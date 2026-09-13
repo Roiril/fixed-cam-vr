@@ -163,7 +163,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (renderFrames)
                 {
                     var framesTsv = new System.Text.StringBuilder(
-                        "index\tstage\tstageProgress\tlive\tshatter\tShatterDrawn\tShatterPieces\n");
+                        "index\tstage\tstageProgress\tlive\tshatter\tShatterDrawn\tShatterPieces\tFrozenFrame\tFrozenCount\n");
                     var cuesTsv = new System.Text.StringBuilder("tSec\tcue\tResourceName\n");
                     var cues = new SoundCueLogic();
                     cues.ResetRun();
@@ -173,6 +173,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     string cleanFramesDir = Path.Combine(cleanDir, FramesDirName);
                     File.WriteAllText(Path.Combine(cleanFramesDir, "frames.tsv"), framesTsv.ToString());
                     File.WriteAllText(Path.Combine(cleanFramesDir, "audio-cues.tsv"), cuesTsv.ToString());
+                    stage.VerifyFrozenFrame(saved);
                 }
             }
             catch (Exception e)
@@ -400,6 +401,7 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly Texture2D _sceneTex;
             private Texture2D? _alphaMask;
             private Color32[]? _alphaPixels;
+            private Texture2D? _freezeSourceOverride;
             private readonly RenderTexture _outRt;
             private readonly Texture2D _readback;
             private readonly int _outW, _outH;
@@ -428,6 +430,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 _plateLabel = plateLabel; _screenMatLabel = screenMatLabel; _showLabel = showLabel;
                 _timing = timing;
                 _liveTex = screenMat.GetTexture(LiveTexId);
+                _veil.FrozenFrameProvider = CaptureProxySource;
+            }
+
+            private IntroFrozenFrameSource? CaptureProxySource()
+            {
+                // Editor の代理画像も本体と同じ GPU 複製を通す。動く窓へ後から絵を足さない。
+                var viewport = Matrix4x4.identity;
+                viewport.m00 = viewport.m11 = 0.5f;
+                viewport.m03 = viewport.m13 = 0.5f;
+                Matrix4x4 worldToUv = viewport * _cam.projectionMatrix * _cam.worldToCameraMatrix;
+                Texture source = _freezeSourceOverride != null ? _freezeSourceOverride : _reality;
+                return new IntroFrozenFrameSource(source, source, worldToUv, worldToUv);
             }
 
             public static Stage Create(string outDir)
@@ -473,6 +487,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 //    覆いが alpha を 0 へ落とした所にだけ現実が出る。
                 cam.backgroundColor = new Color(0f, 0f, 0f, 1f);
                 cam.fieldOfView = 90f;
+                cam.aspect = (float)Width / Height;
                 cam.nearClipPlane = 0.05f;
                 cam.farClipPlane = 50f;
                 cam.cullingMask = 1 << IntroLayer;   // 開いている Main.unity の中身を写さない
@@ -659,7 +674,7 @@ namespace FixedCamVr.Streaming.EditorTools
                                : logic.Stage == IntroStage.Swap ? _timing.swapSec : 0f;
                     float progress = span > 0f ? Mathf.Clamp01(logic.StageElapsedSec / span) : 0f;
                     framesTsv.AppendLine(FormattableString.Invariant(
-                        $"{shot.sequenceIndex}\t{logic.Stage}\t{progress:0.000000}\t{w.live:0.000000}\t{w.shatter:0.000000}\t{(_veil.ShatterDrawn ? 1 : 0)}\t{_veil.ShatterPieces}"));
+                        $"{shot.sequenceIndex}\t{logic.Stage}\t{progress:0.000000}\t{w.live:0.000000}\t{w.shatter:0.000000}\t{(_veil.ShatterDrawn ? 1 : 0)}\t{_veil.ShatterPieces}\t{(_veil.HasFrozenFrame ? 1 : 0)}\t{_veil.FrozenFrameCount}"));
 
                     if (cuesTsv != null && cueLogic != null)
                     {
@@ -693,7 +708,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 string? dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllBytes(path, _sceneTex.EncodeToPNG());
-                // 合成前の alpha も保存する。中央だけ割れていない状態を画素で検出するため。
+                // 合成前の alpha も保存する。静止画像を描く間に現実が漏れていないか測る。
                 if (_alphaMask != null)
                 {
                     string maskPath = Path.Combine(_outDir, "alpha", fileName);
@@ -701,6 +716,69 @@ namespace FixedCamVr.Streaming.EditorTools
                     if (!string.IsNullOrEmpty(maskDir)) Directory.CreateDirectory(maskDir);
                     File.WriteAllBytes(maskPath, _alphaMask.EncodeToPNG());
                 }
+            }
+
+            public void VerifyFrozenFrame(List<string> saved)
+            {
+                _freezeSourceOverride = UnityEngine.Object.Instantiate(_reality);
+                try
+                {
+                    Render(new Shot(IntroStage.Frame, 4, "probe_reset", 0f, 0), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "probe_frozen_before", 0.50f, 50), saved);
+                    if (!_veil.HasFrozenFrame)
+                        throw new InvalidOperationException("フリーズ画像を作れていない");
+                    int captured = _veil.FrozenFrameCount;
+                    Color32[] before = _sceneTex.GetPixels32();
+
+                    // 入力画像を変えても凍結した破片は変わらないことを実描画で検証する。
+                    var changedInput = new Color32[Width * Height];
+                    for (int i = 0; i < changedInput.Length; i++) changedInput[i] = new Color32(0, 255, 0, 255);
+                    _freezeSourceOverride.SetPixels32(changedInput);
+                    _freezeSourceOverride.Apply();
+                    Render(new Shot(IntroStage.Frame, 4, "probe_frozen_after", 0.50f, 50), saved);
+                    float frozenDelta = MeanPixelDifference(before, _sceneTex.GetPixels32());
+                    if (_veil.FrozenFrameCount != captured || frozenDelta > 0.1f)
+                        throw new InvalidOperationException($"静止画が入力へ追従した: delta={frozenDelta}");
+
+                    // 新しく凍結すれば変えた入力が現れる。上の検査が常に同じ絵を返していないか校正。
+                    Render(new Shot(IntroStage.Frame, 4, "probe_new_reset", 0f, 0), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "probe_new_capture", 0.50f, 50), saved);
+                    float recaptureDelta = MeanPixelDifference(before, _sceneTex.GetPixels32());
+                    if (recaptureDelta < 5f)
+                        throw new InvalidOperationException($"再取得しても画像が変わらない: delta={recaptureDelta}");
+
+                    // 視点だけを左右へ動かして、凍結した空間からの視差を保存する。
+                    _freezeSourceOverride.SetPixels32(_reality.GetPixels32());
+                    _freezeSourceOverride.Apply();
+                    Render(new Shot(IntroStage.Frame, 4, "probe_depth_reset", 0f, 0), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "probe_depth_center", 0.50f, 50), saved);
+                    _cam.transform.localPosition = Vector3.left * 0.032f;
+                    Render(new Shot(IntroStage.Frame, 4, "probe_depth_left", 0.50f, 50), saved);
+                    Color32[] left = _sceneTex.GetPixels32();
+                    _cam.transform.localPosition = Vector3.right * 0.032f;
+                    Render(new Shot(IntroStage.Frame, 4, "probe_depth_right", 0.50f, 50), saved);
+                    float parallaxDelta = MeanPixelDifference(left, _sceneTex.GetPixels32());
+                    if (parallaxDelta < 0.5f)
+                        throw new InvalidOperationException($"視点を移動しても破片の像が変わらない: delta={parallaxDelta}");
+                    File.WriteAllText(Path.Combine(_outDir, "frozen-proof.json"), FormattableString.Invariant(
+                        $"{{\"frozenPixelDelta\":{frozenDelta:0.000000},\"recapturePixelDelta\":{recaptureDelta:0.000000},\"parallaxPixelDelta\":{parallaxDelta:0.000000}}}"));
+                    Debug.Log($"[IntroViz] frozen proof: retained={frozenDelta:F4} recaptured={recaptureDelta:F4} parallax={parallaxDelta:F4}");
+                }
+                finally
+                {
+                    _cam.transform.localPosition = Vector3.zero;
+                    UnityEngine.Object.DestroyImmediate(_freezeSourceOverride);
+                    _freezeSourceOverride = null;
+                }
+            }
+
+            private static float MeanPixelDifference(Color32[] a, Color32[] b)
+            {
+                if (a.Length != b.Length) throw new InvalidOperationException("比較画像の画素数が一致しない");
+                long difference = 0;
+                for (int i = 0; i < a.Length; i++)
+                    difference += Math.Abs(a[i].r - b[i].r) + Math.Abs(a[i].g - b[i].g) + Math.Abs(a[i].b - b[i].b);
+                return (float)((double)difference / (a.Length * 3));
             }
 
             private void PlaceHead(bool inside)
@@ -776,6 +854,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     $"drawn: veil built={B(_veil.IsBuilt)} on={B(_veil.IsActive)} " +
                     $"shards drawn={B(_veil.ShatterDrawn)} peak={_veil.ShatterPeak:0.00} " +
                     $"pieces={_veil.ShatterPieces} rect={_veil.ShatterRectDesc} " +
+                    $"frozen={B(_veil.HasFrozenFrame)} copies={_veil.FrozenFrameCount} " +
                     $"base quads={_veil.ApertureQuads} | " +
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +

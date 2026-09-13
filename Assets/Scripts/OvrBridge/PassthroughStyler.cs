@@ -57,7 +57,13 @@ namespace FixedCamVr.OvrBridge
         private Color[] _rigClearColors = System.Array.Empty<Color>();
         private bool _backgroundOpened;
 
-        private void Awake() => Resolve();
+        private void Awake()
+        {
+            Resolve();
+            if (Application.isPlaying
+                && FindObjectOfType<IntroPassthroughCapture>(includeInactive: true) == null)
+                gameObject.AddComponent<IntroPassthroughCapture>();
+        }
 
         private void OnEnable()
         {

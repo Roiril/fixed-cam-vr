@@ -1,15 +1,17 @@
 #nullable enable
 
+using System;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// 導入演出の「覆い」。<b>現実を枠の中へ閉じ込める面</b>。
+    /// 導入演出の全画面の覆いと、静止した実景を運ぶ立体的な破片。
     ///
-    /// 配置は <c>CenterEyeAnchor</c> の子（head-lock）。起動時の黒（<c>StartupFader</c>）と同じ流儀だが、
-    /// UI Canvas ではなく <b>Quad + 専用シェーダ</b>にしている — Passthrough Windows 方式が
-    /// <c>Blend Zero SrcAlpha</c> という特殊なブレンドを要求するため（UI の Image では書けない）。
+    /// 基底 Quad は <c>CenterEyeAnchor</c> の子（head-lock）。破片は撮影時の頭位置から
+    /// スクリーンの実平面へワールド空間で移動する。静止画像を得られない場合に限り、
+    /// <c>Blend Zero SrcAlpha</c> で現実を透かす Passthrough Windows 表示へ戻す。
     ///
     /// <b>面そのものは head-lock</b>（視界を必ず覆い切るため。ワールド固定にすると頭を振った瞬間に
     /// 覆いの外が見える）。<b>その上で、開口だけがスクリーンの見かけの形をなぞる</b>
@@ -53,6 +55,20 @@ namespace FixedCamVr.Streaming
         private static readonly int ScreenRightId = Shader.PropertyToID("_ScreenRight");
         private static readonly int ScreenUpId = Shader.PropertyToID("_ScreenUp");
         private static readonly int ScreenHalfId = Shader.PropertyToID("_ScreenHalf");
+        private static readonly int HasFrozenFrameId = Shader.PropertyToID("_HasFrozenFrame");
+        private static readonly int FrozenLeftTexId = Shader.PropertyToID("_FrozenLeftTex");
+        private static readonly int FrozenRightTexId = Shader.PropertyToID("_FrozenRightTex");
+        private static readonly int LeftWorldToUvId = Shader.PropertyToID("_LeftWorldToUv");
+        private static readonly int RightWorldToUvId = Shader.PropertyToID("_RightWorldToUv");
+        private static readonly int CaptureHeadToWorldId = Shader.PropertyToID("_CaptureHeadToWorld");
+        private static readonly int CurrentHeadPositionId = Shader.PropertyToID("_CurrentHeadPosition");
+        private static readonly int SrcBlendId = Shader.PropertyToID("_SrcBlend");
+        private static readonly int DstBlendId = Shader.PropertyToID("_DstBlend");
+        private static readonly int SrcBlendAlphaId = Shader.PropertyToID("_SrcBlendAlpha");
+        private static readonly int DstBlendAlphaId = Shader.PropertyToID("_DstBlendAlpha");
+        private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
+        private static readonly int ZTestId = Shader.PropertyToID("_ZTest");
+        private static readonly int ColorMaskId = Shader.PropertyToID("_ColorMask");
         private static readonly int[] FramePlaneIds =
         {
             Shader.PropertyToID("_FramePlane0"), Shader.PropertyToID("_FramePlane1"),
@@ -79,6 +95,27 @@ namespace FixedCamVr.Streaming
         private MeshRenderer? _fractureRenderer;
         private MeshFilter? _fractureFilter;
         private Material? _fractureMat;
+        private MeshRenderer? _fractureDepthRenderer;
+        private MeshFilter? _fractureDepthFilter;
+        private Material? _fractureDepthMat;
+        private MaterialPropertyBlock? _fractureBlock;
+        private RenderTexture? _frozenLeft;
+        private RenderTexture? _frozenRight;
+        private Matrix4x4 _leftWorldToUv = Matrix4x4.identity;
+        private Matrix4x4 _rightWorldToUv = Matrix4x4.identity;
+        private Matrix4x4 _captureHeadToWorld = Matrix4x4.identity;
+
+        /// <summary>破砕開始時に左右眼の実景を一度だけ借りる。</summary>
+        public Func<IntroFrozenFrameSource?>? FrozenFrameProvider { get; set; }
+
+        /// <summary>借りた実景を所有 RenderTexture へ複製できたか。</summary>
+        public bool HasFrozenFrame => _frozenLeft != null && _frozenRight != null;
+
+        /// <summary>この走行で所有コピーを作れた回数。</summary>
+        public int FrozenFrameCount { get; private set; }
+
+        /// <summary>この走行で provider を試したか。失敗時も再試行しない。</summary>
+        public bool FrozenFrameAttempted { get; private set; }
 
         /// <summary>いま覆いが何かを隠しているか（＝導入演出中か）。</summary>
         public bool IsActive => _renderer != null && _renderer.enabled;
@@ -161,7 +198,7 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            var fractureGo = new GameObject("IntroVeilFracture");
+            var fractureGo = new GameObject("IntroVeilFractureColor");
             fractureGo.transform.SetParent(transform, worldPositionStays: false);
             fractureGo.transform.localPosition = new Vector3(0f, 0f, distance);
             fractureGo.transform.localRotation = Quaternion.identity;
@@ -175,11 +212,38 @@ namespace FixedCamVr.Streaming
 
             _fractureRenderer = fractureGo.AddComponent<MeshRenderer>();
             _fractureMat = new Material(fractureShader) { name = "IntroFracture (runtime)" };
+            _fractureMat.renderQueue = 4902;
+            ConfigureColorMaterial(frozen: false);
             _fractureRenderer.sharedMaterial = _fractureMat;
             _fractureRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _fractureRenderer.receiveShadows = false;
             _fractureRenderer.allowOcclusionWhenDynamic = false;
             _fractureRenderer.enabled = false;
+
+            var fractureDepthGo = new GameObject("IntroVeilFractureDepth");
+            fractureDepthGo.transform.SetParent(transform, worldPositionStays: false);
+            fractureDepthGo.transform.localPosition = new Vector3(0f, 0f, distance);
+            fractureDepthGo.transform.localRotation = Quaternion.identity;
+            fractureDepthGo.transform.localScale = new Vector3(veilSize.x, veilSize.y, 1f);
+            _fractureDepth = fractureDepthGo.transform;
+            _fractureDepthFilter = fractureDepthGo.AddComponent<MeshFilter>();
+            _fractureDepthFilter.sharedMesh = _fractureMesh;
+            _fractureDepthRenderer = fractureDepthGo.AddComponent<MeshRenderer>();
+            _fractureDepthMat = new Material(fractureShader) { name = "IntroFractureDepth (runtime)" };
+            _fractureDepthMat.renderQueue = 4901;
+            _fractureDepthMat.SetInt(ColorMaskId, 0);
+            _fractureDepthMat.SetInt(ZWriteId, 1);
+            _fractureDepthMat.SetInt(ZTestId, (int)CompareFunction.LessEqual);
+            _fractureDepthMat.SetInt(SrcBlendId, (int)BlendMode.One);
+            _fractureDepthMat.SetInt(DstBlendId, (int)BlendMode.Zero);
+            _fractureDepthMat.SetInt(SrcBlendAlphaId, (int)BlendMode.One);
+            _fractureDepthMat.SetInt(DstBlendAlphaId, (int)BlendMode.Zero);
+            _fractureDepthRenderer.sharedMaterial = _fractureDepthMat;
+            _fractureDepthRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            _fractureDepthRenderer.receiveShadows = false;
+            _fractureDepthRenderer.allowOcclusionWhenDynamic = false;
+            _fractureDepthRenderer.enabled = false;
+            _fractureBlock = new MaterialPropertyBlock();
         }
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
@@ -187,6 +251,23 @@ namespace FixedCamVr.Streaming
         private Transform? _quad;
         private Mesh? _fractureMesh;
         private Transform? _fracture;
+        private Transform? _fractureDepth;
+
+        private void ConfigureColorMaterial(bool frozen)
+        {
+            if (_fractureMat == null) return;
+            _fractureMat.SetInt(ColorMaskId, 15);
+            _fractureMat.SetInt(ZWriteId, 0);
+            _fractureMat.SetInt(ZTestId,
+                (int)(frozen ? CompareFunction.Equal : CompareFunction.Always));
+            _fractureMat.SetInt(SrcBlendId,
+                (int)(frozen ? BlendMode.SrcAlpha : BlendMode.Zero));
+            _fractureMat.SetInt(DstBlendId,
+                (int)(frozen ? BlendMode.OneMinusSrcAlpha : BlendMode.SrcAlpha));
+            _fractureMat.SetInt(SrcBlendAlphaId, (int)BlendMode.Zero);
+            _fractureMat.SetInt(DstBlendAlphaId,
+                (int)(frozen ? BlendMode.One : BlendMode.SrcAlpha));
+        }
 
         /// <summary>
         /// 覆いの面を <see cref="PlaneDistanceResolved"/> へ運ぶ。**覆う画角は変えない**ので、
@@ -206,6 +287,11 @@ namespace FixedCamVr.Streaming
             {
                 _fracture.localPosition = new Vector3(0f, 0f, d);
                 _fracture.localScale = new Vector3(size.x, size.y, 1f);
+            }
+            if (_fractureDepth != null)
+            {
+                _fractureDepth.localPosition = new Vector3(0f, 0f, d);
+                _fractureDepth.localScale = new Vector3(size.x, size.y, 1f);
             }
             return size;
         }
@@ -409,6 +495,88 @@ namespace FixedCamVr.Streaming
             for (int i = 0; i < planes.Length; i++) planes[i] = new Vector4(0f, 0f, -1f, 0f);
         }
 
+        private void TryCaptureFrozenFrame()
+        {
+            FrozenFrameAttempted = true;
+            RenderTexture? left = null;
+            RenderTexture? right = null;
+            try
+            {
+                IntroFrozenFrameSource? candidate = FrozenFrameProvider?.Invoke();
+                if (!candidate.HasValue) return;
+                IntroFrozenFrameSource source = candidate.Value;
+                if (source.Left == null || source.Right == null
+                    || source.Left.width <= 0 || source.Left.height <= 0
+                    || source.Right.width <= 0 || source.Right.height <= 0)
+                    return;
+
+                left = CopyFrozenTexture(source.Left, "IntroFrozenLeft");
+                right = CopyFrozenTexture(source.Right, "IntroFrozenRight");
+                _frozenLeft = left;
+                _frozenRight = right;
+                left = null;
+                right = null;
+                _leftWorldToUv = source.LeftWorldToUv;
+                _rightWorldToUv = source.RightWorldToUv;
+                _captureHeadToWorld = transform.localToWorldMatrix;
+                FrozenFrameCount++;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[IntroVeil] 実景の静止画を複製できません: {ex.Message}");
+            }
+            finally
+            {
+                DestroyFrozenTexture(left);
+                DestroyFrozenTexture(right);
+            }
+        }
+
+        private static RenderTexture CopyFrozenTexture(Texture source, string name)
+        {
+            var copy = new RenderTexture(
+                source.width, source.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default)
+            {
+                name = name,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                useMipMap = false,
+                autoGenerateMips = false,
+            };
+            try
+            {
+                copy.Create();
+                if (!copy.IsCreated())
+                    throw new InvalidOperationException($"{name} RenderTexture の生成に失敗しました。");
+                Graphics.Blit(source, copy);
+                return copy;
+            }
+            catch
+            {
+                DestroyFrozenTexture(copy);
+                throw;
+            }
+        }
+
+        private void ReleaseFrozenFrame()
+        {
+            DestroyFrozenTexture(_frozenLeft);
+            DestroyFrozenTexture(_frozenRight);
+            _frozenLeft = null;
+            _frozenRight = null;
+            _leftWorldToUv = Matrix4x4.identity;
+            _rightWorldToUv = Matrix4x4.identity;
+            _captureHeadToWorld = Matrix4x4.identity;
+        }
+
+        private static void DestroyFrozenTexture(RenderTexture? texture)
+        {
+            if (texture == null) return;
+            texture.Release();
+            if (Application.isPlaying) Destroy(texture);
+            else DestroyImmediate(texture);
+        }
+
         /// <summary>導入演出の重みを覆いへ流す。<b>判断はしない</b>（値を書くだけ）。</summary>
         public void Apply(in IntroWeights w)
         {
@@ -418,10 +586,16 @@ namespace FixedCamVr.Streaming
             // SetHidden では落とさない。Frame → Swap の遷移ログが閉じ切った実測を読むため。
             if (w.shatter <= FullyOpenEpsilon && w.frame <= FullyOpenEpsilon)
             {
+                ReleaseFrozenFrame();
+                FrozenFrameAttempted = false;
+                FrozenFrameCount = 0;
                 ApertureDrawn = false;
                 ApertureClosePeak = 0f;
                 ShatterPeak = 0f;
             }
+
+            if (w.shatter > FullyOpenEpsilon && !FrozenFrameAttempted)
+                TryCaptureFrozenFrame();
 
             // 何も隠していない状態（枠が開いていて、パススルーも出さない）では描画そのものを止める。
             // 覆いは全画面 1 パスなので、本編中ずっと描くのは無駄。
@@ -447,22 +621,48 @@ namespace FixedCamVr.Streaming
             bool drawShatter = w.shatter > FullyOpenEpsilon
                                && _fractureRenderer != null && _fractureMat != null
                                && _fractureMesh != null;
+            bool drawFrozenDepth = drawShatter && HasFrozenFrame
+                                   && _fractureDepthRenderer != null && _fractureDepthMat != null;
+            _mat.SetInt(ZWriteId, drawFrozenDepth ? 1 : 0);
+            ConfigureColorMaterial(HasFrozenFrame);
             if (_fractureRenderer != null) _fractureRenderer.enabled = drawShatter;
+            if (_fractureDepthRenderer != null) _fractureDepthRenderer.enabled = drawFrozenDepth;
             if (drawShatter)
             {
                 float shatter = Mathf.Clamp01(w.shatter);
-                _fractureMat!.SetFloat(ShatterId, shatter);
-                _fractureMat.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
-                _fractureMat.SetVector(VeilSizeId,
+                _fractureBlock ??= new MaterialPropertyBlock();
+                _fractureBlock.Clear();
+                _fractureBlock.SetFloat(ShatterId, shatter);
+                _fractureBlock.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
+                _fractureBlock.SetFloat(HasFrozenFrameId, HasFrozenFrame ? 1f : 0f);
+                _fractureBlock.SetVector(VeilSizeId,
                     new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
-                _fractureMat.SetVector(ScreenCenterId,
-                    new Vector4(_screenCenter.x, _screenCenter.y, _screenCenter.z, 0f));
-                _fractureMat.SetVector(ScreenRightId,
-                    new Vector4(_screenRight.x, _screenRight.y, _screenRight.z, 0f));
-                _fractureMat.SetVector(ScreenUpId,
-                    new Vector4(_screenUp.x, _screenUp.y, _screenUp.z, 0f));
-                _fractureMat.SetVector(ScreenHalfId,
+                Vector3 screenCenterWorld = transform.TransformPoint(_screenCenter);
+                Vector3 screenRightWorld = transform.TransformDirection(_screenRight).normalized;
+                Vector3 screenUpWorld = transform.TransformDirection(_screenUp).normalized;
+                _fractureBlock.SetVector(ScreenCenterId,
+                    new Vector4(screenCenterWorld.x, screenCenterWorld.y, screenCenterWorld.z, 0f));
+                _fractureBlock.SetVector(ScreenRightId,
+                    new Vector4(screenRightWorld.x, screenRightWorld.y, screenRightWorld.z, 0f));
+                _fractureBlock.SetVector(ScreenUpId,
+                    new Vector4(screenUpWorld.x, screenUpWorld.y, screenUpWorld.z, 0f));
+                _fractureBlock.SetVector(ScreenHalfId,
                     new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
+                Vector3 headPosition = transform.position;
+                _fractureBlock.SetVector(CurrentHeadPositionId,
+                    new Vector4(headPosition.x, headPosition.y, headPosition.z, 1f));
+                _fractureBlock.SetMatrix(CaptureHeadToWorldId,
+                    HasFrozenFrame ? _captureHeadToWorld : transform.localToWorldMatrix);
+                _fractureBlock.SetMatrix(LeftWorldToUvId, _leftWorldToUv);
+                _fractureBlock.SetMatrix(RightWorldToUvId, _rightWorldToUv);
+                if (HasFrozenFrame)
+                {
+                    _fractureBlock.SetTexture(FrozenLeftTexId, _frozenLeft!);
+                    _fractureBlock.SetTexture(FrozenRightTexId, _frozenRight!);
+                }
+                _fractureRenderer!.SetPropertyBlock(_fractureBlock);
+                if (_fractureDepthRenderer != null)
+                    _fractureDepthRenderer.SetPropertyBlock(_fractureBlock);
                 if (shatter > ShatterPeak) ShatterPeak = shatter;
             }
             float close = Mathf.Clamp01(w.frame);
@@ -541,8 +741,11 @@ namespace FixedCamVr.Streaming
         {
             if (_renderer != null) _renderer.enabled = false;
             if (_fractureRenderer != null) _fractureRenderer.enabled = false;
+            if (_fractureDepthRenderer != null) _fractureDepthRenderer.enabled = false;
             if (_mat != null) _mat.SetFloat(FractureActiveId, 0f);
+            if (_mat != null) _mat.SetInt(ZWriteId, 0);
             if (_filter != null && _mesh != null) _filter.sharedMesh = _mesh;
+            ReleaseFrozenFrame();
             // 閉じ切った開口を配ったまま去ると、次に箱を出す誰かが**枠の形に切られる**。
             PublishApertureOpen();
         }
@@ -551,8 +754,10 @@ namespace FixedCamVr.Streaming
 
         private void OnDestroy()
         {
+            ReleaseFrozenFrame();
             if (_mat != null) Destroy(_mat);
             if (_fractureMat != null) Destroy(_fractureMat);
+            if (_fractureDepthMat != null) Destroy(_fractureDepthMat);
             if (_mesh != null) Destroy(_mesh);
             if (_fractureMesh != null) Destroy(_fractureMesh);
         }

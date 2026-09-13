@@ -2906,7 +2906,8 @@ def analyze(events, others, exp, warns=None):
             verdict("FAIL", "旧破砕ログのセル格子が 0 枚（IntroVeilShatterMesh を組めていない）")
 
     # 0208 の不揃いな破片。旧ログにはこの印が無いため適用しない。
-    if "art" in effect_samples(events, "shatStyle"):
+    fracture_styles = set(effect_samples(events, "shatStyle"))
+    if fracture_styles.intersection({"art", "frozen"}):
         any_effect_key = True
         def fracture_numbers(key):
             values = []
@@ -2930,6 +2931,13 @@ def analyze(events, others, exp, warns=None):
                     verdict("FAIL", "破片を収束まで描画できていない（shat が欠損または到達不足）")
                 elif pieces and max(pieces) > 0:
                     verdict("OK", f"破片を収束まで描画した（到達 {max(peaks):.2f}）")
+            if "frozen" in fracture_styles and complete_fracture:
+                frozen = fracture_numbers("shatFrozen")
+                copies = fracture_numbers("shatCopies")
+                if not frozen or max(frozen) < 1 or not copies or max(copies) < 1:
+                    verdict("FAIL", "実景の静止画を破片へ描画できていない（カメラ未許可・未取得・代替描画を確認）")
+                else:
+                    verdict("OK", f"実景を静止画として破片へ配布した（取得 {int(max(copies))} 回）")
 
     # -- スクリーンの管の点灯
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。

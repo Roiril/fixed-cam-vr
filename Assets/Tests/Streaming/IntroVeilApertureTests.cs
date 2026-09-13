@@ -223,7 +223,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void FractureAndBaseQuad_UseTheSamePlaneForBothEyes()
+        public void FractureAndBaseQuad_ResolveTheSameScreen()
         {
             PlaceScreen(screenYawDeg: 0f);
             typeof(IntroVeil).GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -231,7 +231,7 @@ namespace FixedCamVr.Streaming.Tests
             _veil!.Apply(new IntroWeights { passthrough = 1f, shatter = 0.4f, ignite = 1f });
 
             Transform? baseQuad = _veil.transform.Find("IntroVeilQuad");
-            Transform? fracture = _veil.transform.Find("IntroVeilFracture");
+            Transform? fracture = _veil.transform.Find("IntroVeilFractureColor");
             Assert.IsNotNull(baseQuad, "スクリーン窓の base quad が無い");
             Assert.IsNotNull(fracture, "破片面が無い");
             Assert.That(fracture!.localPosition.z, Is.EqualTo(baseQuad!.localPosition.z).Within(1e-5f),

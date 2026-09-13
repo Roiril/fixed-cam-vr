@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace FixedCamVr.Streaming
 {
@@ -15,6 +16,9 @@ namespace FixedCamVr.Streaming
         public const int MacroCount = 24;
         public const int MicroSide = 40;
         public const float HalfExtentLocal = 0.30f;
+        public const float FrontSurface = 0f;
+        public const float BackSurface = 1f;
+        public const float SideSurface = 2f;
 
         private const int MacroColumns = 6;
         private const int MacroRows = 4;
@@ -30,6 +34,7 @@ namespace FixedCamVr.Streaming
         };
 
         public static int LastPieceCount { get; private set; }
+        public static int LastVertexCount { get; private set; }
 
         public static Mesh Build()
         {
@@ -42,7 +47,9 @@ namespace FixedCamVr.Streaming
             var uv0 = new List<Vector2>(12000);
             var uv1 = new List<Vector4>(12000);
             var uv2 = new List<Vector4>(12000);
-            var triangles = new List<int>(18000);
+            var uv3 = new List<Vector4>(12000);
+            var normals = new List<Vector3>(12000);
+            var triangles = new List<int>(48000);
             int pieceCount = 0;
 
             for (int y = 0; y < MicroSide; y++)
@@ -67,24 +74,30 @@ namespace FixedCamVr.Streaming
                         if (!TryMeasure(local, out float area, out Vector2 centroid) || area <= MinArea)
                             continue;
 
-                        AddPiece(positions, uv0, uv1, uv2, triangles, local, centroid, area,
+                        AddPiece(positions, uv0, uv1, uv2, uv3, normals, triangles, local, centroid, area,
                             macros[macroIndex], macroIndex);
                         pieceCount++;
                     }
                 }
             }
 
-            if (positions.Count > ushort.MaxValue)
-                throw new InvalidOperationException($"Intro fracture mesh exceeds 16-bit indices: {positions.Count} vertices.");
-
             LastPieceCount = pieceCount;
-            var mesh = new Mesh { name = "IntroFractureShards" };
+            LastVertexCount = positions.Count;
+            var mesh = new Mesh
+            {
+                name = "IntroFractureShards",
+                indexFormat = IndexFormat.UInt32,
+            };
             mesh.SetVertices(positions);
+            mesh.SetNormals(normals);
             mesh.SetUVs(0, uv0);
             mesh.SetUVs(1, uv1);
             mesh.SetUVs(2, uv2);
+            mesh.SetUVs(3, uv3);
             mesh.SetTriangles(triangles, 0);
-            mesh.bounds = new Bounds(Vector3.zero, new Vector3(1.2f, 1.2f, 1.2f));
+            // 頂点シェーダで撮影時の頭位置から現在のスクリーンまで運ぶ。
+            // 元の平面だけから求めた bounds では、頭を動かした瞬間に全破片がカリングされる。
+            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 200f);
             mesh.UploadMeshData(markNoLongerReadable: false);
             return mesh;
         }
@@ -240,6 +253,8 @@ namespace FixedCamVr.Streaming
             List<Vector2> uv0,
             List<Vector4> uv1,
             List<Vector4> uv2,
+            List<Vector4> uv3,
+            List<Vector3> normals,
             List<int> triangles,
             List<Vector2> polygon,
             Vector2 centroid,
@@ -247,26 +262,91 @@ namespace FixedCamVr.Streaming
             MacroRegion macro,
             int macroIndex)
         {
-            int first = positions.Count;
             var pieceData = new Vector4(centroid.x, centroid.y, Mathf.Sqrt(area), 1f);
             var macroData = new Vector4(macro.localCentroid.x, macro.localCentroid.y,
                 macro.startOffset, macroIndex);
+            int front = positions.Count;
             for (int i = 0; i < polygon.Count; i++)
             {
                 Vector2 point = polygon[i];
-                positions.Add(new Vector3(point.x, point.y, 0f));
-                uv0.Add(point + Vector2.one * 0.5f);
-                uv1.Add(pieceData);
-                uv2.Add(macroData);
+                AddVertex(positions, uv0, uv1, uv2, uv3, normals,
+                    new Vector3(point.x, point.y, -0.5f), point, pieceData, macroData,
+                    new Vector3(0f, 0f, -1f), FrontSurface);
             }
 
-            // 覆いは -Z 側から見る。各面は独立頂点なので、小片単位で回転できる。
+            // 覆いは -Z 側から見る。表は従来と同じ winding、裏は逆向きにする。
             for (int i = 1; i < polygon.Count - 1; i++)
             {
-                triangles.Add(first);
-                triangles.Add(first + i + 1);
-                triangles.Add(first + i);
+                triangles.Add(front);
+                triangles.Add(front + i + 1);
+                triangles.Add(front + i);
             }
+
+            int back = positions.Count;
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Vector2 point = polygon[i];
+                AddVertex(positions, uv0, uv1, uv2, uv3, normals,
+                    new Vector3(point.x, point.y, 0.5f), point, pieceData, macroData,
+                    new Vector3(0f, 0f, 1f), BackSurface);
+            }
+            for (int i = 1; i < polygon.Count - 1; i++)
+            {
+                triangles.Add(back);
+                triangles.Add(back + i);
+                triangles.Add(back + i + 1);
+            }
+
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Vector2 a = polygon[i];
+                Vector2 b = polygon[(i + 1) % polygon.Count];
+                Vector2 edge = b - a;
+                // Voronoi の交点には 1e-5m 未満の辺もある。Vector2.normalized はそれを
+                // ゼロへ丸めるため、側面の照明へ不正な法線を渡してしまう。
+                float edgeLength = edge.magnitude;
+                if (edgeLength <= 0f)
+                    throw new InvalidOperationException("Fracture polygon contains an empty edge.");
+                Vector2 outward = new Vector2(edge.y, -edge.x) / edgeLength;
+                Vector3 normal = new Vector3(outward.x, outward.y, 0f);
+                int side = positions.Count;
+                AddVertex(positions, uv0, uv1, uv2, uv3, normals,
+                    new Vector3(a.x, a.y, -0.5f), a, pieceData, macroData, normal, SideSurface);
+                AddVertex(positions, uv0, uv1, uv2, uv3, normals,
+                    new Vector3(b.x, b.y, -0.5f), b, pieceData, macroData, normal, SideSurface);
+                AddVertex(positions, uv0, uv1, uv2, uv3, normals,
+                    new Vector3(a.x, a.y, 0.5f), a, pieceData, macroData, normal, SideSurface);
+                AddVertex(positions, uv0, uv1, uv2, uv3, normals,
+                    new Vector3(b.x, b.y, 0.5f), b, pieceData, macroData, normal, SideSurface);
+                triangles.Add(side);
+                triangles.Add(side + 1);
+                triangles.Add(side + 2);
+                triangles.Add(side + 1);
+                triangles.Add(side + 3);
+                triangles.Add(side + 2);
+            }
+        }
+
+        private static void AddVertex(
+            List<Vector3> positions,
+            List<Vector2> uv0,
+            List<Vector4> uv1,
+            List<Vector4> uv2,
+            List<Vector4> uv3,
+            List<Vector3> normals,
+            Vector3 position,
+            Vector2 flatPosition,
+            Vector4 pieceData,
+            Vector4 macroData,
+            Vector3 normal,
+            float surface)
+        {
+            positions.Add(position);
+            uv0.Add(flatPosition + Vector2.one * 0.5f);
+            uv1.Add(pieceData);
+            uv2.Add(macroData);
+            uv3.Add(new Vector4(surface, 0f, 0f, 0f));
+            normals.Add(normal);
         }
 
         private static Vector2 ToLocal(Point angle)

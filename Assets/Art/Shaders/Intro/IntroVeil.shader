@@ -22,6 +22,7 @@ Shader "FixedCamVr/IntroVeil"
         _ScreenPlane3("Screen edge plane 3", Vector) = (0, 0, -1, 0)
         _VeilSize("Veil size m (xy) / distance (z)", Vector) = (2, 2, 0.3, 0)
         _FeatherAng("Edge feather (sin of angle)", Float) = 0.02
+        [HideInInspector] _ZWrite("Reset depth for frozen fracture", Float) = 0
     }
 
     SubShader
@@ -34,11 +35,12 @@ Shader "FixedCamVr/IntroVeil"
             Name "IntroVeil"
             Blend Zero SrcColor, Zero SrcAlpha
             BlendOp Add
-            ZWrite Off
+            ZWrite [_ZWrite]
             ZTest Always
             Cull Off
 
             HLSLPROGRAM
+            #pragma target 3.5
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
@@ -82,9 +84,14 @@ Shader "FixedCamVr/IntroVeil"
                 return o;
             }
 
-            float4 frag(Varyings i) : SV_Target
+            float4 frag(Varyings i, out float depth : SV_Depth) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+#if UNITY_REVERSED_Z
+                depth = 0.0;
+#else
+                depth = 1.0;
+#endif
 
                 // 覆いとスクリーンを同じ距離へ置くため、中央眼から解いた平面は左右眼でも一致する。
                 float3 dir = normalize(float3((i.uv - 0.5) * _VeilSize.xy, _VeilSize.z));

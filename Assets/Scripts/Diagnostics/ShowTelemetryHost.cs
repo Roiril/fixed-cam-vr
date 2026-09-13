@@ -508,6 +508,8 @@ namespace FixedCamVr.Diagnostics
         private string ShatterState => _veil == null ? "-" : _veil.ShatterPeak.ToString("F2");
         private string ShatterPieceState => _veil == null ? "-" : _veil.ShatterPieces.ToString();
         private string ShatterDrawState => _veil == null ? "-" : (_veil.ShatterDrawn ? "1" : "0");
+        private string ShatterFrozenState => _veil == null ? "-" : (_veil.HasFrozenFrame ? "1" : "0");
+        private string ShatterFrozenCount => _veil == null ? "-" : _veil.FrozenFrameCount.ToString();
 
         /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
         private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
@@ -727,7 +729,8 @@ namespace FixedCamVr.Diagnostics
                      $"shellRev={ShellRevealState} " +
                      // 連続開口は段 4 のあいだだけ動く。Frame → Swap の行に閉じ切った実測が載る。
                      $"aper={ApertureState} aperQ={ApertureQuadState} aperRect={ApertureRectState} " +
-                     $"shatStyle=art shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
+                     $"shatStyle=frozen shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
+                     $"shatFrozen={ShatterFrozenState} shatCopies={ShatterFrozenCount} " +
                      // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
                      $"ignite={IgniteState} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
@@ -1089,9 +1092,11 @@ namespace FixedCamVr.Diagnostics
                 // 連続開口も同じ理由。段 4 の途中の到達点はここでしか取れない。
                 _sb.Append(" aper=").Append(ApertureState);
                 _sb.Append(" aperQ=").Append(ApertureQuadState);
-                _sb.Append(" shatStyle=art shat=").Append(ShatterState);
+                _sb.Append(" shatStyle=frozen shat=").Append(ShatterState);
                 _sb.Append(" shatC=").Append(ShatterPieceState);
                 _sb.Append(" shatDraw=").Append(ShatterDrawState);
+                _sb.Append(" shatFrozen=").Append(ShatterFrozenState);
+                _sb.Append(" shatCopies=").Append(ShatterFrozenCount);
             }
 
             int active = _registry != null ? _registry.ActiveIndex : -1;

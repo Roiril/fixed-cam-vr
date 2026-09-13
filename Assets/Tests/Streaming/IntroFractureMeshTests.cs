@@ -18,6 +18,7 @@ namespace FixedCamVr.Streaming.Tests
                 Vector3[] vertices = mesh.vertices;
                 int[] triangles = mesh.triangles;
                 List<Vector4> pieceData = ReadUv(mesh, 1);
+                List<Vector4> surfaceData = ReadUv(mesh, 3);
                 var pieceAreas = new Dictionary<Vector4, double>();
                 double totalArea = 0d;
                 for (int i = 0; i < triangles.Length; i += 3)
@@ -30,6 +31,11 @@ namespace FixedCamVr.Streaming.Tests
                     Vector3 c = vertices[ic];
                     double area = Vector3.Cross(b - a, c - a).magnitude * 0.5d;
                     Assert.That(area, Is.GreaterThan(0d), $"triangle {i / 3} has no area");
+                    float surface = surfaceData[ia].x;
+                    Assert.That(surfaceData[ib].x, Is.EqualTo(surface));
+                    Assert.That(surfaceData[ic].x, Is.EqualTo(surface));
+                    if (surface != IntroFractureMesh.FrontSurface)
+                        continue;
                     totalArea += area;
 
                     Vector4 key = pieceData[ia];
@@ -58,12 +64,15 @@ namespace FixedCamVr.Streaming.Tests
             {
                 List<Vector4> pieceData = ReadUv(mesh, 1);
                 List<Vector4> macroData = ReadUv(mesh, 2);
+                List<Vector4> surfaceData = ReadUv(mesh, 3);
                 var macros = new HashSet<int>();
                 var verticesPerPiece = new Dictionary<Vector4, int>();
                 bool hasNonQuad = false;
                 for (int i = 0; i < mesh.vertexCount; i++)
                 {
                     macros.Add(Mathf.RoundToInt(macroData[i].w));
+                    if (surfaceData[i].x != IntroFractureMesh.FrontSurface)
+                        continue;
                     verticesPerPiece.TryGetValue(pieceData[i], out int count);
                     verticesPerPiece[pieceData[i]] = count + 1;
                 }
@@ -84,6 +93,56 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void EveryPiece_HasFrontBackAndOutwardSideSurfaces()
+        {
+            Mesh mesh = IntroFractureMesh.Build();
+            try
+            {
+                List<Vector4> pieces = ReadUv(mesh, 1);
+                List<Vector4> surfaces = ReadUv(mesh, 3);
+                Vector3[] vertices = mesh.vertices;
+                Vector3[] normals = mesh.normals;
+                var counts = new Dictionary<Vector4, Vector3Int>();
+                for (int i = 0; i < mesh.vertexCount; i++)
+                {
+                    Vector3Int count = counts.TryGetValue(pieces[i], out Vector3Int found)
+                        ? found : Vector3Int.zero;
+                    if (surfaces[i].x == IntroFractureMesh.FrontSurface)
+                    {
+                        count.x++;
+                        Assert.That(vertices[i].z, Is.EqualTo(-0.5f));
+                        Assert.That(normals[i], Is.EqualTo(Vector3.back));
+                    }
+                    else if (surfaces[i].x == IntroFractureMesh.BackSurface)
+                    {
+                        count.y++;
+                        Assert.That(vertices[i].z, Is.EqualTo(0.5f));
+                        Assert.That(normals[i], Is.EqualTo(Vector3.forward));
+                    }
+                    else
+                    {
+                        count.z++;
+                        Assert.That(normals[i].z, Is.EqualTo(0f));
+                    }
+                    counts[pieces[i]] = count;
+                }
+
+                Assert.That(counts.Count, Is.EqualTo(IntroFractureMesh.LastPieceCount));
+                Assert.That(mesh.vertexCount, Is.EqualTo(IntroFractureMesh.LastVertexCount));
+                foreach (KeyValuePair<Vector4, Vector3Int> piece in counts)
+                {
+                    Assert.That(piece.Value.x, Is.GreaterThanOrEqualTo(3));
+                    Assert.That(piece.Value.y, Is.EqualTo(piece.Value.x));
+                    Assert.That(piece.Value.z, Is.EqualTo(piece.Value.x * 4));
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
         public void VertexStreams_AreFiniteAndConsistent()
         {
             Mesh mesh = IntroFractureMesh.Build();
@@ -93,17 +152,20 @@ namespace FixedCamVr.Streaming.Tests
                 Vector2[] uv0 = mesh.uv;
                 List<Vector4> uv1 = ReadUv(mesh, 1);
                 List<Vector4> uv2 = ReadUv(mesh, 2);
+                List<Vector4> uv3 = ReadUv(mesh, 3);
+                Vector3[] normals = mesh.normals;
                 int[] triangles = mesh.triangles;
 
                 Assert.That(mesh.name, Is.EqualTo("IntroFractureShards"));
-                Assert.That(mesh.indexFormat, Is.EqualTo(IndexFormat.UInt16));
-                Assert.That(vertices.Length, Is.LessThanOrEqualTo(ushort.MaxValue));
+                Assert.That(mesh.indexFormat, Is.EqualTo(IndexFormat.UInt32));
                 Assert.That(uv0.Length, Is.EqualTo(vertices.Length));
                 Assert.That(uv1.Count, Is.EqualTo(vertices.Length));
                 Assert.That(uv2.Count, Is.EqualTo(vertices.Length));
+                Assert.That(uv3.Count, Is.EqualTo(vertices.Length));
+                Assert.That(normals.Length, Is.EqualTo(vertices.Length));
                 Assert.That(triangles.Length % 3, Is.Zero);
                 Assert.That(mesh.bounds.center, Is.EqualTo(Vector3.zero));
-                Assert.That(mesh.bounds.size, Is.EqualTo(new Vector3(1.2f, 1.2f, 1.2f)));
+                Assert.That(mesh.bounds.size, Is.EqualTo(Vector3.one * 200f));
 
                 for (int i = 0; i < vertices.Length; i++)
                 {
@@ -111,8 +173,14 @@ namespace FixedCamVr.Streaming.Tests
                     AssertFinite(uv0[i], $"uv0 {i}");
                     AssertFinite(uv1[i], $"uv1 {i}");
                     AssertFinite(uv2[i], $"uv2 {i}");
-                    Assert.That(vertices[i].z, Is.EqualTo(0f));
+                    AssertFinite(uv3[i], $"uv3 {i}");
+                    AssertFinite(normals[i], $"normal {i}");
+                    Assert.That(Mathf.Abs(vertices[i].z), Is.EqualTo(0.5f));
                     Assert.That(uv0[i], Is.EqualTo(new Vector2(vertices[i].x + 0.5f, vertices[i].y + 0.5f)));
+                    Assert.That(normals[i].sqrMagnitude, Is.EqualTo(1f).Within(1e-5f));
+                    Assert.That(uv3[i].x, Is.EqualTo(IntroFractureMesh.FrontSurface)
+                        .Or.EqualTo(IntroFractureMesh.BackSurface)
+                        .Or.EqualTo(IntroFractureMesh.SideSurface));
                     Assert.That(uv1[i].z, Is.GreaterThan(0f));
                     Assert.That(uv1[i].w, Is.EqualTo(1f));
                     Assert.That(uv2[i].w, Is.InRange(0f, IntroFractureMesh.MacroCount - 1f));
@@ -183,6 +251,8 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(ReadUv(second, 0), Is.EqualTo(ReadUv(first, 0)));
                 Assert.That(ReadUv(second, 1), Is.EqualTo(ReadUv(first, 1)));
                 Assert.That(ReadUv(second, 2), Is.EqualTo(ReadUv(first, 2)));
+                Assert.That(ReadUv(second, 3), Is.EqualTo(ReadUv(first, 3)));
+                Assert.That(second.normals, Is.EqualTo(first.normals));
             }
             finally
             {
