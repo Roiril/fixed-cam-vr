@@ -334,6 +334,8 @@ namespace FixedCamVr.Streaming
         /// <summary>ライブ卓の抑止（activeCue 非空 / cameraOverride 非 null）を通知する。</summary>
         public void SetSuppressed(bool s) => _suppressed = s;
 
+        public bool Suppressed => _suppressed;
+
         /// <summary>
         /// ゾーン確定（ショーの時計）を受ける。離脱区間の決着（exit 演出 / 取り逃した enter 演出）を行い、
         /// 進入区間の enter 演出を武装する。返すのは最大 1 つの即時 Decision（離脱時発火）。

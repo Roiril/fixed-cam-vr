@@ -29,6 +29,7 @@ import os
 import re
 import sys
 from collections import defaultdict
+from comms_takeover_evidence import analyze_takeover
 
 XP = re.compile(r"\[XP\]\s+(.*)$")
 # 体験に関わる既存タグ（テレメトリ以外の一次情報）。理由まで書いてあるのはこちら。
@@ -393,6 +394,9 @@ def analyze(events, others, exp, warns=None):
 
     def verdict(level, text):
         verdicts.append((level, text))
+
+    for level, text in analyze_takeover(events):
+        verdict(level, text)
 
     def emit_warnings():
         # [XP] は「こちらが観測しようと決めたもの」しか出さない。実機が自分から言っていることは
@@ -1614,8 +1618,7 @@ def analyze(events, others, exp, warns=None):
             # ⚠⚠ 見るのは「強さが動いた」ではなく **実際に化けた字の数（commsCx）**。
             #    2026-07-31 の「段は進んだのに画は空だった」と同じ型を避けるための観測。
             # ⚠ 0069 で壊れ方を作り直した（レイヤを貼る → 印字そのものが壊れる）。
-            #    化けの組み合わせは刻みごとに変わるので、標本によって 0 が出るのは正常。
-            #    だから「全標本が 0」でだけ落とす。
+            #    非表示中の標本もあるので、欠落の有無は表示期間を通して測る。
             cx = []
             for v in effect_samples(events, "commsCx"):
                 try:
@@ -1685,14 +1688,18 @@ def analyze(events, others, exp, warns=None):
             if gl and max(gl) <= 0.0:
                 verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
                                 "周が進んでいないか、ShowRunDirector.ScreenDecay を読めていない")
-            elif gl and cx and max(cx) <= 0:
+            elif gl and cx and max(cx) <= 0 and not any(
+                    e.get("commsTakeover") in ("Truth", "Erase", "Blank", "LieReveal", "LieHold", "Complete")
+                    for e in events if e.get("ev") == "sum"):
                 # 強さは上がったのに 1 字も化けていない ＝ 印字へ届いていない。
                 verdict("FAIL", f"強さは上がった（最大 {max(gl):.2f}）のに字が 1 つも化けていない"
                                 "（commsCx が全標本 0）— CommsPanel.ApplyCorruption が"
                                 "文面へ届いていない疑い")
-            elif gl:
+            elif gl and cx and max(cx) > 0:
                 verdict("OK", f"連絡の面が周回とともに壊れた"
                               f"（強さ 最大 {max(gl):.2f} / 化けた字 最大 {max(cx) if cx else 0}）")
+            elif gl and cx:
+                verdict("WARN", "改変中は読みやすい報告を残すため、通常文の欠落はこの記録だけでは判定できない")
 
             # ③（4 周目 A の締め）は進み 1.0 ＝ 壊れが最大の状態で届くはず。
             # ⚠ 進みは 3 周目 A で 1.0 に着いて以後動かない（`ScreenDecayLogic`）ので、

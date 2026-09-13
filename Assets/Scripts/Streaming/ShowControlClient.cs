@@ -2906,6 +2906,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool LastMarkResolved { get; private set; }
 
+        /// <summary>直近の報告を受けた瞬間の表示状態。次フレームの進行では書き換えない。</summary>
+        public bool LastMarkDollReplacementShowing { get; private set; }
+
+        public bool LastMarkSuppressed { get; private set; }
+
+        public int LastMarkLap { get; private set; } = -1;
+
         /// <summary>
         /// <b>呪いが排除されて画がリアルタイム映像へ戻った回数</b>（2026-09-05・
         /// <c>canon/LEDGER.md</c> 0156）。<b>単調に増えるだけで、ラン開始でも 0 へ戻さない</b> —
@@ -2942,6 +2949,11 @@ namespace FixedCamVr.Streaming
                 return;
             }
             VisitorMarkCount++;
+            LastMarkDollReplacementShowing = timelineDirector != null
+                && timelineDirector.DollReplacementShowing;
+            LastMarkSuppressed = timelineDirector != null && timelineDirector.Suppressed;
+            LastMarkLap = timelineDirector != null ? timelineDirector.CurrentLap
+                                                   : (CurrentLapProvider != null ? CurrentLapProvider() : -1);
             // 「報告するまで」のカット（4 周目 A の締め）と、dismissible な演出だけが反応する。
             // ⚠ 戻り値が「何に効いたか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
             TakeRunnerLogic.MarkResult result =

@@ -72,21 +72,32 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void MissingSelection_ChangesAcrossTicks_ButIsDeterministic()
+        public void MissingSelection_IsStableAcrossTime_AndMonotonicWithLevel()
         {
             var a = new bool[32];
             var b = new bool[32];
-            CommsGlitchLogic.FillMissing(a, a.Length, 1f, 8);
-            CommsGlitchLogic.FillMissing(b, b.Length, 1f, 8);
+            CommsGlitchLogic.FillMissing(a, a.Length, 0.5f, 8);
+            CommsGlitchLogic.FillMissing(b, b.Length, 0.5f, 80);
             CollectionAssert.AreEqual(a, b);
 
-            bool changed = false;
-            for (int tick = 9; tick < 30 && !changed; tick++)
+            CommsGlitchLogic.FillMissing(b, b.Length, 0.8f, 80);
+            for (int i = 0; i < a.Length; i++)
+                if (a[i]) Assert.IsTrue(b[i], $"侵食量を増やしたら {i} 番の欠けが戻った");
+        }
+
+        [Test]
+        public void SmearsDoNotJumpWhenOnlyTimeChanges()
+        {
+            for (int line = 0; line < 4; line++)
+                Assert.AreEqual(CommsGlitchLogic.LineOffsetM(0.8f, 1, line),
+                                CommsGlitchLogic.LineOffsetM(0.8f, 999, line));
+            for (int glyph = 0; glyph < 80; glyph++)
             {
-                CommsGlitchLogic.FillMissing(b, b.Length, 1f, tick);
-                changed = !System.Linq.Enumerable.SequenceEqual(a, b);
+                Assert.AreEqual(CommsGlitchLogic.EchoAt(0.8f, 1, glyph),
+                                CommsGlitchLogic.EchoAt(0.8f, 999, glyph));
+                Assert.AreEqual(CommsGlitchLogic.EchoOffsetM(0.8f, 1, glyph),
+                                CommsGlitchLogic.EchoOffsetM(0.8f, 999, glyph));
             }
-            Assert.IsTrue(changed);
         }
 
         [Test]

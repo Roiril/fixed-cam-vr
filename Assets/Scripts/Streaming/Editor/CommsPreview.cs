@@ -34,6 +34,9 @@ namespace FixedCamVr.Streaming.EditorTools
     /// </summary>
     public static class CommsPreview
     {
+        [MenuItem("Tools/FixedCamVr/Preview/Comms Takeover (frames)", priority = 85)]
+        public static void RunTakeover() => CommsTakeoverPreview.Run();
+
         /// <summary>
         /// 撮る文面。⚠ <b>全部を並べる。</b> 1 つでも漏らすと、その文面だけ枠から溢れていても
         /// 誰も気づけない（0079 で⓪a / ⓪b を足したときに漏らしかけた）。

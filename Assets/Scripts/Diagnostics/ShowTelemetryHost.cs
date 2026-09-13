@@ -139,6 +139,7 @@ namespace FixedCamVr.Diagnostics
         /// <summary>直近に出した記録ボタンの回数（体験者の左のどれか）。</summary>
         private int _lastMarkCount;
         private int _lastCommsPulse;
+        private string _lastCommsTakeoverPhase = "Off";
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
@@ -801,6 +802,15 @@ namespace FixedCamVr.Diagnostics
             // AIエージェントからの連絡（`canon/LEDGER.md` 0054）。**1 通ごとに 1 行**。
             // ⚠ id だけでは足りない — 「配った」と「画に出た」は別物なので glyph / open を必ず添える
             //   （2026-07-31 の「段は進んだのに画は空だった」と同じ型）。built=0 なら一生出ない。
+            if (_comms != null && _comms.TakeoverPhase.ToString() != _lastCommsTakeoverPhase)
+            {
+                _lastCommsTakeoverPhase = _comms.TakeoverPhase.ToString();
+                Emit($"ev=commsTakeover phase={_lastCommsTakeoverPhase} " +
+                     $"erase={_comms.AppliedTakeoverErase:F3} lie={_comms.AppliedTakeoverLie:F3} " +
+                     $"cx={_comms.CorruptedChars} face={_comms.AppliedFaceMix:F3} " +
+                     $"glyph={_comms.AppliedGlyph:F3} started={_comms.TakeoverStartedCount} " +
+                     $"completed={_comms.TakeoverCompletedCount}");
+            }
             if (_comms != null && _comms.PulseCount != _lastCommsPulse)
             {
                 _lastCommsPulse = _comms.PulseCount;
@@ -1304,6 +1314,9 @@ namespace FixedCamVr.Diagnostics
             //   終幕の 5 標本にしか出ず、解析器の判定に 1 度も入らなかった（走行で気づいた）。
             _sb.Append(" commsGl=").Append(_comms == null ? "-" : _comms.GlitchLevel.ToString("F2"));
             _sb.Append(" commsCx=").Append(_comms == null ? "-" : _comms.CorruptedChars.ToString());
+            _sb.Append(" commsTakeover=").Append(_comms == null ? "-" : _comms.TakeoverPhase.ToString());
+            _sb.Append(" commsErase=").Append(_comms == null ? "-" : _comms.AppliedTakeoverErase.ToString("F3"));
+            _sb.Append(" commsLie=").Append(_comms == null ? "-" : _comms.AppliedTakeoverLie.ToString("F3"));
             //   commsBg = 地と縁を組めたか。**0 なら文字と壊れだけが宙に浮く。**
             //   ⚠⚠ 2026-08-17 まで実機がまさにこれだった（`Unlit/Color` がビルドから剥がれていた）。
             //   Editor では出るので、この 1 ビットが無いと永久に気づけない。

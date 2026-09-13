@@ -16,6 +16,15 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public class CommsNoticeTextTests
     {
+        [TestCase(ShowLang.Ja, "異状を検出しました", "異状は検出されませんでした")]
+        [TestCase(ShowLang.En, "An anomaly was detected.", "No anomaly was detected.")]
+        [TestCase(ShowLang.Fr, "Une anomalie a été\ndétectée.", "Aucune anomalie n’a été\ndétectée.")]
+        public void ConcealmentChangesTheMeaningInEveryLanguage(ShowLang lang, string truth, string lie)
+        {
+            Assert.AreEqual(truth, CommsPanel.NoticeText(CommsNotice.Takeover, lang));
+            Assert.AreEqual(lie, CommsPanel.NoticeText(CommsNotice.TakeoverLie, lang));
+        }
+
         /// <summary>
         /// 1 行に入る全角の数（面の幅 0.76m × 0.92 ÷ 1 文字 1.8°）。
         /// ⚠ <c>menu text-audit</c> が実測で測る値の、机上の目安。

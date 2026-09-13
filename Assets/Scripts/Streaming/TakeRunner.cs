@@ -148,6 +148,16 @@ namespace FixedCamVr.Streaming
         public bool DollCallShowing => _logic.IsActive && _activeStepDollCall;
 
         private bool _activeStepDollCall;
+        private bool _activeStepDollReplacement;
+
+        /// <summary>人形の差し替えカットが実際に CG を表示しているか。</summary>
+        public bool DollReplacementShowing => IsDollReplacementShowing(
+            _logic.IsActive, _activeStepDollReplacement, _cgLayer != null && _cgLayer.DollVisible);
+
+        public static bool IsDollReplacementShowing(bool active, bool stepWantsDoll, bool dollVisible)
+            => active && stepWantsDoll && dollVisible;
+
+        public bool Suppressed => _logic.Suppressed;
 
         /// <summary>
         /// <b>別の場所（異世界）の素材 id の頭</b>（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
@@ -669,6 +679,7 @@ namespace FixedCamVr.Streaming
             _activeStepCueId = step.cueId ?? "";
             // 呼びかけのカットが画面を取っているか（心音の始まりを決める・0175）。
             _activeStepDollCall = step.dollCall;
+            _activeStepDollReplacement = false;
 
             // このカットから劇伴を差し替える（`canon/LEDGER.md` 0119）。
             // ⚠ **演出の bgm（占有）とは別の口。** こちらはレーンそのものを書き換えるので、
@@ -746,6 +757,9 @@ namespace FixedCamVr.Streaming
                 // 人形に付き従う劣化。人形を出さないカットでは必ず 0 へ戻す
                 // （残ると「何も居ない所の画だけが荒れている」という説明の付かない絵になる）。
                 _cgLayer.SetAura(toDoll ? step.aura : 0f);
+                // 表示意図を保持する。DollVisible は非同期の準備後に次フレームで立つ場合があるので、
+                // ここで一度だけ標本を取ると、実際に出た後も false のままになる。
+                _activeStepDollReplacement = toDoll;
             }
 
             // カット遷移（cut / dip / fade / glitch）。**source によって効かせ方が違う**:
@@ -1113,6 +1127,7 @@ namespace FixedCamVr.Streaming
             if (!_logic.IsActive && !handingOver) return;
             _activeStepCueId = "";   // 音が「まだ異世界が映っている」と読まない（0131）
             _activeStepDollCall = false;   // 同・呼びかけのカットが降りた縁を作る（0175）
+            _activeStepDollReplacement = false;
             EndTakeBgm();
             ReleaseStepState();
             if (director != null && director.InsertActive)
@@ -1142,6 +1157,7 @@ namespace FixedCamVr.Streaming
             _clipToken = -1;
             _stepFrames?.Dispose();
             _stepFrames = null;
+            _activeStepDollReplacement = false;
             // ⚠ 入れ替わりのノイズを先に畳む。畳まないと ShowCgLayer が人形を掴んだままで、
             //   この直後の Hide が保留され、**砂の人形が次の体験者へ持ち越される**。
             director?.CancelSwap();

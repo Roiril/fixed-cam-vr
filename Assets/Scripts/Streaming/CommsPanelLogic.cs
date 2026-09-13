@@ -185,7 +185,10 @@ namespace FixedCamVr.Streaming
 
         /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
         public static float HoldSecFor(CommsDelivery delivery)
-            => delivery == CommsDelivery.Fade ? FadeHoldSec : HoldSec;
+            => delivery == CommsDelivery.Fade ? FadeHoldSec
+             : delivery == CommsDelivery.Takeover ? CommsTakeoverLogic.TotalSec
+             : delivery == CommsDelivery.TakeoverLie ? CommsTakeoverLogic.LieHoldSec
+             : HoldSec;
 
         /// <summary>引くまで (秒)。ぱっと消すと「消えた」ではなく「壊れた」に見える。</summary>
         public const float OutSec = 0.9f;
@@ -234,6 +237,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public CommsDelivery Delivery => _delivery;
 
+        /// <summary>現在の段に入ってからの秒数。専用表示とプレビューが同じ時計を読む。</summary>
+        public float StageElapsedSec => _elapsed;
+
+        public CommsTakeoverSample TakeoverSample => _delivery == CommsDelivery.Takeover
+            ? CommsTakeoverLogic.Sample(_stage == CommsStage.Hold ? _elapsed
+                                      : _stage == CommsStage.Out ? CommsTakeoverLogic.TotalSec : 0f)
+            : _delivery == CommsDelivery.TakeoverLie
+                ? CommsTakeoverLogic.LieOnly(_stage == CommsStage.Hold ? _elapsed
+                                          : _stage == CommsStage.Out ? CommsTakeoverLogic.LieHoldSec : 0f)
+                : new CommsTakeoverSample { phase = CommsTakeoverPhase.Off };
+
         /// <summary>
         /// <b>読ませ終わった</b>（<see cref="HoldSec"/> を満たした、または最初から何も出ていない）。
         ///
@@ -273,7 +287,9 @@ namespace FixedCamVr.Streaming
             //   新しい出方の目で古い段を測らせない）。
             EnterStage(chained ? CommsStage.Type : CommsStage.In);
             _delivery = delivery;
-            _typeSec = delivery == CommsDelivery.Fade
+            _typeSec = delivery == CommsDelivery.TakeoverLie
+                ? 0f
+                : delivery == CommsDelivery.Fade
                 ? FadeInSec
                 : charCount <= 0
                     ? 0f
@@ -301,6 +317,7 @@ namespace FixedCamVr.Streaming
         {
             bool rising = wanted && !_guideWanted;
             _guideWanted = wanted;
+            if (_delivery == CommsDelivery.Takeover) return;
             if (wanted && (_stage == CommsStage.Off || _stage == CommsStage.Out))
                 EnterStage(CommsStage.Guide);
             // ⚠⚠ **押し始めたら、走っている連絡は片づく**（2026-08-16・`canon/LEDGER.md` 0065）。

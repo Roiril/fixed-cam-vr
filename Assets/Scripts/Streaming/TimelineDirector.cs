@@ -94,6 +94,10 @@ namespace FixedCamVr.Streaming
         /// <summary>いま押しても受け付けない（締めに入って <c>TakeRunnerLogic.MarkGraceSec</c> 未満）。</summary>
         public bool IsMarkTooEarly => takeRunner != null && takeRunner.IsMarkTooEarly;
 
+        public bool DollReplacementShowing => takeRunner != null && takeRunner.DollReplacementShowing;
+
+        public bool Suppressed => takeRunner != null && takeRunner.Suppressed;
+
         /// <summary>
         /// <b>いま体験者が居る区間のカメラ</b>（0 = A / 1 = B / 2 = C）。まだ 1 度も区間へ入って
         /// いなければ -1。音が「増えるのは C だけ」を判断するために読む

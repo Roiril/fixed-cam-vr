@@ -49,15 +49,14 @@ namespace FixedCamVr.Streaming
         public static int TickAt(float timeSec)
             => timeSec <= 0f ? 0 : (int)(timeSec / TickSec);
 
-        /// <summary>この刻みで欠ける字形数。最大時はおよそ 75%。</summary>
+        /// <summary>欠ける字形数。時刻には依存せず、侵食量に対して単調に増える。</summary>
         public static int MissingCountFor(int glyphCount, float level, int tick)
         {
             if (glyphCount <= 0) return 0;
             float share = MaxMissingShare * Clamp01(level);
             if (share <= OffThreshold) return 0;
             float expected = glyphCount * share;
-            int count = (int)expected;
-            if (Hash01((uint)tick * 2246822519u + 99u) < expected - count) count++;
+            int count = (int)(expected + 0.5f);
             return count > glyphCount ? glyphCount : count;
         }
 
@@ -79,7 +78,7 @@ namespace FixedCamVr.Streaming
                 for (int i = 0; i < glyphCount; i++)
                 {
                     if (missing[i]) continue;
-                    uint score = Hash((uint)tick * 2654435761u + (uint)i * 2246822519u + 374761393u);
+                    uint score = Hash((uint)i * 2246822519u + 374761393u);
                     if (best >= 0 && score >= bestScore) continue;
                     bestScore = score;
                     best = i;
@@ -94,12 +93,11 @@ namespace FixedCamVr.Streaming
         {
             float amount = Clamp01(level);
             if (amount <= OffThreshold || line < 0) return 0f;
-            float chance = 0.18f + 0.42f * amount;
-            float pick = Hash01((uint)tick * 668265263u + (uint)line * 374761393u + 17u);
-            if (pick >= chance) return 0f;
+            float pick = Hash01((uint)line * 374761393u + 17u);
+            if (pick >= 0.6f) return 0f;
             float magnitude = 0.35f + 0.65f
-                * Hash01((uint)tick * 1103515245u + (uint)line * 22695477u + 12345u);
-            float sign = Hash01((uint)tick * 22695477u + (uint)line * 668265263u + 1u) < 0.5f
+                * Hash01((uint)line * 22695477u + 12345u);
+            float sign = Hash01((uint)line * 668265263u + 1u) < 0.5f
                 ? -1f : 1f;
             return sign * MaxLineOffsetM * amount * magnitude;
         }
@@ -109,7 +107,7 @@ namespace FixedCamVr.Streaming
         {
             float amount = Clamp01(level);
             if (amount <= OffThreshold || glyphOrdinal < 0) return false;
-            return Hash01((uint)tick * 3266489917u + (uint)glyphOrdinal * 668265263u + 41u)
+            return Hash01((uint)glyphOrdinal * 668265263u + 41u)
                    < MaxEchoShare * amount;
         }
 
@@ -117,8 +115,8 @@ namespace FixedCamVr.Streaming
         {
             if (!EchoAt(level, tick, glyphOrdinal)) return 0f;
             float magnitude = 0.45f + 0.55f
-                * Hash01((uint)tick * 747796405u + (uint)glyphOrdinal * 2891336453u + 73u);
-            float sign = Hash01((uint)tick * 277803737u + (uint)glyphOrdinal * 668265263u + 9u) < 0.5f
+                * Hash01((uint)glyphOrdinal * 2891336453u + 73u);
+            float sign = Hash01((uint)glyphOrdinal * 668265263u + 9u) < 0.5f
                 ? -1f : 1f;
             return sign * MaxEchoOffsetM * Clamp01(level) * magnitude;
         }
