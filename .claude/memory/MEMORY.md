@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [presentation_redesign.md](presentation_redesign.md) - 2026-09-13 の導入とエージェント画面の再構築。連続開口と固定位置の通信面。実装案の採否は未判定。比較画像と検証手順。
+
 > ここは**技術の罠・実装の経緯**の索引。
 > **世界観・演出の判定は `.claude/canon/` が正本**（`LEDGER` = ユーザーが言ったこと /
 > `OPEN` = 未確定とシュビーの案 / `ROUNDS` = 周回の賭けと差）。混ぜない — 規律は `rules/canon-boundary.md`。

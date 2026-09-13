@@ -173,7 +173,7 @@ $Menus = [ordered]@{
                             Desc = 'タイトル画面「廻リ視」を 9 枚 + 閉じる演出 56 枚 PNG 化（両眼の厚み確認つき）'
                             Out = 'Assets/Screenshots/title' }
     'intro'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.IntroPreview.Run'
-                            Desc = '導入演出の段 0〜5（素通し→格下げ→輪郭→割れる→映像）を 16 枚 PNG 化'
+                            Desc = '導入演出の段 0〜5（現実→脱色→連続開口→映像）を PNG 化。-Set frames=1 で遷移の連番'
                             Out = 'Assets/Screenshots/intro' }
     'shatter'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.IntroShatterPreview.Run'
                             Desc = '【退避中】封印の箱の破片を 9 枚 + 連番 60 枚 PNG 化（覆いの割れは menu intro）'

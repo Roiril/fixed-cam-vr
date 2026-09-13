@@ -75,28 +75,39 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
-        public void Reveal_WaitsUntilTheShutterHasPassedTheWholeCell()
+        public void Reveal_FadesWithoutChangingTheFaceSize()
         {
-            // 枠の右端ちょうどまで開いた時点では、まだ 1 画素も出ない。
-            float cellRightFromLeft = CommsFaceLayout.MarginM + CommsFaceLayout.CellM;
-            float open = cellRightFromLeft / CommsFaceLayout.FullW(BodyW);
-            Assert.AreEqual(0f, CommsFaceLayout.Reveal(open, BodyW), 1e-5f);
-
-            // そこから `RevealSpanM` ぶん開けば出そろう。
-            float wider = (cellRightFromLeft + CommsFaceLayout.RevealSpanM)
-                          / CommsFaceLayout.FullW(BodyW);
-            Assert.AreEqual(1f, CommsFaceLayout.Reveal(wider, BodyW), 1e-5f);
+            Assert.AreEqual(0.5f, CommsFaceLayout.Reveal(0.5f, BodyW), 1e-5f);
+            Assert.AreEqual(0.15f, CommsFaceLayout.CellM, 1e-6f,
+                            "出入りで顔そのものを縮めない");
         }
 
         [Test]
-        public void Stroke_IsThickEnoughToSurviveTheHeadset()
+        public void FaceFrame_IsRemoved()
         {
-            // 1.5m 先の 0.15m 角 ＝ 見かけ 5.7°。Quest 3 は視野中心でおよそ 20 画素/度なので
-            // 1 辺 110 画素そこそこ。**枠線が 3 画素を切ると縮小で灰色の靄になる**。
-            const float pxPerCell = 110f;
-            Assert.GreaterOrEqual(CommsFaceLayout.StrokeK * pxPerCell, 3f);
-            // 逆に太すぎると顔が枠に食われる（1 辺の 1 割まで）。
-            Assert.Less(CommsFaceLayout.StrokeK, 0.10f);
+            Assert.AreEqual(0f, CommsFaceLayout.StrokeK);
+        }
+
+        [Test]
+        public void Divider_IsShortThinAndBetweenFaceAndText()
+        {
+            float cellRight = CommsFaceLayout.CellCenterX(BodyW) + CommsFaceLayout.CellM * 0.5f;
+            float textLeft = -BodyW * 0.5f;
+            float divider = CommsFaceLayout.DividerCenterX(BodyW);
+            Assert.Greater(divider, cellRight);
+            Assert.Less(divider, textLeft);
+            Assert.Less(CommsFaceLayout.DividerW, 0.004f);
+            Assert.Less(CommsFaceLayout.DividerH, CommsFaceLayout.CellM);
+        }
+
+        [Test]
+        public void GlyphFade_RisesWithinThirtyToFortyFiveMilliseconds()
+        {
+            Assert.That(CommsPanel.GlyphFadeSec, Is.InRange(0.030f, 0.045f));
+            Assert.AreEqual(0f, CommsPanel.GlyphFadeAlpha(0f), 1e-6f);
+            Assert.That(CommsPanel.GlyphFadeAlpha(CommsPanel.GlyphFadeSec * 0.5f),
+                        Is.InRange(0.45f, 0.55f));
+            Assert.AreEqual(1f, CommsPanel.GlyphFadeAlpha(CommsPanel.GlyphFadeSec), 1e-6f);
         }
     }
 }

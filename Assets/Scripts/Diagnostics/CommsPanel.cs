@@ -23,11 +23,10 @@ namespace FixedCamVr.Diagnostics
     /// ⚠ <b>文面はコードが持っている</b>（show.json への著作 ＝ take の並列チャンネルは次の段）。
     /// 出る所は 3 点 — <see cref="CommsCueLogic"/>（<c>canon/LEDGER.md</c> 0054）。
     ///
-    /// <b>出方</b>（<c>canon/LEDGER.md</c> 0053・2026-08-16）: 枠が<b>左端から右へ開き</b>、
-    /// 開き切ってから文字が<b>1 字ずつ打たれる</b>。引くときは逆で、文字が消えてから枠が左へ畳まれる。
-    /// 装置が受信して、印字して、片づける — という順序がそのまま画になる。
+    /// <b>出方</b>: 面と文面の位置は固定し、透明度で出入りする。顔と本文の間の短い縦罫線だけが伸びる。
+    /// 文字は従来の時刻で 1 字ずつ打たれ、各字の alpha が 40ms で立ち上がる。
     /// 判断は <see cref="CommsPanelLogic"/>、配るのは <c>Apply</c> 1 か所。
-    /// ⚠ 打つのは <c>TMP_Text.maxVisibleCharacters</c>（文字列を作り直さないので毎フレーム触ってよい）。
+    /// ⚠ 打つ順序は文字の頂点 alpha で作る。文字列と字幅は毎フレーム変えない。
     ///
     /// <b>打鍵音</b>（<c>canon/LEDGER.md</c> 0056・2026-08-16）: 1 文字が出るたびに 1 発鳴る。
     /// 鳴らすのは <see cref="TypeAudioCue"/> で、<b>字を画へ書いているのと同じ行</b>から呼ぶ —
@@ -42,8 +41,8 @@ namespace FixedCamVr.Diagnostics
     /// ⚠ <b>読まなくても体験は進む。</b> 既読の操作は作らない（体験者が持つ唯一の入力 ＝ 左のボタンは
     /// 記録専用で、兼用すると押した時刻の意味が濁る）。
     ///
-    /// <b>顔</b>（<c>canon/LEDGER.md</c> 0071・2026-08-17）: 面の<b>左に角丸の枠</b>が立ち、
-    /// その中に AIエージェントの顔（paperdoll の「スイ」）が出る。寸法は
+    /// <b>顔</b>（<c>canon/LEDGER.md</c> 0071・2026-08-17）: 面の左に
+    /// AIエージェントの顔（paperdoll の「スイ」）が出る。寸法は
     /// <see cref="CommsFaceLayout"/>、描くのは <c>CommsAvatar.shader</c>、版を焼くのは
     /// <c>tools/make-comms-face.py</c>。⚠ <b>顔のぶんは面を左へ伸ばして作る</b> —
     /// 文面の帯は 1mm も動いていない（詰めると最長の行が 3 行へ折り返して前提が崩れる）。
@@ -185,18 +184,15 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>上段の中心（面のローカル y）。<see cref="SetNotice"/> が文面の重心をここへ運ぶ。</summary>
         private float BodyCenterY => HintBandTopY + _bodyBandH * 0.5f;
-        /// <summary>縁の張り出し (m)。地より一回り大きい面を裏に置いて枠に見せる。</summary>
-        private const float BezelM = 0.012f;
+        /// <summary>深い黒の面。後ろの映像は残す。</summary>
+        private const float PanelAlpha = 0.72f;
 
-        /// <summary>
-        /// 地の不透明度（2026-08-19・<c>canon/LEDGER.md</c> 0096・ユーザー指定
-        /// 「スクリーンの背景 → 黒い半透明に」）。<b>後ろの映像が透ける</b>。
-        /// ⚠ 縁が裏に敷いてあるので、中央の実効は 1-(1-<see cref="BezelAlpha"/>)(1-これ) ＝ 約 0.69。
-        /// </summary>
-        private const float PanelAlpha = 0.50f;
+        /// <summary>各文字が立ち上がる時間。出現時刻と打鍵音は従来の刻みを保つ。</summary>
+        public const float GlyphFadeSec = 0.04f;
 
-        /// <summary>縁の不透明度。<b>地より薄い</b> — 濃くすると中央だけ透けなくなる。</summary>
-        private const float BezelAlpha = 0.38f;
+        private static readonly Color PanelColor = new Color(10f / 255f, 9f / 255f, 8f / 255f, 1f);
+        private static readonly Color Ivory = new Color(209f / 255f, 199f / 255f, 184f / 255f, 1f);
+        private static readonly Color EchoRed = new Color(135f / 255f, 61f / 255f, 53f / 255f, 1f);
 
         /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
         private const float FontSize = 0.07f;
@@ -405,34 +401,18 @@ namespace FixedCamVr.Diagnostics
 
         private Transform? _root;
         private MeshRenderer? _panelRenderer;
-        private MeshRenderer? _bezelRenderer;
-        /// <summary>表示側のバグ（分離）の層。<b>本体より先に描く</b>（下に敷く）。⚠ 5000 以下。</summary>
-        private const int GhostQueueR = 4988;
-        private const int GhostQueueC = 4989;
-
-        // 顔の枠と切り抜き。地（4980）の後・文字の分離（4988）の前。
-        // ⚠ 分離の複製は本体より先（下に敷く）。文字の層と同じ流儀。
-        private const int AvatarGhostQueueR = 4983;
-        private const int AvatarGhostQueueC = 4984;
+        private MeshRenderer? _dividerRenderer;
         private const int AvatarQueue = 4985;
-
-        // ⚠ 赤とシアン。**装置の意匠（暖色）ではなく、表示が壊れたときの色**（`canon/LEDGER.md` 0070）。
-        private static readonly Color GhostRed = new Color(1.00f, 0.12f, 0.18f);
-        private static readonly Color GhostCyan = new Color(0.10f, 0.88f, 0.95f);
 
         // AI の侵食（`canon/LEDGER.md` 0068 / 0069 / **0070**）。
         // ⚠⚠ 0070 から**単調ではない** — 3 周目で 1.0 に着き、帰りの A で回復する。
-        private float _glitchLevel, _glitchOffsetX;
+        private float _glitchLevel;
         // 帰りの区間に入ってからの経過（回復の進み）。
         private float _returnSec;
-        // 表示側のバグ（赤・シアンの分離）。本体と同じ文面・同じ可視数を書く。
-        private TMP_Text? _textR, _textC;
-        // 地と文字に掛ける明るさ（1 = 平常。沈むだけで明るくはならない）。
-        private float _glitchFlicker = 1f;
+        // 一部の字形だけに残す鈍い赤の残像。通常の全文複製にはしない。
+        private TMP_Text? _textEcho;
         // 化けの組み合わせが変わる刻み。**-1 = まだ一度も掛けていない**。
         private int _corruptTick = -1;
-        // 壊す前の素の文面。**打鍵の数えも枠の高さもこちらが正**（化けても幅は変わらない）。
-        private string _noticeSource = "";
         // プレビュー（`menu comms-preview -Set decay=`）が注入する進み。**負なら実機の値を読む**。
         private float _decayOverride = -1f;
         private float _previewTimeSec;
@@ -455,16 +435,20 @@ namespace FixedCamVr.Diagnostics
         private static readonly int StrokeId = Shader.PropertyToID("_Stroke");
         private static readonly int FaceOnId = Shader.PropertyToID("_FaceOn");
         // 枠を左端から右へ開くために、左端と全幅を覚えておく（地と縁で別々）。
-        private float _panelW, _panelLeftX, _bezelW, _bezelLeftX;
-        // 顔の枠（本体）と、表示側のバグの複製 2 枚。⚠ 版が無くても枠だけは出す。
-        private MeshRenderer? _avatarRenderer, _avatarGhostR, _avatarGhostC;
-        private Material? _avatarMat, _avatarGhostMatR, _avatarGhostMatC;
+        private float _panelW, _panelLeftX;
+        private MeshRenderer? _avatarRenderer;
+        private Material? _avatarMat;
         private int _charCount;
         private Material? _panelMat;
-        private Material? _bezelMat;
+        private Material? _dividerMat;
         private Mesh? _panelMesh;
         private TMP_Text? _text;
+        private MeshRenderer? _textRenderer, _echoRenderer;
         private TMP_Text? _hint;
+        private Vector3[][]? _textBaseVertices, _echoBaseVertices;
+        private Color32[][]? _textBaseColors, _echoBaseColors;
+        private bool[] _missingGlyphs = System.Array.Empty<bool>();
+        private int _glyphCount;
         // 報告の長押しの状態（`OvrControllerBridge` が毎フレーム push）。
         private float _markProgress;
         private bool _markConfirming;
@@ -506,11 +490,11 @@ namespace FixedCamVr.Diagnostics
         /// ⚠⚠ 2026-08-17 まで実機がまさにこれだった（<c>Unlit/Color</c> がビルドから剥がれていた）。
         /// <b>Editor では出るので、この観測が無いと永久に気づけない。</b>
         /// </summary>
-        public bool PanelBuilt => _panelMat != null && _bezelMat != null;
+        public bool PanelBuilt => _panelMat != null && _dividerMat != null;
 
         /// <summary>
-        /// 顔の枠を組めたか（<c>canon/LEDGER.md</c> 0071）。
-        /// <b>false なら枠も顔も 1 画素も出ない</b> — シェーダがビルドから剥がれた側の症状で、
+        /// 顔を組めたか（<c>canon/LEDGER.md</c> 0071）。
+        /// <b>false なら顔が 1 画素も出ない</b> — シェーダがビルドから剥がれた側の症状で、
         /// <c>Unlit/Color</c> と同じ穴（<c>rules/unity-vr.md</c>）。Editor では出るので、
         /// <b>この 1 ビットが無いと実機で消えていることに永久に気づけない</b>。
         /// </summary>
@@ -635,10 +619,8 @@ namespace FixedCamVr.Diagnostics
         {
             OnDestroyHooks();
             if (_panelMat != null) Destroy(_panelMat);
-            if (_bezelMat != null) Destroy(_bezelMat);
+            if (_dividerMat != null) Destroy(_dividerMat);
             if (_avatarMat != null) Destroy(_avatarMat);
-            if (_avatarGhostMatR != null) Destroy(_avatarGhostMatR);
-            if (_avatarGhostMatC != null) Destroy(_avatarGhostMatC);
             if (_panelMesh != null) Destroy(_panelMesh);
         }
 
@@ -811,13 +793,8 @@ namespace FixedCamVr.Diagnostics
             Quaternion yaw = Quaternion.Euler(0f, _yawFollow.CurrentYaw + YawOffsetDeg, 0f);
             Vector3 dir = yaw * Quaternion.Euler(PitchOffsetDeg, 0f, 0f) * Vector3.forward;
             Vector3 basePos = head.position + dir * DistanceM;
-            // ⚠ **向きを先に決めてから横へ飛ばす**（`right` は rotation が決まらないと引けない）。
             _root.rotation = Quaternion.LookRotation(basePos - head.position, Vector3.up);
-            // 周回の壊れ（`canon/LEDGER.md` 0068）。発作の刻みだけ、面ごと横へ飛ぶ。
-            // ⚠ 追従の値そのものは汚さない（`_yawFollow` に足すと、飛んだ先から追従が始まって尾を引く）。
-            // ⚠ 飛ぶ幅も面と同じだけ縮める（`Scale`）。ここだけ実寸のままにすると、
-            //   面が小さくなったぶん**飛びだけが大きく**見える。
-            _root.position = basePos + _root.right * (_glitchOffsetX * Scale);
+            _root.position = basePos;
         }
 
         private void Build()
@@ -853,19 +830,14 @@ namespace FixedCamVr.Diagnostics
             Shader? flat = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
             if (flat != null)
             {
-                // 縁（裏の一回り大きい面）。⚠ **地だけだと真っ黒の中で面が消える**
-                //    （2026-08-15 の実機の画で、文字だけが宙に浮いていた）。
-                // ⚠ ここで渡す高さは**組んだ瞬間の見かけだけ**（`Apply` の `SetFrame` が
-                //   毎フレーム中心と高さを置き直す）。
-                _bezelW = _panelW + BezelM * 2f;
-                _bezelLeftX = _panelLeftX - BezelM;
-                _bezelRenderer = MakeQuad(rootGo.transform, "CommsBezelQuad",
-                                          _bezelW, BodyMaxH + HintBandH + BezelM * 2f, 0.014f,
-                                          flat, RenderQueue - 1, out _bezelMat);
-                // 地。暗い漆のような面。純黒だと「穴」に見え、明るいと掲示物に見える。
+                // 地は固定した寸法で置く。出入りは透明度だけを変える。
                 _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
                                           _panelW, BodyMaxH + HintBandH, 0.012f,
                                           flat, RenderQueue, out _panelMat);
+                // 顔と本文の間にだけ、短い縦罫線を置く。
+                _dividerRenderer = MakeQuad(rootGo.transform, "CommsDivider",
+                                            CommsFaceLayout.DividerW, CommsFaceLayout.DividerH, 0.006f,
+                                            flat, AvatarQueue, out _dividerMat);
             }
             else
             {
@@ -888,7 +860,7 @@ namespace FixedCamVr.Diagnostics
             hintTmp.fontSize = FontSize;
             hintTmp.enableWordWrapping = false;
             hintTmp.richText = true;
-            hintTmp.color = HmdTextStyle.Ink;
+            hintTmp.color = Ivory;
             var hintRt = (RectTransform)hintGo.transform;
             float hintScale = HintScale;
             hintRt.sizeDelta = new Vector2(PanelW * 0.92f / hintScale, HintBandH / hintScale);
@@ -900,14 +872,10 @@ namespace FixedCamVr.Diagnostics
             hintTmp.fontMaterial.renderQueue = GlyphQueue;
             _hint = hintTmp;
 
-            // ⚠⚠ **表示側のバグ（赤とシアンへ分離してずれる）は複製 3 枚で作る**
-            //    （`canon/LEDGER.md` 0070・参考画像 2 枚目）。TMP の頂点を触る手もあるが、
-            //    `maxVisibleCharacters` が打鍵中ずっと変わってメッシュが組み直されるので、
-            //    **毎フレーム頂点へ書き戻す**必要がある。複製なら文面と可視数を写すだけで済む。
-            //    ⚠ 複製は本体より**先に**描く（queue が小さい ＝ 下に敷く）。
-            _textR = MakeGlyphSurface(rootGo.transform, jp, "CommsTextR", GhostQueueR, GhostRed);
-            _textC = MakeGlyphSurface(rootGo.transform, jp, "CommsTextC", GhostQueueC, GhostCyan);
-            _text = MakeGlyphSurface(rootGo.transform, jp, "CommsText", GlyphQueue, HmdTextStyle.Ink);
+            _textEcho = MakeGlyphSurface(rootGo.transform, jp, "CommsTextEcho", GlyphQueue - 1, EchoRed);
+            _text = MakeGlyphSurface(rootGo.transform, jp, "CommsText", GlyphQueue, Ivory);
+            _echoRenderer = _textEcho.GetComponent<MeshRenderer>();
+            _textRenderer = _text.GetComponent<MeshRenderer>();
             SetNotice(CommsNotice.None);   // 組み上げたら、まず畳んだ状態にする
         }
 
@@ -944,15 +912,8 @@ namespace FixedCamVr.Diagnostics
                                  + "スイのまま変わりません（py -3.11 tools/make-comms-face.py）");
             }
 
-            // ⚠⚠ 表示側のバグ（赤とシアンの分離）は**顔だけ**が浴びる（`_Stroke = 0`）。
-            //    枠は装置の意匠なので分離させない — 分離させると「枠が二重にずれた」に見えて、
-            //    壊れているのが AI ではなく面そのものだ、という別の話になる。
-            _avatarGhostR = MakeAvatar(parent, "CommsAvatarGhostR", AvatarGhostQueueR,
-                                       GhostRed, art, doll, avatar, stroke: 0f, out _avatarGhostMatR);
-            _avatarGhostC = MakeAvatar(parent, "CommsAvatarGhostC", AvatarGhostQueueC,
-                                       GhostCyan, art, doll, avatar, stroke: 0f, out _avatarGhostMatC);
             _avatarRenderer = MakeAvatar(parent, "CommsAvatar", AvatarQueue,
-                                         HmdTextStyle.Ink, art, doll, avatar,
+                                         Ivory, art, doll, avatar,
                                          stroke: CommsFaceLayout.StrokeK, out _avatarMat);
         }
 
@@ -1034,16 +995,20 @@ namespace FixedCamVr.Diagnostics
         {
             TMP_Text? tmp = _text;
             if (tmp == null) return;
+            TMP_Text? echo = _textEcho;
             string body = notice == CommsNotice.None ? LongestNoticeText : TextFor(notice);
-            // ⚠ 壊す前の姿を覚える。**重心も枠の高さも打鍵の数えも、こちらで測る**
-            //   （`canon/LEDGER.md` 0069）。化けた文面で測ると、全角の空白が混ざった分だけ
-            //   `textBounds` が縮んで、刻みのたびに文面が上下に跳ねる。
-            _noticeSource = body;
+            // 文面はこの原文のまま保つ。乱れは頂点だけに掛ける。
             _corruptTick = -1;
 
             tmp.maxVisibleCharacters = int.MaxValue;
             if (tmp.text != body) tmp.text = body;
             tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+            if (echo != null)
+            {
+                echo.maxVisibleCharacters = int.MaxValue;
+                if (echo.text != body) echo.text = body;
+                echo.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+            }
 
             // ⚠ 上寄せにしたぶん、**全文が出ている状態の重心**を面の中心へ運ぶ（文面ごとに変わる —
             //    1 行と 2 行では重心が違うので、ここを 1 度きりにすると 2 行の文面が下へずれる）。
@@ -1058,6 +1023,7 @@ namespace FixedCamVr.Diagnostics
             _bodyBandH = Mathf.Max(0.01f, ink.size.y * scale + BodyPadM);
             // ⚠ 運ぶ先は面の中心ではなく**上段の中心**（下段に報告の押し方が居るため）。
             tmp.transform.localPosition = new Vector3(0f, BodyCenterY - ink.center.y * scale, 0f);
+            if (echo != null) echo.transform.localPosition = tmp.transform.localPosition;
             // ⚠ ここは**全文が出ている状態**（上で maxVisibleCharacters = int.MaxValue して
             //   組み直した直後）なので、`isVisible` が「その字が絵を持つか」を表す。
             //   ここでしか測れない（下で 0 に戻すと、以後は全部 false になる）。
@@ -1071,7 +1037,10 @@ namespace FixedCamVr.Diagnostics
                 if (_charVisible[i]) visible++;
             }
             NoticeChars = visible;
-            tmp.maxVisibleCharacters = 0;
+            _glyphCount = visible;
+            _missingGlyphs = new bool[_glyphCount];
+            CaptureBaseMesh(tmp, out _textBaseVertices, out _textBaseColors);
+            if (echo != null) CaptureBaseMesh(echo, out _echoBaseVertices, out _echoBaseColors);
             // ⚠ 文面を差し替えたら**打鍵の数えも 0 に戻す**。戻さないと、
             //    前の文面より短い文面では 1 発も鳴らず、長い文面では途中から鳴り始める。
             _lastShown = 0;
@@ -1095,6 +1064,88 @@ namespace FixedCamVr.Diagnostics
             if (_charVisible == null || i < 0 || i >= _charVisible.Length) return true;
             return _charVisible[i];
         }
+
+        private static void CaptureBaseMesh(TMP_Text text, out Vector3[][] vertices,
+                                            out Color32[][] colors)
+        {
+            TMP_MeshInfo[] meshInfo = text.textInfo.meshInfo;
+            vertices = new Vector3[meshInfo.Length][];
+            colors = new Color32[meshInfo.Length][];
+            for (int i = 0; i < meshInfo.Length; i++)
+            {
+                vertices[i] = (Vector3[])meshInfo[i].vertices.Clone();
+                colors[i] = (Color32[])meshInfo[i].colors32.Clone();
+            }
+        }
+
+        /// <summary>
+        /// 本文の原文と等幅配置を保ったまま、字形の頂点だけを更新する。
+        /// </summary>
+        private int ApplyGlyphMesh(TMP_Text text, Vector3[][]? baseVertices, Color32[][]? baseColors,
+                                   float reveal, float globalAlpha, bool echo)
+        {
+            if (baseVertices == null || baseColors == null) return 0;
+            TMP_TextInfo info = text.textInfo;
+            if (info.meshInfo.Length != baseVertices.Length) return 0;
+
+            for (int i = 0; i < info.meshInfo.Length; i++)
+            {
+                System.Array.Copy(baseVertices[i], info.meshInfo[i].vertices, baseVertices[i].Length);
+                System.Array.Copy(baseColors[i], info.meshInfo[i].colors32, baseColors[i].Length);
+            }
+
+            int missingVisible = 0;
+            int glyphOrdinal = 0;
+            float exact = Mathf.Clamp01(reveal) * _charCount;
+            float charSec = _charCount > 0 ? _logic.TypeSec / _charCount : 0f;
+            for (int i = 0; i < info.characterCount; i++)
+            {
+                TMP_CharacterInfo character = info.characterInfo[i];
+                if (!character.isVisible) continue;
+
+                float ageSec = Mathf.Max(0f, exact - i) * charSec;
+                float fade = _silent ? 1f : GlyphFadeAlpha(ageSec);
+                bool appeared = exact > i;
+                bool missing = glyphOrdinal < _missingGlyphs.Length && _missingGlyphs[glyphOrdinal];
+                bool echoOn = echo && CommsGlitchLogic.EchoAt(_glitchLevel, _corruptTick, glyphOrdinal);
+                float alpha = appeared ? fade * globalAlpha : 0f;
+                if (echo ? !echoOn : missing)
+                {
+                    if (!echo && appeared && alpha > 0.004f) missingVisible++;
+                    alpha = 0f;
+                }
+
+                int material = character.materialReferenceIndex;
+                int vertex = character.vertexIndex;
+                Vector3[] vertices = info.meshInfo[material].vertices;
+                Color32[] colors = info.meshInfo[material].colors32;
+                float dx = CommsGlitchLogic.LineOffsetM(_glitchLevel, _corruptTick,
+                                                        character.lineNumber) / TextScale;
+                if (echo)
+                    dx += CommsGlitchLogic.EchoOffsetM(_glitchLevel, _corruptTick, glyphOrdinal)
+                          / TextScale;
+                byte a = (byte)Mathf.RoundToInt(Mathf.Clamp01(alpha) * 255f);
+                for (int k = 0; k < 4; k++)
+                {
+                    vertices[vertex + k].x += dx;
+                    Color32 c = colors[vertex + k];
+                    c.a = (byte)(c.a * a / 255);
+                    colors[vertex + k] = c;
+                }
+                glyphOrdinal++;
+            }
+
+            text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
+            return missingVisible;
+        }
+
+        private static float Smooth01(float t)
+        {
+            t = Mathf.Clamp01(t);
+            return t * t * (3f - 2f * t);
+        }
+
+        public static float GlyphFadeAlpha(float ageSec) => Smooth01(ageSec / GlyphFadeSec);
 
         /// <summary>
         /// 地・縁の色を書く。<b>両方のプロパティへ書く</b> — 引けたシェーダで分岐すると、
@@ -1179,41 +1230,33 @@ namespace FixedCamVr.Diagnostics
 
         private void Apply(in CommsWeights w)
         {
-            // ⚠ 明滅は**地と文字の両方**に掛ける（`canon/LEDGER.md` 0069）。
-            //   片方だけだと「文字が消えかけている」ではなく「面の色が変わった」に見える。
-            //   沈むだけで明るくはならない（電源が落ちかけている装置）。
-            AppliedGlyph = Mathf.Clamp01(w.glyph) * _glitchFlicker;
+            AppliedGlyph = Mathf.Clamp01(w.glyph);
             AppliedOpen = Mathf.Clamp01(w.open);
             if (_text != null)
             {
-                _text.alpha = AppliedGlyph;
-                // 1 字ずつ出す。⚠ **切り上げ**（0 より大きければ 1 字目は出ている）。
+                // 出現時刻は従来どおり。見え始めた後の 40ms だけ頂点 alpha を滑らかに立てる。
                 int shown = _charCount <= 0 ? 0
                           : Mathf.Clamp(Mathf.CeilToInt(Mathf.Clamp01(w.reveal) * _charCount), 0, _charCount);
-                if (_text.maxVisibleCharacters != shown) _text.maxVisibleCharacters = shown;
                 bool on = AppliedGlyph > 0.002f && shown > 0;
-                if (_text.gameObject.activeSelf != on) _text.gameObject.SetActive(on);
-                // ⚠⚠ **打鍵音は、字を画へ書いているこの行から鳴らす**（`canon/LEDGER.md` 0056）。
-                //    絵と音が同じ数えから出るので、ずれようがない（乱れの育ちを 1 か所で
-                //    数えているのと同じ理由 — 別々に数えると黙って食い違う）。
-                //    ⚠ **増えた字数ぶん鳴らさない。** 1 フレームで 2 字進んだら（コマ落ち）
-                //      同じ DSP 時刻に 2 発重なって 1 つの大きな音に潰れる。1 発だけ鳴らす。
-                //    ⚠⚠ **鳴らす場所も同じ行が決める**（2026-09-03・`canon/LEDGER.md` 0130）。
-                //      打鍵は「スクリーン関係の音」なので面そのものから鳴る。渡すのは
-                //      `_root`（実際に画へ出ている面）で、この部品が乗っている
-                //      GameObject ではない（あちらは動かない ＝ 足元から鳴る）。
-                //    ⚠⚠ **すっと浮かぶ連絡では鳴らさない**（`canon/LEDGER.md` 0168）。あの出方は
-                //      1 フレームで全文が出るので、ここは増分 1 回ぶん **1 発だけ**鳴らしてしまう
-                //      ＝ 「カタカタ無し」のはずが打鍵が 1 発だけ鳴る（画では気づけない）。
+                if (_textRenderer != null) _textRenderer.enabled = on;
                 if (shown > _lastShown && IsVisibleChar(shown - 1) && _root != null && !_silent)
                     typeSfx?.Play(_root.position);
                 _lastShown = shown;
                 VisibleChars = shown;
+
+                CommsGlitchLogic.FillMissing(_missingGlyphs, _glyphCount, _glitchLevel, _corruptTick);
+                CorruptedChars = ApplyGlyphMesh(_text, _textBaseVertices, _textBaseColors,
+                                                w.reveal, AppliedGlyph, echo: false);
+                if (_textEcho != null)
+                {
+                    bool echoOn = on && _glitchLevel > CommsGlitchLogic.OffThreshold;
+                    if (_echoRenderer != null) _echoRenderer.enabled = echoOn;
+                    ApplyGlyphMesh(_textEcho, _echoBaseVertices, _echoBaseColors,
+                                   w.reveal, AppliedGlyph * 0.58f, echo: true);
+                }
             }
-            // 表示側のバグ（赤とシアンの分離）を本体へ揃える（`canon/LEDGER.md` 0070）。
-            SyncGhosts();
             ApplyHint(Mathf.Clamp01(w.hint));
-            float pa = Mathf.Clamp01(w.panel) * _glitchFlicker;
+            float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
             AppliedBody = Mathf.Clamp01(w.body);
 
             // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
@@ -1226,49 +1269,33 @@ namespace FixedCamVr.Diagnostics
             float top = HintBandTopY + _bodyBandH * AppliedBody;
             float bottom = HintBandTopY - HintBandH * hintK;
             float cy = (top + bottom) * 0.5f;
-            // ⚠⚠ **顔の枠が縦にはみ出さない丈を必ず確保する**（2026-08-17・`canon/LEDGER.md` 0071）。
-            //    伸ばすのは中心の周りへ対称に ＝ **文面も下段も 1mm も動かない**。
-            //    0065 の「出ている帯だけを覆う」に反しない — あれが禁じたのは中身の無い空の箱で、
-            //    いまは左に顔が居るので空ではない。いちばん高い姿（2 行 ＋ 下段）は下限を超える。
             float h = Mathf.Max(0f, top - bottom);
             if (h > 0.0005f) h = Mathf.Max(h, CommsFaceLayout.MinBoxH);
-            bool lit = pa > 0.01f && AppliedOpen > 0.001f && h > 0.0005f;
+            bool lit = pa > 0.002f && h > 0.0005f;
 
-            // 地は**黒い半透明**（2026-08-19・`canon/LEDGER.md` 0096）。
-            // ⚠⚠ **薄めるのは alpha であって rgb ではない。** 2026-08-19 まで地は不透明で、
-            //    出入りを rgb の掛け算（黒へ寄せる）で作っていた。半透明にしたので、
-            //    そこを rgb のままにすると「消えていく」ではなく「黒くなっていく」に見える。
             if (_panelRenderer != null && _panelMat != null)
             {
-                SetFlatColor(_panelMat, new Color(0.020f, 0.017f, 0.015f, PanelAlpha * pa));
+                SetFlatColor(_panelMat, new Color(PanelColor.r, PanelColor.g, PanelColor.b,
+                                                  PanelAlpha * pa));
                 _panelRenderer.enabled = lit;
-                SetFrame(_panelRenderer.transform, _panelLeftX, _panelW, AppliedOpen, cy, h);
+                SetFixedPanel(_panelRenderer.transform, _panelLeftX, _panelW, cy, h);
             }
-            if (_bezelRenderer != null && _bezelMat != null)
+            if (_dividerRenderer != null && _dividerMat != null)
             {
-                // 縁は地より明るい。ここだけが「面がある」ことを伝える。
-                // ⚠ 縁は地の**裏に敷いた一回り大きい面**なので、中央では 2 枚が重なる
-                //   （合成は 1-(1-地)(1-縁)）。縁を濃くすると中央だけ透けなくなる。
-                SetFlatColor(_bezelMat, new Color(0.150f, 0.110f, 0.085f, BezelAlpha * pa));
-                _bezelRenderer.enabled = lit;
-                SetFrame(_bezelRenderer.transform, _bezelLeftX, _bezelW, AppliedOpen, cy,
-                         h + BezelM * 2f);
+                SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b, 0.68f * pa));
+                _dividerRenderer.enabled = lit;
+                _dividerRenderer.transform.localPosition = new Vector3(
+                    CommsFaceLayout.DividerCenterX(PanelW), cy, 0.006f);
+                _dividerRenderer.transform.localScale = new Vector3(
+                    CommsFaceLayout.DividerW,
+                    CommsFaceLayout.DividerH * Smooth01(AppliedOpen), 1f);
             }
             ApplyAvatar(pa, cy, lit);
         }
 
-        /// <summary>
-        /// 顔の枠と顔を書く（<c>canon/LEDGER.md</c> 0071）。
-        ///
-        /// ⚠ <b>明滅は地・文字とまとめて浴びる</b>（<paramref name="alpha"/> に既に掛かっている）。
-        /// 顔だけ平常のまま残ると、装置が沈むのに AI だけ無事に見える。
-        /// ⚠ <b>横飛びは面ごと</b>（<c>LateUpdate</c> が root を動かす）ので、ここでは書かない。
-        /// </summary>
         private void ApplyAvatar(float alpha, float centerY, bool lit)
         {
             if (_avatarRenderer == null || _avatarMat == null) return;
-            // ⚠ **出していないときは 0 と言う。** 重みだけ立てて描いていない状態を
-            //   「出た」と観測すると、実機で消えていても計器が緑になる。
             AppliedFace = lit
                 ? Mathf.Clamp01(alpha) * CommsFaceLayout.Reveal(AppliedOpen, PanelW)
                 : 0f;
@@ -1287,54 +1314,6 @@ namespace FixedCamVr.Diagnostics
             _avatarMat.SetFloat(FaceMixId, AppliedFaceMix);
             _avatarRenderer.enabled = on;
             _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);
-
-            // 表示側のバグ（赤とシアンの分離）。⚠ **文字と同じ振れ幅・同じ刻み**を読む
-            //   （別々に持つと、面の中で分離の向きが場所によって違うことになる）。
-            float dx = CommsGlitchLogic.SplitOffsetM(_glitchLevel, _corruptTick);
-            bool ghost = on && dx > 0.0001f;
-            ApplyAvatarGhost(_avatarGhostR, _avatarGhostMatR, x - dx, centerY, ghost);
-            ApplyAvatarGhost(_avatarGhostC, _avatarGhostMatC, x + dx, centerY, ghost);
-        }
-
-        private void ApplyAvatarGhost(MeshRenderer? r, Material? m, float x, float y, bool on)
-        {
-            if (r == null || m == null) return;
-            r.enabled = on;
-            if (!on) return;
-            m.SetFloat(OpacityId, AppliedFace);
-            m.SetFloat(FaceMixId, AppliedFaceMix);
-            r.transform.localPosition = new Vector3(x, y, CommsFaceLayout.DepthM);
-        }
-
-        /// <summary>
-        /// 表示側のバグ（赤とシアンの分離）を本体へ揃える（<c>canon/LEDGER.md</c> 0070）。
-        /// ⚠ <b>侵食が 0 のあいだは複製ごと消す</b>（描画も走らない）。
-        /// </summary>
-        private void SyncGhosts()
-        {
-            if (_text == null || _textR == null || _textC == null) return;
-            float dx = CommsGlitchLogic.SplitOffsetM(_glitchLevel, _corruptTick);
-            bool on = dx > 0.0001f && AppliedGlyph > 0.002f && VisibleChars > 0;
-            ApplyGhost(_textR, -dx, on);
-            ApplyGhost(_textC, dx, on);
-        }
-
-        /// <summary>
-        /// 分離の 1 層を本体へ揃える。
-        /// ⚠⚠ <b>文面・可視数・置き場所は本体から写す。</b> 別々に持つと、化けの組み合わせが
-        /// 1 刻みずれた瞬間に「違う字が 3 つ並ぶ」になり、分離ではなく**別の文が重なって**見える。
-        /// </summary>
-        private void ApplyGhost(TMP_Text ghost, float dx, bool on)
-        {
-            if (ghost.gameObject.activeSelf != on) ghost.gameObject.SetActive(on);
-            if (!on || _text == null) return;
-            if (!string.Equals(ghost.text, _text.text, System.StringComparison.Ordinal))
-                ghost.text = _text.text;
-            if (ghost.maxVisibleCharacters != VisibleChars) ghost.maxVisibleCharacters = VisibleChars;
-            // 明滅も一緒に浴びる（本体だけ沈むと分離だけが残って「色が出た」に見える）。
-            ghost.alpha = AppliedGlyph;
-            Vector3 p = _text.transform.localPosition;
-            ghost.transform.localPosition = new Vector3(p.x + dx, p.y, p.z);
         }
 
         /// <summary>
@@ -1377,39 +1356,7 @@ namespace FixedCamVr.Diagnostics
         private void TickGlitch(float timeSec)
         {
             _glitchLevel = ResolveCorruption();
-            _glitchOffsetX = CommsGlitchLogic.OffsetXAt(timeSec, _glitchLevel);
-            _glitchFlicker = CommsGlitchLogic.PanelFlickerAt(timeSec, _glitchLevel);
-
-            // ⚠ 文面の差し替えは**刻みごとに 1 回だけ**。毎フレームやると TMP が
-            //   組み直す（文字列の割り当ても毎フレーム出る）。
-            int tick = CommsGlitchLogic.TickAt(timeSec);
-            if (tick != _corruptTick)
-            {
-                _corruptTick = tick;
-                ApplyCorruption();
-            }
-        }
-
-        /// <summary>
-        /// 素の文面を壊して面へ書く（<c>canon/LEDGER.md</c> 0069）。
-        ///
-        /// ⚠⚠ <b>打鍵の数え（<see cref="IsVisibleChar"/>）は素の文面のまま</b>にしてある。
-        /// 化けて字が出なくなっても<b>打鍵は鳴る</b> — 装置は打っていて、字が出なかっただけ。
-        /// 音と絵が食い違うのではなく、**印字の失敗が音でも分かる**という側。
-        ///
-        /// ⚠ 幅は変わらない（化け先も空白も全角）ので、重心の運び直しも枠の測り直しも要らない。
-        /// </summary>
-        private void ApplyCorruption()
-        {
-            TMP_Text? tmp = _text;
-            if (tmp == null || _noticeSource.Length == 0) return;
-            string s = CommsGlitchLogic.Corrupt(_noticeSource, _glitchLevel, _corruptTick);
-            if (!string.Equals(tmp.text, s, System.StringComparison.Ordinal)) tmp.text = s;
-
-            int n = 0;
-            for (int i = 0; i < s.Length && i < _noticeSource.Length; i++)
-                if (s[i] != _noticeSource[i]) n++;
-            CorruptedChars = n;
+            _corruptTick = CommsGlitchLogic.TickAt(timeSec);
         }
 
         /// <summary>
@@ -1436,29 +1383,14 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
-        /// 枠を<b>左端を固定したまま</b>開き、<b>縦は中心と高さを直に置く</b>。
-        /// <paramref name="kx"/> = 横の開き（0 = 左端に畳まれている / 1 = 開き切り）。
-        ///
-        /// 面のメッシュは中心が原点（頂点 ±0.5）なので、横は縮めると<b>両側から</b>縮む。
-        /// 左端を残すには、縮めたぶんの半分だけそちらへ寄せる。
-        ///
-        /// ⚠⚠ <b>左端は引数で受け取る</b>（2026-08-17・<c>canon/LEDGER.md</c> 0071）。
-        /// 顔の枠のぶん面が左へ伸びて、<b>面の原点（＝ 文面の帯の中心）が左右の中央でなくなった</b>。
-        /// <c>-fullW/2</c> を左端と決め打ちしていた頃の式のままだと、顔のぶんだけ面が右へずれる。
-        ///
-        /// ⚠⚠ <b>縦は「下端固定で伸びる」をやめた</b>（2026-08-16・<c>canon/LEDGER.md</c> 0065）。
-        /// 下段が空になりうるので、<b>出ている帯だけを覆う</b>必要がある
-        /// （呼び出し側が上端と下端から中心・高さを解く）。下端固定のままだと、
-        /// 下段が無い連絡が<b>下半分の空いた箱</b>として出る。
+        /// 面の幅と位置を固定し、縦は出ている上段・下段の実寸へ合わせる。
         /// </summary>
-        private static void SetFrame(Transform quad, float leftX, float fullW, float kx,
-                                     float centerY, float height)
+        private static void SetFixedPanel(Transform quad, float leftX, float fullW,
+                                          float centerY, float height)
         {
-            float w = fullW * kx;
-            quad.localScale = new Vector3(w, height, 1f);
-            // 左端は常に leftX に居る（開いたぶんの半分だけ右へ出る）。縦は解いた中心をそのまま置く。
+            quad.localScale = new Vector3(fullW, height, 1f);
             Vector3 p = quad.localPosition;
-            quad.localPosition = new Vector3(leftX + w * 0.5f, centerY, p.z);
+            quad.localPosition = new Vector3(leftX + fullW * 0.5f, centerY, p.z);
         }
     }
 }

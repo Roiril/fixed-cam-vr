@@ -3,7 +3,7 @@
 namespace FixedCamVr.Diagnostics
 {
     /// <summary>
-    /// <b>連絡の面の左に立つ「AIエージェントの顔」の寸法。</b>UnityEngine 非依存。
+    /// 連絡の面の左に立つ AI エージェントの顔と、本文との区切りの寸法。UnityEngine 非依存。
     ///
     /// 出どころは <c>canon/LEDGER.md</c> 0071（ユーザー指定・2026-08-17）:
     /// 「左に角丸の四角い枠線をつけて、その中にAIの顔を入れれるようにしてほしい」。
@@ -28,7 +28,7 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public const float CellM = 0.15f;
 
-        /// <summary>枠の外に取る余白 (m)。面の左の縁との間・文面の帯との間に同じだけ空ける。</summary>
+        /// <summary>顔の外に取る余白 (m)。面の左端と本文の間に同じだけ空ける。</summary>
         public const float MarginM = 0.022f;
 
         /// <summary>面が左へ伸びる幅 (m)。</summary>
@@ -44,23 +44,23 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public const float MinBoxH = CellM + MarginM * 2f;
 
-        /// <summary>角の丸み（1 辺に対する割合）。</summary>
+        /// <summary>顔の切り抜きの角の丸み（1 辺に対する割合）。</summary>
         public const float RadiusK = 0.20f;
 
-        /// <summary>
-        /// 枠線の太さ（1 辺に対する割合）。0.15m の 3.8% ＝ 5.7mm ＝ 見かけ 0.22°
-        /// （実機でおよそ 4 画素）。⚠ これより細いと縮小で灰色の靄になる。
-        /// </summary>
-        public const float StrokeK = 0.038f;
+        /// <summary>顔の外枠は描かない。顔の大きさは <see cref="CellM"/> のまま保つ。</summary>
+        public const float StrokeK = 0f;
+
+        /// <summary>顔と本文の間に置く短い縦罫線の幅。</summary>
+        public const float DividerW = 0.0025f;
+
+        /// <summary>短い縦罫線が開き切ったときの高さ。</summary>
+        public const float DividerH = 0.082f;
+
+        /// <summary>短い縦罫線の中心。</summary>
+        public static float DividerCenterX(float bodyW) => -bodyW * 0.5f - MarginM * 0.5f;
 
         /// <summary>地より手前・文字より奥 (m)。⚠ 面の +Z は体験者から見て奥。</summary>
         public const float DepthM = 0.006f;
-
-        /// <summary>
-        /// 枠が出そろうまでの、開きの幅 (m)。
-        /// 枠は面のいちばん左に居るので、<b>開き始めてすぐ</b>顔が要る所まで届く。
-        /// </summary>
-        public const float RevealSpanM = 0.06f;
 
         /// <summary>面の左端（面のローカル x）。<paramref name="bodyW"/> は文面の帯の幅。</summary>
         public static float LeftX(float bodyW) => -(bodyW * 0.5f + BandW);
@@ -72,13 +72,12 @@ namespace FixedCamVr.Diagnostics
         public static float CellCenterX(float bodyW) => LeftX(bodyW) + MarginM + CellM * 0.5f;
 
         /// <summary>
-        /// 枠と顔の出方 0..1。<b>枠を覆い切るまで開いてから</b>出す。
-        /// 開いていない所へ顔が浮くと、面の外に絵が貼ってあるように見える。
+        /// 顔の出方 0..1。面の位置と大きさは固定したまま透明度だけを動かす。
         /// </summary>
-        public static float Reveal(float open01, float bodyW)
+        public static float Reveal(float open01, float _)
         {
-            float opened = FullW(bodyW) * Clamp01(open01);
-            return Clamp01((opened - (MarginM + CellM)) / RevealSpanM);
+            float t = Clamp01(open01);
+            return t * t * (3f - 2f * t);
         }
 
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);

@@ -42,11 +42,8 @@ namespace FixedCamVr.Streaming
         [Tooltip("枠の縁のぼけ。硬い矩形は「UI の窓」に見えるので少しぼかす。")]
         [SerializeField, Range(0.002f, 0.4f)] private float feather = 0.08f;
 
-        [Tooltip("走査線の本数。ScreenComposite の既定と同じ 240 に揃える。")]
-        [SerializeField] private float scanlineCount = 240f;
-
         private static readonly int PassthroughId = Shader.PropertyToID("_Passthrough");
-        /// <summary>吸い込み先（スクリーンの上のセル）を現実の窓からカメラ映像へ入れ替える量。</summary>
+        /// <summary>スクリーン矩形だけを現実からカメラ映像へ入れ替える量。</summary>
         private static readonly int ScreenFadeId = Shader.PropertyToID("_ScreenFade");
         private static readonly int VeilSizeId = Shader.PropertyToID("_VeilSize");
         private static readonly int FeatherAngId = Shader.PropertyToID("_FeatherAng");
@@ -54,6 +51,11 @@ namespace FixedCamVr.Streaming
         {
             Shader.PropertyToID("_FramePlane0"), Shader.PropertyToID("_FramePlane1"),
             Shader.PropertyToID("_FramePlane2"), Shader.PropertyToID("_FramePlane3"),
+        };
+        private static readonly int[] ScreenPlaneIds =
+        {
+            Shader.PropertyToID("_ScreenPlane0"), Shader.PropertyToID("_ScreenPlane1"),
+            Shader.PropertyToID("_ScreenPlane2"), Shader.PropertyToID("_ScreenPlane3"),
         };
         // 開口を**他の面へも配る**ための global（`SealedBox.shader` が読む）。封印の箱は覆いより
         // 後に描かれるので、開口で切らないと枠の外へはみ出して「枠が閉じる」が見えなくなる。
@@ -65,27 +67,9 @@ namespace FixedCamVr.Streaming
         };
         private static readonly int GlobalFeatherId = Shader.PropertyToID("_IntroFrameFeather");
 
-        private static readonly int GrainId = Shader.PropertyToID("_Grain");
-        private static readonly int ScanCountId = Shader.PropertyToID("_ScanlineCount");
-        private static readonly int GlitchId = Shader.PropertyToID("_Glitch");
-        private static readonly int GlitchSeedId = Shader.PropertyToID("_GlitchSeed");
-
-        // ---- 破砕（段 4）。現実がセルに割れてスクリーンへ入る -----------------------
-        // 曲線の数値は `IntroShatterCurve.PushVeil` が配る（マテリアルへ書く場所は 1 箇所だけ）。
-        private static readonly int ShatterId = Shader.PropertyToID("_Shatter");
-
-        // 破片の行き先（スクリーン矩形）は **global で配る**。封印の箱も同じ値を読んで、
-        // 同じ格子・同じ順番で割れる（片方だけ別の行き先へ飛ぶと 2 つの出来事に見える）。
-        private static readonly int GlobalScreenCId = Shader.PropertyToID("_IntroScreenC");
-        private static readonly int GlobalScreenRId = Shader.PropertyToID("_IntroScreenR");
-        private static readonly int GlobalScreenUId = Shader.PropertyToID("_IntroScreenU");
-        private static readonly int GlobalScreenHalfId = Shader.PropertyToID("_IntroScreenHalf");
-        private static readonly int GlobalL2WId = Shader.PropertyToID("_IntroFrameL2W");
-
         private MeshRenderer? _renderer;
         private MeshFilter? _filter;
         private Material? _mat;
-        private float _seed;
 
         /// <summary>いま覆いが何かを隠しているか（＝導入演出中か）。</summary>
         public bool IsActive => _renderer != null && _renderer.enabled;
@@ -99,30 +83,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool IsBuilt => _renderer != null;
 
-        /// <summary>
-        /// 段 4 の破砕で<b>実際にセル格子を張ったか</b>（覆いが畳まれるまで立ちっぱなし）。
-        ///
-        /// ⚠ 「重みが動いた」ではなく「画に出た」の側の観測。段の遷移は完璧に進んでいるのに
-        /// 画には何も出ていなかった、という壊れ方を 2026-07-31 に踏んでいる。
-        /// テレメトリが <c>shat=</c> で出し、解析が「破砕が 1 度も張られていない」を名指しする。
-        /// </summary>
-        public bool ShatterDrawn { get; private set; }
+        /// <summary>段 4 で単一 quad の開口を実際に描いたか。</summary>
+        public bool ApertureDrawn { get; private set; }
 
-        /// <summary>この段で実際に配った破砕の進みの最大値（0 なら 1 度も割れていない）。</summary>
-        public float ShatterPeak { get; private set; }
+        /// <summary>実際に配った開口の閉じ具合の最大値。</summary>
+        public float ApertureClosePeak { get; private set; }
 
-        /// <summary>張ったセル格子のセル数。<c>0</c> ならメッシュを組めていない ＝ 一生割れない。</summary>
-        public int ShatterCells => _cellMesh != null ? IntroVeilShatterMesh.CellCount : 0;
+        /// <summary>現在描いている覆いの quad 数。組めていれば常に 1。</summary>
+        public int ApertureQuads => _filter != null && _filter.sharedMesh == _mesh ? 1 : 0;
 
-        /// <summary>
-        /// 破片の行き先として<b>実際に配った</b>スクリーン矩形（<c>hw,hh,面までの距離,遠さの基準</c>）。
-        ///
-        /// ⚠ これが無いと「割れなかった」の原因を切り分けられない。破片が動くかどうかは
-        /// <c>far = 見かけの隔たり / 遠さの基準</c> 1 本で決まり、基準が大きすぎれば
-        /// **全部の破片が「スクリーンのすぐ脇」扱いになって 1 枚も動かない**（2026-08-12 実機で発生）。
-        /// C# 側は「重みを配った」までしか知らないので、そこだけ見ると成功に見える。
-        /// </summary>
-        public string ShatterRectDesc { get; private set; } = "-";
+        /// <summary>映像との交差判定に使ったスクリーン矩形（半幅,半高,眼からの距離）。</summary>
+        public string ApertureRectDesc { get; private set; } = "-";
 
         private void Awake()
         {
@@ -148,9 +119,6 @@ namespace FixedCamVr.Streaming
             go.transform.localScale = new Vector3(veilSize.x, veilSize.y, 1f);
 
             _mesh = BuildQuad();
-            // ⚠ **起動時に組む。** 段 4 で初めて 16,400 頂点を作ると、その 1 フレームだけ
-            //    落ちる（継ぎ目の直前なので一番見せたくない場所）。0.4MB 程度なので常時持つ。
-            _cellMesh = IntroVeilShatterMesh.Build();
             var mf = go.AddComponent<MeshFilter>();
             mf.sharedMesh = _mesh;
             _filter = mf;
@@ -167,7 +135,6 @@ namespace FixedCamVr.Streaming
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
         private Mesh? _mesh;
-        private Mesh? _cellMesh;
         private Transform? _quad;
 
         /// <summary>
@@ -230,6 +197,8 @@ namespace FixedCamVr.Streaming
 
         // 枠の 4 辺の平面の法線（この GameObject のローカル空間・**内側で dot(dir, n) < 0**）。
         private readonly Vector4[] _planes = new Vector4[4];
+        // 映像とのクロスフェードは現在の開口ではなく、本編スクリーンの実矩形だけに掛ける。
+        private readonly Vector4[] _screenPlanes = new Vector4[4];
 
         /// <summary>
         /// 覆いの面を置く距離 (m)。<b>スクリーンと同じ距離に置く</b>のが要点で、
@@ -270,13 +239,16 @@ namespace FixedCamVr.Streaming
 
             float dist = Mathf.Max(c.magnitude, 0.01f);
             PlaneDistanceResolved = dist;   // 覆いの面はここへ置く（両眼視差を消すため）
+            ApertureRectDesc = $"{hw:F2},{hh:F2},{dist:F2}";
+            if (!TryBuildPlanes(c, right, up, hw, hh, _screenPlanes))
+                SetPlanesFullyOpen(_screenPlanes);
             float k = Mathf.Clamp01(frameClose);
 
             // 枠が無い段（黒・現実・格下げ・構造）は**厳密に全開**。有限の矩形で近似すると、
             // その矩形の辺がどこかの頭の向きで必ず視界に入る（FullyOpenEpsilon のコメント）。
             if (k <= FullyOpenEpsilon)
             {
-                SetPlanesFullyOpen();
+                SetPlanesFullyOpen(_planes);
                 return Mathf.Max(Mathf.Sin(Mathf.Clamp01(feather) * Mathf.Atan2(hh, dist)), 1e-4f);
             }
 
@@ -311,15 +283,7 @@ namespace FixedCamVr.Streaming
             float w = hw * scale;
             float h = hh * scale;
 
-            Vector3 p0 = c - right * w - up * h;
-            Vector3 p1 = c + right * w - up * h;
-            Vector3 p2 = c + right * w + up * h;
-            Vector3 p3 = c - right * w + up * h;
-            if (!TryEdgePlane(p0, p1, c, 0) || !TryEdgePlane(p1, p2, c, 1) ||
-                !TryEdgePlane(p2, p3, c, 2) || !TryEdgePlane(p3, p0, c, 3))
-            {
-                SetPlanesFullyOpen();
-            }
+            if (!TryBuildPlanes(c, right, up, w, h, _planes)) SetPlanesFullyOpen(_planes);
 
             // 縁のぼけ。feather は「枠の半分の高さに対する割合」なので、角度へ直してから
             // SignedDistance と同じ単位（辺の平面からの sin）にする。
@@ -350,21 +314,34 @@ namespace FixedCamVr.Streaming
         }
 
         // 眼（ローカル原点）と辺 a→b を通る平面。内側（center 側）が負になるよう向きを揃える。
-        private bool TryEdgePlane(Vector3 a, Vector3 b, Vector3 inside, int index)
+        private static bool TryBuildPlanes(Vector3 center, Vector3 right, Vector3 up,
+                                           float halfW, float halfH, Vector4[] target)
+        {
+            Vector3 p0 = center - right * halfW - up * halfH;
+            Vector3 p1 = center + right * halfW - up * halfH;
+            Vector3 p2 = center + right * halfW + up * halfH;
+            Vector3 p3 = center - right * halfW + up * halfH;
+            return TryEdgePlane(p0, p1, center, 0, target)
+                && TryEdgePlane(p1, p2, center, 1, target)
+                && TryEdgePlane(p2, p3, center, 2, target)
+                && TryEdgePlane(p3, p0, center, 3, target);
+        }
+
+        private static bool TryEdgePlane(Vector3 a, Vector3 b, Vector3 inside, int index, Vector4[] target)
         {
             Vector3 n = Vector3.Cross(a, b);
             if (n.sqrMagnitude < 1e-12f) return false;   // 辺が眼と一直線 = 枠が退化している
             n.Normalize();
             if (Vector3.Dot(inside, n) > 0f) n = -n;
-            _planes[index] = new Vector4(n.x, n.y, n.z, 0f);
+            target[index] = new Vector4(n.x, n.y, n.z, 0f);
             return true;
         }
 
         // 退化したときは「何も覆わない」に倒す。覆いは全画面 1 パスなので、
         // 判定が壊れた瞬間に視界が真っ黒になる方が危ない。dir.z > 0 は覆いの面の性質から常に成立。
-        private void SetPlanesFullyOpen()
+        private static void SetPlanesFullyOpen(Vector4[] planes)
         {
-            for (int i = 0; i < _planes.Length; i++) _planes[i] = new Vector4(0f, 0f, -1f, 0f);
+            for (int i = 0; i < planes.Length; i++) planes[i] = new Vector4(0f, 0f, -1f, 0f);
         }
 
         /// <summary>導入演出の重みを覆いへ流す。<b>判断はしない</b>（値を書くだけ）。</summary>
@@ -372,72 +349,38 @@ namespace FixedCamVr.Streaming
         {
             if (_renderer == null || _mat == null) return;
 
+            // 新しい導入が全開から始まった時点で、前回走行の到達値を落とす。
+            // SetHidden では落とさない。Frame → Swap の遷移ログが閉じ切った実測を読むため。
+            if (w.frame <= FullyOpenEpsilon)
+            {
+                ApertureDrawn = false;
+                ApertureClosePeak = 0f;
+            }
+
             // 何も隠していない状態（枠が開いていて、パススルーも出さない）では描画そのものを止める。
             // 覆いは全画面 1 パスなので、本編中ずっと描くのは無駄。
-            bool needed = w.frame < 0.999f || w.passthrough > 0.001f || w.grain > 0.001f || w.glitch > 0.001f;
+            // Frame を描いた後の Swap では閉じ切った開口を 1 枚のまま静止して描く。
+            // これにより frame=1 は実際の描画経路を通り、終端の観測値も捏造にならない。
+            bool needed = w.frame < 0.999f || w.passthrough > 0.001f || ApertureDrawn;
             if (!needed) { SetHidden(); return; }
 
             _renderer.enabled = true;
-            _seed += Time.unscaledDeltaTime;
             float featherAng = BuildFramePlanes(w.frame);
             // 面をスクリーンと同じ距離へ運び、見かけの大きさ（＝覆う画角）は変えない。
             Vector2 size = PlaceQuad();
             for (int i = 0; i < FramePlaneIds.Length; i++) _mat.SetVector(FramePlaneIds[i], _planes[i]);
+            for (int i = 0; i < ScreenPlaneIds.Length; i++) _mat.SetVector(ScreenPlaneIds[i], _screenPlanes[i]);
             _mat.SetFloat(PassthroughId, Mathf.Clamp01(w.passthrough));
             _mat.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
             _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
-            _mat.SetFloat(GrainId, Mathf.Clamp01(w.grain));
-            _mat.SetFloat(ScanCountId, scanlineCount);
-            _mat.SetFloat(GlitchId, Mathf.Clamp01(w.glitch));
-            _mat.SetFloat(GlitchSeedId, _seed);
-            ApplyShatter(Mathf.Clamp01(w.shatter), size);
+            float close = Mathf.Clamp01(w.frame);
+            if (close > FullyOpenEpsilon)
+            {
+                ApertureDrawn = true;
+                if (close > ApertureClosePeak) ApertureClosePeak = close;
+            }
             PublishAperture(featherAng);
-        }
-
-        /// <summary>
-        /// 破砕（段 4）を配る。<b>覆いのメッシュを差し替えるのはここ 1 箇所だけ</b>。
-        ///
-        /// ⚠ <c>shatter = 0</c> のときは<b>必ず 1 枚 quad へ戻す</b>。セル格子は 1 セル = 独立した
-        /// quad なので、隣り合う辺が浮動小数で 1 ulp ずれると<b>髪の毛ほどの黒い格子</b>が
-        /// 現実の上に出る。段 1〜3 でそれが出ると「割れる」という段 4 の合図が先食いされる。
-        /// </summary>
-        private void ApplyShatter(float shatter, Vector2 veilSizeM)
-        {
-            if (_mat == null) return;
-            // 段 4 の進みは**覆いと箱で分け合う**（パススルーを閉じ切ってから箱を割る）。
-            float veilPart = IntroShatterCurve.VeilShatter(shatter);
-            IntroShatterCurve.PushVeil(_mat, veilPart);
-
-            if (_filter != null)
-            {
-                Mesh? want = veilPart > 0f ? _cellMesh : _mesh;
-                if (want != null && _filter.sharedMesh != want) _filter.sharedMesh = want;
-            }
-
-            // 行き先は**破砕が始まる前から**配る。箱は覆いより後に描かれるが、同じ 1 フレームの
-            // 値を読むので、ここで毎フレーム更新しておけば両者がずれない。
-            if (!TryResolveScreenRect(out Vector3 c, out Vector3 right, out Vector3 up,
-                                      out float hw, out float hh))
-            {
-                c = new Vector3(0f, 0f, Mathf.Max(PlaneDistanceResolved, 0.01f));
-                right = Vector3.right;
-                up = Vector3.up;
-                hw = c.z * Mathf.Tan(Mathf.Clamp(fallbackApertureHalfAngleDeg.x, 1f, 80f) * Mathf.Deg2Rad);
-                hh = c.z * Mathf.Tan(Mathf.Clamp(fallbackApertureHalfAngleDeg.y, 1f, 80f) * Mathf.Deg2Rad);
-            }
-            float planeZ = Mathf.Max(PlaneDistanceResolved, 0.01f);
-            float absorbM = IntroShatterCurve.AbsorbRangeM(hw, hh);
-            Shader.SetGlobalVector(GlobalScreenCId, c);
-            Shader.SetGlobalVector(GlobalScreenRId, right);
-            Shader.SetGlobalVector(GlobalScreenUId, up);
-            Shader.SetGlobalVector(GlobalScreenHalfId, new Vector4(hw, hh, planeZ, absorbM));
-            ShatterRectDesc = $"{hw:F2},{hh:F2},{planeZ:F2},{absorbM:F2}";
-            Shader.SetGlobalMatrix(GlobalL2WId, transform.localToWorldMatrix);
-
-            if (veilPart <= 0f) return;
-            ShatterDrawn = _cellMesh != null;
-            if (veilPart > ShatterPeak) ShatterPeak = veilPart;
         }
 
         /// <summary>
@@ -487,15 +430,26 @@ namespace FixedCamVr.Streaming
         /// <summary>いまの枠の縁のぼけ幅（<see cref="SignedDistance"/> と同じ単位）。テスト用。</summary>
         public float FeatherAngle(float frameClose) => BuildFramePlanes(frameClose);
 
+        /// <summary>
+        /// そのワールド点が映像へクロスフェードするスクリーン矩形の内側かを返す。
+        /// 負 = 内側 / 0 = 縁 / 正 = 外側。
+        /// </summary>
+        public float ScreenSignedDistance(Vector3 worldPoint)
+        {
+            BuildFramePlanes(1f);
+            Vector3 dir = transform.InverseTransformPoint(worldPoint).normalized;
+            float m = float.NegativeInfinity;
+            for (int i = 0; i < _screenPlanes.Length; i++)
+                m = Mathf.Max(m, Vector3.Dot(dir,
+                    new Vector3(_screenPlanes[i].x, _screenPlanes[i].y, _screenPlanes[i].z)));
+            return m;
+        }
+
         /// <summary>覆いを完全に外す（本編・終了時）。</summary>
         public void SetHidden()
         {
             if (_renderer != null) _renderer.enabled = false;
-            // 割れたままのメッシュと進みを残して去らない（次の体験者は割れていない現実から始まる）。
             if (_filter != null && _mesh != null) _filter.sharedMesh = _mesh;
-            if (_mat != null) _mat.SetFloat(ShatterId, 0f);
-            ShatterDrawn = false;
-            ShatterPeak = 0f;
             // 閉じ切った開口を配ったまま去ると、次に箱を出す誰かが**枠の形に切られる**。
             PublishApertureOpen();
         }
@@ -506,7 +460,6 @@ namespace FixedCamVr.Streaming
         {
             if (_mat != null) Destroy(_mat);
             if (_mesh != null) Destroy(_mesh);
-            if (_cellMesh != null) Destroy(_cellMesh);
         }
     }
 }

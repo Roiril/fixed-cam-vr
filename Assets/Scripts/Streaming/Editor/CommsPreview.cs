@@ -107,15 +107,14 @@ namespace FixedCamVr.Streaming.EditorTools
             // 打鍵も起こす（音は鳴らないが、**鳴らしたはずの数**が数えられる ＝ type.tsv の材料）。
             var typeSfx = panel.GetComponent<TypeAudioCue>();
             if (typeSfx != null) Invoke(typeSfx, "Awake");
-            TMP_Text? tmp = panel.GetComponentInChildren<TMP_Text>(includeInactive: true);
+            TMP_Text? tmp = null;
+            foreach (TMP_Text candidate in panel.GetComponentsInChildren<TMP_Text>(includeInactive: true))
+                if (candidate.name == "CommsText") { tmp = candidate; break; }
             if (tmp == null)
             {
-                Debug.LogError("[CommsPreview] 面を組めませんでした（日本語フォントが解決できない？）");
+                Debug.LogError("[CommsPreview] CommsText を組めませんでした（日本語フォントが解決できない？）");
                 return;
             }
-            var jp = JapaneseHudFont.TryGet();
-            if (jp != null) tmp.font = jp;
-
             object? logic = GetField(panel, "_logic");
             MethodInfo? apply = panel.GetType().GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic);
             if (logic == null || apply == null)
@@ -155,6 +154,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 float inSec = ConstF(typeof(CommsPanelLogic), "InSec", 0.45f);
                 float holdSec = ConstF(typeof(CommsPanelLogic), "HoldSec", 2f);
                 float outSec = ConstF(typeof(CommsPanelLogic), "OutSec", 0.9f);
+                float previewTime = PreviewTimeSec();
 
                 // ---- 1 枚目: 視界の中の座り（正面を向いた頭から見て、面がどこに立つか）----
                 PlaceAuthored(root, dist, yawOff, pitchOff);
@@ -186,29 +186,16 @@ namespace FixedCamVr.Streaming.EditorTools
                         Disable(logic);
                         ApplyNow(apply, panel, logic);
                         panel.Deliver(notice);
-                        // ⚠ **Deliver の後**（素の文面が入ってから壊しにいく）。
-                        SeekCorruption(panel, decay, wantMin);
                         PlaceStraightAhead(root, tmp, dist);
                         Step(logic, apply, panel, inSec);
                         Step(logic, apply, panel, TypeSec(logic));
+                        // 実描画の欠落数を測るため、全文を出して Apply した後に刻みを探す。
+                        SeekCorruption(panel, logic, apply, decay, wantMin, previewTime);
                         Shoot(cam, Path.Combine(dir, $"notice_{notice}{suffix}.png"));
                     }
 
-                    // ---- 1 字も化けていない刻み（③でだけ撮る）------------------------------
-                    // ⚠ 面は**ほとんどの時間こちらの姿**で立っている。化けた絵だけ見て強さを決めると、
-                    //    体験のほとんどの時間に何も起きていない、という判断ミスをする。
-                    if (decay > 0f)
-                    {
-                        Disable(logic);
-                        ApplyNow(apply, panel, logic);
-                        panel.Deliver(CommsNotice.Prompt);
-                        SeekQuiet(panel, decay);
-                        PlaceStraightAhead(root, tmp, dist);
-                        Step(logic, apply, panel, inSec);
-                        Step(logic, apply, panel, TypeSec(logic));
-                        Shoot(cam, Path.Combine(dir, $"notice_Prompt{suffix}_quiet.png"));
-                    }
                 }
+                ShootReviewFrames(panel, logic, apply, root, tmp, cam, dir, dist, previewTime);
                 // コマ送りの動画は 1 周目の姿で撮る（壊れは静止画で見る）。
                 panel.SetDecayForPreview(0f, 0f);
 
@@ -248,10 +235,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 //   ここが書くのは「体験者が何をしたか」だけ — 導入に居る / 円へ着いた /
                 //   本編へ入った / ボタンを長押しした / 締めのカットが待ち始めた。
                 //   ⓪a → ⓪b と① → ①b が**同じ面のまま繋がる**のも、実装がそう返すからそう写る。
-                bool wantFrames = EditorCliArgs.Get("frames") != "0";
+                bool wantFrames = EditorCliArgs.Get("frames") == "1";
                 if (!wantFrames)
                 {
-                    Debug.Log("[CommsPreview] コマ送りは飛ばした（-Set frames=0）。静止画だけ焼いた");
+                    Debug.Log("[CommsPreview] 55 秒の全通知連番は飛ばした（必要なら -Set frames=1）");
+                    if (EditorCliArgs.Get("motion") == "1")
+                        ShootMotion(panel, logic, apply, root, tmp, cam, dir, dist);
                     return;
                 }
                 Disable(logic);
@@ -385,23 +374,118 @@ namespace FixedCamVr.Streaming.EditorTools
         /// （プレビュー側が文面を知らなくて済む）。
         /// ⚠ <b>必ず <c>Deliver</c> の後に呼ぶ</b> — 素の文面が入っていないと 1 字も化けない。
         /// </summary>
-        private static void SeekCorruption(CommsPanel panel, float decay, int wantMin)
+        private static void SeekCorruption(CommsPanel panel, object logic, MethodInfo apply,
+                                           float decay, int wantMin, float startSec)
         {
+            if (decay <= 0f) return;
             for (int t = 0; t < 240; t++)
             {
-                panel.SetDecayForPreview(decay, t * CommsGlitchLogic.TickSec + 0.01f);
+                panel.SetDecayForPreview(decay, startSec + t * CommsGlitchLogic.TickSec);
+                ApplyNow(apply, panel, logic);
                 if (panel.CorruptedChars >= wantMin) return;
             }
         }
 
-        /// <summary>1 字も化けていない刻みへ合わせる（面が立っている時間の大半はこちらの姿）。</summary>
-        private static void SeekQuiet(CommsPanel panel, float decay)
+        private static float PreviewTimeSec()
         {
-            for (int t = 0; t < 240; t++)
+            string? raw = EditorCliArgs.Get("time");
+            if (string.IsNullOrEmpty(raw)) return 0.01f;
+            if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float value))
             {
-                panel.SetDecayForPreview(decay, t * CommsGlitchLogic.TickSec + 0.01f);
-                if (panel.CorruptedChars == 0) return;
+                Debug.LogWarning($"[CommsPreview] time の値を読めない: '{raw}'（0.01 として扱う）");
+                return 0.01f;
             }
+            return Mathf.Max(0f, value);
+        }
+
+        private static void SetLevelForPreview(CommsPanel panel, float level, float timeSec)
+            => panel.SetDecayForPreview(Mathf.Sqrt(Mathf.Clamp01(level)), timeSec);
+
+        private static void ShootReviewFrames(CommsPanel panel, object logic, MethodInfo apply,
+                                              Transform root, TMP_Text tmp, Camera cam, string dir,
+                                              float dist, float timeSec)
+        {
+            float inSec = ConstF(typeof(CommsPanelLogic), "InSec", 0.45f);
+            float outSec = ConstF(typeof(CommsPanelLogic), "OutSec", 0.9f);
+
+            float[] levels = { 0f, 0.45f, 1f, CommsGlitchLogic.RecoveredLevel, 0f };
+            string[] names =
+            {
+                "state_normal.png", "state_middle.png", "state_maximum.png",
+                "state_recovered_012.png", "state_released.png",
+            };
+            for (int i = 0; i < levels.Length; i++)
+            {
+                Disable(logic);
+                ApplyNow(apply, panel, logic);
+                panel.Deliver(CommsNotice.BeginHow);
+                PlaceStraightAhead(root, tmp, dist);
+                SetLevelForPreview(panel, levels[i], timeSec);
+                Step(logic, apply, panel, inSec);
+                Step(logic, apply, panel, TypeSec(logic));
+                ApplyNow(apply, panel, logic);
+                Shoot(cam, Path.Combine(dir, names[i]));
+            }
+
+            Disable(logic);
+            ApplyNow(apply, panel, logic);
+            panel.Deliver(CommsNotice.BeginHow);
+            SetLevelForPreview(panel, 0f, timeSec);
+            PlaceStraightAhead(root, tmp, dist);
+            Step(logic, apply, panel, inSec * 0.5f);
+            Shoot(cam, Path.Combine(dir, "transition_in.png"));
+            Step(logic, apply, panel, inSec * 0.5f);
+
+            float typeSec = TypeSec(logic);
+            Step(logic, apply, panel, typeSec * 0.18f);
+            Shoot(cam, Path.Combine(dir, "type_early.png"));
+            Step(logic, apply, panel, typeSec * 0.34f);
+            Shoot(cam, Path.Combine(dir, "type_middle.png"));
+            Step(logic, apply, panel, typeSec * 0.34f);
+            Shoot(cam, Path.Combine(dir, "type_late.png"));
+            Step(logic, apply, panel, typeSec * 0.14f);
+            Step(logic, apply, panel, ConstF(typeof(CommsPanelLogic), "HoldSec", 2f));
+            Step(logic, apply, panel, outSec * 0.55f);
+            Shoot(cam, Path.Combine(dir, "transition_out.png"));
+        }
+
+        private static void ShootMotion(CommsPanel panel, object logic, MethodInfo apply,
+                                        Transform root, TMP_Text tmp, Camera cam, string dir, float dist)
+        {
+            string motionDir = Path.Combine(dir, "motion");
+            Directory.CreateDirectory(motionDir);
+            float dt = 1f / Fps;
+            int frame = 0;
+
+            Disable(logic);
+            ApplyNow(apply, panel, logic);
+            panel.Deliver(CommsNotice.BeginHow);
+            SetLevelForPreview(panel, 0f, 0f);
+            PlaceStraightAhead(root, tmp, dist);
+            while ((bool)logic.GetType().GetProperty("Active")!.GetValue(logic) && frame < Fps * 12)
+            {
+                ApplyNow(apply, panel, logic);
+                Shoot(cam, Frame(motionDir, frame++));
+                Step(logic, apply, panel, dt);
+            }
+
+            panel.Deliver(CommsNotice.BeginHow);
+            Step(logic, apply, panel, ConstF(typeof(CommsPanelLogic), "InSec", 0.45f));
+            Step(logic, apply, panel, TypeSec(logic));
+            for (int i = 0; i < Mathf.RoundToInt(Fps * 1.5f); i++)
+            {
+                SetLevelForPreview(panel, 1f, i * dt);
+                ApplyNow(apply, panel, logic);
+                Shoot(cam, Frame(motionDir, frame++));
+            }
+            for (int i = 0; i < Mathf.RoundToInt(Fps * 1.5f); i++)
+            {
+                SetLevelForPreview(panel, CommsGlitchLogic.RecoveredLevel, (i + 60) * dt);
+                ApplyNow(apply, panel, logic);
+                Shoot(cam, Frame(motionDir, frame++));
+            }
+            Debug.Log($"[CommsPreview] 短い動き {frame} コマ → {motionDir}");
         }
 
         /// <summary>著作どおりの位置（左へ振って下げて、面は頭へ正対）へ置く。</summary>

@@ -11,9 +11,9 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// 導入演出（2026-08-15 に戻した旧構成・段 0〜5）を PNG で出す。<b>Play も HMD もビルドも要らない。</b>
+    /// 導入演出（段 0〜5）を PNG で出す。<b>Play も HMD もビルドも要らない。</b>
     ///
-    /// ⚠⚠ <b>これが導入の唯一の安い門。</b> 覆い・隔離殻・破砕・管の面はすべてシェーダで、
+    /// ⚠⚠ <b>これが導入の唯一の安い門。</b> 覆い・隔離殻・連続開口・管の面はすべてシェーダで、
     /// <c>unity.ps1 test</c> には 1 件も出ない（コンパイルが通っても全面マゼンタ・真っ黒になりうる）。
     /// 段を触ったら必ずここを通して<b>焼いた PNG を開くこと</b>
     /// （<c>rules/show-design.md</c>「シェーダを書いたら絵を出す」）。
@@ -36,7 +36,7 @@ namespace FixedCamVr.Streaming.EditorTools
     /// <c>PassthroughStyler</c>（Assembly-CSharp 側）が<b>実機のパススルー層</b>へ当てるもので、
     /// ここが敷いているのは静止した実写プレートだから。<b>絵が同じでも「効いていない」の証拠にはならない</b> —
     /// 重み（帯の <c>degrade</c> / <c>edge</c>）が動いていることだけを見て、見え方は実機で確かめる。
-    /// ここで判定できるのは<b>段 0 / 1（素通し）・段 4（割れる）・段 5（すり替え）</b>。
+    /// ここで判定できるのは<b>段 0 / 1（素通し）・段 4（連続開口）・段 5（静止）</b>。
     ///
     /// ⚠ <b>これは段の進み方と形を見るための絵で、現場の見えではない。</b> 「現実」は明るい実写プレートで、
     /// 実際の会場（暗い）とは違う。ブラウン管の<b>曲面</b>（<see cref="CrtScreenMesh"/>）も出ない
@@ -46,6 +46,9 @@ namespace FixedCamVr.Streaming.EditorTools
     public static class IntroPreview
     {
         private const string OutDirRel = "Screenshots/intro";
+        private const string FramesDirName = "frames";
+        private const string CleanDirName = "clean";
+        private const int SequenceFps = 30;
 
         /// <summary>映像部分の解像度。キャプション帯はこの下に足される。</summary>
         private const int Width = 1280;
@@ -115,7 +118,6 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly int CrtIgniteId = Shader.PropertyToID("_CrtIgnite");
         private static readonly int IntroLiveId = Shader.PropertyToID("_IntroLive");
         private static readonly int GlitchId = Shader.PropertyToID("_Glitch");
-        private static readonly int GlitchSeedId = Shader.PropertyToID("_GlitchSeed");
         private static readonly int SignalLostId = Shader.PropertyToID("_SignalLost");
         private static readonly int SignalFloorId = Shader.PropertyToID("_SignalFloor");
         private static readonly int LiveTexId = Shader.PropertyToID("_LiveTex");
@@ -133,6 +135,19 @@ namespace FixedCamVr.Streaming.EditorTools
             // ⚠ 古い絵を残さない。段や刻みを変えると名前が変わるので、消さないと**前の版の 1 枚が
             //    新しい絵の隣に並んで証拠として読まれる**（この codebase が繰り返し踏んでいる型）。
             foreach (string old in Directory.GetFiles(outDir, "intro_*.png")) File.Delete(old);
+            string cleanDir = Path.Combine(outDir, CleanDirName);
+            Directory.CreateDirectory(cleanDir);
+            foreach (string old in Directory.GetFiles(cleanDir, "intro_*.png")) File.Delete(old);
+            bool renderFrames = string.Equals(EditorCliArgs.Get("frames"), "1", StringComparison.Ordinal);
+            string framesDir = Path.Combine(outDir, FramesDirName);
+            if (renderFrames)
+            {
+                Directory.CreateDirectory(framesDir);
+                foreach (string old in Directory.GetFiles(framesDir, "intro_*.png")) File.Delete(old);
+                string cleanFramesDir = Path.Combine(cleanDir, FramesDirName);
+                Directory.CreateDirectory(cleanFramesDir);
+                foreach (string old in Directory.GetFiles(cleanFramesDir, "intro_*.png")) File.Delete(old);
+            }
 
             var saved = new List<string>();
             Stage? stage = null;
@@ -140,6 +155,8 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 stage = Stage.Create(outDir);
                 foreach (Shot shot in BuildShots()) stage.Render(shot, saved);
+                if (renderFrames)
+                    foreach (Shot shot in BuildFrameSequence(stage.Timing)) stage.Render(shot, saved);
             }
             catch (Exception e)
             {
@@ -176,20 +193,24 @@ namespace FixedCamVr.Streaming.EditorTools
             public readonly int label;      // ファイル名に入れる進み（000 / 050 / 100 …）
             /// <summary>カメラが 1 台も繋がっていない現場（<c>_SignalLost = 1</c>）。</summary>
             public readonly bool noSignal;
+            public readonly int sequenceIndex;
 
             public Shot(IntroStage stage, int index, string name, float p, int label,
-                        bool noSignal = false)
+                        bool noSignal = false, int sequenceIndex = -1)
             {
                 this.stage = stage; this.index = index; this.name = name; this.p = p; this.label = label;
                 this.noSignal = noSignal;
+                this.sequenceIndex = sequenceIndex;
             }
 
             public string File =>
-                $"intro_{index}_{name}_{label:000}{(noSignal ? "_nosignal" : "")}.png";
+                sequenceIndex >= 0
+                    ? $"{FramesDirName}/intro_{sequenceIndex:0000}.png"
+                    : $"intro_{index}_{name}_{label:000}{(noSignal ? "_nosignal" : "")}.png";
         }
 
         /// <summary>
-        /// 段の頭・中・終わりを撮る。<b>段 4（現実が割れる）は割れ方が本題なので 5 枚</b>。
+        /// 段の頭・中・終わりを撮る。段 4 は連続開口の輪郭を読むため細かく撮る。
         ///
         /// ⚠ 段 0 と段 1 は 1 枚だけ。どちらも <see cref="IntroLogic.Weights"/> が定数を返す
         /// （素通しのパススルー）ので、3 枚撮っても同じ絵が 3 つ並ぶ。
@@ -208,12 +229,14 @@ namespace FixedCamVr.Streaming.EditorTools
             yield return new Shot(IntroStage.Structure, 3, "structure", 0.5f, 50);
 
             foreach ((float p, int label) in
-                     new[] { (0f, 0), (0.25f, 25), (0.5f, 50), (0.75f, 75), (0.999f, 100) })
+                     new[]
+                     {
+                         (0f, 0), (0.125f, 12), (0.25f, 25), (0.375f, 37), (0.5f, 50),
+                         (0.625f, 62), (0.75f, 75), (0.875f, 87), (0.999f, 100),
+                     })
                 yield return new Shot(IntroStage.Frame, 4, "frame", p, label);
 
-            // ⚠ 段 5 の「中」は 0.50 ではなく **0.25**。段の尺は 4.5 秒だが、映像へのクロスフェードは
-            //    <see cref="IntroLogic.SwapCrossfadeSec"/>（1.2 秒）で終わり、継ぎ目を隠す乱れも
-            //    そこが山になる。0.50 で撮ると終わりと同じ絵が 2 枚並ぶだけで、**継ぎ目が 1 枚も写らない**。
+            // 段 5 は映像を静止して見せる。3 枚が同じであること自体が乱れの無い契約になる。
             foreach ((float p, int label) in new[] { (0f, 0), (0.25f, 25), (0.999f, 100) })
                 yield return new Shot(IntroStage.Swap, 5, "swap", p, label);
 
@@ -227,6 +250,30 @@ namespace FixedCamVr.Streaming.EditorTools
             yield return new Shot(IntroStage.Swap, 5, "swap", 0.999f, 100, noSignal: true);
         }
 
+        /// <summary>
+        /// <c>-Set frames=1</c> のときに出す段 4 → 5 の 30fps 連番。
+        /// 最終標本は各段の終了直前に置き、状態機械が次段へ送った値を誤って前段として保存しない。
+        /// </summary>
+        private static IEnumerable<Shot> BuildFrameSequence(IntroTiming timing)
+        {
+            int n = 0;
+            int frameFrames = Mathf.Max(1, Mathf.CeilToInt(timing.frameSec * SequenceFps));
+            for (int i = 0; i < frameFrames; i++)
+            {
+                float p = Mathf.Min(0.999f, (float)i / frameFrames);
+                yield return new Shot(IntroStage.Frame, 4, "frame", p,
+                    Mathf.RoundToInt(p * 100f), sequenceIndex: n++);
+            }
+
+            int swapFrames = Mathf.Max(1, Mathf.CeilToInt(timing.swapSec * SequenceFps));
+            for (int i = 0; i < swapFrames; i++)
+            {
+                float p = Mathf.Min(0.999f, (float)i / swapFrames);
+                yield return new Shot(IntroStage.Swap, 5, "swap", p,
+                    Mathf.RoundToInt(p * 100f), sequenceIndex: n++);
+            }
+        }
+
         // ---- 段の駆動（重みは本物の状態機械から取る）--------------------------
 
         /// <summary>
@@ -236,9 +283,7 @@ namespace FixedCamVr.Streaming.EditorTools
         /// （このリポジトリが「状態は進んでいるのに画には何も出ていない」を 2026-07-31 に踏んでいる）。
         ///
         /// 尺は show.json の <c>run.intro</c>（無ければ <see cref="IntroTiming.Default"/>）。
-        /// 段の中の進みは正規化してあるので尺を変えても絵は変わらないが、<b>段 5 だけは違う</b> —
-        /// <see cref="IntroLogic.SwapCrossfadeSec"/> は絶対秒なので、<c>swapSec</c> を変えると
-        /// 「クロスフェードが段のどこで終わるか」が動く。
+        /// 段の中の進みは正規化してあるので、尺を変えても各標本の絵は変わらない。
         /// </summary>
         private static IntroLogic DriveTo(IntroStage target, float p, IntroTiming t)
         {
@@ -344,9 +389,9 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly string _screenMatLabel;
             private readonly string _showLabel;
             private readonly IntroTiming _timing;
-            /// <summary>段 4 の乱れに掛かる係数（<c>run.intro.glitchOnSwap</c>）。実機と同じ倍率を掛ける。</summary>
-            private readonly float _glitchOnSwap;
             private float _igniteWritten = -1f;
+
+            public IntroTiming Timing => _timing;
 
             private Stage(string outDir, GameObject root, Transform head, Camera cam, Material screenMat,
                           IntroVeil veil, ContainmentShell shell, float halfM,
@@ -354,7 +399,7 @@ namespace FixedCamVr.Streaming.EditorTools
                           Texture2D reality, Texture2D? plate, Texture2D sceneTex,
                           RenderTexture outRt, Texture2D readback, int outW, int outH,
                           string plateLabel, string screenMatLabel, string showLabel,
-                          IntroTiming timing, float glitchOnSwap)
+                          IntroTiming timing)
             {
                 _outDir = outDir; _root = root; _head = head; _cam = cam; _screenMat = screenMat;
                 _veil = veil; _shell = shell; _halfM = halfM;
@@ -362,7 +407,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _reality = reality; _plate = plate; _sceneTex = sceneTex;
                 _outRt = outRt; _readback = readback; _outW = outW; _outH = outH;
                 _plateLabel = plateLabel; _screenMatLabel = screenMatLabel; _showLabel = showLabel;
-                _timing = timing; _glitchOnSwap = glitchOnSwap;
+                _timing = timing;
                 _liveTex = screenMat.GetTexture(LiveTexId);
             }
 
@@ -372,7 +417,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 Texture2D? plate = LoadPlate(out string plateLabel);
                 Texture2D reality = BuildReality(plate, Width, Height);
 
-                // --- show.json。footprint（封印の箱の大きさ）も尺も乱れの倍率も現場の値が正 ---
+                // --- show.json。footprint（封印の箱の大きさ）と尺は現場の値が正 ---
                 ShowJsonSubset? show = LoadShow(out string showLabel);
                 ShowLayoutDef? layout = show?.layout;
 
@@ -381,11 +426,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 ShowIntroDef? introDef = show?.run?.intro;
                 if (introDef != null && introDef.LooksUnset) introDef = null;
                 IntroTiming timing = introDef != null ? introDef.ToTiming() : IntroTiming.Default;
-                float glitchOnSwap = introDef != null ? Mathf.Clamp01(introDef.glitchOnSwap) : 0f;
                 showLabel += introDef != null
                     ? $" | intro {timing.realSec:0.0}/{timing.degradeSec:0.0}/{timing.structureSec:0.0}/" +
-                      $"{timing.frameSec:0.0}/{timing.swapSec:0.0}s = {timing.TotalSec:0.0}s " +
-                      $"glitch x{glitchOnSwap:0.00}"
+                      $"{timing.frameSec:0.0}/{timing.swapSec:0.0}s = {timing.TotalSec:0.0}s"
                     : " | intro NOT authored -> code defaults";
 
                 float halfM = FallbackHalfM;
@@ -552,7 +595,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 return new Stage(outDir, root, head, cam, screenMat, veil, shell, halfM,
                                  capRoot, outCam, stageMat, caption,
                                  reality, plate, sceneTex, outRt, readback, outW, outH,
-                                 plateLabel, screenMatLabel, showLabel, timing, glitchOnSwap);
+                                 plateLabel, screenMatLabel, showLabel, timing);
             }
 
             // ---- 1 枚ぶん ----
@@ -569,20 +612,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 _veil.Apply(w);
                 _shell.Apply(w);
 
-                // 管の点灯と、**映像そのものの出方**。実機は IntroDirector が MjpegScreen の材質へ
-                // 両方書く（既定はどちらも 1）。⚠ **2 つは別物** — 導入のあいだ管は点いたまま
-                // （ignite = 1）で、映像が来るのは段 5 だけ。分けていないと、重み live が 0 のままなのに
-                // 画に映像が出る（2026-08-13 にこの絵で見つけた食い違い）。
+                // 実機と同じく _IntroLive は 0/1 の表示ゲート。混合量は IntroVeil の
+                // _ScreenFade だけが持つ。ここへ w.live を直接入れると二重に暗くなる。
                 _igniteWritten = Mathf.Clamp01(w.ignite);
                 _screenMat.SetFloat(CrtIgniteId, _igniteWritten);
-                _screenMat.SetFloat(IntroLiveId, Mathf.Clamp01(w.live));
-                // ⚠ 乱れの唯一の writer は本来 GlitchFx だが、あれは Update で書くので Edit Mode では
-                //    1 度も走らない。段 4 の継ぎ目は乱れが乗った絵でしか判定できないので、ここだけ直接書く。
-                //    ⚠⚠ **倍率 glitchOnSwap を忘れない。** 実機は
-                //    `SetSustain(w.glitch * _def.glitchOnSwap)` なので、生の重みを書くと
-                //    プレビューだけ乱れが強くなる（現行 show.json では 1.00 対 0.80）。
-                _screenMat.SetFloat(GlitchId, Mathf.Clamp01(w.glitch) * _glitchOnSwap);
-                _screenMat.SetFloat(GlitchSeedId, shot.index * 3.1f + shot.p * 7.3f);
+                _screenMat.SetFloat(IntroLiveId, w.live > 0f ? 1f : 0f);
+                _screenMat.SetFloat(GlitchId, 0f);
                 // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
                 _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
                 // 砂は掛け算で乗るので、下に画があるかで地の持ち上げ方が変わる。
@@ -597,8 +632,17 @@ namespace FixedCamVr.Streaming.EditorTools
                 SetLayerRecursive(_root.transform, IntroLayer);
 
                 CaptureScene();
+                SaveClean(shot.File);
                 SetCaption(BuildCaption(shot, w, inside));
                 saved.Add(SaveWithCaption(shot.File));
+            }
+
+            private void SaveClean(string fileName)
+            {
+                string path = Path.Combine(_outDir, CleanDirName, fileName);
+                string? dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllBytes(path, _sceneTex.EncodeToPNG());
             }
 
             private void PlaceHead(bool inside)
@@ -664,13 +708,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 return
                     $"INTRO stage {shot.index} {shot.name}  p={shot.p:0.00}  eye {eye}\n" +
                     $"w: passthrough {w.passthrough:0.00}  degrade {w.degrade:0.00}  edge {w.edge:0.00}  " +
-                    $"shatter {w.shatter:0.00}  frame {w.frame:0.00}  shell {w.shell:0.00}  " +
+                    $"audio clock {w.shatter:0.00}  aperture {w.frame:0.00}  shell {w.shell:0.00}  " +
                     $"live {w.live:0.00}   (glitch {w.glitch:0.00} grain {w.grain:0.00})\n" +
                     $"drawn: veil built={B(_veil.IsBuilt)} on={B(_veil.IsActive)} " +
-                    // ⚠ **破砕は「画に出た」の側で出す**。重み shatter が動いていても、セル格子を
-                    //    組めていなければ 1 枚 quad のままで 1 画素も割れない。
-                    $"shatter drawn={B(_veil.ShatterDrawn)} peak={_veil.ShatterPeak:0.00} " +
-                    $"cells={_veil.ShatterCells} rect={_veil.ShatterRectDesc} | " +
+                    $"aperture drawn={B(_veil.ApertureDrawn)} close={_veil.ApertureClosePeak:0.00} " +
+                    $"quads={_veil.ApertureQuads} rect={_veil.ApertureRectDesc} | " +
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +
                     $"crtIgnite={_igniteWritten:0.00}" +

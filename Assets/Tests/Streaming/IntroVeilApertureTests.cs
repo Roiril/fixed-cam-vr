@@ -154,6 +154,23 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void ScreenFadeIntersection_UsesOnlyTheScreenRectangle()
+        {
+            // _ScreenFade は開口全体ではなく、本編スクリーンの実矩形だけへ掛ける。
+            // 頭とスクリーンが平行でない場合も、中心は内側、すぐ外は外側でなければならない。
+            _eye!.transform.position = new Vector3(0.8f, 1.6f, -0.4f);
+            _eye.transform.rotation = Quaternion.Euler(18f, 22f, 4f);
+            PlaceScreen(screenYawDeg: 8f);
+
+            Assert.That(_veil!.ScreenSignedDistance(ScreenPoint(0f, 0f)), Is.LessThan(-Eps),
+                "スクリーン中心が映像クロスフェードの外になっている");
+            Assert.That(_veil.ScreenSignedDistance(ScreenPoint(1.2f, 0f)), Is.GreaterThan(Eps),
+                "スクリーンの横外まで映像クロスフェードが掛かっている");
+            Assert.That(_veil.ScreenSignedDistance(ScreenPoint(0f, 1.2f)), Is.GreaterThan(Eps),
+                "スクリーンの縦外まで映像クロスフェードが掛かっている");
+        }
+
+        [Test]
         public void Frame_FullyOpen_CoversNothing()
         {
             PlaceScreen(screenYawDeg: 0f);

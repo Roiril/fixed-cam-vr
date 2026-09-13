@@ -496,22 +496,14 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : (_report.AppliedAlpha < 0f ? "nc" : _report.AppliedAlpha.ToString("F2"));
 
-        /// <summary>
-        /// 破砕（段 4）が<b>画に出たか</b>。2026-08-13 に段ごと廃止して観測から外していたが、
-        /// 2026-08-15 に段が戻ったので戻した（<c>canon/LEDGER.md</c> 0044）。
-        ///
-        /// ⚠ 箱の側（旧 <c>shatB</c> / <c>shatBC</c> / <c>shatBMesh</c>）は戻していない —
-        /// 封印の箱を退避したので、割れるのは覆いだけ。
-        ///
-        /// <c>-</c>=覆いがシーンに居ない / 0.00 のまま = 進みは配っているのに画が割れていない。
-        /// </summary>
-        private string ShatterState => _veil == null ? "-" : _veil.ShatterPeak.ToString("F2");
+        /// <summary>段 4 の連続開口へ実際に配った閉じ具合の最大値。</summary>
+        private string ApertureState => _veil == null ? "-" : _veil.ApertureClosePeak.ToString("F2");
 
-        /// <summary>破砕のセル数。<c>0</c> ならセル格子を組めていない ＝ 割れようがない。</summary>
-        private string ShatterCellState => _veil == null ? "-" : _veil.ShatterCells.ToString();
+        /// <summary>覆いの quad 数。新しい開口は全期間 1 枚で、0 は実体を組めていない。</summary>
+        private string ApertureQuadState => _veil == null ? "-" : _veil.ApertureQuads.ToString();
 
-        /// <summary>吸い込み先の矩形（半幅,半高,奥行,吸い込み半径）。全部 0 なら行き先が解けていない。</summary>
-        private string ShatterRectState => _veil == null ? "-" : _veil.ShatterRectDesc;
+        /// <summary>開口の終端と映像交差に使ったスクリーン矩形（半幅,半高,眼からの距離）。</summary>
+        private string ApertureRectState => _veil == null ? "-" : _veil.ApertureRectDesc;
 
         /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
         private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
@@ -721,7 +713,7 @@ namespace FixedCamVr.Diagnostics
                 IntroWeights w = _intro.Weights;
                 // fresh / centered は段 4 → 段 5 の進行条件。false のまま足踏みすると
                 // 最後の段（枠の中がカメラ映像へ変わる）が出ないので、必ず一緒に出す。
-                // veil / veilBuilt / wire / pt / shat は「重みが動いた」ではなく「画に出た」の側。
+                // veil / veilBuilt / wire / pt / aper は「重みが動いた」ではなく「画に出た」の側。
                 // 段だけ見て OK と判定した 2026-07-31 の事故を繰り返さないため必ず一緒に出す。
                 Emit($"ev=intro stage={_lastStage} hold={(_intro.Holding ? 1 : 0)} " +
                      $"fresh={(_intro.LiveFresh ? 1 : 0)} centered={(_intro.FrameCentered ? 1 : 0)} " +
@@ -729,9 +721,8 @@ namespace FixedCamVr.Diagnostics
                      $"veil={VeilState} veilBuilt={VeilBuiltState} wire={WireState} pt={PassthroughState} " +
                      $"shell={ShellState} shellBuilt={ShellBuiltState} shellBox={ShellBoxState} " +
                      $"shellRev={ShellRevealState} " +
-                     // 破砕は段 4 のあいだしか動かない。**遷移の瞬間の値**なので、
-                     // 意味を持つのは Frame → Swap の行（そこに段 4 の到達点が載る）。
-                     $"shat={ShatterState} shatC={ShatterCellState} shatRect={ShatterRectState} " +
+                     // 連続開口は段 4 のあいだだけ動く。Frame → Swap の行に閉じ切った実測が載る。
+                     $"aper={ApertureState} aperQ={ApertureQuadState} aperRect={ApertureRectState} " +
                      // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
                      $"ignite={IgniteState} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
@@ -1090,8 +1081,9 @@ namespace FixedCamVr.Diagnostics
                 // 段の遷移（ev=intro）は 1 瞬の値しか持たない。線は Apply の中で組まれるので、
                 // 遷移の瞬間はまだ 0 本のことがある。段に居るあいだの実数はここでしか取れない。
                 _sb.Append(" wire=").Append(WireState);
-                // 破砕も同じ理由。段 4 の途中の到達点はここでしか取れない。
-                _sb.Append(" shat=").Append(ShatterState);
+                // 連続開口も同じ理由。段 4 の途中の到達点はここでしか取れない。
+                _sb.Append(" aper=").Append(ApertureState);
+                _sb.Append(" aperQ=").Append(ApertureQuadState);
             }
 
             int active = _registry != null ? _registry.ActiveIndex : -1;

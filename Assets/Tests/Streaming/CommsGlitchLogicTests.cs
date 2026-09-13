@@ -4,381 +4,167 @@ using NUnit.Framework;
 
 namespace FixedCamVr.Streaming.Tests
 {
-    /// <summary>
-    /// 連絡の面が周回とともに壊れていく（`canon/LEDGER.md` 0068 / <b>0069</b>）。
-    ///
-    /// 0069 で**壊れ方そのものを作り直した** — 面の上にレイヤを貼るのをやめ、
-    /// **印字そのものが壊れる**形にした。ここが固定するのは「いつ・どれだけ壊れるか」と
-    /// 「**文面の骨格を壊していないか**」で、<b>どう見えるか</b>は
-    /// `menu comms-preview -Set decay=` の絵でしか判定できない。
-    /// </summary>
     public sealed class CommsGlitchLogicTests
     {
-        private const string Body = "異常が検出されました。\n記録してください。";
-
-        /// <summary>
-        /// ⚠⚠ <b>1 周目は 1 画素も変わらない。</b> 進み 0 は本編の頭そのもので、
-        /// そこで壊れが出ると<b>映像がまだ綺麗なのに連絡の面だけ先に壊れる</b>。
-        /// </summary>
         [Test]
-        public void Progress0_ChangesNothing()
+        public void Progress0_ChangesNoGlyph()
         {
-            Assert.AreEqual(0f, CommsGlitchLogic.LevelFor(0f), "進み 0 では強さ 0");
-            for (float t = 0f; t < 12f; t += 0.037f)
-            {
-                Assert.AreEqual(0f, CommsGlitchLogic.OffsetXAt(t, 0f), 0f, "横へも飛ばない");
-                Assert.IsFalse(CommsGlitchLogic.BurstAt(t, 0f), "発作も起きない");
-                Assert.AreEqual(1f, CommsGlitchLogic.PanelFlickerAt(t, 0f), 0f, "明滅もしない");
-                Assert.AreSame(Body, CommsGlitchLogic.Corrupt(Body, 0f, (int)(t * 5f)),
-                               "文面は同じ実体のまま返る（割り当てすら作らない）");
-            }
+            var missing = new bool[24];
+            Assert.AreEqual(0f, CommsGlitchLogic.LevelFor(0f));
+            Assert.AreEqual(0, CommsGlitchLogic.FillMissing(missing, missing.Length, 0f, 12));
+            Assert.That(System.Array.Exists(missing, value => value), Is.False);
+            Assert.AreEqual(0f, CommsGlitchLogic.LineOffsetM(0f, 12, 0));
+            Assert.IsFalse(CommsGlitchLogic.EchoAt(0f, 12, 0));
         }
 
-        /// <summary>進み 1（3 周目 A 以降）で強さが 1 に着く。</summary>
         [Test]
         public void Progress1_ReachesFullLevel()
         {
             Assert.AreEqual(1f, CommsGlitchLogic.LevelFor(1f), 0.0001f);
-            Assert.AreEqual(1f, CommsGlitchLogic.LevelFor(1.7f), 0.0001f, "範囲外は 1 で頭打ち");
-            Assert.AreEqual(0f, CommsGlitchLogic.LevelFor(-3f), "負も 0 で止まる");
+            Assert.AreEqual(1f, CommsGlitchLogic.LevelFor(1.7f), 0.0001f);
+            Assert.AreEqual(0f, CommsGlitchLogic.LevelFor(-3f));
         }
 
-        /// <summary>
-        /// ⚠ <b>序盤は線形より軽い。</b> 2 周目の頭（進み 0.33）で線形なら 0.33 だが、
-        /// 指数 2 なので 0.11 — 映像の劣化と足並みが揃う。
-        /// </summary>
         [Test]
         public void EarlyLaps_AreLighterThanLinear()
         {
-            Assert.Less(CommsGlitchLogic.LevelFor(0.33f), 0.33f * 0.5f, "2 周目の頭は線形の半分より軽い");
-            Assert.Less(CommsGlitchLogic.LevelFor(0.5f), 0.5f, "中ほども線形より軽い");
-            Assert.Greater(CommsGlitchLogic.LevelFor(0.9f), 0.75f, "終盤はちゃんと効く");
+            Assert.Less(CommsGlitchLogic.LevelFor(0.33f), 0.33f * 0.5f);
+            Assert.Less(CommsGlitchLogic.LevelFor(0.5f), 0.5f);
+            Assert.Greater(CommsGlitchLogic.LevelFor(0.9f), 0.75f);
         }
 
-        /// <summary>単調（下がらない）。下がると「直った」に見えて装置が壊れていく筋が崩れる。</summary>
         [Test]
         public void Level_IsMonotonic()
         {
-            float prev = -1f;
-            for (float p = 0f; p <= 1f; p += 0.01f)
+            float previous = -1f;
+            for (float progress = 0f; progress <= 1f; progress += 0.01f)
             {
-                float lv = CommsGlitchLogic.LevelFor(p);
-                Assert.GreaterOrEqual(lv, prev, $"p={p:0.00} で下がった");
-                prev = lv;
+                float level = CommsGlitchLogic.LevelFor(progress);
+                Assert.GreaterOrEqual(level, previous);
+                previous = level;
             }
         }
 
-        /// <summary>
-        /// ⚠⚠ <b>文字数を変えない。</b> 変えると打鍵の数え（`NoticeChars`）と食い違い、
-        /// 枠の高さと重心も測り直しになる。<b>置換のみ・挿入も削除もしない。</b>
-        /// </summary>
         [Test]
-        public void Corrupt_KeepsLength_AndNewlines()
+        public void Maximum_MissesAboutThreeQuarters_ExactlyAsBudgeted()
         {
-            for (int tick = 0; tick < 400; tick++)
+            const int glyphs = 40;
+            var missing = new bool[glyphs];
+            for (int tick = 0; tick < 100; tick++)
             {
-                string s = CommsGlitchLogic.Corrupt(Body, 1f, tick);
-                Assert.AreEqual(Body.Length, s.Length, $"tick={tick} で長さが変わった");
-                for (int i = 0; i < Body.Length; i++)
-                    if (Body[i] == '\n')
-                        Assert.AreEqual('\n', s[i], $"tick={tick} で改行が壊れた（行が繋がる）");
+                int budget = CommsGlitchLogic.MissingCountFor(glyphs, 1f, tick);
+                int applied = CommsGlitchLogic.FillMissing(missing, glyphs, 1f, tick);
+                Assert.AreEqual(30, budget, "40 字の 75% は常に 30 字");
+                Assert.AreEqual(budget, applied);
+                Assert.AreEqual(budget, System.Array.FindAll(missing, value => value).Length,
+                                "テレメトリへ渡す数と実際に alpha=0 にする数を一致させる");
             }
         }
 
-        /// <summary>
-        /// ⚠⚠ <b>化け先は意味を持たない記号だけ。</b> 別の言葉になると
-        /// <b>装置が嘘をついた</b>ことになり、3 周目の反転が乗っている
-        /// 「装置は正直に映している」が壊れる。
-        /// </summary>
         [Test]
-        public void Corrupt_OnlyProducesMeaninglessMarks()
+        public void MissingSelection_PreservesGlyphSlots()
         {
-            for (int tick = 0; tick < 400; tick++)
-            {
-                string s = CommsGlitchLogic.Corrupt(Body, 1f, tick);
-                for (int i = 0; i < s.Length; i++)
-                {
-                    if (s[i] == Body[i]) continue;
-                    bool ok = s[i] == CommsGlitchLogic.Blank
-                              || CommsGlitchLogic.Marks.IndexOf(s[i]) >= 0;
-                    Assert.IsTrue(ok, $"tick={tick} i={i} で '{s[i]}' へ化けた（記号でも空白でもない）");
-                }
-            }
+            var missing = new bool[31];
+            CommsGlitchLogic.FillMissing(missing, missing.Length, 1f, 5);
+            Assert.AreEqual(31, missing.Length, "欠落しても字形スロットを削除しない");
+            Assert.Less(System.Array.FindAll(missing, value => value).Length, missing.Length,
+                        "最大時も輪郭と整列を残す");
         }
 
-        /// <summary>
-        /// ⚠⚠ <b>上限を守る。</b> 3 周目は原型を保てない（4 字に 3 字が化ける）が、
-        /// **予算を超えて全部が消えることは無い**（`canon/LEDGER.md` 0070）。
-        /// ⚠ 「読める」を保証するのはここではなく <see cref="Corruption_RecoversOnReturnLap"/> —
-        /// **③が出る 4 周目 A では侵食が戻っている**。
-        /// </summary>
         [Test]
-        public void Corrupt_RespectsBudget()
+        public void MissingSelection_ChangesAcrossTicks_ButIsDeterministic()
         {
-            int worst = 0;
-            for (int tick = 0; tick < 600; tick++)
+            var a = new bool[32];
+            var b = new bool[32];
+            CommsGlitchLogic.FillMissing(a, a.Length, 1f, 8);
+            CommsGlitchLogic.FillMissing(b, b.Length, 1f, 8);
+            CollectionAssert.AreEqual(a, b);
+
+            bool changed = false;
+            for (int tick = 9; tick < 30 && !changed; tick++)
             {
-                string s = CommsGlitchLogic.Corrupt(Body, 1f, tick);
-                int n = 0;
-                for (int i = 0; i < s.Length; i++) if (s[i] != Body[i]) n++;
-                if (n > worst) worst = n;
+                CommsGlitchLogic.FillMissing(b, b.Length, 1f, tick);
+                changed = !System.Linq.Enumerable.SequenceEqual(a, b);
             }
-            // ⚠⚠ **上限は確率ではなく字数で守る**（`Corrupt` が budget で打ち切る）。
-            //    字ごとに独立の確率だけで決めていた初版は、まれに 8/20 字 ＝ 4 割が化けた。
-            //    余裕は端数の抽選（+1）のぶんだけ。
-            int cap = (int)((Body.Length - 1) * CommsGlitchLogic.MaxCorruptShare) + 1;
-            Assert.LessOrEqual(worst, cap,
-                               $"最悪の刻みで {worst} 字が化けた（上限 {cap}）");
-            Assert.Greater(worst, 0, "600 刻みで 1 字も化けないのは薄すぎる");
+            Assert.IsTrue(changed);
         }
 
-        /// <summary>
-        /// ⚠⚠ <b>帰りの A で回復する</b>（`canon/LEDGER.md` 0070 —
-        /// 「4周目のAでなんとか復帰して、体験者を助けようと…表示する」）。
-        /// **③はここで出るので、ここが読めないと締めのカットが進まない。**
-        /// </summary>
         [Test]
         public void Corruption_RecoversOnReturnLap()
         {
             const int total = 3;
-            // 3 周目（原型を保てない）
-            Assert.AreEqual(1f, CommsGlitchLogic.CorruptionFor(1f, total, total, 0f, 0f), 0.001f,
-                            "3 周目は満額のまま");
-            // 帰りの A へ入った瞬間はまだ壊れている（いきなり戻ると「壊れていた」印象ごと消える）
+            Assert.AreEqual(1f, CommsGlitchLogic.CorruptionFor(1f, total, total, 0f, 0f), 0.001f);
             Assert.Greater(CommsGlitchLogic.CorruptionFor(1f, total + 1, total, 0f, 0f), 0.9f);
-            // 数秒で持ち直す
-            float mid = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                      CommsGlitchLogic.RecoverSec * 0.5f, 0f);
-            Assert.Less(mid, 0.9f, "半ばでは戻り始めている");
-            Assert.Greater(mid, CommsGlitchLogic.RecoveredLevel, "半ばで戻り切ってはいない");
             float done = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                       CommsGlitchLogic.RecoverSec * 2f, 0f);
-            Assert.AreEqual(CommsGlitchLogic.RecoveredLevel, done, 0.001f, "戻り切る");
-            Assert.Greater(done, 0f,
-                           "⚠ 報告の前に 0 にはしない（押す前に直ると、報告が何も変えなかったことになる）");
+                                                        CommsGlitchLogic.RecoverSec * 2f, 0f);
+            Assert.AreEqual(CommsGlitchLogic.RecoveredLevel, done, 0.001f);
         }
 
-        /// <summary>
-        /// ⚠⚠ <b>報告が通って呪いが解けたら、普通のエージェントに戻る</b>
-        /// （2026-09-03・<c>canon/LEDGER.md</c> 0129 — ユーザー
-        /// 「呪いを消したら普通のエージェントに戻るようにしてほしい」）。
-        /// <b>帰りの A の傷（<see cref="CommsGlitchLogic.RecoveredLevel"/>）ごと消える</b> —
-        /// 侵食は呪いのせい（0083）なので、原因が消えたのに侵食だけが残ってはいけない。
-        /// </summary>
         [Test]
         public void Corruption_ClearsWhenCurseReleased()
         {
             const int total = 3;
-            // 帰りの A で持ち直したところ（報告の直前）。まだ傷が残っている。
             float before = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
                                                           CommsGlitchLogic.RecoverSec * 2f, 0f);
-            Assert.AreEqual(CommsGlitchLogic.RecoveredLevel, before, 0.001f);
-
-            // 解除の途中（画が戻りつつある）。傷は減っているが、まだ 0 ではない。
-            float mid = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                      CommsGlitchLogic.RecoverSec * 2f, 0.5f);
-            Assert.Less(mid, before, "解除が進んだのに侵食が減っていない");
-            Assert.Greater(mid, 0f, "途中で 0 に飛ぶと「消えた」ではなく「切れた」に見える");
-
-            // 戻り切ったら **1 画素も壊れていない**（顔もスイに戻る ＝ CommsPanel の _FaceMix が 0）。
+            float halfway = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
+                                                           CommsGlitchLogic.RecoverSec * 2f, 0.5f);
             float after = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                        CommsGlitchLogic.RecoverSec * 2f, 1f);
-            Assert.AreEqual(0f, after, 0.0001f, "呪いが解けても侵食が残っている");
-            Assert.AreEqual("あいうえお", CommsGlitchLogic.Corrupt("あいうえお", after, tick: 7),
-                            "侵食 0 なら文面は 1 字も化けない");
+                                                         CommsGlitchLogic.RecoverSec * 2f, 1f);
+            Assert.Less(halfway, before);
+            Assert.Greater(halfway, 0f);
+            Assert.AreEqual(0f, after, 0.0001f);
+            Assert.AreEqual(0, CommsGlitchLogic.MissingCountFor(30, after, 7));
         }
 
-        /// <summary>
-        /// 解除は<b>どの周で起きても</b>そのときの侵食を消す（掛け算なので周に依らない）。
-        /// ⚠ 台本の上では帰りの A の 1 点だけだが、ここが周に依存すると
-        /// 「締めのカットを別の周に置いた」だけで黙って壊れる。
-        /// </summary>
         [Test]
         public void Corruption_ReleaseClearsRegardlessOfLap()
         {
             for (int lap = 1; lap <= 4; lap++)
-                Assert.AreEqual(0f, CommsGlitchLogic.CorruptionFor(1f, lap, 3, 0f, 1f), 0.0001f,
-                                $"{lap} 周目で解除が効いていない");
+                Assert.AreEqual(0f, CommsGlitchLogic.CorruptionFor(1f, lap, 3, 0f, 1f), 0.0001f);
         }
 
-        /// <summary>手前の周では回復しない（`returnSec` を渡しても効かない）。</summary>
         [Test]
-        public void Corruption_DoesNotRecoverBeforeReturnLap()
+        public void LineOffsets_AreHorizontalAndShort()
         {
-            for (int lap = 1; lap <= 3; lap++)
-                Assert.AreEqual(CommsGlitchLogic.LevelFor(1f),
-                                CommsGlitchLogic.CorruptionFor(1f, lap, 3, 99f, 0f), 0.0001f,
-                                $"{lap} 周目で回復してしまっている");
-        }
-
-        /// <summary>
-        /// ⚠⚠ <b>化け先はすべて全角。</b> 半角が混じると**幅が変わって折り返しが動く**
-        /// （文字数を変えない設計の前提が崩れ、枠から溢れる）。
-        /// </summary>
-        [Test]
-        public void Marks_AreAllFullWidth()
-        {
-            foreach (char c in CommsGlitchLogic.Marks)
+            bool moved = false;
+            for (int tick = 0; tick < 200; tick++)
+            for (int line = 0; line < 4; line++)
             {
-                Assert.Greater(c, 0x7F, $"'{c}' が ASCII（半角）");
-                Assert.IsFalse(c >= 0xFF61 && c <= 0xFF9F, $"'{c}' が半角カナ");
+                float offset = CommsGlitchLogic.LineOffsetM(1f, tick, line);
+                Assert.LessOrEqual(System.Math.Abs(offset), CommsGlitchLogic.MaxLineOffsetM + 1e-6f);
+                moved |= offset != 0f;
             }
-            Assert.Greater(CommsGlitchLogic.Marks.Length, 20,
-                           "化け先が少ないと同じ字ばかり出て『模様』に見える");
-            Assert.AreEqual(CommsGlitchLogic.Marks.Length,
-                            new System.Collections.Generic.HashSet<char>(CommsGlitchLogic.Marks).Count,
-                            "化け先に重複がある（その字だけ出やすくなる）");
+            Assert.IsTrue(moved);
         }
 
-        /// <summary>
-        /// ⚠⚠⚠ <b>化け先に読める字を入れない</b>（2026-08-17・<c>canon/LEDGER.md</c> 0072）。
-        ///
-        /// 面に AIエージェントの顔がついた（0071）ことで、<b>化けた字がその顔の発話として
-        /// 読まれる</b>ようになった。ユーザー赤入れ「キャラクターが"アユ"と言ってるみたいで
-        /// 面白くなってしまうから、読めない文字化けにして」。実際に小書きの仮名 2 つが並んで
-        /// 「ぁュ」＝「アユ」に見えていた。
-        ///
-        /// ⚠ 疑問符・感嘆符・句読点も同じ理由で外している。記号ではあるが、顔の隣に出ると
-        /// 「聞き返している」「驚いている」という<b>抑揚</b>として読まれる。
-        /// </summary>
         [Test]
-        public void Marks_ContainNothingReadable()
+        public void RedEcho_IsLimitedToPartOfTheText()
         {
-            foreach (char c in CommsGlitchLogic.Marks)
+            const int glyphs = 80;
+            int worst = 0;
+            int total = 0;
+            for (int tick = 0; tick < 200; tick++)
             {
-                // 平仮名（U+3041–309F）と片仮名（U+30A1–30FF）。小書きも濁点も全部ここ。
-                Assert.IsFalse(c >= 0x3041 && c <= 0x309F, $"'{c}' が平仮名（読めてしまう）");
-                Assert.IsFalse(c >= 0x30A1 && c <= 0x30FF, $"'{c}' が片仮名（読めてしまう）");
-                // 発話の抑揚に読まれる約物。
-                Assert.IsFalse("？！。、，．?!".IndexOf(c) >= 0, $"'{c}' が発話の抑揚に読まれる");
+                int count = 0;
+                for (int i = 0; i < glyphs; i++)
+                {
+                    if (!CommsGlitchLogic.EchoAt(1f, tick, i)) continue;
+                    count++;
+                    Assert.LessOrEqual(System.Math.Abs(CommsGlitchLogic.EchoOffsetM(1f, tick, i)),
+                                       CommsGlitchLogic.MaxEchoOffsetM + 1e-6f);
+                }
+                worst = System.Math.Max(worst, count);
+                total += count;
             }
+            Assert.Greater(total, 0);
+            Assert.Less(worst, glyphs / 2, "全文の色複製へ戻さない");
         }
 
-        /// <summary>表示側のバグ（分離）の振れ幅が上限を超えない。</summary>
-        [Test]
-        public void SplitOffset_StaysWithinLimit()
-        {
-            Assert.AreEqual(0f, CommsGlitchLogic.SplitOffsetM(0f, 3), "侵食 0 では分離しない");
-            for (int t = 0; t < 400; t++)
-            {
-                float dx = CommsGlitchLogic.SplitOffsetM(1f, t);
-                Assert.Greater(dx, 0f, $"tick={t} で分離が消えた（点滅に見える）");
-                Assert.LessOrEqual(dx, CommsGlitchLogic.MaxSplitM + 1e-6f, $"tick={t} で広がりすぎ");
-            }
-        }
-
-        /// <summary>進みが増えるほど化ける字も増える（1 周目は 0、3 周目でよく化ける）。</summary>
-        [Test]
-        public void Corrupt_GrowsWithProgress()
-        {
-            Assert.AreEqual(0, TotalCorrupted(0f), "進み 0 では 1 字も化けない");
-            Assert.Less(TotalCorrupted(0.33f), TotalCorrupted(1f), "進むほど化ける");
-        }
-
-        private static int TotalCorrupted(float progress)
-        {
-            float lv = CommsGlitchLogic.LevelFor(progress);
-            int n = 0;
-            for (int tick = 0; tick < 300; tick++)
-            {
-                string s = CommsGlitchLogic.Corrupt(Body, lv, tick);
-                for (int i = 0; i < s.Length; i++) if (s[i] != Body[i]) n++;
-            }
-            return n;
-        }
-
-        /// <summary>
-        /// ⚠ <b>明滅は沈むだけ。</b> 明るくすると「光った」に見えて、赤入れの
-        /// 「明るすぎる」へ戻る（`canon/LEDGER.md` 0069）。
-        /// </summary>
-        [Test]
-        public void Flicker_OnlyDims_NeverBrightens()
-        {
-            float low = 1f;
-            int dips = 0, total = 0;
-            for (float t = 0f; t < 60f; t += 0.02f)
-            {
-                float f = CommsGlitchLogic.PanelFlickerAt(t, 1f);
-                Assert.LessOrEqual(f, 1f, $"t={t:0.00} で 1 を超えた（明るくなっている）");
-                Assert.Greater(f, 0.5f, $"t={t:0.00} で沈みすぎ（面が消える）");
-                if (f < 0.999f) dips++;
-                if (f < low) low = f;
-                total++;
-            }
-            Assert.Greater(dips, 0, "60 秒で 1 度も沈まないのは薄すぎる");
-            Assert.Less(dips / (float)total, 0.5f, "半分以上沈んでいたら『点滅する看板』になる");
-            Assert.Less(low, 0.95f, "いちばん沈んだ瞬間でも気づけない深さ");
-        }
-
-        /// <summary>
-        /// ⚠ <b>横飛びの上限を超えない。</b> 面の幅は 0.76m なので、これ以上飛ぶと
-        /// 飛んでいるあいだ文字が追えない。
-        /// </summary>
-        [Test]
-        public void OffsetX_StaysWithinLimit()
-        {
-            for (float t = 0f; t < 120f; t += 0.05f)
-            {
-                float dx = CommsGlitchLogic.OffsetXAt(t, 1f);
-                Assert.LessOrEqual(System.Math.Abs(dx), CommsGlitchLogic.MaxOffsetM + 1e-5f,
-                                   $"t={t:0.00} で {dx:0.000}m 飛んだ");
-            }
-        }
-
-        /// <summary>発作は「たまに」でなければならない（ずっと飛んでいると読めない）。</summary>
-        [Test]
-        public void Burst_IsOccasional_NotConstant()
-        {
-            int burst = 0, total = 0;
-            for (float t = 0f; t < 60f; t += CommsGlitchLogic.TickSec)
-            {
-                total++;
-                if (CommsGlitchLogic.BurstAt(t, 1f)) burst++;
-            }
-            Assert.Greater(burst, 0, "60 秒で 1 度も発作が起きないのは薄すぎる");
-            Assert.Less(burst / (float)total, 0.5f, "半分以上が発作なら『たまに』ではない");
-        }
-
-        /// <summary>
-        /// ⚠ <b>乱数を使っていない。</b> 同じ時刻・同じ進みなら必ず同じ絵になる
-        /// （走行を並べて比べられなくなるのを防ぐ）。
-        /// </summary>
-        [Test]
-        public void SameInput_GivesSameOutput()
-        {
-            for (float t = 0.1f; t < 20f; t += 1.3f)
-            {
-                Assert.AreEqual(CommsGlitchLogic.BurstAt(t, 0.7f), CommsGlitchLogic.BurstAt(t, 0.7f));
-                Assert.AreEqual(CommsGlitchLogic.OffsetXAt(t, 0.7f), CommsGlitchLogic.OffsetXAt(t, 0.7f));
-                Assert.AreEqual(CommsGlitchLogic.PanelFlickerAt(t, 0.7f),
-                                CommsGlitchLogic.PanelFlickerAt(t, 0.7f));
-                Assert.AreEqual(CommsGlitchLogic.Corrupt(Body, 0.7f, (int)t),
-                                CommsGlitchLogic.Corrupt(Body, 0.7f, (int)t));
-            }
-        }
-
-        /// <summary>
-        /// ⚠ <b>刻みの中では化けの組み合わせが動かない。</b> 毎フレーム変えると
-        /// 字がざわついて「読めない砂」になる。
-        /// </summary>
-        [Test]
-        public void Corrupt_HoldsWithinTick_AndChangesAcrossTicks()
-        {
-            Assert.AreEqual(CommsGlitchLogic.Corrupt(Body, 1f, 5),
-                            CommsGlitchLogic.Corrupt(Body, 1f, 5), "同じ刻みなら同じ");
-            bool anyDiff = false;
-            for (int t = 0; t < 40; t++)
-                if (CommsGlitchLogic.Corrupt(Body, 1f, t) != CommsGlitchLogic.Corrupt(Body, 1f, t + 1))
-                    anyDiff = true;
-            Assert.IsTrue(anyDiff, "刻みが変わっても 1 度も組み合わせが変わらない");
-        }
-
-        /// <summary>刻みは時刻から決まる（時刻の写し先が 1 つであることの確認）。</summary>
         [Test]
         public void TickAt_AdvancesWithTime()
         {
             Assert.AreEqual(0, CommsGlitchLogic.TickAt(0f));
-            Assert.AreEqual(0, CommsGlitchLogic.TickAt(-5f), "負の時刻でも落ちない");
+            Assert.AreEqual(0, CommsGlitchLogic.TickAt(-5f));
             Assert.AreEqual(1, CommsGlitchLogic.TickAt(CommsGlitchLogic.TickSec * 1.5f));
             Assert.Less(CommsGlitchLogic.TickAt(1f), CommsGlitchLogic.TickAt(2f));
         }

@@ -1,9 +1,9 @@
-// 連絡の面の左に立つ「AIエージェントの顔」の枠と顔。
+// 連絡の面の左に立つ AI エージェントの顔。
 //
 // 出どころは `canon/LEDGER.md` 0071（ユーザー指定・2026-08-17）:
 // 「左に角丸の四角い枠線をつけて、その中にAIの顔を入れれるようにしてほしい」。
 //
-// **1 枚の面が枠線と顔の両方を出す。** 枠は角丸の矩形を距離場で描き、顔は焼いた版
+// 1 枚の面が顔を出す。角丸の輪郭は切り抜きにだけ使い、通常は枠線を描かない。顔は焼いた版
 // （`Assets/Resources/Comms/SuiFace.png`・焼くのは `tools/make-comms-face.py`）の
 // **A だけ**を使う。RGB は捨てる — 色は `_Color` が持ち、地・文字と同じ墨の色で、
 // 同じように明滅する（`CommsPanel.Apply` が毎フレーム書く）。
@@ -27,7 +27,7 @@ Shader "FixedCamVr/CommsAvatar"
         _Face("Face (A = ink)", 2D) = "black" {}
         // 侵食の行き先（市松人形）。⚠ **同じ大きさ・同じ座り**で焼いてあること。
         _Face2("Face taken over (A = ink)", 2D) = "black" {}
-        _Color("Ink color", Color) = (0.82, 0.78, 0.72, 1)
+        _Color("Ink color", Color) = (0.8196, 0.7804, 0.7216, 1)
         _Opacity("Opacity (0..1)", Range(0, 1)) = 0
 
         // 侵食の進み。0 = スイのまま / 1 = 完全に人形。`CommsPanel` が周回の壊れと同じ値を書く。
@@ -39,7 +39,7 @@ Shader "FixedCamVr/CommsAvatar"
         // 角の丸み（1 辺に対する割合。0.5 で円）。
         _Radius("Corner radius (0..0.5)", Range(0, 0.5)) = 0.20
         // 枠線の太さ（1 辺に対する割合）。**0 なら枠線を描かない**。
-        _Stroke("Frame stroke (0 = none)", Range(0, 0.25)) = 0.038
+        _Stroke("Frame stroke (0 = none)", Range(0, 0.25)) = 0
         // 顔を出すか。0 にすると枠線だけになる（版を掴めなかったときの姿）。
         _FaceOn("Draw face (0/1)", Range(0, 1)) = 1
     }

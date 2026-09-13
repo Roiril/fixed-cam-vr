@@ -9,11 +9,8 @@ namespace FixedCamVr.Streaming
     /// <see cref="ShowPhase.Intro"/> の**内側**のサブ状態で、ゲート・終了判定・heartbeat・卓・
     /// シミュレータへの分岐を増やさないための設計。
     ///
-    /// ⚠ <b>2026-08-15 に旧構成へ戻した。</b> 設定が「隔離された壁の調査」から
-    /// 「回収された壁の調査」へ変わり（<c>canon/LEDGER.md</c> 0040 / 0044）、
-    /// <b>体験エリアを隠す必要がなくなった</b> ＝ 封印の箱が無くなった。
-    /// 箱が無ければ「箱の中に入ってから固定視点になる」も成立しないので、段は
-    /// <b>現実が格下げされて、割れて、スクリーンへ入る</b>という 2026-08-13 以前の形へ戻る。
+        /// 段名と進行骨格は既存のまま保ち、見え方は 2026-09-13 に連続光学開口へ更新した。
+        /// 現実の彩度が落ち、静止した後、全視野を囲む 4 辺が本編スクリーンへ閉じる。
     ///
     /// 段は <b>Black → Real → Degrade → Structure → Frame → Swap</b> の 5 段 13.1 秒
     /// （段 3 は段 2 と重なるので単純和ではない）。
@@ -26,16 +23,13 @@ namespace FixedCamVr.Streaming
         Black,
         /// <summary>段 1。素のパススルー。何も演出しない（段 2 の変化を読ませるための比較対象）。</summary>
         Real,
-        /// <summary>段 2。色が抜け、コントラストが上がり、実物の輪郭が浮く。</summary>
+        /// <summary>段 2。現実の彩度だけが滑らかに落ちる。</summary>
         Degrade,
-        /// <summary>段 3。輪郭だけの世界に、カメラの位置の印と壁・床の線が加わる（線は既定 OFF）。</summary>
+        /// <summary>段 3。彩度が落ち切った現実を静止して見せる。</summary>
         Structure,
         /// <summary>
-        /// 段 4。<b>見えているものが細かなセルに割れて、スクリーンの矩形へ吸い込まれる。</b>
-        /// 残るのは枠だけ（中はまだ現実）。
-        ///
-        /// ⚠ 2026-08-15 から<b>割れるのは覆い（パススルー）だけ</b>。旧実装は後半で封印の箱の面も
-        /// 割っていたが、箱そのものが無くなった（<see cref="IntroShatterCurve"/>）。
+        /// 段 4。全視野の現実を囲む 4 辺が、本編スクリーンの開口へ滑らかに閉じる。
+        /// 後半はスクリーンの内側だけをカメラ映像へクロスフェードする。
         /// </summary>
         Frame,
         /// <summary>
@@ -134,14 +128,15 @@ namespace FixedCamVr.Streaming
         public float frame;
 
         /// <summary>
-        /// 破砕の進み。<b>見えているものが細かなセルに割れて、スクリーンへ吸い込まれる量</b>
-        /// （0 = 割れていない / 1 = 入り切った）。段 4 だけで動く。
-        ///
-        /// ⚠ <b>受け手は <see cref="IntroVeil"/> ひとつだけ</b>（2026-08-15）。
-        /// 旧実装は後半で封印の箱の面も割っていたが、箱そのものが無くなった。
+        /// 段 4 の進行度。映像の観測値には使わない。
+        /// <see cref="SoundCueLogic"/> と <see cref="SoundBedLogic"/> が既存の割れる音と劇伴の時刻を
+        /// 保つために読む互換入力なので、段 4 の <c>p</c> をそのまま残す。
         /// </summary>
         public float shatter;
-        /// <summary>カメラ映像の不透明度（枠の中身）。<c>ScreenComposite</c> の <c>_IntroLive</c> へ降りる。</summary>
+        /// <summary>
+        /// スクリーン矩形のカメラ映像との混合量。<see cref="IntroVeil"/> の <c>_ScreenFade</c> へ渡る。
+        /// <c>_IntroLive</c> へは 0/1 の表示ゲートとして変換して渡す。
+        /// </summary>
         public float live;
         /// <summary>粒状感・走査線の強さ（アプリ側の面で出す）。</summary>
         public float grain;
@@ -283,8 +278,7 @@ namespace FixedCamVr.Streaming
     /// 要点:
     ///   - <b>視点は 1 度も動かさない</b>。動かすのは現実の側の身分（現実 → 映像）
     ///   - 枠は本編のスクリーンそのもの。開口と不透明度だけを動かすので「枠を運ぶ」処理が無い
-    ///   - 段 2 と段 3 は<b>重なる</b>（段 2 の後半から構造の線が出始める）。重なりは段の直列ではなく
-    ///     <see cref="IntroWeights"/> の重みで表す
+        ///   - 段 2 と段 3 の尺の重なりは維持する。見た目は彩度の終端を静止して保つ
     ///   - <b>手を上げたことは検出しない</b>（<c>canon/LEDGER.md</c> 0034 で合図ごと廃止）
     /// </summary>
     public sealed class IntroLogic
@@ -296,26 +290,19 @@ namespace FixedCamVr.Streaming
         public const float FrameCenteredHoldSec = 0.5f;
 
         /// <summary>
-        /// 段 5 のクロスフェードの秒数。ここは急がない（遅延と視差が同時に来る唯一の点）。
-        /// 段 5 が 4.5 秒なので、フェード後に「自分だ」と気づく時間が 3 秒以上残る。
+        /// 段 5 の鈴を鳴らす時刻。見た目は段 4 の後半で既にクロスフェードを終えている。
+        /// 音の既存時刻を変えないために残す。
         /// </summary>
         public const float SwapCrossfadeSec = 1.2f;
 
         /// <summary>
-        /// 段 2 の進行度がこれを超えたら、段 3 の構造の線が出始める（段の重なり）。
+        /// 段 2 と段 3 の尺を重ね始める進行度。
         /// **卓の `intro-model.js` の `STRUCTURE_OVERLAP_AT` と同じ値**（尺の表示が食い違うため）。
         /// </summary>
         public const float StructureOverlapAt = 0.6f;
 
         /// <summary>段 3 が段 2 に飲み込まれても、これだけは単独で流れる。</summary>
         public const float StructureMinOwnSec = 0.5f;
-
-        /// <summary>
-        /// 段 4 のどこから枠が閉じ始めるか。<b>破砕の後ろへ寄せてある</b> —
-        /// 開口は覆いのセルを切るので、破片が飛んでいる最中に閉じると通り道で消える。
-        /// ここまでは開口を全開のままにしておく。
-        /// </summary>
-        public const float FrameCloseAt = 0.70f;
 
         /// <summary>
         /// 「近づいた」とみなす距離 (m)。体験エリアの境界からこれ以下まで来たら導入が始まる。
@@ -647,64 +634,49 @@ namespace FixedCamVr.Streaming
                         return new IntroWeights
                         {
                             passthrough = 1f,
-                            // 色 → コントラスト → 輪郭 → 粒 の順に足す。一度に全部動かすと
-                            // 「質感が落ちた」ではなく「ただ壊れた」に見える。
-                            degrade = p,
-                            edge = SmoothStep(0.35f, 1f, p),
-                            structure = SmoothStep(StructureOverlapAt, 1f, p),
-                            grain = SmoothStep(0.6f, 1f, p) * 0.6f,
+                            // 彩度だけを滑らかに抜く。輪郭・線・粒・乱れを足すと、連続した光学変化ではなく
+                            // 映像効果の切り替えに見えるため、この段では使わない。
+                            degrade = SmoothStep(0f, 1f, p),
+                            edge = 0f, structure = 0f, grain = 0f, glitch = 0f,
                             frame = 0f, live = 0f, ignite = 1f,
                         };
                     }
 
                     case IntroStage.Structure:
+                        // 次の開口を読ませる前の静止。格下げの終端をそのまま保持する。
                         return new IntroWeights
                         {
-                            passthrough = 1f, degrade = 1f, edge = 1f, structure = 1f,
-                            grain = 0.6f, frame = 0f, live = 0f, ignite = 1f,
+                            passthrough = 1f, degrade = 1f, edge = 0f, structure = 0f,
+                            grain = 0f, glitch = 0f, frame = 0f, live = 0f, ignite = 1f,
                         };
 
                     case IntroStage.Frame:
                     {
                         float p = Progress(_t.frameSec);
+                        float remaining = 1f - p;
                         return new IntroWeights
                         {
                             passthrough = 1f,
                             degrade = 1f,
-                            // 枠になるとき構造の線は引く。枠の中に集中させる。
-                            edge = 1f - 0.7f * p,
-                            structure = 1f - p,
-                            // ⚠ **枠は破砕より遅れて閉じる。** 同時に閉じると、飛んでいる途中の破片が
-                            //    枠の縁でぷつりと切れる（覆いを開口で切っているため）。
-                            frame = SmoothStep(FrameCloseAt, 1f, p),
-                            // 見えているものが割れて、スクリーンへ入っていく。
+                            edge = 0f,
+                            structure = 0f,
+                            // 4 辺の開口は段の先頭から動き、全視野から本編スクリーンへ連続して閉じる。
+                            frame = 1f - remaining * remaining * remaining,
+                            // 音と進行の互換入力。IntroVeil は読まない。
                             shatter = p,
-                            grain = 0.6f,
-                            // ⚠⚠ **吸い込み先はカメラ映像**（2026-08-15・ユーザー指摘
-                            //    「割れた先はパススルーのくりぬきではなくカメラ映像にしてください」）。
-                            //    覆いの側は `IntroVeil.shader` が「スクリーンの上のセルの alpha を
-                            //    `_ScreenFade`（＝ この値）にする」ので、**中間はそのまま
-                            //    現実とカメラ映像のクロスフェード**になる。
-                            //
-                            // ⚠ **割れ始めと同時に入れ替えない**（2026-08-15・ユーザー指摘
-                            //    「細かくなって集まって、くりぬきが完全になる少し前にフェードで
-                            //    カメラ映像に入れ替える感じ」）。前半は現実のまま割れて集まり、
-                            //    開口が閉じ切る（p=1）少し前の <b>0.55 → 0.85</b> で入れ替わる。
-                            //    ⚠ 枠が閉じ始めるのは `FrameCloseAt`(0.70) なので、
-                            //    **入れ替えは閉じ始めをまたいで、閉じ切る前に終わる**。
-                            live = SmoothStep(0.55f, 0.85f, p),
+                            grain = 0f,
+                            glitch = 0f,
+                            // 混合量は IntroVeil の _ScreenFade だけが持つ。IntroDirector の
+                            // _IntroLive は 0/1 の表示ゲートなので、ここを二重に掛けない。
+                            live = SmoothStep(0.78f, 0.96f, p),
                             ignite = 1f,
                         };
                     }
 
                     case IntroStage.Swap:
-                    {
-                        float cross = _t.swapSec > 0f
-                            ? Clamp01(_stageElapsed / Math.Max(SwapCrossfadeSec, 0.01f)) : 1f;
                         return new IntroWeights
                         {
-                            // ⚠ **ここでパススルーを 1 画素も出さない。** 現実は段 4 で全部
-                            //    吸い込まれているので、残りの窓もここで閉じる。
+                            // 開口と映像を静止して見せる。継ぎ目を隠す乱れは使わない。
                             passthrough = 0f,
                             degrade = 1f,
                             edge = 0f,
@@ -714,15 +686,13 @@ namespace FixedCamVr.Streaming
                             //    出ていた映像が一度消えて戻る。段 5 は「自分だと気づく」ための間。
                             live = 1f,
                             ignite = 1f,
-                            grain = 0f,                // 以後は映像側の post FX が持つ
-                            // 最後の破片が消える継ぎ目は乱れで隠す。
-                            glitch = Bump(cross),
+                            grain = 0f,
+                            glitch = 0f,
                             // ⚠ **殻は立てない。** 段 4 の終わりで既に「黒 ＋ 枠の中に映像」なので、
                             //    ここで黒を被せると出ていた映像が一度消える。枠の外の黒は覆いが持つ。
                             shell = 0f,
                             shellReveal = 0f,
                         };
-                    }
 
                     default:
                         return IntroWeights.Inactive;

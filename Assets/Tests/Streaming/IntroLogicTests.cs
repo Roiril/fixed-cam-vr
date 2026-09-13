@@ -440,16 +440,18 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Structure_OverlapsTheBackHalfOfDegrade()
+        public void StructureOverlap_ChangesTimingWithoutShowingLines()
         {
-            // 段 3 は段 2 の後半から始まる。段の直列ではなく重みで表すので、段 2 の中で
-            // structure が立ち上がっていること（立たないと段 3 が唐突に見える）。
+            // 段 3 の重なりは既存の尺の計算だけに残す。画は彩度だけが変わり、線を足さない。
             var l = AtStage(IntroStage.Degrade);
             Advance(l, T.degradeSec * (IntroLogic.StructureOverlapAt - 0.1f), Ready(outsideM: 2f));
             Assert.AreEqual(0f, l.Weights.structure, 1e-4f, "重なる前から線が出ている");
 
             Advance(l, T.degradeSec * 0.35f, Ready(outsideM: 2f));
-            Assert.Greater(l.Weights.structure, 0f, "段 2 の後半で線が出始めていない");
+            Assert.AreEqual(0f, l.Weights.structure, 1e-4f, "尺の重なりを画の線として出している");
+            Assert.AreEqual(0f, l.Weights.edge, 1e-4f);
+            Assert.AreEqual(0f, l.Weights.grain, 1e-4f);
+            Assert.AreEqual(0f, l.Weights.glitch, 1e-4f);
         }
 
         [Test]
@@ -500,35 +502,37 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Degrade_DrainsTheColourBeforeTheEdges()
+        public void Degrade_OnlyDrainsColourSmoothly()
         {
-            // 色 → コントラスト → 輪郭 → 粒 の順に足す。一度に全部動かすと
-            // 「質感が落ちた」ではなく「ただ壊れた」に見える。
             var l = AtStage(IntroStage.Degrade);
             Advance(l, T.degradeSec * 0.2f, Ready(outsideM: 2f));
             var early = l.Weights;
             Assert.Greater(early.degrade, 0f, "色が抜け始めていない");
-            Assert.AreEqual(0f, early.edge, 1e-4f, "輪郭が色より先に出ている");
+            Assert.Less(early.degrade, 0.2f, "滑らかな立ち上がりになっていない");
+            Assert.AreEqual(0f, early.edge, 1e-4f, "輪郭を足している");
+            Assert.AreEqual(0f, early.structure, 1e-4f, "構造線を足している");
+            Assert.AreEqual(0f, early.grain, 1e-4f, "粒を足している");
+            Assert.AreEqual(0f, early.glitch, 1e-4f, "乱れを足している");
             Assert.AreEqual(1f, early.passthrough, 1e-4f, "格下げの段で現実が消えている");
             Assert.AreEqual(0f, early.frame, 1e-4f, "枠はまだ閉じない");
 
             Advance(l, T.degradeSec * 0.6f, Ready(outsideM: 2f));
-            Assert.Greater(l.Weights.edge, 0f, "後半で輪郭が出ていない");
+            Assert.Greater(l.Weights.degrade, early.degrade, "彩度が単調に抜けていない");
+            Assert.AreEqual(0f, l.Weights.edge, 1e-4f);
         }
 
         [Test]
-        public void Frame_ShattersFirst_AndClosesTheApertureLater()
+        public void Frame_ClosesTheApertureContinuouslyFromTheStart()
         {
-            // ⚠ **枠は破砕より遅れて閉じる。** 同時に閉じると、飛んでいる途中の破片が枠の縁で
-            //    ぷつりと切れる（覆いを開口で切っているため）。
             var l = AtStage(IntroStage.Frame);
-            Advance(l, T.frameSec * (IntroLogic.FrameCloseAt - 0.1f), Ready(outsideM: 2f));
+            Assert.AreEqual(0f, l.Weights.frame, 1e-4f, "段の頭が全開ではない");
+            Advance(l, T.frameSec * 0.1f, Ready(outsideM: 2f));
             var early = l.Weights;
-            Assert.Greater(early.shatter, 0f, "割れ始めていない");
-            Assert.AreEqual(0f, early.frame, 1e-4f, "破砕より先に枠が閉じている");
+            Assert.Greater(early.frame, 0f, "段の先頭から開口が閉じていない");
+            Assert.Greater(early.shatter, 0f, "音の互換時計が進んでいない");
 
-            Advance(l, T.frameSec * 0.25f, Ready(outsideM: 2f));
-            Assert.Greater(l.Weights.frame, 0f, "終わりに向けて枠が閉じていない");
+            Advance(l, T.frameSec * 0.4f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.frame, early.frame, "開口が単調に閉じていない");
         }
 
         [Test]
@@ -541,27 +545,28 @@ namespace FixedCamVr.Streaming.Tests
             var l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から入れ替わっている");
 
-            // 前半（割れて集まるところ）は**まだ現実**。
-            Advance(l, T.frameSec * 0.4f, Ready(outsideM: 2f));
-            Assert.Greater(l.Weights.shatter, 0f, "割れていない");
-            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "集まる前に入れ替わっている");
-            Assert.AreEqual(0f, l.Weights.frame, 1e-4f, "破砕より先に枠が閉じている");
+            // 開口がスクリーンへ寄るまでは現実を保つ。
+            // Advance の 0.1 秒丸めでは .98 の標本が終端へ進むため、正確な時刻を渡す。
+            l.Tick(T.frameSec * 0.75f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.shatter, 0f, "音の互換時計が進んでいない");
+            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "開口が寄る前に入れ替わっている");
+            Assert.Greater(l.Weights.frame, 0f, "開口が動いていない");
 
-            // 枠が閉じ始めるあたりで入れ替えが進んでいる（＝ クロスフェードの最中）。
-            Advance(l, T.frameSec * 0.3f, Ready(outsideM: 2f));
+            // スクリーンの近くまで寄った後だけクロスフェードする。
+            l.Tick(T.frameSec * 0.12f, Ready(outsideM: 2f));
             float mid = l.Weights.live;
-            Assert.Greater(mid, 0f, "閉じ始めても入れ替わっていない");
+            Assert.Greater(mid, 0f, "開口が寄っても入れ替わっていない");
             Assert.Less(mid, 1f, "一瞬で入れ替わっている（フェードになっていない）");
 
             // 閉じ切る前に入れ替え終わっている。
-            Advance(l, T.frameSec * 0.2f, Ready(outsideM: 2f));
+            l.Tick(T.frameSec * 0.11f, Ready(outsideM: 2f));
             Assert.AreEqual(1f, l.Weights.live, 0.02f, "閉じ切るまでに入れ替わっていない");
             Assert.Less(l.Weights.frame, 1f, "もう閉じ切っている（「少し前」になっていない）");
-            Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "破片が現実を持って飛ばなくなっている");
+            Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "開口の中の現実が先に消えている");
         }
 
         [Test]
-        public void Swap_KeepsTheVideoOn_AndHidesTheSeamWithGlitch()
+        public void Swap_KeepsTheVideoStillWithoutGlitch()
         {
             var l = AtStage(IntroStage.Swap);
 
@@ -569,7 +574,8 @@ namespace FixedCamVr.Streaming.Tests
             var mid = l.Weights;
             // ⚠ 段 4 で既に映像が出ているので、ここで上げ直さない（出ていた映像が一度消える）。
             Assert.AreEqual(1f, mid.live, 1e-4f, "段 5 で映像を出し直している");
-            Assert.Greater(mid.glitch, 0f, "継ぎ目は乱れで隠す");
+            Assert.AreEqual(0f, mid.glitch, 1e-4f, "静止の段に乱れが出ている");
+            Assert.AreEqual(0f, mid.grain, 1e-4f, "静止の段に粒が出ている");
             Assert.AreEqual(1f, mid.frame, 1e-4f, "枠は既に閉じている");
             Assert.AreEqual(1f, mid.ignite, 1e-4f, "映像が来る段で管が消えている");
             Assert.AreEqual(0f, mid.passthrough, 1e-4f, "段 5 で現実が 1 画素でも出ている");
@@ -579,7 +585,7 @@ namespace FixedCamVr.Streaming.Tests
             Advance(l, IntroLogic.SwapCrossfadeSec, Ready(outsideM: 2f));
             var after = l.Weights;
             Assert.AreEqual(1f, after.live, 0.01f);
-            Assert.Less(after.glitch, 0.2f);
+            Assert.AreEqual(0f, after.glitch, 1e-4f);
         }
 
         [Test]

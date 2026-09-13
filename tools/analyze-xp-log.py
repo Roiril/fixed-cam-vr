@@ -2830,31 +2830,80 @@ def analyze(events, others, exp, warns=None):
         # ⚠ 封印の箱（box / boxBuilt）は 2026-08-15 に観測ごと外した。箱を退避して
         #   重み sealBox を全段 0 にしたので、常に 0 が並ぶだけになり誤検出の材料にしかならない。
 
-    # -- 段 4 の破砕（現実が割れてスクリーンへ吸い込まれる）
-    # ⚠ 「重みが動いた」ではなく「画に出た」を見る。`shat` は IntroVeil が
-    #    **実際にセル格子を描いた到達点**なので、進みだけ動いて 1 枚 quad のままの状態を捕まえる。
-    shat_all = [v for v in effect_samples(events, "shat") if v not in ("", "-")]
-    if shat_all:
+    # -- 段 4 の連続開口（全視野から本編スクリーンへ閉じる）
+    # `aper` は IntroVeil が単一 quad へ実際に配った閉じ量の最大値。
+    # 重みだけ進んだ場合と、セル破砕へ戻ってしまった場合を同時に捕まえる。
+    aper_all = [v for v in effect_samples(events, "aper") if v not in ("", "-")]
+    if aper_all:
         any_effect_key = True
-        snums = []
-        for v in shat_all:
+        anums = []
+        for v in aper_all:
             try:
-                snums.append(float(v))
+                anums.append(float(v))
             except ValueError:
                 pass
-        if snums:
-            w(f"  破砕の到達: 最大 {max(snums):.2f}")
-            if "Frame" in stages:
-                if max(snums) <= 0.01:
-                    verdict("FAIL", "段 Frame に達したのに現実が 1 画素も割れていない（shat が 0 のまま）— "
-                                    "セル格子を組めていない疑い。menu intro の絵で確かめる")
+        if anums:
+            peak = max(anums)
+            w(f"  連続開口の到達: 最大 {peak:.2f}")
+            # Frame だけの短い録画は途中で終わりうる。Swap まで観測できた走行だけ終端を要求する。
+            if "Swap" in stages or "Done" in stages:
+                if peak <= 0.01:
+                    verdict("FAIL", "段 Frame に達したのに開口が動いていない（aper が 0 のまま）— "
+                                    "IntroVeil.Apply と menu intro の絵で確かめる")
+                elif peak < 0.99:
+                    verdict("FAIL", f"連続開口が閉じ切っていない（aper={peak:.2f}）— "
+                                    "Frame → Swap の遷移で 1.00 に到達する必要がある")
                 else:
-                    verdict("OK", f"現実が割れた（到達 {max(snums):.2f}）")
-    cells = [v for v in effect_samples(events, "shatC") if v not in ("", "-")]
-    if cells and all(v == "0" for v in cells):
-        any_effect_key = True
-        verdict("FAIL", "破砕のセル格子が 0 枚（IntroVeilShatterMesh を組めていない）— "
-                        "重みが動いても 1 枚 quad のままで 1 画素も割れない")
+                    verdict("OK", f"連続開口がスクリーンまで閉じた（到達 {peak:.2f}）")
+
+        quads = []
+        for v in effect_samples(events, "aperQ"):
+            try:
+                quads.append(int(v))
+            except ValueError:
+                pass
+        if quads:
+            if any(n != 1 for n in quads):
+                verdict("FAIL", f"導入の覆いが単一 quad ではない（aperQ={sorted(set(quads))}）— "
+                                "破片メッシュを描画経路へ戻してはいけない")
+            else:
+                w("  導入の覆い: 単一 quad を維持")
+
+        rects = [v for v in effect_samples(events, "aperRect") if v not in ("", "-")]
+        if rects:
+            valid_rect = False
+            for value in rects:
+                try:
+                    parts = [float(x) for x in str(value).split(",")]
+                    valid_rect = valid_rect or (len(parts) == 3 and all(x > 0 for x in parts))
+                except ValueError:
+                    pass
+            if not valid_rect:
+                verdict("FAIL", "連続開口のスクリーン矩形が解けていない（aperRect が不正）")
+
+    else:
+        # 2026-09-13 より前の走行だけを読む互換経路。新ログで shatC=0 を要求しない。
+        shat_all = [v for v in effect_samples(events, "shat") if v not in ("", "-")]
+        if shat_all:
+            any_effect_key = True
+            snums = []
+            for v in shat_all:
+                try:
+                    snums.append(float(v))
+                except ValueError:
+                    pass
+            if snums:
+                w(f"  旧破砕ログの到達: 最大 {max(snums):.2f}")
+                if "Frame" in stages:
+                    if max(snums) <= 0.01:
+                        verdict("FAIL", "段 Frame に達したのに現実が 1 画素も割れていない（shat が 0 のまま）— "
+                                        "セル格子を組めていない疑い。menu intro の絵で確かめる")
+                    else:
+                        verdict("OK", f"現実が割れた（到達 {max(snums):.2f}）")
+        cells = [v for v in effect_samples(events, "shatC") if v not in ("", "-")]
+        if cells and all(v == "0" for v in cells):
+            any_effect_key = True
+            verdict("FAIL", "旧破砕ログのセル格子が 0 枚（IntroVeilShatterMesh を組めていない）")
 
     # -- スクリーンの管の点灯
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。

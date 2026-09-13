@@ -1,4 +1,5 @@
 #nullable enable
+using System.Reflection;
 using FixedCamVr.Streaming;
 using NUnit.Framework;
 using UnityEngine;
@@ -6,126 +7,100 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// 「見えているものが割れてスクリーンへ入る」破砕（段 4）の契約。
-    ///
-    /// ⚠⚠ <b>2026-08-15 に導入へ戻した。</b> 2026-08-13〜15 は段ごと眠っていたが、
-    /// 封印の箱を退避して「箱の外で現実が割れる」構成に戻ったため
-    /// （<c>canon/LEDGER.md</c> 0044）。**割れるのは覆い（パススルー）だけ**で、
-    /// 箱の側（<see cref="IntroShatterCurve.BoxShatter"/> / <c>SealedBoxShatterMesh</c>）は
-    /// Attic に退避してある。
-    ///
-    /// 守るのは 5 つ:
-    ///   (A) <b>割れるのは段 4 だけ</b>（他の段で現実が勝手に割れない）
-    ///   (B) <b>覆いは段 4 の進みをまるごと受ける</b>（箱に半分渡していた分は要らない）
-    ///   (C) 進み 1 で<b>全部の破片が閉じる</b>
-    ///   (D) スクリーンの上のセルは割らない
-    ///   (E) 格子そのものが組める（組めていなければ一生割れない）
+    /// 段 4 の連続光学開口と、旧 <c>shatter</c> 時計の音声互換を固定する。
+    /// 破片メッシュと <see cref="IntroShatterCurve"/> は廃止互換資産として残るが、描画には使わない。
     /// </summary>
     public sealed class IntroShatterTests
     {
-        // (A) ------------------------------------------------------------------
+        private static IntroInput Ready() => new IntroInput
+        {
+            blackCleared = true,
+            startAuthorized = true,
+            outsideValid = true,
+            atStartSpot = true,
+            frameCentered = true,
+            liveFresh = true,
+            outsideBoxM = 2f,
+        };
 
-        [Test]
-        public void Shatter_OnlyMoves_DuringTheFrameStage()
+        private static IntroLogic AtFrame()
         {
             var l = new IntroLogic();
             l.Configure(IntroTiming.Default);
             l.Begin();
-            var input = new IntroInput
+            for (int i = 0; i < 4; i++)
             {
-                blackCleared = true, startAuthorized = true, outsideValid = true, atStartSpot = true,
-                frameCentered = true, liveFresh = true, outsideBoxM = 2f,
-            };
-            Assert.AreEqual(0f, l.Weights.shatter, 1e-5f, "段 0 で割れている");
-            bool sawShatter = false;
-            for (int i = 0; i < 600 && l.Stage != IntroStage.Done; i++)
-            {
-                l.Tick(0.05f, input);
-                if (l.Stage == IntroStage.Frame)
-                {
-                    if (l.Weights.shatter > 0f) sawShatter = true;
-                }
-                else
-                {
-                    Assert.AreEqual(0f, l.Weights.shatter, 1e-5f, $"段 {l.Stage} で割れている");
-                }
+                l.RequestAdvance();
+                l.Tick(0f, Ready());
             }
-            Assert.AreEqual(IntroStage.Done, l.Stage);
-            Assert.IsTrue(sawShatter, "段 4 で 1 度も割れていない");
+            Assert.AreEqual(IntroStage.Frame, l.Stage);
+            return l;
         }
 
-        // (B) ------------------------------------------------------------------
-
         [Test]
-        public void VeilTakesTheWholeProgress()
+        public void LegacyShatterClock_EqualsFrameProgress_ForSoundCompatibility()
         {
-            // ⚠ 箱が居たころは前半 0.35 だけが覆いの取り分だった。箱を退避したので、
-            //   進みをまるごと覆いへ渡さないと**段の 1/3 で割れ終わって残りが無風**になる。
-            Assert.AreEqual(0f, IntroShatterCurve.VeilShatter(0f), 1e-5f);
-            Assert.AreEqual(0.5f, IntroShatterCurve.VeilShatter(0.5f), 1e-5f);
-            Assert.AreEqual(1f, IntroShatterCurve.VeilShatter(1f), 1e-5f);
+            var l = AtFrame();
+            l.Tick(IntroTiming.Default.frameSec * 0.4f, Ready());
+            Assert.AreEqual(0.4f, l.Weights.shatter, 1e-4f,
+                "SoundCueLogic と SoundBedLogic が読む既存時計を変えている");
+            Assert.AreEqual(0f, l.Weights.grain, 1e-5f);
+            Assert.AreEqual(0f, l.Weights.glitch, 1e-5f);
         }
 
-        // (C) ------------------------------------------------------------------
-
         [Test]
-        public void EveryCell_IsClosed_WhenShatterReachesOne()
+        public void ApertureClose_IsContinuousAndMonotonic()
         {
+            var l = AtFrame();
+            float previous = l.Weights.frame;
             for (int i = 1; i <= 20; i++)
             {
-                float far = i / 20f;
-                for (int j = 0; j <= 4; j++)
-                {
-                    float r = j / 4f;
-                    Assert.AreEqual(1f, IntroShatterCurve.ClosedAt(far, r, 1f), 1e-4f,
-                        $"far={far:F2} r={r:F2} の破片が閉じ切っていない");
-                }
+                if (i == 20) l.RequestAdvance();
+                l.Tick(IntroTiming.Default.frameSec / 20f, Ready());
+                float current = l.Weights.frame;
+                Assert.GreaterOrEqual(current, previous, $"標本 {i} で開口が広がった");
+                previous = current;
             }
+            Assert.AreEqual(IntroStage.Swap, l.Stage);
+            Assert.AreEqual(1f, l.Weights.frame, 1e-5f, "終端がスクリーンの開口まで閉じていない");
         }
 
         [Test]
-        public void Periphery_ClosesBefore_TheCellsNearTheScreen()
+        public void ScreenCrossfade_StaysOffThenCompletesBeforeFrameEnd()
         {
-            // 前線は**周縁からスクリーンへ**。逆走すると「持っていかれている」が読めない。
-            const float mid = 0.6f;
-            float outer = IntroShatterCurve.ClosedAt(1.0f, 0.5f, mid);
-            float inner = IntroShatterCurve.ClosedAt(0.1f, 0.5f, mid);
-            Assert.Greater(outer, inner, "周縁より内側が先に閉じている（前線が逆）");
+            var l = AtFrame();
+            l.Tick(IntroTiming.Default.frameSec * 0.75f, Ready());
+            Assert.AreEqual(0f, l.Weights.live, 1e-5f);
+
+            l.Tick(IntroTiming.Default.frameSec * 0.12f, Ready());
+            Assert.That(l.Weights.live, Is.InRange(0.01f, 0.99f));
+
+            l.Tick(IntroTiming.Default.frameSec * 0.11f, Ready());
+            Assert.AreEqual(1f, l.Weights.live, 1e-5f);
+            Assert.Less(l.Weights.frame, 1f, "開口の終端より前にクロスフェードが終わっていない");
         }
 
-        // (D) ------------------------------------------------------------------
-
         [Test]
-        public void CellsOnTheScreen_DoNotShatter()
+        public void IntroVeil_KeepsOneQuadWhileApertureCloses()
         {
-            Assert.IsFalse(IntroShatterCurve.Shatters(0f), "スクリーンの上のセルが割れている");
-            Assert.IsTrue(IntroShatterCurve.Shatters(0.01f));
-        }
-
-        // (E) 格子そのもの（組めていなければ一生割れない）-------------------------
-
-        [Test]
-        public void VeilMesh_HasOneQuadPerCell_PlusStillBorder()
-        {
-            Mesh m = IntroVeilShatterMesh.Build();
+            var root = new GameObject("IntroVeilTest");
             try
             {
-                int cells = IntroVeilShatterMesh.CellCount;
-                Assert.AreEqual((cells + 4) * 4, m.vertexCount, "セル数と頂点数が合わない");
-                Assert.Less(m.vertexCount, 65535, "16bit index に収まらない");
-                var cell = new System.Collections.Generic.List<Vector3>();
-                m.GetUVs(1, cell);
-                Assert.AreEqual(m.vertexCount, cell.Count, "セル中心のストリームが無い");
-                int shattering = 0;
-                foreach (Vector3 c in cell) if (c.z > 0.5f) shattering++;
-                Assert.AreEqual(cells * 4, shattering, "動かない縁取りの枚数が合わない");
+                var veil = root.AddComponent<IntroVeil>();
+                typeof(IntroVeil).GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .Invoke(veil, null);
+                Assert.AreEqual(1, veil.ApertureQuads, "覆いが単一 quad で組まれていない");
+
+                var w = new IntroWeights { passthrough = 1f, frame = 0.5f, ignite = 1f };
+                veil.Apply(w);
+                Assert.AreEqual(1, veil.ApertureQuads, "開口の途中でメッシュを差し替えている");
+                Assert.IsTrue(veil.ApertureDrawn);
+                Assert.Greater(veil.ApertureClosePeak, 0f);
             }
-            finally { Object.DestroyImmediate(m); }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
         }
-
-        // ⚠ 箱の破片メッシュ（`SealedBoxShatterMesh`）の契約は
-        //   `Assets/Tests/Streaming/Attic/` へは移していない — 箱を戻すときに
-        //   `.claude/reference/attic-sealed-box.md` の手順で書き直す。
-
     }
 }
