@@ -496,7 +496,7 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : (_report.AppliedAlpha < 0f ? "nc" : _report.AppliedAlpha.ToString("F2"));
 
-        /// <summary>段 4 の連続開口へ実際に配った閉じ具合の最大値。</summary>
+        /// <summary>段 4 の基底面へ実際に配った閉じ具合の最大値。</summary>
         private string ApertureState => _veil == null ? "-" : _veil.ApertureClosePeak.ToString("F2");
 
         /// <summary>覆いの quad 数。新しい開口は全期間 1 枚で、0 は実体を組めていない。</summary>
@@ -504,6 +504,10 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>開口の終端と映像交差に使ったスクリーン矩形（半幅,半高,眼からの距離）。</summary>
         private string ApertureRectState => _veil == null ? "-" : _veil.ApertureRectDesc;
+
+        private string ShatterState => _veil == null ? "-" : _veil.ShatterPeak.ToString("F2");
+        private string ShatterPieceState => _veil == null ? "-" : _veil.ShatterPieces.ToString();
+        private string ShatterDrawState => _veil == null ? "-" : (_veil.ShatterDrawn ? "1" : "0");
 
         /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
         private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
@@ -723,6 +727,7 @@ namespace FixedCamVr.Diagnostics
                      $"shellRev={ShellRevealState} " +
                      // 連続開口は段 4 のあいだだけ動く。Frame → Swap の行に閉じ切った実測が載る。
                      $"aper={ApertureState} aperQ={ApertureQuadState} aperRect={ApertureRectState} " +
+                     $"shatStyle=art shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
                      // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
                      $"ignite={IgniteState} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
@@ -1084,6 +1089,9 @@ namespace FixedCamVr.Diagnostics
                 // 連続開口も同じ理由。段 4 の途中の到達点はここでしか取れない。
                 _sb.Append(" aper=").Append(ApertureState);
                 _sb.Append(" aperQ=").Append(ApertureQuadState);
+                _sb.Append(" shatStyle=art shat=").Append(ShatterState);
+                _sb.Append(" shatC=").Append(ShatterPieceState);
+                _sb.Append(" shatDraw=").Append(ShatterDrawState);
             }
 
             int active = _registry != null ? _registry.ActiveIndex : -1;

@@ -48,9 +48,11 @@ REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 3.5, 2.5, 2.5, 1.6
 # 段 3 は段 2 の後半から重なるので、単独で流れるのはこれだけ（`IntroTiming.TotalSec` と同じ式）。
 STRUCTURE = max(STRUCTURE_SRC - DEGRADE * (1 - 0.6), 0.5)
 # ⚠⚠ **2026-08-16 に「入れ替えが終わった所」へ移した**（`canon/LEDGER.md` 0057）。
-#    段 4 の `live = SmoothStep(0.55, 0.85, p)` が 1 に届く進み ＝ 0.85。
+#    0208 の `live = SmoothStep(0.72, 0.88, p)` が 0.999 へ届く進み。
 #    `SoundCueLogic.ScreenOnAt`（live の閾値）と対。片方だけ直すと聴いて決めた間が実機と違う。
-SCREEN_ON_AT = 0.85
+SCREEN_ON_AT = 0.72 + (0.88 - 0.72) * 0.9816297461411884
+SHATTER_AT = 0.02
+INTRO_DSP_LEAD = 0.035
 # 鈴が鳴るまで（段 5 の頭から）。`IntroLogic.SwapCrossfadeSec` ＝ `SoundCueLogic.BellAfterSwapSec`。
 BELL_AFTER_SWAP = 1.2
 
@@ -273,12 +275,12 @@ def build_intro() -> np.ndarray:
     lay(mix, load("sfx_title_in"), t_a)          # ⚠ 尾は題字が消えた後も鳴り続ける
     lay(mix, load("sfx_title_out"), t_glyph_out)
     # ⚠⚠ **導入の節目は 3 つ**（2026-08-16・`canon/LEDGER.md` 0057）。
-    #    ①段 4 の頭で割れる（1.70 秒でだんだん小さく）②静けさ 0.37 秒 ③入れ替えが終わって
+    #    ①段 4 の頭で割れる（1.70 秒でだんだん小さく）②静けさ約 0.44 秒 ③入れ替えが終わって
     #    スクリーンが出る ④段 5 ＋ 1.2 秒で**完全にスクリーンになった**鈴。
     #    **ノイズ（`sfx_screen_noise`）は鳴らさない。** ここへ戻さないこと。
-    lay(mix, load("sfx_shatter"), t_frame)
-    lay(mix, load("sfx_screen_on"), t_frame + FRAME * SCREEN_ON_AT)
-    lay(mix, load("amb_bell"), t_swap + BELL_AFTER_SWAP)
+    lay(mix, load("sfx_shatter"), t_frame + FRAME * SHATTER_AT + INTRO_DSP_LEAD)
+    lay(mix, load("sfx_screen_on"), t_frame + FRAME * SCREEN_ON_AT + INTRO_DSP_LEAD)
+    lay(mix, load("amb_bell"), t_swap + BELL_AFTER_SWAP + INTRO_DSP_LEAD)
     # ⚠ 切替は**変種を回す**（2026-08-23・`canon/LEDGER.md` 0112）。
     #    実機は音程と音量も散らすが、ここでは並べるだけ。6 本の違いは `preview_switch` で聴く。
     for i, at in enumerate((t_run + 2.2, t_run + 5.6, t_run + 8.4)):
@@ -840,7 +842,7 @@ def build_break() -> np.ndarray:
     1. 新しい割れる音**だけ**（素で形を聴く）
     2. **旧版 → 新版**（同じ場所に置いて比べる。`logs/sound/ref/sfx_shatter_prev.wav` が
        あるときだけ。無ければ飛ばす）
-    3. **段 4 の通し**（割れる → 0.37 秒の静けさ → スクリーンが出る → 1.2 秒後に鈴）。
+    3. **段 4 の通し**（割れる → 約 0.44 秒の静けさ → スクリーンが出る → 段 5 の 1.2 秒後に鈴）。
        ⚠ ここが 0057 でユーザーが指定した並びで、判定はこの形でしかできない
 
     ⚠ 敷く音（部屋 ＋ 装置）を下に置く。**尻が敷く音へ沈むかどうか**が今回直した点なので、
@@ -868,12 +870,12 @@ def build_break() -> np.ndarray:
     lay(out, new, at)
     at += 3.5
     # ③ 段 4 の通し（0057 の並び）
-    lay(out, new, at)
-    lay(out, load("sfx_screen_on"), at + FRAME * SCREEN_ON_AT)
-    lay(out, load("amb_bell"), at + FRAME + BELL_AFTER_SWAP)
+    lay(out, new, at + FRAME * SHATTER_AT + INTRO_DSP_LEAD)
+    lay(out, load("sfx_screen_on"), at + FRAME * SCREEN_ON_AT + INTRO_DSP_LEAD)
+    lay(out, load("amb_bell"), at + FRAME + BELL_AFTER_SWAP + INTRO_DSP_LEAD)
     print(f"   0.5s 新しい割れる音だけ   "
           f"{'4.5s 旧 → 7.5s 新（敷く音の上）' if prev is not None else '（旧版が無いので比べは飛ばす）'}   "
-          f"{at:.1f}s 段 4 の通し（割れる → 静けさ {FRAME * (1 - SCREEN_ON_AT):.2f}s → "
+          f"{at:.1f}s 段 4 の通し（割れる → 静けさ {FRAME * (SCREEN_ON_AT - SHATTER_AT) - len(new) / sk.SR:.2f}s → "
           f"スクリーン → 鈴）")
     return out
 

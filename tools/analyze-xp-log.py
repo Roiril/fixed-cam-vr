@@ -2832,7 +2832,7 @@ def analyze(events, others, exp, warns=None):
 
     # -- 段 4 の連続開口（全視野から本編スクリーンへ閉じる）
     # `aper` は IntroVeil が単一 quad へ実際に配った閉じ量の最大値。
-    # 重みだけ進んだ場合と、セル破砕へ戻ってしまった場合を同時に捕まえる。
+    # 基底面を検査する。0208 の破片は別メッシュなので下で独立に検査する。
     aper_all = [v for v in effect_samples(events, "aper") if v not in ("", "-")]
     if aper_all:
         any_effect_key = True
@@ -2865,7 +2865,7 @@ def analyze(events, others, exp, warns=None):
         if quads:
             if any(n != 1 for n in quads):
                 verdict("FAIL", f"導入の覆いが単一 quad ではない（aperQ={sorted(set(quads))}）— "
-                                "破片メッシュを描画経路へ戻してはいけない")
+                                "基底面と破片メッシュの個数を分けて観測する")
             else:
                 w("  導入の覆い: 単一 quad を維持")
 
@@ -2904,6 +2904,32 @@ def analyze(events, others, exp, warns=None):
         if cells and all(v == "0" for v in cells):
             any_effect_key = True
             verdict("FAIL", "旧破砕ログのセル格子が 0 枚（IntroVeilShatterMesh を組めていない）")
+
+    # 0208 の不揃いな破片。旧ログにはこの印が無いため適用しない。
+    if "art" in effect_samples(events, "shatStyle"):
+        any_effect_key = True
+        def fracture_numbers(key):
+            values = []
+            for value in effect_samples(events, key):
+                try:
+                    values.append(float(value))
+                except (ValueError, TypeError):
+                    pass
+            return values
+
+        peaks = fracture_numbers("shat")
+        pieces = fracture_numbers("shatC")
+        complete_fracture = "Swap" in stages or "Done" in stages
+        if "Frame" in stages or complete_fracture:
+            if not pieces or max(pieces) <= 0:
+                verdict("FAIL", "破片メッシュを組めていない（shatC が欠損または 0）")
+            else:
+                w(f"  不揃いな破片: {int(max(pieces))} 枚")
+            if complete_fracture:
+                if not peaks or max(peaks) < 0.70:
+                    verdict("FAIL", "破片を収束まで描画できていない（shat が欠損または到達不足）")
+                elif pieces and max(pieces) > 0:
+                    verdict("OK", f"破片を収束まで描画した（到達 {max(peaks):.2f}）")
 
     # -- スクリーンの管の点灯
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。

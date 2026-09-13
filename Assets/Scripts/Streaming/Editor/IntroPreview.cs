@@ -13,7 +13,7 @@ namespace FixedCamVr.Streaming.EditorTools
     /// <summary>
     /// 導入演出（段 0〜5）を PNG で出す。<b>Play も HMD もビルドも要らない。</b>
     ///
-    /// ⚠⚠ <b>これが導入の唯一の安い門。</b> 覆い・隔離殻・連続開口・管の面はすべてシェーダで、
+    /// ⚠⚠ <b>これが導入の唯一の安い門。</b> 覆い・隔離殻・実破砕・管の面はすべてシェーダで、
     /// <c>unity.ps1 test</c> には 1 件も出ない（コンパイルが通っても全面マゼンタ・真っ黒になりうる）。
     /// 段を触ったら必ずここを通して<b>焼いた PNG を開くこと</b>
     /// （<c>rules/show-design.md</c>「シェーダを書いたら絵を出す」）。
@@ -147,6 +147,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 string cleanFramesDir = Path.Combine(cleanDir, FramesDirName);
                 Directory.CreateDirectory(cleanFramesDir);
                 foreach (string old in Directory.GetFiles(cleanFramesDir, "intro_*.png")) File.Delete(old);
+                foreach (string old in new[] { "frames.tsv", "audio-cues.tsv" })
+                {
+                    string path = Path.Combine(cleanFramesDir, old);
+                    if (File.Exists(path)) File.Delete(path);
+                }
             }
 
             var saved = new List<string>();
@@ -156,7 +161,19 @@ namespace FixedCamVr.Streaming.EditorTools
                 stage = Stage.Create(outDir);
                 foreach (Shot shot in BuildShots()) stage.Render(shot, saved);
                 if (renderFrames)
-                    foreach (Shot shot in BuildFrameSequence(stage.Timing)) stage.Render(shot, saved);
+                {
+                    var framesTsv = new System.Text.StringBuilder(
+                        "index\tstage\tstageProgress\tlive\tshatter\tShatterDrawn\tShatterPieces\n");
+                    var cuesTsv = new System.Text.StringBuilder("tSec\tcue\tResourceName\n");
+                    var cues = new SoundCueLogic();
+                    cues.ResetRun();
+                    foreach (Shot shot in BuildFrameSequence(stage.Timing))
+                        stage.Render(shot, saved, framesTsv, cuesTsv, cues);
+
+                    string cleanFramesDir = Path.Combine(cleanDir, FramesDirName);
+                    File.WriteAllText(Path.Combine(cleanFramesDir, "frames.tsv"), framesTsv.ToString());
+                    File.WriteAllText(Path.Combine(cleanFramesDir, "audio-cues.tsv"), cuesTsv.ToString());
+                }
             }
             catch (Exception e)
             {
@@ -210,7 +227,7 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// 段の頭・中・終わりを撮る。段 4 は連続開口の輪郭を読むため細かく撮る。
+        /// 段の頭・中・終わりを撮る。段 4 は破砕と収束を読むため細かく撮る。
         ///
         /// ⚠ 段 0 と段 1 は 1 枚だけ。どちらも <see cref="IntroLogic.Weights"/> が定数を返す
         /// （素通しのパススルー）ので、3 枚撮っても同じ絵が 3 つ並ぶ。
@@ -600,7 +617,10 @@ namespace FixedCamVr.Streaming.EditorTools
 
             // ---- 1 枚ぶん ----
 
-            public void Render(Shot shot, List<string> saved)
+            public void Render(Shot shot, List<string> saved,
+                               System.Text.StringBuilder? framesTsv = null,
+                               System.Text.StringBuilder? cuesTsv = null,
+                               SoundCueLogic? cueLogic = null)
             {
                 IntroLogic logic = DriveTo(shot.stage, shot.p, _timing);
                 IntroWeights w = logic.Weights;
@@ -630,6 +650,34 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 // 覆い・殻は自分で子 GameObject を作る（レイヤは継がない）。撮る直前に揃える。
                 SetLayerRecursive(_root.transform, IntroLayer);
+
+                if (shot.sequenceIndex >= 0 && framesTsv != null)
+                {
+                    float span = logic.Stage == IntroStage.Frame ? _timing.frameSec
+                               : logic.Stage == IntroStage.Swap ? _timing.swapSec : 0f;
+                    float progress = span > 0f ? Mathf.Clamp01(logic.StageElapsedSec / span) : 0f;
+                    framesTsv.AppendLine(FormattableString.Invariant(
+                        $"{shot.sequenceIndex}\t{logic.Stage}\t{progress:0.000000}\t{w.live:0.000000}\t{w.shatter:0.000000}\t{(_veil.ShatterDrawn ? 1 : 0)}\t{_veil.ShatterPieces}"));
+
+                    if (cuesTsv != null && cueLogic != null)
+                    {
+                        var soundState = SoundShowState.Idle;
+                        soundState.introActive = true;
+                        soundState.introStage = logic.Stage;
+                        soundState.introWeights = w;
+                        float dt = shot.sequenceIndex == 0 ? 0f : 1f / SequenceFps;
+                        ReadOnlySpan<SoundCue> fired = cueLogic.Tick(dt, soundState, 0f, out int count);
+                        float tSec = shot.sequenceIndex / (float)SequenceFps;
+                        for (int i = 0; i < count; i++)
+                        {
+                            SoundCue cue = fired[i];
+                            if (cue != SoundCue.Shatter && cue != SoundCue.ScreenOn && cue != SoundCue.Bell)
+                                continue;
+                            cuesTsv.AppendLine(FormattableString.Invariant(
+                                $"{tSec:0.000000}\t{cue}\t{SoundCueLogic.ResourceName(cue)}"));
+                        }
+                    }
+                }
 
                 CaptureScene();
                 SaveClean(shot.File);
@@ -708,11 +756,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 return
                     $"INTRO stage {shot.index} {shot.name}  p={shot.p:0.00}  eye {eye}\n" +
                     $"w: passthrough {w.passthrough:0.00}  degrade {w.degrade:0.00}  edge {w.edge:0.00}  " +
-                    $"audio clock {w.shatter:0.00}  aperture {w.frame:0.00}  shell {w.shell:0.00}  " +
+                    $"fracture {w.shatter:0.00}  terminal frame {w.frame:0.00}  shell {w.shell:0.00}  " +
                     $"live {w.live:0.00}   (glitch {w.glitch:0.00} grain {w.grain:0.00})\n" +
                     $"drawn: veil built={B(_veil.IsBuilt)} on={B(_veil.IsActive)} " +
-                    $"aperture drawn={B(_veil.ApertureDrawn)} close={_veil.ApertureClosePeak:0.00} " +
-                    $"quads={_veil.ApertureQuads} rect={_veil.ApertureRectDesc} | " +
+                    $"shards drawn={B(_veil.ShatterDrawn)} peak={_veil.ShatterPeak:0.00} " +
+                    $"pieces={_veil.ShatterPieces} rect={_veil.ShatterRectDesc} " +
+                    $"base quads={_veil.ApertureQuads} | " +
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +
                     $"crtIgnite={_igniteWritten:0.00}" +

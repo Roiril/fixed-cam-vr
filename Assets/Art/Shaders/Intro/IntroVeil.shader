@@ -1,17 +1,17 @@
-// 導入演出の覆い。全視野の現実を、本編スクリーンと一致する光学開口へ連続して閉じる。
+// 導入演出の覆い。全開の現実と、破砕後に残る正確なスクリーン窓を 1 枚で持つ。
 //
 // Meta の Passthrough Windows 方式を使う。`Blend Zero SrcAlpha` により
 // alpha 0 だけで現実が透け、alpha 1 では先に描かれたアプリの画が残る。
 // UI や通常の透明ブレンドへ置き換えると compositor の意味が逆になる。
 //
-// 面は常に 1 枚の quad。破片・白色ノイズ・走査線は作らない。
-// 開口の縁だけを薄い 2 段の透過帯にして、硬い UI の矩形に見えることを避ける。
+// 面は常に 1 枚の quad。破片は同位置の IntroFracture が担当する。
 Shader "FixedCamVr/IntroVeil"
 {
     Properties
     {
         _Passthrough("Passthrough inside aperture (0..1)", Range(0, 1)) = 1
         _ScreenFade("Screen crossfade inside screen rect (0..1)", Range(0, 1)) = 0
+        _FractureActive("Use final screen window", Range(0, 1)) = 0
         _FramePlane0("Aperture edge plane 0", Vector) = (0, 0, -1, 0)
         _FramePlane1("Aperture edge plane 1", Vector) = (0, 0, -1, 0)
         _FramePlane2("Aperture edge plane 2", Vector) = (0, 0, -1, 0)
@@ -60,6 +60,7 @@ Shader "FixedCamVr/IntroVeil"
 
             float _Passthrough;
             float _ScreenFade;
+            float _FractureActive;
             float4 _FramePlane0;
             float4 _FramePlane1;
             float4 _FramePlane2;
@@ -88,12 +89,19 @@ Shader "FixedCamVr/IntroVeil"
                 // 覆いとスクリーンを同じ距離へ置くため、中央眼から解いた平面は左右眼でも一致する。
                 float3 dir = normalize(float3((i.uv - 0.5) * _VeilSize.xy, _VeilSize.z));
 
-                float apertureDistance = max(
+                float frameDistance = max(
                     max(dot(dir, _FramePlane0.xyz), dot(dir, _FramePlane1.xyz)),
                     max(dot(dir, _FramePlane2.xyz), dot(dir, _FramePlane3.xyz)));
+                float screenDistance = max(
+                    max(dot(dir, _ScreenPlane0.xyz), dot(dir, _ScreenPlane1.xyz)),
+                    max(dot(dir, _ScreenPlane2.xyz), dot(dir, _ScreenPlane3.xyz)));
+                // 破砕が始まった後の base quad は最終スクリーン窓だけを保つ。
+                // 周囲の現実は IntroFracture の各片が透かすので、四辺から先に切り落とさない。
+                float apertureDistance = lerp(frameDistance, screenDistance, saturate(_FractureActive));
                 // 平面の幾何はそのまま保ち、画面上の局所ぼけだけを絞る。
                 float feather = max(_FeatherAng * 0.25, 1e-4);
                 float aperture = 1.0 - smoothstep(-feather, 0.0, apertureDistance);
+                aperture = lerp(aperture, 1.0 - step(0.0, screenDistance), saturate(_FractureActive));
 
                 // 開口の外はアプリの画を保ち、内側だけ現実を透かす。
                 float alpha = lerp(1.0, 1.0 - saturate(_Passthrough), aperture);
@@ -102,15 +110,14 @@ Shader "FixedCamVr/IntroVeil"
                 float wideEdge = smoothstep(-4.0 * feather, -1.0 * feather, apertureDistance);
                 float fineEdge = smoothstep(-1.6 * feather, -0.15 * feather, apertureDistance);
                 float edgeAlpha = aperture * saturate(_Passthrough)
+                                * (1.0 - saturate(_FractureActive))
                                 * (0.055 * wideEdge + 0.12 * fineEdge);
                 alpha = saturate(alpha + edgeAlpha);
 
                 // クロスフェードは本編スクリーンの 3D 矩形との交差部分だけに掛ける。
                 // 開口がまだ大きい時も、周囲の現実を先に映像へ変えてしまわない。
-                float screenDistance = max(
-                    max(dot(dir, _ScreenPlane0.xyz), dot(dir, _ScreenPlane1.xyz)),
-                    max(dot(dir, _ScreenPlane2.xyz), dot(dir, _ScreenPlane3.xyz)));
                 float onScreen = 1.0 - smoothstep(-feather, 0.0, screenDistance);
+                onScreen = lerp(onScreen, 1.0 - step(0.0, screenDistance), saturate(_FractureActive));
                 alpha = lerp(alpha, saturate(_ScreenFade), onScreen);
 
                 // RGB は使わない。Passthrough Windows の compositor alpha だけを書く。

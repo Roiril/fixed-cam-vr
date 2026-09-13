@@ -124,13 +124,13 @@ namespace FixedCamVr.Streaming
         public float edge;
         /// <summary>壁・床の線とカメラの印の強さ（<c>run.intro.showRoomWire</c> が既定 OFF）。</summary>
         public float structure;
-        /// <summary>枠の閉じ具合。0 = 全画面 / 1 = スクリーンの開口だけ。</summary>
+        /// <summary>破砕の終端でスクリーン矩形を確定する量。0 = 全画面 / 1 = スクリーンの開口だけ。</summary>
         public float frame;
 
         /// <summary>
-        /// 段 4 の進行度。映像の観測値には使わない。
-        /// <see cref="SoundCueLogic"/> と <see cref="SoundBedLogic"/> が既存の割れる音と劇伴の時刻を
-        /// 保つために読む互換入力なので、段 4 の <c>p</c> をそのまま残す。
+        /// 段 4 の破砕進行度。<see cref="IntroVeil"/> の破片描画へそのまま渡る。
+        /// <see cref="SoundCueLogic"/> と <see cref="SoundBedLogic"/> も既存の割れる音と劇伴の時刻を
+        /// 保つために読むので、段 4 の <c>p</c> と常に同じ値にする。
         /// </summary>
         public float shatter;
         /// <summary>
@@ -653,22 +653,22 @@ namespace FixedCamVr.Streaming
                     case IntroStage.Frame:
                     {
                         float p = Progress(_t.frameSec);
-                        float remaining = 1f - p;
                         return new IntroWeights
                         {
                             passthrough = 1f,
                             degrade = 1f,
                             edge = 0f,
                             structure = 0f,
-                            // 4 辺の開口は段の先頭から動き、全視野から本編スクリーンへ連続して閉じる。
-                            frame = 1f - remaining * remaining * remaining,
-                            // 音と進行の互換入力。IntroVeil は読まない。
+                            // 破片がスクリーンへ収束した終盤だけ、正確な矩形を確定する。
+                            // 破砕中の現実を四辺から先に切り落とさない。
+                            frame = SmoothStep(0.70f, 0.88f, p),
+                            // 映像と既存音が共有する段 4 の時計。
                             shatter = p,
                             grain = 0f,
                             glitch = 0f,
                             // 混合量は IntroVeil の _ScreenFade だけが持つ。IntroDirector の
                             // _IntroLive は 0/1 の表示ゲートなので、ここを二重に掛けない。
-                            live = SmoothStep(0.78f, 0.96f, p),
+                            live = SmoothStep(0.72f, 0.88f, p),
                             ignite = 1f,
                         };
                     }

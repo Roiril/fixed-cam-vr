@@ -522,17 +522,18 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Frame_ClosesTheApertureContinuouslyFromTheStart()
+        public void Frame_BreaksFromTheStartAndOnlyClosesAtTheEnd()
         {
             var l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.frame, 1e-4f, "段の頭が全開ではない");
             Advance(l, T.frameSec * 0.1f, Ready(outsideM: 2f));
             var early = l.Weights;
-            Assert.Greater(early.frame, 0f, "段の先頭から開口が閉じていない");
-            Assert.Greater(early.shatter, 0f, "音の互換時計が進んでいない");
+            Assert.AreEqual(0f, early.frame, 1e-4f, "破砕の途中で四辺から切り落としている");
+            Assert.Greater(early.shatter, 0f, "段の先頭から破砕が進んでいない");
 
-            Advance(l, T.frameSec * 0.4f, Ready(outsideM: 2f));
-            Assert.Greater(l.Weights.frame, early.frame, "開口が単調に閉じていない");
+            Advance(l, T.frameSec * 0.65f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.frame, early.frame, "終盤でスクリーン矩形が確定し始めていない");
+            Assert.Greater(l.Weights.shatter, early.shatter, "破砕が単調に進んでいない");
         }
 
         [Test]
@@ -545,24 +546,22 @@ namespace FixedCamVr.Streaming.Tests
             var l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から入れ替わっている");
 
-            // 開口がスクリーンへ寄るまでは現実を保つ。
-            // Advance の 0.1 秒丸めでは .98 の標本が終端へ進むため、正確な時刻を渡す。
-            l.Tick(T.frameSec * 0.75f, Ready(outsideM: 2f));
-            Assert.Greater(l.Weights.shatter, 0f, "音の互換時計が進んでいない");
-            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "開口が寄る前に入れ替わっている");
-            Assert.Greater(l.Weights.frame, 0f, "開口が動いていない");
+            // 破片がスクリーンへ寄るまでは現実を保つ。
+            l.Tick(T.frameSec * 0.70f, Ready(outsideM: 2f));
+            Assert.Greater(l.Weights.shatter, 0f, "破砕が進んでいない");
+            Assert.AreEqual(0f, l.Weights.live, 1e-4f, "破片が寄る前に入れ替わっている");
 
             // スクリーンの近くまで寄った後だけクロスフェードする。
-            l.Tick(T.frameSec * 0.12f, Ready(outsideM: 2f));
+            l.Tick(T.frameSec * 0.10f, Ready(outsideM: 2f));
             float mid = l.Weights.live;
-            Assert.Greater(mid, 0f, "開口が寄っても入れ替わっていない");
+            Assert.Greater(mid, 0f, "破片が寄っても入れ替わっていない");
             Assert.Less(mid, 1f, "一瞬で入れ替わっている（フェードになっていない）");
 
-            // 閉じ切る前に入れ替え終わっている。
-            l.Tick(T.frameSec * 0.11f, Ready(outsideM: 2f));
-            Assert.AreEqual(1f, l.Weights.live, 0.02f, "閉じ切るまでに入れ替わっていない");
-            Assert.Less(l.Weights.frame, 1f, "もう閉じ切っている（「少し前」になっていない）");
-            Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "開口の中の現実が先に消えている");
+            // p=.88 を過ぎると映像と終端矩形が揃って確定する。
+            l.Tick(T.frameSec * 0.10f, Ready(outsideM: 2f));
+            Assert.AreEqual(1f, l.Weights.live, 0.02f, "終端までに入れ替わっていない");
+            Assert.AreEqual(1f, l.Weights.frame, 0.02f, "終端矩形が確定していない");
+            Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "段 4 の現実を先に消している");
         }
 
         [Test]

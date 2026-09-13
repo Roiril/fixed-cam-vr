@@ -409,7 +409,7 @@ EYE_VARIANTS = [
 # ⚠⚠ **尺は「次の音が鳴る時刻」から逆算する。** 割れる音は段 4 の頭（進み 0.02 ＝ 0.05 秒）から
 #    始まり、スクリーンが出る音は入れ替えが終わる進み 0.85（＝ 2.125 秒）に鳴る。
 #    ユーザー指示は「割れる音はちゃんとこれを鳴らす前に終わらせて静かにしてから」なので、
-#    **1.70 秒 ＝ 鳴り終わってから 0.37 秒の静けさが残る**（`canon/LEDGER.md` 0057）。
+#    0208 の画では 1.70 秒の後に約 0.44 秒の静けさが残る。判定は live の到達を読む。
 #
 SWARM_SEC = 1.70          # 全長（上の逆算）。⚠ 2026-08-23 の作り直しでも動かしていない
 #
@@ -434,38 +434,26 @@ SWARM_HEAD_WIN = 0.50
 #    **さらに -4dB**。合わせて **-10dB ＝ 元の 0.32 倍**。-14.7 は 0112 で旧版に揃えた値だった。
 #    ⚠ 尺・粒・刻み・音程・減り方は 1 つも動かしていない（大きさだけの指示だったので）。
 SWARM_HEAD_LUFS = -24.7   # 0112 は -14.7（旧版の実測値）。0144 で -6dB → さらに -4dB
-SWARM_GRAIN_HEAD = 0.070  # 頭の粒（押し込み＋中間。重なって轟くが、粒立ちは残る）
-SWARM_GRAIN_TAIL = 0.022  # 尻の粒（破片 1 つ）
-SWARM_GRAIN_POW = 0.80
-# 刻みの折れ目は**画の縁に合わせる**（`IntroShatterCurve` の PullAt 0.18 ＝ 0.45 秒で
-# 破片が動き出し、CloseAt 0.60 ＝ 1.50 秒で閉じ切る）。音だけ別の弧を描かせない。
-SWARM_KNEE_U = 0.265      # 0.45 秒
-SWARM_SETTLE_U = 0.882    # 1.50 秒
-SWARM_STEP_HEAD = 0.0145  # 頭の刻み（≈ 69 粒/秒 ＝「ほんとに小刻み」）
-SWARM_STEP_KNEE = 0.030
-SWARM_STEP_TAIL = 0.062   # 尻の刻み（散っていく ＝ まばらになる）
-SWARM_STEP_JITTER = 0.34  # 刻みの揺らぎ（±・比）。等間隔だと機械の連射になる
-SWARM_PITCH_HEAD = 0.86   # 音程の中心（頭）
-SWARM_PITCH_TAIL = 1.58   # 同（尻）。破片が小さくなるほど高い
-SWARM_PITCH_SPREAD = 0.17 # 1 粒ごとの散らし（±・比）
-# ⚠⚠ **減り方は dB の折れ線で書く。** 滑らかな式（`(1-u)^p`）だと頭が平らなあいだに
-#    重なりが増えて**膨らむ**（旧版の山が 150ms にあった理由）。
-#    最初の 0.15 秒で 5.5dB 落として重なりを打ち消し、以後は画の縁に合わせて折る。
-#    ⚠ 最後の -15.5dB は**敷く音（約 -30.5 LUFS）へ沈ませない**ための下限。
-#      実測: -14.0 で 1.2〜1.7 秒が **-30.9 LUFS**（敷く音と同じ高さ ＝ かろうじて聞こえる）。
-#      -15.5 だと -33.6、-19.0 だと -34.7 で、どちらも旧版と同じ「消えた」に戻る。
-SWARM_FALL_KNOTS = ((0.000,   0.0),
-                    (0.088,  -5.5),   # 0.15s ＝ 重なりが増え切るところ
-                    (0.265,  -8.5),   # 0.45s ＝ 画の PullAt（破片が動き出す）
-                    (0.600, -13.0),   # 1.02s
-                    (1.000, -14.0))   # 1.70s ＝「最後らへんは本当に小さく」
-SWARM_GAIN_JITTER_DB = 2.5
-SWARM_POP_AT = (0.33, 0.46, 0.61, 0.78)  # 単独で立つ「ピシッ」（大きめの破片が 1 つ落ちる）
-SWARM_POP_DB = 5.0
-SWARM_PAN_MIN = 0.10      # 左右の散らし。**時間とともに広げる**（破片が飛び散る）
-SWARM_PAN_MAX = 0.95
+# 2026-09-13: 破裂して左右へ広がったあと、短粒化しながら中心へ収束する形へ再設計。
+# 頭の高さと全長は維持し、1.45 秒以降は中心の小さな 4 粒だけを残す。
+SWARM_GRAIN_HEAD = 0.040  # 収束し始める粒。前半の主亀裂より短い
+SWARM_GRAIN_TAIL = 0.014  # 中心へ集まった破片 1 つ
+SWARM_FLOW_START = 0.40
+SWARM_FLOW_END = 1.45
+SWARM_STEP_HEAD = 0.030   # 広がった破片が戻り始める間隔
+SWARM_STEP_TAIL = 0.018   # 中心へ近づくほど細かく集まる
+SWARM_STEP_JITTER = 0.12  # 等間隔の連射にしない最小限の揺らぎ
+SWARM_PITCH_HEAD = 0.72   # 主亀裂から自然につながる低めの粒
+SWARM_PITCH_TAIL = 1.18   # 小さくなっても甲高くしない
+SWARM_PITCH_SPREAD = 0.07
+SWARM_FALL_KNOTS = ((0.00, -5.0),
+                    (0.55, -7.0),
+                    (1.00, -8.5))
+SWARM_GAIN_JITTER_DB = 1.5
+SWARM_PAN_HEAD = 0.85     # 左右へ広がった地点
+SWARM_PAN_TAIL = 0.10     # 中心へ静かに集まる地点
 SWARM_DRIVE_MAX = 6.0     # 頭の高さへ届かないときに丸めてよい上限
-SWARM_SEED = 20260823
+SWARM_SEED = 20260913
 # 素材（PC-Mouse06-1・端を落とした後の時刻）の一撃 4 つ。粒はここから「長さ」を切る。
 #   0.005 押し込み（本体の頭。長く取ると中間と戻りまで入る ＝ 割れの轟き）
 #   0.049 中間の小さな粒
@@ -474,14 +462,20 @@ SWARM_SEED = 20260823
 # ⚠ 旧版は 1 種類（0.005 から 130ms）しか使っておらず、しかも尻の 12ms フェードが
 #    **いちばん大きい一撃の本体を毎粒で潰していた**。
 SWARM_SHARD_AT = (0.0050, 0.0490, 0.1010, 0.1190)
-SWARM_SHARD_MIX = (0.30, 0.24, 0.20, 0.26)   # 粒が短くなってから、どれを引くか
-SWARM_SHARD_LONG = 0.048  # これより長い粒は押し込みから切る（轟きは 1 種類でよい）
-# t=0 の一撃。(時刻, 一撃番号, 音程, dB, 左右)
-# ⚠ **音程を下げると「大きい破片」になる。** 実測で 0.30 まで下げても内蔵スピーカーの
-#    損失は -0.5dB（重心 2428Hz）＝ この素材の「重み」は下の 1 オクターブにしか無い。
-SWARM_IMPACT = ((0.000, 3, 0.38, +5.0, 0.00),
-                (0.009, 0, 0.60, -1.0, 0.00))
+SWARM_SHARD_MIX = (0.30, 0.24, 0.20, 0.26)   # 収束する粒に使う一撃の比率
+# 0〜0.40 秒の主亀裂と枝分かれ。(時刻, 一撃番号, 音程, dB, 左右)
+SWARM_IMPACT = ((0.000, 3, 0.55, +4.0,  0.00),
+                (0.028, 0, 0.64, -1.0, -0.85),
+                (0.074, 3, 0.70, -2.5, +0.85),
+                (0.155, 1, 0.78, -5.0, -0.72),
+                (0.248, 2, 0.88, -6.5, +0.66))
 SWARM_IMPACT_LEN = 0.190
+# 1.45 秒以降は中心付近の 4 粒だけを残し、そのまま無音へ入る。
+SWARM_SETTLE = ((1.465, 1, 0.96, -12.0, -0.05),
+                (1.515, 3, 1.02, -14.0, +0.04),
+                (1.575, 2, 1.10, -16.0, -0.03),
+                (1.635, 1, 1.18, -18.0, +0.02))
+SWARM_SETTLE_LEN = 0.012
 
 # (元ファイル名, 出力名, **頭 0.5 秒の**短期ラウドネス, 使い先)
 # ⚠ 3 つ目は統合 LUFS ではない（上の `SWARM_HEAD_LUFS` の理由）。
@@ -1353,17 +1347,12 @@ def swarm_fall_db(u: float) -> float:
 
 
 def swarm_grain_len(u: float) -> float:
-    return SWARM_GRAIN_HEAD * (SWARM_GRAIN_TAIL / SWARM_GRAIN_HEAD) ** (u ** SWARM_GRAIN_POW)
+    return SWARM_GRAIN_HEAD * (SWARM_GRAIN_TAIL / SWARM_GRAIN_HEAD) ** u
 
 
 def swarm_step(u: float) -> float:
-    """刻み。**画の縁（PullAt / CloseAt）で折れる。**"""
-    if u <= SWARM_KNEE_U:
-        return SWARM_STEP_HEAD + (SWARM_STEP_KNEE - SWARM_STEP_HEAD) * (u / SWARM_KNEE_U)
-    if u <= SWARM_SETTLE_U:
-        return SWARM_STEP_KNEE * (SWARM_STEP_TAIL / SWARM_STEP_KNEE) ** (
-            (u - SWARM_KNEE_U) / (SWARM_SETTLE_U - SWARM_KNEE_U))
-    return SWARM_STEP_TAIL
+    """中心へ近づくほど短くなる刻み。"""
+    return SWARM_STEP_HEAD + (SWARM_STEP_TAIL - SWARM_STEP_HEAD) * u
 
 
 def swarm_shard(st: np.ndarray, sr: int, at: float, length: float,
@@ -1375,15 +1364,14 @@ def swarm_shard(st: np.ndarray, sr: int, at: float, length: float,
 
 
 def swarm_build(y, sr: int, head_lufs: float):
-    """1 発の録音を小刻みに並べて、**t=0 に一撃を置き、散って静まる**群れにする。
+    """1 発の録音を並べて、左右へ割れた破片が中心へ収束する群れにする。
 
     ⚠ **等間隔・等音量にしない。** そうすると「割れた」ではなく「連射した」に聞こえる。
-    ⚠ **粒の長さを時間で縮める。** 頭は長い粒が重なって轟き、尻は破片 1 つが単独で鳴る。
-      密度だけで弧を作ると、頭の音量（＝ 重なりの数）を density と一緒に失う。
+    ⚠ **粒の長さと左右幅を時間で縮める。** 密度は上げながら音量を下げて、静かに集める。
     """
     st = sk.to_stereo(trim(y))
     rng = np.random.default_rng(SWARM_SEED)
-    n = int((SWARM_SEC + 0.40) * sr)
+    n = int(SWARM_SEC * sr)
     out = np.zeros((n, 2))
 
     # ① t=0 の一撃（大きい破片が 1 つ割れる）。ここが 25ms 窓の山になる。
@@ -1392,25 +1380,19 @@ def swarm_build(y, sr: int, head_lufs: float):
         i = int(at * sr)
         out[i:i + len(g)] += g * 10 ** (db / 20.0) * pan_lr(p)
 
-    # ② 散っていく破片
-    t, count, head_n = 0.012, 0, 0
-    pops = list(SWARM_POP_AT)
-    while t < SWARM_SEC:
-        u = t / SWARM_SEC
+    # ② 左右へ広がった破片が、細かくなりながら中心へ集まる。
+    t, count, head_n = SWARM_FLOW_START, len(SWARM_IMPACT), len(SWARM_IMPACT)
+    while t < SWARM_FLOW_END:
+        u = (t - SWARM_FLOW_START) / (SWARM_FLOW_END - SWARM_FLOW_START)
         gl = swarm_grain_len(u)
-        # 粒が短い ＝ 破片 1 つなので、素材の中の一撃から引く。長いあいだは押し込みから。
-        idx = 0 if gl > SWARM_SHARD_LONG else int(rng.choice(len(SWARM_SHARD_AT),
-                                                            p=SWARM_SHARD_MIX))
+        idx = int(rng.choice(len(SWARM_SHARD_AT), p=SWARM_SHARD_MIX))
         ratio = (SWARM_PITCH_HEAD + (SWARM_PITCH_TAIL - SWARM_PITCH_HEAD) * u
                  + float(rng.uniform(-SWARM_PITCH_SPREAD, SWARM_PITCH_SPREAD)))
-        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], gl), max(0.35, ratio))
+        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], gl), ratio)
         amp = 10 ** (swarm_fall_db(u) / 20.0)
         amp *= 10 ** (float(rng.uniform(-SWARM_GAIN_JITTER_DB, SWARM_GAIN_JITTER_DB)) / 20.0)
-        if pops and u >= pops[0]:
-            amp *= 10 ** (SWARM_POP_DB / 20.0)
-            pops.pop(0)
-        p = float(rng.uniform(-1, 1)) * (SWARM_PAN_MIN
-                                         + (SWARM_PAN_MAX - SWARM_PAN_MIN) * u)
+        pan_width = SWARM_PAN_HEAD + (SWARM_PAN_TAIL - SWARM_PAN_HEAD) * u
+        p = float(rng.uniform(-1, 1)) * pan_width
         i = int(t * sr)
         seg = g * amp * pan_lr(p)
         out[i:i + len(seg)] += seg
@@ -1420,12 +1402,16 @@ def swarm_build(y, sr: int, head_lufs: float):
                                                       SWARM_STEP_JITTER)))
         count += 1
 
-    out = sk.env_fade(out, 0.0, 0.05)
-    nz = np.where(np.max(np.abs(out), axis=1) > 1e-5)[0]
-    if len(nz):
-        out = out[:nz[-1] + 1]
+    # ③ 中心付近の小さな 4 粒から無音へ入る。
+    for (at, idx, ratio, db, p) in SWARM_SETTLE:
+        g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], SWARM_SETTLE_LEN), ratio)
+        i = int(at * sr)
+        out[i:i + len(g)] += g * 10 ** (db / 20.0) * pan_lr(p)
+        count += 1
 
-    # ③ **頭 0.5 秒の高さ**で揃える（届かなければ必要なぶんだけ尖頭を丸める）。
+    out = sk.env_fade(out, 0.0, 0.05)
+
+    # ④ **頭 0.5 秒の高さ**で揃える（届かなければ必要なぶんだけ尖頭を丸める）。
     drive = 0.0
     while True:
         z = sk.soft_clip(out, drive) if drive > 0 else out

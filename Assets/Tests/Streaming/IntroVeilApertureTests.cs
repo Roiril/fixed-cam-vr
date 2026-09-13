@@ -223,6 +223,26 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void FractureAndBaseQuad_UseTheSamePlaneForBothEyes()
+        {
+            PlaceScreen(screenYawDeg: 0f);
+            typeof(IntroVeil).GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(_veil, null);
+            _veil!.Apply(new IntroWeights { passthrough = 1f, shatter = 0.4f, ignite = 1f });
+
+            Transform? baseQuad = _veil.transform.Find("IntroVeilQuad");
+            Transform? fracture = _veil.transform.Find("IntroVeilFracture");
+            Assert.IsNotNull(baseQuad, "スクリーン窓の base quad が無い");
+            Assert.IsNotNull(fracture, "破片面が無い");
+            Assert.That(fracture!.localPosition.z, Is.EqualTo(baseQuad!.localPosition.z).Within(1e-5f),
+                "破片だけ手前にあり、左右眼でスクリーン辺との位置がずれる");
+            Assert.That(fracture.localScale.x, Is.EqualTo(baseQuad.localScale.x).Within(1e-5f));
+            Assert.That(fracture.localScale.y, Is.EqualTo(baseQuad.localScale.y).Within(1e-5f));
+            Assert.AreEqual(_veil.ApertureRectDesc, _veil.ShatterRectDesc,
+                "破片の行き先と映像の交差判定が別の矩形を使っている");
+        }
+
+        [Test]
         public void Frame_KeepsScreenAspect_WhileClosing()
         {
             PlaceScreen(screenYawDeg: 0f);

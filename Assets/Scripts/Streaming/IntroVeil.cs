@@ -45,8 +45,14 @@ namespace FixedCamVr.Streaming
         private static readonly int PassthroughId = Shader.PropertyToID("_Passthrough");
         /// <summary>スクリーン矩形だけを現実からカメラ映像へ入れ替える量。</summary>
         private static readonly int ScreenFadeId = Shader.PropertyToID("_ScreenFade");
+        private static readonly int FractureActiveId = Shader.PropertyToID("_FractureActive");
+        private static readonly int ShatterId = Shader.PropertyToID("_Shatter");
         private static readonly int VeilSizeId = Shader.PropertyToID("_VeilSize");
         private static readonly int FeatherAngId = Shader.PropertyToID("_FeatherAng");
+        private static readonly int ScreenCenterId = Shader.PropertyToID("_ScreenCenter");
+        private static readonly int ScreenRightId = Shader.PropertyToID("_ScreenRight");
+        private static readonly int ScreenUpId = Shader.PropertyToID("_ScreenUp");
+        private static readonly int ScreenHalfId = Shader.PropertyToID("_ScreenHalf");
         private static readonly int[] FramePlaneIds =
         {
             Shader.PropertyToID("_FramePlane0"), Shader.PropertyToID("_FramePlane1"),
@@ -70,6 +76,9 @@ namespace FixedCamVr.Streaming
         private MeshRenderer? _renderer;
         private MeshFilter? _filter;
         private Material? _mat;
+        private MeshRenderer? _fractureRenderer;
+        private MeshFilter? _fractureFilter;
+        private Material? _fractureMat;
 
         /// <summary>いま覆いが何かを隠しているか（＝導入演出中か）。</summary>
         public bool IsActive => _renderer != null && _renderer.enabled;
@@ -94,6 +103,19 @@ namespace FixedCamVr.Streaming
 
         /// <summary>映像との交差判定に使ったスクリーン矩形（半幅,半高,眼からの距離）。</summary>
         public string ApertureRectDesc { get; private set; } = "-";
+
+        /// <summary>破片メッシュがあり、現在その Renderer を実際に描いているか。</summary>
+        public bool ShatterDrawn => _fractureRenderer != null && _fractureRenderer.enabled
+                                    && _fractureFilter != null && _fractureFilter.sharedMesh != null;
+
+        /// <summary>この走行で Renderer へ実際に配った破砕進行度の最大値。</summary>
+        public float ShatterPeak { get; private set; }
+
+        /// <summary>生成された微細破片の実数。</summary>
+        public int ShatterPieces { get; private set; }
+
+        /// <summary>破片の行き先に使ったスクリーン矩形（半幅,半高,眼からの距離）。</summary>
+        public string ShatterRectDesc { get; private set; } = "-";
 
         private void Awake()
         {
@@ -131,11 +153,40 @@ namespace FixedCamVr.Streaming
             _renderer.receiveShadows = false;
             // 覆いは常に描く（視錐台カリングで消えると視界に穴が空く）。
             _renderer.allowOcclusionWhenDynamic = false;
+
+            var fractureShader = Shader.Find("FixedCamVr/IntroFracture");
+            if (fractureShader == null)
+            {
+                Debug.LogWarning("[IntroVeil] シェーダ FixedCamVr/IntroFracture が見つかりません。破砕は出ません。");
+                return;
+            }
+
+            var fractureGo = new GameObject("IntroVeilFracture");
+            fractureGo.transform.SetParent(transform, worldPositionStays: false);
+            fractureGo.transform.localPosition = new Vector3(0f, 0f, distance);
+            fractureGo.transform.localRotation = Quaternion.identity;
+            fractureGo.transform.localScale = new Vector3(veilSize.x, veilSize.y, 1f);
+            _fracture = fractureGo.transform;
+
+            _fractureMesh = IntroFractureMesh.Build();
+            _fractureFilter = fractureGo.AddComponent<MeshFilter>();
+            _fractureFilter.sharedMesh = _fractureMesh;
+            ShatterPieces = IntroFractureMesh.LastPieceCount;
+
+            _fractureRenderer = fractureGo.AddComponent<MeshRenderer>();
+            _fractureMat = new Material(fractureShader) { name = "IntroFracture (runtime)" };
+            _fractureRenderer.sharedMaterial = _fractureMat;
+            _fractureRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _fractureRenderer.receiveShadows = false;
+            _fractureRenderer.allowOcclusionWhenDynamic = false;
+            _fractureRenderer.enabled = false;
         }
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
         private Mesh? _mesh;
         private Transform? _quad;
+        private Mesh? _fractureMesh;
+        private Transform? _fracture;
 
         /// <summary>
         /// 覆いの面を <see cref="PlaneDistanceResolved"/> へ運ぶ。**覆う画角は変えない**ので、
@@ -150,6 +201,11 @@ namespace FixedCamVr.Streaming
             {
                 _quad.localPosition = new Vector3(0f, 0f, d);
                 _quad.localScale = new Vector3(size.x, size.y, 1f);
+            }
+            if (_fracture != null)
+            {
+                _fracture.localPosition = new Vector3(0f, 0f, d);
+                _fracture.localScale = new Vector3(size.x, size.y, 1f);
             }
             return size;
         }
@@ -199,6 +255,10 @@ namespace FixedCamVr.Streaming
         private readonly Vector4[] _planes = new Vector4[4];
         // 映像とのクロスフェードは現在の開口ではなく、本編スクリーンの実矩形だけに掛ける。
         private readonly Vector4[] _screenPlanes = new Vector4[4];
+        private Vector3 _screenCenter;
+        private Vector3 _screenRight = Vector3.right;
+        private Vector3 _screenUp = Vector3.up;
+        private Vector2 _screenHalf;
 
         /// <summary>
         /// 覆いの面を置く距離 (m)。<b>スクリーンと同じ距離に置く</b>のが要点で、
@@ -240,6 +300,11 @@ namespace FixedCamVr.Streaming
             float dist = Mathf.Max(c.magnitude, 0.01f);
             PlaneDistanceResolved = dist;   // 覆いの面はここへ置く（両眼視差を消すため）
             ApertureRectDesc = $"{hw:F2},{hh:F2},{dist:F2}";
+            ShatterRectDesc = ApertureRectDesc;
+            _screenCenter = c;
+            _screenRight = right;
+            _screenUp = up;
+            _screenHalf = new Vector2(hw, hh);
             if (!TryBuildPlanes(c, right, up, hw, hh, _screenPlanes))
                 SetPlanesFullyOpen(_screenPlanes);
             float k = Mathf.Clamp01(frameClose);
@@ -351,10 +416,11 @@ namespace FixedCamVr.Streaming
 
             // 新しい導入が全開から始まった時点で、前回走行の到達値を落とす。
             // SetHidden では落とさない。Frame → Swap の遷移ログが閉じ切った実測を読むため。
-            if (w.frame <= FullyOpenEpsilon)
+            if (w.shatter <= FullyOpenEpsilon && w.frame <= FullyOpenEpsilon)
             {
                 ApertureDrawn = false;
                 ApertureClosePeak = 0f;
+                ShatterPeak = 0f;
             }
 
             // 何も隠していない状態（枠が開いていて、パススルーも出さない）では描画そのものを止める。
@@ -372,8 +438,34 @@ namespace FixedCamVr.Streaming
             for (int i = 0; i < ScreenPlaneIds.Length; i++) _mat.SetVector(ScreenPlaneIds[i], _screenPlanes[i]);
             _mat.SetFloat(PassthroughId, Mathf.Clamp01(w.passthrough));
             _mat.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
+            _mat.SetFloat(FractureActiveId, w.shatter > FullyOpenEpsilon ? 1f : 0f);
             _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
+
+            // p=.84 以降はシェーダ内で alpha=1 になり、破片の見かけは消えている。
+            // Renderer は Frame 終端まで通して実配布の最大値を記録し、Swap へ入った所で止める。
+            bool drawShatter = w.shatter > FullyOpenEpsilon
+                               && _fractureRenderer != null && _fractureMat != null
+                               && _fractureMesh != null;
+            if (_fractureRenderer != null) _fractureRenderer.enabled = drawShatter;
+            if (drawShatter)
+            {
+                float shatter = Mathf.Clamp01(w.shatter);
+                _fractureMat!.SetFloat(ShatterId, shatter);
+                _fractureMat.SetVector(VeilSizeId,
+                    new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
+                _fractureMat.SetVector(ScreenCenterId,
+                    new Vector4(_screenCenter.x, _screenCenter.y, _screenCenter.z, 0f));
+                _fractureMat.SetVector(ScreenRightId,
+                    new Vector4(_screenRight.x, _screenRight.y, _screenRight.z, 0f));
+                _fractureMat.SetVector(ScreenUpId,
+                    new Vector4(_screenUp.x, _screenUp.y, _screenUp.z, 0f));
+                _fractureMat.SetVector(ScreenHalfId,
+                    new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
+                for (int i = 0; i < ScreenPlaneIds.Length; i++)
+                    _fractureMat.SetVector(ScreenPlaneIds[i], _screenPlanes[i]);
+                if (shatter > ShatterPeak) ShatterPeak = shatter;
+            }
             float close = Mathf.Clamp01(w.frame);
             if (close > FullyOpenEpsilon)
             {
@@ -449,6 +541,8 @@ namespace FixedCamVr.Streaming
         public void SetHidden()
         {
             if (_renderer != null) _renderer.enabled = false;
+            if (_fractureRenderer != null) _fractureRenderer.enabled = false;
+            if (_mat != null) _mat.SetFloat(FractureActiveId, 0f);
             if (_filter != null && _mesh != null) _filter.sharedMesh = _mesh;
             // 閉じ切った開口を配ったまま去ると、次に箱を出す誰かが**枠の形に切られる**。
             PublishApertureOpen();
@@ -459,7 +553,9 @@ namespace FixedCamVr.Streaming
         private void OnDestroy()
         {
             if (_mat != null) Destroy(_mat);
+            if (_fractureMat != null) Destroy(_fractureMat);
             if (_mesh != null) Destroy(_mesh);
+            if (_fractureMesh != null) Destroy(_fractureMesh);
         }
     }
 }
