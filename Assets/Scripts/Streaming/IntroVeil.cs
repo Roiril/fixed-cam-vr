@@ -442,7 +442,7 @@ namespace FixedCamVr.Streaming
             _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
 
-            // p=.84 以降はシェーダ内で alpha=1 になり、破片の見かけは消えている。
+            // p=.82 で全片がスクリーン矩形を埋める。p=.88 以降は映像へ溶け始める。
             // Renderer は Frame 終端まで通して実配布の最大値を記録し、Swap へ入った所で止める。
             bool drawShatter = w.shatter > FullyOpenEpsilon
                                && _fractureRenderer != null && _fractureMat != null
@@ -452,6 +452,7 @@ namespace FixedCamVr.Streaming
             {
                 float shatter = Mathf.Clamp01(w.shatter);
                 _fractureMat!.SetFloat(ShatterId, shatter);
+                _fractureMat.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
                 _fractureMat.SetVector(VeilSizeId,
                     new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
                 _fractureMat.SetVector(ScreenCenterId,
@@ -462,8 +463,6 @@ namespace FixedCamVr.Streaming
                     new Vector4(_screenUp.x, _screenUp.y, _screenUp.z, 0f));
                 _fractureMat.SetVector(ScreenHalfId,
                     new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
-                for (int i = 0; i < ScreenPlaneIds.Length; i++)
-                    _fractureMat.SetVector(ScreenPlaneIds[i], _screenPlanes[i]);
                 if (shatter > ShatterPeak) ShatterPeak = shatter;
             }
             float close = Mathf.Clamp01(w.frame);

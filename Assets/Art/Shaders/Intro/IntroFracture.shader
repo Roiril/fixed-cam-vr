@@ -1,19 +1,16 @@
-// 段 4 の破片。Passthrough Windows の alpha だけで、現実の面が割れてスクリーンへ収束する。
+// 段 4 の破片。Passthrough Windows の alpha だけで、現実の全面が割れてスクリーンへ再構成される。
 // UV1 は微細片の中心と面積、UV2 は大面の中心・波の開始差・面番号を持つ。
 Shader "FixedCamVr/IntroFracture"
 {
     Properties
     {
         _Shatter("Fracture progress", Range(0, 1)) = 0
+        _ScreenFade("Screen crossfade", Range(0, 1)) = 0
         _VeilSize("Veil size m (xy) / distance (z)", Vector) = (2, 2, 0.3, 0)
         _ScreenCenter("Screen center", Vector) = (0, 0, 2, 0)
         _ScreenRight("Screen right", Vector) = (1, 0, 0, 0)
         _ScreenUp("Screen up", Vector) = (0, 1, 0, 0)
         _ScreenHalf("Screen half size", Vector) = (1, 0.56, 0, 0)
-        _ScreenPlane0("Screen edge plane 0", Vector) = (0, 0, -1, 0)
-        _ScreenPlane1("Screen edge plane 1", Vector) = (0, 0, -1, 0)
-        _ScreenPlane2("Screen edge plane 2", Vector) = (0, 0, -1, 0)
-        _ScreenPlane3("Screen edge plane 3", Vector) = (0, 0, -1, 0)
     }
 
     SubShader
@@ -49,27 +46,27 @@ Shader "FixedCamVr/IntroFracture"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float2 local : TEXCOORD0;
-                float closed : TEXCOORD1;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
             float _Shatter;
+            float _ScreenFade;
             float4 _VeilSize;
             float4 _ScreenCenter;
             float4 _ScreenRight;
             float4 _ScreenUp;
             float4 _ScreenHalf;
-            float4 _ScreenPlane0;
-            float4 _ScreenPlane1;
-            float4 _ScreenPlane2;
-            float4 _ScreenPlane3;
-
-            float EaseOutCubic(float t)
+            float2 ScreenAngle(float2 local)
             {
-                t = saturate(t);
-                float r = 1.0 - t;
-                return 1.0 - r * r * r;
+                return atan(local * (2.0 / 0.30)) / atan(2.0);
+            }
+
+            float3 ScreenPoint(float2 local)
+            {
+                float2 angle = ScreenAngle(local);
+                return _ScreenCenter.xyz
+                     + normalize(_ScreenRight.xyz) * (_ScreenHalf.x * angle.x)
+                     + normalize(_ScreenUp.xyz) * (_ScreenHalf.y * angle.y);
             }
 
             Varyings vert(Attributes v)
@@ -97,64 +94,51 @@ Shader "FixedCamVr/IntroFracture"
                                     + IntroShardSpin2(smallCenter - macroCenter, macroAngle) * (1.0 - 0.008 * macroOpen)
                                     + macroDrift;
 
-                // 大面の内部は後からほどく。各三角形は中心を共有せず、自分の中心へ連続して細くなる。
+                // 大面の内部は後からほどく。開始差は残すが、移動は全片で同じ時計を使う。
                 float pieceDelay = (v.macro.z / 0.14 - 0.5) * 0.04 + pieceNoise.x * 0.02;
-                float loosen = smoothstep(0.22 + pieceDelay, 0.48 + pieceDelay, p);
-                float2 relative = pos - movingCenter;
-                relative *= lerp(1.0, 0.82, loosen);
+                float loosen = smoothstep(0.20 + pieceDelay, 0.40 + pieceDelay, p);
+                float travel = smoothstep(0.30, 0.82, p);
+                float seal = smoothstep(0.66, 0.82, p);
 
-                // 微細片の中心から、見かけ上もっとも近いスクリーン辺を求める。
-                float3 source = float3(movingCenter * _VeilSize.xy, _VeilSize.z);
-                float2 targetOnPlane;
-                float3 targetOnScreen;
-                IntroShardTarget(source, _ScreenCenter.xyz, normalize(_ScreenRight.xyz),
-                    normalize(_ScreenUp.xyz), _ScreenHalf.xy, _VeilSize.z,
-                    targetOnPlane, targetOnScreen);
-                float2 target = targetOnPlane / max(_VeilSize.xy, float2(1e-4, 1e-4));
-                float2 delta = target - movingCenter;
+                // 元の角度空間をスクリーン実平面へ戻す。同じ元頂点は必ず同じ終点になるため、
+                // p=.82 で全共有辺が隙間なく閉じ、大面変形も残らない。
+                float3 sourceCenter = float3(movingCenter * _VeilSize.xy, _VeilSize.z);
+                float3 sourceVertex = float3(pos * _VeilSize.xy, _VeilSize.z);
+                float3 targetCenter = ScreenPoint(smallCenter);
+                float3 targetVertex = ScreenPoint(v.positionOS.xy);
+                float3 delta = targetCenter - sourceCenter;
                 float travelDistance = length(delta);
-                float2 direction = travelDistance > 1e-5 ? delta / travelDistance : float2(1.0, 0.0);
-                float2 sideways = float2(-direction.y, direction.x);
 
-                float travel = smoothstep(0.32 + pieceDelay, 0.82, p);
+                float3 screenNormal = normalize(cross(normalize(_ScreenRight.xyz), normalize(_ScreenUp.xyz)));
+                float3 sideways = cross(screenNormal, delta);
+                float sidewaysLength = length(sideways);
+                sideways = sidewaysLength > 1e-5 ? sideways / sidewaysLength : normalize(_ScreenRight.xyz);
                 float curveSign = pieceNoise.x < 0.5 ? -1.0 : 1.0;
-                float curve = sin(travel * PI) * travelDistance * 0.06 * curveSign;
-                movingCenter += delta * travel + sideways * curve;
+                float curveVariation = 0.88 + saturate(pieceDelay * 8.0 + 0.5) * 0.24;
+                float curve = sin(travel * PI) * travelDistance * 0.025 * curveSign * curveVariation;
+                float3 centerHead = lerp(sourceCenter, targetCenter, travel) + sideways * curve;
 
-                // 収束中の面積を減らし、重なった幕にならないよう短い片へ変える。
-                float spin = radians((pieceNoise.y * 2.0 - 1.0) * 4.0) * travel;
-                relative = IntroShardSpin2(relative, spin);
-                float along = dot(relative, direction);
-                float across = dot(relative, sideways);
-                float remaining = max(1.0 - travel, 0.001);
-                relative = direction * along * pow(remaining, 1.10)
-                         + sideways * across * pow(remaining, 1.45);
+                float3 sourceRelative = sourceVertex - sourceCenter;
+                float3 targetRelative = targetVertex - targetCenter;
+                float3 relativeHead = lerp(sourceRelative, targetRelative, travel);
+                float spin = radians((pieceNoise.y * 2.0 - 1.0) * 3.0) * sin(travel * PI);
+                relativeHead = IntroShardSpin3(relativeHead, screenNormal, spin);
 
-                // 辺に着いた破片は細い継ぎ目へ畳まれ、p=.84 で完全に閉じる。
-                float closed = smoothstep(0.76, 0.84, p);
-                relative = direction * dot(relative, direction) * lerp(1.0, 0.28, closed)
-                         + sideways * dot(relative, sideways) * lerp(1.0, 0.03, closed);
-                movingCenter = lerp(movingCenter, target, closed);
-                pos = movingCenter + relative;
-
-                o.local = pos;
-                o.closed = closed;
-                o.positionCS = TransformObjectToHClip(float3(pos, 0.0));
+                // 隙間は内部分離で開き、移動中も18%以内に留め、再構成の終端でゼロへ戻す。
+                float gap = loosen * (0.06 + 0.12 * sin(travel * PI)) * (1.0 - seal);
+                float3 head = centerHead + relativeHead * (1.0 - gap);
+                float3 objectPosition = float3(
+                    head.xy / max(_VeilSize.xy, float2(1e-4, 1e-4)),
+                    head.z - _VeilSize.z);
+                o.positionCS = TransformObjectToHClip(objectPosition);
                 return o;
             }
 
             float4 frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
-                float3 dir = normalize(float3(i.local * _VeilSize.xy, _VeilSize.z));
-                float screenDistance = max(
-                    max(dot(dir, _ScreenPlane0.xyz), dot(dir, _ScreenPlane1.xyz)),
-                    max(dot(dir, _ScreenPlane2.xyz), dot(dir, _ScreenPlane3.xyz)));
-
-                // スクリーン矩形は base quad が正確に透かす。跨いだ破片も fragment 単位で塞ぐ。
-                float onScreen = 1.0 - step(0.0, screenDistance);
-                float alpha = max(saturate(i.closed), onScreen);
-                return float4(0.0, 0.0, 0.0, alpha);
+                // 全片を同じ量で現実から映像へ溶かす。中央を除外しない。
+                return float4(0.0, 0.0, 0.0, saturate(_ScreenFade));
             }
             ENDHLSL
         }

@@ -249,7 +249,7 @@ namespace FixedCamVr.Streaming.EditorTools
                      new[]
                      {
                          (0f, 0), (0.125f, 12), (0.25f, 25), (0.375f, 37), (0.5f, 50),
-                         (0.625f, 62), (0.75f, 75), (0.875f, 87), (0.999f, 100),
+                         (0.625f, 62), (0.75f, 75), (0.84f, 84), (0.875f, 87), (0.94f, 94), (0.999f, 100),
                      })
                 yield return new Shot(IntroStage.Frame, 4, "frame", p, label);
 
@@ -398,6 +398,8 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly Texture2D _reality;
             private readonly Texture2D? _plate;
             private readonly Texture2D _sceneTex;
+            private Texture2D? _alphaMask;
+            private Color32[]? _alphaPixels;
             private readonly RenderTexture _outRt;
             private readonly Texture2D _readback;
             private readonly int _outW, _outH;
@@ -691,6 +693,14 @@ namespace FixedCamVr.Streaming.EditorTools
                 string? dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
                 File.WriteAllBytes(path, _sceneTex.EncodeToPNG());
+                // 合成前の alpha も保存する。中央だけ割れていない状態を画素で検出するため。
+                if (_alphaMask != null)
+                {
+                    string maskPath = Path.Combine(_outDir, "alpha", fileName);
+                    string? maskDir = Path.GetDirectoryName(maskPath);
+                    if (!string.IsNullOrEmpty(maskDir)) Directory.CreateDirectory(maskDir);
+                    File.WriteAllBytes(maskPath, _alphaMask.EncodeToPNG());
+                }
             }
 
             private void PlaceHead(bool inside)
@@ -728,8 +738,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ---- パススルーの合成（Passthrough Windows と同じ式）----
                 Color32[] a = _sceneTex.GetPixels32();
                 Color32[] r = _reality.GetPixels32();
+                if (_alphaPixels == null || _alphaPixels.Length != a.Length) _alphaPixels = new Color32[a.Length];
                 for (int i = 0; i < a.Length; i++)
                 {
+                    _alphaPixels[i] = new Color32(a[i].a, a[i].a, a[i].a, 255);
                     float inv = 1f - a[i].a / 255f;
                     a[i] = new Color32(
                         (byte)Mathf.Min(255f, a[i].r + r[i].r * inv),
@@ -739,6 +751,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 _sceneTex.SetPixels32(a);
                 _sceneTex.Apply();
+                if (_alphaMask == null) _alphaMask = new Texture2D(Width, Height, TextureFormat.RGBA32, false);
+                _alphaMask.SetPixels32(_alphaPixels);
+                _alphaMask.Apply();
 
                 resolved.Release();
                 UnityEngine.Object.DestroyImmediate(resolved);
@@ -804,6 +819,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 UnityEngine.Object.DestroyImmediate(_readback);
                 UnityEngine.Object.DestroyImmediate(_sceneTex);
+                if (_alphaMask != null) UnityEngine.Object.DestroyImmediate(_alphaMask);
                 UnityEngine.Object.DestroyImmediate(_reality);
                 if (_plate != null) UnityEngine.Object.DestroyImmediate(_plate);
                 UnityEngine.Object.DestroyImmediate(_stageMat);

@@ -522,7 +522,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Frame_BreaksFromTheStartAndOnlyClosesAtTheEnd()
+        public void Frame_BreaksFromTheStartAndReconstructsAtTheEnd()
         {
             var l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.frame, 1e-4f, "段の頭が全開ではない");
@@ -537,28 +537,28 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Frame_CrossfadesToVideo_JustBeforeTheApertureCloses()
+        public void Frame_ReconstructsRealityBeforeCrossfadingToVideo()
         {
             // ⚠⚠ ユーザー指摘（2026-08-15・`canon/LEDGER.md` 0045 / 0046）
             //    「割れた先はパススルーのくりぬきではなくカメラ映像に」
             //    「細かくなって集まって、くりぬきが完全になる少し前にフェードで入れ替える感じ」。
-            //    前半は現実のまま割れて集まり、閉じ切る少し前に入れ替わる。
+            //    全面が割れて集まり、中央の四角い現実が成立してから映像へ入れ替わる。
             var l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から入れ替わっている");
 
-            // 破片がスクリーンへ寄るまでは現実を保つ。
-            l.Tick(T.frameSec * 0.70f, Ready(outsideM: 2f));
+            // p=.82 の再構成後も p=.88 までは中央の四角い現実を保つ。
+            l.Tick(T.frameSec * 0.88f, Ready(outsideM: 2f));
             Assert.Greater(l.Weights.shatter, 0f, "破砕が進んでいない");
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "破片が寄る前に入れ替わっている");
 
-            // スクリーンの近くまで寄った後だけクロスフェードする。
-            l.Tick(T.frameSec * 0.10f, Ready(outsideM: 2f));
+            // 再構成された矩形からだけクロスフェードする。
+            l.Tick(T.frameSec * 0.05f, Ready(outsideM: 2f));
             float mid = l.Weights.live;
             Assert.Greater(mid, 0f, "破片が寄っても入れ替わっていない");
             Assert.Less(mid, 1f, "一瞬で入れ替わっている（フェードになっていない）");
 
-            // p=.88 を過ぎると映像と終端矩形が揃って確定する。
-            l.Tick(T.frameSec * 0.10f, Ready(outsideM: 2f));
+            // p=.98 で映像と終端矩形が揃って確定する。
+            l.Tick(T.frameSec * 0.05f, Ready(outsideM: 2f));
             Assert.AreEqual(1f, l.Weights.live, 0.02f, "終端までに入れ替わっていない");
             Assert.AreEqual(1f, l.Weights.frame, 0.02f, "終端矩形が確定していない");
             Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "段 4 の現実を先に消している");

@@ -9,8 +9,8 @@ namespace FixedCamVr.Streaming
     /// <see cref="ShowPhase.Intro"/> の**内側**のサブ状態で、ゲート・終了判定・heartbeat・卓・
     /// シミュレータへの分岐を増やさないための設計。
     ///
-        /// 段名と進行骨格は既存のまま保ち、見え方は 2026-09-13 に連続光学開口へ更新した。
-        /// 現実の彩度が落ち、静止した後、全視野を囲む 4 辺が本編スクリーンへ閉じる。
+        /// 段名と進行骨格は既存のまま保つ。現実の彩度が落ちて静止した後、
+        /// 全視野が割れ、全片が本編スクリーンの矩形へ再構成される。
     ///
     /// 段は <b>Black → Real → Degrade → Structure → Frame → Swap</b> の 5 段 13.1 秒
     /// （段 3 は段 2 と重なるので単純和ではない）。
@@ -28,8 +28,8 @@ namespace FixedCamVr.Streaming
         /// <summary>段 3。彩度が落ち切った現実を静止して見せる。</summary>
         Structure,
         /// <summary>
-        /// 段 4。全視野の現実を囲む 4 辺が、本編スクリーンの開口へ滑らかに閉じる。
-        /// 後半はスクリーンの内側だけをカメラ映像へクロスフェードする。
+        /// 段 4。全視野の現実が割れ、全片が本編スクリーンの矩形へ滑らかに集まる。
+        /// 矩形になった現実を短く見せた後、同じ全片をカメラ映像へクロスフェードする。
         /// </summary>
         Frame,
         /// <summary>
@@ -124,7 +124,7 @@ namespace FixedCamVr.Streaming
         public float edge;
         /// <summary>壁・床の線とカメラの印の強さ（<c>run.intro.showRoomWire</c> が既定 OFF）。</summary>
         public float structure;
-        /// <summary>破砕の終端でスクリーン矩形を確定する量。0 = 全画面 / 1 = スクリーンの開口だけ。</summary>
+        /// <summary>破砕の終端でスクリーン矩形を確定する量。0 = 全視野 / 1 = 再構成された矩形。</summary>
         public float frame;
 
         /// <summary>
@@ -659,16 +659,16 @@ namespace FixedCamVr.Streaming
                             degrade = 1f,
                             edge = 0f,
                             structure = 0f,
-                            // 破片がスクリーンへ収束した終盤だけ、正確な矩形を確定する。
-                            // 破砕中の現実を四辺から先に切り落とさない。
-                            frame = SmoothStep(0.70f, 0.88f, p),
+                            // 全片の再構成が終わる時刻に、幾何上の矩形も確定する。
+                            // base quad は破砕中ずっと閉じているため、四辺の閉鎖としては見せない。
+                            frame = SmoothStep(0.70f, 0.84f, p),
                             // 映像と既存音が共有する段 4 の時計。
                             shatter = p,
                             grain = 0f,
                             glitch = 0f,
                             // 混合量は IntroVeil の _ScreenFade だけが持つ。IntroDirector の
                             // _IntroLive は 0/1 の表示ゲートなので、ここを二重に掛けない。
-                            live = SmoothStep(0.72f, 0.88f, p),
+                            live = SmoothStep(0.88f, 0.98f, p),
                             ignite = 1f,
                         };
                     }

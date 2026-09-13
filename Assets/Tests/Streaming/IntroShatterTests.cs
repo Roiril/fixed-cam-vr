@@ -7,7 +7,7 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
-    /// 段 4 の実破砕とスクリーンへの収束を固定する。
+    /// 段 4 の全面破砕とスクリーン矩形への再構成を固定する。
     /// <c>shatter</c> は描画と既存音が共有する同じ時計でなければならない。
     /// </summary>
     public sealed class IntroShatterTests
@@ -71,16 +71,17 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ScreenCrossfade_StaysOffThenCompletesBeforeFrameEnd()
+        public void ScreenCrossfade_HoldsTheReconstructedRealityThenCompletes()
         {
             var l = AtFrame();
-            l.Tick(IntroTiming.Default.frameSec * 0.70f, Ready());
+            // p=.82 で全片が矩形へ再構成された後も、短く現実を保つ。
+            l.Tick(IntroTiming.Default.frameSec * 0.88f, Ready());
             Assert.AreEqual(0f, l.Weights.live, 1e-5f);
 
-            l.Tick(IntroTiming.Default.frameSec * 0.10f, Ready());
+            l.Tick(IntroTiming.Default.frameSec * 0.05f, Ready());
             Assert.That(l.Weights.live, Is.InRange(0.01f, 0.99f));
 
-            l.Tick(IntroTiming.Default.frameSec * 0.10f, Ready());
+            l.Tick(IntroTiming.Default.frameSec * 0.05f, Ready());
             Assert.AreEqual(1f, l.Weights.live, 1e-5f);
             Assert.AreEqual(1f, l.Weights.frame, 1e-5f, "映像の終端とスクリーン矩形が揃っていない");
         }
@@ -94,7 +95,7 @@ namespace FixedCamVr.Streaming.Tests
                 var veil = root.AddComponent<IntroVeil>();
                 typeof(IntroVeil).GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance)!
                     .Invoke(veil, null);
-                Assert.AreEqual(1, veil.ApertureQuads, "正確なスクリーン窓の base quad が 1 枚でない");
+                Assert.AreEqual(1, veil.ApertureQuads, "破砕の背面を塞ぐ base quad が 1 枚でない");
                 Assert.Greater(veil.ShatterPieces, 0, "破片メッシュが生成されていない");
                 Assert.IsFalse(veil.ShatterDrawn, "段 4 の開始前から破片が描かれている");
 
@@ -103,23 +104,23 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.IsTrue(veil.ShatterDrawn, "割れ始めに破片 Renderer が描かれていない");
                 Assert.AreEqual(1, veil.ApertureQuads, "破砕中に base quad を差し替えている");
 
-                w.shatter = 0.83f;
+                w.shatter = 0.81f;
                 w.frame = 0.9f;
                 veil.Apply(w);
-                Assert.IsTrue(veil.ShatterDrawn, "継ぎ目へ収束する前に破片が消えた");
-                Assert.That(veil.ShatterPeak, Is.EqualTo(0.83f).Within(1e-4f));
+                Assert.IsTrue(veil.ShatterDrawn, "矩形へ再構成される前に破片が消えた");
+                Assert.That(veil.ShatterPeak, Is.EqualTo(0.81f).Within(1e-4f));
 
-                w.shatter = 0.84f;
+                w.shatter = 0.82f;
                 w.frame = 1f;
-                w.live = 1f;
+                w.live = 0f;
                 veil.Apply(w);
                 Assert.IsTrue(veil.ShatterDrawn,
-                    "見かけが継ぎ目へ閉じた Frame 終端まで実配布の記録経路を保っていない");
+                    "全片が矩形へ再構成された Frame 終端まで実配布の記録経路を保っていない");
 
                 w = new IntroWeights { passthrough = 0f, frame = 1f, live = 1f, ignite = 1f };
                 veil.Apply(w);
                 Assert.IsFalse(veil.ShatterDrawn, "収束終端で破片 Renderer が残り、現実が漏れる");
-                Assert.That(veil.ShatterPeak, Is.EqualTo(0.84f).Within(1e-4f),
+                Assert.That(veil.ShatterPeak, Is.EqualTo(0.82f).Within(1e-4f),
                     "終端記録より前に破砕の実測最大値を消した");
             }
             finally
