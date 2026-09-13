@@ -420,6 +420,10 @@ test('表示更新は同期し、重複アニメーションを取消して縮�
 
 test('本番JSONと表示指定の境界値を検証する', () => {
   assert.equal(runtime.validateBriefingData(clone(briefing)).scenes.length, briefing.scenes.length);
+  for (const scene of briefing.scenes) {
+    assert.equal(scene.audio?.ja, `${scene.id}-ja-v1.mp3`);
+    assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.audio.ja}.bytes`)));
+  }
   const presentation = clone(briefing);
   presentation.scenes[0].layout = 'doctor-evidence';
   presentation.scenes[0].doctorAnchor = 0;
@@ -443,6 +447,7 @@ test('本番JSONと表示指定の境界値を検証する', () => {
 
 test('媒体未指定の場面ではaudioもvideoも作らない', () => {
   const data = clone(briefing);
+  delete data.scenes[0].audio;
   prepareBriefing(data);
   const audioCount = createdAudio.length;
   const video = elements.get('doctorVideo');

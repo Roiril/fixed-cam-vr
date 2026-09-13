@@ -27,15 +27,18 @@
         "en": "Doctor · Anomalous investigations",
         "fr": "Docteur · Supervision des enquêtes"
       },
+      "audio": {
+        "ja": "introduction-ja-v1.mp3"
+      },
       "cues": {
         "ja": [
           {
             "text": "こんにちは。日本怪異研究所へようこそ。私はあなたの上司にあたる、博士です。",
-            "durationMs": 3600
+            "durationMs": 7030
           },
           {
             "text": "あなたに、ある呪われたオブジェクトの調査を依頼します。",
-            "durationMs": 4600
+            "durationMs": 4609
           }
         ],
         "en": [
@@ -86,23 +89,26 @@
         "en": "SH-KB-02 · Observe as you walk",
         "fr": "SH-KB-02 · Observez en marchant"
       },
+      "audio": {
+        "ja": "subject-ja-v1.mp3"
+      },
       "cues": {
         "ja": [
           {
             "text": "それが、こちらの壁です。",
-            "durationMs": 2400
+            "durationMs": 2744
           },
           {
             "text": "観測装置をつけ、この壁を3周してください。",
-            "durationMs": 3000
+            "durationMs": 4091
           },
           {
             "text": "その間は右手で手すりを持ち、離さないでください。",
-            "durationMs": 4200
+            "durationMs": 4368
           },
           {
             "text": "異変を見逃さないよう、ゆっくり慎重に歩いてください。",
-            "durationMs": 5200
+            "durationMs": 4903
           }
         ],
         "en": [
@@ -169,23 +175,26 @@
         "en": "Left controller · Either button · 1 second",
         "fr": "Manette gauche · Un seul bouton · 1 seconde"
       },
+      "audio": {
+        "ja": "report-ja-v1.mp3"
+      },
       "cues": {
         "ja": [
           {
             "text": "これが、怪異を記録・解析する観測装置です。",
-            "durationMs": 3600
+            "durationMs": 4564
           },
           {
             "text": "あなたの調査を支援するエージェントが搭載されています。",
-            "durationMs": 3800
+            "durationMs": 4541
           },
           {
             "text": "異変に気づいたら、左コントローラーのXかYを1秒間長押ししてください。",
-            "durationMs": 5000
+            "durationMs": 6673
           },
           {
             "text": "エージェントが解析してくれます。",
-            "durationMs": 3500
+            "durationMs": 2865
           }
         ],
         "en": [
@@ -252,15 +261,18 @@
         "en": "The agent will guide you once you are equipped",
         "fr": "L’agent vous guidera une fois équipé"
       },
+      "audio": {
+        "ja": "wear-ja-v1.mp3"
+      },
       "cues": {
         "ja": [
           {
             "text": "では、左手にコントローラーを持って観測装置をつけてください。",
-            "durationMs": 4000
+            "durationMs": 5064
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 3000
+            "durationMs": 2021
           }
         ],
         "en": [
