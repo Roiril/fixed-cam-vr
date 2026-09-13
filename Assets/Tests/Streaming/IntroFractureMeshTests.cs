@@ -50,6 +50,12 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(totalArea, Is.EqualTo(0.36d).Within(0.0002d));
                 Assert.That(pieceAreas.Count, Is.EqualTo(IntroFractureMesh.LastPieceCount));
                 Assert.That(IntroFractureMesh.LastPieceCount, Is.InRange(200, 500));
+                Assert.That(IntroFractureMesh.LastTrianglePieceCount + IntroFractureMesh.LastQuadPieceCount,
+                    Is.EqualTo(IntroFractureMesh.LastPieceCount));
+                TestContext.WriteLine(
+                    $"fracture pieces: triangles={IntroFractureMesh.LastTrianglePieceCount} "
+                    + $"quads={IntroFractureMesh.LastQuadPieceCount} total={IntroFractureMesh.LastPieceCount} "
+                    + $"vertices={mesh.vertexCount} meshTriangles={triangles.Length / 3}");
             }
             finally
             {
@@ -82,10 +88,9 @@ namespace FixedCamVr.Streaming.Tests
                 var edgeCounts = new Dictionary<EdgeKey, int>();
                 foreach (List<Vector2> points in verticesByPiece.Values)
                 {
-                    Assert.That(points.Count, Is.EqualTo(3), "a shard is not triangular");
-                    AddEdge(edgeCounts, points[0], points[1]);
-                    AddEdge(edgeCounts, points[1], points[2]);
-                    AddEdge(edgeCounts, points[2], points[0]);
+                    Assert.That(points.Count, Is.EqualTo(3).Or.EqualTo(4), "a shard has an unsupported outline");
+                    for (int i = 0; i < points.Count; i++)
+                        AddEdge(edgeCounts, points[i], points[(i + 1) % points.Count]);
                 }
 
                 int outside = 0;
@@ -114,7 +119,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ShardSizes_HaveClearLargeSmallContrastAndMostlyPointedShapes()
+        public void Shards_MixPointedTrianglesWithConvexIrregularQuads()
         {
             Mesh mesh = IntroFractureMesh.Build();
             try
@@ -137,24 +142,119 @@ namespace FixedCamVr.Streaming.Tests
 
                 var areas = new List<double>(verticesByPiece.Count);
                 int pointed = 0;
+                int triangleCount = 0;
+                int quadCount = 0;
                 foreach (List<Vector2> points in verticesByPiece.Values)
                 {
-                    double area = Math.Abs(Cross(points[1] - points[0], points[2] - points[0])) * 0.5d;
+                    double twiceArea = 0d;
+                    for (int i = 0; i < points.Count; i++)
+                        twiceArea += Cross(points[i], points[(i + 1) % points.Count]);
+                    double area = twiceArea * 0.5d;
+                    Assert.That(area, Is.GreaterThan(0d));
                     areas.Add(area);
-                    double longestSquared = Math.Max(
-                        (points[1] - points[0]).sqrMagnitude,
-                        Math.Max((points[2] - points[1]).sqrMagnitude, (points[0] - points[2]).sqrMagnitude));
-                    if (longestSquared / (2d * area) >= 2d)
-                        pointed++;
+                    if (points.Count == 3)
+                    {
+                        triangleCount++;
+                        double longestSquared = Math.Max(
+                            (points[1] - points[0]).sqrMagnitude,
+                            Math.Max((points[2] - points[1]).sqrMagnitude, (points[0] - points[2]).sqrMagnitude));
+                        if (longestSquared / (2d * area) >= 2d)
+                            pointed++;
+                    }
+                    else
+                    {
+                        quadCount++;
+                        bool allAnglesNearRight = true;
+                        for (int i = 0; i < points.Count; i++)
+                        {
+                            Vector2 a = points[(i + points.Count - 1) % points.Count];
+                            Vector2 b = points[i];
+                            Vector2 c = points[(i + 1) % points.Count];
+                            Assert.That(Cross(c - b, a - b), Is.GreaterThan(0d), "quad is not convex");
+                            double cosine = Math.Abs(Vector2.Dot(a - b, c - b))
+                                            / ((a - b).magnitude * (c - b).magnitude);
+                            allAnglesNearRight &= cosine <= 0.21d;
+                        }
+                        Assert.That(allAnglesNearRight, Is.False, "square or rectangle-like shard was accepted");
+                    }
                 }
                 areas.Sort();
 
+                double quadRatio = (double)quadCount / (triangleCount + quadCount);
+                Assert.That(triangleCount, Is.EqualTo(IntroFractureMesh.LastTrianglePieceCount));
+                Assert.That(quadCount, Is.EqualTo(IntroFractureMesh.LastQuadPieceCount));
+                Assert.That(quadRatio, Is.InRange(0.25d, 0.40d));
                 double lower = areas[areas.Count / 10];
                 double upper = areas[areas.Count * 9 / 10];
                 Assert.That(upper / lower, Is.GreaterThanOrEqualTo(8d),
                     "the 90th-percentile shard is not eight times the 10th-percentile shard");
-                Assert.That(pointed, Is.GreaterThanOrEqualTo(areas.Count / 3),
-                    "fewer than one third of the shards are pointed or elongated");
+                Assert.That(pointed, Is.GreaterThanOrEqualTo(triangleCount / 3),
+                    "fewer than one third of the triangle shards are pointed or elongated");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
+        public void QuadFaces_UseThePreservedDelaunayEdgeAsTheirDiagonal()
+        {
+            Mesh mesh = IntroFractureMesh.Build();
+            try
+            {
+                List<Vector4> pieces = ReadUv(mesh, 1);
+                List<Vector4> surfaces = ReadUv(mesh, 3);
+                Vector3[] vertices = mesh.vertices;
+                int[] triangles = mesh.triangles;
+                var outlines = new Dictionary<Vector4, List<Vector2>>();
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    if (surfaces[i].x != IntroFractureMesh.FrontSurface)
+                        continue;
+                    if (!outlines.TryGetValue(pieces[i], out List<Vector2>? points))
+                    {
+                        points = new List<Vector2>(4);
+                        outlines.Add(pieces[i], points);
+                    }
+                    points.Add(vertices[i]);
+                }
+
+                var faces = new Dictionary<Vector4, List<int[]>>();
+                for (int i = 0; i < triangles.Length; i += 3)
+                {
+                    int first = triangles[i];
+                    if (surfaces[first].x != IntroFractureMesh.FrontSurface)
+                        continue;
+                    Vector4 piece = pieces[first];
+                    if (!faces.TryGetValue(piece, out List<int[]>? pieceFaces))
+                    {
+                        pieceFaces = new List<int[]>(2);
+                        faces.Add(piece, pieceFaces);
+                    }
+                    pieceFaces.Add(new[] { first, triangles[i + 1], triangles[i + 2] });
+                }
+
+                foreach (KeyValuePair<Vector4, List<Vector2>> outline in outlines)
+                {
+                    if (outline.Value.Count != 4)
+                        continue;
+                    List<int[]> pieceFaces = faces[outline.Key];
+                    Assert.That(pieceFaces.Count, Is.EqualTo(2));
+                    var common = new List<int>(2);
+                    foreach (int first in pieceFaces[0])
+                    {
+                        foreach (int second in pieceFaces[1])
+                        {
+                            if (first == second)
+                                common.Add(first);
+                        }
+                    }
+                    Assert.That(common.Count, Is.EqualTo(2));
+                    var actual = new EdgeKey(vertices[common[0]], vertices[common[1]]);
+                    var preserved = new EdgeKey(outline.Value[0], outline.Value[2]);
+                    Assert.That(actual, Is.EqualTo(preserved), "quad fan changed the preserved Delaunay edge");
+                }
             }
             finally
             {
@@ -201,9 +301,9 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(mesh.vertexCount, Is.EqualTo(IntroFractureMesh.LastVertexCount));
                 foreach (KeyValuePair<Vector4, Vector3Int> piece in counts)
                 {
-                    Assert.That(piece.Value.x, Is.EqualTo(3));
-                    Assert.That(piece.Value.y, Is.EqualTo(3));
-                    Assert.That(piece.Value.z, Is.EqualTo(12));
+                    Assert.That(piece.Value.x, Is.EqualTo(3).Or.EqualTo(4));
+                    Assert.That(piece.Value.y, Is.EqualTo(piece.Value.x));
+                    Assert.That(piece.Value.z, Is.EqualTo(piece.Value.x * 4));
                 }
             }
             finally

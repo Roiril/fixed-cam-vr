@@ -8,8 +8,8 @@ using UnityEngine.Rendering;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// 導入で覆いを割る大小の三角形片を組む。角度空間の Delaunay 分割を全片で共有し、
-    /// 各片を最寄りの大区分へまとめる。
+    /// 導入で覆いを割る大小の三角形片と四角形片を組む。角度空間の Delaunay 分割を全片で共有し、
+    /// 隣接三角形の一部を凸な四角形へまとめる。
     /// </summary>
     public static class IntroFractureMesh
     {
@@ -26,6 +26,8 @@ namespace FixedCamVr.Streaming
         private const double DuplicateDistanceSquared = 1e-16;
 
         public static int LastPieceCount { get; private set; }
+        public static int LastTrianglePieceCount { get; private set; }
+        public static int LastQuadPieceCount { get; private set; }
         public static int LastVertexCount { get; private set; }
 
         public static Mesh Build()
@@ -33,33 +35,43 @@ namespace FixedCamVr.Streaming
             var random = new System.Random(Seed);
             Point[] macroSites = BuildGridSites(MacroColumns, MacroRows, 0.34d, random);
             List<Point> points = BuildFracturePoints(macroSites, random);
-            List<Triangle> shards = Triangulate(points);
+            List<Triangle> triangles = Triangulate(points);
+            List<Piece> shards = BuildPieces(points, triangles, macroSites, random);
             MacroRegion[] macros = BuildMacroRegions(macroSites);
 
-            var positions = new List<Vector3>(shards.Count * 18);
-            var uv0 = new List<Vector2>(shards.Count * 18);
-            var uv1 = new List<Vector4>(shards.Count * 18);
-            var uv2 = new List<Vector4>(shards.Count * 18);
-            var uv3 = new List<Vector4>(shards.Count * 18);
-            var normals = new List<Vector3>(shards.Count * 18);
-            var triangles = new List<int>(shards.Count * 24);
+            var positions = new List<Vector3>(shards.Count * 20);
+            var uv0 = new List<Vector2>(shards.Count * 20);
+            var uv1 = new List<Vector4>(shards.Count * 20);
+            var uv2 = new List<Vector4>(shards.Count * 20);
+            var uv3 = new List<Vector4>(shards.Count * 20);
+            var normals = new List<Vector3>(shards.Count * 20);
+            var meshTriangles = new List<int>(shards.Count * 28);
 
-            foreach (Triangle shard in shards)
+            int trianglePieceCount = 0;
+            int quadPieceCount = 0;
+            foreach (Piece shard in shards)
             {
-                Point a = points[shard.a];
-                Point b = points[shard.b];
-                Point c = points[shard.c];
-                Point angularCentroid = (a + b + c) * (1d / 3d);
+                var angular = new List<Point>(shard.vertices.Length);
+                var local = new List<Vector2>(shard.vertices.Length);
+                foreach (int vertex in shard.vertices)
+                {
+                    angular.Add(points[vertex]);
+                    local.Add(ToLocal(points[vertex]));
+                }
+                Point angularCentroid = Centroid(angular);
                 int macroIndex = FindNearestMacro(angularCentroid, macroSites);
-                var local = new List<Vector2>(3) { ToLocal(a), ToLocal(b), ToLocal(c) };
                 if (!TryMeasure(local, out float area, out Vector2 centroid))
-                    throw new InvalidOperationException("Delaunay shard became degenerate after projection.");
+                    throw new InvalidOperationException("Fracture shard became degenerate after projection.");
 
-                AddPiece(positions, uv0, uv1, uv2, uv3, normals, triangles, local, centroid, area,
+                AddPiece(positions, uv0, uv1, uv2, uv3, normals, meshTriangles, local, centroid, area,
                     macros[macroIndex], macroIndex);
+                if (shard.vertices.Length == 3) trianglePieceCount++;
+                else quadPieceCount++;
             }
 
             LastPieceCount = shards.Count;
+            LastTrianglePieceCount = trianglePieceCount;
+            LastQuadPieceCount = quadPieceCount;
             LastVertexCount = positions.Count;
             var mesh = new Mesh
             {
@@ -72,7 +84,7 @@ namespace FixedCamVr.Streaming
             mesh.SetUVs(1, uv1);
             mesh.SetUVs(2, uv2);
             mesh.SetUVs(3, uv3);
-            mesh.SetTriangles(triangles, 0);
+            mesh.SetTriangles(meshTriangles, 0);
             // 頂点シェーダで撮影時の頭位置から現在のスクリーンまで運ぶ。
             // 元の平面だけから求めた bounds では、頭を動かした瞬間に全破片がカリングされる。
             mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 200f);
@@ -204,6 +216,173 @@ namespace FixedCamVr.Streaming
             return triangles;
         }
 
+        private static List<Piece> BuildPieces(
+            List<Point> points,
+            List<Triangle> triangles,
+            Point[] macroSites,
+            System.Random random)
+        {
+            var owners = new Dictionary<Edge, int>();
+            var candidates = new List<MergeCandidate>(triangles.Count);
+            for (int triangleIndex = 0; triangleIndex < triangles.Count; triangleIndex++)
+            {
+                Triangle triangle = triangles[triangleIndex];
+                AddMergeCandidate(owners, candidates, new Edge(triangle.a, triangle.b), triangleIndex);
+                AddMergeCandidate(owners, candidates, new Edge(triangle.b, triangle.c), triangleIndex);
+                AddMergeCandidate(owners, candidates, new Edge(triangle.c, triangle.a), triangleIndex);
+            }
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int swap = random.Next(i + 1);
+                MergeCandidate candidate = candidates[i];
+                candidates[i] = candidates[swap];
+                candidates[swap] = candidate;
+            }
+
+            int targetQuadCount = triangles.Count / 4;
+            int quadCount = 0;
+            var consumed = new bool[triangles.Count];
+            var mergedAt = new Piece[triangles.Count];
+            var hasMergedAt = new bool[triangles.Count];
+            foreach (MergeCandidate candidate in candidates)
+            {
+                if (quadCount >= targetQuadCount)
+                    break;
+                if (consumed[candidate.firstTriangle] || consumed[candidate.secondTriangle])
+                    continue;
+
+                Triangle first = triangles[candidate.firstTriangle];
+                Triangle second = triangles[candidate.secondTriangle];
+                if (FindNearestMacro(TriangleCentroid(first, points), macroSites)
+                    != FindNearestMacro(TriangleCentroid(second, points), macroSites))
+                    continue;
+                if (!TryBuildQuad(first, second, candidate.edge, points, out Piece quad))
+                    continue;
+
+                consumed[candidate.firstTriangle] = true;
+                consumed[candidate.secondTriangle] = true;
+                int outputIndex = Math.Min(candidate.firstTriangle, candidate.secondTriangle);
+                mergedAt[outputIndex] = quad;
+                hasMergedAt[outputIndex] = true;
+                quadCount++;
+            }
+            if (quadCount < targetQuadCount)
+                throw new InvalidOperationException($"Only {quadCount} valid fracture quads were available; expected {targetQuadCount}.");
+
+            var pieces = new List<Piece>(triangles.Count - quadCount);
+            for (int i = 0; i < triangles.Count; i++)
+            {
+                if (hasMergedAt[i])
+                    pieces.Add(mergedAt[i]);
+                else if (!consumed[i])
+                    pieces.Add(new Piece(triangles[i].a, triangles[i].b, triangles[i].c));
+            }
+            return pieces;
+        }
+
+        private static void AddMergeCandidate(
+            Dictionary<Edge, int> owners,
+            List<MergeCandidate> candidates,
+            Edge edge,
+            int triangleIndex)
+        {
+            if (owners.TryGetValue(edge, out int owner))
+                candidates.Add(new MergeCandidate(owner, triangleIndex, edge));
+            else
+                owners.Add(edge, triangleIndex);
+        }
+
+        private static bool TryBuildQuad(
+            Triangle first,
+            Triangle second,
+            Edge shared,
+            List<Point> points,
+            out Piece quad)
+        {
+            int firstOpposite = OppositeVertex(first, shared);
+            int secondOpposite = OppositeVertex(second, shared);
+            int[] vertices = { shared.a, firstOpposite, shared.b, secondOpposite };
+            var angular = new List<Point>(4)
+            {
+                points[vertices[0]], points[vertices[1]], points[vertices[2]], points[vertices[3]],
+            };
+            if (TwiceArea(angular) < 0d)
+            {
+                vertices[1] = secondOpposite;
+                vertices[3] = firstOpposite;
+                angular[1] = points[vertices[1]];
+                angular[3] = points[vertices[3]];
+            }
+
+            if (!IsConvex(angular) || IsRectangleLike(angular))
+            {
+                quad = default;
+                return false;
+            }
+
+            var local = new List<Point>(4);
+            foreach (int vertex in vertices)
+            {
+                Vector2 point = ToLocal(points[vertex]);
+                local.Add(new Point(point.x, point.y));
+            }
+            if (!IsConvex(local) || IsRectangleLike(local))
+            {
+                quad = default;
+                return false;
+            }
+
+            // 0-2 は元の Delaunay 共有辺。AddPiece の fan も同じ対角線を使う。
+            quad = new Piece(vertices);
+            return true;
+        }
+
+        private static int OppositeVertex(Triangle triangle, Edge edge)
+        {
+            if (triangle.a != edge.a && triangle.a != edge.b) return triangle.a;
+            if (triangle.b != edge.a && triangle.b != edge.b) return triangle.b;
+            return triangle.c;
+        }
+
+        private static Point TriangleCentroid(Triangle triangle, List<Point> points) =>
+            (points[triangle.a] + points[triangle.b] + points[triangle.c]) * (1d / 3d);
+
+        private static bool IsConvex(List<Point> polygon)
+        {
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Point a = polygon[i];
+                Point b = polygon[(i + 1) % polygon.Count];
+                Point c = polygon[(i + 2) % polygon.Count];
+                if (Cross(b - a, c - b) <= MinArea)
+                    return false;
+            }
+            return true;
+        }
+
+        private static bool IsRectangleLike(List<Point> polygon)
+        {
+            const double maxRightAngleCosine = 0.21d;
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Point incoming = polygon[(i + polygon.Count - 1) % polygon.Count] - polygon[i];
+                Point outgoing = polygon[(i + 1) % polygon.Count] - polygon[i];
+                double cosine = Math.Abs(Dot(incoming, outgoing))
+                                / Math.Sqrt(Dot(incoming, incoming) * Dot(outgoing, outgoing));
+                if (cosine > maxRightAngleCosine)
+                    return false;
+            }
+            return true;
+        }
+
+        private static double TwiceArea(List<Point> polygon)
+        {
+            double twiceArea = 0d;
+            for (int i = 0; i < polygon.Count; i++)
+                twiceArea += Cross(polygon[i], polygon[(i + 1) % polygon.Count]);
+            return twiceArea;
+        }
+
         private static void ToggleBoundary(List<Edge> boundary, Edge edge)
         {
             int existing = boundary.IndexOf(edge);
@@ -292,9 +471,12 @@ namespace FixedCamVr.Streaming
             }
 
             // 覆いは -Z 側から見る。表は従来と同じ winding、裏は逆向きにする。
-            triangles.Add(front);
-            triangles.Add(front + 2);
-            triangles.Add(front + 1);
+            for (int i = 1; i < polygon.Count - 1; i++)
+            {
+                triangles.Add(front);
+                triangles.Add(front + i + 1);
+                triangles.Add(front + i);
+            }
 
             int back = positions.Count;
             for (int i = 0; i < polygon.Count; i++)
@@ -304,9 +486,12 @@ namespace FixedCamVr.Streaming
                     new Vector3(point.x, point.y, 0.5f), point, pieceData, macroData,
                     new Vector3(0f, 0f, 1f), BackSurface);
             }
-            triangles.Add(back);
-            triangles.Add(back + 1);
-            triangles.Add(back + 2);
+            for (int i = 1; i < polygon.Count - 1; i++)
+            {
+                triangles.Add(back);
+                triangles.Add(back + i);
+                triangles.Add(back + i + 1);
+            }
 
             for (int i = 0; i < polygon.Count; i++)
             {
@@ -395,6 +580,24 @@ namespace FixedCamVr.Streaming
             return true;
         }
 
+        private static Point Centroid(List<Point> polygon)
+        {
+            double twiceArea = 0d;
+            double sumX = 0d;
+            double sumY = 0d;
+            for (int i = 0; i < polygon.Count; i++)
+            {
+                Point a = polygon[i];
+                Point b = polygon[(i + 1) % polygon.Count];
+                double cross = Cross(a, b);
+                twiceArea += cross;
+                sumX += (a.x + b.x) * cross;
+                sumY += (a.y + b.y) * cross;
+            }
+            return new Point(sumX / (3d * twiceArea), sumY / (3d * twiceArea));
+        }
+
+        private static double Dot(Point a, Point b) => a.x * b.x + a.y * b.y;
         private static double Cross(Point a, Point b) => a.x * b.y - a.y * b.x;
         private static double Square(double value) => value * value;
         private static double DistanceSquared(Point a, Point b) => Square(a.x - b.x) + Square(a.y - b.y);
@@ -422,6 +625,30 @@ namespace FixedCamVr.Streaming
                 this.a = a;
                 this.b = b;
                 this.c = c;
+            }
+        }
+
+        private readonly struct Piece
+        {
+            public readonly int[] vertices;
+
+            public Piece(params int[] vertices)
+            {
+                this.vertices = vertices;
+            }
+        }
+
+        private readonly struct MergeCandidate
+        {
+            public readonly int firstTriangle;
+            public readonly int secondTriangle;
+            public readonly Edge edge;
+
+            public MergeCandidate(int firstTriangle, int secondTriangle, Edge edge)
+            {
+                this.firstTriangle = firstTriangle;
+                this.secondTriangle = secondTriangle;
+                this.edge = edge;
             }
         }
 

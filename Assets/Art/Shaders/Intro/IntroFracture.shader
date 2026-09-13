@@ -106,13 +106,6 @@ Shader "FixedCamVr/IntroFracture"
                 return normalize(float3(local / 0.15, 1.0)) * 1.6;
             }
 
-            float3 Bezier(float3 a, float3 b, float3 c, float3 d, float t)
-            {
-                float u = 1.0 - t;
-                return u * u * u * a + 3.0 * u * u * t * b
-                     + 3.0 * u * t * t * c + t * t * t * d;
-            }
-
             float3 SafeNormalize(float3 value, float3 fallback)
             {
                 float lengthSquared = dot(value, value);
@@ -130,12 +123,12 @@ Shader "FixedCamVr/IntroFracture"
                 return t * t * t * t * (2.5 + t * (t - 3.0));
             }
 
-            float OrbitProgress(float p)
+            float OpeningProgress(float p, float delay)
             {
-                // 角速度の山を積分する。最大開口で最速、四角形になる前に回転を終える。
-                const float begin = 0.12;
-                const float peak = 0.42;
-                const float end = 0.68;
+                // 開き始めに最速となり、離れるほど減速する。発進だけは短く滑らかにする。
+                float begin = 0.08 + delay;
+                float peak = begin + 0.035;
+                const float end = 0.42;
                 float up = peak - begin;
                 float down = end - peak;
                 float a = saturate((p - begin) / up);
@@ -186,7 +179,7 @@ Shader "FixedCamVr/IntroFracture"
                 float crack = Ease(macroStart, macroStart + 0.055, p);
                 float loosen = Ease(0.10 + v.macro.z * 0.30,
                     0.28 + pieceNoise.x * 0.03, p);
-                float launch = Ease(0.12 + v.macro.z * 0.35, 0.42, p);
+                float launch = OpeningProgress(p, v.macro.z * 0.14);
                 float largePiece = smoothstep(0.016, 0.055, v.small.z);
                 float macroAngle = radians(lerp(2.0, 5.0, macroNoise.y))
                                  * (macroNoise.x < 0.5 ? -1.0 : 1.0) * crack;
@@ -210,10 +203,10 @@ Shader "FixedCamVr/IntroFracture"
                 float3 burst = float3(radial * lateral + tangent * 0.08, depth);
                 sourcePieceCenter += burst * launch;
 
-                float travelStart = 0.42 + v.macro.z * 0.08 + pieceNoise.x * 0.012;
+                float travelStart = 0.49 + v.macro.z * 0.06 + pieceNoise.x * 0.012;
                 float travelEnd = lerp(0.79, 0.82, largePiece);
                 float travel = Ease(travelStart, travelEnd, p);
-                float alignment = Ease(0.40, 0.68, p);
+                float alignment = Ease(0.30, 0.49, p);
                 float seal = Ease(0.60, 0.82, p);
                 float detail = crack * (1.0 - seal);
                 float3 startCenter = mul(_CaptureHeadToWorld, float4(sourcePieceCenter, 1.0)).xyz;
@@ -231,29 +224,13 @@ Shader "FixedCamVr/IntroFracture"
                 if (dot(screenNormal, targetCenter - _CurrentHeadPosition.xyz) < 0.0)
                     screenNormal = -screenNormal;
 
-                float3 worldBurst = mul((float3x3)_CaptureHeadToWorld, burst);
-                float3 drift = (screenRight * tangent.x + screenUp * tangent.y) * 0.10;
-                float3 control1 = startCenter + worldBurst * 0.14 + drift;
-                float3 control2 = targetCenter - screenNormal * lerp(0.24, 0.42, pieceNoise.y) + drift * 0.35;
-                float3 centerWorld = Bezier(startCenter, control1, control2, targetCenter, travel);
-
-                // 中央を時計回りに囲み、元の写真の位置まで半径を単調に縮める。
-                // 回転した直線経路では一度集まりすぎて再拡大するため、角度と半径を分ける。
+                // 回転は開く期間だけ。離散後の位置からは写真の対応位置へ直線で戻す。
                 float3 fromScreen = startCenter - _ScreenCenter.xyz;
-                float3 toScreen = targetCenter - _ScreenCenter.xyz;
-                float2 orbitStart = float2(dot(fromScreen, screenRight), dot(fromScreen, screenUp));
-                float2 orbitTarget = float2(dot(toScreen, screenRight), dot(toScreen, screenUp));
-                float angleDelta = atan2(orbitStart.x * orbitTarget.y - orbitStart.y * orbitTarget.x,
-                    dot(orbitStart, orbitTarget)) - TWO_PI;
-                float orbitAngle = atan2(orbitStart.y, orbitStart.x) + angleDelta * OrbitProgress(p);
-                float orbitRadius = lerp(length(orbitStart), length(orbitTarget), travel);
-                float orbitSin, orbitCos;
-                sincos(orbitAngle, orbitSin, orbitCos);
-                float orbitDepth = dot(centerWorld - _ScreenCenter.xyz, screenNormal);
-                centerWorld = _ScreenCenter.xyz + screenRight * (orbitRadius * orbitCos)
-                            + screenUp * (orbitRadius * orbitSin) + screenNormal * orbitDepth;
-                // 終端を厳密に揃える。進みを戻す回転や、貼り付け直す別面は使わない。
-                if (p <= 0.12) centerWorld = startCenter;
+                float orbitAngle = -radians(80.0) * OpeningProgress(p, 0.0);
+                float3 releasedCenter = _ScreenCenter.xyz
+                    + IntroShardSpin3(fromScreen, screenNormal, orbitAngle);
+                float3 centerWorld = lerp(releasedCenter, targetCenter, travel);
+                if (p <= 0.08) centerWorld = startCenter;
                 if (travel >= 1.0) centerWorld = targetCenter;
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
@@ -264,7 +241,8 @@ Shader "FixedCamVr/IntroFracture"
                 }
 
                 float3 relativeWorld = lerp(sourceRelative, targetVertex - targetCenter, alignment);
-                float middle = loosen * (1.0 - Ease(0.38, 0.68, p));
+                float middle = loosen * lerp(1.0, 0.14, Ease(0.28, 0.49, p))
+                             * (1.0 - Ease(0.49, 0.65, p));
                 float3 travelAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroTangentX), screenRight, alignment), screenRight);
                 float3 faceAxis = SafeNormalize(lerp(
