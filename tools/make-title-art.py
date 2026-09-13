@@ -12,7 +12,8 @@
 平らな版のまま両眼視差だけで層が分かれる（押し出すと細い画が潰れる）。
 
 正本は tools/title-art/mawarimi-title-master-v2.png。
-画像生成で詰めた字形を一度だけ正本に固定し、Quest・Web UI・キービジュアルへ同じ輪郭を配る。
+Quest・Web UI は採用した題字正本から生成する。
+キービジュアルは文字配置まで仕上げた keyvisual-layout-v3.png を使う。
 正本が無い場合だけ、以前のフォント輪郭による版へ戻る。
 
 ⚠ **sRGB 変換を掛けさせない。** ここは絵ではなくマスクで、掛かると墨の量が変わる。
@@ -35,6 +36,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 
 MASTER_SOURCE = os.path.join(ROOT, "tools", "title-art", "mawarimi-title-master-v2.png")
 KEYVISUAL_PLATE = os.path.join(ROOT, "tools", "title-art", "keyvisual-clean-v2.png")
+KEYVISUAL_LAYOUT = os.path.join(ROOT, "tools", "title-art", "keyvisual-layout-v3.png")
 WEB_DEST = os.path.join(ROOT, "Assets", "Resources", "Visitor", "title-logo-v2.png.bytes")
 KEYVISUAL_DEST = os.path.join(ROOT, "Assets", "Art", "KeyVisual", "MawarimiKeyVisual-v2.png")
 
@@ -350,7 +352,9 @@ def build_from_master(preview=False):
     os.makedirs(os.path.dirname(WEB_DEST), exist_ok=True)
     transparent.save(WEB_DEST, format="PNG", optimize=True)
 
-    if os.path.exists(KEYVISUAL_PLATE):
+    if os.path.exists(KEYVISUAL_LAYOUT):
+        build_keyvisual_layout()
+    elif os.path.exists(KEYVISUAL_PLATE):
         plate = Image.open(KEYVISUAL_PLATE).convert("RGBA")
         # 人形群の右上にある暗幕へ置く。顔と左のコピーを避ける。
         logo = _fit(transparent, int(plate.width * 0.43), int(plate.height * 0.35))
@@ -367,10 +371,24 @@ def build_from_master(preview=False):
     if os.path.exists(KEYVISUAL_PLATE): print(f"key  : {KEYVISUAL_DEST}  (1920x1080)")
 
 
+def build_keyvisual_layout():
+    """文字配置を含む完成原稿から配布サイズを書き出す。"""
+    with Image.open(KEYVISUAL_LAYOUT) as source:
+        plate = source.convert("RGB").resize((1920, 1080), Image.Resampling.LANCZOS)
+    os.makedirs(os.path.dirname(KEYVISUAL_DEST), exist_ok=True)
+    plate.save(KEYVISUAL_DEST)
+    print(f"keyvisual: {KEYVISUAL_DEST} (1920x1080)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", action="store_true")
+    ap.add_argument("--keyvisual-only", action="store_true", help="完成原稿からキービジュアルだけを書き出す")
     a = ap.parse_args()
+
+    if a.keyvisual_only:
+        build_keyvisual_layout()
+        return
 
     if os.path.exists(MASTER_SOURCE):
         build_from_master(a.preview)
