@@ -166,12 +166,12 @@
         "fr": "SIGNALER UNE ANOMALIE"
       },
       "title": {
-        "ja": "XかYを長押し",
+        "ja": "XかYを押す",
         "en": "Hold X or Y",
         "fr": "Maintenez X ou Y"
       },
       "caption": {
-        "ja": "左コントローラー · どちらか一つを1秒間",
+        "ja": "左コントローラー · 押したまま1秒間",
         "en": "Left controller · Either button · 1 second",
         "fr": "Manette gauche · Un seul bouton · 1 seconde"
       },
@@ -189,7 +189,7 @@
             "durationMs": 4730
           },
           {
-            "text": "異変に気づいたら、左コントローラーのXかYを1秒間長押ししてください。",
+            "text": "異変に気づいたら、左コントローラーのXかYを押して、そのまま、1秒間待ってください。",
             "durationMs": 7775
           },
           {
