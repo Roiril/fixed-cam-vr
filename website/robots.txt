@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://mawarimi.vercel.app/sitemap.xml

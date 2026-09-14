@@ -220,6 +220,17 @@ button {
 }
 
 .archive-record dt { color: #94a38d; }
+.archive-record dt a {
+  color: inherit;
+  text-decoration-color: #94a38d66;
+  text-underline-offset: 0.35em;
+  transition: color 150ms ease-out, text-decoration-color 150ms ease-out;
+}
+.archive-record dt a:hover,
+.archive-record dt a:focus-visible {
+  color: #d0ddc8;
+  text-decoration-color: currentColor;
+}
 .archive-record dd { margin: 0; }
 .archive-divider { padding-inline: 0.45em; color: #7c8b76; }
 .archive-upcoming { display: inline-block; margin-left: 1.2em; }

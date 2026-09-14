@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const websiteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceFiles = ["index.html", "styles.css", "main.js"];
+const seoFiles = ["robots.txt", "sitemap.xml", "site.webmanifest"];
 const requiredAssets = [
+  "assets/favicon.png",
   "assets/hero-desktop.webp",
   "assets/hero-small.webp",
   "assets/hero-mobile.webp",
@@ -20,7 +22,7 @@ const requiredAssets = [
   "assets/yuji-boku-OFL.txt",
   "assets/shippori-mincho-OFL.txt"
 ];
-const builtFiles = [...sourceFiles, ...requiredAssets];
+const builtFiles = [...sourceFiles, ...seoFiles, ...requiredAssets];
 const errors = [];
 
 async function mustBeFile(relativePath, base = websiteRoot) {
@@ -33,9 +35,17 @@ async function mustBeFile(relativePath, base = websiteRoot) {
 }
 
 const [html, css, js] = await Promise.all(sourceFiles.map((file) => readFile(join(websiteRoot, file), "utf8")));
+const [robots, sitemap, manifestSource] = await Promise.all(seoFiles.map((file) => readFile(join(websiteRoot, file), "utf8")));
 
 for (const file of sourceFiles) await mustBeFile(file);
+for (const file of seoFiles) await mustBeFile(file);
 for (const asset of requiredAssets) await mustBeFile(asset);
+
+try {
+  JSON.parse(manifestSource);
+} catch {
+  errors.push("site.webmanifest: invalid JSON");
+}
 
 const localReferences = new Set();
 for (const content of [html, css]) {
@@ -114,6 +124,21 @@ if (!html.includes('href="assets/investigation-request.webp"')) errors.push("ful
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
 if (!html.includes('class="skip-link"') || !html.includes('aria-live="polite"')) errors.push("required accessibility hooks are missing");
+if (!html.includes('<link rel="canonical" href="https://mawarimi.vercel.app/">')) errors.push("canonical URL is missing");
+if (!html.includes('property="og:image"') || !html.includes('name="twitter:card"')) errors.push("social preview metadata is missing");
+const structuredDataMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+if (!structuredDataMatch) {
+  errors.push("structured data is missing");
+} else {
+  try {
+    JSON.parse(structuredDataMatch[1]);
+  } catch {
+    errors.push("structured data is invalid JSON");
+  }
+}
+if (!html.includes('href="https://ivrc.net/2026/release3/"') || !html.includes('href="https://www.dcexpo.jp/"')) errors.push("archive source links are missing");
+if (!robots.includes("Sitemap: https://mawarimi.vercel.app/sitemap.xml")) errors.push("robots.txt sitemap URL is missing");
+if (!sitemap.includes("<loc>https://mawarimi.vercel.app/</loc>")) errors.push("sitemap canonical URL is missing");
 
 if (errors.length === 0) {
   const build = spawnSync(process.execPath, [join(websiteRoot, "scripts/build.mjs")], {
@@ -134,5 +159,5 @@ if (errors.length > 0) {
   for (const error of errors) console.error(`- ${error}`);
   process.exitCode = 1;
 } else {
-  console.log(`Check passed: ${sourceFiles.length} source files, ${requiredAssets.length} assets, ${builtFiles.length} built files.`);
+  console.log(`Check passed: ${sourceFiles.length} source files, ${seoFiles.length} SEO files, ${requiredAssets.length} assets, ${builtFiles.length} built files.`);
 }

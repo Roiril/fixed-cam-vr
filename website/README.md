@@ -24,6 +24,8 @@ npm start
 
 Vercelでは `vercel.json` により同じビルドを実行し、`dist/` だけを公開します。
 
+公開URLは `https://mawarimi.vercel.app/` です。検索エンジン向けの正規URL・OGP・構造化データは `index.html`、巡回設定は `robots.txt` と `sitemap.xml` で管理します。
+
 ## 素材
 
 - `assets/hero-desktop.webp`: デスクトップ用キービジュアル原本

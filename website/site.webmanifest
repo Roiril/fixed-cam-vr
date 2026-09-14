@@ -1,0 +1,17 @@
+{
+  "name": "廻リ視",
+  "short_name": "廻リ視",
+  "description": "監視カメラに映る自分を見ながら現実空間を歩く、固定視点のホラー体験。",
+  "lang": "ja",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#100e0c",
+  "theme_color": "#100e0c",
+  "icons": [
+    {
+      "src": "/assets/favicon.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    }
+  ]
+}
