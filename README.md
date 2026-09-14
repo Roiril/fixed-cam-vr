@@ -1,5 +1,8 @@
 # fixed-cam-vr
 
+公式サイト: [website/](website/)
+ローカル起動: `cd website` → `npm run dev`
+
 1 つの Unity プロジェクトに **2 つの独立した VR アプリ**が同居している：
 
 | アプリ | 一言で | コード | シーン | パッケージ ID |
