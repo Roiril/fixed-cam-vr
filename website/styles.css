@@ -140,6 +140,11 @@ button {
 
 .site-nav a,
 .section-number,
+.site-footer {
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+}
+
 .archive {
   padding: clamp(4rem, 8vw, 8rem) var(--gutter);
   background: var(--ground);
@@ -222,11 +227,6 @@ button {
 @media (max-width: 600px) {
   .archive-record { grid-template-columns: 1fr; gap: 0.35rem; }
   .archive-record dt { font-size: 0.8rem; }
-}
-
-.site-footer {
-  font-size: 0.75rem;
-  letter-spacing: 0.18em;
 }
 
 .site-nav a {
