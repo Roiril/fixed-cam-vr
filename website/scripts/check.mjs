@@ -84,9 +84,9 @@ for (const marker of sectionMarkers) {
 const pageText = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
 const requiredCopy = [
   "固定視点",
-  "離れたカメラに映る自分を見ながら、現実の空間を歩く。",
-  "シナリオ",
-  "怪異調査員のあなたに、呪われた壁の調査依頼が届く。"
+  "監視カメラに映る自分を見ながら、現実の空間を歩く。",
+  "調査依頼",
+  "怪異調査員として、呪われた壁の調査に向かう。"
 ];
 for (const copy of requiredCopy) {
   if (!pageText.includes(copy)) errors.push(`required copy is missing: ${copy}`);
