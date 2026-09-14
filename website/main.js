@@ -3,21 +3,16 @@ const cameraButtons = [...document.querySelectorAll("[data-camera-button]")];
 const screen = document.querySelector(".crt-screen");
 const indicator = document.querySelector("#camera-indicator");
 const status = document.querySelector("#camera-status");
-const autoSwitch = document.querySelector("#auto-switch");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const CAMERA_COUNT = 3;
-const AUTO_INTERVAL_MS = 5000;
 
 let currentCamera = readCameraFromUrl();
-let autoEnabled = false;
-let autoTimer = null;
 let noiseTimer = null;
 
 function readCameraFromUrl() {
   const raw = new URL(window.location.href).searchParams.get("camera");
-  const camera = /^[1-3]$/.test(raw ?? "1") ? Number(raw ?? "1") : 1;
-  return Number.isInteger(camera) && camera >= 1 && camera <= CAMERA_COUNT ? camera : 1;
+  return /^[1-3]$/.test(raw ?? "") ? Number(raw) : 1;
 }
 
 function cameraLabel(camera) {
@@ -30,14 +25,19 @@ function writeCameraToUrl(camera, historyMode) {
   window.history[historyMode]({ camera }, "", url);
 }
 
+function stopSwitchNoise() {
+  window.clearTimeout(noiseTimer);
+  noiseTimer = null;
+  screen.classList.remove("is-switching");
+}
+
 function showSwitchNoise() {
   if (reducedMotion.matches) return;
 
-  window.clearTimeout(noiseTimer);
-  screen.classList.remove("is-switching");
+  stopSwitchNoise();
   window.requestAnimationFrame(() => {
     screen.classList.add("is-switching");
-    noiseTimer = window.setTimeout(() => screen.classList.remove("is-switching"), 190);
+    noiseTimer = window.setTimeout(stopSwitchNoise, 190);
   });
 }
 
@@ -58,43 +58,14 @@ function renderCamera(camera, { animate = true } = {}) {
   }
 
   indicator.textContent = label;
-  status.textContent = label;
+  status.textContent = `カメラ ${String(camera).padStart(2, "0")}`;
   if (animate) showSwitchNoise();
 }
 
-function stopAutoTimer() {
-  window.clearTimeout(autoTimer);
-  autoTimer = null;
-}
-
-function scheduleAutoSwitch() {
-  stopAutoTimer();
-  if (!autoEnabled || document.hidden) return;
-
-  autoTimer = window.setTimeout(() => {
-    const nextCamera = currentCamera % CAMERA_COUNT + 1;
-    renderCamera(nextCamera);
-    writeCameraToUrl(nextCamera, "replaceState");
-    scheduleAutoSwitch();
-  }, AUTO_INTERVAL_MS);
-}
-
-function setAutoEnabled(enabled) {
-  autoEnabled = enabled;
-  autoSwitch.setAttribute("aria-pressed", String(enabled));
-  if (enabled) scheduleAutoSwitch();
-  else stopAutoTimer();
-}
-
-function selectCamera(camera, historyMode = "pushState") {
-  if (camera === currentCamera) {
-    scheduleAutoSwitch();
-    return;
-  }
-
+function selectCamera(camera) {
+  if (camera === currentCamera) return;
   renderCamera(camera);
-  writeCameraToUrl(camera, historyMode);
-  scheduleAutoSwitch();
+  writeCameraToUrl(camera, "pushState");
 }
 
 for (const button of cameraButtons) {
@@ -123,20 +94,12 @@ for (const button of cameraButtons) {
   });
 }
 
-autoSwitch.addEventListener("click", () => setAutoEnabled(!autoEnabled));
-
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopAutoTimer();
-  else scheduleAutoSwitch();
-});
-
 reducedMotion.addEventListener("change", (event) => {
-  if (event.matches) setAutoEnabled(false);
+  if (event.matches) stopSwitchNoise();
 });
 
 window.addEventListener("popstate", () => {
   renderCamera(readCameraFromUrl(), { animate: false });
-  scheduleAutoSwitch();
 });
 
 renderCamera(currentCamera, { animate: false });

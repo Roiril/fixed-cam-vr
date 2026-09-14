@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#100e0c">
-    <meta name="description" content="固定視点を現実空間に再構成するホラー体験『廻リ視』。">
+    <meta name="description" content="離れたカメラに映る自分を見ながら、現実の空間を歩く。固定視点のホラー体験『廻リ視』。">
     <title>廻リ視</title>
     <link rel="preload" href="assets/shippori-mincho.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="assets/hero-desktop.webp" as="image" type="image/webp" media="(min-width: 601px)" imagesrcset="assets/hero-small.webp 1024w, assets/hero-desktop.webp 1672w" imagesizes="(min-width: 1800px) 1800px, 100vw" fetchpriority="high">
@@ -18,7 +18,7 @@
       <a class="site-mark" href="#top" aria-label="廻リ視 ページ先頭へ">廻リ視</a>
       <nav class="site-nav" aria-label="ページ内">
         <a href="#fixed-view">固定視点</a>
-        <a href="#about">企画について</a>
+        <a href="#scenario">シナリオ</a>
       </nav>
     </header>
 
@@ -30,67 +30,50 @@
           <source srcset="assets/hero-small.webp 1024w, assets/hero-desktop.webp 1672w" sizes="(min-width: 1800px) 1800px, 100vw">
           <img src="assets/hero-desktop.webp" width="1672" height="941" alt="黒い幕の前に並ぶ日本人形。廻リ視。" fetchpriority="high">
         </picture>
-        <a class="hero-next" href="#fixed-view">
-          <span>固定視点</span>
-          <span class="hero-next-line" aria-hidden="true"></span>
-        </a>
       </section>
 
       <section id="fixed-view" class="fixed-view" aria-labelledby="fixed-view-title">
-        <div class="fixed-view-heading">
+        <div class="fixed-view-copy">
           <p class="section-number" aria-hidden="true">01</p>
-          <h2 id="fixed-view-title">画面の中の自分</h2>
-          <p class="fixed-view-lead">シーン内に固定された<br>カメラを通して<br>操作キャラクターを見る</p>
+          <h2 id="fixed-view-title">固定視点</h2>
+          <p class="fixed-view-lead">離れたカメラに映る自分を見ながら、<br class="desktop-break">現実の空間を歩く。</p>
         </div>
 
         <div class="camera-exhibit">
-          <div class="crt" aria-label="固定カメラの生成イメージ">
+          <div class="crt">
             <img class="crt-body" src="assets/crt.webp" width="1448" height="1086" alt="ブラウン管テレビ">
             <div class="crt-screen">
-              <img class="camera-feed is-active" src="assets/camera-01.webp" width="1152" height="864" alt="固定カメラ01の生成イメージ" data-camera-feed="1">
-              <img class="camera-feed" src="assets/camera-02.webp" width="1152" height="864" alt="固定カメラ02の生成イメージ" data-camera-feed="2" aria-hidden="true">
-              <img class="camera-feed" src="assets/camera-03.webp" width="1152" height="864" alt="固定カメラ03の生成イメージ" data-camera-feed="3" aria-hidden="true">
+              <img class="camera-feed is-active" src="assets/camera-01.webp" width="1152" height="864" alt="固定カメラ01の映像" data-camera-feed="1">
+              <img class="camera-feed" src="assets/camera-02.webp" width="1152" height="864" alt="固定カメラ02の映像" data-camera-feed="2" aria-hidden="true">
+              <img class="camera-feed" src="assets/camera-03.webp" width="1152" height="864" alt="固定カメラ03の映像" data-camera-feed="3" aria-hidden="true">
               <span class="screen-noise" aria-hidden="true"></span>
               <span class="screen-shade" aria-hidden="true"></span>
               <span id="camera-indicator" class="camera-indicator" aria-hidden="true">CAM 01</span>
             </div>
           </div>
 
-          <div class="camera-console">
-            <div class="camera-buttons" role="group" aria-label="カメラを選択">
-              <button class="camera-button is-active" type="button" data-camera-button="1" aria-pressed="true"><span class="button-led" aria-hidden="true"></span>カメラ 01</button>
-              <button class="camera-button" type="button" data-camera-button="2" aria-pressed="false"><span class="button-led" aria-hidden="true"></span>カメラ 02</button>
-              <button class="camera-button" type="button" data-camera-button="3" aria-pressed="false"><span class="button-led" aria-hidden="true"></span>カメラ 03</button>
-            </div>
-            <button id="auto-switch" class="auto-switch" type="button" aria-pressed="false"><span class="toggle-track" aria-hidden="true"><span class="toggle-knob"></span></span>自動切替</button>
+          <div class="camera-console" role="group" aria-label="カメラを選択">
+            <button class="camera-button is-active" type="button" data-camera-button="1" aria-pressed="true"><span class="button-led" aria-hidden="true"></span>カメラ 01</button>
+            <button class="camera-button" type="button" data-camera-button="2" aria-pressed="false"><span class="button-led" aria-hidden="true"></span>カメラ 02</button>
+            <button class="camera-button" type="button" data-camera-button="3" aria-pressed="false"><span class="button-led" aria-hidden="true"></span>カメラ 03</button>
           </div>
+          <p id="camera-status" class="sr-only" aria-live="polite">カメラ 01</p>
+        </div>
+      </section>
 
-          <div class="camera-meta">
-            <p id="camera-status" class="camera-status" aria-live="polite">CAM 01</p>
-            <p class="generated-note">生成イメージ</p>
-          </div>
+      <section id="scenario" class="scenario" aria-labelledby="scenario-title">
+        <div class="scenario-copy">
+          <p class="section-number" aria-hidden="true">02</p>
+          <h2 id="scenario-title">シナリオ</h2>
+          <p>怪異調査員のあなたに、<br class="desktop-break">呪われた壁の調査依頼が届く。</p>
         </div>
 
-        <p class="work-statement">固定視点をHMDと複数のカメラで<br>現実空間に再構成する。</p>
-      </section>
-
-      <section id="blind-spot" class="blind-spot" aria-labelledby="blind-spot-title">
-        <figure class="blind-spot-figure">
-          <img src="assets/camera-03.webp" width="1152" height="864" alt="壁に視界を遮られた固定カメラ03の生成イメージ" loading="lazy">
-          <div class="blind-spot-overlay">
-            <p class="section-number" aria-hidden="true">02</p>
-            <h2 id="blind-spot-title"><span class="blind-context">固定画角ゆえの</span><span class="blind-word">死角</span></h2>
-          </div>
-          <figcaption>生成イメージ</figcaption>
-        </figure>
-      </section>
-
-      <section id="about" class="about" aria-labelledby="about-heading">
-        <p class="section-number" aria-hidden="true">03</p>
-        <details>
-          <summary id="about-heading">企画について</summary>
-          <p>1990年代のサバイバルホラーでは，シーン内に固定されたカメラを通して操作キャラクターを見る視点構成が用いられた．本企画はこの固定視点をHMDと複数のカメラで現実空間に再構成する．画角が変化しないため，視界の一部または全体を事前録画映像や生成映像へ差し替えられ，差し替えの対象は周囲の場面だけでなく画面の中の自分にまで及ぶ．固定画角ゆえの死角の演出も加え，日本人形との追跡劇のホラー体験を構成する．</p>
-        </details>
+        <div class="scenario-collage">
+          <img class="wall-evidence" src="assets/wall-evidence.webp" width="1672" height="940" alt="調査対象の壁" loading="lazy">
+          <a class="investigation-request" href="assets/investigation-request.webp" aria-label="調査依頼書を原寸で開く">
+            <img src="assets/investigation-request.webp" width="1273" height="1800" alt="調査依頼書。壁面周辺の観測調査について。" loading="lazy">
+          </a>
+        </div>
       </section>
     </main>
 

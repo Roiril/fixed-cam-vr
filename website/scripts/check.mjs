@@ -13,6 +13,8 @@ const requiredAssets = [
   "assets/camera-01.webp",
   "assets/camera-02.webp",
   "assets/camera-03.webp",
+  "assets/investigation-request.webp",
+  "assets/wall-evidence.webp",
   "assets/yuji-boku.woff2",
   "assets/shippori-mincho.woff2",
   "assets/yuji-boku-OFL.txt",
@@ -63,8 +65,53 @@ for (const forbidden of forbiddenReferences) {
   if (combinedSource.includes(forbidden)) errors.push(`forbidden legacy or remote reference: ${forbidden}`);
 }
 
-const originalText = "1990年代のサバイバルホラーでは，シーン内に固定されたカメラを通して操作キャラクターを見る視点構成が用いられた．本企画はこの固定視点をHMDと複数のカメラで現実空間に再構成する．画角が変化しないため，視界の一部または全体を事前録画映像や生成映像へ差し替えられ，差し替えの対象は周囲の場面だけでなく画面の中の自分にまで及ぶ．固定画角ゆえの死角の演出も加え，日本人形との追跡劇のホラー体験を構成する．";
-if (!html.includes(originalText)) errors.push("企画本文が指定原文と一致しません");
+const sectionCount = html.match(/<section\b/g)?.length ?? 0;
+if (sectionCount !== 3) errors.push(`expected 3 sections, found ${sectionCount}`);
+
+const sectionMarkers = [
+  'class="hero"',
+  'id="fixed-view"',
+  'id="scenario"'
+];
+let previousSectionIndex = -1;
+for (const marker of sectionMarkers) {
+  const sectionIndex = html.indexOf(marker);
+  if (sectionIndex === -1) errors.push(`required section is missing: ${marker}`);
+  else if (sectionIndex <= previousSectionIndex) errors.push(`section order is invalid: ${marker}`);
+  previousSectionIndex = sectionIndex;
+}
+
+const pageText = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+const requiredCopy = [
+  "固定視点",
+  "離れたカメラに映る自分を見ながら、現実の空間を歩く。",
+  "シナリオ",
+  "怪異調査員のあなたに、呪われた壁の調査依頼が届く。"
+];
+for (const copy of requiredCopy) {
+  if (!pageText.includes(copy)) errors.push(`required copy is missing: ${copy}`);
+}
+
+const forbiddenFeatures = [
+  "自動切替",
+  "生成イメージ",
+  "画面の中の自分",
+  "死角",
+  "企画について",
+  "blind-spot",
+  "auto-switch",
+  "scheduleautoswitch",
+  "setautoenabled",
+  "auto_interval_ms"
+];
+for (const forbidden of forbiddenFeatures) {
+  if (combinedSource.includes(forbidden)) errors.push(`forbidden content or feature remains: ${forbidden}`);
+}
+
+if ((html.match(/data-camera-button=/g)?.length ?? 0) !== 3) errors.push("manual camera controls must contain 3 buttons");
+if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
+if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
+if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
 if (!html.includes('class="skip-link"') || !html.includes('aria-live="polite"')) errors.push("required accessibility hooks are missing");
 
 if (errors.length === 0) {

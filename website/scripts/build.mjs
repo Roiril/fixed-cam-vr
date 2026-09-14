@@ -15,6 +15,8 @@ const publicFiles = [
   "assets/camera-01.webp",
   "assets/camera-02.webp",
   "assets/camera-03.webp",
+  "assets/investigation-request.webp",
+  "assets/wall-evidence.webp",
   "assets/yuji-boku.woff2",
   "assets/shippori-mincho.woff2",
   "assets/yuji-boku-OFL.txt",
