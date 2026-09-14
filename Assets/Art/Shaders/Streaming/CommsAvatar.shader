@@ -43,6 +43,7 @@ Shader "FixedCamVr/CommsAvatar"
         // 顔を出すか。0 にすると枠線だけになる（版を掴めなかったときの姿）。
         _FaceOn("Draw face (0/1)", Range(0, 1)) = 1
         _Seizure("Output seized (0..1)", Range(0, 1)) = 0
+        _PanelX("Panel-local centre X", Float) = 0
     }
 
     SubShader
@@ -79,6 +80,7 @@ Shader "FixedCamVr/CommsAvatar"
                 float _Stroke;
                 float _FaceOn;
                 float _Seizure;
+                float _PanelX;
             CBUFFER_END
 
             struct Attributes
@@ -100,6 +102,12 @@ Shader "FixedCamVr/CommsAvatar"
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+                // 上端は据え置き、下端だけを最大 40mm 下へ送る。通常時は頂点を一切変えない。
+                if (_Seizure > 0.0001)
+                {
+                    float bottom = saturate(0.5 - v.positionOS.y);
+                    v.positionOS.y -= bottom * (0.04 / 0.15) * _Seizure;
+                }
                 o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
                 o.uv = v.uv;
                 return o;
@@ -156,19 +164,41 @@ Shader "FixedCamVr/CommsAvatar"
                 //    斑なら、その画素は必ずどちらかの顔で、境目だけが柔らかい。
                 float n = ValueNoise(i.uv * _MixCells);
                 float k = saturate((_FaceMix * (1.0 + _MixSoft) - n) / max(_MixSoft, 1e-4));
-                float a1 = SAMPLE_TEXTURE2D(_Face, sampler_Face, i.uv).a;
-                float a2 = SAMPLE_TEXTURE2D(_Face2, sampler_Face2, i.uv).a;
-                float face = lerp(a1, a2, k) * _FaceOn * inner;
-
-                float a = saturate(max(ring, face)) * _Opacity;
-                // 発話を失う時は口元から版が消える。形を潰して別の表情にはしない。
+                float2 faceUv = i.uv;
+                float panelX = _PanelX + (i.uv.x - 0.5) * 0.15;
                 if (_Seizure > 0.0001)
                 {
-                    float edge = _Seizure * 1.10;
-                    float paper = i.uv.y + (n - 0.5) * 0.025;
-                    a *= smoothstep(edge - 0.04, edge + 0.02, paper);
+                    // 口元ほど先に下へ引かれる。同じ x は常に同じ長さなので静止中は完全に止まる。
+                    float column = floor(panelX / 0.0075);
+                    float lengthK = Hash21(float2(column, 17.0));
+                    float lower = 1.0 - smoothstep(0.18, 0.82, i.uv.y);
+                    faceUv.y = saturate(faceUv.y + lower * _Seizure
+                                        * lerp(0.012, 0.038, lengthK));
                 }
-                return half4(_Color.rgb, a);
+                float a1 = SAMPLE_TEXTURE2D(_Face, sampler_Face, faceUv).a;
+                float a2 = SAMPLE_TEXTURE2D(_Face2, sampler_Face2, faceUv).a;
+                float face = lerp(a1, a2, k) * _FaceOn * inner;
+
+                float a = saturate(max(ring, face));
+                // 7.5mm 周期に 1.5mm だけ版を残す。位相はパネル座標だけで決まり、時刻では揺れない。
+                // 下から先に細い繊維へ変わるので、序盤の目と頭頂は判読できる。
+                if (_Seizure > 0.0001)
+                {
+                    float stripeM = abs(frac(panelX / 0.0075) - 0.5) * 0.0075;
+                    float stripeAa = max(fwidth(panelX), 1e-5);
+                    float column = floor(panelX / 0.0075);
+                    float widthK = Hash21(float2(column, 31.0));
+                    float halfWidthM = lerp(0.00062, 0.00088, widthK);
+                    float fibre = 1.0 - smoothstep(halfWidthM,
+                                                   halfWidthM + stripeAa, stripeM);
+                    float lowerLoss = smoothstep(i.uv.y - 0.08, i.uv.y + 0.08,
+                                                 _Seizure * 1.08);
+                    float fibreLate = smoothstep(0.72, 0.96, _Seizure);
+                    float lengthK = Hash21(float2(column, 17.0));
+                    a *= lerp(1.0, fibre,
+                              lowerLoss * fibreLate * lerp(0.88, 1.0, lengthK));
+                }
+                return half4(_Color.rgb, a * _Opacity);
             }
             ENDHLSL
         }

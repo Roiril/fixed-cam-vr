@@ -17,7 +17,9 @@ namespace FixedCamVr.Streaming
         public CommsTakeoverPhase phase;
         public float reveal;
         public float erase;
+        public float strain;
         public float collapse;
+        public bool resistance;
         public bool soundCut;
     }
 
@@ -25,13 +27,13 @@ namespace FixedCamVr.Streaming
     public static class CommsTakeoverLogic
     {
         public const float AutoDelaySec = 0.6f;
-        public const float PursuitStartRatio = 0.35f;
+        public const float PursuitStartRatio = 0.20f;
+        public const float ResistanceStartRatio = 0.74f;
+        public const float ResistanceEndRatio = 0.82f;
         public const float CaptureRatio = 1f;
         public const float SeizedHoldSec = 0.35f;
-        public const float CollapseLeadSec = 0.18f;
-        public const float CollapseTailSec = 0.06f;
-        public const float MinOutputSec = 1.25f;
-        public const float MaxOutputSec = 2.2f;
+        public const float MinOutputSec = 2.2f;
+        public const float MaxOutputSec = 3f;
         // Mono の中間計算と float の戻り値の丸め差だけを吸収する。描画1コマより十分小さい。
         private const float BoundaryToleranceSec = 0.000001f;
 
@@ -56,41 +58,69 @@ namespace FixedCamVr.Streaming
             float duration = Positive(outputSec);
             float captureAt = CaptureAt(duration);
             float t = elapsedSinceTypeStart < 0f ? 0f : elapsedSinceTypeStart;
-            float collapse = Smooth(Clamp01((t - (captureAt - CollapseLeadSec))
-                                             / (CollapseLeadSec + CollapseTailSec)));
 
             if (t + BoundaryToleranceSec >= DurationFor(duration))
-                return At(CommsTakeoverPhase.Complete, MaxReveal, 1f, 1f, true);
+                return At(CommsTakeoverPhase.Complete, MaxReveal, 1f, 1f, 1f, false, true);
             if (t + BoundaryToleranceSec >= captureAt)
-                return At(CommsTakeoverPhase.Seized, MaxReveal, 1f, collapse, true);
+                return At(CommsTakeoverPhase.Seized, MaxReveal, 1f, 1f, 1f, false, true);
 
             float p = Clamp01(t / duration);
             float reveal = SourceReveal(p);
             if (p < PursuitStartRatio)
-                return At(CommsTakeoverPhase.Output, reveal, 0f, collapse, false);
+                return At(CommsTakeoverPhase.Output, reveal, 0f, 0f, 0f, false, false);
 
-            float q = Clamp01((p - PursuitStartRatio) / (CaptureRatio - PursuitStartRatio));
-            float erase = MaxReveal * (0.04f * q + 0.96f * q * q * q);
-            return At(CommsTakeoverPhase.Pursuit, reveal, erase, collapse, false);
+            bool resistance = p >= ResistanceStartRatio && p < ResistanceEndRatio;
+            float authoredP = resistance ? ResistanceStartRatio : p;
+            float erase, strain;
+            if (authoredP <= ResistanceStartRatio)
+            {
+                float q = Clamp01((authoredP - PursuitStartRatio)
+                                  / (ResistanceStartRatio - PursuitStartRatio));
+                float shaped = Smooth(q);
+                erase = 0.46f * shaped;
+                strain = 0.52f * shaped;
+            }
+            else
+            {
+                float q = Clamp01((authoredP - ResistanceEndRatio)
+                                  / (CaptureRatio - ResistanceEndRatio));
+                float accelerated = q * q;
+                erase = 0.46f + 0.54f * accelerated;
+                strain = 0.52f + 0.48f * accelerated;
+            }
+            float collapse = authoredP <= ResistanceEndRatio ? 0f
+                : Smooth((authoredP - ResistanceEndRatio) / (CaptureRatio - ResistanceEndRatio));
+            return At(CommsTakeoverPhase.Pursuit, reveal, erase, strain, collapse,
+                      resistance, false);
         }
 
         private static float SourceReveal(float p)
         {
             p = Clamp01(p);
-            if (p <= PursuitStartRatio) return p;
-            float d = p - PursuitStartRatio;
-            return PursuitStartRatio + 0.70f * d
-                   + 0.06f * (1f - (float)Math.Exp(-d / 0.20f));
+            const float readableHead = 0.44f;
+            const float beforeResistance = 0.68f;
+            const float finalReveal = 0.88f;
+            if (p <= PursuitStartRatio)
+                return readableHead * p / PursuitStartRatio;
+            if (p <= ResistanceStartRatio)
+                return readableHead + (beforeResistance - readableHead)
+                    * (p - PursuitStartRatio) / (ResistanceStartRatio - PursuitStartRatio);
+            if (p < ResistanceEndRatio) return beforeResistance;
+            // 捕捉の直前に出た字にも打鍵を対応させるため、最後の 4% は同じ未完状態を保つ。
+            float q = Clamp01((p - ResistanceEndRatio) / 0.14f);
+            return beforeResistance + (finalReveal - beforeResistance) * Smooth(q);
         }
 
         private static CommsTakeoverSample At(CommsTakeoverPhase phase, float reveal,
-            float erase, float collapse, bool soundCut)
+            float erase, float strain, float collapse, bool resistance, bool soundCut)
             => new CommsTakeoverSample
             {
                 phase = phase,
                 reveal = reveal,
                 erase = erase,
+                strain = strain,
                 collapse = collapse,
+                resistance = resistance,
                 soundCut = soundCut,
             };
 

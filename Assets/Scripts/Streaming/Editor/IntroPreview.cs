@@ -723,11 +723,11 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 // 状態値だけでは停止を証明できない。同じ入力で別時刻の実画素を照合する。
                 Render(new Shot(IntroStage.Frame, 4, "probe_motion_reset", 0f, 0), saved);
-                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_a", 0.38f, 38), saved);
+                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_a", 0.36f, 36), saved);
                 Color32[] suspended = _sceneTex.GetPixels32();
-                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_b", 0.43f, 43), saved);
+                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_b", 0.40f, 40), saved);
                 float suspendedDelta = MeanPixelDifference(suspended, _sceneTex.GetPixels32());
-                Render(new Shot(IntroStage.Frame, 4, "probe_landed_a", 0.78f, 78), saved);
+                Render(new Shot(IntroStage.Frame, 4, "probe_landed_a", 0.82f, 82), saved);
                 Color32[] landed = _sceneTex.GetPixels32();
                 Render(new Shot(IntroStage.Frame, 4, "probe_landed_b", 0.87f, 87), saved);
                 float landedDelta = MeanPixelDifference(landed, _sceneTex.GetPixels32());

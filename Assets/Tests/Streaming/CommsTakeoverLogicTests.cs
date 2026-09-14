@@ -12,7 +12,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             Assert.AreEqual(CommsTakeoverLogic.MinOutputSec,
                 CommsTakeoverLogic.OutputSecFor(1, ShowLang.Ja), 0.001f);
-            Assert.AreEqual(1.5f,
+            Assert.AreEqual(CommsTakeoverLogic.MinOutputSec,
                 CommsTakeoverLogic.OutputSecFor(18, ShowLang.Ja), 0.001f);
             Assert.AreEqual(CommsTakeoverLogic.MinOutputSec,
                 CommsTakeoverLogic.OutputSecFor(18, ShowLang.En), 0.001f);
@@ -53,11 +53,53 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void PursuitEndsFasterThanTheSourcePrints()
         {
-            const float outputSec = 2f;
-            CommsTakeoverSample a = CommsTakeoverLogic.Sample(1.8f, outputSec);
-            CommsTakeoverSample b = CommsTakeoverLogic.Sample(1.9f, outputSec);
+            const float outputSec = 2.2f;
+            CommsTakeoverSample a = CommsTakeoverLogic.Sample(2.0f, outputSec);
+            CommsTakeoverSample b = CommsTakeoverLogic.Sample(2.1f, outputSec);
 
             Assert.Greater(b.erase - a.erase, b.reveal - a.reveal);
+        }
+
+        [Test]
+        public void ResistanceFreezesEveryRenderedValue()
+        {
+            const float outputSec = 2.2f;
+            CommsTakeoverSample a = CommsTakeoverLogic.Sample(outputSec * 0.75f, outputSec);
+            CommsTakeoverSample b = CommsTakeoverLogic.Sample(outputSec * 0.81f, outputSec);
+
+            Assert.IsTrue(a.resistance);
+            Assert.IsTrue(b.resistance);
+            Assert.AreEqual(a.reveal, b.reveal, 0.000001f);
+            Assert.AreEqual(a.erase, b.erase, 0.000001f);
+            Assert.AreEqual(a.strain, b.strain, 0.000001f);
+            Assert.AreEqual(a.collapse, b.collapse, 0.000001f);
+        }
+
+        [Test]
+        public void RevealEraseAndCollapseNeverRunBackward()
+        {
+            const float outputSec = 2.2f;
+            CommsTakeoverSample previous = CommsTakeoverLogic.Sample(0f, outputSec);
+            for (int i = 1; i <= 220; i++)
+            {
+                CommsTakeoverSample current = CommsTakeoverLogic.Sample(i * 0.01f, outputSec);
+                Assert.GreaterOrEqual(current.reveal + 0.000001f, previous.reveal);
+                Assert.GreaterOrEqual(current.erase + 0.000001f, previous.erase);
+                Assert.GreaterOrEqual(current.collapse + 0.000001f, previous.collapse);
+                Assert.GreaterOrEqual(current.strain + 0.000001f, previous.strain);
+                previous = current;
+            }
+        }
+
+        [TestCase(11)]
+        [TestCase(24)]
+        [TestCase(31)]
+        public void AtLeastOneCharacterIsGeneratedAfterResistance(int charCount)
+        {
+            CommsTakeoverSample held = CommsTakeoverLogic.Sample(
+                CommsTakeoverLogic.MinOutputSec * 0.81f, CommsTakeoverLogic.MinOutputSec);
+            int before = (int)System.Math.Ceiling(held.reveal * charCount);
+            Assert.GreaterOrEqual(CommsTakeoverLogic.MaxGeneratedChars(charCount), before + 1);
         }
 
         [Test]
@@ -76,17 +118,16 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void CollapseStraddlesCaptureAndFinishesShortlyAfterIt()
+        public void CollapseStartsAfterResistanceAndFinishesAtCapture()
         {
             const float outputSec = 2f;
             float captureAt = CommsTakeoverLogic.CaptureAt(outputSec);
 
             Assert.AreEqual(0f, CommsTakeoverLogic.Sample(
-                captureAt - CommsTakeoverLogic.CollapseLeadSec, outputSec).collapse, 0.0001f);
-            Assert.That(CommsTakeoverLogic.Sample(captureAt, outputSec).collapse,
-                Is.InRange(0.8f, 0.9f));
+                outputSec * CommsTakeoverLogic.ResistanceEndRatio, outputSec).collapse, 0.0001f);
+            Assert.Greater(CommsTakeoverLogic.Sample(outputSec * 0.9f, outputSec).collapse, 0f);
             Assert.AreEqual(1f, CommsTakeoverLogic.Sample(
-                captureAt + CommsTakeoverLogic.CollapseTailSec, outputSec).collapse, 0.0001f);
+                captureAt, outputSec).collapse, 0.0001f);
         }
 
         [Test]
@@ -123,7 +164,7 @@ namespace FixedCamVr.Streaming.Tests
             var logic = new CommsPanelLogic();
             logic.Begin(9, CommsDelivery.Takeover);
 
-            for (int i = 0; i < 80 && logic.Stage != CommsStage.Out; i++)
+            for (int i = 0; i < 120 && logic.Stage != CommsStage.Out; i++)
             {
                 logic.SetGuideWanted(true);
                 logic.Tick(Dt);

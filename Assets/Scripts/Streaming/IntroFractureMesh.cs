@@ -18,6 +18,7 @@ namespace FixedCamVr.Streaming
         public const float FrontSurface = 0f;
         public const float BackSurface = 1f;
         public const float SideSurface = 2f;
+        public const int EdgeCloserCount = 3;
 
         private const int MacroColumns = 6;
         private const int MacroRows = 4;
@@ -38,6 +39,7 @@ namespace FixedCamVr.Streaming
             List<Triangle> triangles = Triangulate(points);
             List<Piece> shards = BuildPieces(points, triangles, macroSites, random);
             MacroRegion[] macros = BuildMacroRegions(macroSites);
+            HashSet<int> edgeClosers = SelectEdgeClosers(shards, points);
 
             var positions = new List<Vector3>(shards.Count * 20);
             var uv0 = new List<Vector2>(shards.Count * 20);
@@ -50,8 +52,9 @@ namespace FixedCamVr.Streaming
 
             int trianglePieceCount = 0;
             int quadPieceCount = 0;
-            foreach (Piece shard in shards)
+            for (int shardIndex = 0; shardIndex < shards.Count; shardIndex++)
             {
+                Piece shard = shards[shardIndex];
                 var angular = new List<Point>(shard.vertices.Length);
                 var local = new List<Vector2>(shard.vertices.Length);
                 foreach (int vertex in shard.vertices)
@@ -66,7 +69,7 @@ namespace FixedCamVr.Streaming
 
                 int firstVertex = positions.Count;
                 AddPiece(positions, uv0, uv1, uv2, uv3, normals, meshTriangles, local, centroid, area,
-                    macros[macroIndex], macroIndex);
+                    macros[macroIndex], macroIndex, edgeClosers.Contains(shardIndex));
                 // 各外周辺までの符号付き距離。四角片の内部対角線を光らせない。
                 // 距離はアフィンなので、面の中でも頂点からの補間で正確に復元できる。
                 for (int vertex = firstVertex; vertex < positions.Count; vertex++)
@@ -109,6 +112,192 @@ namespace FixedCamVr.Streaming
             mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 200f);
             mesh.UploadMeshData(markNoLongerReadable: false);
             return mesh;
+        }
+
+        /// <summary>
+        /// 撮影画像の実際の有効範囲に接する大片を、終端を閉じる片として選び直す。
+        /// 投影が使えない場合は Build 時の外周選択を残す。
+        /// </summary>
+        public static int ReselectClosingPieces(
+            Mesh mesh,
+            Matrix4x4 captureHeadToWorld,
+            Matrix4x4 leftWorldToUv,
+            Matrix4x4 rightWorldToUv)
+        {
+            if (mesh == null || !mesh.isReadable) return 0;
+            Vector3[] vertices = mesh.vertices;
+            var pieces = new List<Vector4>(vertices.Length);
+            var surfaces = new List<Vector4>(vertices.Length);
+            mesh.GetUVs(1, pieces);
+            mesh.GetUVs(3, surfaces);
+            if (pieces.Count != vertices.Length || surfaces.Count != vertices.Length) return 0;
+
+            var candidates = new Dictionary<Vector3, ClosingCandidate>();
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                if (surfaces[i].x != FrontSurface) continue;
+                Vector4 piece = pieces[i];
+                var key = new Vector3(piece.x, piece.y, piece.z);
+                if (!candidates.TryGetValue(key, out ClosingCandidate? candidate))
+                {
+                    Vector3 centerWorld = captureHeadToWorld.MultiplyPoint3x4(ShellPoint(key));
+                    bool leftCenterValid = TryProjectFrozenUv(leftWorldToUv, centerWorld, out Vector2 leftCenter);
+                    bool rightCenterValid = TryProjectFrozenUv(rightWorldToUv, centerWorld, out Vector2 rightCenter);
+                    candidate = new ClosingCandidate(
+                        key,
+                        piece.z * piece.z,
+                        leftCenterValid && rightCenterValid
+                            && IsInsidePhoto(leftCenter) && IsInsidePhoto(rightCenter),
+                        leftCenterValid && rightCenterValid
+                            ? Mathf.Min(PhotoEdgeDistance(leftCenter), PhotoEdgeDistance(rightCenter))
+                            : float.PositiveInfinity);
+                    candidates.Add(key, candidate);
+                }
+
+                Vector3 captureWorld = captureHeadToWorld.MultiplyPoint3x4(ShellPoint(vertices[i]));
+                candidate.vertexCount++;
+                if (TryProjectFrozenUv(leftWorldToUv, captureWorld, out Vector2 leftUv)
+                    && IsInsidePhoto(leftUv))
+                {
+                    candidate.leftInside++;
+                    candidate.edgeDistance = Mathf.Min(candidate.edgeDistance, PhotoEdgeDistance(leftUv));
+                }
+                if (TryProjectFrozenUv(rightWorldToUv, captureWorld, out Vector2 rightUv)
+                    && IsInsidePhoto(rightUv))
+                {
+                    candidate.rightInside++;
+                    candidate.edgeDistance = Mathf.Min(candidate.edgeDistance, PhotoEdgeDistance(rightUv));
+                }
+            }
+
+            var visible = new List<ClosingCandidate>();
+            foreach (ClosingCandidate candidate in candidates.Values)
+            {
+                if (candidate.centerInsideBoth && candidate.leftInside > 0 && candidate.rightInside > 0)
+                    visible.Add(candidate);
+            }
+            if (visible.Count < EdgeCloserCount) return 0;
+            visible.Sort((a, b) =>
+            {
+                int edgeOrder = b.TouchesPhotoEdge.CompareTo(a.TouchesPhotoEdge);
+                if (edgeOrder != 0) return edgeOrder;
+                if (a.TouchesPhotoEdge)
+                {
+                    int areaOrder = b.area.CompareTo(a.area);
+                    if (areaOrder != 0) return areaOrder;
+                }
+                else
+                {
+                    int distanceOrder = a.edgeDistance.CompareTo(b.edgeDistance);
+                    if (distanceOrder != 0) return distanceOrder;
+                    int areaOrder = b.area.CompareTo(a.area);
+                    if (areaOrder != 0) return areaOrder;
+                }
+                return ComparePieceKey(a.key, b.key);
+            });
+
+            var selected = new HashSet<Vector3>();
+            for (int i = 0; i < EdgeCloserCount; i++)
+                selected.Add(visible[i].key);
+            for (int i = 0; i < pieces.Count; i++)
+            {
+                Vector4 piece = pieces[i];
+                piece.w = selected.Contains(new Vector3(piece.x, piece.y, piece.z)) ? 1f : 0f;
+                pieces[i] = piece;
+            }
+            mesh.SetUVs(1, pieces);
+            return selected.Count;
+        }
+
+        private static Vector3 ShellPoint(Vector3 local)
+        {
+            return new Vector3(local.x / 0.15f, local.y / 0.15f, 1f).normalized * 1.6f;
+        }
+
+        private static bool TryProjectFrozenUv(Matrix4x4 worldToUv, Vector3 captureWorld, out Vector2 uv)
+        {
+            Vector4 q = worldToUv * new Vector4(captureWorld.x, captureWorld.y, captureWorld.z, 1f);
+            if (!(q.z > 1e-5f) || !(q.w > 1e-5f)
+                || float.IsNaN(q.x) || float.IsInfinity(q.x)
+                || float.IsNaN(q.y) || float.IsInfinity(q.y))
+            {
+                uv = default;
+                return false;
+            }
+            uv = new Vector2(q.x / q.w, q.y / q.w);
+            return !float.IsNaN(uv.x) && !float.IsInfinity(uv.x)
+                && !float.IsNaN(uv.y) && !float.IsInfinity(uv.y);
+        }
+
+        private static bool IsInsidePhoto(Vector2 uv)
+        {
+            return uv.x >= 0f && uv.x <= 1f && uv.y >= 0f && uv.y <= 1f;
+        }
+
+        private static float PhotoEdgeDistance(Vector2 uv)
+        {
+            return Mathf.Min(Mathf.Min(uv.x, uv.y), Mathf.Min(1f - uv.x, 1f - uv.y));
+        }
+
+        private static int ComparePieceKey(Vector3 a, Vector3 b)
+        {
+            int xOrder = a.x.CompareTo(b.x);
+            if (xOrder != 0) return xOrder;
+            int yOrder = a.y.CompareTo(b.y);
+            return yOrder != 0 ? yOrder : a.z.CompareTo(b.z);
+        }
+
+        private static HashSet<int> SelectEdgeClosers(List<Piece> shards, List<Point> points)
+        {
+            var candidates = new List<KeyValuePair<int, float>>();
+            for (int shardIndex = 0; shardIndex < shards.Count; shardIndex++)
+            {
+                Piece shard = shards[shardIndex];
+                var local = new List<Vector2>(shard.vertices.Length);
+                bool touchesOuterBoundary = false;
+                foreach (int vertex in shard.vertices)
+                {
+                    Vector2 point = ToLocal(points[vertex]);
+                    local.Add(point);
+                    touchesOuterBoundary |= Mathf.Abs(point.x) >= HalfExtentLocal - 1e-5f
+                        || Mathf.Abs(point.y) >= HalfExtentLocal - 1e-5f;
+                }
+                if (touchesOuterBoundary && TryMeasure(local, out float area, out _))
+                    candidates.Add(new KeyValuePair<int, float>(shardIndex, area));
+            }
+            candidates.Sort((a, b) =>
+            {
+                int areaOrder = b.Value.CompareTo(a.Value);
+                return areaOrder != 0 ? areaOrder : a.Key.CompareTo(b.Key);
+            });
+            if (candidates.Count < EdgeCloserCount)
+                throw new InvalidOperationException("Fracture mesh has too few outer shards for edge closers.");
+
+            var selected = new HashSet<int>();
+            for (int i = 0; i < EdgeCloserCount; i++)
+                selected.Add(candidates[i].Key);
+            return selected;
+        }
+
+        private sealed class ClosingCandidate
+        {
+            public readonly Vector3 key;
+            public readonly float area;
+            public readonly bool centerInsideBoth;
+            public int vertexCount;
+            public int leftInside;
+            public int rightInside;
+            public float edgeDistance;
+
+            public bool TouchesPhotoEdge => leftInside < vertexCount || rightInside < vertexCount;
+
+            public ClosingCandidate(Vector3 key, float area, bool centerInsideBoth, float edgeDistance)
+            {
+                this.key = key;
+                this.area = area;
+                this.centerInsideBoth = centerInsideBoth;
+                this.edgeDistance = edgeDistance;
+            }
         }
 
         private static List<Point> BuildFracturePoints(Point[] macroSites, System.Random random)
@@ -475,9 +664,10 @@ namespace FixedCamVr.Streaming
             Vector2 centroid,
             float area,
             MacroRegion macro,
-            int macroIndex)
+            int macroIndex,
+            bool edgeCloser)
         {
-            var pieceData = new Vector4(centroid.x, centroid.y, Mathf.Sqrt(area), 1f);
+            var pieceData = new Vector4(centroid.x, centroid.y, Mathf.Sqrt(area), edgeCloser ? 1f : 0f);
             var macroData = new Vector4(macro.localCenter.x, macro.localCenter.y,
                 macro.startOffset, macroIndex);
             int front = positions.Count;

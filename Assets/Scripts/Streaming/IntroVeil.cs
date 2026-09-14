@@ -519,6 +519,11 @@ namespace FixedCamVr.Streaming
                 _leftWorldToUv = source.LeftWorldToUv;
                 _rightWorldToUv = source.RightWorldToUv;
                 _captureHeadToWorld = transform.localToWorldMatrix;
+                if (_fractureMesh != null)
+                {
+                    IntroFractureMesh.ReselectClosingPieces(
+                        _fractureMesh, _captureHeadToWorld, _leftWorldToUv, _rightWorldToUv);
+                }
                 FrozenFrameCount++;
             }
             catch (Exception ex)
@@ -616,7 +621,7 @@ namespace FixedCamVr.Streaming
             _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
 
-            // p=.76 で全片がスクリーン矩形を埋める。p=.88 までは実景の面を静止して見せる。
+            // p=.81 で最後の大片がスクリーン矩形を埋める。p=.88 までは実景の面を静止して見せる。
             // Renderer は Frame 終端まで通して実配布の最大値を記録し、Swap へ入った所で止める。
             bool drawShatter = w.shatter > FullyOpenEpsilon
                                && _fractureRenderer != null && _fractureMat != null

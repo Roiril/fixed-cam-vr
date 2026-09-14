@@ -546,8 +546,14 @@ namespace FixedCamVr.Streaming.Tests
             var l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から入れ替わっている");
 
-            // p=.76 の再構成後も p=.88 までは中央の四角い現実を保つ。
-            l.Tick(T.frameSec * 0.88f, Ready(outsideM: 2f));
+            l.Tick(T.frameSec * 0.69f, Ready(outsideM: 2f));
+            Assert.AreEqual(0f, l.Weights.frame, 1e-4f, "大片の着地前に終端矩形が閉じ始めている");
+
+            l.Tick(T.frameSec * 0.12f, Ready(outsideM: 2f));
+            Assert.AreEqual(1f, l.Weights.frame, 1e-4f, "edge closer の着地で終端矩形が確定していない");
+
+            // p=.81 の再構成後も p=.88 までは中央の四角い現実を保つ。
+            l.Tick(T.frameSec * 0.07f, Ready(outsideM: 2f));
             Assert.Greater(l.Weights.shatter, 0f, "破砕が進んでいない");
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "破片が寄る前に入れ替わっている");
 

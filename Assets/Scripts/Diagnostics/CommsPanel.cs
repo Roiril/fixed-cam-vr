@@ -405,8 +405,9 @@ namespace FixedCamVr.Diagnostics
         private Transform? _root;
         private MeshRenderer? _panelRenderer;
         private MeshRenderer? _dividerRenderer;
-        private MeshRenderer? _takeoverRuleRenderer;
         private const int AvatarQueue = 4985;
+        private const float TakeoverStretchM = 0.04f;
+        private const float TakeoverThinK = 0.22f;
 
         // AI の侵食（`canon/LEDGER.md` 0068 / 0069 / **0070**）。
         // ⚠⚠ 0070 から**単調ではない** — 3 周目で 1.0 に着き、帰りの A で回復する。
@@ -439,6 +440,7 @@ namespace FixedCamVr.Diagnostics
         private static readonly int StrokeId = Shader.PropertyToID("_Stroke");
         private static readonly int FaceOnId = Shader.PropertyToID("_FaceOn");
         private static readonly int SeizureId = Shader.PropertyToID("_Seizure");
+        private static readonly int PanelXId = Shader.PropertyToID("_PanelX");
         // 枠を左端から右へ開くために、左端と全幅を覚えておく（地と縁で別々）。
         private float _panelW, _panelLeftX;
         private MeshRenderer? _avatarRenderer;
@@ -446,7 +448,6 @@ namespace FixedCamVr.Diagnostics
         private int _charCount;
         private Material? _panelMat;
         private Material? _dividerMat;
-        private Material? _takeoverRuleMat;
         private Mesh? _panelMesh;
         private TMP_Text? _text;
         private MeshRenderer? _textRenderer, _echoRenderer;
@@ -576,7 +577,11 @@ namespace FixedCamVr.Diagnostics
         public CommsTakeoverPhase TakeoverPhase { get; private set; }
         public float AppliedTakeoverErase { get; private set; }
         public float AppliedTakeoverReveal { get; private set; }
+        public float AppliedTakeoverStrain { get; private set; }
         public float AppliedTakeoverCollapse { get; private set; }
+        public bool TakeoverResistance { get; private set; }
+        public int TakeoverDeformedChars { get; private set; }
+        public float AppliedPanelAlpha { get; private set; }
         public int TakeoverCutCount { get; private set; }
         public int TakeoverStartedCount { get; private set; }
         public int TakeoverCompletedCount { get; private set; }
@@ -640,7 +645,6 @@ namespace FixedCamVr.Diagnostics
             OnDestroyHooks();
             if (_panelMat != null) Destroy(_panelMat);
             if (_dividerMat != null) Destroy(_dividerMat);
-            if (_takeoverRuleMat != null) Destroy(_takeoverRuleMat);
             if (_avatarMat != null) Destroy(_avatarMat);
             if (_panelMesh != null) Destroy(_panelMesh);
         }
@@ -892,10 +896,6 @@ namespace FixedCamVr.Diagnostics
                 _dividerRenderer = MakeQuad(rootGo.transform, "CommsDivider",
                                             CommsFaceLayout.DividerW, CommsFaceLayout.DividerH, 0.006f,
                                             flat, AvatarQueue, out _dividerMat);
-                _takeoverRuleRenderer = MakeQuad(rootGo.transform, "CommsTakeoverRule",
-                                                 1f, CommsFaceLayout.DividerW, 0.004f,
-                                                 flat, AvatarQueue, out _takeoverRuleMat);
-                _takeoverRuleRenderer.enabled = false;
             }
             else
             {
@@ -997,6 +997,7 @@ namespace FixedCamVr.Diagnostics
             mat.SetFloat(RadiusId, CommsFaceLayout.RadiusK);
             mat.SetFloat(StrokeId, stroke);
             mat.SetFloat(FaceOnId, art != null ? 1f : 0f);
+            mat.SetFloat(PanelXId, CommsFaceLayout.CellCenterX(PanelW));
             r.sharedMaterial = mat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = false;
@@ -1152,7 +1153,7 @@ namespace FixedCamVr.Diagnostics
                 System.Array.Copy(baseColors[i], info.meshInfo[i].colors32, baseColors[i].Length);
             }
 
-            int missingVisible = 0;
+            int changedVisible = 0;
             int glyphOrdinal = 0;
             bool taking = _takeoverActive || _takeoverModifiedThisRun;
             float meshGlitch = taking ? 0f : _glitchLevel;
@@ -1170,17 +1171,15 @@ namespace FixedCamVr.Diagnostics
                 bool echoOn = echo && CommsGlitchLogic.EchoAt(meshGlitch, _corruptTick, glyphOrdinal);
                 float alpha = appeared ? fade * globalAlpha : 0f;
                 // 画面の横位置ではなく原文の字順で追う。複数行でも後の行を先に消さない。
-                float takeoverErase = taking && !echo
+                float takeoverDeform = taking && !echo && appeared
                     ? Smooth01(AppliedTakeoverErase * _charCount - i) : 0f;
-                bool takeoverErased = takeoverErase >= 0.999f;
-                if (echo ? !echoOn : missing || takeoverErased)
+                if (echo ? !echoOn : missing)
                 {
-                    if (!echo && appeared && alpha > 0.004f
-                        && (!takeoverErased || TakeoverPhase == CommsTakeoverPhase.Pursuit))
-                        missingVisible++;
+                    if (!echo && appeared && alpha > 0.004f) changedVisible++;
                     alpha = 0f;
                 }
-                alpha *= 1f - takeoverErase;
+                else if (takeoverDeform > 0.001f && alpha > 0.004f)
+                    changedVisible++;
 
                 int material = character.materialReferenceIndex;
                 int vertex = character.vertexIndex;
@@ -1191,14 +1190,22 @@ namespace FixedCamVr.Diagnostics
                 if (echo)
                     dx += CommsGlitchLogic.EchoOffsetM(meshGlitch, _corruptTick, glyphOrdinal)
                           / TextScale;
+                float centerX = (character.bottomLeft.x + character.topRight.x) * 0.5f;
+                float glyphH = Mathf.Max(0.0001f, character.topRight.y - character.bottomLeft.y);
                 byte a = (byte)Mathf.RoundToInt(Mathf.Clamp01(alpha) * 255f);
                 for (int k = 0; k < 4; k++)
                 {
                     vertices[vertex + k].x += dx;
-                    if (takeoverErase > 0f)
+                    if (takeoverDeform > 0f)
                     {
-                        float ruleY = (character.bottomLeft.y + character.topRight.y) * 0.5f;
-                        vertices[vertex + k].y = Mathf.Lerp(vertices[vertex + k].y, ruleY, takeoverErase);
+                        float bottomK = Mathf.Clamp01((character.topRight.y - vertices[vertex + k].y)
+                                                       / glyphH);
+                        float narrow = Mathf.Lerp(1f, TakeoverThinK,
+                            takeoverDeform * bottomK);
+                        vertices[vertex + k].x = centerX
+                            + (vertices[vertex + k].x - centerX) * narrow;
+                        vertices[vertex + k].y -= TakeoverStretchM / TextScale
+                            * AppliedTakeoverStrain * takeoverDeform * bottomK;
                     }
                     Color32 c = colors[vertex + k];
                     c.a = (byte)(c.a * a / 255);
@@ -1208,7 +1215,7 @@ namespace FixedCamVr.Diagnostics
             }
 
             text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
-            return missingVisible;
+            return changedVisible;
         }
 
         private static float Smooth01(float t)
@@ -1218,9 +1225,6 @@ namespace FixedCamVr.Diagnostics
         }
 
         public static float GlyphFadeAlpha(float ageSec) => Smooth01(ageSec / GlyphFadeSec);
-
-        private static float TakeoverStartX => CommsFaceLayout.DividerCenterX(PanelW)
-                                            + CommsFaceLayout.DividerW * 0.5f;
 
         /// <summary>
         /// 地・縁の色を書く。<b>両方のプロパティへ書く</b> — 引けたシェーダで分岐すると、
@@ -1310,11 +1314,14 @@ namespace FixedCamVr.Diagnostics
                 && _logic.Delivery == CommsDelivery.Takeover
                 ? _logic.TakeoverSample : new CommsTakeoverSample
                 { phase = CommsTakeoverPhase.Off, erase = taking ? 1f : 0f,
-                  collapse = taking ? 1f : 0f, soundCut = taking };
+                  strain = taking ? 1f : 0f, collapse = taking ? 1f : 0f,
+                  soundCut = taking };
             TakeoverPhase = takeover.phase;
             AppliedTakeoverErase = Mathf.Clamp01(takeover.erase);
             AppliedTakeoverReveal = Mathf.Clamp01(takeover.reveal);
+            AppliedTakeoverStrain = Mathf.Clamp01(takeover.strain);
             AppliedTakeoverCollapse = Mathf.Clamp01(takeover.collapse);
+            TakeoverResistance = takeover.resistance;
             if (_takeoverActive && takeover.soundCut && !_takeoverSoundCut)
             {
                 // 予約済みの最後の打鍵も同じ時刻で切る。止めた音を後の段へ持ち越さない。
@@ -1330,7 +1337,11 @@ namespace FixedCamVr.Diagnostics
                 TakeoverCompletedCount++;
             }
 
-            AppliedGlyph = Mathf.Clamp01(w.glyph) * (taking && takeover.soundCut ? 0f : 1f);
+            float takeoverInk = taking
+                ? 1f - Smooth01((AppliedTakeoverCollapse - 0.35f) / 0.65f)
+                : 1f;
+            if (taking && takeover.soundCut) takeoverInk = 0f;
+            AppliedGlyph = Mathf.Clamp01(w.glyph) * takeoverInk;
             AppliedOpen = Mathf.Clamp01(w.open);
             float reveal = taking ? Mathf.Min(w.reveal,
                 Mathf.Max(0f, CommsTakeoverLogic.MaxGeneratedChars(_charCount) - 0.001f)
@@ -1342,16 +1353,20 @@ namespace FixedCamVr.Diagnostics
                           : Mathf.Clamp(Mathf.CeilToInt(Mathf.Clamp01(reveal) * _charCount), 0, _charCount);
                 bool on = AppliedGlyph > 0.002f && shown > 0;
                 if (_textRenderer != null) _textRenderer.enabled = on;
-                if (shown > _lastShown && IsVisibleChar(shown - 1) && _root != null
-                    && !_silent && !takeover.soundCut)
-                    typeSfx?.Play(_root.position);
+                if (shown > _lastShown && _root != null && !_silent && !takeover.soundCut)
+                {
+                    // 低い描画頻度でも、同じコマに増えた字を間引かない。絵を持つ1字につき1打。
+                    for (int i = _lastShown; i < shown; i++)
+                        if (IsVisibleChar(i)) typeSfx?.Play(_root.position);
+                }
                 _lastShown = shown;
                 VisibleChars = shown;
 
                 float ordinaryGlitch = taking ? 0f : _glitchLevel;
                 CommsGlitchLogic.FillMissing(_missingGlyphs, _glyphCount, ordinaryGlitch, _corruptTick);
                 CorruptedChars = ApplyGlyphMesh(_text, _textBaseVertices, _textBaseColors,
-                                                reveal, AppliedGlyph, echo: false);
+                                                 reveal, AppliedGlyph, echo: false);
+                TakeoverDeformedChars = taking ? CorruptedChars : 0;
                 if (_textEcho != null)
                 {
                     bool echoOn = on && ordinaryGlitch > CommsGlitchLogic.OffThreshold;
@@ -1362,6 +1377,9 @@ namespace FixedCamVr.Diagnostics
             }
             ApplyHint(taking ? 0f : Mathf.Clamp01(w.hint));
             float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
+            float panelPa = pa * (taking ? 1f - AppliedTakeoverCollapse : 1f);
+            float contentPa = pa * takeoverInk;
+            AppliedPanelAlpha = PanelAlpha * panelPa;
             AppliedBody = Mathf.Clamp01(w.body);
 
             // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
@@ -1381,51 +1399,26 @@ namespace FixedCamVr.Diagnostics
             if (_panelRenderer != null && _panelMat != null)
             {
                 SetFlatColor(_panelMat, new Color(PanelColor.r, PanelColor.g, PanelColor.b,
-                                                  PanelAlpha * pa));
+                                                  AppliedPanelAlpha));
                 _panelRenderer.enabled = lit;
                 SetFixedPanel(_panelRenderer.transform, _panelLeftX, _panelW, cy, h);
             }
             if (_dividerRenderer != null && _dividerMat != null)
             {
                 SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b,
-                    0.68f * pa * (1f - AppliedTakeoverCollapse)));
+                    0.68f * contentPa));
                 _dividerRenderer.enabled = lit;
+                float dividerH = CommsFaceLayout.DividerH * Smooth01(AppliedOpen);
+                float dividerStretch = TakeoverStretchM * AppliedTakeoverStrain;
                 _dividerRenderer.transform.localPosition = new Vector3(
-                    CommsFaceLayout.DividerCenterX(PanelW), cy, 0.006f);
+                    CommsFaceLayout.DividerCenterX(PanelW), cy - dividerStretch * 0.5f, 0.006f);
                 _dividerRenderer.transform.localScale = new Vector3(
-                    CommsFaceLayout.DividerW,
-                    CommsFaceLayout.DividerH * Smooth01(AppliedOpen)
-                    * (1f - AppliedTakeoverCollapse), 1f);
+                    CommsFaceLayout.DividerW
+                    * Mathf.Lerp(1f, TakeoverThinK, AppliedTakeoverStrain),
+                    dividerH + dividerStretch, 1f);
             }
-            ApplyAvatar(pa, cy, lit);
-            ApplyTakeoverRule(pa);
+            ApplyAvatar(contentPa, cy, lit);
 
-        }
-
-        private void ApplyTakeoverRule(float alpha)
-        {
-            if (_takeoverRuleRenderer == null || _takeoverRuleMat == null) return;
-            bool on = TakeoverPhase == CommsTakeoverPhase.Pursuit && AppliedTakeoverErase > 0.001f
-                && _text != null;
-            _takeoverRuleRenderer.enabled = on;
-            if (!on) return;
-            var info = _text!.textInfo;
-            float exact = AppliedTakeoverErase * _charCount;
-            int index = Mathf.Clamp(Mathf.FloorToInt(exact), 0, info.characterCount - 1);
-            while (!info.characterInfo[index].isVisible && index < info.characterCount - 1) index++;
-            var character = info.characterInfo[index];
-            int first = info.lineInfo[character.lineNumber].firstCharacterIndex;
-            float left = character.lineNumber == 0 ? TakeoverStartX
-                : _text.transform.localPosition.x + info.characterInfo[first].bottomLeft.x * TextScale;
-            float right = _text.transform.localPosition.x + Mathf.Lerp(character.bottomLeft.x,
-                character.topRight.x, exact - index) * TextScale;
-            float width = Mathf.Max(0.001f, right - left);
-            float y = _text.transform.localPosition.y
-                + (character.bottomLeft.y + character.topRight.y) * 0.5f * TextScale;
-            _takeoverRuleRenderer.transform.localPosition = new Vector3(left + width * 0.5f, y, 0.004f);
-            _takeoverRuleRenderer.transform.localScale = new Vector3(width, CommsFaceLayout.DividerW, 1f);
-            SetFlatColor(_takeoverRuleMat, new Color(Ivory.r, Ivory.g, Ivory.b,
-                0.72f * alpha * (1f - AppliedTakeoverCollapse)));
         }
 
         private void ResetTakeoverVisual()
@@ -1435,9 +1428,12 @@ namespace FixedCamVr.Diagnostics
             TakeoverPhase = CommsTakeoverPhase.Off;
             AppliedTakeoverErase = 0f;
             AppliedTakeoverReveal = 0f;
+            AppliedTakeoverStrain = 0f;
             AppliedTakeoverCollapse = 0f;
+            TakeoverResistance = false;
+            TakeoverDeformedChars = 0;
+            AppliedPanelAlpha = 0f;
             _silent = false;
-            if (_takeoverRuleRenderer != null) _takeoverRuleRenderer.enabled = false;
         }
 
         private void ApplyAvatar(float alpha, float centerY, bool lit)
@@ -1445,7 +1441,6 @@ namespace FixedCamVr.Diagnostics
             if (_avatarRenderer == null || _avatarMat == null) return;
             AppliedFace = lit
                 ? Mathf.Clamp01(alpha) * CommsFaceLayout.Reveal(AppliedOpen, PanelW)
-                    * (1f - AppliedTakeoverCollapse)
                 : 0f;
             bool on = AppliedFace > 0.004f;
 
@@ -1460,7 +1455,7 @@ namespace FixedCamVr.Diagnostics
             float x = CommsFaceLayout.CellCenterX(PanelW);
             _avatarMat.SetFloat(OpacityId, AppliedFace);
             _avatarMat.SetFloat(FaceMixId, AppliedFaceMix);
-            _avatarMat.SetFloat(SeizureId, AppliedTakeoverCollapse);
+            _avatarMat.SetFloat(SeizureId, AppliedTakeoverStrain);
             _avatarRenderer.enabled = on;
             _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);
             _avatarRenderer.transform.localScale = Vector3.one * CommsFaceLayout.CellM;

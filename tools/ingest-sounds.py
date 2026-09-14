@@ -436,7 +436,7 @@ SWARM_HEAD_LUFS = -24.7   # 0112 は -14.7（旧版の実測値）。0144 で -6
 # 2026-09-13: 映像の主破壊 0.30 秒へ、DSP 分を引いたクリップ 0.20 秒の一撃を合わせる。
 # 0.65〜1.00 秒を無音にし、1.00 秒から小片→大片の帰還を作る。
 SWARM_RETURN_START = 1.00
-SWARM_RETURN_END = 1.90
+SWARM_RETURN_END = 1.82
 SWARM_GRAIN_HEAD = 0.012  # 帰還の頭は小片
 SWARM_GRAIN_TAIL = 0.055  # 着地に近いほど大片
 SWARM_STEP_JITTER = 0.10  # 等間隔の連射にしない最小限の揺らぎ
@@ -444,10 +444,11 @@ SWARM_PITCH_HEAD = 1.20
 SWARM_PITCH_TAIL = 0.52
 SWARM_PITCH_SPREAD = 0.07
 SWARM_FALL_KNOTS = ((0.00, -24.0),
-                    (0.28, -9.0),
-                    (0.55, -6.0),
-                    (0.72, -11.0),
-                    (1.00, -24.0))
+                    (0.22, -11.0),
+                    (0.42, -20.0),
+                    (0.62, -10.0),
+                    (0.82, -22.0),
+                    (1.00, -30.0))
 SWARM_GAIN_JITTER_DB = 1.5
 SWARM_PAN_HEAD = 0.30
 SWARM_PAN_TAIL = 0.06
@@ -473,8 +474,10 @@ SWARM_BRANCH = ((0.240, 0, 0.060, 0.72, -1.0, -0.72),
                 (0.355, 2, 0.052, 0.86, -6.0, -0.58),
                 (0.445, 0, 0.048, 0.92, -10.0, +0.46),
                 (0.565, 1, 0.040, 0.98, -16.0, -0.30))
-SWARM_DUST = ((1.905, 1, 0.010, 1.20, -34.0, -0.03),
-              (1.938, 2, 0.008, 1.28, -40.0, +0.02))
+# 小片の群れが収まった後、最後の大片だけを低い二打で閉じる。
+# 実時刻は発火とDSP待ちを含め約 +0.10 秒。最後の着地 p=.81（2.025秒）に対応する。
+SWARM_DUST = ((1.820, 0, 0.035, 0.62, -18.0, -0.06),
+              (1.922, 3, 0.035, 0.56, -13.0, +0.02))
 
 # (元ファイル名, 出力名, **頭 0.5 秒の**短期ラウドネス, 使い先)
 # ⚠ 3 つ目は統合 LUFS ではない（上の `SWARM_HEAD_LUFS` の理由）。
@@ -1421,7 +1424,7 @@ def swarm_build(y, sr: int, head_lufs: float):
                                                       SWARM_STEP_JITTER)))
         count += 1
 
-    # ④ 1.90 秒で主成分を終えた後は、ごく小さい粒だけにする。
+    # ④ 帰還を疎密二群へ分けた後、遅れていた大片の接合を二打だけ残す。
     for (at, idx, length, ratio, db, p) in SWARM_DUST:
         g = resample(swarm_shard(st, sr, SWARM_SHARD_AT[idx], length), ratio)
         swarm_add(out, g, at, 10 ** (db / 20.0), p, sr)
@@ -1626,8 +1629,10 @@ def ingest_swarms(swarms, src_dir: str) -> None:
               f"丸め {drive:.1f}dB   tp {d['true_peak_db']:5.1f}dB   山 {top}ms")
         print(f"    頭 0.5s {short_lufs(out, 0.0, 0.5):6.1f} LUFS   "
               f"無音 0.65-1.00s {short_lufs(out, 0.65, 1.0):6.1f}   "
-              f"帰還 1.00-1.90s {short_lufs(out, 1.0, 1.9):6.1f}   "
-              f"微小粒 1.90-1.98s {short_lufs(out, 1.9, 1.98):6.1f}   "
+              f"帰還 {SWARM_RETURN_START:.2f}-{SWARM_RETURN_END:.2f}s "
+              f"{short_lufs(out, SWARM_RETURN_START, SWARM_RETURN_END):6.1f}   "
+              f"接合 {SWARM_RETURN_END:.2f}-{SWARM_SEC:.2f}s "
+              f"{short_lufs(out, SWARM_RETURN_END, SWARM_SEC):6.1f}   "
               f"最後の 0.25s {rest:5.1f}dB")
         print(f"    通し {d['lufs']:6.1f} LUFS   波高 {d['crest_db']:4.1f}dB   "
               f"鋭さ {d['sharp']:4.2f} 粗さ {d['rough']:4.2f} 内蔵SP {d['speaker_db']:5.1f}dB   "

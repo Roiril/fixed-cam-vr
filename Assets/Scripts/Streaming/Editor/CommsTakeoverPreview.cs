@@ -73,10 +73,12 @@ namespace FixedCamVr.Streaming.EditorTools
                     - (text.transform.position - go.transform.position);
                 int intended = panel.NoticeChars;
                 int previousHits = panel.TypedCount;
-                var rows = new StringBuilder("frame\tsec\tphase\terase\treveal\tcollapse\tface\tmissing\thit\tfull\tdrawn\tgenerated\ttotal\texpected\tcut\tx\ty\ttext\n");
+                var rows = new StringBuilder("frame\tsec\tprogress\tphase\terase\treveal\tstrain\tresistance\tcollapse\tface\tmissing\tdeformed\tbottom_y\tpanel_alpha\thit\tfull\tdrawn\tgenerated\ttotal\texpected\tcut\tx\ty\ttext\n");
                 var taps = new StringBuilder("frame\tchars\thit\n");
                 int totalHits = 0, overlapFrames = 0, blankFrames = 0;
                 int lastGenerated = 0, overlapGrowth = 0;
+                byte[]? resistanceA = null, resistanceB = null;
+                bool midSaved = false;
                 string original = text.text;
                 int total = text.textInfo.characterCount;
                 string lastPhase = "";
@@ -92,12 +94,17 @@ namespace FixedCamVr.Streaming.EditorTools
                     CountInk(text, out int full, out int drawn);
                     string body = text.text.Replace("\n", " / ").Replace("\t", " ");
                     Vector3 screen = cam.WorldToScreenPoint(text.transform.position);
+                    float progress = phase == "Off" || logic.TypeSec <= 0f ? 0f
+                        : Mathf.Clamp01(logic.StageElapsedSec / logic.TypeSec);
+                    float bottomY = MeasureBottom(text, panel.VisibleChars);
                     rows.AppendFormat(CultureInfo.InvariantCulture,
-                        "{0}\t{1:F6}\t{2}\t{3:F4}\t{4:F4}\t{5:F4}\t{6:F4}\t{7}\t{8}\t{9}\t{10}\t{11}\t{12}\t{13}\t{14}\t{15:F3}\t{16:F3}\t{17}\n",
-                        i, i / (float)Fps, phase, panel.AppliedTakeoverErase, panel.AppliedTakeoverReveal,
-                        panel.AppliedTakeoverCollapse, panel.AppliedFace, panel.CorruptedChars,
-                        hit, full, drawn, panel.VisibleChars, total, intended, panel.TakeoverCutCount,
-                        screen.x, screen.y, body);
+                        "{0}\t{1:F6}\t{2:F6}\t{3}\t{4:F4}\t{5:F4}\t{6:F4}\t{7}\t{8:F4}\t{9:F4}\t{10}\t{11}\t{12:F6}\t{13:F4}\t{14}\t{15}\t{16}\t{17}\t{18}\t{19}\t{20}\t{21:F3}\t{22:F3}\t{23}\n",
+                        i, i / (float)Fps, progress, phase, panel.AppliedTakeoverErase,
+                        panel.AppliedTakeoverReveal, panel.AppliedTakeoverStrain,
+                        panel.TakeoverResistance ? 1 : 0, panel.AppliedTakeoverCollapse,
+                        panel.AppliedFace, panel.CorruptedChars, panel.TakeoverDeformedChars,
+                        bottomY, panel.AppliedPanelAlpha, hit, full, drawn, panel.VisibleChars,
+                        total, intended, panel.TakeoverCutCount, screen.x, screen.y, body);
                     taps.Append(i).Append('\t').Append(panel.VisibleChars).Append('\t').Append(hit).Append('\n');
                     byte[] png = Capture(cam, rt, image);
                     File.WriteAllBytes(Path.Combine(dir, $"f{i:0000}.png"), png);
@@ -115,6 +122,22 @@ namespace FixedCamVr.Streaming.EditorTools
                         if (overlapFrames == 3) File.WriteAllBytes(Path.Combine(dir, "overlap-early.png"), png);
                         File.WriteAllBytes(Path.Combine(dir, "overlap-late.png"), png);
                     }
+                    if (!midSaved && phase == "Pursuit" && !panel.TakeoverResistance
+                        && panel.AppliedTakeoverStrain >= 0.30f)
+                    {
+                        File.WriteAllBytes(Path.Combine(dir, "mid-deformation.png"), png);
+                        midSaved = true;
+                    }
+                    if (panel.TakeoverResistance && progress >= 0.75f && resistanceA == null)
+                    {
+                        resistanceA = png;
+                        File.WriteAllBytes(Path.Combine(dir, "resistance-a.png"), png);
+                    }
+                    if (panel.TakeoverResistance && progress >= 0.81f && resistanceB == null)
+                    {
+                        resistanceB = png;
+                        File.WriteAllBytes(Path.Combine(dir, "resistance-b.png"), png);
+                    }
                     if (phase == "Seized")
                     {
                         blankFrames++;
@@ -131,8 +154,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 File.WriteAllText(Path.Combine(dir, "frames.tsv"), rows.ToString(), new UTF8Encoding(false));
                 File.WriteAllText(Path.Combine(dir, "type.tsv"), taps.ToString(), new UTF8Encoding(false));
-                if (logic.Active || overlapFrames < 6 || overlapGrowth < 2 || blankFrames < 4)
+                if (logic.Active || overlapFrames < 6 || overlapGrowth < 2 || blankFrames < 4
+                    || !midSaved || resistanceA == null || resistanceB == null)
                     throw new InvalidOperationException("Output did not coexist with erasure or fail irreversibly");
+                if (!SameBytes(resistanceA!, resistanceB!))
+                    throw new InvalidOperationException("Resistance frames changed while the output clock was stopped");
                 if (totalHits != intended)
                     throw new InvalidOperationException($"Keystrokes {totalHits}, expected generated glyphs {intended}");
                 Debug.Log($"[CommsTakeoverPreview] {ShowLanguage.Code(lang)} frames={count} "
@@ -181,6 +207,30 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (minimum >= 250) full++;
                 if (maximum > 2) drawn++;
             }
+        }
+
+        private static float MeasureBottom(TMP_Text text, int generated)
+        {
+            float bottom = float.PositiveInfinity;
+            var info = text.textInfo;
+            for (int i = 0; i < info.characterCount && i < generated; i++)
+            {
+                var ch = info.characterInfo[i];
+                if (!ch.isVisible) continue;
+                Vector3[] vertices = info.meshInfo[ch.materialReferenceIndex].vertices;
+                for (int k = 0; k < 4; k++)
+                    bottom = Mathf.Min(bottom, text.transform.localPosition.y
+                        + vertices[ch.vertexIndex + k].y * text.transform.localScale.y);
+            }
+            return float.IsPositiveInfinity(bottom) ? 0f : bottom;
+        }
+
+        private static bool SameBytes(byte[] a, byte[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i]) return false;
+            return true;
         }
     }
 }

@@ -23,6 +23,10 @@ namespace FixedCamVr.Diagnostics.Tests
             _panel = _go.AddComponent<CommsPanel>();
             Call("Awake");
             Assert.IsTrue(_panel.IsBuilt, "The actual panel must build for this check");
+            var sound = _go.GetComponent<TypeAudioCue>();
+            if (!sound.HasClips)
+                typeof(TypeAudioCue).GetMethod("Awake", Private)!.Invoke(sound, null);
+            Assert.IsTrue(sound.HasClips);
             _logic = (CommsPanelLogic)typeof(CommsPanel).GetField("_logic", Private)!.GetValue(_panel);
             _panel.SetDecayForPreview(1f, 0f);
         }
@@ -103,7 +107,7 @@ namespace FixedCamVr.Diagnostics.Tests
         [TestCase(ShowLang.Ja)]
         [TestCase(ShowLang.En)]
         [TestCase(ShowLang.Fr)]
-        public void OneSentenceIsErasedWhileTheTailIsStillBeingGenerated(ShowLang lang)
+        public void OneSentenceDeformsWhileTheTailIsStillBeingGenerated(ShowLang lang)
         {
             ShowLanguage.Select(lang);
             _panel.Deliver(CommsNotice.Takeover);
@@ -124,9 +128,66 @@ namespace FixedCamVr.Diagnostics.Tests
                 }
                 lastShown = _panel.VisibleChars;
             }
-            Assert.GreaterOrEqual(overlappingGrowth, 2, "Erasure and new output must coexist");
+            Assert.GreaterOrEqual(overlappingGrowth, 2, "Deformation and new output must coexist");
             Assert.IsTrue(seized);
             Assert.AreEqual(0f, _panel.AppliedFace);
+            Assert.AreEqual(1, _panel.TakeoverCutCount);
+        }
+
+        [Test]
+        public void ActualGlyphMeshStretchesAndStopsDuringResistance()
+        {
+            _panel.Deliver(CommsNotice.Takeover);
+            var text = (TMPro.TMP_Text)typeof(CommsPanel).GetField("_text", Private)!.GetValue(_panel);
+            _logic.Tick(CommsPanelLogic.InSec);
+            _logic.Tick(_logic.TypeSec * 0.15f);
+            Apply();
+            var ch = text.textInfo.characterInfo[0];
+            Vector3[] original = (Vector3[])text.textInfo.meshInfo[ch.materialReferenceIndex].vertices.Clone();
+            _logic.Tick(_logic.TypeSec * 0.60f);
+            Apply();
+            Assert.IsTrue(_panel.TakeoverResistance);
+            Vector3[] held = (Vector3[])text.textInfo.meshInfo[ch.materialReferenceIndex].vertices.Clone();
+            Color32[] heldColors = (Color32[])text.textInfo.meshInfo[ch.materialReferenceIndex].colors32.Clone();
+            Assert.Less(held[ch.vertexIndex].y, original[ch.vertexIndex].y,
+                "The first glyph's lower edge must actually move");
+            Assert.AreEqual(original[ch.vertexIndex + 1], held[ch.vertexIndex + 1],
+                "The upper edge stays anchored");
+            int hits = _panel.TypedCount;
+            int generated = _panel.VisibleChars;
+            _logic.Tick(_logic.TypeSec * 0.06f);
+            Apply();
+            CollectionAssert.AreEqual(held, text.textInfo.meshInfo[ch.materialReferenceIndex].vertices);
+            CollectionAssert.AreEqual(heldColors, text.textInfo.meshInfo[ch.materialReferenceIndex].colors32);
+            Assert.AreEqual(hits, _panel.TypedCount);
+            Assert.AreEqual(generated, _panel.VisibleChars);
+            _logic.Tick(_logic.TypeSec * 0.14f);
+            Apply();
+            Assert.Greater(_panel.VisibleChars, generated);
+            Assert.Greater(_panel.TypedCount, hits);
+            _logic.Tick(_logic.TypeSec * 0.05f);
+            Apply();
+            Assert.AreEqual(0f, _panel.AppliedPanelAlpha);
+            Assert.AreEqual(0f, _panel.AppliedFace);
+            Assert.AreEqual(0f, _panel.AppliedGlyph);
+        }
+
+        [TestCase(ShowLang.Ja)]
+        [TestCase(ShowLang.En)]
+        [TestCase(ShowLang.Fr)]
+        public void MultipleGlyphsInOneFrameKeepEveryKeystroke(ShowLang lang)
+        {
+            ShowLanguage.Select(lang);
+            _panel.Deliver(CommsNotice.Takeover);
+            _logic.Tick(CommsPanelLogic.InSec);
+            Apply();
+            int startHits = _panel.TypedCount;
+            for (int i = 0; i < 22; i++)
+            {
+                _logic.Tick(0.1f);
+                Apply();
+            }
+            Assert.AreEqual(_panel.NoticeChars, _panel.TypedCount - startHits);
             Assert.AreEqual(1, _panel.TakeoverCutCount);
         }
     }

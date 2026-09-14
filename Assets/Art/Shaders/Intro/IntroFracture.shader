@@ -67,7 +67,7 @@ Shader "FixedCamVr/IntroFracture"
                 nointerpolation float surface : TEXCOORD5;
                 float detail : TEXCOORD6;
                 float4 edgeDistances : TEXCOORD7;
-                nointerpolation float2 fractureLight : TEXCOORD8;
+                nointerpolation float3 fractureLight : TEXCOORD8;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -130,8 +130,8 @@ Shader "FixedCamVr/IntroFracture"
             {
                 // 開き始めに最速となり、離れるほど減速する。発進だけは短く滑らかにする。
                 float begin = 0.12 + delay;
-                float peak = begin + 0.024;
-                const float end = 0.37;
+                float peak = begin + 0.018;
+                const float end = 0.34;
                 float up = peak - begin;
                 float down = end - peak;
                 float a = saturate((p - begin) / up);
@@ -179,10 +179,10 @@ Shader "FixedCamVr/IntroFracture"
 
                 float largePiece = smoothstep(0.016, 0.055, v.small.z);
                 // 予兆では位置を保つ。起点付近の細い亀裂だけが先に見え、破断波で解放される。
-                float macroStart = 0.12 + v.macro.z * 0.32;
+                float macroStart = 0.12 + v.macro.z * 0.24;
                 float crack = Ease(macroStart, macroStart + 0.025, p);
                 float loosen = Ease(macroStart, macroStart + 0.085, p);
-                float launch = OpeningProgress(p, v.macro.z * 0.20 + largePiece * 0.008);
+                float launch = OpeningProgress(p, v.macro.z * 0.14 + largePiece * 0.004);
                 float macroAngle = radians(lerp(1.5, 3.5, macroNoise.y))
                                  * (macroNoise.x < 0.5 ? -1.0 : 1.0) * crack;
                 float3 macroAxis = SafeNormalize(
@@ -205,11 +205,19 @@ Shader "FixedCamVr/IntroFracture"
                 float3 burst = float3(radial * lateral + tangent * (pieceNoise.y - 0.5) * 0.10, depth);
                 sourcePieceCenter += burst * launch;
 
-                float travelStart = 0.44 + largePiece * 0.016 + pieceNoise.x * 0.008;
-                float travelEnd = lerp(0.70, 0.76, largePiece);
+                float sizeTiming = saturate((v.small.z - 0.016) / (0.055 - 0.016));
+                float lowerSize = saturate(sizeTiming * 2.0);
+                float upperSize = saturate(sizeTiming * 2.0 - 1.0);
+                float travelStart = lerp(0.41, 0.47, lowerSize);
+                travelStart = lerp(travelStart, 0.56, upperSize);
+                float travelEnd = lerp(0.62, 0.69, lowerSize);
+                travelEnd = lerp(travelEnd, 0.78, upperSize);
+                float edgeCloser = step(0.5, v.small.w);
+                travelStart = lerp(travelStart, 0.56, edgeCloser);
+                travelEnd = lerp(travelEnd, 0.81, edgeCloser);
                 float travel = Ease(travelStart, travelEnd, p);
                 float alignment = travel;
-                float seal = Ease(0.60, travelEnd, p);
+                float seal = travel;
                 float detail = crack * (1.0 - seal);
                 float3 startCenter = mul(_CaptureHeadToWorld, float4(sourcePieceCenter, 1.0)).xyz;
                 float3 sourceRelative = mul((float3x3)_CaptureHeadToWorld,
@@ -226,8 +234,15 @@ Shader "FixedCamVr/IntroFracture"
                 if (dot(screenNormal, targetCenter - _CurrentHeadPosition.xyz) < 0.0)
                     screenNormal = -screenNormal;
 
-                // 共通の公転を使わない。一撃の慣性が止まった位置から、対応点へ直線で戻る。
+                // 一撃の慣性が止まった位置から浅い弧で戻る。終盤 25% は対応点へ直進する。
                 float3 centerWorld = lerp(startCenter, targetCenter, travel);
+                float3 returnTangent = SafeNormalize(
+                    screenRight * (pieceNoise.x * 2.0 - 1.0)
+                    + screenUp * (pieceNoise.y * 2.0 - 1.0), screenRight);
+                float arcPhase = saturate(travel / 0.75);
+                float arcSine = sin(arcPhase * 3.14159265);
+                float arcWeight = arcSine * arcSine * arcSine * (1.0 - step(0.75, travel));
+                centerWorld += returnTangent * lerp(0.040, 0.018, largePiece) * arcWeight;
                 if (travel >= 1.0) centerWorld = targetCenter;
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
@@ -238,8 +253,8 @@ Shader "FixedCamVr/IntroFracture"
                 }
 
                 float3 relativeWorld = lerp(sourceRelative, targetVertex - targetCenter, alignment);
-                // .37〜.44 は位置・姿勢・照明を完全に止める。帰還前に勝手に姿勢を整えない。
-                float middle = loosen * (1.0 - Ease(travelStart, travelEnd - 0.045, p));
+                // .34〜.41 は位置・姿勢・照明を完全に止める。帰還と同時に自然な向きへ揃える。
+                float middle = loosen * (1.0 - alignment);
                 float3 travelAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroTangentX), screenRight, alignment), screenRight);
                 float3 faceAxis = SafeNormalize(lerp(
@@ -251,7 +266,7 @@ Shader "FixedCamVr/IntroFracture"
                 relativeWorld = IntroShardSpin3(relativeWorld, faceAxis, roll);
 
                 // 片を小さく消すのではなく、位置と向きで間隔を空ける。
-                float gap = lerp(crack * 0.008, 0.014 + pieceNoise.x * 0.020, loosen) * (1.0 - seal);
+                float gap = lerp(crack * 0.004, 0.006 + pieceNoise.x * 0.010, loosen) * (1.0 - seal);
                 float thickness = lerp(0.006, 0.015, largePiece) * detail;
                 float3 faceNormal = faceAxis;
                 faceNormal = IntroShardSpin3(faceNormal, travelAxis, tilt);
@@ -292,7 +307,9 @@ Shader "FixedCamVr/IntroFracture"
                 anticipation *= 1.0 - smoothstep(0.025, 0.095, v.macro.z);
                 float breakLight = Ease(macroStart, macroStart + 0.014, p)
                     * (1.0 - Ease(macroStart + 0.014, macroStart + 0.075, p));
-                o.fractureLight = float2(anticipation, breakLight);
+                float landingLight = Ease(travelEnd - 0.018, travelEnd - 0.009, p)
+                    * (1.0 - Ease(travelEnd - 0.009, travelEnd, p));
+                o.fractureLight = float3(anticipation, breakLight, landingLight);
                 o.positionCS = TransformWorldToHClip(worldPosition);
                 return o;
             }
@@ -334,7 +351,7 @@ Shader "FixedCamVr/IntroFracture"
                 float stressArea = 1.0 - smoothstep(0.045, 0.21,
                     length((sampleUv - float2(0.45, 0.56)) * float2(1.333, 1.0)));
                 float edgeLight = bevel * (0.14 * i.fractureLight.x * stressArea + 0.42 * i.fractureLight.y
-                    + i.detail * (0.035 + 0.14 * grazing));
+                    + 0.10 * i.fractureLight.z + i.detail * (0.035 + 0.14 * grazing));
                 // 実景の明暗は残す。断面と一瞬の縁光だけで厚みを読ませる。
                 color = color * shade + float3(0.76, 0.84, 0.89) * edgeLight * field;
                 if (i.surface >= 0.5)

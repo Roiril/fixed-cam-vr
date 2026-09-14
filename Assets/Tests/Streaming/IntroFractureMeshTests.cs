@@ -119,6 +119,127 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void EdgeClosers_AreExactlyThreeLargeOuterPieces()
+        {
+            Mesh mesh = IntroFractureMesh.Build();
+            try
+            {
+                List<Vector4> pieces = ReadUv(mesh, 1);
+                List<Vector4> surfaces = ReadUv(mesh, 3);
+                Vector3[] vertices = mesh.vertices;
+                var fronts = new Dictionary<Vector4, List<Vector2>>();
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    if (surfaces[i].x != IntroFractureMesh.FrontSurface)
+                        continue;
+                    if (!fronts.TryGetValue(pieces[i], out List<Vector2>? points))
+                    {
+                        points = new List<Vector2>(4);
+                        fronts.Add(pieces[i], points);
+                    }
+                    points.Add(vertices[i]);
+                }
+
+                var outerAreas = new List<float>();
+                var closerAreas = new List<float>();
+                foreach (KeyValuePair<Vector4, List<Vector2>> piece in fronts)
+                {
+                    bool outer = false;
+                    foreach (Vector2 point in piece.Value)
+                    {
+                        outer |= Mathf.Abs(point.x) >= IntroFractureMesh.HalfExtentLocal - 1e-5f
+                            || Mathf.Abs(point.y) >= IntroFractureMesh.HalfExtentLocal - 1e-5f;
+                    }
+                    if (!outer)
+                    {
+                        Assert.That(piece.Key.w, Is.Zero, "an interior piece was marked as an edge closer");
+                        continue;
+                    }
+
+                    float area = piece.Key.z * piece.Key.z;
+                    outerAreas.Add(area);
+                    if (piece.Key.w > 0.5f)
+                        closerAreas.Add(area);
+                }
+                outerAreas.Sort((a, b) => b.CompareTo(a));
+                closerAreas.Sort((a, b) => b.CompareTo(a));
+
+                Assert.That(closerAreas.Count, Is.EqualTo(IntroFractureMesh.EdgeCloserCount));
+                Assert.That(closerAreas, Is.EqualTo(outerAreas.GetRange(0, IntroFractureMesh.EdgeCloserCount)),
+                    "edge closers must be the largest outer pieces");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
+        public void ClosingPieces_UseTheCapturedPhotoBoundaryAndExcludeOutsidePieces()
+        {
+            Mesh mesh = IntroFractureMesh.Build();
+            try
+            {
+                var worldToUv = new Matrix4x4();
+                worldToUv.m00 = 0.40f;
+                worldToUv.m03 = 0.50f;
+                worldToUv.m11 = 0.40f;
+                worldToUv.m13 = 0.50f;
+                worldToUv.m23 = 1f;
+                worldToUv.m33 = 1f;
+
+                int selected = IntroFractureMesh.ReselectClosingPieces(
+                    mesh, Matrix4x4.identity, worldToUv, worldToUv);
+                Assert.That(selected, Is.EqualTo(IntroFractureMesh.EdgeCloserCount));
+
+                List<Vector4> pieces = ReadUv(mesh, 1);
+                List<Vector4> surfaces = ReadUv(mesh, 3);
+                Vector3[] vertices = mesh.vertices;
+                var fronts = new Dictionary<Vector4, List<Vector2>>();
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    if (surfaces[i].x != IntroFractureMesh.FrontSurface)
+                        continue;
+                    if (!fronts.TryGetValue(pieces[i], out List<Vector2>? points))
+                    {
+                        points = new List<Vector2>(4);
+                        fronts.Add(pieces[i], points);
+                    }
+                    points.Add(vertices[i]);
+                }
+
+                int closerCount = 0;
+                int outsideCenterCount = 0;
+                foreach (KeyValuePair<Vector4, List<Vector2>> piece in fronts)
+                {
+                    Vector2 centerUv = ProjectUv(worldToUv, ShellPoint(piece.Key));
+                    bool centerInside = IsInsidePhoto(centerUv);
+                    if (!centerInside) outsideCenterCount++;
+                    if (piece.Key.w <= 0.5f) continue;
+
+                    closerCount++;
+                    Assert.That(centerInside, Is.True, "an out-of-photo piece was selected as a closer");
+                    bool hasVisibleVertex = false;
+                    bool hasClippedVertex = false;
+                    foreach (Vector2 point in piece.Value)
+                    {
+                        bool inside = IsInsidePhoto(ProjectUv(worldToUv, ShellPoint(point)));
+                        hasVisibleVertex |= inside;
+                        hasClippedVertex |= !inside;
+                    }
+                    Assert.That(hasVisibleVertex, Is.True, "a closer has no visible photo area");
+                    Assert.That(hasClippedVertex, Is.True, "a closer does not meet the photo boundary");
+                }
+                Assert.That(closerCount, Is.EqualTo(IntroFractureMesh.EdgeCloserCount));
+                Assert.That(outsideCenterCount, Is.GreaterThan(0), "the projection did not exercise clipping");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
         public void Shards_MixPointedTrianglesWithConvexIrregularQuads()
         {
             Mesh mesh = IntroFractureMesh.Build();
@@ -391,7 +512,7 @@ namespace FixedCamVr.Streaming.Tests
                         .Or.EqualTo(IntroFractureMesh.BackSurface)
                         .Or.EqualTo(IntroFractureMesh.SideSurface));
                     Assert.That(uv1[i].z, Is.GreaterThan(0f));
-                    Assert.That(uv1[i].w, Is.EqualTo(1f));
+                    Assert.That(uv1[i].w, Is.EqualTo(0f).Or.EqualTo(1f));
                     Assert.That(uv2[i].w, Is.InRange(0f, IntroFractureMesh.MacroCount - 1f));
                 }
                 foreach (int index in triangles)
@@ -479,6 +600,27 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         private static double Cross(Vector2 a, Vector2 b) => (double)a.x * b.y - (double)a.y * b.x;
+
+        private static Vector3 ShellPoint(Vector4 local)
+        {
+            return new Vector3(local.x / 0.15f, local.y / 0.15f, 1f).normalized * 1.6f;
+        }
+
+        private static Vector3 ShellPoint(Vector2 local)
+        {
+            return new Vector3(local.x / 0.15f, local.y / 0.15f, 1f).normalized * 1.6f;
+        }
+
+        private static Vector2 ProjectUv(Matrix4x4 worldToUv, Vector3 world)
+        {
+            Vector4 q = worldToUv * new Vector4(world.x, world.y, world.z, 1f);
+            return new Vector2(q.x / q.w, q.y / q.w);
+        }
+
+        private static bool IsInsidePhoto(Vector2 uv)
+        {
+            return uv.x >= 0f && uv.x <= 1f && uv.y >= 0f && uv.y <= 1f;
+        }
 
         private static List<Vector4> ReadUv(Mesh mesh, int channel)
         {
