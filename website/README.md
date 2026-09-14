@@ -22,6 +22,8 @@ npm start
 
 `npm run build` は公開に必要なファイルだけを `dist/` へ出力します。`dist/` は生成物です。
 
+Vercelでは `vercel.json` により同じビルドを実行し、`dist/` だけを公開します。
+
 ## 素材
 
 - `assets/hero-desktop.webp`: デスクトップ用キービジュアル原本
