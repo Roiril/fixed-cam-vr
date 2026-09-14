@@ -66,12 +66,13 @@ for (const forbidden of forbiddenReferences) {
 }
 
 const sectionCount = html.match(/<section\b/g)?.length ?? 0;
-if (sectionCount !== 3) errors.push(`expected 3 sections, found ${sectionCount}`);
+if (sectionCount !== 4) errors.push(`expected 4 sections, found ${sectionCount}`);
 
 const sectionMarkers = [
   'class="hero"',
   'id="fixed-view"',
-  'id="scenario"'
+  'id="scenario"',
+  'id="archive"'
 ];
 let previousSectionIndex = -1;
 for (const marker of sectionMarkers) {
