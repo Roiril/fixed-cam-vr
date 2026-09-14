@@ -30,6 +30,9 @@ namespace FixedCamVr.Tracking
     /// ログは全て <c>[XPWalk]</c> タグ。体験そのものの観測は <c>[XP]</c>（ShowTelemetryHost）が出す。
     ///
     /// ⚠⚠ <b><c>-e relief 1</c> を足すと、タブレットでホラー軽減を選んだ状態を模した走行になる</b>。
+    /// ⚠ <b><c>-e xpstatus 1</c> を足すと、題字と導入の黒の上でステータス表示を 2 秒だけ立てる</b>
+    /// （<c>StatusHud.Probe</c>・<c>ev=status src=probe</c>）。黒の上に文字が出るかを人が被らずに
+    /// 録画で確かめるための口で、**既定の走行では 1 度も出さない**。
     /// ⚠ <b>校正は両側を流す</b>（`~/.claude/rules/work-style.md` §2-3）— 付けない走行で
     /// <c>relief=0/0/1.00/…</c>、付けた走行で <c>relief=1/1/0.50/…</c> が出て初めて、
     /// 対象と計器のどちらが正しいかが決まる。
@@ -101,6 +104,31 @@ namespace FixedCamVr.Tracking
                 if (string.Equals(a, "-" + name, StringComparison.OrdinalIgnoreCase)) return true;
             return false;
 #endif
+        }
+
+        /// <summary>プローブでステータスを立てておく秒数（録画で読める長さ）。</summary>
+        private const float StatusProbeSec = 2f;
+
+        /// <summary>
+        /// <b>黒の上にステータスの文字が出るか</b>を、人が被らずに録画で確かめるための口
+        /// （<c>-e xpstatus 1</c> のときだけ）。既定の走行では 1 度も出さない ＝
+        /// 「体験者の走行中に業務表示が出ていないか」の判定を汚さない。
+        ///
+        /// ⚠ <b>Tracking は Diagnostics を参照しない規約</b>（asmdef）なので、
+        /// <c>RegVizDebugDriver</c> と同じく名前で引いて <c>SendMessage</c> する。
+        /// 面が居なければ黙って何もしない。
+        /// </summary>
+        private static void ProbeStatusHud(string where)
+        {
+            if (!ExtraPresent("xpstatus")) return;
+            var hudGo = GameObject.Find("StatusHud");
+            if (hudGo == null)
+            {
+                Debug.LogWarning("[XPWalk] StatusHud がシーンに居ない — ステータスのプローブは飛ばす");
+                return;
+            }
+            hudGo.SendMessage("Probe", StatusProbeSec, SendMessageOptions.DontRequireReceiver);
+            Debug.Log($"[XPWalk] ステータスのプローブ（{where}）");
         }
 
         private Transform? _rig;
@@ -183,8 +211,13 @@ namespace FixedCamVr.Tracking
                 {
                     title.SetStartGuidance(TitleStartGuidance.Ready);
                     Debug.Log("[XPWalk] 題字とX/Y開始案内を表示した");
+                    // 題字の黒の上にステータスが出るかを録画で確かめる（-e xpstatus 1 のときだけ）。
+                    ProbeStatusHud("題字");
                     yield return new WaitForSeconds(TitleReadSec);
                     if (title.DismissTitle()) Debug.Log("[XPWalk] X/Y短押しを模して題字を閉じた");
+                    // 導入の黒（覆い）の上でももう一度。題字と導入では覆いの作りが違う
+                    // （題字は ZTest Always のメッシュ・導入は乗算ブレンド）ので、片方だけでは足りない。
+                    ProbeStatusHud("導入の黒");
                 }
                 else
                 {

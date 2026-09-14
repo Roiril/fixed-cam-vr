@@ -9,6 +9,7 @@ namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
     /// StatusHud / ControllerGuidePanel の見た目を Play モード無しで PNG 化する Editor プレビュー。
+    /// ⚠ 2 面とも <b>3D の TextMeshPro</b>（2026-09-14 に WorldSpace Canvas から移した。黒の上に描くため）。
     /// Play モードは MCP ブリッジを落とす既知の wedge があるため（mcp-unity.md）、Edit モードのまま
     /// 実コンポーネントへ状態を注入 → private の描画/配置メソッドを reflection で 1 回駆動 →
     /// 専用カメラで RenderTexture に描いて Screenshots/hud-preview/ へ保存する。
@@ -69,6 +70,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 実配置だと隠れて写らないため、プレビューに限り手前へ寄せる（見た目確認用・シーン非保存）。
                 SetPrivateField(hud, "distance", 0.9f);
                 SetPrivateField(hud, "heightOffset", -0.24f);
+                // ⚠ `SetVisible` は**ピン留め**（Editor の H キーと同じ）。右 B は押下中の表示なので
+                //   ここからは押せない — プレビューはピン留めで面を立てる（見た目は同じ）。
                 hud.SetVisible(true);
                 // RenderContent は「text.enabled かつ間引き間隔内」だと SetText をスキップする
                 // （updateInterval 間引き）。シーン保存状態の enabled=true が残っていると空のまま
@@ -93,10 +96,12 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 // ---- Edit モードでは Awake（日本語フォント差し替え）が走っていないため明示適用し、
                 //      TMP の遅延メッシュ生成も強制する（これが無いと豆腐 / 空白 PNG になる）----
+                // ⚠ 2 面とも 3D の TextMeshPro になった（2026-09-14・黒の上に描くため）。
+                //   Canvas を持たないので `Canvas.ForceUpdateCanvases` は要らない
+                //   （メッシュを組ませるのは `TMP_Text.ForceMeshUpdate` の方）。
                 var jp = JapaneseHudFont.TryGet();
                 ForceTmpReady(hud, jp);
                 ForceTmpReady(panel, jp);
-                UnityEngine.Canvas.ForceUpdateCanvases();
 
                 // ---- 頭の位置から撮る（両パネルとも頭へ正対 billboard のため、頭からが正しい見え方）----
                 string dir = Path.Combine(Application.dataPath, OutDirRel);

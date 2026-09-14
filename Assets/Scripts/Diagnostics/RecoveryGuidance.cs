@@ -21,6 +21,16 @@ namespace FixedCamVr.Diagnostics
         /// <summary>ヘッドセットが自己位置を見失った。</summary>
         TrackingLost,
         /// <summary>
+        /// 体験者の左コントローラが繋がっていない。<b>体験者の唯一の入力</b>なので、
+        /// このまま始めると報告が 1 件も通らない（しかも画にも音にも出ない）。
+        /// </summary>
+        VisitorControllerLost,
+        /// <summary>
+        /// 体験者の左コントローラの位置が取れていない（伏せている・体の陰）。
+        /// ボタンは効くが、手元の案内とゲージが出ない。
+        /// </summary>
+        VisitorControllerUntracked,
+        /// <summary>
         /// 配信端末が熱い。⚠ streamer v0.11.0 で熱による fps・画質の低下は全廃したので
         /// 「いま落ちている」ではなく「この先 OS に絞られる」の警告（体験は続けられる）。
         /// </summary>
@@ -69,6 +79,8 @@ namespace FixedCamVr.Diagnostics
                 ShowAlert.NotRegistered => "部屋の位置を測っていません",
                 ShowAlert.NoVideo => cam + "の映像が届いていません",
                 ShowAlert.TrackingLost => "ヘッドセットが自分の位置を見失いました",
+                ShowAlert.VisitorControllerLost => "左コントローラーが繋がっていません",
+                ShowAlert.VisitorControllerUntracked => "左コントローラーの位置が取れていません",
                 ShowAlert.Hot => cam + "が熱くなっています",
                 ShowAlert.FloorNotMeasured => "床の高さを測っていません",
                 _ => "",
@@ -98,6 +110,9 @@ namespace FixedCamVr.Diagnostics
             //   2026-08-12 に撤去済み・`canon/LEDGER.md`）。現場でできることに書き直した。
             ShowAlert.NoVideo => "カメラの画面が消えていないか見る\n直らなければ端末を再起動する",
             ShowAlert.TrackingLost => "明るい方を向いて数歩歩く",
+            // 体験者の唯一の入力。⚠ 直すのは**渡す前**（被ってしまうと手が届かない）。
+            ShowAlert.VisitorControllerLost => "電池を替えて、ボタンをどれか一度押す",
+            ShowAlert.VisitorControllerUntracked => "手を体の前に出してもらう",
             ShowAlert.Hot => "体験はこのまま続けられる\n次の人の前に充電を外して冷ます",
             ShowAlert.FloorNotMeasured => "トリガー2秒：位置合わせを開始\n×印に先を着けて打ち直す",
             _ => "",

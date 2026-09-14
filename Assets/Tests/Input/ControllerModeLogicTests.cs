@@ -254,7 +254,10 @@ namespace FixedCamVr.Input.Tests
             Assert.That(resets, Is.EqualTo(2));
         }
 
-        // ---- A / B と重なったトリガーは長押しに数えない ----
+        // ---- A と重なったトリガーは長押しに数えない ----
+        // ⚠ **B は 2026-09-14 に外した**（Bridge が `faceButtonHeld` へ渡さなくなった）。
+        //   B は押しているあいだステータスを読む操作なので、含めると早見表を読みながら
+        //   位置合わせへ入れない。渡す側の判断なので、このロジックの契約は変わっていない。
 
         [Test]
         public void Trigger_StartedWhileFaceButtonHeld_IsVoidedUntilRelease()

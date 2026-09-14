@@ -59,10 +59,12 @@ namespace FixedCamVr.Diagnostics
             }
 
             // ホットキー
-            if (Input.GetKeyDown(KeyCode.T)) _visible = !_visible;
+            // ⚠⚠ **`UnityEngine.` を省かない。** この asmdef は 2026-09-14 から `FixedCamVr.Input`
+            //    を参照しており、`FixedCamVr.Diagnostics` の中では素の `Input` がそちらの名前空間へ解決される。
+            if (UnityEngine.Input.GetKeyDown(KeyCode.T)) _visible = !_visible;
             if (registry != null)
             {
-                if (Input.GetKeyDown(KeyCode.R))
+                if (UnityEngine.Input.GetKeyDown(KeyCode.R))
                 {
                     var active = registry.GetActive();
                     if (active != null)
@@ -72,8 +74,8 @@ namespace FixedCamVr.Diagnostics
                         Debug.Log("[Overlay] 'R' hotkey: forced reconnect requested.");
                     }
                 }
-                if (Input.GetKeyDown(KeyCode.N)) registry.Next();
-                if (Input.GetKeyDown(KeyCode.P)) registry.Prev();
+                if (UnityEngine.Input.GetKeyDown(KeyCode.N)) registry.Next();
+                if (UnityEngine.Input.GetKeyDown(KeyCode.P)) registry.Prev();
             }
         }
 

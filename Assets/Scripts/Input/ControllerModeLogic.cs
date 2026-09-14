@@ -19,7 +19,7 @@ namespace FixedCamVr.Input
     /// スタッフの右手は A / B / トリガーだけを使い、誤操作しやすいグリップは読まない。
     /// 長押し検出（トリガー・A の 2 秒ホールド）は 1 回の連続ホールドで 1 回だけ発火する
     /// （<see cref="HoldLatch"/>）。
-    /// ⚠ <b>A / B と重なったトリガーは離すまで数えない</b>。登録の A 操作や体験者リセットの最中に
+    /// ⚠ <b>A と重なったトリガーは離すまで数えない</b>。登録の A 操作や体験者リセットの最中に
     /// 人差し指が自然にトリガーへ掛かっても、位置合わせを開始・中止しない
     /// （<see cref="Frame.faceButtonHeld"/> / <see cref="FaceButtonQuietSec"/>）。
     /// registrationActive は <c>CourseRegistrationController.IsActive</c>
@@ -42,14 +42,14 @@ namespace FixedCamVr.Input
             /// <summary>登録フロー中か（CourseRegistrationController.IsActive の外部真実）。</summary>
             public bool registrationActive;
             /// <summary>
-            /// 右の A / B（面のボタン）が押されているか。<b>押されているあいだ、トリガーの
+            /// 右の A（面のボタン）が押されているか。<b>押されているあいだ、トリガーの
             /// 長押しは数えない</b>（<see cref="FaceButtonQuietSec"/> も参照）。
             /// </summary>
             public bool faceButtonHeld;
         }
 
         /// <summary>
-        /// A / B を離してから、トリガーの長押しを数え始めてよいまでの間（秒）。
+        /// A を離してから、トリガーの長押しを数え始めてよいまでの間（秒）。
         ///
         /// A で点を記録するときや体験者リセットをするとき、人差し指がトリガーへ掛かりやすい。
         /// A を離した直後までトリガーを数えないことで、位置合わせへの誤入場を防ぐ。
@@ -61,13 +61,13 @@ namespace FixedCamVr.Input
         {
             private float _hold;
             private bool _fired;
-            // A / B と重なった（またはその直後に始まった）ホールド。離すまで数えず、発火もしない。
+            // A と重なった（またはその直後に始まった）ホールド。離すまで数えず、発火もしない。
             private bool _voided;
 
             /// <summary>長押しの進捗 [0,1]。無効化されたホールドは 0（鳴らさない・表示しない）。</summary>
             public float Progress01(float holdSec) => (holdSec <= 0f || _voided) ? 0f : Clamp01(_hold / holdSec);
 
-            /// <summary>いま押されているホールドが A / B と重なって無効化されているか。</summary>
+            /// <summary>いま押されているホールドが A と重なって無効化されているか。</summary>
             public bool Voided => _voided;
 
             /// <summary>計時とラッチをクリアする。</summary>
@@ -88,7 +88,7 @@ namespace FixedCamVr.Input
             /// <summary>
             /// 押下状態を進める。ホールドが holdSec に達した最初の 1 フレームだけ true を返す
             /// （離すまで再発火しない。離したら計時とラッチをリセット）。
-            /// <paramref name="blocked"/> のあいだ（A / B が押されている・離した直後）に押されている
+            /// <paramref name="blocked"/> のあいだ（A が押されている・離した直後）に押されている
             /// ホールドは<b>離すまで無効</b> — 数えず、鳴らさず、発火しない。
             /// </summary>
             public bool Tick(bool held, float dt, float holdSec, bool blocked)
@@ -124,7 +124,7 @@ namespace FixedCamVr.Input
 
         private float _holdSec = 2f;
 
-        // A / B を離してからの静穏期の残り（秒）。> 0 のあいだホールドは数え始めない。
+        // A を離してからの静穏期の残り（秒）。> 0 のあいだホールドは数え始めない。
         private float _faceQuiet;
         private int _voidedHolds;
 
@@ -138,12 +138,12 @@ namespace FixedCamVr.Input
         public float ResetHoldProgress01 => _reset.Progress01(_holdSec);
 
         /// <summary>
-        /// A / B と重なって無効化されたトリガーホールドの累計。
+        /// A と重なって無効化されたトリガーホールドの累計。
         /// Bridge が増分を見てログを出す（振動は画にも音にも出ないので、ここが唯一の手掛かり）。
         /// </summary>
         public int VoidedHolds => _voidedHolds;
 
-        /// <summary>いま押されているトリガーが A / B と重なって無効化されているか。</summary>
+        /// <summary>いま押されているトリガーが A と重なって無効化されているか。</summary>
         public bool TriggerHoldVoided => _trigger.Voided;
 
         /// <summary>モードが変わった時に (from, to) で発火する。副作用（登録開始/停止等）は購読側で行う。</summary>
@@ -169,7 +169,7 @@ namespace FixedCamVr.Input
         /// <summary>毎フレームの評価。入力からモード遷移・ランリセット要求を決める。</summary>
         public void Tick(in Frame f)
         {
-            // A / B が押されているあいだと、離してから FaceButtonQuietSec のあいだは、
+            // A が押されているあいだと、離してから FaceButtonQuietSec のあいだは、
             // トリガーのホールドを指が自然に掛かったものとみなして数えない。
             if (f.faceButtonHeld) _faceQuiet = FaceButtonQuietSec;
             else if (_faceQuiet > 0f) _faceQuiet = Max0(_faceQuiet - f.deltaTime);

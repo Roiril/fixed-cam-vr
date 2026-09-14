@@ -146,6 +146,13 @@ STEP_SKIP_REASONS = {
     "norec": "端末内録画が無い",
 }
 
+# ステータス表示（右 B）の出どころ（C# の `StatusHud` が `ev=status src=` へ出す名前と対）。
+STATUS_SRC = {
+    "held": "右 B を押している",
+    "pin": "ピン留め（Editor の H / menu hud）",
+    "probe": "自動走行のプローブ（-e xpstatus 1）",
+}
+
 # 目の視界ジャックの終わり方（canon/LEDGER.md 0099）。done / cut が体験者 2 通りの分岐そのもの。
 JACK_END_WHY = {
     "done": "写真が尽きた（足を止めた体験者 → 目も閉じる）",
@@ -1767,6 +1774,59 @@ def analyze(events, others, exp, warns=None):
                                 "OculusProjectConfig の _insightPassthroughSupport を見る）")
             else:
                 verdict("OK", f"位置合わせに {len(reg)} 回入り、いずれもパススルーが有効だった")
+        w()
+
+    # ---------------- ステータス表示（右 B）----------------
+    # ⚠⚠ **画にも音にも出ない。** ステータスは HMD の中にしか出ないので、体験者が被っている
+    #    あいだに業務表示が出ていたかは、録画を見ても卓を見ても後から分からない
+    #    （2026-09-14 まではテレメトリにも heartbeat にも 1 ビットも無かった）。
+    #    観測の出どころは C# の `ShowTelemetryHost`（`ev=status` の縁と
+    #    `ev=sum` の `hud` / `hudSec` / `hudN`）。**片方だけ直すと沈黙して食い違う。**
+    # ⚠ 2026-09-14 に右 B は「押しているあいだだけ出る」へ変わった。ラッチが無いので
+    #    出ていた秒は押していた秒とほぼ等しく、誤押しの害は押した長さに収まる。
+    status_rows = [e for e in events if e.get("ev") == "status"]
+    hud_raw = [str(v) for v in effect_samples(events, "hud")]
+    hud_all = [v for v in hud_raw if v != "-"]
+    if status_rows or any(e.get("ev") == "sum" for e in events):
+        w("## ステータス表示（右 B）")
+        for e in status_rows:
+            st = str(e.get("st", "?"))
+            src = STATUS_SRC.get(str(e.get("src")), str(e.get("src")))
+            sec = fnum(e, "sec")
+            tail = f" 出ていた秒 {sec:.1f}" if st == "off" and sec is not None else ""
+            w(f"  t={fnum(e,'t',0):7.1f}  {'出た' if st == 'on' else '消えた'}（{src}）{tail}")
+        if not status_rows:
+            w("  一度も出ていない")
+
+        hud_sec_all = [v for v in effect_samples(events, "hudSec") if str(v) not in ("-", "nc")]
+        hud_n_all = [v for v in effect_samples(events, "hudN") if str(v) not in ("-", "nc")]
+        hud_sec = fstr(hud_sec_all[-1]) if hud_sec_all else None
+        hud_n = fstr(hud_n_all[-1]) if hud_n_all else None
+        if hud_sec is not None:
+            w(f"  このランの累計: 出ていた {hud_sec:.1f} 秒 / "
+              f"{int(hud_n) if hud_n is not None else 0} 回（ラン開始で 0 へ戻る）")
+
+        probe_on = [e for e in status_rows
+                    if str(e.get("st")) == "on" and str(e.get("src")) == "probe"]
+        staff_on = [e for e in status_rows
+                    if str(e.get("st")) == "on" and str(e.get("src")) in ("held", "pin")]
+        if not hud_raw:
+            verdict("WARN", "ステータスの観測（hud）が出ていない — 古い APK か "
+                            "ShowTelemetryHost 未更新（2026-09-14 より前のビルド）")
+        elif not hud_all:
+            # 観測は出ているが値が `-` ＝ シーンに StatusHud が居ない（焼き直し忘れ）。
+            verdict("WARN", "StatusHud がシーンに居ない（hud=-）— 右 B を押しても何も出ない。"
+                            ".\\tools\\unity.ps1 menu scene で焼き直す")
+        if probe_on:
+            verdict("OK", f"プローブでステータスを {len(probe_on)} 回出した — "
+                          "題字と導入の黒の上に文字が出ているかは録画の PNG で見る")
+        if staff_on and hud_sec is not None and hud_sec > 0:
+            verdict("WARN", f"体験者の走行中にステータスが {hud_sec:.1f} 秒出ていた"
+                            f"（右 B を {int(hud_n) if hud_n is not None else len(staff_on)} 回）— "
+                            "そのあいだ体験者の視界に業務表示が重なっている。"
+                            "自動走行（--walk）では誰も押さないので 0 が普通")
+        elif hud_all and not staff_on:
+            verdict("OK", "体験者の走行中にステータスは出ていない（右 B は押されていない）")
         w()
 
     # ---------------- コントローラの位置（手元の面が出るか）----------------

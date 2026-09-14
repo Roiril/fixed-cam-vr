@@ -40,23 +40,35 @@ namespace FixedCamVr.Streaming.EditorTools
         //     0.18°〜2.67° と 15 倍ばらついていた）。ここに置くのは
         //    「どこに・どれだけの広さで出すか」だけ。
 
-        /// <summary>視線前方の面の Canvas 1 unit あたりの世界サイズ (m)。</summary>
-        private const float HudCanvasScaleM = 0.001f;
-
-        /// <summary>手元の面の Canvas 1 unit あたりの世界サイズ (m)。</summary>
-        private const float HandCanvasScaleM = 0.0005f;
+        // ⚠⚠ **2026-09-14 に 2 面（ステータス・操作早見表）を Canvas から 3D の TextMeshPro へ移した。**
+        //    黒の上に描くため（`TextMeshPro/Distance Field Overlay` ＋ renderQueue 5000）。
+        //    Canvas の sortingOrder では題字の覆い（queue 4950・ZTest Always）を越えられない。
+        //    ⇒ 寸法は **m 単位**になった（Canvas units ではない）。
 
         /// <summary>ステータスの面までの距離 (m)。<c>StatusHud.distance</c> と対で書く。</summary>
         private const float StatusDistanceM = 1.6f;
 
-        /// <summary>ステータスの面の幅 (Canvas units)。1.0m ＝ 1.6m 先で 35°（本文 19 文字 ＋ 余白）。</summary>
-        private const float StatusPanelW = 1000f;
+        /// <summary>ステータスの面の幅 (m)。1.6m 先で 35°（本文 19 文字 ＋ 余白）。</summary>
+        private const float StatusPanelW = 1.0f;
 
-        /// <summary>ステータスの面の高さ (Canvas units)。0.48m ＝ 7 行 ＋ 行間。</summary>
-        private const float StatusPanelH = 480f;
+        /// <summary>ステータスの面の高さ (m)。7 行 ＋ 行間。</summary>
+        private const float StatusPanelH = 0.48f;
 
         /// <summary>手元の面までのおよその距離 (m)。腕を自然に下ろした位置から頭まで。</summary>
         private const float HandDistanceM = 0.45f;
+
+        /// <summary>手元の面の幅 (m)。コントローラ幅 ≈0.1m の 2〜3 倍。</summary>
+        private const float HandPanelW = 0.28f;
+
+        /// <summary>手元の面の高さ (m)。</summary>
+        private const float HandPanelH = 0.15f;
+
+        /// <summary>
+        /// 3D の TextMeshPro の版の中の字の大きさ。
+        /// ⚠ <b>倍率は fontSize ではなく localScale で掛ける</b>（fontSize を上げるとメッシュの座標が
+        /// 広がる — <c>canon/LEDGER.md</c> 0035）。<c>OutroReport</c> / <c>TitleNotice</c> と同じ値。
+        /// </summary>
+        private const float HudMeshFontSize = 0.07f;
         private const string DiagnosticsName = "Diagnostics";
         private const string DebugHudName = "DebugHud"; // 旧構成の掃除用（削除対象）
         private const string StartupFaderName = "StartupFader";
@@ -628,7 +640,7 @@ namespace FixedCamVr.Streaming.EditorTools
             //      確認は `grep "m_Name: \[Eyes\]" Assets/Scenes/Main.unity`。
             CreateOrUpdateEyes(logic.transform, centerEye.transform, showControl);
 
-            // 4. StatusHud（単一サーフェス・緩追従・TMP）。本番は startVisible=false・視界保護。右 B でトグル。
+            // 4. StatusHud（単一サーフェス・緩追従・3D TMP）。本番は非表示（視界保護）。右 B を押している間だけ出る。
             //    lap / ゾーン / 次の cue / 信号 / 要再登録 を 1 枚に統合し、登録中は登録ガイダンスを強制表示。
             //    world-space（Logic 直下・head 非親）で StatusHud が自前に緩追従する。
             var statusHud = CreateStatusHud(logic.transform, centerEye.transform, registry, tracker,
@@ -715,7 +727,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右 A 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / [Comms]（接続確認・報告練習・本編の連絡とゲージ） / OutroReport（終幕の報告 4 行） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（報告練習後に自動表示し、左 X/Y 短押しで閉じる） / OvrBridge（左 X/Y: 報告練習・本編報告・題字開始。右手: A 長押し=体験者リセット / B=ステータス / トリガー長押し=登録。右グリップは未使用）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右 A 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・右 B を押している間だけ表示・黒の上に描く） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / [Comms]（接続確認・報告練習・本編の連絡とゲージ） / OutroReport（終幕の報告 4 行） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（報告練習後に自動表示し、左 X/Y 短押しで閉じる） / OvrBridge（左 X/Y: 報告練習・本編報告・題字開始。右手: A 長押し=体験者リセット / B=押している間ステータス / トリガー長押し=登録。右グリップは未使用）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -1218,44 +1230,33 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// StatusHud の**見た目部分**（WorldSpace Canvas + CanvasScaler + TextMeshProUGUI + StatusHud
-        /// コンポーネント + 配置系 SerializeField + head / registration / courseFrame 参照）を組んで返す。
+        /// StatusHud の**見た目部分**（3D TextMeshPro + StatusHud コンポーネント +
+        /// 配置系 SerializeField + head / registration / courseFrame 参照）を組んで返す。
         /// 本番シーン生成（<see cref="CreateStatusHud"/>）と Editor プレビュー（登録ガイダンス HUD の
         /// 位置・サイズ感の机上検証）で**同一の見た目を再現するための共有シーム**。ステータス内容ソース
         /// （registry / tracker / lap / cue / signal / switch）は含めない — 呼び出し側が足す。
-        /// パネル寸法・fontSize・配置の数値定義はこの 1 箇所だけに置く（二重定義を作らない）。
+        /// パネル寸法・配置の数値定義はこの 1 箇所だけに置く（二重定義を作らない）。
+        ///
+        /// ⚠⚠ <b>2026-09-14 に WorldSpace Canvas をやめた。</b> 題字の覆い（queue 4950・ZTest Always）と
+        /// 導入の覆い（queue 4900・乗算ブレンド）に対して、Canvas の sortingOrder では越えられない
+        /// （UI も深度を書かないので、勝てるのは描画順だけ。乗算の相手には先に描いた時点で負ける）。
+        /// Overlay シェーダと <c>renderQueue</c> の適用は <see cref="StatusHud"/>.Awake が行う
+        /// （<c>fontMaterial</c> はインスタンスを作るので、シーンへ焼く値ではない）。
         /// </summary>
         public static StatusHud CreateStatusHudVisual(Transform parent, Transform head,
             CourseRegistrationController? registration, CourseFrame? courseFrame)
         {
-            var canvasGo = new GameObject(StatusHudName);
-            canvasGo.transform.SetParent(parent, worldPositionStays: false);
-
-            var canvas = canvasGo.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.WorldSpace;
-            canvasGo.AddComponent<UnityEngine.UI.CanvasScaler>();
-
-            var rt = (RectTransform)canvasGo.transform;
-            // ⚠ 幅は**いちばん長い行が収まる**大きさ。旧 720（0.72m）は異常の 1 行（18 文字）に
-            //   対して 3 割足りず、折り返しも無効なので**面の外へ流れ出していた**。
-            //   960 units = 0.96m ＝ 1.6m 先で 33°（1 文字 1.8° × 19 文字）。
-            rt.sizeDelta = new Vector2(StatusPanelW, StatusPanelH);
-            rt.localScale = Vector3.one * HudCanvasScaleM;
+            var rootGo = new GameObject(StatusHudName);
+            rootGo.transform.SetParent(parent, worldPositionStays: false);
 
             var textGo = new GameObject("StatusText");
-            textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
-            var textRt = textGo.AddComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.anchoredPosition = Vector2.zero;
-            textRt.sizeDelta = Vector2.zero;
-            textRt.localScale = Vector3.one;
-            textRt.localPosition = Vector3.zero;
+            textGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
 
-            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            var tmp = textGo.AddComponent<TextMeshPro>();
             tmp.text = "";
-            // 大きさ・色は HmdTextStyle が唯一の正（面ごとに数字を決めない）。
-            tmp.fontSize = HmdTextStyle.CanvasFontSize(HmdTextStyle.BodyDeg, StatusDistanceM, HudCanvasScaleM);
+            // 大きさは HmdTextStyle が唯一の正（面ごとに数字を決めない）。
+            // ⚠ **fontSize は据え置き、倍率は localScale**（OutroReport / TitleNotice と同じ流儀）。
+            tmp.fontSize = HudMeshFontSize;
             tmp.color = HmdTextStyle.Ink;
             // ⚠ **左上寄せ**。中央揃えだと数値が変わるたびに行頭が動き、行数が増減すると
             //   面ごと上下する（現場で視線を取り直す原因になる）。
@@ -1263,7 +1264,18 @@ namespace FixedCamVr.Streaming.EditorTools
             tmp.enableWordWrapping = false;
             tmp.richText = true;
 
-            var hud = canvasGo.AddComponent<StatusHud>();
+            // ⚠ 幅は**いちばん長い行が収まる**大きさ。旧 0.72m は異常の 1 行（18 文字）に
+            //   対して 3 割足りず、折り返しも無効なので**面の外へ流れ出していた**。
+            //   1.0m ＝ 1.6m 先で 35°（1 文字 1.8° × 19 文字 ＋ 余白）。
+            // ⚠⚠ **枠は倍率で割る**（localScale が掛かるので、m の値をそのまま入れると枠だけ広がる）。
+            float scale = HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, StatusDistanceM, HudMeshFontSize);
+            var textRt = (RectTransform)textGo.transform;
+            textRt.sizeDelta = new Vector2(StatusPanelW / scale, StatusPanelH / scale);
+            textGo.transform.localScale = Vector3.one * scale;
+            textGo.transform.localPosition = Vector3.zero;
+            textGo.transform.localRotation = Quaternion.identity;
+
+            var hud = rootGo.AddComponent<StatusHud>();
             var hudSo = new SerializedObject(hud);
             TrySetObjectRef(hudSo, "text", tmp);
             if (courseFrame != null) TrySetObjectRef(hudSo, "courseFrame", courseFrame);
@@ -1276,8 +1288,8 @@ namespace FixedCamVr.Streaming.EditorTools
             TrySetFloat(hudSo, "yawDeadzoneDeg", 10f);
             TrySetFloat(hudSo, "smoothTime", 0.30f);
             TrySetFloat(hudSo, "updateInterval", 0.25f);
-            TrySetBool(hudSo, "startVisible", false); // 本番の視界保護（右 B でトグル）
-            TrySetFloat(hudSo, "autoHideSec", 0f);    // 既定無効（現場で必要なら設定）
+            // ⚠ 旧 `startVisible` / `autoHideSec` は 2026-09-14 に削除した（押下中の表示になり、
+            //    開けっ放しを閉じる仕掛けが要らなくなった）。どちらも既定のまま死んでいた設定。
             // ⚠ 旧 `recenterAutoShowSec`（要再登録で 5 秒だけ自動表示）は 2026-08-07 に廃止。
             //    体験者の視界へ業務連絡が湧く唯一の経路だった（StatusHud のコメント参照）。
             hudSo.ApplyModifiedPropertiesWithoutUndo();
@@ -1289,43 +1301,36 @@ namespace FixedCamVr.Streaming.EditorTools
         // 見た目は StatusHud（CreateStatusHudVisual）を踏襲するが、パネル幅はコントローラ幅の
         // 2〜3 倍程度に収める規模感（小さめ・左寄せの操作リスト）。配置追従は ControllerGuidePanel が
         // controller / head を見て自前で行う（world-space・parent 直下・controller 非親）。
+        // ⚠ 2026-09-14 に 3D の TextMeshPro へ移した（理由は CreateStatusHudVisual と同じ ＝ 黒の上に描く）。
         private static ControllerGuidePanel CreateControllerGuidePanel(Transform parent,
             Transform controller, Transform head, StatusHud? statusHud)
         {
-            var canvasGo = new GameObject(ControllerGuideName);
-            canvasGo.transform.SetParent(parent, worldPositionStays: false);
-
-            var canvas = canvasGo.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.WorldSpace;
-            canvasGo.AddComponent<UnityEngine.UI.CanvasScaler>();
-
-            var rt = (RectTransform)canvasGo.transform;
-            // sizeDelta 560 × 0.0005 = 0.28m 幅（コントローラ幅 ≈0.1m の 2〜3 倍）。
-            // 本文 1.8° ＝ 1 文字 28 units なので 1 行 19 文字まで（最長は 15 文字）。
-            rt.sizeDelta = new Vector2(560f, 300f);
-            rt.localScale = Vector3.one * HandCanvasScaleM;
+            var rootGo = new GameObject(ControllerGuideName);
+            rootGo.transform.SetParent(parent, worldPositionStays: false);
 
             var textGo = new GameObject("GuideText");
-            textGo.transform.SetParent(canvasGo.transform, worldPositionStays: false);
-            var textRt = textGo.AddComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.anchoredPosition = Vector2.zero;
-            textRt.sizeDelta = Vector2.zero;
-            textRt.localScale = Vector3.one;
-            textRt.localPosition = Vector3.zero;
+            textGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
 
-            var tmp = textGo.AddComponent<TextMeshProUGUI>();
+            var tmp = textGo.AddComponent<TextMeshPro>();
             tmp.text = "";
-            // ⚠ 旧 26（StatusHud 34 より小さめ、という面どうしの比較）は**距離が違うので比較になっていない**。
-            //   手元 0.45m と視線前方 1.6m では同じ fontSize でも見かけ角が 3.5 倍違う。
-            tmp.fontSize = HmdTextStyle.CanvasFontSize(HmdTextStyle.BodyDeg, HandDistanceM, HandCanvasScaleM);
+            // ⚠ 大きさは距離から逆算する（面どうしを見比べて決めない）。手元 0.45m と
+            //   視線前方 1.6m では同じ fontSize でも見かけ角が 3.5 倍違う。
+            tmp.fontSize = HudMeshFontSize;
             tmp.color = HmdTextStyle.Ink;
             tmp.alignment = TextAlignmentOptions.TopLeft;
             tmp.enableWordWrapping = false;
             tmp.richText = false;
 
-            var panel = canvasGo.AddComponent<ControllerGuidePanel>();
+            // 0.28m 幅（コントローラ幅 ≈0.1m の 2〜3 倍）。本文 1.8° ＝ 0.45m 先で 1 文字 0.0141m
+            // なので 1 行 19 文字まで（最長は 15 文字）。⚠ 枠は倍率で割る。
+            float scale = HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, HandDistanceM, HudMeshFontSize);
+            var textRt = (RectTransform)textGo.transform;
+            textRt.sizeDelta = new Vector2(HandPanelW / scale, HandPanelH / scale);
+            textGo.transform.localScale = Vector3.one * scale;
+            textGo.transform.localPosition = Vector3.zero;
+            textGo.transform.localRotation = Quaternion.identity;
+
+            var panel = rootGo.AddComponent<ControllerGuidePanel>();
             var so = new SerializedObject(panel);
             TrySetObjectRef(so, "text", tmp);
             TrySetObjectRef(so, "controller", controller);

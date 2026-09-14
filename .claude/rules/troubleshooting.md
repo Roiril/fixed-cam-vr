@@ -141,8 +141,9 @@ XML は普通に「1369 中 1 件失敗」のような結果を返すので、**
 ### 「コントローラのボタンが意図と違う / 左右どちらも同じ操作になる」（2026-06-17 実害）
 
 - **`OVRInput.GetDown(Button.One/Two)` はコントローラ未指定だと両手から拾う**。`Button.One`=A(右)**または**X(左)、`Button.Two`=B(右)**または**Y(左)。左手を明示しないと左の X/Y までカメラ操作に化ける
-- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する。[`OvrControllerBridge`](../../Assets/Scripts/OvrBridge/OvrControllerBridge.cs) は左 X / Y を体験者の報告と題字開始に使う。右は A 2秒長押し=体験者リセット / B=ステータストグル / トリガー2秒長押し=登録。右グリップは読まない。
-- **トグル系ボタンの「初回押下が空振り」（2026-06-18 実害）**: ローカルに `bool _visible=true` 等で持つ状態が**対象側の初期状態とズレる**と、初回押下が「既にその状態」へのトグルになり何も起きない。→ **トグルは真実源（対象の `IsVisible`）を毎回読んで反転する**（`OvrControllerBridge.ToggleStatus()` が `StatusHud.IsVisible` を反転。`HudToggleInput`（Editor H）も同様）
+- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する。[`OvrControllerBridge`](../../Assets/Scripts/OvrBridge/OvrControllerBridge.cs) は左 X / Y を体験者の報告と題字開始に使う。右は A 2秒長押し=体験者リセット / B=押しているあいだステータス表示 / トリガー2秒長押し=登録。右グリップは読まない。
+- **トグル系ボタンの「初回押下が空振り」（2026-06-18 実害）**: ローカルに `bool _visible=true` 等で持つ状態が**対象側の初期状態とズレる**と、初回押下が「既にその状態」へのトグルになり何も起きない。→ **トグルは真実源（対象の `IsVisible`）を毎回読んで反転する**（`HudToggleInput`（Editor H）がこの形）。⚠ **右 B のステータスは 2026-09-14 にトグルをやめた**（`ToggleStatus()` は廃止）。押しているあいだ `SetHeld(true)` が流れるだけなので、この型の空振りは起きない
+- **「右 B を押してもステータスが出ない」（2026-09-14〜）**: 押しているあいだだけ出るので、**離してから見ても遅い**。順に見る — ①押しっぱなしにしたか ②右コントローラが繋がっているか（押下の Ack 振動が鳴るか）③`ev=sum` の `hud` が `-` なら `StatusHud` がシーンに居ない（`.\tools\unity.ps1 menu scene` で焼き直す）④`hud` そのものが出ていなければ古い APK。題字と導入の黒に潰される経路は 2026-09-14 に塞いだ（Overlay ＋ renderQueue 5000）ので、黒の上でも出る — 出ないなら `Shader.Find` が剥がれた疑いで、logcat に `シェーダが見つかりません` が出ていないか見る（[memory/staff_status_view.md](../memory/staff_status_view.md)）
 
 ## ⚠ まとめて直して「直った」は、どれが効いたかを教えてくれない（2026-07-31 実害）
 

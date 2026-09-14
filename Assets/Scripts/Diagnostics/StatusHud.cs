@@ -1,5 +1,6 @@
 #nullable enable
 using System.Text;
+using FixedCamVr.Input;
 using FixedCamVr.Streaming;
 using FixedCamVr.Tracking;
 using TMPro;
@@ -13,16 +14,29 @@ namespace FixedCamVr.Diagnostics
     /// CourseRegGuidance（登録ガイダンス）の 3 枚を 1 枚に統合し、重なりを構造で根絶する。
     ///
     /// 内容モード（優先度順・常に最大 1 枚）:
-    ///   1. 登録中（<see cref="registration"/>.IsActive）→ **登録ガイダンスを強制表示**（最優先・オートハイド対象外）
-    ///   2. ステータス表示中（右 B トグル）→ 相 / lap / ゾーン / 次の演出 / カメラ / 異常 1 件と直し方
+    ///   1. 登録中（<see cref="registration"/>.IsActive）→ **登録ガイダンスを強制表示**（最優先）
+    ///   2. ステータス表示中（<b>右 B を押しているあいだ</b>、または Editor / 卓からのピン留め）
+    ///      → 相 / lap / ゾーン / 次の演出 / カメラ / 報告の件数 / 異常 1 件と直し方
     ///   3. それ以外 → 非表示
     ///
+    /// ⚠⚠ <b>2026-09-14 にトグル（ラッチ）をやめた。</b> 右は本編中もスタッフの手にあるので、
+    /// ラッチだと<b>開いたまま体験者へ渡る</b>。自然な手順（A 2 秒でリセット → B で確認 → 被せる）は
+    /// 消す縁（ラン開始）が B より先に来るため、導入から終幕までずっと出たままになる。
+    /// いまは押下中の表示（<see cref="StatusViewLogic"/>）で、誤押しの害は押していた長さに有界。
+    /// 真実源は 1 つ: <see cref="IsVisible"/> ＝ ピン留め or 押下ビューが見えている。
+    ///
     /// <b>この 2 つは「スタッフが被っている」ことの印でもある</b>（<see cref="StaffViewing"/>）。
-    /// HMD 内の他の文字面（導入の合図・黒の上の 1 行・手元の操作早見表）はここを見て出入りする。
+    /// HMD 内の他の文字面（黒の上の 1 行・手元の操作早見表）はここを見て出入りする。
+    ///
+    /// ⚠ <b>黒の上に描く。</b> 題字の覆い（queue 4950・ZTest Always）と導入の覆い
+    /// （queue 4900・乗算ブレンド）に先に描かれると必ず潰されるので、面の TMP は
+    /// <c>TextMeshPro/Distance Field Overlay</c>（ZTest Always）＋ <c>renderQueue 5000</c> で描く
+    /// （<see cref="OutroReport"/> / <see cref="TitleNotice"/> と同じ形）。譲らせないので、
+    /// B を押しているあいだも体験者の X / Y 短押しはそのまま通る。
     ///
     /// 配置は剛体 head-lock を廃し、<see cref="YawFollowLogic"/> の deadzone + SmoothDamp 緩追従
     /// （ScreenAnchor と同型）。頭を回すと遅れてついてくるが、視線だけ動かせば静止して読める。
-    /// 距離・角度・サイズ・追従・オートハイドはすべて SerializeField（現場調整前提）。
+    /// 距離・角度・追従はすべて SerializeField（現場調整前提）。
     /// 診断詳細（FPS / HMD 座標 / DISC）は載せない（HudLogDumper のログ + Web 卓 heartbeat が担う）。
     /// </summary>
     public sealed class StatusHud : MonoBehaviour
@@ -92,11 +106,10 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("ステータス更新間隔 (秒)。90Hz を守るため毎フレームの文字列構築を間引く。")]
         [SerializeField] private float updateInterval = 0.25f;
 
-        [Tooltip("起動時にステータスを表示するか。本番は false（視界保護）。右 B でトグル。")]
-        [SerializeField] private bool startVisible = false;
-
-        [Tooltip("ステータス表示をこの秒数で自動的に隠す（0 = 無効）。登録ガイダンスには適用しない。")]
-        [SerializeField] private float autoHideSec = 0f;
+        // ⚠ 旧 `startVisible` / `autoHideSec` は 2026-09-14 に削除した。どちらもラッチ表示の
+        //    ための設定で、**既定のまま一度も使われていない死んだつまみ**だった
+        //    （`autoHideSec` は既定 0 ＝ 無効・`startVisible` は既定 false）。
+        //    押下中の表示になったので、開けっ放しを閉じる仕掛けそのものが要らない。
 
         // ⚠ 旧 `recenterAutoShowSec`（要再登録が立った瞬間、非表示中でも 5 秒だけ自動表示）は
         //    2026-08-07 に廃止した。**体験者が被っている最中に業務連絡が視界へ勝手に出る**唯一の
@@ -108,8 +121,11 @@ namespace FixedCamVr.Diagnostics
         private readonly YawFollowLogic _yawFollow = new();
         private bool _yawSeeded;
 
-        private bool _visible;          // 右 B トグルによる手動表示
-        private float _hideAt;          // autoHideSec の失効時刻（_visible=true のとき有効）
+        /// <summary>押下中の表示（右 B）。<b>純ロジック</b>なので秒とフェードの規則はここに無い。</summary>
+        private readonly StatusViewLogic _view = new();
+
+        private bool _pinned;           // Editor の H キー / menu hud / 卓からのピン留め
+        private float _probeLeft;       // 自動走行のプローブ（Probe(sec)）の残り時間
 
         private float _accum;
         private string _lastGuidance = "";
@@ -117,31 +133,96 @@ namespace FixedCamVr.Diagnostics
         // コントローラ操作モードのラベル（NORMAL/REG）。OvrControllerBridge が遷移時に push する。
         private string _modeLabel = "";
 
-        /// <summary>ステータスの表示・非表示を外部から切り替える（右 B / Editor H）。</summary>
-        public void SetVisible(bool v)
+        // 導入の段（左の接続待ち / 報告の練習 / 題字 …）。OvrControllerBridge が変化時に push する。
+        private string _introStep = "";
+
+        /// <summary>面が出た理由。<b>テレメトリの <c>ev=status src=</c> がそのまま読む。</b></summary>
+        public enum ShowSource
         {
-            _visible = v;
-            if (v && autoHideSec > 0f) _hideAt = Time.unscaledTime + autoHideSec;
+            /// <summary>右 B を押している（本番の経路）。</summary>
+            Held,
+            /// <summary>Editor の H キー / <c>menu hud</c> / 卓からのピン留め。</summary>
+            Pinned,
+            /// <summary>自動走行のプローブ（<see cref="Probe"/>）。</summary>
+            Probe,
         }
 
-        /// <summary>現在ステータスを手動表示中か（トグルの真実源）。</summary>
-        public bool IsVisible => _visible;
+        /// <summary>
+        /// ステータスを<b>ピン留め</b>する（Editor の H キー / <c>menu hud</c> のプレビュー）。
+        /// ⚠ <b>右 B はこれを呼ばない</b> — B は押しているあいだだけの表示で、状態を残さない。
+        /// ラン開始（<see cref="OnRunRestarted"/>）で必ず落ちる。
+        /// </summary>
+        public void SetVisible(bool v) => _pinned = v;
+
+        /// <summary>
+        /// <b>右 B を押しているか</b>を毎フレーム渡す（<c>OvrControllerBridge</c> が呼ぶ）。
+        /// <b>戻り値は「このフレームで面が出た」</b> ＝ 振動を 1 粒鳴らす縁。
+        ///
+        /// ⚠ <b>計時はここでやる</b>（<c>Update</c> ではない）。Bridge と StatusHud の Update 順は
+        /// 保証されないので、押した縁と振動が 1 フレームずれる形を作らない。
+        /// </summary>
+        public bool SetHeld(bool held)
+        {
+            _view.Tick(held, Time.unscaledDeltaTime);
+            return _view.JustShown;
+        }
+
+        /// <summary>
+        /// <paramref name="sec"/> 秒だけ面を立てる（自動走行のプローブ・<c>-e xpstatus 1</c>）。
+        /// 人が被らなくても「黒の上に文字が出る」を録画で確かめるための口。
+        /// </summary>
+        public void Probe(float sec)
+        {
+            if (sec <= 0f) return;
+            if (sec > _probeLeft) _probeLeft = sec;
+        }
+
+        /// <summary>
+        /// <b>いま面が出ているか。真実源はここ 1 つ</b>
+        /// ＝ ピン留め or プローブ中 or 右 B の押下ビューが見えている。
+        /// </summary>
+        public bool IsVisible => _pinned || _probeLeft > 0f || _view.Visible;
+
+        /// <summary>
+        /// いま書くべき不透明度 [0,1]。<b>手元の早見表（<see cref="ControllerGuidePanel"/>）も
+        /// 同じ値を使う</b> — 2 枚が別々に薄れると、同じ操作で出た面が 2 通りの速さで消える。
+        /// 位置合わせ中とピン留め・プローブは読ませ続けるので 1。
+        /// </summary>
+        public float StaffAlpha01 =>
+            RegistrationActive || _pinned || _probeLeft > 0f ? 1f : _view.Alpha01;
+
+        /// <summary>直近に面が出たときの理由（テレメトリ用）。</summary>
+        public ShowSource LastShowSource { get; private set; } = ShowSource.Held;
+
+        /// <summary>
+        /// ラン開始からの<b>面が出ていた累計 (秒)</b>。
+        /// ⚠ <b>画にも音にも出ない</b>ので、体験者の走行中に業務表示が出ていたかはここにしか残らない。
+        /// </summary>
+        public float VisibleSecSinceRun { get; private set; }
+
+        /// <summary>ラン開始から面が出た回数。</summary>
+        public int ShowCountSinceRun { get; private set; }
+
+        /// <summary>導入の段（「左の接続待ち」「報告の練習」「題字」…）。空なら段を出さない。</summary>
+        public void SetIntroStep(string label) => _introStep = label ?? "";
 
         /// <summary>
         /// <b>HMD の中に文字を出してよいか ＝ 被っているのがスタッフか。</b>
-        /// 導入の合図（<c>IntroPrompt</c>）・黒の上の 1 行（<c>ShowEndingFader</c>）・
-        /// 手元の操作早見表（<c>ControllerGuidePanel</c>）が全部ここを見る。
+        /// 黒の上の 1 行（<c>ShowEndingFader</c>）・手元の操作早見表
+        /// （<c>ControllerGuidePanel</c>）が全部ここを見る。
         ///
-        /// 印は 2 つだけ。どちらも<b>コントローラを持っている人にしか起こせない</b>ので、
-        /// 体験者が被っている間は構造的に立たない（体験者はコントローラを持たない運用）。
-        ///   - 右 B のステータス表示（スタッフが自分で開いた）
+        /// 印は 2 つだけ。どちらも<b>コントローラを持っている人にしか起こせない</b>。
+        ///   - 右 B のステータス表示（スタッフが自分で押している）
         ///   - 位置合わせ作業中（登録は必ずスタッフの仕事）
         ///
         /// 2026-08-07 にこの門を作った。それまでは体験者にも文字が出ていて、機器の言葉が
         /// ホラー体験の入口に混ざっていた（ユーザー指摘「世界観を壊すので消して」）。
         /// スタッフが確認したいときは従来どおり全部読める ＝ 現地のリハ・切り分けの手段は減らない。
+        ///
+        /// ⚠ <b>2026-09-14 まで「押した人 ＝ 被っている人」を仮定していた</b>が、右は本編中も
+        /// スタッフの手にある。押しているあいだだけ出す形にして、開けっ放しの経路を無くした。
         /// </summary>
-        public bool StaffViewing => _visible || RegistrationActive;
+        public bool StaffViewing => IsVisible || RegistrationActive;
 
         /// <summary>
         /// 位置合わせ作業中か（この面が登録ガイダンスを最優先で強制表示している状態）。
@@ -168,16 +249,8 @@ namespace FixedCamVr.Diagnostics
         {
             if (head == null && Camera.main != null) head = Camera.main.transform;
 
-            // 世界空間 Canvas には描く相手を渡しておく（UGUI の作法）。
-            // ⚠ **これは `Screen position out of view frustum` の対策ではない。**
-            //    2026-08-14 にそのつもりで入れたが、実機の警告は 1 行も減らなかった
-            //    （`canon/OPEN.md` の未解決項目）。**効かなかった対策を「効いた」と書かない。**
-            var canvas = GetComponent<Canvas>();
-            if (canvas != null && canvas.renderMode == RenderMode.WorldSpace && canvas.worldCamera == null)
-            {
-                canvas.worldCamera = head != null ? head.GetComponent<Camera>() : null;
-                if (canvas.worldCamera == null) canvas.worldCamera = Camera.main;
-            }
+            // ⚠ 旧「世界空間 Canvas に描く相手を渡す」は 2026-09-14 に消した。面は 3D の
+            //   TextMeshPro になり Canvas を持たない（黒の上に描くため・下の UseOverlayShader）。
 
             // 既定 LiberationSans SDF は日本語グリフを持たない（ガイダンス・ステータス行が豆腐化する）。
             // OS フォントから日本語対応の動的 TMP フォントを生成して差し替える（失敗時は既定のまま）。
@@ -185,20 +258,43 @@ namespace FixedCamVr.Diagnostics
             {
                 var jp = JapaneseHudFont.TryGet();
                 if (jp != null) text.font = jp;
+
+                // ⚠⚠ **題字と導入の覆いより後に、深度を無視して描く。**
+                //    題字の黒（queue 4950・ZTest Always）と導入の覆い（queue 4900・乗算ブレンド）は
+                //    先に描かれた文字を必ず潰すので、**描画順（queue 5000）と ZTest Always の両方**が要る。
+                //    fontMaterial の getter がインスタンスを作るので共有マテリアルは汚れない。
+                UseOverlayShader(text);
+                text.fontMaterial.renderQueue = RenderQueue;
             }
         }
 
-        private void OnEnable()
+        /// <summary>タイトルの黒（4950）・導入の覆い（4900）より後に描く。<b>5000 を超えない</b>
+        /// （URP の透明パスは [2501, 5000] しか描かない・<c>rules/unity-vr.md</c>）。</summary>
+        private const int RenderQueue = 5000;
+
+        /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。</summary>
+        private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
+
+        /// <summary>
+        /// TMP の <b>Overlay 版</b>（<c>ZTest Always</c>）へ差し替える。既定の
+        /// <c>TextMeshPro/Distance Field</c> は ZTest をグローバル（<c>unity_GUIZTestMode</c>）で引くので
+        /// マテリアルからは上書きできない。見つからないときは<b>差し替えずに続ける</b>
+        /// （<see cref="OutroReport"/> と同文。マテリアルを壊して字が化けるよりはよい）。
+        /// </summary>
+        private static void UseOverlayShader(TMP_Text tmp)
         {
-            _visible = startVisible;
-            if (_visible && autoHideSec > 0f) _hideAt = Time.unscaledTime + autoHideSec;
+            var overlay = Shader.Find(OverlayShaderName);
+            if (overlay == null)
+            {
+                Debug.LogWarning($"[StatusHud] {OverlayShaderName} が見つかりません。" +
+                                 "題字や導入の黒にステータスが隠れる可能性があります");
+                return;
+            }
+            tmp.fontMaterial.shader = overlay;
         }
 
-        // ⚠⚠ **ラン開始で必ず消す**（2026-09-04）。落とす経路が右 B のトグルしか無いので、
-        //    本編中にスタッフが開いて閉じ忘れると、体験者の視線前方に日本語の業務表示が
-        //    残ったままになる。**画にしか出ない**（`IsVisible` は heartbeat にもテレメトリにも
-        //    乗らない）ので、卓でも当日パネルでも気づけない。
-        //    シーンの既定は `autoHideSec: 0` ＝ 自動で閉じないので、ここが唯一の受け皿。
+        // ⚠⚠ **ラン開始でピン留めを必ず落とす**（2026-09-04）。押下中の表示は離せば消えるが、
+        //    ピン留め（Editor の H キー / `menu hud`）は残るので、ここが受け皿になる。
         private void Start()
         {
             _runDirector = FindObjectOfType<ShowRunDirector>();
@@ -215,18 +311,81 @@ namespace FixedCamVr.Diagnostics
             _runRestartHooked = false;
         }
 
-        private void OnRunRestarted() => SetVisible(false);
+        // ⚠ 落とすのは**ピン留めだけ**（押下中の表示は指を離せば消える）。累計も 0 へ戻すので、
+        //   `hudSec` / `hudN` は「この体験者の走行で何秒出ていたか」を意味する。
+        private void OnRunRestarted()
+        {
+            _pinned = false;
+            _probeLeft = 0f;
+            VisibleSecSinceRun = 0f;
+            ShowCountSinceRun = 0;
+        }
 
         private ShowRunDirector? _runDirector;
         private bool _runRestartHooked;
 
+        // 直前のフレームで面が出ていたか（出入りの縁をログへ残すためだけに持つ）。
+        private bool _lastVisible;
+        // いま出ている面が出てからの秒数（消えるときにログへ書く）。
+        private float _shownSec;
+
         private void Update()
         {
-            // オートハイド（手動表示のみ・登録ガイダンスは対象外）。
-            if (_visible && autoHideSec > 0f && Time.unscaledTime >= _hideAt) _visible = false;
+            float dt = Time.unscaledDeltaTime;
+            if (_probeLeft > 0f)
+            {
+                _probeLeft -= dt;
+                if (_probeLeft < 0f) _probeLeft = 0f;
+            }
 
+            TrackVisibility(dt);
             RenderContent();
         }
+
+        /// <summary>
+        /// 面の出入りを数えてログへ残す。
+        ///
+        /// ⚠⚠ <b>画にも音にも出ない。</b> 体験者の走行中に業務表示が出ていたかは、ここと
+        /// テレメトリ（<c>ev=status</c> / <c>ev=sum</c> の <c>hudSec</c>）にしか残らない。
+        /// 2026-09-14 までは 1 ビットも観測しておらず、卓でも解析器でも当日パネルでも
+        /// 「開いたまま体験者へ渡った走行」を検出できなかった。
+        /// </summary>
+        private void TrackVisibility(float dt)
+        {
+            bool now = IsVisible;
+            if (now)
+            {
+                VisibleSecSinceRun += dt;
+                _shownSec += dt;
+            }
+
+            if (now == _lastVisible) return;
+            _lastVisible = now;
+
+            if (now)
+            {
+                // 同時に立っていたら「人の手でピン留めした」側を名乗る（プローブ > ピン > 押下）。
+                LastShowSource = _probeLeft > 0f ? ShowSource.Probe
+                               : _pinned ? ShowSource.Pinned
+                               : ShowSource.Held;
+                _shownSec = 0f;
+                ShowCountSinceRun++;
+                Debug.Log($"[StatusHud] 表示 on src={SourceTag(LastShowSource)}");
+            }
+            else
+            {
+                Debug.Log($"[StatusHud] 表示 off src={SourceTag(LastShowSource)} sec={_shownSec:F1}");
+                _shownSec = 0f;
+            }
+        }
+
+        /// <summary>ログとテレメトリで同じ綴りを使う（解析器が `src=` をそのまま読む）。</summary>
+        public static string SourceTag(ShowSource src) => src switch
+        {
+            ShowSource.Pinned => "pin",
+            ShowSource.Probe => "probe",
+            _ => "held",
+        };
 
         private void LateUpdate()
         {
@@ -278,28 +437,35 @@ namespace FixedCamVr.Diagnostics
                 }
                 // 色の正は HmdTextStyle 1 か所。Tracking は「対応が要る行か」だけを返す。
                 text.color = registration.GuidanceIsAlert ? HmdTextStyle.Alert : HmdTextStyle.Ink;
+                text.alpha = 1f;
                 text.enabled = !string.IsNullOrEmpty(g);
                 return;
             }
             _lastGuidance = "";
 
-            // 2. ステータス表示中（右 B の手動トグルだけ）。自動で開く経路は持たない
-            //    ＝ 体験者が被っている最中に文字が湧く道を 1 本も残さない。
-            if (!_visible)
+            // 2. ステータス表示中（右 B を押しているあいだ・ピン留め・プローブ）。
+            //    自動で開く経路は持たない ＝ 体験者が被っている最中に文字が湧く道を 1 本も残さない。
+            if (!IsVisible)
             {
                 text.enabled = false;
                 return;
             }
 
             _accum += Time.unscaledDeltaTime;
-            if (_accum < updateInterval && text.enabled) return; // 直前の文字列を維持
-            _accum = 0f;
+            if (_accum >= updateInterval || !text.enabled)   // 間引きの間は直前の文字列を維持
+            {
+                _accum = 0f;
+                BuildStatus(_sb);
+                text.SetText(_sb);
+                // 対応が要る 1 件が出ているときだけ警告色（面の色は 2 色しか無い — HmdTextStyle）。
+                text.color = _alertShown ? HmdTextStyle.Alert : HmdTextStyle.Ink;
+                text.enabled = true;
+            }
 
-            BuildStatus(_sb);
-            text.SetText(_sb);
-            // 対応が要る 1 件が出ているときだけ警告色（面の色は 2 色しか無い — HmdTextStyle）。
-            text.color = _alertShown ? HmdTextStyle.Alert : HmdTextStyle.Ink;
-            text.enabled = true;
+            // ⚠⚠ **濃さは色の後に書く。** `TMP_Text.color` の setter は alpha ごと上書きするので、
+            //    先に書くと立ち上がり（0.15 秒）も離してからの猶予（0.3 秒）も 1 フレームで消える。
+            //    ⚠ 文字列の組み立ては間引くが、濃さは毎フレーム書く（薄れ方が階段になる）。
+            text.alpha = StaffAlpha01;
         }
 
         // 直近の BuildStatus が異常の 2 行を出したか（面の色を選ぶためだけに持つ）。
@@ -313,6 +479,25 @@ namespace FixedCamVr.Diagnostics
         {
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
             return _run;
+        }
+
+        // 報告の件数の出どころ。ShowRunDirector と同じ流儀で遅延解決する（居なければ行を出さない）。
+        private ShowControlClient? _show;
+
+        private ShowControlClient? ResolveShow()
+        {
+            if (_show == null) _show = FindObjectOfType<ShowControlClient>();
+            return _show;
+        }
+
+        // 体験者の左コントローラの生死。⚠ **これを読む唯一の面がここ**（連絡の面は体験者へ出す面で、
+        // 「繋がっていません」を体験者に見せるわけにはいかない）。居なければ判定しない。
+        private CommsPanel? _comms;
+
+        private CommsPanel? ResolveComms()
+        {
+            if (_comms == null) _comms = FindObjectOfType<CommsPanel>();
+            return _comms;
         }
 
         // m:ss（GC ゼロ。sb.Append(int) だけで組む）。
@@ -342,7 +527,15 @@ namespace FixedCamVr.Diagnostics
             ShowRunDirector? run = ResolveRun();
             if (run != null && run.Phase == ShowPhase.Intro)
             {
+                // ⚠ 導入は 1 分近くあり、「導入中」だけでは**止まっているのか進んでいるのか読めない**。
+                //   段（左の接続待ち / 報告の練習 / 題字）は OvrControllerBridge が push する
+                //   （導入の状態機械は Assembly-CSharp 側にあり、この面からは見えない）。
                 sb.Append("導入中");
+                if (!string.IsNullOrEmpty(_introStep))
+                {
+                    sb.Append('：');
+                    sb.Append(_introStep);
+                }
             }
             else if (run != null && run.Phase == ShowPhase.Finished)
             {
@@ -411,6 +604,18 @@ namespace FixedCamVr.Diagnostics
                 }
             }
             else sb.Append('-');
+
+            // 行5: 報告：N 件。**押されているかはスタッフに 1 ビットも届いていなかった**
+            // （気づくのは終幕の報告が「０」になったとき ＝ もう手遅れ）。
+            // ⚠ 半角数字。全角にしてよいのは体験者が読む面（終幕の報告・紙と揃える）だけで、
+            //   ここは業務表示なので他の数値（周回・カメラ番号・ずれ cm）と揃える。
+            ShowControlClient? show = ResolveShow();
+            if (show != null)
+            {
+                sb.Append("\n報告：");
+                sb.Append(show.VisitorMarkCount);
+                sb.Append(" 件");
+            }
 
             // 行3.5: 映像の遅れ（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
             // **絶対の end-to-end ではない** — Unity が観測できる分（到着の揺らぎ + 展開 + 提示）だけ。
@@ -492,6 +697,12 @@ namespace FixedCamVr.Diagnostics
             if (courseFrame != null && !courseFrame.HasRegistration) return ShowAlert.NotRegistered;
             if (signalFx != null && signalFx.SignalLost) return ShowAlert.NoVideo;
             if (signalFx != null && signalFx.TrackingFrozen) return ShowAlert.TrackingLost;
+
+            // 体験者の左コントローラ。⚠⚠ **切れても画にも音にも出ない**（報告の押し方の案内が
+            //    黙って消えるだけ）。気づく経路は卓の heartbeat とここの 2 つしかない。
+            CommsPanel? comms = ResolveComms();
+            if (comms != null && !comms.LeftConnected) return ShowAlert.VisitorControllerLost;
+            if (comms != null && !comms.LeftTracked) return ShowAlert.VisitorControllerUntracked;
 
             var active = registry != null ? registry.GetActive() : null;
             if ((active?.Health?.throttleStage ?? 0) > 0) return ShowAlert.Hot;

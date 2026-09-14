@@ -14,11 +14,12 @@ namespace FixedCamVr.Diagnostics
     ///
     /// ⚠ **2026-08-07 に「接続していれば常時」をやめた**（ユーザー指摘・世界観）。読み手はスタッフでも、
     /// パネルが浮くのはコントローラの位置＝<b>体験者の視界の中</b>で、スタッフが横で持っていれば
-    /// 体験者に文字が見えていた。いまは <see cref="StatusHud.StaffViewing"/>（右 B の表示 or
-    /// 位置合わせ作業中）が立っている間だけ出す。位置合わせ中は自動で立つので REG 本文は従来どおり読める。
+    /// 体験者に文字が見えていた。いまは <see cref="StatusHud.StaffViewing"/>（<b>右 B を押している
+    /// あいだ</b> or 位置合わせ作業中）が立っている間だけ出す。位置合わせ中は自動で立つので
+    /// REG 本文は従来どおり読める。
     ///
     /// ⚠ 「押しても振動しないときはガイドパネルが出ているか見る」という切り分けは、
-    /// <b>先に右 B を押してから</b>になった（B を押せばパネルもステータスも出る）。
+    /// <b>右 B を押しながら</b>になった（B を押しているあいだパネルもステータスも出る）。
     ///
     /// 配置（<see cref="LateUpdate"/>）: コントローラ位置から上へ <see cref="heightOffset"/>、
     /// 頭→コントローラの水平方向へさらに <see cref="awayOffset"/> 奥へずらす。位置は
@@ -35,16 +36,19 @@ namespace FixedCamVr.Diagnostics
         //   同じ操作を RecoveryGuidance も同じ名前で呼ぶ（「トリガー2秒」「A」「B」）。
         private const string NormalBody =
             "A2秒：新しい体験者にする\n" +
-            // 旧「切/入」は日本語として逆で、しかもこの行だけ動詞で終わっていなかった。
-            "B：ステータス表示を切り替える\n" +
+            // ⚠ 2026-09-14 にトグルをやめた（押しているあいだだけ出る）ので、
+            //   「切り替える」と書いてあると挙動と食い違う。
+            "B：押している間ステータスを見る\n" +
             "トリガー2秒：位置合わせを開始";
 
         private const string RegBody =
             // 押下か長押しかが読めない旧文（「A：この点を記録（押しながら静止）」）を、
             // 動作の側へ条件を寄せて書き直した。
-            // ⚠ 位置合わせのガイダンス（CourseRegistrationController）と **1 字まで同じ**にする。
+            // ⚠ この行は位置合わせのガイダンス（CourseRegistrationController）と **1 字まで同じ**にする。
             "A：押したまま 0.5 秒静止で記録\n" +
-            "B：この位置合わせで確定\n" +
+            // ⚠ B の意味は Verify（確定して終える）と Review（保存せず終える）で違う。
+            //   どちらでも真になる言い方にする（旧「この位置合わせで確定」は Review で嘘になっていた）。
+            "B：位置合わせを終える\n" +
             "トリガー2秒：中止して戻る";
 
         [Header("Output")]
@@ -125,6 +129,13 @@ namespace FixedCamVr.Diagnostics
             return statusHud != null && statusHud.StaffViewing;
         }
 
+        /// <summary>
+        /// いま書く濃さ。<b>ステータスと同じ値</b>（<see cref="StatusHud.StaffAlpha01"/>）を使う —
+        /// 2 枚は同じ B で同時に出るので、別々に薄れると 2 通りの速さで消える。
+        /// 解決できないときは 1（門が閉じていれば面ごと出ないので、濃さは効かない）。
+        /// </summary>
+        private float StaffAlpha() => statusHud != null ? statusHud.StaffAlpha01 : 1f;
+
         private void Awake()
         {
             if (head == null && Camera.main != null) head = Camera.main.transform;
@@ -136,9 +147,38 @@ namespace FixedCamVr.Diagnostics
                 var jp = JapaneseHudFont.TryGet();
                 if (jp != null) text.font = jp;
                 text.color = HmdTextStyle.Ink;   // 面ごとに色を決めない（HmdTextStyle が唯一の正）
+
+                // ⚠⚠ **題字と導入の黒の上に描く**（2026-09-14）。ステータスと同時に出る面なので、
+                //    片方だけ潰れると「B は効いているのに早見表だけ消えた」に見える。
+                //    手順も理由も StatusHud.UseOverlayShader と同じ（あちらが正本）。
+                UseOverlayShader(text);
+                text.fontMaterial.renderQueue = RenderQueue;
             }
 
             ApplyBody();
+        }
+
+        /// <summary>題字の黒（4950）・導入の覆い（4900）より後に描く。<b>5000 を超えない</b>。</summary>
+        private const int RenderQueue = 5000;
+
+        /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。</summary>
+        private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
+
+        /// <summary>
+        /// TMP の Overlay 版（<c>ZTest Always</c>）へ差し替える。既定の
+        /// <c>TextMeshPro/Distance Field</c> は ZTest をグローバルで引くのでマテリアルから上書きできない。
+        /// 見つからないときは<b>差し替えずに続ける</b>（<see cref="StatusHud"/> と同文）。
+        /// </summary>
+        private static void UseOverlayShader(TMP_Text tmp)
+        {
+            var overlay = Shader.Find(OverlayShaderName);
+            if (overlay == null)
+            {
+                Debug.LogWarning($"[ControllerGuidePanel] {OverlayShaderName} が見つかりません。" +
+                                 "題字や導入の黒に早見表が隠れる可能性があります");
+                return;
+            }
+            tmp.fontMaterial.shader = overlay;
         }
 
         private void LateUpdate()
@@ -153,6 +193,9 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
             if (!text.enabled) text.enabled = true;
+            // ⚠ 濃さは毎フレーム。⚠⚠ **色を書いたあとに書く**（`TMP_Text.color` の setter は
+            //   alpha ごと上書きする）。ここでは色は Awake でしか書かないので順序の衝突は無い。
+            text.alpha = StaffAlpha();
 
             // 配置: コントローラ位置 + 上 heightOffset + (頭→コントローラの水平単位ベクトル) * awayOffset。
             Vector3 toController = controller.position - head.position;

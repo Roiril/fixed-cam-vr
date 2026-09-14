@@ -1145,8 +1145,14 @@ function renderRunPanel() {
   }
   zoneEl.textContent = walkIdx >= 0 ? `ゾーン ${camLabelOf(walkIdx)}` : 'ゾーン —';
   zoneEl.className = 'run-zone' + (unityAlive ? ' on' : '');
-  modeEl.textContent = unityAlive ? (u.mode || 'NORMAL') : 'Unity 未接続';
-  modeEl.className = 'run-mode' + (unityAlive ? (u.mode === 'REG' ? ' reg' : ' on') : ' off');
+  // スタッフが右 B を押しているあいだ、体験者の視界にステータスが重なっている（2026-09-14）。
+  // HMD の中にしか出ないので、卓のこの 1 行が本番中に唯一それを知らせる面。
+  const hudOn = unityAlive && u.statusHud === true;
+  modeEl.textContent = unityAlive
+    ? (u.mode || 'NORMAL') + (hudOn ? '／ステータス表示中' : '')
+    : 'Unity 未接続';
+  modeEl.className = 'run-mode' + (unityAlive ? (u.mode === 'REG' ? ' reg' : ' on') : ' off')
+    + (hudOn ? ' hud' : '');
 
   // 「いま画面を握っているのは誰か」— 本番中にいちばん知りたい 1 行。
   const ctrl = (state && state.control) || {};

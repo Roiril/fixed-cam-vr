@@ -1348,6 +1348,8 @@ body.server-down .floormap, body.server-down .runpanel { opacity: .45; }
 .run-mode.on { border-color: var(--line-input); }
 .run-mode.reg { color: var(--warn-color); border-color: var(--warn-color); opacity: 1; }
 .run-mode.off { color: var(--danger-color); border-color: var(--danger-color); opacity: 1; }
+/* 右 B を押しているあいだ＝体験者の視界に業務表示が重なっている。位置合わせ中と同じ警告色で出す。 */
+.run-mode.hud { color: var(--warn-color); border-color: var(--warn-color); opacity: 1; }
 /* 「いま画面を握っているのは誰か」。自律なら地味に、誰かが握っているなら目立たせる
    — 本番中に「なぜ切り替わらないのか」を一目で答えるための行。 */
 .run-owner { margin-top: 6px; font-size: var(--fs-body); opacity: var(--opacity-sub); }

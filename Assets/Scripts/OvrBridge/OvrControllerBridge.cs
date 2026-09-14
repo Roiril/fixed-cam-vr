@@ -14,7 +14,7 @@ namespace FixedCamVr.OvrBridge
     ///
     /// スタッフ操作は右コントローラの A / B / トリガーで完結する。グリップは読まない。
     /// モードは <see cref="ControllerModeLogic"/> の 2 状態（Normal / Registration）でゲートする:
-    ///   - Normal: A 2 秒長押し=体験者リセット / B=ステータス表示トグル /
+    ///   - Normal: A 2 秒長押し=体験者リセット / B=押している間ステータスを表示 /
     ///             トリガー 2 秒長押し=位置合わせ入場
     ///   - Registration: A=点サンプル(やり直し) / B=確定 / トリガー 2 秒長押し=キャンセル退場
     ///
@@ -46,11 +46,11 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("体験者リセット（Normal・2 秒長押し）/ 点サンプル・やり直し（Registration）に使う右手ボタン。既定 A。")]
         [SerializeField] private OVRInput.Button primaryButton = OVRInput.Button.One;   // A (右)
 
-        [Tooltip("ステータス表示トグル（Normal）/ 登録確定（Registration）に使う右手ボタン。既定 B。")]
+        [Tooltip("ステータス表示（Normal・押している間）/ 登録確定（Registration）に使う右手ボタン。既定 B。")]
         [SerializeField] private OVRInput.Button statusButton = OVRInput.Button.Two;  // B (右)
 
         [Header("Status HUD")]
-        [Tooltip("単一サーフェス StatusHud（[StatusHud] 上）。B 押下でステータス表示をトグルする。")]
+        [Tooltip("単一サーフェス StatusHud（[StatusHud] 上）。B を押しているあいだステータスを表示する。")]
         [SerializeField] private StatusHud? statusHud;
 
         [Tooltip("スタッフ用コントローラ操作ガイドパネル（右コントローラに追従）。現在モードの操作説明を常時表示。" +
@@ -145,9 +145,10 @@ namespace FixedCamVr.OvrBridge
                 showControl.StartAuthorizedProvider = () => _onboarding.StartAuthorized;
             }
 
-            // スタッフがステータスを開いているあいだ、タイトルの黒（0.3m・queue 4950）が
-            // StatusHud（1.6m・TMP）を丸ごと塗り潰す。**引き渡し直前にカメラの○×も位置合わせの
-            // 残差も確認できない**ので、タイトル側に譲らせる（位置合わせ中と同じ扱い）。
+            // ステータスが出ているかを卓の heartbeat（`statusHud`）へ流す。
+            // ⚠ **2026-09-14 まではタイトルに黒を譲らせるためのものだった。** いまは面が
+            //    黒の上に描かれる（Overlay ＋ queue 5000）ので、譲りは要らない ＝ B を押している
+            //    あいだも体験者の X / Y 短押しはそのまま通る（`TitleScreen.IsYielding` も参照）。
             if (showControl != null && statusHud != null)
             {
                 var hud = statusHud;
@@ -242,8 +243,8 @@ namespace FixedCamVr.OvrBridge
             // Button.One/Two はコントローラ未指定だと両手から拾う（One=A|X 等）ため、必ず RTouch を明示する。
             bool aDown = OVRInput.GetDown(primaryButton, OVRInput.Controller.RTouch); // A: 登録のマーク・やり直し
             bool aHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);     // A: 押しっぱなし（登録のホールド平均用）
-            bool bDown = OVRInput.GetDown(statusButton, OVRInput.Controller.RTouch); // B: ステータストグル / 確定
-            bool bHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);     // B: 押しっぱなし（長押しの無効化の門）
+            bool bDown = OVRInput.GetDown(statusButton, OVRInput.Controller.RTouch); // B: 登録の確定（Registration）
+            bool bHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);     // B: 押しっぱなし（Normal のステータス表示）
             bool rTrigger = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
             bool triggerDown = OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
 
@@ -313,7 +314,11 @@ namespace FixedCamVr.OvrBridge
             }
 
             // ---- モード遷移（副作用は OnModeChanged / ResetRun が担う）----
-            // A / B の操作中に人差し指がトリガーへ掛かっても、位置合わせの長押しには数えない。
+            // A の操作中に人差し指がトリガーへ掛かっても、位置合わせの長押しには数えない。
+            // ⚠⚠ **B は外してある**（2026-09-14）。B は押しているあいだステータスを読む操作なので、
+            //    含めると**早見表を読みながらトリガー長押しで位置合わせへ入れない**。
+            //    2026-09-11 の事故（右が震え続ける・ランリセットが撃たれる）は**握り込み × A** なので、
+            //    B を外しても回帰しない。
             int voidedBefore = _modeLogic.VoidedHolds;
             _modeLogic.Tick(new ControllerModeLogic.Frame
             {
@@ -321,12 +326,12 @@ namespace FixedCamVr.OvrBridge
                 triggerHeld = rTrigger,
                 resetHeld = aHeld,
                 registrationActive = regActive,
-                faceButtonHeld = aHeld || bHeld,
+                faceButtonHeld = aHeld,
             });
             if (_modeLogic.VoidedHolds != voidedBefore)
             {
                 // 振動は画にも音にも出ないので、重なりが起きたことはここに残す。
-                Debug.Log("[OvrBridge] 右トリガーの長押しを無効にした（A/B と重なった入力）"
+                Debug.Log("[OvrBridge] 右トリガーの長押しを無効にした（A と重なった入力）"
                           + $" trigger={(rTrigger ? 1 : 0)}"
                           + $" triggerAxis={OVRInput.Get(OVRInput.Axis1D.PrimaryIndexTrigger, OVRInput.Controller.RTouch):F2}");
             }
@@ -420,6 +425,17 @@ namespace FixedCamVr.OvrBridge
                 holdProgress = Mathf.Max(holdProgress, courseRegistration.SampleHoldProgress01);
             haptics?.SetHoldProgress(holdProgress);
 
+            // ---- ステータス表示（右 B を押しているあいだ）--------------------------
+            // ⚠⚠ **モードに関わらず毎フレーム渡す**（Registration では false）。渡さないと
+            //    離した猶予（0.3 秒）が進まず、**位置合わせへ入った瞬間の姿で面が凍る**。
+            // ⚠ 振動は「面が実際に出た」瞬間に 1 粒だけ（離すときは鳴らさない）。
+            //    down の Ack は上で全ダウン共通に鳴っているので、ここは Action の後着で昇格する。
+            if (statusHud != null)
+            {
+                bool statusShown = statusHud.SetHeld(bHeld && mode == ControllerModeLogic.Mode.Normal);
+                if (statusShown) haptics?.Action();
+            }
+
             // ---- モード別の入力分配 ----
             switch (mode)
             {
@@ -436,9 +452,7 @@ namespace FixedCamVr.OvrBridge
 
                 case ControllerModeLogic.Mode.Normal:
                 default:
-                    // B: ステータス表示トグル（真実源 IsVisible の反転）。
-                    if (bDown) { ToggleStatus(); haptics?.Action(); }
-
+                    // B は押しているあいだの表示なので、ここでは何もしない（上の SetHeld が担う）。
                     // 右 A の長押しは _modeLogic が体験者リセットへ送る。短押しでは何もしない。
                     // タイトル開始は体験者の左 X / Y 短押しだけ。
                     // 体験者の報告はモードの外で数える（上を見る）。
@@ -448,8 +462,40 @@ namespace FixedCamVr.OvrBridge
             }
         }
 
+        /// <summary>
+        /// 導入の段をスタッフの面（<see cref="StatusHud"/>）の言葉にする。
+        ///
+        /// ⚠ <b>enum の名前をそのまま出さない</b>（開発語）。読むのは現場のスタッフで、
+        /// 知りたいのは「いま何を待っているか」だけ。
+        /// ⚠ 導入が終わったら空にする — 本編の 1 行目は周回なので、段が残ると嘘になる。
+        /// </summary>
+        private static string IntroStepLabel(HmdOnboardingStage stage) => stage switch
+        {
+            HmdOnboardingStage.Greeting => "名乗り",
+            HmdOnboardingStage.WaitingForController => "左の接続待ち",
+            HmdOnboardingStage.ControllerConfirmed => "報告の練習",
+            HmdOnboardingStage.Tutorial => "報告の練習",
+            HmdOnboardingStage.TutorialAccepted => "報告の練習",
+            HmdOnboardingStage.Reminder => "報告の練習",
+            HmdOnboardingStage.TitleTransition => "題字",
+            HmdOnboardingStage.Title => "題字",
+            HmdOnboardingStage.TitleDismissing => "題字",
+            _ => "",   // Complete
+        };
+
+        // 直近に push した導入の段（変わったときだけ書きに行く）。
+        private HmdOnboardingStage _pushedIntroStage = (HmdOnboardingStage)(-1);
+
         private void ApplyOnboardingPresentation()
         {
+            // 導入の段をスタッフの面へ。⚠ **導入の状態機械は Assembly-CSharp 側にしか無い**ので、
+            //    StatusHud からは見えない（Diagnostics は OVR も導入の入力も知らない）。
+            if (_onboarding.Stage != _pushedIntroStage)
+            {
+                _pushedIntroStage = _onboarding.Stage;
+                statusHud?.SetIntroStep(IntroStepLabel(_pushedIntroStage));
+            }
+
             CommsNotice notice = CommsNotice.None;
             switch (_onboarding.Prompt)
             {
@@ -517,11 +563,6 @@ namespace FixedCamVr.OvrBridge
         // 確定保存 = Fire。この直後に IsActive=false → 次フレーム ModeChanged(Reg→Normal) でも Fire が来るが、
         // HapticSequenceLogic のピア優先（同ピークは再生中なら無視）で 1 回に畳まれる。
         private void OnRegConfirmed() => haptics?.Fire();
-
-        private void ToggleStatus()
-        {
-            if (statusHud != null) statusHud.SetVisible(!statusHud.IsVisible);
-        }
 
         // ---- モード遷移の副作用（登録開始/停止・状態露出）----
 

@@ -102,17 +102,19 @@ namespace FixedCamVr.Streaming.EditorTools
             new Surface { Name = "ステータス", Type = typeof(StatusHud),
                           DistanceField = "distance",
                           // 実行時のいちばん長い行（異常の 1 行目）。ここが枠に収まらないと現場で切れる。
-                          // ⚠ この 4 行は `StatusHud.BuildStatus` の写し。**向こうを直したらここも直す**
+                          // ⚠ この 6 行は `StatusHud.BuildStatus` の写し。**向こうを直したらここも直す**
                           //    （private なうえ registry / tracker が要るので、Edit モードから呼べない）。
                           //    異常の 2 行だけは `RecoveryGuidance` から実物を引いている。
-                          Probe = "2周目／全3周　経過 1:05\n場所：C:North　表示：カメラ3\n"
-                                + "次の演出：3周目 カメラ1\n受信：1 ○　2 ×　3 ○\n"
+                          // ⚠ 1 行目は**導入中の姿**（2026-09-14 に段が付いた）。本編の姿
+                          //    （`2周目／全3周　経過 1:05`）より長いので、最悪の行はこちら。
+                          Probe = "導入中：報告の練習　経過 1:05\n場所：C:North　表示：カメラ3\n"
+                                + "次の演出：3周目 カメラ1\n受信：1 ○　2 ×　3 ○\n報告：3 件\n"
                                 + RecoveryGuidance.What(ShowAlert.IntroAborted, 2) + "\n"
                                 + RecoveryGuidance.How(ShowAlert.IntroAborted) },
             new Surface { Name = "操作早見表", Type = typeof(ControllerGuidePanel),
                           FixedDistanceM = HandDistanceM,
                           // ⚠ `ControllerGuidePanel.NormalBody` の写し（private const なので参照できない）。
-                          Probe = "A2秒：新しい体験者にする\nB：ステータス表示を切り替える\n"
+                          Probe = "A2秒：新しい体験者にする\nB：押している間ステータスを見る\n"
                                 + "トリガー2秒：位置合わせを開始" },
             // ⚠ 報告の押し方とゲージは **[Comms] の下段**（2026-08-16・canon/LEDGER.md 0058）。
             //    面としては上の「AIエージェントからの連絡」と同じ実体なので、ここでは別行を持たない。

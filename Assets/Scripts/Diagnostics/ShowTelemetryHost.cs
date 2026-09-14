@@ -77,6 +77,11 @@ namespace FixedCamVr.Diagnostics
         // **コントローラの位置が取れているか**の唯一の観測点（下の ctrlL / ctrlR）。
         // 左は連絡の面が受け取っている（報告の押し方をそこへ出すため）。
         private ControllerGuidePanel? _guidePanel;
+        /// <summary>
+        /// ステータス表示（右 B）。⚠⚠ <b>画にも音にも出ない</b>ので、体験者の走行中に業務表示が
+        /// 出ていたかは <c>ev=status</c> と <c>ev=sum</c> の <c>hud*</c> にしか残らない。
+        /// </summary>
+        private StatusHud? _statusHud;
         private TitleScreen? _title;
         private TimelineDirector? _timeline;
         private SignalLostFx? _signal;
@@ -146,6 +151,10 @@ namespace FixedCamVr.Diagnostics
         private bool _lastJackActive;
         private int _jackShownAtBegin;
         private string _lastCtrlMode = "";
+
+        // ステータス表示（右 B）の縁。`sec` を出すために「出た時刻」も持つ。
+        private bool _lastHudVisible;
+        private float _hudShownAt;
         private string _lastCueId = "";
         private bool _lastStormOn;
         private bool _lastTrackingFrozen;
@@ -239,6 +248,7 @@ namespace FixedCamVr.Diagnostics
             if (_report == null) _report = FindObjectOfType<OutroReport>();
             if (_comms == null) _comms = FindObjectOfType<CommsPanel>();
             if (_guidePanel == null) _guidePanel = FindObjectOfType<ControllerGuidePanel>();
+            if (_statusHud == null) _statusHud = FindObjectOfType<StatusHud>();
             if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_timeline == null) _timeline = FindObjectOfType<TimelineDirector>();
             if (_signal == null) _signal = FindObjectOfType<SignalLostFx>();
@@ -865,6 +875,30 @@ namespace FixedCamVr.Diagnostics
                 Emit($"ev=ctrlmode v={(string.IsNullOrEmpty(ctrlMode) ? "?" : ctrlMode)} pt={PassthroughState}");
             }
 
+            // ステータス表示（右 B）の出入り。
+            // ⚠⚠ **画にも音にも出ない。** 体験者の視線前方に日本語の業務表示が出ていた走行を、
+            //    卓でも解析器でも当日パネルでも検出できなかった（2026-09-14 まで観測が 1 ビットも無かった）。
+            //    `sec` は「その 1 回で出ていた秒数」。走行全体の累計は `ev=sum` の `hudSec`。
+            if (_statusHud != null)
+            {
+                bool hudNow = _statusHud.IsVisible;
+                if (hudNow != _lastHudVisible)
+                {
+                    string src = StatusHud.SourceTag(_statusHud.LastShowSource);
+                    if (hudNow)
+                    {
+                        _hudShownAt = Time.unscaledTime;
+                        Emit($"ev=status st=on src={src} sec=0.0");
+                    }
+                    else
+                    {
+                        float sec = Mathf.Max(0f, Time.unscaledTime - _hudShownAt);
+                        Emit($"ev=status st=off src={src} sec={sec:F1}");
+                    }
+                    _lastHudVisible = hudNow;
+                }
+            }
+
             // 演出（Take）の出入り。
             // ⚠⚠ **終わり方の理由を必ず添える。** 理由が無いと「著作どおり終わった」「体験者が報告して
             //    消した」「壊れて打ち切られた」が尺の長短でしか区別できず、**報告で畳む機構が
@@ -1375,6 +1409,19 @@ namespace FixedCamVr.Diagnostics
                                                          : (bool?)_guidePanel.ControllerConnected,
                                                          _guidePanel == null ? null
                                                          : (bool?)_guidePanel.ControllerTracked));
+            //   hud / hudSec / hudN = スタッフのステータス表示（右 B）。
+            //   ⚠⚠ **画にも音にも出ない。** 体験者の走行中に業務表示が出ていたかはここにしか残らない
+            //     （2026-09-14 まで観測が 1 ビットも無く、卓でも解析器でも当日パネルでも検出できなかった）。
+            //   ⚠ 自動走行（`--walk`）では誰も押さないので **`hudSec=0.0` が普通**。
+            //     0 でなければ、押したか・ピン留めが残っているか・プローブ（`-e xpstatus 1`）を指したか。
+            //   ⚠ `-` は StatusHud がシーンに居ない（`menu scene` の焼き直し漏れ）。
+            _sb.Append(" hud=").Append(_statusHud == null ? "-" : (_statusHud.IsVisible ? "1" : "0"));
+            _sb.Append(" hudSec=").Append(_statusHud == null
+                                          ? "-"
+                                          : _statusHud.VisibleSecSinceRun.ToString("F1"));
+            _sb.Append(" hudN=").Append(_statusHud == null
+                                        ? "-"
+                                        : _statusHud.ShowCountSinceRun.ToString());
             //   lang / langN = 体験者が読んでいる言語と、この走行で変わった回数（2026-09-03）。
             //   ⚠⚠ **画にも音にも出ない。** 注意書き・AIエージェントの連絡・終幕の報告は
             //     どれも「文字が出ている」ことしか外から見えないので、**どの言語で出ていたかは

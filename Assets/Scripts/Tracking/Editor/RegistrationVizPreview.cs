@@ -253,13 +253,18 @@ namespace FixedCamVr.Tracking.EditorTools
                 savedPaths.Add(path);
             }
 
-            // パネルの見かけ角を数値ログ（体感サイズの一次証拠）。パネル寸法は Canvas RectTransform 実測、
-            // 1 行高は TMP fontSize × スケール、distance は SerializeField を読み戻して二重定義を避ける。
-            var hudRt = (RectTransform)hud.transform;
+            // パネルの見かけ角を数値ログ（体感サイズの一次証拠）。distance は SerializeField を
+            // 読み戻して二重定義を避ける。
+            // ⚠ **枠を持つのは面の根ではなく字の RectTransform**（2026-09-14 に WorldSpace Canvas を
+            //   やめ、3D の TextMeshPro へ移した）。根は素の Transform なので RectTransform へは落ちない。
+            RectTransform? hudRt = hudTmp != null ? (RectTransform)hudTmp.transform : null;
             float dist = new SerializedObject(hud).FindProperty("distance").floatValue;
-            float panelW = hudRt.rect.width * hudRt.lossyScale.x;   // 720 * 0.001 = 0.72m
-            float panelH = hudRt.rect.height * hudRt.lossyScale.y;  // 320 * 0.001 = 0.32m
-            float lineH = (hudTmp != null ? hudTmp.fontSize : 34f) * hudRt.lossyScale.y; // 34 * 0.001 ≈ 0.034m
+            float panelW = hudRt != null ? hudRt.rect.width * hudRt.lossyScale.x : 0f;
+            float panelH = hudRt != null ? hudRt.rect.height * hudRt.lossyScale.y : 0f;
+            // ⚠ 3D の TMP は透視カメラのとき内部で 0.1 を掛ける（HmdTextStyle.MeshWorldEm が唯一の正）。
+            float lineH = hudTmp != null && hudRt != null
+                ? FixedCamVr.Diagnostics.HmdTextStyle.MeshWorldEm(hudTmp.fontSize, hudRt.lossyScale.y)
+                : 0f;
             float panelWDeg = 2f * Mathf.Atan2(panelW * 0.5f, dist) * Mathf.Rad2Deg;
             float panelHDeg = 2f * Mathf.Atan2(panelH * 0.5f, dist) * Mathf.Rad2Deg;
             float lineDeg = 2f * Mathf.Atan2(lineH * 0.5f, dist) * Mathf.Rad2Deg;
@@ -292,10 +297,14 @@ namespace FixedCamVr.Tracking.EditorTools
             var jpFont = FixedCamVr.Diagnostics.JapaneseHudFont.TryGet();
             if (jpFont != null && _hudMirror.font != jpFont) _hudMirror.font = jpFont;
 
-            var hudRt = (RectTransform)hud.transform;
+            // ⚠ 枠と倍率は**字の RectTransform**から取る（面の根は素の Transform・上の注記と同じ理由）。
+            RectTransform? hudRt = hudTmp != null ? (RectTransform)hudTmp.transform : null;
             var mirrorRt = (RectTransform)_hudMirror.transform;
-            mirrorRt.sizeDelta = hudRt.sizeDelta;          // 720x320
-            mirrorRt.localScale = hudRt.localScale;        // 0.001
+            if (hudRt != null)
+            {
+                mirrorRt.sizeDelta = hudRt.sizeDelta;
+                mirrorRt.localScale = hudRt.lossyScale;
+            }
             _hudMirror.transform.SetPositionAndRotation(hud.transform.position, hud.transform.rotation);
             _hudMirror.fontSize = hudTmp != null ? hudTmp.fontSize : 34f;
             _hudMirror.color = hudTmp != null ? hudTmp.color : Color.white;

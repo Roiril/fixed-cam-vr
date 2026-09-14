@@ -352,14 +352,16 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// いま画面を譲っているか（位置合わせ中 / スタッフがステータスを開いている）。
+        /// いま画面を譲っているか（<b>位置合わせ中だけ</b>）。
         ///
         /// ⚠ <b><see cref="IsBlocking"/> には含めない。</b> あれは「人が始めてよいと言ったか」
         /// （<c>ShowControlClient.StartAuthorized</c>）の供給元なので、譲るたびに false になると
-        /// <b>スタッフが右 B を押しただけで体験が始まる</b>。
+        /// <b>スタッフが押しただけで体験が始まる</b>。
+        ///
+        /// ⚠⚠ <b>2026-09-14 にステータス表示（右 B）を外した。</b> ステータスが黒の上に描かれる
+        /// ようになったので譲る必要が無く、譲っている間は体験者の開始押しが黙って無視されていた。
         /// </summary>
-        private bool IsYielding =>
-            (showControl?.CourseRegistrationActive ?? false) || (showControl?.StatusVisible ?? false);
+        private bool IsYielding => showControl?.CourseRegistrationActive ?? false;
 
         /// <summary>
         /// いま譲っているか（テレメトリ用）。<b>譲っている間は段が Wait のままでも黒は 0</b> なので、
@@ -383,7 +385,7 @@ namespace FixedCamVr.Streaming
         {
             if (!titleEnabled) return "タイトルを出さない設定になっている";
             if (!IsBuilt) return "タイトルの実体を組めていない（シェーダが剥がれたか版が無い）";
-            if (IsYielding) return "ステータス表示か位置合わせ中は受け付けない（右 B で閉じてから押す）";
+            if (IsYielding) return "位置合わせ中は受け付けない";
             if (_logic.Stage == TitleStage.Done) return "タイトルはもう閉じている（体験はすでに始まっている）";
             if (_logic.Stage == TitleStage.Off) return "タイトルの段が Off（周回リセットで出し直す）";
             if (_logic.Stage == TitleStage.Out) return "いま閉じる演出の最中";
@@ -428,10 +430,13 @@ namespace FixedCamVr.Streaming
             //    登録ガイダンス（StatusHud・1.6m）より手前かつ後に描かれるので、
             //    譲らないと作業中のスタッフに文字が 1 つも見えない（2026-08-07 の実害と同型）。
             //
-            // ⚠⚠ **右 B のステータス表示にも同じことが起きる**（2026-08-14）。引き渡し直前の
-            //    真っ暗な待ちで、スタッフがカメラの○×や位置合わせの残差を確かめようとしても
-            //    **黒が StatusHud を丸ごと塗り潰す**ので「B が効いていない」としか見えなかった。
-            //    どちらもコントローラを持つ人にしか起こせないので、体験者の視界に現実は漏れない。
+            // ⚠⚠ **右 B のステータス表示にはもう譲らない**（2026-09-14）。2026-08-14 に譲らせたのは、
+            //    黒（0.3m・queue 4950）が StatusHud（1.6m・TMP）を丸ごと塗り潰していたため
+            //    （スタッフには「B が効いていない」としか見えなかった）。
+            //    いまはステータスの側が**黒の上に描く**（Overlay シェーダ ＋ renderQueue 5000）ので、
+            //    譲る理由が消えた。⭐ 譲りは害も持っていた — 譲っているあいだ `ReadyForStart` が
+            //    false になるので、**体験者の X / Y 短押しが黙って無視されていた**
+            //    （スタッフが B を押しているとは体験者にもスタッフにも分からない）。
             bool yielding = IsYielding;
 
             // 導入が段 0 を出てしまったら（卓の ⏭ 等）、タイトルは即座に畳む。

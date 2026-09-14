@@ -2857,12 +2857,12 @@ namespace FixedCamVr.Streaming
         public bool StartAuthorized => StartAuthorizedProvider?.Invoke() ?? true;
 
         /// <summary>
-        /// <b>スタッフがステータス表示（右 B）を開いているか。</b> Diagnostics asmdef を参照しない規約なので、
+        /// <b>スタッフのステータス表示（右 B）が出ているか。</b> Diagnostics asmdef を参照しない規約なので、
         /// 両方を知っている <c>OvrControllerBridge</c> が差し込む。未配線なら false。
         ///
-        /// タイトルの黒は頭から 0.3m・queue 4950・ZTest Always で、<c>StatusHud</c>（1.6m・TMP）を
-        /// <b>後から丸ごと塗り潰す</b>。引き渡し直前にカメラの○×や位置合わせの残差を確かめられないと、
-        /// スタッフは「B が効いていない」としか読めない。開いているあいだはタイトルが譲る。
+        /// ⚠ <b>2026-09-14 から読むのは heartbeat（<c>statusHud</c>）だけ。</b> それまでは
+        /// タイトルに黒を譲らせるためのものだったが、面が黒の上に描かれるようになって譲りは廃止した
+        /// （譲っているあいだ体験者の開始押しが黙って無視されていた）。
         /// </summary>
         public Func<bool>? StatusVisibleProvider;
 
@@ -3250,6 +3250,11 @@ namespace FixedCamVr.Streaming
             // コントローラ操作モード（NORMAL/REG）。スタッフが遠隔でモードを把握するため。
             // サーバ側は未知フィールドを無視するので送るだけでよい。
             public string mode = "NORMAL";
+            // ⚠⚠ **ステータス表示（右 B）が出ているか**（2026-09-14）。
+            //    体験者の視界の 1.6m 先に日本語の業務表示が出ている状態で、**画にも音にも出ない**。
+            //    押しているあいだだけ出る形にして開けっ放しは構造的に消えたが、
+            //    「本編中にどれだけ出していたか」を卓が見られないと運用の改善に繋がらない。
+            public bool statusHud;
             // 現在の周回数（LapCounter 由来。未注入なら -1）とアクティブカメラ index。
             // Web ライブ運用パネルの「Lap N / cam B」表示用。既存 activeIndex と重複するが契約名は cam。
             public int lap = -1;
@@ -3376,6 +3381,7 @@ namespace FixedCamVr.Streaming
                     hb.playingCue = _overlay?.Current?.id ?? "";
                     hb.cameraOverride = _appliedOverride;
                     hb.mode = _controllerMode;
+                    hb.statusHud = StatusVisible;
                     hb.appliedRev = _rev;
                     hb.lap = CurrentLapProvider != null ? CurrentLapProvider() : -1;
                     hb.cam = registry != null ? registry.ActiveIndex : -1;

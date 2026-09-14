@@ -425,7 +425,8 @@ def clock_skew(serial: str) -> float | None:
     return dev - pc
 
 
-def record(serial, secs, walk, size=None, warmup=5.0, with_log=True, relief=False):
+def record(serial, secs, walk, size=None, warmup=5.0, with_log=True, relief=False,
+           status_probe=False):
     """アプリを起動してから録る。起動と録画開始の**壁時計**を返す。
 
     **⚠ 順序を逆にしてはいけない。** screenrecord を先に始めて VR アプリを起動すると、
@@ -457,6 +458,11 @@ def record(serial, secs, walk, size=None, warmup=5.0, with_log=True, relief=Fals
     #    ⚠ 校正は両側を流す — 付けない走行と付けた走行を 1 本ずつ。
     if relief:
         start += ["-e", "relief", "1"]
+    # ⚠⚠ ステータスは**右 B を押しているあいだしか出ない**（2026-09-14）ので、
+    #    人が被らない走行では 1 度も出ず、「黒の上に文字が出るか」を画で確かめられない。
+    #    これを付けた走行だけ、題字と導入の黒で 2 秒ずつ自分で出す（`ev=status src=probe`）。
+    if status_probe:
+        start += ["-e", "xpstatus", "1"]
     start += ["-n", ACT]
     adb(serial, *start)
     app_started = datetime.now()
@@ -547,6 +553,8 @@ def main():
     ap.add_argument("--walk", action="store_true", help="自動走行させる（導入が自動で始まる）")
     ap.add_argument("--relief", action="store_true",
                     help="ホラー軽減モードで走らせる（既存の音が半分・陽気な曲。--walk と併用）")
+    ap.add_argument("--status-probe", action="store_true",
+                    help="題字と導入の黒の上でステータスを2秒ずつ自分で出す（--walk と併用）")
     ap.add_argument("--serial", help="省略すると quest-fleet.py pick が選ぶ")
     ap.add_argument("--raw", help="録らずに、既にある mp4 を変換するだけ")
     ap.add_argument("--left", action="store_true", help="右眼でなく左眼を使う")
@@ -582,7 +590,8 @@ def main():
         print("  before: " + ln)
 
     app_started, rec_started = record(serial, args.sec, args.walk, args.size,
-                                      with_log=not args.no_log, relief=args.relief)
+                                      with_log=not args.no_log, relief=args.relief,
+                                      status_probe=args.status_probe)
 
     # ログはバッファに溜まる一方なので、重い pull より先に落とす。
     dump_path = os.path.join(OUTDIR, f"{stamp}_logcat.log")
