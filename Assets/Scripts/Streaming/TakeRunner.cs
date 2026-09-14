@@ -159,6 +159,12 @@ namespace FixedCamVr.Streaming
 
         public bool Suppressed => _logic.Suppressed;
 
+        /// <summary>著作された演出が抑止されずに画面を取っているか。</summary>
+        public bool AnomalyShowing => IsAnomalyShowing(_logic.IsActive, _logic.Suppressed);
+
+        public static bool IsAnomalyShowing(bool active, bool suppressed)
+            => active && !suppressed;
+
         /// <summary>
         /// <b>別の場所（異世界）の素材 id の頭</b>（2026-09-03・<c>canon/LEDGER.md</c> 0131）。
         ///

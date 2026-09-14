@@ -126,9 +126,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 return;
             }
 
-            // ---- 周回の壊れ（`canon/LEDGER.md` 0068）------------------------------------
-            // ⚠⚠ **指定が無ければ 4 段階まとめて焼く。** Unity の起動は 1 回 8 分かかるので、
-            //    周ごとの見え方を比べるのに 4 回起こしていられない。
+            // ---- イベントで進む通信侵食 -----------------------------------------------
+            // 指定が無ければ 0 / 0.25 / 0.75 / 1 をまとめて焼く。
             float[] decays = ParseDecayList();
 
             string outDirRel = OutDirFor(lang);
@@ -200,7 +199,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 ShootReviewFrames(panel, logic, apply, root, tmp, cam, dir, dist, previewTime);
                 // コマ送りの動画は 1 周目の姿で撮る（壊れは静止画で見る）。
-                panel.SetDecayForPreview(0f, 0f);
+                panel.SetInvasionForPreview(0f, 0f);
 
                 // ---- 報告の長押し中（下段が 2 行になる）----
                 // ⚠ **これは絵でしか確かめられない。** 見出しがゲージの左上に小さく座っているか
@@ -304,7 +303,7 @@ namespace FixedCamVr.Streaming.EditorTools
                         panelDoneReading = (bool)doneReading.GetValue(logic),
                         closingSec = t >= WaitAt ? t - WaitAt : -1f,
                         markPressed = release,
-                        markResolved = presses == 1,   // 1 回目は通る / 2 回目は通らない
+                        markDetected = presses == 1,   // 1 回目は異常表示中 / 2 回目は平常時
                         dt = dt,
                     });
                     if (next != CommsNotice.None) panel.Deliver(next);
@@ -327,7 +326,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
 
                 Debug.Log($"[CommsPreview] {n} コマ + place.png + 文面 {decays.Length * Notices.Length} 枚"
-                        + $"（周回の壊れ {string.Join(" / ", System.Array.ConvertAll(decays, d => d.ToString("0.00")))}）"
+                        + $"（通信侵食 {string.Join(" / ", System.Array.ConvertAll(decays, d => d.ToString("0.00")))}）"
                         + $" → Assets/{outDirRel}/（言語 {ShowLanguage.Code(lang)}）\n"
                         + $"  通し: {EndAt:0} 秒 ＝ 文面 {Notices.Length} 通"
                         + "（⓪a→⓪b / ①→①b / ③a→③b は同じ面のまま繋がる）\n"
@@ -341,30 +340,26 @@ namespace FixedCamVr.Streaming.EditorTools
         private static string Frame(string dir, int i) => Path.Combine(dir, $"f{i:0000}.png");
 
         /// <summary>
-        /// <c>-Set decay=0..1</c>（周回の進み）。既定 0 ＝ 1 周目の頭 ＝ <b>壊れが 1 画素も出ない</b>。
-        /// 周の境目は 0 / 0.33 / 0.67 / 1.0（<see cref="ScreenDecayLogic"/>）。
-        /// ⚠ 形は <c>ShowCompositePreview.ParseDecayArg</c> と同じ（あちらは映像、こちらは連絡の面）。
+        /// <c>-Set invasion=0..1</c>。旧 <c>decay=</c> も同じ意味で受け付ける。
         /// </summary>
         /// <summary>
-        /// 焼く進みの並び。<b>指定が無ければ 4 段階</b>（1 周目の頭 / 2 周目の頭 / 2 周目の終わり /
-        /// 3 周目 A 以降）。周の境目は <see cref="ScreenDecayLogic"/> の
-        /// <c>(lap-1 + 経過/目安) / (totalLaps-1)</c> から。
+        /// 焼く侵食度。指定が無ければ物語上の4段階を使う。
         /// </summary>
         private static float[] ParseDecayList()
         {
-            string? raw = EditorCliArgs.Get("decay");
-            if (string.IsNullOrEmpty(raw)) return new[] { 0f, 0.33f, 0.66f, 1f };
+            string? raw = EditorCliArgs.Get("invasion") ?? EditorCliArgs.Get("decay");
+            if (string.IsNullOrEmpty(raw)) return new[] { 0f, 0.25f, 0.75f, 1f };
             return new[] { ParseDecayArg() };
         }
 
         private static float ParseDecayArg()
         {
-            string? raw = EditorCliArgs.Get("decay");
+            string? raw = EditorCliArgs.Get("invasion") ?? EditorCliArgs.Get("decay");
             if (string.IsNullOrEmpty(raw)) return 0f;
             if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
                                 System.Globalization.CultureInfo.InvariantCulture, out float v))
             {
-                Debug.LogWarning($"[CommsPreview] decay の値を読めない: '{raw}'（0 として扱う）");
+                Debug.LogWarning($"[CommsPreview] invasion の値を読めない: '{raw}'（0 として扱う）");
                 return 0f;
             }
             return Mathf.Clamp01(v);
@@ -383,7 +378,7 @@ namespace FixedCamVr.Streaming.EditorTools
             if (decay <= 0f) return;
             for (int t = 0; t < 240; t++)
             {
-                panel.SetDecayForPreview(decay, startSec + t * CommsGlitchLogic.TickSec);
+                panel.SetInvasionForPreview(decay, startSec + t * CommsGlitchLogic.TickSec);
                 ApplyNow(apply, panel, logic);
                 if (panel.CorruptedChars >= wantMin) return;
             }
@@ -403,7 +398,7 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         private static void SetLevelForPreview(CommsPanel panel, float level, float timeSec)
-            => panel.SetDecayForPreview(Mathf.Sqrt(Mathf.Clamp01(level)), timeSec);
+            => panel.SetInvasionForPreview(Mathf.Clamp01(level), timeSec);
 
         private static void ShootReviewFrames(CommsPanel panel, object logic, MethodInfo apply,
                                               Transform root, TMP_Text tmp, Camera cam, string dir,
@@ -412,11 +407,10 @@ namespace FixedCamVr.Streaming.EditorTools
             float inSec = ConstF(typeof(CommsPanelLogic), "InSec", 0.45f);
             float outSec = ConstF(typeof(CommsPanelLogic), "OutSec", 0.9f);
 
-            float[] levels = { 0f, 0.45f, 1f, CommsGlitchLogic.RecoveredLevel, 0f };
+            float[] levels = { 0f, 0.25f, 0.75f, 1f };
             string[] names =
             {
-                "state_normal.png", "state_middle.png", "state_maximum.png",
-                "state_recovered_012.png", "state_released.png",
+                "state_000.png", "state_025.png", "state_075.png", "state_100.png",
             };
             for (int i = 0; i < levels.Length; i++)
             {
@@ -476,15 +470,16 @@ namespace FixedCamVr.Streaming.EditorTools
             panel.Deliver(CommsNotice.BeginHow);
             Step(logic, apply, panel, ConstF(typeof(CommsPanelLogic), "InSec", 0.45f));
             Step(logic, apply, panel, TypeSec(logic));
+            // 実機と同じく侵食は戻らない。2-C の連続視点から 3-A の完全侵食へ進める。
             for (int i = 0; i < Mathf.RoundToInt(Fps * 1.5f); i++)
             {
-                SetLevelForPreview(panel, 1f, i * dt);
+                SetLevelForPreview(panel, 0.75f, i * dt);
                 ApplyNow(apply, panel, logic);
                 Shoot(cam, Frame(motionDir, frame++));
             }
             for (int i = 0; i < Mathf.RoundToInt(Fps * 1.5f); i++)
             {
-                SetLevelForPreview(panel, CommsGlitchLogic.RecoveredLevel, (i + 60) * dt);
+                SetLevelForPreview(panel, 1f, (i + 60) * dt);
                 ApplyNow(apply, panel, logic);
                 Shoot(cam, Frame(motionDir, frame++));
             }

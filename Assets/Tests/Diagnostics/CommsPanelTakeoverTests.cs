@@ -135,6 +135,42 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
+        public void JapaneseDenialPrefixAloneIsRedInTheActualGlyphMesh()
+        {
+            _panel.Deliver(CommsNotice.Takeover);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec * 0.5f);
+            var text = (TMPro.TMP_Text)typeof(CommsPanel).GetField("_text", Private)!.GetValue(_panel);
+
+            Assert.AreEqual(4, _panel.TakeoverTintedChars, "「異常なし」の4文字だけを赤くする");
+            for (int i = 0; i < 4; i++)
+            {
+                var ch = text.textInfo.characterInfo[i];
+                Color32 color = text.textInfo.meshInfo[ch.materialReferenceIndex].colors32[ch.vertexIndex];
+                Assert.AreEqual(184, color.r, $"{i}文字目 red");
+                Assert.AreEqual(48, color.g, $"{i}文字目 green");
+                Assert.AreEqual(40, color.b, $"{i}文字目 blue");
+            }
+
+            var suffix = text.textInfo.characterInfo[4];
+            Color32 suffixColor = text.textInfo.meshInfo[suffix.materialReferenceIndex]
+                .colors32[suffix.vertexIndex];
+            Assert.AreEqual(209, suffixColor.r, "続く「と」は地の象牙色を保つ");
+            Assert.AreEqual(199, suffixColor.g);
+            Assert.AreEqual(184, suffixColor.b);
+        }
+
+        [Test]
+        public void StopNoticeRemainsReadableAtFullInvasion()
+        {
+            _panel.Deliver(CommsNotice.Halt);
+            Advance(1f);
+
+            Assert.AreEqual(1f, _panel.InvasionProgress);
+            Assert.AreEqual(0, _panel.CorruptedChars);
+            Assert.Greater(_panel.VisibleChars, 0);
+        }
+
+        [Test]
         public void ActualGlyphMeshStretchesAndStopsDuringResistance()
         {
             _panel.Deliver(CommsNotice.Takeover);

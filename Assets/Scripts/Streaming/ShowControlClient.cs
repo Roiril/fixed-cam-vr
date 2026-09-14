@@ -2878,9 +2878,8 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>体験の進行には 1 ビットも使わない。</b> 押さなくても体験は同じように進む
         /// （判定に使うと、押さなかった人が失敗した気になる）。唯一の例外が 4 周目 A の締め
         /// （<c>durKind:"untilMark"</c>・`canon/LEDGER.md` 0050）。
-        /// ⚠ <b>正誤は返す</b>（2026-08-16 に反転・`canon/LEDGER.md` 0054）。AIエージェントからの連絡が
-        /// 「異変を排除しました」/「異常は検出されませんでした」を返す
-        /// （分岐の材料が下の <see cref="LastMarkResolved"/>）。
+        /// 通信面は報告時の表示を見て「異常を検出しました」/「異常は検出されませんでした」を返す。
+        /// 分岐の材料は <see cref="LastMarkDetected"/>。演出の解除可否とは分ける。
         /// ⭐ 押した時刻が残ると、<b>3 周目の反転に気づいたかが訊かずに分かる</b>
         /// （初見は消耗品なので、誘導せずに取れる観測の価値が高い）。
         /// </summary>
@@ -2888,23 +2887,16 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// <b>直近の報告で、怪異の解除が通ったか</b>（2026-08-17・`canon/LEDGER.md` 0082）。
-        /// AIエージェントからの連絡の文面がこれで分かれる（0054 ②）—
-        /// 通れば「異変を排除しました」、通らなければ「異常は検出されませんでした」。
-        ///
-        /// ⚠⚠ <b>「演出が走っていたか」ではない。</b> 2026-08-17 まではそれを見ていたので、
-        /// <b>3 周目の録画（入れ替わり）に押しても「異変を排除しました」と返っていた</b> ＝
-        /// 消えていないのに認めた顔をする。いまは <c>dismissible</c> が立っていない演出では
-        /// false ＝ <b>装置は本当に検出できていない</b>と返る。
-        ///
-        /// ⭐ これが 0082 の設定（解除を実行しているのはエージェント）を体験に出す唯一の場所。
-        /// 効かない周（3 周目）は、そのことが押すたびに文面で返る。
-        ///
-        /// ⚠ 供給は <c>TimelineDirector.NotifyVisitorMark</c> の<b>戻り値</b>。
-        /// 中継の前に <c>ActiveTakeId</c> を見て凍らせる旧実装は、締めのカットが
-        /// その場で畳まれる 4 周目 A で必ず逆になるための回避策だった。
-        /// <b>戻り値なら畳んだ本人が答えるので、順序の問題そのものが消える。</b>
+        /// 供給は <c>TimelineDirector.NotifyVisitorMark</c> の戻り値。
+        /// これは演出を消す処理と主映像の解除だけが読む。通信面の検出表示には使わない。
         /// </summary>
         public bool LastMarkResolved { get; private set; }
+
+        /// <summary>
+        /// 直近の報告時に、著作された異常演出が画面を取っていたか。
+        /// <see cref="LastMarkResolved"/> は演出を解除できたかを表すため、表示の検出結果とは分ける。
+        /// </summary>
+        public bool LastMarkDetected { get; private set; }
 
         /// <summary>直近の報告を受けた瞬間の表示状態。次フレームの進行では書き換えない。</summary>
         public bool LastMarkDollReplacementShowing { get; private set; }
@@ -2954,11 +2946,15 @@ namespace FixedCamVr.Streaming
             LastMarkSuppressed = timelineDirector != null && timelineDirector.Suppressed;
             LastMarkLap = timelineDirector != null ? timelineDirector.CurrentLap
                                                    : (CurrentLapProvider != null ? CurrentLapProvider() : -1);
+            // 報告で段が進む前に凍らせる。untilMark はこの直後に終了するため、後から見ると
+            // 「何も映っていなかった」に変わってしまう。
+            bool anomalyShowing = timelineDirector != null && timelineDirector.AnomalyShowing;
             // 「報告するまで」のカット（4 周目 A の締め）と、dismissible な演出だけが反応する。
             // ⚠ 戻り値が「何に効いたか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
             TakeRunnerLogic.MarkResult result =
                 timelineDirector?.NotifyVisitorMark() ?? TakeRunnerLogic.MarkResult.None;
             LastMarkResolved = result != TakeRunnerLogic.MarkResult.None;
+            LastMarkDetected = anomalyShowing || LastMarkResolved;
 
             // ⚠⚠ **呪いが解けるのは締めのカットが進んだ 1 回だけ**（`canon/LEDGER.md` 0083）。
             //    1〜2 周目で異変を消した（Dismissed）ときに戻すと、**まだ呪われている最中に

@@ -50,11 +50,11 @@ namespace FixedCamVr.Streaming
         /// 画としては「文面が入れ替わる」1 続きに見える。
         /// </summary>
         BeginHow,
-        /// <summary>② 報告した瞬間、<b>解除が通った</b>。「異変を排除しました」。</summary>
+        /// <summary>② 報告時に異常演出が表示されていた。「異常を検出しました」。</summary>
         MarkLogged,
         /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異常は検出されませんでした」。</summary>
         MarkNothing,
-        /// <summary>人形へ置換された最終周の報告。印字へ侵食が追いついて文面を奪う。</summary>
+        /// <summary>侵食度 1 の報告。印字へ侵食が追いついて文面を奪う。</summary>
         Takeover,
         /// <summary>
         /// ③a <b>4 周目 A の締めで、押さないまま時間が過ぎた最初の一言</b>「止まってください！」
@@ -144,31 +144,17 @@ namespace FixedCamVr.Streaming
         public bool markPressed;
 
         /// <summary>
-        /// ⚠⚠ <b>その報告で怪異の解除が通ったか</b>（2026-08-17・<c>canon/LEDGER.md</c> 0082）。
-        /// 通れば <see cref="CommsNotice.MarkLogged"/>（異変を排除しました）、
-        /// 通らなければ <see cref="CommsNotice.MarkNothing"/>（異常は検出されませんでした）。
-        ///
-        /// ⚠⚠ <b>「演出が走っていたか」ではない。</b> 2026-08-17 まではそれを見ていたので、
-        /// <b>3 周目の入れ替わりに押しても「排除しました」と返っていた</b>。
-        /// いま false が返るのは、装置が本当に検出できていないから
-        /// （解除を実行するエージェントが侵食されている周 ＝ 0070）。
-        ///
-        /// 供給は <c>ShowControlClient.LastMarkResolved</c>
-        /// ＝ <c>TimelineDirector.NotifyVisitorMark</c> の戻り値。
+        /// その報告時に、著作された異常演出が画面を取っていたか。
+        /// 侵食度 1 未満では、解除できる演出かどうかに関わらず表示事実を検出結果として返す。
+        /// 供給は <c>ShowControlClient.LastMarkDetected</c>。
         /// </summary>
-        public bool markResolved;
+        public bool markDetected;
 
-        /// <summary>報告を受けた瞬間に、人形置換が実際に画面へ出ていたか。</summary>
-        public bool markDollReplacementShowing;
-
-        /// <summary>報告を受けた瞬間にライブ卓が演出を抑止していたか。</summary>
-        public bool markSuppressed;
-
-        /// <summary>いまの周と、走り切る通常周数。</summary>
-        public int lap, totalLaps;
-
-        /// <summary>現在、人形置換が実際に画面へ出ているか。</summary>
-        public bool dollReplacementShowing;
+        /// <summary>
+        /// 通信画面の侵食度。0 / 0.25 / 0.75 / 1 の段階値で、1 のあいだは
+        /// 通常の検出結果を維持できず、ひと続きの書き換えへ入る。
+        /// </summary>
+        public float invasionProgress;
 
         /// <summary>書き換えの再生中か。再報告で頭へ戻さないために使う。</summary>
         public bool takeoverPlaying;
@@ -265,7 +251,7 @@ namespace FixedCamVr.Streaming
         private int _walkRepeats;
         private float _introSec;
         private float _idleSec;
-        private float _dollShowingSec;
+        private float _fullInvasionSec;
         private bool _takeoverDelivered;
 
         /// <summary>本編に入ってからの経過（診断用）。</summary>
@@ -290,7 +276,7 @@ namespace FixedCamVr.Streaming
             _walkRepeats = 0;
             _introSec = 0f;
             _idleSec = 0f;
-            _dollShowingSec = 0f;
+            _fullInvasionSec = 0f;
             _takeoverDelivered = false;
         }
 
@@ -346,11 +332,11 @@ namespace FixedCamVr.Streaming
             float dt = dtAll;
             _runSec += dt;
 
-            bool finalNormalLap = inp.totalLaps > 0 && inp.lap == inp.totalLaps;
-            if (!_takeoverDelivered && finalNormalLap && inp.dollReplacementShowing)
-                _dollShowingSec += dt;
+            bool fullyInvaded = inp.invasionProgress >= CommsInvasionLogic.DollReplacementLevel;
+            if (!_takeoverDelivered && fullyInvaded)
+                _fullInvasionSec += dt;
             else if (!_takeoverDelivered)
-                _dollShowingSec = 0f;
+                _fullInvasionSec = 0f;
 
             // ⚠⚠ **ラッチは「出したもの」ではなく「このフレームに条件が揃ったもの」全部を消費する。**
             //     1 フレームに 2 つ揃ったとき、出せるのは 1 通だけ（面が 1 つしかない）。
@@ -387,15 +373,14 @@ namespace FixedCamVr.Streaming
             // （押した手応えが返らないと、装置が壊れているように見える）。
             if (inp.markPressed)
             {
-                if (inp.markResolved) return CommsNotice.MarkLogged;
                 if (inp.takeoverPlaying || inp.takeoverModified) return CommsNotice.None;
-                if (inp.takeoverAllowed && finalNormalLap && !inp.markSuppressed && inp.markDollReplacementShowing)
+                if (inp.takeoverAllowed && !_takeoverDelivered && fullyInvaded)
                     return CommsNotice.Takeover;
+                if (inp.markDetected) return CommsNotice.MarkLogged;
                 return CommsNotice.MarkNothing;
             }
             if (inp.takeoverAllowed && !_takeoverDelivered && !inp.takeoverModified
-                && finalNormalLap && inp.dollReplacementShowing
-                && _dollShowingSec >= CommsTakeoverLogic.AutoDelaySec)
+                && fullyInvaded && _fullInvasionSec >= CommsTakeoverLogic.AutoDelaySec)
                 return CommsNotice.Takeover;
             if (haltDue) { _haltFired = true; return CommsNotice.Halt; }
             if (promptDue) { _promptFired = true; return CommsNotice.Prompt; }

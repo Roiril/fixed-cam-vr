@@ -26,11 +26,11 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void EarlyLaps_AreLighterThanLinear()
+        public void AuthoredInvasionLevels_AreAppliedWithoutAnotherCurve()
         {
-            Assert.Less(CommsGlitchLogic.LevelFor(0.33f), 0.33f * 0.5f);
-            Assert.Less(CommsGlitchLogic.LevelFor(0.5f), 0.5f);
-            Assert.Greater(CommsGlitchLogic.LevelFor(0.9f), 0.75f);
+            Assert.AreEqual(0.25f, CommsGlitchLogic.LevelFor(0.25f), 0.0001f);
+            Assert.AreEqual(0.75f, CommsGlitchLogic.LevelFor(0.75f), 0.0001f);
+            Assert.AreEqual(1f, CommsGlitchLogic.LevelFor(1f), 0.0001f);
         }
 
         [Test]
@@ -98,40 +98,6 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual(CommsGlitchLogic.EchoOffsetM(0.8f, 1, glyph),
                                 CommsGlitchLogic.EchoOffsetM(0.8f, 999, glyph));
             }
-        }
-
-        [Test]
-        public void Corruption_RecoversOnReturnLap()
-        {
-            const int total = 3;
-            Assert.AreEqual(1f, CommsGlitchLogic.CorruptionFor(1f, total, total, 0f, 0f), 0.001f);
-            Assert.Greater(CommsGlitchLogic.CorruptionFor(1f, total + 1, total, 0f, 0f), 0.9f);
-            float done = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                        CommsGlitchLogic.RecoverSec * 2f, 0f);
-            Assert.AreEqual(CommsGlitchLogic.RecoveredLevel, done, 0.001f);
-        }
-
-        [Test]
-        public void Corruption_ClearsWhenCurseReleased()
-        {
-            const int total = 3;
-            float before = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                          CommsGlitchLogic.RecoverSec * 2f, 0f);
-            float halfway = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                           CommsGlitchLogic.RecoverSec * 2f, 0.5f);
-            float after = CommsGlitchLogic.CorruptionFor(1f, total + 1, total,
-                                                         CommsGlitchLogic.RecoverSec * 2f, 1f);
-            Assert.Less(halfway, before);
-            Assert.Greater(halfway, 0f);
-            Assert.AreEqual(0f, after, 0.0001f);
-            Assert.AreEqual(0, CommsGlitchLogic.MissingCountFor(30, after, 7));
-        }
-
-        [Test]
-        public void Corruption_ReleaseClearsRegardlessOfLap()
-        {
-            for (int lap = 1; lap <= 4; lap++)
-                Assert.AreEqual(0f, CommsGlitchLogic.CorruptionFor(1f, lap, 3, 0f, 1f), 0.0001f);
         }
 
         [Test]

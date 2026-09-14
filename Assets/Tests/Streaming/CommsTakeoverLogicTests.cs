@@ -176,98 +176,88 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void OrdinaryMissAndSuccessKeepTheirExistingAnswers()
+        public void OrdinaryMissAndDetectionKeepTheirAnswers()
         {
             var logic = new CommsCueLogic();
             Assert.AreEqual(CommsNotice.MarkNothing, logic.Tick(Input(mark: true)));
-            Assert.AreEqual(CommsNotice.MarkLogged, logic.Tick(Input(mark: true, resolved: true)));
+            Assert.AreEqual(CommsNotice.MarkLogged, logic.Tick(Input(mark: true, detected: true)));
         }
 
         [Test]
-        public void SuccessTakesPriorityDuringAndAfterTakeover()
-        {
-            var logic = new CommsCueLogic();
-            Assert.AreEqual(CommsNotice.MarkLogged,
-                logic.Tick(Input(mark: true, resolved: true, playing: true)));
-            Assert.AreEqual(CommsNotice.MarkLogged,
-                logic.Tick(Input(mark: true, resolved: true, modified: true)));
-        }
-
-        [Test]
-        public void UnresolvedReportDuringOrAfterTakeoverProducesNoReply()
+        public void ReportDuringOrAfterTakeoverCannotRestartTheOutput()
         {
             var logic = new CommsCueLogic();
             Assert.AreEqual(CommsNotice.None,
-                logic.Tick(Input(mark: true, markDoll: true, lap: 3, playing: true)));
+                logic.Tick(Input(mark: true, detected: true, invasion: 1f, playing: true)));
             Assert.AreEqual(CommsNotice.None,
-                logic.Tick(Input(mark: true, markDoll: true, lap: 3, modified: true)));
+                logic.Tick(Input(mark: true, detected: true, invasion: 1f, modified: true)));
         }
 
         [Test]
-        public void FinalLap_AutoFiresOnlyAfterTheDollWasActuallyShown()
+        public void FullInvasion_AutoFiresOnlyAfterItsDelay()
         {
             var logic = new CommsCueLogic();
             for (float t = 0f; t < 2f; t += 0.1f)
-                Assert.AreNotEqual(CommsNotice.Takeover, logic.Tick(Input(lap: 3)));
+                Assert.AreNotEqual(CommsNotice.Takeover, logic.Tick(Input(invasion: 0.75f)));
             for (float t = 0f; t < CommsTakeoverLogic.AutoDelaySec - 0.1f; t += 0.1f)
-                Assert.AreNotEqual(CommsNotice.Takeover, logic.Tick(Input(lap: 3, doll: true)));
-            Assert.AreEqual(CommsNotice.Takeover, logic.Tick(Input(lap: 3, doll: true)));
-            Assert.AreEqual(CommsNotice.Takeover, logic.Tick(Input(lap: 3, doll: true)),
+                Assert.AreNotEqual(CommsNotice.Takeover, logic.Tick(Input(invasion: 1f)));
+            Assert.AreEqual(CommsNotice.Takeover, logic.Tick(Input(invasion: 1f)));
+            Assert.AreEqual(CommsNotice.Takeover, logic.Tick(Input(invasion: 1f)),
                 "実際に Deliver されるまでは one-shot を消費しない");
             logic.NotifyDelivered(CommsNotice.Takeover);
-            Assert.AreNotEqual(CommsNotice.Takeover, logic.Tick(Input(lap: 3, doll: true)));
+            Assert.AreNotEqual(CommsNotice.Takeover, logic.Tick(Input(invasion: 1f)));
         }
 
         [Test]
-        public void EarlierLapsReturnLapAndModifiedRunNeverAutoFire()
+        public void PartialInvasionAndModifiedRunNeverAutoFire()
         {
-            foreach (int lap in new[] { 1, 2, 4 })
+            foreach (float invasion in new[] { 0f, 0.25f, 0.75f })
             {
                 var logic = new CommsCueLogic();
                 for (int i = 0; i < 30; i++)
                     Assert.AreNotEqual(CommsNotice.Takeover,
-                        logic.Tick(Input(lap: lap, doll: true)));
+                        logic.Tick(Input(invasion: invasion)));
             }
 
             var modified = new CommsCueLogic();
             for (int i = 0; i < 30; i++)
                 Assert.AreNotEqual(CommsNotice.Takeover,
-                    modified.Tick(Input(lap: 3, doll: true, modified: true)));
+                    modified.Tick(Input(invasion: 1f, modified: true)));
         }
 
-        [TestCase(1)]
-        [TestCase(2)]
-        [TestCase(4)]
-        public void DollReportOutsideFinalLapIsAnOrdinaryResponse(int lap)
+        [TestCase(0.25f)]
+        [TestCase(0.75f)]
+        public void DetectedReportBeforeFullInvasionIsOrdinary(float invasion)
         {
             var logic = new CommsCueLogic();
-            Assert.AreEqual(CommsNotice.MarkNothing,
-                logic.Tick(Input(mark: true, markDoll: true, lap: lap)));
+            Assert.AreEqual(CommsNotice.MarkLogged,
+                logic.Tick(Input(mark: true, detected: true, invasion: invasion)));
         }
 
         [Test]
-        public void ReportWhileTheDollIsShownFiresImmediately()
+        public void ReportAtFullInvasionFiresImmediately()
         {
             var logic = new CommsCueLogic();
             Assert.AreEqual(CommsNotice.Takeover,
-                logic.Tick(Input(mark: true, markDoll: true, lap: 3)));
+                logic.Tick(Input(mark: true, detected: true, invasion: 1f)));
         }
 
         [Test]
-        public void SuppressedReportDoesNotMasqueradeAsTheDollSignal()
+        public void AfterTakeoverWasDeliveredAFullInvasionReportDoesNotReplayIt()
         {
             var logic = new CommsCueLogic();
-            Assert.AreEqual(CommsNotice.MarkNothing,
-                logic.Tick(Input(mark: true, markDoll: true, suppressed: true, lap: 3)));
+            logic.NotifyDelivered(CommsNotice.Takeover);
+            Assert.AreEqual(CommsNotice.MarkLogged,
+                logic.Tick(Input(mark: true, detected: true, invasion: 1f)));
         }
 
         [Test]
-        public void ReturnLapRejectsAReportThatWasSnapshottedOnTheFinalLap()
+        public void HaltBoundaryDisablesTakeoverButKeepsDetectionAnswer()
         {
             var logic = new CommsCueLogic();
-            CommsCueInput input = Input(mark: true, markDoll: true, lap: 3);
+            CommsCueInput input = Input(mark: true, detected: true, invasion: 1f);
             input.takeoverAllowed = false;
-            Assert.AreEqual(CommsNotice.MarkNothing, logic.Tick(input));
+            Assert.AreEqual(CommsNotice.MarkLogged, logic.Tick(input));
         }
 
         [Test]
@@ -282,28 +272,31 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void DetectionRequiresAnActiveUnsuppressedTake()
+        {
+            Assert.IsTrue(TakeRunner.IsAnomalyShowing(true, false));
+            Assert.IsFalse(TakeRunner.IsAnomalyShowing(false, false));
+            Assert.IsFalse(TakeRunner.IsAnomalyShowing(true, true));
+        }
+
+        [Test]
         public void LeavingRunResetsTheOneShotForTheNextVisitor()
         {
             var logic = new CommsCueLogic();
             logic.NotifyDelivered(CommsNotice.Takeover);
             logic.Tick(new CommsCueInput { inRun = false, dt = 0.1f });
-            for (int i = 0; i < 6; i++) logic.Tick(Input(lap: 3, doll: true));
-            Assert.AreEqual(CommsNotice.Takeover, logic.Tick(Input(lap: 3, doll: true)));
+            for (int i = 0; i < 6; i++) logic.Tick(Input(invasion: 1f));
+            Assert.AreEqual(CommsNotice.Takeover, logic.Tick(Input(invasion: 1f)));
         }
 
-        private static CommsCueInput Input(bool mark = false, bool resolved = false,
-            bool markDoll = false, bool suppressed = false, int lap = 1, bool doll = false,
-            bool playing = false, bool modified = false) => new CommsCueInput
+        private static CommsCueInput Input(bool mark = false, bool detected = false,
+            float invasion = 0f, bool playing = false, bool modified = false) => new CommsCueInput
         {
             inRun = true,
             panelDoneReading = false,
             markPressed = mark,
-            markResolved = resolved,
-            markDollReplacementShowing = markDoll,
-            markSuppressed = suppressed,
-            lap = lap,
-            totalLaps = 3,
-            dollReplacementShowing = doll,
+            markDetected = detected,
+            invasionProgress = invasion,
             takeoverPlaying = playing,
             takeoverModified = modified,
             takeoverAllowed = true,

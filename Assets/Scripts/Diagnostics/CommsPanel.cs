@@ -193,6 +193,7 @@ namespace FixedCamVr.Diagnostics
         private static readonly Color PanelColor = new Color(10f / 255f, 9f / 255f, 8f / 255f, 1f);
         private static readonly Color Ivory = new Color(209f / 255f, 199f / 255f, 184f / 255f, 1f);
         private static readonly Color EchoRed = new Color(135f / 255f, 61f / 255f, 53f / 255f, 1f);
+        private static readonly Color DenialRed = new Color(184f / 255f, 48f / 255f, 40f / 255f, 1f);
 
         /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
         private const float FontSize = 0.07f;
@@ -273,11 +274,11 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Begin => "調査を開始してください。",
             // ①b 押し方と、押すと何が起きるか。
             CommsNotice.BeginHow => "異変を見つけたら\nボタンを長押ししてください\n装置が解析して対処を試みます",
-            // ②a 報告が通った（解除が効いた）。
-            CommsNotice.MarkLogged => "異変を排除しました",
-            // ②b 報告が通らなかった（3 周目は AI が侵食されていて通らない — 0082）。
+            // ②a 報告時に異常演出が画面を取っていた。
+            CommsNotice.MarkLogged => "異常を検出しました",
+            // ②b 報告時に異常演出が画面を取っていなかった。
             CommsNotice.MarkNothing => "異状は検出されませんでした",
-            CommsNotice.Takeover => "異状なしと判定しました",
+            CommsNotice.Takeover => "異常なしと判定しました",
             // ③a すっと浮かぶ一言（打鍵は鳴らない・`canon/LEDGER.md` 0168）。
             CommsNotice.Halt => "止まってください！",
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
@@ -303,7 +304,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Begin => "Begin the survey.",
             // ①b 3 行目は「押すと何が起きるか」（日本語と同じ役割・0096）。
             CommsNotice.BeginHow => "If you see an anomaly,\nhold down the button and\nthe device will analyse it.",
-            CommsNotice.MarkLogged => "The anomaly was removed.",
+            CommsNotice.MarkLogged => "An anomaly was detected.",
             CommsNotice.MarkNothing => "No anomaly was detected.",
             CommsNotice.Takeover => "No anomaly was detected.",
             CommsNotice.Halt => "Please stop!",
@@ -320,7 +321,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Arrived => "Vous êtes arrivé.\nDémarrage de l'appareil.",
             CommsNotice.Begin => "Commencez l'enquête.",
             CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez le bouton.\nL'appareil l'analysera.",
-            CommsNotice.MarkLogged => "L'anomalie a été supprimée.",
+            CommsNotice.MarkLogged => "Anomalie détectée.",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
             CommsNotice.Takeover => "Aucune anomalie n’a été\ndétectée.",
             CommsNotice.Halt => "Arrêtez-vous !",
@@ -353,6 +354,16 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>言語を明示した文面（テストが 3 言語ぶん測るために公開している）。</summary>
         public static string NoticeText(CommsNotice n, ShowLang lang) => TextFor(n, lang);
+
+        /// <summary>
+        /// 侵食が否定文を奪うとき、赤く残す語の長さ。各言語で「異常なし」に当たる部分だけを返す。
+        /// </summary>
+        public static int TakeoverDenialPrefixLength(ShowLang lang) => lang switch
+        {
+            ShowLang.En => "No anomaly".Length,
+            ShowLang.Fr => "Aucune anomalie".Length,
+            _ => "異常なし".Length,
+        };
 
         /// <summary>
         /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（①b の 3 行目・14 文字）。
@@ -400,6 +411,7 @@ namespace FixedCamVr.Diagnostics
 
         private readonly CommsPanelLogic _logic = new CommsPanelLogic();
         private readonly CommsCueLogic _cue = new CommsCueLogic();
+        private readonly CommsInvasionLogic _invasion = new CommsInvasionLogic();
         private readonly YawFollowLogic _yawFollow = new YawFollowLogic();
 
         private Transform? _root;
@@ -409,11 +421,8 @@ namespace FixedCamVr.Diagnostics
         private const float TakeoverStretchM = 0.04f;
         private const float TakeoverThinK = 0.22f;
 
-        // AI の侵食（`canon/LEDGER.md` 0068 / 0069 / **0070**）。
-        // ⚠⚠ 0070 から**単調ではない** — 3 周目で 1.0 に着き、帰りの A で回復する。
+        // AI の侵食。映像劣化とは分離し、2-C の人形視点と 3-A の人形表示で段階的に進む。
         private float _glitchLevel;
-        // 帰りの区間に入ってからの経過（回復の進み）。
-        private float _returnSec;
         // 一部の字形だけに残す鈍い赤の残像。通常の全文複製にはしない。
         private TMP_Text? _textEcho;
         // 化けの組み合わせが変わる刻み。**-1 = まだ一度も掛けていない**。
@@ -521,18 +530,19 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 直近に書いた侵食の進み（0 = スイ / 1 = 完全に市松人形）。
-        /// <b>周回の壊れ（<see cref="GlitchLevel"/>）と同じ値</b>なので、食い違ったら配線が壊れている。
+        /// <see cref="InvasionProgress"/> と同じ値なので、食い違ったら配線が壊れている。
         /// </summary>
         public float AppliedFaceMix { get; private set; }
 
-        /// <summary>いま読んでいる周回の進み 0..1（<b>映像の劣化とまったく同じ値</b>）。</summary>
-        public float DecayProgress =>
-            _decayOverride >= 0f ? _decayOverride
-                                 : (runDirector != null ? runDirector.ScreenDecay : 0f);
+        /// <summary>主映像の劣化 0..1。通信侵食とは別の物語状態。</summary>
+        public float DecayProgress => runDirector != null ? runDirector.ScreenDecay : 0f;
+
+        /// <summary>通信画面の侵食度。実機では 0 / 0.25 / 0.75 / 1 のイベント段階。</summary>
+        public float InvasionProgress => _decayOverride >= 0f ? _decayOverride : _invasion.Level;
 
         /// <summary>
-        /// 壊れの進みと時刻を外から差し込む（<c>menu comms-preview -Set decay=</c> 専用）。
-        /// ⚠ <b>実機では呼ばない。</b> 負を渡すと実機の値（<c>ShowRunDirector.ScreenDecay</c>）へ戻る。
+        /// 通信侵食と時刻を外から差し込む（<c>menu comms-preview</c> 専用）。
+        /// ⚠ <b>実機では呼ばない。</b> 負を渡すと <see cref="CommsInvasionLogic.Level"/> へ戻る。
         /// </summary>
         public void SetDecayForPreview(float progress01, float timeSec)
         {
@@ -540,6 +550,10 @@ namespace FixedCamVr.Diagnostics
             _previewTimeSec = timeSec;
             TickGlitch(timeSec);
         }
+
+        /// <summary><see cref="SetDecayForPreview"/> の意味を明示した新しい名前。</summary>
+        public void SetInvasionForPreview(float progress01, float timeSec)
+            => SetDecayForPreview(progress01, timeSec);
 
         /// <summary>いまの段（テレメトリ用）。</summary>
         public CommsStage Stage => _logic.Stage;
@@ -585,6 +599,7 @@ namespace FixedCamVr.Diagnostics
         public int TakeoverCutCount { get; private set; }
         public int TakeoverStartedCount { get; private set; }
         public int TakeoverCompletedCount { get; private set; }
+        public int TakeoverTintedChars { get; private set; }
 
         /// <summary>いま下段に出している文字（テスト・診断用）。</summary>
         public string HintBody => _hintBody;
@@ -634,6 +649,9 @@ namespace FixedCamVr.Diagnostics
         {
             _logic.Disable();
             _cue.ResetRun();
+            _invasion.Reset();
+            _glitchLevel = 0f;
+            _corruptTick = -1;
             _takeoverModifiedThisRun = false;
             ResetTakeoverVisual();
             Apply(CommsWeights.Hidden);
@@ -684,6 +702,9 @@ namespace FixedCamVr.Diagnostics
         private void OnRunRestarted()
         {
             _cue.ResetRun();
+            _invasion.Reset();
+            _glitchLevel = 0f;
+            _corruptTick = -1;
             _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
             _logic.Disable();
             _silent = false;
@@ -707,6 +728,9 @@ namespace FixedCamVr.Diagnostics
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
             ResetTakeoverVisual();
             if (notice == CommsNotice.MarkLogged) _takeoverModifiedThisRun = false;
+            // 「止まってください！」は、侵食した否定文を最後まで見せた後の次の発話。
+            // ここから先へ崩壊中の頂点変形を持ち越さない。
+            if (notice == CommsNotice.Halt) _takeoverModifiedThisRun = false;
             SetNotice(notice);
             // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
             // 読ませる尺は**全文面で同じ 2 秒**（`canon/LEDGER.md` 0092）。
@@ -740,17 +764,15 @@ namespace FixedCamVr.Diagnostics
         {
             if (!IsBuilt) return;
 
-            // ---- 報告の縁を取る。⚠ **解除が通ったかは `ShowControlClient` が中継の戻り値で持っている**。
-            //      ここで `timeline.ActiveTakeId` を見ると「演出が走っていたか」しか分からず、
-            //      3 周目の入れ替わり（消えない）にも「記録されました」と返してしまう。
-            bool markPressed = false, markResolved = false;
+            // ---- 報告の縁を取る。表示状態は中継前に `ShowControlClient.LastMarkDetected` へ凍らせてある。
+            //      解除可否は `LastMarkResolved` の別用途で、通信面の文面には使わない。
+            bool markPressed = false;
             if (showControl != null)
             {
                 if (showControl.VisitorMarkCount != _lastMarkCount)
                 {
                     // 押し戻し（ラン開始で 0 に戻る）は報告ではない。
                     markPressed = showControl.VisitorMarkCount > _lastMarkCount;
-                    markResolved = showControl.LastMarkResolved;
                     _lastMarkCount = showControl.VisitorMarkCount;
                 }
             }
@@ -759,14 +781,14 @@ namespace FixedCamVr.Diagnostics
             //   （開始待ち）のあいだだけで、タイトルが画面を持っているうちは 1 文字も出さない。
             bool inIntroPhase = runDirector != null && runDirector.Phase == ShowPhase.Intro;
             bool inRun = runDirector != null && runDirector.Phase == ShowPhase.Run;
-            bool returning = runDirector != null && runDirector.Lap > runDirector.TotalLaps;
-            if ((!inRun || returning) && (_takeoverActive || _takeoverModifiedThisRun))
+            if (!inRun && (_takeoverActive || _takeoverModifiedThisRun))
             {
                 ResetTakeoverVisual();
                 _takeoverModifiedThisRun = false;
                 _logic.Disable();
             }
             if (!inRun) _takeoverModifiedThisRun = false;
+            ObserveInvasion();
             bool introWaiting = inIntroPhase && intro != null && intro.Stage == IntroStage.Black;
             CommsNotice next = _cue.Tick(new CommsCueInput
             {
@@ -778,18 +800,11 @@ namespace FixedCamVr.Diagnostics
                 // ③の時計は**締めのカットに入ってから**（0178）。報告待ちが立つのは待たない。
                 closingSec = timeline != null ? timeline.ClosingTakeSec : -1f,
                 markPressed = markPressed,
-                markResolved = markResolved,
-                markDollReplacementShowing = showControl != null
-                    && showControl.LastMarkDollReplacementShowing,
-                markSuppressed = showControl != null && showControl.LastMarkSuppressed,
-                lap = markPressed && showControl != null
-                    ? showControl.LastMarkLap
-                    : (timeline != null ? timeline.CurrentLap : -1),
-                totalLaps = runDirector != null ? runDirector.TotalLaps : 3,
-                dollReplacementShowing = timeline != null && timeline.DollReplacementShowing,
+                markDetected = markPressed && showControl != null && showControl.LastMarkDetected,
+                invasionProgress = InvasionProgress,
                 takeoverPlaying = _takeoverActive,
                 takeoverModified = _takeoverModifiedThisRun,
-                takeoverAllowed = inRun && !returning,
+                takeoverAllowed = inRun,
                 dt = Time.unscaledDeltaTime,
             });
             if (next != CommsNotice.None) Deliver(next);
@@ -808,7 +823,6 @@ namespace FixedCamVr.Diagnostics
 
             // ⚠ **壊れは面が出ていなくても進める。** 出た瞬間から正しい強さで出るようにするため
             //    （届いた所で 0 から立ち上がると「連絡が来ると壊れる」に見える）。
-            TickReturnClock(Time.unscaledDeltaTime);
             TickGlitch(Time.unscaledTime);
             _logic.Tick(Time.unscaledDeltaTime);
             Apply(_logic.Weights);
@@ -1154,9 +1168,11 @@ namespace FixedCamVr.Diagnostics
             }
 
             int changedVisible = 0;
+            int tintedVisible = 0;
             int glyphOrdinal = 0;
             bool taking = _takeoverActive || _takeoverModifiedThisRun;
-            float meshGlitch = taking ? 0f : _glitchLevel;
+            bool closingNotice = LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt;
+            float meshGlitch = taking || closingNotice ? 0f : _glitchLevel;
             float exact = Mathf.Clamp01(reveal) * _charCount;
             float charSec = _charCount > 0 ? _logic.TypeSec / _charCount : 0f;
             for (int i = 0; i < info.characterCount; i++)
@@ -1167,6 +1183,8 @@ namespace FixedCamVr.Diagnostics
                 float ageSec = Mathf.Max(0f, exact - i) * charSec;
                 float fade = _silent ? 1f : GlyphFadeAlpha(ageSec);
                 bool appeared = exact > i;
+                bool tintDenial = taking && !echo && LastNotice == CommsNotice.Takeover
+                    && i < TakeoverDenialPrefixLength(ShowLanguage.Current);
                 bool missing = glyphOrdinal < _missingGlyphs.Length && _missingGlyphs[glyphOrdinal];
                 bool echoOn = echo && CommsGlitchLogic.EchoAt(meshGlitch, _corruptTick, glyphOrdinal);
                 float alpha = appeared ? fade * globalAlpha : 0f;
@@ -1208,13 +1226,21 @@ namespace FixedCamVr.Diagnostics
                             * AppliedTakeoverStrain * takeoverDeform * bottomK;
                     }
                     Color32 c = colors[vertex + k];
+                    if (tintDenial)
+                    {
+                        c.r = (byte)Mathf.RoundToInt(DenialRed.r * 255f);
+                        c.g = (byte)Mathf.RoundToInt(DenialRed.g * 255f);
+                        c.b = (byte)Mathf.RoundToInt(DenialRed.b * 255f);
+                    }
                     c.a = (byte)(c.a * a / 255);
                     colors[vertex + k] = c;
                 }
+                if (tintDenial && appeared && alpha > 0.004f) tintedVisible++;
                 glyphOrdinal++;
             }
 
             text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
+            if (!echo) TakeoverTintedChars = tintedVisible;
             return changedVisible;
         }
 
@@ -1362,7 +1388,8 @@ namespace FixedCamVr.Diagnostics
                 _lastShown = shown;
                 VisibleChars = shown;
 
-                float ordinaryGlitch = taking ? 0f : _glitchLevel;
+                bool closingNotice = LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt;
+                float ordinaryGlitch = taking || closingNotice ? 0f : _glitchLevel;
                 CommsGlitchLogic.FillMissing(_missingGlyphs, _glyphCount, ordinaryGlitch, _corruptTick);
                 CorruptedChars = ApplyGlyphMesh(_text, _textBaseVertices, _textBaseColors,
                                                  reveal, AppliedGlyph, echo: false);
@@ -1432,6 +1459,7 @@ namespace FixedCamVr.Diagnostics
             AppliedTakeoverCollapse = 0f;
             TakeoverResistance = false;
             TakeoverDeformedChars = 0;
+            TakeoverTintedChars = 0;
             AppliedPanelAlpha = 0f;
             _silent = false;
         }
@@ -1444,12 +1472,8 @@ namespace FixedCamVr.Diagnostics
                 : 0f;
             bool on = AppliedFace > 0.004f;
 
-            // ⚠⚠ **侵食は周回の壊れとまったく同じ値を読む**（`canon/LEDGER.md` 0073）。
-            //    独自の曲線を持たせない — 2 つ持つと、片方だけ直したときに
-            //    「文字は原型を保てないのに顔はスイのまま」が黙って起きる。
-            //    あの値は 3 周目 A で 1.0（＝ 完全に人形）に着き、**帰りの A で戻り**、
-            //    **報告で呪いが解けると 0（＝ 完全にスイ）へ消える**
-            //    （`CommsGlitchLogic.CorruptionFor`・0129）ので、AI の復帰がそのまま顔にも出る。
+            // 顔と印字は同じ通信侵食度を読む。別の曲線にすると、文字と顔が別々の速さで
+            // 壊れて見えるため、0 / 0.25 / 0.75 / 1 をそのまま両方へ渡す。
             AppliedFaceMix = _glitchLevel;
 
             float x = CommsFaceLayout.CellCenterX(PanelW);
@@ -1462,40 +1486,25 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
-        /// 周回の壊れを 1 フレーム進める（<c>canon/LEDGER.md</c> 0068）。
-        /// <b>進みは映像の劣化とまったく同じ値</b>（<see cref="DecayProgress"/>）。
+        /// 通信侵食を 1 フレーム進める。
         ///
         /// ⚠ <b>面が出ていないあいだも進める。</b> 届いた所で 0 から立ち上げると
         /// 「連絡が来ると壊れる」に見えて、因果が逆になる。
         /// </summary>
-        /// <summary>
-        /// 帰りの区間（<c>lap &gt; totalLaps</c>）に入ってからの経過を数える。
-        /// ⚠ 手前の周では 0 へ戻す — 戻さないと、次の体験者で**最初から回復済み**になる。
-        /// </summary>
-        private void TickReturnClock(float dt)
+        private void ObserveInvasion()
         {
-            if (runDirector == null) { _returnSec = 0f; return; }
-            bool returning = runDirector.Lap > runDirector.TotalLaps;
-            _returnSec = returning ? _returnSec + Mathf.Max(0f, dt) : 0f;
+            if (_decayOverride >= 0f || timeline == null) return;
+            _invasion.Observe(timeline.CurrentLap, timeline.CurrentCamera,
+                              timeline.ActiveStepCueId, timeline.DollReplacementShowing);
         }
 
         /// <summary>
-        /// いまの侵食 0..1（<c>canon/LEDGER.md</c> 0070 / <b>0129</b>）。
-        /// ⚠⚠ <b>単調ではない</b> — 3 周目で 1.0 に着き（原型を保てない）、
-        /// 帰りの A で <see cref="CommsGlitchLogic.RecoveredLevel"/> まで戻り（なんとか復帰）、
-        /// <b>報告が通って呪いが解けると 0 へ消える</b>（普通のエージェントに戻る）。
-        /// 映像の劣化は単調のままなので、**ここだけが山になる**。
+        /// いまの侵食 0..1。2-C の単発人形視点で 0.25、続く連続列で 0.75、
+        /// 3-A の人形が実際に表示された瞬間に 1 となる。新しい体験者まで減らない。
         /// </summary>
         private float ResolveCorruption()
         {
-            // プレビューは侵食そのものを差し込む（回復の途中も `decay` で直に指定できる）。
-            if (_decayOverride >= 0f) return CommsGlitchLogic.LevelFor(_decayOverride);
-            int lap = runDirector != null ? runDirector.Lap : 1;
-            int total = runDirector != null ? runDirector.TotalLaps : 3;
-            // ⚠ 解除の進みは **画が戻るのと同じ 1 本**（`ScreenDecayLogic.ReleaseK`）。
-            //   ここで自前に数え直すと、片方だけ直したときに黙って食い違う。
-            float releaseK = runDirector != null ? runDirector.ScreenDecayReleaseK : 0f;
-            return CommsGlitchLogic.CorruptionFor(DecayProgress, lap, total, _returnSec, releaseK);
+            return CommsGlitchLogic.LevelFor(InvasionProgress);
         }
 
         private void TickGlitch(float timeSec)

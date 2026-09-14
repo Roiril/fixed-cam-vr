@@ -258,7 +258,7 @@ namespace FixedCamVr.Streaming.Tests
         /// （2026-09-03・<c>canon/LEDGER.md</c> 0129）。入力は単調のまま、解除だけが侵食を 0 にする。
         /// </summary>
         [Test]
-        public void 音とAIが読む進みは呪いが解けても下がらない()
+        public void 音が読む進みは呪いが解けても下がらない()
         {
             ScreenDecayLogic l = Cursed();
             float raw = l.Progress;
@@ -271,22 +271,20 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// <b>解除の進みは画と AI が共有する 1 本</b>（2026-09-03・<c>canon/LEDGER.md</c> 0129）。
-        /// <c>CommsPanel</c> がこれを <c>CommsGlitchLogic.CorruptionFor</c> へ渡して侵食を 0 にする。
-        /// ⚠ 侵食の側に別の時計を置くと、片方だけ直したときに黙って食い違う。
+        /// 解除の進みは主映像の解像度と色が共有する。
         /// </summary>
         [Test]
-        public void 解除の進みは画とAIで同じ1本()
+        public void 解除の進みは主映像の見え方で同じ1本()
         {
             ScreenDecayLogic l = Cursed();
-            Assert.AreEqual(0f, l.ReleaseK, 0.0001f, "報告の前は 0（＝ 侵食はそのまま）");
+            Assert.AreEqual(0f, l.ReleaseK, 0.0001f, "報告の前は 0");
 
             l.Release();
             Run(l, ScreenDecayLogic.ReleaseSec * 0.5f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
             Assert.That(l.ReleaseK, Is.GreaterThan(0f).And.LessThan(1f), "途中は途中の値");
 
             Run(l, ScreenDecayLogic.ReleaseSec, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
-            Assert.AreEqual(1f, l.ReleaseK, 0.0001f, "戻り切ったら 1（＝ 侵食は 0）");
+            Assert.AreEqual(1f, l.ReleaseK, 0.0001f, "戻り切ったら 1");
 
             l.Reset();
             Assert.AreEqual(0f, l.ReleaseK, 0.0001f, "次の体験者は最初から解けていない");

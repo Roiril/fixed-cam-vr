@@ -3,46 +3,21 @@
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// 連絡の印字が周回とともに欠けていく。UnityEngine 非依存・時刻注入。
+    /// 連絡の印字が侵食度に応じて欠けていく。UnityEngine 非依存・時刻注入。
     /// 元の文面と字幅は変えず、表示側が頂点の不透明度と位置だけを変える。
     /// </summary>
     public sealed class CommsGlitchLogic
     {
-        public const float Exponent = 2f;
         public const float MaxMissingShare = 0.75f;
-        public const float RecoverSec = 3.2f;
-        public const float RecoveredLevel = 0.12f;
         public const float TickSec = 0.22f;
         public const float MaxLineOffsetM = 0.006f;
         public const float MaxEchoShare = 0.16f;
         public const float MaxEchoOffsetM = 0.0035f;
         public const float OffThreshold = 0.002f;
 
-        public static float LevelFor(float decayProgress)
+        public static float LevelFor(float invasionProgress)
         {
-            float p = Clamp01(decayProgress);
-            if (p <= 0f) return 0f;
-            float level = Pow(p, Exponent);
-            return level <= OffThreshold ? 0f : level;
-        }
-
-        /// <summary>
-        /// AI の侵食。3 周目で 1、帰りの A で 0.12、呪いの解除後に 0 となる。
-        /// 顔の侵食と本文の欠落がこの同じ値を読む。
-        /// </summary>
-        public static float CorruptionFor(float decayProgress, int lap, int totalLaps, float returnSec,
-                                          float releaseK)
-        {
-            float level = LevelFor(decayProgress);
-            if (totalLaps < 1) totalLaps = 3;
-            if (lap > totalLaps)
-            {
-                float k = Smooth(Clamp01(returnSec / RecoverSec));
-                level += (RecoveredLevel - level) * k;
-            }
-
-            float released = Clamp01(releaseK);
-            if (released > 0f) level *= 1f - released;
+            float level = Clamp01(invasionProgress);
             return level <= OffThreshold ? 0f : level;
         }
 
@@ -121,12 +96,6 @@ namespace FixedCamVr.Streaming
             return sign * MaxEchoOffsetM * Clamp01(level) * magnitude;
         }
 
-        private static float Smooth(float t)
-        {
-            t = Clamp01(t);
-            return t * t * (3f - 2f * t);
-        }
-
         private static uint Hash(uint n)
         {
             unchecked
@@ -139,6 +108,5 @@ namespace FixedCamVr.Streaming
 
         private static float Hash01(uint n) => (Hash(n) & 0xFFFFFFu) / 16777215f;
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);
-        private static float Pow(float b, float e) => (float)System.Math.Pow(b, e);
     }
 }

@@ -130,6 +130,18 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中の演出の id（卓のモニタ用。走っていなければ空）。</summary>
         public string ActiveTakeId => takeRunner != null ? takeRunner.ActiveTakeId : "";
 
+        /// <summary>
+        /// いま画面を取っているカットの素材 id。飛ばされたカットでは空のまま。
+        /// 通信侵食は、2-C の人形視点が実際に表示された縁をここから読む。
+        /// </summary>
+        public string ActiveStepCueId => takeRunner != null ? takeRunner.ActiveStepCueId : "";
+
+        /// <summary>
+        /// 著作された演出が現在画面を取っているか。報告への「異常を検出しました」は、
+        /// 解除できたかではなく、この表示事実を答える。
+        /// </summary>
+        public bool AnomalyShowing => takeRunner != null && takeRunner.AnomalyShowing;
+
         /// <summary>再生中の端末内録画（テレメトリ用）。null なら録画カットではない。</summary>
         public Recording.RecordedFramePlayer? ActiveRecording => takeRunner?.ActiveRecording;
 

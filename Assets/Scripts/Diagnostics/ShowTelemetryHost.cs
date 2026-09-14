@@ -140,6 +140,7 @@ namespace FixedCamVr.Diagnostics
         private int _lastMarkCount;
         private int _lastCommsPulse;
         private string _lastCommsTakeoverPhase = "Off";
+        private float _lastCommsInvasion = -1f;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
@@ -793,15 +794,25 @@ namespace FixedCamVr.Diagnostics
                 _lastMarkCount = _show.VisitorMarkCount;
                 Emit($"ev=mark n={_lastMarkCount} lap={(_run != null ? _run.Lap : -1)} " +
                      $"cam={(_switch != null && _switch.TryGetCurrentZoneCamera(out int mc) ? mc : -1)}"
-                     // ⚠⚠ **その報告で解除が通ったか**（2026-08-17・`canon/LEDGER.md` 0082）。
-                     //    連絡の面の文面がこれで分かれる。2026-08-17 まではキーが `take=`
-                     //    ＝「演出が走っていたか」で、3 周目の入れ替わりでも 1 が立っていた。
-                   + $" res={(_show.LastMarkResolved ? 1 : 0)}");
+                     // det = 報告時に異常演出が表示されていたか。通信面の返答はこれで分かれる。
+                     // res = 解除処理が通ったか。主映像の解除と進行の診断に残す。
+                   + $" det={(_show.LastMarkDetected ? 1 : 0)}"
+                   + $" res={(_show.LastMarkResolved ? 1 : 0)}"
+                   + $" invasion={(_comms != null ? _comms.InvasionProgress : 0f):F2}");
             }
 
             // AIエージェントからの連絡（`canon/LEDGER.md` 0054）。**1 通ごとに 1 行**。
             // ⚠ id だけでは足りない — 「配った」と「画に出た」は別物なので glyph / open を必ず添える
             //   （2026-07-31 の「段は進んだのに画は空だった」と同じ型）。built=0 なら一生出ない。
+            if (_comms != null && Mathf.Abs(_comms.InvasionProgress - _lastCommsInvasion) > 0.001f)
+            {
+                _lastCommsInvasion = _comms.InvasionProgress;
+                Emit($"ev=commsInvasion v={_lastCommsInvasion:F2} " +
+                     $"lap={(_timeline != null ? _timeline.CurrentLap : -1)} " +
+                     $"cam={(_timeline != null ? _timeline.CurrentCamera : -1)} " +
+                     $"cue={(_timeline != null ? _timeline.ActiveStepCueId : "")} " +
+                     $"doll={(_timeline != null && _timeline.DollReplacementShowing ? 1 : 0)}");
+            }
             if (_comms != null && _comms.TakeoverPhase.ToString() != _lastCommsTakeoverPhase)
             {
                 _lastCommsTakeoverPhase = _comms.TakeoverPhase.ToString();
@@ -809,6 +820,7 @@ namespace FixedCamVr.Diagnostics
                      $"erase={_comms.AppliedTakeoverErase:F3} reveal={_comms.AppliedTakeoverReveal:F3} " +
                      $"collapse={_comms.AppliedTakeoverCollapse:F3} cut={_comms.TakeoverCutCount} " +
                      $"cx={_comms.CorruptedChars} face={_comms.AppliedFaceMix:F3} " +
+                     $"invasion={_comms.InvasionProgress:F2} red={_comms.TakeoverTintedChars} " +
                      $"glyph={_comms.AppliedGlyph:F3} faceInk={_comms.AppliedFace:F3} " +
                      $"shown={_comms.VisibleChars} started={_comms.TakeoverStartedCount} " +
                      $"completed={_comms.TakeoverCompletedCount}");
@@ -825,7 +837,7 @@ namespace FixedCamVr.Diagnostics
                      // この 1 通が届いたときの周回の進み（`canon/LEDGER.md` 0068）。
                      // ⚠ 強さではなく**進み**を出す — 強さは発作で跳ねるので、
                      //   1 通ごとの比較には使えない（3 周目の連絡が軽く見えることがある）。
-                     $"decay={_comms.DecayProgress:F2} " +
+                     $"decay={_comms.DecayProgress:F2} invasion={_comms.InvasionProgress:F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             }
 

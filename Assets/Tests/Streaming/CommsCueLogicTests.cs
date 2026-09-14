@@ -21,13 +21,13 @@ namespace FixedCamVr.Streaming.Tests
         /// 既存のテストは①だけを見たいので、①b が続かない状態を既定にしてある。
         /// </summary>
         private static CommsCueInput Run(float closing = -1f, bool mark = false,
-                                         bool resolved = false, bool read = false) =>
+                                         bool detected = false, bool read = false) =>
             new CommsCueInput
             {
                 inRun = true,
                 closingSec = closing,
                 markPressed = mark,
-                markResolved = resolved,
+                markDetected = detected,
                 panelDoneReading = read,
                 dt = Dt,
             };
@@ -115,7 +115,7 @@ namespace FixedCamVr.Streaming.Tests
             // 読ませ終わったフレームに報告が来る ＝ ②が勝つ。
             CollectionAssert.AreEqual(new[] { CommsNotice.MarkLogged },
                                       new System.Collections.Generic.List<CommsNotice>
-                                      { l.Tick(Run(mark: true, resolved: true, read: true)) });
+                                      { l.Tick(Run(mark: true, detected: true, read: true)) });
             Assert.IsFalse(l.BeginFired, "押しのけられた①b を消費している");
 
             CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 0.1f, read: true));
@@ -175,26 +175,22 @@ namespace FixedCamVr.Streaming.Tests
         // ------------------------------------------------------------------ ② 報告した瞬間
 
         [Test]
-        public void WhenTheAnomalyIsCleared_TheAgentSaysItWasLogged()
+        public void WhenAnAnomalyWasShowing_TheAgentSaysItWasDetected()
         {
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
-            Assert.AreEqual(CommsNotice.MarkLogged, l.Tick(Run(mark: true, resolved: true)));
+            Assert.AreEqual(CommsNotice.MarkLogged, l.Tick(Run(mark: true, detected: true)));
         }
 
         /// <summary>
-        /// ⚠⚠ <b>解除が通らなければ「検出されませんでした」。</b>
-        /// 3 周目の入れ替わり（<c>dismissible</c> でない演出）に押したときがこれで、
-        /// **演出は走っているのに** false が返る（`canon/LEDGER.md` 0082）。
-        /// 2026-08-17 まではここが「演出が走っていたか」だったので、消えていないのに
-        /// 「異常が記録されました」と認めた顔をしていた。
+        /// 異常演出が画面を取っていなければ「検出されませんでした」。
         /// </summary>
         [Test]
-        public void WhenNothingIsCleared_TheAgentSaysNothingWasDetected()
+        public void WhenNoAnomalyWasShowing_TheAgentSaysNothingWasDetected()
         {
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
-            Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(Run(mark: true, resolved: false)));
+            Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(Run(mark: true, detected: false)));
         }
 
         [Test]
@@ -218,7 +214,7 @@ namespace FixedCamVr.Streaming.Tests
             AdvanceClosing(l, new Closing(), 1f);
 
             Assert.AreEqual(CommsNotice.MarkLogged,
-                            l.Tick(Run(closing: 1f, mark: true, resolved: true)));
+                            l.Tick(Run(closing: 1f, mark: true, detected: true)));
         }
 
         [Test]
@@ -344,7 +340,7 @@ namespace FixedCamVr.Streaming.Tests
 
             // ③a を読ませている最中に報告した。
             Assert.AreEqual(CommsNotice.MarkLogged,
-                            l.Tick(Run(closing: c.Sec, mark: true, resolved: true)));
+                            l.Tick(Run(closing: c.Sec, mark: true, detected: true)));
             CollectionAssert.AreEqual(new[] { CommsNotice.Prompt },
                                       AdvanceClosing(l, c, 30f, read: true),
                                       "報告したら③b が消えた（全員に見せる約束が守られていない）");

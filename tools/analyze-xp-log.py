@@ -1436,12 +1436,10 @@ def analyze(events, others, exp, warns=None):
 
     # ---------------- AIエージェントからの連絡 ----------------
     # 発火は 3 点（`canon/LEDGER.md` 0054）: ①導入が明けた直後 ②報告した瞬間（演出の有無で文面が
-    # 変わる）③4 周目 A の締めで押さないまま 3 秒。
-    # ⚠⚠ **②の分岐は「解除が通ったか」で決まる**（2026-08-17・`canon/LEDGER.md` 0082）。
-    #    ここは `ev=mark` の `res=` と `ev=comms` の id を突き合わせて
-    #    **食い違っていたら FAIL** にする（画を見ても絶対に気づけない壊れ方なので）。
-    #    ⚠ 2026-08-17 まではキーが `take=`（演出が走っていたか）で、3 周目の入れ替わりに
-    #      押しても「異変を排除しました」と返っていた ＝ 消えていないのに認めた顔をしていた。
+    # 変わる）③4周目Aの締めで押さないまま5秒。
+    # ②の分岐は「異常演出が表示されていたか」で決まる。
+    # `ev=mark` の `det=` と `ev=comms` の id を突き合わせ、食い違いを FAIL にする。
+    # `res=` は演出を解除できたかであり、主映像の解除を検証する別の値。
     # 観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
     comms = [e for e in events if e.get("ev") == "comms"]
     comms_built = effect_samples(events, "commsBuilt")
@@ -1450,7 +1448,8 @@ def analyze(events, others, exp, warns=None):
         for e in comms:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
               f"built={e.get('built')} lap={e.get('lap')} chars={e.get('chars')} "
-              f"sfx={e.get('sfx')} decay={e.get('decay')} wait={e.get('wait')}")
+              f"sfx={e.get('sfx')} decay={e.get('decay')} "
+              f"invasion={e.get('invasion')} wait={e.get('wait')}")
 
         if comms_built and all(str(v) == "0" for v in comms_built):
             verdict("FAIL", "連絡の面を組めていない（commsBuilt=0）— 1 通も出ない。"
@@ -1459,6 +1458,27 @@ def analyze(events, others, exp, warns=None):
             verdict("WARN", "連絡が 1 通も届いていない（本編に入っていないか、CommsPanel が未配線）")
         else:
             ids = [e.get("id") for e in comms]
+            invasion_events = [e for e in events if e.get("ev") == "commsInvasion"]
+            positive_invasion = [e for e in invasion_events if fnum(e, "v", 0.0) > 0.001]
+            if positive_invasion:
+                got_levels = [round(fnum(e, "v", 0.0), 2) for e in positive_invasion]
+                expected_levels = [0.25, 0.75, 1.0]
+                if got_levels != expected_levels:
+                    verdict("FAIL", f"通信侵食の段階が {got_levels} — 期待は {expected_levels}")
+                else:
+                    first, chained, full = positive_invasion
+                    first_ok = (str(first.get("lap")) == "2" and str(first.get("cam")) == "2"
+                                and first.get("cue") == "pov_0")
+                    chained_ok = (str(chained.get("lap")) == "2" and str(chained.get("cam")) == "2"
+                                  and chained.get("cue") in ("pov_1", "pov_2", "pov_3", "pov_4"))
+                    full_ok = (str(full.get("lap")) == "3" and str(full.get("cam")) == "0"
+                               and str(full.get("doll")) == "1")
+                    if first_ok and chained_ok and full_ok:
+                        verdict("OK", "通信侵食が 2-C の単発視点で0.25、連続視点で0.75、"
+                                      "3-Aの人形表示で1へ進んだ")
+                    else:
+                        verdict("FAIL", "通信侵食の値は正しいが、切り替わった区間または表示が違う — "
+                                        f"{[(e.get('lap'), e.get('cam'), e.get('cue'), e.get('doll')) for e in positive_invasion]}")
             # ⚠⚠ **2026-09-06 に①と①b を入れ替えた**（canon/LEDGER.md 0174・ユーザー指定
             #    「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆に」）。
             #    ① = BeginHow（押し方）/ ①b = Begin（開始の合図）。**id の綴りは入れ替えていない**。
@@ -1525,28 +1545,41 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("OK", f"⓪c が演出の始まりと同時に届いた（t={t_arrived:.1f}s）")
 
-            # ②の分岐が「解除が通ったか」と一致しているか。ev=mark と ev=comms を時刻で対にする。
+            # ②の分岐が「異常演出が表示されていたか」と一致しているか。
+            # 侵食度1では通常返答を維持できず Takeover が一度だけ走るため、通常返答の照合は
+            # 0 / 0.25 / 0.75 の報告だけに限定する。
             marks = [e for e in events if e.get("ev") == "mark"]
             answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing")]
+            ordinary_marks = [m for m in marks if fnum(m, "invasion", 0.0) < 0.999]
             mark_ok = True
-            if len(answers) < len(marks):
+            if len(answers) < len(ordinary_marks):
                 mark_ok = False
-                verdict("FAIL", f"報告 {len(marks)} 回に対して②の返事が {len(answers)} 通しかない — "
+                verdict("FAIL", f"侵食度1未満の報告 {len(ordinary_marks)} 回に対して"
+                                f"②の返事が {len(answers)} 通しかない — "
                                 "押しても返らない報告がある（装置が壊れて見える）")
-            for m in marks:
+            for m in ordinary_marks:
                 near = [a for a in answers if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
                 if not near:
                     continue
-                want = "MarkLogged" if str(m.get("res")) == "1" else "MarkNothing"
+                # 古いログには det が無いため res を退避値として読む。
+                detected = m.get("det") if m.get("det") is not None else m.get("res")
+                want = "MarkLogged" if str(detected) == "1" else "MarkNothing"
                 if near[0].get("id") != want:
                     mark_ok = False
                     verdict("FAIL",
-                            f"t={fnum(m,'t',0):.1f} の報告（解除 res={m.get('res')}）に対して "
+                            f"t={fnum(m,'t',0):.1f} の報告（表示 det={detected}）に対して "
                             f"{near[0].get('id')} が返っている — 期待は {want}。"
-                            "ShowControlClient.LastMarkResolved と CommsCueLogic.markResolved が "
+                            "ShowControlClient.LastMarkDetected と CommsCueLogic.markDetected が "
                             "食い違っている（画に出る意味が真逆になる）")
-            if answers and mark_ok:
-                verdict("OK", f"②の返事が報告 {len(answers)} 回すべてに返り、解除の可否と一致した")
+            if ordinary_marks and mark_ok:
+                verdict("OK", f"侵食度1未満の報告 {len(ordinary_marks)} 回で、"
+                              "②の返事が異常演出の表示状態と一致した")
+
+            full_marks = [m for m in marks if fnum(m, "invasion", 0.0) >= 0.999]
+            takeover_events = [e for e in comms if e.get("id") == "Takeover"]
+            if full_marks and not takeover_events:
+                verdict("WARN", "侵食度1で報告されたが『異常なしと判定しました』の崩壊が記録されていない — "
+                                "先に自動再生済みか、CommsCueLogic の侵食入力を確認する")
 
             # ⚠⚠ **解除が 1 度も通らない台本は、ゲーム性が死んでいる**（`canon/LEDGER.md` 0082）。
             #    体験者は「押すと消える」を 1〜2 周目で学習してはじめて、3 周目の「消えない」が効く。
@@ -1677,7 +1710,7 @@ def analyze(events, others, exp, warns=None):
                                         "Assets/Resources/Comms/DollFace.png を焼く")
                     if lit:
                         verdict("OK", f"AIエージェントの顔が出ている（最大の濃さ {max(lit):.2f}）")
-                    # ⚠⚠ 侵食は周回の壊れと同じ値のはず。届いていなければ顔だけ無事に見える。
+                    # 顔と文字は同じ通信侵食度を読む。届いていなければ顔だけ無事に見える。
                     if mix and max(mix) <= 0.01 and gl and max(gl) > 0.01:
                         verdict("FAIL", f"文字は壊れた（最大 {max(gl):.2f}）のに顔が侵食されていない"
                                         "（commsFace の 4 つ目が全標本 0）— "
@@ -1687,7 +1720,7 @@ def analyze(events, others, exp, warns=None):
 
             if gl and max(gl) <= 0.0:
                 verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
-                                "周が進んでいないか、ShowRunDirector.ScreenDecay を読めていない")
+                                "2-Cの人形視点まで進んでいないか、CommsInvasionLogic の配線を確認する")
             elif gl and cx and max(cx) <= 0 and not any(
                     e.get("commsTakeover") in ("Output", "Pursuit", "Seized", "Complete")
                     for e in events if e.get("ev") == "sum"):
@@ -1696,24 +1729,23 @@ def analyze(events, others, exp, warns=None):
                                 "（commsCx が全標本 0）— CommsPanel.ApplyCorruption が"
                                 "文面へ届いていない疑い")
             elif gl and cx and max(cx) > 0:
-                verdict("OK", f"連絡の面が周回とともに壊れた"
+                verdict("OK", f"連絡の面が表示イベントとともに壊れた"
                               f"（強さ 最大 {max(gl):.2f} / 化けた字 最大 {max(cx) if cx else 0}）")
             elif gl and cx:
                 verdict("WARN", "報告が侵食される区間を含むため、通常文の欠落はこの記録だけでは判定できない")
 
-            # ③（4 周目 A の締め）は進み 1.0 ＝ 壊れが最大の状態で届くはず。
-            # ⚠ 進みは 3 周目 A で 1.0 に着いて以後動かない（`ScreenDecayLogic`）ので、
-            #    ここが 1 に届いていないなら周が進み切っていない（＝ 演出最大に到達していない）。
+            # ③（4周目Aの締め）は通信侵食度1の状態で届く。
+            # 警告の文字欠けは描画側で外すが、生の侵食度はランリセットまで保持する。
             for e in comms:
                 if e.get("id") != "Prompt":
                     continue
                 try:
-                    d = float(e.get("decay"))
+                    d = float(e.get("invasion", e.get("decay")))
                 except (TypeError, ValueError):
                     continue
                 if d < 0.9:
-                    verdict("WARN", f"③の催促が進み {d:.2f} で届いた — "
-                                    "3 周目 A で最大に着いていない（周が足りないか走行が短い）")
+                    verdict("WARN", f"③の催促が通信侵食度 {d:.2f} で届いた — "
+                                    "3-Aの人形表示で1へ進んでいない")
         w()
 
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------
@@ -3048,10 +3080,8 @@ def analyze(events, others, exp, warns=None):
                                 "装置の声（bed_device の痩せ）が新品へ戻ってしまう。"
                                 "画へ書くのは Shown、音へ渡すのは Progress")
 
-            # ⚠⚠ **AI の侵食も一緒に消える**（`canon/LEDGER.md` 0129 —
-            #    「呪いを消したら普通のエージェントに戻るようにしてほしい」）。
-            #    画（coarseShown）と**別々に壊れる**ので畳まない — 画が戻っても侵食が残れば、
-            #    体験者から見えるのは「呪いを消したのにエージェントがバグったまま」。
+            # 通信侵食は主映像の解除とは別の状態。3-Aで1になった後は次の体験者まで保持する。
+            # 4-Aの警告だけは描画側で崩れを外し、読める状態にする。
             gl_after = []
             for e in events[first:]:
                 if e.get("ev") != "sum":
@@ -3060,14 +3090,12 @@ def analyze(events, others, exp, warns=None):
                     gl_after.append(float(e["commsGl"]))
                 except (KeyError, TypeError, ValueError):
                     pass
-            if gl_after and min(gl_after) > 0.01:
-                verdict("FAIL", f"呪いが解けたのに AI の侵食が残っている"
-                                f"（commsGl {min(gl_after):.2f} 止まり）— "
-                                "報告した後も文字が化け、顔が市松人形のまま。"
-                                "CommsPanel.ResolveCorruption が ScreenDecayReleaseK を"
-                                "渡せていない疑い")
-            elif gl_after:
-                verdict("OK", "呪いが解け、AIエージェントが普通に戻った（侵食が 0 まで落ちた）")
+            if gl_after and max(gl_after) >= 0.999 and min(gl_after) < 0.999:
+                verdict("FAIL", f"主映像の解除と同時に通信侵食が戻っている"
+                                f"（解除後の commsGl 最小 {min(gl_after):.2f}）— "
+                                "CommsInvasionLogic の保持が切れている")
+            elif gl_after and max(gl_after) >= 0.999:
+                verdict("OK", "主映像の解除後も通信侵食1を保持した")
         elif max(decay_run) > 0.5:
             verdict("WARN", "視界が劣化したまま解除されずに終わった — "
                             "締めのカット（untilMark）へ報告が届いていないか、押されなかった")

@@ -16,12 +16,31 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public class CommsNoticeTextTests
     {
-        [TestCase(ShowLang.Ja, "異状なしと判定しました")]
+        [TestCase(ShowLang.Ja, "異常なしと判定しました")]
         [TestCase(ShowLang.En, "No anomaly was detected.")]
         [TestCase(ShowLang.Fr, "Aucune anomalie n’a été\ndétectée.")]
         public void TakeoverAttemptsOnlyOneDenial(ShowLang lang, string sentence)
         {
             Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.Takeover, lang));
+        }
+
+        [TestCase(ShowLang.Ja, "異常なし")]
+        [TestCase(ShowLang.En, "No anomaly")]
+        [TestCase(ShowLang.Fr, "Aucune anomalie")]
+        public void TakeoverRedPrefixCoversOnlyTheDenial(ShowLang lang, string prefix)
+        {
+            string sentence = CommsPanel.NoticeText(CommsNotice.Takeover, lang);
+            int length = CommsPanel.TakeoverDenialPrefixLength(lang);
+            Assert.AreEqual(prefix, sentence.Substring(0, length));
+            Assert.Less(length, sentence.Length);
+        }
+
+        [TestCase(ShowLang.Ja, "異常を検出しました")]
+        [TestCase(ShowLang.En, "An anomaly was detected.")]
+        [TestCase(ShowLang.Fr, "Anomalie détectée.")]
+        public void SuccessfulReportSaysTheAnomalyWasDetected(ShowLang lang, string sentence)
+        {
+            Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkLogged, lang));
         }
 
         /// <summary>
