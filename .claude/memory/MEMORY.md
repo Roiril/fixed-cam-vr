@@ -58,7 +58,7 @@
 - [doll_reference_kit.md](doll_reference_kit.md) - 実物の市松人形を画像生成 AI に描かせる資料（tools/doll-ref/）。3D 用マスクは資料に使えない／写真は暗く緑に転ぶ／正面の T 字は撮影の都合／探針は目で置く
 
 - [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) - 2026-07-23 監査 11 件は全修正済み（EditMode 364/364・JVM 31/31）。実機確認チェックリストと P2 テスト候補はここ
-- [controller_input_final.md](controller_input_final.md) - スタッフ操作は右 A / B / トリガー。Normal の右 A 2 秒長押しで体験者リセット。右グリップは読まず、機能も振動もない（2026-09-14）。
+- [controller_input_final.md](controller_input_final.md) - 体験者入力は左 X / Y だけ。左グリップ、左インデックストリガー、左スティック押し込みは読まない。スタッフ操作は右 A / B / トリガー（2026-09-14）。
 - [hud_font_and_preview.md](hud_font_and_preview.md) - HMD内文言を変えたらフォント再生成必須（静的ベイク・忘れると実機豆腐）／見た目確認は Play 禁止・HudPreviewScreenshot（batchmode可）
 
 - [ivrc_video_pages_naming.md](ivrc_video_pages_naming.md) - IVRC動画 pages/ の透過PNGはファイル名固定（編集ソフト参照中・リネーム禁止／追加は既存をずらさない名で）

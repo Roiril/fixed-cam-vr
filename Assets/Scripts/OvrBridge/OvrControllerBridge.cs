@@ -90,9 +90,6 @@ namespace FixedCamVr.OvrBridge
         /// </summary>
         private const float HoldTickDeadSec = 0.3f;
 
-        private const OVRInput.RawButton LeftReportMask =
-            OVRInput.RawButton.X | OVRInput.RawButton.Y;
-
         // モード状態機械（純ロジック。入力を bool/float で Tick する）。
         private readonly ControllerModeLogic _modeLogic = new();
 
@@ -255,7 +252,9 @@ namespace FixedCamVr.OvrBridge
             // RawButton を使い、練習と本編の両方を同じ入力に揃える。
             bool xHeld = OVRInput.Get(OVRInput.RawButton.X, OVRInput.Controller.LTouch);
             bool yHeld = OVRInput.Get(OVRInput.RawButton.Y, OVRInput.Controller.LTouch);
-            bool leftMarkHeld = OVRInput.Get(LeftReportMask, OVRInput.Controller.LTouch);
+            // 体験者へ説明する X / Y だけを使う。左グリップ、左インデックストリガー、
+            // 左スティック押し込みは導入・題字・本編報告のどこでも読まない。
+            bool leftMarkHeld = xHeld || yHeld;
 
             // 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。

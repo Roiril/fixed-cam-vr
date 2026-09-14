@@ -885,7 +885,7 @@ alpha がそのまま混ぜ具合）。別レイヤは足していない。
   3. スタッフの明示操作（⏭）
 
   ⚠⚠ **1 と 2（＝自動の出口）はすべて「人が始めた」を通る**（2026-08-14）。実体は
-  **タイトルが画面を手放したか**（スタッフが A を押して題字が焼け切ったか）で、
+  **タイトルが画面を手放したか**（体験者が左 X / Y を短く押して題字が焼け切ったか）で、
   `ShowControlClient.StartAuthorizedProvider`。**3 は通さない**（人の判断は上書きできる）。
   加えて**箱の至近に立たされた体験者を 1 秒で救う**出口が足してある。
   設計と踏んだ穴は [show-design.md](show-design.md) の「自動の出口はすべて『人が始めた』で
@@ -3221,7 +3221,7 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
   `GET /asset/<name>`（面が使う画像・動画。`Resources/Visitor/<name>.bytes`。Range 対応）。
   判断は [`VisitorPortalLogic`](../../Assets/Scripts/Streaming/VisitorPortalLogic.cs)（純ロジック・テスト付き）
 - **正は Quest の中**（`VisitorPrefs`）。**書くのは注意書きの段（`TitleStage.Wait`）だけ**。`BeginTitle` は
-  **戻した直後に載せ直す**（同じ受理番号でも）。体験者が A を押したら枠を空にする ＝ 次の人へ持ち越さない
+  **戻した直後に載せ直す**（同じ受理番号でも）。体験者が題字で左 X / Y を短く押したら枠を空にする ＝ 次の人へ持ち越さない
 - `Select` で書くので `langN` / `relief` の 2 つ目（体験者が押した回数）は動かない
 - **卓に載るのは heartbeat の実値と「口が開いているか」だけ**（`deviceId` / `localIp` / `titleStage` / `visitorPort` /
   `visitorReceived` / `visitorPending` / `lang` / `relief`）。`GET /unity/devices` が機ごとに出す（スタッフが眺める用）。
