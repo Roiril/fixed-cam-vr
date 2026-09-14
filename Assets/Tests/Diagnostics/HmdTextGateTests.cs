@@ -107,6 +107,19 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
+        public void ControllerGuidePanel_Normal_UsesAHoldAndDoesNotMentionGrip()
+        {
+            FieldInfo? field = typeof(ControllerGuidePanel).GetField("NormalBody",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null);
+            string body = (string)field!.GetRawConstantValue();
+
+            Assert.That(body, Does.Contain("A2秒：新しい体験者にする"));
+            Assert.That(body, Does.Not.Contain("グリップ"));
+            Assert.That(body, Does.Not.Contain("タイトル"));
+        }
+
+        [Test]
         public void ShowEndingFader_FollowsGate()
         {
             var hud = Spawn<StatusHud>();

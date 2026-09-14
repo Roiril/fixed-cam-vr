@@ -32,13 +32,11 @@ namespace FixedCamVr.Diagnostics
     {
         // 本文（このまま使う。装飾記号や英語見出しを足さない）。
         // ⚠ 書式は `入力：動作` で固定（<see cref="HmdTextStyle"/> の規約）。
-        //   同じ操作を RecoveryGuidance も同じ名前で呼ぶ（「トリガー2秒」「グリップ2秒」「A」「B」）。
+        //   同じ操作を RecoveryGuidance も同じ名前で呼ぶ（「トリガー2秒」「A」「B」）。
         private const string NormalBody =
-            "A：タイトルを閉じて始める\n" +
+            "A2秒：新しい体験者にする\n" +
             // 旧「切/入」は日本語として逆で、しかもこの行だけ動詞で終わっていなかった。
             "B：ステータス表示を切り替える\n" +
-            // 「周回リセット」は開発語で、スタッフには何が起きるか分からない（廃語）。
-            "グリップ2秒：新しい体験者にする\n" +
             "トリガー2秒：位置合わせを開始";
 
         private const string RegBody =

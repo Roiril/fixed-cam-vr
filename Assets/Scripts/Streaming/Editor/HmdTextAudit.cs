@@ -112,8 +112,8 @@ namespace FixedCamVr.Streaming.EditorTools
             new Surface { Name = "操作早見表", Type = typeof(ControllerGuidePanel),
                           FixedDistanceM = HandDistanceM,
                           // ⚠ `ControllerGuidePanel.NormalBody` の写し（private const なので参照できない）。
-                          Probe = "A：タイトルを閉じて始める\nB：ステータス表示を切り替える\n"
-                                + "グリップ2秒：新しい体験者にする\nトリガー2秒：位置合わせを開始" },
+                          Probe = "A2秒：新しい体験者にする\nB：ステータス表示を切り替える\n"
+                                + "トリガー2秒：位置合わせを開始" },
             // ⚠ 報告の押し方とゲージは **[Comms] の下段**（2026-08-16・canon/LEDGER.md 0058）。
             //    面としては上の「AIエージェントからの連絡」と同じ実体なので、ここでは別行を持たない。
             //    下段が枠に収まっているかは `menu comms-preview` の絵で見る（4 文面 × 長押し中）。

@@ -8,7 +8,7 @@ namespace FixedCamVr.Input.Tests
     /// <summary>
     /// ControllerModeLogic（Normal / Registration の 2 状態機械）の検証。
     /// トリガー長押しでの Registration 入場 / キャンセル（対称）・registrationActive 追従での確定・
-    /// グリップ長押しでのランリセット要求・長押しラッチ（1 ホールド 1 発火）・進捗・ModeChanged を固定する。
+    /// 右 A 長押しでの体験者リセット要求・長押しラッチ（1 ホールド 1 発火）・進捗・ModeChanged を固定する。
     /// </summary>
     public sealed class ControllerModeLogicTests
     {
@@ -23,14 +23,14 @@ namespace FixedCamVr.Input.Tests
         }
 
         private static void Tick(ControllerModeLogic l, float dt = 0f,
-            bool triggerHeld = false, bool gripHeld = false, bool registrationActive = false,
+            bool triggerHeld = false, bool resetHeld = false, bool registrationActive = false,
             bool faceButtonHeld = false)
         {
             l.Tick(new ControllerModeLogic.Frame
             {
                 deltaTime = dt,
                 triggerHeld = triggerHeld,
-                gripHeld = gripHeld,
+                resetHeld = resetHeld,
                 registrationActive = registrationActive,
                 faceButtonHeld = faceButtonHeld,
             });
@@ -44,11 +44,11 @@ namespace FixedCamVr.Input.Tests
             Tick(l, dt: 0.5f, triggerHeld: false, registrationActive: registrationActive);
         }
 
-        private static void HoldGrip(ControllerModeLogic l, float seconds)
+        private static void HoldReset(ControllerModeLogic l, float seconds)
         {
             float t = 0f;
-            while (t < seconds) { Tick(l, dt: 0.5f, gripHeld: true); t += 0.5f; }
-            Tick(l, dt: 0.5f, gripHeld: false);
+            while (t < seconds) { Tick(l, dt: 0.5f, resetHeld: true, faceButtonHeld: true); t += 0.5f; }
+            Tick(l, dt: 0.5f, resetHeld: false);
         }
 
         // ---- 既定 ----
@@ -127,41 +127,64 @@ namespace FixedCamVr.Input.Tests
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
         }
 
-        // ---- グリップ長押し = ランリセット（モードは変わらない）----
+        // ---- Normal の右 A 長押し = 体験者リセット（モードは変わらない）----
 
         [Test]
-        public void Normal_GripHold_RequestsRunReset_WithoutModeChange()
+        public void Normal_ResetHold_RequestsRunReset_WithoutModeChange()
         {
             var l = Make();
             int resets = 0;
             l.RunResetRequested += () => resets++;
-            HoldGrip(l, 2f);
+            HoldReset(l, 2f);
             Assert.That(resets, Is.EqualTo(1));
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
         }
 
         [Test]
-        public void Normal_GripBelowThreshold_NoReset()
+        public void Normal_ResetBelowThreshold_NoReset()
         {
             var l = Make();
             int resets = 0;
             l.RunResetRequested += () => resets++;
-            Tick(l, dt: 1.0f, gripHeld: true);
-            Tick(l, dt: 0.9f, gripHeld: true); // 1.9s < 2s
-            Tick(l, dt: 0.5f, gripHeld: false);
+            Tick(l, dt: 1.0f, resetHeld: true, faceButtonHeld: true);
+            Tick(l, dt: 0.9f, resetHeld: true, faceButtonHeld: true); // 1.9s < 2s
+            Tick(l, dt: 0.5f, resetHeld: false);
             Assert.That(resets, Is.EqualTo(0));
         }
 
         [Test]
-        public void Registration_GripHold_DoesNothing()
+        public void Registration_ResetHold_DoesNothingAndCannotCarryIntoNormal()
         {
             var l = Make(ControllerModeLogic.Mode.Registration);
             int resets = 0;
             l.RunResetRequested += () => resets++;
-            float t = 0f;
-            while (t < 2f) { Tick(l, dt: 0.5f, gripHeld: true, registrationActive: true); t += 0.5f; }
+            for (int i = 0; i < 6; i++)
+                Tick(l, dt: 0.5f, resetHeld: true, registrationActive: true, faceButtonHeld: true);
             Assert.That(resets, Is.EqualTo(0));
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
+
+            Tick(l, dt: 0.1f, resetHeld: true, registrationActive: false, faceButtonHeld: true);
+            for (int i = 0; i < 6; i++) Tick(l, dt: 0.5f, resetHeld: true, faceButtonHeld: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
+            Assert.That(resets, Is.EqualTo(0), "登録で押した A は Normal のリセットへ持ち越さない");
+
+            Tick(l, dt: 0.1f, resetHeld: false);
+            HoldReset(l, 2f);
+            Assert.That(resets, Is.EqualTo(1), "一度離した後の新しい長押しは受け取る");
+        }
+
+        [Test]
+        public void FirstResetHoldAfterRegistrationExit_IsAccepted()
+        {
+            var l = Make();
+            int resets = 0;
+            l.RunResetRequested += () => resets++;
+
+            Tick(l, registrationActive: true);
+            Tick(l, registrationActive: false);
+            HoldReset(l, 2f);
+
+            Assert.That(resets, Is.EqualTo(1));
         }
 
         // ---- 再入場 ----
@@ -206,96 +229,84 @@ namespace FixedCamVr.Input.Tests
         }
 
         [Test]
-        public void GripHoldProgress_TracksHold()
+        public void ResetHoldProgress_TracksHold()
         {
             var l = Make();
-            Tick(l, dt: 0.5f, gripHeld: true); // 0.5 / 2.0 = 0.25
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0.25f).Within(1e-4f));
-            Tick(l, dt: 0f, gripHeld: false);
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
+            Tick(l, dt: 0.5f, resetHeld: true, faceButtonHeld: true); // 0.5 / 2.0 = 0.25
+            Assert.That(l.ResetHoldProgress01, Is.EqualTo(0.25f).Within(1e-4f));
+            Tick(l, dt: 0f, resetHeld: false);
+            Assert.That(l.ResetHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
         }
 
-        // ---- A / B と重なった握り込みは長押しに数えない（2026-09-11）----
-        // 親指で A を押すと中指が握り込む。閾値を越えた握りをそのまま数えると、体験を始める A の
-        // たびに右の手元で HoldTick が鳴り続け、2 秒握っていればランリセットまで撃たれる。
-
         [Test]
-        public void Grip_StartedWhileFaceButtonHeld_IsVoidedUntilRelease()
+        public void Normal_ResetHold_FiresOnlyOnceUntilRelease()
         {
             var l = Make();
             int resets = 0;
             l.RunResetRequested += () => resets++;
 
-            // A を押しながら握り込み、A を離しても握ったまま 3 秒。
-            Tick(l, dt: 0.1f, gripHeld: true, faceButtonHeld: true);
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0f).Within(1e-4f), "重なった握りは進捗 0（鳴らさない）");
-            Assert.That(l.GripHoldVoided, Is.True);
-            Assert.That(l.VoidedHolds, Is.EqualTo(1));
-            for (int i = 0; i < 6; i++) Tick(l, dt: 0.5f, gripHeld: true);
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0f).Within(1e-4f), "離すまで数えない");
-            Assert.That(resets, Is.EqualTo(0), "ランリセットは撃たれない");
-            Assert.That(l.VoidedHolds, Is.EqualTo(1), "1 回の握りで 1 回だけ数える");
-
-            // 離して握り直せば従来どおり 2 秒で撃たれる。
-            Tick(l, dt: 0.5f, gripHeld: false);
-            Assert.That(l.GripHoldVoided, Is.False);
-            HoldGrip(l, 2f);
+            for (int i = 0; i < 10; i++)
+                Tick(l, dt: 0.5f, resetHeld: true, faceButtonHeld: true);
             Assert.That(resets, Is.EqualTo(1));
+
+            Tick(l, dt: 0.1f, resetHeld: false);
+            HoldReset(l, 2f);
+            Assert.That(resets, Is.EqualTo(2));
         }
 
-        [Test]
-        public void Grip_FaceButtonPressedMidHold_VoidsTheRest()
-        {
-            var l = Make();
-            int resets = 0;
-            l.RunResetRequested += () => resets++;
-
-            Tick(l, dt: 1.0f, gripHeld: true);                       // 1.0 / 2.0 = 0.5
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0.5f).Within(1e-4f));
-            Tick(l, dt: 0.1f, gripHeld: true, faceButtonHeld: true); // 握ったまま A を叩いた
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0f).Within(1e-4f), "叩いた瞬間に進捗は 0 へ");
-            for (int i = 0; i < 6; i++) Tick(l, dt: 0.5f, gripHeld: true);
-            Assert.That(resets, Is.EqualTo(0), "同じ握りでは二度と撃たれない");
-        }
+        // ---- A / B と重なったトリガーは長押しに数えない ----
 
         [Test]
-        public void Grip_StartedWithinQuietAfterFaceButton_IsVoided()
-        {
-            var l = Make();
-            int resets = 0;
-            l.RunResetRequested += () => resets++;
-
-            Tick(l, dt: 0.1f, faceButtonHeld: true);                // A を押して
-            Tick(l, dt: 0.1f);                                      // 離した 0.1 秒後に
-            Tick(l, dt: 0.1f, gripHeld: true);                      // 握り込んだ（静穏期の中）
-            Assert.That(l.GripHoldVoided, Is.True);
-            for (int i = 0; i < 6; i++) Tick(l, dt: 0.5f, gripHeld: true);
-            Assert.That(resets, Is.EqualTo(0));
-            Assert.That(l.GripHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
-        }
-
-        [Test]
-        public void Grip_StartedAfterQuietElapsed_CountsNormally()
-        {
-            var l = Make();
-            int resets = 0;
-            l.RunResetRequested += () => resets++;
-
-            Tick(l, dt: 0.1f, faceButtonHeld: true);
-            Tick(l, dt: ControllerModeLogic.FaceButtonQuietSec + 0.05f); // 静穏期を過ぎてから
-            HoldGrip(l, 2f);
-            Assert.That(resets, Is.EqualTo(1), "静穏期を過ぎた握りは従来どおり撃たれる");
-        }
-
-        [Test]
-        public void Trigger_StartedWhileFaceButtonHeld_DoesNotEnterRegistration()
+        public void Trigger_StartedWhileFaceButtonHeld_IsVoidedUntilRelease()
         {
             var l = Make();
             Tick(l, dt: 0.1f, triggerHeld: true, faceButtonHeld: true);
+            Assert.That(l.TriggerHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
+            Assert.That(l.TriggerHoldVoided, Is.True);
+            Assert.That(l.VoidedHolds, Is.EqualTo(1));
+            for (int i = 0; i < 6; i++) Tick(l, dt: 0.5f, triggerHeld: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
+            Assert.That(l.VoidedHolds, Is.EqualTo(1));
+
+            Tick(l, dt: 0.5f, triggerHeld: false);
+            Assert.That(l.TriggerHoldVoided, Is.False);
+            for (int i = 0; i < 4; i++) Tick(l, dt: 0.5f, triggerHeld: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
+        }
+
+        [Test]
+        public void Trigger_FaceButtonPressedMidHold_VoidsTheRest()
+        {
+            var l = Make();
+            Tick(l, dt: 1.0f, triggerHeld: true);
+            Assert.That(l.TriggerHoldProgress01, Is.EqualTo(0.5f).Within(1e-4f));
+            Tick(l, dt: 0.1f, triggerHeld: true, faceButtonHeld: true);
+            Assert.That(l.TriggerHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
+            for (int i = 0; i < 6; i++) Tick(l, dt: 0.5f, triggerHeld: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
+        }
+
+        [Test]
+        public void Trigger_StartedWithinQuietAfterFaceButton_IsVoided()
+        {
+            var l = Make();
+            Tick(l, dt: 0.1f, faceButtonHeld: true);
+            Tick(l, dt: 0.1f);
+            Tick(l, dt: 0.1f, triggerHeld: true);
             Assert.That(l.TriggerHoldVoided, Is.True);
             for (int i = 0; i < 6; i++) Tick(l, dt: 0.5f, triggerHeld: true);
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
             Assert.That(l.TriggerHoldProgress01, Is.EqualTo(0f).Within(1e-4f));
+        }
+
+        [Test]
+        public void Trigger_StartedAfterQuietElapsed_CountsNormally()
+        {
+            var l = Make();
+            Tick(l, dt: 0.1f, faceButtonHeld: true);
+            Tick(l, dt: ControllerModeLogic.FaceButtonQuietSec + 0.05f);
+            for (int i = 0; i < 4; i++) Tick(l, dt: 0.5f, triggerHeld: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
         }
 
         [Test]
@@ -312,15 +323,13 @@ namespace FixedCamVr.Input.Tests
         public void Reset_ClearsVoidedAndQuiet()
         {
             var l = Make();
-            Tick(l, dt: 0.1f, gripHeld: true, faceButtonHeld: true);
+            Tick(l, dt: 0.1f, triggerHeld: true, faceButtonHeld: true);
             Assert.That(l.VoidedHolds, Is.EqualTo(1));
             l.Reset();
             Assert.That(l.VoidedHolds, Is.EqualTo(0));
-            Assert.That(l.GripHoldVoided, Is.False);
-            int resets = 0;
-            l.RunResetRequested += () => resets++;
-            HoldGrip(l, 2f);                                        // 静穏期も消えているので数える
-            Assert.That(resets, Is.EqualTo(1));
+            Assert.That(l.TriggerHoldVoided, Is.False);
+            for (int i = 0; i < 4; i++) Tick(l, dt: 0.5f, triggerHeld: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
         }
     }
 }

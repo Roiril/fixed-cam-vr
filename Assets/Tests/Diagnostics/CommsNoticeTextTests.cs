@@ -25,6 +25,14 @@ namespace FixedCamVr.Diagnostics.Tests
                             CommsPanel.NoticeText(CommsNotice.TutorialAccepted, ShowLang.Ja));
         }
 
+        [TestCase(ShowLang.Ja, "装置が正常に動くか\nチェックします。XかYを\n1秒間押し続けてください")]
+        [TestCase(ShowLang.En, "Let's check the device.\nHold X or Y\nfor one second.")]
+        [TestCase(ShowLang.Fr, "Vérifions le dispositif.\nMaintenez X ou Y\npendant une seconde.")]
+        public void Tutorial_ExplainsThatItChecksTheDevice(ShowLang lang, string text)
+        {
+            Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.Tutorial, lang));
+        }
+
         [Test]
         public void OnboardingCharacters_ExistInBundledFont()
         {

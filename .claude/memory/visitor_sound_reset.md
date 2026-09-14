@@ -29,7 +29,7 @@ metadata:
 `ResolveBgmDirector()?.ResetRun()` が既にあるので、そこへ並べる。
 
 - `TriggerRunReset()` — 卓の ▶ ラン開始（`control.runEpoch` の変化）
-- `BeginNewVisitorRunLocal()` — 現地の右グリップ 2 秒長押し
+- `BeginNewVisitorRunLocal()` — 現地の右 A 2 秒長押し
 
 ⚠ **`BeginMainRun()` には入れない。** あれは「導入 → 本編」で体験者は代わっていない。
 入れると走行の途中で笑いの方角が引き直され、**人形が歩いて聞こえる**。

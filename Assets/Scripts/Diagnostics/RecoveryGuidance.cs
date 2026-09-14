@@ -45,7 +45,7 @@ namespace FixedCamVr.Diagnostics
     /// ⚠ <b>同じ規約を <c>FixedCamVr.Tracking.RegistrationGuidance</c> も守る</b> — 2026-08-15 まで
     /// あちらは廃語だらけで、<b>同じ 1 枚の面に 2 つの語彙が並んでいた</b>。
     ///
-    /// 操作の呼び方は <see cref="ControllerGuidePanel"/> と揃える（「トリガー2秒」「グリップ2秒」「A」「B」）。
+    /// 操作の呼び方は <see cref="ControllerGuidePanel"/> と揃える（「トリガー2秒」「A」「B」）。
     /// 同じ操作を 2 つの面が違う名前で呼ぶと、現場で照合できない。
     ///
     /// 書式は <see cref="HmdTextStyle"/> の規約（操作は <c>入力：動作</c> / 括弧は全角 /

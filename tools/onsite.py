@@ -574,7 +574,7 @@ def sample_heartbeat(rows: Rows, seconds: float, running_count: int):
 
     for k, jp, why in (
             ("ctrlLConnected", "左コントローラ", "体験者が異変を報告できません（画にも音にも出ません）"),
-            ("ctrlRConnected", "右コントローラ", "スタッフが体験を始められません（右 A / 右グリップ長押し）")):
+            ("ctrlRConnected", "右コントローラ", "スタッフが次の体験者へリセットできません（右 A 2 秒長押し）")):
         vals = [bool((s.get("status") or s).get(k)) for s in samples]
         if vals and not all(vals):
             rows.add(sec, "ng", jp, f"{sum(vals)}/{len(vals)} の観測でしか繋がっていません", why)

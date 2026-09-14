@@ -11,17 +11,16 @@ namespace FixedCamVr.Input
     /// モードモデル（計画 2026-07-20_staff-input-hud-redesign.md）:
     ///   Normal（既定）
     ///     ├ 右トリガー <see cref="_holdSec"/> 秒長押し → Registration（位置合わせ入場）
-    ///     └ 右グリップ <see cref="_holdSec"/> 秒長押し → <see cref="RunResetRequested"/>（ランリセット。モードは変えない）
+    ///     └ 右 A <see cref="_holdSec"/> 秒長押し → <see cref="RunResetRequested"/>（体験者リセット。モードは変えない）
     ///   Registration（既存の N 点登録フロー）
     ///     ├ 登録終了（確定 = registrationActive が false へ）→ Normal
     ///     └ 右トリガー <see cref="_holdSec"/> 秒長押し（キャンセル）→ Normal（入場と対称）
     ///
-    /// 体験者はコントローラを持たないため封印モード（旧 Run/Staff）は廃止した。右手 4 入力
-    /// （A / B / グリップ / トリガー）だけで全操作を賄い、モード遷移はトリガー長押しに集約する。
-    /// 長押し検出（トリガー・グリップの 2 秒ホールド）は 1 回の連続ホールドで 1 回だけ発火する
+    /// スタッフの右手は A / B / トリガーだけを使い、誤操作しやすいグリップは読まない。
+    /// 長押し検出（トリガー・A の 2 秒ホールド）は 1 回の連続ホールドで 1 回だけ発火する
     /// （<see cref="HoldLatch"/>）。
-    /// ⚠ <b>A / B と重なったホールドは離すまで数えない</b>（2026-09-11）。A を押す手は自然に握り込むので、
-    /// 重なりを許すと「体験を始める A」のたびに右の手元が震え、2 秒握っていればランリセットまで撃たれる
+    /// ⚠ <b>A / B と重なったトリガーは離すまで数えない</b>。登録の A 操作や体験者リセットの最中に
+    /// 人差し指が自然にトリガーへ掛かっても、位置合わせを開始・中止しない
     /// （<see cref="Frame.faceButtonHeld"/> / <see cref="FaceButtonQuietSec"/>）。
     /// registrationActive は <c>CourseRegistrationController.IsActive</c>
     /// （外部の真実）を渡す。登録の開始・停止という副作用は Bridge が <see cref="ModeChanged"/> を
@@ -38,29 +37,26 @@ namespace FixedCamVr.Input
             public float deltaTime;
             /// <summary>右トリガー（PrimaryIndexTrigger）が押されているか。長押しで Registration 入場 / キャンセル。</summary>
             public bool triggerHeld;
-            /// <summary>右グリップ（PrimaryHandTrigger）が押されているか。Normal での長押しでランリセット。</summary>
-            public bool gripHeld;
+            /// <summary>右 A が押されているか。Normal での長押しで体験者リセット。</summary>
+            public bool resetHeld;
             /// <summary>登録フロー中か（CourseRegistrationController.IsActive の外部真実）。</summary>
             public bool registrationActive;
             /// <summary>
-            /// 右の A / B（面のボタン）が押されているか。<b>押されているあいだ、グリップ／トリガーの
+            /// 右の A / B（面のボタン）が押されているか。<b>押されているあいだ、トリガーの
             /// 長押しは数えない</b>（<see cref="FaceButtonQuietSec"/> も参照）。
             /// </summary>
             public bool faceButtonHeld;
         }
 
         /// <summary>
-        /// A / B を離してから、グリップ／トリガーの長押しを数え始めてよいまでの間（秒）。
+        /// A / B を離してから、トリガーの長押しを数え始めてよいまでの間（秒）。
         ///
-        /// 親指で A を押すとき、持ち手の中指と人差し指は自然に握り込む。握りが
-        /// <c>OVRInput</c> の閾値（0.5）を越えると、それだけでグリップの長押しが数え始まり、
-        /// 右の手元で HoldTick（連続の振動）が鳴り、2 秒握っていればランリセットが撃たれる。
-        /// 「体験を始める A を押したら右コントローラがしばらく震え続けた」（2026-09-11 ユーザー報告）は
-        /// この形で説明がつく。A を押した手はしばらく握ったままなので、離した直後も数えない。
+        /// A で点を記録するときや体験者リセットをするとき、人差し指がトリガーへ掛かりやすい。
+        /// A を離した直後までトリガーを数えないことで、位置合わせへの誤入場を防ぐ。
         /// </summary>
         public const float FaceButtonQuietSec = 0.3f;
 
-        // 単一ボタンの「N 秒長押しを 1 ホールド 1 回だけ発火」する計時 + ラッチ。トリガー / グリップで各 1 個。
+        // 単一ボタンの「N 秒長押しを 1 ホールド 1 回だけ発火」する計時 + ラッチ。トリガー / A で各 1 個。
         private sealed class HoldLatch
         {
             private float _hold;
@@ -124,7 +120,7 @@ namespace FixedCamVr.Input
         private bool _prevRegActive;
 
         private readonly HoldLatch _trigger = new();
-        private readonly HoldLatch _grip = new();
+        private readonly HoldLatch _reset = new();
 
         private float _holdSec = 2f;
 
@@ -138,17 +134,14 @@ namespace FixedCamVr.Input
         /// <summary>右トリガー長押しの進捗 [0,1]（HUD 表示等の任意用途）。無効化中は 0。</summary>
         public float TriggerHoldProgress01 => _trigger.Progress01(_holdSec);
 
-        /// <summary>右グリップ長押しの進捗 [0,1]（HUD 表示等の任意用途）。無効化中は 0。</summary>
-        public float GripHoldProgress01 => _grip.Progress01(_holdSec);
+        /// <summary>Normal の右 A 長押しの進捗 [0,1]（HUD 表示等の任意用途）。</summary>
+        public float ResetHoldProgress01 => _reset.Progress01(_holdSec);
 
         /// <summary>
-        /// A / B と重なって無効化されたホールドの累計（グリップ・トリガー合算）。
+        /// A / B と重なって無効化されたトリガーホールドの累計。
         /// Bridge が増分を見てログを出す（振動は画にも音にも出ないので、ここが唯一の手掛かり）。
         /// </summary>
         public int VoidedHolds => _voidedHolds;
-
-        /// <summary>いま押されているグリップが A / B と重なって無効化されているか。</summary>
-        public bool GripHoldVoided => _grip.Voided;
 
         /// <summary>いま押されているトリガーが A / B と重なって無効化されているか。</summary>
         public bool TriggerHoldVoided => _trigger.Voided;
@@ -156,7 +149,7 @@ namespace FixedCamVr.Input
         /// <summary>モードが変わった時に (from, to) で発火する。副作用（登録開始/停止等）は購読側で行う。</summary>
         public event Action<Mode, Mode>? ModeChanged;
 
-        /// <summary>Normal でグリップ長押しが完了した時に発火（ランリセット要求）。モードは変わらない。</summary>
+        /// <summary>Normal で右 A 長押しが完了した時に発火（体験者リセット要求）。モードは変わらない。</summary>
         public event Action? RunResetRequested;
 
         /// <summary>長押し閾値（秒）を設定する。</summary>
@@ -168,7 +161,7 @@ namespace FixedCamVr.Input
             _mode = mode;
             _prevRegActive = false;
             _trigger.Reset();
-            _grip.Reset();
+            _reset.Reset();
             _faceQuiet = 0f;
             _voidedHolds = 0;
         }
@@ -177,15 +170,22 @@ namespace FixedCamVr.Input
         public void Tick(in Frame f)
         {
             // A / B が押されているあいだと、離してから FaceButtonQuietSec のあいだは、
-            // グリップ／トリガーのホールドを「コントローラを握っているだけ」とみなして数えない。
+            // トリガーのホールドを指が自然に掛かったものとみなして数えない。
             if (f.faceButtonHeld) _faceQuiet = FaceButtonQuietSec;
             else if (_faceQuiet > 0f) _faceQuiet = Max0(_faceQuiet - f.deltaTime);
             bool blocked = f.faceButtonHeld || _faceQuiet > 0f;
 
-            bool wasVoided = _trigger.Voided || _grip.Voided;
+            bool wasVoided = _trigger.Voided;
             bool triggerFired = _trigger.Tick(f.triggerHeld, f.deltaTime, _holdSec, blocked);
-            bool gripFired = _grip.Tick(f.gripHeld, f.deltaTime, _holdSec, blocked);
-            if (!wasVoided && (_trigger.Voided || _grip.Voided)) _voidedHolds++;
+            if (!wasVoided && _trigger.Voided) _voidedHolds++;
+
+            // Registration の A は点サンプル専用。押したまま Normal へ戻っても、いったん離すまで
+            // 体験者リセットの計時へ持ち越さない。
+            bool resetFired = false;
+            if (_mode == Mode.Normal)
+                resetFired = _reset.Tick(f.resetHeld, f.deltaTime, _holdSec, blocked: false);
+            else
+                _reset.Tick(f.resetHeld, f.deltaTime, _holdSec, blocked: true);
 
             switch (_mode)
             {
@@ -195,15 +195,14 @@ namespace FixedCamVr.Input
                     // （停止の副作用は Bridge が ModeChanged で行うため 1 フレーム遅れる）。
                     if (f.registrationActive && !_prevRegActive) { SetMode(Mode.Registration); break; }
                     if (triggerFired) { SetMode(Mode.Registration); break; }
-                    // グリップ長押し = ランリセット（モードは変えない）。
-                    if (gripFired) RunResetRequested?.Invoke();
+                    // 右 A 長押し = 体験者リセット（モードは変えない）。
+                    if (resetFired) RunResetRequested?.Invoke();
                     break;
 
                 case Mode.Registration:
                     // 出口は「トリガー長押し（キャンセル）」か「登録が確定して IsActive=false」。
                     if (triggerFired) { SetMode(Mode.Normal); break; }
                     if (!f.registrationActive) SetMode(Mode.Normal);
-                    // グリップは Registration では未使用（予備）。
                     break;
             }
 
@@ -215,10 +214,9 @@ namespace FixedCamVr.Input
             if (_mode == next) return;
             Mode prev = _mode;
             _mode = next;
-            // 遷移を起こした（または遷移中に押しっぱなしだった）ホールドは消費し、
-            // 離すまで次の遷移を発火させない（1 ホールド 1 作用）。
+            // モード遷移に使ったトリガーは消費し、離すまで逆向きの遷移を発火させない。
+            // A は Registration 側の Tick が持ち越しを無効化するため、ここで消費しない。
             _trigger.Consume();
-            _grip.Consume();
             ModeChanged?.Invoke(prev, next);
         }
 

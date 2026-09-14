@@ -141,7 +141,7 @@ XML は普通に「1369 中 1 件失敗」のような結果を返すので、**
 ### 「コントローラのボタンが意図と違う / 左右どちらも同じ操作になる」（2026-06-17 実害）
 
 - **`OVRInput.GetDown(Button.One/Two)` はコントローラ未指定だと両手から拾う**。`Button.One`=A(右)**または**X(左)、`Button.Two`=B(右)**または**Y(左)。左手を明示しないと左の X/Y までカメラ操作に化ける
-- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する。**2026-07-20〜 廻リ視は右手 4 入力のみ**（[`OvrControllerBridge`](../../Assets/Scripts/OvrBridge/OvrControllerBridge.cs)：A=Next / B=ステータストグル / 右グリップ長押し=ランリセット / 右トリガー長押し=登録。左手・スティックは読まない）
+- → 用途ごとに `OVRInput.Controller.RTouch` / `LTouch` を明示する。[`OvrControllerBridge`](../../Assets/Scripts/OvrBridge/OvrControllerBridge.cs) は左 X / Y を体験者の報告と題字開始に使う。右は A 2秒長押し=体験者リセット / B=ステータストグル / トリガー2秒長押し=登録。右グリップは読まない。
 - **トグル系ボタンの「初回押下が空振り」（2026-06-18 実害）**: ローカルに `bool _visible=true` 等で持つ状態が**対象側の初期状態とズレる**と、初回押下が「既にその状態」へのトグルになり何も起きない。→ **トグルは真実源（対象の `IsVisible`）を毎回読んで反転する**（`OvrControllerBridge.ToggleStatus()` が `StatusHud.IsVisible` を反転。`HudToggleInput`（Editor H）も同様）
 
 ## ⚠ まとめて直して「直った」は、どれが効いたかを教えてくれない（2026-07-31 実害）

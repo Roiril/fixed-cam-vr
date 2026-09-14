@@ -26,12 +26,12 @@ metadata:
 4. **終了で凍結ラッチを増やさない。** 見えなくなるのは `ShowEndingFader` の黒のおかげで、
    切替は裏で回ったまま。凍結が解けない事故はこの codebase で 4 回起きている。
 
-現地の右グリップ長押しも `ShowControlClient.BeginNewVisitorRunLocal()` を通す（卓の ▶ ラン開始と同じ号令元）。
+現地の右 A 2 秒長押しも `ShowControlClient.BeginNewVisitorRunLocal()` を通す（卓の ▶ ラン開始と同じ号令元）。
 片方だけに処理を足すと非対称ができる。
 
 ## ⚠⚠ 「新しい体験者」で戻すものを足し忘れると、黙って持ち越される（2026-08-15）
 
-号令元は 3 つ（卓の ▶ ＝ `TriggerRunReset` / 現地の右グリップ ＝ `BeginNewVisitorRunLocal` /
+号令元は 3 つ（卓の ▶ ＝ `TriggerRunReset` / 現地の右 A 2 秒長押し ＝ `BeginNewVisitorRunLocal` /
 導入 → 本編 ＝ `BeginMainRun`）。**`ResetRun` を持つ実行体を足しても、ここへ繋がなければ黙って残る。**
 同日に見つけた実例が 2 件ある。
 

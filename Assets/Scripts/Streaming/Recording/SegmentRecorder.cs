@@ -202,7 +202,7 @@ namespace FixedCamVr.Streaming.Recording
         }
 
         /// <summary>
-        /// 現地のランリセット（右グリップ長押し）。卓が居ないので epoch は自分で 1 つ進める
+        /// 現地のランリセット（右 A 2 秒長押し）。卓が居ないので epoch は自分で 1 つ進める
         /// （0 に戻すと前の体験者の録画を上書きしつつ混ざる）。
         /// </summary>
         public void ResetRunLocal() => ResetRun(CurrentEpoch + 1);

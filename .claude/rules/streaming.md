@@ -445,7 +445,7 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
   1 つしか出さないと「引き返して再演された」と「著作が二重に置かれている」を走行のログから区別できない
 - ラン開始でカメラごとの記憶も消す（前の体験者の足跡が次の体験者の 1 周目に化けない）
 
-- **ラン（体験者 1 人分）**: `control.runEpoch`（int・既定 0）の**変化**で LapCounter リセット（lap=1・再シード）+ CueScheduler の once 発火済みクリア。Web ライブ運用パネルの「▶ ラン開始」= **runEpoch++ ＋ `cameraOverride=null` ＋ `activeCue=null` を 1 回の postState で同時に書く**（2026-07-25〜。旧実装は runEpoch だけで、前の体験者のカメラ固定・再生中 cue が次のランへ持ち越された。override / activeCue は端末キャッシュには載らないが show.json には永続するため、卓を立てて Quest を繋いだ瞬間に再適用される＝「歩いても切り替わらない」事故になっていた）。armed なラッチは Web 卓ヘッダ直下の警告バーが show.json 由来で常時可視化する（Unity 未接続でも出る）。PC 不在時は **右グリップ 2 秒長押し** = ローカルランリセット（2026-07-20〜。旧: Staff 左スティック押し込み）。heartbeat に `lap` / `cam` / `mode`（NORMAL/REG）を載せる（Web でラン状態が見える）
+- **ラン（体験者 1 人分）**: `control.runEpoch`（int・既定 0）の**変化**で LapCounter リセット（lap=1・再シード）+ CueScheduler の once 発火済みクリア。Web ライブ運用パネルの「▶ ラン開始」= **runEpoch++ ＋ `cameraOverride=null` ＋ `activeCue=null` を 1 回の postState で同時に書く**（2026-07-25〜。旧実装は runEpoch だけで、前の体験者のカメラ固定・再生中 cue が次のランへ持ち越された。override / activeCue は端末キャッシュには載らないが show.json には永続するため、卓を立てて Quest を繋いだ瞬間に再適用される＝「歩いても切り替わらない」事故になっていた）。armed なラッチは Web 卓ヘッダ直下の警告バーが show.json 由来で常時可視化する（Unity 未接続でも出る）。PC 不在時は **右 A 2 秒長押し** = ローカルランリセット。右グリップは未使用。heartbeat に `lap` / `cam` / `mode`（NORMAL/REG）を載せる（Web でラン状態が見える）
   - **2026-07-28 追記**: 「▶ ラン開始」は `slots=[]`（素材スロットの束縛解除）も書き、`abortTake` を併送する。
     旧実装は**前の体験者のために束縛した素材が次のランの演出に出る**穴があり、走行中の演出も畳めなかった。
     卓のラッチ列挙は `latches()` が単一の正で、警告バー・本番前チェック・⛑・▶ ラン開始 が同じ配列を消費する
@@ -616,7 +616,7 @@ Quest 単体で自動発火する仕組み。計画 [.claude/plans/2026-07-17_pr
 - **ライブ卓の介入は走行中の演出も畳む**（2026-07-26 修正）: `activeCue` / `cameraOverride` が立った瞬間に
   演出を折り畳む。抑止フラグだけ立てて走らせ続けると、演出のカット終了が卓の cue を消し、
   演出の復帰 dip が卓の固定カメラを外していた。**卓がカメラも握っている（override 中）ならカメラは返さない**
-- **現地のランリセット（右グリップ 2 秒長押し）も演出を畳む**（2026-07-26 修正）。卓が無い現場での唯一の出口
+- **現地のランリセット（右 A 2 秒長押し）も演出を畳む**。卓が無い現場での唯一の出口
 - **⚠ Quest 実機未検証**（2026-07-25。EditMode 655/655・fixture 契約テスト・卓のブラウザ実操作は通過）。
   **卓のオーサリング面は演出・カットのリボン 1 つ**（旧グリッド `timeline.js` は削除）。v2 の show.json も
   読み込み時に変換して表示し、💾 保存で `timeline.schema=3` として書き出す。
@@ -783,7 +783,7 @@ lap <= totalLaps || (lap == totalLaps + 1 && camera == order[0])
     旧実装は `ApplyGate()` がこの後にあったため、**本編 1 周目のスタート区間の進入が閉じたゲートに捨てられていた**。
     周回は進行ポインタ方式で、次に `course.order[0]` へ入る時は lap 2 なので (1, order[0]) は二度と来ない
     → **スタート区間だけ 1 周目が録画されず**、それを背景に使う 3 周目の録画カットが実機で無言で飛ぶ。
-- 現地の右グリップ長押しは `ShowControlClient.BeginNewVisitorRunLocal()` を通す（卓の ▶ ラン開始と同じ号令元）。
+- 現地の右 A 2 秒長押しは `ShowControlClient.BeginNewVisitorRunLocal()` を通す（卓の ▶ ラン開始と同じ号令元）。
   旧実装は個別に叩いており、実測滞在が前の体験者と混ざる非対称があった。
 - 卓: `/command` の `advanceIntro` / `endRun`（いずれも世代カウンタ）、ラン状態パネルに相・経過・目安、
   ⚙ 欄で run を編集。**本番前チェックが「走り切る周数を超えた周の演出」を ❌ で出す**（実機だけが黙って落とすため）。
@@ -3146,7 +3146,7 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
   `UnityWebRequestMultimedia` で取得しキャッシュ（`sa://` 焼き込み / ライブ URL 双方）。**擬似トラック id
   `__default__` = APK 同梱の既定クリップ**（音源を web 側に二重に置かず「元の曲へ戻す」が書ける）
 - **区間への配線**: [`TimelineDirector`](../../Assets/Scripts/Streaming/TimelineDirector.cs) がゾーン進入で
-  `ApplySegment`。ラン開始（runEpoch 変化 / 右グリップ長押し）で**ラン既定へ戻る**。show.json の rev が上がる
+  `ApplySegment`。ラン開始（runEpoch 変化 / 右 A 2 秒長押し）で**ラン既定へ戻る**。show.json の rev が上がる
   たびに鳴り直さないよう、既定はシグネチャ比較で変化時のみ適用する
 - **演出（Take）は音も一時占有できる**（2026-07-26）: `timeline.segments[].takes[].bgm` / `hasBgm`（型は区間と同じ
   `ShowBgmDef`）。**画面と同じ規則** — 演出開始で BGM レーンを占有し、終了・中止・ライブ卓の介入・ランリセットで

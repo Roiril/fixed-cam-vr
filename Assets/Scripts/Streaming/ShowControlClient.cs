@@ -1818,7 +1818,7 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 現地の「新しい体験者」（右グリップ 2 秒長押し）。卓の ▶ ラン開始と**同じ号令元**を通す。
+        /// 現地の「新しい体験者」（右 A 2 秒長押し）。卓の ▶ ラン開始と**同じ号令元**を通す。
         ///
         /// 旧実装はコントローラ側が TimelineDirector / SegmentRecorder / LapCounter / BgmDirector を
         /// 個別に叩いており、ラン開始が 2 系統に割れていた（実測滞在が前の体験者の分と混ざる・
@@ -1826,7 +1826,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void BeginNewVisitorRunLocal()
         {
-            Debug.Log("[ShowControl] ラン開始（現地・右グリップ長押し）");
+            Debug.Log("[ShowControl] ラン開始（現地・右 A 2 秒長押し）");
             ReleaseLiveHolds();
             VisitorMarkCount = 0;   // 体験 1 回ぶんの状態（memory/show_run_skeleton.md）
             _dwell.Reset();
@@ -1844,11 +1844,11 @@ namespace FixedCamVr.Streaming
         /// <b>卓が前の体験者のために掛けた「画面の占有」を現地で外す。</b>
         ///
         /// ⚠⚠ 卓の ▶ ラン開始は `cameraOverride` / `activeCue` / `slots` を空にしてから
-        /// `runEpoch` を進めるが、<b>現地の右グリップ長押しはそれらに触れなかった</b>
+        /// `runEpoch` を進めるが、<b>現地の右 A 2 秒長押しはそれらに触れなかった</b>
         /// （サーバへ書けないので当然だが、<b>ローカルの適用状態まで残していた</b>）。
         /// 壊れる手順は現場で普通に起きる:
         /// <b>① 体験者 A の最中に卓でカメラ固定か手動 cue を使う ② PC が落ちる・卓を閉じる・
-        /// Wi-Fi が切れる ③ スタッフが右グリップでリセットして体験者 B を始める</b>。
+        /// Wi-Fi が切れる ③ スタッフが右 A 2 秒長押しでリセットして体験者 B を始める</b>。
         /// B には前の手動映像が残り、ゾーンの自動切替は凍結されたままになる。
         ///
         /// ⚠ 卓が生きているなら次の long-poll で卓の状態が正として戻ってくる（それでよい —
