@@ -22,6 +22,15 @@
       ],
       "port": 8299,
       "autoPort": false
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "website/server.mjs"
+      ],
+      "port": 4173,
+      "autoPort": false
     }
   ]
 }
