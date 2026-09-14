@@ -1,54 +1,40 @@
-import { cp, mkdir, readdir, stat } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { cp, mkdir, rm, lstat } from "node:fs/promises";
+import { dirname, join, resolve, basename } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const websiteRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outputRoot = path.join(websiteRoot, 'dist');
-const entries = ['index.html', 'styles.css', 'main.js', 'scene.js', 'assets'];
+const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const outputRoot = resolve(websiteRoot, "dist");
+const publicFiles = [
+  "index.html",
+  "styles.css",
+  "main.js",
+  "assets/hero-desktop.webp",
+  "assets/hero-small.webp",
+  "assets/hero-mobile.webp",
+  "assets/crt.webp",
+  "assets/camera-01.webp",
+  "assets/camera-02.webp",
+  "assets/camera-03.webp",
+  "assets/yuji-boku.woff2",
+  "assets/shippori-mincho.woff2",
+  "assets/yuji-boku-OFL.txt",
+  "assets/shippori-mincho-OFL.txt"
+];
 
-async function validateSources() {
-  const missing = [];
+if (dirname(outputRoot) !== websiteRoot || basename(outputRoot) !== "dist") {
+  throw new Error("Build output must stay inside website/dist.");
+}
+const previousOutput = await lstat(outputRoot).catch(error => {
+  if (error.code === "ENOENT") return null;
+  throw error;
+});
+if (previousOutput?.isSymbolicLink()) throw new Error("Refusing to remove a linked build directory.");
+await rm(outputRoot, { recursive: true, force: true });
 
-  for (const entry of entries) {
-    try {
-      const metadata = await stat(path.join(websiteRoot, entry));
-      const expectedDirectory = entry === 'assets';
-      if ((expectedDirectory && !metadata.isDirectory()) || (!expectedDirectory && !metadata.isFile())) {
-        missing.push(`${entry} (${expectedDirectory ? 'directory' : 'file'} expected)`);
-      }
-    } catch {
-      missing.push(entry);
-    }
-  }
-
-  if (missing.length > 0) {
-    throw new Error(`Build inputs are missing or invalid:\n- ${missing.join('\n- ')}`);
-  }
-
-  const unsafeAssets = [];
-  async function inspectAssets(directory, relativeDirectory = '') {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const relativePath = path.join(relativeDirectory, entry.name);
-      if (entry.name.startsWith('.') || entry.isSymbolicLink()) unsafeAssets.push(relativePath);
-      else if (entry.isDirectory()) await inspectAssets(path.join(directory, entry.name), relativePath);
-    }
-  }
-
-  await inspectAssets(path.join(websiteRoot, 'assets'));
-  if (unsafeAssets.length > 0) {
-    throw new Error(`Assets contain dotfiles or symbolic links:\n- ${unsafeAssets.join('\n- ')}`);
-  }
+for (const relativePath of publicFiles) {
+  const destination = join(outputRoot, relativePath);
+  await mkdir(dirname(destination), { recursive: true });
+  await cp(join(websiteRoot, relativePath), destination);
 }
 
-await validateSources();
-await mkdir(outputRoot, { recursive: true });
-
-for (const entry of entries) {
-  await cp(path.join(websiteRoot, entry), path.join(outputRoot, entry), {
-    recursive: entry === 'assets',
-    force: true,
-    errorOnExist: false
-  });
-}
-
-console.log(`Built ${entries.length} public entries in ${path.relative(process.cwd(), outputRoot) || 'dist'}.`);
+console.log(`Built ${publicFiles.length} files in dist/`);
