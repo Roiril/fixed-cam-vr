@@ -522,6 +522,10 @@ namespace FixedCamVr.Diagnostics
         private string ShatterDrawState => _veil == null ? "-" : (_veil.ShatterDrawn ? "1" : "0");
         private string ShatterFrozenState => _veil == null ? "-" : (_veil.HasFrozenFrame ? "1" : "0");
         private string ShatterFrozenCount => _veil == null ? "-" : _veil.FrozenFrameCount.ToString();
+        /// <summary>静止画を取れなかった理由（ok / none / unsupported / denied / nocam / noimage / stale / stereo）。</summary>
+        private string ShatterCameraState => _veil == null ? "-" : _veil.FrozenFrameStatus;
+        /// <summary>割れ始めの頭の姿勢を固定したか。0 のまま Frame が進むと破片が頭についてくる。</summary>
+        private string ShatterAnchorState => _veil == null ? "-" : (_veil.ShatterAnchored ? "1" : "0");
 
         /// <summary>段 3 の構造の線の本数。<c>-</c>=シーンに居ない。</summary>
         private string WireState => _wire == null ? "-" : _wire.LineCount.ToString();
@@ -743,6 +747,7 @@ namespace FixedCamVr.Diagnostics
                      $"aper={ApertureState} aperQ={ApertureQuadState} aperRect={ApertureRectState} " +
                      $"shatStyle=frozen shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
                      $"shatFrozen={ShatterFrozenState} shatCopies={ShatterFrozenCount} " +
+                     $"shatCam={ShatterCameraState} shatAnchor={ShatterAnchorState} " +
                      // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
                      $"ignite={IgniteState} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
@@ -1155,6 +1160,8 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" shatDraw=").Append(ShatterDrawState);
                 _sb.Append(" shatFrozen=").Append(ShatterFrozenState);
                 _sb.Append(" shatCopies=").Append(ShatterFrozenCount);
+                _sb.Append(" shatCam=").Append(ShatterCameraState);
+                _sb.Append(" shatAnchor=").Append(ShatterAnchorState);
             }
 
             int active = _registry != null ? _registry.ActiveIndex : -1;

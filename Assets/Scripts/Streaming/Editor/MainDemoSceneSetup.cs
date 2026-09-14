@@ -755,10 +755,17 @@ namespace FixedCamVr.Streaming.EditorTools
             }
 
             bool changed = false;
+            // requestPassthroughCameraAccessPermissionOnStartup は internal。導入の静止画（実景を
+            // 破片へ貼る）に HEADSET_CAMERA が要り、段 1 で初めて求めると体験の途中でダイアログが出る。
+            // 起動時に求めておけば、スタッフが 1 度許可するだけで以後は残る。
+            const System.Reflection.BindingFlags anyInstance =
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Instance;
             foreach (string name in new[] { "SimultaneousHandsAndControllersEnabled",
-                                            "launchSimultaneousHandsControllersOnStartup" })
+                                            "launchSimultaneousHandsControllersOnStartup",
+                                            "requestPassthroughCameraAccessPermissionOnStartup" })
             {
-                var field = type.GetField(name);
+                var field = type.GetField(name, anyInstance);
                 if (field == null || field.FieldType != typeof(bool)) continue;
                 if (field.GetValue(manager) is bool b && b) continue;
                 field.SetValue(manager, true);
@@ -767,8 +774,9 @@ namespace FixedCamVr.Streaming.EditorTools
             if (changed)
             {
                 EditorUtility.SetDirty(manager);
-                Debug.Log("[MainDemoSceneSetup] OVRManager: 素手 + コントローラの同時使用を有効化しました" +
-                          "（CG 人形の腕を体験者の手で動かすため。スタッフは右 A / B / トリガーを使用）。");
+                Debug.Log("[MainDemoSceneSetup] OVRManager: 素手 + コントローラの同時使用と、起動時のカメラ権限要求を有効化しました" +
+                          "（CG 人形の腕を体験者の手で動かすため。スタッフは右 A / B / トリガーを使用。" +
+                          "カメラ権限は導入で実景を破片へ貼るため）。");
             }
         }
 

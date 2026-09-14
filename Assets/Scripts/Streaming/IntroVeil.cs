@@ -13,6 +13,11 @@ namespace FixedCamVr.Streaming
     /// スクリーンの実平面へワールド空間で移動する。静止画像を得られない場合に限り、
     /// <c>Blend Zero SrcAlpha</c> で現実を透かす Passthrough Windows 表示へ戻す。
     ///
+    /// ⚠ <b>破片の開始姿勢は、静止画の有無に関わらず割れ始めの 1 回だけ取る</b>（2026-09-14）。
+    /// 静止画が取れなかった経路で毎フレームの頭の姿勢を渡していたため、割れた実景が
+    /// 頭についてきた（ユーザー報告「フリーズしたパススルーが目の前にずっとついてくる」）。
+    /// 割れた実景はその地点に残り、そこからスクリーンへ集まる。どちらの経路でも同じ。
+    ///
     /// <b>面そのものは head-lock</b>（視界を必ず覆い切るため。ワールド固定にすると頭を振った瞬間に
     /// 覆いの外が見える）。<b>その上で、開口だけがスクリーンの見かけの形をなぞる</b>
     /// （計画 2026-07-30_intro-passthrough-to-screen.md §4 の「枠は現れるだけで、既にそこにある」）。
@@ -116,6 +121,21 @@ namespace FixedCamVr.Streaming
 
         /// <summary>この走行で provider を試したか。失敗時も再試行しない。</summary>
         public bool FrozenFrameAttempted { get; private set; }
+
+        /// <summary>
+        /// 実景の静止画を用意する側（<c>IntroPassthroughCapture</c>）が書く状態。テレメトリが
+        /// <c>shatCam=</c> で出す。<c>none</c>=未配線 / <c>ok</c>=取得できた / それ以外は取れなかった理由。
+        /// </summary>
+        public string FrozenFrameStatus { get; set; } = "none";
+
+        /// <summary>
+        /// 割れ始めの頭の姿勢を固定したか。破片はこの姿勢からワールド空間で動く。
+        /// 静止画の有無に関わらず、割れ始めの 1 回だけ取る。
+        /// </summary>
+        public bool ShatterAnchored { get; private set; }
+
+        /// <summary>固定した割れ始めの頭のワールド位置（テスト・診断用）。</summary>
+        public Vector3 ShatterAnchorPosition => _captureHeadToWorld.GetColumn(3);
 
         /// <summary>いま覆いが何かを隠しているか（＝導入演出中か）。</summary>
         public bool IsActive => _renderer != null && _renderer.enabled;
@@ -518,7 +538,7 @@ namespace FixedCamVr.Streaming
                 right = null;
                 _leftWorldToUv = source.LeftWorldToUv;
                 _rightWorldToUv = source.RightWorldToUv;
-                _captureHeadToWorld = transform.localToWorldMatrix;
+                // 開始姿勢は Apply が割れ始めに固定済み（静止画の有無に関わらず同じ行列）。
                 if (_fractureMesh != null)
                 {
                     IntroFractureMesh.ReselectClosingPieces(
@@ -571,7 +591,13 @@ namespace FixedCamVr.Streaming
             _frozenRight = null;
             _leftWorldToUv = Matrix4x4.identity;
             _rightWorldToUv = Matrix4x4.identity;
+        }
+
+        /// <summary>割れ始めの頭の姿勢を捨てる。走行の境界と覆いを畳むときだけ。</summary>
+        private void ReleaseShatterAnchor()
+        {
             _captureHeadToWorld = Matrix4x4.identity;
+            ShatterAnchored = false;
         }
 
         private static void DestroyFrozenTexture(RenderTexture? texture)
@@ -592,11 +618,20 @@ namespace FixedCamVr.Streaming
             if (w.shatter <= FullyOpenEpsilon && w.frame <= FullyOpenEpsilon)
             {
                 ReleaseFrozenFrame();
+                ReleaseShatterAnchor();
                 FrozenFrameAttempted = false;
                 FrozenFrameCount = 0;
                 ApertureDrawn = false;
                 ApertureClosePeak = 0f;
                 ShatterPeak = 0f;
+            }
+
+            // 割れ始めの頭の姿勢を 1 回だけ固定する。破片はここからワールド空間で動くので、
+            // その後に頭を振っても割れた実景はその地点に残る。静止画が取れなくても同じ。
+            if (w.shatter > FullyOpenEpsilon && !ShatterAnchored)
+            {
+                _captureHeadToWorld = transform.localToWorldMatrix;
+                ShatterAnchored = true;
             }
 
             if (w.shatter > FullyOpenEpsilon && !FrozenFrameAttempted)
@@ -656,8 +691,8 @@ namespace FixedCamVr.Streaming
                 Vector3 headPosition = transform.position;
                 _fractureBlock.SetVector(CurrentHeadPositionId,
                     new Vector4(headPosition.x, headPosition.y, headPosition.z, 1f));
-                _fractureBlock.SetMatrix(CaptureHeadToWorldId,
-                    HasFrozenFrame ? _captureHeadToWorld : transform.localToWorldMatrix);
+                // 静止画の有無に関わらず、割れ始めに固定した姿勢を渡す（毎フレームの頭を渡さない）。
+                _fractureBlock.SetMatrix(CaptureHeadToWorldId, _captureHeadToWorld);
                 _fractureBlock.SetMatrix(LeftWorldToUvId, _leftWorldToUv);
                 _fractureBlock.SetMatrix(RightWorldToUvId, _rightWorldToUv);
                 if (HasFrozenFrame)
@@ -751,6 +786,7 @@ namespace FixedCamVr.Streaming
             if (_mat != null) _mat.SetInt(ZWriteId, 0);
             if (_filter != null && _mesh != null) _filter.sharedMesh = _mesh;
             ReleaseFrozenFrame();
+            ReleaseShatterAnchor();
             // 閉じ切った開口を配ったまま去ると、次に箱を出す誰かが**枠の形に切られる**。
             PublishApertureOpen();
         }

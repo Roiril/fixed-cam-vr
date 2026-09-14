@@ -11,6 +11,12 @@ namespace FixedCamVr.OvrBridge
     /// <summary>
     /// 導入の破砕直前から左右パススルーカメラを準備し、撮影時の姿勢と内部パラメータを
     /// Streaming 側へ渡す。カメラ texture は借用で、保存や CPU readback は行わない。
+    ///
+    /// ⚠ <b>カメラ権限は起動直後に求める</b>（2026-09-14）。段 1 で初めて求めると、
+    /// 体験者の目の前に許可ダイアログが出るうえ、答えが間に合わなければ静止画が取れず、
+    /// 破片は代替経路で描かれる。スタッフが起動時に 1 度許可すれば以後は残る
+    /// （<c>OVRManager.requestPassthroughCameraAccessPermissionOnStartup</c> もシーンへ焼く）。
+    /// 取れなかった理由は <see cref="IntroVeil.FrozenFrameStatus"/> へ書き、テレメトリが <c>shatCam=</c> で出す。
     /// </summary>
     [DefaultExecutionOrder(-50)]
     [DisallowMultipleComponent]
@@ -61,6 +67,19 @@ namespace FixedCamVr.OvrBridge
         {
             if (!Application.isPlaying) return;
             ResolveAndBind();
+        }
+
+        private void Start()
+        {
+            if (!Application.isPlaying) return;
+            // 起動直後に権限を求める。段 1 まで待つと体験の途中でダイアログが出て、間に合わない。
+            if (!PassthroughCameraAccess.IsSupported)
+            {
+                PublishStatus("unsupported");
+                return;
+            }
+            _supportConfirmed = true;
+            RequestPermissionIfNeeded();
         }
 
         private void Update()
@@ -137,20 +156,7 @@ namespace FixedCamVr.OvrBridge
                 if (!_supportConfirmed) return;
             }
 
-            bool authorized = Permission.HasUserAuthorizedPermission(CameraPermission);
-            if (!authorized)
-            {
-                if (!_permissionRequested)
-                {
-                    _permissionRequested = true;
-                    _permissionCallbacks = new PermissionCallbacks();
-                    _permissionCallbacks.PermissionGranted += OnPermissionGranted;
-                    _permissionCallbacks.PermissionDenied += OnPermissionDenied;
-                    _permissionCallbacks.PermissionDeniedAndDontAskAgain += OnPermissionDenied;
-                    Permission.RequestUserPermission(CameraPermission, _permissionCallbacks);
-                }
-                return;
-            }
+            if (!RequestPermissionIfNeeded()) return;
 
             _permissionDenied = false;
             EnsureCameraObjects();
@@ -159,6 +165,27 @@ namespace FixedCamVr.OvrBridge
             _enableAttempted = true;
             _leftCamera.enabled = true;
             _rightCamera.enabled = true;
+        }
+
+        /// <summary>権限が無ければ 1 度だけ求める。戻り値は「いま許可されているか」。</summary>
+        private bool RequestPermissionIfNeeded()
+        {
+            if (Permission.HasUserAuthorizedPermission(CameraPermission)) return true;
+            if (!_permissionRequested)
+            {
+                _permissionRequested = true;
+                _permissionCallbacks = new PermissionCallbacks();
+                _permissionCallbacks.PermissionGranted += OnPermissionGranted;
+                _permissionCallbacks.PermissionDenied += OnPermissionDenied;
+                _permissionCallbacks.PermissionDeniedAndDontAskAgain += OnPermissionDenied;
+                Permission.RequestUserPermission(CameraPermission, _permissionCallbacks);
+            }
+            return false;
+        }
+
+        private void PublishStatus(string status)
+        {
+            if (veil != null) veil.FrozenFrameStatus = status;
         }
 
         private void EnsureCameraObjects()
@@ -214,13 +241,13 @@ namespace FixedCamVr.OvrBridge
         private IntroFrozenFrameSource? ProvideFrozenFrame()
         {
             if (!_supportConfirmed)
-                return Fail("Quest 3 / Quest 3S の Passthrough Camera Access に対応していません");
+                return Fail("unsupported", "Quest 3 / Quest 3S の Passthrough Camera Access に対応していません");
             if (_permissionDenied || !Permission.HasUserAuthorizedPermission(CameraPermission))
-                return Fail("HEADSET_CAMERA 権限が許可されていません");
+                return Fail("denied", "HEADSET_CAMERA 権限が許可されていません");
             if (cameraRig == null || cameraRig.trackingSpace == null
                 || _leftCamera == null || _rightCamera == null
                 || !_leftCamera.IsPlaying || !_rightCamera.IsPlaying)
-                return Fail("左右パススルーカメラが初期化されていません");
+                return Fail("nocam", "左右パススルーカメラが初期化されていません");
 
 #if UNITY_EDITOR
             FrameSample left = Application.isEditor ? _leftSample : _leftRenderedSample;
@@ -230,18 +257,20 @@ namespace FixedCamVr.OvrBridge
             FrameSample right = _rightRenderedSample;
 #endif
             if (left.texture == null || right.texture == null)
-                return Fail("左右パススルーカメラの画像がまだ届いていません");
+                return Fail("noimage", "左右パススルーカメラの画像がまだ届いていません");
 
             float now = Time.unscaledTime;
             if (now - left.observedAt > MaxFrameAgeSec
                 || now - right.observedAt > MaxFrameAgeSec
                 || _leftCamera.Timestamp != _leftSample.timestamp
                 || _rightCamera.Timestamp != _rightSample.timestamp)
-                return Fail("パススルーカメラの画像が古いため、破片への撮影を見送ります");
+                return Fail("stale", "パススルーカメラの画像が古いため、破片への撮影を見送ります");
 
             double deltaMs = Math.Abs((left.timestamp - right.timestamp).TotalMilliseconds);
             if (deltaMs >= MaxStereoDeltaSec * 1000.0)
-                return Fail($"左右カメラの撮影時刻差が {deltaMs:0.0}ms のため、破片への撮影を見送ります");
+                return Fail("stereo", $"左右カメラの撮影時刻差が {deltaMs:0.0}ms のため、破片への撮影を見送ります");
+
+            PublishStatus("ok");
 
             Debug.Log($"[IntroCamera] 静止画用の入力取得: left={left.timestamp:O} "
                       + $"right={right.timestamp:O} delta={deltaMs:0.0}ms "
@@ -251,8 +280,9 @@ namespace FixedCamVr.OvrBridge
                 left.texture, right.texture, left.worldToUv, right.worldToUv);
         }
 
-        private IntroFrozenFrameSource? Fail(string reason)
+        private IntroFrozenFrameSource? Fail(string status, string reason)
         {
+            PublishStatus(status);
             if (!_providerFailureLogged)
             {
                 Debug.LogWarning($"[IntroCamera] {reason}。従来の破片表示へ戻します");

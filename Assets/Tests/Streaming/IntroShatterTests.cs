@@ -4,6 +4,7 @@ using FixedCamVr.Streaming;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.TestTools.Utils;
 
 namespace FixedCamVr.Streaming.Tests
 {
@@ -227,6 +228,82 @@ namespace FixedCamVr.Streaming.Tests
                 Object.DestroyImmediate(left);
                 Object.DestroyImmediate(right);
             }
+        }
+
+        /// <summary>
+        /// 割れ始めの頭の姿勢は、静止画の有無に関わらず 1 回だけ固定され、その後に頭が動いても
+        /// 破片へ渡す行列は変わらない（2026-09-14 ユーザー報告「フリーズしたパススルーが
+        /// 目の前にずっとついてくる」— 代替経路で毎フレームの頭を渡していた）。
+        /// </summary>
+        [TestCase(true)]
+        [TestCase(false)]
+        public void IntroVeil_ShatterAnchorStaysAtStartPoseWhileHeadMoves(bool frozen)
+        {
+            var root = new GameObject("IntroShatterAnchorTest");
+            var left = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            var right = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            try
+            {
+                var veil = root.AddComponent<IntroVeil>();
+                typeof(IntroVeil).GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .Invoke(veil, null);
+                veil.FrozenFrameProvider = () => frozen
+                    ? new IntroFrozenFrameSource(left, right, Matrix4x4.identity, Matrix4x4.identity)
+                    : null;
+                var colorRenderer = (MeshRenderer)typeof(IntroVeil)
+                    .GetField("_fractureRenderer", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetValue(veil)!;
+                var block = new MaterialPropertyBlock();
+
+                var poseA = new Vector3(1f, 1.6f, -2f);
+                root.transform.SetPositionAndRotation(poseA, Quaternion.Euler(0f, 30f, 0f));
+                Matrix4x4 startMatrix = root.transform.localToWorldMatrix;
+                Assert.That(veil.ShatterAnchored, Is.False);
+
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.02f, ignite = 1f });
+                Assert.That(veil.ShatterAnchored, Is.True);
+                Assert.That(veil.HasFrozenFrame, Is.EqualTo(frozen));
+                Assert.That(veil.ShatterAnchorPosition, Is.EqualTo(poseA).Using(Vector3EqualityComparer.Instance));
+                colorRenderer.GetPropertyBlock(block);
+                AssertMatrix(block.GetMatrix("_CaptureHeadToWorld"), startMatrix, "割れ始めの姿勢が渡っていない");
+
+                // 頭を大きく振る。破片へ渡す姿勢は割れ始めのまま。
+                root.transform.SetPositionAndRotation(new Vector3(-0.5f, 1.7f, -1f), Quaternion.Euler(10f, -70f, 0f));
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.36f, ignite = 1f });
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.60f, ignite = 1f });
+                Assert.That(veil.ShatterAnchorPosition, Is.EqualTo(poseA).Using(Vector3EqualityComparer.Instance));
+                colorRenderer.GetPropertyBlock(block);
+                AssertMatrix(block.GetMatrix("_CaptureHeadToWorld"), startMatrix,
+                    frozen ? "静止画ありで破片が頭についてきた" : "静止画なしで破片が頭についてきた");
+                // 現在の頭の位置は毎フレーム更新される（眼からの距離を保つ側だけが使う）。
+                Vector4 head = block.GetVector("_CurrentHeadPosition");
+                Assert.That(new Vector3(head.x, head.y, head.z),
+                    Is.EqualTo(root.transform.position).Using(Vector3EqualityComparer.Instance));
+
+                // 走行の境界で捨て、次の割れ始めの姿勢で取り直す。
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0f, frame = 0f });
+                Assert.That(veil.ShatterAnchored, Is.False);
+                var poseB = new Vector3(3f, 1.5f, 0.5f);
+                root.transform.SetPositionAndRotation(poseB, Quaternion.identity);
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.02f, ignite = 1f });
+                Assert.That(veil.ShatterAnchored, Is.True);
+                Assert.That(veil.ShatterAnchorPosition, Is.EqualTo(poseB).Using(Vector3EqualityComparer.Instance));
+
+                veil.SetHidden();
+                Assert.That(veil.ShatterAnchored, Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(left);
+                Object.DestroyImmediate(right);
+            }
+        }
+
+        private static void AssertMatrix(Matrix4x4 actual, Matrix4x4 expected, string message)
+        {
+            for (int i = 0; i < 16; i++)
+                Assert.That(actual[i], Is.EqualTo(expected[i]).Within(1e-5f), $"{message} (m{i})");
         }
 
         [Test]

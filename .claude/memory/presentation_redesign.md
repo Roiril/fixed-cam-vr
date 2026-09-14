@@ -1,5 +1,21 @@
 # 導入と通信画面の再構築
 
+## 割れた実景は頭についてこない（2026-09-14・LEDGER 0220）
+
+破片の位置はシェーダが `_CaptureHeadToWorld` から世界座標で解く。この行列は **静止画の有無に関わらず
+割れ始めの 1 回だけ** `IntroVeil.Apply` が固定する（`ShatterAnchored`）。それまでは静止画が取れなかった
+代替経路だけ毎フレームの頭を渡していて、割れた実景が頭についてきた（ユーザー報告）。
+静止画が取れた経路は元からワールド固定だったので、**実機で症状が出たなら代替経路に落ちていた**可能性が高い。
+落ちる条件は `shatCam=` に出る（unsupported / denied / nocam / noimage / stale / stereo。ok が正常）。
+権限は起動時に求める（`IntroPassthroughCapture.Start` と `OVRManager.requestPassthroughCameraAccessPermissionOnStartup`。
+後者は `menu scene` がシーンへ焼く）。段 1 で初めて求めると体験の途中でダイアログが出て、答えが間に合わない。
+
+プレビューの頭は元々一度も動かなかったので、頭固定の破片は測れなかった。`menu intro -Set frames=1` の
+`VerifyShatterAnchor` が両経路で頭を 12° 振って測り、`anchor-proof.json` へ書く。
+「通るはず」（割れた後に振ると画が変わる）と「止まるはず」（振った姿勢で割り始めれば正面と同じ画）の両方を流す。
+判定は `analyze-xp-log.py` の `shatAnchor`（0 のまま Frame が終わると FAIL）と `shatCam`。
+実機の走行記録は無い（Quest 未接続）。
+
 2026-09-14の調整後は123コマを実描画。290片を使用し、実景の取得は1回。
 空中の静止と完成面の静止は平均画素差0。入力を替えても保持画像は画素差0。
 再取得では36.71/255。視点移動では24.62/255の画素差を確認した。

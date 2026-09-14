@@ -412,6 +412,8 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly string _showLabel;
             private readonly IntroTiming _timing;
             private float _igniteWritten = -1f;
+            /// <summary>頭のヨー（度）。割れた実景がその場に残るかを測る探針だけが動かす。</summary>
+            private float _headYawDeg;
 
             public IntroTiming Timing => _timing;
 
@@ -735,6 +737,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     throw new InvalidOperationException(
                         $"破片の静止区間が動いた: suspended={suspendedDelta} landed={landedDelta}");
                 Debug.Log($"[IntroViz] motion holds: suspended={suspendedDelta:F4} landed={landedDelta:F4}");
+                VerifyShatterAnchor(saved);
                 _freezeSourceOverride = UnityEngine.Object.Instantiate(_reality);
                 try
                 {
@@ -787,6 +790,70 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
             }
 
+            /// <summary>
+            /// 割れた実景が<b>その地点に残る</b>か（ワールド固定）を実画素で測る。静止画あり／なしの両経路。
+            ///
+            /// 計器の校正を先にやる。「通るはず」＝割れ始めの後に頭を 12° 振ると、破片は世界に残るので
+            /// 画は大きく変わる。「止まるはず」＝頭を 12° 振った姿勢で割り始めれば、頭から見た破片の
+            /// 並びは振らない場合と同じなので、画は変わらない。片方だけでは対象と計器のどちらが
+            /// 悪いか分からない（2026-09-14。以前はプレビューの頭が一度も動かず、頭固定の破片を測れなかった）。
+            /// </summary>
+            private void VerifyShatterAnchor(List<string> saved)
+            {
+                const float yawDeg = 12f;
+                const float p = 0.36f;
+                var proof = new System.Text.StringBuilder("{");
+                Func<IntroFrozenFrameSource?>? provider = _veil.FrozenFrameProvider;
+                try
+                {
+                    foreach (bool frozen in new[] { true, false })
+                    {
+                        string mode = frozen ? "frozen" : "fallback";
+                        _veil.FrozenFrameProvider = frozen ? CaptureProxySource : () => null;
+
+                        // 正面で割り始め、そのまま撮る。
+                        _headYawDeg = 0f;
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_anchor_{mode}_reset", 0f, 0), saved);
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_anchor_{mode}_straight", p, 36), saved);
+                        if (_veil.HasFrozenFrame != frozen)
+                            throw new InvalidOperationException($"{mode} の経路になっていない（HasFrozenFrame={_veil.HasFrozenFrame}）");
+                        if (!_veil.ShatterAnchored)
+                            throw new InvalidOperationException($"{mode} で割れ始めの姿勢を固定していない");
+                        Color32[] straight = _sceneTex.GetPixels32();
+
+                        // 同じ走行のまま頭を振る。破片は世界に残るので画が変わる（通るはず）。
+                        _headYawDeg = yawDeg;
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_anchor_{mode}_turned", p, 36), saved);
+                        float turnedDelta = MeanPixelDifference(straight, _sceneTex.GetPixels32());
+
+                        // 振った姿勢で割り始める。頭から見た並びは正面と同じ（止まるはず）。
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_anchor_{mode}_turned_reset", 0f, 0), saved);
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_anchor_{mode}_turned_start", p, 36), saved);
+                        float restartDelta = MeanPixelDifference(straight, _sceneTex.GetPixels32());
+                        _headYawDeg = 0f;
+
+                        if (turnedDelta < 0.5f)
+                            throw new InvalidOperationException(
+                                $"{mode}: 頭を {yawDeg}° 振っても割れた実景が同じ位置に見える（頭についてきている）: delta={turnedDelta}");
+                        if (restartDelta > 0.05f)
+                            throw new InvalidOperationException(
+                                $"{mode}: 振った姿勢で割り始めた画が正面と違う（計器が壊れている）: delta={restartDelta}");
+                        Debug.Log($"[IntroViz] shatter anchor ({mode}): turned={turnedDelta:F4} restart={restartDelta:F4}");
+                        proof.Append(FormattableString.Invariant(
+                            $"\"{mode}TurnedPixelDelta\":{turnedDelta:0.000000},\"{mode}RestartPixelDelta\":{restartDelta:0.000000},"));
+                    }
+                    proof.Append(FormattableString.Invariant($"\"yawDeg\":{yawDeg:0.0},\"p\":{p:0.00}}}"));
+                    File.WriteAllText(Path.Combine(_outDir, "anchor-proof.json"), proof.ToString());
+                }
+                finally
+                {
+                    _headYawDeg = 0f;
+                    _veil.FrozenFrameProvider = provider;
+                    // 探針の走行を捨て、後続の探針が新しい走行から始まるようにする。
+                    Render(new Shot(IntroStage.Frame, 4, "probe_anchor_done", 0f, 0), saved);
+                }
+            }
+
             private static float MeanPixelDifference(Color32[] a, Color32[] b)
             {
                 if (a.Length != b.Length) throw new InvalidOperationException("比較画像の画素数が一致しない");
@@ -802,7 +869,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 _head.position = inside
                     ? new Vector3(0f, EyeH, 0f)
                     : new Vector3(0f, EyeH, -(_halfM + OutsideStandM));
-                _head.rotation = Quaternion.identity;   // +Z（エリアの中心）を向く
+                // +Z（エリアの中心）を向く。探針だけがヨーを足す。
+                _head.rotation = Quaternion.Euler(0f, _headYawDeg, 0f);
             }
 
             /// <summary>

@@ -3033,10 +3033,20 @@ def analyze(events, others, exp, warns=None):
             if "frozen" in fracture_styles and complete_fracture:
                 frozen = fracture_numbers("shatFrozen")
                 copies = fracture_numbers("shatCopies")
+                # 2026-09-14 から。取れなかった理由（shatCam）と開始姿勢の固定（shatAnchor）。
+                cam_states = [v for v in effect_samples(events, "shatCam") if v not in ("", "-")]
+                cam_last = cam_states[-1] if cam_states else "(未出力)"
                 if not frozen or max(frozen) < 1 or not copies or max(copies) < 1:
-                    verdict("FAIL", "実景の静止画を破片へ描画できていない（カメラ未許可・未取得・代替描画を確認）")
+                    verdict("FAIL", "実景の静止画を破片へ描画できていない"
+                                    f"（shatCam={cam_last}。unsupported=機種 / denied=権限 / nocam=カメラ未初期化 / "
+                                    "noimage=画像未着 / stale=画像が古い / stereo=左右の時刻差 / none=未配線）")
                 else:
-                    verdict("OK", f"実景を静止画として破片へ配布した（取得 {int(max(copies))} 回）")
+                    verdict("OK", f"実景を静止画として破片へ配布した（取得 {int(max(copies))} 回・shatCam={cam_last}）")
+                anchors = fracture_numbers("shatAnchor")
+                if anchors and max(anchors) < 1:
+                    verdict("FAIL", "割れ始めの頭の姿勢を固定できていない（shatAnchor=0 のまま）— 破片が頭についてくる")
+                elif anchors:
+                    verdict("OK", "割れ始めの頭の姿勢を固定した（破片はワールド空間でその地点に残る）")
 
     # -- スクリーンの管の点灯
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。
