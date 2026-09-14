@@ -55,6 +55,22 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void OnboardingNotice_StaysUntilTheFlowReleasesIt()
+        {
+            var l = new CommsPanelLogic();
+            l.Begin(Chars, CommsDelivery.Fade, persistent: true);
+            Advance(l, CommsPanelLogic.InSec + CommsPanelLogic.FadeInSec
+                     + CommsPanelLogic.FadeHoldSec + 10f);
+            Assert.AreEqual(CommsStage.Hold, l.Stage,
+                            "接続確認を時間だけで畳んではいけない");
+
+            l.ReleasePersistent();
+            Assert.AreEqual(CommsStage.Out, l.Stage);
+            Advance(l, CommsPanelLogic.OutSec + 0.2f);
+            Assert.AreEqual(CommsStage.Off, l.Stage);
+        }
+
+        [Test]
         public void TheFrameOpensBeforeAnyLetterIsTyped()
         {
             // 枠が開き切る前に文字が出ると、開いていない側へ字がはみ出す。

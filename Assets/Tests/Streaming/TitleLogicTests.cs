@@ -25,6 +25,18 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void StartGuidance_ExistsInAllThreeLanguages()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (TitleStartGuidance guidance in System.Enum.GetValues(typeof(TitleStartGuidance)))
+            {
+                string text = TitleScreen.StartPromptText(guidance, lang);
+                if (guidance == TitleStartGuidance.Hidden) Assert.That(text, Is.Empty);
+                else Assert.That(text, Is.Not.Empty, $"{lang} / {guidance}");
+            }
+        }
+
+        [Test]
         public void Idle_IsOff_AndShowsNothing()
         {
             var l = new TitleLogic();
@@ -67,43 +79,42 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Hold_ClosesItselfAfterTwoSeconds()
+        public void Hold_WaitsUntilTheVisitorIsReady()
         {
-            // 2026-08-12 ユーザー指示「2s でタイトルが消え今まで通りのパススルーとしよう」。
-            // ⚠ 尺は **A からの通算**（Hold に入ってから 2 秒ではない）。
             var l = new TitleLogic();
             l.Begin();
             l.RequestAdvance();
-            for (int i = 0; i < 30; i++) l.Tick(1f / 60f, Ready);     // 0.5 秒
-            Assert.AreNotEqual(TitleStage.Out, l.Stage, "まだ消え始めてはいけない");
-            for (int i = 0; i < 120; i++) l.Tick(1f / 60f, Ready);    // 通算 2.5 秒
-            Assert.AreEqual(TitleStage.Out, l.Stage, "2 秒で消え始めていない");
+            Run(l, TitleLogic.InSec + 30f, Ready);
+            Assert.AreEqual(TitleStage.Hold, l.Stage,
+                            "本人の短押し前にタイトルを自動で閉じてはいけない");
+            l.RequestDismiss();
+            Assert.AreEqual(TitleStage.Out, l.Stage);
         }
 
         [Test]
-        public void Begin_StartsBlack_WithNoLetters_UntilA()
+        public void Begin_StartsBlack_WithNoLetters_UntilRequested()
         {
             // ⚠ **周回リセット直後は真っ暗で、字は出ていない。**
-            //    A を押すまで時間では何も起きない（前は Begin で字が出始めていた）。
+            //    導入側が呼び出すまで時間では何も起きない。
             var l = new TitleLogic();
             l.Begin();
             for (int i = 0; i < 600; i++) l.Tick(1f / 60f, Ready);    // 10 秒放置
             Assert.AreEqual(TitleStage.Wait, l.Stage);
             Assert.AreEqual(1f, l.Weights.veil, 1e-6f, "黒が張っていない");
-            Assert.AreEqual(0f, l.Weights.glyph, 1e-6f, "A を押す前に字が出ている");
+            Assert.AreEqual(0f, l.Weights.glyph, 1e-6f, "呼び出す前に字が出ている");
             Assert.IsTrue(l.AwaitingInput);
             Assert.IsFalse(l.GlyphShowing);
 
             l.RequestAdvance();
             l.Tick(1f / 60f, Ready);
             Assert.AreEqual(TitleStage.In, l.Stage);
-            Assert.IsTrue(l.GlyphShowing, "A を押しても字が立っていない");
+            Assert.IsTrue(l.GlyphShowing, "呼び出しても字が立っていない");
         }
 
         [Test]
         public void A_TwiceInQuickSuccession_DoesNotSkipTheTitle()
         {
-            // 現場で A を軽く 2 回叩いても、題字が一瞬で消えない。
+            // 呼び出し直後に消去要求が重なっても、題字が一瞬で消えない。
             var l = new TitleLogic();
             l.Begin();
             l.RequestAdvance();
@@ -124,7 +135,7 @@ namespace FixedCamVr.Streaming.Tests
 
             // 押した手応えは**その場で**返す。遅れると押した気がしない。
             l.Tick(Dt, Ready);
-            Assert.Greater(l.Weights.flashAmt, 0f, "A の光は押した直後から出る");
+            Assert.Greater(l.Weights.flashAmt, 0f, "消去の光は要求直後から出る");
 
             // 字は黒より先に消え切る（最後に残るのが黒 ＝ 継ぎ目が 1 回で済む）。
             Run(l, TitleLogic.GlyphGoneSec, Ready);
@@ -234,7 +245,7 @@ namespace FixedCamVr.Streaming.Tests
             l.RequestAdvance();   // 2026-08-12: A で題字を呼び出す段が増えた
             l.ForceClose();
             l.RequestDismiss();
-            Assert.AreEqual(TitleStage.Done, l.Stage, "閉じ切った後の A はタイトルを掘り起こさない");
+            Assert.AreEqual(TitleStage.Done, l.Stage, "閉じ切った後の要求はタイトルを掘り起こさない");
         }
 
         [Test]

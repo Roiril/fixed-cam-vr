@@ -1,6 +1,6 @@
 ---
 name: title-screen
-description: タイトル画面「廻リ視」を触る前に — 描画順で壁を隠している / 題字は版 1 枚（4ch マスク・押し出さない）/ A は閉じるだけ / 素通しへ倒す
+description: タイトル画面「廻リ視」を触る前に — 描画順で壁を隠す / 報告練習後に自動表示 / 左X/Y短押しまで待つ / 素通しへ倒す
 metadata: 
   node_type: memory
   type: project
@@ -69,34 +69,28 @@ VR の立体感は両眼視差が主役なので、**平らな版のまま 3 層
 - **細い画（ルビ・罫）はかすれさせない。** 同じ割合で抜くと読めなくなる。掛けた後で足す
 - **溶ける順のゆらぎは大きく。** 細かいと墨が点々と抜けて、波が横切っているように見えない
 
-## 3. Normal の A は「タイトルを閉じる」だけ
+## 3. 題字は報告練習の続きとして出す
 
-2026-08-12 ユーザー宣言「カメラの手送り機能は要らないです」で**カメラ手動送りごと撤去した**。
-Registration の A（点サンプル）は不変。入力面は右手 4 入力のまま → [[controller-input-final]]。
+2026-09-14 から、題字は左コントローラーの確認と報告練習が終わった後に自動で出る。
+時間では閉じない。本人が準備できたときの左 X / Y の短押しと解放で閉じる。
 
-撤去で連鎖したもの（**次に触る人が驚かないように**）:
+- `TitleStage.Wait`: スイの名乗りと接続確認と報告練習。黒は最初から立っている。
+- `TitleStage.In`: 通信面を畳んだ後、題字を 0.6 秒で出す。
+- `TitleStage.Hold`: 題字下へ開始案内を出し、X / Y の新しい短押しを待つ。
+- `TitleStage.Out`: 既存の光と焼失と黒の開放。
+- `TitleStage.Done`: 既存の歩行誘導と導入演出へ渡す。
 
-- `OvrControllerBridge` の `registry` / `switchDirector` を削除。`nextButton` → **`primaryButton`** へ改名
-- `StreamingLogic.prefab` の YAML と `StreamingLogicPrefabFieldsTests` を同じコミットで合わせた
-  （テストは**ブロックを切り出して**stale キーを見る — `registry:` は同じ prefab の
-  `CameraSwitchInput` にもあるので全文検索だと誤検出する）
-- `ControllerGuidePanel.ShowTransient` は呼び出し元が消えて未参照だった → **2026-08-16 に API ごと削除**
-  （`canon/LEDGER.md` 0052。`richText=false` の面へ色タグを流し込む形だったので、鳴っていたら生の `<color=…>` が出ていた）
-- `CameraSwitchDirector.Next()` は死んでいない（キーボードの `CameraSwitchInput` が使う）
-
-現場でカメラを見たいときは Web 卓の 📺 カメラ固定。**実機のコントローラからは送れない**。
+練習の長押しは題字へ持ち越さない。題字で 0.5 秒を超えて押した場合も開始しない。
+右 A は Normal では未使用。Registration の点サンプルだけに残る。
+カメラ手動送りは撤去済み。設営では Web 卓のカメラ固定を使う。
 
 ## 4. 失敗したら必ず素通しへ倒す
 
-`TitleScreen.IsBlocking` は **実体を組めたときしか true にならない**（シェーダ剥がれ・
-版の欠落なら false）。この値が **`ShowControlClient.StartAuthorizedProvider`**（2026-08-14〜。
-それまでは `UserPresentProvider`）を通じて**導入の開始門**に効くので、
-ここをラッチにすると**タイトルが出せない現場で体験が二度と始まらない**
-（2026-07-31 のシェーダ剥がれと同型）。
+`ShowControlClient.StartAuthorizedProvider` は `HmdOnboardingLogic.StartAuthorized` を読む。
+接続確認と報告練習と題字の消去が終わるまで、歩行接近では本編を始めない。
 
-出口は 2 つある。**両方消さないこと**:
-- 右 A（`RequestDismiss`）
-- 導入が段 0 を出た（卓の ⏭ 等）→ `ForceClose`。**コントローラが死んでいる現場での唯一の出口**
+題字の実体が無い場合は、報告練習の後に開始を許可する。
+卓の進行で導入が段 0 を出た場合は `ForceClose` で題字を畳み、その後の進行を止めない。
 
 ### ⚠⚠ 開始門は「被っているか」と別の provider（2026-08-14）
 
@@ -109,12 +103,12 @@ Registration の A（点サンプル）は不変。入力面は右手 4 入力�
 - 段 0 の**安全網（外 → 中）はこの門を通っていなかった**ので、
   **スタッフが HMD を持って体験エリアを横切るだけで導入が始まり、題字が飛んだ**
 
-いまは `StartAuthorizedProvider`（＝ `!IsBlocking`）が独立し、`IntroLogic` の段 0 の
-**自動の出口すべて**がそれを通る（⏭ だけは通さない）。走行側は
-`TitleScreen.RequestAdvance()` を送って閉じ切るまで待つ ＝ 実機と同じ入り方。
+いまは `StartAuthorizedProvider` が被り検知から独立している。`IntroLogic` の段 0 の
+自動の出口はこの門を通る。自動走行は題字を表示して開始案内を残し、短押しを模して閉じてから
+この門を開く。
 
 ⚠ **`IsYielding`（位置合わせ中・ステータス表示中）を `IsBlocking` に混ぜない。**
-混ぜると**スタッフが右 B を押しただけで体験が始まる**。譲りは `RequestAdvance` の側で弾く。
+混ぜると**スタッフが右 B を押しただけで体験が始まる**。表示と消去の要求側で弾く。
 
 ## 4.6 タイトルの黒はスタッフのステータス表示も塗り潰す（2026-08-14）
 
@@ -123,8 +117,8 @@ Registration の A（点サンプル）は不変。入力面は右手 4 入力�
 カメラの○×や位置合わせの残差を確かめられず「B が効いていない」としか見えなかった。
 
 → **位置合わせ中と同じ扱いで譲る**（`ShowControlClient.StatusVisibleProvider` ←
-`OvrControllerBridge` が `StatusHud.IsVisible` を配線）。譲っている間の A は受け付けない
-（`RequestAdvance` が false を返し、呼び出し側が理由をログと触覚で出す）。
+`OvrControllerBridge` が `StatusHud.IsVisible` を配線）。譲っている間は題字の表示と消去を受け付けない。
+通常の体験は `ShowTitle()` と `DismissTitle()` を使う。診断用の `RequestAdvance()` も false を返す。
 
 `TitleShaderInclusionTests` が「2 本のシェーダが `m_AlwaysIncludedShaders` に入っていること」と
 「版が Resources から読めること」を機械で固定している。
@@ -223,8 +217,8 @@ deadzone 0.5°・止まるのは頭の正面ちょうど）。値は `ScreenAnch
 **背景には本物の封印の箱を置いてある** — 単色の背景で撮ると「黒が開いたとき何が見えるか」を
 判定できない。
 
-⚠⚠ **プレビューは `Begin()` だけでは題字を出さない。** 段 `Wait`（真っ暗・A 待ち）が
-2026-08-12 に入ってから `RequestAdvance()` が要る。直し忘れていて、
+⚠⚠ **プレビューは `Begin()` だけでは題字を出さない。** 段 `Wait` から題字を呼び出す
+`RequestAdvance()` が要る。直し忘れていて、
 **10 枚とも真っ黒な絵を出しながら `menu` は「✓」と報告していた**（2026-08-13 に発覚。
 `menu` の門は出力ディレクトリの更新しか見ない）。いまは `TitlePreview.Summoned()` が
 唯一の入口で、**`hold` の最大の明るさが 120 未満なら LogError** で落ちる
@@ -243,12 +237,12 @@ deadzone 0.5°・止まるのは頭の正面ちょうど）。値は `ScreenAnch
 |---|---|---|
 | `_InkColor` | 生成り (0.88, 0.82, 0.71) | 「廻」「リ」と払い・ルビ・罫。紙に載った墨 |
 | `_AccentColor` | 朱 (0.62, 0.030, 0.035) | **「視」1 字だけ**。画面で唯一の赤 |
-| `_GlowColor` | 灯り (0.82, 0.52, 0.24) | 走る光・A を押した閃光・溶ける削れ際 |
+| `_GlowColor` | 灯り (0.82, 0.52, 0.24) | 走る光・開始時の閃光・溶ける削れ際 |
 
 ⚠ **`_GlowColor` を朱にしない。** 光まで赤くすると、`_AccentColor` の朱が「赤い画の中の赤」になって
 アクセントとして立たなくなる。灯り側を橙に置いて、**赤との差**で朱を立てる。
 なお `TitleVeil._CoreColor` は 2026-08-12 の別作業で既に暖色（暗い漆）へ寄せてあったので触っていない。
-封印の箱の光は同じ日に朱へ変えたので、A を押して黒が開くと**朱の題字 → 朱の六角格子**へ繋がる。
+封印の箱の光は同じ日に朱へ変えたので、題字を明けて黒が開くと**朱の題字 → 朱の六角格子**へ繋がる。
 
 ## 6. まだ入っていないもの
 

@@ -96,6 +96,7 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Diagnostics/TitleNotice.cs',
                                     'Assets/Scripts/Diagnostics/RecoveryGuidance.cs',
                                     'Assets/Scripts/Diagnostics/CommsPanel.cs',
+                                    'Assets/Scripts/Streaming/TitleScreen.cs',
                                     'Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs',
                                     'Assets/Scripts/Diagnostics/OutroReportText.cs',
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',

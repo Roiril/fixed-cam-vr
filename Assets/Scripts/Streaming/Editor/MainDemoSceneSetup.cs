@@ -542,14 +542,12 @@ namespace FixedCamVr.Streaming.EditorTools
             // ⚠ 導入の合図（IntroPrompt）は 2026-08-13 に**廃止**した（canon/LEDGER.md 0033）。
             //   「前進してください」型の小さい文字を出さない、というユーザー判定。
             //   上の DeleteIfExists が既存シーンからも外す。
-            // 3.3. タイトル画面「廻リ視」。導入の段 0（開始待ち）に被さる薄い層で、右 A で閉じる。
+            // 3.3. タイトル画面「廻リ視」。報告練習後に自動で立ち、体験者の左 X / Y 短押しで閉じる。
             //      head-lock なので CenterEyeAnchor 直下。**封印の箱（4920）より後（4950/4960）に描く**
             //      ので、黒を開けば既に立っている箱がそのまま現れる（壁が覗くフレームが構造的に無い）。
             var titleScreen = CreateTitleScreen(centerEye.transform, runDirector, introDirector,
                                                 sealedBox, containment, showControl);
-            // 3.35. 体験前の注意書き（周回リセット直後の真っ暗＝ TitleStage.Wait のあいだだけ）。
-            //       題字と同じ 2.6m に立てる。⚠ 体験者に見せる唯一の文字なので、
-            //       文言を変えたら `unity.ps1 menu hud-font` を再実行する（忘れると実機で豆腐）。
+            // 3.35. 旧注意書き。タブレット移行後は HMD へ出さないが、Editor の文面検査用に残す。
             var noticeGo = new GameObject(TitleNoticeName);
             noticeGo.transform.SetParent(centerEye.transform, worldPositionStays: false);
             var notice = noticeGo.AddComponent<FixedCamVr.Diagnostics.TitleNotice>();
@@ -706,13 +704,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (haptics != null) TrySetObjectRef(bridgeSo, "haptics", haptics);
                 // スタッフ用コントローラ操作ガイド（モード遷移で本文を切替・接続状態を push）。
                 if (guidePanel != null) TrySetObjectRef(bridgeSo, "guidePanel", guidePanel);
-                // 体験者の報告ボタンの面（長押しの進捗と接続状態を push）。
-                // タイトル画面。**A の意味がここで分岐する**（立っていれば閉じる / 無ければカメラ送り）。
+                // 体験者の報告面へ、長押しの進捗と接続状態を push する。
+                // タイトル画面。報告練習後の表示と左 X / Y 短押しによる消去に使う。
                 if (titleScreen != null) TrySetObjectRef(bridgeSo, "titleScreen", titleScreen);
-                // 体験前の注意書きの面。**左 X／Y が言語の切り替えになる段かの門**（2026-09-03）。
-                // ⚠ 未配線でも実行時に間隔を置いて探すので体験は止まらないが、その間は
-                //   「押しても言語が変わらない」に見える。ここで繋いでおくのが正。
-                TrySetObjectRef(bridgeSo, "titleNotice", notice);
                 bridgeSo.ApplyModifiedPropertiesWithoutUndo();
             }
 
@@ -721,7 +715,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / [Comms]（AIエージェントからの連絡 ＋ 報告の押し方とゲージ。体験者に見せる唯一の面） / OutroReport（終幕の報告 4 行・体験前の注意書きと対の面） /Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（タイトル画面「廻リ視」・導入の段 0 に被さる・右 A で閉じる） / OvrBridge（右手 4 入力: A=タイトルを閉じて体験を始める / B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録。カメラ手動送りは 2026-08-12 に撤去）。シーン保存済み。" +
+            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右グリップ 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・startVisible=false・右 B トグル） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / [Comms]（接続確認・報告練習・本編の連絡とゲージ） / OutroReport（終幕の報告 4 行） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（報告練習後に自動表示し、左 X/Y 短押しで閉じる） / OvrBridge（左 X/Y: 報告練習・本編報告・題字開始。右手: B=ステータス / グリップ長押し=ランリセット / トリガー長押し=登録。Normal の A は未使用）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -913,7 +907,7 @@ namespace FixedCamVr.Streaming.EditorTools
             return box;
         }
 
-        // タイトル画面「廻リ視」。黒の中に立体文字だけを置き、右 A で閉じて体験へ入る。
+        // タイトル画面「廻リ視」。黒の中に立体文字だけを置き、左 X / Y の短押しで体験へ入る。
         // head-lock なので CenterEyeAnchor 直下（IntroVeil と同じ理由）。
         // ⚠ **封印の箱・隔離殻への参照を明示する。** タイトルはこの 2 つが実際に立っているのを
         //    確かめてから黒を開ける（見つからないと確かめようが無く、上限 0.5 秒で諦めて開く）。

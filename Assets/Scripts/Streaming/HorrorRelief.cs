@@ -4,9 +4,8 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// <b>ホラー軽減モード。</b>体験前の注意書きが出ているあいだ、体験者が手元（左）の
-    /// どれかのボタンを <see cref="HoldSec"/> 秒<b>長押し</b>すると入る／出る
-    /// （2026-09-05 ユーザー指定・<c>canon/LEDGER.md</c> 0154）。
+    /// <b>ホラー軽減モード。</b>装着前にタブレットで選び、<see cref="VisitorPrefs"/> が導入へ反映する。
+    /// HMD 内の入力では変更しない。
     ///
     /// 効くのは<b>音だけ</b>:
     ///   ① 既存の音（劇伴・敷く音・一撃・打鍵・切替）がすべて <see cref="Gain"/> 倍になる
@@ -43,7 +42,7 @@ namespace FixedCamVr.Streaming
         public const float Gain = 0.5f;
 
         /// <summary>
-        /// 切り替えに要る長押しの秒。<b>ここが唯一の正</b>（入力側は <c>OvrControllerBridge</c>）。
+        /// 旧 HMD 注意書きと Editor 検査が使う長押しの秒。通常の体験ではタブレットで選ぶ。
         ///
         /// ⚠ <b>異変の報告（1.0 秒）より長くする。</b> 注意書きの中では同じボタンの短押しが
         /// 言語の切り替えなので、巡らせるための押下が軽減モードへ化けてはいけない。

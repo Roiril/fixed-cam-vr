@@ -8,16 +8,16 @@ namespace FixedCamVr.Streaming
         /// <summary>出していない（本編中・終了後・そもそも切ってある）。</summary>
         Off,
         /// <summary>
-        /// <b>何も見えない真っ暗。A を待っている。</b>
+        /// <b>何も見えない真っ暗。導入側の呼び出しを待っている。</b>
         /// 2026-08-12 のユーザー指示で足した段 — 周回リセット直後はここに居る。
         /// 字も光も出さない（黒だけ）ので、A が「閉じる」ではなく<b>「呼び出す」</b>に変わった。
         /// </summary>
         Wait,
         /// <summary>字が現れている途中。</summary>
         In,
-        /// <summary>出し切って、A を待っている。</summary>
+        /// <summary>出し切って、体験者の左X/Y短押しを待っている。</summary>
         Hold,
-        /// <summary>A が押された。光が走り、字が中心へ巻き込まれて焼け落ち、黒が開く。</summary>
+        /// <summary>短押しを受けた。光が走り、字が中心へ巻き込まれて焼け落ち、黒が開く。</summary>
         Out,
         /// <summary>閉じ切った。以後この体験では二度と出ない（ランリセットで戻る）。</summary>
         Done,
@@ -59,7 +59,7 @@ namespace FixedCamVr.Streaming
     /// <summary>タイトルが読む観測値。</summary>
     public struct TitleInput
     {
-        /// <summary>A が押された（この 1 フレームだけ true）。</summary>
+        /// <summary>導入側が題字の表示か消去を要求した（この1フレームだけtrue）。</summary>
         public bool dismissRequested;
 
         /// <summary>
@@ -80,7 +80,7 @@ namespace FixedCamVr.Streaming
     /// 段は <see cref="TitleStage"/> の 5 つだけで、<c>ShowPhase</c> も <c>IntroStage</c> も増やさない。
     /// タイトルは導入の<b>段 0（開始待ち）に被さる薄い層</b>で、体験の骨格には手を入れていない。
     ///
-    /// ⚠ <b>閉じ方は 2 つある</b>: A（<see cref="RequestDismiss"/>）と、
+    /// ⚠ <b>閉じ方は 2 つある</b>: 導入側の短押し（<see cref="RequestDismiss"/>）と、
     /// 卓の ⏭ 等で導入が段 0 を出たとき（実行体が <see cref="ForceClose"/> を打つ）。
     /// 片方しか無いと、コントローラが死んでいる現場でタイトルから出られない。
     /// </summary>
@@ -88,7 +88,7 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>
         /// 出すまでの間。
-        /// ⚠ **0.5 → 0 にした**（2026-08-12）。A と同時に音の一撃が鳴るので、
+        /// ⚠ **0.5 → 0 にした**（2026-08-12）。呼び出しと同時に音の一撃が鳴るので、
         /// 字が半秒遅れて出ると「押した音」と「出た字」が別の出来事になる。
         /// </summary>
         public const float InDelaySec = 0f;
@@ -102,19 +102,11 @@ namespace FixedCamVr.Streaming
         public const float InSec = 0.6f;
 
         /// <summary>
-        /// <b>A を押してから字が消え始めるまで</b>（出現の時間を含む）。
-        /// 2026-08-12 ユーザー指示「2s でタイトルが消え今まで通りのパススルーとしよう」。
-        /// ⚠ <b>A からの通算</b>で測る（Hold に入ってから 2 秒ではない）。
-        /// </summary>
-        public const float AutoDismissSec = 2.0f;
-
-        /// <summary>
-        /// 呼び出した直後に A の二度押しで即閉じないための不感時間。
-        /// これが無いと、A を軽く 2 回叩いた現場でタイトルが一瞬で消える。
+        /// 呼び出した直後の別経路による消去要求を捨てる不感時間。
         /// </summary>
         public const float DismissLockoutSec = 0.4f;
 
-        /// <summary>A の手応え。光が字を走り抜ける。<b>押した瞬間に始める</b>（遅れると効かない）。</summary>
+        /// <summary>消去要求の手応え。光が字を走り抜ける。要求を受けた瞬間に始める。</summary>
         public const float FlashSec = 0.42f;
 
         /// <summary>光が走ってから字が焼け始めるまで。</summary>
@@ -131,7 +123,7 @@ namespace FixedCamVr.Streaming
         public const float OpenSec = 1.25f;
 
         /// <summary>
-        /// <b>字が消え切る時刻</b>（A からの通算）。黒が開き始めてよいのはここから。
+        /// <b>字が消え切る時刻</b>（消去要求からの通算）。黒が開き始めてよいのはここから。
         ///
         /// ⚠ 2026-08-13 ユーザー指示「タイトルが消えきってから、パススルーへのフェードが
         /// 始まるようにしてほしい」。それまでは黒が開きながら焼けていたので、
@@ -145,7 +137,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float ConcealWaitMaxSec = 0.5f;
 
-        /// <summary>A を押した瞬間に字が迫る量 (m)。<b>山なので必ず 0 へ戻る</b>。</summary>
+        /// <summary>消去要求を受けた瞬間に字が迫る量 (m)。<b>山なので必ず 0 へ戻る</b>。</summary>
         public const float PushM = 0.06f;
 
         /// <summary>
@@ -169,7 +161,7 @@ namespace FixedCamVr.Streaming
         public bool Active => _stage == TitleStage.Wait || _stage == TitleStage.In
                               || _stage == TitleStage.Hold || _stage == TitleStage.Out;
 
-        /// <summary>A を待っているか（＝ 真っ暗のまま呼び出しを待っている）。</summary>
+        /// <summary>導入側が題字を呼び出す前の、黒だけの待機か。</summary>
         public bool AwaitingInput => _stage == TitleStage.Wait;
 
         /// <summary>字が立っているか。<b>音の一撃を鳴らす縁はここ。</b></summary>
@@ -198,9 +190,9 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// A。<b>段で意味が変わる。</b>
+        /// 導入側からの進行要求。<b>段で意味が変わる。</b>
         ///   Wait → 題字を呼び出す（音の一撃と同時）
-        ///   In / Hold → 閉じる（自動で閉じるので通常は使わない。現場の逃げ道）
+        ///   In / Hold → 閉じる（プレビューと現場の退避路）
         /// </summary>
         public void RequestAdvance()
         {
@@ -210,7 +202,7 @@ namespace FixedCamVr.Streaming
                 _elapsed = 0f;
                 return;
             }
-            if (_elapsed < DismissLockoutSec) return;   // 二度押しで一瞬で消えないように
+            if (_elapsed < DismissLockoutSec) return;
             RequestDismiss();
         }
 
@@ -258,18 +250,15 @@ namespace FixedCamVr.Streaming
             switch (_stage)
             {
                 case TitleStage.Wait:
-                    // 真っ暗のまま待つ。**時間では進まない**（A か ForceClose だけが出口）。
+                    // 真っ暗のまま待つ。時間では進まない（導入側の呼び出しか ForceClose だけが出口）。
                     break;
 
                 case TitleStage.In:
-                    // ⚠ Hold へ移っても `_elapsed` を 0 に戻さない。
-                    //    AutoDismissSec は **A からの通算**で測るため。
                     if (_elapsed >= InDelaySec + InSec) _stage = TitleStage.Hold;
                     break;
 
                 case TitleStage.Hold:
-                    // 2026-08-12 から**時間で閉じる**（A を押しっぱなしにする必要が無い）。
-                    if (_elapsed >= AutoDismissSec) RequestDismiss();
+                    // 体験者が準備できるまで待つ。時間では閉じない。
                     break;
 
                 case TitleStage.Out:

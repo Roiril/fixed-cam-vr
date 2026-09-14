@@ -6,7 +6,8 @@ using UnityEngine;
 namespace FixedCamVr.Diagnostics
 {
     /// <summary>
-    /// **体験前の注意書き。周回リセット直後の真っ暗な待ちの中だけに出る。**
+    /// 旧HMD内注意書き。注意事項と言語選択はタブレットへ移行したため、通常の体験では表示しない。
+    /// Editor の文面検査と過去シーンとの互換用に実体を残す。以下は停止前の表示仕様の記録。
     ///
     /// 立ち位置は <see cref="TitleStage.Wait"/>（黒だけが立っていて A を待っている段）で、
     /// 題字と同じ場所に注意事項を置く。A が押されて題字が立ち上がったら消える
@@ -520,12 +521,15 @@ namespace FixedCamVr.Diagnostics
         /// <summary>
         /// <b>いま注意書きが画に出ているか</b>（＝ 言語を選べる間か）。
         ///
-        /// <c>OvrControllerBridge</c> がこれを見て、左（体験者）のボタンを言語の切り替えへ回す。
+        /// 旧実装では <c>OvrControllerBridge</c> がこれを見て、左の入力を言語切り替えへ回していた。
         /// ⚠ <b>「段が Wait」ではなく「面が組めていて、かつ出る条件を満たしている」</b>を返す —
         /// 面が組めていない現場（フォントが解決できない等）では言語の並びが 1 文字も見えないので、
         /// 押しても何も起きない方が正しい（見えない切り替えは、体験者には壊れているのと同じ）。
         /// </summary>
-        public bool IsShowing => _text != null && ShouldShow();
+        /// <summary>注意事項と言語選択はタブレットへ移ったため、HMDでは常に表示しない。</summary>
+        public const bool HmdDisplayEnabled = false;
+
+        public bool IsShowing => HmdDisplayEnabled && _text != null && ShouldShow();
 
         private void Awake()
         {
@@ -790,6 +794,7 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private bool ShouldShow()
         {
+            if (!HmdDisplayEnabled) return false;
             if (titleScreen == null) return false;
             if (titleScreen.Stage != TitleStage.Wait) return false;
             return titleScreen.AppliedVeil >= VeilUpMin;

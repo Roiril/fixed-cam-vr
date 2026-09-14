@@ -10,10 +10,10 @@ namespace FixedCamVr.Streaming
     ///
     /// 流れは 1 本だけ、しかも**この機の中で閉じている**:
     ///   タブレット → <see cref="VisitorPortal"/>（この機の HTTP）→ <see cref="Set"/>
-    ///   → 注意書きが出ている段で <see cref="ApplyPending"/>（<c>TitleScreen</c>）
+    ///   → 題字を待つ段で <see cref="ApplyPending"/>（<c>TitleScreen</c>）
     ///   → <see cref="ShowLanguage"/> / <see cref="HorrorRelief"/>。
     ///
-    /// <b>正はこの機。</b>卓も PC も持たない。体験者が A を押して注意書きを閉じた瞬間に
+    /// <b>正はこの機。</b>卓も PC も持たない。報告練習後に題字を出し始めた瞬間に
     /// <see cref="Consume"/> が枠を空にする ＝ 次の人に前の人の設定を持ち越さない。
     /// 再起動すればまっさら（永続化しない。持ち越してよいものが 1 つも無い）。
     ///
@@ -90,7 +90,7 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 体験者が注意書きを閉じた（始めた）。枠を空にする ＝ 次の人へ持ち越さない。
+        /// 導入が題字の表示へ進んだ。枠を空にする ＝ 次の人へ持ち越さない。
         /// <b>空にしたら true</b>（もともと空なら false）。
         /// </summary>
         public static bool Consume()

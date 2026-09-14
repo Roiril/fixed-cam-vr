@@ -12,38 +12,23 @@ namespace FixedCamVr.OvrBridge
     /// 唯一の場所として、コントローラ入力を Streaming / Tracking / Diagnostics のコンポーネントに
     /// 転送する橋渡し。配置先は [Streaming] GameObject 等。
     ///
-    /// 操作は<b>右コントローラ 4 入力だけ</b>で完結する（計画 2026-07-20_staff-input-hud-redesign.md）。
+    /// スタッフ操作は<b>右コントローラ 4 入力だけ</b>で完結する。
     /// モードは <see cref="ControllerModeLogic"/> の 2 状態（Normal / Registration）でゲートする:
-    ///   - Normal: A=タイトルを閉じて体験を始める / B=ステータス表示トグル /
+    ///   - Normal: B=ステータス表示トグル /
     ///             グリップ 2 秒長押し=ランリセット / トリガー 2 秒長押し=位置合わせ入場
     ///   - Registration: A=点サンプル(やり直し) / B=確定 / トリガー 2 秒長押し=キャンセル退場
     ///
-    /// ⚠ <b>A のカメラ手動送りは 2026-08-12 に撤去した</b>（ユーザー宣言「カメラの手送り機能は
-    /// 要らないです」）。A は<b>タイトルを閉じる 1 つだけ</b>で、閉じた後の A は何もしない。
+    /// ⚠ <b>A のカメラ手動送りは 2026-08-12 に撤去した</b>。通常時の A は何もしない。
     /// キーボード経由の切替（<c>CameraSwitchInput</c> の Tab / 1-9・Editor 用）は残っている。
     /// 封印モード（旧 Run/Staff）・スティック・cue 試射は撤去した。
     ///
-    /// <b>左は体験者の手。読むのは「どのボタンでも」</b>（2026-09-03・<c>canon/LEDGER.md</c> 0128
-    /// ユーザー指定「体験者が押すボタン、X/Y だけじゃなく、どのボタンを押してもいいようにしてほしい。
-    /// これは、言語選択も報告も全部含めて」）。一覧は <see cref="LeftAnyButtons"/>。
+    /// <b>左は体験者の手。読むのはXとYだけ。</b>
     /// <b>1 秒長押し</b>で異変の報告になる（<see cref="VisitorMarkHoldLogic"/>。
     /// 2026-08-16 に 2 秒から半分へ・<c>canon/LEDGER.md</c> 0059）。
     /// 押し方と進捗は<b>AIエージェントからの連絡の面（<see cref="CommsPanel"/>）の下段</b>が出す
     /// （2026-08-16・<c>canon/LEDGER.md</c> 0058。コントローラに追従する面は廃止した）。
-    /// ⚠ <b>どれを押しても同じ</b>という 0050 の芯は変わっていない（被った体験者に手元は見えない）。
-    /// 変わったのは「同じ」の範囲が X／Y の 2 つから<b>手で握って押せるもの全部</b>になったこと。
-    /// <b>読まないのは 2 つ</b> — スティックの倒し（ボタンではなく、親指が乗っているだけで倒れる）と、
-    /// 左のメニュー（Quest 側の予約で、押されると体験が中断する）。
-    /// ⚠⚠ <b>体験前の注意書きが出ているあいだだけ、同じボタンが言語の切り替えになる</b>
-    /// （2026-09-03 ユーザー指定・日本語 / English / Français）。<b>入力は増えていない</b> —
-    /// 段で意味が変わるだけで、A が「カメラ送り」から「タイトルを閉じる」へ変わったのと同じ形。
-    /// そのあいだ報告のゲージは進めない（言語を選んだだけで異変の報告が 1 件立たないように）。
-    /// ⚠⚠ <b>2026-09-05 から、その同じボタンの長押しがホラー軽減モードになる</b>
-    /// （ユーザー指定・<c>canon/LEDGER.md</c> 0154）。注意書きの中では
-    /// <b>短押し（離した時）= 次の言語 ／ <see cref="HorrorRelief.HoldSec"/> 秒長押し = 軽減モード</b>で、
-    /// <b>入力もボタンも 1 つも増えていない</b>（2026-07-23 の凍結は生きている）。
-    /// 押した瞬間の言語切替は<b>離した時へ移した</b> — 押した瞬間のままだと、長押しの途中で
-    /// 必ず言語が 1 つ進む。
+    /// 導入では左コントローラの接続と位置を確認し、同じ 1 秒長押しを一度練習する。
+    /// 練習は本編の報告件数へ渡さない。題字が出たあとは X / Y の短押しで本編へ進む。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
     /// </summary>
     public sealed class OvrControllerBridge : MonoBehaviour
@@ -54,12 +39,11 @@ namespace FixedCamVr.OvrBridge
         [Tooltip("演出モードのラベルを heartbeat へ載せる ShowControlClient（Screen 上）。未割当なら Start で自動取得。")]
         [SerializeField] private ShowControlClient? showControl;
 
-        [Tooltip("タイトル画面（[Title] 上）。**A の行き先**。null だと A は Normal で何もしない" +
-                 "（タイトルが出ないだけで、ほかの操作は従来どおり動く）。")]
+        [Tooltip("タイトル画面（[Title] 上）。導入の報告練習後に自動表示し、左 X / Y の短押しで閉じる。")]
         [SerializeField] private TitleScreen? titleScreen;
 
         [Header("Mappings（右コントローラのみ）")]
-        [Tooltip("タイトルを閉じて体験を始める（Normal）/ 点サンプル・やり直し（Registration）に使う右手ボタン。既定 A。")]
+        [Tooltip("点サンプル・やり直し（Registration）に使う右手ボタン。Normal では未使用。既定 A。")]
         [SerializeField] private OVRInput.Button primaryButton = OVRInput.Button.One;   // A (右)
 
         [Tooltip("ステータス表示トグル（Normal）/ 登録確定（Registration）に使う右手ボタン。既定 B。")]
@@ -108,76 +92,17 @@ namespace FixedCamVr.OvrBridge
         /// </summary>
         private const float HoldTickDeadSec = 0.3f;
 
-        /// <summary>
-        /// <b>体験者が押せるもの、全部</b>（2026-09-03 ユーザー指定「体験者が押すボタン、X/Y だけじゃなく、
-        /// どのボタンを押してもいいようにしてほしい。これは、言語選択も報告も全部含めて」）。
-        ///
-        /// 名前はすべて<b>左にしか無い物理ボタン</b>なので、右（スタッフ）と取り違えようが無い
-        /// （右の A / B / トリガー / グリップは `RButton` 系・`RTouch` 明示で読んでいる）。
-        ///
-        /// ⚠ <b>スティックの倒し（<c>LThumbstickUp</c> 等）は入れない。</b> あれはボタンではなく、
-        /// 歩いているあいだ親指が乗っているだけで倒れる。1 秒握れば報告になる以上、
-        /// <b>倒しっぱなしが異変の報告に化ける</b>。押し込み（<c>LThumbstick</c>）は入れてある。
-        ///
-        /// ⚠⚠ <b>左のメニュー（<c>RawButton.Start</c>）も入れない</b>（2026-09-03 に一度入れて外した）。
-        /// <c>docs/onsite-checklist.md</c> が<b>現場の事実として「Quest 側の予約で、押されると体験が
-        /// 中断する」</b>と書いている。届くかどうかは実機で確かめていないが、どちらに転んでも入れる利が無い:
-        /// 予約なら押しても何も来ない（入れても無意味）、部分的に届くなら
-        /// <b>言語が変わると同時にシステムの面が出る</b>（いちばん悪い）。
-        /// 手で握って押せるものは下の 5 つで尽きているので、「どれを押してもいい」は成立する。
-        ///
-        /// ⚠ 記号（三本線のメニュー字など）をこのファイルへ書かない。<b>フォントの収集元なので、
-        /// コメントの字まで焼かれる</b>（元フォントに無い字は「欠落」として毎回報告に出る）。
-        /// </summary>
-        private static readonly OVRInput.RawButton[] LeftAnyButtons =
-        {
-            OVRInput.RawButton.X,
-            OVRInput.RawButton.Y,
-            OVRInput.RawButton.LIndexTrigger,  // 人差し指
-            OVRInput.RawButton.LHandTrigger,   // 握り
-            OVRInput.RawButton.LThumbstick,    // スティックの押し込み（倒しではない）
-        };
-
-        /// <summary>
-        /// <see cref="LeftAnyButtons"/> をまとめたもの。<b>一覧から導出する</b> —
-        /// 手で書くと片方だけ足して「握りでは報告できるのに言語が変わらない」が起きる。
-        /// </summary>
-        private static readonly OVRInput.RawButton LeftAnyMask = OrAll(LeftAnyButtons);
-
-        private static OVRInput.RawButton OrAll(OVRInput.RawButton[] buttons)
-        {
-            OVRInput.RawButton mask = OVRInput.RawButton.None;
-            for (int i = 0; i < buttons.Length; i++) mask |= buttons[i];
-            return mask;
-        }
+        private const OVRInput.RawButton LeftReportMask =
+            OVRInput.RawButton.X | OVRInput.RawButton.Y;
 
         // モード状態機械（純ロジック。入力を bool/float で Tick する）。
         private readonly ControllerModeLogic _modeLogic = new();
 
         // 体験者の報告ボタン（左のどれか）の長押し（純ロジック）。
         private readonly VisitorMarkHoldLogic _markHold = new();
-
-        /// <summary>
-        /// <b>注意書きの中だけ</b>の長押し ＝ ホラー軽減モードの出入り（2026-09-05・
-        /// <c>canon/LEDGER.md</c> 0154）。<b>報告と同じ純ロジックを使い回す</b> —
-        /// 欲しいのは「閾値で 1 回だけ発火し、離すまでラッチし、1 フレームの dt を切る」で、
-        /// それは <see cref="VisitorMarkHoldLogic"/> がちょうど持っているもの。
-        /// 秒数だけ違う（<see cref="HorrorRelief.HoldSec"/>）。
-        /// </summary>
-        private readonly VisitorMarkHoldLogic _reliefHold = new();
-
-        /// <summary>前フレームに左のどれかを押していたか（<b>離した瞬間</b>を作るため）。</summary>
-        private bool _leftWasHeld;
-
-        /// <summary>
-        /// いまの押下は<b>長押しとして使い切った</b>（＝ 離しても言語を巡らせない）。
-        /// ⚠ 無いと、軽減モードへ入った手を離した瞬間に言語まで 1 つ進む。
-        /// </summary>
-        private bool _leftPressConsumed;
-
-        // 言語を選んでいたあいだ押していた手を、そのまま報告として数えないためのラッチ。
-        // 一度離すまで true（`ControllerModeLogic` の長押しラッチと同じ約束）。
-        private bool _markNeedsRelease;
+        private readonly HmdOnboardingLogic _onboarding = new();
+        private int _titleSequence = -1;
+        private bool _markNeedsRelease = true;
 
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
@@ -196,13 +121,6 @@ namespace FixedCamVr.OvrBridge
         // 連絡の面を毎フレーム探しに行かないための再試行の間隔（面が無い構成での 90Hz 全走査を断つ）。
         private const float CommsResolveRetrySec = 2f;
         private float _commsRetryAt;
-
-        [Tooltip("体験前の注意書きの面（[Title] 上）。**左 X／Y で言語を巡らせてよい段かの門**。" +
-                 "null でも体験は従来どおり動く（言語が日本語から変わらないだけ）。")]
-        [SerializeField] private TitleNotice? titleNotice;
-        // 注意書きの面も間隔を置いて探す（面が無い構成での 90Hz 全走査を断つ。comms と同じ理由）。
-        private const float NoticeResolveRetrySec = 2f;
-        private float _noticeRetryAt;
 
         // コントローラの生死（heartbeat 経由で卓が読む）。⚠ 接続と位置は別物 — 電源が入っていれば
         // 接続は true だが、カメラから見えていないと姿勢は無効（memory/hmd 系の既知の罠）。
@@ -228,9 +146,8 @@ namespace FixedCamVr.OvrBridge
             //    出せない現場で**体験が二度と始まらない**（2026-07-31 のシェーダ剥がれと同型）。
             if (showControl != null)
             {
-                var title = titleScreen;
                 showControl.UserPresentProvider = () => OVRPlugin.userPresent;
-                showControl.StartAuthorizedProvider = () => !(title != null && title.IsBlocking);
+                showControl.StartAuthorizedProvider = () => _onboarding.StartAuthorized;
             }
 
             // スタッフがステータスを開いているあいだ、タイトルの黒（0.3m・queue 4950）が
@@ -260,9 +177,8 @@ namespace FixedCamVr.OvrBridge
                 showControl.ControllerStateProvider = () => (_lConnected, _lTracked, _rConnected, _rTracked);
             }
 
-            // 注意書きの中の長押し（ホラー軽減モード）。**余韻は要らない** — 「報告しました」に
-            // あたる出し先が無く、状態そのものは面の 1 行が出し続ける。
-            _reliefHold.Configure(HorrorRelief.HoldSec, confirmSec: 0f);
+            _onboarding.Reset();
+            _titleSequence = titleScreen != null ? titleScreen.Sequence : -1;
 
             _modeLogic.Configure(LongPressSec);
             _modeLogic.Reset(ControllerModeLogic.Mode.Normal);
@@ -320,11 +236,8 @@ namespace FixedCamVr.OvrBridge
 
             // トラッキングロスト（HMD 非装着 = プロキシ）を SignalLostFx へ通知。初期化前（instance==null）は
             // present 扱いにして誤発火を避ける。位置トラッキングの一時ロストは resume-gap 側で拾う。
-            if (signalFx != null)
-            {
-                bool present = OVRManager.instance == null || OVRManager.isHmdPresent;
-                signalFx.ReportTrackingLost(!present);
-            }
+            bool hmdPresent = OVRManager.instance == null || OVRManager.isHmdPresent;
+            signalFx?.ReportTrackingLost(!hmdPresent);
 
             // 表示レートの要求（起動直後だけ。成功か時間切れで以後は何もしない）。
             // ここに置くのは、既存シーン / prefab へコンポーネントを 1 個増やさずに済ませるため。
@@ -332,7 +245,7 @@ namespace FixedCamVr.OvrBridge
 
             // ---- 入力を 1 回だけ読む（同じボタンを複数箇所で拾わないため）----
             // Button.One/Two はコントローラ未指定だと両手から拾う（One=A|X 等）ため、必ず RTouch を明示する。
-            bool aDown = OVRInput.GetDown(primaryButton, OVRInput.Controller.RTouch); // A: タイトルを閉じる / マーク・やり直し
+            bool aDown = OVRInput.GetDown(primaryButton, OVRInput.Controller.RTouch); // A: 登録のマーク・やり直し
             bool aHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);     // A: 押しっぱなし（登録のホールド平均用）
             bool bDown = OVRInput.GetDown(statusButton, OVRInput.Controller.RTouch); // B: ステータストグル / 確定
             bool bHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);     // B: 押しっぱなし（長押しの無効化の門）
@@ -341,20 +254,18 @@ namespace FixedCamVr.OvrBridge
             bool gripDown = OVRInput.GetDown(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.RTouch);
             bool triggerDown = OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
 
-            // ---- 体験者の手（左）。**どのボタンでもよい**（2026-09-03・canon/LEDGER.md 0128）----
-            // ⚠⚠ **`Button.Three` / `Button.Four` を `Controller.LTouch` と組み合わせてはいけない。**
-            //    LTouch の仮想マップは `Three = RawButton.None` / `Four = RawButton.None` で
-            //    （`OVRInput.cs` の `OVRControllerLTouch`）、**押しても永遠に false になる**。
-            //    Three=X / Four=Y が生きているのは左右をまとめた `Controller.Touch` のマップだけで、
-            //    `ShouldResolveController` は LTouch 指定のとき Touch を弾く。
-            //    2026-08-15 まで記録ボタンはこの形で書かれていて、**実機で一度も発火していなかった**
-            //    （実機で押した記録が無く、ログにも `[XP] ev=mark` が 1 行も出ていない）。
-            // ⇒ **物理ボタンを名指しする `RawButton` を使う**（下の一覧は全部左にしか無い名前）。
-            bool leftMarkHeld = OVRInput.Get(LeftAnyMask, OVRInput.Controller.LTouch);
+            // ---- 体験者の手（左）。X / Y を物理ボタン名で読む -----------------------
+            // Button.Three / Four と LTouch の組み合わせは SDK の仮想マップ上で None になる。
+            // RawButton を使い、練習と本編の両方を同じ入力に揃える。
+            bool xHeld = OVRInput.Get(OVRInput.RawButton.X, OVRInput.Controller.LTouch);
+            bool yHeld = OVRInput.Get(OVRInput.RawButton.Y, OVRInput.Controller.LTouch);
+            bool leftMarkHeld = OVRInput.Get(LeftReportMask, OVRInput.Controller.LTouch);
 
             // 監視入力のダウンエッジ受理（アクションに繋がらなくても鳴る＝「入力は届いている」）。
             // アクション実行時は switch 内で Action を後着し、ピーク優先で Ack を昇格させる。
-            if (aDown || bDown || gripDown || triggerDown) haptics?.Ack();
+            if (bDown || gripDown || triggerDown
+                || (aDown && _modeLogic.Current == ControllerModeLogic.Mode.Registration))
+                haptics?.Ack();
 
             // 右コントローラの状態をガイドパネルへ push（Diagnostics は OVRInput 非依存のため直読み不可）。
             //
@@ -432,137 +343,81 @@ namespace FixedCamVr.OvrBridge
             }
             ControllerModeLogic.Mode mode = _modeLogic.Current;
 
-            // ---- 体験者の報告（左 X / 左 Y の 2 秒長押し）-------------------------------
-            // 紙（調査依頼書）の「気になるものが見えたら、手元のボタンを押してください」が指しているのがこれ。
-            // **体験者が持つ唯一の入力**で、左コントローラは他に何も読まない。
-            //
-            // ⚠ 体験の進行には 1 ビットも使わない（押さなくても同じように進む）。
-            //    通信面は、異常演出の表示中なら「異常を検出しました」、平常時なら
-            //    「異常は検出されませんでした」を返す（進行は変わらない）。
-            // ⚠ **短押しでは通さない**（2026-08-15）。歩きながら握り込むので、押した瞬間に決まると
-            //    「触れただけ」が報告になる。位置合わせの点サンプルと同じ「意思のある長押し」にする。
-            // ⚠ 位置合わせ中（スタッフ作業）は数えない。作業のあいだ手元でゲージが伸びない。
-            // ---- 言語の選択（体験前の注意書きが出ているあいだだけ）------------------------
-            // 2026-09-03 ユーザー指定「言語選択をできるようにしてほしい。日本語、英語、フランス語の
-            // 3 種類で。最初の注意書きが表示されている間に、体験者がもつコントローラーから
-            // 切り替えできるように」。
-            //
-            // ⚠ **入力を増やしていない。** 左で読むのは X／Y だけのまま（2026-07-23 の凍結と
-            //    2026-08-15 の「左は X/Y の 2 つだけ」は生きている）。段で意味が変わるだけで、
-            //    これは A が「カメラ送り」から「タイトルを閉じる」へ変わったのと同じ形。
-            // ⚠⚠ **門は「面が画に出ているか」**（`TitleNotice.IsShowing`）。段だけを見ると、
-            //    フォントが解決できず面が組めていない現場で**見えない切り替えが起きる**。
-            // ⚠ **選べる間は報告のゲージを進めない。** 押した瞬間に言語が変わるので、
-            //    そのまま握り込むと「言語を選んだだけ」が異変の報告として数えられる
-            //    （終幕の報告の数が、まだ始まってもいないのに 1 から始まる）。
-            if (titleNotice == null && Time.unscaledTime >= _noticeRetryAt)
+            // ---- 導入（左の接続確認 → 報告練習 → 題字）-------------------------------
+            // ランの開始と同じ縁で純ロジックも戻す。練習成功は RecordVisitorMark へ渡さない。
+            if (titleScreen != null && titleScreen.Sequence != _titleSequence)
             {
-                titleNotice = FindObjectOfType<TitleNotice>();
-                if (titleNotice == null) _noticeRetryAt = Time.unscaledTime + NoticeResolveRetrySec;
+                _titleSequence = titleScreen.Sequence;
+                _onboarding.Reset();
+                _markHold.Reset();
+                _markNeedsRelease = true;
             }
-            bool langChoosing = titleNotice != null && titleNotice.IsShowing;
 
-            // ---- 注意書きの中では、同じボタンが 2 つの意味を持つ（2026-09-05・0154）----
-            //   短押し（離した時）= 次の言語 ／ 長押し = ホラー軽減モードの出入り
-            //
-            // ⚠⚠ **押した瞬間に言語を巡らせる形（2026-09-03〜09-04）は使えなくなった。**
-            //    長押しの途中で必ず言語が 1 つ進むので、Français を選んだ人が軽減モードへ
-            //    入るたびに日本語へ戻る（逆に、軽減モードへ入るたび言語が変わる）。
-            //    **1 押下に 2 つの意味を持たせるなら、決着は離した時にしか置けない。**
-            //
-            // ⚠⚠ **離れたかは「まとめたマスクの level 読み」で見る**（`GetUp` を 1 つずつ聞かない）。
-            //    握りに指を掛けたまま X を離す持ち方だと、`GetUp(X)` は true になるのに
-            //    手はまだ押している ＝ 短押しとして確定してしまう。
-            //    `OVRInput.Get` はマスクの OR なので、**全部離れた瞬間**だけが縁になる。
-            //    ⚠ 逆に `GetDown` はマスクで呼んではいけない（`OVRInput.GetResolvedButtonDown` は
-            //      前フレームにマスクのどれかが押されていたら問答無用で false）。
-            //      押した瞬間へ戻すことがあれば、必ず 1 つずつ聞くこと。
-            if (langChoosing)
-            {
-                // ⚠⚠ **押していた長さは Tick の前に読む。** 離したフレームの `Tick` は
-                //    計時を 0 へ戻すので、後で読むと**どの押下も 0 秒 ＝ 単押し**になる。
-                float leftHeldSec = _reliefHold.ElapsedSec;
-                if (_reliefHold.Tick(Time.deltaTime, leftMarkHeld))
-                {
-                    HorrorRelief.Toggle();
-                    haptics?.LeftMark();   // 受理の 1 発（`LeftNotify` は連絡の合図なので混ぜない）
-                    _leftPressConsumed = true;
-                    Debug.Log($"[Relief] ホラー軽減モード {(HorrorRelief.Enabled ? "ON" : "OFF")}"
-                              + $"（長押し {HorrorRelief.HoldSec:0.0}s / 切り替え "
-                              + $"{HorrorRelief.ChangeCount} 回目）");
-                }
-                // ⚠⚠ **言語が変わるのは単押しだけ**（2026-09-05 ユーザー指定・0159
-                //    「長押しした後に離すと言語が変わるのが面倒なので、単押し以外で言語は
-                //    変わらないように」）。成立した長押しは上で食べてあるが、**成立する手前で
-                //    離した回**（1.4 秒など）は単押しと区別が付かず、軽減モードを狙って
-                //    押すたびに言語が 1 つ進んでいた。⇒ **0.5 秒（`ShowLanguage.TapMaxSec`）を
-                //    超えて握っていたら、離しても何も起きない。**
-                // ⭐ 境目は面のゲージが出る所と同じ ＝ **ゲージが出たら言語は変わらない**。
-                if (_leftWasHeld && !leftMarkHeld)
-                {
-                    if (!_leftPressConsumed && ShowLanguage.IsTap(leftHeldSec)
-                        && ShowLanguage.Cycle()) haptics?.LeftMark();
-                    _leftPressConsumed = false;
-                }
-                // 面へゲージを渡す（2026-09-05・0155）。⚠ **長押しが成立した後は満杯のまま**
-                //    （`VisitorMarkHoldLogic` は離すまでラッチする）＝ 「効いた」が画に残る。
-                HorrorRelief.SetHoldProgress(_reliefHold.Progress01);
-            }
-            else
-            {
-                // ⚠⚠ **面が閉じたら計時を捨てる。** 捨てないと、体験者が押しっぱなしのまま
-                //    スタッフが右 A を押した回に、**本編に入ってから軽減モードが切り替わる**
-                //    （面が無いので何が起きたか誰にも見えない）。
-                _reliefHold.Reset();
-                _leftPressConsumed = false;
-                // ⚠ ゲージも 0 へ。次に注意書きを出したとき伸びたまま始まらないように。
-                HorrorRelief.SetHoldProgress(0f);
-            }
-            _leftWasHeld = leftMarkHeld;
+            // HMDを持たない自動走行は、題字を自前で検証した後に開始門を true へ差し替える。
+            // 通常時はこの provider 自体が _onboarding.StartAuthorized を返すので、この分岐へ入らない。
+            if (showControl != null && showControl.StartAuthorized && !_onboarding.StartAuthorized)
+                _onboarding.CompleteForAutomation();
 
-            // ⚠⚠ **言語を選んだ手を、そのまま報告として数えない**（2026-09-03）。
-            //    どのボタンでも通るようになったので、**押したまま**注意書きが閉じられる筋が現実に出た
-            //    （体験者が握りに指を掛けて言語を巡らせ、その間にスタッフが右 A を押す）。
-            //    ゲートを外した瞬間から積み始めるので、**本編の 1 秒後に身に覚えの無い報告が 1 件立つ**。
-            //    ⇒ 選んでいるあいだに押していたら、**一度離すまで数えない**。
-            if (langChoosing && leftMarkHeld) _markNeedsRelease = true;
+            _lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
+            _lTracked = _lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
+            HmdOnboardingAction onboardingAction = _onboarding.Tick(new HmdOnboardingInput
+            {
+                dt = Time.unscaledDeltaTime,
+                hmdPresent = hmdPresent,
+                leftConnected = _lConnected,
+                leftPositionValid = _lTracked,
+                xHeld = xHeld && mode == ControllerModeLogic.Mode.Normal,
+                yHeld = yHeld && mode == ControllerModeLogic.Mode.Normal,
+                titleAvailable = titleScreen != null && titleScreen.IsBuilt,
+                titleReady = titleScreen != null && titleScreen.ReadyForStart,
+                titleDone = titleScreen == null || titleScreen.ClosedAlready,
+            });
+
+            if (onboardingAction == HmdOnboardingAction.TutorialAccepted)
+            {
+                haptics?.LeftMark();
+                Debug.Log("[Onboarding] 報告の練習を受け取りました");
+            }
+            else if (onboardingAction == HmdOnboardingAction.DismissTitle)
+            {
+                if (titleScreen != null && titleScreen.DismissTitle()) haptics?.Fire();
+            }
+
+            // タイトル表示は一時的な譲り（ステータス面・位置合わせ）が終わったあとも再試行する。
+            if (_onboarding.Stage == HmdOnboardingStage.Title
+                && titleScreen != null && titleScreen.Stage == TitleStage.Wait)
+                titleScreen.ShowTitle();
+
+            ApplyOnboardingPresentation();
+
+            // ---- 本編の報告（左 X / Y の 1 秒長押し）-------------------------------
+            // 導入が完了するまでは本編件数を一切触らない。位置合わせ中と締めの冒頭でも積まない。
+            if (!_onboarding.StartAuthorized) _markNeedsRelease = true;
             else if (!leftMarkHeld) _markNeedsRelease = false;
-
-            // ⚠⚠ **締めに入って最初の数秒は、握っても溜まらない**（`canon/LEDGER.md` 0178・
-            //    ユーザー指定「4-A に入ってから 4s は、押しても反応しない」）。
-            //    ⚠ **入力ごと止める。** 押させてから捨てると、ゲージだけ溜まって何も起きない
-            //      ＝ 装置が壊れて見える（「反応しない」は「溜まらない」で表す）。
             bool markTooEarly = showControl != null && showControl.IsMarkTooEarly;
             bool markFired = _markHold.Tick(Time.deltaTime,
-                                            leftMarkHeld && !langChoosing && !_markNeedsRelease
+                                            leftMarkHeld && _onboarding.StartAuthorized
+                                            && !_markNeedsRelease
                                             && !markTooEarly
                                             && mode == ControllerModeLogic.Mode.Normal);
             if (markFired)
             {
                 showControl?.RecordVisitorMark();
-                haptics?.LeftMark();   // 返すのは「受け取った」の 1 種類だけ
+                haptics?.LeftMark();
             }
-            // 押し方とゲージは **[Comms] の下段**へ出す（2026-08-16・canon/LEDGER.md 0058）。
-            // 左コントローラに追従する面は廃止した。
-            // ⚠ 位置の有効性はこの面の見え方には効かない（頭に追従する）が、観測（ctrlL）と
-            //    人形の左腕が動いているかの手掛かりのために一緒に渡す。
-            // ⚠ 左の生死は面の有無に関わらず測る（卓の heartbeat が読む）。
-            //   面が無い構成でも、体験者の入力が死んでいることは分からなければならない。
-            _lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
-            _lTracked = _lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
             if (comms != null)
             {
-                bool lConnected = _lConnected;
-                bool lTracked = _lTracked;
-                comms.SetControllerState(lConnected, lTracked);
-                comms.SetMarkState(_markHold.Progress01, _markHold.Confirming);
+                comms.SetControllerState(_lConnected, _lTracked);
+                if (_onboarding.StartAuthorized)
+                    comms.SetMarkState(_markHold.Progress01, _markHold.Confirming);
+                else
+                    comms.SetMarkState(_onboarding.TutorialProgress01,
+                                       _onboarding.Stage == HmdOnboardingStage.TutorialAccepted);
             }
-            // 長押しの手応えも左へ返す（右の HoldTick とは別の時間軸）。
-            // 進捗 1 で HoldTick は止まり、代わりに上の LeftMark が鳴る。
-            // ⚠ **注意書きの中では軽減モードのランプが同じ口から出る**（2026-09-05）。
-            //    どちらか一方しか進まない（面が出ているあいだ報告は数えない）ので、
-            //    大きい方を渡せば足りる。左が受け取る振動は 3 つのままで、4 つ目を作っていない。
-            haptics?.SetLeftHoldProgress(Mathf.Max(_markHold.Progress01, _reliefHold.Progress01));
+            float visitorHoldProgress = _onboarding.StartAuthorized
+                ? _markHold.Progress01
+                : _onboarding.TutorialProgress01;
+            haptics?.SetLeftHoldProgress(visitorHoldProgress);
 
             // 長押しカウント進行を HoldTick 振動へ（トリガー入場 / グリップ ランリセット / 登録の 0.5s ホールド
             // 平均サンプリングの最大を流す。登録中は SampleHoldProgress01 が 0.5 秒ホールドの進行ランプを鳴らす）。
@@ -593,46 +448,46 @@ namespace FixedCamVr.OvrBridge
 
                 case ControllerModeLogic.Mode.Normal:
                 default:
-                    // A: **真っ暗から題字を呼び出す**（2026-08-12 のユーザー指示で意味が変わった。
-                    //    それまでは「立っている題字を閉じる」だった）。呼び出したあとは
-                    //    2 秒で自動的に閉じてパススルーへ渡るので、押すのは 1 回だけ。
-                    //    Normal での A はこれ 1 つだけで、タイトルが立っていなければ何も起きない。
-                    //
-                    //    カメラ手動送りは 2026-08-12 に撤去した（ユーザー宣言「カメラの手送り機能は
-                    //    要らないです」）。設営でカメラを見たいときは Web 卓の 📺 カメラ固定か、
-                    //    Editor のキーボード（CameraSwitchInput の Tab / 1-9）を使う。
-                    if (aDown)
-                    {
-                        if (titleScreen != null && titleScreen.RequestAdvance())
-                        {
-                            haptics?.Fire();   // 体験の開始。短押しより強い手応えを返す
-                            Debug.Log("[Title] A を受け取りました（真っ暗なら題字を呼び出す / 立っていれば閉じる）");
-                        }
-                        else
-                        {
-                            // ⚠ **空振りを黙らせない**（2026-08-14）。旧実装は成功したときだけログを出して
-                            //    いたので、押しても何も起きない現場では「A が壊れた」としか見えなかった。
-                            //    もう閉じている（＝スタッフの二度押し）は正常なので振動は返さない。
-                            string why = titleScreen == null
-                                ? "タイトルがシーンに居ない（menu scene で焼き直す）"
-                                : titleScreen.DescribeAdvanceBlock();
-                            bool benign = titleScreen != null && titleScreen.ClosedAlready;
-                            if (benign) Debug.Log($"[Title] A は何もしませんでした（{why}）");
-                            else
-                            {
-                                haptics?.Error();
-                                Debug.LogWarning($"[Title] A が効きませんでした（{why}）");
-                            }
-                        }
-                    }
                     // B: ステータス表示トグル（真実源 IsVisible の反転）。
                     if (bDown) { ToggleStatus(); haptics?.Action(); }
 
-                    // ⚠ 体験者の報告（左 X / 左 Y の 2 秒長押し）は**モードの外**で数える（上を見る）。
+                    // 右 A は通常時には意味を持たない。タイトル開始は体験者の左 X / Y 短押しだけ。
+                    // 体験者の報告はモードの外で数える（上を見る）。
                     //    ここに置くと位置合わせから戻った 1 フレームで進捗の押し戻しが起きる。
                     // グリップ長押し=ランリセット / トリガー長押し=Registration 入場は _modeLogic が担う。
                     break;
             }
+        }
+
+        private void ApplyOnboardingPresentation()
+        {
+            CommsNotice notice = CommsNotice.None;
+            switch (_onboarding.Prompt)
+            {
+                case HmdOnboardingPrompt.Greeting: notice = CommsNotice.Greeting; break;
+                case HmdOnboardingPrompt.ControllerDisconnected: notice = CommsNotice.ControllerDisconnected; break;
+                case HmdOnboardingPrompt.ControllerUntracked: notice = CommsNotice.ControllerUntracked; break;
+                case HmdOnboardingPrompt.ControllerStaff: notice = CommsNotice.ControllerStaff; break;
+                case HmdOnboardingPrompt.ControllerConfirmed: notice = CommsNotice.ControllerConfirmed; break;
+                case HmdOnboardingPrompt.Tutorial: notice = CommsNotice.Tutorial; break;
+                case HmdOnboardingPrompt.TutorialShort: notice = CommsNotice.TutorialShort; break;
+                case HmdOnboardingPrompt.TutorialAccepted: notice = CommsNotice.TutorialAccepted; break;
+                case HmdOnboardingPrompt.TutorialReconnect: notice = CommsNotice.TutorialReconnect; break;
+                case HmdOnboardingPrompt.Reminder: notice = CommsNotice.TutorialReminder; break;
+            }
+            if (notice == CommsNotice.None) comms?.ClearOnboardingNotice();
+            else comms?.SetOnboardingNotice(notice);
+
+            TitleStartGuidance guidance = TitleStartGuidance.Hidden;
+            if (_onboarding.Stage == HmdOnboardingStage.Title)
+            {
+                if (!_lConnected) guidance = TitleStartGuidance.Reconnect;
+                else if (!_lTracked) guidance = TitleStartGuidance.MoveIntoView;
+                else if (_onboarding.NeedsRelease) guidance = TitleStartGuidance.Release;
+                else if (_onboarding.TitleLongPressHint) guidance = TitleStartGuidance.ShortPress;
+                else guidance = TitleStartGuidance.Ready;
+            }
+            titleScreen?.SetStartGuidance(guidance);
         }
 
         // ランリセット（現地手段）。LapCounter.ResetRun が周回リセット + cue 発火済みクリア + 現在ゾーン再シードを行う。
@@ -660,8 +515,6 @@ namespace FixedCamVr.OvrBridge
                 FindObjectOfType<ShowRunDirector>()?.BeginRun();
             }
             // 体験者が代わるので、進行中の報告の長押しと余韻も落とす。
-            // ⚠ 離し待ちのラッチは**落とさない** — ここで消すと、注意書きが出直した瞬間に
-            //   握ったままの手が報告として数え直される（それを止めるためのラッチなので）。
             _markHold.Reset();
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: ランリセット（右グリップ 2 秒長押し）");

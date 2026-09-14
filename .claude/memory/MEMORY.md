@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [hmd_onboarding.md](hmd_onboarding.md) - 2026-09-14。HMD 内は左コントローラーの接続確認 → X/Y の報告練習 → 本人の短押しでタイトル開始 → 歩行誘導。注意・言語選択はタブレット。入力持ち越しと切断時の復帰条件。
+
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) - CommsTakeoverの時刻境界で再発したfloat比較の注意。境界ぴったりと低FPSを別に検証する。
 
 - [comms_takeover.md](comms_takeover.md) - 2026-09-14。否定報告の出力中に文頭から侵食が追いつく。完成前に文字と打鍵と顔が失われる。二つ目の発話を出さない。復路では復帰する。

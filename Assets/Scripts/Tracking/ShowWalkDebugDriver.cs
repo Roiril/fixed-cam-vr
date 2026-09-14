@@ -29,10 +29,7 @@ namespace FixedCamVr.Tracking
     ///   <c>adb shell am start -e xpwalk 1 -n com.roiril.mawarimi/com.unity3d.player.UnityPlayerActivity</c>
     /// ログは全て <c>[XPWalk]</c> タグ。体験そのものの観測は <c>[XP]</c>（ShowTelemetryHost）が出す。
     ///
-    /// ⚠⚠ <b><c>-e relief 1</c> を足すと、注意書きの中でホラー軽減モードへ入った走行になる</b>
-    /// （2026-09-05・<c>canon/LEDGER.md</c> 0154）。あのモードは<b>左コントローラの長押しでしか
-    /// 入れない</b>ので、素の走行では音の経路が 1 度も通らない ＝
-    /// <b>実機で効いているかを確かめる手段が無い</b>。
+    /// ⚠⚠ <b><c>-e relief 1</c> を足すと、タブレットでホラー軽減を選んだ状態を模した走行になる</b>。
     /// ⚠ <b>校正は両側を流す</b>（`~/.claude/rules/work-style.md` §2-3）— 付けない走行で
     /// <c>relief=0/0/1.00/…</c>、付けた走行で <c>relief=1/1/0.50/…</c> が出て初めて、
     /// 対象と計器のどちらが正しいかが決まる。
@@ -58,14 +55,13 @@ namespace FixedCamVr.Tracking
         /// <summary>導入が終わるのを待つ上限 (秒)。超えたら諦めて歩き出す（導入の不具合も観測対象）。</summary>
         private const float IntroWaitLimitSec = 90f;
 
-        /// <summary>タイトルが閉じ切るのを待つ上限 (秒)。A から Done まで実測 4.85 秒。</summary>
+        /// <summary>題字の表示開始から閉じ切るまでを待つ上限 (秒)。</summary>
         private const float TitleWaitLimitSec = 15f;
 
         /// <summary>
-        /// A を押す前に、真っ暗な待ち（注意書きが出ている段）を保つ秒数。
-        /// <b>走行の画に注意書きを写すためだけの間</b>で、実機の運用ではここは数十秒ある。
+        /// 題字が立ってから短押しを模すまでの秒数。開始案内を走行の画へ残す。
         /// </summary>
-        private const float NoticeReadSec = 4f;
+        private const float TitleReadSec = 4f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -165,38 +161,35 @@ namespace FixedCamVr.Tracking
             // これが無いと run.intro.startLineId を使う設定では導入が永久に始まらない。
             if (_show != null) _show.UserPresentProvider = () => true;
 
-            // ⚠⚠ **タイトルは実機と同じく A で閉じる**（2026-08-14）。それまで被り検知の provider が
-            //    「被っている」と「タイトルが立っていない」を兼ねていたので、ここで全体を true に
-            //    上書きした瞬間にタイトルを飛び越して導入が始まり、**題字は走行の画に 1 枚も
-            //    写っていなかった**（＝ タイトル画面が一度も自動検証されていなかった）。
-            //    いまは開始承認が別 provider なので、A を送らないと段 0 から進まない。
+            // コントローラーの無い自動走行では、報告練習の代わりに題字だけを実物の入口から検証する。
+            // 開始門は題字が閉じ切るまで false のまま保つ。
             var title = FindObjectOfType<TitleScreen>();
             if (title != null && title.IsBlocking)
             {
-                // ⚠ **注意書きを読む間を置く**（2026-08-14）。実機ではスタッフが位置合わせを終えて
-                //    周回リセットし、体験者に被せてから A を押すので、真っ暗な待ち（`TitleStage.Wait`）は
-                //    数十秒ある。ここで即座に A を送ると**待ちが 1 フレームも無く、注意書きが
-                //    走行の画に 1 枚も写らない**（安全の掲示なのに、実機で読めるか確かめる手段が無い）。
-                // ⚠⚠ **読む間より先に入る。** 実機の体験者は注意書きを読みながら長押しして、
-                //    そのあとスタッフが A を押すので、**注意書きが出ているあいだ陽気な曲が鳴る**
-                //    （`canon/LEDGER.md` 0154 のユーザー指定）。読む間の後に入れると、
-                //    走行では入った 0.3 秒後に題字が立つので**注意書きの最中に鳴った証拠が残らない**
-                //    （2026-09-05 の走行 20260905_100203 が実際にそうだった）。
-                // ⚠ `TitleScreen.BeginTitle` が落とすので、A を押す前でなければ次のリセットで消える。
-                //    実機の押下と同じ入口（`Toggle`）を通す。
                 if (ExtraPresent("relief"))
                 {
                     FixedCamVr.Streaming.HorrorRelief.Toggle();
-                    Debug.Log("[XPWalk] ホラー軽減モードへ入った（-e relief 1）— "
-                              + "既存の音が半分になり、陽気な曲が流れる走行になる");
+                    Debug.Log("[XPWalk] タブレットの軽減選択を模した（-e relief 1）");
                 }
 
-                Debug.Log("[XPWalk] 注意書きを読む間（真っ暗な待ち）");
-                yield return new WaitForSeconds(NoticeReadSec);
-
-                if (title.RequestAdvance()) Debug.Log("[XPWalk] タイトルを A で閉じた（実機と同じ入り方）");
-                else Debug.LogWarning($"[XPWalk] タイトルの A が効かない（{title.DescribeAdvanceBlock()}）");
                 float titleWait = 0f;
+                while (!title.ReadyForStart && title.IsBlocking && titleWait < TitleWaitLimitSec)
+                {
+                    if (title.Stage == TitleStage.Wait) title.ShowTitle();
+                    titleWait += Time.deltaTime;
+                    yield return null;
+                }
+                if (title.ReadyForStart)
+                {
+                    title.SetStartGuidance(TitleStartGuidance.Ready);
+                    Debug.Log("[XPWalk] 題字とX/Y開始案内を表示した");
+                    yield return new WaitForSeconds(TitleReadSec);
+                    if (title.DismissTitle()) Debug.Log("[XPWalk] X/Y短押しを模して題字を閉じた");
+                }
+                else
+                {
+                    Debug.LogWarning($"[XPWalk] 題字を表示できない（{title.DescribeAdvanceBlock()}）");
+                }
                 while (title.IsBlocking && titleWait < TitleWaitLimitSec)
                 {
                     titleWait += Time.deltaTime;
@@ -210,6 +203,11 @@ namespace FixedCamVr.Tracking
             {
                 Debug.Log("[XPWalk] タイトルがシーンに居ない（そのまま導入へ）");
             }
+
+            // 自動走行には左コントローラーが無い。題字の検証後だけ開始門を開く。
+            // OvrControllerBridge はこの上書きを見て導入面を畳み、本編の連絡へ返す。
+            if (_show != null) _show.StartAuthorizedProvider = () => true;
+            yield return null;
 
             // 開始ラインが著作されていれば、実機と同じ入り方をする ＝ その線を横切ってから中へ入る。
             string startLineId = _run != null ? (_run.IntroDef?.startLineId ?? "") : "";
@@ -225,7 +223,7 @@ namespace FixedCamVr.Tracking
 
             // ⚠⚠ **歩行誘導が出る現場では、円へ着かないと導入が始まらない**（canon/LEDGER.md 0079）。
             //    接近では抜けないので、ここを飛ばすと走行は 30 秒の時間切れを待つことになる。
-            //    タイトルを A で閉じるのと同じ理屈 — **走行側が実機と同じ入り方をする**。
+            //    題字を短押しで閉じるのと同じ理屈 — **走行側が実機と同じ入り方をする**。
             yield return StartCoroutine(WalkToGuideSpot(layout));
 
             // ⚠ **導入は箱の外で流れる**（canon/LEDGER.md 0005）。終わるまで中へ入らない —
@@ -336,7 +334,7 @@ namespace FixedCamVr.Tracking
         ///
         /// <b>なぜ走行側に要るか</b>: 4 周目 A の締め（<c>durKind:"untilMark"</c>）は体験者の
         /// 左 X / Y でしか進まない。走行はコントローラを持たないので、押す真似をしないと
-        /// <b>締めのカットは実機で一度も検証されない</b>（タイトルの A を押す真似と同じ理由）。
+        /// <b>締めのカットは実機で一度も検証されない</b>（題字の短押しを模すのと同じ理由）。
         ///
         /// ⚠ **押すのは 1 回だけ**。実機の体験者と同じ回数にしないと、終幕の報告数が嘘になる。
         /// ⚠ 走っている演出が待っている時だけ押す（誰も待っていない所で押すと、

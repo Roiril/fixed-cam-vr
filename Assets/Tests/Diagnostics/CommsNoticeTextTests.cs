@@ -3,6 +3,8 @@
 using FixedCamVr.Diagnostics;
 using FixedCamVr.Streaming;
 using NUnit.Framework;
+using TMPro;
+using UnityEngine;
 
 namespace FixedCamVr.Diagnostics.Tests
 {
@@ -16,6 +18,50 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public class CommsNoticeTextTests
     {
+        [Test]
+        public void TutorialAcknowledgement_UsesTheApprovedJapaneseWording()
+        {
+            Assert.AreEqual("報告を受け取りました",
+                            CommsPanel.NoticeText(CommsNotice.TutorialAccepted, ShowLang.Ja));
+        }
+
+        [Test]
+        public void OnboardingCharacters_ExistInBundledFont()
+        {
+            TMP_FontAsset font = Resources.Load<TMP_FontAsset>("Fonts/JapaneseHud SDF");
+            Assert.NotNull(font, "HMD 用フォントを Resources から読めない");
+
+            var onboarding = new[]
+            {
+                CommsNotice.ControllerDisconnected,
+                CommsNotice.ControllerUntracked,
+                CommsNotice.ControllerStaff,
+                CommsNotice.ControllerConfirmed,
+                CommsNotice.Tutorial,
+                CommsNotice.TutorialShort,
+                CommsNotice.TutorialAccepted,
+                CommsNotice.TutorialReconnect,
+                CommsNotice.TutorialReminder,
+            };
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (CommsNotice notice in onboarding)
+            foreach (char c in CommsPanel.NoticeText(notice, lang))
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                Assert.IsTrue(font.HasCharacter(c),
+                              $"{ShowLanguage.Code(lang)} / {notice}: U+{(int)c:X4} '{c}' が HMD 用フォントに無い");
+            }
+
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (TitleStartGuidance guidance in System.Enum.GetValues(typeof(TitleStartGuidance)))
+            foreach (char c in TitleScreen.StartPromptText(guidance, lang))
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                Assert.IsTrue(font.HasCharacter(c),
+                              $"{ShowLanguage.Code(lang)} / {guidance}: U+{(int)c:X4} '{c}' が HMD 用フォントに無い");
+            }
+        }
+
         [TestCase(ShowLang.Ja, "異常なしと判定しました")]
         [TestCase(ShowLang.En, "No anomaly was detected.")]
         [TestCase(ShowLang.Fr, "Aucune anomalie n’a été\ndétectée.")]

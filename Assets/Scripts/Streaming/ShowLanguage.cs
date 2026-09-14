@@ -18,10 +18,8 @@ namespace FixedCamVr.Streaming
     }
 
     /// <summary>
-    /// <b>いま体験者に見せている言語。</b>選ぶのは体験者自身で、
-    /// <b>体験前の注意書きが出ているあいだだけ</b>、手元（左）のボタンで巡る
-    /// （<see cref="TitleStage.Wait"/> ＝ まだ何も始まっていない黒の中。
-    /// 入力を読むのは <c>OvrControllerBridge</c>、面は <c>TitleNotice</c>）。
+    /// <b>いま体験者に見せている言語。</b>装着前にタブレットで選び、
+    /// <see cref="VisitorPrefs"/> が導入へ反映する。HMD 内の入力では変更しない。
     ///
     /// ⚠ <b>static なのは、読む側が 3 つの asmdef に散っているから。</b>
     /// 文言を持つのは <c>Diagnostics</c>（注意書き・連絡・報告）、入力は Assembly-CSharp、
@@ -106,9 +104,8 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 言語を直接指定する。<b>体験の中では呼ばない</b> — 体験者が押して巡らせるものなので、
-        /// 実行時の入口は <see cref="Cycle"/> の 1 つだけ。使うのは
-        /// <c>menu text-audit</c> のような Editor の検査と、テスト。
+        /// 言語を直接指定する。実行時は <see cref="VisitorPrefs"/> がタブレットの選択を反映する。
+        /// <c>menu text-audit</c> のような Editor の検査とテストも使う。
         ///
         /// ⚠ <b><see cref="ChangeCount"/> を動かさない。</b> あれは「体験者が押して変わった回数」で、
         /// 検査が回した分を混ぜるとテレメトリの <c>langN</c> が嘘になる。

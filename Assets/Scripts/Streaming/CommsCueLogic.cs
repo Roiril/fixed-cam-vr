@@ -7,6 +7,24 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>何も出さない。</summary>
         None,
+        /// <summary>導入。左コントローラーを起こす。</summary>
+        ControllerDisconnected,
+        /// <summary>導入。接続済みだが位置を認識できない。</summary>
+        ControllerUntracked,
+        /// <summary>導入。15秒以上確認できないためスタッフへ知らせる。</summary>
+        ControllerStaff,
+        /// <summary>導入。左コントローラーの接続と位置認識が安定した。</summary>
+        ControllerConfirmed,
+        /// <summary>導入。報告操作を練習する。</summary>
+        Tutorial,
+        /// <summary>導入。短く離した人へ長押しを補足する。</summary>
+        TutorialShort,
+        /// <summary>導入。練習の報告を受け取った。</summary>
+        TutorialAccepted,
+        /// <summary>導入中の切断から戻す。</summary>
+        TutorialReconnect,
+        /// <summary>導入。練習した操作を本編でも使うと伝える。</summary>
+        TutorialReminder,
         /// <summary>
         /// ⓪a <b>タイトルが焼け切った直後</b>。スイが名乗る（<c>canon/LEDGER.md</c> 0079）。
         /// ⚠ 0073 では①の 1 行目だったものを<b>ここへ移した</b> — 名乗るのは会う前で、
@@ -186,8 +204,7 @@ namespace FixedCamVr.Streaming
     public sealed class CommsCueLogic
     {
         /// <summary>
-        /// ① 本編に入ってから連絡（<see cref="CommsNotice.BeginHow"/>「異変を見つけたら…」）が
-        /// 届くまで (秒)。⚠ <b>1 通目が何かは 2026-09-06 に入れ替わった</b>（0174）。
+        /// 本編に入ってから「調査を開始してください」が届くまで (秒)。
         ///
         /// ⚠⚠ <b>1.5 → 0</b>（2026-08-16・<c>canon/LEDGER.md</c> 0058・ユーザー指示
         /// 「終わったらそのまま鈴を鳴らし、すぐに調査を開始してくださいを表示する。3s またなくていい」）。
@@ -241,7 +258,7 @@ namespace FixedCamVr.Streaming
         public const int WalkRepeatMax = 2;
 
         private bool _beginFired;
-        private bool _beginHowFired;
+        private bool _beginHowFired = true;
         private bool _haltFired;
         private bool _promptFired;
         private float _runSec;
@@ -266,7 +283,8 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _beginFired = false;
-            _beginHowFired = false;
+            // 押し方はHMD導入で実際に練習した。ここでは再掲しない。
+            _beginHowFired = true;
             _haltFired = false;
             _promptFired = false;
             _runSec = 0f;
@@ -294,9 +312,14 @@ namespace FixedCamVr.Streaming
         /// （散らすと、音だけ / 観測だけが黙って食い違う）。
         /// </summary>
         public static CommsDelivery DeliveryOf(CommsNotice notice)
-            => notice == CommsNotice.Halt ? CommsDelivery.Fade
+            => IsOnboarding(notice) ? CommsDelivery.Fade
+             : notice == CommsNotice.Halt ? CommsDelivery.Fade
              : notice == CommsNotice.Takeover ? CommsDelivery.Takeover
              : CommsDelivery.Typed;
+
+        public static bool IsOnboarding(CommsNotice notice)
+            => notice >= CommsNotice.ControllerDisconnected
+               && notice <= CommsNotice.TutorialReminder;
 
         /// <summary>候補ではなく面へ実際に渡せた時だけ自動提示の一回を消費する。</summary>
         public void NotifyDelivered(CommsNotice notice)
@@ -338,19 +361,6 @@ namespace FixedCamVr.Streaming
             else if (!_takeoverDelivered)
                 _fullInvasionSec = 0f;
 
-            // ⚠⚠ **ラッチは「出したもの」ではなく「このフレームに条件が揃ったもの」全部を消費する。**
-            //     1 フレームに 2 つ揃ったとき、出せるのは 1 通だけ（面が 1 つしかない）。
-            //     消費しないと、押しのけられた方が次のフレームに遅れて出て、
-            //     体験者から見ると「報告したのに関係ない連絡が来た」になる。
-            // ⚠⚠ **1 通目は①「異変を見つけたら…」**（2026-09-06・0174 で入れ替えた）。
-            //     番号は**出る順**に振ってある（① = 押し方 / ①b = 開始の合図）。
-            //     ⚠ enum の名前（`BeginHow` / `Begin`）は入れ替えていない — あれは文面の名前で、
-            //       走行ログの `ev=comms id=` と解析器がその綴りで繋がっている。
-            //     ⚠ ラッチの形も入れ替えていない — **時間で立つ方を消費し、
-            //       読ませ終わりで立つ方は消費しない**（下の `beginDue`）。
-            bool howDue = !_beginHowFired && _runSec >= BeginDelaySec;
-            if (howDue) _beginHowFired = true;
-
             // ③a は**締めのカットに入ってから** `HaltAfterClosingSec` 秒（0178）。
             // ⚠⚠ **消費しない。面が空くまで待って、必ず出す。** ユーザー指定が
             //    「止まってください！以降の流れは全員に見せる」なので、報告に押しのけられて
@@ -363,11 +373,7 @@ namespace FixedCamVr.Streaming
             // ⚠⚠ **報告したかは見ない**（0178）。③a を見せた以上、続きも見せる。
             bool promptDue = !haltDue && _haltFired && !_promptFired && inp.panelDoneReading;
 
-            // ①b「調査を開始してください。」は①を**読ませ終わった縁**で、間を置かずに続ける
-            // （`canon/LEDGER.md` 0097 の形のまま・0174 で中身が入れ替わった）。
-            // ⚠ **①を出したそのフレームには立たない**（`!howDue`）。面はまだ Deliver されておらず
-            //   「読ませ終わった」が true のままなので、見ないと 2 通が同じフレームに揃って片方が消える。
-            bool beginDue = !howDue && _beginHowFired && !_beginFired && inp.panelDoneReading;
+            bool beginDue = !_beginFired && _runSec >= BeginDelaySec && inp.panelDoneReading;
 
             // 優先は 報告 > 締めの催促 > 開始。**報告は体験者が起こした出来事**なので必ず勝つ
             // （押した手応えが返らないと、装置が壊れているように見える）。
@@ -384,16 +390,14 @@ namespace FixedCamVr.Streaming
                 return CommsNotice.Takeover;
             if (haltDue) { _haltFired = true; return CommsNotice.Halt; }
             if (promptDue) { _promptFired = true; return CommsNotice.Prompt; }
-            if (howDue) return CommsNotice.BeginHow;
-            // ⚠ ①だけは**押しのけられても消費しない**（上の 2 つと違う）。開始の合図なので、
+            // 開始の合図は押しのけられても消費しない。報告を読ませ終わってから改めて出す。
             //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
             if (beginDue) { _beginFired = true; return CommsNotice.Begin; }
             return CommsNotice.None;
         }
 
         /// <summary>
-        /// 導入（段 0）で出す 2 通（<c>canon/LEDGER.md</c> 0079）。
-        /// <b>名乗る → 引く → 指示</b>の順で、重ねない。
+        /// タイトル後の段0で歩行指示を出す。名乗りは報告練習の前に済ませる。
         ///
         /// ⚠ <b>タイトルが立っているあいだは何も出さない。</b> 題字の上に受信票が重なる。
         /// ⚠ <b>演出が走り出したら止める。</b> 段 0 を抜けたら誘導の指示は用済みで、
@@ -416,15 +420,10 @@ namespace FixedCamVr.Streaming
             }
             _introSec += dt;
 
-            if (!_greetFired)
-            {
-                if (_introSec < GreetDelaySec) return CommsNotice.None;
-                _greetFired = true;
-                _idleSec = 0f;
-                return CommsNotice.Greeting;
-            }
+            if (!_greetFired) _greetFired = true;
 
-            // ⚠ 前の連絡が引き切るまで数え始めない（面は 1 つしか無い）。
+            if (_introSec < GreetDelaySec) return CommsNotice.None;
+            // 前の連絡が引き切るまで数え始めない（面は1つしか無い）。
             if (!inp.panelDoneReading) { _idleSec = 0f; return CommsNotice.None; }
             _idleSec += dt;
 

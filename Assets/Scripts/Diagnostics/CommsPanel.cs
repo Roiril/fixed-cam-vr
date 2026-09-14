@@ -249,6 +249,15 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private static string TextJa(CommsNotice n) => n switch
         {
+            CommsNotice.ControllerDisconnected => "左コントローラーを持ち\nXかYを押してください",
+            CommsNotice.ControllerUntracked => "左コントローラーを\n少し前に出してください",
+            CommsNotice.ControllerStaff => "接続を確認できません\nスタッフを呼んでください",
+            CommsNotice.ControllerConfirmed => "左コントローラーを\n確認しました",
+            CommsNotice.Tutorial => "報告を一度試します\nXかYを1秒間\n押し続けてください",
+            CommsNotice.TutorialShort => "もう少し長く\n押し続けてください",
+            CommsNotice.TutorialAccepted => "報告を受け取りました",
+            CommsNotice.TutorialReconnect => "左コントローラーを\n確認してください",
+            CommsNotice.TutorialReminder => "異変に気づいたら\n今の操作で報告してください\n解析して対処を試みます",
             // ⓪a 名乗り。⚠ **「AI」とは書かない。「エージェント」と書く**（`canon/LEDGER.md` 0080）。
             //    ⚠ 紙の依頼書と同じ語（`docs/onsite/handout.html`「調査を支援するエージェント」）。
             //      片方だけ直すと、紙と装置が別のものを指しているように読める。
@@ -260,7 +269,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Walk => "開始ポイントを\nマークしました。\n矢印から向かってください。",
             // ⓪c 演出の始まりの告知。**段 0 を抜けた縁**（＝ 導入演出が始まるのと同じフレーム）。
             //    ⓪b が出ていれば引かずに上書きする（`Deliver` は頭から出し直す）。
-            CommsNotice.Arrived => "到着しました。\n観測装置を起動します。",
+            CommsNotice.Arrived => "到着しました。\n観測を開始します。",
             // ① 調査の開始。⚠⚠ **押し方はここにしか出ない**（2026-08-16・`canon/LEDGER.md` 0065）。
             //    下段は状態だけを持ち、指示を持たない（押している最中に「押せ」と言い続けない）。
             //    ⚠ キー名（X／Y）を出さない — 装置の面に入力機器の名前が出ると、
@@ -273,7 +282,7 @@ namespace FixedCamVr.Diagnostics
             //      その間を切り詰める」）。①を読ませ終わった縁で、**間を置かず同じ面のまま**①b へ替わる。
             CommsNotice.Begin => "調査を開始してください。",
             // ①b 押し方と、押すと何が起きるか。
-            CommsNotice.BeginHow => "異変を見つけたら\nボタンを長押ししてください\n装置が解析して対処を試みます",
+            CommsNotice.BeginHow => "異変を見つけたら\nXかYを長押ししてください\n装置が解析して対処を試みます",
             // ②a 報告時に異常演出が画面を取っていた。
             CommsNotice.MarkLogged => "異常を検出しました",
             // ②b 報告時に異常演出が画面を取っていなかった。
@@ -298,12 +307,21 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private static string TextEn(CommsNotice n) => n switch
         {
+            CommsNotice.ControllerDisconnected => "Hold the left controller\nand press X or Y.",
+            CommsNotice.ControllerUntracked => "Move the left controller\nslightly forward.",
+            CommsNotice.ControllerStaff => "Controller not found.\nPlease call a staff member.",
+            CommsNotice.ControllerConfirmed => "Left controller confirmed.",
+            CommsNotice.Tutorial => "Try reporting once.\nHold X or Y\nfor one second.",
+            CommsNotice.TutorialShort => "Keep holding the button\na little longer.",
+            CommsNotice.TutorialAccepted => "Report received.",
+            CommsNotice.TutorialReconnect => "Check the left controller.",
+            CommsNotice.TutorialReminder => "If you notice an anomaly,\nreport it the same way.\nI will analyse and respond.",
             CommsNotice.Greeting => "I am the agent assisting\nthe survey.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
-            CommsNotice.Arrived => "You have arrived.\nActivating the device.",
+            CommsNotice.Arrived => "You have arrived.\nObservation will now begin.",
             CommsNotice.Begin => "Begin the survey.",
             // ①b 3 行目は「押すと何が起きるか」（日本語と同じ役割・0096）。
-            CommsNotice.BeginHow => "If you see an anomaly,\nhold down the button and\nthe device will analyse it.",
+            CommsNotice.BeginHow => "If you see an anomaly,\nhold X or Y and the device\nwill analyse it.",
             CommsNotice.MarkLogged => "An anomaly was detected.",
             CommsNotice.MarkNothing => "No anomaly was detected.",
             CommsNotice.Takeover => "No anomaly was detected.",
@@ -316,11 +334,20 @@ namespace FixedCamVr.Diagnostics
         /// <summary>文面（Français）。<see cref="TextEn"/> と同じ規律。</summary>
         private static string TextFr(CommsNotice n) => n switch
         {
+            CommsNotice.ControllerDisconnected => "Tenez la manette gauche\net appuyez sur X ou Y.",
+            CommsNotice.ControllerUntracked => "Avancez légèrement\nla manette gauche.",
+            CommsNotice.ControllerStaff => "Manette introuvable.\nAppelez un membre\ndu personnel.",
+            CommsNotice.ControllerConfirmed => "Manette gauche confirmée.",
+            CommsNotice.Tutorial => "Essayez de signaler.\nMaintenez X ou Y\npendant une seconde.",
+            CommsNotice.TutorialShort => "Maintenez le bouton\nun peu plus longtemps.",
+            CommsNotice.TutorialAccepted => "Signalement reçu.",
+            CommsNotice.TutorialReconnect => "Vérifiez la manette gauche.",
+            CommsNotice.TutorialReminder => "Si vous voyez une anomalie,\nsignalez-la ainsi.\nJe tenterai de la traiter.",
             CommsNotice.Greeting => "Je suis l'agent qui assiste\ncette enquête.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
-            CommsNotice.Arrived => "Vous êtes arrivé.\nDémarrage de l'appareil.",
+            CommsNotice.Arrived => "Vous êtes arrivé.\nL'observation commence.",
             CommsNotice.Begin => "Commencez l'enquête.",
-            CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez le bouton.\nL'appareil l'analysera.",
+            CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez X ou Y.\nL'appareil l'analysera.",
             CommsNotice.MarkLogged => "Anomalie détectée.",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
             CommsNotice.Takeover => "Aucune anomalie n’a été\ndétectée.",
@@ -638,6 +665,9 @@ namespace FixedCamVr.Diagnostics
         /// <summary>直近に届いた連絡の種類（テレメトリ用。まだ 1 通も来ていなければ None）。</summary>
         public CommsNotice LastNotice { get; private set; } = CommsNotice.None;
 
+        private bool _onboardingActive;
+        private CommsNotice _onboardingNotice = CommsNotice.None;
+
         private void Awake()
         {
             ResolveRefs();
@@ -653,6 +683,8 @@ namespace FixedCamVr.Diagnostics
             _glitchLevel = 0f;
             _corruptTick = -1;
             _takeoverModifiedThisRun = false;
+            _onboardingActive = false;
+            _onboardingNotice = CommsNotice.None;
             ResetTakeoverVisual();
             Apply(CommsWeights.Hidden);
             typeSfx?.StopAll();
@@ -701,6 +733,8 @@ namespace FixedCamVr.Diagnostics
 
         private void OnRunRestarted()
         {
+            _onboardingActive = false;
+            _onboardingNotice = CommsNotice.None;
             _cue.ResetRun();
             _invasion.Reset();
             _glitchLevel = 0f;
@@ -717,6 +751,28 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>連絡を 1 通出す。<b>すでに出ていれば頭から出し直す</b>（重ねない）。</summary>
         public void Deliver(CommsNotice notice)
+            => Deliver(notice, persistent: false, pulse: true);
+
+        /// <summary>HMD導入の文面を、次の状態へ進むまで同じ面に保つ。</summary>
+        public void SetOnboardingNotice(CommsNotice notice)
+        {
+            if (!CommsCueLogic.IsOnboarding(notice) && notice != CommsNotice.Greeting) return;
+            if (_onboardingActive && _onboardingNotice == notice) return;
+            _onboardingActive = true;
+            _onboardingNotice = notice;
+            Deliver(notice, persistent: true, pulse: false);
+        }
+
+        /// <summary>導入の連絡面を畳み、通常の自動連絡へ返す。</summary>
+        public void ClearOnboardingNotice()
+        {
+            if (!_onboardingActive) return;
+            _onboardingActive = false;
+            _onboardingNotice = CommsNotice.None;
+            _logic.ReleasePersistent();
+        }
+
+        private void Deliver(CommsNotice notice, bool persistent, bool pulse)
         {
             if (!IsBuilt || notice == CommsNotice.None) return;
             // ⚠⚠ **床の矢印はこの連絡と対で出る**（`canon/LEDGER.md` 0079 の赤入れ 4
@@ -750,10 +806,10 @@ namespace FixedCamVr.Diagnostics
                     if (IsVisibleChar(i)) NoticeChars++;
                 TakeoverStartedCount++;
             }
-            _logic.Begin(_charCount, delivery);
+            _logic.Begin(_charCount, delivery, persistent);
             LastNotice = notice;
-            PulseCount++;
-            _cue.NotifyDelivered(notice);
+            if (pulse) PulseCount++;
+            if (!persistent) _cue.NotifyDelivered(notice);
             Debug.Log($"[Comms] AIエージェントからの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
                     + $"（{_charCount} 文字 / "
                     + (_silent ? $"すっと浮かぶ {_logic.TypeSec:0.00}s・打鍵なし"
@@ -763,6 +819,13 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             if (!IsBuilt) return;
+
+            if (_onboardingActive)
+            {
+                _logic.Tick(Time.unscaledDeltaTime);
+                Apply(_logic.Weights);
+                return;
+            }
 
             // ---- 報告の縁を取る。表示状態は中継前に `ShowControlClient.LastMarkDetected` へ凍らせてある。
             //      解除可否は `LastMarkResolved` の別用途で、通信面の文面には使わない。

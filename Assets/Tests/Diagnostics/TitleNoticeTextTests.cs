@@ -20,6 +20,13 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public sealed class TitleNoticeTextTests
     {
+        [Test]
+        public void TheFormerHmdNotice_IsPermanentlyRetired()
+        {
+            Assert.IsFalse(TitleNotice.HmdDisplayEnabled,
+                           "注意事項と言語選択はタブレット側だけに出す");
+        }
+
         /// <summary>面が持つ 2 つの状態（ホラー軽減モードの外 / 中）。<b>両方測る</b>。</summary>
         private static readonly bool[] BothReliefStates = { false, true };
 

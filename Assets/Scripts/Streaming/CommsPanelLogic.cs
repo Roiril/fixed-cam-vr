@@ -213,6 +213,7 @@ namespace FixedCamVr.Streaming
         private float _elapsed;
         private float _typeSec = MinTypeSec;
         private CommsDelivery _delivery = CommsDelivery.Typed;
+        private bool _persistent;
         private bool _guideWanted;
         // 段へ入った瞬間の姿。**そこから動かす**ので、どの段へ移っても飛ばない。
         // ⚠⚠ **4 つ全部を覚える。** 2026-08-16 まで開きと丈しか継承しておらず、
@@ -277,7 +278,8 @@ namespace FixedCamVr.Streaming
         /// 出方（既定は打つ）。<see cref="CommsDelivery.Fade"/> なら
         /// <b>文面ごとすっと浮かび、打鍵は 1 発も鳴らない</b>（<c>canon/LEDGER.md</c> 0168）。
         /// </param>
-        public void Begin(int charCount, CommsDelivery delivery = CommsDelivery.Typed)
+        public void Begin(int charCount, CommsDelivery delivery = CommsDelivery.Typed,
+                          bool persistent = false)
         {
             // ⚠⚠ **いまの姿から動かす**（`canon/LEDGER.md` 0058）。②の連絡は「押した瞬間」に届くので、
             //    開きを 0 から張り直すと**押し終わるたびに枠が畳まれて開き直る**（毎回かならず起きる吃り）。
@@ -291,6 +293,7 @@ namespace FixedCamVr.Streaming
             //   新しい出方の目で古い段を測らせない）。
             EnterStage(chained ? CommsStage.Type : CommsStage.In);
             _delivery = delivery;
+            _persistent = persistent;
             _typeSec = delivery == CommsDelivery.Takeover
                 ? CommsTakeoverLogic.OutputSecFor(charCount, ShowLanguage.Current)
                 : delivery == CommsDelivery.Fade
@@ -338,6 +341,14 @@ namespace FixedCamVr.Streaming
                 EnterStage(CommsStage.Out);
         }
 
+        /// <summary>導入の固定表示を終え、現在の面を静かに畳む。</summary>
+        public void ReleasePersistent()
+        {
+            _persistent = false;
+            if (_stage == CommsStage.Hold || _stage == CommsStage.Type)
+                EnterStage(CommsStage.Out);
+        }
+
         // ⚠ 「読ませ終わる前に引く」API（Retract）は 2026-08-17 に**足してすぐ外した**。
         //    導入の段 0 を抜けた瞬間に⓪b の指示を引かせるために作ったが、同じ縁で⓪c
         //    「ポイントに到着しました」が届くようになり（`canon/LEDGER.md` 0079 の赤入れ 3）、
@@ -349,6 +360,7 @@ namespace FixedCamVr.Streaming
             _stage = CommsStage.Off;
             _elapsed = 0f;
             _delivery = CommsDelivery.Typed;
+            _persistent = false;
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = 0f;
         }
@@ -375,7 +387,7 @@ namespace FixedCamVr.Streaming
                 case CommsStage.Hold:
                     // 読ませ終わったら引く。⚠ ただし**まだ押している最中なら開いたまま残す** —
                     //    引いてすぐ開き直すのは、体験者から見れば 1 度の操作の途中のちらつき。
-                    if (_elapsed >= HoldSecFor(_delivery))
+                    if (!_persistent && _elapsed >= HoldSecFor(_delivery))
                         EnterStage(_guideWanted ? CommsStage.Guide : CommsStage.Out);
                     break;
                 case CommsStage.Out:

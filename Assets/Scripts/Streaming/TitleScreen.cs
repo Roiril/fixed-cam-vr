@@ -1,9 +1,21 @@
 #nullable enable
 
+using TMPro;
 using UnityEngine;
 
 namespace FixedCamVr.Streaming
 {
+    /// <summary>題字の下へ出す開始案内。</summary>
+    public enum TitleStartGuidance
+    {
+        Hidden,
+        Ready,
+        Release,
+        ShortPress,
+        Reconnect,
+        MoveIntoView,
+    }
+
     /// <summary>
     /// タイトル画面「廻リ視」。<b>体験が始まる前に、暗い地の中へ組んだ題字だけを置く。</b>
     ///
@@ -122,6 +134,13 @@ namespace FixedCamVr.Streaming
         public const string VeilShaderName = "FixedCamVr/TitleVeil";
         public const string GlyphShaderName = "FixedCamVr/TitleGlyph";
         public const string ArtResourcePath = "Title/MawarimiTitle";
+        public const string FontResourcePath = "Fonts/JapaneseHud SDF";
+        private const string TextOverlayShaderName = "TextMeshPro/Distance Field Overlay";
+        private const float PromptFontSize = 0.07f;
+        private const float PromptDegrees = 1.5f;
+        private const float PromptWidthM = 2.2f;
+        private const float PromptBelowM = 0.78f;
+        private const int PromptRenderQueue = 4995;
 
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         private static readonly int ArtId = Shader.PropertyToID("_Art");
@@ -145,6 +164,9 @@ namespace FixedCamVr.Streaming
         private Material? _glyphMat;
         private Mesh? _veilMesh;
         private Mesh? _glyphMesh;
+        private TMP_Text? _startPrompt;
+        private TitleStartGuidance _startGuidance;
+        private ShowLang _promptLang = ShowLang.Ja;
         private bool _subscribed;
         private bool _dismissRequested;
         private readonly YawFollowLogic _yawFollow = new YawFollowLogic();
@@ -162,8 +184,15 @@ namespace FixedCamVr.Streaming
         /// <summary>いま画面を持っているか。<b>組めていないときは必ず false</b>（素通しに倒す）。</summary>
         public bool IsBlocking => IsBuilt && titleEnabled && _logic.Active;
 
-        /// <summary>A を待っているか（実行体が触覚・案内を出す判断に使う）。</summary>
+        /// <summary>報告練習後の題字呼び出しを待っているか。</summary>
         public bool AwaitingInput => IsBlocking && _logic.AwaitingInput;
+
+        /// <summary>題字の出現が終わり、短押しを受けられるか。</summary>
+        public bool ReadyForStart => IsBuilt && titleEnabled && !IsYielding
+                                     && _logic.Stage == TitleStage.Hold;
+
+        /// <summary>ラン開始ごとに増える。OVR側が導入状態を同じ縁で戻すための通し番号。</summary>
+        public int Sequence { get; private set; }
 
         public TitleStage Stage => _logic.Stage;
 
@@ -211,6 +240,7 @@ namespace FixedCamVr.Streaming
             if (_glyphMat != null) DestroySafe(_glyphMat);
             if (_veilMesh != null) DestroySafe(_veilMesh);
             if (_glyphMesh != null) DestroySafe(_glyphMesh);
+            if (_startPrompt != null) DestroySafe(_startPrompt.gameObject);
             _veilMat = null; _glyphMat = null; _veilMesh = null; _glyphMesh = null;
         }
 
@@ -243,6 +273,7 @@ namespace FixedCamVr.Streaming
 
         private void BeginTitle()
         {
+            Sequence++;
             _dismissRequested = false;
             _yawSeeded = false;
             _driftSec = 0f;
@@ -278,17 +309,36 @@ namespace FixedCamVr.Streaming
                 return;
             }
             _logic.Begin();
+            SetStartGuidance(TitleStartGuidance.Hidden);
+        }
+
+        /// <summary>導入の練習が終わったあと、題字を自動で呼び出す。</summary>
+        public bool ShowTitle()
+        {
+            if (!IsBlocking || IsYielding || _logic.Stage != TitleStage.Wait) return false;
+            _logic.RequestAdvance();
+            return true;
+        }
+
+        /// <summary>体験者の左X/Y短押しを受けて題字を閉じる。</summary>
+        public bool DismissTitle()
+        {
+            if (!ReadyForStart) return false;
+            _logic.RequestDismiss();
+            SetStartGuidance(TitleStartGuidance.Hidden);
+            return true;
+        }
+
+        /// <summary>題字の下へ出す開始案内を差し替える。</summary>
+        public void SetStartGuidance(TitleStartGuidance guidance)
+        {
+            _startGuidance = guidance;
+            ApplyStartPrompt();
         }
 
         /// <summary>
-        /// A（右コントローラ）。<b>受け取れたら true</b> を返す。
-        ///
-        /// ⚠ <b>2026-08-12 から段で意味が変わる</b>（ユーザー指示）:
-        ///   真っ暗で待っている（<see cref="TitleStage.Wait"/>）→ <b>題字を呼び出す</b>
-        ///   題字が立っている → 閉じる（通常は 2 秒で自動的に閉じるので現場の逃げ道）
-        ///
-        /// false は「タイトルが立っていない・実体を組めていない」で、押下は何にも繋がらない
-        /// （Normal での A はこれ 1 つだけ。カメラ手動送りは 2026-08-12 に撤去した）。
+        /// プレビューと診断用の進行要求。<b>受け取れたら true</b> を返す。
+        /// 通常の体験では <see cref="ShowTitle"/> と <see cref="DismissTitle"/> を使う。
         /// </summary>
         public bool RequestAdvance()
         {
@@ -322,16 +372,12 @@ namespace FixedCamVr.Streaming
         public bool GlyphShowing => IsBuilt && titleEnabled && _logic.GlyphShowing;
 
         /// <summary>
-        /// もう閉じ切っているか（＝ A が空振りしても<b>異常ではない</b>）。
-        /// スタッフが二度押ししただけの空振りと、出せていない空振りを分けるために公開する。
+        /// もう閉じ切っているか。開始待ちと実体不在を分けるために公開する。
         /// </summary>
         public bool ClosedAlready => _logic.Stage == TitleStage.Done;
 
         /// <summary>
-        /// A が効かなかった理由（<b>現場で読める 1 行</b>）。効くはずの状態なら空を返す。
-        ///
-        /// ⚠ これが無いと、押しても何も起きない現場で切り分ける手掛かりが 1 つも無い
-        /// （成功したときだけログが出ていた）。
+        /// 題字の表示や消去を受け取れなかった理由。効く状態なら空を返す。
         /// </summary>
         public string DescribeAdvanceBlock()
         {
@@ -356,8 +402,8 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            // ▶ タブレットの設定（0185 / 0187）。注意書きが出ている段（Wait）にタブレットから新しい枠が
-            //   届いたらその場で書く（体験者が手元で巡らせるのと同じ縁）。Wait を出た瞬間 ＝ 体験者が
+            // ▶ タブレットの設定（0185 / 0187）。導入中の段（Wait）にタブレットから新しい枠が
+            //   届いたらその場で書く。Wait を出た瞬間 ＝ 体験者が
             //   始めたので、そのとき持っていた枠を空にする ＝ 次の人へ持ち越さない（正はこの機。卓は関わらない）。
             //   ⚠ Wait → Wait（ランリセットの出し直し）は縁ではない。BeginTitle が載せ直す。
             TitleStage stage = _logic.Stage;
@@ -407,6 +453,7 @@ namespace FixedCamVr.Streaming
 
             if (yielding) { Hide(); return; }
             Apply(_logic.Weights);
+            ApplyStartPrompt();
         }
 
         private void LateUpdate()
@@ -483,6 +530,99 @@ namespace FixedCamVr.Streaming
             _glyphMat.SetFloat(ArtAspectId, ArtAspect);
             ConfigureRenderer(_glyphRenderer, _glyphMat);
             _glyphRoot = glyphGo.transform;
+
+            TMP_FontAsset? font = Resources.Load<TMP_FontAsset>(FontResourcePath);
+            if (font != null)
+            {
+                var promptGo = new GameObject("TitleStartPrompt");
+                promptGo.transform.SetParent(lagGo.transform, worldPositionStays: false);
+                var prompt = promptGo.AddComponent<TextMeshPro>();
+                prompt.font = font;
+                prompt.fontSize = PromptFontSize;
+                prompt.alignment = TextAlignmentOptions.Center;
+                prompt.enableWordWrapping = true;
+                prompt.richText = false;
+                prompt.color = new Color(0.82f, 0.78f, 0.72f, 1f);
+                float scale = PromptScale();
+                ((RectTransform)promptGo.transform).sizeDelta =
+                    new Vector2(PromptWidthM / scale, 0.42f / scale);
+                promptGo.transform.localScale = Vector3.one * scale;
+                promptGo.transform.localPosition =
+                    new Vector3(0f, GlyphYOffset() - PromptBelowM, Mathf.Max(distanceM, 0.5f) - 0.08f);
+                Shader? overlay = Shader.Find(TextOverlayShaderName);
+                if (overlay != null) prompt.fontMaterial.shader = overlay;
+                prompt.fontMaterial.renderQueue = PromptRenderQueue;
+                prompt.gameObject.SetActive(false);
+                _startPrompt = prompt;
+            }
+        }
+
+        private float PromptScale()
+        {
+            float d = Mathf.Max(distanceM, 0.5f);
+            float em = 2f * d * Mathf.Tan(PromptDegrees * 0.5f * Mathf.Deg2Rad);
+            return em / (PromptFontSize * 0.1f);
+        }
+
+        private void ApplyStartPrompt()
+        {
+            TMP_Text? prompt = _startPrompt;
+            if (prompt == null) return;
+            bool show = _logic.Stage == TitleStage.Hold && _startGuidance != TitleStartGuidance.Hidden;
+            if (!show)
+            {
+                if (prompt.gameObject.activeSelf) prompt.gameObject.SetActive(false);
+                return;
+            }
+            ShowLang lang = ShowLanguage.Current;
+            if (prompt.text.Length == 0 || _promptLang != lang || !prompt.gameObject.activeSelf)
+            {
+                _promptLang = lang;
+                prompt.text = StartPromptText(_startGuidance, lang);
+            }
+            else
+            {
+                string text = StartPromptText(_startGuidance, lang);
+                if (prompt.text != text) prompt.text = text;
+            }
+            if (!prompt.gameObject.activeSelf) prompt.gameObject.SetActive(true);
+        }
+
+        public static string StartPromptText(TitleStartGuidance guidance, ShowLang lang)
+        {
+            if (lang == ShowLang.En)
+            {
+                return guidance switch
+                {
+                    TitleStartGuidance.Ready => "When ready, briefly press\nand release X or Y.",
+                    TitleStartGuidance.Release => "Release the button once.",
+                    TitleStartGuidance.ShortPress => "Release it, then briefly press\nand release X or Y.",
+                    TitleStartGuidance.Reconnect => "Hold the left controller.",
+                    TitleStartGuidance.MoveIntoView => "Move the left controller\nslightly forward.",
+                    _ => "",
+                };
+            }
+            if (lang == ShowLang.Fr)
+            {
+                return guidance switch
+                {
+                    TitleStartGuidance.Ready => "Quand vous êtes prêt, appuyez\nbrièvement sur X ou Y puis relâchez.",
+                    TitleStartGuidance.Release => "Relâchez d’abord le bouton.",
+                    TitleStartGuidance.ShortPress => "Relâchez, puis appuyez brièvement\nsur X ou Y et relâchez.",
+                    TitleStartGuidance.Reconnect => "Tenez la manette gauche.",
+                    TitleStartGuidance.MoveIntoView => "Avancez légèrement\nla manette gauche.",
+                    _ => "",
+                };
+            }
+            return guidance switch
+            {
+                TitleStartGuidance.Ready => "準備ができたら\nXかYを短く押して離してください",
+                TitleStartGuidance.Release => "一度ボタンを離してください",
+                TitleStartGuidance.ShortPress => "一度離して、XかYを\n短く押してください",
+                TitleStartGuidance.Reconnect => "左コントローラーを持ってください",
+                TitleStartGuidance.MoveIntoView => "左コントローラーを\n少し前に出してください",
+                _ => "",
+            };
         }
 
         private static void ConfigureRenderer(MeshRenderer r, Material m)
@@ -645,6 +785,7 @@ namespace FixedCamVr.Streaming
             AppliedGlyph = 0f;
             if (_veilRenderer != null) _veilRenderer.enabled = false;
             if (_glyphRenderer != null) _glyphRenderer.enabled = false;
+            if (_startPrompt != null) _startPrompt.gameObject.SetActive(false);
         }
 
         /// <summary>
