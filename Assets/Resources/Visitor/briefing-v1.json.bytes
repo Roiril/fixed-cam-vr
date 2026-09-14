@@ -34,11 +34,11 @@
         "ja": [
           {
             "text": "こんにちは。日本怪異研究所へようこそ。私はあなたの上司にあたる、博士です。",
-            "durationMs": 7647
+            "durationMs": 7582
           },
           {
             "text": "あなたに、ある呪われたオブジェクトの調査を依頼します。",
-            "durationMs": 5176
+            "durationMs": 4688
           }
         ],
         "en": [
@@ -96,19 +96,19 @@
         "ja": [
           {
             "text": "それが、こちらの壁です。",
-            "durationMs": 3431
+            "durationMs": 3065
           },
           {
             "text": "観測装置をつけ、この壁を3周してください。",
-            "durationMs": 4488
+            "durationMs": 3927
           },
           {
             "text": "その間は右手で手すりを持ち、離さないでください。",
-            "durationMs": 4677
+            "durationMs": 4368
           },
           {
             "text": "異変を見逃さないよう、ゆっくり慎重に歩いてください。",
-            "durationMs": 5261
+            "durationMs": 4695
           }
         ],
         "en": [
@@ -182,19 +182,19 @@
         "ja": [
           {
             "text": "これが、怪異を記録・解析する観測装置です。",
-            "durationMs": 4738
+            "durationMs": 4489
           },
           {
             "text": "あなたの調査を支援するエージェントが搭載されています。",
-            "durationMs": 4730
+            "durationMs": 4362
           },
           {
             "text": "異変に気づいたら、左コントローラーのXかYを1秒、長押ししてください。",
-            "durationMs": 7775
+            "durationMs": 6864
           },
           {
             "text": "エージェントが解析してくれます。",
-            "durationMs": 2880
+            "durationMs": 2576
           }
         ],
         "en": [
@@ -268,11 +268,11 @@
         "ja": [
           {
             "text": "では、左手にコントローラーを持って観測装置をつけてください。",
-            "durationMs": 5223
+            "durationMs": 5567
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 2096
+            "durationMs": 1942
           }
         ],
         "en": [
