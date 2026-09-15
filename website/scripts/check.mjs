@@ -138,7 +138,15 @@ if (!structuredDataMatch) {
   errors.push("structured data is missing");
 } else {
   try {
-    JSON.parse(structuredDataMatch[1]);
+    const structuredData = JSON.parse(structuredDataMatch[1]);
+    const graph = structuredData["@graph"];
+    const website = graph?.find((entry) => entry["@type"] === "WebSite");
+    const work = graph?.find((entry) => entry["@type"] === "CreativeWork");
+    const requiredNames = ["まわりみ", "廻り視", "マワリミ", "Mawarimi"];
+    for (const name of requiredNames) {
+      if (!website?.alternateName?.includes(name)) errors.push(`website alternate name is missing: ${name}`);
+      if (!work?.alternateName?.includes(name)) errors.push(`work alternate name is missing: ${name}`);
+    }
   } catch {
     errors.push("structured data is invalid JSON");
   }
