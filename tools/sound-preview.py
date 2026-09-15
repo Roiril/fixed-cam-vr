@@ -41,16 +41,16 @@ OUT = os.path.join(ROOT, "logs", "sound")
 
 # --- 段の尺（`IntroLogic.IntroTiming.Default` の写し）------------------------
 # ⚠ 2026-08-15 に旧構成へ戻した（`canon/LEDGER.md` 0044）。封印の箱を退避したので
-#   「箱の中に入ってから固定視点」が成立しない。いまは 5 段 13.1 秒:
+#   「箱の中に入ってから固定視点」が成立しない。いまは 5 段 12.7 秒（段 4 は 0221 で 5.0 秒）:
 #   段 1 素通し / 段 2 格下げ / 段 3 輪郭（段 2 と重なる）/ 段 4 割れる / 段 5 映像だけになる。
 #   ⚠ `IntroTiming.Default` と同じ値にしておく（ずれると、聴いて決めた間が実機と違う）。
-REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 3.5, 2.5, 2.5, 1.6
+REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 3.5, 2.5, 5.0, 1.6
 # 段 3 は段 2 の後半から重なるので、単独で流れるのはこれだけ（`IntroTiming.TotalSec` と同じ式）。
 STRUCTURE = max(STRUCTURE_SRC - DEGRADE * (1 - 0.6), 0.5)
 # ⚠⚠ **2026-08-16 に「入れ替えが終わった所」へ移した**（`canon/LEDGER.md` 0057）。
-#    0209 の `live = SmoothStep(0.88, 0.98, p)` が 0.999 へ届く進み。
+#    0221 の `live = SmoothStep(0.94, 0.99, p)` が 0.999 へ届く進み。
 #    `SoundCueLogic.ScreenOnAt`（live の閾値）と対。片方だけ直すと聴いて決めた間が実機と違う。
-SCREEN_ON_AT = 0.88 + (0.98 - 0.88) * 0.9816297461411884
+SCREEN_ON_AT = 0.94 + (0.99 - 0.94) * 0.9816297461411884
 SHATTER_AT = 0.02
 INTRO_DSP_LEAD = 0.035
 # 鈴が鳴るまで（段 5 の頭から）。`IntroLogic.SwapCrossfadeSec` ＝ `SoundCueLogic.BellAfterSwapSec`。
@@ -275,7 +275,7 @@ def build_intro() -> np.ndarray:
     lay(mix, load("sfx_title_in"), t_a)          # ⚠ 尾は題字が消えた後も鳴り続ける
     lay(mix, load("sfx_title_out"), t_glyph_out)
     # ⚠⚠ **導入の節目は 3 つ**（2026-08-16・`canon/LEDGER.md` 0057）。
-    #    ①段 4 の頭で割れる（1.70 秒でだんだん小さく）②静けさ約 0.70 秒 ③入れ替えが終わって
+    #    ①段 4 の頭で割れる（一撃 → スロー → 集結の 4.42 秒）②静けさ約 0.42 秒 ③入れ替えが終わって
     #    スクリーンが出る ④段 5 ＋ 1.2 秒で**完全にスクリーンになった**鈴。
     #    **ノイズ（`sfx_screen_noise`）は鳴らさない。** ここへ戻さないこと。
     lay(mix, load("sfx_shatter"), t_frame + FRAME * SHATTER_AT + INTRO_DSP_LEAD)

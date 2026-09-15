@@ -1,4 +1,9 @@
 // 段 4 の破片。撮影時の実景を厚み付きの破片へ貼り、現在のスクリーン実平面へ再構成する。
+//
+// 時計は映画の速度変化（canon/LEDGER.md 0221）:
+//   予兆（亀裂が起点から光って走る）→ 一撃（最初の 0.2 秒で行程の 8 割を飛ぶ）→
+//   引き延ばした時間（漂いと順回転は止めない）→ 集結（1 片ずつ直線に戻り、密度が上がる）。
+// 見た目はガラス（同 0222）: 縁に幅のある光の帯、斜めの艶、回転で流れる鏡面の閃き。写真の明暗は残す。
 Shader "FixedCamVr/IntroFracture"
 {
     Properties
@@ -65,9 +70,11 @@ Shader "FixedCamVr/IntroFracture"
                 float3 rightUv : TEXCOORD3;
                 float2 projectionValidity : TEXCOORD4;
                 nointerpolation float surface : TEXCOORD5;
-                float detail : TEXCOORD6;
+                // x = 飛んでいる度合い（縁・厚み・艶はこれで出す）/ y = 遠さ（奥の片を沈める）/ z = 一撃の閃き（面を白ませる）
+                float3 detail : TEXCOORD6;
                 float4 edgeDistances : TEXCOORD7;
-                nointerpolation float3 fractureLight : TEXCOORD8;
+                // x = 予兆の亀裂の光 / y = 破断・一撃の閃き / z = 着地の閃き / w = スロー中の閃き
+                nointerpolation float4 light : TEXCOORD8;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -90,6 +97,21 @@ Shader "FixedCamVr/IntroFracture"
             float4x4 _CaptureHeadToWorld;
             float4x4 _LeftWorldToUv;
             float4x4 _RightWorldToUv;
+
+            // ---- 時計（段の進み p = 0..1。数値は 5.0 秒の段で決めた ＝ IntroTiming.Default.frameSec）----
+            //   予兆   .000-.060 (0.30s) 亀裂が起点から光って走る。位置は保つ
+            //   一撃   .060-.100 (0.20s) 破断の波が起点から全域へ。行程の 8 割を最初の 0.2 秒で飛ぶ
+            //   スロー .100-.520         引き延ばした時間。漂いと順回転は止めない
+            //   集結   .520-.900 (1.90s) 1 片ずつ 90ms で直線に戻る。始め疎、終わり密。枠を閉じる 3 片が最後
+            //   実景の面 .900-.940 / 混合 .940-.990 は IntroLogic の frame / live が持つ
+            // ⚠ 音（ingest-sounds.py の SWARM_*）はこの表を秒に直したもの。片方だけ動かさない。
+            static const float CrackEnd = 0.060;
+            static const float BreakSpan = 0.040;
+            static const float SnapBegin = 0.520;
+            static const float SnapEnd = 0.900;
+            static const float SnapLen = 0.018;
+            static const float BurstTau = 0.024;   // 一撃の時定数（120ms）
+            static const float DriftRate = 0.60;   // スローの漂い（行程 / p）
 
             float2 ScreenAngle(float2 local)
             {
@@ -121,23 +143,11 @@ Shader "FixedCamVr/IntroFracture"
                 return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
             }
 
-            float EaseIntegral(float t)
+            // 引き延ばした時間。破断からの経過 x（p 単位）を、破片が生きる物理の時間 u へ写す。
+            // 一撃で 0.80 を時定数 BurstTau で飛び、あとは DriftRate の遅い漂いが続く（止めない）。
+            float WarpedTime(float x)
             {
-                return t * t * t * t * (2.5 + t * (t - 3.0));
-            }
-
-            float OpeningProgress(float p, float delay)
-            {
-                // 開き始めに最速となり、離れるほど減速する。発進だけは短く滑らかにする。
-                float begin = 0.12 + delay;
-                float peak = begin + 0.018;
-                const float end = 0.34;
-                float up = peak - begin;
-                float down = end - peak;
-                float a = saturate((p - begin) / up);
-                float b = saturate((p - peak) / down);
-                return saturate((up * EaseIntegral(a) + down * (b - EaseIntegral(b)))
-                    / (0.5 * (up + down)));
+                return 0.80 * (1.0 - exp(-x / BurstTau)) + DriftRate * x;
             }
 
             float2 ProjectFrozenUv(float4x4 worldToUv, float3 captureWorld, out float valid)
@@ -169,6 +179,7 @@ Shader "FixedCamVr/IntroFracture"
                 float p = saturate(_Shatter);
                 float2 macroNoise = IntroShardHash2(float2(v.macro.w, 17.0), 3.7);
                 float2 pieceNoise = IntroShardHash2(v.small.xy, v.macro.w + 11.0);
+                float2 pieceNoise2 = IntroShardHash2(v.small.xy + 0.37, v.macro.w + 29.0);
                 float3 rawVertex = ShellPoint(v.positionOS.xy);
                 float3 rawPieceCenter = ShellPoint(v.small.xy);
                 float3 rawMacroCenter = ShellPoint(v.macro.xy);
@@ -177,12 +188,25 @@ Shader "FixedCamVr/IntroFracture"
                     -macroRay.x / max(macroRay.z, 1e-4)));
                 float3 macroTangentY = normalize(cross(macroRay, macroTangentX));
 
+                float sizeRank = saturate((v.small.z - 0.016) / (0.055 - 0.016));
                 float largePiece = smoothstep(0.016, 0.055, v.small.z);
-                // 予兆では位置を保つ。起点付近の細い亀裂だけが先に見え、破断波で解放される。
-                float macroStart = 0.12 + v.macro.z * 0.24;
-                float crack = Ease(macroStart, macroStart + 0.025, p);
-                float loosen = Ease(macroStart, macroStart + 0.085, p);
-                float launch = OpeningProgress(p, v.macro.z * 0.14 + largePiece * 0.004);
+                float edgeCloser = step(0.5, v.small.w);
+
+                // 起点（tan 空間 (-0.16, 0.12)・IntroFractureMesh.Impact と同じ点）からの向きと距離。
+                // 亀裂の光と破断の波はここから外へ走り、破片もここから放射状に飛ぶ。
+                float2 slope = rawPieceCenter.xy / max(rawPieceCenter.z, 0.01);
+                float2 fromOrigin = slope - float2(-0.16, 0.12);
+                float originDist = saturate(length(fromOrigin) / 2.2);
+                float2 radial = fromOrigin / max(length(fromOrigin), 1e-4);
+                float2 tangent = float2(-radial.y, radial.x);
+
+                // 破断の時刻。大区分の順（macro.z 0..0.14 ＝ 起点からの距離順）に 0.20 秒で全域へ。
+                float breakAt = CrackEnd + v.macro.z * (BreakSpan / 0.14) + pieceNoise.x * 0.004;
+                float crack = Ease(breakAt, breakAt + 0.006, p);
+                float loosen = Ease(breakAt, breakAt + 0.020, p);
+                float u = WarpedTime(max(p - breakAt, 0.0));
+
+                // 破断の瞬間、大区分ごとにわずかに傾いて剥がれる。
                 float macroAngle = radians(lerp(1.5, 3.5, macroNoise.y))
                                  * (macroNoise.x < 0.5 ? -1.0 : 1.0) * crack;
                 float3 macroAxis = SafeNormalize(
@@ -192,36 +216,40 @@ Shader "FixedCamVr/IntroFracture"
                     + IntroShardSpin3(rawVertex - rawMacroCenter, macroAxis, macroAngle) + peelOffset;
                 float3 sourcePieceCenter = rawMacroCenter
                     + IntroShardSpin3(rawPieceCenter - rawMacroCenter, macroAxis, macroAngle) + peelOffset;
+                float3 relativeSource = sourceVertex - sourcePieceCenter;
 
-                float2 slope = rawPieceCenter.xy / max(rawPieceCenter.z, 0.01);
-                float2 radial = slope - float2(-0.16, 0.12);
-                radial /= max(length(radial), 1e-4);
-                float2 tangent = float2(-radial.y, radial.x);
+                // 一撃の行程（撮影時の頭の空間・m）。小片は速く遠く、周縁の片は奥へ、大片の一部だけ手前へ。
                 float edgeDistance = smoothstep(0.35, 1.25, length(slope));
-                float lateral = lerp(0.38, 0.64, pieceNoise.x) + v.small.z * 0.8;
-                // 周縁の片は奥へ逃がす。大きな片の一部だけが少し手前を通る。
-                float depth = lerp(0.34, -0.14, largePiece) + edgeDistance * 0.30
-                            + (pieceNoise.y - 0.5) * 0.12;
-                float3 burst = float3(radial * lateral + tangent * (pieceNoise.y - 0.5) * 0.10, depth);
-                sourcePieceCenter += burst * launch;
+                float lateral = (lerp(0.34, 0.58, pieceNoise.x) + v.small.z * 0.7)
+                              * lerp(1.15, 0.85, sizeRank);
+                float depth = lerp(0.30, -0.14, largePiece) + edgeDistance * 0.26
+                            + (pieceNoise.y - 0.5) * 0.14;
+                float3 burst = float3(radial * lateral + tangent * (pieceNoise2.x - 0.5) * 0.14, depth);
+                float3 flightCenter = sourcePieceCenter + burst * u;
 
-                float sizeTiming = saturate((v.small.z - 0.016) / (0.055 - 0.016));
-                float lowerSize = saturate(sizeTiming * 2.0);
-                float upperSize = saturate(sizeTiming * 2.0 - 1.0);
-                float travelStart = lerp(0.41, 0.47, lowerSize);
-                travelStart = lerp(travelStart, 0.56, upperSize);
-                float travelEnd = lerp(0.62, 0.69, lowerSize);
-                travelEnd = lerp(travelEnd, 0.78, upperSize);
-                float edgeCloser = step(0.5, v.small.w);
-                travelStart = lerp(travelStart, 0.56, edgeCloser);
-                travelEnd = lerp(travelEnd, 0.81, edgeCloser);
-                float travel = Ease(travelStart, travelEnd, p);
+                // 順回転。引き延ばした時間 u で回るので、一撃で速く、スローで遅く、止まらず、戻らない。
+                // 0217「勢いよく回りすぎ」を越えない振れ幅（全行程で小片 30〜70° / 大片 10〜25°）。
+                float tiltRate = radians(lerp(52.0, 18.0, sizeRank) * (0.55 + 0.9 * pieceNoise2.y))
+                               * (pieceNoise.x < 0.5 ? -1.0 : 1.0);
+                float rollRate = radians(lerp(38.0, 13.0, sizeRank) * (0.55 + 0.9 * pieceNoise2.x))
+                               * (pieceNoise.y < 0.5 ? -1.0 : 1.0);
+
+                // 集結。順番は小片・中央寄りが先で、乱数を混ぜる。枠を閉じる 3 片は最後。
+                // 時刻は order^0.30 ＝ 着地の密度が時間の 2.3 乗で増える（始め疎、終わり密）。
+                float centerDist = saturate(length(v.small.xy) / 0.15);
+                float order = saturate(0.20 * sizeRank + 0.30 * centerDist + 0.50 * pieceNoise2.y);
+                // 5% の片は先駆けとして 2.6 秒から 1 枚ずつ戻る（「徐々に」の始まり）。
+                order = lerp(order * 0.95, pieceNoise2.y * 0.03, step(pieceNoise2.x, 0.05));
+                order = lerp(order, 0.965 + 0.035 * pieceNoise2.x, edgeCloser);
+                float snapLen = SnapLen * lerp(1.0, 1.4, sizeRank);
+                float snapAt = SnapBegin + (SnapEnd - SnapLen * 1.4 - SnapBegin) * pow(order, 0.30);
+                float travel = Ease(snapAt, snapAt + snapLen, p);
                 float alignment = travel;
                 float seal = travel;
                 float detail = crack * (1.0 - seal);
-                float3 startCenter = mul(_CaptureHeadToWorld, float4(sourcePieceCenter, 1.0)).xyz;
-                float3 sourceRelative = mul((float3x3)_CaptureHeadToWorld,
-                    sourceVertex - sourcePieceCenter + burst * launch);
+
+                float3 startCenter = mul(_CaptureHeadToWorld, float4(flightCenter, 1.0)).xyz;
+                float3 sourceRelative = mul((float3x3)_CaptureHeadToWorld, relativeSource);
                 float3 captureWorld = mul(_CaptureHeadToWorld, float4(rawVertex, 1.0)).xyz;
                 float3 captureCenterWorld = mul(_CaptureHeadToWorld, float4(rawPieceCenter, 1.0)).xyz;
                 float3 targetCenter = _HasFrozenFrame > 0.5
@@ -234,15 +262,8 @@ Shader "FixedCamVr/IntroFracture"
                 if (dot(screenNormal, targetCenter - _CurrentHeadPosition.xyz) < 0.0)
                     screenNormal = -screenNormal;
 
-                // 一撃の慣性が止まった位置から浅い弧で戻る。終盤 25% は対応点へ直進する。
+                // 漂っている位置から対応点へ直線で戻る（鞭のように。弧も跳ね返りも付けない）。
                 float3 centerWorld = lerp(startCenter, targetCenter, travel);
-                float3 returnTangent = SafeNormalize(
-                    screenRight * (pieceNoise.x * 2.0 - 1.0)
-                    + screenUp * (pieceNoise.y * 2.0 - 1.0), screenRight);
-                float arcPhase = saturate(travel / 0.75);
-                float arcSine = sin(arcPhase * 3.14159265);
-                float arcWeight = arcSine * arcSine * arcSine * (1.0 - step(0.75, travel));
-                centerWorld += returnTangent * lerp(0.040, 0.018, largePiece) * arcWeight;
                 if (travel >= 1.0) centerWorld = targetCenter;
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
@@ -250,18 +271,18 @@ Shader "FixedCamVr/IntroFracture"
                 {
                     float3 safeFromEye = eyeDistance > 1e-4 ? fromEye / eyeDistance : screenNormal;
                     centerWorld = _CurrentHeadPosition.xyz + safeFromEye * 0.55;
+                    eyeDistance = 0.55;
                 }
 
                 float3 relativeWorld = lerp(sourceRelative, targetVertex - targetCenter, alignment);
-                // .34〜.41 は位置・姿勢・照明を完全に止める。帰還と同時に自然な向きへ揃える。
-                float middle = loosen * (1.0 - alignment);
+                // 回転量は引き延ばした時間に比例し、帰還と同時に自然な向きへ揃う。
+                float spinAmount = u * (1.0 - travel);
                 float3 travelAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroTangentX), screenRight, alignment), screenRight);
                 float3 faceAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroRay), screenNormal, alignment), screenNormal);
-                float tilt = radians(lerp(20.0, 43.0, pieceNoise.y) * (1.0 - 0.40 * largePiece))
-                           * (pieceNoise.x < 0.5 ? -1.0 : 1.0) * middle;
-                float roll = radians((pieceNoise.y * 2.0 - 1.0) * (24.0 - 13.0 * largePiece)) * middle;
+                float tilt = tiltRate * spinAmount;
+                float roll = rollRate * spinAmount;
                 relativeWorld = IntroShardSpin3(relativeWorld, travelAxis, tilt);
                 relativeWorld = IntroShardSpin3(relativeWorld, faceAxis, roll);
 
@@ -300,16 +321,27 @@ Shader "FixedCamVr/IntroFracture"
                 o.positionWS = worldPosition;
                 o.normalWS = normalize(normalWorld);
                 o.surface = v.surface.x;
-                o.detail = detail;
                 o.edgeDistances = v.edgeDistances;
-                float anticipation = Ease(0.012 + v.macro.z * 0.6,
-                    0.095 + v.macro.z * 0.6, p) * (1.0 - Ease(0.12, 0.17, p));
-                anticipation *= 1.0 - smoothstep(0.025, 0.095, v.macro.z);
-                float breakLight = Ease(macroStart, macroStart + 0.014, p)
-                    * (1.0 - Ease(macroStart + 0.014, macroStart + 0.075, p));
-                float landingLight = Ease(travelEnd - 0.018, travelEnd - 0.009, p)
-                    * (1.0 - Ease(travelEnd - 0.009, travelEnd, p));
-                o.fractureLight = float3(anticipation, breakLight, landingLight);
+
+                // 光。予兆は起点から外へ走る亀裂の光 — 先端が明るく、通り過ぎた所は 4 割まで落ちる
+                // （網を一斉に点灯させると「亀裂が走る」ではなく「網目」に見える）。
+                // 一撃は全域が同時に閃き、破断した片はその瞬間にも光る。
+                float glowOn = 0.008 + originDist * 0.040;
+                float glowFront = Ease(glowOn, glowOn + 0.010, p)
+                                * (0.40 + 0.60 * (1.0 - Ease(glowOn + 0.010, glowOn + 0.030, p)))
+                                * (1.0 - Ease(CrackEnd - 0.002, CrackEnd + 0.012, p));
+                float shock = Ease(CrackEnd - 0.004, CrackEnd + 0.004, p)
+                            * (1.0 - Ease(CrackEnd + 0.004, CrackEnd + 0.045, p));
+                float breakLight = Ease(breakAt, breakAt + 0.005, p)
+                                 * (1.0 - Ease(breakAt + 0.005, breakAt + 0.040, p));
+                float landAt = snapAt + snapLen;
+                float landingLight = Ease(landAt - 0.006, landAt - 0.001, p)
+                                   * (1.0 - Ease(landAt - 0.001, landAt + 0.006, p));
+                float glint = Ease(0.11, 0.20, p) * (1.0 - travel) * step(breakAt, p);
+                o.light = float4(glowFront, breakLight, landingLight, glint);
+                // 遠い片は沈む。着地した面には掛けない（detail で消える）。
+                float fog = saturate((eyeDistance - 1.7) / 2.2) * detail;
+                o.detail = float3(detail, fog, shock);
                 o.positionCS = TransformWorldToHClip(worldPosition);
                 return o;
             }
@@ -335,31 +367,49 @@ Shader "FixedCamVr/IntroFracture"
                 gray = saturate((gray - 0.5) * _PhotoContrast + 0.5);
                 gray = saturate(gray * _PhotoBrightness) * field;
 
+                float detail = i.detail.x;
+                float shock = i.detail.z;
                 float3 viewDirection = normalize(_CurrentHeadPosition.xyz - i.positionWS);
                 float3 normal = normalize(i.normalWS);
                 float3 lightDirection = normalize(-normalize(cross(_ScreenRight.xyz, _ScreenUp.xyz))
                     + normalize(_ScreenUp.xyz) * 0.70 - normalize(_ScreenRight.xyz) * 0.45);
                 float directionalShade = 0.68 + 0.32 * saturate(dot(normal, lightDirection));
-                float shade = lerp(1.0, directionalShade, i.detail);
-                float3 color = gray.xxx;
+                float shade = lerp(1.0, directionalShade, detail);
+                // 一撃の閃きは線ではなく面を白ませる（線だけ光らせるとワイヤーフレームに見える）。
+                float3 color = gray.xxx * (1.0 + 0.35 * i.light.y + 0.45 * shock);
+
+                // ガラス: 斜めから見た面の艶と、回転で流れる鏡面の閃き（鋭い芯と柔らかい艶）。飛んでいる間だけ。
+                float grazing = pow(1.0 - saturate(abs(dot(normal, viewDirection))), 3.0);
+                float3 halfVector = normalize(lightDirection + viewDirection);
+                float facing = saturate(dot(normal, halfVector));
+                float specular = pow(facing, 36.0) + 0.5 * pow(facing, 12.0);
+                float3 rimColor = float3(0.96, 0.90, 0.78);   // 生成り寄りの白（題字と同じ側の色）
                 float edgeDistance = min(min(i.edgeDistances.x, i.edgeDistances.y),
                     min(i.edgeDistances.z, i.edgeDistances.w));
                 float aa = max(fwidth(edgeDistance), 1e-6);
-                float bevel = 1.0 - smoothstep(0.00012, 0.00012 + aa * 1.15, edgeDistance);
-                float grazing = pow(1.0 - saturate(abs(dot(normal, viewDirection))), 3.0);
-                // 全面の分割線を先に見せると網目になる。予兆は起点付近にだけ残す。
-                float stressArea = 1.0 - smoothstep(0.045, 0.21,
-                    length((sampleUv - float2(0.45, 0.56)) * float2(1.333, 1.0)));
-                float edgeLight = bevel * (0.14 * i.fractureLight.x * stressArea + 0.42 * i.fractureLight.y
-                    + 0.10 * i.fractureLight.z + i.detail * (0.035 + 0.14 * grazing));
-                // 実景の明暗は残す。断面と一瞬の縁光だけで厚みを読ませる。
-                color = color * shade + float3(0.76, 0.84, 0.89) * edgeLight * field;
+                // 稜線（1 画素）と、縁に沿う幅のある光の帯（約 1cm）。帯が「厚みのあるガラス」に読ませる。
+                float ridge = 1.0 - smoothstep(0.00012, 0.00012 + aa * 1.15, edgeDistance);
+                float band = exp(-edgeDistance / 0.0011);
+                float edgeGlow = ridge * (0.12 * i.light.x + 0.50 * i.light.y + 0.30 * shock + 0.16 * i.light.z
+                                          + detail * (0.07 + 0.18 * grazing))
+                               + band * (0.05 * i.light.x + 0.28 * i.light.y + 0.20 * shock + 0.08 * i.light.z
+                                         + detail * (0.045 + 0.14 * grazing) * (0.6 + 0.8 * i.light.w));
+                // 実景の明暗は残す。飛んでいる間はわずかに冷たく、着地で素の写真へ戻る。
+                color = color * shade * lerp(float3(1.0, 1.0, 1.0), float3(0.94, 0.97, 1.03), detail)
+                      + rimColor * edgeGlow * field
+                      + float3(0.90, 0.92, 0.96) * specular * (0.32 * i.light.w + 0.10 * detail) * field
+                      + rimColor * grazing * 0.06 * detail * field;
+                color *= 1.0 - 0.30 * i.detail.y;
                 if (i.surface >= 0.5)
+                {
+                    // 裏は暗く、側面（ガラスの厚み）は明るく光を返す。
+                    float sideShade = 0.35 + 1.6 * saturate(dot(normal, lightDirection));
                     color = (i.surface < 1.5
-                        ? float3(0.022, 0.024, 0.026)
-                        : float3(0.065, 0.074, 0.080)
-                            * (0.35 + 1.6 * saturate(dot(normal, lightDirection)))
-                            + float3(0.30, 0.34, 0.36) * i.fractureLight.y) * field;
+                        ? float3(0.020, 0.022, 0.026) + rimColor * band * 0.10 * detail
+                        : float3(0.16, 0.17, 0.18) * sideShade
+                            + rimColor * (0.30 * i.light.y + 0.25 * shock + 0.10 * detail
+                                          + 0.08 * grazing * detail)) * field;
+                }
                 return float4(color, saturate(1.0 - _ScreenFade));
             }
             ENDHLSL

@@ -25,7 +25,7 @@ namespace FixedCamVr.Streaming.Tests
         private static readonly IntroTiming T = new IntroTiming
         {
             realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
-            frameSec = 2.5f, swapSec = 1.6f, maxSec = 20f,
+            frameSec = 5.0f, swapSec = 1.6f, maxSec = 20f,
         };
 
         /// <summary>段 3 が単独で流れる秒数（段 2 と重なるぶんを引いたもの）。</summary>
@@ -383,12 +383,12 @@ namespace FixedCamVr.Streaming.Tests
         public void TotalSec_AccountsForTheStructureOverlap()
         {
             // ⚠ この数字は卓の `intro-model.test.mjs` と**同じ値**にしてある。
-            //    1.5 + 3.5 + (2.5 - 3.5×0.4) + 2.5 + 1.6 = 10.2（段 3 は段 2 の後半から重なる）。
+            //    1.5 + 3.5 + (2.5 - 3.5×0.4) + 5.0 + 1.6 = 12.7（段 3 は段 2 の後半から重なる。段 4 は 0221 で 5.0 秒）。
             //    片方だけ直すと、卓の表示と実機の尺が沈黙して食い違う。
             // ⚠ 2026-08-16 に段 5 を 4.5 → 1.6 秒へ詰めた（`canon/LEDGER.md` 0058）。
             //    鈴（段 5 ＋ 1.2 秒）の後に 3.3 秒の無音の間が残っていた。
-            Assert.AreEqual(10.2f, T.TotalSec, 0.001f);
-            Assert.AreEqual(10.2f, IntroTiming.Default.TotalSec, 0.001f);
+            Assert.AreEqual(12.7f, T.TotalSec, 0.001f);
+            Assert.AreEqual(12.7f, IntroTiming.Default.TotalSec, 0.001f);
             Assert.Less(T.TotalSec, T.realSec + T.degradeSec + T.structureSec + T.frameSec + T.swapSec,
                 "重なりが効いていない（単純和になっている）");
         }
@@ -531,7 +531,8 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0f, early.frame, 1e-4f, "破砕の途中で四辺から切り落としている");
             Assert.Greater(early.shatter, 0f, "段の先頭から破砕が進んでいない");
 
-            Advance(l, T.frameSec * 0.65f, Ready(outsideM: 2f));
+            // 終端矩形は最後の大片が着く p=.84〜.90 で確定する（0221 の速度変化）。p=.87 で見る。
+            Advance(l, T.frameSec * 0.77f, Ready(outsideM: 2f));
             Assert.Greater(l.Weights.frame, early.frame, "終盤でスクリーン矩形が確定し始めていない");
             Assert.Greater(l.Weights.shatter, early.shatter, "破砕が単調に進んでいない");
         }
@@ -546,25 +547,26 @@ namespace FixedCamVr.Streaming.Tests
             var l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "段の頭から入れ替わっている");
 
-            l.Tick(T.frameSec * 0.69f, Ready(outsideM: 2f));
+            // 集結は p=.52〜.90（0221 の速度変化）。最後の大片が着く .90 まで終端矩形は閉じない。
+            l.Tick(T.frameSec * 0.80f, Ready(outsideM: 2f));
             Assert.AreEqual(0f, l.Weights.frame, 1e-4f, "大片の着地前に終端矩形が閉じ始めている");
 
-            l.Tick(T.frameSec * 0.12f, Ready(outsideM: 2f));
+            l.Tick(T.frameSec * 0.10f, Ready(outsideM: 2f));
             Assert.AreEqual(1f, l.Weights.frame, 1e-4f, "edge closer の着地で終端矩形が確定していない");
 
-            // p=.81 の再構成後も p=.88 までは中央の四角い現実を保つ。
-            l.Tick(T.frameSec * 0.07f, Ready(outsideM: 2f));
+            // p=.90 の再構成後も p=.94 までは中央の四角い現実を保つ。
+            l.Tick(T.frameSec * 0.03f, Ready(outsideM: 2f));
             Assert.Greater(l.Weights.shatter, 0f, "破砕が進んでいない");
             Assert.AreEqual(0f, l.Weights.live, 1e-4f, "破片が寄る前に入れ替わっている");
 
             // 再構成された矩形からだけクロスフェードする。
-            l.Tick(T.frameSec * 0.05f, Ready(outsideM: 2f));
+            l.Tick(T.frameSec * 0.035f, Ready(outsideM: 2f));
             float mid = l.Weights.live;
             Assert.Greater(mid, 0f, "破片が寄っても入れ替わっていない");
             Assert.Less(mid, 1f, "一瞬で入れ替わっている（フェードになっていない）");
 
-            // p=.98 で映像と終端矩形が揃って確定する。
-            l.Tick(T.frameSec * 0.05f, Ready(outsideM: 2f));
+            // p=.99 で映像と終端矩形が揃って確定する。
+            l.Tick(T.frameSec * 0.025f, Ready(outsideM: 2f));
             Assert.AreEqual(1f, l.Weights.live, 0.02f, "終端までに入れ替わっていない");
             Assert.AreEqual(1f, l.Weights.frame, 0.02f, "終端矩形が確定していない");
             Assert.AreEqual(1f, l.Weights.passthrough, 1e-4f, "段 4 の現実を先に消している");

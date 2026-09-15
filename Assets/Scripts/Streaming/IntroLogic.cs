@@ -12,8 +12,8 @@ namespace FixedCamVr.Streaming
         /// 段名と進行骨格は既存のまま保つ。現実の彩度が落ちて静止した後、
         /// 全視野が割れ、全片が本編スクリーンの矩形へ再構成される。
     ///
-    /// 段は <b>Black → Real → Degrade → Structure → Frame → Swap</b> の 5 段 13.1 秒
-    /// （段 3 は段 2 と重なるので単純和ではない）。
+    /// 段は <b>Black → Real → Degrade → Structure → Frame → Swap</b> の 5 段 12.7 秒
+    /// （段 3 は段 2 と重なるので単純和ではない。段 4 は 2026-09-15 に 2.5 → 5.0 秒・0221）。
     /// </summary>
     public enum IntroStage
     {
@@ -64,7 +64,9 @@ namespace FixedCamVr.Streaming
         public float maxSec;
 
         /// <summary>
-        /// コード既定。**合計 13.1 秒**（段 3 は段 2 と重なるので単純和ではない）。
+        /// コード既定。**合計 12.7 秒**（段 3 は段 2 と重なるので単純和ではない。
+        /// 段 4 は 2026-09-15 に 2.5 → 5.0 秒 — 映画の速度変化（一撃 → スロー → 集結）に
+        /// 2.5 秒ではスローが 1 秒も取れない・`canon/LEDGER.md` 0221）。
         ///
         /// ⚠ この値は 4 箇所に現れる。**全部一致していること**:
         ///   ここ / <c>ShowIntroDef</c> / 卓の <c>intro-model.js</c> の <c>INTRO_DEFAULT</c> /
@@ -73,7 +75,7 @@ namespace FixedCamVr.Streaming
         public static IntroTiming Default => new IntroTiming
         {
             realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
-            frameSec = 2.5f, swapSec = 1.6f, maxSec = 20f,
+            frameSec = 5.0f, swapSec = 1.6f, maxSec = 20f,
         };
 
         /// <summary>不正値を潰した複製。0 や負値はコード既定へ戻す（黙って 0 秒の段を作らない）。</summary>
@@ -659,16 +661,18 @@ namespace FixedCamVr.Streaming
                             degrade = 1f,
                             edge = 0f,
                             structure = 0f,
-                            // 全片の再構成が終わる時刻に、幾何上の矩形も確定する。
+                            // 全片の再構成が終わる時刻（枠を閉じる 3 片が着く p=.90）に、幾何上の矩形も確定する。
                             // base quad は破砕中ずっと閉じているため、四辺の閉鎖としては見せない。
-                            frame = SmoothStep(0.69f, 0.81f, p),
+                            // 時計の表は IntroFracture.shader（0221 の速度変化・5.0 秒の段）。
+                            frame = SmoothStep(0.84f, 0.90f, p),
                             // 映像と既存音が共有する段 4 の時計。
                             shatter = p,
                             grain = 0f,
                             glitch = 0f,
                             // 混合量は IntroVeil の _ScreenFade だけが持つ。IntroDirector の
                             // _IntroLive は 0/1 の表示ゲートなので、ここを二重に掛けない。
-                            live = SmoothStep(0.88f, 0.98f, p),
+                            // .90〜.94 は完成した実景の面を見せ、.94〜.99 で映像へ混合する。
+                            live = SmoothStep(0.94f, 0.99f, p),
                             ignite = 1f,
                         };
                     }

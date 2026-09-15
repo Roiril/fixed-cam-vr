@@ -1314,7 +1314,7 @@ function renderRunCfg(s) {
 }
 
 // ---- 導入の遷移演出（show.json run.intro）------------------------------------
-//   現実が格下げされ、割れて、スクリーンの枠へ吸い込まれる 13.1 秒
+//   現実が格下げされ、割れて、スクリーンの枠へ吸い込まれる 12.7 秒
 //   （2026-08-15 に旧構成へ戻した。封印の箱を退避したため — canon/LEDGER.md 0044）。
 //   run の一部なので**保存は applyRunCfg の 1 経路に乗せる**（新しい保存口を作らない）。
 //   判定と既定は intro-model.js が単一の正（本番前チェックも同じ関数を読む）。
@@ -1953,7 +1953,7 @@ function preflightRows() {
         detail: `${laps} 周走る設定ですが演出は ${authoredMax} 周目までです（最後の周は映像切替だけになります）` });
     } else {
       // ⚠ 導入は「演出（run.intro の段の合計）＋ 慣らし歩行（introMinSec）」。
-      //   introMinSec だけを出すと**演出のぶん（既定 13.1s）が予算から丸ごと落ちる**。
+      //   introMinSec だけを出すと**演出のぶん（既定 12.7s）が予算から丸ごと落ちる**。
       //   3 分の予算を現場で守るための行なので、実際に流れる秒を出す。
       const introSec = run.introEnabled
         ? (run.intro && run.intro.enabled !== false ? introStageSec(introConfig(run)) : 0) + (run.introMinSec || 0)

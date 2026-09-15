@@ -578,12 +578,13 @@ def _default_show():
         'run': {'totalLaps': 3, 'introEnabled': True, 'introMinSec': 20, 'introAutoAdvance': True,
                 'targetSec': 180, 'hardLimitSec': 300, 'endFadeSec': 1.5,
                 'endGraceSec': 3.0, 'endHoldMaxSec': 60.0,
-                # 尺は 2026-08-15 に旧構成へ戻した（段 3 は段 2 と重なるので実尺 13.1s）。
+                # 尺は 2026-08-15 に旧構成へ戻した（段 3 は段 2 と重なるので実尺 12.7s。
+                # 段 4 は 2026-09-15 に 2.5 → 5.0 秒・canon/LEDGER.md 0221）。
                 # ⚠ この値は tools/web-compositor/intro-model.js の INTRO_DEFAULT と一致していること
                 #   （intro-model.test.mjs が両者を突き合わせる。片方だけ直すと沈黙して食い違う）。
                 'intro': {'enabled': True, 'maxSec': 20,
                           'realSec': 1.5, 'degradeSec': 3.5, 'structureSec': 2.5,
-                          'frameSec': 2.5, 'swapSec': 1.6,
+                          'frameSec': 5.0, 'swapSec': 1.6,
                           # 構造の線は既定で出さない（2026-08-01。細い線が現実に重なると計測器に見える）。
                           # Unity の ShowIntroDef / 卓の INTRO_DEFAULT と 3 者で揃えること。
                           'edgeColor': '#ffcf9e', 'showCameraMarks': False, 'showRoomWire': False,

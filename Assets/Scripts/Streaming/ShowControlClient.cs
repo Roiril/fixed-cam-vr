@@ -708,7 +708,7 @@ namespace FixedCamVr.Streaming
         /// <summary>段 3。輪郭だけの世界（段 2 の後半から重なる）。</summary>
         public float structureSec = 2.5f;
         /// <summary>段 4。現実が割れてスクリーンへ吸い込まれ、枠が閉じる。</summary>
-        public float frameSec = 2.5f;
+        public float frameSec = 5.0f;
         /// <summary>段 5。枠の中がカメラ映像へ。</summary>
         public float swapSec = 1.6f;
 

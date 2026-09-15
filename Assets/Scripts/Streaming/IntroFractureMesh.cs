@@ -10,10 +10,21 @@ namespace FixedCamVr.Streaming
     /// <summary>
     /// 導入で覆いを割る大小の三角形片と四角形片を組む。角度空間の Delaunay 分割を全片で共有し、
     /// 隣接三角形の一部を凸な四角形へまとめる。
+    ///
+    /// 形は<b>起点から放射する亀裂と同心の亀裂の網</b>（ガラスの蜘蛛の巣・canon/LEDGER.md 0222）。
+    /// 起点近くは細かく、周縁ほど大きい。放射線に沿う細長い片を混ぜる。節は角度も半径も揺らし、
+    /// 届かない亀裂も混ぜて、長方形の升目にならないようにする（0215「正方形、長方形は除く」）。
     /// </summary>
     public static class IntroFractureMesh
     {
         public const int MacroCount = 24;
+        /// <summary>
+        /// 起点（角度空間）。シェーダの起点 tan(-0.16, 0.12) と同じ点（tan = tan(angle × atan 2)）。
+        /// 亀裂はここから放射し、破断の波もここから外へ走る（大区分の startOffset）。
+        /// </summary>
+        public const double ImpactX = -0.143d;
+        public const double ImpactY = 0.108d;
+        public const int RayCount = 15;
         public const float HalfExtentLocal = 0.30f;
         public const float FrontSurface = 0f;
         public const float BackSurface = 1f;
@@ -22,7 +33,10 @@ namespace FixedCamVr.Streaming
 
         private const int MacroColumns = 6;
         private const int MacroRows = 4;
-        private const int Seed = 20260913;
+        private const int Seed = 20260915;
+        /// <summary>同心の亀裂の半径（角度空間・起点から）。外側 2 つは遠い角にしか届かない。</summary>
+        private static readonly double[] RingRadii =
+            { 0.055d, 0.115d, 0.19d, 0.29d, 0.42d, 0.58d, 0.78d, 1.02d, 1.32d, 1.70d };
         private const double MinArea = 1e-12;
         private const double DuplicateDistanceSquared = 1e-16;
 
@@ -321,35 +335,56 @@ namespace FixedCamVr.Streaming
                 AddPoint(points, new Point(1d, y));
             }
 
-            foreach (Point site in BuildGridSites(9, 7, 0.42d, random))
-                AddPoint(points, site);
-
-            Point[] clusterCenters =
+            // 起点から放射する亀裂と同心の亀裂の網。節は角度（区画の ±36%）も半径（±22%）も揺らし、
+            // 2 本目の輪から先は 12% の節を欠かせる（亀裂が届かない）。外周は境界の点が閉じる。
+            var impact = new Point(ImpactX, ImpactY);
+            AddPoint(points, impact);
+            double sector = Math.PI * 2d / RayCount;
+            var rayAngles = new double[RayCount];
+            var rayDrift = new double[RayCount];
+            for (int ray = 0; ray < RayCount; ray++)
             {
-                new Point(-0.64d, 0.52d),
-                new Point(0.53d, 0.58d),
-                new Point(-0.48d, -0.51d),
-                new Point(0.49d, -0.43d),
-                new Point(0.03d, 0.02d),
-            };
-            double[] clusterAngles = { 0.22d, -0.63d, 0.87d, 0.38d, -0.91d };
-            for (int cluster = 0; cluster < clusterCenters.Length; cluster++)
-                AddCluster(points, clusterCenters[cluster], clusterAngles[cluster], random);
+                rayAngles[ray] = sector * ray + (random.NextDouble() * 2d - 1d) * sector * 0.30d;
+                rayDrift[ray] = (random.NextDouble() * 2d - 1d) * 0.045d;
+            }
+            for (int ring = 0; ring < RingRadii.Length; ring++)
+            {
+                for (int ray = 0; ray < RayCount; ray++)
+                {
+                    double skip = random.NextDouble();
+                    double angle = rayAngles[ray] + rayDrift[ray] * ring
+                                   + (random.NextDouble() * 2d - 1d) * sector * 0.36d;
+                    double radius = RingRadii[ring] * (1d + (random.NextDouble() * 2d - 1d) * 0.22d);
+                    if (ring >= 2 && skip < 0.12d)
+                        continue;
+                    Point point = impact + new Point(Math.Cos(angle), Math.Sin(angle)) * radius;
+                    if (Math.Abs(point.x) > 0.985d || Math.Abs(point.y) > 0.985d)
+                        continue;
+                    AddPoint(points, point);
+                }
+            }
+
+            // 放射線に沿う細長い片。起点付近の 5 本の亀裂に、線上のわずかにずれた点を並べる。
+            for (int ray = 0; ray < RayCount; ray += 3)
+                AddSliver(points, impact, rayAngles[ray] + rayDrift[ray] * 1.5d, random);
 
             foreach (Point site in macroSites)
                 AddPoint(points, site);
             return points;
         }
 
-        private static void AddCluster(List<Point> points, Point center, double angle, System.Random random)
+        private static void AddSliver(List<Point> points, Point origin, double angle, System.Random random)
         {
             var along = new Point(Math.Cos(angle), Math.Sin(angle));
             var across = new Point(-along.y, along.x);
-            for (int i = 0; i < 18; i++)
+            for (int i = 0; i < 6; i++)
             {
-                double longitudinal = (random.NextDouble() * 2d - 1d) * 0.16d;
-                double lateral = (random.NextDouble() * 2d - 1d) * 0.022d;
-                AddPoint(points, center + along * longitudinal + across * lateral);
+                double longitudinal = 0.08d + random.NextDouble() * 0.36d;
+                double lateral = (random.NextDouble() * 2d - 1d) * 0.018d;
+                Point point = origin + along * longitudinal + across * lateral;
+                if (Math.Abs(point.x) > 0.985d || Math.Abs(point.y) > 0.985d)
+                    continue;
+                AddPoint(points, point);
             }
         }
 
@@ -618,7 +653,8 @@ namespace FixedCamVr.Streaming
         {
             var centers = new Vector2[MacroCount];
             var distances = new float[MacroCount];
-            Vector2 start = ToLocal(new Point(-0.12d, 0.08d));
+            // 破断の波は亀裂の起点から外へ走る（シェーダの breakAt ＝ CrackEnd + startOffset の順）。
+            Vector2 start = ToLocal(new Point(ImpactX, ImpactY));
             float maxDistance = 0f;
             float minDistance = float.PositiveInfinity;
             for (int i = 0; i < sites.Length; i++)

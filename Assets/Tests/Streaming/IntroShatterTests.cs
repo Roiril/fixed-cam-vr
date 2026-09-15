@@ -76,14 +76,14 @@ namespace FixedCamVr.Streaming.Tests
         public void ScreenCrossfade_HoldsTheReconstructedRealityThenCompletes()
         {
             var l = AtFrame();
-            // p=.82 で全片が矩形へ再構成された後も、短く現実を保つ。
-            l.Tick(IntroTiming.Default.frameSec * 0.88f, Ready());
+            // p=.90 で全片が矩形へ再構成された後も、p=.94 まで現実を保つ（0221 の速度変化）。
+            l.Tick(IntroTiming.Default.frameSec * 0.92f, Ready());
             Assert.AreEqual(0f, l.Weights.live, 1e-5f);
 
-            l.Tick(IntroTiming.Default.frameSec * 0.05f, Ready());
+            l.Tick(IntroTiming.Default.frameSec * 0.045f, Ready());
             Assert.That(l.Weights.live, Is.InRange(0.01f, 0.99f));
 
-            l.Tick(IntroTiming.Default.frameSec * 0.05f, Ready());
+            l.Tick(IntroTiming.Default.frameSec * 0.03f, Ready());
             Assert.AreEqual(1f, l.Weights.live, 1e-5f);
             Assert.AreEqual(1f, l.Weights.frame, 1e-5f, "映像の終端とスクリーン矩形が揃っていない");
         }

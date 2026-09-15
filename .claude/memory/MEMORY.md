@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) - 2026-09-15（0221 / 0222）。現実が割れる遷移を映画の速度変化へ書き直した。段 4 は 5.0 秒（5 か所＋卓の show.json）。時計の表はシェーダ 1 つで、音と IntroLogic はその写し。形は起点からの網、質感はガラスの縁の光。短い窓の LUFS は −70 を返す／速い粒は半分の長さ／平均乱数は 0.1 を下回らない。
+
 - [staff_status_view.md](staff_status_view.md) - 2026-09-14。右 B のステータスは押しているあいだだけ出す。トグルをやめた理由／黒の上に描く 3 点（3D TMP・Overlay・queue 5000。sortingOrder では越えられない）／題字を譲らせない／faceButtonHeld から B を外した／電池 API は使わない／`ev=status` と `hudSec` と heartbeat `statusHud` の読み方。
 
 - [hmd_onboarding.md](hmd_onboarding.md) - 2026-09-14。HMD 内は左コントローラーの接続確認 → X/Y の報告練習 → 本人の短押しでタイトル開始 → 歩行誘導。注意・言語選択はタブレット。入力持ち越しと切断時の復帰条件。

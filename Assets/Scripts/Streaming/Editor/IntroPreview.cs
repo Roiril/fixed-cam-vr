@@ -174,6 +174,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     File.WriteAllText(Path.Combine(cleanFramesDir, "frames.tsv"), framesTsv.ToString());
                     File.WriteAllText(Path.Combine(cleanFramesDir, "audio-cues.tsv"), cuesTsv.ToString());
                     stage.VerifyFrozenFrame(saved);
+                    WriteMeshEvidence(outDir);
                 }
             }
             catch (Exception e)
@@ -197,6 +198,50 @@ namespace FixedCamVr.Streaming.EditorTools
             foreach (string p in saved) sb.AppendLine("  " + p.Replace('\\', '/'));
             sb.Append("（段の進み方と形を見るための絵。現場の見えではない）");
             Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
+        /// 破片の形の分布を JSON で残す（0222「割れ方が美しくない」への答え合わせ用）。
+        /// 1 片 1 行: 重心（覆いのローカル・m）/ 面積 / 枠を閉じる片か。起点からの距離で
+        /// 面積がどう変わるかを `Logs/` の検査スクリプトが数える。Build は決定的なので撮った絵と同じ形。
+        /// </summary>
+        private static void WriteMeshEvidence(string outDir)
+        {
+            Mesh mesh = IntroFractureMesh.Build();
+            try
+            {
+                var pieces = new List<Vector4>();
+                var surfaces = new List<Vector4>();
+                mesh.GetUVs(1, pieces);
+                mesh.GetUVs(3, surfaces);
+                var seen = new HashSet<Vector4>();
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\"pieces\":").Append(IntroFractureMesh.LastPieceCount)
+                  .Append(",\"triangles\":").Append(IntroFractureMesh.LastTrianglePieceCount)
+                  .Append(",\"quads\":").Append(IntroFractureMesh.LastQuadPieceCount)
+                  .Append(",\"impactAngular\":[").Append(IntroFractureMesh.ImpactX.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture))
+                  .Append(',').Append(IntroFractureMesh.ImpactY.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture))
+                  .Append("],\"halfExtentLocal\":").Append(IntroFractureMesh.HalfExtentLocal.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture))
+                  .Append(",\"shards\":[");
+                bool first = true;
+                for (int i = 0; i < pieces.Count; i++)
+                {
+                    if (surfaces[i].x != IntroFractureMesh.FrontSurface) continue;
+                    if (!seen.Add(pieces[i])) continue;
+                    Vector4 piece = pieces[i];
+                    if (!first) sb.Append(',');
+                    first = false;
+                    sb.Append(FormattableString.Invariant(
+                        $"{{\"cx\":{piece.x:0.00000},\"cy\":{piece.y:0.00000},\"area\":{piece.z * piece.z:0.000000000},\"closer\":{(piece.w > 0.5f ? 1 : 0)}}}"));
+                }
+                sb.Append("]}");
+                File.WriteAllText(Path.Combine(outDir, "mesh-evidence.json"), sb.ToString());
+                Debug.Log($"[IntroViz] mesh evidence: {seen.Count} pieces");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
         }
 
         // ---- 撮る対象 --------------------------------------------------------
@@ -247,11 +292,12 @@ namespace FixedCamVr.Streaming.EditorTools
             yield return new Shot(IntroStage.Structure, 3, "structure", 0.5f, 50);
 
             foreach ((float p, int label) in
+                     // 0221 の時計: 予兆 .00-.06 / 一撃 .06-.10 / スロー .10-.52 / 集結 .52-.90 / 面 .90-.94 / 混合 .94-.99
                      new[]
                      {
-                         (0f, 0), (0.08f, 8), (0.125f, 12), (0.16f, 16), (0.25f, 25),
-                         (0.375f, 37), (0.42f, 42), (0.5f, 50),
-                         (0.625f, 62), (0.75f, 75), (0.84f, 84), (0.875f, 87), (0.94f, 94), (0.999f, 100),
+                         (0f, 0), (0.04f, 4), (0.065f, 6), (0.08f, 8), (0.10f, 10), (0.14f, 14),
+                         (0.25f, 25), (0.40f, 40), (0.52f, 52), (0.65f, 65), (0.78f, 78),
+                         (0.86f, 86), (0.90f, 90), (0.92f, 92), (0.96f, 96), (0.999f, 100),
                      })
                 yield return new Shot(IntroStage.Frame, 4, "frame", p, label);
 
@@ -723,20 +769,34 @@ namespace FixedCamVr.Streaming.EditorTools
 
             public void VerifyFrozenFrame(List<string> saved)
             {
-                // 状態値だけでは停止を証明できない。同じ入力で別時刻の実画素を照合する。
+                // 状態値だけでは速度変化を証明できない。同じ入力で別時刻の実画素を照合する（0221）。
+                // 一撃直後の 100ms はスロー中の 100ms の 5 倍以上動き、スロー中は止まらず（0 ではなく）、
+                // 着地後は止まる。「止まるはず」と「動くはず」の両方を流して計器を校正する。
                 Render(new Shot(IntroStage.Frame, 4, "probe_motion_reset", 0f, 0), saved);
-                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_a", 0.36f, 36), saved);
-                Color32[] suspended = _sceneTex.GetPixels32();
-                Render(new Shot(IntroStage.Frame, 4, "probe_suspended_b", 0.40f, 40), saved);
-                float suspendedDelta = MeanPixelDifference(suspended, _sceneTex.GetPixels32());
-                Render(new Shot(IntroStage.Frame, 4, "probe_landed_a", 0.82f, 82), saved);
+                Render(new Shot(IntroStage.Frame, 4, "probe_burst_a", 0.07f, 7), saved);
+                Color32[] burst = _sceneTex.GetPixels32();
+                Render(new Shot(IntroStage.Frame, 4, "probe_burst_b", 0.09f, 9), saved);
+                float burstDelta = MeanPixelDifference(burst, _sceneTex.GetPixels32());
+                Render(new Shot(IntroStage.Frame, 4, "probe_slow_a", 0.30f, 30), saved);
+                Color32[] slow = _sceneTex.GetPixels32();
+                Render(new Shot(IntroStage.Frame, 4, "probe_slow_b", 0.32f, 32), saved);
+                float slowDelta = MeanPixelDifference(slow, _sceneTex.GetPixels32());
+                Render(new Shot(IntroStage.Frame, 4, "probe_landed_a", 0.91f, 91), saved);
                 Color32[] landed = _sceneTex.GetPixels32();
-                Render(new Shot(IntroStage.Frame, 4, "probe_landed_b", 0.87f, 87), saved);
+                Render(new Shot(IntroStage.Frame, 4, "probe_landed_b", 0.93f, 93), saved);
                 float landedDelta = MeanPixelDifference(landed, _sceneTex.GetPixels32());
-                if (suspendedDelta > 0.01f || landedDelta > 0.01f)
+                if (slowDelta < 0.02f)
                     throw new InvalidOperationException(
-                        $"破片の静止区間が動いた: suspended={suspendedDelta} landed={landedDelta}");
-                Debug.Log($"[IntroViz] motion holds: suspended={suspendedDelta:F4} landed={landedDelta:F4}");
+                        $"スロー中に破片が止まっている（0216 の「止まって逆回転に見える」に戻る）: slow={slowDelta}");
+                if (burstDelta < slowDelta * 5f)
+                    throw new InvalidOperationException(
+                        $"一撃がスローより速くない（速度変化が出ていない）: burst={burstDelta} slow={slowDelta}");
+                if (landedDelta > 0.01f)
+                    throw new InvalidOperationException(
+                        $"着地した実景の面が動いた: landed={landedDelta}");
+                Debug.Log($"[IntroViz] speed ramp: burst={burstDelta:F4} slow={slowDelta:F4} landed={landedDelta:F4}");
+                File.WriteAllText(Path.Combine(_outDir, "motion-proof.json"), FormattableString.Invariant(
+                    $"{{\"burstPixelDelta\":{burstDelta:0.000000},\"slowPixelDelta\":{slowDelta:0.000000},\"landedPixelDelta\":{landedDelta:0.000000}}}"));
                 VerifyShatterAnchor(saved);
                 _freezeSourceOverride = UnityEngine.Object.Instantiate(_reality);
                 try
