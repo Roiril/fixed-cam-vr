@@ -6,9 +6,11 @@ const status = document.querySelector("#camera-status");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const CAMERA_COUNT = 3;
+const AUTO_SWITCH_INTERVAL_MS = 6000;
 
 let currentCamera = readCameraFromUrl();
 let noiseTimer = null;
+let autoSwitchTimer = null;
 
 function readCameraFromUrl() {
   const raw = new URL(window.location.href).searchParams.get("camera");
@@ -62,7 +64,27 @@ function renderCamera(camera, { animate = true } = {}) {
   if (animate) showSwitchNoise();
 }
 
+function stopAutoSwitch() {
+  window.clearTimeout(autoSwitchTimer);
+  autoSwitchTimer = null;
+}
+
+function scheduleAutoSwitch() {
+  stopAutoSwitch();
+  if (document.hidden) return;
+
+  autoSwitchTimer = window.setTimeout(advanceCamera, AUTO_SWITCH_INTERVAL_MS);
+}
+
+function advanceCamera() {
+  const nextCamera = (currentCamera % CAMERA_COUNT) + 1;
+  renderCamera(nextCamera);
+  writeCameraToUrl(nextCamera, "replaceState");
+  scheduleAutoSwitch();
+}
+
 function selectCamera(camera) {
+  scheduleAutoSwitch();
   if (camera === currentCamera) return;
   renderCamera(camera);
   writeCameraToUrl(camera, "pushState");
@@ -98,9 +120,19 @@ reducedMotion.addEventListener("change", (event) => {
   if (event.matches) stopSwitchNoise();
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopAutoSwitch();
+  } else {
+    scheduleAutoSwitch();
+  }
+});
+
 window.addEventListener("popstate", () => {
   renderCamera(readCameraFromUrl(), { animate: false });
+  scheduleAutoSwitch();
 });
 
 renderCamera(currentCamera, { animate: false });
 writeCameraToUrl(currentCamera, "replaceState");
+scheduleAutoSwitch();

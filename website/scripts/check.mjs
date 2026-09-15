@@ -111,16 +111,12 @@ for (const copy of requiredCopy) {
 }
 
 const forbiddenFeatures = [
-  "自動切替",
   "生成イメージ",
   "画面の中の自分",
   "死角",
   "企画について",
   "blind-spot",
-  "auto-switch",
-  "scheduleautoswitch",
-  "setautoenabled",
-  "auto_interval_ms"
+  "setautoenabled"
 ];
 for (const forbidden of forbiddenFeatures) {
   if (combinedSource.includes(forbidden)) errors.push(`forbidden content or feature remains: ${forbidden}`);
@@ -130,6 +126,29 @@ if ((html.match(/data-camera-button=/g)?.length ?? 0) !== 3) errors.push("manual
 if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
+if (!js.includes("const AUTO_SWITCH_INTERVAL_MS = 6000;")) errors.push("automatic camera interval must be 6000 ms");
+if (!js.includes("const nextCamera = (currentCamera % CAMERA_COUNT) + 1;")) errors.push("automatic camera order must loop forward");
+if (!/function advanceCamera\(\)\s*{[\s\S]*?writeCameraToUrl\(nextCamera, "replaceState"\);[\s\S]*?scheduleAutoSwitch\(\);[\s\S]*?}/.test(js)) {
+  errors.push("automatic camera switching must replace URL state and reschedule");
+}
+if (!/function selectCamera\(camera\)\s*{\s*scheduleAutoSwitch\(\);\s*if \(camera === currentCamera\) return;[\s\S]*?writeCameraToUrl\(camera, "pushState"\);[\s\S]*?}/.test(js)) {
+  errors.push("manual camera selection must reset the timer and avoid duplicate history entries");
+}
+if (!/button\.addEventListener\("click",[\s\S]*?selectCamera\(/.test(js) || !/button\.addEventListener\("keydown",[\s\S]*?selectCamera\(/.test(js)) {
+  errors.push("click and keyboard camera selection must use the manual reset path");
+}
+if (!/function scheduleAutoSwitch\(\)\s*{[\s\S]*?if \(document\.hidden\) return;[\s\S]*?AUTO_SWITCH_INTERVAL_MS[\s\S]*?}/.test(js)) {
+  errors.push("automatic camera timer must not run while the document is hidden");
+}
+if (!/document\.addEventListener\("visibilitychange",[\s\S]*?stopAutoSwitch\(\);[\s\S]*?scheduleAutoSwitch\(\);[\s\S]*?}\);/.test(js)) {
+  errors.push("visibility changes must pause and restart automatic camera switching");
+}
+if (!/window\.addEventListener\("popstate",[\s\S]*?scheduleAutoSwitch\(\);[\s\S]*?}\);/.test(js)) {
+  errors.push("back and forward navigation must restart the automatic camera timer");
+}
+if (/data-(?:auto-switch|camera-autoplay)|自動切替|自動再生|auto(?:matic)?\s+(?:switch|play)/i.test(html)) {
+  errors.push("automatic camera switching must not add an on/off control");
+}
 if (!html.includes('class="skip-link"') || !html.includes('aria-live="polite"')) errors.push("required accessibility hooks are missing");
 if (!html.includes('<link rel="canonical" href="https://mawarimi.vercel.app/">')) errors.push("canonical URL is missing");
 if (!html.includes('property="og:image"') || !html.includes('name="twitter:card"')) errors.push("social preview metadata is missing");
