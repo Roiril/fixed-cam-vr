@@ -113,6 +113,8 @@ namespace FixedCamVr.Streaming
         /// 「状態が進んだではなく効果が出た」）。<c>ShowTelemetryHost</c> が読む。
         /// </summary>
         public float IgniteWritten => _screenMat != null ? _igniteWritten : -1f;
+        /// <summary>スクリーンの材質へ実際に書いた <c>_IntroLive</c>（0/1 の表示ゲート）。掴めていなければ -1。</summary>
+        public float LiveGateWritten => _screenMat != null ? _liveWritten : -1f;
 
         /// <summary>輪郭線の色（<c>PassthroughStyler</c> が読む）。</summary>
         public Color EdgeColor => _def.ResolveEdgeColor();

@@ -464,6 +464,9 @@ namespace FixedCamVr.Diagnostics
         private static readonly int BlendId = Shader.PropertyToID("_Blend");
         private static readonly int SrcBlendId = Shader.PropertyToID("_SrcBlend");
         private static readonly int DstBlendId = Shader.PropertyToID("_DstBlend");
+        // compositor alpha の別ブレンド（0227）。URP の Unlit が持つ __srcA / __dstA。
+        private static readonly int SrcBlendAlphaId = Shader.PropertyToID("_SrcBlendAlpha");
+        private static readonly int DstBlendAlphaId = Shader.PropertyToID("_DstBlendAlpha");
         private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
         private static readonly int AlphaClipId = Shader.PropertyToID("_AlphaClip");
         private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -1356,6 +1359,14 @@ namespace FixedCamVr.Diagnostics
         /// ここは丸ごと空振りし、従来どおり不透明で出る）。だから警告を出す — 黙って不透明に
         /// なると、実機の画を拡大するまで誰も気づけない。
         /// ⚠ <b>深度は書かない。</b> 書くと後ろの文字（TMP Overlay）が自分の地に隠れる。
+        ///
+        /// ⚠⚠ <b>compositor alpha は「足す」だけにする</b>（2026-09-15・<c>canon/LEDGER.md</c> 0227）。
+        /// Quest の compositor は<b>フレームバッファの alpha が 1 未満の画素にパススルーを混ぜる</b>。
+        /// URP の Unlit は既定で RGB と同じ <c>SrcAlpha OneMinusSrcAlpha</c> を alpha にも掛けるので、
+        /// 地（alpha 0.72）は題字の黒が書いた alpha 1 を <b>0.72 へ置き換え</b>、その画素に 28% の現実が
+        /// 混ざっていた ＝ 題字の前の暗闇で「背景ごしにパススルーが見える」。alpha を
+        /// <c>One OneMinusSrcAlpha</c>（<c>TitleVeil</c> / <c>CommsAvatar</c> と同じ式）にすると、
+        /// 地は下の alpha を<b>閉じる方向にしか</b>動かせない。RGB の混ぜ方（黒い半透明・0096）は変えない。
         /// </summary>
         private static void MakeTranslucent(Material m)
         {
@@ -1371,6 +1382,10 @@ namespace FixedCamVr.Diagnostics
                 m.SetFloat(SrcBlendId, (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
             if (m.HasProperty(DstBlendId))
                 m.SetFloat(DstBlendId, (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (m.HasProperty(SrcBlendAlphaId))
+                m.SetFloat(SrcBlendAlphaId, (float)UnityEngine.Rendering.BlendMode.One);
+            if (m.HasProperty(DstBlendAlphaId))
+                m.SetFloat(DstBlendAlphaId, (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             if (m.HasProperty(ZWriteId)) m.SetFloat(ZWriteId, 0f);
             if (m.HasProperty(AlphaClipId)) m.SetFloat(AlphaClipId, 0f);
             m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");

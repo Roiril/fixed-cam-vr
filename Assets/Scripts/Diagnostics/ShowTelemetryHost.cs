@@ -440,6 +440,10 @@ namespace FixedCamVr.Diagnostics
         private string IgniteState => _intro == null
             ? "-"
             : (_intro.IgniteWritten < 0f ? "nc" : _intro.IgniteWritten.ToString("F2"));
+        /// <summary>スクリーンの表示ゲート <c>_IntroLive</c> に実際に書いた値（0225 で reveal でも開く）。</summary>
+        private string LiveGateState => _intro == null
+            ? "-"
+            : (_intro.LiveGateWritten < 0f ? "nc" : _intro.LiveGateWritten.ToString("F2"));
 
         /// <summary>
         /// スクリーンの電力（<c>_ScreenPower</c>）に<b>実際に書いた値</b>。
@@ -1211,6 +1215,12 @@ namespace FixedCamVr.Diagnostics
             // 管の点灯は**導入の外でも必ず出す**。既定は 1（点いている）で、演出が終わった後に
             // 0 が残っていたら画がまるごと消えている ＝ ここでしか気づけない。
             _sb.Append(" ignite=").Append(IgniteState);
+            // 表示ゲート。導入の段 4 で reveal（.68〜）か live（.895〜）が立てば 1。ここが 0 のまま
+            // 砂嵐も映像も出ない（0225 の実機検証で、保持中に画が黒だった原因の切り分けに要る）。
+            _sb.Append(" ilive=").Append(LiveGateState);
+            // 砂嵐の実値。**導入中にも出す**（0225 の実機検証で、段 Frame の保持中に画が黒だった原因の
+            // 切り分けに要る — 後半の `storm=` は本編でしか書かれない）。`-` は SignalLostFx を掴めていない。
+            _sb.Append(" sig=").Append(_signal != null ? _signal.Level.ToString("F2") : "-");
             // 終幕の電力。**演出の外では 1.00** なので、本編中にこれが下がっていたら画が暗い理由がここ。
             _sb.Append(" pw=").Append(PowerState);
             _sb.Append(" cg=").Append(CgState);

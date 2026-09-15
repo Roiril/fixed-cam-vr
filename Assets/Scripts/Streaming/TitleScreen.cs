@@ -580,15 +580,15 @@ namespace FixedCamVr.Streaming
                 return;
             }
             ShowLang lang = ShowLanguage.Current;
-            if (prompt.text.Length == 0 || _promptLang != lang || !prompt.gameObject.activeSelf)
+            // ⚠ 生成時に SetActive(false) した TMP は Awake を通っておらず、初めて出す瞬間の `text` は null
+            //    （2026-09-15 実害: 自動走行が題字の開始案内を出した瞬間に NullReference で落ち、走行のコルーチン
+            //    ごと死んで導入まで 1 歩も進まなかった。被って操作した分だけ進んで見える）。
+            string current = prompt.text ?? string.Empty;
+            string text = StartPromptText(_startGuidance, lang);
+            if (current.Length == 0 || _promptLang != lang || !prompt.gameObject.activeSelf || current != text)
             {
                 _promptLang = lang;
-                prompt.text = StartPromptText(_startGuidance, lang);
-            }
-            else
-            {
-                string text = StartPromptText(_startGuidance, lang);
-                if (prompt.text != text) prompt.text = text;
+                prompt.text = text;
             }
             if (!prompt.gameObject.activeSelf) prompt.gameObject.SetActive(true);
         }

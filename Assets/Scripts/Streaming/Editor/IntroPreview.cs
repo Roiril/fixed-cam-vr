@@ -311,6 +311,9 @@ namespace FixedCamVr.Streaming.EditorTools
             //        （砂嵐は post の最後なので、切らないと割れの過程をまるごと上書きする）
             //      - 段 5 で映像と同じ進みで砂嵐が**入ってくる**こと
             yield return new Shot(IntroStage.Frame, 4, "frame", 0.5f, 50, noSignal: true);
+            // 0225: 着地した破片の下に砂嵐が出るか（カメラ無し）と、枠を閉じた後（Frame の保持中）の画。
+            yield return new Shot(IntroStage.Frame, 4, "frame", 0.8f, 80, noSignal: true);
+            yield return new Shot(IntroStage.Frame, 4, "frame", 0.999f, 100, noSignal: true);
             yield return new Shot(IntroStage.Swap, 5, "swap", 0.25f, 25, noSignal: true);
             yield return new Shot(IntroStage.Swap, 5, "swap", 0.999f, 100, noSignal: true);
         }
