@@ -11,6 +11,7 @@ const publicFiles = [
   "robots.txt",
   "sitemap.xml",
   "site.webmanifest",
+  "google5081a8a413a7871f.html",
   "assets/favicon.png",
   "assets/hero-desktop.webp",
   "assets/hero-small.webp",

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const websiteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceFiles = ["index.html", "styles.css", "main.js"];
 const seoFiles = ["robots.txt", "sitemap.xml", "site.webmanifest"];
+const verificationFiles = ["google5081a8a413a7871f.html"];
 const requiredAssets = [
   "assets/favicon.png",
   "assets/hero-desktop.webp",
@@ -22,7 +23,7 @@ const requiredAssets = [
   "assets/yuji-boku-OFL.txt",
   "assets/shippori-mincho-OFL.txt"
 ];
-const builtFiles = [...sourceFiles, ...seoFiles, ...requiredAssets];
+const builtFiles = [...sourceFiles, ...seoFiles, ...verificationFiles, ...requiredAssets];
 const errors = [];
 
 async function mustBeFile(relativePath, base = websiteRoot) {
@@ -39,7 +40,13 @@ const [robots, sitemap, manifestSource] = await Promise.all(seoFiles.map((file) 
 
 for (const file of sourceFiles) await mustBeFile(file);
 for (const file of seoFiles) await mustBeFile(file);
+for (const file of verificationFiles) await mustBeFile(file);
 for (const asset of requiredAssets) await mustBeFile(asset);
+
+const verification = await readFile(join(websiteRoot, verificationFiles[0]), "utf8");
+if (verification.trim() !== "google-site-verification: google5081a8a413a7871f.html") {
+  errors.push(`${verificationFiles[0]}: unexpected verification content`);
+}
 
 try {
   JSON.parse(manifestSource);
@@ -159,5 +166,5 @@ if (errors.length > 0) {
   for (const error of errors) console.error(`- ${error}`);
   process.exitCode = 1;
 } else {
-  console.log(`Check passed: ${sourceFiles.length} source files, ${seoFiles.length} SEO files, ${requiredAssets.length} assets, ${builtFiles.length} built files.`);
+  console.log(`Check passed: ${sourceFiles.length} source files, ${seoFiles.length} SEO files, ${verificationFiles.length} verification file, ${requiredAssets.length} assets, ${builtFiles.length} built files.`);
 }
