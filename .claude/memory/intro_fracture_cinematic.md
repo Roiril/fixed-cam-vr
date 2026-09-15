@@ -1,6 +1,6 @@
 ---
 name: intro-fracture-cinematic
-description: 2026-09-15（0221 / 0222 / 0223）。現実が割れる遷移を映画の速度変化（一撃 → 引き延ばした時間 → だんだん強くなる磁石の集結）へ書き直した。段 4 は 5.0 秒。時計は画・音・IntroLogic の 3 か所が同じ表から出ている。形は起点からの網、質感はガラスの縁の光。触るときの対の関係と計器の罠。
+description: 2026-09-15（0221〜0224）。現実が割れる遷移を映画の速度変化（一撃 → 引き延ばした時間 → だんだん強くなる磁石の集結 → 閉じる一撃）へ書き直した。段 4 は 5.0 秒。時計は画・音・IntroLogic の 3 か所が同じ表から出ている。形は起点からの網、質感はガラスの縁の光。触るときの対の関係と計器の罠。
 metadata: 
   node_type: memory
   type: project
@@ -8,7 +8,7 @@ metadata:
   modified: 2026-09-15T03:35:20.022Z
 ---
 
-# 現実が割れる遷移（0221 / 0222 / 0223 の版）
+# 現実が割れる遷移（0221〜0224 の版）
 
 **時計の表は 1 つ。** `Assets/Art/Shaders/Intro/IntroFracture.shader` の先頭の表（p = 段 4 の進み 0..1、段は 5.0 秒）が正で、
 音（`tools/ingest-sounds.py` の `SWARM_*`）と `IntroLogic` の `frame` / `live` はその写し。
@@ -18,7 +18,7 @@ metadata:
 | .000–.060 | 0.00–0.30 | 予兆 | 亀裂が起点から外へ光って走る（`glowFront`）。位置は保つ | 軋み 3 粒 0.00–0.13 |
 | .060–.100 | 0.30–0.50 | 一撃 | 全域が同時に閃く（`shock`）。破断の波が起点から 0.2 秒で全域へ（`breakAt` ＝ `macro.z` の順）。行程の 8 割を時定数 120ms で飛ぶ | 同じ一撃を音程 0.30 / 0.42 / 0.62 で重ねる 0.17 |
 | .100–.520 | 0.50–2.60 | スロー | 引き延ばした時間 `u = 0.8(1−e^(−x/.024)) + 0.6x`。漂い約 8cm/s・順回転数°/s。**止めない** | 高く小さい粒 5 つ（0.78〜2.13） |
-| .520–.900 | 2.60–4.50 | 集結 | **中心の磁石（0223）。** `WarpedTime` の漂いが .52〜.64 で止まる（回転は `SpinTime` で続く）。重さ w（0.55 大きさ ＋ 0.25 中心距離 ＋ 0.20 乱数）で**着地 = .70 + .20 w^0.6**、行程 = .18 → .10、始まり = 着地 − 行程（軽い片は .52 から 0.9 秒かけて、重い片は .78 から 0.5 秒で）。進みは t^1.8 を 5 次補間に通す。枠を閉じる 3 片は .90 | 44 粒の着地を同じ式で 3.37–4.37。大片 3 打 4.17–4.30 |
+| .520–.900 | 2.60–4.50 | 集結 | **中心の磁石（0223 / 0224）。** `WarpedTime` の漂いが .52〜.64 で止まる（回転は `SpinTime` で続く）。**全片が `PullStart .56` で同時に引かれ始め**、重さ w（0.55 大きさ ＋ 0.25 中心距離 ＋ 0.20 乱数）で**着地 = .70 + .17 w^0.6**、進みは **t^k（k = 1.6 → 3.5）で減速せずに嵌まる**。速い片は進行方向に最大 1.55 倍伸びる（`StretchMax` / `StretchSpeed`）。枠を閉じる 3 片は .90 で、その瞬間に全片が白む（`slam`） | 44 粒の着地を同じ式で 3.37–4.22。0.08 秒静めて 4.30 に一撃と同じ 3 音程の重ね打ち（−5dB） |
 | .900–.940 | 4.50–4.70 | 実景の面 | `frame = SmoothStep(.84, .90)` で矩形確定 | 静けさ |
 | .940–.990 | 4.70–4.95 | 混合 | `live = SmoothStep(.94, .99)` | ScreenOn は live ≥ .999（約 4.95 秒） |
 
@@ -27,8 +27,9 @@ metadata:
 - 段 4 の尺 **5.0 秒**は 5 か所: `IntroTiming.Default` / `ShowIntroDef` / 卓 `intro-model.js` の `INTRO_DEFAULT` /
   `capture-server.py` の `_default_show` / **卓の `show.json`（`run.intro.frameSec`・git 外・サーバのメモリ経由で更新した rev 1207）**。
   導入の合計は 10.2 → **12.7 秒**（`IntroLogicTests.TotalSec…` と `intro-model.test.mjs` が固定）
-- 集結の式: シェーダ `ArriveFirst .70` / `ArriveSpan .20`（着地 = .70 + .20 w^0.6）↔
-  `SWARM_ARRIVE_FIRST_P` / `SWARM_ARRIVE_SPAN_P`（同じ 2 値）。行程 `PullLenLight .18` / `PullLenHeavy .10` は画だけ
+- 集結の式: シェーダ `ArriveFirst .70` / `ArriveSpan .17`（着地 = .70 + .17 w^0.6）↔
+  `SWARM_ARRIVE_FIRST_P` / `SWARM_ARRIVE_SPAN_P`（同じ 2 値）。`PullStart .56` と `PullPowLight/Heavy` は画だけ。
+  閉じる一撃はシェーダ `CloserArrive .90` ↔ `SWARM_DUST` の 4.30（= .90 × 5.0 − 0.135 − DSP 込みで約 4.47 秒）
 - 混合の終わり: `live = SmoothStep(.94, .99)` ↔ `SoundCueLogic.ScreenOnAt .999` ↔ `sound-preview.py` の `SCREEN_ON_AT` ↔ `SWARM_SEC 4.42`
 - 起点: シェーダ tan(−0.16, 0.12) ↔ `IntroFractureMesh.ImpactX/Y`（角度空間 −0.143, 0.108）。網の中心・破断の波の起点・破片の飛ぶ向きの 3 つがここ
 

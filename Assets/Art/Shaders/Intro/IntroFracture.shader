@@ -109,14 +109,16 @@ Shader "FixedCamVr/IntroFracture"
             // ⚠ 音（ingest-sounds.py の SWARM_*）はこの表を秒に直したもの。片方だけ動かさない。
             static const float CrackEnd = 0.060;
             static const float BreakSpan = 0.040;
-            static const float PullBegin = 0.520;   // 磁力が立ち上がる（いちばん軽い片が動き始める）
+            static const float PullBegin = 0.520;   // 磁力が立ち上がる（漂いが止まり始める）
             static const float PullArrest = 0.120;  // 漂いが止まるまで（0.6 秒）。回転は止めない
+            static const float PullStart = 0.560;   // 全片が同時に引かれ始める（2.8 秒・0224）
             static const float ArriveFirst = 0.700; // いちばん軽い片の着地
-            static const float ArriveSpan = 0.200;  // 着地 = ArriveFirst + ArriveSpan × w^0.6（重い片ほど遅く、密度は終わりへ増える）
-            static const float PullLenLight = 0.180; // 軽い片の行程（0.9 秒・弱い力で長く）
-            static const float PullLenHeavy = 0.100; // 重い片の行程（0.5 秒・強い力で短く）
-            static const float CloserArrive = 0.900; // 枠を閉じる 3 片は最後
-            static const float CloserLen = 0.100;
+            static const float ArriveSpan = 0.170;  // 着地 = ArriveFirst + ArriveSpan × w^0.6（重い片ほど遅く、密度は終わりへ増える）
+            static const float PullPowLight = 1.6;  // 進み = t^k。軽い片は早くから動き
+            static const float PullPowHeavy = 3.5;  // 重い片は遅れて一気に加速する（減速せずに嵌まる）
+            static const float CloserArrive = 0.900; // 枠を閉じる 3 片は最後（直前の 0.15 秒は静まる）
+            static const float StretchMax = 0.55;   // 速い片を進行方向に伸ばす上限（モーションブラーの代わり）
+            static const float StretchSpeed = 2.0;  // この速さ (m/s) で伸びが上限に届く
             static const float BurstTau = 0.024;   // 一撃の時定数（120ms）
             static const float DriftRate = 0.60;   // スローの漂い（行程 / p）
 
@@ -250,16 +252,19 @@ Shader "FixedCamVr/IntroFracture"
                 float rollRate = radians(lerp(38.0, 13.0, sizeRank) * (0.55 + 0.9 * pieceNoise2.x))
                                * (pieceNoise.y < 0.5 ? -1.0 : 1.0);
 
-                // 集結は中心の磁石（0223）。重さ = 大きさ・中心からの距離・乱数。軽い片から捕まり、
-                // 遅く始まった片ほど強い力で速く引かれる。進みは t^1.8 を 5 次補間に通す ＝ 弱い力で動き始め、
-                // 力が増すほど速く、終端だけ滑らかに止まる（跳ね返りは付けない）。着地は .70 から .90 へ増える。
+                // 集結は中心の磁石（0223 / 0224）。重さ = 大きさ・中心からの距離・乱数。全片が同時に引かれ始め、
+                // 軽い片は早くから動いて先に着き、重い片は遅れて一気に加速して最後に来る（進み = t^k、k は重さで 1.6 → 3.5）。
+                // 減速せずに嵌まる（跳ね返りは付けない）。着地は .70 から .87 へ増え、枠を閉じる 3 片が .90 で閉じる。
                 float centerDist = saturate(length(v.small.xy) / 0.15);
                 float weight = saturate(0.55 * sizeRank + 0.25 * centerDist + 0.20 * pieceNoise2.y);
                 float arrive = lerp(ArriveFirst + ArriveSpan * pow(weight, 0.6), CloserArrive, edgeCloser);
-                float pullLen = lerp(lerp(PullLenLight, PullLenHeavy, weight), CloserLen, edgeCloser);
-                float pullStart = arrive - pullLen;
-                float pullT = saturate((p - pullStart) / pullLen);
-                float travel = Ease(0.0, 1.0, pow(pullT, 1.8));
+                float pullLen = arrive - PullStart;
+                float pullPow = lerp(PullPowLight, PullPowHeavy, max(weight, edgeCloser));
+                float pullT = saturate((p - PullStart) / pullLen);
+                float travel = pow(pullT, pullPow);
+                // 速さ（m/s）。進みの微分 × 行程の長さ ÷ 段の秒数。伸びと着地の閃きに使う。
+                float pullRate = pullPow * pow(max(pullT, 1e-4), pullPow - 1.0) / pullLen;
+                float pullStart = PullStart;
                 float alignment = travel;
                 float seal = travel;
                 float detail = crack * (1.0 - seal);
@@ -278,9 +283,16 @@ Shader "FixedCamVr/IntroFracture"
                 if (dot(screenNormal, targetCenter - _CurrentHeadPosition.xyz) < 0.0)
                     screenNormal = -screenNormal;
 
-                // 漂っている位置から対応点へ直線で戻る（鞭のように。弧も跳ね返りも付けない）。
+                // 漂っている位置から対応点へ直線で戻る（弧も跳ね返りも付けない）。
                 float3 centerWorld = lerp(startCenter, targetCenter, travel);
                 if (travel >= 1.0) centerWorld = targetCenter;
+                float3 pullPath = targetCenter - startCenter;
+                float pullDistance = length(pullPath);
+                float3 pullDir = SafeNormalize(pullPath, screenNormal);
+                float speed = pullRate * pullDistance / 5.0 * step(1e-4, 1.0 - travel);
+                // 速い片は進行方向に伸びる（後処理の無い VR での速さの表現）。嵌まる直前の 8% で元へ戻す。
+                float stretch = StretchMax * saturate(speed / StretchSpeed)
+                              * (1.0 - Ease(0.92, 1.0, travel)) * step(PullStart, p);
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
                 if (eyeDistance < 0.55)
@@ -301,6 +313,7 @@ Shader "FixedCamVr/IntroFracture"
                 float roll = rollRate * spinAmount;
                 relativeWorld = IntroShardSpin3(relativeWorld, travelAxis, tilt);
                 relativeWorld = IntroShardSpin3(relativeWorld, faceAxis, roll);
+                relativeWorld += pullDir * (dot(relativeWorld, pullDir) * stretch);
 
                 // 片を小さく消すのではなく、位置と向きで間隔を空ける。
                 float gap = lerp(crack * 0.004, 0.006 + pieceNoise.x * 0.010, loosen) * (1.0 - seal);
@@ -351,13 +364,17 @@ Shader "FixedCamVr/IntroFracture"
                 float breakLight = Ease(breakAt, breakAt + 0.005, p)
                                  * (1.0 - Ease(breakAt + 0.005, breakAt + 0.040, p));
                 float landAt = pullStart + pullLen;
-                float landingLight = Ease(landAt - 0.006, landAt - 0.001, p)
-                                   * (1.0 - Ease(landAt - 0.001, landAt + 0.006, p));
+                // 着地の閃き。速く嵌まる片ほど強く光る（当たりの強さ）。枠を閉じる瞬間は全片が白む（ドン）。
+                float landingLight = Ease(landAt - 0.004, landAt, p)
+                                   * (1.0 - Ease(landAt, landAt + 0.010, p))
+                                   * lerp(0.6, 1.4, saturate(speed / StretchSpeed));
+                float slam = Ease(CloserArrive - 0.004, CloserArrive, p)
+                           * (1.0 - Ease(CloserArrive, CloserArrive + 0.030, p));
                 float glint = Ease(0.11, 0.20, p) * (1.0 - travel) * step(breakAt, p);
                 o.light = float4(glowFront, breakLight, landingLight, glint);
                 // 遠い片は沈む。着地した面には掛けない（detail で消える）。
                 float fog = saturate((eyeDistance - 1.7) / 2.2) * detail;
-                o.detail = float3(detail, fog, shock);
+                o.detail = float3(detail, fog, max(shock, slam * 0.7));
                 o.positionCS = TransformWorldToHClip(worldPosition);
                 return o;
             }
@@ -406,9 +423,9 @@ Shader "FixedCamVr/IntroFracture"
                 // 稜線（1 画素）と、縁に沿う幅のある光の帯（約 1cm）。帯が「厚みのあるガラス」に読ませる。
                 float ridge = 1.0 - smoothstep(0.00012, 0.00012 + aa * 1.15, edgeDistance);
                 float band = exp(-edgeDistance / 0.0011);
-                float edgeGlow = ridge * (0.12 * i.light.x + 0.50 * i.light.y + 0.30 * shock + 0.16 * i.light.z
+                float edgeGlow = ridge * (0.12 * i.light.x + 0.50 * i.light.y + 0.30 * shock + 0.30 * i.light.z
                                           + detail * (0.07 + 0.18 * grazing))
-                               + band * (0.05 * i.light.x + 0.28 * i.light.y + 0.20 * shock + 0.08 * i.light.z
+                               + band * (0.05 * i.light.x + 0.28 * i.light.y + 0.20 * shock + 0.16 * i.light.z
                                          + detail * (0.045 + 0.14 * grazing) * (0.6 + 0.8 * i.light.w));
                 // 実景の明暗は残す。飛んでいる間はわずかに冷たく、着地で素の写真へ戻る。
                 color = color * shade * lerp(float3(1.0, 1.0, 1.0), float3(0.94, 0.97, 1.03), detail)
