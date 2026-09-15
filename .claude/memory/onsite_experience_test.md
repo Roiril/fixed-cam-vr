@@ -19,7 +19,7 @@ metadata:
 | 何 | どこ | 役割 |
 |---|---|---|
 | テレメトリ | [`ShowTelemetryHost`](../../Assets/Scripts/Diagnostics/ShowTelemetryHost.cs) | `[XP]` タグで 1 行 1 イベント + 2 秒ごとの集計。**観測専用**（既存の公開イベントとプロパティを読むだけ・状態を書き換えない）。Development ビルドでのみ `RuntimeInitializeOnLoadMethod` で自動生成されるので**シーン再生成は要らない** |
-| 自動走行 | [`ShowWalkDebugDriver`](../../Assets/Scripts/Tracking/ShowWalkDebugDriver.cs) | `OVRCameraRig` を動かして歩行を合成。既存コードは無改変。経路は `layout.grid` から BFS で解く（出発と到着のタイル以外を踏まない）。**導入の開始ライン（`run.intro.startLineId`）があれば線の中点を法線方向に横切ってから中へ入り**、被り検知（`UserPresentProvider`）を true で上書きする — HMD を被らずに走らせるので、これが無いと導入が永久に始まらない |
+| 自動走行 | [`ShowWalkDebugDriver`](../../Assets/Scripts/Tracking/ShowWalkDebugDriver.cs) | ⚠⚠ **走行が黙って死ぬ形がある**（2026-09-15 実害）。題字の開始案内を出す瞬間に `TitleScreen.ApplyStartPrompt` が NullReference を投げ、走行のコルーチンごと止まった（未起動の TMP の `text` は null）。導入まで 1 歩も進まず、ログは `[XPWalk] 経路: …` の次が出ない。**被って操作した分だけ進んで見える**ので、走行が「機能していない」と感じたら logcat の `NullReferenceException` と`[XPWalk] 題字とX/Y開始案内を表示した` の有無を先に見る。<br> `OVRCameraRig` を動かして歩行を合成。既存コードは無改変。経路は `layout.grid` から BFS で解く（出発と到着のタイル以外を踏まない）。**導入の開始ライン（`run.intro.startLineId`）があれば線の中点を法線方向に横切ってから中へ入り**、被り検知（`UserPresentProvider`）を true で上書きする — HMD を被らずに走らせるので、これが無いと導入が永久に始まらない |
 | 判定 | [`tools/analyze-xp-log.py`](../../tools/analyze-xp-log.py) | show.json を期待値にして突き合わせ。**起きなかったことを引き算で見つける**のが主目的。**実機ログの警告・エラーも数える**（下記） |
 | 画の証拠 | [`tools/xp-evidence.py`](../../tools/xp-evidence.py) | ログの時刻を録画の時刻へ写し、**その瞬間の画をフル解像度で切り出す**。導入の各段・演出の始まりと終わり・相・砂嵐 |
 | 録画 | [`tools/quest-record.py`](../../tools/quest-record.py) | 走行 1 回で画・ログ・判定・画の証拠をまとめて出す（下記「画を録る」） |
