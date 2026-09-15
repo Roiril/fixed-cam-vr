@@ -207,6 +207,29 @@ button {
   box-shadow: 0 0 5px #a8bba044;
 }
 
+.credits {
+  max-width: 44rem;
+  margin-inline: auto;
+  padding: 2rem var(--gutter) 5rem;
+}
+
+.credits h2 {
+  margin: 0 0 2rem;
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+.credit-list { margin: 0; }
+.credit-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding-block: 0.35rem;
+}
+.credit-list dt { color: var(--ink-muted); overflow-wrap: anywhere; }
+.credit-list dd { margin: 0; }
+.credit-list .credit-group-start { margin-top: 1.5rem; }
+
 .archive-records { margin: 0; }
 
 .archive-record {
