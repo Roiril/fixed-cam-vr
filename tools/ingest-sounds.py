@@ -418,7 +418,7 @@ SWARM_SEC = 4.42
 #    ここはそれをクリップの秒（映像上 − 0.135）に直したもの:
 #
 #      予兆 0.00-0.17 / 一撃 0.17（ドゥーン）/ 枝分かれ 0.21-0.60 / スロー 0.65-2.45（高く小さい粒だけ）/
-#      集結 2.47-4.16（画と同じ分布で 44 粒・疎 → 密）/ 最後の大片 3 打 4.17-4.30
+#      集結 3.37-4.37（磁石・0223。画と同じ式で 44 粒の着地。軽い片から重い片へ、増えながら）/ 最後の大片 3 打 4.17-4.30
 #
 #    掛けるのは並べ方・音程・音量・左右・端の処理だけ（§4.5）。合成音も残響も足していない。
 #    **一撃の重さは音程で作る** — 同じ一撃を 0.30 / 0.42 / 0.62 で重ねる。低い粒は再標本化で 3 倍長く
@@ -445,12 +445,16 @@ SWARM_HEAD_WIN = 0.50
 #    **さらに -4dB**。合わせて **-10dB ＝ 元の 0.32 倍**。-14.7 は 0112 で旧版に揃えた値だった。
 #    ⚠ 0221 の並べ直しでもこの高さは動かしていない（大きさはユーザーが決めた値）。
 SWARM_HEAD_LUFS = -24.7   # 0112 は -14.7（旧版の実測値）。0144 で -6dB → さらに -4dB
-# 集結（シュパパパパッ）。画の SnapBegin p=.52（2.60 秒）〜 最後の小片 p≈.885（4.43 秒）を
-# クリップの秒へ直したもの。着地時刻は order^0.30 ＝ 密度が時間の 2.3 乗で増える（画と同じ式）。
-SWARM_GATHER_START = 2.47
-SWARM_GATHER_END = 4.16
+# 集結（中心の磁石・`canon/LEDGER.md` 0223）。画（IntroFracture.shader）と同じ式で着地時刻を出す:
+#   重さ w = 3 つの一様乱数の平均 / 着地 p = .70 + .20 w^0.6（重い片ほど遅く、密度は終わりへ増える）。
+#   段は 5.0 秒、クリップは映像上 0.135 秒に始まる。軽い片 3.37 秒 〜 重い片 4.37 秒。
+SWARM_FRAME_SEC = 5.0
+SWARM_CLIP_LEAD = 0.135
+SWARM_ARRIVE_FIRST_P = 0.70
+SWARM_ARRIVE_SPAN_P = 0.20
+SWARM_GATHER_START = SWARM_ARRIVE_FIRST_P * SWARM_FRAME_SEC - SWARM_CLIP_LEAD
+SWARM_GATHER_END = (SWARM_ARRIVE_FIRST_P + SWARM_ARRIVE_SPAN_P) * SWARM_FRAME_SEC - SWARM_CLIP_LEAD
 SWARM_GATHER_COUNT = 44
-SWARM_GATHER_POWER = 0.30
 SWARM_GRAIN_HEAD = 0.012  # 小片（order 0）
 SWARM_GRAIN_TAIL = 0.055  # 大片（order 1）
 SWARM_PITCH_HEAD = 1.25   # 小片は高く
@@ -1386,19 +1390,19 @@ def swarm_add(out: np.ndarray, g: np.ndarray, at: float, amp: float,
 
 
 def swarm_gather_times(rng) -> tuple:
-    """集結の着地時刻。画（`IntroFracture.shader`）と同じ分布 — 順番 order は 3 つの一様乱数の平均
-    （小片・中央寄り・乱数の重ね合わせの写し）、時刻は order^0.30。始めは数枚ずつ、終わりに雪崩れる。
-    返り値は (order, 時刻) を時刻順に並べたもの。"""
-    orders = np.sort(rng.random((SWARM_GATHER_COUNT, 3)).mean(axis=1))
-    # 先駆けの 3 粒。3 つの平均は 0.1 を下回らないので、そのままだと最初の粒が 3.3 秒まで出ない。
-    # 画も 5% の片を先駆けにしている（IntroFracture.shader の order）。
-    orders[:3] = (0.004, 0.012, 0.025)
-    times = (SWARM_GATHER_START
-             + (SWARM_GATHER_END - SWARM_GATHER_START) * orders ** SWARM_GATHER_POWER)
+    """集結の着地時刻。画（`IntroFracture.shader` の磁石）と同じ式 — 重さ w は 3 つの一様乱数の平均
+    （大きさ・中心からの距離・乱数の重ね合わせの写し）、着地 = .70 + .20 w^0.6。
+    軽い片が先に静かに着き、重い片ほど遅く速く着く ＝ 着地は増えながら終わる。
+    返り値は (w, 時刻) を時刻順に並べたもの。"""
+    weights = np.sort(rng.random((SWARM_GATHER_COUNT, 3)).mean(axis=1))
+    # 軽い 3 粒。3 つの平均は 0.1 を下回らないので、そのままだと最初の着地が遅れて「徐々に」が消える。
+    weights[:3] = (0.02, 0.06, 0.10)
+    arrive_p = SWARM_ARRIVE_FIRST_P + SWARM_ARRIVE_SPAN_P * weights ** 0.6
+    times = arrive_p * SWARM_FRAME_SEC - SWARM_CLIP_LEAD
     for k in range(1, len(times)):
         if times[k] - times[k - 1] < SWARM_MIN_GAP:
             times[k] = times[k - 1] + SWARM_MIN_GAP
-    return tuple(zip(orders.tolist(), times.tolist()))
+    return tuple(zip(weights.tolist(), times.tolist()))
 
 
 def swarm_build(y, sr: int, head_lufs: float):
@@ -1645,11 +1649,11 @@ def ingest_swarms(swarms, src_dir: str) -> None:
         def peak_db(a, b):
             seg = out[int(a * sr):int(b * sr)]
             return 20 * np.log10(max(float(np.abs(seg).max()), 1e-9)) if len(seg) else -99.0
-        first_gather = SWARM_GATHER_START + (SWARM_GATHER_END - SWARM_GATHER_START) * 0.004 ** SWARM_GATHER_POWER
         print(f"    頭 0.5s {short_lufs(out, 0.0, 0.5):6.1f} LUFS   "
               f"尖頭 dB: スロー 0.65-2.45s {peak_db(0.65, 2.45):6.1f}   "
-              f"先駆け {first_gather:.2f}s〜 {peak_db(first_gather - 0.01, first_gather + 0.3):6.1f}   "
-              f"雪崩 {SWARM_GATHER_END - 0.6:.2f}-{SWARM_GATHER_END:.2f}s {peak_db(SWARM_GATHER_END - 0.6, SWARM_GATHER_END):6.1f}   "
+              f"着地 {SWARM_GATHER_START:.2f}s〜 {peak_db(SWARM_GATHER_START - 0.05, SWARM_GATHER_START + 0.3):6.1f} "
+              f"/ {peak_db(SWARM_GATHER_START + 0.3, SWARM_GATHER_START + 0.6):6.1f} "
+              f"/ {peak_db(SWARM_GATHER_START + 0.6, SWARM_GATHER_END):6.1f}（0.3 秒ごと・上がるはず）   "
               f"大片 {SWARM_DUST[0][0]:.2f}-{SWARM_SEC:.2f}s {peak_db(SWARM_DUST[0][0], SWARM_SEC):6.1f}   "
               f"最後の 0.25s {rest:5.1f}dB")
         print(f"    通し {d['lufs']:6.1f} LUFS   波高 {d['crest_db']:4.1f}dB   "
