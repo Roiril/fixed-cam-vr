@@ -1,6 +1,6 @@
 ---
 name: intro-fracture-cinematic
-description: 2026-09-15（0221〜0224）。現実が割れる遷移を映画の速度変化（一撃 → 引き延ばした時間 → だんだん強くなる磁石の集結 → 閉じる一撃）へ書き直した。段 4 は 5.0 秒。時計は画・音・IntroLogic の 3 か所が同じ表から出ている。形は起点からの網、質感はガラスの縁の光。触るときの対の関係と計器の罠。
+description: 2026-09-15（0221〜0225）。現実が割れる遷移を映画の速度変化（一撃 → 引き延ばした時間 → だんだん強くなる磁石の集結 → 着地した破片からその場所の映像 → 閉じる瞬間に ScreenOn）へ書き直した。段 4 は 5.0 秒。時計は画・音・IntroLogic の 3 か所が同じ表から出ている。形は起点からの網、質感はガラスの縁の光。触るときの対の関係と計器の罠。
 metadata: 
   node_type: memory
   type: project
@@ -8,7 +8,7 @@ metadata:
   modified: 2026-09-15T03:35:20.022Z
 ---
 
-# 現実が割れる遷移（0221〜0224 の版）
+# 現実が割れる遷移（0221〜0225 の版）
 
 **時計の表は 1 つ。** `Assets/Art/Shaders/Intro/IntroFracture.shader` の先頭の表（p = 段 4 の進み 0..1、段は 5.0 秒）が正で、
 音（`tools/ingest-sounds.py` の `SWARM_*`）と `IntroLogic` の `frame` / `live` はその写し。
@@ -18,19 +18,31 @@ metadata:
 | .000–.060 | 0.00–0.30 | 予兆 | 亀裂が起点から外へ光って走る（`glowFront`）。位置は保つ | 軋み 3 粒 0.00–0.13 |
 | .060–.100 | 0.30–0.50 | 一撃 | 全域が同時に閃く（`shock`）。破断の波が起点から 0.2 秒で全域へ（`breakAt` ＝ `macro.z` の順）。行程の 8 割を時定数 120ms で飛ぶ | 同じ一撃を音程 0.30 / 0.42 / 0.62 で重ねる 0.17 |
 | .100–.520 | 0.50–2.60 | スロー | 引き延ばした時間 `u = 0.8(1−e^(−x/.024)) + 0.6x`。漂い約 8cm/s・順回転数°/s。**止めない** | 高く小さい粒 5 つ（0.78〜2.13） |
-| .520–.900 | 2.60–4.50 | 集結 | **中心の磁石（0223 / 0224）。** `WarpedTime` の漂いが .52〜.64 で止まる（回転は `SpinTime` で続く）。**全片が `PullStart .56` で同時に引かれ始め**、重さ w（0.55 大きさ ＋ 0.25 中心距離 ＋ 0.20 乱数）で**着地 = .70 + .17 w^0.6**、進みは **t^k（k = 1.6 → 3.5）で減速せずに嵌まる**。速い片は進行方向に最大 1.55 倍伸びる（`StretchMax` / `StretchSpeed`）。枠を閉じる 3 片は .90 で、その瞬間に全片が白む（`slam`） | 44 粒の着地を同じ式で 3.37–4.22。0.08 秒静めて 4.30 に一撃と同じ 3 音程の重ね打ち（−5dB） |
-| .900–.940 | 4.50–4.70 | 実景の面 | `frame = SmoothStep(.84, .90)` で矩形確定 | 静けさ |
-| .940–.990 | 4.70–4.95 | 混合 | `live = SmoothStep(.94, .99)` | ScreenOn は live ≥ .999（約 4.95 秒） |
+| .520–.900 | 2.60–4.50 | 集結 | **中心の磁石（0223 / 0224）。** `WarpedTime` の漂いが .52〜.64 で止まる（回転は `SpinTime` で続く）。**全片が `PullStart .56` で同時に引かれ始め**、重さ w（0.55 大きさ ＋ 0.25 中心距離 ＋ 0.20 乱数）で**着地 = .70 + .13 w^0.6**、進みは **t^k（k = 1.6 → 3.5）で減速せずに嵌まる**。速い片は進行方向に最大 1.55 倍伸びる。**着地した片は 0.12 秒で透明になり、その下に描かれているその場所の映像が現れる（0225・`reveal`）**。枠を閉じる 3 片は .90 で、その瞬間に全片が白む（`slam`） | 44 粒の着地を同じ式で 3.37–4.02。4.15 で終える |
+| .895–.905 | 4.48–4.53 | 閉じる | `frame = SmoothStep(.84, .90)` で矩形確定。`live = SmoothStep(.895, .905)`（全面の混合を閉じる瞬間に揃える。完成した静止画の面は見せない） | **ScreenOn は live ≥ .999（約 4.53 秒 ＋ DSP）＝ 閉じる一撃を兼ねる。** 割れ音の尻（4.285）から約 0.27 秒の静けさ |
+
+## 描画の順序（0225・着地した破片の下に映像を残す）
+
+| queue | 何 | 役割 |
+|---|---|---|
+| Geometry | スクリーン（`ScreenComposite`） | カメラ映像。破片より先に描かれている |
+| 4900 | 覆いの基底（`IntroVeil`） | 深度を遠くへ戻し、compositor alpha を閉じる。`_Reveal > 0` か `_ScreenFade > 0` のあいだは **RGB を残す** |
+| 4901 | 破片の深度パス | 深度を書き、**ステンシル bit 32** に「破片のある所」を刻む（`FractureStencilBit`） |
+| 4902 | 隙間の面（`IntroVeilGaps`・同じシェーダの `_GapsMode`） | ステンシル NotEqual で**隙間だけ**を黒く塗る。`reveal > 0 && live < .999` のあいだだけ |
+| 4903 | 破片の色パス | `ZTest Equal`。alpha = (1 − live) × (1 − 着地からの露出) → 着地した片は透明になり、下の映像が見える |
+
+⚠ `IntroShatterTests` が 4900 / 4901 / 4903 を固定している。⚠ `_IntroLive`（スクリーンの表示ゲート）は `live > 0 || reveal > 0` で開く
+（`IntroDirector`）— reveal だけで開かないと、着地した片の下に映像が無い。
 
 ## 対で動かすもの（片方だけ動かすと沈黙して食い違う）
 
 - 段 4 の尺 **5.0 秒**は 5 か所: `IntroTiming.Default` / `ShowIntroDef` / 卓 `intro-model.js` の `INTRO_DEFAULT` /
   `capture-server.py` の `_default_show` / **卓の `show.json`（`run.intro.frameSec`・git 外・サーバのメモリ経由で更新した rev 1207）**。
   導入の合計は 10.2 → **12.7 秒**（`IntroLogicTests.TotalSec…` と `intro-model.test.mjs` が固定）
-- 集結の式: シェーダ `ArriveFirst .70` / `ArriveSpan .17`（着地 = .70 + .17 w^0.6）↔
+- 集結の式: シェーダ `ArriveFirst .70` / `ArriveSpan .13`（着地 = .70 + .13 w^0.6）↔
   `SWARM_ARRIVE_FIRST_P` / `SWARM_ARRIVE_SPAN_P`（同じ 2 値）。`PullStart .56` と `PullPowLight/Heavy` は画だけ。
-  閉じる一撃はシェーダ `CloserArrive .90` ↔ `SWARM_DUST` の 4.30（= .90 × 5.0 − 0.135 − DSP 込みで約 4.47 秒）
-- 混合の終わり: `live = SmoothStep(.94, .99)` ↔ `SoundCueLogic.ScreenOnAt .999` ↔ `sound-preview.py` の `SCREEN_ON_AT` ↔ `SWARM_SEC 4.42`
+  閉じる一撃は割れ音に置かない（`SWARM_DUST = ()`）— ScreenOn（Cyber14-1）が兼ねる
+- 閉じる瞬間: `live = SmoothStep(.895, .905)` ↔ `SoundCueLogic.ScreenOnAt .999` ↔ `sound-preview.py` の `SCREEN_ON_AT` ↔ `SWARM_SEC 4.15`（割れ音はその前に終わる）
 - 起点: シェーダ tan(−0.16, 0.12) ↔ `IntroFractureMesh.ImpactX/Y`（角度空間 −0.143, 0.108）。網の中心・破断の波の起点・破片の飛ぶ向きの 3 つがここ
 
 ## 形（`IntroFractureMesh.BuildFracturePoints`）
@@ -56,6 +68,9 @@ metadata:
   w = .02 / .06 / .10 に置いた（R043 の連打では画に 5% の先駆けを置いたが、磁石では重さの式だけで自然に散る）
 - **R043 の「1 片ずつ 90ms で戻る連打」は 0223 で退けられた**（「磁力がだんだん強くなって引き寄せられる」）。
   連打はコマ間差の 1 コマの跳ねとして出る。磁石は跳ねが無く、帯ごとの平均が単調に増える（`review.py` の r044_*）
+- **`IntroPreview` は `_IntroLive` を `IntroDirector` と別に書いている（写経）。** 0225 で本番を `live || reveal` に直しても
+  プレビューは `live` のままで、着地した片の下が映像ではなく管の燐光（茶色）になった。探針（映像を緑に差し替えて差を測る）が
+  landing=0 で落として気づいた。表示ゲートの式を変えたら `IntroPreview.Render` も対で直す
 - `menu intro -Set frames=1` の探針は「止まるはず」（着地後 .91→.93）と「動くはず」（スロー .30→.32 が 0 でない・
   一撃 .07→.09 がその 5 倍）の両方を流す（`motion-proof.json`）。旧版の「静止区間が動いていない」探針は
   スローが止まらない設計と矛盾するので置き換えた

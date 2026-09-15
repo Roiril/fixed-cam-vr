@@ -140,6 +140,12 @@ namespace FixedCamVr.Streaming
         /// <c>_IntroLive</c> へは 0/1 の表示ゲートとして変換して渡す。
         /// </summary>
         public float live;
+        /// <summary>
+        /// 着地した破片が<b>その場所のカメラ映像</b>を見せてよい区間（0225）。1 のあいだ、覆いの基底は RGB を残し、
+        /// 隙間だけを別の面が黒く塗る。破片は着地から 0.12 秒で透明になる。全面の混合（<see cref="live"/>）は
+        /// 枠を閉じる瞬間に揃える。
+        /// </summary>
+        public float reveal;
         /// <summary>粒状感・走査線の強さ（アプリ側の面で出す）。</summary>
         public float grain;
         /// <summary>乱れ（グリッチ）の強さ。すり替えの継ぎ目を隠す。</summary>
@@ -671,8 +677,11 @@ namespace FixedCamVr.Streaming
                             glitch = 0f,
                             // 混合量は IntroVeil の _ScreenFade だけが持つ。IntroDirector の
                             // _IntroLive は 0/1 の表示ゲートなので、ここを二重に掛けない。
-                            // .90〜.94 は完成した実景の面を見せ、.94〜.99 で映像へ混合する。
-                            live = SmoothStep(0.94f, 0.99f, p),
+                            // 0225: 着地した破片からその場所の映像が現れる（軽い片の着地 .70 から）。
+                            reveal = SmoothStep(0.68f, 0.70f, p),
+                            // 全面の混合は枠を閉じる瞬間（.90）に揃える。ScreenOn はここで鳴る。
+                            // 完成した静止画の面は見せない（0225「全部の破片が戻ったら、もうカメラ映像」）。
+                            live = SmoothStep(0.895f, 0.905f, p),
                             ignite = 1f,
                         };
                     }

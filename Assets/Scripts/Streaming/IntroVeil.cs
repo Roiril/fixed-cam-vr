@@ -74,6 +74,15 @@ namespace FixedCamVr.Streaming
         private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
         private static readonly int ZTestId = Shader.PropertyToID("_ZTest");
         private static readonly int ColorMaskId = Shader.PropertyToID("_ColorMask");
+        private static readonly int RevealId = Shader.PropertyToID("_Reveal");
+        private static readonly int GapsModeId = Shader.PropertyToID("_GapsMode");
+        private static readonly int StencilRefId = Shader.PropertyToID("_StencilRef");
+        private static readonly int StencilCompId = Shader.PropertyToID("_StencilComp");
+        private static readonly int StencilPassId = Shader.PropertyToID("_StencilPass");
+        private static readonly int StencilWriteMaskId = Shader.PropertyToID("_StencilWriteMask");
+        private static readonly int StencilReadMaskId = Shader.PropertyToID("_StencilReadMask");
+        /// <summary>破片の深度パスがステンシルに刻むビット（0225）。隔離殻の Ref 1 と被らない。</summary>
+        public const int FractureStencilBit = 32;
         private static readonly int[] FramePlaneIds =
         {
             Shader.PropertyToID("_FramePlane0"), Shader.PropertyToID("_FramePlane1"),
@@ -103,6 +112,10 @@ namespace FixedCamVr.Streaming
         private MeshRenderer? _fractureDepthRenderer;
         private MeshFilter? _fractureDepthFilter;
         private Material? _fractureDepthMat;
+        // 0225: 破片の隙間だけを黒く塗る面（基底 4900 → 深度 4901 → 隙間 4902 → 色 4903）。
+        private MeshFilter? _gapsFilter;
+        private MeshRenderer? _gapsRenderer;
+        private Material? _gapsMat;
         private MaterialPropertyBlock? _fractureBlock;
         private RenderTexture? _frozenLeft;
         private RenderTexture? _frozenRight;
@@ -166,6 +179,9 @@ namespace FixedCamVr.Streaming
                                     && _fractureFilter != null && _fractureFilter.sharedMesh != null;
 
         /// <summary>この走行で Renderer へ実際に配った破砕進行度の最大値。</summary>
+        /// <summary>着地した破片の下に映像を残すため、隙間だけを黒く塗る面を出しているか（0225）。</summary>
+        public bool GapsDrawn { get; private set; }
+
         public float ShatterPeak { get; private set; }
 
         /// <summary>生成された微細破片の実数。</summary>
@@ -211,6 +227,30 @@ namespace FixedCamVr.Streaming
             // 覆いは常に描く（視錐台カリングで消えると視界に穴が空く）。
             _renderer.allowOcclusionWhenDynamic = false;
 
+            // 0225: 破片の隙間だけを黒く塗る面。基底（4900）が RGB を残す区間に、深度パス（4901）が刻んだ
+            // ステンシルの外側だけを 4902 で塗る。着地して透明になった破片の下に、その場所の映像が残る。
+            var gapsGo = new GameObject("IntroVeilGaps");
+            gapsGo.transform.SetParent(transform, worldPositionStays: false);
+            gapsGo.transform.localPosition = new Vector3(0f, 0f, distance);
+            gapsGo.transform.localRotation = Quaternion.identity;
+            gapsGo.transform.localScale = new Vector3(veilSize.x, veilSize.y, 1f);
+            _gaps = gapsGo.transform;
+            _gapsFilter = gapsGo.AddComponent<MeshFilter>();
+            _gapsFilter.sharedMesh = _mesh;
+            _gapsRenderer = gapsGo.AddComponent<MeshRenderer>();
+            _gapsMat = new Material(shader) { name = "IntroVeilGaps (runtime)" };
+            _gapsMat.renderQueue = 4902;
+            _gapsMat.SetFloat(GapsModeId, 1f);
+            _gapsMat.SetInt(ZWriteId, 0);
+            _gapsMat.SetInt(StencilRefId, FractureStencilBit);
+            _gapsMat.SetInt(StencilReadMaskId, FractureStencilBit);
+            _gapsMat.SetInt(StencilCompId, (int)CompareFunction.NotEqual);
+            _gapsRenderer.sharedMaterial = _gapsMat;
+            _gapsRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _gapsRenderer.receiveShadows = false;
+            _gapsRenderer.allowOcclusionWhenDynamic = false;
+            _gapsRenderer.enabled = false;
+
             var fractureShader = Shader.Find("FixedCamVr/IntroFracture");
             if (fractureShader == null)
             {
@@ -232,7 +272,8 @@ namespace FixedCamVr.Streaming
 
             _fractureRenderer = fractureGo.AddComponent<MeshRenderer>();
             _fractureMat = new Material(fractureShader) { name = "IntroFracture (runtime)" };
-            _fractureMat.renderQueue = 4902;
+            // 色は隙間の面（4902）の後に描く。着地して透明になった片の下に、その場所の映像が残る。
+            _fractureMat.renderQueue = 4903;
             ConfigureColorMaterial(frozen: false);
             _fractureRenderer.sharedMaterial = _fractureMat;
             _fractureRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -258,6 +299,11 @@ namespace FixedCamVr.Streaming
             _fractureDepthMat.SetInt(DstBlendId, (int)BlendMode.Zero);
             _fractureDepthMat.SetInt(SrcBlendAlphaId, (int)BlendMode.One);
             _fractureDepthMat.SetInt(DstBlendAlphaId, (int)BlendMode.Zero);
+            // 深度と一緒に「破片のある所」をステンシルへ刻む（0225）。隙間の面はこのビットの外側だけを塗る。
+            _fractureDepthMat.SetInt(StencilRefId, FractureStencilBit);
+            _fractureDepthMat.SetInt(StencilCompId, (int)CompareFunction.Always);
+            _fractureDepthMat.SetInt(StencilPassId, (int)StencilOp.Replace);
+            _fractureDepthMat.SetInt(StencilWriteMaskId, FractureStencilBit);
             _fractureDepthRenderer.sharedMaterial = _fractureDepthMat;
             _fractureDepthRenderer.shadowCastingMode = ShadowCastingMode.Off;
             _fractureDepthRenderer.receiveShadows = false;
@@ -272,6 +318,7 @@ namespace FixedCamVr.Streaming
         private Mesh? _fractureMesh;
         private Transform? _fracture;
         private Transform? _fractureDepth;
+        private Transform? _gaps;
 
         private void ConfigureColorMaterial(bool frozen)
         {
@@ -312,6 +359,11 @@ namespace FixedCamVr.Streaming
             {
                 _fractureDepth.localPosition = new Vector3(0f, 0f, d);
                 _fractureDepth.localScale = new Vector3(size.x, size.y, 1f);
+            }
+            if (_gaps != null)
+            {
+                _gaps.localPosition = new Vector3(0f, 0f, d);
+                _gaps.localScale = new Vector3(size.x, size.y, 1f);
             }
             return size;
         }
@@ -653,6 +705,8 @@ namespace FixedCamVr.Streaming
             _mat.SetFloat(PassthroughId, Mathf.Clamp01(w.passthrough));
             _mat.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
             _mat.SetFloat(FractureActiveId, w.shatter > FullyOpenEpsilon ? 1f : 0f);
+            // 0225: 着地した破片が映像を見せる区間。静止画が取れなかった経路（旧 alpha 窓）では使わない。
+            _mat.SetFloat(RevealId, HasFrozenFrame ? Mathf.Clamp01(w.reveal) : 0f);
             _mat.SetVector(VeilSizeId, new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
             _mat.SetFloat(FeatherAngId, featherAng);
 
@@ -667,6 +721,10 @@ namespace FixedCamVr.Streaming
             ConfigureColorMaterial(HasFrozenFrame);
             if (_fractureRenderer != null) _fractureRenderer.enabled = drawShatter;
             if (_fractureDepthRenderer != null) _fractureDepthRenderer.enabled = drawFrozenDepth;
+            // 0225: 着地した破片が映像を見せる区間だけ、隙間を黒く塗る面を出す。全面が映像になったら畳む。
+            bool drawGaps = drawFrozenDepth && w.reveal > FullyOpenEpsilon && w.live < 0.999f;
+            if (_gapsRenderer != null) _gapsRenderer.enabled = drawGaps;
+            GapsDrawn = drawGaps;
             if (drawShatter)
             {
                 float shatter = Mathf.Clamp01(w.shatter);
@@ -674,6 +732,7 @@ namespace FixedCamVr.Streaming
                 _fractureBlock.Clear();
                 _fractureBlock.SetFloat(ShatterId, shatter);
                 _fractureBlock.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
+                _fractureBlock.SetFloat(RevealId, HasFrozenFrame ? Mathf.Clamp01(w.reveal) : 0f);
                 _fractureBlock.SetFloat(HasFrozenFrameId, HasFrozenFrame ? 1f : 0f);
                 _fractureBlock.SetVector(VeilSizeId,
                     new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
@@ -782,6 +841,8 @@ namespace FixedCamVr.Streaming
             if (_renderer != null) _renderer.enabled = false;
             if (_fractureRenderer != null) _fractureRenderer.enabled = false;
             if (_fractureDepthRenderer != null) _fractureDepthRenderer.enabled = false;
+            if (_gapsRenderer != null) _gapsRenderer.enabled = false;
+            GapsDrawn = false;
             if (_mat != null) _mat.SetFloat(FractureActiveId, 0f);
             if (_mat != null) _mat.SetInt(ZWriteId, 0);
             if (_filter != null && _mesh != null) _filter.sharedMesh = _mesh;
@@ -799,6 +860,7 @@ namespace FixedCamVr.Streaming
             if (_mat != null) Destroy(_mat);
             if (_fractureMat != null) Destroy(_fractureMat);
             if (_fractureDepthMat != null) Destroy(_fractureDepthMat);
+            if (_gapsMat != null) Destroy(_gapsMat);
             if (_mesh != null) Destroy(_mesh);
             if (_fractureMesh != null) Destroy(_fractureMesh);
         }

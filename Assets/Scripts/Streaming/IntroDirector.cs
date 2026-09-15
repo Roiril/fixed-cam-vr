@@ -356,7 +356,8 @@ namespace FixedCamVr.Streaming
             //    現実 → カメラ映像のクロスフェードは**覆いの alpha**（`_ScreenFade`）が持つ。
             //    ここにも同じ重みを渡すと**二重に掛かって**、混ざっている最中の映像が暗く沈む
             //    （合成は `アプリの rgb + 現実 × (1 - alpha)` なので、rgb を絞ると足す側が減る）。
-            WriteIgnite(w.ignite, w.live > 0f ? 1f : 0f);
+            // 0225: 着地した破片がその場所の映像を見せる区間（reveal）も、映像は出してよい。
+            WriteIgnite(w.ignite, (w.live > 0f || w.reveal > 0f) ? 1f : 0f);
 
             if (ev == IntroEvent.Finished) FinishIntro(restartClock: true);
             else if (ev == IntroEvent.Aborted) AbortIntro();

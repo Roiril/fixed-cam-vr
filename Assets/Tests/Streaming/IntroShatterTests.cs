@@ -76,14 +76,15 @@ namespace FixedCamVr.Streaming.Tests
         public void ScreenCrossfade_HoldsTheReconstructedRealityThenCompletes()
         {
             var l = AtFrame();
-            // p=.90 で全片が矩形へ再構成された後も、p=.94 まで現実を保つ（0221 の速度変化）。
-            l.Tick(IntroTiming.Default.frameSec * 0.92f, Ready());
+            // 0225: 着地した破片からその場所の映像が現れ（.70〜）、枠を閉じる .90 で全面が映像になる。
+            l.Tick(IntroTiming.Default.frameSec * 0.89f, Ready());
             Assert.AreEqual(0f, l.Weights.live, 1e-5f);
+            Assert.AreEqual(1f, l.Weights.reveal, 1e-5f, "着地した破片が映像を見せる区間に入っていない");
 
-            l.Tick(IntroTiming.Default.frameSec * 0.045f, Ready());
+            l.Tick(IntroTiming.Default.frameSec * 0.01f, Ready());
             Assert.That(l.Weights.live, Is.InRange(0.01f, 0.99f));
 
-            l.Tick(IntroTiming.Default.frameSec * 0.03f, Ready());
+            l.Tick(IntroTiming.Default.frameSec * 0.02f, Ready());
             Assert.AreEqual(1f, l.Weights.live, 1e-5f);
             Assert.AreEqual(1f, l.Weights.frame, 1e-5f, "映像の終端とスクリーン矩形が揃っていない");
         }
@@ -194,7 +195,8 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(depthRenderer.sharedMaterial.GetInt("_ZWrite"), Is.EqualTo(1));
                 Assert.That(depthRenderer.sharedMaterial.GetInt("_ZTest"),
                     Is.EqualTo((int)CompareFunction.LessEqual));
-                Assert.That(colorRenderer.sharedMaterial.renderQueue, Is.EqualTo(4902));
+                Assert.That(colorRenderer.sharedMaterial.renderQueue, Is.EqualTo(4903),
+                    "色は隙間の面（4902）の後に描く（0225）");
                 Assert.That(colorRenderer.sharedMaterial.GetInt("_ZWrite"), Is.Zero);
                 Assert.That(colorRenderer.sharedMaterial.GetInt("_ZTest"),
                     Is.EqualTo((int)CompareFunction.Equal));

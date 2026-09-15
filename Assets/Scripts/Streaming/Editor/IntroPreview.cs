@@ -433,6 +433,8 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly Material _screenMat;
             /// <summary>本編の映像として敷いてあるプレート（<see cref="Shot.noSignal"/> で外す）。</summary>
             private readonly Texture? _liveTex;
+            // 0225 の探針: 映像のテクスチャを差し替えて「着地した破片の場所に映像が出ているか」を測る。
+            private Texture? _liveTexOverride;
             private readonly IntroVeil _veil;
             private readonly ContainmentShell _shell;
             private readonly float _halfM;
@@ -702,7 +704,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 // _ScreenFade だけが持つ。ここへ w.live を直接入れると二重に暗くなる。
                 _igniteWritten = Mathf.Clamp01(w.ignite);
                 _screenMat.SetFloat(CrtIgniteId, _igniteWritten);
-                _screenMat.SetFloat(IntroLiveId, w.live > 0f ? 1f : 0f);
+                // 0225: 着地した破片がその場所の映像を見せる区間（reveal）も出してよい（IntroDirector と同じ式）。
+                _screenMat.SetFloat(IntroLiveId, (w.live > 0f || w.reveal > 0f) ? 1f : 0f);
                 _screenMat.SetFloat(GlitchId, 0f);
                 // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
                 _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
@@ -712,7 +715,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ⚠⚠ **映像そのものを外す。** 「カメラが繋がっていない」は画が 1 枚も来ていない
                 //   状態なので、プレートを敷いたままだと砂の下に部屋が残り、
                 //   `canon/LEDGER.md` 0025 の現場（砂だけで体験が流れる）を 1 枚も映さない。
-                _screenMat.SetTexture(LiveTexId, shot.noSignal ? Texture2D.blackTexture : _liveTex);
+                _screenMat.SetTexture(LiveTexId, shot.noSignal ? Texture2D.blackTexture : (_liveTexOverride ?? _liveTex));
 
                 // 覆い・殻は自分で子 GameObject を作る（レイヤは継がない）。撮る直前に揃える。
                 SetLayerRecursive(_root.transform, IntroLayer);
@@ -798,6 +801,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 File.WriteAllText(Path.Combine(_outDir, "motion-proof.json"), FormattableString.Invariant(
                     $"{{\"burstPixelDelta\":{burstDelta:0.000000},\"slowPixelDelta\":{slowDelta:0.000000},\"landedPixelDelta\":{landedDelta:0.000000}}}"));
                 VerifyShatterAnchor(saved);
+                VerifyPerPieceReveal(saved);
                 _freezeSourceOverride = UnityEngine.Object.Instantiate(_reality);
                 try
                 {
@@ -847,6 +851,55 @@ namespace FixedCamVr.Streaming.EditorTools
                     _cam.transform.localPosition = Vector3.zero;
                     UnityEngine.Object.DestroyImmediate(_freezeSourceOverride);
                     _freezeSourceOverride = null;
+                }
+            }
+
+            /// <summary>
+            /// 着地した破片から、その場所の映像が現れるか（0225）を実画素で測る。映像のテクスチャを緑へ差し替えて
+            /// 同じコマを描き、差が出る画素があれば映像が見えている。「止まるはず」＝着地前（p=.60）は差 0。
+            /// 「通るはず」＝着地の途中（p=.78）は差が出て、全面が映像の p=.999 ではさらに大きい。
+            /// </summary>
+            private void VerifyPerPieceReveal(List<string> saved)
+            {
+                var green = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+                var px = new Color32[16];
+                for (int i = 0; i < px.Length; i++) px[i] = new Color32(0, 255, 0, 255);
+                green.SetPixels32(px);
+                green.Apply();
+                var proof = new System.Text.StringBuilder("{");
+                try
+                {
+                    float[] probes = { 0.60f, 0.78f, 0.999f };
+                    string[] names = { "before", "landing", "closed" };
+                    var deltas = new float[probes.Length];
+                    for (int k = 0; k < probes.Length; k++)
+                    {
+                        int label = Mathf.RoundToInt(probes[k] * 100f);
+                        _liveTexOverride = null;
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_reveal_{names[k]}_reset", 0f, 0), saved);
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_reveal_{names[k]}_plate", probes[k], label), saved);
+                        Color32[] plate = _sceneTex.GetPixels32();
+                        _liveTexOverride = green;
+                        Render(new Shot(IntroStage.Frame, 4, $"probe_reveal_{names[k]}_green", probes[k], label), saved);
+                        deltas[k] = MeanPixelDifference(plate, _sceneTex.GetPixels32());
+                        _liveTexOverride = null;
+                        proof.Append(FormattableString.Invariant($"\"{names[k]}PixelDelta\":{deltas[k]:0.000000},"));
+                    }
+                    if (deltas[0] > 0.01f)
+                        throw new InvalidOperationException($"着地前から映像が見えている: before={deltas[0]}");
+                    if (deltas[1] < 0.2f)
+                        throw new InvalidOperationException($"着地した破片の場所に映像が現れていない: landing={deltas[1]}");
+                    if (deltas[2] < deltas[1] * 2f)
+                        throw new InvalidOperationException($"枠を閉じても全面が映像になっていない: closed={deltas[2]} landing={deltas[1]}");
+                    Debug.Log($"[IntroViz] per-piece reveal: before={deltas[0]:F4} landing={deltas[1]:F4} closed={deltas[2]:F4}");
+                    proof.Append("\"ok\":true}");
+                    File.WriteAllText(Path.Combine(_outDir, "reveal-proof.json"), proof.ToString());
+                }
+                finally
+                {
+                    _liveTexOverride = null;
+                    UnityEngine.Object.DestroyImmediate(green);
+                    Render(new Shot(IntroStage.Frame, 4, "probe_reveal_done", 0f, 0), saved);
                 }
             }
 

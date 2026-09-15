@@ -10,6 +10,7 @@ Shader "FixedCamVr/IntroFracture"
     {
         _Shatter("Fracture progress", Range(0, 1)) = 0
         _ScreenFade("Screen crossfade", Range(0, 1)) = 0
+        _Reveal("Landed pieces reveal the video", Range(0, 1)) = 0
         _HasFrozenFrame("Has frozen reality", Range(0, 1)) = 0
         _PhotoBrightness("Frozen frame brightness", Range(0.5, 1.5)) = 0.96
         _PhotoContrast("Frozen frame contrast", Range(0.5, 1.5)) = 1.04
@@ -25,6 +26,11 @@ Shader "FixedCamVr/IntroFracture"
         [HideInInspector] _ZWrite("Z write", Float) = 0
         [HideInInspector] _ZTest("Z test", Float) = 8
         [HideInInspector] _ColorMask("Color mask", Float) = 15
+        // 深度パスだけがステンシルに「破片のある所」を刻む（0225）。色パスは触らない。
+        [HideInInspector] _StencilRef("Stencil ref", Float) = 0
+        [HideInInspector] _StencilComp("Stencil comp", Float) = 8
+        [HideInInspector] _StencilPass("Stencil pass", Float) = 0
+        [HideInInspector] _StencilWriteMask("Stencil write mask", Float) = 255
     }
 
     SubShader
@@ -40,6 +46,13 @@ Shader "FixedCamVr/IntroFracture"
             ZTest [_ZTest]
             ColorMask [_ColorMask]
             Cull Back
+            Stencil
+            {
+                Ref [_StencilRef]
+                Comp [_StencilComp]
+                Pass [_StencilPass]
+                WriteMask [_StencilWriteMask]
+            }
 
             HLSLPROGRAM
             #pragma target 3.5
@@ -71,7 +84,8 @@ Shader "FixedCamVr/IntroFracture"
                 float2 projectionValidity : TEXCOORD4;
                 nointerpolation float surface : TEXCOORD5;
                 // x = 飛んでいる度合い（縁・厚み・艶はこれで出す）/ y = 遠さ（奥の片を沈める）/ z = 一撃の閃き（面を白ませる）
-                float3 detail : TEXCOORD6;
+                // w = 着地してからの露出 0..1（0225: 透明になって、その下に描かれているその場所の映像が現れる）
+                float4 detail : TEXCOORD6;
                 float4 edgeDistances : TEXCOORD7;
                 // x = 予兆の亀裂の光 / y = 破断・一撃の閃き / z = 着地の閃き / w = スロー中の閃き
                 nointerpolation float4 light : TEXCOORD8;
@@ -85,6 +99,7 @@ Shader "FixedCamVr/IntroFracture"
 
             float _Shatter;
             float _ScreenFade;
+            float _Reveal;
             float _HasFrozenFrame;
             float _PhotoBrightness;
             float _PhotoContrast;
@@ -374,7 +389,9 @@ Shader "FixedCamVr/IntroFracture"
                 o.light = float4(glowFront, breakLight, landingLight, glint);
                 // 遠い片は沈む。着地した面には掛けない（detail で消える）。
                 float fog = saturate((eyeDistance - 1.7) / 2.2) * detail;
-                o.detail = float3(detail, fog, max(shock, slam * 0.7));
+                // 着地から 0.12 秒で透明になり、その場所の映像が現れる（0225）。閃きは露出の途中で消えていく。
+                float reveal = Ease(landAt, landAt + 0.024, p) * step(1e-4, _Reveal);
+                o.detail = float4(detail, fog, max(shock, slam * 0.7), reveal);
                 o.positionCS = TransformWorldToHClip(worldPosition);
                 return o;
             }
@@ -443,7 +460,8 @@ Shader "FixedCamVr/IntroFracture"
                             + rimColor * (0.30 * i.light.y + 0.25 * shock + 0.10 * detail
                                           + 0.08 * grazing * detail)) * field;
                 }
-                return float4(color, saturate(1.0 - _ScreenFade));
+                // 着地した片は透明になり、その下に描かれているその場所の映像が現れる（0225）。
+                return float4(color, saturate(1.0 - _ScreenFade) * (1.0 - i.detail.w));
             }
             ENDHLSL
         }

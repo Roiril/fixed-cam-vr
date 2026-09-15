@@ -12,6 +12,12 @@ Shader "FixedCamVr/IntroVeil"
         _Passthrough("Passthrough inside aperture (0..1)", Range(0, 1)) = 1
         _ScreenFade("Screen crossfade inside screen rect (0..1)", Range(0, 1)) = 0
         _FractureActive("Full-field fracture active", Range(0, 1)) = 0
+        // 0225: 着地した破片がその場所の映像を見せる区間。基底は RGB を残し、隙間だけを別の面（_GapsMode）が黒く塗る。
+        _Reveal("Landed pieces reveal the video", Range(0, 1)) = 0
+        _GapsMode("Paint only the gaps between pieces (stencil)", Range(0, 1)) = 0
+        [HideInInspector] _StencilRef("Stencil ref", Float) = 0
+        [HideInInspector] _StencilComp("Stencil comp", Float) = 8
+        [HideInInspector] _StencilReadMask("Stencil read mask", Float) = 255
         _FramePlane0("Aperture edge plane 0", Vector) = (0, 0, -1, 0)
         _FramePlane1("Aperture edge plane 1", Vector) = (0, 0, -1, 0)
         _FramePlane2("Aperture edge plane 2", Vector) = (0, 0, -1, 0)
@@ -38,6 +44,12 @@ Shader "FixedCamVr/IntroVeil"
             ZWrite [_ZWrite]
             ZTest Always
             Cull Off
+            Stencil
+            {
+                Ref [_StencilRef]
+                ReadMask [_StencilReadMask]
+                Comp [_StencilComp]
+            }
 
             HLSLPROGRAM
             #pragma target 3.5
@@ -63,6 +75,8 @@ Shader "FixedCamVr/IntroVeil"
             float _Passthrough;
             float _ScreenFade;
             float _FractureActive;
+            float _Reveal;
+            float _GapsMode;
             float4 _FramePlane0;
             float4 _FramePlane1;
             float4 _FramePlane2;
@@ -92,6 +106,10 @@ Shader "FixedCamVr/IntroVeil"
 #else
                 depth = 1.0;
 #endif
+                // 隙間だけを黒く塗る面（0225）。ステンシルが「破片のある所」を弾くので、ここへ来るのは隙間だけ。
+                // RGB を 0 に、compositor alpha は閉じたまま（乗算で 1）。
+                if (_GapsMode > 0.5)
+                    return float4(0.0, 0.0, 0.0, 1.0);
 
                 // 覆いとスクリーンを同じ距離へ置くため、中央眼から解いた平面は左右眼でも一致する。
                 float3 dir = normalize(float3((i.uv - 0.5) * _VeilSize.xy, _VeilSize.z));
@@ -108,7 +126,8 @@ Shader "FixedCamVr/IntroVeil"
                     // 映像が出る前は先描きされた管の燐光も隠す。残すと破片の隙間だけが
                     // 茶色になり、完成前から中央の四角形が見える。alpha は閉じたまま。
                     // 混合開始後の RGB は維持し、混合量は後段の IntroFracture だけへ任せる。
-                    float rgbGate = _ScreenFade > 0.0 ? 1.0 : 0.0;
+                    // 0225: 着地した破片が映像を見せる区間（_Reveal）も RGB を残す。隙間は _GapsMode の面が黒く塗る。
+                    float rgbGate = (_ScreenFade > 0.0 || _Reveal > 0.0) ? 1.0 : 0.0;
                     return float4(rgbGate, rgbGate, rgbGate, 1.0);
                 }
 
