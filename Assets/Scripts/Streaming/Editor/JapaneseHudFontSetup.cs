@@ -119,11 +119,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 "Assets/Scripts/Diagnostics/CommsPanel.cs",
                 // 報告練習後の題字に添える開始案内。TitleScreen も同じ静的アトラスを使う。
                 "Assets/Scripts/Streaming/TitleScreen.cs",
-                // ⚠⚠ **化け字の置き場**（`canon/LEDGER.md` 0069 の `CommsGlitchLogic.Marks`）。
-                //    周回が進むと連絡の字がここの記号へ化けるので、**焼かれていないと豆腐が出る**。
-                //    ⚠ ここに居るのは「文面」ではなく定数だが、収集はソースの非 ASCII を全部拾うので
-                //      これで入る（`OutroReportText.cs` と同じ扱い）。
-                "Assets/Scripts/Streaming/CommsGlitchLogic.cs",
+                // ⚠ 化け字（`CommsGlitchLogic.Marks`・0069）は 2026-09-14 に廃止、ファイルごと
+                //    2026-09-18 に消した（連絡の面の壊れは斑の場で切る — `canon/LEDGER.md` 0229）。
+                //    連絡の面に非 ASCII を持つのは `CommsPanel.cs` だけになった。
                 // ⚠ 2026-08-15 追加: **体験者の報告ボタンの面**（VisitorMarkGuidance が文言を持つ）。
                 //    「(X,Yで異変を報告)」「報告中」「報告しました」。ゲージの █░ は下の記号保険にある。
                 "Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs",

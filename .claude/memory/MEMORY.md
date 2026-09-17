@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [comms_curse.md](comms_curse.md) - 2026-09-18（0229）。連絡の面の壊れを「呪われた双子の画面が斑で重なる」形へ。斑の場は HLSL と C# の写し 1 対（顔・地・走り書き・文字の切断が共有）／**文字は地が書くステンシル bit 8 を TMP の材質が読んで切る**（1 パスでは書けない・fontMaterials 全部・ステンシルが無い形式では CPU の alpha 0 が保険）／面積は侵食度に等号で結ばない（0.25→22%・0.75→55%・1→全面）／「出た初めは通常 → 1 秒で重なる」は CommsPanelLogic が持つ／乗っ取りの一文は文字を切らない。
+
 - [intro_fracture_cinematic.md](intro_fracture_cinematic.md) - 2026-09-15（0221〜0226・**採用済み**・実機 3 走行で割れる遷移を確認）。現実が割れる遷移を映画の速度変化へ書き直した。集結は中心の磁石（漂いが止まり、全片が同時に引かれ、重い片ほど遅れて一気に加速、減速せずに嵌まる）。**着地した破片からその場所の映像**（ステンシルで隙間だけ黒・描画順 4900/4901/4902/4903）。ScreenOn は閉じる瞬間。段 4 は 5.0 秒（5 か所＋卓の show.json）。時計の表はシェーダ 1 つで、音と IntroLogic はその写し。形は起点からの網、質感はガラスの縁の光。短い窓の LUFS は −70 を返す／速い粒は半分の長さ／平均乱数は 0.1 を下回らない。
 
 - [staff_status_view.md](staff_status_view.md) - 2026-09-14。右 B のステータスは押しているあいだだけ出す。トグルをやめた理由／黒の上に描く 3 点（3D TMP・Overlay・queue 5000。sortingOrder では越えられない）／題字を譲らせない／faceButtonHeld から B を外した／電池 API は使わない／`ev=status` と `hudSec` と heartbeat `statusHud` の読み方。

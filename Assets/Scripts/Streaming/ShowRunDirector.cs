@@ -94,7 +94,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 装置の劣化そのものの進み 0..1。<b>呪いが解けても下がらない</b>（単調）。
-        /// 読むのは<b>音</b>（装置の声の痩せ）と <c>CommsGlitchLogic</c>（AI の侵食の入力）。
+        /// 読むのは<b>音</b>（装置の声の痩せ）。⚠ 連絡の面の侵食は 2026-09-14 から表示イベント
+        /// （<c>CommsInvasionLogic</c>）で進むので、これを読まない。
         /// ⚠ <b>画はこれを読まない</b> → <see cref="ScreenDecayShown"/>。
         /// </summary>
         public float ScreenDecay => _decay.Progress;
@@ -113,7 +114,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// <b>解除の進み 0..1</b>（0 = まだ呪われている / 1 = 戻り切った）。
-        /// 画だけでなく <b>AI の侵食（<c>CommsGlitchLogic</c>）もこの 1 本で消える</b>
+        /// 画だけでなく <b>AI の侵食（連絡の面の斑・<c>CommsPanel.PushCurseTarget</c>）もこの 1 本で消える</b>
         /// （2026-09-03・<c>canon/LEDGER.md</c> 0129）。呪いが解けた瞬間は 1 つなので時計も 1 つ。
         /// </summary>
         public float ScreenDecayReleaseK => _decay.ReleaseK;

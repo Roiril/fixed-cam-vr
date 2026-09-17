@@ -100,7 +100,6 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs',
                                     'Assets/Scripts/Diagnostics/OutroReportText.cs',
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
-                                    'Assets/Scripts/Streaming/CommsGlitchLogic.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
                             Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set lang=ja|en|fr,invasion=0|0.25|0.75|1,frames=0／→ make-preview-video.py で mp4）'

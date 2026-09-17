@@ -1,6 +1,7 @@
 ﻿#nullable enable
 using System.IO;
 using System.Reflection;
+using FormattableString = System.FormattableString;
 using FixedCamVr.Diagnostics;
 using TMPro;
 using UnityEditor;
@@ -366,22 +367,24 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// <b>字が <paramref name="wantMin"/> 個以上化けている刻みへ合わせる。</b>
-        /// ⚠⚠ 適当な時刻で撮ると「何も起きていない」絵になり、**実装が死んでいても気づけない**。
-        /// ⚠ 文面ごとに化ける刻みが違うので、**面へ実際に掛けてから数える**
-        /// （プレビュー側が文面を知らなくて済む）。
-        /// ⚠ <b>必ず <c>Deliver</c> の後に呼ぶ</b> — 素の文面が入っていないと 1 字も化けない。
+        /// <b>斑が目標まで重なった所で撮る。</b> 斑は面が開いてから
+        /// <see cref="CommsCurseLogic.RampSec"/> で立ち上がる（0229）ので、届く前に撮ると
+        /// 「何も起きていない」絵になり、**実装が死んでいても気づけない**。
+        /// ⚠ <b>必ず <c>Deliver</c> の後に呼ぶ</b> — 素の文面が入っていないと 1 字も切れない。
+        /// ⚠ 呼ぶのは読ませている段（Hold 2 秒）なので、1 秒進めても引き始めない。
         /// </summary>
         private static void SeekCorruption(CommsPanel panel, object logic, MethodInfo apply,
                                            float decay, int wantMin, float startSec)
         {
             if (decay <= 0f) return;
-            for (int t = 0; t < 240; t++)
-            {
-                panel.SetInvasionForPreview(decay, startSec + t * CommsGlitchLogic.TickSec);
-                ApplyNow(apply, panel, logic);
-                if (panel.CorruptedChars >= wantMin) return;
-            }
+            panel.SetInvasionForPreview(decay, startSec);
+            Step(logic, apply, panel, CommsCurseLogic.RampSec + 0.05f);
+            // 「止まってください！」と続く警告は斑の目標が 0（読める状態で出す）。切られなくて正しい。
+            if (panel.CurseTarget <= 0.001f) return;
+            if (panel.AppliedCurse < panel.CurseTarget * 0.99f)
+                Debug.LogWarning($"[CommsPreview] 斑が目標へ届いていない: {panel.AppliedCurse:F2} / {panel.CurseTarget:F2}");
+            if (panel.CorruptedChars < wantMin)
+                Debug.LogWarning($"[CommsPreview] 侵食度 {decay:F2} で切られた字が {panel.CorruptedChars} 字（{wantMin} 字以上のはず）");
         }
 
         private static float PreviewTimeSec()
@@ -447,43 +450,120 @@ namespace FixedCamVr.Streaming.EditorTools
             Shoot(cam, Path.Combine(dir, "transition_out.png"));
         }
 
+        /// <summary>
+        /// <b>呪いの動き（<c>canon/LEDGER.md</c> 0229）。</b> 同じ文面（①）を侵食度 0 / 0.25 / 0.75 / 1 で、
+        /// 開く → 打つ → 読ませる → 引く まで通しで焼く。<c>motion/lv000|025|075|100/</c> に
+        /// 連番と <c>type.tsv</c>（打鍵）と <c>curse.tsv</c>（斑の量・切られた字数）、
+        /// <c>motion/geometry.json</c> に矩形と本文の帯の画面座標（Python の画素検査が読む）。
+        ///
+        /// ⚠ 判定は Python（<c>tools/render-comms-curse-preview.py</c>）が画素でする。ここは
+        /// 「出た初めは通常」「1 秒で重なった」を数値で出し、届いていなければ落とす。
+        /// </summary>
         private static void ShootMotion(CommsPanel panel, object logic, MethodInfo apply,
                                         Transform root, TMP_Text tmp, Camera cam, string dir, float dist)
         {
             string motionDir = Path.Combine(dir, "motion");
             Directory.CreateDirectory(motionDir);
             float dt = 1f / Fps;
-            int frame = 0;
+            float[] levels = { 0f, 0.25f, 0.75f, 1f };
+            var summary = new System.Text.StringBuilder(
+                "level\tframes\tcurse_open\tcurse_1_2s\ttarget\tcx_1_2s\tcx_max\tramp_frame\n");
+            PropertyInfo active = logic.GetType().GetProperty("Active")!;
+            PropertyInfo stage = logic.GetType().GetProperty("Stage")!;
 
-            Disable(logic);
-            ApplyNow(apply, panel, logic);
-            panel.Deliver(CommsNotice.BeginHow);
-            SetLevelForPreview(panel, 0f, 0f);
-            PlaceStraightAhead(root, tmp, dist);
-            while ((bool)logic.GetType().GetProperty("Active")!.GetValue(logic) && frame < Fps * 12)
+            foreach (float level in levels)
             {
+                string sub = Path.Combine(motionDir, $"lv{Mathf.RoundToInt(level * 100f):000}");
+                Directory.CreateDirectory(sub);
+                Disable(logic);
                 ApplyNow(apply, panel, logic);
-                Shoot(cam, Frame(motionDir, frame++));
-                Step(logic, apply, panel, dt);
+                SetLevelForPreview(panel, level, 0f);
+                panel.Deliver(CommsNotice.BeginHow);
+                PlaceStraightAhead(root, tmp, dist);
+                var taps = new System.Text.StringBuilder("frame\tchars\thit\n");
+                var curse = new System.Text.StringBuilder("frame\tsec\tstage\tcurse\ttarget\tcx\tglyph\tpanel\tface\n");
+                int lastTyped = panel.TypedCount;
+                int frame = 0, cxMax = 0, cxAt12 = -1, rampFrame = -1;
+                float curseOpen = -1f, curseAt12 = -1f;
+                while ((bool)active.GetValue(logic) && frame < Fps * 12)
+                {
+                    ApplyNow(apply, panel, logic);
+                    Shoot(cam, Frame(sub, frame));
+                    int hit = panel.TypedCount > lastTyped ? 1 : 0;
+                    lastTyped = panel.TypedCount;
+                    taps.Append(frame).Append('\t').Append(panel.VisibleChars).Append('\t').Append(hit).Append('\n');
+                    curse.Append(frame).Append('\t')
+                         .Append((frame * dt).ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                         .Append(stage.GetValue(logic)).Append('\t')
+                         .Append(panel.AppliedCurse.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                         .Append(panel.CurseTarget.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                         .Append(panel.CorruptedChars).Append('\t')
+                         .Append(panel.AppliedGlyph.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                         .Append(panel.AppliedPanelAlpha.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                         .Append(panel.AppliedFaceMix.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
+                    if (frame == 0) curseOpen = panel.AppliedCurse;
+                    if (frame == Mathf.RoundToInt(1.2f * Fps))
+                    {
+                        curseAt12 = panel.AppliedCurse;
+                        cxAt12 = panel.CorruptedChars;
+                        // 画面座標は**面が開いて置かれている最中**に測る（畳んだ後に測ると quad が潰れている）。
+                        if (level <= 0.01f)
+                            File.WriteAllText(Path.Combine(motionDir, "geometry.json"), GeometryJson(panel, cam, tmp, root));
+                    }
+                    if (rampFrame < 0 && panel.CurseTarget > 0.01f && panel.AppliedCurse >= panel.CurseTarget * 0.99f)
+                        rampFrame = frame;
+                    cxMax = Mathf.Max(cxMax, panel.CorruptedChars);
+                    Step(logic, apply, panel, dt);
+                    frame++;
+                }
+                File.WriteAllText(Path.Combine(sub, "type.tsv"), taps.ToString());
+                File.WriteAllText(Path.Combine(sub, "curse.tsv"), curse.ToString());
+                summary.Append(level.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                       .Append(frame).Append('\t')
+                       .Append(curseOpen.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                       .Append(curseAt12.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                       .Append(panel.CurseTarget.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                       .Append(cxAt12).Append('\t').Append(cxMax).Append('\t').Append(rampFrame).Append('\n');
+                // 「出た初めは通常」「1 秒で重なる」を数値で落とす（画素は Python が見る）。
+                if (curseOpen > 0.001f)
+                    throw new System.InvalidOperationException($"侵食度 {level}: 開いた縁で斑が {curseOpen:F3}（0 のはず）");
+                if (level > 0.01f && (rampFrame < 0 || rampFrame > Mathf.RoundToInt(1.3f * Fps)))
+                    throw new System.InvalidOperationException($"侵食度 {level}: 斑が 1.3 秒までに目標へ届かない（{rampFrame} コマ）");
+                if (level > 0.01f && cxAt12 <= 0)
+                    throw new System.InvalidOperationException($"侵食度 {level}: 1.2 秒で切られた字が 0");
+                if (level <= 0.01f && cxMax != 0)
+                    throw new System.InvalidOperationException($"侵食度 0 で字が切られた（{cxMax}）");
             }
+            File.WriteAllText(Path.Combine(motionDir, "summary.tsv"), summary.ToString());
+            Debug.Log($"[CommsPreview] 呪いの動き 4 段 → {motionDir}\n{summary}");
+        }
 
-            panel.Deliver(CommsNotice.BeginHow);
-            Step(logic, apply, panel, ConstF(typeof(CommsPanelLogic), "InSec", 0.45f));
-            Step(logic, apply, panel, TypeSec(logic));
-            // 実機と同じく侵食は戻らない。2-C の連続視点から 3-A の完全侵食へ進める。
-            for (int i = 0; i < Mathf.RoundToInt(Fps * 1.5f); i++)
+        /// <summary>
+        /// 画素検査のための画面座標（px・左上原点）: 地の矩形（毛羽立ちの余白を除く）と本文の帯と顔の枠。
+        /// ⚠ 地の quad は毛羽立ちのぶん広い（<c>CommsPanel.PlateMarginM</c>）。矩形は余白を引いて出す。
+        /// </summary>
+        private static string GeometryJson(CommsPanel panel, Camera cam, TMP_Text tmp, Transform root)
+        {
+            float margin = ConstF(typeof(CommsPanel), "PlateMarginM", 0.05f) * root.localScale.x;
+            var plate = panel.transform.Find("CommsRoot/CommsPanelQuad");
+            var face = panel.transform.Find("CommsRoot/CommsAvatar");
+            string Rect(Transform? t, float inset)
             {
-                SetLevelForPreview(panel, 0.75f, i * dt);
-                ApplyNow(apply, panel, logic);
-                Shoot(cam, Frame(motionDir, frame++));
+                if (t == null) return "null";
+                Vector3 s = t.lossyScale;
+                Vector3 a = cam.WorldToScreenPoint(t.position + t.rotation * new Vector3(-s.x * 0.5f + inset, -s.y * 0.5f + inset, 0f));
+                Vector3 b = cam.WorldToScreenPoint(t.position + t.rotation * new Vector3(s.x * 0.5f - inset, s.y * 0.5f - inset, 0f));
+                return FormattableString.Invariant(
+                    $"{{\"x0\":{Mathf.Min(a.x, b.x):0.0},\"x1\":{Mathf.Max(a.x, b.x):0.0},\"y0\":{H - Mathf.Max(a.y, b.y):0.0},\"y1\":{H - Mathf.Min(a.y, b.y):0.0}}}");
             }
-            for (int i = 0; i < Mathf.RoundToInt(Fps * 1.5f); i++)
-            {
-                SetLevelForPreview(panel, 1f, (i + 60) * dt);
-                ApplyNow(apply, panel, logic);
-                Shoot(cam, Frame(motionDir, frame++));
-            }
-            Debug.Log($"[CommsPreview] 短い動き {frame} コマ → {motionDir}");
+            Bounds tb = tmp.textBounds;
+            Vector3 ta = cam.WorldToScreenPoint(tmp.transform.TransformPoint(tb.min));
+            Vector3 tz = cam.WorldToScreenPoint(tmp.transform.TransformPoint(tb.max));
+            string text = FormattableString.Invariant(
+                $"{{\"x0\":{Mathf.Min(ta.x, tz.x):0.0},\"x1\":{Mathf.Max(ta.x, tz.x):0.0},\"y0\":{H - Mathf.Max(ta.y, tz.y):0.0},\"y1\":{H - Mathf.Min(ta.y, tz.y):0.0}}}");
+            return "{\"width\":" + W + ",\"height\":" + H + ",\"fps\":" + Fps
+                   + ",\"plate\":" + Rect(plate, margin) + ",\"plateQuad\":" + Rect(plate, 0f)
+                   + ",\"face\":" + Rect(face, 0f) + ",\"text\":" + text + "}";
         }
 
         /// <summary>著作どおりの位置（左へ振って下げて、面は頭へ正対）へ置く。</summary>

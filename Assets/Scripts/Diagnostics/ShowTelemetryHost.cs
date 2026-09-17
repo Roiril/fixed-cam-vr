@@ -144,6 +144,7 @@ namespace FixedCamVr.Diagnostics
         /// <summary>直近に出した記録ボタンの回数（体験者の左のどれか）。</summary>
         private int _lastMarkCount;
         private int _lastCommsPulse;
+        private int _lastCommsCurseRamp;
         private string _lastCommsTakeoverPhase = "Off";
         private float _lastCommsInvasion = -1f;
         private string _lastTakeId = "";
@@ -844,6 +845,16 @@ namespace FixedCamVr.Diagnostics
                      $"shown={_comms.VisibleChars} started={_comms.TakeoverStartedCount} " +
                      $"completed={_comms.TakeoverCompletedCount}");
             }
+            // 呪いの斑が目標へ届いた縁（`canon/LEDGER.md` 0229「出た初めは通常 → 1s ほどで重なる」）。
+            // sec = 面が開いてから届くまでの秒。**画に出た側**（AppliedCurse）で数えている。
+            if (_comms != null && _comms.CurseRampCount != _lastCommsCurseRamp)
+            {
+                _lastCommsCurseRamp = _comms.CurseRampCount;
+                Emit($"ev=commsCurse n={_lastCommsCurseRamp} sec={_comms.LastCurseRampSec:F2} " +
+                     $"v={_comms.AppliedCurse:F2} target={_comms.CurseTarget:F2} " +
+                     $"cx={_comms.CorruptedChars} id={_comms.LastNotice} " +
+                     $"invasion={_comms.InvasionProgress:F2} plate={(_comms.PlateBuilt ? 1 : 0)}");
+            }
             if (_comms != null && _comms.PulseCount != _lastCommsPulse)
             {
                 _lastCommsPulse = _comms.PulseCount;
@@ -857,6 +868,8 @@ namespace FixedCamVr.Diagnostics
                      // ⚠ 強さではなく**進み**を出す — 強さは発作で跳ねるので、
                      //   1 通ごとの比較には使えない（3 周目の連絡が軽く見えることがある）。
                      $"decay={_comms.DecayProgress:F2} invasion={_comms.InvasionProgress:F2} " +
+                     // curse = 届いた瞬間に画へ書いていた斑の量。**開いた縁なら 0 のはず**（0229）。
+                     $"curse={_comms.AppliedCurse:F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             }
 
@@ -1398,6 +1411,14 @@ namespace FixedCamVr.Diagnostics
                 ? "-"
                 : $"{(_comms.AvatarBuilt ? 1 : 0)}/{_comms.FaceArtCount}/" +
                   $"{_comms.AppliedFace:F2}/{_comms.AppliedFaceMix:F2}");
+            //   commsCurse = 呪いの斑（`canon/LEDGER.md` 0229）。
+            //   **`<地の双子のシェーダを引けたか>/<画へ書いた斑の量>/<斑の目標>`** の 3 つ組。
+            //   ⚠ 1 つ目が 0 なら毛羽立ち・走り書き・文字の切断が実機で 1 画素も出ていない
+            //     （Editor では出るので、この 1 ビットが無いと永久に気づけない — `Unlit/Color` と同じ穴）。
+            //   ⚠ 2 つ目は面が開いてから 1 秒で 3 つ目へ寄る。開いた直後の標本で 0 なのは正常。
+            _sb.Append(" commsCurse=").Append(_comms == null
+                ? "-"
+                : $"{(_comms.PlateBuilt ? 1 : 0)}/{_comms.AppliedCurse:F2}/{_comms.CurseTarget:F2}");
             //   repTypeN / repShown = 終幕の報告の打鍵の累計と、いま画に出ている文字数
             //           （`canon/LEDGER.md` 0063）。**対で出す** — 片方だけだと
             //           「字は出たのに無音」と「音は鳴ったのに字が出ていない」を区別できない。

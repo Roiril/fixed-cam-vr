@@ -46,6 +46,13 @@ namespace FixedCamVr.Diagnostics
     /// <see cref="CommsFaceLayout"/>、描くのは <c>CommsAvatar.shader</c>、版を焼くのは
     /// <c>tools/make-comms-face.py</c>。⚠ <b>顔のぶんは面を左へ伸ばして作る</b> —
     /// 文面の帯は 1mm も動いていない（詰めると最長の行が 3 行へ折り返して前提が崩れる）。
+    ///
+    /// <b>呪い</b>（<c>canon/LEDGER.md</c> 0229・2026-09-18）: 壊れは「字が抜ける引き算」ではなく、
+    /// <b>呪われた双子の画面が斑で重なる足し算</b>。地のふちが毛羽立って黒くにじみ、顔が市松人形になり、
+    /// 本文の行の位置に走り書きが乗る。斑の場は <c>CommsCurse.hlsl</c>（判断は
+    /// <see cref="CommsCurseLogic"/>）1 つで、顔（<c>CommsAvatar.shader</c>）・地と走り書き
+    /// （<c>CommsPanelPlate.shader</c>）・文字の切断（地が書くステンシルを TMP の材質が読む）が共有する。
+    /// 面が開くたびに斑は 0 から目標へ 1 秒で立ち上がる（<see cref="CommsPanelLogic.SetCurseTarget"/>）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CommsPanel : MonoBehaviour
@@ -139,6 +146,33 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>顔の枠と切り抜きのシェーダ。⚠ <b>Always Included に入れてある</b>。</summary>
         private const string AvatarShaderName = "FixedCamVr/CommsAvatar";
+
+        /// <summary>
+        /// 地とその呪われた双子（毛羽立ち・走り書き・文字を切るステンシル）のシェーダ（0229）。
+        /// ⚠ <b>Always Included に入れてある</b>。引けなければ URP の Unlit へ落ちる
+        /// （地は出るが呪いは顔にしか出ない ＝ <see cref="PlateBuilt"/> が 0 で観測に出る）。
+        /// </summary>
+        private const string PlateShaderName = "FixedCamVr/CommsPanelPlate";
+
+        /// <summary>
+        /// 斑の中に文字を切るステンシルを書くシェーダ（色は書かない）。
+        /// ⚠⚠ <b>地の双子と別の quad</b> — URP は 1 つのマテリアルの LightMode の無いパスを最初の
+        /// 1 つしか描かないので、同じシェーダの第 2 パスにすると地が 1 画素も出ない（2026-09-18 に踏んだ）。
+        /// ⚠ <b>Always Included に入れてある</b>。引けなければ文字は切れない（読める側へ倒れる）。
+        /// </summary>
+        private const string StencilShaderName = "FixedCamVr/CommsCurseStencil";
+
+        /// <summary>
+        /// 地の quad を矩形より外へ広げる幅 (m)。毛羽立ち（振幅 12mm）と煙のにじみ（35mm）がここに収まる。
+        /// ⚠ <see cref="CommsFaceLayout"/> の寸法は 1mm も動かさない — 広がるのは描く面だけ。
+        /// </summary>
+        private const float PlateMarginM = 0.05f;
+
+        /// <summary>文字を切るステンシルのビット。隔離の殻は 1・導入の破砕は 32 なので重ならない。</summary>
+        private const int CurseStencilBit = 8;
+
+        /// <summary>走り書きを乗せる行の上限（文面の最悪は 3 行・<see cref="BodyMaxH"/>）。</summary>
+        private const int MaxScrawlLines = 4;
         // ---- 縦の組み立て -------------------------------------------------------------
         //
         // ⚠⚠ **面の高さは固定ではない**（2026-08-16・`canon/LEDGER.md` 0065）。
@@ -192,7 +226,6 @@ namespace FixedCamVr.Diagnostics
 
         private static readonly Color PanelColor = new Color(10f / 255f, 9f / 255f, 8f / 255f, 1f);
         private static readonly Color Ivory = new Color(209f / 255f, 199f / 255f, 184f / 255f, 1f);
-        private static readonly Color EchoRed = new Color(135f / 255f, 61f / 255f, 53f / 255f, 1f);
         private static readonly Color DenialRed = new Color(184f / 255f, 48f / 255f, 40f / 255f, 1f);
 
         /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
@@ -444,19 +477,25 @@ namespace FixedCamVr.Diagnostics
         private Transform? _root;
         private MeshRenderer? _panelRenderer;
         private MeshRenderer? _dividerRenderer;
+        // 文字を切るステンシルの quad（地と同じ寸法・色は書かない）。
+        private MeshRenderer? _stencilRenderer;
+        private Material? _stencilMat;
         private const int AvatarQueue = 4985;
         private const float TakeoverStretchM = 0.04f;
         private const float TakeoverThinK = 0.22f;
 
         // AI の侵食。映像劣化とは分離し、2-C の人形視点と 3-A の人形表示で段階的に進む。
         private float _glitchLevel;
-        // 一部の字形だけに残す鈍い赤の残像。通常の全文複製にはしない。
-        private TMP_Text? _textEcho;
-        // 化けの組み合わせが変わる刻み。**-1 = まだ一度も掛けていない**。
-        private int _corruptTick = -1;
         // プレビュー（`menu comms-preview -Set decay=`）が注入する進み。**負なら実機の値を読む**。
         private float _decayOverride = -1f;
         private float _previewTimeSec;
+        // 呪いの立ち上がりの観測（面が開いてから斑が目標へ届くまでの秒）。
+        private float _curseOpenAt;
+        private bool _curseRampReported;
+        // 走り書きの行（面のローカル m: x0, x1, 行の中心 y, 字の高さ）と、その行の字順の範囲。
+        private readonly Vector4[] _lineRects = new Vector4[MaxScrawlLines];
+        private readonly int[] _lineFirstChar = new int[MaxScrawlLines];
+        private readonly int[] _lineLastChar = new int[MaxScrawlLines];
         // ⚠ 地の色は**シェーダによってプロパティ名が違う**（URP は `_BaseColor` / 組み込みは `_Color`）。
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         // 半透明へ倒すためのプロパティ（URP の Unlit）。⚠ 組み込みの `Unlit/Color` には 1 つも無い。
@@ -480,6 +519,27 @@ namespace FixedCamVr.Diagnostics
         private static readonly int FaceOnId = Shader.PropertyToID("_FaceOn");
         private static readonly int SeizureId = Shader.PropertyToID("_Seizure");
         private static readonly int PanelXId = Shader.PropertyToID("_PanelX");
+        // 呪いの斑（`CommsCurse.hlsl`）。顔と地が同じ名前で受ける。
+        private static readonly int OriginId = Shader.PropertyToID("_Origin");
+        private static readonly int SizeId = Shader.PropertyToID("_Size");
+        // 地の双子（`CommsPanelPlate.shader`）。
+        private static readonly int RectHalfId = Shader.PropertyToID("_RectHalf");
+        private static readonly int CurseId = Shader.PropertyToID("_Curse");
+        private static readonly int TextCutId = Shader.PropertyToID("_TextCut");
+        private static readonly int ScrawlId = Shader.PropertyToID("_Scrawl");
+        private static readonly int InkId = Shader.PropertyToID("_Ink");
+        private static readonly int InkAlphaId = Shader.PropertyToID("_InkAlpha");
+        private static readonly int[] LineIds =
+        {
+            Shader.PropertyToID("_Line0"), Shader.PropertyToID("_Line1"),
+            Shader.PropertyToID("_Line2"), Shader.PropertyToID("_Line3"),
+        };
+        private static readonly int LineRevealId = Shader.PropertyToID("_LineReveal");
+        // TextMeshPro の材質が持つステンシル（`TMP_SDF Overlay.shader`）。
+        private static readonly int StencilId = Shader.PropertyToID("_Stencil");
+        private static readonly int StencilCompId = Shader.PropertyToID("_StencilComp");
+        private static readonly int StencilReadMaskId = Shader.PropertyToID("_StencilReadMask");
+        private static readonly int StencilWriteMaskId = Shader.PropertyToID("_StencilWriteMask");
         // 枠を左端から右へ開くために、左端と全幅を覚えておく（地と縁で別々）。
         private float _panelW, _panelLeftX;
         private MeshRenderer? _avatarRenderer;
@@ -489,11 +549,10 @@ namespace FixedCamVr.Diagnostics
         private Material? _dividerMat;
         private Mesh? _panelMesh;
         private TMP_Text? _text;
-        private MeshRenderer? _textRenderer, _echoRenderer;
+        private MeshRenderer? _textRenderer;
         private TMP_Text? _hint;
-        private Vector3[][]? _textBaseVertices, _echoBaseVertices;
-        private Color32[][]? _textBaseColors, _echoBaseColors;
-        private bool[] _missingGlyphs = System.Array.Empty<bool>();
+        private Vector3[][]? _textBaseVertices;
+        private Color32[][]? _textBaseColors;
         private int _glyphCount;
         // 報告の長押しの状態（`OvrControllerBridge` が毎フレーム push）。
         private float _markProgress;
@@ -522,17 +581,39 @@ namespace FixedCamVr.Diagnostics
         public bool IsBuilt => _text != null;
 
         /// <summary>
-        /// 直近にシェーダへ書いた壊れの強さ（<b>画に出た側</b>の観測）。
-        /// 発作の刻みで跳ねるので、**サンプルによっては 0 に近い値が出る**のが正常。
+        /// いまの侵食度（0 / 0.25 / 0.75 / 1）。斑の量そのものではない（<see cref="AppliedCurse"/>）。
+        /// 呪いが解けても 1 を保つ（テレメトリの <c>commsGl</c>・`analyze-xp-log.py` が保持を見る）。
         /// </summary>
         public float GlitchLevel => _glitchLevel;
 
         /// <summary>
-        /// いま化けている字の数（<b>画に出た側</b>の観測）。
-        /// ⚠ 刻みごとに組み合わせが変わるので、標本によって 0 が出るのは正常。
-        /// <b>本編を通して 1 度も 0 を超えないなら壊れていない。</b>
+        /// いま斑に切られている字の数（<b>画に出た側</b>の観測）。字の中心が斑の中にあるものを数える
+        /// （画素の切断はステンシルなので、字の端だけ千切れているものは数に入らない）。
+        /// ⚠ 斑は面が開いてから 1 秒で立ち上がるので、開いた直後の標本で 0 なのは正常。
+        /// <b>侵食度 &gt; 0 の面で本編を通して 1 度も 0 を超えないなら切れていない。</b>
         /// </summary>
         public int CorruptedChars { get; private set; }
+
+        /// <summary>
+        /// 直近に顔と地へ書いた斑の量（<b>画に出た側</b>の観測・0 = 通常の面 / 1 = 全面が呪われた双子）。
+        /// </summary>
+        public float AppliedCurse { get; private set; }
+
+        /// <summary>斑の目標（侵食度と文面から決めた値。<see cref="AppliedCurse"/> はこれへ 1 秒で寄る）。</summary>
+        public float CurseTarget { get; private set; }
+
+        /// <summary>斑が目標へ届いた回数（面が開くたびに 1 回）。</summary>
+        public int CurseRampCount { get; private set; }
+
+        /// <summary>直近に斑が目標へ届くまでに掛かった秒（面が開いてから）。</summary>
+        public float LastCurseRampSec { get; private set; }
+
+        /// <summary>
+        /// 地の双子のシェーダ（<c>CommsPanelPlate</c>）を引けたか。<b>false なら地は URP の Unlit で
+        /// 出て、毛羽立ちも走り書きも文字の切断も出ない</b>（呪いは顔にしか出ない）。
+        /// Editor では出るので、この 1 ビットが無いと実機で剥がれていることに気づけない。
+        /// </summary>
+        public bool PlateBuilt { get; private set; }
 
         /// <summary>
         /// 地と縁を組めたか。<b>false なら文字と壊れだけが宙に浮く。</b>
@@ -559,8 +640,8 @@ namespace FixedCamVr.Diagnostics
         public float AppliedFace { get; private set; }
 
         /// <summary>
-        /// 直近に書いた侵食の進み（0 = スイ / 1 = 完全に市松人形）。
-        /// <see cref="InvasionProgress"/> と同じ値なので、食い違ったら配線が壊れている。
+        /// 直近に顔へ書いた斑の量（0 = スイ / 1 = 完全に市松人形）。<see cref="AppliedCurse"/> と同じ値
+        /// （顔と地は同じ場を読む）。侵食度 &gt; 0 の面で 1 度も 0 を超えないなら配線が壊れている。
         /// </summary>
         public float AppliedFaceMix { get; private set; }
 
@@ -579,6 +660,7 @@ namespace FixedCamVr.Diagnostics
             _decayOverride = progress01;
             _previewTimeSec = timeSec;
             TickGlitch(timeSec);
+            PushCurseTarget();
         }
 
         /// <summary><see cref="SetDecayForPreview"/> の意味を明示した新しい名前。</summary>
@@ -684,7 +766,6 @@ namespace FixedCamVr.Diagnostics
             _cue.ResetRun();
             _invasion.Reset();
             _glitchLevel = 0f;
-            _corruptTick = -1;
             _takeoverModifiedThisRun = false;
             _onboardingActive = false;
             _onboardingNotice = CommsNotice.None;
@@ -698,6 +779,7 @@ namespace FixedCamVr.Diagnostics
             OnDestroyHooks();
             if (_panelMat != null) Destroy(_panelMat);
             if (_dividerMat != null) Destroy(_dividerMat);
+            if (_stencilMat != null) Destroy(_stencilMat);
             if (_avatarMat != null) Destroy(_avatarMat);
             if (_panelMesh != null) Destroy(_panelMesh);
         }
@@ -741,7 +823,6 @@ namespace FixedCamVr.Diagnostics
             _cue.ResetRun();
             _invasion.Reset();
             _glitchLevel = 0f;
-            _corruptTick = -1;
             _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
             _logic.Disable();
             _silent = false;
@@ -791,6 +872,9 @@ namespace FixedCamVr.Diagnostics
             // ここから先へ崩壊中の頂点変形を持ち越さない。
             if (notice == CommsNotice.Halt) _takeoverModifiedThisRun = false;
             SetNotice(notice);
+            LastNotice = notice;
+            // 文面が決まった所で斑の目標を押し込む（「止まってください！」以降は 0）。
+            PushCurseTarget();
             // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
             // 読ませる尺は**全文面で同じ 2 秒**（`canon/LEDGER.md` 0092）。
             // ⚠⚠ **③a だけは打たない**（`CommsCueLogic.DeliveryOf`・0168）。すっと浮かんで
@@ -887,11 +971,41 @@ namespace FixedCamVr.Diagnostics
             _logic.SetGuideWanted(inRun && _leftConnected
                                   && (_markProgress > 0f || _markConfirming));
 
-            // ⚠ **壊れは面が出ていなくても進める。** 出た瞬間から正しい強さで出るようにするため
-            //    （届いた所で 0 から立ち上がると「連絡が来ると壊れる」に見える）。
+            // 侵食度は面が出ていなくても読む。**斑の立ち上がりは面が開いた縁から**（0229
+            //   「出た初めはこれ ← 1s ほどで重なる」）で、それは `CommsPanelLogic` が持つ。
             TickGlitch(Time.unscaledTime);
+            PushCurseTarget();
+            bool wasActive = _logic.Active;
             _logic.Tick(Time.unscaledDeltaTime);
+            if (_logic.Active && !wasActive)
+            {
+                _curseOpenAt = Time.unscaledTime;
+                _curseRampReported = false;
+            }
             Apply(_logic.Weights);
+            // 斑が目標へ届いた縁を 1 回だけ数える（面が開いてからの秒が「1s ほどで重なる」の観測）。
+            if (_logic.Active && !_curseRampReported && CurseTarget > 0.01f
+                && AppliedCurse >= CurseTarget * 0.99f)
+            {
+                _curseRampReported = true;
+                CurseRampCount++;
+                LastCurseRampSec = Time.unscaledTime - _curseOpenAt;
+            }
+        }
+
+        /// <summary>
+        /// 斑の目標を決めて <see cref="CommsPanelLogic"/> へ押し込む。
+        /// 侵食度そのものではなく <see cref="CommsCurseLogic.MaskFor"/>（覆う面積で決めた閾値）。
+        /// 「止まってください！」と続く警告は 0（エージェントがなんとか復帰して助ける — 0070）。
+        /// 呪いが解けた後（報告が通った・0129）も 0。
+        /// </summary>
+        private void PushCurseTarget()
+        {
+            bool closing = LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt;
+            bool released = runDirector != null && runDirector.ScreenDecayReleaseK >= 0.999f;
+            float target = closing || released ? 0f : CommsCurseLogic.MaskFor(_glitchLevel);
+            CurseTarget = target;
+            _logic.SetCurseTarget(target);
         }
 
         private void LateUpdate()
@@ -966,18 +1080,50 @@ namespace FixedCamVr.Diagnostics
             //    ⇒ 実機で **1 度も地も縁も描かれておらず、文字と壊れだけが宙に浮いていた。**
             //    URP の Unlit は URP のマテリアルが参照しているので必ず入っている。そちらを先に引く。
             Shader? flat = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
-            if (flat != null)
+            // 地は呪われた双子を描けるシェーダ（0229）。⚠ 引けなければ URP の Unlit へ落として
+            //   **地だけは出す**（呪いは顔にしか出なくなる）。落ちたことは `PlateBuilt` が観測に出す。
+            Shader? plate = Shader.Find(PlateShaderName);
+            Shader? stencil = Shader.Find(StencilShaderName);
+            // ⚠ 観測（commsCurse の 1 つ目）は**両方**引けたか。片方でも剥がれたら呪いの絵は欠ける。
+            PlateBuilt = plate != null && stencil != null;
+            if (plate == null)
             {
-                // 地は固定した寸法で置く。出入りは透明度だけを変える。
+                Debug.LogWarning($"[Comms] {PlateShaderName} を引けないので地の呪い（毛羽立ち・走り書き）は"
+                                 + "出ません（Always Included から外れていないか）");
+            }
+            if (stencil == null)
+            {
+                Debug.LogWarning($"[Comms] {StencilShaderName} を引けないので文字は斑で切れません"
+                                 + "（Always Included から外れていないか）");
+            }
+            if (plate != null)
+            {
+                // 地は固定した寸法で置く。出入りは透明度だけを変える。混ぜ方はシェーダが持つ。
                 _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
                                           _panelW, BodyMaxH + HintBandH, 0.012f,
-                                          flat, RenderQueue, out _panelMat);
+                                          plate, RenderQueue, out _panelMat, translucent: false);
+            }
+            if (stencil != null)
+            {
+                // 文字を切るステンシル。地の直後（4981）に描き、色は書かない。
+                _stencilRenderer = MakeQuad(rootGo.transform, "CommsPanelStencil",
+                                            _panelW, BodyMaxH + HintBandH, 0.011f,
+                                            stencil, RenderQueue + 1, out _stencilMat, translucent: false);
+            }
+            else if (flat != null)
+            {
+                _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
+                                          _panelW, BodyMaxH + HintBandH, 0.012f,
+                                          flat, RenderQueue, out _panelMat, translucent: true);
+            }
+            if (flat != null)
+            {
                 // 顔と本文の間にだけ、短い縦罫線を置く。
                 _dividerRenderer = MakeQuad(rootGo.transform, "CommsDivider",
                                             CommsFaceLayout.DividerW, CommsFaceLayout.DividerH, 0.006f,
-                                            flat, AvatarQueue, out _dividerMat);
+                                            flat, AvatarQueue, out _dividerMat, translucent: true);
             }
-            else
+            if (plate == null && flat == null)
             {
                 // ⚠ 黙って飛ばさない。2026-08-17 まで警告が 1 行も無かったので、
                 //   実機で地が消えていることに走行の画を拡大するまで気づけなかった。
@@ -1010,11 +1156,32 @@ namespace FixedCamVr.Diagnostics
             hintTmp.fontMaterial.renderQueue = GlyphQueue;
             _hint = hintTmp;
 
-            _textEcho = MakeGlyphSurface(rootGo.transform, jp, "CommsTextEcho", GlyphQueue - 1, EchoRed);
             _text = MakeGlyphSurface(rootGo.transform, jp, "CommsText", GlyphQueue, Ivory);
-            _echoRenderer = _textEcho.GetComponent<MeshRenderer>();
             _textRenderer = _text.GetComponent<MeshRenderer>();
             SetNotice(CommsNotice.None);   // 組み上げたら、まず畳んだ状態にする
+            // 文字は地が書くステンシル（斑の中）で画素単位に切られる。下段も同じ装置の面なので同じ扱い。
+            ApplyTextStencil(_text);
+            ApplyTextStencil(_hint);
+        }
+
+        /// <summary>
+        /// TextMeshPro の材質に「斑のビットが立っている画素は描かない」を入れる（0229）。
+        /// ⚠ フォールバックで複数のサブメッシュ材質を持ちうるので <c>fontMaterials</c> 全部へ書く。
+        /// ⚠ 書き込みはしない（WriteMask 0）— 文字が他の層のステンシルを汚さない。
+        /// ⚠ 地のシェーダが無ければステンシルは 1 画素も立たないので、この設定は何もしない側へ倒れる
+        /// （文字は全部出る ＝ 切れないだけで読める）。
+        /// </summary>
+        private static void ApplyTextStencil(TMP_Text? tmp)
+        {
+            if (tmp == null) return;
+            foreach (Material m in tmp.fontMaterials)
+            {
+                if (m == null || !m.HasProperty(StencilId) || !m.HasProperty(StencilCompId)) continue;
+                m.SetFloat(StencilId, CurseStencilBit);
+                m.SetFloat(StencilCompId, (float)UnityEngine.Rendering.CompareFunction.NotEqual);
+                if (m.HasProperty(StencilReadMaskId)) m.SetFloat(StencilReadMaskId, CurseStencilBit);
+                if (m.HasProperty(StencilWriteMaskId)) m.SetFloat(StencilWriteMaskId, 0f);
+            }
         }
 
         /// <summary>
@@ -1134,20 +1301,12 @@ namespace FixedCamVr.Diagnostics
         {
             TMP_Text? tmp = _text;
             if (tmp == null) return;
-            TMP_Text? echo = _textEcho;
             string body = notice == CommsNotice.None ? LongestNoticeText : TextFor(notice);
-            // 文面はこの原文のまま保つ。乱れは頂点だけに掛ける。
-            _corruptTick = -1;
+            // 文面はこの原文のまま保つ。乱れは頂点と画素の切断だけに掛ける。
 
             tmp.maxVisibleCharacters = int.MaxValue;
             if (tmp.text != body) tmp.text = body;
             tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
-            if (echo != null)
-            {
-                echo.maxVisibleCharacters = int.MaxValue;
-                if (echo.text != body) echo.text = body;
-                echo.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
-            }
 
             // ⚠ 上寄せにしたぶん、**全文が出ている状態の重心**を面の中心へ運ぶ（文面ごとに変わる —
             //    1 行と 2 行では重心が違うので、ここを 1 度きりにすると 2 行の文面が下へずれる）。
@@ -1162,7 +1321,6 @@ namespace FixedCamVr.Diagnostics
             _bodyBandH = Mathf.Max(0.01f, ink.size.y * scale + BodyPadM);
             // ⚠ 運ぶ先は面の中心ではなく**上段の中心**（下段に報告の押し方が居るため）。
             tmp.transform.localPosition = new Vector3(0f, BodyCenterY - ink.center.y * scale, 0f);
-            if (echo != null) echo.transform.localPosition = tmp.transform.localPosition;
             // ⚠ ここは**全文が出ている状態**（上で maxVisibleCharacters = int.MaxValue して
             //   組み直した直後）なので、`isVisible` が「その字が絵を持つか」を表す。
             //   ここでしか測れない（下で 0 に戻すと、以後は全部 false になる）。
@@ -1177,9 +1335,10 @@ namespace FixedCamVr.Diagnostics
             }
             NoticeChars = visible;
             _glyphCount = visible;
-            _missingGlyphs = new bool[_glyphCount];
             CaptureBaseMesh(tmp, out _textBaseVertices, out _textBaseColors);
-            if (echo != null) CaptureBaseMesh(echo, out _echoBaseVertices, out _echoBaseColors);
+            ComputeLineRects(tmp, info);
+            // 組み直しでサブメッシュの材質が増えていても、切断の設定を落とさない。
+            ApplyTextStencil(tmp);
             // ⚠ 文面を差し替えたら**打鍵の数えも 0 に戻す**。戻さないと、
             //    前の文面より短い文面では 1 発も鳴らず、長い文面では途中から鳴り始める。
             _lastShown = 0;
@@ -1204,6 +1363,49 @@ namespace FixedCamVr.Diagnostics
             return _charVisible[i];
         }
 
+        /// <summary>
+        /// 走り書きを乗せる行の矩形（面のローカル m）を、組み上がった字の実寸から測る。
+        /// 字の頂点は TMP のローカル単位なので、<see cref="TextScale"/> と本文の置き場所で面へ写す。
+        /// </summary>
+        private void ComputeLineRects(TMP_Text tmp, TMP_TextInfo? info)
+        {
+            var minX = new float[MaxScrawlLines];
+            var maxX = new float[MaxScrawlLines];
+            var minY = new float[MaxScrawlLines];
+            var maxY = new float[MaxScrawlLines];
+            for (int l = 0; l < MaxScrawlLines; l++)
+            {
+                _lineRects[l] = Vector4.zero;
+                _lineFirstChar[l] = int.MaxValue;
+                _lineLastChar[l] = -1;
+                minX[l] = minY[l] = float.PositiveInfinity;
+                maxX[l] = maxY[l] = float.NegativeInfinity;
+            }
+            if (info == null) return;
+            for (int i = 0; i < info.characterCount; i++)
+            {
+                TMP_CharacterInfo ch = info.characterInfo[i];
+                if (!ch.isVisible) continue;
+                int line = ch.lineNumber;
+                if (line < 0 || line >= MaxScrawlLines) continue;
+                minX[line] = Mathf.Min(minX[line], ch.bottomLeft.x);
+                maxX[line] = Mathf.Max(maxX[line], ch.topRight.x);
+                minY[line] = Mathf.Min(minY[line], ch.bottomLeft.y);
+                maxY[line] = Mathf.Max(maxY[line], ch.topRight.y);
+                _lineFirstChar[line] = Mathf.Min(_lineFirstChar[line], i);
+                _lineLastChar[line] = Mathf.Max(_lineLastChar[line], i);
+            }
+            float scale = TextScale;
+            Vector3 pos = tmp.transform.localPosition;
+            for (int l = 0; l < MaxScrawlLines; l++)
+            {
+                if (_lineLastChar[l] < 0) continue;
+                _lineRects[l] = new Vector4(pos.x + minX[l] * scale, pos.x + maxX[l] * scale,
+                                            pos.y + (minY[l] + maxY[l]) * 0.5f * scale,
+                                            (maxY[l] - minY[l]) * scale);
+            }
+        }
+
         private static void CaptureBaseMesh(TMP_Text text, out Vector3[][] vertices,
                                             out Color32[][] colors)
         {
@@ -1219,9 +1421,14 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 本文の原文と等幅配置を保ったまま、字形の頂点だけを更新する。
+        ///
+        /// 呪いの斑（0229）で消える字は 2 段構え — <b>画素の切断は地のステンシル</b>（字の端が斑の境目で
+        /// 千切れる）、<b>字の中心と両端が斑の中にある字は CPU でも alpha 0</b>（ステンシルの無い深度形式で
+        /// 黙って切れなくなっても、斑の中の字は消える）。数えるのは中心が斑の中にある字
+        /// （<see cref="CorruptedChars"/>）。
         /// </summary>
         private int ApplyGlyphMesh(TMP_Text text, Vector3[][]? baseVertices, Color32[][]? baseColors,
-                                   float reveal, float globalAlpha, bool echo)
+                                   float reveal, float globalAlpha, bool textCut)
         {
             if (baseVertices == null || baseColors == null) return 0;
             TMP_TextInfo info = text.textInfo;
@@ -1235,12 +1442,12 @@ namespace FixedCamVr.Diagnostics
 
             int changedVisible = 0;
             int tintedVisible = 0;
-            int glyphOrdinal = 0;
             bool taking = _takeoverActive || _takeoverModifiedThisRun;
-            bool closingNotice = LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt;
-            float meshGlitch = taking || closingNotice ? 0f : _glitchLevel;
             float exact = Mathf.Clamp01(reveal) * _charCount;
             float charSec = _charCount > 0 ? _logic.TypeSec / _charCount : 0f;
+            float curse = textCut ? AppliedCurse : 0f;
+            Vector3 textPos = text.transform.localPosition;
+            float scale = TextScale;
             for (int i = 0; i < info.characterCount; i++)
             {
                 TMP_CharacterInfo character = info.characterInfo[i];
@@ -1249,37 +1456,37 @@ namespace FixedCamVr.Diagnostics
                 float ageSec = Mathf.Max(0f, exact - i) * charSec;
                 float fade = _silent ? 1f : GlyphFadeAlpha(ageSec);
                 bool appeared = exact > i;
-                bool tintDenial = taking && !echo && LastNotice == CommsNotice.Takeover
+                bool tintDenial = taking && LastNotice == CommsNotice.Takeover
                     && i < TakeoverDenialPrefixLength(ShowLanguage.Current);
-                bool missing = glyphOrdinal < _missingGlyphs.Length && _missingGlyphs[glyphOrdinal];
-                bool echoOn = echo && CommsGlitchLogic.EchoAt(meshGlitch, _corruptTick, glyphOrdinal);
                 float alpha = appeared ? fade * globalAlpha : 0f;
-                // 画面の横位置ではなく原文の字順で追う。複数行でも後の行を先に消さない。
-                float takeoverDeform = taking && !echo && appeared
-                    ? Smooth01(AppliedTakeoverErase * _charCount - i) : 0f;
-                if (echo ? !echoOn : missing)
+                float centerX = (character.bottomLeft.x + character.topRight.x) * 0.5f;
+                float centerY = (character.bottomLeft.y + character.topRight.y) * 0.5f;
+                float glyphH = Mathf.Max(0.0001f, character.topRight.y - character.bottomLeft.y);
+                // 斑の場を字の中心と両端（面のローカル m）で読む。
+                bool cutCenter = false, cutWhole = false;
+                if (curse > 0f)
                 {
-                    if (!echo && appeared && alpha > 0.004f) changedVisible++;
-                    alpha = 0f;
+                    float px = textPos.x + centerX * scale;
+                    float py = textPos.y + centerY * scale;
+                    float halfW = (character.topRight.x - character.bottomLeft.x) * 0.35f * scale;
+                    cutCenter = CommsCurseLogic.IsCut(px, py, curse);
+                    cutWhole = cutCenter && CommsCurseLogic.IsCut(px - halfW, py, curse)
+                               && CommsCurseLogic.IsCut(px + halfW, py, curse);
                 }
-                else if (takeoverDeform > 0.001f && alpha > 0.004f)
-                    changedVisible++;
+                // 画面の横位置ではなく原文の字順で追う。複数行でも後の行を先に消さない。
+                float takeoverDeform = taking && appeared
+                    ? Smooth01(AppliedTakeoverErase * _charCount - i) : 0f;
+                if (cutCenter && appeared && alpha > 0.004f) changedVisible++;
+                else if (takeoverDeform > 0.001f && alpha > 0.004f) changedVisible++;
+                if (cutWhole) alpha = 0f;
 
                 int material = character.materialReferenceIndex;
                 int vertex = character.vertexIndex;
                 Vector3[] vertices = info.meshInfo[material].vertices;
                 Color32[] colors = info.meshInfo[material].colors32;
-                float dx = CommsGlitchLogic.LineOffsetM(meshGlitch, _corruptTick,
-                                                        character.lineNumber) / TextScale;
-                if (echo)
-                    dx += CommsGlitchLogic.EchoOffsetM(meshGlitch, _corruptTick, glyphOrdinal)
-                          / TextScale;
-                float centerX = (character.bottomLeft.x + character.topRight.x) * 0.5f;
-                float glyphH = Mathf.Max(0.0001f, character.topRight.y - character.bottomLeft.y);
                 byte a = (byte)Mathf.RoundToInt(Mathf.Clamp01(alpha) * 255f);
                 for (int k = 0; k < 4; k++)
                 {
-                    vertices[vertex + k].x += dx;
                     if (takeoverDeform > 0f)
                     {
                         float bottomK = Mathf.Clamp01((character.topRight.y - vertices[vertex + k].y)
@@ -1302,11 +1509,10 @@ namespace FixedCamVr.Diagnostics
                     colors[vertex + k] = c;
                 }
                 if (tintDenial && appeared && alpha > 0.004f) tintedVisible++;
-                glyphOrdinal++;
             }
 
             text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
-            if (!echo) TakeoverTintedChars = tintedVisible;
+            TakeoverTintedChars = tintedVisible;
             return changedVisible;
         }
 
@@ -1329,9 +1535,12 @@ namespace FixedCamVr.Diagnostics
             if (m.HasProperty(ColorId)) m.SetColor(ColorId, c);
         }
 
-        /// <summary>面を 1 枚作る（地と縁で共有）。色は <see cref="Apply"/> が毎フレーム書く。</summary>
+        /// <summary>
+        /// 面を 1 枚作る（地と縁で共有）。色は <see cref="Apply"/> が毎フレーム書く。
+        /// <paramref name="translucent"/> は URP の Unlit を半透明へ倒すか（自前のシェーダは混ぜ方を持つので不要）。
+        /// </summary>
         private MeshRenderer MakeQuad(Transform parent, string name, float w, float h, float z,
-                                      Shader shader, int queue, out Material mat)
+                                      Shader shader, int queue, out Material mat, bool translucent)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, worldPositionStays: false);
@@ -1340,7 +1549,7 @@ namespace FixedCamVr.Diagnostics
             go.AddComponent<MeshFilter>().sharedMesh = _panelMesh;
             var r = go.AddComponent<MeshRenderer>();
             mat = new Material(shader) { name = name + " (runtime)" };
-            MakeTranslucent(mat);
+            if (translucent) MakeTranslucent(mat);
             mat.renderQueue = queue;   // ⚠ 半透明へ倒したあとに書く（倒す側が queue を上書きする）
             r.sharedMaterial = mat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -1447,6 +1656,11 @@ namespace FixedCamVr.Diagnostics
             if (taking && takeover.soundCut) takeoverInk = 0f;
             AppliedGlyph = Mathf.Clamp01(w.glyph) * takeoverInk;
             AppliedOpen = Mathf.Clamp01(w.open);
+            // 斑の量は `CommsPanelLogic` が面の開いた縁から 1 秒で立ち上げる（0229）。
+            AppliedCurse = Mathf.Clamp01(w.curse);
+            // 乗っ取りの一文は文字を斑で切らない（既存の引き延ばし → 抵抗 → 崩壊の弧を保つ）。
+            // 走り書きも描かない。地のふちと顔だけが 1 秒で重なる。
+            bool textCut = !taking;
             float reveal = taking ? Mathf.Min(w.reveal,
                 Mathf.Max(0f, CommsTakeoverLogic.MaxGeneratedChars(_charCount) - 0.001f)
                 / Mathf.Max(1, _charCount)) : w.reveal;
@@ -1466,19 +1680,9 @@ namespace FixedCamVr.Diagnostics
                 _lastShown = shown;
                 VisibleChars = shown;
 
-                bool closingNotice = LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt;
-                float ordinaryGlitch = taking || closingNotice ? 0f : _glitchLevel;
-                CommsGlitchLogic.FillMissing(_missingGlyphs, _glyphCount, ordinaryGlitch, _corruptTick);
                 CorruptedChars = ApplyGlyphMesh(_text, _textBaseVertices, _textBaseColors,
-                                                 reveal, AppliedGlyph, echo: false);
+                                                 reveal, AppliedGlyph, textCut);
                 TakeoverDeformedChars = taking ? CorruptedChars : 0;
-                if (_textEcho != null)
-                {
-                    bool echoOn = on && ordinaryGlitch > CommsGlitchLogic.OffThreshold;
-                    if (_echoRenderer != null) _echoRenderer.enabled = echoOn;
-                    ApplyGlyphMesh(_textEcho, _echoBaseVertices, _echoBaseColors,
-                                   reveal, AppliedGlyph * 0.58f, echo: true);
-                }
             }
             ApplyHint(taking ? 0f : Mathf.Clamp01(w.hint));
             float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
@@ -1506,7 +1710,16 @@ namespace FixedCamVr.Diagnostics
                 SetFlatColor(_panelMat, new Color(PanelColor.r, PanelColor.g, PanelColor.b,
                                                   AppliedPanelAlpha));
                 _panelRenderer.enabled = lit;
-                SetFixedPanel(_panelRenderer.transform, _panelLeftX, _panelW, cy, h);
+                if (_panelMat.HasProperty(CurseId))
+                    SetPlate(_panelRenderer.transform, _panelMat, _panelLeftX, _panelW, cy, h,
+                             textCut, contentPa, reveal);
+                else
+                    SetFixedPanel(_panelRenderer.transform, _panelLeftX, _panelW, cy, h);
+            }
+            if (_stencilRenderer != null && _stencilMat != null)
+            {
+                _stencilRenderer.enabled = lit && textCut && AppliedCurse > 0.001f;
+                SetStencilQuad(_stencilRenderer.transform, _stencilMat, _panelLeftX, _panelW, cy, h, textCut);
             }
             if (_dividerRenderer != null && _dividerMat != null)
             {
@@ -1550,13 +1763,15 @@ namespace FixedCamVr.Diagnostics
                 : 0f;
             bool on = AppliedFace > 0.004f;
 
-            // 顔と印字は同じ通信侵食度を読む。別の曲線にすると、文字と顔が別々の速さで
-            // 壊れて見えるため、0 / 0.25 / 0.75 / 1 をそのまま両方へ渡す。
-            AppliedFaceMix = _glitchLevel;
+            // 顔と地と文字は同じ斑の場と同じ量を読む（0229）。別の曲線にすると、
+            // 文字と顔が別々の速さで壊れて見える。
+            AppliedFaceMix = AppliedCurse;
 
             float x = CommsFaceLayout.CellCenterX(PanelW);
             _avatarMat.SetFloat(OpacityId, AppliedFace);
             _avatarMat.SetFloat(FaceMixId, AppliedFaceMix);
+            _avatarMat.SetVector(OriginId, new Vector4(x, centerY, 0f, 0f));
+            _avatarMat.SetVector(SizeId, new Vector4(CommsFaceLayout.CellM, CommsFaceLayout.CellM, 0f, 0f));
             _avatarMat.SetFloat(SeizureId, AppliedTakeoverStrain);
             _avatarRenderer.enabled = on;
             _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);
@@ -1582,13 +1797,61 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private float ResolveCorruption()
         {
-            return CommsGlitchLogic.LevelFor(InvasionProgress);
+            return CommsCurseLogic.LevelFor(InvasionProgress);
         }
 
         private void TickGlitch(float timeSec)
         {
             _glitchLevel = ResolveCorruption();
-            _corruptTick = CommsGlitchLogic.TickAt(timeSec);
+        }
+
+        /// <summary>
+        /// 地の双子（<c>CommsPanelPlate.shader</c>）へ寸法と斑と走り書きの行を書く。
+        /// quad は毛羽立ちのぶん矩形より <see cref="PlateMarginM"/> ずつ広く、矩形の実寸は uniform で渡す。
+        /// </summary>
+        private void SetPlate(Transform quad, Material mat, float leftX, float fullW, float centerY,
+                              float height, bool textCut, float contentAlpha, float reveal)
+        {
+            float w = fullW + PlateMarginM * 2f;
+            float hh = height + PlateMarginM * 2f;
+            float cx = leftX + fullW * 0.5f;
+            quad.localScale = new Vector3(w, hh, 1f);
+            Vector3 p = quad.localPosition;
+            quad.localPosition = new Vector3(cx, centerY, p.z);
+            mat.SetVector(OriginId, new Vector4(cx, centerY, 0f, 0f));
+            mat.SetVector(SizeId, new Vector4(w, hh, 0f, 0f));
+            mat.SetVector(RectHalfId, new Vector4(fullW * 0.5f, height * 0.5f, 0f, 0f));
+            mat.SetFloat(CurseId, AppliedCurse);
+            mat.SetFloat(ScrawlId, textCut ? 1f : 0f);
+            mat.SetColor(InkId, Ivory);
+            mat.SetFloat(InkAlphaId, contentAlpha);
+            // 走り書きは印字が進んだ範囲まで（人形が「打たれた分」を塗りつぶしている）。
+            float exact = Mathf.Clamp01(reveal) * _charCount;
+            var lineReveal = Vector4.zero;
+            for (int l = 0; l < MaxScrawlLines; l++)
+            {
+                mat.SetVector(LineIds[l], _lineRects[l]);
+                if (_lineLastChar[l] < 0) continue;
+                float span = Mathf.Max(1, _lineLastChar[l] - _lineFirstChar[l] + 1);
+                lineReveal[l] = Mathf.Clamp01((exact - _lineFirstChar[l]) / span);
+            }
+            mat.SetVector(LineRevealId, lineReveal);
+        }
+
+        /// <summary>文字を切るステンシルの quad を地と同じ寸法に置き、斑の量を書く。</summary>
+        private void SetStencilQuad(Transform quad, Material mat, float leftX, float fullW, float centerY,
+                                    float height, bool textCut)
+        {
+            float w = fullW + PlateMarginM * 2f;
+            float hh = height + PlateMarginM * 2f;
+            float cx = leftX + fullW * 0.5f;
+            quad.localScale = new Vector3(w, hh, 1f);
+            Vector3 p = quad.localPosition;
+            quad.localPosition = new Vector3(cx, centerY, p.z);
+            mat.SetVector(OriginId, new Vector4(cx, centerY, 0f, 0f));
+            mat.SetVector(SizeId, new Vector4(w, hh, 0f, 0f));
+            mat.SetFloat(CurseId, AppliedCurse);
+            mat.SetFloat(TextCutId, textCut ? 1f : 0f);
         }
 
         /// <summary>

@@ -30,11 +30,12 @@ Shader "FixedCamVr/CommsAvatar"
         _Color("Ink color", Color) = (0.8196, 0.7804, 0.7216, 1)
         _Opacity("Opacity (0..1)", Range(0, 1)) = 0
 
-        // 侵食の進み。0 = スイのまま / 1 = 完全に人形。`CommsPanel` が周回の壊れと同じ値を書く。
+        // 呪いの斑の量。0 = スイのまま / 1 = 完全に人形。`CommsPanel` が地と同じ値（`_Curse`）を書く。
         _FaceMix("Taken over (0..1)", Range(0, 1)) = 0
-        // 侵食の斑の大きさ（1 辺あたりの区画数）と、境目の柔らかさ。
-        _MixCells("Patch cells", Float) = 4.5
-        _MixSoft("Patch edge softness", Range(0.01, 0.5)) = 0.12
+        // 斑の場は面のローカル座標で解く（`CommsCurse.hlsl`・地と共有）。
+        // この面の中心（面の根から見た位置）と 1 辺 (m)。`CommsPanel.ApplyAvatar` が書く。
+        _Origin("Face centre (panel-local m)", Vector) = (0, 0, 0, 0)
+        _Size("Face cell size (m)", Vector) = (0.15, 0.15, 0, 0)
 
         // 角の丸み（1 辺に対する割合。0.5 で円）。
         _Radius("Corner radius (0..0.5)", Range(0, 0.5)) = 0.20
@@ -64,6 +65,7 @@ Shader "FixedCamVr/CommsAvatar"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "CommsCurse.hlsl"
 
             TEXTURE2D(_Face);
             SAMPLER(sampler_Face);
@@ -74,8 +76,8 @@ Shader "FixedCamVr/CommsAvatar"
                 float4 _Color;
                 float _Opacity;
                 float _FaceMix;
-                float _MixCells;
-                float _MixSoft;
+                float4 _Origin;
+                float4 _Size;
                 float _Radius;
                 float _Stroke;
                 float _FaceOn;
@@ -127,22 +129,6 @@ Shader "FixedCamVr/CommsAvatar"
                 return frac(p.x * p.y);
             }
 
-            /// <summary>
-            /// 侵食の斑。**乱数を実行時に振らない** — uv だけで決まるので、
-            /// 同じ進みなら毎フレーム同じ形。ちらつかせると「侵食」ではなく「ノイズ」に見える。
-            /// </summary>
-            float ValueNoise(float2 uv)
-            {
-                float2 i = floor(uv);
-                float2 f = frac(uv);
-                f = f * f * (3.0 - 2.0 * f);
-                float a = Hash21(i);
-                float b = Hash21(i + float2(1.0, 0.0));
-                float c = Hash21(i + float2(0.0, 1.0));
-                float d = Hash21(i + float2(1.0, 1.0));
-                return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
-            }
-
             half4 frag(Varyings i) : SV_Target
             {
                 float2 p = i.uv - 0.5;
@@ -162,8 +148,10 @@ Shader "FixedCamVr/CommsAvatar"
                 //    （`canon/LEDGER.md` 0073）。混ぜると alpha が中間の灰へ落ちて、
                 //    **侵されているのではなく薄くなっている**ように見える（2 通り焼いて比べた）。
                 //    斑なら、その画素は必ずどちらかの顔で、境目だけが柔らかい。
-                float n = ValueNoise(i.uv * _MixCells);
-                float k = saturate((_FaceMix * (1.0 + _MixSoft) - n) / max(_MixSoft, 1e-4));
+                // ⚠ 斑の場は**地と共有**（`CommsCurse.hlsl`・0229）。面のローカル座標で解くので、
+                //    顔の枠の中の斑と地の斑が 1 つの塊として繋がる。乱数は実行時に振らない。
+                float2 panelPos = _Origin.xy + (i.uv - 0.5) * _Size.xy;
+                float k = CurseK(CurseField(panelPos), _FaceMix);
                 float2 faceUv = i.uv;
                 float panelX = _PanelX + (i.uv.x - 0.5) * 0.15;
                 if (_Seizure > 0.0001)

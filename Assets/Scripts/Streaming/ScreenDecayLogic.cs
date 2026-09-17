@@ -91,7 +91,7 @@ namespace FixedCamVr.Streaming
         ///   - <c>ShowSoundDirector</c> — 装置の声の痩せ（<c>bed_device → bed_device_worn</c>）。
         ///     <b>下げると音が新品へ戻り、「直った」を音で宣言する</b> ＝ 最も避けたい
         ///     「クリア演出」がまさに音で出る。装置は呪いとは無関係に使い込まれている
-        ///   - <c>CommsGlitchLogic</c> — AI の侵食の入力（あちらは自前の山を描く）。
+        ///   - 連絡の面の斑（<c>CommsPanel.PushCurseTarget</c>）— AI の侵食は表示イベントで進む。
         ///     ⚠ <b>侵食が消えるのは解除の側</b>（<see cref="ReleaseK"/>）であって、ここではない
         ///   - 画 — こちらだけが <see cref="Shown"/> を読む
         /// </summary>

@@ -47,6 +47,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float body;
 
+        /// <summary>
+        /// 呪いの斑の量（0 = 通常の面 / 1 = 全面が呪われた双子）。<c>canon/LEDGER.md</c> 0229。
+        /// 面が開くたびに 0 から目標（<see cref="CommsPanelLogic.SetCurseTarget"/>）へ
+        /// <see cref="CommsCurseLogic.RampSec"/> で立ち上がる。畳まれていれば 0。
+        /// </summary>
+        public float curse;
+
         public static CommsWeights Hidden => new CommsWeights();
     }
 
@@ -222,7 +229,40 @@ namespace FixedCamVr.Streaming
         //    既存のテストは開き・丈・文字しか見ていなかったので素通りしていた。
         private float _openFrom, _bodyFrom, _panelFrom, _hintFrom;
 
+        // 呪いの斑の量（`canon/LEDGER.md` 0229）。目標は実行体が毎フレーム押し込み、
+        // ここは**面が開いてからの立ち上がり**だけを持つ（開いた縁で 0 から数え直す）。
+        private float _curseTarget, _curseFrom, _curseShown, _curseRampSec;
+
         public CommsStage Stage => _stage;
+
+        /// <summary>斑の目標（実行体が侵食度と文面から決めて押し込む）。</summary>
+        public float CurseTarget => _curseTarget;
+
+        /// <summary>いま面へ書く斑の量。畳まれていれば 0。</summary>
+        public float CurseShown => _stage == CommsStage.Off ? 0f : _curseShown;
+
+        /// <summary>
+        /// 斑の目標を押し込む。<b>変わったときだけ</b>いまの量から目標へ
+        /// <see cref="CommsCurseLogic.RampSec"/> で寄せ直す（開いている最中に侵食度が上がった場合）。
+        /// ⚠ 立ち上がりを 0 から始めるのは<b>面が開いた縁</b>（<see cref="Begin"/> /
+        /// <see cref="SetGuideWanted"/>）だけ。ここでは戻さない。
+        /// </summary>
+        public void SetCurseTarget(float target)
+        {
+            target = Clamp01(target);
+            if (System.Math.Abs(target - _curseTarget) < 0.0001f) return;
+            _curseFrom = CurseShown;
+            _curseTarget = target;
+            _curseRampSec = 0f;
+        }
+
+        /// <summary>面が開く縁。「出た初めは通常の面」（0229）— 斑を 0 から立ち上げ直す。</summary>
+        private void RestartCurseRamp()
+        {
+            _curseFrom = 0f;
+            _curseShown = 0f;
+            _curseRampSec = 0f;
+        }
 
         /// <summary>出ているか（実行体が面を描くべきか）。</summary>
         public bool Active => _stage != CommsStage.Off;
@@ -289,6 +329,9 @@ namespace FixedCamVr.Streaming
             //    そのあいだ面が空になる（体験者から見れば「消えて、少し待って、また出た」）。
             CommsWeights now = Weights;
             bool chained = _stage != CommsStage.Off && now.open >= 0.999f && now.body >= 0.999f;
+            // ⚠ 面が畳まれた状態から開くときだけ、斑を 0 から立ち上げ直す（0229「出た初めはこれ」）。
+            //   同じ面のまま次の文面へ繋ぐ（chained）ときは重なったままにする。
+            if (_stage == CommsStage.Off) RestartCurseRamp();
             // ⚠ **出方を替えるのは段を移った後**（`EnterStage` は「いまの姿」を覚えるので、
             //   新しい出方の目で古い段を測らせない）。
             EnterStage(chained ? CommsStage.Type : CommsStage.In);
@@ -326,7 +369,11 @@ namespace FixedCamVr.Streaming
             _guideWanted = wanted;
             if (_delivery == CommsDelivery.Takeover) return;
             if (wanted && (_stage == CommsStage.Off || _stage == CommsStage.Out))
+            {
+                // 畳まれた所から開くなら斑も 0 から（引いている最中からなら続きから）。
+                if (_stage == CommsStage.Off) RestartCurseRamp();
                 EnterStage(CommsStage.Guide);
+            }
             // ⚠⚠ **押し始めたら、走っている連絡は片づく**（2026-08-16・`canon/LEDGER.md` 0065）。
             //    体験者が新しい行為を始めたのに前の通知が居座ると、装置が体験者を見ていないように
             //    見える。**これが「押して閉じる」の代わり** — 体験者のボタンに 2 つ目の意味を与えずに
@@ -363,6 +410,7 @@ namespace FixedCamVr.Streaming
             _persistent = false;
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = 0f;
+            RestartCurseRamp();
         }
 
         /// <summary>時間を進める。</summary>
@@ -371,6 +419,10 @@ namespace FixedCamVr.Streaming
             if (dt < 0f) dt = 0f;
             if (_stage == CommsStage.Off) return;
             _elapsed += dt;
+            // 斑は面が出ているあいだだけ進む（段に関わらず 1 本の時計）。
+            _curseRampSec += dt;
+            _curseShown = Lerp(_curseFrom, _curseTarget,
+                               Smooth(Clamp01(_curseRampSec / CommsCurseLogic.RampSec)));
             switch (_stage)
             {
                 case CommsStage.In:
@@ -401,6 +453,16 @@ namespace FixedCamVr.Streaming
 
         /// <summary>いまの段から面と文字へ配る値。<b>見え方の判断はすべてここ</b>。</summary>
         public CommsWeights Weights
+        {
+            get
+            {
+                CommsWeights w = StageWeights;
+                w.curse = CurseShown;
+                return w;
+            }
+        }
+
+        private CommsWeights StageWeights
         {
             get
             {

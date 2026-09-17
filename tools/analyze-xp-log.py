@@ -1682,6 +1682,39 @@ def analyze(events, others, exp, warns=None):
             elif bg:
                 verdict("OK", "連絡の面の地と縁が出ている（commsBg=1）")
 
+            # ---- 呪いの斑（`canon/LEDGER.md` 0229）----
+            # `commsCurse=<地の双子のシェーダ>/<画へ書いた斑>/<目標>`。
+            # ⚠ 1 つ目が 0 なら、毛羽立ち・走り書き・文字の切断が実機で 1 画素も出ていない
+            #    （Editor では出るので、この 1 ビットだけが手掛かり — commsBg と同じ型）。
+            plates = [str(v) for v in effect_samples(events, "commsCurse")
+                      if str(v) not in ("", "-")]
+            plate_built = [p.split("/")[0] for p in plates if p.count("/") == 2]
+            if plate_built and all(v == "0" for v in plate_built):
+                verdict("FAIL", "連絡の面の地の双子（FixedCamVr/CommsPanelPlate）を引けていない"
+                                "（commsCurse の 1 つ目が 0）— 毛羽立ち・走り書き・文字の切断が出ない。"
+                                "ProjectSettings の Always Included を見る")
+            elif plate_built:
+                verdict("OK", "地の双子のシェーダを引けている（commsCurse の 1 つ目が 1）")
+            # 「出た初めは通常 → 1s ほどで重なる」。侵食度 > 0 の面（警告を除く）が開いたら、
+            # 斑が目標へ届いた縁 `ev=commsCurse sec=` が 1 度は出るはず。
+            # ⚠ sec は面が開いてから届くまで。0.4 秒未満なら立ち上がらずに跳んでいる。
+            cursed = [e for e in comms
+                      if fnum(e, "invasion", 0.0) > 0.001
+                      and e.get("id") not in ("Halt", "Prompt")]
+            ramps = [e for e in events if e.get("ev") == "commsCurse"]
+            if cursed and not ramps:
+                verdict("FAIL", f"侵食度 > 0 の連絡が {len(cursed)} 通届いたのに、斑が一度も目標へ届いていない"
+                                "（ev=commsCurse が無い）— CommsPanelLogic.SetCurseTarget の配線を見る")
+            elif ramps:
+                secs = [fnum(e, "sec", 0.0) for e in ramps]
+                fast = [s for s in secs if s < 0.4]
+                if fast:
+                    verdict("FAIL", f"斑が 1 秒掛けずに重なった（sec={min(fast):.2f}）— "
+                                    "「出た初めは通常」が成立していない")
+                else:
+                    verdict("OK", f"斑が面の開いた後に重なった（{len(ramps)} 回・"
+                                  f"{min(secs):.2f}〜{max(secs):.2f} 秒）")
+
             # ⚠⚠ AIエージェントの顔（`canon/LEDGER.md` 0071 / 0073）。
             #    `<枠>/<版の枚数>/<濃さ>/<侵食>`。**4 つとも別の壊れ方**なので畳まず 1 つずつ見る。
             #    どれも Editor のプレビューでは必ず出るので、実機の手掛かりはここだけ。
