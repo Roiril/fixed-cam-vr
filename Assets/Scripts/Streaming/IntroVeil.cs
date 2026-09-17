@@ -74,6 +74,7 @@ namespace FixedCamVr.Streaming
         private static readonly int ZWriteId = Shader.PropertyToID("_ZWrite");
         private static readonly int ZTestId = Shader.PropertyToID("_ZTest");
         private static readonly int ColorMaskId = Shader.PropertyToID("_ColorMask");
+        private static readonly int ModeId = Shader.PropertyToID("_Mode");
         private static readonly int RevealId = Shader.PropertyToID("_Reveal");
         private static readonly int GapsModeId = Shader.PropertyToID("_GapsMode");
         private static readonly int StencilRefId = Shader.PropertyToID("_StencilRef");
@@ -117,6 +118,12 @@ namespace FixedCamVr.Streaming
         private MeshRenderer? _gapsRenderer;
         private Material? _gapsMat;
         private MaterialPropertyBlock? _fractureBlock;
+        private MeshRenderer? _peripheralWindowRenderer;
+        private MeshRenderer? _peripheralColorRenderer;
+        private Material? _peripheralWindowMat;
+        private Material? _peripheralColorMat;
+        private MaterialPropertyBlock? _peripheralBlock;
+        private bool _suppressPeripheralForDiagnostics;
         private RenderTexture? _frozenLeft;
         private RenderTexture? _frozenRight;
         private Matrix4x4 _leftWorldToUv = Matrix4x4.identity;
@@ -187,14 +194,45 @@ namespace FixedCamVr.Streaming
         /// <summary>生成された微細破片の実数。</summary>
         public int ShatterPieces { get; private set; }
 
+        /// <summary>撮影画角の外に生成された周辺破片の実数。</summary>
+        public int PeripheralPieces { get; private set; }
+
+        /// <summary>静止画があり、周辺の静止窓と実体片を描く経路が有効か。</summary>
+        public bool PeripheralDrawn => (_peripheralWindowRenderer != null && _peripheralWindowRenderer.enabled)
+                                       || (_peripheralColorRenderer != null && _peripheralColorRenderer.enabled);
+
         /// <summary>破片の行き先に使ったスクリーン矩形（半幅,半高,眼からの距離）。</summary>
         public string ShatterRectDesc { get; private set; } = "-";
 
         private void Awake()
         {
+#if UNITY_ANDROID && !UNITY_EDITOR && DEVELOPMENT_BUILD
+            _suppressPeripheralForDiagnostics = ReadPeripheralSuppressionIntent();
+            if (_suppressPeripheralForDiagnostics)
+                Debug.Log("[IntroVeil] xpnoperipheral=1 — 周辺破片の描画を診断用に抑制します。");
+#endif
             Build();
             SetHidden();
         }
+
+#if UNITY_ANDROID && !UNITY_EDITOR && DEVELOPMENT_BUILD
+        private static bool ReadPeripheralSuppressionIntent()
+        {
+            try
+            {
+                using var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+                using var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
+                using var intent = activity.Call<AndroidJavaObject>("getIntent");
+                string value = intent.Call<string>("getStringExtra", "xpnoperipheral");
+                return string.Equals(value, "1", StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[IntroVeil] intent extra 読取失敗（xpnoperipheral）: {ex.Message}");
+                return false;
+            }
+        }
+#endif
 
         private void Build()
         {
@@ -310,15 +348,72 @@ namespace FixedCamVr.Streaming
             _fractureDepthRenderer.allowOcclusionWhenDynamic = false;
             _fractureDepthRenderer.enabled = false;
             _fractureBlock = new MaterialPropertyBlock();
+            BuildPeripheralFracture();
         }
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
         private Mesh? _mesh;
         private Transform? _quad;
         private Mesh? _fractureMesh;
+        private Mesh? _peripheralMesh;
         private Transform? _fracture;
         private Transform? _fractureDepth;
         private Transform? _gaps;
+
+        private void BuildPeripheralFracture()
+        {
+            Shader? shader = Resources.Load<Shader>("IntroPeripheralFracture");
+            if (shader == null)
+            {
+                Debug.LogWarning("[IntroVeil] Resources/IntroPeripheralFracture が見つかりません。周辺破砕は出ません。");
+                return;
+            }
+
+            _peripheralMesh = IntroPeripheralFractureMesh.Build();
+            PeripheralPieces = IntroPeripheralFractureMesh.LastPieceCount;
+
+            _peripheralWindowMat = new Material(shader) { name = "IntroPeripheralWindow (runtime)" };
+            _peripheralWindowMat.renderQueue = 4904;
+            _peripheralWindowMat.SetFloat(ModeId, 0f);
+            _peripheralWindowMat.SetInt(ColorMaskId, 15);
+            _peripheralWindowMat.SetInt(ZWriteId, 0);
+            _peripheralWindowMat.SetInt(ZTestId, (int)CompareFunction.Always);
+            _peripheralWindowMat.SetInt(SrcBlendId, (int)BlendMode.Zero);
+            _peripheralWindowMat.SetInt(DstBlendId, (int)BlendMode.SrcAlpha);
+            _peripheralWindowMat.SetInt(SrcBlendAlphaId, (int)BlendMode.Zero);
+            _peripheralWindowMat.SetInt(DstBlendAlphaId, (int)BlendMode.SrcAlpha);
+            CreatePeripheralRenderer("IntroPeripheralWindow", _peripheralWindowMat,
+                out _, out _peripheralWindowRenderer);
+
+            _peripheralColorMat = new Material(shader) { name = "IntroPeripheralColor (runtime)" };
+            _peripheralColorMat.renderQueue = 4906;
+            _peripheralColorMat.SetFloat(ModeId, 1f);
+            _peripheralColorMat.SetInt(ColorMaskId, 15);
+            _peripheralColorMat.SetInt(ZWriteId, 1);
+            _peripheralColorMat.SetInt(ZTestId, (int)CompareFunction.LessEqual);
+            _peripheralColorMat.SetInt(SrcBlendId, (int)BlendMode.SrcAlpha);
+            _peripheralColorMat.SetInt(DstBlendId, (int)BlendMode.OneMinusSrcAlpha);
+            _peripheralColorMat.SetInt(SrcBlendAlphaId, (int)BlendMode.Zero);
+            _peripheralColorMat.SetInt(DstBlendAlphaId, (int)BlendMode.One);
+            CreatePeripheralRenderer("IntroPeripheralColor", _peripheralColorMat,
+                out _, out _peripheralColorRenderer);
+            _peripheralBlock = new MaterialPropertyBlock();
+        }
+
+        private void CreatePeripheralRenderer(
+            string name, Material material, out MeshFilter filter, out MeshRenderer renderer)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(transform, worldPositionStays: false);
+            filter = go.AddComponent<MeshFilter>();
+            filter.sharedMesh = _peripheralMesh;
+            renderer = go.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.allowOcclusionWhenDynamic = false;
+            renderer.enabled = false;
+        }
 
         private void ConfigureColorMaterial(bool frozen)
         {
@@ -721,6 +816,16 @@ namespace FixedCamVr.Streaming
             ConfigureColorMaterial(HasFrozenFrame);
             if (_fractureRenderer != null) _fractureRenderer.enabled = drawShatter;
             if (_fractureDepthRenderer != null) _fractureDepthRenderer.enabled = drawFrozenDepth;
+            bool peripheralAvailable = !_suppressPeripheralForDiagnostics
+                                       && drawFrozenDepth && _peripheralMesh != null
+                                       && _peripheralWindowRenderer != null
+                                       && _peripheralColorRenderer != null;
+            float peripheralClock = Mathf.Clamp01(w.shatter);
+            bool drawPeripheralWindow = peripheralAvailable && peripheralClock < 0.124f;
+            bool drawPeripheralPieces = peripheralAvailable
+                                        && peripheralClock >= 0.060f && peripheralClock < 0.840f;
+            if (_peripheralWindowRenderer != null) _peripheralWindowRenderer.enabled = drawPeripheralWindow;
+            if (_peripheralColorRenderer != null) _peripheralColorRenderer.enabled = drawPeripheralPieces;
             // 0225: 着地した破片が映像を見せる区間だけ、隙間を黒く塗る面を出す。全面が映像になったら畳む。
             bool drawGaps = drawFrozenDepth && w.reveal > FullyOpenEpsilon && w.live < 0.999f;
             if (_gapsRenderer != null) _gapsRenderer.enabled = drawGaps;
@@ -763,6 +868,30 @@ namespace FixedCamVr.Streaming
                 if (_fractureDepthRenderer != null)
                     _fractureDepthRenderer.SetPropertyBlock(_fractureBlock);
                 if (shatter > ShatterPeak) ShatterPeak = shatter;
+
+                if (drawPeripheralWindow || drawPeripheralPieces)
+                {
+                    _peripheralBlock ??= new MaterialPropertyBlock();
+                    _peripheralBlock.Clear();
+                    _peripheralBlock.SetFloat(ShatterId, shatter);
+                    _peripheralBlock.SetMatrix(CaptureHeadToWorldId, _captureHeadToWorld);
+                    _peripheralBlock.SetMatrix(LeftWorldToUvId, _leftWorldToUv);
+                    _peripheralBlock.SetMatrix(RightWorldToUvId, _rightWorldToUv);
+                    _peripheralBlock.SetTexture(FrozenLeftTexId, _frozenLeft!);
+                    _peripheralBlock.SetTexture(FrozenRightTexId, _frozenRight!);
+                    _peripheralBlock.SetVector(ScreenCenterId,
+                        new Vector4(screenCenterWorld.x, screenCenterWorld.y, screenCenterWorld.z, 0f));
+                    _peripheralBlock.SetVector(ScreenRightId,
+                        new Vector4(screenRightWorld.x, screenRightWorld.y, screenRightWorld.z, 0f));
+                    _peripheralBlock.SetVector(ScreenUpId,
+                        new Vector4(screenUpWorld.x, screenUpWorld.y, screenUpWorld.z, 0f));
+                    _peripheralBlock.SetVector(ScreenHalfId,
+                        new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
+                    _peripheralBlock.SetVector(CurrentHeadPositionId,
+                        new Vector4(headPosition.x, headPosition.y, headPosition.z, 1f));
+                    _peripheralWindowRenderer!.SetPropertyBlock(_peripheralBlock);
+                    _peripheralColorRenderer!.SetPropertyBlock(_peripheralBlock);
+                }
             }
             float close = Mathf.Clamp01(w.frame);
             if (close > FullyOpenEpsilon)
@@ -842,6 +971,8 @@ namespace FixedCamVr.Streaming
             if (_fractureRenderer != null) _fractureRenderer.enabled = false;
             if (_fractureDepthRenderer != null) _fractureDepthRenderer.enabled = false;
             if (_gapsRenderer != null) _gapsRenderer.enabled = false;
+            if (_peripheralWindowRenderer != null) _peripheralWindowRenderer.enabled = false;
+            if (_peripheralColorRenderer != null) _peripheralColorRenderer.enabled = false;
             GapsDrawn = false;
             if (_mat != null) _mat.SetFloat(FractureActiveId, 0f);
             if (_mat != null) _mat.SetInt(ZWriteId, 0);
@@ -861,8 +992,11 @@ namespace FixedCamVr.Streaming
             if (_fractureMat != null) Destroy(_fractureMat);
             if (_fractureDepthMat != null) Destroy(_fractureDepthMat);
             if (_gapsMat != null) Destroy(_gapsMat);
+            if (_peripheralWindowMat != null) Destroy(_peripheralWindowMat);
+            if (_peripheralColorMat != null) Destroy(_peripheralColorMat);
             if (_mesh != null) Destroy(_mesh);
             if (_fractureMesh != null) Destroy(_fractureMesh);
+            if (_peripheralMesh != null) Destroy(_peripheralMesh);
         }
     }
 }

@@ -160,6 +160,8 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 stage = Stage.Create(outDir);
                 foreach (Shot shot in BuildShots()) stage.Render(shot, saved);
+                if (string.Equals(EditorCliArgs.Get("peripheral"), "1", StringComparison.Ordinal))
+                    stage.VerifyPeripheralFracture(saved);
                 if (renderFrames)
                 {
                     var framesTsv = new System.Text.StringBuilder(
@@ -465,6 +467,10 @@ namespace FixedCamVr.Streaming.EditorTools
             private float _igniteWritten = -1f;
             /// <summary>頭のヨー（度）。割れた実景がその場に残るかを測る探針だけが動かす。</summary>
             private float _headYawDeg;
+            private float _headPitchDeg;
+            private bool _peripheralProbe;
+            private bool _peripheralOtherEyeWide;
+            private bool _suppressPeripheral;
 
             public IntroTiming Timing => _timing;
 
@@ -493,9 +499,17 @@ namespace FixedCamVr.Streaming.EditorTools
                 var viewport = Matrix4x4.identity;
                 viewport.m00 = viewport.m11 = 0.5f;
                 viewport.m03 = viewport.m13 = 0.5f;
-                Matrix4x4 worldToUv = viewport * _cam.projectionMatrix * _cam.worldToCameraMatrix;
+                // 周辺の探針は、表示視野より狭い正方形の撮影範囲を明示して再現する。
+                Matrix4x4 projection = _peripheralProbe
+                    ? Matrix4x4.Perspective(70f, 1f, _cam.nearClipPlane, _cam.farClipPlane)
+                    : _cam.projectionMatrix;
+                Matrix4x4 worldToUv = viewport * projection * _cam.worldToCameraMatrix;
                 Texture source = _freezeSourceOverride != null ? _freezeSourceOverride : _reality;
-                return new IntroFrozenFrameSource(source, source, worldToUv, worldToUv);
+                Matrix4x4 otherEyeUv = _peripheralOtherEyeWide
+                    ? viewport * Matrix4x4.Perspective(110f, 1f, _cam.nearClipPlane, _cam.farClipPlane)
+                        * _cam.worldToCameraMatrix
+                    : worldToUv;
+                return new IntroFrozenFrameSource(source, source, worldToUv, otherEyeUv);
             }
 
             public static Stage Create(string outDir)
@@ -970,6 +984,83 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
             }
 
+            /// <summary>狭い撮影範囲の外を、正面・左右・背後・上下から実画素で確認する。</summary>
+            public void VerifyPeripheralFracture(List<string> saved)
+            {
+                string proofPath = Path.Combine(_outDir, "peripheral-proof.json");
+                if (File.Exists(proofPath)) File.Delete(proofPath);
+                var proof = new System.Text.StringBuilder("{\"captureFovDeg\":70,\"views\":[");
+                string[] names = { "front", "right", "back", "left", "up", "down" };
+                float[] yaws = { 0f, 90f, 180f, -90f, 0f, 0f };
+                float[] pitches = { 0f, 0f, 0f, 0f, -75f, 75f };
+                float[] phases = { 0.04f, 0.14f, 0.30f, 0.65f, 0.86f };
+                _peripheralProbe = true;
+                try
+                {
+                    for (int view = 0; view < names.Length; view++)
+                    {
+                        _headYawDeg = _headPitchDeg = 0f;
+                        Render(new Shot(IntroStage.Frame, 4, "peripheral_reset_" + names[view], 0f, 0), saved);
+                        Render(new Shot(IntroStage.Frame, 4, "peripheral_anchor_" + names[view], 0.01f, 1), saved);
+                        if (!_veil.ShatterAnchored || !_veil.HasFrozenFrame)
+                            throw new InvalidOperationException("周辺の探針が正面で撮影姿勢を固定できていない");
+                        _headYawDeg = yaws[view];
+                        _headPitchDeg = pitches[view];
+                        if (view > 0) proof.Append(',');
+                        proof.Append("{\"name\":\"").Append(names[view]).Append("\",\"samples\":[");
+                        for (int sample = 0; sample < phases.Length; sample++)
+                        {
+                            float p = phases[sample];
+                            int label = Mathf.RoundToInt(p * 100f);
+                            _suppressPeripheral = false;
+                            Render(new Shot(IntroStage.Frame, 4, "peripheral_" + names[view], p, label), saved);
+                            Color32[] withPeripheral = _sceneTex.GetPixels32();
+                            long alphaSum = 0;
+                            foreach (Color32 pixel in _alphaPixels!) alphaSum += pixel.r;
+                            float alpha = (float)((double)alphaSum / (_alphaPixels!.Length * 255));
+                            _suppressPeripheral = true;
+                            Render(new Shot(IntroStage.Frame, 4, "peripheral_off_" + names[view], p, label), saved);
+                            float delta = MeanPixelDifference(withPeripheral, _sceneTex.GetPixels32());
+                            _suppressPeripheral = false;
+                            if (sample == 0 && view > 0 && alpha > 0.25f)
+                                throw new InvalidOperationException($"{names[view]}: 破断前に周囲の現実が消えている alpha={alpha}");
+                            if (sample >= 1 && alpha < 0.999f)
+                                throw new InvalidOperationException($"{names[view]} p={p}: 破断後にライブ実景が漏れる alpha={alpha}");
+                            if (sample == 2 && view > 0 && delta < 0.2f)
+                                throw new InvalidOperationException($"{names[view]}: 撮影範囲外に破片が描かれていない delta={delta}");
+                            if (sample == 4 && delta > 0.01f)
+                                throw new InvalidOperationException($"{names[view]}: 周辺破片が退場していない delta={delta}");
+                            if (sample > 0) proof.Append(',');
+                            proof.Append(FormattableString.Invariant(
+                                $"{{\"p\":{p:0.00},\"alpha\":{alpha:0.000000},\"pixelDelta\":{delta:0.000000}}}"));
+                        }
+                        proof.Append("]}");
+                    }
+                    // Monoでは左眼を描く。右眼の撮影範囲だけ広げても左眼の窓に欠けを作らない。
+                    _headYawDeg = _headPitchDeg = 0f;
+                    Render(new Shot(IntroStage.Frame, 4, "peripheral_eye_reset", 0f, 0), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "peripheral_eye_anchor", 0.01f, 1), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "peripheral_eye_base", 0.04f, 4), saved);
+                    Color32[] eyeBaseline = _sceneTex.GetPixels32();
+                    _peripheralOtherEyeWide = true;
+                    Render(new Shot(IntroStage.Frame, 4, "peripheral_eye_wide_reset", 0f, 0), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "peripheral_eye_wide_anchor", 0.01f, 1), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "peripheral_eye_wide", 0.04f, 4), saved);
+                    float otherEyeDelta = MeanPixelDifference(eyeBaseline, _sceneTex.GetPixels32());
+                    if (otherEyeDelta > 0.01f)
+                        throw new InvalidOperationException($"別の眼の撮影範囲が表示中の眼に欠けを作る delta={otherEyeDelta}");
+                    proof.Append(FormattableString.Invariant($"],\"otherEyeOverscanDelta\":{otherEyeDelta:0.000000},\"ok\":true}}"));
+                    File.WriteAllText(proofPath, proof.ToString());
+                    Debug.Log("[IntroViz] peripheral proof: all six directions retain reality, fracture, then retire");
+                }
+                finally
+                {
+                    _headYawDeg = _headPitchDeg = 0f;
+                    _peripheralProbe = _suppressPeripheral = _peripheralOtherEyeWide = false;
+                    Render(new Shot(IntroStage.Frame, 4, "peripheral_done", 0f, 0), saved);
+                }
+            }
+
             private static float MeanPixelDifference(Color32[] a, Color32[] b)
             {
                 if (a.Length != b.Length) throw new InvalidOperationException("比較画像の画素数が一致しない");
@@ -986,7 +1077,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     ? new Vector3(0f, EyeH, 0f)
                     : new Vector3(0f, EyeH, -(_halfM + OutsideStandM));
                 // +Z（エリアの中心）を向く。探針だけがヨーを足す。
-                _head.rotation = Quaternion.Euler(0f, _headYawDeg, 0f);
+                _head.rotation = Quaternion.Euler(_headPitchDeg, _headYawDeg, 0f);
             }
 
             /// <summary>
@@ -1000,7 +1091,18 @@ namespace FixedCamVr.Streaming.EditorTools
                                            RenderTextureReadWrite.sRGB)
                 { antiAliasing = 4 };
                 _cam.targetTexture = rt;
+                // 実描画から追加分だけを外す校正。同時刻の差で存在と退場を測る。
+                var suppressed = new List<Renderer>();
+                if (_suppressPeripheral)
+                    foreach (Renderer renderer in _root.GetComponentsInChildren<Renderer>())
+                        if (renderer.enabled && renderer.sharedMaterial != null
+                            && renderer.sharedMaterial.shader.name == "FixedCamVr/IntroPeripheralFracture")
+                        {
+                            renderer.enabled = false;
+                            suppressed.Add(renderer);
+                        }
                 _cam.Render();
+                foreach (Renderer renderer in suppressed) renderer.enabled = true;
 
                 // ⚠ MSAA の RT から直接 ReadPixels しない（解決前の面を読むとまだらになる）。
                 var resolved = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGB32,

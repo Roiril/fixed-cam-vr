@@ -61,6 +61,7 @@ Shader "FixedCamVr/IntroFracture"
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "IntroShatter.hlsl"
+            #include "IntroFractureTime.hlsl"
 
             struct Attributes
             {
@@ -122,11 +123,6 @@ Shader "FixedCamVr/IntroFracture"
             //                            着地は .70 から .90 へ増えていく。枠を閉じる 3 片が最後
             //   実景の面 .900-.940 / 混合 .940-.990 は IntroLogic の frame / live が持つ
             // ⚠ 音（ingest-sounds.py の SWARM_*）はこの表を秒に直したもの。片方だけ動かさない。
-            static const float CrackEnd = 0.060;
-            static const float BreakSpan = 0.040;
-            static const float PullBegin = 0.520;   // 磁力が立ち上がる（漂いが止まり始める）
-            static const float PullArrest = 0.120;  // 漂いが止まるまで（0.6 秒）。回転は止めない
-            static const float PullStart = 0.560;   // 全片が同時に引かれ始める（2.8 秒・0224）
             static const float ArriveFirst = 0.700; // いちばん軽い片の着地
             static const float ArriveSpan = 0.170;  // 着地 = ArriveFirst + ArriveSpan × w^0.6（重い片ほど遅く、密度は終わりへ増える）
             static const float PullPowLight = 1.6;  // 進み = t^k。軽い片は早くから動き
@@ -134,8 +130,6 @@ Shader "FixedCamVr/IntroFracture"
             static const float CloserArrive = 0.900; // 枠を閉じる 3 片は最後（直前の 0.15 秒は静まる）
             static const float StretchMax = 0.55;   // 速い片を進行方向に伸ばす上限（モーションブラーの代わり）
             static const float StretchSpeed = 2.0;  // この速さ (m/s) で伸びが上限に届く
-            static const float BurstTau = 0.024;   // 一撃の時定数（120ms）
-            static const float DriftRate = 0.60;   // スローの漂い（行程 / p）
 
             float2 ScreenAngle(float2 local)
             {
@@ -159,27 +153,6 @@ Shader "FixedCamVr/IntroFracture"
             {
                 float lengthSquared = dot(value, value);
                 return lengthSquared > 1e-8 ? value * rsqrt(lengthSquared) : fallback;
-            }
-
-            float Ease(float from, float to, float value)
-            {
-                float t = saturate((value - from) / (to - from));
-                return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-            }
-
-            // 引き延ばした時間。破断からの経過 x（p 単位）を、破片が生きる物理の時間 u へ写す。
-            // 一撃で 0.80 を時定数 BurstTau で飛び、あとは DriftRate の遅い漂いが続く（止めない）。
-            // xs = 磁力が立ち上がってからの経過。漂いは PullArrest かけて滑らかに 0 になる（磁石がまず漂いを止める）。
-            float WarpedTime(float x, float xs)
-            {
-                float arrested = xs * Ease(0.0, PullArrest, xs);
-                return 0.80 * (1.0 - exp(-x / BurstTau)) + DriftRate * (x - arrested);
-            }
-
-            // 回転の時計。漂いは磁石が止めるが、回転は慣性で続く（止めると 0216「止まって見える」に戻る）。
-            float SpinTime(float x)
-            {
-                return 0.80 * (1.0 - exp(-x / BurstTau)) + DriftRate * x;
             }
 
             float2 ProjectFrozenUv(float4x4 worldToUv, float3 captureWorld, out float valid)
