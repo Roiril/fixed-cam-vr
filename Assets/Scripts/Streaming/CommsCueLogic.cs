@@ -72,7 +72,10 @@ namespace FixedCamVr.Streaming
         MarkLogged,
         /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異常は検出されませんでした」。</summary>
         MarkNothing,
-        /// <summary>侵食度 1 の報告。印字へ侵食が追いついて文面を奪う。</summary>
+        /// <summary>
+        /// 侵食度 1 の報告への嘘「異常なしと判定しました」。**ラン 1 回に 1 度だけ**。
+        /// 出し方は <see cref="CommsDelivery.Possessed"/>（0230）— 一気に出て、読ませて、上から塗り替わる。
+        /// </summary>
         Takeover,
         /// <summary>
         /// ③a <b>4 周目 A の締めで、押さないまま時間が過ぎた最初の一言</b>「止まってください！」
@@ -108,8 +111,13 @@ namespace FixedCamVr.Streaming
         /// ⚠ 濃さだけが上がる — 字は最初から全部そこに在る（<c>CommsPanelLogic.FadeInSec</c>）。
         /// </summary>
         Fade,
-        /// <summary>印字へ侵食が追いつき、未完成の文面を捕捉する。</summary>
-        Takeover,
+        /// <summary>
+        /// <b>憑依の出し方</b>（<c>canon/LEDGER.md</c> 0230・侵食度 0.75 以降）。
+        /// 全文が<b>一気に</b>出て（打鍵なし）、読ませてから、<b>上から前線が降りて呪われた双子に塗り替わる</b>
+        /// （時計は <see cref="CommsPossessionLogic"/>）。
+        /// ⚠ 旧「印字へ侵食が追いつく」（<c>Takeover</c>）は 0230 で捨てた。
+        /// </summary>
+        Possessed,
     }
 
     /// <summary>1 フレーム分の入力。<b>UnityEngine 非依存・dt 注入</b>。</summary>
@@ -174,11 +182,8 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float invasionProgress;
 
-        /// <summary>書き換えの再生中か。再報告で頭へ戻さないために使う。</summary>
+        /// <summary>嘘の一文（<see cref="CommsNotice.Takeover"/>）が出ている最中か。再報告で頭へ戻さないために使う。</summary>
         public bool takeoverPlaying;
-
-        /// <summary>このランで書き換えを最後まで見せたか。</summary>
-        public bool takeoverModified;
 
         /// <summary>現在も本編の通常周に居るか。報告時のスナップショットとは別に中止を優先する。</summary>
         public bool takeoverAllowed;
@@ -310,12 +315,22 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// その連絡の出方。<b>ここが唯一の窓口</b> — 面も打鍵も観測もここを読む
         /// （散らすと、音だけ / 観測だけが黙って食い違う）。
+        ///
+        /// ⚠⚠ <b>侵食度 0.75 以降は憑依の出し方</b>（<c>canon/LEDGER.md</c> 0230・
+        /// <see cref="CommsCurseLogic.PossessedLevel"/>）。実際にそこで届くのは報告の返事（②）と嘘の一文だけ。
+        /// ⚠ 「止まってください！」（浮かぶ）と続く警告（打つ）は<b>侵食度に関わらず従来のまま</b> —
+        /// エージェントがなんとか復帰して助ける段（0070）なので、呪いの形では出さない。
         /// </summary>
-        public static CommsDelivery DeliveryOf(CommsNotice notice)
+        public static CommsDelivery DeliveryOf(CommsNotice notice, float invasionProgress)
             => IsOnboarding(notice) ? CommsDelivery.Fade
              : notice == CommsNotice.Halt ? CommsDelivery.Fade
-             : notice == CommsNotice.Takeover ? CommsDelivery.Takeover
+             : notice == CommsNotice.Prompt ? CommsDelivery.Typed
+             : notice == CommsNotice.Takeover ? CommsDelivery.Possessed
+             : invasionProgress >= CommsCurseLogic.PossessedLevel ? CommsDelivery.Possessed
              : CommsDelivery.Typed;
+
+        /// <summary>侵食度 0 での出方（文面の規約を測るテスト用）。</summary>
+        public static CommsDelivery DeliveryOf(CommsNotice notice) => DeliveryOf(notice, 0f);
 
         public static bool IsOnboarding(CommsNotice notice)
             => notice >= CommsNotice.ControllerDisconnected
@@ -379,14 +394,15 @@ namespace FixedCamVr.Streaming
             // （押した手応えが返らないと、装置が壊れているように見える）。
             if (inp.markPressed)
             {
-                if (inp.takeoverPlaying || inp.takeoverModified) return CommsNotice.None;
+                // 嘘の一文が出ている最中の再報告は頭へ戻さない（1 回だけ・最後まで見せる）。
+                if (inp.takeoverPlaying) return CommsNotice.None;
                 if (inp.takeoverAllowed && !_takeoverDelivered && fullyInvaded)
                     return CommsNotice.Takeover;
                 if (inp.markDetected) return CommsNotice.MarkLogged;
                 return CommsNotice.MarkNothing;
             }
-            if (inp.takeoverAllowed && !_takeoverDelivered && !inp.takeoverModified
-                && fullyInvaded && _fullInvasionSec >= CommsTakeoverLogic.AutoDelaySec)
+            if (inp.takeoverAllowed && !_takeoverDelivered
+                && fullyInvaded && _fullInvasionSec >= CommsPossessionLogic.AutoDelaySec)
                 return CommsNotice.Takeover;
             if (haltDue) { _haltFired = true; return CommsNotice.Halt; }
             if (promptDue) { _promptFired = true; return CommsNotice.Prompt; }

@@ -28,6 +28,15 @@ Shader "FixedCamVr/CommsPanelPlate"
         _Size("Quad size (m)", Vector) = (1, 0.3, 0, 0)
         _RectHalf("Sharp rect half extents (m)", Vector) = (0.45, 0.12, 0, 0)
         _Curse("Curse amount (0..1)", Range(0, 1)) = 0
+        // 塗り替わりの帯（0230 / 0231・憑依の出し方）: (進み, 矩形の上端 y, 矩形の下端 y, 帯の高さ)。
+        // 反転した帯は層 B（斑と同じ k に max で入る）。
+        _Sweep("Sweep (progress, top, bottom, band)", Vector) = (0, 0, 0, 0.04)
+        // 乱れ（0231・本編の乱れをまねたもの）: (強さ, 明滅, 0, 0) と帯ごとの飛び・脱落（C# が作る）。
+        _Tear("Tear (strength, flicker, 0, 0)", Vector) = (0, 1, 0, 0)
+        _TearShiftA("Tear shift bands 0-3 (m)", Vector) = (0, 0, 0, 0)
+        _TearShiftB("Tear shift bands 4-7 (m)", Vector) = (0, 0, 0, 0)
+        _TearDropA("Tear drop bands 0-3", Vector) = (0, 0, 0, 0)
+        _TearDropB("Tear drop bands 4-7", Vector) = (0, 0, 0, 0)
         _CurseDensity("Cursed plate density gain", Float) = 1.12
         _Fray("Fray amplitude (m)", Float) = 0.012
         _FrayCell("Fray noise cell (m)", Float) = 0.022
@@ -60,6 +69,12 @@ Shader "FixedCamVr/CommsPanelPlate"
             float4 _Size;
             float4 _RectHalf;
             float _Curse;
+            float4 _Sweep;
+            float4 _Tear;
+            float4 _TearShiftA;
+            float4 _TearShiftB;
+            float4 _TearDropA;
+            float4 _TearDropB;
             float _CurseDensity;
             float _Fray;
             float _FrayCell;
@@ -173,29 +188,36 @@ Shader "FixedCamVr/CommsPanelPlate"
 
             half4 PlateFrag(Varyings i) : SV_Target
             {
-                float2 p = PanelPos(i.uv);
-                float d = RectDistance(p);
+                // 生の座標（枠と帯の格子はこれで決まる）と、乱れで飛んだ座標（中身はこれで引く・0231）。
+                float2 pRaw = PanelPos(i.uv);
+                float d = RectDistance(pRaw);
                 float aa = max(fwidth(d), 1e-5);
+                float2 p = pRaw;
+                p.x -= CommsTearShiftAt(pRaw.y, _Sweep, _TearShiftA, _TearShiftB);
 
-                // 層 A: 鋭い矩形
+                // 層 A: 鋭い矩形。**枠そのものなので飛ばない**（本編の枠が乱れで動かないのと同じ）。
                 float sharp = 1.0 - smoothstep(-aa, aa, d);
 
-                // 層 B: 縁が毛羽立ち、外へ煙のようににじむ（「りんかくは不鮮明」）
+                // 層 B: 縁が毛羽立ち、外へ煙のようににじむ（「りんかくは不鮮明」）。中身なので帯ごとに飛ぶ。
+                float dB = RectDistance(p);
                 float2 e = p / max(_FrayCell, 1e-4);
                 float fn = CurseValueNoise(e + 5.3) * 0.65 + CurseValueNoise(e * 2.7 + 9.1) * 0.35;
                 float disp = (fn - 0.5) * 2.0 * _Fray;
-                float db = d + disp;
+                float db = dB + disp;
                 float frayed = 1.0 - smoothstep(-0.004, 0.004, db);
                 float halo = (1.0 - smoothstep(0.0, max(_Halo, 1e-4), db)) * (0.55 + 0.45 * fn) * 0.38;
                 float cursed = saturate(frayed + halo * (1.0 - frayed)) * _CurseDensity;
 
-                float k = CurseK(CurseField(p), _Curse);
+                // 斑（0229）と、帯ごとに反転する塗り替わり（0230 / 0231）は同じ k に入る。どちらも層 B へ倒す。
+                // ⚠ 帯の反転は**生の y**で決める（帯は面に固定された格子。飛ぶのは帯の中身）。
+                float kSweep = CurseSweepK(pRaw, _Sweep);
+                float k = max(CurseK(CurseField(p), _Curse), kSweep);
                 float plateA = saturate(lerp(sharp, cursed, k)) * _Color.a;
 
                 // 走り書きは斑の中だけ。境目は文字の切断（k ≥ 0.5）と同じ所で切り替わる。
                 // ⚠ 分岐で飛ばさない（`fwidth` を非一様な分岐の中で取らない）。乗算で消す。
-                float aaY = max(fwidth(p.y), 1e-5);
-                float ink = Scrawl(p, aaY) * step(0.5, _Scrawl) * step(0.001, _Curse)
+                float aaY = max(fwidth(pRaw.y), 1e-5);
+                float ink = Scrawl(p, aaY) * step(0.5, _Scrawl) * step(0.001, max(_Curse, _Sweep.x))
                             * smoothstep(CURSE_CUT - 0.15, CURSE_CUT + 0.15, k) * _InkAlpha;
                 // 毛羽立った縁に、途切れた細い糸くず（同じ象牙の墨）。地は黒い半透明なので、暗い背景の前では
                 // 縁の毛羽立ちが読めない — ほつれた糸が縁をなぞることで、背景が何であれ輪郭が崩れて見える。
@@ -203,9 +225,14 @@ Shader "FixedCamVr/CommsPanelPlate"
                 float threadDry = smoothstep(0.42, 0.62, CurseValueNoise(e * 1.9 + 23.0));
                 ink = max(ink, thread * threadDry * 0.42 * k * _InkAlpha);
 
-                // 象牙を地の上に置く（over）。
-                float outA = ink + plateA * (1.0 - ink);
-                float3 outRgb = (ink * _Ink.rgb + plateA * (1.0 - ink) * _Color.rgb) / max(outA, 1e-4);
+                // 乱れ（0231）: 帯ごとの脱落（本編の「帯が砂になる」。ここでは**抜ける**）と全体の明滅。
+                float drop = CommsTearDropAt(pRaw.y, _Sweep, _TearDropA, _TearDropB);
+                plateA *= 1.0 - drop;
+                ink *= 1.0 - drop;
+
+                // 象牙を地の上に置く（over）。明滅は出力の alpha に掛ける（暗い側へだけ）。
+                float outA = (ink + plateA * (1.0 - ink)) * _Tear.y;
+                float3 outRgb = (ink * _Ink.rgb + plateA * (1.0 - ink) * _Color.rgb) / max(ink + plateA * (1.0 - ink), 1e-4);
                 return half4(outRgb, outA);
             }
             ENDHLSL

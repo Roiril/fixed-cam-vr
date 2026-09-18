@@ -54,6 +54,18 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float curse;
 
+        /// <summary>
+        /// 上から降りる前線の進み（0 = まだ通常 / 1 = 全面が呪われた双子）。<c>canon/LEDGER.md</c> 0230。
+        /// 憑依の出し方（<see cref="CommsDelivery.Possessed"/>）でだけ動く。他の出方では 0。
+        /// </summary>
+        public float sweep;
+
+        /// <summary>乱れの強さ 0..1（<c>canon/LEDGER.md</c> 0231）。塗り替わりの頭で立ち、塗り替わり切ってから引く。</summary>
+        public float tear;
+
+        /// <summary>乱れの種（面が開いてからの秒）。実行時の乱数の代わり。</summary>
+        public float tearSeed;
+
         public static CommsWeights Hidden => new CommsWeights();
     }
 
@@ -219,6 +231,8 @@ namespace FixedCamVr.Streaming
         private CommsStage _stage = CommsStage.Off;
         private float _elapsed;
         private float _typeSec = MinTypeSec;
+        // 憑依の出し方（0230）で読ませる秒。文字の段は 出る → 読ませる → 塗り替わる の合計（`_typeSec`）。
+        private float _readSec = CommsPossessionLogic.ReadMinSec;
         private CommsDelivery _delivery = CommsDelivery.Typed;
         private bool _persistent;
         private bool _guideWanted;
@@ -232,6 +246,8 @@ namespace FixedCamVr.Streaming
         // 呪いの斑の量（`canon/LEDGER.md` 0229）。目標は実行体が毎フレーム押し込み、
         // ここは**面が開いてからの立ち上がり**だけを持つ（開いた縁で 0 から数え直す）。
         private float _curseTarget, _curseFrom, _curseShown, _curseRampSec;
+        // 面が開いてからの秒。乱れ（0231）の種に使う（段をまたいで単調に増える）。
+        private float _openSec;
 
         public CommsStage Stage => _stage;
 
@@ -267,7 +283,10 @@ namespace FixedCamVr.Streaming
         /// <summary>出ているか（実行体が面を描くべきか）。</summary>
         public bool Active => _stage != CommsStage.Off;
 
-        /// <summary>打ち終わるまでの秒（この文面での実測値。プレビューと卓が読む）。</summary>
+        /// <summary>
+        /// 文字の段の長さ（この文面での実測値。プレビューと卓が読む）。打つ出し方では打ち終わるまで、
+        /// 憑依の出し方（0230）では 出る → 読ませる → 塗り替わる の合計。
+        /// </summary>
         public float TypeSec => _typeSec;
 
         /// <summary>
@@ -279,17 +298,22 @@ namespace FixedCamVr.Streaming
         /// <summary>現在の段に入ってからの秒数。専用表示とプレビューが同じ時計を読む。</summary>
         public float StageElapsedSec => _elapsed;
 
-        public CommsTakeoverSample TakeoverSample
+        /// <summary>
+        /// 憑依の出し方（0230）の段と値。他の出方と、面が畳まれている／開いている最中は <see cref="CommsPossessionPhase.Off"/>。
+        /// 文字の段が「出る → 読ませる → 塗り替わる」で、読ませる段（Hold）以降は塗り替わったまま。
+        /// </summary>
+        public CommsPossessionSample PossessionSample
         {
             get
             {
-                if (_delivery != CommsDelivery.Takeover || _stage == CommsStage.In)
-                    return new CommsTakeoverSample { phase = CommsTakeoverPhase.Off };
+                if (_delivery != CommsDelivery.Possessed || _stage == CommsStage.Off || _stage == CommsStage.In)
+                    return new CommsPossessionSample { phase = CommsPossessionPhase.Off };
                 if (_stage == CommsStage.Type)
-                    return CommsTakeoverLogic.Sample(_elapsed, _typeSec);
-                if (_stage == CommsStage.Out)
-                    return CommsTakeoverLogic.Sample(CommsTakeoverLogic.DurationFor(_typeSec), _typeSec);
-                return new CommsTakeoverSample { phase = CommsTakeoverPhase.Off };
+                    return CommsPossessionLogic.Sample(_elapsed, _readSec);
+                // 読ませる段（呪われたまま）。乱れの尾（0231）は塗り替わり切った後も少し続くので時計を繋ぐ。
+                if (_stage == CommsStage.Hold)
+                    return CommsPossessionLogic.Sample(CommsPossessionLogic.DurationFor(_readSec) + _elapsed, _readSec);
+                return new CommsPossessionSample { phase = CommsPossessionPhase.Cursed, show = 1f, sweep = 1f };
             }
         }
 
@@ -337,8 +361,10 @@ namespace FixedCamVr.Streaming
             EnterStage(chained ? CommsStage.Type : CommsStage.In);
             _delivery = delivery;
             _persistent = persistent;
-            _typeSec = delivery == CommsDelivery.Takeover
-                ? CommsTakeoverLogic.OutputSecFor(charCount, ShowLanguage.Current)
+            // 憑依の出し方（0230）: 文字の段は 出る → 読ませる（字数で伸びる）→ 塗り替わる の合計。
+            _readSec = CommsPossessionLogic.ReadSecFor(charCount, ShowLanguage.Current);
+            _typeSec = delivery == CommsDelivery.Possessed
+                ? CommsPossessionLogic.DurationFor(_readSec)
                 : delivery == CommsDelivery.Fade
                 ? FadeInSec
                 : charCount <= 0
@@ -367,7 +393,10 @@ namespace FixedCamVr.Streaming
         {
             bool rising = wanted && !_guideWanted;
             _guideWanted = wanted;
-            if (_delivery == CommsDelivery.Takeover) return;
+            // ⚠ 憑依の出し方（0230）の「出る → 読ませる → 塗り替わる」は途中で退かせない —
+            //   塗り替わる前に畳むと、初見の人には「乗っ取られた」が一度も見えないまま終わる。
+            //   押しっぱなしなら読ませる段（Hold）の後で `Guide` へ移る（下の Tick）。
+            if (_delivery == CommsDelivery.Possessed && _stage == CommsStage.Type) return;
             if (wanted && (_stage == CommsStage.Off || _stage == CommsStage.Out))
             {
                 // 畳まれた所から開くなら斑も 0 から（引いている最中からなら続きから）。
@@ -410,6 +439,7 @@ namespace FixedCamVr.Streaming
             _persistent = false;
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = 0f;
+            _openSec = 0f;
             RestartCurseRamp();
         }
 
@@ -419,6 +449,7 @@ namespace FixedCamVr.Streaming
             if (dt < 0f) dt = 0f;
             if (_stage == CommsStage.Off) return;
             _elapsed += dt;
+            _openSec += dt;
             // 斑は面が出ているあいだだけ進む（段に関わらず 1 本の時計）。
             _curseRampSec += dt;
             _curseShown = Lerp(_curseFrom, _curseTarget,
@@ -429,12 +460,7 @@ namespace FixedCamVr.Streaming
                     if (_elapsed >= InSec) EnterStage(CommsStage.Type);
                     break;
                 case CommsStage.Type:
-                    if (_delivery == CommsDelivery.Takeover)
-                    {
-                        if (CommsTakeoverLogic.Sample(_elapsed, _typeSec).phase == CommsTakeoverPhase.Complete)
-                            EnterStage(CommsStage.Out);
-                    }
-                    else if (_elapsed >= _typeSec) EnterStage(CommsStage.Hold);
+                    if (_elapsed >= _typeSec) EnterStage(CommsStage.Hold);
                     break;
                 case CommsStage.Hold:
                     // 読ませ終わったら引く。⚠ ただし**まだ押している最中なら開いたまま残す** —
@@ -458,6 +484,16 @@ namespace FixedCamVr.Streaming
             {
                 CommsWeights w = StageWeights;
                 w.curse = CurseShown;
+                if (_delivery == CommsDelivery.Possessed && _stage != CommsStage.Off)
+                {
+                    // 憑依の出し方（0230）: 斑ではなく前線。塗り替わる前は通常の面（斑 0）、
+                    // 塗り替わった後は全面（0.75 でも 1 でも同じ Max）。前線の進みは `sweep`。
+                    CommsPossessionSample s = PossessionSample;
+                    w.sweep = s.sweep;
+                    w.tear = s.tear;
+                    w.tearSeed = _openSec;
+                    w.curse = s.phase == CommsPossessionPhase.Cursed ? 1f : 0f;
+                }
                 return w;
             }
         }
@@ -494,14 +530,13 @@ namespace FixedCamVr.Streaming
                     }
                     case CommsStage.Type:
                     {
-                        if (_delivery == CommsDelivery.Takeover)
+                        // ⚠⚠ **憑依の出し方**（`canon/LEDGER.md` 0230）。字は最初から全部そこに在って
+                        //    （`reveal = 1`）、`ShowSec` でふっと出る。塗り替わりは `Weights` が `sweep` へ出す。
+                        if (_delivery == CommsDelivery.Possessed)
                         {
-                            CommsTakeoverSample takeover = CommsTakeoverLogic.Sample(_elapsed, _typeSec);
+                            CommsPossessionSample s = CommsPossessionLogic.Sample(_elapsed, _readSec);
                             return new CommsWeights
-                            {
-                                panel = 1f, glyph = 1f, open = 1f, body = 1f,
-                                reveal = takeover.reveal, hint = 0f,
-                            };
+                            { panel = 1f, glyph = s.show, open = 1f, body = 1f, reveal = 1f, hint = 1f };
                         }
                         // ⚠⚠ **すっと浮かぶ出方**（`canon/LEDGER.md` 0168）。字は最初から全部
                         //    そこに在って（`reveal = 1`）、**濃さだけが上がる**。
@@ -545,18 +580,6 @@ namespace FixedCamVr.Streaming
                         //    文字がはみ出して「潰された」に見える。
                         float g = Smooth(Clamp01(t / GlyphOutAt));
                         float fold = Smooth(Clamp01((t - FoldStartAt) / (1f - FoldStartAt)));
-                        if (_delivery == CommsDelivery.Takeover)
-                        {
-                            return new CommsWeights
-                            {
-                                panel = _panelFrom * (1f - Smooth(t)),
-                                glyph = 0f,
-                                open = (1f - fold) * _openFrom,
-                                body = _bodyFrom,
-                                reveal = CommsTakeoverLogic.MaxReveal,
-                                hint = 0f,
-                            };
-                        }
                         return new CommsWeights
                         {
                             panel = _panelFrom,

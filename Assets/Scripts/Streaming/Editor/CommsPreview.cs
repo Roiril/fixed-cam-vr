@@ -35,8 +35,9 @@ namespace FixedCamVr.Streaming.EditorTools
     /// </summary>
     public static class CommsPreview
     {
-        [MenuItem("Tools/FixedCamVr/Preview/Comms Takeover (frames)", priority = 85)]
-        public static void RunTakeover() => CommsTakeoverPreview.Run();
+        /// <summary>嘘の一文（3 周目 A）を憑依の出し方（0230）で 3 言語ぶん焼く。呼ぶのは <c>menu raw:…CommsPreview.RunPossession</c>。</summary>
+        [MenuItem("Tools/FixedCamVr/Preview/Comms Possession (frames)", priority = 85)]
+        public static void RunPossession() => CommsPossessionPreview.Run();
 
         /// <summary>
         /// 撮る文面。⚠ <b>全部を並べる。</b> 1 つでも漏らすと、その文面だけ枠から溢れていても
@@ -111,6 +112,9 @@ namespace FixedCamVr.Streaming.EditorTools
             // 打鍵も起こす（音は鳴らないが、**鳴らしたはずの数**が数えられる ＝ type.tsv の材料）。
             var typeSfx = panel.GetComponent<TypeAudioCue>();
             if (typeSfx != null) Invoke(typeSfx, "Awake");
+            // 塗り替わりの頭の乱れの音（0230）も同じ理由で自分で起こす（起こさないと音源を掴まず 0 発のまま）。
+            var sweepSfx = panel.GetComponent<CurseSweepAudioCue>();
+            if (sweepSfx != null) Invoke(sweepSfx, "Awake");
             TMP_Text? tmp = null;
             foreach (TMP_Text candidate in panel.GetComponentsInChildren<TMP_Text>(includeInactive: true))
                 if (candidate.name == "CommsText") { tmp = candidate; break; }
@@ -188,6 +192,8 @@ namespace FixedCamVr.Streaming.EditorTools
                     {
                         Disable(logic);
                         ApplyNow(apply, panel, logic);
+                        // ⚠ 侵食度は**届く前**に立てる — 出し方（打つ／憑依・0230）は届いた瞬間の侵食度で決まる。
+                        SetLevelForPreview(panel, decay, previewTime);
                         panel.Deliver(notice);
                         PlaceStraightAhead(root, tmp, dist);
                         Step(logic, apply, panel, inSec);
@@ -378,7 +384,14 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             if (decay <= 0f) return;
             panel.SetInvasionForPreview(decay, startSec);
-            Step(logic, apply, panel, CommsCurseLogic.RampSec + 0.05f);
+            // 斑は 1 秒で立ち上がり（0229）、憑依の出し方（0230）は 出る → 読ませる → 塗り替わる の後で全面になる。
+            // どちらも「届いた所」で撮る。届かなければ 6 秒で諦めて警告する。
+            float waited = 0f;
+            while (waited < 6f && panel.CurseTarget > 0.001f && panel.AppliedCurse < panel.CurseTarget * 0.99f)
+            {
+                Step(logic, apply, panel, 1f / Fps);
+                waited += 1f / Fps;
+            }
             // 「止まってください！」と続く警告は斑の目標が 0（読める状態で出す）。切られなくて正しい。
             if (panel.CurseTarget <= 0.001f) return;
             if (panel.AppliedCurse < panel.CurseTarget * 0.99f)
@@ -419,9 +432,9 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 Disable(logic);
                 ApplyNow(apply, panel, logic);
+                SetLevelForPreview(panel, levels[i], timeSec);
                 panel.Deliver(CommsNotice.BeginHow);
                 PlaceStraightAhead(root, tmp, dist);
-                SetLevelForPreview(panel, levels[i], timeSec);
                 Step(logic, apply, panel, inSec);
                 Step(logic, apply, panel, TypeSec(logic));
                 ApplyNow(apply, panel, logic);
@@ -451,13 +464,14 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
-        /// <b>呪いの動き（<c>canon/LEDGER.md</c> 0229）。</b> 同じ文面（①）を侵食度 0 / 0.25 / 0.75 / 1 で、
-        /// 開く → 打つ → 読ませる → 引く まで通しで焼く。<c>motion/lv000|025|075|100/</c> に
-        /// 連番と <c>type.tsv</c>（打鍵）と <c>curse.tsv</c>（斑の量・切られた字数）、
+        /// <b>呪いの動き（<c>canon/LEDGER.md</c> 0229 / 0230）。</b> 同じ文面（①）を侵食度 0 / 0.25 / 0.75 / 1 で、
+        /// 開く → 出す → 読ませる → 引く まで通しで焼く。<c>motion/lv000|025|075|100/</c> に
+        /// 連番と <c>type.tsv</c>（打鍵）と <c>curse.tsv</c>（斑・前線・切られた字数・段）、
         /// <c>motion/geometry.json</c> に矩形と本文の帯の画面座標（Python の画素検査が読む）。
         ///
-        /// ⚠ 判定は Python（<c>tools/render-comms-curse-preview.py</c>）が画素でする。ここは
-        /// 「出た初めは通常」「1 秒で重なった」を数値で出し、届いていなければ落とす。
+        /// 0.25 は打つ ＋ 1 秒で斑が重なる（0229）。0.75 と 1 は憑依の出し方（0230）:
+        /// 全文が一気に出て（打鍵 0）→ 読ませて → 上から前線が降りて塗り替わる。
+        /// ⚠ 判定は Python（<c>tools/render-comms-curse-preview.py</c>）が画素でする。ここは数値の側を落とす。
         /// </summary>
         private static void ShootMotion(CommsPanel panel, object logic, MethodInfo apply,
                                         Transform root, TMP_Text tmp, Camera cam, string dir, float dist)
@@ -466,8 +480,9 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(motionDir);
             float dt = 1f / Fps;
             float[] levels = { 0f, 0.25f, 0.75f, 1f };
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
             var summary = new System.Text.StringBuilder(
-                "level\tframes\tcurse_open\tcurse_1_2s\ttarget\tcx_1_2s\tcx_max\tramp_frame\n");
+                "level\tframes\tcurse_open\tcurse_1_2s\ttarget\tcx_1_2s\tcx_max\tramp_frame\tpossessed\tshown_frame\tshown_chars\tsweep_start_frame\tsweep_end_frame\thits\tsweep_sfx\n");
             PropertyInfo active = logic.GetType().GetProperty("Active")!;
             PropertyInfo stage = logic.GetType().GetProperty("Stage")!;
 
@@ -479,28 +494,41 @@ namespace FixedCamVr.Streaming.EditorTools
                 ApplyNow(apply, panel, logic);
                 SetLevelForPreview(panel, level, 0f);
                 panel.Deliver(CommsNotice.BeginHow);
+                bool possessed = level >= CommsCurseLogic.PossessedLevel;
                 PlaceStraightAhead(root, tmp, dist);
                 var taps = new System.Text.StringBuilder("frame\tchars\thit\n");
-                var curse = new System.Text.StringBuilder("frame\tsec\tstage\tcurse\ttarget\tcx\tglyph\tpanel\tface\n");
-                int lastTyped = panel.TypedCount;
-                int frame = 0, cxMax = 0, cxAt12 = -1, rampFrame = -1;
-                float curseOpen = -1f, curseAt12 = -1f;
+                var curse = new System.Text.StringBuilder("frame\tsec\tstage\tcurse\ttarget\tcx\tglyph\tpanel\tface\tsweep\tphase\tsfx\ttear\ttorn\n");
+                int lastTyped = panel.TypedCount, lastSfx = panel.SweepSfxCount;
+                int frame = 0, cxMax = 0, cxAt12 = -1, rampFrame = -1, hits = 0, sfxHits = 0;
+                int shownFrame = Mathf.RoundToInt((CommsPanelLogic.InSec + CommsPossessionLogic.ShowSec + 0.05f) * Fps);
+                int shownChars = -1, shownCx = -1, sweepStart = -1, sweepEnd = -1;
+                float curseOpen = -1f, curseAt12 = -1f, curseShown = -1f;
+                int total = tmp.textInfo.characterCount;
                 while ((bool)active.GetValue(logic) && frame < Fps * 12)
                 {
                     ApplyNow(apply, panel, logic);
                     Shoot(cam, Frame(sub, frame));
-                    int hit = panel.TypedCount > lastTyped ? 1 : 0;
+                    int hit = panel.TypedCount - lastTyped;
                     lastTyped = panel.TypedCount;
+                    hits += hit;
+                    int sfx = panel.SweepSfxCount - lastSfx;
+                    lastSfx = panel.SweepSfxCount;
+                    sfxHits += sfx;
                     taps.Append(frame).Append('\t').Append(panel.VisibleChars).Append('\t').Append(hit).Append('\n');
                     curse.Append(frame).Append('\t')
-                         .Append((frame * dt).ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                         .Append((frame * dt).ToString("F3", inv)).Append('\t')
                          .Append(stage.GetValue(logic)).Append('\t')
-                         .Append(panel.AppliedCurse.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
-                         .Append(panel.CurseTarget.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                         .Append(panel.AppliedCurse.ToString("F3", inv)).Append('\t')
+                         .Append(panel.CurseTarget.ToString("F3", inv)).Append('\t')
                          .Append(panel.CorruptedChars).Append('\t')
-                         .Append(panel.AppliedGlyph.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
-                         .Append(panel.AppliedPanelAlpha.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
-                         .Append(panel.AppliedFaceMix.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
+                         .Append(panel.AppliedGlyph.ToString("F3", inv)).Append('\t')
+                         .Append(panel.AppliedPanelAlpha.ToString("F3", inv)).Append('\t')
+                         .Append(panel.AppliedFaceMix.ToString("F3", inv)).Append('\t')
+                         .Append(panel.AppliedSweep.ToString("F3", inv)).Append('\t')
+                         .Append(panel.PossessionPhase).Append('\t')
+                         .Append(sfx).Append('\t')
+                         .Append(panel.AppliedTear.ToString("F3", inv)).Append('\t')
+                         .Append(panel.TornBands).Append('\n');
                     if (frame == 0) curseOpen = panel.AppliedCurse;
                     if (frame == Mathf.RoundToInt(1.2f * Fps))
                     {
@@ -510,6 +538,14 @@ namespace FixedCamVr.Streaming.EditorTools
                         if (level <= 0.01f)
                             File.WriteAllText(Path.Combine(motionDir, "geometry.json"), GeometryJson(panel, cam, tmp, root));
                     }
+                    if (frame == shownFrame)
+                    {
+                        shownChars = panel.VisibleChars;
+                        shownCx = panel.CorruptedChars;
+                        curseShown = panel.AppliedCurse;
+                    }
+                    if (sweepStart < 0 && panel.PossessionPhase == CommsPossessionPhase.Sweep) sweepStart = frame;
+                    if (sweepEnd < 0 && panel.PossessionPhase == CommsPossessionPhase.Cursed) sweepEnd = frame;
                     if (rampFrame < 0 && panel.CurseTarget > 0.01f && panel.AppliedCurse >= panel.CurseTarget * 0.99f)
                         rampFrame = frame;
                     cxMax = Mathf.Max(cxMax, panel.CorruptedChars);
@@ -518,21 +554,47 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 File.WriteAllText(Path.Combine(sub, "type.tsv"), taps.ToString());
                 File.WriteAllText(Path.Combine(sub, "curse.tsv"), curse.ToString());
-                summary.Append(level.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
+                summary.Append(level.ToString("F2", inv)).Append('\t')
                        .Append(frame).Append('\t')
-                       .Append(curseOpen.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
-                       .Append(curseAt12.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
-                       .Append(panel.CurseTarget.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)).Append('\t')
-                       .Append(cxAt12).Append('\t').Append(cxMax).Append('\t').Append(rampFrame).Append('\n');
-                // 「出た初めは通常」「1 秒で重なる」を数値で落とす（画素は Python が見る）。
+                       .Append(curseOpen.ToString("F3", inv)).Append('\t')
+                       .Append(curseAt12.ToString("F3", inv)).Append('\t')
+                       .Append(panel.CurseTarget.ToString("F3", inv)).Append('\t')
+                       .Append(cxAt12).Append('\t').Append(cxMax).Append('\t').Append(rampFrame).Append('\t')
+                       .Append(possessed ? 1 : 0).Append('\t').Append(shownFrame).Append('\t').Append(shownChars).Append('\t')
+                       .Append(sweepStart).Append('\t').Append(sweepEnd).Append('\t').Append(hits).Append('\t').Append(sfxHits).Append('\n');
+                // 数値の側を落とす（画素は Python が見る）。
                 if (curseOpen > 0.001f)
                     throw new System.InvalidOperationException($"侵食度 {level}: 開いた縁で斑が {curseOpen:F3}（0 のはず）");
-                if (level > 0.01f && (rampFrame < 0 || rampFrame > Mathf.RoundToInt(1.3f * Fps)))
-                    throw new System.InvalidOperationException($"侵食度 {level}: 斑が 1.3 秒までに目標へ届かない（{rampFrame} コマ）");
-                if (level > 0.01f && cxAt12 <= 0)
-                    throw new System.InvalidOperationException($"侵食度 {level}: 1.2 秒で切られた字が 0");
                 if (level <= 0.01f && cxMax != 0)
                     throw new System.InvalidOperationException($"侵食度 0 で字が切られた（{cxMax}）");
+                if (level > 0.01f && !possessed)
+                {
+                    // 0229: 打ちながら 1 秒で斑が重なる。
+                    if (rampFrame < 0 || rampFrame > Mathf.RoundToInt(1.3f * Fps))
+                        throw new System.InvalidOperationException($"侵食度 {level}: 斑が 1.3 秒までに目標へ届かない（{rampFrame} コマ）");
+                    if (cxAt12 <= 0)
+                        throw new System.InvalidOperationException($"侵食度 {level}: 1.2 秒で切られた字が 0");
+                    if (hits <= 0)
+                        throw new System.InvalidOperationException($"侵食度 {level}: 打鍵が 0（打つ出し方のはず）");
+                }
+                if (possessed)
+                {
+                    // 0230: 一気に出て（打鍵 0・全文）→ 読ませて（斑 0・切られた字 0）→ 上から塗り替わる（0.45 秒）→ 全面。
+                    if (hits != 0)
+                        throw new System.InvalidOperationException($"侵食度 {level}: 打鍵が {hits} 発（一気に出るので 0 のはず）");
+                    if (shownChars != total || shownCx != 0 || curseShown > 0.001f)
+                        throw new System.InvalidOperationException(
+                            $"侵食度 {level}: 出た直後に 全文 {shownChars}/{total}・切られた字 {shownCx}・斑 {curseShown:F3}（全文・0・0 のはず）");
+                    if (sweepStart < 0 || sweepEnd < 0)
+                        throw new System.InvalidOperationException($"侵食度 {level}: 塗り替わりが始まらない／終わらない（{sweepStart}〜{sweepEnd}）");
+                    int sweepFrames = sweepEnd - sweepStart;
+                    if (Mathf.Abs(sweepFrames - CommsPossessionLogic.SweepSec * Fps) > 2f)
+                        throw new System.InvalidOperationException($"侵食度 {level}: 塗り替わりが {sweepFrames} コマ（{CommsPossessionLogic.SweepSec * Fps:0} のはず）");
+                    if (sfxHits != 1)
+                        throw new System.InvalidOperationException($"侵食度 {level}: 塗り替わりの音が {sfxHits} 発（1 発のはず）");
+                    if (rampFrame < 0 || rampFrame != sweepEnd)
+                        throw new System.InvalidOperationException($"侵食度 {level}: 斑が全面になる縁（{rampFrame}）が塗り替わり切った縁（{sweepEnd}）と違う");
+                }
             }
             File.WriteAllText(Path.Combine(motionDir, "summary.tsv"), summary.ToString());
             Debug.Log($"[CommsPreview] 呪いの動き 4 段 → {motionDir}\n{summary}");

@@ -230,7 +230,7 @@ namespace FixedCamVr.Diagnostics.Tests
                 {
                     // ⚠ すっと浮かぶ連絡（③a）は 1 字も打たないので、速さの物差しを当てる相手ではない
                     //    （`canon/LEDGER.md` 0168）。
-                    if (CommsCueLogic.DeliveryOf(notice) != CommsDelivery.Typed) continue;
+                    if (CommsCueLogic.DeliveryOf(notice, 0f) != CommsDelivery.Typed) continue;
                     // ⚠ 速さは言語で違う（日本語 12 / Latin 18・0149）。**その言語で測る**。
                     ShowLanguage.Select(lang);
                     var logic = new CommsPanelLogic();

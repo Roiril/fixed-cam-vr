@@ -53,6 +53,12 @@ namespace FixedCamVr.Diagnostics
     /// <see cref="CommsCurseLogic"/>）1 つで、顔（<c>CommsAvatar.shader</c>）・地と走り書き
     /// （<c>CommsPanelPlate.shader</c>）・文字の切断（地が書くステンシルを TMP の材質が読む）が共有する。
     /// 面が開くたびに斑は 0 から目標へ 1 秒で立ち上がる（<see cref="CommsPanelLogic.SetCurseTarget"/>）。
+    ///
+    /// <b>憑依の出し方</b>（<c>canon/LEDGER.md</c> 0230・2026-09-18）: 侵食度 0.75 以降の連絡は
+    /// <b>全文が一気に出て（打鍵なし）→ 読ませて → 上から前線が降りて呪われた双子に塗り替わる</b>
+    /// （時計は <see cref="CommsPossessionLogic"/>・前線は帯ごと <see cref="CommsCurseLogic.IsSwept"/>・乱れは <see cref="CommsCurseLogic.ComputeTear"/>）。
+    /// 塗り替わりの頭で乱れの音が 1 発（<see cref="CurseSweepAudioCue"/>）。嘘の一文（3 周目 A）も同じ形で、
+    /// 旧「印字へ侵食が追いつく」の弧は捨てた（初見の人には装置の不調にしか見えない、がユーザーの判定の芯）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class CommsPanel : MonoBehaviour
@@ -77,6 +83,9 @@ namespace FixedCamVr.Diagnostics
 
         [Tooltip("打鍵音。null なら同 GameObject から取得（無ければ足す）。")]
         [SerializeField] private TypeAudioCue? typeSfx;
+
+        [Tooltip("塗り替わりの頭の乱れの音（0230）。null なら同 GameObject から取得（無ければ足す）。")]
+        [SerializeField] private CurseSweepAudioCue? sweepSfx;
 
         // ---- 置き場所。**const**（SerializeField にすると既存シーンの YAML で 0 に読まれる）----
         /// <summary>頭からの距離 (m)。本編のスクリーンは 2.0m なので<b>0.5m 手前</b>。</summary>
@@ -481,8 +490,6 @@ namespace FixedCamVr.Diagnostics
         private MeshRenderer? _stencilRenderer;
         private Material? _stencilMat;
         private const int AvatarQueue = 4985;
-        private const float TakeoverStretchM = 0.04f;
-        private const float TakeoverThinK = 0.22f;
 
         // AI の侵食。映像劣化とは分離し、2-C の人形視点と 3-A の人形表示で段階的に進む。
         private float _glitchLevel;
@@ -517,11 +524,17 @@ namespace FixedCamVr.Diagnostics
         private static readonly int RadiusId = Shader.PropertyToID("_Radius");
         private static readonly int StrokeId = Shader.PropertyToID("_Stroke");
         private static readonly int FaceOnId = Shader.PropertyToID("_FaceOn");
-        private static readonly int SeizureId = Shader.PropertyToID("_Seizure");
-        private static readonly int PanelXId = Shader.PropertyToID("_PanelX");
         // 呪いの斑（`CommsCurse.hlsl`）。顔と地が同じ名前で受ける。
         private static readonly int OriginId = Shader.PropertyToID("_Origin");
         private static readonly int SizeId = Shader.PropertyToID("_Size");
+        // 上から降りる前線（0230）。顔・地・文字のステンシルが同じ名前・同じ値で受ける。
+        private static readonly int SweepId = Shader.PropertyToID("_Sweep");
+        // 乱れ（0231）。帯ごとの値は C# が作って 3 つの材質へ同じものを配る。
+        private static readonly int TearId = Shader.PropertyToID("_Tear");
+        private static readonly int TearShiftAId = Shader.PropertyToID("_TearShiftA");
+        private static readonly int TearShiftBId = Shader.PropertyToID("_TearShiftB");
+        private static readonly int TearDropAId = Shader.PropertyToID("_TearDropA");
+        private static readonly int TearDropBId = Shader.PropertyToID("_TearDropB");
         // 地の双子（`CommsPanelPlate.shader`）。
         private static readonly int RectHalfId = Shader.PropertyToID("_RectHalf");
         private static readonly int CurseId = Shader.PropertyToID("_Curse");
@@ -573,9 +586,16 @@ namespace FixedCamVr.Diagnostics
         private bool _silent;
         // その字が絵を持つか（改行だけ false）。⚠ **全文が出ている一瞬にしか測れない** → SetNotice。
         private bool[]? _charVisible;
-        private bool _takeoverActive;
-        private bool _takeoverModifiedThisRun;
-        private bool _takeoverSoundCut;
+        // 嘘の一文（3 周目 A）が出ている最中（面が畳まれるまで）。再報告で頭へ戻さないために CueLogic へ渡す。
+        private bool _lieActive;
+        // 憑依の出し方（0230）の縁: この連絡で乱れの音を鳴らしたか／塗り替わり切ったか。Deliver で落とす。
+        private bool _sweepSfxFired, _sweepDone;
+        // 前線が降りる矩形の上端と下端（面のローカル m）。Apply が毎フレーム更新し、字の切断の判定が読む。
+        private float _sweepTop, _sweepBottom;
+        // 乱れ（0231）の帯ごとの値。`CommsCurseLogic.ComputeTear` が毎フレーム作り、地・顔・ステンシルと本文の頂点が読む。
+        private readonly float[] _tearShift = new float[CommsCurseLogic.TearMaxBands];
+        private readonly float[] _tearDrop = new float[CommsCurseLogic.TearMaxBands];
+        private float _tearFlicker = 1f;
 
         /// <summary>実体を組めたか。<b>false なら一生出ない</b>（テレメトリが読む）。</summary>
         public bool IsBuilt => _text != null;
@@ -700,18 +720,38 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public int PulseCount { get; private set; }
 
-        public CommsTakeoverPhase TakeoverPhase { get; private set; }
-        public float AppliedTakeoverErase { get; private set; }
-        public float AppliedTakeoverReveal { get; private set; }
-        public float AppliedTakeoverStrain { get; private set; }
-        public float AppliedTakeoverCollapse { get; private set; }
-        public bool TakeoverResistance { get; private set; }
-        public int TakeoverDeformedChars { get; private set; }
+        /// <summary>憑依の出し方（0230）の段（テレメトリ用）。他の出方では Off。</summary>
+        public CommsPossessionPhase PossessionPhase { get; private set; }
+
+        /// <summary>直近に書いた前線の進み（0 = まだ通常 / 1 = 全面が呪われた双子）。「画に出た」側の観測。</summary>
+        public float AppliedSweep { get; private set; }
+
+        /// <summary>直近に書いた乱れの強さ（0231）。塗り替わりのあいだ 0.6 で、読ませる段は 0。</summary>
+        public float AppliedTear { get; private set; }
+
+        /// <summary>直近のフレームで飛んでいる帯の数（乱れが画へ出た側の観測）。</summary>
+        public int TornBands { get; private set; }
+
+        /// <summary>直近に書いた地の不透明度（「画に出た」側の観測）。</summary>
         public float AppliedPanelAlpha { get; private set; }
-        public int TakeoverCutCount { get; private set; }
-        public int TakeoverStartedCount { get; private set; }
-        public int TakeoverCompletedCount { get; private set; }
-        public int TakeoverTintedChars { get; private set; }
+
+        /// <summary>憑依の出し方で出した連絡の数（ラン内・侵食度 0.75 以降の返事と嘘の一文）。</summary>
+        public int PossessedCount { get; private set; }
+
+        /// <summary>塗り替わり切った回数。<see cref="PossessedCount"/> と対で出す（出したのに塗り替わらない、を見る）。</summary>
+        public int SweepCount { get; private set; }
+
+        /// <summary>嘘の一文（<see cref="CommsNotice.Takeover"/>）を出した回数。ラン 1 回に 1 度のはず。</summary>
+        public int LieCount { get; private set; }
+
+        /// <summary>塗り替わりの頭で鳴らした乱れの音の累計。</summary>
+        public int SweepSfxCount => sweepSfx != null ? sweepSfx.PlayedCount : 0;
+
+        /// <summary>乱れの音源を掴めているか。<b>false なら塗り替わりは無音。</b></summary>
+        public bool SweepSfxBuilt => sweepSfx != null && sweepSfx.HasClips;
+
+        /// <summary>いま実際に赤く描いている字の数（嘘の「異常なし」）。前線に切られた字は数えない。</summary>
+        public int RedChars { get; private set; }
 
         /// <summary>いま下段に出している文字（テスト・診断用）。</summary>
         public string HintBody => _hintBody;
@@ -766,12 +806,12 @@ namespace FixedCamVr.Diagnostics
             _cue.ResetRun();
             _invasion.Reset();
             _glitchLevel = 0f;
-            _takeoverModifiedThisRun = false;
             _onboardingActive = false;
             _onboardingNotice = CommsNotice.None;
-            ResetTakeoverVisual();
+            ResetPossessionVisual();
             Apply(CommsWeights.Hidden);
             typeSfx?.StopAll();
+            sweepSfx?.StopAll();
         }
 
         private void OnDestroy()
@@ -795,6 +835,9 @@ namespace FixedCamVr.Diagnostics
             //    1 秒に 12 回・字の刻みちょうどには鳴らせない）。切替音と同じ構え。
             if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
             if (typeSfx == null) typeSfx = gameObject.AddComponent<TypeAudioCue>();
+            // 塗り替わりの頭の乱れの音（0230）。打鍵と同じ構え（縁を取る場所が鳴らす）。
+            if (sweepSfx == null) sweepSfx = GetComponent<CurseSweepAudioCue>();
+            if (sweepSfx == null) sweepSfx = gameObject.AddComponent<CurseSweepAudioCue>();
             if (head == null)
             {
                 var anchor = GameObject.Find("CenterEyeAnchor");
@@ -825,12 +868,11 @@ namespace FixedCamVr.Diagnostics
             _glitchLevel = 0f;
             _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
             _logic.Disable();
-            _silent = false;
-            ResetTakeoverVisual();
-            _takeoverModifiedThisRun = false;
+            ResetPossessionVisual();
             Apply(CommsWeights.Hidden);
             // 前の体験者の打鍵を次のランへ持ち越さない（`ShowSoundDirector.ResetRun` と同じ流儀）。
             typeSfx?.StopAll();
+            sweepSfx?.StopAll();
         }
 
         /// <summary>連絡を 1 通出す。<b>すでに出ていれば頭から出し直す</b>（重ねない）。</summary>
@@ -866,11 +908,7 @@ namespace FixedCamVr.Diagnostics
             // ⚠ 誘導そのものを出すか（幾何が解けたか・被っているか）は向こうが決める。
             //    ここは「説明を始めた」という事実だけを渡す。
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
-            ResetTakeoverVisual();
-            if (notice == CommsNotice.MarkLogged) _takeoverModifiedThisRun = false;
-            // 「止まってください！」は、侵食した否定文を最後まで見せた後の次の発話。
-            // ここから先へ崩壊中の頂点変形を持ち越さない。
-            if (notice == CommsNotice.Halt) _takeoverModifiedThisRun = false;
+            ResetPossessionVisual();
             SetNotice(notice);
             LastNotice = notice;
             // 文面が決まった所で斑の目標を押し込む（「止まってください！」以降は 0）。
@@ -881,17 +919,15 @@ namespace FixedCamVr.Diagnostics
             //    打鍵は 1 発も鳴らないので、**鳴るはずの数（`NoticeChars`）も 0 にする** —
             //    ここを字数のままにすると、解析器が「打鍵が字数の半分以下」と言い出す
             //    （`analyze-xp-log.py` は `ev=comms` の `chars` の合計と `typeN` を突き合わせる）。
-            CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice);
-            _silent = delivery == CommsDelivery.Fade;
+            // ⚠⚠ **侵食度 0.75 以降は憑依の出し方**（0230）。全文が一気に出るので、これも打鍵 0。
+            CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
+            _silent = delivery != CommsDelivery.Typed;
             if (_silent) NoticeChars = 0;
-            if (delivery == CommsDelivery.Takeover)
+            if (delivery == CommsDelivery.Possessed) PossessedCount++;
+            if (notice == CommsNotice.Takeover)
             {
-                _takeoverActive = true;
-                // 打鍵の期待数も、完成できない原文のうち生成できる部分だけにする。
-                NoticeChars = 0;
-                for (int i = 0; i < CommsTakeoverLogic.MaxGeneratedChars(_charCount); i++)
-                    if (IsVisibleChar(i)) NoticeChars++;
-                TakeoverStartedCount++;
+                _lieActive = true;
+                LieCount++;
             }
             _logic.Begin(_charCount, delivery, persistent);
             LastNotice = notice;
@@ -899,8 +935,10 @@ namespace FixedCamVr.Diagnostics
             if (!persistent) _cue.NotifyDelivered(notice);
             Debug.Log($"[Comms] AIエージェントからの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
                     + $"（{_charCount} 文字 / "
-                    + (_silent ? $"すっと浮かぶ {_logic.TypeSec:0.00}s・打鍵なし"
-                               : $"打つ {_logic.TypeSec:0.00}s") + "）");
+                    + (delivery == CommsDelivery.Possessed
+                        ? $"一気に出る → 読ませる → 上から塗り替わる {_logic.TypeSec:0.00}s・打鍵なし"
+                        : _silent ? $"すっと浮かぶ {_logic.TypeSec:0.00}s・打鍵なし"
+                                  : $"打つ {_logic.TypeSec:0.00}s") + "）");
         }
 
         private void Update()
@@ -931,13 +969,12 @@ namespace FixedCamVr.Diagnostics
             //   （開始待ち）のあいだだけで、タイトルが画面を持っているうちは 1 文字も出さない。
             bool inIntroPhase = runDirector != null && runDirector.Phase == ShowPhase.Intro;
             bool inRun = runDirector != null && runDirector.Phase == ShowPhase.Run;
-            if (!inRun && (_takeoverActive || _takeoverModifiedThisRun))
+            if (!inRun && _lieActive)
             {
-                ResetTakeoverVisual();
-                _takeoverModifiedThisRun = false;
+                // 本編を出たら嘘の一文は畳む（終幕・中止に持ち越さない）。
+                ResetPossessionVisual();
                 _logic.Disable();
             }
-            if (!inRun) _takeoverModifiedThisRun = false;
             ObserveInvasion();
             bool introWaiting = inIntroPhase && intro != null && intro.Stage == IntroStage.Black;
             CommsNotice next = _cue.Tick(new CommsCueInput
@@ -952,8 +989,7 @@ namespace FixedCamVr.Diagnostics
                 markPressed = markPressed,
                 markDetected = markPressed && showControl != null && showControl.LastMarkDetected,
                 invasionProgress = InvasionProgress,
-                takeoverPlaying = _takeoverActive,
-                takeoverModified = _takeoverModifiedThisRun,
+                takeoverPlaying = _lieActive,
                 takeoverAllowed = inRun,
                 dt = Time.unscaledDeltaTime,
             });
@@ -1244,7 +1280,6 @@ namespace FixedCamVr.Diagnostics
             mat.SetFloat(RadiusId, CommsFaceLayout.RadiusK);
             mat.SetFloat(StrokeId, stroke);
             mat.SetFloat(FaceOnId, art != null ? 1f : 0f);
-            mat.SetFloat(PanelXId, CommsFaceLayout.CellCenterX(PanelW));
             r.sharedMaterial = mat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = false;
@@ -1426,9 +1461,11 @@ namespace FixedCamVr.Diagnostics
         /// 千切れる）、<b>字の中心と両端が斑の中にある字は CPU でも alpha 0</b>（ステンシルの無い深度形式で
         /// 黙って切れなくなっても、斑の中の字は消える）。数えるのは中心が斑の中にある字
         /// （<see cref="CorruptedChars"/>）。
+        /// 上から降りる前線（0230）も同じ 2 段構えで、前線の上側の字が切れる（<see cref="CommsCurseLogic.IsSwept"/>）。
+        /// 嘘の一文の「異常なし」は赤いまま出て、塗り替わった後は字ごと切れる。
         /// </summary>
         private int ApplyGlyphMesh(TMP_Text text, Vector3[][]? baseVertices, Color32[][]? baseColors,
-                                   float reveal, float globalAlpha, bool textCut)
+                                   float reveal, float globalAlpha)
         {
             if (baseVertices == null || baseColors == null) return 0;
             TMP_TextInfo info = text.textInfo;
@@ -1441,13 +1478,26 @@ namespace FixedCamVr.Diagnostics
             }
 
             int changedVisible = 0;
-            int tintedVisible = 0;
-            bool taking = _takeoverActive || _takeoverModifiedThisRun;
+            int redVisible = 0;
             float exact = Mathf.Clamp01(reveal) * _charCount;
             float charSec = _charCount > 0 ? _logic.TypeSec / _charCount : 0f;
-            float curse = textCut ? AppliedCurse : 0f;
+            float curse = AppliedCurse;
+            float sweep = AppliedSweep;
+            float top = _sweepTop, bottom = _sweepBottom;
+            // 乱れ（0231）: 字の飛びと脱落は**その字の行の中心**の帯で引く（地・顔と同じ帯・同じ値）。
+            // ⚠ 頂点ごとに帯を引くと、帯の境目が行を横切った字は上と下が別の量だけ動いて**斜体**になる
+            //   （本編の乱れは画素の帯を切って飛ばすので傾かない）。行ごとなら行がまるごと横へ切れて飛ぶ。
+            //   切断（前線・斑）は従来どおり字の中心と両端で読む — 帯の境目の上側はステンシルが画素で切る。
+            bool tearing = AppliedTear > 0.001f;
+            float flicker = _tearFlicker;
+            bool lie = LastNotice == CommsNotice.Takeover;
+            int redLen = lie ? TakeoverDenialPrefixLength(ShowLanguage.Current) : 0;
             Vector3 textPos = text.transform.localPosition;
             float scale = TextScale;
+            // その点が斑の中か、前線の上側か（どちらもステンシルが立つ側）。
+            bool Cut(float x, float y)
+                => (curse > 0f && CommsCurseLogic.IsCut(x, y, curse))
+                   || (sweep > 0f && CommsCurseLogic.IsSwept(x, y, sweep, top, bottom));
             for (int i = 0; i < info.characterCount; i++)
             {
                 TMP_CharacterInfo character = info.characterInfo[i];
@@ -1456,63 +1506,63 @@ namespace FixedCamVr.Diagnostics
                 float ageSec = Mathf.Max(0f, exact - i) * charSec;
                 float fade = _silent ? 1f : GlyphFadeAlpha(ageSec);
                 bool appeared = exact > i;
-                bool tintDenial = taking && LastNotice == CommsNotice.Takeover
-                    && i < TakeoverDenialPrefixLength(ShowLanguage.Current);
+                bool red = lie && i < redLen;
                 float alpha = appeared ? fade * globalAlpha : 0f;
                 float centerX = (character.bottomLeft.x + character.topRight.x) * 0.5f;
                 float centerY = (character.bottomLeft.y + character.topRight.y) * 0.5f;
-                float glyphH = Mathf.Max(0.0001f, character.topRight.y - character.bottomLeft.y);
-                // 斑の場を字の中心と両端（面のローカル m）で読む。
+                // 斑の場と前線を字の中心と両端（面のローカル m）で読む。
                 bool cutCenter = false, cutWhole = false;
-                if (curse > 0f)
+                if (curse > 0f || sweep > 0f)
                 {
                     float px = textPos.x + centerX * scale;
                     float py = textPos.y + centerY * scale;
                     float halfW = (character.topRight.x - character.bottomLeft.x) * 0.35f * scale;
-                    cutCenter = CommsCurseLogic.IsCut(px, py, curse);
-                    cutWhole = cutCenter && CommsCurseLogic.IsCut(px - halfW, py, curse)
-                               && CommsCurseLogic.IsCut(px + halfW, py, curse);
+                    cutCenter = Cut(px, py);
+                    cutWhole = cutCenter && Cut(px - halfW, py) && Cut(px + halfW, py);
                 }
-                // 画面の横位置ではなく原文の字順で追う。複数行でも後の行を先に消さない。
-                float takeoverDeform = taking && appeared
-                    ? Smooth01(AppliedTakeoverErase * _charCount - i) : 0f;
                 if (cutCenter && appeared && alpha > 0.004f) changedVisible++;
-                else if (takeoverDeform > 0.001f && alpha > 0.004f) changedVisible++;
                 if (cutWhole) alpha = 0f;
 
                 int material = character.materialReferenceIndex;
                 int vertex = character.vertexIndex;
-                Vector3[] vertices = info.meshInfo[material].vertices;
                 Color32[] colors = info.meshInfo[material].colors32;
-                byte a = (byte)Mathf.RoundToInt(Mathf.Clamp01(alpha) * 255f);
+                Vector3[] vertices = info.meshInfo[material].vertices;
+                float shiftLocal = 0f, keep = 1f;
+                if (tearing)
+                {
+                    TMP_LineInfo lineInfo = info.lineInfo[character.lineNumber];
+                    float lineCenterY = (lineInfo.ascender + lineInfo.descender) * 0.5f;
+                    int band = CommsCurseLogic.SweepBandOf(textPos.y + lineCenterY * scale, top);
+                    if (band < CommsCurseLogic.TearMaxBands)
+                    {
+                        shiftLocal = _tearShift[band] / scale;
+                        keep = 1f - _tearDrop[band];
+                    }
+                    keep *= flicker;
+                }
                 for (int k = 0; k < 4; k++)
                 {
-                    if (takeoverDeform > 0f)
+                    float vertexAlpha = alpha;
+                    if (tearing)
                     {
-                        float bottomK = Mathf.Clamp01((character.topRight.y - vertices[vertex + k].y)
-                                                       / glyphH);
-                        float narrow = Mathf.Lerp(1f, TakeoverThinK,
-                            takeoverDeform * bottomK);
-                        vertices[vertex + k].x = centerX
-                            + (vertices[vertex + k].x - centerX) * narrow;
-                        vertices[vertex + k].y -= TakeoverStretchM / TextScale
-                            * AppliedTakeoverStrain * takeoverDeform * bottomK;
+                        vertices[vertex + k].x += shiftLocal;
+                        vertexAlpha *= keep;
                     }
                     Color32 c = colors[vertex + k];
-                    if (tintDenial)
+                    if (red)
                     {
                         c.r = (byte)Mathf.RoundToInt(DenialRed.r * 255f);
                         c.g = (byte)Mathf.RoundToInt(DenialRed.g * 255f);
                         c.b = (byte)Mathf.RoundToInt(DenialRed.b * 255f);
                     }
-                    c.a = (byte)(c.a * a / 255);
+                    c.a = (byte)(c.a * (byte)Mathf.RoundToInt(Mathf.Clamp01(vertexAlpha) * 255f) / 255);
                     colors[vertex + k] = c;
                 }
-                if (tintDenial && appeared && alpha > 0.004f) tintedVisible++;
+                if (red && appeared && alpha > 0.004f && !cutCenter) redVisible++;
             }
 
             text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
-            TakeoverTintedChars = tintedVisible;
+            RedChars = redVisible;
             return changedVisible;
         }
 
@@ -1622,48 +1672,60 @@ namespace FixedCamVr.Diagnostics
 
         private void Apply(in CommsWeights w)
         {
-            bool taking = _takeoverActive || _takeoverModifiedThisRun;
-            CommsTakeoverSample takeover = taking && _logic.Active
-                && _logic.Delivery == CommsDelivery.Takeover
-                ? _logic.TakeoverSample : new CommsTakeoverSample
-                { phase = CommsTakeoverPhase.Off, erase = taking ? 1f : 0f,
-                  strain = taking ? 1f : 0f, collapse = taking ? 1f : 0f,
-                  soundCut = taking };
-            TakeoverPhase = takeover.phase;
-            AppliedTakeoverErase = Mathf.Clamp01(takeover.erase);
-            AppliedTakeoverReveal = Mathf.Clamp01(takeover.reveal);
-            AppliedTakeoverStrain = Mathf.Clamp01(takeover.strain);
-            AppliedTakeoverCollapse = Mathf.Clamp01(takeover.collapse);
-            TakeoverResistance = takeover.resistance;
-            if (_takeoverActive && takeover.soundCut && !_takeoverSoundCut)
+            // 憑依の出し方（0230）の段。他の出方では Off のまま。
+            CommsPossessionSample poss = _logic.PossessionSample;
+            PossessionPhase = poss.phase;
+            AppliedSweep = Mathf.Clamp01(w.sweep);
+            if (_lieActive && !_logic.Active) _lieActive = false;
+            if (poss.phase == CommsPossessionPhase.Sweep && !_sweepSfxFired)
             {
-                // 予約済みの最後の打鍵も同じ時刻で切る。止めた音を後の段へ持ち越さない。
-                typeSfx?.StopAll();
-                _takeoverSoundCut = true;
-                _takeoverModifiedThisRun = true;
-                TakeoverCutCount++;
+                // 塗り替わりの頭で乱れの音を 1 発。前線が降り始めたのと同じフレーム（絵と音を同じ縁から出す）。
+                _sweepSfxFired = true;
+                if (_root != null) sweepSfx?.Play(_root.position);
             }
-            if (_takeoverActive && takeover.phase == CommsTakeoverPhase.Complete)
+            if (poss.phase == CommsPossessionPhase.Cursed && !_sweepDone)
             {
-                _takeoverActive = false;
-                _takeoverModifiedThisRun = true;
-                TakeoverCompletedCount++;
+                _sweepDone = true;
+                SweepCount++;
             }
 
-            float takeoverInk = taking
-                ? 1f - Smooth01((AppliedTakeoverCollapse - 0.35f) / 0.65f)
-                : 1f;
-            if (taking && takeover.soundCut) takeoverInk = 0f;
-            AppliedGlyph = Mathf.Clamp01(w.glyph) * takeoverInk;
+            AppliedGlyph = Mathf.Clamp01(w.glyph);
             AppliedOpen = Mathf.Clamp01(w.open);
             // 斑の量は `CommsPanelLogic` が面の開いた縁から 1 秒で立ち上げる（0229）。
+            // 憑依の出し方では塗り替わる前 0・塗り替わった後 1（前線の進みは `AppliedSweep`）。
             AppliedCurse = Mathf.Clamp01(w.curse);
-            // 乗っ取りの一文は文字を斑で切らない（既存の引き延ばし → 抵抗 → 崩壊の弧を保つ）。
-            // 走り書きも描かない。地のふちと顔だけが 1 秒で重なる。
-            bool textCut = !taking;
-            float reveal = taking ? Mathf.Min(w.reveal,
-                Mathf.Max(0f, CommsTakeoverLogic.MaxGeneratedChars(_charCount) - 0.001f)
-                / Mathf.Max(1, _charCount)) : w.reveal;
+            float reveal = w.reveal;
+            ApplyHint(Mathf.Clamp01(w.hint));
+            float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
+            AppliedPanelAlpha = PanelAlpha * pa;
+            AppliedBody = Mathf.Clamp01(w.body);
+
+            // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
+            //    下段から指示を剥がしたので、**押していないときは下段に 1 文字も無い**。
+            //    それまでの「下端を固定して丈だけ伸びる」ままだと、①の連絡が
+            //    **下半分が空の大きな箱**として出る（プレビューの絵で見つけた）。
+            //    ⚠ 下段の有無は不透明度だけでは決まらない — 文字が空でも hint は 1 になる。
+            float hintK = Mathf.Clamp01(w.hint) * (_hintBody.Length > 0 ? 1f : 0f);
+            // 上段の帯 = [0, _bodyBandH]（**文面の実寸**）/ 下段の帯 = [-HintBandH, 0]。
+            float top = HintBandTopY + _bodyBandH * AppliedBody;
+            float bottom = HintBandTopY - HintBandH * hintK;
+            float cy = (top + bottom) * 0.5f;
+            float h = Mathf.Max(0f, top - bottom);
+            if (h > 0.0005f) h = Mathf.Max(h, CommsFaceLayout.MinBoxH);
+            bool lit = pa > 0.002f && h > 0.0005f;
+            // 前線（0230）は矩形の実寸（丈の下限を含む）を上端から帯ごとに降りる。顔・地・文字が同じ値を読む。
+            _sweepTop = cy + h * 0.5f;
+            _sweepBottom = cy - h * 0.5f;
+            var sweep = new Vector4(AppliedSweep, _sweepTop, _sweepBottom, CommsCurseLogic.TearBandM);
+            // 乱れ（0231）。帯ごとの飛びと脱落を 1 か所で作り、地・顔・ステンシルと本文の頂点へ同じ値を配る。
+            AppliedTear = Mathf.Clamp01(w.tear);
+            CommsCurseLogic.ComputeTear(AppliedTear, w.tearSeed,
+                                        CommsCurseLogic.SweepBandCount(_sweepTop, _sweepBottom),
+                                        _tearShift, _tearDrop, out _tearFlicker);
+            int torn = 0;
+            for (int i = 0; i < _tearShift.Length; i++) if (Mathf.Abs(_tearShift[i]) > 0.0001f) torn++;
+            TornBands = torn;
+
             if (_text != null)
             {
                 // 出現時刻は従来どおり。見え始めた後の 40ms だけ頂点 alpha を滑らかに立てる。
@@ -1671,7 +1733,7 @@ namespace FixedCamVr.Diagnostics
                           : Mathf.Clamp(Mathf.CeilToInt(Mathf.Clamp01(reveal) * _charCount), 0, _charCount);
                 bool on = AppliedGlyph > 0.002f && shown > 0;
                 if (_textRenderer != null) _textRenderer.enabled = on;
-                if (shown > _lastShown && _root != null && !_silent && !takeover.soundCut)
+                if (shown > _lastShown && _root != null && !_silent)
                 {
                     // 低い描画頻度でも、同じコマに増えた字を間引かない。絵を持つ1字につき1打。
                     for (int i = _lastShown; i < shown; i++)
@@ -1681,29 +1743,8 @@ namespace FixedCamVr.Diagnostics
                 VisibleChars = shown;
 
                 CorruptedChars = ApplyGlyphMesh(_text, _textBaseVertices, _textBaseColors,
-                                                 reveal, AppliedGlyph, textCut);
-                TakeoverDeformedChars = taking ? CorruptedChars : 0;
+                                                 reveal, AppliedGlyph);
             }
-            ApplyHint(taking ? 0f : Mathf.Clamp01(w.hint));
-            float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
-            float panelPa = pa * (taking ? 1f - AppliedTakeoverCollapse : 1f);
-            float contentPa = pa * takeoverInk;
-            AppliedPanelAlpha = PanelAlpha * panelPa;
-            AppliedBody = Mathf.Clamp01(w.body);
-
-            // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
-            //    下段から指示を剥がしたので、**押していないときは下段に 1 文字も無い**。
-            //    それまでの「下端を固定して丈だけ伸びる」ままだと、①の連絡が
-            //    **下半分が空の大きな箱**として出る（プレビューの絵で見つけた）。
-            //    ⚠ 下段の有無は不透明度だけでは決まらない — 文字が空でも hint は 1 になる。
-            float hintK = taking ? 0f : Mathf.Clamp01(w.hint) * (_hintBody.Length > 0 ? 1f : 0f);
-            // 上段の帯 = [0, _bodyBandH]（**文面の実寸**）/ 下段の帯 = [-HintBandH, 0]。
-            float top = HintBandTopY + _bodyBandH * AppliedBody;
-            float bottom = HintBandTopY - HintBandH * hintK;
-            float cy = (top + bottom) * 0.5f;
-            float h = Mathf.Max(0f, top - bottom);
-            if (h > 0.0005f) h = Mathf.Max(h, CommsFaceLayout.MinBoxH);
-            bool lit = pa > 0.002f && h > 0.0005f;
 
             if (_panelRenderer != null && _panelMat != null)
             {
@@ -1712,50 +1753,46 @@ namespace FixedCamVr.Diagnostics
                 _panelRenderer.enabled = lit;
                 if (_panelMat.HasProperty(CurseId))
                     SetPlate(_panelRenderer.transform, _panelMat, _panelLeftX, _panelW, cy, h,
-                             textCut, contentPa, reveal);
+                             pa, reveal, sweep);
                 else
                     SetFixedPanel(_panelRenderer.transform, _panelLeftX, _panelW, cy, h);
             }
             if (_stencilRenderer != null && _stencilMat != null)
             {
-                _stencilRenderer.enabled = lit && textCut && AppliedCurse > 0.001f;
-                SetStencilQuad(_stencilRenderer.transform, _stencilMat, _panelLeftX, _panelW, cy, h, textCut);
+                _stencilRenderer.enabled = lit && (AppliedCurse > 0.001f || AppliedSweep > 0.001f);
+                SetStencilQuad(_stencilRenderer.transform, _stencilMat, _panelLeftX, _panelW, cy, h, sweep);
             }
             if (_dividerRenderer != null && _dividerMat != null)
             {
-                SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b,
-                    0.68f * contentPa));
+                SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b, 0.68f * pa));
                 _dividerRenderer.enabled = lit;
                 float dividerH = CommsFaceLayout.DividerH * Smooth01(AppliedOpen);
-                float dividerStretch = TakeoverStretchM * AppliedTakeoverStrain;
                 _dividerRenderer.transform.localPosition = new Vector3(
-                    CommsFaceLayout.DividerCenterX(PanelW), cy - dividerStretch * 0.5f, 0.006f);
-                _dividerRenderer.transform.localScale = new Vector3(
-                    CommsFaceLayout.DividerW
-                    * Mathf.Lerp(1f, TakeoverThinK, AppliedTakeoverStrain),
-                    dividerH + dividerStretch, 1f);
+                    CommsFaceLayout.DividerCenterX(PanelW), cy, 0.006f);
+                _dividerRenderer.transform.localScale = new Vector3(CommsFaceLayout.DividerW, dividerH, 1f);
             }
-            ApplyAvatar(contentPa, cy, lit);
-
+            ApplyAvatar(pa, cy, lit, sweep);
         }
 
-        private void ResetTakeoverVisual()
+        /// <summary>憑依の出し方の縁と嘘の一文の状態を落とす（連絡が届いた縁・畳む縁・ラン開始）。</summary>
+        private void ResetPossessionVisual()
         {
-            _takeoverActive = false;
-            _takeoverSoundCut = false;
-            TakeoverPhase = CommsTakeoverPhase.Off;
-            AppliedTakeoverErase = 0f;
-            AppliedTakeoverReveal = 0f;
-            AppliedTakeoverStrain = 0f;
-            AppliedTakeoverCollapse = 0f;
-            TakeoverResistance = false;
-            TakeoverDeformedChars = 0;
-            TakeoverTintedChars = 0;
+            _lieActive = false;
+            _sweepSfxFired = false;
+            _sweepDone = false;
+            PossessionPhase = CommsPossessionPhase.Off;
+            AppliedSweep = 0f;
+            AppliedTear = 0f;
+            TornBands = 0;
+            _tearFlicker = 1f;
+            System.Array.Clear(_tearShift, 0, _tearShift.Length);
+            System.Array.Clear(_tearDrop, 0, _tearDrop.Length);
+            RedChars = 0;
             AppliedPanelAlpha = 0f;
             _silent = false;
         }
 
-        private void ApplyAvatar(float alpha, float centerY, bool lit)
+        private void ApplyAvatar(float alpha, float centerY, bool lit, Vector4 sweep)
         {
             if (_avatarRenderer == null || _avatarMat == null) return;
             AppliedFace = lit
@@ -1764,7 +1801,7 @@ namespace FixedCamVr.Diagnostics
             bool on = AppliedFace > 0.004f;
 
             // 顔と地と文字は同じ斑の場と同じ量を読む（0229）。別の曲線にすると、
-            // 文字と顔が別々の速さで壊れて見える。
+            // 文字と顔が別々の速さで壊れて見える。前線（0230）も同じ値を渡す。
             AppliedFaceMix = AppliedCurse;
 
             float x = CommsFaceLayout.CellCenterX(PanelW);
@@ -1772,7 +1809,8 @@ namespace FixedCamVr.Diagnostics
             _avatarMat.SetFloat(FaceMixId, AppliedFaceMix);
             _avatarMat.SetVector(OriginId, new Vector4(x, centerY, 0f, 0f));
             _avatarMat.SetVector(SizeId, new Vector4(CommsFaceLayout.CellM, CommsFaceLayout.CellM, 0f, 0f));
-            _avatarMat.SetFloat(SeizureId, AppliedTakeoverStrain);
+            _avatarMat.SetVector(SweepId, sweep);
+            PushTear(_avatarMat);
             _avatarRenderer.enabled = on;
             _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);
             _avatarRenderer.transform.localScale = Vector3.one * CommsFaceLayout.CellM;
@@ -1810,7 +1848,7 @@ namespace FixedCamVr.Diagnostics
         /// quad は毛羽立ちのぶん矩形より <see cref="PlateMarginM"/> ずつ広く、矩形の実寸は uniform で渡す。
         /// </summary>
         private void SetPlate(Transform quad, Material mat, float leftX, float fullW, float centerY,
-                              float height, bool textCut, float contentAlpha, float reveal)
+                              float height, float contentAlpha, float reveal, Vector4 sweep)
         {
             float w = fullW + PlateMarginM * 2f;
             float hh = height + PlateMarginM * 2f;
@@ -1822,7 +1860,9 @@ namespace FixedCamVr.Diagnostics
             mat.SetVector(SizeId, new Vector4(w, hh, 0f, 0f));
             mat.SetVector(RectHalfId, new Vector4(fullW * 0.5f, height * 0.5f, 0f, 0f));
             mat.SetFloat(CurseId, AppliedCurse);
-            mat.SetFloat(ScrawlId, textCut ? 1f : 0f);
+            mat.SetVector(SweepId, sweep);
+            PushTear(mat);
+            mat.SetFloat(ScrawlId, 1f);
             mat.SetColor(InkId, Ivory);
             mat.SetFloat(InkAlphaId, contentAlpha);
             // 走り書きは印字が進んだ範囲まで（人形が「打たれた分」を塗りつぶしている）。
@@ -1838,9 +1878,9 @@ namespace FixedCamVr.Diagnostics
             mat.SetVector(LineRevealId, lineReveal);
         }
 
-        /// <summary>文字を切るステンシルの quad を地と同じ寸法に置き、斑の量を書く。</summary>
+        /// <summary>文字を切るステンシルの quad を地と同じ寸法に置き、斑の量と前線を書く。</summary>
         private void SetStencilQuad(Transform quad, Material mat, float leftX, float fullW, float centerY,
-                                    float height, bool textCut)
+                                    float height, Vector4 sweep)
         {
             float w = fullW + PlateMarginM * 2f;
             float hh = height + PlateMarginM * 2f;
@@ -1850,8 +1890,21 @@ namespace FixedCamVr.Diagnostics
             quad.localPosition = new Vector3(cx, centerY, p.z);
             mat.SetVector(OriginId, new Vector4(cx, centerY, 0f, 0f));
             mat.SetVector(SizeId, new Vector4(w, hh, 0f, 0f));
+            mat.SetVector(RectHalfId, new Vector4(fullW * 0.5f, height * 0.5f, 0f, 0f));
             mat.SetFloat(CurseId, AppliedCurse);
-            mat.SetFloat(TextCutId, textCut ? 1f : 0f);
+            mat.SetVector(SweepId, sweep);
+            PushTear(mat);
+            mat.SetFloat(TextCutId, 1f);
+        }
+
+        /// <summary>乱れ（0231）の帯ごとの値を材質へ書く。地・顔・ステンシルが**同じ値**を読む。</summary>
+        private void PushTear(Material mat)
+        {
+            mat.SetVector(TearId, new Vector4(AppliedTear, _tearFlicker, 0f, 0f));
+            mat.SetVector(TearShiftAId, new Vector4(_tearShift[0], _tearShift[1], _tearShift[2], _tearShift[3]));
+            mat.SetVector(TearShiftBId, new Vector4(_tearShift[4], _tearShift[5], _tearShift[6], _tearShift[7]));
+            mat.SetVector(TearDropAId, new Vector4(_tearDrop[0], _tearDrop[1], _tearDrop[2], _tearDrop[3]));
+            mat.SetVector(TearDropBId, new Vector4(_tearDrop[4], _tearDrop[5], _tearDrop[6], _tearDrop[7]));
         }
 
         /// <summary>

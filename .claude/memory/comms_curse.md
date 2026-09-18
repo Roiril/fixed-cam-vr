@@ -15,6 +15,7 @@
 | 顔の斑（スイ → 市松人形） | `CommsAvatar.shader`（同じ場を `_Origin` / `_Size` で読む） |
 | 斑の面積と閾値 | `CommsCurseLogic.MaskFor`（0.25 → 22% / 0.75 → 55% / 1 → 全面） |
 | 1 秒の立ち上がり | `CommsPanelLogic.SetCurseTarget` / `Weights.curse`（面が開いた縁で 0 から） |
+| **0.75 以降の憑依の出し方**（0230） | `CommsPossessionLogic`（時計）/ `CommsCurseLogic.SweepFrontY`（前線・HLSL と対）/ `CommsPanelLogic.PossessionSample` / `Weights.sweep`。罠は [comms_takeover.md](comms_takeover.md) |
 | 配線 | `CommsPanel.PushCurseTarget` / `SetPlate` / `ApplyTextStencil` |
 | 見る | `.\tools\unity.ps1 menu comms-preview -Set motion=1` → `py -3.11 tools/render-comms-curse-preview.py` |
 | 観測 | `ev=sum` の `commsCurse=<シェーダ>/<斑>/<目標>`・`ev=commsCurse sec=`・`ev=comms curse=` |
@@ -56,11 +57,17 @@ TextMeshPro の面には斑を描けないので、**別の quad**（`CommsCurse
 批評の別案（侵食度が上がった直後の 1 回だけ 0 から・以後は開いた瞬間から目標）は `canon/OPEN.md` に置いた。
 判定は動画で。
 
-## ⚠ 乗っ取りの一文は文字を切らない
+## ⚠⚠ 侵食度 0.75 以降は斑ではなく前線（2026-09-18・0230）
 
-侵食度 1 の報告「異常なしと判定しました」は既存の弧（引き延ばし → 抵抗 → 崩壊・`CommsTakeoverLogic`）を保つ。
-`taking` のあいだ `_TextCut = 0` / `_Scrawl = 0` で、地のふちと顔だけが 1 秒で重なる。
-赤い「異常なし」4 字が実メッシュで残ることは `CommsPanelTakeoverTests` が固定する。
+ここまでの「1 秒で斑が重なる」は **0.25 だけ**になった。0.75 と 1 は憑依の出し方
+（一気に出る → 読ませる → 上から前線が降りて全面が双子）。ユーザーの判定「これだと乗っ取られている感じが、
+一部のユーザにわかりにくい」「初見の人視点で」。
+
+- 斑（`_Curse`）と前線（`_Sweep`）は同じ k に `max` で合流する。顔・地・ステンシルの 3 シェーダが**同じ 2 つの値**を読む
+- 憑依の出し方では `Weights.curse` は塗り替わる前 0・後 1（1 秒の立ち上がりは効かない）。`SetCurseTarget` の目標
+  （`MaskFor(0.75)` = 0.477）は使われない — 塗り替わった後は 0.75 でも全面（0229 の「0.75 → 55%」は打つ出し方の話に縮んだ）
+- `CorruptedChars` は前線の上側の字も数える（`CommsCurseLogic.IsSwept`）。塗り替わった後は全字
+- 嘘の一文も同じ形。旧「文字を切らない・引き延ばし → 抵抗 → 崩壊」は捨てた（[comms_takeover.md](comms_takeover.md)）
 
 ## 走り書きの作り方（シェーダ）
 
@@ -94,5 +101,8 @@ EditMode 1965/1965。実機は未走行（並行セッションが Editor を握
 
 - 画面座標を **畳んだ後の quad** から測って外れた（`GeometryJson` を最後に呼んでいた）。矩形は通常の面の画素
   （地 ≤ 11・象牙の墨）から測る（`render-comms-curse-preview.py` の `measure_geometry`）
+- プレビューの文面ごとの静止画は**侵食度を立てる前に `Deliver` していた**（0230 で気づいた）。出し方は届いた瞬間の
+  侵食度で決まるので、順序が逆だと 0.75 の面が「打つ出し方 ＋ 斑 55%」という本番に無い姿で焼ける。
+  侵食度 → `Deliver` の順にした（`RunFor` / `ShootReviewFrames` / `ShootMotion` の 3 か所）
 - HLSL の予約語 `line` を引数名にして落ちた（`rules/show-design.md` に書いてある罠）。`Shader error` は
   `unity.ps1 test` には出ない — プレビューの後に Editor.log を `grep "Shader error"` する

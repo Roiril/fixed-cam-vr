@@ -18,7 +18,16 @@ Shader "FixedCamVr/CommsCurseStencil"
     {
         _Origin("Quad centre (panel-local m)", Vector) = (0, 0, 0, 0)
         _Size("Quad size (m)", Vector) = (1, 0.3, 0, 0)
+        _RectHalf("Sharp rect half extents (m)", Vector) = (0.45, 0.12, 0, 0)
         _Curse("Curse amount (0..1)", Range(0, 1)) = 0
+        // 塗り替わりの帯（0230 / 0231）: (進み, 矩形の上端 y, 矩形の下端 y, 帯の高さ)。反転した帯も切る。
+        _Sweep("Sweep (progress, top, bottom, band)", Vector) = (0, 0, 0, 0.04)
+        // 乱れ（0231）: 地と同じ値。飛んだ中身と同じ座標で斑を読み、**矩形の外へ飛んだ字は切る**。
+        _Tear("Tear (strength, flicker, 0, 0)", Vector) = (0, 1, 0, 0)
+        _TearShiftA("Tear shift bands 0-3 (m)", Vector) = (0, 0, 0, 0)
+        _TearShiftB("Tear shift bands 4-7 (m)", Vector) = (0, 0, 0, 0)
+        _TearDropA("Tear drop bands 0-3", Vector) = (0, 0, 0, 0)
+        _TearDropB("Tear drop bands 4-7", Vector) = (0, 0, 0, 0)
         _TextCut("Write stencil for text cut (0/1)", Float) = 1
     }
 
@@ -52,7 +61,14 @@ Shader "FixedCamVr/CommsCurseStencil"
             CBUFFER_START(UnityPerMaterial)
                 float4 _Origin;
                 float4 _Size;
+                float4 _RectHalf;
                 float _Curse;
+                float4 _Sweep;
+                float4 _Tear;
+                float4 _TearShiftA;
+                float4 _TearShiftB;
+                float4 _TearDropA;
+                float4 _TearDropB;
                 float _TextCut;
             CBUFFER_END
 
@@ -82,10 +98,17 @@ Shader "FixedCamVr/CommsCurseStencil"
 
             half4 frag(Varyings i) : SV_Target
             {
-                float2 p = _Origin.xy + (i.uv - 0.5) * _Size.xy;
-                float k = CurseK(CurseField(p), _Curse);
+                float2 pRaw = _Origin.xy + (i.uv - 0.5) * _Size.xy;
+                // 中身（斑）は帯ごとに飛んだ座標で読み、帯の反転は生の y で決める（地と同じ）。
+                float2 p = pRaw;
+                p.x -= CommsTearShiftAt(pRaw.y, _Sweep, _TearShiftA, _TearShiftB);
+                float k = max(CurseK(CurseField(p), _Curse), CurseSweepK(pRaw, _Sweep));
+                // 飛んだ字を枠の外へ出さない（0231・設計批評）: 本編は枠外を黒に落とすが、この面の外は
+                // パススルーなので、矩形の外はいつも切る（この quad が有効なあいだ）。
+                float2 q = abs(pRaw - _Origin.xy) - _RectHalf.xy;
+                float outside = step(0.0, max(q.x, q.y));
                 clip(_TextCut - 0.5);
-                clip(k - CURSE_CUT);
+                clip(max(k - CURSE_CUT, outside - 0.5));
                 return half4(0, 0, 0, 0);
             }
             ENDHLSL

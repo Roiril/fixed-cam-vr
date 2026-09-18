@@ -145,7 +145,10 @@ namespace FixedCamVr.Diagnostics
         private int _lastMarkCount;
         private int _lastCommsPulse;
         private int _lastCommsCurseRamp;
-        private string _lastCommsTakeoverPhase = "Off";
+        private string _lastCommsPossessPhase = "Off";
+        // 塗り替わりのあいだに画へ書いた乱れの最大（`canon/LEDGER.md` 0231）。段の縁で出し、読ませる段で 0 へ戻す。
+        private float _commsTearMax;
+        private int _commsTornMax;
         private float _lastCommsInvasion = -1f;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
@@ -833,17 +836,34 @@ namespace FixedCamVr.Diagnostics
                      $"cue={(_timeline != null ? _timeline.ActiveStepCueId : "")} " +
                      $"doll={(_timeline != null && _timeline.DollReplacementShowing ? 1 : 0)}");
             }
-            if (_comms != null && _comms.TakeoverPhase.ToString() != _lastCommsTakeoverPhase)
+            // 憑依の出し方（`canon/LEDGER.md` 0230）の段の縁: Shown（一気に出て読ませている）→ Sweep（上から
+            // 塗り替わっている）→ Cursed（塗り替わり切った）。**画に出た側**（AppliedSweep / cx / red）で出す。
+            // `sfx` は塗り替わりの頭の乱れの音の累計（nc = 音源を掴めていない ＝ 画は変わるのに無音）。
+            if (_comms != null)
             {
-                _lastCommsTakeoverPhase = _comms.TakeoverPhase.ToString();
-                Emit($"ev=commsTakeover phase={_lastCommsTakeoverPhase} " +
-                     $"erase={_comms.AppliedTakeoverErase:F3} reveal={_comms.AppliedTakeoverReveal:F3} " +
-                     $"collapse={_comms.AppliedTakeoverCollapse:F3} cut={_comms.TakeoverCutCount} " +
+                // 乱れ（0231）は前線が降りているあいだだけ立つ。**画へ書いた側**（AppliedTear / 飛んだ帯の数）の最大を持つ。
+                if (_comms.PossessionPhase == FixedCamVr.Streaming.CommsPossessionPhase.Sweep)
+                {
+                    _commsTearMax = Mathf.Max(_commsTearMax, _comms.AppliedTear);
+                    _commsTornMax = Mathf.Max(_commsTornMax, _comms.TornBands);
+                }
+                else if (_comms.PossessionPhase == FixedCamVr.Streaming.CommsPossessionPhase.Shown)
+                {
+                    _commsTearMax = 0f;
+                    _commsTornMax = 0;
+                }
+            }
+            if (_comms != null && _comms.PossessionPhase.ToString() != _lastCommsPossessPhase)
+            {
+                _lastCommsPossessPhase = _comms.PossessionPhase.ToString();
+                Emit($"ev=commsPossess phase={_lastCommsPossessPhase} sweep={_comms.AppliedSweep:F3} " +
+                     $"tearMax={_commsTearMax:F2} tornMax={_commsTornMax} " +
                      $"cx={_comms.CorruptedChars} face={_comms.AppliedFaceMix:F3} " +
-                     $"invasion={_comms.InvasionProgress:F2} red={_comms.TakeoverTintedChars} " +
+                     $"invasion={_comms.InvasionProgress:F2} red={_comms.RedChars} " +
                      $"glyph={_comms.AppliedGlyph:F3} faceInk={_comms.AppliedFace:F3} " +
-                     $"shown={_comms.VisibleChars} started={_comms.TakeoverStartedCount} " +
-                     $"completed={_comms.TakeoverCompletedCount}");
+                     $"shown={_comms.VisibleChars} id={_comms.LastNotice} n={_comms.PossessedCount} " +
+                     $"lies={_comms.LieCount} sweeps={_comms.SweepCount} " +
+                     $"sfx={(_comms.SweepSfxBuilt ? _comms.SweepSfxCount.ToString() : "nc")}");
             }
             // 呪いの斑が目標へ届いた縁（`canon/LEDGER.md` 0229「出た初めは通常 → 1s ほどで重なる」）。
             // sec = 面が開いてから届くまでの秒。**画に出た側**（AppliedCurse）で数えている。
@@ -1392,10 +1412,13 @@ namespace FixedCamVr.Diagnostics
             //   終幕の 5 標本にしか出ず、解析器の判定に 1 度も入らなかった（走行で気づいた）。
             _sb.Append(" commsGl=").Append(_comms == null ? "-" : _comms.GlitchLevel.ToString("F2"));
             _sb.Append(" commsCx=").Append(_comms == null ? "-" : _comms.CorruptedChars.ToString());
-            _sb.Append(" commsTakeover=").Append(_comms == null ? "-" : _comms.TakeoverPhase.ToString());
-            _sb.Append(" commsErase=").Append(_comms == null ? "-" : _comms.AppliedTakeoverErase.ToString("F3"));
-            _sb.Append(" commsReveal=").Append(_comms == null ? "-" : _comms.AppliedTakeoverReveal.ToString("F3"));
-            _sb.Append(" commsCollapse=").Append(_comms == null ? "-" : _comms.AppliedTakeoverCollapse.ToString("F3"));
+            //   commsPossess / commsSweep = 憑依の出し方（`canon/LEDGER.md` 0230）の段と、画へ書いた前線の進み。
+            //   ⚠ 斑（commsCurse）とは別の観測 — 憑依の出し方では斑は塗り替わる前 0・後 1 で、
+            //     その間の「上から降りている」は commsSweep にしか出ない。
+            _sb.Append(" commsPossess=").Append(_comms == null ? "-" : _comms.PossessionPhase.ToString());
+            _sb.Append(" commsSweep=").Append(_comms == null ? "-" : _comms.AppliedSweep.ToString("F3"));
+            //   commsTear = いま画へ書いている乱れの強さ（0231）。降りているあいだだけ 0.6。
+            _sb.Append(" commsTear=").Append(_comms == null ? "-" : _comms.AppliedTear.ToString("F2"));
             //   commsBg = 地と縁を組めたか。**0 なら文字と壊れだけが宙に浮く。**
             //   ⚠⚠ 2026-08-17 まで実機がまさにこれだった（`Unlit/Color` がビルドから剥がれていた）。
             //   Editor では出るので、この 1 ビットが無いと永久に気づけない。
