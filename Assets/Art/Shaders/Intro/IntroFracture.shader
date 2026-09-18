@@ -14,6 +14,7 @@ Shader "FixedCamVr/IntroFracture"
         _HasFrozenFrame("Has frozen reality", Range(0, 1)) = 0
         _PhotoBrightness("Frozen frame brightness", Range(0.5, 1.5)) = 0.96
         _PhotoContrast("Frozen frame contrast", Range(0.5, 1.5)) = 1.04
+        _EdgeEmphasis("Edge emphasis", Range(0, 1)) = 1
         _VeilSize("Veil size m (xy) / distance (z)", Vector) = (2, 2, 0.3, 0)
         _ScreenCenter("Screen center world", Vector) = (0, 0, 2, 0)
         _ScreenRight("Screen right world", Vector) = (1, 0, 0, 0)
@@ -90,6 +91,7 @@ Shader "FixedCamVr/IntroFracture"
                 float4 edgeDistances : TEXCOORD7;
                 // x = 予兆の亀裂の光 / y = 破断・一撃の閃き / z = 着地の閃き / w = スロー中の閃き
                 nointerpolation float4 light : TEXCOORD8;
+                nointerpolation float landed : TEXCOORD9;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -104,6 +106,7 @@ Shader "FixedCamVr/IntroFracture"
             float _HasFrozenFrame;
             float _PhotoBrightness;
             float _PhotoContrast;
+            float _EdgeEmphasis;
             float4 _VeilSize;
             float4 _ScreenCenter;
             float4 _ScreenRight;
@@ -360,6 +363,7 @@ Shader "FixedCamVr/IntroFracture"
                            * (1.0 - Ease(CloserArrive, CloserArrive + 0.030, p));
                 float glint = Ease(0.11, 0.20, p) * (1.0 - travel) * step(breakAt, p);
                 o.light = float4(glowFront, breakLight, landingLight, glint);
+                o.landed = seal;
                 // 遠い片は沈む。着地した面には掛けない（detail で消える）。
                 float fog = saturate((eyeDistance - 1.7) / 2.2) * detail;
                 // 着地から 0.12 秒で透明になり、その場所の映像が現れる（0225）。閃きは露出の途中で消えていく。
@@ -433,8 +437,44 @@ Shader "FixedCamVr/IntroFracture"
                             + rimColor * (0.30 * i.light.y + 0.25 * shock + 0.10 * detail
                                           + 0.08 * grazing * detail)) * field;
                 }
-                // 着地した片は透明になり、その下に描かれているその場所の映像が現れる（0225）。
-                return float4(color, saturate(1.0 - _ScreenFade) * (1.0 - i.detail.w));
+
+                // 写真と縁を別々の straight-alpha 面として合成する。写真が消えた場所へ灰色の面を戻さない。
+                float photoAlpha = saturate(1.0 - _ScreenFade) * (1.0 - i.detail.w);
+                float oldAlpha = photoAlpha;
+
+                float strongRidge = 1.0 - smoothstep(0.00020, 0.00020 + aa * 1.75, edgeDistance);
+                float strongBand = exp(-edgeDistance / 0.0019);
+                float flightEdge = saturate(
+                    strongRidge * (0.32 + 0.38 * grazing + 0.28 * i.light.y + 0.22 * shock)
+                    + strongBand * (0.16 + 0.24 * grazing + 0.18 * i.light.w)) * detail;
+                // 戻った小片が中央へ密集しても映像を隠さないよう、着地後は明るさを保って幅を絞る。
+                float landedFrontEdge = saturate(ridge * 0.72 + band * 0.16)
+                    * i.landed * (1.0 - step(0.5, i.surface));
+
+                // 全片着地後も p=.930 までは保つ。実ワールド平面の距離なので縦横比による楕円にならない。
+                float2 screenMeters = float2(
+                    dot(i.positionWS - _ScreenCenter.xyz, normalize(_ScreenRight.xyz)),
+                    dot(i.positionWS - _ScreenCenter.xyz, normalize(_ScreenUp.xyz)));
+                float screenRadius = length(screenMeters) / max(length(_ScreenHalf.xy), 1e-4);
+                float radialFade = 1.0;
+                if (_Shatter > 0.930 && _Shatter < 0.995)
+                {
+                    const float softness = 0.065;
+                    float boundary = lerp(-softness, 1.0 + softness, Ease(0.930, 0.995, _Shatter));
+                    radialFade = 1.0 - Ease(screenRadius - softness, screenRadius + softness, boundary);
+                }
+                else if (_Shatter >= 0.995)
+                {
+                    radialFade = 0.0;
+                }
+
+                float edgeAlpha = saturate(max(flightEdge, landedFrontEdge) * field) * radialFade;
+                float unionAlpha = edgeAlpha + photoAlpha * (1.0 - edgeAlpha);
+                float3 unionColor = (rimColor * edgeAlpha
+                    + color * photoAlpha * (1.0 - edgeAlpha)) / max(unionAlpha, 1e-5);
+                float4 oldResult = float4(color, oldAlpha);
+                float4 emphasizedResult = float4(unionColor, unionAlpha);
+                return lerp(oldResult, emphasizedResult, saturate(_EdgeEmphasis));
             }
             ENDHLSL
         }

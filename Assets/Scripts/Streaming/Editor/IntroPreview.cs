@@ -176,6 +176,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     File.WriteAllText(Path.Combine(cleanFramesDir, "frames.tsv"), framesTsv.ToString());
                     File.WriteAllText(Path.Combine(cleanFramesDir, "audio-cues.tsv"), cuesTsv.ToString());
                     stage.VerifyFrozenFrame(saved);
+                    stage.VerifyEdgeDissolve(saved);
                     WriteMeshEvidence(outDir);
                 }
             }
@@ -784,6 +785,75 @@ namespace FixedCamVr.Streaming.EditorTools
                     string? maskDir = Path.GetDirectoryName(maskPath);
                     if (!string.IsNullOrEmpty(maskDir)) Directory.CreateDirectory(maskDir);
                     File.WriteAllBytes(maskPath, _alphaMask.EncodeToPNG());
+                }
+            }
+
+            /// <summary>縁のON/OFFを同じ画像で比較し、中心から消える順序を画素で測る。</summary>
+            public void VerifyEdgeDissolve(List<string> saved)
+            {
+                var materials = new List<Material>();
+                foreach (Renderer renderer in _veil.GetComponentsInChildren<Renderer>(true))
+                    if (renderer.sharedMaterial != null && renderer.sharedMaterial.HasProperty("_EdgeEmphasis"))
+                        materials.Add(renderer.sharedMaterial);
+                if (materials.Count == 0)
+                    throw new InvalidOperationException("縁の描画材質が見つからない");
+                Render(new Shot(IntroStage.Frame, 4, "probe_edge_reset", 0f, 0), saved);
+                var screen = _head.Find("ScreenQuad");
+                var plane = new Plane(screen.forward, screen.position);
+                float halfDiagonal = new Vector2(screen.lossyScale.x, screen.lossyScale.y).magnitude * 0.5f;
+                var radius = new float[Width * Height];
+                for (int y = 0; y < Height; y++)
+                for (int x = 0; x < Width; x++)
+                {
+                    Ray ray = _cam.ViewportPointToRay(new Vector3((x + 0.5f) / Width, (y + 0.5f) / Height, 0f));
+                    Vector3 local = plane.Raycast(ray, out float distance)
+                        ? screen.InverseTransformPoint(ray.GetPoint(distance)) : Vector3.one;
+                    radius[y * Width + x] = Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.y) > 0.5f
+                        ? -1f : new Vector2(local.x * screen.lossyScale.x, local.y * screen.lossyScale.y).magnitude / halfDiagonal;
+                }
+                var proof = new System.Text.StringBuilder("{\"samples\":[");
+                float[] progress = { 0.30f, 0.91f, 0.93f, 0.955f, 0.97f, 0.985f, 0.995f, 1f };
+                try
+                {
+                    for (int n = 0; n < progress.Length; n++)
+                    {
+                        float p = progress[n];
+                        foreach (Material material in materials) material.SetFloat("_EdgeEmphasis", 0f);
+                        Render(new Shot(IntroStage.Frame, 4, "probe_edge_off", p, n), saved);
+                        Color32[] baseline = _sceneTex.GetPixels32();
+                        foreach (Material material in materials) material.SetFloat("_EdgeEmphasis", 1f);
+                        Render(new Shot(IntroStage.Frame, 4, "probe_edge_on", p, n), saved);
+                        Color32[] emphasized = _sceneTex.GetPixels32();
+                        double center = 0, outer = 0;
+                        int centerCount = 0, outerCount = 0;
+                        for (int i = 0; i < radius.Length; i++)
+                        {
+                            float d = (Mathf.Abs(emphasized[i].r - baseline[i].r)
+                                + Mathf.Abs(emphasized[i].g - baseline[i].g)
+                                + Mathf.Abs(emphasized[i].b - baseline[i].b)) / 3f;
+                            if (radius[i] >= 0f && radius[i] < 0.25f) { center += d; centerCount++; }
+                            if (radius[i] > 0.75f) { outer += d; outerCount++; }
+                        }
+                        center /= Math.Max(1, centerCount);
+                        outer /= Math.Max(1, outerCount);
+                        float all = MeanPixelDifference(baseline, emphasized);
+                        if (n > 0) proof.Append(',');
+                        proof.Append(FormattableString.Invariant(
+                            $"{{\"p\":{p:0.000},\"allDelta\":{all:0.000000},\"centerDelta\":{center:0.000000},\"outerDelta\":{outer:0.000000}}}"));
+                        if (p == 0.91f && (center < 0.5 || outer < 0.5))
+                            throw new InvalidOperationException($"着地後の縁が残っていない: center={center} outer={outer}");
+                        if (p == 0.97f && (center > 0.02 || outer < 0.5))
+                            throw new InvalidOperationException($"中心から外へ消えていない: center={center} outer={outer}");
+                        if (p >= 0.995f && all > 0.01f)
+                            throw new InvalidOperationException($"縁を消した後の画が元の映像と違う: delta={all}");
+                    }
+                    proof.Append("]}");
+                    File.WriteAllText(Path.Combine(_outDir, "edge-proof.json"), proof.ToString());
+                    Debug.Log("[IntroViz] edge dissolve: retained after landing, center clears before perimeter, final image unchanged");
+                }
+                finally
+                {
+                    foreach (Material material in materials) material.SetFloat("_EdgeEmphasis", 1f);
                 }
             }
 

@@ -4,6 +4,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
     {
         _Shatter("Fracture progress", Range(0, 1)) = 0
         _Mode("Window 0 / color 1", Range(0, 1)) = 0
+        _EdgeEmphasis("Edge emphasis", Range(0, 1)) = 1
         [HideInInspector] _SrcBlend("Source blend", Float) = 0
         [HideInInspector] _DstBlend("Destination blend", Float) = 5
         [HideInInspector] _SrcBlendAlpha("Source alpha blend", Float) = 0
@@ -65,6 +66,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
 
             float _Shatter;
             float _Mode;
+            float _EdgeEmphasis;
             float4x4 _CaptureHeadToWorld;
             float4x4 _LeftWorldToUv;
             float4x4 _RightWorldToUv;
@@ -257,7 +259,10 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float screenClear = 1.0 - insideScreen * Ease(PullStart, 0.70, _Shatter);
                 clip(i.phase.x * i.phase.z * screenClear - 0.001);
                 float3 rimColor = float3(0.96, 0.90, 0.78);
-                float3 color = i.surface.rgb + rimColor * crack * i.surface.a;
+                float strongCrack = 1.0 - smoothstep(0.003, 0.016, edgeDistance);
+                float edgeLight = lerp(crack * i.surface.a, strongCrack * (0.68 + 0.54 * i.surface.a),
+                    saturate(_EdgeEmphasis));
+                float3 color = i.surface.rgb + rimColor * edgeLight;
                 float alpha = i.phase.x * i.phase.z * outsidePhoto * screenClear;
                 return float4(color, alpha);
             }
