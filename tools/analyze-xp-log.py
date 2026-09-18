@@ -1375,7 +1375,7 @@ def analyze(events, others, exp, warns=None):
             w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pw={e.get('pw')} cl={e.get('cl')} "
               f"rep={e.get('rep')} repBuilt={e.get('repBuilt')} "
               f"repChars={e.get('repChars')} repSfx={e.get('repSfx')} marks={e.get('marks')} "
-              f"armed={e.get('armed')} cue={e.get('cue')}")
+              f"anomalies={e.get('anomalies')} armed={e.get('armed')} cue={e.get('cue')}")
         ostages = [e.get("stage") for e in outro if e.get("stage") != "Off"]
         if not ostages:
             w("  終幕は 1 度も始まっていない（体験が終わる前に走行が切れたなら正常）")
@@ -2951,6 +2951,81 @@ def analyze(events, others, exp, warns=None):
                             "（`ev=take st=end why=` が全部 done なら後者）")
         else:
             verdict("OK", f"報告 {len(marks)} 回で演出が {len(dismissed)} 本消えた")
+        w()
+
+    # ------------------------------------------------------------------
+    # 報告した異変の数（canon/LEDGER.md 0234「1つの異変に対して報告したら内部では1だけカウント」）
+    #
+    # ⚠⚠ 押した回数（ev=mark n=）と報告した異変の数（anom=）は**別物**。終幕の「報告した怪異の数」に
+    #    出るのは anom の方で、同じ演出のあいだに何度押しても 1。演出の無い所（det=0）で押しても増えない。
+    #    観測の出どころは C# の ShowTelemetryHost（ev=mark take= new= anom= / ev=outro anomalies=）。
+    #    **片方だけ直すと沈黙して食い違う。**
+    # ⚠ 2026-09-19 より前のログには anom= が無い。その走行では数えない（FAIL にしない）。
+    # ⚠ n はラン開始で 0 へ戻る（その縁の ev=mark n=0 は押下ではない）。ラン（体験者）ごとに分けて見る。
+    # ------------------------------------------------------------------
+    tallied = [m for m in marks if m.get("anom") is not None and fnum(m, "n", 0.0) > 0]
+    if tallied:
+        w("## 報告した異変の数（押した回数とは別に数える）")
+        played_takes = sorted({str(e.get("id")) for e in events
+                               if e.get("ev") == "take" and e.get("st") == "begin" and e.get("id")})
+        outros = [e for e in events if e.get("ev") == "outro" and e.get("anomalies") is not None]
+        runs = []
+        for m in tallied:
+            if not runs or fnum(m, "n", 0.0) <= fnum(runs[-1][-1], "n", 0.0):
+                runs.append([])
+            runs[-1].append(m)
+        for ri, run in enumerate(runs):
+            t0 = fnum(run[0], "t", 0.0)
+            t1 = fnum(runs[ri + 1][0], "t", 0.0) if ri + 1 < len(runs) else float("inf")
+            anom_last = int(fnum(run[-1], "anom", 0.0))
+            detected_takes = []
+            for m in run:
+                tid = str(m.get("take") or "")
+                if str(m.get("det")) == "1" and tid and tid != "-" and tid not in detected_takes:
+                    detected_takes.append(tid)
+            label = f"ラン {ri + 1}: " if len(runs) > 1 else ""
+            w(f"  {label}押した {len(run)} 回 / 報告した異変 {anom_last} 件 / 出た演出 {len(played_takes)} 本")
+            for m in run:
+                w(f"    t={fnum(m, 't', 0.0):6.1f} lap={m.get('lap')} take={m.get('take')} det={m.get('det')} "
+                  f"new={m.get('new')} anom={m.get('anom')}")
+
+            ok = True
+            # 1. 累計は減らず、増えるのは new=1 の行でだけ 1 ずつ
+            prev = 0
+            for m in run:
+                a = int(fnum(m, "anom", 0.0))
+                is_new = str(m.get("new")) == "1"
+                if (a - prev) not in (0, 1) or ((a - prev) == 1) != is_new:
+                    ok = False
+                    verdict("FAIL", f"t={fnum(m, 't', 0.0):.1f} の報告で anom が {prev} → {a}（new={m.get('new')}）— "
+                                    "累計は new=1 の行でだけ 1 増えるはず（VisitorReportTally の縁がずれている）")
+                prev = a
+            # 2. 最後の累計 == 検出した報告（det=1）が乗っていた相異なる演出の数
+            if anom_last != len(detected_takes):
+                ok = False
+                verdict("FAIL", f"報告した異変の数 {anom_last} が、検出した報告の相異なる演出 {len(detected_takes)} 本"
+                                f"（{', '.join(detected_takes) or '-'}）と食い違う — "
+                                "ShowControlClient.RecordVisitorMark が凍らせた take と det の対がずれている")
+            # 3. 演出の無い所での報告（det=0）が異変に数えられていない
+            ghost = [m for m in run if str(m.get("det")) != "1" and str(m.get("new")) == "1"]
+            if ghost:
+                ok = False
+                verdict("FAIL", "演出の無い所での報告（det=0）が異変に数えられた: "
+                                + ", ".join(f"t={fnum(m, 't', 0.0):.1f}" for m in ghost))
+            # 4. 終幕に出た数（ev=outro anomalies=）と一致
+            near_outro = [e for e in outros if t0 <= fnum(e, "t", 0.0) < t1]
+            if near_outro and str(near_outro[-1].get("anomalies")) != str(anom_last):
+                ok = False
+                verdict("FAIL", f"終幕の報告に出た数（anomalies={near_outro[-1].get('anomalies')}）が"
+                                f"報告した異変の数 {anom_last} と違う")
+            # 5. 出た演出より多くは数えられない
+            if played_takes and anom_last > len(played_takes):
+                ok = False
+                verdict("FAIL", f"報告した異変 {anom_last} 件が、出た演出 {len(played_takes)} 本を超えている")
+            if ok:
+                extra = len(run) - anom_last
+                note = f"（同じ演出への押し直し・演出の無い所での押下が {extra} 回）" if extra > 0 else ""
+                verdict("OK", f"{label}押した {len(run)} 回のうち、報告した異変は {anom_last} 件{note}")
         w()
 
     w("## 効果の実在（画・音に出たか）")

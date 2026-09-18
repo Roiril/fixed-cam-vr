@@ -805,6 +805,9 @@ namespace FixedCamVr.Diagnostics
                      // ⚠ 周回の壊れ（commsGl / commsGlMat）は **`ev=sum` の側**に出す。
                      //   ここ（`ev=outro`）は終幕の縁でしか出ないので、判定の材料にならない。
                      $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
+                     // anomalies = 報告した異変の数（同じ演出は 1・`canon/LEDGER.md` 0234）。
+                     // 終幕の「報告した怪異の数」に出るのは marks（押した回数）ではなくこちら。
+                     $"anomalies={(_show != null ? _show.ReportedAnomalyCount : -1)} " +
                      // 合図（run.outro.afterTakeId）が武装したか / 撃ったか。
                      // 著作していなければ両方 0 のままで、終わり方は従来どおり。
                      $"armed={(_run != null && _run.EndingArmed ? 1 : 0)} " +
@@ -823,7 +826,13 @@ namespace FixedCamVr.Diagnostics
                      // res = 解除処理が通ったか。主映像の解除と進行の診断に残す。
                    + $" det={(_show.LastMarkDetected ? 1 : 0)}"
                    + $" res={(_show.LastMarkResolved ? 1 : 0)}"
-                   + $" invasion={(_comms != null ? _comms.InvasionProgress : 0f):F2}");
+                   + $" invasion={(_comms != null ? _comms.InvasionProgress : 0f):F2}"
+                     // take = 報告が乗った演出の id（走っていなければ -）。new = この報告で異変の数が増えたか。
+                     // anom = 報告した異変の数の累計（`canon/LEDGER.md` 0234・同じ演出は 1）。
+                     // ⚠ n（押した回数）とは別物 — 解析器が「det=1 の相異なる take の数 == 最後の anom」を突き合わせる。
+                   + $" take={(string.IsNullOrEmpty(_show.LastMarkTakeId) ? "-" : _show.LastMarkTakeId)}"
+                   + $" new={(_show.LastMarkCounted ? 1 : 0)}"
+                   + $" anom={_show.ReportedAnomalyCount}");
             }
 
             // AIエージェントからの連絡（`canon/LEDGER.md` 0054）。**1 通ごとに 1 行**。

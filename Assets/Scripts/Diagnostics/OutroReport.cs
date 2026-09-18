@@ -336,7 +336,9 @@ namespace FixedCamVr.Diagnostics
             //    数字が書き換わる（報告は体験の終わりに確定した値であってライブの表示ではない）。
             if (!wanted)
             {
-                int n = showControl != null ? showControl.VisitorMarkCount : 0;
+                // ⚠ 出すのは**報告した異変の数**（同じ演出は何度押しても 1・`canon/LEDGER.md` 0234）。
+                //   押した回数（`VisitorMarkCount`）ではない — 2026-09-19 までは押した回数をそのまま出していた。
+                int n = showControl != null ? showControl.ReportedAnomalyCount : 0;
                 // ⚠ 言語も見る。報告を 1 度も押さなかった体験者は数が 0 のまま終わるので、
                 //   数だけを見ていると Awake で組んだ日本語がそのまま出る（2026-09-04）。
                 if (n != _shownCount || _shownLang != ShowLanguage.Current) SetBody(n);

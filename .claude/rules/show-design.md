@@ -209,6 +209,18 @@ LTouch の仮想マップは `Three = None` / `Four = None` なので（`OVRInpu
   `LastMarkResolved` は解除処理と主映像の復帰だけに使い、通信面の文面へは渡さない。
   - `analyze-xp-log.py` が `ev=mark res=` と `ev=comms id=` の食い違いを FAIL にする。
     **解除が 1 度も通らない走行は WARN**（台本に `dismissible` が 1 つも立っていない疑い）
+- ⚠⚠ **数えるのは「報告した異変の数」で、押した回数ではない**（2026-09-19・`canon/LEDGER.md` 0234・
+  ユーザー逐語「1つの異変に対して報告したら内部では1だけカウントするようにしてほしい」）。
+  異変の単位は**報告が乗った演出（take）の id**。同じ演出のあいだに何度押しても 1。
+  演出の無い所（`det=0`）で押しても増えない。押した回数は別に残す（`VisitorMarkCount`）。
+  数え方は [`VisitorReportTally`](../../Assets/Scripts/Streaming/VisitorReportTally.cs)（純ロジック・テスト 9 本）、
+  持ち主は `ShowControlClient.ReportedAnomalyCount`。**終幕の「報告した怪異の数」とスタッフの面はこれを出す。**
+  スイの返事（②）は従来どおり**押すたび**返す — 変えたのは数える側だけ。
+  - なぜ要るか: スイの言葉が読めるようになった（0230〜0232）ので、嘘の一文「異常を検出しませんでした」を
+    読んだ体験者が**同じ異変に押し直す**。押した回数を出すと、その押し直しがそのまま数になる
+  - 観測は `ev=mark take= new= anom=` と `ev=outro anomalies=`。`analyze-xp-log.py` の
+    「## 報告した異変の数」が押した回数との食い違いを FAIL にする。**C# と Python を対で直す**
+  - ⭐ 後々の「報告数によるエンディング分岐」（0234「まだしないが」）の材料はこの数。押した回数は使わない
 - **短押しでは通さない。** 歩きながら握り込むので、押した瞬間に決まると「触れただけ」が報告になる。
   判定は [`VisitorMarkHoldLogic`](../../Assets/Scripts/Input/VisitorMarkHoldLogic.cs)（純ロジック・
   テスト 6 本）。1 回の押しで 1 回だけ・離すとゲージは 0 へ戻る・**dt は 0.25 秒で切る**
@@ -805,7 +817,7 @@ Unity 側が面倒を見る**。全画面 1 パスで幾何を解きたくなっ
   （`TitleNotice`）と対の面**で、置き場・深度の逃がし方を揃えてある（2.6m /
   TMP Overlay の `ZTest Always` / queue 5000）。
   ⚠⚠ **大きさはもう揃っていない**（2026-09-05・`canon/LEDGER.md` 0161）。注意書きだけ
-  ユーザー指定で 2/3（本文 1.2°）にした。**報告は本文 1.8° のまま** — 揃え直さない。数は `ShowControlClient.VisitorMarkCount`、
+  ユーザー指定で 2/3（本文 1.2°）にした。**報告は本文 1.8° のまま** — 揃え直さない。数は `ShowControlClient.ReportedAnomalyCount`（報告した異変の数・同じ演出は 1・0234。押した回数ではない）、
   **全角数字**（紙の「観測者番号 ０３７」と揃える）
 - ⚠⚠ **報告は 1 字ずつ打たれ、1 字ごとに打鍵音が 1 発鳴る**（2026-08-16・`canon/LEDGER.md` 0063）。
   速さは **`CommsPanelLogic.CharsPerSecFor`（日本語 12 / Latin 18 文字/秒）をそのまま使う** —

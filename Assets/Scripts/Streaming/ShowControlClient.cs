@@ -1812,7 +1812,7 @@ namespace FixedCamVr.Streaming
         private void TriggerRunReset()
         {
             Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムライン / BGM をリセット");
-            VisitorMarkCount = 0;   // 体験 1 回ぶんの状態（memory/show_run_skeleton.md）
+            _reportTally.Reset();   // 押した回数と報告した異変の数（体験 1 回ぶんの状態・memory/show_run_skeleton.md）
             _dwell.Reset();   // 計時中の部分区間は「体験者 1 人分の滞在」として成立しないので捨てる
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
@@ -1841,7 +1841,7 @@ namespace FixedCamVr.Streaming
         {
             Debug.Log("[ShowControl] ラン開始（現地・右 A 2 秒長押し）");
             ReleaseLiveHolds();
-            VisitorMarkCount = 0;   // 体験 1 回ぶんの状態（memory/show_run_skeleton.md）
+            _reportTally.Reset();   // 押した回数と報告した異変の数（体験 1 回ぶんの状態・memory/show_run_skeleton.md）
             _dwell.Reset();
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
@@ -2883,10 +2883,15 @@ namespace FixedCamVr.Streaming
         public bool StatusVisible => StatusVisibleProvider?.Invoke() ?? false;
 
         /// <summary>
-        /// <b>体験者が記録ボタン（左 X）を押した回数。</b> ラン開始で 0 に戻る。
+        /// <b>体験者が記録ボタン（左 X / Y）を押した回数。</b> ラン開始で 0 に戻る。
         ///
         /// 紙（調査依頼書）の「違和感を認めるたび、手元のボタンを一度押してください。
         /// ボタンを押した時刻は、自動的に記録されます」が指しているのがこれ。
+        ///
+        /// ⚠⚠ <b>終幕の「報告した怪異の数」はこれではない</b>（2026-09-19・<c>canon/LEDGER.md</c> 0234・
+        /// ユーザー逐語「1つの異変に対して報告したら内部では1だけカウントするようにしてほしい」）。
+        /// あちらは <see cref="ReportedAnomalyCount"/>。押した回数を読むのはスタッフの面（<c>StatusHud</c>）と
+        /// <c>ev=mark n=</c> だけ。
         ///
         /// ⚠ <b>体験の進行には 1 ビットも使わない。</b> 押さなくても体験は同じように進む
         /// （判定に使うと、押さなかった人が失敗した気になる）。唯一の例外が 4 周目 A の締め
@@ -2896,7 +2901,25 @@ namespace FixedCamVr.Streaming
         /// ⭐ 押した時刻が残ると、<b>3 周目の反転に気づいたかが訊かずに分かる</b>
         /// （初見は消耗品なので、誘導せずに取れる観測の価値が高い）。
         /// </summary>
-        public int VisitorMarkCount { get; private set; }
+        public int VisitorMarkCount => _reportTally.PressCount;
+
+        /// <summary>
+        /// <b>報告した異変の数</b>（2026-09-19・<c>canon/LEDGER.md</c> 0234）。同じ演出のあいだに何度押しても 1。
+        /// 演出の無い所で押しても増えない（<see cref="VisitorMarkCount"/> には残る）。ラン開始で 0 に戻る。
+        /// <b>終幕の「報告した怪異の数」（<c>OutroReport</c>）はこれを出す。</b>
+        /// 数え方は <see cref="VisitorReportTally"/>。
+        /// ⭐ 後々の分岐（報告数によるエンディング・0234「まだしないが」）の材料はこれ。押した回数は使わない。
+        /// </summary>
+        public int ReportedAnomalyCount => _reportTally.AnomalyCount;
+
+        /// <summary>直近の報告が乗った演出の id（走っていなければ空）。<c>ev=mark take=</c>。</summary>
+        public string LastMarkTakeId => _reportTally.LastTakeId;
+
+        /// <summary>直近の報告で <see cref="ReportedAnomalyCount"/> が増えたか。<c>ev=mark new=</c>。</summary>
+        public bool LastMarkCounted => _reportTally.LastCounted;
+
+        // 押した回数と報告した異変の数（体験 1 回ぶん）。落とすのは TriggerRunReset / BeginNewVisitorRunLocal の 2 か所。
+        private readonly VisitorReportTally _reportTally = new();
 
         /// <summary>
         /// <b>直近の報告で、怪異の解除が通ったか</b>（2026-08-17・`canon/LEDGER.md` 0082）。
@@ -2953,7 +2976,9 @@ namespace FixedCamVr.Streaming
                         + "経っていないので受け付けない（canon/LEDGER.md 0178）");
                 return;
             }
-            VisitorMarkCount++;
+            // 報告が乗った演出の id。⚠ **報告で段が進む前に凍らせる**（下の anomalyShowing と同じ理由 —
+            //    報告した瞬間に走っていた演出が「1 つの異変」の単位・0234）。
+            string markTakeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
             LastMarkDollReplacementShowing = timelineDirector != null
                 && timelineDirector.DollReplacementShowing;
             LastMarkSuppressed = timelineDirector != null && timelineDirector.Suppressed;
@@ -2968,6 +2993,10 @@ namespace FixedCamVr.Streaming
                 timelineDirector?.NotifyVisitorMark() ?? TakeRunnerLogic.MarkResult.None;
             LastMarkResolved = result != TakeRunnerLogic.MarkResult.None;
             LastMarkDetected = anomalyShowing || LastMarkResolved;
+            // 押した回数と、報告した異変の数（0234「1つの異変に対して報告したら内部では1だけカウント」）。
+            // 異変に数えるのは**画で「検出した」と言ったもの**だけ ＝ スイの返事（②）と同じ判定を使う。
+            // 同じ演出への押し直し（侵食度 1 の嘘の一文を読んで押し直した形）は押した回数にしか乗らない。
+            bool counted = _reportTally.Record(markTakeId, LastMarkDetected);
 
             // ⚠⚠ **呪いが解けるのは締めのカットが進んだ 1 回だけ**（`canon/LEDGER.md` 0083）。
             //    1〜2 周目で異変を消した（Dismissed）ときに戻すと、**まだ呪われている最中に
@@ -2980,7 +3009,9 @@ namespace FixedCamVr.Streaming
             }
 
             Debug.Log($"[ShowControl] 記録ボタン（体験者・左のどれか） {VisitorMarkCount} 回目"
-                    + $"（解除は{(LastMarkResolved ? "通った" : "通らなかった")}・{result}）");
+                    + $"（解除は{(LastMarkResolved ? "通った" : "通らなかった")}・{result}）"
+                    + $" 報告した異変 {ReportedAnomalyCount} 件"
+                    + (counted ? $"（{markTakeId} を新しく数えた）" : "（増えていない）"));
         }
 
         private void ApplyPostForActive()

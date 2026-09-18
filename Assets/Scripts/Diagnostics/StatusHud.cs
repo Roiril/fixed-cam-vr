@@ -605,16 +605,20 @@ namespace FixedCamVr.Diagnostics
             }
             else sb.Append('-');
 
-            // 行5: 報告：N 件。**押されているかはスタッフに 1 ビットも届いていなかった**
+            // 行5: 報告：N 件（M 回押した）。**押されているかはスタッフに 1 ビットも届いていなかった**
             // （気づくのは終幕の報告が「０」になったとき ＝ もう手遅れ）。
+            // N = 報告した異変の数（終幕に出る数・同じ演出は 1・`canon/LEDGER.md` 0234）/ M = 押した回数。
+            // 両方出すのは、押しているのに N が増えない（演出の無い所で押している）を現場で見分けるため。
             // ⚠ 半角数字。全角にしてよいのは体験者が読む面（終幕の報告・紙と揃える）だけで、
             //   ここは業務表示なので他の数値（周回・カメラ番号・ずれ cm）と揃える。
             ShowControlClient? show = ResolveShow();
             if (show != null)
             {
                 sb.Append("\n報告：");
+                sb.Append(show.ReportedAnomalyCount);
+                sb.Append(" 件（");
                 sb.Append(show.VisitorMarkCount);
-                sb.Append(" 件");
+                sb.Append(" 回押した）");
             }
 
             // 行3.5: 映像の遅れ（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
