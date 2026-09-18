@@ -60,6 +60,16 @@ namespace FixedCamVr.Diagnostics.Tests
                               $"{ShowLanguage.Code(lang)} / {notice}: U+{(int)c:X4} '{c}' が HMD 用フォントに無い");
             }
 
+            // 嘘の一文の書き換え先と、判定を持たない返事（0232）は新しい字を持たないはず（フォントの焼き直し不要の根拠）。
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (string body in new[] { CommsPanel.TakeoverLieText(lang), CommsPanel.NoticeText(CommsNotice.MarkAnalyzing, lang) })
+            foreach (char c in body)
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                Assert.IsTrue(font.HasCharacter(c),
+                              $"{ShowLanguage.Code(lang)} / 0232: U+{(int)c:X4} '{c}' が HMD 用フォントに無い");
+            }
+
             foreach (ShowLang lang in ShowLanguage.All)
             foreach (TitleStartGuidance guidance in System.Enum.GetValues(typeof(TitleStartGuidance)))
             foreach (char c in TitleScreen.StartPromptText(guidance, lang))
@@ -70,23 +80,38 @@ namespace FixedCamVr.Diagnostics.Tests
             }
         }
 
-        [TestCase(ShowLang.Ja, "異常なしと判定しました")]
-        [TestCase(ShowLang.En, "No anomaly was detected.")]
-        [TestCase(ShowLang.Fr, "Aucune anomalie n’a été\ndétectée.")]
-        public void TakeoverAttemptsOnlyOneDenial(ShowLang lang, string sentence)
+        [TestCase(ShowLang.Ja)]
+        [TestCase(ShowLang.En)]
+        [TestCase(ShowLang.Fr)]
+        public void TakeoverShowsTheTruthfulDetectionFirst(ShowLang lang)
         {
-            Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.Takeover, lang));
+            // 0232: 上書きされる前の正常な表示は、ちゃんと異常を検知する ＝ 当たりの報告の返事そのもの。
+            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, lang),
+                            CommsPanel.NoticeText(CommsNotice.Takeover, lang));
         }
 
-        [TestCase(ShowLang.Ja, "異常なし")]
-        [TestCase(ShowLang.En, "No anomaly")]
-        [TestCase(ShowLang.Fr, "Aucune anomalie")]
-        public void TakeoverRedPrefixCoversOnlyTheDenial(ShowLang lang, string prefix)
+        [TestCase(ShowLang.Ja, "異常を検出しませんでした", "異常を検出し")]
+        [TestCase(ShowLang.En, "An anomaly was not detected.", "An anomaly was ")]
+        [TestCase(ShowLang.Fr, "Anomalie non détectée.", "Anomalie ")]
+        public void TakeoverLieIsAMinimalEditOfTheTruth(ShowLang lang, string lie, string sharedHead)
         {
-            string sentence = CommsPanel.NoticeText(CommsNotice.Takeover, lang);
-            int length = CommsPanel.TakeoverDenialPrefixLength(lang);
-            Assert.AreEqual(prefix, sentence.Substring(0, length));
-            Assert.Less(length, sentence.Length);
+            string truth = CommsPanel.NoticeText(CommsNotice.Takeover, lang);
+            Assert.AreEqual(lie, CommsPanel.TakeoverLieText(lang));
+            Assert.AreNotEqual(truth, lie);
+            Assert.IsTrue(truth.StartsWith(sharedHead) && lie.StartsWith(sharedHead), "頭が同じで尾だけ変わる");
+            Assert.AreNotEqual(lie, CommsPanel.NoticeText(CommsNotice.MarkNothing, lang),
+                               "何も無い所での正直な返事を嘘に流用しない（既出の字面は嘘に見えない）");
+            Assert.AreEqual(1, lie.Split('\n').Length, "嘘は 1 行（真実と同じ行数で、同じ場所に書き換わる）");
+            Assert.LessOrEqual(FullWidth(lie), MaxFullWidthPerLine, "嘘も 1 行に入る");
+        }
+
+        [TestCase(ShowLang.Ja, "装置が解析しています")]
+        [TestCase(ShowLang.En, "Analyzing.")]
+        [TestCase(ShowLang.Fr, "Analyse en cours.")]
+        public void MissAtOrAbovePossessedLevel_AnswersWithoutAVerdict(ShowLang lang, string sentence)
+        {
+            // 0232: 「異常なし」は乗っ取られた結果なので、乗っ取られた装置は正直に「異常なし」を言わない。
+            Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkAnalyzing, lang));
         }
 
         [TestCase(ShowLang.Ja, "異常を検出しました")]
@@ -149,6 +174,9 @@ namespace FixedCamVr.Diagnostics.Tests
         {
             foreach ((ShowLang lang, CommsNotice notice, string t) in AllNotices())
                 yield return (lang, t);
+            // 嘘の書き換え先（0232）も画へ出る文面。
+            foreach (ShowLang lang in ShowLanguage.All)
+                yield return (lang, CommsPanel.TakeoverLieText(lang));
         }
 
         [Test]

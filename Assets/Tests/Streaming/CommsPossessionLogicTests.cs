@@ -300,6 +300,7 @@ namespace FixedCamVr.Streaming.Tests
         [TestCase(CommsNotice.MarkLogged, 0.25f, CommsDelivery.Typed)]
         [TestCase(CommsNotice.MarkLogged, 0.75f, CommsDelivery.Possessed)]
         [TestCase(CommsNotice.MarkNothing, 1f, CommsDelivery.Possessed)]
+        [TestCase(CommsNotice.MarkAnalyzing, 0.75f, CommsDelivery.Possessed)]
         [TestCase(CommsNotice.Takeover, 0f, CommsDelivery.Possessed)]
         [TestCase(CommsNotice.Takeover, 1f, CommsDelivery.Possessed)]
         [TestCase(CommsNotice.Halt, 1f, CommsDelivery.Fade)]
@@ -386,9 +387,18 @@ namespace FixedCamVr.Streaming.Tests
             logic.NotifyDelivered(CommsNotice.Takeover);
             Assert.AreEqual(CommsNotice.MarkLogged,
                 logic.Tick(Input(mark: true, detected: true, invasion: 1f)));
-            Assert.AreEqual(CommsNotice.MarkNothing,
+            Assert.AreEqual(CommsNotice.MarkAnalyzing,
                 logic.Tick(Input(mark: true, invasion: 1f)),
-                "嘘は 1 回だけ。その後の報告は普通の返事（出し方は憑依のまま）");
+                "嘘は 1 回だけ。その後の空振りの報告は判定を持たない一文（0232・乗っ取られた装置は正直に「異常なし」を言わない）");
+        }
+
+        [TestCase(0f, CommsNotice.MarkNothing)]
+        [TestCase(0.25f, CommsNotice.MarkNothing)]
+        [TestCase(0.75f, CommsNotice.MarkAnalyzing)]
+        public void MissAnswersWithoutAVerdict_OnceThePanelIsPossessed(float invasion, CommsNotice expected)
+        {
+            var logic = new CommsCueLogic();
+            Assert.AreEqual(expected, logic.Tick(Input(mark: true, invasion: invasion)));
         }
 
         [Test]

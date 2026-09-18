@@ -86,18 +86,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 int total = text.textInfo.characterCount;
                 int visibleTotal = 0;
                 for (int i = 0; i < total; i++) if (text.textInfo.characterInfo[i].isVisible) visibleTotal++;
-                // ⚠ 赤くする範囲は**原文の字数**だが、画に出て数えられるのは**絵を持つ字**だけ
-                //   （`ApplyGlyphMesh` は `isVisible` の字しか数えない）。English「No anomaly」は
-                //   10 字だが空白を除くと 9 字。期待値もそちらで作る。
-                int redExpected = 0;
-                for (int i = 0; i < CommsPanel.TakeoverDenialPrefixLength(lang) && i < total; i++)
-                    if (text.textInfo.characterInfo[i].isVisible) redExpected++;
-                var rows = new StringBuilder("frame\tsec\tphase\tsweep\tcurse\tface\tcx\tred\tglyph\tpanel_alpha\thit\tsfx\tfull\tdrawn\tshown\ttotal\tvisible\tx\ty\ttext\ttear\ttorn\n");
+                // 0232: 読ませる段は真実（当たりの報告の返事）、前線が行を渡り切ったコマに嘘へ書き換わる。
+                //   嘘の字数は空白を除いて数える（`ApplyGlyphMesh` は絵を持つ字しか数えない）。
+                string truthText = text.text;
+                string lieText = CommsPanel.TakeoverLieText(lang);
+                int lieExpected = 0;
+                foreach (char c in lieText) if (!char.IsWhiteSpace(c)) lieExpected++;
+                var rows = new StringBuilder("frame\tsec\tphase\tsweep\tcurse\tface\tcx\tlie\tglyph\tpanel_alpha\thit\tsfx\tfull\tdrawn\tshown\ttotal\tvisible\tx\ty\ttext\ttear\ttorn\n");
                 var taps = new StringBuilder("frame\tchars\thit\n");
                 int totalHits = 0, totalSfx = 0, count = 0;
                 int shownFrames = 0, sweepFrames = 0, cursedFrames = 0;
                 int sweepStart = -1, sweepEnd = -1;
-                bool shownSaved = false, cursedSaved = false;
+                bool shownSaved = false, cursedSaved = false, sawLie = false;
                 string original = text.text;
                 string lastPhase = "";
                 for (int i = 0; i < Fps * 14; i++)
@@ -117,7 +117,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     rows.AppendFormat(CultureInfo.InvariantCulture,
                         "{0}\t{1:F6}\t{2}\t{3:F4}\t{4:F4}\t{5:F4}\t{6}\t{7}\t{8:F4}\t{9:F4}\t{10}\t{11}\t{12}\t{13}\t{14}\t{15}\t{16}\t{17:F3}\t{18:F3}\t{19}\t{20:F3}\t{21}\n",
                         i, i / (float)Fps, phase, panel.AppliedSweep, panel.AppliedCurse, panel.AppliedFaceMix,
-                        panel.CorruptedChars, panel.RedChars, panel.AppliedGlyph, panel.AppliedPanelAlpha,
+                        panel.CorruptedChars, panel.LieChars, panel.AppliedGlyph, panel.AppliedPanelAlpha,
                         hit, sfx, full, drawn, panel.VisibleChars, total, visibleTotal, screen.x, screen.y, body,
                         panel.AppliedTear, panel.TornBands);
                     taps.Append(i).Append('\t').Append(panel.VisibleChars).Append('\t').Append(hit).Append('\n');
@@ -135,8 +135,8 @@ namespace FixedCamVr.Streaming.EditorTools
                         {
                             if (panel.VisibleChars != total)
                                 throw new InvalidOperationException($"Not all characters shown while Shown: {panel.VisibleChars}/{total}");
-                            if (panel.RedChars != redExpected)
-                                throw new InvalidOperationException($"Red prefix {panel.RedChars}, expected {redExpected}");
+                            if (panel.LieChars != 0 || text.text != truthText)
+                                throw new InvalidOperationException($"The lie showed while Shown: lie={panel.LieChars} text={text.text}");
                             if (panel.CorruptedChars != 0 || panel.AppliedCurse > 0f || panel.AppliedFaceMix > 0f)
                                 throw new InvalidOperationException("The face or the text was cursed before the sweep");
                             if (!shownSaved && shownFrames >= 6)
@@ -164,18 +164,24 @@ namespace FixedCamVr.Streaming.EditorTools
                         // ⚠ 引いている最中は文字の濃さが 0 へ落ちるので、切られた字の数え上げも 0 になる
                         //    （`ApplyGlyphMesh` は「画に出ている字」だけを数える）。判定は**まだ点いているコマ**に絞る。
                         if (panel.AppliedGlyph > 0.5f
-                            && (panel.CorruptedChars != visibleTotal || panel.RedChars != 0 || panel.AppliedCurse < 0.999f
-                                || panel.AppliedFaceMix < 0.999f || drawn != 0))
+                            && (panel.CorruptedChars != visibleTotal || panel.LieChars != lieExpected || text.text != lieText
+                                || panel.AppliedCurse < 0.999f || panel.AppliedFaceMix < 0.999f || drawn != lieExpected))
                             throw new InvalidOperationException(
-                                $"Cursed frame {i}: cx={panel.CorruptedChars}/{visibleTotal} red={panel.RedChars} curse={panel.AppliedCurse} drawn={drawn}");
+                                $"Cursed frame {i}: cx={panel.CorruptedChars}/{visibleTotal} lie={panel.LieChars}/{lieExpected} curse={panel.AppliedCurse} drawn={drawn} text={text.text}");
                         if (!cursedSaved && cursedFrames >= 4 && panel.AppliedGlyph > 0.5f)
                         {
                             File.WriteAllBytes(Path.Combine(dir, "cursed.png"), png);
                             cursedSaved = true;
                         }
                     }
-                    if (text.text != original)
-                        throw new InvalidOperationException("A second sentence was introduced");
+                    // 0232: 文面は 真実 → 嘘 の 1 度だけ替わる（前線が行を渡り切ったコマ）。それ以外の文面は出ない。
+                    if (text.text != original && text.text != lieText)
+                        throw new InvalidOperationException("A second sentence was introduced: " + text.text);
+                    if (text.text == lieText && phase == "Shown")
+                        throw new InvalidOperationException("The lie replaced the truth before the front arrived");
+                    if (text.text == original && sawLie)
+                        throw new InvalidOperationException("The text went back from the lie to the truth");
+                    if (text.text == lieText) sawLie = true;
                     count++;
                     if (!logic.Active) break;
                     logic.Tick(1f / Fps);
@@ -192,7 +198,35 @@ namespace FixedCamVr.Streaming.EditorTools
                     throw new InvalidOperationException($"Sweep took {sweepSec:F2}s, expected {CommsPossessionLogic.SweepSec:F2}s");
                 Debug.Log($"[CommsPossessionPreview] {ShowLanguage.Code(lang)} frames={count} typed={totalHits} "
                     + $"shownFrames={shownFrames} ({shownFrames / (float)Fps:F2}s) sweepFrames={sweepFrames} ({sweepSec:F2}s) "
-                    + $"cursedFrames={cursedFrames} red={redExpected} visible={visibleTotal} sfx={totalSfx}");
+                    + $"cursedFrames={cursedFrames} lie={lieExpected} visible={visibleTotal} sfx={totalSfx}");
+                // 嘘の書き換えの幾何（Python が「頭は同じ場所・尾だけ変わる」を画素で確かめる）。
+                {
+                    int head = 0;
+                    while (head < truthText.Length && head < lieText.Length && truthText[head] == lieText[head]) head++;
+                    var ti = text.textInfo;
+                    int headIdx = -1, lastIdx = -1, firstIdx = -1;
+                    for (int i = 0; i < ti.characterCount; i++)
+                    {
+                        if (!ti.characterInfo[i].isVisible) continue;
+                        if (firstIdx < 0) firstIdx = i;
+                        if (i < head) headIdx = i;
+                        lastIdx = i;
+                    }
+                    float ScreenX(int idx, bool right)
+                    {
+                        if (idx < 0) return -1f;
+                        var ch = ti.characterInfo[idx];
+                        Vector3 local = right ? ch.topRight : ch.bottomLeft;
+                        return cam.WorldToScreenPoint(text.transform.TransformPoint(local)).x;
+                    }
+                    string J(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n");
+                    File.WriteAllText(Path.Combine(dir, "lie.json"),
+                        "{\"truth\": \"" + J(truthText) + "\", \"lie\": \"" + J(text.text) + "\", \"swapped\": " + (text.text == lieText ? "true" : "false")
+                        + ", \"head_chars\": " + head
+                        + ", \"head_x\": " + ScreenX(headIdx, true).ToString("F1", CultureInfo.InvariantCulture)
+                        + ", \"lie_x0\": " + ScreenX(firstIdx, false).ToString("F1", CultureInfo.InvariantCulture)
+                        + ", \"lie_x1\": " + ScreenX(lastIdx, true).ToString("F1", CultureInfo.InvariantCulture) + "}\n");
+                }
             }
             finally
             {

@@ -90,33 +90,39 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
-        public void RedPrefixIsReadableWhileShown_AndCutAfterTheSweep()
+        public void TheTruthIsShownFirst_ThenTheLineIsRewrittenToTheLie()
         {
             _panel.Deliver(CommsNotice.Takeover);
             Advance(CommsPanelLogic.InSec + CommsPossessionLogic.ShowSec + 0.3f);
             var text = Text();
-            Assert.AreEqual(4, _panel.RedChars, "「異常なし」の 4 文字だけを赤くする");
-            for (int i = 0; i < 4; i++)
-            {
-                Color32 color = VertexColor(text, i);
-                Assert.AreEqual(184, color.r, $"{i}文字目 red");
-                Assert.AreEqual(48, color.g, $"{i}文字目 green");
-                Assert.AreEqual(40, color.b, $"{i}文字目 blue");
-                Assert.AreEqual(255, color.a, $"{i}文字目は読める");
-            }
-            Color32 suffix = VertexColor(text, 4);
-            Assert.AreEqual(209, suffix.r, "続く「と」は地の象牙色を保つ");
-            Assert.AreEqual(199, suffix.g);
-            Assert.AreEqual(184, suffix.b);
+            string truth = CommsPanel.NoticeText(CommsNotice.MarkLogged, ShowLanguage.Current);
+            string lie = CommsPanel.TakeoverLieText(ShowLanguage.Current);
+            float readSec = ReadSec();
+            Assert.AreEqual(truth, text.text, "読ませる段は当たりの報告の返事そのもの（0232）");
+            Assert.AreEqual(0, _panel.LieChars, "差し替える前は嘘の字は 0");
+            int truthVisible = VisibleCount(text);
+            Color32 first = VertexColor(text, 0);
+            Assert.AreEqual(209, first.r, "象牙のまま（赤は使わない）");
+            Assert.AreEqual(199, first.g);
+            Assert.AreEqual(184, first.b);
+            Assert.AreEqual(255, first.a);
 
-            Advance(ReadSec() + CommsPossessionLogic.SweepSec + 0.1f);
+            // 前線がまだ上の帯に居るあいだは真実のまま（画素はステンシルが切る）。
+            Advance(readSec - 0.3f + CommsPossessionLogic.SweepSec * 0.2f);
+            Assert.AreEqual(CommsPossessionPhase.Sweep, _panel.PossessionPhase);
+            Assert.AreEqual(truth, Text().text, "行を渡り切る前は差し替えない");
+
+            Advance(CommsPossessionLogic.SweepSec * 0.8f + 0.3f);   // 乱れの尾（0.12 秒）も引いた後
+            text = Text();
             Assert.AreEqual(CommsPossessionPhase.Cursed, _panel.PossessionPhase);
+            Assert.AreEqual(lie, text.text, "塗り替わった行は嘘に書き換わっている");
+            Assert.Greater(_panel.LieChars, 0);
+            Assert.AreEqual(VisibleCount(text), _panel.LieChars, "嘘の行は全字が出ている");
+            Assert.AreEqual(truthVisible, _panel.CorruptedChars, "上書きされた真実の字の数");
+            Assert.AreEqual(255, VertexColor(text, text.textInfo.characterCount - 1).a, "嘘の尾は読める（CPU でも alpha 255）");
             Assert.AreEqual(1f, _panel.AppliedSweep);
             Assert.AreEqual(1f, _panel.AppliedCurse, "塗り替わった後は全面");
             Assert.AreEqual(1f, _panel.AppliedFaceMix, "顔は完全に人形");
-            Assert.AreEqual(VisibleCount(text), _panel.CorruptedChars, "全字が切られている");
-            Assert.AreEqual(0, _panel.RedChars, "赤い字も塗り替わって切れる");
-            Assert.AreEqual(0, VertexColor(text, 0).a, "切られた字は CPU でも alpha 0");
             Assert.AreEqual(1, _panel.SweepCount);
         }
 

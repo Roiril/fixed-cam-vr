@@ -1117,7 +1117,8 @@ py -3.11 tools/quest-record.py --sec 45 --walk --relief   # relief=1/1/0.50/1.00
 - 決め所は打鍵と同じ `CommsCueLogic.DeliveryOf(notice, invasion)`（`CommsDelivery.Possessed`）。
   `NoticeChars = 0` にしてある（字数のままだと解析器が「打鍵が字数の半分以下」と言う）
 - 鳴らすのは `CommsPanel.Apply` の**前線が降り始めたのと同じフレーム**（打鍵と同じ構え。`SoundCueLogic` では縁を取りこぼす）
-- 3 周目 A の嘘「異常なしと判定しました」も同じ形。**2026-09-14 の「印字の途中で崩れて `StopAll` で打鍵を切る」弧は捨てた**
+- 3 周目 A の嘘の一文（真実「異常を検出しました」→ 塗り替わった行が「異常を検出しませんでした」・0232）も同じ形。
+  **2026-09-14 の「印字の途中で崩れて `StopAll` で打鍵を切る」弧は捨てた**
   （初見の人には装置の不調にしか見えない、がユーザーの判定の芯）
 - 観測は `ev=commsPossess … sfx=`（`nc` = 音源を掴めていない）。`analyze-xp-log.py` が FAIL にする
 

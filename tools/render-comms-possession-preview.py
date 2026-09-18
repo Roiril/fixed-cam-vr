@@ -74,7 +74,7 @@ def render_language(folder: Path, glitch_index: int) -> dict:
     with (folder / "frames.tsv").open(encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f, delimiter="\t"))
     assert rows and [int(r["frame"]) for r in rows] == list(range(len(rows)))
-    required = {"frame", "phase", "sweep", "curse", "face", "cx", "red", "glyph", "panel_alpha",
+    required = {"frame", "phase", "sweep", "curse", "face", "cx", "lie", "glyph", "panel_alpha",
                 "hit", "sfx", "drawn", "shown", "total", "visible", "text", "tear", "torn"}
     assert required <= rows[0].keys(), f"frames.tsv の列が足りない: {sorted(required - rows[0].keys())}"
     frames = [folder / f"f{i:04d}.png" for i in range(len(rows))]
@@ -91,21 +91,28 @@ def render_language(folder: Path, glitch_index: int) -> dict:
         order = order[:-1]
     assert order == ["Off", "Shown", "Sweep", "Cursed"] or order == ["Shown", "Sweep", "Cursed"], f"段の順が違う: {order}"
     assert sum(int(r["hit"]) for r in rows) == 0, "打鍵が鳴った（一気に出るので 0 のはず）"
-    assert len({r["text"] for r in rows}) == 1, "文面が途中で替わった"
+    # 0232: 文面は 真実（当たりの報告の返事）→ 嘘（最小編集）の 2 つで、この順。
+    texts = [r["text"] for r in rows]
+    distinct = [t for i, t in enumerate(texts) if i == 0 or texts[i - 1] != t]
+    meta = json.loads((folder / "lie.json").read_text(encoding="utf-8"))
+    assert meta["swapped"], "嘘へ差し替わらないまま終わった"
+    assert distinct == [meta["truth"].replace("\n", " / "), meta["lie"].replace("\n", " / ")], f"文面の順が 真実 → 嘘 ではない: {distinct}"
     total = int(rows[0]["total"])
     visible = int(rows[0]["visible"])
     lit_shown = [r for r in shown if float(r["glyph"]) >= 0.99]
     assert lit_shown, "全文が出切った読ませる段が無い"
     assert all(int(r["shown"]) == total for r in lit_shown), "読ませる段で全文が出ていない"
     assert all(int(r["cx"]) == 0 and float(r["curse"]) == 0 for r in lit_shown), "読ませる段で字が切れた／斑が乗った"
-    red_expected = int(lit_shown[0]["red"])
-    assert red_expected > 0 and all(int(r["red"]) == red_expected for r in lit_shown), "赤い「異常なし」が読ませる段で揃っていない"
+    assert all(int(r["lie"]) == 0 and r["text"] == distinct[0] for r in lit_shown), "読ませる段に嘘が出ている"
     # ⚠ 引いている最中は文字の濃さが 0 へ落ちるので、切られた字の数え上げも 0 になる（画に出ている字だけを数えるため）。
     #   判定は**まだ点いているコマ**に絞る。
     lit_cursed = [r for r in cursed if float(r["glyph"]) > 0.5]
     assert lit_cursed, "塗り替わり切って点いたままのコマが無い"
-    assert all(int(r["cx"]) == visible and int(r["red"]) == 0 and int(r["drawn"]) == 0 for r in lit_cursed), \
-        "塗り替わり切った後に切れていない字／赤い字が残っている"
+    lie_total = max(int(r["lie"]) for r in lit_cursed)
+    assert lie_total > 0, "塗り替わり切っても嘘の行が 1 字も出ていない"
+    assert all(int(r["cx"]) == visible and int(r["lie"]) == lie_total and int(r["drawn"]) == lie_total
+               and r["text"] == distinct[1] for r in lit_cursed), \
+        "塗り替わり切った後の行が嘘に書き換わっていない（上書きされた字・出ている嘘の字・文面）"
     sfx_frames = [int(r["frame"]) for r in rows if int(r["sfx"]) > 0]
     assert sfx_frames == [int(sweep[0]["frame"])], f"乱れの音は前線が降り始めたコマに 1 発のはず: {sfx_frames}"
     sweep_sec = len(sweep) / FPS
@@ -166,8 +173,21 @@ def render_language(folder: Path, glitch_index: int) -> dict:
     settle_max = max(settle) if settle else 0.0
     assert settle_max <= 0.3 and tear_col[min(f_settle, len(rows) - 1)] == 0.0, \
         f"尾が引いた後も動いている（コマ差 {settle_max:.3f} / 乱れ {tear_col[min(f_settle, len(rows) - 1)]:.2f}）"
-    assert red_shown > 30, f"読ませる段に赤い「異常なし」が無い（{red_shown} 画素）"
-    assert red_cursed < red_shown * 0.1, f"塗り替わった後も赤が残っている（{red_cursed} / {red_shown}）"
+    assert red_shown == 0 and red_cursed == 0, f"赤は使わない（読ませる段 {red_shown} / 塗り替わった後 {red_cursed} 画素）"
+    # 0232: 嘘の行は象牙で出ていて、頭「異常を検出し」は同じ場所のまま、尾だけが書き換わる。
+    ivory_shown = int(ivory_mask(crop(img_shown, text)).sum())
+    lie_rect = {**text, "x1": max(text["x1"], int(meta["lie_x1"]) + 4)}
+    ivory_cursed = int(ivory_mask(crop(img_cursed, lie_rect)).sum())
+    assert ivory_cursed >= ivory_shown * 0.6, f"塗り替わった後に嘘の行の字が薄い（象牙 {ivory_cursed} / 読ませる段 {ivory_shown}）"
+    head = {**text, "x1": int(meta["head_x"]) - 2}
+    tail = {**lie_rect, "x0": int(meta["head_x"]) + 2}
+    d_head = float(np.abs(crop(img_cursed, head) - crop(img_shown, head)).mean())
+    d_tail = float(np.abs(crop(img_cursed, tail) - crop(img_shown, tail)).mean())
+    assert d_head < 2.0, f"頭「{meta['truth'][:meta['head_chars']]}」が動いた（画素差 {d_head:.2f}）— 同じ場所で尾だけ書き換わるはず"
+    assert d_tail > 8.0, f"尾が書き換わっていない（画素差 {d_tail:.2f}）"
+    # 走り書きの両端（字の右の余白）。en は幅いっぱいなので残らないことがある — 記録だけ。
+    flank = {**text, "x0": int(meta["lie_x1"]) + 6, "x1": plate["x1"] - 6}
+    flank_ink = int(ivory_mask(crop(img_cursed, flank)).sum()) if flank["x1"] > flank["x0"] else 0
 
     # ---- 音（Unity が記録した sfx 列だけ）----
     sounds = ROOT / "Assets/Resources/Sound"
@@ -189,7 +209,10 @@ def render_language(folder: Path, glitch_index: int) -> dict:
                     "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac",
                     "-b:a", "160k", "-shortest", "-movflags", "+faststart", str(video)], check=True)
     result = dict(language=folder.name, frames=len(rows), seconds=len(rows) / FPS,
-                  keystrokes=0, total_chars=total, visible_chars=visible, red_chars=red_expected,
+                  keystrokes=0, total_chars=total, visible_chars=visible, lie_chars=lie_total,
+                  truth=meta["truth"], lie=meta["lie"], head_chars=meta["head_chars"],
+                  ivory_pixels_shown=ivory_shown, ivory_pixels_cursed=ivory_cursed,
+                  head_delta=d_head, tail_delta=d_tail, flank_ink_pixels=flank_ink,
                   shown_seconds=len(shown) / FPS, sweep_seconds=sweep_sec, cursed_seconds=len(cursed) / FPS,
                   sweep_start_sec=int(sweep[0]["frame"]) / FPS, sweep_sfx_frames=sfx_frames,
                   pixel_delta_text=d_text, pixel_delta_face=d_face, pixel_delta_plate=d_plate,
@@ -213,7 +236,7 @@ def main() -> int:
     results = [render_language(folder / lang, i) for i, lang in enumerate(("ja", "en", "fr"))]
     (folder / "evidence.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    print("OK: 打鍵 0 / 全文が出て読める / 上から降りる前線で塗り替わる / 赤い「異常なし」は読ませる段だけ")
+    print("OK: 打鍵 0 / 真実が出て読める / 上から降りる前線で塗り替わる / 行が「検出しませんでした」に書き換わる（頭は同じ場所・尾だけ）")
     return 0
 
 

@@ -235,7 +235,6 @@ namespace FixedCamVr.Diagnostics
 
         private static readonly Color PanelColor = new Color(10f / 255f, 9f / 255f, 8f / 255f, 1f);
         private static readonly Color Ivory = new Color(209f / 255f, 199f / 255f, 184f / 255f, 1f);
-        private static readonly Color DenialRed = new Color(184f / 255f, 48f / 255f, 40f / 255f, 1f);
 
         /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
         private const float FontSize = 0.07f;
@@ -329,7 +328,12 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.MarkLogged => "異常を検出しました",
             // ②b 報告時に異常演出が画面を取っていなかった。
             CommsNotice.MarkNothing => "異状は検出されませんでした",
-            CommsNotice.Takeover => "異常なしと判定しました",
+            // ② 侵食度 0.75 以上で何も無い所へ報告した。判定を持たない一文（0232 — 乗っ取られた装置は
+            //    正直に「異常なし」を言わない。「異常なし」は人形が塗り替えた行にしか出ない）。
+            CommsNotice.MarkAnalyzing => "装置が解析しています",
+            // 嘘の一文（0232）: 読ませる段は**当たりの報告の返事そのもの**。前線が行を渡り切ったコマに
+            //    <see cref="TakeoverLieText"/>（その最小編集「…しませんでした」）へ書き換わる。
+            CommsNotice.Takeover => "異常を検出しました",
             // ③a すっと浮かぶ一言（打鍵は鳴らない・`canon/LEDGER.md` 0168）。
             CommsNotice.Halt => "止まってください！",
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
@@ -366,7 +370,8 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.BeginHow => "If you see an anomaly,\nhold X or Y and the device\nwill analyse it.",
             CommsNotice.MarkLogged => "An anomaly was detected.",
             CommsNotice.MarkNothing => "No anomaly was detected.",
-            CommsNotice.Takeover => "No anomaly was detected.",
+            CommsNotice.MarkAnalyzing => "Analyzing.",
+            CommsNotice.Takeover => "An anomaly was detected.",
             CommsNotice.Halt => "Please stop!",
             // ③ ここだけが体験者自身を名指しする（0096）。
             CommsNotice.Prompt => "An anomaly is trying to\nabsorb you.\nRemove it.",
@@ -392,7 +397,8 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez X ou Y.\nL'appareil l'analysera.",
             CommsNotice.MarkLogged => "Anomalie détectée.",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
-            CommsNotice.Takeover => "Aucune anomalie n’a été\ndétectée.",
+            CommsNotice.MarkAnalyzing => "Analyse en cours.",
+            CommsNotice.Takeover => "Anomalie détectée.",
             CommsNotice.Halt => "Arrêtez-vous !",
             CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber.\nSupprimez-la.",
             _ => "",
@@ -425,14 +431,27 @@ namespace FixedCamVr.Diagnostics
         public static string NoticeText(CommsNotice n, ShowLang lang) => TextFor(n, lang);
 
         /// <summary>
-        /// 侵食が否定文を奪うとき、赤く残す語の長さ。各言語で「異常なし」に当たる部分だけを返す。
+        /// 嘘の一文（0232）で、前線が行を渡り切ったコマに<b>本文が書き換わる先</b>。読ませる段の
+        /// 「異常を検出しました」（＝ 当たりの報告の返事そのもの）の<b>最小編集</b> — 頭が同じで尾だけ変わるので、
+        /// 2 秒で尾だけ追えば「書き換えられた」と読める。
+        /// ⚠ 何も無い所での正直な返事「異状は検出されませんでした」は流用しない（1〜2 周目に既出の字面は嘘に見えない）。
+        /// 新しい字は無い（フォントの焼き直し不要）。色は本文と同じ象牙 — 朱赤は黒の地で輝度が低く、
+        /// 110 画素・2 秒・乱れの下で読み切れない。
         /// </summary>
-        public static int TakeoverDenialPrefixLength(ShowLang lang) => lang switch
+        public static string TakeoverLieText(ShowLang lang) => lang switch
         {
-            ShowLang.En => "No anomaly".Length,
-            ShowLang.Fr => "Aucune anomalie".Length,
-            _ => "異常なし".Length,
+            ShowLang.En => "An anomaly was not detected.",
+            ShowLang.Fr => "Anomalie non détectée.",
+            _ => "異常を検出しませんでした",
         };
+
+        /// <summary>その言語で画へ出る文面ぜんぶ（連絡の文面 ＋ 嘘の書き換え先）。幅の物差しとテストが読む。</summary>
+        public static System.Collections.Generic.IEnumerable<string> AllBodies(ShowLang lang)
+        {
+            foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
+                yield return TextFor(n, lang);
+            yield return TakeoverLieText(lang);
+        }
 
         /// <summary>
         /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（①b の 3 行目・14 文字）。
@@ -463,9 +482,8 @@ namespace FixedCamVr.Diagnostics
             string best = "";
             float bestW = -1f;
             foreach (ShowLang lang in ShowLanguage.All)
-            foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
+            foreach (string body in AllBodies(lang))
             {
-                string body = TextFor(n, lang);
                 if (string.IsNullOrEmpty(body)) continue;
                 float w = 0f;
                 foreach (string line in body.Split('\n'))
@@ -588,6 +606,11 @@ namespace FixedCamVr.Diagnostics
         private bool[]? _charVisible;
         // 嘘の一文（3 周目 A）が出ている最中（面が畳まれるまで）。再報告で頭へ戻さないために CueLogic へ渡す。
         private bool _lieActive;
+        // 嘘の一文（0232）: 前線がその行を渡り切ったコマに本文を嘘へ差し替えたか。差し替えた後は字を切らず、
+        // 走り書きは字の両端の余白だけに置く。Deliver / 畳む縁で落とす。
+        private bool _lieSwapped;
+        // 差し替える前の真実の行の絵を持つ字の数（差し替えた後の CorruptedChars ＝ 上書きされた字の数）。
+        private int _truthVisible;
         // 憑依の出し方（0230）の縁: この連絡で乱れの音を鳴らしたか／塗り替わり切ったか。Deliver で落とす。
         private bool _sweepSfxFired, _sweepDone;
         // 前線が降りる矩形の上端と下端（面のローカル m）。Apply が毎フレーム更新し、字の切断の判定が読む。
@@ -750,8 +773,8 @@ namespace FixedCamVr.Diagnostics
         /// <summary>乱れの音源を掴めているか。<b>false なら塗り替わりは無音。</b></summary>
         public bool SweepSfxBuilt => sweepSfx != null && sweepSfx.HasClips;
 
-        /// <summary>いま実際に赤く描いている字の数（嘘の「異常なし」）。前線に切られた字は数えない。</summary>
-        public int RedChars { get; private set; }
+        /// <summary>嘘の一文（0232）で、差し替えた嘘の行のうち<b>いま実際に描いている字の数</b>。差し替える前は 0。</summary>
+        public int LieChars { get; private set; }
 
         /// <summary>いま下段に出している文字（テスト・診断用）。</summary>
         public string HintBody => _hintBody;
@@ -1462,7 +1485,7 @@ namespace FixedCamVr.Diagnostics
         /// 黙って切れなくなっても、斑の中の字は消える）。数えるのは中心が斑の中にある字
         /// （<see cref="CorruptedChars"/>）。
         /// 上から降りる前線（0230）も同じ 2 段構えで、前線の上側の字が切れる（<see cref="CommsCurseLogic.IsSwept"/>）。
-        /// 嘘の一文の「異常なし」は赤いまま出て、塗り替わった後は字ごと切れる。
+        /// 嘘の一文（0232）は前線が行を渡り切ったコマに本文が嘘へ差し替わり（<see cref="SwapToLie"/>）、以後は前線が渡った側にだけ出る。
         /// </summary>
         private int ApplyGlyphMesh(TMP_Text text, Vector3[][]? baseVertices, Color32[][]? baseColors,
                                    float reveal, float globalAlpha)
@@ -1478,7 +1501,7 @@ namespace FixedCamVr.Diagnostics
             }
 
             int changedVisible = 0;
-            int redVisible = 0;
+            int lieVisible = 0;
             float exact = Mathf.Clamp01(reveal) * _charCount;
             float charSec = _charCount > 0 ? _logic.TypeSec / _charCount : 0f;
             float curse = AppliedCurse;
@@ -1490,8 +1513,7 @@ namespace FixedCamVr.Diagnostics
             //   切断（前線・斑）は従来どおり字の中心と両端で読む — 帯の境目の上側はステンシルが画素で切る。
             bool tearing = AppliedTear > 0.001f;
             float flicker = _tearFlicker;
-            bool lie = LastNotice == CommsNotice.Takeover;
-            int redLen = lie ? TakeoverDenialPrefixLength(ShowLanguage.Current) : 0;
+            bool lieShown = _lieSwapped;
             Vector3 textPos = text.transform.localPosition;
             float scale = TextScale;
             // その点が斑の中か、前線の上側か（どちらもステンシルが立つ側）。
@@ -1506,13 +1528,21 @@ namespace FixedCamVr.Diagnostics
                 float ageSec = Mathf.Max(0f, exact - i) * charSec;
                 float fade = _silent ? 1f : GlyphFadeAlpha(ageSec);
                 bool appeared = exact > i;
-                bool red = lie && i < redLen;
                 float alpha = appeared ? fade * globalAlpha : 0f;
                 float centerX = (character.bottomLeft.x + character.topRight.x) * 0.5f;
                 float centerY = (character.bottomLeft.y + character.topRight.y) * 0.5f;
                 // 斑の場と前線を字の中心と両端（面のローカル m）で読む。
                 bool cutCenter = false, cutWhole = false;
-                if (curse > 0f || sweep > 0f)
+                if (lieShown)
+                {
+                    // 差し替えた嘘の行は**前線が渡った側にだけ**在る（渡っていない行はまだ出ない）。
+                    // 斑の切断は掛けない — 塗り替わった後は斑が全面（curse = 1）で、掛けると嘘が消える。
+                    float py = textPos.y + centerY * scale;
+                    bool swept = sweep >= 1f
+                        || (sweep > 0f && CommsCurseLogic.IsSwept(textPos.x + centerX * scale, py, sweep, top, bottom));
+                    cutWhole = !swept;
+                }
+                else if (curse > 0f || sweep > 0f)
                 {
                     float px = textPos.x + centerX * scale;
                     float py = textPos.y + centerY * scale;
@@ -1522,6 +1552,7 @@ namespace FixedCamVr.Diagnostics
                 }
                 if (cutCenter && appeared && alpha > 0.004f) changedVisible++;
                 if (cutWhole) alpha = 0f;
+                if (lieShown && appeared && alpha > 0.004f) lieVisible++;
 
                 int material = character.materialReferenceIndex;
                 int vertex = character.vertexIndex;
@@ -1549,21 +1580,90 @@ namespace FixedCamVr.Diagnostics
                         vertexAlpha *= keep;
                     }
                     Color32 c = colors[vertex + k];
-                    if (red)
-                    {
-                        c.r = (byte)Mathf.RoundToInt(DenialRed.r * 255f);
-                        c.g = (byte)Mathf.RoundToInt(DenialRed.g * 255f);
-                        c.b = (byte)Mathf.RoundToInt(DenialRed.b * 255f);
-                    }
                     c.a = (byte)(c.a * (byte)Mathf.RoundToInt(Mathf.Clamp01(vertexAlpha) * 255f) / 255);
                     colors[vertex + k] = c;
                 }
-                if (red && appeared && alpha > 0.004f && !cutCenter) redVisible++;
             }
 
             text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32);
-            RedChars = redVisible;
-            return changedVisible;
+            LieChars = lieVisible;
+            // 差し替えた後は「上書きされた真実の字の数」を切られた字として返す（観測の cx が塗り替わりを言い続ける）。
+            return lieShown ? _truthVisible : changedVisible;
+        }
+
+        /// <summary>本文の最後の行（走り書きの矩形で測った行の中心）が前線の上側に入ったか。</summary>
+        private bool LastLineSwept()
+        {
+            if (AppliedSweep >= 1f) return true;
+            if (AppliedSweep <= 0f) return false;
+            int last = -1;
+            for (int l = 0; l < MaxScrawlLines; l++) if (_lineLastChar[l] >= 0) last = l;
+            if (last < 0) return true;
+            Vector4 r = _lineRects[last];
+            return CommsCurseLogic.IsSwept((r.x + r.y) * 0.5f, r.z, AppliedSweep, _sweepTop, _sweepBottom);
+        }
+
+        /// <summary>
+        /// 嘘の一文（0232）: 本文を真実（「異常を検出しました」）から嘘（<see cref="TakeoverLieText"/>）へ、
+        /// 同じ TMP のまま文字列ごと差し替える。位置は動かさない（同じ行数なので頭が揃ったまま尾だけ変わる）。
+        /// 差し替えた後は画素の切断（ステンシル）を止める — 前線は既にこの行を渡り切っていて、
+        /// 止めないと嘘が呪われた画素で 1 画素も出ない。走り書きはその行の字の両端の余白へ置き換える
+        /// （スケッチの「～異常を検出しませんでした～」）。
+        /// ⚠ 第 2 の面をステンシル Equal で描く案は捨てた — ステンシルの無い形式で嘘が 1 画素も出ない側へ倒れる。
+        /// </summary>
+        private void SwapToLie(TMP_Text tmp)
+        {
+            _truthVisible = _glyphCount;
+            Vector4 truthLine = _lineRects[0];
+            tmp.maxVisibleCharacters = int.MaxValue;
+            tmp.text = TakeoverLieText(ShowLanguage.Current);
+            tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
+            var info = tmp.textInfo;
+            _charCount = info != null ? info.characterCount : 0;
+            _charVisible = new bool[_charCount];
+            int visible = 0;
+            for (int i = 0; i < _charCount; i++)
+            {
+                _charVisible[i] = info!.characterInfo[i].isVisible;
+                if (_charVisible[i]) visible++;
+            }
+            _glyphCount = visible;
+            _lastShown = _charCount;
+            CaptureBaseMesh(tmp, out _textBaseVertices, out _textBaseColors);
+            ComputeLineRects(tmp, info);
+            // 走り書きは嘘の行の両端の余白だけ（字の下には描かない）。列の幅は本文の折り返し幅と同じ。
+            Vector4 lie = _lineRects[0];
+            float colX0 = tmp.transform.localPosition.x - PanelW * 0.46f;
+            float colX1 = tmp.transform.localPosition.x + PanelW * 0.46f;
+            float gap = lie.w * 0.5f;
+            float yc = truthLine.w > 0f ? truthLine.z : lie.z;
+            float h = truthLine.w > 0f ? truthLine.w : lie.w;
+            for (int l = 0; l < MaxScrawlLines; l++)
+            {
+                _lineRects[l] = Vector4.zero;
+                _lineFirstChar[l] = int.MaxValue;
+                _lineLastChar[l] = -1;
+            }
+            if (lie.x - gap - colX0 > 0.005f)
+            {
+                _lineRects[0] = new Vector4(colX0, lie.x - gap, yc, h);
+                _lineFirstChar[0] = 0;
+                _lineLastChar[0] = 0;
+            }
+            if (colX1 - (lie.y + gap) > 0.005f)
+            {
+                _lineRects[1] = new Vector4(lie.y + gap, colX1, yc, h);
+                _lineFirstChar[1] = 0;
+                _lineLastChar[1] = 0;
+            }
+            SetTextStencilComp(tmp, UnityEngine.Rendering.CompareFunction.Always);
+            _lieSwapped = true;
+        }
+
+        private static void SetTextStencilComp(TMP_Text tmp, UnityEngine.Rendering.CompareFunction comp)
+        {
+            foreach (Material m in tmp.fontMaterials)
+                if (m != null && m.HasProperty(StencilCompId)) m.SetFloat(StencilCompId, (float)comp);
         }
 
         private static float Smooth01(float t)
@@ -1742,6 +1842,11 @@ namespace FixedCamVr.Diagnostics
                 _lastShown = shown;
                 VisibleChars = shown;
 
+                // 嘘の一文（0232）: 前線が本文の最後の行を渡り切ったコマに、本文を嘘へ差し替える。
+                if (_lieActive && !_lieSwapped
+                    && (PossessionPhase == CommsPossessionPhase.Sweep || PossessionPhase == CommsPossessionPhase.Cursed)
+                    && LastLineSwept())
+                    SwapToLie(_text);
                 CorruptedChars = ApplyGlyphMesh(_text, _textBaseVertices, _textBaseColors,
                                                  reveal, AppliedGlyph);
             }
@@ -1787,7 +1892,9 @@ namespace FixedCamVr.Diagnostics
             _tearFlicker = 1f;
             System.Array.Clear(_tearShift, 0, _tearShift.Length);
             System.Array.Clear(_tearDrop, 0, _tearDrop.Length);
-            RedChars = 0;
+            LieChars = 0;
+            _lieSwapped = false;
+            _truthVisible = 0;
             AppliedPanelAlpha = 0f;
             _silent = false;
         }

@@ -1556,7 +1556,8 @@ def analyze(events, others, exp, warns=None):
             # 侵食度1では通常返答を維持できず Takeover が一度だけ走るため、通常返答の照合は
             # 0 / 0.25 / 0.75 の報告だけに限定する。
             marks = [e for e in events if e.get("ev") == "mark"]
-            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing")]
+            # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
+            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing")]
             ordinary_marks = [m for m in marks if fnum(m, "invasion", 0.0) < 0.999]
             mark_ok = True
             if len(answers) < len(ordinary_marks):
@@ -1570,7 +1571,9 @@ def analyze(events, others, exp, warns=None):
                     continue
                 # 古いログには det が無いため res を退避値として読む。
                 detected = m.get("det") if m.get("det") is not None else m.get("res")
-                want = "MarkLogged" if str(detected) == "1" else "MarkNothing"
+                possessed_mark = fnum(m, "invasion", 0.0) >= 0.75 - 1e-6
+                want = ("MarkLogged" if str(detected) == "1"
+                        else ("MarkAnalyzing" if possessed_mark else "MarkNothing"))
                 if near[0].get("id") != want:
                     mark_ok = False
                     verdict("FAIL",
@@ -1585,7 +1588,7 @@ def analyze(events, others, exp, warns=None):
             full_marks = [m for m in marks if fnum(m, "invasion", 0.0) >= 0.999]
             takeover_events = [e for e in comms if e.get("id") == "Takeover"]
             if full_marks and not takeover_events:
-                verdict("WARN", "侵食度1で報告されたが『異常なしと判定しました』の崩壊が記録されていない — "
+                verdict("WARN", "侵食度1で報告されたが嘘の一文（Takeover）が記録されていない — "
                                 "先に自動再生済みか、CommsCueLogic の侵食入力を確認する")
 
             # ⚠⚠ **解除が 1 度も通らない台本は、ゲーム性が死んでいる**（`canon/LEDGER.md` 0082）。
@@ -1731,6 +1734,17 @@ def analyze(events, others, exp, warns=None):
                                         "CommsCurseLogic.ComputeTear が帯を作れていない")
                     else:
                         verdict("OK", f"塗り替わりのあいだ面が乱れた（強さ 最大 {tear_max:.2f} / 飛んだ帯 最大 {torn_max}）")
+                # 0232: 嘘の一文は塗り替わり切った縁で、行が「検出しませんでした」に書き換わっている（lie = 出ている嘘の字数）。
+                lie_edges = [e for e in cursed_ev if e.get("id") == "Takeover"]
+                if lie_edges and all("lie" in e for e in lie_edges):
+                    lie_max = max(int(e.get("lie") or 0) for e in lie_edges)
+                    if lie_max <= 0:
+                        verdict("FAIL", "嘘の一文が塗り替わり切ったのに、書き換わった行（lie）が 1 字も画に出ていない — "
+                                        "CommsPanel.SwapToLie の配線を見る")
+                    else:
+                        verdict("OK", f"嘘の一文が「検出しませんでした」に書き換わった（{lie_max} 字）")
+                elif lie_edges:
+                    verdict("WARN", "嘘の一文の縁に lie が無い — 0232 より前の APK")
                 if any(str(e.get("sfx")) == "nc" for e in sweeps):
                     verdict("FAIL", "塗り替わりの頭の乱れの音源（sfx_glitch）を掴めていない（sfx=nc）— 画は変わるのに無音")
                 if any(int(e.get("chars") or 0) != 0 for e in possessed):
@@ -2502,7 +2516,7 @@ def analyze(events, others, exp, warns=None):
             else:
                 verdict("OK", f"人形がたくさん出てくる所で笑った（sndDolls 最大 {max(dolls):.2f}）")
             # 押したあとも鳴っていたら、止める経路が壊れている（次の体験者へ持ち越す）。
-            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing")
+            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing")
                                                   for e in comms):
                 verdict("WARN", "報告のあとも人形が笑ったまま走行が終わっている"
                                 f"（最後の sndDolls={dolls[-1]:.2f}）")

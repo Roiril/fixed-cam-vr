@@ -859,7 +859,7 @@ namespace FixedCamVr.Diagnostics
                 Emit($"ev=commsPossess phase={_lastCommsPossessPhase} sweep={_comms.AppliedSweep:F3} " +
                      $"tearMax={_commsTearMax:F2} tornMax={_commsTornMax} " +
                      $"cx={_comms.CorruptedChars} face={_comms.AppliedFaceMix:F3} " +
-                     $"invasion={_comms.InvasionProgress:F2} red={_comms.RedChars} " +
+                     $"invasion={_comms.InvasionProgress:F2} lie={_comms.LieChars} " +
                      $"glyph={_comms.AppliedGlyph:F3} faceInk={_comms.AppliedFace:F3} " +
                      $"shown={_comms.VisibleChars} id={_comms.LastNotice} n={_comms.PossessedCount} " +
                      $"lies={_comms.LieCount} sweeps={_comms.SweepCount} " +

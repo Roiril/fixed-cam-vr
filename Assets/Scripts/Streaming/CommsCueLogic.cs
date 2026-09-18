@@ -70,11 +70,19 @@ namespace FixedCamVr.Streaming
         BeginHow,
         /// <summary>② 報告時に異常演出が表示されていた。「異常を検出しました」。</summary>
         MarkLogged,
-        /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異常は検出されませんでした」。</summary>
+        /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異状は検出されませんでした」。侵食度 0.75 未満だけ。</summary>
         MarkNothing,
         /// <summary>
-        /// 侵食度 1 の報告への嘘「異常なしと判定しました」。**ラン 1 回に 1 度だけ**。
-        /// 出し方は <see cref="CommsDelivery.Possessed"/>（0230）— 一気に出て、読ませて、上から塗り替わる。
+        /// ② 侵食度 0.75 以上で、報告した瞬間に演出が走っていなかった。判定を持たない一文「装置が解析しています」
+        /// （<c>canon/LEDGER.md</c> 0232 — 「異常なし」は人形に乗っ取られた結果なので、乗っ取られた装置は
+        /// 正直に「異常なし」を言わない。「異常なし」は嘘の一文が塗り替えた行にしか出ない）。出し方は憑依（走り書きに消える）。
+        /// </summary>
+        MarkAnalyzing,
+        /// <summary>
+        /// 侵食度 1 の嘘の一文。**ラン 1 回に 1 度だけ**。読ませる段は<b>当たりの報告の返事そのもの</b>
+        /// 「異常を検出しました」で、前線が行を渡り切ったコマに<b>その最小編集</b>「異常を検出しませんでした」
+        /// （<c>CommsPanel.TakeoverLieText</c>）へ書き換わる（<c>canon/LEDGER.md</c> 0232）。
+        /// 出し方は <see cref="CommsDelivery.Possessed"/>（0230 / 0231）— 一気に出て、読ませて、上から乱れとともに塗り替わる。
         /// </summary>
         Takeover,
         /// <summary>
@@ -399,7 +407,9 @@ namespace FixedCamVr.Streaming
                 if (inp.takeoverAllowed && !_takeoverDelivered && fullyInvaded)
                     return CommsNotice.Takeover;
                 if (inp.markDetected) return CommsNotice.MarkLogged;
-                return CommsNotice.MarkNothing;
+                // 0232: 乗っ取られた装置（侵食度 0.75 以上）は正直に「異常なし」を言わない — 判定を持たない一文へ。
+                return inp.invasionProgress >= CommsCurseLogic.PossessedLevel
+                    ? CommsNotice.MarkAnalyzing : CommsNotice.MarkNothing;
             }
             if (inp.takeoverAllowed && !_takeoverDelivered
                 && fullyInvaded && _fullInvasionSec >= CommsPossessionLogic.AutoDelaySec)
