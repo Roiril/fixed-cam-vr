@@ -530,6 +530,38 @@ namespace FixedCamVr.Streaming
 
         public static bool IsUntilMark(string? durKind) => durKind == DurUntilMark;
 
+        /// <summary>
+        /// <b>締めの線</b> ＝ 3 周目 A で左半分が凍る床の線（<c>layout.lines[].id</c>）。
+        /// 4 周目 A の③a「止まってください！」は<b>この線を踏んだ瞬間</b>に出る
+        /// （2026-09-19・<c>canon/LEDGER.md</c> 0233・ユーザー指定
+        /// 「時間指定で 4s ではなく、場所指定にし、その場所を、左右反転の演出のときのフリーズされる位置に」）。
+        ///
+        /// 台本から導く: <c>splitFreeze</c> のカットの<b>直前まで待っていた <c>untilLine</c> の線</b>。
+        /// 凍るのはその線を越えた瞬間なので、「凍った場所」はその線そのもの。
+        /// ⚠ <b>show.json に別の口を作らない。</b> 線を 2 か所で指すと、卓で凍結線を据え直したときに
+        ///   片方だけ動いて「凍った場所」と「止まれと言われる場所」がずれる。
+        /// ⚠ 見つからなければ空 ＝ 締めの線は無い。そのとき③a は時計（<c>CommsCueLogic.HaltAfterClosingSec</c>）
+        ///   で出る（退避路。線が解決できないことを黙って③の欠落にしない）。
+        /// ⚠ 解析器 <c>analyze-xp-log.py</c> の <c>closing_line_of()</c> が同じ規則で show.json から引く。
+        ///   片方だけ変えると <c>ev=config closingLine=</c> の突き合わせが食い違う。
+        /// </summary>
+        public static string ResolveClosingLineId(ShowTakeDef?[]? takes)
+        {
+            if (takes == null) return "";
+            foreach (ShowTakeDef? t in takes)
+            {
+                if (t?.steps == null) continue;
+                string waiting = "";
+                foreach (ShowStepDef? s in t.steps)
+                {
+                    if (s == null) continue;
+                    if (s.IsUntilLine && !string.IsNullOrEmpty(s.lineId)) waiting = s.lineId;
+                    if (s.splitFreeze && !string.IsNullOrEmpty(waiting)) return waiting;
+                }
+            }
+            return "";
+        }
+
         /// <summary>source 判別子を正規化する。未知は <see cref="SourceLive"/> へ倒し known=false。</summary>
         public static string NormalizeSource(string? source, out bool known)
         {

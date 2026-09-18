@@ -47,6 +47,13 @@ namespace FixedCamVr.Streaming
         private bool _warnedNoHeadProvider;
         private string _warnedMissingLines = "";
 
+        // 締めの線（3 周目 A の凍結点・`TakeSchema.ResolveClosingLineId`）。id は台本から、
+        // スロットは _lineSlots から、実体の有無は layout から。③a「止まってください！」の引き金（0233）。
+        private string _closingLineId = "";
+        private int _closingLineSlot = -1;
+        private bool _closingLineDefined;
+        private bool _lastClosingLineCrossed;
+
         // 横断判定用の前回時刻（dt は Now の差分で作る＝テストの時刻源差し替えでも動く）。
         private bool _hasLastNow;
         private float _lastNow;
@@ -400,11 +407,31 @@ namespace FixedCamVr.Streaming
                 }
             }
             _takes = takes.ToArray();
+            // 締めの線は台本から導く（3 周目 A の凍結点）。**枠は必ず取る** — 演出の線と同じ理由で、
+            // layout が後から来ても index が動かないようにする。線があれば横断検出も回す。
+            _closingLineId = TakeSchema.ResolveClosingLineId(_takes);
+            _closingLineSlot = string.IsNullOrEmpty(_closingLineId) ? -1 : LineSlot(_closingLineId);
+            anyLine |= _closingLineSlot >= 0;
             _hasLineTakes = anyLine;
             _logic.SetDefs(defs.ToArray());
             // 新しく取った枠も含めてラインを貼り直す（layout が既に来ていれば geometry が入る）。
             ApplyLinesFromLayout();
         }
+
+        /// <summary>
+        /// 締めの線の id（3 周目 A の凍結点。<c>TakeSchema.ResolveClosingLineId</c>）。台本に無ければ空。
+        /// 自動走行（<c>ShowWalkDebugDriver</c>）が締めのカットの中でこの線を踏みに行く。
+        /// </summary>
+        public string ClosingLineId => _closingLineId;
+
+        /// <summary>締めの線が layout に実体を持つか。false なら③a は時計の退避路で出る。</summary>
+        public bool ClosingLineDefined => _closingLineDefined;
+
+        /// <summary>締めのカットの中で締めの線を踏んだ（③a「止まってください！」の引き金・0233）。</summary>
+        public bool ClosingLineCrossed => _logic.ClosingLineCrossed;
+
+        /// <summary>締めの線を踏んだ時刻（締めのカットに入ってからの秒・踏んでいなければ負）。</summary>
+        public float ClosingLineCrossedSec => _logic.ClosingLineCrossedSec;
 
         // lineId のスロットを引く（無ければ末尾へ追加）。並べ替え・削除はしない。
         private int LineSlot(string id)
@@ -442,6 +469,12 @@ namespace FixedCamVr.Streaming
                 lines[slot] = LineCrossLogic.Line.Between(l.x1, l.z1, l.x2, l.z2, dir, l.camera);
             }
             _lineCross.SetLines(lines);
+            // 締めの線は実体があるときだけ効かせる。実体の無い枠を渡すと決して横切られず、
+            // ③a が黙って出なくなる（時計の退避路へ倒す方が安全）。欠けの警告は WarnMissingLines が
+            // 同じ id（3 周目 A の untilLine）で出す。
+            _closingLineDefined = _closingLineSlot >= 0 && _closingLineSlot < lines.Length
+                                  && lines[_closingLineSlot].defined;
+            _logic.SetClosingLine(_closingLineDefined ? _closingLineSlot : -1);
             WarnMissingLines(lines);
         }
 
@@ -558,6 +591,15 @@ namespace FixedCamVr.Streaming
             int latest = ResolveLatestZoneCamera();
             TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, lines);
             Apply(d, exitAnchored: false);
+
+            // 締めの線を踏んだ縁を 1 行出す（③a の引き金・0233）。「線は踏まれたのに③a が出ない」と
+            // 「そもそも踏んでいない」を実機で切り分けるのはこの行だけ（線の横断そのものは上の
+            // TickLines が出すが、締めのカットの中かどうかまでは言わない）。
+            bool crossedNow = _logic.ClosingLineCrossed;
+            if (crossedNow && !_lastClosingLineCrossed)
+                Debug.Log($"[TakeRunner] 締めの線を踏んだ id={_closingLineId} " +
+                          $"closing={_logic.ClosingLineCrossedSec:F2}s");
+            _lastClosingLineCrossed = crossedNow;
 
             // 連続の渡し（chainNext）で画面を返さなかったのに、次の演出が始まらなかった場合の安全網。
             // 判定と発火のあいだ（1 フレーム）に持ち越しが期限切れになる等で「次」が消えると、

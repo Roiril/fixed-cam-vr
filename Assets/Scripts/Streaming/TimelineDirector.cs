@@ -88,8 +88,23 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
 
-        /// <summary>締めのカットに入ってからの秒数（走っていなければ負）。③の時計（0178）。</summary>
+        /// <summary>
+        /// 締めのカットに入ってからの秒数（走っていなければ負）。締めの線が無いときの③の時計（0178）。
+        /// 線があるときは観測（<c>ev=comms closing=</c>）と自動走行の待ち合わせに読む。
+        /// </summary>
         public float ClosingTakeSec => takeRunner != null ? takeRunner.ClosingTakeSec : -1f;
+
+        /// <summary>締めの線（3 周目 A の凍結点）の id。台本に無ければ空（0233）。</summary>
+        public string ClosingLineId => takeRunner != null ? takeRunner.ClosingLineId : "";
+
+        /// <summary>締めの線が layout に実体を持つか。false なら③a は時計の退避路（<c>HaltAfterClosingSec</c>）で出る。</summary>
+        public bool ClosingLineDefined => takeRunner != null && takeRunner.ClosingLineDefined;
+
+        /// <summary>締めのカットの中で締めの線を踏んだ（③a「止まってください！」の引き金・0233）。</summary>
+        public bool ClosingLineCrossed => takeRunner != null && takeRunner.ClosingLineCrossed;
+
+        /// <summary>締めの線を踏んだ時刻（締めのカットに入ってからの秒・踏んでいなければ負）。</summary>
+        public float ClosingLineCrossedSec => takeRunner != null ? takeRunner.ClosingLineCrossedSec : -1f;
 
         /// <summary>いま押しても受け付けない（締めに入って <c>TakeRunnerLogic.MarkGraceSec</c> 未満）。</summary>
         public bool IsMarkTooEarly => takeRunner != null && takeRunner.IsMarkTooEarly;

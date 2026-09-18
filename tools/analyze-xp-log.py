@@ -282,6 +282,11 @@ def expected_from_show(show: dict):
     exp["takes"] = takes
     # 終幕の合図が指す演出は、旗が立っていても実機が落とす（畳むと終幕が早撃ちされる）。
     exp["outroAnchorId"] = ((run.get("outro") or {}).get("afterTakeId") or "").strip()
+    # 締めの線（3 周目 A の凍結点）。空なら③a は時計で出る。layout に実体が無い id も
+    # 実機では「無い」扱い（`TakeRunner.ApplyLinesFromLayout`）なので、ここでも同じに倒す。
+    closing_line = closing_line_of(show)
+    line_ids = {(l.get("id") or "").strip() for l in ((show.get("layout") or {}).get("lines") or [])}
+    exp["closingLineId"] = closing_line if closing_line in line_ids else ""
 
     # 3 周目の録画カットが必要とする (周, カメラ)。ここが録れていないと実機は黙ってカットを飛ばす。
     needed = set()
@@ -346,6 +351,25 @@ def is_segment_reachable(lap, camera, total_laps, order):
     return camera == order[0]
 
 
+def closing_line_of(show: dict) -> str:
+    """締めの線 ＝ 3 周目 A で左半分が凍る床の線の id（`canon/LEDGER.md` 0233）。
+
+    4 周目 A の③a「止まってください！」はこの線を踏んだ瞬間に出る。C# の
+    `TakeSchema.ResolveClosingLineId` と**同じ規則**: `splitFreeze` のカットの直前まで待っていた
+    `untilLine` の線。見つからなければ空（③a は時計 5 秒の退避路で出る）。
+    **片方だけ変えると `ev=config closingLine=` の突き合わせが食い違う。**
+    """
+    for seg in ((show.get("timeline") or {}).get("segments") or []):
+        for t in (seg.get("takes") or []):
+            waiting = ""
+            for s in (t.get("steps") or []):
+                if (s.get("durKind") or "") == "untilLine" and (s.get("lineId") or "").strip():
+                    waiting = (s.get("lineId") or "").strip()
+                if s.get("splitFreeze") and waiting:
+                    return waiting
+    return ""
+
+
 def config_from_show(show: dict) -> dict:
     """実機の `ShowControlClient.DescribeConfig()` と**同じ項目**を PC の show.json から作る。
 
@@ -389,6 +413,8 @@ def config_from_show(show: dict) -> dict:
         # 後から気づいても取り返せない）。C# の DescribeConfig と対。
         "recLaps": (",".join(str(l) for l in ((rec or {}).get("laps") or []))
                     if (rec or {}).get("enabled") and ((rec or {}).get("laps") or []) else "-"),
+        # 締めの線（③a の引き金・0233）。台本から導く。C# の DescribeConfig と対。
+        "closingLine": closing_line_of(show) or "-",
     }
 
 
@@ -1603,14 +1629,40 @@ def analyze(events, others, exp, warns=None):
             # ③は 2 通（canon/LEDGER.md 0168）。③a「止まってください！」→ ③b「異常があなたを…」。
             # ⚠ ③a は**打鍵を鳴らさない**ので、chars=0 で届くのが正常（下の打鍵の合計に混ぜない）。
             #
-            # ⚠⚠ **2026-09-06（0178）に時計が変わった。** ③は「報告待ちが立ってから 2 秒」ではなく
-            #    **「締めのカットに入ってから 5 秒」**（`CommsCueLogic.HaltAfterClosingSec`）で出る。
-            #    ＝ **押しても押さなくても③a →③b は必ず流れる。**
+            # ⚠⚠ **2026-09-19（0233）に③a の引き金が場所になった。** 締めのカットの中で
+            #    **締めの線（3 周目 A の凍結点・`closingLineId`）を踏んだ瞬間**に出る。
+            #    時計（締めに入って 5 秒・0178）は線が無いときの退避路。
+            #    ⇒ 線がある台本で `ev=closingLine` が無いまま Halt が出たら FAIL（退避路で出ている）。
+            #    ⇒ `ev=closingLine` が出たのに Halt が無ければ FAIL（引き金が配線されていない）。
+            #    ⇒ 締めまで来て線を踏んでいなければ WARN（人なら線の手前で止まった。自動走行なら
+            #      `ShowWalkDebugDriver.CrossClosingLine` が踏みに行くはずなので FAIL 相当）。
+            # ⚠ 0178 の「押しても押さなくても③a →③b は必ず流れる」は線を踏んだ人について生きている。
             #    ⇒ **③b が届いて③a が無い走行は FAIL**（順序が崩れている）。
-            #    ⇒ **③a が届いて③b が無い走行も FAIL**（0168 の頃は「押したら正常」だったが、
-            #      いまは押しても③b は続く。欠けていたら配線が壊れている）。
+            #    ⇒ **③a が届いて③b が無い走行も FAIL**（押しても③b は続く。欠けていたら配線が壊れている）。
             t_halt = _first("Halt")
             waited = [e for e in comms if e.get("id") == "Prompt"]
+            closing_events = [e for e in events if e.get("ev") == "closingLine"]
+            closing_line_id = exp.get("closingLineId") or ""
+            reached_closing = any(str(e.get("wait")) == "1" for e in comms) \
+                or any(fnum(e, "closing", -1.0) >= 0 for e in comms) or bool(closing_events)
+            for e in closing_events:
+                w(f"  t={fnum(e,'t',0):7.1f}  締めの線 {e.get('id')} を踏んだ（締めに入って {e.get('sec')}s・wait={e.get('wait')}）")
+            for tag, ln in others:
+                if tag == "XPWalk" and "締めの線" in ln:
+                    w(f"  {ln}")
+            # 自動走行かどうか（XPWalk のタグ行があれば走行）。線を踏まないのは人なら著作どおり、走行なら不具合。
+            is_walk = any(tag == "XPWalk" for tag, _ in others)
+            if closing_line_id and t_halt is not None:
+                halt_ev = next((e for e in comms if e.get("id") == "Halt"), None)
+                if not closing_events or str((halt_ev or {}).get("cline", "1")) == "0":
+                    verdict("FAIL", f"③a『止まってください！』が締めの線 {closing_line_id} を踏まずに出た（0233）— "
+                                    "線が実機の layout に無い / 古い APK が時計の退避路で出している疑い")
+                else:
+                    t_line = fnum(closing_events[0], "t", 0.0)
+                    verdict("OK", f"締めの線 {closing_line_id} を踏んで {t_halt - t_line:.2f}s 後に③a が出た（0233）")
+            elif closing_line_id and closing_events and t_halt is None:
+                verdict("FAIL", f"締めの線 {closing_line_id} を踏んだのに③a『止まってください！』が届いていない（0233）— "
+                                "CommsCueLogic の closingLineCrossed が配線されていない疑い")
             if t_halt is not None and waited:
                 gap = fnum(waited[0], "t", 0.0) - t_halt
                 if gap < 0:
@@ -1623,9 +1675,14 @@ def analyze(events, others, exp, warns=None):
             elif t_halt is not None:
                 verdict("FAIL", "③a は届いたのに③b『異常があなたを…』が届いていない（0178）— "
                                 "報告で③b を止める古い実装の疑い。いまは押しても続く約束")
-            elif any(str(e.get("wait")) == "1" for e in comms):
+            elif reached_closing and closing_line_id and not closing_events:
+                verdict("FAIL" if is_walk else "WARN",
+                        f"締めのカットまで来たのに締めの線 {closing_line_id} を踏んでおらず、③が 1 通も届いていない（0233）— "
+                        "自動走行なら ShowWalkDebugDriver.CrossClosingLine が踏みに行くはず。"
+                        "人なら線の手前で止まった（③a は場所で出るので、出ないのが著作どおり）")
+            elif reached_closing and not closing_line_id:
                 verdict("FAIL", "締めのカットまで来たのに③が 1 通も届いていない（0178）— "
-                                "③は締めに入ってからの時計で出るので、押した／押さないに関わらず出る")
+                                "線の無い台本では③は締めに入ってからの時計で出るので、押した／押さないに関わらず出る")
 
             # ---- 打鍵音（`canon/LEDGER.md` 0056）----
             # ⚠⚠ **音は録画に映らない。** 字が 1 文字ずつ出る絵は PNG で確かめられるが、

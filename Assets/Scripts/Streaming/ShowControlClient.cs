@@ -1098,11 +1098,24 @@ namespace FixedCamVr.Streaming
             if (_record != null && _record.enabled && _record.laps != null && _record.laps.Length > 0)
                 recLaps = string.Join(",", _record.laps);
 
+            // 締めの線（3 周目 A の凍結点・③a の引き金・0233）。台本から導くので、ずれていれば
+            // 「③a が線で出るはずなのに時計で出た」の切り分けがここで付く。
+            string closingLine = "-";
+            if (_timeline?.segments != null)
+            {
+                var allTakes = new List<ShowTakeDef?>();
+                foreach (var s in _timeline.segments)
+                    if (s?.takes != null) allTakes.AddRange(s.takes);
+                string id = TakeSchema.ResolveClosingLineId(allTakes.ToArray());
+                if (!string.IsNullOrEmpty(id)) closingLine = id;
+            }
+
             return $"src={ConfigOrigin} rev={_rev} tlrev={(_timeline?.rev ?? -1)} " +
                    $"segs={segs} takes={takes} cues={_cues.Length} cams={_cameras.Length} " +
                    $"lines={(_layout?.lines?.Length ?? 0)} laps={(_run?.totalLaps ?? -1)} " +
                    $"intro={(introOn ? 1 : 0)} startLine={startLine} " +
-                   $"rec={((_record?.enabled ?? false) ? 1 : 0)} recLaps={recLaps}";
+                   $"rec={((_record?.enabled ?? false) ? 1 : 0)} recLaps={recLaps} " +
+                   $"closingLine={closingLine}";
         }
 
         // 卓からの手動グリッチ / 導入終了 / 体験終了の世代カウンタ（runEpoch と同じ「変化のみ発火」方式）。

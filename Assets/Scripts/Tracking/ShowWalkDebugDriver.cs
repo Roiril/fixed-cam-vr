@@ -307,6 +307,12 @@ namespace FixedCamVr.Tracking
                 }
             }
 
+            // 帰りの A: ③a「止まってください！」は**締めの線（3 周目 A の凍結点）を踏んだ瞬間**に出る
+            // （canon/LEDGER.md 0233）。経路が線をまたぐのはゾーン確定の前で、猶予 0.6 秒の内か外かは
+            // dwell とフレームの都合で変わる ＝ 「たまたま」に頼ると③が走行ごとに出たり出なかったりする。
+            // 導入の開始ラインと同じく、**締めのカットが始まってから線を踏みに行く**。
+            yield return StartCoroutine(CrossClosingLine(layout));
+
             // 帰りの A で締めを待っているなら、そこでも押す（最後の区間は上のループを抜けた後）。
             yield return StartCoroutine(HoldAndMaybeReport(ReportWaitSec + 2f));
 
@@ -395,6 +401,53 @@ namespace FixedCamVr.Tracking
                 yield return null;
             }
         }
+
+        /// <summary>
+        /// 帰りの A で、締めのカットが始まるのを待ってから<b>締めの線を横切る</b>（③a の引き金・0233）。
+        /// 線が台本に無い／layout に実体が無い／締めのカットが来ないなら何もしない（③a は時計の退避路）。
+        /// ⚠ 押すのはこの後（<see cref="HoldAndMaybeReport"/>）。線を踏む前に押すと、実機の多数派
+        ///   （線は区間の入口寄りにあり、受付が開く 4 秒より先に踏む）と順が変わる。
+        /// </summary>
+        private IEnumerator CrossClosingLine(ShowLayoutDef? layout)
+        {
+            if (_timeline == null) yield break;
+            string id = _timeline.ClosingLineId;
+            if (string.IsNullOrEmpty(id) || !_timeline.ClosingLineDefined)
+            {
+                Debug.Log($"[XPWalk] 締めの線が無い（id='{id}'）— ③a は時計で出る");
+                yield break;
+            }
+            if (!TryLineCrossing(layout, id, out Vector2 before, out Vector2 after))
+            {
+                Debug.LogWarning($"[XPWalk] 締めの線 '{id}' の geometry が引けない — 踏みに行かない");
+                yield break;
+            }
+
+            float waited = 0f;
+            while (_timeline.ClosingTakeSec < 0f && waited < ClosingWaitLimitSec
+                   && (_run == null || _run.Phase != ShowPhase.Finished))
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+            if (_timeline.ClosingTakeSec < 0f)
+            {
+                Debug.LogWarning($"[XPWalk] 締めのカットが {ClosingWaitLimitSec:F0}s 来ない — 線を踏まずに待つ");
+                yield break;
+            }
+            if (_timeline.ClosingLineCrossed)
+            {
+                // 入ってくる途中の横断が猶予の内に入っていた。踏み直さない（1 度きりの記録はもう立っている）。
+                Debug.Log($"[XPWalk] 締めの線 '{id}' は入り際に踏んでいた（closing={_timeline.ClosingLineCrossedSec:F2}s）");
+                yield break;
+            }
+            Debug.Log($"[XPWalk] 締めの線 '{id}' を横切る ({before.x:F2},{before.y:F2}) → ({after.x:F2},{after.y:F2})");
+            yield return StartCoroutine(WalkTo(before));
+            yield return StartCoroutine(WalkTo(after));
+        }
+
+        /// <summary>帰りの A へ着いてから締めのカットが始まるまで待つ上限 (秒)。ゾーン確定の dwell より十分長く。</summary>
+        private const float ClosingWaitLimitSec = 6f;
 
         // このランで報告を押したか（1 回だけ）。
         private bool _reported;

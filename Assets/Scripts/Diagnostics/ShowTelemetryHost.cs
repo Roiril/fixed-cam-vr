@@ -150,6 +150,8 @@ namespace FixedCamVr.Diagnostics
         private float _commsTearMax;
         private int _commsTornMax;
         private float _lastCommsInvasion = -1f;
+        // 締めの線を締めのカットの中で踏んだ縁（③a の引き金・`canon/LEDGER.md` 0233）。
+        private bool _lastClosingLine;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
@@ -890,8 +892,23 @@ namespace FixedCamVr.Diagnostics
                      $"decay={_comms.DecayProgress:F2} invasion={_comms.InvasionProgress:F2} " +
                      // curse = 届いた瞬間に画へ書いていた斑の量。**開いた縁なら 0 のはず**（0229）。
                      $"curse={_comms.AppliedCurse:F2} " +
-                     $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
+                     $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)} " +
+                     // closing = 締めのカットに入ってからの秒（外なら負）。cline = 締めの線を踏んでいたか。
+                     // ③a は線を踏んだ縁で出る（0233）ので、Halt の行は cline=1 のはず。
+                     // cline=0 で Halt が出ていたら時計の退避路（線が解決できていない）。
+                     $"closing={(_timeline != null ? _timeline.ClosingTakeSec : -1f):F2} " +
+                     $"cline={(_timeline != null && _timeline.ClosingLineCrossed ? 1 : 0)}");
             }
+
+            // 締めの線（3 周目 A の凍結点）を締めのカットの中で踏んだ縁（③a の引き金・0233）。
+            // sec = 締めのカットに入ってからの秒。**「線を踏んだのに③a が出ない」と「踏んでいない」を
+            // 分ける唯一の行**（TakeRunner の横断ログは締めの中かどうかを言わない）。
+            bool closingLine = _timeline != null && _timeline.ClosingLineCrossed;
+            if (closingLine && !_lastClosingLine)
+                Emit($"ev=closingLine id={(_timeline != null ? _timeline.ClosingLineId : "-")} " +
+                     $"sec={(_timeline != null ? _timeline.ClosingLineCrossedSec : -1f):F2} " +
+                     $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
+            _lastClosingLine = closingLine;
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
             // built は「実体を組めたか」、veil / glyph は**実際に書いた不透明度** ＝ 画に出た側。

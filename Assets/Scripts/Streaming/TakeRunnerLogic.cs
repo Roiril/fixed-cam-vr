@@ -271,6 +271,13 @@ namespace FixedCamVr.Streaming
         private float _deadline;
         private int _baseZoneCam;
 
+        // 締めの線（3 周目 A の凍結点・`TakeSchema.ResolveClosingLineId`）の LineCrossLogic スロット。
+        // -1 = 無い（③a は時計の退避路で出る）。
+        private int _closingLineSlot = -1;
+        // 締めのカットの中で締めの線を横切った時刻。未横断は NegativeInfinity。
+        // **最初の 1 回だけ**記録する — 線の上で往復しても③a は 1 度きり（CommsCueLogic がラッチする）。
+        private float _closingLineCrossedAt = float.NegativeInfinity;
+
         /// <summary>演出が画面を占有中か。</summary>
         public bool IsActive => _running;
 
@@ -311,7 +318,24 @@ namespace FixedCamVr.Streaming
             _activeTake = -1;
             _activeStep = -1;
             _hasCurrent = false;
+            _closingLineCrossedAt = float.NegativeInfinity;
         }
+
+        /// <summary>
+        /// 締めの線（3 周目 A の凍結点）のスロットを与える。<c>-1</c> = 無い。
+        /// 供給は <c>TakeRunner.ApplyLinesFromLayout</c>（layout に実体が無い id は -1 で渡す —
+        /// 実体の無い線は決して横切られないので、③a が黙って出なくなる。時計の退避路へ倒す方が安全）。
+        /// </summary>
+        public void SetClosingLine(int slot)
+        {
+            // layout は走行中にも届く（卓が線を動かす）。同じ線のままなら、締めの中で踏んだ記録を落とさない —
+            // 面が塞がっていて③a がまだ出ていない瞬間に落とすと、その 1 通が黙って消える。
+            if (slot != _closingLineSlot) _closingLineCrossedAt = float.NegativeInfinity;
+            _closingLineSlot = slot;
+        }
+
+        /// <summary>締めの線のスロット（診断・テスト用。-1 = 無い）。</summary>
+        public int ClosingLineSlot => _closingLineSlot;
 
         /// <summary>ラン開始（体験者交代）。once の決着と進行を全消去する。定義は保持。</summary>
         public void ResetRun()
@@ -329,6 +353,7 @@ namespace FixedCamVr.Streaming
             _activeTake = -1;
             _activeStep = -1;
             _hasCurrent = false;
+            _closingLineCrossedAt = float.NegativeInfinity;
         }
 
         /// <summary>ライブ卓の抑止（activeCue 非空 / cameraOverride 非 null）を通知する。</summary>
@@ -409,6 +434,10 @@ namespace FixedCamVr.Streaming
             //     武装と同じ猶予・同じ担当カメラ照合を使う（別の区間の線では進まない）。
             EndStepIfLineCrossed(now, lines);
 
+            // ①'' 締めのカットの中で締めの線（3 周目 A の凍結点）を踏んだ瞬間を記録する（③a の引き金・0233）。
+            //      カットは進めない — 進行は報告（untilMark）だけが持つ。ここは連絡の面が読む事実。
+            LatchClosingLine(now, lines);
+
             // ② 持ち越しの寿命。塞いでいた演出がいつまでも終わらない / 体験者が遠くまで行ってしまった
             //    場合に、著作した演出が延々と待ち続けるのを止める（捨てるときは必ず報告する）。
             ExpireCarry(now);
@@ -462,6 +491,8 @@ namespace FixedCamVr.Streaming
                 StartTake(takeIndex, now, _hasCurrent ? _curCam : 0);
                 // 同時に条件を満たした他の演出は Ready のまま残り、この 1 本が終わったら順に出る
                 //（同一区間に居るあいだだけ。区間を出れば決着するか、chain なら持ち越す）。
+                // 締めのカットが始まった同じ Tick で、入り際（猶予の内）の横断を拾う。
+                LatchClosingLine(now, lines);
                 return BeginStepDecision(takeStarted: true);
             }
 
@@ -471,6 +502,7 @@ namespace FixedCamVr.Streaming
                 int carried = _carryIndex[0];
                 RemoveCarryAt(0);
                 StartTake(carried, now, _hasCurrent ? _curCam : 0);
+                LatchClosingLine(now, lines);
                 return BeginStepDecision(takeStarted: true);
             }
             return default;
@@ -635,10 +667,42 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 締めのカットに入ってからの秒数（走っていなければ <b>負</b>）。
-        /// ③「止まってください！」の時計がこれ（<c>CommsCueLogic.HaltAfterClosingSec</c>）。
+        /// 締めの線が無いときの③「止まってください！」の時計がこれ（<c>CommsCueLogic.HaltAfterClosingSec</c>）。
+        /// 線があるときは <see cref="ClosingLineCrossed"/> が引き金で、これは観測（<c>ev=comms closing=</c>）だけ。
         /// </summary>
         public float ClosingTakeSec(float now)
             => ActiveTakeWaitsForMark ? now - _takeBeganAt : -1f;
+
+        /// <summary>
+        /// <b>締めのカットの中で、締めの線（3 周目 A の凍結点）を踏んだ</b>（2026-09-19・<c>canon/LEDGER.md</c> 0233）。
+        /// ③a「止まってください！」の引き金。締めのカットが終われば下りる（ラッチは <c>CommsCueLogic</c> が持つ）。
+        ///
+        /// ⚠ 数えるのは<b>締めのカットが始まってから</b>の横断 ＋ 始まる直前 <see cref="LineCrossLogic.CrossLatchSec"/>
+        ///   （at=line の武装と同じ猶予）。線は区間の入口寄りにあり、ゾーン確定の dwell（0.5 秒）のあいだに
+        ///   踏んでしまう人が居る — 線待ちのカット（<see cref="EndStepIfLineCrossed"/>）と違って
+        ///   ここは「同じ区間に線が 2 本ある」問題を持たないので、猶予を切る理由が無い。
+        /// ⚠ <b>報告したかは見ない</b>（0178「止まってください！以降の流れは全員に見せる」）。
+        ///   報告の後に踏んでも立つ。出す・出さないの判断は <c>CommsCueLogic</c> の仕事。
+        /// </summary>
+        public bool ClosingLineCrossed
+            => ActiveTakeWaitsForMark && !float.IsNegativeInfinity(_closingLineCrossedAt);
+
+        /// <summary>締めの線を踏んだ時刻を、締めのカットに入ってからの秒で（踏んでいなければ負・観測用）。</summary>
+        public float ClosingLineCrossedSec
+            => ClosingLineCrossed ? _closingLineCrossedAt - _takeBeganAt : -1f;
+
+        // 締めの線の横断を、締めのカットの中で 1 度だけ記録する。
+        private void LatchClosingLine(float now, LineCrossLogic.State[]? lines)
+        {
+            if (!_running || _closingLineSlot < 0 || lines == null || _closingLineSlot >= lines.Length) return;
+            if (!float.IsNegativeInfinity(_closingLineCrossedAt)) return;   // 最初の 1 回だけ
+            if (!ActiveTakeWaitsForMark) return;
+            LineCrossLogic.State s = lines[_closingLineSlot];
+            if (s.crossedAtSec < _takeBeganAt - LineCrossLogic.CrossLatchSec) return;   // 締めに入る前の横断
+            if (now - s.crossedAtSec > LineCrossLogic.CrossLatchSec) return;            // 古い記録
+            if (!(s.camera < 0 || s.camera == _defs[_activeTake].camera)) return;      // 別の区間の線
+            _closingLineCrossedAt = s.crossedAtSec;
+        }
 
         /// <summary>
         /// <b>いま押しても受け付けない</b>（締めのカットに入って <see cref="MarkGraceSec"/> 未満）。
@@ -736,6 +800,8 @@ namespace FixedCamVr.Streaming
             _takeBeganAt = now;
             _stepEnd = StepEndTime(now, durs.Length > 0 ? durs[0] : 0f);
             _deadline = now + TakeSchema.ResolveMaxDuration(_defs[index].maxDurationSec);
+            // 締めの線の記録は演出ごと（前の演出の中で踏んだ線を持ち越さない）。
+            _closingLineCrossedAt = float.NegativeInfinity;
         }
 
         // 尺が負（untilClipEnd / untilZoneChange）なら外部通知待ち = 無限大。watchdog が上限を保証する。

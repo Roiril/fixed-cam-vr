@@ -263,7 +263,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 const float RunAt = 17.0f;       // 導入演出が明けた（①）
                 const float Press1At = 28.0f;    // 1 回目の報告（通る ＝ ②a）
                 const float Press2At = 34.5f;    // 2 回目の報告（通らない ＝ ②b）
-                const float WaitAt = 41.0f;      // **締めのカットに入った**（③a は 5 秒後・0178）
+                const float WaitAt = 41.0f;      // **締めのカットに入った**
+                const float HaltLineAt = 46.0f;  // **締めの線（3 周目 A の凍結点）を踏んだ**（③a・0233）
                 // ⚠⚠ **③a を挟んだぶん伸びた**（2026-09-06・0168）。③a が 1.35 秒画に居て、
                 //    そこから③b が打ち始めるので、49 のままだと**③b が引き切る前に切れる**
                 //    （＝ 出来上がった動画の最後だけが無い、という気づきにくい形）。
@@ -309,6 +310,9 @@ namespace FixedCamVr.Streaming.EditorTools
                         introWaiting = t < ArrivedAt,
                         panelDoneReading = (bool)doneReading.GetValue(logic),
                         closingSec = t >= WaitAt ? t - WaitAt : -1f,
+                        // 線は台本にある前提（実機の経路を通す。時計の退避路は動画に出さない）。
+                        closingLineDefined = true,
+                        closingLineCrossed = t >= WaitAt && t >= HaltLineAt,
                         markPressed = release,
                         markDetected = presses == 1,   // 1 回目は異常表示中 / 2 回目は平常時
                         dt = dt,

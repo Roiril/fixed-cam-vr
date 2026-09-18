@@ -1007,8 +1007,11 @@ namespace FixedCamVr.Diagnostics
                 startAuthorized = showControl == null || showControl.StartAuthorized,
                 introWaiting = introWaiting,
                 panelDoneReading = _logic.DoneReading,
-                // ③の時計は**締めのカットに入ってから**（0178）。報告待ちが立つのは待たない。
+                // ③a の引き金は**締めのカットの中で締めの線（3 周目 A の凍結点）を踏んだこと**（0233）。
+                // 時計（締めに入ってから 5 秒・0178）は線が無いときの退避路。報告待ちが立つのは待たない。
                 closingSec = timeline != null ? timeline.ClosingTakeSec : -1f,
+                closingLineDefined = timeline != null && timeline.ClosingLineDefined,
+                closingLineCrossed = timeline != null && timeline.ClosingLineCrossed,
                 markPressed = markPressed,
                 markDetected = markPressed && showControl != null && showControl.LastMarkDetected,
                 invasionProgress = InvasionProgress,
