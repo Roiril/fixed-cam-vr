@@ -9,16 +9,20 @@
 // 依存: IntroFractureTime.hlsl（CrackEnd / PullBegin / PullStart / WarpedTime / Ease）を先に include すること。
 
 // ---- 色（0010「全体的に暖色に寄せてほしい」との折り合い）----
-// cos パレット。b/a ≤ 0.58 なので色相は朱〜琥珀〜金緑に収まり、青緑〜紫の位相を作らない。
-static const float3 SparkPaletteA = float3(0.62, 0.52, 0.40);
-static const float3 SparkPaletteB = float3(0.30, 0.26, 0.22);
-static const float3 SparkPaletteD = float3(0.00, 0.10, 0.20);
+// 朱 → 琥珀 → 金 の暖色だけの表。⚠ チャンネルごとに位相をずらした cos パレットは、振幅を絞っても
+// 色相そのものは一周する（実機の周辺片が青みの灰色に写った・2026-09-19）。R ≥ G ≥ B を崩さない 3 点の補間にする。
+static const float3 SparkPaletteShu = float3(0.86, 0.42, 0.30);
+static const float3 SparkPaletteKohaku = float3(0.90, 0.70, 0.40);
+static const float3 SparkPaletteKin = float3(0.92, 0.84, 0.58);
 // 粒の芯・面の閃きの芯。生成り寄りの白（題字と同じ側の色）。
 static const float3 SparkCoreColor = float3(0.98, 0.94, 0.85);
 
 float3 SparkPalette(float t)
 {
-    return SparkPaletteA + SparkPaletteB * cos(6.2831853 * (t + SparkPaletteD));
+    float s = 0.5 + 0.5 * cos(6.2831853 * t);
+    return s < 0.5
+        ? lerp(SparkPaletteShu, SparkPaletteKohaku, s * 2.0)
+        : lerp(SparkPaletteKohaku, SparkPaletteKin, (s - 0.5) * 2.0);
 }
 
 // ---- 代表の粒（点光源を兼ねる）----

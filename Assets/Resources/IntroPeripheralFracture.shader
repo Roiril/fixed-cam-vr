@@ -58,7 +58,8 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float4 rightQ : TEXCOORD1;
                 float4 screenQ : TEXCOORD2;
                 float4 edges : TEXCOORD3;
-                nointerpolation float3 phase : TEXCOORD4;
+                // x = 破断の受け渡し / y = 吸引の進み / z = 退場 / w = 頭中心の視線と法線の内積（きらめきの位相・両眼一致）
+                nointerpolation float4 phase : TEXCOORD4;
                 float4 surface : TEXCOORD5;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -244,7 +245,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float rim = 0.42 + 0.38 * grazing;
                 o.surface = float4(baseColor, rim);
                 o.edges = v.edges;
-                o.phase = float3(handoff, travel, exit);
+                o.phase = float4(handoff, travel, exit, dot(normal, viewDirection));
                 return o;
             }
 
@@ -288,6 +289,21 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float edgeLight = lerp(crack * i.surface.a, strongCrack * (0.68 + 0.54 * i.surface.a),
                     saturate(_EdgeEmphasis));
                 float3 color = i.surface.rgb + rimColor * edgeLight;
+                // 0235: 面のきらめきと光の帯（中央の IntroFracture と同じ式）。座標は辺までの距離（m・両眼で同じ）。
+                // 周辺片は 1 枚が大きいので、格子 1.25cm・密度 4.5% のまま面いっぱいに散る。飛んでいる間だけ。
+                float flying = i.phase.x * (1.0 - i.phase.y) * i.phase.z;
+                float2 cellUv = i.edges.xy * 80.0;
+                float2 cell = floor(cellUv);
+                float cellHash = frac(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
+                float2 cellLocal = frac(cellUv) - 0.5;
+                float cellPoint = smoothstep(0.30, 0.06, length(cellLocal));
+                float twinkle = smoothstep(0.55, 0.95,
+                    sin(i.phase.w * 9.0 + cellHash * 6.283 + _Shatter * 26.0) * 0.5 + 0.5);
+                float cellLod = saturate(1.0 - fwidth(cellUv.x) * 2.0);
+                float3 crystal = SparkCoreColor * cellPoint * twinkle * 1.2 * step(0.955, cellHash) * cellLod;
+                float caustic = exp(-pow((frac(i.edges.x * 3.0 + i.edges.y * 1.7 + i.phase.w) - 0.5) * 11.0, 2.0));
+                crystal += SparkCoreColor * caustic * 0.08;
+                color += crystal * flying * _Crystal;
                 float alpha = i.phase.x * i.phase.z * outsidePhoto * screenClear;
                 return float4(color, alpha);
             }

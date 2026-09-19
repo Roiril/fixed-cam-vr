@@ -532,7 +532,7 @@ Shader "FixedCamVr/IntroFracture"
                         SafeNormalize(toSpark, normal) + viewDirection, normal);
                     // 面ごとの閃き。平らな片は半ベクトルが揃った瞬間に面ごと光るので、粒が通ると片が順に瞬く。
                     sparkLit += SparkCoreColor * pow(saturate(dot(normal, sparkHalf)), 24.0)
-                              * 2.0 * sparkSample.w / (1.0 + sparkDistance / 1.0);
+                              * 1.7 * sparkSample.w / (1.0 + sparkDistance / 1.0);
                 }
                 // 柔らかい照りは弱く（面全体に一様に乗るとコントラストが潰れて霜の付いた樹脂になる）。
                 sparkLit += SparkCoreColor * i.sparkSoft.x * 0.05;

@@ -1032,11 +1032,12 @@ namespace FixedCamVr.Streaming.EditorTools
                     FormattableString.Invariant(
                         $"p=.300 clipFrac={s30.on.clipFrac:0.000000} <= 0.015000"));
 
-                // くすみの門: むらの深さ（明るさで割った標準偏差）が旧描画の 1.3 倍以上。
+                // くすみの門: 面の明暗のむら（輝度の標準偏差）が旧描画より深い。
+                // ⚠ 比（std / mean）で見ない — 加算で明るくすると mean が先に上がり、比は下がる（R053 の予測 2 が外れた形）。
                 Add("texture_gain",
-                    s30.on.LumaStdOverMean >= s30.off.LumaStdOverMean * 1.3f, false,
+                    s30.on.lumaStd >= s30.off.lumaStd * 1.05f, false,
                     FormattableString.Invariant(
-                        $"p=.300 lumaStdOverMean on={s30.on.LumaStdOverMean:0.000000} >= off={s30.off.LumaStdOverMean:0.000000} x1.3"));
+                        $"p=.300 lumaStd on={s30.on.lumaStd:0.000000} >= off={s30.off.lumaStd:0.000000} x1.05 (std/mean on={s30.on.LumaStdOverMean:0.000} off={s30.off.LumaStdOverMean:0.000})"));
 
                 // 彩度は帯で見る。範囲外は黄（warn）、0.25 超だけ赤。
                 float sat = s30.on.satMean;
