@@ -2,11 +2,9 @@
 using System;
 using System.IO;
 using System.Text;
-using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.TextCore.LowLevel;
 using Object = UnityEngine.Object;
 
 namespace FixedCamVr.Streaming.EditorTools
@@ -16,7 +14,7 @@ namespace FixedCamVr.Streaming.EditorTools
     {
         public const string AssetDir = "Assets/Art/Textures/UnauthorizedAccess";
         public const string PrefabPath = "Assets/Prefabs/Effects/UnauthorizedAccess.prefab";
-        private const int Width = 1280, Height = 720, Fps = 24;
+        private const int Width = 1280, Height = 720, Fps = 30;
 
         [MenuItem("Tools/FixedCamVr/Setup/Unauthorized Access Effect")]
         public static void Build()
@@ -24,9 +22,40 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(AssetDir);
             Directory.CreateDirectory(Path.GetDirectoryName(PrefabPath)!);
             AssetDatabase.Refresh();
-            string texturePath = AssetDir + "/interference.png";
-            var importer = (TextureImporter)AssetImporter.GetAtPath(texturePath);
-            if (importer == null) throw new InvalidOperationException("Missing generated interference.png");
+            var texture = ImportTexture("warning-v2.png");
+            var interference = ImportTexture("signal-fragments-v2.png");
+            var shader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/UnauthorizedAccessFx.shader");
+            if (shader == null || ShaderUtil.ShaderHasError(shader))
+                throw new InvalidOperationException("UnauthorizedAccessFx shader missing or invalid");
+            string materialPath = AssetDir + "/ErrorFx.mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            if (material == null)
+            {
+                material = new Material(shader) { name = "ErrorFx" };
+                AssetDatabase.CreateAsset(material, materialPath);
+            }
+            material.shader = shader;
+            material.SetColor("_Color", Color.white);
+            material.SetFloat("_Mode", 0);
+            material.SetFloat("_Strength", 1);
+            var go = new GameObject("UnauthorizedAccess");
+            try
+            {
+                var effect = go.AddComponent<UnauthorizedAccessEffect>();
+                effect.Configure(material, texture, interference);
+                PrefabUtility.SaveAsPrefabAsset(go, PrefabPath);
+            }
+            finally { Object.DestroyImmediate(go); }
+            EditorUtility.SetDirty(material);
+            AssetDatabase.SaveAssets();
+            Debug.Log("[UnauthorizedAccess] Built " + PrefabPath);
+        }
+
+        private static Texture2D ImportTexture(string name)
+        {
+            string path = AssetDir + "/" + name;
+            var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+            if (importer == null) throw new InvalidOperationException("Missing generated texture: " + path);
             importer.textureType = TextureImporterType.Default;
             importer.alphaSource = TextureImporterAlphaSource.FromInput;
             importer.alphaIsTransparency = true;
@@ -42,65 +71,7 @@ namespace FixedCamVr.Streaming.EditorTools
             android.format = TextureImporterFormat.ASTC_6x6;
             importer.SetPlatformTextureSettings(android);
             importer.SaveAndReimport();
-            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
-            var shader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/UnauthorizedAccessFx.shader");
-            if (shader == null || ShaderUtil.ShaderHasError(shader))
-                throw new InvalidOperationException("UnauthorizedAccessFx shader missing or invalid");
-            string materialPath = AssetDir + "/ErrorFx.mat";
-            var material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
-            if (material == null)
-            {
-                material = new Material(shader) { name = "ErrorFx" };
-                AssetDatabase.CreateAsset(material, materialPath);
-            }
-            material.shader = shader;
-            material.SetColor("_Color", Color.white);
-            var font = MakeFont();
-            font.material.renderQueue = 3460;
-            EditorUtility.SetDirty(font.material);
-            var go = new GameObject("UnauthorizedAccess");
-            try
-            {
-                var effect = go.AddComponent<UnauthorizedAccessEffect>();
-                effect.Configure(material, font, texture);
-                PrefabUtility.SaveAsPrefabAsset(go, PrefabPath);
-            }
-            finally { Object.DestroyImmediate(go); }
-            EditorUtility.SetDirty(material);
-            AssetDatabase.SaveAssets();
-            Debug.Log("[UnauthorizedAccess] Built " + PrefabPath);
-        }
-
-        private static TMP_FontAsset MakeFont()
-        {
-            const string path = AssetDir + "/Error SDF.asset";
-            var existing = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
-            var charset = new StringBuilder();
-            for (char c = ' '; c <= '~'; ++c) charset.Append(c);
-            charset.Append("不正アクセスを検出");
-            if (existing != null)
-            {
-                if (!existing.HasCharacters(charset.ToString()))
-                    throw new InvalidOperationException("Existing Error SDF lacks required glyphs");
-                return existing;
-            }
-            var source = AssetDatabase.LoadAssetAtPath<Font>("Assets/Art/Fonts/SourceHanSansJP-Normal.otf");
-            var font = TMP_FontAsset.CreateFontAsset(source, 80, 8, GlyphRenderMode.SDFAA,
-                1024, 1024, AtlasPopulationMode.Dynamic);
-            if (font == null || !font.TryAddCharacters(charset.ToString(), out string missing))
-                throw new InvalidOperationException("Error font bake failed");
-            font.name = "Error SDF";
-            font.atlasPopulationMode = AtlasPopulationMode.Static;
-            font.isMultiAtlasTexturesEnabled = false;
-            AssetDatabase.CreateAsset(font, path);
-            foreach (var atlas in font.atlasTextures)
-            {
-                atlas.name = "Error SDF Atlas";
-                AssetDatabase.AddObjectToAsset(atlas, font);
-            }
-            font.material.name = "Error SDF Material";
-            AssetDatabase.AddObjectToAsset(font.material, font);
-            return font;
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
         [MenuItem("Tools/FixedCamVr/Preview/Unauthorized Access (frames)")]
@@ -138,29 +109,31 @@ namespace FixedCamVr.Streaming.EditorTools
                 var size = new Vector2(2.7f, 1.51875f);
                 var material = AssetDatabase.LoadAssetAtPath<Material>(AssetDir + "/ErrorFx.mat");
                 background = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-                background.SetColor("_BaseColor", new Color(0.035f, 0.046f, 0.053f, 1));
+                background.SetColor("_BaseColor", new Color(0.012f, 0.013f, 0.017f, 1));
                 // A neutral calibration image, not a fictional camera feed.
                 Quad(screen.transform, "Screen", Vector3.zero, size, background);
                 var gridMat = new Material(background);
                 gridMat.SetColor("_BaseColor", new Color(0.11f, 0.135f, 0.145f, 1));
                 try
                 {
+                    var grid = Child(screen.transform, "Calibration grid");
                     for (int i = 1; i < 12; i++)
-                        Quad(screen.transform, "Calibration column", new Vector3((i / 12f - .5f) * size.x, 0, -.005f), new Vector2(.002f, size.y), gridMat);
+                        Quad(grid.transform, "Calibration column", new Vector3((i / 12f - .5f) * size.x, 0, -.005f), new Vector2(.002f, size.y), gridMat);
                     for (int i = 1; i < 7; i++)
-                        Quad(screen.transform, "Calibration row", new Vector3(0, (i / 7f - .5f) * size.y, -.005f), new Vector2(size.x, .002f), gridMat);
+                        Quad(grid.transform, "Calibration row", new Vector3(0, (i / 7f - .5f) * size.y, -.005f), new Vector2(size.x, .002f), gridMat);
+                    grid.SetActive(false);
                     var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
                     var effectGo = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
                     effectGo.transform.SetParent(stage.transform);
                     var effect = effectGo.GetComponent<UnauthorizedAccessEffect>();
                     effect.Play(screen.transform, size);
-                    var samples = new[] { 0f, .35f, .8f, 1.6f, 3.2f, 5.9f, 7f };
+                    var samples = new[] { 0f, .08f, .2f, .35f, .57f, .8f, 1.2f, 1.6f, 2.12f, 3.2f, 3.71f, 4.95f, 5.6f, 5.9f, 6.5f, 7f };
                     foreach (float sec in samples)
                     {
                         effect.Sample(sec);
                         Shoot(cam, pixels, rt, Path.Combine(dir, $"sample-{sec:0.00}.png"));
                     }
-                    effect.Sample(3.2f);
+                    effect.Sample(1.2f);
                     Shoot(cam, pixels, rt, Path.Combine(dir, "hero.png"));
                     cam.transform.position += new Vector3(.22f, 0, 0);
                     cam.transform.LookAt(screen.transform);
@@ -170,6 +143,11 @@ namespace FixedCamVr.Streaming.EditorTools
                     cam.backgroundColor = new Color(.35f, .35f, .35f, 1);
                     Shoot(cam, pixels, rt, Path.Combine(dir, "bright-surround.png"));
                     cam.backgroundColor = new Color(0.012f, 0.013f, 0.017f, 1);
+                    grid.SetActive(true);
+                    background.SetColor("_BaseColor", new Color(.15f, .18f, .20f, 1));
+                    Shoot(cam, pixels, rt, Path.Combine(dir, "overlay-check.png"));
+                    grid.SetActive(false);
+                    background.SetColor("_BaseColor", new Color(.012f, .013f, .017f, 1));
                     if (sequence)
                     {
                         string frames = Path.Combine(dir, "frames");
@@ -181,13 +159,13 @@ namespace FixedCamVr.Streaming.EditorTools
                         }
                     }
                     effect.Sample(3.2f);
-                    var evidence = new StringBuilder("Actual Unity render; neutral calibration background.\n");
+                    var evidence = new StringBuilder("Actual Unity render; background grid only in overlay-check.png.\n");
                     evidence.AppendLine($"duration={effect.Duration}; spatialElements={effect.SpatialElementCount}; size={size}; fps={Fps}");
                     foreach (var root in scene.GetRootGameObjects())
-                    foreach (var text in root.GetComponentsInChildren<TMP_Text>(true))
+                    foreach (var filter in root.GetComponentsInChildren<MeshFilter>(true))
                     {
-                        text.ForceMeshUpdate(true);
-                        evidence.AppendLine($"text={text.text.Replace('\n', '|')}; characters={text.textInfo.characterCount}; bounds={text.textBounds.size}");
+                        if (filter.sharedMesh != null)
+                            evidence.AppendLine($"mesh={filter.name}; vertices={filter.sharedMesh.vertexCount}; bounds={filter.GetComponent<Renderer>().bounds}");
                     }
                     File.WriteAllText(Path.Combine(dir, "render-evidence.txt"), evidence.ToString(), new UTF8Encoding(false));
                     effect.Stop();
@@ -228,8 +206,6 @@ namespace FixedCamVr.Streaming.EditorTools
 
         private static void Shoot(Camera cam, Texture2D pixels, RenderTexture rt, string path)
         {
-            foreach (var root in cam.scene.GetRootGameObjects())
-            foreach (var text in root.GetComponentsInChildren<TMP_Text>()) text.ForceMeshUpdate();
             cam.Render();
             RenderTexture.active = rt;
             pixels.ReadPixels(new Rect(0, 0, Width, Height), 0, 0);

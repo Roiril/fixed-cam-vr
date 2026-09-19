@@ -45,6 +45,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fxMaterial: {fileID: 2100000, guid: 16413b17a2284a64fa8250fcdadcee61, type: 2}
-  font: {fileID: 11400000, guid: 7ff02d047202ab2429cd148754f60e4a, type: 2}
-  interference: {fileID: 2800000, guid: 317f2bbeeacab494bbdf311c4dcd55e5, type: 3}
+  warningGraphic: {fileID: 2800000, guid: bafc54a54b9e6bd4798a700306b88d79, type: 3}
+  interference: {fileID: 2800000, guid: b40739ca590237b4096dbe78c08ade13, type: 3}
   autoPlay: 0

@@ -1,13 +1,15 @@
 #nullable enable
 
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
-using System.Reflection;
 
 namespace FixedCamVr.Streaming.Tests
 {
     public sealed class UnauthorizedAccessEffectTests
     {
+        private static readonly Vector2 ReferenceSize = new Vector2(2.7f, 1.51875f);
+
         [Test]
         public void PlayBuildsBothLayers_StopHidesBoth()
         {
@@ -16,19 +18,21 @@ namespace FixedCamVr.Streaming.Tests
             try
             {
                 var effect = host.AddComponent<UnauthorizedAccessEffect>();
-                effect.Play(anchor.transform, new Vector2(2.7f, 1.51875f));
+                effect.Play(anchor.transform, ReferenceSize);
                 effect.Sample(2.5f);
 
                 Assert.IsTrue(effect.IsPlaying);
                 Assert.AreSame(anchor.transform, effect.ScreenAnchor);
-                Assert.AreEqual(26, effect.SpatialElementCount, "18列 + 4情報 + 4本の空間罫線");
-                Assert.IsTrue(FindRoot(host, "UnauthorizedAccess.Screen").gameObject.activeSelf);
-                Assert.IsTrue(FindRoot(host, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
+                Assert.Greater(effect.SpatialElementCount, 180);
+                Assert.AreEqual(880, effect.GlyphVertexCountDiagnostic, "220 glyph × 4 vertices");
+                Assert.AreEqual(44, effect.WarningVertexCountDiagnostic, "11 bands × 4 vertices");
+                Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
+                Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
 
                 effect.Stop();
                 Assert.IsFalse(effect.IsPlaying);
-                Assert.IsFalse(FindRoot(host, "UnauthorizedAccess.Screen").gameObject.activeSelf);
-                Assert.IsFalse(FindRoot(host, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
+                Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
+                Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
             }
             finally
             {
@@ -48,15 +52,17 @@ namespace FixedCamVr.Streaming.Tests
             {
                 var a = hostA.AddComponent<UnauthorizedAccessEffect>();
                 var b = hostB.AddComponent<UnauthorizedAccessEffect>();
-                a.Play(anchorA.transform, new Vector2(2.7f, 1.51875f));
-                b.Play(anchorB.transform, new Vector2(1.8f, 1.0f));
+                a.Play(anchorA.transform, ReferenceSize);
+                b.Play(anchorB.transform, new Vector2(1.8f, 1f));
                 a.Sample(3f);
                 b.Sample(4f);
 
-                Assert.IsTrue(FindRoot(hostA, "UnauthorizedAccess.Screen").gameObject.activeSelf);
-                Assert.IsTrue(FindRoot(hostB, "UnauthorizedAccess.Screen").gameObject.activeSelf);
-                Assert.AreNotSame(FindRoot(hostA, "UnauthorizedAccess.Spatial"),
-                    FindRoot(hostB, "UnauthorizedAccess.Spatial"));
+                Assert.IsTrue(FindRoot(a, "UnauthorizedAccess.Screen").gameObject.activeSelf);
+                Assert.IsTrue(FindRoot(b, "UnauthorizedAccess.Screen").gameObject.activeSelf);
+                Assert.AreNotSame(FindRoot(a, "UnauthorizedAccess.Spatial"),
+                    FindRoot(b, "UnauthorizedAccess.Spatial"));
+                Assert.AreNotSame(FindMesh(a, "Unauthorized Access Glyphs"),
+                    FindMesh(b, "Unauthorized Access Glyphs"));
             }
             finally
             {
@@ -68,24 +74,34 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ReplayingReusesGeneratedObjects()
+        public void ReplayingReusesGeneratedObjectsAndMeshes()
         {
             GameObject anchor = NewAnchor("ReplayAnchor");
             GameObject host = new GameObject("ReplayEffect");
             try
             {
                 var effect = host.AddComponent<UnauthorizedAccessEffect>();
-                effect.Play(anchor.transform, new Vector2(2.7f, 1.51875f));
-                Transform screen = FindRoot(host, "UnauthorizedAccess.Screen");
-                Transform spatial = FindRoot(host, "UnauthorizedAccess.Spatial");
+                effect.Play(anchor.transform, ReferenceSize);
+                effect.Sample(2f);
+                Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
+                Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
+                Mesh warning = FindMesh(effect, "Unauthorized Access Warning Bands");
+                Mesh glyphs = FindMesh(effect, "Unauthorized Access Glyphs");
+                Mesh strips = FindMesh(effect, "Unauthorized Access Interference");
                 int screenChildren = screen.childCount;
                 int spatialChildren = spatial.childCount;
 
+                Assert.Greater(warning.vertexCount, 0);
+                Assert.Greater(glyphs.vertexCount, 0);
+                Assert.Greater(strips.vertexCount, 0);
                 effect.Stop();
                 effect.Play(anchor.transform, new Vector2(2.2f, 1.2f));
+                effect.Sample(2f);
 
-                Assert.AreSame(screen, FindRoot(host, "UnauthorizedAccess.Screen"));
-                Assert.AreSame(spatial, FindRoot(host, "UnauthorizedAccess.Spatial"));
+                Assert.AreSame(screen, FindRoot(effect, "UnauthorizedAccess.Screen"));
+                Assert.AreSame(spatial, FindRoot(effect, "UnauthorizedAccess.Spatial"));
+                Assert.AreSame(warning, FindMesh(effect, "Unauthorized Access Warning Bands"));
+                Assert.AreSame(glyphs, FindMesh(effect, "Unauthorized Access Glyphs"));
                 Assert.AreEqual(screenChildren, screen.childCount);
                 Assert.AreEqual(spatialChildren, spatial.childCount);
             }
@@ -97,28 +113,44 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void SampleOutsideDurationHidesWithoutChangingPlaybackStateOrElapsed()
+        public void SampleIsDeterministicAndOutsideDurationIsPixelEmptyWithoutChangingPlayback()
         {
-            GameObject anchor = NewAnchor("RangeAnchor");
-            GameObject host = new GameObject("RangeEffect");
+            GameObject anchor = NewAnchor("SampleAnchor");
+            GameObject host = new GameObject("SampleEffect");
             try
             {
                 var effect = host.AddComponent<UnauthorizedAccessEffect>();
-                effect.Play(anchor.transform, new Vector2(2.7f, 1.51875f));
+                effect.Play(anchor.transform, ReferenceSize);
                 float elapsed = effect.Elapsed;
-                effect.Sample(2f);
+                Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
+                Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
+
+                Assert.IsFalse(screen.gameObject.activeSelf, "0秒は画素を出さない");
+                Assert.IsFalse(spatial.gameObject.activeSelf, "0秒は画素を出さない");
+
+                effect.Sample(2.11f);
+                Mesh glyphs = FindMesh(effect, "Unauthorized Access Glyphs");
+                Vector3[] firstVertices = glyphs.vertices;
+                Color[] firstColors = glyphs.colors;
+                effect.Sample(3.72f);
+                effect.Sample(2.11f);
+                CollectionAssert.AreEqual(firstVertices, glyphs.vertices);
+                CollectionAssert.AreEqual(firstColors, glyphs.colors);
                 Assert.IsTrue(effect.IsPlaying);
                 Assert.AreEqual(elapsed, effect.Elapsed);
-                Assert.IsTrue(FindRoot(host, "UnauthorizedAccess.Screen").gameObject.activeSelf);
 
-                effect.Sample(-0.01f);
-                Assert.IsFalse(FindRoot(host, "UnauthorizedAccess.Screen").gameObject.activeSelf);
-                Assert.IsFalse(FindRoot(host, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
+                effect.Sample(-.01f);
+                Assert.IsFalse(screen.gameObject.activeSelf);
+                Assert.IsFalse(spatial.gameObject.activeSelf);
+                effect.Sample(effect.Duration);
+                Assert.IsFalse(screen.gameObject.activeSelf, "7秒は0秒と同じく画素を出さない");
+                Assert.IsFalse(spatial.gameObject.activeSelf);
                 Assert.IsTrue(effect.IsPlaying, "Sampleは再生状態を触らない");
                 Assert.AreEqual(elapsed, effect.Elapsed, "Sampleは経過時刻を触らない");
 
-                effect.Sample(effect.Duration);
-                Assert.IsFalse(FindRoot(host, "UnauthorizedAccess.Screen").gameObject.activeSelf);
+                effect.Stop();
+                Assert.IsFalse(screen.gameObject.activeSelf, "Stopも0秒・7秒と同じく画素を出さない");
+                Assert.IsFalse(spatial.gameObject.activeSelf);
             }
             finally
             {
@@ -132,13 +164,14 @@ namespace FixedCamVr.Streaming.Tests
         {
             GameObject anchor = NewAnchor("PoseAnchor");
             anchor.transform.SetPositionAndRotation(new Vector3(1f, 2f, 3f), Quaternion.Euler(0f, 20f, 0f));
+            anchor.transform.localScale = new Vector3(.8f, 1.3f, 1.7f);
             GameObject host = new GameObject("PoseEffect");
             try
             {
                 var effect = host.AddComponent<UnauthorizedAccessEffect>();
-                effect.Play(anchor.transform, new Vector2(2.7f, 1.51875f));
-                Transform screen = FindRoot(host, "UnauthorizedAccess.Screen");
-                Transform spatial = FindRoot(host, "UnauthorizedAccess.Spatial");
+                effect.Play(anchor.transform, ReferenceSize);
+                Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
+                Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
                 Vector3 spatialPosition = spatial.position;
                 Quaternion spatialRotation = spatial.rotation;
 
@@ -147,10 +180,11 @@ namespace FixedCamVr.Streaming.Tests
 
                 Assert.Less(Vector3.Distance(anchor.transform.position - anchor.transform.forward * .06f,
                     screen.position), .0001f, "警告面は映像面の6cm手前");
-                Assert.Less(Quaternion.Angle(anchor.transform.rotation, screen.rotation), 0.001f);
-                Assert.AreEqual(spatialPosition, spatial.position);
-                Assert.Less(Quaternion.Angle(spatialRotation, spatial.rotation), 0.001f);
-                Assert.IsNull(spatial.parent, "空間側は頭の子に残さない");
+                Assert.Less(Quaternion.Angle(anchor.transform.rotation, screen.rotation), .001f);
+                Assert.Less(Vector3.Distance(spatialPosition, spatial.position), .0001f);
+                Assert.Less(Quaternion.Angle(spatialRotation, spatial.rotation), .001f);
+                Assert.IsNull(spatial.parent, "空間側はanchorの子に残さない");
+                Assert.AreEqual(host.scene, spatial.gameObject.scene, "空間rootはcomponentと同じsceneに置く");
             }
             finally
             {
@@ -165,8 +199,9 @@ namespace FixedCamVr.Streaming.Tests
             GameObject anchor = NewAnchor("DestroyAnchor");
             GameObject host = new GameObject("DestroyEffect");
             var effect = host.AddComponent<UnauthorizedAccessEffect>();
-            effect.Play(anchor.transform, new Vector2(2.7f, 1.51875f));
-            Transform spatial = FindRoot(host, "UnauthorizedAccess.Spatial");
+            effect.Play(anchor.transform, ReferenceSize);
+            effect.Sample(1f);
+            Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
 
             effect.enabled = false;
             Assert.IsFalse(spatial.gameObject.activeSelf);
@@ -179,19 +214,24 @@ namespace FixedCamVr.Streaming.Tests
 
         private static GameObject NewAnchor(string name) => new GameObject(name);
 
-        private static Transform FindRoot(GameObject host, string name)
+        private static Transform FindRoot(UnauthorizedAccessEffect effect, string name)
         {
-            UnauthorizedAccessEffect owner = host.GetComponent<UnauthorizedAccessEffect>();
-            if (name.EndsWith(".Spatial"))
-            {
-                return (Transform)typeof(UnauthorizedAccessEffect)
-                    .GetField("_spatialRoot", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(owner)!;
-            }
-            Transform? anchor = owner.ScreenAnchor;
-            if (anchor != null)
-                for (int i = 0; i < anchor.childCount; i++)
-                    if (anchor.GetChild(i).name == name) return anchor.GetChild(i);
+            string fieldName = name.EndsWith(".Spatial") ? "_spatialRoot" : "_screenRoot";
+            return (Transform)typeof(UnauthorizedAccessEffect)
+                .GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(effect)!;
+        }
+
+        private static Mesh FindMesh(UnauthorizedAccessEffect effect, string name)
+        {
+            Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
+            Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
+            MeshFilter[] screenMeshes = screen.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < screenMeshes.Length; i++)
+                if (screenMeshes[i].sharedMesh.name == name) return screenMeshes[i].sharedMesh;
+            MeshFilter[] spatialMeshes = spatial.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < spatialMeshes.Length; i++)
+                if (spatialMeshes[i].sharedMesh.name == name) return spatialMeshes[i].sharedMesh;
             Assert.Fail($"{name} was not found.");
             return null!;
         }
