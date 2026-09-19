@@ -47,6 +47,7 @@ MCP for Unity（`.codex/config.toml` に登録済み）は「起動中の Editor
 
 差し替え素材（人形・染み・手形）の生成は [tools/gen-plate/](tools/gen-plate/README.md)。
 作法の正本は [.claude/memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)。
+合成マスクの改善と再生成は [.claude/skills/composite-mask/SKILL.md](.claude/skills/composite-mask/SKILL.md)。
 人形の線画依頼は [tools/doll-ref/PROMPT.md](tools/doll-ref/PROMPT.md)。
 
 ## 補助ディレクトリ

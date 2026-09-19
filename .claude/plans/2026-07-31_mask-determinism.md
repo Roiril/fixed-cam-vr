@@ -1,13 +1,20 @@
 ---
 status: planned
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-09-19
 slug: mask-determinism
 ---
 
 # 合成マスクを決定論的に決める
 
-## ⚠ 未着手です
+## 2026-09-19 の状況
+
+オフラインの全コマ走査と保存レシピによる再生成を
+[composite-mask](../skills/composite-mask/SKILL.md) に実装した。
+記録は [composite_mask_quality.md](../memory/composite_mask_quality.md)。
+この計画の工房UIへの統合とcue内のレシピ保持は未実装。以下は2026-07-31時点の設計案。
+
+## 2026-07-31 時点の状況
 
 **コードは 1 行も変えていません。** 2026-07-31 のセッションはユーザーの相談
 （「素材を合成する際のマスク領域をどう決めるかで悩んでいる。フレーム切り抜き→画像生成→動画生成という

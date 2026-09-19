@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "mode": "surface",
+  "reference": "../../web-compositor/captures/plate_B_20260905_193512.jpg",
+  "sources": ["../../web-compositor/captures/gen_handsB_20260904_1554.png"],
+  "core_polygons": [[[0, 0], [308, 0], [310, 317], [255, 479], [0, 479]]],
+  "margin": 0,
+  "feather": 2,
+  "frame_size": [640, 360],
+  "allow_domain_contact": false
+}

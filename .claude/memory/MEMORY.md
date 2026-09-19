@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [composite_mask_quality.md](composite_mask_quality.md) - 2026-09-19。シミの矩形切れと二重マスクを原動画から修正。生成されたパイプも一緒に合成し、保護用の穴を勝手に開けない。`composite-mask` スキルと保存レシピ。人物切り抜きは採用しない。実機未確認。
+
 - [dark_eyes_slices.md](dark_eyes_slices.md) - 2026-09-19（0237 / 0238・R055 / R056）。闇の目の中身を **Codex に描かせた「壊れた画像データの目」の版**へ（`tools/make-eye-glitch.py` → `Resources/Eyes/EyeGlitch.png`）。**手続きの帯は「整然としすぎ・チープ」で不採用**（色の割合が参考に並んでも目には読めない）／シェーダは瞼の包絡で切ってずらして引くだけ／mip の段はずらす前の uv の微分で／`eyes=` の 8 つ目 ＝ 版を掴めたか／**プレビューは `-Set scale=2`**／`RiftExtend` ⇔ `RIFT_EXTEND`・`--ratio` ⇔ `TEX_RATIO`・`DefaultColor`/`DefaultGain` ⇔ シーンの値 は対。
 
 - [unauthorized_access_effect.md](unauthorized_access_effect.md) - 2026-09-19。用途未定のエラー演出。独立 Prefab。描画順と映像面からの距離。Editor での停止と破棄。実描画の不在検出。

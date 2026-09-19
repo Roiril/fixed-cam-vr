@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-19",
+  "before_rev": 1236,
+  "after_rev": 1238,
+  "changes": {
+    "cue_hands_B": {
+      "maskUrl": {
+        "before": "/masks/cue_hands_B_20260904_1554.png",
+        "after": "/masks/cue_hands_B_solid_20260919.png"
+      }
+    },
+    "stain_A_in": {
+      "sourceUrl": {
+        "before": "/captures/gen_stainA_video_20260907.mp4",
+        "after": "/captures/gen_stainA_full_20260919.mp4"
+      },
+      "maskUrl": {
+        "before": "/masks/cue_stain_A_20260907_vid.png",
+        "after": "/masks/cue_stain_A_full_20260919_v3.png"
+      }
+    },
+    "cue_stain_A": {
+      "sourceUrl": {
+        "before": "/captures/gen_stainA_video_still_20260907.png",
+        "after": "/captures/gen_stainA_full_still_20260919.png"
+      },
+      "maskUrl": {
+        "before": "/masks/cue_stain_A_20260907_vid.png",
+        "after": "/masks/cue_stain_A_full_20260919_v3.png"
+      }
+    }
+  },
+  "served_sha256": {
+    "/masks/cue_hands_B_solid_20260919.png": "86470fcc52de10404848c6082843dbf2fd608be49cc5bbcc4de4218b74947d73",
+    "/captures/gen_stainA_full_20260919.mp4": "1984577247915618ba79fbcfaae767921f5593fbf7bb1d5269d9cf1c8bcf7570",
+    "/captures/gen_stainA_full_still_20260919.png": "1976b2cbccab1df3fb2cec013f56864d48508d635824d87bedeb587f481e81c0",
+    "/masks/cue_stain_A_full_20260919_v3.png": "e422a7f220caa90c4a01b09cc715567e705b2a2f125c5702451f4396395328b2"
+  },
+  "only_cue_url_fields_changed": true,
+  "quest_verified": false,
+  "intermediate_rev": 1237,
+  "pipe_protection_removed": true,
+  "raw_source": {
+    "filename": "Curtain_stain_animation_202609071116 (1).mp4",
+    "sha256": "738256a082c832d2ab3f44933d4d52bdcce98552a12d75c1ee80b33ffb94b919",
+    "crop_xywh": [
+      80,
+      0,
+      480,
+      360
+    ],
+    "output_size": [
+      640,
+      480
+    ],
+    "frames": 96,
+    "fps": 24,
+    "mask_baked": false
+  }
+}

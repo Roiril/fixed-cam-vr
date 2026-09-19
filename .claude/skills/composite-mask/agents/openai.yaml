@@ -1,0 +1,4 @@
+interface:
+  display_name: "合成マスク"
+  short_description: "生成画像と動画のシミを欠けなく残し、自然な境界のマスクを再生成する"
+  default_prompt: "$composite-mask を使い、採用素材の全範囲を残すマスクを作って合成結果を比較してください。"
