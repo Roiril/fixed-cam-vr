@@ -20,13 +20,16 @@ namespace FixedCamVr.Streaming.Tests
         private const float Dt = 1f / 72f;
 
         /// <summary>本編を <paramref name="sec"/> 秒進める（周の経過も一緒に進む）。</summary>
-        private static void Run(ScreenDecayLogic l, float sec, int lap, int totalLaps, float lapElapsedAtStart)
+        private static void Run(ScreenDecayLogic l, float sec, int lap, int totalLaps, float lapElapsedAtStart,
+                                bool dollPovShowing = false, bool dollShowing = false,
+                                bool dollTransitioning = false)
         {
             float t = 0f;
             while (t < sec)
             {
                 t += Dt;
-                l.Tick(Dt, running: true, lap, totalLaps, lapElapsedAtStart + t);
+                l.Tick(Dt, running: true, lap, totalLaps, lapElapsedAtStart + t,
+                       dollPovShowing, dollShowing, dollTransitioning);
             }
         }
 
@@ -219,6 +222,147 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(ScreenDecayLogic.EndBlocks, l.Blocks, 2f);
         }
 
+        // ---- 人形状態と連動する画の強さ ----
+
+        [Test]
+        public void 通常映像は生の進みが1でも画は0_5で止まる()
+        {
+            ScreenDecayLogic l = Cursed();
+            Assert.That(l.Progress, Is.GreaterThan(0.9f));
+            Assert.AreEqual(0.5f, l.Shown, 0.001f);
+            Assert.AreEqual(ScreenDecayShownMode.Normal, l.ShownMode);
+        }
+
+        [Test]
+        public void 人形視点が実際に表示された間だけ1になり_liveで0_5へ戻る()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Tick(Dt, true, 2, 3, 20f, dollPovShowing: true);
+            Assert.AreEqual(1f, l.Shown, 0.001f);
+            Assert.AreEqual(ScreenDecayShownMode.DollPov, l.ShownMode);
+
+            l.Tick(Dt, true, 2, 3, 20f, dollPovShowing: false);
+            Assert.AreEqual(0.5f, l.Shown, 0.001f);
+            Assert.AreEqual(ScreenDecayShownMode.Normal, l.ShownMode);
+        }
+
+        [TestCase("pov_0")]
+        [TestCase("pov_1")]
+        [TestCase("pov_2")]
+        [TestCase("pov_3")]
+        [TestCase("pov_4")]
+        public void 人形視点として扱うcueは採用済み5本だけ(string cueId)
+        {
+            Assert.That(TakeRunner.IsDollPovCue(cueId), Is.True);
+            Assert.That(TakeRunner.IsDollPovCue("fake_live_C"), Is.False);
+            Assert.That(TakeRunner.IsDollPovCue("pov_5"), Is.False);
+        }
+
+        [Test]
+        public void 人形視点は要求cueと実際に適用済みのcueが一致した時だけ表示扱いになる()
+        {
+            Assert.That(TakeRunner.IsDollPovShowing(true, "pov_0", "pov_0", 1f), Is.True);
+            Assert.That(TakeRunner.IsDollPovShowing(true, "pov_0", "old_non_pov", 1f), Is.False,
+                "動画 Prepare 中に残る前素材を POV と誤認しない");
+            Assert.That(TakeRunner.IsDollPovShowing(true, "", "pov_0", 1f), Is.False,
+                "live へ戻った後の POV 残像を現行カットと誤認しない");
+            Assert.That(TakeRunner.IsDollPovShowing(true, "pov_0", "pov_0", 0f), Is.False,
+                "texture が選ばれても画へ混ざっていない間は表示扱いにしない");
+        }
+
+        [Test]
+        public void CG人形化は乱れの中で0_5から1へ進み_読めた後は保持する()
+        {
+            ScreenDecayLogic l = Cursed();
+            float previous = l.Shown;
+            float t = 0f;
+            while (t < ScreenDecayLogic.DollMorphSec)
+            {
+                t += Dt;
+                l.Tick(Dt, true, 3, 3, t, dollShowing: true, dollTransitioning: true);
+                Assert.That(l.Shown, Is.GreaterThanOrEqualTo(previous));
+                previous = l.Shown;
+            }
+            Assert.That(l.Shown, Is.GreaterThan(0.99f));
+            Assert.AreEqual(ScreenDecayShownMode.DollMorph, l.ShownMode);
+
+            l.Tick(Dt, true, 3, 3, t, dollShowing: true, dollTransitioning: false);
+            Assert.AreEqual(1f, l.Shown, 0.001f, "最初の読める CG フレームは 1");
+            Assert.AreEqual(ScreenDecayShownMode.DollHold, l.ShownMode);
+
+            l.Tick(Dt, false, 4, 3, 0f, dollShowing: false, dollTransitioning: false);
+            Assert.AreEqual(1f, l.Shown, 0.001f, "カメラと相が変わっても報告までは下げない");
+        }
+
+        [Test]
+        public void CG人形化は著作された乱れの実進捗で終端までに1へ届く()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Tick(Dt, true, 3, 3, 0f, dollShowing: true, dollTransitioning: true,
+                   dollTransition01: 0f);
+            Assert.AreEqual(0.5f, l.Shown, 0.001f);
+
+            l.Tick(Dt, true, 3, 3, Dt, dollShowing: true, dollTransitioning: true,
+                   dollTransition01: 0.5f);
+            Assert.AreEqual(0.75f, l.Shown, 0.001f);
+
+            l.Tick(Dt, true, 3, 3, Dt * 2f, dollShowing: true, dollTransitioning: true,
+                   dollTransition01: 1f);
+            Assert.AreEqual(1f, l.Shown, 0.001f, "220ms の乱れでも消える前に 1 へ届く");
+        }
+
+        [Test]
+        public void CG素材ロードが遅れても最初に読めるフレームは1になる()
+        {
+            ScreenDecayLogic l = Cursed();
+            for (int i = 0; i < 30; i++)
+                l.Tick(Dt, true, 3, 3, i * Dt, dollShowing: false, dollTransitioning: true);
+            Assert.AreEqual(0.5f, l.Shown, 0.001f, "まだ出ていない CG で強くしない");
+
+            l.Tick(Dt, true, 3, 3, 1f, dollShowing: true, dollTransitioning: false);
+            Assert.AreEqual(1f, l.Shown, 0.001f);
+            Assert.AreEqual(ScreenDecayShownMode.DollHold, l.ShownMode);
+        }
+
+        [Test]
+        public void 通常のカメラ切替は人形化として扱わない()
+        {
+            ScreenDecayLogic l = Cursed();
+            Run(l, 1f, 3, 3, 0f, dollShowing: false, dollTransitioning: true);
+            Assert.AreEqual(0.5f, l.Shown, 0.001f);
+            Assert.AreEqual(ScreenDecayShownMode.Normal, l.ShownMode);
+        }
+
+        [Test]
+        public void 十三状態の強度は展示資料の標本と一致する()
+        {
+            var l = new ScreenDecayLogic();
+            Assert.AreEqual(0f, l.Shown, 0.001f, "1-A");
+
+            Run(l, 10f, 1, 3, 0f);
+            Assert.AreEqual(1f / 6f, l.Shown, 0.01f, "1-B");
+            Run(l, 10f, 1, 3, 10f);
+            Assert.AreEqual(1f / 3f, l.Shown, 0.01f, "1-C");
+            Run(l, 10f, 1, 3, 20f);
+            Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-A");
+            Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-B");
+            Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-C live");
+
+            l.Tick(Dt, true, 2, 3, 20f, dollPovShowing: true);
+            Assert.AreEqual(1f, l.Shown, 0.001f, "2-C POV");
+            l.Tick(Dt, true, 3, 3, 0f);
+            Assert.AreEqual(0.5f, l.Shown, 0.001f, "3-A before");
+            l.Tick(Dt, true, 3, 3, Dt, dollShowing: true, dollTransitioning: false);
+            Assert.AreEqual(1f, l.Shown, 0.001f, "3-A after");
+            Assert.AreEqual(1f, l.Shown, 0.001f, "3-B");
+            Assert.AreEqual(1f, l.Shown, 0.001f, "3-C");
+            Assert.AreEqual(1f, l.Shown, 0.001f, "4-A before");
+
+            l.Release();
+            Run(l, ScreenDecayLogic.ReleaseSec, 4, 3, 0f);
+            Assert.AreEqual(0f, l.Shown, 0.001f, "4-A after");
+        }
+
         // ---- 呪いが解ける（canon/LEDGER.md 0083）----
         //
         // 「エージェントがバグるのも、視界が徐々に悪くなるのも、呪いのせいという事にする。
@@ -246,6 +390,15 @@ namespace FixedCamVr.Streaming.Tests
 
             Assert.AreEqual(0f, l.Shown, 0.001f, "画に出る進みは戻り切る");
             Assert.AreEqual(0f, l.ShownBlocks, "量子化しない ＝ 1 周目の頭とまったく同じ画");
+        }
+
+        [Test]
+        public void フレームが詰まっても解除は実時間0_5秒以内に終わる()
+        {
+            ScreenDecayLogic l = Cursed();
+            l.Release();
+            l.Tick(ScreenDecayLogic.ReleaseSec, running: false, lap: 4, totalLaps: 3, lapElapsedSec: 0f);
+            Assert.AreEqual(0f, l.Shown, 0.001f);
         }
 
         /// <summary>

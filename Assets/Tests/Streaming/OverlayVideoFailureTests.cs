@@ -136,5 +136,46 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That((float)GetField(o, "_strength"), Is.EqualTo(0f));
             Assert.That((float)GetField(o, "_target"), Is.EqualTo(0f));
         }
+
+        [Test]
+        public void AppliedCueId_ChangesOnlyWhenTextureIsActuallyApplied_AndClearsAtZero()
+        {
+            var o = NewOverlay();
+            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            Assert.That(shader, Is.Not.Null);
+            var mat = new Material(shader!);
+            var tex = new Texture2D(2, 2);
+            _spawned.Add(mat);
+            _spawned.Add(tex);
+            SetField(o, "_material", mat);
+            SetField(o, "_appliedCueId", "old_non_pov");
+            SetField(o, "_current", VideoCue("pov_0"));
+
+            Assert.That(o.AppliedCueId, Is.EqualTo("old_non_pov"),
+                "Current が次の cue へ進んでも Prepare 完了前は前素材のまま");
+            Invoke(o, "SetOverlayTexture", tex, 1f, "pov_0");
+            Assert.That(o.AppliedCueId, Is.EqualTo("pov_0"));
+
+            SetField(o, "_strength", 0f);
+            SetField(o, "_target", 0f);
+            SetField(o, "_stopWhenFadedOut", true);
+            Invoke(o, "Update");
+            Assert.That(o.AppliedCueId, Is.Empty, "cue 解除で適用済み id も消す");
+        }
+
+        [Test]
+        public void PrepareFailure_ClearsAppliedCueId()
+        {
+            LogAssert.ignoreFailingMessages = true;
+            var o = NewOverlay();
+            SetField(o, "_current", VideoCue("pov_0"));
+            SetField(o, "_appliedCueId", "old_non_pov");
+            SetField(o, "_strength", 1f);
+            var l = Logic(o);
+            l.BeginPrepare(l.BeginPlay(), 0f);
+
+            Invoke(o, "OnVideoError", null, "err");
+            Assert.That(o.AppliedCueId, Is.Empty);
+        }
     }
 }

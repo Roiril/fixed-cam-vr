@@ -111,6 +111,15 @@ namespace FixedCamVr.Streaming
 
         public bool DollReplacementShowing => takeRunner != null && takeRunner.DollReplacementShowing;
 
+        /// <summary>CG 人形が乱れ遷移の覆いの中にいるか。</summary>
+        public bool DollReplacementTransitioning => takeRunner != null && takeRunner.DollReplacementTransitioning;
+
+        /// <summary>CG 人形化の乱れ遷移の実進捗。遷移外は 1。</summary>
+        public float DollReplacementTransition01 => takeRunner != null ? takeRunner.DollReplacementTransition01 : 1f;
+
+        /// <summary>2-C の人形視点素材が実際に画面へ混ざっているか。</summary>
+        public bool DollPovShowing => takeRunner != null && takeRunner.DollPovShowing;
+
         public bool Suppressed => takeRunner != null && takeRunner.Suppressed;
 
         /// <summary>

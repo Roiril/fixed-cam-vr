@@ -92,10 +92,22 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 夜間モードへの進み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
-        /// **解像度の劣化と同じ <see cref="ScreenDecayLogic.Progress"/> を渡す**
-        /// — 1 周目は暖色、3 周目の A で完全な無彩（`canon/LEDGER.md` 0019）。
+        /// **量子化と同じ <see cref="ScreenDecayLogic.Shown"/> を渡す。**
+        /// 通常は 0.5 まで。人形視点と CG 人形化で 1。報告後は量子化と一緒に 0 へ戻る。
         /// </summary>
         public void SetMono(float progress) => Mono = Mathf.Clamp01(progress);
+
+        /// <summary>
+        /// 解像度と無彩化を同じ進みで書き、その場で material へ反映する。
+        /// <see cref="ShowRunDirector.LateUpdate"/> から呼び、同フレームに確定した素材表示を
+        /// 次の描画へ 1 フレーム遅れず渡す。
+        /// </summary>
+        public void SetScreenDecay(float blocks, float progress)
+        {
+            SetCoarseBlocks(blocks);
+            SetMono(progress);
+            Write();
+        }
 
         /// <summary>いま書いている夜間モードの進み 0..1。診断用。</summary>
         public float Mono { get; private set; }

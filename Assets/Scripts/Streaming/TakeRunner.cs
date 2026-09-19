@@ -161,8 +161,31 @@ namespace FixedCamVr.Streaming
         public bool DollReplacementShowing => IsDollReplacementShowing(
             _logic.IsActive, _activeStepDollReplacement, _cgLayer != null && _cgLayer.DollVisible);
 
+        /// <summary>
+        /// 人形視点の素材が実際に画面へ混ざっているか。
+        /// cue id だけでは動画の Prepare 前にも立つため、overlay の実効強度と対で見る。
+        /// </summary>
+        public bool DollPovShowing => IsDollPovShowing(
+            _logic.IsActive, _activeStepCueId,
+            overlay != null ? overlay.AppliedCueId : "",
+            overlay != null ? overlay.Strength : 0f);
+
+        /// <summary>CG 人形を出すカットが、乱れ遷移でまだ覆われているか。</summary>
+        public bool DollReplacementTransitioning => _logic.IsActive && _activeStepDollReplacement
+                                                     && director != null && director.Dipping;
+
+        /// <summary>CG 人形化の乱れ遷移の進み。遷移外は 1。</summary>
+        public float DollReplacementTransition01 => director != null ? director.TransitionProgress01 : 1f;
+
         public static bool IsDollReplacementShowing(bool active, bool stepWantsDoll, bool dollVisible)
             => active && stepWantsDoll && dollVisible;
+
+        public static bool IsDollPovCue(string cueId)
+            => cueId == "pov_0" || cueId == "pov_1" || cueId == "pov_2"
+               || cueId == "pov_3" || cueId == "pov_4";
+
+        public static bool IsDollPovShowing(bool active, string activeCueId, string appliedCueId, float strength)
+            => active && strength > 0.001f && activeCueId == appliedCueId && IsDollPovCue(appliedCueId);
 
         public bool Suppressed => _logic.Suppressed;
 

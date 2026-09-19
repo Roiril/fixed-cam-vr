@@ -303,6 +303,24 @@ namespace FixedCamVr.Streaming
         /// <summary>dip-to-black 演出の実行中か（HUD 表示用）。</summary>
         public bool Dipping => _dip != DipState.Idle;
 
+        /// <summary>
+        /// 現在の dip / 乱れ遷移の全尺に対する進み 0..1。Down と Up を実尺で連結する。
+        /// 遷移外は 1。
+        /// </summary>
+        public float TransitionProgress01
+        {
+            get
+            {
+                if (_dip == DipState.Idle) return 1f;
+                float total = _curDipDown + _curDipUp;
+                if (total <= 0f) return 1f;
+                float elapsed = _dip == DipState.Down
+                    ? Mathf.Clamp(_dipTimer, 0f, _curDipDown)
+                    : _curDipDown + Mathf.Clamp(_dipTimer, 0f, _curDipUp);
+                return Mathf.Clamp01(elapsed / total);
+            }
+        }
+
         /// <summary>インサート表示中か（手動切替は拒否される。拒否時の赤メッセージ判定に使う）。</summary>
         public bool InsertActive => _logic.InsertActive;
 

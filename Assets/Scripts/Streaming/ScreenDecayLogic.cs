@@ -3,9 +3,23 @@ using System;
 
 namespace FixedCamVr.Streaming
 {
+    /// <summary>画へ出している劣化の根拠。走行ログと純ロジックテストが読む。</summary>
+    public enum ScreenDecayShownMode
+    {
+        Normal,
+        DollPov,
+        DollMorph,
+        DollHold,
+        Release,
+    }
+
     /// <summary>
-    /// 周を重ねるごとに映像の解像度が落ちていく進み（UnityEngine 非依存・dt 注入）。
+    /// 装置の劣化と、人形の状態に連動する画面加工（UnityEngine 非依存・dt 注入）。
     /// <see cref="ShowRunDirector"/> が回し、<see cref="CameraFeelFx"/> がシェーダへ書く。
+    ///
+    /// 値は 2 本ある。<see cref="Progress"/> は周回で 0 → 1 へ単調に進む装置の劣化で、音が読む。
+    /// <see cref="Shown"/> は画へ出す値で、通常は <see cref="NormalMax"/> まで。2-C の人形視点では 1。
+    /// 3-A の CG 人形化では乱れの中で 1 へ進み、最初の読める CG フレームから報告まで 1 を保持する。
     ///
     /// 出どころは <c>canon/LEDGER.md</c> 0012 —
     /// 「1 周目の最初は今くらいの解像度」「3 周目にはだいぶ粗い」
@@ -26,9 +40,9 @@ namespace FixedCamVr.Streaming
     ///   3. <b>上げ幅の頭打ち</b>（<see cref="MaxRisePerSec"/>）— 速く歩いて周が飛んでも滑って渡る。
     ///      自然な進みは 1/60 ≒ 0.017/秒 なので、2 倍までは許して段差だけ潰す
     ///
-    /// ⚠ <b>進むのは本編（<see cref="ShowPhase.Run"/>）だけ。</b> 導入と終了では値を**保持する**。
-    /// 終了で 0 へ戻すと、走行中の演出を見せ切っている猶予のあいだに
-    /// <b>画が急に鮮明になって「直った」ように見える</b>。落とすのは体験者の交代（BeginRun）だけ。
+    /// ⚠ <b><see cref="Progress"/> が進むのは本編（<see cref="ShowPhase.Run"/>）だけ。</b>
+    /// 導入と終了では保持し、体験者の交代（BeginRun）だけで 0 へ戻す。
+    /// <see cref="Shown"/> の解除は例外で、終了相へ移っても <see cref="ReleaseSec"/> の時計を進める。
     /// </summary>
     public sealed class ScreenDecayLogic
     {
@@ -68,12 +82,15 @@ namespace FixedCamVr.Streaming
         /// 視界の悪さも元に戻そう」）。
         ///
         /// ⚠ 締めのカットの次は <c>live</c> 3.0 秒で、その頭に乱れ（0.5〜0.7 秒）が乗る。
-        /// <b>戻り始めは乱れが覆い、戻り切るのは乱れが引いた後</b>になる長さにしてある
-        /// （0050「推したら乱れたのちに元に戻って」）。残り約 1.8 秒は鮮明な現実の映像。
-        /// ⚠ これを 3 秒以上にすると、戻り切る前に終幕（画面が死ぬ Flicker）へ入って
-        /// <b>「戻った」が体験されないまま終わる</b>。
+        /// 戻しは報告に伴う乱れの中へ収める。終了相へ移っても時計を止めない。
         /// </summary>
-        public const float ReleaseSec = 1.2f;
+        public const float ReleaseSec = 0.5f;
+
+        /// <summary>通常のライブ映像で画へ出す上限。装置の劣化そのものは 1 まで進み続ける。</summary>
+        public const float NormalMax = 0.5f;
+
+        /// <summary>CG 人形化の乱れの中で 0.5 → 1 へ渡る目安。</summary>
+        public const float DollMorphSec = 0.5f;
 
         private float _progress;
         private int _lastLap = 1;
@@ -83,6 +100,14 @@ namespace FixedCamVr.Streaming
         // 呪いが解けた（4 周目 A の締めが報告で進んだ）。
         private bool _released;
         private float _releaseSec;
+        private float _releaseFrom;
+
+        // 画に出る状態は、周回の進みとは別に「いま本当に出ている素材」で決まる。
+        private float _shown;
+        private float _dollMorphSec;
+        private bool _dollSeen;
+        private bool _dollLatched;
+        private ScreenDecayShownMode _shownMode;
 
         /// <summary>
         /// <b>装置の劣化そのものの進み 0..1</b>（単調・下がらない）。
@@ -98,7 +123,9 @@ namespace FixedCamVr.Streaming
         public float Progress => _progress;
 
         /// <summary>
-        /// <b>画に出す進み。</b>呪いが解けると <see cref="ReleaseSec"/> かけて 0 へ落ちる。
+        /// <b>画に出す進み。</b>通常は <see cref="NormalMax"/> で止まる。人形視点のカット中は 1。
+        /// CG 人形化で 1 に達した後は報告まで保持し、呪いが解けると
+        /// <see cref="ReleaseSec"/> かけて 0 へ落ちる。
         /// 解像度（<see cref="ShownBlocks"/>）と色（<c>SetMono</c>）が<b>この 1 本を共有する</b>ので、
         /// 両方が必ず一緒に戻る。
         ///
@@ -106,7 +133,10 @@ namespace FixedCamVr.Streaming
         /// 派生させているので、ずらすと<b>順方向では絶対に作れない画</b>
         /// （色があって粗い／鮮明な暗視）が数秒出る。
         /// </summary>
-        public float Shown => _progress * (1f - ReleaseK);
+        public float Shown => _shown;
+
+        /// <summary>いまの <see cref="Shown"/> を決めた表示状態。</summary>
+        public ScreenDecayShownMode ShownMode => _shownMode;
 
         /// <summary>
         /// <see cref="Shown"/> に対応する「枠を横切るブロック数」。<b>0 = 量子化しない。</b>
@@ -143,6 +173,8 @@ namespace FixedCamVr.Streaming
             if (_released) return;
             _released = true;
             _releaseSec = 0f;
+            _releaseFrom = _shown;
+            _shownMode = ScreenDecayShownMode.Release;
         }
 
         /// <summary>いま使っている 1 周の目安 (秒)。診断用。</summary>
@@ -166,42 +198,122 @@ namespace FixedCamVr.Streaming
             //（画がいつまでも鮮明なまま）。
             _released = false;
             _releaseSec = 0f;
+            _releaseFrom = 0f;
+            _shown = 0f;
+            _dollMorphSec = 0f;
+            _dollSeen = false;
+            _dollLatched = false;
+            _shownMode = ScreenDecayShownMode.Normal;
         }
 
         /// <summary>
-        /// 1 フレーム進める。<paramref name="running"/> が false のあいだは値を保持する。
+        /// 1 フレーム進める。<paramref name="running"/> が false のあいだは
+        /// <see cref="Progress"/> を保持する。解除中の <see cref="Shown"/> は相に関係なく進む。
         ///
         /// ⚠ <b>1 周の目安は前の周の実測へ差し替える。</b> 定数で当てると、実際の周がそれより短いとき
         /// 周の中の進みが 1 に届かず、**不足が最後の境目へ持ち越されて「最後の周に入ってもまだ落ち続ける」**
         /// （2026-08-12 実機: 目安 30 秒に対し実際は 24 秒で、3 周目に入ってから 2 秒ぶん落ち続けた）。
         /// 前の周の実測を使えば周の中で 1 に届き切るので、境目の不足が 0 になる。
         /// </summary>
-        public void Tick(float dt, bool running, int lap, int totalLaps, float lapElapsedSec)
+        public void Tick(float dt, bool running, int lap, int totalLaps, float lapElapsedSec,
+                         bool dollPovShowing = false, bool dollShowing = false,
+                         bool dollTransitioning = false, float dollTransition01 = -1f)
         {
             if (dt <= 0f) return;
+            float visualDt = dt;
             if (dt > MaxStepSec) dt = MaxStepSec;
 
             // 解除の進み。
             // ⚠⚠ **running を条件にしない。** 報告 → 現実の 3 秒 → 終幕 は連続した 1 つの出来事で、
             //    その途中で相が Run から Finished へ移る。相を見ると**戻り切る前に凍り**、
             //    「戻った」が体験されないまま画面が死ぬ。
-            if (_released && _releaseSec < ReleaseSec) _releaseSec += dt;
-
-            if (!running) return;
-
-            if (lap != _lastLap)
+            if (_released && _releaseSec < ReleaseSec)
             {
-                // 周が変わった。**直前に見た経過**がその周にかかった秒（lapElapsed は既に 0 へ戻っている）。
-                if (_lastLapElapsed > 0f) _lapRef = Clamp(_lastLapElapsed, MinLapRefSec, MaxLapRefSec);
-                _lastLap = lap;
+                _releaseSec += visualDt;
+                _shown = _releaseFrom * (1f - ReleaseK);
+                _shownMode = ScreenDecayShownMode.Release;
             }
-            _lastLapElapsed = lapElapsedSec;
 
-            float target = TargetFor(lap, totalLaps, lapElapsedSec, _lapRef);
-            if (target <= _progress) return;     // 単調（後戻りしない）
+            if (running)
+            {
+                if (lap != _lastLap)
+                {
+                    // 周が変わった。**直前に見た経過**がその周にかかった秒（lapElapsed は既に 0 へ戻っている）。
+                    if (_lastLapElapsed > 0f) _lapRef = Clamp(_lastLapElapsed, MinLapRefSec, MaxLapRefSec);
+                    _lastLap = lap;
+                }
+                _lastLapElapsed = lapElapsedSec;
 
-            float next = _progress + MaxRisePerSec * dt;
-            _progress = next < target ? next : target;
+                float target = TargetFor(lap, totalLaps, lapElapsedSec, _lapRef);
+                if (target > _progress)
+                {
+                    float next = _progress + MaxRisePerSec * dt;
+                    _progress = next < target ? next : target;
+                }
+            }
+
+            if (!_released)
+                TickShown(visualDt, dollPovShowing, dollShowing, dollTransitioning, dollTransition01);
+        }
+
+        private void TickShown(float dt, bool dollPovShowing, bool dollShowing,
+                               bool dollTransitioning, float dollTransition01)
+        {
+            float normal = _progress < NormalMax ? _progress : NormalMax;
+
+            // 2-C の人形視点は、素材が実際に overlay へ混ざったフレームだけ最大にする。
+            if (dollPovShowing)
+            {
+                _shown = 1f;
+                _shownMode = ScreenDecayShownMode.DollPov;
+                return;
+            }
+
+            if (_dollLatched)
+            {
+                _shown = 1f;
+                _shownMode = ScreenDecayShownMode.DollHold;
+                return;
+            }
+
+            if (dollShowing)
+            {
+                _dollSeen = true;
+                if (dollTransitioning)
+                {
+                    float k;
+                    if (dollTransition01 >= 0f)
+                    {
+                        k = Clamp01(dollTransition01);
+                    }
+                    else
+                    {
+                        _dollMorphSec += dt;
+                        k = Clamp01(_dollMorphSec / DollMorphSec);
+                    }
+                    _shown = NormalMax + (1f - NormalMax) * Smooth(k);
+                    _shownMode = ScreenDecayShownMode.DollMorph;
+                    return;
+                }
+
+                // 遷移が解けた最初の読める CG フレームで 1。以後はカメラや相が変わっても保持する。
+                _dollLatched = true;
+                _shown = 1f;
+                _shownMode = ScreenDecayShownMode.DollHold;
+                return;
+            }
+
+            // CG が乱れの最中に畳まれた場合も、一度出た事実を失わない。
+            if (_dollSeen)
+            {
+                _dollLatched = true;
+                _shown = 1f;
+                _shownMode = ScreenDecayShownMode.DollHold;
+                return;
+            }
+
+            _shown = normal;
+            _shownMode = ScreenDecayShownMode.Normal;
         }
 
         /// <summary>

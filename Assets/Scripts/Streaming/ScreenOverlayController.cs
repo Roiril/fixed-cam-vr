@@ -97,6 +97,12 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float Strength => _strength;
 
+        /// <summary>
+        /// いま material の <c>_OverlayTex</c> に実際に適用済みの cue id。
+        /// <see cref="Current"/> は動画の Prepare 前に次の cue へ変わるため、表示中の素材判定には使わない。
+        /// </summary>
+        public string AppliedCueId => _appliedCueId;
+
         /// <summary>スクリーンの material を掴めているか。false なら合成は 1 画素も効かない。</summary>
         public bool HasMaterial => _material != null;
 
@@ -115,6 +121,7 @@ namespace FixedCamVr.Streaming
 
         // フェード状態。target に向かって _strength を進める。
         private float _strength;
+        private string _appliedCueId = "";
         private float _target;
         private float _fadeSpeed = 4f;
         private bool _stopWhenFadedOut;
@@ -242,6 +249,7 @@ namespace FixedCamVr.Streaming
                 _stopWhenFadedOut = false;
                 if (_player != null && _player.isPlaying) _player.Stop();
                 _current = null;
+                _appliedCueId = "";
             }
         }
 
@@ -330,7 +338,7 @@ namespace FixedCamVr.Streaming
                 _player!.Stop();
                 _framesStart = Time.time;
                 data.frames!.Tick(0f);
-                SetOverlayTexture(data.frames.Texture, data.frames.Aspect);
+                SetOverlayTexture(data.frames.Texture, data.frames.Aspect, data.id);
                 BeginFadeIn(data);
             }
             else if (data.SourceIsVideo)
@@ -385,7 +393,7 @@ namespace FixedCamVr.Streaming
                 // 無条件 Stop: preparing 中（isPlaying=false）の動画 cue も中断しないと、
                 // 後から prepareCompleted が届いてこの静止画を動画 RT で上書きする。
                 _player!.Stop();
-                SetOverlayTexture(still, (float)still.width / still.height);
+                SetOverlayTexture(still, (float)still.width / still.height, data.id);
                 BeginFadeIn(data);
             }
         }
@@ -420,7 +428,7 @@ namespace FixedCamVr.Streaming
             if (_material == null || tex == null) return false;
             if (_current == null || _strength <= 0.001f) return false;
             if (_current.SourceIsVideo || _current.SourceIsFrames) return false;
-            SetOverlayTexture(tex, (float)tex.width / Mathf.Max(1, tex.height));
+            SetOverlayTexture(tex, (float)tex.width / Mathf.Max(1, tex.height), _appliedCueId);
             return true;
         }
 
@@ -751,7 +759,7 @@ namespace FixedCamVr.Streaming
             }
 
             vp.targetTexture = _videoRt;
-            SetOverlayTexture(_videoRt, aspect);
+            SetOverlayTexture(_videoRt, aspect, cue.id);
             if (cue.trimStart > 0f) vp.time = cue.trimStart; // 再生区間の頭へシーク
             vp.Play();
             BeginFadeIn(cue);
@@ -828,6 +836,7 @@ namespace FixedCamVr.Streaming
             _stopWhenFadedOut = false;
             _strength = 0f;
             _target = 0f;
+            _appliedCueId = "";
             ApplyStrength(0f);
             Debug.LogWarning($"[ScreenOverlay] cue aborted ({reason}) — live 維持");
         }
@@ -839,12 +848,13 @@ namespace FixedCamVr.Streaming
             _fadeSpeed = Mathf.Max(_target - _strength, 0.01f) / fade;
         }
 
-        private void SetOverlayTexture(Texture tex, float srcAspect)
+        private void SetOverlayTexture(Texture tex, float srcAspect, string cueId)
         {
             if (_material == null) return;
             Vector2 scale = ContainScale(srcAspect);
             _material.SetTexture(OverlayTexId, tex);
             _material.SetVector(OverlayScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
+            _appliedCueId = cueId ?? "";
         }
 
         /// <summary>

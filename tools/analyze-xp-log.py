@@ -3414,6 +3414,30 @@ def analyze(events, others, exp, warns=None):
             verdict("WARN", "視界が劣化したまま解除されずに終わった — "
                             "締めのカット（untilMark）へ報告が届いていないか、押されなかった")
 
+        # 画の劣化は周回値をそのまま出さない。通常は 0.5 で止まり、実際に出た人形視点と
+        # CG 人形化だけが 1 になる。mode と coarseShown を対で見て、状態だけ立った配線を通さない。
+        mode_samples = [(str(e.get("coarseMode", "")), fnum(e, "coarseShown"))
+                        for e in events
+                        if e.get("ev") == "sum" and e.get("coarseMode") is not None]
+        if mode_samples:
+            normal = [v for mode, v in mode_samples if mode == "Normal" and v is not None]
+            pov = [v for mode, v in mode_samples if mode == "DollPov" and v is not None]
+            morph = [v for mode, v in mode_samples if mode == "DollMorph" and v is not None]
+            held = [v for mode, v in mode_samples if mode == "DollHold" and v is not None]
+            if normal and max(normal) > 0.51:
+                verdict("FAIL", f"通常映像の劣化が 0.5 を超えた（最大 {max(normal):.2f}）— "
+                                "人形状態と周回劣化が分離されていない")
+            if pov and min(pov) < 0.99:
+                verdict("FAIL", f"人形視点が出ているのに劣化が 1 でない（最小 {min(pov):.2f}）")
+            elif pov:
+                verdict("OK", "観測した人形視点の標本で劣化 1 を確認した")
+            if morph and (min(morph) < 0.49 or max(morph) > 1.001):
+                verdict("FAIL", "CG 人形化の乱れ中の劣化が 0.5..1 を外れた")
+            if held and min(held) < 0.99:
+                verdict("FAIL", f"CG 人形化後の劣化が保持されていない（最小 {min(held):.2f}）")
+            elif held:
+                verdict("OK", "観測した CG 人形化後の標本で劣化 1 を確認した")
+
     # 導入のあいだは 0 でなければならない（「1 周目の最初は今くらいの解像度」）。
     decay_intro = _decay_nums("coarse", t_to=run_t)
     if decay_intro and max(decay_intro) > 0.001:

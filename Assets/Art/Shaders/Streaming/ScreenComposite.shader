@@ -102,7 +102,7 @@ Shader "FixedCamVr/ScreenComposite"
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
-        // 周を重ねるごとに落ちていく解像度（canon/LEDGER.md 0012）。**枠を横切るブロック数**をそのまま受ける。
+        // 人形状態に対応する解像度（canon/LEDGER.md 0242）。**枠を横切るブロック数**をそのまま受ける。
         //   0 = 量子化しない（今までと 1 ビットも変わらない画）
         // 0..1 → ブロック数の対応表は **C# の ScreenDecayLogic にしかない**。ここにも式を置くと、
         // テレメトリが読む値と画が黙って食い違う（この codebase が何度も踏んだ型）。
@@ -232,6 +232,7 @@ Shader "FixedCamVr/ScreenComposite"
             #pragma vertex vert
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
             TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
             TEXTURE2D(_SwapMaskTex); SAMPLER(sampler_SwapMaskTex);
@@ -626,7 +627,7 @@ Shader "FixedCamVr/ScreenComposite"
 
             /// 粗さの出どころは 2 つあり、**粗い方だけ**を掛ける（2 つの格子が干渉すると縞が出る）。
             ///   _Pixelate     著作した値（post 12 項目。卓の FS_POST と同式・硬い格子のまま）
-            ///   _CoarseBlocks 周を重ねるごとに痩せる伝送（別系統。C# の ScreenDecayLogic が解いたブロック数）
+            ///   _CoarseBlocks 人形状態に対応する粗さ（C# の ScreenDecayLogic が解いたブロック数）
             /// 返すのは「_CoarseBlocks 側を使うか」。使うならブロック数を <paramref name="blocks"/> へ。
             bool PickCoarse(out float blocks)
             {
@@ -648,7 +649,7 @@ Shader "FixedCamVr/ScreenComposite"
                 return (floor(uv * b) + 0.5) / b;
             }
 
-            /// 周回で痩せる伝送を **mip で作る**。
+            /// 状態に応じた粗さを **mip で作る**。
             ///
             /// ⚠⚠ 旧実装はサンプル位置を量子化していた（点サンプル）。それは低域通過でも符号化でもなく
             ///    **周期的な停止と局所拡大を持つ座標変形**で、ブロック内は 1 テクセルを引き伸ばし、
@@ -1395,9 +1396,22 @@ Shader "FixedCamVr/ScreenComposite"
                 // 暗部の色差から捨てるので、一様な脱色（＝フィルタ）ではなくこの形になる。
                 half sat = _Saturation + max(1.0 - _Saturation, 0.0)
                                        * saturate(luma * 3.33) * saturate(_ChromaKill);
-                // 周回で夜間モードへ落ちる。**最後は色がまったく無い**（`canon/LEDGER.md` 0019）。
+                // 人形の知覚へ移ると色が抜ける。強度 1 で完全な無彩。
                 sat *= 1.0 - saturate(_Mono);
                 col = lerp(luma.xxx, col, sat);
+
+                // 採用した比較稿の明暗曲線。合成済みの映像全体へ同じ処理を掛ける。
+                // 曲線は表示用 sRGB で定義されているため、linear のまま計算しない。
+                // 0 では色変換も飛ばして元の画を保つ。乱れ・管の縁・終幕はこの後。
+                if (_Mono > 0.0)
+                {
+                    float3 displayColor = LinearToSRGB(saturate(col));
+                    float displayLuma = dot(displayColor, float3(0.299, 0.587, 0.114));
+                    float t = saturate((displayLuma - 0.10) / 0.60);
+                    float targetLuma = 0.90 * t * t * (3.0 - 2.0 * t) + 0.10 * displayLuma;
+                    displayColor = saturate(displayColor + saturate(_Mono) * (targetLuma - displayLuma));
+                    col = SRGBToLinear(displayColor);
+                }
 
                 if (_Scanline > 0.001)
                 {

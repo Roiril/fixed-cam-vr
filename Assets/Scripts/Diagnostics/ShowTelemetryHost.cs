@@ -1571,6 +1571,7 @@ namespace FixedCamVr.Diagnostics
                 //    **対で出さないと「解けたのか / そもそも劣化していないのか」が走行から読めない。**
                 _sb.Append(" coarse=").Append(_run.ScreenDecay.ToString("F2"));
                 _sb.Append(" coarseShown=").Append(_run.ScreenDecayShown.ToString("F2"));
+                _sb.Append(" coarseMode=").Append(_run.ScreenDecayShownMode);
                 _sb.Append(" cbx=").Append(_run.ScreenDecayBlocks.ToString("F0"));
                 _sb.Append(" coarseMat=").Append(CoarseMaterialState);
                 if (_run.ScreenDecayReleased) _sb.Append(" coarseRel=1");

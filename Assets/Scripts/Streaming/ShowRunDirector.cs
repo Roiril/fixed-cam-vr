@@ -106,6 +106,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float ScreenDecayShown => _decay.Shown;
 
+        /// <summary>画の劣化を決めた表示状態（テレメトリ用）。</summary>
+        public ScreenDecayShownMode ScreenDecayShownMode => _decay.ShownMode;
+
         /// <summary>いま画へ書いている「枠を横切るブロック数」（0 = 量子化していない・テレメトリ用）。</summary>
         public float ScreenDecayBlocks => _decay.ShownBlocks;
 
@@ -384,16 +387,21 @@ namespace FixedCamVr.Streaming
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             else if (ev == ShowRunEvent.RunFinished) OnRunFinished();
 
-            TickScreenDecay();
             NotifyPhaseIfChanged();
         }
 
         /// <summary>
-        /// 周を重ねるごとに映像の解像度を落とす（<c>canon/LEDGER.md</c> 0012）。
+        /// TakeRunner・overlay・乱れの Update が終わった後に実表示を読む。
+        /// Update 同士の順番に依存すると、POV と最初の CG フレームだけ 1 フレーム遅れる。
+        /// </summary>
+        private void LateUpdate() => TickScreenDecay();
+
+        /// <summary>
+        /// 音が読む装置の劣化と、画へ出す人形状態連動の加工を進める。
         ///
-        /// ⚠ <b>進めるのは本編だけ。導入と終了では値を保持する</b>（0 へ戻さない）。
-        /// 導入で進めると「1 周目の最初は今くらいの解像度」が破れ、終了で戻すと
-        /// 走行中の演出を見せ切っている猶予のあいだに画が急に鮮明になって「直った」ように見える。
+        /// <see cref="ScreenDecayLogic.Progress"/> は本編の周回でだけ進み、音へ渡る単調値。
+        /// <see cref="ScreenDecayLogic.Shown"/> は通常 0.5 まで。実表示中の人形視点と CG 人形化で 1 になり、
+        /// 報告後は終了相でも 0 まで戻る。
         ///
         /// ⚠ 押す先（<see cref="CameraFeelFx"/>）は <see cref="ResolveRefs"/> で 1 回だけ引く。
         /// ここで毎フレーム <c>FindObjectOfType</c> を撃つと 90Hz でシーン全走査になる。
@@ -403,14 +411,16 @@ namespace FixedCamVr.Streaming
         private void TickScreenDecay()
         {
             _decay.Tick(Time.unscaledDeltaTime, _logic.Phase == ShowPhase.Run,
-                        _logic.Lap, _logic.TotalLaps, _logic.LapElapsedSec);
-            // ⚠⚠ 画へ書くのは **Shown**（呪いが解けたら 0 へ戻る側）。生の Progress は
-            //    音と AI の侵食が読む — そちらまで戻すと「直った」を音で宣言することになる。
-            _feel?.SetCoarseBlocks(_decay.ShownBlocks);
-            // 色が抜けるのも**同じ進み**。1 周目は暖色、3 周目の A で完全な無彩
+                        _logic.Lap, _logic.TotalLaps, _logic.LapElapsedSec,
+                        timelineDirector != null && timelineDirector.DollPovShowing,
+                        timelineDirector != null && timelineDirector.DollReplacementShowing,
+                        timelineDirector != null && timelineDirector.DollReplacementTransitioning,
+                        timelineDirector != null ? timelineDirector.DollReplacementTransition01 : 1f);
+            // ⚠⚠ 画へ書くのは **Shown**。生の Progress は音が読む単調値で、画の人形状態には使わない。
+            // 色が抜けるのも**同じ進み**。通常は 0.5 まで。人形視点と CG 人形化で 1 になる。
             // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。
             // ⚠ 戻すときも同じ 1 本なので、解像度と色は必ず一緒に戻る。
-            _feel?.SetMono(_decay.Shown);
+            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown);
         }
 
         private bool AtStartZone()
