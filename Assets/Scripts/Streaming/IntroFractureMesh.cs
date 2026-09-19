@@ -45,6 +45,41 @@ namespace FixedCamVr.Streaming
         public static int LastQuadPieceCount { get; private set; }
         public static int LastVertexCount { get; private set; }
 
+        /// <summary>
+        /// 片ごとの情報。光の粒（<see cref="IntroSparkMesh"/>・0235）が放出点と破断時刻を
+        /// 同じ片から読むために公開する。<b>メッシュの頂点・順序・属性は 1 ビットも変えない。</b>
+        /// </summary>
+        public readonly struct PieceInfo
+        {
+            /// <summary>片の重心（覆いのローカル・±<see cref="HalfExtentLocal"/>）。</summary>
+            public readonly Vector2 center;
+            /// <summary>sqrt(面積)（覆いのローカル m）。uv1.z と同じ値。</summary>
+            public readonly float size;
+            /// <summary>枠を閉じる片か（uv1.w ≥ 0.5 と同じ）。</summary>
+            public readonly bool edgeCloser;
+            /// <summary>大区分の番号（uv2.w と同じ）。</summary>
+            public readonly int macroIndex;
+            /// <summary>大区分の破断の順（0..0.14・uv2.z と同じ）。</summary>
+            public readonly float macroOrder;
+            /// <summary>外周（覆いのローカル）。向きは問わない。</summary>
+            public readonly Vector2[] outline;
+
+            public PieceInfo(Vector2 center, float size, bool edgeCloser,
+                int macroIndex, float macroOrder, Vector2[] outline)
+            {
+                this.center = center;
+                this.size = size;
+                this.edgeCloser = edgeCloser;
+                this.macroIndex = macroIndex;
+                this.macroOrder = macroOrder;
+                this.outline = outline;
+            }
+        }
+
+        /// <summary>直近の <see cref="Build"/> が組んだ片の一覧（順序はメッシュの片の順と同じ）。</summary>
+        public static IReadOnlyList<PieceInfo> LastPieces { get; private set; } =
+            Array.Empty<PieceInfo>();
+
         public static Mesh Build()
         {
             var random = new System.Random(Seed);
@@ -63,6 +98,7 @@ namespace FixedCamVr.Streaming
             var edgeDistances = new List<Vector4>(shards.Count * 20);
             var normals = new List<Vector3>(shards.Count * 20);
             var meshTriangles = new List<int>(shards.Count * 28);
+            var pieceInfos = new List<PieceInfo>(shards.Count);
 
             int trianglePieceCount = 0;
             int quadPieceCount = 0;
@@ -82,8 +118,11 @@ namespace FixedCamVr.Streaming
                     throw new InvalidOperationException("Fracture shard became degenerate after projection.");
 
                 int firstVertex = positions.Count;
+                bool edgeCloser = edgeClosers.Contains(shardIndex);
                 AddPiece(positions, uv0, uv1, uv2, uv3, normals, meshTriangles, local, centroid, area,
-                    macros[macroIndex], macroIndex, edgeClosers.Contains(shardIndex));
+                    macros[macroIndex], macroIndex, edgeCloser);
+                pieceInfos.Add(new PieceInfo(centroid, Mathf.Sqrt(area), edgeCloser, macroIndex,
+                    macros[macroIndex].startOffset, local.ToArray()));
                 // 各外周辺までの符号付き距離。四角片の内部対角線を光らせない。
                 // 距離はアフィンなので、面の中でも頂点からの補間で正確に復元できる。
                 for (int vertex = firstVertex; vertex < positions.Count; vertex++)
@@ -105,6 +144,7 @@ namespace FixedCamVr.Streaming
             }
 
             LastPieceCount = shards.Count;
+            LastPieces = pieceInfos;
             LastTrianglePieceCount = trianglePieceCount;
             LastQuadPieceCount = quadPieceCount;
             LastVertexCount = positions.Count;

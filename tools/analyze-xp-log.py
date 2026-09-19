@@ -3262,6 +3262,17 @@ def analyze(events, others, exp, warns=None):
                                     "noimage=画像未着 / stale=画像が古い / stereo=左右の時刻差 / none=未配線）")
                 else:
                     verdict("OK", f"実景を静止画として破片へ配布した（取得 {int(max(copies))} 回・shatCam={cam_last}）")
+                    # 0235: 光の粒。静止画の経路にしか出さないので、配布が OK だった走行でだけ見る。
+                    # 旧ログ（キーが無い）では沈黙する。
+                    sparks = fracture_numbers("spark")
+                    spark_counts = fracture_numbers("sparkN")
+                    if sparks:
+                        if max(sparks) < 1:
+                            verdict("FAIL", "光の粒が出ていない（spark=0）— "
+                                            "Resources/IntroSpark が剥がれたか、粒のメッシュを組めていない")
+                        else:
+                            grains = int(max(spark_counts)) if spark_counts else 0
+                            verdict("OK", f"光の粒を描いた（{grains} 粒）")
                 anchors = fracture_numbers("shatAnchor")
                 if anchors and max(anchors) < 1:
                     verdict("FAIL", "割れ始めの頭の姿勢を固定できていない（shatAnchor=0 のまま）— 破片が頭についてくる")

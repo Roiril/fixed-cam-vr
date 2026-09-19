@@ -5,6 +5,9 @@ Shader "FixedCamVr/IntroPeripheralFracture"
         _Shatter("Fracture progress", Range(0, 1)) = 0
         _Mode("Window 0 / color 1", Range(0, 1)) = 0
         _EdgeEmphasis("Edge emphasis", Range(0, 1)) = 1
+        // 0 で旧描画（くすんだガラス）と厳密一致。中央の IntroFracture と同じ既定（1）。
+        _Crystal("Crystal face", Range(0, 1)) = 1
+        _SparkLit("Spark reflections", Range(0, 1)) = 1
         [HideInInspector] _SrcBlend("Source blend", Float) = 0
         [HideInInspector] _DstBlend("Destination blend", Float) = 5
         [HideInInspector] _SrcBlendAlpha("Source alpha blend", Float) = 0
@@ -35,6 +38,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Assets/Art/Shaders/Intro/IntroFractureTime.hlsl"
+            #include "Assets/Art/Shaders/Intro/IntroSpark.hlsl"
 
             struct Attributes
             {
@@ -67,6 +71,8 @@ Shader "FixedCamVr/IntroPeripheralFracture"
             float _Shatter;
             float _Mode;
             float _EdgeEmphasis;
+            float _Crystal;
+            float _SparkLit;
             float4x4 _CaptureHeadToWorld;
             float4x4 _LeftWorldToUv;
             float4x4 _RightWorldToUv;
@@ -214,8 +220,27 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float shock = Ease(CrackEnd - 0.004, CrackEnd + 0.004, p)
                     * (1.0 - Ease(CrackEnd + 0.004, CrackEnd + 0.045, p));
                 float3 rimColor = float3(0.96, 0.90, 0.78);
-                float3 baseColor = luma * float3(0.78, 0.84, 0.88) * (1.0 + 0.45 * shock)
+                // 地の色は寒色から暖色へ（0235 / LEDGER 0010）。_Crystal=0 で旧値へ戻る。
+                float3 baseColor = luma * lerp(float3(0.78, 0.84, 0.88), float3(0.90, 0.86, 0.78), _Crystal)
+                        * (1.0 + 0.45 * shock)
                     + rimColor * 0.10 * specular * (1.0 - travel);
+                // 片ごとの薄膜の色。色相だけ移して明るさは保つ。
+                float3 irid = SparkPalette(Hash(v.piece.w + 43.0) * 0.5 + 0.5 + 0.3 * grazing);
+                float3 iridTint = irid / max(dot(irid, float3(0.299, 0.587, 0.114)), 1e-3);
+                baseColor *= lerp(float3(1.0, 1.0, 1.0), iridTint, 0.20 * _Crystal);
+                // 代表の粒の柔らかい照り。周辺は頂点で足す（画素で点光源は置かない）。
+                float sparkSoft = 0.0;
+                [unroll]
+                for (int sparkIndex = 0; sparkIndex < HeroSparkCount; sparkIndex++)
+                {
+                    float3 sparkPos;
+                    float sparkIntensity;
+                    HeroSpark(sparkIndex, p, _CaptureHeadToWorld, _ScreenCenter.xyz,
+                              sparkPos, sparkIntensity);
+                    float3 toSpark = sparkPos - worldPosition;
+                    sparkSoft += sparkIntensity / (1.0 + dot(toSpark, toSpark) / 0.25);
+                }
+                baseColor += SparkCoreColor * min(sparkSoft * 0.12, 0.30) * (1.0 - travel) * _SparkLit;
                 float rim = 0.42 + 0.38 * grazing;
                 o.surface = float4(baseColor, rim);
                 o.edges = v.edges;

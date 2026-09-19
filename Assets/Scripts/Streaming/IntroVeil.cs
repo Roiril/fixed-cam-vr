@@ -61,6 +61,12 @@ namespace FixedCamVr.Streaming
         private static readonly int ScreenUpId = Shader.PropertyToID("_ScreenUp");
         private static readonly int ScreenHalfId = Shader.PropertyToID("_ScreenHalf");
         private static readonly int HasFrozenFrameId = Shader.PropertyToID("_HasFrozenFrame");
+        /// <summary>光の粒の明るさ（0235）。0 なら 1 画素も出さない。</summary>
+        private static readonly int SparkId = Shader.PropertyToID("_Spark");
+        /// <summary>破片のガラスらしさ（粒と対で足した表現・診断で 0）。</summary>
+        private static readonly int CrystalId = Shader.PropertyToID("_Crystal");
+        /// <summary>代表の粒が破片を照らし返す量（診断で 0）。</summary>
+        private static readonly int SparkLitId = Shader.PropertyToID("_SparkLit");
         private static readonly int FrozenLeftTexId = Shader.PropertyToID("_FrozenLeftTex");
         private static readonly int FrozenRightTexId = Shader.PropertyToID("_FrozenRightTex");
         private static readonly int LeftWorldToUvId = Shader.PropertyToID("_LeftWorldToUv");
@@ -124,6 +130,10 @@ namespace FixedCamVr.Streaming
         private Material? _peripheralColorMat;
         private MaterialPropertyBlock? _peripheralBlock;
         private bool _suppressPeripheralForDiagnostics;
+        private MeshRenderer? _sparkRenderer;
+        private Material? _sparkMat;
+        private MaterialPropertyBlock? _sparkBlock;
+        private bool _suppressSparkleForDiagnostics;
         private RenderTexture? _frozenLeft;
         private RenderTexture? _frozenRight;
         private Matrix4x4 _leftWorldToUv = Matrix4x4.identity;
@@ -204,12 +214,36 @@ namespace FixedCamVr.Streaming
         /// <summary>破片の行き先に使ったスクリーン矩形（半幅,半高,眼からの距離）。</summary>
         public string ShatterRectDesc { get; private set; } = "-";
 
+        /// <summary>いま光の粒（0235）の Renderer を実際に描いているか。</summary>
+        public bool SparkDrawn { get; private set; }
+
+        /// <summary>この走行で一度でも光の粒を描いたか。テレメトリが <c>spark=</c> で出す。</summary>
+        public bool SparkEverDrawn { get; private set; }
+
+        /// <summary>組めた光の粒の数（流れ 512 ＋ 代表 6）。0 はメッシュを組めていない。</summary>
+        public int SparkCount { get; private set; }
+
+        /// <summary>
+        /// 探針用。1 = 通常 / 0 = その要素を止める（Editor の <c>IntroPreview</c> が ON/OFF を撮る）。
+        /// 診断フラグ（<c>xpnosparkle</c>）が立っていれば、この値に関わらず 3 つとも 0 として扱う。
+        /// </summary>
+        public float DiagnosticCrystal { get; set; } = 1f;
+
+        /// <summary>探針用。代表の粒が破片を照らし返す量（<c>_SparkLit</c>）。</summary>
+        public float DiagnosticSparkLit { get; set; } = 1f;
+
+        /// <summary>探針用。0 なら粒の Renderer を有効にしない（<c>_Spark</c> も 0）。</summary>
+        public float DiagnosticSpark { get; set; } = 1f;
+
         private void Awake()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR && DEVELOPMENT_BUILD
             _suppressPeripheralForDiagnostics = ReadPeripheralSuppressionIntent();
             if (_suppressPeripheralForDiagnostics)
                 Debug.Log("[IntroVeil] xpnoperipheral=1 — 周辺破片の描画を診断用に抑制します。");
+            _suppressSparkleForDiagnostics = ReadSparkleSuppressionIntent();
+            if (_suppressSparkleForDiagnostics)
+                Debug.Log("[IntroVeil] xpnosparkle=1 — 光の粒の描画を診断用に抑制します。");
 #endif
             Build();
             SetHidden();
@@ -229,6 +263,23 @@ namespace FixedCamVr.Streaming
             catch (Exception ex)
             {
                 Debug.LogWarning($"[IntroVeil] intent extra 読取失敗（xpnoperipheral）: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool ReadSparkleSuppressionIntent()
+        {
+            try
+            {
+                using var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+                using var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
+                using var intent = activity.Call<AndroidJavaObject>("getIntent");
+                string value = intent.Call<string>("getStringExtra", "xpnosparkle");
+                return string.Equals(value, "1", StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[IntroVeil] intent extra 読取失敗（xpnosparkle）: {ex.Message}");
                 return false;
             }
         }
@@ -349,6 +400,7 @@ namespace FixedCamVr.Streaming
             _fractureDepthRenderer.enabled = false;
             _fractureBlock = new MaterialPropertyBlock();
             BuildPeripheralFracture();
+            BuildSparks();
         }
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
@@ -356,6 +408,7 @@ namespace FixedCamVr.Streaming
         private Transform? _quad;
         private Mesh? _fractureMesh;
         private Mesh? _peripheralMesh;
+        private Mesh? _sparkMesh;
         private Transform? _fracture;
         private Transform? _fractureDepth;
         private Transform? _gaps;
@@ -398,6 +451,39 @@ namespace FixedCamVr.Streaming
             CreatePeripheralRenderer("IntroPeripheralColor", _peripheralColorMat,
                 out _, out _peripheralColorRenderer);
             _peripheralBlock = new MaterialPropertyBlock();
+        }
+
+        /// <summary>
+        /// 破片から飛ぶ光の粒（0235）。破片と同じ片から放出点を取るので、
+        /// <see cref="IntroFractureMesh.Build"/> の後でなければ組めない。
+        /// </summary>
+        private void BuildSparks()
+        {
+            Shader? shader = Resources.Load<Shader>("IntroSpark");
+            if (shader == null)
+            {
+                Debug.LogWarning("[IntroVeil] Resources/IntroSpark が見つかりません。光の粒は出ません。");
+                return;
+            }
+
+            _sparkMesh = IntroSparkMesh.Build(IntroFractureMesh.LastPieces);
+            SparkCount = IntroSparkMesh.LastSparkCount;
+
+            _sparkMat = new Material(shader) { name = "IntroSparks (runtime)" };
+            // 粒は周辺の破片（4906）の後・文字（5000）の前。加算なので深度は書かない。
+            _sparkMat.renderQueue = 4907;
+
+            var go = new GameObject("IntroSparks");
+            go.transform.SetParent(transform, worldPositionStays: false);
+            var filter = go.AddComponent<MeshFilter>();
+            filter.sharedMesh = _sparkMesh;
+            _sparkRenderer = go.AddComponent<MeshRenderer>();
+            _sparkRenderer.sharedMaterial = _sparkMat;
+            _sparkRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            _sparkRenderer.receiveShadows = false;
+            _sparkRenderer.allowOcclusionWhenDynamic = false;
+            _sparkRenderer.enabled = false;
+            _sparkBlock = new MaterialPropertyBlock();
         }
 
         private void CreatePeripheralRenderer(
@@ -771,6 +857,7 @@ namespace FixedCamVr.Streaming
                 ApertureDrawn = false;
                 ApertureClosePeak = 0f;
                 ShatterPeak = 0f;
+                SparkEverDrawn = false;
             }
 
             // 割れ始めの頭の姿勢を 1 回だけ固定する。破片はここからワールド空間で動くので、
@@ -826,6 +913,14 @@ namespace FixedCamVr.Streaming
                                         && peripheralClock >= 0.060f && peripheralClock < 0.840f;
             if (_peripheralWindowRenderer != null) _peripheralWindowRenderer.enabled = drawPeripheralWindow;
             if (_peripheralColorRenderer != null) _peripheralColorRenderer.enabled = drawPeripheralPieces;
+            // 0235: 破断（.060）から集結の終わり（.820）まで光の粒を飛ばす。静止画が無い経路では出さない
+            // （破片が実景を運んでいないので、粒だけが飛ぶ画になる）。
+            bool drawSparks = !_suppressSparkleForDiagnostics && DiagnosticSpark > 0.5f
+                              && drawFrozenDepth && _sparkRenderer != null
+                              && peripheralClock >= 0.060f && peripheralClock < 0.820f;
+            if (_sparkRenderer != null) _sparkRenderer.enabled = drawSparks;
+            SparkDrawn = drawSparks;
+            if (drawSparks) SparkEverDrawn = true;
             // 0225: 着地した破片が映像を見せる区間だけ、隙間を黒く塗る面を出す。全面が映像になったら畳む。
             bool drawGaps = drawFrozenDepth && w.reveal > FullyOpenEpsilon && w.live < 0.999f;
             if (_gapsRenderer != null) _gapsRenderer.enabled = drawGaps;
@@ -833,9 +928,15 @@ namespace FixedCamVr.Streaming
             if (drawShatter)
             {
                 float shatter = Mathf.Clamp01(w.shatter);
+                // 0235: ガラスらしさと、代表の粒が破片を照らし返す量。診断で粒を止めた走行では
+                // 破片の側も旧描画へ戻す（同一 APK で fps を比べるため）。
+                float crystal = _suppressSparkleForDiagnostics ? 0f : DiagnosticCrystal;
+                float sparkLit = _suppressSparkleForDiagnostics ? 0f : DiagnosticSparkLit;
                 _fractureBlock ??= new MaterialPropertyBlock();
                 _fractureBlock.Clear();
                 _fractureBlock.SetFloat(ShatterId, shatter);
+                _fractureBlock.SetFloat(CrystalId, crystal);
+                _fractureBlock.SetFloat(SparkLitId, sparkLit);
                 _fractureBlock.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
                 _fractureBlock.SetFloat(RevealId, HasFrozenFrame ? Mathf.Clamp01(w.reveal) : 0f);
                 _fractureBlock.SetFloat(HasFrozenFrameId, HasFrozenFrame ? 1f : 0f);
@@ -874,6 +975,8 @@ namespace FixedCamVr.Streaming
                     _peripheralBlock ??= new MaterialPropertyBlock();
                     _peripheralBlock.Clear();
                     _peripheralBlock.SetFloat(ShatterId, shatter);
+                    _peripheralBlock.SetFloat(CrystalId, crystal);
+                    _peripheralBlock.SetFloat(SparkLitId, sparkLit);
                     _peripheralBlock.SetMatrix(CaptureHeadToWorldId, _captureHeadToWorld);
                     _peripheralBlock.SetMatrix(LeftWorldToUvId, _leftWorldToUv);
                     _peripheralBlock.SetMatrix(RightWorldToUvId, _rightWorldToUv);
@@ -891,6 +994,29 @@ namespace FixedCamVr.Streaming
                         new Vector4(headPosition.x, headPosition.y, headPosition.z, 1f));
                     _peripheralWindowRenderer!.SetPropertyBlock(_peripheralBlock);
                     _peripheralColorRenderer!.SetPropertyBlock(_peripheralBlock);
+                }
+
+                if (drawSparks)
+                {
+                    _sparkBlock ??= new MaterialPropertyBlock();
+                    _sparkBlock.Clear();
+                    _sparkBlock.SetFloat(ShatterId, shatter);
+                    _sparkBlock.SetFloat(HasFrozenFrameId, HasFrozenFrame ? 1f : 0f);
+                    // 探針で止めた走行では renderer を有効にしないので、ここは常に正。
+                    _sparkBlock.SetFloat(SparkId,
+                        _suppressSparkleForDiagnostics ? 0f : Mathf.Clamp01(DiagnosticSpark));
+                    _sparkBlock.SetMatrix(CaptureHeadToWorldId, _captureHeadToWorld);
+                    _sparkBlock.SetVector(CurrentHeadPositionId,
+                        new Vector4(headPosition.x, headPosition.y, headPosition.z, 1f));
+                    _sparkBlock.SetVector(ScreenCenterId,
+                        new Vector4(screenCenterWorld.x, screenCenterWorld.y, screenCenterWorld.z, 0f));
+                    _sparkBlock.SetVector(ScreenRightId,
+                        new Vector4(screenRightWorld.x, screenRightWorld.y, screenRightWorld.z, 0f));
+                    _sparkBlock.SetVector(ScreenUpId,
+                        new Vector4(screenUpWorld.x, screenUpWorld.y, screenUpWorld.z, 0f));
+                    _sparkBlock.SetVector(ScreenHalfId,
+                        new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
+                    _sparkRenderer!.SetPropertyBlock(_sparkBlock);
                 }
             }
             float close = Mathf.Clamp01(w.frame);
@@ -973,7 +1099,9 @@ namespace FixedCamVr.Streaming
             if (_gapsRenderer != null) _gapsRenderer.enabled = false;
             if (_peripheralWindowRenderer != null) _peripheralWindowRenderer.enabled = false;
             if (_peripheralColorRenderer != null) _peripheralColorRenderer.enabled = false;
+            if (_sparkRenderer != null) _sparkRenderer.enabled = false;
             GapsDrawn = false;
+            SparkDrawn = false;
             if (_mat != null) _mat.SetFloat(FractureActiveId, 0f);
             if (_mat != null) _mat.SetInt(ZWriteId, 0);
             if (_filter != null && _mesh != null) _filter.sharedMesh = _mesh;
@@ -994,9 +1122,11 @@ namespace FixedCamVr.Streaming
             if (_gapsMat != null) Destroy(_gapsMat);
             if (_peripheralWindowMat != null) Destroy(_peripheralWindowMat);
             if (_peripheralColorMat != null) Destroy(_peripheralColorMat);
+            if (_sparkMat != null) Destroy(_sparkMat);
             if (_mesh != null) Destroy(_mesh);
             if (_fractureMesh != null) Destroy(_fractureMesh);
             if (_peripheralMesh != null) Destroy(_peripheralMesh);
+            if (_sparkMesh != null) Destroy(_sparkMesh);
         }
     }
 }

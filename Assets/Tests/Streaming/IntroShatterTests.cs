@@ -302,6 +302,110 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        /// <summary>
+        /// 光の粒（0235）は静止画を運べた経路でだけ、破断から集結の終わりまで飛ぶ。
+        /// 静止画が無い走行では 1 粒も出さない（破片が実景を運んでいないため）。
+        /// </summary>
+        [TestCase(true)]
+        [TestCase(false)]
+        public void IntroVeil_DrawsSparksOnlyWhileTheFrozenPiecesFly(bool frozen)
+        {
+            var root = new GameObject("IntroSparkTest");
+            var left = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            var right = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            try
+            {
+                var veil = root.AddComponent<IntroVeil>();
+                typeof(IntroVeil).GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .Invoke(veil, null);
+                veil.FrozenFrameProvider = () => frozen
+                    ? new IntroFrozenFrameSource(left, right, Matrix4x4.identity, Matrix4x4.identity)
+                    : null;
+                var sparkRenderer = (MeshRenderer)typeof(IntroVeil)
+                    .GetField("_sparkRenderer", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetValue(veil)!;
+                Assert.That(sparkRenderer, Is.Not.Null, "光の粒の Renderer を組めていない");
+                Assert.That(sparkRenderer.sharedMaterial.renderQueue, Is.EqualTo(4907),
+                    "粒は周辺の破片（4906）の後・文字（5000）の前に描く");
+                Assert.That(veil.SparkCount,
+                    Is.EqualTo(IntroSparkMesh.FlowSparkCount + IntroSparkMesh.HeroSparkCount));
+                Assert.That(veil.SparkDrawn, Is.False);
+                Assert.That(veil.SparkEverDrawn, Is.False);
+
+                // 破断（.060）の手前ではまだ出さない。
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.03f, ignite = 1f });
+                Assert.That(sparkRenderer.enabled, Is.False);
+                Assert.That(veil.SparkDrawn, Is.False);
+
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.30f, ignite = 1f });
+                Assert.That(sparkRenderer.enabled, Is.EqualTo(frozen),
+                    frozen ? "漂っている最中に粒が出ていない" : "静止画が無いのに粒が出ている");
+                Assert.That(veil.SparkDrawn, Is.EqualTo(frozen));
+                Assert.That(veil.SparkEverDrawn, Is.EqualTo(frozen));
+
+                // 集結の終わり（.820）を過ぎたら畳む。
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.85f, frame = 1f, ignite = 1f });
+                Assert.That(sparkRenderer.enabled, Is.False, "集結の後も粒が残っている");
+                Assert.That(veil.SparkDrawn, Is.False);
+
+                // Swap（破片の描画そのものが終わる）。
+                veil.Apply(new IntroWeights { passthrough = 0f, frame = 1f, live = 1f, ignite = 1f });
+                Assert.That(sparkRenderer.enabled, Is.False);
+                Assert.That(veil.SparkEverDrawn, Is.EqualTo(frozen),
+                    "走行の記録を終端より前に消した");
+
+                veil.SetHidden();
+                Assert.That(sparkRenderer.enabled, Is.False);
+                Assert.That(veil.SparkDrawn, Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(left);
+                Object.DestroyImmediate(right);
+            }
+        }
+
+        /// <summary>
+        /// 探針（Editor の <c>IntroPreview</c>）が粒を止められる。止めた走行では
+        /// <c>SparkDrawn</c> / <c>SparkEverDrawn</c> も立たない（実際に描いた事実だけを残す）。
+        /// </summary>
+        [Test]
+        public void IntroVeil_DiagnosticSparkZeroKeepsTheSparkRendererOff()
+        {
+            var root = new GameObject("IntroSparkDiagnosticTest");
+            var left = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            var right = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+            try
+            {
+                var veil = root.AddComponent<IntroVeil>();
+                typeof(IntroVeil).GetMethod("Awake", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .Invoke(veil, null);
+                veil.FrozenFrameProvider = () =>
+                    new IntroFrozenFrameSource(left, right, Matrix4x4.identity, Matrix4x4.identity);
+                veil.DiagnosticSpark = 0f;
+                var sparkRenderer = (MeshRenderer)typeof(IntroVeil)
+                    .GetField("_sparkRenderer", BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .GetValue(veil)!;
+
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.30f, ignite = 1f });
+                Assert.That(sparkRenderer.enabled, Is.False, "探針が止めた粒を描いている");
+                Assert.That(veil.SparkDrawn, Is.False);
+                Assert.That(veil.SparkEverDrawn, Is.False);
+
+                veil.DiagnosticSpark = 1f;
+                veil.Apply(new IntroWeights { passthrough = 1f, shatter = 0.30f, ignite = 1f });
+                Assert.That(sparkRenderer.enabled, Is.True, "探針を戻しても粒が出ない");
+                Assert.That(veil.SparkEverDrawn, Is.True);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(left);
+                Object.DestroyImmediate(right);
+            }
+        }
+
         private static void AssertMatrix(Matrix4x4 actual, Matrix4x4 expected, string message)
         {
             for (int i = 0; i < 16; i++)

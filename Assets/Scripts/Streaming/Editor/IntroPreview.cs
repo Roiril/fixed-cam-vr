@@ -139,6 +139,9 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(cleanDir);
             foreach (string old in Directory.GetFiles(cleanDir, "intro_*.png")) File.Delete(old);
             bool renderFrames = string.Equals(EditorCliArgs.Get("frames"), "1", StringComparison.Ordinal);
+            // 0235 の校正: `-Set sparkle=0` で 198 コマを**結晶化も粒も止めて**焼く。
+            // 旧版（0235 前）の master で撮ったコマと画素で突き合わせるための版で、既定は本番の絵。
+            bool sparkleOff = string.Equals(EditorCliArgs.Get("sparkle"), "0", StringComparison.Ordinal);
             string framesDir = Path.Combine(outDir, FramesDirName);
             if (renderFrames)
             {
@@ -165,18 +168,21 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (renderFrames)
                 {
                     var framesTsv = new System.Text.StringBuilder(
-                        "index\tstage\tstageProgress\tlive\tshatter\tShatterDrawn\tShatterPieces\tFrozenFrame\tFrozenCount\n");
+                        "index\tstage\tstageProgress\tlive\tshatter\tShatterDrawn\tShatterPieces\tFrozenFrame\tFrozenCount\tsparkle\n");
                     var cuesTsv = new System.Text.StringBuilder("tSec\tcue\tResourceName\n");
                     var cues = new SoundCueLogic();
                     cues.ResetRun();
+                    stage.SetSparkleForFrames(!sparkleOff);
                     foreach (Shot shot in BuildFrameSequence(stage.Timing))
                         stage.Render(shot, saved, framesTsv, cuesTsv, cues);
+                    stage.SetSparkleForFrames(true);
 
                     string cleanFramesDir = Path.Combine(cleanDir, FramesDirName);
                     File.WriteAllText(Path.Combine(cleanFramesDir, "frames.tsv"), framesTsv.ToString());
                     File.WriteAllText(Path.Combine(cleanFramesDir, "audio-cues.tsv"), cuesTsv.ToString());
                     stage.VerifyFrozenFrame(saved);
                     stage.VerifyEdgeDissolve(saved);
+                    stage.VerifySparkle(saved);
                     WriteMeshEvidence(outDir);
                 }
             }
@@ -472,6 +478,8 @@ namespace FixedCamVr.Streaming.EditorTools
             private bool _peripheralProbe;
             private bool _peripheralOtherEyeWide;
             private bool _suppressPeripheral;
+            /// <summary>連番の 198 コマを結晶化と粒ありで焼いたか（<c>frames.tsv</c> の sparkle 列）。</summary>
+            private bool _sparkleFramesOn = true;
 
             public IntroTiming Timing => _timing;
 
@@ -744,7 +752,7 @@ namespace FixedCamVr.Streaming.EditorTools
                                : logic.Stage == IntroStage.Swap ? _timing.swapSec : 0f;
                     float progress = span > 0f ? Mathf.Clamp01(logic.StageElapsedSec / span) : 0f;
                     framesTsv.AppendLine(FormattableString.Invariant(
-                        $"{shot.sequenceIndex}\t{logic.Stage}\t{progress:0.000000}\t{w.live:0.000000}\t{w.shatter:0.000000}\t{(_veil.ShatterDrawn ? 1 : 0)}\t{_veil.ShatterPieces}\t{(_veil.HasFrozenFrame ? 1 : 0)}\t{_veil.FrozenFrameCount}"));
+                        $"{shot.sequenceIndex}\t{logic.Stage}\t{progress:0.000000}\t{w.live:0.000000}\t{w.shatter:0.000000}\t{(_veil.ShatterDrawn ? 1 : 0)}\t{_veil.ShatterPieces}\t{(_veil.HasFrozenFrame ? 1 : 0)}\t{_veil.FrozenFrameCount}\t{(_sparkleFramesOn ? "on" : "off")}"));
 
                     if (cuesTsv != null && cueLogic != null)
                     {
@@ -854,6 +862,370 @@ namespace FixedCamVr.Streaming.EditorTools
                 finally
                 {
                     foreach (Material material in materials) material.SetFloat("_EdgeEmphasis", 1f);
+                }
+            }
+
+            // ---- 破片の面の結晶化と光の粒（0235）--------------------------------
+
+            /// <summary>0 とみなす画素差（既存の探針と同じ幅）。描画は決定論なので本来は厳密に 0。</summary>
+            private const float SparkleQuietDelta = 0.01f;
+
+            /// <summary>破片領域とみなす輝度（0..255）。破片の外は黒。</summary>
+            private const float SparkleMaskLumaMin = 8f;
+
+            /// <summary>色相を数えに行く下限の彩度（これ以下は無彩として数えない）。</summary>
+            private const float SparkleHueSatMin = 0.05f;
+
+            /// <summary>粒の数（<c>IntroSparkMesh</c> の契約）。</summary>
+            private const int SparkleExpectedCount = 518;
+
+            /// <summary>探針のノブ。<b>既定の (1,1,1) が本番の絵</b>で、0 は 0235 より前の描画。</summary>
+            private void SetSparkle(float crystal, float sparkLit, float spark)
+            {
+                _veil.DiagnosticCrystal = crystal;
+                _veil.DiagnosticSparkLit = sparkLit;
+                _veil.DiagnosticSpark = spark;
+            }
+
+            /// <summary>連番の 198 コマをどちらで焼くか（<c>-Set sparkle=0</c> が切る）。</summary>
+            public void SetSparkleForFrames(bool on)
+            {
+                _sparkleFramesOn = on;
+                float k = on ? 1f : 0f;
+                SetSparkle(k, k, k);
+            }
+
+            /// <summary>
+            /// 破片の面の結晶化と光の粒（0235）が<b>画に出ているか</b>を実画素で測る。
+            ///
+            /// ノブを 3 通り（全部入り / 全部切 / 粒だけ切）に振って同じコマを描き、
+            /// 「止まるはず」（破断前 p=.03 と閉じた後 p≥.995 は差 0）と
+            /// 「効いているはず」（p=.30 で差が出る）の<b>両方</b>を流して計器を校正する
+            /// — 片方だけでは対象と計器のどちらが悪いか分からない。
+            ///
+            /// ⚠ <b>判定に落ちても例外にしない。</b> 結果は <c>sparkle-proof.json</c> の
+            /// <c>checks</c> と Debug のログが持つ。ここで投げると隣の探針まで巻き添えで止まる。
+            /// </summary>
+            public void VerifySparkle(List<string> saved)
+            {
+                float[] probes = { 0.03f, 0.12f, 0.30f, 0.45f, 0.60f, 0.80f, 0.93f, 0.995f, 1f };
+                var samples = new SparkleSample[probes.Length];
+                float noFrozenDelta = 0f;
+                bool noFrozenHadFrame = false;
+                Func<IntroFrozenFrameSource?>? provider = _veil.FrozenFrameProvider;
+                try
+                {
+                    for (int i = 0; i < probes.Length; i++)
+                    {
+                        float p = probes[i];
+                        int label = Mathf.RoundToInt(p * 1000f);
+                        // ⚠ p=1.0 は段 5（Swap）へ送られる。どの段の画を測ったかを記録に残す。
+                        IntroStage reached = DriveTo(IntroStage.Frame, p, _timing).Stage;
+
+                        SetSparkle(0f, 0f, 0f);
+                        Render(new Shot(IntroStage.Frame, 4, "sparkle_reset", 0f, label), saved);
+                        Render(new Shot(IntroStage.Frame, 4, "sparkle_off", p, label), saved);
+                        Color32[] off = _sceneTex.GetPixels32();
+
+                        SetSparkle(1f, 1f, 0f);
+                        Render(new Shot(IntroStage.Frame, 4, "sparkle_nospark", p, label), saved);
+                        Color32[] noSpark = _sceneTex.GetPixels32();
+
+                        SetSparkle(1f, 1f, 1f);
+                        Render(new Shot(IntroStage.Frame, 4, "sparkle_on", p, label), saved);
+                        Color32[] on = _sceneTex.GetPixels32();
+
+                        // 破片領域は**旧描画（off）の明るい画素**で取る。新しい光で領域が広がっても
+                        // 比べる相手は同じ画素集合のままになる。
+                        bool[] mask = BrightMask(off, out int maskPixels);
+                        samples[i] = new SparkleSample(
+                            p, reached.ToString(), maskPixels,
+                            MeanPixelDifference(off, on), MeanPixelDifference(noSpark, on),
+                            MeasureMasked(on, mask, maskPixels), MeasureMasked(off, mask, maskPixels),
+                            _veil.SparkDrawn, _veil.SparkEverDrawn, _veil.SparkCount);
+                    }
+
+                    // 静止画が取れなかった走行（旧 alpha 窓の経路）。面の光も粒も出ない。
+                    _veil.FrozenFrameProvider = () => null;
+                    SetSparkle(0f, 0f, 0f);
+                    Render(new Shot(IntroStage.Frame, 4, "sparkle_nofrozen_reset", 0f, 300), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "sparkle_nofrozen_off", 0.30f, 300), saved);
+                    Color32[] plain = _sceneTex.GetPixels32();
+                    noFrozenHadFrame = _veil.HasFrozenFrame;
+                    SetSparkle(1f, 1f, 1f);
+                    Render(new Shot(IntroStage.Frame, 4, "sparkle_nofrozen_on", 0.30f, 300), saved);
+                    noFrozenDelta = MeanPixelDifference(plain, _sceneTex.GetPixels32());
+                }
+                finally
+                {
+                    _veil.FrozenFrameProvider = provider;
+                    SetSparkle(1f, 1f, 1f);
+                    _sparkleFramesOn = true;
+                    // 探針の走行を捨て、後続が新しい走行から始まるようにする。
+                    Render(new Shot(IntroStage.Frame, 4, "sparkle_done", 0f, 0), saved);
+                }
+
+                WriteSparkleProof(probes, samples, noFrozenHadFrame, noFrozenDelta);
+            }
+
+            /// <summary>測った値を判定へ落とし、<c>sparkle-proof.json</c> と 1 行ずつのログにする。</summary>
+            private void WriteSparkleProof(float[] probes, SparkleSample[] samples,
+                                           bool noFrozenHadFrame, float noFrozenDelta)
+            {
+                int At(float p)
+                {
+                    for (int i = 0; i < probes.Length; i++)
+                        if (Mathf.Abs(probes[i] - p) < 1e-4f) return i;
+                    return -1;
+                }
+
+                // ⚠ 判定の名前と文面は **ASCII だけ**（この探針の JSON とログを読む側の符号化を選ばない。
+                //    既存の [IntroViz] のログも全部 ASCII）。日本語はコメントに置く。
+                var checks = new List<SparkleCheck>();
+                void Add(string name, bool pass, bool warnOnly, string detail) =>
+                    checks.Add(new SparkleCheck(name, pass, warnOnly, detail));
+
+                SparkleSample s03 = samples[At(0.03f)];
+                SparkleSample s30 = samples[At(0.30f)];
+                SparkleSample s80 = samples[At(0.80f)];
+                SparkleSample s93 = samples[At(0.93f)];
+
+                // 計器そのものが生きているか（マスクが空なら以下の指標は全部 0 になり、緑に見える）。
+                foreach (SparkleSample s in samples)
+                    Add(FormattableString.Invariant($"mask_alive_p{Mathf.RoundToInt(s.p * 1000f):000}"),
+                        s.maskPixels > 0, false,
+                        FormattableString.Invariant(
+                            $"p={s.p:0.000} stage={s.stage} maskPixels={s.maskPixels} (0 = instrument is dead)"));
+
+                // 止まるはず: 破断前と、閉じ切った後。
+                Add("quiet_before_break", s03.onOffDelta <= SparkleQuietDelta, false,
+                    FormattableString.Invariant(
+                        $"p=.030 onOffDelta={s03.onOffDelta:0.000000} <= {SparkleQuietDelta:0.000000} (nothing before the break)"));
+
+                foreach (float p in new[] { 0.995f, 1f })
+                {
+                    SparkleSample s = samples[At(p)];
+                    Add(FormattableString.Invariant($"quiet_after_close_p{Mathf.RoundToInt(p * 1000f):000}"),
+                        s.onOffDelta <= SparkleQuietDelta && s.sparkDelta <= SparkleQuietDelta, false,
+                        FormattableString.Invariant(
+                            $"p={p:0.000} onOffDelta={s.onOffDelta:0.000000} sparkDelta={s.sparkDelta:0.000000}"));
+                }
+
+                // 効いているはず。
+                Add("alive_at_030",
+                    s30.onOffDelta > SparkleQuietDelta && s30.sparkDelta > SparkleQuietDelta, false,
+                    FormattableString.Invariant(
+                        $"p=.300 onOffDelta={s30.onOffDelta:0.000000} sparkDelta={s30.sparkDelta:0.000000} (0 = instrument is dead)"));
+
+                // 流れの粒は .80 までに消える（代表の粒も .78 まで）。
+                Add("sparks_gone_by_080",
+                    s30.sparkDelta > SparkleQuietDelta && s80.sparkDelta < s30.sparkDelta * 0.1f, false,
+                    FormattableString.Invariant(
+                        $"p=.800 sparkDelta={s80.sparkDelta:0.000000} < 10% of p=.300 ({s30.sparkDelta * 0.1f:0.000000})"));
+
+                // 色の門: 朱〜金だけ。青緑〜紫は出さない。白飛びさせない。
+                Add("hue_no_cool", s30.on.hueCoolFrac <= 0.02f, false,
+                    FormattableString.Invariant(
+                        $"p=.300 hueCoolFrac={s30.on.hueCoolFrac:0.000000} <= 0.020000 (warm={s30.on.hueWarmFrac:0.000000})"));
+
+                Add("no_clipping", s30.on.clipFrac <= 0.015f, false,
+                    FormattableString.Invariant(
+                        $"p=.300 clipFrac={s30.on.clipFrac:0.000000} <= 0.015000"));
+
+                // くすみの門: むらの深さ（明るさで割った標準偏差）が旧描画の 1.3 倍以上。
+                Add("texture_gain",
+                    s30.on.LumaStdOverMean >= s30.off.LumaStdOverMean * 1.3f, false,
+                    FormattableString.Invariant(
+                        $"p=.300 lumaStdOverMean on={s30.on.LumaStdOverMean:0.000000} >= off={s30.off.LumaStdOverMean:0.000000} x1.3"));
+
+                // 彩度は帯で見る。範囲外は黄（warn）、0.25 超だけ赤。
+                float sat = s30.on.satMean;
+                Add("saturation_band", sat >= 0.10f && sat <= 0.18f, sat <= 0.25f,
+                    FormattableString.Invariant(
+                        $"p=.300 satMean={sat:0.000000} (want 0.100000..0.180000, above 0.250000 is a failure)"));
+
+                // 静止画が取れなかった走行（旧 alpha 窓の経路）では 1 画素も変わらない。
+                Add("nofrozen_path", !noFrozenHadFrame, false,
+                    noFrozenHadFrame ? "the frozen frame was still captured (instrument is dead)"
+                                     : "rendered through the no-frozen-frame path");
+                Add("nofrozen_quiet", noFrozenDelta <= SparkleQuietDelta, false,
+                    FormattableString.Invariant(
+                        $"no frozen frame, p=.300 onOffDelta={noFrozenDelta:0.000000} <= {SparkleQuietDelta:0.000000}"));
+
+                // 粒そのものの契約（数と、描いた / 描かない）。
+                Add("spark_count", s30.sparkCount == SparkleExpectedCount, false,
+                    FormattableString.Invariant($"SparkCount={s30.sparkCount} (expected {SparkleExpectedCount})"));
+                Add("spark_drawn_at_030", s30.sparkDrawn, false, "SparkDrawn is true at p=.300");
+                Add("spark_quiet_at_003", !s03.sparkDrawn, false, "SparkDrawn is false at p=.030");
+                Add("spark_quiet_at_093", !s93.sparkDrawn, false, "SparkDrawn is false at p=.930");
+
+                bool ok = true;
+                foreach (SparkleCheck c in checks)
+                {
+                    if (c.ok) Debug.Log($"[IntroViz] sparkle OK   {c.name}: {c.detail}");
+                    else if (c.warnOnly) Debug.LogWarning($"[IntroViz] sparkle WARN {c.name}: {c.detail}");
+                    else { ok = false; Debug.LogError($"[IntroViz] sparkle FAIL {c.name}: {c.detail}"); }
+                }
+
+                var proof = new System.Text.StringBuilder();
+                proof.Append(FormattableString.Invariant(
+                    $"{{\"sparkCount\":{s30.sparkCount},\"sparkEverDrawn\":{(s30.sparkEverDrawn ? 1 : 0)}"));
+                proof.Append(FormattableString.Invariant(
+                    $",\"quietDelta\":{SparkleQuietDelta:0.000000},\"maskLumaMin\":{SparkleMaskLumaMin:0.000000}"));
+                proof.Append(FormattableString.Invariant(
+                    $",\"hueSatMin\":{SparkleHueSatMin:0.000000},\"samples\":["));
+                for (int i = 0; i < samples.Length; i++)
+                {
+                    if (i > 0) proof.Append(',');
+                    SparkleSample s = samples[i];
+                    proof.Append(FormattableString.Invariant(
+                        $"{{\"p\":{s.p:0.000},\"stage\":\"{s.stage}\",\"maskPixels\":{s.maskPixels}"));
+                    proof.Append(FormattableString.Invariant(
+                        $",\"onOffDelta\":{s.onOffDelta:0.000000},\"sparkDelta\":{s.sparkDelta:0.000000}"));
+                    proof.Append(FormattableString.Invariant(
+                        $",\"sparkDrawn\":{(s.sparkDrawn ? 1 : 0)},\"on\":{StatsJson(s.on)},\"off\":{StatsJson(s.off)}}}"));
+                }
+                proof.Append(FormattableString.Invariant(
+                    $"],\"noFrozenFrame\":{{\"skipped\":false,\"hasFrozenFrame\":{(noFrozenHadFrame ? 1 : 0)}"));
+                proof.Append(FormattableString.Invariant(
+                    $",\"pixelDelta\":{noFrozenDelta:0.000000}}},\"checks\":["));
+                for (int i = 0; i < checks.Count; i++)
+                {
+                    if (i > 0) proof.Append(',');
+                    SparkleCheck c = checks[i];
+                    proof.Append($"{{\"name\":\"{c.name}\",\"ok\":{(c.ok ? "true" : "false")}");
+                    proof.Append($",\"level\":\"{(c.warnOnly ? "warn" : "fail")}\",\"detail\":\"{c.detail}\"}}");
+                }
+                proof.Append($"],\"ok\":{(ok ? "true" : "false")}}}");
+                File.WriteAllText(Path.Combine(_outDir, "sparkle-proof.json"), proof.ToString());
+                Debug.Log($"[IntroViz] sparkle proof: ok={ok} checks={checks.Count} "
+                          + FormattableString.Invariant(
+                              $"p=.30 onOff={s30.onOffDelta:0.0000} spark={s30.sparkDelta:0.0000} ")
+                          + FormattableString.Invariant(
+                              $"sat={s30.on.satMean:0.0000} std/mean={s30.on.LumaStdOverMean:0.0000}"));
+            }
+
+            /// <summary>破片領域（<c>off</c> の明るい画素）。背景は黒なのでこれで足りる。</summary>
+            private static bool[] BrightMask(Color32[] px, out int count)
+            {
+                var mask = new bool[px.Length];
+                count = 0;
+                for (int i = 0; i < px.Length; i++)
+                {
+                    if (Luma(px[i]) <= SparkleMaskLumaMin) continue;
+                    mask[i] = true;
+                    count++;
+                }
+                return mask;
+            }
+
+            private static float Luma(Color32 c) => 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+
+            /// <summary>マスクの中だけで測る。色相は HSV の H（度）、彩度は (max-min)/max。</summary>
+            private static MaskedStats MeasureMasked(Color32[] px, bool[] mask, int count)
+            {
+                if (count <= 0) return default;
+                double sum = 0, sumSq = 0, satSum = 0;
+                long warm = 0, cool = 0, chromatic = 0, clipped = 0;
+                for (int i = 0; i < mask.Length; i++)
+                {
+                    if (!mask[i]) continue;
+                    Color32 c = px[i];
+                    float luma = Luma(c);
+                    sum += luma;
+                    sumSq += (double)luma * luma;
+                    Color.RGBToHSV(new Color(c.r / 255f, c.g / 255f, c.b / 255f),
+                                   out float h, out float s, out _);
+                    satSum += s;
+                    if (s > SparkleHueSatMin)
+                    {
+                        chromatic++;
+                        float deg = h * 360f;
+                        if (deg <= 60f) warm++;
+                        else if (deg >= 180f && deg <= 300f) cool++;
+                    }
+                    if (c.r >= 250 && c.g >= 250 && c.b >= 250) clipped++;
+                }
+                double mean = sum / count;
+                double variance = Math.Max(0d, sumSq / count - mean * mean);
+                return new MaskedStats(
+                    (float)mean, (float)Math.Sqrt(variance), (float)(satSum / count),
+                    chromatic > 0 ? (float)((double)warm / chromatic) : 0f,
+                    chromatic > 0 ? (float)((double)cool / chromatic) : 0f,
+                    (float)((double)clipped / count));
+            }
+
+            private static string StatsJson(in MaskedStats m) =>
+                FormattableString.Invariant(
+                    $"{{\"lumaMean\":{m.lumaMean:0.000000},\"lumaStd\":{m.lumaStd:0.000000}")
+                + FormattableString.Invariant(
+                    $",\"lumaStdOverMean\":{m.LumaStdOverMean:0.000000},\"satMean\":{m.satMean:0.000000}")
+                + FormattableString.Invariant(
+                    $",\"hueWarmFrac\":{m.hueWarmFrac:0.000000},\"hueCoolFrac\":{m.hueCoolFrac:0.000000}")
+                + FormattableString.Invariant(
+                    $",\"clipFrac\":{m.clipFrac:0.000000}}}");
+
+            /// <summary>破片領域の中で測った 1 通りぶん（輝度は 0..255・残りは 0..1 の割合）。</summary>
+            private readonly struct MaskedStats
+            {
+                public readonly float lumaMean;
+                public readonly float lumaStd;
+                public readonly float satMean;
+                /// <summary>彩度 <see cref="SparkleHueSatMin"/> 超の画素のうち色相 0〜60 度の割合。</summary>
+                public readonly float hueWarmFrac;
+                /// <summary>同じ母数で色相 180〜300 度の割合。</summary>
+                public readonly float hueCoolFrac;
+                public readonly float clipFrac;
+
+                public MaskedStats(float lumaMean, float lumaStd, float satMean,
+                                   float hueWarmFrac, float hueCoolFrac, float clipFrac)
+                {
+                    this.lumaMean = lumaMean; this.lumaStd = lumaStd; this.satMean = satMean;
+                    this.hueWarmFrac = hueWarmFrac; this.hueCoolFrac = hueCoolFrac; this.clipFrac = clipFrac;
+                }
+
+                /// <summary>くすみの唯一の数値。明るさで割ってあるので露出の差では動かない。</summary>
+                public float LumaStdOverMean => lumaMean > 0.0001f ? lumaStd / lumaMean : 0f;
+            }
+
+            /// <summary>1 つの標本点で撮った 3 通りの比較。</summary>
+            private readonly struct SparkleSample
+            {
+                public readonly float p;
+                public readonly string stage;
+                public readonly int maskPixels;
+                public readonly float onOffDelta;
+                public readonly float sparkDelta;
+                public readonly MaskedStats on;
+                public readonly MaskedStats off;
+                public readonly bool sparkDrawn;
+                public readonly bool sparkEverDrawn;
+                public readonly int sparkCount;
+
+                public SparkleSample(float p, string stage, int maskPixels,
+                                     float onOffDelta, float sparkDelta,
+                                     MaskedStats on, MaskedStats off,
+                                     bool sparkDrawn, bool sparkEverDrawn, int sparkCount)
+                {
+                    this.p = p; this.stage = stage; this.maskPixels = maskPixels;
+                    this.onOffDelta = onOffDelta; this.sparkDelta = sparkDelta;
+                    this.on = on; this.off = off;
+                    this.sparkDrawn = sparkDrawn; this.sparkEverDrawn = sparkEverDrawn;
+                    this.sparkCount = sparkCount;
+                }
+            }
+
+            /// <summary>1 つの判定。<c>warnOnly</c> が立っていれば全体の ok を落とさない。</summary>
+            private readonly struct SparkleCheck
+            {
+                public readonly string name;
+                public readonly bool ok;
+                public readonly bool warnOnly;
+                public readonly string detail;
+
+                public SparkleCheck(string name, bool ok, bool warnOnly, string detail)
+                {
+                    this.name = name; this.ok = ok; this.warnOnly = warnOnly; this.detail = detail;
                 }
             }
 
