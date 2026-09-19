@@ -3281,6 +3281,9 @@ def analyze(events, others, exp, warns=None):
                     if "behind" in proj_last:
                         verdict("WARN", f"静止画の投影がカメラ姿勢の後ろ（shatProj={proj_last}）— 中央の片は写真の範囲判定で描かれず、"
                                         "周辺の板が中央まで覆う。未装着の自動走行で起きる型なので、録画で中央の片の質感は判定できない")
+                    elif "(head)" in proj_last:
+                        verdict("WARN", f"静止画の投影はカメラ姿勢が後ろを向いていたので頭の姿勢で組み直した（shatProj={proj_last}）— "
+                                        "未装着の自動走行では期待どおり。被った走行で出たらカメラ姿勢の取得を疑う")
                     else:
                         verdict("OK", f"静止画の投影は前を向いている（正面 1.6m の uv 左/右 = {proj_last}）")
                 anchors = fracture_numbers("shatAnchor")

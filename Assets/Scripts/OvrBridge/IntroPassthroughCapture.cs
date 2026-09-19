@@ -271,14 +271,19 @@ namespace FixedCamVr.OvrBridge
                 return Fail("stereo", $"左右カメラの撮影時刻差が {deltaMs:0.0}ms のため、破片への撮影を見送ります");
 
             PublishStatus("ok");
-            PublishProjectionProbe(left.worldToUv, right.worldToUv);
+            // 0236: カメラ姿勢が頭と無関係な向き（未装着で観測）なら、左右の眼のアンカーの姿勢で投影を組み直す。
+            // 組み直さないと中央の片は写真の範囲判定で 1 枚も描かれず、周辺の板が中央まで覆う。
+            Matrix4x4 leftWorldToUv = left.worldToUv;
+            Matrix4x4 rightWorldToUv = right.worldToUv;
+            bool usedHeadPose = TryHeadPoseFallback(ref leftWorldToUv, ref rightWorldToUv);
+            PublishProjectionProbe(leftWorldToUv, rightWorldToUv, usedHeadPose);
 
             Debug.Log($"[IntroCamera] 静止画用の入力取得: left={left.timestamp:O} "
                       + $"right={right.timestamp:O} delta={deltaMs:0.0}ms "
                       + $"leftRes={_leftCamera.CurrentResolution.x}x{_leftCamera.CurrentResolution.y} "
                       + $"rightRes={_rightCamera.CurrentResolution.x}x{_rightCamera.CurrentResolution.y}");
             return new IntroFrozenFrameSource(
-                left.texture, right.texture, left.worldToUv, right.worldToUv);
+                left.texture, right.texture, leftWorldToUv, rightWorldToUv);
         }
 
         /// <summary>
@@ -286,7 +291,35 @@ namespace FixedCamVr.OvrBridge
         /// 後ろに出ると中央の片は写真の範囲判定で 1 枚も描かれず、周辺の板が中央まで覆う。
         /// 未装着の自動走行でだけ起きる型なので、ログだけでなくテレメトリ（shatProj=）へも出す。
         /// </summary>
-        private void PublishProjectionProbe(Matrix4x4 leftWorldToUv, Matrix4x4 rightWorldToUv)
+        private static bool ProjectsInFront(Matrix4x4 worldToUv, Vector3 point)
+        {
+            Vector4 q = worldToUv * new Vector4(point.x, point.y, point.z, 1f);
+            return q.w > 1e-4f;
+        }
+
+        /// <summary>
+        /// 0236 の退避路。頭の正面 1.6m（破片のシェル半径）の点が左右どちらかのカメラ姿勢の後ろに落ちるなら、
+        /// カメラ姿勢を捨てて左右の眼のアンカーの姿勢で worldToUv を組み直す（内部パラメータは実カメラのまま）。
+        /// 物理のカメラは HMD に固定されているので、頭の姿勢から組んだ投影は多少ずれても前を向く。
+        /// 戻り値 true = 組み直した。
+        /// </summary>
+        private bool TryHeadPoseFallback(ref Matrix4x4 leftWorldToUv, ref Matrix4x4 rightWorldToUv)
+        {
+            if (cameraRig == null || cameraRig.centerEyeAnchor == null) return false;
+            if (_leftCamera == null || _rightCamera == null) return false;
+            Transform head = cameraRig.centerEyeAnchor;
+            Vector3 probe = head.position + head.forward * 1.6f;
+            if (ProjectsInFront(leftWorldToUv, probe) && ProjectsInFront(rightWorldToUv, probe)) return false;
+            Transform leftEye = cameraRig.leftEyeAnchor != null ? cameraRig.leftEyeAnchor : head;
+            Transform rightEye = cameraRig.rightEyeAnchor != null ? cameraRig.rightEyeAnchor : head;
+            leftWorldToUv = BuildWorldToUv(new Pose(leftEye.position, leftEye.rotation),
+                _leftCamera.Intrinsics, _leftCamera.CurrentResolution);
+            rightWorldToUv = BuildWorldToUv(new Pose(rightEye.position, rightEye.rotation),
+                _rightCamera.Intrinsics, _rightCamera.CurrentResolution);
+            return true;
+        }
+
+        private void PublishProjectionProbe(Matrix4x4 leftWorldToUv, Matrix4x4 rightWorldToUv, bool usedHeadPose)
         {
             if (veil == null || cameraRig == null || cameraRig.centerEyeAnchor == null) return;
             Transform head = cameraRig.centerEyeAnchor;
@@ -297,7 +330,7 @@ namespace FixedCamVr.OvrBridge
             string Describe(Vector4 q) => q.w > 1e-4f
                 ? FormattableString.Invariant($"{q.x / q.w:0.00},{q.y / q.w:0.00}")
                 : "behind";
-            string note = Describe(ql) + "/" + Describe(qr);
+            string note = Describe(ql) + "/" + Describe(qr) + (usedHeadPose ? "(head)" : string.Empty);
             veil.FrozenFrameProjection = note;
             Debug.Log($"[IntroCamera] 投影の検算: 頭 {head.position:F2} 向き {head.forward:F2} → 正面 1.6m の uv 左/右 = {note}"
                       + (ql.w <= 1e-4f || qr.w <= 1e-4f
