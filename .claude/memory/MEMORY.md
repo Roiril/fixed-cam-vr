@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [unauthorized_access_effect.md](unauthorized_access_effect.md) - 2026-09-19。用途未定のエラー演出。独立 Prefab。描画順と映像面からの距離。Editor での停止と破棄。実描画の不在検出。
+
 - [website_plates_and_fonts.md](website_plates_and_fonts.md) - 2026-09-19。公式サイトの記録・クレジットを荷札と銘板へ。**文言を変えたら `npm run fonts`**（和文書体は画面の字だけのサブセット・check が収録漏れを落とす）／Vercel は `--scope roilils-projects` が無いと Not authorized・プレビューはログインが要る／**headless Chrome は 512px より狭く撮れない**（スマホ幅はアプリ内ブラウザで）・ペインが隠れていると IntersectionObserver が発火しない。
 
 - [closing_line_halt.md](closing_line_halt.md) - 2026-09-19（0233）。4-A の③a「止まってください！」は時計ではなく**締めの線（3-A の凍結点）を踏んだ瞬間**。線は show.json に口を作らず台本から導く（`TakeSchema.ResolveClosingLineId`）／記録は締めのカットの中だけ・入り際 0.6 秒の猶予・take が始まった同じ Tick で拾う／自動走行は `CrossClosingLine` で踏みに行く／時計 5 秒は線が無いときの退避路／観測 `ev=closingLine`・`cline=`・`config closingLine=`。
