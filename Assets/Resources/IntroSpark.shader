@@ -142,8 +142,9 @@ Shader "FixedCamVr/IntroSpark"
                 float fade = 1.0 - Ease(death - 0.05, death, p);
                 float flash = 0.8 * Ease(death - 0.03, death - 0.01, p)
                             * (1.0 - Ease(death - 0.01, death, p));
-                float intensity = born * (lerp(0.42, 0.55, star) * fade + flash) * step(p, death);
-                float sizeM = 0.006 * v.look.y;
+                // 加算で黒地に乗るので芯は 1.0 近くまで振る（0.4 台では灰色の塵にしか見えなかった）。
+                float intensity = born * (lerp(0.85, 1.0, star) * fade + flash) * step(p, death);
+                float sizeM = 0.008 * v.look.y;
                 // 閃きの最後は小さく強く（点になって消える）。
                 sizeM *= lerp(1.0, 0.4, Ease(death - 0.03, death - 0.01, p));
 
@@ -155,8 +156,8 @@ Shader "FixedCamVr/IntroSpark"
                     HeroSpark((int)v.seed.w, p, _CaptureHeadToWorld, _ScreenCenter.xyz,
                               heroPos, heroIntensity);
                     posWS = heroPos;
-                    intensity = heroIntensity * 0.7;
-                    sizeM = 0.010;
+                    intensity = heroIntensity;
+                    sizeM = 0.016;
                     star = 1.0;
                 }
 
@@ -185,7 +186,7 @@ Shader "FixedCamVr/IntroSpark"
                 float pixelsPerMeter = _ScreenParams.y * abs(unity_CameraProjection._m11) * 0.5
                                      / max(eyeDistance, 1e-3);
                 if (pixelsPerMeter > 1e-3)
-                    sizeM = clamp(sizeM, 3.0 / pixelsPerMeter, 14.0 / pixelsPerMeter);
+                    sizeM = clamp(sizeM, 3.0 / pixelsPerMeter, 18.0 / pixelsPerMeter);
 
                 // ビルボードの基底は頭中心（眼ごとに向きを変えない）。
                 float3 forward = toSpark;
@@ -211,10 +212,12 @@ Shader "FixedCamVr/IntroSpark"
                 float spikes = i.star * 0.35 * (
                       exp(-abs(i.corner.x) * 9.0) * exp(-i.corner.y * i.corner.y * 1.5)
                     + exp(-abs(i.corner.y) * 9.0) * exp(-i.corner.x * i.corner.x * 1.5));
-                float shape = saturate(core + spikes);
+                // 芯の外に薄い暈を足す（点ではなく光の粒に読ませる）。
+                float halo = 0.18 * saturate(1.0 - d);
+                float shape = saturate(core + spikes + halo);
                 // 芯は生成り寄りの白、縁へ向かうほどパレットの色。
                 float3 color = lerp(SparkCoreColor * i.color.a, i.color.rgb, saturate(d));
-                float3 rgb = min(color * shape * _Spark, 0.6);
+                float3 rgb = min(color * shape * _Spark, 1.0);
                 return float4(rgb * step(0.5, _HasFrozenFrame), 0.0);
             }
             ENDHLSL

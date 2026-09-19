@@ -440,14 +440,20 @@ Shader "FixedCamVr/IntroFracture"
                 float3 photo = unity_StereoEyeIndex == 0
                     ? SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, sampleUv).rgb
                     : SAMPLE_TEXTURE2D(_FrozenRightTex, sampler_FrozenRightTex, sampleUv).rgb;
-                // 結晶は写真より明るくコントラストが立つ（0235）。_Crystal=0 で旧値へ戻る。
-                float lumRaw = dot(photo, float3(0.299, 0.587, 0.114));
-                float lift = lerp(1.0, 1.146, _Crystal);    // 0.96 → 1.10
-                float liftC = lerp(1.0, 1.135, _Crystal);   // 1.04 → 1.18
-                float gray = saturate((lumRaw - 0.5) * (_PhotoContrast * liftC) + 0.5);
-                gray = saturate(gray * (_PhotoBrightness * lift)) * field;
-
                 float detail = i.detail.x;
+                // 結晶は写真より明るくコントラストが立つ（0235）。_Crystal=0 で旧値へ戻る。
+                // ⚠ 持ち上げは飛んでいる度合い（detail）で掛ける。破断前の面は生のパススルーから
+                //    差し替わった直後の静止画なので、ここを明るくすると凍った瞬間に画がポンと跳ねる。
+                float lumRaw = dot(photo, float3(0.299, 0.587, 0.114));
+                float liftAmount = _Crystal * detail;
+                // 明るさは少しだけ、コントラストは大きく（明るさを上げすぎると霜の付いた樹脂になる）。
+                float lift = lerp(1.0, 0.92, liftAmount);     // 0.96 → 0.88（体は暗く、光る所だけ光る）
+                float liftC = lerp(1.0, 1.20, liftAmount);    // 1.04 → 1.25
+                float gray = saturate((lumRaw - 0.5) * (_PhotoContrast * liftC) + 0.5);
+                gray = saturate(gray * (_PhotoBrightness * lift));
+                // 暗部を沈める（結晶は暗い所が暗く、光る所だけが光る）。_Crystal=0 で γ = 1。
+                gray = pow(gray, lerp(1.0, 1.6, liftAmount)) * field;
+
                 float shock = i.detail.z;
                 float3 viewDirection = normalize(_CurrentHeadPosition.xyz - i.positionWS);
                 float3 normal = normalize(i.normalWS);
@@ -465,7 +471,7 @@ Shader "FixedCamVr/IntroFracture"
                 float3 irid = SparkPalette(iridPhase);
                 // 色相だけ移して輝度は保つ（彩度の上限 0.28）。
                 float3 iridTint = irid / max(dot(irid, float3(0.299, 0.587, 0.114)), 1e-3);
-                float3 faceTint = lerp(float3(1.0, 1.0, 1.0), iridTint, 0.28 * _Crystal * detail);
+                float3 faceTint = lerp(float3(1.0, 1.0, 1.0), iridTint, 0.35 * _Crystal * detail);
 
                 // 一撃の閃きは線ではなく面を白ませる（線だけ光らせるとワイヤーフレームに見える）。
                 float3 color = gray.xxx * (1.0 + 0.35 * i.light.y + 0.45 * shock);
@@ -490,27 +496,27 @@ Shader "FixedCamVr/IntroFracture"
                 // 加算の自発光層。写真の明暗に掛からないので、暗い実景の上でも結晶が光る。
                 float3 crystal = 0.0;
                 // 薄膜の帯（斜め〜縁）。
-                crystal += irid * fres * (0.22 * detail + 0.16 * i.light.w);
+                crystal += irid * fres * fres * (0.30 * detail + 0.16 * i.light.w);
                 // 面のきらめき場。位相は頭中心の視線なので両眼で揃う。
                 // ⚠ 面の座標は写真の uv ではなく辺までの距離（i.edgeDistances）から取る。写真の uv は
                 //    左右の撮影カメラの視差ぶん眼ごとにずれるので、格子を uv で切ると点の場所が両眼で食い違う。
                 //    辺までの距離はメッシュのローカル値で、どちらの眼でも同じ（1 単位 ≈ 10.7m・0.0012 ≈ 1.3cm）。
-                float2 cellUv = i.edgeDistances.xy * 820.0;
+                float2 cellUv = i.edgeDistances.xy * 1000.0;
                 float2 cell = floor(cellUv);
                 float cellHash = frac(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
                 float2 cellLocal = frac(cellUv) - 0.5;
                 float cellPoint = smoothstep(0.30, 0.06, length(cellLocal));
                 float viewFacing = dot(viewDirection, normal);
-                float twinkle = pow(saturate(
-                    sin(viewFacing * 9.0 + cellHash * 6.283 + _Shatter * 26.0) * 0.5 + 0.5), 6.0);
+                float twinkle = smoothstep(0.55, 0.95,
+                    sin(viewFacing * 9.0 + cellHash * 6.283 + _Shatter * 26.0) * 0.5 + 0.5);
                 // 遠い片・小さい片ではちらつくので消す（1 格子が 2 画素を切ったら描かない）。
                 float cellLod = saturate(1.0 - fwidth(cellUv.x) * 2.0);
-                crystal += SparkCoreColor * cellPoint * twinkle * 0.55 * detail
-                         * step(0.976, cellHash) * cellLod;
+                crystal += SparkCoreColor * cellPoint * twinkle * 1.40 * detail
+                         * step(0.955, cellHash) * cellLod;
                 // コースティクスの帯。片が回ると面を 1〜2 本の明るい帯が横切る（座標は同じ理由で辺までの距離）。
                 float caustic = exp(-pow((frac(i.edgeDistances.x * 40.0 + i.edgeDistances.y * 21.0 + spinPhase)
-                    - 0.5) * 7.2, 2.0));
-                crystal += SparkCoreColor * caustic * 0.14 * detail * (0.4 + 0.6 * fres);
+                    - 0.5) * 11.0, 2.0));
+                crystal += SparkCoreColor * caustic * 0.10 * detail * (0.4 + 0.6 * fres);
 
                 // 代表の粒の反射（0235 の核心）。近い 2 灯を点光源として鏡面を返す。
                 // HDR が無い（8bit LDR）ので必ずクランプする。
@@ -524,11 +530,13 @@ Shader "FixedCamVr/IntroFracture"
                     // 真後ろの粒で半ベクトルが 0 になっても NaN を出さない（_Crystal=0 の一致も守る）。
                     float3 sparkHalf = SafeNormalize(
                         SafeNormalize(toSpark, normal) + viewDirection, normal);
-                    sparkLit += SparkCoreColor * pow(saturate(dot(normal, sparkHalf)), 48.0)
-                              * sparkSample.w / (1.0 + sparkDistance / 0.09);
+                    // 面ごとの閃き。平らな片は半ベクトルが揃った瞬間に面ごと光るので、粒が通ると片が順に瞬く。
+                    sparkLit += SparkCoreColor * pow(saturate(dot(normal, sparkHalf)), 24.0)
+                              * 2.0 * sparkSample.w / (1.0 + sparkDistance / 1.0);
                 }
-                sparkLit += SparkCoreColor * i.sparkSoft.x * 0.10;
-                sparkLit = min(sparkLit, 0.55) * detail * _SparkLit;
+                // 柔らかい照りは弱く（面全体に一様に乗るとコントラストが潰れて霜の付いた樹脂になる）。
+                sparkLit += SparkCoreColor * i.sparkSoft.x * 0.05;
+                sparkLit = min(sparkLit, 0.8) * detail * _SparkLit;
 
                 // 実景の明暗は残す。飛んでいる間はわずかに暖かく、着地で素の写真へ戻る。
                 color = color * shade * lerp(float3(1.0, 1.0, 1.0),

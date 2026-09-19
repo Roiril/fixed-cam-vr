@@ -166,3 +166,39 @@ Questαへ導入済み。実機走行`20260918_104820`では周辺の強い縁�
   スローが止まらない設計と矛盾するので置き換えた
 
 関連: [[presentation_redesign]]（0207〜0220 の経緯）/ [[sound_pipeline]] / [[hud_font_and_preview]]
+
+## 結晶の面と光の粒（2026-09-19・0235・R053）
+
+「くすんだガラス」の正体は粒の不在ではなく、面の色が `gray = dot(photo,…)` の**無彩化した写真に乗算で縛られている**こと
+（設計批評 3 体が独立に同じ結論）。直したのは 3 つ。
+
+- **面**: 写真の輝度に掛からない加算層 `crystal`（片ごとの薄膜干渉 `SparkPalette`・面のきらめき・面を横切る光の帯）＋
+  暖色の tint（旧 (0.94,0.97,1.03) の寒色は 0010 と逆だった）。体は `pow(gray, 1.6)` と明るさ ×0.92 で沈め、
+  コントラスト ×1.20。**明るくすると霜の付いた樹脂になる**（3 回撮り直した。光る所だけ光らせる）
+- **粒**: `Resources/IntroSpark.shader` ＋ `IntroSparkMesh`（512 粒・全 267 片から 1〜3 本・外周の辺の上・代表 6 粒）。
+  queue 4907・`Blend One One, Zero One`・ZTest LEqual・頂点シェーダで時計 p から決定的。
+  **粒あたりの上限を 0.6 で切ると灰色の塵にしか見えない**（芯 0.85〜1.0・上限 1.0・暈 0.18）
+- **反射**: 代表 6 粒 `HeroSpark(k, p, …)`（`IntroSpark.hlsl`・両シェーダで共有）を点光源に、頂点で最寄り 2 灯を選び
+  画素で `pow(n·h, 24) × 2.0 / (1 + d²)`。平らな片は半ベクトルが揃った瞬間に**面ごと**白む（粒が通ると片が順に瞬く）。
+  利得 3.0 だと白飛び 3%
+
+対で動かすもの（増えた）:
+
+- 集結の定数 `ArriveFirst / ArriveSpan / PullPow* / CloserArrive` と `PieceBreakAt / PieceWeight / PieceArrive` は
+  **`IntroFractureTime.hlsl` へ移した**（破片と粒が同じ値を読む）。音の `SWARM_*` との対は変わらない
+- `_Crystal` / `_SparkLit`（破片）/ `_Spark`（粒）: **0 で旧描画と画素単位で一致**（旧版のシェーダで撮った 198 コマと
+  新版 `-Set sparkle=0` の 198 コマが全コマ差 0 ＝ 校正済み）。IntroVeil の `DiagnosticCrystal / DiagnosticSparkLit /
+  DiagnosticSpark` が探針の口、Development Build は `-e xpnosparkle 1` で同一 APK の旧描画
+- 観測: `ev=sum` の `spark=`（renderer を実際に有効にしたか）/ `sparkN=`（518）。`analyze-xp-log.py` は静止画の配布が
+  OK だった走行でだけ判定する。Editor は `menu intro -Set frames=1` の `sparkle-proof.json`（24 検査）
+
+計器の罠（この周で踏んだもの）:
+
+- ⚠ **面のきらめきの格子を写真の uv で切ると両眼で点の場所が食い違う**（左右の撮影カメラの視差ぶん uv がずれる）。
+  眼に依存しない座標は `edgeDistances`（辺までの距離・メッシュのローカル値）。コースティクスの帯も同じ
+- ⚠ **明るさの持ち上げは `detail`（飛んでいる度合い）で掛ける。** 破断前の面に掛けると、生のパススルーから静止画へ
+  差し替わった瞬間に画がポンと跳ねる（探針 `quiet_before_break` が 16.5 で落として気づいた）
+- ⚠ **輝度の分散比（std/mean）は「くすみ」の指標にならない。** 加算で明るくすると mean が先に上がり、比は下がる
+  （R053 の予測 2 は外れた）。見るなら p5 / p95 と白飛び率、あとは画を開く
+- Unity 同梱の NUnit に `Is.AnyOf` は無い。コンパイルが落ちた初回の `unity.ps1 test` は `Temp/UnityLockfile` を
+  残して終わることがある（Unity.exe が居なければ消して再実行）
