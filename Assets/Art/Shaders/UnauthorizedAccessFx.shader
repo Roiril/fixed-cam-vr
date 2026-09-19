@@ -25,6 +25,7 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             TEXTURE2D(_MainTex);
             SAMPLER(sampler_MainTex);
+            float4 _MainTex_TexelSize;
             CBUFFER_START(UnityPerMaterial)
                 half4 _Color;
                 float _Mode;
@@ -72,6 +73,17 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 tint = input.color * _Color;
+                if (_Mode > 1.5)
+                {
+                    // Real typeset glyphs and isolated symbol masks share the same restrained light.
+                    half ink = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).a;
+                    float2 delta = _MainTex_TexelSize.xy * 1.5;
+                    half halo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(delta.x, 0)).a;
+                    halo += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - float2(delta.x, 0)).a;
+                    halo += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(0, delta.y)).a;
+                    halo += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - float2(0, delta.y)).a;
+                    return half4(tint.rgb, saturate(max(ink, halo * .045) * tint.a * _Strength));
+                }
                 if (_Mode < .5)
                 {
                     half4 texel = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);

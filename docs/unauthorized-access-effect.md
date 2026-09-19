@@ -6,13 +6,16 @@
 ## 表示
 
 スクリーンへ巨大な `WARNING` と「不正アクセス検出」を重ねる。
-文字と警告記号が食い込んだ生成画像を使う。閉じたパネル枠は置かない。
+英字は DSEG14 Modern Bold。日本語は DotGothic16。
+文字は実フォントで組む。三角記号とノイズは別々に画像生成する。
+斜線と感嘆符はコードで描く。各部品が異なる時刻に現れて壊れる。
+閉じたパネル枠は置かない。
 警告は急に現れる。欠落を挟んで読める状態へ戻る。2.05 秒と 3.65 秒から大きく横へ裂ける。
 4.9 秒から部分ごとに消え始める。最後に空間の信号が残る。
 
 空間には 220 個の 0 と 1 を置く。距離と大きさと濃さをばらつかせる。
 遠くには細かい数字がある。手前には大きくぼけた数字がある。
-生成した赤い干渉光を断片として重ねる。文字列を左右対称に並べない。
+生成した信号の断片を赤く着色して重ねる。文字列を左右対称に並べない。
 
 7 秒で出現から消退まで再生する。時間は非スケール時間を使う。
 スクリーンの表示は指定した面に追従する。
@@ -40,6 +43,7 @@ effect.Stop(); // 途中で直ちに消す
 ## 作り直しとプレビュー
 
 ```powershell
+py -3.11 tools/make-error-typography.py
 .\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.UnauthorizedAccessPreview.Build
 .\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.UnauthorizedAccessPreview.Run -Set sequence=1
 ```
@@ -59,21 +63,24 @@ py -3.11 tools/check-error-preview.py Logs/unauthorized-access/<日時>
 ```
 
 中央と左右の表示画素を別々に数える。時刻 0 と終了後と停止後を比較する。
-警告画像は 11 個の帯に分割する。描画順は 3450。映像面から 6 cm 手前に置く。
+英字は 11 個の帯に分割する。日本語と記号は独立した面で描く。
+警告文字の描画順は 3450。映像面から 6 cm 手前に置く。
 数字は専用シェーダで描く。フレームごとのフォント生成は行わない。
 文字の頂点が存在するだけでは表示を保証しない。実際の PNG も確認する。
 Editor では自動再生せず `Sample` でのみ時刻を進める。
 
 ## 素材
 
-- `Assets/Art/Textures/UnauthorizedAccess/warning-v2.png`: imagegen で生成した透明な警告文字と記号。1774 × 887 px。
-- `signal-fragments-v2.png`: imagegen で生成した非対称の赤い干渉光。1774 × 887 px。
+- `Assets/Art/Textures/UnauthorizedAccess/wordmark-v3.png`: DSEG14 Modern Bold で組んだ英字。1406 × 257 px。
+- `subtitle-v3.png`: DotGothic16 で組んだ日本語。805 × 107 px。
+- `triangle-v3.png`: 単体で画像生成した三角記号。1254 × 1254 px。
+- `signal-tear-v3.png`: 単体で画像生成した信号の断裂。2172 × 724 px。
 - `ErrorFx.mat`: 専用シェーダを参照する材質。ビルド時にシェーダの参照を保持する。
 
 参考はユーザー指定の `error1.jpg` と `error2.gif`。
 参考画像自体は配布資産へコピーしない。
-第 2 版では参考の太い文字と不均一な密度に立ち戻った。
-警告画像の日本語は生成結果と Unity の描画の両方で確認する。
+文字は一枚の完成画像に合成しない。実行時も部品ごとに位置と時刻を持つ。
+フォントの配布元と生成プロンプトは [部品の作り方](../tools/error-parts/README.md) に記録する。
 
 ## 検証の範囲
 
@@ -82,7 +89,11 @@ Unity の実描画で文字と透過と時間変化を確認する。
 Quest 実機での両眼視差と表示負荷と快適性は未確認。
 用途と配置が決まった時点で HMD を装着して確認する。
 
-2026-09-19 の第 2 版は EditMode 6 件が成功。
+2026-09-19 の第 3 版は EditMode 6 件が成功。
 1280 × 720 px / 30 fps の連番 211 枚を書き出した。異なる画像は 208 枚。
 開始前と終了後と Stop 後の表示差分は 0 画素。
 正面と横へ 22 cm 移動した描画も比較した。
+中央の表示差分は 34,947 画素。左右の空間は 35,547 画素と 32,781 画素。
+文字と三角記号と装飾は独立したメッシュとして存在する。
+プレビュー終了時はスクリーンを破棄する前に演出を破棄する。
+確認用動画は `output/unauthorized-access/unauthorized-access-v3.mp4`。

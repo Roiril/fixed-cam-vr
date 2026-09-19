@@ -26,6 +26,10 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.Greater(effect.SpatialElementCount, 180);
                 Assert.AreEqual(880, effect.GlyphVertexCountDiagnostic, "220 glyph × 4 vertices");
                 Assert.AreEqual(44, effect.WarningVertexCountDiagnostic, "11 bands × 4 vertices");
+                Assert.AreEqual(12, effect.SubtitleVertexCountDiagnostic, "3 bands × 4 vertices");
+                Assert.AreEqual(4, effect.SymbolVertexCountDiagnostic, "triangle image × 4 vertices");
+                Assert.AreEqual(56, FindMesh(effect, "Unauthorized Access Decorations").vertexCount,
+                    "2 exclamation quads + 12 hazard stripe quads");
                 Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
                 Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
 
@@ -63,6 +67,8 @@ namespace FixedCamVr.Streaming.Tests
                     FindRoot(b, "UnauthorizedAccess.Spatial"));
                 Assert.AreNotSame(FindMesh(a, "Unauthorized Access Glyphs"),
                     FindMesh(b, "Unauthorized Access Glyphs"));
+                Assert.AreNotSame(FindMesh(a, "Unauthorized Access Symbol"),
+                    FindMesh(b, "Unauthorized Access Symbol"));
             }
             finally
             {
@@ -86,12 +92,18 @@ namespace FixedCamVr.Streaming.Tests
                 Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
                 Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
                 Mesh warning = FindMesh(effect, "Unauthorized Access Warning Bands");
+                Mesh subtitle = FindMesh(effect, "Unauthorized Access Subtitle Bands");
+                Mesh symbol = FindMesh(effect, "Unauthorized Access Symbol");
+                Mesh decorations = FindMesh(effect, "Unauthorized Access Decorations");
                 Mesh glyphs = FindMesh(effect, "Unauthorized Access Glyphs");
                 Mesh strips = FindMesh(effect, "Unauthorized Access Interference");
                 int screenChildren = screen.childCount;
                 int spatialChildren = spatial.childCount;
 
                 Assert.Greater(warning.vertexCount, 0);
+                Assert.Greater(subtitle.vertexCount, 0);
+                Assert.Greater(symbol.vertexCount, 0);
+                Assert.Greater(decorations.vertexCount, 0);
                 Assert.Greater(glyphs.vertexCount, 0);
                 Assert.Greater(strips.vertexCount, 0);
                 effect.Stop();
@@ -101,7 +113,11 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreSame(screen, FindRoot(effect, "UnauthorizedAccess.Screen"));
                 Assert.AreSame(spatial, FindRoot(effect, "UnauthorizedAccess.Spatial"));
                 Assert.AreSame(warning, FindMesh(effect, "Unauthorized Access Warning Bands"));
+                Assert.AreSame(subtitle, FindMesh(effect, "Unauthorized Access Subtitle Bands"));
+                Assert.AreSame(symbol, FindMesh(effect, "Unauthorized Access Symbol"));
+                Assert.AreSame(decorations, FindMesh(effect, "Unauthorized Access Decorations"));
                 Assert.AreSame(glyphs, FindMesh(effect, "Unauthorized Access Glyphs"));
+                Assert.AreSame(strips, FindMesh(effect, "Unauthorized Access Interference"));
                 Assert.AreEqual(screenChildren, screen.childCount);
                 Assert.AreEqual(spatialChildren, spatial.childCount);
             }
@@ -130,12 +146,18 @@ namespace FixedCamVr.Streaming.Tests
 
                 effect.Sample(2.11f);
                 Mesh glyphs = FindMesh(effect, "Unauthorized Access Glyphs");
-                Vector3[] firstVertices = glyphs.vertices;
-                Color[] firstColors = glyphs.colors;
+                Mesh subtitle = FindMesh(effect, "Unauthorized Access Subtitle Bands");
+                Mesh symbol = FindMesh(effect, "Unauthorized Access Symbol");
+                Vector3[] firstGlyphVertices = glyphs.vertices;
+                Color[] firstGlyphColors = glyphs.colors;
+                Vector3[] firstSubtitleVertices = subtitle.vertices;
+                Color[] firstSymbolColors = symbol.colors;
                 effect.Sample(3.72f);
                 effect.Sample(2.11f);
-                CollectionAssert.AreEqual(firstVertices, glyphs.vertices);
-                CollectionAssert.AreEqual(firstColors, glyphs.colors);
+                CollectionAssert.AreEqual(firstGlyphVertices, glyphs.vertices);
+                CollectionAssert.AreEqual(firstGlyphColors, glyphs.colors);
+                CollectionAssert.AreEqual(firstSubtitleVertices, subtitle.vertices);
+                CollectionAssert.AreEqual(firstSymbolColors, symbol.colors);
                 Assert.IsTrue(effect.IsPlaying);
                 Assert.AreEqual(elapsed, effect.Elapsed);
 
@@ -170,19 +192,30 @@ namespace FixedCamVr.Streaming.Tests
             {
                 var effect = host.AddComponent<UnauthorizedAccessEffect>();
                 effect.Play(anchor.transform, ReferenceSize);
+                effect.Sample(1.2f);
                 Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
                 Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
                 Vector3 spatialPosition = spatial.position;
                 Quaternion spatialRotation = spatial.rotation;
+                Mesh warning = FindMesh(effect, "Unauthorized Access Warning Bands");
+                Mesh subtitle = FindMesh(effect, "Unauthorized Access Subtitle Bands");
+                Mesh symbol = FindMesh(effect, "Unauthorized Access Symbol");
+                Vector3[] warningVertices = warning.vertices;
+                Vector3[] subtitleVertices = subtitle.vertices;
+                Vector3[] symbolVertices = symbol.vertices;
 
                 anchor.transform.SetPositionAndRotation(new Vector3(-2f, 1f, 4f), Quaternion.Euler(8f, 95f, 0f));
-                effect.Sample(3f);
+                effect.Sample(1.2f);
 
                 Assert.Less(Vector3.Distance(anchor.transform.position - anchor.transform.forward * .06f,
                     screen.position), .0001f, "警告面は映像面の6cm手前");
                 Assert.Less(Quaternion.Angle(anchor.transform.rotation, screen.rotation), .001f);
                 Assert.Less(Vector3.Distance(spatialPosition, spatial.position), .0001f);
                 Assert.Less(Quaternion.Angle(spatialRotation, spatial.rotation), .001f);
+                CollectionAssert.AreEqual(warningVertices, warning.vertices);
+                CollectionAssert.AreEqual(subtitleVertices, subtitle.vertices);
+                CollectionAssert.AreEqual(symbolVertices, symbol.vertices,
+                    "screen側パーツのlocal poseはanchor移動で変化しない");
                 Assert.IsNull(spatial.parent, "空間側はanchorの子に残さない");
                 Assert.AreEqual(host.scene, spatial.gameObject.scene, "空間rootはcomponentと同じsceneに置く");
             }
@@ -222,16 +255,19 @@ namespace FixedCamVr.Streaming.Tests
                 .GetValue(effect)!;
         }
 
-        private static Mesh FindMesh(UnauthorizedAccessEffect effect, string name)
+        private static Mesh FindMesh(UnauthorizedAccessEffect effect, string name) =>
+            FindMeshTransform(effect, name).GetComponent<MeshFilter>().sharedMesh;
+
+        private static Transform FindMeshTransform(UnauthorizedAccessEffect effect, string name)
         {
             Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
             Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
             MeshFilter[] screenMeshes = screen.GetComponentsInChildren<MeshFilter>(true);
             for (int i = 0; i < screenMeshes.Length; i++)
-                if (screenMeshes[i].sharedMesh.name == name) return screenMeshes[i].sharedMesh;
+                if (screenMeshes[i].sharedMesh.name == name) return screenMeshes[i].transform;
             MeshFilter[] spatialMeshes = spatial.GetComponentsInChildren<MeshFilter>(true);
             for (int i = 0; i < spatialMeshes.Length; i++)
-                if (spatialMeshes[i].sharedMesh.name == name) return spatialMeshes[i].sharedMesh;
+                if (spatialMeshes[i].sharedMesh.name == name) return spatialMeshes[i].transform;
             Assert.Fail($"{name} was not found.");
             return null!;
         }

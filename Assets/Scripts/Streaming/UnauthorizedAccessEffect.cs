@@ -8,7 +8,7 @@ using UnityEngine.SceneManagement;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// 警告画像を裂けた帯として映像面へ出し、発火位置に数字と干渉光を残す。
+    /// 独立した警告パーツを映像面へ出し、発火位置に数字と干渉光を残す。
     /// 映像面は指定 anchor を追い、空間側は発火した瞬間の世界座標へ固定する。
     /// </summary>
     [ExecuteAlways]
@@ -17,13 +17,19 @@ namespace FixedCamVr.Streaming
         public const float EffectDuration = 7f;
 
         private const int WarningBandCount = 11;
+        private const int SubtitleBandCount = 3;
+        private const int SymbolQuadCount = 1;
+        private const int DecorationQuadCount = 14;
         private const int GlyphCount = 220;
         private const int FarGlyphCount = 100;
         private const int MiddleGlyphCount = 100;
         private const int NearGlyphCount = 4;
         private const int InterferenceStripCount = 12;
         private const int GlyphVertexCount = GlyphCount * 4;
-        private const int BandVertexCount = WarningBandCount * 4;
+        private const int WarningVertexCount = WarningBandCount * 4;
+        private const int SubtitleVertexCount = SubtitleBandCount * 4;
+        private const int SymbolVertexCount = SymbolQuadCount * 4;
+        private const int DecorationVertexCount = DecorationQuadCount * 4;
         private const int StripVertexCount = InterferenceStripCount * 4;
         private const int RandomSeed = 0x5A17C0DE;
 
@@ -31,6 +37,7 @@ namespace FixedCamVr.Streaming
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
         private static readonly int ModeId = Shader.PropertyToID("_Mode");
         private static readonly int StrengthId = Shader.PropertyToID("_Strength");
+        private static readonly Color AlertRed = new Color(1f, .06f, .085f, 1f);
 
         private static readonly float[] BundlePositions =
         {
@@ -38,10 +45,12 @@ namespace FixedCamVr.Streaming
             .24f, .39f, .53f, .69f, .81f, .94f,
         };
 
-        private static readonly float[] BandEdges =
+        private static readonly float[] WarningBandEdges =
         {
             0f, .058f, .137f, .224f, .298f, .404f, .487f, .552f, .685f, .752f, .883f, 1f,
         };
+
+        private static readonly float[] SubtitleBandEdges = { 0f, .32f, .68f, 1f };
 
         private static readonly Vector2[] NearPositions =
         {
@@ -51,6 +60,8 @@ namespace FixedCamVr.Streaming
 
         [SerializeField] private Material? fxMaterial;
         [SerializeField] private Texture2D? warningGraphic;
+        [SerializeField] private Texture2D? subtitleGraphic;
+        [SerializeField] private Texture2D? symbolGraphic;
         [SerializeField] private Texture2D? interference;
         [SerializeField] private bool autoPlay;
 
@@ -58,16 +69,37 @@ namespace FixedCamVr.Streaming
         private Transform? _spatialRoot;
         private Transform? _warningTransform;
         private Mesh? _warningMesh;
+        private Mesh? _subtitleMesh;
+        private Mesh? _symbolMesh;
+        private Mesh? _decorationMesh;
         private Mesh? _glyphMesh;
         private Mesh? _interferenceMesh;
         private Material? _warningMaterial;
+        private Material? _subtitleMaterial;
+        private Material? _symbolMaterial;
+        private Material? _decorationMaterial;
         private Material? _glyphMaterial;
         private Material? _interferenceMaterial;
 
-        private readonly Vector3[] _warningVertices = new Vector3[BandVertexCount];
-        private readonly Vector2[] _warningUvs = new Vector2[BandVertexCount];
-        private readonly Color[] _warningColors = new Color[BandVertexCount];
+        private readonly Vector3[] _warningVertices = new Vector3[WarningVertexCount];
+        private readonly Vector2[] _warningUvs = new Vector2[WarningVertexCount];
+        private readonly Color[] _warningColors = new Color[WarningVertexCount];
         private readonly int[] _warningTriangles = new int[WarningBandCount * 6];
+
+        private readonly Vector3[] _subtitleVertices = new Vector3[SubtitleVertexCount];
+        private readonly Vector2[] _subtitleUvs = new Vector2[SubtitleVertexCount];
+        private readonly Color[] _subtitleColors = new Color[SubtitleVertexCount];
+        private readonly int[] _subtitleTriangles = new int[SubtitleBandCount * 6];
+
+        private readonly Vector3[] _symbolVertices = new Vector3[SymbolVertexCount];
+        private readonly Vector2[] _symbolUvs = new Vector2[SymbolVertexCount];
+        private readonly Color[] _symbolColors = new Color[SymbolVertexCount];
+        private readonly int[] _symbolTriangles = new int[SymbolQuadCount * 6];
+
+        private readonly Vector3[] _decorationVertices = new Vector3[DecorationVertexCount];
+        private readonly Vector2[] _decorationUvs = new Vector2[DecorationVertexCount];
+        private readonly Color[] _decorationColors = new Color[DecorationVertexCount];
+        private readonly int[] _decorationTriangles = new int[DecorationQuadCount * 6];
 
         private readonly Vector3[] _glyphVertices = new Vector3[GlyphVertexCount];
         private readonly Vector2[] _glyphUvs = new Vector2[GlyphVertexCount];
@@ -89,6 +121,9 @@ namespace FixedCamVr.Streaming
         private Vector2 _screenSize;
         private float _warningWidth;
         private float _warningHeight;
+        private float _subtitleWidth;
+        private float _subtitleHeight;
+        private float _symbolSize;
         private float _maximumFrontDepth = 1.5f;
         private float _audienceDistance = 3f;
 
@@ -100,14 +135,20 @@ namespace FixedCamVr.Streaming
         public int WarningBandCountDiagnostic => WarningBandCount;
         public int GlyphVertexCountDiagnostic => _glyphMesh != null ? _glyphMesh.vertexCount : 0;
         public int WarningVertexCountDiagnostic => _warningMesh != null ? _warningMesh.vertexCount : 0;
+        public int SubtitleVertexCountDiagnostic => _subtitleMesh != null ? _subtitleMesh.vertexCount : 0;
+        public int SymbolVertexCountDiagnostic => _symbolMesh != null ? _symbolMesh.vertexCount : 0;
         public Transform? ScreenAnchor { get; private set; }
 
-        public void Configure(Material fxMaterial, Texture2D warningGraphic, Texture2D interference)
+        public void Configure(Material fxMaterial, Texture2D warningGraphic, Texture2D subtitleGraphic,
+            Texture2D symbolGraphic, Texture2D interference)
         {
             bool changed = this.fxMaterial != fxMaterial || this.warningGraphic != warningGraphic ||
+                this.subtitleGraphic != subtitleGraphic || this.symbolGraphic != symbolGraphic ||
                 this.interference != interference;
             this.fxMaterial = fxMaterial;
             this.warningGraphic = warningGraphic;
+            this.subtitleGraphic = subtitleGraphic;
+            this.symbolGraphic = symbolGraphic;
             this.interference = interference;
             if (!changed || _screenRoot == null) return;
 
@@ -188,41 +229,61 @@ namespace FixedCamVr.Streaming
             BuildMaterials();
             CreateRoots();
             InitializeBandData();
+            InitializeScreenPartData();
             InitializeGlyphData();
             InitializeStripData();
             _warningMesh = CreateMesh("Unauthorized Access Warning Bands", _warningVertices,
                 _warningUvs, null, _warningColors, _warningTriangles);
+            _subtitleMesh = CreateMesh("Unauthorized Access Subtitle Bands", _subtitleVertices,
+                _subtitleUvs, null, _subtitleColors, _subtitleTriangles);
+            _symbolMesh = CreateMesh("Unauthorized Access Symbol", _symbolVertices,
+                _symbolUvs, null, _symbolColors, _symbolTriangles);
+            _decorationMesh = CreateMesh("Unauthorized Access Decorations", _decorationVertices,
+                _decorationUvs, null, _decorationColors, _decorationTriangles);
             _glyphMesh = CreateMesh("Unauthorized Access Glyphs", _glyphVertices,
                 _glyphUvs, _glyphData, _glyphColors, _glyphTriangles);
             _interferenceMesh = CreateMesh("Unauthorized Access Interference", _interferenceVertices,
                 _interferenceUvs, null, _interferenceColors, _interferenceTriangles);
 
+            _symbolTransform = CreateMeshObject("WarningSymbol", _screenRoot!, _symbolMesh, _symbolMaterial);
+            CreateMeshObject("WarningDecorations", _screenRoot!, _decorationMesh, _decorationMaterial);
             _warningTransform = CreateMeshObject("WarningBands", _screenRoot!, _warningMesh, _warningMaterial);
-            _warningTransform.localRotation = Quaternion.Euler(0f, 0f, -1.8f);
+            _warningTransform.localRotation = Quaternion.Euler(0f, 0f, -.6f);
+            CreateMeshObject("SubtitleBands", _screenRoot!, _subtitleMesh, _subtitleMaterial);
             CreateMeshObject("BinaryField", _spatialRoot!, _glyphMesh, _glyphMaterial);
             CreateMeshObject("InterferenceLight", _spatialRoot!, _interferenceMesh, _interferenceMaterial);
             SetRootsVisible(false);
         }
 
+        private Transform? _symbolTransform;
+
         private void BuildMaterials()
         {
             if (fxMaterial == null) return;
 
-            _warningMaterial = CreateRuntimeMaterial("Unauthorized Access Warning", 0f,
-                warningGraphic != null ? warningGraphic : Texture2D.whiteTexture, 1f);
+            _symbolMaterial = CreateRuntimeMaterial("Unauthorized Access Symbol", 2f,
+                symbolGraphic != null ? symbolGraphic : Texture2D.whiteTexture, 1f, 3448);
+            _decorationMaterial = CreateRuntimeMaterial("Unauthorized Access Decorations", 2f,
+                Texture2D.whiteTexture, 1f, 3449);
+            _warningMaterial = CreateRuntimeMaterial("Unauthorized Access Warning", 2f,
+                warningGraphic != null ? warningGraphic : Texture2D.whiteTexture, 1f, 3450);
+            _subtitleMaterial = CreateRuntimeMaterial("Unauthorized Access Subtitle", 2f,
+                subtitleGraphic != null ? subtitleGraphic : Texture2D.whiteTexture, 1f, 3451);
             _glyphMaterial = CreateRuntimeMaterial("Unauthorized Access Glyph", 1f,
                 Texture2D.whiteTexture, 1.18f);
             _interferenceMaterial = CreateRuntimeMaterial("Unauthorized Access Interference", 0f,
                 interference != null ? interference : Texture2D.whiteTexture, .82f);
         }
 
-        private Material CreateRuntimeMaterial(string materialName, float mode, Texture texture, float strength)
+        private Material CreateRuntimeMaterial(string materialName, float mode, Texture texture, float strength,
+            int renderQueue = -1)
         {
             var material = new Material(fxMaterial!) { name = materialName + " (runtime)" };
             material.SetTexture(MainTexId, texture);
             material.SetColor(ColorId, Color.white);
             material.SetFloat(ModeId, mode);
             material.SetFloat(StrengthId, strength);
+            if (renderQueue >= 0) material.renderQueue = renderQueue;
             return material;
         }
 
@@ -259,14 +320,31 @@ namespace FixedCamVr.Streaming
             for (int i = 0; i < WarningBandCount; i++)
             {
                 int vertex = i * 4;
-                float v0 = BandEdges[i];
-                float v1 = BandEdges[i + 1];
-                SetQuadUvs(_warningUvs, vertex, 0f, v0, 1f, v1);
+                SetQuadUvs(_warningUvs, vertex, 0f, WarningBandEdges[i], 1f, WarningBandEdges[i + 1]);
                 SetQuadTriangles(_warningTriangles, i, vertex);
                 _bandCollapseStart[i] = 4.9f + (float)random.NextDouble() * .85f;
                 _bandCollapseDuration[i] = .16f + (float)random.NextDouble() * .34f;
                 _bandCollapseDuration[i] = Mathf.Min(_bandCollapseDuration[i], 6.18f - _bandCollapseStart[i]);
                 _bandCollapseDirection[i] = random.Next(2) == 0 ? -1f : 1f;
+            }
+
+            for (int i = 0; i < SubtitleBandCount; i++)
+            {
+                int vertex = i * 4;
+                SetQuadUvs(_subtitleUvs, vertex, 0f, SubtitleBandEdges[i], 1f, SubtitleBandEdges[i + 1]);
+                SetQuadTriangles(_subtitleTriangles, i, vertex);
+            }
+        }
+
+        private void InitializeScreenPartData()
+        {
+            SetQuadUvs(_symbolUvs, 0, 0f, 0f, 1f, 1f);
+            SetQuadTriangles(_symbolTriangles, 0, 0);
+            for (int i = 0; i < DecorationQuadCount; i++)
+            {
+                int vertex = i * 4;
+                SetQuadUvs(_decorationUvs, vertex, 0f, 0f, 1f, 1f);
+                SetQuadTriangles(_decorationTriangles, i, vertex);
             }
         }
 
@@ -298,7 +376,6 @@ namespace FixedCamVr.Streaming
                     GlyphKind.Near => Range(random, 1.38f, 1.5f),
                     _ => Range(random, .32f, 1.28f),
                 };
-                Color color = PickGlyphColor(random, kind);
                 _glyphs[i] = new GlyphSpec
                 {
                     Kind = kind,
@@ -313,7 +390,7 @@ namespace FixedCamVr.Streaming
                     Phase = Range(random, 0f, 12f),
                     Speed = kind == GlyphKind.Near ? Range(random, .006f, .018f) : Range(random, .1f, .38f),
                     Delay = i < 5 ? 0f : Range(random, 0f, .48f),
-                    BaseColor = color,
+                    BaseColor = PickGlyphColor(random, kind),
                 };
 
                 int vertex = i * 4;
@@ -332,6 +409,8 @@ namespace FixedCamVr.Streaming
             var random = new System.Random(RandomSeed ^ 0x71D3);
             for (int i = 0; i < InterferenceStripCount; i++)
             {
+                float vMin = Range(random, .30f, .48f);
+                float vMax = Range(random, .55f, .68f);
                 _strips[i] = new StripSpec
                 {
                     X = Range(random, -.82f, .78f),
@@ -341,14 +420,13 @@ namespace FixedCamVr.Streaming
                     Height = Range(random, .06f, .24f),
                     UMin = Range(random, 0f, .55f),
                     UMax = Range(random, .58f, 1f),
-                    VMin = Range(random, .08f, .82f),
+                    VMin = vMin,
+                    VMax = vMax,
                     Phase = Range(random, 0f, 8f),
-                    Alpha = Range(random, .24f, .65f),
+                    Alpha = Range(random, .10f, .30f),
                 };
                 int vertex = i * 4;
-                float vMax = Mathf.Min(1f, _strips[i].VMin + Range(random, .025f, .12f));
-                SetQuadUvs(_interferenceUvs, vertex, _strips[i].UMin, _strips[i].VMin,
-                    _strips[i].UMax, vMax);
+                SetQuadUvs(_interferenceUvs, vertex, _strips[i].UMin, vMin, _strips[i].UMax, vMax);
                 SetQuadTriangles(_interferenceTriangles, i, vertex);
             }
         }
@@ -356,12 +434,17 @@ namespace FixedCamVr.Streaming
         private void Layout(Vector2 size)
         {
             if (_screenRoot != null) SetWorldUnitLocalScale(_screenRoot);
-            float aspect = warningGraphic != null && warningGraphic.height > 0
-                ? warningGraphic.width / (float)warningGraphic.height
-                : 16f / 9f;
-            _warningWidth = size.x * 1.06f;
-            _warningHeight = _warningWidth / Mathf.Max(.1f, aspect);
+            float warningAspect = TextureAspect(warningGraphic, 1406f / 257f);
+            _warningWidth = size.x * 1.17f;
+            _warningHeight = _warningWidth / warningAspect;
+            float subtitleAspect = TextureAspect(subtitleGraphic, 805f / 107f);
+            _subtitleWidth = size.x * .72f;
+            _subtitleHeight = _subtitleWidth / subtitleAspect;
+            _symbolSize = size.y * 1.32f;
         }
+
+        private static float TextureAspect(Texture2D? texture, float fallback) =>
+            texture != null && texture.height > 0 ? texture.width / (float)texture.height : fallback;
 
         private void Render(float seconds)
         {
@@ -373,7 +456,10 @@ namespace FixedCamVr.Streaming
 
             SetRootsVisible(true);
             if (_screenRoot != null) SetWorldUnitLocalScale(_screenRoot);
+            UpdateSymbolMesh(seconds);
+            UpdateDecorationMesh(seconds);
             UpdateWarningMesh(seconds);
+            UpdateSubtitleMesh(seconds);
             UpdateGlyphMesh(seconds);
             UpdateInterferenceMesh(seconds);
         }
@@ -382,7 +468,7 @@ namespace FixedCamVr.Streaming
         {
             if (_warningMesh == null) return;
 
-            float expansion = Mathf.Lerp(1f, 1.08f, Smooth01((seconds - .75f) / 4.15f));
+            float expansion = Mathf.Lerp(1f, 1.035f, Smooth01((seconds - .75f) / 4.15f));
             for (int i = 0; i < WarningBandCount; i++)
             {
                 float xOffset = WarningBandOffset(seconds, i);
@@ -390,20 +476,97 @@ namespace FixedCamVr.Streaming
                 float yStep = WarningBandStep(seconds, i);
                 float alpha = WarningBandAlpha(seconds, i);
                 float width = _warningWidth * expansion * widthScale;
-                float y0 = (_warningHeight * (BandEdges[i] - .5f) + yStep) * expansion;
-                float y1 = (_warningHeight * (BandEdges[i + 1] - .5f) + yStep) * expansion;
-                float x = (-.035f * _screenSize.x + xOffset) * expansion;
-                SetQuadVertices(_warningVertices, i * 4, x, (y0 + y1) * .5f, -.004f,
-                    width, y1 - y0);
-                SetQuadColor(_warningColors, i * 4, new Color(1f, 1f, 1f, alpha));
+                float y0 = (_warningHeight * (WarningBandEdges[i] - .5f) + yStep) * expansion;
+                float y1 = (_warningHeight * (WarningBandEdges[i + 1] - .5f) + yStep) * expansion;
+                float x = (-.015f * _screenSize.x + xOffset) * expansion;
+                float y = .11f * _screenSize.y + (y0 + y1) * .5f;
+                SetQuadVertices(_warningVertices, i * 4, x, y, -.004f, width, y1 - y0);
+                SetQuadColor(_warningColors, i * 4, WithAlpha(AlertRed, alpha));
             }
             _warningMesh.SetVertices(_warningVertices);
             _warningMesh.SetColors(_warningColors);
         }
 
+        private void UpdateSubtitleMesh(float seconds)
+        {
+            if (_subtitleMesh == null) return;
+
+            for (int i = 0; i < SubtitleBandCount; i++)
+            {
+                float y0 = _subtitleHeight * (SubtitleBandEdges[i] - .5f);
+                float y1 = _subtitleHeight * (SubtitleBandEdges[i + 1] - .5f);
+                float offset = SubtitleBandOffset(seconds, i);
+                float alpha = SubtitleBandAlpha(seconds, i);
+                SetQuadVertices(_subtitleVertices, i * 4, .03f * _screenSize.x + offset,
+                    -.27f * _screenSize.y + (y0 + y1) * .5f, -.006f,
+                    _subtitleWidth, y1 - y0);
+                SetQuadColor(_subtitleColors, i * 4, WithAlpha(AlertRed, alpha));
+            }
+            _subtitleMesh.SetVertices(_subtitleVertices);
+            _subtitleMesh.SetColors(_subtitleColors);
+        }
+
+        private void UpdateSymbolMesh(float seconds)
+        {
+            if (_symbolMesh == null) return;
+
+            float reveal = Smooth01((seconds - .06f) / .035f);
+            float ending = 1f - Smooth01((seconds - 4.72f) / .72f);
+            float alpha = (.34f + Mathf.Sin(seconds * 2.1f) * .04f) * reveal * ending;
+            SetQuadVertices(_symbolVertices, 0, -.24f * _screenSize.x, .10f * _screenSize.y,
+                .006f, _symbolSize, _symbolSize);
+            SetQuadColor(_symbolColors, 0, WithAlpha(AlertRed, alpha));
+            _symbolMesh.SetVertices(_symbolVertices);
+            _symbolMesh.SetColors(_symbolColors);
+        }
+
+        private void UpdateDecorationMesh(float seconds)
+        {
+            if (_decorationMesh == null) return;
+
+            float reveal = Smooth01((seconds - .075f) / .045f);
+            float ending = 1f - Smooth01((seconds - 5.18f) / .82f);
+            float symbolX = -.24f * _screenSize.x;
+            float symbolY = .10f * _screenSize.y;
+            SetQuadVertices(_decorationVertices, 0, symbolX, symbolY + _symbolSize * .035f,
+                .005f, _symbolSize * .055f, _symbolSize * .30f);
+            SetQuadVertices(_decorationVertices, 4, symbolX, symbolY - _symbolSize * .185f,
+                .005f, _symbolSize * .068f, _symbolSize * .068f);
+            Color markColor = WithAlpha(AlertRed, .78f * reveal * ending);
+            SetQuadColor(_decorationColors, 0, markColor);
+            SetQuadColor(_decorationColors, 4, markColor);
+
+            SetHazardGroup(2, .34f * _screenSize.x, .43f * _screenSize.y,
+                .28f * _screenSize.x, .07f * _screenSize.y, seconds, .14f);
+            SetHazardGroup(8, -.30f * _screenSize.x, -.46f * _screenSize.y,
+                .18f * _screenSize.x, .07f * _screenSize.y, seconds, .2f);
+            _decorationMesh.SetVertices(_decorationVertices);
+            _decorationMesh.SetColors(_decorationColors);
+        }
+
+        private void SetHazardGroup(int firstQuad, float centerX, float centerY, float groupWidth,
+            float height, float seconds, float phase)
+        {
+            const int stripeCount = 6;
+            float reveal = Smooth01((seconds - .09f - phase * .05f) / .055f);
+            float ending = 1f - Smooth01((seconds - 5.35f - phase) / .72f);
+            float stripeWidth = groupWidth * .08f;
+            float spacing = groupWidth / (stripeCount - 1f);
+            float shear = height * .48f;
+            Color color = WithAlpha(AlertRed, .68f * reveal * ending);
+            for (int i = 0; i < stripeCount; i++)
+            {
+                float x = centerX - groupWidth * .5f + spacing * i;
+                int vertex = (firstQuad + i) * 4;
+                SetParallelogramVertices(_decorationVertices, vertex, x, centerY, .003f,
+                    stripeWidth, height, shear);
+                SetQuadColor(_decorationColors, vertex, color);
+            }
+        }
+
         private float WarningBandAlpha(float seconds, int band)
         {
-            float hardAppear = Mathf.Clamp01((seconds - .06f) / .03f);
+            float hardAppear = Mathf.Clamp01((seconds - .095f) / .03f);
             if (seconds < .2f) return hardAppear;
             if (seconds < .32f)
             {
@@ -427,6 +590,15 @@ namespace FixedCamVr.Streaming
             return 1f - collapse;
         }
 
+        private float SubtitleBandAlpha(float seconds, int band)
+        {
+            float arrival = .14f + band * .018f;
+            float reveal = Mathf.Clamp01((seconds - arrival) / .035f);
+            if (seconds >= .75f && seconds <= 2f) return 1f;
+            float ending = 1f - Smooth01((seconds - 5.08f - band * .13f) / .56f);
+            return reveal * ending;
+        }
+
         private float WarningBandOffset(float seconds, int band)
         {
             if (IsReadableWindow(seconds)) return 0f;
@@ -442,13 +614,24 @@ namespace FixedCamVr.Streaming
             float eventTime = seconds * 2.65f - eventIndex;
             int selected = PositiveHash(eventIndex * 17 + 5) % WarningBandCount;
             float micro = 0f;
-            if (eventTime < .12f && (band == selected || band == (selected + 1) % WarningBandCount))
+            if (eventTime < .09f && (band == selected || band == (selected + 1) % WarningBandCount))
             {
-                float pulse = Mathf.Sin(eventTime / .12f * Mathf.PI);
+                float pulse = Mathf.Sin(eventTime / .09f * Mathf.PI);
                 float sign = (PositiveHash(eventIndex * 31) & 1) == 0 ? -1f : 1f;
-                micro = sign * pulse * _screenSize.x * (.018f + .012f * (band & 1));
+                micro = sign * pulse * _screenSize.x * (.006f + .005f * (band & 1));
             }
             return tear + micro;
+        }
+
+        private float SubtitleBandOffset(float seconds, int band)
+        {
+            if (seconds >= .75f && seconds <= 2f) return 0f;
+            float tear = LargeTear(seconds, 2.05f, 2.18f, band, 4) * .72f +
+                LargeTear(seconds, 3.65f, 3.79f, band, 9) * .72f;
+            if (seconds < 5.08f) return tear;
+            float collapse = Smooth01((seconds - 5.08f - band * .13f) / .56f);
+            float direction = (band & 1) == 0 ? -1f : 1f;
+            return tear + direction * collapse * _screenSize.x * (.08f + band * .025f);
         }
 
         private float WarningBandWidthScale(float seconds, int band)
@@ -461,8 +644,8 @@ namespace FixedCamVr.Streaming
             }
             int eventIndex = Mathf.FloorToInt(seconds * 2.65f);
             float eventTime = seconds * 2.65f - eventIndex;
-            if (eventTime < .12f && band == PositiveHash(eventIndex * 17 + 5) % WarningBandCount)
-                return 1f + Mathf.Sin(eventTime / .12f * Mathf.PI) * .16f;
+            if (eventTime < .09f && band == PositiveHash(eventIndex * 17 + 5) % WarningBandCount)
+                return 1f + Mathf.Sin(eventTime / .09f * Mathf.PI) * .06f;
             return 1f;
         }
 
@@ -489,8 +672,7 @@ namespace FixedCamVr.Streaming
             return Mathf.Sin((seconds - start) / (end - start) * Mathf.PI);
         }
 
-        private static bool IsReadableWindow(float seconds) =>
-            (seconds >= .75f && seconds <= 1.25f) || (seconds >= 1.4f && seconds <= 2f);
+        private static bool IsReadableWindow(float seconds) => seconds >= .75f && seconds <= 2f;
 
         private void UpdateGlyphMesh(float seconds)
         {
@@ -577,14 +759,14 @@ namespace FixedCamVr.Streaming
             {
                 StripSpec strip = _strips[i];
                 float ending = 1f - Smooth01((seconds - 6.05f - strip.Phase * .065f) / .34f);
-                float pulse = .34f + .66f * StepPulse(seconds, strip.Phase);
+                float pulse = .58f + .42f * StepPulse(seconds, strip.Phase);
                 float x = strip.X * _screenSize.x;
                 float y = strip.Y * _screenSize.y + Mathf.Sin(seconds * .18f + strip.Phase) * .012f;
                 float depth = Mathf.Min(strip.Depth, _maximumFrontDepth);
                 SetQuadVertices(_interferenceVertices, i * 4, x, y, -depth,
                     strip.Width * _screenSize.x, strip.Height);
                 SetQuadColor(_interferenceColors, i * 4,
-                    new Color(1f, .33f, .27f, strip.Alpha * reveal * ending * pulse));
+                    new Color(1f, .06f, .085f, strip.Alpha * reveal * ending * pulse));
             }
             _interferenceMesh.SetVertices(_interferenceVertices);
             _interferenceMesh.SetColors(_interferenceColors);
@@ -650,6 +832,18 @@ namespace FixedCamVr.Streaming
             vertices[index + 3] = new Vector3(x + halfWidth, y + halfHeight, z);
         }
 
+        private static void SetParallelogramVertices(Vector3[] vertices, int index, float x, float y,
+            float z, float width, float height, float shear)
+        {
+            float halfWidth = width * .5f;
+            float halfHeight = height * .5f;
+            float halfShear = shear * .5f;
+            vertices[index] = new Vector3(x - halfWidth - halfShear, y - halfHeight, z);
+            vertices[index + 1] = new Vector3(x + halfWidth - halfShear, y - halfHeight, z);
+            vertices[index + 2] = new Vector3(x - halfWidth + halfShear, y + halfHeight, z);
+            vertices[index + 3] = new Vector3(x + halfWidth + halfShear, y + halfHeight, z);
+        }
+
         private static void SetQuadUvs(Vector2[] uvs, int index, float u0, float v0, float u1, float v1)
         {
             uvs[index] = new Vector2(u0, v0);
@@ -677,6 +871,12 @@ namespace FixedCamVr.Streaming
             colors[index + 3] = color;
         }
 
+        private static Color WithAlpha(Color color, float alpha)
+        {
+            color.a = alpha;
+            return color;
+        }
+
         private static Vector2 ClusterPosition(int cluster, float x, float y)
         {
             return cluster switch
@@ -687,10 +887,8 @@ namespace FixedCamVr.Streaming
             };
         }
 
-        private static float BundleX(int bundle)
-        {
-            return BundlePositions[Mathf.Clamp(bundle, 0, BundlePositions.Length - 1)];
-        }
+        private static float BundleX(int bundle) =>
+            BundlePositions[Mathf.Clamp(bundle, 0, BundlePositions.Length - 1)];
 
         private static int ChooseCluster(System.Random random)
         {
@@ -701,9 +899,13 @@ namespace FixedCamVr.Streaming
 
         private static Color PickGlyphColor(System.Random random, GlyphKind kind)
         {
-            float alpha = kind == GlyphKind.Near
-                ? Range(random, .22f, .36f)
-                : kind == GlyphKind.Far ? Range(random, .18f, .48f) : Range(random, .28f, .72f);
+            float alpha = kind switch
+            {
+                GlyphKind.Near => Range(random, .12f, .20f),
+                GlyphKind.Far => Range(random, .12f, .30f),
+                GlyphKind.Middle => Range(random, .22f, .52f),
+                _ => Range(random, .16f, .38f),
+            };
             int choice = random.Next(10);
             if (choice < 4) return new Color(.93f, .055f, .07f, alpha);
             if (choice < 8) return new Color(.34f, .014f, .022f, alpha);
@@ -759,18 +961,31 @@ namespace FixedCamVr.Streaming
             DestroySafe(_screenRoot != null ? _screenRoot.gameObject : null);
             DestroySafe(_spatialRoot != null ? _spatialRoot.gameObject : null);
             DestroySafe(_warningMaterial);
+            DestroySafe(_subtitleMaterial);
+            DestroySafe(_symbolMaterial);
+            DestroySafe(_decorationMaterial);
             DestroySafe(_glyphMaterial);
             DestroySafe(_interferenceMaterial);
             DestroySafe(_warningMesh);
+            DestroySafe(_subtitleMesh);
+            DestroySafe(_symbolMesh);
+            DestroySafe(_decorationMesh);
             DestroySafe(_glyphMesh);
             DestroySafe(_interferenceMesh);
             _screenRoot = null;
             _spatialRoot = null;
             _warningTransform = null;
+            _symbolTransform = null;
             _warningMaterial = null;
+            _subtitleMaterial = null;
+            _symbolMaterial = null;
+            _decorationMaterial = null;
             _glyphMaterial = null;
             _interferenceMaterial = null;
             _warningMesh = null;
+            _subtitleMesh = null;
+            _symbolMesh = null;
+            _decorationMesh = null;
             _glyphMesh = null;
             _interferenceMesh = null;
         }
@@ -817,6 +1032,7 @@ namespace FixedCamVr.Streaming
             public float UMin;
             public float UMax;
             public float VMin;
+            public float VMax;
             public float Phase;
             public float Alpha;
         }

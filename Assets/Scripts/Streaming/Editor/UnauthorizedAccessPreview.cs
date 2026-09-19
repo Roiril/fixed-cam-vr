@@ -22,8 +22,10 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(AssetDir);
             Directory.CreateDirectory(Path.GetDirectoryName(PrefabPath)!);
             AssetDatabase.Refresh();
-            var texture = ImportTexture("warning-v2.png");
-            var interference = ImportTexture("signal-fragments-v2.png");
+            var texture = ImportTexture("wordmark-v3.png");
+            var subtitle = ImportTexture("subtitle-v3.png");
+            var symbol = ImportTexture("triangle-v3.png");
+            var interference = ImportTexture("signal-tear-v3.png");
             var shader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/UnauthorizedAccessFx.shader");
             if (shader == null || ShaderUtil.ShaderHasError(shader))
                 throw new InvalidOperationException("UnauthorizedAccessFx shader missing or invalid");
@@ -42,7 +44,7 @@ namespace FixedCamVr.Streaming.EditorTools
             try
             {
                 var effect = go.AddComponent<UnauthorizedAccessEffect>();
-                effect.Configure(material, texture, interference);
+                effect.Configure(material, texture, subtitle, symbol, interference);
                 PrefabUtility.SaveAsPrefabAsset(go, PrefabPath);
             }
             finally { Object.DestroyImmediate(go); }
@@ -59,6 +61,7 @@ namespace FixedCamVr.Streaming.EditorTools
             importer.textureType = TextureImporterType.Default;
             importer.alphaSource = TextureImporterAlphaSource.FromInput;
             importer.alphaIsTransparency = true;
+            importer.npotScale = TextureImporterNPOTScale.None;
             importer.mipmapEnabled = true;
             importer.wrapMode = TextureWrapMode.Clamp;
             importer.filterMode = FilterMode.Trilinear;
@@ -68,7 +71,7 @@ namespace FixedCamVr.Streaming.EditorTools
             android.name = "Android";
             android.overridden = true;
             android.maxTextureSize = 2048;
-            android.format = TextureImporterFormat.ASTC_6x6;
+            android.format = TextureImporterFormat.ASTC_4x4;
             importer.SetPlatformTextureSettings(android);
             importer.SaveAndReimport();
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
@@ -107,7 +110,6 @@ namespace FixedCamVr.Streaming.EditorTools
                 var screen = Child(stage.transform, "Screen anchor");
                 screen.transform.position = new Vector3(0, 1.6f, 3);
                 var size = new Vector2(2.7f, 1.51875f);
-                var material = AssetDatabase.LoadAssetAtPath<Material>(AssetDir + "/ErrorFx.mat");
                 background = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
                 background.SetColor("_BaseColor", new Color(0.012f, 0.013f, 0.017f, 1));
                 // A neutral calibration image, not a fictional camera feed.
@@ -177,6 +179,10 @@ namespace FixedCamVr.Streaming.EditorTools
             finally
             {
                 RenderTexture.active = oldRt;
+                // Release the effect while its screen anchor is still alive.
+                // Destroying the whole stage first can destroy the same screen root twice.
+                foreach (var effect in stage.GetComponentsInChildren<UnauthorizedAccessEffect>(true))
+                    Object.DestroyImmediate(effect);
                 Object.DestroyImmediate(stage);
                 EditorSceneManager.ClosePreviewScene(scene);
                 if (background != null) Object.DestroyImmediate(background);
