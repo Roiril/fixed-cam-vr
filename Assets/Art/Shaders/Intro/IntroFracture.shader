@@ -19,6 +19,7 @@ Shader "FixedCamVr/IntroFracture"
         _EdgeEmphasis("Edge emphasis", Range(0, 1)) = 1
         // 0 で旧描画（くすんだガラス）と厳密一致。計器の校正に使う（1 が通常値）。
         _Crystal("Crystal face", Range(0, 1)) = 1
+        _Glass("Polished glass", Range(0, 1)) = 1
         _SparkLit("Spark reflections", Range(0, 1)) = 1
         _VeilSize("Veil size m (xy) / distance (z)", Vector) = (2, 2, 0.3, 0)
         _ScreenCenter("Screen center world", Vector) = (0, 0, 2, 0)
@@ -120,6 +121,10 @@ Shader "FixedCamVr/IntroFracture"
             float _PhotoContrast;
             float _EdgeEmphasis;
             float _Crystal;
+            float _Glass;
+            float _ColorMask;
+            float4 _FrozenLeftTex_TexelSize;
+            float4 _FrozenRightTex_TexelSize;
             float _SparkLit;
             float4 _VeilSize;
             float4 _ScreenCenter;
@@ -436,6 +441,8 @@ Shader "FixedCamVr/IntroFracture"
                 float edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
                 float field = smoothstep(0.0, 0.018, edge) * step(1e-5, valid);
                 clip(field - 1e-4);
+                // 深度だけの描画も同じ撮影範囲を切る。材質の計算と写真参照は不要。
+                if (_ColorMask < 0.5) return 0.0;
                 float2 sampleUv = saturate(uv);
                 float3 photo = unity_StereoEyeIndex == 0
                     ? SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, sampleUv).rgb
@@ -531,12 +538,17 @@ Shader "FixedCamVr/IntroFracture"
                     float3 sparkHalf = SafeNormalize(
                         SafeNormalize(toSpark, normal) + viewDirection, normal);
                     // 面ごとの閃き。平らな片は半ベクトルが揃った瞬間に面ごと光るので、粒が通ると片が順に瞬く。
-                    sparkLit += SparkCoreColor * pow(saturate(dot(normal, sparkHalf)), 24.0)
-                              * 1.7 * sparkSample.w / (1.0 + sparkDistance / 1.0);
+                    float sparkFacing = saturate(dot(normal, sparkHalf));
+                    float broadSpark = pow(sparkFacing, 24.0) * 1.7;
+                    // 磨いた面では光の粒を小さく鋭く返す。面全体を白ませる照りを減らす。
+                    float focusedSpark = pow(sparkFacing, 192.0) * 5.4
+                        + pow(sparkFacing, 40.0) * 0.14;
+                    sparkLit += SparkCoreColor * lerp(broadSpark, focusedSpark, saturate(_Glass * _Crystal))
+                              * sparkSample.w / (1.0 + sparkDistance / 1.0);
                 }
                 // 柔らかい照りは弱く（面全体に一様に乗るとコントラストが潰れて霜の付いた樹脂になる）。
-                sparkLit += SparkCoreColor * i.sparkSoft.x * 0.05;
-                sparkLit = min(sparkLit, 0.8) * detail * _SparkLit;
+                sparkLit += SparkCoreColor * i.sparkSoft.x * lerp(0.05, 0.008, saturate(_Glass * _Crystal));
+                sparkLit = min(sparkLit, lerp(0.8, 1.1, saturate(_Glass * _Crystal))) * detail * _SparkLit;
 
                 // 実景の明暗は残す。飛んでいる間はわずかに暖かく、着地で素の写真へ戻る。
                 color = color * shade * lerp(float3(1.0, 1.0, 1.0),
@@ -565,6 +577,89 @@ Shader "FixedCamVr/IntroFracture"
                             + sparkLit * 0.5) * field;
                 }
 
+                // 磨いたガラス。背景のパススルーはUnityの色バッファに無いので、
+                // 破断時に保持した写真を透過像に使う。元の対応UVから数画素だけ曲げる。
+                // alphaを開けて現在の現実を見せる処理ではない。
+                float glass = saturate(_Glass * _Crystal);
+                float glassFlight = glass * detail;
+                float3 glassEdgeColor = rimColor;
+                if (glassFlight > 0.0001)
+                {
+                    float3 opticalNormal = dot(normal, viewDirection) >= 0.0 ? normal : -normal;
+                    float nv = saturate(dot(opticalNormal, viewDirection));
+                    float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
+                    float3 ray = refract(-viewDirection, opticalNormal, 0.666667);
+                    float3 bend = ray + viewDirection;
+                    float3 captureRight = _CaptureHeadToWorld._m00_m10_m20;
+                    float3 captureUp = _CaptureHeadToWorld._m01_m11_m21;
+                    float2 bendPlane = float2(dot(bend, captureRight), dot(bend, captureUp));
+                    float2 texel = unity_StereoEyeIndex == 0
+                        ? abs(_FrozenLeftTex_TexelSize.xy) : abs(_FrozenRightTex_TexelSize.xy);
+                    float bevel = exp(-edgeDistance / 0.00065);
+                    float uvGuard = smoothstep(0.005, 0.035, edge);
+                    float2 offset = bendPlane * texel * (5.0 + 3.0 * bevel) * detail * uvGuard;
+                    // RGBの差は屈折量の12%。色を面全体へ塗らない。
+                    float2 uvR = clamp(sampleUv + offset * 1.12, texel, 1.0 - texel);
+                    float2 uvG = clamp(sampleUv + offset, texel, 1.0 - texel);
+                    float2 uvB = clamp(sampleUv + offset * 0.88, texel, 1.0 - texel);
+                    float3 transmitted;
+                    if (unity_StereoEyeIndex == 0)
+                    {
+                        transmitted.r = SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, uvR).r;
+                        transmitted.g = SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, uvG).g;
+                        transmitted.b = SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, uvB).b;
+                    }
+                    else
+                    {
+                        transmitted.r = SAMPLE_TEXTURE2D(_FrozenRightTex, sampler_FrozenRightTex, uvR).r;
+                        transmitted.g = SAMPLE_TEXTURE2D(_FrozenRightTex, sampler_FrozenRightTex, uvG).g;
+                        transmitted.b = SAMPLE_TEXTURE2D(_FrozenRightTex, sampler_FrozenRightTex, uvB).b;
+                    }
+                    float transmittedLuma = dot(transmitted, float3(0.299, 0.587, 0.114));
+                    // 元の像を薄く残し、反射のない部分を暗く澄ませる。
+                    float3 body = lerp(transmittedLuma.xxx, transmitted, 0.24)
+                        * (0.085 + 0.045 * nv) * float3(1.0, 0.985, 0.96);
+                    float3 reflected = reflect(-viewDirection, opticalNormal);
+                    // 撮影時の部屋に固定した二つの長い光源。回転と視点移動で反射だけが流れる。
+                    // 景色を作る環境マップや、毎フレーム動く写真の再投影は使わない。
+                    float3 r = mul(transpose((float3x3)_CaptureHeadToWorld), reflected);
+                    float stripCoord = dot(r, normalize(float3(0.72, 0.62, 0.18)))
+                        + (i.edgeDistances.x - i.edgeDistances.y) * 3.0;
+                    float stripAa = max(fwidth(stripCoord), 0.004);
+                    float strip = 1.0 - smoothstep(0.004, 0.012 + stripAa, abs(stripCoord - 0.22));
+                    float softStrip = exp(-abs(stripCoord - 0.22) * 26.0) * 0.025;
+                    float secondStrip = 1.0 - smoothstep(0.003, 0.009 + stripAa,
+                        abs(dot(r, normalize(float3(-0.38, 0.91, 0.16))) + 0.36));
+                    float whiteReflection = (strip * 2.4 + secondStrip * 0.85 + softStrip)
+                        * (0.42 + 0.58 * fresnel);
+                    float3 white = float3(1.0, 0.975, 0.92);
+                    // 分散は反射帯と研磨した縁の小さな色ずれに限定する。
+                    float spectrumPhase = stripCoord * 7.0 + nv * 2.0 + bevel * 0.4;
+                    float3 spectrum = 0.5 + 0.5 * cos(6.2831853
+                        * (spectrumPhase + float3(0.0, 0.333333, 0.666667)));
+                    glassEdgeColor = lerp(white, spectrum, 0.14 * bevel);
+                    float rimReflection = ridge * (0.28 + 0.52 * fresnel)
+                        + bevel * (0.026 + 0.065 * fresnel);
+                    float innerEdge = exp(-abs(edgeDistance - 0.0009) / max(aa, 0.00010))
+                        * (0.08 + 0.16 * fresnel);
+                    float3 polished = body * (1.0 - 0.65 * fresnel)
+                        + white * whiteReflection
+                        + glassEdgeColor * (rimReflection + innerEdge)
+                        + spectrum * (strip * 0.05 + bevel * fresnel * 0.04)
+                        + sparkLit * 0.72
+                        + white * (0.18 * i.light.y + 0.14 * shock + 0.10 * i.light.z);
+                    if (i.surface >= 0.5)
+                    {
+                        // 裏面にも像と反射を残す。側面は薄い光の切断面にする。
+                        polished = i.surface < 1.5 ? polished * 0.76
+                            : body * 0.35 + glassEdgeColor * (0.10 + 0.48 * fresnel)
+                                + white * whiteReflection + sparkLit * 0.5;
+                    }
+                    // 8bitの白へ張り付く面を避けつつ、小さい鏡面の芯は明るく保つ。
+                    polished = min(polished, 0.94) * field;
+                    color = lerp(color, polished, glassFlight);
+                }
+
                 // 写真と縁を別々の straight-alpha 面として合成する。写真が消えた場所へ灰色の面を戻さない。
                 float photoAlpha = saturate(1.0 - _ScreenFade) * (1.0 - i.detail.w);
                 float oldAlpha = photoAlpha;
@@ -574,6 +669,10 @@ Shader "FixedCamVr/IntroFracture"
                 float flightEdge = saturate(
                     strongRidge * (0.32 + 0.38 * grazing + 0.28 * i.light.y + 0.22 * shock)
                     + strongBand * (0.16 + 0.24 * grazing + 0.18 * i.light.w)) * detail;
+                // 飛行中だけ、広い乳白色の縁を細い二重の研磨面へ。着地後の消去は共通。
+                float polishedEdge = saturate(ridge * (0.32 + 0.38 * grazing)
+                    + exp(-edgeDistance / 0.00055) * (0.045 + 0.09 * grazing)) * detail;
+                flightEdge = lerp(flightEdge, polishedEdge, glass);
                 // 戻った小片が中央へ密集しても映像を隠さないよう、着地後は明るさを保って幅を絞る。
                 float landedFrontEdge = saturate(ridge * 0.72 + band * 0.16)
                     * i.landed * (1.0 - step(0.5, i.surface));
@@ -597,7 +696,7 @@ Shader "FixedCamVr/IntroFracture"
 
                 float edgeAlpha = saturate(max(flightEdge, landedFrontEdge) * field) * radialFade;
                 float unionAlpha = edgeAlpha + photoAlpha * (1.0 - edgeAlpha);
-                float3 unionColor = (rimColor * edgeAlpha
+                float3 unionColor = (lerp(rimColor, glassEdgeColor, glassFlight) * edgeAlpha
                     + color * photoAlpha * (1.0 - edgeAlpha)) / max(unionAlpha, 1e-5);
                 float4 oldResult = float4(color, oldAlpha);
                 float4 emphasizedResult = float4(unionColor, unionAlpha);

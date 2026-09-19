@@ -65,6 +65,8 @@ namespace FixedCamVr.Streaming
         private static readonly int SparkId = Shader.PropertyToID("_Spark");
         /// <summary>破片のガラスらしさ（粒と対で足した表現・診断で 0）。</summary>
         private static readonly int CrystalId = Shader.PropertyToID("_Crystal");
+        /// <summary>破片のガラス質感（診断で 0）。</summary>
+        private static readonly int GlassId = Shader.PropertyToID("_Glass");
         /// <summary>代表の粒が破片を照らし返す量（診断で 0）。</summary>
         private static readonly int SparkLitId = Shader.PropertyToID("_SparkLit");
         private static readonly int FrozenLeftTexId = Shader.PropertyToID("_FrozenLeftTex");
@@ -235,6 +237,9 @@ namespace FixedCamVr.Streaming
         /// 診断フラグ（<c>xpnosparkle</c>）が立っていれば、この値に関わらず 3 つとも 0 として扱う。
         /// </summary>
         public float DiagnosticCrystal { get; set; } = 1f;
+
+        /// <summary>探針用。破片のガラス質感（<c>_Glass</c>）。</summary>
+        public float DiagnosticGlass { get; set; } = 1f;
 
         /// <summary>探針用。代表の粒が破片を照らし返す量（<c>_SparkLit</c>）。</summary>
         public float DiagnosticSparkLit { get; set; } = 1f;
@@ -943,6 +948,7 @@ namespace FixedCamVr.Streaming
                 _fractureBlock.Clear();
                 _fractureBlock.SetFloat(ShatterId, shatter);
                 _fractureBlock.SetFloat(CrystalId, crystal);
+                _fractureBlock.SetFloat(GlassId, DiagnosticGlass);
                 _fractureBlock.SetFloat(SparkLitId, sparkLit);
                 _fractureBlock.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
                 _fractureBlock.SetFloat(RevealId, HasFrozenFrame ? Mathf.Clamp01(w.reveal) : 0f);
@@ -983,6 +989,7 @@ namespace FixedCamVr.Streaming
                     _peripheralBlock.Clear();
                     _peripheralBlock.SetFloat(ShatterId, shatter);
                     _peripheralBlock.SetFloat(CrystalId, crystal);
+                    _peripheralBlock.SetFloat(GlassId, DiagnosticGlass);
                     _peripheralBlock.SetFloat(SparkLitId, sparkLit);
                     _peripheralBlock.SetMatrix(CaptureHeadToWorldId, _captureHeadToWorld);
                     _peripheralBlock.SetMatrix(LeftWorldToUvId, _leftWorldToUv);

@@ -142,6 +142,8 @@ namespace FixedCamVr.Streaming.EditorTools
             // 0235 の校正: `-Set sparkle=0` で 198 コマを**結晶化も粒も止めて**焼く。
             // 旧版（0235 前）の master で撮ったコマと画素で突き合わせるための版で、既定は本番の絵。
             bool sparkleOff = string.Equals(EditorCliArgs.Get("sparkle"), "0", StringComparison.Ordinal);
+            // ガラス質感の校正: `-Set glass=0` で通常ショットと連番を追加前の絵へ戻す。
+            bool glassOff = string.Equals(EditorCliArgs.Get("glass"), "0", StringComparison.Ordinal);
             string framesDir = Path.Combine(outDir, FramesDirName);
             if (renderFrames)
             {
@@ -162,6 +164,7 @@ namespace FixedCamVr.Streaming.EditorTools
             try
             {
                 stage = Stage.Create(outDir);
+                stage.SetGlass(!glassOff);
                 foreach (Shot shot in BuildShots()) stage.Render(shot, saved);
                 if (string.Equals(EditorCliArgs.Get("peripheral"), "1", StringComparison.Ordinal))
                     stage.VerifyPeripheralFracture(saved);
@@ -183,6 +186,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     stage.VerifyFrozenFrame(saved);
                     stage.VerifyEdgeDissolve(saved);
                     stage.VerifySparkle(saved);
+                    stage.VerifyGlass(saved, restoreOn: !glassOff);
                     WriteMeshEvidence(outDir);
                 }
             }
@@ -893,6 +897,83 @@ namespace FixedCamVr.Streaming.EditorTools
                 _sparkleFramesOn = on;
                 float k = on ? 1f : 0f;
                 SetSparkle(k, k, k);
+            }
+
+            /// <summary>通常ショットと連番へ配るガラス質感。<c>-Set glass=0</c> が切る。</summary>
+            public void SetGlass(bool on)
+            {
+                _veil.DiagnosticGlass = on ? 1f : 0f;
+            }
+
+            /// <summary>
+            /// ガラス質感が破砕中だけ画へ出ることと、凍結した元絵が質感へ寄与することを実画素で測る。
+            /// </summary>
+            public void VerifyGlass(List<string> saved, bool restoreOn)
+            {
+                float[] probes = { 0.03f, 0.30f, 0.995f };
+                string[] names = { "before", "active", "finished" };
+                var deltas = new float[probes.Length];
+                Texture2D? previousOverride = _freezeSourceOverride;
+                var black = new Texture2D(4, 4, TextureFormat.RGBA32, false)
+                { hideFlags = HideFlags.HideAndDontSave };
+                var blackPixels = new Color32[16];
+                for (int i = 0; i < blackPixels.Length; i++) blackPixels[i] = new Color32(0, 0, 0, 255);
+                black.SetPixels32(blackPixels);
+                black.Apply();
+                float sourceDelta = 0f;
+                try
+                {
+                    for (int i = 0; i < probes.Length; i++)
+                    {
+                        float p = probes[i];
+                        int label = Mathf.RoundToInt(p * 1000f);
+                        SetGlass(false);
+                        Render(new Shot(IntroStage.Frame, 4, "glass_reset", 0f, label), saved);
+                        Render(new Shot(IntroStage.Frame, 4, "glass_off", p, label), saved);
+                        Color32[] off = _sceneTex.GetPixels32();
+                        SetGlass(true);
+                        Render(new Shot(IntroStage.Frame, 4, "glass_on", p, label), saved);
+                        deltas[i] = MeanPixelDifference(off, _sceneTex.GetPixels32());
+                    }
+
+                    SetGlass(true);
+                    _freezeSourceOverride = black;
+                    Render(new Shot(IntroStage.Frame, 4, "glass_input_reset", 0f, 300), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "glass_input_black", 0.30f, 300), saved);
+                    Color32[] blackInput = _sceneTex.GetPixels32();
+                    _freezeSourceOverride = null;
+                    Render(new Shot(IntroStage.Frame, 4, "glass_input_reset", 0f, 301), saved);
+                    Render(new Shot(IntroStage.Frame, 4, "glass_input_normal", 0.30f, 300), saved);
+                    sourceDelta = MeanPixelDifference(blackInput, _sceneTex.GetPixels32());
+                }
+                finally
+                {
+                    _freezeSourceOverride = previousOverride;
+                    UnityEngine.Object.DestroyImmediate(black);
+                    SetGlass(restoreOn);
+                    Render(new Shot(IntroStage.Frame, 4, "glass_done", 0f, 0), saved);
+                }
+
+                bool beforeOk = deltas[0] <= SparkleQuietDelta;
+                bool activeOk = deltas[1] > SparkleQuietDelta;
+                bool finishedOk = deltas[2] <= SparkleQuietDelta;
+                bool sourceOk = sourceDelta > SparkleQuietDelta;
+                bool ok = beforeOk && activeOk && finishedOk && sourceOk;
+                var proof = new System.Text.StringBuilder("{");
+                proof.Append(FormattableString.Invariant(
+                    $"\"threshold\":{SparkleQuietDelta:0.000000},\"samples\":["));
+                proof.Append(FormattableString.Invariant(
+                    $"{{\"name\":\"{names[0]}\",\"p\":{probes[0]:0.000},\"pixelDelta\":{deltas[0]:0.000000},\"ok\":{(beforeOk ? "true" : "false")}}},"));
+                proof.Append(FormattableString.Invariant(
+                    $"{{\"name\":\"{names[1]}\",\"p\":{probes[1]:0.000},\"pixelDelta\":{deltas[1]:0.000000},\"ok\":{(activeOk ? "true" : "false")}}},"));
+                proof.Append(FormattableString.Invariant(
+                    $"{{\"name\":\"{names[2]}\",\"p\":{probes[2]:0.000},\"pixelDelta\":{deltas[2]:0.000000},\"ok\":{(finishedOk ? "true" : "false")}}}],"));
+                proof.Append(FormattableString.Invariant(
+                    $"\"sourceContribution\":{{\"p\":0.300,\"pixelDelta\":{sourceDelta:0.000000},\"ok\":{(sourceOk ? "true" : "false")}}},"));
+                proof.Append($"\"ok\":{(ok ? "true" : "false")}}}");
+                File.WriteAllText(Path.Combine(_outDir, "glass-proof.json"), proof.ToString());
+                Debug.Log($"[IntroViz] glass proof: ok={ok} before={deltas[0]:F4} active={deltas[1]:F4} "
+                          + $"finished={deltas[2]:F4} source={sourceDelta:F4}");
             }
 
             /// <summary>

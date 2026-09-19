@@ -7,6 +7,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
         _EdgeEmphasis("Edge emphasis", Range(0, 1)) = 1
         // 0 で旧描画（くすんだガラス）と厳密一致。中央の IntroFracture と同じ既定（1）。
         _Crystal("Crystal face", Range(0, 1)) = 1
+        _Glass("Polished glass", Range(0, 1)) = 1
         _SparkLit("Spark reflections", Range(0, 1)) = 1
         [HideInInspector] _SrcBlend("Source blend", Float) = 0
         [HideInInspector] _DstBlend("Destination blend", Float) = 5
@@ -61,6 +62,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 // x = 破断の受け渡し / y = 吸引の進み / z = 退場 / w = 頭中心の視線と法線の内積（きらめきの位相・両眼一致）
                 nointerpolation float4 phase : TEXCOORD4;
                 float4 surface : TEXCOORD5;
+                float2 reflection : TEXCOORD6;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -73,6 +75,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
             float _Mode;
             float _EdgeEmphasis;
             float _Crystal;
+            float _Glass;
             float _SparkLit;
             float4x4 _CaptureHeadToWorld;
             float4x4 _LeftWorldToUv;
@@ -242,6 +245,18 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                     sparkSoft += sparkIntensity / (1.0 + dot(toSpark, toSpark) / 0.25);
                 }
                 baseColor += SparkCoreColor * min(sparkSoft * 0.12, 0.30) * (1.0 - travel) * _SparkLit;
+                // 周辺は既存の頂点サンプルを再利用する。画素の写真参照は増やさない。
+                float glass = saturate(_Glass * _Crystal);
+                float3 glassBody = lerp(luma.xxx, (leftColor + rightColor) * 0.5, 0.15)
+                    * float3(0.13, 0.125, 0.118)
+                    + SparkCoreColor * min(sparkSoft * 0.025, 0.065) * _SparkLit;
+                baseColor = lerp(baseColor, glassBody, glass * (1.0 - travel));
+                float3 opticalNormal = dot(normal, viewDirection) >= 0.0 ? normal : -normal;
+                float3 reflected = reflect(-viewDirection, opticalNormal);
+                float3 reflectionLocal = mul(transpose((float3x3)_CaptureHeadToWorld), reflected);
+                o.reflection = float2(
+                    dot(reflectionLocal, normalize(float3(0.72, 0.62, 0.18))),
+                    dot(reflectionLocal, normalize(float3(-0.38, 0.91, 0.16))));
                 float rim = 0.42 + 0.38 * grazing;
                 o.surface = float4(baseColor, rim);
                 o.edges = v.edges;
@@ -304,6 +319,31 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float caustic = exp(-pow((frac(i.edges.x * 3.0 + i.edges.y * 1.7 + i.phase.w) - 0.5) * 11.0, 2.0));
                 crystal += SparkCoreColor * caustic * 0.08;
                 color += crystal * flying * _Crystal;
+                float glass = saturate(_Glass * _Crystal);
+                if (glass > 0.0001)
+                {
+                    float fresnel = 0.04 + 0.96 * pow(1.0 - saturate(abs(i.phase.w)), 5.0);
+                    float aa = max(fwidth(edgeDistance), 0.0001);
+                    float ridge = 1.0 - smoothstep(0.0012, 0.0012 + aa * 1.15, edgeDistance);
+                    float bevel = exp(-edgeDistance / 0.0055);
+                    float inner = exp(-abs(edgeDistance - 0.009) / max(aa, 0.001));
+                    float stripCoord = i.reflection.x + (i.edges.x - i.edges.y) * 0.28;
+                    float stripAa = max(fwidth(stripCoord), 0.004);
+                    float strip = 1.0 - smoothstep(0.004, 0.012 + stripAa, abs(stripCoord - 0.22));
+                    float secondary = 1.0 - smoothstep(0.003, 0.009 + stripAa, abs(i.reflection.y + 0.36));
+                    float3 white = float3(1.0, 0.975, 0.92);
+                    float3 spectrum = 0.5 + 0.5 * cos(6.2831853
+                        * (stripCoord * 7.0 + abs(i.phase.w) * 2.0 + bevel * 0.4
+                            + float3(0.0, 0.333333, 0.666667)));
+                    float3 edgeTint = lerp(white, spectrum, 0.14 * bevel);
+                    float polishedRim = ridge * (0.40 + 0.42 * fresnel)
+                        + bevel * (0.035 + 0.10 * fresnel) + inner * (0.08 + 0.16 * fresnel);
+                    float3 polished = i.surface.rgb * (1.0 - 0.65 * fresnel)
+                        + edgeTint * polishedRim
+                        + white * (strip * 2.4 + secondary * 0.85) * (0.42 + 0.58 * fresnel)
+                        + spectrum * (strip * 0.05 + bevel * fresnel * 0.04);
+                    color = lerp(color, min(polished, 0.94), glass * (1.0 - i.phase.y));
+                }
                 float alpha = i.phase.x * i.phase.z * outsidePhoto * screenClear;
                 return float4(color, alpha);
             }
