@@ -6,6 +6,7 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
         _Color("Color", Color) = (1, 1, 1, 1)
         _Mode("Mode", Float) = 0
         _Strength("Strength", Float) = 1
+        _ReadMaskStrength("Read area attenuation", Float) = 0
     }
     SubShader
     {
@@ -30,6 +31,12 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 half4 _Color;
                 float _Mode;
                 float _Strength;
+                float _ReadMaskStrength;
+                float4x4 _ReadWorldToLocal;
+                float4 _ReadRect0;
+                float4 _ReadRect1;
+                float4 _ReadRect2;
+                float4 _ReadRect3;
             CBUFFER_END
             struct Attributes
             {
@@ -45,6 +52,7 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 float2 uv : TEXCOORD0;
                 float2 glyph : TEXCOORD1;
                 half4 color : COLOR;
+                float3 positionWS : TEXCOORD2;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
             Varyings Vert(Attributes input)
@@ -53,6 +61,7 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 output.uv = input.uv;
                 output.glyph = input.glyph;
                 output.color = input.color;
@@ -69,20 +78,50 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 float h = saturate(dot(pos-a, delta) / dot(delta, delta));
                 return length(pos - a - delta*h) - radius;
             }
+            float ReadRectCoverage(float2 planePoint, float4 rect)
+            {
+                if (rect.z <= 0 || rect.w <= 0) return 0;
+                float2 outside = abs(planePoint - rect.xy) - rect.zw;
+                return 1 - smoothstep(0, .06, max(outside.x, outside.y));
+            }
+            float ReadMask(float3 positionWS)
+            {
+                if (_ReadMaskStrength < .001) return 1;
+                // Project through the fragment onto the text plane from the current eye.
+                // This preserves depth while protecting letters even after head movement.
+                float3 eye = mul(_ReadWorldToLocal, float4(GetCameraPositionWS(), 1)).xyz;
+                float3 fragmentLocal = mul(_ReadWorldToLocal, float4(positionWS, 1)).xyz;
+                float3 ray = fragmentLocal - eye;
+                if (abs(ray.z) < .0001) return 1;
+                float travel = -eye.z / ray.z;
+                if (travel < 0) return 1;
+                float2 onPlane = eye.xy + ray.xy * travel;
+                float coverage = max(ReadRectCoverage(onPlane, _ReadRect0), ReadRectCoverage(onPlane, _ReadRect1));
+                coverage = max(coverage, max(ReadRectCoverage(onPlane, _ReadRect2), ReadRectCoverage(onPlane, _ReadRect3)));
+                return 1 - coverage * saturate(_ReadMaskStrength);
+            }
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 tint = input.color * _Color;
+                tint.a *= ReadMask(input.positionWS);
                 if (_Mode > 1.5)
                 {
-                    // Real typeset glyphs and isolated symbol masks share the same restrained light.
+                    // A narrow dark edge keeps the real letterforms legible over bright footage.
                     half ink = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv).a;
-                    float2 delta = _MainTex_TexelSize.xy * 1.5;
-                    half halo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(delta.x, 0)).a;
-                    halo += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - float2(delta.x, 0)).a;
-                    halo += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(0, delta.y)).a;
-                    halo += SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - float2(0, delta.y)).a;
-                    return half4(tint.rgb, saturate(max(ink, halo * .045) * tint.a * _Strength));
+                    float2 delta = _MainTex_TexelSize.xy * 7;
+                    half edge = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(delta.x, 0)).a;
+                    edge = max(edge, SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - float2(delta.x, 0)).a);
+                    edge = max(edge, SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(0, delta.y)).a);
+                    edge = max(edge, SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - float2(0, delta.y)).a);
+                    float2 diagonal = delta * .7071;
+                    edge = max(edge, SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + diagonal).a);
+                    edge = max(edge, SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv - diagonal).a);
+                    edge = max(edge, SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(diagonal.x, -diagonal.y)).a);
+                    edge = max(edge, SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv + float2(-diagonal.x, diagonal.y)).a);
+                    half opacity = max(ink, edge);
+                    half3 light = lerp(half3(.008, .003, .005), tint.rgb, saturate(ink / max(opacity, .0001)));
+                    return half4(light, saturate(opacity * tint.a * _Strength));
                 }
                 if (_Mode < .5)
                 {

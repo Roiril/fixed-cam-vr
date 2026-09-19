@@ -26,9 +26,17 @@ namespace FixedCamVr.Streaming.EditorTools
             var subtitle = ImportTexture("subtitle-v3.png");
             var symbol = ImportTexture("triangle-v3.png");
             var interference = ImportTexture("signal-tear-v3.png");
+            var context = ImportTexture("context-v4.png");
+            var attempt = ImportTexture("attempt-v4.png");
+            var failed = ImportTexture("failed-v4.png");
             var shader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/UnauthorizedAccessFx.shader");
-            if (shader == null || ShaderUtil.ShaderHasError(shader))
-                throw new InvalidOperationException("UnauthorizedAccessFx shader missing or invalid");
+            if (shader == null) throw new InvalidOperationException("UnauthorizedAccessFx shader missing");
+            if (ShaderUtil.ShaderHasError(shader))
+            {
+                foreach (var message in ShaderUtil.GetShaderMessages(shader))
+                    Debug.LogError($"UnauthorizedAccessFx:{message.line}: {message.message}");
+                throw new InvalidOperationException("UnauthorizedAccessFx shader invalid");
+            }
             string materialPath = AssetDir + "/ErrorFx.mat";
             var material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
             if (material == null)
@@ -44,7 +52,7 @@ namespace FixedCamVr.Streaming.EditorTools
             try
             {
                 var effect = go.AddComponent<UnauthorizedAccessEffect>();
-                effect.Configure(material, texture, subtitle, symbol, interference);
+                effect.Configure(material, texture, subtitle, symbol, interference, context, attempt, failed);
                 PrefabUtility.SaveAsPrefabAsset(go, PrefabPath);
             }
             finally { Object.DestroyImmediate(go); }
@@ -129,14 +137,20 @@ namespace FixedCamVr.Streaming.EditorTools
                     effectGo.transform.SetParent(stage.transform);
                     var effect = effectGo.GetComponent<UnauthorizedAccessEffect>();
                     effect.Play(screen.transform, size);
-                    var samples = new[] { 0f, .08f, .2f, .35f, .57f, .8f, 1.2f, 1.6f, 2.12f, 3.2f, 3.71f, 4.95f, 5.6f, 5.9f, 6.5f, 7f };
+                    var samples = new[] { 0f, .08f, .2f, .35f, .57f, .8f, 1.2f, 1.6f, 2.12f, 3.2f, 3.71f, 3.82f, 4.3f, 4.95f, 5.6f, 5.9f, 6.5f, 6.7f, 6.85f, 7f };
                     foreach (float sec in samples)
                     {
                         effect.Sample(sec);
                         Shoot(cam, pixels, rt, Path.Combine(dir, $"sample-{sec:0.00}.png"));
                     }
-                    effect.Sample(1.2f);
+                    effect.Sample(1.6f);
                     Shoot(cam, pixels, rt, Path.Combine(dir, "hero.png"));
+                    foreach (var root in scene.GetRootGameObjects())
+                    foreach (var renderer in root.GetComponentsInChildren<MeshRenderer>(true))
+                        if (renderer.sharedMaterial.HasProperty("_ReadMaskStrength"))
+                            renderer.sharedMaterial.SetFloat("_ReadMaskStrength", 0);
+                    Shoot(cam, pixels, rt, Path.Combine(dir, "readmask-disabled.png"));
+                    effect.Sample(1.6f);
                     cam.transform.position += new Vector3(.22f, 0, 0);
                     cam.transform.LookAt(screen.transform);
                     Shoot(cam, pixels, rt, Path.Combine(dir, "parallax.png"));
@@ -149,6 +163,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     background.SetColor("_BaseColor", new Color(.15f, .18f, .20f, 1));
                     Shoot(cam, pixels, rt, Path.Combine(dir, "overlay-check.png"));
                     grid.SetActive(false);
+                    RenderBackgroundChecks(cam, pixels, rt, background, effect, dir);
                     background.SetColor("_BaseColor", new Color(.012f, .013f, .017f, 1));
                     if (sequence)
                     {
@@ -189,6 +204,48 @@ namespace FixedCamVr.Streaming.EditorTools
                 rt.Release();
                 Object.DestroyImmediate(rt);
                 Object.DestroyImmediate(pixels);
+            }
+        }
+
+        private static void RenderBackgroundChecks(Camera cam, Texture2D pixels, RenderTexture rt,
+            Material background, UnauthorizedAccessEffect effect, string dir)
+        {
+            effect.Sample(4.3f);
+            background.SetColor("_BaseColor", Color.white);
+            Shoot(cam, pixels, rt, Path.Combine(dir, "bright-screen.png"));
+            var pattern = new Texture2D(256, 128, TextureFormat.RGB24, false) { filterMode = FilterMode.Point };
+            Texture2D? footage = null;
+            try
+            {
+                var colors = new Color[256 * 128];
+                for (int y = 0; y < 128; y++)
+                for (int x = 0; x < 256; x++)
+                    colors[y * 256 + x] = ((x / 7 + y / 5) & 1) == 0
+                        ? new Color(.9f, .025f, .04f) : new Color(.85f, .85f, .85f);
+                pattern.SetPixels(colors);
+                pattern.Apply(false);
+                background.SetTexture("_BaseMap", pattern);
+                Shoot(cam, pixels, rt, Path.Combine(dir, "red-detail-screen.png"));
+                string? photoPath = EditorCliArgs.Get("background");
+                if (!string.IsNullOrWhiteSpace(photoPath))
+                {
+                    footage = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                    if (!ImageConversion.LoadImage(footage, File.ReadAllBytes(Path.GetFullPath(photoPath))))
+                        throw new InvalidOperationException("Preview background could not be decoded.");
+                    background.SetTexture("_BaseMap", footage);
+                    foreach (float sec in new[] { 1.6f, 4.3f, 6.5f })
+                    {
+                        effect.Sample(sec);
+                        Shoot(cam, pixels, rt, Path.Combine(dir, $"footage-check-{sec:0.00}.png"));
+                    }
+                }
+            }
+            finally
+            {
+                background.SetTexture("_BaseMap", null);
+                Object.DestroyImmediate(pattern);
+                if (footage != null) Object.DestroyImmediate(footage);
+                effect.Sample(1.6f);
             }
         }
 

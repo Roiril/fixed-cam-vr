@@ -28,8 +28,12 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual(44, effect.WarningVertexCountDiagnostic, "11 bands × 4 vertices");
                 Assert.AreEqual(12, effect.SubtitleVertexCountDiagnostic, "3 bands × 4 vertices");
                 Assert.AreEqual(4, effect.SymbolVertexCountDiagnostic, "triangle image × 4 vertices");
+                Assert.AreEqual(4, effect.ContextVertexCountDiagnostic, "context image × 4 vertices");
+                Assert.AreEqual(4, effect.StatusVertexCountDiagnostic, "status image × 4 vertices");
                 Assert.AreEqual(56, FindMesh(effect, "Unauthorized Access Decorations").vertexCount,
                     "2 exclamation quads + 12 hazard stripe quads");
+                Assert.AreEqual(4, FindMesh(effect, "Unauthorized Access Context").vertexCount);
+                Assert.AreEqual(4, FindMesh(effect, "Unauthorized Access Status").vertexCount);
                 Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
                 Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
 
@@ -69,6 +73,10 @@ namespace FixedCamVr.Streaming.Tests
                     FindMesh(b, "Unauthorized Access Glyphs"));
                 Assert.AreNotSame(FindMesh(a, "Unauthorized Access Symbol"),
                     FindMesh(b, "Unauthorized Access Symbol"));
+                Assert.AreNotSame(FindMesh(a, "Unauthorized Access Context"),
+                    FindMesh(b, "Unauthorized Access Context"));
+                Assert.AreNotSame(FindMesh(a, "Unauthorized Access Status"),
+                    FindMesh(b, "Unauthorized Access Status"));
             }
             finally
             {
@@ -95,6 +103,8 @@ namespace FixedCamVr.Streaming.Tests
                 Mesh subtitle = FindMesh(effect, "Unauthorized Access Subtitle Bands");
                 Mesh symbol = FindMesh(effect, "Unauthorized Access Symbol");
                 Mesh decorations = FindMesh(effect, "Unauthorized Access Decorations");
+                Mesh context = FindMesh(effect, "Unauthorized Access Context");
+                Mesh status = FindMesh(effect, "Unauthorized Access Status");
                 Mesh glyphs = FindMesh(effect, "Unauthorized Access Glyphs");
                 Mesh strips = FindMesh(effect, "Unauthorized Access Interference");
                 int screenChildren = screen.childCount;
@@ -104,6 +114,8 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.Greater(subtitle.vertexCount, 0);
                 Assert.Greater(symbol.vertexCount, 0);
                 Assert.Greater(decorations.vertexCount, 0);
+                Assert.Greater(context.vertexCount, 0);
+                Assert.Greater(status.vertexCount, 0);
                 Assert.Greater(glyphs.vertexCount, 0);
                 Assert.Greater(strips.vertexCount, 0);
                 effect.Stop();
@@ -116,6 +128,8 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreSame(subtitle, FindMesh(effect, "Unauthorized Access Subtitle Bands"));
                 Assert.AreSame(symbol, FindMesh(effect, "Unauthorized Access Symbol"));
                 Assert.AreSame(decorations, FindMesh(effect, "Unauthorized Access Decorations"));
+                Assert.AreSame(context, FindMesh(effect, "Unauthorized Access Context"));
+                Assert.AreSame(status, FindMesh(effect, "Unauthorized Access Status"));
                 Assert.AreSame(glyphs, FindMesh(effect, "Unauthorized Access Glyphs"));
                 Assert.AreSame(strips, FindMesh(effect, "Unauthorized Access Interference"));
                 Assert.AreEqual(screenChildren, screen.childCount);
@@ -235,6 +249,8 @@ namespace FixedCamVr.Streaming.Tests
             effect.Play(anchor.transform, ReferenceSize);
             effect.Sample(1f);
             Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
+            Mesh context = FindMesh(effect, "Unauthorized Access Context");
+            Mesh status = FindMesh(effect, "Unauthorized Access Status");
 
             effect.enabled = false;
             Assert.IsFalse(spatial.gameObject.activeSelf);
@@ -242,10 +258,96 @@ namespace FixedCamVr.Streaming.Tests
 
             Object.DestroyImmediate(host);
             Assert.IsTrue(spatial == null, "独立world rootが残っている");
+            Assert.IsTrue(context == null, "context meshが残っている");
+            Assert.IsTrue(status == null, "status meshが残っている");
             Object.DestroyImmediate(anchor);
         }
 
+        [Test]
+        public void ContextAndStatusPhasesAreDeterministicAcrossArbitrarySampleOrder()
+        {
+            GameObject anchor = NewAnchor("PhaseAnchor");
+            GameObject host = new GameObject("PhaseEffect");
+            Material? material = null;
+            Texture2D? warning = null;
+            Texture2D? subtitle = null;
+            Texture2D? symbol = null;
+            Texture2D? noise = null;
+            Texture2D? context = null;
+            Texture2D? attempt = null;
+            Texture2D? failed = null;
+            try
+            {
+                Shader shader = Shader.Find("FixedCamVr/UnauthorizedAccessFx");
+                Assert.IsNotNull(shader);
+                material = new Material(shader);
+                warning = NewTexture("warning");
+                subtitle = NewTexture("subtitle");
+                symbol = NewTexture("symbol");
+                noise = NewTexture("noise");
+                context = NewTexture("context");
+                attempt = NewTexture("attempt");
+                failed = NewTexture("failed");
+                var effect = host.AddComponent<UnauthorizedAccessEffect>();
+                effect.Configure(material, warning, subtitle, symbol, noise, context, attempt, failed);
+                effect.Play(anchor.transform, ReferenceSize);
+
+                effect.Sample(6.7f);
+                Material statusMaterial = FindMaterial(effect, "Unauthorized Access Status");
+                Assert.AreSame(failed, statusMaterial.GetTexture("_MainTex"));
+                Assert.Greater(FindMesh(effect, "Unauthorized Access Status").colors[0].a, 0f);
+                effect.Sample(1.8f);
+                Material contextMaterial = FindMaterial(effect, "Unauthorized Access Context");
+                Assert.AreSame(context, contextMaterial.GetTexture("_MainTex"));
+                Assert.AreSame(attempt, statusMaterial.GetTexture("_MainTex"));
+                Color contextColor = FindMesh(effect, "Unauthorized Access Context").colors[0];
+                Color attemptColor = FindMesh(effect, "Unauthorized Access Status").colors[0];
+                Assert.Greater(contextColor.a, 0f);
+                Assert.Greater(attemptColor.a, 0f);
+
+                effect.Sample(4.2f);
+                Assert.AreSame(failed, statusMaterial.GetTexture("_MainTex"));
+                Color failedColor = FindMesh(effect, "Unauthorized Access Status").colors[0];
+                Assert.Greater(failedColor.a, 0f);
+                effect.Sample(1.8f);
+                Assert.AreSame(attempt, statusMaterial.GetTexture("_MainTex"));
+                Assert.AreEqual(contextColor, FindMesh(effect, "Unauthorized Access Context").colors[0]);
+                Assert.AreEqual(attemptColor, FindMesh(effect, "Unauthorized Access Status").colors[0]);
+
+                effect.Sample(effect.Duration);
+                Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
+                Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
+                effect.Stop();
+                Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
+                Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(warning);
+                DestroyImmediate(subtitle);
+                DestroyImmediate(symbol);
+                DestroyImmediate(noise);
+                DestroyImmediate(context);
+                DestroyImmediate(attempt);
+                DestroyImmediate(failed);
+            }
+        }
+
         private static GameObject NewAnchor(string name) => new GameObject(name);
+
+        private static Texture2D NewTexture(string name)
+        {
+            var texture = new Texture2D(4, 2) { name = name };
+            return texture;
+        }
+
+        private static void DestroyImmediate(Object? value)
+        {
+            if (value != null) Object.DestroyImmediate(value);
+        }
 
         private static Transform FindRoot(UnauthorizedAccessEffect effect, string name)
         {
@@ -257,6 +359,9 @@ namespace FixedCamVr.Streaming.Tests
 
         private static Mesh FindMesh(UnauthorizedAccessEffect effect, string name) =>
             FindMeshTransform(effect, name).GetComponent<MeshFilter>().sharedMesh;
+
+        private static Material FindMaterial(UnauthorizedAccessEffect effect, string name) =>
+            FindMeshTransform(effect, name).GetComponent<MeshRenderer>().sharedMaterial;
 
         private static Transform FindMeshTransform(UnauthorizedAccessEffect effect, string name)
         {

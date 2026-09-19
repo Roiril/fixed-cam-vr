@@ -42,6 +42,9 @@ def main():
     results = [
         typeset(latin, "WARNING", 240, 3, args.out / "wordmark-v3.png"),
         typeset(japanese, "不正アクセス検出", 96, 3, args.out / "subtitle-v3.png"),
+        typeset(japanese, "映像回線　接続元不明", 96, 3, args.out / "context-v4.png"),
+        typeset(japanese, "遮断を試行", 96, 3, args.out / "attempt-v4.png"),
+        typeset(japanese, "遮断失敗", 96, 3, args.out / "failed-v4.png"),
     ]
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
