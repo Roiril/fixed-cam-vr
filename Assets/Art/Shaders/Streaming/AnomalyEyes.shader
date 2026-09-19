@@ -13,6 +13,13 @@
 //    この作品の乱れの語彙（本編の `_Glitch`・連絡の面の乱れ）そのもので、目は「画面の乱れの向こうに居るもの」。
 //    ⚠ **段の進み（0076 / 0094 / 0138）と瞼の包絡（笑い・瞬き・視線）は 1 つも変えていない。**
 //
+// ⚠⚠ **2026-09-19（0240）に、出現と消失を「行が届く・ブロックが落ちる」へ替えた。**
+//    それまでは縦の潰し率（squash）で、版の行を中心線へ連続に潰していた ＝ **生き物の瞼**の語彙。
+//    中身が壊れた画像データになった今、外形だけが滑らかに伸縮するのは合っていない。参考画像に
+//    連続な変形は 1 つも無く、あるのは**届いた行と届いていない行・ずれたまま止まった行・欠けたブロック**だけ。
+//    ⇒ 縦に伸縮させず、`open`（0..1）を**中心線から外へ何行届いたか**へ写す。
+//    ⚠ **時計は 1 ビットも触っていない**（AnomalyEyesLogic の尺・EyeOpen・瞬き・閉じの幅はそのまま）。
+//
 // 版の約束（`make-eye-glitch.py` の TILE / EYE_W / ratio と対）:
 //   - 2×2 のタイル。各タイルの中央に目 1 つ。目の箱は横 TEX_EYE_W・縦はその TEX_RATIO 倍
 //   - 黒の地は alpha 0（目の中の黒い欠けも 0 ＝ 闇がそのまま透ける）。rgb は alpha を掛けてある（前乗算）
@@ -124,16 +131,29 @@ Shader "FixedCamVr/AnomalyEyes"
             #define GAZE_MAX_T 0.10
             #define GAZE_STEPS 5.0
 
-            // ---- 帯（開きかけの散らばりと、視線の縁の刻み直し）--------------------------------
+            // ---- 帯（視線の縁の刻み直し）------------------------------------------------------
             // 帯の刻み（目の丈に対する本数）。版の粒より粗い刻みで、版そのものを行ごとにずらす。
             #define BANDS_MIN 14.0
             #define BANDS_MAX 96.0
-            // 開き切った後のずれ（目の半幅に対する比・裾の重い分布）。版が既に壊れているので僅かでよい。
+            // 開き切った後のずれ（目の半幅に対する比）。版が既に壊れているので僅かでよい。
             #define SHEAR_HOLD 0.03
-            // 開きかけのずれと欠け（0076「断片が闇から現れて繋がる」）。閉じるときは掛けない（0085）。
-            #define SHEAR_EARLY 0.55
-            #define DROP_EARLY 0.70
-            #define SHEAR_TAIL 2.6
+
+            // ---- 出現と消失（0240）------------------------------------------------------------
+            // ⚠⚠ **目は開かない、復号される。目は閉じない、脱落する。**
+            //    縦の潰し率（squash）を廃した。版の 1 画素は常に同じ場所に描き、見えるのは
+            //    **どの行が届いているか**だけ。動く単位は画像データの単位（行・ブロック・横ずれ）で、
+            //    値は 2 状態（届いた／届いていない・ずれている／いない）。**連続の補間をしない。**
+            //    出現 ＝ 中心線から外へ行が届く / 消失 ＝ 外から内へブロックが落ちる（最後は中心の 1 行）。
+            #define ROWS_MIN 6.0        // 片側の行数（小さい目）
+            #define ROWS_MAX 16.0       // 同（視界を埋める目）。sizeN で補間する
+            #define BLOCK_COLS 10.0     // 目の横幅あたりのブロック数
+            #define ARRIVE_JITTER 0.6   // 同じ行の中で届く時刻がずれる幅（行の単位）
+            #define TEAR_WIN 1.5        // 届いてからずれている長さ（行の単位）
+            #define TEAR_MAX 0.12       // 横ずれの最大（タイルの単位・GAZE_MAX_T と同じ桁）
+            #define DUP_P 0.25          // 内側の行を写すブロックの割合
+            #define STUCK_P 0.12        // 居残るブロックの割合（閉じるときだけ）
+            #define STUCK_EXTRA 0.25    // 居残る長さ（open の単位）
+            #define PILLAR_LEAD 3.0     // 柱が行より先に立つ倍率
 
             // ---- 動き ----------------------------------------------------------------------
             // 瞬き（周期の逆数 / 鋭さ）。9 秒に 1 度・0.22 秒。**大きい目には掛けない**
@@ -269,26 +289,23 @@ Shader "FixedCamVr/AnomalyEyes"
                 float epoch = gi * gGate;       // 帯の刻み直しは視線が飛んだ縁
 
                 // ---- 帯（版を行ごとにずらす）。
+                // ⚠ 0240 から、開きかけの散らばりと欠けはここではなく**行のゲート**（下）が持つ。
+                //   ここに残るのは開き切った後の僅かなずれだけ。
                 float eyeH = (lidUp + lidDn) * SHAPE_SCALE;
                 float pitch = eyeH / lerp(BANDS_MIN, BANDS_MAX, sizeN);
                 float bi = floor((p.y + RIFT_EXTEND) / pitch);
                 float hb = h21(float2(bi + epoch * 97.0, seed * 13.1));
                 float hb2 = frac(hb * 17.31 + 0.37);
-                float hb4 = h21(float2(bi * 1.7 + 3.0, seed * 41.3));
-                // 開きかけの散らばり。⚠⚠ **閉じるときは掛けない**（砕けて散るのではなく瞼が下りる・0085）。
-                float early = (1.0 - prog) * (1.0 - _EyeClosing);
-                float shearAmp = SHEAR_HOLD + early * SHEAR_EARLY;
-                float sgn = hb2 < 0.5 ? -1.0 : 1.0;
-                float shear = sgn * pow(abs(hb2 - 0.5) * 2.0, SHEAR_TAIL) * shearAmp * SHAPE_SCALE;
-                float bandOn = step(early * DROP_EARLY, hb4);
+                float shear = (hb2 * 2.0 - 1.0) * SHEAR_HOLD * SHAPE_SCALE;
                 float2 q = float2(p.x - shear, p.y);
 
                 // ---- 瞼の包絡（0076 / 0077 の式そのまま）。
                 // ⚠⚠ **0239 からは版を切らない。** 包絡が与えるのは**中心線**（目尻の傾き・笑いの曲がり）と
-                //    **縦の潰し率**だけ。見える形は常に版の目そのものの alpha。切ると、閉じる途中に手続きの
-                //    綺麗な弧の縁が現れ、開き切っても版の縁と包絡の縁の 2 種類が混ざる（ユーザー判定「破綻」）。
-                //    閉じる ＝ 版の行が中心線へ潰れて 1 本の線になる（装置の電源断と同じ語彙）。開く ＝ 線から膨らむ。
-                //    笑い（0085）は中心線が上へ曲がるので、潰れた線が上に凸の三日月になる。
+                //    **笑いで縮む片側の丈**だけ。見える形は常に版の目そのものの alpha。切ると、閉じる途中に
+                //    手続きの綺麗な弧の縁が現れ、開き切っても版の縁と包絡の縁の 2 種類が混ざる（判定「破綻」）。
+                // ⚠⚠ **0240 から縦に伸縮させない。** 開く ＝ 中心線から外へ行が届く（線から膨らむのではない）。
+                //    閉じる ＝ 外から内へブロックが落ちる（中心線へ潰れるのではない）。
+                //    笑い（0085）は中心線が上へ曲がるので、最後に残る 1 行が上に凸の三日月になる。
                 float px = q.x / SHAPE_SCALE;
                 float pu = clamp(px + warpX * px * (1.0 - abs(px)), -1.0, 1.0);
                 float bU = sqrt(max(arcUp * arcUp - 1.0, 1e-4));
@@ -304,22 +321,53 @@ Shader "FixedCamVr/AnomalyEyes"
                 dn += smile * SMILE_LIFT * lidDn * lidD * open * SHAPE_SCALE;
                 dn = min(dn, up);
                 float mid = 0.5 * (up + dn);
-                // 潰し率は**中央の丈**で測る（目尻は丈が 0 なので割れない）。笑いで下瞼が上がるぶんも潰れに入る。
-                float hFull = (lidUp + lidDn) * SHAPE_SCALE;
-                float hNow = open * SHAPE_SCALE * (lidUp * (1.0 - smile * SMILE_TOP) + lidDn * (1.0 - smile * SMILE_LIFT));
-                float squash = max(hNow / max(hFull, 1e-4), 0.004);
 
                 // ---- 版を引く。横は目の箱（横幅 2×SHAPE_SCALE）を版の目の箱へ。縦は等方の尺（quad の縦の単位は
-                //    横の aspect 倍）を潰し率で割る ＝ 開き切ったときは等方、閉じるほど行が中心線へ寄る。
+                //    横の aspect 倍）を**そのまま**。⚠ 0240 から潰し率で割らない ＝ 版の 1 画素は常に同じ場所。
                 float variant = floor(h11(seed * 7.7) * (TEX_COLS * TEX_ROWS - 0.001));
                 float flip = step(0.5, h11(seed * 2.1)) * 2.0 - 1.0;   // 個体の半分は左右反転
                 float Kv = 0.5 * TEX_EYE_W * aspect / SHAPE_SCALE;
                 float2 t0 = float2(0.5 + 0.5 * TEX_EYE_W * flip * p.x / SHAPE_SCALE,
-                                   0.5 + (p.y - mid) / squash * Kv);
-                // ⚠ mip の段は、ずらす前・歪める前の uv の微分で選ぶ（帯ごとに uv が跳ぶ）。
+                                   0.5 + (p.y - mid) * Kv);
+                // ⚠ mip の段は、ずらす前・跳ばす前の uv の微分で選ぶ（帯ごと・ブロックごとに uv が跳ぶ）。
                 float2 dtx = ddx(t0) / float2(TEX_COLS, TEX_ROWS);
                 float2 dty = ddy(t0) / float2(TEX_COLS, TEX_ROWS);
                 float2 t = float2(0.5 + 0.5 * TEX_EYE_W * flip * q.x / SHAPE_SCALE, t0.y);
+
+                // ---- どの行が届いているか（0240）。中心線から外へ数えた行 row と、横 BLOCK_COLS の
+                //    ブロック colB でブロックを決め、届く時刻をブロックごとに散らす。
+                float rowsN = lerp(ROWS_MIN, ROWS_MAX, sizeN);
+                float boxH = TEX_EYE_W * TEX_RATIO;             // 目の箱の丈（版の単位）
+                float rowH = 0.5 * boxH / rowsN;                // 1 行の丈（同）
+                float upper = step(0.5, t.y);                   // 1 = 上側 / 0 = 下側
+                // 笑いで縮むのは片側だけ（上 SMILE_TOP / 下 SMILE_LIFT）。旧 hNow の片側ぶん。
+                float hSide = lerp(1.0 - smile * SMILE_LIFT, 1.0 - smile * SMILE_TOP, upper);
+                float openSide = open * hSide;
+                float rowF = abs(t.y - 0.5) / max(rowH, 1e-5);
+                float row = floor(rowF);
+                float colB = floor((t.x - 0.5) / TEX_EYE_W * BLOCK_COLS + BLOCK_COLS * 0.5);
+                float hbk = h21(float2(row * 31.0 + colB, seed * 7.9 + upper));
+                float hbk2 = frac(hbk * 17.31 + 0.37);
+                float hbk3 = frac(hbk * 29.73 + 0.11);
+                float hbk4 = frac(hbk * 7.13 + 0.61);
+                // 届く時刻。同じ行でも最大 ARRIVE_JITTER 行ぶん違うので、届く縁はぎざぎざになる。
+                float thr = (row + hbk * ARRIVE_JITTER) / rowsN;
+                // 閉じるときだけ、1 割のブロックが閾値を下げて**同じ場所に**残り、遅れて落ちる
+                //（凍ったマクロブロック）。動かさない・薄めない。
+                thr -= _EyeClosing * step(hbk2, STUCK_P) * STUCK_EXTRA;
+                // 箱の外（柱の行）は行の順に入れない —— 柱は open > 0 で最初のコマから立つ（§6）。
+                float inBox = step(rowF, rowsN);
+                float arrived = max(1.0 - inBox, step(thr, openSide));
+                // 届いた瞬間はずれている。**補間しない**（ずれている／いない の 2 状態で、
+                //    窓を過ぎたコマに正しい場所へ跳ぶ）。閉じるときは掛けない（落ちるだけ・0085）。
+                // ⚠ 外の行は thr + TEAR_WIN が開き切りを超えるので、そのままだと**永久にずれたまま**（小さい目の
+                //    最外行で実際に起きた）。跳ぶ時刻は「開き切る手前」で必ず頭打ちにする。
+                float openTop = lerp(openMax, 1.0, isBig) * hSide;
+                float snapAt = min(thr + TEAR_WIN / rowsN, openTop - 0.002);
+                float torn = inBox * (1.0 - _EyeClosing) * step(openSide, snapAt);
+                t.x += torn * (hbk2 < 0.5 ? -1.0 : 1.0) * TEAR_MAX * hbk3;
+                // 壊れたストリームが前の行を使い回す形。1 行ぶん中心線へ寄せて**同じ 1 回のサンプル**で引く。
+                t.y -= torn * step(hbk4, DUP_P) * (upper * 2.0 - 1.0) * rowH;
 
                 // ---- 視線（0084「目玉ぎょろぎょろ」）。⚠⚠ **版ごと滑らせない** — 輪郭が動くと目玉ではなく目そのものが漂う。
                 //    眼球が瞼の下で回るのと同じ形: 目の中（楕円の 0.55 まで）は版ごと平行移動、そこから輪郭（1.0）へ向けて
@@ -344,7 +392,7 @@ Shader "FixedCamVr/AnomalyEyes"
                 // ⚠⚠ **版を引く前に捨てる。** quad は目より縦に 1.5 倍長く、目の外の画素が過半を占める。
                 //    そこで版を 2 回引いてから捨てると、89 個が開いた 2 秒で実機が 34 fps まで落ちた
                 //    （走行 `20260919_192053`）。タイルの外・帯の欠け・柱の帯の外は、何も引かずにここで終える。
-                if (bandOn < 0.5) discard;
+                if (arrived < 0.5) discard;
                 if (abs(t.x - 0.5) > 0.5 || abs(t.y - 0.5) > 0.5) discard;
                 if (outV > 0.0 && abs(t.x - 0.5) > SMEAR_HALF_W) discard;
 
@@ -359,7 +407,9 @@ Shader "FixedCamVr/AnomalyEyes"
                 smearOn *= step(fcol, cw);
                 // 行ごとの明滅で「積んだ行」に見せる（1〜2 画素の行）。
                 float rowOn = step(0.25, h21(float2(bi * 3.1, colx + seed * 5.5)));
-                float smearW = SMEAR_LUM * smearOn * rowOn * (1.0 - rn) * open;
+                // ⚠ **柱は行より先に立ち、行より後に消える**（0240 §6）。最初のコマは
+                //   「中心の 1 行 ＋ 上下の柱」＝ 引き伸ばされた画素の先に目が復号されていく形。
+                float smearW = SMEAR_LUM * smearOn * rowOn * (1.0 - rn) * saturate(open * PILLAR_LEAD);
 
                 half4 tex = SAMPLE_TEXTURE2D_GRAD(_EyeTex, sampler_EyeTex, AtlasUv(t, variant), dtx, dty);
                 half4 smear = half4(0, 0, 0, 0);

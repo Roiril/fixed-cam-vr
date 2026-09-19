@@ -1,7 +1,7 @@
 ---
 title: 闇の目の出現と消失を「行が届く・ブロックが落ちる」へ（0240）
 date: 2026-09-19
-status: 設計のみ（未実装・未焼き）。実装は次のセッション（Opus 想定）
+status: 実装済み（2026-09-19・Opus サブエージェント）。Editor の門は通過・実機は未走行。差は ROUNDS R058
 scope: Assets/Art/Shaders/Streaming/AnomalyEyes.shader だけ。C# の時計・座席表・観測は触らない
 ---
 
@@ -54,7 +54,8 @@ R057 の出現と消失は**縦の潰し率 `squash`** で作ってある。版�
 
 - **A1 届く順**: ブロックの閾値 `thr = (r + hbk · ARRIVE_JITTER) / rowsN`。`openSide ≥ thr` なら描く。それ以外は描かない（alpha 0）。
   同じ行のブロックでも閾値が最大 `ARRIVE_JITTER`（0.6 行）ぶん違うので、届く縁はぎざぎざになる（穴が 1〜2 コマ残って埋まる）
-- **A2 届いた瞬間はずれている**: `age = openSide − thr` が `TEAR_WIN / rowsN` 未満のあいだ、`t.x += sgn(hbk2 − 0.5) · TEAR_MAX · hbk3`。
+- **A2 届いた瞬間はずれている**: `age = openSide − thr` が `TEAR_WIN / rowsN` 未満のあいだ（⚠ 跳ぶ時刻は `openMax·hSide − 0.002` で頭打ち。
+  無いと最外行が永久にずれたまま・R058 で踏んだ）、`t.x += sgn(hbk2 − 0.5) · TEAR_MAX · hbk3`。
   `TEAR_WIN` 1.5 行・`TEAR_MAX` 0.12 タイル。**補間しない**（ずれている／いない の 2 状態。過ぎた瞬間に正しい場所へ跳ぶ）。
   R057 の `SHEAR_EARLY`（0.55・`pow` の尾）と `DROP_EARLY`（0.70・帯の脱落）は**これで置き換える**。`SHEAR_HOLD`（0.03）は残す
 - **A3 複製（任意・弱く）**: `hbk4 < DUP_P`（0.25）のブロックは、ずれている窓のあいだ**1 つ内側の行の画素**を写す
