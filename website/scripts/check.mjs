@@ -3,6 +3,8 @@ import { dirname, join, normalize } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { headingText, latinText, pageText, uniqueChars } from "./font-text.mjs";
+
 const websiteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceFiles = ["index.html", "styles.css", "main.js"];
 const seoFiles = ["robots.txt", "sitemap.xml", "site.webmanifest"];
@@ -20,8 +22,13 @@ const requiredAssets = [
   "assets/wall-evidence.webp",
   "assets/yuji-boku.woff2",
   "assets/shippori-mincho.woff2",
+  "assets/ibm-plex-mono-400.woff2",
+  "assets/ibm-plex-mono-500.woff2",
+  "assets/chakra-petch.woff2",
   "assets/yuji-boku-OFL.txt",
-  "assets/shippori-mincho-OFL.txt"
+  "assets/shippori-mincho-OFL.txt",
+  "assets/ibm-plex-mono-OFL.txt",
+  "assets/chakra-petch-OFL.txt"
 ];
 const builtFiles = [...sourceFiles, ...seoFiles, ...verificationFiles, ...requiredAssets];
 const errors = [];
@@ -48,13 +55,16 @@ if (verification.trim() !== "google-site-verification: google5081a8a413a7871f.ht
   errors.push(`${verificationFiles[0]}: unexpected verification content`);
 }
 
+const localReferences = new Set();
 try {
-  JSON.parse(manifestSource);
+  const manifest = JSON.parse(manifestSource);
+  for (const icon of manifest.icons ?? []) {
+    if (typeof icon.src === "string" && !/^[a-z]+:/i.test(icon.src)) localReferences.add(icon.src.replace(/^\//, ""));
+  }
 } catch {
   errors.push("site.webmanifest: invalid JSON");
 }
 
-const localReferences = new Set();
 for (const content of [html, css]) {
   const referencePattern = /(?:href|src|srcset)=["']([^"']+)["']|url\(["']?([^"')]+)["']?\)/g;
   for (const match of content.matchAll(referencePattern)) {
@@ -100,7 +110,7 @@ for (const marker of sectionMarkers) {
   previousSectionIndex = sectionIndex;
 }
 
-const pageText = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+const pageCopy = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
 const requiredCopy = [
   "固定視点",
   "監視カメラに映る自分を見ながら、現実の空間を歩く。",
@@ -108,7 +118,7 @@ const requiredCopy = [
   "怪異調査員として、呪われた壁の調査に向かう。"
 ];
 for (const copy of requiredCopy) {
-  if (!pageText.includes(copy)) errors.push(`required copy is missing: ${copy}`);
+  if (!pageCopy.includes(copy)) errors.push(`required copy is missing: ${copy}`);
 }
 
 const forbiddenFeatures = [
@@ -172,6 +182,43 @@ if (!structuredDataMatch) {
   }
 }
 if (!html.includes('href="https://ivrc.net/2026/release3/"') || !html.includes('href="https://www.dcexpo.jp/"')) errors.push("archive source links are missing");
+
+const navMarkup = html.match(/<nav class="site-nav"[\s\S]*?<\/nav>/)?.[0] ?? "";
+if (!navMarkup.includes('href="#archive"')) errors.push("nav link to the archive section is missing");
+
+const updatedOnPage = html.match(/data-updated[^>]*>([^<]+)</)?.[1]?.trim();
+const lastmod = sitemap.match(/<lastmod>([^<]+)<\/lastmod>/)?.[1]?.trim();
+if (!updatedOnPage) errors.push("page update date (data-updated) is missing");
+else if (!lastmod) errors.push("sitemap.xml lastmod is missing");
+else if (updatedOnPage !== lastmod) errors.push(`page update date ${updatedOnPage} does not match sitemap lastmod ${lastmod}`);
+
+const fontManifestPath = "assets/fonts-manifest.json";
+const fontCoverage = [
+  { key: "mincho", file: "shippori-mincho", chars: uniqueChars(pageText(html)) },
+  { key: "yuji", file: "yuji-boku", chars: uniqueChars(headingText(html)) },
+  { key: "plex", file: "ibm-plex-mono", chars: uniqueChars(latinText(html)) },
+  { key: "chakra", file: "chakra-petch", chars: uniqueChars(latinText(html)) }
+];
+let fontManifest = null;
+try {
+  fontManifest = JSON.parse(await readFile(join(websiteRoot, fontManifestPath), "utf8"));
+} catch {
+  errors.push(`${fontManifestPath}: missing or invalid JSON → run npm run fonts`);
+}
+if (fontManifest) {
+  for (const { key, file, chars } of fontCoverage) {
+    const covered = new Set([...(fontManifest[key]?.chars ?? "")]);
+    if (!fontManifest[key]) {
+      errors.push(`fonts: ${file} is not in ${fontManifestPath} → run npm run fonts`);
+      continue;
+    }
+    const upstreamLacks = new Set([...(fontManifest[key]?.missing ?? "")]);
+    const lacking = chars.filter((ch) => !covered.has(ch) && !upstreamLacks.has(ch));
+    const unfixable = chars.filter((ch) => upstreamLacks.has(ch));
+    if (lacking.length > 0) errors.push(`fonts: ${file} lacks ${lacking.join(" ")} → run npm run fonts`);
+    if (unfixable.length > 0) errors.push(`fonts: the upstream ${file} has no glyph for ${unfixable.join(" ")} → change the copy (npm run fonts cannot fix this)`);
+  }
+}
 if (!robots.includes("Sitemap: https://mawarimi.vercel.app/sitemap.xml")) errors.push("robots.txt sitemap URL is missing");
 if (!sitemap.includes("<loc>https://mawarimi.vercel.app/</loc>")) errors.push("sitemap canonical URL is missing");
 
@@ -186,7 +233,13 @@ if (errors.length === 0) {
 }
 
 if (errors.length === 0) {
-  for (const file of builtFiles) await mustBeFile(file, join(websiteRoot, "dist"));
+  const distRoot = join(websiteRoot, "dist");
+  for (const file of builtFiles) await mustBeFile(file, distRoot);
+  // html / css / webmanifest が参照するファイルが dist/ にも入っているか（build.mjs の publicFiles への足し忘れを捕まえる）
+  for (const reference of localReferences) {
+    const localPath = normalize(reference);
+    if (!localPath.startsWith("..")) await mustBeFile(localPath, distRoot);
+  }
 }
 
 if (errors.length > 0) {

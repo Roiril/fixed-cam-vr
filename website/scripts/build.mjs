@@ -24,8 +24,13 @@ const publicFiles = [
   "assets/wall-evidence.webp",
   "assets/yuji-boku.woff2",
   "assets/shippori-mincho.woff2",
+  "assets/ibm-plex-mono-400.woff2",
+  "assets/ibm-plex-mono-500.woff2",
+  "assets/chakra-petch.woff2",
   "assets/yuji-boku-OFL.txt",
-  "assets/shippori-mincho-OFL.txt"
+  "assets/shippori-mincho-OFL.txt",
+  "assets/ibm-plex-mono-OFL.txt",
+  "assets/chakra-petch-OFL.txt"
 ];
 
 if (dirname(outputRoot) !== websiteRoot || basename(outputRoot) !== "dist") {

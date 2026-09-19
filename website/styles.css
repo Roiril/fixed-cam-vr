@@ -10,6 +10,27 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 400;
+  src: url("assets/ibm-plex-mono-400.woff2") format("woff2");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 500;
+  src: url("assets/ibm-plex-mono-500.woff2") format("woff2");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Chakra Petch";
+  font-weight: 600;
+  src: url("assets/chakra-petch.woff2") format("woff2");
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --ink: #e8dfd0;
@@ -20,6 +41,13 @@
   --line: rgb(232 223 208 / 16%);
   --line-strong: rgb(232 223 208 / 34%);
   --accent: #aa342f;
+  --plate: #191613;
+  --plate-edge: #2c2723;
+  --plate-deep: #0b0a09;
+  --tag: #e0d6c3;
+  --tag-ink: #141210;
+  --tag-muted: #5a5349;
+  --cut: 14px;
   --content: 112rem;
   --header-height: 4rem;
   --gutter: clamp(1.25rem, 4vw, 5rem);
@@ -145,124 +173,608 @@ button {
   letter-spacing: 0.18em;
 }
 
-.archive {
-  padding: clamp(4rem, 8vw, 8rem) var(--gutter);
+.archive,
+.credits {
+  padding: clamp(4rem, 7vw, 6.5rem) var(--gutter);
   background: var(--ground);
   scroll-margin-top: 1rem;
 }
 
-.archive-screen {
+.credits {
+  padding-top: clamp(2.5rem, 4vw, 3.5rem);
+  padding-bottom: clamp(5rem, 8vw, 7rem);
+}
+
+.plate-section {
+  width: min(100%, 72rem);
+  margin-inline: auto;
+}
+
+.plate-heading {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 1rem;
+  margin-bottom: clamp(1.5rem, 3vw, 2.25rem);
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.plate-heading .section-number {
+  grid-row: 1;
+  grid-column: 1;
+  margin-bottom: 0.5rem;
+}
+
+.plate-heading h2 {
+  grid-row: 2;
+  grid-column: 1;
+  margin: 0;
+  font-family: "Yuji Boku", "Yu Mincho", serif;
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  font-weight: 400;
+  letter-spacing: 0.12em;
+}
+
+.plate-heading-latin {
+  margin-left: 0.8em;
+  white-space: nowrap;
+  color: var(--ink-muted);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  vertical-align: 0.35em;
+}
+
+.plate-heading-meta {
+  display: flex;
+  grid-row: 2;
+  grid-column: 2;
+  gap: 1.5em;
+  margin: 0;
+  color: var(--ink-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.18em;
+  text-transform: none;
+}
+
+.archive-records {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(1rem, 2.5vw, 2rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag {
   position: relative;
   isolation: isolate;
-  max-width: 64rem;
-  margin-inline: auto;
-  padding: clamp(1.5rem, 4vw, 3.5rem);
-  overflow: hidden;
-  border: 1px solid #35352e;
-  border-radius: 3px;
-  background: radial-gradient(ellipse at 45% 20%, #191e18, #0b100d 90%);
-  box-shadow: inset 0 0 2.5rem #0008, 0 0 0 5px #151512, 0 1rem 2rem #0003;
-  color: #b6c4ac;
-  font-family: "Cascadia Mono", "Yu Gothic", "Hiragino Kaku Gothic ProN", monospace;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 6px #b6c4ac22;
+  min-height: 15rem;
+  padding: 1.4rem 1.75rem 1.5rem 2.25rem;
+  background-color: var(--tag);
+  background-image: repeating-linear-gradient(0deg, rgb(0 0 0 / 2.5%) 0 1px, transparent 1px 3px);
+  color: var(--tag-ink);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--cut)) 0,
+    100% var(--cut),
+    100% calc(100% - 60px),
+    calc(100% - 8px) calc(100% - 60px),
+    calc(100% - 8px) calc(100% - 34px),
+    100% calc(100% - 34px),
+    100% 100%,
+    var(--cut) 100%,
+    0 calc(100% - var(--cut))
+  );
+  transition: transform 160ms ease-out;
 }
 
-.archive-screen::after {
-  content: "";
+/* 上辺の右寄りに薄いハザード縞。面取りに切られる形が工業ラベルの文法 */
+.tag::before {
   position: absolute;
-  z-index: 1;
-  inset: 0;
+  top: 0;
+  right: 0;
+  width: 9rem;
+  height: 6px;
+  content: "";
+  background: repeating-linear-gradient(-45deg, rgb(20 18 16 / 22%) 0 7px, transparent 7px 14px);
+}
+
+/* 記録の通し番号を大きく薄く刷る（data-record から取る） */
+.tag::after {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  right: 2.9rem;
+  content: attr(data-record);
+  transform: translateY(-56%);
+  color: rgb(20 18 16 / 7%);
+  font-family: "Chakra Petch", sans-serif;
+  font-size: 8rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
   pointer-events: none;
-  background: repeating-linear-gradient(transparent 0 3px, #0002 3px 4px);
 }
 
-.archive-header {
+.tag-hole {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ground);
+  box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / 40%);
+}
+
+.tag-strip {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid #b6c4ac30;
+  gap: 1.6em;
+  margin: 0 0 0.9rem 0.25rem;
+  color: var(--tag-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.18em;
+  line-height: 1.4;
+  text-transform: none;
 }
 
-.archive-header h2 {
+.tag-strip span:first-child {
+  color: var(--accent);
+}
+
+.tag-title {
   margin: 0;
-  font-family: inherit;
-  font-size: clamp(1rem, 1.7vw, 1.3rem);
-  font-weight: 400;
-  letter-spacing: 0.14em;
+  font-family: "Chakra Petch", sans-serif;
+  font-size: clamp(1.9rem, 3.2vw, 2.6rem);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+.tag-title a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.18em;
+  transition: text-decoration-color 150ms ease-out;
+}
+
+.tag-title a:hover,
+.tag-title a:focus-visible {
+  text-decoration-color: var(--accent);
+}
+
+.tag-result {
+  margin: 0.85rem 0 0;
+  font-family: "Shippori Mincho", "Yu Mincho", serif;
+  font-size: clamp(1.1rem, 1.6vw, 1.35rem);
+  letter-spacing: 0.06em;
   line-height: 1.6;
 }
 
-.archive-header h2 span {
-  font-size: 0.8em;
-  color: #94a38d;
+.tag-divider {
+  padding-inline: 0.4em;
+  color: var(--tag-muted);
 }
 
-.archive-light {
-  width: 5px;
-  height: 5px;
-  background: #a8bba0;
-  box-shadow: 0 0 5px #a8bba044;
+.tag-upcoming {
+  margin-left: 1em;
 }
 
-.credits {
-  max-width: 44rem;
-  margin-inline: auto;
-  padding: 2rem var(--gutter) 5rem;
+.tag-code {
+  position: absolute;
+  bottom: 1.35rem;
+  left: 2.25rem;
+  display: grid;
+  gap: 0.3rem;
+  width: min(46%, 13rem);
+  color: var(--tag-ink);
 }
 
-.credits h2 {
-  margin: 0 0 2rem;
-  font-size: 1.25rem;
+.tag-code svg {
+  display: block;
+  width: 100%;
+  height: 28px;
+}
+
+.tag-code span {
+  color: var(--tag-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.6rem;
   font-weight: 400;
+  letter-spacing: 0.32em;
 }
 
-.credit-list { margin: 0; }
+.tag-seal {
+  position: absolute;
+  right: 2rem;
+  bottom: 1.5rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 2px solid var(--accent);
+}
+
+.tag-seal.is-sealed {
+  background: var(--accent);
+}
+
+.tag-edge {
+  position: absolute;
+  top: 1.25rem;
+  right: 0.55rem;
+  color: var(--tag-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  writing-mode: vertical-rl;
+}
+
+.tag:has(a:hover),
+.tag:has(a:focus-visible) {
+  transform: translateY(-3px);
+}
+
+/* 生成りの地の上では、全域のフォーカス枠（生成り）が見えないので墨色に差し替える */
+.tag :focus-visible {
+  outline-color: var(--tag-ink);
+}
+
+.plate {
+  position: relative;
+  isolation: isolate;
+  padding: 2rem 2.25rem 1.75rem 4.25rem;
+  background: var(--plate);
+  color: var(--ink);
+  clip-path: polygon(
+    var(--cut) 0,
+    100% 0,
+    100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%,
+    0 100%,
+    0 var(--cut)
+  );
+}
+
+.plate::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  background: var(--plate-edge);
+  clip-path: inherit;
+}
+
+.plate::after {
+  position: absolute;
+  z-index: -1;
+  inset: 1px;
+  content: "";
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 40%),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 1.5%) 0 2px, transparent 2px 5px),
+    var(--plate);
+  box-shadow: inset 0 -3px 0 #080706;
+  clip-path: polygon(
+    var(--cut) 0,
+    100% 0,
+    100% calc(100% - var(--cut)),
+    calc(100% - var(--cut)) 100%,
+    0 100%,
+    0 var(--cut)
+  );
+}
+
+.plate-rivet {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #4a443d, #15120f 70%);
+  box-shadow: 0 0 0 1px var(--plate-deep);
+}
+
+.plate-rivet-tl {
+  top: 11px;
+  left: 26px;
+}
+
+.plate-rivet-tr {
+  top: 11px;
+  right: 11px;
+}
+
+.plate-rivet-bl {
+  bottom: 11px;
+  left: 11px;
+}
+
+.plate-rivet-br {
+  bottom: 11px;
+  right: 26px;
+}
+
+.plate-hazard {
+  position: absolute;
+  top: 0;
+  right: 3rem;
+  width: 9rem;
+  height: 6px;
+  background: repeating-linear-gradient(-45deg, rgb(232 223 208 / 22%) 0 8px, transparent 8px 16px);
+}
+
+.plate-spine {
+  position: absolute;
+  top: 1.5rem;
+  bottom: 1.5rem;
+  left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2rem;
+  width: 1.6rem;
+  border-right: 1px solid var(--line);
+}
+
+.plate-spine-title {
+  color: var(--ink);
+  font-family: "Yuji Boku", "Yu Mincho", serif;
+  font-size: 1.05rem;
+  letter-spacing: 0.35em;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+}
+
+.plate-spine-latin {
+  color: var(--ink-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  writing-mode: vertical-rl;
+}
+
+.credit-list {
+  margin: 0;
+  border-bottom: 1px solid rgb(232 223 208 / 8%);
+  counter-reset: credit;
+}
+
+/* 行は全部同じ高さ（2 列に組んだとき行の軌道を共有するので、組の切れ目も余白で作らず線の色だけで作る） */
 .credit-list > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1rem;
-  padding-block: 0.35rem;
-}
-.credit-list dt { color: var(--ink-muted); overflow-wrap: anywhere; }
-.credit-list dd { margin: 0; }
-.credit-list .credit-group-start { margin-top: 1.5rem; }
-
-.archive-records { margin: 0; }
-
-.archive-record {
-  display: grid;
-  grid-template-columns: 1fr 1.3fr;
-  gap: 1rem 2rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: baseline;
-  padding-top: clamp(1.5rem, 3vw, 2.5rem);
-  font-size: clamp(0.9rem, 1.5vw, 1.1rem);
-  letter-spacing: 0.06em;
+  gap: 0.9rem;
+  padding-block: 0.55rem;
+  border-top: 1px solid rgb(232 223 208 / 8%);
+  counter-increment: credit;
 }
 
-.archive-record dt { color: #94a38d; }
-.archive-record dt a {
-  color: inherit;
-  text-decoration-color: #94a38d66;
-  text-underline-offset: 0.35em;
-  transition: color 150ms ease-out, text-decoration-color 150ms ease-out;
+.credit-list > div::before {
+  color: var(--ink-muted);
+  content: counter(credit, decimal-leading-zero);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
 }
-.archive-record dt a:hover,
-.archive-record dt a:focus-visible {
-  color: #d0ddc8;
-  text-decoration-color: currentColor;
+
+.credit-list dt {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75em;
+  overflow-wrap: anywhere;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
 }
-.archive-record dd { margin: 0; }
-.archive-divider { padding-inline: 0.45em; color: #7c8b76; }
-.archive-upcoming { display: inline-block; margin-left: 1.2em; }
+
+.credit-list dt::after {
+  flex: 1;
+  min-width: 1.5em;
+  content: "";
+  transform: translateY(-0.35em);
+  border-bottom: 1px dotted rgb(232 223 208 / 28%);
+}
+
+.credit-list dd {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.credit-list .credit-group-start {
+  border-top-color: var(--accent);
+}
+
+.plate-footer {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.plate-maker {
+  margin: 0;
+  color: var(--ink-muted);
+  font-family: "Shippori Mincho", "Yu Mincho", serif;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+}
+
+.plate-qr {
+  width: 4.6rem;
+  height: 4.6rem;
+  padding: 0.35rem;
+  background: var(--ink);
+  color: var(--tag-ink);
+}
+
+.plate-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.plate-url {
+  margin: 0;
+  color: var(--ink-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.16em;
+}
+
+.js-reveal [data-reveal] {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 360ms ease-out, transform 360ms ease-out;
+  transition-delay: calc(var(--i, 0) * 70ms);
+}
+
+.js-reveal [data-reveal].is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+.js-reveal .tag:not(.is-revealed):has(a:hover),
+.js-reveal .tag:not(.is-revealed):has(a:focus-visible) {
+  transform: translateY(12px);
+}
+
+/* 出現後の浮き上がり。上の .is-revealed { transform: none } より詳細度を高くしておく */
+.js-reveal .tag.is-revealed:has(a:hover),
+.js-reveal .tag.is-revealed:has(a:focus-visible) {
+  transform: translateY(-3px);
+}
+
+@media (min-width: 900px) {
+  .credit-list {
+    display: grid;
+    grid-template-rows: repeat(6, auto);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: column;
+    column-gap: clamp(2rem, 4vw, 3.5rem);
+  }
+}
+
+@media (max-width: 899.98px) {
+  .credit-list .credit-group-start {
+    margin-top: 0.9rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .archive-records {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 @media (max-width: 600px) {
-  .archive-record { grid-template-columns: 1fr; gap: 0.35rem; }
-  .archive-record dt { font-size: 0.8rem; }
-}
+  .tag,
+  .plate {
+    --cut: 10px;
+  }
 
+  .plate-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .plate-heading-meta {
+    grid-row: 3;
+    grid-column: 1;
+    margin-top: 0.25rem;
+  }
+
+  .tag {
+    min-height: 11rem;
+    padding-right: 2.5rem;
+  }
+
+  .tag-code {
+    display: none;
+  }
+
+  .tag::after {
+    font-size: 6.5rem;
+  }
+
+  .tag-edge {
+    font-size: 0.56rem;
+    letter-spacing: 0.14em;
+  }
+
+  .plate {
+    padding-right: 1.1rem;
+    padding-left: 3rem;
+  }
+
+  .plate-spine {
+    left: 0.85rem;
+    width: 1.4rem;
+  }
+
+  .credit-list > div {
+    gap: 0.6rem;
+  }
+
+  .credit-list dt {
+    font-size: 0.88rem;
+    letter-spacing: 0.02em;
+  }
+
+  .credit-list dt::after {
+    min-width: 0.75em;
+  }
+
+  .credit-list dd {
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+  }
+
+  .plate-hazard {
+    right: 2rem;
+    width: 5rem;
+  }
+
+  .plate-footer {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 0.5rem 1rem;
+  }
+
+  .plate-qr {
+    grid-row: 1 / 3;
+  }
+
+  .plate-maker {
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    overflow-wrap: anywhere;
+  }
+
+  .plate-url {
+    grid-row: 2;
+    grid-column: 2;
+  }
+}
 .site-nav a {
   color: var(--ink-muted);
   transition: color 150ms ease-out;

@@ -23,11 +23,25 @@
 
 ## 書体
 
-- [Yuji Boku](https://github.com/google/fonts/tree/main/ofl/yujiboku): 書の見出し。
-- [Shippori Mincho](https://github.com/google/fonts/tree/main/ofl/shipporimincho): 本文。
-- Google Fonts 配布版の必要文字を含む WOFF2 をサイト内で配信する。閲覧時に Google へ接続しない。
-- ライセンスは同じディレクトリの `yuji-boku-OFL.txt` と `shippori-mincho-OFL.txt`。
-- 文字を追加した場合は対応文字の追加を確認する。未収録字はシステム書体へフォールバックする。
+- [Yuji Boku](https://github.com/google/fonts/tree/main/ofl/yujiboku): 書の見出し、サイト名、銘板の背の「廻リ視」。
+- [Shippori Mincho](https://github.com/google/fonts/tree/main/ofl/shipporimincho): 本文、役割名、人名、受賞と展示予定。
+- [IBM Plex Mono](https://github.com/google/fonts/tree/main/ofl/ibmplexmono): データ表記とクレジットの行番号。400 と 500 の 2 ウェイト。
+- [Chakra Petch](https://github.com/google/fonts/tree/main/ofl/chakrapetch): 見出しの欧文と荷札の題。600 のみ。
+- Google Fonts 配布版の必要文字を含む WOFF2 をサイト内で配信する。閲覧時に Google へ接続しない。取得は `npm run fonts`（`scripts/fetch-fonts.mjs`）。和文 2 書体は `index.html` の画面に出る文字だけ、欧文 2 書体は印字できる ASCII 全部を収録する。
+- ライセンスは同じディレクトリの `yuji-boku-OFL.txt` `shippori-mincho-OFL.txt` `ibm-plex-mono-OFL.txt` `chakra-petch-OFL.txt`。いずれも上流の `ofl/<書体>/OFL.txt` をそのまま取得した。
+- 収録文字は `fonts-manifest.json` に書き出す。文字を追加したら `npm run fonts` を走らせる。走らせ忘れは `npm run check` が足りない字を名指しで落とす。
+
+## バーコードと QR
+
+```powershell
+py -3.11 scripts/make-codes.py
+```
+
+出力は `scripts/codes/` の 3 本で、`index.html` へは中身をそのまま貼る（インライン）。配信はしない。色は `currentColor` なので貼った先の文字色がそのまま棒の色になる。
+
+- `code128-ivrc2026.svg` / `code128-dcexpo2026.svg`: `IVRC2026` `DCEXPO2026` を Code 128 B で符号化した。符号表を持つ自前実装で、依存は無い。
+- `qr-site.svg`: 公開URL `https://mawarimi.vercel.app/` を [segno](https://github.com/heuer/segno) で符号化した（版 3・29×29・余白なし。誤り訂正は M を指定したが、同じ版に収まるので segno が Q へ引き上げている）。
+- どちらも読み取り機に通る本物で、当て字の模様ではない。600px 以下ではバーコードを隠す（幅が 2mm になって読めなくなるため）。
 
 ## 参照
 

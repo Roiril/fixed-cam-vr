@@ -1,0 +1,43 @@
+{
+  "plex": {
+    "family": "IBM Plex Mono",
+    "weights": [
+      400,
+      500
+    ],
+    "source": "fixed",
+    "fetched": "2026-09-18",
+    "chars": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×–—→",
+    "missing": ""
+  },
+  "chakra": {
+    "family": "Chakra Petch",
+    "weights": [
+      600
+    ],
+    "source": "fixed",
+    "fetched": "2026-09-18",
+    "chars": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×–—→",
+    "missing": ""
+  },
+  "mincho": {
+    "family": "Shippori Mincho",
+    "weights": [
+      400
+    ],
+    "source": "page",
+    "fetched": "2026-09-19",
+    "chars": "-./012345689ABCDEFHIMOPRSTVWXacdeijlmnoprtvwx、。いうかがくしたてとなにのへまみらりるれわをアィイウェオカクコゴサザシジスソタチッテデトドナバフペホムメラリルレロンー世予五人企体作依優先出分制動勝向呪員営固地壁定実展島年床廻形怪文日映書月本査歩演点現用画界異発白監督石示移空自裏見視記設調賞路録開間頭頼験（）｜",
+    "missing": ""
+  },
+  "yuji": {
+    "family": "Yuji Boku",
+    "weights": [
+      400
+    ],
+    "source": "headings",
+    "fetched": "2026-09-18",
+    "chars": "クジットリレ依固定廻査点視記調録頼",
+    "missing": ""
+  }
+}

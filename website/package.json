@@ -7,6 +7,7 @@
     "dev": "node server.mjs",
     "start": "node server.mjs dist",
     "build": "node scripts/build.mjs",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "fonts": "node scripts/fetch-fonts.mjs"
   }
 }

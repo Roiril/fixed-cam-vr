@@ -136,3 +136,22 @@ window.addEventListener("popstate", () => {
 renderCamera(currentCamera, { animate: false });
 writeCameraToUrl(currentCamera, "replaceState");
 scheduleAutoSwitch();
+
+// 記録の荷札と銘板は、既定の CSS では見えている。ここで js-reveal を付けてから隠すので、
+// この処理が動かなくても内容は消えない。
+const revealTargets = [...document.querySelectorAll("[data-reveal]")];
+if (revealTargets.length > 0) {
+  document.documentElement.classList.add("js-reveal");
+  if (reducedMotion.matches || !("IntersectionObserver" in window)) {
+    for (const target of revealTargets) target.classList.add("is-revealed");
+  } else {
+    const revealObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-revealed");
+        revealObserver.unobserve(entry.target);
+      }
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
+    for (const target of revealTargets) revealObserver.observe(target);
+  }
+}
