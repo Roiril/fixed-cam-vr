@@ -42,9 +42,9 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void BigEye_SitsOutsideTheScreenButInsideTheView()
         {
-            // 目の見かけの大きさ = 横 sizeDeg / 縦はその半分（AspectHeight と瞼の開きから）。
+            // 目の見かけの大きさ = 横 sizeDeg / 縦はいちばん丸い個体（EyeRatioMax）で見る（最悪側）。
             float halfW = AnomalyEyesMesh.BigSizeDeg * 0.5f;
-            float halfH = halfW * 0.5f;
+            float halfH = halfW * AnomalyEyesMesh.EyeRatioMax;
             float left = AnomalyEyesMesh.BigYawDeg - halfW;
             float right = AnomalyEyesMesh.BigYawDeg + halfW;
             float bottom = AnomalyEyesMesh.BigElevDeg - halfH;
@@ -241,7 +241,9 @@ namespace FixedCamVr.Streaming.Tests
             }
             Assert.That(smallN, Is.GreaterThan(0));
             Assert.That(hugeN, Is.GreaterThan(0));
-            Assert.That(hugeSum / hugeN, Is.GreaterThan(smallSum / smallN * 1.3f));
+            // ⚠ 1.3 → 1.15（2026-09-19・0237）。虹彩は丈の 0.72 倍で頭打ちにした（同心の環を読ませるため）ので、
+            //    大小の差は 0077 のころより小さい。差そのものは残す（全部同じ比だと壁紙に見える）。
+            Assert.That(hugeSum / hugeN, Is.GreaterThan(smallSum / smallN * 1.15f));
         }
     }
 }

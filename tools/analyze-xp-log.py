@@ -3707,8 +3707,14 @@ def analyze(events, others, exp, warns=None):
         # 3 つ組は 0093（2026-08-19）より前のビルド。5 つ組は 進み と 速さ が付く。
         # 7 つ組（2026-08-23）は **カットの指示** と **流しきり中か** が付く —
         # 「著作が言っていないのに目が開く」を外から切り分けるために足した。
-        parts = [v.split("/") for v in eyes_raw if v.count("/") in (2, 4, 6)]
+        # 8 つ組（2026-09-19・0238）は **版を掴めたか** が付く — 版はシェーダの既定が黒なので、
+        # 掴めていないと組めていて数も進んでいるのに 1 画素も出ない。
+        parts = [v.split("/") for v in eyes_raw if v.count("/") in (2, 4, 6, 7)]
         built = [p[0] for p in parts]
+        tex_missing = [p for p in parts if len(p) >= 8 and p[0] == "1" and p[7] == "0"]
+        if tex_missing:
+            verdict("FAIL", "目の版（Resources/Eyes/EyeGlitch.png）を掴めていない（eyes の 8 つ目が 0）— "
+                            "実体は組めていて数も進むが 1 画素も出ない。`py -3.11 tools/make-eye-glitch.py` で焼いて焼き直す")
         opened = []
         fades = []
         for p in parts:

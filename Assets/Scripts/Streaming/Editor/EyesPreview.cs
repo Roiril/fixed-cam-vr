@@ -20,8 +20,15 @@ namespace FixedCamVr.Streaming.EditorTools
     public static class EyesPreview
     {
         private const string OutDirRel = "Screenshots/eyes-preview";
-        private const int W = 960, H = 540;
+        private const int BaseW = 960, BaseH = 540;
         private const int Fps = 30;
+
+        /// <summary>
+        /// 出力の画素数。既定 960×540。<c>-Set scale=2</c> で 1920×1080 ＝ Quest 3 の片眼の密度
+        /// （約 19 画素/度）に並ぶ。⚠ 帯の目（0237）は帯 1 本が 2〜8 画素なので、
+        /// 既定の密度では帯の継ぎ目が AA に溶けて「実機より疎ら」に見える。細部の判定は scale=2 で。
+        /// </summary>
+        private static int W = BaseW, H = BaseH;
 
         /// <summary>撮影台。他の scene 幾何が写り込まないよう、誰も居ない高さへ。</summary>
         private static readonly Vector3 Stage = new(0f, 2000f, 0f);
@@ -59,6 +66,9 @@ namespace FixedCamVr.Streaming.EditorTools
             }
 
             float density = ParseArg("density", 1f);
+            float scale = Mathf.Clamp(ParseArg("scale", 1f), 0.5f, 4f);
+            W = Mathf.RoundToInt(BaseW * scale);
+            H = Mathf.RoundToInt(BaseH * scale);
             // ⚠ **プレビュー限定の早回し**。出荷する尺（AnomalyEyesLogic の const）は 1 つも変えない。
             //   止まっている 3 つ（闇 / 断片のまま静止 / 凝視）だけを、この秒数へ詰めて見せる。
             float trim = ParseArg("trim", 0f);
@@ -288,6 +298,14 @@ namespace FixedCamVr.Streaming.EditorTools
             mat.SetFloat("_EyeGain", AnomalyEyes.DefaultGain);
             mat.SetFloat("_EyeBlink", AnomalyEyes.DefaultBlink);
             mat.SetColor("_EyeColor", AnomalyEyes.DefaultColor);
+            // 版（0238）。本番と同じ Resources から引く。無ければ本番と同じく 1 画素も出ない（警告は本番と同じ文言）。
+            if (!mat.HasProperty("_EyeTex") || mat.GetTexture("_EyeTex") == null)
+            {
+                var tex = Resources.Load<Texture2D>(AnomalyEyes.TexResourcePath);
+                if (tex != null) mat.SetTexture("_EyeTex", tex);
+                else Debug.LogWarning($"[EyesPreview] 目の版 Resources/{AnomalyEyes.TexResourcePath} が見つかりません。"
+                                      + "絵は真っ黒になります（`py -3.11 tools/make-eye-glitch.py` で焼く）。");
+            }
         }
 
         private static string F(float v) => v.ToString("F3", CultureInfo.InvariantCulture);

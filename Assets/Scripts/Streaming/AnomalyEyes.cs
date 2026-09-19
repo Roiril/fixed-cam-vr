@@ -58,8 +58,10 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>シーン（<c>Main.unity</c> の <c>[Eyes]</c>）に焼かれている値が実物</b>。ここの既定が効くのは
         /// <c>[Eyes]</c> を作り直したときだけなので、<b>片方だけ動かすと黙って食い違う</b>。
         /// 2026-08-23 に 0.85 → 0.50（ユーザー赤入れ「目が明るすぎる。もう少し暗くしてほしい」）。
+        /// 2026-09-19 に 0.50 → 0.70（0238・版の目は白の面が無く輪郭の内側の 4 割が闇なので、同じ 0.5 だと旧版の半分の明るさ。
+        /// 判定は <c>canon/OPEN.md</c>。眩しければ 0.5 へ戻す — シーンと対で）。
         /// </summary>
-        public const float DefaultGain = 0.5f;
+        public const float DefaultGain = 0.7f;
 
         [Tooltip("目の明るさ。上げすぎると「発光する記号」に見える。")]
         [SerializeField, Range(0f, 2f)] private float gain = DefaultGain;
@@ -71,13 +73,24 @@ namespace FixedCamVr.Streaming
         [SerializeField, Range(0f, 1f)] private float blink = DefaultBlink;
 
         /// <summary>
-        /// 出荷する目の色。<b>シェーダ既定（生成りに近い白）とは別の値</b>なので、
-        /// プレビューが書かないと**プレビューだけ色が違う**。
+        /// 出荷する目の色 ＝ <b>版に掛ける色</b>（2026-09-19・<c>canon/LEDGER.md</c> 0238）。既定は白 ＝ 版の色をそのまま。
+        /// 目の色そのものは版（<see cref="TexResourcePath"/>）が持つ。<b>シーンに焼かれた値が実物</b>
+        /// （<see cref="DefaultGain"/> と同じ罠）で、プレビューが書かないと**プレビューだけ色が違う**。
+        /// ⚠ 版の色は作品の暖色（0010）とわざと外してある（青緑 / 白 / 赤）— この世界の色ではないものが覗いている、という筋。
         /// </summary>
-        public static readonly Color DefaultColor = new(1.0f, 0.93f, 0.84f, 1f);
+        public static readonly Color DefaultColor = new(1f, 1f, 1f, 1f);
 
-        [Tooltip("目の色。作品の色（暖色）へ寄せた白（参考画像の目は白い）。")]
-        [SerializeField] private Color color = new(1.0f, 0.93f, 0.84f, 1f);
+        [Tooltip("版に掛ける色。白で版の色そのまま。目の色は版（Resources/Eyes/EyeGlitch.png）が持つ（0238）。")]
+        [SerializeField] private Color color = new(1f, 1f, 1f, 1f);
+
+        /// <summary>
+        /// 目の版（<c>tools/make-eye-glitch.py</c> が焼く 2×2 の 4 個体）。<c>Resources.Load</c> で引く。
+        /// ⚠ 無ければ目は<b>一生出ない</b>（シェーダの既定は黒 ＝ alpha 0）。テレメトリ <c>eyes=</c> の 8 つ目が 0 で出る。
+        /// </summary>
+        public const string TexResourcePath = "Eyes/EyeGlitch";
+
+        /// <summary>版を掴めたか（<c>eyes=</c> の 8 つ目）。false なら実体は組めていても 1 画素も出ない。</summary>
+        public bool TextureLoaded { get; private set; }
 
         private static readonly int BigId = Shader.PropertyToID("_EyeBig");
         private static readonly int FieldId = Shader.PropertyToID("_EyeField");
@@ -94,6 +107,7 @@ namespace FixedCamVr.Streaming
         private static readonly int SmileId = Shader.PropertyToID("_EyeSmile");
         private static readonly int ClosingId = Shader.PropertyToID("_EyeClosing");
         private static readonly int ColorId = Shader.PropertyToID("_EyeColor");
+        private static readonly int TexId = Shader.PropertyToID("_EyeTex");
         private static readonly int JackTexId = Shader.PropertyToID("_JackTex");
         private static readonly int JackOnId = Shader.PropertyToID("_JackOn");
         private static readonly int JackUvId = Shader.PropertyToID("_JackUv");
@@ -266,6 +280,12 @@ namespace FixedCamVr.Streaming
 
             _renderer = go.AddComponent<MeshRenderer>();
             _mat = new Material(shader) { name = "AnomalyEyes (runtime)" };
+            // 版は起動時に 1 度だけ書く（毎フレーム書くものではない）。掴めなければ警告して進む — 目は出ないが体験は止めない。
+            var tex = Resources.Load<Texture2D>(TexResourcePath);
+            TextureLoaded = tex != null;
+            if (tex != null) _mat.SetTexture(TexId, tex);
+            else Debug.LogWarning($"[AnomalyEyes] 目の版 Resources/{TexResourcePath} が見つかりません。"
+                                  + "闇の目は 1 画素も出ません（`py -3.11 tools/make-eye-glitch.py` で焼く）。");
             _renderer.sharedMaterial = _mat;
             _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _renderer.receiveShadows = false;

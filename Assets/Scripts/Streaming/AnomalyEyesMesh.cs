@@ -120,8 +120,11 @@ namespace FixedCamVr.Streaming
         /// <summary>大きい目の水平の向き (度・正面から右)。</summary>
         public const float BigYawDeg = 30f;
 
-        /// <summary>大きい目の高さ (度・正面から上)。スクリーンの上端（+10.4°）より上。</summary>
-        public const float BigElevDeg = 21f;
+        /// <summary>
+        /// 大きい目の高さ (度・正面から上)。スクリーンの上端（+10.4°）より上。
+        /// ⚠ 2026-09-19 に 21 → 23。目が丸くなった（縦横比 0.80 まで）ので、下端がスクリーンへ掛からないぶん上げた。
+        /// </summary>
+        public const float BigElevDeg = 23f;
 
         /// <summary>大きい目の見かけの大きさ (度)。</summary>
         public const float BigSizeDeg = 28f;
@@ -156,12 +159,17 @@ namespace FixedCamVr.Streaming
         public const float BigRollDeg = 10f;
 
         /// <summary>
-        /// <b>目そのものの縦横比</b>（高さ ÷ 横幅）。細い目 0.34 〜 丸い目 0.66。
-        /// 参考画像（me1 / me2）の目はおよそ 0.4〜0.6。
+        /// <b>目そのものの縦横比</b>（高さ ÷ 横幅）。細い目 0.50 〜 丸い目 0.80。
+        /// ⚠ 2026-09-19（<c>canon/LEDGER.md</c> 0237）に 0.34〜0.66 から上げた。参考画像
+        /// <c>tools/eyes-ref/dejime.jpg</c> の目は 630×520 ≒ 0.8 と丸く、同心の環（輪郭 → 白目 → 虹彩の縁 →
+        /// 内側の環 → 芯）が読めるだけの丈が要る。細い目では環が瞼に切られて帯の束にしか見えない。
         /// ⚠ これは quad の比ではない。quad の比は <see cref="QuadAspect"/> が逆算する。
         /// </summary>
-        public const float EyeRatioMin = 0.34f;
-        public const float EyeRatioMax = 0.66f;
+        public const float EyeRatioMin = 0.50f;
+        public const float EyeRatioMax = 0.80f;
+
+        /// <summary>虹彩の直径の上限（目の丈に対する比）。参考画像は 0.69。</summary>
+        public const float IrisCapOfRatio = 0.72f;
 
         /// <summary>
         /// 目の縦横比と瞼の開きから、quad の 縦/横 を逆算する。
@@ -172,10 +180,24 @@ namespace FixedCamVr.Streaming
             => 2f * eyeRatio / Mathf.Max(lidUp + lidDown, 1e-3f);
 
         /// <summary>
-        /// 目が quad の中で占める割合。<b>残りは暈のための余白</b>。
-        /// ⚠ シェーダの <c>SHAPE_SCALE</c> と対 — 片方だけ直すと暈が切れるか、目が縮む。
+        /// 目が quad の中で占める割合（横）。
+        /// ⚠ シェーダの <c>SHAPE_SCALE</c> と対 — 片方だけ直すと目が縮むか、版が quad からはみ出す。
+        /// ⚠⚠ <b>0.74 → 0.90（0239・R057）。</b> 0.74 の余白は版画の白目の暈のためのもので、版の目には要らない。
+        ///   0.90 だと quad の横幅 ≒ 版のタイルの横幅（縦は <see cref="RiftExtend"/> 0.8 で ≒ タイルの縦）。
+        ///   塗る面積が 32% 減る（89 個が開いた 2 秒で 48 fps → 目標 60）。開きかけの散らばり（0.55）が quad の縁で切れるが 0.27 秒だけ。
         /// </summary>
-        public const float ShapeScale = 0.74f;
+        public const float ShapeScale = 0.90f;
+
+        /// <summary>
+        /// quad の縦の余白（目の丈の単位・2026-09-19・<c>canon/LEDGER.md</c> 0237）。
+        /// 目の上下に「ハザマ」の柱が漏れるための余白で、シェーダはこの倍率で uv.y を戻してから目の式へ入れる。
+        /// ⚠ シェーダの <c>RIFT_EXTEND</c> と対 — 片方だけ直すと目が縦に潰れるか伸びる。
+        /// ⚠⚠ <b>1.5 → 0.8（0239・R057）。</b> 版の柱はタイルの縦（目の丈の ±0.67）にしか無いのに 1.5 まで張っていて、
+        ///   塗る面積が倍 ＝ 89 個が開いた 2 秒で実機が 35 fps だった（版を引く前に捨てても戻らなかった ＝ 重いのは面積）。
+        /// ⚠ 当たり判定（<see cref="Separated"/>）は目の楕円で測るので、この余白は隣の quad と
+        ///   重なってよい（柱は疎らで前乗算なので、重なった所は手前の目が隠すだけ）。
+        /// </summary>
+        public const float RiftExtend = 0.8f;
 
         /// <summary>大きい目の向き（正面 +Z・上 +Y の座標系）。</summary>
         public static Vector3 BigDir =>
@@ -322,14 +344,15 @@ namespace FixedCamVr.Streaming
                                     Mathf.Lerp(0.28f, 0.55f, Hash(k * 13 + 7))),
                 lidUp = Mathf.Lerp(0.46f, 0.72f, Hash(k * 13 + 6)),
                 lidDown = Mathf.Lerp(0.28f, 0.55f, Hash(k * 13 + 7)),
-                // 大きい目ほど虹彩が白目を食う（参考 me3 の「巨大な虹彩と黒い内部」）。
-                // ⚠ **大きい目ほど虹彩が白目を食う。** 白の面積が参考の 1.6 倍あったので上へ寄せた
-                //    （Codex 2 巡目「大眼では虹彩を眼裂高さの 45〜60% へ」）。
-                // ⚠⚠ **0.5 で虹彩の直径 ＝ 目の高さ**（quad の半幅を 1 とする単位）。
-                //    0.78 まで上げたら虹彩が瞼を突き抜けて「暗い葉っぱ」になった（実測）。
-                //    参考画像は眼裂の高さの 45〜60% なので 0.30〜0.52 が上限。
-                irisR = Mathf.Lerp(0.30f, 0.52f, Mathf.Clamp01(t * 1.25f)) *
-                        Mathf.Lerp(0.90f, 1.10f, Hash(k * 13 + 8)),
+                // 大きい目ほど虹彩が白目を食う。
+                // ⚠ 単位は「虹彩の直径 ÷ 目の横幅」。参考画像（0237・dejime.jpg）の虹彩は横幅の 0.55 で、
+                //    同心の環がその中に 3 段入る。目が丸くなった（EyeRatio 0.50〜0.80）ので
+                //    0.60 でも瞼に切られない（0077 の「暗い葉っぱ」は細い目に 0.78 を入れたときの話）。
+                // ⚠ 上限は目の丈の 0.72 倍（`IrisCapOfRatio`）。虹彩が丈いっぱいだと輪郭の線と虹彩の縁の環が
+                //    融けて、同心の環が 1 つも読めない（v3 の絵で確認）。参考画像は丈の 0.69 倍。
+                irisR = Mathf.Min(Mathf.Lerp(0.32f, 0.62f, Mathf.Clamp01(t * 1.25f)),
+                                  IrisCapOfRatio * Mathf.Lerp(EyeRatioMin, EyeRatioMax, Hash(k * 13 + 5))) *
+                        Mathf.Lerp(0.88f, 1.12f, Hash(k * 13 + 8)),
                 // 半開きのまま止まる目を混ぜる（全部が全開だと機械に見える）。
                 openMax = Mathf.Lerp(0.62f, 1.0f, Hash(k * 17 + 3)),
                 skew = (Hash(k * 17 + 4) - 0.5f) * 0.30f,
@@ -369,7 +392,8 @@ namespace FixedCamVr.Streaming
                 // ⚠ **quad は目より一回り大きく張る**（暈のための余白）。シェーダの SHAPE_SCALE と対で、
                 //    ここを割っておくので sizeDeg は「目そのものの見かけの大きさ」のまま。
                 float hw = RadiusM * Mathf.Tan(s.sizeDeg * 0.5f * Mathf.Deg2Rad) / ShapeScale;
-                float hh = hw * s.aspect;
+                // 縦はさらに RiftExtend 倍（目の上下に漏れる帯の柱のぶん）。シェーダが戻す。
+                float hh = hw * s.aspect * RiftExtend;
 
                 var a = new Vector4(s.rank, s.big ? 1f : 0f, Hash(i * 11 + 7), s.presence);
                 var f = new Vector4(s.aspect, s.lidUp, s.lidDown, s.irisR);

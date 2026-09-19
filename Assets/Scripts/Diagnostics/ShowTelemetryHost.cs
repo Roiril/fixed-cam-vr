@@ -644,15 +644,16 @@ namespace FixedCamVr.Diagnostics
               $"{(_swap.RectResolved ? 1 : 0)}/{(_swap.MaskPlateBound ? 1 : 0)}";
 
         /// <summary>
-        /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;/&lt;カットの指示&gt;/&lt;流しきり中か&gt;</c>。
-        /// 後ろ 2 つは 2026-08-19（<c>canon/LEDGER.md</c> 0093）に足した。
+        /// 闇に開く目 — <c>&lt;組めたか&gt;/&lt;開いている数&gt;/&lt;不透明度&gt;/&lt;区間の進み&gt;/&lt;速さ&gt;/&lt;カットの指示&gt;/&lt;流しきり中か&gt;/&lt;版を掴めたか&gt;</c>。
+        /// 6・7 つ目は 2026-08-19（<c>canon/LEDGER.md</c> 0093）、8 つ目は 2026-09-19（0238）に足した。
         /// <b>進み -1 = 位置では測っていない</b>（未登録・layout 不在）。速さ 2.00 = 追い上げ中。
+        /// ⚠ <b>8 つ目が 0 なら、組めていて数も進んでいるのに 1 画素も出ていない</b>（版はシェーダの既定が黒）。
         /// </summary>
         private string EyesState => _eyes == null
             ? "-"
             : $"{(_eyes.IsBuilt ? 1 : 0)}/{_eyes.OpenCount}/{_eyes.AppliedFade:F2}/" +
               $"{_eyes.SpanProgress01:F2}/{_eyes.Rate:F2}/" +
-              $"{_eyes.WantedLevel:F2}/{(_eyes.CueRunning ? 1 : 0)}";
+              $"{_eyes.WantedLevel:F2}/{(_eyes.CueRunning ? 1 : 0)}/{(_eyes.TextureLoaded ? 1 : 0)}";
 
         /// <summary>
         /// 目が開く音（<c>canon/LEDGER.md</c> 0131）。<c>&lt;一撃の累計&gt;/&lt;大きい目を鳴らせたか&gt;</c>。

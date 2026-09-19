@@ -2238,9 +2238,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   head: {fileID: 612330381}
   showControl: {fileID: 2741169640098560028}
-  gain: 0.5
+  gain: 0.7
   blink: 1
-  color: {r: 1, g: 0.93, b: 0.84, a: 1}
+  color: {r: 1, g: 1, b: 1, a: 1}
 --- !u!1 &1524230998
 GameObject:
   m_ObjectHideFlags: 0

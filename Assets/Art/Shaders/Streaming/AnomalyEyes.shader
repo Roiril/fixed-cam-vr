@@ -1,12 +1,25 @@
-// スクリーンの外の闇に開く**目**（canon/LEDGER.md 0075 / 0076）。
+// スクリーンの外の闇に開く**目**（canon/LEDGER.md 0075 / 0076 / 0237 / **0238**）。
 //
-// 1 つの目 = 中心（体験者の頭）を向いた quad 1 枚。**形はここで描き、進み方は C# が決める**
+// 1 つの目 = 中心（体験者の頭）を向いた quad 1 枚。**形（瞼の包絡）はここで描き、進み方は C# が決める**
 //   （AnomalyEyesLogic が `_EyeBig` / `_EyeField` / `_EyeIntensity` を配る。OutroLogic.FlickerPower と同じ流儀）。
+//
+// ⚠⚠ **2026-09-19（0238）に、目の中身を「焼いた版」へ替えた。** 手続きで描いた帯（0237 の第 1 版）は
+//    ユーザー判定「整然としすぎ・質感とデジタル感がチープ」。参考 `tools/eyes-ref/dejime.jpg` は
+//    **写真の目が壊れた画像データ**（JPEG のマクロブロック・行のずれ・複製・欠け・1 画素の色ノイズ）で、
+//    手続きの 1 色のセルではその粒に届かない。だから Codex に同じ画風で描かせた目を
+//    `tools/make-eye-glitch.py` が版（`Resources/Eyes/EyeGlitch.png`・2×2 の 4 個体）へ焼き、ここは
+//    **瞼の包絡で切って、帯ごとにずらして、視線で滑らせて引く**だけにした。
+//    筋は 0237 のまま —「高次元の存在が、次元のハザマからのぞき込んでいる」。壊れた画像データは
+//    この作品の乱れの語彙（本編の `_Glitch`・連絡の面の乱れ）そのもので、目は「画面の乱れの向こうに居るもの」。
+//    ⚠ **段の進み（0076 / 0094 / 0138）と瞼の包絡（笑い・瞬き・視線）は 1 つも変えていない。**
+//
+// 版の約束（`make-eye-glitch.py` の TILE / EYE_W / ratio と対）:
+//   - 2×2 のタイル。各タイルの中央に目 1 つ。目の箱は横 TEX_EYE_W・縦はその TEX_RATIO 倍
+//   - 黒の地は alpha 0（目の中の黒い欠けも 0 ＝ 闇がそのまま透ける）。rgb は alpha を掛けてある（前乗算）
+//   - 目の上下にデータの柱が付いていることがある（タイルの余白に描かれている）
 //
 // ⚠⚠ **前乗算アルファ（Blend One OneMinusSrcAlpha）。** 2026-08-17 に加算から変えた（0076）。
 //    加算では**重なった 2 つが必ず 1 つの塊に融ける**ので、参考画像のような密度にできない。
-//    前乗算なら 1 パスで「体は隠す（アルファ）／細い光の線は足す（加算）」を両方書ける
-//    ＝ 手前の目が奥の目を隠し、暈だけが重なる。
 //    ⚠ 手前 / 奥は**メッシュの並び順**で決まる（座席表を小さい順に並べてある ＝ 大きい ＝ 近い目が後）。
 //
 // ⚠ **Queue は Background+100（1100）。** 本編のスクリーン（ScreenComposite = Geometry / 不透明）が
@@ -14,6 +27,9 @@
 //
 // ⚠ **実行時 Shader.Find で引く。** ProjectSettings/GraphicsSettings.asset の Always Included に
 //    登録してある（外すと Editor では出て実機だけ剥がれる — rules/unity-vr.md の 2026-07-31 実害）。
+//
+// ⚠ **版の mip の段は、ずらす前の uv の微分で選ぶ**（SAMPLE_TEXTURE2D_GRAD）。帯ごとに uv が跳ぶので、
+//    素直に引くと帯の継ぎ目で微分が発散して 1 画素の細い線に別の段が混ざる。
 Shader "FixedCamVr/AnomalyEyes"
 {
     Properties
@@ -30,12 +46,13 @@ Shader "FixedCamVr/AnomalyEyes"
         _EyeBlink("Blink Amount", Range(0, 1)) = 1
         // 待機中の視線移動の強さ（AnomalyEyesLogic.Gaze）。0 = 正面を見たまま。
         _EyeGaze("Gaze Amount", Range(0, 1)) = 0
-        // 笑い（下瞼が持ち上がる。大きい目だけ）と、閉じ中か（開きかけの断片を止める）。
+        // 笑い（下瞼が持ち上がる。大きい目だけ）と、閉じ中か（開きかけの散らばりを止める）。
         _EyeSmile("Smile", Range(0, 1)) = 0
         _EyeClosing("Closing", Range(0, 1)) = 0
-        // ⚠ 参考画像の目は**ほぼ純白**。作品の暖色は残しつつ、ベージュから白へ寄せてある。
-        _EyeColor("Sclera", Color) = (1.0, 0.965, 0.93, 1)
-        _EyeRim("Rim (edge)", Color) = (0.62, 0.56, 0.50, 1)
+        // 版に掛ける色。既定は白（版の色をそのまま出す）。C# の AnomalyEyes.DefaultColor と対（本番はシーンの値）。
+        _EyeColor("Tint", Color) = (1, 1, 1, 1)
+        // 焼いた版（Resources/Eyes/EyeGlitch.png）。C# が起動時に 1 度だけ書く。無ければ黒 ＝ 目は出ない。
+        _EyeTex("Glitch Atlas", 2D) = "black" {}
     }
 
     SubShader
@@ -46,7 +63,7 @@ Shader "FixedCamVr/AnomalyEyes"
         Pass
         {
             Name "AnomalyEyes"
-            Blend One OneMinusSrcAlpha     // 前乗算アルファ（体は隠す / 暈は足す）
+            Blend One OneMinusSrcAlpha     // 前乗算アルファ（体は隠す / 何も足さない）
             ZWrite Off
             ZTest Always
             Cull Off
@@ -59,6 +76,9 @@ Shader "FixedCamVr/AnomalyEyes"
             //    プレビューは単眼カメラなので、この誤りは絵からは絶対に分からない。
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            TEXTURE2D(_EyeTex);
+            SAMPLER(sampler_EyeTex);
 
             CBUFFER_START(UnityPerMaterial)
                 float _EyeBig;
@@ -74,41 +94,48 @@ Shader "FixedCamVr/AnomalyEyes"
                 float _EyeSmile;
                 float _EyeClosing;
                 float4 _EyeColor;
-                float4 _EyeRim;
             CBUFFER_END
 
             // ---- 目の形（すべて quad ローカル -1..1）------------------------------------
-            // 目が quad の中で占める割合。残りは暈のための余白。
-            #define SHAPE_SCALE 0.74
-            // 瞼の弧は**上下で別の半径**（頂点属性 form3）。同じにすると全部が同じ型に見える。
-            // 半径 1.04（尖る）〜1.34（丸い）。**2 つの円弧の差**で描くので目尻は必ず尖る。
-            // 縁のゆらぎ。ゆっくりした歪み ＋ 細かい粗さの 2 段。
-            #define LID_WARP  0.045
-            #define LID_GRAIN 0.018
-            // 粗い粒で縁を欠けさせる（版画・掠れ）。⚠ **細かいノイズにしない** —
-            // VR ではちらつきとモアレになる。数画素の塊として量子化する。
-            // ⚠ 実機は 1 度あたりの画素がこのプレビューの約 2 倍あるので、**ここで細かく見えるくらいが実機で丁度**。
-            #define DROP_CELLS 52.0
-            // 粒を**横長**にする（縦にこの比を掛ける）。正方形の格子は「デジタルな四角いノイズ」に見える。
-            #define DROP_ANISO 0.78
-            // 白目の**内側**にも入れる欠け（版画の掻き取り）。
-            // ⚠ 参考画像の白目は**ほぼ無地**。0.08 でも「黒い雨」に見えた（実測）ので、気配だけ。
-            #define DROP_INNER 0.03
-            #define DROP_EDGE  0.22     // 縁の帯でどれだけ欠けるか（参考画像は 10〜25%）
-            // 縁とみなす帯の幅（**目の中央での高さ**に対する比）。
-            // ⚠⚠ **その場の高さで割ってはいけない。** 目尻へ向かって高さが 0 に近づくので、
-            //    帯が両端を丸ごと飲み込み、**目が粒に爆散する**（実際にそうなった）。
-            #define DROP_BAND  0.26
-            // 開きかけは**断片**にする（参考 me1 — 完成した目が現れるのではなく、
-            // 弧や点が闇から現れて瞼と虹彩へ繋がる）。
-            #define DROP_EARLY 0.80
-            // 輪郭の線。内側 生成り → 外側 橙 の 2 段（me3 の多重輪郭を暖色でやる）。
-            #define RIM_INNER 0.30
-            #define RIM_OUTER 0.12
-            // 暈。⚠ 広いと**闇に灯った投光器**に見える。輪郭の外 1° 以内に収める。
-            // ⚠ 2 巡とも「暈が残っている」と指摘された。輪郭のすぐ外だけに、ごく薄く。
-            #define GLOW_GAIN 0.022
-            #define GLOW_FALL 60.0
+            // 目が quad の中で占める割合（横）。⚠ AnomalyEyesMesh.ShapeScale と対。
+            // ⚠⚠ 0.74 → 0.90（0239）。余白は版画の暈のためのもので、版の目には要らない。quad ≒ 版のタイルになり塗る面積が 32% 減る。
+            #define SHAPE_SCALE 0.90
+            // quad の縦の余白（上下の柱のぶん）。⚠ AnomalyEyesMesh.RiftExtend と対 — 片方だけ直すと目が縦に潰れるか伸びる。
+            // ⚠⚠ 1.5 → 0.8（0239）。版の柱は目の丈の ±0.67 にしか無いのに 1.5 まで張ると塗る面積が倍で、実機が 35 fps だった。
+            #define RIFT_EXTEND 0.8
+
+            // ---- 版（tools/make-eye-glitch.py と対）------------------------------------------
+            #define TEX_COLS 2.0
+            #define TEX_ROWS 2.0
+            #define TEX_EYE_W 0.92      // タイル幅に対する目の箱の横幅
+            #define TEX_RATIO 0.60      // 目の箱の 縦/横（Codex の目は 0.51〜0.55 なので、伸ばすのは 2 割まで）
+            // 目の箱の外（上下）へ、箱の縁の行を縦に引き伸ばして出す柱。参考画像の「データの行を積んだ柱」。
+            // 版にもともと柱が描いてあればそれが優先（max で合流）。
+            #define SMEAR_REACH 1.1     // 目の丈に対して、どこまで届くか
+            #define SMEAR_COLS 14.0     // 目の横幅あたりの柱の候補の数
+            #define SMEAR_DENSITY 0.45  // 目のすぐ上での柱の密度（離れるほど疎ら）
+            #define SMEAR_LUM 0.65
+            // 柱が立ちうる帯（タイルの中心からの半幅）。Codex の 4 個体の柱は ±0.25 の中。外は版も柱も無いので引かずに捨てる。
+            #define SMEAR_HALF_W 0.30
+            // 視線で平行移動する範囲（目の箱の楕円に対する比）。0.55 まで版ごと動く・1.0（輪郭）で止まる・間は薄れる。
+            #define GAZE_E1 0.35
+            #define GAZE_E2 1.0
+            // 動く量の上限（タイルの単位）と、薄れの段数（滑らかだと動きぼかしに見える）。
+            #define GAZE_MAX_T 0.10
+            #define GAZE_STEPS 5.0
+
+            // ---- 帯（開きかけの散らばりと、視線の縁の刻み直し）--------------------------------
+            // 帯の刻み（目の丈に対する本数）。版の粒より粗い刻みで、版そのものを行ごとにずらす。
+            #define BANDS_MIN 14.0
+            #define BANDS_MAX 96.0
+            // 開き切った後のずれ（目の半幅に対する比・裾の重い分布）。版が既に壊れているので僅かでよい。
+            #define SHEAR_HOLD 0.03
+            // 開きかけのずれと欠け（0076「断片が闇から現れて繋がる」）。閉じるときは掛けない（0085）。
+            #define SHEAR_EARLY 0.55
+            #define DROP_EARLY 0.70
+            #define SHEAR_TAIL 2.6
+
+            // ---- 動き ----------------------------------------------------------------------
             // 瞬き（周期の逆数 / 鋭さ）。9 秒に 1 度・0.22 秒。**大きい目には掛けない**
             //（あちらは C# が段の中で 1 度だけ瞬かせる）。
             #define BLINK_RATE 0.11
@@ -116,26 +143,18 @@ Shader "FixedCamVr/AnomalyEyes"
             // 待機中の視線（canon/LEDGER.md 0084「待機中は目がぎょろぎょろ動く感じ」）。
             // ⚠⚠ **滑らかに動かさない。** 実物の目は止まって一瞬で飛ぶ（サッカード）。
             //    滑らかに回すと「機械のスキャン」に見える。開き方（0076）とまったく同じ理屈。
+            // ⭐ 帯の刻み直しも**この飛びと同じ縁**で起きる。別の時計で刻み直すと群れ全体が常にちらつく。
             #define GAZE_RATE 0.80      // 1 秒あたりの停留の数 ＝ 1.25 秒に 1 度飛ぶ
             #define GAZE_HOLD 0.94      // 停留の割合。残り 0.06 ＝ **0.075 秒で飛ぶ**（実物は 0.03〜0.08）
-            // 寄れる幅。⚠⚠ **「白目の余白」を上限にしない**（2026-08-17 に測って直した）。
-            //    虹彩が白目を食う目ほど余白が無くなり、**動きが白目の 2% ＝ 止まって見えた**。
-            //    実物の目も、横を見れば虹彩の一部は瞼の下へ隠れる。**このシェーダは虹彩を
-            //    瞼（cover）で切っているので、はみ出させて構わない。**
             #define GAZE_REACH 0.72
-            #define GAZE_IRIS_KEEP 0.45  // 虹彩の何割ぶんを縁の内側に残すか（0 = 中心が縁まで行く）
+            #define GAZE_IRIS_KEEP 0.45
             #define GAZE_TILT 0.45      // 縦の動きは横より狭い（実物の目と同じ）
             // ⚠ 目ごとに位相を散らす種の掛け数。**素数どうしにする** — 揃うと群れが 1 匹に見える。
             #define GAZE_SEED_T 11.3
             #define GAZE_SEED_X 3.1
             #define GAZE_SEED_Y 7.7
-            // 動き出す時刻を目ごとにずらす幅（_EyeGaze の 0→1 のあいだに順に動き出す）。
-            // ⚠⚠ **振れ幅を滑らかに上げてはいけない。** それは「ゆっくり動く」＝ サッカードではなく、
-            //    しかも全部が同時に動き出すので「スイッチが入った」に見える（2026-08-18 の赤入れ）。
             #define GAZE_STAGGER 1.0
             // 笑い。**下瞼が中央ほど持ち上がり、上瞼も少し下りる**（実物の笑い目 ^ ^ と同じ）。
-            // ⚠ 下だけを上げると「下半分を隠された目」＝ 半円になる（2026-08-18 に絵で見て直した）。
-            //    上も少し下ろすと、高さが元の 4 割まで詰まって**細めた**に見える。
             #define SMILE_LIFT 0.95     // 下瞼（1.0 で中心線まで）
             #define SMILE_TOP  0.25     // 上瞼（大きくすると眠そうな目に寄る）
 
@@ -145,12 +164,6 @@ Shader "FixedCamVr/AnomalyEyes"
                 float3 p3 = frac(p.xyx * 0.1031);
                 p3 += dot(p3, p3.yzx + 33.33);
                 return frac((p3.x + p3.y) * p3.z);
-            }
-            float n11(float x)
-            {
-                float i = floor(x), f = frac(x);
-                f = f * f * (3.0 - 2.0 * f);
-                return lerp(h11(i), h11(i + 1.0), f);
             }
 
             struct Attributes
@@ -189,6 +202,17 @@ Shader "FixedCamVr/AnomalyEyes"
                 return o;
             }
 
+            // 版の 1 タイルの中の uv（0..1）を、アトラスの uv へ。タイルの外へは出さない（Clamp が
+            // 反対側のタイルを漏らさないよう、ここで切る）。
+            float2 AtlasUv(float2 t, float variant)
+            {
+                float cx = fmod(variant, TEX_COLS);
+                float cy = floor(variant / TEX_COLS);
+                t = clamp(t, 0.0015, 0.9985);
+                // PNG の 0 行目が上なので、タイルの行は上から数える（v は下が 0）。
+                return float2((cx + t.x) / TEX_COLS, 1.0 - (cy + 1.0 - t.y) / TEX_ROWS);
+            }
+
             half4 frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
@@ -197,13 +221,12 @@ Shader "FixedCamVr/AnomalyEyes"
                 float isBig = i.attr.y;
                 float seed = i.attr.z;
                 float presence = i.attr.w;
-                float aspect = i.form.x;      // quad の 縦/横
+                float aspect = i.form.x;      // quad（目の部分）の 縦/横
                 float lidUp = i.form.y;
                 float lidDn = i.form.z;
                 float irisR = i.form.w;
                 float openMax = i.form2.x;
                 float skew = i.form2.y;
-                float pupOff = i.form2.z;
                 float sizeN = i.form2.w;      // 0 = 小さい目 / 1 = 視界を埋める目
                 float arcUp = i.form3.x;
                 float arcDn = i.form3.y;
@@ -215,89 +238,23 @@ Shader "FixedCamVr/AnomalyEyes"
                 // 開き具合。**AnomalyEyesLogic.EyeOpen と同じ式**（片方だけ直すと、
                 // 数えた本数（eyesN）と画が黙って食い違う）。
                 float span = max(_EyeSpan, 0.005);
-                // prog = **開く動きの進み**（0..1）。open = 実際の開き（個体差で 1 まで行かない）。
-                // ⚠⚠ この 2 つを混ぜない。断片（欠け）は prog で決める —
-                //    open で決めると、半開きで止まる目が**永久に虫食いのまま**になる（実際になった）。
                 float prog = saturate((_EyeField * (1.0 + span) - rank) / span);
                 prog = lerp(prog, _EyeBig, isBig);
                 float open = prog * lerp(openMax, 1.0, isBig);
 
-                // 瞬き。⚠ **動かすものは 1 つに絞る**（開眼が主・瞬きは稀・震えは強度が上がったときだけ）。
+                // 瞬き。⚠ **動かすものは 1 つに絞る**（開眼が主・瞬きは稀・刻み直しは視線の縁だけ）。
                 if (isBig < 0.5)
                 {
                     float bp = frac(_EyeTime * BLINK_RATE + seed);
                     open *= 1.0 - _EyeBlink * saturate(1.0 - abs(bp - 0.5) * BLINK_SHARP);
                 }
-                open *= 1.0 - 0.05 * _EyeIntensity * (n11(_EyeTime * 5.3 + seed * 31.0) * 2.0 - 1.0);
 
                 if (open <= 0.002 || _EyeFade <= 0.002) discard;
 
-                float2 p = i.uv;
+                // 目の座標。quad は縦に RIFT_EXTEND 倍長いので、戻してから目の式へ入れる。
+                float2 p = float2(i.uv.x, i.uv.y * RIFT_EXTEND);
 
-                // 瞼の弧。目尻で厳密に 0・傾きは有限 ＝ 尖る。
-                // ⚠ **上下で別の弧**にし、横も歪める（目頭と目尻で丸みが変わる）。
-                //    同じ弧を上下に使うと、傾きや大きさを変えても「全部が同じ型」に見える。
-                float pu = clamp(p.x / SHAPE_SCALE + warpX * (p.x / SHAPE_SCALE)
-                                 * (1.0 - abs(p.x / SHAPE_SCALE)), -1.0, 1.0);
-                float wob = 1.0 + (LID_WARP * (n11(pu * 1.7 + seed * 17.0) * 2.0 - 1.0)
-                                   + LID_GRAIN * (n11(pu * 11.0 + seed * 23.0) * 2.0 - 1.0));
-                float bU = sqrt(max(arcUp * arcUp - 1.0, 1e-4));
-                float bD = sqrt(max(arcDn * arcDn - 1.0, 1e-4));
-                float lidU = saturate((sqrt(max(arcUp * arcUp - pu * pu, 0.0)) - bU) / (arcUp - bU));
-                float lidD = saturate((sqrt(max(arcDn * arcDn - pu * pu, 0.0)) - bD) / (arcDn - bD));
-                lidU *= 1.0 + lidU * (wob - 1.0);
-                lidD *= 1.0 + lidD * (wob - 1.0);
-                float lid = max(lidU, lidD);      // 欠け・輪郭・暈は「目のどこか」で測る
-
-                // 目尻の高さ違い（片方を吊る）。上下を同じだけずらすので形は崩れない。
-                float tilt = skew * pu * lid * SHAPE_SCALE;
-                float up = lidUp * open * lidU * SHAPE_SCALE + tilt;
-                float dn = -lidDn * open * lidD * SHAPE_SCALE + tilt;
-
-                // 笑い。**下瞼だけ**が中央ほど持ち上がる ＝ 上に凸の三日月（大きい目のみ）。
-                // ⚠ open を下げて細めると上下から均等に狭まる ＝ 眠そうな目になる。笑いは下だけ。
-                float smile = _EyeSmile * isBig;
-                up -= smile * SMILE_TOP * lidUp * lidU * open * SHAPE_SCALE;
-                dn += smile * SMILE_LIFT * lidDn * lidD * open * SHAPE_SCALE;
-                dn = min(dn, up);
-
-                float aa = max(fwidth(p.y), 1e-4) * 1.2;
-                float cover = smoothstep(-aa, aa, up - p.y) * smoothstep(-aa, aa, p.y - dn);
-                // ⚠⚠ **画素より細い帯は、その細さのぶんだけ薄くする。**
-                //    これが無いと目尻から左右へ 1 画素の白い線が伸びる（髭のように見えた）。
-                cover *= saturate((up - dn) / max(2.0 * aa, 1e-5));
-
-                // 縁からの距離（0 = 縁 / 1 = 帯の内側）。輪郭・欠け・暈の全部がこれを読む。
-                // ⚠ 基準は**目の中央での高さ**（その場の高さではない） ＝ 帯の幅が全体で一定になる。
-                float half_ = max(0.5 * (up - dn), 1e-5);
-                float halfMax = max(0.5 * (lidUp * lidU + lidDn * lidD) * open * SHAPE_SCALE, 1e-5);
-                float dEdge = saturate(min(up - p.y, p.y - dn) / (halfMax * DROP_BAND));
-
-                // 粗い粒で縁を欠けさせる。開きかけは**全体が断片**になる（闇から弧が現れる）。
-                // ⚠ 粒の大きさは**画面での大きさ**を揃える（大きい目ほど細かく刻む）。
-                //    刻みを一定にすると、視界を埋める目だけ粒が巨大な市松模様になる。
-                float cells = DROP_CELLS * lerp(0.6, 3.4, sizeN);
-                // ⚠ **横長の粒**にする。正方形の格子は「デジタルな四角いノイズ」に見える（2 巡目の指摘）。
-                float2 cell = floor(p * float2(cells, cells * DROP_ANISO) / SHAPE_SCALE + seed * 7.0);
-                float grain = h21(cell);
-                // 白目の内側にも欠けを入れる（版画の掻き取り）。縁だけだと面が一様に見える。
-                // ⚠⚠ **断片は「闇から現れる」ときだけ。** 閉じるときも開き具合は小さくなるので、
-                //    ここを素通しにすると**瞼が下りるのではなく砕けて散る**（2026-08-18 の赤入れ）。
-                float dropAmt = saturate((1.0 - dEdge) * DROP_EDGE + DROP_INNER
-                                         + (1.0 - prog) * DROP_EARLY * (1.0 - _EyeClosing));
-                // ⚠⚠ **目尻では欠けさせない。** 高さが 1 セルを下回る所で欠けさせると、
-                //    先細りが階段状の塊に砕ける（実際に 2 度そうなった）。尖りは残す。
-                dropAmt *= smoothstep(0.12, 0.42, lid);
-                cover *= step(dropAmt, grain);
-                if (cover <= 0.002) discard;
-
-                // 虹彩と瞳孔。**真円で描く**（quad は横長なので縦を aspect で伸ばして測る）。
-                // 大きい目ほど虹彩が白目を食う ＝ 参考 me3 の「巨大な虹彩と黒い内部」が自動的に出る。
-                float cy = 0.5 * (lidUp - lidDn) * open * SHAPE_SCALE;
-                float ir = irisR * (0.45 + 0.55 * open) * SHAPE_SCALE;
-
-                // 待機中の視線。**止まって、一瞬で飛ぶ。** 目ごとに位相が違うので、
-                // 群れ全体では「あちこちが順不同に動く」＝ ぎょろぎょろになる。
+                // ---- 待機中の視線。**止まって、一瞬で飛ぶ。**
                 float gt = _EyeTime * GAZE_RATE + seed * GAZE_SEED_T;
                 float gi = floor(gt);
                 float gm = smoothstep(GAZE_HOLD, 1.0, frac(gt));
@@ -305,58 +262,121 @@ Shader "FixedCamVr/AnomalyEyes"
                                    h21(float2(gi, seed * GAZE_SEED_Y))) * 2.0 - 1.0;
                 float2 gB = float2(h21(float2(gi + 1.0, seed * GAZE_SEED_X)),
                                    h21(float2(gi + 1.0, seed * GAZE_SEED_Y))) * 2.0 - 1.0;
-                // 動ける幅。虹彩を GAZE_IRIS_KEEP ぶんだけ縁の内側に残す（残りは瞼が切る）。
-                // ⚠ 目ごとに違う瞬間に動き出す（0/1 の門）。振れ幅は動き出した時点で満額。
                 float gGate = step(h11(seed * 5.7) * GAZE_STAGGER, _EyeGaze * (1.0 + GAZE_STAGGER));
+                float ir = irisR * (0.45 + 0.55 * open) * SHAPE_SCALE;
                 float reach = max(SHAPE_SCALE - ir * GAZE_IRIS_KEEP, 0.0) * GAZE_REACH * gGate * open;
                 float2 gaze = lerp(gA, gB, gm) * reach * float2(1.0, GAZE_TILT);
+                float epoch = gi * gGate;       // 帯の刻み直しは視線が飛んだ縁
 
-                float2 q = float2(p.x - gaze.x, (p.y - cy - gaze.y) * aspect) / max(ir, 1e-3);
-                float d = length(q);
-                float aaI = max(fwidth(d), 1e-4) * 1.2;
-                float irisMask = 1.0 - smoothstep(1.0 - aaI, 1.0 + aaI, d);
-                // 瞳孔は真円にしない（縦に潰れ、少しずれる）。
-                float2 pq = float2(q.x - pupOff, q.y * (1.25 + 0.5 * sizeN));
-                float pupil = 1.0 - smoothstep(0.45 - aaI, 0.45 + aaI, length(pq));
-                pupil *= 1.0 - 0.35 * _EyeIntensity;    // 凝視されると瞳孔が縮む
+                // ---- 帯（版を行ごとにずらす）。
+                float eyeH = (lidUp + lidDn) * SHAPE_SCALE;
+                float pitch = eyeH / lerp(BANDS_MIN, BANDS_MAX, sizeN);
+                float bi = floor((p.y + RIFT_EXTEND) / pitch);
+                float hb = h21(float2(bi + epoch * 97.0, seed * 13.1));
+                float hb2 = frac(hb * 17.31 + 0.37);
+                float hb4 = h21(float2(bi * 1.7 + 3.0, seed * 41.3));
+                // 開きかけの散らばり。⚠⚠ **閉じるときは掛けない**（砕けて散るのではなく瞼が下りる・0085）。
+                float early = (1.0 - prog) * (1.0 - _EyeClosing);
+                float shearAmp = SHEAR_HOLD + early * SHEAR_EARLY;
+                float sgn = hb2 < 0.5 ? -1.0 : 1.0;
+                float shear = sgn * pow(abs(hb2 - 0.5) * 2.0, SHEAR_TAIL) * shearAmp * SHAPE_SCALE;
+                float bandOn = step(early * DROP_EARLY, hb4);
+                float2 q = float2(p.x - shear, p.y);
 
-                // 虹彩の彫り。粒が主・輪が従（版画のように掻き取った虹彩）。
-                // ⚠ 虹彩の座標で刻むと、大きい虹彩ほど粒が巨大になる（碁盤の目に見えた）。
-                //    白目と**同じ座標系・同じ横長**で刻んで、粒の大きさを揃える。
-                float grit = h21(floor(p * float2(cells, cells * DROP_ANISO) * 1.6 / SHAPE_SCALE
-                                       + seed * 13.0));
-                float rings = 0.5 + 0.5 * sin(d * 11.0 + seed * 9.0 + grit * 3.0);
-                float etch = saturate(grit * 0.75 + rings * 0.45 - 0.22);
-                float iris = lerp(0.02, 0.30, etch * etch);
-                iris *= 1.0 - smoothstep(0.72, 1.0, d);   // ⚠ smoothstep は edge0 < edge1
-
-                // 白目。上瞼の影 ＋ 粗い斑（均一な面は「貼った紙」に見える）。
-                float lum = 1.0 - 0.30 * smoothstep(dn, up, p.y);
-                lum *= 0.93 + 0.07 * h21(floor(p * lerp(9.0, 26.0, sizeN) - seed * 5.0));
-                lum = lerp(lum, iris, irisMask);
-                lum = lerp(lum, 0.0, pupil * irisMask);
-
-                // 輪郭。内側 生成り → 外側 橙 の 2 段（me3 の多重輪郭を暖色でやる）。
-                float rimIn = 1.0 - smoothstep(0.0, RIM_INNER, dEdge);
-                float rimOut = 1.0 - smoothstep(0.0, RIM_OUTER, dEdge);
-                float3 rimCol = lerp(_EyeRim.rgb, _EyeColor.rgb, saturate(rimOut * 1.2));
-
-                float3 body = _EyeColor.rgb * lum;
-                // ⚠ 目尻では輪郭を混ぜない（細い所を橙で塗ると、両端だけ色が違う目になる）。
-                body = lerp(body, rimCol, rimIn * (0.45 + 0.35 * sizeN) * smoothstep(0.10, 0.40, lid));
-
-                // 闇に滲む暈。**形の外側だけ**・輪郭の外 1° 以内。
+                // ---- 瞼の包絡（0076 / 0077 の式そのまま）。
+                // ⚠⚠ **0239 からは版を切らない。** 包絡が与えるのは**中心線**（目尻の傾き・笑いの曲がり）と
+                //    **縦の潰し率**だけ。見える形は常に版の目そのものの alpha。切ると、閉じる途中に手続きの
+                //    綺麗な弧の縁が現れ、開き切っても版の縁と包絡の縁の 2 種類が混ざる（ユーザー判定「破綻」）。
+                //    閉じる ＝ 版の行が中心線へ潰れて 1 本の線になる（装置の電源断と同じ語彙）。開く ＝ 線から膨らむ。
+                //    笑い（0085）は中心線が上へ曲がるので、潰れた線が上に凸の三日月になる。
+                float px = q.x / SHAPE_SCALE;
+                float pu = clamp(px + warpX * px * (1.0 - abs(px)), -1.0, 1.0);
+                float bU = sqrt(max(arcUp * arcUp - 1.0, 1e-4));
+                float bD = sqrt(max(arcDn * arcDn - 1.0, 1e-4));
+                float lidU = saturate((sqrt(max(arcUp * arcUp - pu * pu, 0.0)) - bU) / (arcUp - bU));
+                float lidD = saturate((sqrt(max(arcDn * arcDn - pu * pu, 0.0)) - bD) / (arcDn - bD));
+                float lid = max(lidU, lidD);
+                float tilt = skew * pu * lid * SHAPE_SCALE;
+                float up = lidUp * open * lidU * SHAPE_SCALE + tilt;
+                float dn = -lidDn * open * lidD * SHAPE_SCALE + tilt;
+                float smile = _EyeSmile * isBig;
+                up -= smile * SMILE_TOP * lidUp * lidU * open * SHAPE_SCALE;
+                dn += smile * SMILE_LIFT * lidDn * lidD * open * SHAPE_SCALE;
+                dn = min(dn, up);
                 float mid = 0.5 * (up + dn);
-                float dv = max(abs(p.y - mid) - half_, 0.0);
-                float du = max(abs(p.x) - SHAPE_SCALE, 0.0);
-                float glow = exp(-length(float2(du, dv)) * GLOW_FALL) * (1.0 - cover) * open;
-                // quad の縁で必ず 0 にする（残すと面の境目が斜めの線として見える）。
-                glow *= saturate((1.0 - max(abs(p.x), abs(p.y))) / 0.14);
+                // 潰し率は**中央の丈**で測る（目尻は丈が 0 なので割れない）。笑いで下瞼が上がるぶんも潰れに入る。
+                float hFull = (lidUp + lidDn) * SHAPE_SCALE;
+                float hNow = open * SHAPE_SCALE * (lidUp * (1.0 - smile * SMILE_TOP) + lidDn * (1.0 - smile * SMILE_LIFT));
+                float squash = max(hNow / max(hFull, 1e-4), 0.004);
 
-                float a = cover * _EyeFade;
-                // 前乗算: 体は a ぶん隠して足す / 暈は隠さずに足すだけ。
-                float3 col = body * a + _EyeColor.rgb * (glow * GLOW_GAIN * _EyeFade);
-                return half4(col * _EyeGain, a);
+                // ---- 版を引く。横は目の箱（横幅 2×SHAPE_SCALE）を版の目の箱へ。縦は等方の尺（quad の縦の単位は
+                //    横の aspect 倍）を潰し率で割る ＝ 開き切ったときは等方、閉じるほど行が中心線へ寄る。
+                float variant = floor(h11(seed * 7.7) * (TEX_COLS * TEX_ROWS - 0.001));
+                float flip = step(0.5, h11(seed * 2.1)) * 2.0 - 1.0;   // 個体の半分は左右反転
+                float Kv = 0.5 * TEX_EYE_W * aspect / SHAPE_SCALE;
+                float2 t0 = float2(0.5 + 0.5 * TEX_EYE_W * flip * p.x / SHAPE_SCALE,
+                                   0.5 + (p.y - mid) / squash * Kv);
+                // ⚠ mip の段は、ずらす前・歪める前の uv の微分で選ぶ（帯ごとに uv が跳ぶ）。
+                float2 dtx = ddx(t0) / float2(TEX_COLS, TEX_ROWS);
+                float2 dty = ddy(t0) / float2(TEX_COLS, TEX_ROWS);
+                float2 t = float2(0.5 + 0.5 * TEX_EYE_W * flip * q.x / SHAPE_SCALE, t0.y);
+
+                // ---- 視線（0084「目玉ぎょろぎょろ」）。⚠⚠ **版ごと滑らせない** — 輪郭が動くと目玉ではなく目そのものが漂う。
+                //    眼球が瞼の下で回るのと同じ形: 目の中（楕円の 0.55 まで）は版ごと平行移動、そこから輪郭（1.0）へ向けて
+                //    薄れ、輪郭は止まる。間の白目の粒が片側で詰まり片側で伸びるが、壊れた画像データなので乱れとして読める。
+                //    ⚠ 「虹彩の周りだけ」（半径 0.24〜0.42 の円）で試したら、動いた先の縁で渦を巻いた（v1 の絵）。
+                //    ⚠ 動く量はタイルの 0.13 まで（目の半幅の 3 割）。それ以上は白目の詰まりが渦に見える。
+                float2 gT = float2(flip * gaze.x, gaze.y * aspect) * (0.5 * TEX_EYE_W / SHAPE_SCALE);
+                float gl = length(gT);
+                gT *= min(gl, GAZE_MAX_T) / max(gl, 1e-5);
+                float2 te = (t - 0.5) / float2(0.5 * TEX_EYE_W, 0.5 * TEX_EYE_W * TEX_RATIO);
+                float wI = 1.0 - smoothstep(GAZE_E1, GAZE_E2, length(te));
+                // ⚠ 滑らかに薄れさせると、白目の伸びが**動きぼかし**に見える（v2 の絵・輪郭から放射する筋）。
+                //    段に量子化すると、伸びではなく**ブロックが飛んだ**形になり、壊れた画像データの語彙に乗る。
+                wI = floor(wI * GAZE_STEPS + 0.5) / GAZE_STEPS;
+                t -= gT * wI;
+
+                // ---- 目の箱の上下へ、箱の縁の行を縦に引き伸ばした柱（参考画像の「データの行を積んだ柱」）。
+                float vlo = 0.5 - 0.5 * TEX_EYE_W * TEX_RATIO;
+                float vhi = 0.5 + 0.5 * TEX_EYE_W * TEX_RATIO;
+                float outV = max(t.y - vhi, vlo - t.y);                 // 箱からの縦の距離（版の単位）
+
+                // ⚠⚠ **版を引く前に捨てる。** quad は目より縦に 1.5 倍長く、目の外の画素が過半を占める。
+                //    そこで版を 2 回引いてから捨てると、89 個が開いた 2 秒で実機が 34 fps まで落ちた
+                //    （走行 `20260919_192053`）。タイルの外・帯の欠け・柱の帯の外は、何も引かずにここで終える。
+                if (bandOn < 0.5) discard;
+                if (abs(t.x - 0.5) > 0.5 || abs(t.y - 0.5) > 0.5) discard;
+                if (outV > 0.0 && abs(t.x - 0.5) > SMEAR_HALF_W) discard;
+
+                float rn = saturate(outV / (TEX_EYE_W * TEX_RATIO * SMEAR_REACH));
+                float colx = floor((t.x - 0.5) * SMEAR_COLS + 100.0);
+                float hcol = h21(float2(colx, seed * 9.1 + epoch * 2.0));
+                float smearP = SMEAR_DENSITY * pow(1.0 - rn, 1.8);
+                float smearOn = step(0.0, outV) * step(1.0 - smearP, hcol);
+                // 柱の幅は候補の 0.35〜0.8（隣と隙間を空ける）。
+                float fcol = frac((t.x - 0.5) * SMEAR_COLS + 100.0);
+                float cw = lerp(0.35, 0.8, frac(hcol * 7.3));
+                smearOn *= step(fcol, cw);
+                // 行ごとの明滅で「積んだ行」に見せる（1〜2 画素の行）。
+                float rowOn = step(0.25, h21(float2(bi * 3.1, colx + seed * 5.5)));
+                float smearW = SMEAR_LUM * smearOn * rowOn * (1.0 - rn) * open;
+
+                half4 tex = SAMPLE_TEXTURE2D_GRAD(_EyeTex, sampler_EyeTex, AtlasUv(t, variant), dtx, dty);
+                half4 smear = half4(0, 0, 0, 0);
+                if (smearW > 0.002)
+                {
+                    float2 tEdge = float2(t.x, clamp(t.y, vlo + 0.01, vhi - 0.01));
+                    smear = SAMPLE_TEXTURE2D_GRAD(_EyeTex, sampler_EyeTex, AtlasUv(tEdge, variant), dtx, dty) * smearW;
+                }
+
+                // ---- 合成。形は版の alpha そのもの（版に描いてある柱も含む）。引き伸ばした柱は版の無い所だけ。
+                float a = saturate(tex.a + smear.a * (1.0 - tex.a));
+                float3 col = tex.rgb + smear.rgb * (1.0 - tex.a);
+                if (a <= 0.002) discard;
+
+                a *= _EyeFade;
+                col *= _EyeFade * _EyeColor.rgb * _EyeGain;
+                return half4(col, a);
             }
             ENDHLSL
         }

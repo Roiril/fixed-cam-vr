@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [dark_eyes_slices.md](dark_eyes_slices.md) - 2026-09-19（0237 / 0238・R055 / R056）。闇の目の中身を **Codex に描かせた「壊れた画像データの目」の版**へ（`tools/make-eye-glitch.py` → `Resources/Eyes/EyeGlitch.png`）。**手続きの帯は「整然としすぎ・チープ」で不採用**（色の割合が参考に並んでも目には読めない）／シェーダは瞼の包絡で切ってずらして引くだけ／mip の段はずらす前の uv の微分で／`eyes=` の 8 つ目 ＝ 版を掴めたか／**プレビューは `-Set scale=2`**／`RiftExtend` ⇔ `RIFT_EXTEND`・`--ratio` ⇔ `TEX_RATIO`・`DefaultColor`/`DefaultGain` ⇔ シーンの値 は対。
+
 - [unauthorized_access_effect.md](unauthorized_access_effect.md) - 2026-09-19。用途未定のエラー演出。独立 Prefab。描画順と映像面からの距離。Editor での停止と破棄。実描画の不在検出。
 
 - [website_plates_and_fonts.md](website_plates_and_fonts.md) - 2026-09-19。公式サイトの記録・クレジットを荷札と銘板へ。**文言を変えたら `npm run fonts`**（和文書体は画面の字だけのサブセット・check が収録漏れを落とす）／Vercel は `--scope roilils-projects` が無いと Not authorized・プレビューはログインが要る／**headless Chrome は 512px より狭く撮れない**（スマホ幅はアプリ内ブラウザで）・ペインが隠れていると IntersectionObserver が発火しない。
