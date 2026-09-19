@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [website_plates_and_fonts.md](website_plates_and_fonts.md) - 2026-09-19。公式サイトの記録・クレジットを荷札と銘板へ。**文言を変えたら `npm run fonts`**（和文書体は画面の字だけのサブセット・check が収録漏れを落とす）／Vercel は `--scope roilils-projects` が無いと Not authorized・プレビューはログインが要る／**headless Chrome は 512px より狭く撮れない**（スマホ幅はアプリ内ブラウザで）・ペインが隠れていると IntersectionObserver が発火しない。
+
 - [closing_line_halt.md](closing_line_halt.md) - 2026-09-19（0233）。4-A の③a「止まってください！」は時計ではなく**締めの線（3-A の凍結点）を踏んだ瞬間**。線は show.json に口を作らず台本から導く（`TakeSchema.ResolveClosingLineId`）／記録は締めのカットの中だけ・入り際 0.6 秒の猶予・take が始まった同じ Tick で拾う／自動走行は `CrossClosingLine` で踏みに行く／時計 5 秒は線が無いときの退避路／観測 `ev=closingLine`・`cline=`・`config closingLine=`。
 
 - [comms_curse.md](comms_curse.md) - 2026-09-18（0229）。連絡の面の壊れを「呪われた双子の画面が斑で重なる」形へ。斑の場は HLSL と C# の写し 1 対（顔・地・走り書き・文字の切断が共有）／**文字は地が書くステンシル bit 8 を TMP の材質が読んで切る**（1 パスでは書けない・fontMaterials 全部・ステンシルが無い形式では CPU の alpha 0 が保険）／面積は侵食度に等号で結ばない（0.25→22%・0.75→55%・1→全面）／「出た初めは通常 → 1 秒で重なる」は CommsPanelLogic が持つ（**0.25 だけ**）／**0.75 以降は斑ではなく前線**（0230・→ comms_takeover.md）。

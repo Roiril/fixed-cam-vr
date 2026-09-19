@@ -45,7 +45,7 @@ npm run fonts
 
 Vercelでは `vercel.json` により同じビルドを実行し、`dist/` だけを公開します。
 
-Vercelプロジェクト `roilils-projects/mawarimi` はGit連携なしです。公開はこのディレクトリで `vercel deploy --prod` を実行します。初回は `vercel link --project mawarimi --scope roilils-projects` で既存プロジェクトへ接続します。`.vercel/` と `.env*` はローカル専用です。
+Vercelプロジェクト `roilils-projects/mawarimi` はGit連携なしです。公開はこのディレクトリで `vercel deploy --prod --scope roilils-projects` を実行します。`--scope` を省くと "Not authorized" で止まります（2026-09-19 実測）。CLI を入れていなければ `npx --yes vercel@latest deploy --prod --scope roilils-projects` で同じことができます。`--prod` を付けなければプレビュー URL に出ます。プレビューは Deployment Protection が効いていて、Vercel にログインしたブラウザでしか開けません。初回は `vercel link --project mawarimi --scope roilils-projects` で既存プロジェクトへ接続します。`.vercel/` と `.env*` はローカル専用です。
 
 Google Search Console の所有権確認には `google5081a8a413a7871f.html` を使います。確認状態を維持するため、公開後も削除しません。
 
