@@ -271,6 +271,7 @@ namespace FixedCamVr.OvrBridge
                 return Fail("stereo", $"左右カメラの撮影時刻差が {deltaMs:0.0}ms のため、破片への撮影を見送ります");
 
             PublishStatus("ok");
+            PublishProjectionProbe(left.worldToUv, right.worldToUv);
 
             Debug.Log($"[IntroCamera] 静止画用の入力取得: left={left.timestamp:O} "
                       + $"right={right.timestamp:O} delta={deltaMs:0.0}ms "
@@ -278,6 +279,29 @@ namespace FixedCamVr.OvrBridge
                       + $"rightRes={_rightCamera.CurrentResolution.x}x{_rightCamera.CurrentResolution.y}");
             return new IntroFrozenFrameSource(
                 left.texture, right.texture, left.worldToUv, right.worldToUv);
+        }
+
+        /// <summary>
+        /// 投影の検算（0236）。頭の正面 1.6m（破片のシェル半径）の点が左右カメラの投影で「前」に居るか。
+        /// 後ろに出ると中央の片は写真の範囲判定で 1 枚も描かれず、周辺の板が中央まで覆う。
+        /// 未装着の自動走行でだけ起きる型なので、ログだけでなくテレメトリ（shatProj=）へも出す。
+        /// </summary>
+        private void PublishProjectionProbe(Matrix4x4 leftWorldToUv, Matrix4x4 rightWorldToUv)
+        {
+            if (veil == null || cameraRig == null || cameraRig.centerEyeAnchor == null) return;
+            Transform head = cameraRig.centerEyeAnchor;
+            Vector3 probe = head.position + head.forward * 1.6f;
+            var p = new Vector4(probe.x, probe.y, probe.z, 1f);
+            Vector4 ql = leftWorldToUv * p;
+            Vector4 qr = rightWorldToUv * p;
+            string Describe(Vector4 q) => q.w > 1e-4f
+                ? FormattableString.Invariant($"{q.x / q.w:0.00},{q.y / q.w:0.00}")
+                : "behind";
+            string note = Describe(ql) + "/" + Describe(qr);
+            veil.FrozenFrameProjection = note;
+            Debug.Log($"[IntroCamera] 投影の検算: 頭 {head.position:F2} 向き {head.forward:F2} → 正面 1.6m の uv 左/右 = {note}"
+                      + (ql.w <= 1e-4f || qr.w <= 1e-4f
+                          ? "（カメラ姿勢の後ろ ＝ 中央の片は写真の範囲判定で描かれない。未装着の自動走行で起きる型）" : string.Empty));
         }
 
         private IntroFrozenFrameSource? Fail(string status, string reason)

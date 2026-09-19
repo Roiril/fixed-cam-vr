@@ -536,6 +536,8 @@ namespace FixedCamVr.Diagnostics
         private string ShatterCameraState => _veil == null ? "-" : _veil.FrozenFrameStatus;
         /// <summary>割れ始めの頭の姿勢を固定したか。0 のまま Frame が進むと破片が頭についてくる。</summary>
         private string ShatterAnchorState => _veil == null ? "-" : (_veil.ShatterAnchored ? "1" : "0");
+        /// <summary>静止画の投影の検算（0236）。頭の正面 1.6m の uv 左/右、または behind。</summary>
+        private string ShatterProjectionState => _veil == null ? "-" : _veil.FrozenFrameProjection;
         /// <summary>この走行で光の粒（0235）を一度でも描いたか。0 ならシェーダかメッシュが剥がれている。</summary>
         private string SparkState => _veil == null ? "-" : (_veil.SparkEverDrawn ? "1" : "0");
         /// <summary>組めた光の粒の数（流れ ＋ 代表）。0 はメッシュを組めていない。</summary>
@@ -761,7 +763,7 @@ namespace FixedCamVr.Diagnostics
                      $"aper={ApertureState} aperQ={ApertureQuadState} aperRect={ApertureRectState} " +
                      $"shatStyle=frozen shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
                      $"shatFrozen={ShatterFrozenState} shatCopies={ShatterFrozenCount} " +
-                     $"shatCam={ShatterCameraState} shatAnchor={ShatterAnchorState} " +
+                     $"shatCam={ShatterCameraState} shatAnchor={ShatterAnchorState} shatProj={ShatterProjectionState} " +
                      // 0235: 光の粒。spark は「画に出た」側で、sparkN は組めた粒の数。
                      $"spark={SparkState} sparkN={SparkCountState} " +
                      // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
@@ -1231,6 +1233,7 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" shatCopies=").Append(ShatterFrozenCount);
                 _sb.Append(" shatCam=").Append(ShatterCameraState);
                 _sb.Append(" shatAnchor=").Append(ShatterAnchorState);
+                _sb.Append(" shatProj=").Append(ShatterProjectionState);
                 _sb.Append(" spark=").Append(SparkState);
                 _sb.Append(" sparkN=").Append(SparkCountState);
             }

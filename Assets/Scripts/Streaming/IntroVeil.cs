@@ -159,6 +159,13 @@ namespace FixedCamVr.Streaming
         public string FrozenFrameStatus { get; set; } = "none";
 
         /// <summary>
+        /// 静止画の投影の健全性（0236）。撮影時の頭の正面 1.6m の点を左カメラの worldToUv で投影した uv
+        /// （例 <c>0.51,0.48</c>）。<c>behind</c> ならカメラ姿勢の後ろ ＝ 中央の片は写真の範囲判定で全部 clip され、
+        /// 周辺の板が中央まで覆う（未装着の自動走行で 2026-09-19 に観測）。テレメトリが <c>shatProj=</c> で出す。
+        /// </summary>
+        public string FrozenFrameProjection { get; set; } = "-";
+
+        /// <summary>
         /// 割れ始めの頭の姿勢を固定したか。破片はこの姿勢からワールド空間で動く。
         /// 静止画の有無に関わらず、割れ始めの 1 回だけ取る。
         /// </summary>

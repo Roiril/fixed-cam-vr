@@ -3273,6 +3273,16 @@ def analyze(events, others, exp, warns=None):
                         else:
                             grains = int(max(spark_counts)) if spark_counts else 0
                             verdict("OK", f"光の粒を描いた（{grains} 粒）")
+                # 0236: 静止画の投影の検算。behind なら中央の片は 1 枚も描かれず、周辺の板が中央まで覆う
+                # （未装着の自動走行で起きる型）。録画で「中央の片が写っていない」を実装の不具合と読まないための印。
+                projections = [v for v in effect_samples(events, "shatProj") if v not in ("", "-")]
+                if projections:
+                    proj_last = projections[-1]
+                    if "behind" in proj_last:
+                        verdict("WARN", f"静止画の投影がカメラ姿勢の後ろ（shatProj={proj_last}）— 中央の片は写真の範囲判定で描かれず、"
+                                        "周辺の板が中央まで覆う。未装着の自動走行で起きる型なので、録画で中央の片の質感は判定できない")
+                    else:
+                        verdict("OK", f"静止画の投影は前を向いている（正面 1.6m の uv 左/右 = {proj_last}）")
                 anchors = fracture_numbers("shatAnchor")
                 if anchors and max(anchors) < 1:
                     verdict("FAIL", "割れ始めの頭の姿勢を固定できていない（shatAnchor=0 のまま）— 破片が頭についてくる")
