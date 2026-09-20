@@ -333,6 +333,30 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
+        public void TakeoverDarkensOnlyItsOwnPlateWithoutResizingTheText()
+        {
+            _panel.SetDecayForPreview(0f, 0f);
+            _panel.Deliver(CommsNotice.Greeting);
+            Advance(CommsPanelLogic.InSec + 0.2f);
+            float normalAlpha = _panel.AppliedPanelAlpha;
+            Vector3 normalScale = Text().transform.lossyScale;
+            Assert.AreEqual(.72f, normalAlpha, .001f);
+
+            _panel.Deliver(CommsNotice.Takeover);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec + 0.2f);
+            Assert.AreEqual(.96f, _panel.AppliedPanelAlpha, .001f);
+            Assert.AreEqual(normalScale, Text().transform.lossyScale);
+            var plate = (Material)typeof(CommsPanel).GetField("_panelMat", Private)!.GetValue(_panel);
+            Assert.AreEqual(.96f, plate.GetColor("_Color").a, .001f, "実材質へ遮光を反映する");
+
+            Call("OnRunRestarted");
+            _panel.Deliver(CommsNotice.Greeting);
+            Advance(CommsPanelLogic.InSec + 0.2f);
+            Assert.AreEqual(normalAlpha, _panel.AppliedPanelAlpha, .001f);
+            Assert.AreEqual(normalScale, Text().transform.lossyScale);
+        }
+
+        [Test]
         public void SuppressionBetweenTakesAlsoStopsThePossession()
         {
             var runner = _go!.AddComponent<TakeRunner>();

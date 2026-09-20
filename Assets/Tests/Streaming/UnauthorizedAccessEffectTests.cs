@@ -409,7 +409,180 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        [Test]
+        public void TakeoverReadFocusAppliesPerMeshOpacityIncludingAmplifiedStatus()
+        {
+            GameObject anchor = NewAnchor("ReadFocusAnchor");
+            GameObject host = new GameObject("ReadFocusEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            try
+            {
+                var effect = ConfigureTakeoverEffect(host, out material, out textures);
+                effect.Play(anchor.transform, ReferenceSize);
+                const float seconds = 1.45f;
+
+                effect.SampleTakeover(seconds, false, 1f);
+                float warning = MaxAlpha(effect, "Unauthorized Access Warning Bands");
+                float subtitle = MaxAlpha(effect, "Unauthorized Access Subtitle Bands");
+                float symbol = MaxAlpha(effect, "Unauthorized Access Symbol");
+                float decorations = MaxAlpha(effect, "Unauthorized Access Decorations");
+                float context = MaxAlpha(effect, "Unauthorized Access Context");
+                float attempt = MaxAlpha(effect, "Unauthorized Access Status");
+                float glyphs = MaxAlpha(effect, "Unauthorized Access Glyphs");
+                float interference = MaxAlpha(effect, "Unauthorized Access Interference");
+
+                effect.SampleTakeover(seconds, false, 1f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Warning Bands", warning * (.10f / .35f));
+                AssertAlpha(effect, "Unauthorized Access Subtitle Bands", subtitle * (.10f / .35f));
+                AssertAlpha(effect, "Unauthorized Access Symbol", symbol * (.14f / .35f));
+                AssertAlpha(effect, "Unauthorized Access Decorations", decorations * (.14f / .35f));
+                AssertAlpha(effect, "Unauthorized Access Context", context * (.10f / .35f));
+                AssertAlpha(effect, "Unauthorized Access Status", attempt * (.38f / .35f));
+                AssertAlpha(effect, "Unauthorized Access Glyphs", glyphs * (.14f / .35f));
+                AssertAlpha(effect, "Unauthorized Access Interference", interference * (.14f / .35f));
+
+                effect.SampleTakeover(seconds, true, 1f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Status", attempt * (.55f / .35f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
+            }
+        }
+
+        [Test]
+        public void TakeoverPartialReadFocusInterpolatesEachOpacityCoefficient()
+        {
+            GameObject anchor = NewAnchor("PartialReadFocusAnchor");
+            GameObject host = new GameObject("PartialReadFocusEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            try
+            {
+                var effect = ConfigureTakeoverEffect(host, out material, out textures);
+                effect.Play(anchor.transform, ReferenceSize);
+                effect.SampleTakeover(2f, false, 1f);
+                float warning = MaxAlpha(effect, "Unauthorized Access Warning Bands");
+                float symbol = MaxAlpha(effect, "Unauthorized Access Symbol");
+                float attempt = MaxAlpha(effect, "Unauthorized Access Status");
+
+                effect.SampleTakeover(2f, false, .35f, .5f);
+                AssertAlpha(effect, "Unauthorized Access Warning Bands",
+                    warning * .35f * Mathf.Lerp(1f, .10f / .35f, .5f));
+                AssertAlpha(effect, "Unauthorized Access Symbol",
+                    symbol * .35f * Mathf.Lerp(1f, .14f / .35f, .5f));
+                AssertAlpha(effect, "Unauthorized Access Status",
+                    attempt * .35f * Mathf.Lerp(1f, .38f / .35f, .5f));
+
+                effect.SampleTakeover(2f, true, .35f, .5f);
+                AssertAlpha(effect, "Unauthorized Access Status",
+                    attempt * .35f * Mathf.Lerp(1f, .55f / .35f, .5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
+            }
+        }
+
+        [Test]
+        public void TakeoverZeroOpacityHidesBothLayersWhileReadFocusIsActive()
+        {
+            GameObject anchor = NewAnchor("ReadFocusCutAnchor");
+            GameObject host = new GameObject("ReadFocusCutEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            try
+            {
+                var effect = ConfigureTakeoverEffect(host, out material, out textures);
+                effect.Play(anchor.transform, ReferenceSize);
+                effect.SampleTakeover(2f, true, .35f, 1f);
+                Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
+                Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
+                Assert.IsTrue(screen.gameObject.activeSelf);
+                Assert.IsTrue(spatial.gameObject.activeSelf);
+
+                effect.SampleTakeover(2f, true, 0f, 1f);
+                Assert.IsFalse(screen.gameObject.activeSelf);
+                Assert.IsFalse(spatial.gameObject.activeSelf);
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
+            }
+        }
+
+        [Test]
+        public void RepeatedReadFocusSamplesDoNotAccumulateAndNormalSampleRestoresBaseColors()
+        {
+            GameObject anchor = NewAnchor("ReadFocusRepeatAnchor");
+            GameObject host = new GameObject("ReadFocusRepeatEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            try
+            {
+                var effect = ConfigureTakeoverEffect(host, out material, out textures);
+                effect.Play(anchor.transform, ReferenceSize);
+                effect.Sample(2f);
+                Color[][] normalColors = CaptureColors(effect);
+
+                effect.SampleTakeover(2f, false, .35f, 1f);
+                Color[][] firstFocusedColors = CaptureColors(effect);
+                effect.SampleTakeover(2f, false, .35f, 1f);
+                AssertColorsEqual(firstFocusedColors, CaptureColors(effect));
+
+                effect.Sample(2f);
+                AssertColorsEqual(normalColors, CaptureColors(effect));
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
+            }
+        }
+
         private static GameObject NewAnchor(string name) => new GameObject(name);
+
+        private static readonly string[] MeshNames =
+        {
+            "Unauthorized Access Warning Bands",
+            "Unauthorized Access Subtitle Bands",
+            "Unauthorized Access Symbol",
+            "Unauthorized Access Decorations",
+            "Unauthorized Access Context",
+            "Unauthorized Access Status",
+            "Unauthorized Access Glyphs",
+            "Unauthorized Access Interference",
+        };
+
+        private static UnauthorizedAccessEffect ConfigureTakeoverEffect(GameObject host,
+            out Material material, out Texture2D[] textures)
+        {
+            Shader shader = Shader.Find("FixedCamVr/UnauthorizedAccessFx");
+            Assert.IsNotNull(shader);
+            material = new Material(shader!);
+            textures = new[]
+            {
+                NewTexture("warning"), NewTexture("subtitle"), NewTexture("symbol"),
+                NewTexture("noise"), NewTexture("context"), NewTexture("attempt"),
+                NewTexture("failed"),
+            };
+            var effect = host.AddComponent<UnauthorizedAccessEffect>();
+            effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
+                textures[4], textures[5], textures[6]);
+            return effect;
+        }
 
         private static Texture2D NewTexture(string name)
         {
@@ -420,6 +593,11 @@ namespace FixedCamVr.Streaming.Tests
         private static void DestroyImmediate(Object? value)
         {
             if (value != null) Object.DestroyImmediate(value);
+        }
+
+        private static void DestroyImmediate(Object[] values)
+        {
+            for (int i = 0; i < values.Length; i++) DestroyImmediate(values[i]);
         }
 
         private static Transform FindRoot(UnauthorizedAccessEffect effect, string name)
@@ -445,6 +623,31 @@ namespace FixedCamVr.Streaming.Tests
                 for (int i = 0; i < colors.Length; i++) max = Mathf.Max(max, colors[i].a);
             }
             return max;
+        }
+
+        private static float MaxAlpha(UnauthorizedAccessEffect effect, string name)
+        {
+            float max = 0f;
+            Color[] colors = FindMesh(effect, name).colors;
+            for (int i = 0; i < colors.Length; i++) max = Mathf.Max(max, colors[i].a);
+            return max;
+        }
+
+        private static void AssertAlpha(UnauthorizedAccessEffect effect, string name, float expected) =>
+            Assert.AreEqual(Mathf.Clamp01(expected), MaxAlpha(effect, name), .0001f, name);
+
+        private static Color[][] CaptureColors(UnauthorizedAccessEffect effect)
+        {
+            var colors = new Color[MeshNames.Length][];
+            for (int i = 0; i < MeshNames.Length; i++) colors[i] = FindMesh(effect, MeshNames[i]).colors;
+            return colors;
+        }
+
+        private static void AssertColorsEqual(Color[][] expected, Color[][] actual)
+        {
+            Assert.AreEqual(expected.Length, actual.Length);
+            for (int i = 0; i < expected.Length; i++)
+                CollectionAssert.AreEqual(expected[i], actual[i], MeshNames[i]);
         }
 
         private static bool VerticesDiffer(Vector3[] first, Vector3[] second)

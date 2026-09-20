@@ -25,7 +25,7 @@ from PIL import Image
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_RENDER = ROOT / "Logs/comms-story-20260921"
+DEFAULT_RENDER = ROOT / "Logs/comms-readable-20260921"
 FPS = 30
 LANGUAGES = ("ja", "en", "fr")
 
@@ -154,7 +154,7 @@ def make_video(folder: Path, frame_count: int, ffmpeg: str) -> Path:
     return video
 
 
-def verify_language(folder: Path, ffmpeg: str) -> dict[str, object]:
+def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> dict[str, object]:
     rows = read_rows(folder)
     truth = load(folder / "truth.png")
     wipe = load(folder / "wipe.png")
@@ -231,6 +231,8 @@ def verify_language(folder: Path, ffmpeg: str) -> dict[str, object]:
         },
         "video": str(video),
     }
+    if before is not None:
+        result["readability"] = verify_readability(folder, before)
     (folder / "evidence.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
@@ -253,10 +255,13 @@ def verify_story(folder: Path, rows: list[dict[str, str]]) -> dict[str, object]:
         raise AssertionError("不正アクセスの前段より早くスイの面が出た")
     if not first_panel < first_fail < first_sweep < full_doll < cut:
         raise AssertionError("検知/遮断失敗/改ざん/消去の順序が不正")
-    if not .25 <= (first_sweep - first_fail) / FPS <= .45:
+    readable = "readFocus" in rows[0]
+    fail_min, fail_max = (.54, .67) if readable else (.25, .45)
+    hold_min, hold_max = (1.34, 1.40) if readable else (.44, .50)
+    if not fail_min <= (first_sweep - first_fail) / FPS <= fail_max:
         raise AssertionError("遮断失敗から改ざんまでの間隔が不正")
-    if not .44 <= (cut - full_doll) / FPS <= .50:
-        raise AssertionError("人形の完成表示が0.45秒保持されていない")
+    if not hold_min <= (cut - full_doll) / FPS <= hold_max:
+        raise AssertionError("人形の完成表示の読取時間が設定からずれている")
     if not .10 <= (len(rows) - 1 - cut) / FPS <= .17:
         raise AssertionError("表示の切断が0.12秒からずれている")
     for r in rows[:first_panel]:
@@ -269,6 +274,33 @@ def verify_story(folder: Path, rows: list[dict[str, str]]) -> dict[str, object]:
             "panel_at_sec": first_panel / FPS, "failure_at_sec": first_fail / FPS,
             "sweep_at_sec": first_sweep / FPS, "doll_at_sec": full_doll / FPS,
             "cut_at_sec": cut / FPS, "off_at_sec": (len(rows) - 1) / FPS}
+
+
+def verify_readability(folder: Path, before: Path) -> dict[str, object]:
+    """同じ実描画の有/無を比較し、文字の背後へ漏れた警告の強さを測る。"""
+    metrics = {}
+    for phase in ("truth", "doll"):
+        previous = load(before / f"{phase}.png")
+        current = load(folder / f"{phase}.png")
+        old_composite = load(before / f"{phase}-with-error.png")
+        new_composite = load(folder / f"{phase}-with-error.png")
+        # 顔と文字の実画素の外接矩形。画像全体の明るさではなく、読む場所で測る。
+        ink = previous.max(axis=2) > 100
+        yy, xx = np.where(ink)
+        if not len(xx):
+            raise AssertionError("読取領域の実画素が無い")
+        roi = (slice(max(0, yy.min()-4), yy.max()+5), slice(max(0, xx.min()-4), xx.max()+5))
+        old_leak = float(np.abs(old_composite[roi].astype(float) - previous[roi]).mean())
+        new_leak = float(np.abs(new_composite[roi].astype(float) - current[roi]).mean())
+        if old_leak < 1 or new_leak >= old_leak * .45:
+            raise AssertionError(f"{phase}: 読む場所の背景干渉が下がっていない ({old_leak:.2f} -> {new_leak:.2f})")
+        metrics[phase + "_background_leak_before"] = old_leak
+        metrics[phase + "_background_leak_after"] = new_leak
+    for name in ("intro-success", "after-takeover", "holding", "cancel-closed", "intrusion"):
+        if not np.array_equal(load(before / f"{name}.png"), load(folder / f"{name}.png")):
+            raise AssertionError(f"対象外の表示が変わった: {name}")
+    metrics["unchanged_controls"] = 5
+    return metrics
 
 
 def language_folders(render: Path) -> list[Path]:
@@ -285,6 +317,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--render", type=Path, default=DEFAULT_RENDER,
                         help="CommsRevisionPreview の出力 root または言語フォルダ")
+    parser.add_argument("--before", type=Path, help="読みやすさ調整前の3言語実描画 root")
     return parser.parse_args()
 
 
@@ -297,7 +330,8 @@ def main() -> int:
         render = render.resolve()
     ffmpeg = ffmpeg_exe()
     folders = language_folders(render)
-    results = [verify_language(folder, ffmpeg) for folder in folders]
+    results = [verify_language(folder, ffmpeg, args.before / folder.name if args.before else None)
+               for folder in folders]
     if len(folders) > 1:
         (render / "evidence.json").write_text(
             json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")

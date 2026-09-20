@@ -208,13 +208,13 @@ namespace FixedCamVr.Streaming
         public const float IntrusionSec = 0.9f;
 
         /// <summary>塗り替わり後の人形を保持する時間 (秒)。</summary>
-        public const float PossessedHoldSec = 0.45f;
+        public const float PossessedHoldSec = 1.35f;
 
         /// <summary>乗っ取りを一斉に切断する時間 (秒)。</summary>
         public const float PossessedOutSec = 0.12f;
 
         /// <summary>塗り替わりの前に「遮断失敗」へ変わる時間 (秒)。</summary>
-        public const float TakeoverBlockFailedLeadSec = 0.35f;
+        public const float TakeoverBlockFailedLeadSec = 0.6f;
 
         /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
         public static float HoldSecFor(CommsDelivery delivery)
@@ -318,7 +318,7 @@ namespace FixedCamVr.Streaming
         /// <summary>乗っ取り開始からの秒数。段をまたいでも同じ純ロジック時計が単調に進む。</summary>
         public float TakeoverElapsedSec => _takeoverElapsedSec;
 
-        /// <summary>遮断が間に合わない時点へ達したか。塗り替わりの 0.35 秒前から true。</summary>
+        /// <summary>遮断が間に合わない時点へ達したか。塗り替わりの 0.6 秒前から true。</summary>
         public bool TakeoverBlockFailed
             => _delivery == CommsDelivery.Possessed
                && (_stage == CommsStage.Type
@@ -326,6 +326,18 @@ namespace FixedCamVr.Streaming
                        CommsPossessionLogic.SweepStartSec(_readSec) - TakeoverBlockFailedLeadSec)
                    || _stage == CommsStage.Hold
                    || _stage == CommsStage.Out);
+
+        /// <summary>エラーから通信文へ注目を移す割合。消灯中も戻さず、警告を再点灯させない。</summary>
+        public float TakeoverReadFocus
+        {
+            get
+            {
+                if (_delivery != CommsDelivery.Possessed) return 0f;
+                if (_stage == CommsStage.In) return Smooth(Clamp01(_elapsed / InSec));
+                return _stage == CommsStage.Type || _stage == CommsStage.Hold || _stage == CommsStage.Out
+                    ? 1f : 0f;
+            }
+        }
 
         /// <summary>空間エラーの不透明度。通信面より先に出て、専用切断と同時に消える。</summary>
         public float TakeoverErrorOpacity

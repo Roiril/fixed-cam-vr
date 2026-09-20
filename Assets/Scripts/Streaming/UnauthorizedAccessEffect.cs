@@ -153,6 +153,7 @@ namespace FixedCamVr.Streaming
         private bool _takeoverMode;
         private bool _takeoverBlockFailed;
         private float _takeoverOpacity = 1f;
+        private float _takeoverReadFocus;
 
         public float Duration => EffectDuration;
         public bool IsPlaying { get; private set; }
@@ -241,13 +242,15 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// Comms の乗っ取り時計で見た目だけを適用する。7 秒版の退場は使わず、警告と空間要素を
-        /// <paramref name="opacity"/> で同時に消灯する。再生状態と <see cref="Elapsed"/> は変更しない。
+        /// <paramref name="opacity"/> で同時に消灯する。<paramref name="readFocus"/> が上がるほど
+        /// 通信面を読むため周囲を抑える。再生状態と <see cref="Elapsed"/> は変更しない。
         /// </summary>
-        public void SampleTakeover(float elapsed, bool blockFailed, float opacity)
+        public void SampleTakeover(float elapsed, bool blockFailed, float opacity, float readFocus = 0f)
         {
             _takeoverMode = true;
             _takeoverBlockFailed = blockFailed;
             _takeoverOpacity = Mathf.Clamp01(opacity);
+            _takeoverReadFocus = Mathf.Clamp01(readFocus);
             EnsureBuilt();
             if (_screenSize.x > 0f && _screenSize.y > 0f) Layout(_screenSize);
             Render(Mathf.Max(0f, elapsed));
@@ -835,20 +838,24 @@ namespace FixedCamVr.Streaming
 
         private void ApplyTakeoverOpacity(float opacity)
         {
-            ApplyOpacity(_warningColors, _warningMesh, opacity);
-            ApplyOpacity(_subtitleColors, _subtitleMesh, opacity);
-            ApplyOpacity(_symbolColors, _symbolMesh, opacity);
-            ApplyOpacity(_decorationColors, _decorationMesh, opacity);
-            ApplyOpacity(_contextColors, _contextMesh, opacity);
-            ApplyOpacity(_statusColors, _statusMesh, opacity);
-            ApplyOpacity(_glyphColors, _glyphMesh, opacity);
-            ApplyOpacity(_interferenceColors, _interferenceMesh, opacity);
+            float readingOpacity = opacity * Mathf.Lerp(1f, .10f / .35f, _takeoverReadFocus);
+            float surroundingOpacity = opacity * Mathf.Lerp(1f, .14f / .35f, _takeoverReadFocus);
+            float statusTarget = _takeoverBlockFailed ? .55f : .38f;
+            float statusOpacity = opacity * Mathf.Lerp(1f, statusTarget / .35f, _takeoverReadFocus);
+            ApplyOpacity(_warningColors, _warningMesh, readingOpacity);
+            ApplyOpacity(_subtitleColors, _subtitleMesh, readingOpacity);
+            ApplyOpacity(_symbolColors, _symbolMesh, surroundingOpacity);
+            ApplyOpacity(_decorationColors, _decorationMesh, surroundingOpacity);
+            ApplyOpacity(_contextColors, _contextMesh, readingOpacity);
+            ApplyOpacity(_statusColors, _statusMesh, statusOpacity);
+            ApplyOpacity(_glyphColors, _glyphMesh, surroundingOpacity);
+            ApplyOpacity(_interferenceColors, _interferenceMesh, surroundingOpacity);
         }
 
         private static void ApplyOpacity(Color[] colors, Mesh? mesh, float opacity)
         {
-            if (mesh == null || opacity >= 1f) return;
-            for (int i = 0; i < colors.Length; i++) colors[i].a *= opacity;
+            if (mesh == null) return;
+            for (int i = 0; i < colors.Length; i++) colors[i].a = Mathf.Clamp01(colors[i].a * opacity);
             mesh.SetColors(colors);
         }
 
@@ -857,6 +864,7 @@ namespace FixedCamVr.Streaming
             _takeoverMode = false;
             _takeoverBlockFailed = false;
             _takeoverOpacity = 1f;
+            _takeoverReadFocus = 0f;
         }
 
         private void MeasureAudience(Transform anchor)

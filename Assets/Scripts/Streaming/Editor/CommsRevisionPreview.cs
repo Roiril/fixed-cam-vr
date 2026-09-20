@@ -18,7 +18,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const int Fps = 30;
         public static void Run()
         {
-            string root = Path.GetFullPath(EditorCliArgs.Get("out") ?? "Logs/comms-story-20260921");
+            string root = Path.GetFullPath(EditorCliArgs.Get("out") ?? "Logs/comms-readable-20260921");
             Directory.CreateDirectory(root);
             var previous = ShowLanguage.Current;
             try
@@ -110,7 +110,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 sync.Tick(panel.TakeoverVisible, 0f);
                 var error = (UnauthorizedAccessEffect)typeof(CommsTakeoverError)
                     .GetField("_effect", Hidden)!.GetValue(sync);
-                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed\n");
+                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus\n");
                 bool savedIntrusion = false, savedFailure = false;
                 bool savedTruth = false, savedMid = false, savedFinal = false;
                 int frames = 0;
@@ -120,9 +120,10 @@ namespace FixedCamVr.Streaming.EditorTools
                     sync.Tick(panel.TakeoverVisible, 1f / Fps);
                     Shot($"f{i:0000}"); frames++;
                     data.AppendFormat(System.Globalization.CultureInfo.InvariantCulture,
-                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9}\n", i, i / (float)Fps,
+                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9},{10:F3}\n", i, i / (float)Fps,
                         panel.Stage, panel.AppliedSweep, panel.LieChars, panel.AppliedGlyph, error.IsPlaying ? 1 : 0,
-                        panel.AppliedPanelAlpha, panel.TakeoverErrorOpacity, panel.TakeoverBlockFailed ? 1 : 0);
+                        panel.AppliedPanelAlpha, panel.TakeoverErrorOpacity, panel.TakeoverBlockFailed ? 1 : 0,
+                        panel.TakeoverReadFocus);
                     if (!savedIntrusion && i / (float)Fps >= .75f)
                     {
                         if (panel.AppliedPanelAlpha > .001f || panel.VisibleChars != 0)
@@ -132,11 +133,25 @@ namespace FixedCamVr.Streaming.EditorTools
                     if (!savedFailure && panel.TakeoverBlockFailed)
                     { Shot("block-failed"); savedFailure = true; }
                     if (!savedTruth && panel.PossessionPhase == CommsPossessionPhase.Shown && panel.AppliedGlyph > .99f)
-                    { Shot("truth-with-error"); error.Stop(); Shot("truth"); error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedTruth = true; }
+                    {
+                        Shot("truth-with-error");
+                        Color background = camera.backgroundColor;
+                        camera.backgroundColor = Color.white; Shot("truth-bright-background");
+                        camera.backgroundColor = background;
+                        error.Stop(); Shot("truth");
+                        error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedTruth = true;
+                    }
                     if (!savedMid && panel.AppliedSweep >= .65f && panel.AppliedSweep < 1f)
                     { Shot("wipe-with-error"); error.Stop(); Shot("wipe"); error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedMid = true; }
                     if (!savedFinal && panel.AppliedSweep >= .999f && panel.AppliedGlyph > .99f)
-                    { Shot("doll-with-error"); error.Stop(); Shot("doll"); error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedFinal = true; }
+                    {
+                        Shot("doll-with-error");
+                        Color background = camera.backgroundColor;
+                        camera.backgroundColor = Color.white; Shot("doll-bright-background");
+                        camera.backgroundColor = background;
+                        error.Stop(); Shot("doll");
+                        error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedFinal = true;
+                    }
                     if (!logic.Active) { Shot("finished"); break; }
                     logic.Tick(1f / Fps);
                 }

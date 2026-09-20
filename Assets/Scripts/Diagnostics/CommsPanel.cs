@@ -235,6 +235,8 @@ namespace FixedCamVr.Diagnostics
         private float BodyCenterY => HintBandTopY + _bodyBandH * 0.5f;
         /// <summary>深い黒の面。後ろの映像は残す。</summary>
         private const float PanelAlpha = 0.72f;
+        // 乗っ取り時だけ背後の警告を遮る。通常の通信面の大きさと濃さは維持する。
+        private const float TakeoverPanelAlpha = 0.96f;
 
         /// <summary>各文字が立ち上がる時間。出現時刻と打鍵音は従来の刻みを保つ。</summary>
         public const float GlyphFadeSec = 0.04f;
@@ -789,6 +791,8 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>主画面側へ出す侵入エラーの不透明度。</summary>
         public float TakeoverErrorOpacity => _logic.TakeoverErrorOpacity;
+
+        public float TakeoverReadFocus => _logic.TakeoverReadFocus;
 
         /// <summary>塗り替わりの頭で鳴らした乱れの音の累計。</summary>
         public int SweepSfxCount => sweepSfx != null ? sweepSfx.PlayedCount : 0;
@@ -1837,7 +1841,7 @@ namespace FixedCamVr.Diagnostics
             float reveal = w.reveal;
             ApplyHint(Mathf.Clamp01(w.hint));
             float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
-            AppliedPanelAlpha = PanelAlpha * pa;
+            AppliedPanelAlpha = Mathf.Lerp(PanelAlpha, TakeoverPanelAlpha, TakeoverReadFocus) * pa;
             AppliedBody = Mathf.Clamp01(w.body);
 
             // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。

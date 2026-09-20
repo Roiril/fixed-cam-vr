@@ -69,7 +69,8 @@ namespace FixedCamVr.Diagnostics
             float elapsed = _panel != null ? _panel.TakeoverElapsedSec : 0f;
             bool blockFailed = _panel != null && _panel.TakeoverBlockFailed;
             float opacity = _panel != null ? _panel.TakeoverErrorOpacity : 1f;
-            _effect.SampleTakeover(elapsed, blockFailed, opacity);
+            _effect.SampleTakeover(elapsed, blockFailed, opacity,
+                _panel != null ? _panel.TakeoverReadFocus : 0f);
             if (blockFailed && !_blockFailedLogged)
             {
                 _blockFailedLogged = true;

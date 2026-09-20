@@ -16,10 +16,10 @@ namespace FixedCamVr.Streaming.Tests
         {
             Assert.AreEqual(CommsPossessionLogic.ReadMinSec,
                 CommsPossessionLogic.ReadSecFor(0, ShowLang.Ja), 0.001f, "空でも下限");
-            Assert.AreEqual(1.35f, CommsPossessionLogic.ReadSecFor(12, ShowLang.Ja), 0.001f,
-                "日本語 12 字 = 0.9 + 12/12 × 0.45");
-            Assert.AreEqual(1.5f, CommsPossessionLogic.ReadSecFor(24, ShowLang.En), 0.001f,
-                "English 24 字 = 0.9 + 24/18 × 0.45");
+            Assert.AreEqual(1.6f, CommsPossessionLogic.ReadSecFor(12, ShowLang.Ja), 0.001f,
+                "短い真実も1.6秒は読める");
+            Assert.AreEqual(1.6f, CommsPossessionLogic.ReadSecFor(24, ShowLang.En), 0.001f,
+                "英語でも短文の下限を保つ");
             Assert.Less(CommsPossessionLogic.ReadSecFor(39, ShowLang.Ja), CommsPossessionLogic.ReadMaxSec,
                 "いちばん長い文面（①b・改行込み 39 字）でも上限には掛からない");
             Assert.AreEqual(CommsPossessionLogic.ReadMaxSec,
@@ -248,6 +248,7 @@ namespace FixedCamVr.Streaming.Tests
             l.Tick(CommsPanelLogic.IntrusionSec - Dt);
             Assert.AreEqual(CommsStage.Intrusion, l.Stage);
             Assert.AreEqual(1f, l.TakeoverErrorOpacity, 1e-6f);
+            Assert.AreEqual(0f, l.TakeoverReadFocus);
             float before = l.TakeoverElapsedSec;
             l.Tick(Dt);
             Assert.AreEqual(CommsStage.In, l.Stage);
@@ -255,20 +256,23 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Tick(CommsPanelLogic.InSec * 0.5f);
             Assert.AreEqual(0.675f, l.TakeoverErrorOpacity, 1e-5f);
+            Assert.AreEqual(0.5f, l.TakeoverReadFocus, 1e-5f);
             l.Tick(CommsPanelLogic.InSec * 0.5f);
             Assert.AreEqual(CommsStage.Type, l.Stage);
             Assert.AreEqual(0.35f, l.TakeoverErrorOpacity, 1e-6f);
+            Assert.AreEqual(1f, l.TakeoverReadFocus);
 
             l.Tick(failAt - Dt);
-            Assert.IsFalse(l.TakeoverBlockFailed, "0.35 秒前の 1 コマ手前はまだ遮断できる");
+            Assert.IsFalse(l.TakeoverBlockFailed, "0.6 秒前の 1 コマ手前はまだ遮断できる");
             l.Tick(Dt);
-            Assert.IsTrue(l.TakeoverBlockFailed, "0.35 秒前ぴったりで遮断失敗へ変わる");
+            Assert.IsTrue(l.TakeoverBlockFailed, "0.6 秒前ぴったりで遮断失敗へ変わる");
             l.Tick(l.TypeSec - failAt);
             Assert.AreEqual(CommsStage.Hold, l.Stage);
             Assert.IsTrue(l.TakeoverBlockFailed);
             l.Tick(CommsPanelLogic.PossessedHoldSec);
             Assert.AreEqual(CommsStage.Out, l.Stage);
             l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
+            Assert.AreEqual(1f, l.TakeoverReadFocus, "消灯中に警告の主張を戻さない");
             Assert.AreEqual(l.Weights.panel, l.Weights.glyph, 1e-6f,
                 "専用 Out は地と文字を同じ不透明度で切る");
             Assert.AreEqual(0.175f, l.TakeoverErrorOpacity, 1e-5f,
@@ -277,6 +281,7 @@ namespace FixedCamVr.Streaming.Tests
             l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
             Assert.AreEqual(CommsStage.Off, l.Stage);
             Assert.AreEqual(0f, l.TakeoverErrorOpacity, 1e-6f);
+            Assert.AreEqual(0f, l.TakeoverReadFocus);
             Assert.GreaterOrEqual(l.TakeoverElapsedSec, elapsed, "自然終了でも通算時計を巻き戻さない");
         }
 

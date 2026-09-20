@@ -60,8 +60,8 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float ReadPerTypeK = 0.45f;
 
-        /// <summary>読ませる時間の下限 (秒)。短い返事（1 行）でも一瞬で塗り替えない。</summary>
-        public const float ReadMinSec = 1.0f;
+        /// <summary>読ませる時間の下限 (秒)。短い真実も、遮断失敗へ視線を移す前に読める時間を取る。</summary>
+        public const float ReadMinSec = 1.6f;
 
         /// <summary>読ませる時間の上限 (秒)。3 行の文面でも 2.4 秒で塗り替わりへ進む。</summary>
         public const float ReadMaxSec = 2.4f;
