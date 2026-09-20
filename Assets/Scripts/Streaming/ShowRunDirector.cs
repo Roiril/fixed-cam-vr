@@ -106,6 +106,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float ScreenDecayShown => _decay.Shown;
 
+        /// <summary>確定した区間位置から求めた通常画面の加工値（テレメトリ用）。</summary>
+        public float ScreenDecayNormalTarget => _decay.NormalTarget;
+
         /// <summary>画の劣化を決めた表示状態（テレメトリ用）。</summary>
         public ScreenDecayShownMode ScreenDecayShownMode => _decay.ShownMode;
 
@@ -410,12 +413,21 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void TickScreenDecay()
         {
+            float normalTarget = 0f;
+            if (timelineDirector != null &&
+                timelineDirector.TryGetCurrentSegment(out int segmentLap, out int segmentCamera))
+            {
+                normalTarget = ScreenDecayLogic.NormalTargetFor(
+                    segmentLap, segmentCamera, showControl != null ? showControl.CourseOrder : null);
+            }
+
             _decay.Tick(Time.unscaledDeltaTime, _logic.Phase == ShowPhase.Run,
                         _logic.Lap, _logic.TotalLaps, _logic.LapElapsedSec,
                         timelineDirector != null && timelineDirector.DollPovShowing,
                         timelineDirector != null && timelineDirector.DollReplacementShowing,
                         timelineDirector != null && timelineDirector.DollReplacementTransitioning,
-                        timelineDirector != null ? timelineDirector.DollReplacementTransition01 : 1f);
+                        timelineDirector != null ? timelineDirector.DollReplacementTransition01 : 1f,
+                        normalTarget);
             // ⚠⚠ 画へ書くのは **Shown**。生の Progress は音が読む単調値で、画の人形状態には使わない。
             // 色が抜けるのも**同じ進み**。通常は 0.5 まで。人形視点と CG 人形化で 1 になる。
             // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。

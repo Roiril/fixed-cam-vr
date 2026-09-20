@@ -3416,17 +3416,26 @@ def analyze(events, others, exp, warns=None):
 
         # 画の劣化は周回値をそのまま出さない。通常は 0.5 で止まり、実際に出た人形視点と
         # CG 人形化だけが 1 になる。mode と coarseShown を対で見て、状態だけ立った配線を通さない。
-        mode_samples = [(str(e.get("coarseMode", "")), fnum(e, "coarseShown"))
+        mode_samples = [(str(e.get("coarseMode", "")), fnum(e, "coarseShown"), fnum(e, "coarsePos"))
                         for e in events
                         if e.get("ev") == "sum" and e.get("coarseMode") is not None]
         if mode_samples:
-            normal = [v for mode, v in mode_samples if mode == "Normal" and v is not None]
-            pov = [v for mode, v in mode_samples if mode == "DollPov" and v is not None]
-            morph = [v for mode, v in mode_samples if mode == "DollMorph" and v is not None]
-            held = [v for mode, v in mode_samples if mode == "DollHold" and v is not None]
+            normal = [shown for mode, shown, _pos in mode_samples if mode == "Normal" and shown is not None]
+            normal_position = [(shown, pos) for mode, shown, pos in mode_samples
+                               if mode == "Normal" and shown is not None and pos is not None]
+            pov = [shown for mode, shown, _pos in mode_samples if mode == "DollPov" and shown is not None]
+            morph = [shown for mode, shown, _pos in mode_samples if mode == "DollMorph" and shown is not None]
+            held = [shown for mode, shown, _pos in mode_samples if mode == "DollHold" and shown is not None]
             if normal and max(normal) > 0.51:
                 verdict("FAIL", f"通常映像の劣化が 0.5 を超えた（最大 {max(normal):.2f}）— "
                                 "人形状態と周回劣化が分離されていない")
+            if normal_position:
+                max_position_error = max(abs(shown - pos) for shown, pos in normal_position)
+                if max_position_error > 0.011:
+                    verdict("FAIL", f"通常映像の劣化が確定位置の目標と違う（最大差 {max_position_error:.2f}）— "
+                                    "coarseShown と coarsePos の配線を確認する")
+                else:
+                    verdict("OK", "通常映像の劣化が確定位置の目標と一致した")
             if pov and min(pov) < 0.99:
                 verdict("FAIL", f"人形視点が出ているのに劣化が 1 でない（最小 {min(pov):.2f}）")
             elif pov:

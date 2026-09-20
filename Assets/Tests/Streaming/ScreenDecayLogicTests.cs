@@ -21,15 +21,17 @@ namespace FixedCamVr.Streaming.Tests
 
         /// <summary>本編を <paramref name="sec"/> 秒進める（周の経過も一緒に進む）。</summary>
         private static void Run(ScreenDecayLogic l, float sec, int lap, int totalLaps, float lapElapsedAtStart,
-                                bool dollPovShowing = false, bool dollShowing = false,
-                                bool dollTransitioning = false)
+                                 bool dollPovShowing = false, bool dollShowing = false,
+                                 bool dollTransitioning = false,
+                                 float normalTarget = ScreenDecayLogic.NormalMax)
         {
             float t = 0f;
             while (t < sec)
             {
                 t += Dt;
                 l.Tick(Dt, running: true, lap, totalLaps, lapElapsedAtStart + t,
-                       dollPovShowing, dollShowing, dollTransitioning);
+                       dollPovShowing, dollShowing, dollTransitioning,
+                       normalTarget: normalTarget);
             }
         }
 
@@ -225,6 +227,67 @@ namespace FixedCamVr.Streaming.Tests
         // ---- 人形状態と連動する画の強さ ----
 
         [Test]
+        public void 通常加工の位置目標は標準順路の確定区間で決まる()
+        {
+            int[] order = { 0, 1, 2 };
+            Assert.AreEqual(0f, ScreenDecayLogic.NormalTargetFor(1, 0, order), 0.001f, "1-A");
+            Assert.AreEqual(1f / 6f, ScreenDecayLogic.NormalTargetFor(1, 1, order), 0.001f, "1-B");
+            Assert.AreEqual(1f / 3f, ScreenDecayLogic.NormalTargetFor(1, 2, order), 0.001f, "1-C");
+            Assert.AreEqual(0.5f, ScreenDecayLogic.NormalTargetFor(2, 0, order), 0.001f, "2-A");
+            Assert.AreEqual(0.5f, ScreenDecayLogic.NormalTargetFor(4, 2, order), 0.001f, "帰りも中程度");
+        }
+
+        [Test]
+        public void 通常加工の位置目標は非標準順路にも対応する()
+        {
+            int[] order = { 2, 0, 4, 1 };
+            Assert.AreEqual(0f, ScreenDecayLogic.NormalTargetFor(1, 2, order), 0.001f);
+            Assert.AreEqual(0.125f, ScreenDecayLogic.NormalTargetFor(1, 0, order), 0.001f);
+            Assert.AreEqual(0.25f, ScreenDecayLogic.NormalTargetFor(1, 4, order), 0.001f);
+            Assert.AreEqual(0.375f, ScreenDecayLogic.NormalTargetFor(1, 1, order), 0.001f);
+            Assert.AreEqual(0f, ScreenDecayLogic.NormalTargetFor(1, 9, order), 0.001f,
+                "順路に無いカメラは位置未確定として加工しない");
+        }
+
+        [Test]
+        public void 通常加工は滞在秒数に依存せず位置確定時に切り替わる()
+        {
+            var l = new ScreenDecayLogic();
+            float at1B = ScreenDecayLogic.NormalTargetFor(1, 1, new[] { 0, 1, 2 });
+
+            l.Tick(Dt, true, 1, 3, lapElapsedSec: 0f, normalTarget: at1B);
+            float first = l.Shown;
+            l.Tick(0.25f, true, 1, 3, lapElapsedSec: 99f, normalTarget: at1B);
+
+            Assert.AreEqual(1f / 6f, first, 0.001f);
+            Assert.AreEqual(first, l.Shown, 0.001f, "同じ区間では dt と滞在秒が変わっても同値");
+        }
+
+        [Test]
+        public void 飛ばし逆走リセットでも同じ確定位置は同値になる()
+        {
+            int[] order = { 0, 1, 2 };
+            var l = new ScreenDecayLogic();
+
+            l.Tick(Dt, true, 1, 3, 0f,
+                   normalTarget: ScreenDecayLogic.NormalTargetFor(1, 2, order));
+            Assert.AreEqual(1f / 3f, l.Shown, 0.001f, "A から C へ飛ばしても即座に C の値");
+
+            l.Tick(Dt, true, 2, 3, 0f,
+                   normalTarget: ScreenDecayLogic.NormalTargetFor(2, 2, order));
+            Assert.AreEqual(0.5f, l.Shown, 0.001f, "次周へ飛んでも位置目標へ即座に切り替わる");
+
+            l.Tick(Dt, true, 1, 3, 80f,
+                   normalTarget: ScreenDecayLogic.NormalTargetFor(1, 1, order));
+            Assert.AreEqual(1f / 6f, l.Shown, 0.001f, "逆走した B は最初に通った B と同値");
+
+            l.Reset();
+            l.Tick(Dt, true, 1, 3, 0f,
+                   normalTarget: ScreenDecayLogic.NormalTargetFor(1, 1, order));
+            Assert.AreEqual(1f / 6f, l.Shown, 0.001f, "リセット後も同じ B は同値");
+        }
+
+        [Test]
         public void 通常映像は生の進みが1でも画は0_5で止まる()
         {
             ScreenDecayLogic l = Cursed();
@@ -339,11 +402,11 @@ namespace FixedCamVr.Streaming.Tests
             var l = new ScreenDecayLogic();
             Assert.AreEqual(0f, l.Shown, 0.001f, "1-A");
 
-            Run(l, 10f, 1, 3, 0f);
+            Run(l, 10f, 1, 3, 0f, normalTarget: 1f / 6f);
             Assert.AreEqual(1f / 6f, l.Shown, 0.01f, "1-B");
-            Run(l, 10f, 1, 3, 10f);
+            Run(l, 10f, 1, 3, 10f, normalTarget: 1f / 3f);
             Assert.AreEqual(1f / 3f, l.Shown, 0.01f, "1-C");
-            Run(l, 10f, 1, 3, 20f);
+            Run(l, 10f, 1, 3, 20f, normalTarget: 0.5f);
             Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-A");
             Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-B");
             Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-C live");

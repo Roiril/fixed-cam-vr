@@ -18,7 +18,8 @@ namespace FixedCamVr.Streaming
     /// <see cref="ShowRunDirector"/> が回し、<see cref="CameraFeelFx"/> がシェーダへ書く。
     ///
     /// 値は 2 本ある。<see cref="Progress"/> は周回で 0 → 1 へ単調に進む装置の劣化で、音が読む。
-    /// <see cref="Shown"/> は画へ出す値で、通常は <see cref="NormalMax"/> まで。2-C の人形視点では 1。
+    /// <see cref="Shown"/> は画へ出す値で、通常は確定した区間位置から <see cref="NormalMax"/> まで。
+    /// 2-C の人形視点では 1。
     /// 3-A の CG 人形化では乱れの中で 1 へ進み、最初の読める CG フレームから報告まで 1 を保持する。
     ///
     /// 出どころは <c>canon/LEDGER.md</c> 0012 —
@@ -102,7 +103,10 @@ namespace FixedCamVr.Streaming
         private float _releaseSec;
         private float _releaseFrom;
 
-        // 画に出る状態は、周回の進みとは別に「いま本当に出ている素材」で決まる。
+        // 通常画面の加工は、滞在時間ではなく確定した区間位置で決まる。
+        private float _normalTarget;
+
+        // 画に出る状態は、通常位置と「いま本当に出ている素材」で決まる。
         private float _shown;
         private float _dollMorphSec;
         private bool _dollSeen;
@@ -134,6 +138,9 @@ namespace FixedCamVr.Streaming
         /// （色があって粗い／鮮明な暗視）が数秒出る。
         /// </summary>
         public float Shown => _shown;
+
+        /// <summary>確定した区間位置から求めた通常画面の加工値。テレメトリが <see cref="Shown"/> と照合する。</summary>
+        public float NormalTarget => _normalTarget;
 
         /// <summary>いまの <see cref="Shown"/> を決めた表示状態。</summary>
         public ScreenDecayShownMode ShownMode => _shownMode;
@@ -199,6 +206,7 @@ namespace FixedCamVr.Streaming
             _released = false;
             _releaseSec = 0f;
             _releaseFrom = 0f;
+            _normalTarget = 0f;
             _shown = 0f;
             _dollMorphSec = 0f;
             _dollSeen = false;
@@ -217,11 +225,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Tick(float dt, bool running, int lap, int totalLaps, float lapElapsedSec,
                          bool dollPovShowing = false, bool dollShowing = false,
-                         bool dollTransitioning = false, float dollTransition01 = -1f)
+                         bool dollTransitioning = false, float dollTransition01 = -1f,
+                         float normalTarget = -1f)
         {
             if (dt <= 0f) return;
             float visualDt = dt;
             if (dt > MaxStepSec) dt = MaxStepSec;
+            if (normalTarget >= 0f) _normalTarget = Clamp(normalTarget, 0f, NormalMax);
 
             // 解除の進み。
             // ⚠⚠ **running を条件にしない。** 報告 → 現実の 3 秒 → 終幕 は連続した 1 つの出来事で、
@@ -259,7 +269,7 @@ namespace FixedCamVr.Streaming
         private void TickShown(float dt, bool dollPovShowing, bool dollShowing,
                                bool dollTransitioning, float dollTransition01)
         {
-            float normal = _progress < NormalMax ? _progress : NormalMax;
+            float normal = _normalTarget;
 
             // 2-C の人形視点は、素材が実際に overlay へ混ざったフレームだけ最大にする。
             if (dollPovShowing)
@@ -340,6 +350,20 @@ namespace FixedCamVr.Streaming
             // 1 周しか無い設定では手前の周が存在しないので、その 1 周の中で落とす。
             int span = totalLaps > 1 ? totalLaps - 1 : 1;
             return Clamp01((lap - 1 + within) / span);
+        }
+
+        /// <summary>
+        /// 確定した区間位置から通常画面の加工値を求める。1 周目は順路内の位置を 0..<see cref="NormalMax"/>
+        /// へ等分し、2 周目以降は <see cref="NormalMax"/>。時間と通過履歴を読まないので、逆走・飛ばし・
+        /// リセット後も同じ <paramref name="segmentLap"/> と <paramref name="camera"/> は同じ値になる。
+        /// </summary>
+        public static float NormalTargetFor(int segmentLap, int camera, int[]? courseOrder)
+        {
+            if (segmentLap < 1 || courseOrder == null || courseOrder.Length == 0) return 0f;
+            int index = Array.IndexOf(courseOrder, camera);
+            if (index < 0) return 0f;
+            if (segmentLap >= 2) return NormalMax;
+            return NormalMax * index / courseOrder.Length;
         }
 
         /// <summary>

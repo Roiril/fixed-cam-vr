@@ -136,6 +136,14 @@ namespace FixedCamVr.Streaming
         /// <summary>いま体験者が居る区間の周（1 始まり・逆走で戻る）。区間未確定なら -1。</summary>
         public int CurrentLap => _hasCurrent ? _curLap : -1;
 
+        /// <summary>いま体験者が居る確定区間を返す。演出素材が映しているカメラではなく実位置。</summary>
+        public bool TryGetCurrentSegment(out int lap, out int camera)
+        {
+            lap = CurrentLap;
+            camera = CurrentCamera;
+            return _hasCurrent;
+        }
+
         /// <summary>
         /// <b>報告で実際に演出が消えた回数</b>（テレメトリ用）。押した回数とは別物 —
         /// 消えない演出の方が多いので、混ぜると「効いたか」がログから分からなくなる。
