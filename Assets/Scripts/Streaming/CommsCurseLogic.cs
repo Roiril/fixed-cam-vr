@@ -161,13 +161,13 @@ namespace FixedCamVr.Streaming
         public static int SweepBandOf(float y, float top)
             => Math.Max((int)MathF.Floor((top - y) / TearBandM), 0);
 
-        /// <summary>その点の帯が反転しているか（前線の上側 ＝ ステンシルが立つ側）。</summary>
-        public static bool IsSwept(float x, float y, float progress, float top, float bottom)
+        /// <summary>その点が左から右へ進む前線の左側に入ったか。</summary>
+        public static bool IsSwept(float x, float y, float progress, float left, float right)
         {
             if (progress <= 0f) return false;
             if (progress >= 1f) return true;
-            int cursed = (int)MathF.Floor(Clamp01(progress) * SweepBandCount(top, bottom));
-            return SweepBandOf(y, top) < cursed;
+            float front = left + (right - left) * Clamp01(progress);
+            return x <= front;
         }
 
         /// <summary>

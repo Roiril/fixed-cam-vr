@@ -55,7 +55,7 @@ namespace FixedCamVr.Streaming
         public float curse;
 
         /// <summary>
-        /// 上から降りる前線の進み（0 = まだ通常 / 1 = 全面が呪われた双子）。<c>canon/LEDGER.md</c> 0230。
+        /// 左から右へ進む塗り替えの前線（0 = まだ通常 / 1 = 全面が呪われた双子）。
         /// 憑依の出し方（<see cref="CommsDelivery.Possessed"/>）でだけ動く。他の出方では 0。
         /// </summary>
         public float sweep;
@@ -205,6 +205,7 @@ namespace FixedCamVr.Streaming
         /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
         public static float HoldSecFor(CommsDelivery delivery)
             => delivery == CommsDelivery.Fade ? FadeHoldSec
+             : delivery == CommsDelivery.Possessed ? 0f
              : HoldSec;
 
         /// <summary>引くまで (秒)。ぱっと消すと「消えた」ではなく「壊れた」に見える。</summary>
@@ -241,7 +242,7 @@ namespace FixedCamVr.Streaming
         //    連絡が届くたびに**地の濃さと下段が 0 から張り直されていた** ＝ 走行中の面へ
         //    2 通目が来ると、受信票が 0.16 秒だけ黒へ落ちて戻る（画に出る不具合）。
         //    既存のテストは開き・丈・文字しか見ていなかったので素通りしていた。
-        private float _openFrom, _bodyFrom, _panelFrom, _hintFrom;
+        private float _openFrom, _bodyFrom, _panelFrom, _hintFrom, _glyphFrom, _revealFrom;
 
         // 呪いの斑の量（`canon/LEDGER.md` 0229）。目標は実行体が毎フレーム押し込み、
         // ここは**面が開いてからの立ち上がり**だけを持つ（開いた縁で 0 から数え直す）。
@@ -365,6 +366,8 @@ namespace FixedCamVr.Streaming
             _readSec = CommsPossessionLogic.ReadSecFor(charCount, ShowLanguage.Current);
             _typeSec = delivery == CommsDelivery.Possessed
                 ? CommsPossessionLogic.DurationFor(_readSec)
+                : delivery == CommsDelivery.Cursed
+                ? CommsPossessionLogic.ShowSec
                 : delivery == CommsDelivery.Fade
                 ? FadeInSec
                 : charCount <= 0
@@ -380,6 +383,8 @@ namespace FixedCamVr.Streaming
             _bodyFrom = w.body;
             _panelFrom = w.panel;
             _hintFrom = w.hint;
+            _glyphFrom = w.glyph;
+            _revealFrom = w.reveal;
             _stage = next;
             _elapsed = 0f;
         }
@@ -395,9 +400,9 @@ namespace FixedCamVr.Streaming
             _guideWanted = wanted;
             // ⚠ 憑依の出し方（0230）の「出る → 読ませる → 塗り替わる」は途中で退かせない —
             //   塗り替わる前に畳むと、初見の人には「乗っ取られた」が一度も見えないまま終わる。
-            //   押しっぱなしなら読ませる段（Hold）の後で `Guide` へ移る（下の Tick）。
-            if (_delivery == CommsDelivery.Possessed && _stage == CommsStage.Type) return;
-            if (wanted && (_stage == CommsStage.Off || _stage == CommsStage.Out))
+            //   押しっぱなしでも乗っ取りを最後まで描き、そのまま引く。
+            if (_delivery == CommsDelivery.Possessed && _stage != CommsStage.Off) return;
+            if (rising && (_stage == CommsStage.Off || _stage == CommsStage.Out))
             {
                 // 畳まれた所から開くなら斑も 0 から（引いている最中からなら続きから）。
                 if (_stage == CommsStage.Off) RestartCurseRamp();
@@ -438,7 +443,7 @@ namespace FixedCamVr.Streaming
             _delivery = CommsDelivery.Typed;
             _persistent = false;
             _guideWanted = false;
-            _openFrom = _bodyFrom = _panelFrom = _hintFrom = 0f;
+            _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;
             RestartCurseRamp();
         }
@@ -466,10 +471,19 @@ namespace FixedCamVr.Streaming
                     // 読ませ終わったら引く。⚠ ただし**まだ押している最中なら開いたまま残す** —
                     //    引いてすぐ開き直すのは、体験者から見れば 1 度の操作の途中のちらつき。
                     if (!_persistent && _elapsed >= HoldSecFor(_delivery))
-                        EnterStage(_guideWanted ? CommsStage.Guide : CommsStage.Out);
+                        EnterStage(_delivery != CommsDelivery.Possessed && _guideWanted
+                            ? CommsStage.Guide
+                            : CommsStage.Out);
                     break;
                 case CommsStage.Out:
-                    if (_elapsed >= OutSec) Disable();
+                    if (_elapsed >= OutSec)
+                    {
+                        // 乗っ取りは押しっぱなしで終わっても Guide へ戻さない。
+                        // 離して次に押すまで、この保持要求は新しい立ち上がりにしない。
+                        bool keepGuideLatch = _delivery == CommsDelivery.Possessed && _guideWanted;
+                        Disable();
+                        if (keepGuideLatch) _guideWanted = true;
+                    }
                     break;
                 case CommsStage.Guide:
                     // 時間では終わらない。抜けるのは SetGuideWanted(false) か Begin か Disable。
@@ -493,6 +507,12 @@ namespace FixedCamVr.Streaming
                     w.tear = s.tear;
                     w.tearSeed = _openSec;
                     w.curse = s.phase == CommsPossessionPhase.Cursed ? 1f : 0f;
+                }
+                else if (_delivery == CommsDelivery.Cursed && _stage != CommsStage.Off)
+                {
+                    // 乗っ取り後の連絡は、通常の面を 1 フレームも見せず最初から人形。
+                    w.curse = 1f;
+                    w.sweep = 1f;
                 }
                 return w;
             }
@@ -542,7 +562,7 @@ namespace FixedCamVr.Streaming
                         //    そこに在って（`reveal = 1`）、**濃さだけが上がる**。
                         //    1 字ずつ出さないので `CommsPanel.Apply` の打鍵も鳴らない
                         //    （あちらは `shown` の増分で鳴らすが、増分は 1 回きり ＝ `_silent` で止める）。
-                        if (_delivery == CommsDelivery.Fade)
+                        if (_delivery == CommsDelivery.Fade || _delivery == CommsDelivery.Cursed)
                         {
                             float f = Smooth(_typeSec <= 0f ? 1f : Clamp01(_elapsed / _typeSec));
                             return new CommsWeights
@@ -583,10 +603,10 @@ namespace FixedCamVr.Streaming
                         return new CommsWeights
                         {
                             panel = _panelFrom,
-                            glyph = 1f - g,
+                            glyph = _glyphFrom * (1f - g),
                             open = (1f - fold) * _openFrom,
                             body = _bodyFrom,     // 丈は畳むあいだ動かさない（横だけが閉じる）
-                            reveal = 1f,
+                            reveal = _revealFrom,
                             hint = _hintFrom * (1f - g),   // 下段も文面と一緒に消える（枠より先に）
                         };
                     }

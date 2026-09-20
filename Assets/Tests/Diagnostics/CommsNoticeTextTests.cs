@@ -21,8 +21,15 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void TutorialAcknowledgement_UsesTheApprovedJapaneseWording()
         {
-            Assert.AreEqual("報告を受け取りました",
+            Assert.AreEqual("報告できました。\n装置は正常です。",
                             CommsPanel.NoticeText(CommsNotice.TutorialAccepted, ShowLang.Ja));
+        }
+
+        [TestCase(ShowLang.En, "Report sent.\nDevice operating normally.")]
+        [TestCase(ShowLang.Fr, "Signalement envoyé.\nLe dispositif fonctionne.")]
+        public void TutorialAcknowledgement_HasTheSameMeaningInLatinLanguages(ShowLang lang, string text)
+        {
+            Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.TutorialAccepted, lang));
         }
 
         [TestCase(ShowLang.Ja, "装置が正常に動くか\nチェックします。XかYを\n1秒間押し続けてください")]
@@ -80,27 +87,29 @@ namespace FixedCamVr.Diagnostics.Tests
             }
         }
 
-        [TestCase(ShowLang.Ja)]
-        [TestCase(ShowLang.En)]
-        [TestCase(ShowLang.Fr)]
-        public void TakeoverShowsTheTruthfulDetectionFirst(ShowLang lang)
+        [Test]
+        public void CursedTextHasABundledHorrorFont()
         {
-            // 0232: 上書きされる前の正常な表示は、ちゃんと異常を検知する ＝ 当たりの報告の返事そのもの。
-            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, lang),
-                            CommsPanel.NoticeText(CommsNotice.Takeover, lang));
+            TMP_FontAsset horror = Resources.Load<TMP_FontAsset>("Fonts/CommsHorror SDF");
+            Assert.NotNull(horror, "怖い本文用フォントを Resources から読めない");
         }
 
-        [TestCase(ShowLang.Ja, "異常を検出しませんでした", "異常を検出し")]
-        [TestCase(ShowLang.En, "An anomaly was not detected.", "An anomaly was ")]
-        [TestCase(ShowLang.Fr, "Anomalie non détectée.", "Anomalie ")]
-        public void TakeoverLieIsAMinimalEditOfTheTruth(ShowLang lang, string lie, string sharedHead)
+        [TestCase(ShowLang.Ja, "異常を検知しました")]
+        [TestCase(ShowLang.En, "An anomaly was detected.")]
+        [TestCase(ShowLang.Fr, "Anomalie détectée.")]
+        public void TakeoverShowsTheTruthfulDetectionFirst(ShowLang lang, string truth)
+        {
+            Assert.AreEqual(truth, CommsPanel.NoticeText(CommsNotice.Takeover, lang));
+        }
+
+        [TestCase(ShowLang.Ja, "異常は検出されませんでした")]
+        [TestCase(ShowLang.En, "No anomaly was detected.")]
+        [TestCase(ShowLang.Fr, "Aucune anomalie détectée.")]
+        public void TakeoverLieUsesTheApprovedWording(ShowLang lang, string lie)
         {
             string truth = CommsPanel.NoticeText(CommsNotice.Takeover, lang);
             Assert.AreEqual(lie, CommsPanel.TakeoverLieText(lang));
             Assert.AreNotEqual(truth, lie);
-            Assert.IsTrue(truth.StartsWith(sharedHead) && lie.StartsWith(sharedHead), "頭が同じで尾だけ変わる");
-            Assert.AreNotEqual(lie, CommsPanel.NoticeText(CommsNotice.MarkNothing, lang),
-                               "何も無い所での正直な返事を嘘に流用しない（既出の字面は嘘に見えない）");
             Assert.AreEqual(1, lie.Split('\n').Length, "嘘は 1 行（真実と同じ行数で、同じ場所に書き換わる）");
             Assert.LessOrEqual(FullWidth(lie), MaxFullWidthPerLine, "嘘も 1 行に入る");
         }

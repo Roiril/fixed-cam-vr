@@ -53,13 +53,9 @@ float CurseK(float field, float mask)
     return saturate((mask * (1.0 + CURSE_SOFT) - field) / CURSE_SOFT);
 }
 
-// ---- 塗り替わりの帯（`canon/LEDGER.md` 0230 / 0231・憑依の出し方）----
-//
-// 面を上端から**帯**（水平の帯・高さ sweep.w）に割り、前線が届いた帯から順に**帯ごと一斉に**呪われた双子へ
-// 反転する。帯は下の乱れと同じ格子 ＝ 塗り替わりは乱れの帯でできている（0231「ただ上から変わっていくのでは
-// なく、乱れ演出を…使う」）。進み 0 で 1 帯も反転せず、1 で全帯。
-// ⚠⚠ C# の写し `CommsCurseLogic.SweepBandOf` / `SweepBandCount` / `IsSwept` と同じ式でなければならない。
-// sweep = (進み 0..1, 矩形の上端 y, 矩形の下端 y, 帯の高さ m)
+// ---- 左から右への塗り替わり（憑依の出し方）----
+// sweep = (進み 0..1, 矩形の左端 x, 矩形の右端 x, 境界の幅 m)。
+// C# の本文クリップと顔と地が同じ panel-local x を読む。
 
 // 上端から数えた帯番号（0 が最上段。上端より上は 0 に寄せる）。
 float CommsBandOf(float y, float4 sweep)
@@ -78,8 +74,8 @@ float CurseSweepK(float2 p, float4 sweep)
 {
     if (sweep.x <= 0.0) return 0.0;
     if (sweep.x >= 1.0) return 1.0;
-    float cursedBands = floor(saturate(sweep.x) * CommsBandCount(sweep));
-    return step(CommsBandOf(p.y, sweep) + 0.5, cursedBands);
+    float front = lerp(sweep.y, sweep.z, saturate(sweep.x));
+    return step(p.x, front);
 }
 
 // ---- 連絡の面の乱れ（`canon/LEDGER.md` 0231）----

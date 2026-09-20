@@ -181,6 +181,50 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsStage.Off, l.Stage);
         }
 
+        [Test]
+        public void ReleasingTheGuide_ClosesWithoutRestoringThePreviousMessage()
+        {
+            var l = Started();
+            AdvanceUntil(l, CommsStage.Hold);
+            l.SetGuideWanted(true);
+            Assert.AreEqual(CommsStage.Guide, l.Stage);
+            Assert.AreEqual(0f, l.Weights.reveal, 1e-6f);
+
+            l.SetGuideWanted(false);
+            Assert.AreEqual(CommsStage.Out, l.Stage);
+            for (int i = 0; i < 10; i++)
+            {
+                Assert.AreEqual(0f, l.Weights.reveal, 1e-6f,
+                    "閉じる途中に前の本文が戻っている");
+                l.Tick(Dt);
+            }
+        }
+
+        [Test]
+        public void RetractingMidType_NeverRevealsAnotherLetter()
+        {
+            var l = Started();
+            AdvanceUntil(l, CommsStage.Type);
+            Advance(l, l.TypeSec * 0.4f);
+            float revealAtCancel = l.Weights.reveal;
+            float glyphAtCancel = l.Weights.glyph;
+            Assert.That(revealAtCancel, Is.InRange(0.2f, 0.8f));
+
+            l.ReleasePersistent();
+            Assert.AreEqual(CommsStage.Out, l.Stage);
+            Assert.AreEqual(revealAtCancel, l.Weights.reveal, 1e-6f);
+            Assert.AreEqual(glyphAtCancel, l.Weights.glyph, 1e-6f);
+            for (int i = 0; i < 10; i++)
+            {
+                float previousGlyph = l.Weights.glyph;
+                l.Tick(Dt);
+                Assert.AreEqual(revealAtCancel, l.Weights.reveal, 1e-6f,
+                    "閉じる途中に未表示の文字が増えている");
+                Assert.LessOrEqual(l.Weights.glyph, previousGlyph + 1e-6f,
+                    "閉じる途中に文字が濃くなっている");
+            }
+        }
+
         /// <summary>
         /// ⚠⚠ <b>押し終わった瞬間に届く②の連絡で、枠が開き直さない。</b>
         /// 素直に In から始めると<b>押すたびに必ず</b>枠が畳まれて開き直る（毎回起きる吃り）。

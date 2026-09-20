@@ -120,6 +120,9 @@ namespace FixedCamVr.Streaming
         /// <summary>2-C の人形視点素材が実際に画面へ混ざっているか。</summary>
         public bool DollPovShowing => takeRunner != null && takeRunner.DollPovShowing;
 
+        /// <summary>追いつきの最後のカット。終了縁で通信画面の乗っ取りを始める。</summary>
+        public bool DollCallShowing => takeRunner != null && takeRunner.DollCallShowing;
+
         public bool Suppressed => takeRunner != null && takeRunner.Suppressed;
 
         /// <summary>

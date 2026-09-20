@@ -1760,14 +1760,12 @@ def analyze(events, others, exp, warns=None):
             # 段の縁は `ev=commsPossess phase=Shown|Sweep|Cursed`。**塗り替わりが 1 度も無ければ FAIL**
             # （出し方の配線が古いか、前線が画へ書かれていない）。`sfx=nc` は乱れの音源を掴めていない。
             # ⚠ 一気に出るので打鍵は鳴らない ＝ その連絡の `chars`（打鍵の期待数）は 0 が正常。
-            possessed = [e for e in comms
-                         if fnum(e, "invasion", 0.0) >= 0.75 - 1e-6
-                         and e.get("id") not in ("Halt", "Prompt")]
+            possessed = [e for e in comms if e.get("id") == "Takeover"]
             poss_ev = [e for e in events if e.get("ev") == "commsPossess"]
             sweeps = [e for e in poss_ev if e.get("phase") == "Sweep"]
             cursed_ev = [e for e in poss_ev if e.get("phase") == "Cursed"]
             if possessed and not sweeps:
-                verdict("FAIL", f"侵食度 0.75 以上の連絡が {len(possessed)} 通届いたのに、上から塗り替わる縁"
+                verdict("FAIL", f"乗っ取りが {len(possessed)} 回始まったのに、左から塗り替わる縁"
                                 "（ev=commsPossess phase=Sweep）が 1 度も無い — CommsCueLogic.DeliveryOf か "
                                 "CommsPanelLogic.PossessionSample の配線を見る")
             elif possessed and not cursed_ev:
@@ -1778,7 +1776,15 @@ def analyze(events, others, exp, warns=None):
                 # Cursed の縁の tearMax（画へ書いた強さの最大・頭打ち 0.6）と tornMax（飛んだ帯の最大）で見る。
                 # ⚠ 前線の段だけ見ると、乱れが 1 コマも画へ届いていなくても OK になる。
                 with_tear = [e for e in cursed_ev if "tearMax" in e]
-                if cursed_ev and not with_tear:
+                current_delivery = any("delivery" in e for e in comms)
+                if current_delivery:
+                    error_edges = [e for e in events if e.get("ev") == "commsError"]
+                    if not any(str(e.get("active")) == "1" for e in error_edges):
+                        verdict("FAIL", "乗っ取り中の画面・空間エラーが開始していない")
+                    if not any(str(e.get("active")) == "0" for e in error_edges):
+                        verdict("WARN", "乗っ取りエラーの終了が記録されていない。ログ末尾または中止を確認する")
+                    with_tear = []  # 現行版の乱れは独立した画面・空間エラーで測る。
+                if cursed_ev and not with_tear and not current_delivery:
                     verdict("WARN", "塗り替わりの縁に tearMax が無い — 0231 より前の APK")
                 elif with_tear:
                     tear_max = max(fnum(e, "tearMax", 0.0) for e in with_tear)
@@ -1797,9 +1803,9 @@ def analyze(events, others, exp, warns=None):
                     lie_max = max(int(e.get("lie") or 0) for e in lie_edges)
                     if lie_max <= 0:
                         verdict("FAIL", "嘘の一文が塗り替わり切ったのに、書き換わった行（lie）が 1 字も画に出ていない — "
-                                        "CommsPanel.SwapToLie の配線を見る")
+                                        "CommsPanel の左右置換描画を確認する")
                     else:
-                        verdict("OK", f"嘘の一文が「検出しませんでした」に書き換わった（{lie_max} 字）")
+                        verdict("OK", f"嘘の一文が「異常は検出されませんでした」に書き換わった（{lie_max} 字）")
                 elif lie_edges:
                     verdict("WARN", "嘘の一文の縁に lie が無い — 0232 より前の APK")
                 if any(str(e.get("sfx")) == "nc" for e in sweeps):
@@ -1812,8 +1818,10 @@ def analyze(events, others, exp, warns=None):
             # ⚠ sec は面が開いてから届くまで。0.4 秒未満なら立ち上がらずに跳んでいる。
             cursed = [e for e in comms
                       if fnum(e, "invasion", 0.0) > 0.001
-                      and e.get("id") not in ("Halt", "Prompt")]
-            ramps = [e for e in events if e.get("ev") == "commsCurse"]
+                      and e.get("id") not in ("Halt", "Prompt", "Takeover")
+                      and e.get("delivery", "Typed") == "Typed"]
+            ramps = [e for e in events if e.get("ev") == "commsCurse"
+                     and e.get("id") != "Takeover" and e.get("delivery", "Typed") == "Typed"]
             if cursed and not ramps:
                 verdict("FAIL", f"侵食度 > 0 の連絡が {len(cursed)} 通届いたのに、斑が一度も目標へ届いていない"
                                 "（ev=commsCurse が無い）— CommsPanelLogic.SetCurseTarget の配線を見る")

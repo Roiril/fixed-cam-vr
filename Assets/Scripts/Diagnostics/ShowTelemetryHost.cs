@@ -892,7 +892,7 @@ namespace FixedCamVr.Diagnostics
                 _lastCommsCurseRamp = _comms.CurseRampCount;
                 Emit($"ev=commsCurse n={_lastCommsCurseRamp} sec={_comms.LastCurseRampSec:F2} " +
                      $"v={_comms.AppliedCurse:F2} target={_comms.CurseTarget:F2} " +
-                     $"cx={_comms.CorruptedChars} id={_comms.LastNotice} " +
+                     $"cx={_comms.CorruptedChars} id={_comms.LastNotice} delivery={_comms.Delivery} " +
                      $"invasion={_comms.InvasionProgress:F2} plate={(_comms.PlateBuilt ? 1 : 0)}");
             }
             if (_comms != null && _comms.PulseCount != _lastCommsPulse)
@@ -902,7 +902,7 @@ namespace FixedCamVr.Diagnostics
                      $"built={(_comms.IsBuilt ? 1 : 0)} lap={(_run != null ? _run.Lap : -1)} " +
                      // chars = この文面で鳴るはずの打鍵の数（改行を除く）。
                      // 解析器が合計と `typeN` を突き合わせる（`canon/LEDGER.md` 0056）。
-                     $"chars={_comms.NoticeChars} " +
+                     $"chars={_comms.NoticeChars} delivery={_comms.Delivery} " +
                      $"sfx={(_comms.TypeSfxBuilt ? 1 : 0)} " +
                      // この 1 通が届いたときの周回の進み（`canon/LEDGER.md` 0068）。
                      // ⚠ 強さではなく**進み**を出す — 強さは発作で跳ねるので、

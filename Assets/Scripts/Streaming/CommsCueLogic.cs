@@ -126,6 +126,8 @@ namespace FixedCamVr.Streaming
         /// ⚠ 旧「印字へ侵食が追いつく」（<c>Takeover</c>）は 0230 で捨てた。
         /// </summary>
         Possessed,
+        /// <summary>乗っ取り後。最初から人形と否定文だけを表示する。</summary>
+        Cursed,
     }
 
     /// <summary>1 フレーム分の入力。<b>UnityEngine 非依存・dt 注入</b>。</summary>
@@ -213,6 +215,9 @@ namespace FixedCamVr.Streaming
         /// <summary>現在も本編の通常周に居るか。報告時のスナップショットとは別に中止を優先する。</summary>
         public bool takeoverAllowed;
 
+        /// <summary>追いつきの最後の人形視点が表示中。下降縁で一度だけ乗っ取りを開始する。</summary>
+        public bool dollCatchUpShowing;
+
         /// <summary>経過（秒）。</summary>
         public float dt;
     }
@@ -298,8 +303,11 @@ namespace FixedCamVr.Streaming
         private int _walkRepeats;
         private float _introSec;
         private float _idleSec;
-        private float _fullInvasionSec;
+        private bool _catchUpWasShowing;
+        private bool _catchUpFinished;
         private bool _takeoverDelivered;
+
+        public bool TakeoverDelivered => _takeoverDelivered;
 
         /// <summary>本編に入ってからの経過（診断用）。</summary>
         public float RunSec => _runSec;
@@ -324,7 +332,8 @@ namespace FixedCamVr.Streaming
             _walkRepeats = 0;
             _introSec = 0f;
             _idleSec = 0f;
-            _fullInvasionSec = 0f;
+            _catchUpWasShowing = false;
+            _catchUpFinished = false;
             _takeoverDelivered = false;
         }
 
@@ -351,7 +360,7 @@ namespace FixedCamVr.Streaming
              : notice == CommsNotice.Halt ? CommsDelivery.Fade
              : notice == CommsNotice.Prompt ? CommsDelivery.Typed
              : notice == CommsNotice.Takeover ? CommsDelivery.Possessed
-             : invasionProgress >= CommsCurseLogic.PossessedLevel ? CommsDelivery.Possessed
+             : invasionProgress >= CommsCurseLogic.PossessedLevel ? CommsDelivery.Cursed
              : CommsDelivery.Typed;
 
         /// <summary>侵食度 0 での出方（文面の規約を測るテスト用）。</summary>
@@ -395,11 +404,13 @@ namespace FixedCamVr.Streaming
             float dt = dtAll;
             _runSec += dt;
 
-            bool fullyInvaded = inp.invasionProgress >= CommsInvasionLogic.DollReplacementLevel;
-            if (!_takeoverDelivered && fullyInvaded)
-                _fullInvasionSec += dt;
-            else if (!_takeoverDelivered)
-                _fullInvasionSec = 0f;
+            if (_catchUpWasShowing && !inp.dollCatchUpShowing) _catchUpFinished = true;
+            _catchUpWasShowing = inp.dollCatchUpShowing;
+
+            // 追いつき終了は報告や前の通知より優先する。侵食度1への到達だけでは発火しない。
+            if (inp.takeoverAllowed && !_takeoverDelivered && _catchUpFinished)
+                return CommsNotice.Takeover;
+            if (inp.takeoverPlaying) return CommsNotice.None;
 
             // ③a は**締めのカットの中で締めの線（3 周目 A の凍結点）を踏んだ瞬間**（0233）。
             //    線が無い台本・実体の無い線では、締めに入ってから `HaltAfterClosingSec` 秒の時計（0178）へ倒す。
@@ -424,17 +435,11 @@ namespace FixedCamVr.Streaming
             if (inp.markPressed)
             {
                 // 嘘の一文が出ている最中の再報告は頭へ戻さない（1 回だけ・最後まで見せる）。
-                if (inp.takeoverPlaying) return CommsNotice.None;
-                if (inp.takeoverAllowed && !_takeoverDelivered && fullyInvaded)
-                    return CommsNotice.Takeover;
                 if (inp.markDetected) return CommsNotice.MarkLogged;
                 // 0232: 乗っ取られた装置（侵食度 0.75 以上）は正直に「異常なし」を言わない — 判定を持たない一文へ。
                 return inp.invasionProgress >= CommsCurseLogic.PossessedLevel
                     ? CommsNotice.MarkAnalyzing : CommsNotice.MarkNothing;
             }
-            if (inp.takeoverAllowed && !_takeoverDelivered
-                && fullyInvaded && _fullInvasionSec >= CommsPossessionLogic.AutoDelaySec)
-                return CommsNotice.Takeover;
             if (haltDue) { _haltFired = true; return CommsNotice.Halt; }
             if (promptDue) { _promptFired = true; return CommsNotice.Prompt; }
             // 開始の合図は押しのけられても消費しない。報告を読ませ終わってから改めて出す。

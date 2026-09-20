@@ -10,7 +10,7 @@ namespace FixedCamVr.Streaming
         Off,
         /// <summary>全文が一気に出て、読ませている。斑は 0（通常の面そのもの）。</summary>
         Shown,
-        /// <summary>上端から前線が降りて、呪われた双子に塗り替わっている最中。</summary>
+        /// <summary>左端から前線が進み、呪われた双子に塗り替わっている最中。</summary>
         Sweep,
         /// <summary>塗り替わり切った。以後は畳むまで全面が呪われた双子。</summary>
         Cursed,
@@ -33,7 +33,7 @@ namespace FixedCamVr.Streaming
     /// ユーザー逐語「侵食度0.75以降ではスイの文章を、一文字ずつではなくぱっと一気に出してしまい、
     /// スイの文章を全部見せた後に上からデジタルが侵食されるようなアニメーションで急に塗り替わる」。
     ///
-    /// <b>出る（一気に）→ 読ませる → 塗り替わる（上から）</b> の 3 段。塗り替わった先は 0229 の呪われた双子
+    /// <b>出る（一気に）→ 読ませる → 塗り替わる（左から右）</b> の 3 段。塗り替わった先は 0229 の呪われた双子
     /// （人形の顔・走り書き・毛羽立った地）で、塗り替わった後は斑が全面。段の秒数はシュビーの案
     /// （<c>canon/OPEN.md</c>「0.75 以降は一気に出して、上から塗り替わる」）。
     ///
@@ -44,9 +44,6 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public static class CommsPossessionLogic
     {
-        /// <summary>侵食度 1 で報告が無いとき、嘘の一文を自動で出すまで (秒)。</summary>
-        public const float AutoDelaySec = 0.6f;
-
         /// <summary>
         /// 全文がふっと出るまで (秒)。「ぱっと一気に」だが 1 フレームでは出さない —
         /// 点いたのではなく浮かんだ、に見える最短（<see cref="CommsPanelLogic.FadeInSec"/> の半分）。
@@ -69,10 +66,10 @@ namespace FixedCamVr.Streaming
         public const float ReadMaxSec = 2.4f;
 
         /// <summary>
-        /// 上端から下端まで塗り替わるまで (秒)。「急に塗り替わる」の速さ。
-        /// 遅くすると「ゆっくり暗くなる」に見え、1〜2 コマだと「点いた」に見える（前線が画に出ない）。
+        /// 左端から右端まで塗り替わるまで (秒)。
+        /// スイの文を読んでいる間に、人形へ塗り替わる様子を追える速さ。
         /// </summary>
-        public const float SweepSec = 0.45f;
+        public const float SweepSec = 1.6f;
 
         // ---- 乱れ（`canon/LEDGER.md` 0231・「メインスクリーンをまねした…乱れ演出を…使う」）----
 
@@ -86,7 +83,7 @@ namespace FixedCamVr.Streaming
         public const float TearAttackSec = 0.06f;
 
         /// <summary>
-        /// 乱れの尾 (秒)。<b>塗り替わり切った後</b>に引く — 前線が下端へ抜けた瞬間に乱れも消すと、
+        /// 乱れの尾 (秒)。<b>塗り替わり切った後</b>に引く — 前線が右端へ抜けた瞬間に乱れも消すと、
         /// 「装置が直った」に見える。呪われた面へ落ち着くまでを乱れが覆う。
         /// </summary>
         public const float TearReleaseSec = 0.12f;

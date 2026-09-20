@@ -1,242 +1,271 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""嘘の一文（3 周目 A）の憑依の出し方（canon/LEDGER.md 0230）を、Unity が焼いた連番から動画と画素検査へ。
+r"""Unity が焼いた現行の通信面を 30fps 動画にし、画素と状態を検査する。
 
-    .\\tools\\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.CommsPreview.RunPossession
+    .\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.CommsPreview.RunPossession
     py -3.11 tools/render-comms-possession-preview.py
+    py -3.11 tools/render-comms-possession-preview.py --render Logs/comms-revision-20260920
 
-入力は Logs/comms-takeover-20260914/latest-render.txt が指す render-<日時>/<ja|en|fr>/（連番・frames.tsv）。
-出力は同じ場所へ possession.mp4（塗り替わりの頭の乱れの音つき）と evidence.json。
-
-⚠ 絵は Unity が描いたものをそのまま並べる（CPU の模写ではない）。音の発火は Unity が記録した frames.tsv の sfx 列。
-⚠ 判定は「効果の実在」— 打鍵 0 / 全文が出た瞬間の絵と塗り替わり切った絵が違う / 前線が上から降りた
-  （塗り替わりの途中で本文の上 1/3 は変わり下 1/3 は変わらない）/ 赤い「異常なし」が読ませる段だけ在る。
-  **良し悪しは判定しない**（reference/why.md）。
+入力は ``CommsRevisionPreview`` の出力。旧 ``--render <path>`` もそのまま使える。
+各言語の ``fNNNN.png`` と ``frames.csv`` から ``possession.mp4`` と
+``evidence.json`` を作る。Unity の絵を CPU で模写しない。
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
+import shutil
 import subprocess
 import sys
-import wave
 from pathlib import Path
 
-import imageio_ffmpeg
 import numpy as np
 from PIL import Image
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parent.parent
-OUTPUT = ROOT / "Logs/comms-takeover-20260914"
+DEFAULT_RENDER = ROOT / "Logs/comms-revision-20260920"
 FPS = 30
-GLITCH_GAIN = 0.8   # CurseSweepAudioCue.Gain
+LANGUAGES = ("ja", "en", "fr")
 
 
-def wav_read(path: Path):
-    with wave.open(str(path), "rb") as f:
-        assert f.getsampwidth() == 2, path
-        sr, channels = f.getframerate(), f.getnchannels()
-        a = np.frombuffer(f.readframes(f.getnframes()), dtype="<i2").astype(np.float32) / 32768
-    a = a.reshape(-1, channels)
-    if channels == 1:
-        a = np.repeat(a, 2, axis=1)
-    return a, sr
+def ffmpeg_exe() -> str:
+    """PATH を優先し、無ければ imageio-ffmpeg の同梱版を使う。"""
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+    except ImportError as exc:
+        raise SystemExit("ffmpeg が無い。PATH へ追加するか imageio-ffmpeg を入れてください") from exc
+    return imageio_ffmpeg.get_ffmpeg_exe()
 
 
 def load(path: Path) -> np.ndarray:
-    return np.asarray(Image.open(path).convert("RGB")).astype(np.int16)
+    if not path.is_file():
+        raise AssertionError(f"必要な画像が無い: {path}")
+    with Image.open(path) as image:
+        return np.asarray(image.convert("RGB"), dtype=np.int16)
 
 
-def ivory_mask(img: np.ndarray) -> np.ndarray:
-    r, g, b = img[..., 0], img[..., 1], img[..., 2]
-    return (r > 140) & (g > 130) & (b > 115) & (r >= b)
+def red_mask(image: np.ndarray) -> np.ndarray:
+    """通信面の赤文字。実描画の (255, 120, 86) を含み、暗い赤茶の地は除く。"""
+    red, green, blue = image[..., 0], image[..., 1], image[..., 2]
+    return ((red >= 170) & (green <= 145) & (blue <= 125)
+            & (red >= green + 65) & (red >= blue + 90))
 
 
-def red_mask(img: np.ndarray) -> np.ndarray:
-    """嘘の「異常なし」の赤（184, 48, 40）。"""
-    r, g, b = img[..., 0], img[..., 1], img[..., 2]
-    return (r > 120) & (g < 90) & (b < 90) & (r > g + 60)
+def mean_delta(a: np.ndarray, b: np.ndarray, mask: np.ndarray | None = None) -> float:
+    delta = np.abs(a.astype(np.float32) - b.astype(np.float32)).mean(axis=2)
+    values = delta if mask is None else delta[mask]
+    return float(values.mean()) if values.size else 0.0
 
 
-def bbox(mask: np.ndarray, pad: int = 0) -> dict:
-    ys, xs = np.where(mask)
-    assert len(xs), "領域が見つからない"
-    return {"x0": int(xs.min()) - pad, "x1": int(xs.max()) + 1 + pad,
-            "y0": int(ys.min()) - pad, "y1": int(ys.max()) + 1 + pad}
+def foreground_pixels(image: np.ndarray) -> int:
+    """四隅の背景色から外れた画素数。"""
+    corners = np.concatenate((image[:12, :12], image[:12, -12:], image[-12:, :12], image[-12:, -12:]))
+    background = np.median(corners.reshape(-1, 3), axis=0)
+    return int((np.abs(image - background).max(axis=2) > 3).sum())
 
 
-def crop(img: np.ndarray, r: dict) -> np.ndarray:
-    return img[int(r["y0"]):int(r["y1"]), int(r["x0"]):int(r["x1"])]
+def read_rows(folder: Path) -> list[dict[str, str]]:
+    path = folder / "frames.csv"
+    if not path.is_file():
+        raise AssertionError(f"frames.csv が無い: {path}")
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    required = {"frame", "sec", "stage", "sweep", "lie", "glyph", "error"}
+    if not rows or not required <= rows[0].keys():
+        missing = required - (rows[0].keys() if rows else set())
+        raise AssertionError(f"frames.csv の列が足りない: {sorted(missing)}")
+    frames = [int(row["frame"]) for row in rows]
+    if frames != list(range(len(rows))):
+        raise AssertionError(f"フレーム番号が連続していない: {frames[:4]}...{frames[-4:]}")
+    return rows
 
 
-def render_language(folder: Path, glitch_index: int) -> dict:
-    with (folder / "frames.tsv").open(encoding="utf-8-sig", newline="") as f:
-        rows = list(csv.DictReader(f, delimiter="\t"))
-    assert rows and [int(r["frame"]) for r in rows] == list(range(len(rows)))
-    required = {"frame", "phase", "sweep", "curse", "face", "cx", "lie", "glyph", "panel_alpha",
-                "hit", "sfx", "drawn", "shown", "total", "visible", "text", "tear", "torn"}
-    assert required <= rows[0].keys(), f"frames.tsv の列が足りない: {sorted(required - rows[0].keys())}"
-    frames = [folder / f"f{i:04d}.png" for i in range(len(rows))]
-    assert all(p.is_file() for p in frames), "連番が欠けている"
+def verify_wipe(truth: np.ndarray, wipe: np.ndarray, doll: np.ndarray) -> dict[str, object]:
+    final_delta = np.abs(doll.astype(np.float32) - truth.astype(np.float32)).mean(axis=2)
+    changed = final_delta > 6.0
+    changed_pixels = int(changed.sum())
+    if changed_pixels < 500:
+        raise AssertionError(f"人形への最終変化が少なすぎる: {changed_pixels} px")
 
-    phases = [r["phase"] for r in rows]
-    shown = [r for r in rows if r["phase"] == "Shown"]
-    sweep = [r for r in rows if r["phase"] == "Sweep"]
-    cursed = [r for r in rows if r["phase"] == "Cursed"]
-    assert shown and sweep and cursed, "Shown → Sweep → Cursed が揃っていない"
-    order = [p for i, p in enumerate(phases) if i == 0 or phases[i - 1] != p]
-    # 面が畳まれ切ると段は Off へ戻る（尾まで焼くと最後に付く）。
-    if len(order) > 1 and order[-1] == "Off":
-        order = order[:-1]
-    assert order == ["Off", "Shown", "Sweep", "Cursed"] or order == ["Shown", "Sweep", "Cursed"], f"段の順が違う: {order}"
-    assert sum(int(r["hit"]) for r in rows) == 0, "打鍵が鳴った（一気に出るので 0 のはず）"
-    # 0232: 文面は 真実（当たりの報告の返事）→ 嘘（最小編集）の 2 つで、この順。
-    texts = [r["text"] for r in rows]
-    distinct = [t for i, t in enumerate(texts) if i == 0 or texts[i - 1] != t]
-    meta = json.loads((folder / "lie.json").read_text(encoding="utf-8"))
-    assert meta["swapped"], "嘘へ差し替わらないまま終わった"
-    assert distinct == [meta["truth"].replace("\n", " / "), meta["lie"].replace("\n", " / ")], f"文面の順が 真実 → 嘘 ではない: {distinct}"
-    total = int(rows[0]["total"])
-    visible = int(rows[0]["visible"])
-    lit_shown = [r for r in shown if float(r["glyph"]) >= 0.99]
-    assert lit_shown, "全文が出切った読ませる段が無い"
-    assert all(int(r["shown"]) == total for r in lit_shown), "読ませる段で全文が出ていない"
-    assert all(int(r["cx"]) == 0 and float(r["curse"]) == 0 for r in lit_shown), "読ませる段で字が切れた／斑が乗った"
-    assert all(int(r["lie"]) == 0 and r["text"] == distinct[0] for r in lit_shown), "読ませる段に嘘が出ている"
-    # ⚠ 引いている最中は文字の濃さが 0 へ落ちるので、切られた字の数え上げも 0 になる（画に出ている字だけを数えるため）。
-    #   判定は**まだ点いているコマ**に絞る。
-    lit_cursed = [r for r in cursed if float(r["glyph"]) > 0.5]
-    assert lit_cursed, "塗り替わり切って点いたままのコマが無い"
-    lie_total = max(int(r["lie"]) for r in lit_cursed)
-    assert lie_total > 0, "塗り替わり切っても嘘の行が 1 字も出ていない"
-    assert all(int(r["cx"]) == visible and int(r["lie"]) == lie_total and int(r["drawn"]) == lie_total
-               and r["text"] == distinct[1] for r in lit_cursed), \
-        "塗り替わり切った後の行が嘘に書き換わっていない（上書きされた字・出ている嘘の字・文面）"
-    sfx_frames = [int(r["frame"]) for r in rows if int(r["sfx"]) > 0]
-    assert sfx_frames == [int(sweep[0]["frame"])], f"乱れの音は前線が降り始めたコマに 1 発のはず: {sfx_frames}"
-    sweep_sec = len(sweep) / FPS
-    assert abs(sweep_sec - 0.45) <= 2 / FPS, f"塗り替わりが {sweep_sec:.2f} 秒（0.45 のはず）"
-    sweeps = [float(r["sweep"]) for r in sweep]
-    assert all(b >= a for a, b in zip(sweeps, sweeps[1:])), "前線が戻った"
+    ys, xs = np.where(changed)
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    width = x1 - x0
+    x_left_end = x0 + width // 3
+    x_right_start = x0 + width * 2 // 3
+    x_grid = np.indices(changed.shape)[1]
+    left = changed.copy()
+    left &= (x_grid >= x0) & (x_grid < x_left_end)
+    right = changed.copy()
+    right &= (x_grid >= x_right_start) & (x_grid < x1)
+    if int(left.sum()) < 100 or int(right.sum()) < 100:
+        raise AssertionError("左右の塗り替え判定に必要な変化画素が無い")
 
-    # ---- 画素 ----
-    f_shown = int(lit_shown[len(lit_shown) // 2]["frame"])
-    f_mid = int(sweep[len(sweep) // 2]["frame"])
-    f_cursed = int(lit_cursed[min(6, len(lit_cursed) - 1)]["frame"])   # 乱れの尾（0.12 秒）が引いた後
-    img_shown, img_mid, img_cursed = load(frames[f_shown]), load(frames[f_mid]), load(frames[f_cursed])
-    dark = img_shown.max(axis=2) <= 11
-    plate = bbox(dark)
-    ink = ivory_mask(img_shown) | red_mask(img_shown)
-    split = plate["x0"] + (plate["x1"] - plate["x0"]) // 4
-    face_mask = ink.copy(); face_mask[:, split:] = False
-    text_mask = ink.copy(); text_mask[:, :split] = False
-    face, text = bbox(face_mask, 4), bbox(text_mask, 4)
-    h = text["y1"] - text["y0"]
-    top_third = {**text, "y1": text["y0"] + h // 3}
-    bottom_third = {**text, "y0": text["y1"] - h // 3}
-    d_text = float(np.abs(crop(img_cursed, text) - crop(img_shown, text)).mean())
-    d_face = float(np.abs(crop(img_cursed, face) - crop(img_shown, face)).mean())
-    d_plate = float(np.abs(crop(img_cursed, plate) - crop(img_shown, plate)).mean())
-    d_mid_top = float(np.abs(crop(img_mid, top_third) - crop(img_shown, top_third)).mean())
-    d_mid_bottom = float(np.abs(crop(img_mid, bottom_third) - crop(img_shown, bottom_third)).mean())
-    red_shown = int(red_mask(crop(img_shown, text)).sum())
-    red_cursed = int(red_mask(crop(img_cursed, text)).sum())
-    ring = np.zeros(img_shown.shape[:2], bool)
-    ring[max(0, plate["y0"] - 40):plate["y1"] + 40, max(0, plate["x0"] - 40):plate["x1"] + 40] = True
-    ring[plate["y0"]:plate["y1"], plate["x0"]:plate["x1"]] = False
-    ring_changed = int(((np.abs(img_cursed - img_shown).mean(axis=2) > 2.0) & ring).sum())
-    assert d_text > 1.0, f"塗り替わっても本文の画素が変わっていない（{d_text:.2f}）"
-    assert d_face > 3.0, f"塗り替わっても顔が人形になっていない（{d_face:.2f}）"
-    assert d_plate > 1.0, f"塗り替わっても地が変わっていない（{d_plate:.2f}）"
-    assert ring_changed >= 30, f"矩形の外に毛羽立ち・糸くずがほぼ無い（{ring_changed}）"
-    # 前線の向きは矩形の外の環で見る（乱れは中身を動かすが枠は動かさない）。
-    mid_y = (plate["y0"] + plate["y1"]) // 2
-    changed_mid = (np.abs(img_mid - img_shown).mean(axis=2) > 2.0) & ring
-    ring_mid_top, ring_mid_bottom = int(changed_mid[:mid_y].sum()), int(changed_mid[mid_y:].sum())
-    # ⚠ 本文は 1 行なので「上 1/3 の差」は前線の証拠にならない（帯の境目が字の上端をかすめるだけのことがある）。
-    #   向きは環（枠の外の毛羽立ち）で決める。d_mid_top は記録だけ。
-    assert ring_mid_top >= 30 and ring_mid_bottom <= max(10, int(0.15 * ring_mid_top)), \
-        f"前線が上から降りていない（途中の画: 環の変化 上 {ring_mid_top} 下 {ring_mid_bottom} / 上 1/3 の差 {d_mid_top:.2f}）"
-    # ---- 乱れ（0231）----
-    tear_col = [float(r["tear"]) for r in rows]
-    f_start, f_end = int(sweep[0]["frame"]), int(cursed[0]["frame"])
-    assert max(tear_col[int(r["frame"])] for r in shown) == 0.0, "読ませているあいだに乱れが立った"
-    assert tear_col[f_mid] >= 0.5, f"降りている最中の乱れが弱い（{tear_col[f_mid]:.2f}）"
-    motion_below = [float(np.abs(crop(load(frames[i + 1]), bottom_third) - crop(load(frames[i]), bottom_third)).mean())
-                    for i in range(f_start, f_mid)]
-    motion_below_mean = float(np.mean(motion_below)) if motion_below else 0.0
-    assert motion_below_mean >= 0.3, f"前線の下側が動いていない（下 1/3 のコマ差 平均 {motion_below_mean:.3f}）"
-    f_settle = f_end + int(np.ceil(0.12 * FPS)) + 1
-    settle = [float(np.abs(crop(load(frames[i + 1]), plate) - crop(load(frames[i]), plate)).mean())
-              for i in range(f_settle, min(f_settle + 6, len(rows) - 1))]
-    settle_max = max(settle) if settle else 0.0
-    assert settle_max <= 0.3 and tear_col[min(f_settle, len(rows) - 1)] == 0.0, \
-        f"尾が引いた後も動いている（コマ差 {settle_max:.3f} / 乱れ {tear_col[min(f_settle, len(rows) - 1)]:.2f}）"
-    assert red_shown == 0 and red_cursed == 0, f"赤は使わない（読ませる段 {red_shown} / 塗り替わった後 {red_cursed} 画素）"
-    # 0232: 嘘の行は象牙で出ていて、頭「異常を検出し」は同じ場所のまま、尾だけが書き換わる。
-    ivory_shown = int(ivory_mask(crop(img_shown, text)).sum())
-    lie_rect = {**text, "x1": max(text["x1"], int(meta["lie_x1"]) + 4)}
-    ivory_cursed = int(ivory_mask(crop(img_cursed, lie_rect)).sum())
-    assert ivory_cursed >= ivory_shown * 0.6, f"塗り替わった後に嘘の行の字が薄い（象牙 {ivory_cursed} / 読ませる段 {ivory_shown}）"
-    head = {**text, "x1": int(meta["head_x"]) - 2}
-    tail = {**lie_rect, "x0": int(meta["head_x"]) + 2}
-    d_head = float(np.abs(crop(img_cursed, head) - crop(img_shown, head)).mean())
-    d_tail = float(np.abs(crop(img_cursed, tail) - crop(img_shown, tail)).mean())
-    assert d_head < 2.0, f"頭「{meta['truth'][:meta['head_chars']]}」が動いた（画素差 {d_head:.2f}）— 同じ場所で尾だけ書き換わるはず"
-    assert d_tail > 8.0, f"尾が書き換わっていない（画素差 {d_tail:.2f}）"
-    # 走り書きの両端（字の右の余白）。en は幅いっぱいなので残らないことがある — 記録だけ。
-    flank = {**text, "x0": int(meta["lie_x1"]) + 6, "x1": plate["x1"] - 6}
-    flank_ink = int(ivory_mask(crop(img_cursed, flank)).sum()) if flank["x1"] > flank["x0"] else 0
+    left_to_truth = mean_delta(wipe, truth, left)
+    left_to_doll = mean_delta(wipe, doll, left)
+    right_to_truth = mean_delta(wipe, truth, right)
+    right_to_doll = mean_delta(wipe, doll, right)
+    if not left_to_doll < left_to_truth:
+        raise AssertionError(
+            f"途中画の左側が人形に塗り替わっていない: doll={left_to_doll:.2f} truth={left_to_truth:.2f}")
+    if not right_to_truth < right_to_doll:
+        raise AssertionError(
+            f"途中画の右側がまだ真実の面ではない: truth={right_to_truth:.2f} doll={right_to_doll:.2f}")
+    return {
+        "changed_pixels": changed_pixels,
+        "change_bbox": {"x0": x0, "x1": x1, "y0": y0, "y1": y1},
+        "left_to_truth_delta": left_to_truth,
+        "left_to_doll_delta": left_to_doll,
+        "right_to_truth_delta": right_to_truth,
+        "right_to_doll_delta": right_to_doll,
+    }
 
-    # ---- 音（Unity が記録した sfx 列だけ）----
-    sounds = ROOT / "Assets/Resources/Sound"
-    clip, sr = wav_read(sounds / f"sfx_glitch_{glitch_index % 3 + 1}.wav")
-    samples = int(len(rows) / FPS * sr) + sr
-    out = np.zeros((samples, 2), np.float32)
-    for f in sfx_frames:
-        start = int((f / FPS + 0.035) * sr)
-        count = min(len(clip), samples - start)
-        out[start:start + count] += clip[:count] * GLITCH_GAIN
-    assert np.abs(out).max() <= 1, "動画の音が飽和する"
-    audio = folder / "sweep.wav"
-    with wave.open(str(audio), "wb") as f:
-        f.setnchannels(2); f.setsampwidth(2); f.setframerate(sr)
-        f.writeframes(np.round(out * 32767).astype("<i2").tobytes())
+
+def calibrate_direction_guard(truth: np.ndarray, doll: np.ndarray,
+                              change_bbox: dict[str, int]) -> bool:
+    """実画素で右から左の反転対照を作り、判定が必ず落とすことを確かめる。"""
+    reverse = truth.copy()
+    split = (change_bbox["x0"] + change_bbox["x1"]) // 2
+    reverse[:, split:change_bbox["x1"]] = doll[:, split:change_bbox["x1"]]
+    try:
+        verify_wipe(truth, reverse, doll)
+    except AssertionError:
+        return True
+    raise AssertionError("左→右判定が、右→左の反転対照も通している")
+
+
+def make_video(folder: Path, frame_count: int, ffmpeg: str) -> Path:
+    frames = [folder / f"f{i:04d}.png" for i in range(frame_count)]
+    missing = [path.name for path in frames if not path.is_file()]
+    if missing:
+        raise AssertionError(f"連番画像が欠けている: {missing[:8]}")
     video = folder / "possession.mp4"
-    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error",
-                    "-framerate", str(FPS), "-i", str(folder / "f%04d.png"), "-i", str(audio),
-                    "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac",
-                    "-b:a", "160k", "-shortest", "-movflags", "+faststart", str(video)], check=True)
-    result = dict(language=folder.name, frames=len(rows), seconds=len(rows) / FPS,
-                  keystrokes=0, total_chars=total, visible_chars=visible, lie_chars=lie_total,
-                  truth=meta["truth"], lie=meta["lie"], head_chars=meta["head_chars"],
-                  ivory_pixels_shown=ivory_shown, ivory_pixels_cursed=ivory_cursed,
-                  head_delta=d_head, tail_delta=d_tail, flank_ink_pixels=flank_ink,
-                  shown_seconds=len(shown) / FPS, sweep_seconds=sweep_sec, cursed_seconds=len(cursed) / FPS,
-                  sweep_start_sec=int(sweep[0]["frame"]) / FPS, sweep_sfx_frames=sfx_frames,
-                  pixel_delta_text=d_text, pixel_delta_face=d_face, pixel_delta_plate=d_plate,
-                  ring_changed_pixels=ring_changed,
-                  mid_sweep_top_third_delta=d_mid_top, mid_sweep_bottom_third_delta=d_mid_bottom,
-                  ring_changed_mid_top=ring_mid_top, ring_changed_mid_bottom=ring_mid_bottom,
-                  tear_mid=tear_col[f_mid], motion_below_front_mean=motion_below_mean,
-                  settle_frame=f_settle, settle_delta_max=settle_max,
-                  red_pixels_shown=red_shown, red_pixels_cursed=red_cursed,
-                  stills={"shown": str(folder / "shown.png"), "mid": str(folder / "sweep-mid.png"),
-                          "cursed": str(folder / "cursed.png")},
-                  video=str(video),
-                  audio_note="Unity が記録した乱れの音 1 発だけ（35ms の DSP 遅延）。打鍵は無い。劇伴・立体音響は無し。")
-    (folder / "evidence.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    subprocess.run([
+        ffmpeg, "-y", "-v", "error", "-framerate", str(FPS),
+        "-i", str(folder / "f%04d.png"), "-frames:v", str(frame_count),
+        "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-r", str(FPS), "-movflags", "+faststart", str(video),
+    ], check=True)
+    return video
+
+
+def verify_language(folder: Path, ffmpeg: str) -> dict[str, object]:
+    rows = read_rows(folder)
+    truth = load(folder / "truth.png")
+    wipe = load(folder / "wipe.png")
+    doll = load(folder / "doll.png")
+    after = load(folder / "after-takeover.png")
+    holding = load(folder / "holding.png")
+    intro = load(folder / "intro-success.png")
+    finished = load(folder / "finished.png")
+    if len({image.shape for image in (truth, wipe, doll, after, holding, intro, finished)}) != 1:
+        raise AssertionError("静止画のサイズが揃っていない")
+
+    truth_red = int(red_mask(truth).sum())
+    actual_red = max(int(red_mask(after).sum()), int(red_mask(doll).sum()))
+    if truth_red != 0:
+        raise AssertionError(f"真実の面に赤が出ている: {truth_red} px")
+    if actual_red <= 0:
+        raise AssertionError("乗っ取り後の実画素に赤文字が無い")
+    holding_red = int(red_mask(holding).sum())
+    if holding_red != 0:
+        raise AssertionError(f"長押し中に前の赤い本文が戻っている: {holding_red} px")
+
+    sweep = [float(row["sweep"]) for row in rows]
+    active_sweep = [float(row["sweep"]) for row in rows if row["stage"] != "Off"]
+    if any(current + 1e-6 < previous for previous, current in zip(active_sweep, active_sweep[1:])):
+        raise AssertionError("塗り替えの前線が戻っている")
+    if max(sweep) < 0.999:
+        raise AssertionError("人形へ最後まで塗り替わっていない")
+    if rows[-1]["stage"] != "Off" or int(rows[-1]["error"]) != 0:
+        raise AssertionError("面と本体エラーが同時に終了していない")
+    if not any(int(row["error"]) for row in rows[:-1]):
+        raise AssertionError("乗っ取り中に本体エラーが表示されていない")
+    last_panel_frame = max(index for index, row in enumerate(rows) if row["stage"] != "Off")
+    last_error_frame = max(index for index, row in enumerate(rows) if int(row["error"]))
+    if last_panel_frame != last_error_frame:
+        raise AssertionError(
+            f"面と本体エラーの最終表示コマが違う: panel={last_panel_frame} error={last_error_frame}")
+
+    empty_pixels = foreground_pixels(finished)
+    if empty_pixels > 32:
+        raise AssertionError(f"最終フレームが空ではない: {empty_pixels} px")
+    intro_pixels = foreground_pixels(intro)
+    if intro_pixels < 100:
+        raise AssertionError("導入成功の面が描画されていない")
+
+    direction = verify_wipe(truth, wipe, doll)
+    reverse_rejected = calibrate_direction_guard(truth, doll, direction["change_bbox"])
+    video = make_video(folder, len(rows), ffmpeg)
+    result: dict[str, object] = {
+        "language": folder.name,
+        "frames": len(rows),
+        "fps": FPS,
+        "seconds": len(rows) / FPS,
+        "red_pixels_actual": actual_red,
+        "red_pixels_truth": truth_red,
+        "red_pixels_holding": holding_red,
+        "finished_foreground_pixels": empty_pixels,
+        "intro_foreground_pixels": intro_pixels,
+        "sweep_max": max(sweep),
+        "error_frames": sum(int(row["error"]) for row in rows),
+        "last_panel_frame": last_panel_frame,
+        "last_error_frame": last_error_frame,
+        "wipe": direction,
+        "reverse_direction_control_rejected": reverse_rejected,
+        "stills": {
+            "truth": str(folder / "truth.png"),
+            "wipe": str(folder / "wipe.png"),
+            "doll": str(folder / "doll.png"),
+            "after_takeover": str(folder / "after-takeover.png"),
+            "holding": str(folder / "holding.png"),
+            "intro_success": str(folder / "intro-success.png"),
+            "finished": str(folder / "finished.png"),
+        },
+        "video": str(video),
+    }
+    (folder / "evidence.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
 
 
+def language_folders(render: Path) -> list[Path]:
+    if (render / "frames.csv").is_file():
+        return [render]
+    folders = [render / language for language in LANGUAGES]
+    missing = [str(folder) for folder in folders if not (folder / "frames.csv").is_file()]
+    if missing:
+        raise AssertionError(f"言語別の出力が無い: {missing}")
+    return folders
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--render", type=Path, default=DEFAULT_RENDER,
+                        help="CommsRevisionPreview の出力 root または言語フォルダ")
+    return parser.parse_args()
+
+
 def main() -> int:
-    folder = Path((OUTPUT / "latest-render.txt").read_text(encoding="utf-8").strip()).resolve()
-    assert folder.is_relative_to(OUTPUT.resolve())
-    results = [render_language(folder / lang, i) for i, lang in enumerate(("ja", "en", "fr"))]
-    (folder / "evidence.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    args = parse_args()
+    render = args.render.expanduser()
+    if not render.is_absolute():
+        render = (ROOT / render).resolve()
+    else:
+        render = render.resolve()
+    ffmpeg = ffmpeg_exe()
+    folders = language_folders(render)
+    results = [verify_language(folder, ffmpeg) for folder in folders]
+    if len(folders) > 1:
+        (render / "evidence.json").write_text(
+            json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    print("OK: 打鍵 0 / 真実が出て読める / 上から降りる前線で塗り替わる / 行が「検出しませんでした」に書き換わる（頭は同じ場所・尾だけ）")
+    print("OK: 30fps / 赤文字 / 真実は赤なし / 左→右の塗り替え / 面とエラーは同時終了")
     return 0
 
 

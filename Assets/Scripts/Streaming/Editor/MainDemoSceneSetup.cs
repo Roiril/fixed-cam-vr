@@ -673,6 +673,9 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 導入の段 0 のあいだだけ出す 2 通（canon/LEDGER.md 0079）に要る。
                 TrySetObjectRef(commsSo, "intro", introDirector);
                 TrySetObjectRef(commsSo, "typeSfx", typeSfx);
+                TrySetObjectRef(commsSo, "takeoverErrorPrefab",
+                    AssetDatabase.LoadAssetAtPath<GameObject>(
+                        "Assets/Prefabs/Effects/UnauthorizedAccess.prefab"));
                 commsSo.ApplyModifiedPropertiesWithoutUndo();
             }
 

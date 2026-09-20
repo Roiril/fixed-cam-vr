@@ -4,7 +4,7 @@
 // 「通常の画 ＋ 呪われた画（りんかくは不鮮明・行が波線）を、段階に応じたマスクで重ねる」。
 //
 // 層 A（通常）: 鋭い矩形の地。従来の URP Unlit の地と同じ色と濃さ。
-// 層 B（呪われ）: 縁がノイズで毛羽立ち、外へ黒くにじむ。本文の行の位置に象牙の走り書き。
+// 層 B（呪われ）: 縁がノイズで毛羽立ち、外へ黒くにじむ。走り書きと糸線は描かない。
 // 2 つを斑の場 k（`CommsCurse.hlsl`・顔と共有）で画素ごとに混ぜる。
 //
 // 文字（TextMeshPro）はこのシェーダでは描けない。文字を切るステンシルは **別のシェーダ・別の quad**
@@ -28,9 +28,8 @@ Shader "FixedCamVr/CommsPanelPlate"
         _Size("Quad size (m)", Vector) = (1, 0.3, 0, 0)
         _RectHalf("Sharp rect half extents (m)", Vector) = (0.45, 0.12, 0, 0)
         _Curse("Curse amount (0..1)", Range(0, 1)) = 0
-        // 塗り替わりの帯（0230 / 0231・憑依の出し方）: (進み, 矩形の上端 y, 矩形の下端 y, 帯の高さ)。
-        // 反転した帯は層 B（斑と同じ k に max で入る）。
-        _Sweep("Sweep (progress, top, bottom, band)", Vector) = (0, 0, 0, 0.04)
+        // 左から右への塗り替わり: (進み, 矩形の左端 x, 矩形の右端 x, 境界の幅)。
+        _Sweep("Sweep (progress, left, right, band)", Vector) = (0, 0, 0, 0.04)
         // 乱れ（0231・本編の乱れをまねたもの）: (強さ, 明滅, 0, 0) と帯ごとの飛び・脱落（C# が作る）。
         _Tear("Tear (strength, flicker, 0, 0)", Vector) = (0, 1, 0, 0)
         _TearShiftA("Tear shift bands 0-3 (m)", Vector) = (0, 0, 0, 0)
@@ -214,16 +213,8 @@ Shader "FixedCamVr/CommsPanelPlate"
                 float k = max(CurseK(CurseField(p), _Curse), kSweep);
                 float plateA = saturate(lerp(sharp, cursed, k)) * _Color.a;
 
-                // 走り書きは斑の中だけ。境目は文字の切断（k ≥ 0.5）と同じ所で切り替わる。
-                // ⚠ 分岐で飛ばさない（`fwidth` を非一様な分岐の中で取らない）。乗算で消す。
-                float aaY = max(fwidth(pRaw.y), 1e-5);
-                float ink = Scrawl(p, aaY) * step(0.5, _Scrawl) * step(0.001, max(_Curse, _Sweep.x))
-                            * smoothstep(CURSE_CUT - 0.15, CURSE_CUT + 0.15, k) * _InkAlpha;
-                // 毛羽立った縁に、途切れた細い糸くず（同じ象牙の墨）。地は黒い半透明なので、暗い背景の前では
-                // 縁の毛羽立ちが読めない — ほつれた糸が縁をなぞることで、背景が何であれ輪郭が崩れて見える。
-                float thread = 1.0 - smoothstep(0.0009, 0.0028, abs(db));
-                float threadDry = smoothstep(0.42, 0.62, CurseValueNoise(e * 1.9 + 23.0));
-                ink = max(ink, thread * threadDry * 0.42 * k * _InkAlpha);
+                // 呪われた本文は赤い TMP が担う。走り書きと縁の糸線は描かない。
+                float ink = 0.0;
 
                 // 乱れ（0231）: 帯ごとの脱落（本編の「帯が砂になる」。ここでは**抜ける**）と全体の明滅。
                 float drop = CommsTearDropAt(pRaw.y, _Sweep, _TearDropA, _TearDropB);

@@ -101,6 +101,15 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Diagnostics/OutroReportText.cs',
                                     'Assets/Scripts/OvrBridge/OvrControllerBridge.cs',
                                     'Assets/Scripts/Streaming/ShowRunDirector.cs') }
+    'comms-horror-font' = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsHorrorFontSetup.Generate'
+                            Desc = '乗っ取り後の赤い否定文用フォントを3言語ぶん焼く'
+                            Out = 'Assets/Resources/Fonts/CommsHorror SDF.asset'
+                            Src = @('Assets/Art/Fonts/CommsHorror-Regular.ttf',
+                                    'Assets/Scripts/Diagnostics/CommsPanel.cs',
+                                    'Assets/Scripts/Streaming/Editor/CommsHorrorFontSetup.cs') }
+    'comms-revision'   = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsRevisionPreview.Run'
+                            Desc = '追いつき直後の乗っ取りと途中解除を3言語で実描画する'
+                            Out = 'Logs/comms-revision-20260920/ja/finished.png' }
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
                             Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set lang=ja|en|fr,invasion=0|0.25|0.75|1,frames=0／→ make-preview-video.py で mp4）'
                             Out = 'Assets/Screenshots/comms-preview/place.png'
@@ -326,7 +335,7 @@ function Show-BuildLog([string]$target, [datetime]$since) {
 # .cs を直しただけでは APK に入らない。どちらも実害があり（2026-07-30 の演出 0 段・
 # 2026-07-22 の全文字豆腐）、どちらも「ルールに書いてあるのに誰も見ていない」形で起きた。
 # → 見る側を人からここへ移す。判定は $Menus の Src（入力）と Out（焼いたもの）の mtime 比較。
-$BakeGuard = @('scene', 'hud-font')
+$BakeGuard = @('scene', 'hud-font', 'comms-horror-font')
 
 # ⚠ Editor のメニューではない焼き直し（Python で焼くもの）。同じ理屈で見る。
 #   AIエージェントの顔は `Assets/Resources/` に置いた版なので、**焼き直さなければ
