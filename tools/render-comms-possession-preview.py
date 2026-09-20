@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 r"""Unity が焼いた現行の通信面を 30fps 動画にし、画素と状態を検査する。
 
-    .\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.CommsPreview.RunPossession
+    .\tools\unity.ps1 menu comms-revision
     py -3.11 tools/render-comms-possession-preview.py
     py -3.11 tools/render-comms-possession-preview.py --render Logs/comms-revision-20260920
 
@@ -25,7 +25,7 @@ from PIL import Image
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_RENDER = ROOT / "Logs/comms-revision-20260920"
+DEFAULT_RENDER = ROOT / "Logs/comms-story-20260921"
 FPS = 30
 LANGUAGES = ("ja", "en", "fr")
 
@@ -201,6 +201,7 @@ def verify_language(folder: Path, ffmpeg: str) -> dict[str, object]:
 
     direction = verify_wipe(truth, wipe, doll)
     reverse_rejected = calibrate_direction_guard(truth, doll, direction["change_bbox"])
+    story = verify_story(folder, rows) if "blockFailed" in rows[0] else None
     video = make_video(folder, len(rows), ffmpeg)
     result: dict[str, object] = {
         "language": folder.name,
@@ -218,6 +219,7 @@ def verify_language(folder: Path, ffmpeg: str) -> dict[str, object]:
         "last_error_frame": last_error_frame,
         "wipe": direction,
         "reverse_direction_control_rejected": reverse_rejected,
+        "story": story,
         "stills": {
             "truth": str(folder / "truth.png"),
             "wipe": str(folder / "wipe.png"),
@@ -232,6 +234,41 @@ def verify_language(folder: Path, ffmpeg: str) -> dict[str, object]:
     (folder / "evidence.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
+
+
+def verify_story(folder: Path, rows: list[dict[str, str]]) -> dict[str, object]:
+    """侵入→検知→遮断失敗→改ざん→消去。表示時計だけでなく実画素も確認する。"""
+    intrusion = load(folder / "intrusion.png")
+    failed = load(folder / "block-failed.png")
+    if int(red_mask(intrusion).sum()) < 100:
+        raise AssertionError("侵入の先行表示に赤い警告の実画素が無い")
+    if foreground_pixels(failed) < 100:
+        raise AssertionError("遮断失敗のコマが描画されていない")
+    first_panel = next(i for i, r in enumerate(rows) if float(r["panel"]) > .01)
+    first_fail = next(i for i, r in enumerate(rows) if int(r["blockFailed"]))
+    first_sweep = next(i for i, r in enumerate(rows) if float(r["sweep"]) > .001)
+    full_doll = next(i for i, r in enumerate(rows) if float(r["sweep"]) >= .999)
+    cut = next(i for i, r in enumerate(rows) if r["stage"] == "Out")
+    if first_panel / FPS < .89:
+        raise AssertionError("不正アクセスの前段より早くスイの面が出た")
+    if not first_panel < first_fail < first_sweep < full_doll < cut:
+        raise AssertionError("検知/遮断失敗/改ざん/消去の順序が不正")
+    if not .25 <= (first_sweep - first_fail) / FPS <= .45:
+        raise AssertionError("遮断失敗から改ざんまでの間隔が不正")
+    if not .44 <= (cut - full_doll) / FPS <= .50:
+        raise AssertionError("人形の完成表示が0.45秒保持されていない")
+    if not .10 <= (len(rows) - 1 - cut) / FPS <= .17:
+        raise AssertionError("表示の切断が0.12秒からずれている")
+    for r in rows[:first_panel]:
+        if float(r["panel"]) > .01 or int(r["lie"]):
+            raise AssertionError("侵入の前段で人形かスイの面が出ている")
+    for r in rows[first_sweep:cut]:
+        if abs(float(r["errorOpacity"]) - .35) > .002:
+            raise AssertionError("改ざん中の警告が読み取り用の濃さを維持していない")
+    return {"intrusion_red_pixels": int(red_mask(intrusion).sum()),
+            "panel_at_sec": first_panel / FPS, "failure_at_sec": first_fail / FPS,
+            "sweep_at_sec": first_sweep / FPS, "doll_at_sec": full_doll / FPS,
+            "cut_at_sec": cut / FPS, "off_at_sec": (len(rows) - 1) / FPS}
 
 
 def language_folders(render: Path) -> list[Path]:

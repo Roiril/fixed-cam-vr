@@ -186,9 +186,14 @@ namespace FixedCamVr.Streaming.Tests
             l.Begin(12, CommsDelivery.Possessed);
             float readSec = CommsPossessionLogic.ReadSecFor(12, ShowLanguage.Current);
             Assert.AreEqual(CommsPossessionLogic.DurationFor(readSec), l.TypeSec, 1e-5f);
-            Assert.AreEqual(CommsPossessionPhase.Off, l.PossessionSample.phase, "開いている最中は Off");
+            Assert.AreEqual(CommsStage.Intrusion, l.Stage);
+            Assert.AreEqual(CommsWeights.Hidden.panel, l.Weights.panel, 1e-6f, "侵入中は既存の面を完全に消す");
+            Assert.AreEqual(1f, l.TakeoverErrorOpacity, 1e-6f, "空間エラーだけが先行する");
+            Assert.AreEqual(CommsPossessionPhase.Off, l.PossessionSample.phase, "侵入と開いている最中は Off");
             Assert.AreEqual(0f, l.Weights.curse, 1e-6f);
 
+            l.Tick(CommsPanelLogic.IntrusionSec);
+            Assert.AreEqual(CommsStage.In, l.Stage);
             l.Tick(CommsPanelLogic.InSec);
             Assert.AreEqual(CommsStage.Type, l.Stage);
             Assert.AreEqual(1f, l.Weights.reveal, 1e-6f, "字は最初から全部そこに在る");
@@ -220,15 +225,78 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(1f, l.Weights.curse, 1e-6f, "塗り替わった後は全面（目標 0.6 ではなく 1）");
             Assert.AreEqual(1f, l.Weights.glyph, 1e-6f);
             Assert.Greater(l.Weights.tear, 0f, "抜けた直後は乱れの尾が残る");
-            Assert.AreEqual(0f, CommsPanelLogic.HoldSecFor(CommsDelivery.Possessed), 1e-6f,
-                "最終の人形を 1 フレーム描いた後は保持しない");
-            l.Tick(Dt);
+            Assert.AreEqual(CommsPanelLogic.PossessedHoldSec,
+                CommsPanelLogic.HoldSecFor(CommsDelivery.Possessed), 1e-6f);
+            l.Tick(CommsPanelLogic.PossessedHoldSec);
             Assert.AreEqual(CommsStage.Out, l.Stage);
             Assert.AreEqual(1f, l.Weights.curse, 1e-6f, "引いている最中も呪われたまま");
-            l.Tick(CommsPanelLogic.OutSec + 0.001f);
+            l.Tick(CommsPanelLogic.PossessedOutSec + 0.001f);
             Assert.AreEqual(CommsStage.Off, l.Stage);
             Assert.AreEqual(0f, l.Weights.curse, 1e-6f);
             Assert.AreEqual(CommsPossessionPhase.Off, l.PossessionSample.phase);
+        }
+
+        [Test]
+        public void TakeoverBoundaries_DriveTheErrorAndCutFromTheSameClock()
+        {
+            var l = new CommsPanelLogic();
+            l.Begin(12, CommsDelivery.Possessed);
+            float readSec = CommsPossessionLogic.ReadSecFor(12, ShowLanguage.Current);
+            float failAt = CommsPossessionLogic.SweepStartSec(readSec)
+                           - CommsPanelLogic.TakeoverBlockFailedLeadSec;
+
+            l.Tick(CommsPanelLogic.IntrusionSec - Dt);
+            Assert.AreEqual(CommsStage.Intrusion, l.Stage);
+            Assert.AreEqual(1f, l.TakeoverErrorOpacity, 1e-6f);
+            float before = l.TakeoverElapsedSec;
+            l.Tick(Dt);
+            Assert.AreEqual(CommsStage.In, l.Stage);
+            Assert.Greater(l.TakeoverElapsedSec, before, "段をまたいでも開始からの時計は戻らない");
+
+            l.Tick(CommsPanelLogic.InSec * 0.5f);
+            Assert.AreEqual(0.675f, l.TakeoverErrorOpacity, 1e-5f);
+            l.Tick(CommsPanelLogic.InSec * 0.5f);
+            Assert.AreEqual(CommsStage.Type, l.Stage);
+            Assert.AreEqual(0.35f, l.TakeoverErrorOpacity, 1e-6f);
+
+            l.Tick(failAt - Dt);
+            Assert.IsFalse(l.TakeoverBlockFailed, "0.35 秒前の 1 コマ手前はまだ遮断できる");
+            l.Tick(Dt);
+            Assert.IsTrue(l.TakeoverBlockFailed, "0.35 秒前ぴったりで遮断失敗へ変わる");
+            l.Tick(l.TypeSec - failAt);
+            Assert.AreEqual(CommsStage.Hold, l.Stage);
+            Assert.IsTrue(l.TakeoverBlockFailed);
+            l.Tick(CommsPanelLogic.PossessedHoldSec);
+            Assert.AreEqual(CommsStage.Out, l.Stage);
+            l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
+            Assert.AreEqual(l.Weights.panel, l.Weights.glyph, 1e-6f,
+                "専用 Out は地と文字を同じ不透明度で切る");
+            Assert.AreEqual(0.175f, l.TakeoverErrorOpacity, 1e-5f,
+                "空間エラーも同じ切断曲線で消える");
+            float elapsed = l.TakeoverElapsedSec;
+            l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
+            Assert.AreEqual(CommsStage.Off, l.Stage);
+            Assert.AreEqual(0f, l.TakeoverErrorOpacity, 1e-6f);
+            Assert.GreaterOrEqual(l.TakeoverElapsedSec, elapsed, "自然終了でも通算時計を巻き戻さない");
+        }
+
+        [Test]
+        public void PossessionStartsHiddenFromAnOpenNotice_AndRejectsNotificationInterruption()
+        {
+            var l = new CommsPanelLogic();
+            l.Begin(12);
+            l.Tick(CommsPanelLogic.InSec);
+            l.Tick(l.TypeSec);
+            Assert.AreEqual(CommsStage.Hold, l.Stage);
+            Assert.Greater(l.Weights.panel, 0f);
+
+            l.Begin(12, CommsDelivery.Possessed);
+            Assert.AreEqual(CommsStage.Intrusion, l.Stage);
+            Assert.AreEqual(0f, l.Weights.panel, 1e-6f);
+            Assert.AreEqual(0f, l.Weights.glyph, 1e-6f);
+            l.Begin(4, CommsDelivery.Typed);
+            Assert.AreEqual(CommsStage.Intrusion, l.Stage, "後続通知で乗っ取りを中断しない");
+            Assert.AreEqual(CommsDelivery.Possessed, l.Delivery);
         }
 
         [Test]
@@ -278,7 +346,7 @@ namespace FixedCamVr.Streaming.Tests
             var l = new CommsPanelLogic();
             l.Begin(12, CommsDelivery.Possessed);
             l.SetGuideWanted(true);
-            Assert.AreEqual(CommsStage.In, l.Stage, "開いている最中も割り込まない");
+            Assert.AreEqual(CommsStage.Intrusion, l.Stage, "侵入中も割り込まない");
             while (l.Stage != CommsStage.Hold)
             {
                 l.SetGuideWanted(true);
@@ -289,11 +357,11 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsPossessionPhase.Cursed, l.PossessionSample.phase);
             l.SetGuideWanted(true);
             Assert.AreEqual(CommsStage.Hold, l.Stage, "最終の人形の 1 フレームも奪わない");
-            l.Tick(Dt);
+            l.Tick(CommsPanelLogic.PossessedHoldSec);
             Assert.AreEqual(CommsStage.Out, l.Stage, "押しっぱなしでも Guide へ戻さない");
             l.SetGuideWanted(true);
             Assert.AreEqual(CommsStage.Out, l.Stage, "引いている最中も割り込まない");
-            l.Tick(CommsPanelLogic.OutSec + Dt);
+            l.Tick(CommsPanelLogic.PossessedOutSec + Dt);
             Assert.AreEqual(CommsStage.Off, l.Stage);
             l.SetGuideWanted(true);
             Assert.AreEqual(CommsStage.Off, l.Stage, "押しっぱなしを新しい押下として開き直さない");
@@ -342,21 +410,21 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void DollCatchUpFallingEdge_FiresOnce_AndWaitsForDeliveryReceipt()
+        public void DollCatchUpCompletion_FiresOnce_AndWaitsForDeliveryReceipt()
         {
             var logic = new CommsCueLogic();
             Assert.AreNotEqual(CommsNotice.Takeover,
-                logic.Tick(Input(invasion: 1f, dollCatchUpShowing: true)),
-                "最後の人形視点を表示中に乗っ取らない");
+                logic.Tick(Input(invasion: 1f, dollCatchUpCompletedCount: 0)),
+                "追いつきの完了前は乗っ取らない");
             Assert.AreEqual(CommsNotice.Takeover,
-                logic.Tick(Input(invasion: 1f, dollCatchUpShowing: false)),
-                "人形視点が終わる下降縁で直ちに乗っ取る");
+                logic.Tick(Input(invasion: 1f, dollCatchUpCompletedCount: 1)),
+                "追いつきが完了した同じフレームで乗っ取る");
             Assert.AreEqual(CommsNotice.Takeover,
-                logic.Tick(Input(invasion: 1f, dollCatchUpShowing: false)),
+                logic.Tick(Input(invasion: 1f, dollCatchUpCompletedCount: 1)),
                 "実際に Deliver されるまでは候補を消費しない");
             logic.NotifyDelivered(CommsNotice.Takeover);
             Assert.AreNotEqual(CommsNotice.Takeover,
-                logic.Tick(Input(invasion: 1f, dollCatchUpShowing: false)));
+                logic.Tick(Input(invasion: 1f, dollCatchUpCompletedCount: 1)));
         }
 
         [Test]
@@ -444,13 +512,14 @@ namespace FixedCamVr.Streaming.Tests
             logic.NotifyDelivered(CommsNotice.Takeover);
             logic.Tick(new CommsCueInput { inRun = false, dt = 0.1f });
             Assert.AreNotEqual(CommsNotice.Takeover,
-                logic.Tick(Input(invasion: 1f, dollCatchUpShowing: true)));
+                logic.Tick(Input(invasion: 1f, dollCatchUpCompletedCount: 0)));
             Assert.AreEqual(CommsNotice.Takeover,
-                logic.Tick(Input(invasion: 1f, dollCatchUpShowing: false)));
+                logic.Tick(Input(invasion: 1f, dollCatchUpCompletedCount: 1)));
         }
 
         private static CommsCueInput Input(bool mark = false, bool detected = false,
-            float invasion = 0f, bool playing = false, bool dollCatchUpShowing = false)
+            float invasion = 0f, bool playing = false, bool dollCatchUpShowing = false,
+            int dollCatchUpCompletedCount = 0)
             => new CommsCueInput
         {
             inRun = true,
@@ -461,6 +530,7 @@ namespace FixedCamVr.Streaming.Tests
             takeoverPlaying = playing,
             takeoverAllowed = true,
             dollCatchUpShowing = dollCatchUpShowing,
+            dollCatchUpCompletedCount = dollCatchUpCompletedCount,
             dt = 0.1f,
         };
     }

@@ -215,8 +215,19 @@ namespace FixedCamVr.Streaming
         /// <summary>現在も本編の通常周に居るか。報告時のスナップショットとは別に中止を優先する。</summary>
         public bool takeoverAllowed;
 
-        /// <summary>追いつきの最後の人形視点が表示中。下降縁で一度だけ乗っ取りを開始する。</summary>
+        /// <summary>追いつきの最後の人形視点が表示中。既存の表示観測との互換用で、乗っ取り開始には使わない。</summary>
         public bool dollCatchUpShowing;
+
+        /// <summary>
+        /// 追いつきの最後の人形視点を自然完了した累計。供給は
+        /// <c>TimelineDirector.DollCatchUpCompletedCount</c>。増加したフレームで乗っ取りを開始する。
+        /// </summary>
+        public int dollCatchUpCompletedCount;
+
+        /// <summary>
+        /// ライブ卓が画面へ介入中か。介入中に届いた完了は観測済みにして捨て、解除後へ持ち越さない。
+        /// </summary>
+        public bool takeoverSuppressed;
 
         /// <summary>経過（秒）。</summary>
         public float dt;
@@ -303,7 +314,7 @@ namespace FixedCamVr.Streaming
         private int _walkRepeats;
         private float _introSec;
         private float _idleSec;
-        private bool _catchUpWasShowing;
+        private int _dollCatchUpCompletedObserved;
         private bool _catchUpFinished;
         private bool _takeoverDelivered;
 
@@ -332,7 +343,7 @@ namespace FixedCamVr.Streaming
             _walkRepeats = 0;
             _introSec = 0f;
             _idleSec = 0f;
-            _catchUpWasShowing = false;
+            _dollCatchUpCompletedObserved = 0;
             _catchUpFinished = false;
             _takeoverDelivered = false;
         }
@@ -404,11 +415,23 @@ namespace FixedCamVr.Streaming
             float dt = dtAll;
             _runSec += dt;
 
-            if (_catchUpWasShowing && !inp.dollCatchUpShowing) _catchUpFinished = true;
-            _catchUpWasShowing = inp.dollCatchUpShowing;
+            int completed = inp.dollCatchUpCompletedCount > 0 ? inp.dollCatchUpCompletedCount : 0;
+            if (completed < _dollCatchUpCompletedObserved)
+            {
+                // TakeRunner.ResetRun の 0 戻し。非 Run の Tick を挟まない構成でも前ランの候補を消す。
+                _dollCatchUpCompletedObserved = completed;
+                _catchUpFinished = false;
+            }
+            else if (completed > _dollCatchUpCompletedObserved)
+            {
+                _dollCatchUpCompletedObserved = completed;
+                // 卓が画面を握っているあいだの完了は、その場で消費する。解除後に遅れて嘘を出さない。
+                if (!inp.takeoverSuppressed) _catchUpFinished = true;
+            }
+            if (inp.takeoverSuppressed) _catchUpFinished = false;
 
             // 追いつき終了は報告や前の通知より優先する。侵食度1への到達だけでは発火しない。
-            if (inp.takeoverAllowed && !_takeoverDelivered && _catchUpFinished)
+            if (inp.takeoverAllowed && !inp.takeoverSuppressed && !_takeoverDelivered && _catchUpFinished)
                 return CommsNotice.Takeover;
             if (inp.takeoverPlaying) return CommsNotice.None;
 

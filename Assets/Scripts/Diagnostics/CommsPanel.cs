@@ -605,6 +605,9 @@ namespace FixedCamVr.Diagnostics
         private bool _yawSeeded;
         // 報告の縁を取るために、直前に見た回数を覚えておく（ShowControlClient が真実源）。
         private int _lastMarkCount;
+        // 外部 Presentation の中止回数。増えたフレームで進行中の乗っ取りを即座に消す。
+        private int _lastPresentationAbortCount;
+        private bool _presentationAbortedThisFrame;
         private bool _runRestartHooked;
         // 直前のフレームで何文字出ていたか。**打鍵音はこの増分から鳴らす**（下の Apply）。
         private int _lastShown;
@@ -778,6 +781,15 @@ namespace FixedCamVr.Diagnostics
         /// <summary>Takeover の面が出ているあいだ true。主画面側の空間エラーが開始と終了を同期する。</summary>
         public bool TakeoverVisible => _lieActive && _logic.Active;
 
+        /// <summary>Takeover 開始からの単調な秒数。段をまたいでも同じ純ロジック時計を読む。</summary>
+        public float TakeoverElapsedSec => _logic.TakeoverElapsedSec;
+
+        /// <summary>塗り替わりを止めるには遅い時点へ達したか。</summary>
+        public bool TakeoverBlockFailed => _logic.TakeoverBlockFailed;
+
+        /// <summary>主画面側へ出す侵入エラーの不透明度。</summary>
+        public float TakeoverErrorOpacity => _logic.TakeoverErrorOpacity;
+
         /// <summary>塗り替わりの頭で鳴らした乱れの音の累計。</summary>
         public int SweepSfxCount => sweepSfx != null ? sweepSfx.PlayedCount : 0;
 
@@ -904,6 +916,8 @@ namespace FixedCamVr.Diagnostics
             _invasion.Reset();
             _glitchLevel = 0f;
             _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
+            _lastPresentationAbortCount = timeline != null ? timeline.PresentationAbortCount : 0;
+            _presentationAbortedThisFrame = false;
             _logic.Disable();
             ResetPossessionVisual();
             Apply(CommsWeights.Hidden);
@@ -938,6 +952,8 @@ namespace FixedCamVr.Diagnostics
         private void Deliver(CommsNotice notice, bool persistent, bool pulse)
         {
             if (!IsBuilt || notice == CommsNotice.None) return;
+            // 乗っ取りは Guide だけでなく、後続通知でも頭出し・中断しない。
+            if (_logic.Delivery == CommsDelivery.Possessed && _logic.Active) return;
             // ⚠⚠ **床の矢印はこの連絡と対で出る**（`canon/LEDGER.md` 0079 の赤入れ 4
             //    「エージェントが説明し始めるときに、矢印が手前の線から 1 つづつ出てくるような感じに」）。
             //    ここで言わないと `WalkGuide` は保険（12 秒）が切れるまで 1 つも出さないので、
@@ -988,6 +1004,7 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             if (!IsBuilt) return;
+            if (ObservePresentationAbort()) return;
 
             if (_onboardingActive)
             {
@@ -1034,11 +1051,14 @@ namespace FixedCamVr.Diagnostics
                 closingLineDefined = timeline != null && timeline.ClosingLineDefined,
                 closingLineCrossed = timeline != null && timeline.ClosingLineCrossed,
                 dollCatchUpShowing = timeline != null && timeline.DollCallShowing,
+                dollCatchUpCompletedCount = timeline != null ? timeline.DollCatchUpCompletedCount : 0,
                 markPressed = markPressed,
                 markDetected = markPressed && showControl != null && showControl.LastMarkDetected,
                 invasionProgress = InvasionProgress,
                 takeoverPlaying = _lieActive,
                 takeoverAllowed = inRun,
+                takeoverSuppressed = (timeline != null && timeline.Suppressed)
+                                     || _presentationAbortedThisFrame,
                 dt = Time.unscaledDeltaTime,
             });
             if (next != CommsNotice.None) Deliver(next);
@@ -1077,6 +1097,20 @@ namespace FixedCamVr.Diagnostics
             }
         }
 
+        private bool ObservePresentationAbort()
+        {
+            int count = timeline != null ? timeline.PresentationAbortCount : 0;
+            // 完了通知を読むより先に止められた場合も、その通知は消費して再開させない。
+            _presentationAbortedThisFrame = count > _lastPresentationAbortCount;
+            _lastPresentationAbortCount = count;
+            if (!_presentationAbortedThisFrame && !(timeline != null && timeline.Suppressed)) return false;
+            if (_logic.Delivery != CommsDelivery.Possessed || !_logic.Active) return false;
+            ResetPossessionVisual();
+            _logic.Disable();
+            Apply(CommsWeights.Hidden);
+            return true;
+        }
+
         /// <summary>
         /// 斑の目標を決めて <see cref="CommsPanelLogic"/> へ押し込む。
         /// 侵食度そのものではなく <see cref="CommsCurseLogic.MaskFor"/>（覆う面積で決めた閾値）。
@@ -1089,7 +1123,7 @@ namespace FixedCamVr.Diagnostics
             bool released = runDirector != null && runDirector.ScreenDecayReleaseK >= 0.999f;
             float level = _glitchLevel;
             if (runDirector != null && !_cue.TakeoverDelivered)
-                level = Mathf.Min(level, CommsCurseLogic.LevelFor(CommsInvasionLogic.FirstPovLevel));
+                level = 0f;
             float target = closing || released ? 0f : CommsCurseLogic.MaskFor(level);
             CurseTarget = target;
             _logic.SetCurseTarget(target);
@@ -1776,6 +1810,7 @@ namespace FixedCamVr.Diagnostics
             // 憑依の出し方（0230）の段。他の出方では Off のまま。
             CommsPossessionSample poss = _logic.PossessionSample;
             PossessionPhase = poss.phase;
+            bool keepDollState = KeepDollState();
             AppliedSweep = _cursedFromStart ? 1f : Mathf.Clamp01(w.sweep);
             if (!_logic.Active)
             {
@@ -1798,7 +1833,7 @@ namespace FixedCamVr.Diagnostics
             AppliedOpen = Mathf.Clamp01(w.open);
             // 斑の量は `CommsPanelLogic` が面の開いた縁から 1 秒で立ち上げる（0229）。
             // 憑依の出し方では塗り替わる前 0・塗り替わった後 1（前線の進みは `AppliedSweep`）。
-            AppliedCurse = _cursedFromStart ? 1f : Mathf.Clamp01(w.curse);
+            AppliedCurse = _cursedFromStart || keepDollState ? 1f : Mathf.Clamp01(w.curse);
             float reveal = w.reveal;
             ApplyHint(Mathf.Clamp01(w.hint));
             float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
@@ -1924,6 +1959,17 @@ namespace FixedCamVr.Diagnostics
             _avatarRenderer.enabled = on;
             _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);
             _avatarRenderer.transform.localScale = Vector3.one * CommsFaceLayout.CellM;
+        }
+
+        /// <summary>
+        /// 乗っ取り後は Guide や通常報告を開き直しても人形の状態を保つ。
+        /// 4-A の Halt / Prompt、解除済み、新しいランだけは従来どおりスイへ戻す。
+        /// </summary>
+        private bool KeepDollState()
+        {
+            if (!_cue.TakeoverDelivered || _logic.Delivery == CommsDelivery.Possessed) return false;
+            if (LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt) return false;
+            return runDirector == null || runDirector.ScreenDecayReleaseK < 0.999f;
         }
 
         /// <summary>

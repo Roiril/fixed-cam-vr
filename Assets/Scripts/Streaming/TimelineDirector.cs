@@ -120,8 +120,14 @@ namespace FixedCamVr.Streaming
         /// <summary>2-C の人形視点素材が実際に画面へ混ざっているか。</summary>
         public bool DollPovShowing => takeRunner != null && takeRunner.DollPovShowing;
 
-        /// <summary>追いつきの最後のカット。終了縁で通信画面の乗っ取りを始める。</summary>
+        /// <summary>追いつきの最後のカットが現在表示中か（心音など既存表示観測用）。</summary>
         public bool DollCallShowing => takeRunner != null && takeRunner.DollCallShowing;
+
+        /// <summary>追いつきの最後のカットを自然完了した回数。ラン開始で 0 に戻る。</summary>
+        public int DollCatchUpCompletedCount => takeRunner != null ? takeRunner.DollCatchUpCompletedCount : 0;
+
+        /// <summary>演出が外部要因で中止された回数。ラン開始で 0 に戻る。</summary>
+        public int PresentationAbortCount => takeRunner != null ? takeRunner.PresentationAbortCount : 0;
 
         public bool Suppressed => takeRunner != null && takeRunner.Suppressed;
 

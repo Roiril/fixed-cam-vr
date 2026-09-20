@@ -79,7 +79,13 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(0, _panel.NoticeChars, "一気に出るので鳴るはずの打鍵は 0");
             Assert.AreEqual(1, _panel.PossessedCount);
             Assert.AreEqual(1, _panel.LieCount);
-            Advance(CommsPanelLogic.InSec + CommsPossessionLogic.ShowSec + 0.05f);
+            Apply();
+            Assert.AreEqual(CommsStage.Intrusion, _panel.Stage);
+            Assert.AreEqual(0f, _panel.AppliedPanelAlpha, 1e-6f, "侵入中は通信面を完全に隠す");
+            Assert.AreEqual(0f, _panel.AppliedFace, 1e-6f);
+            Assert.AreEqual(1f, _panel.TakeoverErrorOpacity, 1e-6f, "空間エラーだけが先行する");
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec
+                    + CommsPossessionLogic.ShowSec + 0.05f);
             Assert.AreEqual(CommsPossessionPhase.Shown, _panel.PossessionPhase);
             Assert.AreEqual(Text().textInfo.characterCount, _panel.VisibleChars, "全文が出ている");
             Assert.AreEqual(hits, _panel.TypedCount, "打鍵は 1 発も鳴らない");
@@ -95,7 +101,8 @@ namespace FixedCamVr.Diagnostics.Tests
         public void TruthAndLieAreClippedByTheSameLeftToRightFront()
         {
             _panel.Deliver(CommsNotice.Takeover);
-            Advance(CommsPanelLogic.InSec + CommsPossessionLogic.ShowSec + 0.3f);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec
+                    + CommsPossessionLogic.ShowSec + 0.3f);
             var text = Text();
             string truth = CommsPanel.NoticeText(CommsNotice.Takeover, ShowLanguage.Current);
             string lie = CommsPanel.TakeoverLieText(ShowLanguage.Current);
@@ -150,7 +157,8 @@ namespace FixedCamVr.Diagnostics.Tests
             _panel.Deliver(CommsNotice.Takeover);
             var text = Text();
             var info = text.textInfo;
-            Advance(CommsPanelLogic.InSec + CommsPossessionLogic.ShowSec + ReadSec() - 1f / 30f);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec
+                    + CommsPossessionLogic.ShowSec + ReadSec() - 1f / 30f);
             int first = -1, last = -1;
             for (int i = 0; i < info.characterCount; i++)
                 if (info.characterInfo[i].isVisible) { if (first < 0) first = i; last = i; }
@@ -204,7 +212,8 @@ namespace FixedCamVr.Diagnostics.Tests
         {
             _panel.Deliver(CommsNotice.Takeover);
             Assert.AreEqual(0, _panel.SweepSfxCount);
-            Advance(CommsPanelLogic.InSec + CommsPossessionLogic.ShowSec + ReadSec() - 1f / 30f);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec
+                    + CommsPossessionLogic.ShowSec + ReadSec() - 1f / 30f);
             Assert.AreEqual(CommsPossessionPhase.Shown, _panel.PossessionPhase);
             Assert.AreEqual(0, _panel.SweepSfxCount, "降り始める前は鳴らない");
             Advance(2f / 30f);
@@ -289,16 +298,112 @@ namespace FixedCamVr.Diagnostics.Tests
         public void HoldingReportDuringTheLieDoesNotCutIt()
         {
             _panel.Deliver(CommsNotice.Takeover);
-            Advance(CommsPanelLogic.InSec + 0.3f);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec + 0.3f);
             _panel.SetMarkState(0.5f, true);
             _logic.SetGuideWanted(true);
             Advance(0.5f);
             Assert.AreEqual(CommsStage.Type, _logic.Stage, "出る → 読ませる → 塗り替わる は途中で退かない");
             Assert.AreEqual(CommsPossessionPhase.Shown, _panel.PossessionPhase);
             Assert.AreEqual("", _panel.HintBody, "Takeover 中は解析中とゲージを出さない");
-            Advance(ReadSec() + CommsPossessionLogic.SweepSec + 0.2f);
+            // 専用の切断は0.12秒。昔の長いOutまで進めず、置換完了の実際の縁を見る。
+            for (int i = 0; i < 600 && _panel.PossessionPhase != CommsPossessionPhase.Cursed; i++)
+                Advance(1f / 60f);
             Assert.AreEqual(1, _panel.SweepCount, "塗り替わり切るまで見せる");
             Assert.AreEqual(CommsPossessionPhase.Cursed, _panel.PossessionPhase);
+        }
+
+        [Test]
+        public void TakeoverStartsHiddenFromAnExistingHold_AndIgnoresAnotherNotice()
+        {
+            _panel.SetDecayForPreview(0f, 0f);
+            _panel.Deliver(CommsNotice.Greeting);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
+            Assert.AreEqual(CommsStage.Hold, _panel.Stage);
+            Assert.Greater(_panel.AppliedPanelAlpha, 0f);
+
+            _panel.SetDecayForPreview(1f, 0f);
+            _panel.Deliver(CommsNotice.Takeover);
+            Apply();
+            Assert.AreEqual(CommsStage.Intrusion, _panel.Stage);
+            Assert.AreEqual(0f, _panel.AppliedPanelAlpha, 1e-6f);
+            Assert.AreEqual(0, _panel.VisibleChars);
+            _panel.Deliver(CommsNotice.MarkLogged);
+            Assert.AreEqual(CommsNotice.Takeover, _panel.LastNotice, "通知で乗っ取りを中断しない");
+            Assert.AreEqual(CommsStage.Intrusion, _panel.Stage);
+        }
+
+        [Test]
+        public void SuppressionBetweenTakesAlsoStopsThePossession()
+        {
+            var runner = _go!.AddComponent<TakeRunner>();
+            var timeline = _go.AddComponent<TimelineDirector>();
+            typeof(TimelineDirector).GetField("takeRunner", Private)!.SetValue(timeline, runner);
+            typeof(CommsPanel).GetField("timeline", Private)!.SetValue(_panel, timeline);
+            _panel.Deliver(CommsNotice.Takeover);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec + 0.1f);
+            Assert.IsTrue(_panel.TakeoverVisible);
+
+            timeline.SetSuppressed(true);
+            Assert.AreEqual(0, timeline.PresentationAbortCount, "再生中のカットが無くても停止する");
+            Call("ObservePresentationAbort");
+            Assert.IsFalse(_panel.TakeoverVisible);
+            Assert.AreEqual(CommsStage.Off, _panel.Stage);
+            Assert.AreEqual(0f, _panel.AppliedPanelAlpha);
+            Assert.AreEqual(0f, _panel.TakeoverErrorOpacity);
+        }
+
+        [Test]
+        public void AbortBeforeTheNoticeIsObservedSuppressesThatFramesCompletion()
+        {
+            var runner = _go!.AddComponent<TakeRunner>();
+            var timeline = _go.AddComponent<TimelineDirector>();
+            typeof(TimelineDirector).GetField("takeRunner", Private)!.SetValue(timeline, runner);
+            typeof(CommsPanel).GetField("timeline", Private)!.SetValue(_panel, timeline);
+            timeline.AbortActive();
+            Call("ObservePresentationAbort");
+            bool aborted = (bool)typeof(CommsPanel).GetField("_presentationAbortedThisFrame", Private)!.GetValue(_panel);
+            Assert.IsTrue(aborted);
+
+            var cue = new CommsCueLogic();
+            var input = new CommsCueInput {
+                inRun = true, takeoverAllowed = true, takeoverSuppressed = aborted,
+                dollCatchUpCompletedCount = 1,
+            };
+            Assert.AreNotEqual(CommsNotice.Takeover, cue.Tick(input));
+            Call("ObservePresentationAbort");
+            input.takeoverSuppressed = (bool)typeof(CommsPanel).GetField("_presentationAbortedThisFrame", Private)!.GetValue(_panel);
+            Assert.IsFalse(input.takeoverSuppressed);
+            Assert.AreNotEqual(CommsNotice.Takeover, cue.Tick(input), "消費した完了通知を翌フレームへ持ち越さない");
+        }
+
+        [Test]
+        public void RepressAfterTakeoverShowsTheDoll_UntilRunReset()
+        {
+            _panel.Deliver(CommsNotice.Takeover);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec + _logic.TypeSec
+                    + CommsPanelLogic.PossessedHoldSec + CommsPanelLogic.PossessedOutSec + 0.2f);
+            Assert.AreEqual(CommsStage.Off, _panel.Stage);
+            Assert.IsFalse(_panel.TakeoverVisible);
+            float elapsed = _panel.TakeoverElapsedSec;
+
+            _panel.SetControllerState(true, true);
+            _panel.SetMarkState(0.5f, true);
+            _logic.SetGuideWanted(true);
+            Advance(CommsPanelLogic.InSec + 0.05f);
+            Assert.AreEqual(CommsStage.Guide, _panel.Stage);
+            Assert.Greater(_panel.AppliedFace, 0f);
+            Assert.AreEqual(1f, _panel.AppliedFaceMix, 1e-6f,
+                "乗っ取り後の押し直しでスイを一瞬復活させない");
+            Assert.AreEqual(elapsed, _panel.TakeoverElapsedSec, 1e-6f,
+                "乗っ取り後の Guide は乗っ取り時計を再開しない");
+
+            Call("OnRunRestarted");
+            _panel.SetDecayForPreview(0f, 0f);
+            _panel.SetMarkState(0.5f, true);
+            _logic.SetGuideWanted(true);
+            Advance(CommsPanelLogic.InSec + 0.05f);
+            Assert.AreEqual(0f, _panel.AppliedFaceMix, 1e-6f, "新しい体験者ではスイへ戻る");
+            Assert.AreEqual(0f, _panel.TakeoverElapsedSec, 1e-6f, "ランリセットで時計も戻る");
         }
     }
 }

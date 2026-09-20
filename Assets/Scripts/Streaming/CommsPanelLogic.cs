@@ -7,6 +7,8 @@ namespace FixedCamVr.Streaming
     {
         /// <summary>出していない。</summary>
         Off,
+        /// <summary>乗っ取りの侵入。通信面は完全に消え、空間エラーだけが先行する。</summary>
+        Intrusion,
         /// <summary>枠が左から右へ開いている途中。</summary>
         In,
         /// <summary>文字が 1 字ずつ打たれている途中。</summary>
@@ -202,10 +204,22 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float FadeHoldSec = 1.1f;
 
+        /// <summary>乗っ取りが通信面へ侵入している時間 (秒)。この間、通信面は完全に隠す。</summary>
+        public const float IntrusionSec = 0.9f;
+
+        /// <summary>塗り替わり後の人形を保持する時間 (秒)。</summary>
+        public const float PossessedHoldSec = 0.45f;
+
+        /// <summary>乗っ取りを一斉に切断する時間 (秒)。</summary>
+        public const float PossessedOutSec = 0.12f;
+
+        /// <summary>塗り替わりの前に「遮断失敗」へ変わる時間 (秒)。</summary>
+        public const float TakeoverBlockFailedLeadSec = 0.35f;
+
         /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
         public static float HoldSecFor(CommsDelivery delivery)
             => delivery == CommsDelivery.Fade ? FadeHoldSec
-             : delivery == CommsDelivery.Possessed ? 0f
+             : delivery == CommsDelivery.Possessed ? PossessedHoldSec
              : HoldSec;
 
         /// <summary>引くまで (秒)。ぱっと消すと「消えた」ではなく「壊れた」に見える。</summary>
@@ -249,6 +263,8 @@ namespace FixedCamVr.Streaming
         private float _curseTarget, _curseFrom, _curseShown, _curseRampSec;
         // 面が開いてからの秒。乱れ（0231）の種に使う（段をまたいで単調に増える）。
         private float _openSec;
+        // 乗っ取り開始からの単調な時計。段を移っても、演出が終わってもランリセットまでは戻さない。
+        private float _takeoverElapsedSec;
 
         public CommsStage Stage => _stage;
 
@@ -299,6 +315,41 @@ namespace FixedCamVr.Streaming
         /// <summary>現在の段に入ってからの秒数。専用表示とプレビューが同じ時計を読む。</summary>
         public float StageElapsedSec => _elapsed;
 
+        /// <summary>乗っ取り開始からの秒数。段をまたいでも同じ純ロジック時計が単調に進む。</summary>
+        public float TakeoverElapsedSec => _takeoverElapsedSec;
+
+        /// <summary>遮断が間に合わない時点へ達したか。塗り替わりの 0.35 秒前から true。</summary>
+        public bool TakeoverBlockFailed
+            => _delivery == CommsDelivery.Possessed
+               && (_stage == CommsStage.Type
+                   && _elapsed + 0.000001f >= System.Math.Max(0f,
+                       CommsPossessionLogic.SweepStartSec(_readSec) - TakeoverBlockFailedLeadSec)
+                   || _stage == CommsStage.Hold
+                   || _stage == CommsStage.Out);
+
+        /// <summary>空間エラーの不透明度。通信面より先に出て、専用切断と同時に消える。</summary>
+        public float TakeoverErrorOpacity
+        {
+            get
+            {
+                if (_delivery != CommsDelivery.Possessed) return 0f;
+                switch (_stage)
+                {
+                    case CommsStage.Intrusion:
+                        return 1f;
+                    case CommsStage.In:
+                        return Lerp(1f, 0.35f, Clamp01(_elapsed / InSec));
+                    case CommsStage.Type:
+                    case CommsStage.Hold:
+                        return 0.35f;
+                    case CommsStage.Out:
+                        return 0.35f * PossessedCutOpacity;
+                    default:
+                        return 0f;
+                }
+            }
+        }
+
         /// <summary>
         /// 憑依の出し方（0230）の段と値。他の出方と、面が畳まれている／開いている最中は <see cref="CommsPossessionPhase.Off"/>。
         /// 文字の段が「出る → 読ませる → 塗り替わる」で、読ませる段（Hold）以降は塗り替わったまま。
@@ -307,7 +358,8 @@ namespace FixedCamVr.Streaming
         {
             get
             {
-                if (_delivery != CommsDelivery.Possessed || _stage == CommsStage.Off || _stage == CommsStage.In)
+                if (_delivery != CommsDelivery.Possessed || _stage == CommsStage.Off
+                    || _stage == CommsStage.Intrusion || _stage == CommsStage.In)
                     return new CommsPossessionSample { phase = CommsPossessionPhase.Off };
                 if (_stage == CommsStage.Type)
                     return CommsPossessionLogic.Sample(_elapsed, _readSec);
@@ -346,6 +398,8 @@ namespace FixedCamVr.Streaming
         public void Begin(int charCount, CommsDelivery delivery = CommsDelivery.Typed,
                           bool persistent = false)
         {
+            // 乗っ取りの時系列は通知で頭出しも中断もしない。
+            if (_delivery == CommsDelivery.Possessed && _stage != CommsStage.Off) return;
             // ⚠⚠ **いまの姿から動かす**（`canon/LEDGER.md` 0058）。②の連絡は「押した瞬間」に届くので、
             //    開きを 0 から張り直すと**押し終わるたびに枠が畳まれて開き直る**（毎回かならず起きる吃り）。
             //    報告の手元表示で既に開いていれば、横は動かず**丈だけが伸びて文面の場所ができる**。
@@ -359,9 +413,12 @@ namespace FixedCamVr.Streaming
             if (_stage == CommsStage.Off) RestartCurseRamp();
             // ⚠ **出方を替えるのは段を移った後**（`EnterStage` は「いまの姿」を覚えるので、
             //   新しい出方の目で古い段を測らせない）。
-            EnterStage(chained ? CommsStage.Type : CommsStage.In);
+            EnterStage(delivery == CommsDelivery.Possessed
+                ? CommsStage.Intrusion
+                : chained ? CommsStage.Type : CommsStage.In);
             _delivery = delivery;
             _persistent = persistent;
+            if (delivery == CommsDelivery.Possessed) _takeoverElapsedSec = 0f;
             // 憑依の出し方（0230）: 文字の段は 出る → 読ませる（字数で伸びる）→ 塗り替わる の合計。
             _readSec = CommsPossessionLogic.ReadSecFor(charCount, ShowLanguage.Current);
             _typeSec = delivery == CommsDelivery.Possessed
@@ -445,6 +502,7 @@ namespace FixedCamVr.Streaming
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;
+            _takeoverElapsedSec = 0f;
             RestartCurseRamp();
         }
 
@@ -455,12 +513,16 @@ namespace FixedCamVr.Streaming
             if (_stage == CommsStage.Off) return;
             _elapsed += dt;
             _openSec += dt;
+            if (_delivery == CommsDelivery.Possessed) _takeoverElapsedSec += dt;
             // 斑は面が出ているあいだだけ進む（段に関わらず 1 本の時計）。
             _curseRampSec += dt;
             _curseShown = Lerp(_curseFrom, _curseTarget,
                                Smooth(Clamp01(_curseRampSec / CommsCurseLogic.RampSec)));
             switch (_stage)
             {
+                case CommsStage.Intrusion:
+                    if (_elapsed >= IntrusionSec) EnterStage(CommsStage.In);
+                    break;
                 case CommsStage.In:
                     if (_elapsed >= InSec) EnterStage(CommsStage.Type);
                     break;
@@ -476,12 +538,12 @@ namespace FixedCamVr.Streaming
                             : CommsStage.Out);
                     break;
                 case CommsStage.Out:
-                    if (_elapsed >= OutSec)
+                    if (_elapsed >= OutSecFor(_delivery))
                     {
                         // 乗っ取りは押しっぱなしで終わっても Guide へ戻さない。
                         // 離して次に押すまで、この保持要求は新しい立ち上がりにしない。
                         bool keepGuideLatch = _delivery == CommsDelivery.Possessed && _guideWanted;
-                        Disable();
+                        FinishNotice();
                         if (keepGuideLatch) _guideWanted = true;
                     }
                     break;
@@ -524,6 +586,8 @@ namespace FixedCamVr.Streaming
             {
                 switch (_stage)
                 {
+                    case CommsStage.Intrusion:
+                        return CommsWeights.Hidden;
                     case CommsStage.In:
                     {
                         // 枠は左端から右へ開き、**同時に文面のぶんだけ丈が伸びる**。
@@ -595,6 +659,19 @@ namespace FixedCamVr.Streaming
                     }
                     case CommsStage.Out:
                     {
+                        if (_delivery == CommsDelivery.Possessed)
+                        {
+                            float cut = PossessedCutOpacity;
+                            return new CommsWeights
+                            {
+                                panel = cut,
+                                glyph = cut,
+                                open = 1f,
+                                body = 1f,
+                                reveal = 1f,
+                                hint = cut,
+                            };
+                        }
                         float t = Clamp01(_elapsed / OutSec);
                         // ⚠ **文字が先に消えてから枠が畳まれる。** 逆にすると、畳む枠から
                         //    文字がはみ出して「潰された」に見える。
@@ -614,6 +691,24 @@ namespace FixedCamVr.Streaming
                         return CommsWeights.Hidden;
                 }
             }
+        }
+
+        private float PossessedCutOpacity => 1f - Smooth(Clamp01(_elapsed / PossessedOutSec));
+
+        private static float OutSecFor(CommsDelivery delivery)
+            => delivery == CommsDelivery.Possessed ? PossessedOutSec : OutSec;
+
+        /// <summary>通知の自然終了。乗っ取りの通算時計だけは観測のため保持する。</summary>
+        private void FinishNotice()
+        {
+            _stage = CommsStage.Off;
+            _elapsed = 0f;
+            _delivery = CommsDelivery.Typed;
+            _persistent = false;
+            _guideWanted = false;
+            _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
+            _openSec = 0f;
+            RestartCurseRamp();
         }
 
         private static float Clamp01(float v) => v < 0f ? 0f : (v > 1f ? 1f : v);

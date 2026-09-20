@@ -157,6 +157,19 @@ namespace FixedCamVr.Streaming
         private bool _activeStepDollCall;
         private bool _activeStepDollReplacement;
 
+        /// <summary>
+        /// <b>人形の追いつき（<c>steps[].dollCall</c>）を最後まで表示した回数</b>。
+        /// 次カットへの自然遷移か、演出の自然完了だけを数える。離脱・watchdog・中止・未表示カットは数えない。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int DollCatchUpCompletedCount { get; private set; }
+
+        /// <summary>
+        /// <b>走行中の演出を外部要因で中止した回数</b>。
+        /// 通信面が途中の表示を即座に畳むための観測値。ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int PresentationAbortCount { get; private set; }
+
         /// <summary>人形の差し替えカットが実際に CG を表示しているか。</summary>
         public bool DollReplacementShowing => IsDollReplacementShowing(
             _logic.IsActive, _activeStepDollReplacement, _cgLayer != null && _cgLayer.DollVisible);
@@ -358,7 +371,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void AbortActive()
         {
-            if (!_logic.IsActive) return;
+            // 演出が自然終了した直後でも、卓の「■ 画面を取り返す」は通信表示を止める明示信号になる。
+            // active / chain 中は CleanupActive が数えるため、入口では非 active 時だけ数えて二重加算を避ける。
+            if (!_logic.IsActive && !_chainPending)
+            {
+                PresentationAbortCount++;
+                return;
+            }
             CleanupActive(releaseScreen: director == null || !director.OverrideActive);
             Debug.Log("[TakeRunner] 走行中の演出を中止した（卓からの緊急停止）");
         }
@@ -584,6 +603,8 @@ namespace FixedCamVr.Streaming
             // 前の体験者の位置・横断状態を持ち越さない（ラン開始直後に幽霊の横断を作らない）。
             _lineCross.Reset();
             _hasLastNow = false;
+            DollCatchUpCompletedCount = 0;
+            PresentationAbortCount = 0;
         }
 
         /// <summary>ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。</summary>
@@ -714,6 +735,11 @@ namespace FixedCamVr.Streaming
 
         private void BeginStep(TakeRunnerLogic.Decision d, bool exitAnchored)
         {
+            // 同じ演出の次カットへ進んだ事実は、直前のカットが著作どおり終わったことを意味する。
+            // playable 判定を通って画面を取った dollCall だけが _activeStepDollCall を立てるため、
+            // 素材不足などで飛ばされたカットはここへ混ざらない。
+            if (!d.takeStarted) CompleteDollCatchUpIfActive();
+
             if (director == null)
             {
                 Debug.LogWarning("[TakeRunner] director 未配線のため演出を実行できない。");
@@ -1134,6 +1160,8 @@ namespace FixedCamVr.Streaming
         private void EndTake(TakeRunnerLogic.Decision d)
         {
             _lastEndReason = d.reason;
+            if (d.reason == TakeRunnerLogic.EndReason.Completed) CompleteDollCatchUpIfActive();
+            else _activeStepDollCall = false;
             // 音は director の有無に関係なく必ず返す（画面が無くても占有だけ残さない）。
             EndTakeBgm();
             // ⚠ カット単位の資源（オーバーレイ・第 2 層・左右分割・録画・CG）は **画面の有無と無関係**。
@@ -1196,6 +1224,7 @@ namespace FixedCamVr.Streaming
             bool handingOver = _chainPending;
             _chainPending = false;
             if (!_logic.IsActive && !handingOver) return;
+            PresentationAbortCount++;
             _activeStepCueId = "";   // 音が「まだ異世界が映っている」と読まない（0131）
             _activeStepDollCall = false;   // 同・呼びかけのカットが降りた縁を作る（0175）
             _activeStepDollReplacement = false;
@@ -1217,6 +1246,13 @@ namespace FixedCamVr.Streaming
             //    落とさないと、次の体験者が被った直後に前の人の目が閉じ残っている。
             _eyes?.Abort();
             _logic.AbortActive();
+        }
+
+        private void CompleteDollCatchUpIfActive()
+        {
+            if (!_activeStepDollCall) return;
+            _activeStepDollCall = false;
+            DollCatchUpCompletedCount++;
         }
 
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。

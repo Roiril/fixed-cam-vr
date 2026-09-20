@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Globalization;
 using FixedCamVr.Streaming;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -11,10 +12,6 @@ namespace FixedCamVr.Diagnostics
     /// </summary>
     public sealed class CommsTakeoverError : MonoBehaviour
     {
-        // 3 秒は警告・副題・状態表示・空間の数字がすべて出ており、末尾の退場フェード前。
-        // Takeover がこれより長くてもこの画を保持し、Comms より先にエラーだけ消さない。
-        private const float SustainSampleSec = 3f;
-
         private CommsPanel? _panel;
         private GameObject? _prefab;
         private Transform? _screenAnchor;
@@ -22,8 +19,8 @@ namespace FixedCamVr.Diagnostics
         private bool _screenExplicit;
         private GameObject? _instance;
         private UnauthorizedAccessEffect? _effect;
-        private float _elapsed;
         private bool _active;
+        private bool _blockFailedLogged;
         private bool _warnedMissingPrefab;
         private bool _warnedMissingScreen;
 
@@ -33,9 +30,13 @@ namespace FixedCamVr.Diagnostics
             ReleaseInstance();
             _panel = panel;
             _prefab = prefab;
-            _elapsed = 0f;
+            _blockFailedLogged = false;
             _warnedMissingPrefab = false;
-            if (!_screenExplicit) ResolveScreen();
+            if (!_screenExplicit)
+            {
+                _screenAnchor = null;
+                _screenSize = Vector2.zero;
+            }
         }
 
         /// <summary>独立プレビューとテストが本番と同じ時計を使うための画面指定。</summary>
@@ -57,6 +58,7 @@ namespace FixedCamVr.Diagnostics
         /// <summary>乗っ取り表示の実時間を進める。プレビューと EditMode テストもこの入口を使う。</summary>
         public void Tick(bool visible, float dt)
         {
+            _ = dt;
             if (visible && !_active) StartEffect();
             if (!visible && _active)
             {
@@ -64,10 +66,17 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
             if (!_active || _effect == null) return;
-
-            _elapsed += Mathf.Max(0f, dt);
-            float sample = Mathf.Min(_elapsed, SustainSampleSec);
-            _effect.Sample(sample);
+            float elapsed = _panel != null ? _panel.TakeoverElapsedSec : 0f;
+            bool blockFailed = _panel != null && _panel.TakeoverBlockFailed;
+            float opacity = _panel != null ? _panel.TakeoverErrorOpacity : 1f;
+            _effect.SampleTakeover(elapsed, blockFailed, opacity);
+            if (blockFailed && !_blockFailedLogged)
+            {
+                _blockFailedLogged = true;
+                Debug.Log("[XP] ev=commsError phase=BlockFailed sec="
+                    + elapsed.ToString("0.000", CultureInfo.InvariantCulture)
+                    + " opacity=" + opacity.ToString("0.000", CultureInfo.InvariantCulture));
+            }
         }
 
         private void StartEffect()
@@ -101,11 +110,11 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
 
-            // UnauthorizedAccessEffect 自身の 7 秒時計は使わない。Comms が閉じるまで外時計で保持する。
+            // UnauthorizedAccessEffect 自身の 7 秒時計は使わない。Comms の時計を SampleTakeover へ渡す。
             _effect.enabled = false;
             _effect.Play(_screenAnchor, _screenSize);
-            _elapsed = 0f;
             _active = true;
+            _blockFailedLogged = false;
             Debug.Log("[XP] ev=commsError active=1 screen=1 spatial=1");
         }
 
@@ -114,7 +123,7 @@ namespace FixedCamVr.Diagnostics
             _effect?.Stop();
             if (_active) Debug.Log("[XP] ev=commsError active=0 screen=0 spatial=0");
             _active = false;
-            _elapsed = 0f;
+            _blockFailedLogged = false;
         }
 
         private void ResolveScreen()

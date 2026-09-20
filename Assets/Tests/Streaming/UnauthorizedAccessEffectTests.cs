@@ -336,6 +336,79 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        [Test]
+        public void TakeoverSampleUsesExternalFailureOpacityAndContinuesPastSevenSeconds()
+        {
+            GameObject anchor = NewAnchor("TakeoverAnchor");
+            GameObject host = new GameObject("TakeoverEffect");
+            Material? material = null;
+            Texture2D? warning = null;
+            Texture2D? subtitle = null;
+            Texture2D? symbol = null;
+            Texture2D? noise = null;
+            Texture2D? context = null;
+            Texture2D? attempt = null;
+            Texture2D? failed = null;
+            try
+            {
+                Shader shader = Shader.Find("FixedCamVr/UnauthorizedAccessFx");
+                Assert.IsNotNull(shader);
+                material = new Material(shader);
+                warning = NewTexture("warning");
+                subtitle = NewTexture("subtitle");
+                symbol = NewTexture("symbol");
+                noise = NewTexture("noise");
+                context = NewTexture("context");
+                attempt = NewTexture("attempt");
+                failed = NewTexture("failed");
+                var effect = host.AddComponent<UnauthorizedAccessEffect>();
+                effect.Configure(material, warning, subtitle, symbol, noise, context, attempt, failed);
+                effect.Play(anchor.transform, ReferenceSize);
+
+                effect.SampleTakeover(2f, false, 1f);
+                Material status = FindMaterial(effect, "Unauthorized Access Status");
+                Assert.AreSame(attempt, status.GetTexture("_MainTex"));
+                effect.SampleTakeover(2f, true, 1f);
+                Assert.AreSame(failed, status.GetTexture("_MainTex"), "失敗表示は外時計の境界だけで切り替える");
+
+                effect.SampleTakeover(8f, true, 1f);
+                Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
+                Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
+                Vector3[] before = FindMesh(effect, "Unauthorized Access Glyphs").vertices;
+                Assert.Greater(MaxAlpha(screen), 0f);
+                Assert.Greater(MaxAlpha(spatial), 0f);
+                effect.SampleTakeover(8.1f, true, 1f);
+                Assert.IsTrue(VerticesDiffer(before, FindMesh(effect, "Unauthorized Access Glyphs").vertices),
+                    "7秒を越えても空間の数字が動く");
+
+                effect.SampleTakeover(2f, true, 1f);
+                float fullAlpha = MaxAlpha(screen);
+                effect.SampleTakeover(2f, true, .35f);
+                Assert.AreEqual(fullAlpha * .35f, MaxAlpha(screen), .0001f);
+                Assert.Greater(MaxAlpha(spatial), 0f, "低いopacityでも空間側を同時に残す");
+                effect.SampleTakeover(2f, true, 0f);
+                Assert.IsFalse(screen.gameObject.activeSelf);
+                Assert.IsFalse(spatial.gameObject.activeSelf);
+
+                effect.Sample(2f);
+                Assert.IsTrue(screen.gameObject.activeSelf, "通常SampleはTakeover専用modeを解除する");
+                Assert.AreSame(attempt, status.GetTexture("_MainTex"));
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(warning);
+                DestroyImmediate(subtitle);
+                DestroyImmediate(symbol);
+                DestroyImmediate(noise);
+                DestroyImmediate(context);
+                DestroyImmediate(attempt);
+                DestroyImmediate(failed);
+            }
+        }
+
         private static GameObject NewAnchor(string name) => new GameObject(name);
 
         private static Texture2D NewTexture(string name)
@@ -362,6 +435,25 @@ namespace FixedCamVr.Streaming.Tests
 
         private static Material FindMaterial(UnauthorizedAccessEffect effect, string name) =>
             FindMeshTransform(effect, name).GetComponent<MeshRenderer>().sharedMaterial;
+
+        private static float MaxAlpha(Transform root)
+        {
+            float max = 0f;
+            foreach (var filter in root.GetComponentsInChildren<MeshFilter>(true))
+            {
+                Color[] colors = filter.sharedMesh.colors;
+                for (int i = 0; i < colors.Length; i++) max = Mathf.Max(max, colors[i].a);
+            }
+            return max;
+        }
+
+        private static bool VerticesDiffer(Vector3[] first, Vector3[] second)
+        {
+            if (first.Length != second.Length) return true;
+            for (int i = 0; i < first.Length; i++)
+                if (first[i] != second[i]) return true;
+            return false;
+        }
 
         private static Transform FindMeshTransform(UnauthorizedAccessEffect effect, string name)
         {

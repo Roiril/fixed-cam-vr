@@ -33,6 +33,8 @@ namespace FixedCamVr.Streaming
         private const int StripVertexCount = InterferenceStripCount * 4;
         private const int QuadVertexCount = 4;
         private const int RandomSeed = 0x5A17C0DE;
+        private const float TakeoverLoopStartSec = 1.6f;
+        private const float TakeoverLoopEndSec = 3.8f;
 
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
@@ -148,6 +150,9 @@ namespace FixedCamVr.Streaming
         private float _statusHeight;
         private float _maximumFrontDepth = 1.5f;
         private float _audienceDistance = 3f;
+        private bool _takeoverMode;
+        private bool _takeoverBlockFailed;
+        private float _takeoverOpacity = 1f;
 
         public float Duration => EffectDuration;
         public bool IsPlaying { get; private set; }
@@ -214,21 +219,38 @@ namespace FixedCamVr.Streaming
             Layout(screenSize);
             Elapsed = 0f;
             IsPlaying = true;
+            ResetTakeoverSample();
             Render(0f);
         }
 
         public void Stop()
         {
             IsPlaying = false;
+            ResetTakeoverSample();
             SetRootsVisible(false);
         }
 
         /// <summary>指定時刻の見た目だけを適用する。再生状態と経過時刻は変更しない。</summary>
         public void Sample(float seconds)
         {
+            ResetTakeoverSample();
             EnsureBuilt();
             if (_screenSize.x > 0f && _screenSize.y > 0f) Layout(_screenSize);
             Render(seconds);
+        }
+
+        /// <summary>
+        /// Comms の乗っ取り時計で見た目だけを適用する。7 秒版の退場は使わず、警告と空間要素を
+        /// <paramref name="opacity"/> で同時に消灯する。再生状態と <see cref="Elapsed"/> は変更しない。
+        /// </summary>
+        public void SampleTakeover(float elapsed, bool blockFailed, float opacity)
+        {
+            _takeoverMode = true;
+            _takeoverBlockFailed = blockFailed;
+            _takeoverOpacity = Mathf.Clamp01(opacity);
+            EnsureBuilt();
+            if (_screenSize.x > 0f && _screenSize.y > 0f) Layout(_screenSize);
+            Render(Mathf.Max(0f, elapsed));
         }
 
         private void Start()
@@ -467,22 +489,25 @@ namespace FixedCamVr.Streaming
 
         private void Render(float seconds)
         {
-            if (seconds < .06f || seconds >= Duration)
+            if (seconds < .06f || (!_takeoverMode && seconds >= Duration) ||
+                (_takeoverMode && _takeoverOpacity <= 0f))
             {
                 SetRootsVisible(false);
                 return;
             }
             SetRootsVisible(true);
             if (_screenRoot != null) SetWorldUnitLocalScale(_screenRoot);
-            UpdateSymbolMesh(seconds);
-            UpdateDecorationMesh(seconds);
-            UpdateWarningMesh(seconds);
-            UpdateSubtitleMesh(seconds);
-            UpdateContextMesh(seconds);
-            UpdateStatusMesh(seconds);
-            UpdateGlyphMesh(seconds);
-            UpdateInterferenceMesh(seconds);
-            UpdateReadMasks(seconds);
+            float visualSeconds = TakeoverVisualSeconds(seconds);
+            UpdateSymbolMesh(visualSeconds);
+            UpdateDecorationMesh(visualSeconds);
+            UpdateWarningMesh(visualSeconds);
+            UpdateSubtitleMesh(visualSeconds);
+            UpdateContextMesh(visualSeconds);
+            UpdateStatusMesh(visualSeconds);
+            UpdateGlyphMesh(visualSeconds);
+            UpdateInterferenceMesh(visualSeconds);
+            UpdateReadMasks(visualSeconds);
+            if (_takeoverMode) ApplyTakeoverOpacity(_takeoverOpacity);
         }
 
         private void UpdateWarningMesh(float seconds)
@@ -525,7 +550,7 @@ namespace FixedCamVr.Streaming
         {
             if (_symbolMesh == null) return;
             float reveal = Smooth01((seconds - .06f) / .035f);
-            float ending = 1f - Smooth01((seconds - 4.95f) / .5f);
+            float ending = _takeoverMode ? 1f : 1f - Smooth01((seconds - 4.95f) / .5f);
             float alpha = (.38f + Mathf.Sin(seconds * 1.7f) * .025f) * reveal * ending;
             SetQuadVertices(_symbolVertices, 0, -.53f * _screenSize.x, .10f * _screenSize.y,
                 .006f, _symbolSize, _symbolSize);
@@ -538,7 +563,7 @@ namespace FixedCamVr.Streaming
         {
             if (_decorationMesh == null) return;
             float reveal = Smooth01((seconds - .075f) / .045f);
-            float ending = 1f - Smooth01((seconds - 4.95f) / .5f);
+            float ending = _takeoverMode ? 1f : 1f - Smooth01((seconds - 4.95f) / .5f);
             float symbolX = -.53f * _screenSize.x;
             float symbolY = .10f * _screenSize.y;
             SetQuadVertices(_decorationVertices, 0, symbolX, symbolY + _symbolSize * .035f,
@@ -561,7 +586,7 @@ namespace FixedCamVr.Streaming
         {
             const int stripeCount = 6;
             float reveal = Smooth01((seconds - .09f - group * .012f) / .055f);
-            float ending = 1f - Smooth01((seconds - 5.92f) / .18f);
+            float ending = _takeoverMode ? 1f : 1f - Smooth01((seconds - 5.92f) / .18f);
             float firstTear = LargeTearPulse(seconds, 2.05f, 2.18f);
             float broken = Smooth01((seconds - 3.65f) / .35f);
             float stripeWidth = groupWidth * .08f;
@@ -585,7 +610,7 @@ namespace FixedCamVr.Streaming
         {
             if (_contextMesh == null) return;
             float reveal = Smooth01((seconds - .65f) / .20f);
-            float ending = 1f - Smooth01((seconds - 5.6f) / .4f);
+            float ending = _takeoverMode ? 1f : 1f - Smooth01((seconds - 5.6f) / .4f);
             float alpha = contextGraphic != null ? reveal * ending : 0f;
             SetQuadVertices(_contextVertices, 0, .15f * _screenSize.x, -.34f * _screenSize.y,
                 -.008f, _contextWidth, _contextHeight);
@@ -597,12 +622,12 @@ namespace FixedCamVr.Streaming
         private void UpdateStatusMesh(float seconds)
         {
             if (_statusMesh == null) return;
-            bool failed = seconds >= 3.82f;
+            bool failed = _takeoverMode ? _takeoverBlockFailed : seconds >= 3.82f;
             Texture2D? texture = failed ? failedGraphic : attemptGraphic;
             if (_statusMaterial != null)
                 _statusMaterial.SetTexture(MainTexId, texture != null ? texture : Texture2D.whiteTexture);
             float reveal = Smooth01((seconds - 1.35f) / .20f);
-            float ending = 1f - Mathf.Clamp01((seconds - 6.76f) / .08f);
+            float ending = _takeoverMode ? 1f : 1f - Mathf.Clamp01((seconds - 6.76f) / .08f);
             float alpha = texture != null ? reveal * ending : 0f;
             float aspect = TextureAspect(texture, 4.2f);
             _statusWidth = _statusHeight * aspect;
@@ -620,8 +645,9 @@ namespace FixedCamVr.Streaming
             return reveal * (1f - WarningCollapse(seconds, band));
         }
 
-        private static float WarningCollapse(float seconds, int band)
+        private float WarningCollapse(float seconds, int band)
         {
+            if (_takeoverMode) return 0f;
             float start = 4.9f + .65f * ((band * 7) % 11) / 10f;
             float duration = .19f + .16f * ((band * 5) % 7) / 6f;
             return Smooth01((seconds - start) / duration);
@@ -631,7 +657,8 @@ namespace FixedCamVr.Streaming
         {
             float arrival = .32f + band * .075f;
             float reveal = Mathf.Clamp01((seconds - arrival) / .08f);
-            return reveal * (1f - Smooth01((seconds - 5.75f) / .35f));
+            float ending = _takeoverMode ? 1f : 1f - Smooth01((seconds - 5.75f) / .35f);
+            return reveal * ending;
         }
 
         private float WarningBandOffset(float seconds, int band)
@@ -766,14 +793,15 @@ namespace FixedCamVr.Streaming
         private void UpdateReadMasks(float seconds)
         {
             if (_screenRoot == null) return;
-            Vector4 warningRect = seconds >= .095f && seconds < 5.9f ?
+            Vector4 warningRect = seconds >= .095f && (_takeoverMode || seconds < 5.9f) ?
                 ReadRect(.10f, .16f, _warningWidth, _warningHeight) : Vector4.zero;
-            Vector4 subtitleRect = seconds >= .32f && seconds < 6.1f ?
+            Vector4 subtitleRect = seconds >= .32f && (_takeoverMode || seconds < 6.1f) ?
                 ReadRect(.12f, -.14f, _subtitleWidth, _subtitleHeight) : Vector4.zero;
-            Vector4 contextRect = contextGraphic != null && seconds >= .65f && seconds < 6f ?
+            Vector4 contextRect = contextGraphic != null && seconds >= .65f &&
+                (_takeoverMode || seconds < 6f) ?
                 ReadRect(.15f, -.34f, _contextWidth, _contextHeight) : Vector4.zero;
             Vector4 statusRect = (attemptGraphic != null || failedGraphic != null) &&
-                seconds >= 1.35f && seconds < 6.84f ?
+                seconds >= 1.35f && (_takeoverMode || seconds < 6.84f) ?
                 ReadRect(.21f, -.50f, _statusWidth, _statusHeight) : Vector4.zero;
             Matrix4x4 worldToLocal = _screenRoot.worldToLocalMatrix;
             SetReadMask(_symbolMaterial, worldToLocal, warningRect, subtitleRect, contextRect, statusRect);
@@ -796,6 +824,39 @@ namespace FixedCamVr.Streaming
             material.SetVector(ReadRect2Id, rect2);
             material.SetVector(ReadRect3Id, rect3);
             material.SetFloat(ReadMaskStrengthId, .93f);
+        }
+
+        private float TakeoverVisualSeconds(float seconds)
+        {
+            if (!_takeoverMode || seconds < TakeoverLoopEndSec) return seconds;
+            return TakeoverLoopStartSec +
+                Mathf.Repeat(seconds - TakeoverLoopStartSec, TakeoverLoopEndSec - TakeoverLoopStartSec);
+        }
+
+        private void ApplyTakeoverOpacity(float opacity)
+        {
+            ApplyOpacity(_warningColors, _warningMesh, opacity);
+            ApplyOpacity(_subtitleColors, _subtitleMesh, opacity);
+            ApplyOpacity(_symbolColors, _symbolMesh, opacity);
+            ApplyOpacity(_decorationColors, _decorationMesh, opacity);
+            ApplyOpacity(_contextColors, _contextMesh, opacity);
+            ApplyOpacity(_statusColors, _statusMesh, opacity);
+            ApplyOpacity(_glyphColors, _glyphMesh, opacity);
+            ApplyOpacity(_interferenceColors, _interferenceMesh, opacity);
+        }
+
+        private static void ApplyOpacity(Color[] colors, Mesh? mesh, float opacity)
+        {
+            if (mesh == null || opacity >= 1f) return;
+            for (int i = 0; i < colors.Length; i++) colors[i].a *= opacity;
+            mesh.SetColors(colors);
+        }
+
+        private void ResetTakeoverSample()
+        {
+            _takeoverMode = false;
+            _takeoverBlockFailed = false;
+            _takeoverOpacity = 1f;
         }
 
         private void MeasureAudience(Transform anchor)

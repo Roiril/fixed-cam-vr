@@ -18,7 +18,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private const int Fps = 30;
         public static void Run()
         {
-            string root = Path.GetFullPath(EditorCliArgs.Get("out") ?? "Logs/comms-revision-20260920");
+            string root = Path.GetFullPath(EditorCliArgs.Get("out") ?? "Logs/comms-story-20260921");
             Directory.CreateDirectory(root);
             var previous = ShowLanguage.Current;
             try
@@ -50,7 +50,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 var camera = camGo.AddComponent<Camera>();
                 camera.transform.position = new Vector3(0, 1000, 0);
                 camera.nearClipPlane = .05f;
-                camera.fieldOfView = 30f;
+                camera.fieldOfView = 45f;
                 camera.aspect = 1280f / 720f;
                 camera.clearFlags = CameraClearFlags.SolidColor;
                 camera.backgroundColor = new Color(.045f, .045f, .05f, 1f);
@@ -110,7 +110,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 sync.Tick(panel.TakeoverVisible, 0f);
                 var error = (UnauthorizedAccessEffect)typeof(CommsTakeoverError)
                     .GetField("_effect", Hidden)!.GetValue(sync);
-                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error\n");
+                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed\n");
+                bool savedIntrusion = false, savedFailure = false;
                 bool savedTruth = false, savedMid = false, savedFinal = false;
                 int frames = 0;
                 for (int i = 0; i < Fps * 12; i++)
@@ -119,8 +120,17 @@ namespace FixedCamVr.Streaming.EditorTools
                     sync.Tick(panel.TakeoverVisible, 1f / Fps);
                     Shot($"f{i:0000}"); frames++;
                     data.AppendFormat(System.Globalization.CultureInfo.InvariantCulture,
-                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6}\n", i, i / (float)Fps,
-                        panel.Stage, panel.AppliedSweep, panel.LieChars, panel.AppliedGlyph, error.IsPlaying ? 1 : 0);
+                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9}\n", i, i / (float)Fps,
+                        panel.Stage, panel.AppliedSweep, panel.LieChars, panel.AppliedGlyph, error.IsPlaying ? 1 : 0,
+                        panel.AppliedPanelAlpha, panel.TakeoverErrorOpacity, panel.TakeoverBlockFailed ? 1 : 0);
+                    if (!savedIntrusion && i / (float)Fps >= .75f)
+                    {
+                        if (panel.AppliedPanelAlpha > .001f || panel.VisibleChars != 0)
+                            throw new InvalidOperationException("Sui appeared before the intrusion warning");
+                        Shot("intrusion"); savedIntrusion = true;
+                    }
+                    if (!savedFailure && panel.TakeoverBlockFailed)
+                    { Shot("block-failed"); savedFailure = true; }
                     if (!savedTruth && panel.PossessionPhase == CommsPossessionPhase.Shown && panel.AppliedGlyph > .99f)
                     { Shot("truth-with-error"); error.Stop(); Shot("truth"); error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedTruth = true; }
                     if (!savedMid && panel.AppliedSweep >= .65f && panel.AppliedSweep < 1f)
@@ -131,7 +141,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     logic.Tick(1f / Fps);
                 }
                 File.WriteAllText(Path.Combine(dir, "frames.csv"), data.ToString(), new UTF8Encoding(false));
-                if (!savedTruth || !savedMid || !savedFinal || logic.Active || error.IsPlaying)
+                if (!savedIntrusion || !savedFailure || !savedTruth || !savedMid || !savedFinal || logic.Active || error.IsPlaying)
                     throw new InvalidOperationException("Takeover did not render and close completely");
                 Debug.Log($"[CommsRevisionPreview] lang={lang} frames={frames} truth=1 wipe=1 doll=1 closed=1");
             }
