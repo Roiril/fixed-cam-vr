@@ -16,6 +16,10 @@ namespace FixedCamVr.Diagnostics
         [SerializeField, Min(.5f)] private float distanceM = 2.6f;
         [SerializeField, Range(-20, 20)] private float pitchOffsetDeg = 2;
         public const float PanelWidth = 2.42f, PanelHeight = 1.78f;
+        // Ending-only typography: a quiet final record, not the live warning HUD.
+        private static readonly Color TitleInk = new Color32(222, 220, 214, 255);
+        private static readonly Color BodyInk = new Color32(198, 199, 194, 255);
+        private static readonly Color RecordInk = new Color32(157, 163, 160, 255);
         private readonly List<TMP_Text> _fields = new List<TMP_Text>();
         private readonly List<bool[]> _visible = new List<bool[]>();
         private readonly List<Material> _materials = new List<Material>();
@@ -86,31 +90,33 @@ namespace FixedCamVr.Diagnostics
             if (Application.isPlaying) Destroy(collider); else DestroyImmediate(collider);
             _plate = new Material(shader) { name = "Observation record", renderQueue = 4998 };
             plateGo.GetComponent<MeshRenderer>().sharedMaterial = _plate;
-            AddField("Archive", font, .73f, .11f, HmdTextStyle.MinorDeg);
-            AddField("Outcome", font, .54f, .18f, 2.8f);
-            _text = AddField("Message", font, .28f, .22f, HmdTextStyle.MinorDeg);
-            AddField("MeasureLabel", font, -.065f, .12f, HmdTextStyle.MinorDeg);
-            AddField("Measure", font, -.19f, .24f, 3.8f);
-            AddField("MeasureNote", font, -.50f, .13f, HmdTextStyle.MinorDeg);
-            AddField("Exit", font, -.72f, .14f, HmdTextStyle.MinorDeg);
+            AddField("Archive", font, -.99f, .73f, 2.04f, .11f, HmdTextStyle.MinorDeg);
+            AddField("Outcome", font, -.99f, .49f, 2.04f, .28f, 3.8f);
+            _text = AddField("Message", font, -.99f, .12f, 2.04f, .26f, HmdTextStyle.MinorDeg);
+            // The count is an appendix, not a score or the headline of the ending.
+            AddField("MeasureLabel", font, -.99f, -.34f, 1.43f, .12f, HmdTextStyle.MinorDeg);
+            AddField("Measure", font, .50f, -.29f, .55f, .20f, 2.2f, TextAlignmentOptions.TopRight);
+            AddField("MeasureNote", font, -.99f, -.52f, 2.04f, .13f, HmdTextStyle.MinorDeg);
+            AddField("Exit", font, -.99f, -.76f, 2.04f, .14f, HmdTextStyle.MinorDeg);
         }
-        private TMP_Text AddField(string name, TMP_FontAsset font, float y, float h, float deg)
+        private TMP_Text AddField(string name, TMP_FontAsset font, float x, float y, float w, float h,
+            float deg, TextAlignmentOptions alignment = TextAlignmentOptions.TopLeft)
         {
             var go = new GameObject(name);
             go.transform.SetParent(_card, false);
             var tmp = go.AddComponent<TextMeshPro>();
             tmp.font = font;
             tmp.fontSize = .07f;
-            tmp.alignment = TextAlignmentOptions.TopLeft;
+            tmp.alignment = alignment;
             tmp.enableWordWrapping = true;
             tmp.richText = false;
-            tmp.color = HmdTextStyle.Ink;
+            tmp.color = BodyInk;
             float scale = HmdTextStyle.MeshScale(deg, distanceM, .07f);
             var rt = (RectTransform)go.transform;
             rt.pivot = new Vector2(0, 1);
-            rt.sizeDelta = new Vector2(2.04f / scale, h / scale);
+            rt.sizeDelta = new Vector2(w / scale, h / scale);
             go.transform.localScale = Vector3.one * scale;
-            go.transform.localPosition = new Vector3(-.99f, y, -.005f);
+            go.transform.localPosition = new Vector3(x, y, -.005f);
             var mat = tmp.fontMaterial;
             mat.shader = Shader.Find("TextMeshPro/Distance Field Overlay");
             mat.renderQueue = 5000;
@@ -134,6 +140,10 @@ namespace FixedCamVr.Diagnostics
             for (int i = 0; i < _fields.Count; i++)
             {
                 var tmp = _fields[i];
+                // TMP tracking is in font-design units. Keep prose natural; only
+                // the short identifying lines use slightly opened letter spacing.
+                tmp.characterSpacing = i == 0 ? 5f : i == 1 ? (lang == ShowLang.Ja ? 4f : 1f) : 0;
+                tmp.lineSpacing = i == 2 ? 8f : 0;
                 tmp.SetText(texts[i]);
                 tmp.maxVisibleCharacters = int.MaxValue;
                 tmp.ForceMeshUpdate(true, true);
@@ -147,10 +157,9 @@ namespace FixedCamVr.Diagnostics
                 }
                 _visible.Add(visible);
                 tmp.maxVisibleCharacters = 0;
-                tmp.color = i == 1 && outcome == ShowEndingOutcome.Trapped ? HmdTextStyle.Alert : HmdTextStyle.Ink;
+                tmp.color = i == 1 ? TitleInk : i == 0 || i == 3 || i == 5 ? RecordInk : BodyInk;
             }
             if (_card != null) _card.gameObject.SetActive(active);
-            if (_plate != null) _plate.SetFloat("_Failed", outcome == ShowEndingOutcome.Trapped ? 1 : 0);
             _elapsed = 0;
             _lastTyped = VisibleChars = 0;
             _typedAtStart = typeSfx != null ? typeSfx.PlayedCount : 0;

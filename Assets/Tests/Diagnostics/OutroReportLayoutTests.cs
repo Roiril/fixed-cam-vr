@@ -42,7 +42,7 @@ namespace FixedCamVr.Tests.Diagnostics
         }
 
         [Test]
-        public void BuildsSevenTopLeftFields_AndStartsWithNothingTyped()
+        public void BuildsLeftAlignedTextWithRightAlignedCount_AndStartsWithNothingTyped()
         {
             OutroReport report = SpawnReport();
             string[] names = { "Archive", "Outcome", "Message", "MeasureLabel", "Measure", "MeasureNote", "Exit" };
@@ -50,7 +50,8 @@ namespace FixedCamVr.Tests.Diagnostics
             for (int i = 0; i < names.Length; i++)
             {
                 Assert.That(report.Fields[i].name, Is.EqualTo(names[i]));
-                Assert.That(report.Fields[i].alignment, Is.EqualTo(TextAlignmentOptions.TopLeft));
+                Assert.That(report.Fields[i].alignment, Is.EqualTo(i == 4
+                    ? TextAlignmentOptions.TopRight : TextAlignmentOptions.TopLeft));
                 Assert.That(report.Fields[i].maxVisibleCharacters, Is.Zero);
             }
             Assert.That(report.VisibleChars, Is.Zero);
@@ -68,7 +69,8 @@ namespace FixedCamVr.Tests.Diagnostics
                 for (int i = 0; i < report.Fields.Count; i++)
                 {
                     TMP_Text field = report.Fields[i];
-                    Assert.That(field.alignment, Is.EqualTo(TextAlignmentOptions.TopLeft),
+                    Assert.That(field.alignment, Is.EqualTo(i == 4
+                        ? TextAlignmentOptions.TopRight : TextAlignmentOptions.TopLeft),
                         $"{lang}/{outcome}/{field.name}");
                     Assert.That(field.font, Is.Not.Null, $"{lang}/{outcome}/{field.name}: font が無い");
                     foreach (char ch in field.text)
@@ -92,6 +94,42 @@ namespace FixedCamVr.Tests.Diagnostics
                 for (int j = i + 1; j < rects.Length; j++)
                     Assert.That(HasInkOverlap(rects[i], rects[j]), Is.False,
                         $"{lang}/{outcome}: {report.Fields[i].name} {rects[i]} と {report.Fields[j].name} {rects[j]} が重なる");
+            }
+        }
+
+        [Test]
+        public void EndingIsTheLargestType_AndNoSupportingTextIsBelowReadableSize()
+        {
+            OutroReport report = SpawnReport();
+            float titleEm = HmdTextStyle.MeshWorldEm(report.Fields[1].fontSize,
+                report.Fields[1].transform.localScale.x);
+            foreach (TMP_Text field in report.Fields)
+            {
+                float em = HmdTextStyle.MeshWorldEm(field.fontSize, field.transform.localScale.x);
+                Assert.That(em, Is.LessThanOrEqualTo(titleEm), field.name);
+                Assert.That(HmdTextStyle.DegreesOf(em, 2.6f), Is.GreaterThanOrEqualTo(1.499f), field.name);
+            }
+        }
+
+        [Test]
+        public void EveryOutcomeUsesTheSameNeutralPalette_AndIncludesEveryCharacter()
+        {
+            OutroReport report = SpawnReport();
+            report.PresentPreview(12, 8, ShowEndingOutcome.Released, ShowLang.Ja);
+            var colors = new Color[report.Fields.Count];
+            for (int i = 0; i < colors.Length; i++) colors[i] = report.Fields[i].color;
+            foreach (ShowLang lang in Languages)
+            foreach (ShowEndingOutcome outcome in Outcomes)
+            {
+                report.PresentPreview(12, 8, outcome, lang);
+                for (int i = 0; i < report.Fields.Count; i++)
+                {
+                    TMP_Text field = report.Fields[i];
+                    field.ForceMeshUpdate(true, true);
+                    Assert.That(field.color, Is.EqualTo(colors[i]), $"{lang}/{outcome}/{field.name}");
+                    Assert.That(field.maxVisibleCharacters, Is.EqualTo(field.textInfo.characterCount),
+                        $"{lang}/{outcome}/{field.name}: 印字が途中で欠ける");
+                }
             }
         }
 

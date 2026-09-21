@@ -36,12 +36,16 @@ namespace FixedCamVr.Streaming.EditorTools
                 camera.targetTexture = rt;
                 string dir = Path.Combine(Application.dataPath, "Screenshots/ending");
                 Directory.CreateDirectory(dir);
+                var evidence = new StringBuilder("language,outcome,field,characters,shown,glyphs,queue,missingPixels\n");
+                var blank = new Color32[1600 * 1200];
+                int missingTotal = 0;
                 foreach (ShowLang lang in new[] { ShowLang.Ja, ShowLang.En, ShowLang.Fr })
                     foreach (ShowEndingOutcome outcome in new[] { ShowEndingOutcome.Released, ShowEndingOutcome.Trapped, ShowEndingOutcome.Interrupted })
                     {
                         report.PresentPreview(outcome == ShowEndingOutcome.Released ? 12 : 2, 8, outcome, lang);
                         foreach (var t in stage.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = 31;
-                        foreach (var t in report.Fields) t.ForceMeshUpdate(true, true);
+                        foreach (var t in report.Fields)
+                            t.ForceMeshUpdate(true, true);
                         camera.Render();
                         RenderTexture.active = rt;
                         image.ReadPixels(new Rect(0, 0, 1600, 1200), 0, 0);
@@ -49,7 +53,19 @@ namespace FixedCamVr.Streaming.EditorTools
                         string path = Path.Combine(dir, lang + "-" + outcome + ".png");
                         File.WriteAllBytes(path, image.EncodeToPNG());
                         Debug.Log("[EndingPreview] " + path);
+                        Color32[] pixels = image.GetPixels32();
+                        foreach (var t in report.Fields)
+                        {
+                            int missingPixels = MissingGlyphPixels(t, camera, pixels, out int glyphs);
+                            if (MissingGlyphPixels(t, camera, blank, out _) != glyphs)
+                                throw new InvalidOperationException("Glyph pixel probe did not detect the blank calibration image");
+                            missingTotal += missingPixels;
+                            evidence.AppendLine($"{lang},{outcome},{t.name},{t.textInfo.characterCount},{t.maxVisibleCharacters},{glyphs},{t.fontMaterial.renderQueue},{missingPixels}");
+                        }
                     }
+                File.WriteAllText(Path.Combine(dir, "layout.csv"), evidence.ToString(), new UTF8Encoding(false));
+                if (missingTotal != 0)
+                    throw new InvalidOperationException($"Ending preview has {missingTotal} glyphs without rendered pixels; inspect layout.csv");
             }
             finally
             {
@@ -59,6 +75,30 @@ namespace FixedCamVr.Streaming.EditorTools
                 Object.DestroyImmediate(rt);
                 Object.DestroyImmediate(image);
             }
+        }
+
+        // Mesh state alone does not prove that the saved image contains the text.
+        private static int MissingGlyphPixels(TMP_Text text, Camera camera, Color32[] pixels, out int glyphs)
+        {
+            glyphs = 0;
+            int missing = 0;
+            for (int c = 0; c < text.textInfo.characterCount; c++)
+            {
+                var ch = text.textInfo.characterInfo[c];
+                if (!ch.isVisible) continue;
+                glyphs++;
+                var lo = camera.WorldToScreenPoint(text.transform.TransformPoint(ch.bottomLeft));
+                var hi = camera.WorldToScreenPoint(text.transform.TransformPoint(ch.topRight));
+                bool ink = false;
+                for (int y = Mathf.Max(0, Mathf.FloorToInt(lo.y)); y < Mathf.Min(1200, Mathf.CeilToInt(hi.y)) && !ink; y++)
+                for (int x = Mathf.Max(0, Mathf.FloorToInt(lo.x)); x < Mathf.Min(1600, Mathf.CeilToInt(hi.x)); x++)
+                {
+                    Color32 p = pixels[y * 1600 + x];
+                    if (p.r > 30 || p.g > 30 || p.b > 30) { ink = true; break; }
+                }
+                if (!ink) missing++;
+            }
+            return missing;
         }
 
         // Separate atlas: never rewrite the user's in-progress shared HUD fonts.
