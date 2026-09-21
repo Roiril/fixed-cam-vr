@@ -43,6 +43,23 @@ namespace FixedCamVr.Tracking
 
         private PlayerZone? _current;
         private float _accum;
+        private ShowRunDirector? _runDirector;
+
+        /// <summary>最後の選択を保持せず、指定カメラの実領域への包含を返す。領域なしは未観測。</summary>
+        public bool? CameraPresenceAt(int camera, Vector3 position)
+        {
+            if (float.IsNaN(position.x) || float.IsInfinity(position.x)
+                || float.IsNaN(position.y) || float.IsInfinity(position.y)
+                || float.IsNaN(position.z) || float.IsInfinity(position.z)) return null;
+            bool defined = false;
+            foreach (PlayerZone? zone in zones)
+            {
+                if (zone == null || !zone.isActiveAndEnabled || zone.CameraIndex != camera) continue;
+                defined = true;
+                if (zone.Contains(position)) return true;
+            }
+            return defined ? false : (bool?)null;
+        }
 
         /// <summary>直近に選択されたゾーン。未選択時は null。</summary>
         public PlayerZone? CurrentZone => _current;
@@ -86,6 +103,7 @@ namespace FixedCamVr.Tracking
         // 無効化しておくと、同一ゾーン滞在のままでも次 Update で現在位置から再 Pick し、override カメラへの
         // 表示固着を解消できる（初回 enable では _current は既に null なので無害）。
         private void OnEnable() => InvalidateCurrent();
+        private void OnDisable() => _runDirector?.NotifyClosingAreaPresence(null);
 
         private void Reset()
         {
@@ -112,6 +130,13 @@ namespace FixedCamVr.Tracking
                 if (cam == null) return;
                 head = cam.transform;
             }
+
+            if (_runDirector == null) _runDirector = FindObjectOfType<ShowRunDirector>();
+            bool? inClosingArea = CameraPresenceAt(0, head.position);
+            var headDevice = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.Head);
+            if (headDevice.isValid && headDevice.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked,
+                    out bool tracked) && !tracked) inClosingArea = null;
+            _runDirector?.NotifyClosingAreaPresence(inClosingArea);
 
             PlayerZone? picked = Pick(head.position);
             if (picked == null) return;

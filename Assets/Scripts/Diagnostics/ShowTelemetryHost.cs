@@ -814,8 +814,11 @@ namespace FixedCamVr.Diagnostics
                      // ⚠ 周回の壊れ（commsGl / commsGlMat）は **`ev=sum` の側**に出す。
                      //   ここ（`ev=outro`）は終幕の縁でしか出ないので、判定の材料にならない。
                      $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
+                     $"ending={(_run != null ? _run.EndingOutcome.ToString() : "-")} " +
+                     $"anomalyTotal={(_show != null ? _show.TotalAnomalyCount : -1)} " +
+                     $"promptAge={(_run != null ? _run.ClosingPromptElapsedSec : -1f):F2} " +
                      // anomalies = 報告した異変の数（同じ演出は 1・`canon/LEDGER.md` 0234）。
-                     // 終幕の「報告した怪異の数」に出るのは marks（押した回数）ではなくこちら。
+                     // 内部の重複除外件数。結果画面の分子は marks、分母は anomalyTotal。
                      $"anomalies={(_show != null ? _show.ReportedAnomalyCount : -1)} " +
                      // 合図（run.outro.afterTakeId）が武装したか / 撃ったか。
                      // 著作していなければ両方 0 のままで、終わり方は従来どおり。
@@ -911,10 +914,8 @@ namespace FixedCamVr.Diagnostics
                      // curse = 届いた瞬間に画へ書いていた斑の量。**開いた縁なら 0 のはず**（0229）。
                      $"curse={_comms.AppliedCurse:F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)} " +
-                     // closing = 締めのカットに入ってからの秒（外なら負）。cline = 締めの線を踏んでいたか。
-                     // ③a は線を踏んだ縁で出る（0233）ので、Halt の行は cline=1 のはず。
-                     // cline=0 で Halt が出ていたら時計の退避路（線が解決できていない）。
-                     $"closing={(_timeline != null ? _timeline.ClosingTakeSec : -1f):F2} " +
+                     // closing = 最終 A の確定進入からの秒。③a は cline=1 OR closing>=3。
+                     $"closing={(_timeline != null ? _timeline.ClosingAreaSec : -1f):F2} " +
                      $"cline={(_timeline != null && _timeline.ClosingLineCrossed ? 1 : 0)}");
             }
 
@@ -1488,6 +1489,11 @@ namespace FixedCamVr.Diagnostics
                                             ? "-"
                                             : (_report.TypeSfxBuilt ? _report.TypedCount.ToString() : "nc"));
             _sb.Append(" repShown=").Append(_report == null ? "-" : _report.VisibleChars.ToString());
+            _sb.Append(" repChars=").Append(_report == null ? -1 : _report.ReportChars);
+            _sb.Append(" repMusicBuilt=").Append(_report != null && _report.MusicHasClip ? 1 : 0);
+            _sb.Append(" repMusicPlay=").Append(_report != null && _report.MusicPlaying ? 1 : 0);
+            _sb.Append(" repMusicVol=").Append(_report != null ? _report.MusicVolume.ToString("F3") : "0");
+            _sb.Append(" repMusicSec=").Append(_report != null ? _report.MusicSeconds.ToString("F2") : "0");
             //   clMax = **電源断が画へ出た最大値**（`canon/LEDGER.md` 0111）。
             //   ⚠⚠ `ev=outro` は段の縁でしか出ないので、そこの `cl` は必ず頭の値（≒0）になる。
             //     潰れ切ったかは**走行全体の最大値**でしか取れない（敷く音を最大値で見るのと同じ理屈・

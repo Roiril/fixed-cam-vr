@@ -243,6 +243,7 @@ adb -s <serial> install -r --no-streaming Builds\tableduo.apk
 |---|---|---|
 | EditMode テスト | 3 アプリのロジック回帰 | `.\tools\unity.ps1 test`（走る前に必ずコンパイルするので、コンパイル確認も兼ねる） |
 | Editor プレビュー | 合成の絵・HMD 内の文字・人形・位置合わせ | `.\tools\unity.ps1 menu <名前>` → `Assets/Screenshots/<種類>/` |
+| 結果画面 | 3 言語の帰還・未報告・中断 | `.\tools\unity.ps1 menu ending-record` → 専用フォントと `Assets/Screenshots/ending/` |
 | Flat デバッグシーン | 廻リ視のストリーミング系 | **Ctrl+Shift+D** → Play → Tab/数字で切替（OVR 無しの通常シーン） |
 | streaming-offline-test | スマホ実機なしで MJPEG E2E | fake server を立てて検証（[スキル](.claude/skills/streaming-offline-test/SKILL.md)） |
 | TableDuo L0 | 実機ゼロで host/client/観戦 | Standalone ビルドを CLI 起動（`tdv_l0=on`・[memory](.claude/memory/table_duo_l0_desktop_test.md)） |
@@ -257,6 +258,10 @@ bash tools/run-quest-xp-test.sh walk 300
 導入 → 3 周 → 終了を自動走行し、`[XP]` テレメトリを取って show.json の著作と突き合わせる。
 「出るはずで出なかった演出」「録れなかった区間」「砂嵐の割合」「受信 fps」が数値で出る。
 手順・収集の罠・ベースライン実測 → [.claude/memory/onsite_experience_test.md](.claude/memory/onsite_experience_test.md)
+
+終幕の未報告分岐は `py -3.11 tools/quest-record.py --walk --no-report --sec 180` で録画する。
+`--no-report` は検証専用の起動フラグ。通常起動の入力には影響しない。
+終了条件と結果画面の数の定義は [.claude/memory/ending_result.md](.claude/memory/ending_result.md)。
 
 ⚠ **Link/HMD 無しの Editor で OVR シーンを Play するとハングする**（TableDuo 検証は L0 経由が正。[.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md)）。
 

@@ -43,7 +43,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 seen++;
                 string name = System.IO.Path.GetFileNameWithoutExtension(path);
-                bool isBed = name.StartsWith("bed_");
+                bool isBed = name.StartsWith("bed_") || name == "bgm_nocturnal_waters";
                 // ⚠⚠ **3D で鳴らす音の名簿は `SpatialAudio.MonoRequired` 1 か所**
                 //    （2026-09-03・`canon/LEDGER.md` 0130）。ここに条件を書き足すと、
                 //    実行時の観測（`SpatialAudio.CountStereo`）と黙って食い違う。

@@ -233,6 +233,41 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Run_FinalTakeDecisionDoesNotBypassTheHoldLimit()
+        {
+            var r = ToRun();
+            r.NotifyLap(4);
+            Assert.That(r.Tick(ShowRunDefaults.EndHoldMaxSec - 0.1f, true, true,
+                               deferNaturalEnd: true),
+                        Is.EqualTo(ShowRunEvent.None));
+            Assert.That(r.Phase, Is.EqualTo(ShowPhase.Run));
+            Assert.That(r.Tick(0.2f, true, true, deferNaturalEnd: true),
+                        Is.EqualTo(ShowRunEvent.RunFinished));
+        }
+
+        [Test]
+        public void Run_FinalTakeDecisionDoesNotBypassTheHardLimit()
+        {
+            var r = ToRun(hardLimit: 30f);
+            r.NotifyLap(4);
+            Assert.That(r.Tick(31f, true, true, deferNaturalEnd: true),
+                        Is.EqualTo(ShowRunEvent.RunFinished));
+        }
+
+        [Test]
+        public void Run_FinalAreaWaitsEvenBeforeTheTakeStarts()
+        {
+            var r = ToRun();
+            r.NotifyLap(4);
+            Assert.That(r.Tick(5f, true, false, deferNaturalEnd: true),
+                        Is.EqualTo(ShowRunEvent.None));
+            Assert.That(r.Phase, Is.EqualTo(ShowPhase.Run));
+            r.RequestFinish();
+            Assert.That(r.Tick(0.02f, true, false, deferNaturalEnd: true),
+                        Is.EqualTo(ShowRunEvent.RunFinished));
+        }
+
+        [Test]
         public void Run_HardLimitFinishes_ForVisitorWhoStopsMoving()
         {
             var r = ToRun(hardLimit: 30f);

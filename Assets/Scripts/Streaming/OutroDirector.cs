@@ -159,7 +159,11 @@ namespace FixedCamVr.Streaming
         {
             if (!_def.enabled) return;
             _logic.Configure(_def.ToTiming());
-            _logic.Begin();
+            // 帰還不能では通常映像を再び見せない。同じフレームに電力も落とす。
+            bool trapped = runDirector != null && runDirector.EndingOutcome == ShowEndingOutcome.Trapped;
+            _logic.Begin(showCollapse: !trapped);
+            WritePower(_logic.ScreenPower);
+            WriteCollapse(_logic.ScreenCollapse);
             // 導入で使う層は畳んでおく（終幕はどれも使わない）。乱れも畳む —
             // 残ると消えていくスクリーンに縞が乗ったまま体験が終わる。
             veil?.SetHidden();

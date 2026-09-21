@@ -2912,6 +2912,10 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public int ReportedAnomalyCount => _reportTally.AnomalyCount;
 
+        /// <summary>今回の台本に著作された異変の総数。結果表示に用いる。</summary>
+        public int TotalAnomalyCount => ShowAnomalyCatalog.CountUnknown(_timeline?.segments) == 0
+            ? ShowAnomalyCatalog.Count(_timeline?.segments) : 0;
+
         /// <summary>直近の報告が乗った演出の id（走っていなければ空）。<c>ev=mark take=</c>。</summary>
         public string LastMarkTakeId => _reportTally.LastTakeId;
 
@@ -2970,6 +2974,8 @@ namespace FixedCamVr.Streaming
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public bool RecordVisitorMark()
         {
+            // 終了後の操作で結末や観測記録を書き換えない。
+            if (ResolveRunDirector()?.Phase == ShowPhase.Finished) return false;
             // 件数・異変解除・返信のいずれも予約しない。復帰後へ持ち越さない。
             if (IsVisitorMarkBlocked) return false;
             // ⚠⚠ **締めに入って最初の数秒は「無かったこと」にする**（0178・ユーザー指定
@@ -3009,7 +3015,9 @@ namespace FixedCamVr.Streaming
             //    視界が晴れて**、以後の周の劣化が「なぜまた悪くなるのか」説明できなくなる。
             if (result == TakeRunnerLogic.MarkResult.Released)
             {
-                ResolveRunDirector()?.ReleaseScreenDecay();
+                ShowRunDirector? runDirector = ResolveRunDirector();
+                runDirector?.ReleaseScreenDecay();
+                runDirector?.NotifyClosingMarkReleased();
                 // スタッフの手へ「締めに入った」を渡す縁（`OvrControllerBridge` が増分を見る）。
                 CurseReleasedCount++;
             }

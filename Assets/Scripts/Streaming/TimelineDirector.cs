@@ -37,6 +37,7 @@ namespace FixedCamVr.Streaming
         private ShowTimelineSegmentDef[] _segments = Array.Empty<ShowTimelineSegmentDef>();
         private bool _hasCurrent;
         private int _curLap, _curCam;
+        private float _closingAreaEnteredAt = -1f;
         private bool _subscribed;
 
         private void Awake()
@@ -89,15 +90,18 @@ namespace FixedCamVr.Streaming
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
 
         /// <summary>
-        /// 締めのカットに入ってからの秒数（走っていなければ負）。締めの線が無いときの③の時計（0178）。
-        /// 線があるときは観測（<c>ev=comms closing=</c>）と自動走行の待ち合わせに読む。
+        /// 締めのカットに入ってからの秒数（走っていなければ負）。演出の観測と自動走行の待ち合わせ用。
         /// </summary>
         public float ClosingTakeSec => takeRunner != null ? takeRunner.ClosingTakeSec : -1f;
+
+        /// <summary>最終 A の確定進入からの秒数。離脱後も進み、未到達なら負。</summary>
+        public float ClosingAreaSec => _closingAreaEnteredAt < 0f
+            ? -1f : Time.unscaledTime - _closingAreaEnteredAt;
 
         /// <summary>締めの線（3 周目 A の凍結点）の id。台本に無ければ空（0233）。</summary>
         public string ClosingLineId => takeRunner != null ? takeRunner.ClosingLineId : "";
 
-        /// <summary>締めの線が layout に実体を持つか。false なら③a は時計の退避路（<c>HaltAfterClosingSec</c>）で出る。</summary>
+        /// <summary>締めの線が layout に実体を持つか。③a は線の有無に関わらず到着後3秒でも出る。</summary>
         public bool ClosingLineDefined => takeRunner != null && takeRunner.ClosingLineDefined;
 
         /// <summary>締めのカットの中で締めの線を踏んだ（③a「止まってください！」の引き金・0233）。</summary>
@@ -222,6 +226,7 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _hasCurrent = false;
+            _closingAreaEnteredAt = -1f;
             takeRunner?.ResetRun();
         }
 
@@ -233,6 +238,8 @@ namespace FixedCamVr.Streaming
         //   （進行の周で貼ると、まだ通っていない先の周の演出が消費される）。
         private void OnCameraEntered(int camera, int lap, int progressLap)
         {
+            if (lap == 4 && camera == 0 && _closingAreaEnteredAt < 0f)
+                _closingAreaEnteredAt = Time.unscaledTime;
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;
 

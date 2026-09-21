@@ -611,6 +611,7 @@ namespace FixedCamVr.Diagnostics
         private bool _yawSeeded;
         // 報告の縁を取るために、直前に見た回数を覚えておく（ShowControlClient が真実源）。
         private int _lastMarkCount;
+        private bool _promptReadableNotified;
         // 外部 Presentation の中止回数。増えたフレームで進行中の乗っ取りを即座に消す。
         private int _lastPresentationAbortCount;
         private bool _presentationAbortedThisFrame;
@@ -900,6 +901,7 @@ namespace FixedCamVr.Diagnostics
         {
             _logic.Disable();
             _cue.ResetRun();
+            _promptReadableNotified = false;
             _invasion.Reset();
             _glitchLevel = 0f;
             _onboardingActive = false;
@@ -965,6 +967,7 @@ namespace FixedCamVr.Diagnostics
             _onboardingActive = false;
             _onboardingNotice = CommsNotice.None;
             _cue.ResetRun();
+            _promptReadableNotified = false;
             _invasion.Reset();
             _glitchLevel = 0f;
             _lastMarkCount = showControl != null ? showControl.VisitorMarkCount : 0;
@@ -1102,9 +1105,8 @@ namespace FixedCamVr.Diagnostics
                 startAuthorized = showControl == null || showControl.StartAuthorized,
                 introWaiting = introWaiting,
                 panelDoneReading = _logic.DoneReading,
-                // ③a の引き金は**締めのカットの中で締めの線（3 周目 A の凍結点）を踏んだこと**（0233）。
-                // 時計（締めに入ってから 5 秒・0178）は線が無いときの退避路。報告待ちが立つのは待たない。
-                closingSec = timeline != null ? timeline.ClosingTakeSec : -1f,
+                // ③a は締めの線を踏むか、最終 A の確定進入から 3 秒。演出の開始は待たない。
+                closingSec = timeline != null ? timeline.ClosingAreaSec : -1f,
                 closingLineDefined = timeline != null && timeline.ClosingLineDefined,
                 closingLineCrossed = timeline != null && timeline.ClosingLineCrossed,
                 dollCatchUpShowing = timeline != null && timeline.DollCallShowing,
@@ -1138,6 +1140,13 @@ namespace FixedCamVr.Diagnostics
             PushCurseTarget();
             bool wasActive = _logic.Active;
             _logic.Tick(Time.unscaledDeltaTime);
+            if (!_promptReadableNotified && runDirector != null
+                && LastNotice == CommsNotice.Prompt
+                && _logic.Stage == CommsStage.Hold)
+            {
+                _promptReadableNotified = true;
+                runDirector.NotifyClosingPromptReadable();
+            }
             if (_logic.Active && !wasActive)
             {
                 _curseOpenAt = Time.unscaledTime;

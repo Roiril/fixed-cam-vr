@@ -40,6 +40,19 @@ namespace FixedCamVr.Streaming
         /// 相と走行中の演出 id を両方持っているのはここだけなので、判定もここで回す。
         /// </summary>
         private readonly EndingCueLogic _ending = new EndingCueLogic();
+        private readonly EndingDecisionLogic _endingDecision = new EndingDecisionLogic();
+        private bool? _insideClosingArea;
+        private float _closingAreaObservedAt = -1f;
+
+        // カメラの「最後にいた区間」と別に実位置を見る。未観測・追跡停止を退出としない。
+        public void NotifyClosingAreaPresence(bool? inside)
+        {
+            _insideClosingArea = inside;
+            _closingAreaObservedAt = Time.unscaledTime;
+        }
+
+        public float ClosingPromptElapsedSec => _endingDecision.PromptReadableAt < 0f
+            ? -1f : Time.unscaledTime - _endingDecision.PromptReadableAt;
 
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
@@ -91,6 +104,16 @@ namespace FixedCamVr.Streaming
 
         /// <summary>終幕の合図が既に撃たれたか（テレメトリ用）。</summary>
         public bool EndingFired => _ending.Fired;
+
+        /// <summary>このランの締めの結果。通常終了とスタッフ停止は Interrupted。</summary>
+        public ShowEndingOutcome EndingOutcome => _endingDecision.Outcome;
+
+        /// <summary>③b の全文が見えた縁。連絡面から一度だけ届く。</summary>
+        public void NotifyClosingPromptReadable()
+            => _endingDecision.NotifyPromptReadable(Time.unscaledTime);
+
+        /// <summary>締めのカットを報告で解除した縁。</summary>
+        public void NotifyClosingMarkReleased() => _endingDecision.NotifyReleased();
 
         /// <summary>
         /// 装置の劣化そのものの進み 0..1。<b>呪いが解けても下がらない</b>（単調）。
@@ -249,6 +272,9 @@ namespace FixedCamVr.Streaming
             // 終幕の合図も落とす。**ユーザーが「周回リセットのときにリセットされるフラグ」と
             // 名指ししたもの**（canon/LEDGER.md 0048）。落とす場所はここ 1 つ。
             _ending.ResetRun();
+            _endingDecision.ResetRun();
+            _insideClosingArea = null;
+            _closingAreaObservedAt = -1f;
             ApplyGate();
             // ⚠⚠ **ゲートを閉じた「後」にもう一度武装を落とす**（2026-08-30）。
             //    ラン開始の号令元（`ShowControlClient.TriggerRunReset` / `BeginNewVisitorRunLocal`）は
@@ -352,15 +378,9 @@ namespace FixedCamVr.Streaming
             string activeTakeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
             bool takeRunning = !string.IsNullOrEmpty(activeTakeId);
 
-            // 終幕の合図。著作した演出（run.outro.afterTakeId）が走って、そして終わったら終わる。
-            // ⚠ **これは出口を増やすだけ**で、周を走り切ったときの従来の終わり方（endGraceSec /
-            //    endHoldMaxSec / hardLimitSec）は 1 つも外していない。指した演出が最後まで走らない
-            //    現場でも体験は必ず終わる。
-            if (_ending.Tick(_logic.Phase == ShowPhase.Run, activeTakeId))
-            {
-                Debug.Log($"[ShowRun] 終幕の合図（演出 {OutroDef.afterTakeId} が終わった）");
-                _logic.RequestFinish();
-            }
+            // 武装は Update で拾う。終了の判定は報告・通信面・区間確定が揃う LateUpdate に置く。
+            if (_logic.Phase == ShowPhase.Run && activeTakeId == OutroDef.afterTakeId)
+                _ending.Tick(true, activeTakeId);
             // 演出が「終わったか」。⚠ **「進行中でない」で判定してはいけない**（2026-08-06 置き換え）。
             // 旧実装は `Active && Stage != Black` の否定＝「進行中でない」を渡していた。段 0（開始待ち）は
             // そこに含まれないので、**演出が始まる前でも「進行中でない」が成立**していた。慣らし歩行
@@ -377,7 +397,9 @@ namespace FixedCamVr.Streaming
             bool introAborted = _intro != null && _intro.Aborted;
 
             ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introCompleted,
-                                          introAborted);
+                                          introAborted,
+                                          _ending.Armed || (timelineDirector != null
+                                              && timelineDirector.ClosingAreaSec >= 0f));
 
             // ⚠ ゲートは**イベントを配る前に**合わせる。RunBegan の処理は
             // BeginMainRun → LapCounter.ResetRun → SeedCurrentZone → CueScheduler.NotifyCameraEntered
@@ -397,7 +419,53 @@ namespace FixedCamVr.Streaming
         /// TakeRunner・overlay・乱れの Update が終わった後に実表示を読む。
         /// Update 同士の順番に依存すると、POV と最初の CG フレームだけ 1 フレーム遅れる。
         /// </summary>
-        private void LateUpdate() => TickScreenDecay();
+        private void LateUpdate()
+        {
+            TickEndingDecision();
+            TickScreenDecay();
+        }
+
+        private void TickEndingDecision()
+        {
+            if (_logic.Phase != ShowPhase.Run) return;
+            string activeTakeId = timelineDirector != null ? timelineDirector.ActiveTakeId : "";
+            bool takeEnded = _ending.Tick(true, activeTakeId);
+            int lap = -1;
+            int camera = -1;
+            bool segmentKnown = timelineDirector != null
+                && timelineDirector.TryGetCurrentSegment(out lap, out camera);
+            _endingDecision.Tick(Time.unscaledTime, segmentKnown,
+                                 segmentKnown ? lap : -1, segmentKnown ? camera : -1,
+                                 _insideClosingArea == false && _closingAreaObservedAt >= 0f
+                                 && Time.unscaledTime - _closingAreaObservedAt <= .25f);
+
+            if (takeEnded)
+            {
+                if (_endingDecision.Outcome == ShowEndingOutcome.Released
+                    && timelineDirector != null
+                    && timelineDirector.LastEndReason == TakeRunnerLogic.EndReason.Completed)
+                    FinishFromEnding();
+                else if (_endingDecision.Outcome == ShowEndingOutcome.Pending
+                         || _endingDecision.Outcome == ShowEndingOutcome.Released)
+                {
+                    // watchdog や打切りを正常完了と推定しない。
+                    _endingDecision.Interrupt();
+                    FinishFromEnding();
+                }
+            }
+            if (_logic.Phase == ShowPhase.Run
+                && _endingDecision.Outcome == ShowEndingOutcome.Trapped)
+                FinishFromEnding();
+        }
+
+        private void FinishFromEnding()
+        {
+            _logic.RequestFinish();
+            if (_logic.Tick(0f, false, false) != ShowRunEvent.RunFinished) return;
+            ApplyGate();
+            OnRunFinished();
+            NotifyPhaseIfChanged();
+        }
 
         /// <summary>
         /// 音が読む装置の劣化と、画へ出す人形状態連動の加工を進める。
@@ -456,6 +524,11 @@ namespace FixedCamVr.Streaming
 
         private void OnRunFinished()
         {
+            if (_endingDecision.Outcome != ShowEndingOutcome.Trapped
+                && !(_endingDecision.Outcome == ShowEndingOutcome.Released && _ending.Fired
+                     && timelineDirector != null
+                     && timelineDirector.LastEndReason == TakeRunnerLogic.EndReason.Completed))
+                _endingDecision.Interrupt();
             Debug.Log($"[ShowRun] 体験の終了（{_logic.Lap - 1} 周 / 経過 {_logic.RunElapsedSec:F0} 秒）");
             timelineDirector?.AbortActive();
             _glitch?.ResetAll();

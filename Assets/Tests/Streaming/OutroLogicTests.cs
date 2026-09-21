@@ -19,6 +19,22 @@ namespace FixedCamVr.Tests.Streaming
         }
 
         [Test]
+        public void Trapped_StartsDarkWithoutShowingLive_ThenResetsForTheNextVisitor()
+        {
+            var logic = Make();
+            logic.Begin(showCollapse: false);
+            Assert.AreEqual(OutroStage.Dark, logic.Stage);
+            Assert.AreEqual(0f, logic.ScreenPower);
+            Assert.AreEqual(0f, logic.TotalElapsedSec);
+            logic.Tick(OutroTiming.Default.darkSec);
+            Assert.AreEqual(OutroStage.Report, logic.Stage);
+            logic.Disable();
+            Assert.AreEqual(1f, logic.ScreenPower);
+            logic.Begin();
+            Assert.AreEqual(OutroStage.Collapse, logic.Stage);
+        }
+
+        [Test]
         public void Begin_StartsWithTheScreenStillOn()
         {
             var l = Make();

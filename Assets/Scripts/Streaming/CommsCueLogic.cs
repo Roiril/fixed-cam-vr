@@ -166,21 +166,15 @@ namespace FixedCamVr.Streaming
         public bool panelDoneReading;
 
         /// <summary>
-        /// <b>締めのカット（<c>durKind:"untilMark"</c> の段を持つ take）に入ってからの秒数</b>。
-        /// 走っていなければ<b>負</b>。供給は <c>TimelineDirector.ClosingTakeSec</c>。
-        ///
-        /// ⚠⚠ <b>2026-09-19 から、③a の引き金は時計ではなく場所</b>（<see cref="closingLineCrossed"/>・0233）。
-        /// この時計で③a が出るのは<b>締めの線が無いとき</b>（<see cref="closingLineDefined"/> = false）だけ。
-        /// ⚠ 2026-09-06 に「報告待ちが立ってからの秒数」から替えた（<c>canon/LEDGER.md</c> 0178）。
-        /// 前は報告待ちの段（人形の動画が終わったあと）から数えていたので、
-        /// <b>その段のあいだに押した人は③を一度も見なかった</b>。
+        /// <b>最終 A の確定進入からの秒数</b>。まだ着いていなければ負。
+        /// 供給は <c>TimelineDirector.ClosingAreaSec</c>。締めの演出が始まる前も進む。
+        /// 線を踏めば早く出る。踏まなくても 3 秒で出る。
         /// </summary>
         public float closingSec;
 
         /// <summary>
         /// <b>締めの線（3 周目 A の凍結点）が layout に実体を持つか。</b> 供給は <c>TimelineDirector.ClosingLineDefined</c>。
-        /// true なら③a は <see cref="closingLineCrossed"/> だけで出る（時計は見ない）。
-        /// false なら時計（<see cref="closingSec"/> ≥ <see cref="CommsCueLogic.HaltAfterClosingSec"/>）の退避路。
+        /// ③a は線の有無に関わらず時計でも出る。
         /// ⚠ 線が解決できないことを黙って③の欠落にしない — 0178「止まってください！以降の流れは全員に見せる」。
         /// </summary>
         public bool closingLineDefined;
@@ -243,7 +237,7 @@ namespace FixedCamVr.Streaming
     ///
     /// ⚠ <b>①①b③はラン 1 回につき 1 度だけ。②は押すたび。</b>
     /// ⚠⚠ <b>③a は締めのカットの中で締めの線（3 周目 A の凍結点）を踏んだ瞬間に出る</b>
-    /// （2026-09-19・0233）。時計（0178 の 5 秒）は<b>線が無いときの退避路</b>。
+    /// （2026-09-19・0233）。線を踏まない場合は 3 秒の時計で出す。
     /// 報告したかは見ないので、<b>線を踏めば押しても押さなくても③a →③b は流れる</b>（0178）。
     /// ⚠ <b>本編の進行は 1 ビットも変わらない。</b> 連絡は読まなくても勝手に引く
     /// （既読の操作を作らない — <see cref="CommsPanelLogic"/>）。
@@ -262,20 +256,16 @@ namespace FixedCamVr.Streaming
         public const float BeginDelaySec = 0f;
 
         /// <summary>
-        /// ③a <b>締めの線が無いときだけ</b>の時計: 締めのカットに入ってから「止まってください！」まで (秒)。
+        /// ③a の時計: 最終 A の確定進入から「止まってください！」まで (秒)。
         ///
-        /// ⚠⚠ <b>2026-09-19 から③a の引き金は場所</b>（<see cref="CommsCueInput.closingLineCrossed"/>・
-        /// <c>canon/LEDGER.md</c> 0233・ユーザー指定「時間指定で 4s ではなく、場所指定にし、その場所を、
-        /// 左右反転の演出のときのフリーズされる位置に」）。台本から締めの線が引けないとき
-        /// （<c>TakeSchema.ResolveClosingLineId</c> が空・layout に実体が無い）だけ、ここへ倒れる。
-        /// 値は 0178（ユーザー指定「押してないとき一律 5s」）のまま。
+        /// 2026-09-21・0247: 線を踏む OR 最終 A に入って 3 秒。線があっても時計は有効。
         ///
         /// ⚠ ③b（異常があなたを…）は<b>③a を読ませ終わった縁</b>で続く（間は持たない）。
         /// ⚠ 場所で出すようになったので、<see cref="TakeRunnerLogic.MarkGraceSec"/>（4 秒）より前に
         ///   ③a → ③b が来ることがある（線を早く踏む人）。③a は「止まれ」で「押せ」ではないので
         ///   矛盾はしないが、③b「排除してください」が受付前に届く形はある（`OPEN.md` に問）。
         /// </summary>
-        public const float HaltAfterClosingSec = 5f;
+        public const float HaltAfterClosingSec = 3f;
 
         /// <summary>
         /// ⓪a タイトルが焼け切ってから名乗るまで (秒)。<b>一拍おく</b> —
@@ -440,16 +430,15 @@ namespace FixedCamVr.Streaming
                 return CommsNotice.Takeover;
             if (inp.takeoverPlaying) return CommsNotice.None;
 
-            // ③a は**締めのカットの中で締めの線（3 周目 A の凍結点）を踏んだ瞬間**（0233）。
-            //    線が無い台本・実体の無い線では、締めに入ってから `HaltAfterClosingSec` 秒の時計（0178）へ倒す。
+            // ③a は締めの線を踏むか、最終 A に入ってから `HaltAfterClosingSec` 秒で出す。
+            //    線が著作されていても、体験者が踏まない場合は時計が有効。
             // ⚠⚠ **消費しない。面が空くまで待って、必ず出す。** ユーザー指定が
             //    「止まってください！以降の流れは全員に見せる」なので、報告に押しのけられて
             //    消えてよい連絡ではない（時間で立つ①を消費するのとはここが違う）。
             //    面が塞がっていれば `panelDoneReading` が false のあいだ待つ ＝ 割り込まない。
             //    線の記録は締めのカットのあいだ立ちっぱなし（TakeRunnerLogic）なので、待っても消えない。
-            bool haltTriggered = inp.closingLineDefined
-                ? inp.closingLineCrossed
-                : inp.closingSec >= HaltAfterClosingSec;
+            bool haltTriggered = inp.closingLineCrossed
+                || inp.closingSec >= HaltAfterClosingSec;
             bool haltDue = !_haltFired && haltTriggered && inp.panelDoneReading;
 
             // ③b は③a を**読ませ終わった縁**で、間を置かずに続ける（①→①b と同じ形）。

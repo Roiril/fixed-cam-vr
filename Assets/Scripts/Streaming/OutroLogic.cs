@@ -110,9 +110,9 @@ namespace FixedCamVr.Streaming
         public void Configure(OutroTiming timing) => _t = timing.Sanitized();
 
         /// <summary>頭から始める。</summary>
-        public void Begin()
+        public void Begin(bool showCollapse = true)
         {
-            _stage = OutroStage.Collapse;
+            _stage = showCollapse ? OutroStage.Collapse : OutroStage.Dark;
             _stageElapsed = 0f;
             _totalElapsed = 0f;
         }

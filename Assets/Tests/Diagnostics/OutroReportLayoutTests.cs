@@ -2,26 +2,22 @@
 using System.Collections.Generic;
 using System.Reflection;
 using FixedCamVr.Diagnostics;
+using FixedCamVr.Streaming;
 using NUnit.Framework;
 using TMPro;
 using UnityEngine;
 
 namespace FixedCamVr.Tests.Diagnostics
 {
-    /// <summary>
-    /// 終幕の報告の<b>置き方</b>を固定する（<c>canon/LEDGER.md</c> 0063）。
-    ///
-    /// ⚠⚠ <b>この 2 つは絵では確かめられない。</b>
-    /// <c>menu text-audit</c> の <c>Shoot</c> は<b>面の原点を必ず画面中心へ運んでから</b>撮るので、
-    /// 塊をどこへ置いたかは 1 枚も写らない（あの絵は<b>大きさとはみ出し専用</b>）。
-    /// 実機を被る以外に見る手が無いから、ここで機械が持つ。
-    ///
-    /// ⚠ 日本語フォントを解決できない環境では面そのものが組まれない（実機と同じ挙動）。
-    /// そのときは判定できないので <c>Ignore</c> にする — <b>通ったことにはしない</b>。
-    /// </summary>
+    /// <summary>結果カードの 7 フィールドを実際の TMP メッシュで検査する。</summary>
     public sealed class OutroReportLayoutTests
     {
         private readonly List<GameObject> _spawned = new List<GameObject>();
+        private static readonly ShowLang[] Languages = { ShowLang.Ja, ShowLang.En, ShowLang.Fr };
+        private static readonly ShowEndingOutcome[] Outcomes =
+        {
+            ShowEndingOutcome.Released, ShowEndingOutcome.Trapped, ShowEndingOutcome.Interrupted
+        };
 
         [TearDown]
         public void TearDown()
@@ -31,103 +27,157 @@ namespace FixedCamVr.Tests.Diagnostics
             _spawned.Clear();
         }
 
-        private (OutroReport report, TMP_Text text) SpawnReport()
+        private OutroReport SpawnReport()
         {
             var go = new GameObject("[Test] OutroReport");
             _spawned.Add(go);
             var report = go.AddComponent<OutroReport>();
-            // ⚠ **Edit モードでは Awake が走らない。** 起こさないと面が組まれず、下の
-            //   `Assert.Ignore` へ落ちて**検証していないのにテストが緑に見える**
-            //   （`HmdTextAudit` が `BuildsItsOwnText` で同じことをしている）。
-            typeof(OutroReport)
-                .GetMethod("Awake", BindingFlags.Instance | BindingFlags.NonPublic)
-                ?.Invoke(report, null);
-            var f = typeof(OutroReport).GetField("_text",
+            // EditMode では Awake が自動実行されないので、生成を明示的に起こす。
+            MethodInfo? awake = typeof(OutroReport).GetMethod("Awake",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            var tmp = f?.GetValue(report) as TMP_Text;
-            if (tmp == null)
-                Assert.Ignore("日本語フォントを解決できないので面が組まれていない（実機と同じ挙動）");
-            return (report, tmp!);
+            Assert.That(awake, Is.Not.Null);
+            awake!.Invoke(report, null);
+            Assert.That(report.IsBuilt, Is.True, "結果カードのフォントまたはシェーダが欠けている");
+            return report;
         }
 
-        private static float Field(object o, string name)
-        {
-            var f = o.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
-            return f?.GetValue(o) is float v ? v : 0f;
-        }
-
-        /// <summary>
-        /// 揃えは<b>左</b>、縦は<b>上</b>（1 字ずつ出すので、行が増えるたびに縦中央を
-        /// 取り直されると打ち終わった行が跳ねる）。
-        /// </summary>
         [Test]
-        public void Alignment_IsTopLeft()
+        public void BuildsSevenTopLeftFields_AndStartsWithNothingTyped()
         {
-            var (_, tmp) = SpawnReport();
-            Assert.AreEqual(TextAlignmentOptions.TopLeft, tmp.alignment,
-                            "左寄せ ＋ 縦は上寄せ（canon/LEDGER.md 0063）");
+            OutroReport report = SpawnReport();
+            string[] names = { "Archive", "Outcome", "Message", "MeasureLabel", "Measure", "MeasureNote", "Exit" };
+            Assert.That(report.Fields.Count, Is.EqualTo(names.Length));
+            for (int i = 0; i < names.Length; i++)
+            {
+                Assert.That(report.Fields[i].name, Is.EqualTo(names[i]));
+                Assert.That(report.Fields[i].alignment, Is.EqualTo(TextAlignmentOptions.TopLeft));
+                Assert.That(report.Fields[i].maxVisibleCharacters, Is.Zero);
+            }
+            Assert.That(report.VisibleChars, Is.Zero);
         }
 
-        /// <summary>
-        /// <b>左寄せでも字の塊は視界の中央に居る。</b> 左寄せの意図は行頭が揃うことで、
-        /// 塊が視界の左へ寄ることではない（黒の中に単独で立つ面なので、寄せると首を振って読む）。
-        ///
-        /// 塊の中心が、頭の正面から <c>pitchOffsetDeg</c> だけ下げた <c>distanceM</c> の点に
-        /// 一致していることを見る。<b>枠は 1.70m・実際の行は 1.0m ほど</b>なので、
-        /// 運ばなければ x は 0.3m 以上ずれる（＝ 許容 1cm はゆるくない）。
-        /// </summary>
         [Test]
-        public void InkBlock_IsCenteredInView_EvenThoughAlignmentIsLeft()
+        public void EveryLanguageAndOutcome_FitsPanelWithoutTextOverlap_AndHasFontGlyphs()
         {
-            var (report, tmp) = SpawnReport();
-
-            float distanceM = Field(report, "distanceM");
-            float pitchDeg = Field(report, "pitchOffsetDeg");
-            float scale = tmp.transform.localScale.x;
-            Assert.That(scale, Is.GreaterThan(0f), "倍率が 0 なら何も測れない");
-
-            // 実際に字が乗っている範囲の中心（面のローカル）を、面の親の座標へ持ち上げる。
-            Bounds ink = tmp.textBounds;
-            Vector3 center = tmp.transform.localPosition + ink.center * scale;
-
-            float rad = pitchDeg * Mathf.Deg2Rad;
-            float d = Mathf.Max(distanceM, 0.5f);
-            var want = new Vector3(0f, -Mathf.Sin(rad) * d, Mathf.Cos(rad) * d);
-
-            Assert.That(center.x, Is.EqualTo(want.x).Within(0.01f),
-                        "字の塊が視界の中央から横へずれている（左寄せの塊を運んでいない）");
-            Assert.That(center.y, Is.EqualTo(want.y).Within(0.01f),
-                        "字の塊が視界の中央から縦へずれている（上寄せの塊を運んでいない）");
-            Assert.That(center.z, Is.EqualTo(want.z).Within(0.01f));
+            OutroReport report = SpawnReport();
+            foreach (ShowLang lang in Languages)
+            foreach (ShowEndingOutcome outcome in Outcomes)
+            {
+                report.PresentPreview(999, 8, outcome, lang);
+                var rects = new Rect[report.Fields.Count];
+                for (int i = 0; i < report.Fields.Count; i++)
+                {
+                    TMP_Text field = report.Fields[i];
+                    Assert.That(field.alignment, Is.EqualTo(TextAlignmentOptions.TopLeft),
+                        $"{lang}/{outcome}/{field.name}");
+                    Assert.That(field.font, Is.Not.Null, $"{lang}/{outcome}/{field.name}: font が無い");
+                    foreach (char ch in field.text)
+                    {
+                        if (char.IsWhiteSpace(ch)) continue;
+                        Assert.That(field.font.HasCharacter(ch), Is.True,
+                            $"{lang}/{outcome}/{field.name}: 欠字 U+{(int)ch:X4} '{ch}'");
+                    }
+                    field.ForceMeshUpdate(true, true);
+                    rects[i] = InkRectInCard(field);
+                    Assert.That(rects[i].xMin, Is.GreaterThanOrEqualTo(-OutroReport.PanelWidth / 2 - .003f),
+                        $"{lang}/{outcome}/{field.name}: 左にはみ出す");
+                    Assert.That(rects[i].xMax, Is.LessThanOrEqualTo(OutroReport.PanelWidth / 2 + .003f),
+                        $"{lang}/{outcome}/{field.name}: 右にはみ出す");
+                    Assert.That(rects[i].yMin, Is.GreaterThanOrEqualTo(-OutroReport.PanelHeight / 2 - .003f),
+                        $"{lang}/{outcome}/{field.name}: 下にはみ出す");
+                    Assert.That(rects[i].yMax, Is.LessThanOrEqualTo(OutroReport.PanelHeight / 2 + .003f),
+                        $"{lang}/{outcome}/{field.name}: 上にはみ出す");
+                }
+                for (int i = 0; i < rects.Length; i++)
+                for (int j = i + 1; j < rects.Length; j++)
+                    Assert.That(HasInkOverlap(rects[i], rects[j]), Is.False,
+                        $"{lang}/{outcome}: {report.Fields[i].name} {rects[i]} と {report.Fields[j].name} {rects[j]} が重なる");
+            }
         }
 
-        /// <summary>
-        /// 組み上がった直後は<b>1 文字も出ていない</b>。打鍵が出現の演出なので、
-        /// 段 <c>Report</c> へ入る前に全文が見えていると、打つ意味がまるごと消える。
-        /// </summary>
         [Test]
-        public void StartsWithNothingTyped()
+        public void PartialReveal_DoesNotMoveFieldsOrAlreadyVisibleGlyphs()
         {
-            var (report, tmp) = SpawnReport();
-            Assert.AreEqual(0, tmp.maxVisibleCharacters);
-            Assert.AreEqual(0, report.VisibleChars);
+            OutroReport report = SpawnReport();
+            report.PresentPreview(123, 8, ShowEndingOutcome.Trapped, ShowLang.Ja);
+            var positions = new Vector3[report.Fields.Count];
+            for (int i = 0; i < positions.Length; i++)
+                positions[i] = report.Fields[i].transform.localPosition;
+            TMP_Text first = report.Fields[0];
+            first.ForceMeshUpdate(true, true);
+            Vector3 firstGlyph = first.textInfo.characterInfo[0].bottomLeft;
+
+            report.PresentPreview(123, 8, ShowEndingOutcome.Trapped, ShowLang.Ja, characters: 3);
+            Assert.That(report.VisibleChars, Is.GreaterThan(0));
+            Assert.That(report.VisibleChars, Is.LessThan(report.ReportChars));
+            for (int i = 0; i < positions.Length; i++)
+                Assert.That(Vector3.Distance(report.Fields[i].transform.localPosition, positions[i]),
+                    Is.LessThan(.0001f), $"{report.Fields[i].name}: 部分表示で位置が動いた");
+            first.ForceMeshUpdate(true, true);
+            Assert.That(Vector3.Distance(first.textInfo.characterInfo[0].bottomLeft, firstGlyph),
+                Is.LessThan(.0001f), "部分表示で先頭の字が動いた");
         }
 
-        /// <summary>
-        /// 打鍵の数は<b>改行を除いた字数</b>（<c>maxVisibleCharacters</c> は改行も 1 文字として
-        /// 数えるので、鳴らすと「字が出ていないのに 1 発鳴る」が 4 回起きる）。
-        /// TMP に測らせた値と、文言側の期待値（<c>OutroReportTextTests</c>）が一致することを見る。
-        /// </summary>
         [Test]
-        public void ReportChars_ExcludeTheNewlines()
+        public void ReportChars_EqualsActualDrawableGlyphs()
         {
-            var (report, _) = SpawnReport();
-            string body = OutroReportText.Compose(0);
-            int want = 0;
-            foreach (char c in body)
-                if (c != '\n') want++;
-            Assert.AreEqual(want, report.ReportChars,
-                            "テレメトリの repChars ＝ 打鍵の数（改行を除く）");
+            OutroReport report = SpawnReport();
+            foreach (ShowLang lang in Languages)
+            foreach (ShowEndingOutcome outcome in Outcomes)
+            {
+                report.PresentPreview(123, 8, outcome, lang);
+                int drawable = 0;
+                foreach (TMP_Text field in report.Fields)
+                {
+                    field.ForceMeshUpdate(true, true);
+                    for (int c = 0; c < field.textInfo.characterCount; c++)
+                        if (field.textInfo.characterInfo[c].isVisible) drawable++;
+                }
+                Assert.That(report.ReportChars, Is.EqualTo(drawable), $"{lang}/{outcome}");
+                Assert.That(report.VisibleChars, Is.EqualTo(drawable), $"{lang}/{outcome}: 全文表示");
+            }
+        }
+
+        [Test]
+        public void NextPreview_ReplacesPreviousOutcomeAndCapturedValues()
+        {
+            OutroReport report = SpawnReport();
+            report.PresentPreview(999, 8, ShowEndingOutcome.Trapped, ShowLang.Ja);
+            string previous = report.CurrentBody;
+            report.PresentPreview(0, 0, ShowEndingOutcome.Released, ShowLang.En);
+
+            Assert.That(report.CapturedReports, Is.Zero);
+            Assert.That(report.CapturedTotal, Is.Zero);
+            Assert.That(report.CapturedOutcome, Is.EqualTo(ShowEndingOutcome.Released));
+            Assert.That(report.CurrentBody, Is.Not.EqualTo(previous));
+            Assert.That(report.CurrentBody, Is.EqualTo(
+                OutroReportText.Compose(0, 0, ShowEndingOutcome.Released, ShowLang.En)));
+            Assert.That(report.Fields[1].text, Is.EqualTo(OutroReportText.Title(ShowEndingOutcome.Released, ShowLang.En)));
+            Assert.That(report.Fields[2].text, Is.EqualTo(OutroReportText.Body(ShowEndingOutcome.Released, ShowLang.En)));
+            Assert.That(report.Fields[4].text, Is.EqualTo("0 / —"));
+            Assert.That(report.VisibleChars, Is.EqualTo(report.ReportChars));
+
+            report.PresentPreview(-2, -5, ShowEndingOutcome.Interrupted, ShowLang.Fr);
+            Assert.That(report.CapturedReports, Is.Zero);
+            Assert.That(report.CapturedTotal, Is.Zero);
+            Assert.That(report.Fields[1].text, Is.EqualTo(OutroReportText.Title(ShowEndingOutcome.Interrupted, ShowLang.Fr)));
+            Assert.That(report.Fields[4].text, Is.EqualTo("0 / —"));
+        }
+
+        private static Rect InkRectInCard(TMP_Text field)
+        {
+            Bounds ink = field.textBounds;
+            float scale = field.transform.localScale.x;
+            Vector3 pos = field.transform.localPosition;
+            return Rect.MinMaxRect(pos.x + ink.min.x * scale, pos.y + ink.min.y * scale,
+                pos.x + ink.max.x * scale, pos.y + ink.max.y * scale);
+        }
+
+        private static bool HasInkOverlap(Rect a, Rect b)
+        {
+            const float margin = .002f;
+            return a.xMin < b.xMax - margin && a.xMax > b.xMin + margin
+                && a.yMin < b.yMax - margin && a.yMax > b.yMin + margin;
         }
     }
 }

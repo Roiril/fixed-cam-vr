@@ -21,7 +21,7 @@ namespace FixedCamVr.Streaming
     /// という 3 周目の反転の土台（<c>rules/sound-design.md</c> §1）を壊す。
     /// 装置が死ぬのは終幕の電力（<c>_ScreenPower</c>）だけ。
     ///
-    /// <b>周回（0167）</b>: 時刻の右に「1周目」「2周目」「3周目」、帰りの区間は<b>「最後」</b>
+    /// <b>周回（0167）</b>: 時刻の右に「1周目」「2周目」「3周目」、帰りの区間は「終了」
     /// （ユーザー逐語「4周目と書くと混乱する」）。出どころは<b>区間の周</b>なので、逆走すれば戻る。
     /// <b>別の場所（バックルームズ）が映っているあいだだけ、時刻も周回も <c>?</c> で埋まる</b> —
     /// 装置が場所を見失っているので、読めないことを読めないと出している（嘘ではない）。
@@ -33,10 +33,10 @@ namespace FixedCamVr.Streaming
         /// <c>GLYPHS</c> と対**。片方だけ直すと実機で別の字が出る
         /// （<c>OsdClockLogicTests</c> が数と並びを固定する）。空白は「何も描かない」セル。
         /// </summary>
-        /// ⚠ 後ろのラテン 11 字は<b>周回の英語とフランス語</b>（<c>LAP 1</c> / <c>LAST</c> /
+        /// ⚠ 後ろのラテン字は<b>周回の英語とフランス語</b>（<c>LAP 1</c> / <c>END</c> /
         /// <c>TOUR 1</c> / <c>FIN</c>）。大文字だけ — 小文字の <c>p</c> はディセンダが
         /// セルの下端で切れる（監視カメラの OSD は大文字が様式でもある）。
-        public const string Glyphs = "0123456789:/ ?LAPSTOURFIN";
+        public const string Glyphs = "0123456789:/ ?LAPSTOURFINED";
 
         /// <summary>
         /// 版の**全角**セルの並び（1 字 = <b>2 セル</b>）。**<c>make-osd-font.py</c> の
@@ -45,10 +45,10 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>1 セルに詰めない。</b> 半角セルは 24px で、漢字を入れると潰れて実機で読めない。
         /// 2 セル（48px）なら数字と同じ字高のまま入る（版の側で字高を数字へ合わせている）。
         /// </summary>
-        public const string WideGlyphs = "周目最後";
+        public const string WideGlyphs = "周目終了";
 
         /// <summary>版のセル数（半角 ＋ 全角 × 2）。</summary>
-        public const int GlyphCount = 33;
+        public const int GlyphCount = 35;
 
         /// <summary>「何も描かない」セルの番号。解決できない文字はここへ落とす。</summary>
         public const int BlankGlyph = 12;
@@ -66,7 +66,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 周回の欄のセル数。いちばん長い <c>TOUR 1</c>（フランス語・6 セル）がちょうど収まる。
-        /// **固定長**で、短い語（「最後」「???」「FIN」）は右に空白が残る。
+        /// **固定長**で、短い語（「終了」「???」「FIN」）は右に空白が残る。
         /// ⚠ 3 言語のうち<b>いちばん長いもの</b>で決める（言語で欄の幅を変えると、
         /// 版を敷き直すテクスチャの大きさが言語で変わる）。
         /// </summary>
@@ -125,7 +125,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// <b>周回の語</b>（<c>canon/LEDGER.md</c> 0167）。区間がまだ確定していなければ空。
         ///
-        /// ⚠ <b>帰りの区間（<c>lap = totalLaps + 1</c>）は「最後」</b>。
+        /// ⚠ <b>帰りの区間（<c>lap = totalLaps + 1</c>）は「終了」</b>。
         /// ユーザー逐語「4-Aは最後とかの表示で。4周目と書くと混乱する」 —
         /// 3 周と案内している体験で 4 周目と出ると、数が合わなくなる。
         /// </summary>
@@ -139,9 +139,9 @@ namespace FixedCamVr.Streaming
         {
             if (totalLaps < 1) totalLaps = ShowRunDefaults.TotalLaps;
             if (lap < 1) return "";
-            // 版に 1 桁ぶんしか欄が無い。走り切った先はどこであれ「最後」。
+            // 版に 1 桁ぶんしか欄が無い。走り切った先はどこであれ「終了」。
             if (lap > totalLaps || lap > 9)
-                return lang switch { ShowLang.En => "LAST", ShowLang.Fr => "FIN", _ => "最後" };
+                return lang switch { ShowLang.En => "END", ShowLang.Fr => "FIN", _ => "終了" };
             char n = (char)('0' + lap);
             return lang switch
             {
@@ -156,7 +156,7 @@ namespace FixedCamVr.Streaming
         /// <c>-</c>（区間が未確定）/ <c>1</c> <c>2</c> <c>3</c> / <c>last</c>（帰りの区間）/
         /// <c>mask</c>（異世界）。
         ///
-        /// ⚠ <b>語ではなくトークンを出す。</b> ログは機械が読むので、語（「最後」）を出すと
+        /// ⚠ <b>語ではなくトークンを出す。</b> ログは機械が読むので、語（「終了」）を出すと
         /// 文言を直した日に解析が黙って落ちる。<c>analyze-xp-log.py</c> と対。
         /// </summary>
         public static string LapToken(int lap, int totalLaps, bool otherworld)

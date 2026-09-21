@@ -1,401 +1,227 @@
-﻿#nullable enable
+#nullable enable
+using System.Collections.Generic;
 using FixedCamVr.Streaming;
 using TMPro;
 using UnityEngine;
 
 namespace FixedCamVr.Diagnostics
 {
-    /// <summary>
-    /// <b>終幕の報告。</b> 装置が力尽きて画が消えたあと、黒の中に浮かぶ 4 行
-    /// （<c>canon/LEDGER.md</c> 0048）。文言は <see cref="OutroReportText"/> が持ち、
-    /// 出す / 消すの判断は <see cref="OutroDirector.ReportAlpha"/> だけを読む。
-    ///
-    /// <b>体験前の注意書き（<see cref="TitleNotice"/>）と対になる面。</b> 置き方・大きさ・
-    /// 深度の逃がし方はあちらと同じで、違うのは出る段だけ（あちらは真っ暗な待ち、こちらは終幕）。
-    ///
-    /// <b>出方</b>（<c>canon/LEDGER.md</c> 0063・2026-08-16）: <b>1 字ずつ打たれ、1 字ごとに
-    /// 打鍵音が 1 発鳴る</b>（AIエージェントからの連絡＝<see cref="CommsPanel"/> と同じ装置の印字）。
-    /// 速さは <see cref="CommsPanelLogic.CharsPerSecFor"/> をそのまま使う — 同じ装置が
-    /// 面によって違う速さで打つと、別の装置が 2 台あるように聞こえる。
-    /// ⚠ <b>言語では変わる</b>（日本語 12 / Latin 18 文字/秒・0149）。1 人が浴びるのは 1 言語だけ。
-    ///
-    /// ⚠ <b>不透明度のフェードは持たない。</b> 打鍵そのものが出現の演出で、重ねると
-    /// 頭の数文字だけ薄いという半端な絵になる。<c>run.outro.reportFadeSec</c> は
-    /// <b>段 Report の長さ</b>（＝ <see cref="OutroStage.Done"/> へ移るまで）としてだけ効く。
-    /// 打ち切るまでの時間はそれより長いことがあり、<b>Done でも打ち続ける</b>（面は消えない）。
-    ///
-    /// ⚠ <b>揃えは左</b>（同 0063）。ただし<b>字の塊は視界の中央へ運ぶ</b> —
-    /// 左寄せの意図は「行頭が揃って読める」ことで、「塊が視界の左に寄る」ことではない。
-    ///
-    /// ⚠ <b>「体験者の視界に文字を出さない」（rules/show-design.md）の対象外。</b>
-    /// 体験そのものは既に終わっていて、この 4 行が終わったことを伝える唯一の手段
-    /// （黒だけだと「まだ何か起きるのか」に見え、HMD を外してよいことが伝わらない）。
-    ///
-    /// ⚠⚠ <b>深度で弾かれる面。</b> 本編のスクリーン（2.0m・不透明・ZWrite On）より奥（2.6m）に
-    /// 立つので、TMP の既定シェーダ（<c>ZTest LEqual</c>）のままだと <b>1 文字も出ない</b>
-    /// （2026-08-13 に注意書きが丸ごと消えていた実害・<c>canon/LEDGER.md</c> 0027）。
-    /// Overlay 版（<c>ZTest Always</c>）へ差し替える。
-    ///
-    /// ⚠ <b>失敗したら黙って出さない側へ倒す。</b> 日本語フォントが解決できない・実体を組めない
-    /// ときは 1 文字も出さない（豆腐が 4 行並ぶ方が悪い）。組めたかは
-    /// <see cref="IsBuilt"/> がテレメトリへ出す — <b>組めていないことに気づく口がそこしかない</b>。
-    ///
-    /// ⚠ 文言に新しい漢字・記号を足したら <c>.\tools\unity.ps1 menu hud-font</c> を再実行する。
-    /// </summary>
+    /// <summary>結果表示の開始時に数と結末を固定する。次の体験まで表示する。</summary>
     [DisallowMultipleComponent]
     public sealed class OutroReport : MonoBehaviour
     {
-        [Tooltip("終幕の実行体。null ならシーンから探す。居なければ何も出さない。")]
         [SerializeField] private OutroDirector? outro;
-
-        [Tooltip("報告した数の供給元。null ならシーンから探す。居なければ 0 として出す。")]
         [SerializeField] private ShowControlClient? showControl;
-
-        [Tooltip("打鍵音。null なら同 GameObject から取得（無ければ足す）。")]
         [SerializeField] private TypeAudioCue? typeSfx;
-
-        [Tooltip("頭からの距離 (m)。体験前の注意書き（TitleNotice.distanceM）と同じ所に立てる。")]
-        [SerializeField, Min(0.5f)] private float distanceM = 2.6f;
-
-        [Tooltip("視線中心からどれだけ下に置くか (度)。注意書きと同じ据わりにする。")]
-        [SerializeField, Range(-20f, 20f)] private float pitchOffsetDeg = 2.0f;
-
-        /// <summary>タイトルの黒・題字より後に描く Queue。<b>5000 を超えない</b>（URP の透明パスは [2501, 5000]）。</summary>
-        private const int RenderQueue = 5000;
-
-        /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
-        private const float FontSize = 0.07f;
-
-        /// <summary>文字の並ぶ幅 (m)。注意書き（<see cref="TitleNotice"/>）と同じ枠。</summary>
-        private const float TextWidthM = 1.70f;
-
-        /// <summary>文字の並ぶ高さ (m)。</summary>
-        private const float TextHeightM = 1.00f;
-
-        /// <summary>
-        /// 文字の拡大率。<b>距離から逆算する</b>（<see cref="HmdTextStyle"/> が唯一の正）。
-        /// 手で持っていた 8.5 倍は 2026-08-15 に捨てた — 経緯は <see cref="TitleNotice"/> の同名。
-        /// </summary>
-        private float TextScale =>
-            HmdTextStyle.MeshScale(HmdTextStyle.BodyDeg, Mathf.Max(distanceM, 0.5f), FontSize);
-
-        /// <summary>TMP の Overlay 版（<c>ZTest Always</c>）。<b>Always Included に入っている。</b></summary>
-        private const string OverlayShaderName = "TextMeshPro/Distance Field Overlay";
-
-        /// <summary>供給元が見つからないときの探し直しの間隔 (s)。毎フレーム探すと只では済まない。</summary>
-        private const float ResolveRetrySec = 1f;
-
+        [SerializeField, Min(.5f)] private float distanceM = 2.6f;
+        [SerializeField, Range(-20, 20)] private float pitchOffsetDeg = 2;
+        public const float PanelWidth = 2.42f, PanelHeight = 1.78f;
+        private readonly List<TMP_Text> _fields = new List<TMP_Text>();
+        private readonly List<bool[]> _visible = new List<bool[]>();
+        private readonly List<Material> _materials = new List<Material>();
         private TMP_Text? _text;
+        private Transform? _card;
         private HeadYawFollow? _follow;
-        private float _alpha;
-        private float _resolveWait;
-        private int _shownCount = -1;
-        // いま出ている文面の言語。⚠ **報告の数だけを見ていると、数が 0 のまま終わった体験者に
-        // 起動時の日本語が出る**（`Build` が Awake で組むので、そこでの言語は必ず既定）。
-        // 相方の注意書き（`TitleNotice`）は最初からこれを持っていて、片方だけ漏れていた。
-        private ShowLang _shownLang = ShowLanguage.Default;
-        // 打鍵の刻み。**画に何文字出したか**をここから決め、同じ数えから音を鳴らす。
-        private float _typeElapsed;
-        private int _charCount;
-        private int _lastShown;
-        // その字が絵を持つか（改行だけ false）。⚠ **全文が出ている一瞬にしか測れない** → SetBody。
-        private bool[]? _charVisible;
-
-        /// <summary>実体（TMP）を組めたか。<b>false なら一生出ない</b>（テレメトリが読む）。</summary>
-        public bool IsBuilt => _text != null;
-
-        /// <summary>いま実際に書いている不透明度（「段が進んだ」ではなく「画に出た」の側）。</summary>
-        public float AppliedAlpha => _text != null ? _alpha : -1f;
-
-        /// <summary>いま面に出している文字（テスト・診断用）。</summary>
-        public string CurrentBody => _text != null ? _text.text : "";
-
-        /// <summary>いま画に出ている文字数。<b>打鍵音はここから鳴る</b>ので、音の証拠でもある。</summary>
+        private Material? _plate;
+        private ShowRunDirector? _run;
+        private OutroResultMusic? _music;
+        private bool _presented;
+        private float _elapsed, _resolveWait, _alpha;
+        private int _lastTyped;
+        private int _typedAtStart;
+        private string _body = "";
+        public bool IsBuilt => _text != null && _plate != null;
+        public float AppliedAlpha => IsBuilt ? _alpha : -1;
+        public string CurrentBody => _body;
         public int VisibleChars { get; private set; }
-
-        /// <summary>
-        /// 打ち切るまでに鳴る打鍵の数（<b>改行を除いた字数</b>）。
-        /// 解析器が <see cref="TypedCount"/> と突き合わせる。
-        /// </summary>
         public int ReportChars { get; private set; }
-
-        /// <summary>鳴らした打鍵の累計。<b>出た文字数と一致するはず</b>（改行は除く）。</summary>
-        public int TypedCount => typeSfx != null ? typeSfx.PlayedCount : 0;
-
-        /// <summary>打鍵の音源を掴めているか。<b>false なら字は出るのに無音。</b></summary>
+        public int TypedCount => typeSfx != null ? Mathf.Max(0, typeSfx.PlayedCount - _typedAtStart) : 0;
         public bool TypeSfxBuilt => typeSfx != null && typeSfx.HasClips;
+        public int CapturedReports { get; private set; }
+        public int CapturedTotal { get; private set; }
+        public ShowEndingOutcome CapturedOutcome { get; private set; }
+        public IReadOnlyList<TMP_Text> Fields => _fields;
+        public bool MusicHasClip => _music != null && _music.HasClip;
+        public bool MusicPlaying => _music != null && _music.IsPlaying;
+        public float MusicVolume => _music != null ? _music.Volume : 0;
+        public float MusicSeconds => _music != null ? _music.PlaybackSeconds : 0;
 
         private void Awake()
         {
             ResolveRefs();
             Build();
-            SetAlpha(0f);
+            Capture(0, 0, ShowEndingOutcome.Interrupted, ShowLanguage.Current);
+            SetVisible(false);
         }
-
-        private void OnDisable()
-        {
-            _alpha = 0f;
-            // 打鍵も頭へ戻す（次に出るときは 1 字目から打ち直す）。
-            _typeElapsed = 0f;
-            _lastShown = 0;
-            VisibleChars = 0;
-            if (_text != null) _text.maxVisibleCharacters = 0;
-            SetAlpha(0f);
-            typeSfx?.StopAll();
-        }
-
         private void ResolveRefs()
         {
             if (outro == null) outro = FindObjectOfType<OutroDirector>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
-            // ⚠ 打鍵音は**この面が持つ**（`ShowSoundDirector` は毎フレーム外から状態を見る層で、
-            //    字の刻みちょうどには鳴らせない）。連絡の面・切替音と同じ構え。
+            if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
             if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
             if (typeSfx == null) typeSfx = gameObject.AddComponent<TypeAudioCue>();
+            if (_music == null) _music = GetComponent<OutroResultMusic>();
+            if (_music == null) _music = gameObject.AddComponent<OutroResultMusic>();
         }
-
         private void Build()
         {
-            // ⚠ 日本語が出せないなら何も出さない。豆腐（□）が 4 行並ぶ方が、無いより悪い。
-            var jp = JapaneseHudFont.TryGet();
-            if (jp == null)
+            if (_card != null) return;
+            var font = Resources.Load<TMP_FontAsset>("Fonts/OutroReport SDF") ?? JapaneseHudFont.TryGet();
+            var shader = Resources.Load<Shader>("Shaders/OutroReportPlate");
+            if (font == null || shader == null)
             {
-                Debug.LogWarning("[OutroReport] 日本語フォントを解決できないので報告は出しません");
+                Debug.LogError("[OutroReport] 結果画面のフォントまたは材質がありません");
                 return;
             }
-
-            GameObject? go = null;
-            try
-            {
-                // ⚠⚠ **頭のヨーだけを追う根の下へ置く**（2026-08-20 ユーザー赤入れ・
-                //    注意書きと同じ指摘）。head-lock のままだと上下に振っても面が眼から離れず、
-                //    4 行を読むあいだずっと目の前に貼り付く。題字と同じ `HeadYawFollow` に乗せる。
-                _follow = HeadYawFollow.Attach(transform, "ReportYawFollow");
-                go = new GameObject("Label");
-                go.transform.SetParent(_follow.transform, worldPositionStays: false);
-                var tmp = go.AddComponent<TextMeshPro>();
-                tmp.font = jp;
-                // ⚠⚠ **揃えは左**（`canon/LEDGER.md` 0063）。塊を中央へ運ぶのは SetBody。
-                //    縦も**上寄せ**にする（`Left` ＝ 縦中央 は使えない）— 1 字ずつ出すと、
-                //    行が増えた瞬間に TMP が「見えている行数」で縦中央を取り直し、
-                //    打ち終わった行がひょいと上へ跳ねる（連絡の面で実測 38px）。
-                tmp.alignment = TextAlignmentOptions.TopLeft;
-                tmp.fontSize = FontSize;
-                tmp.enableWordWrapping = true;
-                tmp.richText = false;
-                // 注意書きと同じ抑えた白。純白だと黒の中で浮いて掲示物に見える。
-                tmp.color = HmdTextStyle.Ink;
-
-                var rt = (RectTransform)go.transform;
-                // ⚠ 折り返し幅も scale で割る（固定値にすると字を直したとき枠だけ取り残される）。
-                float scale = TextScale;
-                rt.sizeDelta = new Vector2(TextWidthM / scale, TextHeightM / scale);
-                go.transform.localScale = Vector3.one * scale;
-                go.transform.localRotation = Quaternion.identity;
-
-                UseOverlayShader(tmp);
-                tmp.fontMaterial.renderQueue = RenderQueue;
-                _text = tmp;
-                _shownCount = 0;
-                SetBody(0);
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"[OutroReport] 実体を組めません — 報告は出しません: {e.Message}");
-                if (go != null) Destroy(go);
-                if (_follow != null) Destroy(_follow.gameObject);
-                _follow = null;
-                _text = null;
-            }
+            _follow = HeadYawFollow.Attach(transform, "ReportYawFollow");
+            _card = new GameObject("ObservationRecord").transform;
+            _card.SetParent(_follow.transform, false);
+            float rad = pitchOffsetDeg * Mathf.Deg2Rad;
+            _card.localPosition = new Vector3(0, -Mathf.Sin(rad) * distanceM, Mathf.Cos(rad) * distanceM);
+            var plateGo = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            plateGo.name = "RecordPlate";
+            plateGo.transform.SetParent(_card, false);
+            plateGo.transform.localScale = new Vector3(PanelWidth, PanelHeight, 1);
+            var collider = plateGo.GetComponent<Collider>();
+            if (Application.isPlaying) Destroy(collider); else DestroyImmediate(collider);
+            _plate = new Material(shader) { name = "Observation record", renderQueue = 4998 };
+            plateGo.GetComponent<MeshRenderer>().sharedMaterial = _plate;
+            AddField("Archive", font, .73f, .11f, HmdTextStyle.MinorDeg);
+            AddField("Outcome", font, .54f, .18f, 2.8f);
+            _text = AddField("Message", font, .28f, .22f, HmdTextStyle.MinorDeg);
+            AddField("MeasureLabel", font, -.065f, .12f, HmdTextStyle.MinorDeg);
+            AddField("Measure", font, -.19f, .24f, 3.8f);
+            AddField("MeasureNote", font, -.50f, .13f, HmdTextStyle.MinorDeg);
+            AddField("Exit", font, -.72f, .14f, HmdTextStyle.MinorDeg);
         }
-
-        /// <summary>
-        /// 面を置く先（頭の正面から <see cref="pitchOffsetDeg"/> だけ下げた
-        /// <see cref="distanceM"/> の点）。<b>字の塊の重心をここへ運ぶ</b>ので、
-        /// 実際の <c>localPosition</c> は <see cref="SetBody"/> がここから差し引いて決める。
-        /// </summary>
-        private Vector3 BasePosition
+        private TMP_Text AddField(string name, TMP_FontAsset font, float y, float h, float deg)
         {
-            get
-            {
-                float rad = pitchOffsetDeg * Mathf.Deg2Rad;
-                float d = Mathf.Max(distanceM, 0.5f);
-                return new Vector3(0f, -Mathf.Sin(rad) * d, Mathf.Cos(rad) * d);
-            }
+            var go = new GameObject(name);
+            go.transform.SetParent(_card, false);
+            var tmp = go.AddComponent<TextMeshPro>();
+            tmp.font = font;
+            tmp.fontSize = .07f;
+            tmp.alignment = TextAlignmentOptions.TopLeft;
+            tmp.enableWordWrapping = true;
+            tmp.richText = false;
+            tmp.color = HmdTextStyle.Ink;
+            float scale = HmdTextStyle.MeshScale(deg, distanceM, .07f);
+            var rt = (RectTransform)go.transform;
+            rt.pivot = new Vector2(0, 1);
+            rt.sizeDelta = new Vector2(2.04f / scale, h / scale);
+            go.transform.localScale = Vector3.one * scale;
+            go.transform.localPosition = new Vector3(-.99f, y, -.005f);
+            var mat = tmp.fontMaterial;
+            mat.shader = Shader.Find("TextMeshPro/Distance Field Overlay");
+            mat.renderQueue = 5000;
+            _materials.Add(mat);
+            _fields.Add(tmp);
+            return tmp;
         }
-
-        /// <summary>
-        /// 文面を差し替えて、1 字ずつ出すための下ごしらえをする。
-        /// <b>数が変わったときだけ</b>走る（毎フレームではない）。
-        ///
-        /// ⚠ 測る前に<b>全文を見えるところまで戻す</b> — 直前の可視数が残っていると
-        /// <see cref="TMP_Text.textBounds"/> が<b>その一部だけ</b>の重心を返して面から外れる。
-        /// ⚠ <b>x も y も中央へ運ぶ。</b> 揃えが左でも、字の塊そのものは視界の中央に居るべき
-        /// （左寄せの意図は行頭が揃うことで、塊が左へ寄ることではない）。
-        /// </summary>
-        private void SetBody(int markCount)
+        private void Capture(int reports, int total, ShowEndingOutcome outcome, ShowLang lang)
         {
-            TMP_Text? tmp = _text;
-            if (tmp == null) return;
-            string body = OutroReportText.Compose(markCount);
-
-            // ⚠ 測るあいだだけ実体を起こす。**消えている面の <c>textBounds</c> は信用できない**
-            //   （この面は出ていない間ずっと非アクティブ ＝ 数が変わるのは必ずその最中）。
-            bool wasActive = tmp.gameObject.activeSelf;
-            if (!wasActive) tmp.gameObject.SetActive(true);
-
-            tmp.maxVisibleCharacters = int.MaxValue;
-            if (tmp.text != body) tmp.SetText(body);
-            // ⚠ **2 回呼ぶ。** 1 回目でまだ焼かれていないグリフの焼き付けを要求し、2 回目で
-            //   焼けたものを含めて組み直す。1 回だと <c>textBounds</c> が足りない字を欠いたまま
-            //   返り、**塊を運ぶ先が静かにずれる**（`HmdTextAudit.Layout` と同じ理由）。
-            tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
-            tmp.ForceMeshUpdate(ignoreActiveState: true, forceTextReparsing: true);
-
-            float scale = TextScale;
-            Bounds ink = tmp.textBounds;
-            tmp.transform.localPosition = BasePosition
-                                        + new Vector3(-ink.center.x * scale, -ink.center.y * scale, 0f);
-
-            // ⚠ ここは**全文が出ている状態**なので、`isVisible` が「その字が絵を持つか」を表す。
-            //    ここでしか測れない（下で 0 に戻すと、以後は全部 false になる）。
-            var info = tmp.textInfo;
-            _charCount = info != null ? info.characterCount : 0;
-            _charVisible = new bool[_charCount];
-            int visible = 0;
-            for (int i = 0; i < _charCount; i++)
+            CapturedReports = Mathf.Max(0, reports);
+            CapturedTotal = Mathf.Max(0, total);
+            CapturedOutcome = outcome;
+            _body = OutroReportText.Compose(reports, total, outcome, lang);
+            string[] texts = { OutroReportText.Header(lang), OutroReportText.Title(outcome, lang),
+                OutroReportText.Body(outcome, lang), OutroReportText.CountLabelOf(lang),
+                OutroReportText.Ratio(reports, total), OutroReportText.Note(lang), OutroReportText.Footer(lang) };
+            _visible.Clear();
+            ReportChars = 0;
+            bool active = _card != null && _card.gameObject.activeSelf;
+            if (_card != null) _card.gameObject.SetActive(true);
+            for (int i = 0; i < _fields.Count; i++)
             {
-                _charVisible[i] = info!.characterInfo[i].isVisible;
-                if (_charVisible[i]) visible++;
+                var tmp = _fields[i];
+                tmp.SetText(texts[i]);
+                tmp.maxVisibleCharacters = int.MaxValue;
+                tmp.ForceMeshUpdate(true, true);
+                tmp.ForceMeshUpdate(true, true);
+                var info = tmp.textInfo;
+                var visible = new bool[info.characterCount];
+                for (int c = 0; c < visible.Length; c++)
+                {
+                    visible[c] = info.characterInfo[c].isVisible;
+                    if (visible[c]) ReportChars++;
+                }
+                _visible.Add(visible);
+                tmp.maxVisibleCharacters = 0;
+                tmp.color = i == 1 && outcome == ShowEndingOutcome.Trapped ? HmdTextStyle.Alert : HmdTextStyle.Ink;
             }
-            ReportChars = visible;
-
-            tmp.maxVisibleCharacters = 0;
-            // 文面を差し替えたら**打鍵の数えも 0 に戻す**（戻さないと、短い文面では 1 発も鳴らず、
-            // 長い文面では途中から鳴り始める）。
-            _lastShown = 0;
-            VisibleChars = 0;
-            _shownCount = markCount;
-            _shownLang = ShowLanguage.Current;
-
-            if (!wasActive) tmp.gameObject.SetActive(false);
+            if (_card != null) _card.gameObject.SetActive(active);
+            if (_plate != null) _plate.SetFloat("_Failed", outcome == ShowEndingOutcome.Trapped ? 1 : 0);
+            _elapsed = 0;
+            _lastTyped = VisibleChars = 0;
+            _typedAtStart = typeSfx != null ? typeSfx.PlayedCount : 0;
         }
-
-        /// <summary>
-        /// その字は絵を持つ字か（<see cref="SetBody"/> が 1 度だけ測る）。
-        /// <b>改行では打鍵を鳴らさない</b> — <c>maxVisibleCharacters</c> は改行も 1 文字として
-        /// 数えるので、鳴らすと「字が出ていないのに 1 発鳴る」が起きる（報告は改行を 4 つ持つ）。
-        ///
-        /// ⚠⚠ <b>毎フレーム <c>textInfo.characterInfo[i].isVisible</c> を見てはいけない。</b>
-        /// あれは<b>いまの <c>maxVisibleCharacters</c> の下で描かれたか</b>を表すので、
-        /// たったいま出た字は<b>必ず false</b>（連絡の面で踏んで、打鍵が 1 発しか鳴らなかった）。
-        /// ⚠ 分からないときは<b>鳴らす側へ倒す</b>（黙る方が気づけない）。
-        /// </summary>
-        private bool IsVisibleChar(int i)
-        {
-            if (_charVisible == null || i < 0 || i >= _charVisible.Length) return true;
-            return _charVisible[i];
-        }
-
-        /// <summary>
-        /// TMP の <b>Overlay 版</b>（<c>ZTest Always</c>）へ差し替える。既定の
-        /// <c>TextMeshPro/Distance Field</c> は ZTest をグローバル（<c>unity_GUIZTestMode</c>）で引くので
-        /// マテリアルからは上書きできない。見つからないときは<b>差し替えずに続ける</b>
-        /// （深度に負けて見えないかもしれないが、マテリアルを壊して字が化けるよりはよい）。
-        /// </summary>
-        private static void UseOverlayShader(TMP_Text tmp)
-        {
-            var overlay = Shader.Find(OverlayShaderName);
-            if (overlay == null)
-            {
-                Debug.LogWarning($"[OutroReport] {OverlayShaderName} が見つかりません。" +
-                                 "報告が本編スクリーンの深度に隠れる可能性があります");
-                return;
-            }
-            tmp.fontMaterial.shader = overlay;
-        }
-
         private void LateUpdate()
         {
-            if (_text == null) return;
-
-            if (outro == null || showControl == null)
-            {
-                _resolveWait += Time.unscaledDeltaTime;
-                if (_resolveWait >= ResolveRetrySec)
-                {
-                    _resolveWait = 0f;
-                    ResolveRefs();
-                }
-            }
-
-            // 出す / 消すの判断は持たない（終幕の段が「出す」の門になる）。
-            bool wanted = outro != null && outro.ReportAlpha > 0f;
-
-            // ⚠ 文言の更新は**出る直前まで**。出ている最中に数が変わると、体験者の目の前で
-            //    数字が書き換わる（報告は体験の終わりに確定した値であってライブの表示ではない）。
+            if (!IsBuilt) return;
+            _resolveWait += Time.unscaledDeltaTime;
+            if (_resolveWait >= 1) { _resolveWait = 0; ResolveRefs(); }
+            bool wanted = outro != null && outro.ReportAlpha > 0;
+            _music?.SetPresented(wanted, Time.unscaledDeltaTime);
             if (!wanted)
             {
-                // ⚠ 出すのは**報告した異変の数**（同じ演出は何度押しても 1・`canon/LEDGER.md` 0234）。
-                //   押した回数（`VisitorMarkCount`）ではない — 2026-09-19 までは押した回数をそのまま出していた。
-                int n = showControl != null ? showControl.ReportedAnomalyCount : 0;
-                // ⚠ 言語も見る。報告を 1 度も押さなかった体験者は数が 0 のまま終わるので、
-                //   数だけを見ていると Awake で組んだ日本語がそのまま出る（2026-09-04）。
-                if (n != _shownCount || _shownLang != ShowLanguage.Current) SetBody(n);
-                // 次のランのために打鍵を頭へ戻す（前の体験者の続きから打ち始めない）。
-                if (_typeElapsed > 0f)
-                {
-                    _typeElapsed = 0f;
-                    _lastShown = 0;
-                    VisibleChars = 0;
-                    _text.maxVisibleCharacters = 0;
-                    typeSfx?.StopAll();
-                }
-                _alpha = 0f;
-                SetAlpha(0f);
-                // ⚠ 出ていないあいだは頭の正面へ置き直し続ける。1 字目が打たれた瞬間に
-                //   前の向きから緩慢に寄ってくると、報告が視界の外から流れ込む。
+                _presented = false;
+                _elapsed = 0;
+                _lastTyped = VisibleChars = 0;
+                SetVisible(false);
+                typeSfx?.StopAll();
                 _follow?.SnapToHead();
                 return;
             }
-
-            // ⚠ **不透明度はフェードしない。** 打鍵そのものが出現の演出なので、重ねると
-            //    頭の数文字だけ薄いという半端な絵になる（1 字目が打たれるまで画には何も無い）。
-            _alpha = 1f;
-            _typeElapsed += Time.unscaledDeltaTime;
-
-            // 1 字ずつ出す。⚠ **切り上げ**（0 より大きければ 1 字目は出ている）。
-            int shown = _charCount <= 0
-                      ? 0
-                      : Mathf.Clamp(
-                            Mathf.CeilToInt(_typeElapsed
-                                            * CommsPanelLogic.CharsPerSecFor(ShowLanguage.Current)),
-                            0, _charCount);
-            if (_text.maxVisibleCharacters != shown) _text.maxVisibleCharacters = shown;
-
-            // ⚠⚠ **打鍵音は、字を画へ書いているこの行から鳴らす**（`canon/LEDGER.md` 0063）。
-            //    絵と音が同じ数えから出るので、ずれようがない。
-            //    ⚠ **増えた字数ぶん鳴らさない。** 1 フレームで 2 字進んだら（コマ落ち）
-            //      同じ DSP 時刻に 2 発重なって 1 つの大きな音に潰れる。1 発だけ鳴らす。
-            //    ⚠⚠ **鳴らす場所も同じ行が決める**（2026-09-03・`canon/LEDGER.md` 0130）。
-            //      打鍵は「スクリーン関係の音」なので、字が出ている面そのものから鳴る。
-            //      渡すのは文字の Transform（`_follow` の下に居る）で、
-            //      この部品が乗っている GameObject ではない（あちらは動かない ＝ 足元から鳴る）。
-            if (shown > _lastShown && IsVisibleChar(shown - 1))
-                typeSfx?.Play(_text.transform.position);
-            _lastShown = shown;
-            VisibleChars = shown;
-
-            SetAlpha(_alpha);
+            if (!_presented)
+            {
+                Capture(showControl != null ? showControl.VisitorMarkCount : 0,
+                    showControl != null ? showControl.TotalAnomalyCount : 0,
+                    _run != null ? _run.EndingOutcome : ShowEndingOutcome.Interrupted, ShowLanguage.Current);
+                _presented = true;
+            }
+            SetVisible(true);
+            _elapsed += Time.unscaledDeltaTime;
+            Reveal(Mathf.CeilToInt(_elapsed * CommsPanelLogic.CharsPerSecFor(ShowLanguage.Current)), true);
         }
-
-        private void SetAlpha(float a)
+        private void Reveal(int budget, bool sound)
         {
-            if (_text == null) return;
-            _text.alpha = a;
-            // 完全に消えている間は描画そのものを止める（体験中ずっと 0 の文字を描く理由が無い）。
-            bool on = a > 0.002f && VisibleChars > 0;
-            if (_text.gameObject.activeSelf != on) _text.gameObject.SetActive(on);
+            int seen = 0;
+            for (int f = 0; f < _fields.Count; f++)
+            {
+                var flags = _visible[f];
+                int n = Mathf.Clamp(budget, 0, flags.Length);
+                _fields[f].maxVisibleCharacters = n;
+                for (int c = 0; c < n; c++) if (flags[c]) seen++;
+                budget -= flags.Length;
+            }
+            if (sound && seen > _lastTyped && _text != null) typeSfx?.Play(_text.transform.position);
+            _lastTyped = VisibleChars = seen;
+        }
+        private void SetVisible(bool visible)
+        {
+            _alpha = visible ? 1 : 0;
+            if (_card != null && _card.gameObject.activeSelf != visible) _card.gameObject.SetActive(visible);
+        }
+        public void PresentPreview(int reports, int total, ShowEndingOutcome outcome, ShowLang lang, int characters = int.MaxValue)
+        {
+            Build();
+            SetVisible(true);
+            Capture(reports, total, outcome, lang);
+            Reveal(characters, false);
+        }
+        private void OnDisable()
+        {
+            _presented = false;
+            SetVisible(false);
+            _music?.SetPresented(false, 0);
+            typeSfx?.StopAll();
+        }
+        private void OnDestroy()
+        {
+            foreach (var mat in _materials)
+                if (Application.isPlaying) Destroy(mat); else DestroyImmediate(mat);
+            if (_plate != null)
+                if (Application.isPlaying) Destroy(_plate); else DestroyImmediate(_plate);
         }
     }
 }

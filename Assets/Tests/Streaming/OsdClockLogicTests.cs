@@ -167,7 +167,7 @@ namespace FixedCamVr.Streaming.Tests
         // ---- 周回（canon/LEDGER.md 0167）----
 
         /// <summary>
-        /// ⚠ <b>帰りの区間は「最後」</b>。ユーザー逐語「4-Aは最後とかの表示で。
+        /// ⚠ 帰りの区間は「終了」。以前のユーザー逐語「4-Aは最後とかの表示で。
         /// 4周目と書くと混乱する」— 待機者の資料に「3 周します」と書いてある（0165）。
         /// </summary>
         [Test]
@@ -176,8 +176,8 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual("1周目", OsdClockLogic.LapLabel(1, 3));
             Assert.AreEqual("2周目", OsdClockLogic.LapLabel(2, 3));
             Assert.AreEqual("3周目", OsdClockLogic.LapLabel(3, 3));
-            Assert.AreEqual("最後", OsdClockLogic.LapLabel(4, 3), "帰りの A は「最後」");
-            Assert.AreEqual("最後", OsdClockLogic.LapLabel(9, 3));
+            Assert.AreEqual("終了", OsdClockLogic.LapLabel(4, 3), "帰りの A は「終了」");
+            Assert.AreEqual("終了", OsdClockLogic.LapLabel(9, 3));
         }
 
         /// <summary>区間がまだ確定していなければ何も出さない（導入のあいだ）。</summary>
@@ -193,7 +193,7 @@ namespace FixedCamVr.Streaming.Tests
         public void LapLabel_FallsBackToTheDefaultTotal()
         {
             Assert.AreEqual("3周目", OsdClockLogic.LapLabel(3, 0));
-            Assert.AreEqual("最後", OsdClockLogic.LapLabel(4, 0));
+            Assert.AreEqual("終了", OsdClockLogic.LapLabel(4, 0));
         }
 
         /// <summary>全角は版の「その字が焼かれている 2 セル」を指す。</summary>
@@ -230,15 +230,15 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(OsdClockLogic.WideCellIndex('目') + 1, buf[25]);
         }
 
-        /// <summary>短い語（「最後」＝ 4 セル）の右は空白で埋まる（欄の幅は変わらない）。</summary>
+        /// <summary>短い語（「終了」＝ 4 セル）の右は空白で埋まる（欄の幅は変わらない）。</summary>
         [Test]
         public void FillCells_PadsTheShorterLabel()
         {
             var buf = new int[OsdClockLogic.CellCount];
             Assert.IsTrue(OsdClockLogic.FillCells(new DateTime(2026, 9, 6, 14, 23, 45),
                                                   lap: 4, totalLaps: 3, otherworld: false, buf));
-            Assert.AreEqual(OsdClockLogic.WideCellIndex('最'), buf[21]);
-            Assert.AreEqual(OsdClockLogic.WideCellIndex('後'), buf[23]);
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('終'), buf[21]);
+            Assert.AreEqual(OsdClockLogic.WideCellIndex('了'), buf[23]);
             Assert.AreEqual(OsdClockLogic.BlankGlyph, buf[25]);
         }
 
@@ -322,9 +322,9 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual("LAP 1", OsdClockLogic.LapLabel(1, 3, ShowLang.En));
             Assert.AreEqual("TOUR 1", OsdClockLogic.LapLabel(1, 3, ShowLang.Fr));
             Assert.AreEqual("1周目", OsdClockLogic.LapLabel(1, 3, ShowLang.Ja));
-            Assert.AreEqual("LAST", OsdClockLogic.LapLabel(4, 3, ShowLang.En));
+            Assert.AreEqual("END", OsdClockLogic.LapLabel(4, 3, ShowLang.En));
             Assert.AreEqual("FIN", OsdClockLogic.LapLabel(4, 3, ShowLang.Fr));
-            Assert.AreEqual("最後", OsdClockLogic.LapLabel(4, 3, ShowLang.Ja));
+            Assert.AreEqual("終了", OsdClockLogic.LapLabel(4, 3, ShowLang.Ja));
         }
 
         /// <summary>

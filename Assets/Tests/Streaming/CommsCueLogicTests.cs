@@ -51,7 +51,7 @@ namespace FixedCamVr.Streaming.Tests
 
         /// <summary>
         /// <b>締めのカットに入ってからの時計を進める</b>（2026-09-06・0178）。報告待ちが立っているかは見ない。
-        /// ⚠ <b>既定は「締めの線が無い台本」</b>（<see cref="LineDefined"/> = false）＝ ③a は時計の退避路で出る。
+        /// ⚠ 既定は締めの線が無い台本（<see cref="LineDefined"/> = false）。時計はどちらでも有効。
         /// 線がある台本（実機の既定・0233）は <see cref="LineDefined"/> を立て、<see cref="Crossed"/> で踏む。
         /// </summary>
         private sealed class Closing
@@ -248,7 +248,7 @@ namespace FixedCamVr.Streaming.Tests
             var c = new Closing();
             CollectionAssert.IsEmpty(
                 AdvanceClosing(l, c, CommsCueLogic.HaltAfterClosingSec - 0.2f, read: true),
-                "5 秒より前に催促した");
+                "3 秒より前に催促した");
             // ⚠ `read: true` を続けると③b もすぐ続く（実機は③a を読ませているあいだ false）。
             CollectionAssert.AreEqual(new[] { CommsNotice.Halt, CommsNotice.Prompt },
                                       AdvanceClosing(l, c, 0.4f, read: true));
@@ -269,6 +269,19 @@ namespace FixedCamVr.Streaming.Tests
             var c = new Closing();
             var seen = AdvanceClosing(l, c, CommsCueLogic.HaltAfterClosingSec + 0.2f, read: true);
             CollectionAssert.AreEqual(new[] { CommsNotice.Halt, CommsNotice.Prompt }, seen);
+        }
+
+        [Test]
+        public void TheStopCall_DoesNotWaitForTheClosingTakeToStart()
+        {
+            var l = new CommsCueLogic();
+            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
+            Advance(l, 0.5f, read: true);
+
+            // 締めの take が前の演出に塞がれていても、最終 A の確定時計は進む。
+            Assert.AreEqual(CommsNotice.Halt,
+                            l.Tick(Run(closing: CommsCueLogic.HaltAfterClosingSec,
+                                       read: true, lineDefined: true)));
         }
 
         /// <summary>
@@ -353,27 +366,23 @@ namespace FixedCamVr.Streaming.Tests
         /// ⚠⚠ <b>③a「止まってください！」は締めの線（3 周目 A の凍結点）を踏んだ瞬間に出る</b>
         /// （2026-09-19・<c>canon/LEDGER.md</c> 0233・ユーザー指定
         /// 「時間指定で 4s ではなく、場所指定にし、その場所を、左右反転の演出のときのフリーズされる位置に」）。
-        /// 線がある台本では<b>時計は見ない</b> — 5 秒を過ぎても踏まなければ出ないし、踏めば 5 秒前でも出る。
+        /// 線がある台本でも時計は有効。踏めば 3 秒前でも出る。
         /// </summary>
         [Test]
-        public void TheStopCall_FiresWhereTheMirrorFroze_NotOnTheClock()
+        public void TheStopCall_UsesTheClock_WhenTheDefinedLineIsNotCrossed()
         {
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);   // ①
             Advance(l, 0.5f, read: true);                     // ①b
 
             var c = new Closing { LineDefined = true };
-            CollectionAssert.IsEmpty(
-                AdvanceClosing(l, c, CommsCueLogic.HaltAfterClosingSec + 6f, read: true),
-                "線を踏んでいないのに時計で催促した（0233 で時計は退避路になった）");
-
-            c.Crossed = true;
             CollectionAssert.AreEqual(new[] { CommsNotice.Halt },
-                                      AdvanceClosing(l, c, Dt * 1.5f, read: true),
-                                      "線を踏んだ瞬間に③a が出ていない");
+                                      AdvanceClosing(l, c, CommsCueLogic.HaltAfterClosingSec + 0.2f,
+                                                     read: true, stopAtFirst: true),
+                                      "線を踏まなくても 3 秒で③a が出る");
         }
 
-        /// <summary>線を早く踏めば、時計の 5 秒より前でも出る（線が引き金・時計ではない）。</summary>
+        /// <summary>線を早く踏めば、時計の 3 秒より前でも出る。</summary>
         [Test]
         public void TheStopCall_ComesEarly_WhenTheLineIsCrossedEarly()
         {
@@ -419,8 +428,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// 線が無い台本（<c>closingLineDefined</c> = false）では時計（5 秒・0178）へ倒れる。
-        /// 線が解決できないことを黙って③の欠落にしない — 上の従来テスト群がこの退避路を守っている。
+        /// 線が無い台本（<c>closingLineDefined</c> = false）でも時計（3 秒）で出る。
         /// </summary>
         [Test]
         public void WithoutAClosingLine_TheClock_StillCallsStop()
@@ -429,8 +437,7 @@ namespace FixedCamVr.Streaming.Tests
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
             Advance(l, 0.5f, read: true);
 
-            // 線が無い台本で「踏んだ」が立つことは無いが、立っても時計を待つ（引き金は線ではない）。
-            var c = new Closing { LineDefined = false, Crossed = true };
+            var c = new Closing { LineDefined = false };
             CollectionAssert.IsEmpty(
                 AdvanceClosing(l, c, CommsCueLogic.HaltAfterClosingSec - 0.2f, read: true));
             CollectionAssert.AreEqual(new[] { CommsNotice.Halt, CommsNotice.Prompt },

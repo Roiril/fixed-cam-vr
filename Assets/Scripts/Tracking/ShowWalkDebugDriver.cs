@@ -138,7 +138,14 @@ namespace FixedCamVr.Tracking
         private ShowRunDirector? _run;
         private TimelineDirector? _timeline;
 
-        private void Start() => StartCoroutine(DriveRoutine());
+        private bool _skipReport;
+
+        private void Start()
+        {
+            _skipReport = ExtraPresent("xpnomark");
+            if (_skipReport) Debug.Log("[XPWalk] 未報告の終幕を検証する（xpnomark）");
+            StartCoroutine(DriveRoutine());
+        }
 
         private IEnumerator DriveRoutine()
         {
@@ -388,7 +395,7 @@ namespace FixedCamVr.Tracking
             while (t < holdSec)
             {
                 t += Time.deltaTime;
-                if (!_reported && _show != null && _timeline != null && _timeline.IsWaitingForVisitorMark)
+                if (!_skipReport && !_reported && _show != null && _timeline != null && _timeline.IsWaitingForVisitorMark)
                 {
                     _waitedSec += Time.deltaTime;
                     if (_waitedSec >= ReportHesitateSec)

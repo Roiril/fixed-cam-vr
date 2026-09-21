@@ -84,8 +84,9 @@ namespace FixedCamVr.Streaming.EditorTools
                           DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_text",
                           TierDeg = HmdTextStyle.BodyDeg * TitleNotice.Scale },
             new Surface { Name = "終幕の報告", Type = typeof(OutroReport),
-                          DistanceField = "distanceM", BuildsItsOwnText = true,
-                          Probe = OutroReportText.Compose(3) },
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_text",
+                          TierDeg = HmdTextStyle.MinorDeg,
+                          Probe = OutroReportText.Body(ShowEndingOutcome.Trapped, ShowLanguage.Current) },
             // ⚠ この面は TMP を **2 つ**持つ（上段 = 文面 / 下段 = 報告の押し方）。
             //    フィールドを名指ししないと、先に組んだ方が測られて「狙いと違う」と誤って落ちる。
             // ⚠⚠ 狙い値に **`CommsPanel.Scale`** を掛けてある（2026-08-19・`canon/LEDGER.md` 0091 で

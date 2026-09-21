@@ -63,6 +63,20 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
+        public void CameraPresence_DoesNotReuseLastZone_AndIncludesEveryRectangle()
+        {
+            var a = MakeZone("A1", Vector3.zero, Vector3.one, 0, 0);
+            var a2 = MakeZone("A2", new Vector3(2, 0, 0), Vector3.one, 0, 0);
+            var tracker = MakeTracker(new[] { a, a2 }, current: a);
+            Assert.AreEqual(true, tracker.CameraPresenceAt(0, Vector3.zero));
+            Assert.AreEqual(true, tracker.CameraPresenceAt(0, new Vector3(2.5f, 0, 0)));
+            Assert.AreEqual(false, tracker.CameraPresenceAt(0, new Vector3(10, 0, 0)));
+            Assert.AreSame(a, InvokePick(tracker, new Vector3(10, 0, 0)), "映像の最後の区間保持は変えない");
+            Assert.IsNull(tracker.CameraPresenceAt(2, Vector3.zero));
+            Assert.IsNull(tracker.CameraPresenceAt(0, new Vector3(float.NaN, 0, 0)));
+        }
+
+        [Test]
         public void Pick_HysteresisBoundary_KeepsCurrentWhileWithinShrunkenAabb()
         {
             // halfExtent.x = 1.0, shrink = 0.15 → 縮小後 hx = 0.85

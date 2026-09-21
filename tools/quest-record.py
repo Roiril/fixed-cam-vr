@@ -426,7 +426,7 @@ def clock_skew(serial: str) -> float | None:
 
 
 def record(serial, secs, walk, size=None, warmup=5.0, with_log=True, relief=False,
-           status_probe=False):
+           status_probe=False, no_report=False):
     """アプリを起動してから録る。起動と録画開始の**壁時計**を返す。
 
     **⚠ 順序を逆にしてはいけない。** screenrecord を先に始めて VR アプリを起動すると、
@@ -453,6 +453,8 @@ def record(serial, secs, walk, size=None, warmup=5.0, with_log=True, relief=Fals
     start = ["shell", "am", "start"]
     if walk:
         start += ["-e", "xpwalk", "1"]
+    if walk and no_report:
+        start += ["-e", "xpnomark", "1"]
     # ⚠⚠ ホラー軽減モードは**左コントローラの長押しでしか入れない**ので、
     #    素の走行では音の経路が 1 度も通らない（`canon/LEDGER.md` 0154）。
     #    ⚠ 校正は両側を流す — 付けない走行と付けた走行を 1 本ずつ。
@@ -551,6 +553,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sec", type=int, default=45, help="録る秒数（screenrecord の上限は 180）")
     ap.add_argument("--walk", action="store_true", help="自動走行させる（導入が自動で始まる）")
+    ap.add_argument("--no-report", action="store_true", help="自動走行で報告せずに終幕を待つ（--walk と併用）")
     ap.add_argument("--relief", action="store_true",
                     help="ホラー軽減モードで走らせる（既存の音が半分・陽気な曲。--walk と併用）")
     ap.add_argument("--status-probe", action="store_true",
@@ -591,7 +594,7 @@ def main():
 
     app_started, rec_started = record(serial, args.sec, args.walk, args.size,
                                       with_log=not args.no_log, relief=args.relief,
-                                      status_probe=args.status_probe)
+                                      status_probe=args.status_probe, no_report=args.no_report)
 
     # ログはバッファに溜まる一方なので、重い pull より先に落とす。
     dump_path = os.path.join(OUTDIR, f"{stamp}_logcat.log")
@@ -629,6 +632,7 @@ def main():
     meta = {
         "serial": serial,
         "walk": bool(args.walk),
+        "no_report": bool(args.no_report),
         "sec": args.sec,
         "app_started_iso": app_started.isoformat(timespec="milliseconds"),
         "record_started_iso": rec_started.isoformat(timespec="milliseconds"),

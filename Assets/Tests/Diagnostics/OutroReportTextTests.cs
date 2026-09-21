@@ -1,159 +1,108 @@
-﻿using FixedCamVr.Diagnostics;
+using FixedCamVr.Diagnostics;
 using FixedCamVr.Streaming;
 using NUnit.Framework;
 
 namespace FixedCamVr.Tests.Diagnostics
 {
-    /// <summary>
-    /// 終幕の報告の文言を固定する（<c>canon/LEDGER.md</c> 0048・ユーザーが書いた 4 行）。
-    ///
-    /// ⚠ 文言を変えたら <c>.\tools\unity.ps1 menu hud-font</c> を再実行する
-    /// （静的ベイクなので、ここに無い文字は実機で豆腐になる）。
-    /// </summary>
+    /// <summary>終幕の観測記録。結果と報告回数は別々の入力として扱う。</summary>
     public sealed class OutroReportTextTests
     {
-        /// <summary>
-        /// ⚠ <c>Compose(int)</c> は<b>体験者が選んだ言語</b>を読む（2026-09-03）。
-        /// 前のテストが回した言語が残っていると、下の逐語の突き合わせが理由なく落ちる。
-        /// </summary>
+        private static readonly ShowLang[] Languages = { ShowLang.Ja, ShowLang.En, ShowLang.Fr };
+        private static readonly ShowEndingOutcome[] Outcomes =
+        {
+            ShowEndingOutcome.Released, ShowEndingOutcome.Trapped, ShowEndingOutcome.Interrupted
+        };
+
         [SetUp]
         public void ResetLanguage() => ShowLanguage.Reset();
 
-        /// <summary>
-        /// <b>どの言語でも構成は 5 行</b>（数の行 ＋ 空行 ＋ 結び 3 行）。
-        /// ⚠ 行を足しも減らしもしない — 構成は <c>canon/LEDGER.md</c> 0048 が書いたもので、
-        /// 訳すのは中身だけ。1 行減らすと、その言語の体験者だけ別の終わり方になる。
-        /// </summary>
         [Test]
-        public void EveryLanguage_KeepsTheFiveLineShape()
+        public void EveryLanguage_HasDistinctOutcomeTextAndRemovalInstruction()
         {
-            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (ShowLang lang in Languages)
             {
-                string[] lines = OutroReportText.Compose(3, lang).Split('\n');
-                Assert.AreEqual(5, lines.Length, $"{lang}: 数の行 + 空行 + 結び 3 行");
-                Assert.AreEqual("", lines[1], $"{lang}: 2 行目は空行");
-                foreach (int i in new[] { 0, 2, 3, 4 })
-                    Assert.That(lines[i], Is.Not.Empty, $"{lang}: {i} 行目が空");
-                StringAssert.Contains(OutroReportText.CountOf(3, lang), lines[0], $"{lang}: 数が出ていない");
+                foreach (ShowEndingOutcome outcome in Outcomes)
+                {
+                    string composed = OutroReportText.Compose(0, 8, outcome, lang);
+                    StringAssert.Contains(OutroReportText.Title(outcome, lang), composed);
+                    StringAssert.Contains(OutroReportText.Body(outcome, lang), composed);
+                    StringAssert.Contains(OutroReportText.Footer(lang), composed);
+                    Assert.That(OutroReportText.Footer(lang), Is.Not.Empty, $"{lang}: 装置を外す指示が無い");
+                }
+
+                Assert.That(OutroReportText.Title(Outcomes[0], lang),
+                    Is.Not.EqualTo(OutroReportText.Title(Outcomes[1], lang)));
+                Assert.That(OutroReportText.Title(Outcomes[0], lang),
+                    Is.Not.EqualTo(OutroReportText.Title(Outcomes[2], lang)));
+                Assert.That(OutroReportText.Title(Outcomes[1], lang),
+                    Is.Not.EqualTo(OutroReportText.Title(Outcomes[2], lang)));
+                Assert.That(OutroReportText.Body(Outcomes[0], lang),
+                    Is.Not.EqualTo(OutroReportText.Body(Outcomes[1], lang)));
+                Assert.That(OutroReportText.Body(Outcomes[0], lang),
+                    Is.Not.EqualTo(OutroReportText.Body(Outcomes[2], lang)));
+                Assert.That(OutroReportText.Body(Outcomes[1], lang),
+                    Is.Not.EqualTo(OutroReportText.Body(Outcomes[2], lang)));
+            }
+
+            StringAssert.Contains("装置を外してください", OutroReportText.Footer(ShowLang.Ja));
+            StringAssert.Contains("remove the headset", OutroReportText.Footer(ShowLang.En));
+            StringAssert.Contains("Retirez le casque", OutroReportText.Footer(ShowLang.Fr));
+        }
+
+        [TestCase(0, 8, "0 / 8")]
+        [TestCase(12, 8, "12 / 8")]
+        [TestCase(123, 8, "123 / 8")]
+        [TestCase(999, 8, "999 / 8")]
+        public void Ratio_PreservesReportsEvenAboveTotal(int reports, int total, string expected)
+        {
+            Assert.That(OutroReportText.Ratio(reports, total), Is.EqualTo(expected));
+            foreach (ShowLang lang in Languages)
+                StringAssert.Contains(expected,
+                    OutroReportText.Compose(reports, total, ShowEndingOutcome.Released, lang));
+        }
+
+        [Test]
+        public void Ratio_UsesDashForUnknownTotal_AndClampsNegativeInputs()
+        {
+            Assert.That(OutroReportText.Ratio(0, 0), Is.EqualTo("0 / —"));
+            Assert.That(OutroReportText.Ratio(12, 0), Is.EqualTo("12 / —"));
+            Assert.That(OutroReportText.Ratio(-1, -8), Is.EqualTo("0 / —"));
+            Assert.That(OutroReportText.Ratio(-1, 8), Is.EqualTo("0 / 8"));
+            foreach (ShowLang lang in Languages)
+                StringAssert.Contains("0 / —",
+                    OutroReportText.Compose(-1, 0, ShowEndingOutcome.Interrupted, lang));
+        }
+
+        [Test]
+        public void Compose_DoesNotInferOutcomeFromCounts()
+        {
+            foreach (ShowLang lang in Languages)
+            foreach (ShowEndingOutcome outcome in Outcomes)
+            foreach (int reports in new[] { 0, 12, 123, 999 })
+            {
+                string composed = OutroReportText.Compose(reports, 8, outcome, lang);
+                StringAssert.Contains(OutroReportText.Title(outcome, lang), composed);
+                StringAssert.Contains(OutroReportText.Body(outcome, lang), composed);
+                foreach (ShowEndingOutcome other in Outcomes)
+                {
+                    if (other == outcome) continue;
+                    Assert.That(composed.Contains(OutroReportText.Title(other, lang)), Is.False,
+                        $"{lang}/{outcome}/{reports}: 件数から別の結末を選んだ");
+                }
             }
         }
 
-        /// <summary>
-        /// 数字の形は言語で分ける。<b>全角は日本語だけ</b>（紙の依頼書と揃えるための形なので、
-        /// Latin の文に混ぜるとその 1 文字だけ倍幅になって桁がずれる）。
-        /// </summary>
         [Test]
         public void FullWidthDigits_AreJapaneseOnly()
         {
-            Assert.AreEqual("１２", OutroReportText.CountOf(12, ShowLang.Ja));
-            Assert.AreEqual("12", OutroReportText.CountOf(12, ShowLang.En));
-            Assert.AreEqual("12", OutroReportText.CountOf(12, ShowLang.Fr));
-            // 負の数はどの言語でも 0（押していない体験者に「−１」を出さない）。
-            foreach (ShowLang lang in ShowLanguage.All)
-                Assert.That(OutroReportText.CountOf(-3, lang), Is.EqualTo(lang == ShowLang.Ja ? "０" : "0"));
-        }
-
-        /// <summary>
-        /// 打ち切るまでの尺（言語ごと）。<b>速さは言語で違う</b>（日本語 12 / Latin 18 文字/秒・
-        /// <c>canon/LEDGER.md</c> 0149）ので、Latin の字数の多さ（およそ 2 倍）は
-        /// <b>1.5 倍ぶんが速さで吸われる</b>。⚠ 残りは尺の側に出るので、
-        /// <b>上限は 1 つで足りる</b>（0149 まで Latin だけ 8 秒に緩めてあった）。
-        /// </summary>
-        [Test]
-        public void EveryLanguage_TypesWithinAReadableSpan()
-        {
-            foreach (ShowLang lang in ShowLanguage.All)
-            {
-                float sec = KeystrokesOf(OutroReportText.Compose(0, lang))
-                          / CommsPanelLogic.CharsPerSecFor(lang);
-                const float max = 6f;
-                Assert.That(sec, Is.GreaterThan(2f), $"{lang}: 速すぎると「一気に出た」に見える");
-                Assert.That(sec, Is.LessThan(max), $"{lang}: 打ち切るまで {sec:F1}s は長い — 文言を詰める");
-            }
-        }
-
-        [Test]
-        public void Compose_KeepsTheAuthoredFourLines()
-        {
-            string s = OutroReportText.Compose(3);
-            string[] lines = s.Split('\n');
-            Assert.AreEqual(5, lines.Length, "数の行 + 空行 + 結び 3 行");
-            Assert.AreEqual("報告した怪異の数：３", lines[0]);
-            Assert.AreEqual("", lines[1]);
-            Assert.AreEqual("十分なデータが取れました。", lines[2]);
-            Assert.AreEqual("調査完了です。", lines[3]);
-            Assert.AreEqual("装置を外してください。", lines[4]);
-        }
-
-        [Test]
-        public void FullWidth_UsesFullWidthDigits()
-        {
-            // 紙の依頼書（観測者番号 ０３７）と同じ形。半角が混ざると装置の声が 2 つに割れる。
-            Assert.AreEqual("０", OutroReportText.FullWidth(0));
-            Assert.AreEqual("７", OutroReportText.FullWidth(7));
-            Assert.AreEqual("１０", OutroReportText.FullWidth(10));
-            Assert.AreEqual("１０３", OutroReportText.FullWidth(103));
-        }
-
-        [Test]
-        public void FullWidth_NeverShowsANegativeCount()
-        {
-            // 押していない体験者に「−１」を出さない（回数の供給が壊れても文面は成立する）。
-            Assert.AreEqual("０", OutroReportText.FullWidth(-1));
-            Assert.AreEqual("０", OutroReportText.FullWidth(int.MinValue));
-        }
-
-        /// <summary>
-        /// 打鍵は<b>改行では鳴らさない</b>（<c>canon/LEDGER.md</c> 0063）。
-        /// <c>maxVisibleCharacters</c> は改行も 1 文字として数えるので、鳴らすと
-        /// 「字が出ていないのに 1 発鳴る」が起きる。実行体（<c>OutroReport</c>）は TMP に
-        /// 測らせるが、<b>期待値はここが持つ</b> — テレメトリの <c>repChars</c> と対で読む値。
-        /// </summary>
-        [Test]
-        public void Compose_KeystrokesExcludeTheFourNewlines()
-        {
-            string s = OutroReportText.Compose(0);
-            int newlines = 0;
-            foreach (char c in s)
-                if (c == '\n') newlines++;
-            Assert.AreEqual(4, newlines, "数の行 + 空行 + 結び 3 行 ＝ 改行 4 つ");
-            Assert.AreEqual(s.Length - 4, KeystrokesOf(s));
-            Assert.AreEqual(41, KeystrokesOf(s), "打鍵の数（数が 1 桁のとき）");
-        }
-
-        /// <summary>
-        /// 打ち切るまでの尺。<b>速さは連絡の面と同じ</b>（同じ装置の印字なので、
-        /// 違う速さで打つと別の装置が 2 台あるように聞こえる）。
-        ///
-        /// ⚠ ここが伸びると、報告が出たまま体験者が待たされる。文言を足すときは実尺を見る。
-        /// </summary>
-        [Test]
-        public void Compose_TypesWithinAReadableSpan()
-        {
-            // ⚠ 言語を明示する（速さも文面も言語で変わるので、他のテストが選んだ言語に依存させない）。
-            float sec = KeystrokesOf(OutroReportText.Compose(0, ShowLang.Ja))
-                      / CommsPanelLogic.CharsPerSecFor(ShowLang.Ja);
-            Assert.That(sec, Is.GreaterThan(2f), "速すぎると「一気に出た」に見える");
-            Assert.That(sec, Is.LessThan(6f), $"打ち切るまで {sec:F1}s は長い — 文言を詰める");
-        }
-
-        private static int KeystrokesOf(string s)
-        {
-            int n = 0;
-            foreach (char c in s)
-                if (c != '\n') n++;
-            return n;
-        }
-
-        [Test]
-        public void Compose_HasNoHalfWidthDigits()
-        {
-            foreach (int n in new[] { 0, 1, 9, 12, 250 })
-            {
-                string s = OutroReportText.Compose(n);
-                foreach (char c in s)
-                    Assert.IsFalse(c >= '0' && c <= '9', $"半角数字が混ざっている: {s}");
-            }
+            Assert.That(OutroReportText.CountOf(12, ShowLang.Ja), Is.EqualTo("１２"));
+            Assert.That(OutroReportText.CountOf(12, ShowLang.En), Is.EqualTo("12"));
+            Assert.That(OutroReportText.CountOf(12, ShowLang.Fr), Is.EqualTo("12"));
+            foreach (ShowLang lang in Languages)
+                Assert.That(OutroReportText.CountOf(-3, lang),
+                    Is.EqualTo(lang == ShowLang.Ja ? "０" : "0"));
+            Assert.That(OutroReportText.FullWidth(103), Is.EqualTo("１０３"));
+            Assert.That(OutroReportText.FullWidth(int.MinValue), Is.EqualTo("０"));
         }
     }
 }

@@ -158,6 +158,28 @@ namespace FixedCamVr.Streaming.Tests
             PumpDirector(rig.Director);
         }
 
+        [Test]
+        public void ClosingAreaClock_StartsOnFirstConfirmedEntry_AndResetsWithTheRun()
+        {
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(Array.Empty<ShowTimelineSegmentDef>());
+            Assert.That(rig.Timeline.ClosingAreaSec, Is.LessThan(0f));
+            EnterZone(rig, 0, 3);
+            Assert.That(rig.Timeline.ClosingAreaSec, Is.LessThan(0f));
+
+            EnterZone(rig, 0, 4);
+            Assert.That(rig.Timeline.ClosingAreaSec, Is.GreaterThanOrEqualTo(0f));
+            EnterZone(rig, 1, 4);
+            Assert.That(rig.Timeline.ClosingAreaSec, Is.GreaterThanOrEqualTo(0f),
+                        "確定区間を離れても到着からの時計は残る");
+            EnterZone(rig, 0, 4);
+            Assert.That(rig.Timeline.ClosingAreaSec, Is.GreaterThanOrEqualTo(0f),
+                        "同じランで再進入しても時計を始め直さない");
+
+            rig.Timeline.ResetRun();
+            Assert.That(rig.Timeline.ClosingAreaSec, Is.LessThan(0f));
+        }
+
         // ---- 多段カット（要求の演出形） ----
 
         [Test]

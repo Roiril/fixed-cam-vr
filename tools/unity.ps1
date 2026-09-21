@@ -191,6 +191,10 @@ $Menus = [ordered]@{
     'regviz'           = @{ Method = 'FixedCamVr.Tracking.EditorTools.RegistrationVizPreview.Run'
                             Desc = '位置合わせのワイヤーとゾーンのタイルを多角度で PNG 化'
                             Out = 'Assets/Screenshots/regviz' }
+    'ending-record'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.OutroReportPreview.Run'
+                           Desc = '終幕の結果画面 3 言語・2 結末と中断。専用フォント生成と実描画'
+                           Out = 'Assets/Resources/Fonts/OutroReport SDF.asset'
+                           Src = @('Assets/Scripts/Diagnostics/OutroReportText.cs') }
     'hud'              = @{ Method = 'FixedCamVr.Streaming.EditorTools.HudPreviewScreenshot.Capture'
                             Desc = 'HMD 内のステータス・操作パネルを PNG 化'
                             Out = 'Assets/Screenshots/hud-preview' }

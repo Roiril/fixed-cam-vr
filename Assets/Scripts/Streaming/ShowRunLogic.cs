@@ -178,8 +178,11 @@ namespace FixedCamVr.Streaming
         /// スタッフの明示操作（<see cref="RequestAdvance"/>）は従来どおり通す — 「ずれていても進めたい」
         /// と人が言っているなら、それは運営の判断で、コードが止める話ではない。
         /// </param>
+        /// <param name="deferNaturalEnd">
+        /// 締めの演出中は報告と警告の結果を待つ。上限と hardLimit は引き続き有効。
+        /// </param>
         public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning, bool introCompleted = true,
-                                 bool introAborted = false)
+                                 bool introAborted = false, bool deferNaturalEnd = false)
         {
             if (dt < 0f) dt = 0f;
 
@@ -244,6 +247,11 @@ namespace FixedCamVr.Streaming
                     //   - 走り出した演出は上限まで見せ切る
                     // 分岐を 2 本に割らず 1 つの式で表す（新しい状態・ラッチを増やさない）。
                     _endHeldSec += dt;
+                    if (deferNaturalEnd && _endHeldSec < _endHoldMaxSec)
+                    {
+                        _endHolding = true;
+                        return ShowRunEvent.None;
+                    }
                     if (_endHeldSec < _endGraceSec || (takeRunning && _endHeldSec < _endHoldMaxSec))
                     {
                         _endHolding = true;
