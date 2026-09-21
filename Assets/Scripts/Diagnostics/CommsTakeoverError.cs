@@ -60,6 +60,8 @@ namespace FixedCamVr.Diagnostics
         public void Tick(bool visible, float dt)
         {
             _ = dt;
+            // 人形の面だけを残す1秒間はエラーを再開しない。
+            visible = visible && (_panel == null || _panel.TakeoverErrorOpacity > 0f);
             if (visible && !_active) StartEffect();
             if (!visible && _active)
             {

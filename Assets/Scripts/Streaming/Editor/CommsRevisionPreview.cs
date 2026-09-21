@@ -114,6 +114,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 panel.SetControllerState(false, false);
 
                 panel.Deliver(CommsNotice.Takeover); Place();
+                // 累積警告は上半分。実機と同じく通信面を下側へ離して比較する。
+                go.transform.position += Vector3.down * .22f;
                 anchor.transform.position = camera.transform.position + new Vector3(0, 0, 3f);
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Effects/UnauthorizedAccess.prefab");
                 var sync = go.GetComponent<CommsTakeoverError>();
@@ -125,7 +127,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     .GetField("_effect", Hidden)!.GetValue(sync);
                 var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus,shake,shakeX,shakeY,shakeAngle,tear,caption\n");
                 bool savedIntrusion = false, savedFailure = false;
-                bool savedTruth = false, savedMid = false, savedFinal = false;
+                bool savedTruth = false, savedMid = false, savedFinal = false, savedDollOnly = false;
                 int frames = 0;
                 for (int i = 0; i < Fps * 12; i++)
                 {
@@ -172,11 +174,13 @@ namespace FixedCamVr.Streaming.EditorTools
                         error.Stop(); Shot("doll");
                         error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedFinal = true;
                     }
+                    if (!savedDollOnly && panel.Stage == CommsStage.Out && !error.IsPlaying)
+                    { Shot("doll-only"); savedDollOnly = true; }
                     if (!logic.Active) { Shot("finished"); break; }
                     logic.Tick(1f / Fps);
                 }
                 File.WriteAllText(Path.Combine(dir, "frames.csv"), data.ToString(), new UTF8Encoding(false));
-                if (!savedIntrusion || !savedFailure || !savedTruth || !savedMid || !savedFinal || logic.Active || error.IsPlaying)
+                if (!savedIntrusion || !savedFailure || !savedTruth || !savedMid || !savedFinal || !savedDollOnly || logic.Active || error.IsPlaying)
                     throw new InvalidOperationException("Takeover did not render and close completely");
                 Debug.Log($"[CommsRevisionPreview] lang={lang} frames={frames} truth=1 wipe=1 doll=1 closed=1");
             }

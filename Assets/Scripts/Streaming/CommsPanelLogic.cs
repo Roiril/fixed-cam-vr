@@ -210,8 +210,8 @@ namespace FixedCamVr.Streaming
         /// <summary>塗り替わり後の人形を保持する時間 (秒)。</summary>
         public const float PossessedHoldSec = 1.35f;
 
-        /// <summary>乗っ取りを一斉に切断する時間 (秒)。</summary>
-        public const float PossessedOutSec = 0.12f;
+        /// <summary>警告と空間エラーが消えた後、人形の面だけを静止して残す時間 (秒)。</summary>
+        public const float PossessedOutSec = 1f;
 
         /// <summary>塗り替わりの前に「遮断失敗」へ変わる時間 (秒)。</summary>
         public const float TakeoverBlockFailedLeadSec = 0.6f;
@@ -343,7 +343,7 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        /// <summary>空間エラーの不透明度。通信面より先に出て、専用切断と同時に消える。</summary>
+        /// <summary>空間エラーの不透明度。Outに入る瞬間に消し、人形の面を1秒残す。</summary>
         public float TakeoverErrorOpacity
         {
             get
@@ -359,7 +359,7 @@ namespace FixedCamVr.Streaming
                     case CommsStage.Hold:
                         return 0.35f;
                     case CommsStage.Out:
-                        return 0.35f * PossessedCutOpacity;
+                        return 0f;
                     default:
                         return 0f;
                 }
@@ -711,15 +711,14 @@ namespace FixedCamVr.Streaming
                     {
                         if (_delivery == CommsDelivery.Possessed)
                         {
-                            float cut = PossessedCutOpacity;
                             return new CommsWeights
                             {
-                                panel = cut,
-                                glyph = cut,
+                                panel = 1f,
+                                glyph = 1f,
                                 open = 1f,
                                 body = 1f,
                                 reveal = 1f,
-                                hint = cut,
+                                hint = 1f,
                             };
                         }
                         float t = Clamp01(_elapsed / OutSec);
@@ -742,8 +741,6 @@ namespace FixedCamVr.Streaming
                 }
             }
         }
-
-        private float PossessedCutOpacity => 1f - Smooth(Clamp01(_elapsed / PossessedOutSec));
 
         private static float OutSecFor(CommsDelivery delivery)
             => delivery == CommsDelivery.Possessed ? PossessedOutSec : OutSec;

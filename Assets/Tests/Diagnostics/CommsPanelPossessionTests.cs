@@ -400,7 +400,7 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(CommsStage.Type, _logic.Stage, "出る → 読ませる → 塗り替わる は途中で退かない");
             Assert.AreEqual(CommsPossessionPhase.Shown, _panel.PossessionPhase);
             Assert.AreEqual("", _panel.HintBody, "Takeover 中は解析中とゲージを出さない");
-            // 専用の切断は0.12秒。昔の長いOutまで進めず、置換完了の実際の縁を見る。
+            // 人形だけが残るOutまで進めず、置換完了の実際の縁を見る。
             for (int i = 0; i < 600 && _panel.PossessionPhase != CommsPossessionPhase.Cursed; i++)
                 Advance(1f / 60f);
             Assert.AreEqual(1, _panel.SweepCount, "塗り替わり切るまで見せる");

@@ -801,7 +801,7 @@ namespace FixedCamVr.Diagnostics
         /// <summary>嘘の一文（<see cref="CommsNotice.Takeover"/>）を出した回数。ラン 1 回に 1 度のはず。</summary>
         public int LieCount { get; private set; }
 
-        /// <summary>Takeover の面が出ているあいだ true。主画面側の空間エラーが開始と終了を同期する。</summary>
+        /// <summary>Takeover の面が出ているあいだ true。エラー消去後の残留1秒も含む。</summary>
         public bool TakeoverVisible => _lieActive && _logic.Active;
 
         /// <summary>乗っ取りの発火待ちから表示終了まで、報告入力を受け付けない。</summary>

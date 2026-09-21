@@ -183,14 +183,17 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
     if max(sweep) < 0.999:
         raise AssertionError("人形へ最後まで塗り替わっていない")
     if rows[-1]["stage"] != "Off" or int(rows[-1]["error"]) != 0:
-        raise AssertionError("面と本体エラーが同時に終了していない")
+        raise AssertionError("面か本体エラーが最後まで残っている")
     if not any(int(row["error"]) for row in rows[:-1]):
         raise AssertionError("乗っ取り中に本体エラーが表示されていない")
     last_panel_frame = max(index for index, row in enumerate(rows) if row["stage"] != "Off")
     last_error_frame = max(index for index, row in enumerate(rows) if int(row["error"]))
-    if last_panel_frame != last_error_frame:
+    if last_panel_frame - last_error_frame != FPS:
         raise AssertionError(
-            f"面と本体エラーの最終表示コマが違う: panel={last_panel_frame} error={last_error_frame}")
+            f"エラー消去後に人形だけ1秒残っていない: panel={last_panel_frame} error={last_error_frame}")
+    doll_only = load(folder / "doll-only.png")
+    if not np.array_equal(doll_only, doll):
+        raise AssertionError("人形だけの残留画像が静止した完成文と一致しない")
 
     empty_pixels = foreground_pixels(finished)
     if empty_pixels > 32:
@@ -229,6 +232,7 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
         "error_frames": sum(int(row["error"]) for row in rows),
         "last_panel_frame": last_panel_frame,
         "last_error_frame": last_error_frame,
+        "doll_only_sec": (last_panel_frame - last_error_frame) / FPS,
         "wipe": direction,
         "reverse_direction_control_rejected": reverse_rejected,
         "story": story,
@@ -253,12 +257,18 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
 
 def verify_intrusion_motion(rows: list[dict[str, str]]) -> dict[str, object]:
     captions = ["WARNING", "不正アクセス", "接続元不明", "遮断を執行", "失敗"]
-    for step, caption in enumerate(captions):
+    for step in range(len(captions)):
+        caption = " | ".join(captions[:step + 1])
         first = next(i for i, row in enumerate(rows) if row["caption"] == caption)
         if abs(first / FPS - step) > 1 / FPS + .001:
             raise AssertionError(f"警告の出現時刻が不正: {caption} at {first / FPS}")
         if step < 4 and sum(row["caption"] == caption for row in rows) != FPS:
-            raise AssertionError(f"警告が1秒保持されていない: {caption}")
+            raise AssertionError(f"次の警告までの追加間隔が1秒ではない: {caption}")
+    for row in rows:
+        expected_count = min(5, int(float(row["sec"]) + .0001) + 1) if int(row["error"]) else 0
+        expected = " | ".join(captions[:expected_count])
+        if row["caption"] != expected:
+            raise AssertionError(f"累積した警告が消えた/順序が違う: {row['sec']}")
     bursts = 0
     previous = False
     max_position = max_angle = 0.0
@@ -277,7 +287,7 @@ def verify_intrusion_motion(rows: list[dict[str, str]]) -> dict[str, object]:
         previous = tear
     if bursts != 4 or not 0 < max_position <= .006 or not 0 < max_angle <= .6:
         raise AssertionError(f"侵食の乱れが設定外: {bursts}, {max_position}, {max_angle}")
-    return {"warning_steps": 5, "each_initial_caption_sec": 1,
+    return {"warning_steps": 5, "caption_add_interval_sec": 1, "captions_accumulate": True,
             "glitch_bursts": bursts, "max_axis_displacement_m": max_position,
             "max_angle_deg": max_angle, "read_and_final_static": True}
 
@@ -306,8 +316,11 @@ def verify_story(folder: Path, rows: list[dict[str, str]]) -> dict[str, object]:
         raise AssertionError("遮断失敗から改ざんまでの間隔が不正")
     if not hold_min <= (cut - full_doll) / FPS <= hold_max:
         raise AssertionError("人形の完成表示の読取時間が設定からずれている")
-    if not .10 <= (len(rows) - 1 - cut) / FPS <= .17:
-        raise AssertionError("表示の切断が0.12秒からずれている")
+    if (len(rows) - 1 - cut) != FPS:
+        raise AssertionError("人形だけが残る時間が1秒からずれている")
+    for row in rows[cut:-1]:
+        if int(row["error"]) or float(row["glyph"]) != 1 or float(row["sweep"]) != 1:
+            raise AssertionError("人形だけの残留中にエラーか消灯が混ざっている")
     for r in rows[:first_panel]:
         if float(r["panel"]) > .01 or int(r["lie"]):
             raise AssertionError("侵入の前段で人形かスイの面が出ている")
@@ -380,7 +393,7 @@ def main() -> int:
         (render / "evidence.json").write_text(
             json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    print("OK: 30fps / 赤文字 / 真実は赤なし / 左→右の塗り替え / 面とエラーは同時終了")
+    print("OK: 30fps / 赤文字 / 真実は赤なし / 左→右の塗り替え / 警告累積 / 人形だけ1秒残留")
     return 0
 
 

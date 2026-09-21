@@ -237,7 +237,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void TakeoverBoundaries_DriveTheErrorAndCutFromTheSameClock()
+        public void TakeoverBoundaries_ClearErrorsThenKeepDollForOneSecond()
         {
             var l = new CommsPanelLogic();
             l.Begin(12, CommsDelivery.Possessed);
@@ -271,12 +271,13 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsTrue(l.TakeoverBlockFailed);
             l.Tick(CommsPanelLogic.PossessedHoldSec);
             Assert.AreEqual(CommsStage.Out, l.Stage);
+            Assert.AreEqual(0f, l.TakeoverErrorOpacity, "残留の開始フレームでエラーを一括消灯する");
             l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
-            Assert.AreEqual(1f, l.TakeoverReadFocus, "消灯中に警告の主張を戻さない");
-            Assert.AreEqual(l.Weights.panel, l.Weights.glyph, 1e-6f,
-                "専用 Out は地と文字を同じ不透明度で切る");
-            Assert.AreEqual(0.175f, l.TakeoverErrorOpacity, 1e-5f,
-                "空間エラーも同じ切断曲線で消える");
+            Assert.AreEqual(1f, l.TakeoverReadFocus, "人形の面の濃さを変えない");
+            Assert.AreEqual(1f, l.Weights.panel);
+            Assert.AreEqual(1f, l.Weights.glyph);
+            Assert.AreEqual(1f, l.Weights.sweep);
+            Assert.AreEqual(0f, l.TakeoverErrorOpacity);
             float elapsed = l.TakeoverElapsedSec;
             l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
             Assert.AreEqual(CommsStage.Off, l.Stage);
@@ -299,7 +300,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual((l.TakeoverElapsedSec - 4.6f) / 1.6f,
                 l.PossessionSample.sweep, 0.00002f);
             while (l.Active) l.Tick(1f / fps);
-            Assert.That(l.TakeoverElapsedSec, Is.InRange(7.669f, 7.67f + 1f / fps));
+            Assert.That(l.TakeoverElapsedSec, Is.InRange(8.549f, 8.55f + 1f / fps));
         }
 
         [Test]
