@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻リ視｜ボタンを押さずに歩いた場合の現状</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ
+ *
+ * 正本: ~/.claude/reference/design-tokens.md
+ *   → このファイルは派生。値を変えたいときは正本を直してからここへ配る。
+ *
+ * 使い方: style タグの中へ**全文インライン展開**する。
+ *   ⚠ このファイルの中に閉じタグの文字列を書かないこと。HTML の style 要素は
+ *     CSS コメントの中だろうと最初の閉じタグで終わるので、**以降の CSS が本文として画面に出る**
+ *     （2026-08-17 実害。この行自体が原因だった）。
+ *   外部参照は禁止（output-format.md: 単一ファイル・CDN 禁止・恒久的に開ける状態）。
+ * ============================================================ */
+
+:root {
+  /* --- color: light（既定） --------------------------------- */
+  --paper:            #f5efe2;
+  --card:             #ece4d4;
+  --ink:              #2b2723;
+  --mute:             #6a6257;
+  --line:             #d8cdb8;
+  --accent:           #b85042;  /* 18px+ / 太字 / 囲み線 / 図形のみ */
+  --accent-strong:    #a8493c;  /* 本文サイズの文字・リンク（AA） */
+  --accent-2:         #5f7d70;
+  --accent-2-strong:  #526c61;
+
+  /* --- type ------------------------------------------------- */
+  --serif:  "Shippori Mincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --gothic: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;    /* 12px  チップ・脚注 */
+  --fs-sm:   .875rem;   /* 14px  キャプション・表・出典 */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-md:   1.125rem;  /* 18px  リード・小見出し */
+  --fs-lg:   1.375rem;  /* 22px  h2 */
+  --fs-xl:   1.875rem;  /* 30px  h1 */
+
+  /* --- space（4px 系列。この外の値を書かない） ---------------- */
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 46rem;     /* 本文計測幅 */
+  --radius: 0;          /* 角丸は 0。円形要素のみ 50% を直接書く */
+}
+
+/* --- color: dark（OS 設定とページ属性の両方に追随） ------------ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+    --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+    --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #191512; --card: #221d18; --ink: #ede6d6; --mute: #a99e90;
+  --line: #3a332b;  --accent: #e0663a; --accent-strong: #e87d55;
+  --accent-2: #8fae9f; --accent-2-strong: #a3bfb1;
+}
+:root[data-theme="light"] {
+  --paper: #f5efe2; --card: #ece4d4; --ink: #2b2723; --mute: #6a6257;
+  --line: #d8cdb8;  --accent: #b85042; --accent-strong: #a8493c;
+  --accent-2: #5f7d70; --accent-2-strong: #526c61;
+}
+
+/* ============================================================
+ * base
+ * ============================================================ */
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+  font-feature-settings: "palt" 1;
+}
+.wrap { max-width: var(--measure); margin: 0 auto; padding: var(--sp-12) var(--sp-4) var(--sp-16); }
+
+/* --- 見出し（明朝。上に置き、下または上に罫） ------------------ */
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.35; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
+h2 {
+  font-size: var(--fs-lg); margin: var(--sp-12) 0 var(--sp-4);
+  padding-top: var(--sp-3); border-top: 2px solid var(--ink);
+}
+h3 { font-size: var(--fs-md); margin: var(--sp-8) 0 var(--sp-2); font-family: var(--gothic); font-weight: 700; }
+
+p  { margin: var(--sp-2) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--accent-strong); text-underline-offset: .18em; }
+a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }          /* 構造上の強調＝色なし */
+em { font-style: normal; font-weight: 700; color: var(--accent-strong); } /* 意味強調＝1 節に 1〜2 回 */
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-8) 0; }
+
+/* ============================================================
+ * 部品
+ * ============================================================ */
+
+/* 見出し上の小ラベル */
+.eyebrow {
+  font-size: var(--fs-xs); letter-spacing: .12em; color: var(--accent-strong);
+  text-transform: uppercase; margin: 0 0 var(--sp-2);
+}
+/* タイトル直下の副題・日付 */
+.sub { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
+
+/* 結論の先出し */
+.lead {
+  background: var(--card); border-left: 4px solid var(--accent);
+  padding: var(--sp-4); margin: var(--sp-6) 0;
+}
+.lead > :first-child { margin-top: 0; }
+.lead > :last-child  { margin-bottom: 0; }
+
+/* 並列カード（3 列を目的にしない。中身の数で自然に折り返す） */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  margin: var(--sp-6) 0;
+}
+.card { background: var(--card); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+/* 時系列 */
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li {
+  border-left: 2px solid var(--line); padding: 0 0 var(--sp-6) var(--sp-4);
+  position: relative; margin: 0;
+}
+.tl > li::before {
+  content: ""; position: absolute; left: -5px; top: .55em;
+  width: 8px; height: 8px; background: var(--accent);
+}
+.tl .date { font-family: var(--serif); font-weight: 600; }
+.tl .headline { color: var(--mute); font-size: var(--fs-sm); margin-left: .6em; }
+
+/* 状態ラベル */
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.5;
+  padding: .05em .55em; margin-left: .4em; vertical-align: middle;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+}
+.chip.hot { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+/* 表（必ず .tblwrap で囲む — 横スクロールは body ではなく表の側で） */
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
+th, td { border: 1px solid var(--line); padding: .45em .7em; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 700; white-space: nowrap; }
+
+/* 図 */
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); color: var(--mute); margin-top: var(--sp-2); }
+
+/* 問いと答え */
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; color: var(--accent-strong); margin-top: var(--sp-3); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+/* コード */
+code { font-family: var(--mono); font-size: .92em; background: var(--card); padding: .1em .35em; }
+/* 表内のトークン名・パスは折り返さない（狭幅では .tblwrap の横スクロールで吸収する） */
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--card); border: 1px solid var(--line);
+  padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+/* 弱い情報・末尾の注記 */
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-12); padding-top: var(--sp-4);
+}
+
+/* ============================================================
+ * responsive / motion / print
+ * ============================================================ */
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-8) var(--sp-4) var(--sp-12); }
+  h1 { font-size: var(--fs-lg); }
+  h2 { font-size: var(--fs-md); margin-top: var(--sp-8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --card: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --accent: #000; --accent-strong: #000;
+  }
+  .wrap { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .lead, .grid, .tblwrap, figure { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+<p class="eyebrow">廻リ視 · 挙動調査</p>
+<h1>ボタンを押さずに歩いた場合</h1>
+<p class="sub">2026年9月21日 · リポジトリの焼き込み設定と実装による調査</p>
+<div class="lead">
+<p>文字どおり一度もボタンを押さなければ、通常の体験は報告操作の練習で止まる。演出本編には入らない。本編開始後に「異変を報告するボタン」を押さず歩く想定では、1〜3周目は移動と時間で進む。帰りのAだけは報告待ちになり、48秒で強制終了する。</p>
+</div>
+<h2>まず入口で止まる</h2>
+<p>装着後に左コントローラーを確認し、XかYを約1秒長押しして報告を練習する。押さない場合は練習段に留まり、時間による自動通過はない。練習後も題字を閉じる短押しが必要。したがって、以下の表は「練習と題字は済ませたが、本編中には報告せず歩く」場合の挙動である。スタッフによる明示操作と自動走行は別経路。</p>
+<p class="muted">根拠：<a href="../Assets/Scripts/Input/HmdOnboardingLogic.cs">HmdOnboardingLogic.cs:136–276</a>、<a href="../Assets/Scripts/OvrBridge/OvrControllerBridge.cs">OvrControllerBridge.cs:338–397</a>。</p>
+<h2>本編の9演出</h2>
+<p>現行の焼き込み台本は3周と帰りのAに9本を配置する。下表の「区間」は画面のカメラ番号ではなく、体験者の位置から確定した周回と場所を指す。</p>
+<div class="tblwrap"><table>
+<thead><tr><th>区間・演出</th><th>報告せず、そのまま歩いた場合</th><th>留まった場合／上限</th></tr></thead>
+<tbody>
+<tr><td>1周目B<br>壁の血の手形<br><a href="../Assets/StreamingAssets/show/show.json">L1C1#0 · 713行</a></td><td>Bに入ると手形が出る。次の区間が確定すると消える。報告で消すこともできるが、押すことは進行条件ではない。</td><td>区間を出なければ表示を維持。45秒で強制終了。</td></tr>
+<tr><td>2周目A<br>幕の顔の染み<br><a href="../Assets/StreamingAssets/show/show.json">L2C0#0 · 759行</a></td><td>動画を約4.04秒出し、静止画の染みを次の区間まで維持。報告がなくても消える。</td><td>次の区間に移らなければ45秒で終了。動画中にAを出ると、後続の「移動待ち」は先の移動を数えず、45秒まで画が残り得る。</td></tr>
+<tr><td>2周目B<br>別の場所と奥の目<br><a href="../Assets/StreamingAssets/show/show.json">L2C1#0 · 827行</a></td><td>約2.375秒と約1.625秒の動画の後、ライブ映像に戻す。報告なしでも次の区間で終わる。</td><td>最後のライブ表示は区間移動か45秒上限まで。動画中にBを出た場合、移動待ちのカットへ進んだ後にその移動を取りこぼし、上限まで続き得る。</td></tr>
+<tr><td>2周目C 前兆<br>低い人形視点<br><a href="../Assets/StreamingAssets/show/show.json">L2C2#0 · 987行</a></td><td>C進入で約0.9秒の視点映像と約0.6秒のライブ。押さなくても約1.5秒で終わる。移動だけでは途中で打ち切られない。</td><td>上限45秒。通常は時間で完走する。</td></tr>
+<tr><td>2周目C 接近<br>人形視点4カット<br><a href="../Assets/StreamingAssets/show/show.json">L2C2#1 · 1075行</a></td><td>接近線を横切った場合だけ開始。約4.1秒の断続映像からライブへ戻り、区間移動で終わる。移動途中でCを出ると打ち切る。線を踏まずCを出た場合は出ない。</td><td>45秒上限。報告不要。この4カットが自然完了すれば乗っ取りの連絡が始まり得る。</td></tr>
+<tr><td>3周目A<br>鏡映し・凍結・録画と人形<br><a href="../Assets/StreamingAssets/show/show.json">L3C0#0 · 1297行</a></td><td>凍結線を横切ると次のカットへ進む。途中でBへ歩けば打ち切ってBの画へ返す。報告していない途中終了なら、Aへ戻ると冒頭から再演する。</td><td>線を踏まずAに留まると線待ちを継続。最大120秒で打ち切り、後続カットは出ない。</td></tr>
+<tr><td>3周目B<br>録画と人形・無人の部屋<br><a href="../Assets/StreamingAssets/show/show.json">L3C1#0 · 1465行</a></td><td>録画の終端後は無人の画を次の区間まで表示。先にCへ歩けば途中終了。未報告でBへ戻ると再演する。</td><td>最大120秒。録画が使えなければ該当カットは飛ばされ得る。</td></tr>
+<tr><td>3周目C<br>録画と人形・無人の部屋<br><a href="../Assets/StreamingAssets/show/show.json">L3C2#0 · 1532行</a></td><td>Bと同じ。録画の終端後に無人の画。Aへ歩けば途中終了。未報告でCへ戻ると再演する。</td><td>最大120秒。素材が欠けたカットは飛ばされ得る。</td></tr>
+<tr><td>帰りのA<br>大量の人形と締め<br><a href="../Assets/StreamingAssets/show/show.json">L4C0#0 · 1603行</a></td><td>最初の約4秒の後、人形を表示して報告を待つ。Aを離れてもこの演出は移動で打ち切られない。押さない場合は開始から48秒で強制終了し、その後に終幕へ入る。</td><td>報告でのみ「現実へ戻る7.1秒」の次カットへ進む。無報告の48秒終了では、このカットは再生されない。本編の300秒上限が先なら、さらに早く終わる。</td></tr>
+</tbody></table></div>
+<p class="muted">尺と開始条件は<a href="../Assets/StreamingAssets/show/show.json">焼き込み show.json:704–1728</a>。移動・報告・時間切れの判定は<a href="../Assets/Scripts/Streaming/TakeRunnerLogic.cs">TakeRunnerLogic.cs:368–475, 563–582, 790–849</a>。既定45秒と演出別上限は<a href="../Assets/Scripts/Streaming/ShowTakeSchema.cs">ShowTakeSchema.cs:389–425, 475, 602–604</a>。</p>
+<h2>報告がないと起きないこと・起きること</h2>
+<ul>
+<li>1周目Bと2周目A・Bは、報告するとその場で消せる設定。押さなければ歩行や上限時間で消える。ほかの途中演出は報告で消す設定ではない。</li>
+<li>劇伴と画面の劣化もボタン入力を待たない。2周目Cの接近がライブ映像へ戻るときに劇伴を切り替える。ただし接近線を踏まずに演出が出なければ、その切替カットも通らない。</li>
+<li>本編開始の操作案内は表示される。報告に対する「異常を検出しました」「異状は検出されませんでした」「装置が解析しています」は一度も出ない。2周目Cの接近が自然完了すれば、報告なしでも乗っ取りの嘘の連絡は出る。</li>
+<li>帰りのAの「止まってください！」と続く警告は、締めの演出中に凍結線を踏んだときに出る。押したかどうかは見ない。ただし線を踏まずに歩き去った場合は出ない。線の設定が解けない場合だけ、開始から5秒の時間条件へ切り替わる。</li>
+<li>終幕は消灯と報告文を出し、次のランまで残す。報告した異変の数は0件になる。帰りのAに到達しなくても、本編開始から300秒で終了する。</li>
+</ul>
+<p class="muted">根拠：<a href="../Assets/Scripts/Streaming/CommsCueLogic.cs">CommsCueLogic.cs:405–478</a>、<a href="../Assets/Scripts/Streaming/ShowRunLogic.cs">ShowRunLogic.cs:190–271</a>、<a href="../Assets/Scripts/Streaming/EndingCueLogic.cs">EndingCueLogic.cs:78–98</a>、<a href="../Assets/Scripts/Diagnostics/OutroReport.cs">OutroReport.cs:336–343</a>。</p>
+<h2>調査の境界</h2>
+<p>これはリポジトリの焼き込み台本とC#の分岐による現状判定で、無入力の実機通し試験ではない。Quest は「焼き込み設定 → 端末キャッシュ → 卓のライブ配信」の順に後の設定を適用する。接続中の実機が別の台本を受け取っていれば、演出一覧と上限は異なる。また、体験者がゾーン外へ出たときは既定で最後のゾーンを維持する。画面の演出が続いても、周回が進んだ証拠にはならない。</p>
+<p>古い演出定義が素材一覧に残っていても、現行9本から参照されなければこの調査の「使用中」には含めない。1周目A・Cには独立した演出はない。旧スケジュールも空で、現行のタイムラインが実行対象。</p>
+<p class="note">設定優先順位：<a href="../Assets/Scripts/Streaming/ShowControlClient.cs">ShowControlClient.cs:904–918, 1555–1625</a>。ゾーン外の扱い：<a href="../Assets/Scripts/Tracking/PlayerZoneTracker.cs">PlayerZoneTracker.cs:38, 135–165</a>。調査中に既存の設定やコードは変更していない。</p>
+</main>
+</body>
+</html>
