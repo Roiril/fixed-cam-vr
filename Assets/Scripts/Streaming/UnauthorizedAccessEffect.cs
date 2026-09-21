@@ -33,8 +33,12 @@ namespace FixedCamVr.Streaming
         private const int StripVertexCount = InterferenceStripCount * 4;
         private const int QuadVertexCount = 4;
         private const int RandomSeed = 0x5A17C0DE;
-        private const float TakeoverLoopStartSec = 1.6f;
-        private const float TakeoverLoopEndSec = 3.8f;
+        private const float TakeoverUnauthorizedSec = 1f;
+        private const float TakeoverSourceUnknownSec = 2f;
+        private const float TakeoverBlockSec = 3f;
+        private const float TakeoverFailedSec = 4f;
+        private const float TakeoverTextX = 0f;
+        private const float TakeoverTextY = .24f;
 
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
@@ -151,7 +155,6 @@ namespace FixedCamVr.Streaming
         private float _maximumFrontDepth = 1.5f;
         private float _audienceDistance = 3f;
         private bool _takeoverMode;
-        private bool _takeoverBlockFailed;
         private float _takeoverOpacity = 1f;
         private float _takeoverReadFocus;
 
@@ -167,6 +170,7 @@ namespace FixedCamVr.Streaming
         public int SymbolVertexCountDiagnostic => _symbolMesh != null ? _symbolMesh.vertexCount : 0;
         public int ContextVertexCountDiagnostic => _contextMesh != null ? _contextMesh.vertexCount : 0;
         public int StatusVertexCountDiagnostic => _statusMesh != null ? _statusMesh.vertexCount : 0;
+        public string TakeoverCaption { get; private set; } = string.Empty;
         public Transform? ScreenAnchor { get; private set; }
 
         public void Configure(Material fxMaterial, Texture2D warningGraphic, Texture2D subtitleGraphic,
@@ -247,10 +251,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void SampleTakeover(float elapsed, bool blockFailed, float opacity, float readFocus = 0f)
         {
+            // float積算の丸め誤差だけを吸収する。許容幅は0.1ms。
+            elapsed = Mathf.Max(0f, elapsed) + .0001f;
             _takeoverMode = true;
-            _takeoverBlockFailed = blockFailed;
+            _ = blockFailed; // 呼び出し契約は維持し、表示の切替は絶対時計だけで決める。
             _takeoverOpacity = Mathf.Clamp01(opacity);
             _takeoverReadFocus = Mathf.Clamp01(readFocus);
+            TakeoverCaption = _takeoverOpacity > 0f ? CaptionFor(elapsed) : string.Empty;
             EnsureBuilt();
             if (_screenSize.x > 0f && _screenSize.y > 0f) Layout(_screenSize);
             Render(Mathf.Max(0f, elapsed));
@@ -492,7 +499,7 @@ namespace FixedCamVr.Streaming
 
         private void Render(float seconds)
         {
-            if (seconds < .06f || (!_takeoverMode && seconds >= Duration) ||
+            if ((!_takeoverMode && seconds < .06f) || (!_takeoverMode && seconds >= Duration) ||
                 (_takeoverMode && _takeoverOpacity <= 0f))
             {
                 SetRootsVisible(false);
@@ -500,7 +507,7 @@ namespace FixedCamVr.Streaming
             }
             SetRootsVisible(true);
             if (_screenRoot != null) SetWorldUnitLocalScale(_screenRoot);
-            float visualSeconds = TakeoverVisualSeconds(seconds);
+            float visualSeconds = seconds;
             UpdateSymbolMesh(visualSeconds);
             UpdateDecorationMesh(visualSeconds);
             UpdateWarningMesh(visualSeconds);
@@ -516,18 +523,21 @@ namespace FixedCamVr.Streaming
         private void UpdateWarningMesh(float seconds)
         {
             if (_warningMesh == null) return;
+            bool takeoverVisible = _takeoverMode && seconds < TakeoverUnauthorizedSec;
             for (int i = 0; i < WarningBandCount; i++)
             {
-                float first = LargeTearPulse(seconds, 2.05f, 2.18f);
-                float second = LargeTearPulse(seconds, 3.65f, 3.79f);
+                float first = _takeoverMode ? 0f : LargeTearPulse(seconds, 2.05f, 2.18f);
+                float second = _takeoverMode ? 0f : LargeTearPulse(seconds, 3.65f, 3.79f);
                 float yStep = (first * ((i % 4) - 1.5f) + second * (((i + 2) % 5) - 2f)) * .008f;
                 float y0 = _warningHeight * (WarningBandEdges[i] - .5f) + yStep;
                 float y1 = _warningHeight * (WarningBandEdges[i + 1] - .5f) + yStep;
-                float x = .10f * _screenSize.x + WarningBandOffset(seconds, i);
-                float y = .16f * _screenSize.y + (y0 + y1) * .5f;
-                float width = _warningWidth * Mathf.Max(.025f, 1f - WarningCollapse(seconds, i) * (.62f + .08f * (i % 4)));
+                float x = TakeoverTextX * _screenSize.x + (_takeoverMode ? 0f : WarningBandOffset(seconds, i));
+                float y = (_takeoverMode ? TakeoverTextY : 0f) * _screenSize.y + (y0 + y1) * .5f;
+                float collapse = _takeoverMode ? 0f : WarningCollapse(seconds, i);
+                float width = _warningWidth * Mathf.Max(.025f, 1f - collapse * (.62f + .08f * (i % 4)));
                 SetQuadVertices(_warningVertices, i * 4, x, y, -.004f, width, y1 - y0);
-                SetQuadColor(_warningColors, i * 4, WithAlpha(AlertRed, WarningBandAlpha(seconds, i)));
+                float alpha = _takeoverMode ? (takeoverVisible ? 1f : 0f) : WarningBandAlpha(seconds, i);
+                SetQuadColor(_warningColors, i * 4, WithAlpha(AlertRed, alpha));
             }
             _warningMesh.SetVertices(_warningVertices);
             _warningMesh.SetColors(_warningColors);
@@ -536,14 +546,19 @@ namespace FixedCamVr.Streaming
         private void UpdateSubtitleMesh(float seconds)
         {
             if (_subtitleMesh == null) return;
+            bool takeoverVisible = _takeoverMode && seconds >= TakeoverUnauthorizedSec &&
+                seconds < TakeoverSourceUnknownSec;
             for (int i = 0; i < SubtitleBandCount; i++)
             {
                 float y0 = _subtitleHeight * (SubtitleBandEdges[i] - .5f);
                 float y1 = _subtitleHeight * (SubtitleBandEdges[i + 1] - .5f);
                 SetQuadVertices(_subtitleVertices, i * 4,
-                    .12f * _screenSize.x + SubtitleBandOffset(seconds, i),
-                    -.14f * _screenSize.y + (y0 + y1) * .5f, -.006f, _subtitleWidth, y1 - y0);
-                SetQuadColor(_subtitleColors, i * 4, WithAlpha(SubtitleRed, SubtitleBandAlpha(seconds, i)));
+                    (_takeoverMode ? TakeoverTextX : .12f) * _screenSize.x +
+                    (_takeoverMode ? 0f : SubtitleBandOffset(seconds, i)),
+                    (_takeoverMode ? TakeoverTextY : -.14f) * _screenSize.y + (y0 + y1) * .5f,
+                    -.006f, _subtitleWidth, y1 - y0);
+                float alpha = _takeoverMode ? (takeoverVisible ? 1f : 0f) : SubtitleBandAlpha(seconds, i);
+                SetQuadColor(_subtitleColors, i * 4, WithAlpha(SubtitleRed, alpha));
             }
             _subtitleMesh.SetVertices(_subtitleVertices);
             _subtitleMesh.SetColors(_subtitleColors);
@@ -614,8 +629,12 @@ namespace FixedCamVr.Streaming
             if (_contextMesh == null) return;
             float reveal = Smooth01((seconds - .65f) / .20f);
             float ending = _takeoverMode ? 1f : 1f - Smooth01((seconds - 5.6f) / .4f);
-            float alpha = contextGraphic != null ? reveal * ending : 0f;
-            SetQuadVertices(_contextVertices, 0, .15f * _screenSize.x, -.34f * _screenSize.y,
+            bool takeoverVisible = seconds >= TakeoverSourceUnknownSec && seconds < TakeoverBlockSec;
+            float alpha = contextGraphic != null ?
+                (_takeoverMode ? (takeoverVisible ? 1f : 0f) : reveal * ending) : 0f;
+            SetQuadVertices(_contextVertices, 0,
+                (_takeoverMode ? TakeoverTextX : .15f) * _screenSize.x,
+                (_takeoverMode ? TakeoverTextY : -.34f) * _screenSize.y,
                 -.008f, _contextWidth, _contextHeight);
             SetQuadColor(_contextColors, 0, WithAlpha(ContextTint, alpha));
             _contextMesh.SetVertices(_contextVertices);
@@ -625,16 +644,20 @@ namespace FixedCamVr.Streaming
         private void UpdateStatusMesh(float seconds)
         {
             if (_statusMesh == null) return;
-            bool failed = _takeoverMode ? _takeoverBlockFailed : seconds >= 3.82f;
+            bool failed = _takeoverMode ? seconds >= TakeoverFailedSec : seconds >= 3.82f;
             Texture2D? texture = failed ? failedGraphic : attemptGraphic;
             if (_statusMaterial != null)
                 _statusMaterial.SetTexture(MainTexId, texture != null ? texture : Texture2D.whiteTexture);
             float reveal = Smooth01((seconds - 1.35f) / .20f);
             float ending = _takeoverMode ? 1f : 1f - Mathf.Clamp01((seconds - 6.76f) / .08f);
-            float alpha = texture != null ? reveal * ending : 0f;
+            bool takeoverVisible = seconds >= TakeoverBlockSec;
+            float alpha = texture != null ?
+                (_takeoverMode ? (takeoverVisible ? 1f : 0f) : reveal * ending) : 0f;
             float aspect = TextureAspect(texture, 4.2f);
             _statusWidth = _statusHeight * aspect;
-            SetQuadVertices(_statusVertices, 0, .21f * _screenSize.x, -.50f * _screenSize.y,
+            SetQuadVertices(_statusVertices, 0,
+                (_takeoverMode ? TakeoverTextX : .21f) * _screenSize.x,
+                (_takeoverMode ? TakeoverTextY : -.50f) * _screenSize.y,
                 -.01f, _statusWidth, _statusHeight);
             SetQuadColor(_statusColors, 0, WithAlpha(failed ? FailureTint : AttemptTint, alpha));
             _statusMesh.SetVertices(_statusVertices);
@@ -796,16 +819,26 @@ namespace FixedCamVr.Streaming
         private void UpdateReadMasks(float seconds)
         {
             if (_screenRoot == null) return;
-            Vector4 warningRect = seconds >= .095f && (_takeoverMode || seconds < 5.9f) ?
-                ReadRect(.10f, .16f, _warningWidth, _warningHeight) : Vector4.zero;
-            Vector4 subtitleRect = seconds >= .32f && (_takeoverMode || seconds < 6.1f) ?
-                ReadRect(.12f, -.14f, _subtitleWidth, _subtitleHeight) : Vector4.zero;
-            Vector4 contextRect = contextGraphic != null && seconds >= .65f &&
-                (_takeoverMode || seconds < 6f) ?
-                ReadRect(.15f, -.34f, _contextWidth, _contextHeight) : Vector4.zero;
-            Vector4 statusRect = (attemptGraphic != null || failedGraphic != null) &&
-                seconds >= 1.35f && (_takeoverMode || seconds < 6.84f) ?
-                ReadRect(.21f, -.50f, _statusWidth, _statusHeight) : Vector4.zero;
+            Vector4 warningRect = _takeoverMode ?
+                (seconds < TakeoverUnauthorizedSec ?
+                    ReadRect(TakeoverTextX, TakeoverTextY, _warningWidth, _warningHeight) : Vector4.zero) :
+                (seconds >= .095f && seconds < 5.9f ?
+                    ReadRect(.10f, .16f, _warningWidth, _warningHeight) : Vector4.zero);
+            Vector4 subtitleRect = _takeoverMode ?
+                (seconds >= TakeoverUnauthorizedSec && seconds < TakeoverSourceUnknownSec ?
+                    ReadRect(TakeoverTextX, TakeoverTextY, _subtitleWidth, _subtitleHeight) : Vector4.zero) :
+                (seconds >= .32f && seconds < 6.1f ?
+                    ReadRect(.12f, -.14f, _subtitleWidth, _subtitleHeight) : Vector4.zero);
+            Vector4 contextRect = _takeoverMode ?
+                (contextGraphic != null && seconds >= TakeoverSourceUnknownSec && seconds < TakeoverBlockSec ?
+                    ReadRect(TakeoverTextX, TakeoverTextY, _contextWidth, _contextHeight) : Vector4.zero) :
+                (contextGraphic != null && seconds >= .65f && seconds < 6f ?
+                    ReadRect(.15f, -.34f, _contextWidth, _contextHeight) : Vector4.zero);
+            Vector4 statusRect = _takeoverMode ?
+                ((attemptGraphic != null || failedGraphic != null) && seconds >= TakeoverBlockSec ?
+                    ReadRect(TakeoverTextX, TakeoverTextY, _statusWidth, _statusHeight) : Vector4.zero) :
+                ((attemptGraphic != null || failedGraphic != null) && seconds >= 1.35f && seconds < 6.84f ?
+                    ReadRect(.21f, -.50f, _statusWidth, _statusHeight) : Vector4.zero);
             Matrix4x4 worldToLocal = _screenRoot.worldToLocalMatrix;
             SetReadMask(_symbolMaterial, worldToLocal, warningRect, subtitleRect, contextRect, statusRect);
             SetReadMask(_decorationMaterial, worldToLocal, warningRect, subtitleRect, contextRect, statusRect);
@@ -829,25 +862,16 @@ namespace FixedCamVr.Streaming
             material.SetFloat(ReadMaskStrengthId, .93f);
         }
 
-        private float TakeoverVisualSeconds(float seconds)
-        {
-            if (!_takeoverMode || seconds < TakeoverLoopEndSec) return seconds;
-            return TakeoverLoopStartSec +
-                Mathf.Repeat(seconds - TakeoverLoopStartSec, TakeoverLoopEndSec - TakeoverLoopStartSec);
-        }
-
         private void ApplyTakeoverOpacity(float opacity)
         {
-            float readingOpacity = opacity * Mathf.Lerp(1f, .10f / .35f, _takeoverReadFocus);
+            float messageOpacity = opacity * Mathf.Lerp(1f, .55f / .35f, _takeoverReadFocus);
             float surroundingOpacity = opacity * Mathf.Lerp(1f, .14f / .35f, _takeoverReadFocus);
-            float statusTarget = _takeoverBlockFailed ? .55f : .38f;
-            float statusOpacity = opacity * Mathf.Lerp(1f, statusTarget / .35f, _takeoverReadFocus);
-            ApplyOpacity(_warningColors, _warningMesh, readingOpacity);
-            ApplyOpacity(_subtitleColors, _subtitleMesh, readingOpacity);
+            ApplyOpacity(_warningColors, _warningMesh, messageOpacity);
+            ApplyOpacity(_subtitleColors, _subtitleMesh, messageOpacity);
             ApplyOpacity(_symbolColors, _symbolMesh, surroundingOpacity);
             ApplyOpacity(_decorationColors, _decorationMesh, surroundingOpacity);
-            ApplyOpacity(_contextColors, _contextMesh, readingOpacity);
-            ApplyOpacity(_statusColors, _statusMesh, statusOpacity);
+            ApplyOpacity(_contextColors, _contextMesh, messageOpacity);
+            ApplyOpacity(_statusColors, _statusMesh, messageOpacity);
             ApplyOpacity(_glyphColors, _glyphMesh, surroundingOpacity);
             ApplyOpacity(_interferenceColors, _interferenceMesh, surroundingOpacity);
         }
@@ -862,9 +886,17 @@ namespace FixedCamVr.Streaming
         private void ResetTakeoverSample()
         {
             _takeoverMode = false;
-            _takeoverBlockFailed = false;
             _takeoverOpacity = 1f;
             _takeoverReadFocus = 0f;
+            TakeoverCaption = string.Empty;
+        }
+
+        private static string CaptionFor(float seconds)
+        {
+            if (seconds < TakeoverUnauthorizedSec) return "WARNING";
+            if (seconds < TakeoverSourceUnknownSec) return "不正アクセス";
+            if (seconds < TakeoverBlockSec) return "接続元不明";
+            return seconds < TakeoverFailedSec ? "遮断を執行" : "失敗";
         }
 
         private void MeasureAudience(Transform anchor)

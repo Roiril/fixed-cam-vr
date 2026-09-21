@@ -21,6 +21,7 @@ namespace FixedCamVr.Diagnostics
         private UnauthorizedAccessEffect? _effect;
         private bool _active;
         private bool _blockFailedLogged;
+        private int _lastWarningStep = -1;
         private bool _warnedMissingPrefab;
         private bool _warnedMissingScreen;
 
@@ -71,6 +72,13 @@ namespace FixedCamVr.Diagnostics
             float opacity = _panel != null ? _panel.TakeoverErrorOpacity : 1f;
             _effect.SampleTakeover(elapsed, blockFailed, opacity,
                 _panel != null ? _panel.TakeoverReadFocus : 0f);
+            int step = Mathf.Min(4, Mathf.FloorToInt(elapsed + 0.0001f));
+            if (step != _lastWarningStep)
+            {
+                _lastWarningStep = step;
+                Debug.Log("[XP] ev=commsError step=" + step + " sec="
+                    + elapsed.ToString("0.000", CultureInfo.InvariantCulture));
+            }
             if (blockFailed && !_blockFailedLogged)
             {
                 _blockFailedLogged = true;
@@ -116,6 +124,7 @@ namespace FixedCamVr.Diagnostics
             _effect.Play(_screenAnchor, _screenSize);
             _active = true;
             _blockFailedLogged = false;
+            _lastWarningStep = -1;
             Debug.Log("[XP] ev=commsError active=1 screen=1 spatial=1");
         }
 

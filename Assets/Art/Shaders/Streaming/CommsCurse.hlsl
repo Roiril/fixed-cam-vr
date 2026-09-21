@@ -57,16 +57,12 @@ float CurseK(float field, float mask)
 // sweep = (進み 0..1, 矩形の左端 x, 矩形の右端 x, 境界の幅 m)。
 // C# の本文クリップと顔と地が同じ panel-local x を読む。
 
+// tearGrid = (乱れの強さ, 明滅, 矩形の上端 y, 帯の高さ)。
+// `_Sweep.yz` は左右の座標なので、縦帯の座標として再利用しない。
 // 上端から数えた帯番号（0 が最上段。上端より上は 0 に寄せる）。
-float CommsBandOf(float y, float4 sweep)
+float CommsBandOf(float y, float4 tearGrid)
 {
-    return max(floor((sweep.y - y) / max(sweep.w, 1e-4)), 0.0);
-}
-
-// 帯の数（最後の帯は欠けていてよい）。
-float CommsBandCount(float4 sweep)
-{
-    return ceil(max(sweep.y - sweep.z, 0.0) / max(sweep.w, 1e-4));
+    return max(floor((tearGrid.z - y) / max(tearGrid.w, 1e-4)), 0.0);
 }
 
 // その画素の「塗り替わった度」0 / 1。反転した帯なら 1。
@@ -101,15 +97,15 @@ float CommsPick8(float4 a, float4 b, float i)
 }
 
 // その y の帯の**中身が右へ動く量**（m）。中身をサンプルするときは引く（p.x - shift）。
-float CommsTearShiftAt(float y, float4 sweep, float4 shiftA, float4 shiftB)
+float CommsTearShiftAt(float y, float4 tearGrid, float4 shiftA, float4 shiftB)
 {
-    return CommsPick8(shiftA, shiftB, CommsBandOf(y, sweep));
+    return CommsPick8(shiftA, shiftB, CommsBandOf(y, tearGrid));
 }
 
 // その y の帯の脱落（0..1）。alpha に (1 - これ) を掛ける。
-float CommsTearDropAt(float y, float4 sweep, float4 dropA, float4 dropB)
+float CommsTearDropAt(float y, float4 tearGrid, float4 dropA, float4 dropB)
 {
-    return CommsPick8(dropA, dropB, CommsBandOf(y, sweep));
+    return CommsPick8(dropA, dropB, CommsBandOf(y, tearGrid));
 }
 
 #endif

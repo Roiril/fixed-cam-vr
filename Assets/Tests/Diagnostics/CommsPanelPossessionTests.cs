@@ -56,6 +56,8 @@ namespace FixedCamVr.Diagnostics.Tests
         }
         private TMPro.TMP_Text Text() => (TMPro.TMP_Text)typeof(CommsPanel).GetField("_text", Private)!.GetValue(_panel);
         private TMPro.TMP_Text LieText() => (TMPro.TMP_Text)typeof(CommsPanel).GetField("_lieText", Private)!.GetValue(_panel);
+        private Transform Root() => (Transform)typeof(CommsPanel).GetField("_root", Private)!.GetValue(_panel);
+        private Transform VisualRoot() => (Transform)typeof(CommsPanel).GetField("_visualRoot", Private)!.GetValue(_panel);
         private static int VisibleCount(TMPro.TMP_Text text)
         {
             int n = 0;
@@ -68,7 +70,8 @@ namespace FixedCamVr.Diagnostics.Tests
             var ch = text.textInfo.characterInfo[charIndex];
             return text.textInfo.meshInfo[ch.materialReferenceIndex].colors32[ch.vertexIndex];
         }
-        private float ReadSec() => CommsPossessionLogic.ReadSecFor(Text().textInfo.characterCount, ShowLanguage.Current);
+        private float ReadSec() => CommsPanelLogic.PossessionReadSecFor(
+            Text().textInfo.characterCount, ShowLanguage.Current);
 
         [Test]
         public void TheTruthAppearsAllAtOnce_WithoutKeystrokes()
@@ -177,6 +180,98 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.Less(firstCutLeft, firstCutRight, "左の字が右の字より先に置換される");
             Assert.AreEqual(CommsPossessionPhase.Cursed, _panel.PossessionPhase);
             Assert.AreEqual(VisibleCount(text), _panel.CorruptedChars);
+        }
+
+        [Test]
+        public void SweepShakesOnlyTheVisualChild_AndReturnsToItsExactPose()
+        {
+            _panel.Deliver(CommsNotice.Takeover);
+            Transform visual = VisualRoot();
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec
+                    + CommsPossessionLogic.ShowSec + ReadSec() - 0.1f);
+            Assert.AreEqual(CommsPossessionPhase.Shown, _panel.PossessionPhase);
+            Assert.AreEqual(Vector3.zero, visual.localPosition, "真実を読む区間は静止する");
+            Assert.Less(Quaternion.Angle(Quaternion.identity, visual.localRotation), 0.0001f);
+            Assert.AreEqual(0f, _panel.AppliedShake);
+            Assert.AreEqual(0f, _panel.AppliedTear);
+
+            Advance(0.2f);
+            Assert.AreEqual(CommsPossessionPhase.Sweep, _panel.PossessionPhase);
+            Assert.AreEqual(1f, _panel.AppliedShake);
+            Assert.Greater(visual.localPosition.sqrMagnitude, 0.00000001f, "面の子だけが実際に動く");
+            Assert.AreEqual(Vector3.zero, Root().localPosition, "HMD 追従の根は Apply で揺らさない");
+            Assert.Less(Quaternion.Angle(Quaternion.identity, Root().localRotation), 0.0001f,
+                        "全視界や追従姿勢へ揺れを返さない");
+            Assert.LessOrEqual(Mathf.Abs(visual.localPosition.x), 0.006f);
+            Assert.LessOrEqual(Mathf.Abs(visual.localPosition.y), 0.006f);
+            Assert.Greater(_panel.AppliedShakeAngleDeg, 0f);
+            Assert.LessOrEqual(_panel.AppliedShakeAngleDeg, 0.6f);
+            Assert.Greater(_panel.AppliedTear, 0f, "最初の短い乱れに入っている");
+
+            Advance(CommsPossessionLogic.SweepSec + 0.1f);
+            Assert.AreEqual(CommsPossessionPhase.Cursed, _panel.PossessionPhase);
+            Assert.AreEqual(Vector3.zero, visual.localPosition, "人形を読む 1.35 秒は元の位置へ戻る");
+            Assert.Less(Quaternion.Angle(Quaternion.identity, visual.localRotation), 0.0001f);
+            Assert.AreEqual(0f, _panel.AppliedShake);
+            Assert.AreEqual(0f, _panel.AppliedTear);
+            Assert.AreEqual(VisibleCount(LieText()), _panel.LieChars, "最終文に欠落を残さない");
+        }
+
+        [Test]
+        public void SweepHasFourShortTearBursts_WithStableGaps()
+        {
+            _panel.Deliver(CommsNotice.Takeover);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec
+                    + CommsPossessionLogic.ShowSec + ReadSec());
+            const float dt = 1f / 120f;
+            var starts = new System.Collections.Generic.List<float>();
+            var ends = new System.Collections.Generic.List<float>();
+            bool tearing = false;
+            for (int i = 0; i <= Mathf.CeilToInt(CommsPossessionLogic.SweepSec / dt); i++)
+            {
+                bool now = _panel.AppliedTear > 0.001f;
+                float t = _panel.AppliedSweep * CommsPossessionLogic.SweepSec;
+                if (now && !tearing) starts.Add(t);
+                if (!now && tearing) ends.Add(t);
+                tearing = now;
+                _logic.Tick(dt);
+                Apply();
+            }
+            if (tearing) ends.Add(CommsPossessionLogic.SweepSec);
+
+            Assert.AreEqual(4, starts.Count);
+            Assert.AreEqual(starts.Count, ends.Count);
+            for (int i = 0; i < starts.Count; i++)
+            {
+                Assert.That(ends[i] - starts[i], Is.InRange(0.10f, 0.14f));
+                if (i > 0) Assert.GreaterOrEqual(starts[i] - ends[i - 1], 0.25f);
+            }
+        }
+
+        [Test]
+        public void TakeoverRejectsRepeatedMarkState_WithoutHidingTheTruthOrLie()
+        {
+            _panel.SetDecayForPreview(0f, 0f);
+            _panel.Deliver(CommsNotice.Greeting);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
+            _panel.SetMarkState(0.6f, true);
+            _logic.SetGuideWanted(true);
+            Apply();
+            Assert.IsNotEmpty(_panel.HintBody, "直前の通常通知では入力を表示できる");
+
+            _panel.SetDecayForPreview(1f, 0f);
+            _panel.Deliver(CommsNotice.Takeover);
+            Assert.IsTrue(_panel.TakeoverInputBlocked);
+            for (int i = 0; i < 5; i++) _panel.SetMarkState(1f, true);
+            Advance(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec
+                    + CommsPossessionLogic.ShowSec + 0.1f);
+            Assert.AreEqual("", _panel.HintBody, "押し続けても Guide を割り込ませない");
+            Assert.AreEqual(Text().textInfo.characterCount, _panel.VisibleChars,
+                            "入力の繰り返しで真実全文を消灯しない");
+
+            Advance(ReadSec() + CommsPossessionLogic.SweepSec);
+            Assert.AreEqual(VisibleCount(LieText()), _panel.LieChars,
+                            "入力の繰り返しで最終文を欠落させない");
         }
 
         [Test]

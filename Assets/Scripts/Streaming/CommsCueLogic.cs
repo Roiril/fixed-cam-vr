@@ -320,6 +320,11 @@ namespace FixedCamVr.Streaming
 
         public bool TakeoverDelivered => _takeoverDelivered;
 
+        /// <summary>Update 順序によらず、追いつき完了から強制表示までの入力も止める。</summary>
+        public bool HasPendingTakeover(int completedCount)
+            => !_takeoverDelivered && (_catchUpFinished
+                || completedCount > _dollCatchUpCompletedObserved);
+
         /// <summary>本編に入ってからの経過（診断用）。</summary>
         public float RunSec => _runSec;
 

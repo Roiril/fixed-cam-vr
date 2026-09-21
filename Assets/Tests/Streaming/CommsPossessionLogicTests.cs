@@ -184,7 +184,7 @@ namespace FixedCamVr.Streaming.Tests
             var l = new CommsPanelLogic();
             l.SetCurseTarget(0.6f);
             l.Begin(12, CommsDelivery.Possessed);
-            float readSec = CommsPossessionLogic.ReadSecFor(12, ShowLanguage.Current);
+            float readSec = CommsPanelLogic.PossessionReadSecFor(12, ShowLanguage.Current);
             Assert.AreEqual(CommsPossessionLogic.DurationFor(readSec), l.TypeSec, 1e-5f);
             Assert.AreEqual(CommsStage.Intrusion, l.Stage);
             Assert.AreEqual(CommsWeights.Hidden.panel, l.Weights.panel, 1e-6f, "侵入中は既存の面を完全に消す");
@@ -241,7 +241,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = new CommsPanelLogic();
             l.Begin(12, CommsDelivery.Possessed);
-            float readSec = CommsPossessionLogic.ReadSecFor(12, ShowLanguage.Current);
+            float readSec = CommsPanelLogic.PossessionReadSecFor(12, ShowLanguage.Current);
             float failAt = CommsPossessionLogic.SweepStartSec(readSec)
                            - CommsPanelLogic.TakeoverBlockFailedLeadSec;
 
@@ -283,6 +283,58 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0f, l.TakeoverErrorOpacity, 1e-6f);
             Assert.AreEqual(0f, l.TakeoverReadFocus);
             Assert.GreaterOrEqual(l.TakeoverElapsedSec, elapsed, "自然終了でも通算時計を巻き戻さない");
+        }
+
+        [TestCase(30)]
+        [TestCase(72)]
+        [TestCase(90)]
+        public void TakeoverClock_PreservesFrameRemainders(int fps)
+        {
+            var l = new CommsPanelLogic();
+            l.Begin(9, CommsDelivery.Possessed);
+            int steps = (int)System.Math.Ceiling(4.7 * fps);
+            for (int i = 0; i < steps; i++) l.Tick(1f / fps);
+            Assert.IsTrue(l.TakeoverBlockFailed);
+            Assert.AreEqual(CommsPossessionPhase.Sweep, l.PossessionSample.phase);
+            Assert.AreEqual((l.TakeoverElapsedSec - 4.6f) / 1.6f,
+                l.PossessionSample.sweep, 0.00002f);
+            while (l.Active) l.Tick(1f / fps);
+            Assert.That(l.TakeoverElapsedSec, Is.InRange(7.669f, 7.67f + 1f / fps));
+        }
+
+        [Test]
+        public void PendingCompletion_BlocksBeforeCueTick_ButNotAfterSuppressedCompletion()
+        {
+            var l = new CommsCueLogic();
+            Assert.IsFalse(l.HasPendingTakeover(0));
+            Assert.IsTrue(l.HasPendingTakeover(1));
+            var input = Input(dollCatchUpCompletedCount: 1);
+            input.takeoverSuppressed = true;
+            l.Tick(input);
+            Assert.IsFalse(l.HasPendingTakeover(1));
+            l.ResetRun();
+            Assert.IsTrue(l.HasPendingTakeover(1));
+            l.NotifyDelivered(CommsNotice.Takeover);
+            Assert.IsFalse(l.HasPendingTakeover(1));
+        }
+
+        [Test]
+        public void BlockedReport_DoesNotCountOrResolveAnything()
+        {
+            var go = new UnityEngine.GameObject("Blocked report test");
+            try
+            {
+                var control = go.AddComponent<ShowControlClient>();
+                control.VisitorMarkBlockedProvider = () => true;
+                for (int i = 0; i < 20; i++) Assert.IsFalse(control.RecordVisitorMark());
+                Assert.AreEqual(0, control.VisitorMarkCount);
+                Assert.AreEqual(0, control.ReportedAnomalyCount);
+                Assert.IsFalse(control.LastMarkResolved);
+                control.VisitorMarkBlockedProvider = () => false;
+                Assert.IsTrue(control.RecordVisitorMark());
+                Assert.AreEqual(1, control.VisitorMarkCount);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(go); }
         }
 
         [Test]

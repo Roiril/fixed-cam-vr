@@ -202,6 +202,18 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
     direction = verify_wipe(truth, wipe, doll)
     reverse_rejected = calibrate_direction_guard(truth, doll, direction["change_bbox"])
     story = verify_story(folder, rows) if "blockFailed" in rows[0] else None
+    intrusion_motion = verify_intrusion_motion(rows) if "shake" in rows[0] else None
+    if intrusion_motion is not None:
+        # 時計がずれた警告と、乱れが描画側へ届かない対照を確実に拒否する。
+        for field, wrong in (("caption", "失敗"), ("tear", "0")):
+            control = [{**row, field: wrong} for row in rows]
+            try:
+                verify_intrusion_motion(control)
+            except (AssertionError, StopIteration):
+                pass
+            else:
+                raise AssertionError(f"侵食の検査が不正な対照を受け入れた: {field}")
+        intrusion_motion["wrong_caption_and_missing_glitch_controls_rejected"] = True
     video = make_video(folder, len(rows), ffmpeg)
     result: dict[str, object] = {
         "language": folder.name,
@@ -220,6 +232,7 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
         "wipe": direction,
         "reverse_direction_control_rejected": reverse_rejected,
         "story": story,
+        "intrusion_motion": intrusion_motion,
         "stills": {
             "truth": str(folder / "truth.png"),
             "wipe": str(folder / "wipe.png"),
@@ -236,6 +249,37 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
     (folder / "evidence.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
+
+
+def verify_intrusion_motion(rows: list[dict[str, str]]) -> dict[str, object]:
+    captions = ["WARNING", "不正アクセス", "接続元不明", "遮断を執行", "失敗"]
+    for step, caption in enumerate(captions):
+        first = next(i for i, row in enumerate(rows) if row["caption"] == caption)
+        if abs(first / FPS - step) > 1 / FPS + .001:
+            raise AssertionError(f"警告の出現時刻が不正: {caption} at {first / FPS}")
+        if step < 4 and sum(row["caption"] == caption for row in rows) != FPS:
+            raise AssertionError(f"警告が1秒保持されていない: {caption}")
+    bursts = 0
+    previous = False
+    max_position = max_angle = 0.0
+    for row in rows:
+        sweep = float(row["sweep"])
+        moving = float(row["shake"]) > 0
+        tear = float(row["tear"]) > .001
+        displacement = max(abs(float(row["shakeX"])), abs(float(row["shakeY"])))
+        angle = float(row["shakeAngle"])
+        max_position = max(max_position, displacement)
+        max_angle = max(max_angle, angle)
+        if not .001 < sweep < .999 and (moving or tear or displacement > 1e-6 or angle > 1e-4):
+            raise AssertionError("読取中か完成文に揺れが残っている")
+        if tear and not previous:
+            bursts += 1
+        previous = tear
+    if bursts != 4 or not 0 < max_position <= .006 or not 0 < max_angle <= .6:
+        raise AssertionError(f"侵食の乱れが設定外: {bursts}, {max_position}, {max_angle}")
+    return {"warning_steps": 5, "each_initial_caption_sec": 1,
+            "glitch_bursts": bursts, "max_axis_displacement_m": max_position,
+            "max_angle_deg": max_angle, "read_and_final_static": True}
 
 
 def verify_story(folder: Path, rows: list[dict[str, str]]) -> dict[str, object]:

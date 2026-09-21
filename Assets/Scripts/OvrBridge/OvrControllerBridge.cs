@@ -389,15 +389,18 @@ namespace FixedCamVr.OvrBridge
             if (!_onboarding.StartAuthorized) _markNeedsRelease = true;
             else if (!leftMarkHeld) _markNeedsRelease = false;
             bool markTooEarly = showControl != null && showControl.IsMarkTooEarly;
+            bool takeoverBlocked = (showControl != null && showControl.IsVisitorMarkBlocked)
+                                   || (comms != null && comms.TakeoverInputBlocked);
+            if (takeoverBlocked) _markNeedsRelease = true;
             bool markFired = _markHold.Tick(Time.deltaTime,
                                             leftMarkHeld && _onboarding.StartAuthorized
                                             && !_markNeedsRelease
                                             && !markTooEarly
-                                            && mode == ControllerModeLogic.Mode.Normal);
+                                            && mode == ControllerModeLogic.Mode.Normal,
+                                            blocked: takeoverBlocked);
             if (markFired)
             {
-                showControl?.RecordVisitorMark();
-                haptics?.LeftMark();
+                if (showControl != null && showControl.RecordVisitorMark()) haptics?.LeftMark();
             }
             if (comms != null)
             {

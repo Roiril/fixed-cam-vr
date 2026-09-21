@@ -98,6 +98,37 @@ namespace FixedCamVr.Input.Tests
         }
 
         [Test]
+        public void Takeover_CancelsPartialHoldAndRequiresReleaseAfterItEnds()
+        {
+            var logic = new VisitorMarkHoldLogic();
+            Hold(logic, 0.8f);
+            for (int i = 0; i < 300; i++)
+            {
+                Assert.IsFalse(logic.Tick(0.03f, true, blocked: true));
+                Assert.AreEqual(0f, logic.Progress01);
+                Assert.IsFalse(logic.Confirming);
+            }
+            for (int i = 0; i < 80; i++) Assert.IsFalse(logic.Tick(0.03f, true));
+            Assert.IsFalse(logic.Tick(0.03f, false));
+            Assert.IsFalse(logic.Tick(0.25f, true));
+            Assert.IsFalse(logic.Tick(0.25f, true));
+            Assert.IsFalse(logic.Tick(0.25f, true));
+            Assert.IsTrue(logic.Tick(0.25f, true));
+        }
+
+        [Test]
+        public void Takeover_DiscardsConfirmationAndRapidPresses()
+        {
+            var logic = new VisitorMarkHoldLogic();
+            Hold(logic, Full);
+            Assert.IsTrue(logic.Confirming);
+            for (int i = 0; i < 100; i++)
+                Assert.IsFalse(logic.Tick(0.03f, i % 2 == 0, blocked: true));
+            Assert.IsFalse(logic.Confirming);
+            Assert.AreEqual(0f, logic.Progress01);
+        }
+
+        [Test]
         public void Reset_ClearsHoldAndConfirm()
         {
             var logic = new VisitorMarkHoldLogic();

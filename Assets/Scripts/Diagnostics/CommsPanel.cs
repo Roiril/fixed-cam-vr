@@ -23,7 +23,7 @@ namespace FixedCamVr.Diagnostics
     /// ⚠ <b>文面はコードが持っている</b>（show.json への著作 ＝ take の並列チャンネルは次の段）。
     /// 出る所は 3 点 — <see cref="CommsCueLogic"/>（<c>canon/LEDGER.md</c> 0054）。
     ///
-    /// <b>出方</b>: 面と文面の位置は固定し、透明度で出入りする。顔と本文の間の短い縦罫線だけが伸びる。
+    /// <b>出方</b>: 通常時の面と文面の位置は固定し、透明度で出入りする。顔と本文の間の短い縦罫線だけが伸びる。
     /// 文字は従来の時刻で 1 字ずつ打たれ、各字の alpha が 40ms で立ち上がる。
     /// 判断は <see cref="CommsPanelLogic"/>、配るのは <c>Apply</c> 1 か所。
     /// ⚠ 打つ順序は文字の頂点 alpha で作る。文字列と字幅は毎フレーム変えない。
@@ -58,6 +58,7 @@ namespace FixedCamVr.Diagnostics
     /// <b>全文が一気に出て（打鍵なし）→ 読ませて → 左から顔と本文が呪われた双子へ塗り替わる</b>
     /// （時計は <see cref="CommsPossessionLogic"/>・本文は同位置の 2 枚の TMP を同じ x で切る）。
     /// 塗り替わりの頭で乱れの音が 1 発（<see cref="CurseSweepAudioCue"/>）。嘘の一文（3 周目 A）も同じ形で、
+    /// Sweep 中だけ面の子が小さく揺れ、短い 4 回の乱れで帯の中身が横へ飛ぶ。読む区間と塗り替わり後は静止する。
     /// 旧「印字へ侵食が追いつく」の弧は捨てた（初見の人には装置の不調にしか見えない、がユーザーの判定の芯）。
     /// </summary>
     [DisallowMultipleComponent]
@@ -508,6 +509,9 @@ namespace FixedCamVr.Diagnostics
         private readonly YawFollowLogic _yawFollow = new YawFollowLogic();
 
         private Transform? _root;
+        // HMD 追従は `_root`、乗っ取り中の面の揺れはその子に分離する。
+        // LateUpdate が根の world pose を更新しても、Apply が書いた local pose は消えない。
+        private Transform? _visualRoot;
         private MeshRenderer? _panelRenderer;
         private MeshRenderer? _dividerRenderer;
         // 文字を切るステンシルの quad（地と同じ寸法・色は書かない）。
@@ -629,6 +633,14 @@ namespace FixedCamVr.Diagnostics
         private readonly float[] _tearShift = new float[CommsCurseLogic.TearMaxBands];
         private readonly float[] _tearDrop = new float[CommsCurseLogic.TearMaxBands];
         private float _tearFlicker = 1f;
+        private float _tearTop;
+
+        // Sweep 1.6 秒の中に 4 回。各 0.12〜0.13 秒、間は 0.28 秒以上静止する。
+        private static readonly Vector2[] TearWindows =
+        {
+            new Vector2(0.02f, 0.14f), new Vector2(0.42f, 0.54f),
+            new Vector2(0.82f, 0.94f), new Vector2(1.22f, 1.35f),
+        };
 
         /// <summary>実体を組めたか。<b>false なら一生出ない</b>（テレメトリが読む）。</summary>
         public bool IsBuilt => _text != null;
@@ -762,11 +774,20 @@ namespace FixedCamVr.Diagnostics
         /// <summary>直近に書いた前線の進み（0 = まだ通常 / 1 = 全面が呪われた双子）。「画に出た」側の観測。</summary>
         public float AppliedSweep { get; private set; }
 
-        /// <summary>直近に書いた乱れの強さ（0231）。塗り替わりのあいだ 0.6 で、読ませる段は 0。</summary>
+        /// <summary>直近に書いた乱れの強さ（0231）。Sweep 中の短い 4 回だけ立ち、読ませる段は 0。</summary>
         public float AppliedTear { get; private set; }
 
         /// <summary>直近のフレームで飛んでいる帯の数（乱れが画へ出た側の観測）。</summary>
         public int TornBands { get; private set; }
+
+        /// <summary>面だけに書いた揺れの強さ（0 = 静止 / 1 = Sweep 中）。</summary>
+        public float AppliedShake { get; private set; }
+
+        /// <summary>面だけに書いたローカル位置。HMD 追従の根は含まない。</summary>
+        public Vector3 AppliedShakePosition { get; private set; }
+
+        /// <summary>面だけに書いたローカル回転の角度（度）。</summary>
+        public float AppliedShakeAngleDeg { get; private set; }
 
         /// <summary>直近に書いた地の不透明度（「画に出た」側の観測）。</summary>
         public float AppliedPanelAlpha { get; private set; }
@@ -782,6 +803,15 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>Takeover の面が出ているあいだ true。主画面側の空間エラーが開始と終了を同期する。</summary>
         public bool TakeoverVisible => _lieActive && _logic.Active;
+
+        /// <summary>乗っ取りの発火待ちから表示終了まで、報告入力を受け付けない。</summary>
+        public bool TakeoverInputBlocked
+            => isActiveAndEnabled
+               && (TakeoverVisible
+                   || (runDirector != null && runDirector.Phase == ShowPhase.Run
+                       && timeline != null && !timeline.Suppressed
+                       && timeline.PresentationAbortCount <= _lastPresentationAbortCount
+                       && _cue.HasPendingTakeover(timeline.DollCatchUpCompletedCount)));
 
         /// <summary>Takeover 開始からの単調な秒数。段をまたいでも同じ純ロジック時計を読む。</summary>
         public float TakeoverElapsedSec => _logic.TakeoverElapsedSec;
@@ -821,6 +851,12 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public void SetMarkState(float progress01, bool confirming)
         {
+            if (TakeoverInputBlocked)
+            {
+                _markProgress = 0f;
+                _markConfirming = false;
+                return;
+            }
             _markProgress = Mathf.Clamp01(progress01);
             _markConfirming = confirming;
         }
@@ -881,6 +917,7 @@ namespace FixedCamVr.Diagnostics
         {
             if (runDirector == null) runDirector = FindObjectOfType<ShowRunDirector>();
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
+            if (showControl != null) showControl.VisitorMarkBlockedProvider = IsTakeoverInputBlocked;
             if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
             if (intro == null) intro = FindObjectOfType<IntroDirector>();
             if (walkGuide == null) walkGuide = FindObjectOfType<WalkGuide>();
@@ -910,7 +947,11 @@ namespace FixedCamVr.Diagnostics
         {
             if (_runRestartHooked && runDirector != null) runDirector.RunRestarted -= OnRunRestarted;
             _runRestartHooked = false;
+            if (showControl != null && showControl.VisitorMarkBlockedProvider == IsTakeoverInputBlocked)
+                showControl.VisitorMarkBlockedProvider = null;
         }
+
+        private bool IsTakeoverInputBlocked() => TakeoverInputBlocked;
 
         private void OnRunRestarted()
         {
@@ -958,6 +999,11 @@ namespace FixedCamVr.Diagnostics
             if (!IsBuilt || notice == CommsNotice.None) return;
             // 乗っ取りは Guide だけでなく、後続通知でも頭出し・中断しない。
             if (_logic.Delivery == CommsDelivery.Possessed && _logic.Active) return;
+            if (notice == CommsNotice.Takeover)
+            {
+                _markProgress = 0f;
+                _markConfirming = false;
+            }
             // ⚠⚠ **床の矢印はこの連絡と対で出る**（`canon/LEDGER.md` 0079 の赤入れ 4
             //    「エージェントが説明し始めるときに、矢印が手前の線から 1 つづつ出てくるような感じに」）。
             //    ここで言わないと `WalkGuide` は保険（12 秒）が切れるまで 1 つも出さないので、
@@ -1076,7 +1122,7 @@ namespace FixedCamVr.Diagnostics
             // ⚠ **押している最中は面を開いたままにする**（`canon/LEDGER.md` 0058）。
             //   本編の外では開かない — 導入・終幕に手元の案内が浮くと世界が壊れる
             //   （元の面が queue 3000 で覆いに潰されていたのと同じ意図）。
-            _logic.SetGuideWanted(inRun && _leftConnected
+            _logic.SetGuideWanted(inRun && !TakeoverInputBlocked && _leftConnected
                                   && (_markProgress > 0f || _markConfirming));
 
             // 侵食度は面が出ていなくても読む。**斑の立ち上がりは面が開いた縁から**（0229
@@ -1190,6 +1236,10 @@ namespace FixedCamVr.Diagnostics
             // ⚠ 大きさは**根 1 か所**で決める（`canon/LEDGER.md` 0091）。
             //   個々の寸法へ倍率を配ると、次に足した部品が掛け忘れられて 1 つだけ大きく残る。
             _root.localScale = Vector3.one * Scale;
+            var visualGo = new GameObject("CommsVisualRoot");
+            visualGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
+            Transform visualRoot = visualGo.transform;
+            _visualRoot = visualRoot;
 
             // 地（受信票の面）。⚠ 標準シェーダが見つからなければ**文字だけ**にする
             //    （面が無くても読めるので、体験は止めない）。
@@ -1224,27 +1274,27 @@ namespace FixedCamVr.Diagnostics
             if (plate != null)
             {
                 // 地は固定した寸法で置く。出入りは透明度だけを変える。混ぜ方はシェーダが持つ。
-                _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
+                _panelRenderer = MakeQuad(visualRoot, "CommsPanelQuad",
                                           _panelW, BodyMaxH + HintBandH, 0.012f,
                                           plate, RenderQueue, out _panelMat, translucent: false);
             }
             if (stencil != null)
             {
                 // 文字を切るステンシル。地の直後（4981）に描き、色は書かない。
-                _stencilRenderer = MakeQuad(rootGo.transform, "CommsPanelStencil",
+                _stencilRenderer = MakeQuad(visualRoot, "CommsPanelStencil",
                                             _panelW, BodyMaxH + HintBandH, 0.011f,
                                             stencil, RenderQueue + 1, out _stencilMat, translucent: false);
             }
             else if (flat != null)
             {
-                _panelRenderer = MakeQuad(rootGo.transform, "CommsPanelQuad",
+                _panelRenderer = MakeQuad(visualRoot, "CommsPanelQuad",
                                           _panelW, BodyMaxH + HintBandH, 0.012f,
                                           flat, RenderQueue, out _panelMat, translucent: true);
             }
             if (flat != null)
             {
                 // 顔と本文の間にだけ、短い縦罫線を置く。
-                _dividerRenderer = MakeQuad(rootGo.transform, "CommsDivider",
+                _dividerRenderer = MakeQuad(visualRoot, "CommsDivider",
                                             CommsFaceLayout.DividerW, CommsFaceLayout.DividerH, 0.006f,
                                             flat, AvatarQueue, out _dividerMat, translucent: true);
             }
@@ -1256,13 +1306,13 @@ namespace FixedCamVr.Diagnostics
                                  + "（Universal Render Pipeline/Unlit も Unlit/Color も見つからない）");
             }
 
-            BuildAvatar(rootGo.transform);
+            BuildAvatar(visualRoot);
 
             // ---- 下段（報告の押し方・ゲージ）。**2026-08-16 にコントローラの先からここへ移した**
             //      （`canon/LEDGER.md` 0058）。上段より下・小さく・左揃え。
             //      ⚠ ゲージと見出しの大きさはリッチテキストで組む（`VisitorMarkGuidance`）。
             var hintGo = new GameObject("CommsHint");
-            hintGo.transform.SetParent(rootGo.transform, worldPositionStays: false);
+            hintGo.transform.SetParent(visualRoot, worldPositionStays: false);
             var hintTmp = hintGo.AddComponent<TextMeshPro>();
             hintTmp.font = jp;
             hintTmp.alignment = TextAlignmentOptions.TopLeft;
@@ -1281,7 +1331,7 @@ namespace FixedCamVr.Diagnostics
             hintTmp.fontMaterial.renderQueue = GlyphQueue;
             _hint = hintTmp;
 
-            _text = MakeGlyphSurface(rootGo.transform, jp, "CommsText", GlyphQueue, Ivory);
+            _text = MakeGlyphSurface(visualRoot, jp, "CommsText", GlyphQueue, Ivory);
             _textRenderer = _text.GetComponent<MeshRenderer>();
             TMP_FontAsset? horror = Resources.Load<TMP_FontAsset>(HorrorFontResourcePath);
             if (horror == null)
@@ -1299,7 +1349,7 @@ namespace FixedCamVr.Diagnostics
                 }
                 if (!fallbacks.Contains(jp)) fallbacks.Add(jp);
             }
-            _lieText = MakeGlyphSurface(rootGo.transform, horror, "CommsLieText", GlyphQueue + 1, LieRed);
+            _lieText = MakeGlyphSurface(visualRoot, horror, "CommsLieText", GlyphQueue + 1, LieRed);
             _lieTextRenderer = _lieText.GetComponent<MeshRenderer>();
             _lieTextRenderer.enabled = false;
             SetNotice(CommsNotice.None);   // 組み上げたら、まず畳んだ状態にする
@@ -1596,6 +1646,7 @@ namespace FixedCamVr.Diagnostics
                     : 0f;
                 float centerX = (ch.bottomLeft.x + ch.topRight.x) * 0.5f;
                 float centerY = (ch.bottomLeft.y + ch.topRight.y) * 0.5f;
+                float panelY = _text.transform.localPosition.y + centerY * TextScale;
                 if (_lieActive)
                 {
                     if (appeared && _text.transform.localPosition.x + centerX * TextScale < boundaryPanel)
@@ -1606,13 +1657,15 @@ namespace FixedCamVr.Diagnostics
                 else if (AppliedCurse > 0f)
                 {
                     float px = _text.transform.localPosition.x + centerX * TextScale;
-                    float py = _text.transform.localPosition.y + centerY * TextScale;
+                    float py = panelY;
                     float halfW = (ch.topRight.x - ch.bottomLeft.x) * 0.35f * TextScale;
                     bool cutCenter = CommsCurseLogic.IsCut(px, py, AppliedCurse);
                     if (cutCenter && appeared) overwritten++;
                     if (cutCenter && CommsCurseLogic.IsCut(px - halfW, py, AppliedCurse)
                         && CommsCurseLogic.IsCut(px + halfW, py, AppliedCurse)) alpha = 0f;
                 }
+                alpha *= TearAlphaAt(panelY);
+                ShiftGlyphX(info, ch, TearShiftAt(panelY) / TextScale);
                 SetGlyphAlpha(info, ch, alpha);
             }
             _text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32
@@ -1638,12 +1691,36 @@ namespace FixedCamVr.Diagnostics
                 bool kept = ClipGlyphX(info, _lieBaseVertices, _lieBaseUvs, ch, boundaryLocal, keepLeft: true);
                 float center = _lieText.transform.localPosition.x
                              + (ch.bottomLeft.x + ch.topRight.x) * 0.5f * TextScale;
+                float centerY = (ch.bottomLeft.y + ch.topRight.y) * 0.5f;
+                float panelY = _lieText.transform.localPosition.y + centerY * TextScale;
                 if (kept && center <= boundaryPanel && globalAlpha > 0.004f) visible++;
-                SetGlyphAlpha(info, ch, kept ? globalAlpha : 0f);
+                ShiftGlyphX(info, ch, TearShiftAt(panelY) / TextScale);
+                SetGlyphAlpha(info, ch, kept ? globalAlpha * TearAlphaAt(panelY) : 0f);
             }
             _lieText.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32
                                       | TMP_VertexDataUpdateFlags.Uv0);
             return visible;
+        }
+
+        private float TearShiftAt(float panelY)
+        {
+            int band = Mathf.Clamp(CommsCurseLogic.SweepBandOf(panelY, _tearTop),
+                                   0, CommsCurseLogic.TearMaxBands - 1);
+            return _tearShift[band];
+        }
+
+        private float TearAlphaAt(float panelY)
+        {
+            int band = Mathf.Clamp(CommsCurseLogic.SweepBandOf(panelY, _tearTop),
+                                   0, CommsCurseLogic.TearMaxBands - 1);
+            return (1f - _tearDrop[band]) * _tearFlicker;
+        }
+
+        private static void ShiftGlyphX(TMP_TextInfo info, TMP_CharacterInfo ch, float shift)
+        {
+            if (Mathf.Abs(shift) <= 0.000001f) return;
+            Vector3[] vertices = info.meshInfo[ch.materialReferenceIndex].vertices;
+            for (int k = 0; k < 4; k++) vertices[ch.vertexIndex + k].x += shift;
         }
 
         private static void RestoreMesh(TMP_TextInfo info, Vector3[][] vertices, Color32[][] colors,
@@ -1843,6 +1920,7 @@ namespace FixedCamVr.Diagnostics
             float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
             AppliedPanelAlpha = Mathf.Lerp(PanelAlpha, TakeoverPanelAlpha, TakeoverReadFocus) * pa;
             AppliedBody = Mathf.Clamp01(w.body);
+            ApplyPossessionMotion(poss.phase, AppliedSweep);
 
             // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
             //    下段から指示を剥がしたので、**押していないときは下段に 1 文字も無い**。
@@ -1857,12 +1935,14 @@ namespace FixedCamVr.Diagnostics
             float h = Mathf.Max(0f, top - bottom);
             if (h > 0.0005f) h = Mathf.Max(h, CommsFaceLayout.MinBoxH);
             bool lit = pa > 0.002f && h > 0.0005f;
-            // 前線（0230）は矩形の実寸（丈の下限を含む）を上端から帯ごとに降りる。顔・地・文字が同じ値を読む。
+            // `_Sweep` は左→右の前線だけを持つ。縦帯の上端と高さは `_Tear.zw` へ分離する。
             var sweep = new Vector4(AppliedSweep, _panelLeftX, _panelLeftX + _panelW,
                                     CommsCurseLogic.TearBandM);
-            // Takeover は左右の置換そのものを読ませる。旧 y 帯の乱れは前線と空間が異なるため掛けない。
-            AppliedTear = 0f;
-            CommsCurseLogic.ComputeTear(0f, w.tearSeed, 0,
+            _tearTop = top;
+            AppliedTear = TearStrengthAt(poss.phase, AppliedSweep);
+            int bandCount = Mathf.Clamp(CommsCurseLogic.SweepBandCount(top, bottom),
+                                        0, CommsCurseLogic.TearMaxBands);
+            CommsCurseLogic.ComputeTear(AppliedTear, TakeoverElapsedSec, bandCount,
                                         _tearShift, _tearDrop, out _tearFlicker);
             int torn = 0;
             for (int i = 0; i < _tearShift.Length; i++) if (Mathf.Abs(_tearShift[i]) > 0.0001f) torn++;
@@ -1922,6 +2002,58 @@ namespace FixedCamVr.Diagnostics
             ApplyAvatar(pa, cy, lit, sweep);
         }
 
+        private static float TearStrengthAt(CommsPossessionPhase phase, float sweep)
+        {
+            if (phase != CommsPossessionPhase.Sweep) return 0f;
+            float t = Mathf.Clamp01(sweep) * CommsPossessionLogic.SweepSec;
+            const float edgeSec = 0.02f;
+            for (int i = 0; i < TearWindows.Length; i++)
+            {
+                Vector2 window = TearWindows[i];
+                if (t < window.x || t >= window.y) continue;
+                float edge = Mathf.Min((t - window.x) / edgeSec, (window.y - t) / edgeSec);
+                return CommsPossessionLogic.TearPeak * Smooth01(edge);
+            }
+            return 0f;
+        }
+
+        /// <summary>
+        /// Sweep 中だけ面の子を小さく揺らす。単調な Takeover 時計だけを読むので、
+        /// Preview が Apply を呼ぶ経路でも本番と同じ pose になる。
+        /// </summary>
+        private void ApplyPossessionMotion(CommsPossessionPhase phase, float sweep)
+        {
+            bool moving = phase == CommsPossessionPhase.Sweep
+                          && sweep > 0f && sweep < 1f && _visualRoot != null;
+            AppliedShake = moving ? 1f : 0f;
+            if (!moving)
+            {
+                AppliedShakePosition = Vector3.zero;
+                AppliedShakeAngleDeg = 0f;
+                if (_visualRoot != null)
+                {
+                    _visualRoot.localPosition = Vector3.zero;
+                    _visualRoot.localRotation = Quaternion.identity;
+                }
+                return;
+            }
+
+            float t = TakeoverElapsedSec;
+            var p = new Vector3(
+                Mathf.Sin(t * 41.3f) * 0.0044f + Mathf.Sin(t * 73.1f + 0.7f) * 0.0015f,
+                Mathf.Sin(t * 53.7f + 1.4f) * 0.0034f + Mathf.Sin(t * 89.9f) * 0.0014f,
+                0f);
+            var euler = new Vector3(
+                Mathf.Sin(t * 37.1f + 0.3f) * 0.18f,
+                Mathf.Sin(t * 29.7f + 1.1f) * 0.22f,
+                Mathf.Sin(t * 43.9f) * 0.37f + Mathf.Sin(t * 67.3f + 0.5f) * 0.12f);
+            Quaternion rotation = Quaternion.Euler(euler);
+            AppliedShakePosition = p;
+            AppliedShakeAngleDeg = Quaternion.Angle(Quaternion.identity, rotation);
+            _visualRoot!.localPosition = p;
+            _visualRoot.localRotation = rotation;
+        }
+
         /// <summary>憑依の出し方の縁と嘘の一文の状態を落とす（連絡が届いた縁・畳む縁・ラン開始）。</summary>
         private void ResetPossessionVisual()
         {
@@ -1932,7 +2064,9 @@ namespace FixedCamVr.Diagnostics
             AppliedSweep = 0f;
             AppliedTear = 0f;
             TornBands = 0;
+            ApplyPossessionMotion(CommsPossessionPhase.Off, 0f);
             _tearFlicker = 1f;
+            _tearTop = 0f;
             System.Array.Clear(_tearShift, 0, _tearShift.Length);
             System.Array.Clear(_tearDrop, 0, _tearDrop.Length);
             LieChars = 0;
@@ -2060,7 +2194,8 @@ namespace FixedCamVr.Diagnostics
         /// <summary>乱れ（0231）の帯ごとの値を材質へ書く。地・顔・ステンシルが**同じ値**を読む。</summary>
         private void PushTear(Material mat)
         {
-            mat.SetVector(TearId, new Vector4(AppliedTear, _tearFlicker, 0f, 0f));
+            mat.SetVector(TearId, new Vector4(AppliedTear, _tearFlicker,
+                                              _tearTop, CommsCurseLogic.TearBandM));
             mat.SetVector(TearShiftAId, new Vector4(_tearShift[0], _tearShift[1], _tearShift[2], _tearShift[3]));
             mat.SetVector(TearShiftBId, new Vector4(_tearShift[4], _tearShift[5], _tearShift[6], _tearShift[7]));
             mat.SetVector(TearDropAId, new Vector4(_tearDrop[0], _tearDrop[1], _tearDrop[2], _tearDrop[3]));
@@ -2077,7 +2212,7 @@ namespace FixedCamVr.Diagnostics
         private void ApplyHint(float alpha)
         {
             if (_hint == null) return;
-            string body = !_lieActive && _leftConnected
+            string body = !TakeoverInputBlocked && !_lieActive && _leftConnected
                 ? VisitorMarkGuidance.Line(_markProgress, _markConfirming)
                 : "";
             if (body != _hintBody)

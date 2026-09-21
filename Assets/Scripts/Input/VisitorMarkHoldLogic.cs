@@ -49,6 +49,7 @@ namespace FixedCamVr.Input
         private float _elapsed;      // いまのホールドの積算 (秒)
         private bool _consumed;      // このホールドは発火済み（離すまで再発火しない）
         private float _confirmLeft;  // 「報告しました」の残り時間 (秒)
+        private bool _blockedUntilRelease;
 
         /// <summary>長押しの閾値 (秒)。</summary>
         public float HoldSec => _holdSec;
@@ -78,6 +79,7 @@ namespace FixedCamVr.Input
             _elapsed = 0f;
             _consumed = false;
             _confirmLeft = 0f;
+            _blockedUntilRelease = false;
         }
 
         /// <summary>
@@ -85,8 +87,19 @@ namespace FixedCamVr.Input
         /// </summary>
         /// <param name="dt">このフレームの経過時間 (秒)。<see cref="MaxStepSec"/> で切られる。</param>
         /// <param name="held">左 X または Y が押されているか。</param>
-        public bool Tick(float dt, bool held)
+        public bool Tick(float dt, bool held, bool blocked = false)
         {
+            if (blocked)
+            {
+                Reset();
+                _blockedUntilRelease = true;
+                return false;
+            }
+            if (_blockedUntilRelease)
+            {
+                if (!held) _blockedUntilRelease = false;
+                return false;
+            }
             float step = dt < 0f ? 0f : (dt > MaxStepSec ? MaxStepSec : dt);
 
             if (_confirmLeft > 0f)

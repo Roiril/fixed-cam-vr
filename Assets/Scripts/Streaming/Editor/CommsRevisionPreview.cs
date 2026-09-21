@@ -79,6 +79,19 @@ namespace FixedCamVr.Streaming.EditorTools
                     }
                     finally { RenderTexture.active = old; }
                 }
+                void ShotAlignedForDirectionCheck(string name)
+                {
+                    // 左右の画素比較だけは剛体移動を除く。動画とwith-error画像は実際の揺れを残す。
+                    var visual = (Transform)typeof(CommsPanel).GetField("_visualRoot", Hidden)!.GetValue(panel);
+                    Vector3 position = visual.localPosition;
+                    Quaternion rotation = visual.localRotation;
+                    try
+                    {
+                        visual.localPosition = Vector3.zero; visual.localRotation = Quaternion.identity;
+                        Shot(name);
+                    }
+                    finally { visual.localPosition = position; visual.localRotation = rotation; }
+                }
                 panel.SetDecayForPreview(0f, 0f);
                 panel.Deliver(CommsNotice.TutorialAccepted); Place();
                 Step(CommsPanelLogic.InSec + CommsPanelLogic.FadeInSec + .1f); Shot("intro-success");
@@ -110,7 +123,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 sync.Tick(panel.TakeoverVisible, 0f);
                 var error = (UnauthorizedAccessEffect)typeof(CommsTakeoverError)
                     .GetField("_effect", Hidden)!.GetValue(sync);
-                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus\n");
+                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus,shake,shakeX,shakeY,shakeAngle,tear,caption\n");
                 bool savedIntrusion = false, savedFailure = false;
                 bool savedTruth = false, savedMid = false, savedFinal = false;
                 int frames = 0;
@@ -119,11 +132,17 @@ namespace FixedCamVr.Streaming.EditorTools
                     Apply();
                     sync.Tick(panel.TakeoverVisible, 1f / Fps);
                     Shot($"f{i:0000}"); frames++;
+                    if (i == 15) Shot("warning");
+                    if (i == 45) Shot("unauthorized");
+                    if (i == 75) Shot("unknown-source");
+                    if (i == 105) Shot("block-attempt");
                     data.AppendFormat(System.Globalization.CultureInfo.InvariantCulture,
-                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9},{10:F3}\n", i, i / (float)Fps,
+                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9},{10:F3},{11:F3},{12:F6},{13:F6},{14:F4},{15:F4},{16}\n", i, i / (float)Fps,
                         panel.Stage, panel.AppliedSweep, panel.LieChars, panel.AppliedGlyph, error.IsPlaying ? 1 : 0,
                         panel.AppliedPanelAlpha, panel.TakeoverErrorOpacity, panel.TakeoverBlockFailed ? 1 : 0,
-                        panel.TakeoverReadFocus);
+                        panel.TakeoverReadFocus, panel.AppliedShake, panel.AppliedShakePosition.x,
+                        panel.AppliedShakePosition.y, panel.AppliedShakeAngleDeg, panel.AppliedTear,
+                        error.TakeoverCaption);
                     if (!savedIntrusion && i / (float)Fps >= .75f)
                     {
                         if (panel.AppliedPanelAlpha > .001f || panel.VisibleChars != 0)
@@ -141,8 +160,9 @@ namespace FixedCamVr.Streaming.EditorTools
                         error.Stop(); Shot("truth");
                         error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedTruth = true;
                     }
-                    if (!savedMid && panel.AppliedSweep >= .65f && panel.AppliedSweep < 1f)
-                    { Shot("wipe-with-error"); error.Stop(); Shot("wipe"); error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedMid = true; }
+                    // 字数の違う2文でも左右1/3が前線から離れている静止区間で方向を検査する。
+                    if (!savedMid && panel.AppliedSweep >= .45f && panel.AppliedSweep < 1f)
+                    { Shot("wipe-with-error"); error.Stop(); ShotAlignedForDirectionCheck("wipe"); error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedMid = true; }
                     if (!savedFinal && panel.AppliedSweep >= .999f && panel.AppliedGlyph > .99f)
                     {
                         Shot("doll-with-error");

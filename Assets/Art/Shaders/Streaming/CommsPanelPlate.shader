@@ -31,7 +31,7 @@ Shader "FixedCamVr/CommsPanelPlate"
         // 左から右への塗り替わり: (進み, 矩形の左端 x, 矩形の右端 x, 境界の幅)。
         _Sweep("Sweep (progress, left, right, band)", Vector) = (0, 0, 0, 0.04)
         // 乱れ（0231・本編の乱れをまねたもの）: (強さ, 明滅, 0, 0) と帯ごとの飛び・脱落（C# が作る）。
-        _Tear("Tear (strength, flicker, 0, 0)", Vector) = (0, 1, 0, 0)
+        _Tear("Tear (strength, flicker, top, band)", Vector) = (0, 1, 0, 0.04)
         _TearShiftA("Tear shift bands 0-3 (m)", Vector) = (0, 0, 0, 0)
         _TearShiftB("Tear shift bands 4-7 (m)", Vector) = (0, 0, 0, 0)
         _TearDropA("Tear drop bands 0-3", Vector) = (0, 0, 0, 0)
@@ -192,7 +192,7 @@ Shader "FixedCamVr/CommsPanelPlate"
                 float d = RectDistance(pRaw);
                 float aa = max(fwidth(d), 1e-5);
                 float2 p = pRaw;
-                p.x -= CommsTearShiftAt(pRaw.y, _Sweep, _TearShiftA, _TearShiftB);
+                p.x -= CommsTearShiftAt(pRaw.y, _Tear, _TearShiftA, _TearShiftB);
 
                 // 層 A: 鋭い矩形。**枠そのものなので飛ばない**（本編の枠が乱れで動かないのと同じ）。
                 float sharp = 1.0 - smoothstep(-aa, aa, d);
@@ -217,7 +217,7 @@ Shader "FixedCamVr/CommsPanelPlate"
                 float ink = 0.0;
 
                 // 乱れ（0231）: 帯ごとの脱落（本編の「帯が砂になる」。ここでは**抜ける**）と全体の明滅。
-                float drop = CommsTearDropAt(pRaw.y, _Sweep, _TearDropA, _TearDropB);
+                float drop = CommsTearDropAt(pRaw.y, _Tear, _TearDropA, _TearDropB);
                 plateA *= 1.0 - drop;
                 ink *= 1.0 - drop;
 

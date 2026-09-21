@@ -205,7 +205,7 @@ namespace FixedCamVr.Streaming
         public const float FadeHoldSec = 1.1f;
 
         /// <summary>乗っ取りが通信面へ侵入している時間 (秒)。この間、通信面は完全に隠す。</summary>
-        public const float IntrusionSec = 0.9f;
+        public const float IntrusionSec = 2f;
 
         /// <summary>塗り替わり後の人形を保持する時間 (秒)。</summary>
         public const float PossessedHoldSec = 1.35f;
@@ -215,6 +215,14 @@ namespace FixedCamVr.Streaming
 
         /// <summary>塗り替わりの前に「遮断失敗」へ変わる時間 (秒)。</summary>
         public const float TakeoverBlockFailedLeadSec = 0.6f;
+
+        /// <summary>WARNING・不正アクセス・接続元不明・遮断を執行を各1秒表示した後。</summary>
+        public const float TakeoverFailureSec = 4f;
+
+        public static float PossessionReadSecFor(int charCount, ShowLang lang)
+            => System.Math.Max(CommsPossessionLogic.ReadSecFor(charCount, lang),
+                TakeoverFailureSec + TakeoverBlockFailedLeadSec - IntrusionSec - InSec
+                - CommsPossessionLogic.ShowSec);
 
         /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
         public static float HoldSecFor(CommsDelivery delivery)
@@ -321,11 +329,7 @@ namespace FixedCamVr.Streaming
         /// <summary>遮断が間に合わない時点へ達したか。塗り替わりの 0.6 秒前から true。</summary>
         public bool TakeoverBlockFailed
             => _delivery == CommsDelivery.Possessed
-               && (_stage == CommsStage.Type
-                   && _elapsed + 0.000001f >= System.Math.Max(0f,
-                       CommsPossessionLogic.SweepStartSec(_readSec) - TakeoverBlockFailedLeadSec)
-                   || _stage == CommsStage.Hold
-                   || _stage == CommsStage.Out);
+               && Active && _takeoverElapsedSec + 0.0001f >= TakeoverFailureSec;
 
         /// <summary>エラーから通信文へ注目を移す割合。消灯中も戻さず、警告を再点灯させない。</summary>
         public float TakeoverReadFocus
@@ -432,7 +436,7 @@ namespace FixedCamVr.Streaming
             _persistent = persistent;
             if (delivery == CommsDelivery.Possessed) _takeoverElapsedSec = 0f;
             // 憑依の出し方（0230）: 文字の段は 出る → 読ませる（字数で伸びる）→ 塗り替わる の合計。
-            _readSec = CommsPossessionLogic.ReadSecFor(charCount, ShowLanguage.Current);
+            _readSec = PossessionReadSecFor(charCount, ShowLanguage.Current);
             _typeSec = delivery == CommsDelivery.Possessed
                 ? CommsPossessionLogic.DurationFor(_readSec)
                 : delivery == CommsDelivery.Cursed
@@ -523,6 +527,11 @@ namespace FixedCamVr.Streaming
         {
             if (dt < 0f) dt = 0f;
             if (_stage == CommsStage.Off) return;
+            if (_delivery == CommsDelivery.Possessed)
+            {
+                TickPossession(dt);
+                return;
+            }
             _elapsed += dt;
             _openSec += dt;
             if (_delivery == CommsDelivery.Possessed) _takeoverElapsedSec += dt;
@@ -563,6 +572,35 @@ namespace FixedCamVr.Streaming
                     // 時間では終わらない。抜けるのは SetGuideWanted(false) か Begin か Disable。
                     break;
             }
+        }
+
+        // 主画面の警告と同じ通算時計で段を決める。段境界で端数を捨てると
+        // フレームレートによって「失敗」と侵食の間隔がずれる。
+        private void TickPossession(float dt)
+        {
+            _takeoverElapsedSec += dt;
+            _openSec += dt;
+            float t = _takeoverElapsedSec;
+            float typeAt = IntrusionSec + InSec;
+            float holdAt = typeAt + _typeSec;
+            float outAt = holdAt + PossessedHoldSec;
+            const float tolerance = 0.0001f;
+            if (t + tolerance >= outAt + PossessedOutSec)
+            {
+                bool keepGuideLatch = _guideWanted;
+                FinishNotice();
+                _guideWanted = keepGuideLatch;
+                return;
+            }
+            CommsStage next;
+            float start;
+            if (t + tolerance < IntrusionSec) { next = CommsStage.Intrusion; start = 0f; }
+            else if (t + tolerance < typeAt) { next = CommsStage.In; start = IntrusionSec; }
+            else if (t + tolerance < holdAt) { next = CommsStage.Type; start = typeAt; }
+            else if (t + tolerance < outAt) { next = CommsStage.Hold; start = holdAt; }
+            else { next = CommsStage.Out; start = outAt; }
+            if (_stage != next) EnterStage(next);
+            _elapsed = System.Math.Max(0f, t - start);
         }
 
         /// <summary>いまの段から面と文字へ配る値。<b>見え方の判断はすべてここ</b>。</summary>

@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using FixedCamVr.Streaming;
@@ -41,6 +42,7 @@ namespace FixedCamVr.Diagnostics.Tests
                 Transform spatialRoot = Root(effect, "_spatialRoot");
                 Assert.IsTrue(screenRoot.gameObject.activeSelf, "lead中はエラーだけが見える");
                 Assert.IsTrue(spatialRoot.gameObject.activeSelf, "lead中は空間側も見える");
+                Assert.AreEqual("WARNING", effect.TakeoverCaption);
                 var statusMaterial = (Material)typeof(UnauthorizedAccessEffect)
                     .GetField("_statusMaterial", Private)!.GetValue(effect)!;
                 var attempt = (Texture2D)typeof(UnauthorizedAccessEffect)
@@ -60,6 +62,7 @@ namespace FixedCamVr.Diagnostics.Tests
                 var apply = typeof(CommsPanel).GetMethod("Apply", Private)!;
                 bool sawOut = false;
                 bool sawFailed = false;
+                var captions = new HashSet<string> { effect.TakeoverCaption };
                 int blockFailedLogs = 0;
                 void CountBlockFailed(string condition, string stackTrace, LogType type)
                 {
@@ -74,6 +77,10 @@ namespace FixedCamVr.Diagnostics.Tests
                         apply.Invoke(panel, new object[] { logic.Weights });
                         float opacity = panel.TakeoverErrorOpacity;
                         coordinator.Tick(panel.TakeoverVisible, 0f);
+                        string expectedCaption = opacity > 0f ? ExpectedCaption(.3f + (frame + 1) / 30f) : string.Empty;
+                        Assert.AreEqual(expectedCaption, effect.TakeoverCaption,
+                            $"elapsed={panel.TakeoverElapsedSec:0.000}");
+                        captions.Add(effect.TakeoverCaption);
                         if (panel.TakeoverBlockFailed)
                         {
                             sawFailed = true;
@@ -89,8 +96,14 @@ namespace FixedCamVr.Diagnostics.Tests
                 }
                 finally { Application.logMessageReceived -= CountBlockFailed; }
                 Assert.IsTrue(sawOut, "Outでは主画面と空間を同じopacityで薄くする");
-                Assert.IsTrue(sawFailed, "塗り替わり前に実prefabの遮断失敗表示へ切り替える");
+                Assert.IsTrue(sawFailed, "4秒以降に実prefabの失敗表示へ切り替える");
                 Assert.AreEqual(1, blockFailedLogs, "BlockFailedの縁は実機ログへ1回だけ出す");
+                CollectionAssert.Contains(captions, "WARNING");
+                CollectionAssert.Contains(captions, "不正アクセス");
+                CollectionAssert.Contains(captions, "接続元不明");
+                CollectionAssert.Contains(captions, "遮断を執行");
+                CollectionAssert.Contains(captions, "失敗");
+                Assert.AreEqual(string.Empty, effect.TakeoverCaption);
                 Assert.IsFalse(effect.IsPlaying);
                 Assert.IsFalse(screenRoot.gameObject.activeSelf);
                 Assert.IsFalse(spatialRoot.gameObject.activeSelf);
@@ -202,6 +215,14 @@ namespace FixedCamVr.Diagnostics.Tests
                 for (int i = 0; i < colors.Length; i++) max = Mathf.Max(max, colors[i].a);
             }
             return max;
+        }
+
+        private static string ExpectedCaption(float seconds)
+        {
+            if (seconds < 1f) return "WARNING";
+            if (seconds < 2f) return "不正アクセス";
+            if (seconds < 3f) return "接続元不明";
+            return seconds < 4f ? "遮断を執行" : "失敗";
         }
 
     }

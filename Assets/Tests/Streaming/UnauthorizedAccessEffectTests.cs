@@ -337,7 +337,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void TakeoverSampleUsesExternalFailureOpacityAndContinuesPastSevenSeconds()
+        public void TakeoverSampleSwitchesOneWholeMessageAtEachAbsoluteSecond()
         {
             GameObject anchor = NewAnchor("TakeoverAnchor");
             GameObject host = new GameObject("TakeoverEffect");
@@ -365,11 +365,51 @@ namespace FixedCamVr.Streaming.Tests
                 effect.Configure(material, warning, subtitle, symbol, noise, context, attempt, failed);
                 effect.Play(anchor.transform, ReferenceSize);
 
-                effect.SampleTakeover(2f, false, 1f);
                 Material status = FindMaterial(effect, "Unauthorized Access Status");
+                effect.SampleTakeover(0f, false, 1f);
+                Assert.AreEqual("WARNING", effect.TakeoverCaption);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Warning Bands");
+                AssertUniformPositiveAlpha(effect, "Unauthorized Access Warning Bands");
+                Vector2 center = MeshCenter(effect, "Unauthorized Access Warning Bands");
+                Assert.AreEqual(.24f * ReferenceSize.y, center.y, .0001f,
+                    "警告文は中央と下寄りのエージェント面を避ける上寄りの共通位置");
+                effect.SampleTakeover(.999f, true, 1f);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Warning Bands");
+
+                effect.SampleTakeover(1f, false, 1f);
+                Assert.AreEqual("不正アクセス", effect.TakeoverCaption);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Subtitle Bands");
+                AssertUniformPositiveAlpha(effect, "Unauthorized Access Subtitle Bands");
+                Assert.AreEqual(center.x, MeshCenter(effect, "Unauthorized Access Subtitle Bands").x, .0001f);
+                Assert.AreEqual(center.y, MeshCenter(effect, "Unauthorized Access Subtitle Bands").y, .0001f);
+                effect.SampleTakeover(1.999f, true, 1f);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Subtitle Bands");
+
+                effect.SampleTakeover(2f, false, 1f);
+                Assert.AreEqual("接続元不明", effect.TakeoverCaption);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Context");
+                AssertUniformPositiveAlpha(effect, "Unauthorized Access Context");
+                Assert.AreEqual(center.x, MeshCenter(effect, "Unauthorized Access Context").x, .0001f);
+                Assert.AreEqual(center.y, MeshCenter(effect, "Unauthorized Access Context").y, .0001f);
+                effect.SampleTakeover(2.999f, true, 1f);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Context");
+
+                effect.SampleTakeover(3f, true, 1f);
+                Assert.AreEqual("遮断を執行", effect.TakeoverCaption);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Status");
+                AssertUniformPositiveAlpha(effect, "Unauthorized Access Status");
+                Assert.AreSame(attempt, status.GetTexture("_MainTex"),
+                    "blockFailedが早く届いても4秒までは遮断を執行する");
+                Assert.AreEqual(center.x, MeshCenter(effect, "Unauthorized Access Status").x, .0001f);
+                Assert.AreEqual(center.y, MeshCenter(effect, "Unauthorized Access Status").y, .0001f);
+                effect.SampleTakeover(3.999f, true, 1f);
                 Assert.AreSame(attempt, status.GetTexture("_MainTex"));
-                effect.SampleTakeover(2f, true, 1f);
-                Assert.AreSame(failed, status.GetTexture("_MainTex"), "失敗表示は外時計の境界だけで切り替える");
+
+                effect.SampleTakeover(4f, false, 1f);
+                Assert.AreEqual("失敗", effect.TakeoverCaption);
+                AssertOnlyTextVisible(effect, "Unauthorized Access Status");
+                Assert.AreSame(failed, status.GetTexture("_MainTex"),
+                    "4秒以降は外部フラグが1コマ遅れても絶対時計で失敗へ切り替える");
 
                 effect.SampleTakeover(8f, true, 1f);
                 Transform screen = FindRoot(effect, "UnauthorizedAccess.Screen");
@@ -381,12 +421,13 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.IsTrue(VerticesDiffer(before, FindMesh(effect, "Unauthorized Access Glyphs").vertices),
                     "7秒を越えても空間の数字が動く");
 
-                effect.SampleTakeover(2f, true, 1f);
+                effect.SampleTakeover(4f, true, 1f);
                 float fullAlpha = MaxAlpha(screen);
-                effect.SampleTakeover(2f, true, .35f);
+                effect.SampleTakeover(4f, true, .35f);
                 Assert.AreEqual(fullAlpha * .35f, MaxAlpha(screen), .0001f);
                 Assert.Greater(MaxAlpha(spatial), 0f, "低いopacityでも空間側を同時に残す");
-                effect.SampleTakeover(2f, true, 0f);
+                effect.SampleTakeover(4f, true, 0f);
+                Assert.AreEqual(string.Empty, effect.TakeoverCaption);
                 Assert.IsFalse(screen.gameObject.activeSelf);
                 Assert.IsFalse(spatial.gameObject.activeSelf);
 
@@ -410,7 +451,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void TakeoverReadFocusAppliesPerMeshOpacityIncludingAmplifiedStatus()
+        public void TakeoverReadFocusKeepsCurrentOneSecondMessageReadableAndSuppressesSurroundings()
         {
             GameObject anchor = NewAnchor("ReadFocusAnchor");
             GameObject host = new GameObject("ReadFocusEffect");
@@ -420,30 +461,33 @@ namespace FixedCamVr.Streaming.Tests
             {
                 var effect = ConfigureTakeoverEffect(host, out material, out textures);
                 effect.Play(anchor.transform, ReferenceSize);
-                const float seconds = 1.45f;
+                const float seconds = .5f;
 
                 effect.SampleTakeover(seconds, false, 1f);
                 float warning = MaxAlpha(effect, "Unauthorized Access Warning Bands");
-                float subtitle = MaxAlpha(effect, "Unauthorized Access Subtitle Bands");
                 float symbol = MaxAlpha(effect, "Unauthorized Access Symbol");
                 float decorations = MaxAlpha(effect, "Unauthorized Access Decorations");
-                float context = MaxAlpha(effect, "Unauthorized Access Context");
-                float attempt = MaxAlpha(effect, "Unauthorized Access Status");
                 float glyphs = MaxAlpha(effect, "Unauthorized Access Glyphs");
                 float interference = MaxAlpha(effect, "Unauthorized Access Interference");
 
-                effect.SampleTakeover(seconds, false, 1f, 1f);
-                AssertAlpha(effect, "Unauthorized Access Warning Bands", warning * (.10f / .35f));
-                AssertAlpha(effect, "Unauthorized Access Subtitle Bands", subtitle * (.10f / .35f));
-                AssertAlpha(effect, "Unauthorized Access Symbol", symbol * (.14f / .35f));
-                AssertAlpha(effect, "Unauthorized Access Decorations", decorations * (.14f / .35f));
-                AssertAlpha(effect, "Unauthorized Access Context", context * (.10f / .35f));
-                AssertAlpha(effect, "Unauthorized Access Status", attempt * (.38f / .35f));
-                AssertAlpha(effect, "Unauthorized Access Glyphs", glyphs * (.14f / .35f));
-                AssertAlpha(effect, "Unauthorized Access Interference", interference * (.14f / .35f));
+                effect.SampleTakeover(seconds, false, .35f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Warning Bands", warning * .55f);
+                AssertAlpha(effect, "Unauthorized Access Subtitle Bands", 0f);
+                AssertAlpha(effect, "Unauthorized Access Symbol", symbol * .14f);
+                AssertAlpha(effect, "Unauthorized Access Decorations", decorations * .14f);
+                AssertAlpha(effect, "Unauthorized Access Context", 0f);
+                AssertAlpha(effect, "Unauthorized Access Status", 0f);
+                AssertAlpha(effect, "Unauthorized Access Glyphs", glyphs * .14f);
+                AssertAlpha(effect, "Unauthorized Access Interference", interference * .14f);
 
-                effect.SampleTakeover(seconds, true, 1f, 1f);
-                AssertAlpha(effect, "Unauthorized Access Status", attempt * (.55f / .35f));
+                effect.SampleTakeover(1.5f, false, .35f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Subtitle Bands", .55f);
+                effect.SampleTakeover(2.5f, false, .35f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Context", .55f);
+                effect.SampleTakeover(3.5f, false, .35f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Status", .55f);
+                effect.SampleTakeover(4.5f, true, .35f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Status", .55f);
             }
             finally
             {
@@ -466,21 +510,15 @@ namespace FixedCamVr.Streaming.Tests
                 var effect = ConfigureTakeoverEffect(host, out material, out textures);
                 effect.Play(anchor.transform, ReferenceSize);
                 effect.SampleTakeover(2f, false, 1f);
-                float warning = MaxAlpha(effect, "Unauthorized Access Warning Bands");
+                float context = MaxAlpha(effect, "Unauthorized Access Context");
                 float symbol = MaxAlpha(effect, "Unauthorized Access Symbol");
-                float attempt = MaxAlpha(effect, "Unauthorized Access Status");
 
                 effect.SampleTakeover(2f, false, .35f, .5f);
-                AssertAlpha(effect, "Unauthorized Access Warning Bands",
-                    warning * .35f * Mathf.Lerp(1f, .10f / .35f, .5f));
+                AssertAlpha(effect, "Unauthorized Access Context",
+                    context * .35f * Mathf.Lerp(1f, .55f / .35f, .5f));
                 AssertAlpha(effect, "Unauthorized Access Symbol",
                     symbol * .35f * Mathf.Lerp(1f, .14f / .35f, .5f));
-                AssertAlpha(effect, "Unauthorized Access Status",
-                    attempt * .35f * Mathf.Lerp(1f, .38f / .35f, .5f));
-
-                effect.SampleTakeover(2f, true, .35f, .5f);
-                AssertAlpha(effect, "Unauthorized Access Status",
-                    attempt * .35f * Mathf.Lerp(1f, .55f / .35f, .5f));
+                AssertAlpha(effect, "Unauthorized Access Status", 0f);
             }
             finally
             {
@@ -635,6 +673,43 @@ namespace FixedCamVr.Streaming.Tests
 
         private static void AssertAlpha(UnauthorizedAccessEffect effect, string name, float expected) =>
             Assert.AreEqual(Mathf.Clamp01(expected), MaxAlpha(effect, name), .0001f, name);
+
+        private static void AssertOnlyTextVisible(UnauthorizedAccessEffect effect, string visibleName)
+        {
+            string[] textMeshes =
+            {
+                "Unauthorized Access Warning Bands",
+                "Unauthorized Access Subtitle Bands",
+                "Unauthorized Access Context",
+                "Unauthorized Access Status",
+            };
+            for (int i = 0; i < textMeshes.Length; i++)
+            {
+                if (textMeshes[i] == visibleName)
+                    Assert.Greater(MaxAlpha(effect, textMeshes[i]), 0f, textMeshes[i]);
+                else
+                    AssertAlpha(effect, textMeshes[i], 0f);
+            }
+        }
+
+        private static void AssertUniformPositiveAlpha(UnauthorizedAccessEffect effect, string name)
+        {
+            Color[] colors = FindMesh(effect, name).colors;
+            Assert.Greater(colors.Length, 0, name);
+            Assert.Greater(colors[0].a, 0f, name);
+            for (int i = 1; i < colors.Length; i++)
+                Assert.AreEqual(colors[0].a, colors[i].a, .0001f, $"{name} vertex {i}");
+        }
+
+        private static Vector2 MeshCenter(UnauthorizedAccessEffect effect, string name)
+        {
+            // 描画カリング用boundsは固定。文字の実際の頂点から中心を測る。
+            Vector3[] vertices = FindMesh(effect, name).vertices;
+            var bounds = new Bounds(vertices[0], Vector3.zero);
+            foreach (Vector3 vertex in vertices) bounds.Encapsulate(vertex);
+            Vector3 center = bounds.center;
+            return new Vector2(center.x, center.y);
+        }
 
         private static Color[][] CaptureColors(UnauthorizedAccessEffect effect)
         {

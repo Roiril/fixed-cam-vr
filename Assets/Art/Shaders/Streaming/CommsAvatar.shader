@@ -36,10 +36,10 @@ Shader "FixedCamVr/CommsAvatar"
         // この面の中心（面の根から見た位置）と 1 辺 (m)。`CommsPanel.ApplyAvatar` が書く。
         _Origin("Face centre (panel-local m)", Vector) = (0, 0, 0, 0)
         _Size("Face cell size (m)", Vector) = (0.15, 0.15, 0, 0)
-        // 塗り替わりの帯（0230 / 0231・地と同じ値）: (進み, 矩形の上端 y, 矩形の下端 y, 帯の高さ)。反転した帯は人形。
-        _Sweep("Sweep (progress, top, bottom, band)", Vector) = (0, 0, 0, 0.04)
-        // 乱れ（0231・地と同じ値）: 顔の中身が帯ごとに飛び、帯ごとに抜け、全体が明滅する。枠は動かない。
-        _Tear("Tear (strength, flicker, 0, 0)", Vector) = (0, 1, 0, 0)
+        // 左から右への塗り替わり: (進み, 左端 x, 右端 x, 境界幅)。
+        _Sweep("Sweep (progress, left, right, edge)", Vector) = (0, 0, 0, 0.04)
+        // 乱れ（0231・地と同じ値）: (強さ, 明滅, 矩形の上端 y, 帯の高さ)。
+        _Tear("Tear (strength, flicker, top, band)", Vector) = (0, 1, 0, 0.04)
         _TearShiftA("Tear shift bands 0-3 (m)", Vector) = (0, 0, 0, 0)
         _TearShiftB("Tear shift bands 4-7 (m)", Vector) = (0, 0, 0, 0)
         _TearDropA("Tear drop bands 0-3", Vector) = (0, 0, 0, 0)
@@ -150,7 +150,7 @@ Shader "FixedCamVr/CommsAvatar"
                 // ⚠ 憑依の出し方（0230 / 0231）は斑ではなく**帯ごとの反転**で人形へ替わる。同じ k に max で入れる。
                 //    乱れの帯の飛びは顔の中身（版）に掛け、枠（inner）には掛けない — 本編の枠が動かないのと同じ。
                 float2 panelPos = _Origin.xy + (i.uv - 0.5) * _Size.xy;
-                float shift = CommsTearShiftAt(panelPos.y, _Sweep, _TearShiftA, _TearShiftB);
+                float shift = CommsTearShiftAt(panelPos.y, _Tear, _TearShiftA, _TearShiftB);
                 float2 fieldPos = panelPos;
                 fieldPos.x -= shift;
                 float k = max(CurseK(CurseField(fieldPos), _FaceMix), CurseSweepK(panelPos, _Sweep));
@@ -160,7 +160,7 @@ Shader "FixedCamVr/CommsAvatar"
                 float a1 = SAMPLE_TEXTURE2D(_Face, sampler_Face, faceUv).a;
                 float a2 = SAMPLE_TEXTURE2D(_Face2, sampler_Face2, faceUv).a;
                 float face = lerp(a1, a2, k) * _FaceOn * inner * inRange;
-                float drop = CommsTearDropAt(panelPos.y, _Sweep, _TearDropA, _TearDropB);
+                float drop = CommsTearDropAt(panelPos.y, _Tear, _TearDropA, _TearDropB);
 
                 float a = saturate(max(ring, face * (1.0 - drop))) * _Tear.y;
                 return half4(_Color.rgb, a * _Opacity);
