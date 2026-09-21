@@ -216,8 +216,12 @@ namespace FixedCamVr.Streaming
         /// <summary>塗り替わりの前に「遮断失敗」へ変わる時間 (秒)。</summary>
         public const float TakeoverBlockFailedLeadSec = 0.6f;
 
-        /// <summary>WARNING・不正アクセス・接続元不明・遮断を執行を各1秒表示した後。</summary>
-        public const float TakeoverFailureSec = 4f;
+        public const float TakeoverBlockSec = 3f;
+        public const float TakeoverBlockFillSec = 1.5f;
+        public const float TakeoverBlockBreakSec = .25f;
+
+        /// <summary>遮断バーの満了と処理行の破損が終わった時刻。</summary>
+        public const float TakeoverFailureSec = TakeoverBlockSec + TakeoverBlockFillSec + TakeoverBlockBreakSec;
 
         public static float PossessionReadSecFor(int charCount, ShowLang lang)
             => System.Math.Max(CommsPossessionLogic.ReadSecFor(charCount, lang),

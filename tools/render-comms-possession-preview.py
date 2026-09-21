@@ -205,10 +205,30 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
     direction = verify_wipe(truth, wipe, doll)
     reverse_rejected = calibrate_direction_guard(truth, doll, direction["change_bbox"])
     story = verify_story(folder, rows) if "blockFailed" in rows[0] else None
+    if story is not None:
+        # A sub-frame rounding allowance must not admit a three-frame hold error.
+        full = next(i for i, row in enumerate(rows) if float(row["sweep"]) >= .999)
+        for offset in (-3, 3):
+            control = [dict(row) for row in rows]
+            if offset < 0:
+                for row in control[full + offset:full]:
+                    row["sweep"] = "1"
+            else:
+                for row in control[full:full + offset]:
+                    row["sweep"] = ".998"
+            try:
+                verify_story(folder, control)
+            except AssertionError as exc:
+                if "読取時間" not in str(exc):
+                    raise
+            else:
+                raise AssertionError("完成文の検査が3コマずれた保持時間を受け入れた")
+        story["three_frame_hold_errors_rejected"] = True
+    bar_pixels = verify_bar_pixels(folder)
     intrusion_motion = verify_intrusion_motion(rows) if "shake" in rows[0] else None
     if intrusion_motion is not None:
         # 時計がずれた警告と、乱れが描画側へ届かない対照を確実に拒否する。
-        for field, wrong in (("caption", "失敗"), ("tear", "0")):
+        for field, wrong in (("caption", "失敗"), ("tear", "0"), ("blockProgress", "0")):
             control = [{**row, field: wrong} for row in rows]
             try:
                 verify_intrusion_motion(control)
@@ -217,6 +237,7 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
             else:
                 raise AssertionError(f"侵食の検査が不正な対照を受け入れた: {field}")
         intrusion_motion["wrong_caption_and_missing_glitch_controls_rejected"] = True
+        intrusion_motion["missing_bar_progress_control_rejected"] = True
     video = make_video(folder, len(rows), ffmpeg)
     result: dict[str, object] = {
         "language": folder.name,
@@ -236,6 +257,7 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
         "wipe": direction,
         "reverse_direction_control_rejected": reverse_rejected,
         "story": story,
+        "bar_pixels": bar_pixels,
         "intrusion_motion": intrusion_motion,
         "stills": {
             "truth": str(folder / "truth.png"),
@@ -255,20 +277,54 @@ def verify_language(folder: Path, ffmpeg: str, before: Path | None = None) -> di
     return result
 
 
+def verify_bar_pixels(folder: Path) -> dict[str, object]:
+    empty, half, full, broken, gone = [load(folder / f"bar-{phase}.png").astype(np.int16)
+                                       for phase in ("empty", "half", "full", "break", "gone")]
+    def measure(half_image, full_image):
+        delta = lambda image: int((np.max(np.abs(image - empty), axis=2) > 16).sum())
+        h, f = delta(half_image), delta(full_image)
+        if f < 50 or not .40 <= h / f <= .60:
+            raise AssertionError(f"バーの実画素が空→半分→満了にならない: {h}/{f}")
+        return h, f
+    half_pixels, full_pixels = measure(half, full)
+    if np.array_equal(broken, full) or foreground_pixels(gone) > 32:
+        raise AssertionError("バーの破損か消去が描画されていない")
+    # 同じ満了画像を半分と称する対照は拒否できる。
+    try:
+        measure(full, full)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("バーの検査が静止した対照を受け入れた")
+    return {"half_fill_pixels": half_pixels, "full_fill_pixels": full_pixels,
+            "fill_ratio": half_pixels / full_pixels, "gone_pixels": foreground_pixels(gone),
+            "frozen_control_rejected": True}
+
+
 def verify_intrusion_motion(rows: list[dict[str, str]]) -> dict[str, object]:
-    captions = ["WARNING", "不正アクセス", "接続元不明", "遮断を執行", "失敗"]
-    for step in range(len(captions)):
-        caption = " | ".join(captions[:step + 1])
+    captions = ["WARNING", "WARNING | 不正アクセス", "WARNING | 不正アクセス | 接続元不明",
+                "WARNING | 不正アクセス | 接続元不明 | 遮断を執行",
+                "WARNING | 不正アクセス | 接続元不明 | 失敗"]
+    times = [0, 1, 2, 3, 4.75]
+    for step, caption in enumerate(captions):
         first = next(i for i, row in enumerate(rows) if row["caption"] == caption)
-        if abs(first / FPS - step) > 1 / FPS + .001:
+        if abs(first / FPS - times[step]) > 1 / FPS + .001:
             raise AssertionError(f"警告の出現時刻が不正: {caption} at {first / FPS}")
-        if step < 4 and sum(row["caption"] == caption for row in rows) != FPS:
+        if step < 3 and sum(row["caption"] == caption for row in rows) != FPS:
             raise AssertionError(f"次の警告までの追加間隔が1秒ではない: {caption}")
     for row in rows:
-        expected_count = min(5, int(float(row["sec"]) + .0001) + 1) if int(row["error"]) else 0
-        expected = " | ".join(captions[:expected_count])
+        sec = float(row["sec"])
+        expected = captions[max(i for i, at in enumerate(times) if sec + .001 >= at)] if int(row["error"]) else ""
         if row["caption"] != expected:
-            raise AssertionError(f"累積した警告が消えた/順序が違う: {row['sec']}")
+            raise AssertionError(f"警告の保持か処理行の置換が違う: {row['sec']}")
+        active = int(row["error"]) and 3 <= sec < 4.75
+        progress = min(1, max(0, (sec - 3) / 1.5)) if active else 0
+        if abs(float(row["blockProgress"]) - progress) > .001:
+            raise AssertionError(f"遮断バーが1.5秒で満了しない: {sec}")
+        if bool(int(row["blockVisible"])) != bool(active):
+            raise AssertionError(f"遮断バーの表示区間が違う: {sec}")
+        if 4.51 < sec < 4.74 and float(row["blockBreak"]) <= 0:
+            raise AssertionError("満了後に処理行が破損していない")
     bursts = 0
     previous = False
     max_position = max_angle = 0.0
@@ -287,7 +343,8 @@ def verify_intrusion_motion(rows: list[dict[str, str]]) -> dict[str, object]:
         previous = tear
     if bursts != 4 or not 0 < max_position <= .006 or not 0 < max_angle <= .6:
         raise AssertionError(f"侵食の乱れが設定外: {bursts}, {max_position}, {max_angle}")
-    return {"warning_steps": 5, "caption_add_interval_sec": 1, "captions_accumulate": True,
+    return {"warning_steps": 5, "caption_times_sec": times, "header_and_context_persist": True,
+            "block_fill_sec": 1.5, "block_break_sec": .25,
             "glitch_bursts": bursts, "max_axis_displacement_m": max_position,
             "max_angle_deg": max_angle, "read_and_final_static": True}
 
@@ -311,10 +368,12 @@ def verify_story(folder: Path, rows: list[dict[str, str]]) -> dict[str, object]:
         raise AssertionError("検知/遮断失敗/改ざん/消去の順序が不正")
     readable = "readFocus" in rows[0]
     fail_min, fail_max = (.54, .67) if readable else (.25, .45)
-    hold_min, hold_max = (1.34, 1.40) if readable else (.44, .50)
+    # Each transition is observed on the next rendered frame. The difference
+    # of two quantized timestamps can be up to one frame from the target.
+    hold_target = 1.35 if readable else .45
     if not fail_min <= (first_sweep - first_fail) / FPS <= fail_max:
         raise AssertionError("遮断失敗から改ざんまでの間隔が不正")
-    if not hold_min <= (cut - full_doll) / FPS <= hold_max:
+    if abs((cut - full_doll) / FPS - hold_target) > 1 / FPS + .001:
         raise AssertionError("人形の完成表示の読取時間が設定からずれている")
     if (len(rows) - 1 - cut) != FPS:
         raise AssertionError("人形だけが残る時間が1秒からずれている")
@@ -393,7 +452,7 @@ def main() -> int:
         (render / "evidence.json").write_text(
             json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    print("OK: 30fps / 赤文字 / 真実は赤なし / 左→右の塗り替え / 警告累積 / 人形だけ1秒残留")
+    print("OK: 30fps / 赤文字 / 左→右の塗り替え / 遮断1.5秒→破損→失敗 / 人形だけ1秒残留")
     return 0
 
 

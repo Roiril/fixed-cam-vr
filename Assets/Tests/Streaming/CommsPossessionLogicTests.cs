@@ -293,14 +293,33 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = new CommsPanelLogic();
             l.Begin(9, CommsDelivery.Possessed);
-            int steps = (int)System.Math.Ceiling(4.7 * fps);
+            int steps = (int)System.Math.Ceiling(5.45 * fps);
             for (int i = 0; i < steps; i++) l.Tick(1f / fps);
             Assert.IsTrue(l.TakeoverBlockFailed);
             Assert.AreEqual(CommsPossessionPhase.Sweep, l.PossessionSample.phase);
-            Assert.AreEqual((l.TakeoverElapsedSec - 4.6f) / 1.6f,
+            Assert.AreEqual((l.TakeoverElapsedSec - 5.35f) / 1.6f,
                 l.PossessionSample.sweep, 0.00002f);
             while (l.Active) l.Tick(1f / fps);
-            Assert.That(l.TakeoverElapsedSec, Is.InRange(8.549f, 8.55f + 1f / fps));
+            Assert.That(l.TakeoverElapsedSec, Is.InRange(9.299f, 9.3f + 1f / fps));
+        }
+
+        [Test]
+        public void TakeoverFailureWaitsForFullBarAndBreakBeforePossession()
+        {
+            Assert.AreEqual(1.5f, CommsPanelLogic.TakeoverBlockFillSec);
+            Assert.AreEqual(4.75f, CommsPanelLogic.TakeoverFailureSec);
+            var l = new CommsPanelLogic();
+            l.Begin(9, CommsDelivery.Possessed);
+            l.Tick(4.5f);
+            Assert.IsFalse(l.TakeoverBlockFailed, "バー満了は遮断成功でも失敗確定でもない");
+            Assert.AreEqual(CommsPossessionPhase.Shown, l.PossessionSample.phase);
+            l.Tick(.249f);
+            Assert.IsFalse(l.TakeoverBlockFailed);
+            l.Tick(.001f);
+            Assert.IsTrue(l.TakeoverBlockFailed);
+            Assert.AreEqual(CommsPossessionPhase.Shown, l.PossessionSample.phase);
+            l.Tick(.61f);
+            Assert.AreEqual(CommsPossessionPhase.Sweep, l.PossessionSample.phase);
         }
 
         [Test]

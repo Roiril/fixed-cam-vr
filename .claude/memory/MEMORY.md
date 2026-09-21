@@ -4,7 +4,7 @@
 
 - [dark_eyes_slices.md](dark_eyes_slices.md) - 2026-09-19（0237 / 0238・R055 / R056）。闇の目の中身を **Codex に描かせた「壊れた画像データの目」の版**へ（`tools/make-eye-glitch.py` → `Resources/Eyes/EyeGlitch.png`）。**手続きの帯は「整然としすぎ・チープ」で不採用**（色の割合が参考に並んでも目には読めない）／シェーダは瞼の包絡で切ってずらして引くだけ／mip の段はずらす前の uv の微分で／`eyes=` の 8 つ目 ＝ 版を掴めたか／**プレビューは `-Set scale=2`**／`RiftExtend` ⇔ `RIFT_EXTEND`・`--ratio` ⇔ `TEX_RATIO`・`DefaultColor`/`DefaultGain` ⇔ シーンの値 は対。
 
-- [unauthorized_access_effect.md](unauthorized_access_effect.md) - 2026-09-19。用途未定のエラー演出。独立 Prefab。描画順と映像面からの距離。Editor での停止と破棄。実描画の不在検出。
+- [unauthorized_access_effect.md](unauthorized_access_effect.md) - 2026-09-19の独立エラー演出。描画順と映像面からの距離。Editorでの停止と破棄。実描画の不在検出。通常の7秒デモは維持。2026-09-21に本編へ接続した乗っ取り専用表示の最新仕様は[comms_takeover.md](comms_takeover.md)。
 
 - [website_plates_and_fonts.md](website_plates_and_fonts.md) - 2026-09-19。公式サイトの記録・クレジットを荷札と銘板へ。**文言を変えたら `npm run fonts`**（和文書体は画面の字だけのサブセット・check が収録漏れを落とす）／Vercel は `--scope roilils-projects` が無いと Not authorized・プレビューはログインが要る／**headless Chrome は 512px より狭く撮れない**（スマホ幅はアプリ内ブラウザで）・ペインが隠れていると IntersectionObserver が発火しない。
 
@@ -20,7 +20,7 @@
 
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) - CommsTakeoverの時刻境界で再発したfloat比較の注意。境界ぴったりと低FPSを別に検証する。
 
-- [comms_takeover.md](comms_takeover.md) - 2026-09-18（0230 / 0231 / 0232）。**侵食度 0.75 以降の連絡と 3 周目 A の嘘は「憑依の出し方」**: 全文が一気に出る（打鍵 0）→ 読ませる（1.0〜2.4 秒・嘘の一文も真実「異常を検出しました」を出す）→ 上から前線が降りて 0.45 秒で呪われた双子に塗り替わる（頭で乱れの音 1 発）→ 全面のまま閉じる。前線は 4cm の帯ごと（C# と HLSL の 1 対・斑と max で合流）／**降りているあいだは本編の `_Glitch` をまねた乱れ**（帯の横飛び・脱落・明滅。値は `ComputeTear` 1 か所 → 3 材質 ＋ 本文の頂点。枠は動かさず、外へ出た字は切る。置換で 78 行を落とした罠）／**嘘の一文は前線が行を渡り切ったコマに同じ TMP で「異常を検出しませんでした」へ書き換わる**（0232・最小編集・象牙・差し替え後はステンシル Always・走り書きは両端の余白だけ・0.75 以上の空振りは「装置が解析しています」）／決め所は `CommsCueLogic.DeliveryOf(notice, invasion)` 1 か所／旧「印字へ侵食が追いつく」の弧は捨てた（初見に分からない）／観測 `ev=commsPossess` と `commsSweep`。
+- [comms_takeover.md](comms_takeover.md) - 2026-09-21。追いつきの自然完了から不正アクセスへ。大きなWARNINGと横並びの接続情報。3秒から遮断バーを1.5秒で満了し、0.25秒の破損後に赤い失敗へ置換。5.35〜6.95秒でスイと本文を左から人形へ変える。8.30秒でエラーを消し、人形だけ1秒残す。開始前の返信を破棄し、終了後はボタンを離すまで再入力しない。旧来の「上から」「象牙色」「3-Aで時刻発火」は廃止。実描画と実機の証拠は本文の最新節。
 
 - [presentation_redesign.md](presentation_redesign.md) - 2026-09-13 の導入とエージェント画面の再構築。連続開口と固定位置の通信面。実装案の採否は未判定。比較画像と検証手順。**2026-09-14: 割れた実景は割れ始めの姿勢にワールド固定**（代替経路だけ頭についてきた）／落ちる条件は `shatCam=`／権限は起動時／頭を振る探針 `anchor-proof.json`。
 

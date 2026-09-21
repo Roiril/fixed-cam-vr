@@ -92,6 +92,23 @@ namespace FixedCamVr.Streaming.EditorTools
                     }
                     finally { visual.localPosition = position; visual.localRotation = rotation; }
                 }
+                void ShotBarOnly(string name)
+                {
+                    var renderers = Object.FindObjectsOfType<Renderer>(true);
+                    var enabled = new bool[renderers.Length];
+                    for (int i = 0; i < renderers.Length; i++)
+                    {
+                        enabled[i] = renderers[i].enabled;
+                        var filter = renderers[i].GetComponent<MeshFilter>();
+                        renderers[i].enabled = enabled[i] && filter != null && filter.sharedMesh != null
+                            && filter.sharedMesh.name == "Unauthorized Access Block Bar";
+                    }
+                    try { Shot(name); }
+                    finally
+                    {
+                        for (int i = 0; i < renderers.Length; i++) renderers[i].enabled = enabled[i];
+                    }
+                }
                 panel.SetDecayForPreview(0f, 0f);
                 panel.Deliver(CommsNotice.TutorialAccepted); Place();
                 Step(CommsPanelLogic.InSec + CommsPanelLogic.FadeInSec + .1f); Shot("intro-success");
@@ -125,7 +142,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 sync.Tick(panel.TakeoverVisible, 0f);
                 var error = (UnauthorizedAccessEffect)typeof(CommsTakeoverError)
                     .GetField("_effect", Hidden)!.GetValue(sync);
-                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus,shake,shakeX,shakeY,shakeAngle,tear,caption\n");
+                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus,shake,shakeX,shakeY,shakeAngle,tear,caption,blockProgress,blockBreak,blockVisible\n");
                 bool savedIntrusion = false, savedFailure = false;
                 bool savedTruth = false, savedMid = false, savedFinal = false, savedDollOnly = false;
                 int frames = 0;
@@ -138,13 +155,18 @@ namespace FixedCamVr.Streaming.EditorTools
                     if (i == 45) Shot("unauthorized");
                     if (i == 75) Shot("unknown-source");
                     if (i == 105) Shot("block-attempt");
+                    if (i == 90) ShotBarOnly("bar-empty");
+                    if (i == 112) { Shot("block-half"); ShotBarOnly("bar-half"); }
+                    if (i == 135) { Shot("block-full"); ShotBarOnly("bar-full"); }
+                    if (i == 139) { Shot("block-break"); ShotBarOnly("bar-break"); }
                     data.AppendFormat(System.Globalization.CultureInfo.InvariantCulture,
-                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9},{10:F3},{11:F3},{12:F6},{13:F6},{14:F4},{15:F4},{16}\n", i, i / (float)Fps,
+                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9},{10:F3},{11:F3},{12:F6},{13:F6},{14:F4},{15:F4},{16},{17:F4},{18:F4},{19}\n", i, i / (float)Fps,
                         panel.Stage, panel.AppliedSweep, panel.LieChars, panel.AppliedGlyph, error.IsPlaying ? 1 : 0,
                         panel.AppliedPanelAlpha, panel.TakeoverErrorOpacity, panel.TakeoverBlockFailed ? 1 : 0,
                         panel.TakeoverReadFocus, panel.AppliedShake, panel.AppliedShakePosition.x,
                         panel.AppliedShakePosition.y, panel.AppliedShakeAngleDeg, panel.AppliedTear,
-                        error.TakeoverCaption);
+                        error.TakeoverCaption, error.TakeoverBlockProgress,
+                        error.TakeoverBlockBreak, error.TakeoverBlockVisible ? 1 : 0);
                     if (!savedIntrusion && i / (float)Fps >= .75f)
                     {
                         if (panel.AppliedPanelAlpha > .001f || panel.VisibleChars != 0)
@@ -152,7 +174,7 @@ namespace FixedCamVr.Streaming.EditorTools
                         Shot("intrusion"); savedIntrusion = true;
                     }
                     if (!savedFailure && panel.TakeoverBlockFailed)
-                    { Shot("block-failed"); savedFailure = true; }
+                    { Shot("block-failed"); ShotBarOnly("bar-gone"); savedFailure = true; }
                     if (!savedTruth && panel.PossessionPhase == CommsPossessionPhase.Shown && panel.AppliedGlyph > .99f)
                     {
                         Shot("truth-with-error");

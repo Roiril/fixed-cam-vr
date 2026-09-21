@@ -104,11 +104,12 @@ namespace FixedCamVr.Diagnostics.Tests
                 }
                 finally { Application.logMessageReceived -= CountBlockFailed; }
                 Assert.AreEqual(30, dollOnlyFrames, "主画面と空間が消えた後に人形だけ30フレーム残る");
-                Assert.IsTrue(sawFailed, "4秒以降に実prefabの失敗表示へ切り替える");
+                Assert.IsTrue(sawFailed, "4.75秒以降に実prefabの失敗表示へ切り替える");
                 Assert.AreEqual(1, blockFailedLogs, "BlockFailedの縁は実機ログへ1回だけ出す");
                 CollectionAssert.Contains(captions, "WARNING");
                 for (int step = 1; step <= 4; step++)
                     CollectionAssert.Contains(captions, ExpectedCaption(step + .1f));
+                CollectionAssert.Contains(captions, ExpectedCaption(4.8f));
                 Assert.AreEqual(string.Empty, effect.TakeoverCaption);
                 Assert.IsFalse(effect.IsPlaying);
                 Assert.IsFalse(screenRoot.gameObject.activeSelf);
@@ -228,8 +229,8 @@ namespace FixedCamVr.Diagnostics.Tests
             if (seconds < 1f) return "WARNING";
             if (seconds < 2f) return "WARNING | 不正アクセス";
             if (seconds < 3f) return "WARNING | 不正アクセス | 接続元不明";
-            if (seconds < 4f) return "WARNING | 不正アクセス | 接続元不明 | 遮断を執行";
-            return "WARNING | 不正アクセス | 接続元不明 | 遮断を執行 | 失敗";
+            if (seconds < CommsPanelLogic.TakeoverFailureSec) return "WARNING | 不正アクセス | 接続元不明 | 遮断を執行";
+            return "WARNING | 不正アクセス | 接続元不明 | 失敗";
         }
 
     }

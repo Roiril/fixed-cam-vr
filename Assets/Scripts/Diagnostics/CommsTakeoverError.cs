@@ -74,7 +74,8 @@ namespace FixedCamVr.Diagnostics
             float opacity = _panel != null ? _panel.TakeoverErrorOpacity : 1f;
             _effect.SampleTakeover(elapsed, blockFailed, opacity,
                 _panel != null ? _panel.TakeoverReadFocus : 0f);
-            int step = Mathf.Min(4, Mathf.FloorToInt(elapsed + 0.0001f));
+            int step = elapsed + .0001f >= CommsPanelLogic.TakeoverFailureSec
+                ? 4 : Mathf.Min(3, Mathf.FloorToInt(elapsed + .0001f));
             if (step != _lastWarningStep)
             {
                 _lastWarningStep = step;

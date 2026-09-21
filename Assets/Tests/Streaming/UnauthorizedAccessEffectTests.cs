@@ -29,18 +29,22 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual(12, effect.SubtitleVertexCountDiagnostic, "3 bands × 4 vertices");
                 Assert.AreEqual(4, effect.SymbolVertexCountDiagnostic, "triangle image × 4 vertices");
                 Assert.AreEqual(4, effect.ContextVertexCountDiagnostic, "context image × 4 vertices");
-                Assert.AreEqual(4, effect.StatusVertexCountDiagnostic, "status image × 4 vertices");
+                Assert.AreEqual(12, effect.StatusVertexCountDiagnostic, "status image × 3 bands");
+                Assert.AreEqual(24, effect.BlockBarVertexCountDiagnostic, "bar × 6 quads");
                 Assert.AreEqual(4, effect.FailureVertexCountDiagnostic, "failure image × 4 vertices");
                 Assert.AreEqual(56, FindMesh(effect, "Unauthorized Access Decorations").vertexCount,
                     "2 exclamation quads + 12 hazard stripe quads");
                 Assert.AreEqual(4, FindMesh(effect, "Unauthorized Access Context").vertexCount);
-                Assert.AreEqual(4, FindMesh(effect, "Unauthorized Access Status").vertexCount);
+                Assert.AreEqual(12, FindMesh(effect, "Unauthorized Access Status").vertexCount);
+                Assert.AreEqual(24, FindMesh(effect, "Unauthorized Access Block Bar").vertexCount);
                 Assert.AreEqual(4, FindMesh(effect, "Unauthorized Access Failure").vertexCount);
                 Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
                 Assert.IsTrue(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
 
                 effect.Stop();
                 Assert.IsFalse(effect.IsPlaying);
+                Assert.IsFalse(effect.TakeoverBlockVisible);
+                Assert.AreEqual(0f, effect.TakeoverBlockProgress);
                 Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Screen").gameObject.activeSelf);
                 Assert.IsFalse(FindRoot(effect, "UnauthorizedAccess.Spatial").gameObject.activeSelf);
             }
@@ -107,6 +111,7 @@ namespace FixedCamVr.Streaming.Tests
                 Mesh decorations = FindMesh(effect, "Unauthorized Access Decorations");
                 Mesh context = FindMesh(effect, "Unauthorized Access Context");
                 Mesh status = FindMesh(effect, "Unauthorized Access Status");
+                Mesh blockBar = FindMesh(effect, "Unauthorized Access Block Bar");
                 Mesh failure = FindMesh(effect, "Unauthorized Access Failure");
                 Mesh glyphs = FindMesh(effect, "Unauthorized Access Glyphs");
                 Mesh strips = FindMesh(effect, "Unauthorized Access Interference");
@@ -119,6 +124,7 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.Greater(decorations.vertexCount, 0);
                 Assert.Greater(context.vertexCount, 0);
                 Assert.Greater(status.vertexCount, 0);
+                Assert.Greater(blockBar.vertexCount, 0);
                 Assert.Greater(failure.vertexCount, 0);
                 Assert.Greater(glyphs.vertexCount, 0);
                 Assert.Greater(strips.vertexCount, 0);
@@ -134,6 +140,7 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreSame(decorations, FindMesh(effect, "Unauthorized Access Decorations"));
                 Assert.AreSame(context, FindMesh(effect, "Unauthorized Access Context"));
                 Assert.AreSame(status, FindMesh(effect, "Unauthorized Access Status"));
+                Assert.AreSame(blockBar, FindMesh(effect, "Unauthorized Access Block Bar"));
                 Assert.AreSame(failure, FindMesh(effect, "Unauthorized Access Failure"));
                 Assert.AreSame(glyphs, FindMesh(effect, "Unauthorized Access Glyphs"));
                 Assert.AreSame(strips, FindMesh(effect, "Unauthorized Access Interference"));
@@ -256,6 +263,7 @@ namespace FixedCamVr.Streaming.Tests
             Transform spatial = FindRoot(effect, "UnauthorizedAccess.Spatial");
             Mesh context = FindMesh(effect, "Unauthorized Access Context");
             Mesh status = FindMesh(effect, "Unauthorized Access Status");
+            Mesh blockBar = FindMesh(effect, "Unauthorized Access Block Bar");
             Mesh failure = FindMesh(effect, "Unauthorized Access Failure");
 
             effect.enabled = false;
@@ -266,6 +274,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsTrue(spatial == null, "独立world rootが残っている");
             Assert.IsTrue(context == null, "context meshが残っている");
             Assert.IsTrue(status == null, "status meshが残っている");
+            Assert.IsTrue(blockBar == null, "block bar meshが残っている");
             Assert.IsTrue(failure == null, "failure meshが残っている");
             Object.DestroyImmediate(anchor);
         }
@@ -344,7 +353,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void TakeoverSampleAccumulatesFiveFixedMessagesAtAbsoluteSeconds()
+        public void TakeoverSamplePlacesMessagesAndBreaksBlockAtAbsoluteSeconds()
         {
             GameObject anchor = NewAnchor("TakeoverAnchor");
             GameObject host = new GameObject("TakeoverEffect");
@@ -378,10 +387,13 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual("WARNING", effect.TakeoverCaption);
                 AssertCumulativeTextVisible(effect, 1);
                 AssertUniformPositiveAlpha(effect, "Unauthorized Access Warning Bands");
-                Assert.AreEqual(.34f * ReferenceSize.y,
+                Assert.AreEqual(.26f * ReferenceSize.y,
                     MeshCenter(effect, "Unauthorized Access Warning Bands").y, .0001f);
-                Assert.AreEqual(.075f * ReferenceSize.y,
+                Assert.AreEqual(.06f * ReferenceSize.x,
+                    MeshCenter(effect, "Unauthorized Access Warning Bands").x, .0001f);
+                Assert.AreEqual(.17f * ReferenceSize.y,
                     MeshSize(effect, "Unauthorized Access Warning Bands").y, .0001f);
+                Assert.IsFalse(effect.TakeoverBlockVisible);
                 Vector3[][] fixedVertices = CaptureTextVertices(effect);
                 effect.SampleTakeover(.999f, true, 1f);
                 AssertCumulativeTextVisible(effect, 1);
@@ -391,9 +403,11 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual("WARNING | 不正アクセス", effect.TakeoverCaption);
                 AssertCumulativeTextVisible(effect, 2);
                 AssertUniformPositiveAlpha(effect, "Unauthorized Access Subtitle Bands");
-                Assert.AreEqual(.24f * ReferenceSize.y,
+                Assert.AreEqual(.07f * ReferenceSize.y,
                     MeshCenter(effect, "Unauthorized Access Subtitle Bands").y, .0001f);
-                Assert.AreEqual(.06f * ReferenceSize.y,
+                Assert.AreEqual(-.12f * ReferenceSize.x,
+                    MeshCenter(effect, "Unauthorized Access Subtitle Bands").x, .0001f);
+                Assert.AreEqual(.052f * ReferenceSize.y,
                     MeshSize(effect, "Unauthorized Access Subtitle Bands").y, .0001f);
                 effect.SampleTakeover(1.999f, true, 1f);
                 AssertCumulativeTextVisible(effect, 2);
@@ -402,9 +416,11 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual("WARNING | 不正アクセス | 接続元不明", effect.TakeoverCaption);
                 AssertCumulativeTextVisible(effect, 3);
                 AssertUniformPositiveAlpha(effect, "Unauthorized Access Context");
-                Assert.AreEqual(.155f * ReferenceSize.y,
+                Assert.AreEqual(.07f * ReferenceSize.y,
                     MeshCenter(effect, "Unauthorized Access Context").y, .0001f);
-                Assert.AreEqual(.06f * ReferenceSize.y,
+                Assert.AreEqual(.23f * ReferenceSize.x,
+                    MeshCenter(effect, "Unauthorized Access Context").x, .0001f);
+                Assert.AreEqual(.052f * ReferenceSize.y,
                     MeshSize(effect, "Unauthorized Access Context").y, .0001f);
                 effect.SampleTakeover(2.999f, true, 1f);
                 AssertCumulativeTextVisible(effect, 3);
@@ -413,28 +429,71 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreEqual("WARNING | 不正アクセス | 接続元不明 | 遮断を執行", effect.TakeoverCaption);
                 AssertCumulativeTextVisible(effect, 4);
                 AssertUniformPositiveAlpha(effect, "Unauthorized Access Status");
+                Assert.IsTrue(effect.TakeoverBlockVisible);
+                Assert.AreEqual(0f, effect.TakeoverBlockProgress);
+                Assert.AreEqual(0f, effect.TakeoverBlockBreak);
+                Assert.AreEqual(0f, BarFillWidth(effect), .0001f);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Block Bar"), 0f);
                 Assert.AreSame(attempt, status.GetTexture("_MainTex"),
-                    "blockFailedが早く届いても4秒までは遮断を執行する");
+                    "blockFailedが早く届いても満了までは遮断を執行する");
                 Assert.AreSame(failed, failure.GetTexture("_MainTex"));
-                Assert.AreEqual(.07f * ReferenceSize.y,
+                Assert.AreEqual(-.065f * ReferenceSize.y,
                     MeshCenter(effect, "Unauthorized Access Status").y, .0001f);
-                Assert.AreEqual(.06f * ReferenceSize.y,
+                Assert.AreEqual(-.18f * ReferenceSize.x,
+                    MeshCenter(effect, "Unauthorized Access Status").x, .0001f);
+                Assert.AreEqual(.052f * ReferenceSize.y,
                     MeshSize(effect, "Unauthorized Access Status").y, .0001f);
                 effect.SampleTakeover(3.999f, true, 1f);
                 Assert.AreSame(attempt, status.GetTexture("_MainTex"));
                 AssertCumulativeTextVisible(effect, 4);
 
-                effect.SampleTakeover(4f, false, 1f);
-                Assert.AreEqual("WARNING | 不正アクセス | 接続元不明 | 遮断を執行 | 失敗",
-                    effect.TakeoverCaption);
-                AssertCumulativeTextVisible(effect, 5);
-                Assert.AreSame(attempt, status.GetTexture("_MainTex"), "遮断を執行の画像を差し替えない");
+                effect.SampleTakeover(3.75f, false, 1f);
+                Assert.AreEqual(.5f, effect.TakeoverBlockProgress, .0001f);
+                Assert.AreEqual(.32f * ReferenceSize.x * .5f,
+                    BarFillWidth(effect), .0001f);
+                effect.SampleTakeover(4.5f, false, 1f);
+                Assert.AreEqual(1f, effect.TakeoverBlockProgress);
+                Assert.AreEqual(0f, effect.TakeoverBlockBreak);
+                Assert.AreEqual(.32f * ReferenceSize.x, BarFillWidth(effect), .0001f);
+                AssertCumulativeTextVisible(effect, 4);
+                AssertAlpha(effect, "Unauthorized Access Failure", 0f);
+                Vector3[] intactStatus = FindMesh(effect, "Unauthorized Access Status").vertices;
+                Vector3[] intactBar = FindMesh(effect, "Unauthorized Access Block Bar").vertices;
+                effect.SampleTakeover(4.52f, true, 1f);
+                Assert.AreEqual(0f, effect.TakeoverBlockBreak);
+                CollectionAssert.AreEqual(intactStatus, FindMesh(effect, "Unauthorized Access Status").vertices);
+                CollectionAssert.AreEqual(intactBar, FindMesh(effect, "Unauthorized Access Block Bar").vertices);
+                effect.SampleTakeover(4.625f, true, 1f);
+                Assert.Greater(effect.TakeoverBlockBreak, .4f);
+                Assert.Less(effect.TakeoverBlockBreak, .5f);
+                Assert.IsTrue(VerticesDiffer(intactStatus, FindMesh(effect, "Unauthorized Access Status").vertices));
+                Assert.IsTrue(VerticesDiffer(intactBar, FindMesh(effect, "Unauthorized Access Block Bar").vertices));
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Status"), 0f);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Block Bar"), 0f);
+                AssertAlpha(effect, "Unauthorized Access Failure", 0f);
+                effect.SampleTakeover(4.749f, true, 1f);
+                Assert.IsTrue(effect.TakeoverBlockVisible);
+                Assert.AreEqual("WARNING | 不正アクセス | 接続元不明 | 遮断を執行", effect.TakeoverCaption);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Status"), 0f);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Block Bar"), 0f);
+                effect.SampleTakeover(4.75f, true, 1f);
+                Assert.AreEqual("WARNING | 不正アクセス | 接続元不明 | 失敗", effect.TakeoverCaption);
+                Assert.IsFalse(effect.TakeoverBlockVisible);
+                Assert.AreEqual(0f, effect.TakeoverBlockProgress);
+                AssertAlpha(effect, "Unauthorized Access Status", 0f);
+                AssertAlpha(effect, "Unauthorized Access Block Bar", 0f);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Failure"), 0f);
+                Assert.AreSame(attempt, status.GetTexture("_MainTex"));
                 Assert.AreSame(failed, failure.GetTexture("_MainTex"));
-                Assert.AreEqual(-.015f * ReferenceSize.y,
+                Assert.AreEqual(-.065f * ReferenceSize.y,
                     MeshCenter(effect, "Unauthorized Access Failure").y, .0001f);
-                Assert.AreEqual(.06f * ReferenceSize.y,
+                Assert.AreEqual(.06f * ReferenceSize.x,
+                    MeshCenter(effect, "Unauthorized Access Failure").x, .0001f);
+                Assert.AreEqual(.085f * ReferenceSize.y,
                     MeshSize(effect, "Unauthorized Access Failure").y, .0001f);
-                AssertTextVerticesEqual(fixedVertices, CaptureTextVertices(effect));
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Warning Bands"), 0f);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Subtitle Bands"), 0f);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Context"), 0f);
                 AssertTakeoverTextDoesNotOverlap(effect);
 
                 effect.SampleTakeover(8f, true, 1f);
@@ -454,6 +513,8 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.Greater(MaxAlpha(spatial), 0f, "低いopacityでも空間側を同時に残す");
                 effect.SampleTakeover(4f, true, 0f);
                 Assert.AreEqual(string.Empty, effect.TakeoverCaption);
+                Assert.IsFalse(effect.TakeoverBlockVisible);
+                Assert.AreEqual(0f, effect.TakeoverBlockProgress);
                 Assert.IsFalse(screen.gameObject.activeSelf);
                 Assert.IsFalse(spatial.gameObject.activeSelf);
 
@@ -461,6 +522,7 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.IsTrue(screen.gameObject.activeSelf, "通常SampleはTakeover専用modeを解除する");
                 Assert.AreSame(attempt, status.GetTexture("_MainTex"));
                 AssertAlpha(effect, "Unauthorized Access Failure", 0f);
+                AssertAlpha(effect, "Unauthorized Access Block Bar", 0f);
             }
             finally
             {
@@ -492,16 +554,16 @@ namespace FixedCamVr.Streaming.Tests
                 effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
                     textures[4], textures[5], failed);
                 effect.Play(anchor.transform, ReferenceSize);
-                effect.SampleTakeover(4f, true, 1f);
+                effect.SampleTakeover(4.75f, true, 1f);
 
                 Bounds bounds = MeshBounds(effect, "Unauthorized Access Failure");
                 float visibleMinX = bounds.min.x + bounds.size.x * (10f / 211f);
                 float visibleMaxX = bounds.min.x + bounds.size.x * (200f / 211f);
                 float visibleMinY = bounds.min.y + bounds.size.y * (8f / 107f);
                 float visibleMaxY = bounds.min.y + bounds.size.y * (99f / 107f);
-                Assert.AreEqual(0f, (visibleMinX + visibleMaxX) * .5f, .0001f);
-                Assert.AreEqual(-.015f * ReferenceSize.y, (visibleMinY + visibleMaxY) * .5f, .0001f);
-                Assert.AreEqual(.06f * ReferenceSize.y, visibleMaxY - visibleMinY, .0001f);
+                Assert.AreEqual(.06f * ReferenceSize.x, (visibleMinX + visibleMaxX) * .5f, .0001f);
+                Assert.AreEqual(-.065f * ReferenceSize.y, (visibleMinY + visibleMaxY) * .5f, .0001f);
+                Assert.AreEqual(.085f * ReferenceSize.y, visibleMaxY - visibleMinY, .0001f);
             }
             finally
             {
@@ -510,6 +572,47 @@ namespace FixedCamVr.Streaming.Tests
                 DestroyImmediate(material);
                 DestroyImmediate(textures);
                 DestroyImmediate(failed);
+            }
+        }
+
+        [Test]
+        public void TakeoverProductionGraphicSizesKeepRowsSeparate()
+        {
+            GameObject anchor = NewAnchor("ProductionLayoutAnchor");
+            GameObject host = new GameObject("ProductionLayoutEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            try
+            {
+                Shader shader = Shader.Find("FixedCamVr/UnauthorizedAccessFx");
+                Assert.IsNotNull(shader);
+                material = new Material(shader!);
+                textures = new[]
+                {
+                    new Texture2D(1406, 257) { name = "wordmark-v3" },
+                    new Texture2D(607, 107) { name = "subtitle-v3" },
+                    NewTexture("symbol"), NewTexture("noise"),
+                    new Texture2D(508, 107) { name = "context-v4" },
+                    new Texture2D(508, 107) { name = "attempt-v4" },
+                    new Texture2D(211, 107) { name = "failed-v4" },
+                };
+                var effect = host.AddComponent<UnauthorizedAccessEffect>();
+                effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
+                    textures[4], textures[5], textures[6]);
+                effect.Play(anchor.transform, ReferenceSize);
+                effect.SampleTakeover(4.75f, true, 1f);
+                AssertTakeoverTextDoesNotOverlap(effect);
+                Assert.AreEqual(.26f * ReferenceSize.y,
+                    VisibleCenterY(effect, "Unauthorized Access Warning Bands", 8f / 257f, 249f / 257f), .0001f);
+                Assert.AreEqual(.17f * ReferenceSize.y,
+                    VisibleHeight(effect, "Unauthorized Access Warning Bands", 8f / 257f, 249f / 257f), .0001f);
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
             }
         }
 
@@ -540,6 +643,7 @@ namespace FixedCamVr.Streaming.Tests
                 AssertAlpha(effect, "Unauthorized Access Decorations", decorations * .14f);
                 AssertAlpha(effect, "Unauthorized Access Context", 0f);
                 AssertAlpha(effect, "Unauthorized Access Status", 0f);
+                AssertAlpha(effect, "Unauthorized Access Block Bar", 0f);
                 AssertAlpha(effect, "Unauthorized Access Glyphs", glyphs * .14f);
                 AssertAlpha(effect, "Unauthorized Access Interference", interference * .14f);
 
@@ -552,9 +656,15 @@ namespace FixedCamVr.Streaming.Tests
                 AssertAlpha(effect, "Unauthorized Access Context", .55f);
                 effect.SampleTakeover(3.5f, false, .35f, 1f);
                 AssertAlpha(effect, "Unauthorized Access Status", .55f);
+                AssertAlpha(effect, "Unauthorized Access Block Bar", .55f);
                 AssertAlpha(effect, "Unauthorized Access Failure", 0f);
                 effect.SampleTakeover(4.5f, true, .35f, 1f);
                 AssertAlpha(effect, "Unauthorized Access Status", .55f);
+                AssertAlpha(effect, "Unauthorized Access Block Bar", .55f);
+                AssertAlpha(effect, "Unauthorized Access Failure", 0f);
+                effect.SampleTakeover(4.75f, true, .35f, 1f);
+                AssertAlpha(effect, "Unauthorized Access Status", 0f);
+                AssertAlpha(effect, "Unauthorized Access Block Bar", 0f);
                 AssertAlpha(effect, "Unauthorized Access Failure", .55f);
             }
             finally
@@ -668,6 +778,7 @@ namespace FixedCamVr.Streaming.Tests
             "Unauthorized Access Decorations",
             "Unauthorized Access Context",
             "Unauthorized Access Status",
+            "Unauthorized Access Block Bar",
             "Unauthorized Access Failure",
             "Unauthorized Access Glyphs",
             "Unauthorized Access Interference",
@@ -829,22 +940,40 @@ namespace FixedCamVr.Streaming.Tests
 
         private static void AssertTakeoverTextDoesNotOverlap(UnauthorizedAccessEffect effect)
         {
-            Bounds first = MeshBounds(effect, TextMeshNames[0]);
-            Assert.LessOrEqual(first.max.y, .40f * ReferenceSize.y + .0001f,
-                "上端の日時表示に余白を残す");
-            Assert.AreEqual(0f, first.center.x, .0001f);
-            Bounds previous = first;
-            for (int i = 1; i < TextMeshNames.Length; i++)
-            {
-                Bounds current = MeshBounds(effect, TextMeshNames[i]);
-                Assert.Greater(previous.min.y, current.max.y,
-                    $"{TextMeshNames[i - 1]} and {TextMeshNames[i]} overlap");
-                Assert.AreEqual(0f, current.center.x, .0001f, TextMeshNames[i]);
-                previous = current;
-            }
-            Assert.GreaterOrEqual(previous.min.y, -.05f * ReferenceSize.y - .0001f,
-                "通信面との間に余白を残す");
+            Bounds warning = MeshBounds(effect, "Unauthorized Access Warning Bands");
+            Bounds unauthorized = MeshBounds(effect, "Unauthorized Access Subtitle Bands");
+            Bounds source = MeshBounds(effect, "Unauthorized Access Context");
+            Bounds status = MeshBounds(effect, "Unauthorized Access Status");
+            Bounds bar = MeshBounds(effect, "Unauthorized Access Block Bar");
+            Bounds failure = MeshBounds(effect, "Unauthorized Access Failure");
+            Assert.Less(warning.max.y, .37f * ReferenceSize.y, "上端の日時表示に余白を残す");
+            Assert.Greater(warning.min.y, unauthorized.max.y);
+            Assert.Less(unauthorized.max.x, source.min.x, "主文は同じ行で離す");
+            Assert.Greater(unauthorized.min.y, status.max.y);
+            Assert.Greater(source.min.y, status.max.y);
+            Assert.Less(status.max.x, bar.min.x, "遮断ラベルとバーを離す");
+            Assert.Greater(unauthorized.min.y, failure.max.y);
+            Assert.Greater(source.min.y, failure.max.y);
+            Assert.Greater(failure.min.y, -.15f * ReferenceSize.y, "通信面との間に余白を残す");
+            float left = Mathf.Min(warning.min.x, Mathf.Min(unauthorized.min.x, status.min.x));
+            float right = Mathf.Max(warning.max.x, Mathf.Max(source.max.x, bar.max.x));
+            Assert.LessOrEqual(right - left, .78f * ReferenceSize.x);
         }
+
+        private static float BarFillWidth(UnauthorizedAccessEffect effect)
+        {
+            Vector3[] vertices = FindMesh(effect, "Unauthorized Access Block Bar").vertices;
+            return vertices[5].x - vertices[4].x;
+        }
+
+        private static float VisibleCenterY(UnauthorizedAccessEffect effect, string name, float minV, float maxV)
+        {
+            Bounds bounds = MeshBounds(effect, name);
+            return bounds.min.y + bounds.size.y * (minV + maxV) * .5f;
+        }
+
+        private static float VisibleHeight(UnauthorizedAccessEffect effect, string name, float minV, float maxV) =>
+            MeshBounds(effect, name).size.y * (maxV - minV);
 
         private static Color[][] CaptureColors(UnauthorizedAccessEffect effect)
         {
