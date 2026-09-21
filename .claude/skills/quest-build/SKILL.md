@@ -34,6 +34,20 @@ fileID の振り直しで、このリポジトリでは以前からそうなっ�
 Unity の**手動 Build Settings は使わない**。手動だと 3 アプリが同名・同パッケージ ID になり、
 Quest 上で共存できなくなる。
 
+### 描画メニューで出力先を変える場合
+
+`menu comms-revision -Set out=...` は実行先だけを変える。wrapperの更新確認先は
+`$Menus.Out`の固定パスのままなので、本体exit 0でも「出力が更新されていない」となる。
+別の出力先へ描画するときは次を使い、指定先のCSVと画像を検証する。
+
+```powershell
+.\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.CommsRevisionPreview.Run -Set out=Logs/comms-check
+py -3.11 tools/render-comms-possession-preview.py --render Logs/comms-check
+```
+
+既定先を使う場合は従来の`menu comms-revision`のままでよい。
+固定先のmtimeだけを更新して判定を通さない。（2026-09-21 実測）
+
 ## なぜ CLI なのか（2026-08-08 に切り替え）
 
 旧経路は MCP の `execute_menu_item` で、**構造的に不利だった**。
