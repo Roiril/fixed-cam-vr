@@ -19,11 +19,15 @@ namespace FixedCamVr.Diagnostics
         private bool _screenExplicit;
         private GameObject? _instance;
         private UnauthorizedAccessEffect? _effect;
+        private CommsTakeoverAudio? _audio;
         private bool _active;
         private bool _blockFailedLogged;
         private int _lastWarningStep = -1;
         private bool _warnedMissingPrefab;
         private bool _warnedMissingScreen;
+
+        /// <summary>提供音が鳴る本番だけ、従来の塗り替わり1発を重ねない。</summary>
+        public bool UsesProvidedSweepAudio => _active && _audio != null && _audio.HasSweepClip;
 
         public void Configure(CommsPanel panel, GameObject? prefab)
         {
@@ -74,6 +78,8 @@ namespace FixedCamVr.Diagnostics
             _effect.SampleTakeover(elapsed, blockFailed, opacity,
                 _panel != null ? _panel.TakeoverReadFocus : 0f,
                 _panel != null ? _panel.TakeoverFillStartSec : CommsPanelLogic.DefaultTakeoverFillStartSec);
+            _audio?.Tick(elapsed, _panel != null ? _panel.TakeoverFillStartSec :
+                CommsPanelLogic.DefaultTakeoverFillStartSec);
             int step = elapsed + .0001f >= (_panel != null ? _panel.FailureAtSec :
                 CommsPanelLogic.DefaultTakeoverFailureSec)
                 ? 4 : Mathf.Min(3, Mathf.FloorToInt(elapsed + .0001f));
@@ -127,6 +133,12 @@ namespace FixedCamVr.Diagnostics
             _effect.enabled = false;
             _effect.Play(_screenAnchor, _screenSize);
             _active = true;
+            if (Application.isPlaying && _panel != null)
+            {
+                if (_audio == null) _audio = GetComponent<CommsTakeoverAudio>();
+                if (_audio == null) _audio = gameObject.AddComponent<CommsTakeoverAudio>();
+                _audio.Begin(_screenAnchor, _panel.TakeoverSoundAnchor);
+            }
             _blockFailedLogged = false;
             _lastWarningStep = -1;
             Debug.Log("[XP] ev=commsError active=1 screen=1 spatial=1");
@@ -134,6 +146,7 @@ namespace FixedCamVr.Diagnostics
 
         private void StopEffect()
         {
+            _audio?.StopAll();
             _effect?.Stop();
             if (_active) Debug.Log("[XP] ev=commsError active=0 screen=0 spatial=0");
             _active = false;

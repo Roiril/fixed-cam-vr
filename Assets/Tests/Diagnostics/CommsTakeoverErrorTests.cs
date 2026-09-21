@@ -16,6 +16,30 @@ namespace FixedCamVr.Diagnostics.Tests
         private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
         [Test]
+        public void ProvidedVideoAudioIsPresentAsMono48kAndCutToTheSharedTimeline()
+        {
+            (string name, float seconds)[] clips =
+            {
+                ("sfx_comms_alert", 4.17f),
+                ("sfx_comms_block", 2.23f),
+                ("sfx_comms_sweep", CommsPossessionLogic.SweepSec),
+            };
+            foreach (var (name, seconds) in clips)
+            {
+                string path = "Assets/Resources/Sound/" + name + ".wav";
+                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+                Assert.IsNotNull(clip, path);
+                Assert.AreEqual(1, clip.channels, name + " must be spatial mono");
+                Assert.AreEqual(48000, clip.frequency, name);
+                // ADPCM の最終ブロックは端数サンプルを埋める。
+                Assert.AreEqual(seconds, clip.length, .003f, name);
+                var importer = (AudioImporter)AssetImporter.GetAtPath(path);
+                Assert.IsTrue(importer.forceToMono, name);
+                Assert.AreEqual(AudioClipLoadType.DecompressOnLoad, importer.defaultSampleSettings.loadType);
+            }
+        }
+
+        [Test]
         public void TickStartsRealPrefabWhilePanelIsHiddenAndStopsBothLayers()
         {
             GameObject host = new GameObject("Comms takeover test");

@@ -41,6 +41,7 @@ MONO3D = {
     "sfx_switch_warn",
     "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
     "sfx_screen_on", "sfx_power_off",
+    "sfx_comms_alert", "sfx_comms_block", "sfx_comms_sweep",
     "bed_device", "bed_device_worn", "bed_static",
     # 目（2026-09-03・0131）。**1 つ 1 つがその目の方角から鳴る**ので 3D
     *(f"sfx_eye_{i}" for i in range(1, 7)),

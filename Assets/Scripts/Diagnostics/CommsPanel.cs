@@ -828,6 +828,9 @@ namespace FixedCamVr.Diagnostics
 
         public float TakeoverReadFocus => _logic.TakeoverReadFocus;
 
+        /// <summary>連絡の面から鳴る音の位置。揺れる子ではなく面の根を使う。</summary>
+        public Transform TakeoverSoundAnchor => _root != null ? _root : transform;
+
         /// <summary>塗り替わりの頭で鳴らした乱れの音の累計。</summary>
         public int SweepSfxCount => sweepSfx != null ? sweepSfx.PlayedCount : 0;
 
@@ -1906,7 +1909,8 @@ namespace FixedCamVr.Diagnostics
             {
                 // 塗り替わりの頭で乱れの音を 1 発。前線が降り始めたのと同じフレーム（絵と音を同じ縁から出す）。
                 _sweepSfxFired = true;
-                if (_root != null) sweepSfx?.Play(_root.position);
+                if (_root != null && GetComponent<CommsTakeoverError>()?.UsesProvidedSweepAudio != true)
+                    sweepSfx?.Play(_root.position);
             }
             if (poss.phase == CommsPossessionPhase.Cursed && !_sweepDone)
             {

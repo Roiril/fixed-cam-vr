@@ -109,6 +109,7 @@ RECORDED |= {"bed_relief"}
 #          150Hz 以下）。`bed_beat`（-21.0）と同じ形で、**既知の NG はこれで 3 本目**。
 #          ヘッドホンなら鳴る。直さない（§4.5）。
 RECORDED |= {"bed_heart"}
+RECORDED |= {"sfx_comms_alert", "sfx_comms_block", "sfx_comms_sweep"}
 RECORDED |= {f"sfx_eye_{i}" for i in range(1, 9)}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 

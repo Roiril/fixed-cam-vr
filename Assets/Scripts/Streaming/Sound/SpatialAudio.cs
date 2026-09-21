@@ -131,6 +131,8 @@ namespace FixedCamVr.Streaming
             "sfx_switch_warn",
             "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
             "sfx_screen_on", "sfx_power_off",
+            // 提供動画の警告と遮断は主画面、侵食は連絡の面から鳴る。
+            "sfx_comms_alert", "sfx_comms_block", "sfx_comms_sweep",
             "bed_device", "bed_device_worn", "bed_static",
             // 目（2026-09-03・`canon/LEDGER.md` 0131）。**1 つ 1 つがその目の方角から鳴る**
             "sfx_eye_1", "sfx_eye_2", "sfx_eye_3",
