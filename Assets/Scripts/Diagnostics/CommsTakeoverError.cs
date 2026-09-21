@@ -60,7 +60,6 @@ namespace FixedCamVr.Diagnostics
         public void Tick(bool visible, float dt)
         {
             _ = dt;
-            // 人形の面だけを残す1秒間はエラーを再開しない。
             visible = visible && (_panel == null || _panel.TakeoverErrorOpacity > 0f);
             if (visible && !_active) StartEffect();
             if (!visible && _active)
@@ -73,8 +72,10 @@ namespace FixedCamVr.Diagnostics
             bool blockFailed = _panel != null && _panel.TakeoverBlockFailed;
             float opacity = _panel != null ? _panel.TakeoverErrorOpacity : 1f;
             _effect.SampleTakeover(elapsed, blockFailed, opacity,
-                _panel != null ? _panel.TakeoverReadFocus : 0f);
-            int step = elapsed + .0001f >= CommsPanelLogic.TakeoverFailureSec
+                _panel != null ? _panel.TakeoverReadFocus : 0f,
+                _panel != null ? _panel.TakeoverFillStartSec : CommsPanelLogic.DefaultTakeoverFillStartSec);
+            int step = elapsed + .0001f >= (_panel != null ? _panel.FailureAtSec :
+                CommsPanelLogic.DefaultTakeoverFailureSec)
                 ? 4 : Mathf.Min(3, Mathf.FloorToInt(elapsed + .0001f));
             if (step != _lastWarningStep)
             {

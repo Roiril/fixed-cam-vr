@@ -210,23 +210,21 @@ namespace FixedCamVr.Streaming
         /// <summary>塗り替わり後の人形を保持する時間 (秒)。</summary>
         public const float PossessedHoldSec = 1.35f;
 
-        /// <summary>警告と空間エラーが消えた後、人形の面だけを静止して残す時間 (秒)。</summary>
-        public const float PossessedOutSec = 1f;
-
-        /// <summary>塗り替わりの前に「遮断失敗」へ変わる時間 (秒)。</summary>
-        public const float TakeoverBlockFailedLeadSec = 0.6f;
+        /// <summary>乗っ取りは警告と通信面を同時に消す。</summary>
+        public const float PossessedOutSec = 0f;
 
         public const float TakeoverBlockSec = 3f;
-        public const float TakeoverBlockFillSec = 1.5f;
+        public const float TakeoverBlockFillSec = CommsPossessionLogic.SweepSec;
         public const float TakeoverBlockBreakSec = .25f;
 
-        /// <summary>遮断バーの満了と処理行の破損が終わった時刻。</summary>
-        public const float TakeoverFailureSec = TakeoverBlockSec + TakeoverBlockFillSec + TakeoverBlockBreakSec;
+        public const float DefaultTakeoverFillStartSec = IntrusionSec + InSec +
+            CommsPossessionLogic.ShowSec + CommsPossessionLogic.ReadMinSec;
+        public const float DefaultTakeoverFailureSec = DefaultTakeoverFillStartSec +
+            TakeoverBlockFillSec + TakeoverBlockBreakSec;
+        public const float TakeoverFailureSec = DefaultTakeoverFailureSec;
 
         public static float PossessionReadSecFor(int charCount, ShowLang lang)
-            => System.Math.Max(CommsPossessionLogic.ReadSecFor(charCount, lang),
-                TakeoverFailureSec + TakeoverBlockFailedLeadSec - IntrusionSec - InSec
-                - CommsPossessionLogic.ShowSec);
+            => CommsPossessionLogic.ReadSecFor(charCount, lang);
 
         /// <summary>その出方で読ませる時間 (秒)。<b>読ませる尺を読む所は必ずここを通す</b>。</summary>
         public static float HoldSecFor(CommsDelivery delivery)
@@ -330,10 +328,14 @@ namespace FixedCamVr.Streaming
         /// <summary>乗っ取り開始からの秒数。段をまたいでも同じ純ロジック時計が単調に進む。</summary>
         public float TakeoverElapsedSec => _takeoverElapsedSec;
 
-        /// <summary>遮断が間に合わない時点へ達したか。塗り替わりの 0.6 秒前から true。</summary>
+        public float TakeoverFillStartSec => IntrusionSec + InSec + CommsPossessionLogic.SweepStartSec(_readSec);
+
+        public float FailureAtSec => TakeoverFillStartSec + TakeoverBlockFillSec + TakeoverBlockBreakSec;
+
+        /// <summary>遮断バーと処理行の破損が終わったか。</summary>
         public bool TakeoverBlockFailed
             => _delivery == CommsDelivery.Possessed
-               && Active && _takeoverElapsedSec + 0.0001f >= TakeoverFailureSec;
+               && Active && _takeoverElapsedSec + 0.0001f >= FailureAtSec;
 
         /// <summary>エラーから通信文へ注目を移す割合。消灯中も戻さず、警告を再点灯させない。</summary>
         public float TakeoverReadFocus
@@ -347,7 +349,7 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        /// <summary>空間エラーの不透明度。Outに入る瞬間に消し、人形の面を1秒残す。</summary>
+        /// <summary>空間エラーの不透明度。通信面と同じ時刻に消す。</summary>
         public float TakeoverErrorOpacity
         {
             get

@@ -801,7 +801,7 @@ namespace FixedCamVr.Diagnostics
         /// <summary>嘘の一文（<see cref="CommsNotice.Takeover"/>）を出した回数。ラン 1 回に 1 度のはず。</summary>
         public int LieCount { get; private set; }
 
-        /// <summary>Takeover の面が出ているあいだ true。エラー消去後の残留1秒も含む。</summary>
+        /// <summary>Takeover の面とエラーが出ているあいだ true。</summary>
         public bool TakeoverVisible => _lieActive && _logic.Active;
 
         /// <summary>乗っ取りの発火待ちから表示終了まで、報告入力を受け付けない。</summary>
@@ -815,6 +815,10 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>Takeover 開始からの単調な秒数。段をまたいでも同じ純ロジック時計を読む。</summary>
         public float TakeoverElapsedSec => _logic.TakeoverElapsedSec;
+
+        public float TakeoverFillStartSec => _logic.TakeoverFillStartSec;
+
+        public float FailureAtSec => _logic.FailureAtSec;
 
         /// <summary>塗り替わりを止めるには遅い時点へ達したか。</summary>
         public bool TakeoverBlockFailed => _logic.TakeoverBlockFailed;

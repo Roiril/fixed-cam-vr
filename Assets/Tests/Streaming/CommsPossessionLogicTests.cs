@@ -58,7 +58,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsPossessionPhase.Cursed, done.phase, "境界ぴったりで塗り替わり切る");
             Assert.AreEqual(1f, done.sweep, 1e-6f);
             Assert.AreEqual(CommsPossessionPhase.Cursed, CommsPossessionLogic.Sample(end + 10f, readSec).phase);
-            Assert.AreEqual(1.6f, CommsPossessionLogic.SweepSec, 1e-6f,
+            Assert.AreEqual(1.5f, CommsPossessionLogic.SweepSec, 1e-6f,
                 "左から人形へ塗り替わる過程を読める尺");
         }
 
@@ -228,22 +228,21 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsPanelLogic.PossessedHoldSec,
                 CommsPanelLogic.HoldSecFor(CommsDelivery.Possessed), 1e-6f);
             l.Tick(CommsPanelLogic.PossessedHoldSec);
-            Assert.AreEqual(CommsStage.Out, l.Stage);
-            Assert.AreEqual(1f, l.Weights.curse, 1e-6f, "引いている最中も呪われたまま");
-            l.Tick(CommsPanelLogic.PossessedOutSec + 0.001f);
             Assert.AreEqual(CommsStage.Off, l.Stage);
             Assert.AreEqual(0f, l.Weights.curse, 1e-6f);
             Assert.AreEqual(CommsPossessionPhase.Off, l.PossessionSample.phase);
         }
 
         [Test]
-        public void TakeoverBoundaries_ClearErrorsThenKeepDollForOneSecond()
+        public void TakeoverBoundaries_ClosePanelAndErrorTogether()
         {
             var l = new CommsPanelLogic();
             l.Begin(12, CommsDelivery.Possessed);
             float readSec = CommsPanelLogic.PossessionReadSecFor(12, ShowLanguage.Current);
-            float failAt = CommsPossessionLogic.SweepStartSec(readSec)
-                           - CommsPanelLogic.TakeoverBlockFailedLeadSec;
+            float fillStart = l.TakeoverFillStartSec;
+            float failAt = l.FailureAtSec;
+            Assert.AreEqual(CommsPanelLogic.IntrusionSec + CommsPanelLogic.InSec +
+                CommsPossessionLogic.SweepStartSec(readSec), fillStart, 1e-5f);
 
             l.Tick(CommsPanelLogic.IntrusionSec - Dt);
             Assert.AreEqual(CommsStage.Intrusion, l.Stage);
@@ -262,64 +261,102 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0.35f, l.TakeoverErrorOpacity, 1e-6f);
             Assert.AreEqual(1f, l.TakeoverReadFocus);
 
-            l.Tick(failAt - Dt);
-            Assert.IsFalse(l.TakeoverBlockFailed, "0.6 秒前の 1 コマ手前はまだ遮断できる");
+            l.Tick(fillStart - CommsPanelLogic.IntrusionSec - CommsPanelLogic.InSec);
+            Assert.AreEqual(CommsPossessionPhase.Sweep, l.PossessionSample.phase);
+            Assert.IsFalse(l.TakeoverBlockFailed);
+            l.Tick(failAt - fillStart - Dt);
+            Assert.IsFalse(l.TakeoverBlockFailed, "破損終了の1コマ手前はまだ遮断中");
             l.Tick(Dt);
-            Assert.IsTrue(l.TakeoverBlockFailed, "0.6 秒前ぴったりで遮断失敗へ変わる");
-            l.Tick(l.TypeSec - failAt);
+            Assert.IsTrue(l.TakeoverBlockFailed, "破損終了で遮断失敗へ変わる");
             Assert.AreEqual(CommsStage.Hold, l.Stage);
-            Assert.IsTrue(l.TakeoverBlockFailed);
-            l.Tick(CommsPanelLogic.PossessedHoldSec);
-            Assert.AreEqual(CommsStage.Out, l.Stage);
-            Assert.AreEqual(0f, l.TakeoverErrorOpacity, "残留の開始フレームでエラーを一括消灯する");
-            l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
-            Assert.AreEqual(1f, l.TakeoverReadFocus, "人形の面の濃さを変えない");
+            Assert.AreEqual(.35f, l.TakeoverErrorOpacity);
             Assert.AreEqual(1f, l.Weights.panel);
             Assert.AreEqual(1f, l.Weights.glyph);
             Assert.AreEqual(1f, l.Weights.sweep);
-            Assert.AreEqual(0f, l.TakeoverErrorOpacity);
-            float elapsed = l.TakeoverElapsedSec;
-            l.Tick(CommsPanelLogic.PossessedOutSec * 0.5f);
+            l.Tick(CommsPanelLogic.PossessedHoldSec - CommsPanelLogic.TakeoverBlockBreakSec - Dt);
+            Assert.AreEqual(CommsStage.Hold, l.Stage);
+            Assert.AreEqual(1f, l.TakeoverReadFocus);
+            Assert.AreEqual(.35f, l.TakeoverErrorOpacity);
+            l.Tick(Dt);
             Assert.AreEqual(CommsStage.Off, l.Stage);
-            Assert.AreEqual(0f, l.TakeoverErrorOpacity, 1e-6f);
+            Assert.AreEqual(0f, l.TakeoverErrorOpacity);
             Assert.AreEqual(0f, l.TakeoverReadFocus);
-            Assert.GreaterOrEqual(l.TakeoverElapsedSec, elapsed, "自然終了でも通算時計を巻き戻さない");
+            Assert.AreEqual(fillStart + CommsPanelLogic.TakeoverBlockFillSec +
+                CommsPanelLogic.PossessedHoldSec, l.TakeoverElapsedSec, 1e-4f);
         }
 
         [TestCase(30)]
         [TestCase(72)]
         [TestCase(90)]
+        [TestCase(8)]
         public void TakeoverClock_PreservesFrameRemainders(int fps)
         {
             var l = new CommsPanelLogic();
             l.Begin(9, CommsDelivery.Possessed);
-            int steps = (int)System.Math.Ceiling(5.45 * fps);
+            float midpoint = l.TakeoverFillStartSec + CommsPanelLogic.TakeoverBlockFillSec * .5f;
+            int steps = (int)System.Math.Ceiling(midpoint * fps);
             for (int i = 0; i < steps; i++) l.Tick(1f / fps);
-            Assert.IsTrue(l.TakeoverBlockFailed);
+            Assert.IsFalse(l.TakeoverBlockFailed);
             Assert.AreEqual(CommsPossessionPhase.Sweep, l.PossessionSample.phase);
-            Assert.AreEqual((l.TakeoverElapsedSec - 5.35f) / 1.6f,
+            Assert.AreEqual((l.TakeoverElapsedSec - l.TakeoverFillStartSec) /
+                CommsPanelLogic.TakeoverBlockFillSec,
                 l.PossessionSample.sweep, 0.00002f);
             while (l.Active) l.Tick(1f / fps);
-            Assert.That(l.TakeoverElapsedSec, Is.InRange(9.299f, 9.3f + 1f / fps));
+            float finishAt = l.TakeoverFillStartSec + CommsPanelLogic.TakeoverBlockFillSec +
+                CommsPanelLogic.PossessedHoldSec;
+            Assert.That(l.TakeoverElapsedSec, Is.InRange(finishAt - .0001f, finishAt + 1f / fps));
         }
 
         [Test]
-        public void TakeoverFailureWaitsForFullBarAndBreakBeforePossession()
+        public void TakeoverSweepStartsWithBlockFillAndFailureFollowsBreak()
         {
             Assert.AreEqual(1.5f, CommsPanelLogic.TakeoverBlockFillSec);
-            Assert.AreEqual(4.75f, CommsPanelLogic.TakeoverFailureSec);
+            Assert.AreEqual(4.17f, CommsPanelLogic.DefaultTakeoverFillStartSec, 1e-5f);
+            Assert.AreEqual(5.92f, CommsPanelLogic.DefaultTakeoverFailureSec, 1e-5f);
             var l = new CommsPanelLogic();
             l.Begin(9, CommsDelivery.Possessed);
-            l.Tick(4.5f);
-            Assert.IsFalse(l.TakeoverBlockFailed, "バー満了は遮断成功でも失敗確定でもない");
-            Assert.AreEqual(CommsPossessionPhase.Shown, l.PossessionSample.phase);
-            l.Tick(.249f);
+            l.Tick(l.TakeoverFillStartSec);
+            Assert.IsFalse(l.TakeoverBlockFailed);
+            Assert.AreEqual(CommsPossessionPhase.Sweep, l.PossessionSample.phase);
+            Assert.AreEqual(0f, l.PossessionSample.sweep, 1e-5f);
+            l.Tick(CommsPanelLogic.TakeoverBlockFillSec * .5f);
+            Assert.AreEqual(.5f, l.PossessionSample.sweep, 1e-5f);
+            l.Tick(CommsPanelLogic.TakeoverBlockFillSec * .5f);
+            Assert.AreEqual(1f, l.PossessionSample.sweep);
+            Assert.IsFalse(l.TakeoverBlockFailed);
+            l.Tick(CommsPanelLogic.TakeoverBlockBreakSec - .001f);
             Assert.IsFalse(l.TakeoverBlockFailed);
             l.Tick(.001f);
             Assert.IsTrue(l.TakeoverBlockFailed);
-            Assert.AreEqual(CommsPossessionPhase.Shown, l.PossessionSample.phase);
-            l.Tick(.61f);
-            Assert.AreEqual(CommsPossessionPhase.Sweep, l.PossessionSample.phase);
+            Assert.AreEqual(CommsPossessionPhase.Cursed, l.PossessionSample.phase);
+        }
+
+        [TestCase(ShowLang.Ja)]
+        [TestCase(ShowLang.En)]
+        [TestCase(ShowLang.Fr)]
+        public void LongTakeoverReadingDelaysFillAndFailureTogether(ShowLang lang)
+        {
+            ShowLang previous = ShowLanguage.Current;
+            try
+            {
+                ShowLanguage.Select(lang);
+                var l = new CommsPanelLogic();
+                l.Begin(200, CommsDelivery.Possessed);
+                Assert.AreEqual(CommsPossessionLogic.ReadMaxSec,
+                    CommsPanelLogic.PossessionReadSecFor(200, lang), 1e-5f);
+                Assert.AreEqual(4.97f, l.TakeoverFillStartSec, 1e-5f);
+                Assert.AreEqual(6.72f, l.FailureAtSec, 1e-5f);
+                l.Tick(CommsPanelLogic.DefaultTakeoverFillStartSec);
+                Assert.AreEqual(CommsPossessionPhase.Shown, l.PossessionSample.phase);
+                Assert.IsFalse(l.TakeoverBlockFailed);
+                l.Tick(l.TakeoverFillStartSec - l.TakeoverElapsedSec);
+                Assert.AreEqual(0f, l.PossessionSample.sweep, 1e-5f);
+                l.Tick(CommsPanelLogic.TakeoverBlockFillSec * .5f);
+                Assert.AreEqual(.5f, l.PossessionSample.sweep, 1e-5f);
+                l.Tick(l.FailureAtSec - l.TakeoverElapsedSec);
+                Assert.IsTrue(l.TakeoverBlockFailed);
+            }
+            finally { ShowLanguage.Select(previous); }
         }
 
         [Test]
@@ -435,11 +472,7 @@ namespace FixedCamVr.Streaming.Tests
             l.SetGuideWanted(true);
             Assert.AreEqual(CommsStage.Hold, l.Stage, "最終の人形の 1 フレームも奪わない");
             l.Tick(CommsPanelLogic.PossessedHoldSec);
-            Assert.AreEqual(CommsStage.Out, l.Stage, "押しっぱなしでも Guide へ戻さない");
-            l.SetGuideWanted(true);
-            Assert.AreEqual(CommsStage.Out, l.Stage, "引いている最中も割り込まない");
-            l.Tick(CommsPanelLogic.PossessedOutSec + Dt);
-            Assert.AreEqual(CommsStage.Off, l.Stage);
+            Assert.AreEqual(CommsStage.Off, l.Stage, "押しっぱなしでも Guide へ戻さず同時消灯する");
             l.SetGuideWanted(true);
             Assert.AreEqual(CommsStage.Off, l.Stage, "押しっぱなしを新しい押下として開き直さない");
             l.SetGuideWanted(false);

@@ -60,7 +60,7 @@ namespace FixedCamVr.Diagnostics.Tests
 
                 var logic = Logic(panel);
                 var apply = typeof(CommsPanel).GetMethod("Apply", Private)!;
-                int dollOnlyFrames = 0;
+                int jointFinalFrames = 0;
                 bool sawFailed = false;
                 var captions = new HashSet<string> { effect.TakeoverCaption };
                 int blockFailedLogs = 0;
@@ -77,7 +77,8 @@ namespace FixedCamVr.Diagnostics.Tests
                         apply.Invoke(panel, new object[] { logic.Weights });
                         float opacity = panel.TakeoverErrorOpacity;
                         coordinator.Tick(panel.TakeoverVisible, 0f);
-                        string expectedCaption = opacity > 0f ? ExpectedCaption(.3f + (frame + 1) / 30f) : string.Empty;
+                        string expectedCaption = opacity > 0f ?
+                            ExpectedCaption(panel.TakeoverElapsedSec, panel.FailureAtSec) : string.Empty;
                         Assert.AreEqual(expectedCaption, effect.TakeoverCaption,
                             $"elapsed={panel.TakeoverElapsedSec:0.000}");
                         captions.Add(effect.TakeoverCaption);
@@ -89,31 +90,100 @@ namespace FixedCamVr.Diagnostics.Tests
                             Assert.AreSame(attempt, statusMaterial.GetTexture("_MainTex"));
                             Assert.AreSame(failed, failureMaterial.GetTexture("_MainTex"));
                         }
-                        if (panel.TakeoverVisible && opacity == 0f)
+                        if (panel.TakeoverVisible)
                         {
-                            dollOnlyFrames++;
-                            Assert.IsFalse(effect.IsPlaying);
-                            Assert.IsFalse(screenRoot.gameObject.activeSelf);
-                            Assert.IsFalse(spatialRoot.gameObject.activeSelf);
-                            Assert.AreEqual(1f, panel.AppliedGlyph);
-                            Assert.AreEqual(1f, panel.AppliedSweep);
-                            Assert.Greater(panel.LieChars, 0);
+                            Assert.Greater(opacity, 0f);
+                            Assert.IsTrue(effect.IsPlaying);
+                            Assert.IsTrue(screenRoot.gameObject.activeSelf);
+                            Assert.IsTrue(spatialRoot.gameObject.activeSelf);
                             Assert.IsTrue(panel.TakeoverInputBlocked);
+                            if (panel.Stage == CommsStage.Hold && panel.TakeoverBlockFailed)
+                            {
+                                jointFinalFrames++;
+                                Assert.AreEqual(1f, panel.AppliedSweep);
+                                Assert.Greater(panel.LieChars, 0);
+                            }
                         }
                     }
                 }
                 finally { Application.logMessageReceived -= CountBlockFailed; }
-                Assert.AreEqual(30, dollOnlyFrames, "主画面と空間が消えた後に人形だけ30フレーム残る");
-                Assert.IsTrue(sawFailed, "4.75秒以降に実prefabの失敗表示へ切り替える");
+                Assert.Greater(jointFinalFrames, 0, "最後まで人形とエラーを同時に残す");
+                Assert.IsTrue(sawFailed, "runtime failure時刻に実prefabの失敗表示へ切り替える");
                 Assert.AreEqual(1, blockFailedLogs, "BlockFailedの縁は実機ログへ1回だけ出す");
                 CollectionAssert.Contains(captions, "WARNING");
                 for (int step = 1; step <= 4; step++)
-                    CollectionAssert.Contains(captions, ExpectedCaption(step + .1f));
-                CollectionAssert.Contains(captions, ExpectedCaption(4.8f));
+                    CollectionAssert.Contains(captions, ExpectedCaption(step + .1f, panel.FailureAtSec));
+                CollectionAssert.Contains(captions, ExpectedCaption(panel.FailureAtSec + .1f, panel.FailureAtSec));
                 Assert.AreEqual(string.Empty, effect.TakeoverCaption);
                 Assert.IsFalse(effect.IsPlaying);
                 Assert.IsFalse(screenRoot.gameObject.activeSelf);
                 Assert.IsFalse(spatialRoot.gameObject.activeSelf);
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(screen);
+            }
+        }
+
+        [TestCase(30)]
+        [TestCase(72)]
+        [TestCase(8)]
+        public void RealBarProgressMatchesPanelSweepAndBothCloseInSameFrame(int fps)
+        {
+            GameObject host = new GameObject("Comms synced sweep test");
+            GameObject screen = new GameObject("Screen anchor");
+            try
+            {
+                var panel = host.AddComponent<CommsPanel>();
+                typeof(CommsPanel).GetMethod("Awake", Private)!.Invoke(panel, null);
+                var coordinator = host.GetComponent<CommsTakeoverError>();
+                coordinator.Configure(panel, AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath));
+                coordinator.ConfigureScreen(screen.transform, new Vector2(2.3704f, 1.3333f));
+                panel.Deliver(CommsNotice.Takeover);
+                var logic = Logic(panel);
+                var apply = typeof(CommsPanel).GetMethod("Apply", Private)!;
+                coordinator.Tick(true, 0f);
+                var effect = Object.FindObjectOfType<UnauthorizedAccessEffect>(true);
+                Assert.IsNotNull(effect);
+                int sweepFrames = 0;
+                int jointFrames = 0;
+                bool closed = false;
+                for (int frame = 0; frame < fps * 12; frame++)
+                {
+                    logic.Tick(1f / fps);
+                    apply.Invoke(panel, new object[] { logic.Weights });
+                    coordinator.Tick(panel.TakeoverVisible, 0f);
+                    float elapsed = panel.TakeoverElapsedSec;
+                    if (!panel.TakeoverVisible)
+                    {
+                        Assert.IsFalse(effect.IsPlaying);
+                        Assert.IsFalse(Root(effect, "_screenRoot").gameObject.activeSelf);
+                        Assert.IsFalse(Root(effect, "_spatialRoot").gameObject.activeSelf);
+                        closed = true;
+                        break;
+                    }
+                    Assert.IsTrue(effect.IsPlaying);
+                    if (elapsed >= CommsPanelLogic.TakeoverBlockSec && elapsed < panel.TakeoverFillStartSec)
+                        Assert.AreEqual(0f, effect.TakeoverBlockProgress);
+                    if (elapsed >= panel.TakeoverFillStartSec &&
+                        elapsed < panel.TakeoverFillStartSec + CommsPanelLogic.TakeoverBlockFillSec)
+                    {
+                        Assert.AreEqual(panel.AppliedSweep, effect.TakeoverBlockProgress, .00005f);
+                        sweepFrames++;
+                    }
+                    if (elapsed >= panel.TakeoverFillStartSec + CommsPanelLogic.TakeoverBlockFillSec &&
+                        elapsed < panel.FailureAtSec)
+                        Assert.AreEqual(1f, effect.TakeoverBlockProgress);
+                    if (panel.TakeoverBlockFailed && panel.Stage == CommsStage.Hold)
+                    {
+                        Assert.Greater(panel.AppliedPanelAlpha, 0f);
+                        jointFrames++;
+                    }
+                }
+                Assert.Greater(sweepFrames, 0);
+                Assert.Greater(jointFrames, 0);
+                Assert.IsTrue(closed);
             }
             finally
             {
@@ -224,12 +294,14 @@ namespace FixedCamVr.Diagnostics.Tests
             return max;
         }
 
-        private static string ExpectedCaption(float seconds)
+        private static string ExpectedCaption(float seconds, float failureAtSec)
         {
+            // Match the renderer's sub-frame tolerance at accumulated float boundaries.
+            seconds += .0001f;
             if (seconds < 1f) return "WARNING";
             if (seconds < 2f) return "WARNING | 不正アクセス";
             if (seconds < 3f) return "WARNING | 不正アクセス | 接続元不明";
-            if (seconds < CommsPanelLogic.TakeoverFailureSec) return "WARNING | 不正アクセス | 接続元不明 | 遮断を執行";
+            if (seconds < failureAtSec) return "WARNING | 不正アクセス | 接続元不明 | 遮断を執行";
             return "WARNING | 不正アクセス | 接続元不明 | 失敗";
         }
 

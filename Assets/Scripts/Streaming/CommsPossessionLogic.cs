@@ -70,7 +70,7 @@ namespace FixedCamVr.Streaming
         /// 左端から右端まで塗り替わるまで (秒)。
         /// スイの文を読んでいる間に、人形へ塗り替わる様子を追える速さ。
         /// </summary>
-        public const float SweepSec = 1.6f;
+        public const float SweepSec = 1.5f;
 
         // ---- 乱れ（`canon/LEDGER.md` 0231・「メインスクリーンをまねした…乱れ演出を…使う」）----
 

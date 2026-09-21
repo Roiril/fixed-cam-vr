@@ -383,6 +383,9 @@ namespace FixedCamVr.Streaming.Tests
 
                 Material status = FindMaterial(effect, "Unauthorized Access Status");
                 Material failure = FindMaterial(effect, "Unauthorized Access Failure");
+                float fillStart = CommsPanelLogic.DefaultTakeoverFillStartSec;
+                float fullAt = fillStart + CommsPanelLogic.TakeoverBlockFillSec;
+                float failAt = CommsPanelLogic.DefaultTakeoverFailureSec;
                 effect.SampleTakeover(0f, false, 1f);
                 Assert.AreEqual("WARNING", effect.TakeoverCaption);
                 AssertCumulativeTextVisible(effect, 1);
@@ -447,11 +450,14 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.AreSame(attempt, status.GetTexture("_MainTex"));
                 AssertCumulativeTextVisible(effect, 4);
 
-                effect.SampleTakeover(3.75f, false, 1f);
+                effect.SampleTakeover(fillStart - .01f, false, 1f);
+                Assert.AreEqual(0f, effect.TakeoverBlockProgress);
+                Assert.AreEqual(0f, BarFillWidth(effect), .0001f);
+                effect.SampleTakeover(fillStart + .75f, false, 1f);
                 Assert.AreEqual(.5f, effect.TakeoverBlockProgress, .0001f);
                 Assert.AreEqual(.32f * ReferenceSize.x * .5f,
                     BarFillWidth(effect), .0001f);
-                effect.SampleTakeover(4.5f, false, 1f);
+                effect.SampleTakeover(fullAt, false, 1f);
                 Assert.AreEqual(1f, effect.TakeoverBlockProgress);
                 Assert.AreEqual(0f, effect.TakeoverBlockBreak);
                 Assert.AreEqual(.32f * ReferenceSize.x, BarFillWidth(effect), .0001f);
@@ -459,11 +465,11 @@ namespace FixedCamVr.Streaming.Tests
                 AssertAlpha(effect, "Unauthorized Access Failure", 0f);
                 Vector3[] intactStatus = FindMesh(effect, "Unauthorized Access Status").vertices;
                 Vector3[] intactBar = FindMesh(effect, "Unauthorized Access Block Bar").vertices;
-                effect.SampleTakeover(4.52f, true, 1f);
+                effect.SampleTakeover(fullAt + .02f, true, 1f);
                 Assert.AreEqual(0f, effect.TakeoverBlockBreak);
                 CollectionAssert.AreEqual(intactStatus, FindMesh(effect, "Unauthorized Access Status").vertices);
                 CollectionAssert.AreEqual(intactBar, FindMesh(effect, "Unauthorized Access Block Bar").vertices);
-                effect.SampleTakeover(4.625f, true, 1f);
+                effect.SampleTakeover(fullAt + .125f, true, 1f);
                 Assert.Greater(effect.TakeoverBlockBreak, .4f);
                 Assert.Less(effect.TakeoverBlockBreak, .5f);
                 Assert.IsTrue(VerticesDiffer(intactStatus, FindMesh(effect, "Unauthorized Access Status").vertices));
@@ -471,12 +477,12 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.Greater(MaxAlpha(effect, "Unauthorized Access Status"), 0f);
                 Assert.Greater(MaxAlpha(effect, "Unauthorized Access Block Bar"), 0f);
                 AssertAlpha(effect, "Unauthorized Access Failure", 0f);
-                effect.SampleTakeover(4.749f, true, 1f);
+                effect.SampleTakeover(failAt - .001f, true, 1f);
                 Assert.IsTrue(effect.TakeoverBlockVisible);
                 Assert.AreEqual("WARNING | 不正アクセス | 接続元不明 | 遮断を執行", effect.TakeoverCaption);
                 Assert.Greater(MaxAlpha(effect, "Unauthorized Access Status"), 0f);
                 Assert.Greater(MaxAlpha(effect, "Unauthorized Access Block Bar"), 0f);
-                effect.SampleTakeover(4.75f, true, 1f);
+                effect.SampleTakeover(failAt, true, 1f);
                 Assert.AreEqual("WARNING | 不正アクセス | 接続元不明 | 失敗", effect.TakeoverCaption);
                 Assert.IsFalse(effect.TakeoverBlockVisible);
                 Assert.AreEqual(0f, effect.TakeoverBlockProgress);
@@ -554,7 +560,7 @@ namespace FixedCamVr.Streaming.Tests
                 effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
                     textures[4], textures[5], failed);
                 effect.Play(anchor.transform, ReferenceSize);
-                effect.SampleTakeover(4.75f, true, 1f);
+                effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFailureSec, true, 1f);
 
                 Bounds bounds = MeshBounds(effect, "Unauthorized Access Failure");
                 float visibleMinX = bounds.min.x + bounds.size.x * (10f / 211f);
@@ -572,6 +578,44 @@ namespace FixedCamVr.Streaming.Tests
                 DestroyImmediate(material);
                 DestroyImmediate(textures);
                 DestroyImmediate(failed);
+            }
+        }
+
+        [Test]
+        public void TakeoverUsesRuntimeFillStartForLongReadingTime()
+        {
+            GameObject anchor = NewAnchor("LongReadAnchor");
+            GameObject host = new GameObject("LongReadEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            try
+            {
+                var effect = ConfigureTakeoverEffect(host, out material, out textures);
+                effect.Play(anchor.transform, ReferenceSize);
+                const float fillStart = 5f;
+                effect.SampleTakeover(4.99f, false, 1f, 0f, fillStart);
+                Assert.AreEqual(0f, effect.TakeoverBlockProgress);
+                Assert.IsTrue(effect.TakeoverBlockVisible);
+                effect.SampleTakeover(5.75f, false, 1f, 0f, fillStart);
+                Assert.AreEqual(.5f, effect.TakeoverBlockProgress, .0001f);
+                Assert.AreEqual(.16f * ReferenceSize.x, BarFillWidth(effect), .0001f);
+                effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFailureSec, true, 1f, 0f, fillStart);
+                Assert.IsTrue(effect.TakeoverBlockVisible);
+                AssertAlpha(effect, "Unauthorized Access Failure", 0f);
+                effect.SampleTakeover(6.5f, true, 1f, 0f, fillStart);
+                Assert.AreEqual(1f, effect.TakeoverBlockProgress);
+                effect.SampleTakeover(6.75f, true, 1f, 0f, fillStart);
+                Assert.IsFalse(effect.TakeoverBlockVisible);
+                Assert.Greater(MaxAlpha(effect, "Unauthorized Access Failure"), 0f);
+                effect.Sample(2f);
+                AssertAlpha(effect, "Unauthorized Access Block Bar", 0f);
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
             }
         }
 
@@ -600,7 +644,7 @@ namespace FixedCamVr.Streaming.Tests
                 effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
                     textures[4], textures[5], textures[6]);
                 effect.Play(anchor.transform, ReferenceSize);
-                effect.SampleTakeover(4.75f, true, 1f);
+                effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFailureSec, true, 1f);
                 AssertTakeoverTextDoesNotOverlap(effect);
                 Assert.AreEqual(.26f * ReferenceSize.y,
                     VisibleCenterY(effect, "Unauthorized Access Warning Bands", 8f / 257f, 249f / 257f), .0001f);
@@ -658,11 +702,12 @@ namespace FixedCamVr.Streaming.Tests
                 AssertAlpha(effect, "Unauthorized Access Status", .55f);
                 AssertAlpha(effect, "Unauthorized Access Block Bar", .55f);
                 AssertAlpha(effect, "Unauthorized Access Failure", 0f);
-                effect.SampleTakeover(4.5f, true, .35f, 1f);
+                effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFillStartSec +
+                    CommsPanelLogic.TakeoverBlockFillSec, true, .35f, 1f);
                 AssertAlpha(effect, "Unauthorized Access Status", .55f);
                 AssertAlpha(effect, "Unauthorized Access Block Bar", .55f);
                 AssertAlpha(effect, "Unauthorized Access Failure", 0f);
-                effect.SampleTakeover(4.75f, true, .35f, 1f);
+                effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFailureSec, true, .35f, 1f);
                 AssertAlpha(effect, "Unauthorized Access Status", 0f);
                 AssertAlpha(effect, "Unauthorized Access Block Bar", 0f);
                 AssertAlpha(effect, "Unauthorized Access Failure", .55f);

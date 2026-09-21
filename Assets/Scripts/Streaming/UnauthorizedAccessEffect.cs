@@ -42,7 +42,7 @@ namespace FixedCamVr.Streaming
         private const float TakeoverProcessY = -.065f;
         private const float TakeoverWarningVisibleHeight = .17f;
         private const float TakeoverJapaneseVisibleHeight = .052f;
-        private const float TakeoverBlockFullHoldSec = .03f;
+        private const float TakeoverBlockFullHoldSec = .04f;
 
         private static readonly int ColorId = Shader.PropertyToID("_Color");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
@@ -184,6 +184,7 @@ namespace FixedCamVr.Streaming
         private bool _takeoverMode;
         private float _takeoverOpacity = 1f;
         private float _takeoverReadFocus;
+        private float _takeoverFailureAtSec = CommsPanelLogic.DefaultTakeoverFailureSec;
 
         public float Duration => EffectDuration;
         public bool IsPlaying { get; private set; }
@@ -281,7 +282,8 @@ namespace FixedCamVr.Streaming
         /// <paramref name="opacity"/> で同時に消灯する。<paramref name="readFocus"/> が上がるほど
         /// 通信面を読むため周囲を抑える。再生状態と <see cref="Elapsed"/> は変更しない。
         /// </summary>
-        public void SampleTakeover(float elapsed, bool blockFailed, float opacity, float readFocus = 0f)
+        public void SampleTakeover(float elapsed, bool blockFailed, float opacity, float readFocus = 0f,
+            float fillStartSec = CommsPanelLogic.DefaultTakeoverFillStartSec)
         {
             // float積算の丸め誤差だけを吸収する。許容幅は0.1ms。
             float clock = Mathf.Max(0f, elapsed);
@@ -290,15 +292,17 @@ namespace FixedCamVr.Streaming
             _ = blockFailed; // 呼び出し契約は維持し、表示の切替は絶対時計だけで決める。
             _takeoverOpacity = Mathf.Clamp01(opacity);
             _takeoverReadFocus = Mathf.Clamp01(readFocus);
+            fillStartSec = Mathf.Max(CommsPanelLogic.TakeoverBlockSec, fillStartSec);
+            _takeoverFailureAtSec = fillStartSec + CommsPanelLogic.TakeoverBlockFillSec +
+                CommsPanelLogic.TakeoverBlockBreakSec;
             TakeoverBlockVisible = _takeoverOpacity > 0f && clock + .0001f >= CommsPanelLogic.TakeoverBlockSec &&
-                clock < CommsPanelLogic.TakeoverFailureSec;
+                clock + .0001f < _takeoverFailureAtSec;
             TakeoverBlockProgress = TakeoverBlockVisible ?
-                Mathf.Clamp01((clock - CommsPanelLogic.TakeoverBlockSec) / CommsPanelLogic.TakeoverBlockFillSec) : 0f;
+                Mathf.Clamp01((clock - fillStartSec) / CommsPanelLogic.TakeoverBlockFillSec) : 0f;
             TakeoverBlockBreak = TakeoverBlockVisible ? Mathf.Clamp01(
-                (clock - CommsPanelLogic.TakeoverBlockSec - CommsPanelLogic.TakeoverBlockFillSec -
-                    TakeoverBlockFullHoldSec) /
+                (clock - fillStartSec - CommsPanelLogic.TakeoverBlockFillSec - TakeoverBlockFullHoldSec) /
                 (CommsPanelLogic.TakeoverBlockBreakSec - TakeoverBlockFullHoldSec)) : 0f;
-            TakeoverCaption = _takeoverOpacity > 0f ? CaptionFor(elapsed) : string.Empty;
+            TakeoverCaption = _takeoverOpacity > 0f ? CaptionFor(elapsed, _takeoverFailureAtSec) : string.Empty;
             EnsureBuilt();
             if (_screenSize.x > 0f && _screenSize.y > 0f) Layout(_screenSize);
             Render(Mathf.Max(0f, elapsed));
@@ -834,7 +838,7 @@ namespace FixedCamVr.Streaming
         private void UpdateFailureMesh(float seconds)
         {
             if (_failureMesh == null) return;
-            bool visible = _takeoverMode && seconds >= CommsPanelLogic.TakeoverFailureSec && failedGraphic != null;
+            bool visible = _takeoverMode && seconds >= _takeoverFailureAtSec && failedGraphic != null;
             SetQuadVertices(_failureVertices, 0, _takeoverFailureLayout.CenterX,
                 _takeoverFailureLayout.CenterY, -.012f, _takeoverFailureLayout.Width,
                 _takeoverFailureLayout.Height);
@@ -1015,7 +1019,7 @@ namespace FixedCamVr.Streaming
             if (_takeoverMode)
             {
                 bool attemptVisible = attemptGraphic != null && TakeoverBlockVisible;
-                bool failureVisible = failedGraphic != null && seconds >= CommsPanelLogic.TakeoverFailureSec;
+                bool failureVisible = failedGraphic != null && seconds >= _takeoverFailureAtSec;
                 statusRect = attemptVisible && failureVisible ?
                     EnclosingReadRect(_takeoverStatusLayout, _takeoverFailureLayout) :
                     attemptVisible ? ReadRect(_takeoverStatusLayout) :
@@ -1106,18 +1110,19 @@ namespace FixedCamVr.Streaming
             _takeoverMode = false;
             _takeoverOpacity = 1f;
             _takeoverReadFocus = 0f;
+            _takeoverFailureAtSec = CommsPanelLogic.DefaultTakeoverFailureSec;
             TakeoverCaption = string.Empty;
             TakeoverBlockProgress = 0f;
             TakeoverBlockBreak = 0f;
             TakeoverBlockVisible = false;
         }
 
-        private static string CaptionFor(float seconds)
+        private static string CaptionFor(float seconds, float failureAtSec)
         {
             if (seconds < TakeoverUnauthorizedSec) return "WARNING";
             if (seconds < TakeoverSourceUnknownSec) return "WARNING | 不正アクセス";
             if (seconds < CommsPanelLogic.TakeoverBlockSec) return "WARNING | 不正アクセス | 接続元不明";
-            return seconds < CommsPanelLogic.TakeoverFailureSec ?
+            return seconds < failureAtSec ?
                 "WARNING | 不正アクセス | 接続元不明 | 遮断を執行" :
                 "WARNING | 不正アクセス | 接続元不明 | 失敗";
         }

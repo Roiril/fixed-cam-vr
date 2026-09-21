@@ -142,9 +142,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 sync.Tick(panel.TakeoverVisible, 0f);
                 var error = (UnauthorizedAccessEffect)typeof(CommsTakeoverError)
                     .GetField("_effect", Hidden)!.GetValue(sync);
-                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus,shake,shakeX,shakeY,shakeAngle,tear,caption,blockProgress,blockBreak,blockVisible\n");
+                var data = new StringBuilder("frame,sec,stage,sweep,lie,glyph,error,panel,errorOpacity,blockFailed,readFocus,shake,shakeX,shakeY,shakeAngle,tear,caption,blockProgress,blockBreak,blockVisible,fillStartSec,failureAtSec\n");
                 bool savedIntrusion = false, savedFailure = false;
-                bool savedTruth = false, savedMid = false, savedFinal = false, savedDollOnly = false;
+                bool savedTruth = false, savedMid = false, savedFinal = false, savedJointFinal = false;
+                bool savedEmptyBar = false, savedHalfBar = false, savedFullBar = false, savedBrokenBar = false;
                 int frames = 0;
                 for (int i = 0; i < Fps * 12; i++)
                 {
@@ -154,26 +155,33 @@ namespace FixedCamVr.Streaming.EditorTools
                     if (i == 15) Shot("warning");
                     if (i == 45) Shot("unauthorized");
                     if (i == 75) Shot("unknown-source");
-                    if (i == 105) Shot("block-attempt");
-                    if (i == 90) ShotBarOnly("bar-empty");
-                    if (i == 112) { Shot("block-half"); ShotBarOnly("bar-half"); }
-                    if (i == 135) { Shot("block-full"); ShotBarOnly("bar-full"); }
-                    if (i == 139) { Shot("block-break"); ShotBarOnly("bar-break"); }
+                    float elapsed = panel.TakeoverElapsedSec;
+                    float fillStart = panel.TakeoverFillStartSec;
+                    if (!savedEmptyBar && elapsed >= CommsPanelLogic.TakeoverBlockSec)
+                    { Shot("block-attempt"); ShotBarOnly("bar-empty"); savedEmptyBar = true; }
+                    if (!savedHalfBar && elapsed >= fillStart + CommsPanelLogic.TakeoverBlockFillSec * .5f)
+                    { Shot("block-half"); ShotBarOnly("bar-half"); savedHalfBar = true; }
+                    if (!savedFullBar && elapsed >= fillStart + CommsPanelLogic.TakeoverBlockFillSec)
+                    { Shot("block-full"); ShotBarOnly("bar-full"); savedFullBar = true; }
+                    if (!savedBrokenBar && elapsed >= fillStart + CommsPanelLogic.TakeoverBlockFillSec +
+                        CommsPanelLogic.TakeoverBlockBreakSec * .5f)
+                    { Shot("block-break"); ShotBarOnly("bar-break"); savedBrokenBar = true; }
                     data.AppendFormat(System.Globalization.CultureInfo.InvariantCulture,
-                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9},{10:F3},{11:F3},{12:F6},{13:F6},{14:F4},{15:F4},{16},{17:F4},{18:F4},{19}\n", i, i / (float)Fps,
+                        "{0},{1:F3},{2},{3:F3},{4},{5:F3},{6},{7:F3},{8:F3},{9},{10:F3},{11:F3},{12:F6},{13:F6},{14:F4},{15:F4},{16},{17:F4},{18:F4},{19},{20:F4},{21:F4}\n", i, elapsed,
                         panel.Stage, panel.AppliedSweep, panel.LieChars, panel.AppliedGlyph, error.IsPlaying ? 1 : 0,
                         panel.AppliedPanelAlpha, panel.TakeoverErrorOpacity, panel.TakeoverBlockFailed ? 1 : 0,
                         panel.TakeoverReadFocus, panel.AppliedShake, panel.AppliedShakePosition.x,
                         panel.AppliedShakePosition.y, panel.AppliedShakeAngleDeg, panel.AppliedTear,
                         error.TakeoverCaption, error.TakeoverBlockProgress,
-                        error.TakeoverBlockBreak, error.TakeoverBlockVisible ? 1 : 0);
+                        error.TakeoverBlockBreak, error.TakeoverBlockVisible ? 1 : 0,
+                        fillStart, panel.FailureAtSec);
                     if (!savedIntrusion && i / (float)Fps >= .75f)
                     {
                         if (panel.AppliedPanelAlpha > .001f || panel.VisibleChars != 0)
                             throw new InvalidOperationException("Sui appeared before the intrusion warning");
                         Shot("intrusion"); savedIntrusion = true;
                     }
-                    if (!savedFailure && panel.TakeoverBlockFailed)
+                    if (!savedFailure && elapsed >= panel.FailureAtSec + .01f)
                     { Shot("block-failed"); ShotBarOnly("bar-gone"); savedFailure = true; }
                     if (!savedTruth && panel.PossessionPhase == CommsPossessionPhase.Shown && panel.AppliedGlyph > .99f)
                     {
@@ -196,13 +204,18 @@ namespace FixedCamVr.Streaming.EditorTools
                         error.Stop(); Shot("doll");
                         error.Play(anchor.transform, new Vector2(2.7f, 1.51875f)); savedFinal = true;
                     }
-                    if (!savedDollOnly && panel.Stage == CommsStage.Out && !error.IsPlaying)
-                    { Shot("doll-only"); savedDollOnly = true; }
+                    float finishAt = fillStart + CommsPanelLogic.TakeoverBlockFillSec +
+                        CommsPanelLogic.PossessedHoldSec;
+                    if (!savedJointFinal && elapsed >= finishAt - 1.5f / Fps &&
+                        panel.TakeoverVisible && error.IsPlaying)
+                    { Shot("joint-final"); savedJointFinal = true; }
                     if (!logic.Active) { Shot("finished"); break; }
                     logic.Tick(1f / Fps);
                 }
                 File.WriteAllText(Path.Combine(dir, "frames.csv"), data.ToString(), new UTF8Encoding(false));
-                if (!savedIntrusion || !savedFailure || !savedTruth || !savedMid || !savedFinal || !savedDollOnly || logic.Active || error.IsPlaying)
+                if (!savedIntrusion || !savedFailure || !savedTruth || !savedMid || !savedFinal ||
+                    !savedJointFinal || !savedEmptyBar || !savedHalfBar || !savedFullBar ||
+                    !savedBrokenBar || logic.Active || error.IsPlaying)
                     throw new InvalidOperationException("Takeover did not render and close completely");
                 Debug.Log($"[CommsRevisionPreview] lang={lang} frames={frames} truth=1 wipe=1 doll=1 closed=1");
             }
