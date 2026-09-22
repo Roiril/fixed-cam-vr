@@ -12,7 +12,6 @@ photos = {
     "camera-01.webp": "plate_A_20260907_101013.jpg",
     "camera-02.webp": "plate_B_20260907_104115.jpg",
     "camera-03.webp": "plate_C_20260823_194236.jpg",
-    "wall-evidence.webp": "plate_B_20260907_104115.jpg",
 }
 for original in photos.values():
     if not (captures / original).is_file():

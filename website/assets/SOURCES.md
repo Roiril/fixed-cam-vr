@@ -9,11 +9,12 @@
 | camera-01.webp | `tools/web-compositor/captures/plate_A_20260907_101013.jpg` | 幕と手すり |
 | camera-02.webp | `tools/web-compositor/captures/plate_B_20260907_104115.jpg` | 壁と床 |
 | camera-03.webp | `tools/web-compositor/captures/plate_C_20260823_194236.jpg` | 幕と壁を別の位置から撮影 |
-| wall-evidence.webp | `tools/web-compositor/captures/plate_B_20260907_104115.jpg` | 撮影場所の壁 |
+
+調査依頼も `camera-01.webp` を共用する。ユーザーの修正指示「カーテンが正面から見えるやつ」に対応した。旧 `wall-evidence.webp` は履歴として残し、配信対象から外した。
 
 いずれも640×480。生成素材ではなく、合成前に撮影した背景写真。原本は保存したままPillowでWebPへ変換した。色調整と走査線の表現はCSSのみ。撮影場所の根拠は `tools/gen-plate/sites/A_20260907.json`、`B_20260907.json`、`C_20260823_1942.json`。再生成は `py -3.11 website/scripts/prepare-photos.py`。
 
-実機映像3本の出典は [FOOTAGE.md](FOOTAGE.md)。入口の立体題字は既存の `title.png`（1210×531）の輪郭と色をWebGLで使用。新しい題字を生成していない。
+実機映像3本の出典は [FOOTAGE.md](FOOTAGE.md)。入口の立体題字は既存の `title.png`（1210×531）の輪郭と色をWebGLで使用。新しい題字を生成していない。破砕の幾何は `Assets/Scripts/Streaming/IntroFractureMesh.cs`、時計と材質は `Assets/Art/Shaders/Intro/IntroFractureTime.hlsl` と `IntroFracture.shader` からウェブ用に移植した。凍結する像は題字で、戻った場所から実HTMLを透過して見せる。
 
 ## キービジュアル
 
@@ -24,7 +25,7 @@
 
 ## 以前の配信用素材（2026-09-15時点）
 
-以下のカメラ3枚は現在の配信では実写真に置き換わった。CRTは公開ビルドから除いた。寸法と生成プロンプトは旧版の記録として残す。
+以下のカメラ3枚は現在の配信では実写真に置き換わった。CRTは2026-09-22の修正指示で再び公開ビルドに含めた。寸法と生成プロンプトは旧版の記録として残す。
 
 | ファイル | 寸法 | バイト |
 |---|---|---:|

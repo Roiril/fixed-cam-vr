@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { headingText, latinText, pageText, uniqueChars } from "./font-text.mjs";
 
 const websiteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const sourceFiles = ["index.html", "styles.css", "main.js", "experience.css", "experience-config.js", "experience.js", "entrance.css", "entrance.js"];
+const sourceFiles = ["index.html", "styles.css", "main.js", "experience.css", "experience-config.js", "experience.js", "entrance.css", "entrance-geometry.js", "entrance-glass.js", "entrance.js"];
 const seoFiles = ["robots.txt", "sitemap.xml", "site.webmanifest"];
 const verificationFiles = ["google5081a8a413a7871f.html"];
 const requiredAssets = [
@@ -18,8 +18,8 @@ const requiredAssets = [
   "assets/camera-01.webp",
   "assets/camera-02.webp",
   "assets/camera-03.webp",
+  "assets/crt.webp",
   "assets/investigation-request.webp",
-  "assets/wall-evidence.webp",
   "assets/footage-fracture.mp4",
   "assets/footage-fracture.webp",
   "assets/footage-error.mp4",
@@ -144,6 +144,8 @@ for (const forbidden of forbiddenFeatures) {
 }
 
 if ((html.match(/data-camera-button=/g)?.length ?? 0) !== 3) errors.push("manual camera controls must contain 3 buttons");
+if (!html.includes('class="crt-body" src="assets/crt.webp"')) errors.push("camera feeds must be shown inside the CRT photograph");
+if (!html.includes('class="wall-evidence" src="assets/camera-01.webp"')) errors.push("investigation photo must reuse the first camera photograph");
 if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
@@ -201,6 +203,10 @@ if (!structuredDataMatch) {
   }
 }
 if (!html.includes('href="https://ivrc.net/2026/release3/"') || !html.includes('href="https://www.dcexpo.jp/"')) errors.push("archive source links are missing");
+const creditsMarkup = html.match(/<dl class="credit-list">([\s\S]*?)<\/dl>/)?.[1] ?? "";
+if ((creditsMarkup.match(/<dt>/g)?.length ?? 0) !== 10) errors.push("credits must keep all 10 roles");
+if (!html.includes('"name": "Roil Studio"') || !html.includes('class="plate-maker">Roil Studio')) errors.push("credit organization name is missing");
+if (!html.includes('href="mailto:rinkyouaoi@gmail.com"')) errors.push("credit contact link is missing");
 
 const navMarkup = html.match(/<nav class="site-nav"[\s\S]*?<\/nav>/)?.[0] ?? "";
 if (!navMarkup.includes('href="#archive"')) errors.push("nav link to the archive section is missing");

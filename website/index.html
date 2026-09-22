@@ -35,6 +35,8 @@
     <script src="main.js" defer></script>
     <script src="experience-config.js" defer></script>
     <script src="experience.js" defer></script>
+    <script src="entrance-geometry.js" defer></script>
+    <script src="entrance-glass.js" defer></script>
     <script src="entrance.js" defer></script>
     <script type="application/ld+json">
       {
@@ -74,7 +76,7 @@
             },
             "creator": {
               "@type": "Organization",
-              "name": "路地裏インターフェース"
+              "name": "Roil Studio"
             },
             "genre": ["ホラー", "XR"],
             "keywords": ["固定視点", "監視カメラ", "HMD", "VR"],
@@ -123,6 +125,7 @@
         <div class="camera-exhibit">
           <div class="camera-topline"><span>CAMERA RECORD</span><span>撮影写真</span></div>
           <div class="crt" data-reveal>
+            <img class="crt-body" src="assets/crt.webp" width="1448" height="1086" alt="" aria-hidden="true" loading="lazy">
             <div class="crt-screen">
               <img class="camera-feed is-active" src="assets/camera-01.webp" width="640" height="480" alt="撮影場所にある幕と手すり" data-camera-feed="1" loading="lazy">
               <img class="camera-feed" src="assets/camera-02.webp" width="640" height="480" alt="撮影場所にある壁と床" data-camera-feed="2" aria-hidden="true" loading="lazy">
@@ -174,7 +177,7 @@
         </div>
 
         <div class="scenario-collage">
-          <figure class="wall-photo" data-reveal><img class="wall-evidence" src="assets/wall-evidence.webp" width="640" height="480" alt="実際の撮影場所にある壁と床" loading="lazy"><figcaption>実際のカメラで撮影した場所</figcaption></figure>
+          <figure class="wall-photo" data-reveal><img class="wall-evidence" src="assets/camera-01.webp" width="640" height="480" alt="実際の撮影場所にある幕と手すり" loading="lazy"><figcaption>実際のカメラで撮影した場所</figcaption></figure>
           <a class="investigation-request" href="assets/investigation-request.webp" aria-label="調査依頼書を原寸で開く">
             <img src="assets/investigation-request.webp" width="1273" height="1800" alt="調査依頼書。壁面周辺の観測調査について。" loading="lazy">
           </a>
@@ -264,7 +267,7 @@
               <div><dt>設営、展示</dt><dd>チーム</dd></div>
             </dl>
             <footer class="plate-footer">
-              <p class="plate-maker">路地裏インターフェース</p>
+              <p class="plate-maker">Roil Studio<a class="plate-email" href="mailto:rinkyouaoi@gmail.com">rinkyouaoi@gmail.com</a></p>
               <div class="plate-qr" aria-hidden="true">
                 <svg shape-rendering="crispEdges" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"><path stroke="currentColor" d="M0 0.5h7m2 0h1m3 0h1m4 0h1m1 0h1m1 0h7m-29 1h1m5 0h1m2 0h1m1 0h2m2 0h1m1 0h1m1 0h2m1 0h1m5 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m1 0h1m2 0h4m3 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m2 0h1m1 0h3m2 0h1m1 0h1m1 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m5 0h3m3 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m1 0h2m4 0h1m1 0h2m1 0h1m2 0h1m5 0h1m-29 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-20 1h2m1 0h1m1 0h5m-18 1h1m2 0h1m1 0h1m1 0h2m3 0h4m1 0h2m1 0h1m1 0h2m1 0h1m-25 1h2m3 0h1m3 0h1m1 0h3m2 0h1m3 0h3m1 0h3m-28 1h1m1 0h2m1 0h1m2 0h2m1 0h2m1 0h3m3 0h1m4 0h1m1 0h1m-24 1h1m1 0h3m2 0h1m4 0h2m2 0h1m3 0h1m1 0h2m-25 1h1m1 0h2m1 0h3m2 0h4m1 0h2m2 0h1m1 0h1m2 0h1m-28 1h1m1 0h2m2 0h1m2 0h1m1 0h1m2 0h1m6 0h1m1 0h1m1 0h3m-28 1h1m1 0h1m2 0h6m1 0h1m2 0h2m2 0h1m3 0h1m3 0h1m-27 1h1m1 0h1m3 0h1m1 0h3m4 0h1m2 0h4m1 0h1m1 0h1m-26 1h1m2 0h3m1 0h1m1 0h3m1 0h1m2 0h1m8 0h2m-29 1h2m5 0h1m1 0h1m1 0h1m1 0h1m2 0h1m1 0h1m3 0h3m1 0h1m1 0h1m-27 1h1m1 0h1m1 0h1m4 0h1m1 0h2m1 0h1m3 0h1m3 0h2m2 0h1m-27 1h1m1 0h1m2 0h2m1 0h1m1 0h3m2 0h1m5 0h1m1 0h1m1 0h2m-29 1h5m1 0h1m1 0h1m1 0h1m4 0h1m1 0h1m1 0h6m2 0h2m-21 1h1m3 0h2m1 0h6m3 0h1m1 0h1m1 0h1m-29 1h7m5 0h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m-29 1h1m5 0h1m3 0h1m2 0h3m3 0h2m3 0h2m2 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m1 0h1m2 0h2m2 0h6m3 0h1m-29 1h1m1 0h3m1 0h1m4 0h3m3 0h2m4 0h1m1 0h3m-28 1h1m1 0h3m1 0h1m2 0h1m3 0h3m1 0h1m1 0h3m4 0h3m-29 1h1m5 0h1m1 0h4m3 0h4m1 0h1m2 0h1m1 0h1m1 0h2m-29 1h7m3 0h2m5 0h1m2 0h1m1 0h1m1 0h2m1 0h1"/></svg>
               </div>

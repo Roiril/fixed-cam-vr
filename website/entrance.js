@@ -2,8 +2,8 @@
   'use strict';
 
   const IMAGE_URL = 'assets/title.png';
-  const STORAGE_KEY = 'mawarimi-entrance-seen';
-  const DURATION = 1950;
+  const STORAGE_KEY = 'mawarimi-entrance-glass-seen';
+  const DURATION = 5000;
   const DEPTH = 0.14;
   const TITLE_WIDTH = 3.2;
   const TITLE_HEIGHT = TITLE_WIDTH * 531 / 1210;
@@ -334,11 +334,14 @@
     const dialog = document.createElement('dialog');
     dialog.id = 'entrance';
     dialog.setAttribute('aria-labelledby', 'entrance-heading');
-    dialog.innerHTML = '<h2 id="entrance-heading" class="entrance-sr-only">廻リ視</h2><div class="entrance-stage"><canvas aria-hidden="true"></canvas><img src="assets/title.png" width="1210" height="531" alt="" aria-hidden="true"></div><div class="entrance-actions"><button type="button" class="entrance-enter">タイトルを割って入る</button><button type="button" class="entrance-skip">演出をスキップ</button></div>';
+    dialog.innerHTML = '<h2 id="entrance-heading" class="entrance-sr-only">廻リ視</h2><div class="entrance-stage"><canvas class="entrance-title" aria-hidden="true"></canvas><canvas class="entrance-glass" aria-hidden="true"></canvas><img src="assets/title.png" width="1210" height="531" alt="" aria-hidden="true"></div><div class="entrance-actions"><button type="button" class="entrance-enter"><span></span></button><button type="button" class="entrance-skip">スキップ</button></div>';
     const canvas = dialog.querySelector('canvas');
     const enter = dialog.querySelector('.entrance-enter');
     const skip = dialog.querySelector('.entrance-skip');
+    enter.querySelector('span').textContent = window.matchMedia('(pointer: coarse)').matches ? 'タップ' : 'クリック';
+    const glassCanvas = dialog.querySelector('.entrance-glass');
     let renderer = null;
+    let glass = null;
     if (!reduced) {
       try {
         renderer = createRenderer(canvas, image);
@@ -356,7 +359,6 @@
     let hiddenAt = 0;
     let origin = [0.5, 0.5];
     let pointer = [0, 0];
-    const replayButton = document.getElementById('replay-entrance');
     function finish() {
       if (finished) return;
       finished = true;
@@ -364,18 +366,19 @@
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('resize', resize);
+      glass?.dispose();
       renderer?.dispose();
       if (dialog.open) dialog.close();
       dialog.remove();
       active = false;
-      const target = replay && replayButton?.isConnected ? replayButton : document.querySelector('.hero-enter') || document.getElementById('main');
+      const target = document.querySelector('.hero-enter') || document.getElementById('main');
       target?.focus({ preventScroll: true });
     }
     function frame(now) {
       if (finished || document.hidden) return;
       const progress = Math.min(1, (now - startTime) / DURATION);
       try {
-        renderer.render(progress, origin, pointer);
+        glass.render(progress);
       } catch (_) {
         finish();
         return;
@@ -383,18 +386,29 @@
       if (progress < 1) raf = requestAnimationFrame(frame);
       else finish();
     }
-    function begin(event) {
+    function begin() {
       if (started || finished) return;
       started = true;
-      if (event?.currentTarget === canvas && renderer) {
-        const scale = renderer.scale();
-        origin = [
-          Math.max(0, Math.min(1, 0.5 + (event.clientX - window.innerWidth / 2) / (TITLE_WIDTH * scale))),
-          Math.max(0, Math.min(1, 0.5 + (event.clientY - window.innerHeight / 2) / (TITLE_HEIGHT * scale)))
-        ];
+      if (renderer && !reduced) {
+        try {
+          const frozen = document.createElement('canvas');
+          frozen.width = canvas.width;
+          frozen.height = canvas.height;
+          const context = frozen.getContext('2d');
+          if (!context) throw new Error('Title capture unavailable');
+          renderer.render(0, origin, pointer);
+          context.fillStyle = '#000';
+          context.fillRect(0, 0, frozen.width, frozen.height);
+          context.drawImage(canvas, 0, 0);
+          glass = window.MAWARIMI_GLASS.create(glassCanvas, frozen);
+          glass.render(0);
+          dialog.dataset.pieces = String(glass.pieceCount);
+        } catch (_) {
+          dialog.classList.add('entrance-flat');
+        }
       }
       dialog.classList.add('is-fracturing');
-      if (reduced || !renderer) {
+      if (reduced || !glass) {
         timer = setTimeout(finish, reduced ? 260 : 650);
       } else {
         startTime = performance.now();
@@ -403,7 +417,7 @@
       }
     }
     function visibility() {
-      if (!started || !renderer || finished) return;
+      if (!started || !glass || finished) return;
       if (document.hidden) {
         hiddenAt = performance.now();
         cancelAnimationFrame(raf);
@@ -416,12 +430,13 @@
       if (!renderer || finished) return;
       try {
         renderer.resize();
+        glass?.resize();
         if (!started) renderer.render(0, origin, pointer);
       } catch (_) {
         finish();
       }
     }
-    canvas.addEventListener('pointermove', (event) => {
+    dialog.addEventListener('pointermove', (event) => {
       if (started || !renderer || finished) return;
       pointer = [event.clientX / window.innerWidth * 2 - 1, event.clientY / window.innerHeight * 2 - 1];
       try {
@@ -430,14 +445,18 @@
         finish();
       }
     });
-    canvas.addEventListener('click', begin);
     canvas.addEventListener('webglcontextlost', (event) => {
       event.preventDefault();
       finish();
     });
-    dialog.querySelector('.entrance-stage img').addEventListener('click', begin);
-    enter.addEventListener('click', begin);
-    skip.addEventListener('click', finish);
+    glassCanvas.addEventListener('webglcontextlost', (event) => {
+      event.preventDefault();
+      finish();
+    });
+    dialog.addEventListener('click', (event) => {
+      if (!event.target.closest('.entrance-skip')) begin();
+    });
+    skip.addEventListener('click', (event) => { event.stopPropagation(); finish(); });
     dialog.addEventListener('cancel', (event) => {
       event.preventDefault();
       finish();
@@ -447,6 +466,7 @@
     window.addEventListener('resize', resize);
     document.body.append(dialog);
     try {
+      if (replay) window.scrollTo({ top: 0, behavior: 'instant' });
       dialog.showModal();
       enter.focus();
     } catch (_) {
