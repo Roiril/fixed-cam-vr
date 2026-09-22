@@ -643,10 +643,13 @@ def check_show_material(rows: Rows, show: dict, state: dict | None):
                 missing.append(cid)
             elif source.startswith("/"):
                 path = compositor_asset_path(source)
+                present = False
                 try:
-                    present = path is not None and os.path.isfile(path) and os.path.getsize(path) > 0
+                    if path is not None and os.path.isfile(path):
+                        with open(path, "rb") as f:
+                            present = bool(f.read(1))
                 except OSError:
-                    present = False
+                    pass
                 if not present:
                     missing.append(cid)
             else:
