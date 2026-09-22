@@ -67,15 +67,12 @@ class ExportBuildTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.out, 'assets', 'm.png')))
         self.assertEqual(res['count'], 2)
 
-    def test_external_urls_are_left_alone(self):
-        """http / sa:// は焼き込み対象外。書き換えると 2 回目の焼き込みで壊れる。"""
+    def test_external_urls_are_rejected(self):
         show = {'cues': [{'id': 'a', 'sourceUrl': 'http://example.com/x.mp4'},
                          {'id': 'b', 'sourceUrl': 'sa://assets/already.png'}]}
-        res = self._run(show)
-        cues = self._baked()['cues']
-        self.assertEqual(cues[0]['sourceUrl'], 'http://example.com/x.mp4')
-        self.assertEqual(cues[1]['sourceUrl'], 'sa://assets/already.png')
-        self.assertEqual(res['unresolvedAssets'], [], '外部 URL を「実ファイルが無い」に数えない')
+        with self.assertRaises(ValueError):
+            self._run(show)
+        self.assertFalse(os.path.exists(self.out))
 
     def test_bgm_and_step_assets_and_eyejack_are_baked(self):
         """cue 以外の 3 経路。どれかを歩き漏らすと「そこだけ無映像 / 無音」になる。"""
@@ -84,6 +81,7 @@ class ExportBuildTest(unittest.TestCase):
         self._put('eyejack/norm/p.jpg')
         show = {
             'bgmTracks': [{'id': 't', 'url': '/audio/b.mp3'}],
+            'bgm': {'action': 'play', 'trackId': 't'},
             'eyejack': {'photos': ['/eyejack/norm/p.jpg']},
             'timeline': {'segments': [{'takes': [{'steps': [{'assetUrl': '/recordings/pov.mp4'}]}]}]},
         }
@@ -94,11 +92,29 @@ class ExportBuildTest(unittest.TestCase):
         self.assertEqual(b['timeline']['segments'][0]['takes'][0]['steps'][0]['assetUrl'],
                          'sa://assets/pov.mp4')
 
-    def test_missing_file_is_reported_not_silently_passed(self):
-        """卓には ✓ としか出ない事故。CLI / UI が気づけるよう必ず列挙する。"""
-        res = self._run({'cues': [{'id': 'a', 'sourceUrl': '/captures/gone.mp4'}]})
-        self.assertEqual(res['unresolvedAssets'], ['/captures/gone.mp4'])
-        self.assertEqual(self._baked()['cues'][0]['sourceUrl'], '/captures/gone.mp4')
+    def test_missing_file_preserves_previous_export(self):
+        self._run({'cues': []})
+        with open(os.path.join(self.out, 'manifest.json'), 'rb') as stream:
+            previous = stream.read()
+        with self.assertRaises(ValueError):
+            self._run({'cues': [{'id': 'a', 'sourceUrl': '/captures/gone.mp4'}]})
+        with open(os.path.join(self.out, 'manifest.json'), 'rb') as stream:
+            self.assertEqual(stream.read(), previous)
+
+    def test_take_and_step_only_music_is_baked_and_missing_track_rejected(self):
+        self._put('audio/take.mp3', b'take music')
+        self._put('audio/step.mp3', b'step music')
+        show = {'bgmTracks': [{'id': 'take', 'url': '/audio/take.mp3'},
+                              {'id': 'step', 'url': '/audio/step.mp3'}],
+                'timeline': {'schema': 3, 'segments': [{'takes': [
+                    {'hasBgm': True, 'bgm': {'action': 'play', 'trackId': 'take'},
+                     'steps': [{'hasBgm': True, 'bgm': {'action': 'play', 'trackId': 'step'}}]}]}]}}
+        self.assertEqual(self._run(show)['count'], 2)
+        self.assertEqual({t['url'] for t in self._baked()['bgmTracks']},
+                         {'sa://assets/take.mp3', 'sa://assets/step.mp3'})
+        show['bgmTracks'].pop()
+        with self.assertRaisesRegex(ValueError, 'step'):
+            self._run(show)
 
     def test_same_file_is_copied_once_and_different_files_do_not_collide(self):
         self._put('masks/same.png')
@@ -127,13 +143,13 @@ class ExportBuildTest(unittest.TestCase):
         secret = os.path.join(self.tmp, 'secret.txt')
         with open(secret, 'wb') as f:
             f.write(b'x')
-        res = self._run({'cues': [{'id': 'a', 'sourceUrl': '/masks/../../secret.txt'}]})
-        self.assertEqual(res['count'], 0)
+        with self.assertRaises(ValueError):
+            self._run({'cues': [{'id': 'a', 'sourceUrl': '/masks/../../secret.txt'}]})
         self.assertFalse(os.path.exists(os.path.join(self.out, 'assets', 'secret.txt')))
 
     # --- 報告 ---
 
-    def test_dangling_cue_and_track_references_are_reported(self):
+    def test_dangling_cue_and_track_references_are_rejected(self):
         show = {
             'cues': [{'id': 'known'}],
             'bgmTracks': [{'id': 'bgm_known'}],
@@ -142,9 +158,19 @@ class ExportBuildTest(unittest.TestCase):
                  'hasBgm': True, 'bgm': {'action': 'play', 'trackId': 'bgm_gone'}},
             ]},
         }
-        res = self._run(show)
-        self.assertEqual(res['missingCues'], ['gone'])
-        self.assertEqual(res['missingTracks'], ['bgm_gone'])
+        with self.assertRaisesRegex(ValueError, 'gone'):
+            self._run(show)
+
+    def test_manifest_hashes_and_revision_only_change(self):
+        self._put('masks/m.png', b'asset')
+        show = {'rev': 1, 'cues': [{'id': 'a', 'maskUrl': '/masks/m.png'}]}
+        first = self._run(show)['contentId']
+        with open(os.path.join(self.out, 'manifest.json'), encoding='utf-8') as stream:
+            manifest = json.load(stream)
+        self.assertEqual(manifest['schema'], 1)
+        self.assertEqual(manifest['policy'], 'baked-only-v1')
+        self.assertEqual(len(manifest['assets']), 1)
+        self.assertEqual(first, self._run({'rev': 2, 'cues': show['cues']})['contentId'])
 
     def test_revs_are_reported_for_the_build_log(self):
         """どの著作を焼いたかは rev でしか分からない（CLI がこれを出す）。"""

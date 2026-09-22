@@ -12,6 +12,21 @@ metadata:
 
 ## 現行の導線（2026-09-22）
 
+演出と接続は別々に確認する。`/ops/content` は準備素材 → StreamingAssets → APK → 各 Quest を照合する。
+`rev` の一致は証拠にしない。本文と素材の SHA256、成功した APK の buildGuid を使う。
+Player は演出のライブ更新と旧キャッシュを受けない。変更時は素材をそろえて再ビルドし、両 Quest に入れる。
+通常サーバは演出変更の POST を拒否。事前編集のときだけ `FIXEDCAM_AUTHORING=1` を使う。
+博士タブレットは Quest の `:8090` に直接接続。卓は設定を中継しない。
+`/ops/status.tablets` で待受・ページの応答・送信した設定の実値反映を確認する。
+未送信、30 秒以上応答なし、複数ページ、別ページの送信、古い Quest 応答は確認済みにしない。
+`onsite.py check` は Wi-Fi 設定を変更しない。切断時の自動切り替えを点検に混ぜない。
+
+2026-09-22 検証: Streaming EditMode 1531 件、ビルドガード 12 件、Python 61+17 件、Node 10+10 件が通過。
+代役 Quest で博士 UI の送信 1 / 反映 1 と実値一致を確認。実機タブレットの往復は未確認。
+`build fixedcam -Force` の検証 APK は素材 20/20 件のハッシュと receipt / boot.config の build-guid が一致。
+通常ビルドは既存の hud-font / comms-horror-font / OSD の mtime 検査が未通過。既存の dirty フォントは保全した。
+この APK は実機へ配布していない。push は通常の事前チェックが通るまで保留。
+
 `tools/web-compositor/serve.ps1` で新しい `capture-server.py` を起動してから
 `http://192.168.10.10:8099/` を開く。`index.html` は「設営と点検」。旧 `onsite.html` は転送入口。
 演出編集は `authoring.html`。以下の 2026-09-04 の記録にある旧画面の配置と操作は歴史的経緯であり、

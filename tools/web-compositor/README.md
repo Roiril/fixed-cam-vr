@@ -4,10 +4,12 @@
 
 `./serve.ps1` で `capture-server.py` を起動し、`http://localhost:8099/` を開く。
 `index.html` は当日の「設営と点検」。旧 `onsite.html` はここへ転送する。
-演出編集は `authoring.html` に移した。次節以降のタイムラインや画質の操作説明はこの編集画面の記録。
+演出編集は `authoring.html` に移した。既定では演出を変更する POST を 403 で拒否する。
+事前編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
+次節以降のタイムラインや画質の操作説明は旧編集画面の記録。Player へのライブ反映は廃止した。
 サーバを新しいコードで起動し直すまで `/ops/status` と `/ops/restart` は使えない。
 
-当日画面は固定のカメラ A/B/C と Quest α/β を 1 行ずつ表示する。
+当日画面は固定のカメラ A/B/C と Quest α/β、対応する博士タブレット 2 台を表示する。
 固定登録は `operations-fleet.json`。A/B/C は `192.168.10.21/.22/.23:8080`、Quest α/β は
 `192.168.10.31/.32`。スマホの登録 UUID は 8 月の観測値なので、新設した Android 登録との一致を現地で確認する。
 PC は `autoFollow=false`、Quest は `discoveryEnabled=false`、A/B/C は `pinned=true` を投影する。
@@ -32,7 +34,19 @@ py -3.11 -m unittest tools/test_onsite_operations.py
 node --test tools/web-compositor/test_ops_model.mjs
 ```
 
+演出の準備は `GET /ops/content` で照合する。素材準備、StreamingAssets への同梱、APK 内の素材を別々に表示する。
+export は必要な画像・動画・BGM を検証し、本文と素材の SHA256 を manifest に書く。カット単位の BGM も対象。
+Unity ビルドは欠損と改変を拒否する。成功時の `mawarimi.apk.content.json` は APK のハッシュと buildGuid を保存する。
+起動中の Quest が同じ contentId と buildGuid を報告した場合だけ導入版一致になる。素材差し替え後は再ビルドが必要。
+
+博士タブレットは `:8090` の Quest に直接接続する。卓は設定を送らない。
+`GET /ops/status` の `tablets` は待受、30 秒以内のページ応答、設定の実値反映を分ける。
+Quest 起動 ID とページ ID を照合する。未送信、別ページの送信、反映待ち、複数ページ、応答期限切れは確認済みにしない。
+両方のタブレットから設定を実際に送り、言語と軽減の表示を見比べて点検する。
+
 ## 演出編集画面の記録
+
+この節以降のライブ反映と端末キャッシュの記述は過去の仕様。現行 Player には適用しない。
 
 ブラウザから廻リ視（FixedCam）の体験を**タイムライン（周回×ゾーン区間）でオーサリング**し、カメラを監視する 1 ページ UI。
 状態の正は `show.json`（このサーバ）。Unity（Quest 実機）は long-poll で追従し、端末ローカルにキャッシュして

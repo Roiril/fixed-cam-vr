@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using Stopwatch = System.Diagnostics.Stopwatch;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -47,13 +48,48 @@ namespace FixedCamVr.Streaming
         private volatile string _statusJson = "{\"ok\":false}";
         private readonly object _queueLock = new object();
         private readonly List<Action> _queue = new List<Action>();
-        private int _received;   // POST /set を受けた累計（入力の累計。work-style §2-2）
+        private volatile int _received;   // POST /set を受けた累計（入力の累計。work-style §2-2）
         private int _rejected;   // 読めない本文を返した累計
         private string _model = "";
         private string _ip = "";
         private TitleScreen? _title;
         private ShowRunDirector? _run;
         private string _lastKey = "";
+        private string _portalSessionId = "";
+        private readonly List<TabletSeen> _tablets = new List<TabletSeen>();
+        private LastRequest? _lastRequest;
+
+        [Serializable] public sealed class TabletSeen
+        {
+            public string tabletSessionId = "";
+            public string ip = "";
+            public float ageSec;
+            [NonSerialized] public long seenAt;
+        }
+
+        [Serializable] public sealed class LastRequest
+        {
+            public string tabletSessionId = "";
+            public int seq;
+            public string lang = "";
+            public bool relief;
+        }
+
+        [Serializable] public sealed class HeartbeatSnapshot
+        {
+            public int schema = 1;
+            public bool listening;
+            public string portalSessionId = "";
+            public TabletSeen[] tablets = Array.Empty<TabletSeen>();
+            public LastRequest? lastRequest;
+            public int appliedSeq;
+            public int applyCount;
+            public int received;
+            public string lang = "";
+            public bool relief;
+            public int pendingSeq;
+            public int consumedSeq;
+        }
 
         /// <summary>待ち受けに成功しているか（bind に失敗すると false ＝ タブレットは繋げない）。</summary>
         public bool IsListening { get; private set; }
@@ -63,6 +99,41 @@ namespace FixedCamVr.Streaming
 
         /// <summary><c>POST /set</c> を受けた累計。テレメトリが読む。</summary>
         public int Received => _received;
+
+        public HeartbeatSnapshot CreateHeartbeatSnapshot()
+        {
+            long now = Stopwatch.GetTimestamp();
+            var tablets = new TabletSeen[_tablets.Count];
+            for (int i = 0; i < _tablets.Count; i++)
+            {
+                TabletSeen seen = _tablets[i];
+                tablets[i] = new TabletSeen
+                {
+                    tabletSessionId = seen.tabletSessionId,
+                    ip = seen.ip,
+                    ageSec = (float)((now - seen.seenAt) / (double)Stopwatch.Frequency),
+                };
+            }
+            return new HeartbeatSnapshot
+            {
+                listening = IsListening,
+                portalSessionId = _portalSessionId,
+                tablets = tablets,
+                lastRequest = _lastRequest,
+                appliedSeq = VisitorPrefs.AppliedSeq,
+                applyCount = VisitorPrefs.ApplyCount,
+                received = _received,
+                lang = ShowLanguage.Code(ShowLanguage.Current),
+                relief = HorrorRelief.Enabled,
+                pendingSeq = VisitorPrefs.PendingSeq,
+                consumedSeq = VisitorPrefs.ConsumedSeq,
+            };
+        }
+
+        private void Awake()
+        {
+            _portalSessionId = Guid.NewGuid().ToString("N");
+        }
 
         private void Start()
         {
@@ -103,12 +174,9 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             // 背景スレッドから積まれた要求をここで実行する（static と Unity を触るのはメインだけ）。
-            if (_queue.Count > 0)
-            {
-                Action[] batch;
-                lock (_queueLock) { batch = _queue.ToArray(); _queue.Clear(); }
-                foreach (var a in batch) a();
-            }
+            Action[] batch;
+            lock (_queueLock) { batch = _queue.ToArray(); _queue.Clear(); }
+            foreach (var a in batch) a();
             RefreshStatus(force: false);
         }
 
@@ -123,12 +191,13 @@ namespace FixedCamVr.Streaming
             bool relief = HorrorRelief.Enabled;
             // 変わったフレームだけ組み直す（90Hz で文字列を作らない）。
             string key = stage + "|" + phase + "|" + lang + "|" + (relief ? 1 : 0) + "|" + VisitorPrefs.PendingSeq
-                         + "|" + VisitorPrefs.AppliedSeq + "|" + _received + "|" + _rejected;
+                         + "|" + VisitorPrefs.AppliedSeq + "|" + VisitorPrefs.ApplyCount + "|" + _received + "|" + _rejected;
             if (!force && key == _lastKey) return;
             _lastKey = key;
 
             var sb = new StringBuilder(320);
             sb.Append("{\"ok\":true");
+            sb.Append(",\"portalSessionId\":").Append(VisitorPortalLogic.JsonString(_portalSessionId));
             sb.Append(",\"lang\":\"").Append(lang).Append('"');
             sb.Append(",\"relief\":").Append(relief ? "true" : "false");
             sb.Append(",\"titleStage\":").Append(VisitorPortalLogic.JsonString(stage));
@@ -139,6 +208,13 @@ namespace FixedCamVr.Streaming
                   .Append(",\"seq\":").Append(VisitorPrefs.PendingSeq).Append('}');
             else sb.Append(",\"pending\":null");
             sb.Append(",\"appliedSeq\":").Append(VisitorPrefs.AppliedSeq);
+            if (_lastRequest != null)
+                sb.Append(",\"lastRequest\":{\"tabletSessionId\":")
+                  .Append(VisitorPortalLogic.JsonString(_lastRequest.tabletSessionId))
+                  .Append(",\"seq\":").Append(_lastRequest.seq)
+                  .Append(",\"lang\":").Append(VisitorPortalLogic.JsonString(_lastRequest.lang))
+                  .Append(",\"relief\":").Append(_lastRequest.relief ? "true" : "false").Append('}');
+            else sb.Append(",\"lastRequest\":null");
             sb.Append(",\"applyCount\":").Append(VisitorPrefs.ApplyCount);
             sb.Append(",\"received\":").Append(_received);
             sb.Append(",\"rejected\":").Append(_rejected);
@@ -201,8 +277,10 @@ namespace FixedCamVr.Streaming
                             if (n <= 0) break;
                             have += n;
                         }
+                        string remoteIp = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "";
                         res = VisitorPortalLogic.Route(req, Encoding.UTF8.GetString(body, 0, have), _page, _statusJson,
-                                                       OnSetFromThread, OnClearFromThread, LoadAssetFromThread);
+                                                       OnSetFromThread, OnClearFromThread, LoadAssetFromThread,
+                                                       _portalSessionId, id => OnPulseFromThread(id, remoteIp));
                         if (res.status == 400 && req.path == "/set") Interlocked.Increment(ref _rejected);
                     }
                     byte[] bytes = VisitorPortalLogic.Encode(res);
@@ -222,16 +300,38 @@ namespace FixedCamVr.Streaming
 
         // 受理番号はここで振る（応答に載せるため）。static へ書くのはメインスレッド。
         private int _seqIssued;
-        private int OnSetFromThread(ShowLang lang, bool relief)
+        private int OnSetFromThread(ShowLang lang, bool relief, string tabletId)
         {
-            int seq = Interlocked.Increment(ref _seqIssued);
-            Interlocked.Increment(ref _received);
+            lock (_queueLock)
+            {
+                int seq = ++_seqIssued;
+                _received++;
+                _queue.Add(() =>
+                {
+                    VisitorPrefs.Set(lang, relief, seq);
+                    _lastRequest = new LastRequest { tabletSessionId = tabletId, seq = seq,
+                                                     lang = ShowLanguage.Code(lang), relief = relief };
+                    Debug.Log($"[VisitorPortal] タブレットから受けた: lang={ShowLanguage.Code(lang)} relief={relief} seq={seq}");
+                });
+                return seq;
+            }
+        }
+
+        private void OnPulseFromThread(string tabletId, string ip)
+        {
+            long seenAt = Stopwatch.GetTimestamp();
             lock (_queueLock) _queue.Add(() =>
             {
-                VisitorPrefs.Set(lang, relief, seq);
-                Debug.Log($"[VisitorPortal] タブレットから受けた: lang={ShowLanguage.Code(lang)} relief={relief} seq={seq}");
+                int existing = _tablets.FindIndex(t => t.tabletSessionId == tabletId);
+                if (existing >= 0)
+                {
+                    if (_tablets[existing].seenAt > seenAt) return;
+                    _tablets.RemoveAt(existing);
+                }
+                _tablets.Add(new TabletSeen { tabletSessionId = tabletId, ip = ip, seenAt = seenAt });
+                _tablets.Sort((a, b) => a.seenAt.CompareTo(b.seenAt));
+                if (_tablets.Count > 8) _tablets.RemoveAt(0);
             });
-            return seq;
         }
 
         private void OnClearFromThread()

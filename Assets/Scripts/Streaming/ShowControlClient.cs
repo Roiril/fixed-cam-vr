@@ -965,6 +965,11 @@ namespace FixedCamVr.Streaming
         private ScreenOverlayController? _overlay;
         private Material? _material;
         private int _rev = -1;
+        [NonSerialized] private bool _bakedOnlyOverride; // EditMode テストで Player のゲートを駆動する。
+        private bool BakedOnly => !Application.isEditor || _bakedOnlyOverride;
+        public string ContentId { get; private set; } = "";
+        public string ContentPolicy => BakedShowManifest.Policy;
+        public bool ContentVerified { get; private set; }
         // 適用に失敗した版と、その版で何回失敗したか（`PollLoopAsync` の巻き戻し用）。
         private int _applyFailRev = int.MinValue;
         private int _applyFailCount;
@@ -975,11 +980,11 @@ namespace FixedCamVr.Streaming
         private string _appliedOverride = "";
 
         // ---- 発見（discovery）連携用の公開状態 ----
-        // DiscoveryClient が「PC 卓が不通か」を判定するために最後に /state 応答を得た時刻を持つ。
+        // DiscoveryClient が「PC 卓が不通か」を判定するために最後の応答時刻を持つ。
         // control.discoveryEnabled はキルスイッチ（false で probe/切替を全停止。省略時 true）。
         private float _lastServerContactTime = -999f;
 
-        /// <summary>最後に /state を成功受信した realtimeSinceStartup。未接続なら大きな負値。</summary>
+        /// <summary>最後に卓から応答を得た realtimeSinceStartup。未接続なら大きな負値。</summary>
         public float LastServerContactTime => _lastServerContactTime;
 
         // コントローラ操作モード（NORMAL/REG）。OvrControllerBridge が遷移時に push し、heartbeat に載せる。
@@ -991,7 +996,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>server が実効的に通じているか（cue 試射のローカルフォールバック分岐に使う）。</summary>
         private bool ServerReachable
-            => server != null && (Time.realtimeSinceStartup - _lastServerContactTime) < ServerStaleSeconds;
+            => !BakedOnly && server != null && (Time.realtimeSinceStartup - _lastServerContactTime) < ServerStaleSeconds;
 
         /// <summary>コントローラ操作モードのラベル（NORMAL/REG）を設定する。heartbeat で卓へ報告する。</summary>
         public void SetControllerMode(string mode) => _controllerMode = string.IsNullOrEmpty(mode) ? "NORMAL" : mode;
@@ -1013,7 +1018,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>index 番カメラが卓で手動固定（pinned）されているか。pinned には discovery を適用しない。</summary>
         public bool IsCameraPinned(int index)
-            => index >= 0 && index < _cameras.Length && _cameras[index] != null && _cameras[index]!.pinned;
+            => index >= 0 && index < _cameras.Length && _cameras[index] != null
+               && (_cameras[index]!.pinned || (BakedOnly && !string.IsNullOrEmpty(_cameras[index]!.host)));
 
         // 直近に解決したカメラ別設定 / global post（ライブ or 端末キャッシュ由来）。
         // ゾーン自律切替（ActiveChanged）でカメラ別 post を再適用するため保持する。
@@ -1622,7 +1628,8 @@ namespace FixedCamVr.Streaming
             // 1) 焼き込み StreamingAssets/show/show.json（最下位）。無ければ何もしない。
             await InitStepAsync("焼き込みの読込", () => LoadBakedShowAsync(ct));
             // 2) 端末キャッシュ（焼き込みを上書き）。ライブが既に適用済みなら両方スキップ（ライブ優先）。
-            InitStep("端末キャッシュの適用", () => { if (_rev < 0) LoadAndApplyCache(); });
+            if (!BakedOnly)
+                InitStep("端末キャッシュの適用", () => { if (_rev < 0) LoadAndApplyCache(); });
             // 2.5) 録画係。**卓が居なくても録れなければならない**（1 周目を録って 3 周目に流すのは
             //      現地 PC 不在でも成立する体験）。旧実装はライブ受信の Apply でしか EnsureRecorder を
             //      呼んでおらず、焼き込み / 端末キャッシュの record.enabled は読むだけで録画係が
@@ -1690,7 +1697,7 @@ namespace FixedCamVr.Streaming
                 return;
             }
             _loopCts = CancellationTokenSource.CreateLinkedTokenSource(destroyCancellationToken);
-            _ = PollLoopAsync(_loopCts.Token);
+            if (!BakedOnly) _ = PollLoopAsync(_loopCts.Token);
             _ = HeartbeatLoopAsync(_loopCts.Token);
         }
 
@@ -1747,7 +1754,7 @@ namespace FixedCamVr.Streaming
             _loopCts = null;
             if (!isActiveAndEnabled) return;
             _loopCts = CancellationTokenSource.CreateLinkedTokenSource(destroyCancellationToken);
-            _ = PollLoopAsync(_loopCts.Token);
+            if (!BakedOnly) _ = PollLoopAsync(_loopCts.Token);
             _ = HeartbeatLoopAsync(_loopCts.Token);
         }
 
@@ -2068,6 +2075,7 @@ namespace FixedCamVr.Streaming
 
         private void Apply(ShowState state)
         {
+            if (BakedOnly) return;
             ConfigOrigin = "live";  // 卓が配った設定。以後キャッシュ・焼き込みでは上書きされない
             // 1) カメラ設定（IP / 認証 / カメラ別画像加工）を反映
             _cameras = state.cameras ?? Array.Empty<CameraDef>();
@@ -2359,6 +2367,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private string ResolveAssetUrl(string url)
         {
+            if (BakedOnly && TakeSchema.SlotName(url).Length > 0) return "";
             string slot = TakeSchema.SlotName(url);
             if (!string.IsNullOrEmpty(slot))
             {
@@ -2585,14 +2594,33 @@ namespace FixedCamVr.Streaming
                 req.timeout = 5;
                 var op = req.SendWebRequest();
                 while (!op.isDone) { ct.ThrowIfCancellationRequested(); await Task.Yield(); }
-                // 焼き込みが無い（新規ビルドで export していない）のは正常。静かに続行。
-                if (req.result != UnityWebRequest.Result.Success) return;
-                var state = JsonUtility.FromJson<ShowState>(req.downloadHandler.text);
-                if (state == null) return;
+                if (req.result != UnityWebRequest.Result.Success)
+                    throw new IOException("show.json: " + req.error);
+                byte[] configBytes = req.downloadHandler.data;
+                string configJson = req.downloadHandler.text;
+                string verifiedId = "";
+                if (BakedOnly)
+                {
+                    using var manifestReq = UnityWebRequest.Get(ShowAssetResolver.StreamingAssetsUri("show/manifest.json"));
+                    manifestReq.timeout = 5;
+                    var manifestOp = manifestReq.SendWebRequest();
+                    while (!manifestOp.isDone) { ct.ThrowIfCancellationRequested(); await Task.Yield(); }
+                    if (manifestReq.result != UnityWebRequest.Result.Success)
+                        throw new FileNotFoundException("manifest.json: " + manifestReq.error);
+                    if (!BakedShowManifest.TryVerify(configBytes, manifestReq.downloadHandler.text, out verifiedId))
+                        throw new InvalidDataException("manifest.json と show.json が一致しない");
+                }
+                var state = JsonUtility.FromJson<ShowState>(configJson);
+                if (state == null) throw new InvalidDataException("show.json が空");
                 ApplyBaked(state);
+                if (BakedOnly)
+                {
+                    ContentId = verifiedId;
+                    ContentVerified = true;
+                }
             }
-            catch (OperationCanceledException) { }
-            catch (Exception e) { Debug.LogWarning($"[ShowControl] 焼き込み show.json 読込失敗: {e.Message}"); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception e) { ContentId = ""; ContentVerified = false; Debug.LogError($"[ShowControl] 焼き込み show.json 読込失敗: {e.Message}"); }
         }
 
         // 焼き込み値をフィールドへ流し込む（最下位優先。接続反映・イベント発火は InitializeAsync が一括で行う）。
@@ -2730,6 +2758,7 @@ namespace FixedCamVr.Streaming
 
         private void SendCommand(string type, string id)
         {
+            if (BakedOnly) return;
             if (server == null) { Debug.LogWarning("[ShowControl] server 未設定: 演出はオペレータ卓接続時のみ発火可"); return; }
             _ = SendCommandAsync(type, id, destroyCancellationToken);
         }
@@ -3164,6 +3193,7 @@ namespace FixedCamVr.Streaming
 
         private void SaveCache()
         {
+            if (BakedOnly) return;
             try
             {
                 var cfg = new CachedConfig
@@ -3219,6 +3249,7 @@ namespace FixedCamVr.Streaming
         // 接続反映・イベント発火・post 適用は呼び出し側（InitializeAsync）が一括で行う。
         private void LoadAndApplyCache()
         {
+            if (BakedOnly) return;
             try
             {
                 if (!File.Exists(ConfigCachePath)) return;
@@ -3320,6 +3351,10 @@ namespace FixedCamVr.Streaming
             public int cam = -1;
             // ここまで適用した show.json の rev。UI / 自動検証が「Unity 反映済み」を機械判定する。
             public int appliedRev = -1;
+            public string contentId = "";
+            public string contentPolicy = BakedShowManifest.Policy;
+            public bool contentVerified;
+            public string buildGuid = "";
             // ライブモニタ用（任意）: HMD の course space XZ と現在ゾーンラベル。
             // 供給元（ZoneLayoutApplier）未注入なら 0 / 空文字。
             public float headCourseX;
@@ -3387,6 +3422,7 @@ namespace FixedCamVr.Streaming
             public int visitorPort;
             public int visitorReceived;
             public bool visitorPending;
+            public VisitorPortal.HeartbeatSnapshot? visitorPortal;
             public string lang = "ja";
             public bool relief;
             // titleStage = タイトルの段（Off / Wait / In / Hold / Out / Done）。タブレットが
@@ -3442,6 +3478,10 @@ namespace FixedCamVr.Streaming
                     hb.mode = _controllerMode;
                     hb.statusHud = StatusVisible;
                     hb.appliedRev = _rev;
+                    hb.contentId = ContentId;
+                    hb.contentPolicy = ContentPolicy;
+                    hb.contentVerified = ContentVerified;
+                    hb.buildGuid = Application.buildGUID ?? "";
                     hb.lap = CurrentLapProvider != null ? CurrentLapProvider() : -1;
                     hb.cam = registry != null ? registry.ActiveIndex : -1;
                     if (HeadCourseXZProvider != null)
@@ -3492,6 +3532,7 @@ namespace FixedCamVr.Streaming
                     hb.visitorPort = _portal != null && _portal.IsListening ? VisitorPortal.Port : 0;
                     hb.visitorReceived = _portal != null ? _portal.Received : 0;
                     hb.visitorPending = VisitorPrefs.HasPending;
+                    hb.visitorPortal = _portal != null ? _portal.CreateHeartbeatSnapshot() : null;
                     hb.lang = ShowLanguage.Code(ShowLanguage.Current);
                     hb.relief = HorrorRelief.Enabled;
                     if (_titleForHb == null) _titleForHb = FindObjectOfType<TitleScreen>();
@@ -3520,6 +3561,7 @@ namespace FixedCamVr.Streaming
                         await Task.Yield();
                     }
                     if (req.result != UnityWebRequest.Result.Success) _dwell.PutBack(taken);
+                    else _lastServerContactTime = Time.realtimeSinceStartup;
                 }
                 catch (OperationCanceledException) { _dwell.PutBack(taken); return; }
                 catch { _dwell.PutBack(taken); /* heartbeat はベストエフォート */ }

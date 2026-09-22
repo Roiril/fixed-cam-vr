@@ -2,7 +2,8 @@
 """Quest のタブレットの口（VisitorPortal :8090）の**代役**。面（visitor.html）を机上で確かめるためのもの。
 
 Quest 無しで `Assets/Resources/Visitor/visitor.html` をブラウザで開き、送る → 待ち → 反映 の見え方を通す。
-実機の VisitorPortalLogic と同じ 4 つの道（GET / ・ GET /status ・ POST /set ・ POST /clear）を持ち、
+実機の VisitorPortalLogic と同じ GET / ・ GET /status ・ POST /set ・ POST /clear ・
+POST /tablet/pulse を持ち、
 「注意書きの段（Wait）で受けたら書く／本編（RUN）では次まで持つ／始めたら枠を空にする」を真似る。
 
     py -3.11 tools/visitor-portal-stub.py                # :8090・段は Wait
@@ -19,6 +20,7 @@ import re
 import sys
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -30,9 +32,12 @@ _st = {
     "lang": "ja", "relief": False, "titleStage": "Wait", "phase": "INTRO",
     "pending": None, "appliedSeq": 0, "applyCount": 0, "received": 0, "rejected": 0,
     "model": "Quest 3 (stub)", "ip": "127.0.0.1", "port": 8090, "seq": 0,
+    "portalSessionId": uuid.uuid4().hex, "lastRequest": None,
 }
 _initial = dict(_st)
 _faults = {}
+_tablets = {}
+_id_rx = r'"([A-Za-z0-9_-]{1,128})"'
 
 
 def _apply_if_wait():
@@ -47,6 +52,9 @@ def _apply_if_wait():
 
 def _status():
     d = {k: v for k, v in _st.items() if k != "seq"}
+    now = time.monotonic()
+    d["tablets"] = [{"tabletSessionId": tablet_id, "ip": ip, "ageSec": now - seen_at}
+                    for tablet_id, (ip, seen_at) in _tablets.items()]
     d["ok"] = True
     return json.dumps(d)
 
@@ -142,7 +150,8 @@ class H(BaseHTTPRequestHandler):
                     delay = spec.get("delayMs", 0)
                     status = spec.get("status", 200)
                     count = spec.get("count", 1)
-                    if (target not in ("/status", "/set", "/clear", "/asset/briefing-v1.json")
+                    if (target not in ("/status", "/set", "/clear", "/tablet/pulse",
+                                       "/asset/briefing-v1.json")
                             or type(delay) is not int or not 0 <= delay <= 15000
                             or type(status) is not int or status not in (200, 400, 503)
                             or type(count) is not int or not -1 <= count <= 100):
@@ -158,6 +167,8 @@ class H(BaseHTTPRequestHandler):
                 port = _st["port"]
                 _st.update(_initial)
                 _st["port"] = port
+                _st["portalSessionId"] = uuid.uuid4().hex
+                _tablets.clear()
                 _faults.clear()
                 return self._send(200, "application/json", '{"ok":true}')
             if path == "/_begin":
@@ -170,12 +181,32 @@ class H(BaseHTTPRequestHandler):
                 if not m or m.group(1).lower() not in ("ja", "en", "fr"):
                     _st["rejected"] += 1
                     return self._send(400, "application/json", '{"ok":false,"error":"lang"}')
+                tablet = re.search(r'"tabletSessionId"\s*:\s*' + _id_rx, body)
+                portal = re.search(r'"portalSessionId"\s*:\s*' + _id_rx, body)
+                if ('"tabletSessionId"' in body and not tablet or
+                        '"portalSessionId"' in body and not portal or bool(tablet) != bool(portal)):
+                    _st["rejected"] += 1
+                    return self._send(400, "application/json", '{"ok":false,"error":"session ids required"}')
+                if portal and portal.group(1) != _st["portalSessionId"]:
+                    return self._send(409, "application/json", '{"ok":false,"error":"portal session changed"}')
                 relief = bool(re.search(r'"relief"\s*:\s*true', body))
                 _st["seq"] += 1
                 _st["received"] += 1
                 _st["pending"] = {"lang": m.group(1).lower(), "relief": relief, "seq": _st["seq"]}
+                _st["lastRequest"] = {"tabletSessionId": tablet.group(1) if tablet else "",
+                                      "seq": _st["seq"], "lang": m.group(1).lower(), "relief": relief}
                 _apply_if_wait()
                 return self._send(200, "application/json", json.dumps({"ok": True, "seq": _st["seq"]}))
+            if path == "/tablet/pulse":
+                tablet = re.search(r'"tabletSessionId"\s*:\s*' + _id_rx, body)
+                if not tablet:
+                    return self._send(400, "application/json", '{"ok":false,"error":"tabletSessionId required"}')
+                tablet_id = tablet.group(1)
+                _tablets.pop(tablet_id, None)
+                _tablets[tablet_id] = (self.client_address[0], time.monotonic())
+                if len(_tablets) > 8:
+                    _tablets.pop(next(iter(_tablets)))
+                return self._send(200, "application/json", '{"ok":true}')
             if path == "/clear":
                 _st["pending"] = None
                 return self._send(200, "application/json", '{"ok":true}')

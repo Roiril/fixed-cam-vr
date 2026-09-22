@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [onsite_day_ops.md](onsite_day_ops.md) - 2026-09-22。演出素材・同梱・APK・Quest の内容を照合。Player は事前同梱のみ。博士タブレットの応答と設定反映は [visitor_tablet.md](visitor_tablet.md)。
+
 - [ending_result.md](ending_result.md) - 2026-09-21。最後のAは凍結線OR入場3秒で警告。催促の全文表示後に未報告退出OR15秒で帰還不能。結果は報告回数/異常総数8件。Nocturnal Waters。専用フォントと3言語の実描画。
 
 - [composite_mask_quality.md](composite_mask_quality.md) - 2026-09-19。シミの矩形切れと二重マスクを原動画から修正。生成されたパイプも一緒に合成し、保護用の穴を勝手に開けない。`composite-mask` スキルと保存レシピ。人物切り抜きは採用しない。実機未確認。

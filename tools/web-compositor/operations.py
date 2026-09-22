@@ -335,6 +335,116 @@ def _quest(fixed, devices, now):
     return row
 
 
+def _tablet(fixed, devices, now):
+    row = {'id': fixed['id'], 'host': fixed['host'], 'status': 'unknown',
+           'title': 'タブレットを確認できません', 'action': 'Quest の起動と Wi-Fi を確認してください',
+           'portalStatus': 'unknown', 'connectionStatus': 'unknown',
+           'reflectionStatus': 'unknown', 'portalSessionId': None,
+           'tabletSessionId': None, 'tabletIp': None, 'ageSec': None,
+           'sentSeq': None, 'appliedSeq': None, 'received': None,
+           'applyCount': None, 'requestedLang': None, 'requestedRelief': None,
+           'lang': None, 'relief': None, 'activePages': 0}
+    matches = []
+    for did, hb in devices.items():
+        if not isinstance(hb, dict) or hb.get('localIp') != fixed['host']:
+            continue
+        try:
+            age = now - float(hb.get('at') or 0)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= age < 6:
+            matches.append((did, hb, age))
+    if len(matches) > 1:
+        row.update(status='error', title='同じ IP の Quest が複数あります',
+                   action='Quest の IP 設定を確認してください')
+        return row
+    if not matches:
+        if any(isinstance(hb, dict) and hb.get('localIp') == fixed['host']
+               for hb in devices.values()):
+            row.update(title='Quest からの応答が古くなっています',
+                       action='Quest の起動と Wi-Fi を確認してください')
+        return row
+    did, hb, hb_age = matches[0]
+    if fixed.get('deviceId') and did != fixed['deviceId']:
+        row.update(status='error', title='登録と違う Quest です',
+                   action='Quest の端末 ID を確認してください')
+        return row
+    portal = hb.get('visitorPortal')
+    required = ('listening', 'portalSessionId', 'tablets', 'lastRequest', 'appliedSeq',
+                'applyCount', 'received', 'lang', 'relief', 'pendingSeq', 'consumedSeq')
+    if (not isinstance(portal, dict) or portal.get('schema') != 1 or
+            any(key not in portal for key in required) or
+            not isinstance(portal['listening'], bool) or
+            not isinstance(portal['portalSessionId'], str) or not portal['portalSessionId'] or
+            not isinstance(portal['tablets'], list) or
+            any(not isinstance(portal[key], int) or isinstance(portal[key], bool)
+                for key in ('appliedSeq', 'applyCount', 'received', 'pendingSeq', 'consumedSeq')) or
+            not isinstance(portal['lang'], str) or not isinstance(portal['relief'], bool)):
+        row.update(title='タブレットの診断情報がありません',
+                   action='診断情報に対応した Quest アプリを確認してください')
+        return row
+    row.update(portalSessionId=portal['portalSessionId'], appliedSeq=portal['appliedSeq'],
+               applyCount=portal['applyCount'], received=portal['received'],
+               lang=portal['lang'], relief=portal['relief'])
+    if not portal['listening']:
+        row.update(status='error', portalStatus='error', title='タブレットの受付が停止しています',
+                   action='Quest の受付画面を確認してください')
+        return row
+    row['portalStatus'] = 'ok'
+    pages = []
+    for page in portal['tablets']:
+        if not isinstance(page, dict) or not isinstance(page.get('tabletSessionId'), str) or not page['tabletSessionId']:
+            continue
+        age = page.get('ageSec')
+        if isinstance(age, bool) or not isinstance(age, (int, float)) or not 0 <= age + hb_age <= 30:
+            continue
+        pages.append((page, age + hb_age))
+    row['activePages'] = len(pages)
+    if len(pages) == 1:
+        page, age = pages[0]
+        row.update(connectionStatus='ok', tabletSessionId=page['tabletSessionId'],
+                   tabletIp=page.get('ip'), ageSec=round(age, 1))
+    elif not pages:
+        row.update(title='タブレットの応答がありません',
+                   action='画面を手前に開いてください')
+        return row
+    else:
+        row.update(status='warning', connectionStatus='warning',
+                   title='複数のページが開いています', action='使用するページを一つだけ開いてください')
+        return row
+    request = portal['lastRequest']
+    if (request is None or not isinstance(request, dict) or
+            not isinstance(request.get('seq'), int) or isinstance(request.get('seq'), bool) or
+            request['seq'] <= 0):
+        row.update(title='設定の送信はまだ確認できません',
+                   action='タブレットから設定を送ってください')
+        return row
+    if (not isinstance(request.get('tabletSessionId'), str) or
+            not isinstance(request.get('lang'), str) or
+            not isinstance(request.get('relief'), bool)):
+        row.update(title='タブレットの診断情報がありません',
+                   action='診断情報に対応した Quest アプリを確認してください')
+        return row
+    row.update(sentSeq=request['seq'], requestedLang=request.get('lang'),
+               requestedRelief=request.get('relief'))
+    if request.get('tabletSessionId') != row['tabletSessionId']:
+        row.update(status='warning', reflectionStatus='warning',
+                   title='別のタブレットからの設定です',
+                   action='現在開いているページから設定を送り直してください')
+    elif portal['appliedSeq'] != request['seq']:
+        row.update(status='warning', reflectionStatus='warning',
+                   title='設定の反映を待っています',
+                   action='少し待ってから反映を確認してください')
+    elif (portal['lang'], portal['relief']) != (request['lang'], request['relief']):
+        row.update(status='warning', reflectionStatus='warning',
+                   title='設定の反映値が違います',
+                   action='タブレットから設定を送り直してください')
+    else:
+        row.update(status='ok', reflectionStatus='ok', title='タブレットの設定が反映されています',
+                   action='')
+    return row
+
+
 def status(devices, beacons, revision, show=None):
     global _cached, _cached_until, _cached_beacons, _checking
     now = time.time()
@@ -346,8 +456,9 @@ def status(devices, beacons, revision, show=None):
                 _cached['config']['revision'] == revision and _cached_beacons == beacon_key):
             cameras = _cached['cameras']
             quests = [_quest(q, devices, now) for q in FLEET['quests']]
+            tablets = [_tablet(q, devices, now) for q in FLEET['quests']]
             return {'ok': True, 'observedAt': _cached['observedAt'],
-                    'cameras': cameras, 'quests': quests,
+                    'cameras': cameras, 'quests': quests, 'tablets': tablets,
                     'issues': [dict(i, device=row['id']) for row in cameras + quests
                                for i in row['issues']], 'config': _cached['config']}
         _checking = True
@@ -358,7 +469,9 @@ def status(devices, beacons, revision, show=None):
         cameras = [f.result() for f in futures]
         now = time.time()
         quests = [_quest(q, devices, now) for q in FLEET['quests']]
+        tablets = [_tablet(q, devices, now) for q in FLEET['quests']]
         result = {'ok': True, 'observedAt': now, 'cameras': cameras, 'quests': quests,
+                  'tablets': tablets,
                   'issues': [dict(i, device=row['id']) for row in cameras + quests
                              for i in row['issues']],
                   'config': {'fixed': True, 'revision': revision}}

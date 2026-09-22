@@ -84,6 +84,8 @@ namespace FixedCamVr.Streaming
 
         private static readonly Regex LangRx = new Regex("\"lang\"\\s*:\\s*\"([A-Za-z]{2})\"", RegexOptions.Compiled);
         private static readonly Regex ReliefRx = new Regex("\"relief\"\\s*:\\s*(true|false)", RegexOptions.Compiled);
+        private static readonly Regex TabletIdRx = new Regex("\"tabletSessionId\"\\s*:\\s*\"([A-Za-z0-9_-]{1,128})\"", RegexOptions.Compiled);
+        private static readonly Regex PortalIdRx = new Regex("\"portalSessionId\"\\s*:\\s*\"([A-Za-z0-9_-]{1,128})\"", RegexOptions.Compiled);
 
         /// <summary>
         /// <c>POST /set</c> の本文を読む。<b>lang が ja / en / fr でなければ false</b>（打ち間違いを黙って既定にしない）。
@@ -106,13 +108,21 @@ namespace FixedCamVr.Streaming
             return true;
         }
 
+        public static bool TryParseTabletId(string body, out string tabletId)
+        {
+            Match match = TabletIdRx.Match(body ?? "");
+            tabletId = match.Success ? match.Groups[1].Value : "";
+            return match.Success;
+        }
+
         /// <summary>
         /// 道を選ぶ。<paramref name="statusJson"/> はこの機の実値（メインスレッドが組んだもの）、
         /// <paramref name="onSet"/> / <paramref name="onClear"/> はメインスレッドへ積む口（戻り値は受理番号）。
         /// </summary>
         public static Response Route(Request req, string body, string page, string statusJson,
-                                     Func<ShowLang, bool, int> onSet, Action onClear,
-                                     Func<string, byte[]?>? asset = null)
+                                     Func<ShowLang, bool, string, int> onSet, Action onClear,
+                                     Func<string, byte[]?>? asset = null, string portalSessionId = "",
+                                     Action<string>? onPulse = null)
         {
             string p = req.path;
             if (req.method == "GET" && p.StartsWith("/asset/"))
@@ -130,11 +140,26 @@ namespace FixedCamVr.Streaming
                 return new Response { status = 200, contentType = "text/html; charset=utf-8", body = page };
             if (req.method == "GET" && p == "/status")
                 return new Response { status = 200, contentType = "application/json; charset=utf-8", body = statusJson };
+            if (req.method == "POST" && p == "/tablet/pulse")
+            {
+                if (!TryParseTabletId(body, out string tabletId))
+                    return Json(400, "{\"ok\":false,\"error\":\"tabletSessionId required\"}");
+                onPulse?.Invoke(tabletId);
+                return Json(200, "{\"ok\":true}");
+            }
             if (req.method == "POST" && p == "/set")
             {
                 if (!TryParseSet(body, out ShowLang lang, out bool relief))
                     return Json(400, "{\"ok\":false,\"error\":\"lang は ja / en / fr\"}");
-                int seq = onSet(lang, relief);
+                bool hasTablet = TryParseTabletId(body, out string tabletId);
+                Match portalMatch = PortalIdRx.Match(body ?? "");
+                if (body.Contains("\"tabletSessionId\"") && !hasTablet ||
+                    body.Contains("\"portalSessionId\"") && !portalMatch.Success ||
+                    hasTablet != portalMatch.Success)
+                    return Json(400, "{\"ok\":false,\"error\":\"session ids required\"}");
+                if (portalMatch.Success && portalMatch.Groups[1].Value != portalSessionId)
+                    return Json(409, "{\"ok\":false,\"error\":\"portal session changed\"}");
+                int seq = onSet(lang, relief, tabletId);
                 return Json(200, "{\"ok\":true,\"seq\":" + seq + "}");
             }
             if (req.method == "POST" && p == "/clear")
@@ -188,7 +213,7 @@ namespace FixedCamVr.Streaming
             byte[] body = bin ? r.bytes! : Encoding.UTF8.GetBytes(r.body ?? "");
             int off = bin ? r.bytesOffset : 0;
             int cnt = bin ? r.bytesCount : body.Length;
-            string reason = r.status switch { 200 => "OK", 206 => "Partial Content", 400 => "Bad Request", 404 => "Not Found", _ => "Error" };
+            string reason = r.status switch { 200 => "OK", 206 => "Partial Content", 400 => "Bad Request", 404 => "Not Found", 409 => "Conflict", _ => "Error" };
             var sb = new StringBuilder(256);
             sb.Append("HTTP/1.1 ").Append(r.status).Append(' ').Append(reason).Append("\r\n");
             sb.Append("Content-Type: ").Append(r.contentType).Append("\r\n");

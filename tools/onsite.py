@@ -191,7 +191,7 @@ def load_fleet():
 
 
 def baked_content_matches_show(show: dict) -> bool:
-    """焼き込みで変換された素材 URL を揃え、設定本文を比較する。"""
+    """従来の本文比較。運用判定は素材 hash を含む --check を使う。"""
     try:
         with io.open(BAKED_SHOW_JSON, encoding="utf-8") as f:
             baked = json.load(f)
@@ -289,19 +289,15 @@ def check_desk(rows: Rows, show: dict):
         if False else run(["py", "-3.11", os.path.join(ROOT, "tools", "export-show-build.py"),
                            "--check"], timeout=60)
     line = (out.strip().splitlines() or [""])[0]
-    if baked_content_matches_show(show):
-        if rc == 0:
-            rows.add(sec, "ok", "本体に入れた設定", "保存済みの内容と一致しています")
-        elif rc == 4:
-            rows.add(sec, "warn", "本体に入れた設定", "内容は同じで版番号だけ違います",
-                     "操作画面なしで起動する機がある場合は設定を入れ直す", required=False)
-        else:
-            rows.add(sec, "skip", "本体に入れた設定", "設定の照合処理が完了しませんでした",
-                     "点検をやり直す")
-    else:
+    if rc == 0:
+        rows.add(sec, "ok", "本体に入れた設定", "素材を含む準備済みの内容と一致しています")
+    elif rc == 4:
         rows.add(sec, "ng", "本体に入れた設定",
-                 "保存済みの内容と違います" + (f"（{line}）" if line else ""),
-                 "py -3.11 tools/export-show-build.py で設定を入れ直す")
+                 "素材を含む準備済みの内容と違います" + (f"（{line}）" if line else ""),
+                 "設定を同梱し直して APK を焼き直し、Quest に入れ直す")
+    else:
+        rows.add(sec, "skip", "本体に入れた設定", "設定の照合処理が完了しませんでした",
+                 "点検をやり直す")
 
     ips = local_ipv4()
     if DESK_IP in ips:
@@ -585,7 +581,7 @@ def quest_rows(rows: Rows):
 
         # ⚠⚠ **繋がっている間は何も出ない失敗。** 上流の無いネットワークは Android に
         #    恒久無効化され、次に電源を入れた時だけ戻ってこない（展示の朝に全機が同時に踏む）。
-        g = wifi_guard(s)
+        g = wifi_guard(s, read_only=True)
         if g["disabled"]:
             rows.add(sec, "ng", tag + " の自動接続",
                      "Android が Wi-Fi を恒久的に無効化しています"
@@ -1020,13 +1016,14 @@ def configured_networks(dump: str) -> list:
     return nets
 
 
-def wifi_guard(serial: str) -> dict:
+def wifi_guard(serial: str, read_only: bool = False) -> dict:
     """その機の「自動接続を殺す仕掛け」を止め、いま殺されていないかを見る。
 
     `parsed` が False なら**判定できていない**（節が見つからなかった）。OK と読まないこと。
     """
-    for k in CAPTIVE_KEYS:
-        run(["adb", "-s", serial, "shell", f"settings put global {k} 0"], timeout=20)
+    if not read_only:
+        for k in CAPTIVE_KEYS:
+            run(["adb", "-s", serial, "shell", f"settings put global {k} 0"], timeout=20)
     _, got, _ = run(["adb", "-s", serial, "shell",
                      f"settings get global {CAPTIVE_KEYS[0]}"], timeout=20)
     _, dump, _ = run(["adb", "-s", serial, "shell", "dumpsys wifi"], timeout=60)

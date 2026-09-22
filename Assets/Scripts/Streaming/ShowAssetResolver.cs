@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,6 +7,7 @@ namespace FixedCamVr.Streaming
 {
     /// <summary>
     /// show.json のアセット URL を実機で開ける絶対 URL へ解決するヘルパ。
+    /// Player は sa:// だけを許す。Editor の著作プレビューでは卓の URL も解決する。
     ///
     /// - <c>sa://assets/&lt;file&gt;</c> → <c>StreamingAssets/show/assets/&lt;file&gt;</c>（APK 焼き込み経路）
     /// - <c>sa://&lt;rel&gt;</c>        → <c>StreamingAssets/show/&lt;rel&gt;</c>
@@ -22,18 +24,44 @@ namespace FixedCamVr.Streaming
         private const string SaPrefix = "sa://";
 
         /// <summary>
-        /// show.json のアセット URL（sa:// / 相対 / 絶対）を UnityWebRequest / VideoPlayer が
-        /// 開ける URL に解決する。server が null（オフライン焼き込み）の場合、相対 URL はそのまま返す。
+        /// show.json のアセット URL を UnityWebRequest / VideoPlayer が開ける URL に解決する。
+        /// Player では同梱以外を空文字にする。
         /// </summary>
         public static string Resolve(string url, ShowServerSource? server)
         {
             if (string.IsNullOrEmpty(url)) return "";
+            if (!Application.isEditor) return ResolveBakedOnly(url);
             if (url.StartsWith(SaAssetsPrefix))
                 return StreamingAssetsUri("show/assets/" + url.Substring(SaAssetsPrefix.Length));
             if (url.StartsWith(SaPrefix))
                 return StreamingAssetsUri("show/" + url.Substring(SaPrefix.Length));
             if (IsAbsolute(url)) return url;
             return server != null ? server.Absolute(url) : url;
+        }
+
+        /// <summary>Player の演出素材は show/ 配下の同梱ファイルだけを参照する。</summary>
+        public static string ResolveBakedOnly(string url)
+        {
+            if (string.IsNullOrEmpty(url) || !url.StartsWith(SaPrefix, StringComparison.Ordinal)) return "";
+            string encoded = url.Substring(SaPrefix.Length);
+            string relative;
+            try { relative = Uri.UnescapeDataString(encoded); }
+            catch (UriFormatException) { return ""; }
+            // 区切り文字の符号化や二重符号化は、検証後の再解釈で show/ の外へ出られる。
+            if (encoded.Split('/').Length != relative.Split('/').Length) return "";
+            if (string.IsNullOrEmpty(relative) || relative.StartsWith("/", System.StringComparison.Ordinal)
+                || relative.Contains("\\") || relative.Contains(":") || relative.Contains("?")
+                || relative.Contains("#") || relative.Contains("%")) return "";
+            string[] parts = relative.Split('/');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string part = parts[i];
+                if (part.Length == 0 || part == "." || part == "..") return "";
+                foreach (char c in part) if (char.IsControl(c)) return "";
+                try { parts[i] = Uri.EscapeDataString(part); }
+                catch (UriFormatException) { return ""; }
+            }
+            return StreamingAssetsUri("show/" + string.Join("/", parts));
         }
 
         /// <summary>

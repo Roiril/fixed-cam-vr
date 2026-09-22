@@ -19,7 +19,7 @@ namespace FixedCamVr.Streaming.Tests
             int sets = 0, clears = 0; ShowLang l = ShowLang.Ja; bool r = false;
             var req = new VisitorPortalLogic.Request { method = method, path = path, contentLength = body.Length };
             var res = VisitorPortalLogic.Route(req, body, "<html>page</html>", "{\"ok\":true,\"lang\":\"ja\"}",
-                (lang, relief) => { sets++; l = lang; r = relief; return 7; },
+                (lang, relief, tabletId) => { sets++; l = lang; r = relief; return 7; },
                 () => clears++);
             setCalls = sets; lastLang = l; lastRelief = r; clearCalls = clears;
             return res;
@@ -96,6 +96,38 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Post_Set_RejectsOldPortalSession_AndKeepsTabletAttribution()
+        {
+            string tablet = "";
+            var req = new VisitorPortalLogic.Request { method = "POST", path = "/set" };
+            var old = VisitorPortalLogic.Route(req,
+                "{\"lang\":\"ja\",\"tabletSessionId\":\"page-a\",\"portalSessionId\":\"old\"}",
+                "", "{}", (lang, relief, id) => { tablet = id; return 1; }, () => { },
+                portalSessionId: "current");
+            Assert.AreEqual(409, old.status);
+            Assert.AreEqual("", tablet);
+
+            var current = VisitorPortalLogic.Route(req,
+                "{\"lang\":\"ja\",\"tabletSessionId\":\"page-a\",\"portalSessionId\":\"current\"}",
+                "", "{}", (lang, relief, id) => { tablet = id; return 2; }, () => { },
+                portalSessionId: "current");
+            Assert.AreEqual(200, current.status);
+            Assert.AreEqual("page-a", tablet);
+        }
+
+        [Test]
+        public void Post_Pulse_RequiresTabletId()
+        {
+            string tablet = "";
+            var req = new VisitorPortalLogic.Request { method = "POST", path = "/tablet/pulse" };
+            Assert.AreEqual(400, VisitorPortalLogic.Route(req, "{}", "", "{}",
+                (lang, relief, id) => 1, () => { }, onPulse: id => tablet = id).status);
+            Assert.AreEqual(200, VisitorPortalLogic.Route(req, "{\"tabletSessionId\":\"page-a\"}", "", "{}",
+                (lang, relief, id) => 1, () => { }, onPulse: id => tablet = id).status);
+            Assert.AreEqual("page-a", tablet);
+        }
+
+        [Test]
         public void Post_Clear_QueuesAClear()
         {
             var res = Route("POST", "/clear", "", out int sets, out _, out _, out int clears);
@@ -124,7 +156,7 @@ namespace FixedCamVr.Streaming.Tests
         private static VisitorPortalLogic.Response RouteAsset(string path, long rangeStart, long rangeEnd, byte[]? data)
         {
             var req = new VisitorPortalLogic.Request { method = "GET", path = path, rangeStart = rangeStart, rangeEnd = rangeEnd };
-            return VisitorPortalLogic.Route(req, "", "<html>", "{}", (l, r) => 1, () => { }, (name) => name == "doctor.jpg" ? data : null);
+            return VisitorPortalLogic.Route(req, "", "<html>", "{}", (l, r, id) => 1, () => { }, (name) => name == "doctor.jpg" ? data : null);
         }
 
         [Test]

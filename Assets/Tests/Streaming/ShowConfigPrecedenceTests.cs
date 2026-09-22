@@ -336,6 +336,33 @@ namespace FixedCamVr.Streaming.Tests
         private static bool TimelineActive(ShowControlClient show)
             => (bool)ShowT.GetProperty("TimelineActive", InstBF)!.GetValue(show)!;
 
+        [Test]
+        public void BakedMode_IgnoresDeskStateAndPreviousCache()
+        {
+            var show = MakeShow();
+            SetF(show, "_bakedOnlyOverride", true);
+            InvokeM(show, "ApplyBaked", MakeState(1,
+                cameras: MakeCams(MakeCam("A", host: "192.0.2.10")),
+                layout: MakeLayout(2)));
+            Assert.That(show.IsCameraPinned(0), Is.True, "Player では同梱の固定 IP を発見で上書きしない");
+            object cfg = Activator.CreateInstance(CachedT)!;
+            CachedT.GetField("cameras")!.SetValue(cfg, MakeCams(MakeCam("A", host: "192.0.2.20")));
+            CachedT.GetField("buildGuid")!.SetValue(cfg, Application.buildGUID ?? "");
+            File.WriteAllText(CachePath(show), JsonUtility.ToJson(cfg));
+
+            InvokeM(show, "LoadAndApplyCache");
+            InvokeM(show, "Apply", MakeState(99,
+                cameras: MakeCams(MakeCam("A", host: "192.0.2.30")),
+                layout: MakeLayout(99)));
+            InvokeM(show, "SaveCache");
+
+            var cams = (Array)GetF(show, "_cameras");
+            Assert.That(CamT.GetField("host")!.GetValue(cams.GetValue(0)), Is.EqualTo("192.0.2.10"));
+            Assert.That(((ShowLayoutDef)GetF(show, "_layout")).rev, Is.EqualTo(2));
+            Assert.That((int)GetF(show, "_rev"), Is.EqualTo(-1));
+            Assert.That(File.ReadAllText(CachePath(show)), Is.EqualTo(JsonUtility.ToJson(cfg)));
+        }
+
         // ---- 8) runEpoch 既知値初期化：ApplyBaked / LoadAndApplyCache は RunReset を発火しない ----
 
         [Test]

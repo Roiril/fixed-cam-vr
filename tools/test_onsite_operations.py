@@ -278,25 +278,24 @@ class OnsiteOperationsTests(unittest.TestCase):
         self.assertTrue(any(r["label"] == "インターネット接続" and
                             r["state"] == "warn" and not r["required"] for r in rows.items))
 
-    def test_baked_revision_only_warning_is_optional_but_content_change_is_ng(self):
+    def test_baked_content_mismatch_is_required_failure(self):
         import operations
 
         disk = {"rev": 1267, "cameras": [{"id": cid} for cid in "ABC"],
                 "control": {}, "timeline": {"rev": 46}}
         live = copy.deepcopy(disk)
         operations.normalize_show(live)
-        line = "✗ 焼き込みが卓と違う 焼き込み rev=1263 timeline.rev=46 → 卓 rev=1267 timeline.rev=46"
-        for same, state in ((True, "warn"), (False, "ng")):
+        line = "✗ 焼き込みが卓と違う contentId"
+        for code, state in ((0, "ok"), (4, "ng")):
             rows = onsite.Rows()
             with mock.patch.object(onsite, "listening_pids", return_value=["12"]), \
                     mock.patch.object(onsite, "get_json", return_value=live), \
-                    mock.patch.object(onsite, "run", return_value=(4, line, "")), \
-                    mock.patch.object(onsite, "local_ipv4", return_value=[onsite.DESK_IP]), \
-                    mock.patch.object(onsite, "baked_content_matches_show", return_value=same):
+                    mock.patch.object(onsite, "run", return_value=(code, line, "")), \
+                    mock.patch.object(onsite, "local_ipv4", return_value=[onsite.DESK_IP]):
                 onsite.check_desk(rows, disk)
             baked_row = next(r for r in rows.items if r["label"] == "本体に入れた設定")
             self.assertEqual(baked_row["state"], state)
-            self.assertEqual(baked_row["required"], not same)
+            self.assertTrue(baked_row["required"])
 
 
 if __name__ == "__main__":

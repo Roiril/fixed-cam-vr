@@ -44,6 +44,7 @@ namespace FixedCamVr.Streaming
         private bool _incomplete;
         private float _retryAt;
         private int _generation;   // リストが変わるたびに増える（走行中の Sync の結果を捨てる）
+        private string _cacheDir = "";
 
         /// <summary>端末に用意できた（デコード済みの）枚数。ファイル名順。</summary>
         public int ReadyCount => _ready.Count;
@@ -56,7 +57,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Texture2D[] Snapshot() => _ready.ToArray();
 
-        private static string CacheDir => Path.Combine(Application.persistentDataPath, "eyejack");
+        private string CacheDir => _cacheDir;
 
         /// <summary>
         /// 毎フレーム呼んでよい（変更が無ければ int 比較 1 回で返る）。
@@ -82,6 +83,10 @@ namespace FixedCamVr.Streaming
 
             _seenRev = show.EyeJackPhotosRev;
             _urls = show.ResolveEyeJackPhotoUrls();
+            _cacheDir = Application.isEditor
+                ? Path.Combine(Application.persistentDataPath, "eyejack")
+                : Path.Combine(Application.persistentDataPath, "eyejack", show.ContentVerified ? show.ContentId : "unverified");
+            if (!Application.isEditor && !show.ContentVerified) _urls = Array.Empty<string>();
             _retryAt = now + RetrySec;
             _ = SyncAsync(_cts.Token);
         }
@@ -228,7 +233,7 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>いまのリストに無いキャッシュを消す（当日撮り直した分だけが残るように）。</summary>
-        private static void Prune(HashSet<string> keep)
+        private void Prune(HashSet<string> keep)
         {
             try
             {

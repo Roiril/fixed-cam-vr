@@ -5,6 +5,12 @@ description: 廻リ視 / TableDuo / MyCobotHand の APK を Unity CLI で焼い�
 
 # Quest へのビルド & インストール
 
+廻リ視の現行 Player は事前同梱のみ（2026-09-22）。この文書中の古いライブ反映・設定キャッシュの記録は現行 Player に適用しない。
+export は使用中の素材を検証し manifest を作る。Unity のビルド前検査は本文と素材のハッシュ不一致で停止する。
+成功したビルドの `Builds/mawarimi.apk.content.json` も残す。運用卓は APK 自体のハッシュと buildGuid を使って導入版を照合する。
+記録は `BuildVariants` の `BuildPlayer` 成功確定後に作る。`IPostprocessBuildWithReport` 内では `result` が未確定のため作らない。
+素材を更新したら再ビルドして両 Quest に入れる。ビルド後の設定変更は博士 UI の言語とホラー軽減だけ。
+
 **`tools\unity.ps1` が Unity CLI を叩く唯一の場所。** ここ以外から `unity.exe` を呼ばない。
 
 ```powershell

@@ -605,6 +605,12 @@
   const BRIEFING_LANGS = Object.keys(LANG_NAME);
   const $ = (id) => document.getElementById(id);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const tabletSessionId = (() => {
+    const bytes = new Uint8Array(16);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  })();
   const state = {
     lang: 'ja',
     relief: false,
@@ -643,6 +649,7 @@
   let titleTimer = null;
   let pollInFlight = null;
   let pollController = null;
+  let sendGeneration = 0;
   let briefingController = null;
   let briefingTimer = null;
   let briefingMedia = null;
@@ -778,6 +785,7 @@
   }
 
   function resetVisitorSession(restarted = false) {
+    sendGeneration++;
     cancelVisualChange();
     if (titleTimer) clearTimeout(titleTimer);
     titleTimer = null;
@@ -1442,7 +1450,9 @@
     if (state.connection !== 'online' || !state.status) return 'noserver';
     const actual = state.status;
     const sent = state.sent;
-    if (sent && sent.seq > 0 && actual.lang === sent.lang && actual.relief === sent.relief && actual.appliedSeq >= sent.seq) return 'applied';
+    if (sent && sent.seq > 0 && actual.portalSessionId === sent.portalSessionId
+      && actual.lastRequest?.tabletSessionId === tabletSessionId && actual.lastRequest.seq === sent.seq
+      && actual.lang === sent.lang && actual.relief === sent.relief && actual.appliedSeq === sent.seq) return 'applied';
     if (actual.phase === 'RUN' || actual.phase === 'END') return 'later';
     return 'waiting';
   }
@@ -1516,9 +1526,12 @@
   function observeVisitorCycle(status) {
     if (!state.sent) return;
     const applied = state.sent.seq > 0
+      && status.portalSessionId === state.sent.portalSessionId
+      && status.lastRequest?.tabletSessionId === tabletSessionId
+      && status.lastRequest.seq === state.sent.seq
       && status.lang === state.sent.lang
       && status.relief === state.sent.relief
-      && status.appliedSeq >= state.sent.seq;
+      && status.appliedSeq === state.sent.seq;
     if (applied) state.appliedSeen = true;
     if (state.appliedSeen && status.pending == null && status.titleStage !== 'Wait') {
       state.leftWaitAfterApplied = true;
@@ -1547,6 +1560,11 @@
       && validSequence(status.appliedSeq)
       && validSequence(status.applyCount)
       && validSequence(status.received)
+      && typeof status.portalSessionId === 'string'
+      && status.portalSessionId.length > 0
+      && (status.lastRequest == null ||
+        (status.lastRequest.tabletSessionId != null
+          && validSequence(status.lastRequest.seq, false)))
       && pendingValid;
   }
 
@@ -1572,9 +1590,16 @@
 
   async function send() {
     if (state.ui === 'sending') return;
+    if (!state.status?.portalSessionId || state.connection !== 'online') await poll();
+    if (!state.status?.portalSessionId || state.connection !== 'online') {
+      state.ui = 'fail';
+      render();
+      return;
+    }
     if (pollController) pollController.abort();
     resetBriefingSession();
-    state.sent = { lang: state.lang, relief: state.relief, seq: 0 };
+    const generation = ++sendGeneration;
+    state.sent = { lang: state.lang, relief: state.relief, seq: 0, portalSessionId: state.status.portalSessionId };
     state.restartMessage = false;
     state.appliedSeen = false;
     state.leftWaitAfterApplied = false;
@@ -1582,13 +1607,16 @@
     setSurface('result', $('resultTitle'));
     render();
     try {
-      const response = await post('./set', { lang: state.sent.lang, relief: state.sent.relief });
+      const response = await post('./set', { lang: state.sent.lang, relief: state.sent.relief,
+        tabletSessionId, portalSessionId: state.sent.portalSessionId });
+      if (generation !== sendGeneration) return;
       if (response.ok !== true || !validSequence(response.seq, false)) throw new Error('invalid set response');
       state.sent.seq = response.seq;
       state.ui = 'sent';
       if (pollInFlight) await pollInFlight;
       await poll();
     } catch (error) {
+      if (generation !== sendGeneration) return;
       console.warn('set failed', error);
       if (error.name === 'AbortError' || error instanceof TypeError) state.connection = 'offline';
       state.ui = 'fail';
@@ -1598,13 +1626,13 @@
 
   function poll() {
     if (pollInFlight) return pollInFlight;
-    if (state.ui === 'sending') return Promise.resolve();
     pollController = new AbortController();
     pollInFlight = (async () => {
       try {
         const status = await fetchWithTimeout('./status', { cache: 'no-store' }, pollController);
         if (!validateStatus(status)) throw new Error('invalid status response');
-        if (state.lastReceived != null && status.received < state.lastReceived) {
+        if (state.status?.portalSessionId && status.portalSessionId !== state.status.portalSessionId ||
+            state.lastReceived != null && status.received < state.lastReceived) {
           resetVisitorSession(true);
         }
         state.lastReceived = status.received;
@@ -1624,6 +1652,11 @@
       pollController = null;
     });
     return pollInFlight;
+  }
+
+  async function pulse() {
+    try { await post('./tablet/pulse', { tabletSessionId }); }
+    catch (error) { console.warn('tablet pulse failed', error); }
   }
 
   $('settingsForm').addEventListener('submit', (event) => {
@@ -1791,7 +1824,9 @@
   render();
   loadBriefingData();
   poll();
+  pulse();
   setInterval(poll, 2000);
+  setInterval(pulse, 5000);
 })();
 </script>
 </body>

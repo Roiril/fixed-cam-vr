@@ -145,10 +145,76 @@ class OperationsTests(unittest.TestCase):
                 self.assertEqual([c['id'] for c in result['cameras']], ['A', 'B', 'C'])
                 self.assertEqual([c['status'] for c in result['cameras']], ['ok', 'error', 'error'])
                 self.assertEqual(len(result['quests']), 2)
+                self.assertEqual([t['id'] for t in result['tablets']], ['alpha', 'beta'])
                 self.assertEqual(result['config']['revision'], 8)
                 fresh = ops.status({}, [{'id': 'A', 'uuid': 'other'},
                                         {'id': 'A', 'uuid': server.uuid}], 8)
                 self.assertEqual(fresh['cameras'][0]['code'], 'duplicate_id')
+
+    def test_tablet_connection_and_reflection_from_quest_heartbeat(self):
+        now = time.time()
+        fixed = ops.FLEET['quests'][0]
+        portal = {'schema': 1, 'listening': True, 'portalSessionId': 'quest-run',
+                  'tablets': [{'tabletSessionId': 'page-1', 'ip': '192.168.10.50', 'ageSec': 2}],
+                  'lastRequest': {'tabletSessionId': 'page-1', 'seq': 4, 'lang': 'en',
+                                  'relief': True},
+                  'appliedSeq': 4, 'applyCount': 3, 'received': 4,
+                  'lang': 'en', 'relief': True, 'pendingSeq': 4, 'consumedSeq': 4}
+        heartbeat = {'localIp': fixed['host'], 'at': now - 3, 'visitorPortal': portal}
+        devices = {'unregistered-id': heartbeat}
+
+        def check(expected, changed=None, at=None):
+            current = json.loads(json.dumps(heartbeat))
+            if changed:
+                current['visitorPortal'].update(changed)
+            if at is not None:
+                current['at'] = at
+            return ops._tablet(fixed, {'unregistered-id': current}, now)
+
+        row = check('ok')
+        self.assertEqual((row['status'], row['portalStatus'], row['connectionStatus'],
+                          row['reflectionStatus']), ('ok', 'ok', 'ok', 'ok'))
+        self.assertEqual((row['portalSessionId'], row['tabletSessionId'], row['tabletIp']),
+                         ('quest-run', 'page-1', '192.168.10.50'))
+        self.assertEqual((row['ageSec'], row['sentSeq'], row['appliedSeq'], row['received'],
+                          row['applyCount'], row['requestedLang'], row['requestedRelief'],
+                          row['lang'], row['relief'], row['activePages']),
+                         (5, 4, 4, 4, 3, 'en', True, 'en', True, 1))
+        self.assertEqual(check('unknown', {'lastRequest': None})['title'],
+                         '設定の送信はまだ確認できません')
+        self.assertEqual(check('unknown', at=now - 7)['status'], 'unknown')
+        self.assertEqual(check('unknown', at=now + 1)['status'], 'unknown')
+        self.assertEqual(check('warning', {'tablets': portal['tablets'] + [
+            {'tabletSessionId': 'page-2', 'ip': '192.168.10.51', 'ageSec': 1}]})['title'],
+            '複数のページが開いています')
+        self.assertEqual(check('warning', {'lastRequest': dict(portal['lastRequest'],
+            tabletSessionId='page-2')})['reflectionStatus'], 'warning')
+        self.assertEqual(check('warning', {'lang': 'ja'})['reflectionStatus'], 'warning')
+        self.assertEqual(check('warning', {'appliedSeq': 3, 'pendingSeq': 4})['reflectionStatus'],
+                         'warning')
+        self.assertEqual(check('unknown', {'tablets': []})['action'],
+                         '画面を手前に開いてください')
+        self.assertEqual(check('unknown', {'tablets': [dict(portal['tablets'][0], ageSec=29)]})[
+            'activePages'], 0)
+        self.assertEqual(check('unknown', {'schema': 0})['portalStatus'], 'unknown')
+        self.assertEqual(check('unknown', {'received': None})['portalStatus'], 'unknown')
+        self.assertEqual(check('error', {'listening': False})['portalStatus'], 'error')
+        collision = dict(devices, other=heartbeat)
+        self.assertEqual(ops._tablet(fixed, collision, now)['status'], 'error')
+        with patch.dict(ops.FLEET, {'quests': [dict(fixed, deviceId='expected')]}):
+            self.assertEqual(ops._tablet(ops.FLEET['quests'][0], devices, now)['status'], 'error')
+
+    def test_status_refreshes_tablets_during_camera_cache(self):
+        now = time.time()
+        fixed = ops.FLEET['quests'][0]
+        with patch.object(ops, '_camera', return_value={'id': 'A', 'issues': []}), \
+             patch.dict(ops.FLEET, {'cameras': [{'id': 'A', 'host': 'unused'}]}):
+            ops.invalidate()
+            first = ops.status({}, [], 943)
+            self.assertEqual([row['id'] for row in first['tablets']], ['alpha', 'beta'])
+            second = ops.status({'test': {'localIp': fixed['host'], 'at': now,
+                                          'visitorPortal': {'schema': 0}}}, [], 943)
+            self.assertEqual(second['tablets'][0]['title'], 'タブレットの診断情報がありません')
 
     def test_fixed_show_guards(self):
         show = {'rev': 10, 'cameras': [{'id': 'A', 'host': 'wrong', 'pose': {'x': 1}},
@@ -201,6 +267,12 @@ class OperationsTests(unittest.TestCase):
             thread = threading.Thread(target=http.serve_forever, daemon=True)
             thread.start()
             base = f'http://127.0.0.1:{http.server_port}'
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                urllib.request.urlopen(urllib.request.Request(
+                    base + '/state', b'{}', {'Content-Type': 'application/json'}))
+            self.assertEqual(error.exception.code, 403)
+            authoring = patch.dict(os.environ, {'FIXEDCAM_AUTHORING': '1'})
+            authoring.start()
             try:
                 with urllib.request.urlopen(base + '/state') as response:
                     state = json.load(response)
@@ -235,6 +307,7 @@ class OperationsTests(unittest.TestCase):
                 self.assertEqual(saved['post']['exposure'], 1)
                 self.assertEqual(saved['cameras'][0]['host'], '192.168.10.21')
             finally:
+                authoring.stop()
                 http.shutdown()
                 http.server_close()
 

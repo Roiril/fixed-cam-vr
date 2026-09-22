@@ -10,6 +10,17 @@ metadata:
 
 # タブレットの設定（visitor.html）を触る前に
 
+## 運用卓での観測（2026-09-22）
+
+博士 UI はページを開くたびに tabletSessionId を作る。5 秒ごとの `/tablet/pulse` だけを接続証拠にする。
+PC が `/status` を読むことはタブレットの応答に数えない。30 秒以内のページが複数あれば要確認。
+Quest は portalSessionId を起動ごとに変更する。古い起動に向けた `/set` は 409 で拒否する。
+反映は同一起動・同一ページ・同じ受理番号で照合する。`appliedSeq == seq` と言語・軽減の実値一致が必要。
+`ShowControlClient` の heartbeat に `visitorPortal` を載せる。卓の `/ops/status.tablets` はこれを読むだけ。
+Quest の応答が 6 秒以上古ければ未確認。ページの経過時間には Quest の応答後に経った秒数も加える。
+通常の運用卓に設定送信ボタンは置かない。両タブレットから実際に送って反映を確認する。
+タブレットの物理的な所在はブラウザの応答だけでは保証しない。固定 URL と端末ラベルも設営時に見比べる。
+
 0198により `scene.image === 'doctor.jpg'` の場面は博士を中央に表示する。章名は左上だけに表示。設定へ戻る際は `is-doctor-only` を解除する。
 
 0197によりタイトルと設定の背景は右側に日本人形一体の生成画像へ変更。`entrance-doll-v1.png.bytes` を共有する。博士の画像・動画は `.stage.is-briefing` のときだけ表示する。メディア停止処理が hidden を解除しても設定画面へ博士が戻らないようCSSで制限する。

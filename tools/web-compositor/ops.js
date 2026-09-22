@@ -1,10 +1,11 @@
-import {CAMERA_IDS, QUEST_IDS, MANUAL_CHECKS, isFresh, signature, validChecks, summarize} from './ops-model.js';
+import {CAMERA_IDS, QUEST_IDS, MANUAL_CHECKS, isFresh, signature, contentSignature, summarizeContent, validChecks, summarize} from './ops-model.js';
 
 const $ = id => document.getElementById(id);
 const demo = new URLSearchParams(location.search).get('demo');
 const labels = {ok:'確認済み', warning:'要確認', error:'対処が必要', unknown:'未確認'};
 const storageKey = demo ? 'mawarimi-ops-demo' : 'mawarimi-ops-checks-v1';
 let snapshot = null, failed = false, busy = false, pollTimer, record = null, deepResult = null;
+let contentSnapshot = null, contentFailed = false, contentBusy = false, contentTimer;
 const cameraViews = new Map(), questViews = new Map();
 try { record = JSON.parse(sessionStorage.getItem(storageKey)); } catch {}
 
@@ -66,8 +67,7 @@ for (const [i,id] of QUEST_IDS.entries()) {
   state(badge,'unknown'); top.append(name,badge);
   const body = el('div','quest-body'), text = el('div'), title = el('div','device-title','応答を待っています'), address = el('p','mono',`192.168.10.${31+i}`), detail = el('p','note');
   text.append(title,address,detail);
-  const link = el('a','portal-link','受付ページ'); link.href = `http://192.168.10.${31+i}:8090/`; link.target = '_blank'; link.rel = 'noopener';
-  link.setAttribute('aria-label',`Quest ${i ? 'β' : 'α'} の受付ページを別タブで開く`);
+  const link = el('span','portal-link','博士 UI :8090');
   body.append(text,link); card.append(top,body); $('quests').append(card); questViews.set(id,{badge,title,address,detail,link});
 }
 
@@ -81,7 +81,7 @@ for (const check of MANUAL_CHECKS) {
 }
 
 function render() {
-  const checks = validChecks(record,snapshot), s = summarize(snapshot,checks,Date.now(),failed,deepResult);
+  const checks = validChecks(record,snapshot), s = summarize(snapshot,checks,Date.now(),failed,deepResult,contentFailed?null:contentSnapshot);
   $('overview-title').textContent = s.title; state($('overall-state'),s.status);
   $('online-count').textContent = s.observed; $('error-count').textContent = s.fresh ? s.blockers : '—';
   $('unknown-count').textContent = s.unknown; $('manual-count').textContent = s.pending;
@@ -90,7 +90,9 @@ function render() {
   $('overview-detail').textContent = !s.fresh ? 'サーバーの起動と PC のネットワークを確認してください。古い機器の値は判定に使っていません。' :
     s.blockers ? '該当する機器の「次にすること」から対処します。担当の入れ替えは必要ありません。' :
     s.ready ? '自動で調べられる状態と装着して確認した結果がそろっています。動作中も接続を確認します。' :
-    '機器ごとの注意と開場前の確認を済ませます。映像の到着だけでは音や合成位置の正しさは分かりません。';
+    '演出の同梱と当日の接続を別々に確認します。最後に装着して映像と音を確かめます。';
+  renderContent();
+  renderTablets(s.fresh);
   $('connection-error').hidden = !failed;
   if (failed) $('connection-error').textContent = '状態を取得できません。この PC の点検サーバーとネットワークを確認してください。接続が戻れば自動で確認を再開します。';
   if (snapshot?.observedAt) {
@@ -139,6 +141,75 @@ function render() {
   $('download').disabled = !snapshot;
 }
 
+function renderContent() {
+  const s = summarizeContent(contentSnapshot,Date.now(),contentFailed), c = contentSnapshot;
+  $('content-summary').textContent = s.title;
+  $('content-observed').textContent = c?.observedAt ? `${Math.max(0,Math.floor(Date.now()/1000-c.observedAt))} 秒前に照合${s.fresh?'':' / 現在は未確認'}` : '最初の照合を待っています。';
+  $('content-stages').replaceChildren(...[
+    ['preparation','1 / 素材をそろえる'],['bundle','2 / ビルドへ入れる'],['apk','3 / APK を作る'],
+  ].map(([key,label]) => {
+    const d = s.fresh ? c?.[key] : null, box = el('article','content-stage'), badge = el('span','state');
+    state(badge,d?.status || 'unknown');box.append(el('p','eyebrow',label),badge,el('h3','',d?.title || 'まだ確認できていません'),
+      el('p','',d?.action || (d?.status==='ok'?'内容を照合しました。':'照合結果を待っています。機器の接続確認は下で続けられます。')));
+    if(d?.contentId)box.append(el('p','content-id',`演出版 ${d.contentId.slice(0,12)}`));
+    if(d?.buildGuid)box.append(el('p','content-id',`アプリ版 ${d.buildGuid.replaceAll('-','').slice(0,12)}`));
+    return box;
+  }));
+  const effects = c?.effects || [];
+  $('effect-list').replaceChildren(...(effects.length ? effects.map(d => {
+    const row = el('article','effect-row'), title = el('div'), progress = el('div','effect-progress');
+    title.append(el('h3','',d.name || d.id),el('p','note',s.fresh ? d.title || `${d.assetCount ?? '—'} 個の素材を使用` : '現在の準備状態は未確認です'));
+    for(const [name,key,yes,no] of [['素材','sourceReady','準備済み','要準備'],['ビルド用','bundled','同梱済み','要更新'],['APK','inApk','同梱済み','要ビルド']]) {
+      const cell = el('div','effect-step',name), badge = el('span','state'), value = s.fresh ? d[key] : null;
+      state(badge,value===true?'ok':value===false?'warning':'unknown');badge.textContent=value===true?yes:value===false?no:'未確認';cell.append(badge);progress.append(cell);
+    }
+    row.append(title,progress);if(s.fresh&&d.action)row.append(el('p','effect-action',d.action));return row;
+  }) : [el('p','note','使用する演出の一覧はまだ確認できていません。')]));
+  $('content-quests').replaceChildren(...QUEST_IDS.map((id,i) => {
+    const d = s.fresh ? c?.quests?.find(q=>q.id===id) : null, box=el('article','quest-card content-quest'),badge=el('span','state');
+    state(badge,d?.status||'unknown');box.append(el('h3','',`Quest ${i?'β':'α'}`),badge,el('p','',d?.title||'動いている演出版は未確認です'),
+      el('p','note',d?.action||(d?.status==='ok'?'装着して映像と音を確認します。':'同梱したアプリを起動すると照合できます。')));
+    if(d?.contentId)box.append(el('p','content-id',`演出版 ${d.contentId.slice(0,12)}`));
+    if(d?.buildGuid)box.append(el('p','content-id',`アプリ版 ${d.buildGuid.replaceAll('-','').slice(0,12)}`));return box;
+  }));
+}
+
+function renderTablets(fresh) {
+  const languages={ja:'日本語',en:'English',fr:'Français'};
+  const selection=(lang,relief)=>languages[lang] && typeof relief==='boolean' ? `${languages[lang]} / 軽減 ${relief?'あり':'なし'}` : '未確認';
+  $('tablets').replaceChildren(...QUEST_IDS.map((id,i)=>{
+    const t=fresh?snapshot?.tablets?.find(t=>t.id===id):null;
+    const card=el('article','quest-card tablet-card'),top=el('div','quest-top'),badge=el('span','state');
+    state(badge,t?.status||'unknown');top.append(el('h3','',`博士タブレット → Quest ${i?'β':'α'}`),badge);
+    const path=el('p','mono',`http://192.168.10.${31+i}:8090/`);
+    const stages=el('div','tablet-stages');
+    for(const [label,key] of [['Quest の受付','portalStatus'],['タブレットの応答','connectionStatus'],['設定の反映','reflectionStatus']]){
+      const row=el('div'),b=el('span','state');state(b,t?.[key]||'unknown');row.append(el('span','',label),b);stages.append(row);
+    }
+    card.append(top,path,stages,el('p','device-title',t?.title||'タブレットの状態は未確認です'));
+    const values=el('dl','tablet-values');
+    for(const [label,value] of [['タブレットから送った設定',selection(t?.requestedLang,t?.requestedRelief)],['Quest の現在の設定',selection(t?.lang,t?.relief)]]){
+      const row=el('div');row.append(el('dt','',label),el('dd','',value));values.append(row);
+    }
+    card.append(values,el('p','note',t?`受信 ${num(t.received,' 回')} / 反映 ${num(t.applyCount,' 回')} / 開いているページ ${num(t.activePages,' 個')}`:'送信と反映の回数も Quest から確認します。'));
+    const next=el('div','tablet-next');next.append(el('p','next-label','次にすること'),el('p','',t?.action||(t?.status==='ok'?'このページを開いたままにしてください。次の体験者の設定もここで確認できます。':'Quest を起動します。対応するタブレットで上のアドレスを開いてください。')));card.append(next);
+    if(t?.tabletIp)card.append(el('p','note',`タブレット ${t.tabletIp} / ${num(t.ageSec,' 秒前',1)}に応答`));
+    return card;
+  }));
+}
+
+async function pollContent() {
+  if(contentBusy || document.hidden)return;
+  clearTimeout(contentTimer);contentBusy=true;
+  try {
+    const next=demo?demoContent(demo):await request('/ops/content',{timeout:90000});
+    if(!next.ok || !Array.isArray(next.effects) || !Array.isArray(next.quests))throw new Error('演出の照合結果がありません');
+    contentSnapshot=next;contentFailed=false;
+    if(snapshot)snapshot.contentSignature=contentSignature(next);
+  } catch {contentFailed=true;}
+  finally {contentBusy=false;render();contentTimer=setTimeout(pollContent,15000);}
+}
+
 async function request(url,{method='GET',body,timeout=15000}={}) {
   const controller = new AbortController(), timer = setTimeout(()=>controller.abort(),timeout);
   try {
@@ -153,7 +224,7 @@ async function poll() {
   try {
     const next = demo ? demoSnapshot(demo) : await request('/ops/status');
     if (!next.ok || !Array.isArray(next.cameras) || !Array.isArray(next.quests)) throw new Error('診断結果の形式が違います');
-    snapshot=next;failed=false;
+    snapshot=next;snapshot.contentSignature=contentSignature(contentSnapshot);failed=false;
     const s=summarize(snapshot,{},Date.now());
     if (!s.fresh || s.blockers || s.unknown) { record=null;saveRecord();if(deepResult)deepResult.signature=''; }
   } catch { failed=true; record=null;saveRecord();if(deepResult)deepResult.signature=''; }
@@ -192,11 +263,11 @@ $('deep-check').addEventListener('click',async()=>{
   catch(e){$('deep-message').textContent=`点検を完了できません。${e.name==='AbortError'?'時間内に応答がありませんでした。':e.message}`;}
   finally{button.disabled=false;button.textContent='詳しい点検を実行';}
 });
-$('refresh').addEventListener('click',poll);
+$('refresh').addEventListener('click',()=>{poll();pollContent();});
 $('reset-checks').addEventListener('click',()=>{record=null;saveRecord();render();});
 $('download').addEventListener('click',()=>{
   // Download the allowlisted diagnosis only. Never fetch show.json, auth, or raw heartbeat.
-  const data={savedAt:new Date().toISOString(),example:!!demo,diagnosis:snapshot,manual:validChecks(record,snapshot),detailedCheck:deepResult};
+  const data={savedAt:new Date().toISOString(),example:!!demo,diagnosis:snapshot,content:contentSnapshot,contentCurrent:!contentFailed&&summarizeContent(contentSnapshot).fresh,manual:validChecks(record,snapshot),detailedCheck:deepResult};
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
   const a=el('a');a.href=url;a.download=`mawarimi-check-${new Date().toISOString().replaceAll(':','-')}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
@@ -205,7 +276,7 @@ let theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 try{theme=localStorage.getItem('mawarimi-ops-theme')||theme;}catch{}
 applyTheme(theme);
 $('theme').addEventListener('click',()=>{theme=theme==='dark'?'light':'dark';applyTheme(theme);try{localStorage.setItem('mawarimi-ops-theme',theme);}catch{}});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();else for(const v of cameraViews.values())closePreview(v);});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){poll();pollContent();}else for(const v of cameraViews.values())closePreview(v);});
 setInterval(()=>{if(!document.hidden)render();},1000);
 
 function demoSnapshot(mode) {
@@ -213,7 +284,18 @@ function demoSnapshot(mode) {
   if(mode!=='ready')Object.assign(cameras[1],{status:'error',title:'応答はありますが映像が止まっています',action:'カメラ B の画面を点けて配信アプリを開いてください。改善しなければこの端末を起こし直します。',stream:{ok:false,frames:0}});
   const quests=QUEST_IDS.map((id,i)=>({id,label:`Quest ${i?'β':'α'}`,host:`192.168.10.${31+i}`,deviceId:`example-${id}`,status:'ok',title:'Quest から応答があります',action:'受付ページが起動しています。装着して映像と音を確認してください。',ageSec:1.2,visitorPort:8090,issues:[]}));
   if(mode!=='ready')Object.assign(quests[1],{status:'unknown',title:'Quest β の応答がありません',action:'Quest β を起動して会場の Wi-Fi につないでください。',ageSec:null,visitorPort:0});
-  return {ok:true,observedAt:Date.now()/1000,cameras,quests,issues:[],config:{fixed:true,revision:1}};
+  const tablets=QUEST_IDS.map((id,i)=>({id,status:'ok',portalStatus:'ok',connectionStatus:'ok',reflectionStatus:'ok',portalSessionId:`demo-${id}`,tabletSessionId:`page-${id}`,title:'送った設定が Quest に反映されています',action:'タブレットはこのページを開いたままにしてください。',tabletIp:`192.168.10.${41+i}`,ageSec:2,activePages:1,sentSeq:3,appliedSeq:3,received:3,applyCount:3,requestedLang:'ja',requestedRelief:true,lang:'ja',relief:true}));
+  if(mode!=='ready')Object.assign(tablets[1],{status:'warning',reflectionStatus:'warning',title:'設定は届いています。反映を待っています',action:'Quest を体験開始前の画面へ戻してください。言語と軽減が一致するまで確認します。',appliedSeq:2,applyCount:2,requestedLang:'en',lang:'ja'});
+  return {ok:true,observedAt:Date.now()/1000,cameras,quests,tablets,issues:[],config:{fixed:true,revision:1}};
+}
+function demoContent(mode) {
+  const id='a'.repeat(64),old='b'.repeat(64),ready=mode==='ready';
+  const stage=(title,status='ok',contentId=id)=>({status,contentId,buildGuid:'c'.repeat(32),title,action:status==='ok'?'内容を照合しました。':'素材を同梱して再ビルドします。'});
+  return {ok:true,observedAt:Date.now()/1000,policy:'baked-only-v1',ready,
+    preparation:stage('必要な素材がそろっています'),bundle:stage(ready?'ビルド用の内容が一致しています':'壁のシミの差し替えが残っています',ready?'ok':'error',ready?id:old),
+    apk:stage(ready?'APK に同じ演出が入っています':'APK は更新前の演出です',ready?'ok':'error',ready?id:old),
+    effects:['人形視点','手形','壁のシミ'].map((name,i)=>({id:`effect-${i}`,name,status:ready||i<2?'ok':'error',title:`${i+1} 個の素材を使用`,action:!ready&&i===2?'差し替えた動画を含めて再ビルドします。':'',sourceReady:true,bundled:ready||i<2,inApk:ready||i<2,assetCount:i+1})),
+    quests:QUEST_IDS.map(idQ=>({id:idQ,status:ready?'ok':'error',contentId:ready?id:old,buildGuid:ready?'c'.repeat(32):'d'.repeat(32),title:ready?'今回の演出と一致しています':'更新前の演出で動いています',action:ready?'この後に装着して映像と音を確認します。':'新しい APK を入れて起動し直します。'}))};
 }
 if(demo){$('demo-banner').hidden=false;$('deep-check').disabled=true;for(const v of questViews.values()){v.link.removeAttribute('href');v.link.textContent='受付ページ（表示例）';}}
-render();poll();
+render();poll();pollContent();

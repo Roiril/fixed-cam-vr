@@ -191,13 +191,14 @@ for (const match of html.matchAll(/<([a-z][a-z0-9-]*)\b[^>]*\bid="([^"]+)"[^>]*>
   elements.set(id, tagName.toLowerCase() === 'video' ? new MockMedia(id, tagName) : new MockElement(id, tagName));
 }
 
+const radioElements = new Map();
 for (const match of html.matchAll(/<input\b([^>]*)>/gi)) {
   const attributes = match[1];
   const id = /\bid="([^"]+)"/.exec(attributes)?.[1];
-  if (!id || !elements.has(id)) continue;
-  const element = elements.get(id);
+  const element = id && elements.has(id) ? elements.get(id) : new MockElement(id || '', 'input');
   element.name = /\bname="([^"]+)"/.exec(attributes)?.[1] || '';
   element.value = /\bvalue="([^"]+)"/.exec(attributes)?.[1] || '';
+  radioElements.set(`${element.name}:${element.value}`, element);
 }
 
 const selectorElements = new Map([
@@ -222,7 +223,7 @@ const document = {
   querySelector(selector) {
     const radio = /^input\[name="(lang|relief)"\]\[value="([^"]+)"\]$/.exec(selector);
     if (radio) {
-      return Array.from(elements.values()).find((element) => element.name === radio[1] && element.value === radio[2]);
+      return radioElements.get(`${radio[1]}:${radio[2]}`);
     }
     assert.ok(selectorElements.has(selector), `missing mock for ${selector}`);
     return selectorElements.get(selector);
@@ -248,6 +249,8 @@ const validStatus = {
   applyCount: 0,
   received: 0,
   pending: null,
+  portalSessionId: 'portal-a',
+  lastRequest: null,
 };
 let fetchHandler = async (resource) => ({
   ok: true,
@@ -288,6 +291,7 @@ assert.notEqual(close, -1, 'visitor runtime IIFE terminator was not found');
 const exportsSource = `
   globalThis.__visitorTest = {
     state,
+    tabletSessionId,
     validateBriefingData,
     resultKey,
     send,
@@ -343,7 +347,8 @@ function test(name, body) {
 
 test('反映判定はPOSTの受理番号と実値の両方を見る', async () => {
   const requests = [];
-  let status = { ...validStatus, lang: 'ja', relief: false, appliedSeq: 7, received: 1 };
+  const lastRequest = { tabletSessionId: runtime.tabletSessionId, seq: 7, lang: 'en', relief: true };
+  let status = { ...validStatus, lang: 'ja', relief: false, appliedSeq: 7, received: 1, lastRequest };
   fetchHandler = async (resource, options = {}) => {
     requests.push({ resource, options });
     return {
@@ -356,13 +361,16 @@ test('反映判定はPOSTの受理番号と実値の両方を見る', async () =
   state.relief = true;
   state.ui = 'idle';
   state.view = 'edit';
+  state.status = clone(validStatus);
+  state.connection = 'online';
   await runtime.send();
   assert.equal(requests[0].resource, './set');
-  assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true });
-  assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7 }));
+  assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true,
+    tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' });
+  assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7, portalSessionId: 'portal-a' }));
   assert.equal(runtime.resultKey(), 'waiting');
 
-  state.status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 6 };
+  state.status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 6, lastRequest };
   assert.equal(runtime.resultKey(), 'waiting');
   state.status = { ...state.status, lang: 'ja', appliedSeq: 7 };
   assert.equal(runtime.resultKey(), 'waiting');
@@ -370,10 +378,46 @@ test('反映判定はPOSTの受理番号と実値の両方を見る', async () =
   assert.equal(runtime.resultKey(), 'waiting');
   state.status = { ...state.status, relief: true };
   assert.equal(runtime.resultKey(), 'applied');
+  state.status = { ...state.status, appliedSeq: 8 };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, appliedSeq: 7, lastRequest: { ...lastRequest, tabletSessionId: 'other' } };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, lastRequest, portalSessionId: 'portal-b' };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, portalSessionId: 'portal-a' };
 
-  status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 7, received: 1 };
+  status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 7, received: 1, lastRequest };
   await runtime.poll();
   assert.equal(runtime.resultKey(), 'applied');
+});
+
+test('Questの起動IDが変わると送信中の古い応答を捨てる', async () => {
+  await flushPromises();
+  const delayedSet = deferred();
+  const requests = [];
+  fetchHandler = async (resource) => {
+    requests.push(resource);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => resource === './set' ? delayedSet.promise
+        : { ...validStatus, portalSessionId: 'portal-b', received: 2 },
+    };
+  };
+  state.status = clone(validStatus);
+  state.connection = 'online';
+  state.ui = 'idle';
+  state.view = 'edit';
+  const sending = runtime.send();
+  await runtime.poll();
+  await runtime.poll();
+  assert.ok(requests.includes('./status'), JSON.stringify(requests));
+  assert.equal(state.connection, 'online');
+  delayedSet.resolve({ ok: true, seq: 8 });
+  await sending;
+  assert.equal(state.status?.portalSessionId, 'portal-b');
+  assert.equal(state.sent, null);
+  assert.equal(state.view, 'title');
 });
 
 test('表示更新は同期し、重複アニメーションを取消して縮小設定に従う', () => {

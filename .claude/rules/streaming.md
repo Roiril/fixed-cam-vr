@@ -9,6 +9,20 @@ paths:
 
 # ストリーミング取り込み規約
 
+## 現行 Player の演出契約（2026-09-22）
+
+廻リ視の Player は `baked-only-v1`。演出と参照素材はビルド前に確定して同梱する。
+`ShowControlClient` は `/state` を取得しない。旧 `show_config.json` の適用と保存もしない。
+このファイル内の「ライブ > キャッシュ > 焼き込み」は旧仕様。Editor の事前編集以外には使わない。
+素材の解決は安全な `sa://` と同梱 `assetMap` のみ。未解決素材を HTTP へ取りに行かない。
+カメラ A/B/C は固定 IP と pin を同梱する。発見した別端末で入れ替えない。
+ビルド後の可変設定は博士タブレットから `VisitorPortal :8090` へ届く言語とホラー軽減だけ。
+Web 卓は観測用。`/ops/content` は素材・同梱・APK の内容を照合し、Quest の contentId と buildGuid を照合する。
+export と Unity ビルドガードは必要素材の欠損やハッシュ不一致で停止する。
+APK と同時に作る `Builds/mawarimi.apk.content.json` は導入版照合に必要。APK だけコピーしても確認済みにはならない。
+博士タブレットの応答と反映は Quest 起動 ID・ページ ID・受理番号・実値を使って別々に確認する。
+古い heartbeat と以前のページの成功を現在の成功にしない。詳細は `memory/visitor_tablet.md`。
+
 ## 入力ソース
 
 | ソース | プロトコル | レイテンシ実測 | 用途 |

@@ -52,6 +52,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 import export_build as _export  # noqa: E402  （sys.path を整えた後でないと読めない）
+import release_inventory as _inventory  # noqa: E402
 import unity_devices as _udev  # noqa: E402  機ごとの heartbeat（0185 / 0187）
 import operations as _ops  # noqa: E402  当日の固定登録と診断
 
@@ -1493,6 +1494,14 @@ class Handler(SimpleHTTPRequestHandler):
                 beacons = [dict(b) for b in _disc.values() if time.time() - b['lastSeen'] < 12]
             return self._json(_ops.status(_unity_devices_snapshot(), beacons, revision,
                                           {'cameras': show_cameras}))
+        if path == '/ops/content':
+            with _show_cond:
+                show = copy.deepcopy(_show)
+            return self._json(_inventory.content_status(
+                show, LOCAL_URL_DIRS,
+                os.path.join(REPO_ROOT, 'Assets', 'StreamingAssets', 'show'),
+                os.path.join(REPO_ROOT, 'Builds', 'mawarimi.apk'),
+                _unity_devices_snapshot()))
         if path == '/unity/devices':
             # 機ごとの heartbeat（スタッフが眺める用。タブレットはここを読まない・0187）。
             return self._json(_udev.device_rows(_unity_devices_snapshot(), time.time()))
@@ -2099,6 +2108,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if os.environ.get('FIXEDCAM_AUTHORING') != '1' and parsed.path not in (
+                '/unity/heartbeat', '/ops/restart', '/onsite/check'):
+            return self._json({'ok': False, 'error': 'この卓から演出は変更できません'}, 403)
         if parsed.path == '/state':
             return self._post_state()
         if parsed.path == '/ops/restart':
@@ -2471,7 +2483,10 @@ class Handler(SimpleHTTPRequestHandler):
     def _export_build(self):
         with _show_cond:  # _mutate_show / _auto_follow と同時に走ると dumps が iteration 中変更で落ちる
             show = json.loads(json.dumps(_show))  # deep copy（現物 _show は不変）
-        return self._json(_export.export_build(show, REPO_ROOT, LOCAL_URL_DIRS))
+        try:
+            return self._json(_export.export_build(show, REPO_ROOT, LOCAL_URL_DIRS))
+        except (OSError, ValueError) as exc:
+            return self._json({'ok': False, 'error': str(exc)}, 422)
 
     # 焼き込みの走査ヘルパ（実体は export_build.py）。卓の本番前チェックと
     # test_export_refs.py が Handler 越しに呼ぶので、委譲だけ残してある。

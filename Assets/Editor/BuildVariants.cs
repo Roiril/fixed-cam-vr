@@ -159,6 +159,7 @@ namespace FixedCamVr.EditorTools
                 var summary = report.summary;
                 if (summary.result == BuildResult.Succeeded)
                 {
+                    FixedCamContentBuildGuard.RecordSuccessfulBuild(report);
                     Debug.Log($"[BuildVariants] OK: {productName} ({packageId}) -> {summary.outputPath} " +
                               $"({summary.totalSize / (1024 * 1024)}MB, {summary.totalTime.TotalSeconds:F0}s)\n" +
                               $"install: adb install -r \"{summary.outputPath}\"");
