@@ -191,7 +191,7 @@ function renderTablets(fresh) {
     for(const [label,value] of [['タブレットから送った設定',selection(t?.requestedLang,t?.requestedRelief)],['Quest の現在の設定',selection(t?.lang,t?.relief)]]){
       const row=el('div');row.append(el('dt','',label),el('dd','',value));values.append(row);
     }
-    card.append(values,el('p','note',t?`受信 ${num(t.received,' 回')} / 反映 ${num(t.applyCount,' 回')} / 開いているページ ${num(t.activePages,' 個')}`:'送信と反映の回数も Quest から確認します。'));
+    card.append(values,el('p','note',t?`受信 ${num(t.received,' 回')} / 反映 ${num(t.applyCount,' 回')} / 開いているページ ${num(t.portalStatus==='ok'?t.activePages:null,' 個')}`:'送信と反映の回数も Quest から確認します。'));
     const next=el('div','tablet-next');next.append(el('p','next-label','次にすること'),el('p','',t?.action||(t?.status==='ok'?'このページを開いたままにしてください。次の体験者の設定もここで確認できます。':'Quest を起動します。対応するタブレットで上のアドレスを開いてください。')));card.append(next);
     if(t?.tabletIp)card.append(el('p','note',`タブレット ${t.tabletIp} / ${num(t.ageSec,' 秒前',1)}に応答`));
     return card;
