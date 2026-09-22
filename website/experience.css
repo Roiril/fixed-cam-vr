@@ -97,13 +97,13 @@ button, summary { font: inherit; }
   height: 58%;
   border-radius: 8% / 6%;
 }
-.camera-feed { object-fit: cover; filter: brightness(.84) contrast(1.03) saturate(.88) sepia(.04); }
+.camera-feed { object-fit: cover; filter: brightness(.72) contrast(1.06) saturate(.76) sepia(.08); }
 .screen-shade {
   background:
     repeating-linear-gradient(to bottom, transparent 0 3px, rgb(8 7 6 / 16%) 3px 4px),
     radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 52%) 100%),
     rgb(25 23 18 / 25%);
-  opacity: .25;
+  opacity: .32;
 }
 .screen-noise {
   background-image:
