@@ -11,6 +11,10 @@ const publicFiles = [
   "experience.css",
   "experience-config.js",
   "experience.js",
+  "handheld.js",
+  "handheld.css",
+  "perspective-game",
+  "assets/handheld.webp",
   "entrance.css",
   "entrance-geometry.js",
   "entrance-glass.js",
@@ -63,7 +67,7 @@ await rm(outputRoot, { recursive: true, force: true });
 for (const relativePath of publicFiles) {
   const destination = join(outputRoot, relativePath);
   await mkdir(dirname(destination), { recursive: true });
-  await cp(join(websiteRoot, relativePath), destination);
+  await cp(join(websiteRoot, relativePath), destination, { recursive: true });
 }
 
 console.log(`Built ${publicFiles.length} files in dist/`);

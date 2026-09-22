@@ -1,0 +1,10 @@
+# 携帯ゲーム機の生成記録 — 2026-09-22
+
+参照: ユーザー添付 `codex-clipboard-efb8156c-9e17-4097-9a0e-525f3f6bb426.png`。
+生成原本: `C:/Users/kouga/.codex/generated_images/01a0c823-2271-7d81-86df-16eeaaf52457/exec-44b9f010-d8e8-4ace-887f-9e6a98bb01f1.png`。
+配信用: `handheld.webp`。1774 × 887。透過を保持してWebP quality90へ形式変換。
+画面はHTMLの実ゲーム。写真内の文字やゲーム画面は生成していない。
+
+## 最終プロンプト
+
+Use case: product-mockup. Create a new photorealistic website asset of a fictional slightly old handheld game console, inspired by the supplied reference's early-2010s Japanese handheld feeling. The supplied image is a STYLE AND OBJECT REFERENCE ONLY, not an edit target. Entire console visible, isolated against genuine transparent background. Exact straight-on front elevation, no perspective, no rotation, no hands, no props. Wide horizontal body in aged warm ivory plastic and brushed dull silver, softly rounded ends, black inset screen bezel. Small realistic wear at seams and buttons, restrained material highlights, not shiny luxury rendering. Left: a directional cross above a short black rubber thumbstick and small speaker holes. Right: four small circular buttons in diamond arrangement with unmarked faces, a matching thumbstick below. A few small recessed physical buttons beneath the screen, one tiny amber power LED. No Sony, PlayStation, Vita, real company names, real logos, invented branding, model names, legible text, or text-like gibberish. Main screen must be a perfectly flat empty pure-black 16:9 rectangle with straight horizontal/vertical sides and almost square corners; NO picture, game, icon, reflection, glow, texture, or highlight inside the black display. We will overlay a real playable website in this rectangle, so it must be unobstructed. Screen occupies approximately 60% of total image width; device is symmetrical around the screen. Compose as a wide image approx 2:1, device filling 94% width with a narrow transparent margin all around. The mood is tactile, nostalgic, slightly mysterious, believable old hardware photographed for a dark Japanese horror artwork website. High-quality detailed asset, not an illustration, no drawn shadows on background.

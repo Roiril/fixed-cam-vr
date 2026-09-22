@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#211b19" />
+    <meta name="description" content="廻リ視 — 残響区画。無人の観測区画を三つの視点で歩く。" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <title>廻リ視 — 残響区画</title>
+    <script type="module" crossorigin src="./assets/index-BZnkwpUb.js"></script>
+    <script defer src="./embed.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/three-BfIlZwn7.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-DdqsXLdv.css">
+    <link rel="stylesheet" href="./embed.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#world">散策画面へ移動</a>
+    <main id="app" data-mode="tps">
+      <canvas id="world" tabindex="0" aria-label="廻リ視 — 残響区画。WASDで移動。1から3で視点を切り替えます。"></canvas>
+      <div class="atmosphere" aria-hidden="true"></div>
+      <div class="grain" aria-hidden="true"></div>
+      <div id="interface">
+        <header class="topbar">
+          <div class="identity"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><div><h1>廻リ視</h1><span class="brand-caption">残響区画</span></div></div>
+          <div class="top-actions">
+            <button id="sound" class="round-button" aria-label="環境音をオン" aria-pressed="false" data-tooltip="環境音"><span data-icon="sound-off"></span></button>
+            <button id="fullscreen" class="round-button fullscreen-button" aria-label="全画面にする" data-tooltip="全画面"><span data-icon="expand"></span></button>
+            <button id="help" class="round-button" aria-label="操作方法" aria-haspopup="dialog" data-tooltip="操作方法 · H"><span data-icon="help"></span></button>
+            <button id="settings" class="round-button" aria-label="設定" aria-haspopup="dialog" data-tooltip="設定 · G"><span data-icon="sliders"></span></button>
+          </div>
+        </header>
+        <section class="place-label" aria-label="現在の部屋">
+          <p class="facility-name">観測区画</p>
+          <div class="room-heading"><span id="room-number">01</span><span id="room-name">観測室</span></div>
+          <p id="room-description">誰もいない。観測だけが続いている。</p>
+        </section>
+        <p id="intro-note" class="intro-note">同じ場所を、違う距離から見つめる。</p>
+        <footer class="bottom-bar">
+          <div class="movement-guide" aria-label="基本操作"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 歩く</span><span><kbd>Shift</kbd> 走る</span></div>
+          <section class="camera-dock" aria-label="視点の切り替え">
+            <div class="dock-caption"><span class="dock-title">視点</span><span id="view-description">身体と背後</span><span id="fixed-label" hidden></span><span id="transition-label" hidden>移動中</span></div>
+            <div class="camera-buttons" role="group" aria-label="視点を選ぶ">
+              <span id="selection-indicator" aria-hidden="true"></span>
+              <button data-mode="fps" aria-label="一人称。近くの痕跡を見る。ショートカット1" aria-pressed="false"><span data-icon="eye"></span><span>一人称</span><kbd aria-hidden="true">1</kbd></button>
+              <button data-mode="tps" class="selected" aria-label="三人称。身体と背後を見る。ショートカット2" aria-pressed="true"><span data-icon="person"></span><span>三人称</span><kbd aria-hidden="true">2</kbd></button>
+              <button data-mode="fixed" aria-label="固定視点。部屋の死角を見る。ショートカット3" aria-pressed="false"><span data-icon="camera"></span><span>固定</span><kbd aria-hidden="true">3</kbd></button>
+            </div>
+            <div class="travel-track" aria-hidden="true"><div id="travel-progress"></div></div>
+          </section>
+          <button id="hide-interface" class="quiet-button" aria-label="画面表示を隠す。ショートカットU"><span data-icon="hide"></span><span>表示を隠す</span><kbd>U</kbd></button>
+        </footer>
+      </div>
+      <div class="touch-ui">
+        <div class="joystick-wrap"><span class="touch-label">移動</span><div id="joystick" class="joystick" role="group" aria-label="ドラッグで移動"><span class="stick-cross" aria-hidden="true"></span><span id="stick" aria-hidden="true"></span></div></div>
+        <button id="touch-run" aria-label="走る" aria-pressed="false"><span data-icon="run"></span><span>走る</span></button>
+      </div>
+      <button id="restore-interface" class="round-button restore-button" aria-label="画面表示を戻す。ショートカットU" data-tooltip="表示を戻す · U" hidden><span data-icon="show"></span></button>
+      <div id="reticle" class="reticle" hidden aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <span id="view-announcement" class="sr-only" aria-live="polite"></span>
+      <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+        <div class="panel-heading"><div><p class="eyebrow">画面と操作</p><h2 id="settings-title">設定</h2></div><form method="dialog"><button class="close-button" aria-label="設定を閉じる"><span data-icon="close"></span></button></form></div>
+        <div class="setting"><div class="setting-label"><label for="brightness">明るさ</label><output id="brightness-value" for="brightness">1.15<span> ×</span></output></div><input id="brightness" type="range" min="0.7" max="1.6" step="0.05" value="1.15" /><div class="range-ends"><span>暗く</span><span>明るく</span></div></div>
+        <div class="setting"><div class="setting-label"><label for="transition-duration">視点の移動時間</label><output id="duration-value" for="transition-duration">1.8<span> 秒</span></output></div><input id="transition-duration" type="range" min="0.8" max="3.2" step="0.1" value="1.8" /><div class="range-ends"><span>すばやく</span><span>ゆっくり</span></div></div>
+        <div class="setting"><div class="setting-label"><label for="sensitivity">見回しの感度</label><output id="sensitivity-value" for="sensitivity">1.0<span> ×</span></output></div><input id="sensitivity" type="range" min="0.4" max="1.8" step="0.1" value="1" /><div class="range-ends"><span>小さく</span><span>大きく</span></div></div>
+        <div class="settings-footer"><button id="defaults" class="text-button">設定を標準に戻す</button><kbd>G</kbd></div>
+        <div class="settings-actions"><button id="reset-position" class="text-button">開始位置へ戻る</button><button id="hide-from-settings" class="text-button">表示を隠す</button></div>
+      </dialog>
+      <dialog id="help-dialog" class="help-dialog" aria-labelledby="help-title">
+        <div class="panel-heading"><span class="eyebrow">操作方法</span><form method="dialog"><button class="close-button" aria-label="操作方法を閉じる"><span data-icon="close"></span></button></form></div>
+        <h2 id="help-title">同じ場所を、<br>違う視点から。</h2>
+        <p class="help-intro">一人称では近くの痕跡を。三人称では身体と背後を。固定視点では部屋の死角を見つめます。目的やクリア条件はありません。</p>
+        <dl class="key-guide"><div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>歩く</dd></div><div><dt><kbd>Shift</kbd></dt><dd>走る</dd></div><div><dt><span data-icon="mouse"></span><span>ドラッグ / 矢印キー</span></dt><dd>見回す</dd></div><div><dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>視点を切り替える</dd></div><div><dt>ホイール</dt><dd>三人称の距離を変える</dd></div><div><dt><kbd>U</kbd></dt><dd>表示を隠す / 戻す</dd></div><div><dt><kbd>R</kbd></dt><dd>開始位置と視点に戻る</dd></div><div><dt><kbd>G</kbd><kbd>H</kbd></dt><dd>設定 / 操作方法</dd></div></dl>
+        <p class="help-footnote">固定視点は部屋に合わせて切り替わります。固定視点同士は瞬時に切り替わり、ほかの視点との行き来は滑らかに移動します。</p>
+        <form method="dialog"><button class="primary-button">散策へ戻る<span data-icon="arrow"></span></button></form>
+      </dialog>
+      <div id="loading" class="loading"><span class="loading-orbit" aria-hidden="true"></span><p>区画を準備しています…</p></div>
+      <div id="error" class="error" hidden><p class="eyebrow">表示エラー</p><h2>区画を表示できませんでした</h2><p>ブラウザのハードウェア アクセラレーションを有効にして再読み込みしてください。</p><button id="reload" class="primary-button">再読み込み</button><pre id="error-detail"></pre></div>
+    </main>
+  </body>
+</html>

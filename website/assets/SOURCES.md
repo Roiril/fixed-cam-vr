@@ -88,6 +88,10 @@ Use case: historical-scene. Input image is a reference for the exact single adul
 ### hero-mobile
 
 Use case: compositing. This is responsive web art direction of an EXISTING finished Japanese horror key visual, not a new artwork. The input is the edit target and absolute authority for all imagery and calligraphy. Recompose this exact poster into a tall PORTRAIT mobile website hero, 2:3 aspect ratio. Keep the identical existing cream-and-red brush lettering '廻リ視' and its small reading まわりみ, exact stroke character, no replacement font. Keep the exact same Japanese ichimatsu dolls with their faces and kimono, dark warm brown-black curtain, floor and dim stage light. Adapt positions: title large in upper middle/right; doll group in lower-left half; keep breathing room around title. All existing title glyphs must be fully visible with comfortable side margins. Existing text can be rearranged but must read exactly: '廻るたびに狂う世界、' 'あなたは生きて戻れるか。' as small two lines at top; '実世界 × 固定視点ホラー' just below title; '企画・監督・制作リーダー' '白石大晴' small at lower right. Do not add any text. Preserve the muted ivory, red, brown palette. Corners and edges blend naturally into warm near-black #100e0c. Original image quality and subdued illumination. No new objects, no additional dolls, no new characters, no poster border, no UI. This must feel like the same exact finished key visual art-directed for a vertical narrow phone, not a variant illustration.
+## 携帯ゲーム機（2026-09-22）
+
+`handheld.webp` はユーザーの携帯ゲーム機写真を参照して画像生成した架空の機器。実在ブランドの表記は含まない。透過PNGからWebPへ変換。元ファイルと最終プロンプトは [handheld-prompt.md](handheld-prompt.md)。画面部分には同梱した体験サイトを表示する。
+
 ## 調査依頼の資料（2026-09-15）
 
 - `investigation-request.webp`: `docs/onsite/handout.pdf` の第1頁を Poppler で画像化して WebP に圧縮。本文は原稿のまま。原本 PDF は保持。サイト上の傾きと紙の色は CSS。

@@ -1,5 +1,6 @@
 window.MAWARIMI_EXPERIENCE = {
-  gameUrl: "",
+  gameUrl: "perspective-game/?embedded=1",
+  gameStandaloneUrl: "perspective-game/",
   footage: [
     {
       id: "fracture",

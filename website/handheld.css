@@ -1,0 +1,58 @@
+.handheld-player { grid-column: 1 / -1; width: 100%; min-width: 0; text-align: center; }
+.handheld { position: relative; width: 100%; max-width: 80rem; margin: 0 auto; isolation: isolate; filter: drop-shadow(0 24px 25px #0008); }
+.handheld > img { display: block; width: 100%; height: auto; pointer-events: none; }
+.handheld-screen { position: absolute; left: 20.55%; top: 17.45%; width: 59%; height: 60%; overflow: hidden; background: #030504; border-radius: 2px; }
+.handheld .game-stage { position: absolute; inset: 0; margin: 0; }
+.handheld .game-stage iframe { display: block; border: 0; width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; }
+#game-launch { position: absolute; inset: 0; width: 100%; border: 0; color: var(--ink); background: radial-gradient(ellipse, #19221e, #020403 75%); font: inherit; font-size: clamp(.85rem, 2vw, 1.4rem); cursor: pointer; letter-spacing: .12em; }
+#game-launch span { display: block; margin-top: 1rem; font-size: .6em; color: var(--ink-muted); letter-spacing: .08em; }
+.hardware { position: absolute; padding: 0; border: 0; background: transparent; border-radius: 25%; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.hardware:disabled { cursor: default; }
+.hardware:active:not(:disabled), .hardware.is-held { background: #b8e8bd44; box-shadow: 0 0 12px #b8e8bd66; }
+.hardware:focus-visible, #game-launch:focus-visible { outline: 2px solid #ccdbbd; outline-offset: -3px; }
+.hardware.up { left: 8%; top: 27%; width: 4.5%; height: 8%; }
+.hardware.down { left: 8%; top: 41%; width: 4.5%; height: 8%; }
+.hardware.left { left: 5%; top: 34%; width: 4%; height: 9%; }
+.hardware.right { left: 11.5%; top: 34%; width: 4%; height: 9%; }
+.hardware.look-up { left: 87.7%; top: 26%; width: 4.5%; height: 8%; }
+.hardware.look-down { left: 87.7%; top: 42%; width: 4.5%; height: 8%; }
+.hardware.look-left { left: 83.6%; top: 34%; width: 4.5%; height: 8%; }
+.hardware.look-right { left: 91.6%; top: 34%; width: 4.5%; height: 8%; }
+.hardware-stick { position: absolute; top: 48%; width: 11%; height: 22%; min-width: 44px; min-height: 44px; border-radius: 50%; touch-action: none; }
+.move-stick { left: 6.7%; }
+.view-stick { left: 82.2%; }
+.hardware-stick.is-held { background: radial-gradient(circle, transparent 35%, #b8e8bd44 70%, transparent 72%); }
+.handheld-modes { display: flex; justify-content: center; gap: .6rem; margin: 1.5rem auto; }
+.handheld-modes button { display: flex; align-items: center; gap: 1rem; min-height: 48px; border: 1px solid var(--line-strong); background: #101512; color: var(--ink-muted); padding: .65rem 1.4rem; cursor: pointer; font: inherit; font-size: .85rem; }
+.handheld-modes button span { font: .65rem "IBM Plex Mono", monospace; }
+.handheld-modes button[aria-pressed="true"] { color: var(--ink); background: #283129; box-shadow: inset 0 -2px #bdc9b6; }
+.handheld-modes button:disabled { opacity: .45; cursor: default; }
+.handheld-guide { font-size: .8rem; line-height: 2; color: var(--ink-muted); }
+.handheld-guide span { font-size: .7rem; }
+.handheld-mobile-hint { display: none; font-size: .7rem; color: var(--ink-muted); }
+.handheld-player .game-actions { justify-content: center; flex-wrap: wrap; }
+.handheld-player .game-state { min-height: 1.5em; }
+.handheld-player.is-expanded { position: fixed; z-index: 1100; inset: 0; overflow: auto; background: #090c0b; padding: 2rem max(1rem, env(safe-area-inset-right)); display: flex; flex-direction: column; justify-content: center; }
+.is-expanded .handheld { width: min(100%, 140vh); flex-shrink: 0; }
+.is-expanded .handheld-modes { margin: .5rem auto; }
+.is-expanded .handheld-guide { margin: .4rem 0; }
+.is-expanded .game-state { margin: .2rem 0; }
+body.handheld-expanded { overflow: hidden; }
+@media (max-width: 720px) {
+ .handheld-player { width: calc(100% + 2 * var(--gutter)); margin-left: calc(-1 * var(--gutter)); }
+ .handheld-player.is-expanded { width: 100%; margin: 0; }
+ .handheld-modes { gap: .4rem; padding: 0 .8rem; }
+ .handheld-modes button { padding: .65rem .8rem; gap: .55rem; }
+ .handheld-guide { padding: 0 1rem; font-size: .7rem; }
+ .handheld-guide span { display: none; }
+ .handheld-mobile-hint { display: block; }
+ .handheld-player .game-actions { padding: 0 1rem; gap: 1.5rem; }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+ .handheld-player.is-expanded { padding: .4rem; }
+ .is-expanded .handheld { width: min(100%, 170vh); margin-top: 0; margin-bottom: 48px; }
+ .is-expanded .handheld-guide, .is-expanded .handheld-mobile-hint, .is-expanded .game-state { display: none; }
+ .is-expanded .handheld-modes { position: absolute; bottom: .3rem; left: .5rem; margin: 0; }
+ .is-expanded .game-actions { position: absolute; bottom: .3rem; right: .8rem; gap: 1rem; }
+ .is-expanded .game-actions a { display: none; }
+}

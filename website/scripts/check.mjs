@@ -7,9 +7,17 @@ import { headingText, latinText, pageText, uniqueChars } from "./font-text.mjs";
 
 const websiteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceFiles = ["index.html", "styles.css", "main.js", "experience.css", "experience-config.js", "experience.js", "entrance.css", "entrance-geometry.js", "entrance-glass.js", "entrance.js"];
+sourceFiles.push("handheld.js", "handheld.css", "perspective-game/embed.js");
 const seoFiles = ["robots.txt", "sitemap.xml", "site.webmanifest"];
 const verificationFiles = ["google5081a8a413a7871f.html"];
 const requiredAssets = [
+  "assets/handheld.webp",
+  "perspective-game/index.html",
+  "perspective-game/embed.css",
+  "perspective-game/assets/index-BZnkwpUb.js",
+  "perspective-game/assets/three-BfIlZwn7.js",
+  "perspective-game/assets/index-DdqsXLdv.css",
+  "perspective-game/assets/three-LICENSE.txt",
   "assets/favicon.png",
   "assets/hero-desktop.webp",
   "assets/hero-small.webp",
@@ -184,7 +192,7 @@ const gate = html.match(/<details\b[^>]*id="footage-gate"[^>]*>/)?.[0] ?? "";
 if (!gate || /\sopen(?:\s|=|>)/.test(gate)) errors.push("spoiler footage must start in a closed details element");
 const video = html.match(/<video\b[^>]*id="footage-player"[^>]*>/)?.[0] ?? "";
 if (!video || /\s(?:src|poster|autoplay)=?/.test(video) || !video.includes('preload="none"')) errors.push("footage must not expose or fetch media before the spoiler gate opens");
-if (html.includes("<iframe")) errors.push("the unfinished perspective experience must not create an iframe on initial load");
+if (html.includes("<iframe")) errors.push("the perspective experience must not create an iframe before launch");
 for (const file of sourceFiles.filter(file => file.endsWith(".js"))) {
   const syntax = spawnSync(process.execPath, ["--check", join(websiteRoot, file)], { encoding: "utf8" });
   if (syntax.status !== 0) errors.push(`${file}: ${syntax.stderr}`);

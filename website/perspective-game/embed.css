@@ -1,0 +1,25 @@
+html.embedded,
+html.embedded body,
+html.embedded #app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+html.embedded #world {
+  width: 100%;
+  height: 100%;
+}
+
+html.embedded .skip-link,
+html.embedded #interface,
+html.embedded .touch-ui,
+html.embedded #restore-interface,
+html.embedded #intro-note,
+html.embedded #reticle,
+html.embedded #toast,
+html.embedded #view-announcement,
+html.embedded #settings-dialog,
+html.embedded #help-dialog {
+  display: none !important;
+}
