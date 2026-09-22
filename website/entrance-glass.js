@@ -173,23 +173,24 @@
       vec2 offset=(ray+view).xy*uTexel*(5.0+3.0*bevel)*detail;
       vec3 photo=texture2D(uTexture,vUv).rgb;
       vec3 transmitted=vec3(texture2D(uTexture,vUv+offset*1.12).r,texture2D(uTexture,vUv+offset).g,texture2D(uTexture,vUv+offset*.88).b);
-      float lum=dot(transmitted,vec3(.299,.587,.114));
-      vec3 body=mix(vec3(lum),transmitted,.24)*(.085+.045*nv)*vec3(1.0,.985,.96);
+      // These are pieces of the captured title screen, not dark glass plates.
+      // Preserve its white brushwork and red seal throughout flight.
+      vec3 body=transmitted*(.92+.08*nv);
       vec3 reflected=reflect(-view,normal);
       float coord=dot(reflected,normalize(vec3(.72,.62,.18)))+(vEdges.x-vEdges.y)*3.0;
       float stripAa=${derivatives ? 'max(fwidth(coord),.004)' : '.004'};
       float strip=1.0-smoothstep(.004,.012+stripAa,abs(coord-.22));
       float softStrip=exp(-abs(coord-.22)*26.0)*.025;
       float secondStrip=1.0-smoothstep(.003,.009+stripAa,abs(dot(reflected,normalize(vec3(-.38,.91,.16)))+.36));
-      float reflection=(strip*2.4+secondStrip*.85+softStrip)*(.42+.58*fres);
+      float reflection=(strip*.16+secondStrip*.06+softStrip)*(.42+.58*fres);
       vec3 white=vec3(1.0,.975,.92);
       vec3 spectrum=.5+.5*cos(6.2831853*(coord*7.0+nv*2.0+bevel*.4+vec3(0.0,.333333,.666667)));
       vec3 edgeColor=mix(white,spectrum,.14*bevel);
       float rim=ridge*(.28+.52*fres)+bevel*(.026+.065*fres);
       float innerEdge=exp(-abs(ed-.0009)/max(aa,.00010))*(.08+.16*fres);
-      vec3 polished=body*(1.0-.65*fres)+white*reflection+edgeColor*(rim+innerEdge)+spectrum*(strip*.05+bevel*fres*.04)+white*(.18*vLight.y+.14*vDetail.z+.10*vLight.z);
-      if(vSurface>.5) polished=vSurface<1.5?polished*.76:body*.35+edgeColor*(.10+.48*fres)+white*reflection;
-      polished=min(polished,vec3(.94))*(1.0-.18*vDetail.w);
+      vec3 polished=body*(1.0-.08*fres)+white*reflection+edgeColor*(rim+innerEdge)+spectrum*(strip*.05+bevel*fres*.04)+white*(.18*vLight.y+.14*vDetail.z+.10*vLight.z);
+      if(vSurface>.5) polished=vSurface<1.5?polished*.92:body*.65+edgeColor*(.10+.48*fres)+white*reflection;
+      polished=min(polished,vec3(1.0))*(1.0-.08*vDetail.w);
       vec3 color=mix(photo,polished,detail);
       color+=vec3(.96,.90,.78)*(ridge*.12+band*.05)*vLight.x;
       float edgeAlpha=clamp(ridge*(.32+.38*grazing)+exp(-ed/.00055)*(.045+.09*grazing),0.0,1.0)*detail;
