@@ -124,15 +124,15 @@ button, summary { font: inherit; }
 .camera-caption { font-size: .72rem; color: var(--ink-muted); margin: 1rem 0 0; }
 .perspective-lab {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: .8fr 1.2fr;
   gap: clamp(2rem, 5vw, 6rem);
-  padding: 4rem 0 0;
+  width: min(100%, 92rem);
+  padding: clamp(4.5rem, 7vw, 7rem) var(--gutter);
   max-width: 92rem;
-  margin: 0;
-  border-top: 1px solid var(--line);
+  margin: 0 auto;
+  border-bottom: 1px solid var(--line);
 }
-.lab-heading h3 { font-family: "Yuji Boku", serif; font-size: clamp(2.2rem, 3.5vw, 3.5rem); line-height: 1.45; font-weight: 400; margin: 0; }
+.lab-heading h2 { font-family: "Yuji Boku", serif; font-size: clamp(3.5rem, 5.6vw, 6rem); line-height: 1.2; font-weight: 400; margin: 0; }
 .lab-heading .section-description { margin-top: 1.6rem; }
 .lab-panel { align-self: center; min-width: 0; }
 .perspective-types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0; }
@@ -254,7 +254,7 @@ button, summary { font: inherit; }
   .credit-list dt { display: block; font-size: clamp(.72rem, 3.4vw, .88rem); line-height: 1.6; }
   .credit-list dd { text-align: left; }
   .perspective-lab { padding-top: 3.5rem; }
-  .lab-heading h3 { font-size: 2.65rem; }
+  .lab-heading h2 { font-size: 3.1rem; }
   .perspective-types li { padding-inline: .65rem; }
   .perspective-types li > span { font-size: 2rem; }
   .perspective-types h4 { font-size: .85rem; }

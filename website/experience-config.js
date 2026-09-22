@@ -8,7 +8,7 @@ window.MAWARIMI_EXPERIENCE = {
       description: "目の前の現実が割れて、映像を映すスクリーンへ変わる。",
       src: "assets/footage-fracture.mp4",
       poster: "assets/footage-fracture.webp",
-      meta: "Meta Quest 3 / 片目の録画 / 18秒 / 音声なし"
+      meta: "Meta Quest 3 / 片目の録画 / 14秒 / 音声なし"
     },
     {
       id: "error",

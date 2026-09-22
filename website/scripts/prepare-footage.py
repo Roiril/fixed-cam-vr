@@ -13,11 +13,11 @@ ASSETS = ROOT / "website" / "assets"
 CLIPS = {
     "fracture": {
         "source": ROOT / "Logs" / "capture" / "20260921_115112_eye.mp4",
-        "start": 40.0,
-        "duration": 18.0,
+        "start": 44.0,
+        "duration": 14.0,
         "crop": None,
-        "poster": 11.0,
-        "contact": [0, 3, 6, 9, 9.5, 10, 10.5, 11, 11.5, 12, 17.9],
+        "poster": 7.0,
+        "contact": [0, 2, 5, 5.5, 6, 6.5, 7, 7.5, 8, 9, 13.9],
     },
     "error": {
         "source": ROOT / "Logs" / "capture" / "20260921_161248_raw.mp4",

@@ -113,12 +113,12 @@ for (const forbidden of forbiddenReferences) {
 }
 
 const sectionCount = html.match(/<section\b/g)?.length ?? 0;
-if (sectionCount !== 6) errors.push(`expected 6 sections, found ${sectionCount}`);
+if (sectionCount !== 7) errors.push(`expected 7 sections, found ${sectionCount}`);
 
 const sectionMarkers = [
   'class="hero"',
-  'id="fixed-view"',
   'id="perspective-lab"',
+  'id="fixed-view"',
   'id="scenario"',
   'id="archive"',
   'id="footage"',
@@ -139,7 +139,7 @@ const requiredCopy = [
   "ストーリー",
   "展示履歴",
   "こだわりのVR演出",
-  "怪異調査員として、呪われた壁の調査に向かう。"
+  "あなたは、怪異調査員として、呪われた壁の調査に向かう。"
 ];
 for (const copy of requiredCopy) {
   if (!pageCopy.includes(copy)) errors.push(`required copy is missing: ${copy}`);
@@ -164,7 +164,8 @@ for (const camera of ["01", "02", "03"]) {
   if (!html.includes(`src="assets/camera-${camera}-quest.webp"`)) errors.push(`camera ${camera} must use its Quest render`);
 }
 if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
-if (!html.includes('<div id="perspective-lab"') || !html.includes('<h3 id="perspective-title">体験してみる</h3>')) errors.push("perspective activity must be a part of fixed viewpoint");
+if (!html.includes('<section id="perspective-lab"') || !html.includes('<h2 id="perspective-title">ゲームの固定視点</h2>')) errors.push("game viewpoint chapter must come before real-world viewpoint");
+if (!html.includes('<h2 id="fixed-view-title">実世界の固定視点</h2>')) errors.push("real-world fixed viewpoint needs a distinct chapter title");
 if (html.includes('class="plate-qr"') || html.includes('class="plate-url"')) errors.push("credit code or URL remains");
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
