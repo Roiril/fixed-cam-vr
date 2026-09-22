@@ -36,6 +36,7 @@ def device_rows(devices, now, alive_sec=6.0):
             'visitorReceived': int(hb.get('visitorReceived') or 0),
             'visitorPending': bool(hb.get('visitorPending')),
             'appliedRev': int(hb.get('appliedRev') or -1),
+            'status': dict(hb['status']) if isinstance(hb.get('status'), dict) else {},
         })
     rows.sort(key=lambda r: (r['localIp'] == '', r['localIp'], r['deviceId']))
     return {'devices': rows}

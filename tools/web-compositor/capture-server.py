@@ -53,6 +53,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 import export_build as _export  # noqa: E402  （sys.path を整えた後でないと読めない）
 import unity_devices as _udev  # noqa: E402  機ごとの heartbeat（0185 / 0187）
+import operations as _ops  # noqa: E402  当日の固定登録と診断
 
 CAPTURES = os.path.join(ROOT, 'captures')
 MASKS = os.path.join(ROOT, 'masks')
@@ -507,9 +508,10 @@ def _gen_record(gen_id, patch):
 
 
 # ---- ショー状態（show.json = 状態の正）----------------------------------
-SHOW_FILE = os.path.join(ROOT, 'show.json')
+SHOW_FILE = os.environ.get('FIXEDCAM_SHOW_FILE') or os.path.join(ROOT, 'show.json')
 LONGPOLL_MAX_SEC = 25.0
 _show_cond = threading.Condition()
+_onsite_check_lock = threading.Lock()
 
 
 def _default_show():
@@ -687,6 +689,8 @@ def _load_show():
 
 
 _show = _load_show()
+if _ops.normalize_show(_show):
+    _show['rev'] = int(_show.get('rev', 0)) + 1
 # Unity の直近 heartbeat（メモリのみ。再起動で消えてよい）
 _unity_status = {'at': 0.0}
 # 端末ごとの直近 heartbeat（deviceId → body）。2 台が 1 スロットを交互に上書きする問題
@@ -718,7 +722,11 @@ def _mutate_show(fn):
     復旧は show.json.bak を show.json にリネームしてサーバ再起動。
     """
     with _show_cond:
-        fn(_show)
+        draft = copy.deepcopy(_show)
+        fn(draft)
+        _ops.normalize_show(draft)
+        _show.clear()
+        _show.update(draft)
         _show['rev'] = int(_show.get('rev', 0)) + 1
         try:
             if os.path.isfile(SHOW_FILE):
@@ -1237,6 +1245,8 @@ def _auto_follow():
             raise _NoChange()
         changes = []
         for cam in show.get('cameras', []):
+            if cam.get('id') in {c['id'] for c in _ops.FLEET['cameras']}:
+                continue
             if cam.get('pinned'):
                 continue
             cid = cam.get('id')
@@ -1475,6 +1485,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self._open_dir(q.get('dir', ['recordings'])[0])
         if path == '/state':
             return self._get_state()
+        if path == '/ops/status':
+            with _show_cond:
+                revision = int(_show.get('rev', 0))
+                show_cameras = copy.deepcopy(_show.get('cameras') or [])
+            with _disc_lock:
+                beacons = [dict(b) for b in _disc.values() if time.time() - b['lastSeen'] < 12]
+            return self._json(_ops.status(_unity_devices_snapshot(), beacons, revision,
+                                          {'cameras': show_cameras}))
         if path == '/unity/devices':
             # 機ごとの heartbeat（スタッフが眺める用。タブレットはここを読まない・0187）。
             return self._json(_udev.device_rows(_unity_devices_snapshot(), time.time()))
@@ -2083,6 +2101,26 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == '/state':
             return self._post_state()
+        if parsed.path == '/ops/restart':
+            origin = self.headers.get('Origin')
+            host = self.headers.get('Host', '')
+            if origin and (urlparse(origin).netloc != host or
+                           urlparse(origin).scheme != 'http'):
+                return self._json({'ok': False, 'message': '外部画面から操作できません'}, 403)
+            if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+                return self._json({'ok': False, 'message': 'JSON が必要です'}, 415)
+            try:
+                body = self._read_json_body()
+            except (ValueError, UnicodeDecodeError):
+                return self._json({'ok': False, 'message': 'JSON を読めません'}, 400)
+            if not isinstance(body, dict) or not isinstance(body.get('cameraId'), str):
+                return self._json({'ok': False, 'message': 'cameraId が必要です'}, 400)
+            with _show_cond:
+                revision = int(_show.get('rev', 0))
+            with _disc_lock:
+                beacons = [dict(b) for b in _disc.values() if time.time() - b['lastSeen'] < 12]
+            code, result = _ops.restart(body['cameraId'], _unity_devices_snapshot(), beacons, revision)
+            return self._json(result, code)
         if parsed.path == '/command':
             return self._post_command()
         if parsed.path == '/masks':
@@ -2270,16 +2308,23 @@ class Handler(SimpleHTTPRequestHandler):
         """
         script = os.path.join(REPO_ROOT, 'tools', 'onsite.py')
         latest = os.path.join(REPO_ROOT, 'logs', 'onsite', 'check-latest.json')
+        if not _onsite_check_lock.acquire(blocking=False):
+            return self._json({'ok': False, 'error': '点検が進行中です'}, 409)
         try:
-            subprocess.run(['py', '-3.11', script, 'check'], cwd=REPO_ROOT,
-                           capture_output=True, timeout=240)
-        except Exception as e:
-            return self._json({'ok': False, 'error': str(e)}, 500)
-        try:
+            before = os.stat(latest).st_mtime_ns if os.path.isfile(latest) else None
+            p = subprocess.run(['py', '-3.11', script, 'check'], cwd=REPO_ROOT,
+                               capture_output=True, timeout=240)
+            if p.returncode not in (0, 1):
+                return self._json({'ok': False, 'error': f'点検が失敗しました (exit {p.returncode})'}, 500)
+            after = os.stat(latest).st_mtime_ns if os.path.isfile(latest) else None
+            if after is None or after == before:
+                return self._json({'ok': False, 'error': '新しい点検結果がありません'}, 500)
             with open(latest, 'r', encoding='utf-8') as f:
                 return self._json({'ok': True, **json.load(f)})
         except Exception as e:
-            return self._json({'ok': False, 'error': f'結果を読めません: {e}'}, 500)
+            return self._json({'ok': False, 'error': str(e)}, 500)
+        finally:
+            _onsite_check_lock.release()
 
     # 決まった復旧だけを名前で呼べるようにする。**名前は白名簿**（外から文字列が渡らない）。
     _ONSITE_FIXES = {
@@ -2331,6 +2376,8 @@ class Handler(SimpleHTTPRequestHandler):
         patch = {k: body[k] for k in self._STATE_KEYS if k in body}
         if not patch:
             return self._json({'ok': False, 'error': 'no valid keys'}, 400)
+        if _ops.conflicts_fixed_patch(patch, _show):
+            return self._json({'ok': False, 'error': '固定カメラと発見設定は変更できません'}, 409)
 
         def apply(show):
             show.update(patch)
@@ -2756,10 +2803,11 @@ if __name__ == '__main__':
     # 素材索引は導出値（採用状態）を含むので、show.json 側が変わっただけでも古くなる。
     #   起動のたびに書き直す — 人間と次セッションのシュビーが読むファイルが嘘をつく状態を残さない。
     #   旧 prompts.json の取り込みも同じ機会に 1 回だけ行う。
-    try:
-        with _atelier_lock:
-            st = _migrate_prompts_into_atelier(_load_atelier())
-            _save_atelier(st)
-    except Exception as e:
-        print(f'  (素材索引の再生成に失敗: {e})')
+    if os.environ.get('FIXEDCAM_VERIFY') != '1':
+        try:
+            with _atelier_lock:
+                st = _migrate_prompts_into_atelier(_load_atelier())
+                _save_atelier(st)
+        except Exception as e:
+            print(f'  (素材索引の再生成に失敗: {e})')
     ThreadingHTTPServer(('0.0.0.0', port), Handler).serve_forever()

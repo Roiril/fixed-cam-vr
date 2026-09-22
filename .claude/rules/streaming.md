@@ -3254,7 +3254,22 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
 - 見た目は DBH 風を廻リ視へ落としたもの（0188）。案内役は研究所の博士（`Resources/Visitor/doctor.jpg.bytes`・Codex 生成）。
   作法と罠は `memory/visitor_tablet.md`「見た目」
 
-## 接続の堅牢化 — 端末内在 ID + 発見プロトコル（fixedcam-discovery/1）— 2026-07-18
+## 当日の固定登録と点検 — 2026-09-22
+
+通常の設営は `tools/web-compositor/index.html`。演出編集は `authoring.html` に分離した。
+`operations-fleet.json` の A/B/C と Quest α/β を必須機器として常に表示する。
+A/B/C は端末 UUID と固定 IP を照合する。スマホの通常画面では担当を変更できない。
+卓はカメラの並び順と接続先を保護する。`pinned=true` とし、
+`control.autoFollow=false` / `control.discoveryEnabled=false` を `/state` に適用する。
+発見した別 IP へ担当カメラを自動で付け替えない。以下の発見機構の説明は従来の実装記録。
+
+カメラの正常判定は完成 JPEG 2 枚以上の連番進行で行う。HTTP の応答だけでは正常にしない。
+Quest は機ごとの新しい応答を確認する。描画と音は装着時の手動確認も必要。
+必須 A/B/C の未設定は異常。使用しない追加カメラ枠の未設定は対象外。
+端末交換時は卓の登録と配信アプリの保守登録を更新する。接続不良を理由に A/B/C を入れ替えない。
+設営手順と検証範囲は [onsite_day_ops.md](../memory/onsite_day_ops.md) を参照。
+
+## 従来の接続実装 — 端末内在 ID + 発見プロトコル（fixedcam-discovery/1）— 2026-07-18
 
 スロット（A/B/C）⇔端末の対応を **DHCP の IP 頼みにしない**。ID を正・IP を手段にする。
 計画 [.claude/plans/2026-07-18_connection-robustness.md](../plans/2026-07-18_connection-robustness.md)。

@@ -1,580 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>廻リ視 web compositor</title>
-  <link rel="stylesheet" href="style.css">
-  <!-- 🎯 カメラを手で合わせる面（align-ui.js）。全画面オーバーレイなので他の面と干渉しない範囲で独立。
-       デザイン言語は style.css と同じ（純黒 + クリーム文字 #fffaf0 / アクセント #ffdead / 角丸ゼロ）。 -->
-  <style>
-    .calib-ui { position: fixed; inset: 0; z-index: 200; display: flex; }
-    /* 🎯 手で合わせる面（align-ui.js）。旧・較正パネルと同じ骨格 + 操作用の追加分。 */
-    .au-modes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-    .au-mode { font-size: var(--fs-body); padding: 3px 8px; }
-    .au-mode.is-on { border-color: var(--accent-color); color: var(--accent-color); }
-    .au-modehint { font-size: var(--fs-body); opacity: var(--opacity-mute); }
-    .au-readout { font-size: var(--fs-body); line-height: 1.7; font-variant-numeric: tabular-nums;
-      padding: 6px 8px; border: 1px solid var(--line-soft); }
-    .au-rohead { font-size: var(--fs-body); opacity: var(--opacity-mute); margin-bottom: 2px; }
-    .au-below { color: var(--warn-color); margin-top: 4px; line-height: 1.45; }
-    .au-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
-    .au-grid label { display: flex; align-items: center; justify-content: space-between; gap: 4px;
-      font-size: var(--fs-body); opacity: var(--opacity-sub); }
-    .au-grid input { width: 74px; font-size: var(--fs-body); padding: 2px 4px; font-variant-numeric: tabular-nums; }
-    .au-block { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border: 1px solid var(--line-soft); }
-    .au-blockhead { font-size: var(--fs-body); color: var(--accent-color); }
-    .au-blockhint { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    .au-dollrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .au-dollrow label { display: flex; align-items: center; gap: 3px; font-size: var(--fs-body); opacity: var(--opacity-sub); }
-    .au-dollrow input { width: 66px; font-size: var(--fs-body); padding: 2px 4px; }
-    .au-axes { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-body);
-      opacity: var(--opacity-sub); margin-left: 4px; }
-    .au-axis { font-size: var(--fs-body); padding: 3px 7px; }
-    .au-axis.is-on { border-color: var(--accent-color); color: var(--accent-color); }
-    .au-dollstatus { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    .au-dollstatus.warn { color: var(--warn-color); opacity: 1; }
-    /* 端末の傾き。値は読みながら合わせるので等幅数字。取れない理由は必ず見えるところに出す。 */
-    .au-tiltval { font-size: var(--fs-body); line-height: 1.6; font-variant-numeric: tabular-nums; }
-    .au-tiltna { opacity: var(--opacity-mute); font-size: var(--fs-body); }
-    .au-tiltgap { color: var(--warn-color); font-size: var(--fs-body); }
-    .au-tiltok { color: var(--accent-color); font-size: var(--fs-body); }
-    .au-tiltblock button:disabled, .au-axis:disabled { opacity: .4; cursor: not-allowed; }
-    .au-msg { font-size: var(--fs-body); min-height: 15px; line-height: 1.5; }
-    .au-msg.warn { color: var(--warn-color); }
-    .au-actions { display: flex; gap: 6px; }
-    .au-actions button { flex: 1; font-size: var(--fs-body); padding: 5px; }
-    /* 「ここで見た目を判定しない」は常に見えていること（過去 3 回、卓の絵を信じて失敗している） */
-    .au-authority { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5;
-      border-top: 1px solid var(--line-soft); padding-top: 6px; }
-    .cu-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .82); }
-    .cu-panel {
-      position: relative; margin: auto; width: min(1180px, 96vw); max-height: 94vh;
-      display: flex; flex-direction: column; overflow: hidden;
-      background: radial-gradient(circle at top left, #1a1a1a 0%, #000 100%);
-      border: 1px solid var(--line-soft);
-    }
-    .cu-head {
-      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-    .cu-head .spacer { flex: 1; }
-    .cu-frameinfo { font-size: var(--fs-body); opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
-    .cu-body { display: flex; gap: 14px; padding: 12px 14px 16px; overflow: auto; }
-    .cu-viewcol { flex: 1 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-    .cu-canvas-wrap { position: relative; border: 1px solid var(--line-soft); background: #000; }
-    .cu-canvas { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: none; }
-    .cu-noframe {
-      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      text-align: center; padding: 20px; font-size: var(--fs-body); color: var(--warn-color);
-    }
-    .cu-ptlist { display: flex; flex-wrap: wrap; gap: 5px; min-height: 24px; }
-    .cu-pt {
-      display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 6px;
-      border: 1px solid var(--line-soft); font-size: var(--fs-body); font-variant-numeric: tabular-nums;
-    }
-    .cu-pt b { color: var(--accent-color); }
-    .cu-pt button { padding: 0 4px; font-size: var(--fs-body); line-height: 1.4; }
-    .cu-pt-empty { font-size: var(--fs-body); opacity: var(--opacity-mute); }
-    .cu-hint { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    .cu-side { flex: 0 0 330px; display: flex; flex-direction: column; gap: 8px; }
-    .cu-lbl { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-body); opacity: var(--opacity-sub); }
-    .cu-cand { max-width: 100%; font-size: var(--fs-body); }
-    .cu-manual { display: flex; align-items: center; gap: 5px; }
-    .cu-manual label { display: flex; align-items: center; gap: 3px; font-size: var(--fs-body); opacity: var(--opacity-sub); }
-    .cu-manual input { width: 62px; font-size: var(--fs-body); padding: 2px 4px; }
-    .cu-lockhint { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.45; }
-    /* 部屋を上から見た図（floor-sketch.js が描く）。候補点が部屋のどこかを絵で示す面 */
-    .cu-mapblock { display: flex; flex-direction: column; gap: 5px; }
-    .cu-maphead { font-size: var(--fs-body); opacity: var(--opacity-sub); display: flex; gap: 6px; align-items: baseline; }
-    .cu-mapmode-hint { font-size: var(--fs-body); opacity: var(--opacity-mute); }
-    .cu-map { width: 100%; height: auto; aspect-ratio: 1 / 1; border: 1px solid var(--line-soft); cursor: crosshair; }
-    .cu-maprow { display: flex; align-items: center; gap: 6px; }
-    .cu-maprow .cu-marklabel { flex: 1; min-width: 0; font-size: var(--fs-body); padding: 2px 4px; }
-    .cu-maprow button { padding: 2px 6px; font-size: var(--fs-body); }
-    .cu-maphint { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    /* 高さの点（壁の縦エッジ）。床だけでは解けない縮退をここで解く */
-    .cu-heightbox { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--line-soft); }
-    .cu-heightrow { display: flex; align-items: center; gap: 8px; }
-    .cu-heightrow button { padding: 3px 9px; font-size: var(--fs-body); }
-    .cu-heightrow button.armed { border-color: var(--geo-wall); color: var(--geo-wall); }
-    .cu-heightrow label { display: flex; align-items: center; gap: 3px; font-size: var(--fs-body); opacity: var(--opacity-sub); }
-    .cu-heightrow input { width: 62px; font-size: var(--fs-body); padding: 2px 4px; }
-    .cu-heighthint { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    .cu-pt.up { border-color: var(--geo-wall); }
-    .cu-pt.up b { color: var(--geo-wall); }
-    /* 高さの点は打った後も高さを直せる（壁 1.8m と箱 0.9m が混ざる現場がある） */
-    .cu-pt .cu-pth { width: 48px; font-size: var(--fs-body); padding: 1px 3px; }
-    .cu-pt .cu-ptunit { font-size: var(--fs-body); opacity: var(--opacity-mute); margin-left: -3px; }
-    /* 実測した基準点が足りないことは、点の打ち方より先に言う（合わない原因の第一位） */
-    .cu-srcwarn:empty { display: none; }
-    .cu-srcwarn {
-      font-size: var(--fs-body); line-height: 1.55; padding: 6px 8px;
-      border: 1px solid color-mix(in srgb, var(--warn-color) 55%, transparent);
-      color: var(--warn-color);
-    }
-    .cu-assumedlbl { font-size: var(--fs-body); opacity: var(--opacity-mute); }
-    /* 実測点が足りないときだけ出る。床を測って入れれば四隅が実測点になる（最短の道） */
-    .cu-floorfix { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--line-soft); }
-    .cu-floorrow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-    .cu-floorrow label { display: flex; align-items: center; gap: 3px; font-size: var(--fs-body); opacity: var(--opacity-sub); }
-    .cu-floorrow input { width: 60px; font-size: var(--fs-body); padding: 2px 4px; }
-    .cu-floorrow button { padding: 3px 8px; font-size: var(--fs-body); }
-    .cu-floorhint { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    /* レンズ（内部パラメータ）。「内部は一度だけ丁寧に / 外部は現場で毎回」を UI に出す口 */
-    .cu-lensbox { display: flex; flex-direction: column; gap: 4px; }
-    .cu-lensrow { display: flex; gap: 4px; align-items: center; }
-    .cu-lensrow select { flex: 1; min-width: 0; font-size: var(--fs-body); }
-    .cu-lensrow button { padding: 2px 6px; font-size: var(--fs-body); }
-    .cu-lensinfo { font-size: var(--fs-body); line-height: 1.5; opacity: var(--opacity-mute); }
-    .cu-lensinfo .warn { color: var(--warn-color); opacity: 1; }
-    .cu-lensinfo .bad { color: var(--danger-color); opacity: 1; }
-    /* 保存した映像から較正する（現場で撮って後で解く / ライブが切れていても進める） */
-    .cu-plate { display: flex; flex-direction: column; gap: 4px; }
-    .cu-plate button { font-size: var(--fs-body); align-self: flex-start; }
-    .cu-plate select { font-size: var(--fs-body); max-width: 100%; }
-    .cu-frameinfo.plate { color: var(--warn-color); opacity: 1; }
-    .cu-quality { font-size: var(--fs-body); padding: 6px 8px; border: 1px solid var(--line-soft); line-height: 1.5; }
-    .cu-quality.ok { border-color: color-mix(in srgb, var(--accent-color) 45%, transparent); }
-    .cu-quality .cu-qdetail { opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
-    .cu-quality ul { margin: 4px 0 0; padding-left: 16px; color: var(--warn-color); }
-    .cu-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-    .cu-actions button:disabled { opacity: .35; cursor: default; filter: none; }
-    .cu-msg { font-size: var(--fs-body); min-height: 1.2em; opacity: var(--opacity-sub); }
-    .cu-msg.ok { color: var(--accent-color); opacity: 1; }
-    .cu-msg.err { color: var(--danger-color); opacity: 1; }
-    .cu-result { display: flex; flex-direction: column; gap: 3px; padding: 8px; border: 1px solid var(--line-soft); }
-    .cu-res-line { font-size: var(--fs-body); line-height: 1.45; }
-    .cu-res-line.sub { font-size: var(--fs-body); opacity: var(--opacity-sub); font-variant-numeric: tabular-nums; }
-    .cu-res-line.good { color: var(--accent-color); }
-    .cu-res-line.ok { color: var(--warn-color); }
-    .cu-res-line.bad { color: var(--danger-color); }
-    .cu-res-line.warn { color: var(--warn-color); font-size: var(--fs-body); line-height: 1.45; }
-    .cu-res-line.saved { opacity: var(--opacity-sub); }
-    .cu-lockto { margin-top: 4px; font-size: var(--fs-body); align-self: flex-start; }
-    .cu-wirekey { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.6; }
-    .cu-wirekey .k-floor { color: #ffdead; }
-    .cu-wirekey .k-grid { color: rgba(255, 222, 173, .6); }
-    .cu-wirekey .k-wall { color: var(--geo-wall); }
-    .cu-wirekey .k-line { color: #fffaf0; }
-    .cu-wirekey .k-mark { color: #ffdead; }
-    .cu-wirekey .k-reproj { color: var(--geo-check); }
-    .cu-wirekey .k-assumed { color: var(--warn-color); }
-    .cu-danger { margin-top: auto; padding-top: 6px; }
-    .cu-danger button { font-size: var(--fs-body); }
-    /* カメラ列の 📐 欄に足す較正の入口とバッジ */
-    .calib-row { margin-top: 6px; }
-    .calib-badge { font-size: var(--fs-body); opacity: var(--opacity-mute); }
-    .calib-badge.ok { color: var(--accent-color); opacity: 1; }
-    .calib-badge.warn { color: var(--warn-color); opacity: 1; }
-
-    /* 🧱 部屋の 3D プロキシ / 💡 CG 照明（floormap.js の 🧱 モードと照明パネル）。
-       既存の .fm-reg / .fm-lines と同じ骨格（1px 罫線 + 左 2px のアクセント帯）に揃える。
-       壁の水色 var(--geo-wall) は較正 UI のワイヤー配色（cu-wirekey .k-wall）と同じ色で、
-       「同じ幾何を別の面から見ている」ことを配色で示す。 */
-    .fm-room {
-      display: flex; flex-direction: column; gap: 6px;
-      padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid var(--geo-wall);
-    }
-    .fm-room-note { font-size: var(--fs-body); opacity: var(--opacity-sub); line-height: 1.4; min-height: 1.3em; }
-    .fm-room-note.warn { color: var(--warn-color); opacity: 1; }
-    .fm-room-tool { padding: 4px 10px; font-size: var(--fs-body); }
-    .fm-room-tool.on { border-color: var(--geo-wall); color: var(--geo-wall); }
-    .fm-room-sel { display: flex; flex-direction: column; gap: 5px; }
-    .fm-room-sel.hint-only { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.4; }
-    .fm-room-list { display: flex; flex-direction: column; gap: 4px; }
-    .fm-room-item { display: flex; align-items: center; gap: 5px; }
-    .fm-room-badge { flex: 0 0 auto; width: 16px; text-align: center; font-size: var(--fs-body); }
-    .fm-room-pick {
-      flex: 1 1 auto; min-width: 0; text-align: left; padding: 2px 6px; font-size: var(--fs-body);
-      border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .fm-room-item.on .fm-room-pick { border-color: var(--geo-wall); color: var(--geo-wall); }
-    .fm-room-info { font-size: var(--fs-body); opacity: var(--opacity-mute); white-space: nowrap; }
-    .fm-room-info.warn { color: var(--danger-color); opacity: 1; }
-    .fm-room-import, .fm-room-clear { padding: 4px 10px; font-size: var(--fs-body); }
-    .fm-canvas.fm-room-edit { cursor: crosshair; }
-
-    .fm-light {
-      display: flex; flex-direction: column; gap: 6px;
-      padding: 8px; border: 1px solid var(--line-soft); border-left: 2px solid #ffdead;
-    }
-    .fm-light-note { font-size: var(--fs-body); opacity: var(--opacity-sub); line-height: 1.4; min-height: 1.3em; }
-    .fm-light-note.ghost { opacity: var(--opacity-mute); }
-    .fm-light-rows { display: flex; flex-direction: column; gap: 4px; }
-    .fm-light-row { display: flex; align-items: center; gap: 6px; }
-    /* まだ Unity が読んでいない項目。押しても実機が変わらないので、著作面で先に落として見せる */
-    .fm-light-row.pending { opacity: var(--opacity-mute); }
-    .fm-light-lbl { flex: 0 0 108px; font-size: var(--fs-body); }
-    .fm-light-row input[type="range"] { flex: 1 1 auto; min-width: 70px; accent-color: var(--accent-color); }
-    .fm-light-num { flex: 0 0 62px; width: 62px; font-size: var(--fs-body); padding: 2px 4px; text-align: right; }
-    .fm-light-unit { flex: 0 0 14px; font-size: var(--fs-body); opacity: var(--opacity-mute); }
-    .fm-light-sw { flex: 0 0 auto; width: 14px; height: 14px; display: inline-block; border: 1px solid var(--line-soft); }
-    .fm-light-clear { padding: 4px 10px; font-size: var(--fs-body); }
-
-    /* 📍 CG 人形の立ち位置（ribbon.js の openPlaceUi）。較正 UI と同じ作法の全画面オーバーレイ。
-       人形の輪郭は無彩色 var(--geo-actor) で、床（var(--geo-floor)）とも壁（var(--geo-wall)）とも
-       必ず見分けが付くようにする — 同系色にすると「線がずれているのか人形がずれているのか」が
-       判別できなくなる。⚠ この凡例はまさにそこが破れていた: 壁 #78dcff と人形 #7ad6ff は
-       RGB 差 (8,6,0) しか無く、隣り合わせで並べても同じ色にしか見えなかった。 */
-    .place-ui { position: fixed; inset: 0; z-index: 200; display: flex; }
-    .pu-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .82); }
-    .pu-panel {
-      position: relative; margin: auto; width: min(1100px, 96vw); max-height: 94vh;
-      display: flex; flex-direction: column; overflow: hidden;
-      background: radial-gradient(circle at top left, #1a1a1a 0%, #000 100%);
-      border: 1px solid var(--line-soft);
-    }
-    .pu-head {
-      display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-    .pu-head .spacer { flex: 1; }
-    .pu-frameinfo { font-size: var(--fs-body); opacity: var(--opacity-mute); font-variant-numeric: tabular-nums; }
-    .pu-body { display: flex; gap: 14px; padding: 12px 14px 16px; overflow: auto; }
-    .pu-viewcol { flex: 1 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-    .pu-canvas-wrap { position: relative; border: 1px solid var(--line-soft); background: #000; }
-    .pu-canvas { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: none; }
-    .pu-hint { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    .pu-side { flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px; }
-    .pu-warn { font-size: var(--fs-body); line-height: 1.45; display: none; }
-    .pu-warn.on { display: block; color: var(--warn-color); }
-    .pu-grid { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
-    .pu-grid label { display: flex; align-items: center; gap: 4px; font-size: var(--fs-body); opacity: var(--opacity-sub); }
-    .pu-grid input { width: 68px; text-align: right; font-variant-numeric: tabular-nums; }
-    .pu-issue { font-size: var(--fs-body); line-height: 1.45; display: none; }
-    .pu-issue.on { display: block; color: var(--warn-color); }
-    .pu-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .pu-key { font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.6; }
-    .pu-key .k-floor { color: var(--geo-floor); }
-    .pu-key .k-wall { color: var(--geo-wall); }
-    .pu-key .k-proxy { color: var(--geo-actor); }
-    .pu-note { margin-top: auto; font-size: var(--fs-body); opacity: var(--opacity-mute); line-height: 1.5; }
-    /* カット編集の「立ち位置」行（📍 画面で置く の入口） */
-    .rb-s-cgmode-l { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); }
-    .rb-s-place-note { font-size: var(--fs-body); color: var(--warn-color); }
-    /* 🕹 検証の画面に重ねる人形の輪郭（show-sim.js）。合成器の WebGL キャンバスの上に載せる。 */
-    .ss-proxy { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f5efe2">
+  <title>廻リ視 — 設営と点検</title>
+  <link rel="stylesheet" href="ops.css">
+  <script type="module" src="ops.js"></script>
 </head>
 <body>
-  <div class="app" data-mode="show">
-    <header>
-      <h1>廻リ視 web compositor</h1>
-      <div class="status-bar">
-        <span class="st-unit" title="この卓サーバ（capture-server.py）との通信。落ちると保存も配信設定も届かない">
-          <span id="stServerDot" class="st-dot off"></span><span id="stServerInfo">サーバ: 確認中</span>
-        </span>
-        <span class="st-unit" title="Quest（Unity）からの heartbeat">
-          <span id="stDot" class="st-dot off"></span><span id="stInfo">Unity: 未接続</span>
-        </span>
-        <span id="stSync" class="st-sync"></span>
-        <span id="stDirty" class="st-dirty" title="タイムライン / フロアマップに未保存の編集があります"></span>
-        <span class="spacer"></span>
-        <button id="recAllRaw" class="rec-btn" title="全カメラの生フレームを同時に録画 開始/停止（recordings/ へ）">⏺ 全カメラ録画(生)</button>
-        <button id="recAllView" class="rec-btn" title="全カメラの最終映像（Quest と同じ絵）を同時に録画 開始/停止（recordings/ へ）">⏺ 全カメラ録画(Quest)</button>
-        <button id="openRecordings" title="撮影した画像・動画のフォルダ（recordings/）を開く">📂 撮影フォルダ</button>
-        <a href="sim.html" target="_blank" class="link" title="Unity なしで動作確認する仮想クライアント">🖥 仮想Quest</a>
+  <a class="skip" href="#main">本文へ移動</a>
+  <div id="demo-banner" class="demo-banner" hidden>画面の表示例です。実機の状態ではありません。復旧操作はできません。</div>
+  <header class="site-header">
+    <a class="brand" href="/">廻リ視 <span>設営と点検</span></a>
+    <nav aria-label="このページ"><a href="#devices">機器の状態</a><a href="#checks">開場前の確認</a><a href="#setup">設置の手順</a></nav>
+    <button id="theme" class="quiet" type="button" aria-label="表示を切り替える">暗い表示</button>
+  </header>
+  <main id="main">
+    <section class="overview" aria-labelledby="overview-title">
+      <div class="eyebrow">OPERATION DESK <span>固定カメラ 3 台 / Quest 2 台</span></div>
+      <div class="overview-heading">
+        <div><p id="overall-state" class="state" data-state="unknown">確認中</p><h1 id="overview-title">機器の状態を確認しています</h1></div>
+        <div class="refresh"><button id="refresh" type="button">もう一度確認</button><p id="updated" class="note" role="status">最初の応答を待っています</p></div>
       </div>
-    </header>
-
-    <!-- 危険なラッチ（カメラ固定 / 演出再生中）の警告。show.json 由来なので Unity 未接続でも出る。
-         これが出たまま体験を始めると「歩いても切り替わらない」「最初から演出が出ている」になる。 -->
-    <div id="latchBar" class="latch-bar" style="display:none">
-      <span id="latchText" class="latch-text"></span>
-      <span class="spacer"></span>
-      <button id="latchClearAll" class="accent">⛑ 全部解除して自律へ</button>
-    </div>
-
-    <!-- サーバ断の警告（卓サーバが落ちると保存も Quest への配信も届かない） -->
-    <div id="serverBar" class="server-bar" style="display:none">
-      <span id="serverBarText">⚠ 卓サーバに接続できません — 保存も Quest への反映も届きません（serve.ps1 を確認）</span>
-    </div>
-
-    <!-- 作業の段。並びは**依存の順序**（場所が無ければ区間が無く、較正が無ければ CG 人形が出ない）。
-         上から下へ進めば必要なものが必要な順に出てくる、という順路そのものをナビにしている。
-         既定は 🎬 演出（一番長く居る面）。段の判定基準は「会場でカメラと部屋が目の前にある時にしかできないか」。 -->
-    <nav class="mode-nav" aria-label="作業の段">
-      <button class="mode-btn" data-mode="place" title="会場でしかできないこと。ゾーンの塗り・位置合わせ点・通過ライン・部屋の形・カメラの姿勢と較正・端末の発見と疎通">📍 場所</button>
-      <button class="mode-btn" data-mode="material" title="カメラ別の合成の試写室。種フレーム→指示→生成物→採否を 1 レコードに束ねる">🧪 素材</button>
-      <button class="mode-btn active" data-mode="show" title="周回タイムラインで演出とカットを組む。画質・BGM・CG 人形・焼き込みもここ">🎬 演出</button>
-      <button class="mode-btn" data-mode="live" title="本番。始めてよいかの確認・ラン状態・緊急操作・カメラの監視">🚨 本番</button>
-      <!-- 別ページ。当日の素材撮りはこの画面だけを全画面で使うので、モード切替とは分けてある。 -->
-      <a class="mode-btn mode-link" href="shoot.html"
-         title="当日その場で撮る接近の素材（2 周目 B・C の 6 本）。1 ショットずつ誘導 → 端末が自動停止 → 卓が回収 → 画に出る頭だけ試写 → 採用">🎥 撮影</a>
-    </nav>
-
-    <section class="atelier-sec" data-group="material">
-      <h2 class="mc-title">素材工房（カメラ別・合成の試写室）
-        <span class="hint">列＝カメラ。1 列の中を上から <b>① 試写 → ② 種フレーム → ③ 指示 → ④ 生成物</b> と流す（上ほど作業中よく見るもの）。判断基準は「動画単体の出来」ではなく<b>その構図の live に載せた時に破綻しないか</b>なので、<b>合成の見えを常に出したまま</b>作る。生成物をクリックすると試写に載り、<b>全面差し替え</b>と<b>動くところだけ（種フレームとの差分＝足されたものだけ）</b>を切り替えて確かめられる。良ければ <b>💾 カットの素材にする</b> で cue になり（差分マスクは PNG に焼かれる）、そのままタイムラインの演出で選べる。<b>📷 いま撮る</b> は下の監視列の生映像から 1 枚切り出して即座に種の候補へ入る（リロード不要）。<br>貯めるのはプロンプトではなく<b>「生成」</b>——種フレーム・全文プロンプト・出力をひとかたまりで残すので「このプロンプトで何が出たか」が後から必ず分かる（同じ内容が <code>atelier-index.md</code> にも自動で書き出される）。<b>採用したかは記録しない</b>——show.json の cue がその出力を指していれば「本番で使用」と自動で出る。静止画は 🪄 でこの PC の Codex に作らせ、動画は外部ツール（Dreamina 等）へ 📋 で持っていき、できたファイルを棚へドロップすると <code>captures/</code> へ規約名で入る。</span>
-      </h2>
-      <div id="atelier"></div>
+      <p id="overview-detail" class="overview-detail">カメラの映像と Quest からの応答を確かめます。</p>
+      <div class="totals" aria-label="確認の集計"><div><span>応答と映像を確認</span><p><span id="online-count">0</span><small> / 5 台</small></p></div><div><span>対処が必要</span><p><span id="error-count">—</span><small> 台</small></p></div><div><span>未確認の機器</span><p><span id="unknown-count">5</span><small> 台</small></p></div><a href="#checks"><span>人が確認すること</span><p><span id="manual-count">4</span><small> 件</small></p></a></div>
+      <div id="connection-error" class="notice" role="alert" hidden></div>
     </section>
-
-    <section class="timeline-sec" data-group="show">
-      <h2 class="mc-title">周回タイムライン（事前オーサリングの主面）
-        <span class="hint">動画編集風の横長タイムライン。layout.course.order 順に「1周目: A|B|C → 2周目: …」を横に連結。区間（＝その周・そのカメラに体験者が居る時間）をクリックして、<b>演出</b>とその<b>カット</b>（映すもの・尺・遷移）、画像加工（post）の上書き、BGM を編集する。演出はドラッグで「進入 +t 秒」「離脱時」へ動かせる。<b>📏 ラインの演出</b>（体験者がフロアマップで引いた線を通過したら始まる）は時間軸に乗らないので、区間の中に段を分けて置かれる — 線の場所と<b>担当カメラ</b>はフロアマップの <b>📏 通過ライン</b>で決める（担当と違う区間からは選べない）。区間には実機で測った<b>平均滞在時間</b>が出るので、開始位置が歩速に対して遅すぎないかを確認する。💾 保存で show.json timeline に入り、📦 エクスポートで APK に焼き込む。▶ 検証は 🕹 ショーシミュレーションへ。ライブ手動操作が優先。<br>※ <b>編集は演出・カット（v3）が既定</b>。show.json がまだ v2（cue 割当・インサートショット）でも変換して表示し、💾 保存で v3 として書き出す（そのあと v2 には戻せない）。保存前なら「▤ 旧グリッド」で従来編集にも戻れる。</span>
-      </h2>
-      <div id="timeline"></div>
+    <section id="devices" aria-labelledby="devices-title">
+      <div class="section-heading"><div><p class="eyebrow">01 / DEVICES</p><h2 id="devices-title">機器の状態</h2></div><p class="note">約 5 秒ごとに確認します。古い結果は正常扱いしません。</p></div>
+      <div id="global-issues"></div><div id="cameras" class="camera-grid"></div>
+      <div class="quest-heading"><h3>Quest と受付ページ</h3><p class="note">受付の言語とホラー軽減は各 Quest に直接届きます。</p></div>
+      <div id="quests" class="quest-grid"></div>
+      <p class="note scope-note">カメラの判定はこの PC までの映像受信です。Quest 内での見え方と音は装着して確認します。</p>
     </section>
-
-    <section class="recpanel" data-group="show">
-      <h2 class="mc-title">⏺ 端末内録画（前の周を録って後の周の演出で流す）
-        <span class="hint">体験者が歩いた区間のライブ映像を <b>Quest 本体に録画</b>しておき、後の周の演出で「録画」カットとして流す。録るのは<b>体験者が実際に居た区間だけ</b>で、長さはその人がそこに居た時間そのまま（画面が演出に取られていても録り続ける）。<b>ラン開始で前の体験者の録画は消える</b>。ここを OFF にしたまま「録画」カットを置くと、実機ではそのカットが黙って飛ばされる（下の一覧が対応を照合する）。卓の ⏺ 録画（recordings/ へ保存する PC 側の記録）とは別物。</span>
-      </h2>
-      <div class="run-bar">
-        <label class="chk" title="show.json の record.enabled。OFF なら 1 フレームも録らない"><input id="recEnabled" type="checkbox"> 端末内録画を使う</label>
-        <span class="rec-laps">録る周 <span id="recLaps"></span></span>
-        <span class="spacer"></span>
-        <span id="recState" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <label class="livecue-lbl" title="カメラが切り替わる何秒前から残すか。3 周目はこれを、その区間へ入った瞬間から流す（頭から録ると映像の中の過去の自分と CG 人形が重なる）">切り替え前 <input id="recTail" type="number" min="1" max="20" step="0.5"> s</label>
-        <label class="livecue-lbl" title="カメラが切り替わった後も、出ていった区間のカメラを何秒録り続けるか。切り替えの瞬間で切ると、映像の中の自分が角を曲がり切る前に終わる">切り替え後 <input id="recPost" type="number" min="0.5" max="20" step="0.5"> s</label>
-        <label class="livecue-lbl" title="ラン全体で使う端末ストレージの上限。使い切ると以降の区間は録らない">ラン全体の上限 <input id="recMaxMB" type="number" min="10" max="2000" step="10"> MB</label>
-        <label class="livecue-lbl" title="録画側の間引き。受信 fps より低くてよい（15 で十分）">録画 fps <input id="recFps" type="number" min="1" max="30" step="1"></label>
-      </div>
-      <div id="recUse" class="rec-use"></div>
-    </section>
-
-    <section class="recpanel" data-group="show">
-      <h2 class="mc-title">👁 目の写真（3 周目 C の視界ジャック）
-        <span class="hint">目がたくさん開いたところで<b>視界を乗っ取って、当日撮った写真をぱぱぱっと流す</b>。撮った写真を <code>tools/web-compositor/eyejack/</code> へ放り込んで「📥 取り込む」を押すだけ（縮小・向き・明るさはここで揃える）。流す順は<b>ファイル名順</b>。0 枚なら何も起きない（目だけ出る）。カットの側で「視界ジャック」に印を付けると出る。</span>
-      </h2>
-      <div class="run-bar">
-        <button id="ejApply" class="accent" title="eyejack/ の写真を正規化して show.json へ配る">📥 取り込む</button>
-        <button id="ejOpen" title="写真を置くフォルダを開く">📂 フォルダを開く</button>
-        <span id="ejState" class="ed-status"></span>
-      </div>
-      <div id="ejList" class="rec-use"></div>
-    </section>
-
-    <section class="multicam" data-group="place show live">
-      <h2 class="mc-title">
-        マルチカメラ（監視）
-        <span class="hint">列＝カメラ（監視専用）。各列は下→上に ① 生映像 → ③ 画像加工（カメラ単位の画質）→ ④ Quest 実映像（合成後）。📷/⏺ は ① 生映像の上＝生フレーム、④ 実映像の上＝合成済み（Quest と同じ絵）を recordings/ へ。cue・マスクの作成はタイムラインのセグメントインスペクタで行う。</span>
-      </h2>
-      <div class="blend-bar" data-group="show">
-        <span class="seg-label">境界ブレンド（合成跡を消す）</span>
-        <label class="sld">フェザー <input id="bFeather" type="range" min="0" max="1" step="0.01" value="0.3"></label>
-        <label class="chk" title="cue を保存するとき 6 つの数（RGB の gain/offset）に焼かれ、実機でも掛かる"><input id="bColor" type="checkbox" checked> 色統計</label>
-        <label class="sld">強度 <input id="bColorStr" type="range" min="0" max="1" step="0.01" value="1"></label>
-        <label class="chk" title="Quest は lerp(live, overlay, mask) の一発で合成する。多重帯域ブレンディングは持っていないので、ここを ON にすると卓だけ継ぎ目が消えて見える"><input id="bLap" type="checkbox"> ラプラシアン<b class="chk-note">卓だけ</b></label>
-        <label class="sld">レベル <input id="bLevels" type="range" min="2" max="9" step="1" value="7"><span id="bLevelsV">7</span></label>
-      </div>
-      <div class="global-fx" data-group="show">
-        <div class="gfx-head">
-          <b>🎥 全体グレーディング</b>
-          <span class="gfx-sub">カメラ個別の画質を設定していない列は全部これになる（＝列の「↺ 画質を初期化」の戻り先）</span>
-          <span class="spacer"></span>
-          <button id="gfxPreset" title="暗めの監視カメラ調（露出 -0.72 / 黒浮き 0.065 / 緑寄り / ヴィネット・グレイン・走査線）に戻す">🎥 監視カメラ既定へ</button>
-          <button id="gfxNeutral" title="加工なし（素の映像）に戻す">◻ 加工なし</button>
-          <span id="gfxMsg" class="fx-msg"></span>
+    <section id="checks" aria-labelledby="checks-title">
+      <div class="section-heading"><div><p class="eyebrow">02 / BEFORE OPENING</p><h2 id="checks-title">開場前の確認</h2></div><button id="reset-checks" class="quiet" type="button">確認をやり直す</button></div>
+      <p class="section-intro">接続だけでは分からないことを確認します。確認は 1 時間有効です。機器の切断や設定の変更があれば取り消します。</p>
+      <div id="manual-checks" class="manual-checks"></div>
+      <p class="note" id="diagnostic-summary" role="status">アプリと素材の詳しい点検は未実行です。</p>
+      <details class="deep-check"><summary>詳しい点検 <span>アプリの版 / 素材 / 無線での復旧 / 音と入力</span></summary>
+        <div class="details-body"><p>この PC から端末を調べます。通常 40 秒ほどかかります。USB または無線の端末接続が必要な項目は別に表示します。</p>
+          <button id="deep-check" type="button">詳しい点検を実行</button><p id="deep-message" role="status" class="note">まだ実行していません。</p><div id="deep-results"></div>
         </div>
-        <div id="gfxRows" class="fx-rows"></div>
-      </div>
-      <div class="row-btns cams-toolbar" data-group="place">
-        <button id="camAdd" title="カメラを 1 台増やす（既定は演出専用＝周回ゾーンに割り当てないカメラ D 用）。配信スマホ側の cameraId も同じ文字にする">＋ カメラを追加</button>
-        <span class="cams-hint">追加したカメラは Unity 側 <b>StreamingLogic.prefab の sources[]</b> と並び順で対応する（4 台目 = Phone04）。</span>
-        <span id="camAddMsg" class="fx-msg"></span>
-      </div>
-      <div id="cams" class="cams"></div>
+      </details>
     </section>
-
-    <section class="preflight" data-group="live">
-      <h2 class="mc-title">✅ 本番前チェック
-        <span class="hint">卓サーバ・Quest・カメラ・素材・ラッチ・未保存を自動で見張る（3 秒ごと）。全部 ✅ なら体験を始めてよい状態。⚠ / ❌ の行がそのまま原因の切り分けになる。</span>
-      </h2>
-      <div id="preflight" class="pf-list"></div>
+    <section id="setup" aria-labelledby="setup-title">
+      <div class="section-heading"><div><p class="eyebrow">03 / SETUP</p><h2 id="setup-title">設置の手順</h2></div><span class="state">担当と IP は固定</span></div>
+      <ol class="setup-steps">
+        <li><span class="step-number">1</span><div><h3>会場の Wi-Fi を起動する</h3><p>ルーターを起動します。PC の IP は <code>192.168.10.10</code> です。カメラと Quest も同じネットワークにつなぎます。</p></div></li>
+        <li><span class="step-number">2</span><div><h3>A・B・C を決まった場所に置く</h3><p>スマホ画面の担当と固定 IP を確認します。A は <code>.21</code>。B は <code>.22</code>。C は <code>.23</code>。接続できなくても担当は入れ替えません。</p></div></li>
+        <li><span class="step-number">3</span><div><h3>構図を合わせて明るさを固定する</h3><p>本番の照明にします。スマホの設置用画面で超広角と構図を確認します。露出とホワイトバランスを固定します。</p></div></li>
+        <li><span class="step-number">4</span><div><h3>Quest と受付を確認する</h3><p>α は <code>192.168.10.31</code>。β は <code>192.168.10.32</code>。上の「受付ページ」で各端末の設定を確認します。装着後に映像と音を確かめます。</p></div></li>
+      </ol>
+      <details><summary>つながらないときに見る場所</summary><div class="details-body trouble-grid">
+        <div><h3>1 台だけ応答しない</h3><p>該当スマホの電源を確認します。配信アプリを開きます。表示された IP とこの画面の固定 IP を見比べます。</p></div>
+        <div><h3>応答はあるが映像が止まる</h3><p>端末の画面を点けてアプリを開きます。熱とカメラ権限を確認します。「この端末を起こし直す」が使えれば実行します。</p></div>
+        <div><h3>複数台が同時につながらない</h3><p>PC が会場の Wi-Fi につながっているか確認します。ルーターの端末間通信の制限も確認します。Wi-Fi の自動切り替えは行いません。</p></div>
+        <div><h3>担当や端末が違うと表示される</h3><p>別の端末をつかんでいる可能性があります。A・B・C を入れ替えずに設置場所を確認します。端末交換時は保守用の登録を更新します。</p></div>
+      </div></details>
     </section>
-
-    <section class="runpanel" data-group="live">
-      <h2 class="mc-title">🚨 ライブ運用 — ラン状態
-        <span class="hint">体験者 1 人分の周回。▶ ラン開始は「周回・ワンショット演出・カメラ固定・再生中演出」を一括リセットする（次の体験者へ前の状態を持ち越さない）。ラン状態は Unity heartbeat 由来。</span>
-      </h2>
-      <div class="run-readout">
-        <div class="run-main">
-          <span id="runPhase" class="run-mode" title="体験の相。導入 = 固定視点に慣らす自由歩行（演出は武装しない）／本編 = 周回中／終了 = 暗転して次の体験者待ち">—</span>
-          <span id="runLap" class="run-lap">Lap —</span>
-          <span id="runClock" class="run-zone" title="本編の経過 / 目安の尺。目安を超えても体験は止まらない（警告だけ）">—</span>
-          <span id="runZone" class="run-zone" title="体験者が実際に居るゾーン（ショーの時計が確定した担当カメラ）。画面に映っているカメラとは別物">ゾーン —</span>
-          <span id="runMode" class="run-mode">—</span>
-        </div>
-        <div id="runOwner" class="run-owner" title="いま画面を握っているのは誰か。自律 = ゾーンの自動切替、それ以外は演出か卓が握っている">画面: —</div>
-        <div id="runNext" class="run-next">次の演出: —</div>
-        <div id="runLatency" class="run-next" title="Unity が観測できる遅延だけ（到着の揺らぎ + 展開 + 提示）。撮影・エンコード・伝送の下限は含まない">映像の遅れ: —</div>
-      </div>
-      <div class="run-bar emergency">
-        <button id="runStart" class="accent big">▶ ラン開始<small>周回 / 演出 / 固定を全リセット</small></button>
-        <button id="runIntroDone" class="big">⏭ 導入を終える<small>本編（1 周目）を始める</small></button>
-        <button id="runEnd" class="big">🏁 体験を終える<small>暗転して次の体験者へ</small></button>
-        <button id="emgAuto" class="big">🚶 ゾーン自律へ戻す<small>カメラ固定を解除</small></button>
-        <button id="emgStop" class="big">■ 画面を取り返す<small>再生中の演出を中止してライブへ</small></button>
-        <button id="emgGlitch" class="big" title="映像の乱れを 1 回走らせる。体験者の注意を引く / 移動を促すのに使う">⚡ 乱れ<small>1 回だけ走らせる</small></button>
-        <span id="emgStopMsg" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <label class="livecue-lbl">最小滞在 <input id="switchDwell" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
-        <label class="livecue-lbl">クールダウン <input id="switchCooldown" type="number" min="0" max="5" step="0.1" placeholder="0.5"> s</label>
-        <span id="switchTimingState" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <span class="hint">切替タイミングは入力するとその場で反映（空 / 0 = 未指定 → Unity 既定 0.5s）。歩くと切替が起きない時は下げ、切替が忙しい時は上げる（control.minDwellSec / switchCooldownSec）。</span>
-      </div>
-      <div class="run-bar">
-        <label class="livecue-lbl">走り切る周数 <input id="runLaps" type="number" min="1" max="9" step="1"></label>
-        <label class="livecue-lbl"><input id="runIntroOn" type="checkbox"> 導入を挟む</label>
-        <label class="livecue-lbl">導入の最低尺 <input id="runIntroSec" type="number" min="0" max="120" step="1"> s</label>
-        <label class="livecue-lbl"><input id="runIntroAuto" type="checkbox"> 自動で本編へ</label>
-        <label class="livecue-lbl">目安 <input id="runTargetSec" type="number" min="0" max="900" step="10"> s</label>
-        <label class="livecue-lbl">強制終了 <input id="runHardSec" type="number" min="0" max="1800" step="10"> s</label>
-        <label class="livecue-lbl">演出を待つ猶予 <input id="runEndGrace" type="number" min="0" max="30" step="0.5"> s</label>
-        <label class="livecue-lbl">演出を見せ切る上限 <input id="runEndHold" type="number" min="0" max="180" step="5"> s</label>
-        <label class="livecue-lbl">切替に乱れ <input id="runSwitchGlitch" type="number" min="0" max="1" step="0.05"></label>
-        <span id="runCfgState" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <span class="hint">体験の骨格（show.json <code>run</code>）。企画書は「3 区間を 3 周・導入を含め 3 分以内・各周およそ 30 秒」。<b>走り切る周数を回ったあと、元の位置（スタート領域）へ戻ったところで終わる</b>ので、タイムラインには「もどり」の区間が 1 つ増える。導入の自動終了は「最低尺を過ぎ、かつスタート区間に居る」の両方が要る（自動を切ればスタッフの ⏭ だけで進む）。目安を超えても体験は止まらない（警告だけ）。強制終了は動かない体験者への保険で 0 = 無効。</span>
-      </div>
-      <div class="run-bar">
-        <span class="hint">演出を待つ猶予＝終わる条件が揃ったあと、演出が始まるのをこの秒数だけ必ず待つ（もどりの区間に置いた演出はこの中で始まらないと出ない）。演出を見せ切る上限＝そのとき走っている演出を最後まで見せる上限。どちらも 0 なら Quest の既定（3s / 60s）。</span>
-      </div>
-      <div class="run-bar">
-        <label class="livecue-lbl" title="暗いところほど粒が乗る（実際のセンサと同じ）。暗がりが物を隠せるようになる">暗部の粒 <input id="feelNoiseDark" type="number" min="0" max="0.5" step="0.01"></label>
-        <label class="livecue-lbl" title="時間で動かない粒。画面に貼り付いた汚れとして静止するので、その中で動いているものだけが浮く">貼り付く粒 <input id="feelNoiseFixed" type="number" min="0" max="0.3" step="0.005"></label>
-        <label class="livecue-lbl" title="装置の明るさ調整がどれだけ律儀に追うか。0 = 追わない（従来どおり明るさが動かない）">明るさの追従 <input id="feelAgc" type="number" min="0" max="1" step="0.05"></label>
-        <label class="livecue-lbl" title="装置が目指す明るさ。現場の照明が暗いほど、これに近づけようと画を持ち上げる">目指す明るさ <input id="feelTargetLuma" type="number" min="0.05" max="0.9" step="0.01"></label>
-        <label class="livecue-lbl" title="明るさが半分まで追いつくのにかかる時間。長いほど遅れが目に付く">追従の鈍さ <input id="feelFollowSec" type="number" min="0.2" max="5" step="0.1"> s</label>
-        <span id="feelCfgState" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <span class="hint">撮像の質（show.json <code>feel</code>）。<b>実機でしか見えない</b>（この卓のプレビューには出ません）。画像加工（post）と違って時間で動くので別系統にしてあります。明るさの追従は、映っている範囲では何も変わっていないのに画が明るくなる／暗くなる、という読まれ方をします。</span>
-      </div>
-      <div class="run-bar">
-        <label class="livecue-lbl"><input id="introOn" type="checkbox"> 導入演出を出す</label>
-        <label class="livecue-lbl">現実 <input id="introReal" type="number" min="0" max="20" step="0.1"> s</label>
-        <label class="livecue-lbl">格下げ <input id="introDegrade" type="number" min="0" max="20" step="0.1"> s</label>
-        <label class="livecue-lbl">構造 <input id="introStructure" type="number" min="0" max="20" step="0.1"> s</label>
-        <label class="livecue-lbl">枠 <input id="introFrame" type="number" min="0" max="20" step="0.1"> s</label>
-        <label class="livecue-lbl">すり替え <input id="introSwap" type="number" min="0" max="20" step="0.1"> s</label>
-        <label class="livecue-lbl">上限 <input id="introMaxSec" type="number" min="10" max="60" step="1"> s</label>
-        <span id="introSum" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <label class="livecue-lbl"><input id="introCamMarks" type="checkbox"> カメラの印を出す</label>
-        <label class="livecue-lbl"><input id="introRoomWire" type="checkbox"> 壁と床の線を出す</label>
-        <label class="livecue-lbl">乱れの強さ <input id="introGlitch" type="number" min="0" max="1" step="0.05"></label>
-        <span id="introCfgState" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <label class="livecue-lbl">始まる合図 <select id="introStartLine"></select></label>
-        <span id="introStartLineNote" class="ed-status"></span>
-      </div>
-      <div class="run-bar">
-        <span class="hint">導入の遷移演出（show.json <code>run.intro</code>）。段は体験者が見る順に <b>現実 → 格下げ → 構造 → 枠 → すり替え</b>。「現実」を削ると次の格下げが変化として読めなくなる。「構造」は輪郭だけの世界に壁・床とカメラの位置を重ねる段で、<b>線が実物に重なるかは位置合わせの現地検証も兼ねる</b>（重ならなければそこで中止して再登録する）。上限を超えた分は段を飛ばして枠を出す。<b>「構造」の壁の線は <code>layout.room</code> からしか出ない</b> — フロアマップの <b>🧱 部屋</b>で壁を引いていないと床の外周とカメラの印だけになる（床の寸法は［🎯 姿勢を合わせる］で測る）。<b>いつ始まるか</b>は「始まる合図」で決める — <b>📏 通過ライン</b>を選べば<b>被った体験者がその線を横切った瞬間</b>に始まり（歩いて入ってくる動きのまま始められる）、選ばなければフロアマップの <b>🎬 開始位置</b>の円に 0.5 秒留まると始まる。どちらも位置合わせ済みが前提で、未登録ならスタッフの ⏭ だけで始まる。</span>
-      </div>
-    </section>
-
-    <section class="livecue" data-group="live">
-      <h2 class="mc-title">🎬 cue 手動発火
-        <span class="hint">保存済み cue を選んで Quest に即時オーバーレイ（control.activeCue）。タイムラインの自動発火より優先され、その間は自動発火が抑止される。動画は再生終了で自動的にライブへ復帰。cue の作成・編集は 🎬 事前オーサリングのタイムラインで行う。</span>
-      </h2>
-      <div class="run-bar">
-        <label class="livecue-lbl">cue <select id="liveCueSelect"></select></label>
-        <button id="liveCueFire" class="accent">▶ 発火</button>
-        <button id="liveCueStop">■ 停止</button>
-        <span class="spacer"></span>
-        <span id="liveCueState" class="ed-status">停止中</span>
-      </div>
-    </section>
-
-    <section class="discovery" data-group="place live">
-      <h2 class="mc-title">📡 発見済み端末
-        <span class="hint">LAN 上の配信カメラ / PC 卓を UDP ビーコン（fixedcam-discovery/1）で発見。ID が同じで uuid が違う端末は二重 ID ＝赤警告。自動追従 ON なら発見した IP をカメラ列へ反映する（📌 手動固定を除く）。</span>
-      </h2>
-      <div class="disc-bar">
-        <label class="chk" title="Quest 内の発見プロトコルそのものを止める。現地で発見が暴走した時に静的 IP 運用へ縮退させる非常用"><input id="discoveryEnabled" type="checkbox"> Quest の端末発見を使う</label>
-        <label class="chk"><input id="autoFollow" type="checkbox"> 発見した IP を自動追従</label>
-        <span id="autoFollowInfo" class="disc-follow"></span>
-        <span class="spacer"></span>
-        <span id="discMeta" class="disc-meta"></span>
-      </div>
-      <div id="discList" class="disc-list"></div>
-    </section>
-
-    <section class="diag" data-group="place live">
-      <h2 class="mc-title">🩺 疎通診断
-        <span class="hint">PC から各カメラの /info へ実 HTTP 接続 + ビーコン受信状況 + Quest heartbeat を 1 画面で確認。ビーコンは ✅ なのに /info が ❌ なら、AP がクライアント間通信を遮断している疑いが濃い（自前 AP 持ち込みを検討）。</span>
-      </h2>
-      <div class="row-btns">
-        <button id="runDiag" class="accent">🩺 疎通診断を実行</button>
-        <span id="diagStatus" class="ed-status"></span>
-      </div>
-      <div id="diagResult" class="diag-result"></div>
-    </section>
-
-    <!-- 操作（フロアマップ）と結果（シミュレーションの画面）は横並びにする。
-         上下に離すと「ドラッグしている場所」と「何が起きたか」が同時に見えない。 -->
-    <div class="sim-row" data-group="place show">
-    <section class="floormap">
-      <h2 class="mc-title">フロアマップ（ゾーン校正）
-        <span class="hint">上から見た床（1.8m）を 12×12 タイル（0.15m）で表示。マップ上の <b>🖌 塗る / 📍 位置合わせ点 / 🚶 歩かせる / 📐 カメラ姿勢 / 📏 通過ライン / 🧱 部屋</b> で操作が切り替わる。<b>🧱 部屋</b>＝実物の壁・什器を写した<b>不可視の 3D プロキシ</b>（VR には映らない）。1 つの幾何が <b>CG 人形を隠す壁・影の落ち先・較正の参照</b>を兼ねるので、用途ごとに別々に作らないこと。人形の陰影と影は下の <b>💡 CG 照明</b> で決める（Quest に環境光の推定は無いので人が実際の部屋を見て合わせる）。<b>📏 通過ライン</b>＝「体験者がここを通過したら演出」の発火点（線分）をドラッグで引く。<b>ラインは担当カメラに紐づく</b>ので、他の領域で踏んでも何も起きない。塗る＝パレットの色（＝担当カメラ）でタイルを塗り、💾 保存で show.json layout.grid を更新（Quest に long-poll で届く）。L 字壁は固定描画。◇ ＝ HMD 位置（Unity heartbeat 由来。無ければ非表示）。<b>🚶 歩かせる</b>ではマップのどこを押してもそこに体験者が立ち、押したまま動かすと歩く → 右の 🕹 ショーシミュレーションが同時に動く。</span>
-      </h2>
-      <div id="floorMap"></div>
-    </section>
-
-    <section class="showsim">
-      <h2 class="mc-title">🕹 ショーシミュレーション（実機なし検証）
-        <span class="hint">左のフロアマップを <b>🚶 歩かせる</b> にしてドラッグすると、体験者が歩いたものとしてショーが実時間で進む。ゾーン確定（最小滞在）・周回・区間・演出の発火（enter/exit・取り逃し・once・同時1本・watchdog）・画面のクールダウンまで、<b>Unity と同じ判定ロジック</b>で動く（golden トレースで機械照合済み）。「いま画面に映っているもの」は卓の合成器（Quest と同じ式）で実画表示する（ライブはカメラ接続時のみ。素材・マスク・画像加工は未接続でも出る）。歩きを記録してシナリオに保存すれば、同じ歩き方をワンクリックで再実行できる。<b>体感・遅延・VR 提示・位置合わせは検証できない</b>ので実機確認は別途必要。</span>
-      </h2>
-      <div id="showSim"></div>
-    </section>
-    </div>
-
-    <details class="drawer" data-group="show">
-      <summary>🎵 BGM ライブラリ<span class="drawer-note">区間で切り替える曲を登録する</span></summary>
-    <section class="bgm-sec">
-      <h2 class="mc-title">🎵 BGM ライブラリ
-        <span class="hint">tools/web-compositor/audio/ に置いた音源をトラックとして登録する（ループ範囲・音量つき）。登録したトラックをタイムラインの区間から「▶ この曲に切り替える / ■ 止める」で指定する。ラン既定 = 体験開始時に鳴っている曲（未設定なら APK 同梱の既定 BGM）。📦 エクスポートで音源も APK に焼き込まれる。</span>
-      </h2>
-      <div class="row-btns bgm-toolbar">
-        <label class="livecue-lbl">音源 <select id="bgmFileSelect"></select></label>
-        <button id="bgmAddTrack" class="accent">＋ トラックに登録</button>
-        <button id="bgmRefreshFiles" title="audio/ を読み直す">↻</button>
-        <button id="bgmOpenDir" title="audio/ フォルダを開く">📂 音源フォルダ</button>
-        <span class="spacer"></span>
-        <label class="livecue-lbl">ラン既定 <select id="bgmRootTrack"></select></label>
-        <span id="bgmRootState" class="ed-status"></span>
-      </div>
-      <div id="bgmTrackList" class="bgm-list"></div>
-    </section>
-    </details>
-
-    <details class="drawer" data-group="show">
-      <summary>🎭 CG 人形<span class="drawer-note">映像の上に立たせる 3D の定義</span></summary>
-    <section class="actors-sec">
-      <h2 class="mc-title">🎭 CG 人形（映像の上に立たせる 3D）
-        <span class="hint">演出のカットに重ねる人形。<b>体験者のハンドトラッキングで腕が動く</b>（プレハブに ShowActorRig が付いていれば自動）。立ち位置は「体験者の位置（分身）」か「決めた位置」をカットで選ぶ。<b>実カメラの姿勢を著作したカメラでだけ出る</b>（カメラ列の 📐 欄・フロアマップの 📐 モード）。プレハブは Unity の <b>Tools/FixedCamVr/Setup/Build Show Actor Prefab</b> で humanoid の FBX（Mixamo 等）から作る。</span>
-      </h2>
-      <div id="actorsPanel"></div>
-    </section>
-    </details>
-
-    <details class="drawer" data-group="show">
-      <summary>📦 ビルド用エクスポート<span class="drawer-note">APK に焼き込む素材を書き出す</span></summary>
-    <section class="export-sec">
-      <h2 class="mc-title">ビルド用エクスポート
-        <span class="hint">現在の show.json と cue が参照するアセット（マスク・動画・画像）を Assets/StreamingAssets/show/ にコピーし、URL を sa://assets/… へ書き換える。Quest 単体（現地 PC 不在）で発火させる APK に焼き込む素材。</span>
-      </h2>
-      <div class="row-btns">
-        <button id="exportBuild" class="accent">📦 ビルド用エクスポート</button>
-        <span id="exportResult" class="ed-status"></span>
-      </div>
-      <div id="exportFiles" class="export-files"></div>
-    </section>
-    </details>
-  </div>
-  <script type="module" src="app.js"></script>
+    <footer><div><p>状態を残す</p><span class="note">不具合が続く場合は確認結果を保存できます。認証情報は含みません。</span></div><button id="download" type="button">確認結果を保存</button><details class="maintenance"><summary>保守用の画面</summary><p>素材や体験内容の編集は当日の点検から分けています。</p><a href="authoring.html">従来の編集画面</a><a href="shoot.html">撮影した素材</a></details></footer>
+  </main>
+  <noscript><p class="notice">この画面には JavaScript が必要です。ブラウザで有効にして読み込み直してください。</p></noscript>
 </body>
 </html>

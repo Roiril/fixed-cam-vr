@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as cf
+import copy
 import io
 import json
 import os
@@ -38,6 +39,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime
+from urllib.parse import unquote
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
@@ -46,6 +48,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(ROOT, "tools")
 COMPOSITOR = os.path.join(TOOLS, "web-compositor")
 SHOW_JSON = os.path.join(COMPOSITOR, "show.json")
+BAKED_SHOW_JSON = os.path.join(ROOT, "Assets", "StreamingAssets", "show", "show.json")
+FLEET_JSON = os.path.join(COMPOSITOR, "operations-fleet.json")
 EYEJACK_DIR = os.path.join(COMPOSITOR, "eyejack")
 LOG_DIR = os.path.join(ROOT, "logs", "onsite")
 DESK = "http://127.0.0.1:8099"
@@ -65,6 +69,7 @@ EYEJACK_SOURCES = [
 PHOTO_EXT = (".jpg", ".jpeg", ".png", ".heic", ".webp")
 
 sys.path.insert(0, TOOLS)
+sys.path.insert(0, COMPOSITOR)
 
 
 # ================= 出力の形 =================
@@ -79,9 +84,9 @@ class Rows:
     def __init__(self):
         self.items: list[dict] = []
 
-    def add(self, sec, state, label, detail, fix=""):
+    def add(self, sec, state, label, detail, fix="", required=True):
         self.items.append({"sec": sec, "state": state, "label": label,
-                           "detail": detail, "fix": fix})
+                           "detail": detail, "fix": fix, "required": required})
 
     def counts(self):
         c = {"ok": 0, "warn": 0, "ng": 0, "skip": 0}
@@ -98,12 +103,15 @@ class Rows:
                 out.append("")
                 out.append(f"── {sec} " + "─" * max(0, 56 - len(sec) * 2))
             out.append(f"{mark[r['state']]} {r['label']}  {r['detail']}")
-            if r["fix"] and r["state"] in ("ng", "warn"):
+            if r["fix"] and r["state"] in ("ng", "warn", "skip"):
                 out.append(f"        → {r['fix']}")
         c = self.counts()
         out.append("")
-        out.append(f"NG {c['ng']} / warn {c['warn']} / OK {c['ok']}"
-                   + ("   ★ NG が無ければ開場してよい" if c["ng"] == 0 else "   ⚠ NG を先に直す"))
+        out.append(f"NG {c['ng']} / warn {c['warn']} / skip {c['skip']} / OK {c['ok']}")
+        if c["ng"]:
+            out.append("⚠ NG を先に直す")
+        if c["warn"] or any(r["state"] == "skip" and r["required"] for r in self.items):
+            out.append("⚠ 未確認または注意が必要な項目があります。上の行を確認する")
         return "\n".join(out)
 
 
@@ -171,6 +179,58 @@ def load_show():
         return {}
 
 
+def load_fleet():
+    try:
+        with io.open(FLEET_JSON, encoding="utf-8") as f:
+            fleet = json.load(f)
+        if fleet.get("schema") != 1:
+            return {}
+        return fleet
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def baked_content_matches_show(show: dict) -> bool:
+    """焼き込みで変換された素材 URL を揃え、設定本文を比較する。"""
+    try:
+        with io.open(BAKED_SHOW_JSON, encoding="utf-8") as f:
+            baked = json.load(f)
+        url_map = {item["from"]: item["to"] for item in baked.get("assetMap", [])}
+
+        def remap(value):
+            if isinstance(value, dict):
+                return {k: remap(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [remap(v) for v in value]
+            return url_map.get(value, value) if isinstance(value, str) else value
+
+        current = remap(show)
+        current.pop("rev", None)
+        current.pop("assetMap", None)
+        baked.pop("rev", None)
+        baked.pop("assetMap", None)
+        return current == baked
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return False
+
+
+def compositor_asset_path(url: str) -> str | None:
+    """配信対象の相対 URL を、この卓の素材ファイルにだけ解決する。"""
+    clean = unquote(url.split("?", 1)[0].split("#", 1)[0])
+    if not clean.startswith("/") or clean.startswith("//") or "\\" in clean or "\x00" in clean:
+        return None
+    parts = clean[1:].split("/")
+    if parts[0] not in ("recordings", "captures", "static-inputs", "testassets") or \
+            any(part in ("", ".", "..") for part in parts):
+        return None
+    root = os.path.realpath(COMPOSITOR)
+    path = os.path.realpath(os.path.join(root, *parts))
+    try:
+        return path if os.path.commonpath((root, path)) == root else None
+    except ValueError:
+        return None
+
+
 def listening_pids(port: int) -> list[str]:
     rc, out, _ = run(["netstat", "-ano"], timeout=20)
     pids = []
@@ -206,35 +266,42 @@ def check_desk(rows: Rows, show: dict):
         rows.add(sec, "ng", "卓の応答", "/state が返りません", "卓サーバを起動し直す")
         return None
 
-    # ⚠ サーバは**メモリを正**にして配る。ディスクだけ新しいと、実機には古い方が流れる。
-    disk_rev = show.get("rev")
-    mem_rev = state.get("rev")
-    if disk_rev is not None and mem_rev is not None and int(disk_rev) != int(mem_rev):
-        rows.add(sec, "ng", "卓のメモリ", f"メモリ rev={mem_rev} / ディスク rev={disk_rev}",
-                 "卓サーバを止めて立て直す（起動時にディスクを読み直す）")
+    # 起動時は固定登録を適用して rev が進むが、show.json への保存は行わない。
+    # その差だけで異常とせず、実際に配信中の設定内容を比較する。
+    try:
+        import operations
+        normalized = copy.deepcopy(show)
+        operations.normalize_show(normalized)
+        normalized.pop("rev", None)
+        live = copy.deepcopy(state)
+        live.pop("rev", None)
+        same = normalized == live
+    except (ImportError, OSError, ValueError, TypeError, KeyError):
+        same = False
+    if same:
+        rows.add(sec, "ok", "卓の設定", "保存済みの設定と一致しています")
     else:
-        rows.add(sec, "ok", "卓のメモリ", f"rev={mem_rev}（ディスクと一致）")
+        rows.add(sec, "ng", "卓の設定", "配信中の設定と保存済みの設定が一致しません",
+                 "操作画面の設定を確認し、サーバを起動し直す")
 
     rc, out, err = run([sys.executable if "python" in sys.executable else "py", "-3.11",
                         os.path.join("tools", "export-show-build.py"), "--check"], timeout=60) \
         if False else run(["py", "-3.11", os.path.join(ROOT, "tools", "export-show-build.py"),
                            "--check"], timeout=60)
     line = (out.strip().splitlines() or [""])[0]
-    if "✓" in line or "同じ" in line:
-        rows.add(sec, "ok", "APK の焼き込み", line.replace("✓", "").strip())
-    else:
-        # ⚠ **rev の差だけで赤くしない。** 卓は beacon を受け取るたびに show.json を書き戻すので、
-        #   誰も操作していなくても rev は勝手に進む。それを NG にすると常時点灯になり、
-        #   **本物の NG が読み飛ばされる**。著作が変わったかは timeline.rev で見る。
-        pairs = re.findall(r"rev=(\d+) timeline\.rev=(\d+)", line)
-        if len(pairs) == 2 and pairs[0][1] == pairs[1][1]:
-            rows.add(sec, "warn", "APK の焼き込み",
-                     f"著作は同じ（timeline.rev={pairs[0][1]}）。rev だけ "
-                     f"{pairs[0][0]} → {pairs[1][0]} に進んでいます",
-                     "卓に一度でも繋ぐ機なら実害なし。卓なしで起動する機があるなら焼き込みを更新する")
+    if baked_content_matches_show(show):
+        if rc == 0:
+            rows.add(sec, "ok", "本体に入れた設定", "保存済みの内容と一致しています")
+        elif rc == 4:
+            rows.add(sec, "warn", "本体に入れた設定", "内容は同じで版番号だけ違います",
+                     "操作画面なしで起動する機がある場合は設定を入れ直す", required=False)
         else:
-            rows.add(sec, "ng", "APK の焼き込み", line or (err.strip()[:120] or "判定できません"),
-                     "卓の 📦 ビルド用エクスポート、または py -3.11 tools/export-show-build.py")
+            rows.add(sec, "skip", "本体に入れた設定", "設定の照合処理が完了しませんでした",
+                     "点検をやり直す")
+    else:
+        rows.add(sec, "ng", "本体に入れた設定",
+                 "保存済みの内容と違います" + (f"（{line}）" if line else ""),
+                 "py -3.11 tools/export-show-build.py で設定を入れ直す")
 
     ips = local_ipv4()
     if DESK_IP in ips:
@@ -260,24 +327,39 @@ def check_desk(rows: Rows, show: dict):
                          "(Find-NetRoute -RemoteIPAddress 8.8.8.8 | "
                          "Select-Object -First 1).InterfaceAlias"], timeout=25)
         via = (out.strip().splitlines() or [""])[0]
-        rows.add(sec, "ok", "外の回線（シュビー用）", f"通っています{f'（{via} 経由）' if via else ''}")
+        rows.add(sec, "ok", "インターネット接続",
+                 f"外部へ接続できます{f'（{via} 経由）' if via else ''}", required=False)
     else:
-        rows.add(sec, "warn", "外の回線（シュビー用）",
-                 "外へ出られません — **体験は動きます**が、シュビーには頼れません",
-                 "当日パネル（onsite.html）で回す。要るならスマホのテザリングを PC へ")
+        rows.add(sec, "warn", "インターネット接続",
+                 "外部へ接続できません。展示は続けられます",
+                 "遠隔の支援が必要な場合だけ PC の接続を確認する", required=False)
     return state
 
 
 def probe_camera(cam: dict) -> dict:
     host = (cam.get("host") or "").strip()
-    port = int(cam.get("port") or 8080)
+    try:
+        port = int(cam.get("port") or 8080)
+    except (TypeError, ValueError):
+        return {"id": cam.get("id"), "host": host,
+                "port": cam.get("port"), "info": None}
     r = {"id": cam.get("id"), "host": host, "port": port}
     if not host:
         return r
     base = f"http://{host}:{port}"
     r["info"] = get_json(base + "/info", timeout=3)
     r["health"] = get_json(base + "/health", timeout=3)
-    r["bytes"] = stream_bytes(base + "/video", seconds=2.5) if r["info"] else 0
+    if not isinstance(r["info"], dict):
+        r["info"] = None
+    if not isinstance(r["health"], dict):
+        r["health"] = None
+    if r["info"]:
+        # 連番付きの JPEG が複数進むことを確認する。停止した応答のバイト数は証拠にならない。
+        try:
+            import operations
+            r["stream"] = operations.probe_stream(host, port)
+        except (ImportError, AttributeError, OSError, ValueError) as e:
+            r["stream"] = {"ok": False, "detail": str(e)}
     # 無線 adb が開いているか。開いていないと当日の復旧が 1 手も打てない。
     s = socket.socket()
     s.settimeout(0.8)
@@ -293,10 +375,38 @@ def probe_camera(cam: dict) -> dict:
 
 def check_cameras(rows: Rows, show: dict):
     sec = "カメラ"
-    cams = [c for c in (show.get("cameras") or [])]
-    used = [c for c in cams if (c.get("host") or "").strip()]
+    fleet = load_fleet()
+    fixed = fleet.get("cameras") or []
+    if not fixed or {c.get("id") for c in fixed} != {"A", "B", "C"}:
+        rows.add(sec, "ng", "固定登録", "operations-fleet.json の A/B/C が読めません",
+                 "固定登録ファイルを確認する")
+        return
+    cams = [c for c in (show.get("cameras") or []) if isinstance(c, dict)]
+    used = []
+    for expected in fixed:
+        cid = expected["id"]
+        matches = [c for c in cams if c.get("id") == cid]
+        if len(matches) != 1:
+            rows.add(sec, "ng", f"カメラ{cid} 登録",
+                     f"show.json の {cid} は {len(matches)} 件です（必要数 1）",
+                     "固定登録と show.json を確認する")
+            continue
+        cam = matches[0]
+        host = (cam.get("host") or "").strip()
+        port = cam.get("port") or 8080
+        if not host:
+            rows.add(sec, "ng", f"カメラ{cid} 登録", "host が空です",
+                     f"固定登録 {expected['host']}:{expected['port']} に戻す")
+            continue
+        if host != expected["host"] or str(port) != str(expected["port"]):
+            rows.add(sec, "ng", f"カメラ{cid} 登録",
+                     f"show.json は {host}:{port} / 固定登録は {expected['host']}:{expected['port']}",
+                     "固定登録と show.json を一致させる")
+            continue
+        used.append(cam)
+    # D は素材撮影などで使う任意のカメラ。host が無ければ判定対象にしない。
+    used.extend(c for c in cams if c.get("id") == "D" and (c.get("host") or "").strip())
     if not used:
-        rows.add(sec, "ng", "カメラ", "show.json に host が 1 つも入っていません", "卓の 📍 場所 で設定")
         return
     with cf.ThreadPoolExecutor(max_workers=8) as ex:
         results = list(ex.map(probe_camera, used))
@@ -309,29 +419,40 @@ def check_cameras(rows: Rows, show: dict):
         info, health = r.get("info"), r.get("health")
         tag = f"カメラ{cid}"
         if not info:
-            rows.add(sec, "ng", tag, f"{host}:8080 が応答しません",
+            rows.add(sec, "ng", tag, f"{host}:{r['port']} が応答しません",
                      "端末の画面を点けて配信アプリが起動しているか見る。IP が静的のままか見る")
             continue
 
-        # 名乗った ID が割当と違う ＝ 演出が別のカメラに出る（2026-08-05 に A が 2 台になった）
-        named = info.get("cameraId")
-        if named != cid:
-            rows.add(sec, "ng", tag, f"端末は「{named}」を名乗っています（割当は {cid}）",
-                     "端末画面の cameraId を直す。演出が別のカメラに出ます")
-        # 実際にバイトが流れたか
-        if r["bytes"] <= 0:
-            rows.add(sec, "ng", tag, "/video からバイトが 1 つも出ません（画は黒になります）",
-                     "端末の画面が消えていないか（ロック中はカメラが止まる）。アプリを起こし直す")
+        expected = next((c for c in fixed if c["id"] == cid), None)
+        if info.get("cameraId") != cid or (expected and
+                (info.get("uuid") != expected["uuid"] or
+                 info.get("show") != fleet.get("show"))):
+            rows.add(sec, "ng", tag + " 端末登録",
+                     f"端末 ID={info.get('cameraId')} UUID={info.get('uuid')} show={info.get('show')}"
+                     + (f" / 固定 ID={cid} UUID={expected['uuid']} show={fleet.get('show')}" if expected else
+                        f" / 割当 ID={cid}"),
+                     "固定登録と端末の識別値を照合する。別の端末が応答していないか確認する")
+            continue
+        stream = r.get("stream") or {}
+        if not stream.get("ok"):
+            rows.add(sec, "ng", tag,
+                     f"映像フレームが進んでいません（{stream.get('frames', 0)} 枚 / "
+                     f"{stream.get('bytes', 0)} bytes）",
+                     "端末の画面ロックを解除し、配信アプリを起こし直す")
         else:
             rows.add(sec, "ok", tag, f"{host} / {info.get('appVersion')} / "
-                                     f"{r['bytes'] // 1024}KB 流れました")
+                                     f"{stream.get('frames', 0)} 枚 連番 "
+                                     f"{stream.get('firstSeq')}→{stream.get('lastSeq')}")
 
         if ver_tuple(info.get("appVersion", "")) < STREAMER_MIN_VERSION:
             rows.add(sec, "ng", tag + " 版",
                      f"{info.get('appVersion')} — 撮影パネルが無く、当日の素材撮りができません",
                      "skills/streamer-android-build で v0.14.0 以上を入れる")
 
-        fov = float(info.get("lensFovDeg") or 0)
+        try:
+            fov = float(info.get("lensFovDeg") or 0)
+        except (TypeError, ValueError):
+            fov = 0
         if abs(fov - WIDE_FOV_DEG) > 2.0:
             rows.add(sec, "ng", tag + " レンズ",
                      f"画角 {fov}°（超広角は {WIDE_FOV_DEG}°）— 較正が前提にしている画角と違います",
@@ -342,11 +463,16 @@ def check_cameras(rows: Rows, show: dict):
                 rows.add(sec, "warn", tag + " 露出",
                          f"AE {health.get('aeLock')} / AWB {health.get('awbLock')} — 自動のままです",
                          "設営と照明が決まったら端末の 🔓 露出/AF ロックを押す（素材と本番で色が変わる）")
-            st = int(health.get("throttleStage") or 0)
+            try:
+                st = int(health.get("throttleStage") or 0)
+            except (TypeError, ValueError):
+                st = 0
             if st > 0:
                 rows.add(sec, "warn", tag + " 熱",
                          f"熱段 {st} / {health.get('batteryTempC')}℃ — 画が粗くなります",
                          "充電ケーブルを抜いて冷ます（配信を止めるだけでは下がらない）")
+        else:
+            rows.add(sec, "skip", tag + " 健康情報", "/health の実測値が取れません")
 
         # 傾きと較正の差。40° ずれていた実績がある（そのとき CG 人形が盛大にずれた）。
         cam = next((c for c in used if c.get("id") == cid), {})
@@ -490,116 +616,153 @@ def check_show_material(rows: Rows, show: dict, state: dict | None):
     items = ej.get("items") or []
     src = show.get("eyejack") or {}
     uses = False
+    used_povs = set()
     tl = (show.get("timeline") or {})
     for seg in (tl.get("segments") or []):
         for take in (seg.get("takes") or []):
             for st in (take.get("steps") or []):
                 if isinstance(st, dict) and st.get("eyeJack"):
                     uses = True
+                if isinstance(st, dict) and str(st.get("cueId") or "").startswith("pov"):
+                    used_povs.add(st["cueId"])
     if not uses:
-        rows.add(sec, "skip", "目の写真", "台本に視界ジャックのカットがありません")
+        rows.add(sec, "skip", "目の写真", "台本に視界ジャックのカットがありません",
+                 required=False)
     elif not items:
         rows.add(sec, "ng", "目の写真", "1 枚も取り込まれていません",
                  "撮って py -3.11 tools/onsite.py eyejack（ジャックは出ません）")
     else:
         rows.add(sec, "ok", "目の写真", f"卓に {len(items)} 枚（{src.get('rev', '?')}）")
 
-    man = get_json(DESK + "/shoot/manifest", timeout=8) or {}
-    adopted = {}
-    for url, e in (man.get("items") or {}).items():
-        if e.get("adopted"):
-            adopted[e.get("shot") or ""] = url
-    povs = [k for k in adopted if k.startswith("pov")]
-    if povs:
-        rows.add(sec, "ok", "人形視点", f"採用済み {len(povs)} 本（{', '.join(sorted(povs))}）")
-    else:
-        rows.add(sec, "warn", "人形視点", "採用済みのテイクがありません",
-                 "当日撮る素材。撮る前ならこれで正常。撮ったのに出ないなら卓の 🎥 撮影 で採用する")
+    if used_povs:
+        cues = {c.get("id"): c for c in (show.get("cues") or []) if isinstance(c, dict)}
+        missing, unverified = [], []
+        for cid in sorted(used_povs):
+            source = (cues.get(cid) or {}).get("sourceUrl")
+            if not isinstance(source, str) or not source:
+                missing.append(cid)
+            elif source.startswith("/"):
+                path = compositor_asset_path(source)
+                try:
+                    present = path is not None and os.path.isfile(path) and os.path.getsize(path) > 0
+                except OSError:
+                    present = False
+                if not present:
+                    missing.append(cid)
+            else:
+                unverified.append(cid)
+        if missing:
+            rows.add(sec, "ng", "人形視点",
+                     f"台本で使う {len(used_povs)} 本のうち映像が見つからないもの {len(missing)} 本"
+                     f"（{', '.join(sorted(missing))}）",
+                     "演出編集画面で映像の参照先とファイルを確認する")
+        if unverified:
+            rows.add(sec, "skip", "人形視点の外部素材",
+                     f"{', '.join(unverified)} の到達を確認できません",
+                     "実際の Quest で映像が出るか確認する")
+        if not missing and not unverified:
+            rows.add(sec, "ok", "人形視点",
+                     f"台本で使う {len(used_povs)} 本の映像ファイルを確認しました")
 
 
 def sample_heartbeat(rows: Rows, seconds: float, running_count: int):
-    """heartbeat を N 秒サンプリングして、**2 台とも**揃っているかを見る。
-
-    ⚠ heartbeat に端末 ID が無いので、卓の `/unity/status` は 2 台ぶんが同じ 1 スロットへ
-    交互に入る。だから 1 回読んでも「両方 OK」は言えない。**窓の中の最悪値**を見れば、
-    片方だけ欠けている状態は必ず引っかかる（欠けている機の番が来た瞬間に値が落ちる）。
-    """
-    sec = "走っている機（heartbeat）"
-    samples = []
-    stale = 0
+    """機ごとの heartbeat と生の診断値を読み、固定登録の両 Quest を確認する。"""
+    sec = "Quest の接続"
+    fleet = load_fleet()
+    expected = fleet.get("quests") or []
+    if {q.get("id") for q in expected} != {"alpha", "beta"}:
+        rows.add(sec, "ng", "固定登録", "Quest α/β の登録が読めません",
+                 "operations-fleet.json を確認する")
+        return
+    samples = {q["id"]: [] for q in expected}
+    latest = {}
     t0 = time.time()
     while time.time() - t0 < seconds:
-        st = get_json(DESK + "/unity/status", timeout=2)
-        # ⚠⚠ **古いスナップショットで判定しない。** サーバは最後に受け取った heartbeat を
-        #    何時間でも返し続ける。落ちている機の 4 時間前の値を「いま」と読むと、
-        #    音もコントローラも判定できてしまう（＝ 計器が生きたまま嘘をつく形）。
-        if st and float(st.get("ageSec") or 1e9) <= 6.0:
-            samples.append(st)
-        elif st:
-            stale += 1
-        time.sleep(0.4)
-    if not samples:
-        if running_count == 0:
-            rows.add(sec, "skip", "heartbeat",
-                     "Quest でアプリが動いていないので、音・コントローラ・目の写真は見ていません",
-                     "開場前は本番と同じ台数を起動してから check --deep を回す")
-        else:
-            rows.add(sec, "ng", "heartbeat",
-                     f"アプリは動いていますが卓に届いていません（古い値のみ {stale} 回）",
-                     "ShowServer.asset の host が 192.168.10.10 か / 卓と同じ LAN に居るか")
-        return
-
-    def nums(key):
-        out = []
-        for s in samples:
-            v = (s.get("status") or s).get(key)
+        response = get_json(DESK + "/unity/devices", timeout=2) or {}
+        devices = (response.get("devices") or []) if isinstance(response, dict) else []
+        devices = [d for d in devices if isinstance(d, dict)]
+        for q in expected:
+            matched = [d for d in devices if d.get("localIp") == q["host"]]
+            latest[q["id"]] = matched
+            if len(matched) != 1:
+                continue
+            d = matched[0]
             try:
-                out.append(float(v))
+                age = float(d.get("ageSec"))
             except (TypeError, ValueError):
-                pass
-        return out
+                continue
+            if 0 <= age < 6.0:
+                samples[q["id"]].append(d)
+        time.sleep(0.4)
+    for q in expected:
+        qid, host = q["id"], q["host"]
+        tag = q.get("label") or f"Quest {qid}"
+        matched = latest.get(qid) or []
+        if len(matched) > 1:
+            rows.add(sec, "ng", tag, f"{host} を名乗る機が {len(matched)} 台あります",
+                     "Quest の固定 IP と端末 ID を確認する")
+            continue
+        if not matched:
+            rows.add(sec, "ng", tag, f"{host} から連絡がありません",
+                     "Quest のアプリと Wi-Fi を確認する")
+            continue
+        device = matched[0]
+        try:
+            age = float(device.get("ageSec"))
+        except (TypeError, ValueError):
+            age = float("inf")
+        if not 0 <= age < 6.0:
+            rows.add(sec, "ng", tag, f"最後の連絡から {device.get('ageSec')} 秒経っています",
+                     "Quest のアプリと卓への通信を確認する")
+            continue
+        if q.get("deviceId") and device.get("deviceId") != q["deviceId"]:
+            rows.add(sec, "ng", tag, f"端末 ID が登録と違います（{device.get('deviceId')}）",
+                     "固定登録と Quest の端末 ID を照合する")
+            continue
+        rows.add(sec, "ok", tag, f"{host} / {age:.1f} 秒前に受信")
+        raw = [d["status"] for d in samples[qid] if isinstance(d.get("status"), dict)]
+        if not raw:
+            rows.add(sec, "skip", tag + " 詳細", "音・入力・目の写真の実測値が届いていません",
+                     "Quest と操作画面の接続を確認する")
+            continue
 
-    n = len(samples)
-    note = f"{n} 回受信"
-    if running_count >= 2 and seconds >= 10:
-        note += "（2 台ぶんが交互に入るので、最悪値で見ています）"
+        def nums(key):
+            values = []
+            for st in raw:
+                try:
+                    values.append(float(st[key]))
+                except (KeyError, TypeError, ValueError):
+                    pass
+            return values
 
-    miss = nums("sndMissing")
-    aud = nums("sndAudible")
-    if miss and max(miss) > 0:
-        rows.add(sec, "ng", "音", f"音源を最大 {int(max(miss))} 本 掴めていません",
-                 "設計どおりには鳴りません。実機ログの [Sound] を見る。menu scene の焼き直し漏れも疑う")
-    elif miss:
-        rows.add(sec, "ok", "音", f"欠けなし / 出力 {max(aud) if aud else 0:.2f}  {note}")
-
-    for k, jp, why in (
-            ("ctrlLConnected", "左コントローラ", "体験者が異変を報告できません（画にも音にも出ません）"),
-            ("ctrlRConnected", "右コントローラ", "スタッフが次の体験者へリセットできません（右 A 2 秒長押し）")):
-        vals = [bool((s.get("status") or s).get(k)) for s in samples]
-        if vals and not all(vals):
-            rows.add(sec, "ng", jp, f"{sum(vals)}/{len(vals)} の観測でしか繋がっていません", why)
-        elif vals:
-            rows.add(sec, "ok", jp, "接続")
-
-    listed = nums("eyeJackListed")
-    ready = nums("eyeJackReady")
-    if listed and max(listed) > 0:
-        worst = min(ready) if ready else -1
-        if worst < max(listed):
-            rows.add(sec, "ng", "目の写真の到達",
-                     f"最悪の観測で {int(worst)}/{int(max(listed))} 枚"
-                     + ("（片方の機に届いていません）" if running_count >= 2 else ""),
-                     "その機に当たった体験者だけジャックが出ません。卓との接続を見る（30 秒で自動再取得）")
+        miss = nums("sndMissing")
+        if miss and max(miss) > 0:
+            rows.add(sec, "ng", tag + " 音", f"音源の欠け 最大 {int(max(miss))} 本",
+                     "実機ログの [Sound] を確認する")
+        elif miss and all(v == 0 for v in miss):
+            rows.add(sec, "ok", tag + " 音", "音源の欠け 0 本")
         else:
-            rows.add(sec, "ok", "目の写真の到達", f"どの観測でも {int(max(listed))} 枚  {note}")
-
-    st = samples[-1].get("status") or samples[-1]
-    if st.get("needsReReg"):
-        rows.add(sec, "ng", "位置合わせ", "トラッキング原点が変わりました",
-                 "再登録するまでゾーンがズレたまま動きます")
-    if st.get("mode") == "REG":
-        rows.add(sec, "ng", "モード", "位置合わせモードのままです",
-                 "右トリガー 2 秒長押しで抜ける（このままでは体験を始められません）")
+            rows.add(sec, "skip", tag + " 音", "音源の実測値がありません")
+        for key, label in (("ctrlLConnected", "左コントローラ"),
+                           ("ctrlRConnected", "右コントローラ")):
+            vals = [st[key] for st in raw if key in st]
+            if len(vals) != len(raw):
+                rows.add(sec, "skip", tag + " " + label, "接続状態が届いていません")
+            else:
+                rows.add(sec, "ok" if all(vals) else "ng", tag + " " + label,
+                         "接続" if all(vals) else f"{sum(bool(v) for v in vals)}/{len(vals)} 回で接続")
+        listed, ready = nums("eyeJackListed"), nums("eyeJackReady")
+        if listed and ready and min(listed) >= 0 and min(ready) >= 0 and max(listed) > 0:
+            rows.add(sec, "ok" if min(ready) >= max(listed) else "ng",
+                     tag + " 目の写真の到達", f"{int(min(ready))}/{int(max(listed))} 枚")
+        elif not listed or not ready or min(listed) < 0 or min(ready) < 0:
+            rows.add(sec, "skip", tag + " 目の写真の到達", "実測値がありません")
+        if any(st.get("needsReReg") for st in raw):
+            rows.add(sec, "ng", tag + " 位置合わせ", "トラッキング原点が変わりました",
+                     "再登録するまでゾーンがズレたまま動きます")
+        if any(st.get("mode") == "REG" for st in raw):
+            rows.add(sec, "ng", tag + " モード", "位置合わせモードのままです",
+                     "右トリガー 2 秒長押しで抜ける")
 
 
 def cmd_check(args):
@@ -688,7 +851,7 @@ def cmd_eyejack(args):
     rows = Rows()
     sample_heartbeat(rows, 20.0, 2)
     for r in rows.items:
-        if "目の写真" in r["label"] or r["label"] == "heartbeat":
+        if "目の写真" in r["label"] or (r["sec"] == "Quest の接続" and r["state"] == "ng"):
             print(f"  {r['state'].upper()}  {r['label']}  {r['detail']}")
     return 0
 

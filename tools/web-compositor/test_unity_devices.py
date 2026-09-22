@@ -15,7 +15,8 @@ class DeviceRowsTest(unittest.TestCase):
         devices = {
             'A111111': {'at': 100.0, 'deviceModel': 'Quest 3', 'localIp': '192.168.10.31', 'phase': 'RUN',
                         'titleStage': 'Done', 'lang': 'ja', 'visitorPort': 8090, 'visitorReceived': 3,
-                        'visitorPending': False, 'appliedRev': 1160},
+                        'visitorPending': False, 'appliedRev': 1160,
+                        'status': {'audio': {'ready': True}}},
             'B222222': {'at': 90.0, 'deviceModel': 'Quest 3', 'localIp': '192.168.10.32', 'phase': 'INTRO',
                         'titleStage': 'Wait', 'lang': 'fr', 'relief': True, 'visitorPort': 0},
         }
@@ -27,6 +28,7 @@ class DeviceRowsTest(unittest.TestCase):
         self.assertEqual(by['A111111']['shortId'], 'A11111')
         self.assertEqual(by['A111111']['visitorPort'], 8090)
         self.assertEqual(by['A111111']['visitorReceived'], 3)
+        self.assertEqual(by['A111111']['status'], {'audio': {'ready': True}})
         self.assertEqual(by['B222222']['visitorPort'], 0)   # 口を開けていない機
         self.assertTrue(by['B222222']['relief'])
         self.assertEqual(by['B222222']['titleStage'], 'Wait')

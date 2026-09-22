@@ -3,6 +3,13 @@
 公式サイト: [website/](website/)
 ローカル起動: `cd website` → `npm run dev`
 
+廻リ視の当日画面は [設営と点検](tools/web-compositor/README.md#現行の入口2026-09-22)。
+`tools/web-compositor/serve.ps1` で新しいサーバを起動し、`http://localhost:8099/` を開く。
+カメラ A/B/C と Quest α/β の固定登録、映像の実フレーム、機ごとの heartbeat を確認する。
+演出編集は `/authoring.html`。旧 `/onsite.html` は当日画面へ転送する。
+人が歩く場所と構図、Quest 2 台の映像・音・入力を確認した記録は 1 時間有効で、切断や設定変更で解除される。
+スマホ 3 台が未接続のため、配信アプリの実機更新と動作は未検証。
+
 1 つの Unity プロジェクトに **2 つの独立した VR アプリ**が同居している：
 
 | アプリ | 一言で | コード | シーン | パッケージ ID |
@@ -42,7 +49,7 @@
 | 3 | 映像加工 4 系統プロトタイプ（[Fx/](Assets/Scripts/Fx/)。本命 = CRT + 薄い埃） | ✅ Editor 検証済み・本実装前 |
 | 3.5 | 映像差し替え（OverlayCue）+ Web オペレータ卓遠隔制御（ShowControlClient / [tools/web-compositor/](tools/web-compositor/)） | ✅ 実装済み・運用検証中 |
 | 3.7 | **タイムライン第一級オーサリング**（周回×ゾーン区間から cue 割当・画像加工 post 上書き・別カメラのインサートショットを一括編集 + APK 焼き込みで現地 PC 不要 + Web 矢印キー検証。LapCounter / CueScheduler / InsertController / TimelineDirector） | 🚧 実装済み・実機未検証 |
-| 3.8 | **接続の堅牢化**（端末に cameraId を刻印 + UDP 発見プロトコル + フレーム断時の ID 自動張り替え。DHCP 変動・入れ替わりに自動追従、Web 卓に発見/疎通診断パネル） | 🚧 streamer/PC 実測済み・Quest 実機未検証 |
+| 3.8 | **接続の堅牢化**（端末 ID・UDP 発見・疎通診断を実装。当日運用の A/B/C は固定登録を優先し、自動追従は OFF） | 🚧 現行の固定登録はスマホ 3 台未接続で実機未検証 |
 | 3.9 | **ビューア体験の改善**（yaw 追従の緩急・切替クールダウン/dip-to-black・cue 中切替凍結・信号ロスト砂嵐・HUD 既定 OFF） | 🚧 実装済み・試着未検証 |
 | 3.95 | **BGM オーサリング**（区間ごとに曲の切替・停止・ループ範囲・音量・クロスフェード。BgmDirector / BgmPlanLogic + Web 卓の BGM ライブラリと BGM 帯） | 🚧 実装済み・実機未検証 |
 | 3.97 | **ショーシミュレータ**（フロアマップのドットを歩かせて実機なしでショーを検証。ゾーン確定・周回・演出発火・画面切替を Unity と同じ純ロジックで再現し、[golden トレース](Assets/Tests/Fixtures/scenario_walk.trace.json)で Web⇄Unity の一致を機械固定。`ShowScenarioRunner` / `ZonePickLogic` + 卓の 🕹 パネル） | ✅ 一致テスト green・ブラウザ実測済み |
@@ -62,7 +69,7 @@
 
 ### 演出の事前オーサリング → ビルド焼き込み（Phase 3.7 の使い方）
 
-1. Web 卓（`tools/web-compositor/serve.ps1` → `http://localhost:8099/`）の **タイムライン**が正面。周回×ゾーン区間（セグメント）が並ぶ
+1. Web 卓（`tools/web-compositor/serve.ps1` → `http://localhost:8099/authoring.html`）の **タイムライン**が正面。周回×ゾーン区間（セグメント）が並ぶ
 2. **フロアマップ**で担当カメラを塗り、「周回コース」で**スタート領域と順方向（CW/CCW）**を決めて保存（区間の並び順を決める）
 2.5. **位置で演出を出すなら**フロアマップの **📏 通過ライン**で床に線を引く（ドラッグで引く・端点で伸縮・線をドラッグで平行移動）。
    **線には担当カメラが付く**（引いた場所のゾーンから自動。一覧で変更可）。演出はその担当カメラの区間からしか選べず、
@@ -123,7 +130,7 @@
 
 ## 動かし方（最短）
 
-1. **配信側**: 各スマホで MJPEG 配信を起動（下表）。IP を `Assets/Settings/Cameras/Phone01.asset` 等の `host` に反映（または Web オペレータ卓の show.json から遠隔設定）
+1. **配信側**: 各スマホで MJPEG 配信を起動（下表）。当日運用の A/B/C は `operations-fleet.json` の固定登録 `.21/.22/.23:8080` と端末の ID・UUID を照合する。`show.json` のローカル接続値をコミットしない
 2. **Unity**: `Main.unity` を開き（**Ctrl+Shift+M**）、必要なら **Tools > FixedCamVr > Setup > Setup Main Demo Scene**（Zones / Tracker / HUD を冪等再配置）→ Play（Quest Link）or 実機ビルド
 3. 疎通確認は **Tools > FixedCamVr > Diagnostics > Ping DroidCams**、または `Phone01.asset` Inspector の **Test Connection**
 
@@ -275,7 +282,7 @@ bash tools/run-quest-xp-test.sh walk 300
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場での 60 秒チェック → 切り分けフロー |
 | [docs/table-duo/](docs/table-duo/) | TableDuo の要件・調査設計・実施プロトコル・同意書・手バリアント設計 |
 | [docs/ivrc-video/](docs/ivrc-video/) | IVRC2026 ビデオ審査の制作プラン一式 |
-| [tools/web-compositor/README.md](tools/web-compositor/README.md) | Web オペレータ卓 + 映像合成検証ツール |
+| [tools/web-compositor/README.md](tools/web-compositor/README.md) | 当日の設営と点検、演出編集、映像合成検証ツール |
 | [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)（別リポ） | 配信側 Android アプリ |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | コミット規約・ブランチ運用 |
 | [.claude/rules/](.claude/rules/) | 領域別の作業規約（streaming / meta-xr / unity-vr / parallel-projects / troubleshooting 等） |

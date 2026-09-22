@@ -1,0 +1,219 @@
+import {CAMERA_IDS, QUEST_IDS, MANUAL_CHECKS, isFresh, signature, validChecks, summarize} from './ops-model.js';
+
+const $ = id => document.getElementById(id);
+const demo = new URLSearchParams(location.search).get('demo');
+const labels = {ok:'確認済み', warning:'要確認', error:'対処が必要', unknown:'未確認'};
+const storageKey = demo ? 'mawarimi-ops-demo' : 'mawarimi-ops-checks-v1';
+let snapshot = null, failed = false, busy = false, pollTimer, record = null, deepResult = null;
+const cameraViews = new Map(), questViews = new Map();
+try { record = JSON.parse(sessionStorage.getItem(storageKey)); } catch {}
+
+function el(tag, cls = '', text = '') {
+  const n = document.createElement(tag); n.className = cls; n.textContent = text; return n;
+}
+function state(node, status) { node.dataset.state = status; node.textContent = labels[status] || labels.unknown; }
+function num(value, unit = '', decimals = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(decimals)}${unit}` : '未確認';
+}
+function saveRecord() { try { sessionStorage.setItem(storageKey, JSON.stringify(record)); } catch {} }
+function metric(label) {
+  const cell = el('div'), dt = el('dt', '', label), dd = el('dd', '', '未確認'); cell.append(dt,dd); return {cell,dd};
+}
+function closePreview(view) {
+  view.image.removeAttribute('src'); view.preview.hidden = true;
+  view.previewButton.textContent = '映像を見る'; view.previewButton.setAttribute('aria-expanded','false');
+}
+
+for (const [i,id] of CAMERA_IDS.entries()) {
+  const card = el('article','camera-card'); card.setAttribute('aria-labelledby',`camera-${id}`);
+  const head = el('div','camera-head'), text = el('div'), name = el('h3','',`カメラ ${id}`);
+  name.id = `camera-${id}`;
+  const address = el('p','mono',`192.168.10.${21+i}:8080`); text.append(name,address);
+  head.append(el('span','camera-letter',id),text);
+  const body = el('div','camera-state'), badge = el('span','state'), title = el('p','device-title','確認しています…');
+  state(badge,'unknown'); body.append(badge,title);
+  const metrics = el('dl','metrics');
+  const frames = metric('新しい映像'), temp = metric('端末の温度'), battery = metric('電池残量');
+  metrics.append(frames.cell,temp.cell,battery.cell);
+  const next = el('div','camera-next'), action = el('p','','端末の状態を待っています。');
+  next.append(el('p','next-label','次にすること'),action);
+  const actions = el('div','camera-actions'), previewButton = el('button','','映像を見る'), restart = el('button','','この端末を起こし直す');
+  previewButton.type = restart.type = 'button'; previewButton.disabled = restart.disabled = true;
+  previewButton.setAttribute('aria-expanded','false'); previewButton.setAttribute('aria-controls',`preview-${id}`);
+  restart.setAttribute('aria-label',`カメラ ${id} を起こし直す`); actions.append(previewButton,restart);
+  const message = el('p','action-message'); message.hidden = true; message.setAttribute('role','status');
+  const preview = el('figure','preview'); preview.id = `preview-${id}`; preview.hidden = true;
+  const image = el('img'); image.alt = `カメラ ${id} の加工前の映像`;
+  image.addEventListener('error', () => { message.hidden = false; message.textContent = '映像を開けません。端末の状態をもう一度確認してください。'; closePreview(view); });
+  preview.append(image,el('figcaption','','加工前の映像です。Quest の合成表示は装着して確認します。'));
+  const details = el('details'), detailBody = el('div','device-details'); details.append(el('summary','','接続と設定の詳細'),detailBody);
+  card.append(head,body,metrics,next,actions,message,preview,details); $('cameras').append(card);
+  const view = {card,address,badge,title,frames,temp,battery,action,previewButton,restart,message,preview,image,detailBody,restarting:false};
+  cameraViews.set(id,view);
+  previewButton.addEventListener('click', () => {
+    if (!preview.hidden) return closePreview(view);
+    const cam = snapshot?.cameras?.find(c => c.id === id);
+    if (!cam?.identityOk || !isFresh(snapshot) || failed || demo) return;
+    const u = new URL('/cam',location.href); u.port = String(Number(location.port || 80)+1);
+    u.search = new URLSearchParams({host:cam.host,port:String(cam.port),path:'/video'}).toString();
+    image.src = u.href; preview.hidden = false; previewButton.textContent = '映像を閉じる'; previewButton.setAttribute('aria-expanded','true');
+  });
+  restart.addEventListener('click', () => restartCamera(id));
+}
+
+for (const [i,id] of QUEST_IDS.entries()) {
+  const card = el('article','quest-card'), top = el('div','quest-top'), name = el('h3','',`Quest ${i ? 'β' : 'α'}`), badge = el('span','state');
+  state(badge,'unknown'); top.append(name,badge);
+  const body = el('div','quest-body'), text = el('div'), title = el('div','device-title','応答を待っています'), address = el('p','mono',`192.168.10.${31+i}`), detail = el('p','note');
+  text.append(title,address,detail);
+  const link = el('a','portal-link','受付ページ'); link.href = `http://192.168.10.${31+i}:8090/`; link.target = '_blank'; link.rel = 'noopener';
+  link.setAttribute('aria-label',`Quest ${i ? 'β' : 'α'} の受付ページを別タブで開く`);
+  body.append(text,link); card.append(top,body); $('quests').append(card); questViews.set(id,{badge,title,address,detail,link});
+}
+
+for (const check of MANUAL_CHECKS) {
+  const label = el('label','manual-check'), input = el('input'); input.type = 'checkbox'; input.name = check.id; input.id = `check-${check.id}`;
+  const copy = el('span'); copy.append(el('span','check-title',check.title),el('span','check-detail',check.detail)); label.append(input,copy); $('manual-checks').append(label);
+  input.addEventListener('change', () => {
+    const values = validChecks(record,snapshot); values[check.id] = input.checked;
+    record = {signature:signature(snapshot),at:Date.now(),values}; saveRecord(); render();
+  });
+}
+
+function render() {
+  const checks = validChecks(record,snapshot), s = summarize(snapshot,checks,Date.now(),failed,deepResult);
+  $('overview-title').textContent = s.title; state($('overall-state'),s.status);
+  $('online-count').textContent = s.observed; $('error-count').textContent = s.fresh ? s.blockers : '—';
+  $('unknown-count').textContent = s.unknown; $('manual-count').textContent = s.pending;
+  $('diagnostic-summary').textContent = s.diagnosticMissing ? 'アプリと素材の詳しい点検が必要です。下から実行できます。結果は 30 分間有効です。' :
+    s.diagnosticIssues ? `詳しい点検に未確認または対処が必要な項目が ${s.diagnosticIssues} 件あります。下の結果を確認してください。` : 'アプリと素材の詳しい点検も確認済みです。';
+  $('overview-detail').textContent = !s.fresh ? 'サーバーの起動と PC のネットワークを確認してください。古い機器の値は判定に使っていません。' :
+    s.blockers ? '該当する機器の「次にすること」から対処します。担当の入れ替えは必要ありません。' :
+    s.ready ? '自動で調べられる状態と装着して確認した結果がそろっています。動作中も接続を確認します。' :
+    '機器ごとの注意と開場前の確認を済ませます。映像の到着だけでは音や合成位置の正しさは分かりません。';
+  $('connection-error').hidden = !failed;
+  if (failed) $('connection-error').textContent = '状態を取得できません。この PC の点検サーバーとネットワークを確認してください。接続が戻れば自動で確認を再開します。';
+  if (snapshot?.observedAt) {
+    const age = Math.max(0,Math.floor(Date.now()/1000-snapshot.observedAt));
+    $('updated').textContent = `${age} 秒前に確認${s.fresh ? '' : ' / 古い結果'}`;
+  }
+  for (const id of CAMERA_IDS) {
+    const v = cameraViews.get(id), c = snapshot?.cameras?.find(d => d.id === id);
+    state(v.badge,s.fresh ? c?.status || 'unknown' : 'unknown');
+    v.title.textContent = s.fresh ? c?.title || '端末の情報がありません' : '現在の状態は未確認';
+    if (c?.host) v.address.textContent = `${c.host}:${c.port || 8080}`;
+    v.frames.dd.textContent = s.fresh && c?.stream?.ok ? `${c.stream.frames} 枚 / ${num(c.stream.elapsedSec,'秒',1)}` : '未確認';
+    v.temp.dd.textContent = s.fresh ? num(c?.metrics?.batteryTempC,' ℃',1) : '未確認';
+    v.battery.dd.textContent = s.fresh ? num(c?.metrics?.batteryPct,' %') : '未確認';
+    v.action.textContent = s.fresh ? c?.action || '映像と設置場所を確認してください。' : 'サーバーとの接続を確認してください。復旧後にこの端末を測り直します。';
+    v.previewButton.disabled = !!demo || !s.fresh || !c?.identityOk;
+    v.restart.disabled = !!demo || !s.fresh || !c?.canRestart || v.restarting;
+    v.restart.title = v.restart.disabled ? '正しい端末だと確認できた場合に使えます。' : 'このカメラだけを起こし直します。';
+    if (!s.fresh || !c?.identityOk) closePreview(v);
+    const details = [];
+    details.push(el('p','',`端末の応答: ${s.fresh && c?.httpOk === true ? 'あり' : '未確認'} / 担当の照合: ${s.fresh && c?.identityOk === true ? '一致' : '未確認または不一致'}`));
+    details.push(el('p','',`名乗った担当: ${s.fresh ? c?.observedId || '未確認' : '未確認'} / 画角: ${s.fresh ? num(c?.metrics?.lensFovDeg,'°',1) : '未確認'}`));
+    details.push(el('p','',`映像の連番: ${s.fresh && c?.stream?.ok ? `${c.stream.firstSeq} → ${c.stream.lastSeq}` : '未確認'}`));
+    const lock = x => x === true ? '固定' : x === false ? '自動' : '未確認';
+    details.push(el('p','',`露出: ${s.fresh ? lock(c?.metrics?.aeLock) : '未確認'} / 色: ${s.fresh ? lock(c?.metrics?.awbLock) : '未確認'}`));
+    details.push(el('p','mono',`登録番号: ${c?.expectedUuid || '未確認'}`));
+    details.push(el('p','mono',`応答した番号: ${s.fresh ? c?.observedUuid || '未確認' : '未確認'}`));
+    for (const issue of s.fresh ? c?.issues || [] : []) details.push(el('p','',`${issue.title || ''} ${issue.detail || ''} ${issue.action || ''}`.trim()));
+    v.detailBody.replaceChildren(...details);
+  }
+  for (const id of QUEST_IDS) {
+    const v=questViews.get(id),q=snapshot?.quests?.find(d=>d.id===id);
+    state(v.badge,s.fresh ? q?.status || 'unknown' : 'unknown');
+    v.title.textContent = s.fresh ? q?.title || '応答がありません' : '現在の状態は未確認';
+    v.detail.textContent = s.fresh ? q?.action || '装着して映像と音を確認してください。' : 'Quest を起動して同じ Wi-Fi につないでください。';
+    if (q?.host) v.address.textContent = `${q.host} / ${s.fresh ? num(q.ageSec,' 秒前',1) : '未確認'}`;
+  }
+  $('global-issues').replaceChildren(...(s.fresh ? snapshot?.issues || [] : []).filter(i => !i.device).map(i => {
+    const box=el('div','global-issue'); box.append(el('div','',i.title || '要確認'),el('p','',`${i.detail || ''} ${i.action || ''}`.trim()));return box;
+  }));
+  for (const c of MANUAL_CHECKS) {
+    const input=$(`check-${c.id}`); input.checked = !!checks[c.id];
+    // Confirm real-world checks only while the evidence they refer to is current.
+    input.disabled = !s.fresh || s.blockers > 0 || s.unknown > 0;
+  }
+  $('download').disabled = !snapshot;
+}
+
+async function request(url,{method='GET',body,timeout=15000}={}) {
+  const controller = new AbortController(), timer = setTimeout(()=>controller.abort(),timeout);
+  try {
+    const res = await fetch(url,{method,body:body === undefined ? undefined : JSON.stringify(body),
+      headers:method === 'POST' ? {'Content-Type':'application/json'} : {},signal:controller.signal,cache:'no-store'});
+    const data = await res.json(); if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`); return data;
+  } finally { clearTimeout(timer); }
+}
+async function poll() {
+  if (busy || document.hidden) return;
+  clearTimeout(pollTimer); busy=true; $('refresh').disabled=true; $('refresh').textContent='確認しています…';
+  try {
+    const next = demo ? demoSnapshot(demo) : await request('/ops/status');
+    if (!next.ok || !Array.isArray(next.cameras) || !Array.isArray(next.quests)) throw new Error('診断結果の形式が違います');
+    snapshot=next;failed=false;
+    const s=summarize(snapshot,{},Date.now());
+    if (!s.fresh || s.blockers || s.unknown) { record=null;saveRecord();if(deepResult)deepResult.signature=''; }
+  } catch { failed=true; record=null;saveRecord();if(deepResult)deepResult.signature=''; }
+  finally {
+    busy=false;render();$('refresh').disabled=false;$('refresh').textContent='もう一度確認';
+    pollTimer=setTimeout(poll,5000);
+  }
+}
+async function restartCamera(id) {
+  const v=cameraViews.get(id); if (demo || v.restarting || v.restart.disabled) return;
+  v.restarting=true;v.restart.textContent='起こし直しています…';v.message.hidden=false;
+  v.message.textContent=`カメラ ${id} を再照合してから起こし直します。新しい映像が届くまで確認します。`;render();
+  try {
+    const result=await request('/ops/restart',{method:'POST',body:{cameraId:id},timeout:70000});
+    v.message.textContent=result.message || (result.ok ? '新しい映像の到着を確認しました。' : '復旧を確認できません。端末の画面を確認してください。');
+  } catch(e) {v.message.textContent=`復旧を確認できません。${e.name==='AbortError' ? '確認が時間内に終わりませんでした。' : e.message}`;}
+  finally {v.restarting=false;v.restart.textContent='この端末を起こし直す';record=null;saveRecord();await poll();render();}
+}
+
+function renderDeep(data) {
+  deepResult={...data,signature:signature(snapshot)};
+  const at=new Date(data.at), age=Math.floor((Date.now()-at.getTime())/60000);
+  const rows=Array.isArray(data.rows)?data.rows:[];
+  $('deep-message').textContent=`${Number.isFinite(age) ? `${Math.max(0,age)} 分前の結果` : '確認時刻は不明'} / 問題 ${rows.filter(r=>r.state==='ng').length} 件 / 未確認 ${rows.filter(r=>r.state==='skip'&&r.required!==false).length} 件。現在の状態は上の機器一覧で確認します。`;
+  const order={ng:0,warn:1,skip:2,ok:3};
+  $('deep-results').replaceChildren(...rows.slice().sort((a,b)=>(order[a.state]??2)-(order[b.state]??2)).map(r=>{
+    const row=el('div','deep-row'), badge=el('span','state'), body=el('div');state(badge,({ng:'error',warn:'warning',skip:'unknown',ok:'ok'})[r.state]||'unknown');if(r.required===false)badge.textContent='対象外';
+    body.append(el('h3','',r.label || ''),el('p','',r.detail || ''));if(r.fix && r.state!=='ok')body.append(el('p','fix',r.fix));row.append(badge,body);return row;
+  }));
+  render();
+}
+$('deep-check').addEventListener('click',async()=>{
+  if(demo)return;const button=$('deep-check');button.disabled=true;button.textContent='詳しい点検を実行中…';
+  $('deep-message').textContent='機器と素材を調べています。通常 40 秒ほどかかります。';
+  try{const result=await request('/onsite/check',{method:'POST',body:{},timeout:245000});if(!result.ok)throw new Error(result.error||'点検結果がありません');renderDeep(result);}
+  catch(e){$('deep-message').textContent=`点検を完了できません。${e.name==='AbortError'?'時間内に応答がありませんでした。':e.message}`;}
+  finally{button.disabled=false;button.textContent='詳しい点検を実行';}
+});
+$('refresh').addEventListener('click',poll);
+$('reset-checks').addEventListener('click',()=>{record=null;saveRecord();render();});
+$('download').addEventListener('click',()=>{
+  // Download the allowlisted diagnosis only. Never fetch show.json, auth, or raw heartbeat.
+  const data={savedAt:new Date().toISOString(),example:!!demo,diagnosis:snapshot,manual:validChecks(record,snapshot),detailedCheck:deepResult};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  const a=el('a');a.href=url;a.download=`mawarimi-check-${new Date().toISOString().replaceAll(':','-')}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+function applyTheme(theme){document.documentElement.dataset.theme=theme;$('theme').textContent=theme==='dark'?'明るい表示':'暗い表示';$('theme').setAttribute('aria-label',theme==='dark'?'明るい表示にする':'暗い表示にする');}
+let theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+try{theme=localStorage.getItem('mawarimi-ops-theme')||theme;}catch{}
+applyTheme(theme);
+$('theme').addEventListener('click',()=>{theme=theme==='dark'?'light':'dark';applyTheme(theme);try{localStorage.setItem('mawarimi-ops-theme',theme);}catch{}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();else for(const v of cameraViews.values())closePreview(v);});
+setInterval(()=>{if(!document.hidden)render();},1000);
+
+function demoSnapshot(mode) {
+  const cameras=CAMERA_IDS.map((id,i)=>({id,host:`192.168.10.${21+i}`,port:8080,expectedUuid:`example-${id}`,observedUuid:`example-${id}`,observedId:id,status:'ok',title:'新しい映像を受信しています',action:'担当と映像の向きを確認してください。',identityOk:true,httpOk:true,canRestart:false,stream:{ok:true,frames:2,firstSeq:1024,lastSeq:1025,elapsedSec:.2,bytes:41520},metrics:{batteryTempC:34.2+i,batteryPct:88-i*9,lensFovDeg:104.3,aeLock:true,awbLock:true},issues:[]}));
+  if(mode!=='ready')Object.assign(cameras[1],{status:'error',title:'応答はありますが映像が止まっています',action:'カメラ B の画面を点けて配信アプリを開いてください。改善しなければこの端末を起こし直します。',stream:{ok:false,frames:0}});
+  const quests=QUEST_IDS.map((id,i)=>({id,label:`Quest ${i?'β':'α'}`,host:`192.168.10.${31+i}`,deviceId:`example-${id}`,status:'ok',title:'Quest から応答があります',action:'受付ページが起動しています。装着して映像と音を確認してください。',ageSec:1.2,visitorPort:8090,issues:[]}));
+  if(mode!=='ready')Object.assign(quests[1],{status:'unknown',title:'Quest β の応答がありません',action:'Quest β を起動して会場の Wi-Fi につないでください。',ageSec:null,visitorPort:0});
+  return {ok:true,observedAt:Date.now()/1000,cameras,quests,issues:[],config:{fixed:true,revision:1}};
+}
+if(demo){$('demo-banner').hidden=false;$('deep-check').disabled=true;for(const v of questViews.values()){v.link.removeAttribute('href');v.link.textContent='受付ページ（表示例）';}}
+render();poll();

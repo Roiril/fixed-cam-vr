@@ -1,4 +1,38 @@
-# web compositor — 廻リ視 のタイムライン・オーサリング卓 + マルチカメラ監視（1 ページ統合）
+# web compositor — 廻リ視の設営と点検・演出編集
+
+## 現行の入口（2026-09-22）
+
+`./serve.ps1` で `capture-server.py` を起動し、`http://localhost:8099/` を開く。
+`index.html` は当日の「設営と点検」。旧 `onsite.html` はここへ転送する。
+演出編集は `authoring.html` に移した。次節以降のタイムラインや画質の操作説明はこの編集画面の記録。
+サーバを新しいコードで起動し直すまで `/ops/status` と `/ops/restart` は使えない。
+
+当日画面は固定のカメラ A/B/C と Quest α/β を 1 行ずつ表示する。
+固定登録は `operations-fleet.json`。A/B/C は `192.168.10.21/.22/.23:8080`、Quest α/β は
+`192.168.10.31/.32`。スマホの登録 UUID は 8 月の観測値なので、新設した Android 登録との一致を現地で確認する。
+PC は `autoFollow=false`、Quest は `discoveryEnabled=false`、A/B/C は `pinned=true` を投影する。
+通常画面から演出編集や ID・IP の変更はできない。`show.json` の host などローカル接続値はコミットしない。
+
+`GET /ops/status` はカメラの ID・UUID、実フレーム 2 枚以上と連番の進行、温度・電池、
+Quest ごとの 6 秒以内の heartbeat を確認する。HTTP 応答や fps の値だけでは映像を正常としない。
+`POST /ops/restart` の `{ "cameraId": "A" }` は登録 UUID が一致する 1 台だけを起こし直す。
+同じカメラの再試行は 90 秒待ち、復旧後はフレームを再観測する。
+歩く場所と構図、Quest 2 台の映像・音・入力は人が確認する。確認の有効時間は 1 時間で、
+切断または設定変更時に解除される。詳細点検の結果は 30 分有効。準備完了には対象項目に NG・注意・未確認が残っていないことが必要。
+詳細点検と `py -3.11 tools/onsite.py check` は従来の機器情報と素材も見る補助。
+固定登録の適用による設定番号の差だけでは異常にしない。人形視点は使用する映像ファイルを確認する。
+旧撮影画面の採用記録は必須にしない。インターネット接続は展示に不要なので開場判定から除外する。
+既存の音・素材はこの画面変更では変わらない。スマホ 3 台が未接続のため、配信アプリの実機更新と動作は未検証。
+
+確認コマンド:
+
+```powershell
+py -3.11 -m unittest discover -s tools/web-compositor -p 'test_*.py'
+py -3.11 -m unittest tools/test_onsite_operations.py
+node --test tools/web-compositor/test_ops_model.mjs
+```
+
+## 演出編集画面の記録
 
 ブラウザから廻リ視（FixedCam）の体験を**タイムライン（周回×ゾーン区間）でオーサリング**し、カメラを監視する 1 ページ UI。
 状態の正は `show.json`（このサーバ）。Unity（Quest 実機）は long-poll で追従し、端末ローカルにキャッシュして
@@ -322,7 +356,7 @@ node --test "tools/web-compositor/*.test.mjs"
 | メソッド | パス | 用途 |
 |---|---|---|
 | GET | `/state?rev=N` | show.json（rev > N まで最大 25s ブロックの long-poll） |
-| POST | `/state` | cameras（host/port/auth/post）/ cues / post / control / layout / schedule / **timeline** の部分更新 |
+| POST | `/state` | cues / post / control / layout / schedule / **timeline** などの部分更新。A/B/C の host/port/pinned と自動追従設定は固定登録を優先 |
 | POST | `/command` | `playCue` / `stopCue` / `setCameraOverride` / `setPost` |
 | POST | `/masks?name=` | マスク PNG 保存 → `/masks/<name>.png` 配信 |
 | GET | `/cam?host=&port=&path=&auth=` | MJPEG プロキシ（Basic 認証肩代わり。別ポート 8100 で listen） |
@@ -332,10 +366,13 @@ node --test "tools/web-compositor/*.test.mjs"
 | GET | `/eyejack/list` | 👁 目の写真の一覧。`eyejack/` の写真を**正規化してから**（長辺 1280 / EXIF の向きを焼き込み / 減光 / JPEG q85）`eyejack/norm/` を返す。`applied[]` は show.json へ配布済みの URL |
 | POST | `/eyejack/apply` | いまの `eyejack/norm/` を show.json の `eyejack.photos[]` へ焼く（**ファイル名順 = 決定的**）。当日の操作はこの 1 つ |
 | POST/GET | `/unity/heartbeat` / `/unity/status` | Unity の生存・アクティブカメラ報告（**卓サーバ生存判定もこの 2 秒ポーリングが担う**。`/state` は long-poll で最大 25s ブロックするため断の検知に使えない）。`eyeJackReady` / `eyeJackListed` = **その機に写真が何枚届いたか**（片方の機だけ欠けるのは無音の失敗） |
+| GET | `/unity/devices` | Quest ごとの heartbeat と生の診断値。`localIp` と `ageSec` で α/β を個別に確認 |
+| GET | `/ops/status` | 固定 5 台の当日点検。映像フレームの進行と機ごとの heartbeat を検査 |
+| POST | `/ops/restart` | 登録 UUID が一致する配信カメラ 1 台を起こし直し、映像を再確認 |
 | POST | `/export-build` | 焼き込み。レスポンスに `exportedAt` / `showRev` / `hosts[]`（焼き込んだカメラ接続先）/ `missingCues[]` を含む |
 | GET/POST | `/dwell/stats` / `/dwell/reset` | 区間 (lap,camera) の**実測滞在時間**（heartbeat の `dwell[]` を集計・`dwell_stats.json` に永続化）。リボンの「実測 平均 Ns」が読む |
 
-- `cameras[i].host/port/auth` を **Unity 実機が読む**（DHCP ズレを Web から復旧。変化時のみ再接続）
+- `cameras[i].host/port/auth` を **Unity 実機が読む**。現行の A/B/C の host/port は固定登録から投影し、通常画面では変更しない
 - `cameras[i].post`（任意）= カメラ別画質。未設定は global `post` にフォールバック。
   列の **⇥ 他カメラにも適用** は「この列の値を他へコピー」（この列が初期化済み＝post 無しなら**他も初期化**して global に揃える）
 - **カメラ post は「層まるごと」の上書き**（実機 `ApplyPostForActive` と同じ。キー単位で global と混ぜない）。
@@ -352,7 +389,8 @@ node --test "tools/web-compositor/*.test.mjs"
 ./serve.ps1
 ```
 
-`http://localhost:8099/`。LAN からは `http://<PC-IP>:8099/`（スマホ/Quest 内ブラウザ確認用）。
+`http://localhost:8099/` は設営と点検。演出編集は `/authoring.html`。
+LAN からは `http://<PC-IP>:8099/`（スマホ/Quest 内ブラウザ確認用）。
 MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一オリジン 6 接続制限の回避。JS が自動算出）。
 
 > **必ず `serve.ps1`（capture-server.py）経由で起動**すること。素の `http.server` だと show 制御 / 保存 API が無い。
@@ -361,7 +399,10 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` / `style.css` | 1 ページ統合 UI（タイムライン主面 + 監視カメラ列） |
+| `index.html` / `ops-model.js` | 当日の設営と点検。固定 5 台の状態と人の確認を表示 |
+| `onsite.html` | `index.html` へ転送する旧入口 |
+| `authoring.html` / `style.css` | 演出編集の統合 UI（タイムライン主面 + 監視カメラ列） |
+| `operations-fleet.json` / `operations.py` | 固定登録、実フレーム点検、登録済みカメラの復旧 |
 | `app.js` | 全配線（status / モードナビ / カメラ列監視 / IP・画質 / 録画 / ライブ運用 / プロンプト）。show.json を正に I/O |
 | `ribbon.js` | **タイムライン第一級オーサリング**（区間 = 伸縮ブロック / 演出 = 尺に比例。演出・カットのインスペクタ・実測滞在表示・BGM）。卓のオーサリング面はこれ 1 つ |
 | `timeline-model.js` | timeline のデータ純関数（正規化・直列化・**古い形式の読み取り変換**）。Unity と fixture で機械照合 |
