@@ -1,6 +1,19 @@
 # 素材の出典と生成記録
 
-このページ用の素材。画像生成は Codex 内蔵 image_gen を使用した。生成日は 2026-09-15（JST）。監視映像は体験の構成を伝える生成イメージであり、実機の録画ではない。
+このページ用の素材。2026-09-22にカメラと壁を実際の写真へ差し替えた。ヒーローは同日の追加指示「今のウェブのヒーローの見た目」に合わせた既存の作品キービジュアル。実写の体験風景とは区別する。
+
+## 現在の実写真（2026-09-22）
+
+| 配信用ファイル | PC内の原本（repo相対） | 撮影内容 |
+|---|---|---|
+| camera-01.webp | `tools/web-compositor/captures/plate_A_20260907_101013.jpg` | 幕と手すり |
+| camera-02.webp | `tools/web-compositor/captures/plate_B_20260907_104115.jpg` | 壁と床 |
+| camera-03.webp | `tools/web-compositor/captures/plate_C_20260823_194236.jpg` | 幕と壁を別の位置から撮影 |
+| wall-evidence.webp | `tools/web-compositor/captures/plate_B_20260907_104115.jpg` | 撮影場所の壁 |
+
+いずれも640×480。生成素材ではなく、合成前に撮影した背景写真。原本は保存したままPillowでWebPへ変換した。色調整と走査線の表現はCSSのみ。撮影場所の根拠は `tools/gen-plate/sites/A_20260907.json`、`B_20260907.json`、`C_20260823_1942.json`。再生成は `py -3.11 website/scripts/prepare-photos.py`。
+
+実機映像3本の出典は [FOOTAGE.md](FOOTAGE.md)。入口の立体題字は既存の `title.png`（1210×531）の輪郭と色をWebGLで使用。新しい題字を生成していない。
 
 ## キービジュアル
 
@@ -9,7 +22,9 @@
 - 題字の正本: `tools/title-art/mawarimi-title-master-v2.png`。
 - キービジュアル以外に人形の素材を配置していない。
 
-## 配信用素材
+## 以前の配信用素材（2026-09-15時点）
+
+以下のカメラ3枚は現在の配信では実写真に置き換わった。CRTは公開ビルドから除いた。寸法と生成プロンプトは旧版の記録として残す。
 
 | ファイル | 寸法 | バイト |
 |---|---|---:|
@@ -47,7 +62,7 @@ py -3.11 scripts/make-codes.py
 
 [第四境界](https://www.daiyonkyokai.net/) の入口にある実物のブラウン管と画面の切替を参照した。参考サイトの画像やコードは使用していない。旧 website の画面とコードを参照せず新規作成した。
 
-## 生成プロンプト
+## 旧版の生成プロンプト
 
 ### cctv01
 
@@ -71,4 +86,4 @@ Use case: compositing. This is responsive web art direction of an EXISTING finis
 ## 調査依頼の資料（2026-09-15）
 
 - `investigation-request.webp`: `docs/onsite/handout.pdf` の第1頁を Poppler で画像化して WebP に圧縮。本文は原稿のまま。原本 PDF は保持。サイト上の傾きと紙の色は CSS。
-- `wall-evidence.webp`: 既存の `Assets/Resources/Visitor/briefing-wall-v1.png.bytes` を WebP に変換。現地写真としての記録ではなく、作品内の壁を示す既存の図像。
+- 旧 `wall-evidence.webp`: 既存の `Assets/Resources/Visitor/briefing-wall-v1.png.bytes` を WebP に変換した作品内の図像。2026-09-22に上記の実写真へ差し替え済み。

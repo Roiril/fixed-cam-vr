@@ -1,0 +1,153 @@
+html:has(#entrance[open]) {
+  overflow: hidden;
+}
+
+#entrance {
+  box-sizing: border-box;
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: #000;
+  color: #f5f0e6;
+  transition: background-color 1.45s ease;
+}
+
+#entrance::backdrop {
+  background: #000;
+  transition: background-color 1.45s ease;
+}
+
+#entrance.is-fracturing {
+  background: transparent;
+}
+
+#entrance.is-fracturing::backdrop {
+  background: transparent;
+}
+
+#entrance .entrance-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+#entrance .entrance-stage,
+#entrance canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#entrance canvas {
+  display: block;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#entrance .entrance-stage img {
+  display: none;
+}
+
+#entrance.entrance-flat canvas {
+  display: none;
+}
+
+#entrance.entrance-flat .entrance-stage {
+  display: grid;
+  place-items: center;
+}
+
+#entrance.entrance-flat .entrance-stage img {
+  display: block;
+  width: min(82vw, 1000px, 110vh);
+  height: auto;
+  cursor: pointer;
+  transition: opacity 450ms ease, transform 450ms ease;
+}
+
+#entrance.entrance-flat.is-fracturing .entrance-stage img {
+  opacity: 0;
+  transform: scale(1.035);
+}
+
+#entrance .entrance-actions {
+  position: absolute;
+  z-index: 1;
+  right: 20px;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  left: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 3vw, 30px);
+  transition: opacity 250ms ease;
+}
+
+#entrance.is-fracturing .entrance-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#entrance button {
+  font: 500 14px/1.5 system-ui, sans-serif;
+  color: inherit;
+  cursor: pointer;
+}
+
+#entrance .entrance-enter {
+  min-height: 48px;
+  padding: 11px 25px;
+  border: 1px solid #f5f0e6;
+  background: rgba(0, 0, 0, 0.76);
+  letter-spacing: 0.08em;
+}
+
+#entrance .entrance-enter:hover {
+  background: #f5f0e6;
+  color: #090808;
+}
+
+#entrance .entrance-skip {
+  min-height: 48px;
+  padding: 11px 6px;
+  border: 0;
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+}
+
+#entrance button:focus-visible {
+  outline: 2px solid #c7313b;
+  outline-offset: 4px;
+}
+
+@media (max-width: 430px) {
+  #entrance .entrance-actions {
+    flex-direction: column;
+    gap: 3px;
+    bottom: max(18px, env(safe-area-inset-bottom));
+  }
+
+  #entrance .entrance-enter {
+    width: min(100%, 280px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #entrance,
+  #entrance::backdrop,
+  #entrance .entrance-stage img {
+    transition-duration: 250ms;
+  }
+}

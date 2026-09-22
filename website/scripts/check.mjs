@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { headingText, latinText, pageText, uniqueChars } from "./font-text.mjs";
 
 const websiteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const sourceFiles = ["index.html", "styles.css", "main.js"];
+const sourceFiles = ["index.html", "styles.css", "main.js", "experience.css", "experience-config.js", "experience.js", "entrance.css", "entrance.js"];
 const seoFiles = ["robots.txt", "sitemap.xml", "site.webmanifest"];
 const verificationFiles = ["google5081a8a413a7871f.html"];
 const requiredAssets = [
@@ -14,12 +14,18 @@ const requiredAssets = [
   "assets/hero-desktop.webp",
   "assets/hero-small.webp",
   "assets/hero-mobile.webp",
-  "assets/crt.webp",
+  "assets/title.png",
   "assets/camera-01.webp",
   "assets/camera-02.webp",
   "assets/camera-03.webp",
   "assets/investigation-request.webp",
   "assets/wall-evidence.webp",
+  "assets/footage-fracture.mp4",
+  "assets/footage-fracture.webp",
+  "assets/footage-error.mp4",
+  "assets/footage-error.webp",
+  "assets/footage-eye.mp4",
+  "assets/footage-eye.webp",
   "assets/yuji-boku.woff2",
   "assets/shippori-mincho.woff2",
   "assets/ibm-plex-mono-400.woff2",
@@ -42,7 +48,9 @@ async function mustBeFile(relativePath, base = websiteRoot) {
   }
 }
 
-const [html, css, js] = await Promise.all(sourceFiles.map((file) => readFile(join(websiteRoot, file), "utf8")));
+const sources = await Promise.all(sourceFiles.map((file) => readFile(join(websiteRoot, file), "utf8")));
+const [html, baseCss, js] = sources;
+const css = [baseCss, sources[3], sources[6]].join("\n");
 const [robots, sitemap, manifestSource] = await Promise.all(seoFiles.map((file) => readFile(join(websiteRoot, file), "utf8")));
 
 for (const file of sourceFiles) await mustBeFile(file);
@@ -86,20 +94,22 @@ for (const reference of localReferences) {
   else await mustBeFile(localPath);
 }
 
-const forbiddenReferences = ["scene.js", "three", "webgl", "cdn."];
+const forbiddenReferences = ["scene.js", "cdn."];
 const combinedSource = `${html}\n${css}\n${js}`.toLowerCase();
 for (const forbidden of forbiddenReferences) {
   if (combinedSource.includes(forbidden)) errors.push(`forbidden legacy or remote reference: ${forbidden}`);
 }
 
 const sectionCount = html.match(/<section\b/g)?.length ?? 0;
-if (sectionCount !== 5) errors.push(`expected 5 sections, found ${sectionCount}`);
+if (sectionCount !== 7) errors.push(`expected 7 sections, found ${sectionCount}`);
 
 const sectionMarkers = [
   'class="hero"',
   'id="fixed-view"',
+  'id="perspective-lab"',
   'id="scenario"',
   'id="archive"',
+  'id="footage"',
   'id="credits"'
 ];
 let previousSectionIndex = -1;
@@ -161,6 +171,15 @@ if (/data-(?:auto-switch|camera-autoplay)|自動切替|自動再生|auto(?:matic
   errors.push("automatic camera switching must not add an on/off control");
 }
 if (!html.includes('class="skip-link"') || !html.includes('aria-live="polite"')) errors.push("required accessibility hooks are missing");
+const gate = html.match(/<details\b[^>]*id="footage-gate"[^>]*>/)?.[0] ?? "";
+if (!gate || /\sopen(?:\s|=|>)/.test(gate)) errors.push("spoiler footage must start in a closed details element");
+const video = html.match(/<video\b[^>]*id="footage-player"[^>]*>/)?.[0] ?? "";
+if (!video || /\s(?:src|poster|autoplay)=?/.test(video) || !video.includes('preload="none"')) errors.push("footage must not expose or fetch media before the spoiler gate opens");
+if (html.includes("<iframe")) errors.push("the unfinished perspective experience must not create an iframe on initial load");
+for (const file of sourceFiles.filter(file => file.endsWith(".js"))) {
+  const syntax = spawnSync(process.execPath, ["--check", join(websiteRoot, file)], { encoding: "utf8" });
+  if (syntax.status !== 0) errors.push(`${file}: ${syntax.stderr}`);
+}
 if (!html.includes('<link rel="canonical" href="https://mawarimi.vercel.app/">')) errors.push("canonical URL is missing");
 if (!html.includes('property="og:image"') || !html.includes('name="twitter:card"')) errors.push("social preview metadata is missing");
 const structuredDataMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);

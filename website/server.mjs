@@ -22,6 +22,8 @@ const MIME_TYPES = new Map([
   [".xml", "application/xml; charset=utf-8"],
   [".png", "image/png"],
   [".webp", "image/webp"],
+  [".mp4", "video/mp4"],
+  [".vtt", "text/vtt; charset=utf-8"],
   [".woff2", "font/woff2"],
   [".txt", "text/plain; charset=utf-8"]
 ]);
@@ -42,6 +44,23 @@ function isWithinRoot(candidate) {
 function sendText(response, statusCode, message) {
   response.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
   response.end(message);
+}
+
+function parseByteRange(header, size) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
+  if (!match || (!match[1] && !match[2]) || size === 0) return null;
+
+  const first = match[1] ? Number(match[1]) : null;
+  const last = match[2] ? Number(match[2]) : null;
+  if ((first !== null && !Number.isSafeInteger(first)) || (last !== null && !Number.isSafeInteger(last))) return null;
+
+  if (first === null) {
+    if (last === 0) return null;
+    return { start: Math.max(0, size - last), end: size - 1 };
+  }
+
+  if (first >= size || (last !== null && last < first)) return null;
+  return { start: first, end: Math.min(last ?? size - 1, size - 1) };
 }
 
 const server = createServer(async (request, response) => {
@@ -90,16 +109,31 @@ const server = createServer(async (request, response) => {
 
     const contentType = MIME_TYPES.get(extname(fileReal).toLowerCase()) ?? "application/octet-stream";
     const cacheControl = /\.(?:webp|woff2)$/i.test(fileReal) ? "public, max-age=3600" : "no-cache";
-    response.writeHead(200, {
+    const rangeHeader = request.headers.range;
+    const range = rangeHeader ? parseByteRange(rangeHeader, fileStat.size) : null;
+    if (rangeHeader && !range) {
+      response.writeHead(416, {
+        "Accept-Ranges": "bytes",
+        "Content-Range": `bytes */${fileStat.size}`,
+        "Content-Length": 0,
+        "X-Content-Type-Options": "nosniff"
+      });
+      response.end();
+      return;
+    }
+
+    response.writeHead(range ? 206 : 200, {
       "Content-Type": contentType,
-      "Content-Length": fileStat.size,
+      "Content-Length": range ? range.end - range.start + 1 : fileStat.size,
+      "Accept-Ranges": "bytes",
+      ...(range ? { "Content-Range": `bytes ${range.start}-${range.end}/${fileStat.size}` } : {}),
       "Cache-Control": cacheControl,
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer"
     });
 
     if (request.method === "HEAD") response.end();
-    else createReadStream(fileReal).pipe(response);
+    else createReadStream(fileReal, range ?? undefined).pipe(response);
   } catch (error) {
     if (error instanceof URIError) sendText(response, 400, "Bad request");
     else if (error?.code === "ENOENT" || error?.code === "ENOTDIR") sendText(response, 404, "Not found");
