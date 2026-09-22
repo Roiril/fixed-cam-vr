@@ -283,3 +283,33 @@ button, summary { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .js-reveal [data-reveal] { opacity: 1; transform: none; }
 }
+
+/* Keep chapter titles on one line and size them against their actual column. */
+.lab-heading,
+.fixed-view-copy,
+.scenario-copy,
+.plate-heading {
+  container-type: inline-size;
+  min-width: 0;
+}
+.perspective-lab .lab-heading h2,
+.fixed-view .fixed-view-copy h2,
+.scenario .scenario-copy h2,
+.archive .plate-heading h2,
+.footage .plate-heading h2,
+.credits .plate-heading h2 {
+  max-width: 100%;
+  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+@supports (font-size: 1cqi) {
+  .perspective-lab .lab-heading h2,
+  .fixed-view .fixed-view-copy h2,
+  .scenario .scenario-copy h2,
+  .archive .plate-heading h2,
+  .footage .plate-heading h2,
+  .credits .plate-heading h2 {
+    font-size: clamp(1.4rem, 10cqi, 6rem);
+  }
+}
