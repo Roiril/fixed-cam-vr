@@ -113,7 +113,7 @@ for (const forbidden of forbiddenReferences) {
 }
 
 const sectionCount = html.match(/<section\b/g)?.length ?? 0;
-if (sectionCount !== 7) errors.push(`expected 7 sections, found ${sectionCount}`);
+if (sectionCount !== 6) errors.push(`expected 6 sections, found ${sectionCount}`);
 
 const sectionMarkers = [
   'class="hero"',
@@ -136,7 +136,9 @@ const pageCopy = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
 const requiredCopy = [
   "固定視点",
   "監視カメラに映る自分を見ながら、現実の空間を歩く。",
-  "調査依頼",
+  "ストーリー",
+  "展示履歴",
+  "こだわりのVR演出",
   "怪異調査員として、呪われた壁の調査に向かう。"
 ];
 for (const copy of requiredCopy) {
@@ -162,6 +164,8 @@ for (const camera of ["01", "02", "03"]) {
   if (!html.includes(`src="assets/camera-${camera}-quest.webp"`)) errors.push(`camera ${camera} must use its Quest render`);
 }
 if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
+if (!html.includes('<div id="perspective-lab"') || !html.includes('<h3 id="perspective-title">体験してみる</h3>')) errors.push("perspective activity must be a part of fixed viewpoint");
+if (html.includes('class="plate-qr"') || html.includes('class="plate-url"')) errors.push("credit code or URL remains");
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
 if (!js.includes("const AUTO_SWITCH_INTERVAL_MS = 6000;")) errors.push("automatic camera interval must be 6000 ms");

@@ -124,21 +124,22 @@ button, summary { font: inherit; }
 .camera-caption { font-size: .72rem; color: var(--ink-muted); margin: 1rem 0 0; }
 .perspective-lab {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: .8fr 1.2fr;
   gap: clamp(2rem, 5vw, 6rem);
-  padding: 4rem var(--gutter) 5rem;
+  padding: 4rem 0 0;
   max-width: 92rem;
-  margin: 0 auto var(--section-space);
-  border-block: 1px solid var(--line);
+  margin: 0;
+  border-top: 1px solid var(--line);
 }
-.lab-heading h2 { font-family: "Yuji Boku", serif; font-size: clamp(2.5rem, 4vw, 4rem); line-height: 1.45; font-weight: 400; margin: 0; }
+.lab-heading h3 { font-family: "Yuji Boku", serif; font-size: clamp(2.2rem, 3.5vw, 3.5rem); line-height: 1.45; font-weight: 400; margin: 0; }
 .lab-heading .section-description { margin-top: 1.6rem; }
 .lab-panel { align-self: center; min-width: 0; }
 .perspective-types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0; }
 .perspective-types li { padding: 1rem 1.2rem 1.5rem; border-left: 1px solid var(--line); min-width: 0; }
 .perspective-types li:last-child { border-right: 1px solid var(--line); background: rgb(211 224 211 / 4%); }
 .perspective-types li > span { font: clamp(1.8rem, 3vw, 3rem) "Chakra Petch", sans-serif; color: var(--ink-muted); }
-.perspective-types h3 { font-size: 1rem; font-weight: 400; margin: 1rem 0 .5rem; }
+.perspective-types h4 { font-size: 1rem; font-weight: 400; margin: 1rem 0 .5rem; }
 .perspective-types p { font-size: .74rem; color: var(--ink-muted); margin: 0; line-height: 1.9; }
 .game-actions { display: flex; flex-wrap: wrap; gap: .7rem 2rem; margin-top: 1.75rem; align-items: center; }
 #game-unavailable { font-size: .8rem; color: var(--ink-muted); padding-left: 1.2rem; border-left: 2px solid var(--accent); }
@@ -248,19 +249,15 @@ button, summary { font: inherit; }
   .section-description { font-size: .84rem; }
   .crt { width: 100%; margin-left: 0; }
   .camera-button { font-size: .72rem; }
-  .credit-list > div { grid-template-columns: minmax(0, 1fr) auto; gap: .4rem; }
+  .credit-list > div { grid-template-columns: minmax(0, 1fr); gap: .4rem; }
   .credit-list > div::before, .credit-list dt::after { display: none; }
   .credit-list dt { display: block; font-size: clamp(.72rem, 3.4vw, .88rem); line-height: 1.6; }
-  .credit-list dd { text-align: right; }
-  .plate-footer { grid-template-columns: minmax(0, 1fr) auto; }
-  .plate-maker { grid-column: 1 / -1; grid-row: 1; }
-  .plate-qr { grid-column: 2; grid-row: 2; }
-  .plate-url { grid-column: 1; grid-row: 2; }
-  .perspective-lab { padding-block: 3.5rem; margin-bottom: 5rem; }
-  .lab-heading h2 { font-size: 2.65rem; }
+  .credit-list dd { text-align: left; }
+  .perspective-lab { padding-top: 3.5rem; }
+  .lab-heading h3 { font-size: 2.65rem; }
   .perspective-types li { padding-inline: .65rem; }
   .perspective-types li > span { font-size: 2rem; }
-  .perspective-types h3 { font-size: .85rem; }
+  .perspective-types h4 { font-size: .85rem; }
   .perspective-types p { font-size: .7rem; }
   .scenario { padding-bottom: 4rem; }
   .scenario h2 { font-size: 3.3rem; }
@@ -282,10 +279,6 @@ button, summary { font: inherit; }
 }
 @media (max-width: 360px) {
   .credits .plate-heading h2 { font-size: 1.65rem; letter-spacing: .06em; white-space: nowrap; }
-  .credits .plate-heading-latin { font-size: .7rem; letter-spacing: .12em; }
-  .plate-footer { column-gap: .5rem; }
-  .plate-qr { width: 4rem; height: 4rem; }
-  .plate-url { font-size: .56rem; letter-spacing: .03em; overflow-wrap: anywhere; }
 }
 @media (prefers-reduced-motion: reduce) {
   .js-reveal [data-reveal] { opacity: 1; transform: none; }

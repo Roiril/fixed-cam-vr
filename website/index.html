@@ -98,9 +98,9 @@
       <a class="site-mark" href="#top" aria-label="廻リ視 ページ先頭へ">廻リ視</a>
       <nav class="site-nav" aria-label="ページ内">
         <a href="#fixed-view">固定視点</a>
-        <a href="#scenario">調査依頼</a>
-        <a href="#archive">記録</a>
-        <a href="#footage">体験映像</a>
+        <a href="#scenario">ストーリー</a>
+        <a href="#archive">展示履歴</a>
+        <a href="#footage">VR演出</a>
       </nav>
     </header>
 
@@ -121,7 +121,7 @@
           <h2 id="fixed-view-title">固定視点</h2>
           <p class="fixed-view-lead">監視カメラに映る自分を見ながら、<br class="desktop-break">現実の空間を歩く。</p>
           <p class="section-description">ヘッドセットに届くのは、その場所に置かれたカメラの映像。自分の体を離れた場所から見ながら、一歩を踏み出す。</p>
-          <a class="text-link" href="#perspective-lab">視点の違いを知る<span aria-hidden="true">↘</span></a>
+          <a class="text-link" href="#perspective-lab">視点を切り替えてみる<span aria-hidden="true">↘</span></a>
         </div>
 
         <div class="camera-exhibit">
@@ -145,19 +145,17 @@
           <p id="camera-status" class="sr-only" aria-live="polite">カメラ 01</p>
           <p class="camera-caption">カメラを選んで、撮影した場所を見る。</p>
         </div>
-      </section>
-
-      <section id="perspective-lab" class="perspective-lab" aria-labelledby="perspective-title">
+      <div id="perspective-lab" class="perspective-lab" role="region" aria-labelledby="perspective-title">
         <div class="lab-heading">
-          <p class="section-number" aria-hidden="true">VIEWPOINT STUDY</p>
-          <h2 id="perspective-title">同じ一歩。<br>違う視点。</h2>
+          <p class="section-number" aria-hidden="true">01 / VIEWPOINT STUDY</p>
+          <h3 id="perspective-title">体験してみる</h3>
           <p class="section-description">自分の目で見る。背後から追う。<br>その場所に置かれたカメラから見る。</p>
         </div>
         <div class="lab-panel">
           <ol class="perspective-types" aria-label="体験で比較する3つの視点">
-            <li><span aria-hidden="true">01</span><h3>一人称</h3><p>自分の目の位置から。</p></li>
-            <li><span aria-hidden="true">03</span><h3>三人称</h3><p>自分を追いかける位置から。</p></li>
-            <li><span aria-hidden="true">FIX</span><h3>固定視点</h3><p>動かないカメラから。</p></li>
+            <li><span aria-hidden="true">01</span><h4>一人称</h4><p>自分の目の位置から。</p></li>
+            <li><span aria-hidden="true">03</span><h4>三人称</h4><p>自分を追いかける位置から。</p></li>
+            <li><span aria-hidden="true">FIX</span><h4>固定視点</h4><p>動かないカメラから。</p></li>
           </ol>
         </div>
         <div class="handheld-player" id="handheld-player">
@@ -193,12 +191,13 @@
           </div>
           <p id="game-state" class="game-state" role="status"></p>
         </div>
+      </div>
       </section>
 
       <section id="scenario" class="scenario" aria-labelledby="scenario-title">
         <div class="scenario-copy">
-          <p class="section-number" aria-hidden="true">02 / INVESTIGATION</p>
-          <h2 id="scenario-title">調査依頼</h2>
+          <p class="section-number" aria-hidden="true">02 / STORY</p>
+          <h2 id="scenario-title">ストーリー</h2>
           <p>怪異調査員として、<br class="desktop-break">呪われた壁の調査に向かう。</p>
         </div>
 
@@ -213,7 +212,7 @@
         <div class="plate-section">
           <header class="plate-heading">
             <p class="section-number" aria-hidden="true">03</p>
-            <h2 id="archive-title">記録<span class="plate-heading-latin" aria-hidden="true">/ ARCHIVE</span></h2>
+            <h2 id="archive-title">展示履歴</h2>
             <p class="plate-heading-meta" aria-hidden="true"><span>MAWARIMI</span><span data-updated>2026-09-22</span></p>
           </header>
           <ol class="archive-records">
@@ -246,10 +245,10 @@
       </section>
       <section id="footage" class="footage" aria-labelledby="footage-heading">
         <div class="plate-section">
-          <header class="plate-heading"><p class="section-number" aria-hidden="true">04 / INSIDE THE HEADSET</p><h2 id="footage-heading">体験の、その先。</h2></header>
+          <header class="plate-heading"><p class="section-number" aria-hidden="true">04 / INSIDE THE HEADSET</p><h2 id="footage-heading">こだわりのVR演出</h2></header>
           <div class="footage-intro"><p>ここから先は、体験中に見えるもの。<br>演出の内容に触れる映像を収めています。</p><p class="section-description">初めての驚きを残しておきたい方は、<br>ここで閉じておいてください。</p></div>
           <details id="footage-gate" class="footage-gate">
-            <summary><span class="gate-index" aria-hidden="true">REC</span><span>演出を含む映像を見る<small>ネタバレあり · Meta Quest 3 実機録画</small></span><span class="gate-symbol" aria-hidden="true">＋</span></summary>
+            <summary><span class="gate-index" aria-hidden="true">REC</span><span>演出を見る<small>ネタバレあり · Meta Quest 3 実機録画</small></span><span class="gate-symbol" aria-hidden="true">＋</span></summary>
             <div class="footage-room">
               <div class="footage-controls" role="group" aria-label="演出映像を選択">
                 <button type="button" data-video-select="fracture" aria-pressed="true"><span aria-hidden="true">01</span>現実がスクリーンになる</button>
@@ -268,7 +267,7 @@
         <div class="plate-section">
           <header class="plate-heading">
             <p class="section-number" aria-hidden="true">05</p>
-            <h2 id="credits-title">クレジット<span class="plate-heading-latin" aria-hidden="true">/ CREDITS</span></h2>
+            <h2 id="credits-title">クレジット</h2>
           </header>
           <div class="plate" data-reveal style="--i: 0">
             <span class="plate-rivet plate-rivet-tl" aria-hidden="true"></span>
@@ -294,10 +293,6 @@
             </dl>
             <footer class="plate-footer">
               <p class="plate-maker">Roil Studio<a class="plate-email" href="mailto:rinkyouaoi@gmail.com">rinkyouaoi@gmail.com</a></p>
-              <div class="plate-qr" aria-hidden="true">
-                <svg shape-rendering="crispEdges" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29"><path stroke="currentColor" d="M0 0.5h7m2 0h1m3 0h1m4 0h1m1 0h1m1 0h7m-29 1h1m5 0h1m2 0h1m1 0h2m2 0h1m1 0h1m1 0h2m1 0h1m5 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m1 0h1m2 0h4m3 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m2 0h1m1 0h3m2 0h1m1 0h1m1 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m5 0h3m3 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m1 0h2m4 0h1m1 0h2m1 0h1m2 0h1m5 0h1m-29 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-20 1h2m1 0h1m1 0h5m-18 1h1m2 0h1m1 0h1m1 0h2m3 0h4m1 0h2m1 0h1m1 0h2m1 0h1m-25 1h2m3 0h1m3 0h1m1 0h3m2 0h1m3 0h3m1 0h3m-28 1h1m1 0h2m1 0h1m2 0h2m1 0h2m1 0h3m3 0h1m4 0h1m1 0h1m-24 1h1m1 0h3m2 0h1m4 0h2m2 0h1m3 0h1m1 0h2m-25 1h1m1 0h2m1 0h3m2 0h4m1 0h2m2 0h1m1 0h1m2 0h1m-28 1h1m1 0h2m2 0h1m2 0h1m1 0h1m2 0h1m6 0h1m1 0h1m1 0h3m-28 1h1m1 0h1m2 0h6m1 0h1m2 0h2m2 0h1m3 0h1m3 0h1m-27 1h1m1 0h1m3 0h1m1 0h3m4 0h1m2 0h4m1 0h1m1 0h1m-26 1h1m2 0h3m1 0h1m1 0h3m1 0h1m2 0h1m8 0h2m-29 1h2m5 0h1m1 0h1m1 0h1m1 0h1m2 0h1m1 0h1m3 0h3m1 0h1m1 0h1m-27 1h1m1 0h1m1 0h1m4 0h1m1 0h2m1 0h1m3 0h1m3 0h2m2 0h1m-27 1h1m1 0h1m2 0h2m1 0h1m1 0h3m2 0h1m5 0h1m1 0h1m1 0h2m-29 1h5m1 0h1m1 0h1m1 0h1m4 0h1m1 0h1m1 0h6m2 0h2m-21 1h1m3 0h2m1 0h6m3 0h1m1 0h1m1 0h1m-29 1h7m5 0h1m2 0h1m2 0h3m1 0h1m1 0h1m2 0h2m-29 1h1m5 0h1m3 0h1m2 0h3m3 0h2m3 0h2m2 0h1m-29 1h1m1 0h3m1 0h1m1 0h3m1 0h1m2 0h2m2 0h6m3 0h1m-29 1h1m1 0h3m1 0h1m4 0h3m3 0h2m4 0h1m1 0h3m-28 1h1m1 0h3m1 0h1m2 0h1m3 0h3m1 0h1m1 0h3m4 0h3m-29 1h1m5 0h1m1 0h4m3 0h4m1 0h1m2 0h1m1 0h1m1 0h2m-29 1h7m3 0h2m5 0h1m2 0h1m1 0h1m1 0h2m1 0h1"/></svg>
-              </div>
-              <p class="plate-url" aria-hidden="true">mawarimi.vercel.app</p>
             </footer>
           </div>
         </div>
