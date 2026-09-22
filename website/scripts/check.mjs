@@ -18,6 +18,10 @@ const requiredAssets = [
   "assets/camera-01.webp",
   "assets/camera-02.webp",
   "assets/camera-03.webp",
+  "assets/camera-01-quest.webp",
+  "assets/camera-02-quest.webp",
+  "assets/camera-03-quest.webp",
+  "assets/camera-01-doll.webp",
   "assets/crt.webp",
   "assets/investigation-request.webp",
   "assets/footage-fracture.mp4",
@@ -145,7 +149,10 @@ for (const forbidden of forbiddenFeatures) {
 
 if ((html.match(/data-camera-button=/g)?.length ?? 0) !== 3) errors.push("manual camera controls must contain 3 buttons");
 if (!html.includes('class="crt-body" src="assets/crt.webp"')) errors.push("camera feeds must be shown inside the CRT photograph");
-if (!html.includes('class="wall-evidence" src="assets/camera-01.webp"')) errors.push("investigation photo must reuse the first camera photograph");
+if (!html.includes('class="wall-evidence" src="assets/camera-01-doll.webp"')) errors.push("investigation photo must use the doll-vision render of camera 01");
+for (const camera of ["01", "02", "03"]) {
+  if (!html.includes(`src="assets/camera-${camera}-quest.webp"`)) errors.push(`camera ${camera} must use its Quest render`);
+}
 if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");

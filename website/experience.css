@@ -97,14 +97,7 @@ button, summary { font: inherit; }
   height: 58%;
   border-radius: 8% / 6%;
 }
-.camera-feed { object-fit: cover; filter: brightness(.72) contrast(1.06) saturate(.76) sepia(.08); }
-.screen-shade {
-  background:
-    repeating-linear-gradient(to bottom, transparent 0 3px, rgb(8 7 6 / 16%) 3px 4px),
-    radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 52%) 100%),
-    rgb(25 23 18 / 25%);
-  opacity: .32;
-}
+.camera-feed { object-fit: cover; filter: none; }
 .screen-noise {
   background-image:
     repeating-linear-gradient(to bottom, rgb(235 225 210 / 14%) 0 1px, transparent 1px 4px),
@@ -176,7 +169,7 @@ button, summary { font: inherit; }
   transform: none;
   border: 1px solid var(--line-strong);
   box-shadow: none;
-  filter: saturate(.4) brightness(.85);
+  filter: none;
 }
 .wall-photo figcaption { font-size: .65rem; letter-spacing: .08em; color: var(--ink-muted); padding-top: .5rem; }
 .investigation-request { top: 20%; left: 45%; width: 50%; transform: rotate(5deg); }

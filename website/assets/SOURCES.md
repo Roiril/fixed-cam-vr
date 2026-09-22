@@ -12,7 +12,11 @@
 
 調査依頼も `camera-01.webp` を共用する。ユーザーの修正指示「カーテンが正面から見えるやつ」に対応した。旧 `wall-evidence.webp` は履歴として残し、配信対象から外した。
 
-いずれも640×480。生成素材ではなく、合成前に撮影した背景写真。原本は保存したままPillowでWebPへ変換した。色調整と走査線の表現はCSSのみ。撮影場所の根拠は `tools/gen-plate/sites/A_20260907.json`、`B_20260907.json`、`C_20260823_1942.json`。再生成は `py -3.11 website/scripts/prepare-photos.py`。
+元写真はいずれも640×480。生成素材ではなく、合成前に撮影した背景写真。原本は保存したままPillowでWebPへ変換した。撮影場所の根拠は `tools/gen-plate/sites/A_20260907.json`、`B_20260907.json`、`C_20260823_1942.json`。元写真のWebPは `py -3.11 website/scripts/prepare-photos.py` で再生成する。
+
+テレビ内の `camera-01-quest.webp` 〜 `camera-03-quest.webp` は対応する元写真から作った1280×720の静止画。上映データ `tools/web-compositor/show.json` の全カメラ共通露出 -1.75 と `ScreenComposite.shader` のレンズ→センサー→現像→管の処理順を `website/scripts/render-camera-quest.py` で再現した。暗部ノイズと自動露出には `CameraFeelFx` の初期値を使う。実シェーダーをUnityやQuestで直接描画したキャプチャではない。実機固有の映像更新と画面の曲面は含まない。各ファイルは `py -3.11 website/scripts/render-camera-quest.py 01 website/assets/camera-01-quest.webp`（02、03も同様）で再生成する。CSS側でさらに色を変えない。
+
+調査依頼の `camera-01-doll.webp` は同じカメラ01を人形視点の表示値 `Shown=1` で加工したもの。解像度は映像幅で約200ブロックに落とす。夜間モードの無彩色化、+0.95EVの増感、強いセンサー粒、明暗曲線を入れる。写真の4:3部分を切り出し、CSSの追加補正はしない。再生成は `py -3.11 website/scripts/render-camera-quest.py 01 website/assets/camera-01-doll.webp --doll`。
 
 実機映像3本の出典は [FOOTAGE.md](FOOTAGE.md)。入口の立体題字は既存の `title.png`（1210×531）の輪郭と色をWebGLで使用。新しい題字を生成していない。破砕の幾何は `Assets/Scripts/Streaming/IntroFractureMesh.cs`、時計と材質は `Assets/Art/Shaders/Intro/IntroFractureTime.hlsl` と `IntroFracture.shader` からウェブ用に移植した。凍結する像は題字で、戻った場所から実HTMLを透過して見せる。
 
