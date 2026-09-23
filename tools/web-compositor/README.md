@@ -2,15 +2,18 @@
 
 ## 現行の入口（2026-09-23）
 
-`./serve.ps1` で `capture-server.py` を起動し、`http://localhost:8099/` を開く。
-`index.html` は当日の「設営と点検」。旧 `onsite.html` はここへ転送する。
-画面上部には現在の機器の集計と、次に開く項目を表示する。「設営 → 演出 → 接続 → 開場前」の順に画面を切り替える。
-URL の `#setup`、`#devices`、`#content`、`#checks` で各項目を直接開ける。演出ごとの照合と補足手順は必要なときに展開する。
+`./serve.ps1 -Prepare` で準備用に起動し、`http://localhost:8099/` を開く。
+`index.html` が当日の準備画面。旧 `onsite.html` と `shoot.html` もここへ転送する。
+「設営 → 接続 → 撮影 → 演出 → ビルド → 開場前」の順に進む。
+URL の `#setup`、`#devices`、`#shoot`、`#content`、`#build`、`#checks` で各項目を直接開ける。
+撮影には選んだカメラの接続と録画機能が必要。Quest と博士タブレットの確認は撮影の前提にせず、開場前に完了させる。
+人は構図・照明・演技を決めてスマホで撮影する。同じ準備画面で回収・冒頭の試写・切り出し・採用を行う。エージェントには素材の加工・検査・選択済み素材の反映・ビルド・導入を任せる。
 「演出」は会場での撮影から始める。人形視点はその日に撮ったテイクを採用する。必要な合成素材は会場で撮った写真を元に画像を作り、動きが要るものだけ画像から動画にする。試写・採用を終えてから書き出し、APK を作って両 Quest に入れる。既存素材を使う演出は一律に再生成しない。
 演出編集は `authoring.html` に移した。既定では演出を変更する POST を 403 で拒否する。
-事前編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
+準備用起動では `FIXEDCAM_PREPARATION=1` を設定する。loopback と同一オリジンからの撮影開始・停止・回収・人形視点の採用だけを許可する。スマホで撮影した後の回収はこの PC の「撮影」で行う。
+通常の `./serve.ps1` は準備用の書き込みを無効にする。一般の演出編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
 次節以降のタイムラインや画質の操作説明は旧編集画面の記録。Player へのライブ反映は廃止した。
-サーバを新しいコードで起動し直すまで `/ops/status` と `/ops/restart` は使えない。
+`GET /ops/capabilities` で起動モードと使用できる操作を読み、使えない操作は理由付きで表示する。Python の API 変更時はサーバーを再起動する。
 
 当日画面は固定のカメラ A/B/C と Quest α/β、対応する博士タブレット 2 台を表示する。
 固定登録は `operations-fleet.json`。A/B/C は `192.168.10.21/.22/.23:8080`、Quest α/β は
@@ -34,11 +37,14 @@ Quest ごとの 6 秒以内の heartbeat を確認する。HTTP 応答や fps �
 ```powershell
 py -3.11 -m unittest discover -s tools/web-compositor -p 'test_*.py'
 py -3.11 -m unittest tools/test_onsite_operations.py
-node --test tools/web-compositor/test_ops_model.mjs
+node --test tools/web-compositor/test_ops_model.mjs tools/web-compositor/test_ops_shoot.mjs tools/web-compositor/shoot-model.test.mjs
 ```
 
 演出の準備は `GET /ops/content` で照合する。参照ファイルの有無、StreamingAssets への同梱、APK 内の素材を別々に表示する。これだけでは素材が当日の画と合うかは判定できない。
-人形視点は `GET /shoot/plan` と `GET /shoot/manifest` を突き合わせ、使用するテイクがその日に撮影・採用された本数を表示する。生成した画像・動画の採否は素材工房で実写に重ねて判断する。
+人形視点は `GET /shoot/plan` と `GET /shoot/manifest` を突き合わせ、採用本数と当日回収を確認できる本数を分けて表示する。`capturedAt` は PC への回収時刻であり撮影日を証明しない。
+「演出」は `GET /ops/library` を使い、演出ごとの現在採用素材と APK 内の実ファイルを並べる。同名ファイルも SHA256 で比較する。APK 内の試写は検証済み manifest のファイルだけを `/ops/apk-asset` から配信する。動画の Range / HEAD に対応する。APK の同梱一致だけでは Quest に導入済みと表示しない。
+当日の撮影環境と採用素材の試写は人がチェックする。確認はこのブラウザのセッションに保持する。演出版が変わった場合や日付が変わった場合は失効する。ファイルの照合結果が古い間も確認済みにしない。
+「ビルドの依頼文をコピー」は現在の演出版と役割分担を含む依頼を作る。ビルドを自動実行するボタンではない。試写後に素材が変わっていたら、エージェントは再確認してからビルドする。
 export は必要な画像・動画・BGM を検証し、本文と素材の SHA256 を manifest に書く。カット単位の BGM も対象。
 Unity ビルドは欠損と改変を拒否する。成功時の `mawarimi.apk.content.json` は APK のハッシュと buildGuid を保存する。
 起動中の Quest が同じ contentId と buildGuid を報告した場合だけ導入版一致になる。素材差し替え後は再ビルドが必要。

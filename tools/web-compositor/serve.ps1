@@ -1,7 +1,10 @@
 ﻿# web compositor をローカルで配信して既定ブラウザで開く。
 # capture-server.py が POST /save を受けてキャプチャ/録画を captures/ に保存する（PC 内）。
 # getUserMedia(Webcam) は localhost なら http でも動く。
-param([int]$Port = 8099)
+param([int]$Port = 8099, [switch]$Prepare)
+
+# Preparation permits local POV recording, collection and adoption only.
+$env:FIXEDCAM_PREPARATION = if ($Prepare) { '1' } else { '0' }
 
 $dir = $PSScriptRoot
 $url = "http://localhost:$Port/index.html"

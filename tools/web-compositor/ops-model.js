@@ -34,17 +34,26 @@ export function contentSignature(content) {
     ...(content?.quests || []).map(q => [q.id, q.contentId, q.buildGuid])]);
 }
 
-// The release inventory checks file presence and hashes. The POV shots also
-// need evidence that the adopted takes were captured on this desk's current day.
+// capturedAt is the collection time, not the phone's filming time.
+// Today's venue and the final selection must be confirmed separately by a person.
 export function summarizeOnsiteShots(plan, manifest) {
   if (plan?.ok !== true || manifest?.ok !== true || !/^\d{4}-\d{2}-\d{2}/.test(plan.nowIso || '')) return null;
   const day = plan.nowIso.slice(0,10);
   const entries = Object.values(manifest.items || {});
   const shots = (plan.shots || []).filter(s => s.dev === 'pov' && Number(s.cuts) > 0);
-  const ready = shots.filter(s => s.status === 'ok' && entries.some(e =>
+  const ready = shots.filter(s => s.status === 'ok' && !!s.adoptedName);
+  const collected = ready.filter(s => entries.some(e =>
     e.shot === s.cueId && e.name === s.adoptedName &&
     typeof e.capturedAt === 'string' && e.capturedAt.slice(0,10) === day));
-  return {required:shots.length, complete:ready.length, missing:shots.filter(s => !ready.includes(s)).map(s => s.label || s.cueId)};
+  return {required:shots.length, complete:ready.length, collectedToday:collected.length, missing:shots.filter(s => !ready.includes(s)).map(s => s.label || s.cueId)};
+}
+
+export function validPreparation(record, content, now = Date.now()) {
+  const current = content?.preparation?.contentId;
+  if (!current || record?.contentId !== current || !Number.isFinite(record?.at) || now < record.at ||
+      new Date(record.at).toDateString() !== new Date(now).toDateString() ||
+      !summarizeContent(content,now).fresh || content.preparation.status !== 'ok') return {};
+  return {venue:record.venue === true,media:record.media === true};
 }
 
 export function summarizeContent(content, now = Date.now(), failed = false) {
@@ -85,7 +94,8 @@ export function summarize(snapshot, checks = {}, now = Date.now(), failed = fals
     detailed.signature === signature(snapshot) && detailedAge >= 0 && detailedAge <= 30 * 60 * 1000);
   const diagnosticIssues = diagnosticMissing ? 0 : detailed.rows.filter(r => r.required !== false && r.state !== 'ok').length;
   const release = summarizeContent(content, now);
-  const onsiteReady = onsiteShots === undefined || !!(onsiteShots && onsiteShots.complete === onsiteShots.required);
+  const onsiteReady = onsiteShots === undefined || !!(onsiteShots && onsiteShots.complete === onsiteShots.required &&
+    onsiteShots.verified === true && onsiteShots.mediaReviewed === true);
   const ready = fresh && !blockers && !unknown && !warnings && !pending && !globalIssues.length && !diagnosticMissing && !diagnosticIssues && release.ready && onsiteReady;
   return { fresh, blockers, unknown, warnings, pending, observed, ready, diagnosticMissing, diagnosticIssues, contentReady:release.ready && onsiteReady,
     title: !fresh ? '機器の状態を確認できていません' : blockers ? `${blockers} 台に対処が必要です` :

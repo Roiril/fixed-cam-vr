@@ -6,7 +6,7 @@ import re
 import threading
 import time
 import zipfile
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import export_build
 import operations
@@ -14,6 +14,8 @@ import operations
 _lock = threading.Lock()
 _cache_key = None
 _cache_value = None
+_apk_lock = threading.Lock()
+_apk_cache = {}
 
 
 def _stage(status, content_id='', title='', action=''):
@@ -100,18 +102,44 @@ def verify_bundle(path):
     return _verify(read, names)
 
 
-def verify_apk(path):
-    if not os.path.isfile(path):
-        return None
+def _apk_signature(path):
     try:
-        with zipfile.ZipFile(path) as apk:
-            prefix = 'assets/show/'
-            names = {n[len(prefix):] for n in apk.namelist() if n.startswith(prefix)}
-            if 'manifest.json' not in names:
-                return None
-            return _verify(lambda p: apk.read(prefix + p), names)
-    except (OSError, ValueError, zipfile.BadZipFile):
+        stat = os.stat(path)
+        return os.path.abspath(path), stat.st_size, stat.st_mtime_ns
+    except OSError:
         return None
+
+
+def _verified_apk(path):
+    """APK の検証結果をファイル署名単位で共有する。receipt は導入判定だけで別に見る。"""
+    signature = _apk_signature(path)
+    if signature is None:
+        return None
+    with _apk_lock:
+        if signature in _apk_cache:
+            return _apk_cache[signature]
+        try:
+            with zipfile.ZipFile(path) as apk:
+                prefix = 'assets/show/'
+                names = {n[len(prefix):] for n in apk.namelist() if n.startswith(prefix)}
+                content_id = _verify(lambda p: apk.read(prefix + p), names)
+                if not content_id:
+                    result = None
+                else:
+                    manifest = json.loads(apk.read(prefix + 'manifest.json'))
+                    show = json.loads(apk.read(prefix + 'show.json'))
+                    result = {'contentId': content_id, 'manifest': manifest, 'show': show,
+                              'assets': {a['path']: dict(a) for a in manifest['assets']}}
+        except (OSError, ValueError, KeyError, TypeError, UnicodeError, zipfile.BadZipFile):
+            result = None
+        _apk_cache.clear()
+        _apk_cache[signature] = result
+        return result
+
+
+def verify_apk(path):
+    verified = _verified_apk(path)
+    return verified['contentId'] if verified else None
 
 
 def verify_receipt(path, apk_content_id):
@@ -187,6 +215,195 @@ def _effects(show, refs, prepared_id, bundle_id, apk_id, dirs):
                          'sourceReady': source_ready, 'bundled': bundled,
                          'inApk': in_apk, 'assetCount': len(urls)})
     return rows
+
+
+def _slot_url(url, show):
+    slots = {s.get('name'): s.get('url') for s in
+             ((show.get('control') or {}).get('slots') or []) if isinstance(s, dict)}
+    seen = set()
+    while isinstance(url, str) and url.startswith('slot://'):
+        name = url[len('slot://'):]
+        if name in seen or not slots.get(name):
+            return None
+        seen.add(name)
+        url = slots[name]
+    return url
+
+
+def _asset_kind(name):
+    ext = os.path.splitext(name.lower())[1]
+    if ext in ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'):
+        return 'image'
+    if ext in ('.mp4', '.webm', '.mov', '.m4v', '.avi'):
+        return 'video'
+    if ext in ('.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'):
+        return 'audio'
+    return 'file'
+
+
+def _take_asset_refs(show, take):
+    cues = {c.get('id'): c for c in show.get('cues') or []}
+    refs = {}
+    for index, step in enumerate(take.get('steps') or []):
+        cue_id = step.get('cueId') or ''
+        cue = cues.get(cue_id) or {}
+        cue_name = cue.get('name') or cue.get('label') or cue_id or '演出'
+        if step.get('assetUrl'):
+            refs[f'step:{index}:assetUrl'] = {
+                'label': cue_name + '・ステップ素材', 'cueId': cue_id,
+                'url': step['assetUrl']}
+        if cue.get('sourceUrl'):
+            refs[f'step:{index}:sourceUrl'] = {
+                'label': cue_name + '・映像', 'cueId': cue_id, 'url': cue['sourceUrl']}
+        if cue.get('maskUrl'):
+            refs[f'step:{index}:maskUrl'] = {
+                'label': cue_name + '・マスク', 'cueId': cue_id, 'url': cue['maskUrl']}
+    return refs
+
+
+def _current_asset(ref, show, dirs):
+    if ref is None:
+        return None
+    url = _slot_url(ref.get('url'), show)
+    local_url = ''
+    clean = url.split('?', 1)[0].split('#', 1)[0] if isinstance(url, str) else ''
+    for prefix, base in dirs.items():
+        if not clean.startswith(prefix):
+            continue
+        candidate = os.path.abspath(os.path.join(base, unquote(clean[len(prefix):])))
+        try:
+            if os.path.commonpath([candidate, os.path.abspath(base)]) == os.path.abspath(base):
+                local_url = url
+        except ValueError:
+            pass
+        break
+    path = export_build.resolve_local_asset(local_url, dirs) if local_url else None
+    name = unquote(local_url.split('?', 1)[0].rsplit('/', 1)[-1]) if local_url else ''
+    return {'url': local_url, 'name': name, 'exists': bool(path),
+            'sha256': export_build._sha_file(path) if path else ''}
+
+
+def _built_asset(ref, verified):
+    if ref is None:
+        return None
+    source = ref.get('url')
+    prefix = 'sa://assets/'
+    name = unquote(source[len(prefix):]) if isinstance(source, str) and source.startswith(prefix) else ''
+    path = 'assets/' + name if name else ''
+    record = verified['assets'].get(path) if verified and path else None
+    url = ('/ops/apk-asset?contentId=' + quote(verified['contentId'], safe='')
+           + '&path=' + quote(path, safe='')) if record else ''
+    return {'url': url, 'name': name, 'exists': bool(record),
+            'sha256': record.get('sha256', '') if record else ''}
+
+
+def _asset_status(current, built, apk_verified):
+    if not apk_verified or (current is not None and not current['exists']):
+        return 'unknown'
+    if current is None:
+        return 'removed' if built and built['exists'] else 'unknown'
+    if built is None or not built['exists']:
+        return 'unbuilt'
+    return 'same' if current['sha256'] == built['sha256'] else 'changed'
+
+
+def _effect_rows(show, built_show, verified, dirs):
+    def indexed(source):
+        rows = []
+        for seg_index, segment in enumerate(((source.get('timeline') or {}).get('segments') or [])):
+            for take_index, take in enumerate(segment.get('takes') or []):
+                identity = take.get('id') or f'@{seg_index}:{take_index}'
+                rows.append((identity, segment, take))
+        return rows
+
+    current_rows = indexed(show)
+    built_rows = indexed(built_show or {})
+    current_by_id = {identity: (segment, take) for identity, segment, take in current_rows}
+    built_by_id = {identity: (segment, take) for identity, segment, take in built_rows}
+    order = [identity for identity, _, _ in current_rows]
+    order.extend(identity for identity, _, _ in built_rows if identity not in current_by_id)
+    effects = []
+    for identity in order:
+        current_pair = current_by_id.get(identity)
+        built_pair = built_by_id.get(identity)
+        segment, take = current_pair or built_pair
+        current_refs = _take_asset_refs(show, current_pair[1]) if current_pair else {}
+        built_refs = _take_asset_refs(built_show, built_pair[1]) if built_pair else {}
+        keys = list(current_refs)
+        keys.extend(key for key in built_refs if key not in current_refs)
+        assets = []
+        for key in keys:
+            current_ref = current_refs.get(key)
+            built_ref = built_refs.get(key)
+            descriptor = current_ref or built_ref
+            current = _current_asset(current_ref, show, dirs)
+            built = _built_asset(built_ref, verified)
+            name = (current or {}).get('name') or (built or {}).get('name') or ''
+            assets.append({'key': key, 'label': descriptor['label'],
+                           'cueId': descriptor.get('cueId') or '',
+                           'kind': _asset_kind(name), 'current': current, 'built': built,
+                           'status': _asset_status(current, built, bool(verified))})
+        take_id = take.get('id') or ''
+        segment_id = segment.get('id') or take_id.split('#', 1)[0]
+        match = re.match(r'^L(\d+)C(\d+)', take_id)
+        derived_segment = (f'{match.group(1)}周目{chr(ord("A") + int(match.group(2)))}'
+                           if match and int(match.group(2)) < 26 else '')
+        cue_names = []
+        cue_table = {}
+        if built_show:
+            cue_table.update({c.get('id'): c for c in (built_show.get('cues') or [])})
+        cue_table.update({c.get('id'): c for c in (show.get('cues') or [])})
+        for step in take.get('steps') or []:
+            cue = cue_table.get(step.get('cueId')) or {}
+            cue_name = cue.get('name') or cue.get('label')
+            if cue_name and cue_name not in cue_names:
+                cue_names.append(cue_name)
+        name = take.get('name') or (cue_names[0] if cue_names else take_id)
+        effects.append({'id': identity, 'name': name,
+                        'segmentId': segment_id,
+                        'segmentName': segment.get('name') or derived_segment or segment_id,
+                        'assets': assets,
+                        'procedural': not any(a['kind'] in ('image', 'video')
+                                              and not a['key'].endswith(':maskUrl')
+                                              for a in assets)})
+    return effects
+
+
+def media_library(show, dirs, apk_path, now=None):
+    """現在採用中の素材と、検証済み APK に実在する素材を用途ごとに比較する。"""
+    now = time.time() if now is None else now
+    verified = _verified_apk(apk_path)
+    try:
+        prepared_id, _ = _planned(show, dirs)
+    except (OSError, ValueError, TypeError):
+        prepared_id = ''
+    built_show = verified['show'] if verified else None
+    return {'ok': True, 'observedAt': int(now), 'apkVerified': bool(verified),
+            'apkContentId': verified['contentId'] if verified else '',
+            'preparedContentId': prepared_id,
+            'effects': _effect_rows(show, built_show, verified, dirs)}
+
+
+def read_apk_asset(apk_path, content_id, asset_path):
+    """検証済み manifest の allowlist にある 1 ファイルだけを APK から読む。"""
+    verified = _verified_apk(apk_path)
+    if not verified:
+        return 404, None, None
+    if content_id != verified['contentId']:
+        return 409, None, None
+    if (not isinstance(asset_path, str) or not asset_path.startswith('assets/')
+            or not asset_path[len('assets/'):] or '/' in asset_path[len('assets/'):]
+            or '\\' in asset_path or asset_path not in verified['assets']):
+        return 404, None, None
+    record = verified['assets'][asset_path]
+    try:
+        with zipfile.ZipFile(apk_path) as apk:
+            raw = apk.read('assets/show/' + asset_path)
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return 404, None, None
+    if len(raw) != record['size'] or hashlib.sha256(raw).hexdigest() != record['sha256']:
+        return 409, None, None
+    return 200, raw, record
 
 
 def content_status(show, dirs, bundle_dir, apk_path, devices, now=None):

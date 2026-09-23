@@ -29,7 +29,9 @@
 import base64
 import copy
 import datetime
+import ipaddress
 import json
+import mimetypes
 import os
 import re
 import shutil
@@ -1463,8 +1465,102 @@ class Handler(SimpleHTTPRequestHandler):
         data = self.rfile.read(length) if length else b'{}'
         return json.loads(data.decode('utf-8') or '{}')
 
+    @staticmethod
+    def _loopback_name(value):
+        try:
+            host = urlparse('//' + value).hostname
+            return host and (host.lower() == 'localhost' or ipaddress.ip_address(host).is_loopback)
+        except ValueError:
+            return False
+
+    def _local_browser_request(self):
+        try:
+            if not ipaddress.ip_address(self.client_address[0]).is_loopback:
+                return False
+        except ValueError:
+            return False
+        host = self.headers.get('Host', '')
+        if not self._loopback_name(host):
+            return False
+        origin = self.headers.get('Origin')
+        if origin:
+            parsed = urlparse(origin)
+            if parsed.scheme != 'http' or parsed.netloc != host or not self._loopback_name(parsed.netloc):
+                return False
+        return True
+
+    def _capabilities(self):
+        authoring = os.environ.get('FIXEDCAM_AUTHORING') == '1'
+        preparation = (not authoring and os.environ.get('FIXEDCAM_PREPARATION') == '1'
+                       and self._local_browser_request())
+        if authoring:
+            return {'ok': True, 'authoring': True, 'shooting': True, 'adoption': True,
+                    'capture': True, 'mode': 'authoring'}
+        if preparation:
+            return {'ok': True, 'authoring': False, 'shooting': True, 'adoption': True,
+                    'capture': False, 'mode': 'preparation'}
+        return {'ok': True, 'authoring': False, 'shooting': False, 'adoption': False,
+                'capture': False, 'mode': 'inspection'}
+
+    def _serve_apk_asset(self, head_only=False):
+        query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+        content_id = (query.get('contentId', [''])[0] or '').strip()
+        asset_path = query.get('path', [''])[0] or ''
+        apk_path = os.path.join(REPO_ROOT, 'Builds', 'mawarimi.apk')
+        code, raw, _ = _inventory.read_apk_asset(apk_path, content_id, asset_path)
+        if code != 200:
+            body = json.dumps({'ok': False, 'error': 'APK素材を配信できません'}).encode('utf-8')
+            self.send_response(code)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            if not head_only:
+                self.wfile.write(body)
+            return
+        start, end = 0, len(raw) - 1
+        range_header = self.headers.get('Range')
+        if range_header:
+            match = re.fullmatch(r'bytes=(\d*)-(\d*)', range_header.strip())
+            if not match or (not match.group(1) and not match.group(2)):
+                return self._range_error(len(raw), head_only)
+            if match.group(1):
+                start = int(match.group(1))
+                end = int(match.group(2)) if match.group(2) else end
+            else:
+                length = int(match.group(2))
+                start = max(0, len(raw) - length)
+            if start >= len(raw) or start > end:
+                return self._range_error(len(raw), head_only)
+            end = min(end, len(raw) - 1)
+        payload = raw[start:end + 1]
+        self.send_response(206 if range_header else 200)
+        self.send_header('Content-Type', mimetypes.guess_type(asset_path)[0]
+                         or 'application/octet-stream')
+        self.send_header('Accept-Ranges', 'bytes')
+        if range_header:
+            self.send_header('Content-Range', f'bytes {start}-{end}/{len(raw)}')
+        self.send_header('Content-Length', str(len(payload)))
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(payload)
+
+    def _range_error(self, size, head_only):
+        self.send_response(416)
+        self.send_header('Content-Range', f'bytes */{size}')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    def do_HEAD(self):
+        if urlparse(self.path).path == '/ops/apk-asset':
+            return self._serve_apk_asset(head_only=True)
+        return super().do_HEAD()
+
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == '/ops/capabilities':
+            return self._json(self._capabilities())
+        if path == '/ops/apk-asset':
+            return self._serve_apk_asset()
         if path == '/captures/list':
             return self._json(self._list_captures())
         if path == '/atelier':
@@ -1502,6 +1598,11 @@ class Handler(SimpleHTTPRequestHandler):
                 os.path.join(REPO_ROOT, 'Assets', 'StreamingAssets', 'show'),
                 os.path.join(REPO_ROOT, 'Builds', 'mawarimi.apk'),
                 _unity_devices_snapshot()))
+        if path == '/ops/library':
+            with _show_cond:
+                show = copy.deepcopy(_show)
+            return self._json(_inventory.media_library(
+                show, LOCAL_URL_DIRS, os.path.join(REPO_ROOT, 'Builds', 'mawarimi.apk')))
         if path == '/unity/devices':
             # 機ごとの heartbeat（スタッフが眺める用。タブレットはここを読まない・0187）。
             return self._json(_udev.device_rows(_unity_devices_snapshot(), time.time()))
@@ -1817,11 +1918,15 @@ class Handler(SimpleHTTPRequestHandler):
         return self._json(out)
 
     def _shoot_post(self, path):
-        try:
-            n = int(self.headers.get('Content-Length') or 0)
-            body = json.loads(self.rfile.read(n).decode('utf-8')) if n else {}
-        except Exception as e:
-            return self._json({'ok': False, 'detail': f'body が読めない: {e}'}, 400)
+        body = getattr(self, '_preparation_json_body', None)
+        if body is None:
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                body = json.loads(self.rfile.read(n).decode('utf-8')) if n else {}
+            except Exception as e:
+                return self._json({'ok': False, 'detail': f'body が読めない: {e}'}, 400)
+        else:
+            del self._preparation_json_body
 
         host = str(body.get('host') or '').strip()
         port = int(body.get('port') or 8080)
@@ -2106,11 +2211,55 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             return self._json({'ok': False, 'error': str(e)}, 500)
 
+    def _preparation_post(self, path):
+        allowed = ('/shoot/start', '/shoot/stop', '/shoot/pull', '/shoot/adopt')
+        if path not in allowed or not self._local_browser_request():
+            return False
+        if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+            self._json({'ok': False, 'error': 'JSON が必要です'}, 415)
+            return None
+        try:
+            body = self._read_json_body()
+        except (ValueError, UnicodeDecodeError):
+            self._json({'ok': False, 'error': 'JSON を読めません'}, 400)
+            return None
+        if not isinstance(body, dict):
+            self._json({'ok': False, 'error': 'JSON object が必要です'}, 400)
+            return None
+        if path in ('/shoot/start', '/shoot/stop', '/shoot/pull'):
+            try:
+                target = (str(body.get('host') or '').strip(), int(body.get('port') or 8080))
+            except (TypeError, ValueError):
+                self._json({'ok': False, 'error': '撮影端末が不正です'}, 400)
+                return None
+            cameras = {(c['host'], c['port']) for c in self._shoot_cams()}
+            if target not in cameras:
+                self._json({'ok': False, 'error': '登録済み撮影端末だけ操作できます'}, 403)
+                return None
+        if path == '/shoot/adopt':
+            cue_id = str(body.get('cueId') or '')
+            pov_ids = {str(s.get('cueId') or '') for s in _shots_def()
+                       if s.get('dev') == 'pov'}
+            url = str(body.get('url') or '')
+            if cue_id not in pov_ids:
+                self._json({'ok': False, 'error': '準備画面では人形視点の素材だけ採用できます'}, 403)
+                return None
+            if url and not _export.resolve_local_asset(url, {'/recordings/': RECORDINGS}):
+                self._json({'ok': False, 'error': '回収済みの素材だけ採用できます'}, 403)
+                return None
+        self._preparation_json_body = body
+        return True
+
     def do_POST(self):
         parsed = urlparse(self.path)
         if os.environ.get('FIXEDCAM_AUTHORING') != '1' and parsed.path not in (
                 '/unity/heartbeat', '/ops/restart', '/onsite/check'):
-            return self._json({'ok': False, 'error': 'この卓から演出は変更できません'}, 403)
+            preparation = (os.environ.get('FIXEDCAM_PREPARATION') == '1'
+                           and self._preparation_post(parsed.path))
+            if preparation is None:
+                return
+            if not preparation:
+                return self._json({'ok': False, 'error': 'この卓から演出は変更できません'}, 403)
         if parsed.path == '/state':
             return self._post_state()
         if parsed.path == '/ops/restart':

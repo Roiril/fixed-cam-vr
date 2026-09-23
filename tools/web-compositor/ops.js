@@ -1,4 +1,6 @@
-import {CAMERA_IDS, QUEST_IDS, MANUAL_CHECKS, isFresh, signature, contentSignature, summarizeContent, summarizeOnsiteShots, validChecks, summarize} from './ops-model.js';
+import {CAMERA_IDS, QUEST_IDS, MANUAL_CHECKS, isFresh, signature, contentSignature, summarizeContent, summarizeOnsiteShots, validPreparation, validChecks, summarize} from './ops-model.js';
+import {mountLibrary} from './ops-library.js';
+import {mountShoot} from './ops-shoot.js';
 
 const $ = id => document.getElementById(id);
 const demo = new URLSearchParams(location.search).get('demo');
@@ -7,6 +9,9 @@ const storageKey = demo ? 'mawarimi-ops-demo' : 'mawarimi-ops-checks-v1';
 let snapshot = null, failed = false, busy = false, pollTimer, record = null, deepResult = null;
 let contentSnapshot = null, contentFailed = false, contentBusy = false, contentTimer;
 let shootProof = null, shootBusy = false;
+let preparation = null, studio, library;
+const preparationKey = demo ? 'mawarimi-preparation-demo' : 'mawarimi-preparation-v1';
+try { preparation=JSON.parse(sessionStorage.getItem(preparationKey)); } catch {}
 const cameraViews = new Map(), questViews = new Map();
 try { record = JSON.parse(sessionStorage.getItem(storageKey)); } catch {}
 
@@ -82,7 +87,9 @@ for (const check of MANUAL_CHECKS) {
 }
 
 function render() {
-  const checks = validChecks(record,snapshot), s = summarize(snapshot,checks,Date.now(),failed,deepResult,contentFailed?null:contentSnapshot,shootProof);
+  const reviews=validPreparation(preparation,contentFailed?null:contentSnapshot);
+  const onsite=shootProof?{...shootProof,verified:reviews.venue||shootProof.required===0,mediaReviewed:reviews.media===true}:null;
+  const checks = validChecks(record,snapshot), s = summarize(snapshot,checks,Date.now(),failed,deepResult,contentFailed?null:contentSnapshot,onsite);
   $('overview-title').textContent = s.title; state($('overall-state'),s.status);
   $('online-count').textContent = s.observed; $('error-count').textContent = s.fresh ? s.blockers : '—';
   $('unknown-count').textContent = s.unknown; $('manual-count').textContent = s.pending;
@@ -92,11 +99,16 @@ function render() {
     s.blockers ? '該当する機器の「次にすること」から対処します。担当の入れ替えは必要ありません。' :
     s.ready ? '自動で調べられる状態と装着して確認した結果がそろっています。動作中も接続を確認します。' :
     '演出の同梱と当日の接続を別々に確認します。最後に装着して映像と音を確かめます。';
-  const next = !s.fresh || s.blockers || s.unknown || s.warnings ? ['devices','機器の状態と対処を見る'] :
-    !s.contentReady ? ['content','演出の同梱を確認する'] : ['checks','開場前の確認へ進む'];
+  const connected=s.fresh?snapshot.cameras.filter(c=>c.identityOk && c.stream?.ok && c.status==='ok'):[];
+  $('shoot-connection-status').textContent=connected.length?`カメラ ${connected.map(c=>c.id).join('・')} の映像を確認しました。撮影画面で録画機能も確認します。`:'撮影に使うカメラの接続と映像を確認してください。';
+  const next = !connected.length ? ['devices','撮影するカメラを接続する'] :
+    !shootProof || shootProof.complete<shootProof.required ? ['shoot','会場の素材を撮影する'] :
+    !reviews.venue || !reviews.media ? ['content','採用素材を見て確定する'] :
+    !s.contentReady ? ['build','ビルドと導入を確認する'] : ['checks','開場前の確認へ進む'];
   $('primary-action').href = `#${next[0]}`;
   $('primary-action').firstChild.textContent = `${next[1]} `;
   renderContent();
+  renderPreparation(reviews);
   renderTablets(s.fresh);
   $('connection-error').hidden = !failed;
   if (failed) $('connection-error').textContent = '状態を取得できません。この PC の点検サーバーとネットワークを確認してください。接続が戻れば自動で確認を再開します。';
@@ -223,8 +235,8 @@ function renderShootProof() {
   if (!shootProof.required) {node.dataset.state='ok';node.textContent='この台本では人形視点の撮影は不要です。';return;}
   node.dataset.state=shootProof.complete===shootProof.required?'ok':'warning';
   node.textContent=shootProof.complete===shootProof.required?
-    `人形視点 ${shootProof.complete} / ${shootProof.required} 本を当日撮影して採用済みです。`:
-    `人形視点 ${shootProof.complete} / ${shootProof.required} 本を当日撮影して採用済み。残り ${shootProof.required-shootProof.complete} 本は撮影画面で確認してください。`;
+    `人形視点 ${shootProof.complete} / ${shootProof.required} 本を採用中。当日の回収を確認できる素材は ${shootProof.collectedToday??'—'} 本です。撮影環境は試写して確認します。`:
+    `人形視点 ${shootProof.complete} / ${shootProof.required} 本を採用中。残り ${shootProof.required-shootProof.complete} 本は撮影・採用が必要です。`;
 }
 async function pollShoot() {
   if (shootBusy || document.hidden) return;
@@ -305,21 +317,25 @@ let theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 try{theme=localStorage.getItem('mawarimi-ops-theme')||theme;}catch{}
 applyTheme(theme);
 $('theme').addEventListener('click',()=>{theme=theme==='dark'?'light':'dark';applyTheme(theme);try{localStorage.setItem('mawarimi-ops-theme',theme);}catch{}});
-const views = ['setup','devices','content','checks'];
+const viewNames={setup:'設営',devices:'接続',shoot:'撮影',content:'演出',build:'ビルド',checks:'開場前'};
+const views = Object.keys(viewNames);
 function selectView() {
-  const requested = location.hash.slice(1);
+  const requested = location.hash.slice(1).split('?')[0];
   const active = views.includes(requested) ? requested : requested === 'tablet-check' ? 'devices' : 'setup';
   for (const id of views) $(id).hidden = id !== active;
   for (const link of document.querySelectorAll('[data-view], [data-step]')) {
     if (link.getAttribute('href') === `#${active}`) link.setAttribute('aria-current',link.dataset.view ? 'page' : 'step');
     else link.removeAttribute('aria-current');
   }
-  $('view-announcement').textContent = `${{setup:'設営',devices:'接続',content:'演出',checks:'開場前'}[active]}を表示しています`;
+  document.body.dataset.view=active;
+  document.title=`${viewNames[active]} — 廻リ視の準備`;
+  $('view-announcement').textContent = `${viewNames[active]}を表示しています`;
+  studio?.setActive(active==='shoot');library?.setActive(active==='content');
+  if(active==='shoot') {const shot=new URLSearchParams(location.hash.split('?')[1]||'').get('shot');if(shot)studio?.selectShot(shot);}
   if (active !== 'devices') for (const view of cameraViews.values()) closePreview(view);
   if (location.hash) requestAnimationFrame(() => $(requested === 'tablet-check' ? 'tablet-check' : active).scrollIntoView({block:'start',behavior:'instant'}));
 }
 addEventListener('hashchange',selectView);
-selectView();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){poll();pollContent();}else for(const v of cameraViews.values())closePreview(v);});
 setInterval(()=>{if(!document.hidden)render();},1000);
 
@@ -341,6 +357,47 @@ function demoContent(mode) {
     effects:['人形視点','手形','壁のシミ'].map((name,i)=>({id:`effect-${i}`,name,status:ready||i<2?'ok':'error',title:`${i+1} 個の素材を使用`,action:!ready&&i===2?'差し替えた動画を含めて再ビルドします。':'',sourceReady:true,bundled:ready||i<2,inApk:ready||i<2,assetCount:i+1})),
     quests:QUEST_IDS.map(idQ=>({id:idQ,status:ready?'ok':'error',contentId:ready?id:old,buildGuid:ready?'c'.repeat(32):'d'.repeat(32),title:ready?'今回の演出と一致しています':'更新前の演出で動いています',action:ready?'この後に装着して映像と音を確認します。':'新しい APK を入れて起動し直します。'}))};
 }
+function renderPreparation(reviews) {
+  const fresh=!contentFailed && summarizeContent(contentSnapshot).fresh;
+  const sourceReady=fresh&&contentSnapshot?.preparation?.status==='ok';
+  const visibleLibrary=library?.getSnapshot();
+  const previewCurrent=!!visibleLibrary&&visibleLibrary.preparedContentId===contentSnapshot?.preparation?.contentId&&Date.now()/1000-visibleLibrary.observedAt<=40;
+  $('venue-review').disabled=!sourceReady||!previewCurrent||!shootProof||shootProof.complete!==shootProof.required;
+  $('media-review').disabled=!sourceReady||!previewCurrent;
+  $('venue-review').checked=!!reviews.venue;$('media-review').checked=!!reviews.media;
+  const ready=!!(sourceReady&&shootProof&&shootProof.complete===shootProof.required&&(reviews.venue||shootProof.required===0)&&reviews.media);
+  state($('build-ready-state'),ready?'ok':'warning');
+  $('build-ready-state').textContent=ready?'試写を確認済み':'素材の確認が残っています';
+  $('build-handoff-title').textContent=ready?'エージェントへビルドを依頼できます':'ビルドの前に素材を確定します';
+  $('build-handoff-detail').textContent=!sourceReady?'採用ファイルを照合できていません。演出画面で素材を確認してください。':
+    !shootProof||shootProof.complete!==shootProof.required?'人形視点の撮影と採用が残っています。「撮影」で必要な素材をそろえます。':
+    !reviews.venue&&shootProof.required>0?'「演出」で当日の会場で撮った人形視点を確認します。':
+    !reviews.media?'「演出」で採用素材を試写して確定します。':
+    'この演出版を書き出して APK を作ります。素材の差し替えが入ったら試写の確認からやり直します。';
+  $('copy-build-task').disabled=!ready||!!demo;
+}
+for(const key of ['venue','media'])$(key+'-review').addEventListener('change',()=>{
+  const checks=validPreparation(preparation,contentFailed?null:contentSnapshot);
+  preparation={...checks,[key]:$(key+'-review').checked,at:Date.now(),contentId:contentSnapshot?.preparation?.contentId};
+  try{sessionStorage.setItem(preparationKey,JSON.stringify(preparation));}catch{}
+  render();
+});
+async function copyTask(text,target) {
+  try{await navigator.clipboard.writeText(text);target.textContent='コピーしました。エージェントとの会話に貼り付けて依頼できます。';}
+  catch{target.textContent='コピーできませんでした。下の文を選択してコピーしてください。';const area=el('textarea','task-copy');area.readOnly=true;area.value=text;area.setAttribute('aria-label','エージェントへの依頼文');target.append(area);area.focus();area.select();}
+}
+$('copy-media-task').addEventListener('click',()=>{
+  const selected=library.selection();if(!selected){$('media-task-status').textContent='演出一覧から素材を確認する演出を選んでください。';return;}
+  const files=(selected.assets||[]).map(a=>`${a.label}: ${a.current?.name||'未採用'}`).join('\n');
+  copyTask(`廻リ視の演出「${selected.name||selected.id}」（${selected.id}）を当日の会場の写真に合わせて調整してください。\n現在の採用:\n${files}\n人が用意するもの: 本番の構図・照明の写真。生成結果の選択と合成した画の確認。\nエージェントの担当: 採用ファイルを確認。必要な演出だけ画像生成の指示と素材加工を行い、必要なら画像から動画にする手順を準備。動画化の結果を取り込み、尺と形式を検査。人が選んだ素材を反映。\n撮影環境や意図は推測で補わず、素材の確定後にビルドしてください。`,$('media-task-status'));
+});
+$('copy-build-task').addEventListener('click',()=>{
+  if($('copy-build-task').disabled)return;
+  copyTask(`廻リ視（FixedCam）をビルドして Quest α と β に導入してください。\n試写確認した演出版: ${contentSnapshot.preparation.contentId}\n当日の会場での撮影と採用素材の試写を人が確認しました。\nまず現在の採用内容が上記の演出版と一致するか照合してください。変更されていたら再試写が必要です。\n素材を書き出して検査し、tools/unity.ps1 build fixedcam で APK を作成。両機へ導入して内容とアプリ版を照合してください。\n人の担当: 導入後に両方を装着して映像・音・合成位置を確認する。`,$('build-task-status'));
+});
+studio=mountShoot($('shoot-console'),{demo:!!demo,onAdopt:()=>{preparation=null;record=null;saveRecord();try{sessionStorage.removeItem(preparationKey);}catch{}pollContent();pollShoot();library.refresh();}});
+library=mountLibrary({demo:!!demo,onLoad:()=>{pollContent();}});
 if(demo){$('demo-banner').hidden=false;$('deep-check').disabled=true;for(const v of questViews.values()){v.link.removeAttribute('href');v.link.textContent='受付ページ（表示例）';}}
+selectView();
 render();poll();pollContent();
 pollShoot();setInterval(pollShoot,15000);
