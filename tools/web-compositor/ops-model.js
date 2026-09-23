@@ -48,6 +48,18 @@ export function summarizeOnsiteShots(plan, manifest) {
   return {required:shots.length, complete:ready.length, collectedToday:collected.length, missing:shots.filter(s => !ready.includes(s)).map(s => s.label || s.cueId)};
 }
 
+export function summarizePlates(payload, now = Date.now()) {
+  const age=now/1000-Number(payload?.observedAt);
+  if(payload?.ok!==true||!Number.isFinite(age)||age < -5||age>CONTENT_MAX_AGE_SEC)return null;
+  const rows=CAMERA_IDS.map(id=>payload.items?.find(item=>item.cameraId===id));
+  const adopted=rows.filter(item=>item?.ready===true&&item.current?.exists===true);
+  const today=adopted.filter(item=>{
+    const captured=new Date(item.current.capturedAt||'');
+    return Number.isFinite(captured.getTime())&&captured.getTime()<=now+5000&&captured.toDateString()===new Date(now).toDateString();
+  });
+  return {required:3,complete:adopted.length,today:today.length,ready:today.length===3};
+}
+
 export function validPreparation(record, content, now = Date.now()) {
   const current = content?.preparation?.contentId;
   if (!current || record?.contentId !== current || !Number.isFinite(record?.at) || now < record.at ||
@@ -100,7 +112,7 @@ export function summarize(snapshot, checks = {}, now = Date.now(), failed = fals
   return { fresh, blockers, unknown, warnings, pending, observed, ready, diagnosticMissing, diagnosticIssues, contentReady:release.ready && onsiteReady,
     title: !fresh ? '機器の状態を確認できていません' : blockers ? `${blockers} 台に対処が必要です` :
       unknown ? `${unknown} 台が未確認です` : warnings || globalIssues.length ? '注意が必要な項目があります' :
-      !release.ready ? release.title : !onsiteReady ? '当日の人形視点を確認してください' : diagnosticIssues ? '詳しい点検に確認が残っています' : pending ? '接続を確認しました。実機の確認が残っています' :
+      !release.ready ? release.title : !onsiteReady ? '当日の人形視点と無人シーンを確認してください' : diagnosticIssues ? '詳しい点検に確認が残っています' : pending ? '接続を確認しました。実機の確認が残っています' :
       diagnosticMissing ? 'アプリと素材の点検が残っています' : '準備の確認がそろいました',
     status: !fresh ? 'unknown' : blockers ? 'error' : unknown ? 'unknown' :
       warnings || globalIssues.length || pending || diagnosticMissing || diagnosticIssues || !release.ready || !onsiteReady ? 'warning' : 'ok' };

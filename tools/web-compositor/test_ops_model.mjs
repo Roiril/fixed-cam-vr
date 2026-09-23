@@ -1,7 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summarize, summarizeContent, summarizeOnsiteShots, contentSignature, validChecks, validPreparation, signature, MANUAL_CHECKS} from './ops-model.js';
+import {summarize, summarizeContent, summarizeOnsiteShots, summarizePlates, contentSignature, validChecks, validPreparation, signature, MANUAL_CHECKS} from './ops-model.js';
 const now = 100_000;
+
+test('empty scenes need all three verified adopted photos from today',()=>{
+  const time=new Date(2026,8,23,12).getTime();
+  const payload={ok:true,observedAt:time/1000,items:['A','B','C'].map(cameraId=>({cameraId,ready:true,current:{exists:true,capturedAt:new Date(time-1000).toISOString()}}))};
+  assert.equal(summarizePlates(payload,time).ready,true);
+  payload.items[1].current.capturedAt=null;
+  assert.equal(summarizePlates(payload,time).today,2);
+  assert.equal(summarizePlates(payload,time).ready,false);
+  payload.items[1].current.capturedAt=new Date(time-86400000).toISOString();
+  assert.equal(summarizePlates(payload,time).ready,false);
+  payload.items[1].current.capturedAt=new Date(time+60000).toISOString();
+  assert.equal(summarizePlates(payload,time).ready,false);
+  payload.items[1].current.capturedAt=new Date(time-1000).toISOString();
+  payload.items[1].ready=false;
+  assert.equal(summarizePlates(payload,time).complete,2);
+  payload.items[1].ready=true;payload.items[1].current.exists=false;
+  assert.equal(summarizePlates(payload,time).ready,false);
+  payload.items.pop();assert.equal(summarizePlates(payload,time).ready,false);
+  assert.equal(summarizePlates(payload,time+41000),null);
+  assert.equal(summarizePlates(null,time),null);
+});
 const snapshot = () => ({ok:true, observedAt:100, config:{revision:12},
   cameras:['A','B','C'].map(id => ({id,status:'ok',host:id,observedUuid:id})),
   quests:['alpha','beta'].map(id => ({id,status:'ok',host:id,deviceId:id})),

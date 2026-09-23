@@ -47,7 +47,7 @@ export function mountShoot(root, { demo = false, onAdopt = () => {} } = {}) {
   root.innerHTML = `
     <div class="studio-shoot">
       <header class="studio-shoot-header">
-        <div><p class="eyebrow">当日の素材撮影</p><h2>人形視点を撮影して確認する</h2></div>
+        <div><p class="eyebrow">当日の素材撮影</p><h2>1. 人形視点を撮影して確認する</h2></div>
         <button class="shoot-refresh" type="button">接続を確認</button>
       </header>
       <p class="shoot-intro">主な作業はスマホ側です。撮影する人がスマホで構図と演技を決めて撮ります。この PC から録画を始めることもできます。</p>

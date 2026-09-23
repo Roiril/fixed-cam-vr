@@ -57,6 +57,7 @@ import export_build as _export  # noqa: E402  （sys.path を整えた後でな�
 import release_inventory as _inventory  # noqa: E402
 import unity_devices as _udev  # noqa: E402  機ごとの heartbeat（0185 / 0187）
 import operations as _ops  # noqa: E402  当日の固定登録と診断
+import onsite_plates as _plates  # noqa: E402  設営時の無人画撮影と採用
 
 CAPTURES = os.path.join(ROOT, 'captures')
 MASKS = os.path.join(ROOT, 'masks')
@@ -1495,12 +1496,12 @@ class Handler(SimpleHTTPRequestHandler):
                        and self._local_browser_request())
         if authoring:
             return {'ok': True, 'authoring': True, 'shooting': True, 'adoption': True,
-                    'capture': True, 'mode': 'authoring'}
+                    'capture': True, 'plateCapture': True, 'mode': 'authoring'}
         if preparation:
             return {'ok': True, 'authoring': False, 'shooting': True, 'adoption': True,
-                    'capture': False, 'mode': 'preparation'}
+                    'capture': False, 'plateCapture': True, 'mode': 'preparation'}
         return {'ok': True, 'authoring': False, 'shooting': False, 'adoption': False,
-                'capture': False, 'mode': 'inspection'}
+                'capture': False, 'plateCapture': False, 'mode': 'inspection'}
 
     def _serve_apk_asset(self, head_only=False):
         query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
@@ -1622,6 +1623,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(self._shoot_takes(parse_qs(urlparse(self.path).query)))
         if path == '/shoot/manifest':
             return self._json({'ok': True, 'items': _shoot_manifest()})
+        if path == '/shoot/plates':
+            with _show_cond:
+                show = copy.deepcopy(_show)
+            show['cameras'] = [self._plate_assignment_camera(camera)
+                               for camera in (show.get('cameras') or [])]
+            return self._json(_plates.plate_status(show, _shoot_manifest(), CAPTURES))
         if path == '/shoot/plan':
             # 配信スマホの撮影パネルが読む「今日撮るもの」。cam= は端末の cameraId。
             pq = parse_qs(urlparse(self.path).query)
@@ -1928,6 +1935,12 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             del self._preparation_json_body
 
+        if path == '/shoot/plate-capture':
+            return self._shoot_plate_capture(body)
+
+        if path == '/shoot/plate-adopt':
+            return self._shoot_plate_adopt(body)
+
         host = str(body.get('host') or '').strip()
         port = int(body.get('port') or 8080)
 
@@ -1966,6 +1979,63 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({'ok': bool(ok), 'result': r})
 
         return self._json({'ok': False, 'detail': 'unknown'}, 404)
+
+    @staticmethod
+    def _plate_assignment_camera(camera):
+        camera = copy.deepcopy(camera)
+        fixed = next((entry for entry in (_ops.FLEET.get('cameras') or [])
+                      if entry.get('id') == camera.get('id')), {})
+        camera['uuid'] = str(camera.get('uuid') or fixed.get('uuid') or '')
+        return camera
+
+    def _plate_camera(self, camera_id):
+        if camera_id not in _plates.PLATE_CUES:
+            raise _plates.PlateError('cameraId は A / B / C のいずれかが必要です')
+        with _show_cond:
+            matches = [copy.deepcopy(camera) for camera in (_show.get('cameras') or [])
+                       if isinstance(camera, dict) and camera.get('id') == camera_id]
+        if len(matches) != 1:
+            raise _plates.PlateError(f'カメラ {camera_id} の登録が一意ではありません', 409)
+        camera = self._plate_assignment_camera(matches[0])
+        try:
+            camera_port = int(camera.get('port') or 8080)
+        except (TypeError, ValueError) as exc:
+            raise _plates.PlateError(f'カメラ {camera_id} の port が不正です', 409) from exc
+        # 定期照合が既に別端末を検出している場合だけ停止する。未観測や /info 非対応は
+        # MJPEG の実取得へ進め、現場の iPhone 経路を塞がない。
+        with _ident_lock:
+            identity = dict(_ident.get(camera_id) or {})
+        if (identity.get('host'), identity.get('port')) == (
+                str(camera.get('host') or '').strip(), camera_port):
+            age = time.time() - float(identity.get('at') or 0)
+            if 0 <= age <= IDCHECK_INTERVAL * 2:
+                if identity.get('state') == 'mismatch':
+                    raise _plates.PlateError('登録と違う端末なので撮影を止めました', 409)
+                if identity.get('uuid') and camera.get('uuid') and \
+                        identity['uuid'] != camera['uuid']:
+                    raise _plates.PlateError('登録と違う端末 UUID なので撮影を止めました', 409)
+        return camera
+
+    def _shoot_plate_capture(self, body):
+        camera_id = str(body.get('cameraId') or '').strip()
+        try:
+            camera = self._plate_camera(camera_id)
+            candidate = _plates.capture_plate(
+                camera_id, camera, CAPTURES, _shoot_manifest_put)
+            return self._json({'ok': True, 'candidate': candidate})
+        except _plates.PlateError as exc:
+            return self._json({'ok': False, 'detail': str(exc)}, exc.status)
+
+    def _shoot_plate_adopt(self, body):
+        camera_id = str(body.get('cameraId') or '').strip()
+        url = str(body.get('url') or '').strip()
+        try:
+            camera = self._plate_camera(camera_id)
+            result = _plates.adopt_plate(
+                camera_id, url, _shoot_manifest(), CAPTURES, camera, _mutate_show)
+            return self._json(result)
+        except _plates.PlateError as exc:
+            return self._json({'ok': False, 'detail': str(exc)}, exc.status)
 
     def _shoot_pull(self, body, host, port):
         payload, code = self._do_pull(str(body.get('name') or ''),
@@ -2212,7 +2282,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({'ok': False, 'error': str(e)}, 500)
 
     def _preparation_post(self, path):
-        allowed = ('/shoot/start', '/shoot/stop', '/shoot/pull', '/shoot/adopt')
+        allowed = ('/shoot/start', '/shoot/stop', '/shoot/pull', '/shoot/adopt',
+                   '/shoot/plate-capture', '/shoot/plate-adopt')
         if path not in allowed or not self._local_browser_request():
             return False
         if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
@@ -2246,6 +2317,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return None
             if url and not _export.resolve_local_asset(url, {'/recordings/': RECORDINGS}):
                 self._json({'ok': False, 'error': '回収済みの素材だけ採用できます'}, 403)
+                return None
+        if path in ('/shoot/plate-capture', '/shoot/plate-adopt'):
+            camera_id = str(body.get('cameraId') or '')
+            if camera_id not in _plates.PLATE_CUES:
+                self._json({'ok': False, 'error': 'cameraId は A / B / C のいずれかが必要です'}, 400)
                 return None
         self._preparation_json_body = body
         return True
@@ -2299,7 +2375,8 @@ class Handler(SimpleHTTPRequestHandler):
                     _unity_devices[did] = dict(body)
             return self._json({'ok': True, 'dwellMerged': merged})
         if parsed.path in ('/shoot/start', '/shoot/stop', '/shoot/pull',
-                           '/shoot/adopt', '/shoot/delete', '/shoot/collect'):
+                           '/shoot/adopt', '/shoot/delete', '/shoot/collect',
+                           '/shoot/plate-capture', '/shoot/plate-adopt'):
             return self._shoot_post(parsed.path)
         if parsed.path == '/dwell/reset':
             with _dwell_lock:

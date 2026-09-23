@@ -35,6 +35,14 @@ section[id]{margin-top:24px;scroll-margin-top:100px}main>section[id]{background:
 @media(prefers-reduced-motion:reduce){.journey a{transition:none}}
 @media print{.journey{display:none}main>section[id]{display:block!important;box-shadow:none}}
 
+.plate-section{margin-top:32px;padding-top:28px;border-top:1px solid var(--line)}
+.plate-section h3{font-size:1.2rem}.plate-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.plate-card{min-width:0;border:1px solid var(--line);border-radius:16px;padding:18px;background:var(--card)}
+.plate-card h4{font-size:1rem;margin:0 0 12px}.plate-state{font-size:.78rem;color:var(--accent-2-strong);min-height:2.6em}
+.plate-card button{width:100%;font-size:.8rem}.plate-choice{display:block;font-size:.76rem;margin-top:20px}.plate-choice select{width:100%;margin:6px 0 12px;font-size:.76rem}
+.plate-preview{width:100%;aspect-ratio:4/3;object-fit:contain;background:var(--paper);border-radius:10px}.plate-meta{overflow-wrap:anywhere;min-height:3em}
+.plate-confirm{display:flex;align-items:flex-start;gap:10px;font-size:.78rem;line-height:1.7;margin:16px 0}.plate-confirm input{flex:none;width:20px;height:20px;margin-top:3px;accent-color:var(--accent-2-strong)}
+@media(max-width:740px){.plate-grid{grid-template-columns:1fr}.plate-choice select{font-size:16px}.plate-state,.plate-meta{min-height:0}}
 /* Preparation workspace: one operation at a time, with the media kept in view. */
 .studio-shoot-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:22px 0 12px}
 .studio-shoot-header h2{font-size:1rem;font-weight:750}.studio-shoot-header .eyebrow{display:none}.studio-shoot-header button{font-size:.78rem}

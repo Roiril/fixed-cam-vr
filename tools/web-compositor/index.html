@@ -39,11 +39,11 @@
     <div id="view-announcement" class="visually-hidden" role="status"></div>
     <section id="shoot" aria-labelledby="shoot-title" hidden>
       <div class="section-heading"><div><p class="eyebrow">STEP 3 / 撮影</p><h2 id="shoot-title">会場の画を撮る</h2></div><a class="text-action" href="#devices">接続を確認する →</a></div>
-      <p class="section-intro">本番の位置と照明で撮ります。構図と演技は現場で決めます。スマホで撮ったテイクの回収から試写と採用までをここで行えます。</p>
+      <p class="section-intro">先に人形視点の 5 本を撮ります。その後でカメラを本番の位置に固定し、A・B・C の無人シーンを 1 枚ずつ撮ります。</p>
       <div class="role-strip"><p><span class="role-label">人が行う</span>構図・照明を固定。白衣を用意して撮影。</p><p><span class="role-label agent">エージェントに任せる</span>尺と形式の検査。必要な切り出し。</p></div>
       <p id="pov-status" class="production-status" role="status">人形視点の採用状況を確認しています。</p>
       <div id="shoot-console"><p class="empty-state">撮影の操作を準備しています…</p></div>
-      <details class="field-photo"><summary>画像・動画生成に使う会場の写真</summary><div class="details-body"><p>固定カメラ A・B・C の構図と本番の照明を決めます。各カメラの無人の写真を保存します。カメラを動かした場合は撮り直します。</p><p>この写真をエージェントへ渡します。人形やシミなど会場との一致が必要な演出を選びます。既存の手形は採用済みの形を保って当日の画へ合わせます。</p></div></details>
+      <section class="plate-section" aria-labelledby="plate-title"><p class="eyebrow">撮影 2 / 人形視点の後</p><h3 id="plate-title">各カメラの無人シーンを撮る</h3><p class="section-intro">借りたスマホを本番の位置へ戻します。A の左右合わせを済ませます。照明を本番と同じにして、撮影者と白衣を着た人も画面から出ます。</p><p class="note">カメラや照明を動かしたら撮り直します。この写真は無人の演出と画像・動画を作り直すために使います。</p><div id="plate-console"></div></section>
       <div class="section-next"><span>素材を回収したら</span><a class="primary-action" href="#content">演出で素材を確認する <span aria-hidden="true">→</span></a></div>
     </section>
     <section id="content" aria-labelledby="content-title" hidden>
@@ -55,7 +55,7 @@
         <div><p class="eyebrow">会場に合わせて作り直すとき</p><h3>写真 → 画像 → 動画 → 試写</h3><p>会場の写真から必要な演出だけ作ります。動画化には外部の生成ツールも使います。結果を取り込みます。</p></div>
         <div class="role-list"><p><span class="role-label">人が行う</span>撮影。生成結果の選択。合成した画の位置と明るさを判断。</p><p><span class="role-label agent">エージェントに任せる</span>生成指示の準備。素材の加工と検査。選んだ素材の反映。</p><button id="copy-media-task" type="button">選んだ演出の作業メモをコピー</button><p id="media-task-status" class="note" role="status">コピーした文をエージェントに渡せます。</p></div>
       </div>
-      <div class="review-card"><label for="venue-review"><input id="venue-review" type="checkbox"><span>当日の会場で撮影した人形視点を確認した<small>回収時刻だけでは撮影日を証明できません。人が撮影した環境と内容を確認します。</small></span></label><label for="media-review"><input id="media-review" type="checkbox"><span>採用素材を試写して確定した<small>生成素材は会場の映像に重ねて確認します。採用内容が変わると確認は取り消されます。</small></span></label></div>
+      <div class="review-card"><label for="venue-review"><input id="venue-review" type="checkbox"><span>当日の人形視点と A・B・C の無人シーンを確認した<small>本番の位置と照明で撮影したことを確認します。人形視点の回収時刻だけでは撮影日を証明できません。</small></span></label><label for="media-review"><input id="media-review" type="checkbox"><span>採用素材を試写して確定した<small>生成素材は会場の映像に重ねて確認します。採用内容が変わると確認は取り消されます。</small></span></label></div>
       <div class="section-next"><a class="text-action" href="#shoot">← 撮影へ戻る</a><a class="primary-action" href="#build">ビルドの準備へ <span aria-hidden="true">→</span></a></div>
     </section>
     <section id="build" aria-labelledby="build-title" hidden>
