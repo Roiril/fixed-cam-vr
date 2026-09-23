@@ -13,35 +13,42 @@
   <div id="demo-banner" class="demo-banner" hidden>画面の表示例です。実機の状態ではありません。復旧操作はできません。</div>
   <header class="site-header">
     <a class="brand" href="/">廻リ視 <span>設営と点検</span></a>
-    <nav aria-label="このページ"><a href="#content">演出の準備</a><a href="#devices">当日の接続</a><a href="#checks">開場前の確認</a></nav>
+    <nav aria-label="準備する項目"><a href="#setup" data-view="setup">設営</a><a href="#devices" data-view="devices">接続</a><a href="#content" data-view="content">演出</a><a href="#checks" data-view="checks">開場前</a></nav>
     <button id="theme" class="quiet" type="button" aria-label="表示を切り替える">暗い表示</button>
   </header>
   <main id="main">
     <section class="overview" aria-labelledby="overview-title">
-      <div class="eyebrow">OPERATION DESK <span>固定カメラ 3 台 / Quest 2 台 / 博士タブレット 2 台</span></div>
+      <div class="eyebrow">廻リ視 / 開場までの準備 <span>固定カメラ 3 台 ・ Quest 2 台 ・ 博士タブレット 2 台</span></div>
       <div class="overview-heading">
         <div><p id="overall-state" class="state" data-state="unknown">確認中</p><h1 id="overview-title">機器の状態を確認しています</h1></div>
         <div class="refresh"><button id="refresh" type="button">もう一度確認</button><p id="updated" class="note" role="status">最初の応答を待っています</p></div>
       </div>
       <p id="overview-detail" class="overview-detail">カメラの映像と Quest からの応答を確かめます。</p>
+      <a id="primary-action" class="primary-action" href="#devices">接続の状態を見る <span aria-hidden="true">→</span></a>
       <div class="totals" aria-label="確認の集計"><div><span>応答と映像を確認</span><p><span id="online-count">0</span><small> / 7 台</small></p></div><div><span>対処が必要</span><p><span id="error-count">—</span><small> 台</small></p></div><div><span>未確認の機器</span><p><span id="unknown-count">7</span><small> 台</small></p></div><a href="#checks"><span>人が確認すること</span><p><span id="manual-count">4</span><small> 件</small></p></a></div>
       <div id="connection-error" class="notice" role="alert" hidden></div>
     </section>
+    <div class="journey" aria-label="準備の手順">
+      <a href="#setup" data-step="setup"><span class="journey-number">1</span><span><strong>設営</strong><small>配置と照明</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
+      <a href="#devices" data-step="devices"><span class="journey-number">2</span><span><strong>接続</strong><small>7 台の状態</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
+      <a href="#content" data-step="content"><span class="journey-number">3</span><span><strong>演出</strong><small>同梱と実機版</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
+      <a href="#checks" data-step="checks"><span class="journey-number">4</span><span><strong>開場前</strong><small>装着して確認</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
+    </div>
+    <div id="view-announcement" class="visually-hidden" role="status"></div>
     <section id="content" aria-labelledby="content-title">
-      <div class="section-heading"><div><p class="eyebrow">01 / BEFORE BUILDING</p><h2 id="content-title">演出の準備と同梱</h2></div><span class="state">演出を変えるときは再ビルド</span></div>
+      <div class="section-heading"><div><p class="eyebrow">STEP 3 / 演出</p><h2 id="content-title">演出の準備と同梱</h2></div><span class="state">演出を変えるときは再ビルド</span></div>
       <p class="section-intro">人形視点と手形。壁のシミや音。体験で使う素材はビルド前にそろえてアプリに入れます。この卓から実行中の演出は変更しません。</p>
-      <div class="content-policy"><h3>ビルド後に変更できること</h3><p>体験者が博士のチュートリアル画面で選ぶ言語とホラー軽減モードだけです。選択は各 Quest に直接届きます。</p></div>
+      <details class="content-policy"><summary>ビルド後に変更できること</summary><p>体験者が博士のチュートリアル画面で選ぶ言語とホラー軽減モードだけです。選択は各 Quest に直接届きます。</p></details>
       <p id="content-summary" role="status">素材とビルドの内容を照合しています。</p>
       <p id="content-observed" class="note">最初の結果を待っています。</p>
       <div id="content-stages" class="content-stages" aria-label="演出を届けるまでの段階"></div>
-      <div class="section-heading content-subheading"><h3>演出ごとの準備</h3><p class="note">ファイル名と版番号だけでなく内容を照合します。</p></div>
-      <div id="effect-list" class="effect-list"><p class="note">まだ確認できていません。</p></div>
       <div class="section-heading content-subheading"><h3>各 Quest で動いている演出</h3><p class="note">応答だけでは導入済みと判定しません。</p></div>
       <div id="content-quests" class="quest-grid"></div>
+      <details class="effect-details"><summary>演出ごとの照合 <span id="effect-summary">素材・ビルド用・APK</span></summary><div id="effect-list" class="effect-list"><p class="note">まだ確認できていません。</p></div></details>
       <details><summary>素材を変更したあとの手順</summary><div class="details-body"><ol class="build-steps"><li>必要な画像と動画を生成します。合成と音を確認します。</li><li>確定した演出と素材をアプリへ同梱してビルドします。</li><li>そのアプリを Quest α と β に入れます。</li><li>両方を起動します。この画面で演出の一致を確認します。</li></ol><p>素材の追加や差し替えは手順 1 に戻ります。ビルド済みのアプリへ後から混ぜません。</p></div></details>
     </section>
     <section id="devices" aria-labelledby="devices-title">
-      <div class="section-heading"><div><p class="eyebrow">02 / CONNECTIONS</p><h2 id="devices-title">当日の接続</h2></div><p class="note">約 5 秒ごとに確認します。古い結果は正常扱いしません。</p></div>
+      <div class="section-heading"><div><p class="eyebrow">STEP 2 / 接続</p><h2 id="devices-title">当日の接続</h2></div><p class="note">約 5 秒ごとに確認します。古い結果は正常扱いしません。</p></div>
       <div id="global-issues"></div><div id="cameras" class="camera-grid"></div>
       <div class="quest-heading"><h3>Quest</h3><p class="note">映像と音は装着して確認します。</p></div>
       <div id="quests" class="quest-grid"></div>
@@ -51,7 +58,7 @@
       <p class="note scope-note">カメラの判定はこの PC までの映像受信です。Quest 内での見え方と音は装着して確認します。</p>
     </section>
     <section id="checks" aria-labelledby="checks-title">
-      <div class="section-heading"><div><p class="eyebrow">03 / BEFORE OPENING</p><h2 id="checks-title">開場前の確認</h2></div><button id="reset-checks" class="quiet" type="button">確認をやり直す</button></div>
+      <div class="section-heading"><div><p class="eyebrow">STEP 4 / 開場前</p><h2 id="checks-title">開場前の確認</h2></div><button id="reset-checks" class="quiet" type="button">確認をやり直す</button></div>
       <p class="section-intro">接続だけでは分からないことを確認します。確認は 1 時間有効です。機器の切断や設定の変更があれば取り消します。</p>
       <div id="manual-checks" class="manual-checks"></div>
       <p class="note" id="diagnostic-summary" role="status">アプリと素材の詳しい点検は未実行です。</p>
@@ -62,7 +69,7 @@
       </details>
     </section>
     <section id="setup" aria-labelledby="setup-title">
-      <div class="section-heading"><div><p class="eyebrow">04 / SETUP</p><h2 id="setup-title">設置の手順</h2></div><span class="state">担当と IP は固定</span></div>
+      <div class="section-heading"><div><p class="eyebrow">STEP 1 / 設営</p><h2 id="setup-title">設置の手順</h2></div><span class="state">担当と IP は固定</span></div>
       <ol class="setup-steps">
         <li><span class="step-number">1</span><div><h3>会場の Wi-Fi を起動する</h3><p>ルーターを起動します。PC の IP は <code>192.168.10.10</code> です。カメラと Quest も同じネットワークにつなぎます。</p></div></li>
         <li><span class="step-number">2</span><div><h3>A・B・C を決まった場所に置く</h3><p>スマホ画面の担当と固定 IP を確認します。A は <code>.21</code>。B は <code>.22</code>。C は <code>.23</code>。接続できなくても担当は入れ替えません。</p></div></li>

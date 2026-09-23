@@ -4,6 +4,8 @@
 
 `./serve.ps1` で `capture-server.py` を起動し、`http://localhost:8099/` を開く。
 `index.html` は当日の「設営と点検」。旧 `onsite.html` はここへ転送する。
+画面上部には現在の機器の集計と、次に開く項目を表示する。「設営 → 接続 → 演出 → 開場前」の順に画面を切り替える。
+URL の `#setup`、`#devices`、`#content`、`#checks` で各項目を直接開ける。演出ごとの照合と補足手順は必要なときに展開する。
 演出編集は `authoring.html` に移した。既定では演出を変更する POST を 403 で拒否する。
 事前編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
 次節以降のタイムラインや画質の操作説明は旧編集画面の記録。Player へのライブ反映は廃止した。

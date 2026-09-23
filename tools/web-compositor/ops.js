@@ -91,6 +91,10 @@ function render() {
     s.blockers ? '該当する機器の「次にすること」から対処します。担当の入れ替えは必要ありません。' :
     s.ready ? '自動で調べられる状態と装着して確認した結果がそろっています。動作中も接続を確認します。' :
     '演出の同梱と当日の接続を別々に確認します。最後に装着して映像と音を確かめます。';
+  const next = !s.fresh || s.blockers || s.unknown || s.warnings ? ['devices','機器の状態と対処を見る'] :
+    !s.contentReady ? ['content','演出の同梱を確認する'] : ['checks','開場前の確認へ進む'];
+  $('primary-action').href = `#${next[0]}`;
+  $('primary-action').firstChild.textContent = `${next[1]} `;
   renderContent();
   renderTablets(s.fresh);
   $('connection-error').hidden = !failed;
@@ -156,6 +160,8 @@ function renderContent() {
     return box;
   }));
   const effects = c?.effects || [];
+  const effectIssues = s.fresh ? effects.filter(d => !d.sourceReady || !d.bundled || !d.inApk).length : 0;
+  $('effect-summary').textContent = !s.fresh ? '現在の状態は未確認' : effectIssues ? `${effects.length} 件中 ${effectIssues} 件を要確認` : `${effects.length} 件を照合済み`;
   $('effect-list').replaceChildren(...(effects.length ? effects.map(d => {
     const row = el('article','effect-row'), title = el('div'), progress = el('div','effect-progress');
     title.append(el('h3','',d.name || d.id),el('p','note',s.fresh ? d.title || `${d.assetCount ?? '—'} 個の素材を使用` : '現在の準備状態は未確認です'));
@@ -276,6 +282,21 @@ let theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 try{theme=localStorage.getItem('mawarimi-ops-theme')||theme;}catch{}
 applyTheme(theme);
 $('theme').addEventListener('click',()=>{theme=theme==='dark'?'light':'dark';applyTheme(theme);try{localStorage.setItem('mawarimi-ops-theme',theme);}catch{}});
+const views = ['setup','devices','content','checks'];
+function selectView() {
+  const requested = location.hash.slice(1);
+  const active = views.includes(requested) ? requested : requested === 'tablet-check' ? 'devices' : 'setup';
+  for (const id of views) $(id).hidden = id !== active;
+  for (const link of document.querySelectorAll('[data-view], [data-step]')) {
+    if (link.getAttribute('href') === `#${active}`) link.setAttribute('aria-current',link.dataset.view ? 'page' : 'step');
+    else link.removeAttribute('aria-current');
+  }
+  $('view-announcement').textContent = `${{setup:'設営',devices:'接続',content:'演出',checks:'開場前'}[active]}を表示しています`;
+  if (active !== 'devices') for (const view of cameraViews.values()) closePreview(view);
+  if (location.hash) requestAnimationFrame(() => $(requested === 'tablet-check' ? 'tablet-check' : active).scrollIntoView({block:'start',behavior:'instant'}));
+}
+addEventListener('hashchange',selectView);
+selectView();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){poll();pollContent();}else for(const v of cameraViews.values())closePreview(v);});
 setInterval(()=>{if(!document.hidden)render();},1000);
 
