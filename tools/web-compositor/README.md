@@ -1,11 +1,12 @@
 # web compositor — 廻リ視の設営と点検・演出編集
 
-## 現行の入口（2026-09-22）
+## 現行の入口（2026-09-23）
 
 `./serve.ps1` で `capture-server.py` を起動し、`http://localhost:8099/` を開く。
 `index.html` は当日の「設営と点検」。旧 `onsite.html` はここへ転送する。
-画面上部には現在の機器の集計と、次に開く項目を表示する。「設営 → 接続 → 演出 → 開場前」の順に画面を切り替える。
+画面上部には現在の機器の集計と、次に開く項目を表示する。「設営 → 演出 → 接続 → 開場前」の順に画面を切り替える。
 URL の `#setup`、`#devices`、`#content`、`#checks` で各項目を直接開ける。演出ごとの照合と補足手順は必要なときに展開する。
+「演出」は会場での撮影から始める。人形視点はその日に撮ったテイクを採用する。必要な合成素材は会場で撮った写真を元に画像を作り、動きが要るものだけ画像から動画にする。試写・採用を終えてから書き出し、APK を作って両 Quest に入れる。既存素材を使う演出は一律に再生成しない。
 演出編集は `authoring.html` に移した。既定では演出を変更する POST を 403 で拒否する。
 事前編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
 次節以降のタイムラインや画質の操作説明は旧編集画面の記録。Player へのライブ反映は廃止した。
@@ -36,7 +37,8 @@ py -3.11 -m unittest tools/test_onsite_operations.py
 node --test tools/web-compositor/test_ops_model.mjs
 ```
 
-演出の準備は `GET /ops/content` で照合する。素材準備、StreamingAssets への同梱、APK 内の素材を別々に表示する。
+演出の準備は `GET /ops/content` で照合する。参照ファイルの有無、StreamingAssets への同梱、APK 内の素材を別々に表示する。これだけでは素材が当日の画と合うかは判定できない。
+人形視点は `GET /shoot/plan` と `GET /shoot/manifest` を突き合わせ、使用するテイクがその日に撮影・採用された本数を表示する。生成した画像・動画の採否は素材工房で実写に重ねて判断する。
 export は必要な画像・動画・BGM を検証し、本文と素材の SHA256 を manifest に書く。カット単位の BGM も対象。
 Unity ビルドは欠損と改変を拒否する。成功時の `mawarimi.apk.content.json` は APK のハッシュと buildGuid を保存する。
 起動中の Quest が同じ contentId と buildGuid を報告した場合だけ導入版一致になる。素材差し替え後は再ビルドが必要。

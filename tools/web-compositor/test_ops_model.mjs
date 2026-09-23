@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {summarize, summarizeContent, contentSignature, validChecks, signature, MANUAL_CHECKS} from './ops-model.js';
+import {summarize, summarizeContent, summarizeOnsiteShots, contentSignature, validChecks, signature, MANUAL_CHECKS} from './ops-model.js';
 const now = 100_000;
 const snapshot = () => ({ok:true, observedAt:100, config:{revision:12},
   cameras:['A','B','C'].map(id => ({id,status:'ok',host:id,observedUuid:id})),
@@ -65,4 +65,27 @@ test('tablet absence, pending reflection and a restarted portal invalidate readi
   for(const status of ['unknown','warning','error']) {s.tablets[0].status=status;assert.equal(summarize(s,checked,now,false,d,content()).ready,false);}
   const r={signature:signature(s),at:now,values:checked};
   s.tablets[0].portalSessionId='restart';assert.deepEqual(validChecks(r,s,now),{});
+});
+
+test('onsite POV proof needs the adopted take from the desk current day',()=>{
+  const plan={ok:true,nowIso:'2026-09-23T10:00:00',shots:[
+    {cueId:'pov_0',label:'予備動作',dev:'pov',cuts:1,status:'ok',adoptedName:'today.mp4'},
+    {cueId:'pov_1',label:'遠い',dev:'pov',cuts:2,status:'ok',adoptedName:'old.mp4'},
+    {cueId:'unused',dev:'pov',cuts:0,status:'ng',adoptedName:''},
+  ]};
+  const manifest={ok:true,items:{'/recordings/today.mp4':{shot:'pov_0',name:'today.mp4',capturedAt:'2026-09-23T09:00:00'},
+    '/recordings/old.mp4':{shot:'pov_1',name:'old.mp4',capturedAt:'2026-09-22T09:00:00'}}};
+  assert.deepEqual(summarizeOnsiteShots(plan,manifest),{required:2,complete:1,missing:['遠い']});
+  plan.shots[1].adoptedName='today-2.mp4';
+  manifest.items['/recordings/today-2.mp4']={shot:'pov_1',name:'today-2.mp4',capturedAt:'2026-09-23T09:01:00'};
+  assert.equal(summarizeOnsiteShots(plan,manifest).complete,2);
+  assert.equal(summarizeOnsiteShots(plan,{ok:false}),null);
+});
+
+test('readiness waits for today\'s POV takes when the plan uses them',()=>{
+  const s=snapshot(),d={ok:true,at:new Date(now).toISOString(),signature:signature(s),rows:[{state:'ok'}]};
+  assert.equal(summarize(s,checked,now,false,d,content(),null).ready,false);
+  assert.equal(summarize(s,checked,now,false,d,content(),{required:5,complete:4}).contentReady,false);
+  assert.equal(summarize(s,checked,now,false,d,content(),{required:5,complete:5}).ready,true);
+  assert.equal(summarize(s,checked,now,false,d,content(),{required:0,complete:0}).ready,true);
 });

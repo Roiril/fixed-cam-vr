@@ -13,7 +13,7 @@
   <div id="demo-banner" class="demo-banner" hidden>画面の表示例です。実機の状態ではありません。復旧操作はできません。</div>
   <header class="site-header">
     <a class="brand" href="/">廻リ視 <span>設営と点検</span></a>
-    <nav aria-label="準備する項目"><a href="#setup" data-view="setup">設営</a><a href="#devices" data-view="devices">接続</a><a href="#content" data-view="content">演出</a><a href="#checks" data-view="checks">開場前</a></nav>
+    <nav aria-label="準備する項目"><a href="#setup" data-view="setup">設営</a><a href="#content" data-view="content">演出</a><a href="#devices" data-view="devices">接続</a><a href="#checks" data-view="checks">開場前</a></nav>
     <button id="theme" class="quiet" type="button" aria-label="表示を切り替える">暗い表示</button>
   </header>
   <main id="main">
@@ -30,14 +30,21 @@
     </section>
     <div class="journey" aria-label="準備の手順">
       <a href="#setup" data-step="setup"><span class="journey-number">1</span><span><strong>設営</strong><small>配置と照明</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
-      <a href="#devices" data-step="devices"><span class="journey-number">2</span><span><strong>接続</strong><small>7 台の状態</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
-      <a href="#content" data-step="content"><span class="journey-number">3</span><span><strong>演出</strong><small>同梱と実機版</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
+      <a href="#content" data-step="content"><span class="journey-number">2</span><span><strong>演出</strong><small>撮影・制作・ビルド</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
+      <a href="#devices" data-step="devices"><span class="journey-number">3</span><span><strong>接続</strong><small>7 台の状態</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
       <a href="#checks" data-step="checks"><span class="journey-number">4</span><span><strong>開場前</strong><small>装着して確認</small></span><span class="journey-arrow" aria-hidden="true">›</span></a>
     </div>
     <div id="view-announcement" class="visually-hidden" role="status"></div>
     <section id="content" aria-labelledby="content-title">
-      <div class="section-heading"><div><p class="eyebrow">STEP 3 / 演出</p><h2 id="content-title">演出の準備と同梱</h2></div><span class="state">演出を変えるときは再ビルド</span></div>
-      <p class="section-intro">人形視点と手形。壁のシミや音。体験で使う素材はビルド前にそろえてアプリに入れます。この卓から実行中の演出は変更しません。</p>
+      <div class="section-heading"><div><p class="eyebrow">STEP 2 / 演出</p><h2 id="content-title">撮影からビルドまで</h2></div><span class="state">素材を確定してからビルド</span></div>
+      <p class="section-intro">本番の構図と照明が決まったら、会場で必要な素材を撮ります。人形視点はその日の映像を使います。画像や動画を作り直す演出は、会場で撮った写真を元にします。</p>
+      <ol class="production-flow">
+        <li><span class="production-number">1</span><div><h3>会場の画を撮る</h3><p>カメラを固定し、本番の照明で無人の画を撮ります。人形視点の 5 本も会場で撮影して採用します。</p><p id="pov-status" class="production-status" role="status">人形視点の撮影状況を確認しています。</p><a href="/shoot.html">人形視点の撮影を開く <span aria-hidden="true">→</span></a></div></li>
+        <li><span class="production-number">2</span><div><h3>必要な画像・動画を作る</h3><p>現場の写真と合わなくなる演出は、その写真から画像を作ります。動きが必要なら画像から動画にします。動画化した結果は素材工房へ取り込みます。既存素材まで一律に作り直しません。</p><a href="/authoring.html">素材工房を開く <span aria-hidden="true">→</span></a><p class="production-hint">素材の採用には編集を有効にした卓が必要です。</p></div></li>
+        <li><span class="production-number">3</span><div><h3>試写して採用する</h3><p>人形視点は実際に画面へ出る冒頭を確認します。生成した素材は配信映像に重ね、位置と明るさを確認してから演出に採用します。</p></div></li>
+        <li><span class="production-number">4</span><div><h3>確定した素材でビルドする</h3><p>採用を終えたらビルド用に書き出して APK を作り、Quest α と β の両方へ入れます。撮り直しや差し替えをしたら、ここからやり直します。</p></div></li>
+      </ol>
+      <div class="section-heading content-subheading"><h3>ビルドと実機版の照合</h3><p class="note">ここはファイルと版の確認です。会場の画との一致は試写で判断します。</p></div>
       <details class="content-policy"><summary>ビルド後に変更できること</summary><p>体験者が博士のチュートリアル画面で選ぶ言語とホラー軽減モードだけです。選択は各 Quest に直接届きます。</p></details>
       <p id="content-summary" role="status">素材とビルドの内容を照合しています。</p>
       <p id="content-observed" class="note">最初の結果を待っています。</p>
@@ -45,10 +52,10 @@
       <div class="section-heading content-subheading"><h3>各 Quest で動いている演出</h3><p class="note">応答だけでは導入済みと判定しません。</p></div>
       <div id="content-quests" class="quest-grid"></div>
       <details class="effect-details"><summary>演出ごとの照合 <span id="effect-summary">素材・ビルド用・APK</span></summary><div id="effect-list" class="effect-list"><p class="note">まだ確認できていません。</p></div></details>
-      <details><summary>素材を変更したあとの手順</summary><div class="details-body"><ol class="build-steps"><li>必要な画像と動画を生成します。合成と音を確認します。</li><li>確定した演出と素材をアプリへ同梱してビルドします。</li><li>そのアプリを Quest α と β に入れます。</li><li>両方を起動します。この画面で演出の一致を確認します。</li></ol><p>素材の追加や差し替えは手順 1 に戻ります。ビルド済みのアプリへ後から混ぜません。</p></div></details>
+      <details><summary>素材を変更したあとの手順</summary><div class="details-body"><p>写真や動画を取り直した場合は試写と採用をやり直します。ビルド用に書き出し、新しい APK を両方の Quest に入れます。この画面で実機版の一致を確認します。</p></div></details>
     </section>
     <section id="devices" aria-labelledby="devices-title">
-      <div class="section-heading"><div><p class="eyebrow">STEP 2 / 接続</p><h2 id="devices-title">当日の接続</h2></div><p class="note">約 5 秒ごとに確認します。古い結果は正常扱いしません。</p></div>
+      <div class="section-heading"><div><p class="eyebrow">STEP 3 / 接続</p><h2 id="devices-title">当日の接続</h2></div><p class="note">約 5 秒ごとに確認します。古い結果は正常扱いしません。</p></div>
       <div id="global-issues"></div><div id="cameras" class="camera-grid"></div>
       <div class="quest-heading"><h3>Quest</h3><p class="note">映像と音は装着して確認します。</p></div>
       <div id="quests" class="quest-grid"></div>
@@ -74,7 +81,7 @@
         <li><span class="step-number">1</span><div><h3>会場の Wi-Fi を起動する</h3><p>ルーターを起動します。PC の IP は <code>192.168.10.10</code> です。カメラと Quest も同じネットワークにつなぎます。</p></div></li>
         <li><span class="step-number">2</span><div><h3>A・B・C を決まった場所に置く</h3><p>スマホ画面の担当と固定 IP を確認します。A は <code>.21</code>。B は <code>.22</code>。C は <code>.23</code>。接続できなくても担当は入れ替えません。</p></div></li>
         <li><span class="step-number">3</span><div><h3>構図を合わせて明るさを固定する</h3><p>本番の照明にします。スマホの設置用画面で超広角と構図を確認します。露出とホワイトバランスを固定します。</p></div></li>
-        <li><span class="step-number">4</span><div><h3>Quest と博士タブレットを確認する</h3><p>α は <code>192.168.10.31</code>。β は <code>192.168.10.32</code>。各タブレットで対応する博士 UI を開いて設定を送ります。上の「設定の反映」を確認します。装着後に映像と音を確かめます。</p></div></li>
+        <li><span class="step-number">4</span><div><h3>撮影の準備をする</h3><p>人形視点を撮るスマホと白衣を用意します。カメラの位置と照明を決めてから「演出」へ進みます。</p></div></li>
       </ol>
       <details><summary>つながらないときに見る場所</summary><div class="details-body trouble-grid">
         <div><h3>1 台だけ応答しない</h3><p>該当スマホの電源を確認します。配信アプリを開きます。表示された IP とこの画面の固定 IP を見比べます。</p></div>

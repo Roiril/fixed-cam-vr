@@ -34,6 +34,19 @@ export function contentSignature(content) {
     ...(content?.quests || []).map(q => [q.id, q.contentId, q.buildGuid])]);
 }
 
+// The release inventory checks file presence and hashes. The POV shots also
+// need evidence that the adopted takes were captured on this desk's current day.
+export function summarizeOnsiteShots(plan, manifest) {
+  if (plan?.ok !== true || manifest?.ok !== true || !/^\d{4}-\d{2}-\d{2}/.test(plan.nowIso || '')) return null;
+  const day = plan.nowIso.slice(0,10);
+  const entries = Object.values(manifest.items || {});
+  const shots = (plan.shots || []).filter(s => s.dev === 'pov' && Number(s.cuts) > 0);
+  const ready = shots.filter(s => s.status === 'ok' && entries.some(e =>
+    e.shot === s.cueId && e.name === s.adoptedName &&
+    typeof e.capturedAt === 'string' && e.capturedAt.slice(0,10) === day));
+  return {required:shots.length, complete:ready.length, missing:shots.filter(s => !ready.includes(s)).map(s => s.label || s.cueId)};
+}
+
 export function summarizeContent(content, now = Date.now(), failed = false) {
   const age = now / 1000 - Number(content?.observedAt);
   const fresh = !failed && content?.ok === true && Number.isFinite(age) && age >= -5 && age <= CONTENT_MAX_AGE_SEC;
@@ -54,7 +67,7 @@ export function summarizeContent(content, now = Date.now(), failed = false) {
       !questsReady ? '各 Quest の演出版を確認してください' : !ready ? '演出の照合が完了していません' : '両方の Quest で同じ演出を確認しました'};
 }
 
-export function summarize(snapshot, checks = {}, now = Date.now(), failed = false, detailed = null, content = null) {
+export function summarize(snapshot, checks = {}, now = Date.now(), failed = false, detailed = null, content = null, onsiteShots = undefined) {
   const fresh = !failed && isFresh(snapshot, now);
   const devices = [
     ...CAMERA_IDS.map(id => snapshot?.cameras?.find(c => c.id === id) || { id, status: 'unknown' }),
@@ -72,12 +85,13 @@ export function summarize(snapshot, checks = {}, now = Date.now(), failed = fals
     detailed.signature === signature(snapshot) && detailedAge >= 0 && detailedAge <= 30 * 60 * 1000);
   const diagnosticIssues = diagnosticMissing ? 0 : detailed.rows.filter(r => r.required !== false && r.state !== 'ok').length;
   const release = summarizeContent(content, now);
-  const ready = fresh && !blockers && !unknown && !warnings && !pending && !globalIssues.length && !diagnosticMissing && !diagnosticIssues && release.ready;
-  return { fresh, blockers, unknown, warnings, pending, observed, ready, diagnosticMissing, diagnosticIssues, contentReady:release.ready,
+  const onsiteReady = onsiteShots === undefined || !!(onsiteShots && onsiteShots.complete === onsiteShots.required);
+  const ready = fresh && !blockers && !unknown && !warnings && !pending && !globalIssues.length && !diagnosticMissing && !diagnosticIssues && release.ready && onsiteReady;
+  return { fresh, blockers, unknown, warnings, pending, observed, ready, diagnosticMissing, diagnosticIssues, contentReady:release.ready && onsiteReady,
     title: !fresh ? '機器の状態を確認できていません' : blockers ? `${blockers} 台に対処が必要です` :
       unknown ? `${unknown} 台が未確認です` : warnings || globalIssues.length ? '注意が必要な項目があります' :
-      !release.ready ? release.title : diagnosticIssues ? '詳しい点検に確認が残っています' : pending ? '接続を確認しました。実機の確認が残っています' :
+      !release.ready ? release.title : !onsiteReady ? '当日の人形視点を確認してください' : diagnosticIssues ? '詳しい点検に確認が残っています' : pending ? '接続を確認しました。実機の確認が残っています' :
       diagnosticMissing ? 'アプリと素材の点検が残っています' : '準備の確認がそろいました',
     status: !fresh ? 'unknown' : blockers ? 'error' : unknown ? 'unknown' :
-      warnings || globalIssues.length || pending || diagnosticMissing || diagnosticIssues || !release.ready ? 'warning' : 'ok' };
+      warnings || globalIssues.length || pending || diagnosticMissing || diagnosticIssues || !release.ready || !onsiteReady ? 'warning' : 'ok' };
 }

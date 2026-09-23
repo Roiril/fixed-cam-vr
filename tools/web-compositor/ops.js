@@ -1,4 +1,4 @@
-import {CAMERA_IDS, QUEST_IDS, MANUAL_CHECKS, isFresh, signature, contentSignature, summarizeContent, validChecks, summarize} from './ops-model.js';
+import {CAMERA_IDS, QUEST_IDS, MANUAL_CHECKS, isFresh, signature, contentSignature, summarizeContent, summarizeOnsiteShots, validChecks, summarize} from './ops-model.js';
 
 const $ = id => document.getElementById(id);
 const demo = new URLSearchParams(location.search).get('demo');
@@ -6,6 +6,7 @@ const labels = {ok:'確認済み', warning:'要確認', error:'対処が必要',
 const storageKey = demo ? 'mawarimi-ops-demo' : 'mawarimi-ops-checks-v1';
 let snapshot = null, failed = false, busy = false, pollTimer, record = null, deepResult = null;
 let contentSnapshot = null, contentFailed = false, contentBusy = false, contentTimer;
+let shootProof = null, shootBusy = false;
 const cameraViews = new Map(), questViews = new Map();
 try { record = JSON.parse(sessionStorage.getItem(storageKey)); } catch {}
 
@@ -81,7 +82,7 @@ for (const check of MANUAL_CHECKS) {
 }
 
 function render() {
-  const checks = validChecks(record,snapshot), s = summarize(snapshot,checks,Date.now(),failed,deepResult,contentFailed?null:contentSnapshot);
+  const checks = validChecks(record,snapshot), s = summarize(snapshot,checks,Date.now(),failed,deepResult,contentFailed?null:contentSnapshot,shootProof);
   $('overview-title').textContent = s.title; state($('overall-state'),s.status);
   $('online-count').textContent = s.observed; $('error-count').textContent = s.fresh ? s.blockers : '—';
   $('unknown-count').textContent = s.unknown; $('manual-count').textContent = s.pending;
@@ -150,10 +151,10 @@ function renderContent() {
   $('content-summary').textContent = s.title;
   $('content-observed').textContent = c?.observedAt ? `${Math.max(0,Math.floor(Date.now()/1000-c.observedAt))} 秒前に照合${s.fresh?'':' / 現在は未確認'}` : '最初の照合を待っています。';
   $('content-stages').replaceChildren(...[
-    ['preparation','1 / 素材をそろえる'],['bundle','2 / ビルドへ入れる'],['apk','3 / APK を作る'],
+    ['preparation','1 / 参照ファイル'],['bundle','2 / ビルド用の書き出し'],['apk','3 / APK'],
   ].map(([key,label]) => {
     const d = s.fresh ? c?.[key] : null, box = el('article','content-stage'), badge = el('span','state');
-    state(badge,d?.status || 'unknown');box.append(el('p','eyebrow',label),badge,el('h3','',d?.title || 'まだ確認できていません'),
+    state(badge,d?.status || 'unknown');box.append(el('p','eyebrow',label),badge,el('h3','',key==='preparation'&&d?.status==='ok'?'参照ファイルは揃っています':d?.title || 'まだ確認できていません'),
       el('p','',d?.action || (d?.status==='ok'?'内容を照合しました。':'照合結果を待っています。機器の接続確認は下で続けられます。')));
     if(d?.contentId)box.append(el('p','content-id',`演出版 ${d.contentId.slice(0,12)}`));
     if(d?.buildGuid)box.append(el('p','content-id',`アプリ版 ${d.buildGuid.replaceAll('-','').slice(0,12)}`));
@@ -165,7 +166,7 @@ function renderContent() {
   $('effect-list').replaceChildren(...(effects.length ? effects.map(d => {
     const row = el('article','effect-row'), title = el('div'), progress = el('div','effect-progress');
     title.append(el('h3','',d.name || d.id),el('p','note',s.fresh ? d.title || `${d.assetCount ?? '—'} 個の素材を使用` : '現在の準備状態は未確認です'));
-    for(const [name,key,yes,no] of [['素材','sourceReady','準備済み','要準備'],['ビルド用','bundled','同梱済み','要更新'],['APK','inApk','同梱済み','要ビルド']]) {
+    for(const [name,key,yes,no] of [['ファイル','sourceReady','あり','見つからない'],['ビルド用','bundled','同梱済み','要更新'],['APK','inApk','同梱済み','要ビルド']]) {
       const cell = el('div','effect-step',name), badge = el('span','state'), value = s.fresh ? d[key] : null;
       state(badge,value===true?'ok':value===false?'warning':'unknown');badge.textContent=value===true?yes:value===false?no:'未確認';cell.append(badge);progress.append(cell);
     }
@@ -214,6 +215,28 @@ async function pollContent() {
     if(snapshot)snapshot.contentSignature=contentSignature(next);
   } catch {contentFailed=true;}
   finally {contentBusy=false;render();contentTimer=setTimeout(pollContent,15000);}
+}
+
+function renderShootProof() {
+  const node=$('pov-status');
+  if (!shootProof) { node.dataset.state='unknown';node.textContent='人形視点の撮影状況を確認できません。撮影画面で確認してください。';return; }
+  if (!shootProof.required) {node.dataset.state='ok';node.textContent='この台本では人形視点の撮影は不要です。';return;}
+  node.dataset.state=shootProof.complete===shootProof.required?'ok':'warning';
+  node.textContent=shootProof.complete===shootProof.required?
+    `人形視点 ${shootProof.complete} / ${shootProof.required} 本を当日撮影して採用済みです。`:
+    `人形視点 ${shootProof.complete} / ${shootProof.required} 本を当日撮影して採用済み。残り ${shootProof.required-shootProof.complete} 本は撮影画面で確認してください。`;
+}
+async function pollShoot() {
+  if (shootBusy || document.hidden) return;
+  shootBusy=true;
+  try {
+    if (demo) shootProof=demo==='ready'?{required:5,complete:5,missing:[]}:{required:5,complete:3,missing:['人形視点 ③ すぐそこ','人形視点 ④ 追いつき']};
+    else {
+      const [plan,manifest]=await Promise.all([request('/shoot/plan?cam=A'),request('/shoot/manifest')]);
+      shootProof=summarizeOnsiteShots(plan,manifest);
+    }
+  } catch {shootProof=null;}
+  finally {shootBusy=false;renderShootProof();render();}
 }
 
 async function request(url,{method='GET',body,timeout=15000}={}) {
@@ -269,7 +292,7 @@ $('deep-check').addEventListener('click',async()=>{
   catch(e){$('deep-message').textContent=`点検を完了できません。${e.name==='AbortError'?'時間内に応答がありませんでした。':e.message}`;}
   finally{button.disabled=false;button.textContent='詳しい点検を実行';}
 });
-$('refresh').addEventListener('click',()=>{poll();pollContent();});
+$('refresh').addEventListener('click',()=>{poll();pollContent();pollShoot();});
 $('reset-checks').addEventListener('click',()=>{record=null;saveRecord();render();});
 $('download').addEventListener('click',()=>{
   // Download the allowlisted diagnosis only. Never fetch show.json, auth, or raw heartbeat.
@@ -313,10 +336,11 @@ function demoContent(mode) {
   const id='a'.repeat(64),old='b'.repeat(64),ready=mode==='ready';
   const stage=(title,status='ok',contentId=id)=>({status,contentId,buildGuid:'c'.repeat(32),title,action:status==='ok'?'内容を照合しました。':'素材を同梱して再ビルドします。'});
   return {ok:true,observedAt:Date.now()/1000,policy:'baked-only-v1',ready,
-    preparation:stage('必要な素材がそろっています'),bundle:stage(ready?'ビルド用の内容が一致しています':'壁のシミの差し替えが残っています',ready?'ok':'error',ready?id:old),
+    preparation:stage('参照ファイルは揃っています'),bundle:stage(ready?'ビルド用の内容が一致しています':'壁のシミの差し替えが残っています',ready?'ok':'error',ready?id:old),
     apk:stage(ready?'APK に同じ演出が入っています':'APK は更新前の演出です',ready?'ok':'error',ready?id:old),
     effects:['人形視点','手形','壁のシミ'].map((name,i)=>({id:`effect-${i}`,name,status:ready||i<2?'ok':'error',title:`${i+1} 個の素材を使用`,action:!ready&&i===2?'差し替えた動画を含めて再ビルドします。':'',sourceReady:true,bundled:ready||i<2,inApk:ready||i<2,assetCount:i+1})),
     quests:QUEST_IDS.map(idQ=>({id:idQ,status:ready?'ok':'error',contentId:ready?id:old,buildGuid:ready?'c'.repeat(32):'d'.repeat(32),title:ready?'今回の演出と一致しています':'更新前の演出で動いています',action:ready?'この後に装着して映像と音を確認します。':'新しい APK を入れて起動し直します。'}))};
 }
 if(demo){$('demo-banner').hidden=false;$('deep-check').disabled=true;for(const v of questViews.values()){v.link.removeAttribute('href');v.link.textContent='受付ページ（表示例）';}}
 render();poll();pollContent();
+pollShoot();setInterval(pollShoot,15000);

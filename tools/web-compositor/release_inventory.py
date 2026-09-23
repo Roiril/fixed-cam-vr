@@ -227,8 +227,8 @@ def content_status(show, dirs, bundle_dir, apk_path, devices, now=None):
             apk_has_manifest = _apk_has_manifest(apk_path) if os.path.isfile(apk_path) else False
             _cache_key, _cache_value = key, (prepared_id, bundle_id, apk_id,
                                             build_guid, apk_has_manifest)
-    prep = (_stage('error', title='演出素材の準備に問題があります', action=error)
-            if error else _stage('ok', prepared_id, '演出素材は準備済み', ''))
+    prep = (_stage('error', title='参照ファイルに問題があります', action=error)
+            if error else _stage('ok', prepared_id, '参照ファイルは揃っています', ''))
     bundle_exists = os.path.isfile(manifest_path)
     apk_exists = os.path.isfile(apk_path)
     bundle = (_stage('error' if bundle_exists else 'unknown',
