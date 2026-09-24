@@ -164,8 +164,13 @@ for (const camera of ["01", "02", "03"]) {
   if (!html.includes(`src="assets/camera-${camera}-quest.webp"`)) errors.push(`camera ${camera} must use its Quest render`);
 }
 if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
-if (!html.includes('<section id="perspective-lab"') || !html.includes('<h2 id="perspective-title">ゲームの固定視点</h2>')) errors.push("game viewpoint chapter must come before real-world viewpoint");
-if (!html.includes('<h2 id="fixed-view-title">実世界の固定視点</h2>')) errors.push("real-world fixed viewpoint needs a distinct chapter title");
+if (!html.includes('<section id="perspective-lab"') || !html.includes('<h2 id="perspective-title">固定視点とは</h2>')) errors.push("fixed viewpoint introduction must come before real-world viewpoint");
+if (!html.includes('<h2 id="fixed-view-title">実世界×固定視点</h2>')) errors.push("real-world fixed viewpoint needs the requested chapter title");
+if (!html.includes('<a href="#perspective-lab">固定視点とは</a>') || !html.includes('<a href="#fixed-view">実世界×固定視点</a>')) errors.push("navigation must match the chapter titles");
+const trailerIndex = html.indexOf('class="archive-trailer"');
+if (trailerIndex < html.indexOf('class="archive-records"') || trailerIndex > html.indexOf('<section id="footage"')) errors.push("trailer must follow the exhibition history");
+if (!html.includes('src="https://www.youtube-nocookie.com/embed/ipoU4gU9G4k"') || !html.includes('href="https://youtu.be/ipoU4gU9G4k"')) errors.push("requested trailer is missing");
+if (!html.includes('この映像は2026.09.01時点で作成した古いバージョンです。')) errors.push("trailer version note is missing");
 if (html.includes('class="plate-qr"') || html.includes('class="plate-url"')) errors.push("credit code or URL remains");
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
@@ -197,7 +202,9 @@ const gate = html.match(/<details\b[^>]*id="footage-gate"[^>]*>/)?.[0] ?? "";
 if (!gate || /\sopen(?:\s|=|>)/.test(gate)) errors.push("spoiler footage must start in a closed details element");
 const video = html.match(/<video\b[^>]*id="footage-player"[^>]*>/)?.[0] ?? "";
 if (!video || /\s(?:src|poster|autoplay)=?/.test(video) || !video.includes('preload="none"')) errors.push("footage must not expose or fetch media before the spoiler gate opens");
-if (html.includes("<iframe")) errors.push("the perspective experience must not create an iframe before launch");
+if (!html.includes('<div id="game-stage" class="game-stage"></div>')) errors.push("the perspective experience must create its iframe in JavaScript");
+if ((html.match(/<iframe\b/g)?.length ?? 0) !== 1) errors.push("only the requested trailer may be embedded in the initial HTML");
+if (!sources[10].includes('  start();') || !sources[12].includes("app.dataset.mode !== 'fixed'")) errors.push("the handheld game must open automatically in fixed view");
 for (const file of sourceFiles.filter(file => file.endsWith(".js"))) {
   const syntax = spawnSync(process.execPath, ["--check", join(websiteRoot, file)], { encoding: "utf8" });
   if (syntax.status !== 0) errors.push(`${file}: ${syntax.stderr}`);

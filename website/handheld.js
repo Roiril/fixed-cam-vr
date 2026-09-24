@@ -12,12 +12,12 @@
   let frame = null;
   let timeout;
   let ready = false;
+  let focusOnReady = false;
   let restoreFocus = null;
   const inertElements = [];
   if (!config.gameUrl) return;
   const url = new URL(config.gameUrl, location.href);
   if (url.origin !== location.origin) return;
-  launch.hidden = false;
   document.querySelector('#game-unavailable').hidden = true;
   fallback.href = new URL(config.gameStandaloneUrl || config.gameUrl, location.href).href;
   function send(action, data = {}) {
@@ -70,12 +70,14 @@
     state.textContent = '';
     launch.focus();
   }
-  launch.addEventListener('click', () => {
+  function start(focusClose = false) {
     if (frame) return;
+    focusOnReady = focusClose;
     launch.hidden = true;
     close.hidden = false;
     state.textContent = '読み込み中です。';
     frame = document.createElement('iframe');
+    frame.style.visibility = 'hidden';
     frame.title = '一人称・三人称・固定視点の切り替え体験';
     frame.allow = 'fullscreen';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock');
@@ -87,8 +89,9 @@
         fallback.hidden = false;
       }
     }, 20000);
-    close.focus({ preventScroll: true });
-  });
+    if (focusClose) close.focus({ preventScroll: true });
+  }
+  launch.addEventListener('click', () => start(true));
   close.addEventListener('click', stop);
   expand.addEventListener('click', () => setExpanded(!player.classList.contains('is-expanded')));
   window.addEventListener('message', event => {
@@ -97,10 +100,11 @@
     if (message.event === 'ready') {
       ready = true;
       clearTimeout(timeout);
+      frame.style.visibility = '';
       state.textContent = '';
       fallback.hidden = false;
       controls.forEach(button => { button.disabled = false; });
-      frame.focus({ preventScroll: true });
+      if (focusOnReady) frame.focus({ preventScroll: true });
     }
     if (message.mode) player.querySelectorAll('[data-game-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.gameMode === message.mode)));
     if (message.event === 'error') {
@@ -162,4 +166,5 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && player.classList.contains('is-expanded')) setExpanded(false);
   });
+  start();
 })();

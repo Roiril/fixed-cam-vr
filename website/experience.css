@@ -222,11 +222,8 @@ button, summary { font: inherit; }
 .site-footer .text-link { font-size: .75rem; color: var(--ink-muted); }
 @media (max-width: 900px) {
   .fixed-view { grid-template-columns: 1fr; gap: 3rem; }
-  .fixed-view-copy { display: grid; grid-template-columns: 1fr 1fr; column-gap: 3rem; max-width: none; }
-  .fixed-view-copy .section-number { grid-column: 1/-1; }
-  .fixed-view-copy h2 { grid-row: 2/4; align-self: center; }
-  .fixed-view-lead { margin-top: 0; }
-  .fixed-view-copy .text-link { grid-column: 2; justify-self: start; }
+  .fixed-view-copy { display: block; max-width: none; }
+  .fixed-view-lead { margin-top: 1.75rem; }
   .camera-exhibit { max-width: 44rem; width: 100%; margin: auto; }
   .perspective-lab, .scenario { grid-template-columns: 1fr; }
   .scenario { gap: 2.5rem; }

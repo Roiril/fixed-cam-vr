@@ -16,6 +16,7 @@
   const app = document.querySelector('#app');
   let ready = false;
   let errorReported = false;
+  let initialFixedSelected = false;
   let currentMode = app.dataset.mode;
 
   function notify(event, details = {}) {
@@ -66,6 +67,12 @@
     }
 
     if (!ready && Number(world.dataset.frames) > 0 && loading.hidden) {
+      if (!initialFixedSelected) {
+        document.querySelector('button[data-mode="fixed"]')?.click();
+        initialFixedSelected = true;
+        return;
+      }
+      if (app.dataset.mode !== 'fixed' || world.dataset.transition !== 'false') return;
       ready = true;
       currentMode = app.dataset.mode;
       notify('ready');
