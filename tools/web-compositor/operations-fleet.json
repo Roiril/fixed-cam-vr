@@ -6,6 +6,9 @@
     {"id": "B", "host": "192.168.10.22", "port": 8080, "uuid": "429a472b-8131-401b-81a3-9cfb91ad2165"},
     {"id": "C", "host": "192.168.10.23", "port": 8080, "uuid": "b9ffed4c-18e2-4570-a8b8-2012c1e6559e"}
   ],
+  "handheldShooters": [
+    {"id": "P", "uuid": "9ad2fe12-7c80-41ba-8fc8-0299bd8b74ea"}
+  ],
   "quests": [
     {"id": "alpha", "label": "Quest α", "host": "192.168.10.31", "port": 8090, "deviceId": ""},
     {"id": "beta", "label": "Quest β", "host": "192.168.10.32", "port": 8090, "deviceId": ""}

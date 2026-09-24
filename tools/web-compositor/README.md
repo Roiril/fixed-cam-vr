@@ -543,6 +543,8 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 | GET | `/shoot/plan?cam=<id>` | **配信スマホが読む**「今日撮るもの」（指示文・尺・要求秒・採用状況）。`shots.json` ＋ timeline から導く |
 | POST | `/shoot/collect` | **配信スマホから**「このテイクを卓へ」。回収 → 検分 →（`adopt` なら）採用まで 1 往復。⚠ 端末の host は body ではなく**接続元アドレス**を使う |
 
+準備モードの手持ち撮影端末 P は `operations-fleet.json` の `handheldShooters` に UUID を登録する。発見した UUID が一致するときだけ撮影・回収を許す。P は `show.json` の固定カメラには追加しない。端末からの `/shoot/collect` は登録済みの接続元と人形視点の cue に限る。
+
 ### 「頭に何秒要るか」は 2 つの言語にある
 
 `neededHeadSec` / `cutCount` は元々ブラウザ（`shoot-model.js`）だけの計算だったが、

@@ -238,6 +238,36 @@ class OpsHttpTest(MediaFixture):
             {'Host': host, 'Origin': 'http://localhost:1'})
         self.assertEqual(status, 403)
 
+    def test_handheld_shooter_requires_registered_discovery_uuid(self):
+        module = self.server_module
+        module._disc.clear()
+        shooter = module._ops.FLEET['handheldShooters'][0]
+        module._disc[shooter['uuid']] = {
+            'role': 'camera', 'id': shooter['id'], 'ip': '127.0.0.2',
+            'port': 8080, 'uuid': shooter['uuid'], 'lastSeen': module.time.time(),
+        }
+        cameras = module.Handler._shoot_cams(None)
+        self.assertIn(('P', '127.0.0.2'), {(c['id'], c['host']) for c in cameras})
+        module._disc[shooter['uuid']]['uuid'] = 'wrong-device'
+        cameras = module.Handler._shoot_cams(None)
+        self.assertNotIn('P', {c['id'] for c in cameras})
+
+    def test_preparation_collect_requires_registered_source_and_pov(self):
+        os.environ.pop('FIXEDCAM_AUTHORING', None)
+        os.environ['FIXEDCAM_PREPARATION'] = '1'
+        self.server_module.Handler._shoot_collect = (
+            lambda handler, body, host, port: handler._json({'ok': True, 'host': host}))
+        status, _, raw = self.request('POST', '/shoot/collect', {
+            'name': 'take.mp4', 'shot': 'pov_0', 'port': 18080})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw)['host'], '127.0.0.1')
+        status, _, _ = self.request('POST', '/shoot/collect', {
+            'name': 'take.mp4', 'shot': 'slot-cue', 'port': 18080})
+        self.assertEqual(status, 403)
+        status, _, _ = self.request('POST', '/shoot/collect', {
+            'name': 'take.mp4', 'shot': 'pov_0', 'host': '127.0.0.2', 'port': 18080})
+        self.assertEqual(status, 403)
+
 
 if __name__ == '__main__':
     unittest.main()

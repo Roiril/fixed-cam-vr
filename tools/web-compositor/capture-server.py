@@ -1766,7 +1766,7 @@ class Handler(SimpleHTTPRequestHandler):
     # 判定は shoot-model.js（ブラウザ側・node テストあり）が持ち、ここは I/O だけ。
 
     def _shoot_cams(self):
-        """show.json の cameras のうち host が入っているもの（撮影に使える端末）。"""
+        """固定カメラと、登録 UUID が一致する発見済みの手持ち撮影端末。"""
         out = []
         with _show_cond:
             cams = list(_show.get('cameras') or [])
@@ -1776,6 +1776,15 @@ class Handler(SimpleHTTPRequestHandler):
                 continue
             out.append({'index': i, 'id': c.get('id') or '', 'host': host,
                         'port': int(c.get('port') or 8080)})
+        discovered, conflicts = _disc_snapshot_cameras()
+        for shooter in _ops.FLEET.get('handheldShooters') or []:
+            cid = shooter.get('id')
+            entry = discovered.get(cid)
+            if (cid in conflicts or not entry or
+                    entry.get('uuid') != shooter.get('uuid')):
+                continue
+            out.append({'index': -1, 'id': cid, 'host': entry['ip'],
+                        'port': int(entry['port'])})
         return out
 
     def _shoot_devices(self, only_host=''):
@@ -2283,8 +2292,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _preparation_post(self, path):
         allowed = ('/shoot/start', '/shoot/stop', '/shoot/pull', '/shoot/adopt',
-                   '/shoot/plate-capture', '/shoot/plate-adopt')
-        if path not in allowed or not self._local_browser_request():
+                   '/shoot/collect', '/shoot/plate-capture', '/shoot/plate-adopt')
+        if path not in allowed or (path != '/shoot/collect' and not self._local_browser_request()):
             return False
         if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
             self._json({'ok': False, 'error': 'JSON が必要です'}, 415)
@@ -2307,6 +2316,22 @@ class Handler(SimpleHTTPRequestHandler):
             if target not in cameras:
                 self._json({'ok': False, 'error': '登録済み撮影端末だけ操作できます'}, 403)
                 return None
+        if path == '/shoot/collect':
+            source = self.client_address[0]
+            try:
+                target = (source, int(body.get('port') or 8080))
+            except (TypeError, ValueError):
+                self._json({'ok': False, 'error': '撮影端末が不正です'}, 400)
+                return None
+            registered = {(c['host'], c['port']) for c in self._shoot_cams()}
+            pov_ids = {str(s.get('cueId') or '') for s in _shots_def()
+                       if s.get('dev') == 'pov'}
+            if (target not in registered or
+                    str(body.get('host') or source).strip() != source or
+                    str(body.get('shot') or '') not in pov_ids):
+                self._json({'ok': False, 'error': '登録済み端末の人形視点だけ送れます'}, 403)
+                return None
+            body['host'] = source
         if path == '/shoot/adopt':
             cue_id = str(body.get('cueId') or '')
             pov_ids = {str(s.get('cueId') or '') for s in _shots_def()
