@@ -1,5 +1,8 @@
 # 2 周目 A の幕の染みを動画にする（Seedance 2.5 ／ 少し不敵な笑みを浮かべる）
 
+2026-09-24 の新しい演出案と首尾フレームは [stain-press-flutter.md](stain-press-flutter.md)。
+この文書は以前の笑みの案と、受け取った動画を置き直した経緯として残す。
+
 ユーザーの言葉（`canon/LEDGER.md` 0137）: 「シミは、少し不敵な笑みを浮かべるような動画」
 
 静止画の方は `anomaly/face-stain.md`（候補 `captures/gen_stainA_left_20260904_0656.png`）。
