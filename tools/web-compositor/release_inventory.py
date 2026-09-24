@@ -203,6 +203,8 @@ def _effects(show, refs, prepared_id, bundle_id, apk_id, dirs):
                     urls.add(step['assetUrl'])
                 cue = cues.get(step.get('cueId')) or {}
                 urls.update(cue[k] for k in ('maskUrl', 'sourceUrl') if cue.get(k))
+            response = cues.get(take.get('markStartCueId')) or {}
+            urls.update(response[k] for k in ('maskUrl', 'sourceUrl') if response.get(k))
             urls = {u for u in urls if u}
             source_ready = all(source_ok(u) for u in urls)
             bundled = source_ready and bundle_id == prepared_id
@@ -258,6 +260,17 @@ def _take_asset_refs(show, take):
         if cue.get('maskUrl'):
             refs[f'step:{index}:maskUrl'] = {
                 'label': cue_name + '・マスク', 'cueId': cue_id, 'url': cue['maskUrl']}
+    response_id = take.get('markStartCueId') or ''
+    response = cues.get(response_id) or {}
+    response_name = response.get('name') or response_id
+    if response.get('sourceUrl'):
+        refs['markStart:sourceUrl'] = {
+            'label': response_name + '・報告開始の映像', 'cueId': response_id,
+            'url': response['sourceUrl']}
+    if response.get('maskUrl'):
+        refs['markStart:maskUrl'] = {
+            'label': response_name + '・マスク', 'cueId': response_id,
+            'url': response['maskUrl']}
     return refs
 
 

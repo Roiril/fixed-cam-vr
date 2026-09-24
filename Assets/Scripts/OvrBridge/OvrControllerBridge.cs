@@ -403,6 +403,7 @@ namespace FixedCamVr.OvrBridge
                                             && !_markNeedsRelease
                                             && mode == ControllerModeLogic.Mode.Normal,
                                             blocked: markBlocked);
+            if (_markHold.StartedThisTick) showControl?.NotifyVisitorMarkStarted();
             if (markFired)
             {
                 if (showControl != null && showControl.RecordVisitorMark()) haptics?.LeftMark();

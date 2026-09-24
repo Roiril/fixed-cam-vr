@@ -25,6 +25,20 @@ class ReleaseInventoryTest(unittest.TestCase):
                          'id': 'take-1', 'name': '演出一',
                          'steps': [{'cueId': 'a'}]}]}]}}
 
+    def test_report_start_video_appears_in_current_adoption(self):
+        os.makedirs(os.path.join(self.source, 'static-inputs'))
+        with open(os.path.join(self.source, 'static-inputs', 'flutter.mp4'), 'wb') as stream:
+            stream.write(b'roundtrip')
+        self.show['cues'].append({'id': 'flutter', 'name': '幕が動く',
+                                  'sourceUrl': '/static-inputs/flutter.mp4'})
+        self.show['timeline']['segments'][0]['takes'][0]['markStartCueId'] = 'flutter'
+        library = release_inventory.media_library(self.show, self.dirs, self.apk, now=100)
+        assets = library['effects'][0]['assets']
+        response = next(a for a in assets if a['key'] == 'markStart:sourceUrl')
+        self.assertEqual(response['kind'], 'video')
+        self.assertEqual(response['cueId'], 'flutter')
+        self.assertTrue(response['current']['exists'])
+
     def test_bundle_apk_and_preparation_match(self):
         content_id = export_build.export_build(self.show, self.tmp, self.dirs,
                                                self.bundle)['contentId']

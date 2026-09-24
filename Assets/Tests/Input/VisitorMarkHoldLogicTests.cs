@@ -140,5 +140,23 @@ namespace FixedCamVr.Input.Tests
             Assert.That(logic.Confirming, Is.False);
             Assert.That(logic.Holding, Is.False);
         }
+
+        [Test]
+        public void StartEvent_OnlyOnAcceptedPressEdge()
+        {
+            var logic = new VisitorMarkHoldLogic();
+            Assert.IsFalse(logic.Tick(Dt, true, blocked: true));
+            Assert.IsFalse(logic.StartedThisTick);
+            Assert.IsFalse(logic.Tick(Dt, true));
+            Assert.IsFalse(logic.StartedThisTick, "禁止が明けても押しっぱなしなら開始しない");
+            logic.Tick(Dt, false);
+            logic.Tick(0f, true);
+            Assert.IsTrue(logic.StartedThisTick);
+            logic.Tick(0f, true);
+            Assert.IsFalse(logic.StartedThisTick, "時計が止まっても同じ押下を再発火しない");
+            logic.Tick(Dt, false);
+            logic.Tick(Dt, true);
+            Assert.IsTrue(logic.StartedThisTick, "離して押し直したら再開する");
+        }
     }
 }

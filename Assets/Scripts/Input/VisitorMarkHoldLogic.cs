@@ -50,6 +50,10 @@ namespace FixedCamVr.Input
         private bool _consumed;      // このホールドは発火済み（離すまで再発火しない）
         private float _confirmLeft;  // 「報告しました」の残り時間 (秒)
         private bool _blockedUntilRelease;
+        private bool _heldAccepted;
+
+        /// <summary>この Tick で受付可能な長押しが始まった。報告成立とは別。</summary>
+        public bool StartedThisTick { get; private set; }
 
         /// <summary>長押しの閾値 (秒)。</summary>
         public float HoldSec => _holdSec;
@@ -76,10 +80,12 @@ namespace FixedCamVr.Input
         /// <summary>計時・ラッチ・余韻をすべて落とす（体験者の交代など）。</summary>
         public void Reset()
         {
+            StartedThisTick = false;
             _elapsed = 0f;
             _consumed = false;
             _confirmLeft = 0f;
             _blockedUntilRelease = false;
+            _heldAccepted = false;
         }
 
         /// <summary>
@@ -89,6 +95,7 @@ namespace FixedCamVr.Input
         /// <param name="held">左 X または Y が押されているか。</param>
         public bool Tick(float dt, bool held, bool blocked = false)
         {
+            StartedThisTick = false;
             if (blocked)
             {
                 Reset();
@@ -112,9 +119,12 @@ namespace FixedCamVr.Input
             {
                 _elapsed = 0f;
                 _consumed = false;
+                _heldAccepted = false;
                 return false;
             }
 
+            StartedThisTick = !_heldAccepted;
+            _heldAccepted = true;
             _elapsed += step;
             if (_consumed || _elapsed < _holdSec) return false;
 

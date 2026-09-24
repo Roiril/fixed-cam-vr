@@ -63,6 +63,20 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.DismissCount, Is.EqualTo(1));
         }
 
+        [Test]
+        public void Report_CanWaitForResponseVideoToReturnToStart()
+        {
+            TakeRunnerLogic l = Started(Make(Take(2, 0, dismissible: true)), 2, 0);
+            Assert.That(l.NotifyMarkPressed(1f, deferDismiss: true),
+                Is.EqualTo(TakeRunnerLogic.MarkResult.Dismissed));
+            Assert.That(l.Tick(2f, 0).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                "報告は成立しても往復映像を切らない");
+            l.CompleteDeferredDismiss();
+            TakeRunnerLogic.Decision d = l.Tick(8f, 0);
+            Assert.That(d.reason, Is.EqualTo(TakeRunnerLogic.EndReason.VisitorDismissed));
+            Assert.That(l.DismissCount, Is.EqualTo(1));
+        }
+
         /// <summary>
         /// <b>畳むのはカットではなく演出ごと。</b> カットだけ畳むと次のカットが出る ＝
         /// 「消したら別のものが現れた」になり、報告が驚かせる引き金に化ける

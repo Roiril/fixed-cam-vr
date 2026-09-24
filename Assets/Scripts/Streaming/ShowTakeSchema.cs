@@ -70,6 +70,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool dismissible;
 
+        /// <summary>報告の長押しを始めた時に再生する任意の動画 cue。空なら反応しない。</summary>
+        public string markStartCueId = "";
+
         public ShowStepDef[] steps = Array.Empty<ShowStepDef>();
 
         /// <summary>

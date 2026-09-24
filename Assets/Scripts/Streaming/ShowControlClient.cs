@@ -3004,6 +3004,13 @@ namespace FixedCamVr.Streaming
                || (timelineDirector != null && timelineDirector.ClosingAreaSec >= 0f
                    && !(ResolveRunDirector()?.ClosingPromptReadable ?? false));
 
+        /// <summary>報告の長押しが始まった。件数は増やさず、該当演出の画だけを動かす。</summary>
+        public void NotifyVisitorMarkStarted()
+        {
+            if (ResolveRunDirector()?.Phase == ShowPhase.Finished || IsVisitorMarkBlocked || IsMarkTooEarly) return;
+            timelineDirector?.NotifyVisitorMarkStarted();
+        }
+
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public bool RecordVisitorMark()
         {

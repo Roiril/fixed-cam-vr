@@ -13,6 +13,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { normalizeTimelineV3, serializeTimelineV3, resolveBgmLane, TAKE } from './timeline-model.js';
 
+test('報告開始の動画 cue は読み込みと保存で残る', () => {
+  const source = { schema: 3, segments: [{ lap: 2, camera: 0, takes: [{
+    id: 'L2C0#0', markStartCueId: 'stain_A_press_flutter', steps: [],
+  }] }] };
+  const normalized = normalizeTimelineV3(source);
+  assert.equal(normalized.segments[0].takes[0].markStartCueId, 'stain_A_press_flutter');
+  const saved = serializeTimelineV3(normalized);
+  assert.equal(saved.segments[0].takes[0].markStartCueId, 'stain_A_press_flutter');
+});
+
 const FIXTURE_URL = new URL('../../Assets/Tests/Fixtures/show_timeline_canonical.json', import.meta.url);
 const fixture = JSON.parse(readFileSync(FIXTURE_URL, { encoding: 'utf-8' }));
 

@@ -1289,6 +1289,13 @@ export function createRibbon(container, deps) {
            + `${lineById(t.lineId) ? `（${escapeHtml(camLabel(lineOwner(t.lineId)))} 担当）` : '（見つかりません）'}</option>`]
         : [])
       .join('');
+    let markCueOpts = '<option value="">（動かさない）</option>';
+    const selectableMarkCues = cues.filter((cue) => cueFitsCam(cue, sel.camera)
+      && /\.(mp4|webm|mov)(\?|#|$)/i.test(cue.sourceUrl || ''));
+    for (const c of selectableMarkCues)
+      markCueOpts += `<option value="${escapeHtml(c.id)}"${t.markStartCueId === c.id ? ' selected' : ''}>${escapeHtml(c.name || c.id)}</option>`;
+    if (t.markStartCueId && !selectableMarkCues.some((c) => c.id === t.markStartCueId))
+      markCueOpts += `<option value="${escapeHtml(t.markStartCueId)}" selected>${escapeHtml(t.markStartCueId)}（映像を確認してください）</option>`;
     inspectorEl.innerHTML = `
       <div class="rb-insp-head">演出 — ${escapeHtml(camLabel(sel.camera))} / ${sel.lap}周目
         <span class="rb-insp-sub">${escapeHtml(startLabel(t))} ／ ${total.approx ? '約' : ''}${fmtSec(total.sec)}s</span>
@@ -1325,6 +1332,7 @@ export function createRibbon(container, deps) {
           <label class="chk" title="体験者が異変を報告（左 X／Y の長押し）したら、この演出は映像の乱れとともに畳まれて現実（ライブ映像）へ戻ります。既定は消えません。⚠ 終幕の合図（run.outro.afterTakeId）が指す演出では効きません。">
             <input class="rb-t-dismiss" type="checkbox" ${t.dismissible ? 'checked' : ''}
               ${isOutroAnchor(t) ? 'disabled' : ''}>報告で消える${isOutroAnchor(t) ? '（終幕の合図なので不可）' : ''}</label>
+          <label>報告を押し始めた時の映像<select class="rb-t-mark-cue">${markCueOpts}</select></label>
           <label class="chk"><input class="rb-t-once" type="checkbox" ${t.once !== false ? 'checked' : ''}>ラン内 1 回</label>
           <label>最大長<input class="rb-t-max" type="number" min="0" step="1" value="${t.maxDurationSec || 0}"><span class="rb-hint2">0=既定 ${TAKE.DEFAULT_MAX_DURATION_SEC}s</span></label>
         </div>
@@ -1362,6 +1370,7 @@ export function createRibbon(container, deps) {
       t.once = !!i('.rb-t-once').checked;
       // 終幕の合図が指す演出では実機が旗を落とすので、卓でも立てさせない（見える形を実機と揃える）。
       t.dismissible = !!i('.rb-t-dismiss').checked && !isOutroAnchor(t);
+      t.markStartCueId = i('.rb-t-mark-cue').value;
       t.maxDurationSec = Math.max(0, numOr(i('.rb-t-max').value, 0));
       markDirty(); render();
       // 開始位置を動かしたら「実測滞在に対して遅すぎないか」の警告をその場で更新する

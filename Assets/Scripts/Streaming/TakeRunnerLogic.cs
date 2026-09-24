@@ -258,6 +258,8 @@ namespace FixedCamVr.Streaming
         private bool _running;
         // 体験者の報告を受けた。実際に畳むのは次の Tick（終わり方を EndTakeDecision 1 本に保つため）。
         private bool _dismissPending;
+        // 報告は成立したが、応答映像が元の姿勢へ戻るまで画面だけ保つ。
+        private bool _dismissDeferred;
         private int _activeTake = -1;
         private int _activeStep = -1;
         private float _stepEnd;
@@ -314,6 +316,7 @@ namespace FixedCamVr.Streaming
             DropAllCarry(DropReason.BlockerGone, report: false); // 定義が変わった＝ index の意味が変わる
             _running = false;
             _dismissPending = false;
+            _dismissDeferred = false;
             _activeReported = false;
             _activeTake = -1;
             _activeStep = -1;
@@ -347,6 +350,7 @@ namespace FixedCamVr.Streaming
             _running = false;
             // 前の体験者が押した 1 回を次のランへ持ち越さない。
             _dismissPending = false;
+            _dismissDeferred = false;
             _activeReported = false;
             DismissCount = 0;
             ReplayCount = 0;
@@ -560,7 +564,7 @@ namespace FixedCamVr.Streaming
         /// ⚠ ②は実際に畳むのが次の <see cref="Tick"/> だが、<b>通ることはこの時点で確定している</b>ので
         /// true を返す（体験者の押下と画の変化のあいだに 1 フレームの猶予があるだけ）。
         /// </returns>
-        public MarkResult NotifyMarkPressed(float now)
+        public MarkResult NotifyMarkPressed(float now, bool deferDismiss = false)
         {
             if (!_running) return MarkResult.None;
             if (now < _stepBeganAt) return MarkResult.None;
@@ -575,11 +579,20 @@ namespace FixedCamVr.Streaming
 
             if (_activeTake >= 0 && _activeTake < _defs.Length && _defs[_activeTake].dismissible)
             {
-                _dismissPending = true;
+                if (deferDismiss) _dismissDeferred = true;
+                else _dismissPending = true;
                 return MarkResult.Dismissed;
             }
 
             return MarkResult.None;
+        }
+
+        /// <summary>報告成立済みの演出を、応答映像の終端で畳む。</summary>
+        public void CompleteDeferredDismiss()
+        {
+            if (!_running || !_dismissDeferred) return;
+            _dismissDeferred = false;
+            _dismissPending = true;
         }
 
         /// <summary>
@@ -775,6 +788,7 @@ namespace FixedCamVr.Streaming
                 _outcome[_activeTake] = Outcome.Settled;
             _running = false;
             _dismissPending = false;
+            _dismissDeferred = false;
             _activeReported = false;
             _activeTake = -1;
             _activeStep = -1;
@@ -845,6 +859,7 @@ namespace FixedCamVr.Streaming
             // 走行が終わったので、消化されなかった報告を次の演出へ持ち越さない
             //（線待ち・untilMark が「カットが始まる前の事象を数えない」のと同じ理由）。
             _dismissPending = false;
+            _dismissDeferred = false;
             return new Decision
             {
                 action = Action.EndTake,

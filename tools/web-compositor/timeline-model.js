@@ -197,6 +197,7 @@ export function newTake(id, over = {}) {
     // ⚠ 既定 false（消えない）。JsonUtility は欠落キーを false で埋めるので、
     //   既存の show.json は挙動が 1 ビットも変わらない。
     dismissible: false,
+    markStartCueId: '',
     steps: [],
     // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
     bgm: defaultBgm(), hasBgm: false,
@@ -286,6 +287,7 @@ function serializeTake(t) {
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
     dismissible: !!t.dismissible,
+    markStartCueId: t.markStartCueId || '',
     steps: (t.steps || []).map(serializeStep),
   };
   // present-flag 規約: false のときは入れ子キー自体を出さない（幽霊指示を作らない）。
@@ -342,6 +344,7 @@ function normalizeTake(t) {
     once: t.once !== false,
     maxDurationSec: num(t.maxDurationSec, 0),
     dismissible: !!t.dismissible,
+    markStartCueId: typeof t.markStartCueId === 'string' ? t.markStartCueId : '',
     hasBgm: !!t.hasBgm,
     bgm: { ...defaultBgm(), ...(t.bgm || {}) },
   });

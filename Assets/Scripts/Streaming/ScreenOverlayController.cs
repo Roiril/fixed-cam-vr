@@ -298,6 +298,12 @@ namespace FixedCamVr.Streaming
             return _current == null;
         }
 
+        // ループ動画の最初の一周が終わった世代。次の静止画のロード中も先頭姿勢を保持するために使う。
+        private int _lastLoopedToken = -1;
+
+        public bool HasLooped(int token)
+            => token >= 0 && token == _logic.Generation && token == _lastLoopedToken;
+
         // fire-and-forget の例外を無音で失わないための wrapper。
         // ここで catch しないと unobserved task exception になり「演出が出ないのにログも無い」になる。
         // finally で必ずロード中フラグを下ろす（どの return 経路・例外でも IsFinished が固まらないように）。
@@ -768,7 +774,9 @@ namespace FixedCamVr.Streaming
         // 動画が自然終端（trimEnd 未指定で最後まで再生）に達した時。ループしない cue を自動で戻す。
         private void OnVideoEnd(VideoPlayer vp)
         {
-            if (_current != null && !_current.loop && !_stopWhenFadedOut) StopOverlay();
+            if (_current == null || _stopWhenFadedOut) return;
+            if (_current.loop) _lastLoopedToken = _logic.Generation;
+            else StopOverlay();
         }
 
         private void OnVideoError(VideoPlayer vp, string message)

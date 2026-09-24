@@ -184,6 +184,25 @@ class ExportBuildTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'gone_right'):
             self._run(show)
 
+    def test_mark_start_video_is_baked_even_though_no_step_uses_it(self):
+        self._put('static-inputs/flutter.mp4', b'roundtrip video')
+        show = {
+            'cues': [{'id': 'idle'},
+                     {'id': 'flutter', 'sourceUrl': '/static-inputs/flutter.mp4'}],
+            'timeline': {'schema': 3, 'segments': [{'takes': [{
+                'markStartCueId': 'flutter', 'steps': [{'cueId': 'idle'}],
+            }]}]},
+        }
+        self._run(show)
+        baked = self._baked()
+        self.assertEqual([cue['id'] for cue in baked['cues']], ['idle', 'flutter'])
+        self.assertEqual(baked['cues'][1]['sourceUrl'], 'sa://assets/flutter.mp4')
+        self.assertTrue(os.path.isfile(os.path.join(self.out, 'assets', 'flutter.mp4')))
+
+        show['timeline']['segments'][0]['takes'][0]['markStartCueId'] = 'missing'
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            self._run(show)
+
     def test_manifest_hashes_and_revision_only_change(self):
         self._put('masks/m.png', b'asset')
         show = {'rev': 1, 'cues': [{'id': 'a', 'maskUrl': '/masks/m.png'}]}
