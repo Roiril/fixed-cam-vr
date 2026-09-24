@@ -2998,14 +2998,19 @@ namespace FixedCamVr.Streaming
 
         /// <summary>通信装置が乗っ取られている間の報告受付。表示側が供給する。</summary>
         public Func<bool>? VisitorMarkBlockedProvider;
-        public bool IsVisitorMarkBlocked => VisitorMarkBlockedProvider?.Invoke() ?? false;
+        public bool IsVisitorMarkBlocked
+            => CourseRegistrationActive
+               || (VisitorMarkBlockedProvider?.Invoke() ?? false)
+               || (timelineDirector != null && timelineDirector.ClosingAreaSec >= 0f
+                   && !(ResolveRunDirector()?.ClosingPromptReadable ?? false));
 
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public bool RecordVisitorMark()
         {
             // 終了後の操作で結末や観測記録を書き換えない。
             if (ResolveRunDirector()?.Phase == ShowPhase.Finished) return false;
-            // 件数・異変解除・返信のいずれも予約しない。復帰後へ持ち越さない。
+            // 位置合わせ、乗っ取り、締めの警告を読み切る前は、件数・異変解除・返信の
+            // いずれも予約しない。復帰後へ持ち越さない。
             if (IsVisitorMarkBlocked) return false;
             // ⚠⚠ **締めに入って最初の数秒は「無かったこと」にする**（0178・ユーザー指定
             //    「4-A に入ってから 4s は、押しても反応しないようにしてほしい」）。

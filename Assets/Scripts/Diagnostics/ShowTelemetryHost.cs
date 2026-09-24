@@ -838,6 +838,8 @@ namespace FixedCamVr.Diagnostics
                      // res = 解除処理が通ったか。主映像の解除と進行の診断に残す。
                    + $" det={(_show.LastMarkDetected ? 1 : 0)}"
                    + $" res={(_show.LastMarkResolved ? 1 : 0)}"
+                   + $" released={(_run != null && _run.ScreenDecayReleased ? 1 : 0)}"
+                   + $" promptReady={(_run != null && _run.ClosingPromptReadable ? 1 : 0)}"
                    + $" invasion={(_comms != null ? _comms.InvasionProgress : 0f):F2}"
                      // take = 報告が乗った演出の id（走っていなければ -）。new = この報告で異変の数が増えたか。
                      // anom = 報告した異変の数の累計（`canon/LEDGER.md` 0234・同じ演出は 1）。
@@ -911,6 +913,8 @@ namespace FixedCamVr.Diagnostics
                      // ⚠ 強さではなく**進み**を出す — 強さは発作で跳ねるので、
                      //   1 通ごとの比較には使えない（3 周目の連絡が軽く見えることがある）。
                      $"decay={_comms.DecayProgress:F2} invasion={_comms.InvasionProgress:F2} " +
+                     $"released={(_run != null && _run.ScreenDecayReleased ? 1 : 0)} " +
+                     $"promptReady={(_run != null && _run.ClosingPromptReadable ? 1 : 0)} " +
                      // curse = 届いた瞬間に画へ書いていた斑の量。**開いた縁なら 0 のはず**（0229）。
                      $"curse={_comms.AppliedCurse:F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)} " +

@@ -1,4 +1,5 @@
 #nullable enable
+using System.Reflection;
 using NUnit.Framework;
 
 namespace FixedCamVr.Streaming.Tests
@@ -395,6 +396,46 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void ClosingReportIsRejectedUntilThePromptIsFullyShown()
+        {
+            const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+            var go = new UnityEngine.GameObject("Closing report gate test");
+            try
+            {
+                var control = go.AddComponent<ShowControlClient>();
+                var timeline = go.AddComponent<TimelineDirector>();
+                typeof(TimelineDirector).GetField("_closingAreaEnteredAt", Private)!
+                    .SetValue(timeline, UnityEngine.Time.unscaledTime);
+                typeof(ShowControlClient).GetField("timelineDirector", Private)!
+                    .SetValue(control, timeline);
+
+                Assert.IsFalse(control.RecordVisitorMark());
+                Assert.AreEqual(0, control.VisitorMarkCount);
+
+                ShowRunDirector run = control.RunDirector!;
+                run.NotifyClosingPromptReadable();
+                Assert.IsTrue(control.RecordVisitorMark());
+                Assert.AreEqual(1, control.VisitorMarkCount);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void CourseRegistrationBlocksDirectReports()
+        {
+            var go = new UnityEngine.GameObject("Registration report gate test");
+            try
+            {
+                var control = go.AddComponent<ShowControlClient>();
+                control.CourseRegistrationActiveProvider = () => true;
+                Assert.IsTrue(control.IsVisitorMarkBlocked);
+                Assert.IsFalse(control.RecordVisitorMark());
+                Assert.AreEqual(0, control.VisitorMarkCount);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(go); }
+        }
+
+        [Test]
         public void PossessionStartsHiddenFromAnOpenNotice_AndRejectsNotificationInterruption()
         {
             var l = new CommsPanelLogic();
@@ -633,6 +674,7 @@ namespace FixedCamVr.Streaming.Tests
             => new CommsCueInput
         {
             inRun = true,
+            closingSec = -1f,
             panelDoneReading = false,
             markPressed = mark,
             markDetected = detected,

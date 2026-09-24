@@ -185,8 +185,8 @@ namespace FixedCamVr.Tracking
         private Vector3[] _capturedWorld = Array.Empty<Vector3>();
         private int _pointIndex;                // 現在キャプチャ中の点 index（0..N-1）
 
-        private string _transientMsg = "";      // エラー等の一時メッセージ
-        private float _transientUntil;
+        // 直近の失敗メッセージ。次の有効な A 押下か登録モード退場まで保持する。
+        private string _transientMsg = "";
 
         // A ホールド平均サンプリング（dt 駆動の純ロジック。計時を EditMode でも決定的に固定できる）。
         private readonly HoldAverageSampler _sampler = new(MarkHoldSec);
@@ -284,6 +284,7 @@ namespace FixedCamVr.Tracking
         private void SetActive(bool on)
         {
             if (IsActive == on) return;
+            ClearTransient();
             if (on)
             {
                 ResolvePoints();                          // 最新 layout の regPoints を取り込む
@@ -358,11 +359,21 @@ namespace FixedCamVr.Tracking
                     break;
                 case Phase.Verify:
                     if (input.confirm) { ConfirmAndExit(); return; }
-                    if (input.mark) { RestartCapture(); return; }
+                    if (input.mark)
+                    {
+                        RestartCapture();
+                        UpdateMarkSampling(input);
+                        return;
+                    }
                     break;
                 case Phase.Review:
                     // 確認フェーズ: A=点 1 から再登録 / B=保存せず終了（RegistrationConfirmed は発火しない）。
-                    if (input.mark) { RestartCapture(); return; }
+                    if (input.mark)
+                    {
+                        RestartCapture();
+                        UpdateMarkSampling(input);
+                        return;
+                    }
                     if (input.confirm) { ExitReview(); return; }
                     break;
             }
@@ -373,14 +384,14 @@ namespace FixedCamVr.Tracking
         //   途中で離したら不成立（ガイダンスにやり直し表示。点 index は進めないのでそのまま再トライ可）。
         private void UpdateMarkSampling(in RegInput input)
         {
+            if (input.mark) ClearTransient();
             HoldAverageSampler.Result r =
                 _sampler.Tick(input.mark, input.markHeld, input.deltaTime, Pointer(), out Vector3 avg);
             if (r == HoldAverageSampler.Result.Aborted)
             {
                 // MarkHoldSec 未満で離した → マーク不成立（点は採らない）。
-                // ⚠ 寿命は「読み切れるか」で決める。2 行の失敗通知を 2.5 秒で消すと、
-                //    手元を見ていないスタッフには原因が残らない（Codex 2 巡目の指摘）。
-                ShowTransient("×印を読み取れませんでした\n×印の上で A を押したまま 0.5 秒静止", 4f);
+                // 手元を見ていないスタッフにも原因が残るよう、次の A 押下まで表示する。
+                ShowTransient("×印を読み取れませんでした\n×印の上で A を押したまま 0.5 秒静止");
                 SampleAborted?.Invoke(); // 触覚 Error（ホールド中断）
                 return;
             }
@@ -427,7 +438,7 @@ namespace FixedCamVr.Tracking
             if (!fit.ok)
             {
                 Debug.LogWarning("[CourseReg] 剛体フィット不能（基準点が重なっています）— やり直します");
-                ShowTransient("点の置き方が正しくありません\n2 つの点が重なっています", 6f);
+                ShowTransient("点の置き方が正しくありません\n2 つの点が重なっています");
                 FitRejected?.Invoke(); // 触覚 Error（拒否・やり直し）
                 RestartCapture();
                 return;
@@ -438,7 +449,7 @@ namespace FixedCamVr.Tracking
                 int w = fit.worstIndex;
                 Debug.LogWarning($"[CourseReg] フィット残差過大: 点 {w + 1} の残差 {fit.maxResidualM:F3}m " +
                                  $"> 許容 {maxResidualM:F3}m（RMS {fit.rmsResidualM:F3}m）— やり直します");
-                ShowTransient($"点 {w + 1} のずれが {Mathf.RoundToInt(fit.maxResidualM * 100f)} cm あります\n打ち直してください", 6f);
+                ShowTransient($"点 {w + 1} のずれが {Mathf.RoundToInt(fit.maxResidualM * 100f)} cm あります\n打ち直してください");
                 FitRejected?.Invoke(); // 触覚 Error（残差過大・やり直し）
                 RestartCapture();
                 return;
@@ -499,11 +510,12 @@ namespace FixedCamVr.Tracking
             SetActive(false);
         }
 
-        private void ShowTransient(string msg, float seconds)
+        private void ShowTransient(string msg)
         {
             _transientMsg = msg;
-            _transientUntil = Time.unscaledTime + seconds;
         }
+
+        private void ClearTransient() => _transientMsg = "";
 
         private void OnFrameChanged() => _zonesDirty = true;
 
@@ -522,7 +534,7 @@ namespace FixedCamVr.Tracking
             string text;
             bool isAlert = false;
 
-            if (!string.IsNullOrEmpty(_transientMsg) && Time.unscaledTime < _transientUntil)
+            if (!string.IsNullOrEmpty(_transientMsg))
             {
                 text = _transientMsg;
                 isAlert = true;

@@ -54,6 +54,8 @@ namespace FixedCamVr.Input
         public bool titleAvailable;
         public bool titleReady;
         public bool titleDone;
+        public bool promptFullyShown;
+        public bool inputBlocked;
     }
 
     /// <summary>
@@ -68,13 +70,13 @@ namespace FixedCamVr.Input
         public const float GreetingSec = 3f;
         public const float ControllerConfirmedSec = 1.2f;
         public const float TutorialHoldSec = VisitorMarkHoldLogic.DefaultHoldSec;
-        public const float TutorialAcceptedMinSec = 1.0f;
+        public const float TutorialAcceptedMinSec = 1.1f;
         public const float ReminderSec = 4f;
         public const float TitleTransitionSec = 0.5f;
         public const float TapMaxSec = 0.5f;
         public const float HintSec = 1.6f;
 
-        private HmdOnboardingStage _stage = HmdOnboardingStage.Greeting;
+        private HmdOnboardingStage _stage = HmdOnboardingStage.Tutorial;
         private float _stageSec;
         private float _readySec;
         private float _troubleSec;
@@ -82,7 +84,7 @@ namespace FixedCamVr.Input
         private float _ySec;
         private bool _xWasHeld;
         private bool _yWasHeld;
-        private bool _needsRelease;
+        private bool _needsRelease = true;
         private float _shortHintSec;
         private float _titlePressSec;
         private bool _titleWasHeld;
@@ -100,7 +102,10 @@ namespace FixedCamVr.Input
         {
             get
             {
-                if (_stage == HmdOnboardingStage.Greeting) return HmdOnboardingPrompt.Greeting;
+                if (_stage == HmdOnboardingStage.Greeting)
+                    return ControllerConnectedAndTracked
+                        ? HmdOnboardingPrompt.Greeting
+                        : ControllerTroublePrompt;
                 if (_stage == HmdOnboardingStage.WaitingForController)
                 {
                     if (_troubleSec >= ControllerTroubleSec) return HmdOnboardingPrompt.ControllerStaff;
@@ -112,30 +117,35 @@ namespace FixedCamVr.Input
                     return HmdOnboardingPrompt.ControllerConfirmed;
                 if (_stage == HmdOnboardingStage.Tutorial)
                 {
-                    if (!ControllerReady) return HmdOnboardingPrompt.TutorialReconnect;
+                    if (!ControllerConnectedAndTracked) return ControllerTroublePrompt;
                     return _shortHintSec > 0f
                         ? HmdOnboardingPrompt.TutorialShort
                         : HmdOnboardingPrompt.Tutorial;
                 }
                 if (_stage == HmdOnboardingStage.TutorialAccepted)
-                    return ControllerReady
+                    return ControllerConnectedAndTracked
                         ? HmdOnboardingPrompt.TutorialAccepted
-                        : HmdOnboardingPrompt.TutorialReconnect;
+                        : ControllerTroublePrompt;
                 if (_stage == HmdOnboardingStage.Reminder)
-                    return ControllerReady
+                    return ControllerConnectedAndTracked
                         ? HmdOnboardingPrompt.Reminder
-                        : HmdOnboardingPrompt.TutorialReconnect;
+                        : ControllerTroublePrompt;
                 return HmdOnboardingPrompt.None;
             }
         }
 
         private bool _lastConnected;
         private bool _lastTracked;
+        private bool ControllerConnectedAndTracked => _lastConnected && _lastTracked;
         private bool ControllerReady => _lastConnected && _lastTracked && _readySec >= ControllerStableSec;
+        private HmdOnboardingPrompt ControllerTroublePrompt
+            => _troubleSec >= ControllerTroubleSec ? HmdOnboardingPrompt.ControllerStaff
+             : _lastConnected ? HmdOnboardingPrompt.ControllerUntracked
+             : HmdOnboardingPrompt.ControllerDisconnected;
 
         public void Reset()
         {
-            _stage = HmdOnboardingStage.Greeting;
+            _stage = HmdOnboardingStage.Tutorial;
             _stageSec = 0f;
             _readySec = 0f;
             _troubleSec = 0f;
@@ -170,6 +180,13 @@ namespace FixedCamVr.Input
             bool rawReady = input.leftConnected && input.leftPositionValid;
             bool anyHeld = input.xHeld || input.yHeld;
 
+            if (input.inputBlocked)
+            {
+                ResetTutorialPress();
+                _needsRelease = true;
+                return HmdOnboardingAction.None;
+            }
+
             if (input.hmdPresent)
             {
                 if (rawReady)
@@ -195,11 +212,10 @@ namespace FixedCamVr.Input
             switch (_stage)
             {
                 case HmdOnboardingStage.Greeting:
-                    _stageSec += dt;
+                    if (!ControllerReady) break;
+                    if (input.promptFullyShown) _stageSec += dt;
                     if (_stageSec >= GreetingSec)
-                        Enter(ControllerReady
-                            ? HmdOnboardingStage.ControllerConfirmed
-                            : HmdOnboardingStage.WaitingForController, anyHeld);
+                        Enter(HmdOnboardingStage.Reminder, anyHeld);
                     break;
 
                 case HmdOnboardingStage.WaitingForController:
@@ -250,15 +266,15 @@ namespace FixedCamVr.Input
                     break;
 
                 case HmdOnboardingStage.TutorialAccepted:
-                    _stageSec += dt;
                     if (!ControllerReady)
                     {
                         _needsRelease = true;
                         break;
                     }
                     if (!anyHeld) _needsRelease = false;
+                    if (input.promptFullyShown) _stageSec += dt;
                     if (!_needsRelease && _stageSec >= TutorialAcceptedMinSec)
-                        Enter(HmdOnboardingStage.Reminder, false);
+                        Enter(HmdOnboardingStage.Greeting, false);
                     break;
 
                 case HmdOnboardingStage.Reminder:
@@ -272,7 +288,7 @@ namespace FixedCamVr.Input
                         if (!anyHeld) _needsRelease = false;
                         break;
                     }
-                    _stageSec += dt;
+                    if (input.promptFullyShown) _stageSec += dt;
                     if (_stageSec >= ReminderSec)
                         Enter(HmdOnboardingStage.TitleTransition, anyHeld);
                     break;

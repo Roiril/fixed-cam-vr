@@ -648,6 +648,10 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool IsWaitingForMark => _running && CurrentStepWait() == WaitMark;
 
+        /// <summary>走行中のカットが、指定した線の横断を待っているか（自動走行の検証用）。</summary>
+        public bool IsWaitingForLine(int slot)
+            => _running && slot >= 0 && CurrentStepWait() == WaitLine && CurrentStepLine() == slot;
+
         /// <summary>
         /// いま走っているのが<b>締めのカット</b>か（<c>durKind:"untilMark"</c> の段を持つ）。
         /// ⚠ <b>「4 周目 A」と書かない。</b> 決めているのは著作で、区間の番号ではない

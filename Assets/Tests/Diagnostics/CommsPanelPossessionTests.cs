@@ -303,6 +303,51 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
+        public void ReleasedClosingReplyIsTypedBySuiAtFullInvasion()
+        {
+            var run = _go!.AddComponent<ShowRunDirector>();
+            typeof(CommsPanel).GetField("runDirector", Private)!.SetValue(_panel, run);
+            run.ReleaseScreenDecay();
+            Assert.IsTrue(run.ScreenDecayReleased);
+
+            int hits = _panel.TypedCount;
+            _panel.Deliver(CommsNotice.MarkLogged);
+            Assert.AreEqual(CommsDelivery.Typed, _logic.Delivery);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
+            Assert.AreEqual(_panel.NoticeChars, _panel.TypedCount - hits);
+            Assert.Greater(_panel.NoticeChars, 0);
+            Assert.AreEqual(0f, _panel.AppliedCurse, 1e-5f);
+            Assert.AreEqual(0f, _panel.AppliedFaceMix, 1e-5f);
+            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, ShowLang.Ja), Text().text);
+        }
+
+        [Test]
+        public void RegistrationHidesAndPausesAnActiveNoticeUntilExit()
+        {
+            bool registering = false;
+            var control = _go!.AddComponent<ShowControlClient>();
+            control.CourseRegistrationActiveProvider = () => registering;
+            typeof(CommsPanel).GetField("showControl", Private)!.SetValue(_panel, control);
+
+            _panel.Deliver(CommsNotice.Greeting);
+            Advance(0.2f);
+            CommsStage before = _panel.Stage;
+            registering = true;
+            for (int i = 0; i < 5; i++) Call("Update");
+            Assert.IsTrue(_panel.RegistrationHidden);
+            Assert.IsFalse(VisualRoot().gameObject.activeSelf);
+            Assert.AreEqual(before, _panel.Stage, "位置合わせ中に会話の時計を進めない");
+
+            registering = false;
+            Call("Update");
+            Assert.IsFalse(_panel.RegistrationHidden);
+            Assert.IsTrue(VisualRoot().gameObject.activeSelf);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
+            Assert.AreEqual(CommsStage.Hold, _panel.Stage, "退出後は同じ連絡から再開する");
+            Assert.AreEqual(Text().textInfo.characterCount, _panel.VisibleChars);
+        }
+
+        [Test]
         public void SweepSoundFiresOnce_OnTheFirstFrameOfTheFront()
         {
             _panel.Deliver(CommsNotice.Takeover);

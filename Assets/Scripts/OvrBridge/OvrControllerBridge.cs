@@ -294,7 +294,8 @@ namespace FixedCamVr.OvrBridge
             if (comms != null && comms.PulseCount != _lastCommsPulse)
             {
                 _lastCommsPulse = comms.PulseCount;
-                haptics?.LeftNotify();
+                if (!regActive && !(showControl != null && showControl.IsVisitorMarkBlocked))
+                    haptics?.LeftNotify();
             }
 
             // 体験者が最後の異変を排除して、画がリアルタイム映像へ戻った ＝ 締めが始まった。
@@ -354,9 +355,10 @@ namespace FixedCamVr.OvrBridge
 
             _lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
             _lTracked = _lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
+            CommsNotice expectedOnboardingNotice = NoticeFor(_onboarding.Prompt);
             HmdOnboardingAction onboardingAction = _onboarding.Tick(new HmdOnboardingInput
             {
-                dt = Time.unscaledDeltaTime,
+                dt = regActive ? 0f : Time.unscaledDeltaTime,
                 hmdPresent = hmdPresent,
                 leftConnected = _lConnected,
                 leftPositionValid = _lTracked,
@@ -365,6 +367,9 @@ namespace FixedCamVr.OvrBridge
                 titleAvailable = titleScreen != null && titleScreen.IsBuilt,
                 titleReady = titleScreen != null && titleScreen.ReadyForStart,
                 titleDone = titleScreen == null || titleScreen.ClosedAlready,
+                promptFullyShown = comms == null
+                    || comms.IsOnboardingNoticeFullyShown(expectedOnboardingNotice),
+                inputBlocked = regActive,
             });
 
             if (onboardingAction == HmdOnboardingAction.TutorialAccepted)
@@ -391,13 +396,13 @@ namespace FixedCamVr.OvrBridge
             bool markTooEarly = showControl != null && showControl.IsMarkTooEarly;
             bool takeoverBlocked = (showControl != null && showControl.IsVisitorMarkBlocked)
                                    || (comms != null && comms.TakeoverInputBlocked);
-            if (takeoverBlocked) _markNeedsRelease = true;
+            bool markBlocked = regActive || markTooEarly || takeoverBlocked;
+            if (markBlocked) _markNeedsRelease = true;
             bool markFired = _markHold.Tick(Time.deltaTime,
                                             leftMarkHeld && _onboarding.StartAuthorized
                                             && !_markNeedsRelease
-                                            && !markTooEarly
                                             && mode == ControllerModeLogic.Mode.Normal,
-                                            blocked: takeoverBlocked);
+                                            blocked: markBlocked);
             if (markFired)
             {
                 if (showControl != null && showControl.RecordVisitorMark()) haptics?.LeftMark();
@@ -414,6 +419,8 @@ namespace FixedCamVr.OvrBridge
             float visitorHoldProgress = _onboarding.StartAuthorized
                 ? _markHold.Progress01
                 : _onboarding.TutorialProgress01;
+            if (markBlocked) visitorHoldProgress = 0f;
+            if (regActive || takeoverBlocked) haptics?.StopLeft();
             haptics?.SetLeftHoldProgress(visitorHoldProgress);
 
             // 長押しカウント進行を HoldTick 振動へ（トリガー入場 / A の体験者リセット / 登録の 0.5s ホールド
@@ -499,20 +506,7 @@ namespace FixedCamVr.OvrBridge
                 statusHud?.SetIntroStep(IntroStepLabel(_pushedIntroStage));
             }
 
-            CommsNotice notice = CommsNotice.None;
-            switch (_onboarding.Prompt)
-            {
-                case HmdOnboardingPrompt.Greeting: notice = CommsNotice.Greeting; break;
-                case HmdOnboardingPrompt.ControllerDisconnected: notice = CommsNotice.ControllerDisconnected; break;
-                case HmdOnboardingPrompt.ControllerUntracked: notice = CommsNotice.ControllerUntracked; break;
-                case HmdOnboardingPrompt.ControllerStaff: notice = CommsNotice.ControllerStaff; break;
-                case HmdOnboardingPrompt.ControllerConfirmed: notice = CommsNotice.ControllerConfirmed; break;
-                case HmdOnboardingPrompt.Tutorial: notice = CommsNotice.Tutorial; break;
-                case HmdOnboardingPrompt.TutorialShort: notice = CommsNotice.TutorialShort; break;
-                case HmdOnboardingPrompt.TutorialAccepted: notice = CommsNotice.TutorialAccepted; break;
-                case HmdOnboardingPrompt.TutorialReconnect: notice = CommsNotice.TutorialReconnect; break;
-                case HmdOnboardingPrompt.Reminder: notice = CommsNotice.TutorialReminder; break;
-            }
+            CommsNotice notice = NoticeFor(_onboarding.Prompt);
             if (notice == CommsNotice.None) comms?.ClearOnboardingNotice();
             else comms?.SetOnboardingNotice(notice);
 
@@ -527,6 +521,21 @@ namespace FixedCamVr.OvrBridge
             }
             titleScreen?.SetStartGuidance(guidance);
         }
+
+        private static CommsNotice NoticeFor(HmdOnboardingPrompt prompt) => prompt switch
+        {
+            HmdOnboardingPrompt.Greeting => CommsNotice.Greeting,
+            HmdOnboardingPrompt.ControllerDisconnected => CommsNotice.ControllerDisconnected,
+            HmdOnboardingPrompt.ControllerUntracked => CommsNotice.ControllerUntracked,
+            HmdOnboardingPrompt.ControllerStaff => CommsNotice.ControllerStaff,
+            HmdOnboardingPrompt.ControllerConfirmed => CommsNotice.ControllerConfirmed,
+            HmdOnboardingPrompt.Tutorial => CommsNotice.Tutorial,
+            HmdOnboardingPrompt.TutorialShort => CommsNotice.TutorialShort,
+            HmdOnboardingPrompt.TutorialAccepted => CommsNotice.TutorialAccepted,
+            HmdOnboardingPrompt.TutorialReconnect => CommsNotice.TutorialReconnect,
+            HmdOnboardingPrompt.Reminder => CommsNotice.TutorialReminder,
+            _ => CommsNotice.None,
+        };
 
         // ランリセット（現地手段）。LapCounter.ResetRun が周回リセット + cue 発火済みクリア + 現在ゾーン再シードを行う。
         // LapCounter 未配線なら CueScheduler 単独で発火済みだけクリアする（周回は動かないが安全側）。

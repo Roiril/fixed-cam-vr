@@ -567,6 +567,9 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
         public bool IsWaitingForVisitorMark => _logic.IsWaitingForMark;
 
+        /// <summary>走行中のカットが指定した線の横断を待っているか。未登録の id は登録しない。</summary>
+        public bool IsWaitingForLine(string id) => _logic.IsWaitingForLine(_lineSlots.IndexOf(id));
+
         /// <summary>締めのカットに入ってからの秒数（走っていなければ負）。③の時計。</summary>
         public float ClosingTakeSec => _logic.ClosingTakeSec(Now);
 

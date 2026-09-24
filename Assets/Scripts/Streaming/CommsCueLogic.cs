@@ -447,9 +447,12 @@ namespace FixedCamVr.Streaming
 
             bool beginDue = !_beginFired && _runSec >= BeginDelaySec && inp.panelDoneReading;
 
-            // 優先は 報告 > 締めの催促 > 開始。**報告は体験者が起こした出来事**なので必ず勝つ
-            // （押した手応えが返らないと、装置が壊れているように見える）。
-            if (inp.markPressed)
+            // 締めでは Halt → Prompt を先に全文見せる。ここで報告を優先すると、同じフレームの
+            // Halt / Prompt が押し流され、ShowControl 側の受付解除も永久に来なくなる。
+            if (haltDue) { _haltFired = true; return CommsNotice.Halt; }
+            if (promptDue) { _promptFired = true; return CommsNotice.Prompt; }
+            bool closingLocked = (inp.closingSec >= 0f || inp.closingLineCrossed) && !_promptFired;
+            if (inp.markPressed && !closingLocked)
             {
                 // 嘘の一文が出ている最中の再報告は頭へ戻さない（1 回だけ・最後まで見せる）。
                 if (inp.markDetected) return CommsNotice.MarkLogged;
@@ -457,8 +460,6 @@ namespace FixedCamVr.Streaming
                 return inp.invasionProgress >= CommsCurseLogic.PossessedLevel
                     ? CommsNotice.MarkAnalyzing : CommsNotice.MarkNothing;
             }
-            if (haltDue) { _haltFired = true; return CommsNotice.Halt; }
-            if (promptDue) { _promptFired = true; return CommsNotice.Prompt; }
             // 開始の合図は押しのけられても消費しない。報告を読ませ終わってから改めて出す。
             //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
             if (beginDue) { _beginFired = true; return CommsNotice.Begin; }

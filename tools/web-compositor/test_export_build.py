@@ -161,6 +161,29 @@ class ExportBuildTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'gone'):
             self._run(show)
 
+    def test_overlay2_cue_mask_is_baked_and_missing_reference_is_rejected(self):
+        self._put('masks/right.png', b'right half mask')
+        show = {
+            'cues': [
+                {'id': 'primary'},
+                {'id': 'right', 'maskUrl': '/masks/right.png'},
+                {'id': 'unused'},
+            ],
+            'timeline': {'schema': 3, 'segments': [{'takes': [{'steps': [
+                {'cueId': 'primary', 'overlay2CueId': 'right'},
+            ]}]}]},
+        }
+        res = self._run(show)
+        baked = self._baked()
+        self.assertEqual([cue['id'] for cue in baked['cues']], ['primary', 'right'])
+        self.assertEqual(baked['cues'][1]['maskUrl'], 'sa://assets/right.png')
+        self.assertTrue(os.path.isfile(os.path.join(self.out, 'assets', 'right.png')))
+        self.assertEqual(res['count'], 1)
+
+        show['timeline']['segments'][0]['takes'][0]['steps'][0]['overlay2CueId'] = 'gone_right'
+        with self.assertRaisesRegex(ValueError, 'gone_right'):
+            self._run(show)
+
     def test_manifest_hashes_and_revision_only_change(self):
         self._put('masks/m.png', b'asset')
         show = {'rev': 1, 'cues': [{'id': 'a', 'maskUrl': '/masks/m.png'}]}

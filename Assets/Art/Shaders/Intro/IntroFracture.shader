@@ -20,6 +20,7 @@ Shader "FixedCamVr/IntroFracture"
         // 0 で旧描画（くすんだガラス）と厳密一致。計器の校正に使う（1 が通常値）。
         _Crystal("Crystal face", Range(0, 1)) = 1
         _Glass("Polished glass", Range(0, 1)) = 1
+        _RealityRetention("Frozen scene retention", Range(0, 1)) = 1
         _SparkLit("Spark reflections", Range(0, 1)) = 1
         _VeilSize("Veil size m (xy) / distance (z)", Vector) = (2, 2, 0.3, 0)
         _ScreenCenter("Screen center world", Vector) = (0, 0, 2, 0)
@@ -122,6 +123,7 @@ Shader "FixedCamVr/IntroFracture"
             float _EdgeEmphasis;
             float _Crystal;
             float _Glass;
+            float _RealityRetention;
             float _ColorMask;
             float4 _FrozenLeftTex_TexelSize;
             float4 _FrozenRightTex_TexelSize;
@@ -616,9 +618,13 @@ Shader "FixedCamVr/IntroFracture"
                         transmitted.b = SAMPLE_TEXTURE2D(_FrozenRightTex, sampler_FrozenRightTex, uvB).b;
                     }
                     float transmittedLuma = dot(transmitted, float3(0.299, 0.587, 0.114));
-                    // 元の像を薄く残し、反射のない部分を暗く澄ませる。
+                    // 破断直後は直前の部屋を保ち、漂う間も棚や壁の模様を運ぶ。
+                    // 0 は写真が消え過ぎていた旧表示との比較用。破断前と着地後は変えない。
+                    float sceneRetention = lerp(0.94, 0.70, Ease(0.12, 0.30, _Shatter));
+                    float transmission = lerp(0.085 + 0.045 * nv, sceneRetention,
+                        saturate(_RealityRetention));
                     float3 body = lerp(transmittedLuma.xxx, transmitted, 0.24)
-                        * (0.085 + 0.045 * nv) * float3(1.0, 0.985, 0.96);
+                        * transmission * float3(1.0, 0.985, 0.96);
                     float3 reflected = reflect(-viewDirection, opticalNormal);
                     // 撮影時の部屋に固定した二つの長い光源。回転と視点移動で反射だけが流れる。
                     // 景色を作る環境マップや、毎フレーム動く写真の再投影は使わない。

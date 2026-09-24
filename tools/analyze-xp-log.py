@@ -1504,7 +1504,8 @@ def analyze(events, others, exp, warns=None):
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
               f"built={e.get('built')} lap={e.get('lap')} chars={e.get('chars')} "
               f"sfx={e.get('sfx')} decay={e.get('decay')} "
-              f"invasion={e.get('invasion')} wait={e.get('wait')}")
+              f"invasion={e.get('invasion')} released={e.get('released')} "
+              f"promptReady={e.get('promptReady')} wait={e.get('wait')}")
 
         if comms_built and all(str(v) == "0" for v in comms_built):
             verdict("FAIL", "連絡の面を組めていない（commsBuilt=0）— 1 通も出ない。"
@@ -1601,16 +1602,17 @@ def analyze(events, others, exp, warns=None):
                     verdict("OK", f"⓪c が演出の始まりと同時に届いた（t={t_arrived:.1f}s）")
 
             # ②の分岐が「異常演出が表示されていたか」と一致しているか。
-            # 侵食度1では通常返答を維持できず Takeover が一度だけ走るため、通常返答の照合は
-            # 0 / 0.25 / 0.75 の報告だけに限定する。
+            # 侵食度1では通常返答を維持できず Takeover が一度だけ走る。ただし最後の解除が
+            # 成立した報告だけはスイの通常返信へ戻るため、released=1 も照合対象に含める。
             marks = [e for e in events if e.get("ev") == "mark"]
             # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
             answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing")]
-            ordinary_marks = [m for m in marks if fnum(m, "invasion", 0.0) < 0.999]
+            ordinary_marks = [m for m in marks
+                              if fnum(m, "invasion", 0.0) < 0.999 or str(m.get("released")) == "1"]
             mark_ok = True
             if len(answers) < len(ordinary_marks):
                 mark_ok = False
-                verdict("FAIL", f"侵食度1未満の報告 {len(ordinary_marks)} 回に対して"
+                verdict("FAIL", f"通常返信を期待する報告 {len(ordinary_marks)} 回に対して"
                                 f"②の返事が {len(answers)} 通しかない — "
                                 "押しても返らない報告がある（装置が壊れて見える）")
             for m in ordinary_marks:
@@ -1619,7 +1621,8 @@ def analyze(events, others, exp, warns=None):
                     continue
                 # 古いログには det が無いため res を退避値として読む。
                 detected = m.get("det") if m.get("det") is not None else m.get("res")
-                possessed_mark = fnum(m, "invasion", 0.0) >= 0.75 - 1e-6
+                possessed_mark = (fnum(m, "invasion", 0.0) >= 0.75 - 1e-6
+                                  and str(m.get("released")) != "1")
                 want = ("MarkLogged" if str(detected) == "1"
                         else ("MarkAnalyzing" if possessed_mark else "MarkNothing"))
                 if near[0].get("id") != want:
@@ -1630,10 +1633,32 @@ def analyze(events, others, exp, warns=None):
                             "ShowControlClient.LastMarkDetected と CommsCueLogic.markDetected が "
                             "食い違っている（画に出る意味が真逆になる）")
             if ordinary_marks and mark_ok:
-                verdict("OK", f"侵食度1未満の報告 {len(ordinary_marks)} 回で、"
+                verdict("OK", f"通常返信を期待する報告 {len(ordinary_marks)} 回で、"
                               "②の返事が異常演出の表示状態と一致した")
 
-            full_marks = [m for m in marks if fnum(m, "invasion", 0.0) >= 0.999]
+            released_marks = [m for m in marks if str(m.get("released")) == "1"]
+            for m in released_marks:
+                near = [a for a in answers
+                        if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
+                if near and near[0].get("id") == "MarkLogged" and near[0].get("delivery") == "Typed":
+                    verdict("OK", "最後の解除後に MarkLogged がスイの通常印字（Typed）で返った")
+                else:
+                    got = f"{near[0].get('id')}/{near[0].get('delivery')}" if near else "返信なし"
+                    verdict("FAIL", "最後の解除後の返事が MarkLogged/Typed ではない"
+                                    f"（実際は {got}）— 侵食1の表示を解除後の返事へ持ち越している")
+
+            closing_lap = int(exp.get("laps", 3)) + 1
+            premature_closing_marks = [m for m in marks
+                                       if int(fnum(m, "lap", -1)) == closing_lap
+                                       and "promptReady" in m
+                                       and str(m.get("promptReady")) == "0"]
+            if premature_closing_marks:
+                verdict("FAIL", "③b の全文が見える前（promptReady=0）に締めの報告を受理した — "
+                                "報告ロックが印字完了まで保たれていない")
+
+            full_marks = [m for m in marks
+                          if fnum(m, "invasion", 0.0) >= 0.999
+                          and str(m.get("released")) != "1"]
             takeover_events = [e for e in comms if e.get("id") == "Takeover"]
             if full_marks and not takeover_events:
                 verdict("WARN", "侵食度1で報告されたが嘘の一文（Takeover）が記録されていない — "
@@ -1843,6 +1868,7 @@ def analyze(events, others, exp, warns=None):
             cursed = [e for e in comms
                       if fnum(e, "invasion", 0.0) > 0.001
                       and e.get("id") not in ("Halt", "Prompt", "Takeover")
+                      and str(e.get("released")) != "1"
                       and e.get("delivery", "Typed") == "Typed"]
             ramps = [e for e in events if e.get("ev") == "commsCurse"
                      and e.get("id") != "Takeover" and e.get("delivery", "Typed") == "Typed"]

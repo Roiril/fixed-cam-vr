@@ -27,7 +27,7 @@ Handler = _srv.Handler
 
 def _v3_show():
     return {
-        'cues': [{'id': 'cg_doll_B'}, {'id': 'unused_cue'}],
+        'cues': [{'id': 'cg_doll_B'}, {'id': 'plate_A_right'}, {'id': 'unused_cue'}],
         'timeline': {
             'rev': 1, 'schema': 3,
             'segments': [{
@@ -37,7 +37,8 @@ def _v3_show():
                     'steps': [
                         {'source': 'live', 'camera': 3, 'assetUrl': ''},
                         {'source': 'clip', 'assetUrl': '/captures/pre_01.mp4'},
-                        {'source': 'clip', 'assetUrl': '/recordings/rec_lap1_B.mp4', 'cueId': 'cg_doll_B'},
+                        {'source': 'clip', 'assetUrl': '/recordings/rec_lap1_B.mp4',
+                         'cueId': 'cg_doll_B', 'overlay2CueId': 'plate_A_right'},
                     ],
                 }],
             }],
@@ -50,6 +51,8 @@ class ReferencedCueIdsTest(unittest.TestCase):
     def test_v3_take_step_cue_is_referenced(self):
         ids = Handler._referenced_cue_ids(_v3_show())
         self.assertIn('cg_doll_B', ids, 'takes[].steps[].cueId を走査していない（dangling 誤検出になる）')
+        self.assertIn('plate_A_right', ids,
+                      'takes[].steps[].overlay2CueId を走査していない（右半分が焼き込みから消える）')
         self.assertNotIn('unused_cue', ids)
 
     def test_v2_keys_still_referenced(self):

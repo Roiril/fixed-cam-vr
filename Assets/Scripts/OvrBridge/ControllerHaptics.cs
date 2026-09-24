@@ -82,6 +82,14 @@ namespace FixedCamVr.OvrBridge
         /// </summary>
         public void LeftNotify() => _left.Trigger(HapticSequenceLogic.Pattern.Fire);
 
+        /// <summary>報告を受け付けない間は、通知も長押しの振動も直ちに止める。</summary>
+        public void StopLeft()
+        {
+            _left.Reset();
+            OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
+            _sentL = 0f;
+        }
+
         /// <summary>
         /// これより長いフレームのあいだに振幅 &gt; 0 を送りっぱなしだったら、ログに残す（秒）。
         /// <c>SetControllerVibration</c> は「次に呼ばれるまで（上限は実行時側の約 2 秒）」鳴り続けるので、

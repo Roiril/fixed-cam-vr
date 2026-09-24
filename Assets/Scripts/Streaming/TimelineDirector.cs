@@ -89,6 +89,9 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
 
+        /// <summary>走行中のカットが指定した線の横断を待っているか（自動走行の検証用）。</summary>
+        public bool IsWaitingForLine(string id) => takeRunner != null && takeRunner.IsWaitingForLine(id);
+
         /// <summary>
         /// 締めのカットに入ってからの秒数（走っていなければ負）。演出の観測と自動走行の待ち合わせ用。
         /// </summary>

@@ -99,6 +99,51 @@ class EndingLogTests(unittest.TestCase):
         verdicts = self.verdicts(events)
         self.assertTrue(any(level == "FAIL" and "③b が③a" in text for level, text in verdicts))
 
+    def test_released_mark_uses_typed_logged_reply_without_curse_requirement(self):
+        events = [
+            {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "1",
+             "invasion": "1", "released": "1", "promptReady": "1"},
+            {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
+             "released": "1", "promptReady": "1", "delivery": "Typed", "chars": "8"},
+        ]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "OK" and "MarkLogged がスイの通常印字" in text
+                            for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "斑が一度も目標へ" in text
+                             for level, text in verdicts))
+
+    def test_released_mark_possessed_reply_fails(self):
+        events = [
+            {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "1",
+             "invasion": "1", "released": "1", "promptReady": "1"},
+            {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
+             "released": "1", "promptReady": "1", "delivery": "Possessed", "chars": "0"},
+        ]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "MarkLogged/Typed ではない" in text
+                            for level, text in verdicts))
+
+    def test_closing_mark_before_prompt_readable_fails(self):
+        events = [
+            {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "0",
+             "invasion": "1", "released": "0", "promptReady": "0"},
+            {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
+             "released": "0", "promptReady": "0", "delivery": "Possessed", "chars": "0"},
+        ]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "promptReady=0" in text
+                            for level, text in verdicts))
+
+    def test_legacy_closing_mark_without_prompt_ready_remains_compatible(self):
+        events = [
+            {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "0", "invasion": "1"},
+            {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
+             "delivery": "Possessed", "chars": "0"},
+        ]
+        verdicts = self.verdicts(events)
+        self.assertFalse(any(level == "FAIL" and "promptReady=0" in text
+                             for level, text in verdicts))
+
     def test_report_music_advances_and_visible_char_count_is_used(self):
         verdicts = self.verdicts(self.report_events())
         self.assertTrue(any(level == "OK" and "結果曲の再生位置が進んだ" in text

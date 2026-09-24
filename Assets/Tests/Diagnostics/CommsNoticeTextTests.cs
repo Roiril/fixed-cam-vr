@@ -18,6 +18,21 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public class CommsNoticeTextTests
     {
+        [TestCase(ShowLang.Ja, "申し遅れました。\n私は支援エージェントの\nスイです。")]
+        [TestCase(ShowLang.En, "My apologies.\nI am Sui,\nyour support agent.")]
+        [TestCase(ShowLang.Fr, "Veuillez m'excuser.\nJe suis Sui,\nvotre agente de soutien.")]
+        public void GreetingIntroducesSuiAfterTheTutorial(ShowLang lang, string text)
+        {
+            Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.Greeting, lang));
+        }
+
+        [Test]
+        public void ClosingPromptUsesTheApprovedJapaneseWording()
+        {
+            Assert.AreEqual("異変があなたを\n取り込もうとしています。\n排除してください。",
+                            CommsPanel.NoticeText(CommsNotice.Prompt, ShowLang.Ja));
+        }
+
         [Test]
         public void TutorialAcknowledgement_UsesTheApprovedJapaneseWording()
         {
@@ -57,6 +72,7 @@ namespace FixedCamVr.Diagnostics.Tests
                 CommsNotice.TutorialAccepted,
                 CommsNotice.TutorialReconnect,
                 CommsNotice.TutorialReminder,
+                CommsNotice.Greeting,
             };
             foreach (ShowLang lang in ShowLanguage.All)
             foreach (CommsNotice notice in onboarding)

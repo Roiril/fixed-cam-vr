@@ -67,6 +67,7 @@ namespace FixedCamVr.Streaming
         private static readonly int CrystalId = Shader.PropertyToID("_Crystal");
         /// <summary>破片のガラス質感（診断で 0）。</summary>
         private static readonly int GlassId = Shader.PropertyToID("_Glass");
+        private static readonly int RealityRetentionId = Shader.PropertyToID("_RealityRetention");
         /// <summary>代表の粒が破片を照らし返す量（診断で 0）。</summary>
         private static readonly int SparkLitId = Shader.PropertyToID("_SparkLit");
         private static readonly int FrozenLeftTexId = Shader.PropertyToID("_FrozenLeftTex");
@@ -240,6 +241,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>探針用。破片のガラス質感（<c>_Glass</c>）。</summary>
         public float DiagnosticGlass { get; set; } = 1f;
+
+        /// <summary>Comparison switch for the frozen scene carried by the shards.</summary>
+        public float DiagnosticRealityRetention { get; set; } = 1f;
 
         /// <summary>探針用。代表の粒が破片を照らし返す量（<c>_SparkLit</c>）。</summary>
         public float DiagnosticSparkLit { get; set; } = 1f;
@@ -949,6 +953,7 @@ namespace FixedCamVr.Streaming
                 _fractureBlock.SetFloat(ShatterId, shatter);
                 _fractureBlock.SetFloat(CrystalId, crystal);
                 _fractureBlock.SetFloat(GlassId, DiagnosticGlass);
+                _fractureBlock.SetFloat(RealityRetentionId, DiagnosticRealityRetention);
                 _fractureBlock.SetFloat(SparkLitId, sparkLit);
                 _fractureBlock.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
                 _fractureBlock.SetFloat(RevealId, HasFrozenFrame ? Mathf.Clamp01(w.reveal) : 0f);

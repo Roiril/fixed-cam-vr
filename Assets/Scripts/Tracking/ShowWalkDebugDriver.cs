@@ -310,7 +310,10 @@ namespace FixedCamVr.Tracking
                 if (wp.HoldSec > 0f)
                 {
                     Debug.Log($"[XPWalk] 到着 cam={wp.Camera} ({wp.Course.x:F2},{wp.Course.y:F2}) — {wp.HoldSec:F0}s 滞在");
-                    yield return StartCoroutine(HoldAndMaybeReport(wp.HoldSec));
+                    float probeBeganAt = Time.realtimeSinceStartup;
+                    yield return StartCoroutine(CrossWaitingClosingLine(layout, wp.HoldSec));
+                    float holdRemaining = Mathf.Max(0f, wp.HoldSec - (Time.realtimeSinceStartup - probeBeganAt));
+                    yield return StartCoroutine(HoldAndMaybeReport(holdRemaining));
                 }
             }
 
@@ -398,16 +401,50 @@ namespace FixedCamVr.Tracking
                 if (!_skipReport && !_reported && _show != null && _timeline != null && _timeline.IsWaitingForVisitorMark)
                 {
                     _waitedSec += Time.deltaTime;
-                    if (_waitedSec >= ReportHesitateSec)
+                    if (_waitedSec >= ReportHesitateSec && !_show.IsVisitorMarkBlocked && !_show.IsMarkTooEarly)
                     {
-                        _reported = true;
-                        Debug.Log($"[XPWalk] 異変を報告する（左 X の代わり・{_waitedSec:0.0}s ためらった）");
-                        _show.RecordVisitorMark();
+                        _reported = _show.RecordVisitorMark();
+                        if (_reported)
+                            Debug.Log($"[XPWalk] 異変を報告する（左 X の代わり・{_waitedSec:0.0}s ためらった）");
                     }
                 }
                 yield return null;
             }
         }
+
+        /// <summary>
+        /// 到着直後のゾーン確定を滞在時間の中で待ち、3-A の線待ちカットが始まった場合だけ線を横切る。
+        /// 区間へ入る途中の自然な横断で既に進んでいれば踏み直さない。1 waypoint につき 1 回だけ試す。
+        /// </summary>
+        private IEnumerator CrossWaitingClosingLine(ShowLayoutDef? layout, float holdSec)
+        {
+            if (_timeline == null) yield break;
+            string id = _timeline.ClosingLineId;
+            if (string.IsNullOrEmpty(id)) yield break;
+
+            float waited = 0f;
+            float waitLimit = Mathf.Min(LineWaitProbeSec, holdSec);
+            while (!_timeline.IsWaitingForLine(id) && waited < waitLimit
+                   && (_run == null || _run.Phase != ShowPhase.Finished))
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+            if (!_timeline.IsWaitingForLine(id)) yield break;
+            if (!TryLineCrossing(layout, id, out Vector2 before, out Vector2 after))
+            {
+                Debug.LogWarning($"[XPWalk] 線待ち '{id}' の geometry が引けない — 踏みに行かない");
+                yield break;
+            }
+
+            Debug.Log($"[XPWalk] 線待ち '{id}' を横切る ({before.x:F2},{before.y:F2}) → ({after.x:F2},{after.y:F2})");
+            yield return StartCoroutine(WalkTo(before));
+            if (!_timeline.IsWaitingForLine(id)) yield break;
+            yield return StartCoroutine(WalkTo(after));
+        }
+
+        /// <summary>ゾーン確定と先頭カット開始を到着後に観測する上限。滞在時間に含める。</summary>
+        private const float LineWaitProbeSec = 1f;
 
         /// <summary>
         /// 帰りの A で、締めのカットが始まるのを待ってから<b>締めの線を横切る</b>（③a の引き金・0233）。
@@ -463,13 +500,9 @@ namespace FixedCamVr.Tracking
         private float _waitedSec;
 
         /// <summary>
-        /// 締めのカットが待ち始めてから押すまで (秒)。
-        /// ⚠ <b>もう③の閾値とは連動しない</b>（2026-09-06・<c>canon/LEDGER.md</c> 0178）。
-        /// ③は<b>締めのカットに入ってからの時計</b>（<c>CommsCueLogic.HaltAfterClosingSec</c>）で出るので、
-        /// ここが短くても③は必ず出る。⚠ ただし
-        /// <c>TakeRunnerLogic.MarkGraceSec</c>（4s・締めに入って最初は受け付けない）より
-        /// <b>報告待ちが立つのが後</b>なので、自動走行の押下が捨てられることは無い。
-        /// 縮めると③が走らず、催促は実機で検証されないまま出荷される。
+        /// Minimum hesitation after the closing take starts waiting.
+        /// The same report gate as the visitor must also open before automation can report.
+        /// A rejected request is never counted as the one completed report.
         /// </summary>
         private const float ReportHesitateSec = 4.5f;
 

@@ -10,7 +10,8 @@ namespace FixedCamVr.Input.Tests
         private static HmdOnboardingInput Frame(bool connected = true, bool tracked = true,
                                                 bool x = false, bool y = false,
                                                 bool titleAvailable = true, bool titleReady = false,
-                                                bool titleDone = false)
+                                                bool titleDone = false, bool promptFullyShown = true,
+                                                bool inputBlocked = false)
             => new HmdOnboardingInput
             {
                 dt = Dt,
@@ -22,6 +23,8 @@ namespace FixedCamVr.Input.Tests
                 titleAvailable = titleAvailable,
                 titleReady = titleReady,
                 titleDone = titleDone,
+                promptFullyShown = promptFullyShown,
+                inputBlocked = inputBlocked,
             };
 
         private static HmdOnboardingAction Run(HmdOnboardingLogic l, float sec,
@@ -38,8 +41,7 @@ namespace FixedCamVr.Input.Tests
 
         private static void ReachTutorial(HmdOnboardingLogic l)
         {
-            Run(l, HmdOnboardingLogic.GreetingSec + HmdOnboardingLogic.ControllerStableSec + 0.2f, Frame());
-            Run(l, HmdOnboardingLogic.ControllerConfirmedSec + 0.2f, Frame());
+            Run(l, HmdOnboardingLogic.ControllerStableSec + 0.2f, Frame());
             Assert.AreEqual(HmdOnboardingStage.Tutorial, l.Stage);
         }
 
@@ -50,6 +52,8 @@ namespace FixedCamVr.Input.Tests
             Assert.AreEqual(HmdOnboardingAction.TutorialAccepted,
                             Run(l, HmdOnboardingLogic.TutorialHoldSec + 0.1f, Frame(x: true)));
             Run(l, HmdOnboardingLogic.TutorialAcceptedMinSec + 0.1f, Frame());
+            Assert.AreEqual(HmdOnboardingStage.Greeting, l.Stage);
+            Run(l, HmdOnboardingLogic.GreetingSec + 0.1f, Frame());
             Assert.AreEqual(HmdOnboardingStage.Reminder, l.Stage);
         }
 
@@ -66,17 +70,17 @@ namespace FixedCamVr.Input.Tests
         public void ControllerMustBeTrackedContinuouslyBeforeTheTutorial()
         {
             var l = new HmdOnboardingLogic();
-            Run(l, HmdOnboardingLogic.GreetingSec + 0.1f, Frame(tracked: false));
-            Assert.AreEqual(HmdOnboardingStage.WaitingForController, l.Stage);
+            Run(l, 0.1f, Frame(tracked: false));
+            Assert.AreEqual(HmdOnboardingStage.Tutorial, l.Stage);
             Assert.AreEqual(HmdOnboardingPrompt.ControllerUntracked, l.Prompt);
 
             Run(l, HmdOnboardingLogic.ControllerStableSec * 0.7f, Frame());
             Run(l, 0.1f, Frame(tracked: false));
             Run(l, HmdOnboardingLogic.ControllerStableSec * 0.7f, Frame());
-            Assert.AreEqual(HmdOnboardingStage.WaitingForController, l.Stage,
+            Assert.AreEqual(HmdOnboardingStage.Tutorial, l.Stage,
                             "途切れた位置認識を足してはいけない");
             Run(l, HmdOnboardingLogic.ControllerStableSec, Frame());
-            Assert.AreEqual(HmdOnboardingStage.ControllerConfirmed, l.Stage);
+            Assert.AreEqual(HmdOnboardingPrompt.Tutorial, l.Prompt);
         }
 
         [Test]
@@ -124,7 +128,7 @@ namespace FixedCamVr.Input.Tests
             Run(l, 0.7f, Frame(x: true));
             l.Tick(Frame(connected: false, tracked: false, x: true));
             Assert.AreEqual(0f, l.TutorialProgress01);
-            Assert.AreEqual(HmdOnboardingPrompt.TutorialReconnect, l.Prompt);
+            Assert.AreEqual(HmdOnboardingPrompt.ControllerDisconnected, l.Prompt);
 
             Run(l, HmdOnboardingLogic.ControllerStableSec + 0.1f, Frame(x: true));
             Assert.IsTrue(l.NeedsRelease);
@@ -146,11 +150,52 @@ namespace FixedCamVr.Input.Tests
             Run(l, 2f, Frame(connected: false, tracked: false));
             Assert.IsTrue(l.TutorialSucceeded);
             Assert.AreEqual(HmdOnboardingStage.TutorialAccepted, l.Stage);
-            Assert.AreEqual(HmdOnboardingPrompt.TutorialReconnect, l.Prompt);
+            Assert.AreEqual(HmdOnboardingPrompt.ControllerDisconnected, l.Prompt);
 
             Run(l, HmdOnboardingLogic.ControllerStableSec + HmdOnboardingLogic.TutorialAcceptedMinSec + 0.2f,
                 Frame());
-            Assert.AreEqual(HmdOnboardingStage.Reminder, l.Stage);
+            Assert.AreEqual(HmdOnboardingStage.Greeting, l.Stage);
+        }
+
+        [Test]
+        public void TutorialComesFirst_ThenAcknowledgementGreetingAndReminderWaitForReading()
+        {
+            var l = new HmdOnboardingLogic();
+            ReachTutorial(l);
+            Assert.AreEqual(HmdOnboardingPrompt.Tutorial, l.Prompt);
+            l.Tick(Frame());
+            Run(l, HmdOnboardingLogic.TutorialHoldSec + 0.1f, Frame(x: true));
+            Assert.AreEqual(HmdOnboardingPrompt.TutorialAccepted, l.Prompt);
+
+            Run(l, 10f, Frame(promptFullyShown: false));
+            Assert.AreEqual(HmdOnboardingStage.TutorialAccepted, l.Stage,
+                            "全文が出る前に受理文を飛ばしてはいけない");
+            Run(l, HmdOnboardingLogic.TutorialAcceptedMinSec + 0.1f, Frame());
+            Assert.AreEqual(HmdOnboardingPrompt.Greeting, l.Prompt);
+
+            Run(l, 10f, Frame(promptFullyShown: false));
+            Assert.AreEqual(HmdOnboardingStage.Greeting, l.Stage,
+                            "自己紹介の全文が出る前に次へ進んではいけない");
+            Run(l, HmdOnboardingLogic.GreetingSec + 0.1f, Frame());
+            Assert.AreEqual(HmdOnboardingPrompt.Reminder, l.Prompt);
+        }
+
+        [Test]
+        public void RegistrationPauseClearsPartialHoldAndRequiresANewPress()
+        {
+            var l = new HmdOnboardingLogic();
+            ReachTutorial(l);
+            l.Tick(Frame());
+            Run(l, HmdOnboardingLogic.TutorialHoldSec * 0.7f, Frame(x: true));
+            Run(l, 2f, Frame(x: true, inputBlocked: true));
+            Assert.AreEqual(0f, l.TutorialProgress01);
+            Assert.IsTrue(l.NeedsRelease);
+
+            Run(l, 2f, Frame(x: true));
+            Assert.AreEqual(HmdOnboardingStage.Tutorial, l.Stage);
+            l.Tick(Frame());
+            Assert.AreEqual(HmdOnboardingAction.TutorialAccepted,
+                            Run(l, HmdOnboardingLogic.TutorialHoldSec + 0.1f, Frame(x: true)));
         }
 
         [Test]

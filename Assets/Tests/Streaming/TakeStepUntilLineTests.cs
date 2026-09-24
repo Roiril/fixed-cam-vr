@@ -61,6 +61,21 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void IsWaitingForLine_ReportsOnlyTheCurrentLineWait()
+        {
+            TakeRunnerLogic l = Make(LineStep(3, 0, Slot));
+            Assert.That(l.IsWaitingForLine(Slot), Is.False, "未実行の演出を待機中と報告した");
+
+            l.OnZoneCommitted(3, 0, false, 0, 0, 0f);
+            l.Tick(0f, 0, NeverCrossed());
+            Assert.That(l.IsWaitingForLine(Slot), Is.True, "現在の線待ちを報告しなかった");
+            Assert.That(l.IsWaitingForLine(Slot + 1), Is.False, "異なる slot を待機中と報告した");
+
+            l.Tick(1f, 0, Line(crossedAtSec: 1f));
+            Assert.That(l.IsWaitingForLine(Slot), Is.False, "横断後も線待ちを報告した");
+        }
+
+        [Test]
         public void UntilLine_AdvancesToNextStep_WhenTheLineIsCrossed()
         {
             TakeRunnerLogic l = Started(out _);

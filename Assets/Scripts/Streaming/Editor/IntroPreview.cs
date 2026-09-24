@@ -139,6 +139,7 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(cleanDir);
             foreach (string old in Directory.GetFiles(cleanDir, "intro_*.png")) File.Delete(old);
             bool renderFrames = string.Equals(EditorCliArgs.Get("frames"), "1", StringComparison.Ordinal);
+            bool renderProbes = renderFrames || string.Equals(EditorCliArgs.Get("probes"), "1", StringComparison.Ordinal);
             // 0235 の校正: `-Set sparkle=0` で 198 コマを**結晶化も粒も止めて**焼く。
             // 旧版（0235 前）の master で撮ったコマと画素で突き合わせるための版で、既定は本番の絵。
             bool sparkleOff = string.Equals(EditorCliArgs.Get("sparkle"), "0", StringComparison.Ordinal);
@@ -166,6 +167,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 stage = Stage.Create(outDir);
                 stage.SetGlass(!glassOff);
                 foreach (Shot shot in BuildShots()) stage.Render(shot, saved);
+                if (string.Equals(EditorCliArgs.Get("retention"), "1", StringComparison.Ordinal))
+                    stage.VerifyRealityRetention(saved);
                 if (string.Equals(EditorCliArgs.Get("peripheral"), "1", StringComparison.Ordinal))
                     stage.VerifyPeripheralFracture(saved);
                 if (renderFrames)
@@ -183,6 +186,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     string cleanFramesDir = Path.Combine(cleanDir, FramesDirName);
                     File.WriteAllText(Path.Combine(cleanFramesDir, "frames.tsv"), framesTsv.ToString());
                     File.WriteAllText(Path.Combine(cleanFramesDir, "audio-cues.tsv"), cuesTsv.ToString());
+                }
+                if (renderProbes)
+                {
                     stage.VerifyFrozenFrame(saved);
                     stage.VerifyEdgeDissolve(saved);
                     stage.VerifySparkle(saved);
@@ -529,7 +535,20 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 // --- 「現実」の代わりに敷く実写プレート（スクリーンの映像にも同じものを使う）---
                 Texture2D? plate = LoadPlate(out string plateLabel);
-                Texture2D reality = BuildReality(plate, Width, Height);
+                Texture2D reality;
+                string? realityPath = EditorCliArgs.Get("reality");
+                if (!string.IsNullOrEmpty(realityPath))
+                {
+                    var source = new Texture2D(2, 2, TextureFormat.RGB24, false);
+                    try
+                    {
+                        if (!source.LoadImage(File.ReadAllBytes(Path.GetFullPath(realityPath))))
+                            throw new InvalidOperationException("Cannot decode reality reference: " + realityPath);
+                        reality = BuildReality(source, Width, Height);
+                    }
+                    finally { UnityEngine.Object.DestroyImmediate(source); }
+                }
+                else reality = BuildReality(plate, Width, Height);
 
                 // --- show.json。footprint（封印の箱の大きさ）と尺は現場の値が正 ---
                 ShowJsonSubset? show = LoadShow(out string showLabel);
@@ -903,6 +922,84 @@ namespace FixedCamVr.Streaming.EditorTools
             public void SetGlass(bool on)
             {
                 _veil.DiagnosticGlass = on ? 1f : 0f;
+            }
+
+            /// <summary>Compare scene retention using identical geometry and an equal-mean mirrored input.</summary>
+            public void VerifyRealityRetention(List<string> saved)
+            {
+                float[] probes = { 0.03f, 0.10f, 0.30f, 0.52f, 0.70f, 0.995f };
+                var deltas = new float[probes.Length];
+                var sourceDeltas = new float[2];
+                Texture2D? previousOverride = _freezeSourceOverride;
+                float previousRetention = _veil.DiagnosticRealityRetention;
+                float previousGlass = _veil.DiagnosticGlass;
+                var mirrored = new Texture2D(_reality.width, _reality.height, TextureFormat.RGBA32, false)
+                { hideFlags = HideFlags.HideAndDontSave };
+                Color32[] source = _reality.GetPixels32();
+                var mirroredPixels = new Color32[source.Length];
+                for (int y = 0; y < _reality.height; y++)
+                    for (int x = 0; x < _reality.width; x++)
+                        mirroredPixels[y * _reality.width + x] = source[y * _reality.width + _reality.width - 1 - x];
+                mirrored.SetPixels32(mirroredPixels);
+                mirrored.Apply();
+                try
+                {
+                    SetGlass(true);
+                    _freezeSourceOverride = null;
+                    for (int i = 0; i < probes.Length; i++)
+                    {
+                        float p = probes[i];
+                        int label = Mathf.RoundToInt(p * 1000f);
+                        _veil.DiagnosticRealityRetention = 0f;
+                        Render(new Shot(IntroStage.Frame, 4, "retention_reset", 0f, label), saved);
+                        Render(new Shot(IntroStage.Frame, 4, "retention_before", p, label), saved);
+                        Color32[] before = _sceneTex.GetPixels32();
+                        _veil.DiagnosticRealityRetention = 1f;
+                        Render(new Shot(IntroStage.Frame, 4, "retention_after", p, label), saved);
+                        deltas[i] = MeanPixelDifference(before, _sceneTex.GetPixels32());
+                    }
+                    // A mirrored source has the same mean brightness. A flat bright face cannot pass this probe.
+                    for (int version = 0; version < 2; version++)
+                    {
+                        _veil.DiagnosticRealityRetention = version;
+                        _freezeSourceOverride = null;
+                        Render(new Shot(IntroStage.Frame, 4, "retention_source_reset", 0f, version), saved);
+                        Render(new Shot(IntroStage.Frame, 4, "retention_source_normal", 0.30f, version), saved);
+                        Color32[] normal = _sceneTex.GetPixels32();
+                        _freezeSourceOverride = mirrored;
+                        Render(new Shot(IntroStage.Frame, 4, "retention_source_reset", 0f, version), saved);
+                        Render(new Shot(IntroStage.Frame, 4, "retention_source_mirrored", 0.30f, version), saved);
+                        sourceDeltas[version] = MeanPixelDifference(normal, _sceneTex.GetPixels32());
+                    }
+                }
+                finally
+                {
+                    _freezeSourceOverride = previousOverride;
+                    _veil.DiagnosticRealityRetention = previousRetention;
+                    _veil.DiagnosticGlass = previousGlass;
+                    UnityEngine.Object.DestroyImmediate(mirrored);
+                    Render(new Shot(IntroStage.Frame, 4, "retention_done", 0f, 0), saved);
+                }
+                bool unchangedEnds = deltas[0] <= SparkleQuietDelta && deltas[5] <= SparkleQuietDelta;
+                bool activeChanged = deltas[1] > SparkleQuietDelta && deltas[2] > SparkleQuietDelta
+                    && deltas[3] > SparkleQuietDelta && deltas[4] > SparkleQuietDelta;
+                bool sceneImproved = sourceDeltas[1] > sourceDeltas[0] * 2f
+                    && sourceDeltas[1] > SparkleQuietDelta;
+                bool ok = unchangedEnds && activeChanged && sceneImproved;
+                var proof = new System.Text.StringBuilder("{\"samples\":[");
+                for (int i = 0; i < probes.Length; i++)
+                {
+                    if (i > 0) proof.Append(',');
+                    proof.Append(FormattableString.Invariant(
+                        $"{{\"p\":{probes[i]:0.000},\"pixelDelta\":{deltas[i]:0.000000}}}"));
+                }
+                proof.Append(FormattableString.Invariant(
+                    $"],\"oldSceneDetail\":{sourceDeltas[0]:0.000000},\"newSceneDetail\":{sourceDeltas[1]:0.000000},"));
+                proof.Append($"\"unchangedEnds\":{(unchangedEnds ? "true" : "false")},"
+                    + $"\"activeChanged\":{(activeChanged ? "true" : "false")},"
+                    + $"\"sceneImproved\":{(sceneImproved ? "true" : "false")},\"ok\":{(ok ? "true" : "false")}}}");
+                File.WriteAllText(Path.Combine(_outDir, "retention-proof.json"), proof.ToString());
+                Debug.Log($"[IntroViz] retention proof: ok={ok} scene={sourceDeltas[0]:F4}->{sourceDeltas[1]:F4}");
             }
 
             /// <summary>

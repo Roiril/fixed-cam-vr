@@ -311,11 +311,9 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialReconnect => "左コントローラーを\n確認してください",
             CommsNotice.TutorialReminder => "異変に気づいたら\n今の操作で報告してください\n解析して対処を試みます",
             // ⓪a 名乗り。⚠ **「AI」とは書かない。「エージェント」と書く**（`canon/LEDGER.md` 0080）。
-            //    ⚠ 紙の依頼書と同じ語（`docs/onsite/handout.html`「調査を支援するエージェント」）。
-            //      片方だけ直すと、紙と装置が別のものを指しているように読める。
-            //    ⚠ 1 行 14 文字を超える（17 文字）ので**2 行へ割ってある**（2026-08-23・0124）。
-            //      任せると「私は調査を支援するエージ／ェントです」と語の途中で切れる。
-            CommsNotice.Greeting => "私は調査を支援する\nエージェントです",
+            //    報告練習の成功後に、支援エージェントのスイ本人として名乗る。
+            //    1 行 14 文字以内、3 行で読める形に固定する。
+            CommsNotice.Greeting => "申し遅れました。\n私は支援エージェントの\nスイです。",
             // ⓪b 歩行の指示。**この連絡が床の矢印を出す**（`WalkGuide.NotifyExplaining`）。
             //    ⚠ 1 文目が 15 文字なので**2 行へ割ってある**（ユーザーの改行は文のあいだの 1 つだけ）。
             CommsNotice.Walk => "開始ポイントを\nマークしました。\n矢印から向かってください。",
@@ -349,7 +347,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Halt => "止まってください！",
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
             //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
-            CommsNotice.Prompt => "異常があなたを\n取り込もうとしています。\n排除してください。",
+            CommsNotice.Prompt => "異変があなたを\n取り込もうとしています。\n排除してください。",
             _ => "",
         };
 
@@ -373,7 +371,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialAccepted => "Report sent.\nDevice operating normally.",
             CommsNotice.TutorialReconnect => "Check the left controller.",
             CommsNotice.TutorialReminder => "If you notice an anomaly,\nreport it the same way.\nI will analyse and respond.",
-            CommsNotice.Greeting => "I am the agent assisting\nthe survey.",
+            CommsNotice.Greeting => "My apologies.\nI am Sui,\nyour support agent.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
             CommsNotice.Arrived => "You have arrived.\nObservation will now begin.",
             CommsNotice.Begin => "Begin the survey.",
@@ -401,7 +399,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialAccepted => "Signalement envoyé.\nLe dispositif fonctionne.",
             CommsNotice.TutorialReconnect => "Vérifiez la manette gauche.",
             CommsNotice.TutorialReminder => "Si vous voyez une anomalie,\nsignalez-la ainsi.\nJe tenterai de la traiter.",
-            CommsNotice.Greeting => "Je suis l'agent qui assiste\ncette enquête.",
+            CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui,\nvotre agente de soutien.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
             CommsNotice.Arrived => "Vous êtes arrivé.\nL'observation commence.",
             CommsNotice.Begin => "Commencez l'enquête.",
@@ -805,6 +803,14 @@ namespace FixedCamVr.Diagnostics
         /// <summary>Takeover の面とエラーが出ているあいだ true。</summary>
         public bool TakeoverVisible => _lieActive && _logic.Active;
 
+        /// <summary>位置合わせ中に会話の時計を止めたまま、描画だけを隠しているか。</summary>
+        public bool RegistrationHidden { get; private set; }
+
+        /// <summary>指定した導入文が全文表示されたか。導入の状態機械が読ませる時間をここから数える。</summary>
+        public bool IsOnboardingNoticeFullyShown(CommsNotice notice)
+            => _onboardingActive && _onboardingNotice == notice && LastNotice == notice
+               && _logic.Stage == CommsStage.Hold;
+
         /// <summary>乗っ取りの発火待ちから表示終了まで、報告入力を受け付けない。</summary>
         public bool TakeoverInputBlocked
             => isActiveAndEnabled
@@ -1023,6 +1029,11 @@ namespace FixedCamVr.Diagnostics
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
             ResetPossessionVisual();
             CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
+            // 締めの報告は、解除が通った同じフレームで ScreenDecayReleased が立つ。
+            // 侵食度 1 のままでも、この返事だけはスイの通常表示へ戻す。
+            if (notice == CommsNotice.MarkLogged
+                && runDirector != null && runDirector.ScreenDecayReleased)
+                delivery = CommsDelivery.Typed;
             // 本番では Takeover が唯一の乗っ取りの縁。それより前の通常報告を赤い嘘へ飛ばさない。
             // プレビューは runDirector を持たないので、侵食度だけで Cursed を直接確認できる。
             if (runDirector != null && !_cue.TakeoverDelivered
@@ -1064,6 +1075,18 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             if (!IsBuilt) return;
+            bool registrationActive = showControl != null && showControl.CourseRegistrationActive;
+            if (registrationActive != RegistrationHidden)
+            {
+                RegistrationHidden = registrationActive;
+                if (_visualRoot != null) _visualRoot.gameObject.SetActive(!registrationActive);
+                if (registrationActive)
+                {
+                    typeSfx?.StopAll();
+                    sweepSfx?.StopAll();
+                }
+            }
+            if (registrationActive) return;
             if (ObservePresentationAbort()) return;
 
             if (_onboardingActive)
@@ -1186,7 +1209,7 @@ namespace FixedCamVr.Diagnostics
         private void PushCurseTarget()
         {
             bool closing = LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt;
-            bool released = runDirector != null && runDirector.ScreenDecayReleaseK >= 0.999f;
+            bool released = runDirector != null && runDirector.ScreenDecayReleased;
             float level = _glitchLevel;
             if (runDirector != null && !_cue.TakeoverDelivered)
                 level = 0f;
@@ -2124,7 +2147,7 @@ namespace FixedCamVr.Diagnostics
         {
             if (!_cue.TakeoverDelivered || _logic.Delivery == CommsDelivery.Possessed) return false;
             if (LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt) return false;
-            return runDirector == null || runDirector.ScreenDecayReleaseK < 0.999f;
+            return runDirector == null || !runDirector.ScreenDecayReleased;
         }
 
         /// <summary>

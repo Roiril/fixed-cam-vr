@@ -205,16 +205,14 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ReportingAtTheClosingCut_IsAnsweredAsLogged_NotAsNothing()
+        public void ReportingAtTheClosingCut_IsIgnoredUntilThePromptIsShown()
         {
-            // ⚠⚠ **締めのカット（untilMark）は報告を消費する ＝ 解除が通った側。**
-            //     供給は TimelineDirector.NotifyVisitorMark の戻り値なので、
-            //     「畳んだ後に演出の有無を見る」ことによる真逆の連絡は構造的に起きない。
+            // 締めの報告は③a→③bの全文表示後だけ受理する。締めの頭では返信もしない。
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
             AdvanceClosing(l, new Closing(), 1f);
 
-            Assert.AreEqual(CommsNotice.MarkLogged,
+            Assert.AreEqual(CommsNotice.None,
                             l.Tick(Run(closing: 1f, mark: true, detected: true)));
         }
 
@@ -334,14 +332,10 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
-        /// ⚠⚠ <b>③b は報告しても届く</b>（2026-09-06・0178・ユーザー指定
-        /// 「止まってください！以降の流れは全員に見せる」）。
-        /// ⚠ 0168 では逆の規律だった（押したら③b を止める）。**覆っている。**
-        /// 押せる時間そのものを締めの頭で塞いだ（<c>TakeRunnerLogic.MarkGraceSec</c>）ので、
-        /// ③a より前に押し切れる人は居ない。
+        /// ③b の全文表示までは報告を受け付けない。入力が別経路から届いても返信で警告を潰さない。
         /// </summary>
         [Test]
-        public void TheExplanation_StillArrives_AfterTheVisitorReports()
+        public void ReportsBeforeTheExplanationAreIgnored_AndCannotReplaceIt()
         {
             var l = new CommsCueLogic();
             Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);   // ①（押し方）
@@ -352,12 +346,15 @@ namespace FixedCamVr.Streaming.Tests
                 new[] { CommsNotice.Halt },
                 AdvanceClosing(l, c, CommsCueLogic.HaltAfterClosingSec + 0.2f, read: true, stopAtFirst: true));
 
-            // ③a を読ませている最中に報告した。
-            Assert.AreEqual(CommsNotice.MarkLogged,
+            // ③a を読ませている最中の報告は受け付けない。返信で③bを上書きもしない。
+            Assert.AreEqual(CommsNotice.None,
                             l.Tick(Run(closing: c.Sec, mark: true, detected: true)));
             CollectionAssert.AreEqual(new[] { CommsNotice.Prompt },
                                       AdvanceClosing(l, c, 30f, read: true),
                                       "報告したら③b が消えた（全員に見せる約束が守られていない）");
+            Assert.AreEqual(CommsNotice.MarkLogged,
+                            l.Tick(Run(closing: c.Sec, mark: true, detected: true)),
+                            "③b を全文見せた後の報告には返信する");
         }
 
         // ------------------------------------------------------------------ ③a は場所で出る（0233）

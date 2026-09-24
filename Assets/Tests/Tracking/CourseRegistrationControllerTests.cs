@@ -50,6 +50,9 @@ namespace FixedCamVr.Tracking.Tests
         private static int PointIndex(CourseRegistrationController c)
             => (int)typeof(CourseRegistrationController).GetField("_pointIndex", BF)!.GetValue(c)!;
 
+        private static void RefreshGuidance(CourseRegistrationController c)
+            => typeof(CourseRegistrationController).GetMethod("UpdateGuidanceText", BF)!.Invoke(c, null);
+
         private static CourseRegistrationController.RegInput RI(bool mark, bool held, bool confirm, float dt)
             => new() { mark = mark, markHeld = held, confirm = confirm, deltaTime = dt };
 
@@ -118,6 +121,66 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(fitRejected, Is.True, "残差過大で FitRejected");
             Assert.That(Phase(c), Is.EqualTo("Capture"), "やり直しで Capture へ戻る");
             Assert.That(PointIndex(c), Is.EqualTo(0), "点 index は 0 へリセット");
+
+            RefreshGuidance(c);
+            Assert.That(c.GuidanceText, Does.Contain("打ち直してください"), "失敗理由は次の操作まで残る");
+
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
+            RefreshGuidance(c);
+
+            Assert.That(c.GuidanceText, Does.Contain("計測中"), "次の A 押下で失敗文が消え、進捗表示へ戻る");
+            Assert.That(c.GuidanceIsAlert, Is.False);
+        }
+
+        [Test]
+        public void VerifyRetryMark_StartsFirstPointSamplingWithoutSecondPress()
+        {
+            var (c, _, hand, _) = Setup();
+            c.Toggle();
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Cap(c, hand, new Vector3(0.5f, 1f, 0.5f));
+            Assert.That(Phase(c), Is.EqualTo("Verify"));
+
+            hand.position = new Vector3(-0.5f, 1f, 0.5f);
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
+            c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.5f));
+
+            Assert.That(Phase(c), Is.EqualTo("Capture"));
+            Assert.That(PointIndex(c), Is.EqualTo(1), "やり直しを選んだ A 押下が点 1 の計測開始にも使われる");
+        }
+
+        [Test]
+        public void ReviewRetryMark_StartsFirstPointSamplingWithoutSecondPress()
+        {
+            var (c, frame, hand, _) = Setup();
+            frame.SetRegistration(Vector2.zero, 0f, 0.02f, 2, save: true);
+            c.Toggle();
+            Assert.That(Phase(c), Is.EqualTo("Review"));
+
+            hand.position = new Vector3(-0.5f, 1f, 0.5f);
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
+            c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.5f));
+
+            Assert.That(Phase(c), Is.EqualTo("Capture"));
+            Assert.That(PointIndex(c), Is.EqualTo(1), "確認画面の A 押下が点 1 の計測開始にも使われる");
+        }
+
+        [Test]
+        public void ReenterRegistration_DoesNotRestorePreviousFailureMessage()
+        {
+            var (c, _, _, _) = Setup();
+            c.Toggle();
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
+            c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
+            RefreshGuidance(c);
+            Assert.That(c.GuidanceText, Does.Contain("読み取れませんでした"));
+
+            c.Toggle();
+            c.Toggle();
+            RefreshGuidance(c);
+
+            Assert.That(c.GuidanceText, Does.Not.Contain("読み取れませんでした"));
+            Assert.That(c.GuidanceText, Does.Contain("点 1／2"));
         }
 
         [Test]
@@ -178,11 +241,12 @@ namespace FixedCamVr.Tracking.Tests
             c.Toggle(); // hasReg true → Review 着地
             Assert.That(Phase(c), Is.EqualTo("Review"));
 
-            c.Feed(RI(mark: true, held: false, confirm: false, dt: 0f)); // A=点1から再登録
+            hand.position = new Vector3(1.2f, 1f, 0.5f);
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f)); // A=点1から再登録 + 計測開始
             Assert.That(Phase(c), Is.EqualTo("Capture"));
 
             // 別変換をプレビュー（world を +X に 1.7 相当シフト → 原点 (1.7,0)）。
-            Cap(c, hand, new Vector3(1.2f, 1f, 0.5f));
+            for (int i = 0; i < 6; i++) c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.1f));
             Cap(c, hand, new Vector3(2.2f, 1f, 0.5f));
             Assert.That(Phase(c), Is.EqualTo("Verify"));
             Assert.That(frame.OriginXZ.x, Is.EqualTo(1.7f).Within(1e-3f), "再登録プレビューが適用されている");

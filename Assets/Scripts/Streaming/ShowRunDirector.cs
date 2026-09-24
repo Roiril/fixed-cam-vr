@@ -54,6 +54,9 @@ namespace FixedCamVr.Streaming
         public float ClosingPromptElapsedSec => _endingDecision.PromptReadableAt < 0f
             ? -1f : Time.unscaledTime - _endingDecision.PromptReadableAt;
 
+        /// <summary>③b が全文表示され、締めの報告を受け付けられる状態か。</summary>
+        public bool ClosingPromptReadable => _endingDecision.PromptReadable;
+
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
         /// <summary>警告音の育ち（0145）を落とすため。⚠ 落とさないと 2 人目が最大から始まる。</summary>
