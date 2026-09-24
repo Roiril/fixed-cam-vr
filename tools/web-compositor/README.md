@@ -42,12 +42,12 @@ Quest ごとの 6 秒以内の heartbeat を確認する。HTTP 応答や fps �
 ```powershell
 py -3.11 -m unittest discover -s tools/web-compositor -p 'test_*.py'
 py -3.11 -m unittest tools/test_onsite_operations.py
-node --test tools/web-compositor/test_ops_model.mjs tools/web-compositor/test_ops_shoot.mjs tools/web-compositor/shoot-model.test.mjs
+node --test tools/web-compositor/test_ops_model.mjs tools/web-compositor/test_ops_shoot.mjs tools/web-compositor/shoot-model.test.mjs tools/web-compositor/test_ops_library_preview.mjs
 ```
 
 演出の準備は `GET /ops/content` で照合する。参照ファイルの有無、StreamingAssets への同梱、APK 内の素材を別々に表示する。これだけでは素材が当日の画と合うかは判定できない。
 人形視点は `GET /shoot/plan` と `GET /shoot/manifest` を突き合わせ、採用本数と当日回収を確認できる本数を分けて表示する。`capturedAt` は PC への回収時刻であり撮影日を証明しない。
-「演出」は `GET /ops/library` を使い、演出ごとの現在採用素材と APK 内の実ファイルを並べる。同名ファイルも SHA256 で比較する。APK 内の試写は検証済み manifest のファイルだけを `/ops/apk-asset` から配信する。動画の Range / HEAD に対応する。APK の同梱一致だけでは Quest に導入済みと表示しない。
+「演出」は `GET /ops/library` を使い、演出ごとの現在採用素材と APK 内の実ファイルを並べる。同名ファイルも SHA256 で比較する。「現在の採用」は `/state` のカット指定・カメラ・マスク・画像加工を解決し、選択した 1 カットだけを既存の WebGL 合成器でライブ映像に重ねる。ライブの鮮度は `/cam/liveness` で確認し、途切れた映像を合成結果として見せない。全面差し替えと実機専用の演出は素材表示に留める。APK 内の試写は検証済み manifest のファイルだけを `/ops/apk-asset` から配信する。動画の Range / HEAD に対応する。APK の同梱一致だけでは Quest に導入済みと表示しない。
 当日の撮影環境と採用素材の試写は人がチェックする。確認はこのブラウザのセッションに保持する。演出版が変わった場合や日付が変わった場合は失効する。ファイルの照合結果が古い間も確認済みにしない。
 「ビルドの依頼文をコピー」は現在の演出版と役割分担を含む依頼を作る。ビルドを自動実行するボタンではない。試写後に素材が変わっていたら、エージェントは再確認してからビルドする。
 export は必要な画像・動画・BGM を検証し、本文と素材の SHA256 を manifest に書く。カット単位の BGM も対象。

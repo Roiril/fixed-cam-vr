@@ -113,6 +113,8 @@ body:not([data-view=setup]) .overview .refresh button{font-size:.8rem;min-height
 .media-column-heading h4{margin:0;font-size:.9rem;font-weight:750}.media-column-heading .state,.media-column-heading .note{font-size:.68rem}
 .media-frame{margin:0}.media-surface{position:relative;aspect-ratio:16/10;background:var(--paper);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .media-surface img,.media-surface video{display:block;width:100%;height:100%;object-fit:contain;background:#10181a}
+.composite-surface{aspect-ratio:16/9}.composite-surface canvas{display:block;width:100%;height:100%}
+.composite-status{position:absolute;inset:0;display:grid;place-items:center;margin:0;padding:24px;background:var(--paper);color:var(--ink);font-size:var(--fs-sm);text-align:center;line-height:1.7}.composite-status[hidden]{display:none}
 .media-surface audio{width:calc(100% - 24px)}.media-file{font-size:.8rem}
 .media-frame figcaption{font-size:.66rem;font-family:Consolas,monospace;overflow-wrap:anywhere;color:var(--mute);margin:10px 2px;line-height:1.5}
 .media-empty{font-size:.82rem;line-height:1.7;text-align:center;padding:24px;color:var(--mute);margin:0}.procedural{padding:70px 30px;background:var(--paper);border-radius:14px}

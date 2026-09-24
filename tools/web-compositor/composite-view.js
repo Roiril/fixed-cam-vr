@@ -122,7 +122,12 @@ export function createCompositeView(canvas, provider) {
   // RAF は非表示タブで停止するので setInterval（multicam の教訓）
   const timer = setInterval(tick, 40);
   return {
-    destroy() { clearInterval(timer); if (io) io.disconnect(); },
+    destroy() {
+      clearInterval(timer);
+      if (io) io.disconnect();
+      // 頻繁に演出を切り替える一覧では、前の WebGL コンテキストを残さない。
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    },
     canvas,
     /** 隠れている間も 1 枚だけ描きたい時（📷 キャプチャ）に使う */
     renderOnce: render,
