@@ -4,7 +4,18 @@
 4 秒の動画生成はユーザーが行う。動画の受領、往復再生の実装、`show.json` への採用は未着手。
 現行の 2 周目 A は旧素材のまま。
 
-## 動画生成へ渡す 2 枚
+## 動画生成へ渡す 2 枚（16:9）
+
+動画生成側が 16:9 のみ対応するため、こちらを渡す。1920×1080。
+中央の 4:3 写真を 1440×1080 に拡大し、左右それぞれ 240 px を完全な黒にした。
+写真の切り取りはない。両フレームで余白と配置は同じ。
+
+| 役割 | ファイル | SHA256 |
+|---|---|---|
+| 開始 | [frames/stain-press-20260924-first-16x9.png](frames/stain-press-20260924-first-16x9.png) | `7ccb962b4c93cce64e3812185026b165aba28f8f36676aacef36b66b722c9b81` |
+| 終了 | [frames/stain-press-20260924-last-16x9.png](frames/stain-press-20260924-last-16x9.png) | `2fd78d3648e1be7ec51644f0596f7dcef9a0896deaf44e3cc587fe44af39ff86` |
+
+## 元の 4:3 フレーム
 
 | 役割 | ファイル | SHA256 |
 |---|---|---|
@@ -20,12 +31,14 @@
 
 ## ユーザーが作る 4 秒動画
 
-開始画像を first frame、終了画像を last frame に指定する。
+上記の 16:9 開始画像を first frame、終了画像を last frame に指定する。
 4 秒は静止状態から最大変形までの順再生だけ。戻りは動画を受け取った後、こちらで逆再生を作る。
 動画生成側のループや自動の戻りは切る。音は不要。
 
 ```text
-Fixed tripod shot, exactly four seconds, 4:3. Animate continuously from the provided first
+Fixed tripod shot, exactly four seconds, 16:9 frame. The central 4:3 photograph is bordered
+by solid black vertical bars on the left and right; keep those bars completely black,
+stationary, and the same width in every frame. Animate continuously from the provided first
 frame to the provided last frame. The existing face-shaped stain stays on the same cloth and
 does not change expression. First the free outer left edge of the curtain flutters in two
 uneven pulses, then the stained cloth swells gently toward the camera as if pressed from
@@ -36,7 +49,8 @@ grain remain unchanged. No person, creature, hand, silhouette, new stain, added 
 camera motion, cut, blur, or return to the first pose within this clip.
 ```
 
-ネガティブ欄は空。動画が 16:9 や別の部屋になった場合は、そのまま採用しない。
+ネガティブ欄は空。動画で黒い余白が動いたり、写真が拡大・切り取られたり、別の部屋になった場合はそのまま採用しない。
+受領後に中央の写真部分を取り出して 4:3 へ戻す。
 以前の動画には画角と顔の位置のずれがあった。受領後に `fitvideo.py` で位置を合わせ、
 全コマを走査してマスクを作る。顔だけのマスクでは左端のめくれが欠ける。
 2026-09-24 に試した画面左半分マスク `masks/split_left_half.png` は、首尾フレームの確認用。
