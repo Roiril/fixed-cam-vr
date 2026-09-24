@@ -606,19 +606,26 @@ def quest_rows(rows: Rows):
     return running
 
 
+def show_uses_eye_jack(show: dict) -> bool:
+    for seg in ((show.get("timeline") or {}).get("segments") or []):
+        for take in (seg.get("takes") or []):
+            for st in (take.get("steps") or []):
+                if isinstance(st, dict) and st.get("eyeJack"):
+                    return True
+    return False
+
+
 def check_show_material(rows: Rows, show: dict, state: dict | None):
     sec = "素材"
     ej = get_json(DESK + "/eyejack/list", timeout=6) or {}
     items = ej.get("items") or []
     src = show.get("eyejack") or {}
-    uses = False
+    uses = show_uses_eye_jack(show)
     used_povs = set()
     tl = (show.get("timeline") or {})
     for seg in (tl.get("segments") or []):
         for take in (seg.get("takes") or []):
             for st in (take.get("steps") or []):
-                if isinstance(st, dict) and st.get("eyeJack"):
-                    uses = True
                 if isinstance(st, dict) and str(st.get("cueId") or "").startswith("pov"):
                     used_povs.add(st["cueId"])
     if not uses:
@@ -664,7 +671,8 @@ def check_show_material(rows: Rows, show: dict, state: dict | None):
                      f"台本で使う {len(used_povs)} 本の映像ファイルを確認しました")
 
 
-def sample_heartbeat(rows: Rows, seconds: float, running_count: int):
+def sample_heartbeat(rows: Rows, seconds: float, running_count: int,
+                     eye_jack_required: bool = True):
     """機ごとの heartbeat と生の診断値を読み、固定登録の両 Quest を確認する。"""
     sec = "Quest の接続"
     fleet = load_fleet()
@@ -721,7 +729,8 @@ def sample_heartbeat(rows: Rows, seconds: float, running_count: int):
         rows.add(sec, "ok", tag, f"{host} / {age:.1f} 秒前に受信")
         raw = [d["status"] for d in samples[qid] if isinstance(d.get("status"), dict)]
         if not raw:
-            rows.add(sec, "skip", tag + " 詳細", "音・入力・目の写真の実測値が届いていません",
+            detail = "音・入力・目の写真" if eye_jack_required else "音・入力"
+            rows.add(sec, "skip", tag + " 詳細", detail + "の実測値が届いていません",
                      "Quest と操作画面の接続を確認する")
             continue
 
@@ -750,12 +759,13 @@ def sample_heartbeat(rows: Rows, seconds: float, running_count: int):
             else:
                 rows.add(sec, "ok" if all(vals) else "ng", tag + " " + label,
                          "接続" if all(vals) else f"{sum(bool(v) for v in vals)}/{len(vals)} 回で接続")
-        listed, ready = nums("eyeJackListed"), nums("eyeJackReady")
-        if listed and ready and min(listed) >= 0 and min(ready) >= 0 and max(listed) > 0:
-            rows.add(sec, "ok" if min(ready) >= max(listed) else "ng",
-                     tag + " 目の写真の到達", f"{int(min(ready))}/{int(max(listed))} 枚")
-        elif not listed or not ready or min(listed) < 0 or min(ready) < 0:
-            rows.add(sec, "skip", tag + " 目の写真の到達", "実測値がありません")
+        if eye_jack_required:
+            listed, ready = nums("eyeJackListed"), nums("eyeJackReady")
+            if listed and ready and min(listed) >= 0 and min(ready) >= 0 and max(listed) > 0:
+                rows.add(sec, "ok" if min(ready) >= max(listed) else "ng",
+                         tag + " 目の写真の到達", f"{int(min(ready))}/{int(max(listed))} 枚")
+            elif not listed or not ready or min(listed) < 0 or min(ready) < 0:
+                rows.add(sec, "skip", tag + " 目の写真の到達", "実測値がありません")
         if any(st.get("needsReReg") for st in raw):
             rows.add(sec, "ng", tag + " 位置合わせ", "トラッキング原点が変わりました",
                      "再登録するまでゾーンがズレたまま動きます")
@@ -773,9 +783,9 @@ def cmd_check(args):
     if state is not None:
         check_show_material(rows, show, state)
     if args.deep:
-        sample_heartbeat(rows, 20.0, len(running))
+        sample_heartbeat(rows, 20.0, len(running), show_uses_eye_jack(show))
     else:
-        sample_heartbeat(rows, 3.0, len(running))
+        sample_heartbeat(rows, 3.0, len(running), show_uses_eye_jack(show))
 
     print(rows.render())
     os.makedirs(LOG_DIR, exist_ok=True)

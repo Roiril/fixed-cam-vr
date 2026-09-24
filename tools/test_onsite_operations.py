@@ -147,6 +147,20 @@ class OnsiteOperationsTests(unittest.TestCase):
         self.assertEqual({r["state"] for r in rows.items if r["label"].endswith("音")},
                          {"skip"})
 
+    def test_unused_eye_jack_does_not_leave_unconfirmed_quest_row(self):
+        rows = onsite.Rows()
+        devices = {"devices": [
+            {"deviceId": q["id"], "localIp": q["host"], "ageSec": 1,
+             "status": {"sndMissing": 0, "ctrlLConnected": True,
+                        "ctrlRConnected": True}}
+            for q in self.fleet["quests"]
+        ]}
+        with mock.patch.object(onsite, "load_fleet", return_value=self.fleet), \
+                mock.patch.object(onsite, "get_json", return_value=devices), \
+                mock.patch.object(onsite.time, "sleep"):
+            onsite.sample_heartbeat(rows, 0.01, 2, eye_jack_required=False)
+        self.assertFalse(any("目の写真" in r["label"] for r in rows.items))
+
     def test_skip_is_visible_in_summary(self):
         rows = onsite.Rows()
         rows.add("点検", "skip", "詳細", "未確認")
