@@ -121,13 +121,6 @@
           <h2 id="perspective-title">固定視点とは</h2>
           <p class="section-description">自分の目で見る。背後から追う。<br>その場所に置かれたカメラから見る。</p>
         </div>
-        <div class="lab-panel">
-          <ol class="perspective-types" aria-label="体験で比較する3つの視点">
-            <li><span aria-hidden="true">01</span><h4>一人称</h4><p>自分の目の位置から。</p></li>
-            <li><span aria-hidden="true">03</span><h4>三人称</h4><p>自分を追いかける位置から。</p></li>
-            <li><span aria-hidden="true">FIX</span><h4>固定視点</h4><p>動かないカメラから。</p></li>
-          </ol>
-        </div>
         <div class="handheld-player" id="handheld-player">
           <div class="handheld">
             <img src="assets/handheld.webp" width="1774" height="887" alt="使い込まれた白い携帯ゲーム機" loading="lazy">
@@ -147,18 +140,18 @@
             <div class="hardware-stick view-stick" data-game-stick="view" aria-hidden="true"></div>
           </div>
           <div class="handheld-modes" aria-label="視点を選ぶ">
-            <button type="button" data-game-mode="fps" aria-pressed="false" disabled><span>01</span>一人称</button>
-            <button type="button" data-game-mode="tps" aria-pressed="false" disabled><span>03</span>三人称</button>
-            <button type="button" data-game-mode="fixed" aria-pressed="true" disabled><span>FIX</span>固定視点</button>
+            <button type="button" data-game-mode="fps" aria-pressed="false" disabled><span aria-hidden="true">01</span><span>一人称<small>自分の目の位置から。</small></span></button>
+            <button type="button" data-game-mode="tps" aria-pressed="false" disabled><span aria-hidden="true">03</span><span>三人称<small>自分を追いかける位置から。</small></span></button>
+            <button type="button" data-game-mode="fixed" aria-pressed="true" disabled><span aria-hidden="true">FIX</span><span>固定視点<small>動かないカメラから。</small></span></button>
           </div>
-          <p class="handheld-guide">左で歩く。右で見回す。スティックも動かせます。<br><span>キーボード：WASDで移動 / 1・2・3で視点切り替え</span></p>
-          <p class="handheld-mobile-hint">スマホは横向きにすると広く遊べます。</p>
           <div class="game-actions">
             <p id="game-unavailable">視点切り替え体験は準備中です。</p>
             <button id="game-expand" class="text-link" type="button" aria-pressed="false">拡大する</button>
             <button id="game-close" class="text-link" type="button" hidden>電源を切る</button>
             <a id="game-fallback" class="text-link" target="_blank" rel="noopener noreferrer" hidden>別のタブで開く<span aria-hidden="true">↗</span></a>
           </div>
+          <p class="handheld-guide">左で歩く。右で見回す。スティックも動かせます。<br><span>キーボード：WASDで移動 / 1・2・3で視点切り替え</span></p>
+          <p class="handheld-mobile-hint">スマホは横向きにすると広く遊べます。</p>
           <p id="game-state" class="game-state" role="status"></p>
         </div>
       </section>
@@ -213,7 +206,7 @@
           <header class="plate-heading">
             <p class="section-number" aria-hidden="true">04</p>
             <h2 id="archive-title">展示履歴</h2>
-            <p class="plate-heading-meta" aria-hidden="true"><span>MAWARIMI</span><span data-updated>2026-09-24</span></p>
+            <p class="plate-heading-meta" aria-hidden="true"><span>MAWARIMI</span><span data-updated>2026-09-25</span></p>
           </header>
           <ol class="archive-records">
             <li class="tag" data-record="01" data-reveal style="--i: 0">
