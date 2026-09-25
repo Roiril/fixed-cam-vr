@@ -67,6 +67,10 @@ namespace FixedCamVr.Streaming.Tests
                 {
                     string t = line.Trim();
                     if (t.StartsWith("//") || t.StartsWith("///") || t.StartsWith("*")) continue;
+                    // 終幕写真の解除区間は人形の在否ではなくCG全体の消灯を確認する。
+                    // 人の代役も残してはいけないため、ここだけ IsVisible が正しい。
+                    if (rel.EndsWith("TakeRunner.cs")
+                        && t == "bool cgActive = _cgLayer != null && _cgLayer.IsVisible;") continue;
                     if (Regex.IsMatch(line, @"\b_?cg(Layer)?\s*[.!]?\s*\.\s*IsVisible|\bcg\.IsVisible"))
                         offenders.Add($"{rel}: {t}");
                 }
