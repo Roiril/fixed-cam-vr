@@ -276,6 +276,7 @@ button, summary { font: inherit; }
   container-type: inline-size;
   min-width: 0;
 }
+.trailer .plate-heading h2,
 .perspective-lab .lab-heading h2,
 .fixed-view .fixed-view-copy h2,
 .scenario .scenario-copy h2,
@@ -288,6 +289,7 @@ button, summary { font: inherit; }
   white-space: nowrap;
 }
 @supports (font-size: 1cqi) {
+  .trailer .plate-heading h2,
   .perspective-lab .lab-heading h2,
   .fixed-view .fixed-view-copy h2,
   .scenario .scenario-copy h2,
@@ -298,6 +300,7 @@ button, summary { font: inherit; }
   }
 }
 @media (max-width: 600px) {
+  .trailer .plate-heading h2,
   .perspective-lab .lab-heading h2,
   .fixed-view .fixed-view-copy h2,
   .scenario .scenario-copy h2,

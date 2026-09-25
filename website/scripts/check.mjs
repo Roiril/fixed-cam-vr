@@ -138,7 +138,7 @@ for (const marker of sectionMarkers) {
   previousSectionIndex = sectionIndex;
 }
 for (const marker of [
-  '01 / TRAILER',
+  '01 / PREVIEW',
   '02 / GAME VIEW',
   '03 / REAL WORLD',
   '04 / STORY',
@@ -188,9 +188,9 @@ if (!html.includes('<a href="#perspective-lab">固定視点とは</a>') || !html
 if (!html.includes('<a href="#footage">演出一覧</a>')) errors.push("navigation must use the requested footage title");
 const trailerIndex = html.indexOf('<section id="trailer"');
 if (trailerIndex < html.indexOf('class="hero"') || trailerIndex > html.indexOf('<section id="perspective-lab"')) errors.push("trailer must follow the hero");
-if (!html.includes('<h2 id="trailer-title">トレイラー</h2>')) errors.push("trailer needs the requested heading");
+if (!html.includes('<h2 id="trailer-title">予告動画</h2>')) errors.push("trailer needs the requested heading");
 if (!html.includes('src="https://www.youtube-nocookie.com/embed/ipoU4gU9G4k"') || !html.includes('href="https://youtu.be/ipoU4gU9G4k"')) errors.push("requested trailer is missing");
-if (!html.includes('この映像は2026.09.01時点で作成したものです。') || !html.includes('DCEXPOに向けた新しいトレイラーを作成中です。')) errors.push("trailer notes are missing");
+if (!html.includes('この映像は2026.09.01時点で作成したものです。') || !html.includes('DCEXPOに向けた新しい予告動画を作成中です。')) errors.push("trailer notes are missing");
 if ((html.match(/ネタバレを含みます/g)?.length ?? 0) !== 2) errors.push("trailer and footage must use the same spoiler note");
 for (const oldCopy of ["この視点に入る", "ここから先は、体験中に見えるもの。", "初めての驚きを残しておきたい方は", "こだわりのVR演出", "古いバージョンです。", "ネタバレあり"]) {
   if (html.includes(oldCopy)) errors.push(`obsolete copy remains: ${oldCopy}`);
