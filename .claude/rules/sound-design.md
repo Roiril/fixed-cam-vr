@@ -993,6 +993,8 @@ skip 0.50 → ふふ（2）         0.66 → ふ（1）
 音源を変更したらピーク時刻も再計測する。現行音源は48kHz・379885フレーム。
 警告の中断では開始しない。凍結が警告より先でも再開しない。体験者交代で開始・終了の記録を戻す。
 描画確認: `tools/unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.HeartbeatScreenPreview.Run`。
+プレビューは `show.json` の全体 `post` を `ShowControlClient.ApplyPostForActive` と同じ項目で適用する。
+2-Cと3-Aは個別のpostを持たないため、全体設定がそのまま有効になる。固定の仮値で描画しない。
 出力は `Logs/heartbeat-ripple/render/`。ゆがみ単独とビネット単独の画素変化を検査する。解除後と加工前が画素単位で一致することも検査する。
 
 ユーザー指定「2-C で連続する人形視点が終わった後から、3-A で左右反転 → 自分が人形になる

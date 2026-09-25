@@ -10,12 +10,21 @@ namespace FixedCamVr.Streaming.EditorTools
     /// <summary>実シェーダで静止画と心音同期フレームを描画する。シーンは保存しない。</summary>
     public static class HeartbeatScreenPreview
     {
+        [Serializable]
+        private sealed class PreviewShow
+        {
+            public PostParams? post;
+        }
+
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Heartbeat Screen")]
         public static void Run()
         {
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             string dir = Path.Combine(root, "Logs", "heartbeat-ripple", "render");
             Directory.CreateDirectory(dir);
+            string showPath = Path.Combine(root, "tools", "web-compositor", "show.json");
+            var show = JsonUtility.FromJson<PreviewShow>(File.ReadAllText(showPath));
+            PostParams post = show?.post ?? throw new InvalidOperationException("show.json の全体画像加工がありません: " + showPath);
             string source = Directory.GetFiles(Path.Combine(root, "tools", "web-compositor", "captures"), "plate_A*.jpg")
                 .OrderByDescending(File.GetLastWriteTimeUtc).First();
             var plate = new Texture2D(2, 2, TextureFormat.RGB24, true);
@@ -32,10 +41,20 @@ namespace FixedCamVr.Streaming.EditorTools
             try
             {
                 mat.SetTexture("_LiveTex", plate);
-                mat.SetFloat("_Vignette", .25f);
-                mat.SetFloat("_Contrast", 1.05f);
-                mat.SetFloat("_Exposure", .5f);
-                mat.SetFloat("_Saturation", .65f);
+                // ShowControlClient.ApplyPostForActive と同じ項目を実シェーダへ渡す。
+                // 2-C と3-Aは個別postを持たないため、この全体設定が体験中の値になる。
+                mat.SetFloat("_Exposure", post.exposure);
+                mat.SetFloat("_Contrast", post.contrast);
+                mat.SetFloat("_Saturation", post.saturation);
+                mat.SetFloat("_Temperature", post.temperature);
+                mat.SetFloat("_Vignette", post.vignette);
+                mat.SetFloat("_Grain", post.grain);
+                mat.SetFloat("_Scanline", post.scanline);
+                mat.SetFloat("_Lift", post.lift);
+                mat.SetFloat("_Tint", post.tint);
+                mat.SetFloat("_Aberration", post.aberration);
+                mat.SetFloat("_Pixelate", post.pixelate);
+                mat.SetFloat("_ScanlineCount", post.ResolveScanlineCount());
                 mat.SetFloat("_FrameAspect", 16f / 9f);
                 float sourceAspect = plate.width / (float)plate.height;
                 mat.SetVector("_LiveScale", sourceAspect > 16f / 9f
@@ -83,7 +102,9 @@ namespace FixedCamVr.Streaming.EditorTools
                         + CameraFeelFx.HeartVignettePulse * pulse : 0f, $"f{frame:0000}");
                 }
                 File.WriteAllText(Path.Combine(dir, "verification.txt"),
-                    $"source={source}\nframes=300\nripplePixelsChanged=true\nvignettePixelsChanged=true\nrestoredPixelsIdentical=true\n");
+                    $"source={source}\npost=show.json global\nexposure={post.exposure}\ncontrast={post.contrast}\n"
+                    + $"saturation={post.saturation}\ntemperature={post.temperature}\nvignette={post.vignette}\n"
+                    + "frames=300\nripplePixelsChanged=true\nvignettePixelsChanged=true\nrestoredPixelsIdentical=true\n");
                 Debug.Log("[HeartbeatPreview] 300 frames; ripple and vignette change pixels; reset is pixel-identical: " + dir);
             }
             finally
