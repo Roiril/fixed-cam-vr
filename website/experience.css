@@ -208,7 +208,7 @@ button, summary { font: inherit; }
   max-width: 100%;
   margin-top: .35rem;
   color: var(--ink);
-  font: .68rem/1.5 "IBM Plex Mono", monospace;
+  font: inherit;
   letter-spacing: .01em;
   overflow-wrap: anywhere;
   text-underline-offset: .2em;
