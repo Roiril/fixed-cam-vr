@@ -44,6 +44,8 @@ namespace FixedCamVr.Streaming
         private static readonly int HeartRippleId = Shader.PropertyToID("_HeartRipple");
         private static readonly int HeartTimeId = Shader.PropertyToID("_HeartTime");
         private static readonly int HeartVignetteId = Shader.PropertyToID("_HeartVignette");
+        public const float HeartVignetteBase = 0.66f;
+        public const float HeartVignettePulse = 0.16f;
 
         [Tooltip("ライブ映像の供給元（平均輝度と、凍らせる 1 枚の複製元）。null なら同 GameObject → シーンから探す。")]
         [SerializeField] private MjpegScreen? screen;
@@ -355,7 +357,8 @@ namespace FixedCamVr.Streaming
             if (_heartbeatSound != null
                 && _heartbeatSound.TryGetHeartPlayback(out seconds, out float gain))
                 pulse = HeartbeatPulseLogic.Evaluate(seconds) * gain;
-            WriteHeartbeat(HeartbeatPulseLogic.Age(seconds), pulse, 0.48f + 0.14f * pulse);
+            WriteHeartbeat(HeartbeatPulseLogic.Age(seconds), pulse,
+                HeartVignetteBase + HeartVignettePulse * pulse);
         }
 
         private void ResolveHeartbeatRefs()

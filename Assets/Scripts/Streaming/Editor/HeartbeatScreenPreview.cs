@@ -67,8 +67,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 byte[] baseline = Draw(0f, 0f, 0f, "before");
                 const float crest = .13f - .045f + HeartbeatPulseLogic.RiseSec;
                 byte[] ripple = Draw(crest, 1f, 0f, "ripple-only");
-                byte[] vignette = Draw(crest, 0f, .62f, "vignette-only");
-                Draw(crest, 1f, .62f, "peak");
+                byte[] vignette = Draw(crest, 0f, CameraFeelFx.HeartVignetteBase, "vignette-only");
+                Draw(crest, 1f, CameraFeelFx.HeartVignetteBase + CameraFeelFx.HeartVignettePulse, "peak");
                 byte[] restored = Draw(2.11f, 0f, 0f, "after-freeze");
                 if (!baseline.SequenceEqual(restored)) throw new InvalidOperationException("Restored image differs from baseline");
                 if (baseline.SequenceEqual(ripple) || baseline.SequenceEqual(vignette))
@@ -79,7 +79,8 @@ namespace FixedCamVr.Streaming.EditorTools
                     float time = frame / 30f;
                     bool active = frame >= 30 && frame < 270;
                     float pulse = active ? HeartbeatPulseLogic.Evaluate(time) : 0f;
-                    Draw(time, pulse, active ? .48f + .14f * pulse : 0f, $"f{frame:0000}");
+                    Draw(time, pulse, active ? CameraFeelFx.HeartVignetteBase
+                        + CameraFeelFx.HeartVignettePulse * pulse : 0f, $"f{frame:0000}");
                 }
                 File.WriteAllText(Path.Combine(dir, "verification.txt"),
                     $"source={source}\nframes=300\nripplePixelsChanged=true\nvignettePixelsChanged=true\nrestoredPixelsIdentical=true\n");
