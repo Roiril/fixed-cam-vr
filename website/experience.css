@@ -67,7 +67,7 @@ button, summary { font: inherit; }
   padding-block: 1rem;
 }
 .hero-bottom p { font-size: .8rem; line-height: 1.9; margin: 0; color: var(--ink-muted); }
-.hero-bottom > span, .camera-topline, .viewer-topline, .section-number {
+.hero-bottom > span, .viewer-topline, .section-number {
   font: .65rem/1.6 "IBM Plex Mono", "Yu Gothic", sans-serif;
   letter-spacing: .12em;
   color: var(--ink-muted);
@@ -83,7 +83,7 @@ button, summary { font: inherit; }
 .fixed-view-lead { color: var(--ink); margin-top: 1.5rem; line-height: 2; }
 .section-description { color: var(--ink-muted); font-size: .9rem; line-height: 2.15; max-width: 32em; }
 .fixed-view-copy .text-link { margin-top: 1rem; }
-.camera-topline, .viewer-topline { display: flex; justify-content: space-between; gap: 1rem; padding: .85rem 0; }
+.viewer-topline { display: flex; justify-content: space-between; gap: 1rem; padding: .85rem 0; }
 .crt {
   width: 100%;
   aspect-ratio: 4/3;
@@ -119,7 +119,6 @@ button, summary { font: inherit; }
 .camera-button:hover, .camera-button:focus-visible { background: #1d2420; }
 .button-led { background: transparent; border-color: var(--ink-muted); border-radius: 0; }
 .camera-button.is-active .button-led { background: var(--signal); border-color: var(--signal); box-shadow: none; }
-.camera-caption { font-size: .72rem; color: var(--ink-muted); margin: .75rem 0 0; text-align: center; }
 .perspective-lab {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
