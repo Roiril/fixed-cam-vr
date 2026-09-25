@@ -243,10 +243,6 @@ button, summary { font: inherit; }
   .section-description { font-size: .84rem; }
   .crt { width: 100%; margin-left: 0; }
   .camera-button { font-size: .72rem; }
-  .credit-list > div { grid-template-columns: minmax(0, 1fr); gap: .4rem; }
-  .credit-list > div::before, .credit-list dt::after { display: none; }
-  .credit-list dt { display: block; font-size: clamp(.72rem, 3.4vw, .88rem); line-height: 1.6; }
-  .credit-list dd { text-align: left; }
   .lab-heading h2 { font-size: 3.1rem; }
   .scenario { padding-top: 0; padding-bottom: var(--section-space); }
   .scenario h2 { font-size: 3.3rem; }

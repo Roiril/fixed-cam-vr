@@ -8,6 +8,7 @@ import { headingText, latinText, pageText, uniqueChars } from "./font-text.mjs";
 const websiteRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceFiles = ["index.html", "styles.css", "main.js", "experience.css", "experience-config.js", "experience.js", "entrance.css", "entrance-geometry.js", "entrance-glass.js", "entrance.js"];
 sourceFiles.push("handheld.js", "handheld.css", "perspective-game/embed.js");
+sourceFiles.push("entrance-timing.js", "entrance-audio.js");
 const seoFiles = ["robots.txt", "sitemap.xml", "site.webmanifest"];
 const verificationFiles = ["google5081a8a413a7871f.html"];
 const requiredAssets = [
@@ -23,6 +24,11 @@ const requiredAssets = [
   "assets/hero-small.webp",
   "assets/hero-mobile.webp",
   "assets/title.png",
+  "assets/sfx_shatter.wav",
+  "assets/sfx_screen_on.wav",
+  "assets/camera-fiction-01.webp",
+  "assets/camera-fiction-02.webp",
+  "assets/camera-fiction-03.webp",
   "assets/camera-01.webp",
   "assets/camera-02.webp",
   "assets/camera-03.webp",
@@ -113,10 +119,11 @@ for (const forbidden of forbiddenReferences) {
 }
 
 const sectionCount = html.match(/<section\b/g)?.length ?? 0;
-if (sectionCount !== 7) errors.push(`expected 7 sections, found ${sectionCount}`);
+if (sectionCount !== 8) errors.push(`expected 8 sections, found ${sectionCount}`);
 
 const sectionMarkers = [
   'class="hero"',
+  'id="trailer"',
   'id="perspective-lab"',
   'id="fixed-view"',
   'id="scenario"',
@@ -131,6 +138,17 @@ for (const marker of sectionMarkers) {
   else if (sectionIndex <= previousSectionIndex) errors.push(`section order is invalid: ${marker}`);
   previousSectionIndex = sectionIndex;
 }
+for (const marker of [
+  '01 / TRAILER',
+  '02 / GAME VIEW',
+  '03 / REAL WORLD',
+  '04 / STORY',
+  '<p class="section-number" aria-hidden="true">05</p>',
+  '06 / INSIDE THE HEADSET',
+  '<p class="section-number" aria-hidden="true">07</p>'
+]) {
+  if (!html.includes(marker)) errors.push(`section number is missing: ${marker}`);
+}
 
 const pageCopy = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
 const requiredCopy = [
@@ -138,7 +156,7 @@ const requiredCopy = [
   "監視カメラに映る自分を見ながら、現実の空間を歩く。",
   "ストーリー",
   "展示履歴",
-  "こだわりのVR演出",
+  "演出一覧",
   "あなたは、怪異調査員として、呪われた壁の調査に向かう。"
 ];
 for (const copy of requiredCopy) {
@@ -161,16 +179,23 @@ if ((html.match(/data-camera-button=/g)?.length ?? 0) !== 3) errors.push("manual
 if (!html.includes('class="crt-body" src="assets/crt.webp"')) errors.push("camera feeds must be shown inside the CRT photograph");
 if (!html.includes('class="wall-evidence" src="assets/camera-01-doll.webp"')) errors.push("investigation photo must use the doll-vision render of camera 01");
 for (const camera of ["01", "02", "03"]) {
-  if (!html.includes(`src="assets/camera-${camera}-quest.webp"`)) errors.push(`camera ${camera} must use its Quest render`);
+  if (!html.includes(`src="assets/camera-fiction-${camera}.webp"`)) errors.push(`camera ${camera} must use the previously generated fictional location`);
 }
 if (!html.includes('href="assets/investigation-request.webp"')) errors.push("full-size investigation request link is missing");
 if (!html.includes('<section id="perspective-lab"') || !html.includes('<h2 id="perspective-title">固定視点とは</h2>')) errors.push("fixed viewpoint introduction must come before real-world viewpoint");
+if (/<h2 id="perspective-title">固定視点とは<\/h2>\s*<p class="section-description">/.test(html)) errors.push("fixed viewpoint introduction must not have a section description");
 if (!html.includes('<h2 id="fixed-view-title">実世界×固定視点</h2>')) errors.push("real-world fixed viewpoint needs the requested chapter title");
 if (!html.includes('<a href="#perspective-lab">固定視点とは</a>') || !html.includes('<a href="#fixed-view">実世界×固定視点</a>')) errors.push("navigation must match the chapter titles");
-const trailerIndex = html.indexOf('class="archive-trailer"');
-if (trailerIndex < html.indexOf('class="archive-records"') || trailerIndex > html.indexOf('<section id="footage"')) errors.push("trailer must follow the exhibition history");
+if (!html.includes('<a href="#footage">演出一覧</a>')) errors.push("navigation must use the requested footage title");
+const trailerIndex = html.indexOf('<section id="trailer"');
+if (trailerIndex < html.indexOf('class="hero"') || trailerIndex > html.indexOf('<section id="perspective-lab"')) errors.push("trailer must follow the hero");
+if (!html.includes('<h2 id="trailer-title">トレイラー</h2>')) errors.push("trailer needs the requested heading");
 if (!html.includes('src="https://www.youtube-nocookie.com/embed/ipoU4gU9G4k"') || !html.includes('href="https://youtu.be/ipoU4gU9G4k"')) errors.push("requested trailer is missing");
-if (!html.includes('この映像は2026.09.01時点で作成した古いバージョンです。')) errors.push("trailer version note is missing");
+if (!html.includes('この映像は2026.09.01時点で作成したものです。') || !html.includes('DCEXPOに向けた新しいトレイラーを作成中です。')) errors.push("trailer notes are missing");
+if ((html.match(/ネタバレを含みます/g)?.length ?? 0) !== 2) errors.push("trailer and footage must use the same spoiler note");
+for (const oldCopy of ["この視点に入る", "ここから先は、体験中に見えるもの。", "初めての驚きを残しておきたい方は", "こだわりのVR演出", "古いバージョンです。", "ネタバレあり"]) {
+  if (html.includes(oldCopy)) errors.push(`obsolete copy remains: ${oldCopy}`);
+}
 if (html.includes('class="plate-qr"') || html.includes('class="plate-url"')) errors.push("credit code or URL remains");
 if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
@@ -232,8 +257,10 @@ if (!structuredDataMatch) {
 if (!html.includes('href="https://ivrc.net/2026/release3/"') || !html.includes('href="https://www.dcexpo.jp/"')) errors.push("archive source links are missing");
 const creditsMarkup = html.match(/<dl class="credit-list">([\s\S]*?)<\/dl>/)?.[1] ?? "";
 if ((creditsMarkup.match(/<dt>/g)?.length ?? 0) !== 10) errors.push("credits must keep all 10 roles");
-if (!html.includes('"name": "Roil Studio"') || !html.includes('class="plate-maker">Roil Studio')) errors.push("credit organization name is missing");
+if (!html.includes('"name": "Roil Studio"') || !html.includes('<span>Roil Studio</span>')) errors.push("credit organization name is missing");
 if (!html.includes('href="mailto:rinkyouaoi@gmail.com"')) errors.push("credit contact link is missing");
+if (!html.includes('href="https://my-portfolio-ruby-delta-87.vercel.app/"')) errors.push("portfolio link is missing");
+if (!pageCopy.includes("総合優勝") || !structuredDataMatch?.[1].includes('IVRC2026 総合優勝')) errors.push("overall winner copy is missing from page or structured data");
 
 const navMarkup = html.match(/<nav class="site-nav"[\s\S]*?<\/nav>/)?.[0] ?? "";
 if (!navMarkup.includes('href="#archive"')) errors.push("nav link to the archive section is missing");

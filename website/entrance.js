@@ -2,8 +2,8 @@
   'use strict';
 
   const IMAGE_URL = 'assets/title.png';
-  const STORAGE_KEY = 'mawarimi-entrance-glass-seen';
-  const DURATION = 5000;
+  const boot = window.MAWARIMI_ENTRANCE_BOOT;
+  const DURATION = window.MAWARIMI_ENTRANCE_TIMING.duration;
   const DEPTH = 0.14;
   const TITLE_WIDTH = 3.2;
   const TITLE_HEIGHT = TITLE_WIDTH * 531 / 1210;
@@ -300,7 +300,7 @@
   function loadImage() {
     return new Promise((resolve, reject) => {
       const image = new Image();
-      const timeout = setTimeout(() => reject(new Error('Title image timeout')), 5000);
+      const timeout = setTimeout(() => reject(new Error('Title image timeout')), 14000);
       image.onload = async () => {
         try {
           if (image.decode) await image.decode();
@@ -323,14 +323,25 @@
   async function openEntrance(replay = false) {
     if (active) return;
     active = true;
+    if (replay) boot.show();
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let image;
+    let sound = null;
+    const audioReady = reduced ? Promise.resolve(null) : window.MAWARIMI_ENTRANCE_AUDIO.prepare();
     try {
-      image = await loadImage();
+      [image, sound] = await Promise.all([loadImage(), audioReady]);
     } catch (_) {
+      audioReady.then(audio => audio?.dispose());
+      boot.release();
       active = false;
       return;
     }
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // A loading skip, timeout, or navigation must never reopen the entrance later.
+    if (!boot.pending) {
+      sound?.dispose();
+      active = false;
+      return;
+    }
     const dialog = document.createElement('dialog');
     dialog.id = 'entrance';
     dialog.setAttribute('aria-labelledby', 'entrance-heading');
@@ -364,6 +375,8 @@
       finished = true;
       cancelAnimationFrame(raf);
       clearTimeout(timer);
+      sound?.dispose();
+      boot.release();
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('resize', resize);
       glass?.dispose();
@@ -371,7 +384,7 @@
       if (dialog.open) dialog.close();
       dialog.remove();
       active = false;
-      const target = document.querySelector('.hero-enter') || document.getElementById('main');
+      const target = document.getElementById('main');
       target?.focus({ preventScroll: true });
     }
     function frame(now) {
@@ -386,9 +399,11 @@
       if (progress < 1) raf = requestAnimationFrame(frame);
       else finish();
     }
-    function begin() {
+    async function begin() {
       if (started || finished) return;
       started = true;
+      // Resume in the click/keyboard gesture, before any asynchronous work.
+      const unlocked = sound?.unlock().catch(() => { sound?.dispose(); sound = null; });
       if (renderer && !reduced) {
         try {
           const frozen = document.createElement('canvas');
@@ -407,13 +422,17 @@
           dialog.classList.add('entrance-flat');
         }
       }
+      await unlocked;
+      if (finished) return;
       dialog.classList.add('is-fracturing');
       if (reduced || !glass) {
+        sound?.dispose();
         timer = setTimeout(finish, reduced ? 260 : 650);
       } else {
         startTime = performance.now();
+        sound?.start();
         if (!document.hidden) raf = requestAnimationFrame(frame);
-        else hiddenAt = performance.now();
+        else { hiddenAt = performance.now(); sound?.pause(); }
       }
     }
     function visibility() {
@@ -421,8 +440,10 @@
       if (document.hidden) {
         hiddenAt = performance.now();
         cancelAnimationFrame(raf);
+        sound?.pause();
       } else {
         startTime += performance.now() - hiddenAt;
+        sound?.resume();
         raf = requestAnimationFrame(frame);
       }
     }
@@ -468,6 +489,7 @@
     try {
       if (replay) window.scrollTo({ top: 0, behavior: 'instant' });
       dialog.showModal();
+      boot.release();
       enter.focus();
     } catch (_) {
       finish();
@@ -479,12 +501,5 @@
     replayButton.hidden = false;
     replayButton.addEventListener('click', () => openEntrance(true));
   }
-  let seen = false;
-  try {
-    seen = sessionStorage.getItem(STORAGE_KEY) === '1';
-    if (!seen && !location.hash) sessionStorage.setItem(STORAGE_KEY, '1');
-  } catch (_) {
-    seen = false;
-  }
-  if (!seen && !location.hash) openEntrance();
+  if (boot.pending) openEntrance();
 })();

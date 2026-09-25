@@ -173,6 +173,7 @@ button {
   letter-spacing: 0.18em;
 }
 
+.trailer,
 .archive,
 .credits {
   padding: clamp(4rem, 7vw, 6.5rem) var(--gutter);
@@ -251,16 +252,9 @@ button {
   list-style: none;
 }
 
-.archive-trailer {
+.trailer-content {
   width: min(100%, 52rem);
-  margin: clamp(2rem, 4vw, 3rem) auto 0;
-}
-
-.archive-trailer h3 {
-  margin: 0 0 1rem;
-  font-size: clamp(1.25rem, 2vw, 1.6rem);
-  font-weight: 400;
-  letter-spacing: 0.08em;
+  margin-inline: auto;
 }
 
 .trailer-frame {
@@ -276,10 +270,22 @@ button {
   border: 0;
 }
 
-.archive-trailer p {
-  margin: 1rem 0 0.25rem;
+.spoiler-note,
+.trailer-notes {
   color: var(--ink-muted);
   font-size: 0.9rem;
+}
+
+.spoiler-note {
+  margin: 0 0 1rem;
+}
+
+.trailer-notes {
+  margin-block: 1rem 0.25rem;
+}
+
+.trailer-notes p {
+  margin: 0;
 }
 
 .tag {
@@ -638,6 +644,10 @@ button {
 }
 
 .plate-maker {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
   margin: 0;
   color: var(--ink-muted);
   font-family: "Shippori Mincho", "Yu Mincho", serif;
@@ -727,23 +737,30 @@ button {
   }
 
   .credit-list > div {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     align-content: center;
-    gap: 0.6rem;
+    gap: 0.25rem;
+  }
+
+  .credit-list > div::before {
+    display: none;
   }
 
   .credit-list dt {
-    font-size: 0.88rem;
-    letter-spacing: 0.02em;
+    gap: 0.25em;
+    font-size: clamp(0.625rem, 2.8vw, 0.8rem);
+    letter-spacing: 0;
+    line-height: 1.6;
   }
 
   .credit-list dt::after {
-    min-width: 0.75em;
+    display: none;
   }
 
   .credit-list dd {
-    font-size: 0.95rem;
-    letter-spacing: 0.06em;
+    font-size: clamp(0.625rem, 2.8vw, 0.88rem);
+    letter-spacing: 0.02em;
   }
 
   .plate-hazard {
@@ -757,6 +774,25 @@ button {
     overflow-wrap: anywhere;
   }
 
+  .credit-list {
+    column-gap: 0.35rem;
+  }
+
+}
+
+@media (max-width: 360px) {
+  .plate {
+    padding-right: 0.75rem;
+    padding-left: 2.35rem;
+  }
+
+  .credit-list > div::before {
+    display: none;
+  }
+
+  .credit-list dt::after {
+    min-width: 0.25em;
+  }
 }
 .site-nav a {
   color: var(--ink-muted);

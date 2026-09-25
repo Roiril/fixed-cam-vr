@@ -1,6 +1,10 @@
 # 素材の出典と生成記録
 
-このページ用の素材。2026-09-22にカメラと壁を実際の写真へ差し替えた。ヒーローは同日の追加指示「今のウェブのヒーローの見た目」に合わせた既存の作品キービジュアル。実写の体験風景とは区別する。
+このページ用の素材。ヒーローは2026-09-22の追加指示「今のウェブのヒーローの見た目」に合わせた既存の作品キービジュアル。レトロテレビの映像、実写真、作品内の加工画像を区別して記録する。
+
+## レトロテレビの架空の廊下（2026-09-25）
+
+`camera-fiction-01.webp` 〜 `camera-fiction-03.webp` は、git `b2d9bce3` の `camera-01.webp` 〜 `camera-03.webp` を別名でバイナリのまま復元した。いずれも1152×864。以前に画像生成した同じ廊下の3視点で、現在のレトロテレビに表示する。Git blob IDは順に `01cf7684bafc8193e8077ca2d4ff321720e1ce5a`、`b1a97dea0751525d605a937875a78432b5926000`、`3178d27ec2b16e90aafcbf0c49246ea0170df6f2`。生成プロンプトは下の旧版記録に残す。
 
 ## 現在の実写真（2026-09-22）
 
@@ -10,15 +14,17 @@
 | camera-02.webp | `tools/web-compositor/captures/plate_B_20260907_104115.jpg` | 壁と床 |
 | camera-03.webp | `tools/web-compositor/captures/plate_C_20260823_194236.jpg` | 幕と壁を別の位置から撮影 |
 
-調査依頼も `camera-01.webp` を共用する。ユーザーの修正指示「カーテンが正面から見えるやつ」に対応した。旧 `wall-evidence.webp` は履歴として残し、配信対象から外した。
+`camera-01.webp` 〜 `camera-03.webp` は現在も原本として保持する。調査依頼にはカメラ01から作った `camera-01-doll.webp` を使う。ユーザーの修正指示「カーテンが正面から見えるやつ」に対応した。旧 `wall-evidence.webp` は履歴として残し、配信対象から外した。
 
 元写真はいずれも640×480。生成素材ではなく、合成前に撮影した背景写真。原本は保存したままPillowでWebPへ変換した。撮影場所の根拠は `tools/gen-plate/sites/A_20260907.json`、`B_20260907.json`、`C_20260823_1942.json`。元写真のWebPは `py -3.11 website/scripts/prepare-photos.py` で再生成する。
 
-テレビ内の `camera-01-quest.webp` 〜 `camera-03-quest.webp` は対応する元写真から作った1280×720の静止画。上映データ `tools/web-compositor/show.json` の全カメラ共通露出 -1.75 と `ScreenComposite.shader` のレンズ→センサー→現像→管の処理順を `website/scripts/render-camera-quest.py` で再現した。暗部ノイズと自動露出には `CameraFeelFx` の初期値を使う。実シェーダーをUnityやQuestで直接描画したキャプチャではない。実機固有の映像更新と画面の曲面は含まない。各ファイルは `py -3.11 website/scripts/render-camera-quest.py 01 website/assets/camera-01-quest.webp`（02、03も同様）で再生成する。CSS側でさらに色を変えない。
+`camera-01-quest.webp` 〜 `camera-03-quest.webp` は対応する実写真から作った1280×720の静止画として保持する。現在のレトロテレビでは使わない。上映データ `tools/web-compositor/show.json` の全カメラ共通露出 -1.75 と `ScreenComposite.shader` の処理順を `website/scripts/render-camera-quest.py` で再現した。各ファイルは `py -3.11 website/scripts/render-camera-quest.py 01 website/assets/camera-01-quest.webp`（02、03も同様）で再生成する。
 
 調査依頼の `camera-01-doll.webp` は同じカメラ01を人形視点の表示値 `Shown=1` で加工したもの。解像度は映像幅で約200ブロックに落とす。夜間モードの無彩色化、+0.95EVの増感、強いセンサー粒、明暗曲線を入れる。写真の4:3部分を切り出し、CSSの追加補正はしない。再生成は `py -3.11 website/scripts/render-camera-quest.py 01 website/assets/camera-01-doll.webp --doll`。
 
-実機映像3本の出典は [FOOTAGE.md](FOOTAGE.md)。入口の立体題字は既存の `title.png`（1210×531）の輪郭と色をWebGLで使用。新しい題字を生成していない。破砕の幾何は `Assets/Scripts/Streaming/IntroFractureMesh.cs`、時計と材質は `Assets/Art/Shaders/Intro/IntroFractureTime.hlsl` と `IntroFracture.shader` からウェブ用に移植した。凍結する像は題字で、戻った場所から実HTMLを透過して見せる。
+実機映像3本の出典は [FOOTAGE.md](FOOTAGE.md)。入口の立体題字は既存の `title.png`（1210×531）の輪郭と色をWebGLで使用する。新しい題字は生成していない。破砕の幾何は `Assets/Scripts/Streaming/IntroFractureMesh.cs`、時計と材質は `Assets/Art/Shaders/Intro/IntroFractureTime.hlsl` と `IntroFracture.shader` からウェブ用に移植した。
+
+入口の値と音は `scripts/sync-entrance.mjs` でQuest本体から同期する。参照先は `IntroFractureTime.hlsl`、`IntroLogic.cs`、`SoundCueLogic.cs`、`SfxPlayer.cs`、`tools/web-compositor/show.json`。`sfx_shatter.wav` と `sfx_screen_on.wav` は `Assets/Resources/Sound/` から無加工コピーする。前者は4.1500秒、SHA-256 `99BCF22507D37C1FA9E4DC6133C5970C41E93414517307489BF13913D7760925`。後者は0.331438秒、SHA-256 `0494FC7615545381A63916CA0786E22E8712ED898EB5B3E8CC9F16B866FCFDBF`。コピー元と配信用ファイルのハッシュは一致する。gainは1。音の開始はQuestと同じく0.135秒と4.559秒。
 
 ## キービジュアル
 
@@ -27,9 +33,9 @@
 - 題字の正本: `tools/title-art/mawarimi-title-master-v2.png`。
 - キービジュアル以外に人形の素材を配置していない。
 
-## 以前の配信用素材（2026-09-15時点）
+## 2026-09-15時点のファイル記録
 
-以下のカメラ3枚は現在の配信では実写真に置き換わった。CRTは2026-09-22の修正指示で再び公開ビルドに含めた。寸法と生成プロンプトは旧版の記録として残す。
+以下のカメラ3枚は2026-09-25に `camera-fiction-01.webp` 〜 `03` として復元した。表の旧ファイル名はgit `b2d9bce3` 時点の記録。CRTは公開ビルドに含める。
 
 | ファイル | 寸法 | バイト |
 |---|---|---:|
@@ -51,17 +57,17 @@
 - ライセンスは同じディレクトリの `yuji-boku-OFL.txt` `shippori-mincho-OFL.txt` `ibm-plex-mono-OFL.txt` `chakra-petch-OFL.txt`。いずれも上流の `ofl/<書体>/OFL.txt` をそのまま取得した。
 - 収録文字は `fonts-manifest.json` に書き出す。文字を追加したら `npm run fonts` を走らせる。走らせ忘れは `npm run check` が足りない字を名指しで落とす。
 
-## バーコードと QR
+## バーコードと旧QR
 
 ```powershell
 py -3.11 scripts/make-codes.py
 ```
 
-出力は `scripts/codes/` の 3 本で、`index.html` へは中身をそのまま貼る（インライン）。配信はしない。色は `currentColor` なので貼った先の文字色がそのまま棒の色になる。
+出力は `scripts/codes/` の3本。2本のバーコードだけを `index.html` へインラインで貼る。SVGファイル自体は配信しない。色は `currentColor` なので貼った先の文字色がそのまま棒の色になる。
 
 - `code128-ivrc2026.svg` / `code128-dcexpo2026.svg`: `IVRC2026` `DCEXPO2026` を Code 128 B で符号化した。符号表を持つ自前実装で、依存は無い。
-- `qr-site.svg`: 公開URL `https://mawarimi.vercel.app/` を [segno](https://github.com/heuer/segno) で符号化した（版 3・29×29・余白なし。誤り訂正は M を指定したが、同じ版に収まるので segno が Q へ引き上げている）。
-- どちらも読み取り機に通る本物で、当て字の模様ではない。600px 以下ではバーコードを隠す（幅が 2mm になって読めなくなるため）。
+- `qr-site.svg` は旧版の生成物としてローカルに残る。現在のクレジットには貼らず、公開ビルドにも含めない。
+- バーコードは読み取り機に通るもの。600px 以下では隠す（幅が 2mm になって読めなくなるため）。
 
 ## 参照
 

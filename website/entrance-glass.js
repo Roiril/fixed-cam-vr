@@ -4,8 +4,12 @@
  */
 (() => {
   'use strict';
+  const timing = window.MAWARIMI_ENTRANCE_TIMING;
+  const clockSource = Object.entries(timing)
+    .map(([name, value]) => `const float ${name} = ${Number(value).toFixed(12)};`).join('\n');
   const vertexSource = `
     precision highp float;
+    ${clockSource}
     attribute vec3 aLocal;
     attribute vec3 aNormal;
     attribute vec4 aPiece;
@@ -49,9 +53,9 @@
       float rank = sat((size-.016)/.039);
       float largePiece = smoothstep(.016,.055,size);
       float weight = sat(.55*rank+.25*sat(length(center)/.15)+.20*noise2.y);
-      float arrive = mix(.70+.17*pow(weight,.6),.90,closer);
-      float pullPow = mix(1.6,3.5,max(weight,closer));
-      float pullT = sat((p-.56)/(arrive-.56));
+      float arrive = mix(ArriveFirst+ArriveSpan*pow(weight,.6),CloserArrive,closer);
+      float pullPow = mix(PullPowLight,PullPowHeavy,max(weight,closer));
+      float pullT = sat((p-PullStart)/(arrive-PullStart));
       float travel = pow(pullT,pullPow);
       float reveal = ease(arrive,arrive+.024,p);
       vReveal = reveal;
@@ -76,12 +80,12 @@
       float originDist = sat(length(fromOrigin)/2.2);
       vec2 radial = normalize(fromOrigin);
       vec2 tangent = vec2(-radial.y,radial.x);
-      float breakAt = .060+aMacro.z*(.040/.14)+noise.x*.004;
+      float breakAt = CrackEnd+aMacro.z*(BreakSpan/.14)+noise.x*.004;
       float crack = ease(breakAt,breakAt+.006,p);
       float x = max(p-breakAt,0.0);
-      float xs = max(p-.52,0.0);
-      float u = .80*(1.0-exp(-x/.024))+.60*(x-xs*ease(0.0,.12,xs));
-      float spinTime = .80*(1.0-exp(-x/.024))+.60*x;
+      float xs = max(p-PullBegin,0.0);
+      float u = .80*(1.0-exp(-x/BurstTau))+DriftRate*(x-xs*ease(0.0,PullArrest,xs));
+      float spinTime = .80*(1.0-exp(-x/BurstTau))+DriftRate*x;
       float macroAngle = radians(mix(1.5,3.5,macroNoise.y))*(macroNoise.x<.5?-1.0:1.0)*crack;
       vec3 macroAxis = normalize(mix(tangentX,tangentY,macroNoise.x));
       vec3 peel = macroRay*.018*crack;
@@ -96,9 +100,9 @@
       vec3 pullPath = targetCenter-flightCenter;
       float pullDistance = length(pullPath);
       vec3 pullDir = pullPath/max(pullDistance,.0001);
-      float pullRate = pullPow*pow(max(pullT,.0001),pullPow-1.0)/(arrive-.56);
-      float speed = pullRate*pullDistance/5.0*step(.0001,1.0-travel);
-      float stretch = .55*sat(speed/2.0)*(1.0-ease(.92,1.0,travel))*step(.56,p);
+      float pullRate = pullPow*pow(max(pullT,.0001),pullPow-1.0)/(arrive-PullStart);
+      float speed = pullRate*pullDistance/(duration/1000.0)*step(.0001,1.0-travel);
+      float stretch = .55*sat(speed/2.0)*(1.0-ease(.92,1.0,travel))*step(PullStart,p);
       float tiltRate = radians(mix(52.0,18.0,rank)*(.55+.9*noise2.y))*(noise.x<.5?-1.0:1.0);
       float rollRate = radians(mix(38.0,13.0,rank)*(.55+.9*noise2.x))*(noise.y<.5?-1.0:1.0);
       vec3 travelAxis = normalize(mix(tangentX,vec3(1.0,0.0,0.0),travel));
@@ -305,5 +309,5 @@
       return {render,resize,dispose,pieceCount:pieces.length};
     } catch(error) { dispose(); throw error; }
   }
-  window.MAWARIMI_GLASS={create,duration:5000};
+  window.MAWARIMI_GLASS={create,duration:timing.duration};
 })();
