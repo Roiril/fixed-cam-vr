@@ -84,7 +84,8 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>終了処理が画面を畳む前に、保持済みの終幕写真を固定する。</summary>
-        public void FreezeEndingShots() => takeRunner?.FreezeEndingShots();
+        public void FreezeEndingShots(bool forceTrappedCapture = false)
+            => takeRunner?.FreezeEndingShots(forceTrappedCapture);
 
         /// <summary>ライブ抑止（activeCue 非空 / cameraOverride 非 null）を実行体へ中継する。</summary>
         public void SetSuppressed(bool suppressed) => takeRunner?.SetSuppressed(suppressed);
@@ -135,6 +136,13 @@ namespace FixedCamVr.Streaming
         public bool IsMarkTooEarly => takeRunner != null && takeRunner.IsMarkTooEarly;
 
         public bool DollReplacementShowing => takeRunner != null && takeRunner.DollReplacementShowing;
+
+        /// <summary>最後の ending take で報告前に描いた CG 人形の足位置（枠 UV）。</summary>
+        public bool TryGetEndingDollFootUv(out Vector2 uv)
+        {
+            uv = new Vector2(0.5f, 0.5f);
+            return takeRunner != null && takeRunner.TryGetEndingDollFootUv(out uv);
+        }
 
         /// <summary>CG 人形が乱れ遷移の覆いの中にいるか。</summary>
         public bool DollReplacementTransitioning => takeRunner != null && takeRunner.DollReplacementTransitioning;

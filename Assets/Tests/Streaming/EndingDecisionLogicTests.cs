@@ -43,8 +43,39 @@ namespace FixedCamVr.Tests.Streaming
             var logic = new EndingDecisionLogic();
             logic.NotifyPromptReadable(10f);
             logic.NotifyReleased();
-            logic.Tick(25f, true, 3, 2);
+            logic.Tick(25f, true, 3, 2, true, true);
             Assert.AreEqual(ShowEndingOutcome.Released, logic.Outcome);
+            Assert.IsFalse(logic.TrappedByLeftHalf);
+        }
+
+        [Test]
+        public void EndingDollOnLeftTrapsBeforeThePromptIsReadable()
+        {
+            var logic = new EndingDecisionLogic();
+            logic.Tick(1f, true, 4, 0, false, true);
+            Assert.AreEqual(ShowEndingOutcome.Trapped, logic.Outcome);
+            Assert.IsTrue(logic.TrappedByLeftHalf);
+        }
+
+        [TestCase(true, 0f, 0f, true)]
+        [TestCase(true, 0.4999f, 1f, true)]
+        [TestCase(true, 0.5f, 0.5f, false)]
+        [TestCase(true, -0.0001f, 0.5f, false)]
+        [TestCase(true, 0.25f, -0.0001f, false)]
+        [TestCase(true, 0.25f, 1.0001f, false)]
+        [TestCase(false, 0.25f, 0.5f, false)]
+        public void LeftHalfRequiresAnOnScreenProjectedFoot(
+            bool projectionValid, float u, float v, bool expected)
+        {
+            Assert.AreEqual(expected, EndingDecisionLogic.IsFootOnLeftHalf(projectionValid, u, v));
+        }
+
+        [Test]
+        public void LeftHalfRejectsNonFiniteCoordinates()
+        {
+            Assert.IsFalse(EndingDecisionLogic.IsFootOnLeftHalf(true, float.NaN, 0.5f));
+            Assert.IsFalse(EndingDecisionLogic.IsFootOnLeftHalf(true, float.PositiveInfinity, 0.5f));
+            Assert.IsFalse(EndingDecisionLogic.IsFootOnLeftHalf(true, 0.25f, float.NegativeInfinity));
         }
 
         [Test]
@@ -70,8 +101,21 @@ namespace FixedCamVr.Tests.Streaming
             Assert.AreEqual(ShowEndingOutcome.Pending, logic.Outcome);
             Assert.IsFalse(logic.PromptReadable);
             Assert.IsFalse(logic.ReleaseReported);
+            Assert.IsFalse(logic.TrappedByLeftHalf);
             logic.Tick(100f, true, 3, 2);
             Assert.AreEqual(ShowEndingOutcome.Pending, logic.Outcome);
+        }
+
+        [Test]
+        public void ResetClearsTheLeftHalfReason()
+        {
+            var logic = new EndingDecisionLogic();
+            logic.Tick(1f, true, 4, 0, false, true);
+            Assert.IsTrue(logic.TrappedByLeftHalf);
+
+            logic.ResetRun();
+            Assert.AreEqual(ShowEndingOutcome.Pending, logic.Outcome);
+            Assert.IsFalse(logic.TrappedByLeftHalf);
         }
 
         [Test]

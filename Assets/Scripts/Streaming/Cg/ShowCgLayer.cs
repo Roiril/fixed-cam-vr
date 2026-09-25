@@ -170,6 +170,8 @@ namespace FixedCamVr.Streaming.Cg
         private int _cameraIndex = -1;
         private bool _warnedCalibMismatch;
         private bool _projectionOverridden;
+        private bool _lastRenderedDollFootValid;
+        private Vector2 _lastRenderedDollFootUv = new Vector2(0.5f, 0.5f);
 
         // 接地（影 / 接地影 / 部屋プロキシ）。すべて実行時生成で、シーン・prefab には現れない。
         private ShowRoomProxy? _roomProxy;
@@ -314,6 +316,8 @@ namespace FixedCamVr.Streaming.Cg
             _calibRaw = hasCalibForPose ? calibForPose : null;
             _warnedCalibMismatch = false;
             _actorRig?.ResetPose();
+            // 新しいカットの Transform をまだ描いていない間、前カットの足位置を現在の画として使わない。
+            _lastRenderedDollFootValid = false;
             _visible = true;
             _warnedUnregistered = false;
             Tick();
@@ -358,6 +362,7 @@ namespace FixedCamVr.Streaming.Cg
             _actorDef = null;
             _pose = null;
             _placement = null;
+            _lastRenderedDollFootValid = false;
             SetStrength(0f);
             // 人形が消えたら荒れも消す。Hide の後は LateUpdate が早期 return するので、
             // ここで明示的に落とさないと「何も居ない所の画だけが荒れている」が残る。
@@ -608,6 +613,16 @@ namespace FixedCamVr.Streaming.Cg
         }
 
         /// <summary>
+        /// 最後に実際へ描いた人形の足位置を枠 UV で返す。
+        /// Transform は毎フレーム動くため、現在位置を再投影せず <see cref="RenderIfDue"/> の瞬間を保持する。
+        /// </summary>
+        public bool TryGetLastRenderedDollFootUv(out Vector2 uv)
+        {
+            uv = _lastRenderedDollFootUv;
+            return DollVisible && _lastRenderedDollFootValid;
+        }
+
+        /// <summary>
         /// 黒い波が読む体の入力。<b>人形と同じ時刻</b>（＝ 映像の遅延ぶん過去）を返すので、
         /// 波のエネルギーと人型の位置が同じ瞬間の体を指す。
         /// </summary>
@@ -638,9 +653,16 @@ namespace FixedCamVr.Streaming.Cg
             long seq = CurrentSourceSeq();
             bool advanced = seq > 0 && seq != _lastRenderedSeq;
             if (!advanced && now - _lastRenderTime < CgFallbackIntervalSec) return;
+            Vector2 footUv = new Vector2(0.5f, 0.5f);
+            Vector2 containScale = _screen != null ? _screen.ContainScale : Vector2.one;
+            bool footValid = DollVisible && _actorInstance != null
+                             && TryFrameUv(_virtualCam, _actorInstance.transform.position,
+                                           containScale, out footUv);
             _lastRenderedSeq = seq;
             _lastRenderTime = now;
             _virtualCam.Render();
+            _lastRenderedDollFootUv = footUv;
+            _lastRenderedDollFootValid = footValid;
         }
 
         /// <summary>いま表示中のカメラが受け取った最新フレームの通し番号（取れなければ -1）。</summary>
@@ -679,6 +701,7 @@ namespace FixedCamVr.Streaming.Cg
             // カメラの enabled は常に false（描画は RenderIfDue の手動 Render）。
             // 出し始めは待たずに 1 枚描く — ここで刻みを待つと、人形が出る瞬間だけ遅れて見える。
             if (on) _lastRenderTime = -999f;
+            else _lastRenderedDollFootValid = false;
             if (_actorInstance != null) _actorInstance.SetActive(on);
             // プロキシと接地影は人形と生死を共にする（人形が居ないのに部屋の深度だけ書いても意味が無い）。
             if (_roomProxy != null) _roomProxy.gameObject.SetActive(on);

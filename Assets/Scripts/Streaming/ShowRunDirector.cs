@@ -111,6 +111,9 @@ namespace FixedCamVr.Streaming
         /// <summary>このランの締めの結果。通常終了とスタッフ停止は Interrupted。</summary>
         public ShowEndingOutcome EndingOutcome => _endingDecision.Outcome;
 
+        /// <summary>報告前の人形が画面左半分へ入ったことで Trapped が確定したか。</summary>
+        public bool EndingTrappedByLeftHalf => _endingDecision.TrappedByLeftHalf;
+
         /// <summary>③b の全文が見えた縁。連絡面から一度だけ届く。</summary>
         public void NotifyClosingPromptReadable()
             => _endingDecision.NotifyPromptReadable(Time.unscaledTime);
@@ -439,10 +442,16 @@ namespace FixedCamVr.Streaming
             int camera = -1;
             bool segmentKnown = timelineDirector != null
                 && timelineDirector.TryGetCurrentSegment(out lap, out camera);
+            Vector2 dollFootUv = new Vector2(0.5f, 0.5f);
+            bool dollFootProjected = timelineDirector != null
+                                     && timelineDirector.TryGetEndingDollFootUv(out dollFootUv);
+            bool endingDollOnLeftHalf = EndingDecisionLogic.IsFootOnLeftHalf(
+                dollFootProjected, dollFootUv.x, dollFootUv.y);
             _endingDecision.Tick(Time.unscaledTime, segmentKnown,
                                  segmentKnown ? lap : -1, segmentKnown ? camera : -1,
                                  _insideClosingArea == false && _closingAreaObservedAt >= 0f
-                                 && Time.unscaledTime - _closingAreaObservedAt <= .25f);
+                                 && Time.unscaledTime - _closingAreaObservedAt <= .25f,
+                                 endingDollOnLeftHalf);
 
             if (takeEnded)
             {
@@ -536,7 +545,7 @@ namespace FixedCamVr.Streaming
                 _endingDecision.Interrupt();
             Debug.Log($"[ShowRun] 体験の終了（{_logic.Lap - 1} 周 / 経過 {_logic.RunElapsedSec:F0} 秒）");
             // AbortActive が overlay / CG / split を畳む前に、最後に成立した 2 枚を固定する。
-            timelineDirector?.FreezeEndingShots();
+            timelineDirector?.FreezeEndingShots(_endingDecision.TrappedByLeftHalf);
             timelineDirector?.AbortActive();
             _glitch?.ResetAll();
             // 凍結・焼き付きも畳む。終わったのに画が止まったままだと、暗転が始まっても

@@ -126,8 +126,24 @@ namespace FixedCamVr.Streaming
 
         /// <summary>終了処理が画を畳む前に、保持済みの最終フレームを固定する。</summary>
         public void Freeze()
+            => Freeze(EndingShotWindow.None);
+
+        /// <summary>
+        /// 終了フレームを同期撮影してから固定する。
+        /// <paramref name="forcedWindow"/> は表示直後に成立した終了条件で、通常の撮影窓が
+        /// EndOfFrame まで待てない場合だけ指定する。
+        /// </summary>
+        public void Freeze(EndingShotWindow forcedWindow)
         {
             if (_frozen) return;
+            EndingShotWindow window = forcedWindow != EndingShotWindow.None
+                ? forcedWindow
+                : _runner != null ? _runner.EndingShotWindow : EndingShotWindow.None;
+            if (window != EndingShotWindow.None && CaptureWindow(window))
+            {
+                if (window == EndingShotWindow.Trapped) _trappedCount++;
+                else if (window == EndingShotWindow.Released) _releasedCount++;
+            }
             _frozen = true;
             Debug.Log($"[EndingFrameCapture] 固定 generation={_generation} shots={ShotCount} " +
                       $"trappedFrames={_trappedCount} releasedFrames={_releasedCount}");

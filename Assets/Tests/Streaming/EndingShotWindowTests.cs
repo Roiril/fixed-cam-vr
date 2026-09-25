@@ -55,5 +55,17 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(Window(waitingForMark: true, released: true,
                 primary: true, secondary: true, cg: true), Is.EqualTo(EndingShotWindow.None));
         }
+
+        [TestCase(true, false, true, false, true)]
+        [TestCase(false, false, true, false, false)]
+        [TestCase(true, true, true, false, false)]
+        [TestCase(true, false, false, false, false)]
+        [TestCase(true, false, true, true, false)]
+        public void EndingDollFootExcludesOtherTakesReportsHiddenDollsAndTransitions(
+            bool endingTake, bool released, bool dollShowing, bool transition, bool expected)
+        {
+            Assert.That(TakeRunner.CanUseEndingDollFoot(
+                endingTake, released, dollShowing, transition), Is.EqualTo(expected));
+        }
     }
 }

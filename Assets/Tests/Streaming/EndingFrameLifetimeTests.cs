@@ -8,6 +8,61 @@ namespace FixedCamVr.Streaming.Tests
     public sealed class EndingFrameLifetimeTests
     {
         [Test]
+        public void ForcedTrappedFreezeCapturesTheFirstVisibleFrameSynchronously()
+        {
+            var screen = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            var material = new Material(Shader.Find("FixedCamVr/ScreenComposite"));
+            var source = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            var readback = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            var previous = RenderTexture.active;
+            source.SetPixel(0, 0, Color.red);
+            source.Apply();
+            material.SetTexture("_LiveTex", source);
+            material.SetVector("_LiveScale", new Vector4(1, 1, 0, 0));
+            material.SetFloat("_ScreenPower", 1f);
+            material.SetFloat("_ScreenCollapse", 0f);
+            var renderer = screen.GetComponent<Renderer>();
+            renderer.sharedMaterial = material;
+            var capture = screen.AddComponent<EndingFrameCapture>();
+            Material? instance = null;
+            try
+            {
+                Invoke(capture, "Awake");
+                instance = renderer.sharedMaterial;
+                capture.Freeze(EndingShotWindow.Trapped);
+
+                Assert.That(capture.TrappedShot, Is.Not.Null);
+                Assert.That(capture.ReleasedShot, Is.Null);
+                Assert.That(capture.ShotCount, Is.EqualTo(1));
+                Assert.That(Get(capture, "_frozen"), Is.True);
+                var shot = (RenderTexture)capture.TrappedShot!;
+                RenderTexture.active = shot;
+                readback.ReadPixels(new Rect(shot.width / 2, shot.height / 2, 1, 1), 0, 0);
+                readback.Apply();
+                Color saved = readback.GetPixel(0, 0);
+                Assert.That(saved.r, Is.GreaterThan(0.3f), "The saved image must contain rendered pixels");
+                Assert.That(saved.r, Is.GreaterThan(saved.g * 2f));
+
+                source.SetPixel(0, 0, Color.green);
+                source.Apply();
+                capture.Freeze(EndingShotWindow.Trapped);
+                RenderTexture.active = shot;
+                readback.ReadPixels(new Rect(shot.width / 2, shot.height / 2, 1, 1), 0, 0);
+                readback.Apply();
+                Assert.That(readback.GetPixel(0, 0), Is.EqualTo(saved), "A frozen photo must not follow the live image");
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                Object.DestroyImmediate(screen);
+                if (instance != null && instance != material) Object.DestroyImmediate(instance);
+                Object.DestroyImmediate(material);
+                Object.DestroyImmediate(source);
+                Object.DestroyImmediate(readback);
+            }
+        }
+
+        [Test]
         public void RunRestartAndDisableDiscardBothVisitorsShots()
         {
             var runGo = new GameObject("Ending frame lifetime run");

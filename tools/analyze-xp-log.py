@@ -1702,6 +1702,10 @@ def analyze(events, others, exp, warns=None):
             #    ⇒ **③a が届いて③b が無い走行も FAIL**（押しても③b は続く。欠けていたら配線が壊れている）。
             t_halt = _first("Halt")
             waited = [e for e in comms if e.get("id") == "Prompt"]
+            # 左半分への進入は催促の全文表示前にも体験を終了させる。
+            # 結末と理由の両方が記録されたときだけ、未着を正常な打切りとして扱う。
+            trapped_by_left = any(e.get("ev") == "outro" and e.get("ending") == "Trapped"
+                                  and str(e.get("endingLeft")) == "1" for e in events)
             closing_events = [e for e in events if e.get("ev") == "closingLine"]
             closing_line_id = exp.get("closingLineId") or ""
             closing_entry = next((fnum(e, "t", 0.0) for e in events
@@ -1731,7 +1735,9 @@ def analyze(events, others, exp, warns=None):
                 # 直前の連絡は最大 7 秒の印字と読ませる時間がある。時計の成立だけでは
                 # Halt を即出せないので、読了待ちの余地があるログは赤にしない。
                 recent_notice = any(t_show_end - fnum(e, "t", 0.0) < 10.0 for e in comms)
-                if recent_notice and not _fin:
+                if trapped_by_left:
+                    verdict("OK", "人形が左半分へ入って終了したため③a の未着は判定しない")
+                elif recent_notice and not _fin:
                     verdict("WARN", "最終 A 進入から 3 秒経ったが、前の連絡の読了待ちかもしれないため"
                                     "③a の未着は判定しない")
                 else:
@@ -1748,8 +1754,11 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", "③b は届いたのに③a『止まってください！』が届いていない（0168）— "
                                 "CommsCueLogic の Halt を見ていない古い APK の疑い")
             elif t_halt is not None:
-                verdict("FAIL", "③a は届いたのに③b『異常があなたを…』が届いていない（0178）— "
-                                "報告で③b を止める古い実装の疑い。いまは押しても続く約束")
+                if trapped_by_left:
+                    verdict("OK", "人形が左半分へ入って終了したため③b の未着は判定しない")
+                else:
+                    verdict("FAIL", "③a は届いたのに③b『異常があなたを…』が届いていない（0178）— "
+                                    "報告で③b を止める古い実装の疑い。いまは押しても続く約束")
 
             # ---- 打鍵音（`canon/LEDGER.md` 0056）----
             # ⚠⚠ **音は録画に映らない。** 字が 1 文字ずつ出る絵は PNG で確かめられるが、

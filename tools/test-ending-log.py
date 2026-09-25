@@ -101,6 +101,34 @@ class EndingLogTests(unittest.TestCase):
         verdicts = self.verdicts(events)
         self.assertTrue(any(level == "FAIL" and "③b が③a" in text for level, text in verdicts))
 
+    def test_left_half_ending_can_interrupt_prompt(self):
+        events = [
+            {"ev": "comms", "id": "Halt", "t": "3", "cline": "0", "closing": "3"},
+            {"ev": "outro", "stage": "Dark", "t": "4", "ending": "Trapped", "endingLeft": "1"},
+        ]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "OK" and "③b の未着" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "③a は届いたのに③b" in text for level, text in verdicts))
+
+    def test_left_half_ending_can_precede_halt(self):
+        events = [
+            {"ev": "comms", "id": "BeginHow", "t": "0"},
+            {"ev": "seg", "t": "10", "lap": "4", "plap": "4", "cam": "0"},
+            {"ev": "outro", "stage": "Dark", "t": "14", "ending": "Trapped", "endingLeft": "1"},
+        ]
+        self.assertTrue(any(level == "OK" and "③a の未着" in text
+                            for level, text in self.verdicts(events)))
+
+    def test_other_endings_do_not_excuse_missing_prompt(self):
+        for ending, left in (("Trapped", "0"), ("Released", "1"), ("Interrupted", "1")):
+            with self.subTest(ending=ending, left=left):
+                events = [
+                    {"ev": "comms", "id": "Halt", "t": "3", "cline": "0", "closing": "3"},
+                    {"ev": "outro", "stage": "Dark", "t": "4", "ending": ending, "endingLeft": left},
+                ]
+                self.assertTrue(any(level == "FAIL" and "③a は届いたのに③b" in text
+                                    for level, text in self.verdicts(events)))
+
     def test_released_mark_uses_typed_logged_reply_without_curse_requirement(self):
         events = [
             {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "1",

@@ -7,8 +7,9 @@
 - 警告は凍結線通過 OR 確定した最後の A への進入から 3 秒。前の連絡が読まれている間は順番を待つ。
 - スイの Prompt が全文可視になる瞬間から 15 秒を数える。印字開始ではない。
 - それ以降の未報告で A の実領域から出るか、確定区間が 4-A 以外になるか、15 秒に達すると Trapped。
+- 2026-09-25追加。最後の演出で未報告の人形が画面の左半分へ入っても Trapped。この条件は Prompt の全文表示を待たない。合成で使うカメラから人形の足位置を投影する。中央と画面外は含めない。通常周の人形や人間の代役は対象外。
 - PlayerZoneTracker は A の矩形すべてで実位置を判定する。カメラの直近区間保持とは分ける。追跡不明や 0.25 秒以上更新のない位置は退出判定に使わない。
-- 報告と期限/離脱が同じフレームなら報告優先。Update の入力と通信表示を受けた後の LateUpdate で判定する。
+- 報告と期限/離脱/左半分への進入が同じフレームなら報告優先。Update の入力と通信表示を受けた後の LateUpdate で判定する。
 - MarkResult.Released だけを解除成立とする。既存の 7.1 秒の帰還カットが自然完了した後に Released の結果を出す。
 - watchdog と技術的な中断を解除と誤認しない。これらは Interrupted。ランの上限は維持する。
 - Trapped は同じフレームに画面の電力を落とす。通常映像へ戻るカットと電源断の縮小を通さず、暗転から結果へ進む。
@@ -28,6 +29,8 @@
 台本の構造を変えたときは対応表とテストも更新する。
 
 ## 表示と音
+
+以下は2026-09-22時点の表示。2026-09-25以降のエンドロール形式は [ending_roll.md](ending_roll.md) を参照する。
 
 OutroReport は結末と件数を表示開始時に固定する。
 「帰還確認」「帰還不能」「調査中断」を別の見出しと文章にする。
@@ -56,6 +59,7 @@ Nocturnal Waters.mp3 を 48 kHz stereo PCM に復号した bgm_nocturnal_waters.
 - `py -3.11 tools/quest-record.py --walk --no-report --sec 180`: 報告しない自動走行。Development の `xpnomark` 起動フラグ。
 - OSD は `py -3.11 tools/make-osd-font.py`。日本語は「終了」。英語は END。仏語は FIN。
 - `ev=outro ending= anomalyTotal=` に結末と分母を記録する。
+- `ev=outro endingLeft=1` は左半分への進入による人形End。`ending=Trapped` と併せて記録された場合だけ、ログ解析で終了前に届かなかった Halt / Prompt を不具合としない。
 - `ev=sum repMusicBuilt= repMusicPlay= repMusicVol= repMusicSec=` に実音源の状態を記録する。
   再生命令だけでは鳴ったとしない。音量と再生位置の前進を `analyze-xp-log.py` が確認する。
 

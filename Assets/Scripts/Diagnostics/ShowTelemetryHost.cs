@@ -813,6 +813,7 @@ namespace FixedCamVr.Diagnostics
                      //   ここ（`ev=outro`）は終幕の縁でしか出ないので、判定の材料にならない。
                      $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
                      $"ending={(_run != null ? _run.EndingOutcome.ToString() : "-")} " +
+                     $"endingLeft={(_run != null && _run.EndingTrappedByLeftHalf ? 1 : 0)} " +
                      $"anomalyTotal={(_show != null ? _show.TotalAnomalyCount : -1)} " +
                      $"promptAge={(_run != null ? _run.ClosingPromptElapsedSec : -1f):F2} " +
                      // anomalies = 報告した異変の数（同じ演出は 1・`canon/LEDGER.md` 0234）。

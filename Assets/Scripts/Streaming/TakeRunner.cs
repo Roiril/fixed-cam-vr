@@ -240,6 +240,26 @@ namespace FixedCamVr.Streaming
             _logic.IsActive, _activeStepDollReplacement, _cgLayer != null && _cgLayer.DollVisible);
 
         /// <summary>
+        /// 最後の ending take で、報告前の CG 人形化を実際に描いた足位置を返す。
+        /// 通常 take、人の代役、乱れ遷移中、報告後は対象外。
+        /// </summary>
+        public bool TryGetEndingDollFootUv(out Vector2 uv)
+        {
+            uv = new Vector2(0.5f, 0.5f);
+            bool endingTakeActive = _logic.IsActive
+                                    && !string.IsNullOrEmpty(_endingTakeId)
+                                    && ActiveTakeId == _endingTakeId;
+            if (!CanUseEndingDollFoot(endingTakeActive, _endingReleased,
+                                      DollReplacementShowing, DollReplacementTransitioning))
+                return false;
+            return _cgLayer != null && _cgLayer.TryGetLastRenderedDollFootUv(out uv);
+        }
+
+        public static bool CanUseEndingDollFoot(bool endingTakeActive, bool reportReleased,
+                                                bool dollReplacementShowing, bool transitionActive)
+            => endingTakeActive && !reportReleased && dollReplacementShowing && !transitionActive;
+
+        /// <summary>
         /// 人形視点の素材が実際に画面へ混ざっているか。
         /// cue id だけでは動画の Prepare 前にも立つため、overlay の実効強度と対で見る。
         /// </summary>
@@ -423,7 +443,12 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>終了処理が表示状態を畳む前に、終幕写真を固定する。</summary>
-        public void FreezeEndingShots() => _endingCapture?.Freeze();
+        public void FreezeEndingShots(bool forceTrappedCapture = false)
+        {
+            if (_endingCapture == null) return;
+            if (forceTrappedCapture) _endingCapture.Freeze(EndingShotWindow.Trapped);
+            else _endingCapture.Freeze();
+        }
 
         /// <summary>
         /// ライブ卓の抑止（activeCue 非空 / cameraOverride 非 null）を通知する。
