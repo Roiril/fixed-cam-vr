@@ -981,6 +981,16 @@ skip 0.50 → ふふ（2）         0.66 → ふ（1）
 
 ### 心音（追いつき → 3 周目 A の入れ替わり・2026-09-06・`canon/LEDGER.md` 0175）
 
+2026-09-25: 連続人形視点に続く警告が自然に表示を終えると、心音に同期する波状のゆがみとビネットをスクリーン映像へ追加する。
+追加加工は3-Aの `splitFreeze` カット開始時に即座に解除する。既存の凍結・人形化の加工と心音の終了時点は変えない。
+`CameraFeelFx` が専用の `_HeartRipple` / `_HeartTime` / `_HeartVignette` だけを書く。既存の `_Vignette` は保存・上書きしない。
+`HeartbeatPulseLogic` は `bed_heart.wav` の10ms RMSから計測した16個の山を使う。
+`ShowSoundDirector.TryGetHeartPlayback` の `AudioSource.timeSamples` で同期する。心音は音量0の間も回っているので、警告終了からの経過秒では同期しない。
+音源を変更したらピーク時刻も再計測する。現行音源は48kHz・379885フレーム。
+警告の中断では開始しない。凍結が警告より先でも再開しない。体験者交代で開始・終了の記録を戻す。
+描画確認: `tools/unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.HeartbeatScreenPreview.Run`。
+出力は `Logs/heartbeat-ripple/render/`。ゆがみ単独とビネット単独の画素変化を検査する。解除後と加工前が画素単位で一致することも検査する。
+
 ユーザー指定「2-C で連続する人形視点が終わった後から、3-A で左右反転 → 自分が人形になる
 演出が終わるまで、これを流すようにしてほしい」（音源 1 本）。
 

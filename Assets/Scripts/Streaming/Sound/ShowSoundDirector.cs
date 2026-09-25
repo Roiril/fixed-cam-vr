@@ -236,6 +236,19 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float HeartGain { get; private set; }
 
+        /// <summary>無音で回っている時間も含め、心音そのものの再生位置を返す。</summary>
+        public bool TryGetHeartPlayback(out float seconds, out float gain)
+        {
+            seconds = 0f;
+            gain = 0f;
+            var source = _heart.src;
+            if (!isActiveAndEnabled || source == null || source.clip == null
+                || !source.isPlaying || source.mute || source.volume <= 0.0005f) return false;
+            seconds = source.timeSamples / (float)source.clip.frequency;
+            gain = source.volume;
+            return true;
+        }
+
         // ---- 3D の観測（`canon/LEDGER.md` 0130）----------------------------------
 
         /// <summary>3D で鳴らす名簿のうち、実際に掴めた本数。</summary>

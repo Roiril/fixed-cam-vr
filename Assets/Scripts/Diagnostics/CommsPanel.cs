@@ -614,6 +614,7 @@ namespace FixedCamVr.Diagnostics
         private int _lastPresentationAbortCount;
         private bool _presentationAbortedThisFrame;
         private bool _runRestartHooked;
+        private CameraFeelFx? _feelFx;
         // 直前のフレームで何文字出ていたか。**打鍵音はこの増分から鳴らす**（下の Apply）。
         private int _lastShown;
         // ⚠⚠ いまの連絡は**すっと浮かぶ出方**か（`canon/LEDGER.md` 0168）。
@@ -936,6 +937,7 @@ namespace FixedCamVr.Diagnostics
             if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
             if (intro == null) intro = FindObjectOfType<IntroDirector>();
             if (walkGuide == null) walkGuide = FindObjectOfType<WalkGuide>();
+            if (_feelFx == null) _feelFx = FindObjectOfType<CameraFeelFx>();
             // ⚠ 打鍵音は**この面が持つ**（`ShowSoundDirector` は毎フレーム外から状態を見る層で、
             //    1 秒に 12 回・字の刻みちょうどには鳴らせない）。切替音と同じ構え。
             if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
@@ -1163,6 +1165,8 @@ namespace FixedCamVr.Diagnostics
             PushCurseTarget();
             bool wasActive = _logic.Active;
             _logic.Tick(Time.unscaledDeltaTime);
+            if (wasActive && !_logic.Active && _lieActive)
+                _feelFx?.NotifyHeartbeatWarningCompleted();
             if (!_promptReadableNotified && runDirector != null
                 && LastNotice == CommsNotice.Prompt
                 && _logic.Stage == CommsStage.Hold)

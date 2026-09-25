@@ -938,6 +938,10 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
+            // 3 周目 A の凍結に入った瞬間で心音同期の画を止める。
+            // ラッチは CameraFeelFx が持つため、引き返して以前のカットを再演しても戻らない。
+            if (step.splitFreeze) _feelFx?.NotifyHeartbeatFreeze();
+
             // いま画面を取っているカットの素材 id（音が読む・`canon/LEDGER.md` 0131）。
             // ⚠ **飛ばす判定の後**（画面を取れなかったカットの id を立てない）。
             _activeStepCueId = step.cueId ?? "";

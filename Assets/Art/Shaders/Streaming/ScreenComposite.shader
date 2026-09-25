@@ -40,6 +40,9 @@ Shader "FixedCamVr/ScreenComposite"
         _Saturation("Saturation", Range(0, 2)) = 1
         _Temperature("Temperature", Range(-1, 1)) = 0
         _Vignette("Vignette", Range(0, 1)) = 0
+        _HeartRipple("Heartbeat Ripple", Range(0, 1)) = 0
+        _HeartTime("Heartbeat Playback Seconds", Float) = 0
+        _HeartVignette("Heartbeat Vignette", Range(0, 1)) = 0
         _Grain("Grain", Range(0, 0.3)) = 0
         _Scanline("Scanline", Range(0, 1)) = 0
         _ScanlineCount("Scanline Count", Float) = 240
@@ -292,6 +295,9 @@ Shader "FixedCamVr/ScreenComposite"
                 float _Saturation;
                 float _Temperature;
                 float _Vignette;
+                float _HeartRipple;
+                float _HeartTime;
+                float _HeartVignette;
                 float _Grain;
                 float _Scanline;
                 float _ScanlineCount;
@@ -1085,7 +1091,19 @@ Shader "FixedCamVr/ScreenComposite"
                 CollapseScreen(_ScreenCollapse, rawUv, collapseUv, collapseMask, collapseGain);
 
                 float2 screenUv = collapseUv;
-                float2 sampleUv = GlitchUv(PixelateUv(screenUv));
+                // 心音に同期した波状のゆがみ。画面の形と頭の位置は動かさない。
+                // 両端で変位を0へ戻し、containの外へ映像を引き出さない。
+                float2 heartUv = screenUv;
+                if (_HeartRipple > 0.0001)
+                {
+                    float2 contentUv = (screenUv - 0.5) / max(_LiveScale.xy, 1e-3) + 0.5;
+                    float2 edge = max(0.0, sin(saturate(contentUv) * 3.14159265));
+                    float envelope = saturate(_HeartRipple) * edge.x * edge.y;
+                    heartUv.x += envelope * (0.009 * sin(screenUv.y * 34.0 - _HeartTime * 23.0)
+                                            + 0.003 * sin(_HeartTime * 67.0));
+                    heartUv.y += envelope * 0.014 * sin(screenUv.x * 48.0 + _HeartTime * 27.0);
+                }
+                float2 sampleUv = GlitchUv(PixelateUv(heartUv));
 
                 // 伝送が痩せたぶん（mip）＋ **周辺の解像度低下**（像面湾曲。実レンズは角ほど像がゆるい）。
                 // 角だけぼけるのは静的なので怖さには効かないが、これが無いと「中心も端も等しく鮮明」
@@ -1309,6 +1327,9 @@ Shader "FixedCamVr/ScreenComposite"
                 //    夜間モードでは赤外の照射範囲だけが残るので、進みに応じて周辺がさらに落ちる。
                 float vig = saturate(_Vignette + saturate(_Mono) * 0.16);
                 col *= 1.0 - vig * 0.58 * r2 * r2;
+                // 既存postとは独立。凍結開始時に0へ戻すと従来の画に復帰する。
+                float heartEdge = smoothstep(0.25, 1.35, length((screenUv - 0.5) * 2.0));
+                col *= 1.0 - saturate(_HeartVignette) * heartEdge;
 
                 // 4) センサ — 粒。**トーンカーブの前**。後に置くと、暗部を締めた黒の上に
                 //    最大量の砂が浮く（旧実装がそうだった）。

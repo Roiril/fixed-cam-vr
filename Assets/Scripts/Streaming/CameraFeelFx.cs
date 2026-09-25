@@ -5,7 +5,8 @@ namespace FixedCamVr.Streaming
 {
     /// <summary>
     /// 「装置らしさ」を画に出す。<c>_NoiseDark</c> / <c>_NoiseFixed</c> / <c>_ExposureBias</c> /
-    /// <c>_VignetteBias</c> / <c>_Echo</c> / <c>_EchoTex</c> の**唯一の writer**
+    /// <c>_VignetteBias</c> / <c>_Echo</c> / <c>_EchoTex</c> / <c>_HeartRipple</c> /
+    /// <c>_HeartTime</c> / <c>_HeartVignette</c> の**唯一の writer**
     /// （<see cref="GlitchFx"/> / <see cref="SignalLostFx"/> と同じ流儀）。
     ///
     /// <b>なぜ要るか</b>: 現行の加工（post 12 項目）はすべて全域一様で、すべてに物理的な言い訳が付く。
@@ -40,6 +41,9 @@ namespace FixedCamVr.Streaming
         private static readonly int EchoId = Shader.PropertyToID("_Echo");
         private static readonly int EchoTexId = Shader.PropertyToID("_EchoTex");
         private static readonly int CoarseBlocksId = Shader.PropertyToID("_CoarseBlocks");
+        private static readonly int HeartRippleId = Shader.PropertyToID("_HeartRipple");
+        private static readonly int HeartTimeId = Shader.PropertyToID("_HeartTime");
+        private static readonly int HeartVignetteId = Shader.PropertyToID("_HeartVignette");
 
         [Tooltip("ライブ映像の供給元（平均輝度と、凍らせる 1 枚の複製元）。null なら同 GameObject → シーンから探す。")]
         [SerializeField] private MjpegScreen? screen;
@@ -51,6 +55,13 @@ namespace FixedCamVr.Streaming
         private Material? _material;
         private RenderTexture? _echoTex;
         private bool _frozenApplied;
+        private readonly HeartbeatScreenLogic _heartbeatScreen = new HeartbeatScreenLogic();
+        private ShowSoundDirector? _heartbeatSound;
+        private ShowRunDirector? _heartbeatRun;
+        private TimelineDirector? _heartbeatTimeline;
+        private ShowControlClient? _heartbeatShow;
+        private bool _heartbeatRunHooked;
+        private float _heartbeatResolveWait;
 
         // show.json `feel` 由来の静的な強さ。**既定値のままでも効く**ようにしてある
         // （設定を書かないと怖くならない、では現場で使われない）。
@@ -82,6 +93,12 @@ namespace FixedCamVr.Streaming
         /// テレメトリが出す（「状態が進んだ」ではなく「効果が出た」を観測するため）。
         /// </summary>
         public bool HasMaterial => _material != null;
+
+        /// <summary>心音から画へ書いた波紋の強さ。診断用。</summary>
+        public float AppliedHeartRipple { get; private set; }
+
+        /// <summary>心音区間で画へ書いた周辺の暗さ。診断用。</summary>
+        public float AppliedHeartVignette { get; private set; }
 
         /// <summary>
         /// 周回で進む解像度の劣化を書く（<see cref="ShowRunDirector"/> が毎フレーム押す）。
@@ -124,6 +141,16 @@ namespace FixedCamVr.Streaming
             _logic.Reset();
             ApplyFrozen(false);
             Write();
+        }
+
+        /// <summary>乗っ取り警告を最後まで読ませた。次の描画から心音と画を同期する。</summary>
+        public void NotifyHeartbeatWarningCompleted() => _heartbeatScreen.NotifyWarningCompleted();
+
+        /// <summary>3 周目 A の凍結へ入った。同じランでは以後再開しない。</summary>
+        public void NotifyHeartbeatFreeze()
+        {
+            _heartbeatScreen.NotifyFreeze();
+            ClearHeartbeat();
         }
 
         /// <summary>
@@ -245,11 +272,15 @@ namespace FixedCamVr.Streaming
             if (screen == null) screen = FindObjectOfType<MjpegScreen>();
             if (overlay == null) overlay = GetComponent<ScreenOverlayController>();
             if (overlay == null) overlay = FindObjectOfType<ScreenOverlayController>();
+            ResolveHeartbeatRefs();
         }
 
         private void OnEnable()
         {
             _logic.Reset();
+            _heartbeatScreen.Reset();
+            ResolveHeartbeatRefs();
+            ClearHeartbeat();
             Write();
         }
 
@@ -262,11 +293,15 @@ namespace FixedCamVr.Streaming
             Mono = 0f;
             ApplyFrozen(false);
             ClearSplit();
+            UnhookHeartbeatRun();
+            _heartbeatScreen.Reset();
+            ClearHeartbeat();
             Write();
         }
 
         private void OnDestroy()
         {
+            UnhookHeartbeatRun();
             if (_echoTex == null) return;
             _echoTex.Release();
             if (Application.isPlaying) Destroy(_echoTex); else DestroyImmediate(_echoTex);
@@ -281,6 +316,98 @@ namespace FixedCamVr.Streaming
             if (_logic.ConsumeSnapshotRequest()) CaptureEcho();
             ApplyFrozen(_logic.Frozen);
             Write();
+        }
+
+        private void LateUpdate()
+        {
+            bool missing = _material == null || _heartbeatSound == null || _heartbeatRun == null
+                           || _heartbeatTimeline == null || _heartbeatShow == null;
+            if (missing)
+            {
+                _heartbeatResolveWait += Time.unscaledDeltaTime;
+                if (_heartbeatResolveWait >= 1f)
+                {
+                    _heartbeatResolveWait = 0f;
+                    ResolveHeartbeatRefs();
+                }
+            }
+
+            // UnityEngine.Object の破棄済み参照も == null になる。書く直前に必ず判定する。
+            if (_material == null)
+            {
+                AppliedHeartRipple = 0f;
+                AppliedHeartVignette = 0f;
+                return;
+            }
+
+            bool apply = _heartbeatScreen.ShouldApply(
+                _heartbeatRun != null && _heartbeatRun.Phase == ShowPhase.Run,
+                _heartbeatTimeline != null && _heartbeatTimeline.Suppressed,
+                _heartbeatShow != null && _heartbeatShow.CourseRegistrationActive);
+            if (!apply)
+            {
+                ClearHeartbeat();
+                return;
+            }
+
+            float seconds = 0f;
+            float pulse = 0f;
+            if (_heartbeatSound != null
+                && _heartbeatSound.TryGetHeartPlayback(out seconds, out float gain))
+                pulse = HeartbeatPulseLogic.Evaluate(seconds) * gain;
+            WriteHeartbeat(seconds, pulse, 0.48f + 0.14f * pulse);
+        }
+
+        private void ResolveHeartbeatRefs()
+        {
+            if (_material == null)
+            {
+                var r = GetComponent<Renderer>();
+                _material = r != null ? r.material : null;
+            }
+            if (_heartbeatSound == null) _heartbeatSound = FindObjectOfType<ShowSoundDirector>();
+            if (_heartbeatTimeline == null) _heartbeatTimeline = FindObjectOfType<TimelineDirector>();
+            if (_heartbeatShow == null) _heartbeatShow = FindObjectOfType<ShowControlClient>();
+            if (_heartbeatRun == null)
+            {
+                _heartbeatRunHooked = false;
+                _heartbeatRun = FindObjectOfType<ShowRunDirector>();
+            }
+            if (!_heartbeatRunHooked && _heartbeatRun != null)
+            {
+                _heartbeatRun.RunRestarted += OnHeartbeatRunRestarted;
+                _heartbeatRunHooked = true;
+            }
+        }
+
+        private void UnhookHeartbeatRun()
+        {
+            if (_heartbeatRunHooked && _heartbeatRun != null)
+                _heartbeatRun.RunRestarted -= OnHeartbeatRunRestarted;
+            _heartbeatRunHooked = false;
+        }
+
+        private void OnHeartbeatRunRestarted()
+        {
+            _heartbeatScreen.Reset();
+            ClearHeartbeat();
+        }
+
+        private void ClearHeartbeat() => WriteHeartbeat(0f, 0f, 0f);
+
+        private void WriteHeartbeat(float seconds, float ripple, float vignette)
+        {
+            if (_material == null)
+            {
+                AppliedHeartRipple = 0f;
+                AppliedHeartVignette = 0f;
+                return;
+            }
+            AppliedHeartRipple = ripple;
+            AppliedHeartVignette = vignette;
+            _material.SetFloat(HeartRippleId, ripple);
+            _material.SetFloat(HeartTimeId, seconds);
+            _material.SetFloat(HeartVignetteId, vignette);
         }
 
         // 「いまの画」を 1 枚だけ RT へ複製する。Blit なのでフォーマット違い（RGB24 → ARGB32）も通る。
