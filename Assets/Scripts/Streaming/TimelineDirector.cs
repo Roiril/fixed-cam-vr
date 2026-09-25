@@ -46,6 +46,11 @@ namespace FixedCamVr.Streaming
             // 演出の実行体。既存シーン / prefab に未配置でも動くよう、無ければ自分で載せる
             //（TakeRunner.Awake が Director / overlay / showControl をシーンから解決する）。
             // シーン配線を必須にしないのは、prefab の SerializeField 欠落で実機機能が全死した実績があるため。
+            ResolveTakeRunner();
+        }
+
+        private void ResolveTakeRunner()
+        {
             if (takeRunner == null) takeRunner = GetComponent<TakeRunner>();
             if (takeRunner == null) takeRunner = gameObject.AddComponent<TakeRunner>();
         }
@@ -70,6 +75,16 @@ namespace FixedCamVr.Streaming
 
         /// <summary>素材 URL（sa:// / 相対）の解決関数を TakeRunner へ中継する。</summary>
         public void SetUrlResolver(Func<string, string> resolver) => takeRunner?.SetUrlResolver(resolver);
+
+        /// <summary>終幕写真を撮る take id を実行体へ中継する。</summary>
+        public void ConfigureEndingCapture(string? afterTakeId)
+        {
+            ResolveTakeRunner();
+            takeRunner?.ConfigureEndingCapture(afterTakeId);
+        }
+
+        /// <summary>終了処理が画面を畳む前に、保持済みの終幕写真を固定する。</summary>
+        public void FreezeEndingShots() => takeRunner?.FreezeEndingShots();
 
         /// <summary>ライブ抑止（activeCue 非空 / cameraOverride 非 null）を実行体へ中継する。</summary>
         public void SetSuppressed(bool suppressed) => takeRunner?.SetSuppressed(suppressed);

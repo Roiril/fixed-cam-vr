@@ -4,24 +4,31 @@ using FixedCamVr.Streaming;
 
 namespace FixedCamVr.Diagnostics
 {
-    /// <summary>終幕の観測記録。押下回数は正解数ではなく、分母を超えても保持する。</summary>
+    /// <summary>エンドロール冒頭に出す結末名と報告数。件数から結末を推測しない。</summary>
     public static class OutroReportText
     {
+        public static string Title(ShowEndingOutcome outcome, ShowLang lang)
+        {
+            if (outcome == ShowEndingOutcome.Released)
+                return lang == ShowLang.En ? "Return End" : lang == ShowLang.Fr ? "Fin retour" : "帰還End";
+            if (outcome == ShowEndingOutcome.Trapped)
+                return lang == ShowLang.En ? "Doll End" : lang == ShowLang.Fr ? "Fin poupée" : "人形End";
+            return lang == ShowLang.En ? "Interrupted" : lang == ShowLang.Fr ? "Interrompu" : "中断";
+        }
+
+        public static string CountLabelOf(ShowLang lang) => lang == ShowLang.En ? "Reports"
+            : lang == ShowLang.Fr ? "Signalements" : "報告数";
+
+        public static string CountLine(int reports, ShowLang lang) =>
+            CountLabelOf(lang) + " " + CountOf(reports, lang);
+
+        // Diagnostics compatibility. These strings remain callable but are not placed on the ending lead.
         public static string Header(ShowLang lang) => lang switch
         {
             ShowLang.En => "OBSERVATION RECORD",
             ShowLang.Fr => "RELEVÉ D’OBSERVATION",
             _ => "観測記録",
         };
-
-        public static string Title(ShowEndingOutcome outcome, ShowLang lang)
-        {
-            if (outcome == ShowEndingOutcome.Released)
-                return lang == ShowLang.En ? "RETURN CONFIRMED" : lang == ShowLang.Fr ? "RETOUR CONFIRMÉ" : "帰還確認";
-            if (outcome == ShowEndingOutcome.Trapped)
-                return lang == ShowLang.En ? "RETURN IMPOSSIBLE" : lang == ShowLang.Fr ? "RETOUR IMPOSSIBLE" : "帰還不能";
-            return lang == ShowLang.En ? "SURVEY INTERRUPTED" : lang == ShowLang.Fr ? "ENQUÊTE INTERROMPUE" : "調査中断";
-        }
 
         public static string Body(ShowEndingOutcome outcome, ShowLang lang)
         {
@@ -38,8 +45,6 @@ namespace FixedCamVr.Diagnostics
                 : "調査は途中で終了しました。\n帰還の判定は記録されていません。";
         }
 
-        public static string CountLabelOf(ShowLang lang) => lang == ShowLang.En ? "REPORTS / ANOMALIES"
-            : lang == ShowLang.Fr ? "SIGNALEMENTS / ANOMALIES" : "報告回数 ／ 異常総数";
         public static string Note(ShowLang lang) => lang == ShowLang.En ? "Repeat reports are included."
             : lang == ShowLang.Fr ? "Les signalements répétés sont inclus."
             : "同じ異常への繰り返しの報告も含みます。";
@@ -48,16 +53,15 @@ namespace FixedCamVr.Diagnostics
             : "体験は終了です。装置を外してください。";
         public static string Ratio(int reports, int total) =>
             CountOf(reports, ShowLang.En) + " / " + (total > 0 ? CountOf(total, ShowLang.En) : "—");
-
-        // Diagnostics compatibility. Runtime supplies the captured denominator and ending.
         public static string Compose(int reports) => Compose(reports, ShowLanguage.Current);
         public static string Compose(int reports, ShowLang lang) =>
             Compose(reports, 0, ShowEndingOutcome.Interrupted, lang);
         public static string Compose(int reports, int total, ShowEndingOutcome outcome, ShowLang lang) =>
-            string.Join("\n", Header(lang), Title(outcome, lang), Body(outcome, lang),
-                CountLabelOf(lang), Ratio(reports, total), Note(lang), Footer(lang));
+            string.Join("\n", Title(outcome, lang), CountLine(reports, lang));
+
         public static string CountOf(int n, ShowLang lang) => lang == ShowLang.Ja ? FullWidth(n)
             : System.Math.Max(0, n).ToString(CultureInfo.InvariantCulture);
+
         public static string FullWidth(int n)
         {
             const string digits = "０１２３４５６７８９";

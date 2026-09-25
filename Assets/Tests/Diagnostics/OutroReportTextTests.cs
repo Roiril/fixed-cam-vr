@@ -4,7 +4,7 @@ using NUnit.Framework;
 
 namespace FixedCamVr.Tests.Diagnostics
 {
-    /// <summary>終幕の観測記録。結果と報告回数は別々の入力として扱う。</summary>
+    /// <summary>エンドロール冒頭の短い結末名と報告数を検査する。</summary>
     public sealed class OutroReportTextTests
     {
         private static readonly ShowLang[] Languages = { ShowLang.Ja, ShowLang.En, ShowLang.Fr };
@@ -17,17 +17,26 @@ namespace FixedCamVr.Tests.Diagnostics
         public void ResetLanguage() => ShowLanguage.Reset();
 
         [Test]
-        public void EveryLanguage_HasDistinctOutcomeTextAndRemovalInstruction()
+        public void JapaneseUsesSpecifiedEndingAndReportLabels()
+        {
+            Assert.That(OutroReportText.Title(ShowEndingOutcome.Released, ShowLang.Ja), Is.EqualTo("帰還End"));
+            Assert.That(OutroReportText.Title(ShowEndingOutcome.Trapped, ShowLang.Ja), Is.EqualTo("人形End"));
+            Assert.That(OutroReportText.Title(ShowEndingOutcome.Interrupted, ShowLang.Ja), Is.EqualTo("中断"));
+            Assert.That(OutroReportText.CountLine(12, ShowLang.Ja), Is.EqualTo("報告数 １２"));
+        }
+
+        [Test]
+        public void EnglishAndFrenchKeepDistinctOutcomeAndReportText()
         {
             foreach (ShowLang lang in Languages)
             {
                 foreach (ShowEndingOutcome outcome in Outcomes)
                 {
-                    string composed = OutroReportText.Compose(0, 8, outcome, lang);
+                    string composed = OutroReportText.Compose(12, 8, outcome, lang);
                     StringAssert.Contains(OutroReportText.Title(outcome, lang), composed);
-                    StringAssert.Contains(OutroReportText.Body(outcome, lang), composed);
-                    StringAssert.Contains(OutroReportText.Footer(lang), composed);
-                    Assert.That(OutroReportText.Footer(lang), Is.Not.Empty, $"{lang}: 装置を外す指示が無い");
+                    StringAssert.Contains(OutroReportText.CountLine(12, lang), composed);
+                    Assert.That(composed.Split('\n').Length, Is.EqualTo(2));
+                    StringAssert.DoesNotContain("/", composed, $"{lang}/{outcome}: 分母を表示している");
                 }
 
                 Assert.That(OutroReportText.Title(Outcomes[0], lang),
@@ -36,41 +45,10 @@ namespace FixedCamVr.Tests.Diagnostics
                     Is.Not.EqualTo(OutroReportText.Title(Outcomes[2], lang)));
                 Assert.That(OutroReportText.Title(Outcomes[1], lang),
                     Is.Not.EqualTo(OutroReportText.Title(Outcomes[2], lang)));
-                Assert.That(OutroReportText.Body(Outcomes[0], lang),
-                    Is.Not.EqualTo(OutroReportText.Body(Outcomes[1], lang)));
-                Assert.That(OutroReportText.Body(Outcomes[0], lang),
-                    Is.Not.EqualTo(OutroReportText.Body(Outcomes[2], lang)));
-                Assert.That(OutroReportText.Body(Outcomes[1], lang),
-                    Is.Not.EqualTo(OutroReportText.Body(Outcomes[2], lang)));
             }
 
-            StringAssert.Contains("装置を外してください", OutroReportText.Footer(ShowLang.Ja));
-            StringAssert.Contains("remove the headset", OutroReportText.Footer(ShowLang.En));
-            StringAssert.Contains("Retirez le casque", OutroReportText.Footer(ShowLang.Fr));
-        }
-
-        [TestCase(0, 8, "0 / 8")]
-        [TestCase(12, 8, "12 / 8")]
-        [TestCase(123, 8, "123 / 8")]
-        [TestCase(999, 8, "999 / 8")]
-        public void Ratio_PreservesReportsEvenAboveTotal(int reports, int total, string expected)
-        {
-            Assert.That(OutroReportText.Ratio(reports, total), Is.EqualTo(expected));
-            foreach (ShowLang lang in Languages)
-                StringAssert.Contains(expected,
-                    OutroReportText.Compose(reports, total, ShowEndingOutcome.Released, lang));
-        }
-
-        [Test]
-        public void Ratio_UsesDashForUnknownTotal_AndClampsNegativeInputs()
-        {
-            Assert.That(OutroReportText.Ratio(0, 0), Is.EqualTo("0 / —"));
-            Assert.That(OutroReportText.Ratio(12, 0), Is.EqualTo("12 / —"));
-            Assert.That(OutroReportText.Ratio(-1, -8), Is.EqualTo("0 / —"));
-            Assert.That(OutroReportText.Ratio(-1, 8), Is.EqualTo("0 / 8"));
-            foreach (ShowLang lang in Languages)
-                StringAssert.Contains("0 / —",
-                    OutroReportText.Compose(-1, 0, ShowEndingOutcome.Interrupted, lang));
+            Assert.That(OutroReportText.CountLine(12, ShowLang.En), Is.EqualTo("Reports 12"));
+            Assert.That(OutroReportText.CountLine(12, ShowLang.Fr), Is.EqualTo("Signalements 12"));
         }
 
         [Test]
@@ -82,7 +60,6 @@ namespace FixedCamVr.Tests.Diagnostics
             {
                 string composed = OutroReportText.Compose(reports, 8, outcome, lang);
                 StringAssert.Contains(OutroReportText.Title(outcome, lang), composed);
-                StringAssert.Contains(OutroReportText.Body(outcome, lang), composed);
                 foreach (ShowEndingOutcome other in Outcomes)
                 {
                     if (other == outcome) continue;
@@ -103,6 +80,19 @@ namespace FixedCamVr.Tests.Diagnostics
                     Is.EqualTo(lang == ShowLang.Ja ? "０" : "0"));
             Assert.That(OutroReportText.FullWidth(103), Is.EqualTo("１０３"));
             Assert.That(OutroReportText.FullWidth(int.MinValue), Is.EqualTo("０"));
+        }
+
+        [Test]
+        public void LegacyProseAndRatioApis_RemainAvailableForDiagnostics()
+        {
+            foreach (ShowLang lang in Languages)
+            {
+                Assert.That(OutroReportText.Header(lang), Is.Not.Empty);
+                Assert.That(OutroReportText.Body(ShowEndingOutcome.Released, lang), Is.Not.Empty);
+                Assert.That(OutroReportText.Note(lang), Is.Not.Empty);
+                Assert.That(OutroReportText.Footer(lang), Is.Not.Empty);
+            }
+            Assert.That(OutroReportText.Ratio(12, 8), Is.EqualTo("12 / 8"));
         }
     }
 }

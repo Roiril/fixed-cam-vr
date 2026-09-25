@@ -1374,7 +1374,8 @@ def analyze(events, others, exp, warns=None):
         for e in outro:
             w(f"  t={fnum(e,'t',0):7.1f}  段={e.get('stage')} pw={e.get('pw')} cl={e.get('cl')} "
               f"rep={e.get('rep')} repBuilt={e.get('repBuilt')} "
-              f"repChars={e.get('repChars')} repSfx={e.get('repSfx')} marks={e.get('marks')} "
+              f"repStyle={e.get('repStyle')} repChars={e.get('repChars')} "
+              f"repSfx={e.get('repSfx')} marks={e.get('marks')} "
               f"anomalies={e.get('anomalies')} armed={e.get('armed')} cue={e.get('cue')}")
         ostages = [e.get("stage") for e in outro if e.get("stage") != "Off"]
         if not ostages:
@@ -1441,10 +1442,11 @@ def analyze(events, others, exp, warns=None):
                 verdict("WARN", "合図の演出は走ったが、そこから終幕へは入っていない"
                                 "（endHoldMaxSec の安全網で終わった — 演出が自分から終わっていない）")
 
-            # -- 報告は 1 字ずつ打たれ、1 字ごとに打鍵音が鳴る（`canon/LEDGER.md` 0063）。
-            #    ⚠ **打ち切るのは段 Done より後**（打つ尺 > reportFadeSec）なので、
-            #      到達の判定は段の行ではなく `ev=sum` の側でしか取れない。
-            #    ⚠ 走行が報告の途中で切れれば届かないのが正常なので、そこは WARN に留める。
+            # -- 新しいエンドロールは全文をフェード表示し、打鍵音を使わない。
+            #    repStyle が無い旧ログだけは従来どおり、1 字ごとの打鍵と表示を突き合わせる。
+            #    ⚠ 到達の判定は段の行ではなく `ev=sum` の側でしか取れない。
+            #    ⚠ 走行が表示の途中で切れれば届かないのが正常なので、そこは WARN に留める。
+            report_style = "roll" if any(e.get("repStyle") == "roll" for e in outro) else "type"
             visible_reports = [e for e in events if e.get("ev") == "sum" and (fnum(e, "repShown", 0) or 0) > 0]
             char_source = visible_reports or outro
             want_chars = int(max((fnum(e, "repChars", 0) or 0) for e in char_source)) if char_source else 0
@@ -1460,7 +1462,23 @@ def analyze(events, others, exp, warns=None):
                     verdict("OK", f"結果曲の再生位置が進んだ（{min(seconds):.2f}〜{max(seconds):.2f}秒）")
             shown_all = [v for v in effect_samples(events, "repShown") if str(v) != "-"]
             typed_all = [v for v in effect_samples(events, "repTypeN") if str(v) != "-"]
-            if any(str(e.get("repSfx")) == "0" for e in outro):
+            if report_style == "roll" and not shown_all:
+                verdict("WARN", "エンドロールの表示文字数（repShown）が出ていない — "
+                                "古い APK か ShowTelemetryHost 未更新")
+            elif report_style == "roll" and want_chars <= 0:
+                verdict("WARN", "エンドロールの字数（repChars）が 0 — 文面を組めていない可能性")
+            elif report_style == "roll":
+                shown = max(int(v) for v in shown_all)
+                w(f"  エンドロール: 出た文字 {shown} / 必要 {want_chars}")
+                if shown == 0:
+                    verdict("FAIL", "エンドロールが 1 文字も表示されていない（repShown=0）— "
+                                    "黒の中で何も出ないまま体験が終わっている")
+                elif shown < want_chars:
+                    verdict("WARN", f"エンドロールが必要な文字数まで出ていない（{shown}/{want_chars} 文字）— "
+                                    "走行を伸ばすか、体験の最後まで回す")
+                else:
+                    verdict("OK", f"エンドロールが必要な {want_chars} 文字を表示した")
+            elif any(str(e.get("repSfx")) == "0" for e in outro):
                 verdict("FAIL", "報告の打鍵の音源を掴めていない（repSfx=0）— 字は出るのに無音。"
                                 "`py -3.11 tools/ingest-sounds.py --only sfx_type` を走らせたか")
             elif not typed_all or not shown_all:

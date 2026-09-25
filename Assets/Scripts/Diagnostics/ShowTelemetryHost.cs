@@ -802,11 +802,9 @@ namespace FixedCamVr.Diagnostics
                 _lastOutroStage = _outro.Stage;
                 Emit($"ev=outro stage={_lastOutroStage} pw={PowerState} cl={CollapseState} " +
                      $"rep={ReportAlphaState} repBuilt={ReportBuiltState} " +
-                     // repChars = 報告を打ち切るまでに鳴る打鍵の数（改行を除く字数）。
-                     // 解析器が `ev=sum` の `repTypeN` と突き合わせる（`canon/LEDGER.md` 0063）。
-                     // ⚠ **打鍵は段 Done より後まで続く**（打つ尺 > reportFadeSec）ので、
-                     //   到達したかを見るのは段の行ではなく `ev=sum` の側。
-                     $"repChars={(_report == null ? -1 : _report.ReportChars)} " +
+                     // repStyle = 報告の表示方式。roll は全文をフェード表示する新しいエンドロール。
+                     // repChars = 画へ出す文字数。到達したかは `ev=sum` の repShown と突き合わせる。
+                     $"repStyle=roll repChars={(_report == null ? -1 : _report.ReportChars)} " +
                      $"repSfx={(_report == null ? "-" : _report.TypeSfxBuilt ? "1" : "0")} " +
                      // comms はAIエージェントからの連絡。built=0 なら一生出ない。段が Off 以外のあいだの
                      // glyph / open は**実際に書いた値** ＝ 画に出た側（`ev=comms` は縁しか持たない）。
@@ -1485,10 +1483,9 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" commsCurse=").Append(_comms == null
                 ? "-"
                 : $"{(_comms.PlateBuilt ? 1 : 0)}/{_comms.AppliedCurse:F2}/{_comms.CurseTarget:F2}");
-            //   repTypeN / repShown = 終幕の報告の打鍵の累計と、いま画に出ている文字数
-            //           （`canon/LEDGER.md` 0063）。**対で出す** — 片方だけだと
-            //           「字は出たのに無音」と「音は鳴ったのに字が出ていない」を区別できない。
-            //           打ち切るまでの尺は段 Report より長いので、到達の判定はここでしか取れない。
+            //   repTypeN / repShown = 終幕の打鍵累計と、いま画に出ている文字数。
+            //           roll では打鍵しないので repTypeN=0 が正常。repShown を repChars と突き合わせる。
+            //           旧ログは repStyle が無く、解析器が従来の打鍵検証を続ける。
             _sb.Append(" repTypeN=").Append(_report == null
                                             ? "-"
                                             : (_report.TypeSfxBuilt ? _report.TypedCount.ToString() : "nc"));

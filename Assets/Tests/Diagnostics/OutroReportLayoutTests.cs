@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace FixedCamVr.Tests.Diagnostics
 {
-    /// <summary>結果カードの 7 フィールドを実際の TMP メッシュで検査する。</summary>
+    /// <summary>エンドロール冒頭の左右配置と、全文同時表示を検査する。</summary>
     public sealed class OutroReportLayoutTests
     {
         private readonly List<GameObject> _spawned = new List<GameObject>();
@@ -32,46 +32,49 @@ namespace FixedCamVr.Tests.Diagnostics
             var go = new GameObject("[Test] OutroReport");
             _spawned.Add(go);
             var report = go.AddComponent<OutroReport>();
-            // EditMode では Awake が自動実行されないので、生成を明示的に起こす。
             MethodInfo? awake = typeof(OutroReport).GetMethod("Awake",
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(awake, Is.Not.Null);
             awake!.Invoke(report, null);
-            Assert.That(report.IsBuilt, Is.True, "結果カードのフォントまたはシェーダが欠けている");
+            Assert.That(report.IsBuilt, Is.True, "エンド画面のフォント、シェーダ、ロゴのいずれかが欠けている");
             return report;
         }
 
         [Test]
-        public void BuildsLeftAlignedTextWithRightAlignedCount_AndStartsWithNothingTyped()
+        public void BuildsWideTwoColumnLead_AndStartsHidden()
         {
             OutroReport report = SpawnReport();
-            string[] names = { "Archive", "Outcome", "Message", "MeasureLabel", "Measure", "MeasureNote", "Exit" };
-            Assert.That(report.Fields.Count, Is.EqualTo(names.Length));
-            for (int i = 0; i < names.Length; i++)
-            {
-                Assert.That(report.Fields[i].name, Is.EqualTo(names[i]));
-                Assert.That(report.Fields[i].alignment, Is.EqualTo(i == 4
-                    ? TextAlignmentOptions.TopRight : TextAlignmentOptions.TopLeft));
-                Assert.That(report.Fields[i].maxVisibleCharacters, Is.Zero);
-            }
+            Assert.That(OutroReport.PanelWidth / OutroReport.PanelHeight, Is.GreaterThan(1.8f));
+            Assert.That(OutroReport.PhotoWidth / OutroReport.PhotoHeight, Is.EqualTo(16f / 9f).Within(.0001f));
+            Assert.That(report.Fields.Count, Is.EqualTo(2));
+            Assert.That(report.Fields[0].name, Is.EqualTo("Outcome"));
+            Assert.That(report.Fields[1].name, Is.EqualTo("ReportCount"));
+            Assert.That(report.Fields[0].alignment, Is.EqualTo(TextAlignmentOptions.Top));
+            Assert.That(report.Fields[1].alignment, Is.EqualTo(TextAlignmentOptions.Top));
+            Assert.That(report.AppliedAlpha, Is.Zero);
             Assert.That(report.VisibleChars, Is.Zero);
+            Assert.That(report.TypeSfxBuilt, Is.False);
+            Assert.That(report.TypedCount, Is.Zero);
+
+            Transform logo = FindDescendant(report.transform, "MawarimiLogo");
+            Transform photo = FindDescendant(report.transform, "EndingPhoto");
+            Assert.That(logo.localPosition.x, Is.LessThan(0));
+            Assert.That(photo.localPosition.x, Is.GreaterThan(0));
+            Assert.That(photo.localScale.x / photo.localScale.y, Is.EqualTo(16f / 9f).Within(.0001f));
         }
 
         [Test]
-        public void EveryLanguageAndOutcome_FitsPanelWithoutTextOverlap_AndHasFontGlyphs()
+        public void EveryLanguageAndOutcome_FitsLeftColumnAndShowsAllGlyphsTogether()
         {
             OutroReport report = SpawnReport();
             foreach (ShowLang lang in Languages)
             foreach (ShowEndingOutcome outcome in Outcomes)
             {
-                report.PresentPreview(999, 8, outcome, lang);
+                report.PresentPreview(999, 8, outcome, lang, characters: 1);
                 var rects = new Rect[report.Fields.Count];
                 for (int i = 0; i < report.Fields.Count; i++)
                 {
                     TMP_Text field = report.Fields[i];
-                    Assert.That(field.alignment, Is.EqualTo(i == 4
-                        ? TextAlignmentOptions.TopRight : TextAlignmentOptions.TopLeft),
-                        $"{lang}/{outcome}/{field.name}");
                     Assert.That(field.font, Is.Not.Null, $"{lang}/{outcome}/{field.name}: font が無い");
                     foreach (char ch in field.text)
                     {
@@ -81,108 +84,56 @@ namespace FixedCamVr.Tests.Diagnostics
                     }
                     field.ForceMeshUpdate(true, true);
                     rects[i] = InkRectInCard(field);
-                    Assert.That(rects[i].xMin, Is.GreaterThanOrEqualTo(-OutroReport.PanelWidth / 2 - .003f),
-                        $"{lang}/{outcome}/{field.name}: 左にはみ出す");
-                    Assert.That(rects[i].xMax, Is.LessThanOrEqualTo(OutroReport.PanelWidth / 2 + .003f),
-                        $"{lang}/{outcome}/{field.name}: 右にはみ出す");
-                    Assert.That(rects[i].yMin, Is.GreaterThanOrEqualTo(-OutroReport.PanelHeight / 2 - .003f),
-                        $"{lang}/{outcome}/{field.name}: 下にはみ出す");
-                    Assert.That(rects[i].yMax, Is.LessThanOrEqualTo(OutroReport.PanelHeight / 2 + .003f),
-                        $"{lang}/{outcome}/{field.name}: 上にはみ出す");
+                    Assert.That(rects[i].xMin, Is.GreaterThanOrEqualTo(-OutroReport.PanelWidth / 2 - .003f));
+                    Assert.That(rects[i].xMax, Is.LessThanOrEqualTo(.16f),
+                        $"{lang}/{outcome}/{field.name}: 写真列へはみ出す");
+                    Assert.That(rects[i].yMin, Is.GreaterThanOrEqualTo(-OutroReport.PanelHeight / 2 - .003f));
+                    Assert.That(rects[i].yMax, Is.LessThanOrEqualTo(OutroReport.PanelHeight / 2 + .003f));
+                    Assert.That(field.maxVisibleCharacters, Is.EqualTo(int.MaxValue));
                 }
-                for (int i = 0; i < rects.Length; i++)
-                for (int j = i + 1; j < rects.Length; j++)
-                    Assert.That(HasInkOverlap(rects[i], rects[j]), Is.False,
-                        $"{lang}/{outcome}: {report.Fields[i].name} {rects[i]} と {report.Fields[j].name} {rects[j]} が重なる");
+                Assert.That(HasInkOverlap(rects[0], rects[1]), Is.False, $"{lang}/{outcome}: 文字が重なる");
+                Assert.That(report.VisibleChars, Is.EqualTo(report.ReportChars),
+                    $"{lang}/{outcome}: タイプ表示が残っている");
+                Assert.That(report.AppliedAlpha, Is.EqualTo(1));
             }
         }
 
         [Test]
-        public void EndingIsTheLargestType_AndNoSupportingTextIsBelowReadableSize()
+        public void SetEndingImages_SelectsOnlyNormalEndingImage()
         {
             OutroReport report = SpawnReport();
-            float titleEm = HmdTextStyle.MeshWorldEm(report.Fields[1].fontSize,
-                report.Fields[1].transform.localScale.x);
-            foreach (TMP_Text field in report.Fields)
+            var released = new Texture2D(16, 9);
+            var trapped = new Texture2D(32, 18);
+            try
             {
-                float em = HmdTextStyle.MeshWorldEm(field.fontSize, field.transform.localScale.x);
-                Assert.That(em, Is.LessThanOrEqualTo(titleEm), field.name);
-                Assert.That(HmdTextStyle.DegreesOf(em, 2.6f), Is.GreaterThanOrEqualTo(1.499f), field.name);
-            }
-        }
+                report.SetEndingImages(released, trapped);
+                report.PresentPreview(12, 8, ShowEndingOutcome.Released, ShowLang.Ja);
+                Assert.That(report.CurrentEndingImage, Is.SameAs(released));
+                Assert.That(report.PhotoVisible, Is.True);
 
-        [Test]
-        public void EveryOutcomeUsesTheSameNeutralPalette_AndIncludesEveryCharacter()
-        {
-            OutroReport report = SpawnReport();
-            report.PresentPreview(12, 8, ShowEndingOutcome.Released, ShowLang.Ja);
-            var colors = new Color[report.Fields.Count];
-            for (int i = 0; i < colors.Length; i++) colors[i] = report.Fields[i].color;
-            foreach (ShowLang lang in Languages)
-            foreach (ShowEndingOutcome outcome in Outcomes)
+                report.PresentPreview(12, 8, ShowEndingOutcome.Trapped, ShowLang.Ja);
+                Assert.That(report.CurrentEndingImage, Is.SameAs(trapped));
+                Assert.That(report.PhotoVisible, Is.True);
+
+                report.PresentPreview(12, 8, ShowEndingOutcome.Interrupted, ShowLang.Ja);
+                Assert.That(report.CurrentEndingImage, Is.Null);
+                Assert.That(report.PhotoVisible, Is.False);
+                Assert.That(report.Fields[0].text, Is.EqualTo("中断"));
+            }
+            finally
             {
-                report.PresentPreview(12, 8, outcome, lang);
-                for (int i = 0; i < report.Fields.Count; i++)
-                {
-                    TMP_Text field = report.Fields[i];
-                    field.ForceMeshUpdate(true, true);
-                    Assert.That(field.color, Is.EqualTo(colors[i]), $"{lang}/{outcome}/{field.name}");
-                    Assert.That(field.maxVisibleCharacters, Is.EqualTo(field.textInfo.characterCount),
-                        $"{lang}/{outcome}/{field.name}: 印字が途中で欠ける");
-                }
+                Object.DestroyImmediate(released);
+                Object.DestroyImmediate(trapped);
             }
         }
 
         [Test]
-        public void PartialReveal_DoesNotMoveFieldsOrAlreadyVisibleGlyphs()
-        {
-            OutroReport report = SpawnReport();
-            report.PresentPreview(123, 8, ShowEndingOutcome.Trapped, ShowLang.Ja);
-            var positions = new Vector3[report.Fields.Count];
-            for (int i = 0; i < positions.Length; i++)
-                positions[i] = report.Fields[i].transform.localPosition;
-            TMP_Text first = report.Fields[0];
-            first.ForceMeshUpdate(true, true);
-            Vector3 firstGlyph = first.textInfo.characterInfo[0].bottomLeft;
-
-            report.PresentPreview(123, 8, ShowEndingOutcome.Trapped, ShowLang.Ja, characters: 3);
-            Assert.That(report.VisibleChars, Is.GreaterThan(0));
-            Assert.That(report.VisibleChars, Is.LessThan(report.ReportChars));
-            for (int i = 0; i < positions.Length; i++)
-                Assert.That(Vector3.Distance(report.Fields[i].transform.localPosition, positions[i]),
-                    Is.LessThan(.0001f), $"{report.Fields[i].name}: 部分表示で位置が動いた");
-            first.ForceMeshUpdate(true, true);
-            Assert.That(Vector3.Distance(first.textInfo.characterInfo[0].bottomLeft, firstGlyph),
-                Is.LessThan(.0001f), "部分表示で先頭の字が動いた");
-        }
-
-        [Test]
-        public void ReportChars_EqualsActualDrawableGlyphs()
-        {
-            OutroReport report = SpawnReport();
-            foreach (ShowLang lang in Languages)
-            foreach (ShowEndingOutcome outcome in Outcomes)
-            {
-                report.PresentPreview(123, 8, outcome, lang);
-                int drawable = 0;
-                foreach (TMP_Text field in report.Fields)
-                {
-                    field.ForceMeshUpdate(true, true);
-                    for (int c = 0; c < field.textInfo.characterCount; c++)
-                        if (field.textInfo.characterInfo[c].isVisible) drawable++;
-                }
-                Assert.That(report.ReportChars, Is.EqualTo(drawable), $"{lang}/{outcome}");
-                Assert.That(report.VisibleChars, Is.EqualTo(drawable), $"{lang}/{outcome}: 全文表示");
-            }
-        }
-
-        [Test]
-        public void NextPreview_ReplacesPreviousOutcomeAndCapturedValues()
+        public void NextPreview_ReplacesOutcomeAndPreservesDiagnostics()
         {
             OutroReport report = SpawnReport();
             report.PresentPreview(999, 8, ShowEndingOutcome.Trapped, ShowLang.Ja);
             string previous = report.CurrentBody;
-            report.PresentPreview(0, 0, ShowEndingOutcome.Released, ShowLang.En);
+            report.PresentPreview(-2, -5, ShowEndingOutcome.Released, ShowLang.En);
 
             Assert.That(report.CapturedReports, Is.Zero);
             Assert.That(report.CapturedTotal, Is.Zero);
@@ -190,16 +141,17 @@ namespace FixedCamVr.Tests.Diagnostics
             Assert.That(report.CurrentBody, Is.Not.EqualTo(previous));
             Assert.That(report.CurrentBody, Is.EqualTo(
                 OutroReportText.Compose(0, 0, ShowEndingOutcome.Released, ShowLang.En)));
-            Assert.That(report.Fields[1].text, Is.EqualTo(OutroReportText.Title(ShowEndingOutcome.Released, ShowLang.En)));
-            Assert.That(report.Fields[2].text, Is.EqualTo(OutroReportText.Body(ShowEndingOutcome.Released, ShowLang.En)));
-            Assert.That(report.Fields[4].text, Is.EqualTo("0 / —"));
+            Assert.That(report.Fields[0].text, Is.EqualTo("Return End"));
+            Assert.That(report.Fields[1].text, Is.EqualTo("Reports 0"));
             Assert.That(report.VisibleChars, Is.EqualTo(report.ReportChars));
+        }
 
-            report.PresentPreview(-2, -5, ShowEndingOutcome.Interrupted, ShowLang.Fr);
-            Assert.That(report.CapturedReports, Is.Zero);
-            Assert.That(report.CapturedTotal, Is.Zero);
-            Assert.That(report.Fields[1].text, Is.EqualTo(OutroReportText.Title(ShowEndingOutcome.Interrupted, ShowLang.Fr)));
-            Assert.That(report.Fields[4].text, Is.EqualTo("0 / —"));
+        private static Transform FindDescendant(Transform root, string name)
+        {
+            foreach (Transform child in root.GetComponentsInChildren<Transform>(true))
+                if (child.name == name) return child;
+            Assert.Fail($"{name} が無い");
+            return root;
         }
 
         private static Rect InkRectInCard(TMP_Text field)

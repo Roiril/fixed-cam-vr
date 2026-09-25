@@ -830,29 +830,10 @@ Unity 側が面倒を見る**。全画面 1 パスで幾何を解きたくなっ
     測り直しても尖頭は 0.797 のままだった（post の露出・コントラストが天井を決める）。
     ⇒ **プレートが変わっても測り直しは要らない。`show.json` の global post を変えたら測り直す**
 - **乱数を使わない**ので同じ版は同じ絵になる（進みは単調に増えるだけ・往復しない）
-- **報告の 4 行**は [`OutroReport`](../../Assets/Scripts/Diagnostics/OutroReport.cs)（文言は
-  [`OutroReportText`](../../Assets/Scripts/Diagnostics/OutroReportText.cs)）。**体験前の注意書き
-  （`TitleNotice`）と対の面**で、置き場・深度の逃がし方を揃えてある（2.6m /
-  TMP Overlay の `ZTest Always` / queue 5000）。
-  ⚠⚠ **大きさはもう揃っていない**（2026-09-05・`canon/LEDGER.md` 0161）。注意書きだけ
-  ユーザー指定で 2/3（本文 1.2°）にした。**報告は本文 1.8° のまま** — 揃え直さない。数は `ShowControlClient.ReportedAnomalyCount`（報告した異変の数・同じ演出は 1・0234。押した回数ではない）、
-  **全角数字**（紙の「観測者番号 ０３７」と揃える）
-- ⚠⚠ **報告は 1 字ずつ打たれ、1 字ごとに打鍵音が 1 発鳴る**（2026-08-16・`canon/LEDGER.md` 0063）。
-  速さは **`CommsPanelLogic.CharsPerSecFor`（日本語 12 / Latin 18 文字/秒）をそのまま使う** —
-  同じ装置の印字なので、連絡の面と違う速さで打つと装置が 2 台あるように聞こえる
-  （⚠ **言語では変わる**・0149。1 人が浴びるのは 1 言語だけ）。音の正本は `rules/sound-design.md` §4
-  - ⚠ **不透明度のフェードは持たない。** 打鍵そのものが出現の演出で、重ねると頭の数文字だけ
-    薄いという半端な絵になる。`reportFadeSec` は**段の長さ**としてだけ効く
-  - ⚠ **揃えは左。ただし字の塊は視界の中央へ運ぶ**（`textBounds` の重心を x も y も中心へ）。
-    左寄せの意図は行頭が揃うことで、塊が視界の左に寄ることではない
-  - ⚠ **縦も上寄せ**（`Left` ＝ 縦中央 は使えない）。1 字ずつ出すと、行が増えた瞬間に TMP が
-    「見えている行数」で縦中央を取り直し、**打ち終わった行が上へ跳ねる**（連絡の面で実測 38px）
-  - ⚠ **改行では鳴らさない**（`maxVisibleCharacters` は改行も 1 文字として数える）。
-    報告は改行を 4 つ持つので、鳴らすと「字が出ていないのに 1 発鳴る」が 4 回起きる
-  - 観測は `ev=outro` の `repChars=` / `repSfx=` と `ev=sum` の `repTypeN=` / `repShown=`。
-    **`ShowTelemetryHost` と `analyze-xp-log.py` を対で直す**
-- ⚠ **`OutroReport` は `StaffViewing` の門を通さない**（体験は既に終わっていて、この 4 行が
-  「HMD を外してよい」を伝える唯一の手段）。`HmdTextGateTests.OutroReport_IsNotGatedByStaffViewing` が固定する
+- 2026-09-25から `OutroReport` はエンドロール冒頭。黒地の左にロゴ・End名・報告数を置く。右にその体験中の合成済み写真を置く。詳細は [ending_roll.md](../memory/ending_roll.md)。
+- 帰還Endは最後の報告後に人形が消えた画面。人形Endは報告待ちの大量人形と体験者位置の人形が左右に映る画面。写真はラン開始ごとに更新する。
+- 旧報告書の説明文と分母とタイプ打ちは廃止。全体をフェード表示する。スタッフロールは未追加。
+- `OutroReport` は `StaffViewing` による非表示の対象外。`HmdTextGateTests.OutroReport_IsNotGatedByStaffViewing` が固定する。
 - ⚠ **終幕が有効なら終了で黒を出さない**（`ShowRunDirector.ShouldBlackout`）。
   `ShowEndingFader` は 0.3m ＝ 全部の面のうち最も手前なので、重ねると消えていく過程も報告も隠れる
 - ⚠ **`PassthroughStyler` は終幕を読まなくなった**（読むと真逆になる — 終幕の頭で現実が立ち上がる）。
@@ -973,7 +954,7 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 | `ControllerGuidePanel`（右手の手元） | スタッフが見ているときだけ（位置合わせ中も出す） | ボタンの早見表だけ。⚠ 手を下げると視界外なので、**復帰手順の置き場にしない** |
 | ~~`VisitorMarkPanel`（左手の手元）~~ | **廃止**（2026-08-16・`canon/LEDGER.md` 0058） | 報告の表示は `CommsPanel` の下段へ移った |
 | `TitleNotice`（2.6m・黒の中） | 周回リセット直後の待ち（A を押す前）だけ | 体験前の注意書き ＋ **言語の選択**（2026-09-03）＋ 小さな案内 3 言語（0147）＋ **ホラー軽減モードの案内 1 行**（2026-09-05・0154）。⚠ **この面だけ 2/3**（`TitleNotice.Scale`・2026-09-05・0161）＝ 本文 1.2° / 補助 1.0°。段の正（1.8° / 1.5°）は動かしていないので**他の面は変わらない**。字だけでなく**枠と塊のあいだにも同じ率**を掛ける（字だけ縮めると塊が左へ寄る） |
-| `OutroReport`（2.6m・黒の中） | 終幕の最後 | 報告の 4 行 |
+| `OutroReport`（2.6m・黒の中） | 終幕の最後 | ロゴ・End名・報告数・その体験の写真 |
 | `CommsPanel`（1.5m・左下） | **3 点**（下）。体験者に見せる面なので門は通さない | AIエージェントの顔 ＋ その連絡 |
 
 ##### ⚠⚠ 体験者が読む面には言語が 3 つある（2026-09-03・`canon/LEDGER.md` 0127）
@@ -990,7 +971,7 @@ HMD 内の文字面はすべてここを見て出入りする。**解決でき�
 | `TitleNotice`（体験前の注意書き） | ○ | 安全の掲示。**言語の選択もこの面が出す** |
 | `CommsPanel`（AIエージェントの連絡 8 通） | ○ | 体験者が読む |
 | `VisitorMarkGuidance`（「解析中」） | ○ | 体験者が読む |
-| `OutroReportText`（終幕の報告 4 行） | ○ | 体験者が読む |
+| `OutroReportText`（エンドロールのEnd名と報告数） | ○ | 体験者が読む |
 | **スクリーン左上の周回**（`OsdClockLogic.LapLabel`・0167 / 訳は 0177） | ○ | 体験者が読む。`LAP 1` / `LAST`、`TOUR 1` / `FIN`。⚠ **時刻は訳さない**（数字と区切りだけ）。⚠ 版は独自（`make-osd-font.py`）なので HUD フォントの収集元とは無関係 |
 | `StatusHud` / `ControllerGuidePanel` / `RegistrationGuidance` / `RecoveryGuidance` / 黒の上の 1 行 | ✗ | **読み手は日本語のスタッフ**。訳すと現場が読めなくなる |
 | 題字「廻リ視」 | ✗ | 作品の名前（焼いた版 1 枚） |

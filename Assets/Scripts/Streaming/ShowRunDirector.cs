@@ -230,6 +230,7 @@ namespace FixedCamVr.Streaming
             var o = def?.outro;
             OutroDef = (o == null || o.LooksUnset()) ? new ShowOutroDef() : o;
             _ending.Configure(OutroDef.afterTakeId);
+            timelineDirector?.ConfigureEndingCapture(OutroDef.afterTakeId);
             OutroDefChanged?.Invoke(OutroDef);
         }
 
@@ -363,6 +364,7 @@ namespace FixedCamVr.Streaming
             if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
             if (_intro == null) _intro = FindObjectOfType<IntroDirector>();
             if (_recorder == null) _recorder = FindObjectOfType<Recording.SegmentRecorder>();
+            timelineDirector?.ConfigureEndingCapture(OutroDef.afterTakeId);
             // ⚠ 言語切替の音は `TitleNotice` が実行時に AddComponent するので、Inspector には出ない。
             if (_langSwitchCue == null) _langSwitchCue = FindObjectOfType<LangSwitchAudioCue>();
         }
@@ -533,6 +535,8 @@ namespace FixedCamVr.Streaming
                      && timelineDirector.LastEndReason == TakeRunnerLogic.EndReason.Completed))
                 _endingDecision.Interrupt();
             Debug.Log($"[ShowRun] 体験の終了（{_logic.Lap - 1} 周 / 経過 {_logic.RunElapsedSec:F0} 秒）");
+            // AbortActive が overlay / CG / split を畳む前に、最後に成立した 2 枚を固定する。
+            timelineDirector?.FreezeEndingShots();
             timelineDirector?.AbortActive();
             _glitch?.ResetAll();
             // 凍結・焼き付きも畳む。終わったのに画が止まったままだと、暗転が始まっても

@@ -83,10 +83,14 @@ namespace FixedCamVr.Streaming.EditorTools
             new Surface { Name = "体験前の注意書き（安全の掲示）", Type = typeof(TitleNotice),
                           DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_text",
                           TierDeg = HmdTextStyle.BodyDeg * TitleNotice.Scale },
-            new Surface { Name = "終幕の報告", Type = typeof(OutroReport),
-                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "_text",
-                          TierDeg = HmdTextStyle.MinorDeg,
-                          Probe = OutroReportText.Body(ShowEndingOutcome.Trapped, ShowLanguage.Current) },
+            new Surface { Name = "エンドロールの結末名", Type = typeof(OutroReport),
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "Outcome",
+                          TierDeg = 3.2f,
+                          Probe = OutroReportText.Title(ShowEndingOutcome.Trapped, ShowLanguage.Current) },
+            new Surface { Name = "エンドロールの報告数", Type = typeof(OutroReport),
+                          DistanceField = "distanceM", BuildsItsOwnText = true, Field = "ReportCount",
+                          TierDeg = 1.8f,
+                          Probe = OutroReportText.CountLine(999, ShowLanguage.Current) },
             // ⚠ この面は TMP を **2 つ**持つ（上段 = 文面 / 下段 = 報告の押し方）。
             //    フィールドを名指ししないと、先に組んだ方が測られて「狙いと違う」と誤って落ちる。
             // ⚠⚠ 狙い値に **`CommsPanel.Scale`** を掛けてある（2026-08-19・`canon/LEDGER.md` 0091 で
@@ -386,6 +390,9 @@ namespace FixedCamVr.Streaming.EditorTools
         // 面が持つ TMP。SerializeField の `text` があればそれ、無ければ子から拾う。
         private static TMP_Text? FindText(MonoBehaviour comp, string? fieldName = null)
         {
+            if (comp is OutroReport ending)
+                foreach (TMP_Text field in ending.Fields)
+                    if (field.name == fieldName) return field;
             FieldInfo? f = comp.GetType().GetField(fieldName ?? "text",
                                                    BindingFlags.Instance | BindingFlags.NonPublic);
             if (fieldName != null) return f?.GetValue(comp) as TMP_Text;

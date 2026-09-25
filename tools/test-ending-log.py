@@ -24,16 +24,18 @@ class EndingLogTests(unittest.TestCase):
     def verdicts(self, events):
         return xp.analyze(events, [], self.exp)[1]
 
-    def report_events(self, ending="Trapped", play="1", seconds=(0.25, 0.75)):
+    def report_events(self, ending="Trapped", play="1", seconds=(0.25, 0.75),
+                      report_style=None, shown="4", typed="4", report_chars="4", sfx="1"):
         events = [
             {"ev": "outro", "stage": stage, "t": str(i), "ending": ending,
              "pw": "0", "rep": "0.98" if stage == "Done" else "0",
-             "repBuilt": "1", "repSfx": "1", "repChars": "12"}
+             "repBuilt": "1", "repSfx": sfx, "repChars": report_chars,
+             **({"repStyle": report_style} if report_style else {})}
             for i, stage in enumerate(("Dark", "Report", "Done"))
         ]
         events.extend(
             {"ev": "sum", "t": str(i + 3), "_cams": [], "clMax": "0",
-             "repShown": "4", "repTypeN": "4", "repChars": "4",
+             "repShown": shown, "repTypeN": typed, "repChars": report_chars,
              "repMusicBuilt": "1", "repMusicPlay": play,
              "repMusicVol": "0.2", "repMusicSec": str(sec)}
             for i, sec in enumerate(seconds)
@@ -149,6 +151,24 @@ class EndingLogTests(unittest.TestCase):
         self.assertTrue(any(level == "OK" and "結果曲の再生位置が進んだ" in text
                             for level, text in verdicts))
         self.assertTrue(any(level == "OK" and "報告が 4 文字ぶん打たれ" in text
+                            for level, text in verdicts))
+
+    def test_roll_report_accepts_visible_text_without_type_sound(self):
+        verdicts = self.verdicts(self.report_events(
+            report_style="roll", shown="12", typed="nc", report_chars="12", sfx="0"))
+        self.assertTrue(any(level == "OK" and "必要な 12 文字を表示した" in text
+                            for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "打鍵" in text for level, text in verdicts))
+
+    def test_roll_report_warns_when_visible_text_is_incomplete(self):
+        verdicts = self.verdicts(self.report_events(
+            report_style="roll", shown="4", typed="nc", report_chars="12", sfx="0"))
+        self.assertTrue(any(level == "WARN" and "4/12 文字" in text
+                            for level, text in verdicts))
+
+    def test_legacy_report_without_style_still_requires_type_sound(self):
+        verdicts = self.verdicts(self.report_events(sfx="0"))
+        self.assertTrue(any(level == "FAIL" and "打鍵の音源を掴めていない" in text
                             for level, text in verdicts))
 
     def test_report_music_play_zero_fails_despite_time_samples(self):

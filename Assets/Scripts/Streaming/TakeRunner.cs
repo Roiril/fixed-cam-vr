@@ -7,6 +7,14 @@ using UnityEngine;
 
 namespace FixedCamVr.Streaming
 {
+    /// <summary>終幕用のスクリーン写真を更新してよい安定区間。</summary>
+    public enum EndingShotWindow
+    {
+        None = 0,
+        Trapped = 1,
+        Released = 2,
+    }
+
     /// <summary>
     /// 演出（Take）の実行体。<see cref="TakeRunnerLogic"/> の判定を実際の画面へ写す。
     ///   - カット の source（live / inherit / clip / still）→ <see cref="CameraSwitchDirector"/>（dip 付き切替 + 占有）
@@ -107,6 +115,10 @@ namespace FixedCamVr.Streaming
 
         // 映像の上に人形を描く層（step.cg）。null なら CG は出ない（機能未配置でも演出は動く）。
         private ShowCgLayer? _cgLayer;
+        private CameraFeelFx? _feelFx;
+        private EndingFrameCapture? _endingCapture;
+        private string _endingTakeId = "";
+        private bool _endingReleased;
 
         /// <summary>
         /// 入れ替わりのノイズが覆い切るのを待っている素材。覆い切る前に演出が畳まれたら
@@ -133,6 +145,53 @@ namespace FixedCamVr.Streaming
         /// 本番中に「いま画面を握っているのは誰か」を人が知る唯一の手段なので公開する。
         /// </summary>
         public string ActiveTakeId => _logic.IsActive ? TakeId(_logic.ActiveTakeIndex) : "";
+
+        /// <summary>
+        /// 終幕写真の更新区間。台本の段だけではなく、素材と CG が material へ実際に届き、
+        /// 遷移が終わっていることまで確認してから開く。
+        /// </summary>
+        public EndingShotWindow EndingShotWindow
+        {
+            get
+            {
+                bool endingTakeActive = _logic.IsActive
+                                        && !string.IsNullOrEmpty(_endingTakeId)
+                                        && ActiveTakeId == _endingTakeId;
+                ShowStepDef? step = GetStep(_logic.ActiveTakeIndex, _logic.ActiveStepIndex);
+                bool liveSource = step != null
+                                  && TakeSchema.NormalizeSource(step.source, out _) == TakeSchema.SourceLive;
+                bool primaryActive = overlay != null && overlay.Strength > 0.001f;
+                bool primaryMatches = step != null && !string.IsNullOrEmpty(step.cueId)
+                                      && primaryActive && overlay!.AppliedCueId == step.cueId;
+                bool secondaryActive = _feelFx != null && _feelFx.Overlay2Strength > 0.001f;
+                bool secondaryMatches = step != null && !string.IsNullOrEmpty(step.overlay2CueId)
+                                        && secondaryActive;
+                bool cgActive = _cgLayer != null && _cgLayer.IsVisible;
+                bool trappedCgVisible = _cgLayer != null && _cgLayer.DollVisible;
+                bool swapActive = director != null && director.SwapActive;
+                bool transitionActive = director != null && director.Dipping;
+                return ResolveEndingShotWindow(endingTakeActive, _logic.IsWaitingForMark,
+                    _endingReleased, liveSource, primaryMatches, secondaryMatches, trappedCgVisible,
+                    primaryActive, secondaryActive, cgActive,
+                    swapActive, transitionActive);
+            }
+        }
+
+        /// <summary>終幕写真の窓判定。Unity の描画状態を引数へ分離し、EditMode で固定する。</summary>
+        public static EndingShotWindow ResolveEndingShotWindow(
+            bool endingTakeActive, bool waitingForMark, bool reportReleased, bool liveSource,
+            bool trappedPrimaryVisible, bool trappedSecondaryVisible, bool trappedCgVisible,
+            bool primaryActive, bool secondaryActive, bool cgActive,
+            bool swapActive, bool transitionActive)
+        {
+            if (!endingTakeActive || swapActive || transitionActive) return EndingShotWindow.None;
+            if (!reportReleased && waitingForMark
+                && trappedPrimaryVisible && trappedSecondaryVisible && trappedCgVisible)
+                return EndingShotWindow.Trapped;
+            if (reportReleased && liveSource && !primaryActive && !secondaryActive && !cgActive)
+                return EndingShotWindow.Released;
+            return EndingShotWindow.None;
+        }
 
         /// <summary>
         /// <b>いま画面を取っているカットの素材 id</b>（<c>steps[].cueId</c>）。演出が走っていなければ空。
@@ -292,6 +351,13 @@ namespace FixedCamVr.Streaming
             // 機能が全死した過去の事故を繰り返さない）。
             _cgLayer = FindObjectOfType<ShowCgLayer>();
             if (_cgLayer == null && overlay != null) _cgLayer = overlay.gameObject.AddComponent<ShowCgLayer>();
+            _feelFx = overlay != null ? overlay.GetComponent<CameraFeelFx>() : FindObjectOfType<CameraFeelFx>();
+
+            // 終幕写真もスクリーンの material と同居させる。旧シーンに配線が無くても自動で載る。
+            _endingCapture = FindObjectOfType<EndingFrameCapture>();
+            if (_endingCapture == null && overlay != null)
+                _endingCapture = overlay.gameObject.AddComponent<EndingFrameCapture>();
+            _endingCapture?.Bind(this);
 
             // 闇の目（canon/LEDGER.md 0075）。**シーンに居なければ自分で載せる** — 群れは
             // 頭に付いて動くだけで親を選ばないので、どこに載っていても同じ絵になる。
@@ -349,6 +415,16 @@ namespace FixedCamVr.Streaming
         /// <summary>素材 URL（sa:// / 相対）の解決関数を注入する（ShowControlClient に集約）。</summary>
         public void SetUrlResolver(Func<string, string> resolver) => _urlResolver = resolver;
 
+        /// <summary>終幕の合図が指す take を設定する。空なら写真の窓は開かない。</summary>
+        public void ConfigureEndingCapture(string? afterTakeId)
+        {
+            _endingTakeId = afterTakeId ?? "";
+            _endingCapture?.Bind(this);
+        }
+
+        /// <summary>終了処理が表示状態を畳む前に、終幕写真を固定する。</summary>
+        public void FreezeEndingShots() => _endingCapture?.Freeze();
+
         /// <summary>
         /// ライブ卓の抑止（activeCue 非空 / cameraOverride 非 null）を通知する。
         ///
@@ -377,6 +453,8 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void AbortActive()
         {
+            // この直後に overlay / CG / split が畳まれる。既に取れた最終フレームを先に固定する。
+            _endingCapture?.FreezeIfCaptured();
             // 演出が自然終了した直後でも、卓の「■ 画面を取り返す」は通信表示を止める明示信号になる。
             // active / chain 中は CleanupActive が数えるため、入口では非 active 時だけ数えて二重加算を避ける。
             if (!_logic.IsActive && !_chainPending)
@@ -575,6 +653,8 @@ namespace FixedCamVr.Streaming
                 deferDismiss: _markResponsePlaying);
             if (result == TakeRunnerLogic.MarkResult.Dismissed && _markResponsePlaying)
                 _markResponseReported = true;
+            if (result == TakeRunnerLogic.MarkResult.Released && ActiveTakeId == _endingTakeId)
+                _endingReleased = true;
             return result;
         }
 
@@ -647,6 +727,7 @@ namespace FixedCamVr.Streaming
             _hasLastNow = false;
             DollCatchUpCompletedCount = 0;
             PresentationAbortCount = 0;
+            _endingReleased = false;
         }
 
         /// <summary>ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。</summary>

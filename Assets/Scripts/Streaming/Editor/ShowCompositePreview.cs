@@ -1547,6 +1547,33 @@ namespace FixedCamVr.Streaming.EditorTools
                 return path;
             }
 
+            // Ending layout fixture: render the actual compositor without its diagnostic caption.
+            public Texture2D ReadEndingTexture(Texture2D? crowd = null, Texture2D? mask = null)
+            {
+                if (_outRt == null) throw new InvalidOperationException("Composite must be rendered first");
+                if (crowd != null)
+                {
+                    _compositeMat.SetTexture("_OverlayTex", crowd);
+                    _compositeMat.SetTexture("_MaskTex", mask);
+                    float aspect = (float)crowd.width / crowd.height;
+                    _compositeMat.SetVector("_OverlayScale", aspect < _frameAspect
+                        ? new Vector4(aspect / _frameAspect, 1, 0, 0)
+                        : new Vector4(1, _frameAspect / aspect, 0, 0));
+                    _compositeMat.SetFloat("_OverlayStrength", 1);
+                }
+                _outCam.Render();
+                var previous = RenderTexture.active;
+                var texture = new Texture2D(_outW, OutImageHeight, TextureFormat.RGB24, false);
+                try
+                {
+                    RenderTexture.active = _outRt;
+                    texture.ReadPixels(new Rect(0, _outH - OutImageHeight, _outW, OutImageHeight), 0, 0);
+                    texture.Apply();
+                }
+                finally { RenderTexture.active = previous; }
+                return texture;
+            }
+
             /// <summary>show.json すら無い等、絵を作れないときに「何が足りないか」だけを書いた 1 枚を出す。</summary>
             public void WriteMessageCard(string fileName, string line1, string line2, List<string> saved)
             {
