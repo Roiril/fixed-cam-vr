@@ -96,8 +96,12 @@ namespace FixedCamVr.OvrBridge
         // 体験者の報告ボタン（左のどれか）の長押し（純ロジック）。
         private readonly VisitorMarkHoldLogic _markHold = new();
         private readonly HmdOnboardingLogic _onboarding = new();
+        private readonly ControllerConnectionGate _leftConnectionGate = new();
+        private readonly ControllerConnectionGate _rightConnectionGate = new();
+        private readonly RegistrationSampleInputGate _registrationSampleInputGate = new();
         private int _titleSequence = -1;
         private bool _markNeedsRelease = true;
+        private bool _prevAHeld, _prevBHeld, _prevTriggerHeld;
 
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
@@ -106,6 +110,7 @@ namespace FixedCamVr.OvrBridge
                  "null でも報告そのものは動く（画に出ないだけ）。")]
         [SerializeField] private CommsPanel? comms;
         private int _lastCommsPulse;
+        private bool _pendingLeftNotify;
 
         /// <summary>
         /// 直近に見た <c>ShowControlClient.CurseReleasedCount</c>。増えた瞬間が
@@ -113,6 +118,7 @@ namespace FixedCamVr.OvrBridge
         /// ⚠ 0 で始めるので、起動直後に空振りしない（あちらも 0 始まりで単調）。
         /// </summary>
         private int _lastCurseReleased;
+        private bool _pendingClosing;
         // 連絡の面を毎フレーム探しに行かないための再試行の間隔（面が無い構成での 90Hz 全走査を断つ）。
         private const float CommsResolveRetrySec = 2f;
         private float _commsRetryAt;
@@ -226,6 +232,60 @@ namespace FixedCamVr.OvrBridge
 
         private void Update()
         {
+            // 接続状態と物理ボタンは最初に一度だけ読む。SDK の Down は切断前の状態を持ち越し得るため、
+            // 再接続後の解放を確認した入力から Down を組み立てる。
+            bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
+            bool lTracked = lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
+            bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
+            bool rTracked = rConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.RTouch);
+            bool xRawHeld = OVRInput.Get(OVRInput.RawButton.X, OVRInput.Controller.LTouch);
+            bool yRawHeld = OVRInput.Get(OVRInput.RawButton.Y, OVRInput.Controller.LTouch);
+            bool aRawHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);
+            bool bRawHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);
+            bool triggerRawHeld = OVRInput.Get(OVRInput.RawButton.RIndexTrigger, OVRInput.Controller.RTouch);
+
+            ControllerConnectionGate.Result leftConnection =
+                _leftConnectionGate.Tick(lConnected, xRawHeld || yRawHeld);
+            ControllerConnectionGate.Result rightConnection =
+                _rightConnectionGate.Tick(rConnected, aRawHeld || bRawHeld || triggerRawHeld);
+
+            _lConnected = lConnected;
+            _lTracked = lTracked;
+            _rConnected = rConnected;
+            _rTracked = rTracked;
+            guidePanel?.SetControllerState(rConnected, rTracked);
+            statusHud?.SetRightControllerState(rConnected, rTracked);
+
+            if (leftConnection.Disconnected)
+            {
+                _markHold.Reset();
+                _markNeedsRelease = true;
+                haptics?.StopLeft();
+            }
+            if (rightConnection.Disconnected)
+            {
+                _modeLogic.DiscardHolds();
+                haptics?.StopRight();
+            }
+
+            if (rightConnection.Reconnected && _pendingClosing)
+            {
+                _pendingClosing = false;
+                haptics?.Closing();
+            }
+
+            bool xHeld = leftConnection.AcceptInput && xRawHeld;
+            bool yHeld = leftConnection.AcceptInput && yRawHeld;
+            bool aHeld = rightConnection.AcceptInput && aRawHeld;
+            bool bHeld = rightConnection.AcceptInput && bRawHeld;
+            bool rTrigger = rightConnection.AcceptInput && triggerRawHeld;
+            bool aDown = aHeld && !_prevAHeld;
+            bool bDown = bHeld && !_prevBHeld;
+            bool triggerDown = rTrigger && !_prevTriggerHeld;
+            _prevAHeld = aHeld;
+            _prevBHeld = bHeld;
+            _prevTriggerHeld = rTrigger;
+
             // ---- パッシブ状態（モードでゲートしない。ゲストが誘発する操作ではなくフェイルソフト表示）----
             // OVRManager.display が後から生えるケースに備え、未購読なら毎フレーム再試行（生えたら 1 回で確定）。
             if (!_recenterSubscribed) TrySubscribeRecenter();
@@ -239,20 +299,9 @@ namespace FixedCamVr.OvrBridge
             // ここに置くのは、既存シーン / prefab へコンポーネントを 1 個増やさずに済ませるため。
             DisplayRateRequester.Tick(Time.unscaledDeltaTime);
 
-            // ---- 入力を 1 回だけ読む（同じボタンを複数箇所で拾わないため）----
-            // Button.One/Two はコントローラ未指定だと両手から拾う（One=A|X 等）ため、必ず RTouch を明示する。
-            bool aDown = OVRInput.GetDown(primaryButton, OVRInput.Controller.RTouch); // A: 登録のマーク・やり直し
-            bool aHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);     // A: 押しっぱなし（登録のホールド平均用）
-            bool bDown = OVRInput.GetDown(statusButton, OVRInput.Controller.RTouch); // B: 登録の確定（Registration）
-            bool bHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);     // B: 押しっぱなし（Normal のステータス表示）
-            bool rTrigger = OVRInput.Get(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
-            bool triggerDown = OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch);
-
             // ---- 体験者の手（左）。X / Y を物理ボタン名で読む -----------------------
             // Button.Three / Four と LTouch の組み合わせは SDK の仮想マップ上で None になる。
             // RawButton を使い、練習と本編の両方を同じ入力に揃える。
-            bool xHeld = OVRInput.Get(OVRInput.RawButton.X, OVRInput.Controller.LTouch);
-            bool yHeld = OVRInput.Get(OVRInput.RawButton.Y, OVRInput.Controller.LTouch);
             // 体験者へ説明する X / Y だけを使う。左グリップ、左インデックストリガー、
             // 左スティック押し込みは導入・題字・本編報告のどこでも読まない。
             bool leftMarkHeld = xHeld || yHeld;
@@ -262,7 +311,7 @@ namespace FixedCamVr.OvrBridge
             if (aDown || bDown || triggerDown)
                 haptics?.Ack();
 
-            // 右コントローラの状態をガイドパネルへ push（Diagnostics は OVRInput 非依存のため直読み不可）。
+            // 右コントローラの状態は Update 冒頭でガイドと StatusHud へ push 済み。
             //
             // ⚠⚠ **接続と位置は別々に見る**（2026-08-16 実機で踏んだ）。
             //    電源が入っていれば `IsControllerConnected` は true だが、カメラから見えていないと
@@ -272,13 +321,21 @@ namespace FixedCamVr.OvrBridge
             //    接続だけを見ていたので、**手元の面が床の原点に出て「遠くに小さく」見えていた**。
             //    人形の左腕（`OvrHandTrackingBridge.TryReadController`）は最初から
             //    `GetControllerPositionValid` を見ていて、そこだけ正しかった。
-            bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
-            bool rTracked = rConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.RTouch);
-            guidePanel?.SetControllerState(rConnected, rTracked);
-            _rConnected = rConnected;
-            _rTracked = rTracked;
-
             bool regActive = courseRegistration != null && courseRegistration.IsActive;
+            bool registrationInputAccepted = _registrationSampleInputGate.Tick(
+                rTracked,
+                aRawHeld,
+                regActive && courseRegistration != null && courseRegistration.SampleHoldProgress01 > 0f);
+            bool registrationMarkHeld = aHeld && registrationInputAccepted;
+            bool registrationMarkDown = aDown && registrationMarkHeld;
+
+            bool leftNotifyAllowed = !regActive
+                && !(showControl != null && showControl.IsVisitorMarkBlocked);
+            if (_pendingLeftNotify && lConnected && leftNotifyAllowed)
+            {
+                _pendingLeftNotify = false;
+                haptics?.LeftNotify();
+            }
 
             // AIエージェントからの連絡が届いたら、体験者の手（左）を震わせる。
             // ⚠ 連絡の面（Diagnostics）も体験の骨格（Streaming）も OVR を参照しない規約なので、
@@ -294,8 +351,11 @@ namespace FixedCamVr.OvrBridge
             if (comms != null && comms.PulseCount != _lastCommsPulse)
             {
                 _lastCommsPulse = comms.PulseCount;
-                if (!regActive && !(showControl != null && showControl.IsVisitorMarkBlocked))
-                    haptics?.LeftNotify();
+                if (leftNotifyAllowed)
+                {
+                    if (lConnected) haptics?.LeftNotify();
+                    else _pendingLeftNotify = true;
+                }
             }
 
             // 体験者が最後の異変を排除して、画がリアルタイム映像へ戻った ＝ 締めが始まった。
@@ -310,7 +370,8 @@ namespace FixedCamVr.OvrBridge
             if (showControl != null && showControl.CurseReleasedCount != _lastCurseReleased)
             {
                 _lastCurseReleased = showControl.CurseReleasedCount;
-                haptics?.Closing();
+                if (rConnected) haptics?.Closing();
+                else _pendingClosing = true;
                 Debug.Log("[Haptics] 締めの合図（右・スタッフ）— 呪いが排除されて画がライブへ戻った");
             }
 
@@ -353,8 +414,6 @@ namespace FixedCamVr.OvrBridge
             if (showControl != null && showControl.StartAuthorized && !_onboarding.StartAuthorized)
                 _onboarding.CompleteForAutomation();
 
-            _lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
-            _lTracked = _lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
             CommsNotice expectedOnboardingNotice = NoticeFor(_onboarding.Prompt);
             HmdOnboardingAction onboardingAction = _onboarding.Tick(new HmdOnboardingInput
             {
@@ -432,7 +491,7 @@ namespace FixedCamVr.OvrBridge
                 longPress = Mathf.Max(longPress, _modeLogic.ResetHoldProgress01);
             if (longPress < HoldTickDeadSec / LongPressSec) longPress = 0f;
             float holdProgress = longPress;
-            if (courseRegistration != null)
+            if (courseRegistration != null && registrationInputAccepted)
                 holdProgress = Mathf.Max(holdProgress, courseRegistration.SampleHoldProgress01);
             haptics?.SetHoldProgress(holdProgress);
 
@@ -454,8 +513,8 @@ namespace FixedCamVr.OvrBridge
                     // 登録モード中は通常マッピングを抑止し、登録入力（A=マーク/やり直し・B=確定）を転送。
                     courseRegistration?.Feed(new CourseRegistrationController.RegInput
                     {
-                        mark = aDown,       // A (右) Down: サンプリング開始 / Verify やり直し
-                        markHeld = aHeld,   // A (右) ホールド: 0.5s 平均サンプリングの継続
+                        mark = registrationMarkDown, // A (右) Down: サンプリング開始 / Verify やり直し
+                        markHeld = registrationMarkHeld, // A (右) ホールド: 0.5s 平均サンプリングの継続
                         confirm = bDown,    // B (右): Verify で確定
                         deltaTime = Time.deltaTime, // ホールド平均計時（純ロジック HoldAverageSampler へ供給）
                     });
@@ -572,7 +631,11 @@ namespace FixedCamVr.OvrBridge
         private void OnRegPointCaptured() => haptics?.Action(); // 点サンプル確定
         private void OnRegFitRejected() => haptics?.Error();    // 残差 NG・やり直し
         private void OnRegFitAccepted() => haptics?.Fire();     // 残差ガード通過・Verify 遷移（FitRejected と対称）
-        private void OnRegSampleAborted() => haptics?.Error();  // 0.5s 未満で離してホールド中断
+        private void OnRegSampleAborted()
+        {
+            // 切断が原因の中断では、冒頭で止めた右振動を再び予約しない。
+            if (_rConnected) haptics?.Error();
+        }
         // 確定保存 = Fire。この直後に IsActive=false → 次フレーム ModeChanged(Reg→Normal) でも Fire が来るが、
         // HapticSequenceLogic のピア優先（同ピークは再生中なら無視）で 1 回に畳まれる。
         private void OnRegConfirmed() => haptics?.Fire();

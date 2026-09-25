@@ -90,6 +90,14 @@ namespace FixedCamVr.OvrBridge
             _sentL = 0f;
         }
 
+        /// <summary>スタッフの手（右）の通知と長押し振動を直ちに止める。</summary>
+        public void StopRight()
+        {
+            _logic.Reset();
+            OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
+            _sentR = 0f;
+        }
+
         /// <summary>
         /// これより長いフレームのあいだに振幅 &gt; 0 を送りっぱなしだったら、ログに残す（秒）。
         /// <c>SetControllerVibration</c> は「次に呼ばれるまで（上限は実行時側の約 2 秒）」鳴り続けるので、
@@ -116,13 +124,19 @@ namespace FixedCamVr.OvrBridge
             _lastRealtime = now;
 
             float dt = Time.deltaTime;
-            float amp = _logic.Tick(dt);
+            bool rightConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
+            float amp = 0f;
+            if (rightConnected) amp = _logic.Tick(dt);
+            else _logic.Reset();
             float freq = amp > 0f ? HapticSequenceLogic.Frequency : 0f;
             OVRInput.SetControllerVibration(freq, amp, OVRInput.Controller.RTouch);
             _sentR = amp;
 
             // 左は体験者の手。右と混ぜない（スタッフの操作が体験者の手に伝わると世界の外の合図になる）。
-            float ampL = _left.Tick(dt);
+            bool leftConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
+            float ampL = 0f;
+            if (leftConnected) ampL = _left.Tick(dt);
+            else _left.Reset();
             float freqL = ampL > 0f ? HapticSequenceLogic.Frequency : 0f;
             OVRInput.SetControllerVibration(freqL, ampL, OVRInput.Controller.LTouch);
             _sentL = ampL;

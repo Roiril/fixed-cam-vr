@@ -334,5 +334,22 @@ namespace FixedCamVr.Input.Tests
             for (int i = 0; i < 4; i++) Tick(l, dt: 0.5f, triggerHeld: true);
             Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
         }
+
+        [Test]
+        public void DiscardHolds_PreservesModeAndRequiresFreshHold()
+        {
+            var l = Make(ControllerModeLogic.Mode.Registration);
+            Tick(l, dt: 1.5f, triggerHeld: true, registrationActive: true);
+
+            l.DiscardHolds();
+
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
+            Assert.That(l.TriggerHoldProgress01, Is.EqualTo(0f));
+            Tick(l, dt: 0f, triggerHeld: false, registrationActive: true);
+            Tick(l, dt: 1.9f, triggerHeld: true, registrationActive: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Registration));
+            Tick(l, dt: 0.2f, triggerHeld: true, registrationActive: true);
+            Assert.That(l.Current, Is.EqualTo(ControllerModeLogic.Mode.Normal));
+        }
     }
 }

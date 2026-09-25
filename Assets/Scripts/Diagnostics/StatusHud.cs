@@ -136,6 +136,10 @@ namespace FixedCamVr.Diagnostics
         // 導入の段（左の接続待ち / 報告の練習 / 題字 …）。OvrControllerBridge が変化時に push する。
         private string _introStep = "";
 
+        // 登録中の右手の状態。Bridge が毎フレーム更新する。未配線のプレビューでは従来の案内を出す。
+        private bool _rightConnected = true;
+        private bool _rightTracked = true;
+
         /// <summary>面が出た理由。<b>テレメトリの <c>ev=status src=</c> がそのまま読む。</b></summary>
         public enum ShowSource
         {
@@ -205,6 +209,13 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>導入の段（「左の接続待ち」「報告の練習」「題字」…）。空なら段を出さない。</summary>
         public void SetIntroStep(string label) => _introStep = label ?? "";
+
+        /// <summary>位置合わせに使う右手の接続と位置追跡を受け取る。</summary>
+        public void SetRightControllerState(bool connected, bool tracked)
+        {
+            _rightConnected = connected;
+            _rightTracked = connected && tracked;
+        }
 
         /// <summary>
         /// <b>HMD の中に文字を出してよいか ＝ 被っているのがスタッフか。</b>
@@ -429,14 +440,19 @@ namespace FixedCamVr.Diagnostics
             // 1. 登録中はガイダンスを強制表示（最優先）。
             if (registration != null && registration.IsActive)
             {
-                string g = registration.GuidanceText;
+                string g = !_rightConnected
+                    ? "右コントローラーを接続してください"
+                    : !_rightTracked
+                        ? "右コントローラーを前に出してください"
+                        : registration.GuidanceText;
                 if (!ReferenceEquals(g, _lastGuidance) && g != _lastGuidance)
                 {
                     text.SetText(g);
                     _lastGuidance = g;
                 }
                 // 色の正は HmdTextStyle 1 か所。Tracking は「対応が要る行か」だけを返す。
-                text.color = registration.GuidanceIsAlert ? HmdTextStyle.Alert : HmdTextStyle.Ink;
+                text.color = !_rightConnected || !_rightTracked || registration.GuidanceIsAlert
+                    ? HmdTextStyle.Alert : HmdTextStyle.Ink;
                 text.alpha = 1f;
                 text.enabled = !string.IsNullOrEmpty(g);
                 return;

@@ -166,6 +166,14 @@ namespace FixedCamVr.Input
             _voidedHolds = 0;
         }
 
+        /// <summary>現在のモードを保ったまま、進行中の長押しと静穏期だけを破棄する。</summary>
+        public void DiscardHolds()
+        {
+            _trigger.Reset();
+            _reset.Reset();
+            _faceQuiet = 0f;
+        }
+
         /// <summary>毎フレームの評価。入力からモード遷移・ランリセット要求を決める。</summary>
         public void Tick(in Frame f)
         {
