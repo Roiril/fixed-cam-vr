@@ -25,7 +25,6 @@ const requiredAssets = [
   "assets/hero-mobile.webp",
   "assets/title.png",
   "assets/sfx_shatter.wav",
-  "assets/sfx_screen_on.wav",
   "assets/camera-fiction-01.webp",
   "assets/camera-fiction-02.webp",
   "assets/camera-fiction-03.webp",

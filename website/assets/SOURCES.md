@@ -24,7 +24,7 @@
 
 実機映像3本の出典は [FOOTAGE.md](FOOTAGE.md)。入口の立体題字は既存の `title.png`（1210×531）の輪郭と色をWebGLで使用する。新しい題字は生成していない。破砕の幾何は `Assets/Scripts/Streaming/IntroFractureMesh.cs`、時計と材質は `Assets/Art/Shaders/Intro/IntroFractureTime.hlsl` と `IntroFracture.shader` からウェブ用に移植した。
 
-入口の値と音は `scripts/sync-entrance.mjs` でQuest本体から同期する。参照先は `IntroFractureTime.hlsl`、`IntroLogic.cs`、`SoundCueLogic.cs`、`SfxPlayer.cs`、`tools/web-compositor/show.json`。`sfx_shatter.wav` と `sfx_screen_on.wav` は `Assets/Resources/Sound/` から無加工コピーする。前者は4.1500秒、SHA-256 `99BCF22507D37C1FA9E4DC6133C5970C41E93414517307489BF13913D7760925`。後者は0.331438秒、SHA-256 `0494FC7615545381A63916CA0786E22E8712ED898EB5B3E8CC9F16B866FCFDBF`。コピー元と配信用ファイルのハッシュは一致する。gainは1。音の開始はQuestと同じく0.135秒と4.559秒。
+入口の値と音は `scripts/sync-entrance.mjs` でQuest本体から同期する。参照先は `IntroFractureTime.hlsl`、`IntroLogic.cs`、`SoundCueLogic.cs`、`SfxPlayer.cs`、`tools/web-compositor/show.json`。`sfx_shatter.wav` は `Assets/Resources/Sound/` から無加工コピーする。原本は `Glass_shattering_and_reforming_v…_20260920133909.mp4`（SHA-256 `4921CE7F5E2508660AC8D173D5DBBD7F2205C838F8A3D96C127A487A46816CB3`）。`tools/ingest-intro-generated-audio.py` で抽出したWAVは6.016秒、SHA-256 `C9A687205CD0466C2E5485D26E63C14DD3CBAD94B5E0049F72F7EC451EE0CE1E`。コピー元と配信用ファイルのハッシュは一致する。gainは1。音の開始はQuestと同じく0.135秒。旧スクリーン音は使わない。
 
 ## キービジュアル
 

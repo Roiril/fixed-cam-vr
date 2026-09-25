@@ -58,7 +58,7 @@ for (const [name, value] of Object.entries(timing)) {
   if (match) assert.equal(value, Number(match[1]), `Quest clock mismatch: ${name}`);
 }
 assert.equal(timing.duration, 5000);
-const clips = await Promise.all(['sfx_shatter', 'sfx_screen_on'].map(async name => {
+const clips = await Promise.all(['sfx_shatter'].map(async name => {
   const web = await readFile(resolve(root, `assets/${name}.wav`));
   const quest = await readFile(resolve(root, `../Assets/Resources/Sound/${name}.wav`));
   assert(web.equals(quest), `${name}: audio must remain byte-identical`);
@@ -73,33 +73,45 @@ const clips = await Promise.all(['sfx_shatter', 'sfx_screen_on'].map(async name 
   return dataLength / byteRate;
 }));
 const shatter = timing.shatterAt * timing.duration / 1000 + timing.audioLead;
-const screen = timing.screenOnAt * timing.duration / 1000 + timing.audioLead;
-assert(screen - shatter - clips[0] > .2, 'Keep silence between the two clips');
-assert(screen + clips[1] < timing.duration / 1000, 'Do not truncate the closing sound');
+assert(Math.abs(clips[0] - 6.016) < .001, 'Keep the complete generated recording');
+assert(shatter + clips[0] > timing.duration / 1000, 'The audio tail must outlast the image');
+assert.match(await readFile(resolve(root, 'entrance.js'), 'utf8'), /else finish\(true\)/,
+  'Natural image completion must preserve the audio tail');
 
 // Validate real scheduling and cleanup through a deterministic Web Audio double.
-const calls = [], contexts = [];
+const calls = [], contexts = [], sources = [];
 class AudioContext {
   currentTime = 10;
   destination = {};
   constructor() { contexts.push(this); }
-  decodeAudioData() { return Promise.resolve({}); }
+  decodeAudioData() { return Promise.resolve({ duration: clips[0] }); }
   resume() { calls.push('resume'); return Promise.resolve(); }
   suspend() { calls.push('suspend'); return Promise.resolve(); }
   close() { calls.push('close'); return Promise.resolve(); }
   createBufferSource() {
-    return { connect() {}, disconnect() { calls.push('disconnect'); }, start(t) { calls.push(t); }, stop() { calls.push('stop'); } };
+    const source = { connect() {}, disconnect() { calls.push('disconnect'); },
+      start(t) { calls.push(t); }, stop() { calls.push('stop'); } };
+    sources.push(source);
+    return source;
   }
 }
 window.AudioContext = AudioContext;
+window.addEventListener = () => {};
+window.removeEventListener = () => {};
+const document = { hidden: false, addEventListener() {}, removeEventListener() {} };
 vm.runInNewContext(await readFile(resolve(root, 'entrance-audio.js'), 'utf8'), {
-  window, AbortController, setTimeout, clearTimeout,
+  window, document, AbortController, setTimeout, clearTimeout,
   fetch: async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(0) })
 });
 const sound = await window.MAWARIMI_ENTRANCE_AUDIO.prepare();
 assert.equal(calls.length, 0, 'Loading must not play audio');
-await sound.unlock(); sound.start(); sound.pause(); sound.resume(); sound.dispose(); sound.dispose();
+await sound.unlock(); sound.start(); sound.pause(); sound.resume();
 assert(Math.abs(calls.find(value => typeof value === 'number') - (10 + shatter)) < 1e-9);
-assert.equal(calls.filter(value => value === 'stop').length, 2);
+sources[0].onended(); sound.dispose();
+assert.equal(calls.filter(value => value === 'stop').length, 0, 'Natural end must keep the full tail');
 assert.equal(calls.filter(value => value === 'close').length, 1);
-console.log(`Entrance checks passed: initial gate, repeat/hash/storage, timeout/skip, Quest clock, unchanged WAV, audio lifecycle.\nShatter ${shatter.toFixed(3)}s / ${clips[0]}s; close ${screen.toFixed(3)}s / ${clips[1]}s; silence ${(screen-shatter-clips[0]).toFixed(3)}s.`);
+const skipped = await window.MAWARIMI_ENTRANCE_AUDIO.prepare();
+await skipped.unlock(); skipped.start(); skipped.dispose(); skipped.dispose();
+assert.equal(calls.filter(value => value === 'stop').length, 1, 'Skip must stop the sound');
+assert.equal(calls.filter(value => value === 'close').length, 2);
+console.log(`Entrance checks passed: initial gate, repeat/hash/storage, timeout/skip, Quest clock, matching 6.016s WAV, audio tail and cancellation.\nShatter ${shatter.toFixed(3)}s / ${clips[0]}s.`);

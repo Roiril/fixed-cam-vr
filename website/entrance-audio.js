@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  // User-supplied Quest clips, already mastered. No pitch or volume changes.
+  // The selected generated recording is shared byte-for-byte with Quest.
   async function prepare() {
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) return null;
@@ -9,35 +9,46 @@
     const timeout = setTimeout(() => abort.abort(), 8000);
     try {
       context = new Audio();
-      const buffers = await Promise.all(['sfx_shatter', 'sfx_screen_on'].map(async name => {
-        const response = await fetch(`assets/${name}.wav`, { signal: abort.signal });
-        if (!response.ok) throw new Error('Entrance audio unavailable');
-        return context.decodeAudioData(await response.arrayBuffer());
-      }));
+      const response = await fetch('assets/sfx_shatter.wav', { signal: abort.signal });
+      if (!response.ok) throw new Error('Entrance audio unavailable');
+      const buffer = await context.decodeAudioData(await response.arrayBuffer());
       clearTimeout(timeout);
-      let sources = [];
+      let source = null;
       let disposed = false;
+      function dispose(stop) {
+        if (disposed) return;
+        disposed = true;
+        document.removeEventListener('visibilitychange', visibility);
+        window.removeEventListener('pagehide', onPageHide);
+        if (source) {
+          if (stop) { try { source.stop(); } catch (_) {} }
+          source.disconnect();
+        }
+        context.close().catch(() => {});
+      }
+      function visibility() {
+        if (document.hidden) context.suspend().catch(() => {});
+        else context.resume().catch(() => {});
+      }
+      function onPageHide() { dispose(true); }
       return {
         unlock() { return context.resume(); },
         start() {
+          if (disposed || source) return;
           const timing = window.MAWARIMI_ENTRANCE_TIMING;
           const start = context.currentTime + timing.audioLead;
-          sources = buffers.map((buffer, index) => {
-            const source = context.createBufferSource();
-            source.buffer = buffer;
-            source.connect(context.destination);
-            source.start(start + (index === 0 ? timing.shatterAt : timing.screenOnAt) * timing.duration / 1000);
-            return source;
-          });
+          source = context.createBufferSource();
+          source.buffer = buffer;
+          source.connect(context.destination);
+          source.onended = () => dispose(false);
+          document.addEventListener('visibilitychange', visibility);
+          window.addEventListener('pagehide', onPageHide);
+          source.start(start + timing.shatterAt * timing.duration / 1000);
+          if (document.hidden) visibility();
         },
         pause() { if (!disposed) context.suspend().catch(() => {}); },
         resume() { if (!disposed) context.resume().catch(() => {}); },
-        dispose() {
-          if (disposed) return;
-          disposed = true;
-          sources.forEach(source => { try { source.stop(); } catch (_) {} source.disconnect(); });
-          context.close().catch(() => {});
-        }
+        dispose() { dispose(true); }
       };
     } catch (_) {
       clearTimeout(timeout);

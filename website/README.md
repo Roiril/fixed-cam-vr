@@ -16,7 +16,7 @@
 
 凍結する像は入口の実際の3D題字と黒背景です。飛んでいる破片にも元の白い筆跡と赤い印を保ちます。本体の暗いガラス材質をそのまま掛けると題字が黒く潰れるため、ウェブ版は画像の色と明るさを保ち、反射を弱く重ねます。破片には本体と同じ薄い厚み、研磨した縁、反射帯、屈折を付けます。ウェブでは両眼の投影と周辺球殻を使わず、画面の縦横比に合わせた投影にします。帰還中も題字の断片を保ち、着地した部分から120msで背後の実HTMLへ変わります。最後の3片は進行率 .90 で中央へ着地し、その部分のウェブ表示も現れます。最後は縁が中央から消えます。別のヒーロー画像への置き換えや拡大フェードで終わらせません。
 
-`scripts/sync-entrance.mjs` は `IntroFractureTime.hlsl`、`IntroLogic.cs`、`SoundCueLogic.cs`、`SfxPlayer.cs`、`show.json` から `entrance-timing.js` を生成します。さらにQuestの `sfx_shatter.wav` と `sfx_screen_on.wav` を無加工でコピーします。5秒の動きは既存実装と同じです。割れる音は進行率0.02と35msの先読みを合わせた0.135秒で始まります。スクリーン音はliveの0.999閾値と同じ4.559秒です。尺は4.15秒と0.3314秒、gainは1です。クリックまたはキーボード操作で音声を有効にします。
+`scripts/sync-entrance.mjs` は `IntroFractureTime.hlsl`、`IntroLogic.cs`、`SoundCueLogic.cs`、`SfxPlayer.cs`、`show.json` から `entrance-timing.js` を生成します。さらにQuestの `sfx_shatter.wav` を無加工でコピーします。5秒の動きは既存実装と同じです。生成動画から採用した6.016秒の音を進行率0.02と35msの先読みを合わせた0.135秒で始めます。映像が終わっても音の尾は最後まで再生します。旧スクリーン音は重ねません。クリックまたはキーボード操作で音声を有効にします。
 
 入口は画像の準備と音声の読み込み試行が終わってから開きます。音声だけを取得できない場合は無音で進めます。非表示中は動きと音を一緒に止めます。スキップとEscapeでは音も停止して本文へ移動します。動きを減らす設定やWebGL非対応では短い無音フェードにします。タブ内の初回だけ表示し、ページ内リンクからの訪問では表示しません。フッターから再表示すると先頭へ戻って開始します。終了時に描画資源とイベントを解放します。
 
@@ -105,7 +105,7 @@ Google Search Console の所有権確認には `google5081a8a413a7871f.html` を
 - `assets/camera-fiction-01.webp` から `camera-fiction-03.webp`: レトロテレビに出す架空の廊下3視点
 - `assets/camera-01.webp` から `camera-03.webp`: 保持している実際のカメラ撮影写真
 - `assets/camera-01-doll.webp`: 調査依頼に出す実写真の人形視点加工
-- `assets/sfx_shatter.wav` / `assets/sfx_screen_on.wav`: Questの入口音を無加工コピーしたもの
+- `assets/sfx_shatter.wav`: Questの入口音を無加工コピーしたもの
 - `assets/investigation-request.webp`: 調査依頼書の原本1ページ
 - `assets/footage-*.mp4` / `*.webp`: 実機片目録画とポスター
 - `assets/yuji-boku.woff2`: 書体見出し

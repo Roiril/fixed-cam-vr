@@ -509,11 +509,7 @@ SWARM_DUST = ()
 
 # (元ファイル名, 出力名, **頭 0.5 秒の**短期ラウドネス, 使い先)
 # ⚠ 3 つ目は統合 LUFS ではない（上の `SWARM_HEAD_LUFS` の理由）。
-SWARMS = [
-    ("PC-Mouse06-mp3/PC-Mouse06/PC-Mouse06-1.mp3", "sfx_shatter", SWARM_HEAD_LUFS,
-     "段 4 — 現実が細かく割れてスクリーンへ吸い込まれる。2026-08-16 ユーザー指定の音源を"
-     "予兆と主破壊から静けさへ移り、小片から大片へ段階的に帰還させる"),
-]
+SWARMS = []  # sfx_shatter is now extracted by ingest-intro-generated-audio.py.
 
 
 # ---- 笑い声の高さ・速さ -----------------------------------------------------
@@ -2080,6 +2076,8 @@ def main() -> int:
              | {v["name"] for v in VOICES})
     if a.only is not None and not set(a.only) <= names:
         missing = sorted(set(a.only) - names)
+        if "sfx_shatter" in missing:
+            print("  sfx_shatter は tools/ingest-intro-generated-audio.py で再生成する")
         print(f"  PLAN にも CUTS にも無い名前: {', '.join(missing)}")
         return 1
     plan = [p for p in PLAN if a.only is None or p[1] in a.only]

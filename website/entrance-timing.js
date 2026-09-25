@@ -14,6 +14,5 @@ window.MAWARIMI_ENTRANCE_TIMING = Object.freeze({
   "CloserArrive": 0.9,
   "duration": 5000,
   "shatterAt": 0.02,
-  "audioLead": 0.035,
-  "screenOnAt": 0.9048162974614119
+  "audioLead": 0.035
 });

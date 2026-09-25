@@ -370,12 +370,12 @@
     let hiddenAt = 0;
     let origin = [0.5, 0.5];
     let pointer = [0, 0];
-    function finish() {
+    function finish(allowAudioTail = false) {
       if (finished) return;
       finished = true;
       cancelAnimationFrame(raf);
       clearTimeout(timer);
-      sound?.dispose();
+      if (allowAudioTail !== true) sound?.dispose();
       boot.release();
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('resize', resize);
@@ -397,7 +397,7 @@
         return;
       }
       if (progress < 1) raf = requestAnimationFrame(frame);
-      else finish();
+      else finish(true);
     }
     async function begin() {
       if (started || finished) return;

@@ -31,7 +31,6 @@ const publicFiles = [
   "assets/hero-mobile.webp",
   "assets/title.png",
   "assets/sfx_shatter.wav",
-  "assets/sfx_screen_on.wav",
   "assets/camera-01.webp",
   "assets/camera-02.webp",
   "assets/camera-03.webp",

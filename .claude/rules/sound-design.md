@@ -12,6 +12,20 @@ paths:
   - "tools/sound-*.py"
 ---
 
+## 2026-09-25 入口音の現行仕様
+
+ユーザーが生成動画「Glass_shattering_and_reforming_v…_20260920133909.mp4」の後者を選択した。
+`tools/ingest-intro-generated-audio.py` で動画の音を無加工の48kHz・ステレオPCMへ抜き、
+`Assets/Resources/Sound/sfx_shatter.wav` とする。原本SHA-256は
+`4921CE7F5E2508660AC8D173D5DBBD7F2205C838F8A3D96C127A487A46816CB3`。
+WAVは6.016秒で、SHA-256は`C9A687205CD0466C2E5485D26E63C14DD3CBAD94B5E0049F72F7EC451EE0CE1E`。
+段4の破砕進み0.02で1回鳴らし、5秒の映像が終わっても音の尾は最後まで再生する。
+旧`sfx_screen_on`は重ねない。音源とenumは過去版のため保持する。
+Webは同じWAVを無加工コピーして使う。以下の旧2音構成と`ingest-sounds.py`の
+破砕レシピに関する記述は履歴であり、現在の再生成手順ではない。
+
+## 旧2音構成（2026-09-25以前の記録）
+
 ⚠⚠ **2026-08-15 に導入の段が旧構成へ戻り、音の置き場も動いた**（`canon/LEDGER.md` 0044）。
 封印の箱を退避したので、隔離が閉じる段も闇の中で管が点く段も無くなった。いまの導入は
 **段 4 で現実が割れ、段 5 でスクリーンが出る**。

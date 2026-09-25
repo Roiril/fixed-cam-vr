@@ -18,14 +18,11 @@ namespace FixedCamVr.Streaming
         SealClose,
         /// <summary>
         /// 段 4 の頭 — 現実が細かく割れてスクリーンへ吸い込まれる。
-        /// 音源はユーザー指定の一撃を**小刻みに並べて 1.70 秒でだんだん小さくしたもの**
-        /// （2026-08-16・<c>canon/LEDGER.md</c> 0057）。<see cref="ScreenOn"/> の手前で
-        /// <b>鳴り終わって静かになる</b>のが要件。
+        /// 2026-09-25 に選ばれた生成動画の破砕と帰還を、1 本の音として鳴らす。
         /// </summary>
         Shatter,
         /// <summary>
-        /// 段 4 — <b>現実からカメラ映像への入れ替えが終わった所 ＝ スクリーンが出る瞬間</b>。**導入の山。**
-        /// 音源はユーザー指定（2026-08-16 に Cyber14-1 へ差し替え・<c>canon/LEDGER.md</c> 0057）。
+        /// 旧スクリーン音。2026-09-25 から入口では鳴らさない。音源は保持する。
         /// </summary>
         ScreenOn,
         /// <summary>
@@ -36,7 +33,7 @@ namespace FixedCamVr.Streaming
         ScreenNoise,
         /// <summary>
         /// 枠の中がカメラ映像になる（装置が点く）。
-        /// ⚠ <b>2026-08-15 以降は鳴らない</b> — 同じ縁をユーザー指定の <see cref="ScreenOn"/> が持つ。
+        /// ⚠ <b>2026-08-15 以降は鳴らない</b>。入口音は <see cref="Shatter"/> が担う。
         /// 音源は残してある。
         /// </summary>
         Swap,
@@ -140,29 +137,12 @@ namespace FixedCamVr.Streaming
         //    鈴は時間ではなく**段 3 へ入った縁**で鳴るので、待つ秒数そのものが要らない。
 
         /// <summary>
-        /// 段 4 で枠の中の映像がここまで満ちたら「スクリーンが出る音」を鳴らす。
-        ///
-        /// ⚠⚠ <b>2026-08-16 に 0.45 → 1.0（入れ替えが終わった所）へ移した</b>
-        /// （<c>canon/LEDGER.md</c> 0057・ユーザー指示「スクリーンのクロスフェードが
-        /// 終わったときに ... これを一度だけ。前の割れる音とはかぶせない」）。
-        ///
-        /// 0225 の <c>live = SmoothStep(0.895, 0.905, p)</c> が閾値へ届いた時に鳴る（枠を閉じる瞬間）。
-        /// 5.0 秒の段では約 4.53 秒。割れる音は約 0.135 秒から 4.285 秒鳴るため、
-        /// 約 0.25 秒の静けさを挟む。フレーム間隔によって最大 1 コマずれる。
-        /// ⚠ 割れる音の尺（<c>tools/ingest-sounds.py</c> の <c>SWARM_SEC</c>）と対で決めた値。
-        /// 片方だけ動かすと重なる。
-        /// </summary>
-        public const float ScreenOnAt = 0.999f;
-
-        /// <summary>
         /// 段 5 へ入ってから鈴を鳴らすまでの秒数。<b>＝ すり替えのクロスフェードの尺</b>
         /// （<see cref="IntroLogic.SwapCrossfadeSec"/>）なので、鳴るのは
         /// <b>完全にスクリーンになった所</b>（<c>canon/LEDGER.md</c> 0057・ユーザー指示
         /// 「鈴は、完全にスクリーンになったときになるようにしてほしい」）。
         ///
-        /// ⚠ <b>スクリーンが出る音（<see cref="SoundCue.ScreenOn"/>）と同じ瞬間にしない。</b>
-        /// あれは段 4 の入れ替えが終わる所で、こちらはその 1.6 秒後。
-        /// 重ねると 1 つの音に潰れて「その後」にならない（0030 と同じ理屈）。
+        /// 入口音が鳴り終わってから鈴を鳴らす。
         /// </summary>
         public const float BellAfterSwapSec = IntroLogic.SwapCrossfadeSec;
 
@@ -179,7 +159,7 @@ namespace FixedCamVr.Streaming
         private readonly SoundCue[] _buf = new SoundCue[MaxPerTick];
         private bool _titleWasVisible;
         // ⚠ `SealClose` / `Swap` のラッチは持たない（2026-08-15 に鳴らさなくなった）。
-        private bool _shatterFired, _screenOnFired, _screenNoiseFired;
+        private bool _shatterFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
         private bool _glyphWasShowing;
@@ -222,7 +202,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void ResetIntroLatches()
         {
-            _shatterFired = _screenOnFired = _screenNoiseFired = false;
+            _shatterFired = false;
             _bellFired = false;
             _swapSec = 0f;
         }
@@ -259,9 +239,7 @@ namespace FixedCamVr.Streaming
             //
             //    - `SealClose`（`sfx_seal_close`）は**鳴らさない**。隔離が閉じる段が無くなった。
             //      音源は残してある
-            //    - `Swap`（`sfx_swap`）も**鳴らさない**。同じ縁に、ユーザーが指定した音源
-            //      （`sfx_screen_on` ＝ Cyber03-2・0030 / 0032 で 2 度調整）がある。
-            //      **もらった音を、シュビーが作った音で押しのけない**（rules/sound-design.md §4.5）
+            //    - `Swap`（`sfx_swap`）も鳴らさない。
             if (s.introActive)
             {
                 // 段 4 の頭 — 現実が割れ始める。
@@ -270,14 +248,7 @@ namespace FixedCamVr.Streaming
                     _shatterFired = true;
                     Push(SoundCue.Shatter, ref count);
                 }
-                // ⚠ **割れた先に映像が満ちる所**（2026-08-15 にここへ移した）。段 4 で枠の中が
-                //    カメラ映像になるので、「スクリーンを出すときの音」もその瞬間へ来る。
-                //    割れる音と同じフレームにならないよう `live` の進みで遅らせる。
-                if (!_screenOnFired && s.introWeights.live >= ScreenOnAt)
-                {
-                    _screenOnFired = true;
-                    Push(SoundCue.ScreenOn, ref count);
-                }
+                // 生成動画の音に帰還まで含まれるため、旧 ScreenOn は重ねない。
                 // ⚠⚠ **その後のノイズ（`ScreenNoise`）は 2026-08-16 に鳴らさなくなった**
                 //    （`canon/LEDGER.md` 0057・ユーザー指示「ノイズは鳴らさない」）。
                 //    スクリーンが出る音を差し替えたので、後ろに足す音が要らなくなった。
@@ -361,7 +332,7 @@ namespace FixedCamVr.Streaming
             {
                 case SoundCue.SealClose: return 0.85f;
                 case SoundCue.Shatter: return 0.90f;    // 導入の山。劇伴を深く退かせる
-                case SoundCue.ScreenOn: return 0.90f;   // スクリーンが出る瞬間。同じだけ退かせる
+                case SoundCue.ScreenOn: return 0.90f;   // 旧音の設定は保持する
                 case SoundCue.ScreenNoise: return 0.75f; // 山の尾。退かせたまま保つ
                 case SoundCue.Swap: return 0.55f;
                 case SoundCue.TitleOut: return 0.70f;
