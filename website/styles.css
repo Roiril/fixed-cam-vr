@@ -156,9 +156,19 @@ button {
 }
 
 .site-mark {
+  flex-direction: column;
+  justify-content: center;
   font-family: "Yuji Boku", "Yu Mincho", serif;
   font-size: 1.05rem;
   letter-spacing: 0.22em;
+}
+
+.site-mark-reading {
+  margin-top: 0.2rem;
+  font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif;
+  font-size: 0.55rem;
+  line-height: 1;
+  letter-spacing: 0.12em;
 }
 
 .site-nav {
