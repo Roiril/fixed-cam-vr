@@ -165,7 +165,7 @@ namespace FixedCamVr.Streaming.EditorTools
         // Separate atlas: never rewrite the user's in-progress shared HUD fonts.
         public static void BakeFont()
         {
-            var source = AssetDatabase.LoadAssetAtPath<Font>("Assets/Art/Fonts/SourceHanSansJP-Normal.otf");
+            var source = AssetDatabase.LoadAssetAtPath<Font>("Assets/Art/Fonts/SourceHanSerifJP-Regular.otf");
             if (source == null) throw new InvalidOperationException("Ending font source is missing");
             var chars = new System.Collections.Generic.SortedSet<char>();
             for (char c = ' '; c <= '~'; c++) chars.Add(c);
@@ -175,7 +175,7 @@ namespace FixedCamVr.Streaming.EditorTools
                         if (!char.IsControl(c)) chars.Add(c);
             var charset = new StringBuilder();
             foreach (char c in chars) charset.Append(c);
-            var font = TMP_FontAsset.CreateFontAsset(source, 64, 6, GlyphRenderMode.SDFAA, 2048, 2048, AtlasPopulationMode.Dynamic);
+            var font = TMP_FontAsset.CreateFontAsset(source, 96, 8, GlyphRenderMode.SDFAA, 2048, 2048, AtlasPopulationMode.Dynamic);
             if (!font.TryAddCharacters(charset.ToString(), out string missing))
                 throw new InvalidOperationException("Missing ending glyphs: " + missing);
             font.atlasPopulationMode = AtlasPopulationMode.Static;

@@ -85,11 +85,11 @@ namespace FixedCamVr.Streaming.EditorTools
                           TierDeg = HmdTextStyle.BodyDeg * TitleNotice.Scale },
             new Surface { Name = "エンドロールの結末名", Type = typeof(OutroReport),
                           DistanceField = "distanceM", BuildsItsOwnText = true, Field = "Outcome",
-                          TierDeg = 3.2f,
+                          TierDeg = OutroReport.OutcomeDeg,
                           Probe = OutroReportText.Title(ShowEndingOutcome.Trapped, ShowLanguage.Current) },
             new Surface { Name = "エンドロールの報告数", Type = typeof(OutroReport),
                           DistanceField = "distanceM", BuildsItsOwnText = true, Field = "ReportCount",
-                          TierDeg = 1.8f,
+                          TierDeg = OutroReport.CountDeg,
                           Probe = OutroReportText.CountLine(999, ShowLanguage.Current) },
             // ⚠ この面は TMP を **2 つ**持つ（上段 = 文面 / 下段 = 報告の押し方）。
             //    フィールドを名指ししないと、先に組んだ方が測られて「狙いと違う」と誤って落ちる。
@@ -195,7 +195,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     if (string.IsNullOrEmpty(probe)) probe = "国";
 
                     var jp = JapaneseHudFont.TryGet();
-                    if (jp != null && tmp.font != jp) tmp.font = jp;
+                    if (!(comp is OutroReport) && jp != null && tmp.font != jp) tmp.font = jp;
                     // ⚠ 起こしてから測る。実行時は不透明度 0・非活性で待っている面があり、
                     //    寝たままだと TMP がメッシュを組まず**見かけ角が嘘の値で出る**。
                     Wake(comp.transform, tmp);
@@ -342,10 +342,18 @@ namespace FixedCamVr.Streaming.EditorTools
         /// </summary>
         private static float MeasureEm(TMP_Text tmp)
         {
-            Layout(tmp, "国国");
-            TMP_TextInfo info = tmp.textInfo;
-            if (info == null || info.characterCount < 2) return 0f;
-            return info.characterInfo[1].origin - info.characterInfo[0].origin;
+            // 字間は組版の値であり、1 em の大きさへ足さない。
+            // 終幕専用アトラスには「国」を含めないので、同じ全角の「報」で測る。
+            float spacing = tmp.characterSpacing;
+            try
+            {
+                tmp.characterSpacing = 0;
+                Layout(tmp, tmp.font.HasCharacter('国') ? "国国" : "報報");
+                TMP_TextInfo info = tmp.textInfo;
+                if (info == null || info.characterCount < 2) return 0f;
+                return info.characterInfo[1].origin - info.characterInfo[0].origin;
+            }
+            finally { tmp.characterSpacing = spacing; }
         }
 
         /// <summary>

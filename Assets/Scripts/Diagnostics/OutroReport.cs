@@ -17,11 +17,12 @@ namespace FixedCamVr.Diagnostics
         [SerializeField, Min(.5f)] private float distanceM = 2.6f;
         [SerializeField, Range(-20, 20)] private float pitchOffsetDeg = 2;
 
-        public const float PanelWidth = 3.10f, PanelHeight = 1.60f;
-        public const float PhotoWidth = 1.56f, PhotoHeight = PhotoWidth * 9f / 16f;
+        public const float PanelWidth = 3.60f, PanelHeight = 1.90f;
+        public const float PhotoWidth = 2.16f, PhotoHeight = PhotoWidth * 9f / 16f;
+        public const float OutcomeDeg = 2.55f, CountDeg = 1.5f;
 
-        private static readonly Color TitleInk = new Color32(222, 220, 214, 255);
-        private static readonly Color RecordInk = new Color32(174, 177, 172, 255);
+        private static readonly Color TitleInk = new Color32(224, 219, 207, 255);
+        private static readonly Color RecordInk = new Color32(188, 184, 175, 255);
         private static readonly int ModeId = Shader.PropertyToID("_Mode");
         private static readonly int AlphaId = Shader.PropertyToID("_Alpha");
         private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
@@ -102,13 +103,14 @@ namespace FixedCamVr.Diagnostics
 
             _plate = AddQuad("EndingBlack", shader, Vector2.zero,
                 new Vector2(PanelWidth, PanelHeight), 0, null, 4997, out _);
-            _logo = AddQuad("MawarimiLogo", shader, new Vector2(-.83f, .47f),
-                new Vector2(1.14f, .57f), 1, title, 4998, out _);
-            _photo = AddQuad("EndingPhoto", shader, new Vector2(.67f, 0),
+            // 左の題字・結末・件数を一つのまとまりにし、右の写真より小さく収める。
+            _logo = AddQuad("MawarimiLogo", shader, new Vector2(-.96f, .25f),
+                new Vector2(.70f, .35f), 1, title, 4998, out _);
+            _photo = AddQuad("EndingPhoto", shader, new Vector2(.71f, .06f),
                 new Vector2(PhotoWidth, PhotoHeight), 2, null, 4998, out _photoRenderer);
 
-            AddField("Outcome", font, -1.37f, .08f, 1.15f, .23f, 3.2f, TitleInk);
-            AddField("ReportCount", font, -1.37f, -.28f, 1.15f, .16f, 1.8f, RecordInk);
+            AddField("Outcome", font, -1.49f, .085f, 1.06f, .20f, OutcomeDeg, TitleInk).richText = true;
+            AddField("ReportCount", font, -1.49f, -.12f, 1.06f, .14f, CountDeg, RecordInk);
         }
 
         private Material AddQuad(string name, Shader shader, Vector2 position, Vector2 size, int mode,
@@ -196,14 +198,18 @@ namespace FixedCamVr.Diagnostics
             CapturedTotal = Mathf.Max(0, total);
             CapturedOutcome = outcome;
             _body = OutroReportText.Compose(reports, total, outcome, lang);
-            string[] texts = { OutroReportText.Title(outcome, lang), OutroReportText.CountLine(reports, lang) };
+            string title = OutroReportText.Title(outcome, lang);
+            // 呼称はそのまま、和文の結末名と欧文の End に大きさの差を付ける。
+            if (lang == ShowLang.Ja && outcome != ShowEndingOutcome.Interrupted)
+                title = title.Replace("End", " <size=67%>End</size>");
+            string[] texts = { title, OutroReportText.CountLine(reports, lang) };
             ReportChars = 0;
             bool active = _card != null && _card.gameObject.activeSelf;
             if (_card != null) _card.gameObject.SetActive(true);
             for (int i = 0; i < _fields.Count; i++)
             {
                 TMP_Text tmp = _fields[i];
-                tmp.characterSpacing = i == 0 && lang == ShowLang.Ja ? 4f : 0;
+                tmp.characterSpacing = lang == ShowLang.Ja ? (i == 0 ? 9f : 12f) : 3f;
                 tmp.SetText(texts[i]);
                 tmp.maxVisibleCharacters = int.MaxValue;
                 tmp.ForceMeshUpdate(true, true);
