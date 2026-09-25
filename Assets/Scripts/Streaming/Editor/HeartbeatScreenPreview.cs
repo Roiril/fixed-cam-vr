@@ -54,7 +54,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 cam.targetTexture = rt;
                 byte[] Draw(float time, float pulse, float vignette, string name)
                 {
-                    mat.SetFloat("_HeartTime", time);
+                    mat.SetFloat("_HeartTime", HeartbeatPulseLogic.Age(time));
                     mat.SetFloat("_HeartRipple", pulse);
                     mat.SetFloat("_HeartVignette", vignette);
                     cam.Render();
@@ -65,24 +65,25 @@ namespace FixedCamVr.Streaming.EditorTools
                     return read.GetRawTextureData<byte>().ToArray();
                 }
                 byte[] baseline = Draw(0f, 0f, 0f, "before");
-                byte[] ripple = Draw(.13f, 1f, 0f, "ripple-only");
-                byte[] vignette = Draw(.13f, 0f, .62f, "vignette-only");
-                Draw(.13f, 1f, .62f, "peak");
+                const float crest = .13f - .045f + HeartbeatPulseLogic.RiseSec;
+                byte[] ripple = Draw(crest, 1f, 0f, "ripple-only");
+                byte[] vignette = Draw(crest, 0f, .62f, "vignette-only");
+                Draw(crest, 1f, .62f, "peak");
                 byte[] restored = Draw(2.11f, 0f, 0f, "after-freeze");
                 if (!baseline.SequenceEqual(restored)) throw new InvalidOperationException("Restored image differs from baseline");
                 if (baseline.SequenceEqual(ripple) || baseline.SequenceEqual(vignette))
                     throw new InvalidOperationException("Heartbeat effect did not change rendered pixels");
-                // 最初の1秒は通常。次の4秒は追加加工。最後の1秒は凍結後の解除を示す。
-                for (int frame = 0; frame < 180; frame++)
+                // 最初の1秒は通常。次の8秒は追加加工。最後の1秒は凍結後の解除を示す。
+                for (int frame = 0; frame < 300; frame++)
                 {
                     float time = frame / 30f;
-                    bool active = frame >= 30 && frame < 150;
+                    bool active = frame >= 30 && frame < 270;
                     float pulse = active ? HeartbeatPulseLogic.Evaluate(time) : 0f;
                     Draw(time, pulse, active ? .48f + .14f * pulse : 0f, $"f{frame:0000}");
                 }
                 File.WriteAllText(Path.Combine(dir, "verification.txt"),
-                    $"source={source}\nframes=180\nripplePixelsChanged=true\nvignettePixelsChanged=true\nrestoredPixelsIdentical=true\n");
-                Debug.Log("[HeartbeatPreview] 180 frames; ripple and vignette change pixels; reset is pixel-identical: " + dir);
+                    $"source={source}\nframes=300\nripplePixelsChanged=true\nvignettePixelsChanged=true\nrestoredPixelsIdentical=true\n");
+                Debug.Log("[HeartbeatPreview] 300 frames; ripple and vignette change pixels; reset is pixel-identical: " + dir);
             }
             finally
             {

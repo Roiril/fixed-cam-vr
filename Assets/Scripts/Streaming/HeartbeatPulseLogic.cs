@@ -3,34 +3,45 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// bed_heart.wav の10ms RMSで測った二連の鼓動。起動からの時計ではなく
+    /// bed_heart.wav の二連の鼓動のうち、最初の音だけで波紋を始める。
+    /// 二つ目の音と次の組までの間は同じ波紋の余韻。起動からの時計ではなく
     /// AudioSource.timeSamples を読むので、音量0での待機やループでもずれない。
     /// 音源を差し替えたらピークも再計測する。
     /// </summary>
     public static class HeartbeatPulseLogic
     {
         public const float ClipLengthSec = 379885f / 48000f;
-        private static readonly float[] Peaks =
+        public const float RiseSec = .18f;
+        public const float DurationSec = .94f;
+        // 10ms RMSで測った最初の山。その45ms前から音の立ち上がりに合わせる。
+        private static readonly float[] FirstPeaks =
         {
-            .13f, .46f, 1.10f, 1.44f, 2.11f, 2.46f, 3.09f, 3.44f,
-            4.09f, 4.43f, 5.06f, 5.40f, 6.07f, 6.43f, 7.06f, 7.40f
+            .13f, 1.10f, 2.11f, 3.09f, 4.09f, 5.06f, 6.07f, 7.06f
         };
+
+        /// <summary>直前の最初の「ど」からの秒数。ループの境界でも余韻を繋ぐ。</summary>
+        public static float Age(float seconds)
+        {
+            if (float.IsNaN(seconds) || float.IsInfinity(seconds) || seconds < 0f) return -1f;
+            float t = Mathf.Repeat(seconds, ClipLengthSec);
+            for (int i = FirstPeaks.Length - 1; i >= 0; i--)
+            {
+                float start = FirstPeaks[i] - .045f;
+                if (t >= start) return t - start;
+            }
+            return t + ClipLengthSec - (FirstPeaks[FirstPeaks.Length - 1] - .045f);
+        }
 
         public static float Evaluate(float seconds)
         {
-            if (float.IsNaN(seconds) || float.IsInfinity(seconds) || seconds < 0f) return 0f;
-            float t = Mathf.Repeat(seconds, ClipLengthSec);
-            float pulse = 0f;
-            foreach (float peak in Peaks)
-            {
-                float age = t - peak;
-                if (age < -.045f || age > .20f) continue;
-                float value = age < 0f
-                    ? Mathf.SmoothStep(0f, 1f, (age + .045f) / .045f)
-                    : 1f - Mathf.SmoothStep(0f, 1f, age / .20f);
-                pulse = Mathf.Max(pulse, value);
-            }
-            return pulse;
+            float age = Age(seconds);
+            if (age < 0f || age >= DurationSec) return 0f;
+            return age < RiseSec
+                ? SmootherStep(age / RiseSec)
+                : 1f - SmootherStep((age - RiseSec) / (DurationSec - RiseSec));
         }
+
+        // 始まり・頂点・終わりで速度と加速度を0にする。
+        private static float SmootherStep(float t) => t * t * t * (t * (t * 6f - 15f) + 10f);
     }
 }

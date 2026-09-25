@@ -41,7 +41,7 @@ Shader "FixedCamVr/ScreenComposite"
         _Temperature("Temperature", Range(-1, 1)) = 0
         _Vignette("Vignette", Range(0, 1)) = 0
         _HeartRipple("Heartbeat Ripple", Range(0, 1)) = 0
-        _HeartTime("Heartbeat Playback Seconds", Float) = 0
+        _HeartTime("Seconds Since First Heartbeat", Float) = 0
         _HeartVignette("Heartbeat Vignette", Range(0, 1)) = 0
         _Grain("Grain", Range(0, 0.3)) = 0
         _Scanline("Scanline", Range(0, 1)) = 0
@@ -1099,9 +1099,15 @@ Shader "FixedCamVr/ScreenComposite"
                     float2 contentUv = (screenUv - 0.5) / max(_LiveScale.xy, 1e-3) + 0.5;
                     float2 edge = max(0.0, sin(saturate(contentUv) * 3.14159265));
                     float envelope = saturate(_HeartRipple) * edge.x * edge.y;
-                    heartUv.x += envelope * (0.009 * sin(screenUv.y * 34.0 - _HeartTime * 23.0)
-                                            + 0.003 * sin(_HeartTime * 67.0));
-                    heartUv.y += envelope * 0.014 * sin(screenUv.x * 48.0 + _HeartTime * 27.0);
+                    // 一つの広い波が中央から外へ進む。二つ目の音では発生し直さない。
+                    float aspect = max(_FrameAspect, 0.1);
+                    float2 p = (screenUv - 0.5) * float2(aspect, 1.0);
+                    float radius = length(p);
+                    float distanceFromWave = radius - _HeartTime * 1.15;
+                    float wave = sin(distanceFromWave * 9.0)
+                               * exp(-distanceFromWave * distanceFromWave / 0.18);
+                    float2 direction = p / max(radius, 0.12);
+                    heartUv += envelope * 0.022 * wave * direction / float2(aspect, 1.0);
                 }
                 float2 sampleUv = GlitchUv(PixelateUv(heartUv));
 

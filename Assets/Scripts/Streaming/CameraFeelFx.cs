@@ -355,7 +355,7 @@ namespace FixedCamVr.Streaming
             if (_heartbeatSound != null
                 && _heartbeatSound.TryGetHeartPlayback(out seconds, out float gain))
                 pulse = HeartbeatPulseLogic.Evaluate(seconds) * gain;
-            WriteHeartbeat(seconds, pulse, 0.48f + 0.14f * pulse);
+            WriteHeartbeat(HeartbeatPulseLogic.Age(seconds), pulse, 0.48f + 0.14f * pulse);
         }
 
         private void ResolveHeartbeatRefs()
