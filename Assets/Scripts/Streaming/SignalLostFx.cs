@@ -15,12 +15,14 @@ namespace FixedCamVr.Streaming
     ///     復帰は ScreenAnchor 側が現在ヨーから減衰合流する（スナップ禁止）。
     ///
     /// 砂嵐・減光は ScreenComposite の <c>_SignalLost</c> uniform で行う（post 数式 = Web FS_POST 一致規約とは
-    /// 別系統）。material は Screen の Renderer から取得（MjpegScreen 等と共有）。
+    /// 別系統）。2-C の演出用砂嵐は <c>_NarrativeStatic</c> で実写を隠し、通信状態とは分ける。
+    /// material は Screen の Renderer から取得（MjpegScreen 等と共有）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class SignalLostFx : MonoBehaviour
     {
         private static readonly int SignalLostId = Shader.PropertyToID("_SignalLost");
+        private static readonly int NarrativeStaticId = Shader.PropertyToID("_NarrativeStatic");
         private static readonly int SignalFloorId = Shader.PropertyToID("_SignalFloor");
 
         [Header("References")]
@@ -67,6 +69,13 @@ namespace FixedCamVr.Streaming
         /// <summary>現在の砂嵐レベル（0-1）。</summary>
         public float Level => _level;
 
+        /// <summary>人形視点の終了から乗っ取り画面が消えるまで、映像に砂嵐を表示する。</summary>
+        /// <remarks>配信状態の Level は変えない。音と障害診断は実際の受信状態だけを読む。</remarks>
+        public void SetNarrativeStatic(bool visible)
+        {
+            if (_material != null) _material.SetFloat(NarrativeStaticId, visible ? 1f : 0f);
+        }
+
         /// <summary>
         /// OVR 由来のトラッキングロストを外部（OvrControllerBridge）から通知する。
         /// resume-gap と OR で「弱適用 + 追従凍結」を発火する。
@@ -83,6 +92,7 @@ namespace FixedCamVr.Streaming
         {
             _level = 0f;
             _floor = 0f;
+            SetNarrativeStatic(false);
             _lastActiveStream = null; // 次の Update でアクティブ参照を再シードさせる
             SetLevel(0f);
         }
@@ -91,6 +101,7 @@ namespace FixedCamVr.Streaming
         {
             _level = 0f;
             _floor = 0f;
+            SetNarrativeStatic(false);
             SetLevel(0f);
         }
 

@@ -56,6 +56,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 mat.SetFloat("_Pixelate", post.pixelate);
                 mat.SetFloat("_ScanlineCount", post.ResolveScanlineCount());
                 mat.SetFloat("_FrameAspect", 16f / 9f);
+                mat.SetFloat("_SignalFloor", 0f); // 実写が砂嵐の下にある状態
                 float sourceAspect = plate.width / (float)plate.height;
                 mat.SetVector("_LiveScale", sourceAspect > 16f / 9f
                     ? new Vector4(1f, (16f / 9f) / sourceAspect, 0f, 0f)
@@ -83,7 +84,12 @@ namespace FixedCamVr.Streaming.EditorTools
                     File.WriteAllBytes(Path.Combine(dir, name + ".png"), read.EncodeToPNG());
                     return read.GetRawTextureData<byte>().ToArray();
                 }
+                mat.SetFloat("_NarrativeStatic", 1f);
+                byte[] takeoverStatic = Draw(0f, 0f, 0f, "takeover-static");
+                mat.SetFloat("_NarrativeStatic", 0f);
                 byte[] baseline = Draw(0f, 0f, 0f, "before");
+                if (takeoverStatic.SequenceEqual(baseline))
+                    throw new InvalidOperationException("Takeover static did not change rendered pixels");
                 const float crest = .13f - .045f + HeartbeatPulseLogic.RiseSec;
                 byte[] ripple = Draw(crest, 1f, 0f, "ripple-only");
                 byte[] vignette = Draw(crest, 0f, CameraFeelFx.HeartVignetteBase, "vignette-only");
@@ -104,7 +110,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 File.WriteAllText(Path.Combine(dir, "verification.txt"),
                     $"source={source}\npost=show.json global\nexposure={post.exposure}\ncontrast={post.contrast}\n"
                     + $"saturation={post.saturation}\ntemperature={post.temperature}\nvignette={post.vignette}\n"
-                    + "frames=300\nripplePixelsChanged=true\nvignettePixelsChanged=true\nrestoredPixelsIdentical=true\n");
+                    + "frames=300\ntakeoverStaticPixelsChanged=true\nripplePixelsChanged=true\n"
+                    + "vignettePixelsChanged=true\nrestoredPixelsIdentical=true\n");
                 Debug.Log("[HeartbeatPreview] 300 frames; ripple and vignette change pixels; reset is pixel-identical: " + dir);
             }
             finally

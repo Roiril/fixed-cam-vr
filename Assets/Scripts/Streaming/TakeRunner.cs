@@ -742,6 +742,7 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             CleanupActive();
+            _feelFx?.CancelTakeoverStatic();
             // ⚠⚠ CleanupActive は「走行中の演出が無ければ」何もしないで返る。ところが闇の目は
             //    カットより長生きする（0093 の流しきり）ので、**演出が終わった後のラン開始**が
             //    そこをすり抜ける。体験者の交代でだけは、走行中かどうかに関わらず落とす。
@@ -1424,6 +1425,7 @@ namespace FixedCamVr.Streaming
             if (!_activeStepDollCall) return;
             _activeStepDollCall = false;
             DollCatchUpCompletedCount++;
+            _feelFx?.BeginTakeoverStatic();
         }
 
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。

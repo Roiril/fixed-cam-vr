@@ -133,9 +133,11 @@ Shader "FixedCamVr/ScreenComposite"
         _OsdOpacity("OSD Opacity", Range(0, 1)) = 1
         [Header(Switch and Signal FX (out of FS_POST parity))]
         // ↓ これらは web-compositor の FS_POST 一致規約の対象外（別系統 uniform）。
-        //   dip-to-black（切替演出）と信号ロスト（配信断のフェイルソフト＝砂嵐）を post FX の後段にかける。
+        //   dip-to-black（切替演出）と信号ロスト／乗っ取り中の砂嵐を post FX の後段にかける。
         _SwitchDim("Switch Dip Dim", Range(0, 1)) = 0
         _SignalLost("Signal Lost (static)", Range(0, 1)) = 0
+        // 2-C 人形視点後の演出用。配信断と違い、砂の下の実写を隠す。
+        _NarrativeStatic("Takeover Static (hide source)", Range(0, 1)) = 0
         // 砂の下に**画が 1 枚も無いか**（1 = 無い）。SignalLostFx が唯一の writer。
         // 砂は掛け算で乗るので、下に画が無いと真っ黒に掛かって何も見えなくなる。
         // カメラが 1 台も繋がっていない現場はこの砂だけで体験が流れる（canon/LEDGER.md 0025）ので、
@@ -310,6 +312,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _OsdOpacity;
                 float _SwitchDim;
                 float _SignalLost;
+                float _NarrativeStatic;
                 float _SignalFloor;
                 float _Glitch;
                 float _GlitchSeed;
@@ -613,6 +616,8 @@ Shader "FixedCamVr/ScreenComposite"
             /// linear で約 0.008 と 0.084（sRGB で約 21 と 82）。切り替えるのは `_SignalFloor`。
             #define SAND_FLOOR_LIVE 0.015
             #define SAND_FLOOR_DEAD 0.15
+            // 演出用は画を隠すが、暗い実写から無信号用の明るさへ跳ね上がらせない。
+            #define SAND_FLOOR_NARRATIVE 0.06
 
             /// 受け側で乗る粒（平均 0 の**足し算**）。掛け算だけだと、暗い所は
             /// 「暗いものに 10 倍の幅を掛けても暗いまま」なので**映像がそのまま読める**
@@ -1543,6 +1548,7 @@ Shader "FixedCamVr/ScreenComposite"
                 // --- 信号ロスト砂嵐（FS_POST 一致規約の対象外・別系統）---
                 // 強=1.0（配信断）/ 弱（トラッキングロスト）は低い値。
                 // 演出の乱れより後に置く: 実際に信号が切れたら、演出が何をしていても障害表示が勝つ。
+                // 乗っ取り中の砂嵐だけは下の実写を消す。配信断の砂は従来の画を保つ。
                 //
                 // ⚠⚠ **砂は置き換えではなく掛け算**（`canon/LEDGER.md` 0131）。
                 //   平均 1.0 の乗数として乗せるので、局所の明るさと色はそのまま残り、形だけが潰れる。
@@ -1558,7 +1564,8 @@ Shader "FixedCamVr/ScreenComposite"
                 //   現場では**段 0〜3 のあいだずっとスクリーンが砂嵐**で、闇の中で管が点く導入の山が
                 //   1 度も画に出ない。`_IntroLive` は演出の外では 1 なので、本編・終幕は 1 ビットも変わらない。
                 //   段 4 では live と同じ進みで砂嵐が入ってくる ＝「映像が出るはずの所に砂嵐が出た」。
-                float sl = saturate(_SignalLost) * saturate(_IntroLive);
+                float narrative = saturate(_NarrativeStatic) * saturate(_IntroLive);
+                float sl = saturate(max(_SignalLost, _NarrativeStatic)) * saturate(_IntroLive);
                 if (sl > 0.001)
                 {
                     // 粒は**格子で切る**。連続の `Hash21` は 1 画素ごとに散るので、
@@ -1583,7 +1590,9 @@ Shader "FixedCamVr/ScreenComposite"
                     // ⚠ **足す。`max` で切らない**（切ると映像の暗部が丸ごと平らになる）。
                     // ⚠ 量は「砂の下に画があるか」で変える — 画があるときはほとんど足さない。
                     float floorK = lerp(SAND_FLOOR_LIVE, SAND_FLOOR_DEAD, saturate(_SignalFloor));
-                    half3 bed = col + PhosphorColor(0.55) * floorK;
+                    // 乗っ取り中は下のライブ像を隠す。配信断の砂は従来どおり像を残す。
+                    half3 bed = lerp(col + PhosphorColor(0.55) * floorK,
+                                     PhosphorColor(0.55) * SAND_FLOOR_NARRATIVE, narrative);
                     // 乗数の平均は 1.0。粒ごとの振れ幅は約 10 倍あるので砂には見えるが、
                     // 局所の平均は動かないので、前の映像から段差なく砂へ移る。
                     // ⚠ **掛け算だけでは足りない**（暗い所に映像がそのまま残る）ので、

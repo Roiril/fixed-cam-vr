@@ -62,6 +62,7 @@ namespace FixedCamVr.Streaming
         private ShowRunDirector? _heartbeatRun;
         private TimelineDirector? _heartbeatTimeline;
         private ShowControlClient? _heartbeatShow;
+        private SignalLostFx? _signalLostFx;
         private bool _heartbeatRunHooked;
         private float _heartbeatResolveWait;
 
@@ -141,12 +142,31 @@ namespace FixedCamVr.Streaming
         public void ResetAll()
         {
             _logic.Reset();
+            CancelTakeoverStatic();
             ApplyFrozen(false);
             Write();
         }
 
         /// <summary>乗っ取り警告を最後まで読ませた。次の描画から心音と画を同期する。</summary>
-        public void NotifyHeartbeatWarningCompleted() => _heartbeatScreen.NotifyWarningCompleted();
+        public void NotifyHeartbeatWarningCompleted()
+        {
+            CancelTakeoverStatic();
+            _heartbeatScreen.NotifyWarningCompleted();
+        }
+
+        /// <summary>2-C の人形視点が終わった瞬間から、メインスクリーンを砂嵐にする。</summary>
+        public void BeginTakeoverStatic()
+        {
+            if (_signalLostFx == null) _signalLostFx = GetComponent<SignalLostFx>();
+            _signalLostFx?.SetNarrativeStatic(true);
+        }
+
+        /// <summary>乗っ取り画面の完了、または中止で通常の受信状態へ戻す。</summary>
+        public void CancelTakeoverStatic()
+        {
+            if (_signalLostFx == null) _signalLostFx = GetComponent<SignalLostFx>();
+            _signalLostFx?.SetNarrativeStatic(false);
+        }
 
         /// <summary>3 周目 A の凍結へ入った。同じランでは以後再開しない。</summary>
         public void NotifyHeartbeatFreeze()
@@ -280,6 +300,7 @@ namespace FixedCamVr.Streaming
         private void OnEnable()
         {
             _logic.Reset();
+            CancelTakeoverStatic();
             _heartbeatScreen.Reset();
             ResolveHeartbeatRefs();
             ClearHeartbeat();
@@ -289,6 +310,7 @@ namespace FixedCamVr.Streaming
         private void OnDisable()
         {
             _logic.Reset();
+            CancelTakeoverStatic();
             // 自分を外したら画は素へ戻す（このコンポーネントが無い状態と同じ画にして去る）。
             // ⚠ これは「終了で畳む」とは別の話 — 終了しても Update は回り続けるので値は保たれる。
             CoarseBlocks = 0f;
@@ -392,6 +414,7 @@ namespace FixedCamVr.Streaming
 
         private void OnHeartbeatRunRestarted()
         {
+            CancelTakeoverStatic();
             _heartbeatScreen.Reset();
             ClearHeartbeat();
         }
