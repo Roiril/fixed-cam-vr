@@ -45,6 +45,8 @@ MCP for Unity（`.codex/config.toml` に登録済み）は「起動中の Editor
 
 ## 画像生成（Codex の主用途）
 
+動画生成へ渡す入力画像（最初・最後のフレームを含む）は、毎回左右に黒い余白を付けて16:9にする。元画像を切り抜いたり引き伸ばしたりしない。納品リンクは黒帯付き版を優先し、寸法と両側の黒帯を実測する。詳細は [.claude/memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md) の「動画生成用の入力画像」。
+
 差し替え素材（人形・染み・手形）の生成は [tools/gen-plate/](tools/gen-plate/README.md)。
 作法の正本は [.claude/memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)。
 合成マスクの改善と再生成は [.claude/skills/composite-mask/SKILL.md](.claude/skills/composite-mask/SKILL.md)。
