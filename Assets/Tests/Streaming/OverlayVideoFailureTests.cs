@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using FixedCamVr.Streaming;
+using FixedCamVr.Streaming.Recording;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -19,6 +20,16 @@ namespace FixedCamVr.Streaming.Tests
     /// </summary>
     public sealed class OverlayVideoFailureTests
     {
+        private sealed class EndedFrames : IFrameSequence
+        {
+            public Texture Texture { get; }
+            public float Aspect => 1f;
+            public float DurationSec => 1f;
+            public EndedFrames(Texture texture) => Texture = texture;
+            public bool Tick(float elapsedSec) => false;
+            public void Dispose() { }
+        }
+
         private const BindingFlags BF = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance;
 
         private readonly List<Object> _spawned = new();
@@ -59,6 +70,42 @@ namespace FixedCamVr.Streaming.Tests
 
         private static OverlayCueData StillCue(string id = "cue_s")
             => new() { id = id, displayName = id, sourceUrl = "http://x/frame.png" };
+
+        [Test]
+        public void RecordedEnd_CompletesTokenWithoutRevealingLive_AndKeepsLastFrame()
+        {
+            var o = NewOverlay();
+            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            Assert.That(shader, Is.Not.Null);
+            var mat = new Material(shader!);
+            var frame = new Texture2D(4, 4);
+            _spawned.Add(mat);
+            _spawned.Add(frame);
+            SetField(o, "_material", mat);
+            var cue = new OverlayCueData { id = "recorded", frames = new EndedFrames(frame) };
+            SetField(o, "_current", cue);
+            SetField(o, "_strength", 1f);
+            SetField(o, "_target", 1f);
+            int token = Logic(o).BeginPlay();
+            Logic(o).EndLoad(token);
+            SetField(o, "_framesCueToken", token);
+
+            Assert.That(o.IsFinished(token), Is.False);
+            Invoke(o, "TickFrames");
+
+            Assert.That(o.IsFinished(token), Is.True, "次のカットへ進める");
+            Assert.That(o.Current, Is.SameAs(cue), "次の素材が載るまでは録画を表示する");
+            Assert.That(o.Strength, Is.EqualTo(1f), "下のライブを混ぜない");
+            var held = (RenderTexture)GetField(o, "_heldFrameRt");
+            Assert.That(held, Is.Not.Null);
+            Assert.That(held.IsCreated(), Is.True);
+            Assert.That(held, Is.Not.SameAs(frame), "元の録画を破棄しても最後の絵は残る");
+
+            var next = new Texture2D(4, 4);
+            _spawned.Add(next);
+            Invoke(o, "SetOverlayTexture", next, 1f, "plate");
+            Assert.That(GetField(o, "_heldFrameRt"), Is.Null, "次の素材へ替わってから保持画を解放する");
+        }
 
         [Test]
         public void OnVideoError_CurrentGenVideo_ReleasesCurrent()

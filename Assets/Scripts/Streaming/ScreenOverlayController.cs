@@ -54,6 +54,11 @@ namespace FixedCamVr.Streaming
         private MjpegScreen? _screen;
         private VideoPlayer? _player;
         private RenderTexture? _videoRt;
+        // 録画の最終コマを次カットの素材が実際に載るまで保持する。
+        // 録画の所有者は TakeRunner なので、カットが進むと元の Texture2D は破棄される。
+        private RenderTexture? _heldFrameRt;
+        private int _framesCueToken = -1;
+        private int _finishedFramesToken = -1;
         private OverlayCueData? _current;
 
         // 第 2 の差し替え層の書き先。**uniform を書くのは CameraFeelFx だけ**（書き手が 2 つになると
@@ -190,6 +195,7 @@ namespace FixedCamVr.Streaming
 
         private void OnDestroy()
         {
+            ReleaseHeldFrame();
             if (_videoRt != null)
             {
                 _videoRt.Release();
@@ -250,6 +256,7 @@ namespace FixedCamVr.Streaming
                 if (_player != null && _player.isPlaying) _player.Stop();
                 _current = null;
                 _appliedCueId = "";
+                ReleaseHeldFrame();
             }
         }
 
@@ -272,6 +279,7 @@ namespace FixedCamVr.Streaming
         public int PlayCue(OverlayCueData data)
         {
             if (_material == null || _player == null) return -1;
+            _finishedFramesToken = -1;
             // 発火時刻はここで取る（マスクや素材のロードもカットの尺を食うので、動画分岐の中では遅い）。
             _clipFireAt = Time.realtimeSinceStartup;
             _clipDlSec = 0f;
@@ -295,7 +303,7 @@ namespace FixedCamVr.Streaming
             if (token < 0) return true;
             if (token != _logic.Generation) return true;   // 新しい発火 / 停止で置き換わった
             if (_logic.IsLoading(token)) return false;     // ロード中（Current 未確定）
-            return _current == null;
+            return _current == null || _finishedFramesToken == token;
         }
 
         // ループ動画の最初の一周が終わった世代。次の静止画のロード中も先頭姿勢を保持するために使う。
@@ -338,6 +346,8 @@ namespace FixedCamVr.Streaming
             {
                 // 端末内録画（JPEG フレーム列）。デコード経路はライブ映像とまったく同じなので絵が一致する。
                 _current = data;
+                _framesCueToken = gen;
+                _finishedFramesToken = -1;
                 _stopWhenFadedOut = false;
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
                 ApplyColorMatch(data);
@@ -445,6 +455,8 @@ namespace FixedCamVr.Streaming
             // _current が null のままなので、この return より前に世代を上げないと in-flight のロード完了が
             // 生き残って stop 後に live を差し替える穴が残る。
             _logic.Stop(); // ロード途中の発火も破棄・進行中 Prepare 保留も無効化
+            _framesCueToken = -1;
+            _finishedFramesToken = -1;
             if (_current == null) return;
             float fade = Mathf.Max(_current.fadeOutSeconds, 1e-3f);
             _target = 0f;
@@ -788,14 +800,40 @@ namespace FixedCamVr.Streaming
             if (_logic.ShouldAbortOnError()) AbortCurrentCue("video error");
         }
 
-        // フレーム列ソース（端末内録画）を進める。終端に達したら動画の自然終端と同じ扱いで畳む
-        // （＝ untilClipEnd のカットがここで終わる）。
+        // 録画の終端は「再生完了」だけを通知し、表示は次の素材まで保持する。
+        // StopOverlay で先に薄めると、次カットの dip 中にライブの体験者が露出する。
         private void TickFrames()
         {
             if (_frozen) return;   // 画のホールド中は素材の時計も止める（下の SetFrozen 参照）
-            if (_current == null || !_current.SourceIsFrames || _stopWhenFadedOut) return;
+            if (_current == null || !_current.SourceIsFrames || _stopWhenFadedOut
+                || _framesCueToken != _logic.Generation) return;
+            if (_finishedFramesToken == _logic.Generation) return;
             var seq = _current.frames!;
-            if (!seq.Tick(Time.time - _framesStart)) StopOverlay();
+            if (seq.Tick(Time.time - _framesStart)) return;
+            // 次のカットは元の録画を Dispose する。最終コマを独立した RT へ複写しておく。
+            Texture last = seq.Texture;
+            if (_material != null && last.width > 0 && last.height > 0)
+            {
+                ReleaseHeldFrame();
+                _heldFrameRt = new RenderTexture(last.width, last.height, 0, RenderTextureFormat.ARGB32)
+                {
+                    name = "RecordedLastFrame",
+                    useMipMap = false,
+                };
+                _heldFrameRt.Create();
+                Graphics.Blit(last, _heldFrameRt);
+                SetOverlayTexture(_heldFrameRt, seq.Aspect, _appliedCueId);
+            }
+            _finishedFramesToken = _logic.Generation;
+        }
+
+        private void ReleaseHeldFrame()
+        {
+            if (_heldFrameRt == null) return;
+            _heldFrameRt.Release();
+            if (Application.isPlaying) Destroy(_heldFrameRt);
+            else DestroyImmediate(_heldFrameRt);
+            _heldFrameRt = null;
         }
 
         private bool _frozen;
@@ -846,6 +884,7 @@ namespace FixedCamVr.Streaming
             _target = 0f;
             _appliedCueId = "";
             ApplyStrength(0f);
+            ReleaseHeldFrame();
             Debug.LogWarning($"[ScreenOverlay] cue aborted ({reason}) — live 維持");
         }
 
@@ -863,6 +902,7 @@ namespace FixedCamVr.Streaming
             _material.SetTexture(OverlayTexId, tex);
             _material.SetVector(OverlayScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
             _appliedCueId = cueId ?? "";
+            if (_heldFrameRt != null && tex != _heldFrameRt) ReleaseHeldFrame();
         }
 
         /// <summary>

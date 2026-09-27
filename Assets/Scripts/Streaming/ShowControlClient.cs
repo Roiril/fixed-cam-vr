@@ -2492,6 +2492,9 @@ namespace FixedCamVr.Streaming
                 foreach (ShowTakeDef take in seg.takes)
                 {
                     if (take?.steps == null) continue;
+                    // 報告の押し始めに出す動画も先読みする。ここを漏らすと初回だけ
+                    // DL とマスク読込が長押し中に走り、押し終わってから動き始める。
+                    CollectCueAssets(take.markStartCueId, stills);
                     foreach (ShowStepDef step in take.steps)
                     {
                         if (step == null) continue;
