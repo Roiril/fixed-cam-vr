@@ -638,6 +638,7 @@ button {
 
 .credit-list dd {
   margin: 0;
+  padding-right: 0.45rem;
   font-size: 1.18rem;
   letter-spacing: 0.08em;
   white-space: nowrap;
@@ -662,9 +663,13 @@ button {
   letter-spacing: 0.08em;
 }
 
-.plate-maker > span {
+.plate-maker > span:first-child {
   color: var(--ink);
   letter-spacing: 0.12em;
+}
+
+.plate-members {
+  overflow-wrap: anywhere;
 }
 
 .plate-portfolio {
@@ -790,6 +795,7 @@ button {
   }
 
   .credit-list dd {
+    padding-right: 0.12rem;
     font-size: clamp(0.59375rem, 2.7vw, 0.95rem);
     letter-spacing: 0;
   }
@@ -814,6 +820,15 @@ button {
     margin-inline: -0.75rem;
     padding-right: 0.5rem;
     padding-left: 2.2rem;
+  }
+
+  .credit-list > div {
+    gap: 0.1rem;
+  }
+
+  .credit-list > div:nth-child(9) dt {
+    font-size: 0.5625rem;
+    letter-spacing: -0.06em;
   }
 
   .credit-list > div::before {
