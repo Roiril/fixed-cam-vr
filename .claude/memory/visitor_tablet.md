@@ -59,7 +59,8 @@ RECと時計は置かない。接続表示はヘッドセットの応答に基�
 次の来場者はタイトルとオートオフから開始する。説明から設定へ戻るときはタイトルを挟まない。
 説明内容は `Resources/Visitor/briefing-v1.json.bytes`。画像は同じ場所の `briefing-*-v1.png.bytes` と `camera-01-doll.webp.bytes`。
 回収壁面の資料画像は作品サイトのストーリー欄と同じ加工済みWebPをバイナリのまま使う。実写カメラ01を人形視点に加工した画像で、タブレット側の色補正や切り抜きはない。出典と再生成手順は `website/assets/SOURCES.md`。
-`/asset/` に JSON の MIME を追加した。音声と動画は未制作で任意の差し替え欄だけがある。
+0254で「それが、こちらの壁です。」の次の文から章末まで、加工した `kabe-one-lap-doll-v1.mp4.bytes` を無音でループ再生する。字幕と博士の音声から独立させる。文送りで再生位置を変えず、章外か最初の文に戻れば停止する。原本のハッシュと処理手順は `tools/visitor-ui/README.md` と `process-wall-video.py`。
+`/asset/` に JSON の MIME を追加した。博士の動画と英仏音声は未制作で任意の差し替え欄だけがある。
 台本と SRT は `tools/visitor-ui/export-briefing.py` で JSON から再生成する。
 台詞と画像の採否は `canon/OPEN.md`。機械の検証済みを世界観の採用へ読み替えない。
 

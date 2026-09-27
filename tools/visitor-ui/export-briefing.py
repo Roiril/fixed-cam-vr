@@ -37,7 +37,7 @@ def main():
               "案 / 2026-09-12 / シュビー。台詞と画面の演出は未判定の実装案。", "",
               "正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。この文書と SRT はそこから生成する。",
               "博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。", "",
-              "音声と動画は未制作。以下の時間はオート再生用の仮の尺。完成した音声に合わせて JSON の durationMs を調整する。",
+              "博士の動画と英仏音声は未制作。以下の時間はオート再生用の尺。完成した音声に合わせて JSON の durationMs を調整する。",
               "通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。",
               "動画は既存博士画像と同じ人物と画角を使用する。映像の切替や字幕を動画に焼き込まない。", "",
               "各場面を個別に音声化する。ファイル名は `場面ID-言語.mp3` または `場面ID-言語.mp4` を推奨する。",
@@ -55,6 +55,9 @@ def main():
             script.extend([f"### {index:02} {scene['id']} — {scene['title'][language]}", "",
                            f"開始 {offset / 1000:.1f} 秒 / 尺 {scene_duration / 1000:.1f} 秒", "",
                            f"画像: `{scene['image']}`", ""])
+            if scene.get("loopVideo"):
+                loop = scene["loopVideo"]
+                script.extend([f"ループ動画: `{loop['file']}`（文 {loop['startCue'] + 1:02} から章末まで。文送りとは別に再生）", ""])
             scene_offset = 0
             for local_index, cue in enumerate(scene["cues"][language], 1):
                 end = offset + cue["durationMs"]

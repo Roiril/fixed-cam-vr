@@ -115,6 +115,7 @@ class MockMedia extends MockElement {
     this.currentTime = 0;
     this.readyState = 1;
     this.muted = false;
+    this.paused = true;
     this.pauseCount = 0;
     this.playCount = 0;
     this.loadCount = 0;
@@ -123,10 +124,12 @@ class MockMedia extends MockElement {
 
   pause() {
     this.pauseCount += 1;
+    this.paused = true;
   }
 
   play() {
     this.playCount += 1;
+    this.paused = false;
     const result = this.nextPlayPromise || Promise.resolve();
     this.nextPlayPromise = null;
     return result;
@@ -471,6 +474,7 @@ test('本番JSONと表示指定の境界値を検証する', () => {
   const presentation = clone(briefing);
   presentation.scenes[0].layout = 'doctor-evidence';
   presentation.scenes[0].doctorAnchor = 0;
+  delete presentation.scenes[1].loopVideo;
   presentation.scenes[1].layout = 'doctor-center';
   presentation.scenes[1].doctorAnchor = 100;
   assert.doesNotThrow(() => runtime.validateBriefingData(presentation));
@@ -487,6 +491,54 @@ test('本番JSONと表示指定の境界値を検証する', () => {
     mutate(invalid);
     assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing presentation/);
   }
+  for (const mutate of [
+    (data) => { data.scenes[1].loopVideo.file = '../other.mp4'; },
+    (data) => { data.scenes[1].loopVideo.startCue = 4; },
+    (data) => { data.scenes[1].loopVideo.startCue = -1; },
+  ]) {
+    const invalid = clone(briefing);
+    mutate(invalid);
+    assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing loop video/);
+  }
+});
+
+test('壁の動画は次の文から始まり、文送りでは再生位置を変えずにループする', () => {
+  assert.match(html, /<video[^>]*id="briefingLoopVideo"[^>]*\bmuted\b[^>]*\bloop\b/);
+  const data = clone(briefing);
+  const scene = data.scenes[1];
+  assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.loopVideo.file}.bytes`)));
+  prepareBriefing(data);
+  state.briefing.sceneIndex = 1;
+  state.briefing.cueIndex = 0;
+  runtime.configureBriefingMedia(scene);
+  runtime.beginBriefingCue();
+  const video = elements.get('briefingLoopVideo');
+  const before = video.playCount;
+  assert.equal(video.hidden, true);
+
+  runtime.moveBriefing(1, 'auto');
+  assert.equal(state.briefing.cueIndex, 1);
+  assert.equal(video.playCount, before + 1);
+  video.onplaying();
+  assert.equal(video.hidden, false);
+  assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), true);
+  video.currentTime = 4.2;
+  const pauseCount = video.pauseCount;
+  const loadCount = video.loadCount;
+
+  runtime.moveBriefing(1, 'auto');
+  runtime.moveBriefing(1, 'auto');
+  assert.equal(state.briefing.cueIndex, 3);
+  assert.equal(video.currentTime, 4.2);
+  assert.equal(video.playCount, before + 1);
+  assert.equal(video.pauseCount, pauseCount);
+  assert.equal(video.loadCount, loadCount);
+
+  runtime.moveBriefing(1, 'auto');
+  assert.equal(state.briefing.sceneIndex, 2);
+  assert.equal(video.paused, true);
+  assert.equal(video.hidden, true);
+  assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), false);
 });
 
 test('媒体未指定の場面ではaudioもvideoも作らない', () => {

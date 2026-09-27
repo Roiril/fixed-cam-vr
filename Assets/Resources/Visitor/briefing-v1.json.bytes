@@ -92,6 +92,10 @@
       "audio": {
         "ja": "subject-ja-v1.mp3"
       },
+      "loopVideo": {
+        "file": "kabe-one-lap-doll-v1.mp4",
+        "startCue": 1
+      },
       "cues": {
         "ja": [
           {

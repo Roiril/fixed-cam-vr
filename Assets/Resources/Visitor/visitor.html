@@ -155,6 +155,10 @@
   .briefing-visual::after { content: ""; position: absolute; pointer-events: none; inset: 8px; border: 1px solid rgba(232,220,196,.08); }
   .briefing-image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .38s var(--ease); }
   .briefing-image.is-visible { opacity: 1; }
+  .briefing-visual.is-loop-playing .briefing-image { opacity: 0; }
+  .briefing-loop-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; pointer-events: none; transition: opacity .38s var(--ease); }
+  .briefing-loop-video.is-visible { opacity: 1; }
+  .briefing-loop-video[hidden] { display: none; }
   .briefing-intro { display: none; }
   .briefing-progress { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 16px; color: var(--faint); font: 10px/1.4 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: .12em; }
   .briefing-progress progress { appearance: none; width: 100%; height: 2px; border: 0; background: var(--line); color: var(--gold); }
@@ -430,6 +434,7 @@
       </div>
       <figure class="briefing-visual">
         <img class="briefing-image" id="briefingImage" alt="" draggable="false" width="1600" height="900" hidden>
+        <video class="briefing-loop-video" id="briefingLoopVideo" playsinline muted loop preload="none" disablepictureinpicture aria-hidden="true" hidden></video>
         <div class="reference-fallback" id="referenceFallback" hidden>
           <p id="referenceDescription"></p><span id="referenceUnavailable"></span>
         </div>
@@ -657,6 +662,8 @@
   let briefingBoundaryTimer = null;
   let briefingMediaToken = 0;
   let briefingMediaSceneId = '';
+  let briefingLoopVideoFailed = false;
+  let briefingLoopVideoToken = 0;
   let chapterTimer = null;
   let pointerGesture = null;
   const activeAnimations = new Map();
@@ -907,6 +914,17 @@
           throw new Error(`invalid briefing cues: ${scene.id}/${lang}`);
         }
       }
+      if (scene.loopVideo != null && (
+        !isRecord(scene.loopVideo)
+        || !validAssetFilename(scene.loopVideo.file)
+        || !scene.loopVideo.file.endsWith('.mp4')
+        || !Number.isInteger(scene.loopVideo.startCue)
+        || scene.loopVideo.startCue < 0
+        || scene.layout !== 'doctor-evidence'
+        || BRIEFING_LANGS.some((lang) => scene.loopVideo.startCue >= scene.cues[lang].length)
+      )) {
+        throw new Error(`invalid briefing loop video: ${scene.id}`);
+      }
       for (const mediaType of ['audio', 'video']) {
         if (scene[mediaType] == null) continue;
         if (!isRecord(scene[mediaType])
@@ -1012,6 +1030,71 @@
     return scene.cues[state.lang]
       .slice(0, cueIndex)
       .reduce((total, cue) => total + cue.durationMs, 0);
+  }
+
+  function isBriefingLoopCue() {
+    const scene = currentBriefingScene();
+    return state.view === 'briefing'
+      && !state.briefing.ended
+      && Boolean(scene?.loopVideo)
+      && state.briefing.cueIndex >= scene.loopVideo.startCue;
+  }
+
+  function stopBriefingLoopVideo() {
+    const video = $('briefingLoopVideo');
+    briefingLoopVideoToken += 1;
+    video.pause();
+    video.classList.remove('is-visible');
+    document.querySelector('.briefing-visual').classList.remove('is-loop-playing');
+    video.hidden = true;
+    if (video.dataset.source) {
+      video.removeAttribute('src');
+      video.load();
+      video.dataset.source = '';
+    }
+    briefingLoopVideoFailed = false;
+  }
+
+  function syncBriefingLoopVideo() {
+    if (!isBriefingLoopCue()) { stopBriefingLoopVideo(); return; }
+    const video = $('briefingLoopVideo');
+    const source = assetPath(currentBriefingScene().loopVideo.file);
+    if (video.dataset.source !== source) {
+      video.src = source;
+      video.dataset.source = source;
+      video.muted = true;
+      video.hidden = true;
+      video.onplaying = () => {
+        if (!isBriefingLoopCue() || state.briefing.pauseReasons.size > 0 || document.hidden) return;
+        video.hidden = false;
+        document.querySelector('.briefing-visual').classList.add('is-loop-playing');
+        video.classList.add('is-visible');
+      };
+      video.onerror = () => {
+        if (!isBriefingLoopCue()) return;
+        briefingLoopVideoFailed = true;
+        video.pause();
+        video.classList.remove('is-visible');
+        document.querySelector('.briefing-visual').classList.remove('is-loop-playing');
+        video.hidden = true;
+      };
+      video.load();
+    }
+    if (state.briefing.pauseReasons.size > 0 || document.hidden) {
+      video.pause();
+      return;
+    }
+    if (briefingLoopVideoFailed || !video.paused) return;
+    const token = ++briefingLoopVideoToken;
+    const attempt = video.play();
+    if (attempt?.catch) attempt.catch(() => {
+      if (token !== briefingLoopVideoToken || !isBriefingLoopCue()) return;
+      briefingLoopVideoFailed = true;
+      video.pause();
+      video.classList.remove('is-visible');
+      document.querySelector('.briefing-visual').classList.remove('is-loop-playing');
+      video.hidden = true;
+    });
   }
 
   function stopBriefingMediaWindow() {
@@ -1188,6 +1271,7 @@
     } else {
       state.briefing.pauseReasons.delete(reason);
     }
+    syncBriefingLoopVideo();
     renderBriefingControls();
   }
 
@@ -1311,6 +1395,7 @@
     clearBriefingTimer();
     setSubtitle(cue.text, `briefing:${scene.id}:${state.lang}:${state.briefing.cueIndex}`);
     renderBriefingScene();
+    syncBriefingLoopVideo();
     startBriefingMediaWindow();
     if (state.briefing.auto) setBriefingAuto(true);
   }
@@ -1376,6 +1461,7 @@
     setBriefingAuto(false);
     stopBriefingMediaWindow();
     state.briefing.ended = true;
+    syncBriefingLoopVideo();
     renderBriefingScene();
   }
 
@@ -1385,6 +1471,7 @@
     if (chapterTimer) clearTimeout(chapterTimer);
     chapterTimer = null;
     stopBriefingMedia();
+    stopBriefingLoopVideo();
     state.briefing.pauseReasons.clear();
     state.briefing.sceneIndex = 0;
     state.briefing.cueIndex = 0;

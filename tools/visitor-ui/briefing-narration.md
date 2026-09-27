@@ -5,7 +5,7 @@
 正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。この文書と SRT はそこから生成する。
 博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。
 
-音声と動画は未制作。以下の時間はオート再生用の仮の尺。完成した音声に合わせて JSON の durationMs を調整する。
+博士の動画と英仏音声は未制作。以下の時間はオート再生用の尺。完成した音声に合わせて JSON の durationMs を調整する。
 通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。
 動画は既存博士画像と同じ人物と画角を使用する。映像の切替や字幕を動画に焼き込まない。
 
@@ -35,6 +35,8 @@
 開始 12.3 秒 / 尺 16.1 秒
 
 画像: `camera-01-doll.webp`
+
+ループ動画: `kabe-one-lap-doll-v1.mp4`（文 02 から章末まで。文送りとは別に再生）
 
 文 01 / 場面内 0.0–3.1 秒
 
@@ -110,6 +112,8 @@ I would like you to serve as an investigator and examine a cursed object.
 
 画像: `camera-01-doll.webp`
 
+ループ動画: `kabe-one-lap-doll-v1.mp4`（文 02 から章末まで。文送りとは別に再生）
+
 文 01 / 場面内 0.0–2.7 秒
 
 This is the wall you will investigate.
@@ -183,6 +187,8 @@ Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 開始 10.4 秒 / 尺 17.9 秒
 
 画像: `camera-01-doll.webp`
+
+ループ動画: `kabe-one-lap-doll-v1.mp4`（文 02 から章末まで。文送りとは別に再生）
 
 文 01 / 場面内 0.0–2.7 秒
 
