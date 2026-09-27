@@ -118,7 +118,7 @@ class H(BaseHTTPRequestHandler):
             with open(fp, "rb") as f:
                 data = f.read()
             ctype = {"json": "application/json; charset=utf-8",
-                     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "mp4": "video/mp4",
+                     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "mp4": "video/mp4",
                      "webm": "video/webm", "mp3": "audio/mpeg", "wav": "audio/wav"}.get(name.rsplit(".", 1)[-1].lower(),
                                                                                          "application/octet-stream")
             rng = self.headers.get("Range")

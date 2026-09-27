@@ -34,7 +34,7 @@
 
 開始 12.3 秒 / 尺 16.1 秒
 
-画像: `briefing-wall-v1.png`
+画像: `camera-01-doll.webp`
 
 文 01 / 場面内 0.0–3.1 秒
 
@@ -108,7 +108,7 @@ I would like you to serve as an investigator and examine a cursed object.
 
 開始 9.0 秒 / 尺 16.5 秒
 
-画像: `briefing-wall-v1.png`
+画像: `camera-01-doll.webp`
 
 文 01 / 場面内 0.0–2.7 秒
 
@@ -182,7 +182,7 @@ Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
 
 開始 10.4 秒 / 尺 17.9 秒
 
-画像: `briefing-wall-v1.png`
+画像: `camera-01-doll.webp`
 
 文 01 / 場面内 0.0–2.7 秒
 

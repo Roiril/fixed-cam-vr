@@ -19,14 +19,15 @@ Quest が配信する。外部フォントや CDN は使わない。
 報告は「左コントローラーのXかYを1秒、長押しする」と案内する。実機が受け付けるボタンの範囲は変更していない。
 最後は装着依頼の画面に留まる。タブレットから Unity の体験開始命令は送らない。
 
-台詞と生成した壁面の外観はシュビーの提案。採否は `.claude/canon/OPEN.md` に分けて記録する。
+台詞はシュビーの提案。採否は `.claude/canon/OPEN.md` に分けて記録する。
+「それが、こちらの壁です。」の資料画像は作品サイトのストーリー欄と同じ `camera-01-doll.webp`。実際のカメラ01の写真を人形視点の表示値で加工したWebPをバイナリのまま同梱する。タブレット側では追加の色補正や切り抜きをしない。画像の出典と加工値は `website/assets/SOURCES.md`。
 日本語の冒頭はユーザー指定の「日本怪異研究所へようこそ」と上司としての自己紹介。博士の個人名は追加していない。
 調査依頼書の対象番号と調査手順を引き継いだ。博士と装着後のエージェントは別の役割。
 
 ### 台詞と素材
 
 - 正本: `Assets/Resources/Visitor/briefing-v1.json.bytes`
-- 生成画像: 同じディレクトリの `briefing-*-v1.png.bytes`
+- 資料画像: 同じディレクトリの `camera-01-doll.webp.bytes` と `briefing-*-v1.png.bytes`
 - 音声生成用台本: `tools/visitor-ui/briefing-narration.md`
 - 字幕: `tools/visitor-ui/briefing-ja.srt` / `briefing-en.srt` / `briefing-fr.srt`
 - 画像生成時のプロンプト: `tools/visitor-ui/briefing-image-prompts.md`

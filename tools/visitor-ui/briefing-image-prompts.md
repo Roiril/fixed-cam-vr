@@ -6,7 +6,7 @@
 
 ## 回収壁面
 
-保存先: `Assets/Resources/Visitor/briefing-wall-v1.png.bytes`
+旧保存先: `Assets/Resources/Visitor/briefing-wall-v1.png.bytes`。2026-09-27に作品サイトのストーリー欄と同じ `camera-01-doll.webp.bytes` へ差し替えた。以下は旧画像の生成記録。
 
 Create one photorealistic cinematic research evidence photograph for the fictional Japanese horror experience Mawarimi. Style first: restrained institutional photography, a physically believable recovered object under one soft overhead tungsten examination light; matte surfaces, muted warm grey, deep charcoal, faint cream highlights. Subject: a freestanding L-shaped recovered wall section in a dark examination room. Two equal upright wall panels join at a clean 90 degree corner; each panel about 0.95 meters wide and 1.8 meters high, human scale. Old grey plaster with modest stains and cracked edges, mounted to a simple low steel support. Camera views the OUTSIDE corner at a three-quarter angle so both equal sides are clearly visible. Isolated, substantial, mundane and unsettling; no supernatural visual effects, no blood, no doll, no face in stains, no warning tape, no invented emblems, no words or numbers baked into image. The floor and rear wall remain visible in shadow, subject edges readable, never pitch-black loss of the subject. Landscape 16:9 composition, object centered with generous breathing room. Intended as a diegetic archival case-file image, not a poster, not a collage, not a UI mockup. High photographic detail, modest contrast, no glossy CGI finish.
 

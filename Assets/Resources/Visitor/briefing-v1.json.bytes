@@ -66,13 +66,13 @@
     {
       "id": "subject",
       "layout": "doctor-evidence",
-      "image": "briefing-wall-v1.png",
+      "image": "camera-01-doll.webp",
       "doctorImage": "doctor.jpg",
       "doctorAnchor": 70,
       "alt": {
-        "ja": "暗い調査室に保管されたL字の壁面",
-        "en": "A recovered L-shaped wall held in a dark examination room",
-        "fr": "Un mur récupéré en forme de L dans une salle d’examen sombre"
+        "ja": "実際の撮影場所にある幕と手すりを人形視点で加工した写真",
+        "en": "The actual filming location, with curtains and a handrail, processed as the doll's camera view",
+        "fr": "Le lieu de tournage réel, avec rideaux et main courante, traité comme la vue de la caméra de la poupée"
       },
       "eyebrow": {
         "ja": "調査方法",
