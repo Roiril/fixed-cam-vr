@@ -256,7 +256,7 @@ if (!structuredDataMatch) {
 if (!html.includes('href="https://ivrc.net/2026/release3/"') || !html.includes('href="https://www.dcexpo.jp/"')) errors.push("archive source links are missing");
 const creditsMarkup = html.match(/<dl class="credit-list">([\s\S]*?)<\/dl>/)?.[1] ?? "";
 if ((creditsMarkup.match(/<dt>/g)?.length ?? 0) !== 10) errors.push("credits must keep all 10 roles");
-if (!html.includes('"name": "Roil Studio"') || !html.includes('<span>Roil Studio</span>')) errors.push("credit organization name is missing");
+if (!html.includes('"name": "Roil Studio"') || !html.includes('<span>チーム：Roil Studio</span>')) errors.push("credit organization name is missing");
 if (!html.includes('href="mailto:rinkyouaoi@gmail.com"')) errors.push("credit contact link is missing");
 if (!html.includes('href="https://my-portfolio-ruby-delta-87.vercel.app/"')) errors.push("portfolio link is missing");
 if (!pageCopy.includes("総合優勝") || !structuredDataMatch?.[1].includes('IVRC2026 総合優勝')) errors.push("overall winner copy is missing from page or structured data");
