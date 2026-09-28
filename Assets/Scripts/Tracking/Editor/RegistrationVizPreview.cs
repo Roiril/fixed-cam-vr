@@ -121,7 +121,7 @@ namespace FixedCamVr.Tracking.EditorTools
                 cam.fieldOfView = 55f;
                 cam.nearClipPlane = 0.03f;
                 cam.farClipPlane = 50f;
-                // ⚠ 開いているシーン（Main / TableDuoMain 等）の机・壁が写り込んで対象を隠すため、
+                // ⚠ 開いているシーン（Main 等）の机・壁が写り込んで対象を隠すため、
                 // プレビュー対象物だけを専用レイヤーに載せて cullingMask で隔離する（シーンは閉じない）。
                 cam.cullingMask = 1 << PreviewLayer;
 

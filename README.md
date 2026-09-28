@@ -14,20 +14,20 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 人が歩く場所と構図、Quest 2 台の映像・音・入力を確認した記録は 1 時間有効で、切断や設定変更で解除される。
 スマホ 3 台が未接続のため、配信アプリの実機更新と動作は未検証。
 
-1 つの Unity プロジェクトに **2 つの独立した VR アプリ**が同居している：
+このプロジェクトは VR アプリ「廻リ視（FixedCam）」だけを持つ。
 
 | アプリ | 一言で | コード | シーン | パッケージ ID |
 |---|---|---|---|---|
 | **[廻リ視（FixedCam）](#廻リ視fixedcam--固定視点ホラー-vr)** | 固定視点カメラのホラー VR（IVRC2026 出展企画） | `Assets/Scripts/`（`FixedCamVr.*`） | `Main.unity` | `com.roiril.mawarimi` |
-| **[TableDuo](#tableduo--手だけアバターの対人調査-vr)** | 「手だけアバター」との対人インタラクション調査 VR | `Assets/TableDuo/`（`TableDuoVr.*`） | `TableDuoMain.unity` | `com.roiril.tableduo` |
 
-2 アプリは asmdef 相互参照禁止で完全分離。ビルドは専用メニューで別 APK として出し、Quest 上に並存できる（→ [ビルド & デプロイ](#ビルド--デプロイ)）。共通スタック：**Unity 2022.3.62f2 LTS / URP / Meta XR All-in-One SDK / Quest 3（Android・IL2CPP・ARM64）**。
+手のアプリ 2 つ（TableDuo / MyCobotHand）は 2026-09-28 に [Roiril/table-duo-vr](https://github.com/Roiril/table-duo-vr) へ分離した。
+
+スタック：**Unity 2022.3.62f2 LTS / URP / Meta XR All-in-One SDK / Quest 3（Android・IL2CPP・ARM64）**。
 
 ## 目次
 
 - [廻リ視（FixedCam）](#廻リ視fixedcam--固定視点ホラー-vr) — 概要 / 実装状況 / 動かし方 / 入力
-- [TableDuo](#tableduo--手だけアバターの対人調査-vr) — 概要 / 調査運用 / 記録物 / 状態
-- [ビルド & デプロイ](#ビルド--デプロイ)（共通）
+- [ビルド & デプロイ](#ビルド--デプロイ)
 - [HMD なし・Editor での検証](#hmd-なしeditor-での検証)
 - [ドキュメント一覧](#ドキュメント一覧) / [ディレクトリ](#ディレクトリ) / [開発フロー](#開発フロー)
 
@@ -165,56 +165,6 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 
 ---
 
-# TableDuo — 手だけアバターの対人調査 VR
-
-テーブルを挟んだ 2 人非対称マルチプレイ VR。片方は**フルアバター（発話可）**、片方は**手だけ（無言・ジェスチャーのみ）**。「手だけの存在と人はどうコミュニケーションするか」を半構造化観察する研究用アプリ（学会発表前提）。
-
-- **構成**: Meta XR ハンドトラッキング + Netcode for GameObjects（LAN 直結・pose 60Hz Unreliable + Seq 後着棄却・自動再接続）。役割（full/hand）と host/client は起動フラグで独立指定
-- **標準トポロジ（2026-07-06〜）**: **PC が NGO host（観戦ロール兼任・L0 デスクトップビルド）+ Quest 2 台が client**。SessionLogger/WireTap が PC に直接落ち、両者の pose が必ずワイヤを通る（計測対称）。役割交代もセッション継続のまま Quest 再起動だけ
-- **卓上タスク = ボードゲーム（5 種・プレイ中切替可）**: 海底探検（Deep Sea Adventure）・アルゴ・ガイスター・バンディド・**あと6画のくま**を卓上へベイクし、**PC ホストの運営パネル（FacilitatorPanel・画面右 IMGUI）か `mark?label=game_<dsa|algo|geister|bandido|bear>` でランタイム切替**（GameSwitcher・サーバ権威・stow/show 方式＝非アクティブゲームは不可視/掴み不可、切替は盤面リセットを兼ねる）。全ピースが掴める（サーバ権威・ピンチグラブ）。サイコロは離すと出目確定＋CSV 記録。アルゴは実プレイ開始形で「配り直し」（ホスト UI / `mark?label=algo_deal`）が完全ランダム再配布。ガイスターは盤上リリースで最寄り空きセルへ吸着（裏マーカーは自分にだけ見える）。バンディドは 1×2 トンネル札の格子スナップ + 配り直し（`bandido_deal`）。**あと6画のくま**は 2 人協力お絵描き — 描画パッドに**ペンで実際に線が描け・消しゴムで消せる**（全 peer 同期・ペンは保持中に自然に俯く）。ルール裁定はコード化せず人間運用（無言交渉が研究データ）。盤面リセットは `mark?label=reset_board`
-- **手の見た目 3 バリアント = 調査条件**（within-pair・ブロック固定・`tdv_hand default|realistic|robot`。**セッション中の変更はホストの FacilitatorPanel からの強制のみ**＝参加者側トグルは撤去、端末間の不一致は検出して CSV に記録）
-- **操作系の設計思想（2026-07-18〜）**: **Quest 側=体験・PC ホスト側=運用**。Quest コントローラは視点リセット（右 A 単押し / 両グリップ 3 秒）だけ。ゲーム切替・手バリアント・盤面操作・**映像記録**・記録マークはホストの運営パネル（FacilitatorPanel・F10 で表示トグル・2026-07-24 刷新: 選択グリッド化 / 配り直しはアクティブゲームのみ表示 / WireTap は左下デバッグパネルへ分離）に集約
-- **人役の一人称自己アバター**（`tdv_selfbody on`・既定 off）: 下を向くと自分の胴/腕/手が見える（頭は潰して視界を塞がない・白手は隠し Remy 手に一本化）。ローカル描画専用＝相手に見える自分は不変。条件は CSV に記録（自己身体の有無は交絡なのでパイロットで既定を決める）
-- **シーン生成**: `.\tools\unity.ps1 menu tableduo-scene`（冪等。**ビルド直前に再実行してクリーン状態にする**）
-
-## 調査の記録物（すべて自動）
-
-| 記録 | 内容 | 場所 |
-|---|---|---|
-| SessionLogger CSV | 両者 pose 30Hz + 手役 7 ランドマーク + イベント（grab / recenter / 条件 / layout 受信 / clockOffset / 欠落系） | host（=PC）の `persistentDataPath` |
-| SessionReplayRecorder | 全 bone + 小物 + イベントの一括リプレイ（Editor の ReplayViewer で自由視点再生 = stimulated recall） | 同上 |
-| StreamingPoseRecorder | 各端末ローカルの **lossless 手 pose 60Hz**（ネット遅延・量子化なしの完全忠実度バックアップ） | 各 Quest の `persistentDataPath` |
-| **SpectatorRecorder（映像記録）** | **俯瞰 + 人役 FPV の 2 視点を同時に MJPG-AVI 録画**（720p/30fps・そのまま再生可）。運営パネルのボタン / `mark?label=rec_toggle` でトグル。FPV は自頭を near clip で消し広角 75° | PC の `persistentDataPath/tdv_recordings/` |
-| WireTapRecorder | 通信ワイヤ上の pose を CSV 化（送出/受信・診断ログ [TDV-WIRE]/[TDV-DRAW] 連動）。**F9 / 左下デバッグパネル（PC）**でトグル。調査運用では通常使わない | 押した端末の `persistentDataPath` |
-| FacilitatorMarkServer | `curl http://localhost:7780/mark?label=phase2` でフェーズマーク（PC ホスト時は localhost） | CSV へ |
-
-## 実機起動（PC ホスト + Quest 2 台・同 LAN）
-
-```powershell
-.\tools\tableduo-pc-host.ps1              # PC host(観戦) 起動 → 2 台を full/hand で接続まで一発
-.\tools\tableduo-pc-host.ps1 -HandVariant robot   # 条件ブロック指定
-.\tools\tableduo-pc-host.ps1 -SelfBody    # 人役に一人称自己アバターを出す（tdv_selfbody on）
-.\tools\tableduo-pc-host.ps1 -NoHost      # ホスト起動済みで Quest だけ繋ぎ直し
-```
-
-前提: `.\tools\unity.ps1 build tableduo-desktop` のデスクトップビルドが最新であること（PoseCodec を変えたら Quest APK と両方焼き直す）。Quest 同士 host 構成（PC 不要）も従来通り可: host を `-e tdv_mode host -e tdv_role full`、client の `-e tdv_ip` を host Quest の IP に。役割交代・条件ブロック切替は [tools/tableduo-role-swap.ps1](tools/tableduo-role-swap.ps1)（`-HandVariant robot` / `-KeepRoles` / `-DryRun`）。
-
-## HMD 内の操作（コントローラ）
-
-**視点リセットのみ**（右 A 単押し / 両手グリップ 3 秒長押し・触覚フィードバック付き）。
-旧 B=WireTap・Y=手バリアント巡回は撤去済み — 運用操作はすべて PC ホストの運営パネルから行う。
-
-## 状態（2026-07-24）
-
-PC ホスト + Quest 2 台の運用が確立（接続テスト済み）。手アバターの 3 大バグ（handSkeletonVersion 混入・席フレーム契約崩れ・Remy 指未駆動）は根治済み。卓上ゲームは 5 種（あと6画のくまはペン描画・消しゴム付き）、運営パネル + 映像記録（俯瞰+FPV）で観察体制も整備。**パイロット 1 ペア実施 → プロトコル凍結**が次のマイルストーン。既知の要修正: client 再接続の恒久拒否ループ（[remaining-tasks](docs/table-duo/remaining-tasks.md) 参照・復旧は 3 プロセス全再起動）。
-
-- 設計 [docs/table-duo/study-design.md](docs/table-duo/study-design.md) / 実施手順 [docs/table-duo/study-protocol.md](docs/table-duo/study-protocol.md) / 同意書 [docs/table-duo/consent-template.md](docs/table-duo/consent-template.md)
-- 最新の実装状態・既知の罠 → [.claude/memory/table_duo_study_status.md](.claude/memory/table_duo_study_status.md)
-- **PC ホスト運用・WireTap・手アバター根治の詳細** → [.claude/memory/table_duo_pc_host_and_wiretap.md](.claude/memory/table_duo_pc_host_and_wiretap.md)
-- 実機ゼロ検証（L0: Standalone を CLI で host/client/観戦 3 プロセス起動） → [.claude/memory/table_duo_l0_desktop_test.md](.claude/memory/table_duo_l0_desktop_test.md)
-
----
-
 # ビルド & デプロイ
 
 **Unity は CLI で操作する。** 入口は [tools/unity.ps1](tools/unity.ps1) だけで、Editor を GUI で開かない。
@@ -229,21 +179,17 @@ PC ホスト + Quest 2 台の運用が確立（接続テスト済み）。手ア
 `tools/web-compositor/show.json` と参照素材を `Assets/StreamingAssets/show/` へ写す）。
 卓の「📦 ビルド用エクスポート」を押す必要は無い。飛ばすなら `-NoExport`。
 
-**手動 Build Settings は使わない**（3 アプリが同名・同 ID になり Quest 上で共存できなくなる）。
-[BuildVariants.cs](Assets/Editor/BuildVariants.cs) が productName / ID をビルド時だけ swap する：
+**手動 Build Settings は使わない。** [BuildVariants.cs](Assets/Editor/BuildVariants.cs) が productName / パッケージ ID / シーンをビルド時に決める：
 
 | `build <app>` | 出力 | パッケージ ID | シーン |
 |---|---|---|---|
 | `fixedcam` | `Builds/mawarimi.apk` | `com.roiril.mawarimi` | Main.unity |
-| `tableduo` | `Builds/tableduo.apk` | `com.roiril.tableduo` | TableDuoMain.unity |
-| `mycobothand` | `Builds/mycobothand-dev.apk` | `com.mycobot.handteleop` | HandTeleop.unity |
-| `tableduo-desktop` | `Builds/tableduo-desktop/` | — | 実機ゼロの L0 検証用 Standalone |
 
 ```
-adb -s <serial> install -r --no-streaming Builds\tableduo.apk
+adb -s <serial> install -r --no-streaming Builds\mawarimi.apk
 ```
 
-**2 ビルドの同時実行は厳禁**（productName/ID を一時 swap するため。→ [.claude/rules/parallel-projects.md](.claude/rules/parallel-projects.md)）。手順詳細・APK 完成ポーリングは [quest-build スキル](.claude/skills/quest-build/SKILL.md)。
+手順詳細・APK 完成ポーリングは [quest-build スキル](.claude/skills/quest-build/SKILL.md)。
 
 # HMD なし・Editor での検証
 
@@ -252,12 +198,11 @@ adb -s <serial> install -r --no-streaming Builds\tableduo.apk
 
 | 経路 | 対象 | 手順 |
 |---|---|---|
-| EditMode テスト | 3 アプリのロジック回帰 | `.\tools\unity.ps1 test`（走る前に必ずコンパイルするので、コンパイル確認も兼ねる） |
+| EditMode テスト | ロジックの回帰 | `.\tools\unity.ps1 test`（走る前に必ずコンパイルするので、コンパイル確認も兼ねる） |
 | Editor プレビュー | 合成の絵・HMD 内の文字・人形・位置合わせ | `.\tools\unity.ps1 menu <名前>` → `Assets/Screenshots/<種類>/` |
 | 結果画面 | 3 言語の帰還・未報告・中断 | `.\tools\unity.ps1 menu ending-record` → 専用フォントと `Assets/Screenshots/ending/` |
 | Flat デバッグシーン | 廻リ視のストリーミング系 | **Ctrl+Shift+D** → Play → Tab/数字で切替（OVR 無しの通常シーン） |
 | streaming-offline-test | スマホ実機なしで MJPEG E2E | fake server を立てて検証（[スキル](.claude/skills/streaming-offline-test/SKILL.md)） |
-| TableDuo L0 | 実機ゼロで host/client/観戦 | Standalone ビルドを CLI 起動（`tdv_l0=on`・[memory](.claude/memory/table_duo_l0_desktop_test.md)） |
 | Quest Link | 実機に近い Editor Play | Build Target = Standalone のまま、XR Plug-in（Windows）で Oculus を有効化 → Link 接続 → Play。**72Hz 上限**なので性能評価は実機 APK で |
 
 **HMD を被らずに体験を丸ごと通す**（実機 APK は要る・被る必要は無い）:
@@ -274,7 +219,7 @@ bash tools/run-quest-xp-test.sh walk 300
 `--no-report` は検証専用の起動フラグ。通常起動の入力には影響しない。
 終了条件と結果画面の数の定義は [.claude/memory/ending_result.md](.claude/memory/ending_result.md)。
 
-⚠ **Link/HMD 無しの Editor で OVR シーンを Play するとハングする**（TableDuo 検証は L0 経由が正。[.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md)）。
+⚠ **Link/HMD 無しの Editor で OVR シーンを Play するとハングする**（[.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md)）。
 
 # ドキュメント一覧
 
@@ -284,12 +229,11 @@ bash tools/run-quest-xp-test.sh walk 300
 | [docs/archive/](docs/archive/) | 廃止した資料（旧版の企画書）。**参照しない** |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 配信不通 / HMD 真っ黒 / FPS 低下 / 実機検証で得た知見 |
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場での 60 秒チェック → 切り分けフロー |
-| [docs/table-duo/](docs/table-duo/) | TableDuo の要件・調査設計・実施プロトコル・同意書・手バリアント設計 |
 | [docs/ivrc-video/](docs/ivrc-video/) | IVRC2026 ビデオ審査の制作プラン一式 |
 | [tools/web-compositor/README.md](tools/web-compositor/README.md) | 当日の設営と点検、演出編集、映像合成検証ツール |
 | [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)（別リポ） | 配信側 Android アプリ |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | コミット規約・ブランチ運用 |
-| [.claude/rules/](.claude/rules/) | 領域別の作業規約（streaming / meta-xr / unity-vr / parallel-projects / troubleshooting 等） |
+| [.claude/rules/](.claude/rules/) | 領域別の作業規約（streaming / meta-xr / unity-vr / troubleshooting 等） |
 | [.claude/plans/](.claude/plans/) | 実装計画書（完了済みは git log 参照） |
 
 # ディレクトリ
@@ -298,15 +242,14 @@ bash tools/run-quest-xp-test.sh walk 300
 fixed-cam-vr/
 ├── Assets/
 │   ├── Scripts/              # 廻リ視本体（Streaming / Tracking / Fx / Diagnostics / OvrBridge）
-│   ├── TableDuo/             # TableDuo（Scripts/Hands・Net・Editor / Scenes / Resources）— 相互参照禁止
 │   ├── Scenes/               # Main.unity / Debug/ / Sandbox/ / FxSandbox.unity
 │   ├── Art/                  # マテリアル + 映像加工シェーダ/Compute
 │   ├── Prefabs/              # MjpegScreenStage / StreamingLogic 等
 │   ├── Settings/             # URP / Quality / CameraSource SO（Cameras/Phone01–04。04 = 演出専用カメラ D）
-│   ├── Oculus/ Resources/ XR/ # Meta XR / OVR / XR 設定（2 アプリ共有 — 片方の都合で触らない）
-│   └── Tests/                # EditMode テスト（Streaming / Tracking / TableDuo）
-├── docs/                     # onsite-checklist / table-duo/ / ivrc-video/
-├── tools/                    # web-compositor / tableduo-role-swap.ps1 等
+│   ├── Oculus/ Resources/ XR/ # Meta XR / OVR / XR 設定
+│   └── Tests/                # EditMode テスト（Streaming / Tracking / Fx / Input / Diagnostics）
+├── docs/                     # onsite-checklist / onsite/ / ivrc-video/ / figures/
+├── tools/                    # unity.ps1 / web-compositor / quest-record.py 等
 ├── Builds/                   # APK 出力（gitignore）
 ├── Packages/ ProjectSettings/ # 依存・エディタ設定（変更は要注意 — CLAUDE.md 禁止事項）
 ├── .claude/                  # Claude Code ハーネス（rules / plans / memory / skills）
@@ -316,6 +259,6 @@ fixed-cam-vr/
 
 # 開発フロー
 
-- シュビー（Claude Code）と共同開発。動作モード・2 アプリ干渉防止・領域別ルールは [CLAUDE.md](CLAUDE.md) が入口
+- シュビー（Claude Code）と共同開発。動作モード・領域別ルールは [CLAUDE.md](CLAUDE.md) が入口
 - 実装計画は `.claude/plans/YYYY-MM-DD_<slug>.md`、コミットは日本語 `<type>：<要約>` 形式
-- 検証方針: Editor（EditMode テスト / L0 / Link）で潰せるものは実機に持ち込まない。実機ビルドは最後
+- 検証方針: Editor（EditMode テスト / Editor プレビュー / Link）で潰せるものは実機に持ち込まない。実機ビルドは最後

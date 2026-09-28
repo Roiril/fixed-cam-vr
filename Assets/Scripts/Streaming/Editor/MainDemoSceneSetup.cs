@@ -104,7 +104,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var scene = SceneManager.GetActiveScene();
             if (scene.path != MainScenePath)
             {
-                // 別シーン（TableDuoMain 等）を開いたまま実行されがち。**未保存でなければ自分で Main を開く**。
+                // 別シーン（FxSandbox 等）を開いたまま実行されがち。**未保存でなければ自分で Main を開く**。
                 // 旧実装はモーダルで止めていたが、MCP 経由の自動実行だとダイアログが Editor ごと固まらせ、
                 // 人がクリックするまで全部の応答が止まる（2026-07-27 実害）。
                 // CLI（batchmode）は人が居ないうえ守るべき手作業も無い（起動直後の空シーン）ので素通りする。

@@ -50,7 +50,7 @@ HMD 録画にノイズ（UI 映り込み等）が乗る場合、**配信フレ�
 | ED-2 | ゾーン切替のギズモ可視化（俯瞰でゾーン Box と HMD 位置マーカーが動く） | B1/B2 補助 | PlayerZone Sandbox を Scene ビュー俯瞰で。位置駆動の仕組みを抽象的に見せる |
 | ED-3 | スクリーン枠 + CCTV UI（カメラ番号/タイムスタンプ）の見本 | A 全般 | Main シーンの MjpegScreen 表示を録る |
 
-> クロードに「FxSandbox の FX サンプルを Editor で撮って」と言えば、Unity MCP で FxSandbox 生成→各 FX を切替→Game ビュー or スクショ取得まで実行する（共有 Editor なので TableDuo 作業と競合しないタイミングで逐次）。
+> クロードに「FxSandbox の FX サンプルを Editor で撮って」と言えば、Unity MCP で FxSandbox 生成→各 FX を切替→Game ビュー or スクショ取得まで実行する（Editor を開いている別セッションと競合しないタイミングで逐次）。
 
 ## 系統 4: AI 生成 / 作図（プロンプトはクロード、生成はユーザー）
 

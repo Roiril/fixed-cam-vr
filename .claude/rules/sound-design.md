@@ -176,9 +176,9 @@ Webは同じWAVを無加工コピーして使う。以下の旧2音構成と`ing
 - 時刻の約束がある音は **`PlayScheduled(AudioSettings.dspTime + 0.035)`**
 - 3D の音は**モノで焼く**（`write_wav(mono=True)`）
 
-⚠ **`ProjectSettings/AudioManager.asset` は 3 アプリの共有資源**（`rules/parallel-projects.md`）。
-DSP バッファを 512 にすれば粒が半分になるが、CPU が増えて他の 2 アプリにも効く。
-**触っていない。** 触るなら 3 アプリ分の影響を測ってから。
+⚠ **`ProjectSettings/AudioManager.asset` の DSP バッファは触っていない。**
+512 にすれば粒が半分になるが、CPU が増える。触るなら実機で負荷を測ってから
+（分離前は 3 アプリの共有資源だったので見送っていた。2026-09-28 に手のアプリは別リポジトリへ移った）。
 
 ---
 

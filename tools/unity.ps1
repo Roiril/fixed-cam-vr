@@ -7,7 +7,6 @@
 #   .\tools\unity.ps1 build fixedcam            # 廻リ視 APK（卓の著作を焼き込んでから焼く）
 #   .\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
 #   .\tools\unity.ps1 build fixedcam -NoExport  # 前回焼き込んだ著作のまま焼く
-#   .\tools\unity.ps1 build tableduo-desktop    # 実機ゼロの L0 検証用 Standalone
 #   .\tools\unity.ps1 test
 #   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
 #   .\tools\unity.ps1 menu scene                # Setup Main Demo Scene
@@ -56,21 +55,11 @@ $Cli = Join-Path $env:LOCALAPPDATA 'Unity\bin\unity.exe'
 $EditorVersion = '2022.3.62f2'
 
 # App -> ビルド入口。Assets/Editor/BuildVariants.cs と 1:1 で対応する。
-# ⚠ MyCobotHand だけ C# 側の命名が非対称（BuildMyCobotHand が Development なし、
-#    BuildMyCobotHandDev が Development あり）。-Release の意味を揃えるため、ここで入れ替えている。
+# 手のアプリ（tableduo / mycobothand / tableduo-desktop）は 2026-09-28 に table-duo-vr へ分離した。
 $Apps = @{
     'fixedcam'         = @{ Method = 'BuildFixedCam'; ReleaseMethod = 'BuildFixedCamRelease'
                             Target = 'Android'; Out = 'Builds/mawarimi.apk'; ReleaseOut = 'Builds/mawarimi-release.apk'
                             Desc = '廻リ視（本体）' }
-    'tableduo'         = @{ Method = 'BuildTableDuo'; ReleaseMethod = 'BuildTableDuoRelease'
-                            Target = 'Android'; Out = 'Builds/tableduo.apk'; ReleaseOut = 'Builds/tableduo-release.apk'
-                            Desc = 'TableDuo（手アバター調査）' }
-    'mycobothand'      = @{ Method = 'BuildMyCobotHandDev'; ReleaseMethod = 'BuildMyCobotHand'
-                            Target = 'Android'; Out = 'Builds/mycobothand-dev.apk'; ReleaseOut = 'Builds/mycobothand.apk'
-                            Desc = 'ロボットハンド操作VR' }
-    'tableduo-desktop' = @{ Method = 'BuildTableDuoDesktop'; ReleaseMethod = $null
-                            Target = 'StandaloneWindows64'; Out = 'Builds/tableduo-desktop/TableDuo.exe'; ReleaseOut = $null
-                            Desc = 'TableDuo L0 検証用デスクトップ' }
 }
 
 $MethodPrefix = 'FixedCamVr.EditorTools.BuildVariants.'
@@ -153,9 +142,6 @@ $Menus = [ordered]@{
     'fx-sandbox'       = @{ Method = 'FixedCamVr.Fx.Editor.FxSandboxBuilder.Setup'
                             Desc = 'FxSandbox シーンを作り直す'
                             Out = 'Assets/Scenes/FxSandbox.unity' }
-    'tableduo-scene'   = @{ Method = 'TableDuoVr.EditorTools.TableDuoSceneSetup.Setup'
-                            Desc = 'TableDuoMain シーンを作り直す'
-                            Out = 'Assets/TableDuo/Scenes/TableDuoMain.unity' }
 
     # ---- Diagnostics 廻リ視（見る・測る）----
     'composite'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.Run'
@@ -202,43 +188,6 @@ $Menus = [ordered]@{
                             Desc = 'CameraSource の .asset が指す先へ HTTP して疎通を見る'
                             Out = $null }
 
-    # ---- Diagnostics TableDuo ----
-    'td-hands'         = @{ Method = 'TableDuoVr.EditorTools.TableDuoHandVariantPreview.Capture'
-                            Desc = '手バリアント 3 種を実録画データで比較'
-                            Out = 'Assets/Screenshots/tableduo/hands' }
-    'td-avatar'        = @{ Method = 'TableDuoVr.EditorTools.TableDuoAvatarPreview.Capture'
-                            Desc = 'フルボディアバターを PNG 化'
-                            Out = 'Assets/Screenshots/tableduo/avatar' }
-    'td-hand-role'     = @{ Method = 'TableDuoVr.EditorTools.TableDuoAvatarPreview.CaptureHandRoleInitial'
-                            Desc = '手役の初期姿勢を PNG 化'
-                            Out = 'Assets/Screenshots/tableduo/avatar' }
-    'td-self-body'     = @{ Method = 'TableDuoVr.EditorTools.TableDuoAvatarPreview.CaptureSelfBody'
-                            Desc = '一人称の自分の体を PNG 化'
-                            Out = 'Assets/Screenshots/tableduo/avatar' }
-    'td-table'         = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.Capture'
-                            Desc = 'テーブルを PNG 化'
-                            Out = 'Assets/Screenshots/tableduo/table' }
-    'td-table-remy'    = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureWithRemy'
-                            Desc = 'テーブル + 着席した Remy'
-                            Out = 'Assets/Screenshots/tableduo/table' }
-    'td-table-geister' = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureGeister'
-                            Desc = 'テーブル（ガイスター）'
-                            Out = 'Assets/Screenshots/tableduo/table' }
-    'td-table-algo'    = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureAlgo'
-                            Desc = 'テーブル（アルゴ）'
-                            Out = 'Assets/Screenshots/tableduo/table' }
-    'td-table-bandido' = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureBandido'
-                            Desc = 'テーブル（バンディド）'
-                            Out = 'Assets/Screenshots/tableduo/table' }
-    'td-table-bear'    = @{ Method = 'TableDuoVr.EditorTools.TableDuoTablePreview.CaptureSixStrokesBear'
-                            Desc = 'テーブル（6 本の線でクマ）'
-                            Out = 'Assets/Screenshots/tableduo/table' }
-    'td-algo-physics'  = @{ Method = 'TableDuoVr.EditorTools.TableDuoAlgoPhysicsCheck.Run'
-                            Desc = 'アルゴ山札が静止しているかを判定（ログのみ）'
-                            Out = $null }
-    'td-replay'        = @{ Method = 'TableDuoVr.EditorTools.TableDuoReplayDump.Dump'
-                            Desc = '手の録画データをテキストへ書き出す（ログのみ）'
-                            Out = $null }
 }
 
 # batchmode に持ち込めないもの。**画面が無いので原理的に動かない**ものだけをここへ置く
@@ -247,7 +196,6 @@ $GuiOnly = [ordered]@{
     'Open Main / Debug / PlayerZone Sandbox Scene' = 'シーンを開くだけ → `unity.ps1 open`'
     'Diagnostics/Run All Tests・Open Test Runner'  = 'テスト実行 → `unity.ps1 test`'
     'Diagnostics/Reveal Camera Sources Folder'     = 'エクスプローラを開くだけ'
-    'Diagnostics/Preview Eye - Seat0 / Seat1'      = 'Scene ビューを席へ動かす。絵が要るなら td-avatar'
     'Layout/*（3 つ）'                              = 'Editor のウィンドウ配置'
 }
 
@@ -540,7 +488,7 @@ switch ($Action) {
 
         $outPath = Join-Path $Root $out
         # ⚠ 単一ファイルの mtime で新旧を判定しない。
-        #   Standalone の差分ビルドはランチャー stub（TableDuo.exe）を書き換えないので、
+        #   Standalone の差分ビルドはランチャー stub（.exe）を書き換えないので、
         #   exe を見ると「更新されていない」と誤判定する（2026-07-24 偽 TIMEOUT の実害）。
         #   出力の**まとまり全体の最新**で見る（APK は単一ファイルなので同じ値になる）。
         $outDir = if ($spec.Target -eq 'Android') { $outPath } else { Split-Path $outPath }

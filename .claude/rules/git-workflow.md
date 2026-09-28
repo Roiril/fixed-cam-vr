@@ -63,7 +63,7 @@ git cherry-pick <SHA1> <SHA2> <SHA3> ...
 
 **同一 working copy で並列エージェントが同時に git を触ると index（ステージング領域）は 1 つで共有される。**
 `git add <自分のファイル>` で個別指定しても、相手のエージェントが同時に `git add` を走らせると、
-**相手のステージ済みファイルが自分の `git commit` に混入する**（2026-06-15 実害：TableDuo の commit が
+**相手のステージ済みファイルが自分の `git commit` に混入する**（2026-06-15 実害：別アプリの作業の commit が
 廻リ視側の未コミット作業 `ZoneCalibrator.cs` 等を巻き込んだ）。
 
 → **対策：コミットは必ず明示 pathspec で行う。**

@@ -20,8 +20,6 @@ namespace FixedCamVr.Streaming.EditorTools
     ///
     /// このクラスは <c>FixedCamVr.Streaming.Editor</c> asmdef に置いてある。
     /// <c>FixedCamVr.Tracking.Editor</c> はこれを参照済みなので両方から使える。
-    /// **TableDuoVr.Editor からは参照しない**（アプリ間の asmdef 相互参照禁止・
-    /// <c>rules/parallel-projects.md</c>。向こうは同じ処理を自前で小さく持つ）。
     /// </summary>
     public static class EditorCliArgs
     {

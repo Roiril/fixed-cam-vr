@@ -1,6 +1,6 @@
 ---
 name: quest-build
-description: 廻リ視 / TableDuo / MyCobotHand の APK を Unity CLI で焼いて Quest に入れる。「ビルドして」「実機に入れて」「APK 作って」で呼ぶ。3 アプリを別パッケージで焼き分ける仕組み、Android マニフェスト注入の罠、adb インストールと起動の罠。
+description: 廻リ視の APK を Unity CLI で焼いて Quest に入れる。「ビルドして」「実機に入れて」「APK 作って」で呼ぶ。ビルドが決める productName・パッケージ ID・シーン、Android マニフェスト注入の罠、adb インストールと起動の罠。
 ---
 
 # Quest へのビルド & インストール
@@ -17,12 +17,9 @@ export は使用中の素材を検証し manifest を作る。Unity のビルド
 .\tools\unity.ps1 doctor                    # 前提（Editor / Android モジュール / py / adb）
 .\tools\unity.ps1 build fixedcam            # 廻リ視 → Builds/mawarimi.apk
 .\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
-.\tools\unity.ps1 build tableduo
-.\tools\unity.ps1 build mycobothand
-.\tools\unity.ps1 build tableduo-desktop    # 実機ゼロの L0 検証用 Standalone
 ```
 
-**焼き直し待ちは build が落とす**（2026-08-09〜。`fixedcam` のみ）。演出は**シーンに焼かれた
+**焼き直し待ちは build が落とす**（2026-08-09〜）。演出は**シーンに焼かれた
 GameObject**、HMD の日本語は**静的ベイクのアトラス**なので、コードを書いただけでは APK に入らない。
 どちらも実害があり、どちらも「ルールに書いてあるのに誰も見ていない」形で起きたので、見る側を機械へ移した。
 
@@ -37,8 +34,7 @@ fileID の振り直しで、このリポジトリでは以前からそうなっ�
 
 古いまま焼くと決めたときだけ `-Force`（`git checkout` 直後は mtime が揃うので誤検知しうる）。
 
-Unity の**手動 Build Settings は使わない**。手動だと 3 アプリが同名・同パッケージ ID になり、
-Quest 上で共存できなくなる。
+Unity の**手動 Build Settings は使わない**。productName / パッケージ ID / シーンは `BuildVariants` が決める（下記）。
 
 ### 描画メニューで出力先を変える場合
 
@@ -67,29 +63,23 @@ py -3.11 tools/render-comms-possession-preview.py --render Logs/comms-check
 | 失敗の理由 | Editor.log を掘る | `Logs/build-<target>-*.log` |
 
 **1 回目で通る理由**: `BuildVariant` は「アクティブプラットフォームが Android でなければ、
-切替を開始して中断する」（[BuildVariants.cs:128](../../../Assets/Editor/BuildVariants.cs)）。
+切替を開始して中断する」（[BuildVariants.cs](../../../Assets/Editor/BuildVariants.cs)）。
 GUI からだと切替待ちで 1 回落ちるので 2 回撃つ必要があった。
 CLI の `unity build --target Android` は **`-buildTarget Android` を張ってから `-executeMethod` を呼ぶ**ので、
 このガードを 1 回目で通過する。
 
-## 3 アプリ分離の仕組み
+## ビルドが決めるもの
 
 `BuildVariants.BuildVariant()` がビルド時だけ差し替える（終了後 `finally` で必ず復元 →
 ProjectSettings に差分を残さない）。
 
-| | 廻リ視 (FixedCam) | TableDuo | MyCobotHand |
-|---|---|---|---|
-| productName | 廻リ視 | TableDuo | ロボットハンド操作VR |
-| パッケージ ID | `com.roiril.mawarimi` | `com.roiril.tableduo` | `com.mycobot.handteleop` |
-| シーン | `Assets/Scenes/Main.unity` | `Assets/TableDuo/Scenes/TableDuoMain.unity` | `Assets/MyCobotHand/Scenes/HandTeleop.unity` |
-| 出力 | `Builds/mawarimi.apk` | `Builds/tableduo.apk` | `Builds/mycobothand-dev.apk` |
+| | 廻リ視 (FixedCam) |
+|---|---|
+| productName | 廻リ視 |
+| パッケージ ID | `com.roiril.mawarimi` |
+| シーン | `Assets/Scenes/Main.unity` |
+| 出力 | `Builds/mawarimi.apk` |
 
-- `BuildPlayerOptions.scenes` に**そのアプリのシーンだけ**渡すので、もう片方は APK に入らない
-- パッケージ ID が別 = Quest 上で独立したアプリとして並存する（同 ID だと上書き）
-- ⚠ **MyCobotHand だけ C# 側の命名が非対称**（`BuildMyCobotHand` が Development なし、
-  `BuildMyCobotHandDev` があり）。`unity.ps1` が `-Release` の意味を揃えるため入れ替えている
-
-⚠ **2 ビルド同時起動は厳禁**（productName / ID を一時 swap するので、片方が他方の ID で焼ける）。
 `unity.ps1` は Editor がプロジェクトを開いていたら止まる（`Temp/UnityLockfile`）。
 
 ## 事前確認（オペレータ卓に繋ぐ場合のみ）
@@ -126,15 +116,12 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
 - **⚠ APK は「アクティブ = Android」でしか正しく焼けない（2026-07-24 実害・HMD にシーンが出ない）**:
   Standalone アクティブのままのクロスターゲット一発ビルドは **Oculus XR プラグインのマニフェスト注入が
   走らず、`com.oculus.intent.category.VR` / `focusaware` の無い APK** が焼ける →
-  Quest が **2D パネルとして起動**する（NGO 接続は正常に成立するので紛らわしい）。
+  Quest が **2D パネルとして起動**する（アプリ自体は動くので紛らわしい）。
   検品:
   ```
   aapt dump xmltree Builds\mawarimi.apk AndroidManifest.xml | Select-String category
   ```
-  `com.oculus.intent.category.VR` があること。**desktop ビルドを挟んだ直後は特に確かめる**
-- **単一ファイルの mtime で完成を判定しない**: Standalone の差分ビルドはランチャー stub
-  （`TableDuo.exe`）を書き換えない（2026-07-24 偽 TIMEOUT の実害）。
-  `unity.ps1` は**出力フォルダ全体の最新**で見ている
+  `com.oculus.intent.category.VR` があること。**Standalone をアクティブにした直後は特に確かめる**
 - **ビルド失敗の診断は `Logs/build-<target>-*.log`**。`errors=0` の失敗はコンパイル競合かシーン欠落で、
   リトライではなく原因の除去が要る。`Tundra build success` の直後に `error CS` が無いことを見る
   （`warning CS` は既存分なので無視してよい）
@@ -146,7 +133,6 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
   `adb shell input keyevent KEYCODE_WAKEUP` か HMD を被る
 - **USB 接続中の Quest Link ダイアログが起動をブロック** → `adb shell am force-stop com.oculus.systemux`
 - install が「0 files pushed」で無言失敗することがある → リトライで通る
-- TableDuo の起動フロー一式は `tools/tableduo-pc-host.ps1`（wake・ダイアログ潰し内包）
 
 ## 関連
 
@@ -154,4 +140,3 @@ adb -s <serial> shell dumpsys package com.roiril.mawarimi | Select-String "lastU
 - [adb-logcat](../adb-logcat/SKILL.md) — 実機ログ
 - [quest-capture](../quest-capture/SKILL.md) — **入れた後、画を録って見た目を確かめる**（HMD 不要）
 - [work-round](../work-round/SKILL.md) — 廻リ視の作りこみ 1 周（この skill はその中の 1 手）
-- `rules/parallel-projects.md` — 3 アプリ同居の干渉防止

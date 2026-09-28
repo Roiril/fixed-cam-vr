@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 8a78d033-0888-47ba-9493-e8e5d446b971
+  modified: 2026-09-28T04:53:42.871Z
 ---
 
 # Unity / Meta XR 地雷集
@@ -88,7 +89,7 @@ Meta XR SDK v201 同梱の `OVRCustomHandPrefab_L/R`（`Packages/com.meta.xr.sdk
 本来は Editor の `OVRCustomSkeletonEditor.AutoMapBones`（Inspector の "Auto Map Bones"）が埋めるが、
 プレハブには反映されていない。
 
-**踏んだ症状**: TableDuo でリモートの白い手メッシュを `CustomBones[i]` で駆動 → 全 null なので
+**踏んだ症状**: 分離前に同居していた TableDuo でリモートの白い手メッシュを `CustomBones[i]` で駆動 → 全 null なので
 指ボーンが一切回らず、bind ポーズ（=開いたパー）で固定。手首位置だけ別経路で追従するので
 「位置は合うが指ポーズが死ぬ」状態になる。
 
@@ -96,7 +97,7 @@ Meta XR SDK v201 同梱の `OVRCustomHandPrefab_L/R`（`Packages/com.meta.xr.sdk
 Meta の FBX 命名規則で bone Transform を実体検索する（legacy Hand: `"b_" + ("r_"/"l_") + {wrist,forearm_stub,
 thumb0..3,index1..3,middle1..3,ring1..3,pinky0..3}`、指先は `"<side><finger>_finger_tip_marker"`、index=BoneId 順）。
 命名表は `OVRCustomSkeletonEditor.FBXHandBoneNames` / `FBXHandSidePrefix` に一致させること。
-TableDuo の実装は [`RemoteHandMeshProvider.MapHandBonesByName`](../../Assets/TableDuo/Scripts/Net/RemoteHandMeshProvider.cs)。
+当時の実装は `RemoteHandMeshProvider.MapHandBonesByName`（2026-09-28 に table-duo-vr へ移った）。
 
 ## execute_code が「ファイル名または拡張子が長すぎます」で全滅する状態（2026-06-11）
 
@@ -109,7 +110,7 @@ manage_* ツールで大半は代替できる（このセッションで実証�
 
 スキニングは**フレームに 1 回**しか焼かれないため、`RenderPipelineManager.beginCameraRendering /
 endCameraRendering` で bone の scale/pose をカメラごとに切り替えても、**全カメラが同じスキン結果を描く**
-（TableDuo SpectatorRecorder の「FPV 録画だけ頭ボーンを潰す」が原理的に無効で、実録画に口内・目玉が
+（分離前に同居していた TableDuo の SpectatorRecorder で「FPV 録画だけ頭ボーンを潰す」が原理的に無効で、実録画に口内・目玉が
 写った実害）。per-camera で見た目を変えたいときの正攻法:
 - **near clip / cullingMask（レイヤー）/ 別インスタンス** のどれかで解く（SpectatorRecorder は
   FPV カメラ nearClipPlane=0.15 で自頭シェルをクリップして解決）
@@ -122,7 +123,7 @@ endCameraRendering` で bone の scale/pose をカメラごとに切り替えて
 （別のシュビー / ユーザーが Editor で同じプロジェクトを開いていると起きる。ログ末尾にこの関数名が出る）。
 Editor を奪わずに検証する手順:
 
-1. `Get-Process Unity` で誰が握っているか確認する（**kill しない** — rules/parallel-projects.md）
+1. `Get-Process Unity` で誰が握っているか確認する（**kill しない** — 別セッションの作業を壊す）
 2. MCP `execute_code` で `AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate)` → `read_console`（errors）
 3. `run_tests` → `get_test_job`
 

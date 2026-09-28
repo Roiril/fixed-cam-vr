@@ -28,7 +28,7 @@ paths:
 | 変えたもの | 反映先 |
 |---|---|
 | プロジェクト全体の構成・ビルド/起動方法・実装済み機能・ディレクトリ | [README.md](../../README.md) |
-| 設計判断・要件・調査設計 | `docs/`（例: `docs/table-duo/*`） |
+| 設計判断・要件・調査設計 | `docs/`（例: `docs/onsite-checklist.md`） |
 | 実装状況・runbook・罠・残課題 | 該当の `.claude/plans/<date>_<slug>.md` |
 | 次セッションが最初に知るべき現状・落とし穴 | `.claude/memory/*`（`MEMORY.md` 索引も更新） |
 | 作業規約・再発防止ルール | `.claude/rules/*`（このファイル群） |
@@ -41,7 +41,7 @@ paths:
 3. 古い記述は消すか「廃止」マークを付ける（残すと誤誘導になる）
 4. README は顔。構成・ビルド・起動が変わったら必ず見直す（[git-workflow.md](git-workflow.md) の「ドキュメント同期チェック」も参照）
 
-## 例（TableDuo）
+## 例
 
-- リモート手をカプセル→Meta 白メッシュに変えた → memory `table_duo_study_status` の該当行 + plan に追記 + RemoteHandMeshProvider を記載
-- ビルド方式を BuildVariants 2 アプリに統一した → README「ビルド & デプロイ」を書き換え
+- 体験者の入力を左 X / Y だけにした → memory `controller_input_final` + README「入力早見表」を書き換え
+- `build fixedcam` が毎回卓の著作を焼き込むようにした → README「ビルド & デプロイ」を書き換え

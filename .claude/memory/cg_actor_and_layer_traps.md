@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: ad44ab49-c74f-4be4-9d34-124bab912968
-  modified: 2026-08-15T11:36:11.404Z
+  modified: 2026-09-28T04:53:46.607Z
 ---
 
 廻リ視の CG 人形（`Assets/Scripts/Streaming/Cg/`）を触るときに踏んだ実害。2026-07-27。
@@ -17,7 +17,7 @@ metadata:
 「レイヤ未定義」で CG が出ない状態になる）。
 
 → レイヤ・タグの追加は **MCP の `manage_editor action=add_layer`**（Unity のメモリ側を更新する経路）で行う。
-現在 `ShowCg` は **slot 9**。TableDuo の `TableProps`(slot 8) と同居しているので、slot を動かさない。
+現在 `ShowCg` は **slot 9**。slot を動かさない（slot 8 の `TableProps` は分離前に同居していた TableDuo が使っていたもの）。
 
 ## 2. Edit Mode では骨を動かしてもスキニングが更新されない
 
@@ -30,8 +30,8 @@ metadata:
 
 ## 3. `Assets/ThirdParty/Mixamo/Remy.fbx` は **Generic**（Humanoid ではない）
 
-TableDuo のフルボディアバターと同じ実体なので、**取り込み設定を Humanoid に変えてはいけない**（向こうが壊れる）。
-そのため `ShowActorRig` は Humanoid（`Animator.isHuman`）と Generic の両対応で、Generic では
+分離前は同居していた TableDuo のフルボディアバターと同じ実体だったので、取り込み設定を Humanoid に変えられなかった
+（2026-09-28 に TableDuo を table-duo-vr へ分離したので、この制約はもう無い）。そのため `ShowActorRig` は Humanoid（`Animator.isHuman`）と Generic の両対応で、Generic では
 **手のボーン名（`mixamorig:LeftHand` 等）を見つけて親を 2 つ遡り**肘・肩を取る。実寸は 3.72m あるので
 `heightM`（既定 1.6m）に合わせて自動縮尺される（縮尺 0.43）。
 

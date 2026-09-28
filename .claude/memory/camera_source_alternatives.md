@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 09dc8cde-cc1e-4b2b-82d3-eccb5e1a5d43
+  modified: 2026-09-28T04:53:47.964Z
 ---
 
 廻リ視の配信元をスマホ（IP Camera Lite / fixed-cam-streamer）から専用カメラ等に替える検討の集約（2026-07-13）。関連: [[camera_c120_go2rtc_plan]]（go2rtc中継の技術検証）/ [[iphone_camera_streamer_plan]] / [[camera_fleet]]。
@@ -19,7 +20,7 @@ metadata:
    - **Vizario H264RTSP for Unity**（有料アセット）＝Quest2/3でVulkan/GLES3両対応と販売元明言・唯一のQuest実績明言源。720p30実働報告。トライアル320x240で遅延実測可 → 最小工数
    - **vlc-unity**（videolan公式・LGPL・ARM64/Vulkan明記）＝自前ビルドで無料。予算ゼロ縛りの本命
    - **ExoPlayer(Media3) を AAR自作**＝Android公式がRTSP(H.264/Basic/Digest認証)サポート。SurfaceTexture→テクスチャ橋渡しを自作、Vulkanが難所
-   - **横断リスク**: QuestのVulkan×映像テクスチャが地雷（WebRTCは「Vulkanで黒画面/GLES3なら動く」報告多数）。GLES3強制はProjectSettings共有ゆえTableDuo同居アプリに波及。②③は Vulkan 対応明言で有利
+   - **横断リスク**: QuestのVulkan×映像テクスチャが地雷（WebRTCは「Vulkanで黒画面/GLES3なら動く」報告多数）。GLES3強制はProjectSettings（Graphics）の変更になる（当時は同居していたTableDuoにも波及した。2026-09-28 に分離済み）。②③は Vulkan 対応明言で有利
    - WebRTC(com.unity.webrtc)は「カメラ側がWebRTCを喋る」前提＝素のRTSPカメラは変換ゲートウェイ必須で「中継なし」を満たさず、本要件では非推奨
    - go2rtc中継(RTSP→MJPEG)も選択肢だがPC常時稼働＋再エンコード遅延（[[camera_c120_go2rtc_plan]]）
 

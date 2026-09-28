@@ -56,23 +56,4 @@
 | 08-12 | `title-screen` | implemented | タイトル画面「廻リ視」（導入の段 0 に被さる層・右 A で閉じる） |
 | 09-19 | `eye-decode-motion` | implemented | 闇の目の出現と消失を「行が届く・ブロックが落ちる」へ（0240・R058・Editor 検証済み・実機未走行） |
 
-## TableDuo（手アバター調査）
-
-作りこみの対象外（CLAUDE.md）。触るのは TableDuo の作業に入ったときだけ。
-
-| 日付 | slug | 状態 | 内容 |
-|---|---|---|---|
-| 06-10 | `table-duo_phase0-3` | — | Phase 0–3 実行計画 |
-| 06-11 | `table-duo_replay` | — | セッションリプレイ（stimulated recall 用） |
-| 06-11 | `table-duo_study` | — | 手アバター調査機能 |
-| 06-16 | `table-duo_remy-fullbody-avatar` | — | 人側アバターを Remy へ置換 |
-| 06-29 | `table-duo_spectator` | — | ライブ観戦（第三者視点） |
-| 07-08 | `remy-hip-hinge-lean` | — | 上体リーンを骨盤ヒンジ方式へ |
-| 07-08 | `tableduo-piece-physics` | in-progress | 卓上ピースの物理統合 |
-| 07-10 | `tableduo-auto-connect` | in-progress | ホスト自動発見・自動接続 |
-| 07-16 | `tableduo-controller-hand-basis` | — | コントローラ保持中の手の基底修正 |
-| 07-18 | `tableduo-game-switcher-host-ui` | in-progress | ボドゲのランタイム切替 + 操作系 |
-| 07-20 | `tableduo-geister` | implemented | ガイスター追加 |
-| 07-22 | `tableduo-bandido` | implemented | バンディド追加 |
-| 07-23 | `tableduo-six-strokes-bear` | — | あと6画のくま追加 |
-| 07-24 | `tableduo-pen-grip-redesign` | — | ペングリップ再設計（ToolGripDriver） |
+TableDuo の計画は 2026-09-28 に table-duo-vr へ移した。

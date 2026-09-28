@@ -56,7 +56,8 @@ namespace FixedCamVr.Streaming.EditorTools
             }
             // Rig は Humanoid でも Generic でもよい（ShowActorRig は Generic なら手のボーン名から
             // 親を 2 つ遡って肘・肩を取る）。**共有 ThirdParty アセットの取り込み設定は変えない**
-            // — Remy は TableDuo のフルボディアバターと同じ実体で、Humanoid へ変えると向こうが壊れる。
+            // — 分離前（〜2026-09-28）は Remy を TableDuo のフルボディアバターと共有していたので、
+            // 取り込み設定を変えずに済む作りにした。
             if (importer.animationType == ModelImporterAnimationType.None)
             {
                 Debug.LogError($"[ShowActor] {modelPath} は Rig 無しです（Animation Type = None）。" +

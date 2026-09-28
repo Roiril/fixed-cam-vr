@@ -7,20 +7,18 @@ Meta Quest 3 の作品「廻リ視」。固定視点カメラ（バイオハザ�
 詳細をここへコピーしない（過去にコピーが古くなって嘘をついた）。正本を読むこと:
 
 - プロジェクト全体の規約: [CLAUDE.md](CLAUDE.md)
-- 領域別ルール: `.claude/rules/`（streaming / show-design / sound-design / unity-vr / meta-xr / parallel-projects / git-workflow ほか）
+- 領域別ルール: `.claude/rules/`（streaming / show-design / sound-design / unity-vr / meta-xr / git-workflow ほか）
 - 技術の罠・実装の経緯: `.claude/memory/`（索引は `MEMORY.md`）
 - 世界観の判定: `.claude/canon/`（`LEDGER.md` = ユーザーの逐語。**エージェントの案を勝手に足さない**）
 
-## ⚠ 同居 3 アプリ — 作業前にどれか確定する
+## アプリ
 
 | ユーザー呼称 | 正式名 | namespace / asmdef | コード root | シーン | パッケージ ID |
 |---|---|---|---|---|---|
 | **fixedcam** / 廻リ視 / 本体 / カメラ | 廻リ視（FixedCam） | `FixedCamVr.*` | `Assets/Scripts/` | `Main.unity` | `com.roiril.mawarimi` |
-| **ハンド** / 手 / テーブル | TableDuo（手アバター調査） | `TableDuoVr.*` | `Assets/TableDuo/` | `TableDuoMain.unity` | `com.roiril.tableduo` |
-| **ロボットハンド** / mycobot / テレオペ | MyCobotHand | `MyCobotHandVr` | `Assets/MyCobotHand/` | `HandTeleop.unity` | `com.mycobot.handteleop` |
 
-呼称からは導けない（「ハンド」= TableDuo）。asmdef 相互参照禁止・共有資源（ProjectSettings / URP / XR /
-manifest）・ビルド逐次の規約は [.claude/rules/parallel-projects.md](.claude/rules/parallel-projects.md) が正本。
+同居していた手のアプリ 2 つ（「ハンド」= TableDuo / 「ロボットハンド」= MyCobotHand）は
+2026-09-28 に [Roiril/table-duo-vr](https://github.com/Roiril/table-duo-vr) へ分離した。このリポジトリには無い。
 
 ## Unity は CLI で操作する
 
@@ -38,7 +36,7 @@ MCP for Unity（`.codex/config.toml` に登録済み）は「起動中の Editor
 ## 禁止・注意
 
 - **`docs/proposal/` と `docs/archive/`（企画書）は開かない**（2026-08-08 ユーザー宣言。コンテキスト汚染になる）
-- `ProjectSettings/` を理由なく変更しない（3 アプリの共有資源）
+- `ProjectSettings/` を理由なく変更しない（特に Graphics / Quality）
 - `show.json` と `Assets/Settings/*.asset` の `host` はローカル値。コミットに混ぜない
 - `Library/` `Builds/` はコミットしない。パスワード・API キーをスクリプトに書かない
 - 機能を変えたらドキュメントも同じコミットで直す（[.claude/rules/doc-sync.md](.claude/rules/doc-sync.md)）

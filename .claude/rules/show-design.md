@@ -344,7 +344,7 @@ HMD を体験者が被っている間はスタッフに視覚（StatusHud）が�
 **右コントローラの振動**で伝える（純ロジック [`HapticSequenceLogic`](../../Assets/Scripts/Input/HapticSequenceLogic.cs)
 ＝「経過時間→振幅」・EditMode テスト [`HapticSequenceLogicTests`](../../Assets/Tests/Input/HapticSequenceLogicTests.cs)、
 MonoBehaviour [`ControllerHaptics`](../../Assets/Scripts/OvrBridge/ControllerHaptics.cs) が毎フレーム
-`OVRInput.SetControllerVibration` を RTouch へ適用）。両アプリ共通仕様（TableDuo 側も同じボキャブラリ）:
+`OVRInput.SetControllerVibration` を RTouch へ適用）。仕様:
 
 | パターン | 意味 | 波形（freq 0.5 固定） |
 |---|---|---|

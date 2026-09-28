@@ -10,7 +10,7 @@ paths:
 
 # 視覚検証の作法 — 誤判定で working を壊さない
 
-**発端（2026-07-01・実害）**: 手バリアントの Robot（機械リグ・多数の分割メッシュ）を **1〜2 角度のスクショだけで「指が崩れてる」と誤判定**し、
+**発端（2026-07-01・実害。分離前に同居していた手アバターのアプリで起きた）**: 手バリアントの Robot（機械リグ・多数の分割メッシュ）を **1〜2 角度のスクショだけで「指が崩れてる」と誤判定**し、
 実際には正常動作していた式A実装を「ワールド空間 FK リターゲット」に大改修 → **working だった Realistic を逆に爪状へ退行**させた。
 その後ユーザーの「角度が悪いだけでは」で**上面・単体隔離**を撮ったら Robot は普通のロボットハンドだった。式Aへ全撤去して復帰。
 
@@ -82,8 +82,6 @@ HMD を被らずに撮れるので、実機確認をユーザーの手作業に�
   - **`** FEET OUT OF FRAME` が出ていたら合成の精度をいくら上げても浮いて見える**（2026-08-07〜）。
     足元が枠の外だと床との接点も影の落ち先も画に無い。直すのは立ち位置か画角（演出の管轄）
 - 位置合わせ検証ビュー（廻リ視）: `.\tools\unity.ps1 menu regviz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
-- Editor 単体の多角度スクショ: `.\tools\unity.ps1 menu td-hands`（3 種並べ）
-  ＝ [TableDuoHandVariantPreview.cs](../../Assets/TableDuo/Scripts/Editor/TableDuoHandVariantPreview.cs)。実録画データを当てるので Play 不要。
 - 新規に視覚検証ツールを書くときも「周回 / 単体隔離 / 正解と並置」を最初から入れる。
 - OVR シーンは Link/HMD 無し Play がハングするので、この種の**静的スクショ**が実機ゼロ検証の主力（[unity_pitfalls](../memory/unity_pitfalls.md)）。
 

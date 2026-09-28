@@ -212,10 +212,6 @@ tools/web-compositor/dwell_stats.json.tmp
 # ビルド成果物（BuildVariants が出力）
 Builds/
 
-# ビルド時スタンプ（BuildVariants.StampTableDuoBuildInfo が毎ビルド書き換える）
-Assets/TableDuo/Resources/TableDuoBuildInfo.txt
-Assets/TableDuo/Resources/TableDuoBuildInfo.txt.meta
-
 # ビルド焼き込みエクスポート生成物（Web 卓の 📦 エクスポートが生成。show.json にカメラ host を含むためコミット禁止）
 Assets/StreamingAssets/show/
 Assets/StreamingAssets/show.meta
@@ -225,7 +221,7 @@ Assets/StreamingAssets/show.meta
 
 # Editor プレビューの出力（`.\tools\unity.ps1 menu <名前>` でいつでも焼き直せる。実データ由来なので
 # 現場の IP が焼き込まれた画も混ざる）。証拠として残したい 1 枚は手で別名保存すること。
-# cgviz / hud-preview / actorviz / actormotion / regviz / tableduo が同じ扱い。
+# cgviz / hud-preview / actorviz / actormotion / regviz が同じ扱い。
 Assets/Screenshots/
 Assets/Screenshots.meta
 

@@ -25,7 +25,6 @@ Assets/
 │   └── <Feature>/Editor/    # 各機能の Editor 拡張（別 asmdef）
 ├── Prefabs/<Feature>/
 ├── Settings/                # ScriptableObject 設定（Cameras/ 等）
-├── TableDuo/                # 同居サブプロジェクト（CLAUDE.md 参照、相互参照禁止）
 └── ThirdParty/              # 外部アセット（Meta XR SDK は除く）
 ```
 
@@ -74,9 +73,8 @@ GameObject、HMD の日本語は静的ベイクのアトラスなので、`.cs` 
 mtime。**新しい焼き直し工程を足したら `Src` / `Out` と `$BakeGuard` に足す**（足さないと誰も見ない）。
 
 - ターゲット: Android / IL2CPP / ARM64 単独
-- **3 アプリ並存**: 廻リ視 / TableDuo / MyCobotHand（[BuildVariants.cs](../../Assets/Editor/BuildVariants.cs)）。
-  productName / パッケージ ID をビルド時のみ切り替え → Quest 上で別アプリとして同居。
-  ProjectSettings は終了後に必ず復元される（手動の Build Settings ではどれも同名・同 ID になるので使わない）
+- productName / パッケージ ID / シーンは [BuildVariants.cs](../../Assets/Editor/BuildVariants.cs) がビルド時に決める
+  （手動の Build Settings は使わない）
 - `Development Build` 有効でデプロイし、初期は `adb logcat` でログ確認
 - リリースは `-Release`（Development なし、出力名 -release）
 
@@ -213,7 +211,7 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 **新しいメニューは CLI から呼べる形で書く**（2026-08-09〜。入口は `.\tools\unity.ps1 menu`）。守ることは 4 つ：
 
 1. **`public static` の引数なし**にする（`-executeMethod` は private も引数ありも呼べない）
-2. **シーンが要るなら自分で開く** — `EditorCliArgs.EnsureScene(path)`（TableDuo 側は `TableDuoEditorCli.EnsureScene()`）。
+2. **シーンが要るなら自分で開く** — `EditorCliArgs.EnsureScene(path)`。
    batchmode は空シーンで始まるので、`GameObject.Find` 頼みのものは開かないと軒並み落ちる。
    **GUI では何もしない**ので、人が開いているシーンを奪わない
 3. **モーダルを出さない** — batchmode の `DisplayDialog` は表示されず **false** を返す。

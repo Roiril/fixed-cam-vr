@@ -38,21 +38,12 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 ⚠ **発案は自由。昇格は禁止。** シュビーの世界観の案を `LEDGER.md` へ入れてよいのは、
 ユーザーが口にしたときだけ。沈黙は同意ではない。規律は `rules/canon-boundary.md`。
 
-## ⚠ 同居 3 アプリ — 作業前に必ずどれか確定する
+## 手のアプリは別リポジトリ
 
-1 プロジェクトに**独立した 3 アプリ**が同居している。ユーザーは下の呼称で指す。
-**正式名だけでは導けない**（「ハンド」が 2 つある）。
-
-| ユーザー呼称 | 正式名 | namespace / asmdef | コード root | シーン |
-|---|---|---|---|---|
-| **fixedcam** / 廻リ視 / 本体 / カメラ | 廻リ視（FixedCam） | `FixedCamVr.*` | `Assets/Scripts/` | `Main.unity` |
-| **ハンド** / 手 / テーブル / TableDuo | TableDuo（手アバター調査） | `TableDuoVr.*` | `Assets/TableDuo/` | `TableDuoMain.unity` |
-| **ロボットハンド** / mycobot / テレオペ | MyCobotHand | `MyCobotHandVr` | `Assets/MyCobotHand/` | `HandTeleop.unity` |
-
-**作りこみの対象は廻リ視だけ。** 他 2 つは別の目的で動いている。
-
-分離規約（asmdef 相互参照禁止・共有資源・ビルド逐次・並列化可否）は
-**[rules/parallel-projects.md](.claude/rules/parallel-projects.md) が正本**（Unity を触る前に読む）。
+2026-09-28 まで同居していた **TableDuo（「ハンド」）と MyCobotHand（「ロボットハンド」）は
+`C:\Users\kouga\Projects\Unity\table-duo-vr`（[Roiril/table-duo-vr](https://github.com/Roiril/table-duo-vr)）へ分離した。**
+このリポジトリは廻リ視（`FixedCamVr.*` / `Assets/Scripts/` / `Main.unity`）だけ。
+ユーザーが「ハンド」「手」「テーブル」「mycobot」と言ったら、向こうのリポジトリで作業する。
 
 ## Unity は CLI で操作する
 
@@ -116,11 +107,10 @@ Unity 2022.3.62f2 LTS / URP / Quest 3（Android・IL2CPP・ARM64）/ Meta XR All
 
 オペレータ卓とブラウザ合成検証は `tools/web-compositor/`（`serve.ps1` → `http://localhost:8099/`）。
 詳細は [memory/web_compositor.md](.claude/memory/web_compositor.md)。
-TableDuo の全体像は [docs/table-duo/remaining-tasks.md](docs/table-duo/remaining-tasks.md)。
 
 ## 禁止・注意
 
-- `ProjectSettings/` を理由なく変更しない（特に Graphics / Quality。3 アプリの共有資源）
+- `ProjectSettings/` を理由なく変更しない（特に Graphics / Quality）
 - パスワード・API キーをスクリプトに書かない（`StreamingAssets/secrets.json` は gitignore）
 - `Library/` `Builds/` はコミットしない。`show.json` と `*.asset` の `host` はローカル値
 - 依存の追加・削除、履歴の破壊、外部公開は
