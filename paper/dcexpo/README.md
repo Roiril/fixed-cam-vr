@@ -1,6 +1,6 @@
 # 廻リ視 DCEXPO 版 資料の執筆環境
 
-元の Word（`IVRC2026_Roiril_v1.6.5.2.docx`・学会論文フォーマット）に寄せた A4・白地・1 段組の紙面を、
+元の Word（`IVRC2026_Roiril_v1.6.5.2.docx`・学会論文フォーマット）に寄せた A4・白地・2 段組（本文）の紙面を、
 **HTML + CSS で書いて Edge で PDF にする**環境。シュビーが本文と図を直接編集し、機械検査で崩れを見つける。
 Word には戻さない（図・注釈・段組の往復で壊れやすいため）。
 
@@ -19,7 +19,7 @@ out/                  生成物（git 管理外）  out/paper.pdf  out/page-N.pn
 
 ```bash
 py -3.10 paper/dcexpo/tools/build.py --sheet   # PDF・ページ画像・検査（Python 3.10 = PyMuPDF あり）
-py -3.10 paper/dcexpo/tools/tune.py --apply    # 本文を変えたあと。約 1.5 分。paper.css の文字サイズ・行間を更新
+py -3.10 paper/dcexpo/tools/tune.py --apply    # 本文を変えたあと。約 3 分。paper.css の文字サイズ・行間を更新
 py -3.11 paper/dcexpo/tools/prep_figures.py    # 図を作り直すとき
 ```
 
@@ -28,7 +28,10 @@ py -3.11 paper/dcexpo/tools/prep_figures.py    # 図を作り直すとき
 
 ## 組版のしくみ（paginate.js）
 
-- 本文は 1 段。**図は各ページの上端か下端に固定**する（2026-09-30 ユーザー指示）。2 段組は図の位置で段が崩れたのでやめた
+- 本文は 2 段（`paper.css` の `--cols`。1 にすると 1 段組）。**図は各ページの上端か下端に、段をまたぐ全幅で固定**する（2026-09-30 ユーザー指示）。
+  以前の CSS の段組は図の位置で崩れたので、段の割り付けも paginate.js が行う（左段 → 右段 → 次頁。最終頁は段を均等に割る）
+- 本文から図の各コマを指す（図6(a) など）。図のパネル記号と本文の参照は `paper.html` の中で対になっている。図の枚数・順序を変えたら両方を直す
+- `tools/assign.py "1b 2t 2b 3b 3t 3t 4t 4t"` で図の頁・位置（t=上端 b=下端）を試す（1 回 6 秒）
 - 本文（`#stream`）を行単位でページに割り付ける。ページの本文の窓の高さ ＝ 内寸 − 見出し部 − 上の図 − 下の図。
   切れ目は行と行の間だけ。見出しでページを終えない・4 行以上の段落は前後に 2 行以上残す・3 行以下の段落は割らない
 - 図の置き場所は `<figure>` の属性で決める: `data-page`（1 始まり）・`data-pos`（top | bottom）・

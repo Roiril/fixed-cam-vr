@@ -33,6 +33,20 @@ GAP_LIMIT_MM = 22          # 最終頁以外で、本文の下端が下余白よ
 
 
 def render_pdf(html=HTML, pdf=PDF, quiet=False):
+    """_render_pdf_once を最大 3 回試す（headless Edge は起動直後に "Printing is not available" を返すことがある）。"""
+    last = None
+    for attempt in range(3):
+        try:
+            return _render_pdf_once(html, pdf, quiet)
+        except (RuntimeError, OSError, ConnectionError) as e:
+            last = e
+            if not quiet:
+                print(f"  [retry {attempt + 1}] {e}")
+            time.sleep(1.5)
+    raise last
+
+
+def _render_pdf_once(html=HTML, pdf=PDF, quiet=False):
     """Edge を CDP（--remote-debugging-port）で動かし、組版スクリプトの完了を待って PDF 化する。
     戻り値は paginate.js の報告（dict）。ページ内の例外・console.error は標準出力へ出す。
     ⚠ msedge.exe は GUI サブシステムで --dump-dom の標準出力が空になるため、CDP で読む。"""
@@ -101,13 +115,27 @@ def render_pdf(html=HTML, pdf=PDF, quiet=False):
         pdf.write_bytes(base64.b64decode(res["data"]))
         ws.close()
     finally:
-        proc.kill()
+        # ⚠ proc.kill() は親のブラウザだけを止め、子（renderer・gpu・utility）が生き残って一時プロファイルを掴み続ける。
+        #   2026-09-30 に 1119 プロセス・256 個のプロファイルが溜まり、C: の空きが 0 になった（実害）。
+        #   必ず木ごと終了し、プロファイルの削除は失敗したら少し待って再試行する。
+        #   proc.pid は起動用の短命なプロセスで、実体のブラウザは別の PID になることがある。
+        #   そこで「このプロファイルのパスを CommandLine に持つ msedge」を全部止める（他の Edge には触れない）。
+        name = Path(prof).name
+        subprocess.run(["powershell", "-NoProfile", "-Command",
+                        "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+                        f"Where-Object {{ $_.CommandLine -like '*{name}*' }} | "
+                        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
+                       capture_output=True)
         try:
             proc.wait(timeout=5)
         except Exception:
             pass
         import shutil
-        shutil.rmtree(prof, ignore_errors=True)
+        for _ in range(10):
+            shutil.rmtree(prof, ignore_errors=True)
+            if not Path(prof).exists():
+                break
+            time.sleep(0.3)
     for m in logs:
         print("  [page]", m)
     if not quiet:
@@ -183,7 +211,7 @@ def check_layout(rep, quiet=False):
             ng.append(f"{f['id']}: 引用 p{cited} から 2 頁以上離れている（図 p{f['page']}）")
     pages = rep["pages"]
     for pg in pages[:-1]:
-        if pg.get("text_mm", 999) < 45:
+        if pg.get("text_mm", 999) < 45 * rep.get("cols", 1):
             ng.append(f"p{pg['page']}: 本文が {pg.get('text_mm', 0):.0f}mm しか無い（図で埋まっている。図の頁を分ける）")
         if pg["slack_mm"] > 9.5:
             ng.append(f"p{pg['page']}: 本文の窓に {pg['slack_mm']:.1f}mm の余り（行の区切りで詰められない。図の頁か寸法を見直す）")

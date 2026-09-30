@@ -7,8 +7,10 @@
   --m-bottom: 15mm;
   --m-side: 21mm;
   --band-gap: 4mm;            /* 本文と図の間の最小の空き */
-  --body-size: 10.00pt;
-  --body-lh: 1.62;
+  --cols: 2;                  /* 本文の段数（1 にすると 1 段組。paginate.js が読む） */
+  --col-gap: 6mm;             /* 段の間 */
+  --body-size: 9.40pt;
+  --body-lh: 1.56;
   --ink: #111;
   --sub: #555;
   --rule: #999;
@@ -44,9 +46,10 @@ body {
 .band { display: flex; flex-direction: column; flex: none; }
 .band.top { margin-bottom: 0; }
 .band.bottom { margin-top: auto; }
-.win { flex: none; overflow: hidden; position: relative; }
+.cols { display: flex; gap: var(--col-gap); flex: none; align-items: flex-start; }
+.win { flex: none; width: var(--col-w); overflow: hidden; position: relative; }
 .win .inner { position: absolute; left: 0; top: 0; width: 100%; }
-#measure { position: absolute; left: -9999px; top: 0; width: calc(var(--page-w) - 2 * var(--m-side)); }
+#measure { position: absolute; left: -9999px; top: 0; width: var(--col-w); }
 #measure > * { display: flow-root; }   /* 窓の中（.inner は絶対配置＝独立した整形文脈）と余白の畳み込みを揃える。ずれると行の途中で切れる */
 
 /* 図を上に置く頁は、図の下に本文との間の空きを取る */
@@ -93,11 +96,11 @@ figure + figure { margin-top: 3mm; }
 figure img { display: block; width: 100%; height: auto; }
 figcaption { font: 8pt/1.45 var(--sans); text-align: center; margin-top: 1.2mm; text-indent: 0; }
 /* 図の幅（写真の帯は全幅・図式は中央に小さめ） */
-#fig1 { width: 134mm; }
-#fig2 { width: 100mm; }
-#fig4 { width: 66mm; }
-#fig3 { width: 124mm; }
-#fig8 { width: 132mm; }
+#fig1 { width: 118mm; }
+#fig2 { width: 92mm; }
+#fig4 { width: 62mm; }
+#fig3 { width: 110mm; }
+#fig8 { width: 118mm; }
 
 .grid { display: grid; gap: 1.4mm; }
 .grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }

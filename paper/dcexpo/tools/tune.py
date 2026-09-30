@@ -20,8 +20,8 @@ import build  # noqa: E402
 sys.stdout.reconfigure(encoding="utf-8")
 
 GRID = {
-    "body-size": [f"{v:.2f}pt" for v in (9.8, 10.0, 10.2, 10.4)],
-    "body-lh": [f"{v:.2f}" for v in (1.62, 1.68, 1.74)],
+    "body-size": [f"{v:.2f}pt" for v in (9.0, 9.1, 9.2, 9.3, 9.4, 9.5)],
+    "body-lh": [f"{v:.2f}" for v in (1.56, 1.60, 1.64, 1.68)],
 }
 PDF_T = build.OUT / "_tune.pdf"
 
