@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [paper_dcexpo_env.md](paper_dcexpo_env.md) - 2026-09-30。DCEXPO 向け資料（論文の新版）の執筆環境 `paper/dcexpo`。HTML→Edge→PDF・図は削らず現行と合わないものは実物へ差し替え・`tune.py` で段組調整・カメラ A〜C は 9/24 の最新プレート。未 push。
+
 - [experience_fixes_2026_09_24.md](experience_fixes_2026_09_24.md) - 3-A/4-Aの右半分素材の同梱漏れ。導入の順序。最後のお願いまで報告をロック。解除後のスイ。位置合わせの再試行表示。破片に運ぶ実景の量と描画比較。
 
 - [onsite_day_ops.md](onsite_day_ops.md) - 2026-09-22。演出素材・同梱・APK・Quest の内容を照合。Player は事前同梱のみ。博士タブレットの応答と設定反映は [visitor_tablet.md](visitor_tablet.md)。
