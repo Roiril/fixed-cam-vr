@@ -1,5 +1,7 @@
 # Project Memory Index
 
+- [experience_shots.md](experience_shots.md) - 2026-09-30。左グリップで体験中の画を 4 種類（スクリーン・生映像・合成のみ・体験者の視界）端末へ PNG 保存。**展示本番の機は `quest-shots.py off`**（体験者が握り込むと撃たれる・Dev ビルドは既定 ON）／④にパススルーは入らない／**描いた直後に一時カメラを壊すと RT が消える**／`adb pull` は 0 バイト・`exec-out cat` で取る／実機は未検証。
+
 - [experience_fixes_2026_09_24.md](experience_fixes_2026_09_24.md) - 3-A/4-Aの右半分素材の同梱漏れ。導入の順序。最後のお願いまで報告をロック。解除後のスイ。位置合わせの再試行表示。破片に運ぶ実景の量と描画比較。
 
 - [onsite_day_ops.md](onsite_day_ops.md) - 2026-09-22。演出素材・同梱・APK・Quest の内容を照合。Player は事前同梱のみ。博士タブレットの応答と設定反映は [visitor_tablet.md](visitor_tablet.md)。
@@ -80,7 +82,7 @@
 - [doll_reference_kit.md](doll_reference_kit.md) - 実物の市松人形を画像生成 AI に描かせる資料（tools/doll-ref/）。3D 用マスクは資料に使えない／写真は暗く緑に転ぶ／正面の T 字は撮影の都合／探針は目で置く
 
 - [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) - 2026-07-23 監査 11 件は全修正済み（EditMode 364/364・JVM 31/31）。実機確認チェックリストと P2 テスト候補はここ
-- [controller_input_final.md](controller_input_final.md) - 体験者入力は左 X / Y だけ。左グリップ、左インデックストリガー、左スティック押し込みは読まない。スタッフ操作は右 A / B / トリガー（2026-09-14）。
+- [controller_input_final.md](controller_input_final.md) - 体験者入力は左 X / Y だけ。左インデックストリガー、左スティック押し込みは読まない。スタッフ操作は右 A / B / トリガー（2026-09-14）。左グリップだけ 2026-09-30 から**開発用の撮影**（体験者の入力ではない → [experience_shots.md](experience_shots.md)）。
 - [hud_font_and_preview.md](hud_font_and_preview.md) - HMD内文言を変えたらフォント再生成必須（静的ベイク・忘れると実機豆腐）／見た目確認は Play 禁止・HudPreviewScreenshot（batchmode可）
 
 - [ivrc_video_pages_naming.md](ivrc_video_pages_naming.md) - IVRC動画 pages/ の透過PNGはファイル名固定（編集ソフト参照中・リネーム禁止／追加は既存をずらさない名で）

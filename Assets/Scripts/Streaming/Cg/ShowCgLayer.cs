@@ -197,6 +197,12 @@ namespace FixedCamVr.Streaming.Cg
         public bool IsVisible => _visible && _rendering;
 
         /// <summary>
+        /// CG 層の描画先（premultiplied alpha）。体験中の撮影（<see cref="FixedCamVr.Streaming.ExperienceShotCapture"/>）が
+        /// 「合成している CG だけ」を 1 枚写すために読む。**書き込みには使わない**。
+        /// </summary>
+        public RenderTexture? Layer => _rt;
+
+        /// <summary>
         /// <b>映像の中に人形が立っているか。</b>「人形として読んでよいか」を訊く側はこちらを読む
         /// （<see cref="IsVisible"/> は「CG の層が描かれているか」で、**人の代役も含む**）。
         ///

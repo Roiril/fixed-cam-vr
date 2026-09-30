@@ -159,7 +159,16 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 | Registration | 右 **B** | Verify で確定・保存・退場 |
 | Registration | **右トリガー 2 秒長押し** | キャンセル退場（入場と対称） |
 | Normal / Registration | 右グリップ | 未使用 |
+| 常時（体験者の入力ではない） | 左 **グリップ** | **体験中の撮影**（説明資料用）。押した瞬間の画を 4 種類、端末へ PNG で保存する。Development ビルドは既定で有効。**展示本番の機は必ず OFF**（下） |
 | （Editor） | キーボード **Tab / 1–9 / Space / H** | カメラ切替・head-lock・ステータス（HMD なし検証・ゲート対象外） |
+
+**体験中の撮影（左グリップ）**: 押した瞬間の ① 表示されているスクリーン ② 加工前の生映像 ③ 合成しているものだけ（合成が無い瞬間は撮らない・CG が出ていれば透過の 1 枚も） ④ 体験者の視界 を、1 回 1 フォルダで `Android/data/com.roiril.mawarimi/files/shots/` へ書く（左が 1 発震える）。取り出しと ON / OFF は `tools/quest-shots.py`。
+左グリップは体験者が握り込むときに普通に押されるので、**展示本番の機は `py -3.11 tools/quest-shots.py off`**。④ にはパススルーの現実は入らない（アプリの描画のみ）。詳細は [memory/experience_shots.md](.claude/memory/experience_shots.md)。
+
+```powershell
+py -3.11 tools/quest-shots.py pull --delete   # → logs/shots/<serial>/<日時_通し番号>/ へ取り出して端末から消す
+py -3.11 tools/quest-shots.py off             # 展示本番の前に（アプリを再起動すると反映）
+```
 
 ステータス（StatusHud）は単一サーフェスで、lap / 現在ゾーン / 次の cue 予定 / 信号 ●●○ / 要再登録 を緩追従（deadzone + SmoothDamp）で 1 枚に表示。登録中は登録ガイダンスを強制表示する。モード状態（NORMAL/REG）は heartbeat（`mode`）でも Web 卓に出る。旧 Run/Staff・左手・スティック・操作チートシート（StaffPanel）・cue 試射は撤去した。
 
