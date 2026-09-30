@@ -23,4 +23,8 @@ A4・**1 段組**を **HTML + CSS + paginate.js で書いて Edge（CDP）で PD
 - 実機の画面は `output/quest-recordings/2026-09-27/quest-alpha/` の録画から抜く。作品内の日時と周の表示が入る
 - 体験の流れの事実は `canon/` と memory（`hmd_onboarding` `comms_takeover` `ending_result`）。企画書は読まない
 - 文体は学会の版を引き継ぐ（である調・`，．`）。日本語の基準は `~/.claude/reference/japanese-writing-review.md`
-- コミット済み（22e774c1）・**未 push**。画面録画に体験者（試験者）の姿と研究室が写るため公開の判断は保留
+- **図1 はユーザーが自作した画像**（`figures/env-fig1.png`。生成した設営イメージ写真＋説明線）。再描画しない。
+  図2・3・5〜8 は `logs/shots/<serial>/`（左グリップの撮影機能 → [[experience_shots]]）と Quest の画面録画から
+- 図の割り当ては `<figure>` の data-page / data-pos。図の総量が多く、置き方で本文の窓が潰れる（本文 45mm 未満は NG）。
+  引用の前後 1 頁以内。動かすと引用の頁も動くので、割り当ての探索は反復が要る
+- コミット済み（最新 ec16a78b）・**未 push**。撮影画像・録画に体験者（試験者）の姿と研究室が写るため公開の判断は保留
