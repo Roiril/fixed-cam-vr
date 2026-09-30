@@ -124,7 +124,7 @@
     if (target >= total - 0.5) end = total;
     else {
       const ok = cands.filter((c) => c.ok && c.y > start + 20 && c.y <= target);
-      end = ok.length ? ok[ok.length - 1].y : target;
+      end = ok.length ? ok[ok.length - 1].y : start;      // 合法な切れ目が無ければ本文は 0 行（行の途中では切らない）
     }
     win.style.height = Math.max(0, end - start) + "px";
     const inner = stream.cloneNode(true);
@@ -161,6 +161,7 @@
     pages: wins.map((w) => ({
       page: w.page,
       slack_mm: (w.avail - w.used) / mm,
+      text_mm: (w.end - w.start) / mm,
       start: w.start, end: w.end, innerH: w.innerH, winH: w.winH,           // 窓の余り。1 行分（約 6mm）を超えたら詰め直す
     })),
     figs: figs.map((f) => {

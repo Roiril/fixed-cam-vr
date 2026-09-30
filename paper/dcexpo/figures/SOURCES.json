@@ -159,6 +159,14 @@
   ],
   "note": "スクリーンの最終合成"
  },
+ "env-fig1.png": {
+  "src": "C:\\Users\\kouga\\Downloads\\無題のプレゼンテーション.png",
+  "size": [
+   960,
+   540
+  ],
+  "note": "ユーザー作成の図1。生成画像の写真＋カメラA〜C・HMD・L字の壁の説明線"
+ },
  "warning.jpg": {
   "src": "output/unauthorized-access/hero-v4.png",
   "size": [

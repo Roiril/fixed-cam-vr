@@ -34,7 +34,7 @@
 <p>本システムは，実空間を撮影する固定カメラと，その映像を提示するHMDから成る．体験全体を貫くモチーフとして，日本人形との追跡を用いる．以下では，物理構成，固定視点での映像表現，映像差し替えと合成処理，報告操作と演出の進行に分けて述べる．</p>
 
 <h3>2.1　物理構成</h3>
-<p>実空間中央にL字型の壁（高さ1.8 m）を設置し，その周囲を体験者が移動する経路とする．また，固定視点を構成するため，高さ1.35 mの三脚上に設置したスマートフォン3台を固定カメラとして配置する．環境構成を図1に示す．体験者は，安全のため右手で壁の手すりをたどりながら歩く．</p>
+<p>実空間中央にL字型の壁（高さ1.8 m）を設置し，その周囲を体験者が移動する経路とする．また，固定視点を構成するため，スマートフォン3台を固定カメラとして配置する．カメラAは三脚上，カメラBは床上，カメラCは棚に取り付けたアームに設置する．環境構成を図1に示す．体験者は，安全のため右手で壁の手すりをたどりながら歩く．</p>
 
 <h3>2.2　固定視点での映像表現</h3>
 <p>各スマートフォンで撮影した映像はWi-Fi経由でHMD（Meta Quest 3）へ伝送され，HMD内の仮想スクリーン上へリアルタイムに提示される．HMDには，いずれか1台の固定カメラ映像のみが表示され，スクリーン外の領域は黒背景とする．体験者は現実空間をスクリーン越しにのみ観察する．体験者位置と提示映像の組み合わせ例を図2に示す．提示するカメラ映像は，体験者の位置に応じて自動的に切り替わる．</p>
@@ -70,18 +70,18 @@
 </div>
 
 <div id="figs">
-<figure id="fig1" data-page="2" data-pos="top" data-row="A">
-  <img src="figures/env-layout.svg" alt="現場の配置図">
-  <figcaption>図1　環境構成（破線は順路）</figcaption>
+<figure id="fig1" data-page="2" data-pos="top">
+  <img src="figures/env-fig1.png" alt="環境構成のイメージ：L字の壁・カメラA〜C・HMDを着けた体験者">
+  <figcaption>図1　環境構成のイメージ</figcaption>
 </figure>
-<figure id="fig2" data-page="2" data-pos="top" data-row="A">
+<figure id="fig2" data-page="2" data-pos="top">
   <div class="grid g2 uni a43">
     <div><img src="figures/sh-fixed-raw.jpg" alt=""><span class="tag">固定カメラの生映像</span></div>
     <div><img src="figures/sh-fixed-hmd.jpg" alt=""><span class="tag">体験者の視界（HMD）</span></div>
   </div>
   <figcaption>図2　同じ瞬間の固定カメラ映像（左）と，HMD内の仮想スクリーンに提示された体験者の視界（右）</figcaption>
 </figure>
-<figure id="fig3" data-page="2" data-pos="bottom">
+<figure id="fig3" data-page="3" data-pos="bottom">
   <div class="grid g3 uni a43 matrix">
     <span class="hdr">加工前の生映像</span><span class="hdr">合成している層</span><span class="hdr">提示映像</span>
     <div><img src="figures/sh-hand-raw.jpg" alt=""><span class="tag">1周目</span></div>
@@ -100,7 +100,7 @@
   <img src="figures/route.jpg" alt="周回経路とカメラ位置">
   <figcaption>図4　周回経路とカメラ位置</figcaption>
 </figure>
-<figure id="fig5" data-page="3" data-pos="top">
+<figure id="fig5" data-page="4" data-pos="top">
   <div class="grid g3 uni a43">
     <div><img src="figures/cam-A.jpg" alt=""><span class="tag">カメラA</span></div>
     <div><img src="figures/cam-B.jpg" alt=""><span class="tag">カメラB</span></div>
@@ -126,7 +126,7 @@
   </div>
   <figcaption>図7　2周目の提示画面の例（右端は不正アクセスの演出画面）</figcaption>
 </figure>
-<figure id="fig8" data-page="4" data-pos="top">
+<figure id="fig8" data-page="5" data-pos="top">
   <div class="grid g3 uni a43">
     <div><img src="figures/sh-lap1-screen.jpg" alt=""><span class="lab">1周目：壁の手形</span></div>
     <div><img src="figures/sh-lap3-screen.jpg" alt=""><span class="lab">3周目：CG人形（右下）</span></div>

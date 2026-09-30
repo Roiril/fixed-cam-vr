@@ -93,10 +93,10 @@ figure + figure { margin-top: 3mm; }
 figure img { display: block; width: 100%; height: auto; }
 figcaption { font: 8pt/1.45 var(--sans); text-align: center; margin-top: 1.2mm; text-indent: 0; }
 /* 図の幅（写真の帯は全幅・図式は中央に小さめ） */
-#fig1 { width: 66mm; }
-#fig2 { width: 96mm; }
+#fig1 { width: 134mm; }
+#fig2 { width: 100mm; }
 #fig4 { width: 66mm; }
-#fig3 { width: 138mm; }
+#fig3 { width: 124mm; }
 #fig8 { width: 132mm; }
 
 .grid { display: grid; gap: 1.4mm; }

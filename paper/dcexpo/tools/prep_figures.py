@@ -123,6 +123,16 @@ for tag, n in (("stain", "005"), ("pov", "009"), ("dolls", "015"), ("lap1", "003
     d = shot(n)
     save(f"sh-{tag}-screen.jpg", crop169(Image.open(d / "1_screen.png")), f"logs/shots/.../{d.name}/1_screen.png", "スクリーンの最終合成")
 
+# ---- 3b. 図1（ユーザーが作った図。生成した設営イメージ写真に説明線を付けたもの・960x540） --------------
+# 写真は生成画像（Codex）。説明線と文字はユーザーが作成。そのまま使う（画像の加工・再描画はしない）。
+ENV_FIG1 = Path("C:/Users/kouga/Downloads/無題のプレゼンテーション.png")
+if ENV_FIG1.exists():
+    (OUT / "env-fig1.png").write_bytes(ENV_FIG1.read_bytes())
+    SOURCES["env-fig1.png"] = {"src": str(ENV_FIG1), "size": list(Image.open(OUT / "env-fig1.png").size),
+                               "note": "ユーザー作成の図1。生成画像の写真＋カメラA〜C・HMD・L字の壁の説明線"}
+else:
+    print("図1 の元ファイルが無いので複製をスキップ（既存の env-fig1.png を使う）")
+
 # ---- 4. 不正アクセスの演出画面 ------------------------------------------------------
 save("warning.jpg", Image.open(REPO / "output/unauthorized-access/hero-v4.png"),
      "output/unauthorized-access/hero-v4.png", "1280x720")

@@ -9,7 +9,6 @@ paper.html            本文の正。図の並びと図番号もここ
 paper.css             紙面（余白・文字サイズ・図の枠）。数値は :root に集約
 figures/              図（生成物。出所は figures/SOURCES.json）
 tools/prep_figures.py 図の素材を集めて figures/ へ（出所を記録・再実行可）
-tools/fig_env.py      図1（配置図）をベクタで描く
 paginate.js           組版（ページ割り付け・図の上下固定）
 tools/build.py        PDF 化（CDP）→ ページ画像 → 検査
 tools/tune.py         文字サイズ・行間を探索（窓の余り・図の規則違反・ページ数を点数化）
@@ -59,12 +58,16 @@ py -3.11 paper/dcexpo/tools/prep_figures.py    # 図を作り直すとき
 ## 図の方針
 
 - **削らない**。元の Word の 5 図の役割（配置・提示映像・合成・経路・各カメラ）は残し、
-  現行の構成と合わなくなったものを差し替えた
-  - 図1 配置図：ハンドアウト用の `docs/onsite/fig_room.py` を論文の 1 段幅で読める文字にした版（実寸は同じ）
-  - 図2 提示映像：CG 模型（台車の人形が写る）→ 実機の画面録画に
-  - 図3 合成：CG の怪物 → 実写プレート・生成素材・マスク・提示映像の実物 4 枚
+  現行の構成と合わなくなったものを差し替えた（2026-09-30）
+  - 図1 環境構成：**ユーザーが作った図**（生成した設営イメージ写真＋カメラA〜C・HMD・L字の壁の説明線）。
+    `figures/env-fig1.png`。元ファイルは `~/Downloads/無題のプレゼンテーション.png`（`prep_figures.py` が複製）
+  - 図2 提示映像：同じ瞬間の固定カメラ映像と体験者の視界（HMD）。`logs/shots` の撮影から
+  - 図3 合成：生映像・合成している層・提示映像を、手形・別の空間・CG 人形の 3 場面で。`logs/shots` の撮影から
   - 図4 経路：元図のまま。台車の人形だけ画像から消した（`cv2.inpaint`＋帯の描き直し）
-  - 図5 各カメラ：アプリが実際に使っている最新のプレート（`Assets/StreamingAssets/show/assets/plate_*_20260924_*`）
+  - 図5 各カメラ：体験中の生映像（Phone 01/02/03）。`logs/shots` の撮影から
+  - 図6〜8：実機（Quest）の画面録画と撮影から。導入〜結果表示・2周目の4画面・各周の画面
+- 撮影（`logs/shots/<serial>/`）は左グリップの撮影機能の出力（`.claude/memory/experience_shots.md`）。
+  1 回の押下で 生映像・合成層・最終合成・体験者の視界が同じ瞬間で揃う
 - 実機の画面は `output/quest-recordings/2026-09-27/quest-alpha/` の録画から抜く（`prep_figures.py`）。
   録画には作品内の日時・周の表示が入るので、そのまま証拠になる
 - 引き伸ばしはしない。切り出しは黒帯の除去（`autocrop`）と `object-fit: cover` のみ

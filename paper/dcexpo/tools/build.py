@@ -179,10 +179,12 @@ def check_layout(rep, quiet=False):
             print(f"  {f['id']}: p{f['page']} {f['pos']:6s} / 引用 p{cited}")
         if not f["placed"]:
             ng.append(f"{f['id']}: 割り当て頁 p{f['page']} が本文の頁数を超えている")
-        elif cited is not None and not (cited <= f["page"] <= cited + 1):
-            ng.append(f"{f['id']}: 引用 p{cited} から離れている（図 p{f['page']}）")
+        elif cited is not None and not (cited - 1 <= f["page"] <= cited + 1):   # 引用の前後 1 頁まで
+            ng.append(f"{f['id']}: 引用 p{cited} から 2 頁以上離れている（図 p{f['page']}）")
     pages = rep["pages"]
     for pg in pages[:-1]:
+        if pg.get("text_mm", 999) < 45:
+            ng.append(f"p{pg['page']}: 本文が {pg.get('text_mm', 0):.0f}mm しか無い（図で埋まっている。図の頁を分ける）")
         if pg["slack_mm"] > 9.5:
             ng.append(f"p{pg['page']}: 本文の窓に {pg['slack_mm']:.1f}mm の余り（行の区切りで詰められない。図の頁か寸法を見直す）")
     if not quiet:
