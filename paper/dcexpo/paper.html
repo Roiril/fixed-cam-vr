@@ -76,31 +76,37 @@
 </figure>
 <figure id="fig2" data-page="2" data-pos="top" data-row="A">
   <div class="grid g2 uni a43">
-    <div><img src="figures/plate-A.jpg" alt=""><span class="tag">カメラAの映像</span></div>
-    <div><img src="figures/q-fixed.jpg" alt=""><span class="tag">HMD内のスクリーン</span></div>
+    <div><img src="figures/sh-fixed-raw.jpg" alt=""><span class="tag">固定カメラの生映像</span></div>
+    <div><img src="figures/sh-fixed-hmd.jpg" alt=""><span class="tag">体験者の視界（HMD）</span></div>
   </div>
-  <figcaption>図2　固定カメラの映像（左）と，HMD内の仮想スクリーンに提示された映像（右）</figcaption>
+  <figcaption>図2　同じ瞬間の固定カメラ映像（左）と，HMD内の仮想スクリーンに提示された体験者の視界（右）</figcaption>
 </figure>
 <figure id="fig3" data-page="2" data-pos="bottom">
-  <div class="grid g4">
-    <div><img src="figures/comp-plate.jpg" alt=""><span class="lab">① 固定カメラの実写</span></div>
-    <div><img src="figures/comp-source.jpg" alt=""><span class="lab">② 生成した差し替え素材</span></div>
-    <div><img src="figures/comp-mask.jpg" alt=""><span class="lab">③ 差し替え領域のマスク</span></div>
-    <div><img src="figures/comp-result.jpg" alt=""><span class="lab">④ 提示される映像</span></div>
+  <div class="grid g3 uni a43 matrix">
+    <span class="hdr">加工前の生映像</span><span class="hdr">合成している層</span><span class="hdr">提示映像</span>
+    <div><img src="figures/sh-hand-raw.jpg" alt=""><span class="tag">1周目</span></div>
+    <div><img src="figures/sh-hand-layers.jpg" alt=""></div>
+    <div><img src="figures/sh-hand-screen.jpg" alt=""></div>
+    <div><img src="figures/sh-back-raw.jpg" alt=""><span class="tag">2周目</span></div>
+    <div><img src="figures/sh-back-layers.jpg" alt=""></div>
+    <div><img src="figures/sh-back-screen.jpg" alt=""></div>
+    <div><img src="figures/sh-cg-raw.jpg" alt=""><span class="tag">3周目</span></div>
+    <div><img src="figures/sh-cg-layers.jpg" alt=""></div>
+    <div><img src="figures/sh-cg-screen.jpg" alt=""></div>
   </div>
-  <figcaption>図3　提示映像の合成例（カメラAの映像に，幕の染みを②③で合成して④とする）</figcaption>
+  <figcaption>図3　提示映像の合成例（Meta Quest 3 の実機で撮影）．上から，1周目の壁の手形，2周目の別の空間への差し替え，3周目のCG人形．合成している層はライブ映像を黒にして合成物だけを描いたもの</figcaption>
 </figure>
-<figure id="fig4" data-page="3" data-pos="bottom" data-row="B">
+<figure id="fig4" data-page="3" data-pos="bottom">
   <img src="figures/route.jpg" alt="周回経路とカメラ位置">
   <figcaption>図4　周回経路とカメラ位置</figcaption>
 </figure>
 <figure id="fig5" data-page="3" data-pos="top">
-  <div class="grid g3 uni a32">
-    <div><img src="figures/plate-A.jpg" alt=""><span class="tag">カメラA</span></div>
-    <div><img src="figures/plate-B.jpg" alt=""><span class="tag">カメラB</span></div>
-    <div><img src="figures/plate-C.jpg" alt=""><span class="tag">カメラC</span></div>
+  <div class="grid g3 uni a43">
+    <div><img src="figures/cam-A.jpg" alt=""><span class="tag">カメラA</span></div>
+    <div><img src="figures/cam-B.jpg" alt=""><span class="tag">カメラB</span></div>
+    <div><img src="figures/cam-C.jpg" alt=""><span class="tag">カメラC</span></div>
   </div>
-  <figcaption>図5　各カメラが撮影する映像の例（体験者が映る前の実写）</figcaption>
+  <figcaption>図5　各カメラの生映像の例（体験中に撮影）</figcaption>
 </figure>
 <figure id="fig6" data-page="4" data-pos="top">
   <div class="grid g4 uni h27 c4w">
@@ -111,18 +117,22 @@
   </div>
   <figcaption>図6　導入から結果表示までの提示画面の例（Meta Quest 3 の画面録画より）</figcaption>
 </figure>
-<figure id="fig7" data-page="3" data-pos="bottom" data-row="B">
-  <img src="figures/warning.jpg" alt="観測装置への不正アクセスを示す演出画面">
-  <figcaption>図7　観測装置への不正アクセスを示す演出画面</figcaption>
+<figure id="fig7" data-page="4" data-pos="top">
+  <div class="grid g4 uni a43">
+    <div><img src="figures/sh-stain-screen.jpg" alt=""><span class="lab">幕に浮かぶ染み</span></div>
+    <div><img src="figures/sh-back-screen.jpg" alt=""><span class="lab">別の空間への差し替え</span></div>
+    <div><img src="figures/sh-pov-screen.jpg" alt=""><span class="lab">低い位置からの人形の視点</span></div>
+    <div><img src="figures/warning.jpg" alt=""><span class="lab">観測装置への不正アクセス</span></div>
+  </div>
+  <figcaption>図7　2周目の提示画面の例（右端は不正アクセスの演出画面）</figcaption>
 </figure>
 <figure id="fig8" data-page="4" data-pos="top">
-  <div class="grid g4 uni a43">
-    <div><img src="figures/q-lap1.jpg" alt=""><span class="lab">1周目：固定視点で歩く</span></div>
-    <div><img src="figures/q-lap2.jpg" alt=""><span class="lab">2周目：別の空間への差し替え</span></div>
-    <div><img src="figures/q-lap3.jpg" alt=""><span class="lab">3周目：画面の質感が粗く変わる</span></div>
-    <div><img src="figures/q-final.jpg" alt=""><span class="lab">終幕：人形の群れとエージェント</span></div>
+  <div class="grid g3 uni a43">
+    <div><img src="figures/sh-lap1-screen.jpg" alt=""><span class="lab">1周目：壁の手形</span></div>
+    <div><img src="figures/sh-lap3-screen.jpg" alt=""><span class="lab">3周目：CG人形（右下）</span></div>
+    <div><img src="figures/sh-dolls-screen.jpg" alt=""><span class="lab">終幕：人形の群れ</span></div>
   </div>
-  <figcaption>図8　各周の提示画面の例（Meta Quest 3 の画面録画より。画面上部の日時と周の表示は作品内のもの）</figcaption>
+  <figcaption>図8　各周の提示画面の例（画面上部に作品内の日時と周の表示が入る）</figcaption>
 </figure>
 </div>
 

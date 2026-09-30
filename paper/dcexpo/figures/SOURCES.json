@@ -7,61 +7,157 @@
   ],
   "note": "元図4。周回経路とカメラ位置。台車の人形を消した（erase_cart_doll）"
  },
- "plate-A.jpg": {
-  "src": "Assets/StreamingAssets/show/assets/plate_A_20260924_172209_b8e1f375.jpg",
+ "sh-hand-raw.jpg": {
+  "src": "logs/shots/.../20260930_140322_003/2_raw.png",
   "size": [
    640,
    480
   ],
-  "note": "640x480。黒帯なし（そのまま）"
+  "note": "加工前の生映像 640x480"
  },
- "plate-B.jpg": {
-  "src": "Assets/StreamingAssets/show/assets/plate_B_20260924_172210_4abb5bae.jpg",
-  "size": [
-   640,
-   480
-  ],
-  "note": "640x480。黒帯なし（そのまま）"
- },
- "plate-C.jpg": {
-  "src": "Assets/StreamingAssets/show/assets/plate_C_20260924_172211_a1c7c02f.jpg",
-  "size": [
-   640,
-   480
-  ],
-  "note": "640x480。黒帯なし（そのまま）"
- },
- "comp-plate.jpg": {
-  "src": "Assets/StreamingAssets/show/assets/plate_A_20260924_172209_b8e1f375.jpg",
-  "size": [
-   640,
-   480
-  ],
-  "note": "実写プレート（カメラA・最新版）"
- },
- "comp-source.jpg": {
-  "src": "tools/web-compositor/captures/gen_stainA_still_20260924_candidate.png",
-  "size": [
-   640,
-   480
-  ],
-  "note": "生成素材（640x480）"
- },
- "comp-mask.jpg": {
-  "src": "Logs/gen-plate/stain_A_20260924_mask_v1/mask.png",
-  "size": [
-   480,
-   360
-  ],
-  "note": "差し替え領域のマスク"
- },
- "comp-result.jpg": {
-  "src": "Logs/gen-plate/stain_A_20260924_mask_v1/delivered.png",
+ "sh-hand-layers.jpg": {
+  "src": "logs/shots/.../20260930_140322_003/3_layers.png",
   "size": [
    960,
    720
   ],
-  "note": "境界ブレンド・色合わせ・ポストFX 後。1280x720 から 960x720 を切り出し"
+  "note": "合成している層だけ（ライブは黒）"
+ },
+ "sh-hand-screen.jpg": {
+  "src": "logs/shots/.../20260930_140322_003/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
+ },
+ "sh-back-raw.jpg": {
+  "src": "logs/shots/.../20260930_140414_007/2_raw.png",
+  "size": [
+   640,
+   480
+  ],
+  "note": "加工前の生映像 640x480"
+ },
+ "sh-back-layers.jpg": {
+  "src": "logs/shots/.../20260930_140414_007/3_layers.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "合成している層だけ（ライブは黒）"
+ },
+ "sh-back-screen.jpg": {
+  "src": "logs/shots/.../20260930_140414_007/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
+ },
+ "sh-cg-raw.jpg": {
+  "src": "logs/shots/.../20260930_140501_011/2_raw.png",
+  "size": [
+   640,
+   480
+  ],
+  "note": "加工前の生映像 640x480"
+ },
+ "sh-cg-layers.jpg": {
+  "src": "logs/shots/.../20260930_140501_011/3_layers.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "合成している層だけ（ライブは黒）"
+ },
+ "sh-cg-screen.jpg": {
+  "src": "logs/shots/.../20260930_140501_011/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
+ },
+ "cam-A.jpg": {
+  "src": "logs/shots/.../20260930_140501_011/2_raw.png",
+  "size": [
+   640,
+   480
+  ],
+  "note": "カメラAの生映像"
+ },
+ "cam-B.jpg": {
+  "src": "logs/shots/.../20260930_140322_003/2_raw.png",
+  "size": [
+   640,
+   480
+  ],
+  "note": "カメラBの生映像"
+ },
+ "cam-C.jpg": {
+  "src": "logs/shots/.../20260930_140429_009/2_raw.png",
+  "size": [
+   640,
+   480
+  ],
+  "note": "カメラCの生映像"
+ },
+ "sh-fixed-raw.jpg": {
+  "src": "logs/shots/.../20260930_140309_002/2_raw.png",
+  "size": [
+   640,
+   480
+  ],
+  "note": "生映像"
+ },
+ "sh-fixed-hmd.jpg": {
+  "src": "logs/shots/.../20260930_140309_002/4_hmd.png",
+  "size": [
+   650,
+   502
+  ],
+  "note": "体験者の視界（左眼の投影）"
+ },
+ "sh-stain-screen.jpg": {
+  "src": "logs/shots/.../20260930_140356_005/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
+ },
+ "sh-pov-screen.jpg": {
+  "src": "logs/shots/.../20260930_140429_009/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
+ },
+ "sh-dolls-screen.jpg": {
+  "src": "logs/shots/.../20260930_140538_015/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
+ },
+ "sh-lap1-screen.jpg": {
+  "src": "logs/shots/.../20260930_140322_003/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
+ },
+ "sh-lap3-screen.jpg": {
+  "src": "logs/shots/.../20260930_140501_011/1_screen.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "スクリーンの最終合成"
  },
  "warning.jpg": {
   "src": "output/unauthorized-access/hero-v4.png",

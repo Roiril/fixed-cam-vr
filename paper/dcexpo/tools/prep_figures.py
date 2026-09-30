@@ -86,26 +86,42 @@ def erase_cart_doll(path):
 
 erase_cart_doll(OUT / "route.jpg")
 
-# ---- 2. 各カメラの実写プレート（アプリが実際に使っている最新の版・2026-09-24 撮影） ------------
-PLATES = {"A": "plate_A_20260924_172209_b8e1f375.jpg",
-          "B": "plate_B_20260924_172210_4abb5bae.jpg",
-          "C": "plate_C_20260924_172211_a1c7c02f.jpg"}
-for cam, fn in PLATES.items():
-    src = REPO / "Assets/StreamingAssets/show/assets" / fn
-    save(f"plate-{cam}.jpg", Image.open(src).convert("RGB"),
-         f"Assets/StreamingAssets/show/assets/{fn}", "640x480。黒帯なし（そのまま）")
+# ---- 2. 体験中の撮影（左グリップの撮影機能・2026-09-30・クエストα）-------------------------
+# 1 回の押下 = 1 フォルダ: 1_screen（スクリーンの最終合成）/ 2_raw（加工前の生映像）/ 3_layers（合成している層だけ）/
+# 3_cg_alpha / 4_hmd（体験者の視界）。同じ瞬間の 4 種が揃うので、合成の前後を並べられる。
+SHOTS = REPO / "logs/shots/2G0YC1ZF890864"
 
-# ---- 3. 合成の例（染み・カメラ A） ---------------------------------------------------
-cap = REPO / "tools/web-compositor/captures"
-gen = REPO / "Logs/gen-plate/stain_A_20260924_mask_v1"
-save("comp-plate.jpg", Image.open(REPO / "Assets/StreamingAssets/show/assets" / PLATES["A"]).convert("RGB"),
-     f"Assets/StreamingAssets/show/assets/{PLATES['A']}", "実写プレート（カメラA・最新版）")
-save("comp-source.jpg", Image.open(cap / "gen_stainA_still_20260924_candidate.png"),
-     "tools/web-compositor/captures/gen_stainA_still_20260924_candidate.png", "生成素材（640x480）")
-save("comp-mask.jpg", Image.open(gen / "mask.png").convert("RGB").crop((80, 0, 560, 360)),
-     "Logs/gen-plate/stain_A_20260924_mask_v1/mask.png", "差し替え領域のマスク")
-save("comp-result.jpg", Image.open(gen / "delivered.png").convert("RGB").crop((160, 0, 1120, 720)),
-     "Logs/gen-plate/stain_A_20260924_mask_v1/delivered.png", "境界ブレンド・色合わせ・ポストFX 後。1280x720 から 960x720 を切り出し")
+
+def shot(n):
+    return next(SHOTS.glob(f"2*_{n}"))
+
+
+def crop169(im):
+    """スクリーンは 16:9 の枠に 4:3 の映像が入る（左右 160px が黒帯）。黒帯だけを除く。"""
+    return im.crop((160, 0, 1120, 720))
+
+
+def hmd_crop(im, pad=24):
+    import numpy as np
+    a = np.asarray(im.convert("RGB")).max(axis=2)
+    ys, xs = np.where(a > 18)
+    return im.crop((max(0, xs.min() - pad), max(0, ys.min() - pad), min(im.width, xs.max() + pad), min(im.height, ys.max() + pad)))
+
+
+for tag, n in (("hand", "003"), ("back", "007"), ("cg", "011")):       # 合成の 3 場面
+    d = shot(n)
+    save(f"sh-{tag}-raw.jpg", Image.open(d / "2_raw.png"), f"logs/shots/.../{d.name}/2_raw.png", "加工前の生映像 640x480")
+    save(f"sh-{tag}-layers.jpg", crop169(Image.open(d / "3_layers.png")), f"logs/shots/.../{d.name}/3_layers.png", "合成している層だけ（ライブは黒）")
+    save(f"sh-{tag}-screen.jpg", crop169(Image.open(d / "1_screen.png")), f"logs/shots/.../{d.name}/1_screen.png", "スクリーンの最終合成")
+for cam, n in (("A", "011"), ("B", "003"), ("C", "009")):              # 各カメラの生映像（Phone 01 / 02 / 03）
+    d = shot(n)
+    save(f"cam-{cam}.jpg", Image.open(d / "2_raw.png"), f"logs/shots/.../{d.name}/2_raw.png", f"カメラ{cam}の生映像")
+d = shot("002")                                                          # 同じ瞬間の生映像と体験者の視界
+save("sh-fixed-raw.jpg", Image.open(d / "2_raw.png"), f"logs/shots/.../{d.name}/2_raw.png", "生映像")
+save("sh-fixed-hmd.jpg", hmd_crop(Image.open(d / "4_hmd.png")), f"logs/shots/.../{d.name}/4_hmd.png", "体験者の視界（左眼の投影）")
+for tag, n in (("stain", "005"), ("pov", "009"), ("dolls", "015"), ("lap1", "003"), ("lap3", "011")):
+    d = shot(n)
+    save(f"sh-{tag}-screen.jpg", crop169(Image.open(d / "1_screen.png")), f"logs/shots/.../{d.name}/1_screen.png", "スクリーンの最終合成")
 
 # ---- 4. 不正アクセスの演出画面 ------------------------------------------------------
 save("warning.jpg", Image.open(REPO / "output/unauthorized-access/hero-v4.png"),
