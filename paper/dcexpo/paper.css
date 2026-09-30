@@ -1,14 +1,14 @@
-/* 廻リ視 DCEXPO 版 紙面。元 Word（学会論文フォーマット）に寄せた白地・2段組。
-   数値はすべて :root に集める。紙面の調整はここだけで済むようにする。 */
+/* 廻リ視 DCEXPO 版 紙面。元 Word（学会論文フォーマット）に寄せた白地・1段組。
+   組版（ページ割り・図の上下固定）は paginate.js。数値はすべて :root に集める。 */
 :root {
   --page-w: 210mm;
-  --page-h: 297mm;
+  --page-h: 296.6mm;          /* 297mm ちょうどだと丸めで次の頁が生えるので少し小さく */
   --m-top: 16mm;
   --m-bottom: 15mm;
-  --m-side: 19mm;
-  --col-gap: 6mm;
-  --body-size: 10.00pt;
-  --body-lh: 1.62;
+  --m-side: 21mm;
+  --band-gap: 4mm;            /* 本文と図の間の最小の空き */
+  --body-size: 9.80pt;
+  --body-lh: 1.68;
   --ink: #111;
   --sub: #555;
   --rule: #999;
@@ -17,10 +17,7 @@
   --latin-serif: "Times New Roman", "BIZ UDPMincho", serif;
 }
 
-@page {
-  size: A4;
-  margin: var(--m-top) var(--m-side) var(--m-bottom);
-}
+@page { size: A4; margin: 0; }
 
 * { box-sizing: border-box; }
 html { background: #fff; }
@@ -33,86 +30,92 @@ body {
   text-align: justify;
   word-break: normal;
   line-break: strict;
-  font-feature-settings: "palt" 0;
   hanging-punctuation: none;
 }
 
-/* ---- 表題部（全段） ---- */
+/* ---- ページの枠（paginate.js が作る） ---- */
+.page {
+  width: var(--page-w); height: var(--page-h);
+  padding: var(--m-top) var(--m-side) var(--m-bottom);
+  display: flex; flex-direction: column;
+  overflow: hidden; break-after: page; position: relative; background: #fff;
+}
+.page:last-child { break-after: auto; }
+.band { display: flex; flex-direction: column; flex: none; }
+.band.top { margin-bottom: 0; }
+.band.bottom { margin-top: auto; }
+.win { flex: none; overflow: hidden; position: relative; }
+.win .inner { position: absolute; left: 0; top: 0; width: 100%; }
+#measure { position: absolute; left: -9999px; top: 0; width: calc(var(--page-w) - 2 * var(--m-side)); }
+#measure > * { display: flow-root; }   /* 窓の中（.inner は絶対配置＝独立した整形文脈）と余白の畳み込みを揃える。ずれると行の途中で切れる */
+
+/* 図を上に置く頁は、図の下に本文との間の空きを取る */
+.band.top:not(:empty) { padding-bottom: var(--band-gap); }
+.band.bottom:not(:empty) { padding-top: var(--band-gap); }
+
+/* ---- 表題部（1 頁目の上端） ---- */
 .masthead { text-align: center; margin: 0 0 3.2mm; }
 .masthead .event {
   font: 8pt/1 var(--sans); color: var(--sub); letter-spacing: .08em;
   text-align: right; margin: 0 0 5mm;
 }
-.masthead h1 {
-  font: 700 19pt/1.3 var(--sans); letter-spacing: .04em; margin: 0 0 2mm;
-}
-.masthead .en {
-  font: 10.5pt/1.3 var(--latin-serif); margin: 0;
-}
+.masthead h1 { font: 700 19pt/1.3 var(--sans); letter-spacing: .04em; margin: 0 0 2mm; }
+.masthead .en { font: 10.5pt/1.3 var(--latin-serif); margin: 0; }
 
 .abstract {
   margin: 0 0 4mm; padding: 0 4mm;
-  font-family: var(--sans); font-size: 8.4pt; line-height: 1.7;
+  font-family: var(--sans); font-size: 8.8pt; line-height: 1.75;
 }
-.abstract p { margin: 0 0 1mm; text-align: justify; }
+.abstract p { margin: 0 0 1mm; text-align: justify; text-indent: 0; }
 .abstract .kw { margin-top: 1.4mm; }
 .abstract b { font-weight: 700; }
 hr.sep { border: 0; border-top: .4pt solid var(--rule); margin: 0 0 4mm; }
 
-/* ---- 本文（2段組。自動で流れる） ---- */
-.body { column-count: 2; column-gap: var(--col-gap); column-fill: balance; }
-
-h2, h3 { font-family: var(--sans); font-weight: 700; break-after: avoid; }
-h2 { font-size: 10.6pt; line-height: 1.4; margin: 3.4mm 0 1.2mm; }
-h3 { font-size: 9.4pt; line-height: 1.4; margin: 2.2mm 0 .6mm; }
-h2:first-child { margin-top: 0; }
+/* ---- 本文 ---- */
+h2, h3 { font-family: var(--sans); font-weight: 700; }
+h2 { font-size: 11pt; line-height: 1.4; margin: 5mm 0 1.6mm; }
+h3 { font-size: 9.8pt; line-height: 1.4; margin: 3mm 0 .8mm; }
+#stream > :first-child { margin-top: 0; }
 
 p { margin: 0; text-indent: 1em; }
-p + p { margin-top: 0; }
-p.lead { text-indent: 0; }
 p .run { font-family: var(--sans); font-weight: 700; }   /* 「導入：」など段落頭の見出し */
 
+/* ---- 参考文献 ---- */
+h2.refh { text-align: center; margin-top: 6mm; }
+p.ref { font-size: 8.8pt; line-height: 1.55; text-align: left; padding-left: 8mm; text-indent: -8mm; margin-bottom: .8mm; }
+
 /* ---- 図 ---- */
-figure { margin: 2mm 0 2.6mm; break-inside: avoid; text-indent: 0; }
+figure { margin: 0 auto; text-indent: 0; width: 100%; break-inside: avoid; }
+figure + figure { margin-top: 3mm; }
+.band > .row + *, .band > * + .row { margin-top: 3mm; }
+.row { display: flex; gap: 6mm; justify-content: center; align-items: flex-start; }
+.row > figure { flex: none; margin: 0; }
 figure img { display: block; width: 100%; height: auto; }
-figcaption {
-  font: 7.9pt/1.45 var(--sans); text-align: center; margin-top: 1mm; text-indent: 0;
-}
-figure.wide { column-span: all; margin: 2.6mm 0 3mm; }
+figcaption { font: 8pt/1.45 var(--sans); text-align: center; margin-top: 1.2mm; text-indent: 0; }
+/* 図の幅（写真の帯は全幅・図式は中央に小さめ） */
+#fig1 { width: 72mm; }
+#fig2 { width: 88mm; }
+#fig4 { width: 66mm; }
+#fig7 { width: 84mm; }
 
 .grid { display: grid; gap: 1.4mm; }
 .grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .grid > div { position: relative; min-width: 0; }
-.grid .lab {
-  display: block; font: 7.4pt/1.3 var(--sans); text-align: center; margin-top: .6mm;
-}
+.grid .lab { display: block; font: 7.6pt/1.3 var(--sans); text-align: center; margin-top: .6mm; }
 .grid .tag {
   position: absolute; left: 1mm; top: 1mm; padding: .2mm 1.2mm;
-  font: 700 7.4pt/1.3 var(--sans); color: #fff; background: rgba(0,0,0,.62);
+  font: 700 7.6pt/1.3 var(--sans); color: #fff; background: rgba(0,0,0,.62);
 }
-.arrow { align-self: center; text-align: center; font: 700 11pt/1 var(--sans); color: var(--sub); }
-
-
 /* 画像の枠：切り出しで縦横比を揃える（引き伸ばしはしない＝object-fit: cover） */
 .grid.uni img { width: 100%; object-fit: cover; }
 .grid.a32 img { aspect-ratio: 4 / 3; }
 .grid.a43 img { aspect-ratio: 4 / 3; }
-figure.narrow img { width: 92%; margin: 0 auto; }
 .grid.c4w { grid-template-columns: 1fr 1fr 1fr 1.55fr; }
 .grid.h27 img { aspect-ratio: auto; height: 27mm; }
 
-/* ---- 参考文献 ---- */
-.refs h2 { text-align: center; margin-top: 4mm; }
-.refs ol { list-style: none; margin: 0; padding: 0; font-size: 8.4pt; line-height: 1.5; }
-.refs li { display: grid; grid-template-columns: 6.5mm 1fr; text-indent: 0; text-align: left; margin-bottom: .8mm; }
-
-/* ---- 校正用（?debug 付きで開いたとき／build --debug） ---- */
-body.debug .body { outline: .3pt dashed #c00; }
-body.debug figure { outline: .3pt dashed #06c; }
-
 @media screen {
-  body { max-width: var(--page-w); margin: 0 auto; padding: var(--m-top) var(--m-side); background: #fff; }
   html { background: #ddd; }
+  .page { margin: 6mm auto; box-shadow: 0 0 4px rgba(0,0,0,.3); }
 }

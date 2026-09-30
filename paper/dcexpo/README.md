@@ -1,6 +1,6 @@
 # 廻リ視 DCEXPO 版 資料の執筆環境
 
-元の Word（`IVRC2026_Roiril_v1.6.5.2.docx`・学会論文フォーマット）に寄せた A4・白地・2 段組の紙面を、
+元の Word（`IVRC2026_Roiril_v1.6.5.2.docx`・学会論文フォーマット）に寄せた A4・白地・1 段組の紙面を、
 **HTML + CSS で書いて Edge で PDF にする**環境。シュビーが本文と図を直接編集し、機械検査で崩れを見つける。
 Word には戻さない（図・注釈・段組の往復で壊れやすいため）。
 
@@ -10,8 +10,9 @@ paper.css             紙面（余白・文字サイズ・図の枠）。数値�
 figures/              図（生成物。出所は figures/SOURCES.json）
 tools/prep_figures.py 図の素材を集めて figures/ へ（出所を記録・再実行可）
 tools/fig_env.py      図1（配置図）をベクタで描く
-tools/build.py        PDF 化 → ページ画像 → 検査
-tools/tune.py         文字サイズ・行間を探索（下端の空き・段の空白・見出しの取り残しを点数化）
+paginate.js           組版（ページ割り付け・図の上下固定）
+tools/build.py        PDF 化（CDP）→ ページ画像 → 検査
+tools/tune.py         文字サイズ・行間を探索（窓の余り・図の規則違反・ページ数を点数化）
 out/                  生成物（git 管理外）  out/paper.pdf  out/page-N.png  out/sheet.png
 ```
 
@@ -19,18 +20,30 @@ out/                  生成物（git 管理外）  out/paper.pdf  out/page-N.pn
 
 ```bash
 py -3.10 paper/dcexpo/tools/build.py --sheet   # PDF・ページ画像・検査（Python 3.10 = PyMuPDF あり）
-py -3.10 paper/dcexpo/tools/tune.py --apply    # 本文を変えたあと。約 2 分。paper.css の文字サイズ・行間を更新
+py -3.10 paper/dcexpo/tools/tune.py --apply    # 本文を変えたあと。約 1.5 分。paper.css の文字サイズ・行間を更新
 py -3.11 paper/dcexpo/tools/prep_figures.py    # 図を作り直すとき
 ```
 
-段組は自動で流れるので、**本文か図を変えたら build → 必要なら tune → 目視**。
+**本文か図を変えたら build →（文字量が変わったら）tune → 目視。**
 `out/sheet.png`（全ページ 1 枚）で全体、`out/page-N.png` で細部を見る。
+
+## 組版のしくみ（paginate.js）
+
+- 本文は 1 段。**図は各ページの上端か下端に固定**する（2026-09-30 ユーザー指示）。2 段組は図の位置で段が崩れたのでやめた
+- 本文（`#stream`）を行単位でページに割り付ける。ページの本文の窓の高さ ＝ 内寸 − 見出し部 − 上の図 − 下の図。
+  切れ目は行と行の間だけ。見出しでページを終えない・4 行以上の段落は前後に 2 行以上残す・3 行以下の段落は割らない
+- 図の置き場所は `<figure>` の属性で決める: `data-page`（1 始まり）・`data-pos`（top | bottom）・
+  同じ `data-row` の図は横に並べる（図式 2 枚など）。**図は本文の引用と同じ頁か次の頁に置く**（build が検査する）
+- ページ数は本文と図の量で決まる。溢れたら `data-page` を動かすか、`paper.css` の図の幅（`#figN`）を小さくする
+- Edge は CDP（`--remote-debugging-port`）で動かす。`msedge.exe` の `--dump-dom` は標準出力が空になる（GUI サブシステム）。
+  組版の報告（図の頁・窓の余り）は CDP で読む
 
 ## 検査（build.py）
 
 - ページ数（`MAX_PAGES`。DCEXPO の規定が分かったら入れる。2026-09-30 時点は上限なし）
 - 余白のはみ出し（画素で判定。`object-fit` の画像は PDF 座標では測れない）
-- ページ下端の空き（最終頁以外で 22mm 超は NG）
+- 本文の窓の余り（最終頁以外で 9.5mm ＝ 約 1.5 行 超は NG）と、ページ下端の空き（22mm 超は NG）
+- 図の置き場所（引用より前・2 頁以上あとは NG）
 - 図が全部 PDF に載っているか・図題の頁
 - フォントの埋め込み・文字化け
 - 通っても**目視は必要**。数値では拾えない: 図の切れ方・ラベルの重なり・「その図が本文と合っているか」

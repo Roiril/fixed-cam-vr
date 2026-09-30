@@ -33,22 +33,86 @@ GAP_LIMIT_MM = 22          # 最終頁以外で、本文の下端が下余白よ
 
 
 def render_pdf(html=HTML, pdf=PDF, quiet=False):
+    """Edge を CDP（--remote-debugging-port）で動かし、組版スクリプトの完了を待って PDF 化する。
+    戻り値は paginate.js の報告（dict）。ページ内の例外・console.error は標準出力へ出す。
+    ⚠ msedge.exe は GUI サブシステムで --dump-dom の標準出力が空になるため、CDP で読む。"""
+    import base64
+    import json
+    import socket
+    import tempfile
+    import urllib.request
+    import websocket
+
     edge = next((p for p in EDGE if Path(p).exists()), None)
     if not edge:
         sys.exit("Edge が見つからない")
-    if pdf.exists():
-        pdf.unlink()
-    cmd = [edge, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
-           "--run-all-compositor-stages-before-draw", "--virtual-time-budget=8000",
-           f"--print-to-pdf={pdf}", html.as_uri()]
-    t = time.time()
-    subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-    for _ in range(50):                      # 書き出し完了待ち
-        if pdf.exists() and pdf.stat().st_size > 0:
-            break
-        time.sleep(0.2)
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        port = sk.getsockname()[1]
+    prof = tempfile.mkdtemp(prefix="edge-paper-")
+    proc = subprocess.Popen([edge, "--headless=new", "--disable-gpu", f"--remote-debugging-port={port}",
+                             f"--user-data-dir={prof}", "--no-first-run", "--no-default-browser-check", "about:blank"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    t0 = time.time()
+    try:
+        ws_url = None
+        for _ in range(100):
+            try:
+                tabs = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/json", timeout=2))
+                ws_url = next(t["webSocketDebuggerUrl"] for t in tabs if t.get("type") == "page")
+                break
+            except Exception:
+                time.sleep(0.2)
+        if not ws_url:
+            sys.exit("Edge の CDP に繋がらない")
+        ws = websocket.create_connection(ws_url, timeout=60, suppress_origin=True)
+        mid = [0]
+        logs = []
+
+        def call(method, params=None):
+            mid[0] += 1
+            ws.send(json.dumps({"id": mid[0], "method": method, "params": params or {}}))
+            while True:
+                msg = json.loads(ws.recv())
+                if msg.get("method") == "Runtime.exceptionThrown":
+                    d = msg["params"]["exceptionDetails"]
+                    logs.append("例外: " + (d.get("exception", {}).get("description") or d.get("text", "")))
+                elif msg.get("method") == "Runtime.consoleAPICalled" and msg["params"]["type"] in ("error", "warning"):
+                    logs.append("console." + msg["params"]["type"] + ": " + " ".join(str(a.get("value", a.get("description", ""))) for a in msg["params"]["args"]))
+                if msg.get("id") == mid[0]:
+                    if "error" in msg:
+                        raise RuntimeError(f"{method}: {msg['error']}")
+                    return msg.get("result", {})
+
+        call("Page.enable")
+        call("Runtime.enable")
+        call("Page.navigate", {"url": html.as_uri()})
+        report = None
+        for _ in range(150):                                   # 最大 30 秒、組版の完了（data-ready）を待つ
+            r = call("Runtime.evaluate", {"expression": "document.body && document.body.dataset.ready === '1' ? document.getElementById('report').textContent : ''", "returnByValue": True})
+            v = r.get("result", {}).get("value")
+            if v:
+                report = json.loads(v)
+                break
+            time.sleep(0.2)
+        res = call("Page.printToPDF", {"printBackground": True, "preferCSSPageSize": True,
+                                        "displayHeaderFooter": False, "marginTop": 0, "marginBottom": 0,
+                                        "marginLeft": 0, "marginRight": 0})
+        pdf.write_bytes(base64.b64decode(res["data"]))
+        ws.close()
+    finally:
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+        import shutil
+        shutil.rmtree(prof, ignore_errors=True)
+    for m in logs:
+        print("  [page]", m)
     if not quiet:
-        print(f"PDF: {pdf.name} {pdf.stat().st_size/1e6:.2f}MB ({time.time()-t:.1f}s)")
+        print(f"PDF: {pdf.name} {pdf.stat().st_size/1e6:.2f}MB ({time.time()-t0:.1f}s)")
+    return report
 
 
 def html_with_vars(vars_: dict, name="_tune.html") -> Path:
@@ -100,6 +164,30 @@ def page_metrics(doc):
         res.append({"page": pno, "gap_l": gap(l, mid), "gap_r": gap(mid, r), "gap": gap(l, r), "orphan": orphan,
                     "blank_l": blank_run(l, mid), "blank_r": blank_run(mid, r)})
     return res
+
+
+def check_layout(rep, quiet=False):
+    """図を各ページの上端か下端に置く方針の検査（paginate.js の報告から）。"""
+    ng = []
+    if rep is None:
+        return ["組版の報告が取れない（paginate.js が動いていない）"]
+    if not quiet:
+        print("図の置き場所（割り当て頁・位置 / 最初に引用している頁）:")
+    for f in rep["figs"]:
+        cited = f["cited_page"]
+        if not quiet:
+            print(f"  {f['id']}: p{f['page']} {f['pos']:6s} / 引用 p{cited}")
+        if not f["placed"]:
+            ng.append(f"{f['id']}: 割り当て頁 p{f['page']} が本文の頁数を超えている")
+        elif cited is not None and not (cited <= f["page"] <= cited + 1):
+            ng.append(f"{f['id']}: 引用 p{cited} から離れている（図 p{f['page']}）")
+    pages = rep["pages"]
+    for pg in pages[:-1]:
+        if pg["slack_mm"] > 9.5:
+            ng.append(f"p{pg['page']}: 本文の窓に {pg['slack_mm']:.1f}mm の余り（行の区切りで詰められない。図の頁か寸法を見直す）")
+    if not quiet:
+        print("窓の余り(mm):", ", ".join(f"p{p['page']}={p['slack_mm']:.1f}" for p in pages))
+    return ng
 
 
 def check(doc):
@@ -161,7 +249,7 @@ def check(doc):
 
 
 def main():
-    render_pdf()
+    report = render_pdf()
     doc = fitz.open(PDF)
     for old in OUT.glob("page-*.png"):
         old.unlink()
@@ -175,7 +263,7 @@ def main():
         for im in ims:
             sheet.paste(im, (x, 0)); x += im.width + 10
         sheet.save(OUT / "sheet.png")
-    ng = check(doc)
+    ng = check_layout(report) + check(doc)
     if ng:
         print("\nNG:")
         for m in ng:
