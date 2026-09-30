@@ -120,12 +120,12 @@
   "note": "生映像"
  },
  "sh-fixed-hmd.jpg": {
-  "src": "logs/shots/.../20260930_140309_002/4_hmd.png",
+  "src": "C:\\Users\\kouga\\.codex\\generated_images\\01a0f140-a3ac-7390-9ca5-7f63a803aaaf\\exec-aee560f7-7692-424e-b407-691b171fb769.png",
   "size": [
-   650,
-   502
+   957,
+   719
   ],
-  "note": "体験者の視界（左眼の投影）"
+  "note": "図2 右。体験者の視界（ユーザー指定の画像・黒余白を除去）"
  },
  "sh-stain-screen.jpg": {
   "src": "logs/shots/.../20260930_140356_005/1_screen.png",

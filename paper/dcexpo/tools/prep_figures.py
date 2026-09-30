@@ -91,7 +91,12 @@ for cam, n in (("A", "011"), ("B", "003"), ("C", "009")):              # 各カ�
     save(f"cam-{cam}.jpg", Image.open(d / "2_raw.png"), f"logs/shots/.../{d.name}/2_raw.png", f"カメラ{cam}の生映像")
 d = shot("002")                                                          # 同じ瞬間の生映像と体験者の視界
 save("sh-fixed-raw.jpg", Image.open(d / "2_raw.png"), f"logs/shots/.../{d.name}/2_raw.png", "生映像")
-save("sh-fixed-hmd.jpg", hmd_crop(Image.open(d / "4_hmd.png")), f"logs/shots/.../{d.name}/4_hmd.png", "体験者の視界（左眼の投影）")
+# 体験者の視界（HMD）はユーザー指定の画像（Codex 生成・1448x1086）を使う。周囲の黒い余白だけ除く。
+HMD_VIEW = Path("C:/Users/kouga/.codex/generated_images/01a0f140-a3ac-7390-9ca5-7f63a803aaaf/exec-aee560f7-7692-424e-b407-691b171fb769.png")
+if HMD_VIEW.exists():
+    save("sh-fixed-hmd.jpg", hmd_crop(Image.open(HMD_VIEW), pad=12), str(HMD_VIEW), "図2 右。体験者の視界（ユーザー指定の画像・黒余白を除去）")
+else:
+    print("図2 の HMD 画像が無いので複製をスキップ（既存の sh-fixed-hmd.jpg を使う）")
 for tag, n in (("stain", "005"), ("pov", "009"), ("dolls", "015"), ("lap1", "003"), ("lap3", "011")):
     d = shot(n)
     save(f"sh-{tag}-screen.jpg", crop169(Image.open(d / "1_screen.png")), f"logs/shots/.../{d.name}/1_screen.png", "スクリーンの最終合成")
