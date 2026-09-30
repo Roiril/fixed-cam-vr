@@ -9,7 +9,7 @@ metadata:
 ---
 
 2026-09-30 に作った。元の Word（`G:\マイドライブ\研究\IVRC2026\IVRC2026_Roiril_v1.6.5.2.docx`）に寄せた
-A4・2 段組を **HTML + CSS で書いて Edge で PDF 化**する。入口は `paper/dcexpo/README.md`。
+A4・**1 段組**を **HTML + CSS + paginate.js で書いて Edge（CDP）で PDF 化**する。図は各ページの上端か下端に固定（2026-09-30 ユーザー指示。2 段組は図の位置で崩れたので廃止）。入口は `paper/dcexpo/README.md`。
 `py -3.10 paper/dcexpo/tools/build.py --sheet`（3.10 のみ PyMuPDF あり）→ `out/sheet.png` を目視。
 
 **Why:** Codex が作った版は図を削りすぎ・レイアウトが崩れていた（ユーザー指摘）。Word は機械操作しづらいので、
@@ -17,7 +17,7 @@ A4・2 段組を **HTML + CSS で書いて Edge で PDF 化**する。入口は 
 ページ数の縛りは無い（いずれもユーザー指示）。
 
 **How to apply:**
-- 本文を変えたら build → 必要なら `tune.py --apply`（段組が自動で流れるので下端の空き・段の空白が動く）
+- 本文を変えたら build → 必要なら `tune.py --apply`。図の置き場所は `<figure>` の data-page / data-pos / data-row（引用と同じ頁か次の頁）。`msedge.exe --dump-dom` は標準出力が空になるので CDP で読む
 - **図は削らない。** 現行と合わないものは差し替える（台車の人形が写る CG 模型は現行に無い → 実機の画面録画・
   実写プレート・合成の実物へ）。カメラ A〜C は `Assets/StreamingAssets/show/assets/plate_*_20260924_*` が最新
 - 実機の画面は `output/quest-recordings/2026-09-27/quest-alpha/` の録画から抜く。作品内の日時と周の表示が入る
