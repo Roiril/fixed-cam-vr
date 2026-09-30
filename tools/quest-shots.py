@@ -219,6 +219,12 @@ def cmd_clear(args):
 
 
 def main(argv=None):
+    # cp932 の端末で「⚠」等を print すると UnicodeEncodeError で落ちる（windows-env.md §2）。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
