@@ -1,11 +1,19 @@
 {
- "route.jpg": {
-  "src": "IVRC2026_Roiril_v1.6.5.2.docx:image10.png",
+ "env-fig1.png": {
+  "src": "C:\\Users\\kouga\\Downloads\\無題のプレゼンテーション.png",
   "size": [
-   1920,
-   1200
+   960,
+   540
   ],
-  "note": "元図4。周回経路とカメラ位置。台車の人形を消した（erase_cart_doll）"
+  "note": "ユーザー作成の図（生成画像の写真＋説明線）"
+ },
+ "route-fig4.png": {
+  "src": "C:\\Users\\kouga\\Downloads\\無題のプレゼンテーション (2).png",
+  "size": [
+   960,
+   540
+  ],
+  "note": "ユーザー作成の図（生成画像の写真＋説明線）"
  },
  "sh-hand-raw.jpg": {
   "src": "logs/shots/.../20260930_140322_003/2_raw.png",
@@ -158,14 +166,6 @@
    720
   ],
   "note": "スクリーンの最終合成"
- },
- "env-fig1.png": {
-  "src": "C:\\Users\\kouga\\Downloads\\無題のプレゼンテーション.png",
-  "size": [
-   960,
-   540
-  ],
-  "note": "ユーザー作成の図1。生成画像の写真＋カメラA〜C・HMD・L字の壁の説明線"
  },
  "warning.jpg": {
   "src": "output/unauthorized-access/hero-v4.png",

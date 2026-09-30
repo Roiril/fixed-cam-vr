@@ -46,45 +46,18 @@ def crop_box(im, box):
     return im.crop(box)
 
 
-# ---- 1. 元 Word（v1.6.5.2）の図 -------------------------------------------------
-import zipfile
-with zipfile.ZipFile(ORIG) as z:
-    def orig(n):
-        with z.open(f"word/media/{n}") as f:
-            return Image.open(f).copy()
-    # 元図4 周回経路（元図2・元図1 は現行の構成と合わないので使わない。README 参照）
-    save("route.jpg", orig("image10.png"), f"{ORIG.name}:image10.png", "元図4。周回経路とカメラ位置")
-
-
-def erase_cart_doll(path):
-    """元図4（周回経路）の左下に写る「台車の人形」を消す（現行の構成では人形は CG で、台車は無い）。
-    床は cv2.inpaint、下に隠れていた矢印の帯は同じ色の多角形で描き直す。座標は 1920x1200 の原図のもの。"""
-    import cv2
-    import numpy as np
-    im = cv2.imread(str(path))
-    ox, oy = 250, 560
-    x0, y0, x1, y1 = 340, 50, 600, 262                       # 作業領域（ox, oy からの相対）
-    reg = im[oy + y0:oy + y1, ox + x0:ox + x1].copy()
-    off = np.array([x0, y0], np.float32)
-    poly = np.array([(362, 92), (430, 66), (512, 76), (540, 118), (566, 172), (566, 204),
-                     (506, 208), (492, 236), (474, 252), (398, 254), (376, 226), (388, 182), (362, 120)], np.float32) - off
-    m = np.zeros(reg.shape[:2], np.uint8)
-    cv2.fillPoly(m, [poly.astype(np.int32)], 255)
-    m = cv2.dilate(m, np.ones((7, 7), np.uint8))
-    inp = cv2.inpaint(reg, m, 9, cv2.INPAINT_TELEA)
-    band = np.array([(290, 165), (395, 258), (625, -40), (430, -40)], np.float32) - off      # 区間1の矢印の帯
-    S = 4
-    big = np.zeros((reg.shape[0] * S, reg.shape[1] * S), np.uint8)
-    cv2.fillPoly(big, [(band * S).astype(np.int32)], 255)
-    bm = cv2.resize(big, (reg.shape[1], reg.shape[0]), interpolation=cv2.INTER_AREA).astype(np.float32) / 255
-    a_ = (bm * (cv2.GaussianBlur(m, (3, 3), 0).astype(np.float32) / 255))[..., None]
-    cyan = np.array([198, 190, 131], np.float32)             # 矢印の BGR（原図から実測）
-    im[oy + y0:oy + y1, ox + x0:ox + x1] = (inp * (1 - a_) + cyan * a_).astype(np.uint8)
-    cv2.imwrite(str(path), im, [cv2.IMWRITE_JPEG_QUALITY, 92])
-    SOURCES["route.jpg"]["note"] += "。台車の人形を消した（erase_cart_doll）"
-
-
-erase_cart_doll(OUT / "route.jpg")
+# ---- 1. ユーザーが作った図 1・図 4（生成した設営イメージの写真＋説明線・960x540）-------------------
+# 図1 = 設営を斜めから見た写真、図4 = 真上から見た周回経路（区間1〜3・カメラA〜C）。そのまま使う（加工・再描画しない）。
+# 元の Word（v1.6.5.2）の図は現行の構成と合わないので使わない。README 参照。
+for name, src in (("env-fig1.png", "C:/Users/kouga/Downloads/無題のプレゼンテーション.png"),
+                  ("route-fig4.png", "C:/Users/kouga/Downloads/無題のプレゼンテーション (2).png")):
+    sp = Path(src)
+    if sp.exists():
+        (OUT / name).write_bytes(sp.read_bytes())
+        SOURCES[name] = {"src": str(sp), "size": list(Image.open(OUT / name).size),
+                         "note": "ユーザー作成の図（生成画像の写真＋説明線）"}
+    else:
+        print(f"{name}: 元ファイルが無いので複製をスキップ（既存の {name} を使う）")
 
 # ---- 2. 体験中の撮影（左グリップの撮影機能・2026-09-30・クエストα）-------------------------
 # 1 回の押下 = 1 フォルダ: 1_screen（スクリーンの最終合成）/ 2_raw（加工前の生映像）/ 3_layers（合成している層だけ）/
@@ -122,16 +95,6 @@ save("sh-fixed-hmd.jpg", hmd_crop(Image.open(d / "4_hmd.png")), f"logs/shots/...
 for tag, n in (("stain", "005"), ("pov", "009"), ("dolls", "015"), ("lap1", "003"), ("lap3", "011")):
     d = shot(n)
     save(f"sh-{tag}-screen.jpg", crop169(Image.open(d / "1_screen.png")), f"logs/shots/.../{d.name}/1_screen.png", "スクリーンの最終合成")
-
-# ---- 3b. 図1（ユーザーが作った図。生成した設営イメージ写真に説明線を付けたもの・960x540） --------------
-# 写真は生成画像（Codex）。説明線と文字はユーザーが作成。そのまま使う（画像の加工・再描画はしない）。
-ENV_FIG1 = Path("C:/Users/kouga/Downloads/無題のプレゼンテーション.png")
-if ENV_FIG1.exists():
-    (OUT / "env-fig1.png").write_bytes(ENV_FIG1.read_bytes())
-    SOURCES["env-fig1.png"] = {"src": str(ENV_FIG1), "size": list(Image.open(OUT / "env-fig1.png").size),
-                               "note": "ユーザー作成の図1。生成画像の写真＋カメラA〜C・HMD・L字の壁の説明線"}
-else:
-    print("図1 の元ファイルが無いので複製をスキップ（既存の env-fig1.png を使う）")
 
 # ---- 4. 不正アクセスの演出画面 ------------------------------------------------------
 save("warning.jpg", Image.open(REPO / "output/unauthorized-access/hero-v4.png"),

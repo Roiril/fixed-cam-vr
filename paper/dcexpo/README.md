@@ -66,7 +66,8 @@ py -3.11 paper/dcexpo/tools/prep_figures.py    # 図を作り直すとき
     `figures/env-fig1.png`。元ファイルは `~/Downloads/無題のプレゼンテーション.png`（`prep_figures.py` が複製）
   - 図2 提示映像：同じ瞬間の固定カメラ映像と体験者の視界（HMD）。`logs/shots` の撮影から
   - 図3 合成：生映像・合成している層・提示映像を、手形・別の空間・CG 人形の 3 場面で。`logs/shots` の撮影から
-  - 図4 経路：元図のまま。台車の人形だけ画像から消した（`cv2.inpaint`＋帯の描き直し）
+  - 図4 周回経路：**ユーザーが作った図**（真上から見た区間1〜3・カメラA〜C）。`figures/route-fig4.png`。
+    元ファイルは `~/Downloads/無題のプレゼンテーション (2).png`（`prep_figures.py` が複製）
   - 図5 各カメラ：体験中の生映像（Phone 01/02/03）。`logs/shots` の撮影から
   - 図6〜8：実機（Quest）の画面録画と撮影から。導入〜結果表示・2周目の4画面・各周の画面
 - 撮影（`logs/shots/<serial>/`）は左グリップの撮影機能の出力（`.claude/memory/experience_shots.md`）。
