@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="6 18 154 94" role="img" aria-labelledby="t">
+<title id="t">現場の配置：床の 3 領域と固定カメラ 3 台</title>
+<style>
+  text   { font-family: "BIZ UDPGothic", "Yu Gothic", Meiryo, sans-serif; fill: #000; }
+  .thing { font-size: 5.2px; font-weight: bold; }
+  .halo  { paint-order: stroke; stroke: #fff; stroke-width: 1.6px; stroke-linejoin: round; }
+  .spec  { font-size: 4.3px; fill: #333; }
+  .zone  { font-size: 7.4px; font-weight: bold; fill: #6a6a6a; }
+  .zn    { font-size: 5.2px; font-weight: bold; fill: #444; }
+  .ln    { fill: none; stroke: #000; stroke-width: .35; }
+  .lead  { fill: none; stroke: #000; stroke-width: .28; }
+  .flow  { fill: none; stroke: #333; stroke-width: .5; stroke-dasharray: 2 1.4; }
+  .f0 { fill: #fcfcfc; stroke: #000; stroke-width: .35; }
+  .f1 { fill: #f2f2f2; stroke: #9a9a9a; stroke-width: .25; }
+  .f2 { fill: #dcdcdc; stroke: #9a9a9a; stroke-width: .25; }
+  .f3 { fill: #c2c2c2; stroke: #9a9a9a; stroke-width: .25; }
+  .wall { fill: #ffffff; fill-opacity: .6; stroke: #000; stroke-width: .4; }
+  .accd { fill: none; stroke: #CC79A7; stroke-width: .5; stroke-dasharray: 1.4 1; }
+</style>
+<defs><marker id="ar" viewBox="0 0 2 1.6" refX="2" refY=".8" markerWidth="2.4" markerHeight="2" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L2,.8 L0,1.6 z" fill="#333"/></marker></defs>
+<path d="M41.75,104.00 L107.75,104.00 L136.25,80.00 L70.25,80.00 Z" class="f0"/>
+<path d="M79.62,86.00 L129.13,86.00 L107.75,104.00 L41.75,104.00 L46.50,100.00 L63.00,100.00 Z" class="f1"/>
+<path d="M46.50,100.00 L63.00,100.00 L86.75,80.00 L70.25,80.00 Z" class="f2"/>
+<path d="M79.62,86.00 L129.13,86.00 L136.25,80.00 L86.75,80.00 Z" class="f3"/>
+<text x="103.27" y="104.00" class="zone" text-anchor="middle">A</text>
+<text x="59.68" y="98.40" class="zone" text-anchor="middle">B</text>
+<text x="123.75" y="86.13" class="zone" text-anchor="middle">C</text>
+<path d="M96.32,90.93 L96.85,90.37 L97.10,89.82 L97.05,89.30 L96.71,88.83 L96.08,88.43 L95.18,88.10 L94.05,87.86 L92.71,87.72 L91.21,87.67 L89.59,87.72 L87.91,87.86 L86.20,88.10 L84.53,88.43 L82.95,88.83 L81.49,89.30 L80.22,89.82 L79.16,90.37 L78.35,90.93 L77.81,91.50 L77.56,92.05 L77.61,92.57 L77.96,93.03 L78.59,93.44 L79.48,93.76 L80.62,94.00 L81.95,94.15 L83.45,94.20 L85.07,94.15 L86.76,94.00 L88.47,93.76 L90.14,93.44 L91.72,93.03 L93.17,92.57 L94.45,92.05 L95.51,91.50 Z" class="accd"/>
+<path d="M78.58,85.33 L115.25,85.33 L115.25,56.53 L78.58,56.53 Z" class="wall"/>
+<path d="M78.58,85.33 L62.75,98.67 L62.75,69.87 L78.58,56.53 Z" class="wall"/>
+<path d="M76.87,101.60 Q65.01,101.09 58.98,98.13" class="flow" marker-end="url(#ar)"/>
+<path d="M62.72,90.67 Q69.66,85.80 80.40,81.33" class="flow" marker-end="url(#ar)"/>
+<path d="M121.67,82.40 Q121.62,89.19 110.75,96.53" class="flow" marker-end="url(#ar)"/>
+<g transform="translate(87.33,66.13)"><path d="M-1.7,24.8 L-2.2,7.4 Q-2.2,3.4 0,3.4 Q2.2,3.4 2.2,7.4 L1.7,24.8 Z" fill="#1a1a1a"/><circle cx="0" cy="1.2" r="1.8" fill="#1a1a1a"/></g>
+<line x1="64.72" y1="78.00" x2="67.12" y2="56.40" class="ln"/>
+<line x1="69.52" y1="78.00" x2="67.12" y2="56.40" class="ln"/>
+<line x1="67.12" y1="76.90" x2="67.12" y2="56.40" class="ln"/>
+<ellipse cx="67.12" cy="78.00" rx="3.2" ry="1.1" fill="none" stroke="#9a9a9a" stroke-width=".25"/>
+<rect x="65.62" y="51.20" width="3.0" height="5.2" rx=".4" fill="#fff" stroke="#000" stroke-width=".4"/>
+<circle cx="67.12" cy="52.10" r=".55" fill="#333"/>
+<text x="69.72" y="53.40" class="zn">A</text>
+<line x1="45.04" y1="106.00" x2="47.44" y2="84.40" class="ln"/>
+<line x1="49.84" y1="106.00" x2="47.44" y2="84.40" class="ln"/>
+<line x1="47.44" y1="104.90" x2="47.44" y2="84.40" class="ln"/>
+<ellipse cx="47.44" cy="106.00" rx="3.2" ry="1.1" fill="none" stroke="#9a9a9a" stroke-width=".25"/>
+<rect x="45.94" y="79.20" width="3.0" height="5.2" rx=".4" fill="#fff" stroke="#000" stroke-width=".4"/>
+<circle cx="47.44" cy="80.10" r=".55" fill="#333"/>
+<text x="50.04" y="81.40" class="zn">B</text>
+<line x1="141.72" y1="78.00" x2="144.12" y2="56.40" class="ln"/>
+<line x1="146.53" y1="78.00" x2="144.12" y2="56.40" class="ln"/>
+<line x1="144.12" y1="76.90" x2="144.12" y2="56.40" class="ln"/>
+<ellipse cx="144.12" cy="78.00" rx="3.2" ry="1.1" fill="none" stroke="#9a9a9a" stroke-width=".25"/>
+<rect x="142.62" y="51.20" width="3.0" height="5.2" rx=".4" fill="#fff" stroke="#000" stroke-width=".4"/>
+<circle cx="144.12" cy="52.10" r=".55" fill="#333"/>
+<text x="146.72" y="53.40" class="zn">C</text>
+<line x1="51.00" y1="30.50" x2="65.32" y2="53.00" class="lead"/>
+<text x="50" y="26.2" class="thing" text-anchor="end">スマートフォン</text>
+<text x="50" y="31.2" class="spec" text-anchor="end">×3・高さ 1.35 m</text>
+<line x1="118.00" y1="30.50" x2="115.65" y2="59.53" class="lead"/>
+<text x="119" y="26.2" class="thing">L 字の壁</text>
+<text x="119" y="31.2" class="spec">高さ 1.8 m</text>
+<text x="82.82" y="101.93" class="thing halo" text-anchor="middle">開始位置</text>
+</svg>

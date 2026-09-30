@@ -1,0 +1,118 @@
+/* 廻リ視 DCEXPO 版 紙面。元 Word（学会論文フォーマット）に寄せた白地・2段組。
+   数値はすべて :root に集める。紙面の調整はここだけで済むようにする。 */
+:root {
+  --page-w: 210mm;
+  --page-h: 297mm;
+  --m-top: 16mm;
+  --m-bottom: 15mm;
+  --m-side: 19mm;
+  --col-gap: 6mm;
+  --body-size: 10.00pt;
+  --body-lh: 1.62;
+  --ink: #111;
+  --sub: #555;
+  --rule: #999;
+  --serif: "BIZ UDPMincho", "Yu Mincho", "MS PMincho", serif;
+  --sans: "BIZ UDPGothic", "Yu Gothic", "Meiryo", sans-serif;
+  --latin-serif: "Times New Roman", "BIZ UDPMincho", serif;
+}
+
+@page {
+  size: A4;
+  margin: var(--m-top) var(--m-side) var(--m-bottom);
+}
+
+* { box-sizing: border-box; }
+html { background: #fff; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--latin-serif), var(--serif);
+  font-size: var(--body-size);
+  line-height: var(--body-lh);
+  text-align: justify;
+  word-break: normal;
+  line-break: strict;
+  font-feature-settings: "palt" 0;
+  hanging-punctuation: none;
+}
+
+/* ---- 表題部（全段） ---- */
+.masthead { text-align: center; margin: 0 0 3.2mm; }
+.masthead .event {
+  font: 8pt/1 var(--sans); color: var(--sub); letter-spacing: .08em;
+  text-align: right; margin: 0 0 5mm;
+}
+.masthead h1 {
+  font: 700 19pt/1.3 var(--sans); letter-spacing: .04em; margin: 0 0 2mm;
+}
+.masthead .en {
+  font: 10.5pt/1.3 var(--latin-serif); margin: 0;
+}
+
+.abstract {
+  margin: 0 0 4mm; padding: 0 4mm;
+  font-family: var(--sans); font-size: 8.4pt; line-height: 1.7;
+}
+.abstract p { margin: 0 0 1mm; text-align: justify; }
+.abstract .kw { margin-top: 1.4mm; }
+.abstract b { font-weight: 700; }
+hr.sep { border: 0; border-top: .4pt solid var(--rule); margin: 0 0 4mm; }
+
+/* ---- 本文（2段組。自動で流れる） ---- */
+.body { column-count: 2; column-gap: var(--col-gap); column-fill: balance; }
+
+h2, h3 { font-family: var(--sans); font-weight: 700; break-after: avoid; }
+h2 { font-size: 10.6pt; line-height: 1.4; margin: 3.4mm 0 1.2mm; }
+h3 { font-size: 9.4pt; line-height: 1.4; margin: 2.2mm 0 .6mm; }
+h2:first-child { margin-top: 0; }
+
+p { margin: 0; text-indent: 1em; }
+p + p { margin-top: 0; }
+p.lead { text-indent: 0; }
+p .run { font-family: var(--sans); font-weight: 700; }   /* 「導入：」など段落頭の見出し */
+
+/* ---- 図 ---- */
+figure { margin: 2mm 0 2.6mm; break-inside: avoid; text-indent: 0; }
+figure img { display: block; width: 100%; height: auto; }
+figcaption {
+  font: 7.9pt/1.45 var(--sans); text-align: center; margin-top: 1mm; text-indent: 0;
+}
+figure.wide { column-span: all; margin: 2.6mm 0 3mm; }
+
+.grid { display: grid; gap: 1.4mm; }
+.grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid > div { position: relative; min-width: 0; }
+.grid .lab {
+  display: block; font: 7.4pt/1.3 var(--sans); text-align: center; margin-top: .6mm;
+}
+.grid .tag {
+  position: absolute; left: 1mm; top: 1mm; padding: .2mm 1.2mm;
+  font: 700 7.4pt/1.3 var(--sans); color: #fff; background: rgba(0,0,0,.62);
+}
+.arrow { align-self: center; text-align: center; font: 700 11pt/1 var(--sans); color: var(--sub); }
+
+
+/* 画像の枠：切り出しで縦横比を揃える（引き伸ばしはしない＝object-fit: cover） */
+.grid.uni img { width: 100%; object-fit: cover; }
+.grid.a32 img { aspect-ratio: 4 / 3; }
+.grid.a43 img { aspect-ratio: 4 / 3; }
+figure.narrow img { width: 92%; margin: 0 auto; }
+.grid.c4w { grid-template-columns: 1fr 1fr 1fr 1.55fr; }
+.grid.h27 img { aspect-ratio: auto; height: 27mm; }
+
+/* ---- 参考文献 ---- */
+.refs h2 { text-align: center; margin-top: 4mm; }
+.refs ol { list-style: none; margin: 0; padding: 0; font-size: 8.4pt; line-height: 1.5; }
+.refs li { display: grid; grid-template-columns: 6.5mm 1fr; text-indent: 0; text-align: left; margin-bottom: .8mm; }
+
+/* ---- 校正用（?debug 付きで開いたとき／build --debug） ---- */
+body.debug .body { outline: .3pt dashed #c00; }
+body.debug figure { outline: .3pt dashed #06c; }
+
+@media screen {
+  body { max-width: var(--page-w); margin: 0 auto; padding: var(--m-top) var(--m-side); background: #fff; }
+  html { background: #ddd; }
+}

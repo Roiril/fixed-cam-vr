@@ -1,0 +1,138 @@
+{
+ "route.jpg": {
+  "src": "IVRC2026_Roiril_v1.6.5.2.docx:image10.png",
+  "size": [
+   1920,
+   1200
+  ],
+  "note": "元図4。周回経路とカメラ位置。台車の人形を消した（erase_cart_doll）"
+ },
+ "plate-A.jpg": {
+  "src": "Assets/StreamingAssets/show/assets/plate_A_20260924_172209_b8e1f375.jpg",
+  "size": [
+   640,
+   480
+  ],
+  "note": "640x480。黒帯なし（そのまま）"
+ },
+ "plate-B.jpg": {
+  "src": "Assets/StreamingAssets/show/assets/plate_B_20260924_172210_4abb5bae.jpg",
+  "size": [
+   640,
+   480
+  ],
+  "note": "640x480。黒帯なし（そのまま）"
+ },
+ "plate-C.jpg": {
+  "src": "Assets/StreamingAssets/show/assets/plate_C_20260924_172211_a1c7c02f.jpg",
+  "size": [
+   640,
+   480
+  ],
+  "note": "640x480。黒帯なし（そのまま）"
+ },
+ "comp-plate.jpg": {
+  "src": "Assets/StreamingAssets/show/assets/plate_A_20260924_172209_b8e1f375.jpg",
+  "size": [
+   640,
+   480
+  ],
+  "note": "実写プレート（カメラA・最新版）"
+ },
+ "comp-source.jpg": {
+  "src": "tools/web-compositor/captures/gen_stainA_still_20260924_candidate.png",
+  "size": [
+   640,
+   480
+  ],
+  "note": "生成素材（640x480）"
+ },
+ "comp-mask.jpg": {
+  "src": "Logs/gen-plate/stain_A_20260924_mask_v1/mask.png",
+  "size": [
+   480,
+   360
+  ],
+  "note": "差し替え領域のマスク"
+ },
+ "comp-result.jpg": {
+  "src": "Logs/gen-plate/stain_A_20260924_mask_v1/delivered.png",
+  "size": [
+   960,
+   720
+  ],
+  "note": "境界ブレンド・色合わせ・ポストFX 後。1280x720 から 960x720 を切り出し"
+ },
+ "warning.jpg": {
+  "src": "output/unauthorized-access/hero-v4.png",
+  "size": [
+   1280,
+   720
+  ],
+  "note": "1280x720"
+ },
+ "q-intro.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 34s",
+  "size": [
+   1920,
+   1080
+  ],
+  "note": "Quest 実機の画面録画から"
+ },
+ "q-shatter.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 40s",
+  "size": [
+   1920,
+   1080
+  ],
+  "note": "Quest 実機の画面録画から"
+ },
+ "q-fixed.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 45s",
+  "size": [
+   1162,
+   694
+  ],
+  "note": "Quest 実機の画面録画から"
+ },
+ "q-end.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 207s",
+  "size": [
+   1365,
+   693
+  ],
+  "note": "Quest 実機の画面録画から"
+ },
+ "q-lap1.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 66s",
+  "size": [
+   1107,
+   780
+  ],
+  "note": "Quest 実機の画面録画から"
+ },
+ "q-lap2.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 93s",
+  "size": [
+   1143,
+   868
+  ],
+  "note": "Quest 実機の画面録画から"
+ },
+ "q-lap3.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 132s",
+  "size": [
+   1116,
+   796
+  ],
+  "note": "Quest 実機の画面録画から"
+ },
+ "q-final.jpg": {
+  "src": "com.roiril.mawarimi-20260927-171959-0.mp4 @ 186s",
+  "size": [
+   1126,
+   808
+  ],
+  "note": "Quest 実機の画面録画から"
+ }
+}
