@@ -12,7 +12,9 @@ namespace FixedCamVr.OvrBridge
     /// 唯一の場所として、コントローラ入力を Streaming / Tracking / Diagnostics のコンポーネントに
     /// 転送する橋渡し。配置先は [Streaming] GameObject 等。
     ///
-    /// スタッフ操作は右コントローラの A / B / トリガーで完結する。グリップは読まない。
+    /// スタッフ操作は右コントローラの A / B / トリガーで完結する。右グリップは読まない。
+    /// <b>左グリップだけは撮影</b>（説明資料用・2026-09-30。<see cref="ExperienceShotCapture"/>）。
+    /// 体験者の入力ではなく、Development ビルドでのみ既定で有効。展示本番の機では OFF にする。
     /// モードは <see cref="ControllerModeLogic"/> の 2 状態（Normal / Registration）でゲートする:
     ///   - Normal: A 2 秒長押し=体験者リセット / B=押している間ステータスを表示 /
     ///             トリガー 2 秒長押し=位置合わせ入場
@@ -102,6 +104,13 @@ namespace FixedCamVr.OvrBridge
         private int _titleSequence = -1;
         private bool _markNeedsRelease = true;
         private bool _prevAHeld, _prevBHeld, _prevTriggerHeld;
+
+        // 左グリップ = 体験中の撮影（説明資料用・2026-09-30）。押した瞬間の画を 4 種類保存する。
+        // ⚠ 体験者の入力ではない（報告・言語・題字には使わない）。SerializeField にしない
+        //    （StreamingLogic.prefab の YAML に無いフィールドは 0 / null で読まれる）。
+        private bool _prevGripRawHeld;
+        private ExperienceShotCapture? _shots;
+        private OVRCameraRig? _cameraRig;
 
         // OS recenter 購読済みフラグ（OVRManager.display は初期化順で null のことがあるためリトライする）。
         private bool _recenterSubscribed;
@@ -243,6 +252,7 @@ namespace FixedCamVr.OvrBridge
             bool aRawHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);
             bool bRawHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);
             bool triggerRawHeld = OVRInput.Get(OVRInput.RawButton.RIndexTrigger, OVRInput.Controller.RTouch);
+            bool gripRawHeld = OVRInput.Get(OVRInput.RawButton.LHandTrigger, OVRInput.Controller.LTouch);
 
             ControllerConnectionGate.Result leftConnection =
                 _leftConnectionGate.Tick(lConnected, xRawHeld || yRawHeld);
@@ -285,6 +295,12 @@ namespace FixedCamVr.OvrBridge
             _prevAHeld = aHeld;
             _prevBHeld = bHeld;
             _prevTriggerHeld = rTrigger;
+
+            // 左グリップの押下の縁。前フレームは**生の値**で持つ — 再接続をまたいで握られていた
+            // グリップが、接続復帰の 1 フレーム目に「新しい押下」として撃たれないように。
+            bool gripDown = leftConnection.AcceptInput && gripRawHeld && !_prevGripRawHeld;
+            _prevGripRawHeld = gripRawHeld;
+            if (gripDown) CaptureExperienceShots();
 
             // ---- パッシブ状態（モードでゲートしない。ゲストが誘発する操作ではなくフェイルソフト表示）----
             // OVRManager.display が後から生えるケースに備え、未購読なら毎フレーム再試行（生えたら 1 回で確定）。
@@ -530,6 +546,32 @@ namespace FixedCamVr.OvrBridge
                     // トリガー長押し=Registration 入場も _modeLogic が担う。
                     break;
             }
+        }
+
+        /// <summary>
+        /// 左グリップの押下 → 体験中の撮影（<see cref="ExperienceShotCapture"/>）。
+        /// 無効な機（展示本番の OFF・Release）では実行体すら作らない。
+        /// 受理したら左を 1 発だけ震わせる（<c>LeftMark</c> を使い回す。新しい振動パターンは作らない）。
+        /// </summary>
+        private void CaptureExperienceShots()
+        {
+            if (!ExperienceShotCapture.Enabled) return;
+            if (_shots == null) _shots = ExperienceShotCapture.Ensure();
+            _shots.HmdViewProvider ??= ResolveHmdView;
+            if (_shots.Request()) haptics?.LeftMark();
+        }
+
+        /// <summary>④ の視点。左眼の位置と、その投影で描くためのカメラ（中央のアンカー上にある）。</summary>
+        private ExperienceShotCapture.HmdView? ResolveHmdView()
+        {
+            if (_cameraRig == null) _cameraRig = FindObjectOfType<OVRCameraRig>();
+            if (_cameraRig == null) return null;
+            Transform? center = _cameraRig.centerEyeAnchor;
+            Camera? cam = center != null ? center.GetComponent<Camera>() : null;
+            if (cam == null) cam = _cameraRig.GetComponentInChildren<Camera>();
+            if (cam == null) return null;
+            Transform eye = _cameraRig.leftEyeAnchor != null ? _cameraRig.leftEyeAnchor : cam.transform;
+            return new ExperienceShotCapture.HmdView(cam, eye);
         }
 
         /// <summary>

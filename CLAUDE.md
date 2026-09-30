@@ -26,6 +26,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | 1 周回す（予測 → 安い門 → 焼く → 見る → 台帳） | `skills/work-round` |
 | ユーザーに見せて赤入れをもらう | `skills/direction-round` |
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |
+| 説明資料用に体験中の画を撮る（左グリップ → 4 種類。**展示本番の機は OFF**） | [memory/experience_shots.md](.claude/memory/experience_shots.md)（取り出しは `py -3.11 tools/quest-shots.py pull`） |
 
 | 音を触る（BGM・効果音・環境音・遷移） | `rules/sound-design.md`（**先に読む**） |
 
