@@ -52,6 +52,7 @@
   .connection[data-state="offline"] { color: var(--error); }
   .staff-label { border-left: 1px solid var(--line-strong); padding-left: 14px; margin-left: 10px; }
   .connection:hover .staff-label { color: var(--ink); }
+  .fullscreen-return { min-height: 44px; padding: 7px 12px; border: 1px solid var(--line-strong); background: rgba(18,16,14,.82); color: var(--ink); font: 12px/1.4 var(--sans); }
   .portrait { position: absolute; z-index: -1; inset: 0; margin: 0; overflow: hidden; background: var(--bg); }
   .portrait img, .portrait video { display: block; width: 100%; height: 100%; object-fit: cover; }
   .portrait::after { content: ""; position: absolute; pointer-events: none; inset: 0; background: linear-gradient(90deg,var(--bg),rgba(9,8,7,.97) 28%,rgba(9,8,7,.83) 44%,rgba(9,8,7,.1) 75%),linear-gradient(0deg,var(--bg),transparent 35%,transparent 80%,rgba(9,8,7,.5)); }
@@ -199,6 +200,7 @@
   .staff-summary { min-height: 8em; margin: 0 0 18px; padding: 16px 0; border-block: 1px solid var(--line); color: var(--muted); font: 13px/1.9 ui-monospace,Consolas,monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
   .staff-message { min-height: 1.6em; color: var(--gold); font: 13px/1.6 var(--sans); }
   .staff-clear { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--red); background: rgba(168,50,57,.12); }
+  .staff-fullscreen { min-height: 48px; width: 100%; margin-bottom: 10px; padding: 10px 14px; border: 1px solid var(--line-strong); background: transparent; }
   @media (min-width:1600px) { .content { width: 52%; } .stage.is-briefing { grid-template-rows: auto minmax(440px,1fr) auto; } .notice-body { font-size: 18px; } }
   @media (min-width:761px) and (max-height:800px) {
     .topbar { min-height: 74px; padding-top: 14px; padding-bottom: 10px; }
@@ -318,6 +320,7 @@
   </section>
   <header class="topbar">
     <p class="brand" translate="no"><img src="./asset/title-logo-v2.png" alt="廻リ視" width="1210" height="531" draggable="false"></p>
+    <button class="fullscreen-return" id="fullscreenBtn" type="button" hidden>全画面</button>
     <ol class="journey" id="journey" aria-label="体験の準備">
       <li id="journeySettings" aria-current="step"><b>01</b><span id="journeySettingsLabel">設定</span></li>
       <li id="journeyBriefing"><b>02</b><span id="journeyBriefingLabel">調査説明</span></li>
@@ -479,6 +482,7 @@
   <h2>スタッフ情報</h2>
   <div class="staff-summary" id="staffSummary">読み込み中…</div>
   <p class="staff-message" id="staffMessage" role="status" aria-live="polite"></p>
+  <button class="staff-fullscreen" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
   <button class="staff-clear" id="clearBtn" type="button">予約を取り消す</button>
 </dialog>
 
@@ -497,8 +501,8 @@
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
       send: 'この設定で始める', edit: '設定を変える', retry: 'もう一度送る',
       selected: '選んだ設定', headset: 'ヘッドセット', item: '項目',
-      restarted: 'ヘッドセットが再起動しました。設定を選び直してください。',
-      staff: 'スタッフ', staffOpen: 'スタッフ情報を開く', skip: '設定へ移動',
+      restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
+      staff: 'スタッフ', staffOpen: 'スタッフ情報を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする', fullscreenExit: '全画面を解除',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
         sending: ['送信中', 'ヘッドセットへ設定を送っています'],
@@ -507,6 +511,7 @@
         later: ['次回の開始待ち', 'いまの体験が終わると、次の開始時に反映されます'],
         noserver: ['ヘッドセットを確認できません', '通信の回復を待っています。スタッフを呼んでください'],
         fail: ['送信を確認できませんでした', '設定が届いたか確認できません。もう一度送れます'],
+        conflict: ['設定が変更されました', '別のページで設定が変更されました。設定を確認してください。'],
       },
       postSpeech: {
         sending: '設定を送っています。少しお待ちください。',
@@ -515,6 +520,7 @@
         later: '次の開始まで、少しお待ちください。',
         noserver: '通信を確認できません。スタッフにお声がけください。',
         fail: '設定を確認できません。スタッフにお声がけください。',
+        conflict: '別のページで設定が変更されました。設定を確認してください。',
         loading: '準備が整うまで、少しお待ちください。',
         error: '説明を読み込めません。スタッフにお声がけください。',
       },
@@ -536,8 +542,8 @@
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
       send: 'Start with these settings', edit: 'Change settings', retry: 'Send again',
       selected: 'Selected settings', headset: 'Headset', item: 'Item',
-      restarted: 'The headset restarted. Please choose the settings again.',
-      staff: 'Staff', staffOpen: 'Open staff information', skip: 'Skip to settings',
+      restarted: 'The headset restarted. Check the retained settings, then send them again.',
+      staff: 'Staff', staffOpen: 'Open staff information', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen', fullscreenExit: 'Exit full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
         sending: ['Sending', 'Sending the settings to the headset'],
@@ -546,6 +552,7 @@
         later: ['Waiting for the next session', 'They will apply when the next session starts'],
         noserver: ['Connection unknown', 'The headset connection cannot be confirmed. Please call a member of staff'],
         fail: ['Could not confirm delivery', 'Delivery could not be confirmed. You can send the settings again'],
+        conflict: ['Settings changed', 'Settings were changed on another page. Please check the settings.'],
       },
       postSpeech: {
         sending: 'I am sending your settings. Please wait a moment.',
@@ -554,6 +561,7 @@
         later: 'Please wait for the next session to begin.',
         noserver: 'I cannot confirm the connection. Please call a member of staff.',
         fail: 'I cannot confirm your settings. Please call a member of staff.',
+        conflict: 'Settings were changed on another page. Please check the settings.',
         loading: 'Please wait a moment while everything is prepared.',
         error: 'I cannot load the briefing. Please call a member of staff.',
       },
@@ -575,8 +583,8 @@
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
       send: 'Commencer avec ces réglages', edit: 'Modifier les réglages', retry: 'Renvoyer',
       selected: 'Réglages choisis', headset: 'Casque', item: 'Élément',
-      restarted: 'Le casque a redémarré. Veuillez choisir de nouveau les réglages.',
-      staff: 'Personnel', staffOpen: 'Ouvrir les informations du personnel', skip: 'Aller aux réglages',
+      restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
+      staff: 'Personnel', staffOpen: 'Ouvrir les informations du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran', fullscreenExit: 'Quitter le plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
         sending: ['Envoi en cours', 'Envoi des réglages au casque'],
@@ -585,6 +593,7 @@
         later: ['En attente de la prochaine session', 'Ils seront appliqués au début de la prochaine session'],
         noserver: ['Connexion non vérifiable', 'La connexion au casque ne peut pas être confirmée. Appelez un membre du personnel'],
         fail: ['Envoi non confirmé', 'La réception n’a pas pu être confirmée. Vous pouvez renvoyer les réglages'],
+        conflict: ['Réglages modifiés', 'Les réglages ont été modifiés sur une autre page. Veuillez les vérifier.'],
       },
       postSpeech: {
         sending: 'J’envoie vos réglages. Veuillez patienter un instant.',
@@ -593,6 +602,7 @@
         later: 'Veuillez attendre le début de la prochaine session.',
         noserver: 'Je ne peux pas confirmer la connexion. Appelez un membre du personnel.',
         fail: 'Je ne peux pas confirmer vos réglages. Appelez un membre du personnel.',
+        conflict: 'Les réglages ont été modifiés sur une autre page. Veuillez les vérifier.',
         loading: 'Veuillez patienter un instant pendant la préparation.',
         error: 'Je ne peux pas charger les explications. Appelez un membre du personnel.',
       },
@@ -610,7 +620,21 @@
   const BRIEFING_LANGS = Object.keys(LANG_NAME);
   const $ = (id) => document.getElementById(id);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const STORAGE_KEY = 'mawarimi.visitor.progress.v1';
+  function readSavedProgress() {
+    try {
+      const value = JSON.parse(globalThis.sessionStorage?.getItem(STORAGE_KEY) || 'null');
+      return value && typeof value === 'object' ? value : null;
+    } catch (error) {
+      return null;
+    }
+  }
+  let restoreCandidate = readSavedProgress();
   const tabletSessionId = (() => {
+    if (typeof restoreCandidate?.tabletSessionId === 'string'
+      && /^[A-Za-z0-9_-]{1,128}$/.test(restoreCandidate.tabletSessionId)) {
+      return restoreCandidate.tabletSessionId;
+    }
     const bytes = new Uint8Array(16);
     if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
     else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
@@ -631,6 +655,7 @@
     restartMessage: false,
     lastReceived: null,
     clearing: false,
+    restored: false,
     briefing: {
       loadState: 'loading',
       data: null,
@@ -666,7 +691,114 @@
   let briefingLoopVideoToken = 0;
   let chapterTimer = null;
   let pointerGesture = null;
+  let wakeLock = null;
   const activeAnimations = new Map();
+
+  function clearSavedProgress() {
+    restoreCandidate = null;
+    try { globalThis.sessionStorage?.removeItem(STORAGE_KEY); }
+    catch (error) { console.warn('briefing progress could not be cleared', error); }
+  }
+
+  function saveBriefingProgress() {
+    if (state.view !== 'briefing' || !state.sent || state.sent.seq <= 0) return;
+    const progress = {
+      tabletSessionId,
+      portalSessionId: state.sent.portalSessionId,
+      seq: state.sent.seq,
+      lang: state.sent.lang,
+      relief: state.sent.relief,
+      sceneIndex: state.briefing.sceneIndex,
+      cueIndex: state.briefing.cueIndex,
+      ended: state.briefing.ended,
+    };
+    try { globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(progress)); }
+    catch (error) { console.warn('briefing progress could not be saved', error); }
+  }
+
+  function savedProgressMatches(progress, status) {
+    return progress?.tabletSessionId === tabletSessionId
+      && progress.portalSessionId === status.portalSessionId
+      && validSequence(progress.seq, false)
+      && Object.hasOwn(LANG_NAME, progress.lang)
+      && typeof progress.relief === 'boolean'
+      && status.lastRequest?.tabletSessionId === progress.tabletSessionId
+      && status.lastRequest.seq === progress.seq
+      && status.lastRequest.lang === progress.lang
+      && status.lastRequest.relief === progress.relief
+      && status.appliedSeq === progress.seq
+      && status.lang === progress.lang
+      && status.relief === progress.relief
+      && status.pending?.seq === progress.seq
+      && status.pending.lang === progress.lang
+      && status.pending.relief === progress.relief;
+  }
+
+  function tryRestoreBriefing() {
+    const progress = restoreCandidate;
+    if (!progress || state.restored || state.briefing.loadState !== 'ready' || !state.status) return false;
+    restoreCandidate = null;
+    if (!savedProgressMatches(progress, state.status)) {
+      clearSavedProgress();
+      return false;
+    }
+    const scene = state.briefing.data?.scenes[progress.sceneIndex];
+    if (!scene || !Number.isSafeInteger(progress.cueIndex)
+      || progress.cueIndex < 0 || progress.cueIndex >= scene.cues[progress.lang].length) {
+      clearSavedProgress();
+      return false;
+    }
+    state.restored = true;
+    setDraft(progress.lang, progress.relief);
+    state.sent = { lang: progress.lang, relief: progress.relief, seq: progress.seq, portalSessionId: progress.portalSessionId };
+    state.ui = 'sent';
+    state.appliedSeen = true;
+    state.briefing.triggered = true;
+    state.briefing.sceneIndex = progress.sceneIndex;
+    state.briefing.cueIndex = progress.cueIndex;
+    state.briefing.ended = Boolean(progress.ended);
+    state.briefing.auto = false;
+    setSurface('briefing');
+    renderText();
+    configureBriefingMedia(scene);
+    setSubtitle(scene.cues[state.lang][state.briefing.cueIndex].text,
+      `briefing:${scene.id}:${state.lang}:${state.briefing.cueIndex}`);
+    renderBriefingScene();
+    stopBriefingMediaWindow();
+    state.briefing.mediaPaused = true;
+    renderBriefingControls();
+    return true;
+  }
+
+  async function requestWakeLock() {
+    if (wakeLock?.released) wakeLock = null;
+    if (document.hidden || wakeLock || !globalThis.navigator?.wakeLock?.request) return;
+    try {
+      wakeLock = await globalThis.navigator.wakeLock.request('screen');
+      wakeLock.addEventListener?.('release', () => { wakeLock = null; });
+    } catch (error) {
+      console.warn('wake lock unavailable', error);
+    }
+  }
+
+  function syncFullscreenControls() {
+    const supported = Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+    const active = Boolean(document.fullscreenElement);
+    $('fullscreenBtn').hidden = !supported || active;
+    $('fullscreenBtn').textContent = T[state.lang].fullscreen;
+    $('staffFullscreenBtn').hidden = !supported;
+    $('staffFullscreenBtn').textContent = active ? T[state.lang].fullscreenExit : T[state.lang].fullscreenEnter;
+  }
+
+  function enterFullscreen() {
+    if (!document.fullscreenEnabled || !document.documentElement.requestFullscreen || document.fullscreenElement) return;
+    try {
+      const result = document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      result?.catch?.((error) => console.warn('fullscreen unavailable', error));
+    } catch (error) {
+      console.warn('fullscreen unavailable', error);
+    }
+  }
 
   function animateElement(element, keyframes, duration) {
     activeAnimations.get(element)?.cancel();
@@ -775,6 +907,8 @@
 
   function beginFromTitle() {
     if (state.view !== 'title' || state.titleTransitioning) return;
+    enterFullscreen();
+    requestWakeLock();
     state.titleTransitioning = true;
     $('titleStart').disabled = true;
     const finish = () => {
@@ -801,11 +935,32 @@
     state.appliedSeen = false;
     state.leftWaitAfterApplied = false;
     state.restartMessage = restarted;
+    state.restored = false;
     resetBriefingSession();
     state.briefing.muted = false;
     setDraft('ja', false);
+    clearSavedProgress();
     setFormDisabled(false);
     setSurface('title');
+    render();
+  }
+
+  function resetAfterQuestRestart() {
+    const lang = state.lang;
+    const relief = state.relief;
+    sendGeneration++;
+    cancelVisualChange();
+    state.sent = null;
+    state.ui = 'idle';
+    state.appliedSeen = false;
+    state.leftWaitAfterApplied = false;
+    state.restartMessage = true;
+    state.restored = false;
+    resetBriefingSession();
+    clearSavedProgress();
+    setDraft(lang, relief);
+    setFormDisabled(false);
+    setSurface('edit', document.querySelector(`input[name="lang"][value="${lang}"]`));
     render();
   }
 
@@ -829,6 +984,7 @@
     document.querySelector('.skip').textContent = t.skip;
     $('staffLabel').textContent = t.staff;
     $('staffToggle').setAttribute('aria-label', t.staffOpen);
+    syncFullscreenControls();
     $('pageTitle').textContent = t.pageTitle;
     $('noticeLabel').textContent = t.noticeLabel;
     $('noticeBody').textContent = t.notice.split('\n\n').map(paragraph => paragraph.replace(/\n/g, state.lang === 'ja' ? '' : ' ')).join('\n\n');
@@ -991,7 +1147,7 @@
     } finally {
       if (briefingController === controller) briefingController = null;
     }
-    if (state.view === 'result') renderResult();
+    if (!tryRestoreBriefing() && state.view === 'result') renderResult();
   }
 
   function currentBriefingScene() {
@@ -1398,6 +1554,7 @@
     syncBriefingLoopVideo();
     startBriefingMediaWindow();
     if (state.briefing.auto) setBriefingAuto(true);
+    saveBriefingProgress();
   }
 
   function playChapterTransition(direction) {
@@ -1463,6 +1620,7 @@
     state.briefing.ended = true;
     syncBriefingLoopVideo();
     renderBriefingScene();
+    saveBriefingProgress();
   }
 
   function stopBriefingPlayback() {
@@ -1493,6 +1651,7 @@
   }
 
   function returnToSettings() {
+    clearSavedProgress();
     stopBriefingMediaWindow();
     changeVisual(() => {
       state.ui = 'idle';
@@ -1533,7 +1692,7 @@
   }
 
   function resultKey() {
-    if (state.ui === 'sending' || state.ui === 'fail') return state.ui;
+    if (state.ui === 'sending' || state.ui === 'fail' || state.ui === 'conflict') return state.ui;
     if (state.connection !== 'online' || !state.status) return 'noserver';
     const actual = state.status;
     const sent = state.sent;
@@ -1555,10 +1714,10 @@
     const actual = state.connection === 'online' ? state.status : null;
     const glyph = briefingBlocked
       ? (state.briefing.loadState === 'error' ? '×' : '…')
-      : { sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', noserver: '?' }[key];
+      : { sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', conflict: '!', noserver: '?' }[key];
     const tone = briefingBlocked
       ? (state.briefing.loadState === 'error' ? 'error' : 'wait')
-      : (key === 'applied' ? 'ok' : (key === 'fail' || key === 'noserver' ? 'error' : 'wait'));
+      : (key === 'applied' ? 'ok' : (key === 'fail' || key === 'conflict' || key === 'noserver' ? 'error' : 'wait'));
     $('resultView').dataset.tone = tone;
     setText('resultGlyph', glyph);
     setText('resultTitle', copy[0]);
@@ -1627,6 +1786,23 @@
     resetVisitorSession();
   }
 
+  function wasChangedByAnotherPage(status) {
+    if (state.ui === 'conflict' || !state.sent || state.sent.seq <= 0
+      || status.portalSessionId !== state.sent.portalSessionId) return false;
+    const request = status.lastRequest;
+    if (!request || !validSequence(request.seq, false) || request.seq < state.sent.seq) return false;
+    return request.seq !== state.sent.seq || request.tabletSessionId !== tabletSessionId;
+  }
+
+  function showPageConflict() {
+    clearSavedProgress();
+    stopBriefingPlayback();
+    state.ui = 'conflict';
+    setFormDisabled(false);
+    setSurface('result', $('resultTitle'));
+    render();
+  }
+
   function validSequence(value, allowZero = true) {
     return Number.isSafeInteger(value) && value >= (allowZero ? 0 : 1);
   }
@@ -1651,7 +1827,9 @@
       && status.portalSessionId.length > 0
       && (status.lastRequest == null ||
         (status.lastRequest.tabletSessionId != null
-          && validSequence(status.lastRequest.seq, false)))
+          && validSequence(status.lastRequest.seq, false)
+          && Object.hasOwn(LANG_NAME, status.lastRequest.lang)
+          && typeof status.lastRequest.relief === 'boolean'))
       && pendingValid;
   }
 
@@ -1684,6 +1862,7 @@
       return;
     }
     if (pollController) pollController.abort();
+    clearSavedProgress();
     resetBriefingSession();
     const generation = ++sendGeneration;
     state.sent = { lang: state.lang, relief: state.relief, seq: 0, portalSessionId: state.status.portalSessionId };
@@ -1720,13 +1899,15 @@
         if (!validateStatus(status)) throw new Error('invalid status response');
         if (state.status?.portalSessionId && status.portalSessionId !== state.status.portalSessionId ||
             state.lastReceived != null && status.received < state.lastReceived) {
-          resetVisitorSession(true);
+          resetAfterQuestRestart();
         }
         state.lastReceived = status.received;
         state.status = status;
         state.connection = 'online';
         if (state.view === 'briefing') setBriefingPause('offline', false);
-        observeVisitorCycle(status);
+        if (wasChangedByAnotherPage(status)) showPageConflict();
+        else observeVisitorCycle(status);
+        tryRestoreBriefing();
       } catch (error) {
         state.connection = 'offline';
         if (state.view === 'briefing') setBriefingPause('offline', true);
@@ -1762,6 +1943,7 @@
   });
   $('titleStart').addEventListener('click', beginFromTitle);
   $('titleView').addEventListener('click', beginFromTitle);
+  $('fullscreenBtn').addEventListener('click', enterFullscreen);
   $('editBtn').addEventListener('click', () => {
     returnToSettings();
   });
@@ -1818,18 +2000,26 @@
   });
   $('staffClose').addEventListener('click', () => $('staff').close());
   $('staff').addEventListener('close', () => setBriefingPause('staff', false));
+  $('staffFullscreenBtn').addEventListener('click', () => {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      const result = document.exitFullscreen();
+      result?.catch?.((error) => console.warn('fullscreen exit unavailable', error));
+    } else enterFullscreen();
+  });
   $('clearBtn').addEventListener('click', async () => {
     if (state.clearing || state.ui === 'sending') return;
     state.clearing = true;
     $('clearBtn').disabled = true;
     $('staffMessage').textContent = '予約を取り消しています…';
     try {
-      const response = await post('./clear');
+      if (!state.status?.portalSessionId) throw new Error('portal session unavailable');
+      const response = await post('./clear', { tabletSessionId, portalSessionId: state.status.portalSessionId });
       if (response.ok !== true) throw new Error('invalid clear response');
       state.sent = null;
       state.ui = 'idle';
       state.appliedSeen = false;
       state.leftWaitAfterApplied = false;
+      clearSavedProgress();
       resetBriefingSession();
       setFormDisabled(false);
       setSurface('edit');
@@ -1855,7 +2045,9 @@
   });
   document.addEventListener('visibilitychange', () => {
     setBriefingPause('hidden', document.hidden);
+    if (!document.hidden) requestWakeLock();
   });
+  document.addEventListener('fullscreenchange', syncFullscreenControls);
   document.addEventListener('keydown', (event) => {
     if ($('staff').open || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (state.view === 'result' && canAdvanceFromResult()

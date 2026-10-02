@@ -12,10 +12,15 @@ metadata:
 
 ## 運用卓での観測（2026-09-22）
 
-博士 UI はページを開くたびに tabletSessionId を作る。5 秒ごとの `/tablet/pulse` だけを接続証拠にする。
+博士 UI はタブごとに tabletSessionId を作る。同じタブのリロードでは復元用に保持する。5 秒ごとの `/tablet/pulse` だけを接続証拠にする。
 PC が `/status` を読むことはタブレットの応答に数えない。30 秒以内のページが複数あれば要確認。
 Quest は portalSessionId を起動ごとに変更する。古い起動に向けた `/set` は 409 で拒否する。
+`/set` と `/clear` は tabletSessionId と portalSessionId の両方が必須。不足は400。起動不一致は409。
 反映は同一起動・同一ページ・同じ受理番号で照合する。`appliedSeq == seq` と言語・軽減の実値一致が必要。
+説明中も照合する。別ページの新しい受理番号を見つけたら媒体を止め、設定確認の結果画面へ戻す。体験開始による pending 消費は別ページ変更ではない。
+同一タブのリロードでは sessionStorage のページ ID、起動 ID、受理番号、選択、説明位置を使う。現行 status の lastRequest、appliedSeq、実値、未消費 pending まで一致するときだけ同じ文へ復元する。オートはOFF。新しい受理番号、pending 消費、Quest 再起動後は復元しない。
+Quest 再起動時は送信済み状態と説明位置を捨てる。選択中の言語とホラー軽減を保って設定画面へ戻す。
+タイトルのタップは同じユーザー操作内で全画面化と画面スリープ抑制を試みる。失敗は設定や説明を止めない。全画面解除後はヘッダーから復帰できる。
 `ShowControlClient` の heartbeat に `visitorPortal` を載せる。卓の `/ops/status.tablets` はこれを読むだけ。
 Quest の応答が 6 秒以上古ければ未確認。ページの経過時間には Quest の応答後に経った秒数も加える。
 通常の運用卓に設定送信ボタンは置かない。両タブレットから実際に送って反映を確認する。
@@ -87,8 +92,8 @@ RECと時計は置かない。接続表示はヘッドセットの応答に基�
 |---|---|
 | `GET /` | 面 |
 | `GET /status` | この機の実値: `lang` / `relief` / `titleStage` / `phase` / `pending{lang,relief,seq}` / `appliedSeq` / `applyCount` / `received` / `model` / `ip` / `port` |
-| `POST /set` `{"lang":"en","relief":true}` | 枠へ入れる。`{"ok":true,"seq":N}`。lang が ja/en/fr 以外は 400 |
-| `POST /clear` | 枠を空にする（スタッフ） |
+| `POST /set` `{"lang":"en","relief":true,"tabletSessionId":"…","portalSessionId":"…"}` | 枠へ入れる。`{"ok":true,"seq":N}`。lang が ja/en/fr 以外、ID 不足は 400。起動 ID の不一致は 409 |
+| `POST /clear` `{"tabletSessionId":"…","portalSessionId":"…"}` | 枠を空にする（スタッフ）。ID 不足は 400。起動 ID の不一致は 409 |
 | `GET /asset/<name>` | 面が使う画像・動画。`Resources/Visitor/<name>.bytes`。Range（206）対応・10 分キャッシュ |
 
 役の結び付けは**どの URL を開くか**で決まる。卓に台帳は無い（0185 初版の `control.visitorDevices` は消した）。

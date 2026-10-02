@@ -241,6 +241,7 @@ const document = {
 const timers = new FakeTimers();
 const createdAudio = [];
 const warnings = [];
+const storedSession = new Map();
 const motionPreference = { matches: true, addEventListener() {} };
 const validStatus = {
   ok: true,
@@ -280,6 +281,11 @@ const context = {
   location: { host: '127.0.0.1:8091' },
   matchMedia: () => motionPreference,
   performance: { now: () => 1000 },
+  sessionStorage: {
+    getItem: (key) => storedSession.get(key) ?? null,
+    setItem: (key, value) => storedSession.set(key, String(value)),
+    removeItem: (key) => storedSession.delete(key),
+  },
   setInterval: (callback, delay) => timers.setInterval(callback, delay),
   setTimeout: (callback, delay) => timers.setTimeout(callback, delay),
   window: { scrollX: 0, scrollY: 0 },
@@ -309,6 +315,11 @@ const exportsSource = `
     setBriefingPause,
     beginBriefingCue,
     moveBriefing,
+    saveBriefingProgress,
+    savedProgressMatches,
+    restoreProgress: (progress) => { restoreCandidate = progress; state.restored = false; return tryRestoreBriefing(); },
+    wasChangedByAnotherPage,
+    showPageConflict,
     getBriefingMedia: () => briefingMedia,
   };
 `;
@@ -347,6 +358,24 @@ const tests = [];
 function test(name, body) {
   tests.push({ name, body });
 }
+
+test('タイトルの操作内でナビゲーションを隠す全画面化を要求する', () => {
+  let options = null;
+  document.fullscreenEnabled = true;
+  document.fullscreenElement = null;
+  document.documentElement.requestFullscreen = (value) => {
+    options = value;
+    return Promise.resolve();
+  };
+  state.view = 'title';
+  state.titleTransitioning = false;
+  elements.get('titleView').hidden = false;
+  elements.get('titleStart').dispatch('click');
+  assert.equal(options?.navigationUI, 'hide');
+  assert.equal(state.view, 'edit');
+  document.fullscreenEnabled = false;
+  delete document.documentElement.requestFullscreen;
+});
 
 test('反映判定はPOSTの受理番号と実値の両方を見る', async () => {
   const requests = [];
@@ -411,6 +440,8 @@ test('Questの起動IDが変わると送信中の古い応答を捨てる', asyn
   state.connection = 'online';
   state.ui = 'idle';
   state.view = 'edit';
+  state.lang = 'fr';
+  state.relief = true;
   const sending = runtime.send();
   await runtime.poll();
   await runtime.poll();
@@ -420,7 +451,59 @@ test('Questの起動IDが変わると送信中の古い応答を捨てる', asyn
   await sending;
   assert.equal(state.status?.portalSessionId, 'portal-b');
   assert.equal(state.sent, null);
-  assert.equal(state.view, 'title');
+  assert.equal(state.view, 'edit');
+  assert.equal(state.lang, 'fr');
+  assert.equal(state.relief, true);
+});
+
+test('別ページの新しい受理番号は説明と媒体を止めて結果画面へ戻す', () => {
+  prepareBriefing(clone(briefing));
+  state.sent = { lang: 'ja', relief: false, seq: 7, portalSessionId: 'portal-a' };
+  state.status = { ...validStatus, appliedSeq: 7,
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 7, lang: 'ja', relief: false } };
+  assert.equal(runtime.wasChangedByAnotherPage({ ...state.status,
+    lastRequest: { tabletSessionId: 'another-page', seq: 8, lang: 'en', relief: true } }), true);
+  assert.equal(runtime.wasChangedByAnotherPage({ ...state.status, pending: null, titleStage: 'In' }), false,
+    '予約消費は別ページ変更ではない');
+  runtime.configureBriefingMedia(briefing.scenes[0]);
+  runtime.beginBriefingCue();
+  const media = runtime.getBriefingMedia();
+  runtime.showPageConflict();
+  assert.equal(state.view, 'result');
+  assert.equal(state.ui, 'conflict');
+  assert.equal(media?.paused ?? true, true);
+});
+
+test('説明位置の保存は起動ID・ページID・受理番号・実値・未消費予約の一致を要求する', () => {
+  prepareBriefing(clone(briefing));
+  state.sent = { lang: 'ja', relief: false, seq: 9, portalSessionId: 'portal-a' };
+  state.briefing.sceneIndex = 1;
+  state.briefing.cueIndex = 2;
+  runtime.saveBriefingProgress();
+  const progress = JSON.parse(storedSession.get('mawarimi.visitor.progress.v1'));
+  const matching = { ...validStatus, appliedSeq: 9,
+    pending: { lang: 'ja', relief: false, seq: 9 },
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 9, lang: 'ja', relief: false } };
+  assert.equal(runtime.savedProgressMatches(progress, matching), true);
+  assert.equal(runtime.savedProgressMatches(progress, { ...matching, pending: null }), false);
+  assert.equal(runtime.savedProgressMatches(progress, { ...matching,
+    lastRequest: { ...matching.lastRequest, tabletSessionId: 'another-page' } }), false);
+  assert.equal(runtime.savedProgressMatches(progress, { ...matching, appliedSeq: 10 }), false);
+});
+
+test('説明を復元した後も操作ボタンと案内を選択した言語に揃える', () => {
+  prepareBriefing(clone(briefing));
+  const progress = { tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a',
+    seq: 11, lang: 'en', relief: true, sceneIndex: 0, cueIndex: 1, ended: false };
+  state.status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 11,
+    pending: { lang: 'en', relief: true, seq: 11 },
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 11, lang: 'en', relief: true } };
+  state.briefing.loadState = 'ready';
+  assert.equal(runtime.restoreProgress(progress), true);
+  assert.equal(document.documentElement.lang, 'en');
+  assert.equal(elements.get('briefingNext').textContent, 'Next sentence');
+  assert.equal(elements.get('briefingSettings').textContent, 'Back to settings');
+  assert.equal(elements.get('staffLabel').textContent, 'Staff');
 });
 
 test('表示更新は同期し、重複アニメーションを取消して縮小設定に従う', () => {

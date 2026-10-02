@@ -20,7 +20,7 @@ namespace FixedCamVr.Streaming.Tests
             var req = new VisitorPortalLogic.Request { method = method, path = path, contentLength = body.Length };
             var res = VisitorPortalLogic.Route(req, body, "<html>page</html>", "{\"ok\":true,\"lang\":\"ja\"}",
                 (lang, relief, tabletId) => { sets++; l = lang; r = relief; return 7; },
-                () => clears++);
+                () => clears++, portalSessionId: "portal-a");
             setCalls = sets; lastLang = l; lastRelief = r; clearCalls = clears;
             return res;
         }
@@ -79,7 +79,7 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Post_Set_QueuesTheChoice_AndReturnsTheSeq()
         {
-            var res = Route("POST", "/set", "{\"lang\":\"fr\",\"relief\":true}", out int sets, out var lang, out var relief, out _);
+            var res = Route("POST", "/set", "{\"lang\":\"fr\",\"relief\":true,\"tabletSessionId\":\"page-a\",\"portalSessionId\":\"portal-a\"}", out int sets, out var lang, out var relief, out _);
             Assert.AreEqual(200, res.status);
             Assert.AreEqual(1, sets);
             Assert.AreEqual(ShowLang.Fr, lang);
@@ -92,6 +92,14 @@ namespace FixedCamVr.Streaming.Tests
         {
             var res = Route("POST", "/set", "{\"lang\":\"xx\"}", out int sets, out _, out _, out _);
             Assert.AreEqual(400, res.status);
+            Assert.AreEqual(0, sets);
+        }
+
+        [Test]
+        public void Post_Set_RequiresBothSessionIds()
+        {
+            Assert.AreEqual(400, Route("POST", "/set", "{\"lang\":\"ja\"}", out int sets, out _, out _, out _).status);
+            Assert.AreEqual(400, Route("POST", "/set", "{\"lang\":\"ja\",\"tabletSessionId\":\"page-a\"}", out _, out _, out _, out _).status);
             Assert.AreEqual(0, sets);
         }
 
@@ -130,9 +138,22 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Post_Clear_QueuesAClear()
         {
-            var res = Route("POST", "/clear", "", out int sets, out _, out _, out int clears);
+            var res = Route("POST", "/clear", "{\"tabletSessionId\":\"page-a\",\"portalSessionId\":\"portal-a\"}", out int sets, out _, out _, out int clears);
             Assert.AreEqual(200, res.status);
             Assert.AreEqual(1, clears); Assert.AreEqual(0, sets);
+        }
+
+        [Test]
+        public void Post_Clear_RequiresCurrentSessionIds()
+        {
+            Assert.AreEqual(400, Route("POST", "/clear", "", out _, out _, out _, out int clears).status);
+            Assert.AreEqual(0, clears);
+            var req = new VisitorPortalLogic.Request { method = "POST", path = "/clear" };
+            var old = VisitorPortalLogic.Route(req,
+                "{\"tabletSessionId\":\"page-a\",\"portalSessionId\":\"old\"}",
+                "", "{}", (lang, relief, id) => 1, () => clears++, portalSessionId: "current");
+            Assert.AreEqual(409, old.status);
+            Assert.AreEqual(0, clears);
         }
 
         [Test]

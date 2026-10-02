@@ -183,11 +183,10 @@ class H(BaseHTTPRequestHandler):
                     return self._send(400, "application/json", '{"ok":false,"error":"lang"}')
                 tablet = re.search(r'"tabletSessionId"\s*:\s*' + _id_rx, body)
                 portal = re.search(r'"portalSessionId"\s*:\s*' + _id_rx, body)
-                if ('"tabletSessionId"' in body and not tablet or
-                        '"portalSessionId"' in body and not portal or bool(tablet) != bool(portal)):
+                if not tablet or not portal:
                     _st["rejected"] += 1
                     return self._send(400, "application/json", '{"ok":false,"error":"session ids required"}')
-                if portal and portal.group(1) != _st["portalSessionId"]:
+                if portal.group(1) != _st["portalSessionId"]:
                     return self._send(409, "application/json", '{"ok":false,"error":"portal session changed"}')
                 relief = bool(re.search(r'"relief"\s*:\s*true', body))
                 _st["seq"] += 1
@@ -208,6 +207,12 @@ class H(BaseHTTPRequestHandler):
                     _tablets.pop(next(iter(_tablets)))
                 return self._send(200, "application/json", '{"ok":true}')
             if path == "/clear":
+                tablet = re.search(r'"tabletSessionId"\s*:\s*' + _id_rx, body)
+                portal = re.search(r'"portalSessionId"\s*:\s*' + _id_rx, body)
+                if not tablet or not portal:
+                    return self._send(400, "application/json", '{"ok":false,"error":"session ids required"}')
+                if portal.group(1) != _st["portalSessionId"]:
+                    return self._send(409, "application/json", '{"ok":false,"error":"portal session changed"}')
                 _st["pending"] = None
                 return self._send(200, "application/json", '{"ok":true}')
             # ---- 代役だけの口（実機には無い）----

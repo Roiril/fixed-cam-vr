@@ -11,7 +11,7 @@ namespace FixedCamVr.Streaming
     ///
     /// 受けるのは 5 つだけ:
     ///   <c>GET /</c>（面）／ <c>GET /status</c>（この機の実値）／
-    ///   <c>POST /set</c>（<c>{"lang":"en","relief":true}</c>）／ <c>POST /clear</c>（枠を空にする）／
+    ///   <c>POST /set</c>（言語・軽減・ページ ID・起動 ID）／ <c>POST /clear</c>（ページ ID・起動 ID。枠を空にする）／
     ///   <c>GET /asset/&lt;name&gt;</c>（面が使う画像・動画。<c>Resources/Visitor/&lt;name&gt;.bytes</c>。Range 対応）。
     /// ⚠ JSON は自前で読む（JsonUtility をサーバのスレッドから呼ばない）。
     /// </summary>
@@ -153,17 +153,21 @@ namespace FixedCamVr.Streaming
                     return Json(400, "{\"ok\":false,\"error\":\"lang は ja / en / fr\"}");
                 bool hasTablet = TryParseTabletId(body, out string tabletId);
                 Match portalMatch = PortalIdRx.Match(body ?? "");
-                if (body.Contains("\"tabletSessionId\"") && !hasTablet ||
-                    body.Contains("\"portalSessionId\"") && !portalMatch.Success ||
-                    hasTablet != portalMatch.Success)
+                if (!hasTablet || !portalMatch.Success)
                     return Json(400, "{\"ok\":false,\"error\":\"session ids required\"}");
-                if (portalMatch.Success && portalMatch.Groups[1].Value != portalSessionId)
+                if (portalMatch.Groups[1].Value != portalSessionId)
                     return Json(409, "{\"ok\":false,\"error\":\"portal session changed\"}");
                 int seq = onSet(lang, relief, tabletId);
                 return Json(200, "{\"ok\":true,\"seq\":" + seq + "}");
             }
             if (req.method == "POST" && p == "/clear")
             {
+                bool hasTablet = TryParseTabletId(body, out _);
+                Match portalMatch = PortalIdRx.Match(body ?? "");
+                if (!hasTablet || !portalMatch.Success)
+                    return Json(400, "{\"ok\":false,\"error\":\"session ids required\"}");
+                if (portalMatch.Groups[1].Value != portalSessionId)
+                    return Json(409, "{\"ok\":false,\"error\":\"portal session changed\"}");
                 onClear();
                 return Json(200, "{\"ok\":true}");
             }
