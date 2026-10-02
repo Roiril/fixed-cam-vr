@@ -90,6 +90,18 @@ class CameraServer:
 
 
 class OperationsTests(unittest.TestCase):
+    def setUp(self):
+        resolver = patch.object(ops, 'resolve_adb', return_value='fixture-adb')
+        resolver.start()
+        self.addCleanup(resolver.stop)
+
+    def test_disconnected_registered_camera_keeps_restart_available(self):
+        fixed = {'id': 'A', 'host': '127.0.0.1', 'port': 1, 'serial': 'KNOWN', 'uuid': 'known'}
+        with patch.object(ops, '_wireless_adb', return_value={'identityOk': True, 'state': 'verified'}):
+            row = ops._camera(fixed, [])
+        self.assertTrue(row['canRestart'])
+        self.assertEqual(row['status'], 'error')
+
     def test_video_needs_new_complete_frames(self):
         with CameraServer() as server:
             row = ops._camera(server.fixed(), [])
@@ -110,30 +122,72 @@ class OperationsTests(unittest.TestCase):
             beacons = [{'id': 'A', 'uuid': server.uuid}, {'id': 'A', 'uuid': 'other'}]
             self.assertEqual(ops._camera(server.fixed(), beacons)['code'], 'duplicate_id')
 
+    def test_disconnected_camera_requires_manual_open_until_serial_is_verified(self):
+        fixed = {'id': 'A', 'host': '127.0.0.1', 'port': 1,
+                 'uuid': ops.FLEET['cameras'][0]['uuid']}
+        row = ops._camera(fixed, [])
+        self.assertEqual(row['code'], 'disconnected')
+        self.assertEqual(row['action'], '端末で配信アプリを開いてください')
+        self.assertEqual(row['wirelessAdb']['state'], 'serial_unregistered')
+        self.assertFalse(row['canRestart'])
+
+    def test_wireless_adb_accepts_only_registered_physical_serial(self):
+        class Result:
+            returncode = 0
+            stderr = ''
+
+            def __init__(self, stdout):
+                self.stdout = stdout
+
+        def runner(args, **_kwargs):
+            return Result('connected') if args[1] == 'connect' else Result('CAM-001\n')
+
+        fixed = {'host': '192.168.10.21', 'serial': 'CAM-001'}
+        self.assertEqual(ops._wireless_adb(fixed, runner)['state'], 'verified')
+        fixed['serial'] = 'CAM-002'
+        self.assertEqual(ops._wireless_adb(fixed, runner)['state'], 'identity_mismatch')
+
     def test_quest_stale_missing_and_collision(self):
         now = time.time()
         fixed = ops.FLEET['quests'][0]
         self.assertEqual(ops._quest(fixed, {}, now)['code'], 'heartbeat_missing')
         self.assertEqual(ops._quest(fixed, {'old': {'localIp': fixed['host'], 'at': now - 7}}, now)['code'],
                          'heartbeat_missing')
-        devices = {'one': {'localIp': fixed['host'], 'at': now, 'visitorPort': 8090},
-                   'two': {'localIp': fixed['host'], 'at': now, 'visitorPort': 8090}}
+        base = {'localIp': fixed['host'], 'at': now, 'visitorPort': 8090,
+                'cameraCount': 3, 'activeCamera': 'A', 'recvFps': 30, 'sourceAgeMs': 50}
+        devices = {fixed['deviceId']: dict(base), 'two': dict(base)}
         self.assertEqual(ops._quest(fixed, devices, now)['code'], 'ip_collision')
-        self.assertEqual(ops._quest(fixed, {'one': devices['one']}, now)['status'], 'ok')
+        self.assertEqual(ops._quest(fixed, {fixed['deviceId']: devices[fixed['deviceId']]}, now)['status'], 'ok')
         self.assertEqual(ops._quest(fixed, {'future': {'localIp': fixed['host'],
                                                        'at': now + 30}}, now)['code'],
                          'heartbeat_future')
         healthy = {'localIp': fixed['host'], 'at': now, 'visitorPort': 8090,
                    'cameraCount': 3, 'activeCamera': 'A', 'recvFps': 30, 'sourceAgeMs': 50}
-        row = ops._quest(fixed, {'one': healthy}, now)
+        row = ops._quest(fixed, {fixed['deviceId']: healthy}, now)
         self.assertEqual(row['title'], 'Quest から応答があります')
         self.assertEqual(row['code'], 'ok')
         self.assertIn('A/B/C', row['action'])
         healthy['recvFps'] = 0
-        self.assertEqual(ops._quest(fixed, {'one': healthy}, now)['code'], 'active_stream_stalled')
+        self.assertEqual(ops._quest(fixed, {fixed['deviceId']: healthy}, now)['code'], 'active_stream_stalled')
         healthy['activeCamera'] = 'Phone 01'
         healthy['activeIndex'] = 0
-        self.assertEqual(ops._quest(fixed, {'one': healthy}, now)['code'], 'active_stream_stalled')
+        self.assertEqual(ops._quest(fixed, {fixed['deviceId']: healthy}, now)['code'], 'active_stream_stalled')
+
+    def test_quest_requires_identity_registration_and_all_stream_diagnostics(self):
+        now = time.time()
+        registered = ops.FLEET['quests'][0]
+        healthy = {'localIp': registered['host'], 'at': now, 'visitorPort': 8090,
+                   'cameraCount': 3, 'activeCamera': 'A', 'recvFps': 30, 'sourceAgeMs': 50}
+        for missing in ('cameraCount', 'activeCamera', 'recvFps', 'sourceAgeMs'):
+            heartbeat = dict(healthy)
+            del heartbeat[missing]
+            row = ops._quest(registered, {registered['deviceId']: heartbeat}, now)
+            self.assertNotEqual(row['status'], 'ok', missing)
+            self.assertEqual(row['code'], 'diagnostics_missing', missing)
+        unregistered = dict(ops.FLEET['quests'][1])
+        row = ops._quest(unregistered, {'observed-beta': dict(healthy, localIp=unregistered['host'])}, now)
+        self.assertEqual(row['status'], 'unknown')
+        self.assertEqual(row['code'], 'identity_unregistered')
 
     def test_status_keeps_all_fixed_rows_and_rejects_missing_camera(self):
         with CameraServer() as server:
@@ -161,7 +215,7 @@ class OperationsTests(unittest.TestCase):
                   'appliedSeq': 4, 'applyCount': 3, 'received': 4,
                   'lang': 'en', 'relief': True, 'pendingSeq': 4, 'consumedSeq': 4}
         heartbeat = {'localIp': fixed['host'], 'at': now - 3, 'visitorPortal': portal}
-        devices = {'unregistered-id': heartbeat}
+        devices = {fixed['deviceId']: heartbeat}
 
         def check(expected, changed=None, at=None):
             current = json.loads(json.dumps(heartbeat))
@@ -169,7 +223,7 @@ class OperationsTests(unittest.TestCase):
                 current['visitorPortal'].update(changed)
             if at is not None:
                 current['at'] = at
-            return ops._tablet(fixed, {'unregistered-id': current}, now)
+            return ops._tablet(fixed, {fixed['deviceId']: current}, now)
 
         row = check('ok')
         self.assertEqual((row['status'], row['portalStatus'], row['connectionStatus'],
@@ -212,8 +266,8 @@ class OperationsTests(unittest.TestCase):
             ops.invalidate()
             first = ops.status({}, [], 943)
             self.assertEqual([row['id'] for row in first['tablets']], ['alpha', 'beta'])
-            second = ops.status({'test': {'localIp': fixed['host'], 'at': now,
-                                          'visitorPortal': {'schema': 0}}}, [], 943)
+            second = ops.status({fixed['deviceId']: {'localIp': fixed['host'], 'at': now,
+                                                     'visitorPortal': {'schema': 0}}}, [], 943)
             self.assertEqual(second['tablets'][0]['title'], 'タブレットの診断情報がありません')
 
     def test_fixed_show_guards(self):
@@ -330,13 +384,26 @@ class OperationsTests(unittest.TestCase):
                 self.assertFalse(result['ok'])
                 self.assertEqual(calls, [])
         with CameraServer() as server:
-            fixed = server.fixed()
+            fixed = dict(server.fixed(), serial='CAMERA-SERIAL')
             class Failed:
                 returncode = 1
                 stdout = ''
                 stderr = 'failed'
+            class Passed:
+                returncode = 0
+                stderr = ''
+
+                def __init__(self, stdout):
+                    self.stdout = stdout
+
+            def runner(args, **_kwargs):
+                if args[1] == 'connect':
+                    return Passed('connected')
+                if args[-2:] == ['getprop', 'ro.serialno']:
+                    return Passed('CAMERA-SERIAL\n')
+                return Failed()
             with patch.dict(ops.FLEET, {'cameras': [fixed]}):
-                code, result = ops.restart('A', {}, [], 1, runner=lambda *a, **k: Failed())
+                code, result = ops.restart('A', {}, [], 1, runner=runner)
                 self.assertEqual(code, 502)
                 self.assertFalse(result['ok'])
 

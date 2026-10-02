@@ -485,7 +485,8 @@ def content_status(show, dirs, bundle_dir, apk_path, devices, now=None):
         matches = [(did, h) for did, h in devices.items()
                    if h.get('localIp') == q['host'] and 0 <= now - float(h.get('at') or 0) < 6]
         did, hb = matches[0] if len(matches) == 1 else ('', None)
-        identity_ok = not q.get('deviceId') or did == q['deviceId']
+        registered = bool(q.get('deviceId'))
+        identity_ok = registered and did == q['deviceId']
         fresh = hb and 0 <= now - float(hb.get('at') or 0) < 6
         matched = (fresh and identity_ok and hb.get('contentPolicy') == export_build.POLICY
                    and hb.get('contentVerified') is True and prepared_id and apk_id == prepared_id
@@ -498,12 +499,16 @@ def content_status(show, dirs, bundle_dir, apk_path, devices, now=None):
                                 and hb.get('contentId') != prepared_id)
                             or (hb.get('buildGuid') and build_guid
                                 and _guid(hb.get('buildGuid')) != _guid(build_guid))))
+        title = ('実機版が一致しています' if matched else
+                 ('端末 ID が未登録です' if not registered else '実機版を確認できません'))
+        action = ('' if matched else
+                  ('Quest の端末 ID を実測して固定台帳へ登録してください' if not registered
+                   else '対応する APK を入れ起動してください'))
         quests.append({'id': q['id'], 'status': 'ok' if matched else
                        ('error' if quest_error else 'unknown'),
                        'contentId': hb.get('contentId', '') if fresh else '',
                        'buildGuid': hb.get('buildGuid', '') if fresh else '',
-                       'title': '実機版が一致しています' if matched else '実機版を確認できません',
-                       'action': '' if matched else '対応する APK を入れ起動してください'})
+                        'title': title, 'action': action})
     effects = _effects(show, refs, prepared_id, bundle_id,
                        apk_id if build_guid else None, dirs)
     return {'ok': True, 'observedAt': int(now), 'policy': export_build.POLICY,

@@ -13,7 +13,8 @@ URL の `#setup`、`#devices`、`#shoot`、`#content`、`#build`、`#checks` で
 準備用起動では `FIXEDCAM_PREPARATION=1` を設定する。loopback と同一オリジンからの撮影開始・停止・回収・人形視点の採用・無人静止画の撮影と採用だけを許可する。スマホで撮影した後の回収はこの PC の「撮影」で行う。
 
 無人静止画は `GET /shoot/plates` で確認する。`POST /shoot/plate-capture {cameraId}` は登録した A・B・C から新しい JPEG を取得する。自動採用はしない。`POST /shoot/plate-adopt {cameraId,url}` は同じカメラで撮影した候補だけを採用する。A は `plate_A` と `plate_A_right` を同時に更新する。ファイルの実在と撮影台帳を確認し、当日撮影して採用した 3 枚がそろうまでビルド依頼を有効にしない。カメラ位置や照明が本番と一致しているかは人が判断する。
-通常の `./serve.ps1` は準備用の書き込みを無効にする。一般の演出編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
+通常の `./serve.ps1` は撮影準備用。点検だけなら `./serve.ps1 -Inspect` で準備用の書き込みを無効にする。一般の演出編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
+電源を入れるところからの手順は [設営の入口](../../docs/onsite/setup-from-zero.md)。`py -3.11 tools/onsite.py setup` は登録した Quest と博士タブレットを起動する。
 次節以降のタイムラインや画質の操作説明は旧編集画面の記録。Player へのライブ反映は廃止した。
 `GET /ops/capabilities` で起動モードと使用できる操作を読み、使えない操作は理由付きで表示する。Python の API 変更時はサーバーを再起動する。
 

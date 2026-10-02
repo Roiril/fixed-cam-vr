@@ -5,9 +5,13 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from android_devices import resolve_adb
 
 FLEET_FILE = os.path.join(os.path.dirname(__file__), 'operations-fleet.json')
 with open(FLEET_FILE, encoding='utf-8') as _file:
@@ -144,6 +148,44 @@ def _issue(status, code, title, action, detail=''):
     return {'status': status, 'code': code, 'title': title, 'detail': detail, 'action': action}
 
 
+def _heartbeat_value(heartbeat, key):
+    """現行の root 値を優先し、旧 APK の nested status も読む。"""
+    if key in heartbeat:
+        return heartbeat[key]
+    nested = heartbeat.get('status')
+    return nested.get(key) if isinstance(nested, dict) else None
+
+
+def _wireless_adb(fixed, runner=subprocess.run):
+    """登録済みの物理 serial と無線 ADB の接続先が同じ端末かを確認する。"""
+    expected = (fixed.get('serial') or '').strip()
+    result = {'state': 'serial_unregistered', 'reachable': False, 'identityOk': False,
+              'expectedSerial': expected, 'observedSerial': ''}
+    if not expected:
+        return result
+    transport = fixed['host'] + ':5555'
+    try:
+        adb_path = resolve_adb()
+        connected = runner([adb_path, 'connect', transport], capture_output=True, text=True,
+                           timeout=20, check=False)
+        if connected.returncode != 0 or 'connected' not in connected.stdout.lower():
+            result['state'] = 'unreachable'
+            return result
+        result['reachable'] = True
+        observed = runner([adb_path, '-s', transport, 'shell', 'getprop', 'ro.serialno'],
+                          capture_output=True, text=True, timeout=20, check=False)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        result['state'] = 'unreachable'
+        return result
+    if observed.returncode != 0:
+        result['state'] = 'identity_unavailable'
+        return result
+    result['observedSerial'] = observed.stdout.strip().splitlines()[0] if observed.stdout.strip() else ''
+    result['identityOk'] = result['observedSerial'] == expected
+    result['state'] = 'verified' if result['identityOk'] else 'identity_mismatch'
+    return result
+
+
 def _registration_issues(info, host):
     fields = ('identityState', 'identityLocked', 'expectedIp', 'localIp')
     present = [key for key in fields if key in info]
@@ -182,7 +224,10 @@ def _camera(fixed, beacons, show_camera=None):
                       'elapsedSec': None, 'bytes': 0},
            'metrics': {'fps': None, 'batteryPct': None, 'batteryTempC': None,
                        'clientCount': None, 'aeLock': None, 'awbLock': None,
-                       'lensFovDeg': None}, 'issues': [], 'canRestart': False}
+                       'lensFovDeg': None}, 'issues': [], 'canRestart': False,
+           'wirelessAdb': {'state': 'serial_unregistered', 'reachable': False,
+                           'identityOk': False, 'expectedSerial': fixed.get('serial') or '',
+                           'observedSerial': ''}}
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as probe_pool:
         info_future = probe_pool.submit(_json_get, host, port, '/info')
         health_future = probe_pool.submit(_json_get, host, port, '/health')
@@ -200,8 +245,10 @@ def _camera(fixed, beacons, show_camera=None):
         except (OSError, ValueError):
             health = {}
     if info is None:
+        row['wirelessAdb'] = _wireless_adb(fixed)
+        row['canRestart'] = row['wirelessAdb']['identityOk']
         row['issues'].append(_issue('error', 'disconnected', '通信できません',
-                                    '端末の電源と Wi-Fi を確認してください', info_error))
+                                    '端末で配信アプリを開いてください', info_error))
         return _finish(row)
     row['httpOk'] = True
     row['observedId'], row['observedUuid'] = info.get('cameraId'), info.get('uuid')
@@ -268,7 +315,9 @@ def _camera(fixed, beacons, show_camera=None):
     if info.get('tiltState') not in (None, '', 'ok', 'stable'):
         row['issues'].append(_issue('warning', 'tilt', '端末の傾きを確認してください',
                                     '設置位置と水平を確認してください'))
-    row['canRestart'] = row['identityOk'] and not any(i['code'] == 'duplicate_id' for i in row['issues'])
+    row['wirelessAdb'] = _wireless_adb(fixed)
+    row['canRestart'] = (row['identityOk'] and row['wirelessAdb']['identityOk'] and
+                         not any(i['code'] == 'duplicate_id' for i in row['issues']))
     return _finish(row)
 
 
@@ -289,6 +338,8 @@ def _quest(fixed, devices, now):
     row = {'id': fixed['id'], 'label': fixed['label'], 'host': fixed['host'],
            'status': 'unknown', 'code': 'unconfirmed', 'title': '未確認',
            'action': 'Quest の起動を確認してください', 'ageSec': None, 'deviceId': None,
+           'expectedDeviceId': fixed.get('deviceId') or '',
+           'shortId': fixed.get('shortId') or '', 'serial': fixed.get('serial') or '',
            'phase': None, 'visitorPort': None, 'issues': []}
     if len(matches) > 1:
         row['issues'].append(_issue('error', 'ip_collision', '同じ IP の Quest が複数あります',
@@ -297,25 +348,34 @@ def _quest(fixed, devices, now):
         did, hb = matches[0]
         row.update(ageSec=round(now - float(hb['at']), 1), deviceId=did,
                    phase=hb.get('phase'), visitorPort=hb.get('visitorPort'))
-        if fixed.get('deviceId') and did != fixed['deviceId']:
+        if not fixed.get('deviceId'):
+            row['issues'].append(_issue('unknown', 'identity_unregistered', '端末 ID が未登録です',
+                                        'Quest の端末 ID を実測して固定台帳へ登録してください'))
+        elif did != fixed['deviceId']:
             row['issues'].append(_issue('error', 'identity_mismatch', '登録と違う Quest です',
                                         'Quest の端末 ID を確認してください'))
-        if not hb.get('visitorPort'):
+        if not _heartbeat_value(hb, 'visitorPort'):
             row['issues'].append(_issue('warning', 'visitor_closed', '受付口が閉じています',
                                         'Quest の受付画面を確認してください'))
-        count = hb.get('cameraCount')
-        if isinstance(count, int) and count < 3:
+        required = ('cameraCount', 'activeCamera', 'recvFps', 'sourceAgeMs')
+        missing = [key for key in required if _heartbeat_value(hb, key) is None]
+        if missing:
+            row['issues'].append(_issue('unknown', 'diagnostics_missing', '映像の診断情報がありません',
+                                        '診断情報に対応した Quest アプリを起動してください',
+                                        ', '.join(missing)))
+        count = _heartbeat_value(hb, 'cameraCount')
+        if count is not None and (not isinstance(count, int) or isinstance(count, bool) or count < 3):
             row['issues'].append(_issue('error', 'camera_count', '受信カメラが足りません',
                                         'Quest のカメラ設定を確認してください'))
-        active = hb.get('activeCamera')
-        active_index = hb.get('activeIndex')
-        fps = hb.get('recvFps')
+        active = _heartbeat_value(hb, 'activeCamera')
+        active_index = _heartbeat_value(hb, 'activeIndex')
+        fps = _heartbeat_value(hb, 'recvFps')
         fixed_active = (active in ('A', 'B', 'C') or
                         (isinstance(active_index, int) and 0 <= active_index <= 2))
         if fixed_active and isinstance(fps, (int, float)) and fps <= 0:
             row['issues'].append(_issue('error', 'active_stream_stalled', '表示中の映像が止まっています',
                                         'Quest の映像接続を確認してください'))
-        age = hb.get('sourceAgeMs')
+        age = _heartbeat_value(hb, 'sourceAgeMs')
         if isinstance(age, (int, float)) and age > 3000:
             row['issues'].append(_issue('error', 'source_stale', '表示中の映像が古くなっています',
                                         'Quest の映像接続を確認してください'))
@@ -336,6 +396,8 @@ def _quest(fixed, devices, now):
 
 
 def _tablet(fixed, devices, now):
+    tablet = next((item for item in FLEET.get('tablets', [])
+                   if (item.get('questId') or item.get('target')) == fixed['id']), None)
     row = {'id': fixed['id'], 'host': fixed['host'], 'status': 'unknown',
            'title': 'タブレットを確認できません', 'action': 'Quest の起動と Wi-Fi を確認してください',
            'portalStatus': 'unknown', 'connectionStatus': 'unknown',
@@ -343,7 +405,13 @@ def _tablet(fixed, devices, now):
            'tabletSessionId': None, 'tabletIp': None, 'ageSec': None,
            'sentSeq': None, 'appliedSeq': None, 'received': None,
            'applyCount': None, 'requestedLang': None, 'requestedRelief': None,
-           'lang': None, 'relief': None, 'activePages': 0}
+           'lang': None, 'relief': None, 'activePages': 0,
+           'tabletName': tablet.get('label') if tablet else None,
+           'tabletModel': tablet.get('model') if tablet else None,
+           'tabletSerial': tablet.get('serial') if tablet else None,
+           'tabletHost': tablet.get('host') if tablet else None,
+           'visitorUrl': (tablet.get('visitorUrl') if tablet else
+                          f"http://{fixed['host']}:{fixed.get('port', 8090)}/")}
     matches = []
     for did, hb in devices.items():
         if not isinstance(hb, dict) or hb.get('localIp') != fixed['host']:
@@ -365,11 +433,15 @@ def _tablet(fixed, devices, now):
                        action='Quest の起動と Wi-Fi を確認してください')
         return row
     did, hb, hb_age = matches[0]
-    if fixed.get('deviceId') and did != fixed['deviceId']:
+    if not fixed.get('deviceId'):
+        row.update(title='対応する Quest の端末 ID が未登録です',
+                   action='Quest の端末 ID を実測して固定台帳へ登録してください')
+        return row
+    if did != fixed['deviceId']:
         row.update(status='error', title='登録と違う Quest です',
                    action='Quest の端末 ID を確認してください')
         return row
-    portal = hb.get('visitorPortal')
+    portal = _heartbeat_value(hb, 'visitorPortal')
     required = ('listening', 'portalSessionId', 'tablets', 'lastRequest', 'appliedSeq',
                 'applyCount', 'received', 'lang', 'relief', 'pendingSeq', 'consumedSeq')
     if (not isinstance(portal, dict) or portal.get('schema') != 1 or
@@ -499,25 +571,38 @@ def restart(camera_id, devices, beacons, revision, runner=subprocess.run):
     try:
         if time.monotonic() - _last_restart.get(camera_id, float('-inf')) < 90:
             return 409, {'ok': False, 'cameraId': camera_id, 'message': '90 秒経ってから再試行してください'}
+        adb_identity = None
         try:
             info = _json_get(fixed['host'], fixed['port'], '/info')
         except (OSError, ValueError):
-            return 409, {'ok': False, 'cameraId': camera_id,
-                         'message': '端末に接続できません。手で配信アプリを起動してください'}
-        if (info.get('cameraId'), info.get('uuid'), info.get('show')) != (
-                camera_id, fixed['uuid'], FLEET['show']):
-            return 409, {'ok': False, 'cameraId': camera_id, 'message': '端末の ID が登録と一致しません'}
-        if any(i['status'] == 'error' for i in _registration_issues(info, fixed['host'])):
-            return 409, {'ok': False, 'cameraId': camera_id, 'message': '端末の登録状態か IP が一致しません'}
+            info = None
+            adb_identity = _wireless_adb(fixed, runner)
+            if not adb_identity['identityOk']:
+                return 409, {'ok': False, 'cameraId': camera_id,
+                             'message': '端末で配信アプリを開いてください。無線 ADB から端末を確認できません'}
+        if info is not None:
+            if (info.get('cameraId'), info.get('uuid'), info.get('show')) != (
+                    camera_id, fixed['uuid'], FLEET['show']):
+                return 409, {'ok': False, 'cameraId': camera_id, 'message': '端末の ID が登録と一致しません'}
+            if any(i['status'] == 'error' for i in _registration_issues(info, fixed['host'])):
+                return 409, {'ok': False, 'cameraId': camera_id, 'message': '端末の登録状態か IP が一致しません'}
+            adb_identity = _wireless_adb(fixed, runner)
+            if not adb_identity['identityOk']:
+                return 409, {'ok': False, 'cameraId': camera_id,
+                             'message': '無線 ADB の端末 ID を確認できません。端末で配信アプリを開いてください'}
         if any(b.get('uuid') != fixed['uuid'] for b in beacons if b.get('id') == camera_id):
             return 409, {'ok': False, 'cameraId': camera_id, 'message': '同じ ID の端末が複数あります'}
         _last_restart[camera_id] = time.monotonic()
         serial = fixed['host'] + ':5555'
-        commands = [['adb', 'connect', serial],
-                    ['adb', '-s', serial, 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'],
-                    ['adb', '-s', serial, 'shell', 'wm', 'dismiss-keyguard'],
-                    ['adb', '-s', serial, 'shell', 'am', 'force-stop', 'com.fixedcamvr.streamer'],
-                    ['adb', '-s', serial, 'shell', 'am', 'start', '-n',
+        try:
+            adb_path = resolve_adb()
+        except RuntimeError as error:
+            return 502, {'ok': False, 'cameraId': camera_id, 'message': str(error)}
+        commands = [[adb_path, 'connect', serial],
+                    [adb_path, '-s', serial, 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'],
+                    [adb_path, '-s', serial, 'shell', 'wm', 'dismiss-keyguard'],
+                    [adb_path, '-s', serial, 'shell', 'am', 'force-stop', 'com.fixedcamvr.streamer'],
+                    [adb_path, '-s', serial, 'shell', 'am', 'start', '-n',
                      'com.fixedcamvr.streamer/.MainActivity']]
         for args in commands:
             try:

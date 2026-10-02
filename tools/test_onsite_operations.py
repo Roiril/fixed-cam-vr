@@ -6,6 +6,9 @@ import json
 import pathlib
 import tempfile
 import unittest
+import argparse
+import contextlib
+import io
 from unittest import mock
 
 
@@ -37,7 +40,7 @@ class OnsiteOperationsTests(unittest.TestCase):
                 mock.patch.object(onsite, "probe_camera", return_value={
                     "id": "A", "host": "192.168.10.21", "port": 8080,
                     "info": {"cameraId": "A", "uuid": "a", "show": "mawarimi",
-                             "appVersion": "0.14.0", "lensFovDeg": 104.3,
+                             "appVersion": "0.15.0", "lensFovDeg": 104.3,
                              "tiltState": "ok"},
                     "stream": {"ok": True, "frames": 2, "firstSeq": 1, "lastSeq": 2},
                     "health": {}, "adb": True,
@@ -86,7 +89,7 @@ class OnsiteOperationsTests(unittest.TestCase):
         def probe(cam):
             return {"id": cam["id"], "host": cam["host"], "port": 8080,
                     "info": {"cameraId": cam["id"], "uuid": cam["uuid"],
-                             "show": "mawarimi", "appVersion": "0.14.0",
+                             "show": "mawarimi", "appVersion": "0.15.0",
                              "lensFovDeg": 104.3, "tiltState": "ok"},
                     "stream": {"ok": False, "bytes": 65536, "frames": 1},
                     "health": {"fps": 0, "clientCount": 0}, "adb": True}
@@ -307,9 +310,73 @@ class OnsiteOperationsTests(unittest.TestCase):
                     mock.patch.object(onsite, "run", return_value=(code, line, "")), \
                     mock.patch.object(onsite, "local_ipv4", return_value=[onsite.DESK_IP]):
                 onsite.check_desk(rows, disk)
-            baked_row = next(r for r in rows.items if r["label"] == "本体に入れた設定")
+            baked_row = next(r for r in rows.items if r["label"] == "ビルド用の設定")
             self.assertEqual(baked_row["state"], state)
             self.assertTrue(baked_row["required"])
+
+    def test_ready_requires_no_required_skip(self):
+        rows = onsite.Rows()
+        rows.add("点検", "warn", "任意", "注意", required=False)
+        self.assertTrue(rows.ready)
+        rows.add("点検", "skip", "必須", "未確認")
+        self.assertFalse(rows.ready)
+        self.assertEqual(rows.required_unconfirmed, 1)
+
+    def test_selected_quest_does_not_expect_the_other(self):
+        selected = onsite.selected_quests(self.fleet, "alpha")
+        self.assertEqual([q["id"] for q in selected], ["alpha"])
+
+    def test_heartbeat_content_mismatch_is_ng(self):
+        rows = onsite.Rows()
+        devices = {"devices": [{
+            "deviceId": "alpha-id", "localIp": "192.168.10.31", "ageSec": 1,
+            "status": {"contentId": "old", "buildGuid": "old", "sndMissing": 0,
+                       "ctrlLConnected": True, "ctrlRConnected": True},
+        }]}
+        manifest = {"contentId": "new", "buildGuid": "abcdef"}
+        with mock.patch.object(onsite, "load_fleet", return_value=self.fleet), \
+                mock.patch.object(onsite, "get_json", return_value=devices), \
+                mock.patch.object(onsite, "load_apk_content", return_value=manifest), \
+                mock.patch.object(onsite.time, "sleep"):
+            onsite.sample_heartbeat(rows, 0.01, 1, False, "alpha")
+        self.assertTrue(any(r["label"] == "Quest α の導入済み内容" and r["state"] == "ng"
+                            for r in rows.items))
+
+    def test_json_check_writes_one_json_document_and_fails_required_skip(self):
+        def desk(rows, show):
+            rows.add("卓", "skip", "証明", "未確認")
+            return None
+
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(onsite, "LOG_DIR", folder), \
+                mock.patch.object(onsite, "load_show", return_value={}), \
+                mock.patch.object(onsite, "check_desk", side_effect=desk), \
+                mock.patch.object(onsite, "check_cameras"), \
+                mock.patch.object(onsite, "quest_rows", return_value=[]), \
+                mock.patch.object(onsite, "check_adb_android_networks"), \
+                mock.patch.object(onsite, "sample_heartbeat"), \
+                mock.patch.object(onsite, "check_tablets"):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                rc = onsite.cmd_check(argparse.Namespace(
+                    deep=False, json=True, quests="alpha"))
+        payload = json.loads(output.getvalue())
+        self.assertEqual(rc, 1)
+        self.assertFalse(payload["ready"])
+        self.assertEqual(payload["requiredUnconfirmed"], 1)
+
+    def test_wifi_guard_does_not_change_unknown_android(self):
+        unknown = {"serial": "USB-X", "physicalSerial": "X", "state": "device",
+                   "model": "Tablet", "isQuest": False, "usb": True}
+        with mock.patch.object(onsite, "connected_android_devices",
+                               return_value=([unknown], "")), \
+                mock.patch.object(onsite, "load_fleet", return_value=self.fleet), \
+                mock.patch.object(onsite, "_authorized_android",
+                                  return_value=(False, "固定登録に一致しない Android")), \
+                mock.patch.object(onsite, "wifi_guard") as guard:
+            rc = onsite.cmd_wifi_guard(argparse.Namespace())
+        self.assertEqual(rc, 1)
+        guard.assert_not_called()
 
 
 if __name__ == "__main__":

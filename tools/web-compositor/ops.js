@@ -74,7 +74,8 @@ for (const [i,id] of QUEST_IDS.entries()) {
   state(badge,'unknown'); top.append(name,badge);
   const body = el('div','quest-body'), text = el('div'), title = el('div','device-title','応答を待っています'), address = el('p','mono',`192.168.10.${31+i}`), detail = el('p','note');
   text.append(title,address,detail);
-  const link = el('span','portal-link','博士 UI :8090');
+  const link = el('a','portal-link','博士タブレットを開く');
+  link.href = `http://192.168.10.${31+i}:8090/`;
   body.append(text,link); card.append(top,body); $('quests').append(card); questViews.set(id,{badge,title,address,detail,link});
 }
 
@@ -130,7 +131,9 @@ function render() {
     v.action.textContent = s.fresh ? c?.action || '映像と設置場所を確認してください。' : 'サーバーとの接続を確認してください。復旧後にこの端末を測り直します。';
     v.previewButton.disabled = !!demo || !s.fresh || !c?.identityOk;
     v.restart.disabled = !!demo || !s.fresh || !c?.canRestart || v.restarting;
-    v.restart.title = v.restart.disabled ? '正しい端末だと確認できた場合に使えます。' : 'このカメラだけを起こし直します。';
+    v.restart.title = v.restart.disabled ? (c?.wirelessAdb?.state==='serial_unregistered'
+      ? 'ADB の端末番号が未登録です。端末で配信アプリを開いてください。'
+      : '無線 ADB で正しい端末だと確認できた場合に使えます。') : 'このカメラだけを起こし直します。';
     if (!s.fresh || !c?.identityOk) closePreview(v);
     const details = [];
     details.push(el('p','',`端末の応答: ${s.fresh && c?.httpOk === true ? 'あり' : '未確認'} / 担当の照合: ${s.fresh && c?.identityOk === true ? '一致' : '未確認または不一致'}`));
@@ -140,6 +143,8 @@ function render() {
     details.push(el('p','',`露出: ${s.fresh ? lock(c?.metrics?.aeLock) : '未確認'} / 色: ${s.fresh ? lock(c?.metrics?.awbLock) : '未確認'}`));
     details.push(el('p','mono',`登録番号: ${c?.expectedUuid || '未確認'}`));
     details.push(el('p','mono',`応答した番号: ${s.fresh ? c?.observedUuid || '未確認' : '未確認'}`));
+    const adb={verified:'接続済み・端末一致',unreachable:'未接続',identity_unavailable:'端末番号を取得できない',identity_mismatch:'登録と違う端末',serial_unregistered:'端末番号が未登録'};
+    details.push(el('p','',`無線 ADB: ${s.fresh ? adb[c?.wirelessAdb?.state] || '未確認' : '未確認'}`));
     for (const issue of s.fresh ? c?.issues || [] : []) details.push(el('p','',`${issue.title || ''} ${issue.detail || ''} ${issue.action || ''}`.trim()));
     v.detailBody.replaceChildren(...details);
   }
@@ -149,6 +154,14 @@ function render() {
     v.title.textContent = s.fresh ? q?.title || '応答がありません' : '現在の状態は未確認';
     v.detail.textContent = s.fresh ? q?.action || '装着して映像と音を確認してください。' : 'Quest を起動して同じ Wi-Fi につないでください。';
     if (q?.host) v.address.textContent = `${q.host} / ${s.fresh ? num(q.ageSec,' 秒前',1) : '未確認'}`;
+    v.link.href = q?.host ? `http://${q.host}:${q.visitorPort || 8090}/` : `http://192.168.10.${id==='alpha'?31:32}:8090/`;
+    v.link.textContent = q?.visitorPort ? '博士タブレットを開く' : '博士タブレットの入口';
+    const ids=[];
+    if(q?.shortId)ids.push(`端末 ID ${q.shortId}`);
+    else ids.push('端末 ID 未登録');
+    if(q?.serial)ids.push(`USB ${q.serial}`);
+    if(s.fresh&&q?.deviceId)ids.push(`応答 ${String(q.deviceId).slice(0,6)}`);
+    v.detail.append(document.createElement('br'),document.createTextNode(ids.join(' / ')));
   }
   $('global-issues').replaceChildren(...(s.fresh ? snapshot?.issues || [] : []).filter(i => !i.device).map(i => {
     const box=el('div','global-issue'); box.append(el('div','',i.title || '要確認'),el('p','',`${i.detail || ''} ${i.action || ''}`.trim()));return box;
@@ -202,13 +215,17 @@ function renderTablets(fresh) {
   $('tablets').replaceChildren(...QUEST_IDS.map((id,i)=>{
     const t=fresh?snapshot?.tablets?.find(t=>t.id===id):null;
     const card=el('article','quest-card tablet-card'),top=el('div','quest-top'),badge=el('span','state');
-    state(badge,t?.status||'unknown');top.append(el('h3','',`博士タブレット → Quest ${i?'β':'α'}`),badge);
-    const path=el('p','mono',`http://192.168.10.${31+i}:8090/`);
+    state(badge,t?.status||'unknown');top.append(el('h3','',t?.tabletName||`博士タブレット ${i?'β':'α'}（未登録） → Quest ${i?'β':'α'}`),badge);
+    const url=t?.visitorUrl||`http://192.168.10.${31+i}:8090/`;
+    const path=el('p','mono'),link=el('a','','受付ページを開く'),copy=el('button','','アドレスをコピー');
+    link.href=url;link.textContent=url;copy.type='button';copy.setAttribute('aria-label',`Quest ${i?'β':'α'} の受付ページのアドレスをコピー`);
+    copy.addEventListener('click',()=>copyTask(url,setup));
+    path.append(link);const setup=el('p','note',t?.tabletSerial?`${t.tabletModel||'タブレット'} / 端末番号 ${t.tabletSerial} / 固定 IP ${t.tabletHost||'未登録'}`:'このタブレットは固定台帳に未登録です。端末番号と固定 IP を実測して登録してください。');
     const stages=el('div','tablet-stages');
     for(const [label,key] of [['Quest の受付','portalStatus'],['タブレットの応答','connectionStatus'],['設定の反映','reflectionStatus']]){
       const row=el('div'),b=el('span','state');state(b,t?.[key]||'unknown');row.append(el('span','',label),b);stages.append(row);
     }
-    card.append(top,path,stages,el('p','device-title',t?.title||'タブレットの状態は未確認です'));
+    card.append(top,path,copy,setup,el('p','note','アドレスは手入力しません。上のリンクを押すかコピーします。Chrome の初回案内を完了します。充電器につなぎます。横向きにします。タブはこの受付ページ 1 枚だけにして全画面で開きます。'),stages,el('p','device-title',t?.title||'タブレットの状態は未確認です'));
     const values=el('dl','tablet-values');
     for(const [label,value] of [['タブレットから送った設定',selection(t?.requestedLang,t?.requestedRelief)],['Quest の現在の設定',selection(t?.lang,t?.relief)]]){
       const row=el('div');row.append(el('dt','',label),el('dd','',value));values.append(row);
@@ -347,7 +364,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden){poll();po
 setInterval(()=>{if(!document.hidden)render();},1000);
 
 function demoSnapshot(mode) {
-  const cameras=CAMERA_IDS.map((id,i)=>({id,host:`192.168.10.${21+i}`,port:8080,expectedUuid:`example-${id}`,observedUuid:`example-${id}`,observedId:id,status:'ok',title:'新しい映像を受信しています',action:'担当と映像の向きを確認してください。',identityOk:true,httpOk:true,canRestart:false,stream:{ok:true,frames:2,firstSeq:1024,lastSeq:1025,elapsedSec:.2,bytes:41520},metrics:{batteryTempC:34.2+i,batteryPct:88-i*9,lensFovDeg:104.3,aeLock:true,awbLock:true},issues:[]}));
+  const cameras=CAMERA_IDS.map((id,i)=>({id,host:`192.168.10.${21+i}`,port:8080,expectedUuid:`example-${id}`,observedUuid:`example-${id}`,observedId:id,status:'ok',title:'新しい映像を受信しています',action:'担当と映像の向きを確認してください。',identityOk:true,httpOk:true,canRestart:false,wirelessAdb:{state:'serial_unregistered',identityOk:false},stream:{ok:true,frames:2,firstSeq:1024,lastSeq:1025,elapsedSec:.2,bytes:41520},metrics:{batteryTempC:34.2+i,batteryPct:88-i*9,lensFovDeg:104.3,aeLock:true,awbLock:true},issues:[]}));
   if(mode!=='ready')Object.assign(cameras[1],{status:'error',title:'応答はありますが映像が止まっています',action:'カメラ B の画面を点けて配信アプリを開いてください。改善しなければこの端末を起こし直します。',stream:{ok:false,frames:0}});
   const quests=QUEST_IDS.map((id,i)=>({id,label:`Quest ${i?'β':'α'}`,host:`192.168.10.${31+i}`,deviceId:`example-${id}`,status:'ok',title:'Quest から応答があります',action:'受付ページが起動しています。装着して映像と音を確認してください。',ageSec:1.2,visitorPort:8090,issues:[]}));
   if(mode!=='ready')Object.assign(quests[1],{status:'unknown',title:'Quest β の応答がありません',action:'Quest β を起動して会場の Wi-Fi につないでください。',ageSec:null,visitorPort:0});

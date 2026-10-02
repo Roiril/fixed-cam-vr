@@ -31,12 +31,17 @@ import sys
 import time
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from android_devices import (AdbNotFoundError, adb_command, list_android_devices,
+                             resolve_adb)
+
 PKG = "com.roiril.mawarimi"
 FILES_DIR = f"/sdcard/Android/data/{PKG}/files"
 CACHE_DIR = f"/sdcard/Android/data/{PKG}/cache"
 XPLOG_DIR = f"{FILES_DIR}/xplog"
-STATE_PATH = os.path.join("logs", "quest-fleet.json")
-DEFAULT_APK = os.path.join("Builds", "mawarimi.apk")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATE_PATH = os.path.join(ROOT, "logs", "quest-fleet.json")
+DEFAULT_APK = os.path.join(ROOT, "Builds", "mawarimi.apk")
 
 # 温度がこの幅に収まっていたら「同じくらい」とみなし、前回使っていない方を選ぶ。
 TEMP_TIE_C = 3.0
@@ -49,10 +54,10 @@ THERMAL_BLOCK = 2
 # ---------------------------------------------------------------- adb
 
 def adb(serial, *args, timeout=20):
-    cmd = ["adb"]
-    if serial:
-        cmd += ["-s", serial]
-    cmd += [str(a) for a in args]
+    try:
+        cmd = adb_command(resolve_adb(), serial, *args)
+    except AdbNotFoundError as e:
+        return 127, "", str(e)
     try:
         # encoding 明示は必須。locale 既定（cp932）だと実機ログ・端末名の日本語が
         # U+FFFD へ潰れて復元できなくなる（quest-record.py の adb() と同じ理由）。
@@ -61,9 +66,8 @@ def adb(serial, *args, timeout=20):
         return p.returncode, p.stdout.replace("\r", ""), p.stderr.replace("\r", "")
     except subprocess.TimeoutExpired:
         return 124, "", "timeout"
-    except FileNotFoundError:
-        print("adb not found in PATH", file=sys.stderr)
-        sys.exit(2)
+    except FileNotFoundError as e:
+        return 127, "", str(e)
 
 
 _SKIP_REPORTED = set()
@@ -81,27 +85,36 @@ def list_devices(all_devices=False):
     そこで消すと「繋がらない機を調べる」用途（`memory/quest_adb_auth.md`）が成り立たなくなる。
     落とすのは「model が読めて、しかも Quest ではない」ときだけ。
     """
-    _, out, _ = adb(None, "devices", "-l")
+    try:
+        found = list_android_devices(
+            lambda cmd, timeout=20: _run_adb_command(cmd, timeout),
+            resolve_adb(), NAMES)
+    except (AdbNotFoundError, RuntimeError) as e:
+        if "adb" not in _SKIP_REPORTED:
+            _SKIP_REPORTED.add("adb")
+            print(str(e), file=sys.stderr)
+        return []
     res = []
-    for line in out.splitlines()[1:]:
-        line = line.strip()
-        if not line or line.startswith("*"):
+    for item in found:
+        if not all_devices and item["state"] == "device" and not item["isQuest"]:
+            if item["serial"] not in _SKIP_REPORTED:
+                _SKIP_REPORTED.add(item["serial"])
+                print(f"  {item['serial']}  {item['model'] or 'Android'} は Quest ではないので対象外",
+                      file=sys.stderr)
             continue
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        model = ""
-        for tok in parts[2:]:
-            if tok.startswith("model:"):
-                model = tok[6:]
-        if not all_devices and model and not model.lower().startswith("quest"):
-            # 黙って外さない（「なぜあの機に入らないのか」を現場で追わせない）。
-            if parts[0] not in _SKIP_REPORTED:
-                _SKIP_REPORTED.add(parts[0])
-                print(f"  {parts[0]}  {model} は Quest ではないので対象外", file=sys.stderr)
-            continue
-        res.append({"serial": parts[0], "state": parts[1], "model": model})
+        res.append(item)
     return res
+
+
+def _run_adb_command(cmd, timeout=20):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
+        return p.returncode, p.stdout.replace("\r", ""), p.stderr.replace("\r", "")
+    except subprocess.TimeoutExpired:
+        return 124, "", "timeout"
+    except FileNotFoundError as e:
+        return 127, "", str(e)
 
 
 # ---------------------------------------------------------------- 観測
@@ -325,8 +338,8 @@ def pick(devs, state, require_app=True, require_reg=False):
     if len(cand) > 1 and cand[0].get("soc_c") is not None and cand[1].get("soc_c") is not None:
         if abs(cand[0]["soc_c"] - cand[1]["soc_c"]) <= TEMP_TIE_C:
             last = state.get("lastUsed")
-            alt = [d for d in cand if d["serial"] != last]
-            if last and alt and best["serial"] == last:
+            alt = [d for d in cand if d.get("physicalSerial", d["serial"]) != last]
+            if last and alt and best.get("physicalSerial", best["serial"]) == last:
                 best = alt[0]
                 reason = "temps within %.0fC; rotating away from last used" % TEMP_TIE_C
     return best, reason, warns
@@ -370,9 +383,9 @@ def fmt_row(d, state):
     used = "rec%.0f" % stg.get("rec_mb", 0)
     wf = d.get("wifi", {})
     wifi = "%s %dM %d" % (wf.get("band", "-"), wf.get("mbps", 0), wf.get("rssi", 0))
-    mark = "*" if state.get("lastUsed") == d["serial"] else " "
+    mark = "*" if state.get("lastUsed") == d.get("physicalSerial", d["serial"]) else " "
     return "%s %-4s %-15s %-6s %6s %-5s %-8s %-14s %-19s %-9s %s" % (
-        mark, name_of(d["serial"]), d["serial"], d["wake"], soc, lvs, tname,
+        mark, name_of(d.get("physicalSerial", d["serial"])), d["serial"], d["wake"], soc, lvs, tname,
         wifi, apps, regs, used)
 
 
@@ -380,13 +393,14 @@ def fmt_row(d, state):
 # （Library/ と違って数は少ないが、Meta XR SDK の中身まで見ると遅いだけで意味が無い）。
 # ここに無いものを変えても APK には入らない、という対応にしてある。
 SOURCE_DIRS = [
-    os.path.join("Assets", "Scripts"),
-    os.path.join("Assets", "Scenes"),
-    os.path.join("Assets", "Art"),
-    os.path.join("Assets", "Editor"),
-    os.path.join("Assets", "Settings"),
-    os.path.join("Assets", "Resources"),
-    "ProjectSettings",
+    os.path.join(ROOT, "Assets", "Scripts"),
+    os.path.join(ROOT, "Assets", "Scenes"),
+    os.path.join(ROOT, "Assets", "Art"),
+    os.path.join(ROOT, "Assets", "Editor"),
+    os.path.join(ROOT, "Assets", "Settings"),
+    os.path.join(ROOT, "Assets", "Resources"),
+    os.path.join(ROOT, "Assets", "StreamingAssets"),
+    os.path.join(ROOT, "ProjectSettings"),
 ]
 
 # ビルド中に触られたファイルを「APK より新しいソース」と読まないための猶予（秒）。
@@ -446,7 +460,8 @@ def cmd_list(args):
     for d in devs:
         if not d.get("_online"):
             print("  %-4s %-15s %s" % (
-                name_of(d["serial"]), d["serial"], d.get("state", "offline")))
+                name_of(d.get("physicalSerial", d["serial"])), d["serial"],
+                d.get("state", "offline")))
             continue
         print(fmt_row(d, state))
     print()
@@ -477,6 +492,7 @@ def collect(deep=True):
         info = probe(d["serial"], deep=deep)
         info["_online"] = True
         info["model"] = d["model"]
+        info["physicalSerial"] = d.get("physicalSerial") or d["serial"]
         devs.append(info)
     return devs
 
@@ -511,14 +527,19 @@ def wake_device(serial):
 
 
 def cmd_sleep(args):
+    devices = [d for d in list_devices() if d["state"] == "device" and d.get("isQuest")]
     targets = []
     if args.others:
-        targets = [d["serial"] for d in list_devices()
-                   if d["state"] == "device" and d["serial"] != args.others]
+        keep = next((d.get("physicalSerial") for d in devices
+                     if d["serial"] == args.others or d.get("physicalSerial") == args.others),
+                    args.others)
+        targets = [d["serial"] for d in devices if d.get("physicalSerial") != keep]
     elif args.serial:
-        targets = [args.serial]
+        selected = next((d for d in devices
+                         if d["serial"] == args.serial or d.get("physicalSerial") == args.serial), None)
+        targets = [selected["serial"]] if selected else []
     else:
-        targets = [d["serial"] for d in list_devices() if d["state"] == "device"]
+        targets = [d["serial"] for d in devices]
     for s in targets:
         # 走行中のアプリを起こしたまま寝かせない（次の起動が中途半端な状態から始まる）。
         adb(s, "shell", "am", "force-stop", PKG)
@@ -528,8 +549,11 @@ def cmd_sleep(args):
 
 
 def cmd_wake(args):
-    for s in ([args.serial] if args.serial else
-              [d["serial"] for d in list_devices() if d["state"] == "device"]):
+    devices = [d for d in list_devices() if d["state"] == "device" and d.get("isQuest")]
+    targets = ([d["serial"] for d in devices
+                if d["serial"] == args.serial or d.get("physicalSerial") == args.serial]
+               if args.serial else [d["serial"] for d in devices])
+    for s in targets:
         print("%s -> %s" % (s, wake_device(s)))
     return 0
 
@@ -552,18 +576,10 @@ def cmd_sync(args):
         if d["state"] != "device":
             print("  %-15s skip (%s)" % (d["serial"], d["state"]))
             continue
-        s = d["serial"]
-        app = read_app(s)
-        need = True
-        if app["installed"] and app["updated"] and not args.force:
-            try:
-                dev_t = datetime.strptime(app["updated"], "%Y-%m-%d %H:%M:%S")
-                need = dev_t < apk_mtime
-            except ValueError:
-                need = True
-        if not need:
-            print("  %-15s up to date (%s)" % (s, app["updated"]))
+        if not d.get("isQuest"):
+            print("  %-15s skip (Quest ではない)" % d["serial"])
             continue
+        s = d["serial"]
         print("  %-15s installing..." % s)
         wake_device(s)  # スリープ中は install が固まることがある
         # --no-streaming: Quest は streaming install が固まる（quest-build スキルの罠）
@@ -581,15 +597,23 @@ def cmd_sync(args):
 
 def cmd_mark(args):
     st = load_state()
-    st["lastUsed"] = args.serial
-    r = st.setdefault("runs", {}).setdefault(args.serial, {"count": 0, "sec": 0})
+    try:
+        resolve_adb()
+        connected = list_devices(all_devices=True)
+    except AdbNotFoundError:
+        connected = []
+    physical = next((d.get("physicalSerial") for d in connected
+                     if d["serial"] == args.serial or d.get("physicalSerial") == args.serial),
+                    args.serial)
+    st["lastUsed"] = physical
+    r = st.setdefault("runs", {}).setdefault(physical, {"count": 0, "sec": 0})
     r["count"] += 1
     r["sec"] += args.sec
     r["lastAtIso"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if args.mode:
         r["lastMode"] = args.mode
     save_state(st)
-    print("%s: %d run(s), %d s" % (args.serial, r["count"], r["sec"]))
+    print("%s: %d run(s), %d s" % (physical, r["count"], r["sec"]))
     return 0
 
 
@@ -611,7 +635,13 @@ def cat_file(serial, remote, local):
 
 def cmd_pull(args):
     """端末内に置かれた設定と登録を回収する。"""
-    serial = args.serial
+    devices = [d for d in list_devices() if d["state"] == "device" and d.get("isQuest")]
+    selected = next((d for d in devices
+                     if d["serial"] == args.serial or d.get("physicalSerial") == args.serial), None)
+    if not selected:
+        print("refusing non-Quest or disconnected serial: %s" % args.serial, file=sys.stderr)
+        return 1
+    serial = selected["serial"]
     outdir = args.out or os.path.join("logs", "device", serial)
     os.makedirs(outdir, exist_ok=True)
     got = []
@@ -635,8 +665,15 @@ def cmd_reset_config(args):
     消すと次の起動は焼き込み → ライブ の順で拾い直す。**卓が立っていないなら焼き込みが正**になるので、
     卓の「ビルド用エクスポート」を通した APK であることを確かめてから消すこと。
     """
-    targets = ([args.serial] if args.serial
-               else [d["serial"] for d in list_devices() if d["state"] == "device"])
+    devices = [d for d in list_devices() if d["state"] == "device" and d.get("isQuest")]
+    if args.serial:
+        targets = [d["serial"] for d in devices
+                   if d["serial"] == args.serial or d.get("physicalSerial") == args.serial]
+        if not targets:
+            print("refusing non-Quest or disconnected serial: %s" % args.serial, file=sys.stderr)
+            return 1
+    else:
+        targets = [d["serial"] for d in devices]
     for s in targets:
         adb(s, "shell", f"rm -f {FILES_DIR}/show_config.json")
         _, out, _ = adb(s, "shell", f"ls {FILES_DIR}/show_config.json 2>&1")
@@ -648,10 +685,10 @@ def cmd_reset_config(args):
 def cmd_clean(args):
     """端末内の録画とログを消す。走行を重ねると溜まる（録画は 1 ラン数十 MB）。"""
     for d in list_devices():
-        if d["state"] != "device":
+        if d["state"] != "device" or not d.get("isQuest"):
             continue
         s = d["serial"]
-        if args.serial and s != args.serial:
+        if args.serial and s != args.serial and d.get("physicalSerial") != args.serial:
             continue
         adb(s, "shell", f"rm -rf {CACHE_DIR}/rec")
         if args.logs:
@@ -713,6 +750,12 @@ def main(argv=None):
     p.set_defaults(fn=cmd_clean)
 
     args = ap.parse_args(argv)
+    if args.cmd != "mark":
+        try:
+            resolve_adb()
+        except AdbNotFoundError as e:
+            print(str(e), file=sys.stderr)
+            return 2
     return args.fn(args)
 
 

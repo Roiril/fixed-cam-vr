@@ -148,7 +148,7 @@ export function mountShoot(root, { demo = false, onAdopt = () => {} } = {}) {
     if (!capabilities.adoption) disabled.push('採用');
     const modeName = { preparation: '準備', inspection: '点検', authoring: '素材編集' }[capabilities.mode] || '';
     ui.capability.textContent = error || (disabled.length
-      ? `${disabled.join('・')}はこの卓では使えません。素材の閲覧と試写はできます。`
+      ? `${disabled.join('・')}はこの卓では使えません。PowerShell で tools/web-compositor/serve.ps1 -Prepare を実行して準備用の卓を開いてください。素材の閲覧と試写はできます。`
       : `準備用の卓です。録画・回収・採用を利用できます。${modeName ? ` 現在は${modeName}用です。` : ''}`);
     ui.capability.dataset.state = disabled.length || error ? 'warning' : 'ok';
   }

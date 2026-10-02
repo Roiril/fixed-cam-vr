@@ -57,9 +57,11 @@ DESK = "http://127.0.0.1:8099"
 # ---- 展示ネットワークの設計値（docs/onsite/network-setup.md が正本）--------------------
 DESK_IP = "192.168.10.10"
 ROUTER_IP = "192.168.10.1"
-STREAMER_MIN_VERSION = (0, 14, 0)   # 構えている最中の窓が入った版（rules/streaming.md）
+STREAMER_MIN_VERSION = (0, 15, 0)   # 映像を覆わない撮影パネルが入った版（rules/streaming.md）
 WIDE_FOV_DEG = 104.3                # 超広角。較正がこの画角を前提にしている
 QUEST_NAMES = {"2G0YC1ZF890864": "α", "2G0YC1ZF7S06BW": "β"}
+EXHIBIT_SSID = "kougaku-lab-exp-a"
+APK_CONTENT_JSON = os.path.join(ROOT, "Builds", "mawarimi.apk.content.json")
 
 # 写真の置き場を探す順。上から見て、最初に中身があったものを使う。
 EYEJACK_SOURCES = [
@@ -70,6 +72,9 @@ PHOTO_EXT = (".jpg", ".jpeg", ".png", ".heic", ".webp")
 
 sys.path.insert(0, TOOLS)
 sys.path.insert(0, COMPOSITOR)
+
+from android_devices import (AdbNotFoundError, adb_command, list_android_devices,
+                             resolve_adb)
 
 
 # ================= 出力の形 =================
@@ -93,6 +98,14 @@ class Rows:
         for r in self.items:
             c[r["state"]] = c.get(r["state"], 0) + 1
         return c
+
+    @property
+    def required_unconfirmed(self):
+        return sum(1 for r in self.items if r["required"] and r["state"] == "skip")
+
+    @property
+    def ready(self):
+        return self.counts()["ng"] == 0 and self.required_unconfirmed == 0
 
     def render(self) -> str:
         mark = {"ok": "[ OK ]", "warn": "[warn]", "ng": "[ NG ]", "skip": "[ -- ]"}
@@ -163,6 +176,48 @@ def run(cmd, timeout=20):
         return p.returncode, (p.stdout or ""), (p.stderr or "")
     except Exception as e:
         return 1, "", str(e)
+
+
+def adb_path() -> str | None:
+    try:
+        return resolve_adb()
+    except AdbNotFoundError:
+        return None
+
+
+def adb_run(serial, *args, timeout=20):
+    path = adb_path()
+    if not path:
+        return 127, "", ("adb が見つかりません。環境変数 ADB に adb.exe のパスを設定するか、"
+                          "Android SDK platform-tools を導入してください")
+    return run(adb_command(path, serial, *args), timeout=timeout)
+
+
+def connected_android_devices() -> tuple[list[dict], str]:
+    path = adb_path()
+    if not path:
+        return [], ("adb が見つかりません。環境変数 ADB に adb.exe のパスを設定するか、"
+                    "Android SDK platform-tools を導入してください")
+    try:
+        return list_android_devices(run, path, QUEST_NAMES), ""
+    except RuntimeError as e:
+        return [], str(e)
+
+
+def selected_quests(fleet: dict, selection: str) -> list[dict]:
+    quests = [q for q in (fleet.get("quests") or []) if isinstance(q, dict)]
+    return quests if selection == "all" else [q for q in quests if q.get("id") == selection]
+
+
+def load_apk_content() -> dict | None:
+    try:
+        with io.open(APK_CONTENT_JSON, encoding="utf-8") as f:
+            value = json.load(f)
+        if value.get("contentId") and value.get("buildGuid"):
+            return value
+    except (OSError, ValueError, AttributeError):
+        pass
+    return None
 
 
 def local_ipv4() -> list[str]:
@@ -290,13 +345,13 @@ def check_desk(rows: Rows, show: dict):
                            "--check"], timeout=60)
     line = (out.strip().splitlines() or [""])[0]
     if rc == 0:
-        rows.add(sec, "ok", "本体に入れた設定", "素材を含む準備済みの内容と一致しています")
+        rows.add(sec, "ok", "ビルド用の設定", "素材を含む準備済みの内容と一致しています")
     elif rc == 4:
-        rows.add(sec, "ng", "本体に入れた設定",
+        rows.add(sec, "ng", "ビルド用の設定",
                  "素材を含む準備済みの内容と違います" + (f"（{line}）" if line else ""),
                  "設定を同梱し直して APK を焼き直し、Quest に入れ直す")
     else:
-        rows.add(sec, "skip", "本体に入れた設定", "設定の照合処理が完了しませんでした",
+        rows.add(sec, "skip", "ビルド用の設定", "設定の照合処理が完了しませんでした",
                  "点検をやり直す")
 
     ips = local_ipv4()
@@ -429,6 +484,22 @@ def check_cameras(rows: Rows, show: dict):
                         f" / 割当 ID={cid}"),
                      "固定登録と端末の識別値を照合する。別の端末が応答していないか確認する")
             continue
+        reported_ip = info.get("localIp") or info.get("ipAddress")
+        reported_ssid = info.get("ssid") or info.get("wifiSsid")
+        reported_freq = info.get("frequencyMhz") or info.get("wifiFrequencyMhz")
+        if reported_ip in (None, "") or reported_ssid in (None, "") or reported_freq in (None, ""):
+            rows.add(sec, "skip", tag + " の会場 Wi-Fi",
+                     "SSID・IP・周波数の実測値が /info に揃っていません",
+                     "端末画面か adb で会場 Wi-Fi の接続を確認する")
+        else:
+            try:
+                freq_ok = int(reported_freq) >= 5000
+            except (TypeError, ValueError):
+                freq_ok = False
+            network_ok = (reported_ssid == EXHIBIT_SSID and reported_ip == host and freq_ok)
+            rows.add(sec, "ok" if network_ok else "ng", tag + " の会場 Wi-Fi",
+                     f"{reported_ssid} / {reported_ip} / {reported_freq}MHz",
+                     "kougaku-lab-exp-a の 5GHz と固定 IP に接続する")
         stream = r.get("stream") or {}
         if not stream.get("ok"):
             rows.add(sec, "ng", tag,
@@ -443,7 +514,7 @@ def check_cameras(rows: Rows, show: dict):
         if ver_tuple(info.get("appVersion", "")) < STREAMER_MIN_VERSION:
             rows.add(sec, "ng", tag + " 版",
                      f"{info.get('appVersion')} — 撮影パネルが無く、当日の素材撮りができません",
-                     "skills/streamer-android-build で v0.14.0 以上を入れる")
+                     "skills/streamer-android-build で v0.15.0 以上を入れる")
 
         try:
             fov = float(info.get("lensFovDeg") or 0)
@@ -501,63 +572,73 @@ def check_cameras(rows: Rows, show: dict):
                      "USB を挿して py -3.11 tools/onsite.py adb-open（端末を再起動すると閉じる）")
 
 
-def quest_rows(rows: Rows):
-    sec = "Quest"
-    try:
-        import importlib
-        qf = importlib.import_module("quest-fleet".replace("-", "_")) \
-            if False else None
-    except Exception:
-        qf = None
-    # quest-fleet.py はハイフン入りで import できないので、必要な処理だけここで叩く。
-    # ⚠⚠ **adb に出ている＝Quest ではない**（2026-09-05 実害）。設営で配信スマホを USB に挿し、
-    #    :5555 を開けた直後は adb に 7 件並ぶ（Quest 1・Pixel 3・その無線側 3）。model で絞らないと
-    #    **配信スマホ 3 台が「Quest / アプリが入っていません」の NG になる**（本物の NG に紛れる）。
-    #    同じ機が USB と :5555 で 2 回出るので、実シリアル（ro.serialno）で畳む。
-    rc, out, _ = run(["adb", "devices", "-l"], timeout=25)
-    devices, seen = [], set()
-    for l in out.splitlines()[1:]:
-        p = l.split()
-        if len(p) < 2 or p[1] != "device" or "model:Quest" not in l:
-            continue
-        _, sn, _ = run(["adb", "-s", p[0], "shell", "getprop ro.serialno"], timeout=20)
-        real = sn.strip().splitlines()[0].strip() if sn.strip() else p[0]
-        if real in seen:
-            continue
-        seen.add(real)
-        devices.append((p[0], real))
-    if not devices:
-        rows.add(sec, "ng", "Quest", "adb に 1 台も出ていません",
-                 "USB を挿すか、無線 adb（192.168.10.31 / .32:5555）へ connect する")
-        return []
+def _quest_physical_serial(qid: str) -> str:
+    mark = "α" if qid == "alpha" else "β" if qid == "beta" else ""
+    return next((serial for serial, name in QUEST_NAMES.items() if name == mark), "")
 
-    apk = os.path.join(ROOT, "Builds", "mawarimi.apk")
-    apk_mtime = os.path.getmtime(apk) if os.path.exists(apk) else 0
+
+def _adb_network(serial: str) -> dict:
+    _, wifi, _ = adb_run(serial, "shell", "dumpsys wifi", timeout=60)
+    _, addr, _ = adb_run(serial, "shell", "ip -f inet addr show wlan0", timeout=20)
+    ssid = re.search(r'SSID:\s*"([^"]*)"', wifi)
+    freq = re.search(r"Frequency:\s*(\d+)MHz", wifi)
+    ip = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", addr)
+    return {"ssid": ssid.group(1) if ssid else None,
+            "frequencyMhz": int(freq.group(1)) if freq else None,
+            "ip": ip.group(1) if ip else None}
+
+
+def quest_rows(rows: Rows, quest_selection="all"):
+    sec = "Quest"
+    fleet = load_fleet()
+    expected = selected_quests(fleet, quest_selection)
+    devices, adb_error = connected_android_devices()
+    if adb_error:
+        rows.add(sec, "skip", "ADB", adb_error,
+                 "ADB を導入してから点検をやり直す")
+        return []
+    for d in devices:
+        if d["state"] != "device" and not d.get("isQuest"):
+            rows.add(sec, "warn", "未識別 Android", f"{d['serial']} / {d['state']}",
+                     "USB デバッグの許可後に端末種別を確認する", required=False)
     running = []
-    for s, real in devices:
-        name = QUEST_NAMES.get(real, real[-6:])
-        tag = f"Quest {name}"
-        _, pkg, _ = run(["adb", "-s", s, "shell", "dumpsys package com.roiril.mawarimi"], 30)
+    for q in expected:
+        real = q.get("serial") or _quest_physical_serial(q.get("id", ""))
+        matches = [d for d in devices if d.get("physicalSerial") == real or
+                   (q.get("deviceId") and d.get("physicalSerial") == q.get("deviceId"))]
+        tag = q.get("label") or f"Quest {q.get('id')}"
+        if not matches:
+            rows.add(sec, "ng", tag, "ADB で接続を確認できません",
+                     "USB を挿すか無線 ADB へ接続する")
+            continue
+        d = matches[0]
+        if d["state"] != "device":
+            rows.add(sec, "ng", tag, f"ADB の状態が {d['state']} です",
+                     "端末側で USB デバッグを許可する")
+            continue
+        s = d["serial"]
+        _, pkg, _ = adb_run(s, "shell", "dumpsys package com.roiril.mawarimi", timeout=30)
         if "Unable to find package" in pkg or not pkg.strip():
             rows.add(sec, "ng", tag, "アプリが入っていません",
                      "py -3.11 tools/quest-fleet.py sync")
             continue
-        m = re.search(r"lastUpdateTime=([\d\-: ]+)", pkg)
-        upd = m.group(1).strip() if m else ""
-        try:
-            upd_ts = datetime.strptime(upd, "%Y-%m-%d %H:%M:%S").timestamp()
-        except Exception:
-            upd_ts = 0
-        if apk_mtime and upd_ts and upd_ts < apk_mtime - 60:
-            rows.add(sec, "ng", tag + " の APK",
-                     f"入っているのは {upd} / 焼いたのは "
-                     f"{datetime.fromtimestamp(apk_mtime):%Y-%m-%d %H:%M}",
-                     "py -3.11 tools/quest-fleet.py sync（古い APK の機は演出が別物になります）")
-        else:
-            rows.add(sec, "ok", tag + " の APK", f"{upd}")
+        rows.add(sec, "ok", tag + " のアプリ", "導入を確認しました")
 
-        _, reg, _ = run(["adb", "-s", s, "shell",
-                         "cat /sdcard/Android/data/com.roiril.mawarimi/files/registration.json"], 20)
+        net = _adb_network(s)
+        values_known = all(net.get(k) not in (None, "") for k in ("ssid", "ip", "frequencyMhz"))
+        if not values_known:
+            rows.add(sec, "skip", tag + " の会場 Wi-Fi", "SSID・IP・周波数を取得できません",
+                     "端末の Wi-Fi 画面で接続を確認する")
+        else:
+            good = (net["ssid"] == EXHIBIT_SSID and net["ip"] == q.get("host") and
+                    net["frequencyMhz"] >= 5000)
+            rows.add(sec, "ok" if good else "ng", tag + " の会場 Wi-Fi",
+                     f"{net['ssid']} / {net['ip']} / {net['frequencyMhz']}MHz",
+                     "kougaku-lab-exp-a の 5GHz と固定 IP に接続する")
+
+        _, reg, _ = adb_run(s, "shell",
+                            "cat /sdcard/Android/data/com.roiril.mawarimi/files/registration.json",
+                            timeout=20)
         if reg.strip().startswith("{"):
             try:
                 j = json.loads(reg)
@@ -570,7 +651,7 @@ def quest_rows(rows: Rows):
             rows.add(sec, "ng", tag + " の位置合わせ", "登録がありません",
                      "現地で右トリガー 2 秒長押しから登録する（ゾーンが実空間に合いません）")
 
-        _, bat, _ = run(["adb", "-s", s, "shell", "dumpsys battery"], 20)
+        _, bat, _ = adb_run(s, "shell", "dumpsys battery", timeout=20)
         lv = re.search(r"level: (\d+)", bat)
         ac = "true" in (re.search(r"(AC|USB) powered: (\w+)", bat) or
                         type("x", (), {"group": lambda *_: "false"})()).group(2).lower()
@@ -596,7 +677,7 @@ def quest_rows(rows: Rows):
             rows.add(sec, "ok", tag + " の自動接続",
                      f"生きています（接続チェック={g['guard']}）")
 
-        _, ps, _ = run(["adb", "-s", s, "shell", "ps -A | grep mawarimi"], 20)
+        _, ps, _ = adb_run(s, "shell", "ps -A | grep mawarimi", timeout=20)
         if "mawarimi" in ps:
             running.append(real)
     rows.add(sec, "ok" if running else "warn", "起動中の機",
@@ -604,6 +685,51 @@ def quest_rows(rows: Rows):
              + (f"（{', '.join(QUEST_NAMES.get(r, r[-6:]) for r in running)}）" if running else ""),
              "点検で音・コントローラ・目の写真を見るには、本番と同じ台数を起動しておく")
     return running
+
+
+def check_adb_android_networks(rows: Rows):
+    """ADB にいるカメラと博士タブレットの会場 Wi-Fi を実測する。"""
+    devices, error = connected_android_devices()
+    if error:
+        return
+    fleet = load_fleet()
+    sec = "Android の会場 Wi-Fi"
+    for d in devices:
+        if d["state"] != "device" or d.get("isQuest"):
+            continue
+        allowed, role = _authorized_android(d, fleet)
+        if not allowed:
+            rows.add(sec, "warn", d["serial"], "表示のみ（固定登録に一致しません）",
+                     required=False)
+            continue
+        net = _adb_network(d["serial"])
+        expected_ip = None
+        for tablet in (fleet.get("tablets") or []):
+            if tablet.get("serial") == d.get("physicalSerial"):
+                expected_ip = tablet.get("host") or tablet.get("expectedIp")
+        if role.startswith("カメラ"):
+            cam_id = role.replace("カメラ", "", 1)
+            cam = next((c for c in (fleet.get("cameras") or []) if c.get("id") == cam_id), {})
+            expected_ip = cam.get("host")
+        label = role + " の会場 Wi-Fi" if role.startswith("カメラ") else role
+        existing = next((r for r in rows.items if r["label"] == label), None)
+        if not expected_ip or any(net.get(k) in (None, "") for k in
+                                  ("ssid", "ip", "frequencyMhz")):
+            if existing is None:
+                rows.add(sec, "skip", label, "SSID・IP・周波数を確認できません",
+                         "ADB と固定登録の serial / host を確認する")
+            continue
+        good = (net["ssid"] == EXHIBIT_SSID and net["ip"] == expected_ip and
+                net["frequencyMhz"] >= 5000)
+        if existing is not None:
+            existing.update({"state": "ok" if good else "ng",
+                             "detail": f"{net['ssid']} / {net['ip']} / "
+                                       f"{net['frequencyMhz']}MHz",
+                             "fix": "kougaku-lab-exp-a の 5GHz と固定 IP に接続する"})
+        else:
+            rows.add(sec, "ok" if good else "ng", label,
+                     f"{net['ssid']} / {net['ip']} / {net['frequencyMhz']}MHz",
+                     "kougaku-lab-exp-a の 5GHz と固定 IP に接続する")
 
 
 def show_uses_eye_jack(show: dict) -> bool:
@@ -672,15 +798,17 @@ def check_show_material(rows: Rows, show: dict, state: dict | None):
 
 
 def sample_heartbeat(rows: Rows, seconds: float, running_count: int,
-                     eye_jack_required: bool = True):
+                     eye_jack_required: bool = True, quest_selection: str = "all"):
     """機ごとの heartbeat と生の診断値を読み、固定登録の両 Quest を確認する。"""
     sec = "Quest の接続"
     fleet = load_fleet()
-    expected = fleet.get("quests") or []
-    if {q.get("id") for q in expected} != {"alpha", "beta"}:
+    all_expected = fleet.get("quests") or []
+    if {q.get("id") for q in all_expected} != {"alpha", "beta"}:
         rows.add(sec, "ng", "固定登録", "Quest α/β の登録が読めません",
                  "operations-fleet.json を確認する")
         return
+    expected = selected_quests(fleet, quest_selection)
+    apk_content = load_apk_content()
     samples = {q["id"]: [] for q in expected}
     latest = {}
     t0 = time.time()
@@ -728,6 +856,23 @@ def sample_heartbeat(rows: Rows, seconds: float, running_count: int,
             continue
         rows.add(sec, "ok", tag, f"{host} / {age:.1f} 秒前に受信")
         raw = [d["status"] for d in samples[qid] if isinstance(d.get("status"), dict)]
+        status = device.get("status") if isinstance(device.get("status"), dict) else {}
+        if not apk_content:
+            rows.add(sec, "skip", tag + " の導入済み内容",
+                     "Builds/mawarimi.apk.content.json がありません",
+                     "APK をビルドして内容証明を作る")
+        elif not status.get("contentId") or not status.get("buildGuid"):
+            rows.add(sec, "skip", tag + " の導入済み内容",
+                     "contentId または buildGuid が heartbeat にありません",
+                     "Quest のアプリを起動し直して heartbeat を確認する")
+        else:
+            guid = str(status.get("buildGuid")).replace("-", "").lower()
+            expected_guid = str(apk_content["buildGuid"]).replace("-", "").lower()
+            same = status.get("contentId") == apk_content["contentId"] and guid == expected_guid
+            rows.add(sec, "ok" if same else "ng", tag + " の導入済み内容",
+                     ("ビルド内容と一致しています" if same else
+                      f"contentId={str(status.get('contentId'))[:12]} / buildGuid={guid[:12]}"),
+                     "現在の APK を入れ直してアプリを起動し直す")
         if not raw:
             detail = "音・入力・目の写真" if eye_jack_required else "音・入力"
             rows.add(sec, "skip", tag + " 詳細", detail + "の実測値が届いていません",
@@ -758,7 +903,8 @@ def sample_heartbeat(rows: Rows, seconds: float, running_count: int,
                 rows.add(sec, "skip", tag + " " + label, "接続状態が届いていません")
             else:
                 rows.add(sec, "ok" if all(vals) else "ng", tag + " " + label,
-                         "接続" if all(vals) else f"{sum(bool(v) for v in vals)}/{len(vals)} 回で接続")
+                         "接続" if all(vals) else f"{sum(bool(v) for v in vals)}/{len(vals)} 回で接続",
+                         "" if all(vals) else "コントローラーのボタンを押して起こす。電池を確認する。接続しない場合は Meta Horizon アプリで再ペアリングする")
         if eye_jack_required:
             listed, ready = nums("eyeJackListed"), nums("eyeJackReady")
             if listed and ready and min(listed) >= 0 and min(ready) >= 0 and max(listed) > 0:
@@ -774,29 +920,65 @@ def sample_heartbeat(rows: Rows, seconds: float, running_count: int,
                      "右トリガー 2 秒長押しで抜ける")
 
 
+def check_tablets(rows: Rows, quest_selection="all"):
+    sec = "博士タブレット"
+    fleet = load_fleet()
+    expected = selected_quests(fleet, quest_selection)
+    status = get_json(DESK + "/ops/status", timeout=5)
+    if not isinstance(status, dict):
+        for q in expected:
+            rows.add(sec, "skip", q.get("label") or q.get("id"),
+                     "ops/status を取得できません", "卓サーバと Quest の接続を確認する")
+        return
+    tablets = [t for t in (status.get("tablets") or []) if isinstance(t, dict)]
+    for q in expected:
+        tag = q.get("label") or q.get("id")
+        matches = [t for t in tablets if t.get("id") == q.get("id")]
+        if len(matches) != 1:
+            rows.add(sec, "skip", tag, "タブレットの診断情報がありません",
+                     "博士タブレットで各 Quest のページを開く")
+            continue
+        tablet = matches[0]
+        state = tablet.get("status")
+        if state == "ok":
+            rows.add(sec, "ok", tag, tablet.get("title") or "接続と反映を確認しました")
+        elif state == "error":
+            rows.add(sec, "ng", tag, tablet.get("title") or "接続または反映に失敗しています",
+                     tablet.get("action") or "タブレットと Quest の接続を確認する")
+        else:
+            rows.add(sec, "skip", tag, tablet.get("title") or "接続または反映を確認できません",
+                     tablet.get("action") or "タブレットと Quest の接続を確認する")
+
+
 def cmd_check(args):
     rows = Rows()
+    quest_selection = getattr(args, "quests", "all")
     show = load_show()
     state = check_desk(rows, show)
     check_cameras(rows, show)
-    running = quest_rows(rows)
+    running = quest_rows(rows, quest_selection)
+    check_adb_android_networks(rows)
     if state is not None:
         check_show_material(rows, show, state)
     if args.deep:
-        sample_heartbeat(rows, 20.0, len(running), show_uses_eye_jack(show))
+        sample_heartbeat(rows, 20.0, len(running), show_uses_eye_jack(show), quest_selection)
     else:
-        sample_heartbeat(rows, 3.0, len(running), show_uses_eye_jack(show))
+        sample_heartbeat(rows, 3.0, len(running), show_uses_eye_jack(show), quest_selection)
+    check_tablets(rows, quest_selection)
 
-    print(rows.render())
     os.makedirs(LOG_DIR, exist_ok=True)
     payload = {"at": datetime.now().isoformat(timespec="seconds"),
+               "ready": rows.ready,
+               "requiredUnconfirmed": rows.required_unconfirmed,
                "counts": rows.counts(), "rows": rows.items}
     with io.open(os.path.join(LOG_DIR, "check-latest.json"), "w",
                  encoding="utf-8", newline="\n") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False))
-    return 1 if rows.counts()["ng"] else 0
+    else:
+        print(rows.render())
+    return 0 if rows.ready else 1
 
 
 # ================= eyejack =================
@@ -874,7 +1056,7 @@ def wake_and_restart(host: str) -> str:
     閉じて**フレーム 0 のまま HTTP だけ生きる**（2026-07-17 実害）。順番が要る。
     """
     dev = f"{host}:5555"
-    run(["adb", "connect", dev], timeout=10)
+    adb_run(None, "connect", dev, timeout=10)
     steps = [
         ["shell", "input", "keyevent", "KEYCODE_WAKEUP"],
         ["shell", "wm", "dismiss-keyguard"],
@@ -883,7 +1065,7 @@ def wake_and_restart(host: str) -> str:
          "com.fixedcamvr.streamer/.MainActivity"],
     ]
     for st in steps:
-        rc, out, err = run(["adb", "-s", dev] + st, timeout=20)
+        rc, out, err = adb_run(dev, *st, timeout=20)
         if rc != 0 and "start" in st:
             return f"起こせません: {(err or out).strip()[:80]}"
     return "起こし直しました"
@@ -891,6 +1073,7 @@ def wake_and_restart(host: str) -> str:
 
 def cmd_watch(args):
     show = load_show()
+    quest_selection = getattr(args, "quests", "all")
     cams = [c for c in (show.get("cameras") or []) if (c.get("host") or "").strip()]
     os.makedirs(LOG_DIR, exist_ok=True)
     logp = os.path.join(LOG_DIR, f"watch-{datetime.now():%Y%m%d_%H%M%S}.log")
@@ -917,19 +1100,28 @@ def cmd_watch(args):
 
     try:
         while True:
-            snap = {"at": datetime.now().isoformat(timespec="seconds"), "cameras": [], "quest": {}}
+            snap = {"at": datetime.now().isoformat(timespec="seconds"), "cameras": [], "quests": []}
             for c in cams:
                 host, cid = c["host"], c.get("id")
-                got = stream_bytes(f"http://{host}:8080/video", seconds=2.0)
-                alive = got > 0
-                snap["cameras"].append({"id": cid, "host": host, "bytes": got, "alive": alive})
+                try:
+                    import operations
+                    probe = operations.probe_stream(host, int(c.get("port") or 8080))
+                except (ImportError, AttributeError, OSError, ValueError) as e:
+                    probe = {"ok": False, "detail": str(e)}
+                alive = bool(probe.get("ok") and probe.get("frames", 0) >= 2 and
+                             probe.get("firstSeq") is not None and
+                             probe.get("lastSeq") is not None and
+                             probe.get("lastSeq") != probe.get("firstSeq"))
+                snap["cameras"].append({"id": cid, "host": host, **probe, "alive": alive})
                 if alive:
                     # 戻ったことは必ず 1 行残す（変わり目が無いと、復旧が効いたのか
                     # たまたま直ったのかが後から分からない）。
                     if said.pop(f"dead:{cid}", None):
-                        say(f"カメラ{cid}（{host}）が戻りました（{got // 1024}KB）")
+                        say(f"カメラ{cid}（{host}）が戻りました（連番 "
+                            f"{probe.get('firstSeq')}→{probe.get('lastSeq')}）")
                     continue
-                say(f"カメラ{cid}（{host}）からバイトが出ていません", key=f"dead:{cid}")
+                say(f"カメラ{cid}（{host}）のフレーム連番が進んでいません",
+                    key=f"dead:{cid}")
                 if args.no_fix:
                     continue
                 # ⚠ 直し過ぎない。落ちている時にだけ・1 台につき 90 秒に 1 回まで。
@@ -938,6 +1130,14 @@ def cmd_watch(args):
                     continue
                 last_fix[host] = time.time()
                 say("  " + wake_and_restart(host))
+                try:
+                    verify = operations.probe_stream(host, int(c.get("port") or 8080))
+                except (NameError, AttributeError, OSError, ValueError) as e:
+                    verify = {"ok": False, "detail": str(e)}
+                recovered = bool(verify.get("ok") and verify.get("frames", 0) >= 2 and
+                                 verify.get("firstSeq") != verify.get("lastSeq"))
+                say("  再確認: " + (f"復旧（連番 {verify.get('firstSeq')}→{verify.get('lastSeq')}）"
+                                      if recovered else "まだ停止しています"))
             # ⚠⚠ **卓自身の生存をいちばん先に見る。** 卓が落ちても体験は焼き込みの値で
             #    続くので、実機には 1 ビットも出ない — 音・コントローラ・目の写真の失敗が
             #    まとめて無音になる。落ちていたら立て直す（serve は冪等で、
@@ -947,14 +1147,25 @@ def cmd_watch(args):
                 cmd_serve(argparse.Namespace())
                 time.sleep(2)
 
-            hb = get_json(DESK + "/unity/status", timeout=2) or {}
-            age = hb.get("ageSec")
-            snap["quest"] = {"ageSec": age}
-            if age is not None and age > 30:
-                say(f"Quest の heartbeat が {age:.0f} 秒 途切れています", key="hb")
-            elif age is not None and "hb" in said:
-                said.pop("hb", None)
-                say("Quest の heartbeat が戻りました")   # 戻りは毎回書く（変わり目なので）
+            hb = get_json(DESK + "/unity/devices", timeout=2) or {}
+            devices = [d for d in (hb.get("devices") or []) if isinstance(d, dict)]
+            for q in selected_quests(load_fleet(), quest_selection):
+                found = [d for d in devices if d.get("localIp") == q.get("host")]
+                device = found[0] if len(found) == 1 else None
+                age = device.get("ageSec") if device else None
+                snap["quests"].append({"id": q.get("id"), "ageSec": age})
+                key = "hb:" + str(q.get("id"))
+                try:
+                    fresh = age is not None and 0 <= float(age) <= 30
+                except (TypeError, ValueError):
+                    fresh = False
+                if not fresh:
+                    detail = "未受信" if age is None else f"{age} 秒前"
+                    say(f"{q.get('label', q.get('id'))} の heartbeat が期限切れです（{detail}）",
+                        key=key)
+                elif key in said:
+                    said.pop(key, None)
+                    say(f"{q.get('label', q.get('id'))} の heartbeat が戻りました")
             with io.open(os.path.join(LOG_DIR, "watch-latest.json"), "w",
                          encoding="utf-8", newline="\n") as f:
                 json.dump(snap, f, ensure_ascii=False)
@@ -986,6 +1197,42 @@ def cmd_watch(args):
 #   予防（二度と付かないようにする）: 接続チェックそのものを切る。下の 1 行。
 
 CAPTIVE_KEYS = ("captive_portal_mode", "captive_portal_detection_enabled")
+
+
+def _authorized_android(device: dict, fleet: dict) -> tuple[bool, str]:
+    physical = device.get("physicalSerial") or ""
+    if physical in QUEST_NAMES:
+        return True, "Quest " + QUEST_NAMES[physical]
+    for tablet in (fleet.get("tablets") or []):
+        if tablet.get("serial") and tablet["serial"] == physical:
+            return True, tablet.get("label") or "博士タブレット"
+    if device.get("state") != "device":
+        return False, "端末種別を確認できません"
+    net = _adb_network(device["serial"])
+    for cam in (fleet.get("cameras") or []):
+        if net.get("ip") != cam.get("host"):
+            continue
+        info = get_json(f"http://{cam['host']}:{cam.get('port', 8080)}/info", timeout=2)
+        if isinstance(info, dict) and info.get("uuid") == cam.get("uuid"):
+            return True, "カメラ" + str(cam.get("id"))
+    return False, "固定登録に一致しない Android"
+
+
+def _read_captive_values(serial: str) -> dict:
+    result = {}
+    for key in CAPTIVE_KEYS:
+        _, value, _ = adb_run(serial, "shell", "settings", "get", "global", key, timeout=20)
+        result[key] = (value.strip().splitlines() or ["null"])[0].strip()
+    return result
+
+
+def _save_wifi_snapshot(entries: list[dict]) -> str:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    path = os.path.join(LOG_DIR, f"wifi-settings-{datetime.now():%Y%m%d_%H%M%S_%f}.json")
+    with io.open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"at": datetime.now().isoformat(timespec="seconds"), "devices": entries},
+                  f, ensure_ascii=False, indent=2)
+    return path
 
 
 def configured_networks(dump: str) -> list:
@@ -1033,10 +1280,10 @@ def wifi_guard(serial: str, read_only: bool = False) -> dict:
     """
     if not read_only:
         for k in CAPTIVE_KEYS:
-            run(["adb", "-s", serial, "shell", f"settings put global {k} 0"], timeout=20)
-    _, got, _ = run(["adb", "-s", serial, "shell",
-                     f"settings get global {CAPTIVE_KEYS[0]}"], timeout=20)
-    _, dump, _ = run(["adb", "-s", serial, "shell", "dumpsys wifi"], timeout=60)
+            adb_run(serial, "shell", "settings", "put", "global", k, "0", timeout=20)
+    _, got, _ = adb_run(serial, "shell", "settings", "get", "global",
+                        CAPTIVE_KEYS[0], timeout=20)
+    _, dump, _ = adb_run(serial, "shell", "dumpsys wifi", timeout=60)
     nets = configured_networks(dump)
     dead = [(sid, rsn) for sid, st, rsn in nets if "PERMANENTLY_DISABLED" in st]
     ssid = dead[0][0] if dead else ""
@@ -1048,15 +1295,34 @@ def wifi_guard(serial: str, read_only: bool = False) -> dict:
 
 
 def cmd_wifi_guard(args):
-    rc, out, _ = run(["adb", "devices"], timeout=25)
-    serials = [l.split()[0] for l in out.splitlines()[1:]
-               if l.strip() and l.split()[-1] == "device"]
-    if not serials:
-        print("adb に 1 台も出ていません。USB を挿す（配信スマホは :5555 が閉じていれば USB 必須）")
+    devices, error = connected_android_devices()
+    if error:
+        print(error)
         return 1
-    for s in serials:
+    online = [d for d in devices if d["state"] == "device"]
+    if not online:
+        print("adb に操作可能な端末がありません。USB を挿して端末側の許可を出す")
+        return 1
+    fleet = load_fleet()
+    authorized = []
+    for d in online:
+        allowed, role = _authorized_android(d, fleet)
+        if allowed:
+            authorized.append((d, role))
+        else:
+            print(f"{d['serial']}  表示のみ（{role}）")
+    if not authorized:
+        print("固定登録に一致する端末がありません。設定は変更していません")
+        return 1
+    entries = [{"serial": d.get("physicalSerial") or d["serial"], "transport": d["serial"],
+                "role": role, "values": _read_captive_values(d["serial"])}
+               for d, role in authorized]
+    if entries:
+        print(f"変更前の値: {_save_wifi_snapshot(entries)}")
+    for d, role in authorized:
+        s = d["serial"]
         r = wifi_guard(s)
-        name = QUEST_NAMES.get(s, s)
+        name = role
         if r["disabled"]:
             print(f"{name}  ⚠ 自動接続が殺されています"
                   + (f"（{r['ssid']} / 理由 {r['reason']}）" if r["ssid"] else "")
@@ -1075,15 +1341,31 @@ def cmd_adb_open(args):
 
     ⚠ 端末を再起動すると閉じる。閉じていると当日の遠隔復旧が 1 手も打てない。
     """
-    rc, out, _ = run(["adb", "devices"], timeout=25)
-    usb = [l.split()[0] for l in out.splitlines()[1:]
-           if l.strip() and l.split()[-1] == "device" and ":" not in l.split()[0]]
+    devices, error = connected_android_devices()
+    if error:
+        print(error)
+        return 1
+    usb = [d for d in devices if d["state"] == "device" and d.get("usb")]
     if not usb:
         print("USB で繋がっている端末がありません。ケーブルを挿して、端末側の許可を出す")
         return 1
     ok = 0
-    for s in usb:
-        _, ip, _ = run(["adb", "-s", s, "shell", "ip -f inet addr show wlan0"], 20)
+    fleet = load_fleet()
+    authorized = []
+    for d in usb:
+        allowed, role = _authorized_android(d, fleet)
+        if allowed:
+            authorized.append((d, role))
+        else:
+            print(f"{d['serial']}  表示のみ（{role}）")
+    entries = [{"serial": d.get("physicalSerial") or d["serial"], "transport": d["serial"],
+                "role": role, "values": _read_captive_values(d["serial"])}
+               for d, role in authorized]
+    if entries:
+        print(f"変更前の値: {_save_wifi_snapshot(entries)}")
+    for d, role in authorized:
+        s = d["serial"]
+        _, ip, _ = adb_run(s, "shell", "ip -f inet addr show wlan0", timeout=20)
         m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", ip)
         if not m:
             print(f"{s}  Wi-Fi の IP が取れません")
@@ -1096,9 +1378,9 @@ def cmd_adb_open(args):
         #    空の dump は「無効化されていない」と同じ顔で出るので、順番を逆にすると
         #    **殺されている機を見逃す**。
         g = wifi_guard(s)
-        run(["adb", "-s", s, "tcpip", "5555"], timeout=20)
+        adb_run(s, "tcpip", "5555", timeout=20)
         time.sleep(1.5)
-        rc2, o2, e2 = run(["adb", "connect", f"{addr}:5555"], timeout=15)
+        rc2, o2, e2 = adb_run(None, "connect", f"{addr}:5555", timeout=15)
         good = "connected" in (o2 + e2)
         print(f"{s}  {addr}:5555  {'開きました' if good else (o2 + e2).strip()[:70]}")
         print(f"    接続チェックを切りました（{g['guard']}）"
@@ -1106,8 +1388,51 @@ def cmd_adb_open(args):
                  "端末の Wi-Fi 設定で 1 度手で選び直すこと" if g["disabled"]
                  else ("  ⚠ 自動接続は判定できませんでした" if not g["parsed"] else "")))
         ok += 1 if good else 0
-    print(f"\n{ok}/{len(usb)} 台。⚠ 端末を再起動すると :5555 は閉じます（設営後にもう一度)")
+    print(f"\n{ok}/{len(authorized)} 台。⚠ 端末を再起動すると :5555 は閉じます（設営後にもう一度)")
     return 0 if ok else 1
+
+
+def cmd_wifi_restore(args):
+    if not os.path.isdir(LOG_DIR):
+        print("復元用の記録がありません")
+        return 1
+    files = sorted((os.path.join(LOG_DIR, n) for n in os.listdir(LOG_DIR)
+                    if n.startswith("wifi-settings-") and n.endswith(".json")), reverse=True)
+    if not files:
+        print("復元用の記録がありません")
+        return 1
+    with io.open(files[0], encoding="utf-8") as f:
+        saved = json.load(f)
+    devices, error = connected_android_devices()
+    if error:
+        print(error)
+        return 1
+    current = {d.get("physicalSerial") or d["serial"]: d for d in devices
+               if d["state"] == "device"}
+    restored = 0
+    for item in saved.get("devices") or []:
+        physical = item.get("serial")
+        if args.serial and physical != args.serial:
+            continue
+        d = current.get(physical)
+        if not d:
+            print(f"{physical}  未接続のため復元できません")
+            continue
+        allowed, role = _authorized_android(d, load_fleet())
+        if not allowed:
+            print(f"{physical}  表示のみ（{role}）")
+            continue
+        for key, value in (item.get("values") or {}).items():
+            if key not in CAPTIVE_KEYS:
+                continue
+            action = "delete" if value in (None, "", "null") else "put"
+            argv = ["shell", "settings", action, "global", key]
+            if action == "put":
+                argv.append(str(value))
+            adb_run(d["serial"], *argv, timeout=20)
+        print(f"{role}  変更前の値へ復元しました")
+        restored += 1
+    return 0 if restored else 1
 
 
 def cmd_fix(args):
@@ -1120,12 +1445,16 @@ def cmd_fix(args):
         return 0
     if args.name == "panel":
         # Quest の設定パネルが生きていると 10 秒ごとの掃引で 3 台同時に途切れる
-        rc, out, _ = run(["adb", "devices"], timeout=25)
-        for s in [l.split()[0] for l in out.splitlines()[1:]
-                  if l.strip() and l.split()[-1] == "device"]:
-            run(["adb", "-s", s, "shell", "am", "force-stop",
-                 "com.oculus.panelapp.settings"], 20)
-            print(f"{s}: 設定パネルを閉じました")
+        devices, error = connected_android_devices()
+        if error:
+            print(error)
+            return 1
+        for d in devices:
+            if d["state"] != "device" or not d.get("isQuest"):
+                continue
+            adb_run(d["serial"], "shell", "am", "force-stop",
+                    "com.oculus.panelapp.settings", timeout=20)
+            print(f"{d['serial']}: 設定パネルを閉じました")
         return 0
     if args.name == "cache":
         rc, out, _ = run(["py", "-3.11", os.path.join(ROOT, "tools", "quest-fleet.py"),
@@ -1302,7 +1631,13 @@ def cmd_serve(args):
     （discovery スレッドが beacon 受信で勝手に書き戻すため）。
     """
     if listening_pids(8099):
-        print("卓はもう動いています（:8099）。何もしません")
+        capabilities = get_json(DESK + "/ops/capabilities")
+        if not isinstance(capabilities, dict) or capabilities.get("ok") is not True or "mode" not in capabilities:
+            print("8099 は別のサービスが使用中です。卓としての応答を確認できません")
+            return 1
+        print("卓はもう動いています（:8099、" + capabilities["mode"] + "）。何もしません")
+        if capabilities["mode"] == "inspection":
+            print("撮影準備は .\\tools\\web-compositor\\serve.ps1 -Prepare で起動する")
         return 0
     script = os.path.join(COMPOSITOR, "capture-server.py")
     os.makedirs(LOG_DIR, exist_ok=True)
@@ -1315,12 +1650,15 @@ def cmd_serve(args):
     with io.open(logp, "a", encoding="utf-8", newline="\n") as log:
         log.write(f"\n---- {datetime.now():%Y-%m-%d %H:%M:%S} 起動 ----\n")
     out = open(logp, "ab")
-    subprocess.Popen(["py", "-3.11", script, "8099"], cwd=COMPOSITOR,
+    child_env = os.environ.copy()
+    child_env["FIXEDCAM_PREPARATION"] = "1"
+    subprocess.Popen([sys.executable, script, "8099"], cwd=COMPOSITOR, env=child_env,
                      stdout=out, stderr=out, stdin=subprocess.DEVNULL,
                      creationflags=flags, close_fds=True)
     for _ in range(24):
         time.sleep(0.5)
-        if listening_pids(8099):
+        capabilities = get_json(DESK + "/ops/capabilities")
+        if isinstance(capabilities, dict) and capabilities.get("ok") is True and "mode" in capabilities:
             print("起動しました → http://192.168.10.10:8099/onsite.html")
             return 0
     print(f"起動を確認できませんでした（{logp} を見る）")
@@ -1331,9 +1669,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="当日の点検・反映・監視")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    p = sub.add_parser("setup", help="登録した Quest と博士用タブレットを起動する")
+    p.add_argument("--quests", choices=("alpha", "beta", "all"), default="all")
+    p.add_argument("--evidence", default=os.path.join(LOG_DIR, "setup"))
+    p.add_argument("--restore-tablet", metavar="SERIAL", help="保存した画面設定を戻す")
+    from exhibit_setup import cmd_setup
+    p.set_defaults(func=cmd_setup)
+
     p = sub.add_parser("check", help="開場前点検")
     p.add_argument("--deep", action="store_true", help="heartbeat を 20 秒サンプリングする")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--quests", choices=("alpha", "beta", "all"), default="all")
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("eyejack", help="目の写真を取り込んで届くまで見る")
@@ -1350,6 +1696,7 @@ def main(argv=None):
     p = sub.add_parser("watch", help="会期中の監視と自動復旧")
     p.add_argument("--sec", type=int, default=20)
     p.add_argument("--no-fix", action="store_true")
+    p.add_argument("--quests", choices=("alpha", "beta", "all"), default="all")
     p.set_defaults(func=cmd_watch)
 
     p = sub.add_parser("adb-open", help="USB の端末に無線 adb を開ける＋自動接続の予防を入れる")
@@ -1358,6 +1705,10 @@ def main(argv=None):
     p = sub.add_parser("wifi-guard",
                        help="上流の無い網で Android が自動接続を殺すのを止める／殺されていないか見る")
     p.set_defaults(func=cmd_wifi_guard)
+
+    p = sub.add_parser("wifi-restore", help="wifi-guard / adb-open 前の接続チェック設定へ戻す")
+    p.add_argument("serial", nargs="?")
+    p.set_defaults(func=cmd_wifi_restore)
 
     p = sub.add_parser("fix", help="個別の復旧")
     p.add_argument("name", nargs="?", default="")

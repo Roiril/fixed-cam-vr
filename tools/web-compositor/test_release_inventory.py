@@ -68,15 +68,18 @@ class ReleaseInventoryTest(unittest.TestCase):
         devices = {key: {'at': 99, 'localIp': host, 'contentId': content_id,
                          'contentPolicy': 'baked-only-v1', 'contentVerified': True,
                          'buildGuid': 'ABCDEF0123456789ABCDEF0123456789'}
-                   for key, host in (('a', '192.168.10.31'), ('b', '192.168.10.32'))}
+                   for key, host in ((release_inventory.operations.FLEET['quests'][0]['deviceId'], '192.168.10.31'),
+                                     ('observed-beta', '192.168.10.32'))}
         ready = release_inventory.content_status(self.show, self.dirs, self.bundle, self.apk,
                                                  devices, now=100)
-        self.assertTrue(ready['ready'])
-        devices['duplicate'] = dict(devices['a'])
+        self.assertFalse(ready['ready'])
+        self.assertEqual(ready['quests'][0]['status'], 'ok')
+        self.assertEqual(ready['quests'][1]['title'], '端末 ID が未登録です')
+        devices['duplicate'] = dict(devices[release_inventory.operations.FLEET['quests'][0]['deviceId']])
         self.assertFalse(release_inventory.content_status(self.show, self.dirs, self.bundle,
                                                          self.apk, devices, now=100)['ready'])
         del devices['duplicate']
-        devices['a']['buildGuid'] = 'other'
+        devices[release_inventory.operations.FLEET['quests'][0]['deviceId']]['buildGuid'] = 'other'
         stale = release_inventory.content_status(self.show, self.dirs, self.bundle, self.apk,
                                                  devices, now=100)
         self.assertFalse(stale['ready'])

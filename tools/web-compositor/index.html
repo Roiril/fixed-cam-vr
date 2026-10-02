@@ -77,7 +77,7 @@
       <p class="section-intro">まず撮影に使うカメラの接続と映像を確認します。使う端末が準備できれば撮影へ進めます。Quest と博士タブレットは開場前までにそろえます。</p>
       <div id="global-issues"></div><div id="cameras" class="camera-grid"></div>
       <div class="section-next"><p id="shoot-connection-status" class="note">撮影できる端末を確認しています。</p><a class="primary-action" href="#shoot">撮影へ進む <span aria-hidden="true">→</span></a></div>
-      <details class="other-devices"><summary>Quest と博士タブレット <span>ビルド後の照合と開場前に使います</span></summary>
+      <details class="other-devices" open><summary>Quest と博士タブレット <span>カメラの次に確認します</span></summary>
       <div class="quest-heading"><h3>Quest</h3><p class="note">映像と音は装着して確認します。</p></div>
       <div id="quests" class="quest-grid"></div>
       <div class="quest-heading" id="tablet-check"><h3>博士タブレットと設定の反映</h3><p class="note">タブレット → 対応する Quest。設定はこの卓を通りません。</p></div>
@@ -100,10 +100,11 @@
     <section id="setup" aria-labelledby="setup-title">
       <div class="section-heading"><div><p class="eyebrow">STEP 1 / 設営</p><h2 id="setup-title">設置の手順</h2></div><span class="state">担当と IP は固定</span></div>
       <ol class="setup-steps">
-        <li><span class="step-number">1</span><div><h3>会場の Wi-Fi を起動する</h3><p>ルーターを起動します。PC の IP は <code>192.168.10.10</code> です。カメラと Quest も同じネットワークにつなぎます。</p></div></li>
-        <li><span class="step-number">2</span><div><h3>A・B・C を決まった場所に置く</h3><p>スマホ画面の担当と固定 IP を確認します。A は <code>.21</code>。B は <code>.22</code>。C は <code>.23</code>。接続できなくても担当は入れ替えません。</p></div></li>
-        <li><span class="step-number">3</span><div><h3>構図を合わせて明るさを固定する</h3><p>本番の照明にします。スマホの設置用画面で超広角と構図を確認します。露出とホワイトバランスを固定します。</p></div></li>
-        <li><span class="step-number">4</span><div><h3>接続を確認する</h3><p>人形視点を撮るスマホと白衣を用意します。「接続」で撮る端末の映像を確認してから撮影を始めます。</p></div></li>
+        <li><span class="step-number">1</span><div><h3>PC と会場 Wi-Fi</h3><p>ルーターを起動します。PC を有線でつなぎます。固定 IP <code>192.168.10.10</code> を確認します。この準備画面を開いたままにします。</p></div></li>
+        <li><span class="step-number">2</span><div><h3>カメラ A・B・C</h3><p>配信アプリを開きます。A は <code>.21</code>。B は <code>.22</code>。C は <code>.23</code> です。担当を入れ替えずに配置します。構図と照明を固定します。</p></div></li>
+        <li><span class="step-number">3</span><div><h3>Quest α・β</h3><p>α は <code>.31</code>。β は <code>.32</code> です。両方で廻リ視を起動します。「接続」で端末 ID と A・B・C の受信を確認します。</p></div></li>
+        <li><span class="step-number">4</span><div><h3>博士タブレット α・β</h3><p>各タブレットを充電します。横向きにします。Chrome の初回案内を終えます。対応する受付ページだけを 1 タブで全画面表示します。</p></div></li>
+        <li><span class="step-number">5</span><div><h3>検査して装着確認</h3><p>「接続」で自動検査を通します。「開場前」で詳しい点検を実行します。最後に Quest を両方装着して映像と音を確認します。</p></div></li>
       </ol>
       <details><summary>つながらないときに見る場所</summary><div class="details-body trouble-grid">
         <div><h3>1 台だけ応答しない</h3><p>該当スマホの電源を確認します。配信アプリを開きます。表示された IP とこの画面の固定 IP を見比べます。</p></div>

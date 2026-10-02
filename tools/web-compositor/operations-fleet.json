@@ -2,15 +2,18 @@
   "schema": 1,
   "show": "mawarimi",
   "cameras": [
-    {"id": "A", "host": "192.168.10.21", "port": 8080, "uuid": "de2d8bea-7d42-4e6a-8823-c777a8901cae"},
-    {"id": "B", "host": "192.168.10.22", "port": 8080, "uuid": "429a472b-8131-401b-81a3-9cfb91ad2165"},
-    {"id": "C", "host": "192.168.10.23", "port": 8080, "uuid": "b9ffed4c-18e2-4570-a8b8-2012c1e6559e"}
+    {"id": "A", "host": "192.168.10.21", "port": 8080, "uuid": "de2d8bea-7d42-4e6a-8823-c777a8901cae", "serial": "37081JEHN03028"},
+    {"id": "B", "host": "192.168.10.22", "port": 8080, "uuid": "429a472b-8131-401b-81a3-9cfb91ad2165", "serial": "3C251JEHN03582"},
+    {"id": "C", "host": "192.168.10.23", "port": 8080, "uuid": "b9ffed4c-18e2-4570-a8b8-2012c1e6559e", "serial": "37201JEHN14152"}
   ],
   "handheldShooters": [
     {"id": "P", "uuid": "9ad2fe12-7c80-41ba-8fc8-0299bd8b74ea"}
   ],
   "quests": [
-    {"id": "alpha", "label": "Quest α", "host": "192.168.10.31", "port": 8090, "deviceId": ""},
-    {"id": "beta", "label": "Quest β", "host": "192.168.10.32", "port": 8090, "deviceId": ""}
+    {"id": "alpha", "label": "Quest α", "host": "192.168.10.31", "port": 8090, "deviceId": "219dcb6cfe8d1bc84801c8356aae825c", "shortId": "219dcb", "serial": "2G0YC1ZF890864"},
+    {"id": "beta", "label": "Quest β", "host": "192.168.10.32", "port": 8090, "deviceId": "", "shortId": "", "serial": "2G0YC1ZF7S06BW"}
+  ],
+  "tablets": [
+    {"id": "alpha", "label": "博士タブレット α", "model": "Redmi", "serial": "122d7871", "host": "192.168.10.3", "target": "alpha", "questId": "alpha", "visitorUrl": "http://192.168.10.31:8090/"}
   ]
 }

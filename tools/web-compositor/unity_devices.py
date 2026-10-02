@@ -11,6 +11,21 @@
 """
 
 
+_STATUS_ROOT_KEYS = {
+    'activeCamera', 'activeIndex', 'cameraCount', 'recvFps', 'sourceAgeMs',
+    'contentId', 'contentPolicy', 'contentVerified', 'buildGuid',
+    'ctrlLConnected', 'ctrlLTracked', 'ctrlRConnected', 'ctrlRTracked',
+    'sndResolved', 'sndMissing', 'sndAudible', 'visitorPortal',
+}
+
+
+def _status(hb):
+    """旧 nested status を残し、現行 heartbeat の診断値だけを同じ場所へ投影する。"""
+    result = dict(hb['status']) if isinstance(hb.get('status'), dict) else {}
+    result.update((key, hb[key]) for key in _STATUS_ROOT_KEYS if key in hb)
+    return result
+
+
 def device_rows(devices, now, alive_sec=6.0):
     """`GET /unity/devices` の中身。heartbeat を持つ端末ごとに 1 行。
 
@@ -36,7 +51,7 @@ def device_rows(devices, now, alive_sec=6.0):
             'visitorReceived': int(hb.get('visitorReceived') or 0),
             'visitorPending': bool(hb.get('visitorPending')),
             'appliedRev': int(hb.get('appliedRev') or -1),
-            'status': dict(hb['status']) if isinstance(hb.get('status'), dict) else {},
+            'status': _status(hb),
         })
     rows.sort(key=lambda r: (r['localIp'] == '', r['localIp'], r['deviceId']))
     return {'devices': rows}
