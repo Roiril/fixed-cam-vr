@@ -49,6 +49,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'unity-log-filter.ps1')
 
 $Root = Split-Path -Parent $PSScriptRoot
 $Cli = Join-Path $env:LOCALAPPDATA 'Unity\bin\unity.exe'
@@ -209,6 +210,18 @@ function Assert-Cli {
 function Assert-NotLocked {
     $lock = Join-Path $Root 'Temp\UnityLockfile'
     if (Test-Path $lock) {
+        $active = @(Get-CimInstance Win32_Process -Filter "Name='Unity.exe'" |
+            Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Root) })
+        if ($active.Count -eq 0) {
+            try {
+                $probe = [System.IO.File]::Open($lock, 'Open', 'ReadWrite', 'None')
+                $probe.Dispose()
+                Write-Host '終了済みのロックファイルです。使用中の Unity はありません' -ForegroundColor DarkGray
+                return
+            } catch [System.IO.IOException] {
+                # 使用中の場合は停止判定を保つ。ロックファイルを削除しない。
+            }
+        }
         Write-Host "⚠ Editor がこのプロジェクトを開いている（Temp/UnityLockfile）。batchmode と衝突する" -ForegroundColor Yellow
         Write-Host "  Editor を閉じてからやり直す" -ForegroundColor Yellow
         exit 1
@@ -242,9 +255,11 @@ function Show-UnityLog {
         return
     }
     # 行頭 [ = プロジェクトのタグ付きログ（[IntroVeil] 等）。あとはコンパイルエラーと例外。
-    $hit = Select-String -Path $EditorLog -Pattern '^\[|error CS\d|Exception:|Unhandled' -Encoding utf8 |
-        Where-Object { $_.Line -notmatch $EditorLogNoise } |
-        Select-Object -Last 40
+    try {
+        $hit = Select-String -Path $EditorLog -Pattern '^\[|error CS\d|Exception:|Unhandled' -Encoding utf8 |
+            Where-Object { $_.Line -notmatch $EditorLogNoise } |
+            Select-Object -Last 40
+    } catch { Write-Warning '実行専用ログを読めません。Unity の終了コードを保持します'; return }
     if (-not $hit) { return }
     Write-Host "--- Editor.log ---" -ForegroundColor DarkGray
     foreach ($h in $hit) { Write-Host "  $($h.Line)" -ForegroundColor DarkGray }
@@ -273,10 +288,12 @@ function Show-BuildLog([string]$target, [datetime]$since) {
     #     → **括弧の中が英字のものだけ**（`[BuildVariants]` `[IntroVeil]`）
     #   - `Exception` を裸で拾うと、末尾の容量内訳 `… .../NotListeningException.cs` が大量に当たる
     #     → **コロンと空白まで**（`NullReferenceException: Object reference …` は拾いたい）
-    $hit = Select-String -Path $log.FullName -Encoding utf8 `
-        -Pattern '^\[[A-Za-z]|error CS\d|Exception: |Unhandled [Ee]xception|BuildFailed|Error building Player|Build completed with a result' |
-        Where-Object { $_.Line -notmatch $EditorLogNoise } |
-        Select-Object -Last 30
+    try {
+        $hit = Select-String -Path $log.FullName -Encoding utf8 `
+            -Pattern '^\[[A-Za-z]|error CS\d|Exception: |Unhandled [Ee]xception|BuildFailed|Error building Player|Build completed with a result' |
+            Where-Object { $_.Line -notmatch $EditorLogNoise } |
+            Select-Object -Last 30
+    } catch { Write-Warning '実行専用ログを読めません。Unity の終了コードを保持します'; return }
     if ($hit) { foreach ($h in $hit) { Write-Host "  $($h.Line)" -ForegroundColor DarkGray } }
     else { Write-Host "  拾える行が無い。全文: $($log.FullName)" -ForegroundColor DarkGray }
 }
@@ -434,7 +451,8 @@ switch ($Action) {
             Write-Host "    この状態では build / test / menu は即エラーで落ちる。閉じるか終わるのを待つ" -ForegroundColor Yellow
             Get-CimInstance Win32_Process -Filter "Name='Unity.exe'" -ErrorAction SilentlyContinue |
                 ForEach-Object {
-                    $cl = if ($_.CommandLine.Length -gt 140) { $_.CommandLine.Substring(0, 140) + '…' } else { $_.CommandLine }
+                    $safeCommand = Protect-UnityLogText $_.CommandLine
+                    $cl = if ($safeCommand.Length -gt 140) { $safeCommand.Substring(0, 140) + '…' } else { $safeCommand }
                     Write-Host "    PID $($_.ProcessId)  $cl" -ForegroundColor DarkGray
                 }
         }
@@ -496,9 +514,9 @@ switch ($Action) {
 
         Write-Host "$($spec.Desc) を焼く → $out" -ForegroundColor Cyan
         $startedAt = Get-Date
-        & $Cli build $Root --target $spec.Target --execute-method "$MethodPrefix$method" `
-            --non-interactive @Rest
-        $code = $LASTEXITCODE
+        $invocationLog = New-UnityInvocationLog ('build-' + $spec.Target)
+        Invoke-SafeUnityCli -LogPath $invocationLog -Arguments (@('build', $Root, '--target', $spec.Target, '--execute-method', "$MethodPrefix$method", '--non-interactive') + $Rest + @('--log-file', $invocationLog))
+        $code = $script:UnityCliExitCode
 
         # ⚠ 出力の有無で判定する。exit 0 でも BuildVariant が中断していれば APK は増えない
         #   （C# 側は「アクティブが Android でない」「コンパイル中」で LogError して return する）
@@ -514,7 +532,11 @@ switch ($Action) {
             Show-BuildLog $spec.Target $startedAt
             exit 1
         }
-        if ($code -ne 0) { Show-BuildLog $spec.Target $startedAt }
+        if ($code -ne 0) {
+            Show-BuildLog $spec.Target $startedAt
+            Write-Host 'ビルドの検証に失敗しました。APK の更新だけでは導入を案内しません' -ForegroundColor Red
+            exit $code
+        }
         if (Test-Path $outPath) {
             $f = Get-Item $outPath
             "✓ {0}  {1:N1} MB  {2:HH:mm:ss}" -f $out, ($f.Length / 1MB), $after | Write-Host -ForegroundColor Green
@@ -538,12 +560,13 @@ switch ($Action) {
         #    CLI の標準出力に出るのは `Scripts have compiler errors.` の 1 行だけで、
         #    `error CS...` の本文は Editor.log にしか無い。
         #    ⚠ 過去の実行のエラーを拾わないよう、**走る前の長さ**を覚えて差分だけ読む。
-        $editorLog = Join-Path $env:LOCALAPPDATA 'Unity\Editor\Editor.log'
+        $editorLog = New-UnityInvocationLog ('test-' + $mode)
         $logStart = 0
-        if (Test-Path $editorLog) { $logStart = (Get-Item $editorLog).Length }
 
-        & $Cli test $Root --mode $mode --output $outXml --non-interactive @Rest
-        $code = $LASTEXITCODE
+        $testArgs = @('test', $Root, '--mode', $mode, '--output', $outXml, '--non-interactive') + $Rest
+        if ($testArgs -notcontains '--') { $testArgs += '--' }
+        Invoke-SafeUnityCli -LogPath $editorLog -Arguments ($testArgs + @('-logFile', $editorLog))
+        $code = $script:UnityCliExitCode
 
         $csErrors = @()
         if (Test-Path $editorLog) {
@@ -636,8 +659,9 @@ switch ($Action) {
 
         Write-Host $desc -ForegroundColor Cyan
         Write-Host "  $method" -ForegroundColor DarkGray
-        & $Cli run $Root --non-interactive -- -executeMethod $method @fcv @Rest
-        $code = $LASTEXITCODE
+        $EditorLog = New-UnityInvocationLog 'run-menu'
+        Invoke-SafeUnityCli -LogPath $EditorLog -Arguments (@('run', $Root, '--non-interactive', '--', '-executeMethod', $method) + $fcv + $Rest + @('-logFile', $EditorLog))
+        $code = $script:UnityCliExitCode
 
         Show-UnityLog
 

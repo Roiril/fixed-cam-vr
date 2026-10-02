@@ -121,6 +121,10 @@ namespace FixedCamVr.Streaming.Tests
             InvokeGuard("WriteReceipt", apkPath, contentId, buildGuid);
             Receipt replaced = JsonUtility.FromJson<Receipt>(File.ReadAllText(receiptPath));
             Assert.That(replaced.apkSha256, Is.EqualTo(Hash(File.ReadAllBytes(apkPath))));
+            string[] previous = Directory.GetFiles(root, "test.apk.content.json.*.previous");
+            Assert.That(previous, Has.Length.EqualTo(1));
+            Receipt preserved = JsonUtility.FromJson<Receipt>(File.ReadAllText(previous[0]));
+            Assert.That(preserved.apkSha256, Is.EqualTo(receipt.apkSha256));
         }
 
         [Test]

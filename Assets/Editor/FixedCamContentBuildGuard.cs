@@ -89,7 +89,17 @@ namespace FixedCamVr.EditorTools
                     builtAt = DateTime.UtcNow.ToString("o"),
                 };
                 File.WriteAllText(temporaryPath, JsonUtility.ToJson(receipt), new UTF8Encoding(false));
-                if (File.Exists(receiptPath)) File.Replace(temporaryPath, receiptPath, null);
+                if (File.Exists(receiptPath))
+                {
+                    // Windows の読取処理と競合しても旧記録を消さない。退避を伴う原子的な置換を使う。
+                    string previousPath = receiptPath + "." + Guid.NewGuid().ToString("N") + ".previous";
+                    for (int attempt = 0; ; attempt++)
+                    {
+                        try { File.Replace(temporaryPath, receiptPath, previousPath); break; }
+                        catch (IOException) when (attempt < 4)
+                        { System.Threading.Thread.Sleep(100 * (attempt + 1)); }
+                    }
+                }
                 else File.Move(temporaryPath, receiptPath);
             }
             catch (BuildFailedException)

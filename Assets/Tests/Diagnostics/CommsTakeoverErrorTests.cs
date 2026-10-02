@@ -285,9 +285,12 @@ namespace FixedCamVr.Diagnostics.Tests
             string prefabGuid = AssetDatabase.AssetPathToGUID(PrefabPath);
             Assert.AreEqual("b9aa0ec021fba704b872270123baf6e1", prefabGuid);
             string yaml = File.ReadAllText(Path.Combine(Application.dataPath, "Scenes/Main.unity"));
-            StringAssert.Contains(
-                "typeSfx: {fileID: 118864515}\r\n  takeoverErrorPrefab: {fileID: 9221488599788193716, guid: "
-                + prefabGuid + ", type: 3}", yaml.Replace("\n", "\r\n").Replace("\r\r\n", "\r\n"));
+            var component = System.Array.Find(yaml.Split(new[] { "--- !u!" },
+                System.StringSplitOptions.None), block => block.Contains("typeSfx: {fileID: 118864515}"));
+            Assert.IsNotNull(component, "通信表示の音源を持つコンポーネントが必要です");
+            StringAssert.IsMatch(
+                @"takeoverErrorPrefab:\s*\{fileID: 9221488599788193716,\s*guid: "
+                + prefabGuid + @",\s*type: 3\}", component);
         }
 
         private static Transform Root(UnauthorizedAccessEffect effect, string field) =>
