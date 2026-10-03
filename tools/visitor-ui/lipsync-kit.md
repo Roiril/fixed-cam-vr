@@ -1,10 +1,10 @@
 # 博士のリップシンク動画用入力
 
-このキットは博士タブレットで使用中の `doctor.jpg.bytes` と、日本語音声 v2 から作る。音声生成時の台詞入力は分割しない。ここでの分割は、動画生成画面で選べる長さに合わせるためのもの。
+このキットは博士タブレットで使用中の `doctor.jpg.bytes` を中央配置に編集した画像と、日本語音声 v2 から作る。音声生成時の台詞入力は分割しない。ここでの分割は、動画生成画面で選べる長さに合わせるためのもの。中央配置は動画生成用の画像だけに適用し、サイトの表示は後で合わせる。
 
 ## 入力
 
-画像欄には全5回とも `doctor-site.jpg` を入れる。1672×941のサイト配信中の JPEG とバイト単位で同じ画像。博士の顔は画面幅の約70%にあり、左に暗い余白がある。顔を中央へ切り抜かない。
+画像欄には全5回とも `doctor-centered-v1.png` を入れる。1672×941の16:9画像で、博士の顔と上半身を中央に置いた。`doctor-site.jpg` はサイト配信中の元画像で、比較用に残す。
 
 音声欄と右側の設定は次の組み合わせにする。音声の長さは実ファイルで確認する。
 
@@ -23,11 +23,11 @@
 下の英文を、各回とも「プロンプト」欄へ同じように貼る。台詞は音声ファイルが与えるため、本文を重ねて書かない。
 
 ```text
-Animate the exact man in the reference image as the Doctor, a restrained Japanese researcher speaking the supplied Japanese audio. Preserve his identity, age, facial features, short dark hair, white lab coat, dark shirt, warm side lighting, deep black background, and the original wide composition. Keep him on the right side of the 16:9 frame with the empty dark space on the left. Use one locked camera shot with no zoom, pan, cut, reframing, or background change. Synchronize the lips precisely with the uploaded voice. His mouth rests naturally closed during pauses. Add only subtle breathing, occasional natural blinks, and very small head movements. His gaze stays near the camera. His expression remains calm, authoritative, and quietly ominous, without exaggerated fear or theatrical gestures. Keep the shoulders and coat stable. Do not add subtitles, text, logos, other people, music, sound effects, or new speech. Preserve the supplied voice and timing.
+Animate the exact man in the reference image as the Doctor, a restrained Japanese researcher speaking the supplied Japanese audio. Preserve his identity, age, facial features, short dark hair, white lab coat, dark shirt, warm side lighting, deep black background, and the centered upper-body composition. Keep his face and upper torso centered in the 16:9 frame throughout the shot, with the dark background around him. Use one locked camera shot with no zoom, pan, cut, reframing, or background change. Synchronize the lips precisely with the uploaded voice. His mouth rests naturally closed during pauses. Add only subtle breathing, occasional natural blinks, and very small head movements. His gaze stays near the camera. His expression remains calm, authoritative, and quietly ominous, without exaggerated fear or theatrical gestures. Keep the shoulders and coat stable. Do not add subtitles, text, logos, other people, music, sound effects, or new speech. Preserve the supplied voice and timing.
 ```
 
 ## 出力の確認
 
-顔と白衣が入力画像から変わっていないかを確認する。無音で口が動かないこと、唇と声がずれないこと、画面左の余白が残ることも確認する。末尾の無音で不自然な表情へ変わる場合は、動画だけ音声の終わりで切る。
+顔と白衣が入力画像から変わっていないかを確認する。無音で口が動かないこと、唇と声がずれないこと、博士が画面中央から動かないことも確認する。末尾の無音で不自然な表情へ変わる場合は、動画だけ音声の終わりで切る。
 
-別のフォルダへ再生成する場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/prepare-lipsync-kit.py --output output/visitor-lipsync-kit-new` を実行する。既存の出力は上書きしない。入力画像は `Assets/Resources/Visitor/doctor.jpg.bytes`。音声の正本は `Assets/Resources/Visitor/*-ja-v2.mp3.bytes` と `tools/visitor-ui/doctor-ja-v2-original.mp3`。
+別のフォルダへ再生成する場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/prepare-lipsync-kit.py --output output/visitor-lipsync-kit-new` を実行する。既存の出力は上書きしない。画像の元は `Assets/Resources/Visitor/doctor.jpg.bytes`。中央配置の入力画像は `tools/visitor-ui/doctor-centered-v1.png`。音声の正本は `Assets/Resources/Visitor/*-ja-v2.mp3.bytes` と `tools/visitor-ui/doctor-ja-v2-original.mp3`。

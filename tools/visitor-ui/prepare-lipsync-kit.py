@@ -1,4 +1,4 @@
-"""Package the site's doctor image and approved narration for a 20-second avatar UI."""
+"""Package the centered site-derived doctor image and approved narration."""
 import argparse
 import hashlib
 import json
@@ -21,6 +21,7 @@ SOURCES = {
     "wear-ja-v2.mp3.bytes": "7046EEBB09ED560383ECEE913C213B073032D65860601E2D47A18E856B0408C9",
 }
 ORIGINAL_SHA256 = "16C072929E29CCA5B583B30BFD871CBB47639DD3C4A7D62453E571B85888D560"
+CENTERED_SHA256 = "E3688256D851F9B94DD140ADC50E378447EB6AA1452AF4A42FEDE09D8D92CA1B"
 
 
 def sha256(path):
@@ -64,12 +65,16 @@ def main():
     original = HERE / "doctor-ja-v2-original.mp3"
     if sha256(original) != ORIGINAL_SHA256:
         raise ValueError("doctor audio changed")
+    centered = HERE / "doctor-centered-v1.png"
+    if sha256(centered) != CENTERED_SHA256:
+        raise ValueError("centered doctor image changed")
     for filename, expected in SOURCES.items():
         if sha256(ASSETS / filename) != expected:
             raise ValueError(f"site asset changed: {filename}")
     if output.exists() and any(output.iterdir()):
         raise FileExistsError(f"preserving existing kit: {output}")
     output.mkdir(parents=True, exist_ok=True)
+    copy_verified(centered, output / "doctor-centered-v1.png", CENTERED_SHA256)
     copy_verified(ASSETS / "doctor.jpg.bytes", output / "doctor-site.jpg", SOURCES["doctor.jpg.bytes"])
     for source, target in (
         ("introduction-ja-v2.mp3.bytes", "01_introduction.mp3"),
