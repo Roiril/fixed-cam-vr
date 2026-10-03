@@ -429,19 +429,19 @@ test('設定は言語から軽減と確認へ進み、戻る操作と三言語�
 
 test('確認画面の見出しと操作は三言語に揃う', () => {
   const copies = {
-    ja: ['Questに反映する', '設定に戻る'],
-    en: ['Apply to Quest', 'Back to settings'],
-    fr: ['Appliquer au Quest', 'Retour aux réglages'],
+    ja: ['設定内容の確認', 'この設定で始める', '設定に戻る'],
+    en: ['Review settings', 'Start with these settings', 'Back to settings'],
+    fr: ['Vérification des réglages', 'Commencer avec ces réglages', 'Retour aux réglages'],
   };
   state.connection = 'online';
   state.status = clone(validStatus);
-  for (const [lang, [apply, edit]] of Object.entries(copies)) {
+  for (const [lang, [heading, apply, edit]] of Object.entries(copies)) {
     state.view = 'edit';
     state.ui = 'idle';
     state.lang = lang;
     runtime.setSettingsStep('relief', false);
     assert.equal(runtime.confirmSettings(), true);
-    assert.equal(elements.get('resultTitle').textContent, apply);
+    assert.equal(elements.get('resultTitle').textContent, heading);
     assert.equal(elements.get('applyBtn').textContent, apply);
     assert.equal(elements.get('editBtn').textContent, edit);
     elements.get('editBtn').dispatch('click');
@@ -573,7 +573,7 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   assert.equal(state.ui, 'confirm');
   assert.equal(state.view, 'result');
   assert.equal(requests.length, 0, '確認画面へ進むだけでは通信しない');
-  assert.equal(elements.get('resultTitle').textContent, 'Apply to Quest');
+  assert.equal(elements.get('resultTitle').textContent, 'Review settings');
   assert.equal(elements.get('selectedLanguage').textContent, 'English');
   assert.equal(elements.get('selectedRelief').textContent, 'on');
   assert.equal(elements.get('applyBtn').hidden, false);
@@ -591,7 +591,7 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   await flushPromises();
   assert.equal(state.ui, 'sending');
   assert.equal(runtime.resultKey(), 'sending');
-  assert.equal(elements.get('resultTitle').textContent, 'Applying to Quest');
+  assert.equal(elements.get('resultTitle').textContent, 'Applying settings');
   assert.equal(requests[0].resource, './set');
   assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true,
     tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' });
@@ -607,6 +607,12 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   state.status = { ...state.status, lang: 'en', relief: false };
   assert.equal(runtime.resultKey(), 'waiting');
   state.status = { ...state.status, relief: true };
+  assert.equal(runtime.resultKey(), 'applied');
+  state.status = { ...state.status, lastRequest: { ...lastRequest, lang: 'ja' } };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, lastRequest: { ...lastRequest, relief: false } };
+  assert.equal(runtime.resultKey(), 'waiting');
+  state.status = { ...state.status, lastRequest };
   assert.equal(runtime.resultKey(), 'applied');
   state.status = { ...state.status, appliedSeq: 8 };
   assert.equal(runtime.resultKey(), 'waiting');
@@ -782,6 +788,20 @@ test('本番JSONと表示指定の境界値を検証する', () => {
     mutate(invalid);
     assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing loop video/);
   }
+});
+
+test('Eleven v4入力は全台詞を一つのコードブロックへ順番どおりに出す', () => {
+  const input = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja.md'), 'utf8');
+  const blocks = [...input.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)];
+  assert.equal(blocks.length, 1);
+  const lines = blocks[0][1].trim().split(/\r?\n/);
+  const cues = briefing.scenes.flatMap((scene) => scene.cues.ja);
+  assert.equal(lines.length, cues.length);
+  for (let index = 0; index < cues.length; index++) {
+    const spoken = cues[index].text.replace('3周', '三周').replace('XかY', 'エックスかワイ').replace('1秒', '一秒');
+    assert.equal(lines[index].replace(/^\[[^\]]+\] /, ''), spoken);
+  }
+  assert.equal(lines.filter((line) => line.startsWith('[long pause]')).length, briefing.scenes.length - 1);
 });
 
 test('壁の動画は次の文から始まり、文送りでは再生位置を変えずにループする', () => {

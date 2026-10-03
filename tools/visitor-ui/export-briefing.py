@@ -81,26 +81,21 @@ def main():
         "# 博士の日本語音声 — Eleven v4 用入力",
         "",
         "正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。このファイルはそこから生成する。",
-        "Text to Speech で Eleven v4 と既存の博士の Voice を選ぶ。各章を別々に生成し、コードブロック内だけを貼り付ける。",
-        "4章とも Stability と Similarity を同じ値にする。v4 に Style と Speed のスライダーはない。",
+        "Text to Speech で Eleven v4 と既存の博士の Voice を選ぶ。全台詞を一度に生成し、下のコードブロック全体を貼り付ける。",
+        "v4 の設定項目は Stability と Similarity。Style と Speed のスライダーはない。",
         "角括弧は発声指示。`[pause]` の秒数は固定されない。完成音声に合わせて JSON の `durationMs` を調整する。",
         "数字とボタン名は読み間違いを避けるため、音声入力だけ漢字とカタカナで書く。字幕の表記は正本のまま。",
-        "章名は読み上げ文に含めない。音声は BGM や効果音を混ぜずに書き出す。",
+        "章名は読み上げ文に含めない。音声は BGM や効果音を混ぜずに書き出し、生成後に4場面へ切り分ける。",
         "公式: [Eleven v4](https://elevenlabs.io/blog/eleven-v4) / [Text to Speech](https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech) / [Audio Tags](https://elevenlabs.io/blog/elevenlabs-audio-tags-list)",
         "",
+        "```text",
     ]
     for index, scene in enumerate(data["scenes"], 1):
         cues = scene["cues"]["ja"]
-        lines = ["[calm, measured] " + speech_reading(cues[0]["text"])]
+        lines = [("[calm, measured] " if index == 1 else "[long pause] ") + speech_reading(cues[0]["text"])]
         lines.extend("[pause] " + speech_reading(cue["text"]) for cue in cues[1:])
-        elevenlabs.extend([
-            f"## {index:02} {scene['title']['ja']}（{scene['id']}）",
-            "",
-            "```text",
-            *lines,
-            "```",
-            "",
-        ])
+        elevenlabs.extend(lines)
+    elevenlabs.extend(["```", ""])
     write_atomic(OUTPUT / "elevenlabs-input-ja.md", "\n".join(elevenlabs))
     print(json.dumps({"scenes": len(data["scenes"]), "durationSeconds": totals, "output": str(OUTPUT)}))
 

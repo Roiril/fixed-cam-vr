@@ -441,7 +441,7 @@
         </tbody>
       </table>
       <div class="result-actions">
-        <button class="primary" id="applyBtn" type="button" hidden>Questに反映する</button>
+        <button class="primary" id="applyBtn" type="button" hidden>この設定で始める</button>
         <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
         <button class="retry" id="briefingRetryBtn" type="button" hidden>説明資料を再読み込み</button>
         <button class="secondary" id="editBtn" type="button" hidden>設定に戻る</button>
@@ -534,26 +534,26 @@
       askRelief: '恐怖を軽減するかどうかを決めてください。',
       next: '次へ', back: '戻る',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
-      review: '設定を確認する', apply: 'Questに反映する', edit: '設定に戻る', retry: 'もう一度送る',
+      review: '設定を確認する', apply: 'この設定で始める', edit: '設定に戻る', retry: 'もう一度送る',
       selected: '選んだ設定', headset: 'ヘッドセット', item: '項目',
       restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
       staff: 'スタッフ', staffOpen: 'スタッフ情報を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする', fullscreenExit: '全画面を解除',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
-        confirm: ['Questに反映する', '選んだ設定を確認してください'],
-        sending: ['Questに反映しています', '選んだ設定をヘッドセットへ送っています'],
-        applied: ['Questに反映しました', '選んだ設定を確認しました'],
-        waiting: ['反映待ち', '注意書きの画面になると反映されます'],
-        later: ['次回の開始待ち', 'いまの体験が終わると、次の開始時に反映されます'],
+        confirm: ['設定内容の確認', '言語とホラー軽減を確認してください'],
+        sending: ['設定を反映しています', 'Questからの反映確認を待っています'],
+        applied: ['Questに反映しました', 'Questから反映確認を受け取りました'],
+        waiting: ['設定を反映しています', 'Questの注意書き画面で反映されます。確認を待っています'],
+        later: ['設定を反映しています', '現在の体験が終わった後に反映されます'],
         noserver: ['ヘッドセットを確認できません', '通信の回復を待っています。スタッフを呼んでください'],
         fail: ['送信を確認できませんでした', '設定が届いたか確認できません。もう一度送れます'],
         conflict: ['設定が変更されました', '別のページで設定が変更されました。設定を確認してください。'],
       },
       postSpeech: {
         confirm: '言語とホラー軽減の設定を確認してください。',
-        sending: '設定を送っています。少しお待ちください。',
+        sending: 'Questからの反映確認を待っています。少しお待ちください。',
         applied: '画面をタップして次へ',
-        waiting: '準備が整うまで、少しお待ちください。',
+        waiting: 'Questの注意書き画面で反映されます。確認を待っています。',
         later: '次の開始まで、少しお待ちください。',
         noserver: '通信を確認できません。スタッフにお声がけください。',
         fail: '設定を確認できません。スタッフにお声がけください。',
@@ -579,26 +579,26 @@
       askRelief: 'Please choose whether you would like to reduce the horror.',
       next: 'Next', back: 'Back',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
-      review: 'Review settings', apply: 'Apply to Quest', edit: 'Back to settings', retry: 'Send again',
+      review: 'Review settings', apply: 'Start with these settings', edit: 'Back to settings', retry: 'Send again',
       selected: 'Selected settings', headset: 'Headset', item: 'Item',
       restarted: 'The headset restarted. Check the retained settings, then send them again.',
       staff: 'Staff', staffOpen: 'Open staff information', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen', fullscreenExit: 'Exit full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
-        confirm: ['Apply to Quest', 'Check the selected settings before applying them'],
-        sending: ['Applying to Quest', 'Sending the selected settings to the headset'],
-        applied: ['Applied to Quest', 'The selected settings have been confirmed'],
-        waiting: ['Waiting to apply', 'They will apply when the notice screen appears'],
-        later: ['Waiting for the next session', 'They will apply when the next session starts'],
+        confirm: ['Review settings', 'Check the language and reduced horror setting'],
+        sending: ['Applying settings', 'Waiting for confirmation from Quest'],
+        applied: ['Applied to Quest', 'Quest confirmed the settings were applied'],
+        waiting: ['Applying settings', 'Quest will apply them on the notice screen. Waiting for confirmation'],
+        later: ['Applying settings', 'Quest will apply them after the current session'],
         noserver: ['Connection unknown', 'The headset connection cannot be confirmed. Please call a member of staff'],
         fail: ['Could not confirm delivery', 'Delivery could not be confirmed. You can send the settings again'],
         conflict: ['Settings changed', 'Settings were changed on another page. Please check the settings.'],
       },
       postSpeech: {
         confirm: 'Check the language and reduced horror settings.',
-        sending: 'I am sending your settings. Please wait a moment.',
+        sending: 'I am waiting for confirmation from Quest. Please wait a moment.',
         applied: 'Tap the screen to continue',
-        waiting: 'Please wait a moment while everything is prepared.',
+        waiting: 'Quest will apply them on the notice screen. Waiting for confirmation.',
         later: 'Please wait for the next session to begin.',
         noserver: 'I cannot confirm the connection. Please call a member of staff.',
         fail: 'I cannot confirm your settings. Please call a member of staff.',
@@ -624,26 +624,26 @@
       askRelief: 'Choisissez si vous souhaitez atténuer l’horreur.',
       next: 'Suivant', back: 'Retour',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
-      review: 'Vérifier les réglages', apply: 'Appliquer au Quest', edit: 'Retour aux réglages', retry: 'Renvoyer',
+      review: 'Vérifier les réglages', apply: 'Commencer avec ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
       selected: 'Réglages choisis', headset: 'Casque', item: 'Élément',
       restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
       staff: 'Personnel', staffOpen: 'Ouvrir les informations du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran', fullscreenExit: 'Quitter le plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
-        confirm: ['Appliquer au Quest', 'Vérifiez les réglages choisis avant de les appliquer'],
-        sending: ['Application au Quest', 'Envoi des réglages choisis au casque'],
-        applied: ['Réglages appliqués au Quest', 'Les réglages choisis ont été confirmés'],
-        waiting: ['En attente d’application', 'Ils seront appliqués à l’écran d’avertissement'],
-        later: ['En attente de la prochaine session', 'Ils seront appliqués au début de la prochaine session'],
+        confirm: ['Vérification des réglages', 'Vérifiez la langue et l’atténuation de l’horreur'],
+        sending: ['Application des réglages', 'En attente de la confirmation du Quest'],
+        applied: ['Réglages appliqués au Quest', 'Le Quest a confirmé les réglages appliqués'],
+        waiting: ['Application des réglages', 'Le Quest les appliquera sur l’écran d’avertissement. En attente de confirmation'],
+        later: ['Application des réglages', 'Le Quest les appliquera après la session en cours'],
         noserver: ['Connexion non vérifiable', 'La connexion au casque ne peut pas être confirmée. Appelez un membre du personnel'],
         fail: ['Envoi non confirmé', 'La réception n’a pas pu être confirmée. Vous pouvez renvoyer les réglages'],
         conflict: ['Réglages modifiés', 'Les réglages ont été modifiés sur une autre page. Veuillez les vérifier.'],
       },
       postSpeech: {
         confirm: 'Vérifiez la langue et l’atténuation de l’horreur.',
-        sending: 'J’envoie vos réglages. Veuillez patienter un instant.',
+        sending: 'J’attends la confirmation du Quest. Veuillez patienter.',
         applied: 'Touchez l’écran pour continuer',
-        waiting: 'Veuillez patienter un instant pendant la préparation.',
+        waiting: 'Le Quest les appliquera sur l’écran d’avertissement. J’attends sa confirmation.',
         later: 'Veuillez attendre le début de la prochaine session.',
         noserver: 'Je ne peux pas confirmer la connexion. Appelez un membre du personnel.',
         fail: 'Je ne peux pas confirmer vos réglages. Appelez un membre du personnel.',
@@ -1832,8 +1832,10 @@
     if (state.connection !== 'online' || !state.status) return 'noserver';
     const actual = state.status;
     const sent = state.sent;
+    // POST /set の受理だけでは完了しない。Quest が適用後に公開した実値と受理番号を照合する。
     if (sent && sent.seq > 0 && actual.portalSessionId === sent.portalSessionId
       && actual.lastRequest?.tabletSessionId === tabletSessionId && actual.lastRequest.seq === sent.seq
+      && actual.lastRequest.lang === sent.lang && actual.lastRequest.relief === sent.relief
       && actual.lang === sent.lang && actual.relief === sent.relief && actual.appliedSeq === sent.seq) return 'applied';
     if (actual.phase === 'RUN' || actual.phase === 'END') return 'later';
     return 'waiting';
@@ -1915,6 +1917,8 @@
       && status.portalSessionId === state.sent.portalSessionId
       && status.lastRequest?.tabletSessionId === tabletSessionId
       && status.lastRequest.seq === state.sent.seq
+      && status.lastRequest.lang === state.sent.lang
+      && status.lastRequest.relief === state.sent.relief
       && status.lang === state.sent.lang
       && status.relief === state.sent.relief
       && status.appliedSeq === state.sent.seq;
@@ -1995,17 +1999,10 @@
 
   async function send() {
     if (state.ui === 'sending') return;
-    if (!state.status?.portalSessionId || state.connection !== 'online') await poll();
-    if (!state.status?.portalSessionId || state.connection !== 'online') {
-      state.ui = 'fail';
-      render();
-      return;
-    }
-    if (pollController) pollController.abort();
+    const generation = ++sendGeneration;
     clearSavedProgress();
     resetBriefingSession();
-    const generation = ++sendGeneration;
-    state.sent = { lang: state.lang, relief: state.relief, seq: 0, portalSessionId: state.status.portalSessionId };
+    state.sent = null;
     state.restartMessage = false;
     state.appliedSeen = false;
     state.leftWaitAfterApplied = false;
@@ -2014,6 +2011,11 @@
     render();
     const minimumApplying = new Promise((resolve) => setTimeout(resolve, MINIMUM_APPLYING_MS));
     try {
+      if (!state.status?.portalSessionId || state.connection !== 'online') await poll();
+      if (generation !== sendGeneration) return;
+      if (!state.status?.portalSessionId || state.connection !== 'online') throw new Error('Quest status unavailable');
+      if (pollController) pollController.abort();
+      state.sent = { lang: state.lang, relief: state.relief, seq: 0, portalSessionId: state.status.portalSessionId };
       const response = await post('./set', { lang: state.sent.lang, relief: state.sent.relief,
         tabletSessionId, portalSessionId: state.sent.portalSessionId });
       if (generation !== sendGeneration) return;
@@ -2022,7 +2024,7 @@
       if (pollInFlight) await pollInFlight;
       await poll();
       await minimumApplying;
-      if (generation !== sendGeneration) return;
+      if (generation !== sendGeneration || state.ui === 'conflict') return;
       state.ui = 'sent';
     } catch (error) {
       if (generation !== sendGeneration) return;
