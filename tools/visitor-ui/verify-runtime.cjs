@@ -794,18 +794,29 @@ test('本番JSONと表示指定の境界値を検証する', () => {
   }
 });
 
-test('Eleven v4入力は全台詞を一つのコードブロックへ順番どおりに出す', () => {
+test('ユーザー指定のEleven v4入力は一つのコードブロックで保存する', () => {
   const input = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja.md'), 'utf8');
   const blocks = [...input.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)];
   assert.equal(blocks.length, 1);
-  const lines = blocks[0][1].trim().split(/\r?\n/);
-  const cues = briefing.scenes.flatMap((scene) => scene.cues.ja);
-  assert.equal(lines.length, cues.length);
-  for (let index = 0; index < cues.length; index++) {
-    const spoken = cues[index].text.replace('3周', '三周').replace('XかY', 'エックスかワイ').replace('1秒', '一秒');
-    assert.equal(lines[index].replace(/^\[[^\]]+\] /, ''), spoken);
+  const prompt = blocks[0][1];
+  for (const phrase of ['[deep, resonant male voice', 'はじめまして。', '呪われたオブジェクト',
+    'こちらの、カーテンです。', '決して、離さないでください。', 'エックスかワイを、一秒間', '健闘を、祈ります。']) {
+    assert.ok(prompt.includes(phrase), phrase);
   }
-  assert.equal(lines.filter((line) => line.startsWith('[long pause]')).length, briefing.scenes.length - 1);
+});
+
+test('日本語の全場面に配信用MP3があり、新しい台詞を参照する', () => {
+  for (const scene of briefing.scenes) {
+    assert.equal(scene.audio?.ja, `${scene.id}-ja-v2.mp3`);
+    const asset = path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.audio.ja}.bytes`);
+    const bytes = fs.readFileSync(asset);
+    assert.ok(bytes.length > 100_000, asset);
+    assert.equal(bytes.subarray(0, 3).toString('ascii'), 'ID3');
+  }
+  const subject = briefing.scenes.find((scene) => scene.id === 'subject');
+  const report = briefing.scenes.find((scene) => scene.id === 'report');
+  assert.match(subject.cues.ja[2].text, /決して離さない/);
+  assert.match(report.cues.ja[2].text, /1秒間/);
 });
 
 test('壁の動画は次の文から始まり、文送りでは再生位置を変えずにループする', () => {
@@ -1122,7 +1133,7 @@ test('取消の送信成功だけでは完了せず、未開始の設定が消�
 test('博士の音声確認は閉じる操作とタブ非表示で止まり、失敗時に案内する', async () => {
   prepareStaff();
   const sound = elements.get('staffSound');
-  assert.match(html, /id="staffSound"[^>]*src="\.\/asset\/report-ja-v1\.mp3"/);
+  assert.ok(html.includes('id="staffSound" src="./asset/report-ja-v2.mp3"'));
   await elements.get('staffSoundBtn').dispatch('click');
   assert.equal(sound.paused, false);
   assert.equal(elements.get('staffSoundBtn').textContent, '博士の音声を止める');

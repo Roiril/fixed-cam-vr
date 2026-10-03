@@ -27,15 +27,18 @@
         "en": "Doctor · Anomalous investigations",
         "fr": "Docteur · Supervision des enquêtes"
       },
+      "audio": {
+        "ja": "introduction-ja-v2.mp3"
+      },
       "cues": {
         "ja": [
           {
             "text": "はじめまして。日本怪異研究所へようこそ。私はあなたの上司にあたる、博士です。",
-            "durationMs": 7582
+            "durationMs": 9820
           },
           {
-            "text": "あなたに、ある呪われたオブジェクトの調査を依頼します。",
-            "durationMs": 4688
+            "text": "あなたに、ある「呪われたオブジェクト」の調査を依頼します。",
+            "durationMs": 5818
           }
         ],
         "en": [
@@ -90,23 +93,26 @@
         "file": "kabe-one-lap-doll-v1.mp4",
         "startCue": 1
       },
+      "audio": {
+        "ja": "subject-ja-v2.mp3"
+      },
       "cues": {
         "ja": [
           {
             "text": "こちらのカーテンです。",
-            "durationMs": 3065
+            "durationMs": 3291
           },
           {
             "text": "観測装置をつけ、このカーテンを3周してください。",
-            "durationMs": 3927
+            "durationMs": 4968
           },
           {
-            "text": "その間は右手で手すりを持ち、離さないでください。",
-            "durationMs": 4368
+            "text": "その間は右手で手すりを持ち、決して離さないでください。",
+            "durationMs": 6141
           },
           {
             "text": "異変を見逃さないよう、ゆっくり慎重に歩いてください。",
-            "durationMs": 4695
+            "durationMs": 6335
           }
         ],
         "en": [
@@ -174,25 +180,25 @@
         "fr": "Manette gauche · Un seul bouton · 1 seconde"
       },
       "audio": {
-        "ja": "report-ja-v1.mp3"
+        "ja": "report-ja-v2.mp3"
       },
       "cues": {
         "ja": [
           {
             "text": "これが、怪異を記録・解析する観測装置です。",
-            "durationMs": 4489
+            "durationMs": 4944
           },
           {
             "text": "あなたの調査を支援するエージェントが搭載されています。",
-            "durationMs": 4362
+            "durationMs": 4371
           },
           {
-            "text": "異変に気づいたら、左コントローラーのXかYを1秒、長押ししてください。",
-            "durationMs": 6864
+            "text": "異変に気づいたら、左コントローラーのXかYを1秒間、長押ししてください。",
+            "durationMs": 7138
           },
           {
             "text": "エージェントが解析してくれます。",
-            "durationMs": 2576
+            "durationMs": 3257
           }
         ],
         "en": [
@@ -260,17 +266,17 @@
         "fr": "L’agent vous guidera une fois équipé"
       },
       "audio": {
-        "ja": "wear-ja-v1.mp3"
+        "ja": "wear-ja-v2.mp3"
       },
       "cues": {
         "ja": [
           {
-            "text": "では、左手にコントローラーを持って観測装置をつけてください。",
-            "durationMs": 5567
+            "text": "では。左手にコントローラーを持って観測装置をつけてください。",
+            "durationMs": 6813
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 1942
+            "durationMs": 2671
           }
         ],
         "en": [

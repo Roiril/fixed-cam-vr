@@ -23,13 +23,6 @@ def write_atomic(path, content):
     temporary.replace(path)
 
 
-def speech_reading(text):
-    """Spell out controls and counts for the TTS input without changing subtitles."""
-    return (text.replace("3周", "三周")
-                .replace("XかY", "エックスかワイ")
-                .replace("1秒", "一秒"))
-
-
 def main():
     data = json.loads(SOURCE.read_text(encoding="utf-8"))
     assert data["schemaVersion"] == 1 and data["scenes"]
@@ -44,10 +37,10 @@ def main():
               "台詞の正本。ユーザーが指定した文言と、それ以外の未判定の実装案を含む。", "",
               "正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。この文書と SRT はそこから生成する。",
               "博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。", "",
-              "博士の動画と英仏音声は未制作。日本語の調査依頼・探索方法は台詞変更により音声の再制作待ち。以下の時間はオート再生用の尺。完成した音声に合わせて JSON の durationMs を調整する。",
+              "博士の動画と英仏音声は未制作。日本語はユーザー提供の Eleven v4 音声（65.567 秒）を4場面へ切り出して使用する。以下の日本語時間は実音源の無音区間で測った尺。",
               "通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。",
               "動画は既存博士画像と同じ人物と画角を使用する。映像の切替や字幕を動画に焼き込まない。", "",
-              "各場面を個別に音声化する。ファイル名は `場面ID-言語.mp3` または `場面ID-言語.mp4` を推奨する。",
+              "日本語の元音源は `tools/visitor-ui/doctor-ja-v2-original.mp3`。`ingest-doctor-audio.py` で `場面ID-ja-v2.mp3.bytes` に切り出す。英仏音声や動画を追加する場合は場面単位にする。",
               "各文の開始は同じ場面にある前の文の durationMs の合計。手動では文の終端で媒体を止める。",
               "一文送りは発話を待たず次の文の開始位置へ移る。文間の間も直前の文の尺へ含める。",
               "音声付き博士動画を使う場合は video のみ指定する。同じ音声を audio にも指定しない。", ""]
@@ -77,26 +70,6 @@ def main():
         totals[language] = offset / 1000
         write_atomic(OUTPUT / f"briefing-{language}.srt", "\n".join(subtitles))
     write_atomic(OUTPUT / "briefing-narration.md", "\n".join(script))
-    elevenlabs = [
-        "# 博士の日本語音声 — Eleven v4 用入力",
-        "",
-        "正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。このファイルはそこから生成する。",
-        "Text to Speech で Eleven v4 と既存の博士の Voice を選ぶ。全台詞を一度に生成し、下のコードブロック全体を貼り付ける。",
-        "v4 の設定項目は Stability と Similarity。Style と Speed のスライダーはない。",
-        "角括弧は発声指示。`[pause]` の秒数は固定されない。完成音声に合わせて JSON の `durationMs` を調整する。",
-        "数字とボタン名は読み間違いを避けるため、音声入力だけ漢字とカタカナで書く。字幕の表記は正本のまま。",
-        "章名は読み上げ文に含めない。音声は BGM や効果音を混ぜずに書き出し、生成後に4場面へ切り分ける。",
-        "公式: [Eleven v4](https://elevenlabs.io/blog/eleven-v4) / [Text to Speech](https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech) / [Audio Tags](https://elevenlabs.io/blog/elevenlabs-audio-tags-list)",
-        "",
-        "```text",
-    ]
-    for index, scene in enumerate(data["scenes"], 1):
-        cues = scene["cues"]["ja"]
-        lines = [("[calm, measured] " if index == 1 else "[long pause] ") + speech_reading(cues[0]["text"])]
-        lines.extend("[pause] " + speech_reading(cue["text"]) for cue in cues[1:])
-        elevenlabs.extend(lines)
-    elevenlabs.extend(["```", ""])
-    write_atomic(OUTPUT / "elevenlabs-input-ja.md", "\n".join(elevenlabs))
     print(json.dumps({"scenes": len(data["scenes"]), "durationSeconds": totals, "output": str(OUTPUT)}))
 
 
