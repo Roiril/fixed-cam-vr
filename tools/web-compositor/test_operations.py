@@ -230,6 +230,8 @@ class OperationsTests(unittest.TestCase):
                           row['reflectionStatus']), ('ok', 'ok', 'ok', 'ok'))
         self.assertEqual((row['portalSessionId'], row['tabletSessionId'], row['tabletIp']),
                          ('quest-run', 'page-1', '192.168.10.50'))
+        self.assertNotIn('visitorUrl', row)
+        self.assertEqual(row['tabletPackage'], 'com.roiril.mawarimi.tablet')
         self.assertEqual((row['ageSec'], row['sentSeq'], row['appliedSeq'], row['received'],
                           row['applyCount'], row['requestedLang'], row['requestedRelief'],
                           row['lang'], row['relief'], row['activePages']),
@@ -240,14 +242,14 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(check('unknown', at=now + 1)['status'], 'unknown')
         self.assertEqual(check('warning', {'tablets': portal['tablets'] + [
             {'tabletSessionId': 'page-2', 'ip': '192.168.10.51', 'ageSec': 1}]})['title'],
-            '複数のページが開いています')
+            '複数のタブレットが応答しています')
         self.assertEqual(check('warning', {'lastRequest': dict(portal['lastRequest'],
             tabletSessionId='page-2')})['reflectionStatus'], 'warning')
         self.assertEqual(check('warning', {'lang': 'ja'})['reflectionStatus'], 'warning')
         self.assertEqual(check('warning', {'appliedSeq': 3, 'pendingSeq': 4})['reflectionStatus'],
                          'warning')
         self.assertEqual(check('unknown', {'tablets': []})['action'],
-                         '画面を手前に開いてください')
+                         'タブレットの「廻リ視 博士」を起動し、スタッフ設定でクエストαを選んでください')
         self.assertEqual(check('unknown', {'tablets': [dict(portal['tablets'][0], ageSec=29)]})[
             'activePages'], 0)
         self.assertEqual(check('unknown', {'schema': 0})['portalStatus'], 'unknown')

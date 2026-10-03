@@ -1,0 +1,322 @@
+package com.roiril.mawarimi.tablet.test;
+
+import android.app.Activity;
+import android.app.Instrumentation;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.ValueCallback;
+import android.webkit.WebView;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.JSONTokener;
+
+import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+public final class TabletInstrumentation extends Instrumentation {
+    private static final String TAG = "DoctorTabletTest";
+    private static final ComponentName ACTIVITY = new ComponentName(
+        "com.roiril.mawarimi.tablet", "com.roiril.mawarimi.tablet.MainActivity");
+    private final Bundle results = new Bundle();
+    private boolean requireQuest;
+    private boolean mutateQuest;
+    private int checks;
+
+    @Override
+    public void onCreate(Bundle arguments) {
+        super.onCreate(arguments);
+        requireQuest = arguments != null && "true".equalsIgnoreCase(arguments.getString("requireQuest"));
+        mutateQuest = arguments != null && "true".equalsIgnoreCase(arguments.getString("mutateQuest"));
+        start();
+    }
+
+    @Override
+    public void onStart() {
+        int resultCode = Activity.RESULT_OK;
+        try {
+            runFunctionalTests();
+            results.putString("summary", "PASS checks=" + checks);
+            Log.i(TAG, "PASS checks=" + checks);
+        } catch (Throwable error) {
+            resultCode = Activity.RESULT_CANCELED;
+            results.putString("summary", "FAIL " + error);
+            Log.e(TAG, "FAIL", error);
+        } finally {
+            finish(resultCode, results);
+        }
+    }
+
+    private void runFunctionalTests() throws Exception {
+        Activity activity = launch(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        final WebView initialWebView = waitForWebView(activity, 10000);
+        waitFor("page ready", 15000, () -> "complete".equals(evaluateString(initialWebView, "document.readyState")));
+        check("secure local origin", evaluateString(initialWebView, "location.origin").equals("https://appassets.androidplatform.net"));
+
+        evaluate(initialWebView, INSTALL_TEST_HARNESS);
+        waitFor("local asset probe", 20000, () -> evaluateBoolean(initialWebView,
+            "Boolean(window.__doctorTest&&window.__doctorTest.assetsDone)"));
+        JSONObject assets = evaluateObject(initialWebView, "JSON.stringify(window.__doctorTest.assets)");
+        check("briefing JSON loaded", assets.optBoolean("json"));
+        check("three local images decoded", assets.optInt("images") == 3);
+        Log.i(TAG, "assets " + assets);
+
+        evaluate(initialWebView, "window.__doctorTest.runMedia()");
+        waitFor("five video probes", 120000, () -> evaluateBoolean(initialWebView,
+            "Boolean(window.__doctorTest&&window.__doctorTest.mediaDone)"));
+        JSONArray media = evaluateArray(initialWebView, "JSON.stringify(window.__doctorTest.media)");
+        check("video probe count", media.length() == 5);
+        for (int index = 0; index < media.length(); index++) {
+            JSONObject item = media.getJSONObject(index);
+            check("video loaded " + item.optString("name"), item.optBoolean("loaded"));
+            check("video seeked " + item.optString("name"), item.optDouble("seeked", -1) > 0);
+            check("video frame advanced " + item.optString("name"), item.optBoolean("frame"));
+            Log.i(TAG, "media " + item);
+        }
+
+        evaluate(initialWebView, "window.__doctorTest.startBackgroundVideo()");
+        waitFor("background video playing", 20000, () -> evaluateBoolean(initialWebView,
+            "Boolean(window.__doctorTest&&window.__doctorTest.backgroundReady)"));
+        double before = evaluateDouble(initialWebView, "window.__doctorTest.backgroundVideo.currentTime");
+        long backgroundStartedAt = SystemClock.elapsedRealtime();
+        pressHome();
+        SystemClock.sleep(2200);
+        resumeExisting(activity, initialWebView);
+        final WebView resumedWebView = initialWebView;
+        SystemClock.sleep(800);
+        double afterResume = evaluateDouble(resumedWebView, "window.__doctorTest.backgroundVideo.currentTime");
+        long backgroundElapsedMs = SystemClock.elapsedRealtime() - backgroundStartedAt;
+        boolean paused = evaluateBoolean(resumedWebView, "window.__doctorTest.backgroundVideo.paused");
+        SystemClock.sleep(900);
+        double afterWait = evaluateDouble(resumedWebView, "window.__doctorTest.backgroundVideo.currentTime");
+        check("background media paused", paused);
+        check("background media did not advance", Math.abs(afterResume - before) < 0.8);
+        check("background media remains stopped", Math.abs(afterWait - afterResume) < 0.12);
+        Log.i(TAG, "background before=" + before + " resumed=" + afterResume + " afterWait=" + afterWait
+            + " paused=" + paused + " backgroundElapsedMs=" + backgroundElapsedMs
+            + " maxBackgroundAdvanceSec=0.8 (less than the 2.2s HOME wait; allows HOME dispatch latency)");
+        evaluate(resumedWebView, "(function(){var v=window.__doctorTest.backgroundVideo;"
+            + "if(v){v.pause();v.removeAttribute('src');v.load();v.remove();}return true;})()");
+
+        evaluate(resumedWebView, "window.__doctorTest.runBridge()");
+        waitFor("bridge probe", 25000, () -> evaluateBoolean(resumedWebView,
+            "Boolean(window.__doctorTest&&window.__doctorTest.bridgeDone)"));
+        JSONObject bridge = evaluateObject(resumedWebView, "JSON.stringify(window.__doctorTest.bridge)");
+        boolean online = bridge.optBoolean("get") && bridge.optBoolean("post");
+        if (requireQuest) check("Quest GET and POST", online);
+        check("offline preview remains ready", "complete".equals(evaluateString(resumedWebView, "document.readyState")));
+        Log.i(TAG, "bridge requireQuest=" + requireQuest + " result=" + bridge);
+
+        if (mutateQuest) {
+            check("mutation requires Quest", requireQuest);
+            evaluate(resumedWebView, "window.__doctorTest.runMutation()");
+            waitFor("safe set and restore", 30000, () -> evaluateBoolean(resumedWebView,
+                "Boolean(window.__doctorTest&&window.__doctorTest.mutationDone)"));
+            JSONObject mutation = evaluateObject(resumedWebView, "JSON.stringify(window.__doctorTest.mutation)");
+            check("Quest setting restored or safely skipped",
+                mutation.optBoolean("restored") || mutation.has("skipped"));
+            Log.i(TAG, "mutation " + mutation);
+        }
+
+        evaluate(resumedWebView, "(function(){document.getElementById('staffToggle').click();return true;})()");
+        waitFor("staff briefing ready", 10000, () -> evaluateBoolean(resumedWebView,
+            "!document.getElementById('staffBriefingBtn').disabled"));
+        String staffButton = evaluateString(resumedWebView,
+            "document.getElementById('staffBriefingBtn').textContent.trim()");
+        evaluate(resumedWebView, "(function(){document.getElementById('staffBriefingBtn').click();return true;})()");
+        waitFor("offline briefing preview", 5000, () -> evaluateBoolean(resumedWebView,
+            "(function(){var v=document.getElementById('briefingView');"
+                + "var m=document.getElementById('briefingMode');var r=v.getBoundingClientRect();"
+                + "var s=getComputedStyle(v);return !v.hidden&&v.getAttribute('aria-hidden')!=='true'"
+                + "&&r.width>0&&r.height>0&&s.display!=='none'&&s.visibility==='visible'"
+                + "&&!m.hidden&&m.textContent.trim()==='スタッフ確認モードです。クエストへ設定は送りません。';})()"));
+        String briefingTitle = evaluateString(resumedWebView,
+            "document.getElementById('briefingTitle').textContent.trim()");
+        String briefingMode = evaluateString(resumedWebView,
+            "document.getElementById('briefingMode').textContent.trim()");
+        check("staff preview control text", staffButton.contains("説明"));
+        check("staff preview visible offline", !briefingTitle.isEmpty());
+        check("staff preview mode text", briefingMode.equals(
+            "スタッフ確認モードです。クエストへ設定は送りません。"));
+        Log.i(TAG, "offlinePreview button=" + staffButton + " title=" + briefingTitle
+            + " mode=" + briefingMode);
+        evaluate(resumedWebView, "(function(){document.getElementById('briefingSettings').click();"
+            + "delete window.__doctorTest;return true;})()");
+    }
+
+    private Activity launch(int flags) {
+        Intent intent = new Intent(Intent.ACTION_MAIN).setComponent(ACTIVITY).addFlags(flags);
+        return startActivitySync(intent);
+    }
+
+    private void resumeExisting(Activity activity, WebView webView) throws Exception {
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            throw new AssertionError("Activity was destroyed while backgrounded");
+        }
+        Intent intent = new Intent(Intent.ACTION_MAIN).setComponent(ACTIVITY).addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        runOnMainSync(() -> activity.startActivity(intent));
+        waitFor("existing Activity resumed", 10000, () -> {
+            AtomicReference<Boolean> resumed = new AtomicReference<>(false);
+            runOnMainSync(() -> resumed.set(!activity.isFinishing() && !activity.isDestroyed()
+                && activity.hasWindowFocus() && webView.isAttachedToWindow() && webView.isShown()));
+            return resumed.get();
+        });
+        AtomicReference<WebView> current = new AtomicReference<>();
+        runOnMainSync(() -> current.set(findWebView(activity.getWindow().getDecorView())));
+        if (current.get() != webView) {
+            throw new AssertionError("Activity or WebView was recreated while backgrounded");
+        }
+        Log.i(TAG, "existing Activity resumed with retained WebView");
+    }
+
+    private void pressHome() throws IOException {
+        ParcelFileDescriptor command = getUiAutomation().executeShellCommand("input keyevent KEYCODE_HOME");
+        command.close();
+    }
+
+    private WebView waitForWebView(Activity activity, long timeoutMs) throws Exception {
+        AtomicReference<WebView> found = new AtomicReference<>();
+        waitFor("WebView", timeoutMs, () -> {
+            runOnMainSync(() -> found.set(findWebView(activity.getWindow().getDecorView())));
+            return found.get() != null;
+        });
+        return found.get();
+    }
+
+    private static WebView findWebView(View view) {
+        if (view instanceof WebView) return (WebView) view;
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int index = 0; index < group.getChildCount(); index++) {
+            WebView found = findWebView(group.getChildAt(index));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private String evaluate(WebView view, String script) throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<String> value = new AtomicReference<>();
+        runOnMainSync(() -> view.evaluateJavascript(script, result -> {
+            value.set(result);
+            latch.countDown();
+        }));
+        if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("JavaScript evaluation timed out");
+        return value.get();
+    }
+
+    private Object evaluateValue(WebView view, String script) throws Exception {
+        String encoded = evaluate(view, script);
+        return encoded == null ? null : new JSONTokener(encoded).nextValue();
+    }
+
+    private String evaluateString(WebView view, String script) throws Exception {
+        Object value = evaluateValue(view, script);
+        return value == null || value == JSONObject.NULL ? "" : String.valueOf(value);
+    }
+
+    private boolean evaluateBoolean(WebView view, String script) throws Exception {
+        return Boolean.TRUE.equals(evaluateValue(view, script));
+    }
+
+    private double evaluateDouble(WebView view, String script) throws Exception {
+        Object value = evaluateValue(view, script);
+        if (!(value instanceof Number)) throw new AssertionError("Expected number from " + script + ": " + value);
+        return ((Number) value).doubleValue();
+    }
+
+    private JSONObject evaluateObject(WebView view, String script) throws Exception {
+        return new JSONObject(evaluateString(view, script));
+    }
+
+    private JSONArray evaluateArray(WebView view, String script) throws Exception {
+        return new JSONArray(evaluateString(view, script));
+    }
+
+    private void waitFor(String name, long timeoutMs, CheckedCondition condition) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+        Throwable lastError = null;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            try {
+                if (condition.test()) return;
+            } catch (Throwable error) {
+                lastError = error;
+            }
+            SystemClock.sleep(100);
+        }
+        AssertionError timeout = new AssertionError(name + " timed out");
+        if (lastError != null) timeout.initCause(lastError);
+        throw timeout;
+    }
+
+    private void check(String name, boolean condition) {
+        checks++;
+        if (!condition) throw new AssertionError(name);
+        Log.i(TAG, "PASS " + name);
+    }
+
+    private interface CheckedCondition {
+        boolean test() throws Exception;
+    }
+
+    private static final String INSTALL_TEST_HARNESS =
+        "(function(){var T=window.__doctorTest={assetsDone:false,mediaDone:false,bridgeDone:false};"
+        + "Promise.all([fetch('./asset/briefing-v1.json').then(function(r){return r.ok;}),"
+        + "...['briefing-device-v1.png','briefing-survey-v1.png','doctor.jpg'].map(function(n){"
+        + "return new Promise(function(ok){var i=new Image();i.onload=function(){ok(i.naturalWidth>0);};"
+        + "i.onerror=function(){ok(false);};i.src='./asset/'+n;});})]).then(function(v){"
+        + "T.assets={json:v[0],images:v.slice(1).filter(Boolean).length};T.assetsDone=true;});"
+        + "T.runMedia=async function(){var files=['introduction-ja-v1.mp4','wear-ja-v1.mp4',"
+        + "'subject-ja-v1.mp4','report-ja-v1.mp4','kabe-one-lap-doll-v1.mp4'];T.media=[];"
+        + "for(var n of files){var v=document.createElement('video');v.muted=true;v.playsInline=true;"
+        + "v.preload='auto';v.style.cssText='position:fixed;left:0;top:0;width:64px;height:36px;z-index:2147483647;pointer-events:none';"
+        + "document.body.appendChild(v);var once=function(e,t){"
+        + "return new Promise(function(ok,bad){var x=setTimeout(function(){bad(new Error(e+' timeout'));},t);"
+        + "v.addEventListener(e,function(){clearTimeout(x);ok();},{once:true});v.addEventListener('error',"
+        + "function(){clearTimeout(x);bad(new Error('media error'));},{once:true});});};try{v.src='./asset/'+n;"
+        + "v.load();await once('loadeddata',20000);var target=Math.min(0.35,Math.max(0.05,v.duration/3));"
+        + "v.currentTime=target;await once('seeked',10000);var seeked=v.currentTime;"
+        + "var quality=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;var framesBefore=quality?quality.totalVideoFrames:-1;await v.play();"
+        + "var frame=false;if(v.requestVideoFrameCallback){await new Promise(function(ok){var x=setTimeout(ok,3000);"
+        + "v.requestVideoFrameCallback(function(){frame=true;clearTimeout(x);ok();});});}else{"
+        + "await new Promise(function(ok){setTimeout(ok,700);});frame=v.currentTime>seeked;}"
+        + "quality=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;var framesAfter=quality?quality.totalVideoFrames:-1;"
+        + "frame=frame||(framesAfter>framesBefore);T.media.push({name:n,loaded:v.readyState>=2,duration:v.duration,"
+        + "seeked:seeked,current:v.currentTime,framesBefore:framesBefore,framesAfter:framesAfter,frame:frame});"
+        + "}catch(e){T.media.push({name:n,loaded:false,error:String(e)});}v.pause();v.removeAttribute('src');v.load();v.remove();}"
+        + "T.mediaDone=true;};T.startBackgroundVideo=async function(){var v=document.createElement('video');"
+        + "v.muted=true;v.playsInline=true;v.src='./asset/introduction-ja-v1.mp4';"
+        + "v.style.cssText='position:fixed;left:0;top:0;width:64px;height:36px;z-index:2147483647;pointer-events:none';"
+        + "document.body.appendChild(v);T.backgroundVideo=v;await v.play();await new Promise(function(ok){"
+        + "if(v.requestVideoFrameCallback)v.requestVideoFrameCallback(function(){ok();});else setTimeout(ok,700);});"
+        + "T.backgroundReady=true;};T.runBridge=async function(){var r={get:false,post:false};try{"
+        + "var g=await TabletTransport.request('/status',{},'alpha');r.get=g.ok;"
+        + "if(g.ok){var p=await TabletTransport.request('/tablet/pulse',{method:'POST',body:JSON.stringify({"
+        + "tabletSessionId:'instrumentation-test'})},'alpha');r.post=p.ok;}}catch(e){r.error=String(e);}"
+        + "T.bridge=r;T.bridgeDone=true;};T.runMutation=async function(){var out={};var id='instrumentation-'+Date.now();"
+        + "var original=null;try{var first=await TabletTransport.request('/status',{},'alpha');var s=await first.json();"
+        + "if(!first.ok){out.skipped='status';}else if(s.pending){out.skipped='existingPending';}"
+        + "else if(s.phase!=='INTRO'||s.titleStage!=='Wait'){out.skipped='notWait';}else{"
+        + "original={lang:s.lang,relief:s.relief,portalSessionId:s.portalSessionId};"
+        + "var set=await TabletTransport.request('/set',{method:'POST',body:JSON.stringify({lang:original.lang,"
+        + "relief:original.relief,tabletSessionId:id,portalSessionId:original.portalSessionId})},'alpha');"
+        + "out.set=set.ok;await new Promise(function(ok){setTimeout(ok,400);});}}catch(e){out.error=String(e);}"
+        + "finally{if(original){try{var middle=await (await TabletTransport.request('/status',{},'alpha')).json();"
+        + "if(middle.pending&&middle.lastRequest&&middle.lastRequest.tabletSessionId===id){"
+        + "out.clear=(await TabletTransport.request('/clear',{method:'POST',body:JSON.stringify({tabletSessionId:id,"
+        + "portalSessionId:original.portalSessionId})},'alpha')).ok;await new Promise(function(ok){setTimeout(ok,400);});}"
+        + "var final=await (await TabletTransport.request('/status',{},'alpha')).json();"
+        + "out.restored=final.lang===original.lang&&final.relief===original.relief&&!final.pending;"
+        + "}catch(cleanupError){out.cleanupError=String(cleanupError);}}}"
+        + "T.mutation=out;T.mutationDone=true;};return true;})()";
+}

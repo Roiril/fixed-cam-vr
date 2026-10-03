@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import subprocess
 import time
 import urllib.request
@@ -20,6 +19,11 @@ SETTINGS = {'stay_on_while_plugged_in': ('global', '3'),
             'accelerometer_rotation': ('system', '0'),
             'user_rotation': ('system', '1')}
 DESK_DEVICES = 'http://127.0.0.1:8099/unity/devices'
+TABLET_PACKAGE = 'com.roiril.mawarimi.tablet'
+TABLET_COMPONENT = TABLET_PACKAGE + '/.MainActivity'
+TABLET_APK = ROOT / 'Builds/doctor-tablet.apk'
+TABLET_BUILD_COMMAND = 'py -3.11 tablet/build.py'
+TABLET_LOG_TAG = 'DoctorTablet'
 
 
 def display_state(power, policy):
@@ -125,9 +129,45 @@ def tablet_artifact(evidence, physical_serial, suffix):
     return target
 
 
-def prepare_tablet(adb, transport, physical_serial, url, evidence):
+def tablet_install_instruction(adb, transport):
+    return (TABLET_BUILD_COMMAND + '\n' + str(adb) + ' -s ' + transport
+            + ' install -r ' + str(TABLET_APK))
+
+
+def parse_tablet_render(log_text):
+    events = []
+    for line in log_text.splitlines():
+        if 'onPageFinished' not in line:
+            continue
+        sequence = re.search(r'\bseq(?:uence)?\s*[=:]\s*(\d+)', line)
+        elapsed = re.search(r'\belapsed(?:Ms)?\s*[=:]\s*(\d+)', line)
+        if sequence and elapsed:
+            events.append({'sequence': int(sequence.group(1)),
+                           'elapsedMs': int(elapsed.group(1)), 'log': line.strip()})
+    if not events:
+        return None
+    if any(current['sequence'] <= previous['sequence']
+           or current['elapsedMs'] < previous['elapsedMs']
+           for previous, current in zip(events, events[1:])):
+        return None
+    return events[-1]
+
+
+def log_suffix(before, after):
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    if before_lines and after_lines[:len(before_lines)] == before_lines:
+        after_lines = after_lines[len(before_lines):]
+    return '\n'.join(after_lines)
+
+
+def prepare_tablet(adb, transport, physical_serial, quest_id, evidence):
     evidence = Path(evidence).resolve()
     evidence.mkdir(parents=True, exist_ok=True)
+    code, out, err = run(adb_command(adb, transport, 'shell', 'pm', 'path', TABLET_PACKAGE))
+    if code or not any(line.startswith('package:') for line in out.splitlines()):
+        return {'verified': False, 'installed': False,
+                'instruction': tablet_install_instruction(adb, transport)}
     backup_path = tablet_artifact(evidence, physical_serial, '-settings.json')
     if not backup_path.exists():
         previous = {}
@@ -141,51 +181,49 @@ def prepare_tablet(adb, transport, physical_serial, url, evidence):
         code, out, err = run(adb_command(adb, transport, 'shell', 'settings', 'put', namespace, key, value))
         if code:
             raise RuntimeError(err or out)
-    node = shutil.which('node')
-    _, launcher, _ = run(adb_command(adb, transport, 'shell', 'cmd', 'package', 'resolve-activity',
-                                     '--brief', '-a', 'android.intent.action.MAIN',
-                                     '-c', 'android.intent.category.LAUNCHER', '-p', 'com.android.chrome'))
-    component = next((line.strip() for line in launcher.splitlines() if line.strip().startswith('com.android.chrome/') ), None)
-    chrome_start = ('am', 'start', '-n', component) if node and component else (
-        'am', 'start', '-a', 'android.intent.action.VIEW', '-d', url, '-p', 'com.android.chrome')
-    for args in [('input', 'keyevent', 'KEYCODE_WAKEUP'), ('wm', 'dismiss-keyguard'), chrome_start]:
+    _, before_log, _ = run(adb_command(adb, transport, 'logcat', '-d', '-v', 'monotonic',
+                                        '-s', TABLET_LOG_TAG + ':I', '*:S'))
+    for args in [('input', 'keyevent', 'KEYCODE_WAKEUP'), ('wm', 'dismiss-keyguard'),
+                 ('am', 'force-stop', TABLET_PACKAGE),
+                 ('am', 'start', '-n', TABLET_COMPONENT, '--es', 'quest', quest_id)]:
         code, out, err = run(adb_command(adb, transport, 'shell', *args))
         if code:
             raise RuntimeError(err or out)
     _, power, _ = run(adb_command(adb, transport, 'shell', 'dumpsys', 'power'))
     _, policy, _ = run(adb_command(adb, transport, 'shell', 'dumpsys', 'window', 'policy'))
     display = display_state(power, policy)
-    # ローカル USB 転送だけを作る。既存転送を上書きしない。
-    browser = {'verified': False, 'instruction': 'Chrome の初回案内を閉じて、タイトルをタップする'}
-    if node and display['awake'] and display['unlocked']:
-        code, out, err = run(adb_command(adb, transport, 'forward', 'tcp:0', 'localabstract:chrome_devtools_remote'))
-        port = out.strip()
-        if code == 0 and port.isdigit():
-            try:
-                for attempt in range(5):
-                    code, out, err = run([node, str(ROOT / 'tools/tablet-browser.cjs'), port, url])
-                    if code == 0:
-                        browser = json.loads(out)
-                        break
-                    if code == 2:
-                        run(adb_command(adb, transport, 'shell', 'am', 'start', '-a',
-                                        'android.intent.action.VIEW', '-d', url, '-p', 'com.android.chrome'))
-                    time.sleep(1)
-                if code:
-                    browser['instruction'] = (err or out).strip() + '。Chrome の初回案内と表示中のページを確認する'
-            finally:
-                run(adb_command(adb, transport, 'forward', '--remove', 'tcp:' + port))
-    browser.update(display)
+    app = {'verified': False, 'installed': True, 'package': TABLET_PACKAGE,
+           'activityComponent': None, 'quest': quest_id, **display}
     if not display['unlocked']:
-        browser.update(verified=False, instruction='本体でロックを解除してから setup を再実行する。PIN をこのツールへ渡さない')
+        app['instruction'] = '本体でロックを解除してから setup を再実行する。PIN をこのツールへ渡さない'
+    activity = ''
+    render = None
+    if display['awake'] and display['unlocked']:
+        for _ in range(10):
+            _, activity, _ = run(adb_command(adb, transport, 'shell', 'dumpsys', 'activity', 'activities'))
+            _, after_log, _ = run(adb_command(adb, transport, 'logcat', '-d', '-v', 'monotonic',
+                                               '-s', TABLET_LOG_TAG + ':I', '*:S'))
+            render = parse_tablet_render(log_suffix(before_log, after_log))
+            if TABLET_COMPONENT in activity and render:
+                break
+            time.sleep(.5)
+    if TABLET_COMPONENT in activity:
+        app['activityComponent'] = TABLET_COMPONENT
+    if render:
+        app['onPageFinished'] = render
     remote = '/sdcard/fixedcam-setup.png'
     code, out, err = run(adb_command(adb, transport, 'shell', 'screencap', '-p', remote))
     if code == 0:
         screenshot = tablet_artifact(evidence, physical_serial, '.png')
         code, out, err = run(adb_command(adb, transport, 'pull', remote, str(screenshot)))
-        if code == 0:
-            browser['screenshot'] = str(screenshot)
-    return browser
+        if code == 0 and screenshot.is_file():
+            app['screenshot'] = str(screenshot)
+    app['verified'] = bool(app.get('activityComponent') == TABLET_COMPONENT
+                           and app.get('onPageFinished') and app.get('screenshot')
+                           and display['awake'] and display['unlocked'])
+    if not app['verified'] and 'instruction' not in app:
+        app['instruction'] = '博士タブレットの画面と DoctorTablet logcat を確認する'
+    return app
 
 
 def restore_tablet(adb, transport, physical_serial, evidence):
@@ -285,12 +323,11 @@ def cmd_setup(args):
                     results.append({'device': tablet.get('label', physical_serial), 'started': False,
                                     'detail': 'タブレットを USB 接続してデバッグを許可する'})
                     continue
-                browser = prepare_tablet(adb, available[physical_serial]['serial'],
-                                         physical_serial, url, evidence)
+                app = prepare_tablet(adb, available[physical_serial]['serial'],
+                                     physical_serial, quest['id'], evidence)
                 results.append({'device': tablet.get('label', physical_serial),
-                                'started': bool(browser.get('verified') and browser.get('fullscreen')
-                                                and browser.get('awake') and browser.get('unlocked')),
-                                'detail': browser})
+                                'started': bool(app.get('verified')),
+                                'detail': app})
         payload = {'at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'startupOnly': True, 'results': results}
         (evidence / 'startup.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps(payload, ensure_ascii=False, indent=2))

@@ -1553,7 +1553,7 @@ namespace FixedCamVr.Streaming
 
         private void Start()
         {
-            // 端末 ID（heartbeat で名乗る。卓の visitor.html が役 α/β と結ぶ・0185）。
+            // 端末 ID（heartbeat で名乗る。博士タブレットアプリが役 α/β と結ぶ・0185）。
             // メインスレッドでしか読めないので、ここで 1 度だけ取る。
             _deviceId = SystemInfo.deviceUniqueIdentifier ?? "";
             _deviceModel = SystemInfo.deviceModel ?? "";
@@ -1564,7 +1564,7 @@ namespace FixedCamVr.Streaming
             _ = RunInitAsync();
         }
 
-        // ---- タブレット（0185 / 0187）----
+        // ---- タブレット状態 API（0185 / 0187）----
         private string _deviceId = "";
         private string _deviceModel = "";
         private TitleScreen? _titleForHb;   // heartbeat の titleStage 用（遅延解決・無ければ空文字）
@@ -1573,11 +1573,11 @@ namespace FixedCamVr.Streaming
         /// <summary>この機の端末 ID（<c>SystemInfo.deviceUniqueIdentifier</c>）。テレメトリの <c>ev=boot</c> も出す。</summary>
         public string DeviceId => _deviceId;
 
-        /// <summary>タブレットの口（この機の HTTP）。テレメトリが読む。</summary>
+        /// <summary>タブレット状態 API（この機の HTTP）。テレメトリが読む。</summary>
         public VisitorPortal? Portal => _portal;
 
         /// <summary>
-        /// タブレットの口をこの機の中に立てる（<c>VisitorPortal</c>・:8090）。**卓が居ても居なくても立つ** —
+        /// タブレット状態 API をこの機の中に立てる（<c>VisitorPortal</c>・:8090）。**卓が居ても居なくても立つ** —
         /// 0187「メインのウェブ卓は経由せずにクエストとタブレットを直接つなぐ」。
         /// シーンには焼かない（SegmentRecorder と同じ流儀。<c>menu scene</c> の焼き直しが要らない）。
         /// </summary>

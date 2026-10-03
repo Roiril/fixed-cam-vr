@@ -5,7 +5,8 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "Assets/Resources/Visitor/briefing-v1.json.bytes"
+ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
+SOURCE = ASSETS / "briefing-v1.json"
 OUTPUT = Path(__file__).resolve().parent
 LANGUAGES = ("ja", "en", "fr")
 
@@ -27,7 +28,7 @@ def main():
     data = json.loads(SOURCE.read_text(encoding="utf-8"))
     assert data["schemaVersion"] == 1 and data["scenes"]
     for scene in data["scenes"]:
-        assert (ROOT / "Assets/Resources/Visitor" / (scene["image"] + ".bytes")).is_file()
+        assert (ASSETS / scene["image"]).is_file()
         for language in LANGUAGES:
             assert scene["cues"][language]
             for cue in scene["cues"][language]:
@@ -35,12 +36,12 @@ def main():
 
     script = ["# 博士の導入台本", "",
               "台詞の正本。ユーザーが指定した文言と、それ以外の未判定の実装案を含む。", "",
-              "正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。この文書と SRT はそこから生成する。",
+              "正本は `tablet/app/src/main/assets/web/asset/briefing-v1.json`。この文書と SRT はそこから生成する。",
               "博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。", "",
               "日本語の4場面はリップシンク動画を使用する。各動画の音声はユーザー提供の Eleven v4 音声（65.567 秒）から切り出した同じ音源を使用する。英仏音声と英仏動画は未制作。以下の日本語時間は実音源の無音区間で測った尺。",
               "通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。",
               "博士動画は既存博士画像と同じ人物を中央配置で使用する。映像の切替や字幕を動画に焼き込まない。", "",
-              "日本語の元音源は `tools/visitor-ui/doctor-ja-v2-original.mp3`。`ingest-doctor-audio.py` で `場面ID-ja-v2.mp3.bytes` に切り出す。`ingest-doctor-video.py` は生成動画の音声を除き、同じ元音源から切り出した音声を AAC にして組み込む。英仏音声や動画を追加する場合は場面単位にする。",
+              "日本語の元音源は `tools/visitor-ui/doctor-ja-v2-original.mp3`。`ingest-doctor-audio.py` で `tablet/app/src/main/assets/web/asset/場面ID-ja-v2.mp3` に切り出す。`ingest-doctor-video.py` は生成動画の音声を除き、同じ元音源から切り出した音声を AAC にして組み込む。英仏音声や動画を追加する場合は場面単位にする。",
               "各文の開始は同じ場面にある前の文の durationMs の合計。手動では文の終端で媒体を止める。",
               "一文送りは発話を待たず次の文の開始位置へ移る。文間の間も直前の文の尺へ含める。",
               "音声付き博士動画を使う場合は video のみ指定する。同じ音声を audio にも指定しない。", ""]

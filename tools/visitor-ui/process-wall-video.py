@@ -15,7 +15,7 @@ import tempfile
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parents[2]
-TARGET = ROOT / "Assets/Resources/Visitor/kabe-one-lap-doll-v1.mp4.bytes"
+TARGET = ROOT / "tablet/app/src/main/assets/web/asset/kabe-one-lap-doll-v1.mp4"
 SOURCE_SHA256 = "9131a796ceff4c21a82684b42882093f6286224e68e151c17fa17560b3723e3e"
 FILTERS = ",".join((
     "crop=1836:1032:37:0",  # Remove only the source's 37 px black side bars.

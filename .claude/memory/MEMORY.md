@@ -39,7 +39,9 @@
 > `OPEN` = 未確定とシュビーの案 / `ROUNDS` = 周回の賭けと差）。混ぜない — 規律は `rules/canon-boundary.md`。
 > 作りこみの思想は `.claude/reference/why.md`。
 
-- [visitor_tablet.md](visitor_tablet.md) - タブレットから Quest 自身の :8090 に直接接続する。PC は不要。注意画面で設定し、実値と反映番号で確認する。2026-09-12 に UI を全面再設計。博士の構図と黒・生成り・朱赤を維持。言語3択と軽減2択を直接選ぶ。注意は狭い画面でも省略しない。通信の期限と再送を用意。机上検証は `tools/visitor-portal-stub.py`、手順は `tools/visitor-ui/README.md`。HTML は APK に入るので実機の反映には再ビルドが必要。
+- [visitor_tablet.md](visitor_tablet.md) - 2026-10-03・0259。博士UIはAndroidタブレットの独立APK。画面と動画の正本は `tablet/app/src/main/assets/web/`。PCとQuestは画面の起動に不要。スタッフ設定でα／βを保存してQuestの:8090へ設定だけを送る。実値と反映番号を照合する。UI変更はタブレットAPKを更新する。机上の代役は `tools/visitor-portal-stub.py`。ビルドと導入は `tablet/README.md`。
+- [redmi_tablet_install.md](redmi_tablet_install.md) - RedmiのUSBインストール確認は制限時間で自動拒否する。USER_RESTRICTEDだけで設定がオフとは判断しない。
+- [tablet_apk_zip_names.md](tablet_apk_zip_names.md) - Windows aapt2の資産名をPOSIX形式で再梱包する。Pythonの正規化済みZIP名だけでは検査しない。
 - [l_wall_geometry.md](l_wall_geometry.md) - ⚠⚠ **L 字の壁は 2 辺とも等長 0.955m**（ユーザーが 2 回言った・0164/0183）。show.json には壁の表現が 2 つあり、`room.walls` は 8/5〜9/11 の間 0.59/1.22 の非対称で、機械で読んだセッションが全員そこから間違えた。`layout.wall`（位置合わせの既定点）は 1.0/1.0 のまま
 - [key_visual.md](key_visual.md) - **キービジュアルを触る前に**。地は Codex に照明だけ描き直させる（暗さはマスクではなく光の不在）／「照明だけ」は Sobel の相関で見る（0.5 を切ったら物が動いている）／着物の赤はプロンプトでは沈まないので組むときに落とす／Codex は 1672×941 で返す／文字の書体と位置
 - [no_internet_autojoin_kill.md](no_internet_autojoin_kill.md) - ⚠⚠ **上流の無い展示網を Android が恒久無効化する**（`NO_INTERNET_PERMANENT`）。繋がっている間は 1 ビットも出ず、**次に電源を入れた時だけ戻らない ＝ 展示の朝に全機が同時に踏む**。Quest も配信スマホも。解けるのは端末の設定で手で選び直すことだけ（adb 不可）／予防は接続チェックを切る（これからにしか効かない）／同時に確かめた「問題なかったこと」4 つ

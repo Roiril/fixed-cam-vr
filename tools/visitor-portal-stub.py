@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Quest のタブレットの口（VisitorPortal :8090）の**代役**。面（visitor.html）を机上で確かめるためのもの。
+"""Quest のタブレットの口（VisitorPortal :8090）の代役。博士アプリの面を机上で確かめる。
 
-Quest 無しで `Assets/Resources/Visitor/visitor.html` をブラウザで開き、送る → 待ち → 反映 の見え方を通す。
+Quest 無しで `tablet/app/src/main/assets/web/index.html` をブラウザで開き、送る → 待ち → 反映 の見え方を通す。
 実機の VisitorPortalLogic と同じ GET / ・ GET /status ・ POST /set ・ POST /clear ・
 POST /tablet/pulse を持ち、
 「注意書きの段（Wait）で受けたら書く／本編（RUN）では次まで持つ／始めたら枠を空にする」を真似る。
@@ -25,7 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.stdout.reconfigure(encoding="utf-8")
 HERE = os.path.dirname(os.path.abspath(__file__))
-PAGE = os.path.join(HERE, "..", "Assets", "Resources", "Visitor", "visitor.html")
+WEB_ROOT = os.path.join(HERE, "..", "tablet", "app", "src", "main", "assets", "web")
+PAGE = os.path.join(WEB_ROOT, "index.html")
 
 _lock = threading.Lock()
 _st = {
@@ -114,9 +115,9 @@ class H(BaseHTTPRequestHandler):
             with open(PAGE, encoding="utf-8") as f:
                 return self._send(200, "text/html; charset=utf-8", f.read())
         if path.startswith("/asset/"):
-            # 実機と同じ置き場（Resources/Visitor/<name>.bytes）から配る。Range も実機と同じ形で返す
+            # アプリと同じ通常拡張子の素材を配る。Range も旧 stub と同じ形で返す。
             name = path[7:]
-            fp = os.path.join(os.path.dirname(PAGE), name + ".bytes")
+            fp = os.path.join(WEB_ROOT, "asset", name)
             if not os.path.isfile(fp) or "/" in name or "\\" in name:
                 return self._send(404, "application/json", '{"ok":false}')
             with open(fp, "rb") as f:
@@ -134,6 +135,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send_bytes(206, ctype, data[start:end + 1],
                                         {"Content-Range": f"bytes {start}-{end}/{len(data)}"})
             return self._send_bytes(200, ctype, data)
+        if path == "/tablet-transport.js":
+            with open(os.path.join(WEB_ROOT, "tablet-transport.js"), encoding="utf-8") as source:
+                return self._send(200, "text/javascript; charset=utf-8", source.read())
         if path == "/status":
             with _lock:
                 _apply_if_wait()

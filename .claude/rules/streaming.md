@@ -3256,10 +3256,10 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
 [memory/visitor_tablet.md](../memory/visitor_tablet.md)。
 
 - **Quest 自身が口を持つ**: [`VisitorPortal`](../../Assets/Scripts/Streaming/VisitorPortal.cs)（TcpListener :8090・
-  `ShowControlClient.EnsureVisitorPortal` が起動時に生成。シーンには焼かない）。面（`Assets/Resources/Visitor/visitor.html`）も
-  Quest が配る。タブレットは `http://192.168.10.31:8090/`（α）／ `.32`（β）を開く ＝ **役は URL で決まる**
-- 口は 5 つ: `GET /`（面）／ `GET /status`（実値）／ `POST /set {"lang","relief"}`（枠へ）／ `POST /clear`（枠を空に）／
-  `GET /asset/<name>`（面が使う画像・動画。`Resources/Visitor/<name>.bytes`。Range 対応）。
+  `ShowControlClient.EnsureVisitorPortal` が起動時に生成。シーンには焼かない）。0259で画面と素材は独立タブレットAPKへ移した。
+  `tablet/app/src/main/assets/web/` が正本。スタッフ設定でα／βを選ぶ。選択は端末内へ保存する。
+- APIは4つ: `GET /status`（実値）／ `POST /set {"lang","relief"}`（受理）／ `POST /clear`（取り消し）／
+  `POST /tablet/pulse`（端末の動作状況）。Questの `/` と `/asset` は410を返す。タブレットは要求しない。
   判断は [`VisitorPortalLogic`](../../Assets/Scripts/Streaming/VisitorPortalLogic.cs)（純ロジック・テスト付き）
 - **正は Quest の中**（`VisitorPrefs`）。**書くのは注意書きの段（`TitleStage.Wait`）だけ**。`BeginTitle` は
   **戻した直後に載せ直す**（同じ受理番号でも）。体験者が題字で左 X / Y を短く押したら枠を空にする ＝ 次の人へ持ち越さない
@@ -3269,8 +3269,8 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
   ⚠ `/unity/status` は従来どおり最後の 1 台
 - 観測: `ev=boot id=`（端末 ID の頭 6 桁）／ `ev=sum visitor=<口>/<受けた>/<枠の受理>/<書いた受理>/<回数>`。
   判定は `analyze-xp-log.py` の「## タブレットの口」。**`ShowTelemetryHost` と対で直す**
-- 面を直したら APK を焼き直す（TextAsset。卓の静的配信ではない）
-- 見た目は DBH 風を廻リ視へ落としたもの（0188）。案内役は研究所の博士（`Resources/Visitor/doctor.jpg.bytes`・Codex 生成）。
+- 画面を直したらタブレットAPKを焼き直す。Quest APKの更新は不要。単体起動とスタッフの説明確認にPCもQuestも不要。
+- 見た目は DBH 風を廻リ視へ落としたもの（0188）。案内役は研究所の博士（`tablet/app/src/main/assets/web/asset/doctor.jpg`・Codex 生成）。
   作法と罠は `memory/visitor_tablet.md`「見た目」
 
 ## 当日の固定登録と点検 — 2026-09-22

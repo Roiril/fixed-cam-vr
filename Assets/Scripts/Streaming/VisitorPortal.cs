@@ -13,18 +13,16 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// <b>タブレットが直接繋ぐ口。</b>この機の中で小さな HTTP サーバを立て、
-    /// 「体験の前に」の面（<c>Resources/Visitor/visitor.html</c>）を配り、言語・軽減の選択を受ける
+    /// <b>タブレットが直接繋ぐ状態 API。</b>この機の中で小さな HTTP サーバを立て、
+    /// タブレットアプリから言語・軽減の選択を受ける
     /// （2026-09-11・<c>canon/LEDGER.md</c> 0187「メインのウェブ卓は経由せずにクエストとタブレットを直接つなぐ」）。
     ///
-    /// タブレットのブラウザで <c>http://&lt;この機の IP&gt;:8090/</c> を開く。**PC も卓も要らない。**
-    /// α 用のタブレットは α の機の IP（現地の静的割当 .31 / .32・<c>docs/onsite/network-setup.md</c>）を
-    /// ブックマークしておく。スタッフ設定で α / β を選び、接続確認後に選択先の URL へ移る。
-    /// 設定送信・反映確認・素材取得はその機と同一 origin で行い、卓に台帳を持たない。
+    /// タブレットアプリはスタッフ設定で α / β を選び、現地の静的割当 .31 / .32 の状態 API へ直接繋ぐ。
+    /// 設定送信と反映確認は選んだ機に対して行い、卓に台帳を持たない。
     ///
     /// 流れ:
-    ///   面 → <c>POST /set</c> → <see cref="VisitorPrefs.Set"/>（メインスレッドへ積む）
-    ///   → 注意書きの段で <c>TitleScreen</c> が書く → 面は <c>GET /status</c> で**実値**を読んで ✓ を出す。
+    ///   タブレットアプリ → <c>POST /set</c> → <see cref="VisitorPrefs.Set"/>（メインスレッドへ積む）
+    ///   → 注意書きの段で <c>TitleScreen</c> が書く → <c>GET /status</c> で実値を返す。
     ///
     /// ⚠ ソケットは背景スレッド、Unity と static を触るのは <see cref="Update"/> だけ（キューで渡す）。
     /// ⚠ 判断は <see cref="VisitorPortalLogic"/>（純ロジック・テスト付き）。ここは配線だけ。
@@ -36,16 +34,12 @@ namespace FixedCamVr.Streaming
         /// <summary>待ち受けるポート。配信スマホ 8080 / 卓 8099 / 発見 8830 と被らない。</summary>
         public const int Port = 8090;
 
-        /// <summary>面の置き場（<c>Resources.Load</c> のパス。実体は <c>Assets/Resources/Visitor/visitor.html</c>）。</summary>
-        public const string PageResource = "Visitor/visitor";
-
         private const int ReadTimeoutMs = 3000;
         private const int MaxHeadBytes = 16 * 1024;
         private const int MaxBodyBytes = 16 * 1024;
 
         private TcpListener? _listener;
         private CancellationTokenSource? _cts;
-        private string _page = "";
         private volatile string _statusJson = "{\"ok\":false}";
         private readonly object _queueLock = new object();
         private readonly List<Action> _queue = new List<Action>();
@@ -139,14 +133,6 @@ namespace FixedCamVr.Streaming
         private void Start()
         {
             _model = SystemInfo.deviceModel ?? "";
-            var ta = Resources.Load<TextAsset>(PageResource);
-            if (ta == null)
-            {
-                Debug.LogWarning($"[VisitorPortal] 面が無い（Resources/{PageResource}）。タブレットには空の面が出る");
-                _page = "<!doctype html><meta charset=utf-8><title>visitor</title><p>visitor.html が APK に入っていません</p>";
-            }
-            else _page = ta.text;
-
             _ip = FindLocalIPv4();
             try
             {
@@ -279,9 +265,9 @@ namespace FixedCamVr.Streaming
                             have += n;
                         }
                         string remoteIp = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "";
-                        res = VisitorPortalLogic.Route(req, Encoding.UTF8.GetString(body, 0, have), _page, _statusJson,
-                                                       OnSetFromThread, OnClearFromThread, LoadAssetFromThread,
-                                                       _portalSessionId, id => OnPulseFromThread(id, remoteIp));
+                        res = VisitorPortalLogic.Route(req, Encoding.UTF8.GetString(body, 0, have), _statusJson,
+                                                       OnSetFromThread, OnClearFromThread, _portalSessionId,
+                                                       id => OnPulseFromThread(id, remoteIp));
                         if (res.status == 400 && req.path == "/set") Interlocked.Increment(ref _rejected);
                     }
                     byte[] bytes = VisitorPortalLogic.Encode(res);
@@ -342,35 +328,6 @@ namespace FixedCamVr.Streaming
                 VisitorPrefs.Clear();
                 Debug.Log("[VisitorPortal] 枠を空にした（スタッフ）");
             });
-        }
-
-        // ---- 面が使う画像・動画（Resources/Visitor/<name>.bytes）-----------------------------
-        // Resources.Load はメインスレッド専用なので、要求はキューで渡して待つ（最大 3 秒）。
-        // 一度読んだものはメモリに持つ（面を開き直すたびに Resources から読まない）。
-        private readonly Dictionary<string, byte[]?> _assets = new Dictionary<string, byte[]?>();
-        private readonly object _assetLock = new object();
-
-        private byte[]? LoadAssetFromThread(string name)
-        {
-            lock (_assetLock) { if (_assets.TryGetValue(name, out var cached)) return cached; }
-            var done = new ManualResetEventSlim(false);
-            byte[]? result = null;
-            lock (_queueLock) _queue.Add(() =>
-            {
-                try
-                {
-                    var ta = Resources.Load<TextAsset>("Visitor/" + name);
-                    result = ta != null ? ta.bytes : null;
-                    if (ta == null) Debug.LogWarning($"[VisitorPortal] 面が要る素材が無い: Resources/Visitor/{name}.bytes");
-                }
-                finally
-                {
-                    lock (_assetLock) _assets[name] = result;
-                    done.Set();
-                }
-            });
-            done.Wait(ReadTimeoutMs);
-            return result;
         }
 
         private static string FindLocalIPv4()

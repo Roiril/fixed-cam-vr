@@ -398,6 +398,7 @@ def _quest(fixed, devices, now):
 def _tablet(fixed, devices, now):
     tablet = next((item for item in FLEET.get('tablets', [])
                    if (item.get('questId') or item.get('target')) == fixed['id']), None)
+    quest_label = {'alpha': 'α', 'beta': 'β'}.get(fixed['id'], fixed['id'])
     row = {'id': fixed['id'], 'host': fixed['host'], 'status': 'unknown',
            'title': 'タブレットを確認できません', 'action': 'Quest の起動と Wi-Fi を確認してください',
            'portalStatus': 'unknown', 'connectionStatus': 'unknown',
@@ -410,8 +411,7 @@ def _tablet(fixed, devices, now):
            'tabletModel': tablet.get('model') if tablet else None,
            'tabletSerial': tablet.get('serial') if tablet else None,
            'tabletHost': tablet.get('host') if tablet else None,
-           'visitorUrl': (tablet.get('visitorUrl') if tablet else
-                          f"http://{fixed['host']}:{fixed.get('port', 8090)}/")}
+           'tabletPackage': tablet.get('package') if tablet else None}
     matches = []
     for did, hb in devices.items():
         if not isinstance(hb, dict) or hb.get('localIp') != fixed['host']:
@@ -478,11 +478,11 @@ def _tablet(fixed, devices, now):
                    tabletIp=page.get('ip'), ageSec=round(age, 1))
     elif not pages:
         row.update(title='タブレットの応答がありません',
-                   action='画面を手前に開いてください')
+                   action=f'タブレットの「廻リ視 博士」を起動し、スタッフ設定でクエスト{quest_label}を選んでください')
         return row
     else:
         row.update(status='warning', connectionStatus='warning',
-                   title='複数のページが開いています', action='使用するページを一つだけ開いてください')
+                   title='複数のタブレットが応答しています', action='使用する博士アプリを一台だけ起動してください')
         return row
     request = portal['lastRequest']
     if (request is None or not isinstance(request, dict) or
@@ -502,7 +502,7 @@ def _tablet(fixed, devices, now):
     if request.get('tabletSessionId') != row['tabletSessionId']:
         row.update(status='warning', reflectionStatus='warning',
                    title='別のタブレットからの設定です',
-                   action='現在開いているページから設定を送り直してください')
+                   action='現在起動している博士アプリから設定を送り直してください')
     elif portal['appliedSeq'] != request['seq']:
         row.update(status='warning', reflectionStatus='warning',
                    title='設定の反映を待っています',
@@ -513,7 +513,7 @@ def _tablet(fixed, devices, now):
                    action='タブレットから設定を送り直してください')
     else:
         row.update(status='ok', reflectionStatus='ok', title='タブレットの設定が反映されています',
-                   action='')
+                   action='「廻リ視 博士」を起動したままにしてください')
     return row
 
 

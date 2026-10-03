@@ -11,14 +11,14 @@ from zipfile import ZipFile, ZIP_DEFLATED
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
-ASSETS = ROOT / "Assets/Resources/Visitor"
+ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
 DEFAULT_OUTPUT = ROOT / "output/visitor-lipsync-kit-20261003"
 SOURCES = {
-    "doctor.jpg.bytes": "9DF0EF6867195FD105183FC120D4E9F680DB147FC24EBDE1488D2B753E0EBA23",
-    "introduction-ja-v2.mp3.bytes": "386CB43643B5A3366431F30CBC4890EEE8A4F20A46A522940E0AF1E9BF8832A7",
-    "subject-ja-v2.mp3.bytes": "053C2CE2555F9BEBCFB9E5F31E1D9BC58610E264C3D4AD6E8F1773372BEA44CF",
-    "report-ja-v2.mp3.bytes": "FE5D26492D6766CDBE96F9FB43D2184B83D7C3DDEE16B37AF2BCC9015983CB5A",
-    "wear-ja-v2.mp3.bytes": "7046EEBB09ED560383ECEE913C213B073032D65860601E2D47A18E856B0408C9",
+    "doctor.jpg": "9DF0EF6867195FD105183FC120D4E9F680DB147FC24EBDE1488D2B753E0EBA23",
+    "introduction-ja-v2.mp3": "386CB43643B5A3366431F30CBC4890EEE8A4F20A46A522940E0AF1E9BF8832A7",
+    "subject-ja-v2.mp3": "053C2CE2555F9BEBCFB9E5F31E1D9BC58610E264C3D4AD6E8F1773372BEA44CF",
+    "report-ja-v2.mp3": "FE5D26492D6766CDBE96F9FB43D2184B83D7C3DDEE16B37AF2BCC9015983CB5A",
+    "wear-ja-v2.mp3": "7046EEBB09ED560383ECEE913C213B073032D65860601E2D47A18E856B0408C9",
 }
 ORIGINAL_SHA256 = "16C072929E29CCA5B583B30BFD871CBB47639DD3C4A7D62453E571B85888D560"
 CENTERED_SHA256 = "E3688256D851F9B94DD140ADC50E378447EB6AA1452AF4A42FEDE09D8D92CA1B"
@@ -75,11 +75,11 @@ def main():
         raise FileExistsError(f"preserving existing kit: {output}")
     output.mkdir(parents=True, exist_ok=True)
     copy_verified(centered, output / "doctor-centered-v1.png", CENTERED_SHA256)
-    copy_verified(ASSETS / "doctor.jpg.bytes", output / "doctor-site.jpg", SOURCES["doctor.jpg.bytes"])
+    copy_verified(ASSETS / "doctor.jpg", output / "doctor-site.jpg", SOURCES["doctor.jpg"])
     for source, target in (
-        ("introduction-ja-v2.mp3.bytes", "01_introduction.mp3"),
-        ("report-ja-v2.mp3.bytes", "04_report.mp3"),
-        ("wear-ja-v2.mp3.bytes", "05_wear.mp3"),
+        ("introduction-ja-v2.mp3", "01_introduction.mp3"),
+        ("report-ja-v2.mp3", "04_report.mp3"),
+        ("wear-ja-v2.mp3", "05_wear.mp3"),
     ):
         copy_verified(ASSETS / source, output / target, SOURCES[source])
     cut_original(original, output / "02_subject_a.mp3", 15638, 23897)
