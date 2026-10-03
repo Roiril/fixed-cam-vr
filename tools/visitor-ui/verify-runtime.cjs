@@ -523,6 +523,7 @@ test('軽減音は反映確認・送信・博士説明では再生せず音量�
   assert.equal(preview.currentTime, 0);
 
   const data = clone(briefing);
+  delete data.scenes[0].video;
   data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
   prepareBriefing(data);
   runtime.configureBriefingMedia(data.scenes[0]);
@@ -759,7 +760,7 @@ test('表示更新は同期し、重複アニメーションを取消して縮�
 test('本番JSONと表示指定の境界値を検証する', () => {
   assert.equal(runtime.validateBriefingData(clone(briefing)).scenes.length, briefing.scenes.length);
   for (const scene of briefing.scenes) {
-    for (const filename of Object.values(scene.audio || {})) {
+    for (const filename of [...Object.values(scene.audio || {}), ...Object.values(scene.video || {})]) {
       assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${filename}.bytes`)));
     }
   }
@@ -805,14 +806,27 @@ test('ユーザー指定のEleven v4入力は一つのコードブロックで�
   }
 });
 
-test('日本語の全場面に配信用MP3があり、新しい台詞を参照する', () => {
+test('日本語の原音声とイントロ動画を配信し、新しい台詞を参照する', () => {
   for (const scene of briefing.scenes) {
-    assert.equal(scene.audio?.ja, `${scene.id}-ja-v2.mp3`);
-    const asset = path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.audio.ja}.bytes`);
+    const filename = `${scene.id}-ja-v2.mp3`;
+    const asset = path.join(root, 'Assets', 'Resources', 'Visitor', `${filename}.bytes`);
     const bytes = fs.readFileSync(asset);
     assert.ok(bytes.length > 100_000, asset);
     assert.equal(bytes.subarray(0, 3).toString('ascii'), 'ID3');
+    if (scene.id !== 'introduction') assert.equal(scene.audio?.ja, filename);
   }
+  const introduction = briefing.scenes.find((scene) => scene.id === 'introduction');
+  assert.equal(introduction.audio?.ja, undefined);
+  assert.equal(introduction.video?.ja, 'introduction-ja-v1.mp4');
+  assert.equal(introduction.image, 'introduction-doctor-v1.jpg');
+  assert.equal(introduction.doctorImage, 'introduction-doctor-v1.jpg');
+  assert.equal(introduction.doctorAnchor, 50);
+  const videoBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'introduction-ja-v1.mp4.bytes'));
+  assert.ok(videoBytes.length > 1_000_000);
+  assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
+  const imageBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'introduction-doctor-v1.jpg.bytes'));
+  assert.ok(imageBytes.length > 40_000);
+  assert.deepEqual([...imageBytes.subarray(0, 2)], [0xff, 0xd8]);
   const subject = briefing.scenes.find((scene) => scene.id === 'subject');
   const report = briefing.scenes.find((scene) => scene.id === 'report');
   assert.match(subject.cues.ja[2].text, /決して離さない/);
@@ -860,6 +874,7 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
 
 test('媒体未指定の場面ではaudioもvideoも作らない', () => {
   const data = clone(briefing);
+  delete data.scenes[0].video;
   delete data.scenes[0].audio;
   prepareBriefing(data);
   const audioCount = createdAudio.length;
@@ -873,6 +888,7 @@ test('媒体未指定の場面ではaudioもvideoも作らない', () => {
 
 test('媒体時計の文末判定で手動は止まり、オートは次の文へ進む', () => {
   const data = clone(briefing);
+  delete data.scenes[0].video;
   data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
   prepareBriefing(data);
   runtime.configureBriefingMedia(data.scenes[0]);
@@ -925,6 +941,7 @@ test('最後の音声が終わっても最終画面を保ち、前の文へ戻�
 
 test('停止や一時停止後の古い再生失敗は現在の文を壊さない', async () => {
   const data = clone(briefing);
+  delete data.scenes[0].video;
   data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
   prepareBriefing(data);
   runtime.configureBriefingMedia(data.scenes[0]);
@@ -951,6 +968,7 @@ test('停止や一時停止後の古い再生失敗は現在の文を壊さな�
 
 test('素早い文送り後の古いmetadata通知を無視する', () => {
   const data = clone(briefing);
+  delete data.scenes[0].video;
   data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
   prepareBriefing(data);
   runtime.configureBriefingMedia(data.scenes[0]);

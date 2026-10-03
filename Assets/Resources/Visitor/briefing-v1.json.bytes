@@ -4,9 +4,9 @@
     {
       "id": "introduction",
       "layout": "doctor-center",
-      "image": "doctor.jpg",
-      "doctorImage": "doctor.jpg",
-      "doctorAnchor": 70,
+      "image": "introduction-doctor-v1.jpg",
+      "doctorImage": "introduction-doctor-v1.jpg",
+      "doctorAnchor": 50,
       "alt": {
         "ja": "黒い背景の前にいる白衣の博士",
         "en": "The doctor in a lab coat against a dark background",
@@ -27,8 +27,8 @@
         "en": "Doctor · Anomalous investigations",
         "fr": "Docteur · Supervision des enquêtes"
       },
-      "audio": {
-        "ja": "introduction-ja-v2.mp3"
+      "video": {
+        "ja": "introduction-ja-v1.mp4"
       },
       "cues": {
         "ja": [

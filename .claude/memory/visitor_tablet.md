@@ -78,11 +78,11 @@ RECと時計は置かない。接続表示はヘッドセットの応答に基�
 説明内容は `Resources/Visitor/briefing-v1.json.bytes`。画像は同じ場所の `briefing-*-v1.png.bytes` と `camera-01-doll.webp.bytes`。
 探索方法の資料画像は作品サイトのストーリー欄と同じ加工済みWebPをバイナリのまま使う。実写カメラ01を人形視点に加工した画像で、タブレット側の色補正や切り抜きはない。出典と再生成手順は `website/assets/SOURCES.md`。
 0254で最初の文の次から章末まで、加工した `kabe-one-lap-doll-v1.mp4.bytes` を無音でループ再生する。字幕から独立させる。文送りで再生位置を変えず、章外か最初の文に戻れば停止する。原本のハッシュと処理手順は `tools/visitor-ui/README.md` と `process-wall-video.py`。0255で最初の文を「こちらのカーテンです。」に変更。2026-10-03にユーザー提供の65.567秒の日本語音声を4場面へ切り出し、全場面の `audio` を v2 にした。字幕は「決して」と「1秒間」を含め、無音区間で測った尺へ更新した。原本と切り出し手順は `tools/visitor-ui/README.md` に記録した。
-`/asset/` に JSON の MIME を追加した。博士の動画と英仏音声は未制作で任意の差し替え欄だけがある。
+`/asset/` に JSON の MIME を追加した。2026-10-03にユーザー提供の `09-ripsync.mp4` を日本語の調査依頼へ組み込んだ。`introduction-ja-v1.mp4.bytes` は中央構図の1280×720動画に既存の v2 音声を合わせる。文末の尺15.638秒に合わせて最後の画を0.04秒延ばす。静止画は先頭フレームの `introduction-doctor-v1.jpg.bytes`。この章の `doctorAnchor` は50。残りの博士動画と英仏音声は未制作。再生成は `tools/visitor-ui/ingest-doctor-video.py`。ブラウザでの実描画とQuestでの配信は未確認。
 台本と SRT は `tools/visitor-ui/export-briefing.py` で JSON から再生成する。
 台詞と画像の採否は `canon/OPEN.md`。機械の検証済みを世界観の採用へ読み替えない。
 
-博士の画は `GET /asset/doctor.jpg`（`Resources/Visitor/doctor.jpg.bytes`）。
+博士の画は各章の `doctorImage` で指定する。調査依頼は `GET /asset/introduction-doctor-v1.jpg`。ほかの章は `GET /asset/doctor.jpg`（`Resources/Visitor/doctor.jpg.bytes`）。
 元は `tools/visitor-ui/doctor_v1.png`。女性版は未採用の候補。
 博士の説明に動画を使うときは JSON の各場面の `video` へ言語別のファイル名を指定する。
 手動送りでは各文の終端で媒体を止める。文送りで次の文の開始位置へ移る。
