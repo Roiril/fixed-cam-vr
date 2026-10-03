@@ -70,7 +70,9 @@ class MockElement {
       preventDefault() {},
       ...properties,
     };
-    for (const listener of this.listeners.get(type) || []) listener(event);
+    let result;
+    for (const listener of this.listeners.get(type) || []) result = listener(event);
+    return result;
   }
 
   setAttribute(name, value) {
@@ -323,6 +325,7 @@ const exportsSource = `
     restoreProgress: (progress) => { restoreCandidate = progress; state.restored = false; return tryRestoreBriefing(); },
     wasChangedByAnotherPage,
     showPageConflict,
+    confirmSettings,
     setSettingsStep,
     syncReliefPreview,
     getReliefPreview: () => reliefPreview,
@@ -388,7 +391,7 @@ test('タイトルの操作内でナビゲーションを隠す全画面化を�
   delete document.documentElement.requestFullscreen;
 });
 
-test('設定は言語から軽減へ進み、戻る操作と三言語の案内を保つ', () => {
+test('設定は言語から軽減と確認へ進み、戻る操作と三言語の案内を保つ', () => {
   state.view = 'edit';
   state.lang = 'ja';
   runtime.setSettingsStep('language', false);
@@ -405,23 +408,48 @@ test('設定は言語から軽減へ進み、戻る操作と三言語の案内�
   assert.equal(elements.get('reliefStep').hidden, false);
   assert.equal(elements.get('settingsBackBtn').hidden, false);
   assert.equal(elements.get('sendBtn').hidden, false);
+  assert.equal(elements.get('submitLabel').textContent, '設定を確認する');
 
   state.lang = 'en';
   runtime.setSettingsStep('language', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Please choose the language you would like to use.');
   runtime.setSettingsStep('relief', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Please choose whether you would like to reduce the horror.');
+  assert.equal(elements.get('submitLabel').textContent, 'Review settings');
 
   state.lang = 'fr';
   runtime.setSettingsStep('language', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez la langue que vous souhaitez utiliser.');
   runtime.setSettingsStep('relief', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez si vous souhaitez atténuer l’horreur.');
+  assert.equal(elements.get('submitLabel').textContent, 'Vérifier les réglages');
   elements.get('settingsBackBtn').dispatch('click');
   assert.equal(state.settingsStep, 'language');
 });
 
-test('軽減音は選択後に同じ要素で続き、遮蔽と解除では先頭へ戻る', async () => {
+test('確認画面の見出しと操作は三言語に揃う', () => {
+  const copies = {
+    ja: ['Questに反映する', '設定に戻る'],
+    en: ['Apply to Quest', 'Back to settings'],
+    fr: ['Appliquer au Quest', 'Retour aux réglages'],
+  };
+  state.connection = 'online';
+  state.status = clone(validStatus);
+  for (const [lang, [apply, edit]] of Object.entries(copies)) {
+    state.view = 'edit';
+    state.ui = 'idle';
+    state.lang = lang;
+    runtime.setSettingsStep('relief', false);
+    assert.equal(runtime.confirmSettings(), true);
+    assert.equal(elements.get('resultTitle').textContent, apply);
+    assert.equal(elements.get('applyBtn').textContent, apply);
+    assert.equal(elements.get('editBtn').textContent, edit);
+    elements.get('editBtn').dispatch('click');
+    assert.equal(state.view, 'edit');
+  }
+});
+
+test('軽減音は軽減選択中だけ再生し、画面を離れると先頭へ戻る', async () => {
   assert.equal((html.match(/<audio\b/g) || []).length, 1);
   assert.match(html, /<audio[^>]*id="reliefPreview"[^>]*src="\.\/asset\/bed-relief-tablet-v1\.mp3"[^>]*\bloop\b/);
   assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'bed-relief-tablet-v1.mp3.bytes')));
@@ -443,15 +471,15 @@ test('軽減音は選択後に同じ要素で続き、遮蔽と解除では先�
 
   preview.currentTime = 3.5;
   elements.get('settingsBackBtn').dispatch('click');
-  assert.equal(preview.paused, false);
-  assert.equal(preview.currentTime, 3.5);
+  assert.equal(preview.paused, true);
+  assert.equal(preview.currentTime, 0);
   runtime.setSettingsStep('relief', false);
-  assert.equal(preview.playCount, 1);
+  assert.equal(preview.playCount, 2);
 
   elements.get('staffToggle').dispatch('click');
   assert.equal(preview.paused, true);
   elements.get('staff').close();
-  assert.equal(preview.playCount, 2);
+  assert.equal(preview.playCount, 3);
   assert.equal(preview.paused, false);
 
   document.hidden = true;
@@ -459,7 +487,7 @@ test('軽減音は選択後に同じ要素で続き、遮蔽と解除では先�
   assert.equal(preview.paused, true);
   document.hidden = false;
   dispatchDocument('visibilitychange');
-  assert.equal(preview.playCount, 3);
+  assert.equal(preview.playCount, 4);
 
   elements.get('settingsForm').dispatch('change', { target: off });
   assert.equal(state.relief, false);
@@ -474,7 +502,7 @@ test('軽減音は選択後に同じ要素で続き、遮蔽と解除では先�
   elements.get('settingsForm').dispatch('change', { target: off });
 });
 
-test('軽減音は反映確認と博士説明まで続き、音声中だけ下がって説明終了で止まる', () => {
+test('軽減音は反映確認・送信・博士説明では再生せず音量も変えない', () => {
   const preview = runtime.getReliefPreview();
   state.view = 'edit';
   state.relief = false;
@@ -484,12 +512,11 @@ test('軽減音は反映確認と博士説明まで続き、音声中だけ下�
   runtime.setSettingsStep('relief', false);
   elements.get('settingsForm').dispatch('change', { target: radioElements.get('relief:on') });
   assert.equal(preview.paused, false);
-  const playCount = preview.playCount;
-
-  state.view = 'result';
-  runtime.syncReliefPreview();
-  assert.equal(preview.paused, false);
-  assert.equal(preview.playCount, playCount);
+  elements.get('settingsForm').dispatch('submit');
+  assert.equal(state.view, 'result');
+  assert.equal(state.ui, 'confirm');
+  assert.equal(preview.paused, true);
+  assert.equal(preview.currentTime, 0);
 
   const data = clone(briefing);
   data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
@@ -497,13 +524,13 @@ test('軽減音は反映確認と博士説明まで続き、音声中だけ下�
   runtime.configureBriefingMedia(data.scenes[0]);
   runtime.beginBriefingCue();
   const doctorAudio = runtime.getBriefingMedia();
-  assert.equal(preview.paused, false);
+  assert.equal(preview.paused, true);
   assert.equal(preview.volume, 0.28);
   doctorAudio.onplaying();
-  assert.equal(preview.volume, 0.08);
+  assert.equal(preview.volume, 0.28);
   runtime.stopBriefingMediaWindow();
   assert.equal(preview.volume, 0.28);
-  assert.equal(preview.paused, false);
+  assert.equal(preview.paused, true);
 
   runtime.finishBriefing();
   assert.equal(state.briefing.ended, true);
@@ -512,7 +539,7 @@ test('軽減音は反映確認と博士説明まで続き、音声中だけ下�
 
   elements.get('briefingReplay').dispatch('click');
   assert.equal(state.briefing.ended, false);
-  assert.equal(preview.paused, false);
+  assert.equal(preview.paused, true);
   state.view = 'title';
   runtime.syncReliefPreview();
   assert.equal(preview.paused, true);
@@ -520,7 +547,7 @@ test('軽減音は反映確認と博士説明まで続き、音声中だけ下�
   state.reliefPreviewStarted = false;
 });
 
-test('反映判定はPOSTの受理番号と実値の両方を見る', async () => {
+test('確認画面はPOSTせず、900msの送信表示後に受理番号と実値で反映を判定する', async () => {
   const requests = [];
   const lastRequest = { tabletSessionId: runtime.tabletSessionId, seq: 7, lang: 'en', relief: true };
   let status = { ...validStatus, lang: 'ja', relief: false, appliedSeq: 7, received: 1, lastRequest };
@@ -542,11 +569,34 @@ test('反映判定はPOSTの受理番号と実値の両方を見る', async () =
   runtime.syncReliefPreview();
   const preview = runtime.getReliefPreview();
   assert.equal(preview.paused, false);
-  await runtime.send();
-  assert.equal(preview.paused, false);
+  elements.get('settingsForm').dispatch('submit');
+  assert.equal(state.ui, 'confirm');
+  assert.equal(state.view, 'result');
+  assert.equal(requests.length, 0, '確認画面へ進むだけでは通信しない');
+  assert.equal(elements.get('resultTitle').textContent, 'Apply to Quest');
+  assert.equal(elements.get('selectedLanguage').textContent, 'English');
+  assert.equal(elements.get('selectedRelief').textContent, 'on');
+  assert.equal(elements.get('applyBtn').hidden, false);
+  assert.equal(elements.get('editBtn').hidden, false);
+  assert.equal(preview.paused, true);
+
+  elements.get('editBtn').dispatch('click');
+  assert.equal(state.view, 'edit');
+  assert.equal(state.settingsStep, 'language');
+  runtime.setSettingsStep('relief', false);
+  elements.get('settingsForm').dispatch('submit');
+  assert.equal(requests.length, 0, '設定へ戻っても確認までは通信しない');
+
+  const sending = elements.get('applyBtn').dispatch('click');
+  await flushPromises();
+  assert.equal(state.ui, 'sending');
+  assert.equal(runtime.resultKey(), 'sending');
+  assert.equal(elements.get('resultTitle').textContent, 'Applying to Quest');
   assert.equal(requests[0].resource, './set');
   assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true,
     tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' });
+  timers.runOne(900);
+  await sending;
   assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7, portalSessionId: 'portal-a' }));
   assert.equal(runtime.resultKey(), 'waiting');
 

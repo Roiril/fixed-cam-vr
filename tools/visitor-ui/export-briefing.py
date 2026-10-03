@@ -23,6 +23,13 @@ def write_atomic(path, content):
     temporary.replace(path)
 
 
+def speech_reading(text):
+    """Spell out controls and counts for the TTS input without changing subtitles."""
+    return (text.replace("3周", "三周")
+                .replace("XかY", "エックスかワイ")
+                .replace("1秒", "一秒"))
+
+
 def main():
     data = json.loads(SOURCE.read_text(encoding="utf-8"))
     assert data["schemaVersion"] == 1 and data["scenes"]
@@ -70,6 +77,31 @@ def main():
         totals[language] = offset / 1000
         write_atomic(OUTPUT / f"briefing-{language}.srt", "\n".join(subtitles))
     write_atomic(OUTPUT / "briefing-narration.md", "\n".join(script))
+    elevenlabs = [
+        "# 博士の日本語音声 — Eleven v4 用入力",
+        "",
+        "正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。このファイルはそこから生成する。",
+        "Text to Speech で Eleven v4 と既存の博士の Voice を選ぶ。各章を別々に生成し、コードブロック内だけを貼り付ける。",
+        "4章とも Stability と Similarity を同じ値にする。v4 に Style と Speed のスライダーはない。",
+        "角括弧は発声指示。`[pause]` の秒数は固定されない。完成音声に合わせて JSON の `durationMs` を調整する。",
+        "数字とボタン名は読み間違いを避けるため、音声入力だけ漢字とカタカナで書く。字幕の表記は正本のまま。",
+        "章名は読み上げ文に含めない。音声は BGM や効果音を混ぜずに書き出す。",
+        "公式: [Eleven v4](https://elevenlabs.io/blog/eleven-v4) / [Text to Speech](https://elevenlabs.io/docs/eleven-creative/playground/text-to-speech) / [Audio Tags](https://elevenlabs.io/blog/elevenlabs-audio-tags-list)",
+        "",
+    ]
+    for index, scene in enumerate(data["scenes"], 1):
+        cues = scene["cues"]["ja"]
+        lines = ["[calm, measured] " + speech_reading(cues[0]["text"])]
+        lines.extend("[pause] " + speech_reading(cue["text"]) for cue in cues[1:])
+        elevenlabs.extend([
+            f"## {index:02} {scene['title']['ja']}（{scene['id']}）",
+            "",
+            "```text",
+            *lines,
+            "```",
+            "",
+        ])
+    write_atomic(OUTPUT / "elevenlabs-input-ja.md", "\n".join(elevenlabs))
     print(json.dumps({"scenes": len(data["scenes"]), "durationSeconds": totals, "output": str(OUTPUT)}))
 
 

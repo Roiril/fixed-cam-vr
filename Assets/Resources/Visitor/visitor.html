@@ -441,9 +441,10 @@
         </tbody>
       </table>
       <div class="result-actions">
+        <button class="primary" id="applyBtn" type="button" hidden>Questに反映する</button>
         <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
         <button class="retry" id="briefingRetryBtn" type="button" hidden>説明資料を再読み込み</button>
-        <button class="secondary" id="editBtn" type="button" hidden>設定を変える</button>
+        <button class="secondary" id="editBtn" type="button" hidden>設定に戻る</button>
       </div>
     </section>
 
@@ -489,7 +490,7 @@
         <span id="nextLabel">次へ</span>
       </button>
       <button class="primary" id="sendBtn" type="submit" form="settingsForm" hidden>
-        <span id="submitLabel">この設定で始める</span>
+        <span id="submitLabel">設定を確認する</span>
       </button>
     </div>
     <div class="briefing-controls" id="briefingControls" hidden>
@@ -533,13 +534,14 @@
       askRelief: '恐怖を軽減するかどうかを決めてください。',
       next: '次へ', back: '戻る',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
-      send: 'この設定で始める', edit: '設定を変える', retry: 'もう一度送る',
+      review: '設定を確認する', apply: 'Questに反映する', edit: '設定に戻る', retry: 'もう一度送る',
       selected: '選んだ設定', headset: 'ヘッドセット', item: '項目',
       restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
       staff: 'スタッフ', staffOpen: 'スタッフ情報を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする', fullscreenExit: '全画面を解除',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
-        sending: ['送信中', 'ヘッドセットへ設定を送っています'],
+        confirm: ['Questに反映する', '選んだ設定を確認してください'],
+        sending: ['Questに反映しています', '選んだ設定をヘッドセットへ送っています'],
         applied: ['Questに反映しました', '選んだ設定を確認しました'],
         waiting: ['反映待ち', '注意書きの画面になると反映されます'],
         later: ['次回の開始待ち', 'いまの体験が終わると、次の開始時に反映されます'],
@@ -548,6 +550,7 @@
         conflict: ['設定が変更されました', '別のページで設定が変更されました。設定を確認してください。'],
       },
       postSpeech: {
+        confirm: '言語とホラー軽減の設定を確認してください。',
         sending: '設定を送っています。少しお待ちください。',
         applied: '画面をタップして次へ',
         waiting: '準備が整うまで、少しお待ちください。',
@@ -576,13 +579,14 @@
       askRelief: 'Please choose whether you would like to reduce the horror.',
       next: 'Next', back: 'Back',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
-      send: 'Start with these settings', edit: 'Change settings', retry: 'Send again',
+      review: 'Review settings', apply: 'Apply to Quest', edit: 'Back to settings', retry: 'Send again',
       selected: 'Selected settings', headset: 'Headset', item: 'Item',
       restarted: 'The headset restarted. Check the retained settings, then send them again.',
       staff: 'Staff', staffOpen: 'Open staff information', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen', fullscreenExit: 'Exit full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
-        sending: ['Sending', 'Sending the settings to the headset'],
+        confirm: ['Apply to Quest', 'Check the selected settings before applying them'],
+        sending: ['Applying to Quest', 'Sending the selected settings to the headset'],
         applied: ['Applied to Quest', 'The selected settings have been confirmed'],
         waiting: ['Waiting to apply', 'They will apply when the notice screen appears'],
         later: ['Waiting for the next session', 'They will apply when the next session starts'],
@@ -591,6 +595,7 @@
         conflict: ['Settings changed', 'Settings were changed on another page. Please check the settings.'],
       },
       postSpeech: {
+        confirm: 'Check the language and reduced horror settings.',
         sending: 'I am sending your settings. Please wait a moment.',
         applied: 'Tap the screen to continue',
         waiting: 'Please wait a moment while everything is prepared.',
@@ -619,13 +624,14 @@
       askRelief: 'Choisissez si vous souhaitez atténuer l’horreur.',
       next: 'Suivant', back: 'Retour',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
-      send: 'Commencer avec ces réglages', edit: 'Modifier les réglages', retry: 'Renvoyer',
+      review: 'Vérifier les réglages', apply: 'Appliquer au Quest', edit: 'Retour aux réglages', retry: 'Renvoyer',
       selected: 'Réglages choisis', headset: 'Casque', item: 'Élément',
       restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
       staff: 'Personnel', staffOpen: 'Ouvrir les informations du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran', fullscreenExit: 'Quitter le plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
-        sending: ['Envoi en cours', 'Envoi des réglages au casque'],
+        confirm: ['Appliquer au Quest', 'Vérifiez les réglages choisis avant de les appliquer'],
+        sending: ['Application au Quest', 'Envoi des réglages choisis au casque'],
         applied: ['Réglages appliqués au Quest', 'Les réglages choisis ont été confirmés'],
         waiting: ['En attente d’application', 'Ils seront appliqués à l’écran d’avertissement'],
         later: ['En attente de la prochaine session', 'Ils seront appliqués au début de la prochaine session'],
@@ -634,6 +640,7 @@
         conflict: ['Réglages modifiés', 'Les réglages ont été modifiés sur une autre page. Veuillez les vérifier.'],
       },
       postSpeech: {
+        confirm: 'Vérifiez la langue et l’atténuation de l’horreur.',
         sending: 'J’envoie vos réglages. Veuillez patienter un instant.',
         applied: 'Touchez l’écran pour continuer',
         waiting: 'Veuillez patienter un instant pendant la préparation.',
@@ -660,7 +667,7 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const reliefPreview = $('reliefPreview');
   const RELIEF_PREVIEW_VOLUME = 0.28;
-  const RELIEF_PREVIEW_DUCKED_VOLUME = 0.08;
+  const MINIMUM_APPLYING_MS = 900;
   reliefPreview.volume = RELIEF_PREVIEW_VOLUME;
   const STORAGE_KEY = 'mawarimi.visitor.progress.v1';
   function readSavedProgress() {
@@ -718,7 +725,6 @@
       imageFailed: false,
       doctorFailed: false,
       mediaPaused: false,
-      mediaPlaying: false,
     },
   };
   let titleTimer = null;
@@ -906,8 +912,8 @@
   function shouldPlayReliefPreview() {
     return state.reliefPreviewStarted
       && state.relief
-      && ['edit', 'result', 'briefing'].includes(state.view)
-      && !(state.view === 'briefing' && state.briefing.ended)
+      && state.view === 'edit'
+      && state.settingsStep === 'relief'
       && !document.hidden
       && !$('staff').open;
   }
@@ -917,11 +923,7 @@
       stopReliefPreview();
       return;
     }
-    reliefPreview.volume = state.view === 'briefing'
-      && state.briefing.mediaPlaying
-      && !state.briefing.muted
-      ? RELIEF_PREVIEW_DUCKED_VOLUME
-      : RELIEF_PREVIEW_VOLUME;
+    reliefPreview.volume = RELIEF_PREVIEW_VOLUME;
     if (!reliefPreview.paused) return;
     try {
       const play = reliefPreview.play();
@@ -1118,7 +1120,8 @@
     $('reliefDesc').textContent = t.reliefDesc;
     $('nextLabel').textContent = t.next;
     $('settingsBackBtn').textContent = t.back;
-    $('submitLabel').textContent = t.send;
+    $('submitLabel').textContent = t.review;
+    $('applyBtn').textContent = t.apply;
     $('editBtn').textContent = t.edit;
     $('retryBtn').textContent = t.retry;
     $('briefingRetryBtn').textContent = t.briefing.retry;
@@ -1387,7 +1390,6 @@
     if (briefingBoundaryTimer) clearTimeout(briefingBoundaryTimer);
     briefingBoundaryTimer = null;
     state.briefing.mediaWindowActive = false;
-    state.briefing.mediaPlaying = false;
     briefingMedia?.pause();
     syncReliefPreview();
   }
@@ -1504,8 +1506,6 @@
     };
     const watchForStall = () => {
       clearBriefingMediaTimer();
-      state.briefing.mediaPlaying = false;
-      syncReliefPreview();
       briefingMediaTimer = setTimeout(() => {
         if (briefingMedia === media && briefingMediaToken === token && state.briefing.mediaWindowActive) handleBriefingMediaFailure();
       }, 6000);
@@ -1515,8 +1515,6 @@
     media.onplaying = () => {
       if (briefingMedia !== media || briefingMediaToken !== token || !state.briefing.mediaWindowActive) return;
       clearBriefingMediaTimer();
-      state.briefing.mediaPlaying = true;
-      syncReliefPreview();
       checkBoundary();
       if (media === $('doctorVideo')) {
         $('doctorVideo').hidden = false;
@@ -1779,7 +1777,6 @@
     state.briefing.lastMoveAt = 0;
     state.briefing.imageFailed = false;
     state.briefing.mediaPaused = false;
-    state.briefing.mediaPlaying = false;
     $('briefingView').classList.remove('is-chapter-changing');
   }
 
@@ -1831,7 +1828,7 @@
   }
 
   function resultKey() {
-    if (state.ui === 'sending' || state.ui === 'fail' || state.ui === 'conflict') return state.ui;
+    if (state.ui === 'confirm' || state.ui === 'sending' || state.ui === 'fail' || state.ui === 'conflict') return state.ui;
     if (state.connection !== 'online' || !state.status) return 'noserver';
     const actual = state.status;
     const sent = state.sent;
@@ -1843,7 +1840,6 @@
   }
 
   function renderResult() {
-    if (!state.sent) return;
     const t = T[state.lang];
     const key = resultKey();
     const briefingBlocked = key === 'applied' && state.briefing.loadState !== 'ready';
@@ -1851,9 +1847,12 @@
       ? t.briefing[state.briefing.loadState === 'error' ? 'error' : 'loading']
       : t.post[key];
     const actual = state.connection === 'online' ? state.status : null;
+    const selected = key === 'confirm' || !state.sent
+      ? { lang: state.lang, relief: state.relief }
+      : state.sent;
     const glyph = briefingBlocked
       ? (state.briefing.loadState === 'error' ? '×' : '…')
-      : { sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', conflict: '!', noserver: '?' }[key];
+      : { confirm: '→', sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', conflict: '!', noserver: '?' }[key];
     const tone = briefingBlocked
       ? (state.briefing.loadState === 'error' ? 'error' : 'wait')
       : (key === 'applied' ? 'ok' : (key === 'fail' || key === 'conflict' || key === 'noserver' ? 'error' : 'wait'));
@@ -1861,10 +1860,11 @@
     setText('resultGlyph', glyph);
     setText('resultTitle', copy[0]);
     setText('resultDetail', copy[1]);
-    $('selectedLanguage').textContent = LANG_NAME[state.sent.lang];
-    $('selectedRelief').textContent = state.sent.relief ? t.reliefOn : t.reliefOff;
+    $('selectedLanguage').textContent = LANG_NAME[selected.lang];
+    $('selectedRelief').textContent = selected.relief ? t.reliefOn : t.reliefOff;
     $('headsetLanguage').textContent = actual && actual.lang ? (LANG_NAME[actual.lang] || actual.lang) : '—';
     $('headsetRelief').textContent = actual && typeof actual.relief === 'boolean' ? (actual.relief ? t.reliefOn : t.reliefOff) : '—';
+    $('applyBtn').hidden = key !== 'confirm';
     $('retryBtn').hidden = key !== 'fail';
     $('briefingRetryBtn').hidden = !(key === 'applied' && state.briefing.loadState === 'error');
     $('editBtn').hidden = key === 'sending';
@@ -1995,7 +1995,6 @@
 
   async function send() {
     if (state.ui === 'sending') return;
-    if (state.relief) state.reliefPreviewStarted = true;
     if (!state.status?.portalSessionId || state.connection !== 'online') await poll();
     if (!state.status?.portalSessionId || state.connection !== 'online') {
       state.ui = 'fail';
@@ -2013,22 +2012,38 @@
     state.ui = 'sending';
     setSurface('result', $('resultTitle'));
     render();
+    const minimumApplying = new Promise((resolve) => setTimeout(resolve, MINIMUM_APPLYING_MS));
     try {
       const response = await post('./set', { lang: state.sent.lang, relief: state.sent.relief,
         tabletSessionId, portalSessionId: state.sent.portalSessionId });
       if (generation !== sendGeneration) return;
       if (response.ok !== true || !validSequence(response.seq, false)) throw new Error('invalid set response');
       state.sent.seq = response.seq;
-      state.ui = 'sent';
       if (pollInFlight) await pollInFlight;
       await poll();
+      await minimumApplying;
+      if (generation !== sendGeneration) return;
+      state.ui = 'sent';
     } catch (error) {
+      if (generation !== sendGeneration) return;
+      await minimumApplying;
       if (generation !== sendGeneration) return;
       console.warn('set failed', error);
       if (error.name === 'AbortError' || error instanceof TypeError) state.connection = 'offline';
       state.ui = 'fail';
     }
     render();
+  }
+
+  function confirmSettings() {
+    if (state.view !== 'edit' || state.settingsStep !== 'relief') return false;
+    state.ui = 'confirm';
+    changeVisual(() => {
+      setFormDisabled(false);
+      setSurface('result', $('resultTitle'));
+      render();
+    });
+    return true;
   }
 
   function poll() {
@@ -2074,7 +2089,7 @@
       setSettingsStep('relief');
       return;
     }
-    send();
+    confirmSettings();
   });
   $('settingsForm').addEventListener('change', (event) => {
     if (event.target.name === 'lang') {
@@ -2090,6 +2105,7 @@
   });
   $('settingsNextBtn').addEventListener('click', () => setSettingsStep('relief'));
   $('settingsBackBtn').addEventListener('click', () => setSettingsStep('language'));
+  $('applyBtn').addEventListener('click', send);
   $('titleStart').addEventListener('click', beginFromTitle);
   $('titleView').addEventListener('click', beginFromTitle);
   $('fullscreenBtn').addEventListener('click', enterFullscreen);
@@ -2109,7 +2125,6 @@
   $('briefingMute').addEventListener('click', () => {
     state.briefing.muted = !state.briefing.muted;
     if (briefingMedia) briefingMedia.muted = state.briefing.muted;
-    syncReliefPreview();
     renderBriefingControls();
   });
   $('mediaRetry').addEventListener('click', () => {
