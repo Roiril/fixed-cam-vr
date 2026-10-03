@@ -35,6 +35,7 @@ Quest が配信する。外部フォントや CDN は使わない。
 - 壁の一周動画: 同じディレクトリの `kabe-one-lap-doll-v1.mp4.bytes`
 - 音声生成用台本: `tools/visitor-ui/briefing-narration.md`
 - ユーザー指定の Eleven v4 日本語入力: `tools/visitor-ui/elevenlabs-input-ja.md`
+- リップシンク動画用の画像・音声・プロンプト: `tools/visitor-ui/lipsync-kit.md` と `prepare-lipsync-kit.py`。`output/visitor-lipsync-kit-20261003/` にアップロード用の拡張子でまとめる。
 - 日本語音声の原本: `tools/visitor-ui/doctor-ja-v2-original.mp3`
 - 字幕: `tools/visitor-ui/briefing-ja.srt` / `briefing-en.srt` / `briefing-fr.srt`
 - 画像生成時のプロンプト: `tools/visitor-ui/briefing-image-prompts.md`
