@@ -23,6 +23,7 @@ namespace FixedCamVr.Streaming
             public string method;
             public string path;
             public int contentLength;
+            public string origin;
             // Range: bytes=a-b（無ければ rangeStart = -1）。動画の再生はブラウザが必ずこれを投げる。
             public long rangeStart;
             public long rangeEnd;
@@ -39,6 +40,8 @@ namespace FixedCamVr.Streaming
             public int bytesOffset;
             public int bytesCount;
             public long totalLength;   // 206 のとき Content-Range に要る
+            // GET /status を許可済みの博士 UI から読ませるときだけ設定する。
+            public string allowOrigin;
         }
 
         /// <summary>
@@ -67,6 +70,8 @@ namespace FixedCamVr.Streaming
                 string value = lines[i].Substring(c + 1).Trim();
                 if (string.Equals(name, "Content-Length", StringComparison.OrdinalIgnoreCase))
                     int.TryParse(value, out req.contentLength);
+                else if (string.Equals(name, "Origin", StringComparison.OrdinalIgnoreCase))
+                    req.origin = value;
                 else if (string.Equals(name, "Range", StringComparison.OrdinalIgnoreCase) && value.StartsWith("bytes="))
                 {
                     string[] se = value.Substring(6).Split('-');
@@ -139,7 +144,13 @@ namespace FixedCamVr.Streaming
             if (req.method == "GET" && (p == "/" || p == "/visitor.html" || p == "/index.html"))
                 return new Response { status = 200, contentType = "text/html; charset=utf-8", body = page };
             if (req.method == "GET" && p == "/status")
-                return new Response { status = 200, contentType = "application/json; charset=utf-8", body = statusJson };
+                return new Response
+                {
+                    status = 200,
+                    contentType = "application/json; charset=utf-8",
+                    body = statusJson,
+                    allowOrigin = IsAllowedStatusOrigin(req.origin) ? req.origin : "",
+                };
             if (req.method == "POST" && p == "/tablet/pulse")
             {
                 if (!TryParseTabletId(body, out string tabletId))
@@ -176,6 +187,9 @@ namespace FixedCamVr.Streaming
 
         private static Response Json(int status, string body)
             => new Response { status = status, contentType = "application/json; charset=utf-8", body = body };
+
+        private static bool IsAllowedStatusOrigin(string origin)
+            => origin == "http://192.168.10.31:8090" || origin == "http://192.168.10.32:8090";
 
         /// <summary>二進の応答。Range があれば 206 で部分を返す（動画の再生に要る）。</summary>
         public static Response Binary(byte[] data, string contentType, Request req)
@@ -231,6 +245,11 @@ namespace FixedCamVr.Streaming
                     sb.Append("Content-Range: bytes ").Append(off).Append('-').Append(off + cnt - 1).Append('/').Append(r.totalLength).Append("\r\n");
             }
             else sb.Append("Cache-Control: no-store\r\n");
+            if (!string.IsNullOrEmpty(r.allowOrigin))
+            {
+                sb.Append("Access-Control-Allow-Origin: ").Append(r.allowOrigin).Append("\r\n");
+                sb.Append("Vary: Origin\r\n");
+            }
             sb.Append("Connection: close\r\n\r\n");
             byte[] head = Encoding.ASCII.GetBytes(sb.ToString());
             byte[] all = new byte[head.Length + cnt];

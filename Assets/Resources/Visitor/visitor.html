@@ -125,6 +125,9 @@
   .stage.is-result-ready .subtitle::after { content: ""; position: absolute; right: 0; top: 11px; width: 7px; height: 7px; border: solid var(--gold); border-width: 1px 1px 0 0; transform: rotate(45deg); }
   .stage.is-title { height: 100svh; }
   .stage.is-title .topbar, .stage.is-title .content, .stage.is-title .footer { visibility: hidden; }
+  .stage.is-title .topbar { visibility: visible; z-index: 11; pointer-events: none; }
+  .stage.is-title .topbar > :not(#staffToggle) { visibility: hidden; }
+  .stage.is-title #staffToggle { pointer-events: auto; }
   .title-view { position: absolute; z-index: 10; inset: 0; display: flex; align-items: center; min-height: 100svh; overflow: hidden; cursor: pointer; background: var(--bg); transition: opacity .52s var(--ease); }
   .title-view::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg,rgba(9,8,7,.45),transparent 75%),linear-gradient(0deg,rgba(9,8,7,.65),transparent 30%),url("./asset/entrance-doll-v1.png") 76% center / cover no-repeat; transition: transform .8s var(--ease),opacity .5s var(--ease); }
   .title-view::after { content: ""; position: absolute; inset: 22px; border: 1px solid rgba(232,220,196,.16); pointer-events: none; }
@@ -194,15 +197,35 @@
   @keyframes chapter-line { from { transform: scaleX(.1); } to { transform: scaleX(1); } }
   .media-notice { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 16px; padding: 8px 0; color: var(--muted); font: 12px/1.5 var(--sans); }
   .media-notice button { min-height: 44px; padding: 8px 12px; background: transparent; border: 1px solid var(--line-strong); font-size: 12px; }
-  .staff-dialog { width: min(92vw,520px); max-height: 86svh; padding: 30px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: 0 25px 90px rgba(0,0,0,.65); overscroll-behavior: contain; }
+  .staff-dialog { width: min(94vw,920px); max-height: 90svh; padding: 0; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: 0 25px 90px rgba(0,0,0,.65); overscroll-behavior: contain; font-family: var(--sans); }
   .staff-dialog[open] { animation: reference-in .24s var(--ease); }
   .staff-dialog::backdrop { background: rgba(0,0,0,.8); }
-  .staff-dialog h2 { margin: 0 45px 22px 0; font-size: 22px; font-weight: 400; }
-  .staff-close { position: absolute; right: 17px; top: 17px; width: 44px; height: 44px; border: 1px solid var(--line); background: transparent; }
-  .staff-summary { min-height: 8em; margin: 0 0 18px; padding: 16px 0; border-block: 1px solid var(--line); color: var(--muted); font: 13px/1.9 ui-monospace,Consolas,monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .staff-message { min-height: 1.6em; color: var(--gold); font: 13px/1.6 var(--sans); }
+  .staff-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .staff-dialog h2 { margin: 0; font-size: 22px; font-weight: 400; }
+  .staff-close { flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid var(--line); background: transparent; }
+  .staff-body { padding: 20px 24px 24px; }
+  .staff-section + .staff-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .staff-section h3, .staff-section legend { margin: 0 0 12px; color: var(--ink); font: 16px/1.5 var(--sans); letter-spacing: 0; }
+  .staff-dialog p { margin: 10px 0; font-size: 14px; line-height: 1.65; }
+  .staff-dialog .choice { min-height: 62px; padding: 10px; font-size: 16px; }
+  .staff-dialog .choice span { min-width: 0; }
+  .staff-dialog .choice small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .staff-summary { margin: 12px 0; color: var(--ink); font: 15px/1.85 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .staff-help { color: var(--muted); }
+  .staff-message { min-height: 1.6em; color: var(--gold); }
+  #staffCheckMessage:empty, #staffMessage:empty { display: none; }
+  .staff-action { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--line-strong); background: transparent; font-size: 15px; }
+  .staff-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
   .staff-clear { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--red); background: rgba(168,50,57,.12); }
-  .staff-fullscreen { min-height: 48px; width: 100%; margin-bottom: 10px; padding: 10px 14px; border: 1px solid var(--line-strong); background: transparent; }
+  .staff-done { margin-top: 22px; background: var(--ink); color: var(--bg); }
+  @media (min-width:850px) {
+    .staff-body { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: 16px 24px; }
+    .staff-section:nth-child(1) { grid-area: 1 / 1; }
+    .staff-section:nth-child(2) { grid-area: 2 / 1; margin-top: 0; padding-top: 16px; }
+    .staff-section:nth-child(3) { grid-area: 1 / 2 / 3 / 3; margin-top: 0; padding: 0 0 0 24px; border-top: 0; border-left: 1px solid var(--line); }
+    .staff-actions { grid-template-columns: 1fr; }
+    .staff-done { grid-column: 1 / -1; margin-top: 0; }
+  }
   @media (min-width:1600px) { .content { width: 52%; } .stage.is-briefing { grid-template-rows: auto minmax(440px,1fr) auto; } .notice-body { font-size: 18px; } }
   @media (min-width:761px) and (max-height:800px) {
     .topbar { min-height: 74px; padding-top: 14px; padding-bottom: 10px; }
@@ -350,7 +373,7 @@
       <li id="journeyBriefing"><b>02</b><span id="journeyBriefingLabel">調査説明</span></li>
       <li id="journeyWear"><b>03</b><span id="journeyWearLabel">装着</span></li>
     </ol>
-    <button class="connection" id="staffToggle" data-state="checking" type="button" aria-haspopup="dialog" aria-label="スタッフ情報を開く">
+    <button class="connection" id="staffToggle" data-state="checking" type="button" aria-haspopup="dialog" aria-label="スタッフ設定を開く">
       <span class="connection-dot" aria-hidden="true"></span>
       <span id="connectionText" role="status" aria-live="polite">接続を確認中…</span>
       <span class="staff-label" id="staffLabel">スタッフ</span>
@@ -508,16 +531,50 @@
   </footer>
 </div>
 
-<dialog class="staff-dialog" id="staff">
-  <button class="staff-close" id="staffClose" type="button" aria-label="閉じる">×</button>
-  <h2>スタッフ情報</h2>
-  <div class="staff-summary" id="staffSummary">読み込み中…</div>
-  <p class="staff-message" id="staffMessage" role="status" aria-live="polite"></p>
-  <button class="staff-fullscreen" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
-  <button class="staff-clear" id="clearBtn" type="button">予約を取り消す</button>
+<dialog class="staff-dialog" id="staff" aria-labelledby="staffTitle" lang="ja">
+  <div class="staff-header">
+    <h2 id="staffTitle">スタッフ設定</h2>
+    <button class="staff-close" id="staffClose" type="button" aria-label="スタッフ設定を閉じる">×</button>
+  </div>
+  <div class="staff-body">
+    <section class="staff-section">
+      <fieldset>
+        <legend>1. 体験に使うクエスト</legend>
+        <div class="choices two">
+          <label class="choice"><input id="questAlpha" name="staffQuest" type="radio" value="alpha"><span>クエスト α<small>192.168.10.31</small></span><span class="choice-mark" aria-hidden="true"></span></label>
+          <label class="choice"><input id="questBeta" name="staffQuest" type="radio" value="beta"><span>クエスト β<small>192.168.10.32</small></span><span class="choice-mark" aria-hidden="true"></span></label>
+        </div>
+      </fieldset>
+      <p class="staff-help" id="staffTargetHelp">本体のα／βのラベルを見て選んでください。</p>
+      <button class="staff-action" id="staffCheckBtn" type="button">接続を確認する</button>
+      <p class="staff-message" id="staffCheckMessage" role="status" aria-live="polite"></p>
+    </section>
+    <section class="staff-section">
+      <h3>2. 受付の状態</h3>
+      <div class="staff-summary" id="staffSummary">読み込み中…</div>
+      <p class="staff-help" id="staffRecovery" hidden>クエストの電源と「廻リ視」の起動を確認してください。タブレットと同じ会場Wi-Fiにつないでから「接続を確認する」を押してください。</p>
+      <div id="staffPending" hidden>
+        <p class="staff-help">前の人の設定が残っているときだけ取り消してください。クエストの現在の言語と軽減は変わりません。次の人は設定を選び直します。</p>
+        <button class="staff-clear" id="clearBtn" type="button">未開始の設定を取り消す</button>
+      </div>
+      <p class="staff-message" id="staffMessage" role="status" aria-live="polite"></p>
+    </section>
+    <section class="staff-section">
+      <h3>3. 受付前の確認</h3>
+      <p class="staff-help">タブレットを充電して横向きに置きます。受付のタブは1枚だけにしてください。</p>
+      <div class="staff-actions">
+        <button class="staff-action" id="staffSoundBtn" type="button">博士の音声を確認する</button>
+        <button class="staff-action" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
+      </div>
+      <p class="staff-help" id="staffSoundHelp" role="status">声が聞こえるか確認してください。音量はタブレット本体のボタンで調整します。</p>
+      <p class="staff-help">クエストの装着位置を確認してください。クエストの音と左コントローラーは実機で確認します。</p>
+    </section>
+    <button class="staff-action staff-done" id="staffDoneBtn" type="button">来場者の画面に戻る</button>
+  </div>
 </dialog>
 
 <audio id="reliefPreview" src="./asset/bed-relief-tablet-v1.mp3" preload="none" loop hidden aria-hidden="true"></audio>
+<audio id="staffSound" src="./asset/report-ja-v1.mp3" preload="none" hidden aria-hidden="true"></audio>
 
 <script>
 (() => {
@@ -537,7 +594,7 @@
       review: '設定を確認する', apply: 'この設定で始める', edit: '設定に戻る', retry: 'もう一度送る',
       selected: '選んだ設定', headset: 'ヘッドセット', item: '項目',
       restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
-      staff: 'スタッフ', staffOpen: 'スタッフ情報を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする', fullscreenExit: '全画面を解除',
+      staff: 'スタッフ設定', staffOpen: 'スタッフ設定を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
         confirm: ['設定内容の確認', '言語とホラー軽減を確認してください'],
@@ -582,7 +639,7 @@
       review: 'Review settings', apply: 'Start with these settings', edit: 'Back to settings', retry: 'Send again',
       selected: 'Selected settings', headset: 'Headset', item: 'Item',
       restarted: 'The headset restarted. Check the retained settings, then send them again.',
-      staff: 'Staff', staffOpen: 'Open staff information', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen', fullscreenExit: 'Exit full screen',
+      staff: 'Staff settings', staffOpen: 'Open staff settings', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
         confirm: ['Review settings', 'Check the language and reduced horror setting'],
@@ -627,7 +684,7 @@
       review: 'Vérifier les réglages', apply: 'Commencer avec ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
       selected: 'Réglages choisis', headset: 'Casque', item: 'Élément',
       restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
-      staff: 'Personnel', staffOpen: 'Ouvrir les informations du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran', fullscreenExit: 'Quitter le plein écran',
+      staff: 'Réglages du personnel', staffOpen: 'Ouvrir les réglages du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
         confirm: ['Vérification des réglages', 'Vérifiez la langue et l’atténuation de l’horreur'],
@@ -662,6 +719,17 @@
   };
 
   const LANG_NAME = { ja: '日本語', en: 'English', fr: 'Français' };
+  // Setup checks the other Quest, then loads its page. All visitor APIs and
+  // assets remain relative to the selected Quest, including after a reload.
+  const QUESTS = {
+    alpha: { name: 'クエスト α', symbol: 'α', host: '192.168.10.31', origin: 'http://192.168.10.31:8090' },
+    beta: { name: 'クエスト β', symbol: 'β', host: '192.168.10.32', origin: 'http://192.168.10.32:8090' },
+  };
+  const activeQuest = Object.keys(QUESTS).find((key) => location.host === `${QUESTS[key].host}:8090`) || null;
+  const activeQuestName = () => activeQuest ? QUESTS[activeQuest].name : 'この受付';
+  const headsetName = () => activeQuest
+    ? `${state.lang === 'ja' ? 'クエスト' : 'Quest'} ${QUESTS[activeQuest].symbol}`
+    : T[state.lang].headset;
   const BRIEFING_LANGS = Object.keys(LANG_NAME);
   const $ = (id) => document.getElementById(id);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -706,6 +774,9 @@
     restartMessage: false,
     lastReceived: null,
     clearing: false,
+    clearReceipt: null,
+    staffQuest: activeQuest,
+    staffChecking: false,
     restored: false,
     briefing: {
       loadState: 'loading',
@@ -743,6 +814,10 @@
   let chapterTimer = null;
   let pointerGesture = null;
   let wakeLock = null;
+  let staffCheckGeneration = 0;
+  let staffCheckController = null;
+  let staffClearTimer = null;
+  let staffSoundGeneration = 0;
   const activeAnimations = new Map();
 
   function clearSavedProgress() {
@@ -838,8 +913,8 @@
     const active = Boolean(document.fullscreenElement);
     $('fullscreenBtn').hidden = !supported || active;
     $('fullscreenBtn').textContent = T[state.lang].fullscreen;
-    $('staffFullscreenBtn').hidden = !supported;
-    $('staffFullscreenBtn').textContent = active ? T[state.lang].fullscreenExit : T[state.lang].fullscreenEnter;
+    $('staffFullscreenBtn').hidden = !supported || active;
+    $('staffFullscreenBtn').textContent = '全画面にする';
   }
 
   function enterFullscreen() {
@@ -974,7 +1049,9 @@
     if (view !== 'result') stage.classList.remove('is-result-ready');
     if (view !== 'briefing') stage.classList.remove('is-doctor-only');
     document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
-    document.querySelector('.topbar').inert = view === 'title';
+    // Staff setup remains reachable on the title. CSS hides the other header
+    // controls; setting inert on their shared header would block staff too.
+    document.querySelector('.topbar').inert = false;
     document.querySelector('.footer').inert = view === 'title';
     document.querySelector('.skip').hidden = view === 'title';
     $('mediaNotice').hidden = view !== 'briefing';
@@ -1132,7 +1209,7 @@
     $('briefingReplay').textContent = t.briefing.replay;
     $('briefingAdvanceHint').textContent = t.briefing.advance;
     $('selectedHeading').textContent = t.selected;
-    $('headsetHeading').textContent = t.headset;
+    $('headsetHeading').textContent = headsetName();
     $('itemHeading').textContent = t.item;
     $('resultLanguageLabel').textContent = t.language;
     $('resultReliefLabel').textContent = t.relief;
@@ -1860,7 +1937,10 @@
       : (key === 'applied' ? 'ok' : (key === 'fail' || key === 'conflict' || key === 'noserver' ? 'error' : 'wait'));
     $('resultView').dataset.tone = tone;
     setText('resultGlyph', glyph);
-    setText('resultTitle', copy[0]);
+    const appliedTitle = activeQuest && key === 'applied' && !briefingBlocked
+      ? ({ ja: `${headsetName()}に反映しました`, en: `Applied to ${headsetName()}`, fr: `Réglages appliqués au ${headsetName()}` })[state.lang]
+      : copy[0];
+    setText('resultTitle', appliedTitle);
     setText('resultDetail', copy[1]);
     $('selectedLanguage').textContent = LANG_NAME[selected.lang];
     $('selectedRelief').textContent = selected.relief ? t.reliefOn : t.reliefOff;
@@ -1878,27 +1958,118 @@
 
   function renderConnection() {
     $('staffToggle').dataset.state = state.connection;
-    setText('connectionText', T[state.lang].connection[state.connection]);
+    const name = activeQuest ? `${headsetName()} · ` : '';
+    setText('connectionText', name + T[state.lang].connection[state.connection]);
+  }
+
+  function targetChangeLocked() {
+    return state.ui === 'sending' || state.clearing || Boolean(state.sent?.seq > 0 || state.status?.pending);
   }
 
   function renderStaff() {
     const status = state.connection === 'online' ? state.status : null;
+    const locked = targetChangeLocked();
+    if (locked) state.staffQuest = activeQuest;
+    ['alpha', 'beta'].forEach((key) => {
+      const input = $(key === 'alpha' ? 'questAlpha' : 'questBeta');
+      input.checked = state.staffQuest === key;
+      input.disabled = locked || state.staffChecking;
+    });
+    setText('staffTargetHelp', locked
+      ? '体験者の設定がある間はクエストを変更できません。未開始の設定を取り消すか、次の受付まで待ってください。'
+      : '本体のα／βのラベルを見て選んでください。接続を確認すると、選んだクエストの受付へ切り替わります。');
+    $('staffCheckBtn').disabled = state.staffChecking || state.ui === 'sending' || state.clearing;
+    $('staffDoneBtn').disabled = state.staffChecking || state.clearing || state.staffQuest !== activeQuest;
+    $('staffCheckBtn').textContent = state.staffChecking ? '接続を確認しています…' : '接続を確認する';
+    $('staffPending').hidden = !status?.pending;
+    $('staffRecovery').hidden = state.connection !== 'offline';
     if (!status) {
-      $('staffSummary').textContent = `接続先: ${location.host}\n応答: なし\n受信回数: —\n反映回数: —\n現在設定: —\n予約: —`;
+      $('staffSummary').textContent = `現在の受付：${activeQuestName()}\n接続：${state.connection === 'checking' ? '確認中' : '応答を確認できません'}\n受付の状態：未確認\nクエストの設定：—`;
       $('clearBtn').disabled = true;
       return;
     }
+    if (state.clearReceipt && status.portalSessionId === state.clearReceipt.portalSessionId
+      && status.pending?.seq !== state.clearReceipt.seq) {
+      const cleared = status.pending == null;
+      state.clearReceipt = null;
+      state.clearing = false;
+      if (staffClearTimer) clearTimeout(staffClearTimer);
+      staffClearTimer = null;
+      if (cleared) resetVisitorSession();
+      $('staffMessage').textContent = cleared
+        ? '未開始の設定の取り消しを確認しました。次の人は言語と軽減を選び直してください。'
+        : '別の設定が届きました。未開始の設定を確認してください。';
+      return renderStaff();
+    }
     const pending = status.pending
-      ? `${LANG_NAME[status.pending.lang]} / ホラー軽減 ${status.pending.relief ? 'あり' : 'なし'} / 受理 ${status.pending.seq}`
+      ? `${LANG_NAME[status.pending.lang]} ／ 軽減 ${status.pending.relief ? 'あり' : 'なし'}`
       : 'なし';
+    const ready = status.phase === 'INTRO' && status.titleStage === 'Wait';
+    const reception = ready ? '注意書きで待機中。受付を始められます。'
+      : (status.phase === 'RUN' || status.phase === 'END'
+        ? '体験中です。次の受付まで待ってください。'
+        : '準備中です。クエストに注意書きが出るまで待ってください。');
     $('staffSummary').textContent =
-      `接続先: ${location.host}\n`
-      + `画面: ${status.phase} / ${status.titleStage}\n`
-      + `受信回数: ${status.received}\n`
-      + `反映回数: ${status.applyCount}\n`
-      + `現在設定: ${LANG_NAME[status.lang]} / ホラー軽減 ${status.relief ? 'あり' : 'なし'}\n`
-      + `予約: ${pending}`;
+      `現在の受付：${activeQuestName()}\n`
+      + `接続：応答を確認しました\n`
+      + `受付：${reception}\n`
+      + `クエストの設定：${LANG_NAME[status.lang]} ／ 軽減 ${status.relief ? 'あり' : 'なし'}\n`
+      + `未開始の設定：${pending}`;
     $('clearBtn').disabled = state.clearing || state.ui === 'sending' || status.pending == null;
+  }
+
+  async function checkStaffQuest() {
+    if (state.ui === 'sending' || state.clearing || state.staffChecking) return;
+    const selected = state.staffQuest;
+    if (targetChangeLocked() && selected !== activeQuest) return;
+    const generation = ++staffCheckGeneration;
+    staffCheckController?.abort();
+    const controller = new AbortController();
+    staffCheckController = controller;
+    state.staffChecking = true;
+    const target = selected ? QUESTS[selected] : null;
+    $('staffCheckMessage').textContent = `${target?.name || activeQuestName()}の接続を確認しています…`;
+    renderStaff();
+    try {
+      const status = await fetchWithTimeout(target && selected !== activeQuest ? `${target.origin}/status` : './status',
+        { cache: 'no-store' }, controller);
+      if (generation !== staffCheckGeneration) return;
+      if (!validateStatus(status) || target && (status.ip !== target.host || status.port !== 8090)) {
+        throw new Error('unexpected Quest response');
+      }
+      if (selected !== activeQuest) {
+        if (targetChangeLocked()) throw new Error('visitor settings arrived during target check');
+        clearSavedProgress();
+        sendGeneration++;
+        pollController?.abort();
+        stopStaffSound();
+        stopBriefingPlayback();
+        location.replace(`${target.origin}/?staff=1`);
+        return;
+      }
+      await poll();
+      if (generation !== staffCheckGeneration) return;
+      $('staffCheckMessage').textContent = state.connection === 'online'
+        ? `${activeQuestName()}の応答を確認しました。受付の状態も確認してください。`
+        : '接続が途切れました。電源と会場Wi-Fiを確認して再度確認してください。';
+    } catch (error) {
+      if (generation !== staffCheckGeneration) return;
+      $('staffCheckMessage').textContent = `${target?.name || activeQuestName()}に接続できません。電源と「廻リ視」の起動と会場Wi-Fiを確認して再度確認してください。現在の受付は${activeQuestName()}です。`;
+    } finally {
+      if (generation === staffCheckGeneration) {
+        state.staffChecking = false;
+        staffCheckController = null;
+        renderStaff();
+      }
+    }
+  }
+
+  function stopStaffSound() {
+    staffSoundGeneration++;
+    const sound = $('staffSound');
+    sound.pause();
+    try { sound.currentTime = 0; } catch (error) { /* Not loaded yet. */ }
+    $('staffSoundBtn').textContent = '博士の音声を確認する';
   }
 
   function render() {
@@ -2165,42 +2336,81 @@
     if (state.view === 'briefing') setBriefingPause('staff', true);
     stopReliefPreview();
     $('staff').showModal();
+    $('staff').scrollTop = 0;
   });
   $('staffClose').addEventListener('click', () => $('staff').close());
+  $('staffDoneBtn').addEventListener('click', () => $('staff').close());
   $('staff').addEventListener('close', () => {
+    staffCheckGeneration++;
+    staffCheckController?.abort();
+    staffCheckController = null;
+    state.staffChecking = false;
+    stopStaffSound();
     setBriefingPause('staff', false);
     syncReliefPreview();
+    $('staffToggle').focus({ preventScroll: true });
   });
+  ['questAlpha', 'questBeta'].forEach((id) => $(id).addEventListener('change', (event) => {
+    if (targetChangeLocked()) { renderStaff(); return; }
+    staffCheckGeneration++;
+    staffCheckController?.abort();
+    state.staffChecking = false;
+    state.staffQuest = event.target.value;
+    $('staffCheckMessage').textContent = '「接続を確認する」を押すと、このクエストを使う受付に切り替わります。';
+    renderStaff();
+  }));
+  $('staffCheckBtn').addEventListener('click', checkStaffQuest);
   $('staffFullscreenBtn').addEventListener('click', () => {
-    if (document.fullscreenElement && document.exitFullscreen) {
-      const result = document.exitFullscreen();
-      result?.catch?.((error) => console.warn('fullscreen exit unavailable', error));
-    } else enterFullscreen();
+    enterFullscreen();
+    requestWakeLock();
+  });
+  $('staffSoundBtn').addEventListener('click', async () => {
+    const sound = $('staffSound');
+    if (!sound.paused) { stopStaffSound(); return; }
+    const generation = ++staffSoundGeneration;
+    try {
+      await sound.play();
+      if (generation !== staffSoundGeneration) return;
+      $('staffSoundBtn').textContent = '博士の音声を止める';
+      $('staffSoundHelp').textContent = '声が聞こえるか確認してください。音量はタブレット本体のボタンで調整します。';
+    } catch (error) {
+      if (generation !== staffSoundGeneration) return;
+      stopStaffSound();
+      $('staffSoundHelp').textContent = '音声を再生できませんでした。接続を確認して、もう一度押してください。';
+    }
+  });
+  $('staffSound').addEventListener('ended', stopStaffSound);
+  $('staffSound').addEventListener('error', () => {
+    stopStaffSound();
+    $('staffSoundHelp').textContent = '音声を再生できませんでした。接続を確認して、もう一度押してください。';
   });
   $('clearBtn').addEventListener('click', async () => {
-    if (state.clearing || state.ui === 'sending') return;
+    if (state.clearing || state.ui === 'sending' || state.staffChecking
+      || state.connection !== 'online' || !state.status?.pending) return;
     state.clearing = true;
     $('clearBtn').disabled = true;
-    $('staffMessage').textContent = '予約を取り消しています…';
+    $('staffMessage').textContent = '未開始の設定を取り消しています…';
     try {
       if (!state.status?.portalSessionId) throw new Error('portal session unavailable');
+      const receipt = { portalSessionId: state.status.portalSessionId, seq: state.status.pending.seq };
       const response = await post('./clear', { tabletSessionId, portalSessionId: state.status.portalSessionId });
       if (response.ok !== true) throw new Error('invalid clear response');
-      state.sent = null;
-      state.ui = 'idle';
-      state.appliedSeen = false;
-      state.leftWaitAfterApplied = false;
-      clearSavedProgress();
-      resetBriefingSession();
-      state.settingsStep = 'language';
-      setFormDisabled(false);
-      setSurface('edit');
-      $('staffMessage').textContent = '予約の取消を送信しました。';
+      state.clearReceipt = receipt;
+      $('staffMessage').textContent = 'クエスト側で設定が消えたことを確認しています…';
+      staffClearTimer = setTimeout(() => {
+        if (!state.clearReceipt) return;
+        state.clearReceipt = null;
+        state.clearing = false;
+        staffClearTimer = null;
+        $('staffMessage').textContent = '取り消しを確認できませんでした。接続と未開始の設定を確認してください。';
+        renderStaff();
+      }, 6000);
       await poll();
     } catch (error) {
-      $('staffMessage').textContent = '予約を取り消せませんでした。通信を確認してください。';
+      state.clearReceipt = null;
+      $('staffMessage').textContent = '未開始の設定を取り消せませんでした。通信を確認してください。';
     } finally {
-      state.clearing = false;
+      if (!state.clearReceipt) state.clearing = false;
       renderStaff();
     }
   });
@@ -2216,6 +2426,7 @@
     }
   });
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopStaffSound();
     setBriefingPause('hidden', document.hidden);
     syncReliefPreview();
     if (!document.hidden) requestWakeLock();
@@ -2274,6 +2485,9 @@
   document.addEventListener('pointercancel', () => { pointerGesture = null; });
   setSurface('title');
   render();
+  if (new URLSearchParams(location.search || '').get('staff') === '1') {
+    $('staffToggle').click();
+  }
   loadBriefingData();
   poll();
   pulse();

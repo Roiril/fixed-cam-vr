@@ -28,11 +28,12 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void ParseHead_ReadsMethodPathAndContentLength()
         {
-            string head = "POST /set?x=1 HTTP/1.1\r\nHost: 192.168.10.31:8090\r\ncontent-length: 27\r\nAccept: */*";
+            string head = "POST /set?x=1 HTTP/1.1\r\nHost: 192.168.10.31:8090\r\ncontent-length: 27\r\noRiGiN: http://192.168.10.31:8090\r\nAccept: */*";
             Assert.IsTrue(VisitorPortalLogic.TryParseHead(head, out var req));
             Assert.AreEqual("POST", req.method);
             Assert.AreEqual("/set", req.path, "クエリを落とす");
             Assert.AreEqual(27, req.contentLength, "ヘッダ名は大文字小文字を見ない");
+            Assert.AreEqual("http://192.168.10.31:8090", req.origin, "Origin のヘッダ名も大文字小文字を見ない");
         }
 
         [Test]
@@ -74,6 +75,59 @@ namespace FixedCamVr.Streaming.Tests
             var res = Route("GET", "/status", "", out _, out _, out _, out _);
             Assert.AreEqual(200, res.status);
             Assert.AreEqual("{\"ok\":true,\"lang\":\"ja\"}", res.body);
+        }
+
+        [TestCase("http://192.168.10.31:8090")]
+        [TestCase("http://192.168.10.32:8090")]
+        public void Get_Status_AllowsTheTwoDoctorOrigins(string origin)
+        {
+            var req = new VisitorPortalLogic.Request { method = "GET", path = "/status", origin = origin };
+            var res = VisitorPortalLogic.Route(req, "", "<html>", "{}", (l, r, id) => 1, () => { });
+            Assert.AreEqual(origin, res.allowOrigin);
+
+            string encoded = Encoding.UTF8.GetString(VisitorPortalLogic.Encode(res));
+            StringAssert.Contains("Access-Control-Allow-Origin: " + origin + "\r\n", encoded);
+            StringAssert.Contains("Vary: Origin\r\n", encoded);
+        }
+
+        [TestCase("http://evil.example:8090")]
+        [TestCase("null")]
+        [TestCase("http://192.168.10.31:8090.evil.example")]
+        [TestCase("http://192.168.10.31:80900")]
+        public void Get_Status_RejectsUnknownAndSimilarOrigins(string origin)
+        {
+            var req = new VisitorPortalLogic.Request { method = "GET", path = "/status", origin = origin };
+            var res = VisitorPortalLogic.Route(req, "", "<html>", "{}", (l, r, id) => 1, () => { });
+            Assert.IsTrue(string.IsNullOrEmpty(res.allowOrigin));
+            string encoded = Encoding.UTF8.GetString(VisitorPortalLogic.Encode(res));
+            StringAssert.DoesNotContain("Access-Control-Allow-Origin", encoded);
+            StringAssert.DoesNotContain("Vary: Origin", encoded);
+        }
+
+        [TestCase("/set", "{\"lang\":\"ja\",\"tabletSessionId\":\"page-a\",\"portalSessionId\":\"portal-a\"}")]
+        [TestCase("/clear", "{\"tabletSessionId\":\"page-a\",\"portalSessionId\":\"portal-a\"}")]
+        [TestCase("/tablet/pulse", "{\"tabletSessionId\":\"page-a\"}")]
+        public void CorsHeaders_AreNotAddedToPostEndpoints(string path, string body)
+        {
+            const string origin = "http://192.168.10.31:8090";
+            var post = new VisitorPortalLogic.Request { method = "POST", path = path, origin = origin };
+            var postRes = VisitorPortalLogic.Route(post, body, "", "{}",
+                (l, r, id) => 1, () => { }, portalSessionId: "portal-a");
+            Assert.AreEqual(200, postRes.status);
+            string postEncoded = Encoding.UTF8.GetString(VisitorPortalLogic.Encode(postRes));
+            StringAssert.DoesNotContain("Access-Control-Allow-Origin", postEncoded);
+            StringAssert.DoesNotContain("Vary: Origin", postEncoded);
+        }
+
+        [Test]
+        public void CorsHeaders_AreNotAddedToAssets()
+        {
+            const string origin = "http://192.168.10.31:8090";
+            var asset = new VisitorPortalLogic.Request { method = "GET", path = "/asset/doctor.jpg", origin = origin, rangeStart = -1, rangeEnd = -1 };
+            var assetRes = VisitorPortalLogic.Route(asset, "", "", "{}", (l, r, id) => 1, () => { }, _ => new byte[] { 1 });
+            string assetEncoded = Encoding.UTF8.GetString(VisitorPortalLogic.Encode(assetRes));
+            StringAssert.DoesNotContain("Access-Control-Allow-Origin", assetEncoded);
+            StringAssert.DoesNotContain("Vary: Origin", assetEncoded);
         }
 
         [Test]

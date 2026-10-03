@@ -246,6 +246,7 @@ const timers = new FakeTimers();
 const createdAudio = [];
 const warnings = [];
 const storedSession = new Map();
+const navigations = [];
 const motionPreference = { matches: true, addEventListener() {} };
 const validStatus = {
   ok: true,
@@ -282,7 +283,7 @@ const context = {
   document,
   encodeURIComponent,
   fetch: (...args) => fetchHandler(...args),
-  location: { host: '127.0.0.1:8091' },
+  location: { host: '127.0.0.1:8091', replace: (url) => navigations.push(url) },
   matchMedia: () => motionPreference,
   performance: { now: () => 1000 },
   sessionStorage: {
@@ -328,6 +329,9 @@ const exportsSource = `
     confirmSettings,
     setSettingsStep,
     syncReliefPreview,
+    checkStaffQuest,
+    renderStaff,
+    targetChangeLocked,
     getReliefPreview: () => reliefPreview,
     getBriefingMedia: () => briefingMedia,
   };
@@ -450,7 +454,7 @@ test('確認画面の見出しと操作は三言語に揃う', () => {
 });
 
 test('軽減音は軽減選択中だけ再生し、画面を離れると先頭へ戻る', async () => {
-  assert.equal((html.match(/<audio\b/g) || []).length, 1);
+  assert.equal((html.match(/<audio\b/g) || []).length, 2);
   assert.match(html, /<audio[^>]*id="reliefPreview"[^>]*src="\.\/asset\/bed-relief-tablet-v1\.mp3"[^>]*\bloop\b/);
   assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'bed-relief-tablet-v1.mp3.bytes')));
   const preview = runtime.getReliefPreview();
@@ -707,7 +711,7 @@ test('説明を復元した後も操作ボタンと案内を選択した言語�
   assert.equal(document.documentElement.lang, 'en');
   assert.equal(elements.get('briefingNext').textContent, 'Next sentence');
   assert.equal(elements.get('briefingSettings').textContent, 'Back to settings');
-  assert.equal(elements.get('staffLabel').textContent, 'Staff');
+  assert.equal(elements.get('staffLabel').textContent, 'Staff settings');
 });
 
 test('表示更新は同期し、重複アニメーションを取消して縮小設定に従う', () => {
@@ -1018,6 +1022,123 @@ test('媒体失敗時は静止画と字幕を保ち、オート解除後に再�
   assert.equal(state.briefing.mediaWindowActive, true);
   assert.equal(video.playCount, playCount + 1);
   assert.equal(elements.get('subtitleTyped').textContent, subtitle);
+});
+
+function prepareStaff() {
+  runtime.stopBriefingPlayback();
+  timers.reset();
+  state.view = 'title';
+  state.ui = 'idle';
+  state.lang = 'ja';
+  state.sent = null;
+  state.status = clone(validStatus);
+  state.connection = 'online';
+  state.staffQuest = null;
+  state.staffChecking = false;
+  state.clearing = false;
+  state.clearReceipt = null;
+  elements.get('staff').open = true;
+  document.hidden = false;
+  navigations.length = 0;
+  runtime.renderStaff();
+}
+
+test('スタッフの接続確認は選択したβを読み、成功後だけβの受付に移る', async () => {
+  prepareStaff();
+  state.staffQuest = 'beta';
+  const requests = [];
+  fetchHandler = async (resource, options) => {
+    requests.push({ resource, method: options.method || 'GET' });
+    return { ok: true, status: 200, json: async () => ({ ...clone(validStatus), ip: '192.168.10.32', port: 8090 }) };
+  };
+  await runtime.checkStaffQuest();
+  assert.deepEqual(requests, [{ resource: 'http://192.168.10.32:8090/status', method: 'GET' }]);
+  assert.deepEqual(navigations, ['http://192.168.10.32:8090/?staff=1']);
+  assert.equal(state.sent, null);
+});
+
+test('選択先の不通と別IPの応答では受付を切り替えず、古い成功も捨てる', async () => {
+  prepareStaff();
+  state.staffQuest = 'beta';
+  fetchHandler = async () => { throw new TypeError('offline'); };
+  await runtime.checkStaffQuest();
+  assert.equal(navigations.length, 0);
+  assert.match(elements.get('staffCheckMessage').textContent, /クエスト βに接続できません/);
+  assert.equal(state.status.portalSessionId, 'portal-a');
+  assert.equal(elements.get('staffDoneBtn').disabled, true);
+  fetchHandler = async () => ({ ok: true, status: 200, json: async () => ({ ...clone(validStatus), ip: '192.168.10.31', port: 8090 }) });
+  await runtime.checkStaffQuest();
+  assert.equal(navigations.length, 0);
+
+  const old = deferred();
+  fetchHandler = () => old.promise;
+  const checking = runtime.checkStaffQuest();
+  elements.get('staffClose').dispatch('click');
+  old.resolve({ ok: true, status: 200, json: async () => ({ ...clone(validStatus), ip: '192.168.10.32', port: 8090 }) });
+  await checking;
+  assert.equal(navigations.length, 0);
+  assert.equal(state.staffChecking, false);
+});
+
+test('体験者の設定がある間は対象を変えず、接続成功と受付待機を分ける', async () => {
+  prepareStaff();
+  state.status.pending = { lang: 'fr', relief: true, seq: 5 };
+  runtime.renderStaff();
+  assert.equal(elements.get('questAlpha').disabled, true);
+  assert.equal(elements.get('questBeta').disabled, true);
+  state.staffQuest = 'beta';
+  let requests = 0;
+  fetchHandler = async () => { requests++; throw new Error('must not request a different Quest'); };
+  await runtime.checkStaffQuest();
+  assert.equal(requests, 0);
+  state.status.phase = 'RUN';
+  runtime.renderStaff();
+  assert.match(elements.get('staffSummary').textContent, /応答を確認しました/);
+  assert.match(elements.get('staffSummary').textContent, /体験中です/);
+  assert.doesNotMatch(elements.get('staffSummary').textContent, /受付を始められます/);
+});
+
+test('取消の送信成功だけでは完了せず、未開始の設定が消えてから次の人へ戻す', async () => {
+  prepareStaff();
+  state.status.pending = { lang: 'en', relief: true, seq: 7 };
+  let status = clone(state.status);
+  const posts = [];
+  fetchHandler = async (resource, options) => {
+    if (options.method === 'POST') posts.push({ resource, body: JSON.parse(options.body) });
+    return { ok: true, status: 200, json: async () => resource === './clear' ? { ok: true } : clone(status) };
+  };
+  await elements.get('clearBtn').dispatch('click');
+  assert.deepEqual(posts, [{ resource: './clear', body: { tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' } }]);
+  assert.equal(state.clearing, true);
+  assert.doesNotMatch(elements.get('staffMessage').textContent, /取り消しを確認しました/);
+  status.pending = null;
+  await runtime.poll();
+  assert.equal(state.clearing, false);
+  assert.equal(state.view, 'title');
+  assert.match(elements.get('staffMessage').textContent, /取り消しを確認しました/);
+  assert.equal(elements.get('staffPending').hidden, true);
+});
+
+test('博士の音声確認は閉じる操作とタブ非表示で止まり、失敗時に案内する', async () => {
+  prepareStaff();
+  const sound = elements.get('staffSound');
+  assert.match(html, /id="staffSound"[^>]*src="\.\/asset\/report-ja-v1\.mp3"/);
+  await elements.get('staffSoundBtn').dispatch('click');
+  assert.equal(sound.paused, false);
+  assert.equal(elements.get('staffSoundBtn').textContent, '博士の音声を止める');
+  elements.get('staffDoneBtn').dispatch('click');
+  assert.equal(sound.paused, true);
+  assert.equal(sound.currentTime, 0);
+  elements.get('staff').open = true;
+  await elements.get('staffSoundBtn').dispatch('click');
+  document.hidden = true;
+  for (const listener of documentListeners.get('visibilitychange') || []) listener();
+  assert.equal(sound.paused, true);
+  sound.nextPlayPromise = Promise.reject(new Error('decode failed'));
+  await elements.get('staffSoundBtn').dispatch('click');
+  assert.match(elements.get('staffSoundHelp').textContent, /再生できませんでした/);
+  document.hidden = false;
+  sound.nextPlayPromise = null;
 });
 
 (async () => {

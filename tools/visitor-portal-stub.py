@@ -38,6 +38,7 @@ _initial = dict(_st)
 _faults = {}
 _tablets = {}
 _id_rx = r'"([A-Za-z0-9_-]{1,128})"'
+_doctor_origins = {"http://192.168.10.31:8090", "http://192.168.10.32:8090"}
 
 
 def _apply_if_wait():
@@ -63,12 +64,15 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, fmt, *a):
         print("[stub]", fmt % a)
 
-    def _send(self, code, ctype, body):
+    def _send(self, code, ctype, body, allow_origin=None):
         b = body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(b)))
         self.send_header("Cache-Control", "no-store")
+        if allow_origin:
+            self.send_header("Access-Control-Allow-Origin", allow_origin)
+            self.send_header("Vary", "Origin")
         self.end_headers()
         try:
             self.wfile.write(b)
@@ -133,7 +137,10 @@ class H(BaseHTTPRequestHandler):
         if path == "/status":
             with _lock:
                 _apply_if_wait()
-                return self._send(200, "application/json; charset=utf-8", _status())
+                origin = self.headers.get("Origin")
+                local_origins = {f"http://127.0.0.1:{_st['port']}", f"http://localhost:{_st['port']}"}
+                allow_origin = origin if origin in _doctor_origins or origin in local_origins else None
+                return self._send(200, "application/json; charset=utf-8", _status(), allow_origin)
         return self._send(404, "application/json", '{"ok":false}')
 
     def do_POST(self):
@@ -165,8 +172,10 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, "application/json", '{"ok":true}')
             if path == "/_reboot":
                 port = _st["port"]
+                ip = _st["ip"]
                 _st.update(_initial)
                 _st["port"] = port
+                _st["ip"] = ip
                 _st["portalSessionId"] = uuid.uuid4().hex
                 _tablets.clear()
                 _faults.clear()
@@ -232,15 +241,17 @@ class H(BaseHTTPRequestHandler):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--ip", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8090)
     ap.add_argument("--stage", default="Wait")
     ap.add_argument("--phase", default="INTRO")
     a = ap.parse_args()
     _st["titleStage"] = a.stage
     _st["phase"] = a.phase
+    _st["ip"] = a.ip
     _st["port"] = a.port
     srv = ThreadingHTTPServer(("0.0.0.0", a.port), H)
-    print(f"[stub] http://127.0.0.1:{a.port}/  stage={a.stage} phase={a.phase}")
+    print(f"[stub] http://{a.ip}:{a.port}/  stage={a.stage} phase={a.phase}")
     srv.serve_forever()
 
 
