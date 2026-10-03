@@ -6,10 +6,14 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..', '..');
-const htmlPath = path.join(root, 'Assets', 'Resources', 'Visitor', 'visitor.html');
-const briefingPath = path.join(root, 'Assets', 'Resources', 'Visitor', 'briefing-v1.json.bytes');
+const webRoot = path.join(root, 'tablet', 'app', 'src', 'main', 'assets', 'web');
+const assetRoot = path.join(webRoot, 'asset');
+const htmlPath = path.join(webRoot, 'index.html');
+const briefingPath = path.join(assetRoot, 'briefing-v1.json');
+const transportPath = path.join(webRoot, 'tablet-transport.js');
 const html = fs.readFileSync(htmlPath, 'utf8');
 const briefing = JSON.parse(fs.readFileSync(briefingPath, 'utf8'));
+const transportSource = fs.readFileSync(transportPath, 'utf8');
 
 class ClassList {
   constructor() {
@@ -293,10 +297,14 @@ const context = {
   },
   setInterval: (callback, delay) => timers.setInterval(callback, delay),
   setTimeout: (callback, delay) => timers.setTimeout(callback, delay),
-  window: { scrollX: 0, scrollY: 0 },
+  window: { scrollX: 0, scrollY: 0, scrollTo() {} },
 };
 context.globalThis = context;
 
+for (const match of html.matchAll(/<script\s+[^>]*src="([^"]+)"[^>]*><\/script>/gi)) {
+  const scriptPath = path.resolve(webRoot, match[1]);
+  vm.runInNewContext(fs.readFileSync(scriptPath, 'utf8'), context, { filename: scriptPath });
+}
 const scripts = Array.from(html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi), (match) => match[1]);
 const source = scripts.find((script) => script.includes('(() => {') && script.includes('validateBriefingData'));
 assert.ok(source, 'visitor runtime script was not found');
@@ -330,6 +338,7 @@ const exportsSource = `
     setSettingsStep,
     syncReliefPreview,
     checkStaffQuest,
+    pulse,
     renderStaff,
     targetChangeLocked,
     getReliefPreview: () => reliefPreview,
@@ -456,7 +465,7 @@ test('確認画面の見出しと操作は三言語に揃う', () => {
 test('軽減音は軽減選択中だけ再生し、画面を離れると先頭へ戻る', async () => {
   assert.equal((html.match(/<audio\b/g) || []).length, 2);
   assert.match(html, /<audio[^>]*id="reliefPreview"[^>]*src="\.\/asset\/bed-relief-tablet-v1\.mp3"[^>]*\bloop\b/);
-  assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'bed-relief-tablet-v1.mp3.bytes')));
+  assert.ok(fs.existsSync(path.join(assetRoot, 'bed-relief-tablet-v1.mp3')));
   const preview = runtime.getReliefPreview();
   assert.equal(preview.volume, 0.28);
   state.view = 'edit';
@@ -492,6 +501,12 @@ test('軽減音は軽減選択中だけ再生し、画面を離れると先頭�
   document.hidden = false;
   dispatchDocument('visibilitychange');
   assert.equal(preview.playCount, 4);
+
+  context.__tabletLifecycle(true);
+  assert.equal(preview.paused, true);
+  context.__tabletLifecycle(false);
+  assert.equal(preview.playCount, 5);
+  assert.equal(preview.paused, false);
 
   elements.get('settingsForm').dispatch('change', { target: off });
   assert.equal(state.relief, false);
@@ -602,7 +617,8 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
     tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' });
   timers.runOne(900);
   await sending;
-  assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7, portalSessionId: 'portal-a' }));
+  assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7,
+    portalSessionId: 'portal-a', targetId: null }));
   assert.equal(runtime.resultKey(), 'waiting');
 
   state.status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 6, lastRequest };
@@ -667,7 +683,7 @@ test('Questの起動IDが変わると送信中の古い応答を捨てる', asyn
 
 test('別ページの新しい受理番号は説明と媒体を止めて結果画面へ戻す', () => {
   prepareBriefing(clone(briefing));
-  state.sent = { lang: 'ja', relief: false, seq: 7, portalSessionId: 'portal-a' };
+  state.sent = { lang: 'ja', relief: false, seq: 7, portalSessionId: 'portal-a', targetId: null };
   state.status = { ...validStatus, appliedSeq: 7,
     lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 7, lang: 'ja', relief: false } };
   assert.equal(runtime.wasChangedByAnotherPage({ ...state.status,
@@ -685,7 +701,7 @@ test('別ページの新しい受理番号は説明と媒体を止めて結果�
 
 test('説明位置の保存は起動ID・ページID・受理番号・実値・未消費予約の一致を要求する', () => {
   prepareBriefing(clone(briefing));
-  state.sent = { lang: 'ja', relief: false, seq: 9, portalSessionId: 'portal-a' };
+  state.sent = { lang: 'ja', relief: false, seq: 9, portalSessionId: 'portal-a', targetId: null };
   state.briefing.sceneIndex = 1;
   state.briefing.cueIndex = 2;
   runtime.saveBriefingProgress();
@@ -694,6 +710,7 @@ test('説明位置の保存は起動ID・ページID・受理番号・実値・�
     pending: { lang: 'ja', relief: false, seq: 9 },
     lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 9, lang: 'ja', relief: false } };
   assert.equal(runtime.savedProgressMatches(progress, matching), true);
+  assert.equal(runtime.savedProgressMatches({ ...progress, targetId: 'beta' }, matching), false);
   assert.equal(runtime.savedProgressMatches(progress, { ...matching, pending: null }), false);
   assert.equal(runtime.savedProgressMatches(progress, { ...matching,
     lastRequest: { ...matching.lastRequest, tabletSessionId: 'another-page' } }), false);
@@ -702,7 +719,7 @@ test('説明位置の保存は起動ID・ページID・受理番号・実値・�
 
 test('説明を復元した後も操作ボタンと案内を選択した言語に揃える', () => {
   prepareBriefing(clone(briefing));
-  const progress = { tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a',
+  const progress = { tabletSessionId: runtime.tabletSessionId, targetId: null, portalSessionId: 'portal-a',
     seq: 11, lang: 'en', relief: true, sceneIndex: 0, cueIndex: 1, ended: false };
   state.status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 11,
     pending: { lang: 'en', relief: true, seq: 11 },
@@ -761,7 +778,7 @@ test('本番JSONと表示指定の境界値を検証する', () => {
   assert.equal(runtime.validateBriefingData(clone(briefing)).scenes.length, briefing.scenes.length);
   for (const scene of briefing.scenes) {
     for (const filename of [...Object.values(scene.audio || {}), ...Object.values(scene.video || {})]) {
-      assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${filename}.bytes`)));
+      assert.ok(fs.existsSync(path.join(assetRoot, filename)));
     }
   }
   const presentation = clone(briefing);
@@ -815,13 +832,13 @@ test('日本語の原音声と4場面の博士動画を配信し、新しい台�
   };
   for (const scene of briefing.scenes) {
     const filename = `${scene.id}-ja-v2.mp3`;
-    const asset = path.join(root, 'Assets', 'Resources', 'Visitor', `${filename}.bytes`);
+    const asset = path.join(assetRoot, filename);
     const bytes = fs.readFileSync(asset);
     assert.ok(bytes.length > 100_000, asset);
     assert.equal(bytes.subarray(0, 3).toString('ascii'), 'ID3');
     assert.equal(scene.audio?.ja, undefined);
     assert.equal(scene.video?.ja, expectedVideos[scene.id]);
-    const videoBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.video.ja}.bytes`));
+    const videoBytes = fs.readFileSync(path.join(assetRoot, scene.video.ja));
     assert.ok(videoBytes.length > 1_000_000);
     assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
   }
@@ -833,7 +850,7 @@ test('日本語の原音声と4場面の博士動画を配信し、新しい台�
   const report = briefing.scenes.find((scene) => scene.id === 'report');
   const wear = briefing.scenes.find((scene) => scene.id === 'wear');
   for (const scene of [introduction, subject, report, wear]) {
-    const imageBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.doctorImage}.bytes`));
+    const imageBytes = fs.readFileSync(path.join(assetRoot, scene.doctorImage));
     assert.ok(imageBytes.length > 40_000);
     assert.deepEqual([...imageBytes.subarray(0, 2)], [0xff, 0xd8]);
     assert.equal(scene.doctorAnchor, 50);
@@ -847,7 +864,7 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   assert.match(html, /<video[^>]*id="briefingLoopVideo"[^>]*\bmuted\b[^>]*\bloop\b/);
   const data = clone(briefing);
   const scene = data.scenes[1];
-  assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.loopVideo.file}.bytes`)));
+  assert.ok(fs.existsSync(path.join(assetRoot, scene.loopVideo.file)));
   prepareBriefing(data);
   state.briefing.sceneIndex = 1;
   state.briefing.cueIndex = 0;
@@ -980,6 +997,39 @@ test('停止や一時停止後の古い再生失敗は現在の文を壊さな�
   assert.equal(runtime.getBriefingMedia(), null);
 });
 
+test('Native背景移行は博士媒体を止め、復帰後も同じ文で再生を待つ', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  runtime.configureBriefingMedia(data.scenes[0]);
+  const media = runtime.getBriefingMedia();
+  media.readyState = 1;
+  runtime.beginBriefingCue();
+  media.currentTime = 1.25;
+  runtime.setBriefingAuto(true);
+  const playCount = media.playCount;
+  const sceneIndex = state.briefing.sceneIndex;
+  const cueIndex = state.briefing.cueIndex;
+  const subtitle = elements.get('subtitleTyped').textContent;
+
+  context.__tabletLifecycle(true);
+  assert.equal(media.paused, true);
+  assert.equal(state.briefing.mediaWindowActive, false);
+  assert.equal(state.briefing.auto, false);
+  assert.equal(state.briefing.pauseReasons.has('native'), true);
+  assert.equal(state.briefing.sceneIndex, sceneIndex);
+  assert.equal(state.briefing.cueIndex, cueIndex);
+  assert.equal(media.currentTime, 1.25);
+
+  context.__tabletLifecycle(false);
+  assert.equal(state.briefing.pauseReasons.has('native'), false);
+  assert.equal(state.briefing.sceneIndex, sceneIndex);
+  assert.equal(state.briefing.cueIndex, cueIndex);
+  assert.equal(elements.get('subtitleTyped').textContent, subtitle);
+  assert.equal(state.briefing.mediaPaused, true);
+  assert.equal(state.briefing.mediaWindowActive, false);
+  assert.equal(media.playCount, playCount);
+});
+
 test('素早い文送り後の古いmetadata通知を無視する', () => {
   const data = clone(briefing);
   delete data.scenes[0].video;
@@ -1078,6 +1128,7 @@ function prepareStaff() {
   state.connection = 'online';
   state.staffQuest = null;
   state.staffChecking = false;
+  state.staffPreview = false;
   state.clearing = false;
   state.clearReceipt = null;
   elements.get('staff').open = true;
@@ -1086,7 +1137,7 @@ function prepareStaff() {
   runtime.renderStaff();
 }
 
-test('スタッフの接続確認は選択したβを読み、成功後だけβの受付に移る', async () => {
+test('スタッフの接続確認は選択したβを読み、画面を移動せず通信先を切り替える', async () => {
   prepareStaff();
   state.staffQuest = 'beta';
   const requests = [];
@@ -1095,8 +1146,12 @@ test('スタッフの接続確認は選択したβを読み、成功後だけβ�
     return { ok: true, status: 200, json: async () => ({ ...clone(validStatus), ip: '192.168.10.32', port: 8090 }) };
   };
   await runtime.checkStaffQuest();
-  assert.deepEqual(requests, [{ resource: 'http://192.168.10.32:8090/status', method: 'GET' }]);
-  assert.deepEqual(navigations, ['http://192.168.10.32:8090/?staff=1']);
+  assert.deepEqual(requests, [
+    { resource: './status', method: 'GET' },
+    { resource: './status', method: 'GET' },
+  ]);
+  assert.deepEqual(navigations, []);
+  assert.match(elements.get('staffCheckMessage').textContent, /通信先を保存しました/);
   assert.equal(state.sent, null);
 });
 
@@ -1108,7 +1163,7 @@ test('選択先の不通と別IPの応答では受付を切り替えず、古い
   assert.equal(navigations.length, 0);
   assert.match(elements.get('staffCheckMessage').textContent, /クエスト βに接続できません/);
   assert.equal(state.status.portalSessionId, 'portal-a');
-  assert.equal(elements.get('staffDoneBtn').disabled, true);
+  assert.equal(elements.get('staffDoneBtn').disabled, false);
   fetchHandler = async () => ({ ok: true, status: 200, json: async () => ({ ...clone(validStatus), ip: '192.168.10.31', port: 8090 }) });
   await runtime.checkStaffQuest();
   assert.equal(navigations.length, 0);
@@ -1129,7 +1184,7 @@ test('体験者の設定がある間は対象を変えず、接続成功と受�
   runtime.renderStaff();
   assert.equal(elements.get('questAlpha').disabled, true);
   assert.equal(elements.get('questBeta').disabled, true);
-  state.staffQuest = 'beta';
+  state.staffQuest = 'alpha';
   let requests = 0;
   fetchHandler = async () => { requests++; throw new Error('must not request a different Quest'); };
   await runtime.checkStaffQuest();
@@ -1162,9 +1217,35 @@ test('取消の送信成功だけでは完了せず、未開始の設定が消�
   assert.equal(elements.get('staffPending').hidden, true);
 });
 
+test('スタッフ確認モードはオフラインで全4場面を開き、通信せずタイトルへ戻る', async () => {
+  prepareStaff();
+  state.connection = 'offline';
+  state.status = null;
+  const requests = [];
+  fetchHandler = async (resource) => {
+    requests.push(resource);
+    throw new Error('staff preview must remain offline');
+  };
+  elements.get('staffBriefingBtn').dispatch('click');
+  assert.equal(state.view, 'briefing');
+  assert.equal(state.staffPreview, true);
+  assert.equal(state.sent, null);
+  assert.equal(elements.get('briefingMode').hidden, false);
+  assert.match(html, /id="briefingMode"[^>]*>スタッフ確認モード/);
+  assert.equal(state.briefing.data.scenes.length, 4);
+  assert.equal(state.briefing.pauseReasons.has('offline'), false);
+  await runtime.pulse();
+  assert.deepEqual(requests, []);
+  elements.get('briefingSettings').dispatch('click');
+  assert.equal(state.view, 'title');
+  assert.equal(state.staffPreview, false);
+});
+
 test('博士の音声確認は閉じる操作とタブ非表示で止まり、失敗時に案内する', async () => {
   prepareStaff();
   const sound = elements.get('staffSound');
+  assert.match(html, /「廻リ視 博士」を開いたままにしてください/);
+  assert.doesNotMatch(html, /受付のタブは1枚だけにしてください/);
   assert.ok(html.includes('id="staffSound" src="./asset/report-ja-v2.mp3"'));
   await elements.get('staffSoundBtn').dispatch('click');
   assert.equal(sound.paused, false);
@@ -1179,9 +1260,46 @@ test('博士の音声確認は閉じる操作とタブ非表示で止まり、�
   assert.equal(sound.paused, true);
   sound.nextPlayPromise = Promise.reject(new Error('decode failed'));
   await elements.get('staffSoundBtn').dispatch('click');
-  assert.match(elements.get('staffSoundHelp').textContent, /再生できませんでした/);
+  assert.match(elements.get('staffSoundHelp').textContent, /端末の音量を確認して、もう一度押してください/);
   document.hidden = false;
   sound.nextPlayPromise = null;
+});
+
+test('Native通信は対象と許可APIをJavaへ渡し、応答と取消を一度だけ処理する', async () => {
+  const calls = [];
+  let savedQuest = '';
+  const nativeContext = {
+    AbortController,
+    TabletHost: {
+      getQuest: () => savedQuest,
+      setQuest: (quest) => { savedQuest = quest; },
+      request: (...args) => calls.push(['request', ...args]),
+      cancel: (id) => calls.push(['cancel', id]),
+    },
+    fetch: () => { throw new Error('browser fetch must not be used'); },
+  };
+  nativeContext.globalThis = nativeContext;
+  vm.runInNewContext(transportSource, nativeContext, { filename: transportPath });
+  const nativeTransport = nativeContext.TabletTransport;
+  assert.equal(nativeTransport.native, true);
+  assert.equal(nativeTransport.getQuest(), '');
+  nativeTransport.setQuest('beta');
+  assert.equal(nativeTransport.getQuest(), 'beta');
+
+  const responsePromise = nativeTransport.request('./set', { method: 'POST', body: '{"lang":"ja"}' }, 'beta');
+  assert.deepEqual(calls[0], ['request', 'tablet-1', 'beta', 'POST', '/set', '{"lang":"ja"}']);
+  nativeContext.__tabletNativeResponse('tablet-1', { status: 200, body: '{"ok":true,"seq":4}' });
+  const response = await responsePromise;
+  assert.equal(response.ok, true);
+  assert.equal(JSON.stringify(await response.json()), JSON.stringify({ ok: true, seq: 4 }));
+
+  const controller = new AbortController();
+  const cancelled = nativeTransport.request('./status', { signal: controller.signal }, 'alpha');
+  controller.abort();
+  await assert.rejects(cancelled, (error) => error.name === 'AbortError');
+  assert.deepEqual(calls.at(-1), ['cancel', 'tablet-2']);
+  nativeContext.__tabletNativeResponse('tablet-2', { status: 200, body: '{"ok":true}' });
+  await assert.rejects(nativeTransport.request('./asset/briefing-v1.json', {}, 'alpha'), /not allowed/);
 });
 
 (async () => {

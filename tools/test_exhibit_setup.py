@@ -21,6 +21,64 @@ class SetupTests(unittest.TestCase):
         self.assertEqual({'awake': True, 'unlocked': False}, setup.display_state('mWakefulness=Awake', 'mIsShowing=true'))
         self.assertEqual({'awake': False, 'unlocked': False}, setup.display_state('', ''))
         self.assertEqual({'awake': True, 'unlocked': True}, setup.display_state('mWakefulness=Awake', 'mIsShowing=false'))
+
+    def test_doctor_log_requires_ordered_page_finish_sequence_and_elapsed_time(self):
+        log = ('I/DoctorTablet: onPageFinished seq=1 elapsedMs=420\n'
+               'I/DoctorTablet: onPageFinished seq=2 elapsedMs=710')
+        self.assertEqual(2, setup.parse_tablet_render(log)['sequence'])
+        self.assertIsNone(setup.parse_tablet_render(
+            'onPageFinished seq=2 elapsedMs=710\nonPageFinished seq=1 elapsedMs=900'))
+        self.assertIsNone(setup.parse_tablet_render('onPageFinished url=file:///android_asset/web/index.html'))
+
+    def test_log_suffix_uses_only_messages_after_launch(self):
+        before = 'old\nonPageFinished seq=7 elapsedMs=40'
+        after = before + '\nonPageFinished seq=1 elapsedMs=300'
+        self.assertEqual('onPageFinished seq=1 elapsedMs=300', setup.log_suffix(before, after))
+
+    def test_missing_tablet_apk_does_not_start_activity(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(setup, 'run', return_value=(1, '', 'not installed')) as command:
+            result = setup.prepare_tablet('adb', 'usb-transport', 'T', 'alpha', directory)
+        self.assertFalse(result['verified'])
+        self.assertFalse(result['installed'])
+        self.assertIn('py -3.11 tablet/build.py', result['instruction'])
+        self.assertIn('install -r', result['instruction'])
+        self.assertEqual(['adb', '-s', 'usb-transport', 'shell', 'pm', 'path',
+                          setup.TABLET_PACKAGE], command.call_args.args[0])
+
+    def test_tablet_start_targets_native_activity_and_selected_quest(self):
+        commands = []
+        settings = iter(['0', '1000', '1', '0'])
+
+        def command(cmd, timeout=30):
+            commands.append(cmd)
+            joined = ' '.join(cmd)
+            if ' shell pm path ' in joined:
+                return 0, 'package:/data/app/base.apk\n', ''
+            if ' shell settings get ' in joined:
+                return 0, next(settings), ''
+            if ' dumpsys power' in joined:
+                return 0, 'mWakefulness=Awake', ''
+            if ' dumpsys window policy' in joined:
+                return 0, 'mIsShowing=false', ''
+            if ' dumpsys activity activities' in joined:
+                return 0, 'mResumedActivity: ' + setup.TABLET_COMPONENT, ''
+            if ' logcat -d ' in joined:
+                page = 'I/DoctorTablet: onPageFinished seq=1 elapsedMs=250\n'
+                return 0, page if sum(' logcat -d ' in ' '.join(item) for item in commands) > 1 else '', ''
+            if ' pull /sdcard/fixedcam-setup.png ' in joined:
+                Path(cmd[-1]).write_bytes(b'png')
+            return 0, '', ''
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(setup, 'run', side_effect=command):
+            result = setup.prepare_tablet('adb', 'usb-transport', 'T', 'beta', directory)
+            self.assertTrue(Path(result['screenshot']).is_file())
+        start = ['adb', '-s', 'usb-transport', 'shell', 'am', 'start', '-n',
+                 setup.TABLET_COMPONENT, '--es', 'quest', 'beta']
+        self.assertIn(start, commands)
+        self.assertTrue(result['verified'])
+        self.assertEqual(setup.TABLET_COMPONENT, result['activityComponent'])
+        self.assertEqual(1, result['onPageFinished']['sequence'])
     def test_only_registered_serials_and_selected_quest_are_used(self):
         fleet = {'quests': [{'id': 'alpha', 'serial': 'Q-A'}, {'id': 'beta', 'serial': 'Q-B'}],
                  'tablets': [{'questId': 'alpha', 'serial': 'T-A'}, {'questId': 'beta', 'serial': 'T-B'}]}

@@ -74,9 +74,8 @@ for (const [i,id] of QUEST_IDS.entries()) {
   state(badge,'unknown'); top.append(name,badge);
   const body = el('div','quest-body'), text = el('div'), title = el('div','device-title','応答を待っています'), address = el('p','mono',`192.168.10.${31+i}`), detail = el('p','note');
   text.append(title,address,detail);
-  const link = el('a','portal-link','博士タブレットを開く');
-  link.href = `http://192.168.10.${31+i}:8090/`;
-  body.append(text,link); card.append(top,body); $('quests').append(card); questViews.set(id,{badge,title,address,detail,link});
+  const tabletGuide = el('p','note',`博士タブレットの「廻リ視 博士」を起動し、スタッフ設定でクエスト${i?'β':'α'}を選ぶ`);
+  body.append(text,tabletGuide); card.append(top,body); $('quests').append(card); questViews.set(id,{badge,title,address,detail,tabletGuide});
 }
 
 for (const check of MANUAL_CHECKS) {
@@ -154,8 +153,7 @@ function render() {
     v.title.textContent = s.fresh ? q?.title || '応答がありません' : '現在の状態は未確認';
     v.detail.textContent = s.fresh ? q?.action || '装着して映像と音を確認してください。' : 'Quest を起動して同じ Wi-Fi につないでください。';
     if (q?.host) v.address.textContent = `${q.host} / ${s.fresh ? num(q.ageSec,' 秒前',1) : '未確認'}`;
-    v.link.href = q?.host ? `http://${q.host}:${q.visitorPort || 8090}/` : `http://192.168.10.${id==='alpha'?31:32}:8090/`;
-    v.link.textContent = q?.visitorPort ? '博士タブレットを開く' : '博士タブレットの入口';
+    v.tabletGuide.textContent = `博士タブレットの「廻リ視 博士」を起動し、スタッフ設定でクエスト${id==='alpha'?'α':'β'}を選ぶ`;
     const ids=[];
     if(q?.shortId)ids.push(`端末 ID ${q.shortId}`);
     else ids.push('端末 ID 未登録');
@@ -216,22 +214,20 @@ function renderTablets(fresh) {
     const t=fresh?snapshot?.tablets?.find(t=>t.id===id):null;
     const card=el('article','quest-card tablet-card'),top=el('div','quest-top'),badge=el('span','state');
     state(badge,t?.status||'unknown');top.append(el('h3','',t?.tabletName||`博士タブレット ${i?'β':'α'}（未登録） → Quest ${i?'β':'α'}`),badge);
-    const url=t?.visitorUrl||`http://192.168.10.${31+i}:8090/`;
-    const path=el('p','mono'),link=el('a','','受付ページを開く'),copy=el('button','','アドレスをコピー');
-    link.href=url;link.textContent=url;copy.type='button';copy.setAttribute('aria-label',`Quest ${i?'β':'α'} の受付ページのアドレスをコピー`);
-    copy.addEventListener('click',()=>copyTask(url,setup));
-    path.append(link);const setup=el('p','note',t?.tabletSerial?`${t.tabletModel||'タブレット'} / 端末番号 ${t.tabletSerial} / 固定 IP ${t.tabletHost||'未登録'}`:'このタブレットは固定台帳に未登録です。端末番号と固定 IP を実測して登録してください。');
+    const setup=el('p','note',t?.tabletSerial?`${t.tabletModel||'タブレット'} / 端末番号 ${t.tabletSerial} / 固定 IP ${t.tabletHost||'未登録'}`:'このタブレットは固定台帳に未登録です。端末番号と固定 IP を実測して登録してください。');
+    const appStart=el('p','note','タブレットの「廻リ視 博士」を起動');
+    const questSelect=el('p','note',`スタッフ設定でクエスト${i?'β':'α'}を選ぶ`);
     const stages=el('div','tablet-stages');
     for(const [label,key] of [['Quest の受付','portalStatus'],['タブレットの応答','connectionStatus'],['設定の反映','reflectionStatus']]){
       const row=el('div'),b=el('span','state');state(b,t?.[key]||'unknown');row.append(el('span','',label),b);stages.append(row);
     }
-    card.append(top,path,copy,setup,el('p','note','アドレスは手入力しません。上のリンクを押すかコピーします。Chrome の初回案内を完了します。充電器につなぎます。横向きにします。タブはこの受付ページ 1 枚だけにして全画面で開きます。'),stages,el('p','device-title',t?.title||'タブレットの状態は未確認です'));
+    card.append(top,setup,appStart,questSelect,el('p','note','充電器につなぎます。横向きにします。'),stages,el('p','device-title',t?.title||'タブレットの状態は未確認です'));
     const values=el('dl','tablet-values');
     for(const [label,value] of [['タブレットから送った設定',selection(t?.requestedLang,t?.requestedRelief)],['Quest の現在の設定',selection(t?.lang,t?.relief)]]){
       const row=el('div');row.append(el('dt','',label),el('dd','',value));values.append(row);
     }
-    card.append(values,el('p','note',t?`受信 ${num(t.received,' 回')} / 反映 ${num(t.applyCount,' 回')} / 開いているページ ${num(t.portalStatus==='ok'?t.activePages:null,' 個')}`:'送信と反映の回数も Quest から確認します。'));
-    const next=el('div','tablet-next');next.append(el('p','next-label','次にすること'),el('p','',t?.action||(t?.status==='ok'?'このページを開いたままにしてください。次の体験者の設定もここで確認できます。':'Quest を起動します。対応するタブレットで上のアドレスを開いてください。')));card.append(next);
+    card.append(values,el('p','note',t?`受信 ${num(t.received,' 回')} / 反映 ${num(t.applyCount,' 回')} / 接続中のタブレット ${num(t.portalStatus==='ok'?t.activePages:null,' 台')}`:'送信と反映の回数も Quest から確認します。'));
+    const next=el('div','tablet-next');next.append(el('p','next-label','次にすること'),el('p','',t?.action||(t?.status==='ok'?'「廻リ視 博士」を起動したままにしてください。次の体験者の設定もここで確認できます。':`タブレットの「廻リ視 博士」を起動し、スタッフ設定でクエスト${i?'β':'α'}を選んでください。`)));card.append(next);
     if(t?.tabletIp)card.append(el('p','note',`タブレット ${t.tabletIp} / ${num(t.ageSec,' 秒前',1)}に応答`));
     return card;
   }));
@@ -366,9 +362,9 @@ setInterval(()=>{if(!document.hidden)render();},1000);
 function demoSnapshot(mode) {
   const cameras=CAMERA_IDS.map((id,i)=>({id,host:`192.168.10.${21+i}`,port:8080,expectedUuid:`example-${id}`,observedUuid:`example-${id}`,observedId:id,status:'ok',title:'新しい映像を受信しています',action:'担当と映像の向きを確認してください。',identityOk:true,httpOk:true,canRestart:false,wirelessAdb:{state:'serial_unregistered',identityOk:false},stream:{ok:true,frames:2,firstSeq:1024,lastSeq:1025,elapsedSec:.2,bytes:41520},metrics:{batteryTempC:34.2+i,batteryPct:88-i*9,lensFovDeg:104.3,aeLock:true,awbLock:true},issues:[]}));
   if(mode!=='ready')Object.assign(cameras[1],{status:'error',title:'応答はありますが映像が止まっています',action:'カメラ B の画面を点けて配信アプリを開いてください。改善しなければこの端末を起こし直します。',stream:{ok:false,frames:0}});
-  const quests=QUEST_IDS.map((id,i)=>({id,label:`Quest ${i?'β':'α'}`,host:`192.168.10.${31+i}`,deviceId:`example-${id}`,status:'ok',title:'Quest から応答があります',action:'受付ページが起動しています。装着して映像と音を確認してください。',ageSec:1.2,visitorPort:8090,issues:[]}));
-  if(mode!=='ready')Object.assign(quests[1],{status:'unknown',title:'Quest β の応答がありません',action:'Quest β を起動して会場の Wi-Fi につないでください。',ageSec:null,visitorPort:0});
-  const tablets=QUEST_IDS.map((id,i)=>({id,status:'ok',portalStatus:'ok',connectionStatus:'ok',reflectionStatus:'ok',portalSessionId:`demo-${id}`,tabletSessionId:`page-${id}`,title:'送った設定が Quest に反映されています',action:'タブレットはこのページを開いたままにしてください。',tabletIp:`192.168.10.${41+i}`,ageSec:2,activePages:1,sentSeq:3,appliedSeq:3,received:3,applyCount:3,requestedLang:'ja',requestedRelief:true,lang:'ja',relief:true}));
+  const quests=QUEST_IDS.map((id,i)=>({id,label:`Quest ${i?'β':'α'}`,host:`192.168.10.${31+i}`,deviceId:`example-${id}`,status:'ok',title:'Quest から応答があります',action:'博士アプリの接続を確認しました。装着して映像と音を確認してください。',ageSec:1.2,issues:[]}));
+  if(mode!=='ready')Object.assign(quests[1],{status:'unknown',title:'Quest β の応答がありません',action:'Quest β を起動して会場の Wi-Fi につないでください。',ageSec:null});
+  const tablets=QUEST_IDS.map((id,i)=>({id,status:'ok',portalStatus:'ok',connectionStatus:'ok',reflectionStatus:'ok',portalSessionId:`demo-${id}`,tabletSessionId:`page-${id}`,title:'送った設定が Quest に反映されています',action:'「廻リ視 博士」を起動したままにしてください。',tabletIp:`192.168.10.${41+i}`,ageSec:2,activePages:1,sentSeq:3,appliedSeq:3,received:3,applyCount:3,requestedLang:'ja',requestedRelief:true,lang:'ja',relief:true}));
   if(mode!=='ready')Object.assign(tablets[1],{status:'warning',reflectionStatus:'warning',title:'設定は届いています。反映を待っています',action:'Quest を体験開始前の画面へ戻してください。言語と軽減が一致するまで確認します。',appliedSeq:2,applyCount:2,requestedLang:'en',lang:'ja'});
   return {ok:true,observedAt:Date.now()/1000,cameras,quests,tablets,issues:[],config:{fixed:true,revision:1}};
 }
@@ -426,7 +422,7 @@ function invalidatePreparation(){preparation=null;record=null;saveRecord();try{s
 studio=mountShoot($('shoot-console'),{demo:!!demo,onAdopt:invalidatePreparation});
 plates=mountPlates($('plate-console'),{request,demo:!!demo,onChange:({inventory})=>{plateInventory=inventory;invalidatePreparation();}});
 library=mountLibrary({demo:!!demo,onLoad:()=>{pollContent();}});
-if(demo){$('demo-banner').hidden=false;$('deep-check').disabled=true;for(const v of questViews.values()){v.link.removeAttribute('href');v.link.textContent='受付ページ（表示例）';}}
+if(demo){$('demo-banner').hidden=false;$('deep-check').disabled=true;}
 selectView();
 render();poll();pollContent();
 pollShoot();setInterval(pollShoot,15000);

@@ -11,7 +11,7 @@ import tempfile
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parents[2]
-ASSETS = ROOT / "Assets/Resources/Visitor"
+ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
 SOURCE_SPECS = {
     "introduction": ("54e3e135785c2ca4df9cc29f65783ab6dfa980bc36054f88c38930f0aae83e9a", 390, 15.600),
     "subject-a": ("db3fd690fcfeb9be2318e849a5768676e58dc4dc8373345fc95d7b454db0c409", 206, 8.240),
@@ -20,16 +20,16 @@ SOURCE_SPECS = {
     "wear": ("f3de5a85690e360c36731f742890f4f3000fefc1202ecefe2d0e9e1fc48e755b", 237, 9.480),
 }
 AUDIO_SPECS = {
-    "introduction": ("introduction-ja-v2.mp3.bytes", "386cb43643b5a3366431f30cbc4890eee8a4f20a46a522940e0af1e9bf8832a7", 15.638),
-    "subject": ("subject-ja-v2.mp3.bytes", "053c2ce2555f9bebcfb9e5f31e1d9bc58610e264c3d4ad6e8f1773372bea44cf", 20.735),
-    "report": ("report-ja-v2.mp3.bytes", "fe5d26492d6766cdbe96f9fb43d2184b83d7c3ddee16b37af2bcc9015983cb5a", 19.710),
-    "wear": ("wear-ja-v2.mp3.bytes", "7046eebb09ed560383ecee913c213b073032d65860601e2d47a18e856b0408c9", 9.484),
+    "introduction": ("introduction-ja-v2.mp3", "386cb43643b5a3366431f30cbc4890eee8a4f20a46a522940e0af1e9bf8832a7", 15.638),
+    "subject": ("subject-ja-v2.mp3", "053c2ce2555f9bebcfb9e5f31e1d9bc58610e264c3d4ad6e8f1773372bea44cf", 20.735),
+    "report": ("report-ja-v2.mp3", "fe5d26492d6766cdbe96f9fb43d2184b83d7c3ddee16b37af2bcc9015983cb5a", 19.710),
+    "wear": ("wear-ja-v2.mp3", "7046eebb09ed560383ecee913c213b073032d65860601e2d47a18e856b0408c9", 9.484),
 }
 OUTPUT_SPECS = {
-    "introduction": ("introduction-ja-v1.mp4.bytes", "introduction-doctor-v1.jpg.bytes", 391, 15.638),
-    "subject": ("subject-ja-v1.mp4.bytes", "subject-doctor-v1.jpg.bytes", 519, 20.735),
-    "report": ("report-ja-v1.mp4.bytes", "report-doctor-v1.jpg.bytes", 493, 19.710),
-    "wear": ("wear-ja-v1.mp4.bytes", "wear-doctor-v1.jpg.bytes", 238, 9.484),
+    "introduction": ("introduction-ja-v1.mp4", "introduction-doctor-v1.jpg", 391, 15.638),
+    "subject": ("subject-ja-v1.mp4", "subject-doctor-v1.jpg", 519, 20.735),
+    "report": ("report-ja-v1.mp4", "report-doctor-v1.jpg", 493, 19.710),
+    "wear": ("wear-ja-v1.mp4", "wear-doctor-v1.jpg", 238, 9.484),
 }
 
 

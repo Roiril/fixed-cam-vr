@@ -1,17 +1,15 @@
 """Split the user-approved ElevenLabs take at measured silent gaps."""
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
-import uuid
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = Path(__file__).with_name("doctor-ja-v2-original.mp3")
 SOURCE_SHA256 = "16C072929E29CCA5B583B30BFD871CBB47639DD3C4A7D62453E571B85888D560"
-ASSETS = ROOT / "Assets/Resources/Visitor"
+ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
 
 # Boundaries are midpoints of >=1 s quiet gaps measured with ffmpeg silencedetect
 # at -35 dB. All times are milliseconds in the original 65.567 s recording.
@@ -33,18 +31,6 @@ def duration_ms(path):
     return round(float(result["format"]["duration"]) * 1000)
 
 
-def write_meta(path):
-    meta = path.with_name(path.name + ".meta")
-    if meta.exists():
-        return
-    guid = uuid.uuid5(uuid.NAMESPACE_URL, "fixedcamvr/visitor/" + path.name).hex
-    contents = ("fileFormatVersion: 2\n" + f"guid: {guid}\n" + "TextScriptImporter:\n"
-                + "  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n")
-    temporary = meta.with_name(meta.name + ".tmp")
-    temporary.write_text(contents, encoding="utf-8", newline="\n")
-    os.replace(temporary, meta)
-
-
 def main():
     actual_hash = hashlib.sha256(SOURCE.read_bytes()).hexdigest().upper()
     if actual_hash != SOURCE_SHA256:
@@ -53,14 +39,13 @@ def main():
         raise ValueError("source duration changed")
     outputs = {}
     for scene_id, start_ms, end_ms in SCENES:
-        target = ASSETS / f"{scene_id}-ja-v2.mp3.bytes"
+        target = ASSETS / f"{scene_id}-ja-v2.mp3"
         temporary = target.with_name(target.name + ".tmp")
         filter_chain = f"atrim=start={start_ms / 1000:.3f}:end={end_ms / 1000:.3f},asetpts=PTS-STARTPTS"
         run("ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(SOURCE),
             "-af", filter_chain, "-ac", "1", "-ar", "48000", "-codec:a", "libmp3lame",
             "-b:a", "128k", "-f", "mp3", str(temporary))
-        os.replace(temporary, target)
-        write_meta(target)
+        temporary.replace(target)
         measured_ms = duration_ms(target)
         if abs(measured_ms - (end_ms - start_ms)) > 50:
             raise ValueError(f"unexpected segment duration: {target.name}: {measured_ms}")

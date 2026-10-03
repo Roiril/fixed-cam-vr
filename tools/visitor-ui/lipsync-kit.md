@@ -1,6 +1,6 @@
 # 博士のリップシンク動画用入力
 
-このキットは博士タブレットで使用していた `doctor.jpg.bytes` を中央配置に編集した画像と、日本語音声 v2 から作る。音声生成時の台詞入力は分割しない。ここでの分割は、動画生成画面で選べる長さに合わせるためのもの。完成動画の先頭フレームを各場面の静止画にも使用する。
+このキットは博士タブレットで使用していた `doctor.jpg` を中央配置に編集した画像と、日本語音声 v2 から作る。音声生成時の台詞入力は分割しない。ここでの分割は、動画生成画面で選べる長さに合わせるためのもの。完成動画の先頭フレームを各場面の静止画にも使用する。
 
 ## 入力
 
@@ -30,6 +30,6 @@ Animate the exact man in the reference image as the Doctor, a restrained Japanes
 
 顔と白衣が入力画像から変わっていないかを確認する。無音で口が動かないこと、唇と声がずれないこと、博士が画面中央から動かないことも確認する。末尾の無音で不自然な表情へ変わる場合は、動画だけ音声の終わりで切る。
 
-別のフォルダへ再生成する場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/prepare-lipsync-kit.py --output output/visitor-lipsync-kit-new` を実行する。既存の出力は上書きしない。画像の元は `Assets/Resources/Visitor/doctor.jpg.bytes`。中央配置の入力画像は `tools/visitor-ui/doctor-centered-v1.png`。音声の正本は `Assets/Resources/Visitor/*-ja-v2.mp3.bytes` と `tools/visitor-ui/doctor-ja-v2-original.mp3`。
+別のフォルダへ再生成する場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/prepare-lipsync-kit.py --output output/visitor-lipsync-kit-new` を実行する。既存の出力は上書きしない。画像の元は `tablet/app/src/main/assets/web/asset/doctor.jpg`。中央配置の入力画像は `tools/visitor-ui/doctor-centered-v1.png`。音声の正本は `tablet/app/src/main/assets/web/asset/*-ja-v2.mp3` と `tools/visitor-ui/doctor-ja-v2-original.mp3`。
 
 調査依頼だけを再取り込みする場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/ingest-doctor-video.py C:\Users\kouga\Downloads\01-rip.mp4` を実行する。全4場面を取り込む場合は、続けて `02-rip.mp4` から `05-rip.mp4` までを順に指定する。スクリプトは全入力と元音声の SHA-256 を先に検証する。完成動画と先頭フレームの静止画を一時ファイルへ生成して検証後に置き換える。1は既存の調査依頼動画と同一であるため、5引数の実行では再生成しない。
