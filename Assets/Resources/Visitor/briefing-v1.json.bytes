@@ -67,8 +67,8 @@
       "id": "subject",
       "layout": "doctor-evidence",
       "image": "camera-01-doll.webp",
-      "doctorImage": "doctor.jpg",
-      "doctorAnchor": 70,
+      "doctorImage": "subject-doctor-v1.jpg",
+      "doctorAnchor": 50,
       "alt": {
         "ja": "実際の撮影場所にある幕と手すりを人形視点で加工した写真",
         "en": "The actual filming location, with curtains and a handrail, processed as the doll's camera view",
@@ -93,8 +93,8 @@
         "file": "kabe-one-lap-doll-v1.mp4",
         "startCue": 1
       },
-      "audio": {
-        "ja": "subject-ja-v2.mp3"
+      "video": {
+        "ja": "subject-ja-v1.mp4"
       },
       "cues": {
         "ja": [
@@ -157,8 +157,8 @@
       "id": "report",
       "layout": "doctor-evidence",
       "image": "briefing-device-v1.png",
-      "doctorImage": "doctor.jpg",
-      "doctorAnchor": 70,
+      "doctorImage": "report-doctor-v1.jpg",
+      "doctorAnchor": 50,
       "alt": {
         "ja": "観測装置と手元のコントローラー",
         "en": "The observation headset and handheld controller",
@@ -179,8 +179,8 @@
         "en": "Left controller · Either button · 1 second",
         "fr": "Manette gauche · Un seul bouton · 1 seconde"
       },
-      "audio": {
-        "ja": "report-ja-v2.mp3"
+      "video": {
+        "ja": "report-ja-v1.mp4"
       },
       "cues": {
         "ja": [
@@ -242,9 +242,9 @@
     {
       "id": "wear",
       "layout": "doctor-center",
-      "image": "doctor.jpg",
-      "doctorImage": "doctor.jpg",
-      "doctorAnchor": 70,
+      "image": "wear-doctor-v1.jpg",
+      "doctorImage": "wear-doctor-v1.jpg",
+      "doctorAnchor": 50,
       "alt": {
         "ja": "装置の装着を案内する博士",
         "en": "The doctor asks you to put on the device",
@@ -265,8 +265,8 @@
         "en": "The agent will guide you once you are equipped",
         "fr": "L’agent vous guidera une fois équipé"
       },
-      "audio": {
-        "ja": "wear-ja-v2.mp3"
+      "video": {
+        "ja": "wear-ja-v1.mp4"
       },
       "cues": {
         "ja": [

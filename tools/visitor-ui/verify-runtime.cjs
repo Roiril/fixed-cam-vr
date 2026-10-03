@@ -806,29 +806,39 @@ test('ユーザー指定のEleven v4入力は一つのコードブロックで�
   }
 });
 
-test('日本語の原音声とイントロ動画を配信し、新しい台詞を参照する', () => {
+test('日本語の原音声と4場面の博士動画を配信し、新しい台詞を参照する', () => {
+  const expectedVideos = {
+    introduction: 'introduction-ja-v1.mp4',
+    subject: 'subject-ja-v1.mp4',
+    report: 'report-ja-v1.mp4',
+    wear: 'wear-ja-v1.mp4',
+  };
   for (const scene of briefing.scenes) {
     const filename = `${scene.id}-ja-v2.mp3`;
     const asset = path.join(root, 'Assets', 'Resources', 'Visitor', `${filename}.bytes`);
     const bytes = fs.readFileSync(asset);
     assert.ok(bytes.length > 100_000, asset);
     assert.equal(bytes.subarray(0, 3).toString('ascii'), 'ID3');
-    if (scene.id !== 'introduction') assert.equal(scene.audio?.ja, filename);
+    assert.equal(scene.audio?.ja, undefined);
+    assert.equal(scene.video?.ja, expectedVideos[scene.id]);
+    const videoBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.video.ja}.bytes`));
+    assert.ok(videoBytes.length > 1_000_000);
+    assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
   }
   const introduction = briefing.scenes.find((scene) => scene.id === 'introduction');
-  assert.equal(introduction.audio?.ja, undefined);
-  assert.equal(introduction.video?.ja, 'introduction-ja-v1.mp4');
   assert.equal(introduction.image, 'introduction-doctor-v1.jpg');
   assert.equal(introduction.doctorImage, 'introduction-doctor-v1.jpg');
   assert.equal(introduction.doctorAnchor, 50);
-  const videoBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'introduction-ja-v1.mp4.bytes'));
-  assert.ok(videoBytes.length > 1_000_000);
-  assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
-  const imageBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'introduction-doctor-v1.jpg.bytes'));
-  assert.ok(imageBytes.length > 40_000);
-  assert.deepEqual([...imageBytes.subarray(0, 2)], [0xff, 0xd8]);
   const subject = briefing.scenes.find((scene) => scene.id === 'subject');
   const report = briefing.scenes.find((scene) => scene.id === 'report');
+  const wear = briefing.scenes.find((scene) => scene.id === 'wear');
+  for (const scene of [introduction, subject, report, wear]) {
+    const imageBytes = fs.readFileSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.doctorImage}.bytes`));
+    assert.ok(imageBytes.length > 40_000);
+    assert.deepEqual([...imageBytes.subarray(0, 2)], [0xff, 0xd8]);
+    assert.equal(scene.doctorAnchor, 50);
+  }
+  assert.equal(wear.image, wear.doctorImage);
   assert.match(subject.cues.ja[2].text, /決して離さない/);
   assert.match(report.cues.ja[2].text, /1秒間/);
 });
@@ -843,6 +853,9 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   state.briefing.cueIndex = 0;
   runtime.configureBriefingMedia(scene);
   runtime.beginBriefingCue();
+  const doctorVideo = elements.get('doctorVideo');
+  assert.equal(runtime.getBriefingMedia(), doctorVideo);
+  assert.match(doctorVideo.src, /subject-ja-v1\.mp4$/);
   const video = elements.get('briefingLoopVideo');
   const before = video.playCount;
   assert.equal(video.hidden, true);
@@ -912,6 +925,7 @@ test('最後の音声が終わっても最終画面を保ち、前の文へ戻�
   const data = clone(briefing);
   const lastSceneIndex = data.scenes.length - 1;
   const lastScene = data.scenes[lastSceneIndex];
+  delete lastScene.video;
   lastScene.audio = { ja: 'equipment-ja-v1.mp3' };
   prepareBriefing(data);
   state.relief = false;

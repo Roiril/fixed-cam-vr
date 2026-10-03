@@ -78,11 +78,17 @@ RECと時計は置かない。接続表示はヘッドセットの応答に基�
 説明内容は `Resources/Visitor/briefing-v1.json.bytes`。画像は同じ場所の `briefing-*-v1.png.bytes` と `camera-01-doll.webp.bytes`。
 探索方法の資料画像は作品サイトのストーリー欄と同じ加工済みWebPをバイナリのまま使う。実写カメラ01を人形視点に加工した画像で、タブレット側の色補正や切り抜きはない。出典と再生成手順は `website/assets/SOURCES.md`。
 0254で最初の文の次から章末まで、加工した `kabe-one-lap-doll-v1.mp4.bytes` を無音でループ再生する。字幕から独立させる。文送りで再生位置を変えず、章外か最初の文に戻れば停止する。原本のハッシュと処理手順は `tools/visitor-ui/README.md` と `process-wall-video.py`。0255で最初の文を「こちらのカーテンです。」に変更。2026-10-03にユーザー提供の65.567秒の日本語音声を4場面へ切り出し、全場面の `audio` を v2 にした。字幕は「決して」と「1秒間」を含め、無音区間で測った尺へ更新した。原本と切り出し手順は `tools/visitor-ui/README.md` に記録した。
-`/asset/` に JSON の MIME を追加した。2026-10-03にユーザー提供の `09-ripsync.mp4` を日本語の調査依頼へ組み込んだ。`introduction-ja-v1.mp4.bytes` は中央構図の1280×720動画に既存の v2 音声を合わせる。文末の尺15.638秒に合わせて最後の画を0.04秒延ばす。静止画は先頭フレームの `introduction-doctor-v1.jpg.bytes`。この章の `doctorAnchor` は50。残りの博士動画と英仏音声は未制作。再生成は `tools/visitor-ui/ingest-doctor-video.py`。ブラウザでの実描画とQuestでの配信は未確認。
+`/asset/` に JSON の MIME を追加した。2026-10-03にユーザー提供の `01-rip.mp4` から `05-rip.mp4` を日本語の全4場面へ組み込んだ。01は先に受領した `09-ripsync.mp4` とバイト一致するため既存の調査依頼動画を保持する。02と03は探索方法として8.24秒の境界で連結する。元音声の分割位置8.259秒との差は19msで25fpsの1フレーム未満。04は異変の報告。05は装着案内。生成動画の音声を除き、各場面の既存 v2 音声をAACへ変換して合わせる。映像は1280×720と25fpsを保持する。末尾だけ最終フレームで補う。再生成は `tools/visitor-ui/ingest-doctor-video.py`。
+全場面の `video.ja` へ音声付きMP4を指定する。二重再生を避けるため別の `audio.ja` は指定しない。先頭フレームを `場面ID-doctor-v1.jpg.bytes` として使う。全場面の `doctorAnchor` は50。探索方法の資料画像と壁のループ動画は維持する。日本語の字幕と音声の尺は65.567秒のまま。英仏は静止画と字幕で進む。
+全4動画の全フレームのデコードと元音声との波形相関を確認した。Range/206取得も確認した。27件の回帰検証が通った。Codex内蔵ブラウザの1097×686表示で全4場面の実描画と文末停止を確認した。探索方法では博士と壁の動画を同時に表示した。壁は文送りで再生位置を戻さず、章を出ると止まる。物理タブレットでの音とQuestでの配信は未確認。APKの焼き直しが必要。
+
+### 25fps動画の連結時刻（2026-10-03）
+
+探索方法の連結でフレーム数の不一致が2回起きた。`fps=25` だけで終端とconcatの時間単位を揃えたとは判断しない。各入力を `settb=1/25,setpts=N/(25*TB)` でフレーム番号から時刻を作り直してから連結する。02の206フレームと03の311フレームを保ち、末尾に2フレームを補って519フレームとする。映像20.760秒と音声20.735秒を別に測る。出力フレーム数だけでなく、連結後の03の画も元動画と照合する。
 台本と SRT は `tools/visitor-ui/export-briefing.py` で JSON から再生成する。
 台詞と画像の採否は `canon/OPEN.md`。機械の検証済みを世界観の採用へ読み替えない。
 
-博士の画は各章の `doctorImage` で指定する。調査依頼は `GET /asset/introduction-doctor-v1.jpg`。ほかの章は `GET /asset/doctor.jpg`（`Resources/Visitor/doctor.jpg.bytes`）。
+博士の画は各章の `doctorImage` で指定する。現在は `GET /asset/場面ID-doctor-v1.jpg`（`Resources/Visitor/場面ID-doctor-v1.jpg.bytes`）。
 元は `tools/visitor-ui/doctor_v1.png`。女性版は未採用の候補。
 博士の説明に動画を使うときは JSON の各場面の `video` へ言語別のファイル名を指定する。
 手動送りでは各文の終端で媒体を止める。文送りで次の文の開始位置へ移る。

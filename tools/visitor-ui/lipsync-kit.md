@@ -1,6 +1,6 @@
 # 博士のリップシンク動画用入力
 
-このキットは博士タブレットで使用中の `doctor.jpg.bytes` を中央配置に編集した画像と、日本語音声 v2 から作る。音声生成時の台詞入力は分割しない。ここでの分割は、動画生成画面で選べる長さに合わせるためのもの。調査依頼では動画先頭の中央配置画像をサイトの静止画にも使用する。
+このキットは博士タブレットで使用していた `doctor.jpg.bytes` を中央配置に編集した画像と、日本語音声 v2 から作る。音声生成時の台詞入力は分割しない。ここでの分割は、動画生成画面で選べる長さに合わせるためのもの。完成動画の先頭フレームを各場面の静止画にも使用する。
 
 ## 入力
 
@@ -16,7 +16,7 @@
 | 4 | `04_report.mp3` | 観測装置とエージェントの説明 | 19.710秒 | 16:9 | 20s |
 | 5 | `05_wear.mp3` | 装着案内と「健闘を祈ります」 | 9.484秒 | 16:9 | 10s |
 
-「探索方法」の元音声は20.735秒で、画面の20sを超える。2つの音声は台詞間の無音中央で分けた。言葉は切っていない。5本の生成動画を受け取ったら、音声と同じ長さへ末尾を切り、2と3を連結して4場面に戻す。サイトへ入れるときは音声を生成動画のものに置き換えず、現在の v2 音声を使う。調査依頼は `09-ripsync.mp4` を受領し、`ingest-doctor-video.py` で取り込み済み。
+「探索方法」の元音声は20.735秒で、画面の20sを超える。2つの音声は台詞間の無音中央で分けた。言葉は切っていない。5本の生成動画は受領済み。`ingest-doctor-video.py` は2と3を8.24秒の境界で連結する。3の末尾を最終フレームで補い、4場面に戻す。生成動画の音声は使わず、現在の v2 音声を AAC で組み込む。
 
 ## プロンプト
 
@@ -32,4 +32,4 @@ Animate the exact man in the reference image as the Doctor, a restrained Japanes
 
 別のフォルダへ再生成する場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/prepare-lipsync-kit.py --output output/visitor-lipsync-kit-new` を実行する。既存の出力は上書きしない。画像の元は `Assets/Resources/Visitor/doctor.jpg.bytes`。中央配置の入力画像は `tools/visitor-ui/doctor-centered-v1.png`。音声の正本は `Assets/Resources/Visitor/*-ja-v2.mp3.bytes` と `tools/visitor-ui/doctor-ja-v2-original.mp3`。
 
-受領した調査依頼の動画を再取り込みする場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/ingest-doctor-video.py C:\Users\kouga\Downloads\09-ripsync.mp4` を実行する。入力の SHA-256 を検証してから、元の v2 音声を使った動画と先頭フレームの静止画を一時ファイルへ生成し、検証後に置き換える。
+調査依頼だけを再取り込みする場合は、リポジトリ直下で `py -3.11 tools/visitor-ui/ingest-doctor-video.py C:\Users\kouga\Downloads\01-rip.mp4` を実行する。全4場面を取り込む場合は、続けて `02-rip.mp4` から `05-rip.mp4` までを順に指定する。スクリプトは全入力と元音声の SHA-256 を先に検証する。完成動画と先頭フレームの静止画を一時ファイルへ生成して検証後に置き換える。1は既存の調査依頼動画と同一であるため、5引数の実行では再生成しない。

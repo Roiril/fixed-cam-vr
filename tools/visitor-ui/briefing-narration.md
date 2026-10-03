@@ -5,11 +5,11 @@
 正本は `Assets/Resources/Visitor/briefing-v1.json.bytes`。この文書と SRT はそこから生成する。
 博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。
 
-日本語の調査依頼はリップシンク動画を使用する。残る3場面はユーザー提供の Eleven v4 音声（65.567 秒）から切り出した音声を使用する。英仏音声と英仏動画は未制作。以下の日本語時間は実音源の無音区間で測った尺。
+日本語の4場面はリップシンク動画を使用する。各動画の音声はユーザー提供の Eleven v4 音声（65.567 秒）から切り出した同じ音源を使用する。英仏音声と英仏動画は未制作。以下の日本語時間は実音源の無音区間で測った尺。
 通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。
-調査依頼の動画は既存博士画像と同じ人物を中央配置で使用する。映像の切替や字幕を動画に焼き込まない。
+博士動画は既存博士画像と同じ人物を中央配置で使用する。映像の切替や字幕を動画に焼き込まない。
 
-日本語の元音源は `tools/visitor-ui/doctor-ja-v2-original.mp3`。`ingest-doctor-audio.py` で `場面ID-ja-v2.mp3.bytes` に切り出す。調査依頼の動画は `ingest-doctor-video.py` が生成動画の音声を除き、同じ元音源から切り出した音声を AAC にして組み込む。英仏音声や動画を追加する場合は場面単位にする。
+日本語の元音源は `tools/visitor-ui/doctor-ja-v2-original.mp3`。`ingest-doctor-audio.py` で `場面ID-ja-v2.mp3.bytes` に切り出す。`ingest-doctor-video.py` は生成動画の音声を除き、同じ元音源から切り出した音声を AAC にして組み込む。英仏音声や動画を追加する場合は場面単位にする。
 各文の開始は同じ場面にある前の文の durationMs の合計。手動では文の終端で媒体を止める。
 一文送りは発話を待たず次の文の開始位置へ移る。文間の間も直前の文の尺へ含める。
 音声付き博士動画を使う場合は video のみ指定する。同じ音声を audio にも指定しない。
@@ -38,7 +38,7 @@
 
 画像: `camera-01-doll.webp`
 
-音声: `subject-ja-v2.mp3`
+動画: `subject-ja-v1.mp4`
 
 ループ動画: `kabe-one-lap-doll-v1.mp4`（文 02 から章末まで。文送りとは別に再生）
 
@@ -64,7 +64,7 @@
 
 画像: `briefing-device-v1.png`
 
-音声: `report-ja-v2.mp3`
+動画: `report-ja-v1.mp4`
 
 文 01 / 場面内 0.0–4.9 秒
 
@@ -86,9 +86,9 @@
 
 開始 56.1 秒 / 尺 9.5 秒
 
-画像: `doctor.jpg`
+画像: `wear-doctor-v1.jpg`
 
-音声: `wear-ja-v2.mp3`
+動画: `wear-ja-v1.mp4`
 
 文 01 / 場面内 0.0–6.8 秒
 
@@ -164,7 +164,7 @@ The report will be sent to the agent for analysis.
 
 開始 46.5 秒 / 尺 7.2 秒
 
-画像: `doctor.jpg`
+画像: `wear-doctor-v1.jpg`
 
 文 01 / 場面内 0.0–4.2 秒
 
@@ -240,7 +240,7 @@ Le signalement sera envoyé à l’agent pour analyse.
 
 開始 50.3 秒 / 尺 7.2 秒
 
-画像: `doctor.jpg`
+画像: `wear-doctor-v1.jpg`
 
 文 01 / 場面内 0.0–4.2 秒
 
