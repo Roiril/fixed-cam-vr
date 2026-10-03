@@ -27,13 +27,10 @@
         "en": "Doctor · Anomalous investigations",
         "fr": "Docteur · Supervision des enquêtes"
       },
-      "audio": {
-        "ja": "introduction-ja-v1.mp3"
-      },
       "cues": {
         "ja": [
           {
-            "text": "こんにちは。日本怪異研究所へようこそ。私はあなたの上司にあたる、博士です。",
+            "text": "はじめまして。日本怪異研究所へようこそ。私はあなたの上司にあたる、博士です。",
             "durationMs": 7582
           },
           {
@@ -43,8 +40,8 @@
         ],
         "en": [
           {
-            "text": "I am the doctor overseeing anomalous investigations at this institute.",
-            "durationMs": 4200
+            "text": "Nice to meet you. Welcome to the Japan Institute of Anomalies. I am the doctor, your supervisor.",
+            "durationMs": 6500
           },
           {
             "text": "I would like you to serve as an investigator and examine a cursed object.",
@@ -53,8 +50,8 @@
         ],
         "fr": [
           {
-            "text": "Je suis le docteur chargé de superviser les enquêtes sur les phénomènes anormaux dans cet institut.",
-            "durationMs": 5200
+            "text": "Enchanté. Bienvenue à l'Institut japonais de recherche sur les phénomènes étranges. Je suis le docteur, votre supérieur.",
+            "durationMs": 7500
           },
           {
             "text": "Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.",
@@ -80,17 +77,14 @@
         "fr": "DÉROULEMENT"
       },
       "title": {
-        "ja": "回収壁面",
-        "en": "Recovered wall",
-        "fr": "Mur récupéré"
+        "ja": "探索方法",
+        "en": "How to explore",
+        "fr": "Méthode d'exploration"
       },
       "caption": {
         "ja": "SH-KB-02 · 映像を見ながら歩いて調査",
         "en": "SH-KB-02 · Observe as you walk",
         "fr": "SH-KB-02 · Observez en marchant"
-      },
-      "audio": {
-        "ja": "subject-ja-v1.mp3"
       },
       "loopVideo": {
         "file": "kabe-one-lap-doll-v1.mp4",
@@ -99,11 +93,11 @@
       "cues": {
         "ja": [
           {
-            "text": "それが、こちらの壁です。",
+            "text": "こちらのカーテンです。",
             "durationMs": 3065
           },
           {
-            "text": "観測装置をつけ、この壁を3周してください。",
+            "text": "観測装置をつけ、このカーテンを3周してください。",
             "durationMs": 3927
           },
           {
@@ -117,12 +111,12 @@
         ],
         "en": [
           {
-            "text": "This is the wall you will investigate.",
+            "text": "This is the curtain you will investigate.",
             "durationMs": 2700
           },
           {
-            "text": "Walk around it three times as shown in the video.",
-            "durationMs": 3800
+            "text": "Put on the observation device and walk around this curtain three times.",
+            "durationMs": 5000
           },
           {
             "text": "Hold the handrail with your right hand and keep hold of it as you walk.",
@@ -135,12 +129,12 @@
         ],
         "fr": [
           {
-            "text": "Voici le mur que vous allez examiner.",
+            "text": "Voici le rideau que vous allez examiner.",
             "durationMs": 2700
           },
           {
-            "text": "Faites-en trois fois le tour, comme dans la vidéo.",
-            "durationMs": 4200
+            "text": "Mettez le dispositif d'observation et faites trois fois le tour de ce rideau.",
+            "durationMs": 5500
           },
           {
             "text": "Tenez la main courante de la main droite et ne la lâchez pas en marchant.",

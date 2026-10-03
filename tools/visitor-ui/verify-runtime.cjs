@@ -191,7 +191,9 @@ function clone(value) {
 const elements = new Map();
 for (const match of html.matchAll(/<([a-z][a-z0-9-]*)\b[^>]*\bid="([^"]+)"[^>]*>/gi)) {
   const [, tagName, id] = match;
-  elements.set(id, tagName.toLowerCase() === 'video' ? new MockMedia(id, tagName) : new MockElement(id, tagName));
+  elements.set(id, ['audio', 'video'].includes(tagName.toLowerCase())
+    ? new MockMedia(id, tagName)
+    : new MockElement(id, tagName));
 }
 
 const radioElements = new Map();
@@ -315,11 +317,15 @@ const exportsSource = `
     setBriefingPause,
     beginBriefingCue,
     moveBriefing,
+    finishBriefing,
     saveBriefingProgress,
     savedProgressMatches,
     restoreProgress: (progress) => { restoreCandidate = progress; state.restored = false; return tryRestoreBriefing(); },
     wasChangedByAnotherPage,
     showPageConflict,
+    setSettingsStep,
+    syncReliefPreview,
+    getReliefPreview: () => reliefPreview,
     getBriefingMedia: () => briefingMedia,
   };
 `;
@@ -359,6 +365,11 @@ function test(name, body) {
   tests.push({ name, body });
 }
 
+function dispatchDocument(type, properties = {}) {
+  const event = { target: document, preventDefault() {}, ...properties };
+  for (const listener of documentListeners.get(type) || []) listener(event);
+}
+
 test('タイトルの操作内でナビゲーションを隠す全画面化を要求する', () => {
   let options = null;
   document.fullscreenEnabled = true;
@@ -375,6 +386,138 @@ test('タイトルの操作内でナビゲーションを隠す全画面化を�
   assert.equal(state.view, 'edit');
   document.fullscreenEnabled = false;
   delete document.documentElement.requestFullscreen;
+});
+
+test('設定は言語から軽減へ進み、戻る操作と三言語の案内を保つ', () => {
+  state.view = 'edit';
+  state.lang = 'ja';
+  runtime.setSettingsStep('language', false);
+  assert.equal(elements.get('subtitleTyped').textContent, '使う言語を教えてください。');
+  assert.equal(elements.get('languageStep').hidden, false);
+  assert.equal(elements.get('reliefStep').hidden, true);
+  assert.equal(elements.get('settingsNextBtn').hidden, false);
+  assert.equal(elements.get('sendBtn').hidden, true);
+
+  elements.get('settingsNextBtn').dispatch('click');
+  assert.equal(state.settingsStep, 'relief');
+  assert.equal(elements.get('subtitleTyped').textContent, '恐怖を軽減するかどうかを決めてください。');
+  assert.equal(elements.get('languageStep').hidden, true);
+  assert.equal(elements.get('reliefStep').hidden, false);
+  assert.equal(elements.get('settingsBackBtn').hidden, false);
+  assert.equal(elements.get('sendBtn').hidden, false);
+
+  state.lang = 'en';
+  runtime.setSettingsStep('language', false);
+  assert.equal(elements.get('subtitleTyped').textContent, 'Please choose the language you would like to use.');
+  runtime.setSettingsStep('relief', false);
+  assert.equal(elements.get('subtitleTyped').textContent, 'Please choose whether you would like to reduce the horror.');
+
+  state.lang = 'fr';
+  runtime.setSettingsStep('language', false);
+  assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez la langue que vous souhaitez utiliser.');
+  runtime.setSettingsStep('relief', false);
+  assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez si vous souhaitez atténuer l’horreur.');
+  elements.get('settingsBackBtn').dispatch('click');
+  assert.equal(state.settingsStep, 'language');
+});
+
+test('軽減音は選択後に同じ要素で続き、遮蔽と解除では先頭へ戻る', async () => {
+  assert.equal((html.match(/<audio\b/g) || []).length, 1);
+  assert.match(html, /<audio[^>]*id="reliefPreview"[^>]*src="\.\/asset\/bed-relief-tablet-v1\.mp3"[^>]*\bloop\b/);
+  assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', 'bed-relief-tablet-v1.mp3.bytes')));
+  const preview = runtime.getReliefPreview();
+  assert.equal(preview.volume, 0.28);
+  state.view = 'edit';
+  state.lang = 'ja';
+  state.relief = false;
+  document.hidden = false;
+  elements.get('staff').open = false;
+  runtime.setSettingsStep('relief', false);
+  const on = radioElements.get('relief:on');
+  const off = radioElements.get('relief:off');
+
+  elements.get('settingsForm').dispatch('change', { target: on });
+  assert.equal(state.relief, true);
+  assert.equal(preview.playCount, 1);
+  assert.equal(preview.paused, false);
+
+  preview.currentTime = 3.5;
+  elements.get('settingsBackBtn').dispatch('click');
+  assert.equal(preview.paused, false);
+  assert.equal(preview.currentTime, 3.5);
+  runtime.setSettingsStep('relief', false);
+  assert.equal(preview.playCount, 1);
+
+  elements.get('staffToggle').dispatch('click');
+  assert.equal(preview.paused, true);
+  elements.get('staff').close();
+  assert.equal(preview.playCount, 2);
+  assert.equal(preview.paused, false);
+
+  document.hidden = true;
+  dispatchDocument('visibilitychange');
+  assert.equal(preview.paused, true);
+  document.hidden = false;
+  dispatchDocument('visibilitychange');
+  assert.equal(preview.playCount, 3);
+
+  elements.get('settingsForm').dispatch('change', { target: off });
+  assert.equal(state.relief, false);
+  assert.equal(preview.paused, true);
+
+  const warningCount = warnings.length;
+  preview.nextPlayPromise = Promise.reject(Object.assign(new Error('gesture required'), { name: 'NotAllowedError' }));
+  elements.get('settingsForm').dispatch('change', { target: on });
+  await flushPromises();
+  assert.equal(preview.paused, true);
+  assert.equal(warnings.length, warningCount);
+  elements.get('settingsForm').dispatch('change', { target: off });
+});
+
+test('軽減音は反映確認と博士説明まで続き、音声中だけ下がって説明終了で止まる', () => {
+  const preview = runtime.getReliefPreview();
+  state.view = 'edit';
+  state.relief = false;
+  state.reliefPreviewStarted = false;
+  document.hidden = false;
+  elements.get('staff').open = false;
+  runtime.setSettingsStep('relief', false);
+  elements.get('settingsForm').dispatch('change', { target: radioElements.get('relief:on') });
+  assert.equal(preview.paused, false);
+  const playCount = preview.playCount;
+
+  state.view = 'result';
+  runtime.syncReliefPreview();
+  assert.equal(preview.paused, false);
+  assert.equal(preview.playCount, playCount);
+
+  const data = clone(briefing);
+  data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
+  prepareBriefing(data);
+  runtime.configureBriefingMedia(data.scenes[0]);
+  runtime.beginBriefingCue();
+  const doctorAudio = runtime.getBriefingMedia();
+  assert.equal(preview.paused, false);
+  assert.equal(preview.volume, 0.28);
+  doctorAudio.onplaying();
+  assert.equal(preview.volume, 0.08);
+  runtime.stopBriefingMediaWindow();
+  assert.equal(preview.volume, 0.28);
+  assert.equal(preview.paused, false);
+
+  runtime.finishBriefing();
+  assert.equal(state.briefing.ended, true);
+  assert.equal(preview.paused, true);
+  assert.equal(preview.currentTime, 0);
+
+  elements.get('briefingReplay').dispatch('click');
+  assert.equal(state.briefing.ended, false);
+  assert.equal(preview.paused, false);
+  state.view = 'title';
+  runtime.syncReliefPreview();
+  assert.equal(preview.paused, true);
+  state.relief = false;
+  state.reliefPreviewStarted = false;
 });
 
 test('反映判定はPOSTの受理番号と実値の両方を見る', async () => {
@@ -395,7 +538,12 @@ test('反映判定はPOSTの受理番号と実値の両方を見る', async () =
   state.view = 'edit';
   state.status = clone(validStatus);
   state.connection = 'online';
+  runtime.setSettingsStep('relief', false);
+  runtime.syncReliefPreview();
+  const preview = runtime.getReliefPreview();
+  assert.equal(preview.paused, false);
   await runtime.send();
+  assert.equal(preview.paused, false);
   assert.equal(requests[0].resource, './set');
   assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true,
     tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' });
@@ -551,8 +699,9 @@ test('表示更新は同期し、重複アニメーションを取消して縮�
 test('本番JSONと表示指定の境界値を検証する', () => {
   assert.equal(runtime.validateBriefingData(clone(briefing)).scenes.length, briefing.scenes.length);
   for (const scene of briefing.scenes) {
-    assert.equal(scene.audio?.ja, `${scene.id}-ja-v1.mp3`);
-    assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${scene.audio.ja}.bytes`)));
+    for (const filename of Object.values(scene.audio || {})) {
+      assert.ok(fs.existsSync(path.join(root, 'Assets', 'Resources', 'Visitor', `${filename}.bytes`)));
+    }
   }
   const presentation = clone(briefing);
   presentation.scenes[0].layout = 'doctor-evidence';
@@ -656,6 +805,37 @@ test('媒体時計の文末判定で手動は止まり、オートは次の文�
   timers.runOne(100);
   assert.equal(state.briefing.cueIndex, 1);
   assert.equal(elements.get('subtitleTyped').textContent, data.scenes[0].cues.ja[1].text);
+});
+
+test('最後の音声が終わっても最終画面を保ち、前の文へ戻れる', () => {
+  const data = clone(briefing);
+  const lastSceneIndex = data.scenes.length - 1;
+  const lastScene = data.scenes[lastSceneIndex];
+  lastScene.audio = { ja: 'equipment-ja-v1.mp3' };
+  prepareBriefing(data);
+  state.relief = false;
+  state.reliefPreviewStarted = false;
+  state.briefing.sceneIndex = lastSceneIndex;
+  state.briefing.cueIndex = lastScene.cues.ja.length - 1;
+  runtime.configureBriefingMedia(lastScene);
+  runtime.beginBriefingCue();
+  const finalText = lastScene.cues.ja.at(-1).text;
+  const media = runtime.getBriefingMedia();
+  media.onplaying();
+  media.currentTime = lastScene.cues.ja.reduce((sum, cue) => sum + cue.durationMs, 0) / 1000;
+  media.ontimeupdate();
+
+  assert.equal(state.briefing.ended, true);
+  assert.equal(state.briefing.sceneIndex, lastSceneIndex);
+  assert.equal(state.briefing.cueIndex, lastScene.cues.ja.length - 1);
+  assert.equal(elements.get('subtitleTyped').textContent, finalText);
+  assert.equal(elements.get('briefingReplay').hidden, false);
+  assert.equal(elements.get('briefingPrevious').disabled, false);
+
+  assert.equal(runtime.moveBriefing(-1, 'control'), true);
+  assert.equal(state.briefing.ended, false);
+  assert.equal(state.briefing.cueIndex, lastScene.cues.ja.length - 2);
+  assert.equal(elements.get('subtitleTyped').textContent, lastScene.cues.ja.at(-2).text);
 });
 
 test('停止や一時停止後の古い再生失敗は現在の文を壊さない', async () => {
