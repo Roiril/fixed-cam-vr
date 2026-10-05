@@ -3,7 +3,6 @@ package com.roiril.mawarimi.tablet.test;
 import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.ComponentName;
-import android.content.Intent;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -18,6 +17,10 @@ import org.json.JSONObject;
 import org.json.JSONTokener;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -30,12 +33,16 @@ public final class TabletInstrumentation extends Instrumentation {
     private boolean requireQuest;
     private boolean mutateQuest;
     private int checks;
+    private boolean playback;
+    private boolean briefing;
 
     @Override
     public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         requireQuest = arguments != null && "true".equalsIgnoreCase(arguments.getString("requireQuest"));
         mutateQuest = arguments != null && "true".equalsIgnoreCase(arguments.getString("mutateQuest"));
+        playback = arguments != null && "true".equalsIgnoreCase(arguments.getString("playback"));
+        briefing = arguments != null && "true".equalsIgnoreCase(arguments.getString("briefing"));
         start();
     }
 
@@ -43,7 +50,7 @@ public final class TabletInstrumentation extends Instrumentation {
     public void onStart() {
         int resultCode = Activity.RESULT_OK;
         try {
-            runFunctionalTests();
+            if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
             results.putString("summary", "PASS checks=" + checks);
             Log.i(TAG, "PASS checks=" + checks);
         } catch (Throwable error) {
@@ -55,8 +62,61 @@ public final class TabletInstrumentation extends Instrumentation {
         }
     }
 
+    private void runPlaybackTests() throws Exception {
+        Activity activity = launchFromShell();
+        WebView view = waitForWebView(activity, 10000);
+        waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
+        String[] files = {"introduction-ja-v1.mp4", "wear-ja-v1.mp4", "subject-ja-v1.mp4", "report-ja-v1.mp4"};
+        for (String file : files) {
+            for (int start : new int[]{0, 1048576, 1199370}) {
+                byte[] expected = new byte[100000];
+                int count = 0;
+                try (InputStream input = getTargetContext().getAssets().open("web/asset/" + file)) {
+                    long left = start;
+                    while (left > 0) {
+                        int n = input.read(expected, 0, (int)Math.min(left, expected.length));
+                        if (n < 0) break;
+                        left -= n;
+                    }
+                    while (count < expected.length) {
+                        int n = input.read(expected, count, expected.length - count);
+                        if (n < 0) break;
+                        count += n;
+                    }
+                }
+                if (count == 0) continue;
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                digest.update(expected, 0, count);
+                StringBuilder golden = new StringBuilder();
+                for (byte b : digest.digest()) golden.append(String.format("%02x", b & 255));
+                evaluate(view, "window.__rangeDone=false;fetch('./asset/" + file
+                    + "',{headers:{Range:'bytes=" + start + "-" + (start + count - 1)
+                    + "'}}).then(r=>r.arrayBuffer()).then(async b=>{window.__rangeLength=b.byteLength;"
+                    + "window.__rangeHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',b)))"
+                    + ".map(x=>x.toString(16).padStart(2,'0')).join('');window.__rangeDone=true;});");
+                waitFor("range fetch", 15000, () -> evaluateBoolean(view, "window.__rangeDone"));
+                String actual = evaluateString(view, "window.__rangeHash");
+                Log.i(TAG, "range " + file + " start=" + start + " bytes="
+                    + evaluateDouble(view, "window.__rangeLength") + " expected=" + golden + " actual=" + actual);
+                check("range bytes " + file + ":" + start, golden.toString().equals(actual));
+            }
+            evaluate(view, "(function(){var v=document.createElement('video');v.muted=false;v.playsInline=true;"
+                + "v.style.cssText='position:fixed;inset:0;width:100%;height:85%;z-index:999999';document.body.appendChild(v);"
+                + "window.__playVideo=v;window.__playDone=false;window.__playError='';v.onended=()=>{window.__playDone=true;};"
+                + "v.onerror=()=>{window.__playError=String(v.error&&v.error.code)+':'+(v.error&&v.error.message);window.__playDone=true;};"
+                + "v.src='./asset/" + file + "';v.play().catch(e=>{window.__playError=String(e);window.__playDone=true;});})()");
+            waitFor("unmuted full video", 40000, () -> evaluateBoolean(view, "window.__playDone"));
+            String error = evaluateString(view, "window.__playError");
+            Log.i(TAG, "fullPlayback " + file + " error=" + error + " clock="
+                + evaluateDouble(view, "window.__playVideo.currentTime") + " duration="
+                + evaluateDouble(view, "window.__playVideo.duration"));
+            check("unmuted full playback " + file, error.isEmpty());
+            evaluate(view, "window.__playVideo.removeAttribute('src');window.__playVideo.load();window.__playVideo.remove();");
+        }
+    }
+
     private void runFunctionalTests() throws Exception {
-        Activity activity = launch(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        Activity activity = launchFromShell();
         final WebView initialWebView = waitForWebView(activity, 10000);
         waitFor("page ready", 15000, () -> "complete".equals(evaluateString(initialWebView, "document.readyState")));
         check("secure local origin", evaluateString(initialWebView, "location.origin").equals("https://appassets.androidplatform.net"));
@@ -152,19 +212,76 @@ public final class TabletInstrumentation extends Instrumentation {
             + "delete window.__doctorTest;return true;})()");
     }
 
-    private Activity launch(int flags) {
-        Intent intent = new Intent(Intent.ACTION_MAIN).setComponent(ACTIVITY).addFlags(flags);
-        return startActivitySync(intent);
+    private Activity launchFromShell() throws Exception {
+        ActivityMonitor monitor = addMonitor(ACTIVITY.getClassName(), null, false);
+        try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand(
+            "am start -n com.roiril.mawarimi.tablet/.MainActivity")) {
+            // HyperOS can block startActivitySync from the background test process.
+        }
+        Activity activity = monitor.waitForActivityWithTimeout(15000);
+        removeMonitor(monitor);
+        if (activity == null) throw new AssertionError("Shell Activity launch timed out");
+        return activity;
+    }
+
+    private void runBriefingTests() throws Exception {
+        Activity activity = launchFromShell();
+        WebView view = waitForWebView(activity, 10000);
+        waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
+        evaluate(view, "document.getElementById('staffToggle').click()");
+        waitFor("briefing ready", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('staffBriefingBtn').disabled"));
+        evaluate(view, "document.getElementById('staffBriefingBtn').click()");
+        waitFor("briefing visible", 5000, () -> evaluateBoolean(view,
+            "!document.getElementById('briefingView').hidden"));
+        for (int round = 1; round <= 2; round++) {
+            if (round > 1) {
+                evaluate(view, "document.getElementById('briefingReplay').click()");
+                SystemClock.sleep(1200);
+                double before = evaluateDouble(view, "document.getElementById('doctorVideo').currentTime");
+                pressHome();
+                SystemClock.sleep(1800);
+                try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand(
+                    "am start --activity-reorder-to-front --activity-single-top -n com.roiril.mawarimi.tablet/.MainActivity")) {}
+                waitFor("resume focus", 5000, () -> evaluateBoolean(view, "!document.hidden"));
+                double resumed = evaluateDouble(view, "document.getElementById('doctorVideo').currentTime");
+                check("briefing stopped in background", Math.abs(resumed - before) < 0.8);
+                evaluate(view, "document.getElementById('mediaRetry').click()");
+            }
+            evaluate(view, "document.getElementById('briefingToggle').click()");
+            Set<String> rendered = new HashSet<>();
+            long deadline = SystemClock.elapsedRealtime() + 95000;
+            boolean ended = false;
+            while (SystemClock.elapsedRealtime() < deadline) {
+                JSONObject sample = evaluateObject(view,
+                    "JSON.stringify((()=>{var v=document.getElementById('doctorVideo');var r=v.getBoundingClientRect();"
+                    + "return {cue:document.getElementById('sceneCounter').textContent,clock:v.currentTime,"
+                    + "frames:v.getVideoPlaybackQuality().totalVideoFrames,audio:v.webkitAudioDecodedByteCount||0,"
+                    + "visible:!v.hidden&&r.width>0&&r.height>0,paused:v.paused,muted:v.muted,"
+                    + "failed:!document.getElementById('mediaNotice').hidden&&document.getElementById('mediaMessage').textContent.includes('再生できません'),"
+                    + "ended:document.getElementById('briefingNext').disabled};})())");
+                if (sample.optBoolean("failed")) throw new AssertionError("Briefing media failure " + sample);
+                if (sample.optBoolean("visible") && !sample.optBoolean("paused") && !sample.optBoolean("muted")
+                    && sample.optInt("frames") > 0 && sample.optLong("audio") > 0 && sample.optDouble("clock") > 0.1
+                    && rendered.add(sample.optString("cue"))) {
+                    Log.i(TAG, "briefing round=" + round + " rendered=" + sample);
+                }
+                if (sample.optBoolean("ended")) { ended = true; break; }
+                SystemClock.sleep(120);
+            }
+            check("briefing completed round " + round, ended);
+            check("all twelve subtitles have video and decoded audio round " + round, rendered.size() == 12);
+            Log.i(TAG, "briefing round=" + round + " renderedCues=" + rendered.size() + "/12");
+        }
+        evaluate(view, "document.getElementById('briefingSettings').click()");
     }
 
     private void resumeExisting(Activity activity, WebView webView) throws Exception {
         if (activity.isFinishing() || activity.isDestroyed()) {
             throw new AssertionError("Activity was destroyed while backgrounded");
         }
-        Intent intent = new Intent(Intent.ACTION_MAIN).setComponent(ACTIVITY).addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        runOnMainSync(() -> activity.startActivity(intent));
+        try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand(
+            "am start --activity-reorder-to-front --activity-single-top -n com.roiril.mawarimi.tablet/.MainActivity")) {}
         waitFor("existing Activity resumed", 10000, () -> {
             AtomicReference<Boolean> resumed = new AtomicReference<>(false);
             runOnMainSync(() -> resumed.set(!activity.isFinishing() && !activity.isDestroyed()

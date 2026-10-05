@@ -53,4 +53,17 @@ adb -s 122d7871 shell am instrument -w -e requireQuest true com.roiril.mawarimi.
 
 試験は同梱素材の読み込みと動画の実描画とシークと背景停止を確認する。`requireQuest true` はQuest αの通信も必須にする。通常APKには試験操作の入口を含めない。USBインストールが端末に拒否された場合は端末側の確認を行う。
 
+音声付き動画と説明画面の通し再生は次の試験で確認する。短い消音再生だけでは動画の途中読み出しの不具合を検出できない。
+
+```powershell
+adb -s 122d7871 shell am instrument -w -e playback true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
+adb -s 122d7871 shell am instrument -w -e briefing true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
+```
+
+`playback true` は博士動画4本の12か所の部分読み出しを元データのSHA-256と照合する。音声を有効にして各動画を最後まで再生する。`briefing true` はスタッフ確認から12文を2回通して再生する。各文で画面内の動画フレームと音声デコード量を記録する。2回目にはホーム画面への移動と復帰と再開を挟む。Questの設定は送信しない。
+
+WebViewは `shouldInterceptRequest` が返すストリームに対してRangeの開始位置まで進める。Android側で先に進めると位置が二重に加算される。ストリームは資産の先頭から返す。読み取りの終端だけを制限する。`skip` と `available` にもその制限を反映する。
+
+2026-10-05にRedmi Pad SEで途中データの照合12件と博士動画4本の音声付き全長再生が成功した。説明画面は12文を2回再生した。24回すべてで動画の描画と音声デコードを確認した。背景停止と復帰後の再開も成功した。通常の機能試験はQuest α接続時に27項目が成功した。
+
 2026-10-03にRedmi Pad SEへ導入した。Quest α接続時は29項目が成功。Quest αを停止した状態でも26項目が成功した。動画5本すべてでシーク後の描画フレーム増加を確認した。ホーム画面へ移った間の媒体の進行は0.16秒未満。復帰後も停止を維持した。αへの設定送信と取消を行い、元の言語と軽減値へ戻ったことを確認した。スタッフ設定から未接続の博士説明を開き、端末の画面も撮影した。βの実機接続は未確認。

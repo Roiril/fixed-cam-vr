@@ -268,12 +268,14 @@ public final class MainActivity extends Activity {
                 return response(mimeType(assetPath), 416, "Range Not Satisfiable", headers,
                     new ByteArrayInputStream(new byte[0]));
             }
-            skipFully(source.stream, range.start);
             headers.put("Content-Range", "bytes " + range.start + "-" + range.end + "/" + totalLength);
             headers.put("Content-Length", Long.toString(range.length()));
             Log.i(TAG, "asset206Range path=" + assetPath + " start=" + range.start
                 + " end=" + range.end + " total=" + totalLength);
-            InputStream body = head ? emptyAndClose(source) : new LimitedInputStream(source.stream, range.length());
+            // WebView's AndroidStreamReader applies the request Range to the
+            // intercepted InputStream itself. Supply the complete asset at zero;
+            // pre-skipping here doubles the offset and corrupts media packets.
+            InputStream body = head ? emptyAndClose(source) : new LimitedInputStream(source.stream, range.end + 1);
             return response(mimeType(assetPath), 206, "Partial Content", headers, body);
         }
         headers.put("Content-Length", Long.toString(totalLength));
@@ -300,20 +302,6 @@ public final class MainActivity extends Activity {
     private static InputStream emptyAndClose(AssetSource source) throws IOException {
         source.close();
         return new ByteArrayInputStream(new byte[0]);
-    }
-
-    private static void skipFully(InputStream stream, long count) throws IOException {
-        long remaining = count;
-        while (remaining > 0) {
-            long skipped = stream.skip(remaining);
-            if (skipped > 0) {
-                remaining -= skipped;
-            } else if (stream.read() == -1) {
-                throw new IOException("Unexpected end of asset");
-            } else {
-                remaining--;
-            }
-        }
     }
 
     private static Map<String, String> baseHeaders() {
@@ -551,10 +539,24 @@ public final class MainActivity extends Activity {
 
         @Override
         public int read(byte[] bytes, int offset, int length) throws IOException {
+            if (length == 0) return 0;
             if (remaining == 0) return -1;
             int count = super.read(bytes, offset, (int) Math.min(length, remaining));
             if (count > 0) remaining -= count;
             return count;
+        }
+
+        @Override
+        public long skip(long count) throws IOException {
+            if (count <= 0 || remaining == 0) return 0;
+            long skipped = in.skip(Math.min(count, remaining));
+            if (skipped > 0) remaining -= skipped;
+            return skipped;
+        }
+
+        @Override
+        public int available() throws IOException {
+            return (int) Math.min(in.available(), remaining);
         }
     }
 }
