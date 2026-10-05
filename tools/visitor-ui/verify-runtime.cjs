@@ -440,6 +440,23 @@ test('設定は言語から軽減と確認へ進み、戻る操作と三言語�
   assert.equal(state.settingsStep, 'language');
 });
 
+test('軽減効果は未選択でも三言語で常に読める', () => {
+  const expected = {
+    ja: ['なし：通常の演出と音量', 'あり：音量半分と陽気な曲'],
+    en: ['Off: normal effects and volume', 'On: half volume with a cheerful tune'],
+    fr: ['Non : effets et volume normaux', 'Oui : volume réduit de moitié et musique gaie'],
+  };
+  state.view = 'edit';
+  state.relief = false;
+  for (const [lang, lines] of Object.entries(expected)) {
+    state.lang = lang;
+    runtime.setSettingsStep('relief', false);
+    assert.equal(elements.get('reliefDesc').getAttribute('aria-hidden'), null);
+    for (const line of lines) assert.ok(elements.get('reliefDesc').textContent.includes(line));
+  }
+  state.lang = 'ja';
+});
+
 test('確認画面の見出しと操作は三言語に揃う', () => {
   const copies = {
     ja: ['設定内容の確認', 'この設定で始める', '設定に戻る'],
@@ -646,6 +663,30 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   status = { ...validStatus, lang: 'en', relief: true, appliedSeq: 7, received: 1, lastRequest };
   await runtime.poll();
   assert.equal(runtime.resultKey(), 'applied');
+  assert.equal(elements.get('resultContinueBtn').hidden, false);
+  assert.equal(elements.get('headsetHeading').textContent, 'Settings confirmed on Quest');
+});
+
+test('確認前は現在値と未送信を示し反映後だけ明示ボタンで進める', () => {
+  state.lang = 'ja';
+  state.view = 'edit';
+  state.ui = 'idle';
+  state.sent = null;
+  state.status = clone(validStatus);
+  state.connection = 'online';
+  runtime.setSettingsStep('relief', false);
+  elements.get('settingsForm').dispatch('submit');
+  assert.equal(elements.get('headsetHeading').textContent, '現在のクエスト');
+  assert.match(elements.get('resultDetail').textContent, /まだクエストへ送信していません/);
+  assert.equal(elements.get('resultContinueBtn').hidden, true);
+
+  state.sent = { lang: 'ja', relief: false, seq: 12, portalSessionId: 'portal-a', targetId: null };
+  state.status = { ...validStatus, appliedSeq: 12,
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 12, lang: 'ja', relief: false } };
+  state.ui = 'sent';
+  runtime.poll();
+  assert.equal(runtime.resultKey(), 'applied');
+  assert.equal(elements.get('resultContinueBtn').textContent, '画面をタップして次へ');
 });
 
 test('Questの起動IDが変わると送信中の古い応答を捨てる', async () => {
@@ -916,6 +957,59 @@ test('媒体未指定の場面ではaudioもvideoも作らない', () => {
   assert.equal(video.loadCount, loadCount);
 });
 
+test('説明案内は常設され自動送りと音声なしを三言語で説明する', () => {
+  const expected = {
+    ja: ['画面をタップして次へ進みます。', '自動で次へ進みます。'],
+    en: ['No voice audio is available.', 'The briefing will advance automatically.'],
+    fr: ['Aucune voix n’est disponible.', 'Le passage à la suite est automatique.'],
+  };
+  const data = clone(briefing);
+  delete data.scenes[0].video;
+  for (const lang of ['ja', 'en', 'fr']) {
+    prepareBriefing(data);
+    state.lang = lang;
+    runtime.beginBriefingCue();
+    assert.equal(elements.get('mediaNotice').hidden, false);
+    assert.match(elements.get('mediaMessage').textContent, new RegExp(expected[lang][0]));
+    runtime.setBriefingAuto(true);
+    assert.match(elements.get('mediaMessage').textContent, new RegExp(expected[lang][1]));
+  }
+  state.lang = 'ja';
+});
+
+test('章と文と全体の番号を区別し最後の博士章でも装着を現在扱いにしない', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  state.briefing.sceneIndex = data.scenes.length - 1;
+  state.briefing.cueIndex = 0;
+  runtime.beginBriefingCue();
+  assert.equal(elements.get('briefingChapterNumber').textContent, '04 / 04');
+  assert.equal(elements.get('briefingCueNumber').textContent, '文 1 / 2');
+  assert.match(elements.get('sceneCounter').textContent, /^説明 \d{2} \/ \d{2}$/);
+  assert.equal(elements.get('journeyBriefing').getAttribute('aria-current'), 'step');
+  assert.equal(elements.get('journeyWear').getAttribute('aria-current'), null);
+  runtime.finishBriefing();
+  assert.equal(elements.get('journeyWear').getAttribute('aria-current'), 'step');
+});
+
+test('観測装置の説明と報告操作で見出しと補足を文ごとに切り替える', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  state.briefing.sceneIndex = data.scenes.findIndex(scene => scene.id === 'report');
+  for (const lang of ['ja', 'en', 'fr']) {
+    state.lang = lang;
+    state.briefing.cueIndex = 0;
+    runtime.beginBriefingCue();
+    assert.match(elements.get('briefingTitle').textContent, /観測装置|Observation device|Dispositif d’observation/);
+    assert.equal(context.document.title, `廻リ視 — ${elements.get('briefingTitle').textContent}`);
+    state.briefing.cueIndex = 2;
+    runtime.beginBriefingCue();
+    assert.match(elements.get('briefingTitle').textContent, /X|Y/);
+    assert.match(elements.get('briefingCaption').textContent, /1秒間|1 second|1 seconde/);
+  }
+  state.lang = 'ja';
+});
+
 test('媒体時計の文末判定で手動は止まり、オートは次の文へ進む', () => {
   const data = clone(briefing);
   delete data.scenes[0].video;
@@ -971,9 +1065,10 @@ test('最後の音声が終わると装着案内を表示し、再説明はそ�
   assert.equal(elements.get('equipmentController').textContent, '左手にコントローラーを持ってください。');
   assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエスト内に表示される指示に従ってください。');
   assert.equal(elements.get('briefingReplay').hidden, false);
-  for (const id of ['briefingPrevious', 'briefingNext', 'briefingToggle', 'briefingMute', 'briefingSettings', 'mediaNotice']) {
+  for (const id of ['briefingPrevious', 'briefingNext', 'briefingToggle', 'briefingMute', 'mediaNotice']) {
     assert.equal(elements.get(id).hidden, true);
   }
+  assert.equal(elements.get('briefingSettings').hidden, false);
   assert.equal(media.paused, true);
 
   assert.equal(runtime.moveBriefing(-1, 'control'), false);
@@ -1208,6 +1303,9 @@ test('選択先の不通と別IPの応答では受付を切り替えず、古い
   fetchHandler = async () => ({ ok: true, status: 200, json: async () => ({ ...clone(validStatus), ip: '192.168.10.31', port: 8090 }) });
   await runtime.checkStaffQuest();
   assert.equal(navigations.length, 0);
+  assert.match(elements.get('staffCheckMessage').textContent, /192\.168\.10\.32:8090/);
+  assert.match(elements.get('staffCheckMessage').textContent, /応答は192\.168\.10\.31:8090/);
+  assert.match(elements.get('staffCheckMessage').textContent, /α／βラベル/);
 
   const old = deferred();
   fetchHandler = () => old.promise;
@@ -1282,6 +1380,25 @@ test('スタッフ確認モードはオフラインで全4場面を開き、通�
   assert.equal(state.staffPreview, false);
 });
 
+test('来場者の設定または説明中はスタッフ確認で進行を捨てない', () => {
+  prepareStaff();
+  state.sent = { lang: 'ja', relief: false, seq: 4, portalSessionId: 'portal-a', targetId: null };
+  state.briefing.loadState = 'ready';
+  state.briefing.data = clone(briefing);
+  runtime.renderStaff();
+  assert.equal(elements.get('staffBriefingBtn').disabled, true);
+  assert.match(elements.get('staffBriefingHelp').textContent, /進行中/);
+  elements.get('staffBriefingBtn').dispatch('click');
+  assert.equal(state.sent.seq, 4);
+  assert.equal(state.staffPreview, false);
+
+  state.sent = null;
+  state.view = 'briefing';
+  state.staffPreview = false;
+  runtime.renderStaff();
+  assert.equal(elements.get('staffBriefingBtn').disabled, true);
+});
+
 test('博士の音声確認は閉じる操作とタブ非表示で止まり、失敗時に案内する', async () => {
   prepareStaff();
   const sound = elements.get('staffSound');
@@ -1301,7 +1418,7 @@ test('博士の音声確認は閉じる操作とタブ非表示で止まり、�
   assert.equal(sound.paused, true);
   sound.nextPlayPromise = Promise.reject(new Error('decode failed'));
   await elements.get('staffSoundBtn').dispatch('click');
-  assert.match(elements.get('staffSoundHelp').textContent, /端末の音量を確認して、もう一度押してください/);
+  assert.match(elements.get('staffSoundHelp').textContent, /繰り返す場合はアプリを開き直してください/);
   document.hidden = false;
   sound.nextPlayPromise = null;
 });

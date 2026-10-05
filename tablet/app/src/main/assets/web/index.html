@@ -8,7 +8,7 @@
 <link rel="preload" as="image" href="./asset/title-logo-v2.png">
 <title>廻リ視 — 体験の前に</title>
 <!--
-  Quest 自身が :8090 で配る来場者用の面。PC とウェブ卓は経由しない。
+  Android APK に同梱した来場者用の面。PC とウェブ卓は経由しない。
   注意書きは HMD の TitleNotice と同文。外部 CDN と Web フォントは使わない。
   博士の静止画は ./asset/doctor.jpg。GET /status の実値で反映を判定する。
 -->
@@ -26,7 +26,8 @@
   [hidden] { display: none !important; }
   html { min-height: 100%; background: var(--bg); }
   body { margin: 0; color: var(--ink); font: 16px/1.6 var(--serif); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
-  button, input { font: inherit; }
+  button, input { font: inherit; font-family: var(--sans); }
+  label { font-family: var(--sans); }
   button { color: inherit; cursor: pointer; }
   button, label { touch-action: manipulation; -webkit-tap-highlight-color: rgba(168,50,57,.18); }
   button:focus-visible, input:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px solid var(--gold); outline-offset: 5px; }
@@ -34,42 +35,43 @@
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   .skip { position: fixed; z-index: 30; left: 16px; top: 12px; padding: 10px 18px; color: var(--bg); background: var(--ink); transform: translateY(-180%); }
   .skip:focus { transform: none; }
-  .stage { isolation: isolate; position: relative; display: grid; grid-template-rows: auto 1fr auto; min-height: 100svh; overflow: clip; background: var(--bg); }
+  .stage { isolation: isolate; position: relative; display: grid; grid-template-rows: auto 1fr auto; min-height: 100svh; overflow-x: clip; background: var(--bg); }
   .stage::after { content: ""; position: absolute; z-index: 8; pointer-events: none; inset: 14px; border: 1px solid rgba(232,220,196,.07); }
-  .topbar { position: relative; z-index: 4; display: flex; align-items: center; gap: 36px; min-height: 88px; padding: max(20px,env(safe-area-inset-top)) var(--gutter) 16px; }
+  .topbar { position: relative; z-index: 4; display: flex; align-items: center; gap: 36px; min-height: 88px; padding: max(20px,env(safe-area-inset-top)) max(var(--gutter),env(safe-area-inset-right)) 16px max(var(--gutter),env(safe-area-inset-left)); }
   .brand { width: 104px; margin: 0; line-height: 1; white-space: nowrap; }
   .brand img { display: block; width: 100%; height: auto; }
   .brand::after { content: ""; display: block; width: 22px; height: 2px; margin-top: 11px; background: var(--red); }
-  .journey { display: flex; align-items: center; gap: 25px; margin: 0 auto; padding: 0; list-style: none; color: var(--faint); font: 11px/1.4 var(--sans); letter-spacing: .1em; }
+  .journey { display: flex; align-items: center; gap: 25px; margin: 0 auto; padding: 0; list-style: none; color: var(--faint); font: 14px/1.4 var(--sans); letter-spacing: .035em; }
   .journey li { display: flex; align-items: center; gap: 9px; }
   .journey li + li::before { content: ""; width: 25px; height: 1px; margin-right: 14px; background: var(--line); }
   .journey b { font-weight: 400; font-variant-numeric: tabular-nums; }
   .journey [aria-current="step"] { color: var(--ink); }
   .journey [aria-current="step"] b { color: var(--gold); }
-  .connection { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 44px; margin-left: auto; padding: 4px 0 4px 10px; border: 0; background: transparent; color: var(--muted); font: 11px/1.4 var(--sans); }
+  .connection { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 44px; margin-left: auto; padding: 4px 0 4px 10px; border: 0; background: transparent; color: var(--muted); font: 14px/1.4 var(--sans); }
   .connection-dot { width: 5px; height: 5px; flex: 0 0 5px; border: 1px solid currentColor; border-radius: 50%; }
   .connection[data-state="online"] .connection-dot { background: var(--gold); border-color: var(--gold); }
   .connection[data-state="offline"] { color: var(--error); }
   .staff-label { border-left: 1px solid var(--line-strong); padding-left: 14px; margin-left: 10px; }
   .connection:hover .staff-label { color: var(--ink); }
-  .fullscreen-return { min-height: 44px; padding: 7px 12px; border: 1px solid var(--line-strong); background: rgba(18,16,14,.82); color: var(--ink); font: 12px/1.4 var(--sans); }
+  .fullscreen-return { min-height: 44px; padding: 7px 12px; border: 1px solid var(--line-strong); background: rgba(18,16,14,.82); color: var(--ink); font: 16px/1.4 var(--sans); }
   .portrait { position: absolute; z-index: -1; inset: 0; margin: 0; overflow: hidden; background: var(--bg); }
   .portrait img, .portrait video { display: block; width: 100%; height: 100%; object-fit: cover; }
   .portrait::after { content: ""; position: absolute; pointer-events: none; inset: 0; background: linear-gradient(90deg,var(--bg),rgba(9,8,7,.97) 28%,rgba(9,8,7,.83) 44%,rgba(9,8,7,.1) 75%),linear-gradient(0deg,var(--bg),transparent 35%,transparent 80%,rgba(9,8,7,.5)); }
   #entranceImage { object-position: 76% center; }
   .stage:not(.is-briefing) #doctorImage, .stage:not(.is-briefing) #doctorVideo, .stage.is-briefing #entranceImage { display: none; }
-  .content { position: relative; z-index: 2; align-self: center; width: 56%; max-width: 800px; padding: 16px 36px 12px var(--gutter); min-width: 0; }
+  .content { position: relative; z-index: 2; align-self: center; width: 56%; max-width: 800px; padding: 16px 36px 12px max(var(--gutter),env(safe-area-inset-left)); min-width: 0; }
   h1 { margin: 0 0 25px; font-size: clamp(30px,3.3vw,48px); font-weight: 400; line-height: 1.3; letter-spacing: .12em; text-wrap: balance; scroll-margin-top: 24px; }
   .surface { opacity: 1; transition: opacity .26s var(--ease),transform .38s var(--ease); }
   .surface:not(.is-active) { position: absolute; inset: 16px 36px 12px var(--gutter); opacity: 0; transform: translateY(8px); pointer-events: none; }
   .notice { margin-bottom: 24px; padding: 17px 0 18px; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); }
-  .eyebrow { display: block; margin-bottom: 10px; color: var(--gold); font: 10px/1.4 var(--sans); text-transform: uppercase; letter-spacing: .18em; }
+  .eyebrow { display: block; margin-bottom: 10px; color: var(--gold); font: 14px/1.4 var(--sans); text-transform: uppercase; letter-spacing: .06em; }
   .notice-body { margin: 0; max-width: 42em; color: var(--muted); font: 16px/1.75 var(--sans); white-space: pre-line; overflow-wrap: anywhere; }
   .system-note { margin: 0 0 18px; padding: 10px 14px; border-left: 2px solid var(--gold); background: rgba(215,194,155,.07); font: 14px/1.6 var(--sans); }
   .settings { margin: 0; }
+  #settingsForm { min-height: 158px; }
   fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
   fieldset + fieldset { margin-top: 20px; }
-  legend { width: 100%; margin: 0 0 10px; padding: 0; color: var(--muted); font: 11px/1.5 var(--sans); letter-spacing: .13em; }
+  legend { width: 100%; margin: 0 0 10px; padding: 0; color: var(--muted); font: 14px/1.5 var(--sans); letter-spacing: .04em; }
   .choices { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
   .choices.two { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .choice { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 56px; padding: 12px 15px; border: 1px solid var(--line); background: rgba(9,8,7,.45); cursor: pointer; transition: background-color .2s,border-color .2s,transform .2s var(--ease); }
@@ -85,9 +87,8 @@
   .choice-mark::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--gold); transform: scale(0); transition: transform .22s var(--ease); }
   input:checked ~ .choice-mark { border-color: var(--gold); }
   input:checked ~ .choice-mark::before { transform: scale(1); }
-  .relief-description { min-height: 3em; margin: 10px 0 0; color: var(--muted); font: 13px/1.5 var(--sans); white-space: pre-line; opacity: 0; transform: translateY(-3px); transition: opacity .2s,transform .25s var(--ease); }
-  .relief-description.is-visible { opacity: 1; transform: none; }
-  .footer { position: relative; z-index: 4; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 28px; padding: 23px var(--gutter) max(30px,env(safe-area-inset-bottom)); }
+  .relief-description { min-height: 3em; margin: 10px 0 0; color: var(--muted); font: 16px/1.5 var(--sans); white-space: pre-line; }
+  .footer { position: relative; z-index: 4; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 28px; padding: 23px max(var(--gutter),env(safe-area-inset-right)) max(30px,env(safe-area-inset-bottom)) max(var(--gutter),env(safe-area-inset-left)); }
   .settings-actions { display: flex; align-items: stretch; justify-content: flex-end; gap: 10px; }
   .settings-actions .secondary { min-height: 60px; }
   .subtitle { justify-self: start; align-self: center; width: min(100%,800px); min-height: 3.4em; position: relative; font-size: clamp(16px,1.55vw,21px); line-height: 1.7; letter-spacing: .04em; text-wrap: balance; text-shadow: 0 2px 10px var(--bg); }
@@ -108,15 +109,15 @@
   .result[data-tone="wait"] .status-glyph::after { content: ""; position: absolute; inset: -6px; border: 1px solid transparent; border-top-color: var(--gold); animation: turn 2s linear infinite; }
   @keyframes turn { to { transform: rotate(360deg); } }
   .result-title { margin: 0; font-size: clamp(24px,2.7vw,38px); font-weight: 400; line-height: 1.4; letter-spacing: .05em; text-wrap: balance; overflow-wrap: anywhere; }
-  .result-detail { margin: 0; color: var(--muted); font: 14px/1.65 var(--sans); }
-  .values { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .result-detail { margin: 0; color: var(--muted); font: 16px/1.65 var(--sans); text-wrap: pretty; }
+  .values { width: 100%; table-layout: fixed; border-collapse: collapse; font-family: var(--sans); }
   .values th, .values td { padding: 17px 8px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
-  .values thead th, .values tbody th { color: var(--muted); font: 11px/1.5 var(--sans); font-weight: 400; }
+  .values thead th, .values tbody th { color: var(--muted); font: 14px/1.5 var(--sans); font-weight: 400; }
   .values thead th:first-child { width: 27%; }
   .values td { font-size: 19px; font-variant-numeric: tabular-nums; }
   .result[data-tone="ok"] .values td:last-child { color: var(--gold); }
   .result-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
-  .secondary, .retry, .briefing-control { min-height: 46px; padding: 10px 17px; border: 1px solid var(--line-strong); background: rgba(9,8,7,.7); font: 13px/1.5 var(--sans); letter-spacing: .035em; transition: border-color .2s,background-color .2s,transform .2s var(--ease); }
+  .secondary, .retry, .briefing-control { min-height: 46px; padding: 10px 17px; border: 1px solid var(--line-strong); background: rgba(9,8,7,.7); font: 16px/1.5 var(--sans); letter-spacing: .01em; transition: border-color .2s,background-color .2s,transform .2s var(--ease); }
   .secondary:hover, .retry:hover, .briefing-control:hover:not(:disabled) { background: rgba(215,194,155,.08); border-color: var(--gold); }
   .secondary:active, .retry:active, .briefing-control:active:not(:disabled) { transform: scale(.97); }
   .retry { border-color: var(--error); }
@@ -139,25 +140,25 @@
   .title-start:hover { background: transparent; }
   .title-start-copy { display: grid; gap: 7px; }
   .title-start-main { font-size: 17px; letter-spacing: .12em; }
-  .title-start-alt { font: 10px/1.5 var(--sans); color: var(--muted); letter-spacing: .05em; }
+  .title-start-alt { font: 13px/1.5 var(--sans); color: var(--muted); letter-spacing: .025em; }
   .title-view.is-leaving { opacity: 0; }
   .title-view.is-leaving::before { transform: scale(1.035); opacity: .3; }
   .title-view.is-leaving .title-lockup { opacity: 0; transform: translateY(-12px); }
-  .stage.is-briefing { height: 100svh; min-height: 640px; grid-template-rows: auto minmax(300px,1fr) auto; }
+  .stage.is-briefing { height: auto; min-height: 100svh; grid-template-rows: auto minmax(0,1fr) auto; }
   .stage.is-briefing .content { min-height: 0; align-self: stretch; width: 64%; max-width: none; padding-top: 18px; padding-bottom: 18px; }
   .stage.is-briefing .portrait { top: 88px; bottom: 165px; left: 62%; right: 0; }
   .stage.is-briefing .portrait img, .stage.is-briefing .portrait video { position: absolute; left: 50%; bottom: 0; height: 100%; width: auto; max-width: none; transform: translateX(calc(0% - var(--doctor-anchor))); mask-image: linear-gradient(90deg,transparent,#000 10%,#000 86%,transparent); }
   .stage.is-briefing .portrait::after { background: linear-gradient(90deg,var(--bg),transparent 18%,transparent 84%,var(--bg)),linear-gradient(0deg,var(--bg),transparent 20%,transparent 85%,var(--bg)); }
   .briefing { height: 100%; display: grid; grid-template-rows: auto minmax(150px,1fr) auto; gap: 20px; }
   .briefing-copy { min-width: 0; }
-  .briefing-chapter { display: grid; grid-template-columns: auto auto minmax(20px,1fr) auto; gap: 15px; align-items: center; color: var(--gold); font: 10px/1.3 var(--sans); letter-spacing: .13em; }
+  .briefing-chapter { display: grid; grid-template-columns: auto auto minmax(20px,1fr) auto; gap: 15px; align-items: center; color: var(--gold); font: 14px/1.3 var(--sans); letter-spacing: .04em; }
   .briefing-chapter-number { font-size: 29px; font-weight: 300; line-height: 1; }
-  .briefing-chapter-number, .briefing-cue-number { font-variant-numeric: tabular-nums; }
-  .briefing-chapter .eyebrow { margin: 0; font-size: 11px; }
+  .briefing-chapter-number, .briefing-cue-number { flex-shrink: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .briefing-chapter .eyebrow { margin: 0; font-size: 14px; }
   .briefing-chapter-line { height: 1px; background: var(--line); transform-origin: left; }
   .briefing-title { margin: 20px 0 0; font-size: clamp(24px,2.5vw,36px); font-weight: 400; line-height: 1.4; letter-spacing: .09em; text-wrap: balance; }
-  .briefing-caption { margin: 7px 0 0; font: 12px/1.6 var(--sans); color: var(--muted); }
-  .briefing-mode { margin: 10px 0 0; padding: 7px 10px; border-left: 2px solid var(--gold); color: var(--gold); background: rgba(215,194,155,.07); font: 12px/1.5 var(--sans); }
+  .briefing-caption { margin: 7px 0 0; font: 14px/1.6 var(--sans); color: var(--muted); }
+  .briefing-mode { margin: 10px 0 0; padding: 7px 10px; border-left: 2px solid var(--gold); color: var(--gold); background: rgba(215,194,155,.07); font: 14px/1.5 var(--sans); }
   .briefing-visual { position: relative; min-height: 150px; margin: 0; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
   .briefing-visual::after { content: ""; position: absolute; pointer-events: none; inset: 8px; border: 1px solid rgba(232,220,196,.08); }
   .briefing-image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .38s var(--ease); }
@@ -167,17 +168,22 @@
   .briefing-loop-video.is-visible { opacity: 1; }
   .briefing-loop-video[hidden] { display: none; }
   .briefing-intro { display: none; }
-  .briefing-progress { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 16px; color: var(--faint); font: 10px/1.4 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: .12em; }
+  .briefing-progress { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 16px; color: var(--faint); font: 14px/1.4 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: .035em; }
   .briefing-progress progress { appearance: none; width: 100%; height: 2px; border: 0; background: var(--line); color: var(--gold); }
   progress::-webkit-progress-bar { background: var(--line); }
   progress::-webkit-progress-value { background: var(--gold); }
   progress::-moz-progress-bar { background: var(--gold); }
   .stage.is-briefing .footer { grid-template-columns: 1fr; gap: 16px; padding-top: 20px; background: var(--bg); border-top: 1px solid var(--line); }
   .stage.is-briefing .subtitle { justify-self: center; width: min(100%,1040px); min-height: 3.4em; font-size: clamp(18px,1.8vw,25px); text-align: center; }
-  .briefing-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+  .briefing-controls { display: grid; grid-template-columns: minmax(170px,1fr) repeat(5,auto); align-items: center; gap: 8px; }
   .briefing-control { background: transparent; }
-  #briefingSettings { margin-right: auto; order: -2; border-color: transparent; color: var(--muted); padding-left: 0; }
-  #briefingToggle { order: -1; margin-right: 8px; border-color: transparent; color: var(--muted); }
+  #briefingSettings { border-color: transparent; color: var(--muted); padding-left: 0; }
+  #briefingToggle { border-color: transparent; color: var(--muted); }
+  #briefingSettings { grid-column: 1; grid-row: 1; justify-self: start; }
+  #briefingMute { grid-column: 2; grid-row: 1; }
+  #briefingToggle { grid-column: 3; grid-row: 1; }
+  #briefingPrevious { grid-column: 5; grid-row: 1; }
+  #briefingNext, .briefing-replay { grid-column: 6; grid-row: 1; }
   #briefingToggle[aria-pressed="true"] { color: var(--gold); border-color: var(--line-strong); }
   #briefingNext { border-color: var(--gold); min-width: 112px; }
   #briefingNext::after { content: "›"; margin-left: 20px; color: var(--gold); }
@@ -196,36 +202,37 @@
   @keyframes chapter-in { from { opacity: 0; transform: translateX(var(--chapter-shift,12px)); } to { opacity: 1; transform: none; } }
   @keyframes reference-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes chapter-line { from { transform: scaleX(.1); } to { transform: scaleX(1); } }
-  .media-notice { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 16px; padding: 8px 0; color: var(--muted); font: 12px/1.5 var(--sans); }
-  .media-notice button { min-height: 44px; padding: 8px 12px; background: transparent; border: 1px solid var(--line-strong); font-size: 12px; }
+  .media-notice { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; min-height: 48px; gap: 8px 16px; padding: 4px 0; color: var(--muted); font: 14px/1.5 var(--sans); }
+  .media-notice button { min-height: 44px; padding: 8px 12px; background: transparent; border: 1px solid var(--line-strong); font-size: 14px; }
   .staff-dialog { width: min(94vw,920px); max-height: 90svh; padding: 0; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: 0 25px 90px rgba(0,0,0,.65); overscroll-behavior: contain; font-family: var(--sans); }
   .staff-dialog[open] { animation: reference-in .24s var(--ease); }
   .staff-dialog::backdrop { background: rgba(0,0,0,.8); }
   .staff-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
   .staff-dialog h2 { margin: 0; font-size: 22px; font-weight: 400; }
   .staff-close { flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid var(--line); background: transparent; }
-  .staff-body { padding: 20px 24px 24px; }
+  .staff-body { padding: 20px 24px 0; }
   .staff-section + .staff-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
   .staff-section h3, .staff-section legend { margin: 0 0 12px; color: var(--ink); font: 16px/1.5 var(--sans); letter-spacing: 0; }
   .staff-dialog p { margin: 10px 0; font-size: 14px; line-height: 1.65; }
   .staff-dialog .choice { min-height: 62px; padding: 10px; font-size: 16px; }
   .staff-dialog .choice span { min-width: 0; }
-  .staff-dialog .choice small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .staff-dialog .choice small { display: block; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
   .staff-summary { margin: 12px 0; color: var(--ink); font: 15px/1.85 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
   .staff-help { color: var(--muted); }
   .staff-message { min-height: 1.6em; color: var(--gold); }
   #staffCheckMessage:empty, #staffMessage:empty { display: none; }
-  .staff-action { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--line-strong); background: transparent; font-size: 15px; }
+  .staff-action { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--line-strong); background: transparent; font-size: 16px; }
   .staff-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
   .staff-clear { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--red); background: rgba(168,50,57,.12); }
-  .staff-done { margin-top: 22px; background: var(--ink); color: var(--bg); }
+  .staff-done { position: sticky; z-index: 2; bottom: 0; margin: 22px -24px 0; width: calc(100% + 48px); background: var(--ink); color: var(--bg); }
+  .choice:has(input:disabled) { cursor: default; color: var(--faint); opacity: .55; }
   @media (min-width:850px) {
     .staff-body { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: 16px 24px; }
     .staff-section:nth-child(1) { grid-area: 1 / 1; }
     .staff-section:nth-child(2) { grid-area: 2 / 1; margin-top: 0; padding-top: 16px; }
     .staff-section:nth-child(3) { grid-area: 1 / 2 / 3 / 3; margin-top: 0; padding: 0 0 0 24px; border-top: 0; border-left: 1px solid var(--line); }
     .staff-actions { grid-template-columns: 1fr; }
-    .staff-done { grid-column: 1 / -1; margin-top: 0; }
+    .staff-done { grid-column: 1 / -1; margin: 0 -24px; width: calc(100% + 48px); }
   }
   @media (min-width:1600px) { .content { width: 52%; } .stage.is-briefing { grid-template-rows: auto minmax(440px,1fr) auto; } .notice-body { font-size: 18px; } }
   @media (min-width:761px) and (max-height:800px) {
@@ -238,33 +245,34 @@
     .choice { min-height: 50px; padding-block: 9px; }
     fieldset + fieldset { margin-top: 16px; }
     .footer { padding-top: 16px; padding-bottom: 24px; }
-    .stage.is-briefing { grid-template-rows: auto minmax(300px,1fr) auto; }
+    .stage.is-briefing { grid-template-rows: auto minmax(0,1fr) auto; }
     .stage.is-briefing .portrait { top: 74px; bottom: 178px; }
     .stage.is-briefing .footer { gap: 12px; padding-top: 16px; }
     .stage.is-briefing .subtitle { font-size: 20px; }
     .briefing { gap: 14px; }
     .briefing-title { margin-top: 14px; }
   }
-  @media (max-width:1100px) { .journey { gap: 15px; } .journey li + li::before { width: 14px; margin-right: 5px; } .topbar { gap: 20px; } .content { width: 61%; padding-right: 28px; } .choice { padding-inline: 11px; } .choice-text { font-size: 16px; } }
+  @media (max-width:1100px) { .journey { gap: 15px; } .journey li + li::before { width: 14px; margin-right: 5px; } .topbar { gap: 20px; } .content { width: 61%; padding-right: 28px; } .choice { padding-inline: 11px; } .choice-text { font-size: 18px; } }
   @media (max-width:760px), (max-aspect-ratio:1/1) {
     :root { --gutter: 28px; }
     .stage { min-height: 100svh; }
     .stage::after { inset: 10px; }
     .topbar { min-height: 90px; flex-wrap: wrap; gap: 12px; padding-top: max(22px,env(safe-area-inset-top)); }
     .brand { width: 92px; }
-    .connection { font-size: 10px; }
+    .connection { min-width: 0; flex-wrap: wrap; font-size: 14px; }
+    #connectionText { min-width: 0; overflow-wrap: anywhere; }
     .journey { order: 3; flex-basis: 100%; justify-content: flex-start; padding-top: 9px; gap: 16px; }
     .journey li + li::before { margin-right: 0; width: 16px; }
     .portrait::after { background: linear-gradient(90deg,rgba(9,8,7,.94),rgba(9,8,7,.8)),linear-gradient(0deg,var(--bg),transparent); }
     #entranceImage { object-position: 77% center; }
-    .content { width: 100%; max-width: none; padding: 28px var(--gutter) 0; }
+    .content { width: 100%; max-width: none; padding: 28px max(var(--gutter),env(safe-area-inset-right)) 0 max(var(--gutter),env(safe-area-inset-left)); }
     .surface:not(.is-active) { inset: 28px var(--gutter) 0; }
     h1 { font-size: 34px; margin-bottom: 24px; }
     .notice { margin-bottom: 25px; }
     .notice-body { font-size: 16px; }
     .choice { min-height: 56px; }
-    .choice-text { font-size: 17px; }
-    .footer { grid-template-columns: 1fr; gap: 14px; padding: 22px var(--gutter) max(30px,env(safe-area-inset-bottom)); }
+    .choice-text { font-size: 18px; }
+    .footer { grid-template-columns: 1fr; gap: 14px; padding: 22px max(var(--gutter),env(safe-area-inset-right)) max(30px,env(safe-area-inset-bottom)) max(var(--gutter),env(safe-area-inset-left)); }
     .subtitle { text-align: center; justify-self: center; font-size: 16px; }
     .primary { width: 100%; max-width: none; justify-content: space-between; }
     .settings-actions { width: 100%; }
@@ -279,20 +287,20 @@
     .result-state { gap: 10px 20px; margin-bottom: 30px; }
     .result-title { font-size: 28px; }
     .stage.is-briefing { height: auto; min-height: 100svh; grid-template-rows: auto minmax(310px,1fr) auto; }
-    .stage.is-briefing .content { width: 100%; padding: 22px var(--gutter) 18px; }
+    .stage.is-briefing .content { width: 100%; padding: 22px max(var(--gutter),env(safe-area-inset-right)) 18px max(var(--gutter),env(safe-area-inset-left)); }
     .stage.is-briefing .portrait { top: 125px; left: auto; right: 12px; width: 130px; height: 118px; bottom: auto; opacity: .8; }
     .stage.is-briefing .briefing-copy { padding-right: 114px; min-height: 112px; }
     .briefing-chapter { grid-template-columns: auto minmax(0,1fr) auto; gap: 10px; }
     .briefing-chapter-line { display: none; }
     .briefing-title { font-size: 26px; margin-top: 14px; }
-    .briefing-caption { font-size: 12px; }
+    .briefing-caption { font-size: 14px; }
     .briefing-image { position: relative; height: auto; aspect-ratio: 16 / 9; }
     .briefing { gap: 18px; grid-template-rows: auto auto auto; }
     .stage.is-doctor-only .portrait { left: 0; right: 0; top: 215px; bottom: 235px; width: auto; height: auto; min-height: 230px; opacity: 1; }
     .stage.is-doctor-only .briefing { min-height: 355px; grid-template-rows: auto 1fr auto; }
     .stage.is-doctor-only .briefing-copy { width: 100%; padding-right: 0; }
     .stage.is-doctor-only .briefing-caption { margin-top: 10px; }
-    .stage.is-briefing .subtitle { font-size: 18px; min-height: 5.1em; }
+    .stage.is-briefing .subtitle { font-size: 18px; min-height: 3.4em; }
     .stage.is-briefing .footer { gap: 14px; }
     .briefing-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .briefing-control { padding: 10px 13px; min-height: 46px; }
@@ -311,22 +319,23 @@
     :root { --gutter: 22px; }
     .topbar { gap: 8px; }
     .staff-label { padding-left: 10px; margin-left: 4px; }
-    .journey { font-size: 10px; gap: 12px; }
+    .journey { font-size: 14px; gap: 12px; }
     .journey li { gap: 6px; }
     .journey li + li::before { width: 10px; }
     h1 { font-size: 30px; }
     .choice { padding-inline: 9px; gap: 5px; }
-    .choice-text { font-size: 16px; }
+    .choice-text { font-size: 18px; }
     .choice-mark { width: 11px; height: 11px; flex-basis: 11px; }
     .values td { font-size: 16px; }
     .values th, .values td { padding-inline: 5px; }
     .result-state { grid-template-columns: 1fr; gap: 14px; }
     .result-state .status-glyph { grid-row: auto; margin: 0 0 12px 8px; }
     .result-title { font-size: 26px; }
-    .title-start-alt { font-size: 9px; }
+    .title-start-alt { font-size: 13px; }
+    .stage.is-briefing .subtitle { min-height: 5.1em; }
   }
   @media (min-width:761px) and (min-height:600px) and (min-aspect-ratio:1/1) {
-    .stage.is-briefing { min-height: 100svh; grid-template-rows: auto minmax(300px,1fr) auto; }
+    .stage.is-briefing { min-height: 100svh; grid-template-rows: auto minmax(0,1fr) auto; }
     .stage.is-briefing .topbar { grid-area: 1 / 1; min-height: 58px; padding-top: max(8px,env(safe-area-inset-top)); padding-bottom: 6px; }
     .stage.is-briefing .brand { width: 80px; }
     .stage.is-briefing .brand::after { margin-top: 5px; }
@@ -336,24 +345,23 @@
     .stage.is-doctor-only .portrait img, .stage.is-doctor-only .portrait video { height: 115%; bottom: -15%; }
     .stage.is-doctor-only .portrait::after { background: linear-gradient(90deg,var(--bg),transparent 18%,transparent 84%,var(--bg)),linear-gradient(0deg,var(--bg),transparent 8%,transparent 94%,var(--bg)); }
     .stage.is-briefing .footer { grid-area: 3 / 1; gap: 8px; padding-top: 10px; padding-bottom: max(12px,env(safe-area-inset-bottom)); }
-    .stage.is-briefing .subtitle { width: min(100%,1280px); min-height: 1.55em; line-height: 1.55; overflow-wrap: anywhere; }
+    .stage.is-briefing .subtitle { width: min(100%,1280px); min-height: 3.1em; line-height: 1.55; overflow-wrap: anywhere; }
     .stage.is-briefing .briefing-control { min-height: 44px; padding: 8px 14px; }
-    .stage.is-briefing #briefingSettings { margin-right: 0; }
-    .stage.is-briefing #briefingToggle { order: 0; margin-left: auto; }
-    .stage.is-briefing .media-notice { order: -1; flex: 1 1 180px; min-width: 0; flex-wrap: nowrap; justify-content: flex-start; gap: 8px; padding: 0; }
+    .stage.is-briefing .media-notice { min-width: 0; gap: 8px; padding: 0; }
     .stage.is-briefing .media-notice span { min-width: 0; overflow-wrap: anywhere; }
     .stage.is-briefing .media-notice button { flex: 0 0 auto; }
   }
   @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
   .reference-fallback { min-height: 200px; height: 100%; display: grid; place-content: center; gap: 12px; padding: 30px; text-align: center; color: var(--muted); font: 14px/1.8 var(--sans); }
   .reference-fallback p { margin: 0; }
-  .reference-fallback span { color: var(--faint); font-size: 12px; }
+  .reference-fallback span { color: var(--faint); font-size: 14px; }
   #briefingMute { border-color: transparent; color: var(--muted); }
+  #briefingMute.is-placeholder { visibility: hidden; }
   .stage.is-briefing, .stage.is-briefing * { -webkit-tap-highlight-color: transparent; }
   .stage.is-briefing .briefing, .stage.is-briefing .portrait, .stage.is-briefing .subtitle { -webkit-user-select: none; user-select: none; }
   .stage.is-briefing img, .stage.is-briefing video { -webkit-user-drag: none; }
   .stage.is-equipment .portrait { display: none; }
-  .stage.is-equipment .content { width: 100%; max-width: none; padding: 20px var(--gutter); }
+  .stage.is-equipment .content { width: 100%; max-width: none; padding: 20px max(var(--gutter),env(safe-area-inset-right)) 20px max(var(--gutter),env(safe-area-inset-left)); }
   .stage.is-equipment .briefing { max-width: 960px; margin: 0 auto; grid-template-rows: auto auto; align-content: center; gap: 22px; cursor: default; }
   .stage.is-equipment .briefing-copy { width: 100%; min-height: 0; padding-right: 0; }
   .equipment-steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: equipment; }
@@ -361,7 +369,27 @@
   .equipment-steps li::before { content: counter(equipment,decimal-leading-zero); flex: 0 0 auto; color: var(--gold); font: 16px/1.6 var(--sans); font-variant-numeric: tabular-nums; }
   .equipment-followup { margin: 26px 0 0; color: var(--muted); font: clamp(17px,1.9vw,23px)/1.7 var(--sans); overflow-wrap: anywhere; }
   .stage.is-equipment .footer { padding-bottom: max(24px,env(safe-area-inset-bottom)); }
-  .stage.is-equipment .briefing-controls { justify-content: center; }
+  .stage.is-equipment .briefing-controls { width: min(100%,600px); margin-inline: auto; grid-template-columns: repeat(2,minmax(0,1fr)); justify-content: center; }
+  .stage.is-equipment #briefingSettings { grid-column: 1; grid-row: 1; }
+  .stage.is-equipment .briefing-replay { grid-column: 2; grid-row: 1; }
+  @media (max-width:420px) {
+    .stage.is-equipment .briefing-controls { grid-template-columns: minmax(0,1fr); }
+    .stage.is-equipment #briefingSettings { justify-self: stretch; text-align: center; }
+    .stage.is-equipment .briefing-replay { grid-column: 1; grid-row: 2; }
+  }
+  @media (min-width:761px) and (max-height:590px) {
+    .stage.is-briefing .topbar { min-height: 52px; padding-top: 6px; padding-bottom: 4px; }
+    .stage.is-briefing .brand { width: 72px; }
+    .stage.is-briefing .content { padding-top: 6px; padding-bottom: 6px; }
+    .stage.is-briefing .briefing { gap: 8px; grid-template-rows: auto minmax(90px,1fr) auto; }
+    .stage.is-briefing .briefing-title { margin-top: 6px; font-size: 23px; }
+    .stage.is-briefing .portrait { top: 52px; bottom: 150px; }
+    .stage.is-briefing .footer { gap: 4px; padding-top: 5px; padding-bottom: 7px; }
+    .stage.is-briefing .subtitle { font-size: 17px; min-height: 3em; }
+    .stage.is-briefing .briefing-control { min-height: 40px; padding: 5px 10px; font-size: 14px; }
+    .stage.is-briefing .media-notice { min-height: 40px; font-size: 14px; }
+    .stage.is-briefing .media-notice button { min-height: 38px; }
+  }
 </style>
 </head>
 <body>
@@ -415,17 +443,17 @@
           <div class="choices">
             <label class="choice">
               <input type="radio" name="lang" value="ja" checked>
-              <span class="choice-text">日本語</span>
+              <span class="choice-text" lang="ja">日本語</span>
               <span class="choice-mark" aria-hidden="true"></span>
             </label>
             <label class="choice">
               <input type="radio" name="lang" value="en">
-              <span class="choice-text">English</span>
+              <span class="choice-text" lang="en">English</span>
               <span class="choice-mark" aria-hidden="true"></span>
             </label>
             <label class="choice">
               <input type="radio" name="lang" value="fr">
-              <span class="choice-text">Français</span>
+              <span class="choice-text" lang="fr">Français</span>
               <span class="choice-mark" aria-hidden="true"></span>
             </label>
           </div>
@@ -453,7 +481,7 @@
     <section class="surface result" id="resultView" aria-labelledby="resultTitle" aria-hidden="true" hidden inert>
       <div class="result-state" role="status" aria-live="polite" aria-atomic="true">
         <div class="status-glyph" aria-hidden="true"><span id="resultGlyph">…</span></div>
-        <h2 class="result-title" id="resultTitle" tabindex="-1">送信中</h2>
+        <h1 class="result-title" id="resultTitle" tabindex="-1">送信中</h1>
         <p class="result-detail" id="resultDetail"></p>
       </div>
       <table class="values">
@@ -461,7 +489,7 @@
           <tr>
             <th scope="col"><span class="sr-only" id="itemHeading">項目</span></th>
             <th scope="col" id="selectedHeading">選んだ設定</th>
-            <th scope="col" id="headsetHeading">ヘッドセット</th>
+            <th scope="col" id="headsetHeading">現在のクエスト</th>
           </tr>
         </thead>
         <tbody>
@@ -479,6 +507,7 @@
       </table>
       <div class="result-actions">
         <button class="primary" id="applyBtn" type="button" hidden>この設定で始める</button>
+        <button class="primary" id="resultContinueBtn" type="button" hidden>画面をタップして次へ</button>
         <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
         <button class="retry" id="briefingRetryBtn" type="button" hidden>説明資料を再読み込み</button>
         <button class="secondary" id="editBtn" type="button" hidden>設定に戻る</button>
@@ -494,7 +523,7 @@
           <span class="briefing-chapter-line" aria-hidden="true"></span>
           <span class="briefing-cue-number" id="briefingCueNumber"></span>
         </div>
-        <h2 class="briefing-title" id="briefingTitle" tabindex="-1"></h2>
+        <h1 class="briefing-title" id="briefingTitle" tabindex="-1"></h1>
         <p class="briefing-caption" id="briefingCaption"></p>
         <p class="briefing-mode" id="briefingMode" hidden>スタッフ確認モードです。クエストへ設定は送りません。</p>
       </div>
@@ -511,9 +540,9 @@
       </figure>
       <div class="equipment-guide" id="equipmentGuide" hidden>
         <ol class="equipment-steps">
+          <li><span id="equipmentController"></span></li>
           <li><span id="equipmentQuest"></span></li>
           <li><span id="equipmentHeadphones"></span></li>
-          <li><span id="equipmentController"></span></li>
         </ol>
         <p class="equipment-followup" id="equipmentFollowup"></p>
       </div>
@@ -541,12 +570,12 @@
     </div>
     <div class="briefing-controls" id="briefingControls" hidden>
       <button class="briefing-control" id="briefingMute" type="button" aria-pressed="false" hidden>音声 ON</button>
-      <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button" aria-pressed="false">AUTO OFF</button>
+      <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button" aria-pressed="false">自動送り：切</button>
       <button class="briefing-control" id="briefingPrevious" type="button">前の文</button>
       <button class="briefing-control" id="briefingNext" type="button">次の文</button>
       <button class="briefing-control" id="briefingSettings" type="button">設定に戻る</button>
       <button class="briefing-control briefing-replay" id="briefingReplay" type="button" hidden>もう一度説明を見る</button>
-      <div class="media-notice" id="mediaNotice" hidden>
+      <div class="media-notice" id="mediaNotice">
         <span id="mediaMessage" role="status" aria-live="polite"></span>
         <button id="mediaRetry" type="button">再読み込み</button>
       </div>
@@ -590,6 +619,7 @@
         <button class="staff-action" id="staffBriefingBtn" type="button">説明を確認する</button>
         <button class="staff-action" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
       </div>
+      <p class="staff-help" id="staffBriefingHelp"></p>
       <p class="staff-help" id="staffSoundHelp" role="status">声が聞こえるか確認してください。音量はタブレット本体のボタンで調整します。</p>
       <p class="staff-help">クエストの装着位置を確認してください。クエストの音と左コントローラーは実機で確認します。</p>
     </section>
@@ -608,45 +638,45 @@
   const T = {
     ja: {
       journey: ['体験の準備', '設定', '調査説明', '装着'],
-      media: { muted: '音声 OFF', audible: '音声 ON', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', paused: '説明を一時停止しています。', resume: 'この文を再生', unavailable: '画像を表示できません' },
+      media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: 'この文を再生', noAudio: '', staff: 'スタッフ設定を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', unavailable: '画像を表示できません' },
       pageTitle: '体験の前に', noticeLabel: '注意', language: '言語', relief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
-      reliefDesc: 'すべての演出の音量が半分になり、\n陽気な曲が流れます。',
+      reliefDesc: 'なし：通常の演出と音量\nあり：音量半分と陽気な曲',
       askLanguage: '使う言語を教えてください。',
       askRelief: '恐怖を軽減するかどうかを決めてください。',
       next: '次へ', back: '戻る',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
       review: '設定を確認する', apply: 'この設定で始める', edit: '設定に戻る', retry: 'もう一度送る',
-      selected: '選んだ設定', headset: 'ヘッドセット', item: '項目',
+      selected: '選んだ設定', headset: 'クエスト', headsetCurrent: '現在のクエスト', headsetConfirmed: 'クエストで確認した設定', item: '項目', continue: '画面をタップして次へ',
       restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
       staff: 'スタッフ設定', staffOpen: 'スタッフ設定を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
-        confirm: ['設定内容の確認', '言語とホラー軽減を確認してください'],
-        sending: ['設定を反映しています', 'Questからの反映確認を待っています'],
-        applied: ['Questに反映しました', 'Questから反映確認を受け取りました'],
-        waiting: ['設定を反映しています', 'Questの注意書き画面で反映されます。確認を待っています'],
-        later: ['設定を反映しています', '現在の体験が終わった後に反映されます'],
+        confirm: ['設定内容の確認', '言語とホラー軽減を確認してください。まだクエストへ送信していません'],
+        sending: ['設定を反映しています', 'クエストからの反映確認を待っています'],
+        applied: ['クエストに反映しました', 'クエストで設定の反映を確認しました'],
+        waiting: ['反映を待っています', 'クエストの注意書き画面で反映されます'],
+        later: ['現在体験中です', '体験が終わると設定の反映を待ちます'],
         noserver: ['ヘッドセットを確認できません', '通信の回復を待っています。スタッフを呼んでください'],
-        fail: ['送信を確認できませんでした', '設定が届いたか確認できません。もう一度送れます'],
+        fail: ['送信を確認できませんでした', '設定が届いたか確認できません'],
         conflict: ['設定が変更されました', '別のページで設定が変更されました。設定を確認してください。'],
       },
       postSpeech: {
         confirm: '言語とホラー軽減の設定を確認してください。',
-        sending: 'Questからの反映確認を待っています。少しお待ちください。',
+        sending: 'クエストからの反映確認を待っています。少しお待ちください。',
         applied: '画面をタップして次へ',
-        waiting: 'Questの注意書き画面で反映されます。確認を待っています。',
+        waiting: 'クエストの注意書き画面で反映されます。確認を待っています。',
         later: '次の開始まで、少しお待ちください。',
         noserver: '通信を確認できません。スタッフにお声がけください。',
-        fail: '設定を確認できません。スタッフにお声がけください。',
+        fail: '「もう一度送る」を押してください。繰り返す場合はスタッフにお声がけください。',
         conflict: '別のページで設定が変更されました。設定を確認してください。',
         loading: '準備が整うまで、少しお待ちください。',
-        error: '説明を読み込めません。スタッフにお声がけください。',
+        error: '「説明資料を再読み込み」を押してください。繰り返す場合はスタッフにお声がけください。',
       },
       briefing: {
         loading: ['説明資料を準備しています', '設定は反映されました。準備が整うまでお待ちください'],
-        error: ['説明資料を読み込めません', '通信を確認して、説明資料を再読み込みしてください'],
-        retry: '説明資料を再読み込み', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: '前の文',
+        error: ['説明資料を読み込めません', '再読み込みしてください。続く場合はスタッフへお声がけください'],
+        retry: '説明資料を再読み込み', autoOn: '自動送り：入', autoOff: '自動送り：切', previous: '前の文',
         next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
@@ -654,27 +684,27 @@
     },
     en: {
       journey: ['Prepare for the experience', 'Settings', 'Briefing', 'Equip'],
-      media: { muted: 'Sound OFF', audible: 'Sound ON', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', paused: 'The briefing is paused.', resume: 'Play this sentence', unavailable: 'Image unavailable' },
+      media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Play this sentence', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close Staff settings to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', unavailable: 'Image unavailable' },
       pageTitle: 'Before the experience', noticeLabel: 'Notice', language: 'Language', relief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
-      reliefDesc: 'All sound is halved,\nand a cheerful tune plays.',
+      reliefDesc: 'Off: normal effects and volume\nOn: half volume with a cheerful tune',
       askLanguage: 'Please choose the language you would like to use.',
       askRelief: 'Please choose whether you would like to reduce the horror.',
       next: 'Next', back: 'Back',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
       review: 'Review settings', apply: 'Start with these settings', edit: 'Back to settings', retry: 'Send again',
-      selected: 'Selected settings', headset: 'Headset', item: 'Item',
+      selected: 'Selected settings', headset: 'Quest', headsetCurrent: 'Current Quest settings', headsetConfirmed: 'Settings confirmed on Quest', item: 'Item', continue: 'Tap the screen to continue',
       restarted: 'The headset restarted. Check the retained settings, then send them again.',
       staff: 'Staff settings', staffOpen: 'Open staff settings', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
-        confirm: ['Review settings', 'Check the language and reduced horror setting'],
+        confirm: ['Review settings', 'Check the language and reduced horror setting. Nothing has been sent to Quest yet'],
         sending: ['Applying settings', 'Waiting for confirmation from Quest'],
         applied: ['Applied to Quest', 'Quest confirmed the settings were applied'],
-        waiting: ['Applying settings', 'Quest will apply them on the notice screen. Waiting for confirmation'],
-        later: ['Applying settings', 'Quest will apply them after the current session'],
+        waiting: ['Waiting for the settings to apply', 'Quest will apply them on the notice screen'],
+        later: ['A session is currently in progress', 'The settings will wait to apply when the current session ends'],
         noserver: ['Connection unknown', 'The headset connection cannot be confirmed. Please call a member of staff'],
-        fail: ['Could not confirm delivery', 'Delivery could not be confirmed. You can send the settings again'],
+        fail: ['Could not confirm delivery', 'Delivery could not be confirmed'],
         conflict: ['Settings changed', 'Settings were changed on another page. Please check the settings.'],
       },
       postSpeech: {
@@ -684,15 +714,15 @@
         waiting: 'Quest will apply them on the notice screen. Waiting for confirmation.',
         later: 'Please wait for the next session to begin.',
         noserver: 'I cannot confirm the connection. Please call a member of staff.',
-        fail: 'I cannot confirm your settings. Please call a member of staff.',
+        fail: 'Press “Send again”. If this continues, call a member of staff.',
         conflict: 'Settings were changed on another page. Please check the settings.',
         loading: 'Please wait a moment while everything is prepared.',
-        error: 'I cannot load the briefing. Please call a member of staff.',
+        error: 'Press “Reload briefing”. If this continues, call a member of staff.',
       },
       briefing: {
         loading: ['Preparing the briefing', 'The settings are applied. Please wait while the material loads'],
-        error: ['The briefing could not be loaded', 'Check the connection, then reload the briefing material'],
-        retry: 'Reload briefing', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Previous sentence',
+        error: ['The briefing could not be loaded', 'Reload the briefing. If this continues, ask a member of staff'],
+        retry: 'Reload briefing', autoOn: 'Auto advance: On', autoOff: 'Auto advance: Off', previous: 'Previous sentence',
         next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
@@ -700,27 +730,27 @@
     },
     fr: {
       journey: ['Préparation', 'Réglages', 'Consignes', 'Équipement'],
-      media: { muted: 'Son OFF', audible: 'Son ON', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', paused: 'Les explications sont en pause.', resume: 'Écouter cette phrase', unavailable: 'Image indisponible' },
+      media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Écouter cette phrase', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez les réglages du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', unavailable: 'Image indisponible' },
       pageTitle: 'Avant l’expérience', noticeLabel: 'Attention', language: 'Langue', relief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
-      reliefDesc: 'Tout le son est réduit de moitié,\net une musique gaie est diffusée.',
+      reliefDesc: 'Non : effets et volume normaux\nOui : volume réduit de moitié et musique gaie',
       askLanguage: 'Choisissez la langue que vous souhaitez utiliser.',
       askRelief: 'Choisissez si vous souhaitez atténuer l’horreur.',
       next: 'Suivant', back: 'Retour',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
       review: 'Vérifier les réglages', apply: 'Commencer avec ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
-      selected: 'Réglages choisis', headset: 'Casque', item: 'Élément',
+      selected: 'Réglages choisis', headset: 'Quest', headsetCurrent: 'Réglages actuels du Quest', headsetConfirmed: 'Réglages confirmés sur le Quest', item: 'Élément', continue: 'Touchez l’écran pour continuer',
       restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
       staff: 'Réglages du personnel', staffOpen: 'Ouvrir les réglages du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
-        confirm: ['Vérification des réglages', 'Vérifiez la langue et l’atténuation de l’horreur'],
+        confirm: ['Vérification des réglages', 'Vérifiez la langue et l’atténuation de l’horreur. Rien n’a encore été envoyé au Quest'],
         sending: ['Application des réglages', 'En attente de la confirmation du Quest'],
         applied: ['Réglages appliqués au Quest', 'Le Quest a confirmé les réglages appliqués'],
-        waiting: ['Application des réglages', 'Le Quest les appliquera sur l’écran d’avertissement. En attente de confirmation'],
-        later: ['Application des réglages', 'Le Quest les appliquera après la session en cours'],
+        waiting: ['En attente de l’application des réglages', 'Le Quest les appliquera sur l’écran d’avertissement'],
+        later: ['Une session est en cours', 'Les réglages attendront la fin de la session pour être appliqués'],
         noserver: ['Connexion non vérifiable', 'La connexion au casque ne peut pas être confirmée. Appelez un membre du personnel'],
-        fail: ['Envoi non confirmé', 'La réception n’a pas pu être confirmée. Vous pouvez renvoyer les réglages'],
+        fail: ['Envoi non confirmé', 'La réception n’a pas pu être confirmée'],
         conflict: ['Réglages modifiés', 'Les réglages ont été modifiés sur une autre page. Veuillez les vérifier.'],
       },
       postSpeech: {
@@ -730,15 +760,15 @@
         waiting: 'Le Quest les appliquera sur l’écran d’avertissement. J’attends sa confirmation.',
         later: 'Veuillez attendre le début de la prochaine session.',
         noserver: 'Je ne peux pas confirmer la connexion. Appelez un membre du personnel.',
-        fail: 'Je ne peux pas confirmer vos réglages. Appelez un membre du personnel.',
+        fail: 'Appuyez sur « Renvoyer ». Si le problème persiste, appelez un membre du personnel.',
         conflict: 'Les réglages ont été modifiés sur une autre page. Veuillez les vérifier.',
         loading: 'Veuillez patienter un instant pendant la préparation.',
-        error: 'Je ne peux pas charger les explications. Appelez un membre du personnel.',
+        error: 'Appuyez sur « Recharger les explications ». Si le problème persiste, appelez un membre du personnel.',
       },
       briefing: {
         loading: ['Préparation des explications', 'Les réglages sont appliqués. Veuillez patienter pendant le chargement'],
-        error: ['Impossible de charger les explications', 'Vérifiez la connexion, puis rechargez les documents'],
-        retry: 'Recharger les explications', autoOn: 'AUTO ON', autoOff: 'AUTO OFF', previous: 'Phrase précédente',
+        error: ['Impossible de charger les explications', 'Rechargez les documents. Si le problème persiste, appelez un membre du personnel'],
+        retry: 'Recharger les explications', autoOn: 'Défilement auto : oui', autoOff: 'Défilement auto : non', previous: 'Phrase précédente',
         next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
@@ -989,7 +1019,7 @@
   function renderJourney() {
     const t = T[state.lang].journey;
     $('journey').setAttribute('aria-label', t[0]);
-    const step = state.view !== 'briefing' ? 0 : (state.briefing.sceneIndex === state.briefing.data?.scenes.length - 1 ? 2 : 1);
+    const step = state.view !== 'briefing' ? 0 : (state.briefing.ended ? 2 : 1);
     ['Settings', 'Briefing', 'Wear'].forEach((name, index) => {
       setText(`journey${name}Label`, t[index + 1]);
       if (step === index) $(`journey${name}`).setAttribute('aria-current', 'step');
@@ -1238,6 +1268,7 @@
     $('settingsBackBtn').textContent = t.back;
     $('submitLabel').textContent = t.review;
     $('applyBtn').textContent = t.apply;
+    $('resultContinueBtn').textContent = t.continue;
     $('editBtn').textContent = t.edit;
     $('retryBtn').textContent = t.retry;
     $('briefingRetryBtn').textContent = t.briefing.retry;
@@ -1263,8 +1294,7 @@
   }
 
   function renderReliefDescription() {
-    $('reliefDesc').classList.toggle('is-visible', state.relief);
-    $('reliefDesc').setAttribute('aria-hidden', String(!state.relief));
+    $('reliefDesc').removeAttribute('aria-hidden');
   }
 
   function isRecord(value) {
@@ -1689,9 +1719,7 @@
     const position = currentBriefingPosition();
     const complete = state.briefing.ended;
     const lastCue = position === positions.length - 1;
-    $('briefingToggle').textContent = state.lang === 'ja'
-      ? `オート ${state.briefing.auto ? 'ON' : 'OFF'}`
-      : (state.briefing.auto ? t.autoOn : t.autoOff);
+    $('briefingToggle').textContent = state.briefing.auto ? t.autoOn : t.autoOff;
     $('briefingToggle').setAttribute('aria-label', $('briefingToggle').textContent);
     $('briefingToggle').setAttribute('aria-pressed', String(state.briefing.auto));
     $('briefingToggle').disabled = state.briefing.ended || state.briefing.pauseReasons.size > 0;
@@ -1703,19 +1731,40 @@
     $('briefingNext').textContent = lastCue ? T[state.lang].equipment.next : t.next;
     $('briefingNext').setAttribute('aria-label', $('briefingNext').textContent);
     $('briefingReplay').hidden = !complete;
-    $('briefingSettings').hidden = complete;
+    $('briefingSettings').hidden = false;
     $('subtitle').hidden = complete;
     const m = T[state.lang].media;
     const hasMedia = Boolean(scene.video?.[state.lang] || scene.audio?.[state.lang]);
-    $('briefingMute').hidden = complete || !hasMedia;
+    $('briefingMute').hidden = complete;
+    $('briefingMute').disabled = !hasMedia || state.briefing.pauseReasons.size > 0;
+    $('briefingMute').classList.toggle('is-placeholder', !hasMedia);
     $('briefingMute').textContent = state.briefing.muted ? m.muted : m.audible;
+    $('briefingMute').setAttribute('aria-label', $('briefingMute').textContent);
     $('briefingMute').setAttribute('aria-pressed', String(state.briefing.muted));
     const failed = state.briefing.mediaFailed || state.briefing.imageFailed || state.briefing.doctorFailed;
-    const paused = state.briefing.mediaPaused && !failed;
-    $('mediaNotice').hidden = complete || state.view !== 'briefing' || !(failed || paused);
-    setText('mediaMessage', state.briefing.mediaFailed ? m.failed : (state.briefing.imageFailed || state.briefing.doctorFailed ? m.image : m.paused));
-    setText('mediaRetry', paused ? m.resume : m.retry);
+    const pauseReason = ['staff', 'hidden', 'native', 'offline'].find(reason => state.briefing.pauseReasons.has(reason));
+    const guide = state.briefing.auto ? m.automatic : m.manual;
+    const noAudio = !hasMedia ? m.noAudio : '';
+    const pauseCopy = pauseReason === 'native' || pauseReason === 'hidden' ? m.background : m[pauseReason];
+    const message = state.briefing.mediaFailed ? m.failed
+      : (state.briefing.imageFailed || state.briefing.doctorFailed ? m.image
+        : (pauseReason ? pauseCopy : noAudio + guide));
+    $('mediaNotice').hidden = complete || state.view !== 'briefing';
+    setText('mediaMessage', message);
+    setText('mediaRetry', failed ? m.retry : m.resume);
+    $('mediaRetry').hidden = !hasMedia && !failed;
     $('mediaRetry').disabled = state.briefing.pauseReasons.size > 0;
+  }
+
+  function briefingPresentation(scene) {
+    if (scene.id !== 'report') return { title: scene.title[state.lang], caption: scene.caption[state.lang] };
+    const device = {
+      ja: ['観測装置', '装着後はエージェントが支援します'],
+      en: ['Observation device', 'The agent will support you once equipped'],
+      fr: ['Dispositif d’observation', 'L’agent vous assistera une fois équipé'],
+    };
+    if (state.briefing.cueIndex < 2) return { title: device[state.lang][0], caption: device[state.lang][1] };
+    return { title: scene.title[state.lang], caption: scene.caption[state.lang] };
   }
 
   function renderBriefingScene() {
@@ -1738,6 +1787,7 @@
       setText('equipmentHeadphones', copy.headphones);
       setText('equipmentController', copy.controller);
       setText('equipmentFollowup', copy.followup);
+      $('briefingSettings').textContent = state.staffPreview ? '来場者の画面に戻る' : T[state.lang].briefing.settings;
       $('briefingMode').hidden = !state.staffPreview;
       $('briefingAdvanceHint').textContent = '';
       document.title = `廻リ視 — ${copy.title}`;
@@ -1751,14 +1801,15 @@
     const cues = scene.cues[state.lang];
     const positions = briefingPositions();
     const position = currentBriefingPosition();
-    setText('briefingChapterNumber', String(state.briefing.sceneIndex + 1).padStart(2, '0'));
+    const presentation = briefingPresentation(scene);
+    setText('briefingChapterNumber', `${String(state.briefing.sceneIndex + 1).padStart(2, '0')} / ${String(sceneTotal).padStart(2, '0')}`);
     setText('briefingEyebrow', scene.eyebrow[state.lang]);
-    setText('briefingCueNumber', `${state.briefing.cueIndex + 1} / ${cues.length}`);
-    setText('briefingTitle', scene.title[state.lang]);
-    setText('briefingCaption', scene.caption[state.lang]);
+    setText('briefingCueNumber', `${state.lang === 'ja' ? '文 ' : state.lang === 'fr' ? 'Phrase ' : 'Sentence '}${state.briefing.cueIndex + 1} / ${cues.length}`);
+    setText('briefingTitle', presentation.title);
+    setText('briefingCaption', presentation.caption);
     $('briefingMode').hidden = !state.staffPreview;
     $('briefingSettings').textContent = state.staffPreview ? '来場者の画面に戻る' : t.settings;
-    document.title = `廻リ視 — ${scene.title[state.lang]}`;
+    document.title = `廻リ視 — ${presentation.title}`;
     $('briefingRole').textContent = t.role;
     $('briefingIntroText').textContent = scene.caption[state.lang];
     const intro = scene.layout === 'doctor-center';
@@ -1820,7 +1871,8 @@
       state.briefing.imageFailed = false;
       $('referenceFallback').hidden = true;
     }
-    $('sceneCounter').textContent = `${String(position + 1).padStart(2, '0')} / ${String(positions.length).padStart(2, '0')}`;
+    const progressPrefix = state.lang === 'ja' ? '説明 ' : state.lang === 'fr' ? 'Explication ' : 'Briefing ';
+    $('sceneCounter').textContent = `${progressPrefix}${String(position + 1).padStart(2, '0')} / ${String(positions.length).padStart(2, '0')}`;
     $('sceneProgress').max = Math.max(1, positions.length);
     $('sceneProgress').value = state.briefing.ended ? positions.length : position + 1;
     $('sceneProgress').setAttribute('aria-label', t.progress);
@@ -1974,6 +2026,10 @@
   }
 
   function startStaffPreview() {
+    if (state.sent?.seq > 0 || state.view === 'briefing' && !state.staffPreview) {
+      $('staffMessage').textContent = '来場者の設定または説明が進行中です。終了後に説明を確認してください。';
+      return false;
+    }
     if (state.briefing.loadState !== 'ready' || !state.briefing.data) {
       $('staffMessage').textContent = '説明を準備できませんでした。アプリを開き直してください。';
       return false;
@@ -2045,7 +2101,9 @@
     $('applyBtn').hidden = key !== 'confirm';
     $('retryBtn').hidden = key !== 'fail';
     $('briefingRetryBtn').hidden = !(key === 'applied' && state.briefing.loadState === 'error');
+    $('resultContinueBtn').hidden = briefingBlocked || key !== 'applied';
     $('editBtn').hidden = key === 'sending';
+    $('headsetHeading').textContent = key === 'applied' ? t.headsetConfirmed : t.headsetCurrent;
     document.querySelector('.stage').classList.toggle('is-result-ready', !briefingBlocked && key === 'applied');
     setFormDisabled(key === 'sending');
     const speechKey = briefingBlocked ? state.briefing.loadState : key;
@@ -2076,7 +2134,11 @@
       : '本体のα／βのラベルを見て選んでください。接続を確認すると通信先が切り替わります。');
     $('staffCheckBtn').disabled = state.staffChecking || state.ui === 'sending' || state.clearing;
     $('staffDoneBtn').disabled = state.staffChecking || state.clearing;
-    $('staffBriefingBtn').disabled = state.briefing.loadState !== 'ready';
+    const visitorBriefingActive = Boolean(state.sent?.seq > 0 || state.view === 'briefing' && !state.staffPreview);
+    $('staffBriefingBtn').disabled = state.briefing.loadState !== 'ready' || visitorBriefingActive;
+    $('staffBriefingHelp').textContent = visitorBriefingActive
+      ? '来場者の設定または説明が進行中です。終了後に説明を確認できます。'
+      : 'この確認ではクエストへ設定を送りません。';
     $('staffCheckBtn').textContent = state.staffChecking ? '接続を確認しています…' : '接続を確認する';
     $('staffPending').hidden = !status?.pending;
     $('staffRecovery').hidden = state.connection !== 'offline';
@@ -2134,8 +2196,13 @@
     try {
       const status = await fetchWithTimeout('./status', { cache: 'no-store' }, controller, true, selected);
       if (generation !== staffCheckGeneration) return;
-      if (!validateStatus(status) || target && (status.ip !== target.host || status.port !== target.port)) {
-        throw new Error('unexpected Quest response');
+      if (!validateStatus(status)) throw new Error('unexpected Quest response');
+      if (target && (status.ip !== target.host || status.port !== target.port)) {
+        const mismatch = new Error('Quest identity mismatch');
+        mismatch.name = 'QuestIdentityMismatch';
+        mismatch.actualIp = status.ip;
+        mismatch.actualPort = status.port;
+        throw mismatch;
       }
       if (selected !== activeQuest) {
         if (targetChangeLocked()) throw new Error('visitor settings arrived during target check');
@@ -2159,7 +2226,9 @@
         : '接続が途切れました。電源と会場Wi-Fiを確認して再度確認してください。';
     } catch (error) {
       if (generation !== staffCheckGeneration) return;
-      $('staffCheckMessage').textContent = `${target?.name || activeQuestName()}に接続できません。電源と「廻リ視」の起動と会場Wi-Fiを確認して再度確認してください。現在の受付は${activeQuestName()}です。`;
+      $('staffCheckMessage').textContent = error.name === 'QuestIdentityMismatch'
+        ? `${target.name}（${target.host}:${target.port}）を選びましたが、応答は${error.actualIp ?? '不明'}:${error.actualPort ?? '不明'}でした。本体のα／βラベルを確認してください。現在の受付は${activeQuestName()}です。`
+        : `${target?.name || activeQuestName()}に接続できません。電源と「廻リ視」の起動と会場Wi-Fiを確認して再度確認してください。現在の受付は${activeQuestName()}です。`;
     } finally {
       if (generation === staffCheckGeneration) {
         state.staffChecking = false;
@@ -2406,6 +2475,7 @@
   $('settingsNextBtn').addEventListener('click', () => setSettingsStep('relief'));
   $('settingsBackBtn').addEventListener('click', () => setSettingsStep('language'));
   $('applyBtn').addEventListener('click', send);
+  $('resultContinueBtn').addEventListener('click', advanceFromResult);
   $('titleStart').addEventListener('click', beginFromTitle);
   $('titleView').addEventListener('click', beginFromTitle);
   $('fullscreenBtn').addEventListener('click', enterFullscreen);
@@ -2504,13 +2574,13 @@
     } catch (error) {
       if (generation !== staffSoundGeneration) return;
       stopStaffSound();
-      $('staffSoundHelp').textContent = '音声を再生できませんでした。端末の音量を確認して、もう一度押してください。';
+      $('staffSoundHelp').textContent = '音声を再生できませんでした。もう一度押してください。繰り返す場合はアプリを開き直してください。';
     }
   });
   $('staffSound').addEventListener('ended', stopStaffSound);
   $('staffSound').addEventListener('error', () => {
     stopStaffSound();
-    $('staffSoundHelp').textContent = '音声を再生できませんでした。端末の音量を確認して、もう一度押してください。';
+    $('staffSoundHelp').textContent = '音声を再生できませんでした。もう一度押してください。繰り返す場合はアプリを開き直してください。';
   });
   $('clearBtn').addEventListener('click', async () => {
     if (state.clearing || state.ui === 'sending' || state.staffChecking
