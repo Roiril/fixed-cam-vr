@@ -938,7 +938,7 @@ test('媒体時計の文末判定で手動は止まり、オートは次の文�
   assert.equal(elements.get('subtitleTyped').textContent, data.scenes[0].cues.ja[1].text);
 });
 
-test('最後の音声が終わっても最終画面を保ち、前の文へ戻れる', () => {
+test('最後の音声が終わると装着案内を表示し、再説明はその下から始める', () => {
   const data = clone(briefing);
   const lastSceneIndex = data.scenes.length - 1;
   const lastScene = data.scenes[lastSceneIndex];
@@ -951,7 +951,10 @@ test('最後の音声が終わっても最終画面を保ち、前の文へ戻�
   state.briefing.cueIndex = lastScene.cues.ja.length - 1;
   runtime.configureBriefingMedia(lastScene);
   runtime.beginBriefingCue();
-  const finalText = lastScene.cues.ja.at(-1).text;
+  assert.equal(elements.get('briefingReplay').hidden, true);
+  assert.equal(elements.get('briefingNext').hidden, false);
+  assert.equal(elements.get('briefingNext').textContent, '装着の案内へ');
+  assert.equal(elements.get('equipmentGuide').hidden, true);
   const media = runtime.getBriefingMedia();
   media.onplaying();
   media.currentTime = lastScene.cues.ja.reduce((sum, cue) => sum + cue.durationMs, 0) / 1000;
@@ -960,14 +963,52 @@ test('最後の音声が終わっても最終画面を保ち、前の文へ戻�
   assert.equal(state.briefing.ended, true);
   assert.equal(state.briefing.sceneIndex, lastSceneIndex);
   assert.equal(state.briefing.cueIndex, lastScene.cues.ja.length - 1);
-  assert.equal(elements.get('subtitleTyped').textContent, finalText);
+  assert.equal(elements.get('subtitle').hidden, true);
+  assert.equal(elements.get('equipmentGuide').hidden, false);
+  assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
+  assert.equal(elements.get('equipmentQuest').textContent, 'Meta Questを装着してください。');
+  assert.equal(elements.get('equipmentHeadphones').textContent, 'ヘッドフォンを装着してください。');
+  assert.equal(elements.get('equipmentController').textContent, '左手にコントローラーを持ってください。');
+  assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエスト内に表示される指示に従ってください。');
   assert.equal(elements.get('briefingReplay').hidden, false);
-  assert.equal(elements.get('briefingPrevious').disabled, false);
+  for (const id of ['briefingPrevious', 'briefingNext', 'briefingToggle', 'briefingMute', 'briefingSettings', 'mediaNotice']) {
+    assert.equal(elements.get(id).hidden, true);
+  }
+  assert.equal(media.paused, true);
 
-  assert.equal(runtime.moveBriefing(-1, 'control'), true);
+  assert.equal(runtime.moveBriefing(-1, 'control'), false);
+  elements.get('briefingReplay').dispatch('click');
   assert.equal(state.briefing.ended, false);
-  assert.equal(state.briefing.cueIndex, lastScene.cues.ja.length - 2);
-  assert.equal(elements.get('subtitleTyped').textContent, lastScene.cues.ja.at(-2).text);
+  assert.equal(state.briefing.sceneIndex, 0);
+  assert.equal(state.briefing.cueIndex, 0);
+  assert.equal(elements.get('equipmentGuide').hidden, true);
+  assert.equal(elements.get('subtitle').hidden, false);
+  assert.equal(selectorElements.get('.stage').classList.contains('is-equipment'), false);
+  assert.equal(elements.get('subtitleTyped').textContent, data.scenes[0].cues.ja[0].text);
+});
+
+test('最終文の次へ操作も装着案内を開き、案内は三言語に揃う', () => {
+  for (const [lang, title, leftHand] of [
+    ['ja', '装着の準備', '左手'],
+    ['en', 'Get ready to begin', 'left hand'],
+    ['fr', 'Préparez votre équipement', 'main gauche'],
+  ]) {
+    const data = clone(briefing);
+    prepareBriefing(data);
+    state.lang = lang;
+    state.briefing.sceneIndex = data.scenes.length - 1;
+    state.briefing.cueIndex = data.scenes.at(-1).cues[lang].length - 1;
+    runtime.beginBriefingCue();
+    assert.equal(elements.get('briefingReplay').hidden, true);
+    elements.get('briefingNext').dispatch('click');
+    assert.equal(state.briefing.ended, true);
+    assert.equal(elements.get('equipmentGuide').hidden, false);
+    assert.equal(elements.get('briefingTitle').textContent, title);
+    assert.ok(elements.get('equipmentController').textContent.includes(leftHand));
+    assert.ok(elements.get('equipmentFollowup').textContent.includes('Quest') || lang === 'ja');
+    assert.equal(runtime.moveBriefing(1, 'tap'), false);
+  }
+  state.lang = 'ja';
 });
 
 test('停止や一時停止後の古い再生失敗は現在の文を壊さない', async () => {

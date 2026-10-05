@@ -35,6 +35,7 @@ public final class TabletInstrumentation extends Instrumentation {
     private int checks;
     private boolean playback;
     private boolean briefing;
+    private boolean equipment;
 
     @Override
     public void onCreate(Bundle arguments) {
@@ -43,6 +44,7 @@ public final class TabletInstrumentation extends Instrumentation {
         mutateQuest = arguments != null && "true".equalsIgnoreCase(arguments.getString("mutateQuest"));
         playback = arguments != null && "true".equalsIgnoreCase(arguments.getString("playback"));
         briefing = arguments != null && "true".equalsIgnoreCase(arguments.getString("briefing"));
+        equipment = arguments != null && "true".equalsIgnoreCase(arguments.getString("equipment"));
         start();
     }
 
@@ -50,7 +52,7 @@ public final class TabletInstrumentation extends Instrumentation {
     public void onStart() {
         int resultCode = Activity.RESULT_OK;
         try {
-            if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
+            if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
             results.putString("summary", "PASS checks=" + checks);
             Log.i(TAG, "PASS checks=" + checks);
         } catch (Throwable error) {
@@ -273,6 +275,71 @@ public final class TabletInstrumentation extends Instrumentation {
             check("all twelve subtitles have video and decoded audio round " + round, rendered.size() == 12);
             Log.i(TAG, "briefing round=" + round + " renderedCues=" + rendered.size() + "/12");
         }
+        evaluate(view, "document.getElementById('briefingSettings').click()");
+    }
+
+    private void runEquipmentTests() throws Exception {
+        Activity activity = launchFromShell();
+        WebView view = waitForWebView(activity, 10000);
+        waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
+        evaluate(view, "document.getElementById('staffToggle').click()");
+        waitFor("briefing ready", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('staffBriefingBtn').disabled"));
+        evaluate(view, "document.getElementById('staffBriefingBtn').click()");
+        SystemClock.sleep(1200);
+        waitFor("doctor visible", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('doctorVideo').hidden"));
+        JSONObject touch = evaluateObject(view, "JSON.stringify((()=>{var v=document.getElementById('doctorVideo');"
+            + "var s=getComputedStyle(v);return {tap:s.webkitTapHighlightColor,selection:s.userSelect,drag:s.webkitUserDrag};})())");
+        check("doctor has no tap highlight", "rgba(0, 0, 0, 0)".equals(touch.optString("tap")));
+        check("doctor cannot be selected", "none".equals(touch.optString("selection")));
+        Log.i(TAG, "doctorTouch " + touch);
+        try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand("input swipe 960 450 960 450 700");
+             InputStream output = new ParcelFileDescriptor.AutoCloseInputStream(command)) {
+            while (output.read() != -1) { /* Wait until pointerup has been dispatched. */ }
+        }
+        SystemClock.sleep(1000);
+        check("long press does not select text", evaluateBoolean(view, "String(window.getSelection())===''"));
+        String first = evaluateString(view, "document.getElementById('sceneCounter').textContent");
+        int position = Integer.parseInt(first.trim().split("/")[0].trim());
+        for (; position < 12; position++) {
+            int next = position + 1;
+            evaluate(view, "document.getElementById('briefingNext').click()");
+            waitFor("next sentence " + next, 5000, () -> evaluateBoolean(view,
+                "parseInt(document.getElementById('sceneCounter').textContent,10)===" + next));
+            SystemClock.sleep(1000);
+        }
+        check("final sentence offers equipment", evaluateBoolean(view,
+            "document.getElementById('briefingReplay').hidden&&!document.getElementById('briefingNext').hidden"
+            + "&&document.getElementById('briefingNext').textContent==='装着の案内へ'"));
+        evaluate(view, "document.getElementById('briefingNext').click()");
+        waitFor("equipment visible", 5000, () -> evaluateBoolean(view, "!document.getElementById('equipmentGuide').hidden"));
+        JSONObject layout = evaluateObject(view, "JSON.stringify((()=>{var g=document.getElementById('equipmentGuide');"
+            + "var b=document.getElementById('briefingReplay');var r=g.getBoundingClientRect();var q=b.getBoundingClientRect();"
+            + "return {text:g.textContent,title:document.getElementById('briefingTitle').textContent,"
+            + "viewport:innerWidth+'x'+innerHeight,width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight,"
+            + "fits:document.documentElement.scrollWidth<=innerWidth+1&&document.documentElement.scrollHeight<=innerHeight+1,"
+            + "below:q.top>=r.bottom,buttonVisible:!b.hidden&&q.bottom<=innerHeight,"
+            + "doctorHidden:getComputedStyle(document.querySelector('.portrait')).display==='none',"
+            + "subtitleHidden:document.getElementById('subtitle').hidden,paused:document.getElementById('doctorVideo').paused};})())");
+        check("equipment text", layout.optString("text").contains("左手にコントローラー")
+            && layout.optString("text").contains("ヘッドフォン") && layout.optString("text").contains("クエスト内に表示"));
+        check("equipment fits tablet", layout.optBoolean("fits"));
+        check("replay below equipment", layout.optBoolean("below") && layout.optBoolean("buttonVisible"));
+        check("doctor stopped and hidden", layout.optBoolean("doctorHidden") && layout.optBoolean("paused") && layout.optBoolean("subtitleHidden"));
+        Log.i(TAG, "equipmentLayout " + layout);
+        SystemClock.sleep(500);
+        try (ParcelFileDescriptor command = getUiAutomation().executeShellCommand("screencap -p /sdcard/doctor-equipment.png");
+             InputStream output = new ParcelFileDescriptor.AutoCloseInputStream(command)) {
+            while (output.read() != -1) { /* Capture this screen before starting replay. */ }
+        }
+        evaluate(view, "document.getElementById('briefingReplay').click()");
+        waitFor("replay first sentence", 5000, () -> evaluateBoolean(view,
+            "document.getElementById('equipmentGuide').hidden&&!document.getElementById('subtitle').hidden"
+            + "&&parseInt(document.getElementById('sceneCounter').textContent,10)===1"));
+        waitFor("replay media advancing", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('doctorVideo').hidden&&document.getElementById('doctorVideo').currentTime>0.3"));
+        check("replay restores doctor", evaluateBoolean(view, "!document.querySelector('.stage').classList.contains('is-equipment')"));
         evaluate(view, "document.getElementById('briefingSettings').click()");
     }
 

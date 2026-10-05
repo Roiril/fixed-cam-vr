@@ -349,6 +349,19 @@
   .reference-fallback p { margin: 0; }
   .reference-fallback span { color: var(--faint); font-size: 12px; }
   #briefingMute { border-color: transparent; color: var(--muted); }
+  .stage.is-briefing, .stage.is-briefing * { -webkit-tap-highlight-color: transparent; }
+  .stage.is-briefing .briefing, .stage.is-briefing .portrait, .stage.is-briefing .subtitle { -webkit-user-select: none; user-select: none; }
+  .stage.is-briefing img, .stage.is-briefing video { -webkit-user-drag: none; }
+  .stage.is-equipment .portrait { display: none; }
+  .stage.is-equipment .content { width: 100%; max-width: none; padding: 20px var(--gutter); }
+  .stage.is-equipment .briefing { max-width: 960px; margin: 0 auto; grid-template-rows: auto auto; align-content: center; gap: 22px; cursor: default; }
+  .stage.is-equipment .briefing-copy { width: 100%; min-height: 0; padding-right: 0; }
+  .equipment-steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: equipment; }
+  .equipment-steps li { display: flex; align-items: baseline; gap: 22px; padding: 14px 0; border-bottom: 1px solid var(--line); font: clamp(18px,2.3vw,28px)/1.6 var(--sans); counter-increment: equipment; }
+  .equipment-steps li::before { content: counter(equipment,decimal-leading-zero); flex: 0 0 auto; color: var(--gold); font: 16px/1.6 var(--sans); font-variant-numeric: tabular-nums; }
+  .equipment-followup { margin: 26px 0 0; color: var(--muted); font: clamp(17px,1.9vw,23px)/1.7 var(--sans); overflow-wrap: anywhere; }
+  .stage.is-equipment .footer { padding-bottom: max(24px,env(safe-area-inset-bottom)); }
+  .stage.is-equipment .briefing-controls { justify-content: center; }
 </style>
 </head>
 <body>
@@ -496,7 +509,15 @@
           <p class="briefing-intro-text" id="briefingIntroText"></p>
         </div>
       </figure>
-      <div class="briefing-progress">
+      <div class="equipment-guide" id="equipmentGuide" hidden>
+        <ol class="equipment-steps">
+          <li><span id="equipmentQuest"></span></li>
+          <li><span id="equipmentHeadphones"></span></li>
+          <li><span id="equipmentController"></span></li>
+        </ol>
+        <p class="equipment-followup" id="equipmentFollowup"></p>
+      </div>
+      <div class="briefing-progress" id="briefingProgress">
         <span id="sceneCounter"></span>
         <progress id="sceneProgress" value="0" max="1"></progress>
       </div>
@@ -629,6 +650,7 @@
         next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
+      equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'Meta Questを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエスト内に表示される指示に従ってください。' },
     },
     en: {
       journey: ['Prepare for the experience', 'Settings', 'Briefing', 'Equip'],
@@ -674,6 +696,7 @@
         next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
+      equipment: { title: 'Get ready to begin', next: 'Equipment instructions', quest: 'Put on the Meta Quest headset.', headphones: 'Put on the headphones.', controller: 'Hold the controller in your left hand.', followup: 'Once you are ready, follow the instructions displayed inside the Quest headset.' },
     },
     fr: {
       journey: ['Préparation', 'Réglages', 'Consignes', 'Équipement'],
@@ -719,6 +742,7 @@
         next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
+      equipment: { title: 'Préparez votre équipement', next: 'Consignes d’équipement', quest: 'Mettez le casque Meta Quest.', headphones: 'Mettez le casque audio.', controller: 'Tenez la manette dans votre main gauche.', followup: 'Une fois équipé, suivez les instructions affichées dans le casque Quest.' },
     },
   };
 
@@ -1060,6 +1084,8 @@
     stage.classList.toggle('is-briefing', view === 'briefing');
     if (view !== 'result') stage.classList.remove('is-result-ready');
     if (view !== 'briefing') stage.classList.remove('is-doctor-only');
+    if (view !== 'briefing') stage.classList.remove('is-equipment');
+    $('subtitle').hidden = view === 'briefing' && state.briefing.ended;
     document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
     // Staff setup remains reachable on the title. CSS hides the other header
     // controls; setting inert on their shared header would block staff too.
@@ -1661,26 +1687,32 @@
     const t = T[state.lang].briefing;
     const positions = briefingPositions();
     const position = currentBriefingPosition();
-    const complete = state.briefing.ended || position === positions.length - 1;
+    const complete = state.briefing.ended;
+    const lastCue = position === positions.length - 1;
     $('briefingToggle').textContent = state.lang === 'ja'
       ? `オート ${state.briefing.auto ? 'ON' : 'OFF'}`
       : (state.briefing.auto ? t.autoOn : t.autoOff);
     $('briefingToggle').setAttribute('aria-label', $('briefingToggle').textContent);
     $('briefingToggle').setAttribute('aria-pressed', String(state.briefing.auto));
     $('briefingToggle').disabled = state.briefing.ended || state.briefing.pauseReasons.size > 0;
-    $('briefingToggle').hidden = complete;
+    $('briefingToggle').hidden = complete || lastCue;
     $('briefingPrevious').disabled = position <= 0;
+    $('briefingPrevious').hidden = complete;
     $('briefingNext').disabled = state.briefing.ended || positions.length === 0;
     $('briefingNext').hidden = complete;
+    $('briefingNext').textContent = lastCue ? T[state.lang].equipment.next : t.next;
+    $('briefingNext').setAttribute('aria-label', $('briefingNext').textContent);
     $('briefingReplay').hidden = !complete;
+    $('briefingSettings').hidden = complete;
+    $('subtitle').hidden = complete;
     const m = T[state.lang].media;
     const hasMedia = Boolean(scene.video?.[state.lang] || scene.audio?.[state.lang]);
-    $('briefingMute').hidden = !hasMedia;
+    $('briefingMute').hidden = complete || !hasMedia;
     $('briefingMute').textContent = state.briefing.muted ? m.muted : m.audible;
     $('briefingMute').setAttribute('aria-pressed', String(state.briefing.muted));
     const failed = state.briefing.mediaFailed || state.briefing.imageFailed || state.briefing.doctorFailed;
     const paused = state.briefing.mediaPaused && !failed;
-    $('mediaNotice').hidden = state.view !== 'briefing' || !(failed || paused);
+    $('mediaNotice').hidden = complete || state.view !== 'briefing' || !(failed || paused);
     setText('mediaMessage', state.briefing.mediaFailed ? m.failed : (state.briefing.imageFailed || state.briefing.doctorFailed ? m.image : m.paused));
     setText('mediaRetry', paused ? m.resume : m.retry);
     $('mediaRetry').disabled = state.briefing.pauseReasons.size > 0;
@@ -1689,6 +1721,31 @@
   function renderBriefingScene() {
     const scene = currentBriefingScene();
     if (!scene) return;
+    const equipment = state.briefing.ended;
+    document.querySelector('.stage').classList.toggle('is-equipment', equipment);
+    $('equipmentGuide').hidden = !equipment;
+    $('briefingProgress').hidden = equipment;
+    $('briefingCaption').hidden = equipment;
+    $('briefingCueNumber').hidden = equipment;
+    if (equipment) {
+      const copy = T[state.lang].equipment;
+      document.querySelector('.stage').classList.remove('is-doctor-only');
+      document.querySelector('.briefing-visual').hidden = true;
+      setText('briefingChapterNumber', '03');
+      setText('briefingEyebrow', T[state.lang].journey[3]);
+      setText('briefingTitle', copy.title);
+      setText('equipmentQuest', copy.quest);
+      setText('equipmentHeadphones', copy.headphones);
+      setText('equipmentController', copy.controller);
+      setText('equipmentFollowup', copy.followup);
+      $('briefingMode').hidden = !state.staffPreview;
+      $('briefingAdvanceHint').textContent = '';
+      document.title = `廻リ視 — ${copy.title}`;
+      renderJourney();
+      renderBriefingControls();
+      return;
+    }
+    $('briefingAdvanceHint').textContent = T[state.lang].briefing.advance;
     const t = T[state.lang].briefing;
     const sceneTotal = state.briefing.data.scenes.length;
     const cues = scene.cues[state.lang];
@@ -1803,7 +1860,7 @@
   }
 
   function moveBriefing(delta, source = 'control') {
-    if (state.view !== 'briefing' || !state.briefing.data || delta === 0) return false;
+    if (state.view !== 'briefing' || !state.briefing.data || state.briefing.ended || delta === 0) return false;
     const direction = delta < 0 ? -1 : 1;
     const userMove = source !== 'auto' && source !== 'queued';
     if (state.briefing.chapterChanging && userMove) {
@@ -1848,6 +1905,8 @@
     syncReliefPreview();
     syncBriefingLoopVideo();
     renderBriefingScene();
+    $('subtitleAnnouncement').textContent = '';
+    $('briefingTitle').focus({ preventScroll: true });
     saveBriefingProgress();
   }
 

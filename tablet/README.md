@@ -14,6 +14,10 @@ Questとタブレットは同じ展示Wi-Fiへ接続する。Questでは「廻�
 
 画面と素材は未接続でも読み込める。スタッフ設定の「説明を確認する」で説明を確認できる。この確認ではQuestへの設定送信と反映済み表示を行わない。来場者の説明開始はQuestの実値と反映番号を確認してから行う。
 
+博士の最後の台詞の音声が終わると「装着の準備」へ進む。最後の文の「装着の案内へ」でも進める。Meta Questの装着とヘッドフォンの装着と左手でのコントローラー保持を案内する。装着後はQuest内の指示に従う。画面の下の「もう一度説明を見る」で博士の最初の文へ戻る。案内は日本語と英語とフランス語に対応する。
+
+博士画面のタップでは青い強調表示を出さない。博士の画像と動画と字幕は選択できない。キーボード操作時のボタンの位置表示は保つ。
+
 ## ビルドと導入
 
 Unityに同梱されたAndroid SDKとOpenJDKでビルドする。Gradleや追加ライブラリは使わない。
@@ -58,9 +62,12 @@ adb -s 122d7871 shell am instrument -w -e requireQuest true com.roiril.mawarimi.
 ```powershell
 adb -s 122d7871 shell am instrument -w -e playback true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 adb -s 122d7871 shell am instrument -w -e briefing true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
+adb -s 122d7871 shell am instrument -w -e equipment true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 ```
 
 `playback true` は博士動画4本の12か所の部分読み出しを元データのSHA-256と照合する。音声を有効にして各動画を最後まで再生する。`briefing true` はスタッフ確認から12文を2回通して再生する。各文で画面内の動画フレームと音声デコード量を記録する。2回目にはホーム画面への移動と復帰と再開を挟む。Questの設定は送信しない。
+
+`equipment true` はタップ時の表示と長押し時の文字選択を確認する。最後の文から装着案内へ進む。実際の画面寸法と案内文と下の再説明ボタンを確認する。再説明後の動画の進行も確認する。装着案内の画面は端末の `/sdcard/doctor-equipment.png` に保存する。2026-10-05にRedmi Pad SEで9項目が成功した。表示領域1097×686に案内とボタンが収まった。
 
 WebViewは `shouldInterceptRequest` が返すストリームに対してRangeの開始位置まで進める。Android側で先に進めると位置が二重に加算される。ストリームは資産の先頭から返す。読み取りの終端だけを制限する。`skip` と `available` にもその制限を反映する。
 
