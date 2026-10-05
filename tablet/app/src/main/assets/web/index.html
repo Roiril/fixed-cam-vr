@@ -1543,6 +1543,9 @@
 
   function stopBriefingMedia() {
     briefingMediaToken += 1;
+    // Hide the video surface before unloading its decoder.
+    $('doctorVideo').hidden = true;
+    $('doctorImage').hidden = state.briefing.doctorFailed;
     stopBriefingMediaWindow();
     if (briefingMedia) {
       briefingMedia.onerror = null;
@@ -1560,11 +1563,9 @@
     }
     briefingMedia = null;
     briefingMediaSceneId = '';
-    $('doctorVideo').hidden = true;
-    $('doctorImage').hidden = state.briefing.doctorFailed;
   }
 
-  function setBriefingAuto(enabled, restartMedia = false) {
+  function setBriefingAuto(enabled, startMediaIfIdle = false) {
     const allowed = enabled
       && state.view === 'briefing'
       && !state.briefing.ended
@@ -1572,7 +1573,7 @@
     state.briefing.auto = allowed;
     clearBriefingTimer();
     if (allowed) {
-      if (restartMedia) startBriefingMediaWindow();
+      if (startMediaIfIdle && !state.briefing.mediaWindowActive) startBriefingMediaWindow();
       const cue = currentBriefingCue();
       if (cue && !briefingMedia) briefingTimer = setTimeout(() => moveBriefing(1, 'auto'), cue.durationMs);
     }

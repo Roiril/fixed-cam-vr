@@ -1010,6 +1010,76 @@ test('観測装置の説明と報告操作で見出しと補足を文ごとに�
   state.lang = 'ja';
 });
 
+test('章変更は動画を隠して静止画へ戻してから動画を解放する', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  runtime.configureBriefingMedia(data.scenes[1]);
+  state.briefing.sceneIndex = 1;
+  runtime.beginBriefingCue();
+  const video = runtime.getBriefingMedia();
+  video.onplaying();
+  assert.equal(video.hidden, false);
+  assert.equal(elements.get('doctorImage').hidden, true);
+  const resets = [];
+  const originalLoad = video.load;
+  video.load = function () {
+    resets.push({ videoHidden: this.hidden, stillHidden: elements.get('doctorImage').hidden });
+    return originalLoad.call(this);
+  };
+  try {
+    runtime.configureBriefingMedia(data.scenes[2]);
+    assert.equal(resets.length, 2);
+    for (const reset of resets) {
+      assert.equal(reset.videoHidden, true);
+      assert.equal(reset.stillHidden, false);
+    }
+  } finally {
+    video.load = originalLoad;
+  }
+});
+
+test('読み上げ途中のオート切替は音声と動画を止めず再生位置と文末判定を保つ', () => {
+  for (const kind of ['video', 'audio']) {
+    const data = clone(briefing);
+    if (kind === 'audio') {
+      delete data.scenes[1].video;
+      data.scenes[1].audio = { ja: 'subject-ja-v2.mp3' };
+    }
+    prepareBriefing(data);
+    state.briefing.sceneIndex = 1;
+    state.briefing.cueIndex = 1;
+    runtime.configureBriefingMedia(data.scenes[1]);
+    runtime.beginBriefingCue();
+    const media = runtime.getBriefingMedia();
+    media.onplaying();
+    const start = data.scenes[1].cues.ja[0].durationMs / 1000;
+    media.currentTime = start + 1;
+    const before = { time: media.currentTime, pauses: media.pauseCount, plays: media.playCount };
+    elements.get('briefingToggle').dispatch('click');
+    assert.equal(state.briefing.auto, true);
+    assert.equal(media.currentTime, before.time, kind);
+    assert.equal(media.pauseCount, before.pauses, kind);
+    assert.equal(media.playCount, before.plays, kind);
+    assert.equal(media.paused, false, kind);
+    media.currentTime = start + data.scenes[1].cues.ja[1].durationMs / 1000;
+    media.ontimeupdate();
+    assert.equal(state.briefing.cueIndex, 2, kind);
+
+    media.onplaying();
+    media.currentTime += 1;
+    const off = { time: media.currentTime, pauses: media.pauseCount, plays: media.playCount };
+    elements.get('briefingToggle').dispatch('click');
+    assert.equal(state.briefing.auto, false);
+    assert.equal(media.currentTime, off.time, kind);
+    assert.equal(media.pauseCount, off.pauses, kind);
+    assert.equal(media.playCount, off.plays, kind);
+    media.currentTime = data.scenes[1].cues.ja.slice(0, 3).reduce((sum, cue) => sum + cue.durationMs, 0) / 1000;
+    media.ontimeupdate();
+    assert.equal(state.briefing.cueIndex, 2, kind);
+    assert.equal(media.paused, true, kind);
+  }
+});
+
 test('媒体時計の文末判定で手動は止まり、オートは次の文へ進む', () => {
   const data = clone(briefing);
   delete data.scenes[0].video;
