@@ -6,6 +6,8 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
 #include "soc/gpio_reg.h"
 #include "webui.h"
 
@@ -201,9 +203,55 @@ static void httpRes() {
   jsonSend("{\"ok\":1}");
 }
 
+// LAN への参加情報は NVS（Preferences）に置く。ソースにも git にも載せない。
+//   シリアルで `wifi set <ssid>|<password>` / `wifi clear` / `wifi status`
+// 保存があれば STA（既存 LAN に参加）。15 秒つながらなければ机上用の AP にフォールバックする。
+static Preferences prefs;
+static bool staMode = false;
+
+static String wifiStatus() {
+  String s = staMode ? "STA " : "AP ";
+  if (staMode) {
+    s += (WiFi.status() == WL_CONNECTED) ? "connected ssid=" + WiFi.SSID() + " ip=" + WiFi.localIP().toString() + " rssi=" + String(WiFi.RSSI())
+                                         : "disconnected";
+  } else {
+    s += "ssid=" + String(AP_SSID) + " ip=" + WiFi.softAPIP().toString() + " clients=" + String(WiFi.softAPgetStationNum());
+  }
+  return s;
+}
+
+static void startNetwork() {
+  prefs.begin("romi", true);
+  String ssid = prefs.getString("ssid", "");
+  String pass = prefs.getString("pass", "");
+  prefs.end();
+  staMode = false;
+  if (ssid.length()) {
+    WiFi.mode(WIFI_STA);
+    WiFi.setHostname("romi");
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(ssid.c_str(), pass.c_str());
+    uint32_t t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(200);
+    if (WiFi.status() == WL_CONNECTED) {
+      staMode = true;
+      WiFi.setSleep(false);              // 省電力を切って応答の揺れを減らす
+      MDNS.begin("romi");                // http://romi.local/
+      MDNS.addService("http", "tcp", 80);
+    } else {
+      WiFi.disconnect(true);
+      Serial.println("EVT wifi sta-failed -> fallback AP");
+    }
+  }
+  if (!staMode) {
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
+  }
+  Serial.printf("EVT net %s\n", wifiStatus().c_str());
+}
+
 static void startWeb() {
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
+  startNetwork();
   server.on("/", HTTP_GET, []() { server.send_P(200, "text/html; charset=utf-8", PAGE_HTML); });
   server.on("/run", HTTP_GET, httpRun);
   server.on("/stop", HTTP_GET, httpStop);
@@ -228,14 +276,38 @@ static void handle(String line) {
   int a, b, c, d;
   if (line == "help") help();
   else if (line == "info") {
-    Serial.printf("ROMI-DIAG v2 chip=%s rev=%d cpu=%dMHz heap=%u up=%lus ap=%s ip=%s clients=%d\n", ESP.getChipModel(),
-                  (int)ESP.getChipRevision(), (int)getCpuFrequencyMhz(), (unsigned)ESP.getFreeHeap(), millis() / 1000, AP_SSID,
-                  WiFi.softAPIP().toString().c_str(), (int)WiFi.softAPgetStationNum());
+    Serial.printf("ROMI-DIAG v3 chip=%s rev=%d cpu=%dMHz heap=%u up=%lus net=%s\n", ESP.getChipModel(),
+                  (int)ESP.getChipRevision(), (int)getCpuFrequencyMhz(), (unsigned)ESP.getFreeHeap(), millis() / 1000, wifiStatus().c_str());
     Serial.printf("side0 DIR=%d PWM=%d | side1 DIR=%d PWM=%d | AUX=%d | pwm=%dHz/%dbit\n", DIR_PIN[0], PWM_PIN[0], DIR_PIN[1],
                   PWM_PIN[1], AUX_PIN, PWM_HZ, PWM_BITS);
   } else if (line == "lv") printLevels();
   else if (line == "adc") adcScan();
   else if (line == "adcall") adcAll();
+  else if (line == "wifi status") Serial.println(wifiStatus());
+  else if (line == "wifi scan") {   // ESP32 から見える 2.4GHz の SSID を列挙（ESP32 は 5GHz を使えない）
+    wifi_mode_t prev = WiFi.getMode();
+    if (prev == WIFI_AP) WiFi.mode(WIFI_AP_STA);
+    int n = WiFi.scanNetworks(false, true);
+    Serial.printf("scan: %d networks\n", n);
+    for (int i = 0; i < n; i++)
+      Serial.printf("  ch%-2d rssi=%d enc=%d bssid=%s ssid=%s\n", WiFi.channel(i), WiFi.RSSI(i), (int)WiFi.encryptionType(i),
+                    WiFi.BSSIDstr(i).c_str(), WiFi.SSID(i).c_str());
+    WiFi.scanDelete();
+    if (prev == WIFI_AP) WiFi.mode(WIFI_AP);
+  }
+  else if (line == "wifi clear") {
+    prefs.begin("romi", false); prefs.remove("ssid"); prefs.remove("pass"); prefs.end();
+    Serial.println("wifi credentials cleared (reboot to apply)");
+  } else if (line.startsWith("wifi set ")) {
+    String body = line.substring(9);
+    int bar = body.indexOf('|');
+    if (bar <= 0) { Serial.println("ERR usage: wifi set <ssid>|<password>"); return; }
+    prefs.begin("romi", false);
+    prefs.putString("ssid", body.substring(0, bar));
+    prefs.putString("pass", body.substring(bar + 1));
+    prefs.end();
+    Serial.printf("wifi saved (ssid=%s, password %d chars). reboot to apply\n", body.substring(0, bar).c_str(), (int)(body.length() - bar - 1));
+  } else if (line == "reboot") { Serial.println("rebooting"); delay(100); ESP.restart(); }
   else if (line.startsWith("w ")) {   // w <s|r> <d -1|1> <duty%> <ms> <trim>  Web と同じ駆動経路をシリアルから
     char m = 0; int dd = 0, du = 0, tr = 0; unsigned ms = 0;
     if (sscanf(line.c_str(), "w %c %d %d %u %d", &m, &dd, &du, &ms, &tr) < 4) { Serial.println("ERR args"); return; }
@@ -285,7 +357,7 @@ void setup() {
   startWeb();
   delay(300);
   Serial.println();
-  Serial.printf("ROMI-DIAG v2 ready (type help) AP=%s ip=%s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
+  Serial.printf("ROMI-DIAG v3 ready (type help) net=%s\n", wifiStatus().c_str());
 }
 
 void loop() {
@@ -295,6 +367,6 @@ void loop() {
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == '\n' || ch == '\r') { handle(buf); buf = ""; }
-    else if (buf.length() < 80) buf += ch;
+    else if (buf.length() < 200) buf += ch;
   }
 }

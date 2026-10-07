@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 44c10525-d6cb-48d9-a45f-69c3ffad2f1e
-  modified: 2026-10-07T07:47:40.389Z
+  modified: 2026-10-07T07:53:51.582Z
 ---
 
 2026-10-07 調査。台車（Pololu Romi シャーシ）の USB の先は **Romi 純正の 32U4 基板ではなく ESP32**。
@@ -18,7 +18,8 @@ metadata:
 - **付いていないもの（実測）**: エンコーダ（候補 18 ピンを駆動中に監視して変化なし）、I2C 機器（8 組のピンで 0 件）、バッテリ分圧（ADC は全て浮き電位）。**現状は完全な開ループ**
 - ビルド元は別の PC の `Documents\Arduino`（NimBLE-Arduino 使用）で、元ソースはこの PC に無い。**元ファームの全フラッシュは `output/romi/esp32-flash-backup-20261007.bin`（4MB・git 管理外）にバックアップ済み**。復元は `esptool.py --port COMxx write_flash 0x0 <bin>`
 - 今は **診断ファーム `tools/romi/diag/diag.ino`（ROMI-DIAG v1）が焼いてある**（元の Joy-Con 操作は動かない）。操作は `py -3.11 tools/romi/rc.py "d 0 0 300 1500" ...`。ビルドは Arduino IDE 同梱の arduino-cli、FQBN `esp32:esp32:esp32`（ESP32 コア 3.3.8）。**PlatformIO の ESP32 は Arduino コア 2.x で `ledcAttach` が無いので使えない**
-- **手動操作の WebUI（診断ファーム v2・2026-10-07）**: ESP32 が Wi-Fi アクセスポイント `ROMI-DIAG`（パスワード `romi1234`・机上用）を立て、`http://192.168.4.1/` に直進/回転のバー操作画面を出す。「時間」と「強さ」のバーで量を決め、前進/後退/左右回転ボタンで実行。結果（cm・度）を入力欄に入れると `/res` でシリアルに `EVT res ...` が出る。画面は `tools/romi/diag/webui.h`、API は `/run /stop /state /res`。駆動は時間で自動停止・上限 68%（700/1023）・4 秒・120ms の立ち上げランプ。**前進は dir=0 と仮定**（実機で逆なら画面の「前後を逆にする」）。シリアルの `w <s|r> <±1> <duty%> <ms> <trim>` で同じ経路を叩ける。机上の画面確認は `tools/romi/webui-stub.py`（ESP32 を模す代役サーバ）。**`hidden` 属性は CSS の `display:grid` に負ける**（`.go[hidden]{display:none}` が要った）。**PC を `ROMI-DIAG` に繋ぐとインターネットが切れる**ので、PC からの操作確認は代役サーバで行い、実機の画面は電話で開く。結果の受け取りは `tools/romi/evtlog.py`（`output/romi/evt.log` に追記・COM を占有する）
+- **ネットワーク（診断ファーム v3・2026-10-07）**: Romi は**開発用ルーターの 2.4GHz `kougaku-lab-exp-g`（ch6）に参加**する（Quest・タブレット・PC の有線 LAN 192.168.10.x と同じネットワーク）。IP は DHCP で取れた `192.168.10.2`、名前は **`http://romi.local/`**（PC から名前解決できる）。参加情報は **ESP32 の NVS にだけ**ある（ソース・git・memory に載せない）。入れ直すときは `ROMI_WIFI_SSID` / `ROMI_WIFI_PASS` を環境変数に置いて `py -3.11 tools/romi/set-wifi.py`（パスワードはユーザーに聞く。応答に値は出ない）。シリアルで `wifi status` / `wifi scan` / `wifi clear` / `reboot`。**ESP32 は 5GHz を使えない**ので、5GHz 専用の SSID（`kougaku-lab-A` や `kougaku-lab-exp-a`）には入れない。PC の Wi-Fi 一覧には 2.4GHz 側が出なかったので、**ESP32 自身に `wifi scan` させて SSID を見つけた**。STA に 15 秒つながらなければ下の AP にフォールバックする。LAN 内の誰でも `/run` を叩ける（認証なし）ので、展示本番では要対策。LAN 越しの `/state` は約 30〜40ms（curl の起動込み）
+- **手動操作の WebUI（診断ファーム v2 以降）**: 上のとおり LAN で `http://romi.local/` を開く（フォールバック時は ESP32 が AP `ROMI-DIAG`（パスワード `romi1234`・机上用）を立て `http://192.168.4.1/`）。直進/回転のバー操作画面を出す。「時間」と「強さ」のバーで量を決め、前進/後退/左右回転ボタンで実行。結果（cm・度）を入力欄に入れると `/res` でシリアルに `EVT res ...` が出る。画面は `tools/romi/diag/webui.h`、API は `/run /stop /state /res`。駆動は時間で自動停止・上限 68%（700/1023）・4 秒・120ms の立ち上げランプ。**前進は dir=0 と仮定**（実機で逆なら画面の「前後を逆にする」）。シリアルの `w <s|r> <±1> <duty%> <ms> <trim>` で同じ経路を叩ける。机上の画面確認は `tools/romi/webui-stub.py`（ESP32 を模す代役サーバ）。**`hidden` 属性は CSS の `display:grid` に負ける**（`.go[hidden]{display:none}` が要った）。**PC を `ROMI-DIAG` に繋ぐとインターネットが切れる**ので、PC からの操作確認は代役サーバで行い、実機の画面は電話で開く。結果の受け取りは `tools/romi/evtlog.py`（`output/romi/evt.log` に追記・COM を占有する）
 - USB シリアルの往復遅延は中央値 15.5ms（p99 16.6ms）、ファーム内の駆動窓は ±3ms
 - Romi シャーシ自体の公式仕様: 直径 165mm・163×149×70mm・160g（電池なし）、Mini Plastic Gearmotor 120:1 HP、ホイール 70×8mm、エンコーダは別売りで軸 1 回転 12 カウント、単三 6 本。**積載量・モーター定格電圧は公式ページに数値が無く、人形の重さに耐えるかは未確認**
 
