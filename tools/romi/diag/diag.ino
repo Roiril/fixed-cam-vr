@@ -4,7 +4,10 @@
 // 安全: 起動時は全出力 LOW。駆動は時間・PWM に上限があり、終わると必ず止める。
 #include <Arduino.h>
 #include <Wire.h>
+#include <WiFi.h>
+#include <WebServer.h>
 #include "soc/gpio_reg.h"
+#include "webui.h"
 
 static const int DIR_PIN[2] = {18, 16};
 static const int PWM_PIN[2] = {19, 17};
@@ -23,7 +26,23 @@ static inline bool level(int pin) {
   return (REG_READ(GPIO_IN1_REG) >> (pin - 32)) & 1;
 }
 
+// --- Web 手動操作（時間で自動停止する非ブロッキング駆動） ---
+static const char *AP_SSID = "ROMI-DIAG";
+static const char *AP_PASS = "romi1234";       // 机上の検証用。現場へ持ち出すときは変える
+static const int WEB_DUTY_MAX = 700;           // 元スケッチの上限（0x2BC）に合わせる
+static const int WEB_MS_MAX = 4000;
+static const int RAMP_MS = 120;                // 立ち上げの直線ランプ（スリップを減らす）
+static WebServer server(80);
+
+struct Run {
+  bool active = false;
+  uint32_t id = 0, t0 = 0, ms = 0;
+  int dirL = 0, dirR = 0, dutyL = 0, dutyR = 0;
+} run;
+static uint32_t runCounter = 0;
+
 static void stopAll() {
+  run.active = false;
   for (int s = 0; s < 2; s++) {
     ledcWrite(PWM_PIN[s], 0);
     digitalWrite(DIR_PIN[s], LOW);
@@ -104,6 +123,96 @@ static void i2cScan(int sda, int scl) {
   pinMode(scl, INPUT_PULLUP);
 }
 
+static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+// m: 's' 直進 / 'r' 回転。d>0: 前進・右回転（上から見て時計回り）。side0=左、side1=右。
+// flip=0 のとき dir=0 を前進とみなす（実機で前後が逆なら UI の「前後を逆にする」で反転）。
+static int startRun(char m, int d, int dutyPct, uint32_t ms, int trim, int flip) {
+  if (run.active) return -1;
+  if ((m != 's' && m != 'r') || ms < 50 || ms > WEB_MS_MAX || dutyPct < 1 || dutyPct > 100) return -2;
+  int base = clampi(dutyPct * 1023 / 100, 0, WEB_DUTY_MAX);
+  int F = flip ? 1 : 0;
+  int fwd = F, back = 1 - F;
+  trim = clampi(trim, -20, 20);
+  if (m == 's') {
+    int dir = d > 0 ? fwd : back;
+    run.dirL = run.dirR = dir;
+    run.dutyL = clampi(base * (100 + trim) / 100, 0, WEB_DUTY_MAX);
+    run.dutyR = clampi(base * (100 - trim) / 100, 0, WEB_DUTY_MAX);
+  } else {
+    run.dirL = d > 0 ? fwd : back;      // 右回転: 左輪が前、右輪が後ろ
+    run.dirR = d > 0 ? back : fwd;
+    run.dutyL = run.dutyR = base;
+  }
+  run.id = ++runCounter;
+  run.ms = ms;
+  digitalWrite(DIR_PIN[0], run.dirL);
+  digitalWrite(DIR_PIN[1], run.dirR);
+  run.t0 = millis();
+  run.active = true;
+  Serial.printf("EVT run id=%u m=%c d=%d duty=%d ms=%u trim=%d flip=%d dutyL=%d dutyR=%d t=%lu\n", (unsigned)run.id, m, d, dutyPct,
+                (unsigned)ms, trim, flip, run.dutyL, run.dutyR, millis());
+  return (int)run.id;
+}
+
+static void runTick() {
+  if (!run.active) return;
+  uint32_t e = millis() - run.t0;
+  if (e >= run.ms) {
+    uint32_t id = run.id;
+    stopAll();
+    Serial.printf("EVT done id=%u el=%u t=%lu\n", (unsigned)id, (unsigned)e, millis());
+    return;
+  }
+  float k = e >= (uint32_t)RAMP_MS ? 1.0f : (float)e / RAMP_MS;
+  ledcWrite(PWM_PIN[0], (int)(run.dutyL * k));
+  ledcWrite(PWM_PIN[1], (int)(run.dutyR * k));
+}
+
+static void jsonSend(const String &s) {
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", s);
+}
+
+static void httpRun() {
+  char m = server.arg("m").length() ? server.arg("m")[0] : 0;
+  int id = startRun(m, server.arg("d").toInt(), server.arg("duty").toInt(), (uint32_t)server.arg("ms").toInt(),
+                    server.arg("trim").toInt(), server.arg("flip").toInt());
+  if (id > 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + "}");
+  else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : "range") + "\"}");
+}
+
+static void httpStop() {
+  stopAll();
+  Serial.printf("EVT stop t=%lu\n", millis());
+  jsonSend("{\"ok\":1}");
+}
+
+static void httpState() {
+  uint32_t el = run.active ? millis() - run.t0 : 0;
+  jsonSend("{\"busy\":" + String(run.active ? 1 : 0) + ",\"id\":" + String(run.id) + ",\"el\":" + String(el) + ",\"ms\":" + String(run.ms) + "}");
+}
+
+static void httpRes() {
+  String n = server.arg("n");
+  n.replace(' ', '_'); n.replace('\n', '_'); n.replace('\r', '_');
+  Serial.printf("EVT res id=%s v=%s u=%s note=%s t=%lu\n", server.arg("id").c_str(), server.arg("v").c_str(), server.arg("u").c_str(),
+                n.c_str(), millis());
+  jsonSend("{\"ok\":1}");
+}
+
+static void startWeb() {
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
+  server.on("/", HTTP_GET, []() { server.send_P(200, "text/html; charset=utf-8", PAGE_HTML); });
+  server.on("/run", HTTP_GET, httpRun);
+  server.on("/stop", HTTP_GET, httpStop);
+  server.on("/state", HTTP_GET, httpState);
+  server.on("/res", HTTP_GET, httpRes);
+  server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
+  server.begin();
+}
+
 static void help() {
   Serial.println("commands:");
   Serial.println("  info | help | lv | adc | stop");
@@ -119,13 +228,20 @@ static void handle(String line) {
   int a, b, c, d;
   if (line == "help") help();
   else if (line == "info") {
-    Serial.printf("ROMI-DIAG v1 chip=%s rev=%d cpu=%dMHz heap=%u up=%lus\n", ESP.getChipModel(), (int)ESP.getChipRevision(),
-                  (int)getCpuFrequencyMhz(), (unsigned)ESP.getFreeHeap(), millis() / 1000);
+    Serial.printf("ROMI-DIAG v2 chip=%s rev=%d cpu=%dMHz heap=%u up=%lus ap=%s ip=%s clients=%d\n", ESP.getChipModel(),
+                  (int)ESP.getChipRevision(), (int)getCpuFrequencyMhz(), (unsigned)ESP.getFreeHeap(), millis() / 1000, AP_SSID,
+                  WiFi.softAPIP().toString().c_str(), (int)WiFi.softAPgetStationNum());
     Serial.printf("side0 DIR=%d PWM=%d | side1 DIR=%d PWM=%d | AUX=%d | pwm=%dHz/%dbit\n", DIR_PIN[0], PWM_PIN[0], DIR_PIN[1],
                   PWM_PIN[1], AUX_PIN, PWM_HZ, PWM_BITS);
   } else if (line == "lv") printLevels();
   else if (line == "adc") adcScan();
   else if (line == "adcall") adcAll();
+  else if (line.startsWith("w ")) {   // w <s|r> <d -1|1> <duty%> <ms> <trim>  Web と同じ駆動経路をシリアルから
+    char m = 0; int dd = 0, du = 0, tr = 0; unsigned ms = 0;
+    if (sscanf(line.c_str(), "w %c %d %d %u %d", &m, &dd, &du, &ms, &tr) < 4) { Serial.println("ERR args"); return; }
+    int id = startRun(m, dd, du, ms, tr, 0);
+    Serial.println(id > 0 ? "started" : (id == -1 ? "ERR busy" : "ERR range"));
+  }
   else if (sscanf(line.c_str(), "i2c %d %d", &a, &b) == 2) {
     bool okA = false, okB = false;   // 候補ピンのうち出力もできるもの（34〜39 は入力専用）だけ許す
     for (int i = 0; i < N_SCAN; i++) {
@@ -166,13 +282,16 @@ void setup() {
   pinMode(AUX_PIN, OUTPUT);
   digitalWrite(AUX_PIN, LOW);
   for (int i = 0; i < N_SCAN; i++) pinMode(SCAN_PINS[i], SCAN_PINS[i] >= 34 ? INPUT : INPUT_PULLUP);
+  startWeb();
   delay(300);
   Serial.println();
-  Serial.println("ROMI-DIAG v1 ready (type help)");
+  Serial.printf("ROMI-DIAG v2 ready (type help) AP=%s ip=%s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
 }
 
 void loop() {
   static String buf;
+  server.handleClient();
+  runTick();
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == '\n' || ch == '\r') { handle(buf); buf = ""; }
