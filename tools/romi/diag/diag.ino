@@ -1,14 +1,14 @@
-// Romi 台車の配線を調べる診断ファーム（ESP32）。シリアル 115200、行単位のコマンド。
+// Romi 台車の制御・診断ファーム（ESP32）。v4: 目標（cm / 度）指定の Web 操作 + 堅牢なネットワーク。
 // 元のスケッチ（Romi / Joy-Con 2 control v3）の逆アセンブルから得たピン:
-//   side0: DIR=18 PWM=19 / side1: DIR=16 PWM=17 / AUX=2（左右の割り当ては実機で確認する）
+//   side0=左: DIR=18 PWM=19 / side1=右: DIR=16 PWM=17 / AUX=2
 // 安全: 起動時は全出力 LOW。駆動は時間・PWM に上限があり、終わると必ず止める。
+// シリアル 115200 の行コマンドは `help`。ネットワークは net.h、画面は webui.h。
 #include <Arduino.h>
 #include <Wire.h>
-#include <WiFi.h>
 #include <WebServer.h>
-#include <ESPmDNS.h>
-#include <Preferences.h>
+#include <esp_task_wdt.h>
 #include "soc/gpio_reg.h"
+#include "net.h"
 #include "webui.h"
 
 static const int DIR_PIN[2] = {18, 16};
@@ -16,7 +16,7 @@ static const int PWM_PIN[2] = {19, 17};
 static const int AUX_PIN = 2;
 static const int PWM_HZ = 20000;
 static const int PWM_BITS = 10;
-static const int DUTY_MAX = 800;   // 1023 満点のうち
+static const int DUTY_MAX = 800;   // シリアルの d コマンドの上限（1023 満点）
 static const int MS_MAX = 4000;
 
 // エンコーダなど外部入力の候補（UART の 1,3 とフラッシュの 6〜11、出力に使う 2,16〜19 は除く）
@@ -28,12 +28,10 @@ static inline bool level(int pin) {
   return (REG_READ(GPIO_IN1_REG) >> (pin - 32)) & 1;
 }
 
-// --- Web 手動操作（時間で自動停止する非ブロッキング駆動） ---
-static const char *AP_SSID = "ROMI-DIAG";
-static const char *AP_PASS = "romi1234";       // 机上の検証用。現場へ持ち出すときは変える
-static const int WEB_DUTY_MAX = 700;           // 元スケッチの上限（0x2BC）に合わせる
-static const int WEB_MS_MAX = 4000;
-static const int RAMP_MS = 120;                // 立ち上げの直線ランプ（スリップを減らす）
+// --- 手動操作（時間で自動停止する非ブロッキング駆動） ---
+static const int WEB_DUTY_MAX = 700;    // 元スケッチの上限（0x2BC）に合わせる
+static const int WEB_MS_MAX = 8000;
+static const int RAMP_MS = 120;         // 立ち上げの直線ランプ（スリップを減らす）
 static WebServer server(80);
 
 struct Run {
@@ -41,7 +39,29 @@ struct Run {
   uint32_t id = 0, t0 = 0, ms = 0;
   int dirL = 0, dirR = 0, dutyL = 0, dutyR = 0;
 } run;
-static uint32_t runCounter = 0;
+static uint32_t runCounter = 0, lastId = 0, lastEl = 0;
+
+// 較正モデル（NVS に保存。/cal で更新できる）。実測が溜まったら私が当てはめて入れ直す。
+//   直進 [cm/s] = sv * (強さ% - sd)         時間 = 目標cm / 速さ + st
+//   回転 [度/s] = rv * (強さ% - rd)         時間 = 目標度 / 角速度 + rt
+struct Cal { float sv = 0.75f, sd = 8.f, st = 0.f, rv = 4.5f, rd = 10.f, rt = 0.f; uint32_t ver = 0; } cal;
+
+static void calLoad() {
+  prefs.begin("romi", true);
+  cal.sv = prefs.getFloat("sv", cal.sv); cal.sd = prefs.getFloat("sd", cal.sd); cal.st = prefs.getFloat("st", cal.st);
+  cal.rv = prefs.getFloat("rv", cal.rv); cal.rd = prefs.getFloat("rd", cal.rd); cal.rt = prefs.getFloat("rt", cal.rt);
+  cal.ver = prefs.getUInt("calver", 0);
+  prefs.end();
+}
+
+static void calSave() {
+  cal.ver++;
+  prefs.begin("romi", false);
+  prefs.putFloat("sv", cal.sv); prefs.putFloat("sd", cal.sd); prefs.putFloat("st", cal.st);
+  prefs.putFloat("rv", cal.rv); prefs.putFloat("rd", cal.rd); prefs.putFloat("rt", cal.rt);
+  prefs.putUInt("calver", cal.ver);
+  prefs.end();
+}
 
 static void stopAll() {
   run.active = false;
@@ -61,6 +81,7 @@ static void scanInputs(uint32_t ms, bool drive, int side, int dir, int duty) {
   }
   uint32_t t0 = millis();
   while (millis() - t0 < ms) {
+    esp_task_wdt_reset();
     for (int i = 0; i < N_SCAN; i++) {
       bool v = level(SCAN_PINS[i]);
       if (v != last[i]) { cnt[i]++; last[i] = v; }
@@ -94,7 +115,7 @@ static void adcScan() {
   Serial.println();
 }
 
-// プルアップ無しで ADC を読む（バッテリ分圧・電流センサの接続探し）。ADC2 は Wi-Fi 未使用なので読める
+// プルアップ無しで ADC を読む（バッテリ分圧・電流センサの接続探し）
 static void adcAll() {
   const int pins[] = {4, 12, 13, 14, 15, 25, 26, 27, 32, 33, 34, 35, 36, 39};
   for (int p : pins) pinMode(p, INPUT);
@@ -127,11 +148,40 @@ static void i2cScan(int sda, int scl) {
 
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+static String clean(String s, unsigned maxLen) {   // ログ 1 行に収める（空白・区切りを潰す）
+  s.replace(' ', '_'); s.replace(',', '_'); s.replace('\n', '_'); s.replace('\r', '_');
+  if (s.length() > maxLen) s = s.substring(0, maxLen);
+  return s;
+}
+
+// 目標から時間を求める。返り値: 0 以上=ms / -2=範囲外 / -3=強さが小さすぎる
+static int planMs(char m, int dutyPct, float tgt, float *rate) {
+  float r = (m == 's') ? cal.sv * (dutyPct - cal.sd) : cal.rv * (dutyPct - cal.rd);
+  if (rate) *rate = r;
+  if (r < 0.5f) return -3;
+  if (tgt < 1.f || tgt > (m == 's' ? 150.f : 720.f)) return -2;
+  float ms = tgt / r * 1000.f + (m == 's' ? cal.st : cal.rt);
+  if (ms < 50.f || ms > WEB_MS_MAX) return -2;
+  return (int)(ms + 0.5f);
+}
+
 // m: 's' 直進 / 'r' 回転。d>0: 前進・右回転（上から見て時計回り）。side0=左、side1=右。
+// tgt>0 なら較正モデルから時間を決める。msOverride>0 なら時間を直接指定。
 // flip=0 のとき dir=0 を前進とみなす（実機で前後が逆なら UI の「前後を逆にする」で反転）。
-static int startRun(char m, int d, int dutyPct, uint32_t ms, int trim, int flip) {
+// 返り値: id(>0) / -1=実行中 / -2=範囲外 / -3=強さが小さすぎる
+static int startRun(char m, int d, int dutyPct, float tgt, uint32_t msOverride, int trim, int flip, const String &bat, const String &load, uint32_t *plannedMs, float *rateOut) {
   if (run.active) return -1;
-  if ((m != 's' && m != 'r') || ms < 50 || ms > WEB_MS_MAX || dutyPct < 1 || dutyPct > 100) return -2;
+  if ((m != 's' && m != 'r') || dutyPct < 1 || dutyPct > 100) return -2;
+  float rate = 0;
+  int ms;
+  if (msOverride > 0) {
+    if (msOverride < 50 || msOverride > WEB_MS_MAX) return -2;
+    ms = (int)msOverride;
+    planMs(m, dutyPct, 1.f, &rate);
+  } else {
+    ms = planMs(m, dutyPct, tgt, &rate);
+    if (ms < 0) return ms;
+  }
   int base = clampi(dutyPct * 1023 / 100, 0, WEB_DUTY_MAX);
   int F = flip ? 1 : 0;
   int fwd = F, back = 1 - F;
@@ -147,13 +197,16 @@ static int startRun(char m, int d, int dutyPct, uint32_t ms, int trim, int flip)
     run.dutyL = run.dutyR = base;
   }
   run.id = ++runCounter;
-  run.ms = ms;
+  run.ms = (uint32_t)ms;
   digitalWrite(DIR_PIN[0], run.dirL);
   digitalWrite(DIR_PIN[1], run.dirR);
   run.t0 = millis();
   run.active = true;
-  Serial.printf("EVT run id=%u m=%c d=%d duty=%d ms=%u trim=%d flip=%d dutyL=%d dutyR=%d t=%lu\n", (unsigned)run.id, m, d, dutyPct,
-                (unsigned)ms, trim, flip, run.dutyL, run.dutyR, millis());
+  if (plannedMs) *plannedMs = (uint32_t)ms;
+  if (rateOut) *rateOut = rate;
+  Serial.printf("EVT run id=%u m=%c d=%d duty=%d tgt=%.1f ms=%u rate=%.2f trim=%d flip=%d dutyL=%d dutyR=%d bat=%s load=%s cal=%u t=%lu\n",
+                (unsigned)run.id, m, d, dutyPct, tgt, (unsigned)ms, rate, trim, flip, run.dutyL, run.dutyR, clean(bat, 40).c_str(),
+                clean(load, 60).c_str(), (unsigned)cal.ver, millis());
   return (int)run.id;
 }
 
@@ -163,6 +216,8 @@ static void runTick() {
   if (e >= run.ms) {
     uint32_t id = run.id;
     stopAll();
+    lastId = id;
+    lastEl = e;
     Serial.printf("EVT done id=%u el=%u t=%lu\n", (unsigned)id, (unsigned)e, millis());
     return;
   }
@@ -176,12 +231,19 @@ static void jsonSend(const String &s) {
   server.send(200, "application/json", s);
 }
 
+static String calJson() {
+  return "{\"sv\":" + String(cal.sv, 4) + ",\"sd\":" + String(cal.sd, 3) + ",\"st\":" + String(cal.st, 1) + ",\"rv\":" + String(cal.rv, 4) +
+         ",\"rd\":" + String(cal.rd, 3) + ",\"rt\":" + String(cal.rt, 1) + ",\"ver\":" + String(cal.ver) + "}";
+}
+
 static void httpRun() {
   char m = server.arg("m").length() ? server.arg("m")[0] : 0;
-  int id = startRun(m, server.arg("d").toInt(), server.arg("duty").toInt(), (uint32_t)server.arg("ms").toInt(),
-                    server.arg("trim").toInt(), server.arg("flip").toInt());
-  if (id > 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + "}");
-  else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : "range") + "\"}");
+  uint32_t planned = 0;
+  float rate = 0;
+  int id = startRun(m, server.arg("d").toInt(), server.arg("duty").toInt(), server.arg("tgt").toFloat(), (uint32_t)server.arg("ms").toInt(),
+                    server.arg("trim").toInt(), server.arg("flip").toInt(), server.arg("bat"), server.arg("load"), &planned, &rate);
+  if (id > 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + ",\"ms\":" + String(planned) + ",\"rate\":" + String(rate, 2) + "}");
+  else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : (id == -3 ? "weak" : "range")) + "\"}");
 }
 
 static void httpStop() {
@@ -192,82 +254,65 @@ static void httpStop() {
 
 static void httpState() {
   uint32_t el = run.active ? millis() - run.t0 : 0;
-  jsonSend("{\"busy\":" + String(run.active ? 1 : 0) + ",\"id\":" + String(run.id) + ",\"el\":" + String(el) + ",\"ms\":" + String(run.ms) + "}");
+  jsonSend("{\"busy\":" + String(run.active ? 1 : 0) + ",\"id\":" + String(run.id) + ",\"el\":" + String(el) + ",\"ms\":" + String(run.ms) +
+           ",\"lastId\":" + String(lastId) + ",\"lastEl\":" + String(lastEl) + "}");
 }
 
 static void httpRes() {
-  String n = server.arg("n");
-  n.replace(' ', '_'); n.replace('\n', '_'); n.replace('\r', '_');
-  Serial.printf("EVT res id=%s v=%s u=%s note=%s t=%lu\n", server.arg("id").c_str(), server.arg("v").c_str(), server.arg("u").c_str(),
-                n.c_str(), millis());
+  Serial.printf("EVT res id=%s a=%s lat=%s u=%s bat=%s load=%s note=%s t=%lu\n", server.arg("id").c_str(), server.arg("a").c_str(),
+                server.arg("lat").c_str(), server.arg("u").c_str(), clean(server.arg("bat"), 40).c_str(), clean(server.arg("load"), 60).c_str(),
+                clean(server.arg("n"), 80).c_str(), millis());
   jsonSend("{\"ok\":1}");
 }
 
-// LAN への参加情報は NVS（Preferences）に置く。ソースにも git にも載せない。
-//   シリアルで `wifi set <ssid>|<password>` / `wifi clear` / `wifi status`
-// 保存があれば STA（既存 LAN に参加）。15 秒つながらなければ机上用の AP にフォールバックする。
-static Preferences prefs;
-static bool staMode = false;
-
-static String wifiStatus() {
-  String s = staMode ? "STA " : "AP ";
-  if (staMode) {
-    s += (WiFi.status() == WL_CONNECTED) ? "connected ssid=" + WiFi.SSID() + " ip=" + WiFi.localIP().toString() + " rssi=" + String(WiFi.RSSI())
-                                         : "disconnected";
-  } else {
-    s += "ssid=" + String(AP_SSID) + " ip=" + WiFi.softAPIP().toString() + " clients=" + String(WiFi.softAPgetStationNum());
-  }
-  return s;
-}
-
-static void startNetwork() {
-  prefs.begin("romi", true);
-  String ssid = prefs.getString("ssid", "");
-  String pass = prefs.getString("pass", "");
-  prefs.end();
-  staMode = false;
-  if (ssid.length()) {
-    WiFi.mode(WIFI_STA);
-    WiFi.setHostname("romi");
-    WiFi.setAutoReconnect(true);
-    WiFi.begin(ssid.c_str(), pass.c_str());
-    uint32_t t0 = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(200);
-    if (WiFi.status() == WL_CONNECTED) {
-      staMode = true;
-      WiFi.setSleep(false);              // 省電力を切って応答の揺れを減らす
-      MDNS.begin("romi");                // http://romi.local/
-      MDNS.addService("http", "tcp", 80);
-    } else {
-      WiFi.disconnect(true);
-      Serial.println("EVT wifi sta-failed -> fallback AP");
+static void httpCal() {
+  bool any = false;
+  struct { const char *k; float *p; float lo, hi; } t[] = {
+    {"sv", &cal.sv, 0.05f, 5.f}, {"sd", &cal.sd, 0.f, 40.f}, {"st", &cal.st, -500.f, 1000.f},
+    {"rv", &cal.rv, 0.5f, 50.f}, {"rd", &cal.rd, 0.f, 40.f}, {"rt", &cal.rt, -500.f, 1000.f}};
+  for (auto &e : t) {
+    if (server.hasArg(e.k)) {
+      float v = server.arg(e.k).toFloat();
+      *e.p = v < e.lo ? e.lo : (v > e.hi ? e.hi : v);
+      any = true;
     }
   }
-  if (!staMode) {
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID, AP_PASS, 6, 0, 4);
+  if (any) {
+    calSave();
+    Serial.printf("EVT cal %s\n", calJson().c_str());
   }
-  Serial.printf("EVT net %s\n", wifiStatus().c_str());
+  jsonSend(calJson());
+}
+
+static String infoJson() {
+  return String("{\"proto\":\"") + DISC_PROTO + "\",\"show\":\"" + DISC_SHOW + "\",\"role\":\"cart\",\"id\":\"R\",\"uuid\":\"" + netUuid +
+         "\",\"version\":\"" + FW_VERSION + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"rssi\":" + String(WiFi.RSSI()) +
+         ",\"up\":" + String(millis() / 1000) + ",\"drops\":" + String(netDrops) + ",\"lastReason\":" + String(netLastReason) +
+         ",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) + "}";
 }
 
 static void startWeb() {
-  startNetwork();
   server.on("/", HTTP_GET, []() { server.send_P(200, "text/html; charset=utf-8", PAGE_HTML); });
   server.on("/run", HTTP_GET, httpRun);
   server.on("/stop", HTTP_GET, httpStop);
   server.on("/state", HTTP_GET, httpState);
   server.on("/res", HTTP_GET, httpRes);
+  server.on("/cal", HTTP_GET, httpCal);
+  server.on("/info", HTTP_GET, []() { jsonSend(infoJson()); });
+  server.on("/health", HTTP_GET, []() { jsonSend("{\"ok\":1,\"up\":" + String(millis() / 1000) + ",\"busy\":" + String(run.active ? 1 : 0) + "}"); });
   server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
   server.begin();
 }
 
 static void help() {
   Serial.println("commands:");
-  Serial.println("  info | help | lv | adc | stop");
+  Serial.println("  info | help | lv | adc | adcall | stop | reboot");
+  Serial.println("  w <s|r> <d -1|1> <duty%> <ms> <trim>   run by time (same path as the web UI)");
+  Serial.println("  g <s|r> <d -1|1> <duty%> <target cm|deg> <trim>   run by target");
   Serial.println("  d <side 0|1> <dir 0|1> <duty 0..800> <ms 1..4000>   drive one motor, count edges on input pins");
-  Serial.println("  scan <ms>      count edges with no motor (spin a wheel by hand)");
-  Serial.println("  aux <0|1>      GPIO2");
-  Serial.println("  raw <pin 16|17|18|19> <0|1>  digital write (PWM pins: detaches PWM until reboot)");
+  Serial.println("  scan <ms> | aux <0|1> | raw <pin 16..19> <0|1> | i2c <sda> <scl>");
+  Serial.println("  cal | cal set <key>=<v> ...   keys: sv sd st rv rd rt");
+  Serial.println("  wifi status | wifi scan | wifi set <ssid>|<pass> | wifi ssid <ssid> | wifi clear | wifi kick");
 }
 
 static void handle(String line) {
@@ -276,14 +321,45 @@ static void handle(String line) {
   int a, b, c, d;
   if (line == "help") help();
   else if (line == "info") {
-    Serial.printf("ROMI-DIAG v3 chip=%s rev=%d cpu=%dMHz heap=%u up=%lus net=%s\n", ESP.getChipModel(),
-                  (int)ESP.getChipRevision(), (int)getCpuFrequencyMhz(), (unsigned)ESP.getFreeHeap(), millis() / 1000, wifiStatus().c_str());
-    Serial.printf("side0 DIR=%d PWM=%d | side1 DIR=%d PWM=%d | AUX=%d | pwm=%dHz/%dbit\n", DIR_PIN[0], PWM_PIN[0], DIR_PIN[1],
-                  PWM_PIN[1], AUX_PIN, PWM_HZ, PWM_BITS);
+    Serial.printf("ROMI %s chip=%s rev=%d cpu=%dMHz heap=%u up=%lus uuid=%s\n", FW_VERSION, ESP.getChipModel(), (int)ESP.getChipRevision(),
+                  (int)getCpuFrequencyMhz(), (unsigned)ESP.getFreeHeap(), millis() / 1000, netUuid.c_str());
+    Serial.printf("net: %s\n", netStatus().c_str());
+    Serial.printf("side0 DIR=%d PWM=%d | side1 DIR=%d PWM=%d | AUX=%d | pwm=%dHz/%dbit\n", DIR_PIN[0], PWM_PIN[0], DIR_PIN[1], PWM_PIN[1],
+                  AUX_PIN, PWM_HZ, PWM_BITS);
+    Serial.printf("cal: %s\n", calJson().c_str());
   } else if (line == "lv") printLevels();
   else if (line == "adc") adcScan();
   else if (line == "adcall") adcAll();
-  else if (line == "wifi status") Serial.println(wifiStatus());
+  else if (line == "cal") Serial.println(calJson());
+  else if (line.startsWith("cal set ")) {
+    String rest = line.substring(8);
+    int pos = 0;
+    while (pos < (int)rest.length()) {
+      int sp = rest.indexOf(' ', pos);
+      String tok = rest.substring(pos, sp < 0 ? rest.length() : sp);
+      int eq = tok.indexOf('=');
+      if (eq > 0) {
+        String k = tok.substring(0, eq);
+        float v = tok.substring(eq + 1).toFloat();
+        if (k == "sv") cal.sv = v; else if (k == "sd") cal.sd = v; else if (k == "st") cal.st = v;
+        else if (k == "rv") cal.rv = v; else if (k == "rd") cal.rd = v; else if (k == "rt") cal.rt = v;
+      }
+      if (sp < 0) break;
+      pos = sp + 1;
+    }
+    calSave();
+    Serial.println(calJson());
+  }
+  else if (line == "wifi status") Serial.println(netStatus());
+  else if (line == "wifi kick") { Serial.println("kicking STA (expect auto reconnect)"); WiFi.disconnect(false, false); }
+  else if (line.startsWith("wifi fake ")) {   // 試験用: RAM 上の SSID だけ偽物にして「つながらない状況」を作る（NVS は触らない）
+    netSsid = line.substring(10);
+    Serial.printf("fake ssid '%s' (RAM only). `wifi unfake` restores\n", netSsid.c_str());
+    WiFi.disconnect(false, false);
+  } else if (line == "wifi unfake") {
+    prefs.begin("romi", true); netSsid = prefs.getString("ssid", ""); prefs.end();
+    Serial.println("ssid restored from NVS");
+  }
   else if (line == "wifi scan") {   // ESP32 から見える 2.4GHz の SSID を列挙（ESP32 は 5GHz を使えない）
     wifi_mode_t prev = WiFi.getMode();
     if (prev == WIFI_AP) WiFi.mode(WIFI_AP_STA);
@@ -298,6 +374,9 @@ static void handle(String line) {
   else if (line == "wifi clear") {
     prefs.begin("romi", false); prefs.remove("ssid"); prefs.remove("pass"); prefs.end();
     Serial.println("wifi credentials cleared (reboot to apply)");
+  } else if (line.startsWith("wifi ssid ")) {   // パスワードはそのまま、SSID だけ差し替える（試験用）
+    prefs.begin("romi", false); prefs.putString("ssid", line.substring(10)); prefs.end();
+    Serial.printf("ssid set to '%s' (reboot to apply)\n", line.substring(10).c_str());
   } else if (line.startsWith("wifi set ")) {
     String body = line.substring(9);
     int bar = body.indexOf('|');
@@ -308,11 +387,13 @@ static void handle(String line) {
     prefs.end();
     Serial.printf("wifi saved (ssid=%s, password %d chars). reboot to apply\n", body.substring(0, bar).c_str(), (int)(body.length() - bar - 1));
   } else if (line == "reboot") { Serial.println("rebooting"); delay(100); ESP.restart(); }
-  else if (line.startsWith("w ")) {   // w <s|r> <d -1|1> <duty%> <ms> <trim>  Web と同じ駆動経路をシリアルから
-    char m = 0; int dd = 0, du = 0, tr = 0; unsigned ms = 0;
-    if (sscanf(line.c_str(), "w %c %d %d %u %d", &m, &dd, &du, &ms, &tr) < 4) { Serial.println("ERR args"); return; }
-    int id = startRun(m, dd, du, ms, tr, 0);
-    Serial.println(id > 0 ? "started" : (id == -1 ? "ERR busy" : "ERR range"));
+  else if (line.startsWith("w ") || line.startsWith("g ")) {   // w: 時間指定 / g: 目標指定。Web と同じ駆動経路
+    char m = 0; int dd = 0, du = 0, tr = 0; float v = 0;
+    if (sscanf(line.c_str() + 2, "%c %d %d %f %d", &m, &dd, &du, &v, &tr) < 4) { Serial.println("ERR args"); return; }
+    uint32_t planned = 0;
+    int id = line[0] == 'w' ? startRun(m, dd, du, 0, (uint32_t)v, tr, 0, "", "", &planned, nullptr)
+                            : startRun(m, dd, du, v, 0, tr, 0, "", "", &planned, nullptr);
+    Serial.println(id > 0 ? "started" : (id == -1 ? "ERR busy" : (id == -3 ? "ERR weak" : "ERR range")));
   }
   else if (sscanf(line.c_str(), "i2c %d %d", &a, &b) == 2) {
     bool okA = false, okB = false;   // 候補ピンのうち出力もできるもの（34〜39 は入力専用）だけ許す
@@ -354,16 +435,24 @@ void setup() {
   pinMode(AUX_PIN, OUTPUT);
   digitalWrite(AUX_PIN, LOW);
   for (int i = 0; i < N_SCAN; i++) pinMode(SCAN_PINS[i], SCAN_PINS[i] >= 34 ? INPUT : INPUT_PULLUP);
+  // ループが 30 秒止まったら自動で再起動する（起動時は全出力 LOW なので安全に戻る）
+  esp_task_wdt_config_t twdt = {.timeout_ms = 30000, .idle_core_mask = 0, .trigger_panic = true};
+  esp_task_wdt_reconfigure(&twdt);
+  esp_task_wdt_add(NULL);
+  calLoad();
+  netBegin();       // ブロックしない。接続はイベントとバックオフで進める
   startWeb();
   delay(300);
   Serial.println();
-  Serial.printf("ROMI-DIAG v3 ready (type help) net=%s\n", wifiStatus().c_str());
+  Serial.printf("ROMI %s ready (type help) net: %s\n", FW_VERSION, netStatus().c_str());
 }
 
 void loop() {
   static String buf;
+  esp_task_wdt_reset();
   server.handleClient();
   runTick();
+  netTick(run.active);
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == '\n' || ch == '\r') { handle(buf); buf = ""; }
