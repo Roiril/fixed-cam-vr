@@ -75,13 +75,35 @@ struct Joy {
   int flip = 0;
 } joy;
 
-static void stopAll() {
+// --- ショートカット（一連の動きを台車側で順に実行する。スマホの通信が切れても時間どおりに進む）---
+// 手順の文字列: "s:1:100:40,r:-1:90:40,w:0:500:0"（種類:向き:量:強さ%）
+//   s=直進（量 cm・向き +1 前進/-1 後退）/ r=回転（量 度・向き +1 右/-1 左）/ w=待つ（量 ms）
+struct Step { char m; int d; float v; int duty; };
+struct Seq {
+  bool active = false, running = false;
+  Step st[12];
+  int n = 0, idx = 0, flip = 0, trim = 0;
+  uint32_t nextAt = 0, id = 0, started = 0;
+} seq;
+static const uint32_t SEQ_GAP_MS = 250;   // 動きの間に挟む整定の時間
+static uint32_t seqCounter = 0;
+static bool seqInternal = false;           // seq 自身が startRun を呼ぶときだけ true
+
+// モーターの出力だけを止める（ショートカットの途中の区切りでも使う）
+static void stopOutputs() {
   run.active = false;
   joy.active = false; joy.tgtL = joy.tgtR = joy.curL = joy.curR = 0;
   for (int s = 0; s < 2; s++) {
     ledcWrite(PWM_PIN[s], 0);
     digitalWrite(DIR_PIN[s], LOW);
   }
+}
+
+// すべて止める。ショートカットも中断する（停止ボタン・切断・シリアルの stop）
+static void stopAll() {
+  if (seq.active) Serial.printf("EVT seq abort id=%u at=%d/%d t=%lu\n", (unsigned)seq.id, seq.idx, seq.n, millis());
+  seq.active = false; seq.running = false;
+  stopOutputs();
 }
 
 static void scanInputs(uint32_t ms, bool drive, int side, int dir, int duty) {
@@ -184,6 +206,7 @@ static int planMs(char m, int dutyPct, float tgt, float *rate) {
 // 返り値: id(>0) / -1=実行中 / -2=範囲外 / -3=強さが小さすぎる
 static int startRun(char m, int d, int dutyPct, float tgt, uint32_t msOverride, int trim, int flip, const String &bat, const String &load, uint32_t *plannedMs, float *rateOut) {
   if (run.active || joy.active || joy.curL != 0 || joy.curR != 0) return -1;   // ジョイスティック動作中も受け付けない
+  if (seq.active && !seqInternal) return -1;                                  // ショートカット実行中も
   if ((m != 's' && m != 'r') || dutyPct < 1 || dutyPct > 100) return -2;
   float rate = 0;
   int ms;
@@ -228,7 +251,7 @@ static void runTick() {
   uint32_t e = millis() - run.t0;
   if (e >= run.ms) {
     uint32_t id = run.id;
-    stopAll();
+    stopOutputs();   // ショートカットの途中でも続けるので stopAll ではない
     lastId = id;
     lastEl = e;
     Serial.printf("EVT done id=%u el=%u t=%lu\n", (unsigned)id, (unsigned)e, millis());
@@ -243,7 +266,7 @@ static inline bool joyMoving() { return joy.active || joy.curL != 0 || joy.curR 
 
 // x: 右が正、y: 前が正（-1..1）。cap: 最大の強さ%（10..68）。左右の輪へ混ぜ（アーケード式）、不感帯の分を持ち上げる。
 static int joySet(float x, float y, int capPct, int flip) {
-  if (run.active) return -1;
+  if (run.active || seq.active) return -1;
   capPct = clampi(capPct, 10, 68);
   float l = y + x, r = y - x;
   l = l > 1 ? 1 : (l < -1 ? -1 : l);
@@ -296,6 +319,60 @@ static void joyTick() {
   if (!joy.active && joy.curL == 0 && joy.curR == 0) stopAll();
 }
 
+// 手順の文字列を読む。成功で n（1 以上）、失敗で 0。各動きの量・強さは planMs で検査する。
+static int seqParse(const String &str) {
+  int n = 0, pos = 0;
+  while (pos < (int)str.length() && n < 12) {
+    int comma = str.indexOf(',', pos);
+    String tok = str.substring(pos, comma < 0 ? str.length() : comma);
+    char m = 0; int d = 0, duty = 0; float v = 0;
+    if (sscanf(tok.c_str(), "%c:%d:%f:%d", &m, &d, &v, &duty) < 3) return 0;
+    if (m == 'w') { if (v < 0 || v > 20000) return 0; }
+    else {
+      if ((m != 's' && m != 'r') || (d != 1 && d != -1)) return 0;
+      if (planMs(m, duty, v, nullptr) < 0) return 0;
+    }
+    seq.st[n++] = {m, d, v, duty};
+    if (comma < 0) break;
+    pos = comma + 1;
+  }
+  return n;
+}
+
+// 返り値: id(>0) / -1=実行中 / -2=手順が不正
+static int seqStart(const String &str, int flip, int trim, const String &name) {
+  if (run.active || joy.active || joy.curL != 0 || joy.curR != 0 || seq.active) return -1;
+  int n = seqParse(str);
+  if (n <= 0) return -2;
+  seq.n = n; seq.idx = 0; seq.flip = flip; seq.trim = clampi(trim, -20, 20);
+  seq.id = ++seqCounter; seq.started = millis(); seq.nextAt = seq.started; seq.running = false; seq.active = true;
+  Serial.printf("EVT seq start id=%u n=%d name=%s steps=%s flip=%d t=%lu\n", (unsigned)seq.id, n, clean(name, 40).c_str(), clean(str, 200).c_str(), flip, millis());
+  return (int)seq.id;
+}
+
+static void seqTick() {
+  if (!seq.active || run.active) return;   // 動きの最中は待つ
+  uint32_t now = millis();
+  if (seq.running) { seq.running = false; seq.nextAt = now + SEQ_GAP_MS; }   // 1 つ終わった: 整定を待つ
+  if ((int32_t)(now - seq.nextAt) < 0) return;
+  if (seq.idx >= seq.n) {
+    Serial.printf("EVT seq done id=%u dur=%lums t=%lu\n", (unsigned)seq.id, now - seq.started, now);
+    seq.active = false;
+    return;
+  }
+  Step s = seq.st[seq.idx++];
+  if (s.m == 'w') { seq.nextAt = now + (uint32_t)s.v; return; }
+  seqInternal = true;
+  int id = startRun(s.m, s.d, s.duty, s.v, 0, seq.trim, seq.flip, "seq", "", nullptr, nullptr);
+  seqInternal = false;
+  if (id < 0) {
+    Serial.printf("EVT seq error id=%u step=%d code=%d t=%lu\n", (unsigned)seq.id, seq.idx, id, now);
+    seq.active = false;
+    return;
+  }
+  seq.running = true;
+}
+
 static void jsonSend(const String &s) {
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", s);
@@ -322,6 +399,32 @@ static void httpJoy() {
   server.send(200, "application/json", rc == 0 ? "{\"ok\":1}" : "{\"ok\":0,\"err\":\"busy\"}");
 }
 
+// ショートカットの実行。本文（text/plain）に手順の文字列、クエリに flip / trim / name
+static void httpSeq() {
+  int id = seqStart(server.arg("plain"), server.arg("flip").toInt(), server.arg("trim").toInt(), server.arg("name"));
+  if (id > 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + ",\"n\":" + String(seq.n) + "}");
+  else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : "bad") + "\"}");
+}
+
+// ショートカットの定義はこの台車に保存する（どの端末の画面からでも同じものが出る）
+static void httpScGet() {
+  prefs.begin("romi", true);
+  String s = prefs.getString("sc", "");
+  prefs.end();
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", s.length() ? s : "{}");
+}
+
+static void httpScSet() {
+  String body = server.arg("plain");
+  if (body.length() > 3500) { jsonSend("{\"ok\":0,\"err\":\"too-long\"}"); return; }
+  prefs.begin("romi", false);
+  prefs.putString("sc", body);
+  prefs.end();
+  Serial.printf("EVT sc saved bytes=%u t=%lu\n", (unsigned)body.length(), millis());
+  jsonSend("{\"ok\":1}");
+}
+
 static void httpStop() {
   stopAll();
   Serial.printf("EVT stop t=%lu\n", millis());
@@ -331,7 +434,8 @@ static void httpStop() {
 static void httpState() {
   uint32_t el = run.active ? millis() - run.t0 : 0;
   jsonSend("{\"busy\":" + String(run.active ? 1 : 0) + ",\"id\":" + String(run.id) + ",\"el\":" + String(el) + ",\"ms\":" + String(run.ms) +
-           ",\"lastId\":" + String(lastId) + ",\"lastEl\":" + String(lastEl) + "}");
+           ",\"lastId\":" + String(lastId) + ",\"lastEl\":" + String(lastEl) + ",\"seq\":" + String(seq.active ? 1 : 0) + ",\"si\":" + String(seq.idx) +
+           ",\"sn\":" + String(seq.n) + ",\"sid\":" + String(seq.id) + "}");
 }
 
 static void httpRes() {
@@ -382,6 +486,9 @@ static void startWeb() {
   server.on("/run", HTTP_GET, httpRun);
   server.on("/stop", HTTP_GET, httpStop);
   server.on("/joy", HTTP_GET, httpJoy);
+  server.on("/seq", HTTP_POST, httpSeq);
+  server.on("/sc", HTTP_GET, httpScGet);
+  server.on("/sc", HTTP_POST, httpScSet);
   server.on("/state", HTTP_GET, httpState);
   server.on("/res", HTTP_GET, httpRes);
   server.on("/cal", HTTP_GET, httpCal);
@@ -540,7 +647,8 @@ void loop() {
   server.handleClient();
   runTick();
   joyTick();
-  netTick(run.active || joyMoving());
+  seqTick();
+  netTick(run.active || joyMoving() || seq.active);
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == '\n' || ch == '\r') { handle(buf); buf = ""; }

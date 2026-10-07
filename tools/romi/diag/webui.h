@@ -34,10 +34,27 @@ button{font:inherit;color:inherit}
 .dot{font-size:13px;color:var(--sub);display:flex;align-items:center;gap:6px}
 .dot::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--sub)}
 .dot.ok::before{background:var(--ok)} .dot.ng::before{background:var(--stop)}
-.mid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.2dvh;min-height:0;padding-bottom:1.5dvh}
+/* 持ち方（右手 .hR / 左手 .hL / 両手 .hC）。親指が届く側の下にジョイスティックを寄せ、反対側にボタンを縦に並べる */
+.mid{display:grid;gap:10px;align-items:end;min-height:0;padding:0 12px 1.5dvh}
+.side{grid-area:side;display:flex;flex-direction:column;gap:10px;align-self:end;min-width:0}
+.side .chip{width:100%;min-width:0;min-height:48px;border-radius:14px}
+.padcol{grid-area:pad;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:1.5dvh;min-width:0}
+.hR .mid{grid-template-columns:minmax(108px,32%) 1fr;grid-template-areas:"side pad"}
+.hL .mid{grid-template-columns:1fr minmax(108px,32%);grid-template-areas:"pad side"}
+.hC .mid{grid-template-columns:1fr;grid-template-rows:auto 1fr;grid-template-areas:"side" "pad"}
+.hC .side{display:grid;grid-template-columns:1fr 1fr;align-self:start}
+.hC #spd{grid-column:1/-1}
+.hC .padcol{justify-content:center}
+.hC #pad{width:min(78vw,37dvh)}
+#sc{display:contents}
+.scb{min-height:clamp(60px,9.5dvh,88px);border-radius:14px;border:1px solid var(--line);background:var(--card);font-size:14px;font-weight:700;line-height:1.25;padding:6px 8px;word-break:keep-all;overflow-wrap:anywhere}
+.scb small{display:block;font-weight:500;color:var(--sub);font-size:11px}
+.scb.armed{background:#f59e0b;border-color:#f59e0b;color:#111}
+.scb.armed small{color:#111}
+.scb:disabled{opacity:.4}
 #read{font-size:clamp(22px,4.2dvh,34px);font-weight:700;height:1.3em;font-variant-numeric:tabular-nums}
 #read small{font-size:.55em;color:var(--sub);font-weight:500;margin-left:8px}
-#pad{position:relative;width:min(84vw,50dvh);aspect-ratio:1;border-radius:50%;background:var(--pad);border:2px solid var(--padline);touch-action:none}
+#pad{position:relative;width:min(100%,48dvh);aspect-ratio:1;border-radius:50%;background:var(--pad);border:2px solid var(--padline);touch-action:none}
 #pad::before,#pad::after{content:"";position:absolute;background:var(--padline);opacity:.6}
 #pad::before{left:50%;top:9%;bottom:9%;width:2px;transform:translateX(-50%)}
 #pad::after{top:50%;left:9%;right:9%;height:2px;transform:translateY(-50%)}
@@ -49,11 +66,14 @@ button{font:inherit;color:inherit}
 #cut{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;background:rgba(16,20,24,.86);color:#fff;font-size:20px;font-weight:700;z-index:20;padding:24px}
 #cut.on{display:flex}
 @media(orientation:landscape){
-  #ctl{grid-template-columns:1fr clamp(150px,26vw,260px);grid-template-rows:auto 1fr;grid-template-areas:"top top" "mid side"}
-  .top{grid-area:top} .mid{grid-area:mid;flex-direction:row;gap:3vw}
-  #pad{width:min(70dvh,50vw)}
-  #stop{grid-area:side;margin:0 14px 14px 0;border-radius:18px}
-  #read{writing-mode:horizontal-tb;min-width:6em}
+  #ctl{grid-template-columns:1fr clamp(150px,26vw,260px);grid-template-rows:auto 1fr;grid-template-areas:"top top" "mid stop"}
+  .top{grid-area:top} .mid{grid-area:mid;align-items:center}
+  .hR .mid,.hC .mid{grid-template-columns:minmax(120px,28%) 1fr;grid-template-rows:1fr;grid-template-areas:"side pad"}
+  .hL .mid{grid-template-columns:1fr minmax(120px,28%);grid-template-rows:1fr;grid-template-areas:"pad side"}
+  .hC .side{display:flex;flex-direction:column;align-self:center}
+  .padcol{justify-content:center}
+  #pad,.hC #pad{width:min(100%,62dvh)}
+  #stop{grid-area:stop;margin:0 14px 14px 0;border-radius:18px}
 }
 
 /* ---------- 設定画面 ---------- */
@@ -105,21 +125,36 @@ summary{font-size:14px;color:var(--sub)}
 .chk input{width:20px;height:20px}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px}
 .kv span:nth-child(odd){color:var(--sub)}
+.slot{border-top:1px solid var(--line);padding:12px 0}
+.slot:first-child{border-top:0}
+.stp{display:flex;gap:6px;align-items:center;margin:6px 0}
+.stp select,.stp input{padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:15px;min-width:0}
+.stp select{flex:1.5}
+.stp input{flex:1;width:0}
+.stp span{font-size:13px;color:var(--sub)}
+.stp button{flex:none;width:36px;height:36px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--stop);font-size:16px}
+.slot .tools button{padding:9px 12px;font-size:14px}
 #stop2{position:fixed;left:0;right:0;bottom:0;height:64px;border:0;background:var(--stop);color:#fff;font-size:20px;font-weight:700;z-index:9}
 </style>
 </head>
 <body>
 
 <!-- ============ 操作画面 ============ -->
-<div id="ctl">
+<div id="ctl" class="hR">
   <div class="top">
-    <button id="spd" class="chip s0">ゆっくり</button>
+    <button id="hand" class="chip">右手</button>
     <span id="conn" class="dot">確認中</span>
     <button id="toSet" class="chip">設定</button>
   </div>
   <div class="mid">
-    <div id="read">停止</div>
-    <div id="pad"><div id="knob"></div></div>
+    <div class="side">
+      <button id="spd" class="chip s0">ゆっくり</button>
+      <div id="sc"></div>
+    </div>
+    <div class="padcol">
+      <div id="read">停止</div>
+      <div id="pad"><div id="knob"></div></div>
+    </div>
   </div>
   <button id="stop">■ 停止</button>
 </div>
@@ -138,6 +173,13 @@ summary{font-size:14px;color:var(--sub)}
     <label class="chk"><input id="snap" type="checkbox" checked>まっすぐ・その場回転に吸い付かせる（斜めを補正）</label>
     <label class="chk"><input id="flip" type="checkbox">前後を逆にする（「前」で後ろへ進むとき）</label>
     <p class="hint">操作画面を開き直すと、速度は「ゆっくり」に戻ります。</p>
+  </div>
+
+  <div class="card">
+    <h2>ショートカット</h2>
+    <p class="hint">操作画面のボタンに割り当てる、一連の動きです。名前を空にするとボタンは出ません。押し間違えを防ぐため、操作画面では 2 回タップで実行します。台車に保存されるので、どの端末でも同じものが出ます。</p>
+    <div id="scEdit"></div>
+    <p class="hint" id="scMsg"></p>
   </div>
 
   <div class="card">
@@ -219,6 +261,11 @@ summary{font-size:14px;color:var(--sub)}
   var CAPS=[+P.cap0||25,+P.cap1||40,+P.cap2||60];
   var SPD=0;                                  // 操作画面は必ず「ゆっくり」から始める
   var SPDN=["ゆっくり","ふつう","はやい"];
+  var HANDS=["R","L","C"], HN={R:"右手",L:"左手",C:"両手"};
+  var hand=HN[P.hand]?P.hand:"R";
+  function handRender(){$("ctl").className="h"+hand;$("hand").textContent=HN[hand]}
+  $("hand").onclick=function(){hand=HANDS[(HANDS.indexOf(hand)+1)%3];P.hand=hand;save();handRender()};
+  handRender();
 
   function get(url,ok,ng,to){
     var x=new XMLHttpRequest(); x.open("GET",url,true); x.timeout=to||3000;
@@ -238,8 +285,9 @@ summary{font-size:14px;color:var(--sub)}
     online=on;
     ["conn","conn2"].forEach(function(id){$(id).textContent=on?"接続中":"切断";$(id).className="dot "+(on?"ok":"ng")});
     $("cut").className=(!on&&!$("ctl").hidden)?"on":"";
-    $("pad").className=on?"":"off";
+    padState();scRender();
   }
+  function padState(){$("pad").className=(online&&!seqBusy)?"":"off"}
 
   /* ===== 操作画面: ジョイスティック ===== */
   var pad=$("pad"),knob=$("knob"),pid=null,jx=0,jy=0,rawX=0,rawY=0,zeroSends=0,inflight=null,inflightAt=0;
@@ -278,7 +326,7 @@ summary{font-size:14px;color:var(--sub)}
     jx=jy=rawX=rawY=0;zeroSends=4;readout();
   }
   pad.addEventListener("pointerdown",function(e){
-    if(pid!==null||!online)return;
+    if(pid!==null||!online||seqBusy)return;
     e.preventDefault();pid=e.pointerId;try{pad.setPointerCapture(pid)}catch(x){}
     knob.className="drag";place(e);
   });
@@ -300,7 +348,7 @@ summary{font-size:14px;color:var(--sub)}
     inflight=get(url,function(j){inflight=null;if(!j.ok)$("read").textContent="動作中（設定画面の走行）"},function(){inflight=null},500);
   },60);
 
-  function stopNow(e){if(e)e.preventDefault();release();get("/stop",function(){},function(){});setBusy(false)}
+  function stopNow(e){if(e)e.preventDefault();disarm();release();get("/stop",function(){},function(){});setBusy(false)}
   function sendStopSoon(){release();get("/stop",function(){},function(){})}
   $("stop").addEventListener("touchstart",stopNow,{passive:false});
   $("stop").addEventListener("click",stopNow);
@@ -425,11 +473,133 @@ summary{font-size:14px;color:var(--sub)}
     b.addEventListener("click",function(){run(+b.getAttribute("data-d"))});
   });
 
+  /* ===== ショートカット（一連の動き。台車が順に実行する）===== */
+  var KINDS={f:["前進","cm"],b:["後退","cm"],r:["右回転","度"],l:["左回転","度"],w:["待つ","秒"]};
+  var DEF_SC=[
+    {n:"180°回転 → 1m前進",st:[["r",180,40],["f",100,40]]},
+    {n:"1m 前進",st:[["f",100,40]]},
+    {n:"180°回転",st:[["r",180,40]]},
+    {n:"右に90°",st:[["r",90,40]]}];
+  var SC=null, seqBusy=false, scName="", armed=-1, armTimer=null, saveT=null, ests=[];
+  function post(url,body,ok,ng){
+    var x=new XMLHttpRequest(); x.open("POST",url,true); x.setRequestHeader("Content-Type","text/plain"); x.timeout=3000;
+    x.onload=function(){try{ok(JSON.parse(x.responseText))}catch(e){if(ng)ng()}};
+    x.onerror=x.ontimeout=function(){if(ng)ng()};
+    x.send(body);
+  }
+  function enc(st){   // 台車へ送る手順の文字列（種類:向き:量:強さ）
+    return st.map(function(s){var k=s[0],v=+s[1],p=+s[2];
+      if(k==="w")return "w:0:"+Math.round(v*1000)+":0";
+      if(k==="f")return "s:1:"+v+":"+p; if(k==="b")return "s:-1:"+v+":"+p;
+      return "r:"+(k==="r"?1:-1)+":"+v+":"+p}).join(",");
+  }
+  function estimate(st){   // 予定の合計秒。較正が無い／範囲外なら null
+    if(!cal)return null; var ms=0,mv=0;
+    for(var i=0;i<st.length;i++){var s=st[i],k=s[0],v=+s[1],p=+s[2];
+      if(k==="w"){ms+=v*1000;continue}
+      var r=(k==="f"||k==="b")?cal.sv*(p-cal.sd):cal.rv*(p-cal.rd);
+      if(!(r>=0.5)||!(v>0))return null;
+      var t=v/r*1000+((k==="f"||k==="b")?cal.st:cal.rt); if(t<50||t>8000)return null;
+      ms+=t;mv++;
+    }
+    return (ms+mv*250)/1000;
+  }
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+  function normSC(a){
+    var out=[];for(var i=0;i<4;i++){var s=a&&a[i]||{n:"",st:[]};out.push({n:String(s.n||""),st:(s.st||[]).filter(function(x){return KINDS[x[0]]}).slice(0,12)})}
+    return out;
+  }
+  function scLoad(){
+    get("/sc",function(j){
+      SC=normSC(j&&j.sc&&j.sc.length?j.sc:(P.sc||DEF_SC)); scRender(); scEditRender();
+    },function(){SC=normSC(P.sc||DEF_SC);scRender();scEditRender();setTimeout(scLoad,4000)});
+  }
+  function disarm(){if(armTimer)clearTimeout(armTimer);armTimer=null;if(armed!==-1){armed=-1;scRender()}}
+  function scRender(){
+    var c=$("sc"); if(!c||!SC)return; c.innerHTML="";
+    SC.forEach(function(s,i){
+      if(!s.n.trim()||!s.st.length)return;
+      var b=document.createElement("button");b.className="scb"+(armed===i?" armed":"");
+      b.innerHTML=esc(s.n)+"<small>"+(armed===i?"もう一度タップで実行":"タップで準備")+"</small>";
+      b.disabled=!online||seqBusy;
+      b.onclick=function(){scTap(i)};
+      c.appendChild(b);
+    });
+  }
+  function scTap(i){
+    if(!online||seqBusy)return;
+    if(armed===i){disarm();scRun(SC[i]);return}
+    armed=i;scRender();
+    if(armTimer)clearTimeout(armTimer);
+    armTimer=setTimeout(function(){armTimer=null;armed=-1;scRender()},3000);
+  }
+  function scRun(s,done){
+    var q="/seq?flip="+($("flip").checked?1:0)+"&trim="+$("trim").value+"&name="+encodeURIComponent(s.n);
+    post(q,enc(s.st),function(j){
+      if(!j.ok){$("read").textContent=j.err==="busy"?"まだ動いています":"手順が正しくありません";if(done)done(j);return}
+      scName=s.n;seqBusy=true;padState();scRender();if(done)done(j);
+    },function(){$("read").textContent="台車につながりません";if(done)done(null)});
+  }
+  function scChanged(){
+    P.sc=SC;save();clearTimeout(saveT);$("scMsg").textContent="保存中…";
+    saveT=setTimeout(function(){
+      post("/sc",JSON.stringify({v:1,sc:SC}),function(j){$("scMsg").textContent=j.ok?"保存しました（台車に記録）":"保存できませんでした"},
+        function(){$("scMsg").textContent="台車につながらないため、この端末にだけ保存しました"});
+    },800);
+    updateEsts();scRender();
+  }
+  function updateEsts(){
+    ests.forEach(function(e){var t=estimate(e.slot.st);
+      e.el.textContent=!e.slot.st.length?"動きがありません":(t==null?"強さや量が範囲外の動きがあります":"予定 約 "+t.toFixed(1)+" 秒")});
+  }
+  function scEditRender(){
+    var box=$("scEdit"); if(!box||!SC)return; box.innerHTML=""; ests=[];
+    SC.forEach(function(slot,i){
+      var d=document.createElement("div");d.className="slot";
+      var nm=document.createElement("input");nm.type="text";nm.placeholder="ボタン "+(i+1)+" の名前（空なら出さない）";nm.value=slot.n;
+      nm.oninput=function(){slot.n=nm.value;scChanged()};
+      d.appendChild(nm);
+      slot.st.forEach(function(s,j){
+        var r=document.createElement("div");r.className="stp";
+        var sel=document.createElement("select");
+        Object.keys(KINDS).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=KINDS[k][0];if(k===s[0])o.selected=true;sel.appendChild(o)});
+        var v=document.createElement("input");v.type="number";v.setAttribute("inputmode","decimal");v.value=s[1];
+        var u=document.createElement("span");u.textContent=KINDS[s[0]][1];
+        var p=document.createElement("input");p.type="number";p.setAttribute("inputmode","numeric");p.value=s[2];
+        var pl=document.createElement("span");pl.textContent="%";
+        function vis(){p.style.display=pl.style.display=(s[0]==="w")?"none":""}
+        vis();
+        sel.onchange=function(){s[0]=sel.value;u.textContent=KINDS[s[0]][1];vis();scChanged()};
+        v.oninput=function(){s[1]=+v.value;scChanged()};
+        p.oninput=function(){s[2]=+p.value;scChanged()};
+        var x=document.createElement("button");x.textContent="×";
+        x.onclick=function(){slot.st.splice(j,1);scEditRender();scChanged()};
+        [sel,v,u,p,pl,x].forEach(function(n){r.appendChild(n)});
+        d.appendChild(r);
+      });
+      var info=document.createElement("p");info.className="hint";d.appendChild(info);ests.push({slot:slot,el:info});
+      var t=document.createElement("div");t.className="tools";
+      var add=document.createElement("button");add.textContent="＋ 動きを足す";
+      add.onclick=function(){if(slot.st.length>=12)return;slot.st.push(["f",30,40]);scEditRender();scChanged()};
+      var tr=document.createElement("button");tr.textContent="▶ 試す";
+      tr.onclick=function(){if(!slot.st.length)return;scRun(slot,function(j){$("scMsg").textContent=(j&&j.ok)?"実行中…（止めるときは下の停止ボタン）":"実行できませんでした"})};
+      var clr=document.createElement("button");clr.textContent="空にする";
+      clr.onclick=function(){if(confirm("ボタン "+(i+1)+" を空にしますか？")){slot.n="";slot.st=[];scEditRender();scChanged()}};
+      [add,tr,clr].forEach(function(n){t.appendChild(n)});
+      d.appendChild(t);box.appendChild(d);
+    });
+    updateEsts();
+  }
+
   /* ===== 状態の取得 ===== */
   function poll(){
     get("/state",function(j){
       failN=0;setConn(true);
-      if(j.busy){setBusy(true);$("bar").style.width=Math.min(100,100*j.el/j.ms)+"%"}
+      var was=seqBusy;seqBusy=!!j.seq;
+      if(seqBusy||was!==seqBusy){padState();scRender()}
+      if(seqBusy){$("read").innerHTML=esc(scName||"ショートカット")+"<small>"+Math.min(j.si,j.sn)+"/"+j.sn+"</small>"}
+      else if(was){$("read").textContent="停止"}
+      if(j.busy||j.seq){setBusy(true);$("bar").style.width=j.seq?Math.min(100,100*j.si/Math.max(1,j.sn))+"%":Math.min(100,100*j.el/j.ms)+"%"}
       else{
         if(busy)$("hint").textContent="止まりました。結果を下の記録に入れてください。";
         setBusy(false);$("bar").style.width="0";
@@ -455,7 +625,7 @@ summary{font-size:14px;color:var(--sub)}
   };
   $("clear").onclick=function(){if(confirm("記録をすべて消しますか？")){store.rows=[];save();render()}};
 
-  setMode("s",true); render(); loadCal(); route(); setInterval(poll,350); poll();
+  setMode("s",true); render(); loadCal(); scLoad(); route(); setInterval(poll,350); poll();
 })();
 </script>
 </body>
