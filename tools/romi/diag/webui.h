@@ -51,6 +51,8 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
 .run .h{font-size:14px;margin-bottom:6px}
 .run .h b{font-size:15px}
 .run .h small{color:var(--sub)}
+.run .h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.del{flex:none;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--stop);font-size:13px}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .f2 label{font-size:12px;color:var(--sub);display:block}
 .pm{display:flex;gap:4px}
@@ -138,6 +140,8 @@ summary{font-size:14px;color:var(--sub)}
   store.rows=store.rows||[]; store.prefs=store.prefs||{};
   function save(){try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}}
   var P=store.prefs, mode="s", busy=false, cal=null;
+  // 台車が再起動すると番号 #id は 1 から振り直されるので、記録の同一性は固有キー k で持つ
+  store.rows.forEach(function(r,i){if(!r.k)r.k="old-"+i+"-"+r.id});
 
   var CH={s:[10,20,30,50,100],r:[45,90,180,360]};
   var DEF={s:30,r:90};
@@ -212,8 +216,14 @@ summary{font-size:14px;color:var(--sub)}
     store.rows.slice().reverse().forEach(function(r){
       var d=document.createElement("div");d.className="run";
       var h=document.createElement("div");h.className="h";
-      h.innerHTML="<b>#"+r.id+" "+title(r)+"</b> <small>強さ"+r.duty+"%・予定"+(r.pms/1000).toFixed(2)+"秒"+(r.ams!=null?"・実測"+(r.ams/1000).toFixed(2)+"秒":"")+
-        (r.m==="s"&&r.trim?"・補正"+(r.trim>0?"+":"")+r.trim:"")+"</small>";
+      h.innerHTML="<span><b>#"+r.id+" "+title(r)+"</b> <small>強さ"+r.duty+"%・予定"+(r.pms/1000).toFixed(2)+"秒"+(r.ams!=null?"・実測"+(r.ams/1000).toFixed(2)+"秒":"")+
+        (r.m==="s"&&r.trim?"・補正"+(r.trim>0?"+":"")+r.trim:"")+"</small></span>";
+      var del=document.createElement("button");del.textContent="この記録を消す";del.className="del";
+      del.onclick=function(){
+        if(!confirm("#"+r.id+" の記録を消しますか？"))return;
+        store.rows=store.rows.filter(function(x){return x.k!==r.k});save();render();
+      };
+      h.appendChild(del);
       d.appendChild(h);
       var g=document.createElement("div");g.className="f2";
       g.appendChild(field(r.m==="s"?"実際に進んだ距離 (cm)":"実際に回った角度 (度)",r,"a",r.m==="s"?"cm":"度"));
@@ -241,7 +251,7 @@ summary{font-size:14px;color:var(--sub)}
     setBusy(true);
     get(q,function(j){
       if(!j.ok){setBusy(false);$("hint").textContent=j.err==="weak"?"強さが小さすぎて動きません":(j.err==="busy"?"まだ動いています":"範囲外です（目標が大きすぎる／時間が長すぎる）");return}
-      store.rows.push({id:j.id,m:mode,d:d,duty:+$("duty").value,tgt:useMs?null:t,pms:j.ms,ams:null,trim:mode==="s"?+$("trim").value:0,flip:$("flip").checked?1:0,
+      store.rows.push({k:Date.now()+"-"+Math.random().toString(36).slice(2,6),id:j.id,m:mode,d:d,duty:+$("duty").value,tgt:useMs?null:t,pms:j.ms,ams:null,trim:mode==="s"?+$("trim").value:0,flip:$("flip").checked?1:0,
         bat:$("bat").value,load:$("load").value,cal:cal?cal.ver:null,a:null,lat:null,n:""});
       save(); render();
       $("hint").textContent="実行中…（記録 #"+j.id+"）";
@@ -263,7 +273,10 @@ summary{font-size:14px;color:var(--sub)}
         if(busy)$("hint").textContent="止まりました。結果を下の記録に入れてください。";
         setBusy(false);$("bar").style.width="0";
         var changed=false;
-        store.rows.forEach(function(r){if(r.id===j.lastId&&r.ams==null){r.ams=j.lastEl;changed=true}});
+        for(var i=store.rows.length-1;i>=0;i--){   // 同じ番号が複数あっても、最新の 1 件だけに実測を入れる
+          var r=store.rows[i];
+          if(r.id===j.lastId){if(r.ams==null){r.ams=j.lastEl;changed=true}break}
+        }
         if(changed){save();render()}
       }
     },function(){$("conn").textContent="切断";$("conn").className="ng"});
