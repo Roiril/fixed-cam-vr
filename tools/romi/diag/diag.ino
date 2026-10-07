@@ -468,7 +468,7 @@ static String infoJson() {
   return String("{\"proto\":\"") + DISC_PROTO + "\",\"show\":\"" + DISC_SHOW + "\",\"role\":\"cart\",\"id\":\"R\",\"uuid\":\"" + netUuid +
          "\",\"version\":\"" + FW_VERSION + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"rssi\":" + String(WiFi.RSSI()) +
          ",\"up\":" + String(millis() / 1000) + ",\"drops\":" + String(netDrops) + ",\"lastReason\":" + String(netLastReason) +
-         ",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) + "}";
+         ",\"reset\":\"" + resetName() + "\",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) + "}";
 }
 
 static void startWeb() {
@@ -517,6 +517,7 @@ static void handle(String line) {
   else if (line == "info") {
     Serial.printf("ROMI %s chip=%s rev=%d cpu=%dMHz heap=%u up=%lus uuid=%s\n", FW_VERSION, ESP.getChipModel(), (int)ESP.getChipRevision(),
                   (int)getCpuFrequencyMhz(), (unsigned)ESP.getFreeHeap(), millis() / 1000, netUuid.c_str());
+    Serial.printf("last reset: %s\n", resetName());
     Serial.printf("net: %s\n", netStatus().c_str());
     Serial.printf("side0 DIR=%d PWM=%d | side1 DIR=%d PWM=%d | AUX=%d | pwm=%dHz/%dbit\n", DIR_PIN[0], PWM_PIN[0], DIR_PIN[1], PWM_PIN[1],
                   AUX_PIN, PWM_HZ, PWM_BITS);
@@ -618,8 +619,18 @@ static void handle(String line) {
   Serial.println("ok");
 }
 
+static const char *resetName() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "POWERON";   case ESP_RST_SW: return "SOFTWARE";    case ESP_RST_PANIC: return "PANIC";
+    case ESP_RST_INT_WDT: return "INT_WDT";   case ESP_RST_TASK_WDT: return "TASK_WDT"; case ESP_RST_WDT: return "WDT";
+    case ESP_RST_BROWNOUT: return "BROWNOUT"; case ESP_RST_EXT: return "EXTERNAL";   case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    default: return "UNKNOWN";
+  }
+}
+
 void setup() {
   Serial.begin(115200);
+  Serial.printf("\nEVT boot reason=%s t=%lu\n", resetName(), millis());   // 電源の瞬断・ブラウンアウトの切り分け用
   for (int s = 0; s < 2; s++) {
     pinMode(DIR_PIN[s], OUTPUT);
     digitalWrite(DIR_PIN[s], LOW);
