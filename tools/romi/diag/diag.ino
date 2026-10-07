@@ -10,6 +10,7 @@
 #include "soc/gpio_reg.h"
 #include "net.h"
 #include "webui.h"
+#include "icon.h"
 
 static const int DIR_PIN[2] = {18, 16};
 static const int PWM_PIN[2] = {19, 17};
@@ -368,6 +369,16 @@ static String infoJson() {
 
 static void startWeb() {
   server.on("/", HTTP_GET, []() { server.send_P(200, "text/html; charset=utf-8", PAGE_HTML); });
+  server.on("/icon.png", HTTP_GET, []() {   // ホーム画面のアイコン
+    server.sendHeader("Cache-Control", "max-age=86400");
+    server.send_P(200, "image/png", (const char *)ICON_PNG, ICON_PNG_LEN);
+  });
+  server.on("/manifest.json", HTTP_GET, []() {
+    server.send(200, "application/manifest+json",
+                "{\"name\":\"Romi\",\"short_name\":\"Romi\",\"start_url\":\"/\",\"display\":\"standalone\",\"orientation\":\"portrait\","
+                "\"background_color\":\"#101418\",\"theme_color\":\"#101418\","
+                "\"icons\":[{\"src\":\"/icon.png\",\"sizes\":\"192x192\",\"type\":\"image/png\",\"purpose\":\"any maskable\"}]}");
+  });
   server.on("/run", HTTP_GET, httpRun);
   server.on("/stop", HTTP_GET, httpStop);
   server.on("/joy", HTTP_GET, httpJoy);

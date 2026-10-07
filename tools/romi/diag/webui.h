@@ -12,6 +12,9 @@ static const char PAGE_HTML[] PROGMEM = R"HTML(<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#101418">
+<link rel="icon" type="image/png" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="manifest" href="/manifest.json">
 <title>Romi</title>
 <style>
 :root{--bg:#f4f5f7;--card:#fff;--ink:#1c1f24;--sub:#5f6773;--line:#d9dde3;--acc:#1f6feb;--accsoft:#e6efff;--stop:#d92d20;--ok:#12805c;--field:#f4f5f7;--pad:#e9edf2;--padline:#c5ccd6}
