@@ -69,6 +69,8 @@ class H(BaseHTTPRequestHandler):
             state.update(id=state["id"] + 1, t0=now, ms=ms, active=True)
             print("[stub] RUN", q, "-> ms", ms, flush=True)
             self._send(json.dumps({"ok": 1, "id": state["id"], "ms": ms, "rate": round(rate, 2) if rate else 0}))
+        elif u.path == "/joy":
+            self._send('{"ok":1}')
         elif u.path == "/stop":
             state["active"] = False
             self._send('{"ok":1}')

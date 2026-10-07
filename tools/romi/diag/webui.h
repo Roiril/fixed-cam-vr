@@ -1,6 +1,7 @@
-// Romi 手動操作の Web 画面（ESP32 が配る単一ファイル）。http://romi.local/ または http://192.168.10.51/
-// 流れ: 条件（電池・載せているもの）を入れる → 目標（cm / 度）を決めて動かす → 止まった結果を入れる → コピーして渡す
-// エンドポイント: /run /stop /state /res /cal /info /health
+// Romi の Web 画面（ESP32 が配る単一ファイル）。http://192.168.10.51/ または http://romi.local/
+//   #ctl（既定）… 操作画面。スクロール無し。ジョイスティックと、速度・設定・停止の 3 つだけ。
+//   #set        … 設定画面。条件の入力・目標指定の走行・結果の記録とコピー・ジョイスティックの速度上限・接続状態。
+// エンドポイント: /run /joy /stop /state /res /cal /info /health
 #pragma once
 #include <pgmspace.h>
 
@@ -8,23 +9,60 @@ static const char PAGE_HTML[] PROGMEM = R"HTML(<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Romi 手動操作</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#101418">
+<title>Romi</title>
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--ink:#1c1f24;--sub:#5f6773;--line:#d9dde3;--acc:#1f6feb;--accsoft:#e6efff;--stop:#d92d20;--ok:#12805c;--field:#f4f5f7}
-@media(prefers-color-scheme:dark){:root{--bg:#14171b;--card:#1d2126;--ink:#e8eaed;--sub:#9aa3ad;--line:#333a42;--acc:#5b9bff;--accsoft:#1f2f4a;--stop:#ff5a4d;--ok:#3ecf9b;--field:#14171b}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic",sans-serif;padding-bottom:96px}
-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-header b{font-size:17px}
-#conn{font-size:13px;color:var(--sub)}
-#conn.ok{color:var(--ok)}
-#conn.ng{color:var(--stop)}
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1c1f24;--sub:#5f6773;--line:#d9dde3;--acc:#1f6feb;--accsoft:#e6efff;--stop:#d92d20;--ok:#12805c;--field:#f4f5f7;--pad:#e9edf2;--padline:#c5ccd6}
+@media(prefers-color-scheme:dark){:root{--bg:#101418;--card:#1b2026;--ink:#e8eaed;--sub:#9aa3ad;--line:#333a42;--acc:#5b9bff;--accsoft:#1f2f4a;--stop:#ff5a4d;--ok:#3ecf9b;--field:#101418;--pad:#1b2229;--padline:#36404a}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--ink);
+  font:16px/1.5 system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic",sans-serif;user-select:none;-webkit-user-select:none}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit}
+
+/* ---------- 操作画面 ---------- */
+#ctl{height:100dvh;display:grid;grid-template-rows:auto 1fr clamp(88px,15dvh,140px);padding:env(safe-area-inset-top) 0 0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px}
+.chip{min-width:96px;padding:10px 14px;border-radius:22px;border:1px solid var(--line);background:var(--card);font-size:15px}
+#spd{font-weight:600}
+#spd.s0{color:var(--ok)} #spd.s2{color:var(--stop)}
+.dot{font-size:13px;color:var(--sub);display:flex;align-items:center;gap:6px}
+.dot::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--sub)}
+.dot.ok::before{background:var(--ok)} .dot.ng::before{background:var(--stop)}
+.mid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.2dvh;min-height:0;padding-bottom:1.5dvh}
+#read{font-size:clamp(22px,4.2dvh,34px);font-weight:700;height:1.3em;font-variant-numeric:tabular-nums}
+#read small{font-size:.55em;color:var(--sub);font-weight:500;margin-left:8px}
+#pad{position:relative;width:min(84vw,50dvh);aspect-ratio:1;border-radius:50%;background:var(--pad);border:2px solid var(--padline);touch-action:none}
+#pad::before,#pad::after{content:"";position:absolute;background:var(--padline);opacity:.6}
+#pad::before{left:50%;top:9%;bottom:9%;width:2px;transform:translateX(-50%)}
+#pad::after{top:50%;left:9%;right:9%;height:2px;transform:translateY(-50%)}
+#knob{position:absolute;left:50%;top:50%;width:36%;height:36%;margin:-18% 0 0 -18%;border-radius:50%;background:var(--acc);
+  box-shadow:0 4px 14px rgba(0,0,0,.28);transition:transform .12s ease-out;touch-action:none}
+#knob.drag{transition:none}
+#pad.off{opacity:.35}
+#stop{border:0;background:var(--stop);color:#fff;font-size:clamp(22px,3.6dvh,30px);font-weight:800;letter-spacing:.2em}
+#cut{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;background:rgba(16,20,24,.86);color:#fff;font-size:20px;font-weight:700;z-index:20;padding:24px}
+#cut.on{display:flex}
+@media(orientation:landscape){
+  #ctl{grid-template-columns:1fr clamp(150px,26vw,260px);grid-template-rows:auto 1fr;grid-template-areas:"top top" "mid side"}
+  .top{grid-area:top} .mid{grid-area:mid;flex-direction:row;gap:3vw}
+  #pad{width:min(70dvh,50vw)}
+  #stop{grid-area:side;margin:0 14px 14px 0;border-radius:18px}
+  #read{writing-mode:horizontal-tb;min-width:6em}
+}
+
+/* ---------- 設定画面 ---------- */
+#set{height:100dvh;overflow:auto;-webkit-overflow-scrolling:touch;padding-bottom:40px;user-select:text;-webkit-user-select:text}
+#set header{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+#back{padding:10px 16px;border-radius:22px;border:1px solid var(--line);background:var(--card);font-size:15px;font-weight:600}
+#set header b{font-size:17px;flex:1}
 main{max-width:640px;margin:0 auto;padding:12px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
 .card h2{margin:0 0 8px;font-size:15px}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-.seg button{padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px}
+.seg button{padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:16px}
 .seg button.on{background:var(--accsoft);border-color:var(--acc);color:var(--acc);font-weight:600}
 .row{margin:10px 0}
 .row label.t{display:flex;justify-content:space-between;font-size:14px;color:var(--sub)}
@@ -35,41 +73,69 @@ input[type=text],input[type=number]{width:100%;padding:10px;border-radius:8px;bo
 .tgt input{font-size:28px;font-weight:600;text-align:center;padding:8px}
 .tgt span{font-size:18px;color:var(--sub);min-width:36px}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.chips button{padding:8px 14px;border-radius:18px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px}
+.chips button{padding:8px 14px;border-radius:18px;border:1px solid var(--line);background:var(--card);font-size:15px}
 .plan{margin:10px 0 0;font-size:14px;color:var(--sub)}
 .plan b{color:var(--ink)}
 .go{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 .go button{padding:18px 8px;border-radius:12px;border:0;background:var(--acc);color:#fff;font-size:18px;font-weight:600}
-.go[hidden],textarea[hidden]{display:none}
 .go button:disabled{opacity:.4}
 .prog{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:10px}
 .prog i{display:block;height:100%;width:0;background:var(--ok)}
 .hint{font-size:13px;color:var(--sub);margin:6px 0 0}
-#stop{position:fixed;left:0;right:0;bottom:0;height:76px;border:0;background:var(--stop);color:#fff;font-size:22px;font-weight:700;z-index:9}
 .run{border-top:1px solid var(--line);padding:10px 0}
 .run:first-child{border-top:0}
-.run .h{font-size:14px;margin-bottom:6px}
+.run .h{font-size:14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .run .h b{font-size:15px}
 .run .h small{color:var(--sub)}
-.run .h{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .del{flex:none;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--stop);font-size:13px}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .f2 label{font-size:12px;color:var(--sub);display:block}
 .pm{display:flex;gap:4px}
-.pm button{width:44px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px}
+.pm button{width:44px;border-radius:8px;border:1px solid var(--line);background:var(--card);font-size:16px}
 .tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-.tools button{padding:12px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px}
+.tools button{padding:12px 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:15px}
 .tools button.main{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
 textarea{width:100%;height:130px;margin-top:8px;font:12px/1.4 ui-monospace,Consolas,monospace;background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
 details{margin-top:10px}
 summary{font-size:14px;color:var(--sub)}
 .chk{display:flex;gap:8px;align-items:center;font-size:14px;margin:8px 0}
 .chk input{width:20px;height:20px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14px}
+.kv span:nth-child(odd){color:var(--sub)}
+#stop2{position:fixed;left:0;right:0;bottom:0;height:64px;border:0;background:var(--stop);color:#fff;font-size:20px;font-weight:700;z-index:9}
 </style>
 </head>
 <body>
-<header><b>Romi 手動操作</b><span id="conn">接続を確認中…</span></header>
-<main>
+
+<!-- ============ 操作画面 ============ -->
+<div id="ctl">
+  <div class="top">
+    <button id="spd" class="chip s0">ゆっくり</button>
+    <span id="conn" class="dot">確認中</span>
+    <button id="toSet" class="chip">設定</button>
+  </div>
+  <div class="mid">
+    <div id="read">停止</div>
+    <div id="pad"><div id="knob"></div></div>
+  </div>
+  <button id="stop">■ 停止</button>
+</div>
+<div id="cut">台車とつながっていません<br>つながるまで操作できません</div>
+
+<!-- ============ 設定画面 ============ -->
+<div id="set" hidden>
+  <header><button id="back">← 操作へ</button><b>設定</b><span id="conn2" class="dot">確認中</span></header>
+  <main>
+
+  <div class="card">
+    <h2>ジョイスティックの速度</h2>
+    <div class="row"><label class="t"><span>ゆっくり（上限）</span><b id="vc0">25 %</b></label><input id="cap0" type="range" min="12" max="68" value="25"></div>
+    <div class="row"><label class="t"><span>ふつう（上限）</span><b id="vc1">40 %</b></label><input id="cap1" type="range" min="12" max="68" value="40"></div>
+    <div class="row"><label class="t"><span>はやい（上限）</span><b id="vc2">60 %</b></label><input id="cap2" type="range" min="12" max="68" value="60"></div>
+    <label class="chk"><input id="snap" type="checkbox" checked>まっすぐ・その場回転に吸い付かせる（斜めを補正）</label>
+    <label class="chk"><input id="flip" type="checkbox">前後を逆にする（「前」で後ろへ進むとき）</label>
+    <p class="hint">操作画面を開き直すと、速度は「ゆっくり」に戻ります。</p>
+  </div>
 
   <div class="card">
     <h2>いまの条件</h2>
@@ -105,7 +171,7 @@ summary{font-size:14px;color:var(--sub)}
       <button data-d="1">↻ 右回転</button>
     </div>
     <div class="prog"><i id="bar"></i></div>
-    <p class="hint" id="hint">目標を決めて、方向ボタンを押すと動いて、目標に届く時間で止まります。止めたいときは下の赤いボタン。</p>
+    <p class="hint" id="hint">目標を決めて、方向ボタンを押すと動いて、目標に届く時間で止まります。</p>
     <details>
       <summary>詳しい設定</summary>
       <div class="row" id="trimRow">
@@ -115,7 +181,6 @@ summary{font-size:14px;color:var(--sub)}
       </div>
       <label class="chk"><input id="useMs" type="checkbox">時間（秒）で直接指定する</label>
       <input id="msDirect" type="number" inputmode="decimal" step="0.1" min="0.1" max="8" value="1.0" style="display:none">
-      <label class="chk"><input id="flip" type="checkbox">前後を逆にする（「前進」で後ろへ進むとき）</label>
     </details>
   </div>
 
@@ -125,12 +190,18 @@ summary{font-size:14px;color:var(--sub)}
     <div id="log"></div>
     <div class="tools">
       <button id="copy" class="main">記録をコピー</button>
-      <button id="clear">記録を消す</button>
+      <button id="clear">記録をすべて消す</button>
     </div>
     <textarea id="csv" hidden readonly></textarea>
   </div>
-</main>
-<button id="stop">■ 停止</button>
+
+  <div class="card">
+    <h2>台車の状態</h2>
+    <div class="kv" id="info"><span>—</span><span>—</span></div>
+  </div>
+  </main>
+  <button id="stop2">■ 停止</button>
+</div>
 
 <script>
 (function(){
@@ -139,19 +210,114 @@ summary{font-size:14px;color:var(--sub)}
   try{store=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){store={}}
   store.rows=store.rows||[]; store.prefs=store.prefs||{};
   function save(){try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){}}
-  var P=store.prefs, mode="s", busy=false, cal=null;
-  // 台車が再起動すると番号 #id は 1 から振り直されるので、記録の同一性は固有キー k で持つ
-  store.rows.forEach(function(r,i){if(!r.k)r.k="old-"+i+"-"+r.id});
-
-  var CH={s:[10,20,30,50,100],r:[45,90,180,360]};
-  var DEF={s:30,r:90};
+  var P=store.prefs, mode="s", busy=false, cal=null, online=false, failN=0;
+  store.rows.forEach(function(r,i){if(!r.k)r.k="old-"+i+"-"+r.id});   // 台車の再起動で #番号は振り直されるので固有キー k で区別
   P.tgtS=P.tgtS||30; P.tgtR=P.tgtR||90;
-  if(P.duty)$("duty").value=P.duty; if(P.trim!=null)$("trim").value=P.trim; $("flip").checked=!!P.flip;
-  $("bat").value=P.bat||""; $("load").value=P.load||"";
+  var CAPS=[+P.cap0||25,+P.cap1||40,+P.cap2||60];
+  var SPD=0;                                  // 操作画面は必ず「ゆっくり」から始める
+  var SPDN=["ゆっくり","ふつう","はやい"];
 
-  function saveP(){P.duty=$("duty").value;P.trim=$("trim").value;P.flip=$("flip").checked;P.bat=$("bat").value;P.load=$("load").value;
+  function get(url,ok,ng,to){
+    var x=new XMLHttpRequest(); x.open("GET",url,true); x.timeout=to||3000;
+    x.onload=function(){try{ok(JSON.parse(x.responseText))}catch(e){if(ng)ng()}};
+    x.onerror=x.ontimeout=function(){if(ng)ng()};
+    x.send(); return x;
+  }
+
+  /* ===== 画面切り替え ===== */
+  function route(){var s=location.hash==="#set";$("ctl").hidden=s;$("set").hidden=!s;if(s)loadInfo();else sendStopSoon()}
+  window.addEventListener("hashchange",route);
+  $("toSet").onclick=function(){location.hash="#set"};
+  $("back").onclick=function(){location.hash="#ctl"};
+
+  /* ===== 接続表示 ===== */
+  function setConn(on){
+    online=on;
+    ["conn","conn2"].forEach(function(id){$(id).textContent=on?"接続中":"切断";$(id).className="dot "+(on?"ok":"ng")});
+    $("cut").className=(!on&&!$("ctl").hidden)?"on":"";
+    $("pad").className=on?"":"off";
+  }
+
+  /* ===== 操作画面: ジョイスティック ===== */
+  var pad=$("pad"),knob=$("knob"),pid=null,jx=0,jy=0,rawX=0,rawY=0,zeroSends=0,inflight=null,inflightAt=0;
+  function spdRender(){$("spd").textContent=SPDN[SPD];$("spd").className="chip s"+SPD}
+  $("spd").onclick=function(){SPD=(SPD+1)%3;spdRender();zeroSends=2};
+  spdRender();
+
+  function shape(x,y){   // 不感帯と、まっすぐ／その場回転への吸着
+    var m=Math.sqrt(x*x+y*y);
+    if(m<0.12)return [0,0];
+    var k=Math.min(1,(m-0.12)/0.88)/m; x*=k; y*=k;
+    if($("snap").checked){
+      var ax=Math.abs(x),ay=Math.abs(y);
+      if(ax<0.28*ay)x=0; else if(ay<0.28*ax)y=0;
+    }
+    return [x,y];
+  }
+  function place(e){
+    var r=pad.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,R=r.width*0.32;
+    var dx=(e.clientX-cx)/R,dy=(e.clientY-cy)/R,m=Math.sqrt(dx*dx+dy*dy);
+    if(m>1){dx/=m;dy/=m}
+    rawX=dx;rawY=-dy;
+    knob.style.transform="translate("+(dx*R)+"px,"+(dy*R)+"px)";
+    var s=shape(rawX,rawY);jx=s[0];jy=s[1];readout();
+  }
+  function readout(){
+    var t,v=Math.round(Math.sqrt(jx*jx+jy*jy)*100);
+    if(!jx&&!jy)t="停止";
+    else if(!jx)t=jy>0?"前進":"後退";
+    else if(!jy)t=jx>0?"右にその場回転":"左にその場回転";
+    else t=(jy>0?"前":"後")+"へ"+(jx>0?"右":"左")+"カーブ";
+    $("read").innerHTML=t+(v?"<small>"+Math.min(100,v)+"%</small>":"");
+  }
+  function release(){
+    pid=null;knob.className="";knob.style.transform="translate(0,0)";
+    jx=jy=rawX=rawY=0;zeroSends=4;readout();
+  }
+  pad.addEventListener("pointerdown",function(e){
+    if(pid!==null||!online)return;
+    e.preventDefault();pid=e.pointerId;try{pad.setPointerCapture(pid)}catch(x){}
+    knob.className="drag";place(e);
+  });
+  pad.addEventListener("pointermove",function(e){if(e.pointerId===pid){e.preventDefault();place(e)}});
+  ["pointerup","pointercancel","lostpointercapture"].forEach(function(n){
+    pad.addEventListener(n,function(e){if(e.pointerId===pid)release()});
+  });
+  pad.addEventListener("contextmenu",function(e){e.preventDefault()});
+
+  // 60ms ごとに送る。押している間と、離した直後の数回（確実に 0 を届ける）だけ
+  setInterval(function(){
+    if($("ctl").hidden)return;
+    var active=pid!==null;
+    if(!active&&zeroSends<=0)return;
+    if(inflight&&Date.now()-inflightAt<250)return;
+    if(!active)zeroSends--;
+    var url="/joy?x="+jx.toFixed(3)+"&y="+jy.toFixed(3)+"&cap="+CAPS[SPD]+"&flip="+($("flip").checked?1:0);
+    inflightAt=Date.now();
+    inflight=get(url,function(j){inflight=null;if(!j.ok)$("read").textContent="動作中（設定画面の走行）"},function(){inflight=null},500);
+  },60);
+
+  function stopNow(e){if(e)e.preventDefault();release();get("/stop",function(){},function(){});setBusy(false)}
+  function sendStopSoon(){release();get("/stop",function(){},function(){})}
+  $("stop").addEventListener("touchstart",stopNow,{passive:false});
+  $("stop").addEventListener("click",stopNow);
+  $("stop2").addEventListener("touchstart",function(e){stopNow(e);$("hint").textContent="停止しました"},{passive:false});
+  $("stop2").addEventListener("click",function(){stopNow();$("hint").textContent="停止しました"});
+  document.addEventListener("visibilitychange",function(){if(document.hidden)sendStopSoon()});
+  window.addEventListener("blur",function(){if(pid!==null)release()});
+
+  /* ===== 設定画面: 速度上限・条件・目標指定 ===== */
+  function capsRender(){
+    for(var i=0;i<3;i++){$("cap"+i).value=CAPS[i];$("vc"+i).textContent=CAPS[i]+" %"}
+  }
+  for(var ci=0;ci<3;ci++)(function(i){$("cap"+i).addEventListener("input",function(){CAPS[i]=+this.value;P["cap"+i]=CAPS[i];$("vc"+i).textContent=CAPS[i]+" %";save()})})(ci);
+  capsRender();
+  if(P.duty)$("duty").value=P.duty; if(P.trim!=null)$("trim").value=P.trim; $("flip").checked=!!P.flip; $("snap").checked=P.snap!==false;
+  $("bat").value=P.bat||""; $("load").value=P.load||"";
+  function saveP(){P.duty=$("duty").value;P.trim=$("trim").value;P.flip=$("flip").checked;P.snap=$("snap").checked;P.bat=$("bat").value;P.load=$("load").value;
     if(mode==="s")P.tgtS=$("tgt").value;else P.tgtR=$("tgt").value;save()}
 
+  var CH={s:[10,20,30,50,100],r:[45,90,180,360]};
   function planMs(){
     if($("useMs").checked){var s=+$("msDirect").value;return s>0?s*1000:null}
     if(!cal)return null;
@@ -169,8 +335,7 @@ summary{font-size:14px;color:var(--sub)}
     saveP();
   }
   ["duty","trim","tgt","bat","load","msDirect"].forEach(function(i){$(i).addEventListener("input",fmt)});
-  ["flip","useMs"].forEach(function(i){$(i).addEventListener("change",fmt)});
-
+  ["flip","snap","useMs"].forEach(function(i){$(i).addEventListener("change",fmt)});
   function chips(){
     var c=$("chips"); c.innerHTML="";
     CH[mode].forEach(function(v){var b=document.createElement("button");b.textContent=v+(mode==="s"?" cm":"°");
@@ -184,22 +349,20 @@ summary{font-size:14px;color:var(--sub)}
     $("tgt").value=m==="s"?P.tgtS:P.tgtR; chips(); fmt();
   }
   $("tabS").onclick=function(){setMode("s")}; $("tabR").onclick=function(){setMode("r")};
-
   function setBusy(b){busy=b;Array.prototype.forEach.call(document.querySelectorAll(".go button"),function(x){x.disabled=b})}
-  function get(url,ok,ng){
-    var x=new XMLHttpRequest(); x.open("GET",url,true); x.timeout=3000;
-    x.onload=function(){try{ok(JSON.parse(x.responseText))}catch(e){if(ng)ng()}};
-    x.onerror=x.ontimeout=function(){if(ng)ng()};
-    x.send();
-  }
   function loadCal(){get("/cal",function(j){cal=j;fmt()},function(){setTimeout(loadCal,2000)})}
+  function loadInfo(){
+    get("/info",function(j){
+      var kv=[["アドレス",j.ip],["電波",j.rssi+" dBm"],["稼働",Math.floor(j.up/60)+" 分"],["切断した回数",j.drops],["台車のID",j.uuid],["較正の版",j.calVer],["ファーム",j.version]];
+      $("info").innerHTML=kv.map(function(r){return "<span>"+r[0]+"</span><span>"+r[1]+"</span>"}).join("");
+    });
+  }
 
   function title(r){
     var n=r.m==="s"?(r.d>0?"前進":"後退"):(r.d>0?"右回転":"左回転");
     return n+" "+(r.tgt!=null?r.tgt+(r.m==="s"?"cm":"度"):(r.pms/1000).toFixed(1)+"秒(時間指定)");
   }
   function num(v){if(v==null||String(v).trim()==="")return null;var x=parseFloat(String(v).replace(/[^0-9.\-]/g,""));return isNaN(x)?null:x}
-
   function field(label,row,key,unit,ph){
     var wrap=document.createElement("div");
     var l=document.createElement("label");l.textContent=label;wrap.appendChild(l);
@@ -223,8 +386,7 @@ summary{font-size:14px;color:var(--sub)}
         if(!confirm("#"+r.id+" の記録を消しますか？"))return;
         store.rows=store.rows.filter(function(x){return x.k!==r.k});save();render();
       };
-      h.appendChild(del);
-      d.appendChild(h);
+      h.appendChild(del);d.appendChild(h);
       var g=document.createElement("div");g.className="f2";
       g.appendChild(field(r.m==="s"?"実際に進んだ距離 (cm)":"実際に回った角度 (度)",r,"a",r.m==="s"?"cm":"度"));
       g.appendChild(field(r.m==="s"?"左右のずれ (cm・右へ＋ 左へ－)":"位置のずれ (cm・任意)",r,"lat","cm"));
@@ -242,8 +404,7 @@ summary{font-size:14px;color:var(--sub)}
 
   function run(d){
     if(busy)return;
-    var t=+$("tgt").value;
-    var useMs=$("useMs").checked;
+    var t=+$("tgt").value, useMs=$("useMs").checked;
     if(!useMs&&!(t>0)){$("hint").textContent="目標を入れてください";return}
     var q="/run?m="+mode+"&d="+d+"&duty="+$("duty").value+"&trim="+(mode==="s"?$("trim").value:0)+"&flip="+($("flip").checked?1:0)+
       "&bat="+encodeURIComponent($("bat").value)+"&load="+encodeURIComponent($("load").value)+
@@ -255,19 +416,16 @@ summary{font-size:14px;color:var(--sub)}
         bat:$("bat").value,load:$("load").value,cal:cal?cal.ver:null,a:null,lat:null,n:""});
       save(); render();
       $("hint").textContent="実行中…（記録 #"+j.id+"）";
-    },function(){setBusy(false);$("hint").textContent="台車につながりません。電源とネットワークを確認してください。"});
+    },function(){setBusy(false);$("hint").textContent="台車につながりません。"});
   }
   Array.prototype.forEach.call(document.querySelectorAll(".go button"),function(b){
     b.addEventListener("click",function(){run(+b.getAttribute("data-d"))});
   });
 
-  function stop(e){if(e)e.preventDefault();get("/stop",function(){setBusy(false);$("hint").textContent="停止しました"},function(){$("hint").textContent="停止の指令が届きませんでした。電源を切ってください。"})}
-  $("stop").addEventListener("touchstart",stop,{passive:false});
-  $("stop").addEventListener("click",stop);
-
+  /* ===== 状態の取得 ===== */
   function poll(){
     get("/state",function(j){
-      $("conn").textContent="接続中"; $("conn").className="ok";
+      failN=0;setConn(true);
       if(j.busy){setBusy(true);$("bar").style.width=Math.min(100,100*j.el/j.ms)+"%"}
       else{
         if(busy)$("hint").textContent="止まりました。結果を下の記録に入れてください。";
@@ -279,7 +437,7 @@ summary{font-size:14px;color:var(--sub)}
         }
         if(changed){save();render()}
       }
-    },function(){$("conn").textContent="切断";$("conn").className="ng"});
+    },function(){if(++failN>=2){setConn(false);release()}},900);
   }
 
   function q(v){v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
@@ -294,7 +452,7 @@ summary{font-size:14px;color:var(--sub)}
   };
   $("clear").onclick=function(){if(confirm("記録をすべて消しますか？")){store.rows=[];save();render()}};
 
-  setMode("s",true); render(); loadCal(); setInterval(poll,300); poll();
+  setMode("s",true); render(); loadCal(); route(); setInterval(poll,350); poll();
 })();
 </script>
 </body>

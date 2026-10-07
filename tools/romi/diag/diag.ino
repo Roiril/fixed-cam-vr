@@ -63,8 +63,20 @@ static void calSave() {
   prefs.end();
 }
 
+// --- ジョイスティック（押している間だけ動く。更新が途切れたら自動で止まる）---
+static const uint32_t JOY_TIMEOUT_MS = 400;   // この間 /joy が来なければ止める（電波切れ・画面ロック対策）
+static const int JOY_MIN_PCT = 12;            // 動き出しの下限（不感帯 sd/rd=8〜10% を越える）
+struct Joy {
+  bool active = false;            // 更新を受けている
+  uint32_t last = 0, started = 0, lastTick = 0;
+  float tgtL = 0, tgtR = 0;       // 目標（符号つきカウント、前進が正）
+  float curL = 0, curR = 0;       // いまの出力（なめらかに追従）
+  int flip = 0;
+} joy;
+
 static void stopAll() {
   run.active = false;
+  joy.active = false; joy.tgtL = joy.tgtR = joy.curL = joy.curR = 0;
   for (int s = 0; s < 2; s++) {
     ledcWrite(PWM_PIN[s], 0);
     digitalWrite(DIR_PIN[s], LOW);
@@ -170,7 +182,7 @@ static int planMs(char m, int dutyPct, float tgt, float *rate) {
 // flip=0 のとき dir=1 を前進とみなす（実機で確認済み）。UI の「前後を逆にする」で反転できる。
 // 返り値: id(>0) / -1=実行中 / -2=範囲外 / -3=強さが小さすぎる
 static int startRun(char m, int d, int dutyPct, float tgt, uint32_t msOverride, int trim, int flip, const String &bat, const String &load, uint32_t *plannedMs, float *rateOut) {
-  if (run.active) return -1;
+  if (run.active || joy.active || joy.curL != 0 || joy.curR != 0) return -1;   // ジョイスティック動作中も受け付けない
   if ((m != 's' && m != 'r') || dutyPct < 1 || dutyPct > 100) return -2;
   float rate = 0;
   int ms;
@@ -226,6 +238,63 @@ static void runTick() {
   ledcWrite(PWM_PIN[1], (int)(run.dutyR * k));
 }
 
+static inline bool joyMoving() { return joy.active || joy.curL != 0 || joy.curR != 0; }
+
+// x: 右が正、y: 前が正（-1..1）。cap: 最大の強さ%（10..68）。左右の輪へ混ぜ（アーケード式）、不感帯の分を持ち上げる。
+static int joySet(float x, float y, int capPct, int flip) {
+  if (run.active) return -1;
+  capPct = clampi(capPct, 10, 68);
+  float l = y + x, r = y - x;
+  l = l > 1 ? 1 : (l < -1 ? -1 : l);
+  r = r > 1 ? 1 : (r < -1 ? -1 : r);
+  auto toCount = [&](float u) -> float {
+    float a = u < 0 ? -u : u;
+    if (a < 0.03f) return 0;
+    float pct = JOY_MIN_PCT + a * (capPct - JOY_MIN_PCT);
+    float c = pct * 1023.f / 100.f;
+    if (c > WEB_DUTY_MAX) c = WEB_DUTY_MAX;
+    return u < 0 ? -c : c;
+  };
+  joy.tgtL = toCount(l);
+  joy.tgtR = toCount(r);
+  joy.flip = flip;
+  if (!joy.active) {
+    joy.started = millis();
+    Serial.printf("EVT joy start cap=%d flip=%d t=%lu\n", capPct, flip, millis());
+  }
+  joy.active = true;
+  joy.last = millis();
+  return 0;
+}
+
+// 目標へなめらかに追従。方向が変わるときは必ず 0 を通す。更新が途切れたら 0 へ向かう。
+static void joyTick() {
+  uint32_t now = millis();
+  if (!joyMoving()) { joy.lastTick = now; return; }
+  if (joy.active && now - joy.last > JOY_TIMEOUT_MS) {
+    joy.active = false;
+    joy.tgtL = joy.tgtR = 0;
+    Serial.printf("EVT joy end dur=%lums reason=%s t=%lu\n", now - joy.started, "timeout-or-release", now);
+  }
+  uint32_t dt = now - joy.lastTick;
+  if (dt == 0) return;
+  joy.lastTick = now;
+  float up = 2.5f * dt, down = 7.f * dt;   // カウント/ms。全開まで約 0.3 秒、止めるのは約 0.1 秒
+  float *cur[2] = {&joy.curL, &joy.curR};
+  float tgt[2] = {joy.tgtL, joy.tgtR};
+  for (int s = 0; s < 2; s++) {
+    float c = *cur[s], t = tgt[s];
+    if ((c > 0 && t < 0) || (c < 0 && t > 0)) t = 0;   // 逆向きは 0 を経由
+    float step = (t == 0 || (c > 0 ? t < c : t > c)) ? down : up;
+    if (c < t) c = (c + step > t) ? t : c + step; else if (c > t) c = (c - step < t) ? t : c - step;
+    *cur[s] = c;
+    int F = joy.flip ? 0 : 1;
+    if (c != 0) digitalWrite(DIR_PIN[s], c > 0 ? F : 1 - F);
+    ledcWrite(PWM_PIN[s], (int)(c < 0 ? -c : c));
+  }
+  if (!joy.active && joy.curL == 0 && joy.curR == 0) stopAll();
+}
+
 static void jsonSend(const String &s) {
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", s);
@@ -244,6 +313,12 @@ static void httpRun() {
                     server.arg("trim").toInt(), server.arg("flip").toInt(), server.arg("bat"), server.arg("load"), &planned, &rate);
   if (id > 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + ",\"ms\":" + String(planned) + ",\"rate\":" + String(rate, 2) + "}");
   else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : (id == -3 ? "weak" : "range")) + "\"}");
+}
+
+static void httpJoy() {
+  int rc = joySet(server.arg("x").toFloat(), server.arg("y").toFloat(), server.arg("cap").toInt(), server.arg("flip").toInt());
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", rc == 0 ? "{\"ok\":1}" : "{\"ok\":0,\"err\":\"busy\"}");
 }
 
 static void httpStop() {
@@ -295,6 +370,7 @@ static void startWeb() {
   server.on("/", HTTP_GET, []() { server.send_P(200, "text/html; charset=utf-8", PAGE_HTML); });
   server.on("/run", HTTP_GET, httpRun);
   server.on("/stop", HTTP_GET, httpStop);
+  server.on("/joy", HTTP_GET, httpJoy);
   server.on("/state", HTTP_GET, httpState);
   server.on("/res", HTTP_GET, httpRes);
   server.on("/cal", HTTP_GET, httpCal);
@@ -452,7 +528,8 @@ void loop() {
   esp_task_wdt_reset();
   server.handleClient();
   runTick();
-  netTick(run.active);
+  joyTick();
+  netTick(run.active || joyMoving());
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == '\n' || ch == '\r') { handle(buf); buf = ""; }
