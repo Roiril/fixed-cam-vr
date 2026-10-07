@@ -167,7 +167,7 @@ static int planMs(char m, int dutyPct, float tgt, float *rate) {
 
 // m: 's' 直進 / 'r' 回転。d>0: 前進・右回転（上から見て時計回り）。side0=左、side1=右。
 // tgt>0 なら較正モデルから時間を決める。msOverride>0 なら時間を直接指定。
-// flip=0 のとき dir=0 を前進とみなす（実機で前後が逆なら UI の「前後を逆にする」で反転）。
+// flip=0 のとき dir=1 を前進とみなす（実機で確認済み）。UI の「前後を逆にする」で反転できる。
 // 返り値: id(>0) / -1=実行中 / -2=範囲外 / -3=強さが小さすぎる
 static int startRun(char m, int d, int dutyPct, float tgt, uint32_t msOverride, int trim, int flip, const String &bat, const String &load, uint32_t *plannedMs, float *rateOut) {
   if (run.active) return -1;
@@ -183,7 +183,7 @@ static int startRun(char m, int d, int dutyPct, float tgt, uint32_t msOverride, 
     if (ms < 0) return ms;
   }
   int base = clampi(dutyPct * 1023 / 100, 0, WEB_DUTY_MAX);
-  int F = flip ? 1 : 0;
+  int F = flip ? 0 : 1;   // 実測（2026-10-07）: 前進は dir=1。flip は「それを逆にする」
   int fwd = F, back = 1 - F;
   trim = clampi(trim, -20, 20);
   if (m == 's') {
