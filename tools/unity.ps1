@@ -85,6 +85,7 @@ $Menus = [ordered]@{
                                     'Assets/Scripts/Diagnostics/ControllerGuidePanel.cs',
                                     'Assets/Scripts/Diagnostics/TitleNotice.cs',
                                     'Assets/Scripts/Diagnostics/RecoveryGuidance.cs',
+                                    'Assets/Scripts/Diagnostics/StaffSetupPanel.cs',
                                     'Assets/Scripts/Diagnostics/CommsPanel.cs',
                                     'Assets/Scripts/Streaming/TitleScreen.cs',
                                     'Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs',

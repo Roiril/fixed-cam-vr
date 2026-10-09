@@ -21,6 +21,9 @@
     --serif: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", Georgia, serif;
     --sans: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Sans", sans-serif;
     --ease: cubic-bezier(.2,.8,.2,1); --gutter: clamp(24px,4.2vw,76px); --doctor-anchor: 70%;
+    --ok: #8fd3a7; --wait: #e3c27a;
+    --staff-bg: #16181b; --staff-panel: #1e2125; --staff-ink: #eef0f2; --staff-muted: #a9b1ba;
+    --staff-line: rgba(214,222,230,.14); --staff-line-strong: rgba(214,222,230,.32);
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -204,36 +207,93 @@
   @keyframes chapter-line { from { transform: scaleX(.1); } to { transform: scaleX(1); } }
   .media-notice { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; min-height: 48px; gap: 8px 16px; padding: 4px 0; color: var(--muted); font: 14px/1.5 var(--sans); }
   .media-notice button { min-height: 44px; padding: 8px 12px; background: transparent; border: 1px solid var(--line-strong); font-size: 14px; }
-  .staff-dialog { width: min(94vw,920px); max-height: 90svh; padding: 0; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); box-shadow: 0 25px 90px rgba(0,0,0,.65); overscroll-behavior: contain; font-family: var(--sans); }
-  .staff-dialog[open] { animation: reference-in .24s var(--ease); }
-  .staff-dialog::backdrop { background: rgba(0,0,0,.8); }
-  .staff-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  .staff-dialog h2 { margin: 0; font-size: 22px; font-weight: 400; }
-  .staff-close { flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid var(--line); background: transparent; }
-  .staff-body { padding: 20px 24px 0; }
-  .staff-section + .staff-section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
-  .staff-section h3, .staff-section legend { margin: 0 0 12px; color: var(--ink); font: 16px/1.5 var(--sans); letter-spacing: 0; }
-  .staff-dialog p { margin: 10px 0; font-size: 14px; line-height: 1.65; }
-  .staff-dialog .choice { min-height: 62px; padding: 10px; font-size: 16px; }
-  .staff-dialog .choice span { min-width: 0; }
-  .staff-dialog .choice small { display: block; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
-  .staff-summary { margin: 12px 0; color: var(--ink); font: 15px/1.85 var(--sans); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .staff-help { color: var(--muted); }
-  .staff-message { min-height: 1.6em; color: var(--gold); }
+  /* スタッフ画面。来場者の画面（明朝・人形・博士）と分けるため、無彩色の業務画面にする。 */
+  .staff-screen { position: fixed; inset: 0; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; overflow: hidden auto; overscroll-behavior: contain; background: var(--staff-bg); color: var(--staff-ink); font: 16px/1.6 var(--sans); }
+  .staff-screen::backdrop { background: var(--staff-bg); }
+  .staff-screen button { font-family: var(--sans); }
+  .staff-screen button:focus-visible, .staff-screen summary:focus-visible, .staff-screen input:focus-visible { outline: 2px solid var(--staff-ink); outline-offset: 3px; }
+  .staff-shell { display: flex; flex-direction: column; gap: 12px; min-height: 100%; padding: max(14px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left)); }
+  .staff-handback { display: flex; flex-wrap: wrap; gap: 2px 24px; margin: 0; padding: 10px 16px; border: 1px solid var(--wait); border-radius: 6px; background: rgba(227,194,122,.1); color: var(--staff-ink); font-size: 18px; line-height: 1.5; }
+  .staff-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; min-height: 48px; }
+  .staff-title { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: .02em; }
+  .staff-target { display: flex; align-items: center; gap: 8px; margin: 0 0 0 auto; color: var(--staff-muted); font-size: 16px; }
+  .staff-target-name { color: var(--staff-ink); font-weight: 600; }
+  .staff-return { min-height: 48px; padding: 8px 18px; border: 1px solid var(--staff-line-strong); border-radius: 6px; background: transparent; color: var(--staff-ink); font-size: 16px; }
+  .staff-cycle { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .staff-cycle li { display: flex; flex: 1 1 0; align-items: center; gap: 8px; min-width: 0; min-height: 40px; padding: 4px 12px; border-top: 3px solid var(--staff-line-strong); color: var(--staff-muted); font-size: 15px; white-space: nowrap; }
+  .staff-cycle b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .staff-cycle li[data-done="true"] { border-top-color: rgba(143,211,167,.55); }
+  .staff-cycle li[aria-current="step"] { border-top-color: var(--staff-ink); background: var(--staff-panel); color: var(--staff-ink); font-weight: 600; }
+  .staff-main { display: grid; flex: 1 1 auto; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); gap: 16px; min-height: 0; }
+  .staff-now, .staff-devices { min-width: 0; padding: 18px 22px; border: 1px solid var(--staff-line); border-radius: 6px; background: var(--staff-panel); }
+  .staff-now { display: flex; flex-direction: column; gap: 10px; }
+  .staff-now-label, .staff-devices-title { margin: 0; color: var(--staff-muted); font-size: 14px; font-weight: 400; }
+  .staff-now-title { margin: 0; font-size: 30px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
+  .staff-now-title:focus { outline: none; }
+  .staff-now-meta { margin: 0; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .staff-now-body { margin: 0; font-size: 18px; line-height: 1.7; }
+  .staff-now-note { margin: 0; color: var(--staff-muted); font-size: 15px; line-height: 1.6; }
+  .staff-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  .staff-list li { display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 8px; align-items: baseline; font-size: 18px; line-height: 1.55; }
+  .staff-mark { font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+  [data-tone="ok"] > .staff-mark { color: var(--ok); }
+  [data-tone="wait"] > .staff-mark { color: var(--wait); }
+  [data-tone="trouble"] > .staff-mark, .staff-list li[data-tone="trouble"] { color: var(--error); }
+  .staff-list li[data-tone="plain"] > .staff-mark::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--staff-muted); vertical-align: middle; }
+  .staff-now-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: auto; padding-top: 4px; }
+  .staff-primary { min-width: min(100%,320px); min-height: 64px; padding: 12px 28px; border: 0; border-radius: 6px; background: var(--staff-ink); color: var(--staff-bg); font-size: 20px; font-weight: 600; letter-spacing: .02em; }
+  .staff-secondary { min-height: 56px; padding: 10px 20px; border: 1px solid var(--staff-line-strong); border-radius: 6px; background: transparent; color: var(--staff-ink); font-size: 16px; }
+  .staff-screen button:disabled { opacity: .35; }
+  .staff-hold { position: relative; overflow: hidden; isolation: isolate; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .staff-hold::before { content: ""; position: absolute; z-index: -1; inset: 0; background: var(--ok); transform: scaleX(var(--hold,0)); transform-origin: left; }
+  .staff-secondary.staff-hold::before { background: rgba(240,164,154,.35); }
+  .staff-now-message { min-height: 1.6em; margin: 0; color: var(--wait); font-size: 16px; }
+  .staff-now-message:empty { display: none; }
+  .staff-device-list { margin: 8px 0 0; padding: 0; list-style: none; }
+  .staff-device { display: grid; grid-template-columns: 24px minmax(5.5em,auto) minmax(0,1fr); gap: 0 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--staff-line); font-size: 17px; line-height: 1.5; }
+  .staff-device:last-child { border-bottom: 0; }
+  .staff-device-name { color: var(--staff-muted); }
+  .staff-device-value { min-width: 0; overflow-wrap: anywhere; }
+  [data-tone="trouble"] > .staff-device-value { color: var(--error); }
+  .staff-device-fix { grid-column: 2 / -1; margin: 2px 0 0; color: var(--staff-ink); font-size: 15px; overflow-wrap: anywhere; }
+  .staff-device-fix::before { content: "→ "; color: var(--staff-muted); }
+  .staff-trouble { border: 1px solid var(--staff-line); border-radius: 6px; background: var(--staff-panel); }
+  .staff-trouble > summary { min-height: 48px; padding: 11px 20px; color: var(--staff-ink); font-size: 17px; cursor: pointer; }
+  .staff-trouble-body { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px 28px; padding: 4px 20px 20px; }
+  .staff-trouble-section { min-width: 0; }
+  .staff-trouble-section h4 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+  .staff-trouble-section p, .staff-picker p { margin: 8px 0; font-size: 15px; line-height: 1.65; }
+  .staff-backup { margin: 0; padding: 0; list-style: none; font-size: 15px; line-height: 1.65; }
+  .staff-backup li + li { margin-top: 6px; }
+  .staff-help { color: var(--staff-muted); }
+  .staff-message { min-height: 1.6em; color: var(--wait); }
   #staffCheckMessage:empty, #staffMessage:empty { display: none; }
-  .staff-action { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--line-strong); background: transparent; font-size: 16px; }
-  .staff-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
-  .staff-clear { min-height: 48px; width: 100%; padding: 10px 14px; border: 1px solid var(--red); background: rgba(168,50,57,.12); }
-  .staff-done { position: sticky; z-index: 2; bottom: 0; margin: 22px -24px 0; width: calc(100% + 48px); background: var(--ink); color: var(--bg); }
+  .staff-picker fieldset { margin: 0; }
+  .staff-screen .choice { min-height: 62px; padding: 10px 14px; border-color: var(--staff-line-strong); border-radius: 6px; background: transparent; font-size: 17px; }
+  .staff-screen .choice:hover { border-color: var(--staff-ink); background: rgba(214,222,230,.06); }
+  .staff-screen .choice::after { background: var(--staff-ink); }
+  .staff-screen .choice:has(input:checked) { border-color: var(--staff-ink); background: rgba(214,222,230,.1); }
+  .staff-screen .choice:has(input:focus-visible) { outline: 2px solid var(--staff-ink); }
+  .staff-screen .choice span { min-width: 0; }
+  .staff-screen .choice small { display: block; color: var(--staff-muted); font-size: 14px; overflow-wrap: anywhere; }
+  .staff-screen .choice-mark { border-color: var(--staff-line-strong); }
+  .staff-screen input:checked ~ .choice-mark { border-color: var(--staff-ink); }
+  .staff-screen .choice-mark::before { background: var(--staff-ink); }
+  .staff-action { width: 100%; min-height: 48px; margin-top: 10px; padding: 10px 14px; border: 1px solid var(--staff-line-strong); border-radius: 6px; background: transparent; color: var(--staff-ink); font-size: 16px; }
+  .staff-now .staff-picker .staff-action { min-height: 64px; border: 0; background: var(--staff-ink); color: var(--staff-bg); font-size: 20px; font-weight: 600; }
+  .staff-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 10px; }
+  .staff-clear { width: 100%; min-height: 48px; margin-top: 10px; padding: 10px 14px; border: 1px solid var(--error); border-radius: 6px; background: rgba(240,164,154,.08); color: var(--staff-ink); }
   .choice:has(input:disabled) { cursor: default; color: var(--faint); opacity: .55; }
-  @media (min-width:850px) {
-    .staff-body { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,.9fr); gap: 16px 24px; }
-    .staff-section:nth-child(1) { grid-area: 1 / 1; }
-    .staff-section:nth-child(2) { grid-area: 2 / 1; margin-top: 0; padding-top: 16px; }
-    .staff-section:nth-child(3) { grid-area: 1 / 2 / 3 / 3; margin-top: 0; padding: 0 0 0 24px; border-top: 0; border-left: 1px solid var(--line); }
-    .staff-actions { grid-template-columns: 1fr; }
-    .staff-done { grid-column: 1 / -1; margin: 0 -24px; width: calc(100% + 48px); }
+  @media (max-width:760px), (max-aspect-ratio:1/1) {
+    .staff-shell { padding-inline: max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right)); }
+    .staff-target { margin-left: 0; }
+    .staff-cycle li { flex-direction: column; align-items: flex-start; gap: 0; padding: 4px 6px; font-size: 14px; white-space: normal; }
+    .staff-main, .staff-trouble-body, .staff-actions { grid-template-columns: minmax(0,1fr); }
+    .staff-now-title { font-size: 26px; }
+    .staff-primary, .staff-secondary { width: 100%; }
   }
+  /* 来場者の画面に重ねる最小の呼び出し。体験の画面の他の部分は変えない。 */
+  .call-staff { position: fixed; z-index: 20; top: max(18px,env(safe-area-inset-top)); left: 50%; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 18px; width: max-content; max-width: calc(100% - 32px); margin: 0; padding: 8px 16px; border: 1px solid var(--error); background: rgba(9,8,7,.92); color: var(--ink); font: 15px/1.5 var(--sans); transform: translateX(-50%); pointer-events: none; }
   @media (min-width:1600px) { .content { width: 52%; } .stage.is-briefing { grid-template-rows: auto minmax(440px,1fr) auto; } .notice-body { font-size: 18px; } }
   @media (min-width:761px) and (max-height:800px) {
     .topbar { min-height: 74px; padding-top: 14px; padding-bottom: 10px; }
@@ -390,6 +450,7 @@
     .stage.is-briefing .media-notice { min-height: 40px; font-size: 14px; }
     .stage.is-briefing .media-notice button { min-height: 38px; }
   }
+  .equipment-staff-status { margin: 18px 0 0; font-size: 15px; line-height: 1.6; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -401,8 +462,8 @@
       <span class="title-rule" aria-hidden="true"></span>
       <button class="title-start" id="titleStart" type="button" aria-label="タップして始める。Tap to begin. Touchez pour commencer.">
         <span class="title-start-copy">
-        <span class="title-start-main">タップして始める</span>
-        <span class="title-start-alt"><span lang="en">Tap to begin</span> · <span lang="fr">Touchez pour commencer</span></span>
+        <span class="title-start-main" id="titleStartMain">タップして始める</span>
+        <span class="title-start-alt" id="titleStartAlt"><span lang="en">Tap to begin</span> · <span lang="fr">Touchez pour commencer</span></span>
         </span>
       </button>
     </div>
@@ -415,12 +476,17 @@
       <li id="journeyBriefing"><b>02</b><span id="journeyBriefingLabel">調査説明</span></li>
       <li id="journeyWear"><b>03</b><span id="journeyWearLabel">装着</span></li>
     </ol>
-    <button class="connection" id="staffToggle" data-state="checking" type="button" aria-haspopup="dialog" aria-label="スタッフ設定を開く">
+    <button class="connection" id="staffToggle" data-state="checking" type="button" aria-haspopup="dialog" aria-label="スタッフ画面を開く">
       <span class="connection-dot" aria-hidden="true"></span>
       <span id="connectionText" role="status" aria-live="polite">接続を確認中…</span>
-      <span class="staff-label" id="staffLabel">スタッフ</span>
+      <span class="staff-label" id="staffLabel">スタッフ画面</span>
     </button>
   </header>
+  <p class="call-staff" id="callStaff" role="status" hidden>
+    <span lang="ja">スタッフをお呼びください</span>
+    <span lang="en">Please call a member of staff.</span>
+    <span lang="fr">Veuillez appeler un membre du personnel.</span>
+  </p>
 
   <figure class="portrait" aria-hidden="true">
     <img id="entranceImage" src="./asset/entrance-doll-v1.png" alt="" width="1672" height="941" draggable="false" fetchpriority="high">
@@ -539,12 +605,13 @@
         </div>
       </figure>
       <div class="equipment-guide" id="equipmentGuide" hidden>
-        <ol class="equipment-steps">
+        <ol class="equipment-steps" id="equipmentSteps">
           <li><span id="equipmentController"></span></li>
           <li><span id="equipmentQuest"></span></li>
           <li><span id="equipmentHeadphones"></span></li>
         </ol>
         <p class="equipment-followup" id="equipmentFollowup"></p>
+        <p class="equipment-staff-status" id="equipmentStaffStatus" aria-live="polite"></p>
       </div>
       <div class="briefing-progress" id="briefingProgress">
         <span id="sceneCounter"></span>
@@ -583,47 +650,113 @@
   </footer>
 </div>
 
-<dialog class="staff-dialog" id="staff" aria-labelledby="staffTitle" lang="ja">
-  <div class="staff-header">
-    <h2 id="staffTitle">スタッフ設定</h2>
-    <button class="staff-close" id="staffClose" type="button" aria-label="スタッフ設定を閉じる">×</button>
-  </div>
-  <div class="staff-body">
-    <section class="staff-section">
-      <fieldset>
-        <legend>1. 体験に使うクエスト</legend>
-        <div class="choices two">
-          <label class="choice"><input id="questAlpha" name="staffQuest" type="radio" value="alpha"><span>クエスト α<small>192.168.10.31</small></span><span class="choice-mark" aria-hidden="true"></span></label>
-          <label class="choice"><input id="questBeta" name="staffQuest" type="radio" value="beta"><span>クエスト β<small>192.168.10.32</small></span><span class="choice-mark" aria-hidden="true"></span></label>
+<dialog class="staff-screen" id="staff" aria-labelledby="staffTitle" lang="ja" data-state="checking">
+  <div class="staff-shell">
+    <p class="staff-handback" id="staffHandback" hidden>
+      <span lang="ja">タブレットをスタッフにお渡しください</span>
+      <span lang="en">Please hand the tablet to a member of staff.</span>
+      <span lang="fr">Veuillez remettre la tablette à un membre du personnel.</span>
+    </p>
+    <header class="staff-top">
+      <h2 class="staff-title" id="staffTitle">スタッフ画面</h2>
+      <p class="staff-target" id="staffTarget" data-tone="wait">
+        <span class="staff-target-name" id="staffTargetName">クエスト</span>
+        <span class="staff-mark" id="staffTargetMark" aria-hidden="true">…</span>
+        <span id="staffTargetState">確認しています</span>
+      </p>
+      <button class="staff-return" id="staffDoneBtn" type="button" hidden>来場者の画面へ戻る</button>
+    </header>
+    <ol class="staff-cycle" id="staffCycle" aria-label="体験の一巡">
+      <li id="staffCycle1"><b>1</b><span>準備</span></li>
+      <li id="staffCycle2"><b>2</b><span>来場者</span></li>
+      <li id="staffCycle3"><b>3</b><span>装着</span></li>
+      <li id="staffCycle4"><b>4</b><span>体験</span></li>
+      <li id="staffCycle5"><b>5</b><span>回収</span></li>
+    </ol>
+    <div class="staff-main" id="staffMain">
+      <section class="staff-now" aria-labelledby="staffNowTitle">
+        <p class="staff-now-label">いまやること</p>
+        <h3 class="staff-now-title" id="staffNowTitle" tabindex="-1">クエストの応答を確認しています</h3>
+        <p class="staff-now-meta" id="staffNowMeta" hidden></p>
+        <p class="staff-now-body" id="staffNowBody"></p>
+        <ul class="staff-list" id="staffNowList" hidden>
+          <li id="staffNowItem0" hidden><span class="staff-mark" id="staffNowItem0Mark" aria-hidden="true"></span><span id="staffNowItem0Text"></span></li>
+          <li id="staffNowItem1" hidden><span class="staff-mark" id="staffNowItem1Mark" aria-hidden="true"></span><span id="staffNowItem1Text"></span></li>
+          <li id="staffNowItem2" hidden><span class="staff-mark" id="staffNowItem2Mark" aria-hidden="true"></span><span id="staffNowItem2Text"></span></li>
+          <li id="staffNowItem3" hidden><span class="staff-mark" id="staffNowItem3Mark" aria-hidden="true"></span><span id="staffNowItem3Text"></span></li>
+          <li id="staffNowItem4" hidden><span class="staff-mark" id="staffNowItem4Mark" aria-hidden="true"></span><span id="staffNowItem4Text"></span></li>
+          <li id="staffNowItem5" hidden><span class="staff-mark" id="staffNowItem5Mark" aria-hidden="true"></span><span id="staffNowItem5Text"></span></li>
+        </ul>
+        <p class="staff-now-note" id="staffNowNote" hidden></p>
+        <div class="staff-picker-slot" id="staffPickerSlot"></div>
+        <div class="staff-now-actions">
+          <button class="staff-primary" id="staffRetryBtn" type="button" hidden>もう一度確認する</button>
+          <button class="staff-primary" id="staffResetBtn" type="button" hidden>準備を始める</button>
+          <button class="staff-primary" id="staffVisitorBtn" type="button" hidden>来場者の画面にする</button>
+          <button class="staff-primary staff-hold" id="staffPrepareBtn" type="button" hidden aria-describedby="staffPrepareHint">長押しで装着へ進む</button>
+          <button class="staff-secondary staff-hold" id="staffRestartBtn" type="button" hidden aria-describedby="staffRestartHint">最初からやり直す（長押し）</button>
+          <span class="sr-only" id="staffPrepareHint">1.2 秒押し続けると進みます。</span>
+          <span class="sr-only" id="staffRestartHint">1.5 秒押し続けると次の体験者の準備になります。</span>
         </div>
-      </fieldset>
-      <p class="staff-help" id="staffTargetHelp">本体のα／βのラベルを見て選んでください。</p>
-      <button class="staff-action" id="staffCheckBtn" type="button">接続を確認する</button>
-      <p class="staff-message" id="staffCheckMessage" role="status" aria-live="polite"></p>
-    </section>
-    <section class="staff-section">
-      <h3>2. 受付の状態</h3>
-      <div class="staff-summary" id="staffSummary">読み込み中…</div>
-      <p class="staff-help" id="staffRecovery" hidden>クエストの電源と「廻リ視」の起動を確認してください。タブレットと同じ会場Wi-Fiにつないでから「接続を確認する」を押してください。</p>
-      <div id="staffPending" hidden>
-        <p class="staff-help">前の人の設定が残っているときだけ取り消してください。クエストの現在の言語と軽減は変わりません。次の人は設定を選び直します。</p>
-        <button class="staff-clear" id="clearBtn" type="button">未開始の設定を取り消す</button>
+        <p class="staff-now-message" id="staffNowMessage" role="status" aria-live="polite"></p>
+      </section>
+      <section class="staff-devices" aria-labelledby="staffDevicesTitle">
+        <h3 class="staff-devices-title" id="staffDevicesTitle">機器の状態</h3>
+        <ul class="staff-device-list">
+          <li class="staff-device" id="devQuest" data-tone="none"><span class="staff-mark" id="devQuestMark" aria-hidden="true"></span><span class="staff-device-name">クエスト</span><span class="staff-device-value" id="devQuestValue">—</span><span class="staff-device-fix" id="devQuestFix" hidden></span></li>
+          <li class="staff-device" id="devPosition" data-tone="none"><span class="staff-mark" id="devPositionMark" aria-hidden="true"></span><span class="staff-device-name">位置合わせ</span><span class="staff-device-value" id="devPositionValue">—</span><span class="staff-device-fix" id="devPositionFix" hidden></span></li>
+          <li class="staff-device" id="devCameraA" data-tone="none"><span class="staff-mark" id="devCameraAMark" aria-hidden="true"></span><span class="staff-device-name">カメラ A</span><span class="staff-device-value" id="devCameraAValue">—</span><span class="staff-device-fix" id="devCameraAFix" hidden></span></li>
+          <li class="staff-device" id="devCameraB" data-tone="none"><span class="staff-mark" id="devCameraBMark" aria-hidden="true"></span><span class="staff-device-name">カメラ B</span><span class="staff-device-value" id="devCameraBValue">—</span><span class="staff-device-fix" id="devCameraBFix" hidden></span></li>
+          <li class="staff-device" id="devCameraC" data-tone="none"><span class="staff-mark" id="devCameraCMark" aria-hidden="true"></span><span class="staff-device-name">カメラ C</span><span class="staff-device-value" id="devCameraCValue">—</span><span class="staff-device-fix" id="devCameraCFix" hidden></span></li>
+          <li class="staff-device" id="devContent" data-tone="none" hidden><span class="staff-mark" id="devContentMark" aria-hidden="true"></span><span class="staff-device-name">体験の素材</span><span class="staff-device-value" id="devContentValue">—</span><span class="staff-device-fix" id="devContentFix" hidden></span></li>
+        </ul>
+      </section>
+    </div>
+    <details class="staff-trouble" id="staffTrouble">
+      <summary>困ったとき</summary>
+      <div class="staff-trouble-body">
+        <section class="staff-trouble-section" id="staffTroubleTarget" aria-labelledby="staffTroubleTargetTitle">
+          <h4 id="staffTroubleTargetTitle">接続先の変更</h4>
+          <div class="staff-picker" id="staffQuestPicker">
+            <fieldset>
+              <legend class="sr-only">このタブレットで使うクエスト</legend>
+              <div class="choices two">
+                <label class="choice"><input id="questAlpha" name="staffQuest" type="radio" value="alpha"><span>クエスト α<small>192.168.10.31</small></span><span class="choice-mark" aria-hidden="true"></span></label>
+                <label class="choice"><input id="questBeta" name="staffQuest" type="radio" value="beta"><span>クエスト β<small>192.168.10.32</small></span><span class="choice-mark" aria-hidden="true"></span></label>
+              </div>
+            </fieldset>
+            <p class="staff-help" id="staffTargetHelp">本体のラベル（α または β）を見て選んでください。</p>
+            <button class="staff-action" id="staffCheckBtn" type="button">接続を確認する</button>
+            <p class="staff-message" id="staffCheckMessage" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+        <section class="staff-trouble-section" aria-labelledby="staffTroubleBackupTitle">
+          <h4 id="staffTroubleBackupTitle">予備の操作</h4>
+          <ul class="staff-backup">
+            <li>タブレットが反応しないとき：右コントローラーの A を 2 秒押し続けると次の体験者の準備になります</li>
+            <li>体験を途中でやめるとき：ヘッドセットを外すのを手伝います。右コントローラーの A を 2 秒押し続けます</li>
+            <li>ヘッドセットの画面が見えないとき：右コントローラーの B を 1 秒押すと画面が正面に戻ります</li>
+          </ul>
+        </section>
+        <section class="staff-trouble-section" aria-labelledby="staffTroubleMediaTitle">
+          <h4 id="staffTroubleMediaTitle">博士の音声と説明の確認</h4>
+          <p class="staff-help">タブレットを充電して横向きに置きます。「廻リ視 博士」を開いたままにしてください。</p>
+          <div class="staff-actions">
+            <button class="staff-action" id="staffSoundBtn" type="button">博士の音声を確認する</button>
+            <button class="staff-action" id="staffBriefingBtn" type="button">説明を確認する</button>
+            <button class="staff-action" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
+          </div>
+          <p class="staff-help" id="staffBriefingHelp"></p>
+          <p class="staff-help" id="staffSoundHelp" role="status">声が聞こえるか確認してください。音量はタブレット本体のボタンで調整します。</p>
+        </section>
+        <section class="staff-trouble-section" id="staffPending" aria-labelledby="staffPendingTitle" hidden>
+          <h4 id="staffPendingTitle">未開始の設定の取り消し</h4>
+          <p class="staff-help">別の受付と設定が混ざったときに使います。取り消すと装着前の確認も無効になります。来場者が言語とホラー軽減を選び直します。</p>
+          <button class="staff-clear" id="clearBtn" type="button">未開始の設定を取り消す</button>
+        </section>
       </div>
-      <p class="staff-message" id="staffMessage" role="status" aria-live="polite"></p>
-    </section>
-    <section class="staff-section">
-      <h3>3. 受付前の確認</h3>
-      <p class="staff-help">タブレットを充電して横向きに置きます。「廻リ視 博士」を開いたままにしてください。</p>
-      <div class="staff-actions">
-        <button class="staff-action" id="staffSoundBtn" type="button">博士の音声を確認する</button>
-        <button class="staff-action" id="staffBriefingBtn" type="button">説明を確認する</button>
-        <button class="staff-action" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
-      </div>
-      <p class="staff-help" id="staffBriefingHelp"></p>
-      <p class="staff-help" id="staffSoundHelp" role="status">声が聞こえるか確認してください。音量はタブレット本体のボタンで調整します。</p>
-      <p class="staff-help">クエストの装着位置を確認してください。クエストの音と左コントローラーは実機で確認します。</p>
-    </section>
-    <button class="staff-action staff-done" id="staffDoneBtn" type="button">来場者の画面に戻る</button>
+      <p class="staff-message staff-trouble-message" id="staffMessage" role="status" aria-live="polite"></p>
+    </details>
   </div>
 </dialog>
 
@@ -638,7 +771,7 @@
   const T = {
     ja: {
       journey: ['体験の準備', '設定', '調査説明', '装着'],
-      media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: 'この文を再生', noAudio: '', staff: 'スタッフ設定を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', unavailable: '画像を表示できません' },
+      media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: 'この文を再生', resumeRequired: '再生を停止しました。「この文を再生」で同じ文から続けてください。', noAudio: '', staff: 'スタッフ画面を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', equipment: 'スタッフが機器を確認しています。このままお待ちください。', unavailable: '画像を表示できません' },
       pageTitle: '体験の前に', noticeLabel: '注意', language: '言語', relief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
       reliefDesc: 'なし：通常の演出と音量\nあり：音量半分と陽気な曲',
@@ -646,13 +779,13 @@
       askRelief: '恐怖を軽減するかどうかを決めてください。',
       next: '次へ', back: '戻る',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
-      review: '設定を確認する', apply: 'この設定で始める', edit: '設定に戻る', retry: 'もう一度送る',
+      review: '設定を確認する', apply: 'この設定を送る', edit: '設定に戻る', retry: 'もう一度送る',
       selected: '選んだ設定', headset: 'クエスト', headsetCurrent: '現在のクエスト', headsetConfirmed: 'クエストで確認した設定', item: '項目', continue: '画面をタップして次へ',
       restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
-      staff: 'スタッフ設定', staffOpen: 'スタッフ設定を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする',
+      staff: 'スタッフ画面', staffOpen: 'スタッフ画面を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
-        confirm: ['設定内容の確認', '言語とホラー軽減を確認してください。まだクエストへ送信していません'],
+        confirm: ['設定内容の確認', '言語とホラー軽減を確認してください。クエストへは未送信です'],
         sending: ['設定を反映しています', 'クエストからの反映確認を待っています'],
         applied: ['クエストに反映しました', 'クエストで設定の反映を確認しました'],
         waiting: ['反映を待っています', 'クエストの注意書き画面で反映されます'],
@@ -680,11 +813,11 @@
         next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
-      equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'Meta Questを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエスト内に表示される指示に従ってください。' },
+      equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'Meta Questを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエスト内に表示される指示に従ってください。', handoff: 'タブレットをスタッフへ返してください', handoffDetail: '確認後にスタッフが装着をお手伝いします', waiting: 'スタッフの確認をお待ちください。', interrupted: 'スタッフが機器を確認しています。このままお待ちください。', recovery: 'Quest の通信が戻るまでスタッフにお預けください。' },
     },
     en: {
       journey: ['Prepare for the experience', 'Settings', 'Briefing', 'Equip'],
-      media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Play this sentence', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close Staff settings to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', unavailable: 'Image unavailable' },
+      media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Play this sentence', resumeRequired: 'Playback stopped. Select “Play this sentence” to continue from the same sentence.', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close the staff screen to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', equipment: 'Staff are checking the equipment. Please wait here.', unavailable: 'Image unavailable' },
       pageTitle: 'Before the experience', noticeLabel: 'Notice', language: 'Language', relief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
       reliefDesc: 'Off: normal effects and volume\nOn: half volume with a cheerful tune',
@@ -692,10 +825,10 @@
       askRelief: 'Please choose whether you would like to reduce the horror.',
       next: 'Next', back: 'Back',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
-      review: 'Review settings', apply: 'Start with these settings', edit: 'Back to settings', retry: 'Send again',
+      review: 'Review settings', apply: 'Send these settings', edit: 'Back to settings', retry: 'Send again',
       selected: 'Selected settings', headset: 'Quest', headsetCurrent: 'Current Quest settings', headsetConfirmed: 'Settings confirmed on Quest', item: 'Item', continue: 'Tap the screen to continue',
       restarted: 'The headset restarted. Check the retained settings, then send them again.',
-      staff: 'Staff settings', staffOpen: 'Open staff settings', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen',
+      staff: 'Staff screen', staffOpen: 'Open the staff screen', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
         confirm: ['Review settings', 'Check the language and reduced horror setting. Nothing has been sent to Quest yet'],
@@ -726,11 +859,11 @@
         next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
-      equipment: { title: 'Get ready to begin', next: 'Equipment instructions', quest: 'Put on the Meta Quest headset.', headphones: 'Put on the headphones.', controller: 'Hold the controller in your left hand.', followup: 'Once you are ready, follow the instructions displayed inside the Quest headset.' },
+      equipment: { title: 'Get ready to begin', next: 'Equipment instructions', quest: 'Put on the Meta Quest headset.', headphones: 'Put on the headphones.', controller: 'Hold the controller in your left hand.', followup: 'Once you are ready, follow the instructions displayed inside the Quest headset.', handoff: 'Please return the tablet to a member of staff', handoffDetail: 'After checking, staff will help you put on the equipment', waiting: 'Please wait while staff checks the equipment.', interrupted: 'Staff are checking the equipment. Please wait here.', recovery: 'Please leave the tablet with staff until the Quest reconnects.' },
     },
     fr: {
       journey: ['Préparation', 'Réglages', 'Consignes', 'Équipement'],
-      media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Écouter cette phrase', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez les réglages du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', unavailable: 'Image indisponible' },
+      media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Écouter cette phrase', resumeRequired: 'La lecture est arrêtée. Sélectionnez « Écouter cette phrase » pour reprendre à la même phrase.', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez l’écran du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', equipment: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', unavailable: 'Image indisponible' },
       pageTitle: 'Avant l’expérience', noticeLabel: 'Attention', language: 'Langue', relief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
       reliefDesc: 'Non : effets et volume normaux\nOui : volume réduit de moitié et musique gaie',
@@ -738,10 +871,10 @@
       askRelief: 'Choisissez si vous souhaitez atténuer l’horreur.',
       next: 'Suivant', back: 'Retour',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
-      review: 'Vérifier les réglages', apply: 'Commencer avec ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
+      review: 'Vérifier les réglages', apply: 'Envoyer ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
       selected: 'Réglages choisis', headset: 'Quest', headsetCurrent: 'Réglages actuels du Quest', headsetConfirmed: 'Réglages confirmés sur le Quest', item: 'Élément', continue: 'Touchez l’écran pour continuer',
       restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
-      staff: 'Réglages du personnel', staffOpen: 'Ouvrir les réglages du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran',
+      staff: 'Écran du personnel', staffOpen: 'Ouvrir l’écran du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
         confirm: ['Vérification des réglages', 'Vérifiez la langue et l’atténuation de l’horreur. Rien n’a encore été envoyé au Quest'],
@@ -772,7 +905,7 @@
         next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
-      equipment: { title: 'Préparez votre équipement', next: 'Consignes d’équipement', quest: 'Mettez le casque Meta Quest.', headphones: 'Mettez le casque audio.', controller: 'Tenez la manette dans votre main gauche.', followup: 'Une fois équipé, suivez les instructions affichées dans le casque Quest.' },
+      equipment: { title: 'Préparez votre équipement', next: 'Consignes d’équipement', quest: 'Mettez le casque Meta Quest.', headphones: 'Mettez le casque audio.', controller: 'Tenez la manette dans votre main gauche.', followup: 'Une fois équipé, suivez les instructions affichées dans le casque Quest.', handoff: 'Rendez la tablette au personnel', handoffDetail: 'Après vérification, le personnel vous aidera à vous équiper', waiting: 'Veuillez patienter pendant la vérification du personnel.', interrupted: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', recovery: 'Laissez la tablette au personnel jusqu’au rétablissement du Quest.' },
     },
   };
 
@@ -844,6 +977,8 @@
       triggered: false,
       sceneIndex: 0,
       cueIndex: 0,
+      handoffReady: false,
+      wearStarted: false,
       ended: false,
       auto: false,
       pauseReasons: new Set(),
@@ -899,6 +1034,8 @@
       relief: state.sent.relief,
       sceneIndex: state.briefing.sceneIndex,
       cueIndex: state.briefing.cueIndex,
+      handoffReady: state.briefing.handoffReady,
+      wearStarted: state.briefing.wearStarted,
       ended: state.briefing.ended,
     };
     try { globalThis.sessionStorage?.setItem(STORAGE_KEY, JSON.stringify(progress)); }
@@ -912,6 +1049,8 @@
       && validSequence(progress.seq, false)
       && Object.hasOwn(LANG_NAME, progress.lang)
       && typeof progress.relief === 'boolean'
+      && (progress.handoffReady == null || typeof progress.handoffReady === 'boolean')
+      && (progress.wearStarted == null || typeof progress.wearStarted === 'boolean')
       && status.lastRequest?.tabletSessionId === progress.tabletSessionId
       && status.lastRequest.seq === progress.seq
       && status.lastRequest.lang === progress.lang
@@ -921,7 +1060,9 @@
       && status.relief === progress.relief
       && status.pending?.seq === progress.seq
       && status.pending.lang === progress.lang
-      && status.pending.relief === progress.relief;
+      && status.pending.relief === progress.relief
+      && (!status.staffSetup || ['explanation', 'ready', 'handedOff'].includes(status.staffSetup.stage)
+        || progress.handoffReady === true && ['setup', 'devices', 'alignment'].includes(status.staffSetup.stage));
   }
 
   function tryRestoreBriefing() {
@@ -930,12 +1071,15 @@
     restoreCandidate = null;
     if (!savedProgressMatches(progress, state.status)) {
       clearSavedProgress();
+      // 起動時は復元を優先して待っていた。復元できなければスタッフ画面から始める。
+      openStaffScreen('startup');
       return false;
     }
     const scene = state.briefing.data?.scenes[progress.sceneIndex];
     if (!scene || !Number.isSafeInteger(progress.cueIndex)
       || progress.cueIndex < 0 || progress.cueIndex >= scene.cues[progress.lang].length) {
       clearSavedProgress();
+      openStaffScreen('startup');
       return false;
     }
     state.restored = true;
@@ -943,6 +1087,9 @@
     state.reliefPreviewStarted = progress.relief;
     state.sent = { lang: progress.lang, relief: progress.relief, seq: progress.seq,
       portalSessionId: progress.portalSessionId, targetId: progress.targetId };
+    state.briefing.handoffReady = Boolean(progress.handoffReady || progress.ended);
+    state.briefing.wearStarted = Boolean(progress.wearStarted || progress.ended);
+    restorePreparationState(state.status);
     state.ui = 'sent';
     state.appliedSeen = true;
     state.briefing.triggered = true;
@@ -958,6 +1105,7 @@
     renderBriefingScene();
     stopBriefingMediaWindow();
     state.briefing.mediaPaused = true;
+    if (!advanceToWearIfReady(state.status, true)) syncWearReadiness(state.status);
     renderBriefingControls();
     return true;
   }
@@ -1019,7 +1167,7 @@
   function renderJourney() {
     const t = T[state.lang].journey;
     $('journey').setAttribute('aria-label', t[0]);
-    const step = state.view !== 'briefing' ? 0 : (state.briefing.ended ? 2 : 1);
+    const step = state.view !== 'briefing' ? 0 : (state.briefing.handoffReady || state.briefing.ended ? 2 : 1);
     ['Settings', 'Briefing', 'Wear'].forEach((name, index) => {
       setText(`journey${name}Label`, t[index + 1]);
       if (step === index) $(`journey${name}`).setAttribute('aria-current', 'step');
@@ -1052,6 +1200,7 @@
   function shouldPlayReliefPreview() {
     return state.reliefPreviewStarted
       && state.relief
+      && visitorSettingsAccess().allowed
       && state.view === 'edit'
       && state.settingsStep === 'relief'
       && !document.hidden
@@ -1077,9 +1226,40 @@
     }
   }
 
+  function visitorSettingsAccess(status = state.status) {
+    if (staffResetRequest) return { allowed: false, wait: 'preparing' };
+    if (transport.native && !activeQuest) return { allowed: false, wait: 'preparing' };
+    if (!status) return transport.native
+      ? { allowed: false, wait: 'preparing' }
+      : { allowed: true, legacy: true };
+    if (!status.staffSetup) return { allowed: true, legacy: true };
+    if (!questStatusFresh()) return { allowed: false, wait: 'preparing' };
+    const stage = status.staffSetup.stage;
+    if (stage === 'settings') return { allowed: true };
+    const sameSession = state.sent?.seq > 0
+      && state.sent.targetId === activeQuest
+      && state.sent.portalSessionId === status.portalSessionId;
+    if (sameSession && ['explanation', 'ready', 'handedOff'].includes(stage)) return { allowed: true };
+    return { allowed: false, wait: ['explanation', 'ready', 'handedOff'].includes(stage) ? 'staff' : 'preparing' };
+  }
+
+  function renderTitleEntry() {
+    const access = visitorSettingsAccess();
+    const copy = access.wait === 'staff'
+      ? ['スタッフの確認をお待ちください', 'Please wait for staff confirmation · Attendez la confirmation du personnel']
+      : access.allowed
+        ? ['タップして始める', 'Tap to begin · Touchez pour commencer']
+        : ['準備中', 'Preparing · Préparation en cours'];
+    setText('titleStartMain', copy[0]);
+    setText('titleStartAlt', copy[1]);
+    $('titleStart').disabled = !access.allowed || state.titleTransitioning;
+    $('titleStart').setAttribute('aria-label', `${copy[0]}。${copy[1]}`);
+  }
+
   function renderSettingsStep() {
     const editing = state.view === 'edit';
     const language = state.settingsStep === 'language';
+    const blocked = editing && !visitorSettingsAccess().allowed;
     $('languageStep').hidden = !editing || !language;
     $('languageStep').inert = !editing || !language;
     $('languageStep').setAttribute('aria-hidden', String(!editing || !language));
@@ -1090,11 +1270,15 @@
     $('settingsNextBtn').hidden = !editing || !language;
     $('settingsBackBtn').hidden = !editing || language;
     $('sendBtn').hidden = !editing || language;
+    $('settingsForm').querySelectorAll('input, button').forEach((control) => { control.disabled = blocked; });
+    $('settingsNextBtn').disabled = blocked;
+    $('settingsBackBtn').disabled = blocked;
+    $('sendBtn').disabled = blocked;
     syncReliefPreview();
   }
 
   function setSettingsStep(step, focus = true) {
-    if (step !== 'language' && step !== 'relief') return false;
+    if ((step !== 'language' && step !== 'relief') || !visitorSettingsAccess().allowed) return false;
     state.settingsStep = step;
     if (step === 'relief' && state.relief) state.reliefPreviewStarted = true;
     renderSettingsStep();
@@ -1170,7 +1354,10 @@
   }
 
   function beginFromTitle() {
-    if (state.view !== 'title' || state.titleTransitioning) return;
+    if (state.view !== 'title' || state.titleTransitioning || !visitorSettingsAccess().allowed) {
+      renderTitleEntry();
+      return;
+    }
     enterFullscreen();
     requestWakeLock();
     state.titleTransitioning = true;
@@ -1283,7 +1470,7 @@
     $('itemHeading').textContent = t.item;
     $('resultLanguageLabel').textContent = t.language;
     $('resultReliefLabel').textContent = t.relief;
-    $('connectionText').textContent = t.connection[state.connection];
+    renderConnection();
     $('restartNotice').textContent = t.restarted;
     $('restartNotice').hidden = !state.restartMessage;
     if (state.view === 'title') setSubtitle('', 'title');
@@ -1421,6 +1608,7 @@
       console.warn('briefing failed', error);
       state.briefing.loadState = 'error';
       state.briefing.data = null;
+      if (restoreCandidate && !state.restored) openStaffScreen('startup');
     } finally {
       if (briefingController === controller) briefingController = null;
     }
@@ -1718,18 +1906,25 @@
     const t = T[state.lang].briefing;
     const positions = briefingPositions();
     const position = currentBriefingPosition();
-    const complete = state.briefing.ended;
+    const handoffWaiting = requiresStaffHandoff() && state.briefing.handoffReady && !state.briefing.wearStarted;
+    const wearBlocked = requiresStaffHandoff() && state.briefing.wearStarted
+      && !state.briefing.ended && !wearReadinessConfirmed();
+    const complete = state.briefing.ended || handoffWaiting || wearBlocked;
     const lastCue = position === positions.length - 1;
     $('briefingToggle').textContent = state.briefing.auto ? t.autoOn : t.autoOff;
     $('briefingToggle').setAttribute('aria-label', $('briefingToggle').textContent);
     $('briefingToggle').setAttribute('aria-pressed', String(state.briefing.auto));
     $('briefingToggle').disabled = state.briefing.ended || state.briefing.pauseReasons.size > 0;
     $('briefingToggle').hidden = complete || lastCue;
-    $('briefingPrevious').disabled = position <= 0;
+    $('briefingPrevious').disabled = position <= 0 || atConfirmedWearStart();
     $('briefingPrevious').hidden = complete;
     $('briefingNext').disabled = state.briefing.ended || positions.length === 0;
     $('briefingNext').hidden = complete;
-    $('briefingNext').textContent = lastCue ? T[state.lang].equipment.next : t.next;
+    const returnToStaff = requiresStaffHandoff() && nextBriefingPositionIsWear();
+    const nextLabel = returnToStaff
+      ? { ja: 'スタッフへ返す', en: 'Return to staff', fr: 'Remettre au personnel' }[state.lang]
+      : T[state.lang].equipment.next;
+    $('briefingNext').textContent = returnToStaff || lastCue ? nextLabel : t.next;
     $('briefingNext').setAttribute('aria-label', $('briefingNext').textContent);
     $('briefingReplay').hidden = !complete;
     $('briefingSettings').hidden = false;
@@ -1743,13 +1938,13 @@
     $('briefingMute').setAttribute('aria-label', $('briefingMute').textContent);
     $('briefingMute').setAttribute('aria-pressed', String(state.briefing.muted));
     const failed = state.briefing.mediaFailed || state.briefing.imageFailed || state.briefing.doctorFailed;
-    const pauseReason = ['staff', 'hidden', 'native', 'offline'].find(reason => state.briefing.pauseReasons.has(reason));
+    const pauseReason = ['staff', 'hidden', 'native', 'offline', 'equipment'].find(reason => state.briefing.pauseReasons.has(reason));
     const guide = state.briefing.auto ? m.automatic : m.manual;
     const noAudio = !hasMedia ? m.noAudio : '';
     const pauseCopy = pauseReason === 'native' || pauseReason === 'hidden' ? m.background : m[pauseReason];
     const message = state.briefing.mediaFailed ? m.failed
       : (state.briefing.imageFailed || state.briefing.doctorFailed ? m.image
-        : (pauseReason ? pauseCopy : noAudio + guide));
+        : (pauseReason ? pauseCopy : (state.briefing.mediaPaused ? m.resumeRequired : noAudio + guide)));
     $('mediaNotice').hidden = complete || state.view !== 'briefing';
     setText('mediaMessage', message);
     setText('mediaRetry', failed ? m.retry : m.resume);
@@ -1768,10 +1963,89 @@
     return { title: scene.title[state.lang], caption: scene.caption[state.lang] };
   }
 
+  function requiresStaffHandoff(status = state.status) {
+    return !state.staffPreview && Boolean(status?.staffSetup);
+  }
+
+  function wearSceneIndex() {
+    return state.briefing.data?.scenes.findIndex(scene => scene.id === 'wear') ?? -1;
+  }
+
+  function nextBriefingPositionIsWear() {
+    const positions = briefingPositions();
+    const next = positions[currentBriefingPosition() + 1];
+    return currentBriefingScene()?.id !== 'wear'
+      && next != null && state.briefing.data.scenes[next.sceneIndex]?.id === 'wear';
+  }
+
+  function atConfirmedWearStart() {
+    return requiresStaffHandoff() && state.briefing.wearStarted
+      && currentBriefingScene()?.id === 'wear' && state.briefing.cueIndex === 0;
+  }
+
+  function wearReadinessConfirmed(status = state.status) {
+    const setup = status?.staffSetup;
+    return requiresStaffHandoff(status)
+      && state.briefing.handoffReady
+      && resultKey() === 'applied'
+      && preparationAcknowledged(status)
+      && questStatusFresh()
+      && setup.stage === 'handedOff'
+      && setup.positionConfirmed === true
+      && !setup.reason;
+  }
+
+  function advanceToWearIfReady(status = state.status, resumeExplicitly = false) {
+    if (state.briefing.wearStarted || state.briefing.ended || !wearReadinessConfirmed(status)) return false;
+    const sceneIndex = wearSceneIndex();
+    if (sceneIndex < 0) return false;
+    state.briefing.wearStarted = true;
+    state.briefing.sceneIndex = sceneIndex;
+    state.briefing.cueIndex = 0;
+    // Questが装着へ進む確認を受理した。スタッフ画面を閉じて来場者の画面へ戻し、
+    // 装着案内をそのまま再生する。再読み込みからの復元だけは明示の再生を待つ。
+    if (!resumeExplicitly && $('staff').open) closeStaffScreen();
+    if ($('staff').open) state.briefing.pauseReasons.add('staff');
+    const temporaryPause = resumeExplicitly && state.briefing.pauseReasons.size === 0;
+    if (temporaryPause) state.briefing.pauseReasons.add('native');
+    configureBriefingMedia(currentBriefingScene());
+    beginBriefingCue();
+    if (temporaryPause) state.briefing.pauseReasons.delete('native');
+    if (resumeExplicitly || state.briefing.pauseReasons.size > 0) {
+      state.briefing.mediaPaused = Boolean(briefingMedia);
+      renderBriefingControls();
+    }
+    return true;
+  }
+
+  function syncWearReadiness(status = state.status) {
+    if (!requiresStaffHandoff(status) || !state.briefing.wearStarted || state.briefing.ended) {
+      if (state.briefing.pauseReasons.has('equipment')) setBriefingPause('equipment', false);
+      return;
+    }
+    const paused = !wearReadinessConfirmed(status);
+    if (state.briefing.pauseReasons.has('equipment') === paused) return;
+    setBriefingPause('equipment', paused);
+  }
+
+  function canShowEquipmentGuidance(status = state.status) {
+    if (state.staffPreview || !status?.staffSetup) return state.briefing.ended;
+    return state.briefing.ended && wearReadinessConfirmed(status);
+  }
+
+  function visitorEquipmentStatus() {
+    const copy = T[state.lang].equipment;
+    if (state.connection !== 'online' || !questStatusFresh()) return copy.recovery;
+    return state.status?.staffSetup?.reason ? copy.interrupted : copy.waiting;
+  }
+
   function renderBriefingScene() {
     const scene = currentBriefingScene();
     if (!scene) return;
-    const equipment = state.briefing.ended;
+    const handoffWaiting = requiresStaffHandoff() && state.briefing.handoffReady && !state.briefing.wearStarted;
+    const wearBlocked = requiresStaffHandoff() && state.briefing.wearStarted
+      && !state.briefing.ended && !wearReadinessConfirmed();
+    const equipment = state.briefing.ended || handoffWaiting || wearBlocked;
     document.querySelector('.stage').classList.toggle('is-equipment', equipment);
     $('equipmentGuide').hidden = !equipment;
     $('briefingProgress').hidden = equipment;
@@ -1779,37 +2053,44 @@
     $('briefingCueNumber').hidden = equipment;
     if (equipment) {
       const copy = T[state.lang].equipment;
+      const showGuidance = canShowEquipmentGuidance();
       document.querySelector('.stage').classList.remove('is-doctor-only');
       document.querySelector('.briefing-visual').hidden = true;
       setText('briefingChapterNumber', '03');
       setText('briefingEyebrow', T[state.lang].journey[3]);
-      setText('briefingTitle', copy.title);
+      setText('briefingTitle', showGuidance ? copy.title : copy.handoff);
       setText('equipmentQuest', copy.quest);
       setText('equipmentHeadphones', copy.headphones);
       setText('equipmentController', copy.controller);
-      setText('equipmentFollowup', copy.followup);
-      $('briefingSettings').textContent = state.staffPreview ? '来場者の画面に戻る' : T[state.lang].briefing.settings;
+      $('equipmentSteps').hidden = !showGuidance;
+      setText('equipmentFollowup', showGuidance ? copy.followup : copy.handoffDetail);
+      setText('equipmentStaffStatus', showGuidance ? '' : visitorEquipmentStatus());
+      $('briefingSettings').textContent = state.staffPreview ? 'スタッフ画面に戻る' : T[state.lang].briefing.settings;
       $('briefingMode').hidden = !state.staffPreview;
       $('briefingAdvanceHint').textContent = '';
-      document.title = `廻リ視 — ${copy.title}`;
+      document.title = `廻リ視 — ${showGuidance ? copy.title : copy.handoff}`;
       renderJourney();
       renderBriefingControls();
       return;
     }
     $('briefingAdvanceHint').textContent = T[state.lang].briefing.advance;
     const t = T[state.lang].briefing;
-    const sceneTotal = state.briefing.data.scenes.length;
+    const wearIndex = state.briefing.data.scenes.findIndex(item => item.id === 'wear');
+    const splitProgress = requiresStaffHandoff() && wearIndex > 0;
+    const phaseStart = splitProgress && state.briefing.wearStarted ? wearIndex : 0;
+    const phaseEnd = splitProgress && !state.briefing.wearStarted ? wearIndex : state.briefing.data.scenes.length;
+    const sceneTotal = phaseEnd - phaseStart;
     const cues = scene.cues[state.lang];
-    const positions = briefingPositions();
-    const position = currentBriefingPosition();
+    const positions = briefingPositions().filter(item => item.sceneIndex >= phaseStart && item.sceneIndex < phaseEnd);
+    const position = positions.findIndex(item => item.sceneIndex === state.briefing.sceneIndex && item.cueIndex === state.briefing.cueIndex);
     const presentation = briefingPresentation(scene);
-    setText('briefingChapterNumber', `${String(state.briefing.sceneIndex + 1).padStart(2, '0')} / ${String(sceneTotal).padStart(2, '0')}`);
+    setText('briefingChapterNumber', `${String(state.briefing.sceneIndex - phaseStart + 1).padStart(2, '0')} / ${String(sceneTotal).padStart(2, '0')}`);
     setText('briefingEyebrow', scene.eyebrow[state.lang]);
     setText('briefingCueNumber', `${state.lang === 'ja' ? '文 ' : state.lang === 'fr' ? 'Phrase ' : 'Sentence '}${state.briefing.cueIndex + 1} / ${cues.length}`);
     setText('briefingTitle', presentation.title);
     setText('briefingCaption', presentation.caption);
     $('briefingMode').hidden = !state.staffPreview;
-    $('briefingSettings').textContent = state.staffPreview ? '来場者の画面に戻る' : t.settings;
+    $('briefingSettings').textContent = state.staffPreview ? 'スタッフ画面に戻る' : t.settings;
     document.title = `廻リ視 — ${presentation.title}`;
     $('briefingRole').textContent = t.role;
     $('briefingIntroText').textContent = scene.caption[state.lang];
@@ -1872,11 +2153,15 @@
       state.briefing.imageFailed = false;
       $('referenceFallback').hidden = true;
     }
-    const progressPrefix = state.lang === 'ja' ? '説明 ' : state.lang === 'fr' ? 'Explication ' : 'Briefing ';
+    const progressPrefix = splitProgress && state.briefing.wearStarted
+      ? ({ ja: '装着案内 ', en: 'Equipment ', fr: 'Équipement ' })[state.lang]
+      : state.lang === 'ja' ? '説明 ' : state.lang === 'fr' ? 'Explication ' : 'Briefing ';
     $('sceneCounter').textContent = `${progressPrefix}${String(position + 1).padStart(2, '0')} / ${String(positions.length).padStart(2, '0')}`;
     $('sceneProgress').max = Math.max(1, positions.length);
     $('sceneProgress').value = state.briefing.ended ? positions.length : position + 1;
-    $('sceneProgress').setAttribute('aria-label', t.progress);
+    $('sceneProgress').setAttribute('aria-label', splitProgress && state.briefing.wearStarted
+      ? ({ ja: '装着案内の進み具合', en: 'Equipment progress', fr: 'Progression de l’équipement' })[state.lang]
+      : t.progress);
     renderBriefingControls();
   }
 
@@ -1912,9 +2197,24 @@
     }, reducedMotion.matches ? 0 : 600);
   }
 
+  function waitForStaffHandoff() {
+    setBriefingAuto(false);
+    stopBriefingMediaWindow();
+    state.briefing.handoffReady = true;
+    state.briefing.wearStarted = false;
+    renderBriefingScene();
+    $('subtitleAnnouncement').textContent = '';
+    $('briefingTitle').focus({ preventScroll: true });
+    saveBriefingProgress();
+    void pulse();
+    // 来場者が説明を終えてタブレットを返す。スタッフ画面の「確認」から始める。
+    openStaffScreen('handback');
+  }
+
   function moveBriefing(delta, source = 'control') {
     if (state.view !== 'briefing' || !state.briefing.data || state.briefing.ended || delta === 0) return false;
     const direction = delta < 0 ? -1 : 1;
+    if (direction < 0 && atConfirmedWearStart()) return false;
     const userMove = source !== 'auto' && source !== 'queued';
     if (state.briefing.chapterChanging && userMove) {
       if (!state.briefing.pendingMove) state.briefing.pendingMove = direction;
@@ -1934,6 +2234,12 @@
       return true;
     }
     const next = positions[target];
+    if (direction > 0 && requiresStaffHandoff()
+      && !state.briefing.wearStarted
+      && state.briefing.data.scenes[next.sceneIndex]?.id === 'wear') {
+      waitForStaffHandoff();
+      return true;
+    }
     const changedChapter = next.sceneIndex !== state.briefing.sceneIndex;
     const update = () => {
       state.briefing.sceneIndex = next.sceneIndex;
@@ -1952,6 +2258,12 @@
   }
 
   function finishBriefing() {
+    const scene = currentBriefingScene();
+    if (requiresStaffHandoff()
+      && (scene?.id !== 'wear' || state.briefing.cueIndex !== scene.cues[state.lang].length - 1)) {
+      waitForStaffHandoff();
+      return;
+    }
     setBriefingAuto(false);
     stopBriefingMediaWindow();
     state.briefing.ended = true;
@@ -1961,9 +2273,11 @@
     $('subtitleAnnouncement').textContent = '';
     $('briefingTitle').focus({ preventScroll: true });
     saveBriefingProgress();
+    void pulse();
   }
 
   function stopBriefingPlayback() {
+    staffConfirmationRequested = false;
     clearBriefingTimer();
     clearBriefingMediaTimer();
     if (chapterTimer) clearTimeout(chapterTimer);
@@ -1973,6 +2287,8 @@
     state.briefing.pauseReasons.clear();
     state.briefing.sceneIndex = 0;
     state.briefing.cueIndex = 0;
+    state.briefing.handoffReady = false;
+    state.briefing.wearStarted = false;
     state.briefing.ended = false;
     state.briefing.auto = false;
     state.briefing.mediaFailed = false;
@@ -1999,6 +2315,7 @@
         stopBriefingPlayback();
         setSurface('title', $('titleStart'));
         render();
+        openStaffScreen('preview');
         return;
       }
       state.ui = 'idle';
@@ -2007,6 +2324,7 @@
       setFormDisabled(false);
       setSurface('edit', document.querySelector(`input[name="lang"][value="${state.lang}"]`));
       render();
+      if (state.sent?.seq > 0) void pulse();
     });
   }
 
@@ -2074,18 +2392,20 @@
   function renderResult() {
     const t = T[state.lang];
     const key = resultKey();
+    const settingsAllowed = visitorSettingsAccess().allowed;
+    const staleApplied = key === 'applied' && !questStatusFresh();
     const briefingBlocked = key === 'applied' && state.briefing.loadState !== 'ready';
     const copy = briefingBlocked
       ? t.briefing[state.briefing.loadState === 'error' ? 'error' : 'loading']
       : t.post[key];
-    const actual = state.connection === 'online' ? state.status : null;
+    const actual = questStatusFresh() ? state.status : null;
     const selected = key === 'confirm' || !state.sent
       ? { lang: state.lang, relief: state.relief }
       : state.sent;
     const glyph = briefingBlocked
       ? (state.briefing.loadState === 'error' ? '×' : '…')
       : { confirm: '→', sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', conflict: '!', noserver: '?' }[key];
-    const tone = briefingBlocked
+    const tone = staleApplied ? 'wait' : briefingBlocked
       ? (state.briefing.loadState === 'error' ? 'error' : 'wait')
       : (key === 'applied' ? 'ok' : (key === 'fail' || key === 'conflict' || key === 'noserver' ? 'error' : 'wait'));
     $('resultView').dataset.tone = tone;
@@ -2093,89 +2413,651 @@
     const appliedTitle = activeQuest && key === 'applied' && !briefingBlocked
       ? ({ ja: `${headsetName()}に反映しました`, en: `Applied to ${headsetName()}`, fr: `Réglages appliqués au ${headsetName()}` })[state.lang]
       : copy[0];
-    setText('resultTitle', appliedTitle);
-    setText('resultDetail', copy[1]);
+    setText('resultTitle', staleApplied ? ({ ja: 'Quest の復帰・更新待ち', en: 'Waiting for Quest to resume', fr: 'En attente du réveil du Quest' })[state.lang] : appliedTitle);
+    setText('resultDetail', staleApplied ? ({ ja: '設定の反映は確認済みです。博士の説明は続けられます。Quest の復帰後に機器を再確認します。', en: 'Your settings were applied. You can continue the briefing. Equipment will be checked again when Quest resumes.', fr: 'Les réglages ont été appliqués. Vous pouvez poursuivre les explications. Le matériel sera vérifié au réveil du Quest.' })[state.lang] : copy[1]);
     $('selectedLanguage').textContent = LANG_NAME[selected.lang];
     $('selectedRelief').textContent = selected.relief ? t.reliefOn : t.reliefOff;
     $('headsetLanguage').textContent = actual && actual.lang ? (LANG_NAME[actual.lang] || actual.lang) : '—';
     $('headsetRelief').textContent = actual && typeof actual.relief === 'boolean' ? (actual.relief ? t.reliefOn : t.reliefOff) : '—';
     $('applyBtn').hidden = key !== 'confirm';
+    $('applyBtn').disabled = key === 'confirm' && !settingsAllowed;
     $('retryBtn').hidden = key !== 'fail';
     $('briefingRetryBtn').hidden = !(key === 'applied' && state.briefing.loadState === 'error');
     $('resultContinueBtn').hidden = briefingBlocked || key !== 'applied';
     $('editBtn').hidden = key === 'sending';
-    $('headsetHeading').textContent = key === 'applied' ? t.headsetConfirmed : t.headsetCurrent;
-    document.querySelector('.stage').classList.toggle('is-result-ready', !briefingBlocked && key === 'applied');
+    $('headsetHeading').textContent = key === 'applied' && !staleApplied ? t.headsetConfirmed : t.headsetCurrent;
+    document.querySelector('.stage').classList.toggle('is-result-ready', !staleApplied && !briefingBlocked && key === 'applied');
     setFormDisabled(key === 'sending');
     const speechKey = briefingBlocked ? state.briefing.loadState : key;
     setSubtitle(t.postSpeech[speechKey], `result:${state.lang}:${speechKey}`);
   }
 
   function renderConnection() {
-    $('staffToggle').dataset.state = state.connection;
+    const connection = state.connection === 'online' && !questStatusFresh() ? 'checking' : state.connection;
+    $('staffToggle').dataset.state = connection;
     const name = activeQuest ? `${headsetName()} · ` : '';
-    setText('connectionText', name + T[state.lang].connection[state.connection]);
+    setText('connectionText', name + (state.connection === 'online' && !questStatusFresh()
+      ? ({ ja: 'Quest の復帰・更新待ち', en: 'Waiting for Quest to resume', fr: 'En attente du réveil du Quest' })[state.lang]
+      : T[state.lang].connection[connection]));
+    renderTitleEntry();
   }
 
   function targetChangeLocked() {
-    return state.ui === 'sending' || state.clearing || Boolean(state.sent?.seq > 0 || state.status?.pending);
+    return state.ui === 'sending' || state.clearing || Boolean(staffResetRequest || staffConfirmationRequested || state.sent?.seq > 0 || state.status?.pending);
   }
 
-  function renderStaff() {
+  // スタッフ画面。タブレットのホームで、来場者が使う間だけ来場者の画面へ切り替える。
+  // 状態は Quest の /status とこのタブレットの進行から staffScreenState が決め、描画はその結果だけを見る。
+  const STAFF_STEP = { unselected: 1, legacy: 1, setup: 1, alignment: 1, prepare: 1, handover: 1,
+    visitorActive: 2, confirm: 3, wear: 3, playing: 4, outro: 4, finished: 5 };
+  const STAFF_MARK = { ok: '●', wait: '…', trouble: '✕', none: '', plain: '' };
+  const STAFF_CAMERA_IDS = ['A', 'B', 'C'];
+  const STAFF_CAMERA_PROBLEMS = {
+    nostream: { value: '映像が届いていません', fix: (id) => `スマホ ${id} の FixedCam Streamer を開き、Wi-Fi を確かめる` },
+    stale: { value: '映像が止まっています', fix: (id) => `スマホ ${id} の FixedCam Streamer を開き直す` },
+    identity: { value: 'どのカメラか確認できません', fix: (id) => `スマホ ${id} で FixedCam Streamer を使っているか確かめる` },
+    wrongcam: { value: '別のカメラが映っています', fix: (id) => `スマホ ${id} の FixedCam Streamer でカメラを ${id} にする` },
+    wrongshow: { value: '別の作品の設定です', fix: (id) => `スマホ ${id} の FixedCam Streamer の作品設定を確かめる` },
+  };
+  // 来場者の画面へ戻るボタンを出さない状態。主操作が同じ役目を持つか、来場者の画面に意味が無い。
+  const STAFF_NO_RETURN = new Set(['unselected', 'legacy', 'prepare', 'handover', 'visitorActive', 'playing', 'outro', 'finished']);
+  const LEGACY_END_SETTLE_MS = 8000;
+  const QUEST_TROUBLE_CALL_MS = 6000;
+  const PREPARE_HOLD_MS = 1200;
+  const RESTART_HOLD_MS = 1500;
+  let staffNotice = { key: '', text: '' };
+  let staffOpenReason = '';
+  let staffCycleStep = 1;
+  let staffRetrying = false;
+  let lastStaffStage = '';
+  let legacyEndSince = 0;
+  let questTroubleSince = 0;
+  let staffAction = Promise.resolve();
+  let prepareHold = null;
+  let restartHold = null;
+
+  function staffStageOf(setup) {
+    const stage = typeof setup?.stage === 'string' ? setup.stage : '';
+    // 旧 Quest の devices は、新しい setup（初回の位置合わせ前）と同じに扱う。
+    return stage === 'devices' ? 'setup' : stage;
+  }
+
+  function staffScreenState(input) {
+    if (input.native && !input.quest) return 'unselected';
+    if (input.connection === 'offline') return 'offline';
+    if (input.connection !== 'online' || !input.status) return 'checking';
+    const setup = isRecord(input.status.staffSetup) ? input.status.staffSetup : null;
+    if (!setup) return 'legacy';
+    if (!input.fresh) return 'asleep';
+    if (input.resetPending) return 'prepare';
+    const stage = staffStageOf(setup);
+    const run = isRecord(setup.run) ? setup.run : null;
+    if (stage === 'playing' || stage === 'ended') {
+      if (run) return stage === 'playing' ? 'playing' : (run.outro === 'done' ? 'finished' : 'outro');
+      // run の無い旧 Quest は phase の END から一定時間で終わりの演出が済んだとみなす。
+      if (stage === 'playing' && input.status.phase !== 'END') return 'playing';
+      return input.legacyEndElapsedMs >= LEGACY_END_SETTLE_MS ? 'finished' : 'outro';
+    }
+    if (stage === 'setup') {
+      // 旧 Quest は位置合わせ後のカメラ断も devices で返す。来場者の進行中は進行の画面を保ち、異常は機器の一覧に出す。
+      if (!(input.visitorFlow && setup.positionConfirmed === true)) return 'setup';
+    } else if (stage === 'alignment') return 'alignment';
+    else if (stage === 'reset') return 'prepare';
+    else if (!['settings', 'explanation', 'ready', 'handedOff'].includes(stage)) return 'unknown';
+    if (input.wearStarted || stage === 'handedOff' && input.acknowledged) return 'wear';
+    if (input.handback || stage === 'ready' || stage === 'handedOff') return 'confirm';
+    if (input.visitorFlow) return 'visitorActive';
+    return stage === 'settings' ? 'handover' : 'visitorActive';
+  }
+
+  function staffCycleStepFor(key, previous = 1) {
+    // 通信の状態だけでは一巡のどこにいるか分からない。直前の段を保つ。
+    return STAFF_STEP[key] ?? previous ?? 1;
+  }
+
+  function staffCameraRow(camera) {
+    if (!isRecord(camera)) return { tone: 'none', value: '—', fix: '' };
+    if (camera.state === 'ok') return { tone: 'ok', value: '映っています', fix: '' };
+    if (camera.state === 'checking') return { tone: 'wait', value: '確認しています', fix: '' };
+    if (camera.state !== 'trouble') return { tone: 'none', value: '—', fix: '' };
+    const problem = STAFF_CAMERA_PROBLEMS[camera.problem];
+    return problem
+      ? { tone: 'trouble', value: problem.value, fix: problem.fix(camera.id) }
+      : { tone: 'trouble', value: '映像を確認できません', fix: `スマホ ${camera.id} の FixedCam Streamer を確かめる` };
+  }
+
+  function staffCameraOf(setup, id) {
+    return Array.isArray(setup?.cameras) ? setup.cameras.find((camera) => isRecord(camera) && camera.id === id) : undefined;
+  }
+
+  function staffContentMissing(setup) {
+    return setup?.content === false || setup?.content == null && setup?.reason === 'content';
+  }
+
+  function staffDeviceRows(input) {
+    const status = input.status;
+    const setup = isRecord(status?.staffSetup) ? status.staffSetup : null;
+    // 止まった Quest の値は古い。緑を出さないため、クエスト以外は「—」に戻す。
+    const live = input.connection === 'online' && Boolean(status) && input.fresh;
+    const empty = { tone: 'none', value: '—', fix: '' };
+    let quest = { tone: 'ok', value: '動作中', fix: '' };
+    if (input.native && !input.quest) quest = empty;
+    else if (input.connection === 'offline') quest = { tone: 'trouble', value: '接続できません', fix: '電源と『廻リ視』の起動を確かめる' };
+    else if (input.connection !== 'online' || !status) quest = { tone: 'wait', value: '確認しています', fix: '' };
+    else if (!input.fresh) quest = Number.isInteger(status.questTick)
+      ? { tone: 'wait', value: '休止しています', fix: 'ヘッドセット側面の電源ボタンを 1 回押す' }
+      : { tone: 'wait', value: '応答しています', fix: '' };
+    const rows = [{ id: 'Quest', ...quest }];
+    let position = empty;
+    if (live && setup) {
+      const fix = 'ヘッドセットを被る。右トリガーを 2 秒押し続ける';
+      const value = typeof setup.position === 'string' && setup.position ? setup.position
+        : setup.positionConfirmed === true ? 'confirmed' : staffStageOf(setup) === 'alignment' ? 'recenter' : 'needed';
+      position = {
+        confirmed: { tone: 'ok', value: '済み', fix: '' },
+        needed: { tone: 'wait', value: 'まだです', fix },
+        recenter: { tone: 'trouble', value: 'やり直しが必要です', fix },
+        aligning: { tone: 'wait', value: '位置合わせ中', fix: '' },
+      }[value] || empty;
+    }
+    rows.push({ id: 'Position', ...position });
+    for (const id of STAFF_CAMERA_IDS) {
+      const camera = live ? staffCameraOf(setup, id) : undefined;
+      rows.push({ id: `Camera${id}`, ...(camera ? staffCameraRow(camera) : empty) });
+    }
+    const contentMissing = live && Boolean(setup) && staffContentMissing(setup);
+    rows.push({ id: 'Content', hidden: !contentMissing,
+      ...(contentMissing ? { tone: 'trouble', value: '読み込めていません', fix: 'クエストで『廻リ視』を起動し直す' } : empty) });
+    return rows;
+  }
+
+  function staffConfirmItems(input) {
+    const setup = isRecord(input.setup) ? input.setup : {};
+    const items = [
+      input.applied ? { tone: 'ok', text: `言語：${LANG_NAME[input.lang] || input.lang}` } : { tone: 'trouble', text: '言語：反映を確認できません' },
+      input.applied ? { tone: 'ok', text: `ホラー軽減：${input.relief ? 'あり' : 'なし'}` } : { tone: 'trouble', text: 'ホラー軽減：反映を確認できません' },
+    ];
+    if (Array.isArray(setup.cameras)) {
+      const notReady = STAFF_CAMERA_IDS
+        .map((id) => ({ id, camera: staffCameraOf(setup, id) }))
+        .filter(({ camera }) => camera?.state !== 'ok');
+      if (notReady.length === 0) items.push({ tone: 'ok', text: 'カメラ A・B・C' });
+      else {
+        const detail = notReady.length === 1 && notReady[0].camera
+          ? staffCameraRow(notReady[0].camera).value : '映像を確認できません';
+        items.push({ tone: notReady.every(({ camera }) => camera?.state === 'checking') ? 'wait' : 'trouble',
+          text: `カメラ ${notReady.map(({ id }) => id).join('・')}：${detail === '—' ? '映像を確認できません' : detail}` });
+      }
+    } else {
+      items.push(setup.reason === 'camera' ? { tone: 'trouble', text: 'カメラ：映像を確認できません' } : { tone: 'ok', text: 'カメラ A・B・C' });
+    }
+    const positionOk = setup.positionConfirmed === true && setup.reason !== 'position'
+      && (setup.position == null || setup.position === 'confirmed');
+    items.push(positionOk ? { tone: 'ok', text: '位置合わせ' }
+      : { tone: 'trouble', text: `位置合わせ：${setup.position === 'aligning' ? '位置合わせ中' : setup.position === 'needed' ? 'まだです' : 'やり直しが必要です'}` });
+    if (staffContentMissing(setup)) items.push({ tone: 'trouble', text: '体験の素材：読み込めていません' });
+    if (!input.briefingDone) items.push({ tone: 'wait', text: '博士の説明：まだ終わっていません' });
+    return { items, ready: items.every((item) => item.tone === 'ok') };
+  }
+
+  function staffRunMeta(setup, phase) {
+    const run = isRecord(setup?.run) ? setup.run : null;
+    const runPhase = typeof run?.phase === 'string' && run.phase ? run.phase : phase;
+    let part = '';
+    if (runPhase === 'INTRO') part = '導入';
+    else if (runPhase === 'RUN' && run && Number.isInteger(run.lap) && Number.isInteger(run.laps) && run.lap >= 1) {
+      if (run.lap <= run.laps) part = `${run.lap} 周目`;
+      else if (run.lap === run.laps + 1) part = '最後の区間';
+    }
+    const elapsed = run && Number.isFinite(run.sec) && run.sec >= 0
+      ? `${Math.floor(run.sec / 60)}:${String(Math.floor(run.sec) % 60).padStart(2, '0')}` : '';
+    return [part, elapsed].filter(Boolean).join(' · ');
+  }
+
+  function staffEndingText(setup) {
+    return { released: '結末：帰還', trapped: '結末：人形' }[setup?.run?.ending] || '';
+  }
+
+  function visitorFlowActive() {
+    return !state.staffPreview && (state.view !== 'title' || state.sent?.seq > 0 || state.ui === 'sending');
+  }
+
+  function currentSendMatchesSession() {
+    return state.sent?.seq > 0 && state.sent.targetId === activeQuest
+      && state.sent.portalSessionId === state.status?.portalSessionId;
+  }
+
+  function staffSnapshot() {
+    const status = state.status;
+    return {
+      native: Boolean(transport.native),
+      quest: activeQuest,
+      connection: state.connection,
+      status,
+      fresh: questStatusFresh(),
+      resetPending: Boolean(staffResetRequest),
+      visitorFlow: visitorFlowActive(),
+      handback: !state.staffPreview && state.view === 'briefing' && state.briefing.handoffReady && currentSendMatchesSession(),
+      wearStarted: !state.staffPreview && state.view === 'briefing' && state.briefing.wearStarted,
+      acknowledged: Boolean(status) && preparationAcknowledged(status),
+      legacyEndElapsedMs: legacyEndSince > 0 ? Date.now() - legacyEndSince : 0,
+    };
+  }
+
+  function staffResetAllowed() {
+    const status = state.status;
+    const setup = isRecord(status?.staffSetup) ? status.staffSetup : null;
+    if (staffResetRequest || state.staffPreview || state.ui === 'sending' || state.connection !== 'online'
+      || !questStatusFresh() || !setup || setup.positionConfirmed !== true) return false;
+    const stage = staffStageOf(setup);
+    if (stage === 'setup' || stage === 'alignment') return false;
+    // 本編中はタブレットからリセットを出さない（Quest も拒否する）。旧 Quest は phase の END で終了を知る。
+    if (stage === 'playing') return !isRecord(setup.run) && status.phase === 'END';
+    if (stage === 'ended') return !isRecord(setup.run) || setup.run.outro === 'done';
+    return true;
+  }
+
+  function staffConfirmInput() {
+    return {
+      applied: questStatusFresh() && resultKey() === 'applied' && currentSendMatchesSession(),
+      lang: state.status?.lang,
+      relief: state.status?.relief,
+      setup: state.status?.staffSetup,
+      briefingDone: !state.staffPreview && state.view === 'briefing' && state.briefing.handoffReady,
+    };
+  }
+
+  function staffPreparationReady() {
+    return !state.staffPreview && questStatusFresh() && state.briefing.handoffReady && currentSendMatchesSession()
+      && resultKey() === 'applied' && isRecord(state.status?.staffSetup)
+      && staffConfirmItems(staffConfirmInput()).ready;
+  }
+
+  function visitorProgressText() {
+    if (state.view === 'edit') return '設定を選んでいます';
+    if (state.view === 'result') return state.ui === 'sending' ? '設定を反映しています' : '設定を確かめています';
+    if (state.view === 'briefing') {
+      if (state.briefing.handoffReady) return '説明が終わりました';
+      const wearIndex = wearSceneIndex();
+      const positions = briefingPositions().filter((item) => wearIndex < 0 || item.sceneIndex < wearIndex);
+      const index = positions.findIndex((item) => item.sceneIndex === state.briefing.sceneIndex
+        && item.cueIndex === state.briefing.cueIndex);
+      return index >= 0 ? `説明 ${index + 1} / ${positions.length}` : '説明を見ています';
+    }
+    return 'タイトルを表示しています';
+  }
+
+  function visitorProgressItems() {
+    const applied = questStatusFresh() && resultKey() === 'applied' && currentSendMatchesSession();
+    return [
+      { tone: applied ? 'ok' : 'plain', text: applied ? `言語：${LANG_NAME[state.status.lang]}` : '言語：まだ反映していません' },
+      { tone: applied ? 'ok' : 'plain', text: applied ? `ホラー軽減：${state.status.relief ? 'あり' : 'なし'}` : 'ホラー軽減：まだ反映していません' },
+      { tone: 'plain', text: visitorProgressText() },
+    ];
+  }
+
+  function staffNowCopy(key, snapshot) {
+    const setup = isRecord(state.status?.staffSetup) ? state.status.staffSetup : null;
+    const plain = (text) => ({ tone: 'plain', text });
+    switch (key) {
+      case 'unselected':
+        return { title: 'このタブレットで使うクエストを選ぶ', body: '本体のラベル（α または β）を見て選んでください。' };
+      case 'checking':
+        return { title: 'クエストの応答を確認しています', body: '数秒で結果が出ます。' };
+      case 'offline':
+        return { title: 'クエストに接続できません', items: [
+          plain('クエストの電源が入っている'),
+          plain('クエストで『廻リ視』を起動している'),
+          plain('タブレットとクエストが同じ会場 Wi-Fi につながっている'),
+        ], actions: { retry: true } };
+      case 'asleep': {
+        const items = [];
+        if (staffResetRequest) items.push({ tone: 'wait', text: '準備の要求を保っています。起きると続けます。' });
+        else if (staffConfirmationRequested && !snapshot.acknowledged) items.push({ tone: 'wait', text: '装着へ進む確認を保っています。起きると続けます。' });
+        return { title: 'ヘッドセットが休止しています',
+          body: 'ヘッドセット側面の電源ボタンを 1 回押してください。数秒で画面が変わります。', items,
+          note: '台に置いて約 15 秒たつと休止します。クエストの設定で自動スリープを長くすると止まりにくくなります。' };
+      }
+      case 'legacy':
+        return { title: '古い版のクエストです',
+          body: '準備と確認はヘッドセットの画面で行います。終わったら来場者の画面に切り替えてから渡してください。',
+          actions: { visitor: snapshot.visitorFlow ? '来場者の画面に戻る' : '来場者の画面にする' } };
+      case 'unknown':
+        return { title: 'クエストの状態を読み取れません', body: 'クエストとタブレットのアプリの版をそろえてください。' };
+      case 'setup':
+        return { title: 'ヘッドセットで最初の準備',
+          body: 'ヘッドセットを被って右コントローラーを持ちます。右トリガーを 2 秒押して位置合わせを始めます。機器の接続待ちでも始められます。',
+          note: 'そろうとこの画面が次へ進みます。' };
+      case 'alignment':
+        return { title: '位置合わせをやり直してください',
+          body: 'ヘッドセットの位置の基準が変わりました。ヘッドセットを被ってください。右トリガーを 2 秒押し続けて位置合わせを開きます。' };
+      case 'prepare':
+        return { title: '次の体験者の準備',
+          body: snapshot.resetPending ? '準備しています…' : 'ヘッドセットとコントローラーを台に置きます。下のボタンを押します。',
+          actions: { reset: '準備を始める' } };
+      case 'handover':
+        return { title: 'タブレットを来場者に渡す',
+          body: '準備ができました。来場者の画面に切り替えてから渡してください。言語とホラー軽減は来場者が選びます。',
+          actions: { visitor: '来場者の画面にする' } };
+      case 'visitorActive':
+        return { title: '来場者が設定と説明を見ています', items: visitorProgressItems(),
+          actions: { visitor: '来場者の画面に戻る', restart: true } };
+      case 'confirm': {
+        const confirm = staffConfirmItems(staffConfirmInput());
+        const waiting = staffConfirmationRequested && !snapshot.acknowledged;
+        return { title: '装着の前に確認', items: confirm.items,
+          body: waiting ? 'クエストの確認を待っています。' : confirm.ready ? '項目を確かめたら下のボタンを長押しします。' : '各項目に ● がつくと進めます。',
+          actions: { prepare: true, restart: true } };
+      }
+      case 'wear':
+        return { title: '装着を手伝う', items: [
+          plain('左手にコントローラーを持ってもらう'),
+          plain('ヘッドセットを被ってもらう'),
+          plain('ヘッドフォンを付ける'),
+          plain('ヘッドセットの中の案内に従います。体験者が X か Y を押して始めます'),
+        ] };
+      case 'playing':
+        return { title: '体験中', meta: staffRunMeta(setup, state.status?.phase),
+          body: '中止するとき：ヘッドセットを外すのを手伝います。右コントローラーの A を 2 秒押し続けます。' };
+      case 'outro':
+        return { title: '終わりの演出中です', body: '演出が終わるまで待ってください。まだヘッドセットは外しません。' };
+      case 'finished':
+        return { title: '体験が終わりました',
+          body: 'ヘッドセットを外すのを手伝ってください。ヘッドセット・ヘッドフォン・左コントローラーを拭いて台に置きます。その後に次へ進みます。',
+          note: staffEndingText(setup), actions: { reset: '次の体験者の準備を始める' } };
+      default:
+        return { title: 'クエストの応答を確認しています' };
+    }
+  }
+
+  function setStaffNotice(key, text) {
+    staffNotice = { key, text };
+  }
+
+  function observeStaffResetResult() {
+    if (!staffResetRequest || !state.status) return '';
+    if (state.status.staffResetId === staffResetRequest.id
+      && state.status.portalSessionId !== staffResetRequest.portalSessionId) {
+      staffResetRequest = null;
+      return 'done';
+    }
+    if (state.status.staffResetRejectedId === staffResetRequest.id
+      || state.status.portalSessionId !== staffResetRequest.portalSessionId) {
+      staffResetRequest = null;
+      return 'failed';
+    }
+    return '';
+  }
+
+  function observeClearReceipt() {
+    const status = state.connection === 'online' ? state.status : null;
+    if (!status || !state.clearReceipt || status.portalSessionId !== state.clearReceipt.portalSessionId
+      || status.pending?.seq === state.clearReceipt.seq) return;
+    const cleared = status.pending == null;
+    state.clearReceipt = null;
+    state.clearing = false;
+    if (staffClearTimer) clearTimeout(staffClearTimer);
+    staffClearTimer = null;
+    if (cleared) resetVisitorSession();
+    $('staffMessage').textContent = cleared
+      ? '未開始の設定の取り消しを確認しました。次の人は言語とホラー軽減を選び直します。'
+      : '別の設定が届きました。未開始の設定を確認してください。';
+  }
+
+  function placeStaffPicker(inMain) {
+    const picker = $('staffQuestPicker');
+    const slot = inMain ? $('staffPickerSlot') : $('staffTroubleTarget');
+    if (picker.parentNode !== slot) slot.appendChild(picker);
+    $('staffPickerSlot').hidden = !inMain;
+    $('staffTroubleTarget').hidden = inMain;
+  }
+
+  function renderStaffTop(key, snapshot, questRow) {
+    setText('staffTargetName', activeQuest ? QUESTS[activeQuest].name : snapshot.native ? '接続先は未選択' : 'クエスト');
+    $('staffTarget').dataset.tone = questRow.tone;
+    setText('staffTargetMark', STAFF_MARK[questRow.tone]);
+    setText('staffTargetState', questRow.value === '—' ? '' : questRow.value);
+    $('staffDoneBtn').hidden = !snapshot.visitorFlow || STAFF_NO_RETURN.has(key);
+    $('staffDoneBtn').disabled = state.staffChecking || state.clearing;
+    $('staffHandback').hidden = !(key === 'confirm' && staffOpenReason === 'handback');
+    for (let step = 1; step <= 5; step++) {
+      const item = $(`staffCycle${step}`);
+      if (step === staffCycleStep) item.setAttribute('aria-current', 'step');
+      else item.removeAttribute('aria-current');
+      item.dataset.done = String(step < staffCycleStep);
+    }
+  }
+
+  function renderStaffNow(key, snapshot) {
+    const view = staffNowCopy(key, snapshot);
+    setText('staffNowTitle', view.title);
+    for (const [id, text] of [['staffNowMeta', view.meta], ['staffNowBody', view.body], ['staffNowNote', view.note]]) {
+      setText(id, text || '');
+      $(id).hidden = !text;
+    }
+    const items = view.items || [];
+    $('staffNowList').hidden = items.length === 0;
+    for (let index = 0; index < 6; index++) {
+      const item = items[index];
+      $(`staffNowItem${index}`).hidden = !item;
+      $(`staffNowItem${index}`).dataset.tone = item?.tone || 'plain';
+      setText(`staffNowItem${index}Mark`, item ? STAFF_MARK[item.tone] : '');
+      setText(`staffNowItem${index}Text`, item?.text || '');
+    }
+    const actions = view.actions || {};
+    $('staffRetryBtn').hidden = !actions.retry;
+    $('staffRetryBtn').disabled = staffRetrying || state.staffChecking;
+    $('staffResetBtn').hidden = !actions.reset;
+    setText('staffResetBtn', actions.reset || '準備を始める');
+    $('staffResetBtn').disabled = !staffResetAllowed();
+    $('staffVisitorBtn').hidden = !actions.visitor;
+    setText('staffVisitorBtn', actions.visitor || '来場者の画面にする');
+    $('staffPrepareBtn').hidden = !actions.prepare;
+    setText('staffPrepareBtn', typeof actions.prepare === 'string' ? actions.prepare : '長押しで装着へ進む');
+    $('staffPrepareBtn').disabled = !staffPreparationReady() || staffConfirmationRequested || snapshot.acknowledged;
+    $('staffRestartBtn').hidden = !actions.restart;
+    setText('staffRestartBtn', typeof actions.restart === 'string' ? actions.restart : '最初からやり直す（長押し）');
+    $('staffRestartBtn').disabled = !staffResetAllowed();
+    if ($('staffPrepareBtn').hidden || $('staffPrepareBtn').disabled) prepareHold?.cancel();
+    if ($('staffRestartBtn').hidden || $('staffRestartBtn').disabled) restartHold?.cancel();
+    setText('staffNowMessage', staffNotice.text);
+    placeStaffPicker(key === 'unselected');
+  }
+
+  function renderStaffDevices(rows) {
+    for (const row of rows) {
+      $(`dev${row.id}`).hidden = Boolean(row.hidden);
+      $(`dev${row.id}`).dataset.tone = row.tone;
+      setText(`dev${row.id}Mark`, STAFF_MARK[row.tone]);
+      setText(`dev${row.id}Value`, row.value);
+      setText(`dev${row.id}Fix`, row.fix);
+      $(`dev${row.id}Fix`).hidden = !row.fix;
+    }
+  }
+
+  function renderStaffTrouble(key) {
     const status = state.connection === 'online' ? state.status : null;
     const locked = targetChangeLocked();
     if (locked) state.staffQuest = activeQuest;
-    ['alpha', 'beta'].forEach((key) => {
-      const input = $(key === 'alpha' ? 'questAlpha' : 'questBeta');
-      input.checked = state.staffQuest === key;
+    ['alpha', 'beta'].forEach((quest) => {
+      const input = $(quest === 'alpha' ? 'questAlpha' : 'questBeta');
+      input.checked = state.staffQuest === quest;
       input.disabled = locked || state.staffChecking;
     });
     setText('staffTargetHelp', locked
-      ? '体験者の設定がある間はクエストを変更できません。未開始の設定を取り消すか、次の受付まで待ってください。'
-      : '本体のα／βのラベルを見て選んでください。接続を確認すると通信先が切り替わります。');
-    $('staffCheckBtn').disabled = state.staffChecking || state.ui === 'sending' || state.clearing;
-    $('staffDoneBtn').disabled = state.staffChecking || state.clearing;
+      ? '体験者の設定がある間はクエストを変更できません。未開始の設定を取り消すか、次の体験者の準備まで待ってください。'
+      : '本体のラベル（α または β）を見て選んでください。接続すると通信先が切り替わります。');
+    $('staffCheckBtn').disabled = state.staffChecking || state.ui === 'sending' || state.clearing || !state.staffQuest;
+    $('staffCheckBtn').textContent = state.staffChecking ? '接続を確認しています…'
+      : key === 'unselected' ? '接続する' : '接続を確認する';
     const visitorBriefingActive = Boolean(state.sent?.seq > 0 || state.view === 'briefing' && !state.staffPreview);
     $('staffBriefingBtn').disabled = state.briefing.loadState !== 'ready' || visitorBriefingActive;
     $('staffBriefingHelp').textContent = visitorBriefingActive
       ? '来場者の設定または説明が進行中です。終了後に説明を確認できます。'
       : 'この確認ではクエストへ設定を送りません。';
-    $('staffCheckBtn').textContent = state.staffChecking ? '接続を確認しています…' : '接続を確認する';
     $('staffPending').hidden = !status?.pending;
-    $('staffRecovery').hidden = state.connection !== 'offline';
-    if (!status) {
-      $('staffSummary').textContent = `現在の受付：${activeQuestName()}\n接続：${state.connection === 'checking' ? '確認中' : '応答を確認できません'}\n受付の状態：未確認\nクエストの設定：—`;
-      $('clearBtn').disabled = true;
-      return;
+    $('clearBtn').disabled = !status || state.clearing || state.ui === 'sending' || status.pending == null;
+  }
+
+  function observeQuestTrouble() {
+    const status = state.status;
+    const asleep = state.connection === 'online' && Boolean(status)
+      && Number.isInteger(status.questTick) && !questStatusFresh();
+    if (state.connection === 'offline' || asleep) {
+      if (!questTroubleSince) questTroubleSince = Date.now();
+    } else {
+      questTroubleSince = 0;
     }
-    if (state.clearReceipt && status.portalSessionId === state.clearReceipt.portalSessionId
-      && status.pending?.seq !== state.clearReceipt.seq) {
-      const cleared = status.pending == null;
-      state.clearReceipt = null;
-      state.clearing = false;
-      if (staffClearTimer) clearTimeout(staffClearTimer);
-      staffClearTimer = null;
-      if (cleared) resetVisitorSession();
-      $('staffMessage').textContent = cleared
-        ? '未開始の設定の取り消しを確認しました。次の人は言語と軽減を選び直してください。'
-        : '別の設定が届きました。未開始の設定を確認してください。';
-      return renderStaff();
+  }
+
+  function renderCallStaff() {
+    // 来場者の画面にだけ重なる。スタッフ画面を開いている間はスタッフ画面の下に隠れる。
+    $('callStaff').hidden = !(questTroubleSince > 0 && Date.now() - questTroubleSince >= QUEST_TROUBLE_CALL_MS
+      && !state.staffPreview && !(transport.native && !activeQuest));
+  }
+
+  function observeStaffStage(status) {
+    const setup = isRecord(status?.staffSetup) ? status.staffSetup : null;
+    const stage = staffStageOf(setup);
+    if (status?.phase === 'END' || stage === 'ended') {
+      if (!legacyEndSince) legacyEndSince = Date.now();
+    } else {
+      legacyEndSince = 0;
     }
-    const pending = status.pending
-      ? `${LANG_NAME[status.pending.lang]} ／ 軽減 ${status.pending.relief ? 'あり' : 'なし'}`
-      : 'なし';
-    const ready = status.phase === 'INTRO' && status.titleStage === 'Wait';
-    const reception = ready ? '注意書きで待機中。受付を始められます。'
-      : (status.phase === 'RUN' || status.phase === 'END'
-        ? '体験中です。次の受付まで待ってください。'
-        : '準備中です。クエストに注意書きが出るまで待ってください。');
-    $('staffSummary').textContent =
-      `現在の受付：${activeQuestName()}\n`
-      + `接続：応答を確認しました\n`
-      + `受付：${reception}\n`
-      + `クエストの設定：${LANG_NAME[status.lang]} ／ 軽減 ${status.relief ? 'あり' : 'なし'}\n`
-      + `未開始の設定：${pending}`;
-    $('clearBtn').disabled = state.clearing || state.ui === 'sending' || status.pending == null;
+    const previous = lastStaffStage;
+    lastStaffStage = stage;
+    // 体験が始まるとタブレットはスタッフの手に戻る。スタッフ画面へ切り替える。
+    if (stage === 'playing' && previous !== 'playing') openStaffScreen('playing');
+  }
+
+  function renderStaff() {
+    observeClearReceipt();
+    const resetResult = observeStaffResetResult();
+    renderTitleEntry();
+    if (state.view === 'edit') renderSettingsStep();
+    const snapshot = staffSnapshot();
+    const key = staffScreenState(snapshot);
+    // 状態が変わったら前の状態のメッセージを残さない。
+    if (staffNotice.key !== key) staffNotice = { key, text: '' };
+    if (resetResult === 'failed') {
+      setStaffNotice(key, '準備を始められませんでした。体験の終了と位置合わせを確かめてから、もう一度押してください。');
+    }
+    staffCycleStep = staffCycleStepFor(key, staffCycleStep);
+    $('staff').dataset.state = key;
+    const rows = staffDeviceRows(snapshot);
+    renderStaffTop(key, snapshot, rows[0]);
+    renderStaffNow(key, snapshot);
+    renderStaffDevices(rows);
+    renderStaffTrouble(key);
+    renderCallStaff();
+  }
+
+  function openStaffScreen(reason = 'manual') {
+    const dialog = $('staff');
+    staffOpenReason = reason;
+    if (state.view === 'briefing') setBriefingPause('staff', true);
+    if (!dialog.open) {
+      stopReliefPreview();
+      $('staffTrouble').open = false;
+      $('staffMessage').textContent = '';
+      try {
+        dialog.showModal();
+      } catch (error) {
+        console.warn('staff screen could not open as a modal', error);
+        dialog.setAttribute('open', '');
+      }
+      dialog.scrollTop = 0;
+    }
+    renderStaff();
+  }
+
+  function closeStaffScreen() {
+    if ($('staff').open) $('staff').close();
+  }
+
+  async function requestStaffReset() {
+    if (!$('staff').open || !staffResetAllowed() || !state.status?.portalSessionId) return;
+    staffResetRequest = { id: `reset-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      portalSessionId: state.status.portalSessionId, settingsSeq: state.status.received };
+    staffConfirmationRequested = false;
+    renderStaff();
+    await pulse();
+    await poll();
+  }
+
+  async function confirmStaffPreparation() {
+    if (!$('staff').open || staffConfirmationRequested || !staffPreparationReady()
+      || (state.status && preparationAcknowledged(state.status))) return;
+    staffConfirmationRequested = true;
+    renderStaff();
+    await pulse();
+    await poll();
+  }
+
+  async function retryQuestConnection() {
+    if (!$('staff').open || staffRetrying) return;
+    staffRetrying = true;
+    setStaffNotice('offline', 'クエストの応答を確かめています…');
+    renderStaff();
+    try {
+      await poll();
+    } finally {
+      staffRetrying = false;
+      if (state.connection === 'offline') {
+        setStaffNotice('offline', 'まだ接続できません。上の 3 つを確かめてから、もう一度押してください。');
+      }
+      renderStaff();
+    }
+  }
+
+  // 長押しで確定するボタン。押している間は左から満ちる。離すと取り消す。キーボードの Enter / Space も同じ。
+  function bindHold(button, durationMs, onComplete) {
+    let hold = null;
+    const setProgress = (value) => button.style.setProperty('--hold', String(value));
+    const cancel = () => {
+      if (!hold) return;
+      clearTimeout(hold.timer);
+      clearInterval(hold.ticker);
+      hold = null;
+      button.dataset.holding = 'false';
+      setProgress(0);
+    };
+    const start = () => {
+      if (hold || button.disabled || button.hidden) return false;
+      const startedAt = performance.now();
+      hold = {
+        timer: setTimeout(() => {
+          cancel();
+          onComplete();
+        }, durationMs),
+        // prefers-reduced-motion でも満ちる量は見せる。CSS の遷移ではなく値を直接書く。
+        ticker: setInterval(() => setProgress(Math.min(1, (performance.now() - startedAt) / durationMs)), 40),
+      };
+      button.dataset.holding = 'true';
+      setProgress(0.02);
+      return true;
+    };
+    button.addEventListener('pointerdown', (event) => {
+      if (event.isPrimary === false || event.button > 0 || !start()) return;
+      event.preventDefault();
+      try { button.setPointerCapture?.(event.pointerId); } catch (error) { /* The pointer is already released. */ }
+    });
+    button.addEventListener('pointerup', cancel);
+    button.addEventListener('pointercancel', cancel);
+    button.addEventListener('lostpointercapture', cancel);
+    button.addEventListener('blur', cancel);
+    button.addEventListener('contextmenu', (event) => event.preventDefault());
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      if (!event.repeat) start();
+    });
+    button.addEventListener('keyup', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      cancel();
+    });
+    return { cancel };
   }
 
   async function checkStaffQuest() {
@@ -2361,6 +3243,11 @@
 
   async function send() {
     if (state.ui === 'sending') return;
+    if (!visitorSettingsAccess().allowed) {
+      setSurface('title', $('titleStart'));
+      render();
+      return;
+    }
     const generation = ++sendGeneration;
     clearSavedProgress();
     resetBriefingSession();
@@ -2401,7 +3288,7 @@
   }
 
   function confirmSettings() {
-    if (state.view !== 'edit' || state.settingsStep !== 'relief') return false;
+    if (state.view !== 'edit' || state.settingsStep !== 'relief' || !visitorSettingsAccess().allowed) return false;
     state.ui = 'confirm';
     changeVisual(() => {
       setFormDisabled(false);
@@ -2423,22 +3310,37 @@
         if (!validateStatus(status)) throw new Error('invalid status response');
         if (state.status?.portalSessionId && status.portalSessionId !== state.status.portalSessionId ||
             state.lastReceived != null && status.received < state.lastReceived) {
-          resetAfterQuestRestart();
+          if (status.visitorGeneration > 0) resetVisitorSession(false);
+          else resetAfterQuestRestart();
         }
         state.lastReceived = status.received;
         state.status = status;
+        observeQuestTick(status);
         state.connection = 'online';
         if (state.view === 'briefing' && !state.staffPreview) setBriefingPause('offline', false);
         if (wasChangedByAnotherPage(status)) showPageConflict();
         else observeVisitorCycle(status);
         tryRestoreBriefing();
+        if (state.view === 'briefing') {
+          advanceToWearIfReady(status);
+          syncWearReadiness(status);
+        }
+        observeStaffStage(status);
       } catch (error) {
         if (generation !== targetGeneration || target !== activeQuest) return;
         state.connection = 'offline';
-        if (state.view === 'briefing' && !state.staffPreview) setBriefingPause('offline', true);
+        if (state.view === 'briefing' && !state.staffPreview) {
+          setBriefingPause('offline', true);
+          syncWearReadiness(state.status);
+        }
+        // 再読み込みの復元を待っている間に通信できなければ、スタッフ画面から始める。
+        if (restoreCandidate && !state.restored) openStaffScreen('startup');
       }
+      observeQuestTrouble();
       renderConnection();
       renderStaff();
+      if (state.view === 'edit') renderSettingsStep();
+      if (state.view === 'briefing') renderBriefingScene();
       if (state.view === 'result') renderResult();
     })().finally(() => {
       pollInFlight = null;
@@ -2447,9 +3349,56 @@
     return pollInFlight;
   }
 
+  const preparationRevisionKey = 'mawarimi.visitor.preparation.revision.v1';
+  let preparationRevision = 0, preparationKey = '', staffConfirmationRequested = false;
+  try { preparationRevision = Number(sessionStorage.getItem(preparationRevisionKey)) || 0; } catch (_) {}
+  let questTickKey = '', questTickAt = 0, staffResetRequest = null;
+  function observeQuestTick(status) {
+    if (!Number.isInteger(status.questTick) || status.questTick <= 0) return;
+    const key = `${activeQuest}:${status.portalSessionId}:${status.questTick}`;
+    if (key !== questTickKey) { questTickKey = key; questTickAt = Date.now(); }
+  }
+  function questStatusFresh() {
+    return state.connection === 'online' && Boolean(state.status) && questTickAt > 0 && Date.now() - questTickAt <= 4000;
+  }
+  function preparationAcknowledged(status) {
+    const proof = status?.briefing;
+    return state.sent?.seq > 0 && status.portalSessionId === state.sent.portalSessionId
+      && proof?.seq === state.sent.seq && proof.tabletSessionId === tabletSessionId
+      && proof.revision === preparationRevision && proof.completed === true && proof.staffConfirmed === true;
+  }
+  function restorePreparationState(status) {
+    const proof = status?.briefing;
+    if (!state.sent?.seq || proof?.seq !== state.sent.seq || proof.tabletSessionId !== tabletSessionId
+      || !Number.isSafeInteger(proof.revision) || proof.revision < 1 || proof.completed !== true) return false;
+    state.briefing.handoffReady = true;
+    preparationRevision = proof.revision;
+    staffConfirmationRequested = proof.staffConfirmed === true;
+    preparationKey = `${state.sent.portalSessionId}:${state.sent.seq}:true:${staffConfirmationRequested}`;
+    try { sessionStorage.setItem(preparationRevisionKey, String(preparationRevision)); } catch (_) {}
+    return true;
+  }
   async function pulse() {
     if (state.staffPreview || !activeQuest && transport.native) return;
-    try { await post('./tablet/pulse', { tabletSessionId }); }
+    const body = { tabletSessionId };
+    if (staffResetRequest && staffResetRequest.portalSessionId === state.status?.portalSessionId) {
+      Object.assign(body, { portalSessionId: staffResetRequest.portalSessionId, staffReset: true, resetRequestId: staffResetRequest.id, settingsSeq: staffResetRequest.settingsSeq });
+      try { await post('./tablet/pulse', body); } catch (error) { console.warn('staff reset confirmation pending', error); }
+      return;
+    }
+    if (state.sent?.seq > 0 && state.sent.portalSessionId === state.status?.portalSessionId) {
+      const completed = state.view === 'briefing' && (state.briefing.handoffReady || state.briefing.ended);
+      const confirmed = completed && staffConfirmationRequested;
+      const key = `${state.sent.portalSessionId}:${state.sent.seq}:${completed}:${confirmed}`;
+      if (key !== preparationKey) {
+        preparationRevision = Math.max(preparationRevision, state.status?.briefing?.revision || 0) + 1;
+        preparationKey = key;
+        try { sessionStorage.setItem(preparationRevisionKey, String(preparationRevision)); } catch (_) {}
+      }
+      Object.assign(body, { portalSessionId: state.sent.portalSessionId, seq: state.sent.seq,
+        briefingRevision: preparationRevision, briefingCompleted: completed, staffConfirmed: confirmed });
+    }
+    try { await post('./tablet/pulse', body); }
     catch (error) { console.warn('tablet pulse failed', error); }
   }
 
@@ -2460,6 +3409,26 @@
       return;
     }
     confirmSettings();
+  });
+  $('staffResetBtn').addEventListener('click', () => {
+    if ($('staffResetBtn').disabled || $('staffResetBtn').hidden) return staffAction;
+    staffAction = requestStaffReset();
+    return staffAction;
+  });
+  // 装着へ進む確認と最初からのやり直しは長押しだけで受け付ける。クリックでは何もしない。
+  prepareHold = bindHold($('staffPrepareBtn'), PREPARE_HOLD_MS, () => { staffAction = confirmStaffPreparation(); });
+  restartHold = bindHold($('staffRestartBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(); });
+  $('staffRetryBtn').addEventListener('click', () => {
+    staffAction = retryQuestConnection();
+    return staffAction;
+  });
+  $('staffVisitorBtn').addEventListener('click', () => {
+    if (!$('staff').open || $('staffVisitorBtn').hidden || $('staffVisitorBtn').disabled) return;
+    // スタッフの操作のうちに全画面と画面維持を試みる。失敗しても来場者の画面は出す。
+    enterFullscreen();
+    requestWakeLock();
+    closeStaffScreen();
+    renderTitleEntry();
   });
   $('settingsForm').addEventListener('change', (event) => {
     if (event.target.name === 'lang') {
@@ -2521,6 +3490,7 @@
   $('briefingSettings').addEventListener('click', returnToSettings);
   $('briefingReplay').addEventListener('click', () => {
     stopBriefingPlayback();
+    void pulse();
     if (document.hidden) state.briefing.pauseReasons.add('hidden');
     if ($('staff').open) state.briefing.pauseReasons.add('staff');
     if (!state.staffPreview && state.connection !== 'online') state.briefing.pauseReasons.add('offline');
@@ -2528,17 +3498,16 @@
     beginBriefingCue();
     $('briefingView').focus();
   });
-  $('staffToggle').addEventListener('click', () => {
-    $('staffMessage').textContent = '';
-    renderStaff();
-    if (state.view === 'briefing') setBriefingPause('staff', true);
-    stopReliefPreview();
-    $('staff').showModal();
-    $('staff').scrollTop = 0;
+  $('staffToggle').addEventListener('click', () => openStaffScreen('manual'));
+  $('staffDoneBtn').addEventListener('click', closeStaffScreen);
+  $('staff').addEventListener('cancel', (event) => {
+    // 戻る操作で閉じてよいのは、来場者の画面へ戻るボタンを出している間だけ。
+    if ($('staffDoneBtn').hidden) event.preventDefault();
   });
-  $('staffClose').addEventListener('click', () => $('staff').close());
-  $('staffDoneBtn').addEventListener('click', () => $('staff').close());
   $('staff').addEventListener('close', () => {
+    staffOpenReason = '';
+    prepareHold?.cancel();
+    restartHold?.cancel();
     staffCheckGeneration++;
     staffCheckController?.abort();
     staffCheckController = null;
@@ -2592,7 +3561,7 @@
     try {
       if (!state.status?.portalSessionId) throw new Error('portal session unavailable');
       const receipt = { portalSessionId: state.status.portalSessionId, seq: state.status.pending.seq };
-      const response = await post('./clear', { tabletSessionId, portalSessionId: state.status.portalSessionId });
+      const response = await post('./clear', { tabletSessionId, portalSessionId: state.status.portalSessionId, seq: receipt.seq });
       if (response.ok !== true) throw new Error('invalid clear response');
       state.clearReceipt = receipt;
       $('staffMessage').textContent = 'クエスト側で設定が消えたことを確認しています…';
@@ -2691,8 +3660,9 @@
   document.addEventListener('pointercancel', () => { pointerGesture = null; });
   setSurface('title');
   render();
-  if (new URLSearchParams(location.search || '').get('staff') === '1') {
-    $('staffToggle').click();
+  // スタッフ画面がホーム。同じページの再読み込みで来場者の説明を復元できるときだけ、復元を先に待つ。
+  if (!restoreCandidate || new URLSearchParams(location.search || '').get('staff') === '1') {
+    openStaffScreen('startup');
   }
   loadBriefingData();
   poll();

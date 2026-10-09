@@ -75,6 +75,16 @@ namespace FixedCamVr.Streaming
         private bool _yawSeeded;
         private bool _followFrozen;
         private bool _wasFrozen;
+        private bool _setupFrozen;
+        public void SetSetupFrozen(bool frozen) => _setupFrozen = frozen;
+        /// <summary>停止中のスタッフ画面だけを正面へ戻す。コース座標は変更しない。</summary>
+        public bool RepositionForSetup()
+        {
+            if (!_setupFrozen || head == null) return false;
+            ApplyPose(head.eulerAngles.y);
+            ReseatYawFromTransform();
+            return true;
+        }
 
         public bool Locked
         {
@@ -130,6 +140,7 @@ namespace FixedCamVr.Streaming
 
         private void LateUpdate()
         {
+            if (_setupFrozen) return;
             if (!locked || head == null) return;
 
             if (!yawOnly)

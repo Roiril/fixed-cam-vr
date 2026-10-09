@@ -37,6 +37,8 @@ namespace FixedCamVr.Input
             public float deltaTime;
             /// <summary>右トリガー（PrimaryIndexTrigger）が押されているか。長押しで Registration 入場 / キャンセル。</summary>
             public bool triggerHeld;
+            /// <summary>スタッフ初期機器確認中など。押下を解放するまで入場を抑止する。</summary>
+            public bool triggerBlocked;
             /// <summary>右 A が押されているか。Normal での長押しで体験者リセット。</summary>
             public bool resetHeld;
             /// <summary>登録フロー中か（CourseRegistrationController.IsActive の外部真実）。</summary>
@@ -181,7 +183,7 @@ namespace FixedCamVr.Input
             // トリガーのホールドを指が自然に掛かったものとみなして数えない。
             if (f.faceButtonHeld) _faceQuiet = FaceButtonQuietSec;
             else if (_faceQuiet > 0f) _faceQuiet = Max0(_faceQuiet - f.deltaTime);
-            bool blocked = f.faceButtonHeld || _faceQuiet > 0f;
+            bool blocked = f.faceButtonHeld || _faceQuiet > 0f || f.triggerBlocked;
 
             bool wasVoided = _trigger.Voided;
             bool triggerFired = _trigger.Tick(f.triggerHeld, f.deltaTime, _holdSec, blocked);

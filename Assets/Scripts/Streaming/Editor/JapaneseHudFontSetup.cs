@@ -17,7 +17,7 @@ namespace FixedCamVr.Streaming.EditorTools
     /// 生成して Resources に置き**、ランタイムは Resources.Load で読む。
     ///
     /// 出力: Assets/Resources/Fonts/NotoSansJP SDF.asset（+ 内包 material / atlas）。
-    /// 既存があれば削除して作り直す（再実行安全）。
+    /// 既存の識別子と文字を保って更新する（再実行安全）。
     /// </summary>
     internal static class JapaneseHudFontSetup
     {
@@ -67,12 +67,24 @@ namespace FixedCamVr.Streaming.EditorTools
             asset.atlasPopulationMode = AtlasPopulationMode.Static;
 
             Directory.CreateDirectory(OutDir);
-            if (AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(OutPath) != null)
-                AssetDatabase.DeleteAsset(OutPath);
-
             // material / atlas texture はサブアセットとして同梱する（TMP フォントアセットの標準構成）。
             asset.name = "JapaneseHud SDF";
-            AssetDatabase.CreateAsset(asset, OutPath);
+            var existing = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(OutPath);
+            if (existing != null)
+            {
+                // ルートを消すと GUID が変わる。ルートは残し、今回生成したデータで更新する。
+                foreach (var child in AssetDatabase.LoadAllAssetsAtPath(OutPath))
+                {
+                    if (child == null || child == existing) continue;
+                    AssetDatabase.RemoveObjectFromAsset(child);
+                    Object.DestroyImmediate(child);
+                }
+                EditorUtility.CopySerialized(asset, existing);
+                Object.DestroyImmediate(asset);
+                asset = existing;
+                EditorUtility.SetDirty(asset);
+            }
+            else AssetDatabase.CreateAsset(asset, OutPath);
             if (asset.atlasTextures != null)
                 foreach (var tex in asset.atlasTextures)
                     if (tex != null) { tex.name = asset.name + " Atlas"; AssetDatabase.AddObjectToAsset(tex, asset); }
@@ -93,6 +105,7 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             string[] sources =
             {
+                "Assets/Scripts/Diagnostics/StaffSetupPanel.cs",
                 "Assets/Scripts/Tracking/RegistrationGuidance.cs",
                 "Assets/Scripts/Tracking/CourseRegistrationController.cs",
                 "Assets/Scripts/Diagnostics/StatusHud.cs",
@@ -137,6 +150,11 @@ namespace FixedCamVr.Streaming.EditorTools
             //    全角空白 `　`（ステータスの 1 行に情報を 2 つ並べる区切り）。**空白にも字送りの
             //    グリフが要る**ので、焼けていないと行の並びが崩れる。
             foreach (char c in "█▓░●○→⚠×📍。、・…％℃①②③④⑤／　") set.Add(c);
+            // スタッフの案内を短くしても、本編などで既に使っていた文字を取り除かない。
+            var existing = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(OutPath);
+            if (existing != null && existing.characterTable != null)
+                foreach (var character in existing.characterTable)
+                    if (character.unicode <= char.MaxValue) set.Add((char)character.unicode);
             foreach (string path in sources)
             {
                 if (!File.Exists(path)) { Debug.LogWarning($"[JapaneseHudFontSetup] 収集元が無い: {path}"); continue; }

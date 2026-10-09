@@ -10,6 +10,12 @@ metadata:
 
 # タブレットの博士UIを触る前に
 
+## 毎回の体験者準備（2026-10-08）
+
+スタッフの主画面はタブレット。起動時から全画面で「準備 → 来場者 → 装着 → 体験 → 回収」を示す。Questで行うのは位置合わせと目視確認。機器の接続待ちでも位置合わせを始められる。毎回は清拭・機器確認の後、タブレットでリセットの実完了を待つ。「来場者の画面にする」でタブレットを渡し、新しい設定と博士の説明を進める。スタッフへ返されたら実値と機器を確認し、「長押しで装着へ進む」を押し続ける。Questの応答後に博士の装着案内2文が自動で進む。右AリセットとB確定は予備操作。左X/Yの練習と題字の明示開始は維持する。詳細は[スタッフ起動・交代フロー](staff_setup.md)。
+
+リセットは通信セッションと`visitorGeneration`を更新し、旧設定・受理情報・説明とスタッフ確定を破棄する。`/tablet/pulse`は説明終了／スタッフ確定の版を現在の設定に結び付ける。POST受理だけでは確定表示をしない。戻る／再説明で確定を無効化する。`questTick`が止まった状態を緑表示しない。Quest休止中の実行と非装着復帰は実機確認が必要。新プロトコルを使うため、Questとタブレットの両APK更新が必要。
+
 ## タブレット単体アプリへの移行（2026-10-03・0259）
 
 博士UIの正本は `tablet/app/src/main/assets/web/index.html`。JSONと動画と画像と音声は同じ場所の `asset/`。通常の拡張子で置く。Unityの `Resources/Visitor` は廃止した。生成と机上検証のツールもこの正本を使う。
@@ -45,12 +51,12 @@ Redmi Pad SEへの導入と実機試験は成功した。α接続時は29項目�
 
 博士 UI はタブごとに tabletSessionId を作る。同じタブのリロードでは復元用に保持する。5 秒ごとの `/tablet/pulse` だけを接続証拠にする。
 PC が `/status` を読むことはタブレットの応答に数えない。30 秒以内のページが複数あれば要確認。
-Quest は portalSessionId を起動ごとに変更する。古い起動に向けた `/set` は 409 で拒否する。
+Quest は portalSessionId を起動ごとと右A体験者リセットごとに変更する。古い通信セッションに向けた `/set` は 409 で拒否する。
 `/set` と `/clear` は tabletSessionId と portalSessionId の両方が必須。不足は400。起動不一致は409。
-反映は同一起動・同一ページ・同じ受理番号で照合する。`appliedSeq == seq` と言語・軽減の実値一致が必要。
+反映は同じ通信セッション・同一ページ・同じ受理番号で照合する。`appliedSeq == seq` と言語・軽減の実値一致が必要。
 説明中も照合する。別ページの新しい受理番号を見つけたら媒体を止め、設定確認の結果画面へ戻す。体験開始による pending 消費は別ページ変更ではない。
 同一タブのリロードでは sessionStorage のページ ID、起動 ID、受理番号、選択、説明位置を使う。現行 status の lastRequest、appliedSeq、実値、未消費 pending まで一致するときだけ同じ文へ復元する。オートはOFF。新しい受理番号、pending 消費、Quest 再起動後は復元しない。
-Quest 再起動時は送信済み状態と説明位置を捨てる。選択中の言語とホラー軽減を保って設定画面へ戻す。
+Quest 再起動時は送信済み状態と説明位置を捨てる。まだ体験者リセットを行っていない起動では、選択中の言語とホラー軽減を保って設定画面へ戻す。`visitorGeneration > 0`の通信セッション変更は体験者交代として博士の入口へ戻し、選択も初期化する。
 タイトルのタップは同じユーザー操作内で全画面化と画面スリープ抑制を試みる。失敗は設定や説明を止めない。全画面解除後はヘッダーから復帰できる。
 `ShowControlClient` の heartbeat に `visitorPortal` を載せる。卓の `/ops/status.tablets` はこれを読むだけ。
 Quest の応答が 6 秒以上古ければ未確認。ページの経過時間には Quest の応答後に経った秒数も加える。
@@ -134,7 +140,7 @@ Androidの画面試験で `UiAutomation.executeShellCommand` の戻り値を閉�
 |---|---|
 | `GET /status` | この機の実値: `lang` / `relief` / `titleStage` / `phase` / `pending{lang,relief,seq}` / `appliedSeq` / `applyCount` / `received` / `model` / `ip` / `port` |
 | `POST /set` `{"lang":"en","relief":true,"tabletSessionId":"…","portalSessionId":"…"}` | 枠へ入れる。`{"ok":true,"seq":N}`。lang が ja/en/fr 以外、ID 不足は 400。起動 ID の不一致は 409 |
-| `POST /clear` `{"tabletSessionId":"…","portalSessionId":"…"}` | 枠を空にする（スタッフ）。ID 不足は 400。起動 ID の不一致は 409 |
+| `POST /clear` `{"tabletSessionId":"…","portalSessionId":"…","seq":N}` | 枠を空にする（スタッフ）。ID 不足は 400。起動 ID の不一致は 409 |
 | `POST /tablet/pulse` | タブレットのページIDを記録する。PCのstatus取得とは分ける |
 
 役の結び付けはスタッフ設定で保存したα／βで決まる。卓に台帳は無い（0185初版の `control.visitorDevices` は消した）。面と素材はアプリ内のHTTPS形式URLで読む。動画のRange/206はAndroidの同梱素材処理が返す。
@@ -142,13 +148,12 @@ Androidの画面試験で `UiAutomation.executeShellCommand` の戻り値を閉�
 ## 正は Quest の中。持ち越しは Quest が断つ
 
 `VisitorPrefs` は枠（受理番号・言語・軽減）と、書いた受理番号を持つだけ。**永続化しない**（再起動でまっさら）。
-体験者が題字で左 X / Y を短く押して始めた瞬間（`TitleStage.Wait` を出た縁）に `Consume()` が枠を空にする ＝
-次の人は既定から始まる。本編中に届いた枠は次の `BeginTitle` で載る。
+題字の表示で`TitleStage.Wait`を出る時に`Consume()`が枠を空にする。現在の体験者の適用証拠は同じ`ConsumedSeq`で保持する。次の人はスタッフの実リセット後に必ず新たに設定する。本編中に届いた枠も実リセットで破棄する。右Aを経由しない`BeginTitle`は既存の枠適用動作を維持する。
 
 ## ⚠⚠ 戻す → 載せる の順（`TitleScreen.BeginTitle`）
 
 `ShowLanguage.Reset()` / `HorrorRelief.Reset()` の**直後**に `VisitorPrefs.ApplyAtTitle()`。
-同じ受理番号でも**もう一度書く**。逆順にすると、スタッフがランをやり直した瞬間にタブレットの設定が消える。
+右Aを経由しない題字の再開では同じ受理番号でも**もう一度書く**。逆順では既存の予約値が消える。右A体験者リセットはこの手前で枠を空にし、今回の設定を後から受け取る。
 `memory/show_language.md` の「戻すのは 1 か所」は生きている — 載せる場所が同じ行の隣に足されただけ。
 
 ## ⚠ 書くのは注意書きの段だけ

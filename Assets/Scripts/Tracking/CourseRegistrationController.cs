@@ -98,9 +98,18 @@ namespace FixedCamVr.Tracking
         }
 
         private enum Phase { Idle, Capture, Verify, Review }
+        private bool _staffManagedStartup;
+
+        /// <summary>新セットアップが起動順を管理。Startの順序が逆でも自動入場だけを取り消す。</summary>
+        public void DeferStartupForStaffSetup()
+        {
+            _staffManagedStartup = true;
+            if (IsActive) SetActive(false);
+        }
 
         /// <summary>登録モード中か。Bridge はこれを見て通常入力を抑止する。</summary>
         public bool IsActive => _phase != Phase.Idle;
+        public bool IsReviewing => _phase == Phase.Review;
 
         /// <summary>
         /// ホールド平均サンプリングの進捗 [0,1]（非サンプル中は 0）。Bridge が長押し進捗と Max 合成して
@@ -113,6 +122,10 @@ namespace FixedCamVr.Tracking
         /// Idle では空文字（要再登録警告は StatusHud が CourseFrame から直接読む）。
         /// </summary>
         public string GuidanceText => _guidanceText;
+        /// <summary>スタッフ画面用。操作・実測結果・入力を分け、数値を操作より先に読ませない。</summary>
+        public string GuidanceAction { get; private set; } = "";
+        public string GuidanceDetails { get; private set; } = "";
+        public string GuidanceControls { get; private set; } = "";
 
         /// <summary>
         /// いまのガイダンスが「対応が要る 1 行」か。<b>色そのものは持たない</b> —
@@ -143,6 +156,8 @@ namespace FixedCamVr.Tracking
 
         /// <summary>Verify で B 確定・保存して登録を終えた時に発火（触覚 Fire に使う）。</summary>
         public event Action? RegistrationConfirmed;
+        /// <summary>保存済み値を目視で再利用。保存完了とは別の証拠。</summary>
+        public event Action? RegistrationReviewed;
 
         // マーク確定に必要な A ホールド秒。ホールド中の位置サンプルを平均して手先ジッタを均す
         //（押下瞬間の 1 サンプルは腕の振り・ボタン押し込みのブレをそのまま拾う）。
@@ -190,6 +205,8 @@ namespace FixedCamVr.Tracking
 
         // A ホールド平均サンプリング（dt 駆動の純ロジック。計時を EditMode でも決定的に固定できる）。
         private readonly HoldAverageSampler _sampler = new(MarkHoldSec);
+        // やり直しを選ぶ A と、点 1 を記録する A は別の押下にする。
+        private bool _retryNeedsRelease;
 
         // ライブ誤差 % ガイダンス（間引き更新のキャッシュ）。点 index が変わったら即更新する。
         private string _liveGuidanceText = "";
@@ -248,7 +265,7 @@ namespace FixedCamVr.Tracking
         private void Start()
         {
             ResolvePoints(); // 既定 or layout の初期供給（次の登録開始に備える）
-            if (startInRegistration) SetActive(true);
+            if (startInRegistration && !_staffManagedStartup) SetActive(true);
         }
 
         private void OnDestroy()
@@ -285,6 +302,7 @@ namespace FixedCamVr.Tracking
         {
             if (IsActive == on) return;
             ClearTransient();
+            _retryNeedsRelease = false;
             if (on)
             {
                 ResolvePoints();                          // 最新 layout の regPoints を取り込む
@@ -355,6 +373,11 @@ namespace FixedCamVr.Tracking
             switch (_phase)
             {
                 case Phase.Capture:
+                    if (_retryNeedsRelease)
+                    {
+                        if (!input.markHeld) _retryNeedsRelease = false;
+                        return;
+                    }
                     UpdateMarkSampling(input);
                     break;
                 case Phase.Verify:
@@ -362,7 +385,6 @@ namespace FixedCamVr.Tracking
                     if (input.mark)
                     {
                         RestartCapture();
-                        UpdateMarkSampling(input);
                         return;
                     }
                     break;
@@ -371,7 +393,6 @@ namespace FixedCamVr.Tracking
                     if (input.mark)
                     {
                         RestartCapture();
-                        UpdateMarkSampling(input);
                         return;
                     }
                     if (input.confirm) { ExitReview(); return; }
@@ -391,7 +412,7 @@ namespace FixedCamVr.Tracking
             {
                 // MarkHoldSec 未満で離した → マーク不成立（点は採らない）。
                 // 手元を見ていないスタッフにも原因が残るよう、次の A 押下まで表示する。
-                ShowTransient("×印を読み取れませんでした\n×印の上で A を押したまま 0.5 秒静止");
+                ShowTransient("A を離すのが早すぎました");
                 SampleAborted?.Invoke(); // 触覚 Error（ホールド中断）
                 return;
             }
@@ -438,7 +459,7 @@ namespace FixedCamVr.Tracking
             if (!fit.ok)
             {
                 Debug.LogWarning("[CourseReg] 剛体フィット不能（基準点が重なっています）— やり直します");
-                ShowTransient("点の置き方が正しくありません\n2 つの点が重なっています");
+                ShowTransient("2 つの点が重なっています");
                 FitRejected?.Invoke(); // 触覚 Error（拒否・やり直し）
                 RestartCapture();
                 return;
@@ -449,7 +470,7 @@ namespace FixedCamVr.Tracking
                 int w = fit.worstIndex;
                 Debug.LogWarning($"[CourseReg] フィット残差過大: 点 {w + 1} の残差 {fit.maxResidualM:F3}m " +
                                  $"> 許容 {maxResidualM:F3}m（RMS {fit.rmsResidualM:F3}m）— やり直します");
-                ShowTransient($"点 {w + 1} のずれが {Mathf.RoundToInt(fit.maxResidualM * 100f)} cm あります\n打ち直してください");
+                ShowTransient($"点 {w + 1} のずれが {Mathf.RoundToInt(fit.maxResidualM * 100f)} cm あります");
                 FitRejected?.Invoke(); // 触覚 Error（残差過大・やり直し）
                 RestartCapture();
                 return;
@@ -484,6 +505,7 @@ namespace FixedCamVr.Tracking
             _phase = Phase.Capture;
             _pointIndex = 0;
             _sampler.Reset();
+            _retryNeedsRelease = true;
             _liveGuidanceForIndex = -1;
             TearDownWireframe();
             Debug.Log($"[CourseReg] やり直し — 点 1: {RegistrationGuidance.TouchInstruction(null, TouchHeightM)}A を 0.5 秒ホールド");
@@ -506,8 +528,14 @@ namespace FixedCamVr.Tracking
         // ControllerModeLogic が Normal へ戻す（その ModeChanged の Fire だけが鳴る＝確定保存とは区別）。
         private void ExitReview()
         {
+            if (courseFrame == null || !courseFrame.HasRegistration || courseFrame.NeedsReRegistration)
+            {
+                ShowTransient("頭の向きの基準が変わりました\nA：点 1 からやり直し");
+                return;
+            }
             Debug.Log("[CourseReg] 確認フェーズ終了（保存なし）");
             SetActive(false);
+            RegistrationReviewed?.Invoke();
         }
 
         private void ShowTransient(string msg)
@@ -531,49 +559,46 @@ namespace FixedCamVr.Tracking
         // Idle は空文字（要再登録警告は StatusHud が CourseFrame から直接読む）。
         private void UpdateGuidanceText()
         {
-            string text;
-            bool isAlert = false;
-
-            if (!string.IsNullOrEmpty(_transientMsg))
+            GuidanceAction = GuidanceDetails = GuidanceControls = "";
+            bool isAlert = !string.IsNullOrEmpty(_transientMsg);
+            switch (_phase)
             {
-                text = _transientMsg;
-                isAlert = true;
+                case Phase.Capture:
+                    string touch = $"点 {_pointIndex + 1}：" + RegistrationGuidance.TouchInstruction(_authoredLabels[_pointIndex], TouchHeightM);
+                    GuidanceAction = isAlert ? _transientMsg + "\n" + touch : _retryNeedsRelease
+                        ? "点 1 から位置合わせをやり直します\n" + touch
+                        : touch + "\n右 A：押したまま 0.5 秒静止で記録";
+                    GuidanceDetails = CaptureGuidance();
+                    if (_sampler.Active)
+                        GuidanceDetails += "\n" + RegistrationGuidance.SamplingLine(_sampler.Progress01 * MarkHoldSec, MarkHoldSec);
+                    GuidanceControls = _retryNeedsRelease
+                        ? "右 A を離す → 点 1 の×印へ移動\n右 A：押したまま 0.5 秒静止で記録"
+                        : isAlert ? "右 A：押したまま 0.5 秒静止で記録"
+                        : "点がそろうと、ガイド線の重なりを確認します";
+                    break;
+                case Phase.Verify:
+                    GuidanceAction = "ガイド線が実物の壁と床の×印に\n重なるか確認してください";
+                    GuidanceDetails = RegistrationGuidance.ResidualLine(_verifyMaxResidualM, maxResidualM)
+                        + "\n" + RegistrationGuidance.FloorLine(_verifyFloorY, _verifyFloorSpreadM, FloorHeightSolver.SpreadWarnM);
+                    GuidanceControls = "B 短押し：この位置合わせで確定\nA：点 1 からやり直し";
+                    break;
+                case Phase.Review:
+                    bool invalid = courseFrame != null && courseFrame.NeedsReRegistration;
+                    GuidanceAction = invalid ? "頭の向きの基準が変わりました\n位置合わせをやり直してください"
+                        : "ガイド線が実物の壁と床の×印に\n重なるか確認してください";
+                    GuidanceDetails = ReviewGuidance();
+                    GuidanceControls = invalid ? "A：点 1 からやり直し"
+                        : "B 短押し：重なりを確認して再利用\nA：点 1 からやり直し";
+                    break;
             }
-            else
-            {
-                switch (_phase)
-                {
-                    case Phase.Capture:
-                        // サンプリング中は進捗バー付きで毎フレーム更新（ガイダンスブランチは間引きなし）。
-                        // 経過時間は Progress01（=time/hold）から復元する（SamplingLine は elapsed を受ける）。
-                        text = _sampler.Active
-                            ? RegistrationGuidance.SamplingLine(_sampler.Progress01 * MarkHoldSec, MarkHoldSec)
-                            : CaptureGuidance();
-                        break;
-                    case Phase.Verify:
-                        text = RegistrationGuidance.ResidualLine(_verifyMaxResidualM, maxResidualM)
-                             + "\n" + RegistrationGuidance.FloorLine(
-                                   _verifyFloorY, _verifyFloorSpreadM, FloorHeightSolver.SpreadWarnM)
-                             // ⚠ 画面に出ている線の呼び方は「ガイド線」1 語に固定する（旧「ワイヤー」は
-                             //   初見のスタッフに何を指すか伝わらない。「確認線」も造語なので採らない）。
-                             + "\nガイド線が実物の壁と床の×印に重なるか見る"
-                             + "\nB：この位置合わせで確定"
-                             + "\nA：点 1 からやり直し";
-                        break;
-                    case Phase.Review:
-                        text = ReviewGuidance();
-                        break;
-                    default: // Idle
-                        text = "";
-                        break;
-                }
-            }
-
-            _guidanceText = text;
+            if (isAlert && _phase != Phase.Capture)
+                GuidanceDetails = _transientMsg + "\n" + GuidanceDetails;
+            _guidanceText = GuidanceAction + (GuidanceDetails.Length > 0 ? "\n" + GuidanceDetails : "")
+                + (GuidanceControls.Length > 0 ? "\n" + GuidanceControls : "");
             _guidanceIsAlert = isAlert;
         }
 
-        // Capture 中のガイダンス。点 k/N と label を示し、2 点目以降は直前点との実測距離 vs
+        // Capture 中の補助表示。点 k/N と記録済み点数を示し、2 点目以降は直前点との実測距離 vs
         // authored 距離の誤差 % をライブ表示する（確定前に「いま何 % ズレているか」を見ながら当てられる）。
         // 文字列生成は LiveErrorInterval 間隔に間引く（毎フレームの補間 GC を避ける。点 index 変化で即更新）。
         private string CaptureGuidance()
@@ -586,13 +611,7 @@ namespace FixedCamVr.Tracking
             _liveGuidanceForIndex = _pointIndex;
 
             int k = _pointIndex + 1, n = _authoredPoints.Length;
-            string label = _authoredLabels[_pointIndex];
-            // 床の高さもここで測るので、「かざす」ではなく高さを決めた指示を出す
-            // （既定は着ける＝高さ 0。空中でホバーすると XZ もぶれる）。
-            string head = RegistrationGuidance.TouchInstruction(label, TouchHeightM);
-            // ⚠ 操作の言い方は早見表（ControllerGuidePanel）と **1 字まで同じ**にする。
-            //    同じ操作を 2 つの面が違う言い方で呼ぶと、現場で照合できない。
-            string text = $"点 {k}／{n}\n{head}\nA：押したまま 0.5 秒静止で記録";
+            string text = $"点 {k}／{n}（記録済み {_pointIndex} 点）";
 
             if (_pointIndex >= 1)
             {
@@ -623,17 +642,13 @@ namespace FixedCamVr.Tracking
                 courseFrame != null ? courseFrame.MaxResidualM : 0f,
                 courseFrame != null ? courseFrame.PointCount : 0);
             // 床の高さを測っていない登録（旧ファイル）は、ワイヤーが沈んで見える原因そのものなので名指しする。
+            header = header.Replace("（", "\n（");
             string floor = courseFrame == null ? ""
                 : courseFrame.HasFloorY
                     ? "\n" + RegistrationGuidance.FloorLine(courseFrame.FloorY, courseFrame.FloorSpreadM,
                                                             FloorHeightSolver.SpreadWarnM)
                     : $"\n<color=#{RegistrationGuidance.AlertHex}>床の高さを測っていません</color>";
-            string text = header + floor
-                        + "\nガイド線が実物に重ならなければ A"
-                        + "\nA：点 1 からやり直し"
-                        + "\nB：このまま終了";
-            if (courseFrame != null && courseFrame.NeedsReRegistration)
-                text += $"\n<color=#{RegistrationGuidance.AlertHex}>頭の向きの基準が変わりました。やり直しを</color>";
+            string text = header + floor;
             return text;
         }
 

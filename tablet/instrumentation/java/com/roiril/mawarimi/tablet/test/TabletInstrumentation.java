@@ -3,6 +3,7 @@ package com.roiril.mawarimi.tablet.test;
 import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.ComponentName;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -16,6 +17,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -24,11 +26,14 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class TabletInstrumentation extends Instrumentation {
     private static final String TAG = "DoctorTabletTest";
     private static final ComponentName ACTIVITY = new ComponentName(
         "com.roiril.mawarimi.tablet", "com.roiril.mawarimi.tablet.MainActivity");
+    private static final Pattern FIRST_NUMBER = Pattern.compile("\\d+");
     private final Bundle results = new Bundle();
     private boolean requireQuest;
     private boolean mutateQuest;
@@ -36,6 +41,7 @@ public final class TabletInstrumentation extends Instrumentation {
     private boolean playback;
     private boolean briefing;
     private boolean equipment;
+    private boolean staffFlow;
 
     @Override
     public void onCreate(Bundle arguments) {
@@ -45,6 +51,7 @@ public final class TabletInstrumentation extends Instrumentation {
         playback = arguments != null && "true".equalsIgnoreCase(arguments.getString("playback"));
         briefing = arguments != null && "true".equalsIgnoreCase(arguments.getString("briefing"));
         equipment = arguments != null && "true".equalsIgnoreCase(arguments.getString("equipment"));
+        staffFlow = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFlow"));
         start();
     }
 
@@ -52,7 +59,7 @@ public final class TabletInstrumentation extends Instrumentation {
     public void onStart() {
         int resultCode = Activity.RESULT_OK;
         try {
-            if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
+            if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
             results.putString("summary", "PASS checks=" + checks);
             Log.i(TAG, "PASS checks=" + checks);
         } catch (Throwable error) {
@@ -62,6 +69,184 @@ public final class TabletInstrumentation extends Instrumentation {
         } finally {
             finish(resultCode, results);
         }
+    }
+
+    private void runStaffFlowTests() throws Exception {
+        Activity activity = launchFromShell();
+        WebView view = waitForWebView(activity, 10000);
+        String originalQuest = "";
+        waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
+        try {
+            originalQuest = evaluateString(view, "TabletTransport.getQuest()");
+            check("original Quest selection is restorable",
+                "alpha".equals(originalQuest) || "beta".equals(originalQuest));
+            Log.i(TAG, "staffFlow originalQuest=" + originalQuest);
+
+            waitFor("staff home", 5000, () -> evaluateBoolean(view,
+                "document.getElementById('staff').open"));
+            evaluate(view, "(function(){var d=document.getElementById('staffTrouble');d.open=true;"
+                + "var q=document.getElementById('questBeta');q.checked=true;"
+                + "q.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "document.getElementById('staffCheckBtn').click();return true;})()");
+            waitFor("Quest beta connection", 20000, () -> evaluateBoolean(view,
+                "document.getElementById('questBeta').checked"
+                    + "&&document.getElementById('staffCheckMessage').textContent.includes('通信先を保存しました')"
+                    + "&&document.getElementById('staffTargetName').textContent.includes('クエスト β')"));
+            check("Quest beta selected", "beta".equals(evaluateString(view, "TabletTransport.getQuest()")));
+            check("visitor entry remains disabled", evaluateBoolean(view,
+                "document.getElementById('titleStart').disabled"));
+            JSONObject staffState = evaluateObject(view,
+                "JSON.stringify({viewport:{width:innerWidth,height:innerHeight},"
+                    + "target:document.getElementById('staffTargetName').textContent.trim(),"
+                    + "state:document.getElementById('staff').dataset.state,"
+                    + "title:document.getElementById('staffNowTitle').textContent.trim(),"
+                    + "message:document.getElementById('staffCheckMessage').textContent.trim(),"
+                    + "quest:document.getElementById('devQuestValue').textContent.trim(),"
+                    + "titleDisabled:document.getElementById('titleStart').disabled})");
+            check("staff home has current action", !staffState.optString("title").isEmpty());
+            Log.i(TAG, "staffFlow state=" + staffState);
+            checkButtonBounds(view, "staffCheckBtn", true);
+            evaluate(view, "document.getElementById('staff').scrollTop=0");
+            SystemClock.sleep(300);
+            saveScreenshot("doctor-staff-flow-staff.png");
+
+            evaluate(view, "document.getElementById('staffBriefingBtn').click()");
+            waitFor("staff briefing preview", 5000, () -> evaluateBoolean(view,
+                "!document.getElementById('briefingView').hidden"
+                    + "&&!document.getElementById('briefingMode').hidden"));
+            int position = readSceneCounter(view);
+            for (; position < 12; position++) {
+                int next = position + 1;
+                evaluate(view, "document.getElementById('briefingNext').click()");
+                waitFor("staff preview sentence " + next, 5000, () -> readSceneCounter(view) == next);
+            }
+            check("staff preview final action", evaluateBoolean(view,
+                "document.getElementById('briefingNext').textContent==='装着の案内へ'"
+                    + "&&!document.getElementById('briefingNext').hidden"));
+            evaluate(view, "document.getElementById('briefingNext').click()");
+            waitFor("staff equipment preview", 5000, () -> evaluateBoolean(view,
+                "!document.getElementById('equipmentGuide').hidden"
+                    + "&&!document.getElementById('equipmentSteps').hidden"));
+            JSONObject equipmentLayout = evaluateObject(view,
+                "JSON.stringify((()=>{var d=document.documentElement;var g=document.getElementById('equipmentGuide');"
+                    + "var r=g.getBoundingClientRect();return {viewport:{width:innerWidth,height:innerHeight},"
+                    + "document:{width:d.scrollWidth,height:d.scrollHeight},guide:{left:r.left,top:r.top,right:r.right,bottom:r.bottom},"
+                    + "fits:d.scrollWidth<=innerWidth+1&&d.scrollHeight<=innerHeight+1,text:g.textContent.trim()};})())");
+            check("equipment preview fits viewport", equipmentLayout.optBoolean("fits"));
+            check("equipment preview has visitor instructions",
+                equipmentLayout.optString("text").contains("左手にコントローラー")
+                    && equipmentLayout.optString("text").contains("Meta Quest")
+                    && equipmentLayout.optString("text").contains("ヘッドフォン"));
+            checkButtonBounds(view, "briefingReplay", true);
+            checkButtonBounds(view, "briefingSettings", true);
+            Log.i(TAG, "staffFlow equipment=" + equipmentLayout);
+            saveScreenshot("doctor-staff-flow-equipment.png");
+
+            evaluate(view, "document.getElementById('briefingSettings').click()");
+            waitFor("staff home after preview", 5000, () -> evaluateBoolean(view,
+                "document.getElementById('staff').open"
+                    + "&&document.getElementById('staffNowTitle').textContent.trim().length>0"));
+            JSONObject titleLayout = evaluateObject(view,
+                "JSON.stringify({viewport:{width:innerWidth,height:innerHeight},"
+                    + "width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight,"
+                    + "fits:document.documentElement.scrollWidth<=innerWidth+1"
+                    + "&&document.documentElement.scrollHeight<=innerHeight+1,"
+                    + "label:document.getElementById('staffNowTitle').textContent.trim(),"
+                    + "state:document.getElementById('staff').dataset.state})");
+            check("staff home fits viewport", titleLayout.optBoolean("fits"));
+            Log.i(TAG, "staffFlow return=" + titleLayout);
+            saveScreenshot("doctor-staff-flow-title.png");
+        } finally {
+            if ("alpha".equals(originalQuest) || "beta".equals(originalQuest)) {
+                restoreQuestSelection(view, originalQuest);
+            } else {
+                try { evaluate(view, "document.getElementById('staff').close()"); }
+                catch (Throwable cleanupError) { Log.w(TAG, "staffFlow close failed", cleanupError); }
+            }
+        }
+    }
+
+    private void restoreQuestSelection(WebView view, String quest) throws Exception {
+        Throwable normalRestoreError = null;
+        try {
+            evaluate(view, "(function(){var b=document.getElementById('briefingSettings');"
+                + "if(!document.getElementById('briefingView').hidden&&!b.hidden)b.click();"
+                + "var d=document.getElementById('staff');if(!d.open)document.getElementById('staffToggle').click();"
+                + "document.getElementById('staffTrouble').open=true;var q=document.getElementById('quest"
+                + ("alpha".equals(quest) ? "Alpha" : "Beta") + "');q.checked=true;"
+                + "q.dispatchEvent(new Event('change',{bubbles:true}));"
+                + "document.getElementById('staffCheckBtn').click();return true;})()");
+            waitFor("restore Quest " + quest, 20000, () -> evaluateBoolean(view,
+                "TabletTransport.getQuest()==='" + quest + "'"
+                    + "&&document.getElementById('staffCheckMessage').textContent.includes('通信先を保存しました')"));
+        } catch (Throwable error) {
+            normalRestoreError = error;
+            Log.w(TAG, "normal Quest restore failed; using persisted transport fallback", error);
+            evaluate(view, "TabletTransport.setQuest('" + quest + "');location.reload()");
+            waitFor("reload restored Quest " + quest, 15000, () -> evaluateBoolean(view,
+                "document.readyState==='complete'&&TabletTransport.getQuest()==='" + quest + "'"));
+        } finally {
+            try { evaluate(view, "document.getElementById('staff').close()"); }
+            catch (Throwable closeError) { Log.w(TAG, "staffFlow close failed", closeError); }
+        }
+        check("Quest selection restored", quest.equals(evaluateString(view, "TabletTransport.getQuest()")));
+        Log.i(TAG, "staffFlow restoredQuest=" + quest + " fallback=" + (normalRestoreError != null));
+    }
+
+    private JSONObject checkButtonBounds(WebView view, String id, boolean require44Px) throws Exception {
+        evaluate(view, "document.getElementById('" + id + "').scrollIntoView({block:'center',inline:'center'})");
+        SystemClock.sleep(200);
+        JSONObject bounds = evaluateObject(view,
+            "JSON.stringify((()=>{var e=document.getElementById('" + id + "');var r=e.getBoundingClientRect();"
+                + "var s=getComputedStyle(e);return {id:e.id,left:r.left,top:r.top,right:r.right,bottom:r.bottom,"
+                + "width:r.width,height:r.height,viewportWidth:innerWidth,viewportHeight:innerHeight,"
+                + "visible:s.display!=='none'&&s.visibility==='visible'&&r.width>0&&r.height>0};})())");
+        boolean onScreen = bounds.optBoolean("visible")
+            && bounds.optDouble("left") >= -1 && bounds.optDouble("top") >= -1
+            && bounds.optDouble("right") <= bounds.optDouble("viewportWidth") + 1
+            && bounds.optDouble("bottom") <= bounds.optDouble("viewportHeight") + 1;
+        check(id + " is accessible in viewport", onScreen);
+        if (require44Px) check(id + " is at least 44px high", bounds.optDouble("height") >= 44);
+        Log.i(TAG, "buttonBounds " + bounds);
+        return bounds;
+    }
+
+    private void saveScreenshot(String filename) throws Exception {
+        if (!"doctor-staff-flow-staff.png".equals(filename)
+            && !"doctor-staff-flow-equipment.png".equals(filename)
+            && !"doctor-staff-flow-title.png".equals(filename)) {
+            throw new AssertionError("Unexpected staffFlow screenshot name: " + filename);
+        }
+        Bitmap screenshot = getUiAutomation().takeScreenshot();
+        check("screenshot captured " + filename, screenshot != null);
+        screenshot.recycle();
+        String destination = "/sdcard/" + filename;
+        runShell("screencap -p " + destination);
+        String byteOutput = runShell("wc -c " + destination);
+        long bytes = firstNumber(byteOutput);
+        check("screenshot saved " + destination, bytes > 0);
+        Log.i(TAG, "screenshot " + destination + " bytes=" + bytes);
+    }
+
+    private String runShell(String command) throws Exception {
+        try (ParcelFileDescriptor descriptor = getUiAutomation().executeShellCommand(command);
+             InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            for (int count; (count = input.read(buffer)) >= 0;) output.write(buffer, 0, count);
+            return output.toString("UTF-8");
+        }
+    }
+
+    private int readSceneCounter(WebView view) throws Exception {
+        return Math.toIntExact(firstNumber(evaluateString(view,
+            "document.getElementById('sceneCounter').textContent")));
+    }
+
+    private long firstNumber(String value) {
+        Matcher matcher = FIRST_NUMBER.matcher(value == null ? "" : value);
+        if (!matcher.find()) throw new AssertionError("Expected a number in: " + value);
+        return Long.parseLong(matcher.group());
     }
 
     private void runPlaybackTests() throws Exception {
@@ -300,13 +485,11 @@ public final class TabletInstrumentation extends Instrumentation {
         }
         SystemClock.sleep(1000);
         check("long press does not select text", evaluateBoolean(view, "String(window.getSelection())===''"));
-        String first = evaluateString(view, "document.getElementById('sceneCounter').textContent");
-        int position = Integer.parseInt(first.trim().split("/")[0].trim());
+        int position = readSceneCounter(view);
         for (; position < 12; position++) {
             int next = position + 1;
             evaluate(view, "document.getElementById('briefingNext').click()");
-            waitFor("next sentence " + next, 5000, () -> evaluateBoolean(view,
-                "parseInt(document.getElementById('sceneCounter').textContent,10)===" + next));
+            waitFor("next sentence " + next, 5000, () -> readSceneCounter(view) == next);
             SystemClock.sleep(1000);
         }
         check("final sentence offers equipment", evaluateBoolean(view,
@@ -334,9 +517,9 @@ public final class TabletInstrumentation extends Instrumentation {
             while (output.read() != -1) { /* Capture this screen before starting replay. */ }
         }
         evaluate(view, "document.getElementById('briefingReplay').click()");
-        waitFor("replay first sentence", 5000, () -> evaluateBoolean(view,
-            "document.getElementById('equipmentGuide').hidden&&!document.getElementById('subtitle').hidden"
-            + "&&parseInt(document.getElementById('sceneCounter').textContent,10)===1"));
+        waitFor("replay first sentence", 5000, () -> readSceneCounter(view) == 1
+            && evaluateBoolean(view,
+                "document.getElementById('equipmentGuide').hidden&&!document.getElementById('subtitle').hidden"));
         waitFor("replay media advancing", 10000, () -> evaluateBoolean(view,
             "!document.getElementById('doctorVideo').hidden&&document.getElementById('doctorVideo').currentTime>0.3"));
         check("replay restores doctor", evaluateBoolean(view, "!document.querySelector('.stage').classList.contains('is-equipment')"));

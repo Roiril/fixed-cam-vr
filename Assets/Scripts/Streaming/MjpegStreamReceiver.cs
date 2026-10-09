@@ -30,12 +30,14 @@ namespace FixedCamVr.Streaming
             public readonly long captureNs;   // streamer 側 monotonic ns
             public readonly long seq;          // 連番
             public readonly long receivedTickMs; // 受信側 wall-clock ms（古フレ判定用）
+            public readonly long connection;
 
-            public FrameMeta(long captureNs, long seq, long receivedTickMs)
+            public FrameMeta(long captureNs, long seq, long receivedTickMs, long connection = 0)
             {
                 this.captureNs = captureNs;
                 this.seq = seq;
                 this.receivedTickMs = receivedTickMs;
+                this.connection = connection;
             }
         }
 
@@ -82,6 +84,8 @@ namespace FixedCamVr.Streaming
         private volatile bool _connectionEstablished;
 
         public bool IsConnected => _isConnected;
+        private long _connectionSerial;
+        public long ConnectionSerial => Interlocked.Read(ref _connectionSerial);
         public string? LastError => _lastError;
 
         public void RequestReconnect()
@@ -315,6 +319,7 @@ namespace FixedCamVr.Streaming
                 throw new InvalidOperationException($"boundary not found in Content-Type: {contentType}");
             }
 
+            Interlocked.Increment(ref _connectionSerial);
             _isConnected = true;
             _connectionEstablished = true; // 以降の切断は backoff リセット（次リトライ 1s）対象
             Stream readStream = stream;
@@ -573,7 +578,7 @@ namespace FixedCamVr.Streaming
                 Buffer.BlockCopy(acc, payloadStart, target, 0, payloadLen);
                 _latestBuf = target;
                 _latestLen = payloadLen;
-                _latestMeta = new FrameMeta(captureNs, seq, NowMs());
+                _latestMeta = new FrameMeta(captureNs, seq, NowMs(), ConnectionSerial);
                 _hasLatest = true;
             }
             return b2;

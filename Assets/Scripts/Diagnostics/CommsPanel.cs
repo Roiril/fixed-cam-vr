@@ -1079,7 +1079,8 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             if (!IsBuilt) return;
-            bool registrationActive = showControl != null && showControl.CourseRegistrationActive;
+            bool registrationActive = showControl != null
+                && (showControl.CourseRegistrationActive || showControl.StaffSetupActive);
             if (registrationActive != RegistrationHidden)
             {
                 RegistrationHidden = registrationActive;

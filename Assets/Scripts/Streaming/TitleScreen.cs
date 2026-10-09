@@ -361,7 +361,8 @@ namespace FixedCamVr.Streaming
         /// ⚠⚠ <b>2026-09-14 にステータス表示（右 B）を外した。</b> ステータスが黒の上に描かれる
         /// ようになったので譲る必要が無く、譲っている間は体験者の開始押しが黙って無視されていた。
         /// </summary>
-        private bool IsYielding => showControl?.CourseRegistrationActive ?? false;
+        private bool IsYielding => (showControl?.CourseRegistrationActive ?? false)
+                                  || (showControl?.StaffSetupActive ?? false);
 
         /// <summary>
         /// いま譲っているか（テレメトリ用）。<b>譲っている間は段が Wait のままでも黒は 0</b> なので、

@@ -435,6 +435,12 @@ namespace FixedCamVr.Diagnostics
         // 内容モードを解決して text へ反映する。
         private void RenderContent()
         {
+            var setup = StaffSetupPanel.Instance;
+            if (setup != null && setup.Visible)
+            {
+                if (text != null) text.enabled = false;
+                return;
+            }
             if (text == null) return;
 
             // 1. 登録中はガイダンスを強制表示（最優先）。

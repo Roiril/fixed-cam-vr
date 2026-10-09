@@ -2897,6 +2897,8 @@ namespace FixedCamVr.Streaming
         /// ここが false のまま居座ることは無い（「タイトルが壊れると二度と始まらない」を作らない）。
         /// </summary>
         public Func<bool>? StartAuthorizedProvider;
+        public Func<bool>? StaffSetupActiveProvider;
+        public bool StaffSetupActive => StaffSetupActiveProvider?.Invoke() ?? false;
 
         /// <summary>人が始めてよいと言ったか（未配線なら true ＝ 止めない）。</summary>
         public bool StartAuthorized => StartAuthorizedProvider?.Invoke() ?? true;

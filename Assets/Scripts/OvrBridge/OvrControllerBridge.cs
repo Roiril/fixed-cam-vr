@@ -104,6 +104,8 @@ namespace FixedCamVr.OvrBridge
         private int _titleSequence = -1;
         private bool _markNeedsRelease = true;
         private bool _prevAHeld, _prevBHeld, _prevTriggerHeld;
+        private StaffSetupPanel? _staffSetup;
+        private readonly StaffSetupButtonLogic _setupButton = new StaffSetupButtonLogic();
 
         // 左グリップ = 体験中の撮影（説明資料用・2026-09-30）。押した瞬間の画を 4 種類保存する。
         // ⚠ 体験者の入力ではない（報告・言語・題字には使わない）。SerializeField にしない
@@ -209,6 +211,18 @@ namespace FixedCamVr.OvrBridge
             }
 
             TrySubscribeRecenter();
+            courseRegistration?.DeferStartupForStaffSetup();
+            _staffSetup = StaffSetupPanel.Ensure();
+            if (showControl != null)
+            {
+                showControl.StartAuthorizedProvider = () => _onboarding.StartAuthorized
+                    && _staffSetup != null && _staffSetup.Logic.Started;
+                showControl.StaffSetupActiveProvider = () =>
+                {
+                    _staffSetup?.Refresh(0f);
+                    return _staffSetup != null && _staffSetup.Visible;
+                };
+            }
         }
 
         private void OnDestroy()
@@ -241,6 +255,8 @@ namespace FixedCamVr.OvrBridge
 
         private void Update()
         {
+            if (showControl?.Portal != null && showControl.Portal.StaffResetProvider == null)
+                showControl.Portal.StaffResetProvider = TryResetVisitorFromTablet;
             // 接続状態と物理ボタンは最初に一度だけ読む。SDK の Down は切断前の状態を持ち越し得るため、
             // 再接続後の解放を確認した入力から Down を組み立てる。
             bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
@@ -263,6 +279,8 @@ namespace FixedCamVr.OvrBridge
             _lTracked = lTracked;
             _rConnected = rConnected;
             _rTracked = rTracked;
+            _staffSetup?.SetRightController(rConnected, rTracked);
+            _staffSetup?.Refresh(Time.unscaledDeltaTime);
             guidePanel?.SetControllerState(rConnected, rTracked);
             statusHud?.SetRightControllerState(rConnected, rTracked);
 
@@ -289,6 +307,7 @@ namespace FixedCamVr.OvrBridge
             bool aHeld = rightConnection.AcceptInput && aRawHeld;
             bool bHeld = rightConnection.AcceptInput && bRawHeld;
             bool rTrigger = rightConnection.AcceptInput && triggerRawHeld;
+            if (rTrigger) _setupButton.Tick(false, 0f, false);
             bool aDown = aHeld && !_prevAHeld;
             bool bDown = bHeld && !_prevBHeld;
             bool triggerDown = rTrigger && !_prevTriggerHeld;
@@ -397,6 +416,7 @@ namespace FixedCamVr.OvrBridge
             //    含めると**早見表を読みながらトリガー長押しで位置合わせへ入れない**。
             //    2026-09-11 の事故（右が震え続ける・ランリセットが撃たれる）は**握り込み × A** なので、
             //    B を外しても回帰しない。
+            // 機器確認と位置合わせは並行してよい（2026-10-10）。初回の段でも右トリガー 2 秒で入れる。
             int voidedBefore = _modeLogic.VoidedHolds;
             _modeLogic.Tick(new ControllerModeLogic.Frame
             {
@@ -406,6 +426,7 @@ namespace FixedCamVr.OvrBridge
                 registrationActive = regActive,
                 faceButtonHeld = aHeld,
             });
+            _staffSetup?.SetResetProgress(_modeLogic.ResetHoldProgress01);
             if (_modeLogic.VoidedHolds != voidedBefore)
             {
                 // 振動は画にも音にも出ないので、重なりが起きたことはここに残す。
@@ -423,18 +444,24 @@ namespace FixedCamVr.OvrBridge
                 _onboarding.Reset();
                 _markHold.Reset();
                 _markNeedsRelease = true;
+                _staffSetup?.NewVisitor();
             }
 
             // HMDを持たない自動走行は、題字を自前で検証した後に開始門を true へ差し替える。
             // 通常時はこの provider 自体が _onboarding.StartAuthorized を返すので、この分岐へ入らない。
             if (showControl != null && showControl.StartAuthorized && !_onboarding.StartAuthorized)
+            {
                 _onboarding.CompleteForAutomation();
+                _staffSetup?.UseAutomation();
+            }
+
+            bool setupBlocked = _staffSetup == null || _staffSetup.BlocksVisitor;
 
             CommsNotice expectedOnboardingNotice = NoticeFor(_onboarding.Prompt);
             HmdOnboardingAction onboardingAction = _onboarding.Tick(new HmdOnboardingInput
             {
-                dt = regActive ? 0f : Time.unscaledDeltaTime,
-                hmdPresent = hmdPresent,
+                dt = regActive || setupBlocked ? 0f : Time.unscaledDeltaTime,
+                hmdPresent = OVRManager.instance == null || OVRPlugin.userPresent,
                 leftConnected = _lConnected,
                 leftPositionValid = _lTracked,
                 xHeld = xHeld && mode == ControllerModeLogic.Mode.Normal,
@@ -444,7 +471,7 @@ namespace FixedCamVr.OvrBridge
                 titleDone = titleScreen == null || titleScreen.ClosedAlready,
                 promptFullyShown = comms == null
                     || comms.IsOnboardingNoticeFullyShown(expectedOnboardingNotice),
-                inputBlocked = regActive,
+                inputBlocked = regActive || setupBlocked,
             });
 
             if (onboardingAction == HmdOnboardingAction.TutorialAccepted)
@@ -454,12 +481,14 @@ namespace FixedCamVr.OvrBridge
             }
             else if (onboardingAction == HmdOnboardingAction.DismissTitle)
             {
-                if (titleScreen != null && titleScreen.DismissTitle()) haptics?.Fire();
+                if (titleScreen != null && titleScreen.ReadyForStart
+                    && _staffSetup != null && _staffSetup.TryBeginExperience()
+                    && titleScreen != null && titleScreen.DismissTitle()) haptics?.Fire();
             }
 
             // タイトル表示は一時的な譲り（ステータス面・位置合わせ）が終わったあとも再試行する。
             if (_onboarding.Stage == HmdOnboardingStage.Title
-                && titleScreen != null && titleScreen.Stage == TitleStage.Wait)
+                && !setupBlocked && titleScreen != null && titleScreen.Stage == TitleStage.Wait)
                 titleScreen.ShowTitle();
 
             ApplyOnboardingPresentation();
@@ -518,7 +547,8 @@ namespace FixedCamVr.OvrBridge
             //    down の Ack は上で全ダウン共通に鳴っているので、ここは Action の後着で昇格する。
             if (statusHud != null)
             {
-                bool statusShown = statusHud.SetHeld(bHeld && mode == ControllerModeLogic.Mode.Normal);
+                bool statusShown = statusHud.SetHeld(bHeld && mode == ControllerModeLogic.Mode.Normal
+                    && !(_staffSetup != null && _staffSetup.Visible));
                 if (statusShown) haptics?.Action();
             }
 
@@ -526,6 +556,7 @@ namespace FixedCamVr.OvrBridge
             switch (mode)
             {
                 case ControllerModeLogic.Mode.Registration:
+                    _setupButton.Tick(false, 0f, false);
                     // 登録モード中は通常マッピングを抑止し、登録入力（A=マーク/やり直し・B=確定）を転送。
                     courseRegistration?.Feed(new CourseRegistrationController.RegInput
                     {
@@ -538,6 +569,17 @@ namespace FixedCamVr.OvrBridge
 
                 case ControllerModeLogic.Mode.Normal:
                 default:
+                    // B 短押しは体験者を迎える段の引き渡しだけ。初回の段では画面の呼び戻し（B 1 秒）だけが効く。
+                    var setupAction = _setupButton.Tick(bHeld, Time.unscaledDeltaTime,
+                        _staffSetup != null && _staffSetup.Visible && (OVRManager.instance == null || OVRPlugin.userPresent) && rTracked && !aHeld && !rTrigger,
+                        _staffSetup != null && _staffSetup.Logic.Stage == StaffSetupStage.Welcome
+                            && _staffSetup.Logic.ReadyToHandOff);
+                    if (setupAction == StaffSetupButtonAction.RecallScreen) _staffSetup?.RecallScreen();
+                    else if (setupAction == StaffSetupButtonAction.Continue)
+                    {
+                        if (_staffSetup != null && _staffSetup.Continue()) haptics?.Action();
+                        else haptics?.Error();
+                    }
                     // B は押しているあいだの表示なので、ここでは何もしない（上の SetHeld が担う）。
                     // 右 A の長押しは _modeLogic が体験者リセットへ送る。短押しでは何もしない。
                     // タイトル開始は体験者の左 X / Y 短押しだけ。
@@ -600,6 +642,12 @@ namespace FixedCamVr.OvrBridge
 
         private void ApplyOnboardingPresentation()
         {
+            if (_staffSetup == null || _staffSetup.BlocksVisitor)
+            {
+                comms?.ClearOnboardingNotice();
+                titleScreen?.SetStartGuidance(TitleStartGuidance.Hidden);
+                return;
+            }
             // 導入の段をスタッフの面へ。⚠ **導入の状態機械は Assembly-CSharp 側にしか無い**ので、
             //    StatusHud からは見えない（Diagnostics は OVR も導入の入力も知らない）。
             if (_onboarding.Stage != _pushedIntroStage)
@@ -641,12 +689,29 @@ namespace FixedCamVr.OvrBridge
 
         // ランリセット（現地手段）。LapCounter.ResetRun が周回リセット + cue 発火済みクリア + 現在ゾーン再シードを行う。
         // LapCounter 未配線なら CueScheduler 単独で発火済みだけクリアする（周回は動かないが安全側）。
+        private bool TryResetVisitorFromTablet()
+        {
+            if (_staffSetup == null || !_staffSetup.Logic.PositionConfirmed
+                || _modeLogic.Current != ControllerModeLogic.Mode.Normal
+                || (courseRegistration != null && courseRegistration.IsActive)) return false;
+            var run = FindObjectOfType<ShowRunDirector>();
+            var outro = FindObjectOfType<OutroDirector>();
+            bool runFinished = run != null && run.Phase == ShowPhase.Finished;
+            bool outroPlaying = outro != null && outro.Stage != OutroStage.Off && outro.Stage != OutroStage.Done;
+            if (!StaffSetupLogic.CanResetFromTablet(_staffSetup.Logic.Started, runFinished, outroPlaying)) return false;
+            ResetRun();
+            return _staffSetup.Logic.VisitorStage == VisitorPreparationStage.SettingsRequired;
+        }
+
         private void ResetRun()
         {
             // **号令元は ShowControlClient 1 か所に寄せる**（卓の ▶ ラン開始と同じ経路）。
             // 個別に叩いていた旧実装は、実測滞在が前の体験者の分と混ざる・体験の骨格（相）が
             // 戻らない、という非対称を持っていた。
             var show = FindObjectOfType<ShowControlClient>();
+            int previousTitleSequence = titleScreen != null ? titleScreen.Sequence : -1;
+            if (show?.Portal != null) show.Portal.BeginVisitorSession();
+            else VisitorPrefs.BeginVisitor();
             if (show != null)
             {
                 show.BeginNewVisitorRunLocal();
@@ -664,6 +729,16 @@ namespace FixedCamVr.OvrBridge
                 FindObjectOfType<ShowRunDirector>()?.BeginRun();
             }
             // 体験者が代わるので、進行中の報告の長押しと余韻も落とす。
+            // 実リセット完了を確認。通常のTitle.Sequence通知と二重に新訪問を作らない。
+            if (titleScreen != null && titleScreen.Sequence != previousTitleSequence && titleScreen.Stage == TitleStage.Wait)
+            {
+                _titleSequence = titleScreen.Sequence;
+                _onboarding.Reset();
+                _setupButton.Tick(false, 0f, false);
+                _staffSetup?.VisitorResetCompleted();
+            }
+            else _staffSetup?.NewVisitor();
+            _markNeedsRelease = true;
             _markHold.Reset();
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log("[OvrBridge] Normal: 体験者リセット（右 A 2 秒長押し）");

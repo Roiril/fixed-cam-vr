@@ -135,8 +135,8 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 ## 動かし方（最短）
 
 1. **配信側**: 各スマホで MJPEG 配信を起動（下表）。当日運用の A/B/C は `operations-fleet.json` の固定登録 `.21/.22/.23:8080` と端末の ID・UUID を照合する。`show.json` のローカル接続値をコミットしない
-2. **Unity**: `Main.unity` を開き（**Ctrl+Shift+M**）、必要なら **Tools > FixedCamVr > Setup > Setup Main Demo Scene**（Zones / Tracker / HUD を冪等再配置）→ Play（Quest Link）or 実機ビルド
-3. 疎通確認は **Tools > FixedCamVr > Diagnostics > Ping DroidCams**、または `Phone01.asset` Inspector の **Test Connection**
+2. **Unity**: `tools/unity.ps1 doctor` → `tools/unity.ps1 test` → 必要な変更を反映して `tools/unity.ps1 build fixedcam`。既存 Editor は勝手に終了させない
+3. **Quest 起動後**: 博士タブレットのスタッフ画面で準備を進める。最初の位置合わせはスタッフがQuestを装着して行う。カメラの接続待ちでも右トリガー2秒で始められる。タブレットが機器の実状態を表示する。毎回は回収と清拭の後にリセットの実完了を待ち、「来場者の画面にする」で渡す。設定と博士の説明の後にスタッフが実値と機器を確認し、「長押しで装着へ進む」を押し続ける。応答後に装着案内が自動で進む。終わりの演出中と終了後は別表示。左X/Yの練習と題字の明示開始は維持する。スマホA/B/Cは「FixedCam Streamer」で配信。詳細は[スタッフ起動・交代フロー](.claude/memory/staff_setup.md)
 
 | 配信アプリ | port | videoPath | 備考 |
 |---|---|---|---|
@@ -152,11 +152,13 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 
 | 状態 | 入力 | 機能 |
 |---|---|---|
-| Normal（既定） | 右 **A** 2 秒長押し | ランリセット（周回=1・ワンショット演出クリア。体験者交代時） |
-| Normal | 右 **B** 短押し | ステータス表示トグル（StatusHud） |
+| Normal（既定） | 右 **A** 2 秒長押し | 毎回、新しい博士UI設定の前にランリセット（周回=1・演出と前回の設定枠をクリア。位置は保持） |
+| スタッフ用準備 | 右 **B** 短押しして離す | 予備のスタッフ確定（通常はタブレットの「長押しで装着へ進む」）。位置合わせは右トリガー2秒で直接始める |
+| スタッフ用セットアップ（位置合わせ作業外） | 右 **B** 1 秒長押し | 画面だけを正面へ戻す。コースの位置合わせは変更しない |
+| Normal（セットアップ完了後） | 右 **B** を押している間 | ステータス表示（離すと 0.3 秒で消える） |
 | Normal | **右トリガー 2 秒長押し** | コース登録モードへ入場 |
 | Registration | 右 **A** | 点サンプル（0.5 秒ホールド平均・誤差 % ライブ表示）/ Verify 中はやり直し |
-| Registration | 右 **B** | Verify で確定・保存・退場 |
+| Registration | 右 **B** | Verify で確定・保存・退場／Review でガイド線を目視して再利用（基準変更時は不可） |
 | Registration | **右トリガー 2 秒長押し** | キャンセル退場（入場と対称） |
 | Normal / Registration | 右グリップ | 未使用 |
 | 常時（体験者の入力ではない） | 左 **グリップ** | **体験中の撮影**（説明資料用）。押した瞬間の画を 4 種類、端末へ PNG で保存する。Development ビルドは既定で有効。**展示本番の機は必ず OFF**（下） |

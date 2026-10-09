@@ -228,6 +228,7 @@ namespace FixedCamVr.Streaming
 
         [Tooltip("show トークン（隣ブース混線対策）。probe に載せ、announce / /info の show と照合する。")]
         [SerializeField] private string showToken = "mawarimi";
+        public string ShowToken => showToken;
 
         [Tooltip("発見プロトコルの UDP ポート。streamer / 卓と一致させる。")]
         [SerializeField] private int discoveryPort = 8830;

@@ -63,6 +63,7 @@ namespace FixedCamVr.Tracking.Tests
             hand.position = world;
             c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
             for (int i = 0; i < 6; i++) c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.1f));
+            c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
         }
 
         private (CourseRegistrationController c, CourseFrame frame, Transform hand, string regPath) Setup()
@@ -83,6 +84,35 @@ namespace FixedCamVr.Tracking.Tests
             SetField(c, "rightHandTransform", handGo.transform);
             // showControl は null のまま → ResolvePoints は既定 2 点 (-0.5,0.5)/(0.5,0.5)（距離 1.0）にフォールバック。
             return (c, frame, handGo.transform, regPath);
+        }
+
+        [TestCase(true)] [TestCase(false)]
+        public void StaffSetupDefersLegacyAutoRegistrationRegardlessOfStartOrder(bool registrationStartsFirst)
+        {
+            var s = Setup();
+            var start = typeof(CourseRegistrationController).GetMethod("Start", BF)!;
+            if (registrationStartsFirst) start.Invoke(s.c, null);
+            s.c.DeferStartupForStaffSetup();
+            if (!registrationStartsFirst) start.Invoke(s.c, null);
+            Assert.IsFalse(s.c.IsActive);
+            s.c.Toggle(); Assert.IsTrue(s.c.IsActive, "通常のスタッフ入場は利用できる");
+        }
+
+        [Test]
+        public void ReviewConfirmedIsSeparateFromSaved_AndRecenterCannotReuse()
+        {
+            var (c, frame, _, _) = Setup();
+            SetField(frame, "_hasRegistration", true);
+            bool reviewed = false, saved = false;
+            c.RegistrationReviewed += () => reviewed = true;
+            c.RegistrationConfirmed += () => saved = true;
+            c.Toggle();
+            c.Feed(RI(false, false, true, 0f));
+            Assert.IsTrue(reviewed); Assert.IsFalse(saved); Assert.IsFalse(c.IsActive);
+            reviewed = false; frame.MarkNeedsReRegistration(); c.Toggle();
+            c.Feed(RI(false, false, true, 0f));
+            Assert.IsFalse(reviewed); Assert.IsFalse(saved); Assert.IsTrue(c.IsActive);
+            Assert.IsTrue(frame.NeedsReRegistration);
         }
 
         [Test]
@@ -123,7 +153,9 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(PointIndex(c), Is.EqualTo(0), "点 index は 0 へリセット");
 
             RefreshGuidance(c);
-            Assert.That(c.GuidanceText, Does.Contain("打ち直してください"), "失敗理由は次の操作まで残る");
+            Assert.That(c.GuidanceAction, Does.Contain("ずれが 20 cm"), "失敗理由は主文に残る");
+            Assert.That(c.GuidanceAction, Does.Contain("点 1："), "点 1 からのやり直しを示す");
+            Assert.That(c.GuidanceDetails, Does.Not.Contain("ずれが"), "操作と進捗を重複させない");
 
             c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
             RefreshGuidance(c);
@@ -133,7 +165,7 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
-        public void VerifyRetryMark_StartsFirstPointSamplingWithoutSecondPress()
+        public void VerifyRetryMark_WaitsForReleaseAndNewPressBeforeSampling()
         {
             var (c, _, hand, _) = Setup();
             c.Toggle();
@@ -141,16 +173,21 @@ namespace FixedCamVr.Tracking.Tests
             Cap(c, hand, new Vector3(0.5f, 1f, 0.5f));
             Assert.That(Phase(c), Is.EqualTo("Verify"));
 
-            hand.position = new Vector3(-0.5f, 1f, 0.5f);
+            hand.position = new Vector3(3f, 1f, 4f); // 確認した場所は点 1 とは限らない。
             c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
             c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.5f));
 
             Assert.That(Phase(c), Is.EqualTo("Capture"));
-            Assert.That(PointIndex(c), Is.EqualTo(1), "やり直しを選んだ A 押下が点 1 の計測開始にも使われる");
+            Assert.That(PointIndex(c), Is.EqualTo(0), "やり直し押下では現在地を採らない");
+            RefreshGuidance(c);
+            StringAssert.Contains("右 A を離す", c.GuidanceControls);
+            c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Assert.That(PointIndex(c), Is.EqualTo(1), "点 1 へ移動後の新しい押下でだけ記録する");
         }
 
         [Test]
-        public void ReviewRetryMark_StartsFirstPointSamplingWithoutSecondPress()
+        public void ReviewRetryMark_WaitsForReleaseAndNewPressBeforeSampling()
         {
             var (c, frame, hand, _) = Setup();
             frame.SetRegistration(Vector2.zero, 0f, 0.02f, 2, save: true);
@@ -162,7 +199,10 @@ namespace FixedCamVr.Tracking.Tests
             c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.5f));
 
             Assert.That(Phase(c), Is.EqualTo("Capture"));
-            Assert.That(PointIndex(c), Is.EqualTo(1), "確認画面の A 押下が点 1 の計測開始にも使われる");
+            Assert.That(PointIndex(c), Is.EqualTo(0), "保存位置のやり直しでも解放を待つ");
+            c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Assert.That(PointIndex(c), Is.EqualTo(1));
         }
 
         [Test]
@@ -173,13 +213,13 @@ namespace FixedCamVr.Tracking.Tests
             c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
             c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
             RefreshGuidance(c);
-            Assert.That(c.GuidanceText, Does.Contain("読み取れませんでした"));
+            Assert.That(c.GuidanceAction, Does.Contain("離すのが早すぎました"));
 
             c.Toggle();
             c.Toggle();
             RefreshGuidance(c);
 
-            Assert.That(c.GuidanceText, Does.Not.Contain("読み取れませんでした"));
+            Assert.That(c.GuidanceText, Does.Not.Contain("離すのが早すぎました"));
             Assert.That(c.GuidanceText, Does.Contain("点 1／2"));
         }
 
@@ -246,6 +286,8 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(Phase(c), Is.EqualTo("Capture"));
 
             // 別変換をプレビュー（world を +X に 1.7 相当シフト → 原点 (1.7,0)）。
+            c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
             for (int i = 0; i < 6; i++) c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.1f));
             Cap(c, hand, new Vector3(2.2f, 1f, 0.5f));
             Assert.That(Phase(c), Is.EqualTo("Verify"));

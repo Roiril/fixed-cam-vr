@@ -21,6 +21,13 @@ namespace FixedCamVr.Streaming
         private bool _disposed;
 
         private readonly StreamWatchdogLogic _watchdog = new StreamWatchdogLogic();
+        private readonly DecodedFrameEvidence _decodedEvidence = new DecodedFrameEvidence();
+        private long _metadataConnection = -1;
+        public int EndpointGeneration => _endpointGen;
+        public long ConnectionSerial => _receiver.ConnectionSerial;
+        public bool MetadataFromCurrentConnection => _metadataConnection == ConnectionSerial;
+        public bool HasFreshDecodedFrame => _decodedEvidence.IsFresh(Time.realtimeSinceStartup,
+            ConnectionSerial, IsConnected, IsSuspended);
 
         private StreamMetadata? _metadata;
         private StreamHealth? _health;
@@ -106,6 +113,7 @@ namespace FixedCamVr.Streaming
             if (_disposed) return;
             bool changed = _watchdog.SetSuspended(suspended, Time.realtimeSinceStartup);
             if (!changed) return;
+            _decodedEvidence.Invalidate(MjpegStreamReceiver.NowMs());
             Debug.Log($"[HmdLife] {_source.DisplayName} SetSuspended({suspended})");
             if (!suspended) { _metaRefreshAccum = 0f; _healthRefreshAccum = 0f; }
         }
@@ -170,6 +178,8 @@ namespace FixedCamVr.Streaming
             // （旧: 旧フェッチが in-flight だと新エンドポイントの /info 取得がブロックされ、
             //   さらに旧端末のメタが完了時に書き戻されていた）。
             _endpointGen++;
+            _decodedEvidence.Invalidate(MjpegStreamReceiver.NowMs());
+            _metadataConnection = -1;
             _metaInflight = false;
             _healthInflight = false;
             _metadata = null;
@@ -204,6 +214,7 @@ namespace FixedCamVr.Streaming
             if (_metaInflight) return;
             _metaInflight = true;
             int gen = _endpointGen; // この呼び出しが属するエンドポイント世代
+            long connection = ConnectionSerial;
             try
             {
                 string url = _source.BuildInfoUrl();
@@ -211,6 +222,7 @@ namespace FixedCamVr.Streaming
                 var meta = await StreamMetadataFetcher.FetchInfoAsync(url, basicAuthToken: _source.BasicAuthToken);
                 if (_disposed || meta == null) return;
                 if (gen != _endpointGen) return; // await 中に張替 → 旧エンドポイント由来の結果は破棄
+                if (connection != ConnectionSerial) return; // 同じIPでも旧MJPEG接続の結果は再利用しない
 
                 // 比較: 向き反映に効く 4 値のいずれか変化で発火。
                 // 特に isPortrait は fixed-cam-streamer 側で rotationDeg が固定でも
@@ -222,6 +234,7 @@ namespace FixedCamVr.Streaming
                     || prev.heightPx != meta.heightPx
                     || prev.isPortrait != meta.isPortrait;
                 _metadata = meta;
+                _metadataConnection = connection;
                 MetadataUpdatedRealtime = Time.realtimeSinceStartup;
                 if (!changed) return;
 
@@ -274,6 +287,7 @@ namespace FixedCamVr.Streaming
             // この 1 フレームをスキップする（A1: BeginTick 内で _suspended=false）。
             if (_watchdog.BeginTick(now, udt))
             {
+                _decodedEvidence.Invalidate(MjpegStreamReceiver.NowMs());
                 _metaRefreshAccum = 0f;
                 _healthRefreshAccum = 0f;
                 Debug.Log($"[HmdLife] {_source.DisplayName} resume-gap (dt={udt:F2}s) -> reset");
@@ -290,6 +304,8 @@ namespace FixedCamVr.Streaming
                 bool decoded = _texture.LoadImage(_scratch, markNonReadable: false);
                 if (decoded)
                 {
+                    _decodedEvidence.Decoded(now, meta.receivedTickMs, meta.connection,
+                        ConnectionSerial, MjpegStreamReceiver.NowMs());
                     _watchdog.OnFrameDecoded(now);
 
                     // 端末内録画。null チェックだけなので非録画時のコストはゼロに近い。

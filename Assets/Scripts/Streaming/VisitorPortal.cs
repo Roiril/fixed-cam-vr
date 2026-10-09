@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections.Generic;
 using Stopwatch = System.Diagnostics.Stopwatch;
@@ -51,6 +51,65 @@ namespace FixedCamVr.Streaming
         private ShowRunDirector? _run;
         private string _lastKey = "";
         private string _portalSessionId = "";
+        private int _processedSeq, _visitorGeneration;
+        private int _clearIssued, _clearProcessed;
+        private int _staffResetIssued, _staffResetProcessed;
+        private int _preparationIssued, _preparationProcessed, _briefingSeq;
+        private bool _briefingCompleted, _preparationCompleteIssued;
+        private bool _staffConfirmed, _staffConfirmedIssued;
+        private string _acceptedTablet = "";
+        private int _questTick;
+        private long _nextQuestTick;
+        /// <summary>
+        /// スタッフ用準備の状態（<c>/status</c> の <c>staffSetup</c>）。値は <c>StaffSetupPanel</c> が埋める。
+        /// タブレットは欠けた項目を「未確認」として扱う（後方互換）。
+        /// </summary>
+        public struct StaffStatus
+        {
+            public string stage, reason;
+            public bool positionConfirmed;
+            public int resetProgress;
+            /// <summary>confirmed / needed / recenter / aligning。</summary>
+            public string position;
+            /// <summary>ok / checking / trouble。</summary>
+            public string tablet;
+            /// <summary>体験の素材を確認できたか。</summary>
+            public bool content;
+            /// <summary>カメラ A・B・C の順。<b>呼び出し側の配列を毎回使い回す</b>（毎フレーム作らない）。</summary>
+            public StaffCameraStatus[]? cameras;
+        }
+
+        public struct StaffCameraStatus
+        {
+            /// <summary>"A" / "B" / "C"。</summary>
+            public string id;
+            /// <summary>ok / checking / trouble。</summary>
+            public string state;
+            /// <summary>"" / nostream / stale / identity / wrongcam / wrongshow。</summary>
+            public string problem;
+        }
+
+        /// <summary>本編の進み（<c>staffSetup.run</c>）。ShowRunDirector と OutroDirector から読む。</summary>
+        public struct RunStatus
+        {
+            /// <summary>INTRO / RUN / END。ShowRunDirector が無ければ空。</summary>
+            public string phase;
+            public int lap, laps, sec;
+            /// <summary>off / playing / done。</summary>
+            public string outro;
+            /// <summary>released / trapped / ""。</summary>
+            public string ending;
+        }
+        public Func<StaffStatus>? StaffStatusProvider { get; set; }
+        public Func<bool>? StaffResetProvider { get; set; }
+        private string _lastStaffResetId = "", _staffResetRejectedId = "";
+        private OutroDirector? _outro;
+        private long _nextOutroLookup;
+        // 変化検知の前回値。カメラは呼び出し側の配列を使い回すので、比較用に値を写して持つ。
+        private StaffStatus _lastStaff;
+        private readonly StaffCameraStatus[] _lastStaffCameras = new StaffCameraStatus[3];
+        private int _lastStaffCameraCount = -1;
+        private RunStatus _lastRun;
         private readonly List<TabletSeen> _tablets = new List<TabletSeen>();
         private LastRequest? _lastRequest;
 
@@ -94,6 +153,62 @@ namespace FixedCamVr.Streaming
 
         /// <summary><c>POST /set</c> を受けた累計。テレメトリが読む。</summary>
         public int Received => _received;
+        public LastRequest? LatestRequest => _lastRequest;
+        /// <summary>HTTPでは受理済みだがUnityの設定枠へまだ届いていない要求も開始を止める。</summary>
+        public bool HasQueuedSettings => Volatile.Read(ref _seqIssued) > _processedSeq;
+        public bool HasQueuedClear => Volatile.Read(ref _clearIssued) > _clearProcessed;
+        public bool HasQueuedStaffReset => Volatile.Read(ref _staffResetIssued) > _staffResetProcessed;
+        public int VisitorGeneration => _visitorGeneration;
+        public bool CurrentVisitorStaffConfirmed => CurrentVisitorBriefingCompleted && _staffConfirmed;
+        public bool CurrentVisitorBriefingCompleted => CurrentVisitorSettingsApplied && _briefingCompleted
+            && _lastRequest != null && _briefingSeq == _lastRequest.seq
+            && _preparationProcessed == Volatile.Read(ref _preparationIssued);
+        public bool CurrentVisitorSettingsApplied => _visitorGeneration > 0 && _lastRequest != null
+            && !HasQueuedSettings && !HasQueuedClear && !HasQueuedStaffReset && VisitorPrefs.AppliedSeq == _lastRequest.seq
+            && (VisitorPrefs.PendingSeq == _lastRequest.seq || VisitorPrefs.ConsumedSeq == _lastRequest.seq)
+            && ShowLanguage.Code(ShowLanguage.Current) == _lastRequest.lang
+            && HorrorRelief.Enabled == _lastRequest.relief;
+
+        /// <summary>右Aの実リセット前に通信世代と設定を分離。HTTP検証と受付も同じロック内。</summary>
+        public void BeginVisitorSession()
+        {
+            lock (_queueLock)
+            {
+                _portalSessionId = Guid.NewGuid().ToString("N");
+                _visitorGeneration++;
+                _processedSeq = _seqIssued;
+                _clearProcessed = _clearIssued;
+                _staffResetProcessed = _staffResetIssued;
+                _lastRequest = null;
+                _acceptedTablet = "";
+                _preparationIssued = _preparationProcessed = _briefingSeq = 0;
+                _briefingCompleted = _preparationCompleteIssued = false;
+                _staffConfirmed = _staffConfirmedIssued = false;
+                _lastStaffResetId = _staffResetRejectedId = "";
+                VisitorPrefs.BeginVisitor();
+                RefreshStatus(force: true);
+            }
+        }
+        /// <summary>listen成功とは別の、実際のタブレット通信の年齢。</summary>
+        public float LatestTabletAgeSec
+        {
+            get
+            {
+                if (_tablets.Count == 0) return float.PositiveInfinity;
+                return (float)((Stopwatch.GetTimestamp() - _tablets[_tablets.Count - 1].seenAt)
+                    / (double)Stopwatch.Frequency);
+            }
+        }
+        public float CurrentVisitorTabletAgeSec
+        {
+            get
+            {
+                if (_lastRequest == null) return LatestTabletAgeSec;
+                int i = _tablets.FindIndex(t => t.tabletSessionId == _lastRequest.tabletSessionId);
+                return i < 0 ? float.PositiveInfinity : (float)((Stopwatch.GetTimestamp() - _tablets[i].seenAt)
+                    / (double)Stopwatch.Frequency);
+            }
+        }
 
         public HeartbeatSnapshot CreateHeartbeatSnapshot()
         {
@@ -176,15 +291,41 @@ namespace FixedCamVr.Streaming
             string phase = _run != null ? PhaseCode(_run.Phase) : "";
             string lang = ShowLanguage.Code(ShowLanguage.Current);
             bool relief = HorrorRelief.Enabled;
+            long now = Stopwatch.GetTimestamp();
+            if (now >= _nextQuestTick) { _questTick++; _nextQuestTick = now + Stopwatch.Frequency / 2; }
+            StaffStatus staff = StaffStatusProvider != null ? StaffStatusProvider() : default;
+            if (_outro == null && now >= _nextOutroLookup)
+            {
+                // 終幕の実行体が無い構成で毎フレーム全走査しない。
+                _outro = FindObjectOfType<OutroDirector>();
+                _nextOutroLookup = now + Stopwatch.Frequency * 2;
+            }
+            RunStatus run = ReadRun(_run, _outro);
             // 変わったフレームだけ組み直す（90Hz で文字列を作らない）。
-            string key = stage + "|" + phase + "|" + lang + "|" + (relief ? 1 : 0) + "|" + VisitorPrefs.PendingSeq
-                         + "|" + VisitorPrefs.AppliedSeq + "|" + VisitorPrefs.ApplyCount + "|" + _received + "|" + _rejected;
-            if (!force && key == _lastKey) return;
+            // スタッフ用準備と本編の進みは値で比べる（文字列の鍵へ足すと毎フレームの連結が増える）。
+            // run.sec は 1 秒刻みなので、本編中は 1 秒に 1 回作り直す。
+            bool staffChanged = StaffChanged(staff, run);
+            string key = _portalSessionId + "|" + stage + "|" + phase + "|" + lang + "|" + (relief ? 1 : 0) + "|" + VisitorPrefs.PendingSeq
+                         + "|" + VisitorPrefs.AppliedSeq + "|" + VisitorPrefs.ApplyCount + "|" + _received + "|" + _rejected
+                         + "|" + _questTick + "|" + _preparationProcessed + "|" + _briefingCompleted + "|" + _staffConfirmed + "|" + _lastStaffResetId + "|" + _staffResetRejectedId;
+            if (!force && !staffChanged && key == _lastKey) return;
             _lastKey = key;
+            RememberStaff(staff, run);
 
-            var sb = new StringBuilder(320);
+            var sb = new StringBuilder(640);
             sb.Append("{\"ok\":true");
             sb.Append(",\"portalSessionId\":").Append(VisitorPortalLogic.JsonString(_portalSessionId));
+            sb.Append(",\"visitorGeneration\":").Append(_visitorGeneration);
+            sb.Append(",\"questTick\":").Append(_questTick);
+            sb.Append(",\"staffResetId\":").Append(VisitorPortalLogic.JsonString(_lastStaffResetId));
+            sb.Append(",\"staffResetRejectedId\":").Append(VisitorPortalLogic.JsonString(_staffResetRejectedId));
+            sb.Append(",\"briefing\":{\"seq\":").Append(_briefingSeq)
+                .Append(",\"revision\":").Append(_preparationProcessed)
+                .Append(",\"tabletSessionId\":").Append(VisitorPortalLogic.JsonString(_acceptedTablet))
+                .Append(",\"completed\":").Append(CurrentVisitorBriefingCompleted ? "true" : "false")
+                .Append(",\"staffConfirmed\":").Append(CurrentVisitorStaffConfirmed ? "true" : "false").Append('}');
+            sb.Append(",\"staffSetup\":");
+            AppendStaffSetupJson(sb, staff, run);
             sb.Append(",\"lang\":\"").Append(lang).Append('"');
             sb.Append(",\"relief\":").Append(relief ? "true" : "false");
             sb.Append(",\"titleStage\":").Append(VisitorPortalLogic.JsonString(stage));
@@ -214,6 +355,87 @@ namespace FixedCamVr.Streaming
 
         private static string PhaseCode(ShowPhase p)
             => p == ShowPhase.Intro ? "INTRO" : (p == ShowPhase.Finished ? "END" : "RUN");
+
+        /// <summary>終幕の段の語。Off → off / Collapse・Dark・Report → playing / Done → done。</summary>
+        public static string OutroCode(OutroStage stage)
+            => stage == OutroStage.Off ? "off" : stage == OutroStage.Done ? "done" : "playing";
+
+        /// <summary>締めの結果の語。帰還 → released / 人形化 → trapped / それ以外は空。</summary>
+        public static string EndingCode(ShowEndingOutcome outcome)
+            => outcome == ShowEndingOutcome.Released ? "released" : outcome == ShowEndingOutcome.Trapped ? "trapped" : "";
+
+        private static RunStatus ReadRun(ShowRunDirector? run, OutroDirector? outro)
+        {
+            if (run == null) return new RunStatus { phase = "", outro = outro != null ? OutroCode(outro.Stage) : "off", ending = "" };
+            return new RunStatus
+            {
+                phase = PhaseCode(run.Phase),
+                lap = run.Lap,
+                laps = run.TotalLaps,
+                sec = Mathf.Max(0, Mathf.FloorToInt(run.RunElapsedSec)),
+                outro = outro != null ? OutroCode(outro.Stage) : "off",
+                ending = EndingCode(run.EndingOutcome),
+            };
+        }
+
+        private bool StaffChanged(in StaffStatus staff, in RunStatus run)
+        {
+            if (staff.stage != _lastStaff.stage || staff.reason != _lastStaff.reason
+                || staff.positionConfirmed != _lastStaff.positionConfirmed || staff.resetProgress != _lastStaff.resetProgress
+                || staff.position != _lastStaff.position || staff.tablet != _lastStaff.tablet || staff.content != _lastStaff.content)
+                return true;
+            if (run.phase != _lastRun.phase || run.lap != _lastRun.lap || run.laps != _lastRun.laps || run.sec != _lastRun.sec
+                || run.outro != _lastRun.outro || run.ending != _lastRun.ending)
+                return true;
+            int count = staff.cameras != null ? Math.Min(staff.cameras.Length, _lastStaffCameras.Length) : 0;
+            if (count != _lastStaffCameraCount) return true;
+            for (int i = 0; i < count; i++)
+            {
+                StaffCameraStatus c = staff.cameras![i], last = _lastStaffCameras[i];
+                if (c.id != last.id || c.state != last.state || c.problem != last.problem) return true;
+            }
+            return false;
+        }
+
+        private void RememberStaff(in StaffStatus staff, in RunStatus run)
+        {
+            _lastStaff = staff;
+            _lastStaff.cameras = null;
+            _lastRun = run;
+            _lastStaffCameraCount = staff.cameras != null ? Math.Min(staff.cameras.Length, _lastStaffCameras.Length) : 0;
+            for (int i = 0; i < _lastStaffCameraCount; i++) _lastStaffCameras[i] = staff.cameras![i];
+        }
+
+        /// <summary>
+        /// <c>staffSetup</c> の JSON（オブジェクト 1 つ）を書く。タブレットとの契約の形はここ 1 か所。
+        /// </summary>
+        public static void AppendStaffSetupJson(StringBuilder sb, in StaffStatus staff, in RunStatus run)
+        {
+            sb.Append("{\"stage\":").Append(VisitorPortalLogic.JsonString(staff.stage))
+              .Append(",\"reason\":").Append(VisitorPortalLogic.JsonString(staff.reason))
+              .Append(",\"positionConfirmed\":").Append(staff.positionConfirmed ? "true" : "false")
+              .Append(",\"resetProgress\":").Append(staff.resetProgress)
+              .Append(",\"position\":").Append(VisitorPortalLogic.JsonString(staff.position))
+              .Append(",\"cameras\":[");
+            int count = staff.cameras != null ? staff.cameras.Length : 0;
+            for (int i = 0; i < count; i++)
+            {
+                StaffCameraStatus c = staff.cameras![i];
+                if (i > 0) sb.Append(',');
+                sb.Append("{\"id\":").Append(VisitorPortalLogic.JsonString(c.id))
+                  .Append(",\"state\":").Append(VisitorPortalLogic.JsonString(c.state))
+                  .Append(",\"problem\":").Append(VisitorPortalLogic.JsonString(c.problem)).Append('}');
+            }
+            sb.Append("],\"tablet\":").Append(VisitorPortalLogic.JsonString(staff.tablet))
+              .Append(",\"content\":").Append(staff.content ? "true" : "false")
+              .Append(",\"run\":{\"phase\":").Append(VisitorPortalLogic.JsonString(run.phase))
+              .Append(",\"lap\":").Append(run.lap)
+              .Append(",\"laps\":").Append(run.laps)
+              .Append(",\"sec\":").Append(run.sec)
+              .Append(",\"outro\":").Append(VisitorPortalLogic.JsonString(run.outro))
+              .Append(",\"ending\":").Append(VisitorPortalLogic.JsonString(run.ending))
+              .Append("}}");
+        }
 
         // ---- サーバ（背景スレッド）---------------------------------------------------------
         private async Task AcceptLoop(TcpListener listener, CancellationToken ct)
@@ -265,9 +487,10 @@ namespace FixedCamVr.Streaming
                             have += n;
                         }
                         string remoteIp = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString() ?? "";
-                        res = VisitorPortalLogic.Route(req, Encoding.UTF8.GetString(body, 0, have), _statusJson,
+                        lock (_queueLock) res = VisitorPortalLogic.Route(req, Encoding.UTF8.GetString(body, 0, have), _statusJson,
                                                        OnSetFromThread, OnClearFromThread, _portalSessionId,
-                                                       id => OnPulseFromThread(id, remoteIp));
+                                                       id => OnPulseFromThread(id, remoteIp), OnPreparationFromThread, OnStaffResetFromThread,
+                                                       OnClearVersionedFromThread);
                         if (res.status == 400 && req.path == "/set") Interlocked.Increment(ref _rejected);
                     }
                     byte[] bytes = VisitorPortalLogic.Encode(res);
@@ -292,10 +515,16 @@ namespace FixedCamVr.Streaming
             lock (_queueLock)
             {
                 int seq = ++_seqIssued;
+                string session = _portalSessionId;
+                if (_acceptedTablet != tabletId) _preparationIssued = 0;
+                _acceptedTablet = tabletId;
                 _received++;
                 _queue.Add(() =>
                 {
+                    if (session != _portalSessionId) return;
                     VisitorPrefs.Set(lang, relief, seq);
+                    _processedSeq = seq;
+                    _briefingCompleted = _staffConfirmed = false; _briefingSeq = 0;
                     _lastRequest = new LastRequest { tabletSessionId = tabletId, seq = seq,
                                                      lang = ShowLanguage.Code(lang), relief = relief };
                     Debug.Log($"[VisitorPortal] タブレットから受けた: lang={ShowLanguage.Code(lang)} relief={relief} seq={seq}");
@@ -321,13 +550,66 @@ namespace FixedCamVr.Streaming
             });
         }
 
-        private void OnClearFromThread()
+        private void OnPreparationFromThread(VisitorPortalLogic.PreparationPulse pulse)
         {
-            lock (_queueLock) _queue.Add(() =>
+            lock (_queueLock)
             {
-                VisitorPrefs.Clear();
-                Debug.Log("[VisitorPortal] 枠を空にした（スタッフ）");
-            });
+                if (pulse.portalSessionId != _portalSessionId || pulse.tabletSessionId != _acceptedTablet
+                    || (pulse.seq != 0 && pulse.seq != _seqIssued) || pulse.revision < _preparationIssued) return;
+                if (pulse.revision == _preparationIssued && pulse.completed != _preparationCompleteIssued) return;
+                if (pulse.revision == _preparationIssued && pulse.staffConfirmed != _staffConfirmedIssued) return;
+                _preparationIssued = pulse.revision; _preparationCompleteIssued = pulse.completed;
+                _staffConfirmedIssued = pulse.staffConfirmed;
+                int request = _seqIssued;
+                _queue.Add(() =>
+                {
+                    if (pulse.portalSessionId != _portalSessionId || request != Volatile.Read(ref _seqIssued)
+                        || pulse.tabletSessionId != _acceptedTablet || pulse.revision != Volatile.Read(ref _preparationIssued)) return;
+                    _preparationProcessed = pulse.revision; _briefingSeq = pulse.seq;
+                    _briefingCompleted = pulse.completed;
+                    _staffConfirmed = pulse.staffConfirmed;
+                });
+            }
+        }
+
+        private void OnStaffResetFromThread(string requestId, int settingsSeq)
+        {
+            lock (_queueLock)
+            {
+                string session = _portalSessionId;
+                int reset = ++_staffResetIssued;
+                _queue.Add(() =>
+                {
+                    if (session != _portalSessionId) return;
+                    _staffResetProcessed = Math.Max(_staffResetProcessed, reset);
+                    if (settingsSeq != Volatile.Read(ref _seqIssued) || StaffResetProvider == null || !StaffResetProvider())
+                        _staffResetRejectedId = requestId;
+                    else _lastStaffResetId = requestId;
+                });
+            }
+        }
+
+        private void OnClearFromThread() => QueueClearFromThread(-1);
+        private void OnClearVersionedFromThread(int expectedSeq) => QueueClearFromThread(expectedSeq);
+        private void QueueClearFromThread(int expectedSeq)
+        {
+            lock (_queueLock)
+            {
+                string session = _portalSessionId;
+                int settingsSeq = _seqIssued;
+                if (expectedSeq > 0 && expectedSeq != settingsSeq) return;
+                int clear = ++_clearIssued;
+                _queue.Add(() =>
+                {
+                    if (session != _portalSessionId) return;
+                    _clearProcessed = Math.Max(_clearProcessed, clear);
+                    if (settingsSeq != Volatile.Read(ref _seqIssued)) return;
+                    VisitorPrefs.Clear();
+                    _briefingCompleted = _staffConfirmed = false; _briefingSeq = 0;
+                    _lastRequest = null; _acceptedTablet = "";
+                    Debug.Log("[VisitorPortal] 枠を空にした（スタッフ）");
+                });
+            }
         }
 
         private static string FindLocalIPv4()

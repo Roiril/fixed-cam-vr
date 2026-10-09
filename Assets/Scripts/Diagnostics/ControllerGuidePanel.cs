@@ -125,6 +125,7 @@ namespace FixedCamVr.Diagnostics
         /// <summary>スタッフが被っているか。解決できないときは false ＝ 文字を出さない側へ倒す。</summary>
         private bool StaffViewing()
         {
+            if (StaffSetupPanel.Instance != null && StaffSetupPanel.Instance.Visible) return false;
             if (statusHud == null) statusHud = FindObjectOfType<StatusHud>();
             return statusHud != null && statusHud.StaffViewing;
         }

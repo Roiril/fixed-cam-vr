@@ -104,6 +104,13 @@ namespace FixedCamVr.Streaming
         /// <summary>スタッフが枠を空にする（送ったまま帰った人の分）。書いた値は戻さない。</summary>
         public static void Clear() => ClearPending();
 
+        public static void BeginVisitor()
+        {
+            ClearPending();
+            AppliedSeq = 0;
+            ConsumedSeq = 0;
+        }
+
         private static void ClearPending()
         {
             PendingSeq = 0;

@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -71,6 +71,34 @@ namespace FixedCamVr.Streaming
         private static readonly Regex ReliefRx = new Regex("\"relief\"\\s*:\\s*(true|false)", RegexOptions.Compiled);
         private static readonly Regex TabletIdRx = new Regex("\"tabletSessionId\"\\s*:\\s*\"([A-Za-z0-9_-]{1,128})\"", RegexOptions.Compiled);
         private static readonly Regex PortalIdRx = new Regex("\"portalSessionId\"\\s*:\\s*\"([A-Za-z0-9_-]{1,128})\"", RegexOptions.Compiled);
+        private static readonly Regex SequenceRx = new Regex("\"seq\"\\s*:\\s*(0|[1-9][0-9]*)(?=\\s*[,}])", RegexOptions.Compiled);
+        private static readonly Regex RevisionRx = new Regex("\"briefingRevision\"\\s*:\\s*([1-9][0-9]*)(?=\\s*[,}])", RegexOptions.Compiled);
+        private static readonly Regex CompletedRx = new Regex("\"briefingCompleted\"\\s*:\\s*(true|false)(?=\\s*[,}])", RegexOptions.Compiled);
+        private static readonly Regex StaffConfirmedRx = new Regex("\"staffConfirmed\"\\s*:\\s*(true|false)(?=\\s*[,}])", RegexOptions.Compiled);
+        public struct PreparationPulse
+        {
+            public string tabletSessionId, portalSessionId;
+            public int seq, revision;
+            public bool completed, staffConfirmed;
+        }
+
+        public static bool TryParsePreparation(string body, out PreparationPulse pulse)
+        {
+            pulse = default;
+            var portal = PortalIdRx.Match(body ?? ""); var seq = SequenceRx.Match(body ?? "");
+            var revision = RevisionRx.Match(body ?? ""); var completed = CompletedRx.Match(body ?? "");
+            if (!TryParseTabletId(body, out pulse.tabletSessionId) || !portal.Success
+                || !seq.Success || !int.TryParse(seq.Groups[1].Value, out pulse.seq)
+                || !revision.Success || !int.TryParse(revision.Groups[1].Value, out pulse.revision)
+                || !completed.Success) return false;
+            pulse.portalSessionId = portal.Groups[1].Value;
+            pulse.completed = completed.Groups[1].Value == "true";
+            var staff = StaffConfirmedRx.Match(body ?? "");
+            if (body != null && body.Contains("staffConfirmed") && !staff.Success) return false;
+            pulse.staffConfirmed = staff.Success && staff.Groups[1].Value == "true";
+            if (pulse.staffConfirmed && !pulse.completed) return false;
+            return pulse.seq > 0 || !pulse.completed;
+        }
 
         /// <summary>
         /// <c>POST /set</c> の本文を読む。<b>lang が ja / en / fr でなければ false</b>（打ち間違いを黙って既定にしない）。
@@ -106,7 +134,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public static Response Route(Request req, string body, string statusJson,
                                      Func<ShowLang, bool, string, int> onSet, Action onClear,
-                                     string portalSessionId = "", Action<string>? onPulse = null)
+                                     string portalSessionId = "", Action<string>? onPulse = null,
+                                     Action<PreparationPulse>? onPreparation = null, Action<string, int>? onStaffReset = null,
+                                     Action<int>? onClearVersioned = null)
         {
             string p = req.path;
             if (req.method == "GET" && (p == "/" || p == "/visitor.html" || p == "/index.html" || p.StartsWith("/asset/")))
@@ -123,7 +153,29 @@ namespace FixedCamVr.Streaming
             {
                 if (!TryParseTabletId(body, out string tabletId))
                     return Json(400, "{\"ok\":false,\"error\":\"tabletSessionId required\"}");
+                bool preparation = body != null && (body.Contains("briefingCompleted") || body.Contains("briefingRevision") || body.Contains("staffConfirmed"));
+                if (body != null && body.Contains("staffReset"))
+                {
+                    var reset = Regex.Match(body, "\"staffReset\"\\s*:\\s*true(?=\\s*[,}])");
+                    var requestId = Regex.Match(body, "\"resetRequestId\"\\s*:\\s*\"([A-Za-z0-9_-]{1,128})\"");
+                    var resetPortal = PortalIdRx.Match(body);
+                    var resetSeq = Regex.Match(body, "\"settingsSeq\"\\s*:\\s*(0|[1-9][0-9]*)(?=\\s*[,}])");
+                    int expectedSeq;
+                    if (!reset.Success || !requestId.Success || !resetPortal.Success || preparation
+                        || !resetSeq.Success || !int.TryParse(resetSeq.Groups[1].Value, out expectedSeq))
+                        return Json(400, "{\"ok\":false}");
+                    if (resetPortal.Groups[1].Value != portalSessionId) return Json(409, "{\"ok\":false}");
+                    onPulse?.Invoke(tabletId);
+                    onStaffReset?.Invoke(requestId.Groups[1].Value, expectedSeq);
+                    return Json(200, "{\"ok\":true}");
+                }
+                PreparationPulse pulse = default;
+                if (preparation && !TryParsePreparation(body!, out pulse))
+                    return Json(400, "{\"ok\":false,\"error\":\"invalid preparation pulse\"}");
+                if (preparation && pulse.portalSessionId != portalSessionId)
+                    return Json(409, "{\"ok\":false,\"error\":\"portal session changed\"}");
                 onPulse?.Invoke(tabletId);
+                if (preparation) onPreparation?.Invoke(pulse);
                 return Json(200, "{\"ok\":true}");
             }
             if (req.method == "POST" && p == "/set")
@@ -147,7 +199,14 @@ namespace FixedCamVr.Streaming
                     return Json(400, "{\"ok\":false,\"error\":\"session ids required\"}");
                 if (portalMatch.Groups[1].Value != portalSessionId)
                     return Json(409, "{\"ok\":false,\"error\":\"portal session changed\"}");
-                onClear();
+                if (body != null && body.Contains("\"seq\""))
+                {
+                    var clearSeq = SequenceRx.Match(body);
+                    if (!clearSeq.Success || !int.TryParse(clearSeq.Groups[1].Value, out int expectedSeq) || expectedSeq <= 0)
+                        return Json(400, "{\"ok\":false,\"error\":\"invalid clear sequence\"}");
+                    if (onClearVersioned != null) onClearVersioned(expectedSeq); else onClear();
+                }
+                else onClear();
                 return Json(200, "{\"ok\":true}");
             }
             return Json(404, "{\"ok\":false,\"error\":\"no such path\"}");
