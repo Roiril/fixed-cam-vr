@@ -9,3 +9,13 @@ TMPの文字領域は左端に負の余白を持つことがある。右寄せ�
 2026-10-10: 右寄せ本体ラベルの末尾と位置合わせVerifyの先頭で検査が停止した。内余白で修正する方針をadvisorと確認した。
 
 タブレットの文面を変更するときは同じ文面を検証する`verify-runtime.cjs`の期待文字列も同じ変更で更新する。実ブラウザの検証ではmockのpulseが異常カメラや本編や終幕の状態を上書きしないことを先に確かめる。正常画面と異常画面の両方を流してから測る。
+
+関連ソースの実在パスを先に`rg --files`で確認する。OVRの入力は`Assets/Scripts/OvrBridge/OvrControllerBridge.cs`。受信は`Assets/Scripts/Streaming/MjpegStreamReceiver.cs`。カメラごとの更新は`Assets/Scripts/Streaming/CameraStream.cs`。実機試験は`tablet/instrumentation/java/com/roiril/mawarimi/tablet/test/TabletInstrumentation.java`。`OvrInputBridge`と`MjpegStreamClient`と`CameraStreamSession`というファイルはない。2026-10-10に存在しない名前の読取を繰り返して停止したため、探索の起点を固定した。
+
+手元の案内は`ControllerGuideRegistrationPreview`で立位と屈位の各4状態を描く。TMPの行高を文字数から概算しない。同じフォントとrich textの`GetPreferredValues`を使い、負の左ベアリングも内余白へ含める。通常表示へ戻す時は余白も復元する。
+
+床の×印はLineRendererの`bounds`を画面へ投影した範囲と、実際の線が描かれた範囲が一致しないことがある。文字との重なりは同じRenderTextureの実画素で測る。tipと×印の画素が取れない時は検査失敗にする。空画像では文字の全字を欠落として検出する。2026-10-10の屈位Captureは画像上では離れていたがboundsで誤判定した。許容値を広げず測定対象を実描画へ揃えた。
+
+タブレットの実機試験でも画面の文面と期待文字列を同時に更新する。文送りの本番UIは150ms未満の連打を捨てる。カウンターが同期で更新されても次の入力まで200ms以上空ける。2026-10-10のスタッフ説明試験は文2の直後に文3を押して停止した。本番の連打防止とタイムアウトを変更せず、試験の入力間隔だけを直して30項目が成功した。
+
+実機の通知音は未操作時の波形が0であることを先に測る。実際のタップ後に波形が0を超えることと、音程と開始間隔と長さを測る。波形の出力と人が聞こえたことは別に記録する。試験版を使った場合は本番APKへ戻し、端末から取り出したAPKのSHA-256一致と試験機能の除去を確認する。
