@@ -8,7 +8,7 @@ TMPの文字領域は左端に負の余白を持つことがある。右寄せ�
 
 2026-10-10: 右寄せ本体ラベルの末尾と位置合わせVerifyの先頭で検査が停止した。内余白で修正する方針をadvisorと確認した。
 
-タブレットの文面を変更するときは同じ文面を検証する`verify-runtime.cjs`の期待文字列も同じ変更で更新する。実ブラウザの検証ではmockのpulseが異常カメラや本編や終幕の状態を上書きしないことを先に確かめる。正常画面と異常画面の両方を流してから測る。
+タブレットの文面を変更するときは同じ文面を検証する`verify-runtime.cjs`の期待文字列も同じ変更で更新する。同じ試験内に複数の期待があるため、旧文面をrgで全件列挙してから意味を照合する。2026-10-11は再開案内の期待を1箇所だけ更新し、同じ試験の別の期待で繰り返し停止した。実ブラウザの検証ではmockのpulseが異常カメラや本編や終幕の状態を上書きしないことを先に確かめる。正常画面と異常画面の両方を流してから測る。
 
 関連ソースの実在パスを先に`rg --files`で確認する。OVRの入力は`Assets/Scripts/OvrBridge/OvrControllerBridge.cs`。受信は`Assets/Scripts/Streaming/MjpegStreamReceiver.cs`。カメラごとの更新は`Assets/Scripts/Streaming/CameraStream.cs`。実機試験は`tablet/instrumentation/java/com/roiril/mawarimi/tablet/test/TabletInstrumentation.java`。`OvrInputBridge`と`MjpegStreamClient`と`CameraStreamSession`というファイルはない。2026-10-10に存在しない名前の読取を繰り返して停止したため、探索の起点を固定した。
 
@@ -23,5 +23,7 @@ TMPの文字領域は左端に負の余白を持つことがある。右寄せ�
 CUAのブラウザが利用不能で一覧も空の場合は、同じ接続先の再試行を続けない。タブレットの描画検証は同梱HTMLをAndroidの実WebViewへ読み込むinstrumentationへ切り替えられる。代役の状態を使った描画と実Questとの通信を別に記録する。試験用の状態は本番へ保存しない。試験後は通常ページと本番APKへ戻し、接続先の保持とAPKの一致を確認する。2026-10-10の仕上げではbrowser 2とiabが利用不能になったため、この経路へ切り替えた。
 
 WebViewの初期`about:blank`も`readyState=complete`を返す。待機は通常ページのURLと通信オブジェクトと操作要素まで照合する。ネットワークを禁止した本アプリでは`loadDataWithBaseURL`が`chrome-error`になった。描画用の代役は通常のasset応答のHTML本文だけを差し替える。元の接続先制限とCSPと素材の応答を維持し、finallyで元のWebViewClientへ戻す。失敗時も画像と寸法を検査前に記録する。背景色は透明な内側要素でなく実際の画面要素を測る。
+
+情報を減らしたタブレット画面は24×16の点だけを調べると文字を拾えない。スクリーンショットの色検査は全画素を走査する。単色画像の不合格と3画素だけ異なる画像の合格を先に確認する。画像は合否判定前に保存する。2026-10-11の返却案内では描画済みの文字を粗い抽出が見逃した。空間的な抽出の粗さを直し、合格に必要な4色の閾値は維持した。
 
 UnityのAndroidビルド終了時にADB接続が切れる場合がある。実機instrumentationはビルド終了後に行う。試験APKの生成が終了してからSHA-256を照合し、実行する。2026-10-10はビルド中の試験で結果が空になった。本番APKの復旧を確認してから順次実行し、150項目が成功した。
