@@ -53,6 +53,7 @@ public final class TabletInstrumentation extends Instrumentation {
     private boolean equipment;
     private boolean staffFlow;
     private boolean staffFinish;
+    private boolean visitorFocus;
     private final AtomicReference<String> staffFinishHtml = new AtomicReference<>();
 
     @Override
@@ -65,6 +66,7 @@ public final class TabletInstrumentation extends Instrumentation {
         equipment = arguments != null && "true".equalsIgnoreCase(arguments.getString("equipment"));
         staffFlow = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFlow"));
         staffFinish = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFinish"));
+        visitorFocus = arguments != null && "true".equalsIgnoreCase(arguments.getString("visitorFocus"));
         start();
     }
 
@@ -72,7 +74,7 @@ public final class TabletInstrumentation extends Instrumentation {
     public void onStart() {
         int resultCode = Activity.RESULT_OK;
         try {
-            if (staffFinish) runStaffFinishTests(); else if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
+            if (visitorFocus || staffFinish) runStaffFinishTests(); else if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
             results.putString("summary", "PASS checks=" + checks);
             Log.i(TAG, "PASS checks=" + checks);
         } catch (Throwable error) {
@@ -133,14 +135,17 @@ public final class TabletInstrumentation extends Instrumentation {
             waitFor("staff briefing preview", 5000, () -> evaluateBoolean(view,
                 "!document.getElementById('briefingView').hidden"
                     + "&&!document.getElementById('briefingMode').hidden"));
+            openVisitorControls(view);
             int position = readSceneCounter(view);
             // The production UI rejects manual advances less than 150ms apart.
             for (; position < 12; position++) {
                 int next = position + 1;
+                if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
                 evaluate(view, "document.getElementById('briefingNext').click()");
                 waitFor("staff preview sentence " + next, 5000, () -> readSceneCounter(view) == next);
                 SystemClock.sleep(200);
             }
+            if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
             check("staff preview final action", evaluateBoolean(view,
                 "document.getElementById('briefingNext').textContent==='装着の案内へ'"
                     + "&&!document.getElementById('briefingNext').hidden"));
@@ -153,6 +158,8 @@ public final class TabletInstrumentation extends Instrumentation {
                     + "var r=g.getBoundingClientRect();return {viewport:{width:innerWidth,height:innerHeight},"
                     + "document:{width:d.scrollWidth,height:d.scrollHeight},guide:{left:r.left,top:r.top,right:r.right,bottom:r.bottom},"
                     + "fits:d.scrollWidth<=innerWidth+1&&d.scrollHeight<=innerHeight+1,text:g.textContent.trim()};})())");
+            Log.i(TAG, "staffFlow equipment=" + equipmentLayout);
+            saveScreenshot("doctor-staff-flow-equipment.png");
             check("equipment preview fits viewport", equipmentLayout.optBoolean("fits"));
             check("equipment preview has visitor instructions",
                 equipmentLayout.optString("text").contains("左手にコントローラー")
@@ -160,8 +167,6 @@ public final class TabletInstrumentation extends Instrumentation {
                     && equipmentLayout.optString("text").contains("ヘッドフォン"));
             checkButtonBounds(view, "briefingReplay", true);
             checkButtonBounds(view, "briefingSettings", true);
-            Log.i(TAG, "staffFlow equipment=" + equipmentLayout);
-            saveScreenshot("doctor-staff-flow-equipment.png");
 
             evaluate(view, "document.getElementById('briefingSettings').click()");
             waitFor("staff home after preview", 5000, () -> evaluateBoolean(view,
@@ -218,6 +223,8 @@ public final class TabletInstrumentation extends Instrumentation {
                 + "&&typeof TabletTransport!=='undefined'&&TabletTransport.native===true"
                 + "&&!!document.getElementById('staff')"));
         String source = readAsset(activity, "web/index.html");
+        String savedVisitorStorage = visitorFocus ? evaluateString(view,
+            "JSON.stringify({session:{...sessionStorage},local:{...localStorage}})") : null;
         check("production transport script occurs once", source.indexOf(TRANSPORT_SCRIPT) >= 0
             && source.indexOf(TRANSPORT_SCRIPT) == source.lastIndexOf(TRANSPORT_SCRIPT));
         int[] originalSize = new int[2];
@@ -253,6 +260,10 @@ public final class TabletInstrumentation extends Instrumentation {
             originalSize[1] = params.height;
         });
         try {
+            if (visitorFocus) {
+                runVisitorFocusTests(activity, view, source, originalSize[0]);
+                return;
+            }
             for (String scenario : new String[] {"setup", "handover", "playing", "outro", "finished", "offline"}) {
                 runStaffFinishScenario(activity, view, source, scenario, false, originalSize[0]);
                 if ("handover".equals(scenario)) runStaffFinishReceipts(view);
@@ -261,6 +272,12 @@ public final class TabletInstrumentation extends Instrumentation {
                 runStaffFinishScenario(activity, view, source, scenario, true, originalSize[0]);
             }
         } finally {
+            if (savedVisitorStorage != null) {
+                evaluate(view, "(s=>{sessionStorage.clear();localStorage.clear();"
+                    + "Object.entries(s.session).forEach(([k,v])=>sessionStorage.setItem(k,v));"
+                    + "Object.entries(s.local).forEach(([k,v])=>localStorage.setItem(k,v));})("
+                    + savedVisitorStorage + ")");
+            }
             runOnMainSync(() -> {
                 view.setWebViewClient(originalClient[0]);
                 staffFinishHtml.set(null);
@@ -273,6 +290,229 @@ public final class TabletInstrumentation extends Instrumentation {
             });
             Log.i(TAG, "staffFinish restored production URL=" + LOCAL_URL + " width=" + originalSize[0]);
         }
+    }
+
+    private String visitorFocusTransport() throws Exception {
+        JSONObject status = staffFinishStatus("handover");
+        status.put("portalSessionId", "visitor-focus-" + SystemClock.elapsedRealtime());
+        return "(()=>{'use strict';sessionStorage.clear();const status=" + status + ";let tick=100;"
+            + "globalThis.__visitorFocusStatus=status;globalThis.__visitorFocusOffline=false;"
+            + "const response=body=>Promise.resolve({ok:true,status:200,json:async()=>JSON.parse(JSON.stringify(body))});"
+            + "globalThis.TabletTransport=Object.freeze({native:false,getQuest:()=>'beta',setQuest:()=>{},"
+            + "getMediaVolume:()=>({current:0,max:15,muted:true}),request:(path,options={})=>{"
+            + "if(String(path).startsWith('./asset/'))return fetch(path,options);"
+            + "if(globalThis.__visitorFocusOffline)return Promise.reject(new TypeError('fixture offline'));"
+            + "if(path==='./status'){status.questTick=++tick;return response(status);}"
+            + "const b=JSON.parse(options.body||'{}');if(path==='./set'){"
+            + "status.received++;status.appliedSeq=status.received;status.applyCount++;"
+            + "status.lang=b.lang;status.relief=b.relief;"
+            + "status.pending={seq:status.received,lang:b.lang,relief:b.relief};"
+            + "status.lastRequest={...status.pending,tabletSessionId:b.tabletSessionId};"
+            + "status.staffSetup.stage='explanation';status.staffSetup.reason='explanation';"
+            + "return response({ok:true,seq:status.received});}"
+            + "if(path==='./tablet/pulse'){if(b.seq>0){status.briefing={seq:b.seq,revision:b.briefingRevision,"
+            + "tabletSessionId:b.tabletSessionId,completed:!!b.briefingCompleted,staffConfirmed:!!b.staffConfirmed};"
+            + "status.staffSetup.stage=b.staffConfirmed?'handedOff':b.briefingCompleted?'ready':'explanation';"
+            + "status.staffSetup.reason=b.staffConfirmed?'':b.briefingCompleted?'staff':'explanation';}"
+            + "return response({ok:true});}return Promise.reject(new Error('fixture request rejected: '+path));}});})();";
+    }
+
+    private void runVisitorFocusTests(Activity activity, WebView view, String source, int originalWidth) throws Exception {
+        for (String lang : new String[] {"ja", "en", "fr"}) {
+            loadVisitorFocus(activity, view, source, lang, false, originalWidth);
+            verifyVisitorFocus(view, lang + "-wide", false);
+            if ("ja".equals(lang)) verifyVisitorFocusInteractions(view);
+        }
+        loadVisitorFocus(activity, view, source, "fr", true, originalWidth);
+        verifyVisitorFocus(view, "fr-narrow", true);
+        openVisitorControls(view);
+        saveScreenshot("doctor-visitor-focus-controls-narrow.png");
+        verifyVisitorControlsLayout(view);
+    }
+
+    private void loadVisitorFocus(Activity activity, WebView view, String source, String lang,
+                                  boolean narrow, int originalWidth) throws Exception {
+        String html = source.replace(TRANSPORT_SCRIPT, "<script>" + visitorFocusTransport() + "</script>");
+        int width = narrow ? Math.round(375 * activity.getResources().getDisplayMetrics().density) : originalWidth;
+        runOnMainSync(() -> {
+            ViewGroup.LayoutParams params = view.getLayoutParams();
+            params.width = width;
+            view.setLayoutParams(params);
+            view.requestLayout();
+            staffFinishHtml.set(html);
+            view.loadUrl(STAFF_FINISH_URL);
+        });
+        waitFor("visitor fixture ready", 15000, () -> evaluateBoolean(view,
+            "typeof __visitorFocusStatus!=='undefined'&&document.readyState==='complete'"
+                + "&&document.getElementById('staff').open&&!document.getElementById('staffVisitorBtn').hidden"
+                + "&&!document.getElementById('staffBriefingBtn').disabled"));
+        evaluate(view, "document.getElementById('staffVisitorBtn').click();document.getElementById('titleStart').click()");
+        waitFor("visitor settings", 5000, () -> evaluateBoolean(view,
+            "!document.getElementById('settingsView').hidden"));
+        evaluate(view, "(()=>{const e=document.querySelector('input[name=lang][value=" + lang + "]');"
+            + "e.checked=true;e.dispatchEvent(new Event('change',{bubbles:true}));"
+            + "document.getElementById('settingsNextBtn').click();document.getElementById('sendBtn').click();})()");
+        waitFor("visitor confirmation", 5000, () -> evaluateBoolean(view,
+            "!document.getElementById('applyBtn').hidden"));
+        evaluate(view, "document.getElementById('applyBtn').click()");
+        waitFor("visitor settings applied", 8000, () -> evaluateBoolean(view,
+            "!document.getElementById('resultContinueBtn').hidden"));
+        evaluate(view, "document.getElementById('resultContinueBtn').click()");
+        waitFor("visitor focused briefing", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('briefingView').hidden&&!document.getElementById('staff').open"
+                + "&&document.getElementById('subtitleTyped').textContent.length>0"
+                + "&&document.getElementById('briefingControls').hidden"));
+        if ("ja".equals(lang)) waitFor("doctor frame playing", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('doctorVideo').hidden&&document.getElementById('doctorVideo').currentTime>0.1"));
+        SystemClock.sleep(400);
+    }
+
+    private JSONObject visitorFocusLayout(WebView view) throws Exception {
+        return evaluateObject(view, "JSON.stringify((()=>{"
+            + "const shown=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);"
+            + "return !e.hidden&&r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden';};"
+            + "const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom};};"
+            + "const noise=['.brand','#journey','#connectionText','#staffToggle','.briefing-copy','.briefing-visual',"
+            + "'#briefingProgress','#briefingControls'];"
+            + "const video=document.getElementById('doctorVideo'),still=document.getElementById('doctorImage'),"
+            + "caption=document.getElementById('subtitle');"
+            + "return {width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,"
+            + "scrollHeight:document.documentElement.scrollHeight,noise:noise.filter(s=>shown(document.querySelector(s))),"
+            + "captionVisible:shown(caption),caption:rect(caption),text:document.getElementById('subtitleTyped').textContent,"
+            + "doctorVisible:shown(video)||shown(still),videoVisible:shown(video),doctor:rect(shown(video)?video:still),"
+            + "frames:video.webkitDecodedFrameCount||0,time:video.currentTime,paused:video.paused,"
+            + "counter:document.getElementById('sceneCounter').textContent};})())");
+    }
+
+    private void verifyVisitorFocus(WebView view, String name, boolean narrow) throws Exception {
+        JSONObject layout = visitorFocusLayout(view);
+        Log.i(TAG, "visitorFocus scenario=" + name + " layout=" + layout);
+        saveScreenshot("doctor-visitor-focus-" + name + ".png");
+        check(name + " only doctor and subtitle", layout.getJSONArray("noise").length() == 0);
+        check(name + " subtitle rendered", layout.getBoolean("captionVisible") && !layout.getString("text").isEmpty());
+        check(name + " doctor rendered", layout.getBoolean("doctorVisible"));
+        check(name + " no horizontal overflow", layout.getInt("scrollWidth") <= layout.getInt("width") + 1);
+        check(name + " no vertical page overflow", layout.getInt("scrollHeight") <= layout.getInt("height") + 1);
+        if (narrow) check(name + " uses 375 CSS px", Math.abs(layout.getInt("width") - 375) <= 2);
+        JSONObject caption = layout.getJSONObject("caption"), doctor = layout.getJSONObject("doctor");
+        check(name + " subtitle stays on screen", caption.getDouble("x") >= 0 && caption.getDouble("y") >= 0
+            && caption.getDouble("right") <= layout.getInt("width") + 1 && caption.getDouble("bottom") <= layout.getInt("height") + 1);
+        check(name + " doctor and subtitle do not overlap", doctor.getDouble("bottom") <= caption.getDouble("y") + 1);
+    }
+
+    private void openVisitorControls(WebView view) throws Exception {
+        evaluate(view, "(()=>{const e=document.getElementById('subtitle'),r=e.getBoundingClientRect();"
+            + "for(const type of ['pointerdown','pointerup'])e.dispatchEvent(new PointerEvent(type,"
+            + "{bubbles:true,isPrimary:true,pointerId:21,button:0,clientX:r.x+r.width/2,clientY:r.y+r.height/2}));})()");
+        waitFor("visitor controls visible", 3000, () -> evaluateBoolean(view,
+            "!document.getElementById('briefingControls').hidden"));
+    }
+
+    private void holdVisitorButton(WebView view, String id, int duration) throws Exception {
+        evaluate(view, "(()=>{const e=document.getElementById('" + id + "'),r=e.getBoundingClientRect();"
+            + "e.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,isPrimary:true,pointerId:22,button:0,"
+            + "clientX:r.x+r.width/2,clientY:r.y+r.height/2}));})()");
+        SystemClock.sleep(duration);
+        evaluate(view, "document.getElementById('" + id + "').dispatchEvent(new PointerEvent('pointerup',"
+            + "{bubbles:true,isPrimary:true,pointerId:22,button:0}))");
+    }
+
+    private void ensureStaffScreen(WebView view) throws Exception {
+        if (evaluateBoolean(view, "document.getElementById('staff').open")) return;
+        boolean speaking = evaluateBoolean(view,
+            "!document.getElementById('briefingView').hidden&&document.getElementById('equipmentGuide').hidden");
+        if (speaking && evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
+        holdVisitorButton(view, speaking ? "briefingStaff" : "staffToggle", 1650);
+        waitFor("staff screen opened deliberately", 3000, () -> evaluateBoolean(view, "document.getElementById('staff').open"));
+    }
+
+    private void verifyVisitorControlsLayout(WebView view) throws Exception {
+        JSONObject result = evaluateObject(view, "JSON.stringify((()=>{const e=document.getElementById('briefingControls'),"
+            + "r=e.getBoundingClientRect();return {width:innerWidth,height:innerHeight,x:r.x,y:r.y,right:r.right,bottom:r.bottom,"
+            + "buttons:[...e.querySelectorAll('button')].filter(b=>!b.hidden&&b.getBoundingClientRect().height>0)"
+            + ".map(b=>{const r=b.getBoundingClientRect();return {id:b.id,height:r.height,onScreen:r.left>=0&&r.top>=0"
+            + "&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1};})};})())");
+        Log.i(TAG, "visitorFocus controls=" + result);
+        check("controls panel inside viewport", result.getDouble("x") >= 0 && result.getDouble("y") >= 0
+            && result.getDouble("right") <= result.getInt("width") + 1 && result.getDouble("bottom") <= result.getInt("height") + 1);
+        JSONArray buttons = result.getJSONArray("buttons");
+        check("controls contain actions", buttons.length() >= 5);
+        for (int i = 0; i < buttons.length(); i++) {
+            JSONObject b = buttons.getJSONObject(i);
+            check("control touch target " + b.getString("id"), b.getDouble("height") >= 44);
+            check("control on screen " + b.getString("id"), b.getBoolean("onScreen"));
+        }
+    }
+
+    private void verifyVisitorFocusInteractions(WebView view) throws Exception {
+        String before = evaluateString(view, "document.getElementById('sceneCounter').textContent");
+        double clockBefore = evaluateDouble(view, "document.getElementById('doctorVideo').currentTime");
+        double framesBefore = evaluateDouble(view, "document.getElementById('doctorVideo').webkitDecodedFrameCount");
+        SystemClock.sleep(500);
+        check("doctor decodes additional real frames", evaluateDouble(view,
+            "document.getElementById('doctorVideo').webkitDecodedFrameCount") > framesBefore);
+        openVisitorControls(view);
+        check("tap did not skip the sentence", before.equals(evaluateString(view,
+            "document.getElementById('sceneCounter').textContent")));
+        double stopped = evaluateDouble(view, "document.getElementById('doctorVideo').currentTime");
+        SystemClock.sleep(600);
+        check("controls pause media", evaluateBoolean(view, "document.getElementById('doctorVideo').paused")
+            && Math.abs(evaluateDouble(view, "document.getElementById('doctorVideo').currentTime") - stopped) < 0.08);
+        saveScreenshot("doctor-visitor-focus-controls-wide.png");
+        verifyVisitorControlsLayout(view);
+        evaluate(view, "document.getElementById('briefingResume').click()");
+        waitFor("visitor playback resumes", 4000, () -> evaluateBoolean(view,
+            "document.getElementById('briefingControls').hidden&&!document.getElementById('doctorVideo').paused"));
+        check("resume preserves sentence playback position", evaluateDouble(view,
+            "document.getElementById('doctorVideo').currentTime") >= stopped - 0.12 && stopped > clockBefore);
+        waitFor("visitor automatic sentence advance", 30000, () -> !before.equals(evaluateString(view,
+            "document.getElementById('sceneCounter').textContent")));
+        openVisitorControls(view);
+        evaluate(view, "document.getElementById('briefingStaff').click()");
+        check("short staff tap does not expose staff data", !evaluateBoolean(view, "document.getElementById('staff').open"));
+        holdVisitorButton(view, "briefingStaff", 200);
+        SystemClock.sleep(1500);
+        check("released staff hold is cancelled", !evaluateBoolean(view, "document.getElementById('staff').open"));
+        holdVisitorButton(view, "briefingStaff", 1650);
+        waitFor("intentional staff entry", 2000, () -> evaluateBoolean(view, "document.getElementById('staff').open"));
+        evaluate(view, "document.getElementById('staffDoneBtn').click()");
+        waitFor("staff returns to paused controls", 2000, () -> evaluateBoolean(view,
+            "!document.getElementById('staff').open&&!document.getElementById('briefingControls').hidden"));
+        check("staff return does not silently resume", evaluateBoolean(view, "document.getElementById('doctorVideo').paused"));
+        // Real local media and the production controls remain in use. Only Quest responses are fixtures.
+        for (int i = 0; i < 14; i++) {
+            if (evaluateBoolean(view, "!document.getElementById('equipmentGuide').hidden")) break;
+            if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
+            evaluate(view, "document.getElementById('briefingNext').click()");
+            SystemClock.sleep(700);
+        }
+        waitFor("visitor handback", 4000, () -> evaluateBoolean(view,
+            "!document.getElementById('equipmentGuide').hidden"));
+        check("handback does not automatically expose staff data", !evaluateBoolean(view, "document.getElementById('staff').open"));
+        check("handback asks to return tablet", evaluateString(view,
+            "document.getElementById('briefingTitle').textContent").contains("スタッフ"));
+        saveScreenshot("doctor-visitor-focus-handback-wide.png");
+        holdVisitorButton(view, "staffToggle", 1650);
+        waitFor("staff confirms returned tablet", 3000, () -> evaluateBoolean(view,
+            "document.getElementById('staff').open&&!document.getElementById('staffPrepareBtn').disabled"));
+        holdVisitorButton(view, "staffPrepareBtn", 1350);
+        waitFor("acknowledged wear briefing", 7000, () -> evaluateBoolean(view,
+            "!document.getElementById('staff').open&&document.getElementById('equipmentGuide').hidden"
+                + "&&document.getElementById('doctorVideo').src.includes('wear-ja')"));
+        waitFor("wear playback starts after acknowledged staff confirmation", 4000, () -> evaluateBoolean(view,
+            "document.getElementById('briefingControls').hidden&&!document.getElementById('doctorVideo').paused"));
+        SystemClock.sleep(500);
+        verifyVisitorFocus(view, "wear-wide", false);
+        evaluate(view, "globalThis.__tabletLifecycle(true)");
+        check("background freezes wear media", evaluateBoolean(view, "document.getElementById('doctorVideo').paused"));
+        evaluate(view, "globalThis.__tabletLifecycle(false)");
+        check("foreground provides explicit resume", evaluateBoolean(view,
+            "!document.getElementById('briefingControls').hidden&&document.getElementById('doctorVideo').paused"));
+        evaluate(view, "document.getElementById('briefingResume').click();globalThis.__visitorFocusOffline=true");
+        waitFor("offline briefing recovery shown", 6000, () -> evaluateBoolean(view,
+            "!document.getElementById('briefingControls').hidden&&document.getElementById('doctorVideo').paused"));
+        saveScreenshot("doctor-visitor-focus-offline-wide.png");
+        evaluate(view, "globalThis.__visitorFocusOffline=false");
     }
 
     private void runStaffFinishScenario(Activity activity, WebView view, String source, String scenario,
@@ -584,9 +824,9 @@ public final class TabletInstrumentation extends Instrumentation {
         Throwable normalRestoreError = null;
         try {
             evaluate(view, "(function(){var b=document.getElementById('briefingSettings');"
-                + "if(!document.getElementById('briefingView').hidden&&!b.hidden)b.click();"
-                + "var d=document.getElementById('staff');if(!d.open)document.getElementById('staffToggle').click();"
-                + "document.getElementById('staffTrouble').open=true;var q=document.getElementById('quest"
+                + "if(!document.getElementById('briefingView').hidden&&!b.hidden)b.click();return true;})()");
+            ensureStaffScreen(view);
+            evaluate(view, "(function(){document.getElementById('staffTrouble').open=true;var q=document.getElementById('quest"
                 + ("alpha".equals(quest) ? "Alpha" : "Beta") + "');q.checked=true;"
                 + "q.dispatchEvent(new Event('change',{bubbles:true}));"
                 + "document.getElementById('staffCheckBtn').click();return true;})()");
@@ -625,28 +865,50 @@ public final class TabletInstrumentation extends Instrumentation {
         return bounds;
     }
 
+    private boolean screenshotProbeChecked;
+
+    private boolean hasRenderedColors(Bitmap bitmap) {
+        Set<Integer> colors = new HashSet<>();
+        int[] row = new int[bitmap.getWidth()];
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            bitmap.getPixels(row, 0, row.length, 0, y, row.length, 1);
+            for (int color : row) {
+                colors.add(color);
+                if (colors.size() >= 4) return true;
+            }
+        }
+        return false;
+    }
+
     private void saveScreenshot(String filename) throws Exception {
+        boolean visitorFocusName = filename.matches("doctor-visitor-focus-[a-z-]+\\.png");
         boolean staffFinishName = filename.matches(
             "doctor-staff-finish-(setup|handover|playing|outro|finished|offline|recovered|prepared)-(wide|narrow)\\.png")
             && !(filename.endsWith("handover-narrow.png") || filename.endsWith("playing-narrow.png")
                 || filename.endsWith("outro-narrow.png") || filename.endsWith("offline-narrow.png"));
-        if (!staffFinishName && !"doctor-staff-flow-staff.png".equals(filename)
+        if (!visitorFocusName && !staffFinishName && !"doctor-staff-flow-staff.png".equals(filename)
             && !"doctor-staff-flow-equipment.png".equals(filename)
             && !"doctor-staff-flow-title.png".equals(filename)) {
             throw new AssertionError("Unexpected staffFlow screenshot name: " + filename);
         }
+        if (!screenshotProbeChecked) {
+            Bitmap probe = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888);
+            probe.eraseColor(android.graphics.Color.BLACK);
+            check("screenshot detector rejects a blank image", !hasRenderedColors(probe));
+            probe.setPixel(3, 3, android.graphics.Color.WHITE);
+            probe.setPixel(5, 5, android.graphics.Color.RED);
+            probe.setPixel(7, 7, android.graphics.Color.BLUE);
+            check("screenshot detector finds sparse rendered pixels", hasRenderedColors(probe));
+            probe.recycle();
+            screenshotProbeChecked = true;
+        }
         Bitmap screenshot = getUiAutomation().takeScreenshot();
         check("screenshot captured " + filename, screenshot != null);
-        Set<Integer> sampledColors = new HashSet<>();
-        int xStep = Math.max(1, screenshot.getWidth() / 24);
-        int yStep = Math.max(1, screenshot.getHeight() / 16);
-        for (int y = 0; y < screenshot.getHeight(); y += yStep) {
-            for (int x = 0; x < screenshot.getWidth(); x += xStep) sampledColors.add(screenshot.getPixel(x, y));
-        }
-        check("screenshot has rendered colors " + filename, sampledColors.size() >= 4);
-        screenshot.recycle();
         String destination = "/sdcard/" + filename;
         runShell("screencap -p " + destination);
+        boolean rendered = hasRenderedColors(screenshot);
+        screenshot.recycle();
+        check("screenshot has rendered colors " + filename, rendered);
         String byteOutput = runShell("wc -c " + destination);
         long bytes = firstNumber(byteOutput);
         check("screenshot saved " + destination, bytes > 0);
@@ -798,26 +1060,22 @@ public final class TabletInstrumentation extends Instrumentation {
             Log.i(TAG, "mutation " + mutation);
         }
 
-        evaluate(resumedWebView, "(function(){document.getElementById('staffToggle').click();return true;})()");
+        ensureStaffScreen(resumedWebView);
         waitFor("staff briefing ready", 10000, () -> evaluateBoolean(resumedWebView,
             "!document.getElementById('staffBriefingBtn').disabled"));
         String staffButton = evaluateString(resumedWebView,
             "document.getElementById('staffBriefingBtn').textContent.trim()");
         evaluate(resumedWebView, "(function(){document.getElementById('staffBriefingBtn').click();return true;})()");
         waitFor("offline briefing preview", 5000, () -> evaluateBoolean(resumedWebView,
-            "(function(){var v=document.getElementById('briefingView');"
-                + "var m=document.getElementById('briefingMode');var r=v.getBoundingClientRect();"
-                + "var s=getComputedStyle(v);return !v.hidden&&v.getAttribute('aria-hidden')!=='true'"
-                + "&&r.width>0&&r.height>0&&s.display!=='none'&&s.visibility==='visible'"
-                + "&&!m.hidden&&m.textContent.trim()==='スタッフ確認モードです。クエストへ設定は送りません。';})()"));
+            "!document.getElementById('briefingView').hidden&&document.getElementById('subtitleTyped').textContent.length>0"));
+        openVisitorControls(resumedWebView);
         String briefingTitle = evaluateString(resumedWebView,
             "document.getElementById('briefingTitle').textContent.trim()");
         String briefingMode = evaluateString(resumedWebView,
-            "document.getElementById('briefingMode').textContent.trim()");
+            "document.getElementById('briefingPanelStatus').textContent.trim()");
         check("staff preview control text", staffButton.contains("説明"));
         check("staff preview visible offline", !briefingTitle.isEmpty());
-        check("staff preview mode text", briefingMode.equals(
-            "スタッフ確認モードです。クエストへ設定は送りません。"));
+        check("staff preview mode text", briefingMode.contains("スタッフ確認"));
         Log.i(TAG, "offlinePreview button=" + staffButton + " title=" + briefingTitle
             + " mode=" + briefingMode);
         evaluate(resumedWebView, "(function(){document.getElementById('briefingSettings').click();"
@@ -840,7 +1098,7 @@ public final class TabletInstrumentation extends Instrumentation {
         Activity activity = launchFromShell();
         WebView view = waitForWebView(activity, 10000);
         waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
-        evaluate(view, "document.getElementById('staffToggle').click()");
+        ensureStaffScreen(view);
         waitFor("briefing ready", 10000, () -> evaluateBoolean(view,
             "!document.getElementById('staffBriefingBtn').disabled"));
         evaluate(view, "document.getElementById('staffBriefingBtn').click()");
@@ -858,9 +1116,8 @@ public final class TabletInstrumentation extends Instrumentation {
                 waitFor("resume focus", 5000, () -> evaluateBoolean(view, "!document.hidden"));
                 double resumed = evaluateDouble(view, "document.getElementById('doctorVideo').currentTime");
                 check("briefing stopped in background", Math.abs(resumed - before) < 0.8);
-                evaluate(view, "document.getElementById('mediaRetry').click()");
+                evaluate(view, "document.getElementById('briefingResume').click()");
             }
-            evaluate(view, "document.getElementById('briefingToggle').click()");
             Set<String> rendered = new HashSet<>();
             long deadline = SystemClock.elapsedRealtime() + 95000;
             boolean ended = false;
@@ -892,7 +1149,7 @@ public final class TabletInstrumentation extends Instrumentation {
         Activity activity = launchFromShell();
         WebView view = waitForWebView(activity, 10000);
         waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
-        evaluate(view, "document.getElementById('staffToggle').click()");
+        ensureStaffScreen(view);
         waitFor("briefing ready", 10000, () -> evaluateBoolean(view,
             "!document.getElementById('staffBriefingBtn').disabled"));
         evaluate(view, "document.getElementById('staffBriefingBtn').click()");
@@ -910,13 +1167,16 @@ public final class TabletInstrumentation extends Instrumentation {
         }
         SystemClock.sleep(1000);
         check("long press does not select text", evaluateBoolean(view, "String(window.getSelection())===''"));
+        if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
         int position = readSceneCounter(view);
         for (; position < 12; position++) {
             int next = position + 1;
+            if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
             evaluate(view, "document.getElementById('briefingNext').click()");
             waitFor("next sentence " + next, 5000, () -> readSceneCounter(view) == next);
             SystemClock.sleep(200);
         }
+        if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
         check("final sentence offers equipment", evaluateBoolean(view,
             "document.getElementById('briefingReplay').hidden&&!document.getElementById('briefingNext').hidden"
             + "&&document.getElementById('briefingNext').textContent==='装着の案内へ'"));

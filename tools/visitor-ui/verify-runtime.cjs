@@ -360,6 +360,9 @@ const exportsSource = `
     stopBriefingPlayback,
     setBriefingAuto,
     setBriefingPause,
+    openBriefingControls,
+    resumeBriefing,
+    restartBriefingCue,
     beginBriefingCue,
     moveBriefing,
     finishBriefing,
@@ -656,7 +659,7 @@ test('軽減音は軽減選択中だけ再生し、画面を離れると先頭�
   runtime.setSettingsStep('relief', false);
   assert.equal(preview.playCount, 2);
 
-  elements.get('staffToggle').dispatch('click');
+  runtime.openStaffScreen('manual');
   assert.equal(preview.paused, true);
   elements.get('staff').close();
   assert.equal(preview.playCount, 3);
@@ -817,7 +820,7 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   assert.equal(elements.get('headsetHeading').textContent, 'Settings confirmed on Quest');
 });
 
-test('確認前は現在値と未送信を示し反映後だけ明示ボタンで進める', () => {
+test('確認前は現在値と未送信を示し反映後だけ明示ボタンで進める', async () => {
   state.lang = 'ja';
   state.view = 'edit';
   state.ui = 'idle';
@@ -834,9 +837,10 @@ test('確認前は現在値と未送信を示し反映後だけ明示ボタン�
   state.status = { ...validStatus, appliedSeq: 12,
     lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 12, lang: 'ja', relief: false } };
   state.ui = 'sent';
-  runtime.poll();
+  runtime.renderResult();
   assert.equal(runtime.resultKey(), 'applied');
-  assert.equal(elements.get('resultContinueBtn').textContent, '画面をタップして次へ');
+  assert.equal(elements.get('resultContinueBtn').textContent, '博士の説明を始める');
+  assert.match(elements.get('resultDetail').textContent, /画面に触れると一時停止/);
 });
 
 test('Questの起動IDが変わると送信中の古い応答を捨てる', async () => {
@@ -944,8 +948,9 @@ test('説明を復元した後も操作ボタンと案内を選択した言語�
   assert.equal(runtime.restoreProgress(progress), true);
   assert.equal(document.documentElement.lang, 'en');
   assert.equal(elements.get('briefingNext').textContent, 'Next sentence');
-  assert.equal(elements.get('briefingSettings').textContent, 'Back to settings');
-  assert.equal(elements.get('staffLabel').textContent, 'Staff screen');
+  assert.equal(elements.get('briefingSettings').textContent, 'Change language / reduced horror');
+  assert.equal(elements.get('briefingResume').textContent, 'Resume');
+  assert.equal(elements.get('staffLabel').textContent, 'Staff only');
 });
 
 test('表示更新は同期し、重複アニメーションを取消して縮小設定に従う', () => {
@@ -1076,7 +1081,7 @@ test('日本語の原音声と4場面の博士動画を配信し、新しい台�
   assert.match(report.cues.ja[2].text, /1秒間/);
 });
 
-test('壁の動画は次の文から始まり、文送りでは再生位置を変えずにループする', () => {
+test('参考動画は説明中も停止して非表示のまま解放する', () => {
   assert.match(html, /<video[^>]*id="briefingLoopVideo"[^>]*\bmuted\b[^>]*\bloop\b/);
   const data = clone(briefing);
   const scene = data.scenes[1];
@@ -1095,21 +1100,15 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
 
   runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.cueIndex, 1);
-  assert.equal(video.playCount, before + 1);
-  video.onplaying();
-  assert.equal(video.hidden, false);
-  assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), true);
-  video.currentTime = 4.2;
-  const pauseCount = video.pauseCount;
-  const loadCount = video.loadCount;
+  assert.equal(video.playCount, before);
+  assert.equal(video.hidden, true);
+  assert.equal(video.dataset.source || '', '');
+  assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), false);
 
   runtime.moveBriefing(1, 'auto');
   runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.cueIndex, 3);
-  assert.equal(video.currentTime, 4.2);
-  assert.equal(video.playCount, before + 1);
-  assert.equal(video.pauseCount, pauseCount);
-  assert.equal(video.loadCount, loadCount);
+  assert.equal(video.playCount, before);
 
   runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.sceneIndex, 2);
@@ -1132,22 +1131,17 @@ test('媒体未指定の場面ではaudioもvideoも作らない', () => {
   assert.equal(video.loadCount, loadCount);
 });
 
-test('説明案内は常設され自動送りと音声なしを三言語で説明する', () => {
-  const expected = {
-    ja: ['画面をタップして次へ進みます。', '自動で次へ進みます。'],
-    en: ['No voice audio is available.', 'The briefing will advance automatically.'],
-    fr: ['Aucune voix n’est disponible.', 'Le passage à la suite est automatique.'],
-  };
+test('音声なしの説明も三言語で自動進行し、通常時は操作を常設しない', () => {
   const data = clone(briefing);
   delete data.scenes[0].video;
   for (const lang of ['ja', 'en', 'fr']) {
     prepareBriefing(data);
     state.lang = lang;
+    state.briefing.auto = true;
     runtime.beginBriefingCue();
-    assert.equal(elements.get('mediaNotice').hidden, false);
-    assert.match(elements.get('mediaMessage').textContent, new RegExp(expected[lang][0]));
-    runtime.setBriefingAuto(true);
-    assert.match(elements.get('mediaMessage').textContent, new RegExp(expected[lang][1]));
+    assert.equal(elements.get('briefingControls').hidden, true);
+    assert.ok(pendingDelays().includes(data.scenes[0].cues[lang][0].durationMs));
+    timers.reset();
   }
   state.lang = 'ja';
 });
@@ -1213,7 +1207,7 @@ test('章変更は動画を隠して静止画へ戻してから動画を解放�
   }
 });
 
-test('読み上げ途中のオート切替は音声と動画を止めず再生位置と文末判定を保つ', () => {
+test('読み上げ途中の操作表示は音声と動画を同じ位置で止め、明示再開で続ける', () => {
   for (const kind of ['video', 'audio']) {
     const data = clone(briefing);
     if (kind === 'audio') {
@@ -1230,28 +1224,21 @@ test('読み上げ途中のオート切替は音声と動画を止めず再生�
     const start = data.scenes[1].cues.ja[0].durationMs / 1000;
     media.currentTime = start + 1;
     const before = { time: media.currentTime, pauses: media.pauseCount, plays: media.playCount };
-    elements.get('briefingToggle').dispatch('click');
-    assert.equal(state.briefing.auto, true);
+    state.briefing.auto = true;
+    runtime.openBriefingControls();
+    assert.equal(state.briefing.auto, false);
     assert.equal(media.currentTime, before.time, kind);
-    assert.equal(media.pauseCount, before.pauses, kind);
-    assert.equal(media.playCount, before.plays, kind);
+    assert.ok(media.pauseCount > before.pauses, kind);
+    assert.equal(media.paused, true, kind);
+    assert.equal(elements.get('briefingControls').hidden, false);
+    runtime.resumeBriefing();
+    assert.equal(media.currentTime, before.time, kind);
+    assert.equal(media.playCount, before.plays + 1, kind);
     assert.equal(media.paused, false, kind);
     media.currentTime = start + data.scenes[1].cues.ja[1].durationMs / 1000;
     media.ontimeupdate();
     assert.equal(state.briefing.cueIndex, 2, kind);
 
-    media.onplaying();
-    media.currentTime += 1;
-    const off = { time: media.currentTime, pauses: media.pauseCount, plays: media.playCount };
-    elements.get('briefingToggle').dispatch('click');
-    assert.equal(state.briefing.auto, false);
-    assert.equal(media.currentTime, off.time, kind);
-    assert.equal(media.pauseCount, off.pauses, kind);
-    assert.equal(media.playCount, off.plays, kind);
-    media.currentTime = data.scenes[1].cues.ja.slice(0, 3).reduce((sum, cue) => sum + cue.durationMs, 0) / 1000;
-    media.ontimeupdate();
-    assert.equal(state.briefing.cueIndex, 2, kind);
-    assert.equal(media.paused, true, kind);
   }
 });
 
@@ -1325,6 +1312,8 @@ test('最後の音声が終わると装着案内を表示し、再説明はそ�
   assert.equal(elements.get('subtitle').hidden, false);
   assert.equal(selectorElements.get('.stage').classList.contains('is-equipment'), false);
   assert.equal(elements.get('subtitleTyped').textContent, data.scenes[0].cues.ja[0].text);
+  assert.equal(state.briefing.auto, true, '再説明も最初の文から自動で進む');
+  assert.equal(elements.get('briefingControls').hidden, true);
 });
 
 test('最終文の次へ操作も装着案内を開き、案内は三言語に揃う', () => {
@@ -1456,7 +1445,7 @@ test('自動再生拒否後は同じ媒体をユーザー操作で再生する',
 
   const playCount = video.playCount;
   video.nextPlayPromise = Promise.resolve();
-  elements.get('mediaRetry').dispatch('click');
+  elements.get('briefingResume').dispatch('click');
   assert.equal(runtime.getBriefingMedia(), video);
   assert.equal(video.src, source);
   assert.equal(video.loadCount, loadCount);
@@ -1496,6 +1485,87 @@ test('媒体失敗時は静止画と字幕を保ち、オート解除後に再�
   assert.equal(state.briefing.mediaWindowActive, true);
   assert.equal(video.playCount, playCount + 1);
   assert.equal(elements.get('subtitleTyped').textContent, subtitle);
+});
+
+test('通常説明のタップは文を送らず停止し、再開と文頭再生を明示操作だけで行う', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  elements.get('staff').open = false;
+  state.briefing.auto = true;
+  runtime.configureBriefingMedia(data.scenes[0]);
+  runtime.beginBriefingCue();
+  const media = runtime.getBriefingMedia();
+  media.onplaying();
+  media.currentTime = 1.4;
+  const cueIndex = state.briefing.cueIndex;
+  elements.get('briefingPauseSurface').dispatch('click');
+  assert.equal(state.briefing.cueIndex, cueIndex);
+  assert.equal(state.briefing.auto, false);
+  assert.equal(media.paused, true);
+  assert.equal(media.currentTime, 1.4);
+  assert.equal(elements.get('briefingControls').hidden, false);
+  assert.equal(elements.get('briefingControls').inert, false);
+  elements.get('briefingResume').dispatch('click');
+  assert.equal(media.currentTime, 1.4);
+  assert.equal(media.paused, false);
+  elements.get('briefingPauseSurface').dispatch('click');
+  elements.get('briefingRestart').dispatch('click');
+  assert.equal(media.currentTime, 0);
+  assert.equal(media.paused, false);
+});
+
+test('字幕だけの自動進行は停止時間を除外し、同じ文の残り時間から再開する', () => {
+  const data = clone(briefing);
+  delete data.scenes[0].video;
+  delete data.scenes[0].audio;
+  prepareBriefing(data);
+  state.lang = 'en';
+  state.briefing.auto = true;
+  context.performance.now = () => 1000;
+  runtime.beginBriefingCue();
+  const duration = data.scenes[0].cues.en[0].durationMs;
+  assert.ok(pendingDelays().includes(duration));
+  context.performance.now = () => 2500;
+  elements.get('briefingPauseSurface').dispatch('click');
+  assert.equal(state.briefing.cueIndex, 0);
+  elements.get('briefingResume').dispatch('click');
+  assert.ok(pendingDelays().includes(duration - 1500));
+  context.performance.now = () => 1000;
+  state.lang = 'ja';
+});
+
+test('スタッフ入口は短押し・領域外・複数指で取り消し、異常中も1.5秒長押しだけを受け付ける', () => {
+  prepareBriefing(clone(briefing));
+  elements.get('staff').open = false;
+  state.briefing.auto = true;
+  runtime.configureBriefingMedia(briefing.scenes[0]);
+  runtime.beginBriefingCue();
+  runtime.openBriefingControls();
+  runtime.setBriefingPause('offline', true);
+  const entry = elements.get('briefingStaff');
+  assert.equal(entry.disabled, false);
+  entry.dispatch('pointerdown', { isPrimary: true, pointerId: 81, button: 0 });
+  entry.dispatch('pointerup', { pointerId: 81 });
+  assert.equal(elements.get('staff').open, false);
+  assert.match(elements.get('briefingStaffHint').textContent, /1\.5秒長押し/);
+  entry.dispatch('pointerdown', { isPrimary: true, pointerId: 82, button: 0 });
+  entry.dispatch('pointerleave', { pointerId: 82 });
+  assert.equal(pendingDelays().includes(1500), false);
+  entry.dispatch('pointerdown', { isPrimary: true, pointerId: 83, button: 0 });
+  entry.dispatch('pointerdown', { isPrimary: false, pointerId: 84, button: 0 });
+  assert.equal(pendingDelays().includes(1500), false);
+  entry.dispatch('pointerdown', { isPrimary: true, pointerId: 85, button: 0 });
+  timers.runOne(1500);
+  assert.equal(elements.get('staff').open, true);
+  elements.get('staff').close();
+  runtime.setBriefingPause('offline', false);
+});
+
+test('通常説明は博士と字幕だけを常設し、375pxでも操作ボタンを44px以上にする', () => {
+  assert.match(html, /\.stage\.is-briefing:not\(\.is-equipment\) \.topbar,[\s\S]*?\.content \{ display: none; \}/);
+  assert.match(html, /\.briefing-control \{ min-height: 44px;/);
+  assert.match(html, /\.stage\.is-briefing \.briefing-controls button \{ min-height: 44px; \}/);
+  assert.match(html, /id="briefingPauseSurface"[^>]*aria-label=/);
 });
 
 function prepareStaff() {
@@ -1732,7 +1802,15 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
     assert.equal(elements.get('briefingTitle').textContent, handoff);
   }
   state.lang = 'ja';
-  assert.equal(elements.get('staff').open, true, '来場者がスタッフへ返すとスタッフ画面を開く');
+  assert.equal(elements.get('staff').open, false, '返却画面ではスタッフ画面を自動で開かない');
+  const staffEntry = elements.get('staffToggle');
+  staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 70, button: 0 });
+  staffEntry.dispatch('pointerup', { pointerId: 70 });
+  assert.equal(elements.get('staff').open, false, '短押しではスタッフ画面を開かない');
+  assert.match(elements.get('staffLabel').textContent, /1\.5秒長押し/);
+  staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 71, button: 0 });
+  timers.runOne(1500);
+  assert.equal(elements.get('staff').open, true, '返却画面の長押しでスタッフ画面を開く');
   assert.equal(elements.get('staff').dataset.state, 'confirm');
   assert.equal(elements.get('staffNowTitle').textContent, '装着の前に確認');
   assert.equal(elements.get('staffHandback').hidden, false, '返却の案内を3言語で最上段に出す');
@@ -1755,8 +1833,9 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
   assert.equal(prepare.style['--hold'], '0');
   assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 0);
   prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 8, button: 0 });
-  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 9, button: 0 });
-  assert.equal(pendingDelays().filter(delay => delay === 1200).length, 1, '押している間の二度押しは数えない');
+  prepare.dispatch('pointerdown', { isPrimary: false, pointerId: 9, button: 0 });
+  assert.equal(pendingDelays().filter(delay => delay === 1200).length, 0, '複数指になったら長押しを取り消す');
+  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 10, button: 0 });
   timers.runOne(1200); await runtime.staffAction();
   assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 1, '長押しの完了で一度だけ送る');
   assert.equal(elements.get('staffPrepareBtn').disabled, true);
@@ -1774,7 +1853,8 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
   assert.equal(state.briefing.wearStarted, true);
   assert.equal(elements.get('staff').open, false, 'Questの受理でスタッフ画面を閉じて来場者の画面へ戻す');
   const media = runtime.getBriefingMedia();
-  assert.equal(media.paused, false, '装着案内をスタッフの操作なしで再生する');
+  assert.equal(media.paused, false, 'スタッフの装着確定が受理されたら追加タップなしで案内する');
+  assert.equal(elements.get('briefingControls').hidden, true);
   assert.equal(state.briefing.mediaWindowActive, true);
   assert.equal(state.briefing.sceneIndex, wearIndex);
   assert.equal(state.briefing.cueIndex, 0);
@@ -1794,7 +1874,10 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
   }
   state.lang = 'ja'; state.briefing.cueIndex = 0; runtime.renderBriefingScene();
 
-  elements.get('staffToggle').dispatch('click');
+  runtime.openBriefingControls();
+  const briefingStaff = elements.get('briefingStaff');
+  briefingStaff.dispatch('pointerdown', { isPrimary: true, pointerId: 72, button: 0 });
+  timers.runOne(1500);
   assert.equal(elements.get('staff').dataset.state, 'wear');
   assert.equal(elements.get('staffNowTitle').textContent, '装着を手伝う');
   assert.equal(elements.get('staffNowItem3Text').textContent, 'ヘッドセットの中の案内に従います。体験者が X か Y を押して始めます');
@@ -1803,11 +1886,9 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
   elements.get('staffDoneBtn').dispatch('click');
   assert.equal(elements.get('staff').open, false);
   const playCount = media.playCount;
-  assert.match(elements.get('mediaMessage').textContent, /同じ文から/);
-  elements.get('mediaRetry').dispatch('click');
+  assert.match(elements.get('mediaMessage').textContent, /続きから/);
+  elements.get('briefingResume').dispatch('click');
   assert.equal(media.playCount, playCount + 1);
-  media.currentTime = state.briefing.data.scenes[wearIndex].cues.ja[0].durationMs / 1000;
-  media.ontimeupdate();
   assert.equal(state.briefing.wearStarted, true, '装着1文目の音声終了でスタッフ返却へ戻らない');
   assert.equal(state.briefing.cueIndex, 0);
 
@@ -1820,8 +1901,8 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
     status.staffSetup.reason = ''; status.staffSetup.stage = 'handedOff'; status.questTick++; await runtime.poll();
     const beforeResume = runtime.getBriefingMedia().playCount;
     assert.equal(state.briefing.cueIndex, 0);
-    assert.match(elements.get('mediaMessage').textContent, /同じ文から/);
-    elements.get('mediaRetry').dispatch('click');
+    assert.match(elements.get('mediaMessage').textContent, /続きから/);
+    elements.get('briefingResume').dispatch('click');
     assert.equal(runtime.getBriefingMedia().playCount, beforeResume + 1);
   }
 
@@ -1831,7 +1912,7 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
   assert.equal(state.briefing.cueIndex, 0);
   assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
   fetchHandler = onlineFetch; status.questTick++; await runtime.poll();
-  assert.match(elements.get('mediaMessage').textContent, /同じ文から/);
+  assert.match(elements.get('mediaMessage').textContent, /続きから/);
 
   const realDateNow = vm.runInNewContext('Date.now', context);
   vm.runInNewContext('globalThis.__savedDateNow = Date.now; Date.now = () => globalThis.__savedDateNow() + 5000;', context);
@@ -1841,7 +1922,7 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
   vm.runInNewContext('Date.now = globalThis.__savedDateNow;', context);
   status.questTick++; await runtime.poll();
   assert.equal(state.briefing.cueIndex, 0);
-  assert.match(elements.get('mediaMessage').textContent, /同じ文から/);
+  assert.match(elements.get('mediaMessage').textContent, /続きから/);
 
   state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues.ja.length - 1;
   runtime.finishBriefing(); await flushPromises();
@@ -2691,7 +2772,7 @@ test('来場者の使用中は反映済みの設定と説明の進みを出し�
   assert.equal(elements.get('staff').open, false);
   assert.equal(state.briefing.pauseReasons.has('staff'), false);
   assert.equal(state.view, 'briefing', '来場者の説明はそのまま');
-  elements.get('staffToggle').dispatch('click');
+  runtime.openStaffScreen('manual');
   const restart = elements.get('staffRestartBtn');
   assert.equal(restart.hidden, false);
   assert.equal(restart.disabled, false);

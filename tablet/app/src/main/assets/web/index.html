@@ -460,6 +460,44 @@
     .stage.is-briefing .media-notice button { min-height: 38px; }
   }
   .equipment-staff-status { margin: 18px 0 0; font-size: 15px; line-height: 1.6; color: var(--muted); }
+  /* 説明中は博士と字幕だけを常設し、操作は一時停止時のパネルへ集約する。 */
+  .connection-dot, #connectionText { display: none; }
+  .stage.is-briefing:not(.is-equipment) { height: 100svh; min-height: 100svh; grid-template-rows: minmax(0,1fr) auto; overflow: hidden; }
+  .stage.is-briefing:not(.is-equipment) .topbar,
+  .stage.is-briefing:not(.is-equipment) .content { display: none; }
+  .stage.is-briefing:not(.is-equipment) .portrait { position: relative; grid-area: 1 / 1; inset: auto; width: 100%; height: 100%; min-height: 0; opacity: 1; }
+  .stage.is-briefing:not(.is-equipment) .portrait img,
+  .stage.is-briefing:not(.is-equipment) .portrait video { inset: 0; width: 100%; height: 100%; max-width: 100%; object-fit: contain; object-position: center bottom; transform: none; mask-image: none; }
+  .stage.is-briefing:not(.is-equipment) .portrait::after { background: linear-gradient(0deg,var(--bg),transparent 16%,transparent 94%,var(--bg)); }
+  .briefing-pause-surface { position: relative; z-index: 3; grid-area: 1 / 1; width: 100%; height: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; color: transparent; }
+  .briefing-pause-surface[hidden] { display: none; }
+  .stage.is-briefing:not(.is-equipment) .footer { position: relative; z-index: 4; grid-area: 2 / 1; gap: 10px; padding: 10px max(var(--gutter),env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(var(--gutter),env(safe-area-inset-left)); }
+  .stage.is-briefing:not(.is-equipment) .subtitle { min-height: 3.2em; font-size: clamp(18px,2.2vw,27px); }
+  .briefing-controls { width: min(100%,920px); margin-inline: auto; grid-template-columns: repeat(3,minmax(0,1fr)); padding: 12px; border: 1px solid var(--line-strong); background: rgba(9,8,7,.97); }
+  .briefing-controls[hidden] { display: none; }
+  .briefing-panel-status { grid-column: 1 / -1; margin: 0 0 2px; color: var(--muted); font: 14px/1.5 var(--sans); text-align: center; }
+  #briefingResume, #briefingRestart, #briefingPrevious, #briefingNext, #briefingSettings, #briefingStaff { position: static; grid-column: auto; grid-row: auto; justify-self: stretch; }
+  #briefingResume { border-color: var(--gold); }
+  #briefingStaff { --hold: 0; background: linear-gradient(90deg,rgba(215,194,155,.16) calc(var(--hold) * 100%),transparent 0); }
+  .briefing-staff-hint { grid-column: 1 / -1; min-height: 1.5em; margin: 0; color: var(--muted); font: 14px/1.5 var(--sans); text-align: center; }
+  .briefing-controls .media-notice { grid-column: 1 / -1; grid-template-columns: minmax(0,1fr) auto auto; }
+  #briefingToggle, #briefingMute { display: none; }
+  @media (max-width:760px), (max-aspect-ratio:1/1) {
+    .stage.is-briefing:not(.is-equipment) { grid-template-rows: minmax(0,1fr) auto; }
+    .stage.is-briefing:not(.is-equipment) .portrait { inset: auto; width: 100%; height: 100%; min-height: 0; }
+    .stage.is-briefing:not(.is-equipment) .footer { gap: 8px; padding-inline: max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right)); }
+    .stage.is-briefing:not(.is-equipment) .subtitle { min-height: 3.2em; font-size: 17px; }
+    .briefing-controls { grid-template-columns: repeat(2,minmax(0,1fr)); max-height: 52svh; overflow: auto; padding: 8px; }
+    .briefing-controls .media-notice { grid-template-columns: minmax(0,1fr) auto; }
+    #briefingContinueSubtitles { grid-column: 2; }
+  }
+  @media (max-width:420px) {
+    .briefing-control { min-height: 44px; padding: 7px 8px; font-size: 14px; }
+    .briefing-panel-status, .briefing-staff-hint, .briefing-controls .media-notice { font-size: 13px; }
+  }
+  .stage.is-briefing .briefing-controls button { min-height: 44px; }
+  .stage.is-equipment .briefing-mode, .stage.is-equipment .briefing-staff-hint { display: none; }
+  .stage.is-equipment .briefing-controls { padding: 0; border: 0; background: transparent; }
 </style>
 </head>
 <body>
@@ -502,6 +540,7 @@
     <img id="doctorImage" alt="" width="1672" height="941" draggable="false">
     <video id="doctorVideo" playsinline preload="metadata" disablepictureinpicture hidden></video>
   </figure>
+  <button class="briefing-pause-surface" id="briefingPauseSurface" type="button" aria-label="一時停止して説明の操作を開く" hidden></button>
 
   <main class="content" id="main">
     <section class="surface settings" id="settingsView" aria-labelledby="pageTitle" aria-hidden="true" hidden inert>
@@ -644,16 +683,22 @@
         <span id="submitLabel">設定を確認する</span>
       </button>
     </div>
-    <div class="briefing-controls" id="briefingControls" hidden>
+    <div class="briefing-controls" id="briefingControls" role="group" aria-label="説明の操作" hidden inert>
       <button class="briefing-control" id="briefingMute" type="button" aria-pressed="false" hidden>音声 ON</button>
-      <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button" aria-pressed="false">自動送り：切</button>
+      <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button" aria-pressed="false" hidden>自動送り：切</button>
+      <p class="briefing-panel-status" id="briefingPanelStatus"></p>
+      <button class="briefing-control" id="briefingResume" type="button">再開</button>
+      <button class="briefing-control" id="briefingRestart" type="button">この文を最初から</button>
       <button class="briefing-control" id="briefingPrevious" type="button">前の文</button>
       <button class="briefing-control" id="briefingNext" type="button">次の文</button>
-      <button class="briefing-control" id="briefingSettings" type="button">設定に戻る</button>
+      <button class="briefing-control" id="briefingSettings" type="button">言語・軽減を変更</button>
+      <button class="briefing-control" id="briefingStaff" type="button">スタッフ専用（長押し）</button>
+      <p class="briefing-staff-hint" id="briefingStaffHint" role="status" aria-live="polite"></p>
       <button class="briefing-control briefing-replay" id="briefingReplay" type="button" hidden>もう一度説明を見る</button>
       <div class="media-notice" id="mediaNotice">
         <span id="mediaMessage" role="status" aria-live="polite"></span>
         <button id="mediaRetry" type="button">再読み込み</button>
+        <button id="briefingContinueSubtitles" type="button">字幕で続ける</button>
       </div>
     </div>
   </footer>
@@ -788,7 +833,7 @@
   const T = {
     ja: {
       journey: ['体験の準備', '設定', '調査説明', '装着'],
-      media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: 'この文を再生', resumeRequired: '再生を停止しました。「この文を再生」で同じ文から続けてください。', noAudio: '', staff: 'スタッフ画面を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', equipment: 'スタッフが機器を確認しています。このままお待ちください。', unavailable: '画像を表示できません' },
+      media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: '再開', resumeRequired: '再開すると続きから再生します。', noAudio: '', staff: 'スタッフ画面を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', equipment: 'スタッフが機器を確認しています。このままお待ちください。', unavailable: '画像を表示できません' },
       pageTitle: '体験の前に', noticeLabel: '注意', language: '言語', relief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
       reliefDesc: 'なし：通常の演出と音量\nあり：音量半分と陽気な曲',
@@ -797,14 +842,14 @@
       next: '次へ', back: '戻る',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
       review: '設定を確認する', apply: 'この設定を送る', edit: '設定に戻る', retry: 'もう一度送る',
-      selected: '選んだ設定', headset: 'クエスト', headsetCurrent: '現在のクエスト', headsetConfirmed: 'クエストで確認した設定', item: '項目', continue: '画面をタップして次へ',
+      selected: '選んだ設定', headset: 'クエスト', headsetCurrent: '現在のクエスト', headsetConfirmed: 'クエストで確認した設定', item: '項目', continue: '博士の説明を始める',
       restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
-      staff: 'スタッフ画面', staffOpen: 'スタッフ画面を開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする',
+      staff: 'スタッフ専用', staffOpen: 'スタッフ専用画面を長押しで開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
         confirm: ['設定内容の確認', '言語とホラー軽減を確認してください。クエストへは未送信です'],
         sending: ['設定を反映しています', 'クエストからの反映確認を待っています'],
-        applied: ['クエストに反映しました', 'クエストで設定の反映を確認しました'],
+        applied: ['クエストに反映しました', '説明中は画面に触れると一時停止します'],
         waiting: ['反映を待っています', 'クエストの注意書き画面で反映されます'],
         later: ['現在体験中です', '体験が終わると設定の反映を待ちます'],
         noserver: ['ヘッドセットを確認できません', '通信の回復を待っています。スタッフを呼んでください'],
@@ -827,14 +872,14 @@
         loading: ['説明資料を準備しています', '設定は反映されました。準備が整うまでお待ちください'],
         error: ['説明資料を読み込めません', '再読み込みしてください。続く場合はスタッフへお声がけください'],
         retry: '説明資料を再読み込み', autoOn: '自動送り：入', autoOff: '自動送り：切', previous: '前の文',
-        next: '次の文', settings: '設定に戻る', replay: 'もう一度説明を見る',
+        next: '次の文', settings: '言語・軽減を変更', replay: 'もう一度説明を見る', resume: '再開', restart: 'この文を最初から', staff: 'スタッフ専用（長押し）', hold: '1.5秒長押ししてください', subtitles: '字幕で続ける', controls: '説明の操作', pause: '一時停止して説明の操作を開く', preview: 'スタッフ確認モード',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
       equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'Meta Questを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエスト内に表示される指示に従ってください。', handoff: 'タブレットをスタッフへ返してください', handoffDetail: '確認後にスタッフが装着をお手伝いします', waiting: 'スタッフの確認をお待ちください。', interrupted: 'スタッフが機器を確認しています。このままお待ちください。', recovery: 'Quest の通信が戻るまでスタッフにお預けください。' },
     },
     en: {
       journey: ['Prepare for the experience', 'Settings', 'Briefing', 'Equip'],
-      media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Play this sentence', resumeRequired: 'Playback stopped. Select “Play this sentence” to continue from the same sentence.', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close the staff screen to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', equipment: 'Staff are checking the equipment. Please wait here.', unavailable: 'Image unavailable' },
+      media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Resume', resumeRequired: 'Select Resume to continue from where you paused.', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close the staff screen to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', equipment: 'Staff are checking the equipment. Please wait here.', unavailable: 'Image unavailable' },
       pageTitle: 'Before the experience', noticeLabel: 'Notice', language: 'Language', relief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
       reliefDesc: 'Off: normal effects and volume\nOn: half volume with a cheerful tune',
@@ -843,14 +888,14 @@
       next: 'Next', back: 'Back',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
       review: 'Review settings', apply: 'Send these settings', edit: 'Back to settings', retry: 'Send again',
-      selected: 'Selected settings', headset: 'Quest', headsetCurrent: 'Current Quest settings', headsetConfirmed: 'Settings confirmed on Quest', item: 'Item', continue: 'Tap the screen to continue',
+      selected: 'Selected settings', headset: 'Quest', headsetCurrent: 'Current Quest settings', headsetConfirmed: 'Settings confirmed on Quest', item: 'Item', continue: 'Start the briefing',
       restarted: 'The headset restarted. Check the retained settings, then send them again.',
-      staff: 'Staff screen', staffOpen: 'Open the staff screen', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen',
+      staff: 'Staff only', staffOpen: 'Press and hold to open the staff screen', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
         confirm: ['Review settings', 'Check the language and reduced horror setting. Nothing has been sent to Quest yet'],
         sending: ['Applying settings', 'Waiting for confirmation from Quest'],
-        applied: ['Applied to Quest', 'Quest confirmed the settings were applied'],
+        applied: ['Applied to Quest', 'Tap the screen during the briefing to pause it'],
         waiting: ['Waiting for the settings to apply', 'Quest will apply them on the notice screen'],
         later: ['A session is currently in progress', 'The settings will wait to apply when the current session ends'],
         noserver: ['Connection unknown', 'The headset connection cannot be confirmed. Please call a member of staff'],
@@ -873,14 +918,14 @@
         loading: ['Preparing the briefing', 'The settings are applied. Please wait while the material loads'],
         error: ['The briefing could not be loaded', 'Reload the briefing. If this continues, ask a member of staff'],
         retry: 'Reload briefing', autoOn: 'Auto advance: On', autoOff: 'Auto advance: Off', previous: 'Previous sentence',
-        next: 'Next sentence', settings: 'Back to settings', replay: 'Watch the briefing again',
+        next: 'Next sentence', settings: 'Change language / reduced horror', replay: 'Watch the briefing again', resume: 'Resume', restart: 'Restart this sentence', staff: 'Staff only (press and hold)', hold: 'Press and hold for 1.5 seconds', subtitles: 'Continue with subtitles', controls: 'Briefing controls', pause: 'Pause and open briefing controls', preview: 'Staff preview mode',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
       equipment: { title: 'Get ready to begin', next: 'Equipment instructions', quest: 'Put on the Meta Quest headset.', headphones: 'Put on the headphones.', controller: 'Hold the controller in your left hand.', followup: 'Once you are ready, follow the instructions displayed inside the Quest headset.', handoff: 'Please return the tablet to a member of staff', handoffDetail: 'After checking, staff will help you put on the equipment', waiting: 'Please wait while staff checks the equipment.', interrupted: 'Staff are checking the equipment. Please wait here.', recovery: 'Please leave the tablet with staff until the Quest reconnects.' },
     },
     fr: {
       journey: ['Préparation', 'Réglages', 'Consignes', 'Équipement'],
-      media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Écouter cette phrase', resumeRequired: 'La lecture est arrêtée. Sélectionnez « Écouter cette phrase » pour reprendre à la même phrase.', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez l’écran du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', equipment: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', unavailable: 'Image indisponible' },
+      media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Reprendre', resumeRequired: 'Sélectionnez Reprendre pour continuer à l’endroit de la pause.', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez l’écran du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', equipment: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', unavailable: 'Image indisponible' },
       pageTitle: 'Avant l’expérience', noticeLabel: 'Attention', language: 'Langue', relief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
       reliefDesc: 'Non : effets et volume normaux\nOui : volume réduit de moitié et musique gaie',
@@ -889,14 +934,14 @@
       next: 'Suivant', back: 'Retour',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
       review: 'Vérifier les réglages', apply: 'Envoyer ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
-      selected: 'Réglages choisis', headset: 'Quest', headsetCurrent: 'Réglages actuels du Quest', headsetConfirmed: 'Réglages confirmés sur le Quest', item: 'Élément', continue: 'Touchez l’écran pour continuer',
+      selected: 'Réglages choisis', headset: 'Quest', headsetCurrent: 'Réglages actuels du Quest', headsetConfirmed: 'Réglages confirmés sur le Quest', item: 'Élément', continue: 'Commencer les explications',
       restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
-      staff: 'Écran du personnel', staffOpen: 'Ouvrir l’écran du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran',
+      staff: 'Personnel uniquement', staffOpen: 'Maintenez pour ouvrir l’écran du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
         confirm: ['Vérification des réglages', 'Vérifiez la langue et l’atténuation de l’horreur. Rien n’a encore été envoyé au Quest'],
         sending: ['Application des réglages', 'En attente de la confirmation du Quest'],
-        applied: ['Réglages appliqués au Quest', 'Le Quest a confirmé les réglages appliqués'],
+        applied: ['Réglages appliqués au Quest', 'Touchez l’écran pendant les explications pour faire une pause'],
         waiting: ['En attente de l’application des réglages', 'Le Quest les appliquera sur l’écran d’avertissement'],
         later: ['Une session est en cours', 'Les réglages attendront la fin de la session pour être appliqués'],
         noserver: ['Connexion non vérifiable', 'La connexion au casque ne peut pas être confirmée. Appelez un membre du personnel'],
@@ -919,7 +964,7 @@
         loading: ['Préparation des explications', 'Les réglages sont appliqués. Veuillez patienter pendant le chargement'],
         error: ['Impossible de charger les explications', 'Rechargez les documents. Si le problème persiste, appelez un membre du personnel'],
         retry: 'Recharger les explications', autoOn: 'Défilement auto : oui', autoOff: 'Défilement auto : non', previous: 'Phrase précédente',
-        next: 'Phrase suivante', settings: 'Retour aux réglages', replay: 'Revoir les explications',
+        next: 'Phrase suivante', settings: 'Modifier langue / horreur atténuée', replay: 'Revoir les explications', resume: 'Reprendre', restart: 'Reprendre cette phrase au début', staff: 'Personnel uniquement (maintenir)', hold: 'Maintenez pendant 1,5 seconde', subtitles: 'Continuer avec les sous-titres', controls: 'Commandes des explications', pause: 'Mettre en pause et ouvrir les commandes', preview: 'Mode de vérification du personnel',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
       equipment: { title: 'Préparez votre équipement', next: 'Consignes d’équipement', quest: 'Mettez le casque Meta Quest.', headphones: 'Mettez le casque audio.', controller: 'Tenez la manette dans votre main gauche.', followup: 'Une fois équipé, suivez les instructions affichées dans le casque Quest.', handoff: 'Rendez la tablette au personnel', handoffDetail: 'Après vérification, le personnel vous aidera à vous équiper', waiting: 'Veuillez patienter pendant la vérification du personnel.', interrupted: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', recovery: 'Laissez la tablette au personnel jusqu’au rétablissement du Quest.' },
@@ -998,6 +1043,12 @@
       wearStarted: false,
       ended: false,
       auto: false,
+      controlsOpen: false,
+      resumeAuto: true,
+      cueRemainingMs: 0,
+      cueTimerStartedAt: 0,
+      mediaResumeTime: null,
+      subtitlesOnly: false,
       pauseReasons: new Set(),
       mediaFailed: false,
       mediaWindowActive: false,
@@ -1114,6 +1165,9 @@
     state.briefing.cueIndex = progress.cueIndex;
     state.briefing.ended = Boolean(progress.ended);
     state.briefing.auto = false;
+    state.briefing.resumeAuto = true;
+    state.briefing.controlsOpen = !state.briefing.ended;
+    state.briefing.pauseReasons.add('controls');
     setSurface('briefing');
     renderText();
     configureBriefingMedia(scene);
@@ -1309,7 +1363,12 @@
   }
 
   function syncViewChrome(view) {
-    $('briefingControls').hidden = view !== 'briefing';
+    if (view !== 'briefing') {
+      $('briefingControls').hidden = true;
+      $('briefingControls').inert = true;
+      $('briefingPauseSurface').hidden = true;
+      $('briefingPauseSurface').inert = true;
+    }
     const stage = document.querySelector('.stage');
     stage.classList.toggle('is-title', view === 'title');
     stage.classList.toggle('is-briefing', view === 'briefing');
@@ -1480,6 +1539,12 @@
     $('briefingNext').textContent = t.briefing.next;
     $('briefingNext').setAttribute('aria-label', t.briefing.next);
     $('briefingSettings').textContent = t.briefing.settings;
+    $('briefingResume').textContent = t.briefing.resume;
+    $('briefingRestart').textContent = t.briefing.restart;
+    $('briefingStaff').textContent = t.briefing.staff;
+    $('briefingContinueSubtitles').textContent = t.briefing.subtitles;
+    $('briefingControls').setAttribute('aria-label', t.briefing.controls);
+    $('briefingPauseSurface').setAttribute('aria-label', t.briefing.pause);
     $('briefingReplay').textContent = t.briefing.replay;
     $('briefingAdvanceHint').textContent = t.briefing.advance;
     $('selectedHeading').textContent = t.selected;
@@ -1644,6 +1709,14 @@
   function clearBriefingTimer() {
     if (briefingTimer) clearTimeout(briefingTimer);
     briefingTimer = null;
+    state.briefing.cueTimerStartedAt = 0;
+  }
+
+  function pauseBriefingTimer() {
+    if (!briefingTimer) return;
+    const elapsed = Math.max(0, performance.now() - state.briefing.cueTimerStartedAt);
+    state.briefing.cueRemainingMs = Math.max(0, state.briefing.cueRemainingMs - elapsed);
+    clearBriefingTimer();
   }
 
   function clearBriefingMediaTimer() {
@@ -1695,48 +1768,14 @@
   }
 
   function syncBriefingLoopVideo() {
-    if (!isBriefingLoopCue()) { stopBriefingLoopVideo(); return; }
-    const video = $('briefingLoopVideo');
-    const source = assetPath(currentBriefingScene().loopVideo.file);
-    if (video.dataset.source !== source) {
-      video.src = source;
-      video.dataset.source = source;
-      video.muted = true;
-      video.hidden = true;
-      video.onplaying = () => {
-        if (!isBriefingLoopCue() || state.briefing.pauseReasons.size > 0 || document.hidden) return;
-        video.hidden = false;
-        document.querySelector('.briefing-visual').classList.add('is-loop-playing');
-        video.classList.add('is-visible');
-      };
-      video.onerror = () => {
-        if (!isBriefingLoopCue()) return;
-        briefingLoopVideoFailed = true;
-        video.pause();
-        video.classList.remove('is-visible');
-        document.querySelector('.briefing-visual').classList.remove('is-loop-playing');
-        video.hidden = true;
-      };
-      video.load();
-    }
-    if (state.briefing.pauseReasons.size > 0 || document.hidden) {
-      video.pause();
-      return;
-    }
-    if (briefingLoopVideoFailed || !video.paused) return;
-    const token = ++briefingLoopVideoToken;
-    const attempt = video.play();
-    if (attempt?.catch) attempt.catch(() => {
-      if (token !== briefingLoopVideoToken || !isBriefingLoopCue()) return;
-      briefingLoopVideoFailed = true;
-      video.pause();
-      video.classList.remove('is-visible');
-      document.querySelector('.briefing-visual').classList.remove('is-loop-playing');
-      video.hidden = true;
-    });
+    // 参考映像は説明画面に出さない。デコーダも常に解放する。
+    stopBriefingLoopVideo();
   }
 
-  function stopBriefingMediaWindow() {
+  function stopBriefingMediaWindow(preservePosition = false) {
+    if (preservePosition && briefingMedia && state.briefing.mediaWindowActive) {
+      state.briefing.mediaResumeTime = briefingMedia.currentTime;
+    }
     briefingMediaToken += 1;
     clearBriefingMediaTimer();
     if (briefingBoundaryTimer) clearTimeout(briefingBoundaryTimer);
@@ -1776,11 +1815,15 @@
       && !state.briefing.ended
       && state.briefing.pauseReasons.size === 0;
     state.briefing.auto = allowed;
-    clearBriefingTimer();
+    if (!allowed) pauseBriefingTimer();
     if (allowed) {
-      if (startMediaIfIdle && !state.briefing.mediaWindowActive) startBriefingMediaWindow();
+      if (startMediaIfIdle && !state.briefing.mediaWindowActive) startBriefingMediaWindow(true);
       const cue = currentBriefingCue();
-      if (cue && !briefingMedia) briefingTimer = setTimeout(() => moveBriefing(1, 'auto'), cue.durationMs);
+      if (cue && (!briefingMedia || state.briefing.subtitlesOnly)) {
+        if (!(state.briefing.cueRemainingMs > 0)) state.briefing.cueRemainingMs = cue.durationMs;
+        state.briefing.cueTimerStartedAt = performance.now();
+        briefingTimer = setTimeout(() => moveBriefing(1, 'auto'), state.briefing.cueRemainingMs);
+      }
     }
     renderBriefingControls();
   }
@@ -1788,6 +1831,9 @@
   function handleBriefingMediaFailure() {
     if (state.view !== 'briefing' || state.briefing.mediaFailed) return;
     state.briefing.mediaFailed = true;
+    state.briefing.resumeAuto = state.briefing.auto || state.briefing.resumeAuto;
+    state.briefing.controlsOpen = true;
+    state.briefing.pauseReasons.add('controls');
     setBriefingAuto(false);
     stopBriefingMedia();
     renderBriefingControls();
@@ -1798,6 +1844,7 @@
     stopBriefingMedia();
     state.briefing.mediaFailed = false;
     state.briefing.mediaPaused = false;
+    state.briefing.mediaResumeTime = null;
     const videoFilename = scene.video?.[state.lang];
     const audioFilename = scene.audio?.[state.lang];
     if (videoFilename) {
@@ -1819,9 +1866,10 @@
     briefingMediaSceneId = briefingMedia ? scene.id : '';
   }
 
-  function startBriefingMediaWindow() {
+  function startBriefingMediaWindow(resume = false) {
     stopBriefingMediaWindow();
     if (!briefingMedia
+      || state.briefing.subtitlesOnly
       || state.briefing.mediaFailed
       || state.briefing.ended
       || state.briefing.pauseReasons.size > 0) return;
@@ -1878,7 +1926,10 @@
       if (briefingMedia !== media || briefingMediaToken !== token || !state.briefing.mediaWindowActive) return;
       clearBriefingMediaTimer();
       try {
-        media.currentTime = startSec;
+        const savedTime = state.briefing.mediaResumeTime;
+        media.currentTime = resume && Number.isFinite(savedTime) && savedTime >= startSec && savedTime < endSec
+          ? savedTime : startSec;
+        state.briefing.mediaResumeTime = null;
       } catch (error) {
         handleBriefingMediaFailure();
         return;
@@ -1891,8 +1942,11 @@
           // Keep the decoded source. The next explicit tap can start it within
           // the browser's user gesture instead of loading and losing it again.
           state.briefing.mediaPaused = true;
+          state.briefing.resumeAuto = state.briefing.auto || state.briefing.resumeAuto;
+          state.briefing.controlsOpen = true;
+          state.briefing.pauseReasons.add('controls');
           setBriefingAuto(false);
-          stopBriefingMediaWindow();
+          stopBriefingMediaWindow(true);
           renderBriefingControls();
         } else handleBriefingMediaFailure();
       });
@@ -1907,13 +1961,57 @@
   function setBriefingPause(reason, paused) {
     if (paused) {
       state.briefing.pauseReasons.add(reason);
+      state.briefing.resumeAuto = state.briefing.auto || state.briefing.resumeAuto;
+      state.briefing.controlsOpen = true;
       state.briefing.mediaPaused = Boolean(briefingMedia);
       setBriefingAuto(false);
-      stopBriefingMediaWindow();
+      stopBriefingMediaWindow(true);
     } else {
       state.briefing.pauseReasons.delete(reason);
     }
     syncBriefingLoopVideo();
+    renderBriefingControls();
+  }
+
+  function openBriefingControls() {
+    if (state.view !== 'briefing' || state.briefing.ended) return false;
+    state.briefing.resumeAuto = state.briefing.auto || state.briefing.resumeAuto;
+    state.briefing.controlsOpen = true;
+    state.briefing.pauseReasons.add('controls');
+    state.briefing.mediaPaused = Boolean(briefingMedia);
+    setBriefingAuto(false);
+    stopBriefingMediaWindow(true);
+    renderBriefingControls();
+    $('briefingResume').focus({ preventScroll: true });
+    return true;
+  }
+
+  function resumeBriefing() {
+    state.briefing.pauseReasons.delete('controls');
+    if (state.briefing.pauseReasons.size > 0 || state.briefing.ended) {
+      state.briefing.controlsOpen = true;
+      renderBriefingControls();
+      return false;
+    }
+    state.briefing.controlsOpen = false;
+    state.briefing.mediaPaused = false;
+    setBriefingAuto(state.briefing.resumeAuto, true);
+    renderBriefingControls();
+    $('briefingPauseSurface').focus({ preventScroll: true });
+    return true;
+  }
+
+  function restartBriefingCue() {
+    if (state.briefing.ended) return;
+    state.briefing.pauseReasons.delete('controls');
+    if (state.briefing.pauseReasons.size > 0) { renderBriefingControls(); return; }
+    state.briefing.controlsOpen = false;
+    state.briefing.mediaResumeTime = null;
+    state.briefing.cueRemainingMs = currentBriefingCue()?.durationMs || 0;
+    state.briefing.mediaPaused = false;
+    state.briefing.resumeAuto = true;
+    setBriefingAuto(true);
+    startBriefingMediaWindow(false);
     renderBriefingControls();
   }
 
@@ -1928,6 +2026,13 @@
       && !state.briefing.ended && !wearReadinessConfirmed();
     const complete = state.briefing.ended || handoffWaiting || wearBlocked;
     const lastCue = position === positions.length - 1;
+    const panelOpen = complete || state.briefing.controlsOpen;
+    const controls = $('briefingControls');
+    controls.hidden = !panelOpen;
+    controls.inert = !panelOpen;
+    $('briefingPauseSurface').hidden = panelOpen || complete || state.view !== 'briefing';
+    $('briefingPauseSurface').inert = panelOpen || complete || state.view !== 'briefing';
+    document.querySelector('.stage').classList.toggle('is-briefing-controls', panelOpen);
     $('briefingToggle').textContent = state.briefing.auto ? t.autoOn : t.autoOff;
     $('briefingToggle').setAttribute('aria-label', $('briefingToggle').textContent);
     $('briefingToggle').setAttribute('aria-pressed', String(state.briefing.auto));
@@ -1946,6 +2051,17 @@
     $('briefingReplay').hidden = !complete;
     $('briefingSettings').hidden = false;
     $('subtitle').hidden = complete;
+    $('briefingResume').hidden = complete;
+    $('briefingRestart').hidden = complete;
+    $('briefingStaff').hidden = complete;
+    const externalPause = Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls');
+    $('briefingResume').disabled = externalPause;
+    $('briefingRestart').disabled = externalPause;
+    $('briefingPrevious').disabled ||= externalPause;
+    $('briefingNext').disabled ||= externalPause;
+    $('briefingStaff').disabled = false;
+    const progressText = $('sceneCounter').textContent || '';
+    setText('briefingPanelStatus', `${state.staffPreview ? `${t.preview} · ` : ''}${progressText}`);
     const m = T[state.lang].media;
     const hasMedia = Boolean(scene.video?.[state.lang] || scene.audio?.[state.lang]);
     $('briefingMute').hidden = complete;
@@ -1962,11 +2078,13 @@
     const message = state.briefing.mediaFailed ? m.failed
       : (state.briefing.imageFailed || state.briefing.doctorFailed ? m.image
         : (pauseReason ? pauseCopy : (state.briefing.mediaPaused ? m.resumeRequired : noAudio + guide)));
-    $('mediaNotice').hidden = complete || state.view !== 'briefing';
+    $('mediaNotice').hidden = complete || state.view !== 'briefing' || (!failed && !pauseReason);
     setText('mediaMessage', message);
     setText('mediaRetry', failed ? m.retry : m.resume);
-    $('mediaRetry').hidden = !hasMedia && !failed;
-    $('mediaRetry').disabled = state.briefing.pauseReasons.size > 0;
+    $('mediaRetry').hidden = !state.briefing.mediaFailed;
+    $('mediaRetry').disabled = externalPause;
+    $('briefingContinueSubtitles').hidden = !state.briefing.mediaFailed;
+    $('briefingContinueSubtitles').disabled = externalPause;
   }
 
   function briefingPresentation(scene) {
@@ -2019,16 +2137,19 @@
     state.briefing.wearStarted = true;
     state.briefing.sceneIndex = sceneIndex;
     state.briefing.cueIndex = 0;
-    // Questが装着へ進む確認を受理した。スタッフ画面を閉じて来場者の画面へ戻し、
-    // 装着案内をそのまま再生する。再読み込みからの復元だけは明示の再生を待つ。
+    // 装着の確定はスタッフ自身の開始操作。受理後は両手で補助できるよう自動で案内する。
+    // 再読み込みからの復元と通信中断だけは明示の再開を待つ。
     if (!resumeExplicitly && $('staff').open) closeStaffScreen();
     if ($('staff').open) state.briefing.pauseReasons.add('staff');
-    const temporaryPause = resumeExplicitly && state.briefing.pauseReasons.size === 0;
-    if (temporaryPause) state.briefing.pauseReasons.add('native');
+    else state.briefing.pauseReasons.delete('staff');
+    if (resumeExplicitly) state.briefing.pauseReasons.add('controls');
+    else state.briefing.pauseReasons.delete('controls');
+    state.briefing.controlsOpen = state.briefing.pauseReasons.size > 0;
+    state.briefing.resumeAuto = true;
+    state.briefing.auto = !state.briefing.controlsOpen;
     configureBriefingMedia(currentBriefingScene());
     beginBriefingCue();
-    if (temporaryPause) state.briefing.pauseReasons.delete('native');
-    if (resumeExplicitly || state.briefing.pauseReasons.size > 0) {
+    if (state.briefing.pauseReasons.size > 0) {
       state.briefing.mediaPaused = Boolean(briefingMedia);
       renderBriefingControls();
     }
@@ -2187,11 +2308,14 @@
     const cue = currentBriefingCue();
     if (!scene || !cue) return;
     clearBriefingTimer();
+    state.briefing.cueRemainingMs = cue.durationMs;
+    state.briefing.mediaResumeTime = null;
+    state.briefing.subtitlesOnly = false;
     setSubtitle(cue.text, `briefing:${scene.id}:${state.lang}:${state.briefing.cueIndex}`);
     renderBriefingScene();
     syncBriefingLoopVideo();
     syncReliefPreview();
-    startBriefingMediaWindow();
+    startBriefingMediaWindow(false);
     if (state.briefing.auto) setBriefingAuto(true);
     saveBriefingProgress();
   }
@@ -2224,8 +2348,7 @@
     $('briefingTitle').focus({ preventScroll: true });
     saveBriefingProgress();
     void pulse();
-    // 来場者が説明を終えてタブレットを返す。スタッフ画面の「確認」から始める。
-    openStaffScreen('handback');
+    // 来場者がタブレットを返してから、明示されたスタッフ入口を長押ししてもらう。
   }
 
   function moveBriefing(delta, source = 'control') {
@@ -2262,6 +2385,9 @@
       state.briefing.sceneIndex = next.sceneIndex;
       state.briefing.cueIndex = next.cueIndex;
       state.briefing.ended = false;
+      state.briefing.controlsOpen = false;
+      state.briefing.pauseReasons.delete('controls');
+      state.briefing.resumeAuto = true;
       if (changedChapter) configureBriefingMedia(currentBriefingScene());
       beginBriefingCue();
       if (changedChapter) playChapterTransition(direction);
@@ -2308,6 +2434,12 @@
     state.briefing.wearStarted = false;
     state.briefing.ended = false;
     state.briefing.auto = false;
+    state.briefing.controlsOpen = false;
+    state.briefing.resumeAuto = true;
+    state.briefing.cueRemainingMs = 0;
+    state.briefing.cueTimerStartedAt = 0;
+    state.briefing.mediaResumeTime = null;
+    state.briefing.subtitlesOnly = false;
     state.briefing.mediaFailed = false;
     state.briefing.mediaWindowActive = false;
     state.briefing.chapterChanging = false;
@@ -2353,10 +2485,13 @@
       if (document.hidden) state.briefing.pauseReasons.add('hidden');
       if ($('staff').open) state.briefing.pauseReasons.add('staff');
       if (!state.staffPreview && state.connection !== 'online') state.briefing.pauseReasons.add('offline');
+      state.briefing.auto = state.briefing.pauseReasons.size === 0;
+      state.briefing.resumeAuto = true;
+      state.briefing.controlsOpen = state.briefing.pauseReasons.size > 0;
       setSurface('briefing');
       configureBriefingMedia(currentBriefingScene());
       beginBriefingCue();
-      $('briefingView').focus({ preventScroll: true });
+      $('briefingPauseSurface').focus({ preventScroll: true });
       window.scrollTo({ top: 0, behavior: 'instant' });
     });
   }
@@ -2482,6 +2617,7 @@
   const QUEST_TROUBLE_CALL_MS = 6000;
   const PREPARE_HOLD_MS = 1200;
   const RESTART_HOLD_MS = 1500;
+  const STAFF_ENTRY_HOLD_MS = 1500;
   const STAFF_ALERT_DELAY_MS = 6000;
   const STAFF_RECEIPT_MS = 4000;
   let staffNotice = { key: '', text: '' };
@@ -2498,6 +2634,9 @@
   let prepareHold = null;
   let collectHold = null;
   let restartHold = null;
+  let staffEntryHold = null;
+  let briefingStaffHold = null;
+  let staffHoldHintTimer = null;
   const staffAlert = createStaffAlertState();
   const staffAlertAudio = { context: null, unlockPromise: null, unlocked: false,
     generation: 0, pendingTarget: null, soundTarget: '', activeTones: new Set() };
@@ -3316,12 +3455,13 @@
   }
 
   // 長押しで確定するボタン。押している間は左から満ちる。離すと取り消す。キーボードの Enter / Space も同じ。
-  function bindHold(button, durationMs, onComplete) {
+  function bindHold(button, durationMs, onComplete, options = {}) {
     let hold = null;
     const setProgress = (value) => button.style.setProperty('--hold', String(value));
-    const active = () => !button.disabled && !button.hidden && !button.inert && $('staff').open && !$('staff').inert
+    const active = () => !button.disabled && !button.hidden && !button.inert
+      && (options.active ? options.active() : $('staff').open && !$('staff').inert)
       && !document.hidden && !nativePaused;
-    const cancel = (source, id) => {
+    const cancel = (source, id, short = false) => {
       if (!hold) return;
       if (source && (hold.source !== source || hold.id !== id)) return;
       clearTimeout(hold.timer);
@@ -3329,6 +3469,7 @@
       hold = null;
       button.dataset.holding = 'false';
       setProgress(0);
+      if (short && active()) options.onShort?.();
     };
     const start = (source, id) => {
       if (hold || !active()) return false;
@@ -3351,6 +3492,7 @@
       return true;
     };
     button.addEventListener('pointerdown', (event) => {
+      if (hold && (event.isPrimary === false || hold.id !== event.pointerId)) { cancel(); return; }
       if (event.isPrimary === false || event.button > 0 || !start('pointer', event.pointerId)) return;
       event.preventDefault();
       try { button.setPointerCapture?.(event.pointerId); } catch (error) { /* The pointer is already released. */ }
@@ -3362,7 +3504,8 @@
       if (event.clientX < rect.left || event.clientX > rect.right
         || event.clientY < rect.top || event.clientY > rect.bottom) cancel('pointer', event.pointerId);
     });
-    button.addEventListener('pointerup', (event) => cancel('pointer', event.pointerId));
+    button.addEventListener('pointerup', (event) => cancel('pointer', event.pointerId, true));
+    button.addEventListener('pointerleave', (event) => cancel('pointer', event.pointerId));
     button.addEventListener('pointercancel', (event) => cancel('pointer', event.pointerId));
     button.addEventListener('lostpointercapture', (event) => cancel('pointer', event.pointerId));
     button.addEventListener('blur', () => cancel());
@@ -3376,7 +3519,7 @@
     button.addEventListener('keyup', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      cancel('keyboard', event.key);
+      cancel('keyboard', event.key, true);
     });
     return { cancel };
   }
@@ -3743,6 +3886,24 @@
   prepareHold = bindHold($('staffPrepareBtn'), PREPARE_HOLD_MS, () => { staffAction = confirmStaffPreparation(); });
   collectHold = bindHold($('staffCollectBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(); });
   restartHold = bindHold($('staffRestartBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(); });
+  const showStaffHoldHint = (briefing = false) => {
+    if (staffHoldHintTimer) clearTimeout(staffHoldHintTimer);
+    if (briefing) setText('briefingStaffHint', T[state.lang].briefing.hold);
+    else setText('staffLabel', T[state.lang].briefing.hold);
+    staffHoldHintTimer = setTimeout(() => {
+      staffHoldHintTimer = null;
+      setText('briefingStaffHint', '');
+      setText('staffLabel', T[state.lang].staff);
+    }, 2500);
+  };
+  staffEntryHold = bindHold($('staffToggle'), STAFF_ENTRY_HOLD_MS, () => openStaffScreen('manual'), {
+    active: () => state.view !== 'briefing' || document.querySelector('.stage').classList.contains('is-equipment'),
+    onShort: () => showStaffHoldHint(false),
+  });
+  briefingStaffHold = bindHold($('briefingStaff'), STAFF_ENTRY_HOLD_MS, () => openStaffScreen('manual'), {
+    active: () => state.view === 'briefing' && state.briefing.controlsOpen && !$('staff').open,
+    onShort: () => showStaffHoldHint(true),
+  });
   $('staffRetryBtn').addEventListener('click', () => {
     staffAction = retryQuestConnection();
     return staffAction;
@@ -3783,17 +3944,14 @@
     if (!canAdvanceFromResult() || event.target.closest('button, a, input, select, textarea, dialog')) return;
     if (event.target.closest('#resultView, .portrait, .footer')) advanceFromResult();
   });
-  $('briefingToggle').addEventListener('click', () => {
-    if (state.briefing.ended) return;
-    setBriefingAuto(!state.briefing.auto, true);
-  });
+  $('briefingToggle').addEventListener('click', () => {});
   $('briefingMute').addEventListener('click', () => {
     state.briefing.muted = !state.briefing.muted;
     if (briefingMedia) briefingMedia.muted = state.briefing.muted;
     renderBriefingControls();
   });
   $('mediaRetry').addEventListener('click', () => {
-    if (state.briefing.pauseReasons.size > 0) return;
+    if (Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls')) return;
     if (state.briefing.imageFailed) {
       $('briefingImage').removeAttribute('src');
       renderBriefingScene();
@@ -3802,14 +3960,35 @@
       $('doctorImage').removeAttribute('src');
       renderBriefingScene();
     }
-    if (state.briefing.mediaFailed) configureBriefingMedia(currentBriefingScene());
-    startBriefingMediaWindow();
-    renderBriefingControls();
+    if (state.briefing.mediaFailed) {
+      state.briefing.subtitlesOnly = false;
+      configureBriefingMedia(currentBriefingScene());
+    }
+    restartBriefingCue();
   });
+  $('briefingContinueSubtitles').addEventListener('click', () => {
+    state.briefing.subtitlesOnly = true;
+    state.briefing.mediaFailed = false;
+    stopBriefingMedia();
+    resumeBriefing();
+  });
+  $('briefingPauseSurface').addEventListener('click', openBriefingControls);
+  $('briefingResume').addEventListener('click', resumeBriefing);
+  $('briefingRestart').addEventListener('click', restartBriefingCue);
   $('briefingPrevious').addEventListener('click', () => {
+    if (Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls')) return;
+    state.briefing.pauseReasons.delete('controls');
+    state.briefing.controlsOpen = false;
+    state.briefing.auto = true;
+    state.briefing.resumeAuto = true;
     moveBriefing(-1, 'control');
   });
   $('briefingNext').addEventListener('click', () => {
+    if (Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls')) return;
+    state.briefing.pauseReasons.delete('controls');
+    state.briefing.controlsOpen = false;
+    state.briefing.auto = true;
+    state.briefing.resumeAuto = true;
     moveBriefing(1, 'control');
   });
   $('briefingSettings').addEventListener('click', returnToSettings);
@@ -3819,11 +3998,12 @@
     if (document.hidden) state.briefing.pauseReasons.add('hidden');
     if ($('staff').open) state.briefing.pauseReasons.add('staff');
     if (!state.staffPreview && state.connection !== 'online') state.briefing.pauseReasons.add('offline');
+    state.briefing.controlsOpen = state.briefing.pauseReasons.size > 0;
+    state.briefing.auto = !state.briefing.controlsOpen;
     configureBriefingMedia(currentBriefingScene());
     beginBriefingCue();
-    $('briefingView').focus();
+    $('briefingPauseSurface').focus();
   });
-  $('staffToggle').addEventListener('click', () => openStaffScreen('manual'));
   $('staffDoneBtn').addEventListener('click', closeStaffScreen);
   $('staff').addEventListener('cancel', (event) => {
     // 戻る操作で閉じてよいのは、来場者の画面へ戻るボタンを出している間だけ。
@@ -3834,6 +4014,8 @@
     prepareHold?.cancel();
     collectHold?.cancel();
     restartHold?.cancel();
+    staffEntryHold?.cancel();
+    briefingStaffHold?.cancel();
     staffCheckGeneration++;
     staffCheckController?.abort();
     staffCheckController = null;
@@ -3841,7 +4023,8 @@
     stopStaffSound();
     setBriefingPause('staff', false);
     syncReliefPreview();
-    $('staffToggle').focus({ preventScroll: true });
+    if (state.view === 'briefing' && state.briefing.controlsOpen) $('briefingResume').focus({ preventScroll: true });
+    else $('staffToggle').focus({ preventScroll: true });
   });
   ['questAlpha', 'questBeta'].forEach((id) => $(id).addEventListener('change', (event) => {
     if (targetChangeLocked()) { renderStaff(); return; }
@@ -3927,6 +4110,8 @@
       prepareHold?.cancel();
       collectHold?.cancel();
       restartHold?.cancel();
+      staffEntryHold?.cancel();
+      briefingStaffHold?.cancel();
     }
     observeStaffAlert();
     setBriefingPause('hidden', document.hidden);
@@ -3940,6 +4125,8 @@
       prepareHold?.cancel();
       collectHold?.cancel();
       restartHold?.cancel();
+      staffEntryHold?.cancel();
+      briefingStaffHold?.cancel();
     }
     observeStaffAlert();
     setBriefingPause('native', nativePaused);
@@ -3958,13 +4145,18 @@
     }
     if (state.view !== 'briefing') return;
     const editable = event.target.closest?.('input, select, textarea');
-    if (event.key === 'ArrowLeft' && !editable) {
+    if (event.key === 'Escape' && state.briefing.controlsOpen) {
+      event.preventDefault();
+      $('briefingResume').focus({ preventScroll: true });
+      return;
+    }
+    if (event.key === 'ArrowLeft' && state.briefing.controlsOpen && !editable) {
       event.preventDefault();
       moveBriefing(-1, 'keyboard');
     }
-    if (event.key === 'ArrowRight' && !editable) {
+    if (event.key === 'ArrowRight' && state.briefing.controlsOpen && !editable) {
       event.preventDefault();
-      moveBriefing(1, 'keyboard');
+      openBriefingControls();
     }
     if ((event.key === 'Enter' || event.key === ' ') && event.target === $('briefingView')) {
       event.preventDefault();
@@ -3995,7 +4187,7 @@
     if (!start || start.pointerId !== event.pointerId || !isBriefingAdvanceTarget(event.target)) return;
     const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
     const scrolled = Math.hypot(window.scrollX - start.scrollX, window.scrollY - start.scrollY);
-    if (moved <= 14 && scrolled <= 4) moveBriefing(1, 'pointer');
+    if (moved <= 14 && scrolled <= 4) openBriefingControls();
   });
   document.addEventListener('pointercancel', () => { pointerGesture = null; });
   setSurface('title');
