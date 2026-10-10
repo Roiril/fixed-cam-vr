@@ -214,6 +214,8 @@
   .staff-screen button:focus-visible, .staff-screen summary:focus-visible, .staff-screen input:focus-visible { outline: 2px solid var(--staff-ink); outline-offset: 3px; }
   .staff-shell { display: flex; flex-direction: column; gap: 12px; min-height: 100%; padding: max(14px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left)); }
   .staff-handback { display: flex; flex-wrap: wrap; gap: 2px 24px; margin: 0; padding: 10px 16px; border: 1px solid var(--wait); border-radius: 6px; background: rgba(227,194,122,.1); color: var(--staff-ink); font-size: 18px; line-height: 1.5; }
+  .staff-receipt { position: fixed; z-index: 10; top: max(10px,env(safe-area-inset-top)); left: 50%; width: max-content; max-width: calc(100% - 32px); margin: 0; padding: 11px 16px; border: 1px solid rgba(143,211,167,.7); border-radius: 6px; background: rgba(27,50,39,.96); color: var(--staff-ink); font-size: 17px; line-height: 1.5; opacity: 0; visibility: hidden; transform: translate(-50%,-6px); pointer-events: none; transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s; }
+  .staff-receipt.is-visible { opacity: 1; visibility: visible; transform: translate(-50%,0); transition-delay: 0s; }
   .staff-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; min-height: 48px; }
   .staff-title { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: .02em; }
   .staff-target { display: flex; align-items: center; gap: 8px; margin: 0 0 0 auto; color: var(--staff-muted); font-size: 16px; }
@@ -233,6 +235,7 @@
   .staff-now-meta { margin: 0; font-size: 24px; font-variant-numeric: tabular-nums; }
   .staff-now-body { margin: 0; font-size: 18px; line-height: 1.7; }
   .staff-now-note { margin: 0; color: var(--staff-muted); font-size: 15px; line-height: 1.6; }
+  .staff-recovery { margin: 0; padding: 9px 12px; border-left: 3px solid var(--error); background: rgba(240,164,154,.08); color: var(--staff-ink); font-size: 16px; line-height: 1.55; }
   .staff-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
   .staff-list li { display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 8px; align-items: baseline; font-size: 18px; line-height: 1.55; }
   .staff-mark { font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
@@ -250,7 +253,12 @@
   .staff-now-message { min-height: 1.6em; margin: 0; color: var(--wait); font-size: 16px; }
   .staff-now-message:empty { display: none; }
   .staff-device-list { margin: 8px 0 0; padding: 0; list-style: none; }
-  .staff-device { display: grid; grid-template-columns: 24px minmax(5.5em,auto) minmax(0,1fr); gap: 0 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--staff-line); font-size: 17px; line-height: 1.5; }
+  .staff-readiness { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 5px; margin: 10px 0 2px; }
+  .staff-readiness span { height: 5px; border-radius: 3px; background: var(--staff-line-strong); }
+  .staff-readiness span[data-tone="ok"] { background: var(--ok); }
+  .staff-readiness span[data-tone="trouble"] { background: var(--error); }
+  .staff-readiness span[data-tone="wait"] { background: var(--wait); }
+  .staff-device { display: grid; grid-template-columns: 24px minmax(5.5em,auto) minmax(0,1fr); gap: 0 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--staff-line); font-size: 17px; line-height: 1.5; }
   .staff-device:last-child { border-bottom: 0; }
   .staff-device-name { color: var(--staff-muted); }
   .staff-device-value { min-width: 0; overflow-wrap: anywhere; }
@@ -291,6 +299,7 @@
     .staff-main, .staff-trouble-body, .staff-actions { grid-template-columns: minmax(0,1fr); }
     .staff-now-title { font-size: 26px; }
     .staff-primary, .staff-secondary { width: 100%; }
+    .staff-device { grid-template-columns: 22px minmax(5em,auto) minmax(0,1fr); font-size: 16px; }
   }
   /* 来場者の画面に重ねる最小の呼び出し。体験の画面の他の部分は変えない。 */
   .call-staff { position: fixed; z-index: 20; top: max(18px,env(safe-area-inset-top)); left: 50%; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 18px; width: max-content; max-width: calc(100% - 32px); margin: 0; padding: 8px 16px; border: 1px solid var(--error); background: rgba(9,8,7,.92); color: var(--ink); font: 15px/1.5 var(--sans); transform: translateX(-50%); pointer-events: none; }
@@ -657,6 +666,7 @@
       <span lang="en">Please hand the tablet to a member of staff.</span>
       <span lang="fr">Veuillez remettre la tablette à un membre du personnel.</span>
     </p>
+    <p class="staff-receipt" id="staffReceipt" role="status" aria-live="polite" aria-atomic="true"></p>
     <header class="staff-top">
       <h2 class="staff-title" id="staffTitle">スタッフ画面</h2>
       <p class="staff-target" id="staffTarget" data-tone="wait">
@@ -679,6 +689,7 @@
         <h3 class="staff-now-title" id="staffNowTitle" tabindex="-1">クエストの応答を確認しています</h3>
         <p class="staff-now-meta" id="staffNowMeta" hidden></p>
         <p class="staff-now-body" id="staffNowBody"></p>
+        <p class="staff-recovery" id="staffRecovery" hidden></p>
         <ul class="staff-list" id="staffNowList" hidden>
           <li id="staffNowItem0" hidden><span class="staff-mark" id="staffNowItem0Mark" aria-hidden="true"></span><span id="staffNowItem0Text"></span></li>
           <li id="staffNowItem1" hidden><span class="staff-mark" id="staffNowItem1Mark" aria-hidden="true"></span><span id="staffNowItem1Text"></span></li>
@@ -694,21 +705,25 @@
           <button class="staff-primary" id="staffResetBtn" type="button" hidden>準備を始める</button>
           <button class="staff-primary" id="staffVisitorBtn" type="button" hidden>来場者の画面にする</button>
           <button class="staff-primary staff-hold" id="staffPrepareBtn" type="button" hidden aria-describedby="staffPrepareHint">長押しで装着へ進む</button>
+          <button class="staff-primary staff-hold" id="staffCollectBtn" type="button" hidden aria-describedby="staffCollectHint">長押しで次の準備へ進む</button>
           <button class="staff-secondary staff-hold" id="staffRestartBtn" type="button" hidden aria-describedby="staffRestartHint">最初からやり直す（長押し）</button>
           <span class="sr-only" id="staffPrepareHint">1.2 秒押し続けると進みます。</span>
+          <span class="sr-only" id="staffCollectHint">1.5 秒押し続けると次の体験者の準備になります。</span>
           <span class="sr-only" id="staffRestartHint">1.5 秒押し続けると次の体験者の準備になります。</span>
         </div>
         <p class="staff-now-message" id="staffNowMessage" role="status" aria-live="polite"></p>
       </section>
       <section class="staff-devices" aria-labelledby="staffDevicesTitle">
-        <h3 class="staff-devices-title" id="staffDevicesTitle">機器の状態</h3>
+        <h3 class="staff-devices-title" id="staffDevicesTitle">機器の確認 <span id="staffReadinessCount">0 / 6</span></h3>
+        <div class="staff-readiness" id="staffReadinessSummary" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
         <ul class="staff-device-list">
           <li class="staff-device" id="devQuest" data-tone="none"><span class="staff-mark" id="devQuestMark" aria-hidden="true"></span><span class="staff-device-name">クエスト</span><span class="staff-device-value" id="devQuestValue">—</span><span class="staff-device-fix" id="devQuestFix" hidden></span></li>
           <li class="staff-device" id="devPosition" data-tone="none"><span class="staff-mark" id="devPositionMark" aria-hidden="true"></span><span class="staff-device-name">位置合わせ</span><span class="staff-device-value" id="devPositionValue">—</span><span class="staff-device-fix" id="devPositionFix" hidden></span></li>
           <li class="staff-device" id="devCameraA" data-tone="none"><span class="staff-mark" id="devCameraAMark" aria-hidden="true"></span><span class="staff-device-name">カメラ A</span><span class="staff-device-value" id="devCameraAValue">—</span><span class="staff-device-fix" id="devCameraAFix" hidden></span></li>
           <li class="staff-device" id="devCameraB" data-tone="none"><span class="staff-mark" id="devCameraBMark" aria-hidden="true"></span><span class="staff-device-name">カメラ B</span><span class="staff-device-value" id="devCameraBValue">—</span><span class="staff-device-fix" id="devCameraBFix" hidden></span></li>
           <li class="staff-device" id="devCameraC" data-tone="none"><span class="staff-mark" id="devCameraCMark" aria-hidden="true"></span><span class="staff-device-name">カメラ C</span><span class="staff-device-value" id="devCameraCValue">—</span><span class="staff-device-fix" id="devCameraCFix" hidden></span></li>
-          <li class="staff-device" id="devContent" data-tone="none" hidden><span class="staff-mark" id="devContentMark" aria-hidden="true"></span><span class="staff-device-name">体験の素材</span><span class="staff-device-value" id="devContentValue">—</span><span class="staff-device-fix" id="devContentFix" hidden></span></li>
+          <li class="staff-device" id="devContent" data-tone="none"><span class="staff-mark" id="devContentMark" aria-hidden="true"></span><span class="staff-device-name">体験の素材</span><span class="staff-device-value" id="devContentValue">—</span><span class="staff-device-fix" id="devContentFix" hidden></span></li>
+          <li class="staff-device" id="devAudio" data-tone="none"><span class="staff-mark" id="devAudioMark" aria-hidden="true"></span><span class="staff-device-name">タブレット</span><span class="staff-device-value" id="devAudioValue">本体で確認</span><span class="staff-device-fix" id="devAudioFix" hidden></span></li>
         </ul>
       </section>
     </div>
@@ -2468,7 +2483,11 @@
   const PREPARE_HOLD_MS = 1200;
   const RESTART_HOLD_MS = 1500;
   const STAFF_ALERT_DELAY_MS = 6000;
+  const STAFF_RECEIPT_MS = 4000;
   let staffNotice = { key: '', text: '' };
+  let staffReceiptState = { text: '', until: 0 };
+  let staffHealth = { identity: '', observed: false, problem: false };
+  let staffMediaVolume = null;
   let staffOpenReason = '';
   let staffCycleStep = 1;
   let staffRetrying = false;
@@ -2477,6 +2496,7 @@
   let questTroubleSince = 0;
   let staffAction = Promise.resolve();
   let prepareHold = null;
+  let collectHold = null;
   let restartHold = null;
   const staffAlert = createStaffAlertState();
   const staffAlertAudio = { context: null, unlockPromise: null, unlocked: false,
@@ -2780,10 +2800,23 @@
       const camera = live ? staffCameraOf(setup, id) : undefined;
       rows.push({ id: `Camera${id}`, ...(camera ? staffCameraRow(camera) : empty) });
     }
-    const contentMissing = live && Boolean(setup) && staffContentMissing(setup);
-    rows.push({ id: 'Content', hidden: !contentMissing,
-      ...(contentMissing ? { tone: 'trouble', value: '読み込めていません', fix: 'クエストで『廻リ視』を起動し直す' } : empty) });
+    let content = empty;
+    if (live && setup) {
+      if (staffContentMissing(setup)) content = { tone: 'trouble', value: '読み込めていません', fix: 'クエストで『廻リ視』を起動し直す' };
+      else if (setup.content === true) content = { tone: 'ok', value: '読み込み済み', fix: '' };
+    }
+    rows.push({ id: 'Content', ...content });
     return rows;
+  }
+
+  function staffVolumeRow(volume) {
+    if (!isRecord(volume) || !Number.isInteger(volume.current) || !Number.isInteger(volume.max)
+      || volume.current < 0 || volume.max <= 0 || volume.current > volume.max || typeof volume.muted !== 'boolean') {
+      return { id: 'Audio', tone: 'none', value: '本体で確認', fix: '' };
+    }
+    const silent = volume.current === 0 || volume.muted;
+    return { id: 'Audio', tone: silent ? 'wait' : 'ok', value: `音量 ${volume.current} / ${volume.max}`,
+      fix: silent ? '本体の音量ボタンで上げる' : '' };
   }
 
   function staffConfirmItems(input) {
@@ -2977,9 +3010,12 @@
       case 'outro':
         return { title: '終わりの演出中です', body: '演出が終わるまで待ってください。まだヘッドセットは外しません。' };
       case 'finished':
-        return { title: '体験が終わりました',
-          body: 'ヘッドセットを外すのを手伝ってください。ヘッドセット・ヘッドフォン・左コントローラーを拭いて台に置きます。その後に次へ進みます。',
-          note: staffEndingText(setup), actions: { reset: '次の体験者の準備を始める' } };
+        return { title: '体験が終わりました', items: [
+          plain('ヘッドセットを外すのを手伝う'),
+          plain('ヘッドセットとヘッドフォンを清拭して台へ戻す'),
+          plain('左コントローラーを清拭して台へ戻す'),
+        ], body: '回収が済んだら、下のボタンを長押しします。',
+          note: staffEndingText(setup), actions: { collect: true } };
       default:
         return { title: 'クエストの応答を確認しています' };
     }
@@ -2989,11 +3025,44 @@
     staffNotice = { key, text };
   }
 
+  function setStaffReceipt(text) {
+    staffReceiptState = { text, until: Date.now() + STAFF_RECEIPT_MS };
+  }
+
+  function observeStaffRecovery(snapshot, rows) {
+    const identity = snapshot.status?.portalSessionId
+      ? `${snapshot.quest || 'direct'}|${snapshot.status.portalSessionId}` : '';
+    if (!identity) return;
+    if (staffHealth.identity !== identity) {
+      staffHealth = { identity, observed: true, problem: rows.some((row) => row.fix && row.tone !== 'ok') };
+      return;
+    }
+    const problem = snapshot.connection === 'offline' || rows.some((row) => row.fix && row.tone !== 'ok');
+    const healthy = snapshot.connection === 'online' && snapshot.fresh && rows.every((row) => row.tone === 'ok');
+    if (staffHealth.observed && staffHealth.problem && healthy) setStaffReceipt('接続と機器の状態が戻りました');
+    staffHealth.observed = true;
+    if (problem || healthy) staffHealth.problem = problem;
+  }
+
+  function staffRecoveryText(key, snapshot, rows, audioRow) {
+    if (key === 'playing' || key === 'outro' || key === 'finished') return '';
+    const blocker = staffStartBlocker(snapshot.status);
+    let row = null;
+    if (blocker === 'connection' || blocker === 'stale') row = rows.find((item) => item.id === 'Quest');
+    else if (blocker === 'position') row = rows.find((item) => item.id === 'Position');
+    else if (blocker === 'camera') row = rows.find((item) => item.id.startsWith('Camera') && item.tone !== 'ok' && item.fix);
+    else if (blocker === 'content') row = rows.find((item) => item.id === 'Content');
+    if (row?.fix) return `対処：${row.fix}`;
+    if (audioRow.fix) return `注意：${audioRow.value}です。${audioRow.fix}`;
+    return '';
+  }
+
   function observeStaffResetResult() {
     if (!staffResetRequest || !state.status) return '';
     if (state.status.staffResetId === staffResetRequest.id
       && state.status.portalSessionId !== staffResetRequest.portalSessionId) {
       staffResetRequest = null;
+      setStaffReceipt('次の体験者の準備ができました');
       return 'done';
     }
     if (state.status.staffResetRejectedId === staffResetRequest.id
@@ -3034,7 +3103,7 @@
     setText('staffTargetState', questRow.value === '—' ? '' : questRow.value);
     $('staffDoneBtn').hidden = !snapshot.visitorFlow || STAFF_NO_RETURN.has(key);
     $('staffDoneBtn').disabled = state.staffChecking || state.clearing;
-    $('staffHandback').hidden = !(key === 'confirm' && staffOpenReason === 'handback');
+    $('staffHandback').hidden = !(snapshot.handback && !snapshot.acknowledged);
     for (let step = 1; step <= 5; step++) {
       const item = $(`staffCycle${step}`);
       if (step === staffCycleStep) item.setAttribute('aria-current', 'step');
@@ -3043,13 +3112,16 @@
     }
   }
 
-  function renderStaffNow(key, snapshot) {
+  function renderStaffNow(key, snapshot, rows, audioRow) {
     const view = staffNowCopy(key, snapshot);
     setText('staffNowTitle', view.title);
     for (const [id, text] of [['staffNowMeta', view.meta], ['staffNowBody', view.body], ['staffNowNote', view.note]]) {
       setText(id, text || '');
       $(id).hidden = !text;
     }
+    const recovery = staffRecoveryText(key, snapshot, rows, audioRow);
+    setText('staffRecovery', recovery);
+    $('staffRecovery').hidden = !recovery;
     const items = view.items || [];
     $('staffNowList').hidden = items.length === 0;
     for (let index = 0; index < 6; index++) {
@@ -3070,17 +3142,23 @@
     $('staffPrepareBtn').hidden = !actions.prepare;
     setText('staffPrepareBtn', typeof actions.prepare === 'string' ? actions.prepare : '長押しで装着へ進む');
     $('staffPrepareBtn').disabled = !staffPreparationReady() || staffConfirmationRequested || snapshot.acknowledged;
+    $('staffCollectBtn').hidden = !actions.collect;
+    $('staffCollectBtn').disabled = !actions.collect || key !== 'finished' || !staffResetAllowed();
     $('staffRestartBtn').hidden = !actions.restart;
     setText('staffRestartBtn', typeof actions.restart === 'string' ? actions.restart : '最初からやり直す（長押し）');
     $('staffRestartBtn').disabled = !staffResetAllowed();
     if ($('staffPrepareBtn').hidden || $('staffPrepareBtn').disabled) prepareHold?.cancel();
+    if ($('staffCollectBtn').hidden || $('staffCollectBtn').disabled) collectHold?.cancel();
     if ($('staffRestartBtn').hidden || $('staffRestartBtn').disabled) restartHold?.cancel();
     setText('staffNowMessage', staffNotice.text);
     placeStaffPicker(key === 'unselected');
   }
 
-  function renderStaffDevices(rows) {
-    for (const row of rows) {
+  function renderStaffDevices(rows, audioRow) {
+    setText('staffReadinessCount', `${rows.filter((row) => row.tone === 'ok').length} / 6`);
+    const readiness = $('staffReadinessSummary').querySelectorAll('span');
+    rows.forEach((row, index) => { readiness[index].dataset.tone = row.tone; });
+    for (const row of [...rows, audioRow]) {
       $(`dev${row.id}`).hidden = Boolean(row.hidden);
       $(`dev${row.id}`).dataset.tone = row.tone;
       setText(`dev${row.id}Mark`, STAFF_MARK[row.tone]);
@@ -3088,6 +3166,13 @@
       setText(`dev${row.id}Fix`, row.fix);
       $(`dev${row.id}Fix`).hidden = !row.fix;
     }
+  }
+
+  function renderStaffReceipt() {
+    const visible = Boolean(staffReceiptState.text && Date.now() < staffReceiptState.until);
+    const receipt = $('staffReceipt');
+    if (receipt.textContent !== staffReceiptState.text) receipt.textContent = staffReceiptState.text;
+    receipt.classList.toggle('is-visible', visible);
   }
 
   function renderStaffTrouble(key) {
@@ -3142,8 +3227,8 @@
     }
     const previous = lastStaffStage;
     lastStaffStage = stage;
-    // 体験が始まるとタブレットはスタッフの手に戻る。スタッフ画面へ切り替える。
-    if (stage === 'playing' && previous !== 'playing') openStaffScreen('playing');
+    // RUN を背景中に見逃しても、終幕か回収を初めて観測した時点でスタッフ画面へ戻す。
+    if (!state.staffPreview && (stage === 'playing' || stage === 'ended') && previous !== stage) openStaffScreen(stage);
   }
 
   function renderStaff() {
@@ -3161,9 +3246,13 @@
     staffCycleStep = staffCycleStepFor(key, staffCycleStep);
     $('staff').dataset.state = key;
     const rows = staffDeviceRows(snapshot);
+    if ($('staff').open) staffMediaVolume = transport.getMediaVolume?.() ?? null;
+    const audioRow = staffVolumeRow(staffMediaVolume);
+    observeStaffRecovery(snapshot, rows);
     renderStaffTop(key, snapshot, rows[0]);
-    renderStaffNow(key, snapshot);
-    renderStaffDevices(rows);
+    renderStaffNow(key, snapshot, rows, audioRow);
+    renderStaffDevices(rows, audioRow);
+    renderStaffReceipt();
     renderStaffTrouble(key);
     renderCallStaff();
   }
@@ -3230,48 +3319,64 @@
   function bindHold(button, durationMs, onComplete) {
     let hold = null;
     const setProgress = (value) => button.style.setProperty('--hold', String(value));
-    const cancel = () => {
+    const active = () => !button.disabled && !button.hidden && !button.inert && $('staff').open && !$('staff').inert
+      && !document.hidden && !nativePaused;
+    const cancel = (source, id) => {
       if (!hold) return;
+      if (source && (hold.source !== source || hold.id !== id)) return;
       clearTimeout(hold.timer);
       clearInterval(hold.ticker);
       hold = null;
       button.dataset.holding = 'false';
       setProgress(0);
     };
-    const start = () => {
-      if (hold || button.disabled || button.hidden) return false;
+    const start = (source, id) => {
+      if (hold || !active()) return false;
       const startedAt = performance.now();
-      hold = {
+      const current = {
+        source,
+        id,
         timer: setTimeout(() => {
+          if (hold !== current) return;
+          const shouldComplete = active();
           cancel();
-          onComplete();
+          if (shouldComplete) onComplete();
         }, durationMs),
         // prefers-reduced-motion でも満ちる量は見せる。CSS の遷移ではなく値を直接書く。
         ticker: setInterval(() => setProgress(Math.min(1, (performance.now() - startedAt) / durationMs)), 40),
       };
+      hold = current;
       button.dataset.holding = 'true';
       setProgress(0.02);
       return true;
     };
     button.addEventListener('pointerdown', (event) => {
-      if (event.isPrimary === false || event.button > 0 || !start()) return;
+      if (event.isPrimary === false || event.button > 0 || !start('pointer', event.pointerId)) return;
       event.preventDefault();
       try { button.setPointerCapture?.(event.pointerId); } catch (error) { /* The pointer is already released. */ }
     });
-    button.addEventListener('pointerup', cancel);
-    button.addEventListener('pointercancel', cancel);
-    button.addEventListener('lostpointercapture', cancel);
-    button.addEventListener('blur', cancel);
+    button.addEventListener('pointermove', (event) => {
+      if (!hold || hold.source !== 'pointer' || hold.id !== event.pointerId
+        || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+      const rect = button.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right
+        || event.clientY < rect.top || event.clientY > rect.bottom) cancel('pointer', event.pointerId);
+    });
+    button.addEventListener('pointerup', (event) => cancel('pointer', event.pointerId));
+    button.addEventListener('pointercancel', (event) => cancel('pointer', event.pointerId));
+    button.addEventListener('lostpointercapture', (event) => cancel('pointer', event.pointerId));
+    button.addEventListener('blur', () => cancel());
+    window.addEventListener?.('blur', () => cancel());
     button.addEventListener('contextmenu', (event) => event.preventDefault());
     button.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      if (!event.repeat) start();
+      if (!event.repeat) start('keyboard', event.key);
     });
     button.addEventListener('keyup', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      cancel();
+      cancel('keyboard', event.key);
     });
     return { cancel };
   }
@@ -3636,6 +3741,7 @@
   });
   // 装着へ進む確認と最初からのやり直しは長押しだけで受け付ける。クリックでは何もしない。
   prepareHold = bindHold($('staffPrepareBtn'), PREPARE_HOLD_MS, () => { staffAction = confirmStaffPreparation(); });
+  collectHold = bindHold($('staffCollectBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(); });
   restartHold = bindHold($('staffRestartBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(); });
   $('staffRetryBtn').addEventListener('click', () => {
     staffAction = retryQuestConnection();
@@ -3726,6 +3832,7 @@
   $('staff').addEventListener('close', () => {
     staffOpenReason = '';
     prepareHold?.cancel();
+    collectHold?.cancel();
     restartHold?.cancel();
     staffCheckGeneration++;
     staffCheckController?.abort();
@@ -3815,7 +3922,12 @@
     }
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopStaffSound();
+    if (document.hidden) {
+      stopStaffSound();
+      prepareHold?.cancel();
+      collectHold?.cancel();
+      restartHold?.cancel();
+    }
     observeStaffAlert();
     setBriefingPause('hidden', document.hidden);
     syncReliefPreview();
@@ -3823,7 +3935,12 @@
   });
   globalThis.__tabletLifecycle = (paused) => {
     nativePaused = Boolean(paused);
-    if (nativePaused) stopStaffSound();
+    if (nativePaused) {
+      stopStaffSound();
+      prepareHold?.cancel();
+      collectHold?.cancel();
+      restartHold?.cancel();
+    }
     observeStaffAlert();
     setBriefingPause('native', nativePaused);
     syncReliefPreview();

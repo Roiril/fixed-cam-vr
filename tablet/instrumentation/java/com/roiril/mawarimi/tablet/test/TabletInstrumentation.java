@@ -3,7 +3,9 @@ package com.roiril.mawarimi.tablet.test;
 import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.ComponentName;
+import android.content.Context;
 import android.graphics.Bitmap;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
@@ -12,14 +14,19 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashSet;
 import java.util.Set;
@@ -33,6 +40,9 @@ public final class TabletInstrumentation extends Instrumentation {
     private static final String TAG = "DoctorTabletTest";
     private static final ComponentName ACTIVITY = new ComponentName(
         "com.roiril.mawarimi.tablet", "com.roiril.mawarimi.tablet.MainActivity");
+    private static final String LOCAL_URL = "https://appassets.androidplatform.net/index.html";
+    private static final String STAFF_FINISH_URL = LOCAL_URL + "?staff=1";
+    private static final String TRANSPORT_SCRIPT = "<script src=\"./tablet-transport.js\"></script>";
     private static final Pattern FIRST_NUMBER = Pattern.compile("\\d+");
     private final Bundle results = new Bundle();
     private boolean requireQuest;
@@ -42,6 +52,8 @@ public final class TabletInstrumentation extends Instrumentation {
     private boolean briefing;
     private boolean equipment;
     private boolean staffFlow;
+    private boolean staffFinish;
+    private final AtomicReference<String> staffFinishHtml = new AtomicReference<>();
 
     @Override
     public void onCreate(Bundle arguments) {
@@ -52,6 +64,7 @@ public final class TabletInstrumentation extends Instrumentation {
         briefing = arguments != null && "true".equalsIgnoreCase(arguments.getString("briefing"));
         equipment = arguments != null && "true".equalsIgnoreCase(arguments.getString("equipment"));
         staffFlow = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFlow"));
+        staffFinish = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFinish"));
         start();
     }
 
@@ -59,7 +72,7 @@ public final class TabletInstrumentation extends Instrumentation {
     public void onStart() {
         int resultCode = Activity.RESULT_OK;
         try {
-            if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
+            if (staffFinish) runStaffFinishTests(); else if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
             results.putString("summary", "PASS checks=" + checks);
             Log.i(TAG, "PASS checks=" + checks);
         } catch (Throwable error) {
@@ -75,7 +88,11 @@ public final class TabletInstrumentation extends Instrumentation {
         Activity activity = launchFromShell();
         WebView view = waitForWebView(activity, 10000);
         String originalQuest = "";
-        waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
+        // A newly created WebView can still report complete for its initial about:blank page.
+        waitFor("staff page ready", 15000, () -> evaluateBoolean(view,
+            "location.href==='" + LOCAL_URL + "'&&document.readyState==='complete'"
+                + "&&typeof TabletTransport!=='undefined'&&TabletTransport.native===true"
+                + "&&!!document.getElementById('staff')"));
         try {
             originalQuest = evaluateString(view, "TabletTransport.getQuest()");
             check("original Quest selection is restorable",
@@ -95,6 +112,7 @@ public final class TabletInstrumentation extends Instrumentation {
             check("Quest beta selected", "beta".equals(evaluateString(view, "TabletTransport.getQuest()")));
             check("visitor entry remains disabled", evaluateBoolean(view,
                 "document.getElementById('titleStart').disabled"));
+            verifyNativeMediaVolume(activity, view);
             JSONObject staffState = evaluateObject(view,
                 "JSON.stringify({viewport:{width:innerWidth,height:innerHeight},"
                     + "target:document.getElementById('staffTargetName').textContent.trim(),"
@@ -166,6 +184,343 @@ public final class TabletInstrumentation extends Instrumentation {
                 try { evaluate(view, "document.getElementById('staff').close()"); }
                 catch (Throwable cleanupError) { Log.w(TAG, "staffFlow close failed", cleanupError); }
             }
+        }
+    }
+
+    private void verifyNativeMediaVolume(Activity activity, WebView view) throws Exception {
+        AudioManager audioManager = (AudioManager) activity.getSystemService(Context.AUDIO_SERVICE);
+        check("AudioManager is available", audioManager != null);
+        int current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+        int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        boolean muted = audioManager.isStreamMute(AudioManager.STREAM_MUSIC);
+        JSONObject bridge = evaluateObject(view, "JSON.stringify(TabletTransport.getMediaVolume())");
+        check("native media current matches AudioManager", bridge.optInt("current", -1) == current);
+        check("native media max matches AudioManager", bridge.optInt("max", -1) == max);
+        check("native media muted matches AudioManager", bridge.optBoolean("muted") == muted);
+        String expected = "音量 " + current + " / " + max;
+        waitFor("native media volume rendered", 5000, () -> expected.equals(evaluateString(view,
+            "document.getElementById('devAudioValue').textContent.trim()")));
+        String displayed = evaluateString(view, "document.getElementById('devAudioValue').textContent.trim()");
+        String guidance = evaluateString(view, "document.getElementById('devAudioFix').textContent.trim()");
+        if (current == 0 || muted) {
+            check("silent media volume shows guidance", guidance.equals("本体の音量ボタンで上げる")
+                && evaluateBoolean(view, "!document.getElementById('devAudioFix').hidden"));
+        }
+        Log.i(TAG, "staffFlow mediaVolume current=" + current + " max=" + max + " muted=" + muted
+            + " displayed=" + displayed + " guidance=" + guidance);
+    }
+
+    private void runStaffFinishTests() throws Exception {
+        Activity activity = launchFromShell();
+        WebView view = waitForWebView(activity, 10000);
+        waitFor("production page before fixture", 15000, () -> evaluateBoolean(view,
+            "location.href==='" + LOCAL_URL + "'&&document.readyState==='complete'"
+                + "&&typeof TabletTransport!=='undefined'&&TabletTransport.native===true"
+                + "&&!!document.getElementById('staff')"));
+        String source = readAsset(activity, "web/index.html");
+        check("production transport script occurs once", source.indexOf(TRANSPORT_SCRIPT) >= 0
+            && source.indexOf(TRANSPORT_SCRIPT) == source.lastIndexOf(TRANSPORT_SCRIPT));
+        int[] originalSize = new int[2];
+        WebViewClient[] originalClient = new WebViewClient[1];
+        runOnMainSync(() -> {
+            originalClient[0] = view.getWebViewClient();
+            // Keep the application's origin/asset policy and CSP. Only replace the HTML body
+            // for this test URL. loadDataWithBaseURL can become chrome-error with blocked networking.
+            view.setWebViewClient(new WebViewClient() {
+                @Override public boolean shouldOverrideUrlLoading(WebView target, WebResourceRequest request) {
+                    return originalClient[0].shouldOverrideUrlLoading(target, request);
+                }
+                @Override public WebResourceResponse shouldInterceptRequest(WebView target, WebResourceRequest request) {
+                    WebResourceResponse response = originalClient[0].shouldInterceptRequest(target, request);
+                    if (request.isForMainFrame() && STAFF_FINISH_URL.equals(request.getUrl().toString())
+                        && response != null && response.getStatusCode() == 200 && staffFinishHtml.get() != null) {
+                        try { response.getData().close(); }
+                        catch (IOException error) { Log.w(TAG, "fixture source close", error); }
+                        byte[] bytes = staffFinishHtml.get().getBytes(StandardCharsets.UTF_8);
+                        response.setData(new ByteArrayInputStream(bytes));
+                        java.util.Map<String, String> headers = new java.util.HashMap<>(response.getResponseHeaders());
+                        headers.put("Content-Length", String.valueOf(bytes.length));
+                        response.setResponseHeaders(headers);
+                    }
+                    return response;
+                }
+                @Override public void onPageFinished(WebView target, String url) {
+                    originalClient[0].onPageFinished(target, url);
+                }
+            });
+            ViewGroup.LayoutParams params = view.getLayoutParams();
+            originalSize[0] = params.width;
+            originalSize[1] = params.height;
+        });
+        try {
+            for (String scenario : new String[] {"setup", "handover", "playing", "outro", "finished", "offline"}) {
+                runStaffFinishScenario(activity, view, source, scenario, false, originalSize[0]);
+                if ("handover".equals(scenario)) runStaffFinishReceipts(view);
+            }
+            for (String scenario : new String[] {"setup", "finished"}) {
+                runStaffFinishScenario(activity, view, source, scenario, true, originalSize[0]);
+            }
+        } finally {
+            runOnMainSync(() -> {
+                view.setWebViewClient(originalClient[0]);
+                staffFinishHtml.set(null);
+                ViewGroup.LayoutParams params = view.getLayoutParams();
+                params.width = originalSize[0];
+                params.height = originalSize[1];
+                view.setLayoutParams(params);
+                view.requestLayout();
+                view.loadUrl(LOCAL_URL);
+            });
+            Log.i(TAG, "staffFinish restored production URL=" + LOCAL_URL + " width=" + originalSize[0]);
+        }
+    }
+
+    private void runStaffFinishScenario(Activity activity, WebView view, String source, String scenario,
+                                        boolean narrow, int originalWidth) throws Exception {
+        int current = "setup".equals(scenario) ? 0 : 8;
+        int max = 15;
+        boolean muted = false;
+        String html = source.replace(TRANSPORT_SCRIPT,
+            "<script>" + staffFinishTransport(scenario, current, max, muted) + "</script>");
+        int width = narrow ? Math.round(375 * activity.getResources().getDisplayMetrics().density) : originalWidth;
+        runOnMainSync(() -> {
+            ViewGroup.LayoutParams params = view.getLayoutParams();
+            params.width = width;
+            view.setLayoutParams(params);
+            view.requestLayout();
+            staffFinishHtml.set(html);
+            view.loadUrl(STAFF_FINISH_URL);
+        });
+        SystemClock.sleep(700);
+        Log.i(TAG, "staffFinish loaded=" + evaluate(view,
+            "JSON.stringify({url:location.href,ready:document.readyState,transport:typeof TabletTransport,"
+                + "state:document.getElementById('staff')?.dataset.state,"
+                + "title:document.getElementById('staffNowTitle')?.textContent})"));
+        String expectedState = expectedStaffState(scenario);
+        String expectedVolume = "音量 " + current + " / " + max;
+        waitFor("staffFinish " + scenario + " " + (narrow ? "narrow" : "wide"), 20000, () -> evaluateBoolean(view,
+            "document.readyState==='complete'&&document.getElementById('staff').open"
+                + "&&document.getElementById('staff').dataset.state==='" + expectedState + "'"
+                + "&&document.getElementById('staffNowTitle').textContent.trim()==='" + expectedStaffTitle(scenario) + "'"
+                + "&&document.getElementById('devAudioValue').textContent.trim()==='" + expectedVolume + "'"));
+        evaluate(view, "document.getElementById('staffTrouble').open=false;document.getElementById('staff').scrollTop=0");
+        String actionId = expectedStaffActionId(scenario);
+        if (narrow && !actionId.isEmpty()) {
+            evaluate(view, "document.getElementById('" + actionId + "').scrollIntoView({block:'center',inline:'nearest'})");
+            SystemClock.sleep(250);
+        }
+        JSONObject layout = staffFinishLayout(view);
+        String size = narrow ? "narrow" : "wide";
+        Log.i(TAG, "staffFinish scenario=" + scenario + " size=" + size + " layout=" + layout);
+        saveScreenshot("doctor-staff-finish-" + scenario + "-" + size + ".png");
+        check("staffFinish " + scenario + " document has no horizontal overflow",
+            layout.optDouble("documentOverflowX") <= 1);
+        check("staffFinish " + scenario + " staff has no horizontal overflow",
+            layout.optDouble("staffOverflowX") <= 1);
+        if (narrow) {
+            check("staffFinish " + scenario + " uses 375 CSS px width",
+                Math.abs(layout.optDouble("viewportWidth") - 375) <= 2);
+        } else {
+            check("staffFinish " + scenario + " uses tablet landscape viewport",
+                layout.optDouble("viewportWidth") >= 1000 && layout.optDouble("viewportHeight") >= 600);
+            check("staffFinish " + scenario + " fits without staff scroll",
+                layout.optDouble("staffScrollHeight") <= layout.optDouble("viewportHeight") + 1);
+        }
+        check("staffFinish " + scenario + " title rendered",
+            expectedStaffTitle(scenario).equals(layout.optString("title")));
+        check("staffFinish " + scenario + " media volume rendered",
+            expectedVolume.equals(layout.optString("audio")));
+        check("staffFinish " + scenario + " renders device rows", layout.optInt("deviceCount") >= 7);
+        String readiness = layout.optString("readiness");
+        check("staffFinish " + scenario + " readiness is measured", readiness.matches("[0-6] / 6"));
+        if ("setup".equals(scenario)) {
+            check("staffFinish setup reports incomplete readiness", "4 / 6".equals(readiness));
+            check("staffFinish setup shows camera failure", layout.optString("cameraB").equals("映像が届いていません"));
+            check("staffFinish setup shows recovery", layout.optString("recovery").startsWith("対処："));
+            check("staffFinish setup shows silent volume guidance",
+                layout.optString("audioFix").equals("本体の音量ボタンで上げる"));
+        } else if ("offline".equals(scenario)) {
+            check("staffFinish offline reports zero readiness", "0 / 6".equals(readiness));
+            check("staffFinish offline shows recovery", layout.optString("recovery").startsWith("対処："));
+        } else {
+            check("staffFinish " + scenario + " reports complete readiness", "6 / 6".equals(readiness));
+            check("staffFinish " + scenario + " has no volume guidance", layout.optString("audioFix").isEmpty());
+        }
+        if ("playing".equals(scenario)) {
+            check("staffFinish playing shows lap and time", layout.optString("meta").equals("2 周目 · 1:24"));
+        }
+        if ("finished".equals(scenario)) {
+            String items = layout.optString("items");
+            check("staffFinish finished shows collection checklist", items.contains("ヘッドセット")
+                && items.contains("ヘッドフォン") && items.contains("左コントローラー") && items.contains("清拭"));
+        }
+        JSONArray buttons = layout.getJSONArray("buttons");
+        check("staffFinish " + scenario + " has expected main action count",
+            buttons.length() == (actionId.isEmpty() ? 0 : 1));
+        if (!actionId.isEmpty()) {
+            JSONObject button = buttons.getJSONObject(0);
+            check("staffFinish " + scenario + " main action id", actionId.equals(button.optString("id")));
+            check("staffFinish " + scenario + " main action text",
+                expectedStaffActionText(scenario).equals(button.optString("text")));
+            check("staffFinish " + scenario + " main action is at least 44px", button.optDouble("height") >= 44);
+            check("staffFinish " + scenario + " main action is on screen", button.optBoolean("onScreen"));
+        }
+        check("staffFinish " + scenario + " uses production colors",
+            !layout.optString("shellBackground").isEmpty()
+                && !"rgba(0, 0, 0, 0)".equals(layout.optString("shellBackground")));
+    }
+
+    private JSONObject staffFinishLayout(WebView view) throws Exception {
+        return evaluateObject(view,
+            "JSON.stringify((()=>{var d=document.documentElement,s=document.getElementById('staff'),"
+                + "sh=s.querySelector('.staff-shell');var shown=e=>{var r=e.getBoundingClientRect(),c=getComputedStyle(e);"
+                + "return !e.hidden&&c.display!=='none'&&c.visibility==='visible'&&r.width>0&&r.height>0;};"
+                + "var buttons=[...document.querySelectorAll('.staff-now-actions button')].filter(shown).map(e=>{"
+                + "var r=e.getBoundingClientRect();return {id:e.id,text:e.textContent.trim(),height:r.height,"
+                + "onScreen:r.left>=-1&&r.top>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1};});"
+                + "return {viewportWidth:innerWidth,viewportHeight:innerHeight,"
+                + "documentOverflowX:Math.max(0,d.scrollWidth-d.clientWidth),"
+                + "staffOverflowX:Math.max(0,s.scrollWidth-s.clientWidth),staffScrollHeight:s.scrollHeight,"
+                + "title:document.getElementById('staffNowTitle').textContent.trim(),"
+                + "meta:document.getElementById('staffNowMeta').textContent.trim(),"
+                + "items:document.getElementById('staffNowList').textContent.trim(),"
+                + "readiness:document.getElementById('staffReadinessCount').textContent.trim(),"
+                + "audio:document.getElementById('devAudioValue').textContent.trim(),"
+                + "audioFix:document.getElementById('devAudioFix').textContent.trim(),"
+                + "cameraB:document.getElementById('devCameraBValue').textContent.trim(),"
+                + "receipt:document.getElementById('staffReceipt').textContent.trim(),"
+                + "recovery:document.getElementById('staffRecovery').textContent.trim(),"
+                + "deviceCount:[...document.querySelectorAll('.staff-device')].filter(shown).length,buttons:buttons,"
+                + "shellBackground:getComputedStyle(s).backgroundColor};})())");
+    }
+
+    private String staffFinishTransport(String scenario, int current, int max, boolean muted) throws Exception {
+        JSONObject status = staffFinishStatus(scenario);
+        boolean offline = "offline".equals(scenario);
+        return "(()=>{'use strict';const status=" + status + ";let tick=status.questTick;"
+            + "globalThis.__staffFinishStatus=status;"
+            + "const response=(code,body)=>Promise.resolve({ok:code>=200&&code<300,status:code,"
+            + "json:async()=>JSON.parse(JSON.stringify(body)),text:async()=>JSON.stringify(body)});"
+            + "globalThis.TabletTransport=Object.freeze({native:false,getQuest:()=>'',setQuest:()=>{},"
+            + "getMediaVolume:()=>({current:" + current + ",max:" + max + ",muted:" + muted + "}),"
+            + "request:(path,options={})=>{if(String(path).startsWith('./asset/'))return fetch(path,options);"
+            + (offline
+                ? "return Promise.reject(new TypeError('fixture offline'));"
+                : "if(path==='./status'||path==='/status'){status.questTick=++tick;return response(200,status);}"
+                    + "if(path==='./tablet/pulse'||path==='/tablet/pulse'){const body=JSON.parse(options.body||'{}');"
+                    + "if(body.staffReset){status.portalSessionId='staff-finish-reset';status.staffResetId=body.resetRequestId;"
+                    + "status.visitorGeneration++;status.staffSetup.stage='settings';status.staffSetup.reason='settings';}"
+                    + "return response(200,{ok:true});}"
+                    + "return Promise.reject(new Error('fixture request rejected'));"
+            )
+            + "}});})();";
+    }
+
+    private void runStaffFinishReceipts(WebView view) throws Exception {
+        evaluate(view, "__staffFinishStatus.staffSetup.cameras[1].state='trouble';"
+            + "__staffFinishStatus.staffSetup.cameras[1].problem='nostream'");
+        waitFor("receipt failure observed", 6000, () -> evaluateBoolean(view,
+            "document.getElementById('devCameraB').dataset.tone==='trouble'"));
+        evaluate(view, "__staffFinishStatus.staffSetup.cameras[1].state='ok';"
+            + "__staffFinishStatus.staffSetup.cameras[1].problem=''");
+        verifyReceipt(view, "接続と機器の状態が戻りました", "recovered");
+        evaluate(view, "__staffFinishStatus.staffSetup.stage='reset';__staffFinishStatus.staffSetup.reason='reset'");
+        waitFor("initial preparation action", 6000, () -> evaluateBoolean(view,
+            "!document.getElementById('staffResetBtn').hidden&&!document.getElementById('staffResetBtn').disabled"));
+        evaluate(view, "document.getElementById('staffResetBtn').click()");
+        verifyReceipt(view, "次の体験者の準備ができました", "prepared");
+    }
+
+    private void verifyReceipt(WebView view, String text, String name) throws Exception {
+        waitFor("receipt " + name, 6000, () -> evaluateBoolean(view,
+            "document.getElementById('staffReceipt').classList.contains('is-visible')"
+                + "&&document.getElementById('staffReceipt').textContent==='" + text + "'"));
+        SystemClock.sleep(250);
+        check("receipt " + name + " is fully on screen", evaluateBoolean(view,
+            "(()=>{const e=document.getElementById('staffReceipt'),r=e.getBoundingClientRect();"
+                + "return r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight"
+                + "&&getComputedStyle(e).opacity==='1';})()"));
+        saveScreenshot("doctor-staff-finish-" + name + "-wide.png");
+    }
+
+    private JSONObject staffFinishStatus(String scenario) throws Exception {
+        JSONObject setup = staffSetup("settings", "settings");
+        String phase = "INTRO";
+        if ("setup".equals(scenario)) {
+            setup = staffSetup("setup", "camera");
+            setup.put("positionConfirmed", false).put("position", "needed");
+            setup.getJSONArray("cameras").getJSONObject(1).put("state", "trouble").put("problem", "nostream");
+        } else if ("playing".equals(scenario)) {
+            phase = "RUN";
+            setup = staffSetup("playing", "");
+            setup.put("run", staffRun("RUN", 2, 84, "off", ""));
+        } else if ("outro".equals(scenario)) {
+            phase = "END";
+            setup = staffSetup("ended", "");
+            setup.put("run", staffRun("END", 3, 168, "playing", "released"));
+        } else if ("finished".equals(scenario)) {
+            phase = "END";
+            setup = staffSetup("ended", "");
+            setup.put("run", staffRun("END", 3, 176, "done", "released"));
+        }
+        return new JSONObject()
+            .put("ok", true).put("lang", "ja").put("relief", false).put("phase", phase)
+            .put("titleStage", "Wait").put("appliedSeq", 0).put("applyCount", 0).put("received", 0)
+            .put("pending", JSONObject.NULL).put("questTick", 100).put("portalSessionId", "staff-finish-stable")
+            .put("lastRequest", JSONObject.NULL).put("visitorGeneration", 1).put("staffResetId", "")
+            .put("staffResetRejectedId", "").put("briefing", JSONObject.NULL).put("staffSetup", setup);
+    }
+
+    private JSONObject staffSetup(String stage, String reason) throws Exception {
+        JSONArray cameras = new JSONArray();
+        for (String id : new String[] {"A", "B", "C"}) {
+            cameras.put(new JSONObject().put("id", id).put("state", "ok").put("problem", ""));
+        }
+        return new JSONObject().put("stage", stage).put("reason", reason).put("positionConfirmed", true)
+            .put("resetProgress", 0).put("position", "confirmed").put("cameras", cameras)
+            .put("tablet", "ok").put("content", true)
+            .put("run", staffRun("INTRO", 0, 0, "off", ""));
+    }
+
+    private JSONObject staffRun(String phase, int lap, int sec, String outro, String ending) throws Exception {
+        return new JSONObject().put("phase", phase).put("lap", lap).put("laps", 3).put("sec", sec)
+            .put("outro", outro).put("ending", ending);
+    }
+
+    private String expectedStaffState(String scenario) {
+        return "handover".equals(scenario) ? "handover" : scenario;
+    }
+
+    private String expectedStaffTitle(String scenario) {
+        if ("setup".equals(scenario)) return "ヘッドセットで最初の準備";
+        if ("handover".equals(scenario)) return "タブレットを来場者に渡す";
+        if ("playing".equals(scenario)) return "体験中";
+        if ("outro".equals(scenario)) return "終わりの演出中です";
+        if ("finished".equals(scenario)) return "体験が終わりました";
+        if ("offline".equals(scenario)) return "クエストに接続できません";
+        throw new AssertionError("Unknown staffFinish scenario: " + scenario);
+    }
+
+    private String expectedStaffActionId(String scenario) {
+        if ("handover".equals(scenario)) return "staffVisitorBtn";
+        if ("finished".equals(scenario)) return "staffCollectBtn";
+        if ("offline".equals(scenario)) return "staffRetryBtn";
+        return "";
+    }
+
+    private String expectedStaffActionText(String scenario) {
+        if ("handover".equals(scenario)) return "来場者の画面にする";
+        if ("finished".equals(scenario)) return "長押しで次の準備へ進む";
+        if ("offline".equals(scenario)) return "もう一度確認する";
+        return "";
+    }
+
+    private String readAsset(Activity activity, String path) throws IOException {
+        try (InputStream input = activity.getAssets().open(path);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            for (int count; (count = input.read(buffer)) >= 0;) output.write(buffer, 0, count);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 
@@ -271,13 +626,24 @@ public final class TabletInstrumentation extends Instrumentation {
     }
 
     private void saveScreenshot(String filename) throws Exception {
-        if (!"doctor-staff-flow-staff.png".equals(filename)
+        boolean staffFinishName = filename.matches(
+            "doctor-staff-finish-(setup|handover|playing|outro|finished|offline|recovered|prepared)-(wide|narrow)\\.png")
+            && !(filename.endsWith("handover-narrow.png") || filename.endsWith("playing-narrow.png")
+                || filename.endsWith("outro-narrow.png") || filename.endsWith("offline-narrow.png"));
+        if (!staffFinishName && !"doctor-staff-flow-staff.png".equals(filename)
             && !"doctor-staff-flow-equipment.png".equals(filename)
             && !"doctor-staff-flow-title.png".equals(filename)) {
             throw new AssertionError("Unexpected staffFlow screenshot name: " + filename);
         }
         Bitmap screenshot = getUiAutomation().takeScreenshot();
         check("screenshot captured " + filename, screenshot != null);
+        Set<Integer> sampledColors = new HashSet<>();
+        int xStep = Math.max(1, screenshot.getWidth() / 24);
+        int yStep = Math.max(1, screenshot.getHeight() / 16);
+        for (int y = 0; y < screenshot.getHeight(); y += yStep) {
+            for (int x = 0; x < screenshot.getWidth(); x += xStep) sampledColors.add(screenshot.getPixel(x, y));
+        }
+        check("screenshot has rendered colors " + filename, sampledColors.size() >= 4);
         screenshot.recycle();
         String destination = "/sdcard/" + filename;
         runShell("screencap -p " + destination);

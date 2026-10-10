@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using FixedCamVr.Streaming;
 using UnityEngine;
 
@@ -227,6 +228,7 @@ namespace FixedCamVr.Tracking
         private LineRenderer? _wallBottom;
         private LineRenderer? _wallTop;
         private LineRenderer[] _wallPosts = Array.Empty<LineRenderer>();
+        private readonly List<Material> _wireMaterials = new();
 
         // 登録点×マーカー（点ごとに交差 2 本。Verify のワイヤーフレームと同じ寿命）
         private Vector2[] _markCourse = Array.Empty<Vector2>();
@@ -275,6 +277,41 @@ namespace FixedCamVr.Tracking
 
         /// <summary>Bridge のモード遷移（Staff → Registration 入場 / 退場）から呼ばれる。登録モードの ON/OFF。</summary>
         public void Toggle() => SetActive(!IsActive);
+
+        /// <summary>
+        /// OS 再センタリングでトラッキング原点が変わったことを Bridge から通知する。
+        /// 登録中なら古い座標基準のプレビューと記録点を破棄し、無効状態を新しいプレビューの基準にして
+        /// 点 1 から採り直す。これによりキャンセルでも無効状態が維持される。
+        /// </summary>
+        public void NotifyRecentered()
+        {
+            if (courseFrame == null) return;
+            if (!IsActive)
+            {
+                courseFrame.MarkNeedsReRegistration();
+                return;
+            }
+
+            // 順序が重要。旧セッションを戻してから無効化し、その無効状態を次のロールバック先にする。
+            courseFrame.RollbackPreviewSession();
+            courseFrame.MarkNeedsReRegistration();
+            courseFrame.BeginPreviewSession();
+
+            Array.Clear(_capturedWorld, 0, _capturedWorld.Length);
+            _pointIndex = 0;
+            _sampler.Reset();
+            _retryNeedsRelease = true;
+            _verifyMaxResidualM = 0f;
+            _verifyFloorY = 0f;
+            _verifyFloorSpreadM = 0f;
+            _liveGuidanceText = "";
+            _liveGuidanceNext = 0f;
+            _liveGuidanceForIndex = -1;
+            ShowTransient("頭の向きの基準が変わりました\n位置合わせをやり直してください");
+            _phase = Phase.Capture;
+            TearDownWireframe();
+            Debug.LogWarning("[CourseReg] OS recenter 検知 — 記録中の点とプレビューを破棄し、点 1 からやり直します");
+        }
 
         /// <summary>
         /// **Editor プレビュー / デバッグ起動フック用**エントリ。SetActive の状態機械を通さずに
@@ -737,6 +774,8 @@ namespace FixedCamVr.Tracking
             if (_wallTop != null) DestroySafe(_wallTop.gameObject);
             foreach (var p in _wallPosts) if (p != null) DestroySafe(p.gameObject);
             foreach (var m in _markLines) if (m != null) DestroySafe(m.gameObject);
+            foreach (var m in _wireMaterials) if (m != null) DestroySafe(m);
+            _wireMaterials.Clear();
             _floorLine = null;
             _wallBottom = null;
             _wallTop = null;
@@ -750,7 +789,9 @@ namespace FixedCamVr.Tracking
             var go = new GameObject(lname);
             go.transform.SetParent(_vizRoot!.transform, worldPositionStays: false);
             var lr = go.AddComponent<LineRenderer>();
-            lr.sharedMaterial = new Material(shader) { color = color };
+            var material = new Material(shader) { color = color };
+            _wireMaterials.Add(material);
+            lr.sharedMaterial = material;
             lr.useWorldSpace = true;
             lr.widthMultiplier = 0.01f;
             lr.numCapVertices = 2;

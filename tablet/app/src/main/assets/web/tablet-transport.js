@@ -39,6 +39,20 @@
     host.setQuest(quest);
   }
 
+  function getMediaVolume() {
+    if (!native || typeof host.getMediaVolume !== 'function') return null;
+    try {
+      const value = JSON.parse(host.getMediaVolume());
+      if (!value || typeof value !== 'object' || Array.isArray(value)
+        || !Number.isInteger(value.current) || value.current < 0
+        || !Number.isInteger(value.max) || value.max <= 0 || value.current > value.max
+        || typeof value.muted !== 'boolean') return null;
+      return { current: value.current, max: value.max, muted: value.muted };
+    } catch (error) {
+      return null;
+    }
+  }
+
   function request(path, options = {}, target = '') {
     if (!native) return fetch(path, options);
     const method = String(options.method || 'GET').toUpperCase();
@@ -90,5 +104,5 @@
     });
   };
 
-  globalThis.TabletTransport = Object.freeze({ native, getQuest, setQuest, request });
+  globalThis.TabletTransport = Object.freeze({ native, getQuest, setQuest, getMediaVolume, request });
 })();

@@ -273,6 +273,62 @@ namespace FixedCamVr.Streaming.Tests
             }
             finally { UnityEngine.Object.DestroyImmediate(go); VisitorPrefs.Reset(); }
         }
+        [Test] public void StatusSnapshotKeepsJsonReferenceUntilAValueChangesOrForceIsUsed()
+        {
+            var go = new GameObject("portal-status-snapshot"); VisitorPrefs.Reset();
+            try
+            {
+                var p = go.AddComponent<VisitorPortal>();
+                var run = go.AddComponent<ShowRunDirector>();
+                typeof(VisitorPortal).GetField("_run", Private).SetValue(p, run);
+                p.StaffStatusProvider = () => SampleStaff(SampleCameras());
+                Call(p, "RefreshStatus", true);
+                typeof(VisitorPortal).GetField("_nextQuestTick", Private).SetValue(p, long.MaxValue);
+                string first = (string)typeof(VisitorPortal).GetField("_statusJson", Private).GetValue(p);
+                Call(p, "RefreshStatus", false);
+                string unchanged = (string)typeof(VisitorPortal).GetField("_statusJson", Private).GetValue(p);
+                Assert.AreSame(first, unchanged, "unchanged status keeps the published JSON instance");
+                Call(p, "RefreshStatus", true);
+                string forced = (string)typeof(VisitorPortal).GetField("_statusJson", Private).GetValue(p);
+                Assert.AreNotSame(unchanged, forced, "force still rebuilds the published JSON");
+                Assert.AreEqual(unchanged, forced);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(go); VisitorPrefs.Reset(); ShowLanguage.Reset(); HorrorRelief.Reset(); }
+        }
+        [Test] public void StatusSnapshotRebuildsForTickSequenceRevisionAndResetEvidence()
+        {
+            var go = new GameObject("portal-status-snapshot-fields"); VisitorPrefs.Reset();
+            try
+            {
+                var p = go.AddComponent<VisitorPortal>();
+                var run = go.AddComponent<ShowRunDirector>();
+                typeof(VisitorPortal).GetField("_run", Private).SetValue(p, run);
+                Call(p, "RefreshStatus", true);
+                typeof(VisitorPortal).GetField("_nextQuestTick", Private).SetValue(p, long.MaxValue);
+                string json = (string)typeof(VisitorPortal).GetField("_statusJson", Private).GetValue(p);
+                void ExpectRebuild(Action change, string expected)
+                {
+                    change();
+                    Call(p, "RefreshStatus", false);
+                    string next = (string)typeof(VisitorPortal).GetField("_statusJson", Private).GetValue(p);
+                    Assert.AreNotSame(json, next);
+                    if (!string.IsNullOrEmpty(expected)) StringAssert.Contains(expected, next);
+                    json = next;
+                }
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_questTick", Private).SetValue(p, 41), "\"questTick\":41");
+                ExpectRebuild(() => VisitorPrefs.Set(ShowLang.En, true, 23), "\"pending\":{\"lang\":\"en\",\"relief\":true,\"seq\":23}");
+                ExpectRebuild(() => VisitorPrefs.ApplyPending(), "\"appliedSeq\":23");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_preparationProcessed", Private).SetValue(p, 4), "\"revision\":4");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_briefingCompleted", Private).SetValue(p, true), "");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_staffConfirmed", Private).SetValue(p, true), "");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_lastStaffResetId", Private).SetValue(p, "reset-ok"), "\"staffResetId\":\"reset-ok\"");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_staffResetRejectedId", Private).SetValue(p, "reset-no"), "\"staffResetRejectedId\":\"reset-no\"");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_received", Private).SetValue(p, 7), "\"received\":7");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_rejected", Private).SetValue(p, 3), "\"rejected\":3");
+                ExpectRebuild(() => typeof(VisitorPortal).GetField("_portalSessionId", Private).SetValue(p, "next-session"), "\"portalSessionId\":\"next-session\"");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(go); VisitorPrefs.Reset(); ShowLanguage.Reset(); HorrorRelief.Reset(); }
+        }
         [Test] public void AcceptedHttpRequestBlocksBeforeMainThreadAppliesQueue()
         {
             VisitorPrefs.Reset();

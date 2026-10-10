@@ -137,6 +137,134 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
+        public void RecenterDuringCapture_DiscardsPointsAndPartialSample()
+        {
+            var (c, frame, hand, _) = Setup();
+            c.Toggle();
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Assert.That(PointIndex(c), Is.EqualTo(1));
+
+            hand.position = new Vector3(0.5f, 1f, 0.5f);
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
+            c.Feed(RI(mark: false, held: true, confirm: false, dt: 0.2f));
+            Assert.That(c.SampleHoldProgress01, Is.GreaterThan(0f));
+
+            c.NotifyRecentered();
+
+            Assert.That(Phase(c), Is.EqualTo("Capture"));
+            Assert.That(PointIndex(c), Is.EqualTo(0));
+            Assert.That(c.SampleHoldProgress01, Is.EqualTo(0f));
+            Assert.That(frame.NeedsReRegistration, Is.True);
+            RefreshGuidance(c);
+            Assert.That(c.GuidanceText, Does.Contain("位置合わせをやり直してください"));
+            Assert.That(c.GuidanceControls, Does.Contain("右 A を離す"));
+        }
+
+        [Test]
+        public void RecenterDuringVerify_RejectsConfirmUntilAllPointsAreRecaptured()
+        {
+            var (c, frame, hand, regPath) = Setup();
+            c.Toggle();
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Cap(c, hand, new Vector3(0.5f, 1f, 0.5f));
+            Assert.That(Phase(c), Is.EqualTo("Verify"));
+
+            c.NotifyRecentered();
+            c.Feed(RI(mark: false, held: false, confirm: true, dt: 0f));
+
+            Assert.That(c.IsActive, Is.True);
+            Assert.That(Phase(c), Is.EqualTo("Capture"));
+            Assert.That(frame.NeedsReRegistration, Is.True);
+            Assert.That(File.Exists(regPath), Is.False);
+        }
+
+        [Test]
+        public void CancelAfterRecenter_KeepsSavedRegistrationInvalid()
+        {
+            var (c, frame, _, _) = Setup();
+            var saved = new Vector2(0.2f, 0.3f);
+            frame.SetRegistration(saved, 10f, 0.05f, 2, save: true);
+            c.Toggle();
+            Assert.That(Phase(c), Is.EqualTo("Review"));
+
+            c.NotifyRecentered();
+            c.Toggle();
+
+            Assert.That(c.IsActive, Is.False);
+            Assert.That(frame.NeedsReRegistration, Is.True);
+            Assert.That(frame.HasRegistration, Is.True);
+            Assert.That(frame.OriginXZ, Is.EqualTo(saved));
+            Assert.That(frame.YawDeg, Is.EqualTo(10f).Within(1e-3f));
+        }
+
+        [Test]
+        public void RecenterThenReleaseAndRecapture_AllowsNormalSave()
+        {
+            var (c, frame, hand, regPath) = Setup();
+            c.Toggle();
+            c.Feed(RI(mark: true, held: true, confirm: false, dt: 0f));
+            c.NotifyRecentered();
+
+            c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Cap(c, hand, new Vector3(0.5f, 1f, 0.5f));
+            Assert.That(Phase(c), Is.EqualTo("Verify"));
+            c.Feed(RI(mark: false, held: false, confirm: true, dt: 0f));
+
+            Assert.That(c.IsActive, Is.False);
+            Assert.That(frame.NeedsReRegistration, Is.False);
+            Assert.That(frame.HasRegistration, Is.True);
+            Assert.That(File.Exists(regPath), Is.True);
+        }
+
+        [Test]
+        public void RepeatedRecenter_AlwaysReturnsToFreshCapture()
+        {
+            var (c, frame, hand, _) = Setup();
+            c.Toggle();
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+
+            c.NotifyRecentered();
+            c.Feed(RI(mark: false, held: false, confirm: false, dt: 0f));
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Assert.That(PointIndex(c), Is.EqualTo(1));
+            c.NotifyRecentered();
+
+            Assert.That(Phase(c), Is.EqualTo("Capture"));
+            Assert.That(PointIndex(c), Is.EqualTo(0));
+            Assert.That(c.SampleHoldProgress01, Is.EqualTo(0f));
+            Assert.That(frame.NeedsReRegistration, Is.True);
+        }
+
+        [Test]
+        public void OnDestroy_DestroysGeneratedWireframeAndFootprintMaterials()
+        {
+            var zoneGo = new GameObject("zone");
+            _spawned.Add(zoneGo);
+            zoneGo.AddComponent<PlayerZone>();
+            var (c, _, hand, _) = Setup();
+            c.Toggle();
+            Cap(c, hand, new Vector3(-0.5f, 1f, 0.5f));
+            Cap(c, hand, new Vector3(0.5f, 1f, 0.5f));
+
+            var wireMaterials = ((List<Material>)typeof(CourseRegistrationController)
+                .GetField("_wireMaterials", BF)!.GetValue(c)!).ToArray();
+            var footprintMaterials = (Material[])((Material[])typeof(CourseRegistrationController)
+                .GetField("_footMats", BF)!.GetValue(c)!).Clone();
+            Assert.That(wireMaterials.Length, Is.GreaterThan(0));
+            Assert.That(footprintMaterials.Length, Is.GreaterThan(0));
+
+            // reflection 駆動の EditMode fixture は MonoBehaviour のライフサイクルを自動実行しない。
+            typeof(CourseRegistrationController).GetMethod("OnDestroy", BF)!.Invoke(c, null);
+            UnityEngine.Object.DestroyImmediate(c.gameObject);
+
+            foreach (var material in wireMaterials)
+                Assert.That(material == null, Is.True, "ワイヤーフレーム Material を解放する");
+            foreach (var material in footprintMaterials)
+                Assert.That(material == null, Is.True, "フットプリント Material を解放する");
+        }
+
+        [Test]
         public void ResidualGate_Rejects_ReturnsToCapture()
         {
             var (c, _, hand, _) = Setup();

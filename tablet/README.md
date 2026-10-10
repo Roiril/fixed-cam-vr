@@ -46,6 +46,10 @@ adb -s 122d7871 shell am start -n com.roiril.mawarimi.tablet/.MainActivity
 
 ## 通信と検証
 
+スタッフ画面にはQuestと位置合わせとカメラ3台と素材の確認件数を出す。止まった応答は確認済みの数へ含めない。本体のメディア音量も実数で表示する。消音なら本体の音量ボタンを案内する。アプリは音量を変更しない。取得できない版やブラウザでは本体での確認を案内する。音量表示だけで実際に聞こえることを保証しない。
+
+準備完了はリセット要求と新しいセッションの実応答を確認してから知らせる。同じ接続先の異常から回復した場合も表示する。回収後は清拭と器具の配置を確認し、1.5秒の長押しで次の人の準備へ進む。長押し中に指を外へ動かすかアプリを背景へ移すと取り消す。体験の開始を見逃して終幕や終了から復帰した場合もスタッフ画面へ戻る。
+
 タブレットはQuestへ `GET /status` と `POST /set` と `POST /clear` と `POST /tablet/pulse` だけを送る。Androidの通信処理が固定した2台へ送る。HTMLの取得と動画の再生はタブレット内で完結する。
 
 設定送信の受理だけで成功にしない。Questの起動IDとタブレットのページIDを照合する。受理番号と反映番号と言語とホラー軽減も一致させる。通信が切れたときは未確認として保持する。オフラインの送信予約は行わない。
@@ -74,13 +78,16 @@ adb -s 122d7871 shell am instrument -w -e playback true com.roiril.mawarimi.tabl
 adb -s 122d7871 shell am instrument -w -e briefing true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 adb -s 122d7871 shell am instrument -w -e equipment true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 adb -s 122d7871 shell am instrument -w -e staffFlow true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
+adb -s 122d7871 shell am instrument -w -e staffFinish true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 ```
 
 `playback true` は博士動画4本の12か所の部分読み出しを元データのSHA-256と照合する。音声を有効にして各動画を最後まで再生する。`briefing true` はスタッフ確認から12文を2回通して再生する。各文で画面内の動画フレームと音声デコード量を記録する。2回目にはホーム画面への移動と復帰と再開を挟む。Questの設定は送信しない。
 
 `equipment true` はタップ時の表示と長押し時の文字選択を確認する。最後の文から装着案内へ進む。実際の画面寸法と案内文と下の再説明ボタンを確認する。再説明後の動画の進行も確認する。装着案内の画面は端末の `/sdcard/doctor-equipment.png` に保存する。2026-10-05にRedmi Pad SEで9項目が成功した。表示領域1097×686に案内とボタンが収まった。
 
-`staffFlow true` は実際のQuest βの応答を通常の接続確認操作で読む。体験者設定の送信・取消・リセット・装着確定は行わない。スタッフ欄、タイトル、スタッフの説明確認モードから開く装着見本の3画面を `/sdcard/doctor-staff-flow-*.png` に保存する。終了時は試験前のQuest選択へ戻す。Questのカメラ権限と位置確認状態は変更しない。
+`staffFlow true` は実際のQuest βの応答を通常の接続確認操作で読む。本体音量の表示もAndroidの実値と照合する。体験者設定の送信・取消・リセット・装着確定は行わない。スタッフ欄、タイトル、スタッフの説明確認モードから開く装着見本の3画面を `/sdcard/doctor-staff-flow-*.png` に保存する。終了時は試験前のQuest選択へ戻す。Questのカメラ権限と位置確認状態は変更しない。
+
+`staffFinish true` は同梱HTMLを実WebViewで描画する。代役の状態で準備と受け渡しと体験と終幕と回収と通信断を確認する。通常の横画面6枚と幅375の2枚に加え、復旧と準備完了の通知2枚を `/sdcard/doctor-staff-finish-*.png` に保存する。確認件数と音量と案内文と主要操作の位置を検査する。試験後は通常ページと画面幅に戻す。実Questの通信を証明する試験とは分けて扱う。
 
 WebViewは `shouldInterceptRequest` が返すストリームに対してRangeの開始位置まで進める。Android側で先に進めると位置が二重に加算される。ストリームは資産の先頭から返す。読み取りの終端だけを制限する。`skip` と `available` にもその制限を反映する。
 

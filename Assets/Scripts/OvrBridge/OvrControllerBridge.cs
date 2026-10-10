@@ -31,7 +31,7 @@ namespace FixedCamVr.OvrBridge
     /// （2026-08-16・<c>canon/LEDGER.md</c> 0058。コントローラに追従する面は廃止した）。
     /// 導入では左コントローラの接続と位置を確認し、同じ 1 秒長押しを一度練習する。
     /// 練習は本編の報告件数へ渡さない。題字が出たあとは X / Y の短押しで本編へ進む。
-    /// HMD 非装着→SignalLostFx / OS recenter→CourseFrame.MarkNeedsReRegistration のパッシブ系は現状維持。
+    /// HMD 非装着→SignalLostFx / OS recenter→CourseRegistrationController.NotifyRecentered のパッシブ系は現状維持。
     /// </summary>
     public sealed class OvrControllerBridge : MonoBehaviour
     {
@@ -77,7 +77,7 @@ namespace FixedCamVr.OvrBridge
                  "登録中は入力（A=マーク/やり直し, B=確定）を転送する。")]
         [SerializeField] private CourseRegistrationController? courseRegistration;
 
-        [Tooltip("OS recenter（Oculus ボタン長押し）検知で『要再登録』を立てる CourseFrame（[Tracker] 上）。")]
+        [Tooltip("OS recenter（Oculus ボタン長押し）検知のフォールバック先 CourseFrame（[Tracker] 上）。")]
         [SerializeField] private CourseFrame? courseFrame;
 
         // トリガー / A の長押し閾値 (秒)。SerializeField にすると既存シーン YAML に未記載で 0 と読まれ
@@ -247,12 +247,16 @@ namespace FixedCamVr.OvrBridge
         // （→黙って恒久無効＝OS recenter で登録がズレたまま・ログにも残らない）。生えるまで Update で再試行。
         private void TrySubscribeRecenter()
         {
-            if (_recenterSubscribed || courseFrame == null || OVRManager.display == null) return;
+            if (_recenterSubscribed || (courseRegistration == null && courseFrame == null) || OVRManager.display == null) return;
             OVRManager.display.RecenteredPose += OnRecentered;
             _recenterSubscribed = true;
         }
 
-        private void OnRecentered() => courseFrame?.MarkNeedsReRegistration();
+        private void OnRecentered()
+        {
+            if (courseRegistration != null) courseRegistration.NotifyRecentered();
+            else courseFrame?.MarkNeedsReRegistration();
+        }
 
         private void Update()
         {

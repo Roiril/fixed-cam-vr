@@ -49,7 +49,8 @@ namespace FixedCamVr.Streaming
         private string _ip = "";
         private TitleScreen? _title;
         private ShowRunDirector? _run;
-        private string _lastKey = "";
+        private StatusSnapshot _lastStatus;
+        private bool _hasLastStatus;
         private string _portalSessionId = "";
         private int _processedSeq, _visitorGeneration;
         private int _clearIssued, _clearProcessed;
@@ -112,6 +113,20 @@ namespace FixedCamVr.Streaming
         private RunStatus _lastRun;
         private readonly List<TabletSeen> _tablets = new List<TabletSeen>();
         private LastRequest? _lastRequest;
+
+        private struct StatusSnapshot
+        {
+            public string portalSessionId;
+            public bool hasTitle;
+            public TitleStage titleStage;
+            public bool hasRun;
+            public ShowPhase phase;
+            public ShowLang lang;
+            public bool relief;
+            public int pendingSeq, appliedSeq, applyCount, received, rejected, questTick, preparationProcessed;
+            public bool briefingCompleted, staffConfirmed;
+            public string lastStaffResetId, staffResetRejectedId;
+        }
 
         [Serializable] public sealed class TabletSeen
         {
@@ -287,9 +302,11 @@ namespace FixedCamVr.Streaming
         {
             if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
-            string stage = _title != null ? _title.Stage.ToString() : "";
-            string phase = _run != null ? PhaseCode(_run.Phase) : "";
-            string lang = ShowLanguage.Code(ShowLanguage.Current);
+            bool hasTitle = _title != null;
+            TitleStage titleStage = hasTitle ? _title!.Stage : default;
+            bool hasRun = _run != null;
+            ShowPhase runPhase = hasRun ? _run!.Phase : default;
+            ShowLang lang = ShowLanguage.Current;
             bool relief = HorrorRelief.Enabled;
             long now = Stopwatch.GetTimestamp();
             if (now >= _nextQuestTick) { _questTick++; _nextQuestTick = now + Stopwatch.Frequency / 2; }
@@ -305,12 +322,35 @@ namespace FixedCamVr.Streaming
             // スタッフ用準備と本編の進みは値で比べる（文字列の鍵へ足すと毎フレームの連結が増える）。
             // run.sec は 1 秒刻みなので、本編中は 1 秒に 1 回作り直す。
             bool staffChanged = StaffChanged(staff, run);
-            string key = _portalSessionId + "|" + stage + "|" + phase + "|" + lang + "|" + (relief ? 1 : 0) + "|" + VisitorPrefs.PendingSeq
-                         + "|" + VisitorPrefs.AppliedSeq + "|" + VisitorPrefs.ApplyCount + "|" + _received + "|" + _rejected
-                         + "|" + _questTick + "|" + _preparationProcessed + "|" + _briefingCompleted + "|" + _staffConfirmed + "|" + _lastStaffResetId + "|" + _staffResetRejectedId;
-            if (!force && !staffChanged && key == _lastKey) return;
-            _lastKey = key;
+            var snapshot = new StatusSnapshot
+            {
+                portalSessionId = _portalSessionId,
+                hasTitle = hasTitle,
+                titleStage = titleStage,
+                hasRun = hasRun,
+                phase = runPhase,
+                lang = lang,
+                relief = relief,
+                pendingSeq = VisitorPrefs.PendingSeq,
+                appliedSeq = VisitorPrefs.AppliedSeq,
+                applyCount = VisitorPrefs.ApplyCount,
+                received = _received,
+                rejected = _rejected,
+                questTick = _questTick,
+                preparationProcessed = _preparationProcessed,
+                briefingCompleted = _briefingCompleted,
+                staffConfirmed = _staffConfirmed,
+                lastStaffResetId = _lastStaffResetId,
+                staffResetRejectedId = _staffResetRejectedId,
+            };
+            if (!force && !staffChanged && _hasLastStatus && StatusEquals(snapshot, _lastStatus)) return;
+            _lastStatus = snapshot;
+            _hasLastStatus = true;
             RememberStaff(staff, run);
+
+            string stage = hasTitle ? titleStage.ToString() : "";
+            string phase = hasRun ? PhaseCode(runPhase) : "";
+            string langCode = ShowLanguage.Code(lang);
 
             var sb = new StringBuilder(640);
             sb.Append("{\"ok\":true");
@@ -326,7 +366,7 @@ namespace FixedCamVr.Streaming
                 .Append(",\"staffConfirmed\":").Append(CurrentVisitorStaffConfirmed ? "true" : "false").Append('}');
             sb.Append(",\"staffSetup\":");
             AppendStaffSetupJson(sb, staff, run);
-            sb.Append(",\"lang\":\"").Append(lang).Append('"');
+            sb.Append(",\"lang\":\"").Append(langCode).Append('"');
             sb.Append(",\"relief\":").Append(relief ? "true" : "false");
             sb.Append(",\"titleStage\":").Append(VisitorPortalLogic.JsonString(stage));
             sb.Append(",\"phase\":").Append(VisitorPortalLogic.JsonString(phase));
@@ -351,6 +391,19 @@ namespace FixedCamVr.Streaming
             sb.Append(",\"port\":").Append(Port);
             sb.Append('}');
             _statusJson = sb.ToString();
+        }
+
+        private static bool StatusEquals(in StatusSnapshot a, in StatusSnapshot b)
+        {
+            return a.portalSessionId == b.portalSessionId
+                && a.hasTitle == b.hasTitle && a.titleStage == b.titleStage
+                && a.hasRun == b.hasRun && a.phase == b.phase
+                && a.lang == b.lang && a.relief == b.relief
+                && a.pendingSeq == b.pendingSeq && a.appliedSeq == b.appliedSeq && a.applyCount == b.applyCount
+                && a.received == b.received && a.rejected == b.rejected && a.questTick == b.questTick
+                && a.preparationProcessed == b.preparationProcessed
+                && a.briefingCompleted == b.briefingCompleted && a.staffConfirmed == b.staffConfirmed
+                && a.lastStaffResetId == b.lastStaffResetId && a.staffResetRejectedId == b.staffResetRejectedId;
         }
 
         private static string PhaseCode(ShowPhase p)

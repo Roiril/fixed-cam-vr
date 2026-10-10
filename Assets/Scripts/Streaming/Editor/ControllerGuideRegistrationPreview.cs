@@ -75,6 +75,10 @@ namespace FixedCamVr.Streaming.EditorTools
             fixture.Frame.SetRegistration(new Vector2(.12f, -.08f), 3.5f, .024f, 2, save: false);
             Phase(fixture.Registration, "Review");
             RenderState(fixture, pose, "review", dir, capture, csv);
+
+            fixture.Registration.NotifyRecentered();
+            Guidance(fixture.Registration);
+            RenderState(fixture, pose, "recenter", dir, capture, csv);
         }
 
         private static void RenderState(Fixture fixture, string pose, string state, string dir, Capture capture,

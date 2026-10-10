@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -351,6 +352,20 @@ public final class MainActivity extends Activity {
             }
             preferences.edit().putString(QUEST_KEY, quest).apply();
             Log.i(TAG, "native setQuest quest=" + quest);
+        }
+
+        @JavascriptInterface
+        public String getMediaVolume() {
+            try {
+                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                if (audioManager == null) return "null";
+                int current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+                int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                boolean muted = audioManager.isStreamMute(AudioManager.STREAM_MUSIC);
+                return "{\"current\":" + current + ",\"max\":" + max + ",\"muted\":" + muted + "}";
+            } catch (RuntimeException error) {
+                return "null";
+            }
         }
 
         @JavascriptInterface

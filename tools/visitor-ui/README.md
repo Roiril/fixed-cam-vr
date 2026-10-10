@@ -12,6 +12,8 @@
 
 ## スタッフ画面の描画確認
 
+仕上げ版では機器6項目の実確認件数とタブレット本体のメディア音量を表示する。接続先や応答が古いときは成功数を維持しない。リセットの実完了と同じ接続先の復旧を知らせる。回収後の次の準備は1.5秒の長押し。指がボタンの外へ出た時と背景移行では長押しを取り消す。
+
 `node tools/visitor-ui/staff-mock-server.cjs --port 8108`でlocalhostだけに開発用サーバーを開く。`http://127.0.0.1:8108/`をブラウザで表示する。`POST /_scenario`へ`{"scenario":"setup"}`を送ると初回の準備に切り替わる。`confirm-problem`と`playing`と`outro`と`finished`と`asleep`と`wake`でも確認できる。`GET /_state`で値を確認できる。
 
 mockはQuestへ接続しない。内蔵ブラウザの撮影が縮まないように開発用の応答だけ全画面要求を抑止する。APKのHTMLは変更しない。長押しの時間と要求IDと説明版の照合は`node tools/visitor-ui/verify-runtime.cjs`で検証する。mockの表示だけで実機の動作を合格にしない。
