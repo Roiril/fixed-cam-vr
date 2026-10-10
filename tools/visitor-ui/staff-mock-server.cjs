@@ -119,6 +119,26 @@ const scenarios = {
   wear() {
     status.staffSetup = setup('handedOff');
   },
+  'alert-normal'() {
+    status.staffSetup = setup('handedOff');
+  },
+  'alert-camera'() {
+    status.staffSetup = setup('handedOff', 'camera', {
+      cameras: cameras({ B: { state: 'trouble', problem: 'stale' } }),
+    });
+  },
+  'alert-position'() {
+    status.staffSetup = setup('handedOff', 'position', { positionConfirmed: false, position: 'recenter' });
+  },
+  'alert-content'() {
+    status.staffSetup = setup('handedOff', 'content', { content: false });
+  },
+  'alert-settings'() {
+    status.staffSetup = setup('handedOff', 'settings');
+  },
+  'alert-tablet'() {
+    status.staffSetup = setup('handedOff', '', { tablet: 'trouble' });
+  },
   playing() {
     status.phase = 'RUN';
     status.staffSetup = setup('playing', '', {

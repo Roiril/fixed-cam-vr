@@ -368,6 +368,19 @@ const exportsSource = `
     staffConfirmItems,
     staffRunMeta,
     staffCycleStepFor,
+    createStaffAlertState,
+    updateStaffAlertState,
+    staffAlertTarget,
+    staffStartBlocker,
+    staffAlertClosedByRun,
+    staffAlertPreviewAllowed,
+    observeStaffAlert,
+    staffAlert,
+    staffAlertAudio,
+    unlockStaffAlertAudio,
+    playStaffAlertSound,
+    cancelStaffAlertSound,
+    previewStaffAlertSound,
     staffResetAllowed,
     openStaffScreen,
     closeStaffScreen,
@@ -2072,6 +2085,321 @@ function recordPosts(statusRef) {
   };
   return posts;
 }
+
+function staffAlertInput(overrides = {}) {
+  return {
+    target: 'alpha|portal-a|tablet-a|7|3',
+    acknowledged: true,
+    close: false,
+    blocked: false,
+    hidden: false,
+    fresh: true,
+    audioReady: true,
+    now: 0,
+    ...overrides,
+  };
+}
+
+test('引き渡し後の開始阻害は6秒で一度だけ通知し、理由変更では繰り返さない', () => {
+  const machine = runtime.createStaffAlertState();
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput()), 'none');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, blocker: 'camera', now: 1000 })), 'none');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, blocker: 'position', now: 6999 })), 'none');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, blocker: 'content', now: 7000 })), 'sound');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, blocker: 'stale', now: 15000 })), 'none');
+});
+
+test('全回復後の新しい阻害だけを再通知する', () => {
+  const machine = runtime.createStaffAlertState();
+  runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, now: 0 }));
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, now: 6000 })), 'sound');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: false, now: 7000 })), 'none');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, now: 8000 })), 'none');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, now: 14000 })), 'sound');
+});
+
+test('確認前と対象・セッション・設定・revision不一致では監視を開始しない', () => {
+  const variants = [
+    'beta|portal-a|tablet-a|7|3',
+    'alpha|portal-b|tablet-a|7|3',
+    'alpha|portal-a|tablet-b|7|3',
+    'alpha|portal-a|tablet-a|8|3',
+    'alpha|portal-a|tablet-a|7|4',
+  ];
+  for (const target of variants) {
+    const machine = runtime.createStaffAlertState();
+    const original = staffAlertInput().target;
+    runtime.updateStaffAlertState(machine, staffAlertInput());
+    assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ target, acknowledged: false, blocked: true, now: 7000 })), 'none');
+    assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ target: original, blocked: true, now: 14000 })), 'none');
+    assert.equal(machine.target, '', '閉じた元対象は遅延状態で再開しない');
+  }
+  const beforeAck = runtime.createStaffAlertState();
+  assert.equal(runtime.updateStaffAlertState(beforeAck, staffAlertInput({ acknowledged: false, blocked: true, now: 10000 })), 'none');
+  assert.equal(beforeAck.target, '');
+});
+
+test('本編を一度観測した対象は遅れたhandedOffで再開しない', () => {
+  const machine = runtime.createStaffAlertState();
+  runtime.updateStaffAlertState(machine, staffAlertInput());
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ close: true, now: 1000 })), 'none');
+  assert.equal(runtime.updateStaffAlertState(machine, staffAlertInput({ blocked: true, now: 10000 })), 'none');
+  assert.equal(machine.target, '');
+  assert.ok(machine.closedTargets.includes(staffAlertInput().target));
+});
+
+test('背景中の異常と音声未解除の異常は無音で消費し、復帰や後解除で予約再生しない', () => {
+  const background = runtime.createStaffAlertState();
+  runtime.updateStaffAlertState(background, staffAlertInput({ blocked: true, hidden: true, now: 0 }));
+  assert.equal(runtime.updateStaffAlertState(background, staffAlertInput({ blocked: true, hidden: false, now: 6000 })), 'consume');
+  assert.equal(runtime.updateStaffAlertState(background, staffAlertInput({ blocked: true, hidden: false, now: 7000 })), 'none');
+  runtime.updateStaffAlertState(background, staffAlertInput({ blocked: false, now: 8000 }));
+  runtime.updateStaffAlertState(background, staffAlertInput({ blocked: true, now: 9000 }));
+  assert.equal(runtime.updateStaffAlertState(background, staffAlertInput({ blocked: true, now: 15000 })), 'sound');
+
+  const locked = runtime.createStaffAlertState();
+  runtime.updateStaffAlertState(locked, staffAlertInput({ blocked: true, audioReady: false, now: 0 }));
+  assert.equal(runtime.updateStaffAlertState(locked, staffAlertInput({ blocked: true, audioReady: false, now: 6000 })), 'consume');
+  assert.equal(runtime.updateStaffAlertState(locked, staffAlertInput({ blocked: true, audioReady: true, now: 7000 })), 'none');
+
+  const discoveredOnResume = runtime.createStaffAlertState();
+  runtime.updateStaffAlertState(discoveredOnResume, staffAlertInput({ blocked: false, hidden: false, now: 0 }));
+  runtime.updateStaffAlertState(discoveredOnResume, staffAlertInput({ blocked: false, hidden: true, now: 1000 }));
+  runtime.updateStaffAlertState(discoveredOnResume,
+    staffAlertInput({ blocked: false, hidden: false, fresh: false, now: 7000 }));
+  runtime.updateStaffAlertState(discoveredOnResume, staffAlertInput({ blocked: true, hidden: false, now: 8000 }));
+  assert.equal(runtime.updateStaffAlertState(discoveredOnResume,
+    staffAlertInput({ blocked: true, hidden: false, now: 14000 })), 'consume', '背景中に始まった異常は復帰時に発見しても鳴らさない');
+  runtime.updateStaffAlertState(discoveredOnResume, staffAlertInput({ blocked: false, hidden: false, fresh: true, now: 15000 }));
+  runtime.updateStaffAlertState(discoveredOnResume, staffAlertInput({ blocked: true, hidden: false, now: 16000 }));
+  assert.equal(runtime.updateStaffAlertState(discoveredOnResume,
+    staffAlertInput({ blocked: true, hidden: false, now: 22000 })), 'sound', '新しい正常応答の後の異常は通知する');
+});
+
+test('実操作での音声解除はresume失敗を表示し、後の操作で解除しても古い異常を再生しない', async () => {
+  let resumeCount = 0;
+  let oscillatorStarts = 0;
+  class TestAudioContext {
+    constructor() {
+      this.state = 'suspended';
+      this.currentTime = 10;
+      this.destination = {};
+    }
+
+    async resume() {
+      resumeCount++;
+      if (resumeCount === 1) throw new Error('resume denied');
+      this.state = 'running';
+    }
+
+    createOscillator() {
+      return { type: '', frequency: { setValueAtTime() {} }, connect() {},
+        start: () => { oscillatorStarts++; }, stop() {} };
+    }
+
+    createGain() {
+      return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} };
+    }
+  }
+  context.AudioContext = TestAudioContext;
+  runtime.staffAlertAudio.context = null;
+  runtime.staffAlertAudio.unlockPromise = null;
+  runtime.staffAlertAudio.unlocked = false;
+  assert.equal(await runtime.unlockStaffAlertAudio({ isTrusted: false }), false, '合成操作では解除しない');
+  assert.equal(resumeCount, 0);
+  assert.equal(await runtime.unlockStaffAlertAudio({ isTrusted: true }), false);
+  assert.match(elements.get('staffAlertSoundHelp').textContent, /有効にできませんでした/);
+  assert.equal(await runtime.unlockStaffAlertAudio({ isTrusted: true }), true);
+  assert.match(elements.get('staffAlertSoundHelp').textContent, /再生できます/);
+  assert.equal(oscillatorStarts, 0, '解除だけで過去の異常を再生しない');
+  state.status = null;
+  assert.equal(runtime.playStaffAlertSound(), true);
+  assert.equal(oscillatorStarts, 2, '試聴は短い2音だけを開始する');
+  runtime.cancelStaffAlertSound();
+  runtime.staffAlertAudio.activeTones.clear();
+  delete context.AudioContext;
+  runtime.staffAlertAudio.context = null;
+  runtime.staffAlertAudio.unlockPromise = null;
+  runtime.staffAlertAudio.unlocked = false;
+});
+
+test('予約した通知音は本編・背景・対象変更で残りを停止し、終了ノードを解放する', () => {
+  const oscillators = [];
+  const gains = [];
+  class ActiveAudioContext {
+    constructor() { this.state = 'running'; this.currentTime = 20; this.destination = {}; }
+    createOscillator() {
+      const oscillator = { frequency: { setValueAtTime() {} }, starts: [], stops: [], disconnected: false,
+        connect() {}, start(when) { this.starts.push(when); }, stop(when) { this.stops.push(when); },
+        disconnect() { this.disconnected = true; } };
+      oscillators.push(oscillator);
+      return oscillator;
+    }
+    createGain() {
+      const gain = { values: [], disconnected: false,
+        gain: { setValueAtTime(value, when) { gain.values.push([value, when]); },
+          exponentialRampToValueAtTime(value, when) { gain.values.push([value, when]); },
+          cancelScheduledValues(when) { gain.cancelledAt = when; } },
+        connect() {}, disconnect() { this.disconnected = true; } };
+      gains.push(gain);
+      return gain;
+    }
+  }
+  const audio = new ActiveAudioContext();
+  runtime.staffAlertAudio.context = audio;
+  runtime.staffAlertAudio.unlocked = true;
+  runtime.staffAlertAudio.activeTones.clear();
+  runtime.staffAlertAudio.generation = 0;
+  state.status = null;
+  document.hidden = false;
+  assert.equal(runtime.playStaffAlertSound(), true);
+  audio.currentTime = 20.13;
+  state.status = { phase: 'RUN', staffSetup: { stage: 'playing' } };
+  runtime.observeStaffAlert(1, true);
+  assert.ok(oscillators[1].starts[0] > audio.currentTime, '二音目の開始前に本編へ入る');
+  assert.ok(oscillators.every(item => item.stops.includes(audio.currentTime)), '予約済みoscillatorを現在時刻で停止する');
+  assert.ok(gains.every(item => item.cancelledAt === audio.currentTime
+    && item.values.some(([value, when]) => value === 0 && when === audio.currentTime)), 'gain予約を消して0にする');
+  for (const oscillator of oscillators) oscillator.onended();
+  assert.equal(runtime.staffAlertAudio.activeTones.size, 0);
+  assert.ok(oscillators.every(item => item.disconnected));
+  assert.ok(gains.every(item => item.disconnected));
+
+  const beforeBackground = oscillators.length;
+  state.status = null;
+  assert.equal(runtime.playStaffAlertSound(), true);
+  audio.currentTime = 21;
+  document.hidden = true;
+  runtime.observeStaffAlert(2, false);
+  assert.ok(oscillators.slice(beforeBackground).every(item => item.stops.includes(21)), '背景移行で停止する');
+  for (const oscillator of oscillators.slice(beforeBackground)) oscillator.onended();
+  document.hidden = false;
+
+  const statusA = { ...clone(validStatus), questTick: 930, lang: 'ja', relief: false, appliedSeq: 63, received: 63,
+    pending: { lang: 'ja', relief: false, seq: 63 },
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 63, lang: 'ja', relief: false },
+    briefing: { tabletSessionId: runtime.tabletSessionId, seq: 63, revision: 13, completed: true, staffConfirmed: true },
+    staffSetup: { stage: 'handedOff', reason: '', positionConfirmed: true, position: 'confirmed', content: true,
+      cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'ok' }, { id: 'C', state: 'ok' }] } };
+  state.status = statusA;
+  state.sent = { lang: 'ja', relief: false, seq: 63, portalSessionId: statusA.portalSessionId, targetId: runtime.activeQuest() };
+  runtime.restorePreparationState(statusA);
+  runtime.staffAlert.target = '';
+  runtime.staffAlert.closedTargets.splice(0);
+  runtime.observeStaffAlert(3, true);
+  const beforeTargetChange = oscillators.length;
+  assert.equal(runtime.playStaffAlertSound(), true);
+  audio.currentTime = 22;
+  state.status = { ...statusA, portalSessionId: 'portal-b' };
+  state.sent.portalSessionId = 'portal-b';
+  runtime.observeStaffAlert(4, true);
+  assert.ok(oscillators.slice(beforeTargetChange).every(item => item.stops.includes(22)), '対象変更で停止する');
+  for (const oscillator of oscillators.slice(beforeTargetChange)) oscillator.onended();
+  runtime.staffAlertAudio.context = null;
+  runtime.staffAlertAudio.unlocked = false;
+});
+
+test('音声解除待ちの試聴は本編開始と対象変更で開始しない', async () => {
+  let gate = deferred();
+  let starts = 0;
+  class PendingAudioContext {
+    constructor() { this.state = 'suspended'; this.currentTime = 30; this.destination = {}; }
+    async resume() { await gate.promise; this.state = 'running'; }
+    createOscillator() { return { frequency: { setValueAtTime() {} }, connect() {}, disconnect() {},
+      start() { starts++; }, stop() {} }; }
+    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} },
+      connect() {}, disconnect() {} }; }
+  }
+  const resetAudio = () => {
+    runtime.staffAlertAudio.context = null;
+    runtime.staffAlertAudio.unlockPromise = null;
+    runtime.staffAlertAudio.unlocked = false;
+    runtime.staffAlertAudio.pendingTarget = null;
+    runtime.staffAlertAudio.activeTones.clear();
+  };
+  context.AudioContext = PendingAudioContext;
+  resetAudio();
+  state.status = null;
+  const playingRequest = runtime.previewStaffAlertSound({ isTrusted: true });
+  await flushPromises();
+  state.status = { phase: 'RUN', staffSetup: { stage: 'playing' } };
+  runtime.observeStaffAlert(10, true);
+  gate.resolve();
+  assert.equal(await playingRequest, false);
+  assert.equal(starts, 0);
+
+  gate = deferred();
+  resetAudio();
+  const statusA = { ...clone(validStatus), portalSessionId: 'portal-c', briefing: {
+    tabletSessionId: runtime.tabletSessionId, seq: 64, revision: 14, completed: true, staffConfirmed: true },
+    staffSetup: { stage: 'handedOff', reason: '', positionConfirmed: true } };
+  state.status = statusA;
+  state.sent = { lang: 'ja', relief: false, seq: 64, portalSessionId: 'portal-c', targetId: runtime.activeQuest() };
+  runtime.restorePreparationState(statusA);
+  const targetRequest = runtime.previewStaffAlertSound({ isTrusted: true });
+  await flushPromises();
+  state.status = { ...statusA, portalSessionId: 'portal-d' };
+  state.sent.portalSessionId = 'portal-d';
+  runtime.observeStaffAlert(11, true);
+  gate.resolve();
+  assert.equal(await targetRequest, false);
+  assert.equal(starts, 0);
+  resetAudio();
+  delete context.AudioContext;
+});
+
+test('開始阻害は通信・更新・位置・カメラ・素材・設定で、tabletFreshだけは対象外', () => {
+  prepareBriefing(clone(briefing));
+  const status = { ...clone(validStatus), questTick: 910, lang: 'ja', relief: false, appliedSeq: 61, received: 61,
+    pending: { lang: 'ja', relief: false, seq: 61 },
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 61, lang: 'ja', relief: false },
+    briefing: { tabletSessionId: runtime.tabletSessionId, seq: 61, revision: 11, completed: true, staffConfirmed: true },
+    staffSetup: { stage: 'handedOff', reason: '', positionConfirmed: true, position: 'confirmed', tablet: 'trouble', content: true,
+      cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'ok' }, { id: 'C', state: 'ok' }] } };
+  state.status = status;
+  state.sent = { lang: 'ja', relief: false, seq: 61, portalSessionId: status.portalSessionId, targetId: runtime.activeQuest() };
+  runtime.restorePreparationState(status);
+  runtime.observeQuestTick(status);
+  assert.equal(runtime.staffStartBlocker(status), '', 'tabletFreshは開始阻害ではない');
+  status.staffSetup.cameras[1] = { id: 'B', state: 'trouble', problem: 'stale' };
+  assert.equal(runtime.staffStartBlocker(status), 'camera');
+  status.staffSetup.cameras[1] = { id: 'B', state: 'ok' };
+  status.staffSetup.position = 'recenter';
+  assert.equal(runtime.staffStartBlocker(status), 'position');
+  status.staffSetup.position = 'confirmed';
+  status.staffSetup.content = false;
+  assert.equal(runtime.staffStartBlocker(status), 'content');
+  status.staffSetup.content = true;
+  status.lang = 'en';
+  assert.equal(runtime.staffStartBlocker(status), 'settings');
+});
+
+test('本編と終幕と終了では試聴を無効にし、開始観測後の遅れたhandedOffでも戻さない', () => {
+  prepareBriefing(clone(briefing));
+  const status = { ...clone(validStatus), questTick: 920, lang: 'ja', relief: false, appliedSeq: 62, received: 62,
+    pending: { lang: 'ja', relief: false, seq: 62 },
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq: 62, lang: 'ja', relief: false },
+    briefing: { tabletSessionId: runtime.tabletSessionId, seq: 62, revision: 12, completed: true, staffConfirmed: true },
+    staffSetup: { stage: 'handedOff', reason: '', positionConfirmed: true, position: 'confirmed', content: true,
+      cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'ok' }, { id: 'C', state: 'ok' }] } };
+  state.status = status;
+  state.sent = { lang: 'ja', relief: false, seq: 62, portalSessionId: status.portalSessionId, targetId: runtime.activeQuest() };
+  runtime.restorePreparationState(status);
+  runtime.staffAlert.target = '';
+  runtime.staffAlert.phase = 'idle';
+  runtime.staffAlert.blockedAt = 0;
+  runtime.staffAlert.silent = false;
+  runtime.staffAlert.backgrounded = false;
+  runtime.staffAlert.closedTargets.splice(0);
+  const target = runtime.staffAlertTarget(status);
+  runtime.updateStaffAlertState(runtime.staffAlert, staffAlertInput({ target }));
+  assert.equal(runtime.staffAlertPreviewAllowed(status), true);
+  assert.equal(runtime.staffAlertPreviewAllowed({ ...status, staffSetup: { ...status.staffSetup, stage: 'playing' } }), false);
+  assert.equal(runtime.staffAlertPreviewAllowed({ ...status, phase: 'END' }), false);
+  assert.equal(runtime.staffAlertPreviewAllowed({ ...status, staffSetup: { ...status.staffSetup, stage: 'ended' } }), false);
+  runtime.updateStaffAlertState(runtime.staffAlert, staffAlertInput({ target, close: true }));
+  assert.equal(runtime.staffAlertPreviewAllowed(status), false, '遅れたhandedOffでは試聴を戻さない');
+});
 
 test('起動時はスタッフ画面から始まり、来場者の画面の入口は「スタッフ画面」になる', () => {
   assert.equal(startupStaff.open, true);

@@ -742,10 +742,12 @@
           <h4 id="staffTroubleMediaTitle">博士の音声と説明の確認</h4>
           <p class="staff-help">タブレットを充電して横向きに置きます。「廻リ視 博士」を開いたままにしてください。</p>
           <div class="staff-actions">
+            <button class="staff-action" id="staffAlertSoundBtn" type="button">通知音を確認する</button>
             <button class="staff-action" id="staffSoundBtn" type="button">博士の音声を確認する</button>
             <button class="staff-action" id="staffBriefingBtn" type="button">説明を確認する</button>
             <button class="staff-action" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
           </div>
+          <p class="staff-help" id="staffAlertSoundHelp" role="status">引き渡し後に機器の異常が続いたとき、この短い音で知らせます。</p>
           <p class="staff-help" id="staffBriefingHelp"></p>
           <p class="staff-help" id="staffSoundHelp" role="status">声が聞こえるか確認してください。音量はタブレット本体のボタンで調整します。</p>
         </section>
@@ -2465,6 +2467,7 @@
   const QUEST_TROUBLE_CALL_MS = 6000;
   const PREPARE_HOLD_MS = 1200;
   const RESTART_HOLD_MS = 1500;
+  const STAFF_ALERT_DELAY_MS = 6000;
   let staffNotice = { key: '', text: '' };
   let staffOpenReason = '';
   let staffCycleStep = 1;
@@ -2475,6 +2478,218 @@
   let staffAction = Promise.resolve();
   let prepareHold = null;
   let restartHold = null;
+  const staffAlert = createStaffAlertState();
+  const staffAlertAudio = { context: null, unlockPromise: null, unlocked: false,
+    generation: 0, pendingTarget: null, soundTarget: '', activeTones: new Set() };
+
+  function createStaffAlertState() {
+    return { target: '', phase: 'idle', blockedAt: 0, silent: false, backgrounded: false, closedTargets: [] };
+  }
+
+  function rememberClosedStaffAlertTarget(machine, target) {
+    if (!target || machine.closedTargets.includes(target)) return;
+    machine.closedTargets.push(target);
+  }
+
+  // 引き渡し確認後だけを監視する。異常理由は incident の途中で変わっても再通知条件にしない。
+  function updateStaffAlertState(machine, input) {
+    const target = input.target || '';
+    if (machine.target && machine.target !== target) {
+      rememberClosedStaffAlertTarget(machine, machine.target);
+      machine.target = '';
+      machine.phase = 'idle';
+      machine.blockedAt = 0;
+      machine.silent = false;
+      machine.backgrounded = false;
+    }
+    if (input.close) {
+      rememberClosedStaffAlertTarget(machine, machine.target || target);
+      machine.target = '';
+      machine.phase = 'idle';
+      machine.blockedAt = 0;
+      machine.silent = false;
+      machine.backgrounded = false;
+      return 'none';
+    }
+    if (!target || !input.acknowledged || machine.closedTargets.includes(target)) return 'none';
+    if (!machine.target) {
+      machine.target = target;
+      machine.phase = 'healthy';
+    }
+    if (!input.blocked) {
+      machine.phase = 'healthy';
+      machine.blockedAt = 0;
+      machine.silent = false;
+      if (input.hidden) machine.backgrounded = true;
+      else if (input.fresh) machine.backgrounded = false;
+      return 'none';
+    }
+    if (machine.phase === 'healthy') {
+      machine.phase = 'blocked';
+      machine.blockedAt = input.now;
+      machine.silent = Boolean(input.hidden || machine.backgrounded);
+      machine.backgrounded = false;
+      return 'none';
+    }
+    if (machine.phase === 'blocked') {
+      machine.silent ||= Boolean(input.hidden);
+      if (input.now - machine.blockedAt < STAFF_ALERT_DELAY_MS) return 'none';
+      machine.phase = 'consumed';
+      return !machine.silent && input.audioReady ? 'sound' : 'consume';
+    }
+    return 'none';
+  }
+
+  function staffAlertTarget(status = state.status) {
+    const proof = status?.briefing;
+    if (!state.sent?.seq || state.sent.targetId !== activeQuest || !proof
+      || !Number.isSafeInteger(proof.revision) || proof.revision < 1) return '';
+    return [activeQuest || 'direct', status.portalSessionId, proof.tabletSessionId,
+      proof.seq, proof.revision].join('|');
+  }
+
+  function staffStartBlocker(status = state.status) {
+    if (state.connection !== 'online') return 'connection';
+    if (!questStatusFresh()) return 'stale';
+    const setup = isRecord(status?.staffSetup) ? status.staffSetup : null;
+    if (!setup) return 'settings';
+    const positionReady = setup.positionConfirmed === true && setup.reason !== 'position'
+      && (setup.position == null || setup.position === 'confirmed');
+    if (!positionReady) return 'position';
+    if (Array.isArray(setup.cameras) && STAFF_CAMERA_IDS.some((id) => staffCameraOf(setup, id)?.state !== 'ok')
+      || !Array.isArray(setup.cameras) && setup.reason === 'camera') return 'camera';
+    if (staffContentMissing(setup)) return 'content';
+    if (setup.reason === 'settings' || !currentSendMatchesSession() || resultKey() !== 'applied') return 'settings';
+    return '';
+  }
+
+  function staffAlertClosedByRun(status = state.status) {
+    const stage = staffStageOf(status?.staffSetup);
+    return stage === 'playing' || stage === 'ended' || status?.phase === 'RUN' || status?.phase === 'END';
+  }
+
+  function staffAlertPreviewAllowed(status = state.status) {
+    if (staffAlertClosedByRun(status)) return false;
+    const target = staffAlertTarget(status);
+    return !target || !staffAlert.closedTargets.includes(target);
+  }
+
+  function staffAlertAudioReady() {
+    return staffAlertAudio.unlocked && staffAlertAudio.context?.state === 'running'
+      && !document.hidden && !nativePaused;
+  }
+
+  function cancelStaffAlertSound() {
+    staffAlertAudio.generation++;
+    staffAlertAudio.pendingTarget = null;
+    const now = staffAlertAudio.context?.currentTime || 0;
+    for (const tone of staffAlertAudio.activeTones) {
+      try {
+        tone.gain.gain.cancelScheduledValues(now);
+        tone.gain.gain.setValueAtTime(0, now);
+      } catch (_) {}
+      try { tone.oscillator.stop(now); } catch (_) {}
+    }
+    staffAlertAudio.soundTarget = '';
+  }
+
+  async function unlockStaffAlertAudio(event) {
+    if (event?.isTrusted === false) return false;
+    if (staffAlertAudioReady()) return true;
+    if (staffAlertAudio.unlockPromise) return staffAlertAudio.unlockPromise;
+    staffAlertAudio.unlockPromise = (async () => {
+      try {
+        const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
+        if (!AudioContextClass) throw new Error('Web Audio is unavailable');
+        if (!staffAlertAudio.context) staffAlertAudio.context = new AudioContextClass();
+        if (staffAlertAudio.context.state !== 'running') await staffAlertAudio.context.resume();
+        staffAlertAudio.unlocked = staffAlertAudio.context.state === 'running';
+        if (!staffAlertAudio.unlocked) throw new Error('audio output is suspended');
+        $('staffAlertSoundHelp').textContent = '通知音を再生できます。音量はタブレット本体のボタンで調整します。';
+        return true;
+      } catch (error) {
+        staffAlertAudio.unlocked = false;
+        $('staffAlertSoundHelp').textContent = '通知音を有効にできませんでした。画面を一度タップしてから、もう一度確認してください。';
+        return false;
+      } finally {
+        staffAlertAudio.unlockPromise = null;
+      }
+    })();
+    return staffAlertAudio.unlockPromise;
+  }
+
+  function playStaffAlertSound(generation = staffAlertAudio.generation, target = staffAlertTarget()) {
+    if (generation !== staffAlertAudio.generation || target !== staffAlertTarget()
+      || !staffAlertAudioReady() || !staffAlertPreviewAllowed()) return false;
+    const context = staffAlertAudio.context;
+    const start = context.currentTime + 0.015;
+    staffAlertAudio.soundTarget = target;
+    for (const tone of [{ frequency: 294, at: 0, duration: 0.11 }, { frequency: 349, at: 0.15, duration: 0.13 }]) {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const active = { oscillator, gain };
+      const toneStart = start + tone.at;
+      const toneEnd = toneStart + tone.duration;
+      oscillator.onended = () => {
+        try { oscillator.disconnect(); } catch (_) {}
+        try { gain.disconnect(); } catch (_) {}
+        staffAlertAudio.activeTones.delete(active);
+        if (staffAlertAudio.activeTones.size === 0) staffAlertAudio.soundTarget = '';
+      };
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(tone.frequency, toneStart);
+      gain.gain.setValueAtTime(0.0001, toneStart);
+      gain.gain.exponentialRampToValueAtTime(0.055, toneStart + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      staffAlertAudio.activeTones.add(active);
+      oscillator.start(toneStart);
+      oscillator.stop(toneEnd + 0.01);
+    }
+    return true;
+  }
+
+  function observeStaffAlert(now = Date.now(), fresh = false) {
+    const status = state.status;
+    const target = staffAlertTarget(status);
+    const close = staffAlertClosedByRun(status);
+    const hidden = document.hidden || nativePaused;
+    const targetChanged = staffAlert.target && staffAlert.target !== target;
+    const pendingTargetChanged = staffAlertAudio.pendingTarget != null && staffAlertAudio.pendingTarget !== target;
+    const soundingTargetChanged = staffAlertAudio.activeTones.size > 0 && staffAlertAudio.soundTarget !== target;
+    if (close || hidden || targetChanged || pendingTargetChanged || soundingTargetChanged) cancelStaffAlertSound();
+    const action = updateStaffAlertState(staffAlert, {
+      target,
+      acknowledged: Boolean(status) && preparationAcknowledged(status),
+      close,
+      blocked: Boolean(staffStartBlocker(status)),
+      hidden,
+      fresh,
+      audioReady: staffAlertAudioReady(),
+      now,
+    });
+    if (action === 'sound') playStaffAlertSound();
+    return action;
+  }
+
+  async function previewStaffAlertSound(event) {
+    if (!staffAlertPreviewAllowed()) {
+      $('staffAlertSoundHelp').textContent = '体験が始まった後は通知音を再生できません。';
+      return false;
+    }
+    cancelStaffAlertSound();
+    const generation = staffAlertAudio.generation;
+    const target = staffAlertTarget();
+    staffAlertAudio.pendingTarget = target;
+    const unlocked = await unlockStaffAlertAudio(event);
+    if (generation !== staffAlertAudio.generation || target !== staffAlertTarget()
+      || !staffAlertPreviewAllowed()) return false;
+    staffAlertAudio.pendingTarget = null;
+    if (!unlocked || !playStaffAlertSound(generation, target)) return false;
+    $('staffAlertSoundHelp').textContent = 'この音で機器の異常を知らせます。音量はタブレット本体のボタンで調整します。';
+    return true;
+  }
 
   function staffStageOf(setup) {
     const stage = typeof setup?.stage === 'string' ? setup.stage : '';
@@ -2895,6 +3110,7 @@
     $('staffBriefingHelp').textContent = visitorBriefingActive
       ? '来場者の設定または説明が進行中です。終了後に説明を確認できます。'
       : 'この確認ではクエストへ設定を送りません。';
+    $('staffAlertSoundBtn').disabled = !staffAlertPreviewAllowed();
     $('staffPending').hidden = !status?.pending;
     $('clearBtn').disabled = !status || state.clearing || state.ui === 'sending' || status.pending == null;
   }
@@ -3304,6 +3520,7 @@
     const target = activeQuest;
     pollController = new AbortController();
     pollInFlight = (async () => {
+      let freshStatus = false;
       try {
         const status = await fetchWithTimeout('./status', { cache: 'no-store' }, pollController, true, target);
         if (generation !== targetGeneration || target !== activeQuest) return;
@@ -3315,6 +3532,7 @@
         }
         state.lastReceived = status.received;
         state.status = status;
+        freshStatus = true;
         observeQuestTick(status);
         state.connection = 'online';
         if (state.view === 'briefing' && !state.staffPreview) setBriefingPause('offline', false);
@@ -3337,6 +3555,7 @@
         if (restoreCandidate && !state.restored) openStaffScreen('startup');
       }
       observeQuestTrouble();
+      observeStaffAlert(Date.now(), freshStatus);
       renderConnection();
       renderStaff();
       if (state.view === 'edit') renderSettingsStep();
@@ -3532,6 +3751,8 @@
     enterFullscreen();
     requestWakeLock();
   });
+  document.addEventListener('pointerdown', (event) => { void unlockStaffAlertAudio(event); }, { capture: true, passive: true });
+  $('staffAlertSoundBtn').addEventListener('click', (event) => { void previewStaffAlertSound(event); });
   $('staffSoundBtn').addEventListener('click', async () => {
     const sound = $('staffSound');
     if (!sound.paused) { stopStaffSound(); return; }
@@ -3595,6 +3816,7 @@
   });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopStaffSound();
+    observeStaffAlert();
     setBriefingPause('hidden', document.hidden);
     syncReliefPreview();
     if (!document.hidden) requestWakeLock();
@@ -3602,6 +3824,7 @@
   globalThis.__tabletLifecycle = (paused) => {
     nativePaused = Boolean(paused);
     if (nativePaused) stopStaffSound();
+    observeStaffAlert();
     setBriefingPause('native', nativePaused);
     syncReliefPreview();
     if (!nativePaused) requestWakeLock();

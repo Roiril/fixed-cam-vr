@@ -1,5 +1,6 @@
 #nullable enable
 using TMPro;
+using FixedCamVr.Tracking;
 using UnityEngine;
 
 namespace FixedCamVr.Diagnostics
@@ -87,6 +88,7 @@ namespace FixedCamVr.Diagnostics
         //    （位置合わせ中はこれが唯一の操作説明なので、作業がそのまま止まる）。
         private bool _connected = true;
         private bool _posValid = true;
+        private CourseRegistrationController? _registration;
 
         // ⚠ 2026-08-15 に一時メッセージ（`ShowTransient` / 赤 1 行）を消した。
         //    唯一の呼び出し元だった「演出中に A を押してカメラ手送りを拒否する」経路が
@@ -97,11 +99,31 @@ namespace FixedCamVr.Diagnostics
         private Vector3 _posVel;      // SmoothDamp の速度状態
         private bool _seeded;         // 初回配置済みか（初回はスナップして寄せる）
         private string _lastBody = ""; // SetText の GC を避けるための直近本文
+        private bool _baseLayoutCaptured;
+        private Vector2 _baseRectSize;
+        private Vector2 _baseAnchoredPosition;
+        private float _baseFontSize;
+        private bool _baseRichText;
+        private Color _baseColor;
+        private Vector4 _baseMargin;
+
+        private const float HandDistanceM = 0.45f;
+        private const float RegistrationMarginEm = 0.5f;
 
         /// <summary>操作モード（"NORMAL"/"REG"）を切り替えてパネル本文を差し替える。</summary>
         public void SetMode(string label)
         {
             _modeLabel = label ?? "";
+            ApplyBody();
+        }
+
+        /// <summary>
+        /// 位置合わせの案内元。Bridge が既存参照をそのまま渡す。
+        /// SerializeField を増やさず、案内の正を <see cref="CourseRegistrationController"/> 1 か所に保つ。
+        /// </summary>
+        public void SetRegistration(CourseRegistrationController? registration)
+        {
+            _registration = registration;
             ApplyBody();
         }
 
@@ -125,6 +147,8 @@ namespace FixedCamVr.Diagnostics
         /// <summary>スタッフが被っているか。解決できないときは false ＝ 文字を出さない側へ倒す。</summary>
         private bool StaffViewing()
         {
+            // 位置合わせはスタッフの作業。メインの StaffSetupPanel が出ていても、手元の現在案内は隠さない。
+            if (_registration != null && _registration.IsActive) return true;
             if (StaffSetupPanel.Instance != null && StaffSetupPanel.Instance.Visible) return false;
             if (statusHud == null) statusHud = FindObjectOfType<StatusHud>();
             return statusHud != null && statusHud.StaffViewing;
@@ -186,6 +210,10 @@ namespace FixedCamVr.Diagnostics
         {
             if (text == null) return;
 
+            // Feed と CourseRegistrationController.Update の後に現在案内を読む。
+            // 採取中の 0.5 秒進捗も GuidanceText の変化ごとに反映される。
+            ApplyBody();
+
             // 未接続 or アンカー欠落 or スタッフが見ていないなら非表示（復帰時は再配置スナップする）。
             if (!_connected || !_posValid || controller == null || head == null || !StaffViewing())
             {
@@ -194,18 +222,13 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
             if (!text.enabled) text.enabled = true;
-            // ⚠ 濃さは毎フレーム。⚠⚠ **色を書いたあとに書く**（`TMP_Text.color` の setter は
-            //   alpha ごと上書きする）。ここでは色は Awake でしか書かないので順序の衝突は無い。
+            // ⚠ 濃さは毎フレーム。色を書いたあとに書く（TMP_Text.color は alpha も上書きする）。
+            text.color = _registration != null && _registration.IsActive && _registration.GuidanceIsAlert
+                ? HmdTextStyle.Alert : HmdTextStyle.Ink;
             text.alpha = StaffAlpha();
 
             // 配置: コントローラ位置 + 上 heightOffset + (頭→コントローラの水平単位ベクトル) * awayOffset。
-            Vector3 toController = controller.position - head.position;
-            toController.y = 0f;
-            Vector3 horiz = toController.sqrMagnitude > 1e-6f
-                ? toController.normalized
-                : Flatten(head.forward);
-
-            Vector3 target = controller.position + Vector3.up * heightOffset + horiz * awayOffset;
+            Vector3 target = GuideTarget(controller, head);
 
             if (!_seeded)
             {
@@ -225,20 +248,89 @@ namespace FixedCamVr.Diagnostics
                 transform.rotation = Quaternion.LookRotation(faceDir, Vector3.up);
         }
 
-        // 現在ラベルに対応する本文を text へ反映（変化時のみ・毎フレームは走らない）。
+        // 本文の SetText は変化時だけ。位置合わせ中の見かけ角と領域は手元距離に合わせて毎フレーム更新する。
         private void ApplyBody()
         {
             if (text == null) return;
-            string body = _modeLabel == "REG" ? RegBody : NormalBody;
-            if (body == _lastBody) return;
-            text.SetText(body);
-            _lastBody = body;
+            CaptureBaseLayout();
+            bool registrationActive = _registration != null && _registration.IsActive;
+            string body = registrationActive ? _registration!.GuidanceText
+                : _modeLabel == "REG" ? RegBody : NormalBody;
+            bool changed = body != _lastBody;
+            if (registrationActive) ApplyRegistrationLayout(body);
+            else if (changed) RestoreBaseLayout();
+            if (changed)
+            {
+                text.SetText(body);
+                _lastBody = body;
+            }
+        }
+
+        private void CaptureBaseLayout()
+        {
+            if (_baseLayoutCaptured || text == null) return;
+            _baseLayoutCaptured = true;
+            _baseRectSize = text.rectTransform.sizeDelta;
+            _baseAnchoredPosition = text.rectTransform.anchoredPosition;
+            _baseFontSize = text.fontSize;
+            _baseRichText = text.richText;
+            _baseColor = text.color;
+            _baseMargin = text.margin;
+        }
+
+        private void ApplyRegistrationLayout(string body)
+        {
+            if (text == null) return;
+            float sy = Mathf.Max(1e-6f, Mathf.Abs(text.transform.lossyScale.y));
+            float distance = head != null && controller != null
+                ? Vector3.Distance(head.position, GuideTarget(controller, head))
+                : HandDistanceM;
+            float em = HmdTextStyle.WorldEm(HmdTextStyle.BodyDeg, distance);
+            text.fontSize = em / (HmdTextStyle.MeshFontScale * sy);
+            text.richText = true;
+            float localEm = em / sy;
+            float margin = localEm * RegistrationMarginEm;
+            text.margin = new Vector4(margin, margin, margin, margin);
+
+            // 文字数の概算では、Source Han Sans JP の字面の左ベアリングと実 line-height を
+            // 含められない。TMP が同じ font / rich-text で返す実寸をそのまま領域に使う。
+            Vector2 preferred = text.GetPreferredValues(body);
+            Vector2 size = new Vector2(
+                Mathf.Max(_baseRectSize.x, preferred.x),
+                Mathf.Max(_baseRectSize.y, preferred.y));
+            Vector2 delta = size - _baseRectSize;
+            Vector2 pivot = text.rectTransform.pivot;
+            // 下端と左端を通常ガイドと同じ位置に残し、長い案内は上と右へだけ伸ばす。
+            text.rectTransform.anchoredPosition = _baseAnchoredPosition
+                + new Vector2(delta.x * pivot.x, delta.y * pivot.y);
+            text.rectTransform.sizeDelta = size;
+        }
+
+        private void RestoreBaseLayout()
+        {
+            if (!_baseLayoutCaptured || text == null) return;
+            text.rectTransform.sizeDelta = _baseRectSize;
+            text.rectTransform.anchoredPosition = _baseAnchoredPosition;
+            text.fontSize = _baseFontSize;
+            text.richText = _baseRichText;
+            text.color = _baseColor;
+            text.margin = _baseMargin;
         }
 
         private static Vector3 Flatten(Vector3 v)
         {
             v.y = 0f;
             return v.sqrMagnitude > 1e-6f ? v.normalized : Vector3.forward;
+        }
+
+        private Vector3 GuideTarget(Transform hand, Transform viewer)
+        {
+            Vector3 toController = hand.position - viewer.position;
+            toController.y = 0f;
+            Vector3 horiz = toController.sqrMagnitude > 1e-6f
+                ? toController.normalized
+                : Flatten(viewer.forward);
+            return hand.position + Vector3.up * heightOffset + horiz * awayOffset;
         }
     }
 }

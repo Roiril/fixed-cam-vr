@@ -106,6 +106,7 @@ public final class TabletInstrumentation extends Instrumentation {
             check("staff home has current action", !staffState.optString("title").isEmpty());
             Log.i(TAG, "staffFlow state=" + staffState);
             checkButtonBounds(view, "staffCheckBtn", true);
+            verifyStaffAlertSound(view);
             evaluate(view, "document.getElementById('staff').scrollTop=0");
             SystemClock.sleep(300);
             saveScreenshot("doctor-staff-flow-staff.png");
@@ -115,10 +116,12 @@ public final class TabletInstrumentation extends Instrumentation {
                 "!document.getElementById('briefingView').hidden"
                     + "&&!document.getElementById('briefingMode').hidden"));
             int position = readSceneCounter(view);
+            // The production UI rejects manual advances less than 150ms apart.
             for (; position < 12; position++) {
                 int next = position + 1;
                 evaluate(view, "document.getElementById('briefingNext').click()");
                 waitFor("staff preview sentence " + next, 5000, () -> readSceneCounter(view) == next);
+                SystemClock.sleep(200);
             }
             check("staff preview final action", evaluateBoolean(view,
                 "document.getElementById('briefingNext').textContent==='装着の案内へ'"
@@ -164,6 +167,62 @@ public final class TabletInstrumentation extends Instrumentation {
                 catch (Throwable cleanupError) { Log.w(TAG, "staffFlow close failed", cleanupError); }
             }
         }
+    }
+
+    private void verifyStaffAlertSound(WebView view) throws Exception {
+        evaluate(view, "(function(){var Native=window.AudioContext||window.webkitAudioContext;"
+            + "if(!Native)throw new Error('AudioContext is unavailable');"
+            + "var proof=window.__staffAlertAudioProof={starts:[],stops:[],frequencies:[],maxEnergy:0,zeroSamples:0,nonzeroSamples:0};"
+            + "function Wrapped(){var ctx=new Native();var analyser=ctx.createAnalyser();analyser.fftSize=256;"
+            + "analyser.connect(ctx.destination);var createGain=ctx.createGain.bind(ctx);ctx.createGain=function(){"
+            + "var gain=createGain();var connect=gain.connect.bind(gain);gain.connect=function(target){"
+            + "return connect(target===ctx.destination?analyser:target);};return gain;};"
+            + "var createOscillator=ctx.createOscillator.bind(ctx);ctx.createOscillator=function(){var oscillator=createOscillator();"
+            + "var start=oscillator.start.bind(oscillator),stop=oscillator.stop.bind(oscillator);"
+            + "var setFrequency=oscillator.frequency.setValueAtTime.bind(oscillator.frequency);"
+            + "oscillator.frequency.setValueAtTime=function(value,when){proof.frequencies.push(value);return setFrequency(value,when);};"
+            + "oscillator.start=function(when){proof.starts.push(when);return start(when);};"
+            + "oscillator.stop=function(when){proof.stops.push(when);return stop(when);};return oscillator;};"
+            + "var data=new Uint8Array(analyser.fftSize);function sample(){analyser.getByteTimeDomainData(data);"
+            + "var energy=0;for(var i=0;i<data.length;i++)energy+=Math.abs(data[i]-128);"
+            + "proof.maxEnergy=Math.max(proof.maxEnergy,energy);if(energy===0)proof.zeroSamples++;else proof.nonzeroSamples++;}"
+            + "sample();proof.timer=setInterval(sample,10);"
+            + "return ctx;}Wrapped.prototype=Native.prototype;window.AudioContext=Wrapped;window.webkitAudioContext=Wrapped;return true;})()");
+        check("staff alert has no signal before actual tap", evaluateBoolean(view,
+            "window.__staffAlertAudioProof.maxEnergy===0"
+                + "&&window.__staffAlertAudioProof.starts.length===0"));
+        JSONObject bounds = checkButtonBounds(view, "staffAlertSoundBtn", true);
+        double ratio = evaluateDouble(view, "window.devicePixelRatio");
+        int x = (int)Math.round((bounds.optDouble("left") + bounds.optDouble("right")) * 0.5 * ratio);
+        int y = (int)Math.round((bounds.optDouble("top") + bounds.optDouble("bottom")) * 0.5 * ratio);
+        runShell("input tap " + x + " " + y);
+        waitFor("staff alert generated waveform", 3000, () -> evaluateBoolean(view,
+            "window.__staffAlertAudioProof.starts.length===2"
+                + "&&window.__staffAlertAudioProof.stops.length===2"
+                + "&&window.__staffAlertAudioProof.zeroSamples>0"
+                + "&&window.__staffAlertAudioProof.nonzeroSamples>0"
+                + "&&window.__staffAlertAudioProof.maxEnergy>0"));
+        JSONObject proof = evaluateObject(view,
+            "JSON.stringify((()=>{var p=window.__staffAlertAudioProof;clearInterval(p.timer);return {"
+                + "starts:p.starts,stops:p.stops,frequencies:p.frequencies,maxEnergy:p.maxEnergy,"
+                + "zeroSamples:p.zeroSamples,nonzeroSamples:p.nonzeroSamples,"
+                + "startGapMs:(p.starts[1]-p.starts[0])*1000,scheduledMs:(p.stops[1]-p.starts[0])*1000,"
+                + "message:document.getElementById('staffAlertSoundHelp').textContent.trim()};})())");
+        Log.i(TAG, "staffAlert generatedSignal=" + proof
+            + " audibility=requires-human-listening inputTap=" + x + "," + y);
+        JSONArray frequencies = proof.getJSONArray("frequencies");
+        check("staff alert has two starts", proof.getJSONArray("starts").length() == 2);
+        check("staff alert frequencies are distinct from briefing media",
+            Math.abs(frequencies.getDouble(0) - 294) < 1 && Math.abs(frequencies.getDouble(1) - 349) < 1);
+        check("staff alert tone gap is scheduled", proof.optDouble("startGapMs") >= 140
+            && proof.optDouble("startGapMs") <= 160);
+        check("staff alert duration is short", proof.optDouble("scheduledMs") >= 280
+            && proof.optDouble("scheduledMs") <= 300);
+        check("staff alert analyser has zero control and nonzero signal",
+            proof.optInt("zeroSamples") > 0 && proof.optInt("nonzeroSamples") > 0
+                && proof.optInt("maxEnergy") > 0);
+        check("staff alert reports successful preview",
+            proof.optString("message").equals("この音で機器の異常を知らせます。音量はタブレット本体のボタンで調整します。"));
     }
 
     private void restoreQuestSelection(WebView view, String quest) throws Exception {
@@ -490,7 +549,7 @@ public final class TabletInstrumentation extends Instrumentation {
             int next = position + 1;
             evaluate(view, "document.getElementById('briefingNext').click()");
             waitFor("next sentence " + next, 5000, () -> readSceneCounter(view) == next);
-            SystemClock.sleep(1000);
+            SystemClock.sleep(200);
         }
         check("final sentence offers equipment", evaluateBoolean(view,
             "document.getElementById('briefingReplay').hidden&&!document.getElementById('briefingNext').hidden"

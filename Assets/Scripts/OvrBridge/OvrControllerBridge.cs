@@ -197,6 +197,7 @@ namespace FixedCamVr.OvrBridge
             _modeLogic.Reset(ControllerModeLogic.Mode.Normal);
             _modeLogic.ModeChanged += OnModeChanged;
             _modeLogic.RunResetRequested += ResetRun;
+            guidePanel?.SetRegistration(courseRegistration);
             PushModeLabel(_modeLogic.Current); // 初期状態 NORMAL を StatusHud / heartbeat へ
 
             // 登録フローの節目を触覚へ（点サンプル確定=Action / 残差NG=Error / 確定保存=Fire）。
