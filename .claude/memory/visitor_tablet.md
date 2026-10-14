@@ -96,6 +96,12 @@ Quest の応答が 6 秒以上古ければ未確認。ページの経過時間�
 - 実機の操作は `adb -s 122d7871 shell input tap <x> <y>`（横向き 1920×1200 の座標）。`screencap` で確かめる
 - 通し確認（`state.bypass`）：接続を見ずにタイトルから装着の案内まで。`state.staffPreview` も立てるので、説明側は確認モードと同じ扱い
 
+- **章の切り替え（2026-10-14）**：墨の帯（画面を覆う）は実機で 0.3 秒の真っ黒＋字幕消えになったので廃止。
+  `captureDoctorGhost`（直前の博士の絵を canvas に写して残す）→ 新しい章の最初の絵（poster＝動画の先頭フレーム）が描けたら
+  `releaseDoctorGhost` で溶かす。額も `captureReferenceGhost` で同じ。額を消すときは `setReferenceVisual(false)` で薄れさせる。
+  録画で確かめる手：`adb shell screenrecord`（⚠ MSYS の path 変換で `/sdcard/...` が壊れるので `MSYS_NO_PATHCONV=1`）→ pull →
+  ffmpeg で 30fps の小さな画にして、平均輝度が局所の中央値の 75% を割る区間を数える。修正前は 3 回・0.27〜0.37 秒、修正後は 0 回
+
 ## 見た目（2026-10-14 作り替え・0262「字幕くらいに」・判定待ち）
 
 文字の層は字幕の 1 本だけ（見出し・札・行程・表の見出し・章名・番号は `.visually-gone` 相当で読み上げ用にだけ残す）。

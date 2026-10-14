@@ -54,10 +54,6 @@
   .stage { isolation: isolate; position: relative; display: grid; grid-template: "top" auto "main" minmax(0,1fr) "foot" auto / 100%; height: 100svh; min-height: 100svh; overflow: hidden; background: var(--bg); }
   .stage::before { content: ""; position: absolute; z-index: 9; inset: -60px; pointer-events: none; background: var(--grain); opacity: .075; mix-blend-mode: screen; animation: grain .9s steps(6) infinite; }
   @keyframes grain { 0% { transform: translate(0,0); } 17% { transform: translate(-22px,14px); } 33% { transform: translate(18px,-26px); } 50% { transform: translate(-30px,-8px); } 67% { transform: translate(26px,20px); } 83% { transform: translate(-10px,30px); } 100% { transform: translate(0,0); } }
-  /* 章が替わるときの墨の帯（左から覆い、右へ抜ける。動画の差し替えはその陰で起きる） */
-  .stage::after { content: ""; position: absolute; z-index: 7; inset: 0 -40%; pointer-events: none; background: linear-gradient(90deg,transparent,var(--bg) 18%,var(--bg) 82%,transparent); transform: translateX(-120%); opacity: 0; }
-  .stage.is-chapter-changing::after { animation: ink-wipe .6s var(--ease) both; }
-  @keyframes ink-wipe { 0% { transform: translateX(-120%); opacity: 1; } 48% { transform: translateX(0); opacity: 1; } 100% { transform: translateX(120%); opacity: 1; } }
 
   .topbar { grid-area: top; position: relative; z-index: 6; display: flex; align-items: center; gap: 16px; min-height: 64px; padding: max(14px,env(safe-area-inset-top)) max(var(--gutter),env(safe-area-inset-right)) 0 max(var(--gutter),env(safe-area-inset-left)); pointer-events: none; }
   .topbar > * { pointer-events: auto; }
@@ -198,8 +194,10 @@
      ========================================================================== */
   .stage.is-briefing:not(.is-equipment) .topbar, .stage.is-briefing:not(.is-equipment) .content { display: none; }
   .stage.is-briefing .portrait img, .stage.is-briefing .portrait video { object-fit: cover; object-position: 50% 28%; transform: none; animation: none; }
-  .stage.is-briefing #doctorVideo, .stage.is-briefing #doctorImage { animation: doctor-in .9s var(--ease-out) both; }
-  @keyframes doctor-in { from { opacity: 0; transform: scale(1.04); filter: brightness(.4); } to { opacity: 1; transform: none; filter: none; } }
+  /* 章が替わるとき：直前の絵（ghost）を残したまま新しい章の最初の絵へ溶かす。黒を挟まない。
+     ghost は動画と同じ cover・同じ位置なので、博士が右へ寄る動きの途中でもずれない。 */
+  .doctor-ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; opacity: 1; pointer-events: none; }
+  .doctor-ghost.is-fading { opacity: 0; transition: opacity .5s var(--ease); }
   .stage.is-briefing .portrait::after { background:
       radial-gradient(120% 100% at 50% 40%,transparent 50%,rgba(9,8,7,.7) 100%),
       linear-gradient(0deg,rgba(9,8,7,.94),rgba(9,8,7,.55) 16%,transparent 34%),
@@ -215,7 +213,10 @@
   /* ---- 参考図（写真・壁の一周映像・装置の図）：左に額が上がり、博士は右へ寄る（2026-10-14 復活） ---- */
   .briefing-visual { position: absolute; z-index: 2; left: max(4.5vw,env(safe-area-inset-left)); top: 47%; width: min(38vw,980px); aspect-ratio: 16 / 9; margin: 0; overflow: hidden; pointer-events: none; background: #050403; border: 1px solid rgba(232,220,196,.22); box-shadow: 0 24px 70px rgba(0,0,0,.75), 0 0 0 7px rgba(9,8,7,.55); transform: translateY(-50%); animation: ref-in .95s .1s var(--ease-out) both; }
   @keyframes ref-in { from { clip-path: inset(0 100% 0 0); opacity: 0; transform: translate(-26px,-50%); } to { clip-path: inset(0 0 0 0); opacity: 1; transform: translateY(-50%); } }
-  .stage:not(.has-reference) .briefing-visual, .stage.is-equipment .briefing-visual { display: none; }
+  .stage.is-equipment .briefing-visual { display: none; }
+  .briefing-visual.is-leaving { opacity: 0; filter: none; transition: opacity .45s var(--ease); animation: none; }
+  .reference-ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: 1; }
+  .reference-ghost.is-fading { opacity: 0; transition: opacity .5s var(--ease); }
   .briefing-visual::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 100% at 50% 50%,transparent 55%,rgba(9,8,7,.55)); box-shadow: inset 0 0 0 1px rgba(232,220,196,.06); }
   .briefing-image, .briefing-loop-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s var(--ease); }
   .briefing-image.is-visible, .briefing-loop-video.is-visible { opacity: 1; }
@@ -456,11 +457,13 @@
     <img id="entranceImage" src="./asset/entrance-doll-v1.png" alt="" width="1672" height="941" draggable="false" fetchpriority="high">
     <img id="doctorImage" alt="" width="1672" height="941" draggable="false">
     <video id="doctorVideo" playsinline preload="metadata" disablepictureinpicture hidden></video>
+    <canvas class="doctor-ghost" id="doctorGhost" aria-hidden="true" hidden></canvas>
   </figure>
   <figure class="briefing-visual" hidden>
     <img class="briefing-image" id="briefingImage" alt="" draggable="false" width="1600" height="900" hidden>
     <video class="briefing-loop-video" id="briefingLoopVideo" playsinline muted loop preload="none" disablepictureinpicture aria-hidden="true" hidden></video>
-    <div class="reference-fallback" id="referenceFallback" hidden>
+    <canvas class="reference-ghost" id="referenceGhost" aria-hidden="true" hidden></canvas>
+        <div class="reference-fallback" id="referenceFallback" hidden>
       <p id="referenceDescription"></p><span id="referenceUnavailable"></span>
     </div>
     <div class="briefing-intro" id="briefingIntro" hidden>
@@ -1156,7 +1159,10 @@
       { opacity: 0, filter: 'blur(8px)', transform: 'translateY(14px)' },
       { opacity: 1, filter: 'blur(0)', transform: 'none' },
     ], 620);
-    animateElement(document.querySelector('.portrait'), [{ opacity: .1 }, { opacity: 1 }], 760);
+    // 説明の中の章替わりでは .portrait を透明にしない。黒を挟まず ghost が溶かす。
+    if (!state.briefing.chapterChanging) {
+      animateElement(document.querySelector('.portrait'), [{ opacity: .1 }, { opacity: 1 }], 760);
+    }
     return true;
   }
 
@@ -2236,7 +2242,7 @@
     document.querySelector('.stage').classList.toggle('is-doctor-only', intro);
     if (intro) setText('briefingEyebrow', scene.title[state.lang]);
     $('briefingView').dataset.portrait = String(intro);
-    document.querySelector('.briefing-visual').hidden = intro;
+    setReferenceVisual(!intro);
     // 参考図（写真・壁の映像・装置の図）があるとき、博士は右へ寄り、左に額が上がる。
     document.querySelector('.stage').classList.toggle('has-reference', !intro);
     $('briefingIntro').hidden = !intro;
@@ -2246,6 +2252,7 @@
       image.alt = scene.alt[state.lang];
       const source = assetPath(scene.image);
       if (image.getAttribute('src') !== source || image.dataset.scene !== scene.id) {
+        captureReferenceGhost();   // 直前の絵を残してから差し替える
         image.dataset.scene = scene.id;
         state.briefing.imageFailed = false;
         image.hidden = false;
@@ -2256,6 +2263,7 @@
           $('referenceFallback').hidden = true;
           image.hidden = false;
           image.classList.add('is-visible');
+          releaseReferenceGhost();
           renderBriefingControls();
         };
         image.onerror = () => {
@@ -2305,27 +2313,113 @@
     saveBriefingProgress();
   }
 
+  // 章の切り替え：直前の絵を ghost に写して残し、新しい章の最初の絵が出てから溶かす（黒を挟まない）。
+  let ghostTimer = null;
+  function captureDoctorGhost() {
+    const ghost = $('doctorGhost');
+    if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
+    ghost.classList.remove('is-fading');
+    ghost.hidden = true;
+    if (reducedMotion.matches) return;
+    try {
+      const video = $('doctorVideo');
+      const image = $('doctorImage');
+      const source = !video.hidden && video.readyState >= 2 && video.videoWidth > 0 ? video
+        : (!image.hidden && image.naturalWidth > 0 ? image : null);
+      if (!source) return;
+      const w = source.videoWidth || source.naturalWidth;
+      const h = source.videoHeight || source.naturalHeight;
+      ghost.width = w;
+      ghost.height = h;
+      ghost.getContext('2d').drawImage(source, 0, 0, w, h);
+      ghost.hidden = false;
+    } catch (error) {
+      ghost.hidden = true;   // 写せなければ、ただのカットで切り替える
+    }
+  }
+
+  // 額の中身が替わるとき（写真 → 装置の図など）も、直前の絵を残して溶かす。
+  let refGhostTimer = null;
+  function captureReferenceGhost() {
+    const ghost = $('referenceGhost');
+    if (refGhostTimer) { clearTimeout(refGhostTimer); refGhostTimer = null; }
+    ghost.classList.remove('is-fading');
+    ghost.hidden = true;
+    if (reducedMotion.matches || document.querySelector('.briefing-visual').hidden) return;
+    try {
+      const loop = $('briefingLoopVideo');
+      const image = $('briefingImage');
+      const source = !loop.hidden && loop.readyState >= 2 && loop.videoWidth > 0 ? loop
+        : (!image.hidden && image.naturalWidth > 0 && image.classList.contains('is-visible') ? image : null);
+      if (!source) return;
+      const w = source.videoWidth || source.naturalWidth;
+      const h = source.videoHeight || source.naturalHeight;
+      ghost.width = w;
+      ghost.height = h;
+      ghost.getContext('2d').drawImage(source, 0, 0, w, h);
+      ghost.hidden = false;
+    } catch (error) {
+      ghost.hidden = true;
+    }
+  }
+
+  function releaseReferenceGhost() {
+    const ghost = $('referenceGhost');
+    if (ghost.hidden) return;
+    if (refGhostTimer) clearTimeout(refGhostTimer);
+    ghost.classList.add('is-fading');
+    refGhostTimer = setTimeout(() => { ghost.hidden = true; ghost.classList.remove('is-fading'); refGhostTimer = null; }, 560);
+  }
+
+  // 額を消すときは、すぐ消さずに薄れさせる（博士が元の位置へ戻る動きと同時に）。
+  let refLeaveTimer = null;
+  function setReferenceVisual(show) {
+    const figure = document.querySelector('.briefing-visual');
+    if (refLeaveTimer) { clearTimeout(refLeaveTimer); refLeaveTimer = null; }
+    if (show) {
+      figure.classList.remove('is-leaving');
+      figure.hidden = false;
+      return;
+    }
+    if (figure.hidden || reducedMotion.matches) { figure.hidden = true; figure.classList.remove('is-leaving'); return; }
+    figure.classList.add('is-leaving');
+    refLeaveTimer = setTimeout(() => { figure.hidden = true; figure.classList.remove('is-leaving'); refLeaveTimer = null; }, 460);
+  }
+
+  function releaseDoctorGhost() {
+    const ghost = $('doctorGhost');
+    if (ghost.hidden) return;
+    const image = $('doctorImage');
+    const go = () => {
+      if (ghostTimer) clearTimeout(ghostTimer);
+      ghost.classList.add('is-fading');
+      ghostTimer = setTimeout(() => { ghost.hidden = true; ghost.classList.remove('is-fading'); ghostTimer = null; }, 560);
+    };
+    // 新しい章の最初の絵が描ける状態になってから溶かす。待ちすぎない。
+    if (image.complete && image.naturalWidth > 0) { go(); return; }
+    const once = () => { image.removeEventListener('load', once); go(); };
+    image.addEventListener('load', once);
+    if (ghostTimer) clearTimeout(ghostTimer);
+    ghostTimer = setTimeout(() => { image.removeEventListener('load', once); go(); }, 900);
+  }
+
   function playChapterTransition(direction) {
     if (chapterTimer) clearTimeout(chapterTimer);
     state.briefing.chapterChanging = true;
     const view = $('briefingView');
-    const stageEl = document.querySelector('.stage');
     view.classList.remove('is-chapter-changing');
-    stageEl.classList.remove('is-chapter-changing');
     view.style.setProperty('--chapter-shift', direction < 0 ? '-9px' : '9px');
     void view.offsetWidth;
     view.classList.add('is-chapter-changing');
-    // 墨の帯が画面を横切り、その陰で博士の動画が替わる（CSS の .stage.is-chapter-changing）。
-    if (!reducedMotion.matches) stageEl.classList.add('is-chapter-changing');
+    releaseDoctorGhost();
     chapterTimer = setTimeout(() => {
       chapterTimer = null;
       state.briefing.chapterChanging = false;
       view.classList.remove('is-chapter-changing');
-      stageEl.classList.remove('is-chapter-changing');
       const pending = state.briefing.pendingMove;
       state.briefing.pendingMove = 0;
       if (pending) moveBriefing(pending, 'queued');
-    }, reducedMotion.matches ? 0 : 600);
+    }, reducedMotion.matches ? 0 : 450);
   }
 
   function waitForStaffHandoff() {
@@ -2383,6 +2477,7 @@
       if (changedChapter) playChapterTransition(direction);
     };
     if (changedChapter) {
+      captureDoctorGhost();   // 切り替える前の絵を残す（stopBriefingMedia が動画を隠す前に）
       stopBriefingMediaWindow();
       clearBriefingTimer();
       changeVisual(update);
@@ -2438,6 +2533,9 @@
     state.briefing.imageFailed = false;
     state.briefing.mediaPaused = false;
     $('briefingView').classList.remove('is-chapter-changing');
+    if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
+    $('doctorGhost').hidden = true;
+    $('doctorGhost').classList.remove('is-fading');
   }
 
   function resetBriefingSession() {
