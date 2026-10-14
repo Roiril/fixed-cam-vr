@@ -295,9 +295,11 @@ namespace FixedCamVr.Diagnostics.Tests
 
             _panel.SetDecayForPreview(CommsInvasionLogic.FirstPovLevel, 0f);
             hits = _panel.TypedCount;
-            _panel.Deliver(CommsNotice.MarkLogged);
+            _panel.Deliver(CommsNotice.MarkLogged);   // 同じ面のまま繋ぐ ＝ 赤い嘘を消してから差し替える
+            Assert.AreEqual(CommsStage.Swap, _logic.Stage);
             Assert.AreEqual(CommsDelivery.Typed, _logic.Delivery);
-            Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
+            for (int i = 0; i < 600 && _logic.Stage != CommsStage.Hold; i++) Advance(1f / 30f);
+            Assert.AreEqual(CommsStage.Hold, _logic.Stage);
             Assert.AreEqual(_panel.NoticeChars, _panel.TypedCount - hits, "侵食度 0.25 の返事は 1 字 1 発のまま");
             Assert.Greater(_panel.NoticeChars, 0);
         }

@@ -232,8 +232,22 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private float _bodyBandH = BodyMaxH;
 
+        // 枠が実際に覆っている上段の高さ（m）と、差し替えで動かし始めたときの高さ。
+        // ⚠ 差し替え（`CommsStage.Swap`）では旧文面が消え切ってから `_bandFrom` → `_bodyBandH` へ移す。
+        //   それ以外は `_bodyBandH` と同じ（文面を組んだ瞬間にそろえる）。
+        private float _bandShown = BodyMaxH;
+        private float _bandFrom = BodyMaxH;
+
         /// <summary>上段の中心（面のローカル y）。<see cref="SetNotice"/> が文面の重心をここへ運ぶ。</summary>
         private float BodyCenterY => HintBandTopY + _bodyBandH * 0.5f;
+
+        /// <summary>枠が実際に覆っている上段の高さ (m)。差し替えの途中は旧文面と新しい文面の寸法のあいだ。</summary>
+        public float AppliedBodyBandH => _bandShown;
+
+        // 旧文面が消え切るまで組まずに預かる次の連絡（`CommsPanelLogic.TakeSwapCommit` で組む）。
+        private bool _pendingSwap;
+        private CommsNotice _pendingNotice = CommsNotice.None;
+        private CommsDelivery _pendingDelivery = CommsDelivery.Typed;
         /// <summary>深い黒の面。後ろの映像は残す。</summary>
         private const float PanelAlpha = 0.72f;
         // 乗っ取り時だけ背後の警告を遮る。通常の通信面の大きさと濃さは維持する。
@@ -1031,7 +1045,6 @@ namespace FixedCamVr.Diagnostics
             // ⚠ 誘導そのものを出すか（幾何が解けたか・被っているか）は向こうが決める。
             //    ここは「説明を始めた」という事実だけを渡す。
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
-            ResetPossessionVisual();
             CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
             // 締めの報告は、解除が通った同じフレームで ScreenDecayReleased が立つ。
             // 侵食度 1 のままでも、この返事だけはスイの通常表示へ戻す。
@@ -1043,10 +1056,42 @@ namespace FixedCamVr.Diagnostics
             if (runDirector != null && !_cue.TakeoverDelivered
                 && notice != CommsNotice.Takeover && delivery == CommsDelivery.Cursed)
                 delivery = CommsDelivery.Typed;
-            _cursedFromStart = delivery == CommsDelivery.Cursed;
-            SetNotice(notice, _cursedFromStart ? TakeoverLieText(ShowLanguage.Current) : null);
-            if (delivery == CommsDelivery.Possessed || _cursedFromStart) SetLieNotice();
             LastNotice = notice;
+            if (delivery == CommsDelivery.Possessed) PossessedCount++;
+            if (pulse) PulseCount++;
+            if (!persistent) _cue.NotifyDelivered(notice);
+            // ⚠⚠ **同じ面のまま繋ぐときは、旧文面が消え切るまで新しい文面を組まない**（2026-10-14）。
+            //    組むと TMP の文字列も枠の丈も同じコマで替わり、旧文面が 1 フレームで消える。
+            //    ここでは預かるだけ。組むのは `Apply` が `TakeSwapCommit` を受け取った縁（`CommitNotice`）。
+            if (_logic.WouldSwap(delivery))
+            {
+                _pendingSwap = true;
+                _pendingNotice = notice;
+                _pendingDelivery = delivery;
+                _logic.Begin(_charCount, delivery, persistent);   // 字数は組んだ縁で RetimeSwap が入れ直す
+                return;
+            }
+            _pendingSwap = false;
+            CommitNotice(notice, delivery, easeBand: false);
+            if (notice == CommsNotice.Takeover)
+            {
+                _lieActive = true;
+                LieCount++;
+            }
+            _logic.Begin(_charCount, delivery, persistent);
+            LogDelivered(notice, delivery);
+        }
+
+        /// <summary>
+        /// 連絡の文面を組み、出方に合わせて打鍵・嘘の一文・斑の目標をそろえる。
+        /// 届いた瞬間（面が畳まれている・開いている途中）か、差し替えで旧文面が消え切った縁に 1 回走る。
+        /// </summary>
+        private void CommitNotice(CommsNotice notice, CommsDelivery delivery, bool easeBand)
+        {
+            ResetPossessionVisual();
+            _cursedFromStart = delivery == CommsDelivery.Cursed;
+            SetNotice(notice, _cursedFromStart ? TakeoverLieText(ShowLanguage.Current) : null, easeBand);
+            if (delivery == CommsDelivery.Possessed || _cursedFromStart) SetLieNotice();
             // 文面が決まった所で斑の目標を押し込む（「止まってください！」以降は 0）。
             PushCurseTarget();
             // 打つ尺は文字数から決まる（文面を伸ばせば打つ時間も伸びる）。
@@ -1058,16 +1103,28 @@ namespace FixedCamVr.Diagnostics
             // ⚠⚠ **侵食度 0.75 以降は憑依の出し方**（0230）。全文が一気に出るので、これも打鍵 0。
             _silent = delivery != CommsDelivery.Typed;
             if (_silent) NoticeChars = 0;
-            if (delivery == CommsDelivery.Possessed) PossessedCount++;
-            if (notice == CommsNotice.Takeover)
+        }
+
+        /// <summary>
+        /// 差し替えで預かった連絡を組む（旧文面が消え切った縁）。
+        /// 消え切る前に面が畳まれたり、別の出し方へ移ったりしたら預かりを捨てる。
+        /// </summary>
+        private void ObserveSwapCommit()
+        {
+            if (_logic.TakeSwapCommit())
             {
-                _lieActive = true;
-                LieCount++;
+                if (!_pendingSwap) return;
+                _pendingSwap = false;
+                CommitNotice(_pendingNotice, _pendingDelivery, easeBand: true);
+                _logic.RetimeSwap(_charCount);
+                LogDelivered(_pendingNotice, _pendingDelivery);
+                return;
             }
-            _logic.Begin(_charCount, delivery, persistent);
-            LastNotice = notice;
-            if (pulse) PulseCount++;
-            if (!persistent) _cue.NotifyDelivered(notice);
+            if (_pendingSwap && _logic.Stage != CommsStage.Swap) _pendingSwap = false;
+        }
+
+        private void LogDelivered(CommsNotice notice, CommsDelivery delivery)
+        {
             Debug.Log($"[Comms] AIエージェントからの連絡 {notice}「{TextFor(notice).Replace("\n", "／")}」"
                     + $"（{_charCount} 文字 / "
                     + (delivery == CommsDelivery.Possessed
@@ -1537,7 +1594,7 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ 測る前に<b>全文を見えるところまで戻す</b> — 直前の文面の可視数が残っていると、
         /// <see cref="TMP_Text.textBounds"/> が<b>その一部だけ</b>の重心を返して面から外れる。
         /// </summary>
-        private void SetNotice(CommsNotice notice, string? bodyOverride = null)
+        private void SetNotice(CommsNotice notice, string? bodyOverride = null, bool easeBand = false)
         {
             TMP_Text? tmp = _text;
             if (tmp == null) return;
@@ -1559,6 +1616,10 @@ namespace FixedCamVr.Diagnostics
             //    ②が**上下に余白の空いた大きな箱**として出ていた（プレビューの絵で見つけた）。
             //    枠はこの高さを読んで縮む（`Apply` の `top`）。
             _bodyBandH = Mathf.Max(0.01f, ink.size.y * scale + BodyPadM);
+            // 差し替え（easeBand）は枠をいまの高さから動かす（`Apply` が `BodyBandBlend` で寄せる）。
+            // それ以外は文面を組んだ瞬間に枠の寸法もそろえる（開く段は丈 0 から伸びるので飛ばない）。
+            _bandFrom = easeBand ? _bandShown : _bodyBandH;
+            if (!easeBand) _bandShown = _bodyBandH;
             // ⚠ 運ぶ先は面の中心ではなく**上段の中心**（下段に報告の押し方が居るため）。
             tmp.transform.localPosition = new Vector3(0f, BodyCenterY - ink.center.y * scale, 0f);
             // ⚠ ここは**全文が出ている状態**（上で maxVisibleCharacters = int.MaxValue して
@@ -1936,6 +1997,8 @@ namespace FixedCamVr.Diagnostics
 
         private void Apply(in CommsWeights w)
         {
+            // 旧文面が消え切った縁で、預かっていた次の連絡を組む（字は 1 つも見えていない）。
+            ObserveSwapCommit();
             // 憑依の出し方（0230）の段。他の出方では Off のまま。
             CommsPossessionSample poss = _logic.PossessionSample;
             PossessionPhase = poss.phase;
@@ -1978,7 +2041,11 @@ namespace FixedCamVr.Diagnostics
             //    ⚠ 下段の有無は不透明度だけでは決まらない — 文字が空でも hint は 1 になる。
             float hintK = Mathf.Clamp01(w.hint) * (_hintBody.Length > 0 ? 1f : 0f);
             // 上段の帯 = [0, _bodyBandH]（**文面の実寸**）/ 下段の帯 = [-HintBandH, 0]。
-            float top = HintBandTopY + _bodyBandH * AppliedBody;
+            // ⚠ 差し替えで旧文面を消している最中は、枠を旧文面の寸法に留める
+            //   （字が 1 つでも見えているあいだは枠も字も動かさない）。消え切ってから新しい寸法へ寄せる。
+            if (!_logic.SwapClearing)
+                _bandShown = Mathf.Lerp(_bandFrom, _bodyBandH, _logic.BodyBandBlend);
+            float top = HintBandTopY + _bandShown * AppliedBody;
             float bottom = HintBandTopY - HintBandH * hintK;
             float cy = (top + bottom) * 0.5f;
             float h = Mathf.Max(0f, top - bottom);

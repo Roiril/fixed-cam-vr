@@ -1,6 +1,6 @@
 # Project Memory Index
 
-- [virtual_walk.md](virtual_walk.md) - 2026-10-14。PC の仮想体験（`menu virtualwalk`）。NPC が歩き、実プレート＋CG 合成が実シェーダ・実 Director を通る。90Hz。前後比較は `tools/virtualwalk-video.py --compare`。`-Set` は引用しない。見た目の合否は実機。
+- [virtual_walk.md](virtual_walk.md) - 2026-10-14。PC の仮想体験（`menu virtualwalk`）。NPC が歩き、実プレート＋CG 合成が実シェーダ・実 Director を通る。90Hz。前後比較は `tools/virtualwalk-video.py --compare`。エージェントスクリーンは `comms=1` と `tools/virtualwalk-comms.py`。`-Set` は引用しない。見た目の合否は実機。
 
 - [staff_setup.md](staff_setup.md) - 2026-10-10。タブレット中心の準備・交代フロー。Questの並行位置合わせ。機器別の実状態。終幕中のリセット保護。新設定と説明と引き渡しの照合。検証と実機確認の範囲を記載。
 

@@ -99,6 +99,8 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             float maxSec = ArgFloat("maxsec", 240f);
             string tag = EditorCliArgs.Get("tag") ?? "";
             bool glitchStills = ArgInt("glitchstills", 0) != 0;
+            bool commsOn = ArgInt("comms", 0) != 0;
+            float takeoverAt = ArgFloat("takeover", -1f);
 
             string projectRoot = Directory.GetParent(Application.dataPath)!.FullName;
             string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
@@ -117,7 +119,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             try
             {
                 Execute(show, showPath, projectRoot, outDir, laps, dwellSec, eyeW, eyeH, outro, maxSec,
-                        glitchStills);
+                        glitchStills, commsOn, takeoverAt);
             }
             finally
             {
@@ -128,7 +130,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
 
         private static void Execute(Root show, string showPath, string projectRoot, string outDir, int laps,
                                     float dwellSec, int eyeW, int eyeH, bool outro, float maxSec,
-                                    bool glitchStills)
+                                    bool glitchStills, bool commsOn, float takeoverAt)
         {
             ShowLayoutDef layout = show.layout!;
             float floorY = layout.room != null ? layout.room.floorY : 0f;
@@ -278,6 +280,41 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             _trash.Add(trapShot);
             outroReport.SetEndingImages(relShot, trapShot);
             bool reportShown = false;
+
+            // ---- エージェントスクリーン（実物の CommsPanel・comms=1 のとき） ----
+            // 台本: 0.6s ①「調査を開始してください。」（1 行）→ 読ませる 2s の終わりに①b（3 行。
+            //       連続配信 = 0096 の「そのスクリーンのまま」。枠の高さが変わる組）
+            //       → ①b を読ませている途中で報告を押し始める（走っている連絡が片づく・0065）
+            //       → 1 秒の長押しで②「異常を検出しました」→ takeover=<秒> で乗っ取り（主画面の警告つき）。
+            GameObject? commsGo = null;
+            CommsPanel? comms = null;
+            CommsPanelLogic? commsLogic = null;
+            MethodInfo? commsApply = null;
+            CommsTakeoverError? takeover = null;
+            bool chainPending = false, chainDone = false, markDone = false, takeoverDone = false;
+            float pressAt = -1f;
+            bool releaseDone = false;
+            int lastChars = 0;
+            CommsStage lastStage = CommsStage.Off;
+            // 連絡の面の数値（90Hz）。差し替え・押して片づける瞬間の濃さと枠の高さを前後で比べる。
+            var commsTsv = new StringBuilder();
+            commsTsv.AppendLine("tick\tt\tstage\tglyph\tchars\ttextId\ttextAlpha\tpanelAlpha\tbody\tband\tboxH\thint");
+            FieldInfo? commsTextField = typeof(CommsPanel).GetField("_text", BindingFlags.NonPublic | BindingFlags.Instance);
+            // 新しい枠の高さ（差し替えで動かす方）が無い版でも同じ表を出す（前後比較のため）。
+            FieldInfo? bandField = typeof(CommsPanel).GetField("_bandShown", BindingFlags.NonPublic | BindingFlags.Instance)
+                                ?? typeof(CommsPanel).GetField("_bodyBandH", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (commsOn)
+            {
+                commsGo = new GameObject("CommsPanel");
+                _trash.Add(commsGo);
+                comms = commsGo.AddComponent<CommsPanel>();
+                Refl.Call(comms, "Awake");
+                commsLogic = (CommsPanelLogic)Refl.Get(comms, "_logic");
+                commsApply = typeof(CommsPanel).GetMethod("Apply", BindingFlags.NonPublic | BindingFlags.Instance);
+                comms.SetControllerState(false, false);
+                comms.SetDecayForPreview(0f, 0f);
+                if (!comms.IsBuilt) { Debug.LogError("[VirtualWalk] CommsPanel を組めない"); comms = null; }
+            }
             bool stillsDone = false;
 
             // ---- 目 ----
@@ -373,6 +410,91 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 Refl.Call(director, "Update");
                 glitch.TickExternal(dt, simTime);
 
+                if (comms != null && commsLogic != null && commsApply != null)
+                {
+                    if (simTime >= 0.6f && lastStage == CommsStage.Off && !chainPending && !markDone && simTime < 1f)
+                    {
+                        comms.Deliver(CommsNotice.Begin);
+                        chainPending = true;
+                    }
+                    if (chainPending && comms.Stage == CommsStage.Hold && commsLogic.StageElapsedSec >= 1.95f)
+                    {
+                        comms.Deliver(CommsNotice.BeginHow);
+                        chainPending = false;
+                        chainDone = true;
+                        events.Append(F(simTime)).Append("\tcomms_deliver\tBeginHow (chained)\n");
+                    }
+                    // 読ませている最中に報告を押し始める（走っている連絡は片づく・0065）→ 1 秒の長押しで②。
+                    // 本番の `Update` と同じく、押している間は毎刻 `SetGuideWanted(true)` を立てる。
+                    if (chainDone && pressAt < 0f && !markDone
+                        && comms.Stage == CommsStage.Hold && commsLogic.StageElapsedSec >= 1.0f)
+                    {
+                        pressAt = simTime;
+                        comms.SetControllerState(true, true);
+                        events.Append(F(simTime)).Append("\tpress\tstart\n");
+                    }
+                    if (pressAt >= 0f && !markDone)
+                    {
+                        float pr = Mathf.Clamp01((simTime - pressAt) / 1.0f);
+                        comms.SetMarkState(pr, confirming: false);
+                        commsLogic.SetGuideWanted(true);
+                        if (pr >= 1f)
+                        {
+                            comms.Deliver(CommsNotice.MarkLogged);
+                            markDone = true;
+                            events.Append(F(simTime)).Append("\tcomms_deliver\tMarkLogged (press)\n");
+                        }
+                    }
+                    if (pressAt >= 0f && markDone && !releaseDone && simTime >= pressAt + 1.3f)
+                    {
+                        releaseDone = true;
+                        comms.SetMarkState(0f, confirming: false);
+                        commsLogic.SetGuideWanted(false);
+                        events.Append(F(simTime)).Append("\tpress\trelease\n");
+                    }
+                    if (!markDone && simTime >= 9f && comms.Stage == CommsStage.Off)
+                    {
+                        comms.Deliver(CommsNotice.MarkLogged);
+                        markDone = true;
+                        events.Append(F(simTime)).Append("\tcomms_deliver\tMarkLogged\n");
+                    }
+                    if (!takeoverDone && takeoverAt >= 0f && simTime >= takeoverAt && comms.Stage == CommsStage.Off)
+                    {
+                        comms.SetDecayForPreview(1f, 0f);
+                        comms.Deliver(CommsNotice.Takeover);
+                        var errorPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Effects/UnauthorizedAccess.prefab");
+                        takeover = commsGo!.GetComponent<CommsTakeoverError>() ?? commsGo.AddComponent<CommsTakeoverError>();
+                        takeover.Configure(comms, errorPrefab);
+                        takeover.ConfigureScreen(screen.transform, new Vector2(2.7f, 1.51875f));
+                        takeover.Tick(comms.TakeoverVisible, 0f);
+                        takeoverDone = true;
+                        events.Append(F(simTime)).Append("\tcomms_deliver\tTakeover\n");
+                    }
+                    commsLogic.Tick(dt);
+                    commsApply.Invoke(comms, new object[] { commsLogic.Weights });
+                    takeover?.Tick(comms.TakeoverVisible, dt);
+
+                    // 打鍵（本番は見える字 1 つにつき 1 回鳴る）と段の遷移を時刻で残す
+                    int chars = comms.VisibleChars;
+                    if (chars > lastChars)
+                        events.Append(F(simTime)).Append("\ttype\tchars=").Append(chars - lastChars).Append('\n');
+                    lastChars = chars;
+                    if (comms.Stage != lastStage)
+                        events.Append(F(simTime)).Append("\tcomms_stage\t").Append(comms.Stage).Append('\n');
+                    lastStage = comms.Stage;
+
+                    string commsBody = (commsTextField?.GetValue(comms) as TMPro.TMP_Text)?.text ?? "";
+                    string textId = commsBody.Length == 0 ? "-" : commsBody.Substring(0, Mathf.Min(4, commsBody.Length)).Replace("\n", " ");
+                    float glyphA = comms.AppliedGlyph;
+                    float textAlpha = chars > 0 && glyphA > 0.002f ? glyphA : 0f;
+                    float commsBand = bandField != null ? (float)bandField.GetValue(comms) : 0f;
+                    commsTsv.Append(tick).Append('\t').Append(F(simTime)).Append('\t').Append(comms.Stage).Append('\t')
+                            .Append(F(glyphA)).Append('\t').Append(chars).Append('\t').Append(textId).Append('\t')
+                            .Append(F(textAlpha)).Append('\t').Append(F(comms.AppliedPanelAlpha)).Append('\t')
+                            .Append(F(comms.AppliedBody)).Append('\t').Append(F(commsBand)).Append('\t')
+                            .Append(F(commsBand * comms.AppliedBody)).Append('\t').Append(F(commsLogic.Weights.hint)).Append('\n');
+                }
+
                 // 音の発火（ShowSoundDirector と同じ閾値）を時刻で残す。音そのものは聴けない。
                 if (director.Dipping && !wasDipping) events.Append(F(simTime)).Append("\tsfx_switch\tdipStart\n");
                 wasDipping = director.Dipping;
@@ -428,6 +550,12 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 sp.y = eyePos.y - ScreenDropM;
                 screen.transform.SetPositionAndRotation(sp, sy);
                 reportGo.transform.SetPositionAndRotation(eyePos, sy);
+                if (commsGo != null)
+                {
+                    // CommsPanel の既定（頭から 1.5m・外へ 8°・下へ 17°。ヨーはスクリーンと同じ追従）
+                    Vector3 cdir = Quaternion.Euler(17f, screenYaw - 8f, 0f) * Vector3.forward;
+                    commsGo.transform.SetPositionAndRotation(eyePos + cdir * 1.5f, Quaternion.LookRotation(cdir));
+                }
 
                 tsv.Append(tick).Append('\t').Append(F(simTime)).Append('\t')
                    .Append(F(pos.x)).Append('\t').Append(F(pos.y)).Append('\t')
@@ -457,6 +585,8 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                     cgCam.targetTexture = null;
 
                     mat.SetFloat("_SrcFrame", frame);
+                    if (commsGo != null) SetLayerRecursive(commsGo, ScreenLayer);
+                    foreach (Transform child in screen.transform) SetLayerRecursive(child.gameObject, ScreenLayer);
                     osd.Suppressed = collapse > 0.12f;
                     osd.Tick(OsdStart.AddSeconds(simTime));
 
@@ -502,6 +632,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
 
             File.WriteAllText(Path.Combine(outDir, "frames.tsv"), tsv.ToString());
             File.WriteAllText(Path.Combine(outDir, "events.tsv"), "t\tkind\tdetail\n" + events);
+            if (comms != null) File.WriteAllText(Path.Combine(outDir, "comms.tsv"), commsTsv.ToString());
             string plates = string.Join(" ", views.Select(v => v.id + (v.plate ? ":plate" : ":room")));
             Debug.Log($"[VirtualWalk] {frame} コマ（30fps）/ {tick} 刻み（90Hz）/ {simTime:F1} 秒 → {outDir.Replace('\\', '/')}\n"
                     + $"  show.json: {showPath.Replace('\\', '/')} / 道筋 {routeLog} / 周回 {laps} / 滞在 {dwellSec:F1}s\n"
@@ -701,6 +832,13 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 FieldInfo? f = target.GetType().GetField(field, BF);
                 if (f == null) throw new MissingFieldException(target.GetType().Name, field);
                 f.SetValue(target, value);
+            }
+
+            public static object Get(object target, string field)
+            {
+                FieldInfo? f = target.GetType().GetField(field, BF);
+                if (f == null) throw new MissingFieldException(target.GetType().Name, field);
+                return f.GetValue(target)!;
             }
 
             public static void Call(object target, string method)

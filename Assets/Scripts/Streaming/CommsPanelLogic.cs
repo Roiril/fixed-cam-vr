@@ -22,6 +22,13 @@ namespace FixedCamVr.Streaming
         /// 枠は開き切っていて、AIエージェントからの文面は 1 字も出ていない。
         /// </summary>
         Guide,
+        /// <summary>
+        /// <b>同じ面のまま次の文面へ差し替えている途中</b>（2026-10-14）。
+        /// 旧文面が <see cref="CommsPanelLogic.SwapTextOutSec"/> で消え、そのあと枠の丈と中心が
+        /// <see cref="CommsPanelLogic.SwapBandSec"/> で新しい文面の寸法へ移ってから <see cref="Type"/> へ進む。
+        /// ⚠ 末尾に足した（既存の段の数値を動かさない）。
+        /// </summary>
+        Swap,
     }
 
     /// <summary>連絡の面へ配る値（すべて 0..1）。</summary>
@@ -81,6 +88,8 @@ namespace FixedCamVr.Streaming
     /// <b>枠が左端から右へ開き、開き切ってから文字が 1 字ずつ打たれる。</b>
     /// 引くときは逆で、文字が消えてから枠が左へ畳まれる。
     /// 装置が受信して、印字して、片づける — という順序がそのまま画になる。
+    /// ⚠ 2026-10-14 時点の描画は<b>横には開かない</b>（`CommsPanel.Apply` は <c>open</c> を地の濃さと
+    /// 仕切り線の丈と顔の出にしか掛けない）。左から開く画を戻すかは <c>canon/OPEN.md</c> の判断待ち。
     ///
     /// ⚠ <b>本編の進行を既読待ちにしない。</b> 読まなくても体験は進む（時間で引く）。
     /// 既読の操作を作らないのは、体験者が持つ唯一の入力（左のボタン ＝ 記録）と兼用させないため —
@@ -253,6 +262,30 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float HintInAt = 0.75f;
 
+        /// <summary>
+        /// 同じ面のまま次の文面へ繋ぐとき、<b>旧文面が消え切るまで</b> (秒)（<see cref="CommsStage.Swap"/>）。
+        ///
+        /// ⚠⚠ 2026-10-14 まで差し替えは 1 フレームだった — 3 行の旧文面が消え、枠の丈が 1 行ぶんへ縮み、
+        /// 新しい 1 字目が出る、の 3 つが同じコマで起きていた（PC の仮想体験で NPC の目から撮って確認）。
+        /// 文面を替える前に消し、消えてから枠を動かす。<b>字が 1 つでも見えているあいだは枠も字も動かさない</b>。
+        /// ⚠ 0 にしない（1 フレームの入れ替わりに戻る）。長くもしない（読ませ終わった文面を引きずる）。
+        /// </summary>
+        public const float SwapTextOutSec = 0.15f;
+
+        /// <summary>
+        /// 旧文面が消えてから、<b>枠の丈と中心が新しい文面の寸法へ移るまで</b> (秒)。
+        /// 移り終わってから 1 字目を打つ（打鍵の 1 発目と 1 字目は同じフレーム）。
+        /// ⚠ 寸法が同じ文面どうしでも尺は同じ（連絡の間合いを文面の形で揺らさない）。
+        /// </summary>
+        public const float SwapBandSec = 0.2f;
+
+        /// <summary>
+        /// 押し始めで走っている連絡を片づける（<see cref="CommsStage.Guide"/>）とき、文面が消え切るまで (秒)。
+        /// 2026-10-14 まで 1 フレームで消していた。押した手応えを遅らせないよう、差し替えより短い。
+        /// 消え切るまで枠の丈は縮めない（縮む枠から字がはみ出す）。
+        /// </summary>
+        public const float GuideTextOutSec = 0.1f;
+
         private CommsStage _stage = CommsStage.Off;
         private float _elapsed;
         private float _typeSec = MinTypeSec;
@@ -276,7 +309,49 @@ namespace FixedCamVr.Streaming
         // 乗っ取り開始からの単調な時計。段を移っても、演出が終わってもランリセットまでは戻さない。
         private float _takeoverElapsedSec;
 
+        // 差し替え（Swap）で、旧文面が消え切るまで預かる次の連絡。
+        private int _pendingChars;
+        private CommsDelivery _pendingDelivery = CommsDelivery.Typed;
+        private bool _pendingPersistent;
+        // 旧文面が消え切り、次の連絡の出方と尺を確定した。
+        private bool _swapCommitted;
+        // 実行体がまだ受け取っていない「文面を差し替えてよい」縁（`TakeSwapCommit`）。
+        private bool _swapCommitDue;
+
         public CommsStage Stage => _stage;
+
+        /// <summary>差し替えで旧文面を消している最中（枠の丈は旧文面の寸法に留める）。</summary>
+        public bool SwapClearing => _stage == CommsStage.Swap && !_swapCommitted;
+
+        /// <summary>
+        /// 枠の丈と中心を、旧文面の寸法から新しい文面の寸法へ移す割合（0..1）。
+        /// 差し替えの途中だけ動き、それ以外は 1（実行体は新しい寸法をそのまま使う）。
+        /// </summary>
+        public float BodyBandBlend
+            => _stage != CommsStage.Swap ? 1f
+             : !_swapCommitted ? 0f
+             : Smooth(Clamp01((_elapsed - SwapTextOutSec) / SwapBandSec));
+
+        /// <summary>
+        /// 旧文面が消え切った縁を 1 回だけ返す。実行体はここで文面を差し替え、
+        /// 実際の字数を <see cref="RetimeSwap"/> へ返す。
+        /// </summary>
+        public bool TakeSwapCommit()
+        {
+            bool due = _swapCommitDue;
+            _swapCommitDue = false;
+            return due;
+        }
+
+        /// <summary>
+        /// 差し替えた文面の実際の字数で打つ尺を決め直す。実行体は <see cref="Begin"/> の時点では
+        /// 次の文面を組めない（組むと旧文面が消える）ので、字数はここで渡す。
+        /// </summary>
+        public void RetimeSwap(int charCount)
+        {
+            if (!_swapCommitted) return;
+            SetTiming(charCount, _delivery);
+        }
 
         /// <summary>斑の目標（実行体が侵食度と文面から決めて押し込む）。</summary>
         public float CurseTarget => _curseTarget;
@@ -319,8 +394,10 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// いまの連絡の出方。<b>面が打鍵を鳴らすかはこれが決める</b>
         /// （<c>CommsPanel.Apply</c>）。
+        /// ⚠ 差し替えで旧文面を消している最中は、<b>届いた方（次の連絡）の出方</b>を返す。
+        ///   消えていく旧文面の見え方は内部で旧い出方のまま描く。
         /// </summary>
-        public CommsDelivery Delivery => _delivery;
+        public CommsDelivery Delivery => SwapClearing ? _pendingDelivery : _delivery;
 
         /// <summary>現在の段に入ってからの秒数。専用表示とプレビューが同じ時計を読む。</summary>
         public float StageElapsedSec => _elapsed;
@@ -408,6 +485,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 連絡が届いた。<b>すでに出ていれば頭から出し直す</b>（重ねない）。
+        /// 枠も丈も出来上がっていれば、旧文面を消してから差し替える（<see cref="CommsStage.Swap"/>）。
         /// </summary>
         /// <param name="charCount">
         /// 打つ文字数。<b>尺はここから決まる</b>（文面が伸びれば打つ時間も伸びる）。
@@ -428,19 +506,50 @@ namespace FixedCamVr.Streaming
             // ⚠⚠ **枠も丈も出来上がっているなら、開く段そのものを飛ばす**（2026-08-19・0096）。
             //    通さないと、開き 1 → 1・丈 1 → 1 という**何も動かない 0.45 秒**が挟まり、
             //    そのあいだ面が空になる（体験者から見れば「消えて、少し待って、また出た」）。
-            CommsWeights now = Weights;
-            bool chained = _stage != CommsStage.Off && now.open >= 0.999f && now.body >= 0.999f;
+            //    飛ばした先は差し替えの段（0.35 秒。そのあいだ枠は出たまま、字だけが入れ替わる）。
+            bool chained = WouldSwap(delivery);
             // ⚠ 面が畳まれた状態から開くときだけ、斑を 0 から立ち上げ直す（0229「出た初めはこれ」）。
             //   同じ面のまま次の文面へ繋ぐ（chained）ときは重なったままにする。
             if (_stage == CommsStage.Off) RestartCurseRamp();
+            _swapCommitDue = false;
+            // ⚠⚠ **繋ぐときは、旧文面を消してから差し替える**（2026-10-14・`CommsStage.Swap`）。
+            //    出方・尺・固定表示は旧文面が消え切った縁（`CommitSwap`）で入れ替える —
+            //    先に替えると、消えている途中の旧文面が新しい出方の目で描かれる。
+            if (chained)
+            {
+                _pendingChars = charCount;
+                _pendingDelivery = delivery;
+                _pendingPersistent = persistent;
+                _swapCommitted = false;
+                EnterStage(CommsStage.Swap);
+                return;
+            }
+            _swapCommitted = false;
             // ⚠ **出方を替えるのは段を移った後**（`EnterStage` は「いまの姿」を覚えるので、
             //   新しい出方の目で古い段を測らせない）。
-            EnterStage(delivery == CommsDelivery.Possessed
-                ? CommsStage.Intrusion
-                : chained ? CommsStage.Type : CommsStage.In);
+            EnterStage(delivery == CommsDelivery.Possessed ? CommsStage.Intrusion : CommsStage.In);
             _delivery = delivery;
             _persistent = persistent;
             if (delivery == CommsDelivery.Possessed) _takeoverElapsedSec = 0f;
+            SetTiming(charCount, delivery);
+        }
+
+        /// <summary>
+        /// いま <see cref="Begin"/> を呼ぶと、同じ面のまま文面を差し替える（<see cref="CommsStage.Swap"/>）か。
+        /// 実行体はこれを見て、旧文面を消し切るまで新しい文面を組まずに待つ。
+        /// </summary>
+        public bool WouldSwap(CommsDelivery delivery)
+        {
+            if (delivery == CommsDelivery.Possessed) return false;
+            if (_delivery == CommsDelivery.Possessed && _stage != CommsStage.Off) return false;
+            if (_stage == CommsStage.Off) return false;
+            CommsWeights now = Weights;
+            return now.open >= 0.999f && now.body >= 0.999f;
+        }
+
+        /// <summary>文字の段の尺を字数と出方から決める。</summary>
+        private void SetTiming(int charCount, CommsDelivery delivery)
+        {
             // 憑依の出し方（0230）: 文字の段は 出る → 読ませる（字数で伸びる）→ 塗り替わる の合計。
             _readSec = PossessionReadSecFor(charCount, ShowLanguage.Current);
             _typeSec = delivery == CommsDelivery.Possessed
@@ -452,6 +561,16 @@ namespace FixedCamVr.Streaming
                 : charCount <= 0
                     ? 0f
                     : Clamp(charCount / CharsPerSecFor(ShowLanguage.Current), MinTypeSec, MaxTypeSec);
+        }
+
+        /// <summary>旧文面が消え切った縁。預かっていた連絡の出方・尺・固定表示へ入れ替える。</summary>
+        private void CommitSwap()
+        {
+            _swapCommitted = true;
+            _swapCommitDue = true;
+            _delivery = _pendingDelivery;
+            _persistent = _pendingPersistent;
+            SetTiming(_pendingChars, _delivery);
         }
 
         /// <summary>段を移る。<b>いまの姿を覚えてから</b>移る（そこから動かすので飛ばない）。</summary>
@@ -505,7 +624,9 @@ namespace FixedCamVr.Streaming
         public void ReleasePersistent()
         {
             _persistent = false;
-            if (_stage == CommsStage.Hold || _stage == CommsStage.Type)
+            _pendingPersistent = false;
+            // 差し替えの途中も同じ（これから打つ導入の文面ごと畳む）。旧文面は Out が消し続ける。
+            if (_stage == CommsStage.Hold || _stage == CommsStage.Type || _stage == CommsStage.Swap)
                 EnterStage(CommsStage.Out);
         }
 
@@ -525,6 +646,7 @@ namespace FixedCamVr.Streaming
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;
             _takeoverElapsedSec = 0f;
+            _swapCommitted = _swapCommitDue = false;
             RestartCurseRamp();
         }
 
@@ -552,6 +674,10 @@ namespace FixedCamVr.Streaming
                     break;
                 case CommsStage.In:
                     if (_elapsed >= InSec) EnterStage(CommsStage.Type);
+                    break;
+                case CommsStage.Swap:
+                    if (!_swapCommitted && _elapsed >= SwapTextOutSec) CommitSwap();
+                    if (_elapsed >= SwapTextOutSec + SwapBandSec) EnterStage(CommsStage.Type);
                     break;
                 case CommsStage.Type:
                     if (_elapsed >= _typeSec) EnterStage(CommsStage.Hold);
@@ -697,18 +823,47 @@ namespace FixedCamVr.Streaming
                     case CommsStage.Hold:
                         return new CommsWeights
                         { panel = 1f, glyph = 1f, open = 1f, body = 1f, reveal = 1f, hint = 1f };
+                    case CommsStage.Swap:
+                    {
+                        // ⚠⚠ **旧文面を消してから、枠を動かす**（2026-10-14）。
+                        //    前半（`SwapTextOutSec`）は旧文面の濃さだけが落ちる。出ていた字数は保つ
+                        //    （減らすと字が後ろから欠けて「巻き戻った」に見える）。
+                        //    後半（`SwapBandSec`）は字が 1 つも無く、実行体が `BodyBandBlend` で
+                        //    枠の丈と中心を新しい文面の寸法へ移す。
+                        // ⚠ 濃さ・開き・下段は**いまの値から 1 へ**（読ませ終わりの Out から繋ぐと
+                        //   下段が薄れかけている。0 から張り直すと黒へ落ちて戻る）。
+                        float k = Smooth(Clamp01(_elapsed / (SwapTextOutSec + SwapBandSec)));
+                        bool clearing = !_swapCommitted;
+                        return new CommsWeights
+                        {
+                            panel = Lerp(_panelFrom, 1f, k),
+                            glyph = clearing
+                                ? _glyphFrom * TextFadeOut(_elapsed / SwapTextOutSec)
+                                : 0f,
+                            open = Lerp(_openFrom, 1f, k),
+                            body = Lerp(_bodyFrom, 1f, k),
+                            reveal = clearing ? _revealFrom : 0f,
+                            hint = Lerp(_hintFrom, 1f, k),
+                        };
+                    }
                     case CommsStage.Guide:
                     {
                         // 枠は開いているが、**文面のぶんの丈は無い**（下段だけの細い受信票）。
                         // 連絡を読ませ終わって戻ってきたときは、丈がここで縮む。
                         float k = Smooth(Clamp01(_elapsed / InSec));
+                        // ⚠⚠ **走っている連絡は `GuideTextOutSec` で消してから丈を縮める**（2026-10-14）。
+                        //    それまでは `reveal = 0` で 1 フレームで消していた。字の残っている枠を
+                        //    縮めると、縮む枠の上へ字がはみ出す。
+                        float textOut = _glyphFrom * _revealFrom > 0.0001f ? GuideTextOutSec : 0f;
+                        bool clearing = textOut > 0f && _elapsed < textOut;
+                        float bodyK = Smooth(Clamp01((_elapsed - textOut) / InSec));
                         return new CommsWeights
                         {
                             panel = Lerp(_panelFrom, 1f, k),
-                            glyph = 1f,
+                            glyph = clearing ? _glyphFrom * TextFadeOut(_elapsed / textOut) : 1f,
                             open = Lerp(_openFrom, 1f, k),
-                            body = Lerp(_bodyFrom, 0f, k),
-                            reveal = 0f,
+                            body = Lerp(_bodyFrom, 0f, bodyK),
+                            reveal = clearing ? _revealFrom : 0f,
                             hint = Lerp(_hintFrom, 1f,
                                         Smooth(Clamp01((_elapsed / InSec - HintInAt) / (1f - HintInAt)))),
                         };
@@ -748,6 +903,14 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        /// <summary>
+        /// 文面を消すときの濃さ（進み 0→1 で 1→0）。<b>見た目の明るさ</b>が smoothstep で落ちる
+        /// （<see cref="PerceptualFade.Reveal"/> の逆向き）。
+        /// ⚠ 文字のアルファは線形光で掛かるので、アルファを smoothstep で落とすと見た目は
+        ///   (1−s)^(1/2.2) になり、<b>消え際の 1〜2 フレームで一気に消える</b>（暗い地の上ほど目立つ）。
+        /// </summary>
+        private static float TextFadeOut(float progress) => PerceptualFade.Reveal(1f - Clamp01(progress));
+
         private static float OutSecFor(CommsDelivery delivery)
             => delivery == CommsDelivery.Possessed ? PossessedOutSec : OutSec;
 
@@ -761,6 +924,7 @@ namespace FixedCamVr.Streaming
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;
+            _swapCommitted = _swapCommitDue = false;
             RestartCurseRamp();
         }
 

@@ -188,6 +188,7 @@ namespace FixedCamVr.Streaming.Tests
             AdvanceUntil(l, CommsStage.Hold);
             l.SetGuideWanted(true);
             Assert.AreEqual(CommsStage.Guide, l.Stage);
+            Advance(l, CommsPanelLogic.GuideTextOutSec + Dt);
             Assert.AreEqual(0f, l.Weights.reveal, 1e-6f);
 
             l.SetGuideWanted(false);
@@ -198,6 +199,32 @@ namespace FixedCamVr.Streaming.Tests
                     "閉じる途中に前の本文が戻っている");
                 l.Tick(Dt);
             }
+        }
+
+        /// <summary>
+        /// 文面が消えている途中（<see cref="CommsPanelLogic.GuideTextOutSec"/> の内側）で離しても、
+        /// 前の本文は濃くならずにそのまま消えていく。
+        /// </summary>
+        [Test]
+        public void ReleasingTheGuide_WhileTheTextFades_NeverBrightensIt()
+        {
+            var l = Started();
+            AdvanceUntil(l, CommsStage.Hold);
+            l.SetGuideWanted(true);
+            l.Tick(Dt);
+            float prev = l.Weights.reveal * l.Weights.glyph;
+            Assert.That(prev, Is.InRange(0.05f, 0.999f), "消え始めていない／1 フレームで消えた");
+
+            l.SetGuideWanted(false);
+            Assert.AreEqual(CommsStage.Out, l.Stage);
+            for (int i = 0; i < 90; i++)
+            {
+                l.Tick(Dt);
+                float now = l.Weights.reveal * l.Weights.glyph;
+                Assert.LessOrEqual(now, prev + 1e-6f, "閉じる途中に前の本文が濃くなっている");
+                prev = now;
+            }
+            Assert.AreEqual(0f, prev, 1e-4f);
         }
 
         [Test]
@@ -289,10 +316,10 @@ namespace FixedCamVr.Streaming.Tests
             AdvanceUntil(l, CommsStage.Hold);
 
             l.Begin(Chars);
-            // ⚠ 枠も丈も出来上がっているので、**開く段は挟まずに印字から**
+            // ⚠ 枠も丈も出来上がっているので、**開く段は挟まずに差し替えから**
             //   （2026-08-19・`canon/LEDGER.md` 0096。挟むと何も動かない 0.45 秒だけ面が空になる）。
-            Assert.AreEqual(CommsStage.Type, l.Stage);
-            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "文面は 1 字目から出し直すこと");
+            //   差し替え（2026-10-14）は旧文面を消してから 1 字目を打つ。
+            Assert.AreEqual(CommsStage.Swap, l.Stage);
             Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠は畳まないこと");
             Assert.AreEqual(1f, l.Weights.body, 0.001f, "丈も保つこと");
             // ⚠⚠ 2026-08-16 まで**濃さと下段だけ 0 から張り直していた** — 走行中の面へ 2 通目が
@@ -300,6 +327,16 @@ namespace FixedCamVr.Streaming.Tests
             //    上の 3 行しか見ていなかったので素通りしていた（画にしか出ない不具合）。
             Assert.AreEqual(1f, l.Weights.panel, 0.001f, "地の濃さも保つこと（黒へ落として戻さない）");
             Assert.AreEqual(1f, l.Weights.hint, 0.001f, "下段も保つこと（消して戻さない）");
+
+            for (int i = 0; i < 5000 && l.Stage == CommsStage.Swap; i++)
+            {
+                l.Tick(Dt);
+                Assert.AreNotEqual(CommsStage.In, l.Stage, "開く段を挟んでいる");
+                Assert.AreEqual(1f, l.Weights.open, 0.001f, "差し替えの途中で枠を畳んでいる");
+                Assert.AreEqual(1f, l.Weights.panel, 0.001f, "差し替えの途中で地が落ちている");
+            }
+            Assert.AreEqual(CommsStage.Type, l.Stage);
+            Assert.AreEqual(0f, l.Weights.reveal, 0.02f, "文面は 1 字目から出し直すこと");
         }
 
         /// <summary>
@@ -405,7 +442,10 @@ namespace FixedCamVr.Streaming.Tests
             l.SetGuideWanted(true);          // 体験者が次の報告を押し始めた
 
             Assert.AreEqual(CommsStage.Guide, l.Stage, "走っている連絡が片づいていない");
-            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "文面が残っている");
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠を畳まないこと（1 秒後に②が来る）");
+            // 文面は `GuideTextOutSec` で消える（1 フレームでは消さない・2026-10-14）。
+            Advance(l, CommsPanelLogic.GuideTextOutSec + Dt);
+            Assert.AreEqual(0f, l.Weights.reveal * l.Weights.glyph, 0.001f, "文面が残っている");
             Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠を畳まないこと（1 秒後に②が来る）");
         }
 
@@ -455,10 +495,13 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Begin(Chars);                       // 次の連絡が届く
 
-            Assert.AreEqual(CommsStage.Type, l.Stage, "開く段を挟んでいる（面が空になる）");
+            Assert.AreEqual(CommsStage.Swap, l.Stage, "開く段を挟んでいる（面が空になる）");
             Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠を畳んでいる");
             Assert.AreEqual(1f, l.Weights.body, 0.001f, "丈を張り直している");
-            Assert.AreEqual(0f, l.Weights.reveal, 0.001f, "前の文面が残っている");
+            Advance(l, CommsPanelLogic.SwapTextOutSec + Dt);
+            Assert.AreEqual(0f, l.Weights.reveal * l.Weights.glyph, 0.001f, "前の文面が残っている");
+            AdvanceUntil(l, CommsStage.Type);
+            Assert.AreEqual(1f, l.Weights.open, 0.001f, "枠を畳んでいる");
         }
 
         /// <summary>
