@@ -335,7 +335,9 @@ namespace FixedCamVr.Streaming
                 case SoundCue.ScreenOn: return 0.90f;   // 旧音の設定は保持する
                 case SoundCue.ScreenNoise: return 0.75f; // 山の尾。退かせたまま保つ
                 case SoundCue.Swap: return 0.55f;
-                case SoundCue.TitleOut: return 0.70f;
+                // ⚠ 題字が閉じる音は劇伴を退かせない（2026-10-14・`rules/sound-design.md`「劇伴はそのまま続く」）。
+                //   0.70 で引くと、押した瞬間に劇伴が沈み、吸い込みの一撃の前に戻ってきていた。
+                case SoundCue.TitleOut: return 0f;
                 case SoundCue.ShellOpen: return 0.40f;
                 case SoundCue.Glitch: return 0.35f;
                 case SoundCue.Bell: return 0.45f;

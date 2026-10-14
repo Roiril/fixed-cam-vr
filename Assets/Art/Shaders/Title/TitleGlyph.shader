@@ -55,6 +55,12 @@ Shader "FixedCamVr/TitleGlyph"
         _Bleed("Wet bleed (R=main G=accent A=deco)", 2D) = "black" {}
         // 墨の濡れ（1 = 書いている最中 / 0 = 乾いた）。乾くと滲みと濡れの照りが消え、現行の版と同じ画になる。
         _Wet("Wetness (0..1)", Range(0, 1)) = 0
+        // ⚠⚠ 奥行き（2026-10-14・LEDGER 0261「今のに奥行きを持たせて立体的に」「吸い込まれるような演出」）。
+        //   版の実寸 (m)。正は `TitleScreen`（題字の高さ × 縦横比）。側面を視線に沿って読むのに使う。
+        _PlateSize("Plate size (w, h in m)", Vector) = (2.6, 1.3, 0, 0)
+        // 閉じるとき、渦に捕まった墨が沈む深さ (m)。⚠ 沈むのは捕まった墨だけ（外周から先に、中心は最後）。
+        //   0022 で棄てたのは「平らな版が一様に 0.55m 退く」形で、これはそうならない。0.3m では正面から読めなかった。
+        _SinkM("Funnel depth (m)", Float) = 0.60
         _Dissolve("Burn (0..1)", Range(0, 1)) = 0
         _Swirl("Swirl (0..1)", Range(0, 1)) = 0
 
@@ -194,6 +200,21 @@ Shader "FixedCamVr/TitleGlyph"
             // 滲みの濃さ。墨の外へ広がる薄い縁。暗い地の上で光の暈に見えない量に抑える。
             #define BLEED_GAIN 0.18
 
+            // ---- 奥行き（2026-10-14）------------------------------------------------------
+            // ⚠⚠ **沈むのは渦に捕まった墨だけ**（0026「前線に届いていない墨は 1 ミリも動かない」）。
+            //    沈みは焼けの座標（その墨自身の巻き取りの進み）で決める。消え切る（EAT_B1）前に
+            //    底へ着かない（0027「溜まる前に消す」を奥行きにも当てる）。外周から捕まって沈み、
+            //    最後に中心が落ちる ＝ 平らな版が一様に退く形（0022 で棄てた）にはならない。
+            #define SINK_AT_GONE 0.75
+            // 沈んだ墨の暗さ。奥は闇へ消える（新しい色は足さない。墨の明るさを落とすだけ）。
+            #define DEEP_DARK 0.22
+            // 厚み。**板を重ねず**、表の面の中で視線に沿って奥を読む（重ね描きが増えない・両眼で正しい視差）。
+            // ⚠ 版を押し出すと明朝の横画が太る（TitleScreen の注記）ので、側面は墨より暗い色で描き、
+            //   正面（視線が面に垂直な所）ではほぼ見えない。題字の端ほど内側の側面が覗く。
+            #define EXTRUDE_M 0.05
+            #define SHELL_TAPS 5
+            #define SIDE_TONE 0.30
+
             TEXTURE2D(_Art);
             SAMPLER(sampler_Art);
             TEXTURE2D(_Write);
@@ -210,6 +231,8 @@ Shader "FixedCamVr/TitleGlyph"
             float4 _AshColor;
             float _Reveal;
             float _Wet;
+            float4 _PlateSize;
+            float _SinkM;
             float _Dissolve;
             float _Swirl;
             float _ArtAspect;
@@ -235,20 +258,11 @@ Shader "FixedCamVr/TitleGlyph"
                 float2 uv : TEXCOORD0;
                 float2 local : TEXCOORD1;
                 float4 color : COLOR;
+                float3 viewOS : TEXCOORD2;  // この点からカメラへ（オブジェクト空間）
+                float sink : TEXCOORD3;     // 漏斗の沈み (0..1)
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
-            Varyings vert(Attributes v)
-            {
-                Varyings o;
-                UNITY_SETUP_INSTANCE_ID(v);
-                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
-                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
-                o.uv = v.uv;
-                o.local = v.local;
-                o.color = v.color;
-                return o;
-            }
 
             float Hash21(float2 p)
             {
@@ -315,6 +329,31 @@ Shader "FixedCamVr/TitleGlyph"
                 return step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
             }
 
+            /// 漏斗の沈み (0..1)。その半径の墨がどれだけ巻き取られたか（焼けの座標）で決まる。
+            float SinkAt(float radius, float sw)
+            {
+                return smoothstep(0.0, SINK_AT_GONE, EatCoord(radius, sw));
+            }
+
+            Varyings vert(Attributes v)
+            {
+                Varyings o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+                float3 pos = v.positionOS.xyz;
+                float2 aspect = float2(max(_ArtAspect, 0.01), 1.0);
+                float sink = SinkAt(length((v.uv - 0.5) * aspect), saturate(_Swirl));
+                // 3 層とも同じ半径で同じだけ沈む（描く順＝前後が崩れない）。
+                pos.z += _SinkM * sink;
+                o.sink = sink;
+                o.viewOS = TransformWorldToObject(GetCameraPositionWS()) - pos;
+                o.positionCS = TransformObjectToHClip(pos);
+                o.uv = v.uv;
+                o.local = v.local;
+                o.color = v.color;
+                return o;
+            }
+
             half4 frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
@@ -370,7 +409,7 @@ Shader "FixedCamVr/TitleGlyph"
                         shape = max(shape, inkj * leftTail * (1.0 - k * (1.0 - SMEAR_TAIL)));
                     }
                 }
-                if (shape <= 0.003 && burning <= 0.0 && _Wet <= 0.001) return half4(0, 0, 0, 0);
+                // ⚠ 墨の無い画素でも返さない（側面＝面の後ろの墨がここに覗くことがある）。最後の alpha で切る。
 
                 // ---- 出現。筆が届いた所から墨が置かれる（`_Write`）----
                 // ⚠ `_Reveal` = 1 で必ず全部出る（時刻は 0..1、前線の幅ぶん先へ進めて読む）。
@@ -418,6 +457,9 @@ Shader "FixedCamVr/TitleGlyph"
 
                 float3 rgb = lerp(_InkColor.rgb, _AccentColor.rgb, saturate(i.color.g));
                 rgb *= 1.0 + sheen;
+                // 漏斗の奥へ沈んだ墨は闇へ消える。
+                float sinkShade = lerp(1.0, DEEP_DARK, pow(saturate(i.sink), 0.8));
+                rgb *= sinkShade;
                 // 濡れた前線の照り（墨の色のまま明るく）。乾けば 0。
                 rgb *= 1.0 + WET_SHEEN * crest * saturate(_Wet) * (1.0 - burning);
                 // 焦げは色を**置き換える**（暗くするだけだと「影が差した」に見える）。
@@ -439,7 +481,25 @@ Shader "FixedCamVr/TitleGlyph"
                 float inkA = shape * wipe;
                 float bleedA = max(bleed - inkA, 0.0);
                 rgb = (rgb * inkA + rgb * 0.62 * bleedA) / max(inkA + bleedA, 1e-4);
-                float aInkA = (inkA + bleedA) * op;
+
+                // ---- 厚み（側面）。視線をこの点から奥へ延ばし、面の後ろにある墨を拾う ----
+                // 面に墨が無い所にだけ出る（表の墨が覆っている所は表が勝つ）。
+                float3 vd = normalize(i.viewOS);
+                float2 perM = (-vd.xy / max(-vd.z, 0.2)) / max(_PlateSize.xy, 0.01);
+                float side = 0.0;
+                [unroll]
+                for (int k = 1; k <= SHELL_TAPS; k++)
+                {
+                    float kd = (float)k / (float)SHELL_TAPS;
+                    float2 uvk = wuv + perM * (EXTRUDE_M * kd);
+                    float ik = LayerInk(SAMPLE_TEXTURE2D(_Art, sampler_Art, uvk), i.color.rgb) * InArt(uvk);
+                    side = max(side, ik * (1.0 - 0.35 * kd));
+                }
+                float sideA = max(side * left * wipe - inkA - bleedA, 0.0);
+                float3 sideRgb = lerp(lerp(_InkColor.rgb, _AccentColor.rgb, saturate(i.color.g)) * SIDE_TONE,
+                                      _CharColor.rgb, 0.35) * sinkShade;
+                rgb = (rgb * (inkA + bleedA) + sideRgb * sideA) / max(inkA + bleedA + sideA, 1e-4);
+                float aInkA = (inkA + bleedA + sideA) * op;
                 float aAshA = ash * wipe * op * 0.9;
                 float alpha = saturate(aInkA + aAshA);
                 if (alpha <= 0.002) return half4(0, 0, 0, 0);

@@ -10,6 +10,8 @@ namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
     /// 題字の出（A で呼び出してから 3 秒）を 60fps の連番で撮る（2026-10-14）。
+    /// <c>close=1</c> なら、題字が乾き切ってから A を押し、閉じる演出（押してから 3.2 秒）を撮る。
+    /// <c>yaw=30</c> なら題字の中心を軸に横へ回り込んで撮る（奥行きは正面の片眼では縮みにしか見えない）。
     /// 実物の <see cref="TitleScreen"/> と <see cref="TitleLogic"/> をそのまま回す。
     ///
     /// 使い方: <c>.\tools\unity.ps1 menu titlereveal -Set tag=after</c>
@@ -32,6 +34,8 @@ namespace FixedCamVr.Streaming.EditorTools
         public static void Run()
         {
             string tag = EditorCliArgs.Get("tag") ?? "";
+            bool close = EditorCliArgs.Get("close") == "1";
+            float yaw = float.TryParse(EditorCliArgs.Get("yaw"), NumberStyles.Float, CultureInfo.InvariantCulture, out float yv) ? yv : 0f;
             string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             string dir = Path.Combine("Logs", "title-reveal", tag.Length > 0 ? $"{stamp}_{tag}" : stamp);
             Directory.CreateDirectory(dir);
@@ -49,6 +53,21 @@ namespace FixedCamVr.Streaming.EditorTools
             titleGo.transform.SetPositionAndRotation(cam.transform.position, cam.transform.rotation);
             var title = titleGo.AddComponent<TitleScreen>();
             title.EditorBuild();
+            if (Mathf.Abs(yaw) > 0.01f)
+            {
+                // 題字の中心（面の境界の中心）を軸に、同じ距離のまま横へ回り込む。
+                Renderer? glyph = null;
+                foreach (Renderer r in titleGo.GetComponentsInChildren<Renderer>(true))
+                    if (r.name == "TitleGlyphMesh") glyph = r;
+                if (glyph != null)
+                {
+                    Vector3 c = glyph.bounds.center;
+                    float dist = Vector3.Distance(cam.transform.position, c);
+                    Quaternion q = Quaternion.Euler(0f, yaw, 0f);
+                    cam.transform.SetPositionAndRotation(c + q * new Vector3(0f, 0f, -dist), q);
+                }
+                else Debug.LogWarning("[TitleReveal] 題字の面が見つからないので回り込まずに撮る");
+            }
             var rt = new RenderTexture(Width, Height, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB)
             { antiAliasing = 4 };
             var resolved = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
@@ -64,13 +83,24 @@ namespace FixedCamVr.Streaming.EditorTools
                 l.Begin();
                 var input = new TitleInput { concealReady = true };
                 float dt = 1f / Fps;
-                int frames = Mathf.RoundToInt((PreSec + PostSec) * Fps);
+                int frames = Mathf.RoundToInt((PreSec + PostSec + (close ? 0.2f : 0f)) * Fps);
+                if (close)
+                {
+                    // 呼び出して、書き上がって乾き切るまで進めてから撮り始める（乾きの途中で押すと濡れが混ざる）。
+                    l.RequestAdvance();
+                    for (float tt = 0f; tt < TitleLogic.InDelaySec + TitleLogic.InSec + TitleLogic.SettleSec + 0.3f; tt += 1f / Fps)
+                        l.Tick(1f / Fps, new TitleInput { concealReady = true });
+                }
                 var tsv = new System.Text.StringBuilder("frame\tt\tstage\treveal\tglyph\tpeak\n");
                 int peakMax = 0;
                 for (int f = 0; f < frames; f++)
                 {
                     float t = f * dt - PreSec;
-                    if (f == Mathf.RoundToInt(PreSec * Fps)) l.RequestAdvance();   // A で呼び出す縁（音もここ）
+                    if (f == Mathf.RoundToInt(PreSec * Fps))
+                    {
+                        if (close) l.RequestDismiss();   // A で閉じる縁（音もここ）
+                        else l.RequestAdvance();         // A で呼び出す縁（音もここ）
+                    }
                     TitleWeights w = l.Weights;
                     title.Apply(w, Mathf.Max(0f, t));
                     cam.targetTexture = rt;
