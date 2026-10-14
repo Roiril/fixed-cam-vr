@@ -294,7 +294,11 @@ namespace FixedCamVr.Streaming
         {
             if (_stage == TitleStage.Hold) return 1f;
             if (_stage != TitleStage.In) return 1f;
-            return Clamp01((_elapsed - InDelaySec) / InSec);
+            // 書き出しの前線は ease-out（2026-10-14）。題字の音の一撃（0.09s）の側へ量を寄せ、
+            // 終わりは静かに収める。dismiss の途中値（_dismissReveal）もこの値を保つので連続する。
+            float x = Clamp01((_elapsed - InDelaySec) / InSec);
+            float u = 1f - x;
+            return 1f - u * u * u;
         }
 
         /// <summary>いまの段から各層への値を出す。<b>見え方の判断はすべてここ</b>。</summary>

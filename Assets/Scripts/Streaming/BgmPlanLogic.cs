@@ -92,6 +92,57 @@ namespace FixedCamVr.Streaming
             return (st, ls, le);
         }
 
+        // ---- ループ折り返しのクロスフェード（2026-10-14・LEDGER 0049）------------------
+        // ユーザー逐語「周の途中でBGMの尺が切れたらループするように。差し替えを気づかれないように
+        // クロスフェードをお願い」。折り返しで再生位置を飛ばすと波形が不連続になり、プチッと鳴る。
+        // 終端の手前から「窓の頭を鳴らす 2 本目」を重ね、等パワーで受け渡す。
+
+        /// <summary>折り返しのクロスフェード秒の下限。</summary>
+        public const float LoopCrossfadeMinSec = 0.05f;
+        /// <summary>折り返しのクロスフェード秒の上限。</summary>
+        public const float LoopCrossfadeMaxSec = 1.5f;
+        /// <summary>ループ窓の長さに対するクロスフェード秒の割合。</summary>
+        public const float LoopCrossfadeRatio = 0.25f;
+
+        /// <summary>
+        /// 折り返しのクロスフェード秒。窓の長さの 1/4 を [0.05, 1.5] 秒へ丸める
+        /// （短い窓では曲の大半が重なってしまうので割合で抑え、長い窓でも 1.5 秒で足りる）。
+        /// </summary>
+        public static float LoopCrossfadeSec(float loopStart, float loopEnd)
+            => Clamp(LoopCrossfadeRatio * (loopEnd - loopStart), LoopCrossfadeMinSec, LoopCrossfadeMaxSec);
+
+        /// <summary>
+        /// 折り返しのクロスフェードを始めてよいか。
+        /// <b>loop=false なら常に false</b>（末尾は止める側の処理）。窓が <c>2 × 秒</c> に満たないほど短いときも
+        /// false（受け側が窓の外へ出てしまう）で、呼び出し側は従来の即時巻き戻しへ落ちる。
+        /// </summary>
+        /// <param name="time">いまの再生位置（秒）。</param>
+        /// <param name="loopStart">窓の頭（秒）。</param>
+        /// <param name="loopEnd">窓の終わり（秒・実クリップ長へ丸め済み）。</param>
+        public static bool ShouldStartLoopCrossfade(bool loop, float time, float loopStart, float loopEnd)
+        {
+            if (!loop) return false;
+            float window = loopEnd - loopStart;
+            if (window <= 0f) return false;
+            float xf = LoopCrossfadeSec(loopStart, loopEnd);
+            if (window < 2f * xf) return false;
+            return time >= loopEnd - xf;
+        }
+
+        /// <summary>
+        /// クロスフェードを始めた時点で、すでに重なっていた秒（<c>[0, xfSec]</c>）。
+        /// フレームの粗さで開始が遅れた分を、受け側の開始位置と進みへ織り込むのに使う。
+        /// </summary>
+        public static float LoopCrossfadeOverlap(float time, float loopEnd, float xfSec)
+            => Clamp(time - (loopEnd - xfSec), 0f, xfSec);
+
+        /// <summary>
+        /// 進み <paramref name="t"/>（0..1）での 2 本の倍率。**出ていく側は cos、入ってくる側は sin**
+        /// （二乗の和が 1 ＝ 継ぎ目で音が凹まない・<see cref="SoundFade.Cross"/>）。
+        /// </summary>
+        public static void LoopCrossfadeGains(float t, out float fadeOut, out float fadeIn)
+            => SoundFade.Cross(t, out fadeOut, out fadeIn);
+
         private static float Clamp(float v, float lo, float hi) => v < lo ? lo : (v > hi ? hi : v);
     }
 }

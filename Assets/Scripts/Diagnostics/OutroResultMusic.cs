@@ -1,9 +1,15 @@
 #nullable enable
+using FixedCamVr.Streaming;
 using UnityEngine;
 
 namespace FixedCamVr.Diagnostics
 {
-    /// <summary>終了結果を表示している間だけ流す曲。</summary>
+    /// <summary>
+    /// 終了結果を表示している間だけ流す曲。
+    /// フェードインは<b>聴感が直線</b>になる形（<see cref="SoundFade.Curve.Perceptual"/>・2026-10-14）。
+    /// 以前は振幅を一定速度で動かしていて（<c>MoveTowards</c>）、聴感は入りの頭で急に立ち上がり、
+    /// 後半はほとんど変わらなく聞こえた。フェードアウトは無い（表示が終わったら即停止）。
+    /// </summary>
     [DisallowMultipleComponent]
     public sealed class OutroResultMusic : MonoBehaviour
     {
@@ -15,6 +21,7 @@ namespace FixedCamVr.Diagnostics
 
         private AudioSource? _source;
         private bool _presented;
+        private float _fadeSeconds;   // 表示開始からの経過（**速度ではなく進み**を持つ。形に通して音量にする）
 
         public bool HasClip => _source != null && _source.clip != null;
         public bool IsPlaying => _source != null && _source.isPlaying;
@@ -54,13 +61,17 @@ namespace FixedCamVr.Diagnostics
             {
                 _source.time = 0f;
                 _source.volume = 0f;
+                _fadeSeconds = 0f;
                 _presented = true;
                 _source.Play();
             }
 
             if (!float.IsNaN(deltaTime) && !float.IsInfinity(deltaTime))
-                _source.volume = Mathf.MoveTowards(_source.volume, MusicGain,
-                                                   MusicGain * Mathf.Max(0f, deltaTime) / FadeInSeconds);
+            {
+                _fadeSeconds = Mathf.Min(FadeInSeconds, _fadeSeconds + Mathf.Max(0f, deltaTime));
+                _source.volume = MusicGain *
+                    SoundFade.Gain(_fadeSeconds / FadeInSeconds, SoundFade.Curve.Perceptual);
+            }
         }
 
         private void OnDisable() => Stop();
@@ -68,6 +79,7 @@ namespace FixedCamVr.Diagnostics
         private void Stop()
         {
             _presented = false;
+            _fadeSeconds = 0f;
             if (_source == null) return;
             _source.Stop();
             _source.volume = 0f;

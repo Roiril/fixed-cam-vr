@@ -177,5 +177,75 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(BgmPlanLogic.BgmChange.None,
                 BgmPlanLogic.DecideRestore(playing: true, currentTrackId: "amb", laneTrackId: "amb"));
         }
+
+        // ---- 折り返しのクロスフェード（LEDGER 0049）---------------------------------
+
+        [Test]
+        public void 折り返しの秒は窓の四分の一で_上限と下限に丸める()
+        {
+            Assert.AreEqual(1.5f, BgmPlanLogic.LoopCrossfadeSec(0f, 120f), 1e-5f, "長い窓は上限 1.5 秒");
+            Assert.AreEqual(1.5f, BgmPlanLogic.LoopCrossfadeSec(10f, 16f), 1e-5f, "窓 6 秒 = 1.5 秒ちょうど");
+            Assert.AreEqual(0.5f, BgmPlanLogic.LoopCrossfadeSec(0f, 2f), 1e-5f, "短い窓は 1/4");
+            Assert.AreEqual(0.05f, BgmPlanLogic.LoopCrossfadeSec(0f, 0.1f), 1e-5f, "極端に短い窓は下限 0.05 秒");
+            Assert.AreEqual(0.05f, BgmPlanLogic.LoopCrossfadeSec(5f, 5f), 1e-5f, "潰れた窓も下限");
+        }
+
+        [Test]
+        public void 折り返しは終端から秒を引いた位置で始まる()
+        {
+            // 窓 10〜110（100 秒）→ 秒は上限 1.5 → 108.5 から
+            Assert.IsFalse(BgmPlanLogic.ShouldStartLoopCrossfade(true, 108.49f, 10f, 110f));
+            Assert.IsTrue(BgmPlanLogic.ShouldStartLoopCrossfade(true, 108.5f, 10f, 110f));
+            Assert.IsTrue(BgmPlanLogic.ShouldStartLoopCrossfade(true, 109.9f, 10f, 110f));
+            // 全長ループ（0〜120）
+            Assert.IsFalse(BgmPlanLogic.ShouldStartLoopCrossfade(true, 0f, 0f, 120f));
+            Assert.IsTrue(BgmPlanLogic.ShouldStartLoopCrossfade(true, 118.5f, 0f, 120f));
+        }
+
+        [Test]
+        public void loop_false_は折り返しをしない()
+        {
+            Assert.IsFalse(BgmPlanLogic.ShouldStartLoopCrossfade(false, 119.9f, 0f, 120f));
+            Assert.IsFalse(BgmPlanLogic.ShouldStartLoopCrossfade(false, 108.5f, 10f, 110f));
+        }
+
+        [Test]
+        public void 短い窓では秒が割合で縮み_窓の外へ出るほど短いなら始めない()
+        {
+            // 窓 2 秒 → 秒 0.5。1.5 秒の位置から。
+            Assert.IsFalse(BgmPlanLogic.ShouldStartLoopCrossfade(true, 1.49f, 0f, 2f));
+            Assert.IsTrue(BgmPlanLogic.ShouldStartLoopCrossfade(true, 1.5f, 0f, 2f));
+            // 窓 0.1 秒 → 秒 0.05（下限）= 窓の半分。ちょうど始められる。
+            Assert.IsTrue(BgmPlanLogic.ShouldStartLoopCrossfade(true, 0.05f, 0f, 0.1f));
+            // 窓 0.09 秒 → 2 × 0.05 に満たない。受け側が窓から出るので始めない（従来の即時巻き戻し）。
+            Assert.IsFalse(BgmPlanLogic.ShouldStartLoopCrossfade(true, 0.089f, 0f, 0.09f));
+            Assert.IsFalse(BgmPlanLogic.ShouldStartLoopCrossfade(true, 5f, 5f, 5f), "潰れた窓");
+        }
+
+        [Test]
+        public void 開始が遅れた分は重なり済みの秒として返る()
+        {
+            Assert.AreEqual(0f, BgmPlanLogic.LoopCrossfadeOverlap(108.5f, 110f, 1.5f), 1e-5f);
+            Assert.AreEqual(0.4f, BgmPlanLogic.LoopCrossfadeOverlap(108.9f, 110f, 1.5f), 1e-4f);
+            Assert.AreEqual(1.5f, BgmPlanLogic.LoopCrossfadeOverlap(111f, 110f, 1.5f), 1e-5f, "窓を越えても秒で頭打ち");
+            Assert.AreEqual(0f, BgmPlanLogic.LoopCrossfadeOverlap(100f, 110f, 1.5f), 1e-5f, "手前は 0");
+        }
+
+        [Test]
+        public void 折り返しの倍率は全域で二乗の和が_1_になる()
+        {
+            for (int i = 0; i <= 100; i++)
+            {
+                float t = i / 100f;
+                BgmPlanLogic.LoopCrossfadeGains(t, out float gOut, out float gIn);
+                Assert.AreEqual(1f, gOut * gOut + gIn * gIn, 1e-5f, $"t={t}");
+            }
+            BgmPlanLogic.LoopCrossfadeGains(0f, out float o0, out float i0);
+            Assert.AreEqual(1f, o0, 1e-6f);
+            Assert.AreEqual(0f, i0, 1e-6f);
+            BgmPlanLogic.LoopCrossfadeGains(1f, out float o1, out float i1);
+            Assert.AreEqual(0f, o1, 1e-6f);
+            Assert.AreEqual(1f, i1, 1e-6f);
+        }
     }
 }

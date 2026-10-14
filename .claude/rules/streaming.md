@@ -316,6 +316,13 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
   初回 Apply は現在値へ同期するだけで発火しない（起動のたびに中止が走らない）
 - **切替 dip は unscaledDeltaTime で進行**（2026-07-22）: `CameraSwitchDirector.AdvanceDip` は timeScale=0 で黒凍結しないよう
   unscaledDeltaTime で進める（StartupFader と同流儀）。OnDisable で dip を解除（`_SwitchDim` を 0・状態 Idle 化）
+- **暗転・明け・報告の緩急は [`PerceptualFade`](../../Assets/Scripts/Streaming/PerceptualFade.cs) が正本**（2026-10-14）: 画は線形光で掛かるので
+  係数を時間に比例させると黒の直前の 1 刻みで見た目が一気に落ちる（0.07s を 90Hz で刻むと最後の 1 刻みで見た目 0.45→0）。
+  `Darken(level)` ＝ 見た目 1−level² を線形光へ戻す（落ち ease-in・上がり鏡像 ease-out）。使う先:
+  `CameraSwitchDirector.ApplyTransitionLevel` → `_SwitchDim`（dip 0.07/0.10s・乱れ側の sustain は従来のまま）/ `StartupFader`（明け）/ `ShowEndingFader`（板 alpha。文字を出す判定は線形の進み `_alpha`）。
+  `Reveal(progress)` ＝ 見た目が smoothstep の alpha → `OutroReport.ApplyAlpha`（面・文字を一括で 1 回溶かす。段差は付けない）。
+  タイトルの書き出し前線（`TitleLogic.RevealNow`）は ease-out cubic（0.6s は同じ・旧は線形）。**シェーダ側の掛け算は線形のまま**（曲線を 2 か所に持たない）
+  - PC 仮想体験（`menu virtualwalk`）用の seam: `CameraSwitchDirector.SetClock(Func<float>)` / `GlitchFx.TickExternal(dt, seedSec)`。実機の経路は変えていない
 - **⚠ ScreenComposite の `_SwitchDim` / `_SignalLost` は post FX 数式（Web FS_POST 一致規約）の対象外**（別系統 uniform）
 - ステータス表示（[`StatusHud`](../../Assets/Scripts/Diagnostics/StatusHud.cs)）は既定 OFF（右 B で表示トグル・lap/ゾーン/次の cue/信号 ●●○/要再登録 を単一サーフェスに緩追従表示。旧 RuntimeDebugHud の STATE 行相当を統合）
 - **⚠ 実機試着未実施**（追従・フェイルソフト系パラメータは SerializeField・現場調整前提）。dwell/クールダウンは

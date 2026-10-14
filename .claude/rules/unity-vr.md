@@ -192,7 +192,7 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 - 解除条件は `(min_hold) AND (any_stream_connected OR max_wait_timeout)` の AND/OR
   - `min_hold`（既定 0.5s）: 早すぎる解除での pop-in 防止
   - `max_wait_timeout`（既定 4s）: スマホがスリープ等で永遠に繋がらない時のハードガード
-- フェードアウトは 0.5s 程度の線形 alpha 1→0
+- フェードアウトは 0.5s 程度。alpha は `PerceptualFade.Darken(1−t)`（見た目の明るさで緩急。2026-10-14 まで線形 alpha）
 - 完了したら GameObject ごと破棄（Update を残さない）
 
 実装は [`StartupFader`](../../Assets/Scripts/Diagnostics/StartupFader.cs)。`MainDemoSceneSetup` で自動配置される。

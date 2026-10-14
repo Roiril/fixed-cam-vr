@@ -138,8 +138,10 @@ namespace FixedCamVr.Diagnostics
 
         private void SetAlpha(float a)
         {
-            _alpha = a;
-            if (_image != null) _image.color = new Color(fadeColor.r, fadeColor.g, fadeColor.b, a);
+            _alpha = a;   // 進み（0→1）。文字を出す判定はこちらで見る
+            // 板のアルファは見た目の明るさで落とす（線形だと最後の数コマで急に黒くなる。2026-10-14）
+            if (_image != null)
+                _image.color = new Color(fadeColor.r, fadeColor.g, fadeColor.b, PerceptualFade.Darken(a));
             if (_canvas != null) _canvas.enabled = a > 0.001f;
         }
 

@@ -15,7 +15,9 @@ namespace FixedCamVr.Streaming
     ///
     /// - 指示の無い区間では鳴っている曲がそのまま続く（区間ごとに途切れない）
     /// - ループ範囲（loopStart/loopEnd）は <see cref="Update"/> で監視して巻き戻す。
-    ///   AudioSource.loop はクリップ全長ループ専用なので、範囲指定時は自前で戻す
+    ///   AudioSource.loop はクリップ全長ループ専用なので、範囲指定時は自前で戻す。
+    ///   **折り返しは等パワーのクロスフェード**（2026-10-14・LEDGER 0049）: 終端の手前から 3 本目の
+    ///   AudioSource（<c>_loopTail</c>）に窓の頭を鳴らして重ね、終わったら鳴らす側を入れ替える
     /// - show.json に bgm 指定が無い場合は <see cref="defaultClip"/>（Inspector 設定・従来の固定ループ）を鳴らす。
     ///   つまり未オーサリングのショーは今までと同じ挙動になる
     /// - クリップは URL からの非同期 DL（sa:// 焼き込み / PC 卓のライブ URL 双方）。DL 中は無音のまま待つ
@@ -47,6 +49,7 @@ namespace FixedCamVr.Streaming
 
         private AudioSource? _a;
         private AudioSource? _b;
+        private AudioSource? _loopTail;   // 折り返しのクロスフェードで「窓の頭」を鳴らす 3 本目
         private Voice _cur;      // いま鳴らしている（or 鳴らそうとしている）系統
         private Voice _prev;     // フェードアウト中の系統
         private ShowBgmTrackDef[] _tracks = Array.Empty<ShowBgmTrackDef>();
@@ -64,6 +67,11 @@ namespace FixedCamVr.Streaming
         private ShowBgmDef? _laneDef;                  // レーンを作った指示（戻すときに再利用）
         private bool _takeOverrideActive;              // 演出が音を占有中か
         private float _laneResumeSec;                  // 占有開始時のレーン再生位置（戻る時に続きから）
+
+        // ---- 折り返しのクロスフェード（_cur だけが行う）----------------------------
+        private bool _loopXfActive;
+        private float _loopXfT;                        // 0..1 の進み
+        private float _loopXfDur;                      // 秒
 
         /// <summary>
         /// フェードの役。**クロスフェードの 2 本は必ず対で In / Out を持つ。**
@@ -86,7 +94,8 @@ namespace FixedCamVr.Streaming
             public float targetVolume;
             public float fadeT;         // 0..1 の進み（**速度ではなく進み**を持つ）
             public float fadeDur;       // 秒（<=0 なら即時）
-            public float fadeFrom;      // 開始時の音量
+            public float fadeFrom;      // 開始時のレーン音量（_duck / _score を掛ける前）
+            public float lane;          // いまのレーン音量（_duck / _score を掛ける前）。BeginFade が読む
             public FadeRole fadeRole;
             public bool loop;
             public float loopStart;
@@ -127,6 +136,7 @@ namespace FixedCamVr.Streaming
         {
             _a = CreateSource("A");
             _b = CreateSource("B");
+            _loopTail = CreateSource("LoopTail");
             _cur = new Voice { src = _a, trackId = "" };
             _prev = new Voice { src = _b, trackId = "" };
         }
@@ -402,6 +412,9 @@ namespace FixedCamVr.Streaming
         private void StartVoice(string trackId, AudioClip clip, float startSec, float loopStart, float loopEnd,
                                 bool loop, float volume, float fadeIn)
         {
+            // 折り返しのクロスフェード中なら畳む（旧 cur が prev になるので、2 本目を残さない）。
+            CancelLoopCrossfade();
+
             // 役割を入れ替える（旧 cur が prev になりフェードアウト、空いた側で新トラックを鳴らす）。
             Voice old = _cur;
             Voice next = _prev;
@@ -414,6 +427,7 @@ namespace FixedCamVr.Streaming
             {
                 old.src.Stop();
                 old.src.volume = 0f;
+                old.lane = 0f;
             }
             _prev = old;
 
@@ -423,7 +437,9 @@ namespace FixedCamVr.Streaming
             src.Stop();
             src.clip = clip;
             src.loop = false;              // ループ範囲は Update が見る（全長ループも同じ経路で扱う）
-            src.volume = fadeIn > 0f ? 0f : Mathf.Clamp01(volume);   // BeginFade が fadeFrom に読む
+            // BeginFade が fadeFrom に読むのは lane（src.volume は _duck / _score 込みなので読まない）。
+            next.lane = fadeIn > 0f ? 0f : Mathf.Clamp01(volume);
+            src.volume = Mathf.Clamp01(next.lane * (1f - _duck) * _score);
             src.time = st;
             src.Play();
             next.trackId = trackId;
@@ -444,17 +460,18 @@ namespace FixedCamVr.Streaming
         public void StopAll(float fadeOutSec)
         {
             _generation++;   // in-flight な DL の結果で鳴り出さないようにする
+            CancelLoopCrossfade();   // 止める最中に 2 本目を残さない
             if (_cur.src != null && _cur.src.isPlaying)
             {
                 _cur.stopping = true;
                 BeginFade(ref _cur, 0f, fadeOutSec, FadeRole.Solo);
-                if (fadeOutSec <= 0f) { _cur.src.Stop(); _cur.src.volume = 0f; }
+                if (fadeOutSec <= 0f) { _cur.src.Stop(); _cur.src.volume = 0f; _cur.lane = 0f; }
             }
             if (_prev.src != null && _prev.src.isPlaying)
             {
                 _prev.stopping = true;
                 BeginFade(ref _prev, 0f, fadeOutSec, FadeRole.Solo);
-                if (fadeOutSec <= 0f) { _prev.src.Stop(); _prev.src.volume = 0f; }
+                if (fadeOutSec <= 0f) { _prev.src.Stop(); _prev.src.volume = 0f; _prev.lane = 0f; }
             }
             _cur.trackId = "";
         }
@@ -469,7 +486,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private static void BeginFade(ref Voice v, float to, float sec, FadeRole role)
         {
-            v.fadeFrom = v.src != null ? v.src.volume : 0f;
+            // ⚠ 起点は **lane**（_duck / _score を掛ける前）。src.volume を読むと AdvanceVoice が掛けた
+            //    (1-_duck)*_score をフェード側がもう一度掛けて、始まりの瞬間に二重に引いていた（2026-10-14）。
+            v.fadeFrom = v.src != null ? v.lane : 0f;
             v.targetVolume = Mathf.Clamp01(to);
             v.fadeDur = Mathf.Max(0f, sec);
             v.fadeT = v.fadeDur <= 0f ? 1f : 0f;
@@ -479,11 +498,15 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             float dt = Time.unscaledDeltaTime;   // 演出で timeScale を触っても BGM は実時間で進む
-            AdvanceVoice(ref _cur, dt);
-            AdvanceVoice(ref _prev, dt);
+            AdvanceVoice(ref _cur, dt, isCurrent: true);
+            AdvanceVoice(ref _prev, dt, isCurrent: false);
         }
 
-        private void AdvanceVoice(ref Voice v, float dt)
+        /// <param name="isCurrent">
+        /// <see cref="_cur"/> か。折り返しのクロスフェードは _cur だけが行う
+        /// （_prev はフェードアウト中なので従来どおり即時に巻き戻す）。
+        /// </param>
+        private void AdvanceVoice(ref Voice v, float dt, bool isCurrent)
         {
             var src = v.src;
             if (src == null) return;
@@ -512,7 +535,35 @@ namespace FixedCamVr.Streaming
             // 演出が引いている分と、劇伴が居てよい量をここで掛ける。
             // **レーンの音量そのものは変えない**ので、引き終われば必ず元の高さへ戻る
             // （引いた状態が居座る事故を作らない）。
-            src.volume = Mathf.Clamp01(lane * (1f - _duck) * _score);
+            v.lane = lane;   // BeginFade の起点（掛ける前の値を持っておく）
+            float gain = lane * (1f - _duck) * _score;
+
+            // 折り返しのクロスフェード中は、元の位置（cos）と窓の頭（sin）へ同じ gain を等パワーで配る。
+            if (isCurrent && _loopXfActive)
+            {
+                if (v.stopping || _loopTail == null || !_loopTail.isPlaying)
+                {
+                    CancelLoopCrossfade();
+                    src.volume = Mathf.Clamp01(gain);
+                }
+                else
+                {
+                    _loopXfT = Mathf.Min(1f, _loopXfT + dt / _loopXfDur);
+                    BgmPlanLogic.LoopCrossfadeGains(_loopXfT, out float gOld, out float gNew);
+                    src.volume = Mathf.Clamp01(gain * gOld);
+                    _loopTail.volume = Mathf.Clamp01(gain * gNew);
+                    // 元の位置がクリップ末尾で先に鳴り終えたときも、残りを待たずに受け渡す。
+                    if (_loopXfT >= 1f || !src.isPlaying)
+                    {
+                        CompleteLoopCrossfade(ref v);
+                        return;   // 鳴らす側が入れ替わった。位置の監視は次のフレームから
+                    }
+                }
+            }
+            else
+            {
+                src.volume = Mathf.Clamp01(gain);
+            }
 
             if (v.stopping && v.fadeT >= 1f && v.targetVolume <= 0.0001f && src.isPlaying)
             {
@@ -523,6 +574,14 @@ namespace FixedCamVr.Streaming
 
             // ループ範囲の監視（AudioSource.loop はクリップ全長専用なので自前で巻き戻す）
             float end = v.loopEnd > 0f ? v.loopEnd : src.clip.length;
+            if (isCurrent && v.loop && !v.stopping)
+            {
+                if (_loopXfActive) return;   // 巻き戻しは 2 本目への受け渡しが引き受けている
+                if (BgmPlanLogic.ShouldStartLoopCrossfade(true, src.time, v.loopStart, end)
+                    && BeginLoopCrossfade(ref v, end))
+                    return;
+                // 窓が短すぎる / 2 本目が無いときは、下の従来の即時巻き戻しへ落ちる。
+            }
             if (src.time >= end - 0.02f)
             {
                 if (v.loop) src.time = v.loopStart;
@@ -531,6 +590,76 @@ namespace FixedCamVr.Streaming
                     v.stopping = true;
                     BeginFade(ref v, 0f, defaultFadeSec, FadeRole.Solo);
                 }
+            }
+        }
+
+        // ---- 折り返しのクロスフェード -------------------------------------------------
+
+        /// <summary>
+        /// 折り返しのクロスフェードを始める。2 本目（<c>_loopTail</c>）に**同じクリップの窓の頭**を鳴らし、
+        /// 元の位置は cos、2 本目は sin で <c>xf</c> 秒かけて受け渡す（<see cref="BgmPlanLogic.LoopCrossfadeSec"/>）。
+        /// 終わったら <see cref="CompleteLoopCrossfade"/> が鳴らす側を入れ替える。
+        /// 始められなければ false（呼び出し側が従来の即時巻き戻しへ落ちる）。
+        /// </summary>
+        private bool BeginLoopCrossfade(ref Voice v, float end)
+        {
+            var src = v.src;
+            var tail = _loopTail;
+            if (src == null || tail == null || src.clip == null) return false;
+
+            float xf = BgmPlanLogic.LoopCrossfadeSec(v.loopStart, end);
+            // フレームが粗くて開始が遅れた分は、受け側の頭出しと進みへ織り込む（元の位置と歩調を揃える）。
+            float overlap = BgmPlanLogic.LoopCrossfadeOverlap(src.time, end, xf);
+
+            tail.Stop();
+            tail.clip = src.clip;
+            tail.loop = false;
+            tail.volume = 0f;   // 初回の gain は AdvanceVoice が次のフレームで書く（t≈0 なので 0 のまま）
+            tail.time = Mathf.Min(v.loopStart + overlap, Mathf.Max(0f, src.clip.length - 0.01f));
+            tail.Play();
+
+            _loopXfActive = true;
+            _loopXfDur = xf;
+            _loopXfT = overlap / xf;
+            return true;
+        }
+
+        /// <summary>
+        /// 受け渡しが終わった。2 本目が窓の頭 + xf 秒の位置を鳴らしているので、それを <see cref="_cur"/> にして
+        /// 元の AudioSource を止める（次の折り返しではこちらが 2 本目になる）。
+        /// </summary>
+        private void CompleteLoopCrossfade(ref Voice v)
+        {
+            var old = v.src;
+            var tail = _loopTail;
+            _loopXfActive = false;
+            _loopXfT = 0f;
+            if (old == null || tail == null) return;
+            // 受け渡し直後の 1 フレームを無音にしない: 新しい側の音量は AdvanceVoice が毎フレーム書くが、
+            // その前に今の gain を持たせておく。
+            tail.volume = Mathf.Clamp01(v.lane * (1f - _duck) * _score);
+            old.Stop();
+            old.volume = 0f;
+            v.src = tail;
+            _loopTail = old;
+        }
+
+        /// <summary>
+        /// 折り返しのクロスフェードを取り消す（トラックの切り替え / 止める / 想定外の停止）。
+        /// 2 本目を止め、元の位置の音量に掛けていた cos 分をレーンへ畳む
+        /// （畳まないと、取り消した瞬間に元の位置だけ音量が跳ね上がる）。
+        /// </summary>
+        private void CancelLoopCrossfade()
+        {
+            if (!_loopXfActive) return;
+            _loopXfActive = false;
+            BgmPlanLogic.LoopCrossfadeGains(_loopXfT, out float gOld, out _);
+            _cur.lane *= gOld;
+            _loopXfT = 0f;
+            if (_loopTail != null)
+            {
+                _loopTail.Stop();
+                _loopTail.volume = 0f;
             }
         }
 

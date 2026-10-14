@@ -253,14 +253,17 @@ namespace FixedCamVr.Diagnostics
         {
             _alpha = Mathf.Clamp01(alpha);
             bool visible = _alpha > 0;
+            // 進み（_alpha）を見た目の明るさの曲線へ通してから面と文字へ書く（2026-10-14）。
+            // 線形のアルファは黒の上で最初の数コマに急に見え始め、その後は変化が見えない。
+            float shown = PerceptualFade.Reveal(_alpha);
             if (_card != null && _card.gameObject.activeSelf != visible) _card.gameObject.SetActive(visible);
-            _plate?.SetFloat(AlphaId, _alpha);
-            _logo?.SetFloat(AlphaId, _alpha);
-            _photo?.SetFloat(AlphaId, _alpha);
+            _plate?.SetFloat(AlphaId, shown);
+            _logo?.SetFloat(AlphaId, shown);
+            _photo?.SetFloat(AlphaId, shown);
             for (int i = 0; i < _fields.Count; i++)
             {
                 Color ink = i == 0 ? TitleInk : RecordInk;
-                ink.a = _alpha;
+                ink.a = shown;
                 _fields[i].color = ink;
                 _fields[i].maxVisibleCharacters = int.MaxValue;
             }

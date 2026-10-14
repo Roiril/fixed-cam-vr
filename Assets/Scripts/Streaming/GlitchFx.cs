@@ -116,6 +116,17 @@ namespace FixedCamVr.Streaming
             Write(_logic.Tick(Time.unscaledDeltaTime));
         }
 
+        /// <summary>
+        /// Play せずに 1 コマ進める（PC の仮想体験 VirtualWalk 用）。<c>Update</c> と同じ式を
+        /// 固定の <paramref name="dt"/> とシード時刻で回す。実機の経路（Update）は変えない。
+        /// </summary>
+        public void TickExternal(float dt, float seedSec)
+        {
+            if (_material == null) return;
+            _material.SetFloat(GlitchId, _logic.Tick(dt));
+            _material.SetFloat(GlitchSeedId, seedSec);
+        }
+
         private void Write(float level)
         {
             if (_material == null) return;

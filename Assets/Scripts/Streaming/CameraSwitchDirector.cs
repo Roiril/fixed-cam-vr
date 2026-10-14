@@ -394,7 +394,7 @@ namespace FixedCamVr.Streaming
         //  それ以外の registry 直接切替は既定の External）。
         private void OnRegistryActiveChanged(int index)
         {
-            _logic.NotifyExternalSwitch(index, Time.time);
+            _logic.NotifyExternalSwitch(index, Now);
             SwitchCommitted?.Invoke(index, _commitSource);
         }
 
@@ -460,7 +460,7 @@ namespace FixedCamVr.Streaming
             if (_logic.InsertActive) return false;   // インサート差し込み中は手動切替を破棄
             if (_dip != DipState.Idle) return false; // dip 中は新規切替を始めない（cooldown でも弾かれる）
             _logic.Configure(switchCooldownSec, manualHoldSec);
-            if (_logic.RequestManual(target, Time.time, out int commit))
+            if (_logic.RequestManual(target, Now, out int commit))
             {
                 StartDip(commit, SwitchSource.Manual);
                 return true;
@@ -479,7 +479,7 @@ namespace FixedCamVr.Streaming
             // tracker は keepLastWhenOutside=true で null を出さない構成だが、Director 単体でも安全側に倒す。
             if (registry == null || target < 0 || target >= registry.Count) return;
             _progress.Configure(minDwellSec);
-            _progress.Request(target, Time.time);
+            _progress.Request(target, Now);
         }
 
         /// <summary>
@@ -756,7 +756,7 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            float now = Time.time;
+            float now = Now;
             _logic.SetCueActive(overlay != null && overlay.Current != null);
 
             // (1) 時計を進める。画面が凍結中でも dip 中でも必ず評価する（不変条件 4）。
@@ -893,7 +893,9 @@ namespace FixedCamVr.Streaming
             }
             else
             {
-                SetDim(t);
+                // 見た目の明るさで緩急をつける（落ちるとき ease-in・上がるとき鏡像の ease-out）。
+                // 線形に掛けると黒の直前の 1 刻みで見た目が一気に落ちる → PerceptualFade。
+                SetDim(PerceptualFade.Darken(t));
             }
         }
 
@@ -908,6 +910,15 @@ namespace FixedCamVr.Streaming
         public void SetDeltaSource(Func<float>? source) => _deltaSource = source;
 
         private float DipDeltaTime => _deltaSource != null ? _deltaSource() : Time.unscaledDeltaTime;
+
+        // dwell / cooldown を測る時計。既定は Time.time。
+        // **PC の仮想体験（VirtualWalk）用の seam** — Play せずに固定 dt で回すので、Time.time は進まない。
+        private Func<float>? _clock;
+
+        /// <summary>dwell / cooldown の時計を差し替える（VirtualWalk・EditMode 用。null で <c>Time.time</c> に戻る）。</summary>
+        public void SetClock(Func<float>? clock) => _clock = clock;
+
+        private float Now => _clock != null ? _clock() : Time.time;
 
         private void AdvanceDip()
         {

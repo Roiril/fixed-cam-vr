@@ -1,5 +1,6 @@
 #nullable enable
 using System.Reflection;
+using FixedCamVr.Streaming;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -49,7 +50,8 @@ namespace FixedCamVr.Diagnostics.Tests
                 Assert.AreEqual(0f, music.Volume);
 
                 music.SetPresented(true, .75f);
-                Assert.AreEqual(FullVolume / 2f, music.Volume, .0001f);
+                Assert.AreEqual(Perceptual(.5f), music.Volume, .0001f, "1.5 秒のちょうど半分で聴感曲線の半分");
+                Assert.Less(music.Volume, FullVolume / 2f, "振幅の直線より小さい（入りが静か）");
                 music.SetPresented(true, .75f);
                 Assert.AreEqual(FullVolume, music.Volume, .0001f);
                 Assert.AreEqual(source.volume, music.Volume);
@@ -62,6 +64,33 @@ namespace FixedCamVr.Diagnostics.Tests
                 Assert.AreEqual(FullVolume, music.Volume, .0001f,
                                 "表示中の再生停止でフェードを戻さない");
                 Assert.IsFalse(music.IsPlaying, "再生停止を毎フレーム隠さない");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        [Test]
+        public void FadeInFollowsPerceptualCurveOverFixedSecondsAndIsMonotonic()
+        {
+            var go = new GameObject("outro-result-music-curve-test");
+            try
+            {
+                var music = CreateMusic(go);
+                float previous = 0f;
+                float elapsed = 0f;
+                for (int i = 0; i < 15; i++)
+                {
+                    music.SetPresented(true, .1f);
+                    elapsed += .1f;
+                    Assert.AreEqual(Perceptual(elapsed / 1.5f), music.Volume, .0001f, $"t={elapsed}");
+                    Assert.GreaterOrEqual(music.Volume, previous);
+                    previous = music.Volume;
+                }
+                Assert.AreEqual(FullVolume, music.Volume, .0001f, "1.5 秒ちょうどで目標値");
+                music.SetPresented(true, 10f);
+                Assert.AreEqual(FullVolume, music.Volume, .0001f, "超過しても目標値のまま");
             }
             finally
             {
@@ -122,7 +151,7 @@ namespace FixedCamVr.Diagnostics.Tests
 
                 source.clip = Resources.Load<AudioClip>(OutroResultMusic.ResourceName);
                 music.SetPresented(true, .75f);
-                Assert.AreEqual(FullVolume / 2f, music.Volume, .0001f,
+                Assert.AreEqual(Perceptual(.5f), music.Volume, .0001f,
                                 "クリップ復帰後は表示開始をやり直す");
             }
             finally
@@ -130,6 +159,10 @@ namespace FixedCamVr.Diagnostics.Tests
                 Object.DestroyImmediate(go);
             }
         }
+
+        // 進み t（0..1）での期待音量（目標値 × 聴感曲線）。
+        private static float Perceptual(float t)
+            => FullVolume * SoundFade.Gain(t, SoundFade.Curve.Perceptual);
 
         private static OutroResultMusic CreateMusic(GameObject go)
         {

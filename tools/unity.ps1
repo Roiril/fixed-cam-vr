@@ -126,6 +126,10 @@ $Menus = [ordered]@{
                             Desc = 'タイトル直後の歩行誘導（床の矢印と円）を 1 コマずつ焼く（-Set show=<show.json> / → make-preview-video.py で mp4）'
                             Set = 'show=<show.json のパス>'
                             Out = 'Assets/Screenshots/walkguide-preview/eye_5_hold.png' }
+    'virtualwalk'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.VirtualWalkRun.Run'
+                            Desc = 'PC の仮想体験: 仮想の部屋を NPC が歩き、固定カメラの映像が実シェーダ・実 Director を通る。NPC の目の絵を Logs/virtualwalk/ へ（→ tools/virtualwalk-video.py で mp4）'
+                            Set = 'laps=<周回 既定 1> / dwell=<各カメラの滞在秒 既定 3> / w=<出力の幅 既定 960> / outro=0|1 / maxsec=<上限秒>'
+                            Out = $null }
     'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
                             Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら 3 言語ぶん通す）'
                             Set = 'lang=ja|en|fr（体験者が読む面の言語。既定 ja。Latin は半角ぶん行が長くなるので 3 つとも測る）'

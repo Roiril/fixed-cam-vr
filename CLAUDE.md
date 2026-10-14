@@ -92,6 +92,8 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 - ⚠ **音は録画に映らない。** 画は `quest-record.py` が撮れるが、音は実機で聴く以外に確かめる手段が無い。
   だから `ev=sfx` / `sndBuilt` / `sndAud` / `sndLpf` が唯一の証拠になる → `rules/sound-design.md` §7。
   人に聴かせるのは `py -3.11 tools/sound-preview.py` の 9 本
+- **PC 側の安い門**: `.\tools\unity.ps1 menu virtualwalk -Set laps=1` → `py -3.11 tools/virtualwalk-video.py`
+  （NPC が歩き実シェーダ・実 Director を通した目の絵。時刻・順序・曲線・重なりだけ判定。実機の代わりではない — `rules/visual-verification.md`）
 - **被らないと分からないもの**（立体感・スケール・酔い・怖さの強度）は溜めて 1 回にまとめる →
   `rules/visual-verification.md`
 - ⚠ **検証出力は放っておくと 1 日で数 GB 積む**（1 走行の mp4 が 300〜450MB）。

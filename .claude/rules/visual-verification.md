@@ -82,6 +82,11 @@ HMD を被らずに撮れるので、実機確認をユーザーの手作業に�
   - **`** FEET OUT OF FRAME` が出ていたら合成の精度をいくら上げても浮いて見える**（2026-08-07〜）。
     足元が枠の外だと床との接点も影の落ち先も画に無い。直すのは立ち位置か画角（演出の管轄）
 - 位置合わせ検証ビュー（廻リ視）: `.\tools\unity.ps1 menu regviz`（ZoneGridFootprint + 登録ワイヤーフレームを identity/登録後 × 真上/斜め/目線で PNG 化 → `Assets/Screenshots/regviz/`。Play 不要・南北反転/変換ズレの机上検証）。
+- **PC の仮想体験**（2026-10-14〜）: `.\tools\unity.ps1 menu virtualwalk -Set laps=1` → `py -3.11 tools/virtualwalk-video.py`。
+  NPC が経路（`WalkRouteLogic`）を歩き、実プレート × 実シェーダ・実 Director・GlitchFx・OutroReport を 90Hz で通した**NPC の目の絵**
+  （mp4・`report.md`・`--compare before after`）。**安い門**として、切替・暗転の曲線（見た目の明るさ）・乱れと音の重なり・画面の追従遅れ・終幕の単調さを秒で出す。
+  **判定できるのは時刻・順序・曲線・重なりだけ**。圧縮・伝送の痩せ・遅延・両眼・実ディスプレイは無く、シェーダの `_Time.y`（砂嵐・点灯）は進まない
+  → 見た目の合否は §6 のとおり実機の画で出す（`reference/why.md`「代理を厚くしない」）。
 - 新規に視覚検証ツールを書くときも「周回 / 単体隔離 / 正解と並置」を最初から入れる。
 - OVR シーンは Link/HMD 無し Play がハングするので、この種の**静的スクショ**が実機ゼロ検証の主力（[unity_pitfalls](../memory/unity_pitfalls.md)）。
 

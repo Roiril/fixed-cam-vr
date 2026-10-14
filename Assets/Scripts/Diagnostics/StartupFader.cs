@@ -109,7 +109,7 @@ namespace FixedCamVr.Diagnostics
                 if (_image != null)
                 {
                     var c = _image.color;
-                    c.a = 1f - t;
+                    c.a = PerceptualFade.Darken(1f - t);   // 見た目で滑らかに明ける（2026-10-14）
                     _image.color = c;
                 }
 
