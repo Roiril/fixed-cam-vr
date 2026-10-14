@@ -401,9 +401,8 @@ public final class TabletInstrumentation extends Instrumentation {
     }
 
     private void openVisitorControls(WebView view) throws Exception {
-        evaluate(view, "(()=>{const e=document.getElementById('subtitle'),r=e.getBoundingClientRect();"
-            + "for(const type of ['pointerdown','pointerup'])e.dispatchEvent(new PointerEvent(type,"
-            + "{bubbles:true,isPrimary:true,pointerId:21,button:0,clientX:r.x+r.width/2,clientY:r.y+r.height/2}));})()");
+        // 2026-10-14：画面のタップは次の文へ進む。止めるのは右上の一時停止ボタンだけ。
+        evaluate(view, "document.getElementById('briefingPauseBtn').click()");
         waitFor("visitor controls visible", 3000, () -> evaluateBoolean(view,
             "!document.getElementById('briefingControls').hidden"));
     }
@@ -452,7 +451,7 @@ public final class TabletInstrumentation extends Instrumentation {
         check("doctor decodes additional real frames", evaluateDouble(view,
             "document.getElementById('doctorVideo').webkitDecodedFrameCount") > framesBefore);
         openVisitorControls(view);
-        check("tap did not skip the sentence", before.equals(evaluateString(view,
+        check("pause button did not skip the sentence", before.equals(evaluateString(view,
             "document.getElementById('sceneCounter').textContent")));
         double stopped = evaluateDouble(view, "document.getElementById('doctorVideo').currentTime");
         SystemClock.sleep(600);

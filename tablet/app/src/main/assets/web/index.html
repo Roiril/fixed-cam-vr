@@ -209,16 +209,39 @@
   .stage.is-briefing .subtitle { justify-self: center; width: min(100%,1060px); min-height: 3.4em; text-align: center; font-size: clamp(19px,2.1vw,27px); }
   .stage.is-briefing, .stage.is-briefing * { -webkit-user-select: none; user-select: none; }
   .stage.is-briefing img, .stage.is-briefing video { -webkit-user-drag: none; }
-  .briefing-copy, .briefing-visual, .briefing-progress, .briefing-intro, .reference-fallback { display: none; }
+  .briefing-copy, .briefing-progress, .briefing-intro { display: none; }
   .briefing { position: relative; }
 
+  /* ---- 参考図（写真・壁の一周映像・装置の図）：左に額が上がり、博士は右へ寄る（2026-10-14 復活） ---- */
+  .briefing-visual { position: absolute; z-index: 2; left: max(4.5vw,env(safe-area-inset-left)); top: 47%; width: min(38vw,980px); aspect-ratio: 16 / 9; margin: 0; overflow: hidden; pointer-events: none; background: #050403; border: 1px solid rgba(232,220,196,.22); box-shadow: 0 24px 70px rgba(0,0,0,.75), 0 0 0 7px rgba(9,8,7,.55); transform: translateY(-50%); animation: ref-in .95s .1s var(--ease-out) both; }
+  @keyframes ref-in { from { clip-path: inset(0 100% 0 0); opacity: 0; transform: translate(-26px,-50%); } to { clip-path: inset(0 0 0 0); opacity: 1; transform: translateY(-50%); } }
+  .stage:not(.has-reference) .briefing-visual, .stage.is-equipment .briefing-visual { display: none; }
+  .briefing-visual::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 100% at 50% 50%,transparent 55%,rgba(9,8,7,.55)); box-shadow: inset 0 0 0 1px rgba(232,220,196,.06); }
+  .briefing-image, .briefing-loop-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s var(--ease); }
+  .briefing-image.is-visible, .briefing-loop-video.is-visible { opacity: 1; }
+  .briefing-visual.is-loop-playing .briefing-image { opacity: 0; }
+  .reference-fallback { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; padding: 20px; text-align: center; color: var(--muted); font: 13px/1.7 var(--sans); }
+  .reference-fallback p { margin: 0; }
+  .stage.is-briefing .portrait { left: 0; transition: left .8s var(--ease-out), filter .12s var(--ease); }
+  .stage.has-reference:not(.is-equipment) .portrait { left: 35%; -webkit-mask-image: linear-gradient(90deg,transparent 0,#000 24%); mask-image: linear-gradient(90deg,transparent 0,#000 24%); }
+  .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { transition: left .8s var(--ease-out), filter .45s var(--ease); }
+  /* 止めたら額も沈め、盤は博士側（右）へ寄せる（額に被せない） */
+  .briefing-visual { transition: filter .45s var(--ease); }
+  .stage.is-briefing-controls .briefing-visual { filter: brightness(.45) saturate(.7); }
+  .stage.has-reference:not(.is-equipment) .briefing-controls { left: 67%; }
+  /* 右上の一時停止（画面のタップは次の文へ進む） */
+  .briefing-pause-btn { position: fixed; z-index: 10; top: max(16px,env(safe-area-inset-top)); right: max(22px,env(safe-area-inset-right)); display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 1px solid rgba(232,220,196,.28); border-radius: 50%; background: rgba(9,8,7,.5); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: .62; transition: opacity .25s, border-color .25s, transform .2s var(--ease-out); }
+  .briefing-pause-btn:hover, .briefing-pause-btn:active { opacity: 1; border-color: rgba(232,220,196,.6); }
+  .briefing-pause-btn:active { transform: scale(.92); }
+  .briefing-pause-btn svg { width: 24px; height: 24px; fill: var(--ink); }
+  /* 通し確認中の印（スタッフ向け・小さく） */
+  .bypass-badge { position: fixed; z-index: 12; left: 50%; bottom: max(8px,env(safe-area-inset-bottom)); margin: 0; padding: 2px 12px; transform: translateX(-50%); border-radius: 10px; background: rgba(227,194,122,.16); color: var(--wait); font: 11px/1.6 var(--sans); letter-spacing: .12em; pointer-events: none; }
   /* 一時停止の盤：中央に「続ける」、まわりに小さな記号。名前は記号の下に小さく */
   .briefing-controls { position: relative; display: grid; grid-template-columns: repeat(5,auto); justify-content: center; align-items: start; gap: 6px 18px; width: auto; max-width: min(100%,860px); padding: 18px 26px 14px; border: 1px solid rgba(232,220,196,.12); border-radius: 26px; background: rgba(9,8,7,.62); -webkit-backdrop-filter: blur(14px) saturate(.8); backdrop-filter: blur(14px) saturate(.8); animation: panel-in .45s var(--ease-out) both; }
   @keyframes panel-in { from { opacity: 0; transform: translate(-50%,-46%) scale(.98); } to { opacity: 1; transform: translate(-50%,-50%); } }
   /* 止めたら画を沈め、盤は画面の中央に浮かべる（字幕は下に残す・博士の顔に被せない） */
   .stage.is-briefing:not(.is-equipment) .briefing-controls { position: fixed; z-index: 8; left: 50%; top: 50%; transform: translate(-50%,-50%); }
   .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { filter: brightness(.38) saturate(.7); transition: filter .5s var(--ease); }
-  .stage.is-briefing .portrait { transition: filter .5s var(--ease); }
   .briefing-control { min-height: 44px; }
   .stage.is-briefing .briefing-controls button { min-height: 44px; }
   .briefing-control { display: grid; justify-items: center; gap: 6px; min-width: 84px; white-space: nowrap; min-height: 76px; padding: 4px 2px; border: 0; background: transparent; color: rgba(242,236,223,.7); font: 11px/1.35 var(--sans); letter-spacing: .06em; text-align: center; transition: color .25s, transform .25s var(--ease-out); }
@@ -282,6 +305,9 @@
     .settings-actions { justify-content: space-between; }
     .title-brand { left: 8%; right: 8%; top: 12%; width: auto; }
     .equipment-steps { grid-template-columns: 1fr; gap: 18px; }
+    .briefing-visual { left: 6vw; right: 6vw; top: 6%; width: auto; transform: none; }
+    @keyframes ref-in { from { clip-path: inset(0 100% 0 0); opacity: 0; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+    .stage.has-reference:not(.is-equipment) .portrait { left: 0; top: 34%; -webkit-mask-image: linear-gradient(180deg,transparent 0,#000 22%); mask-image: linear-gradient(180deg,transparent 0,#000 22%); }
     .equip-ico { width: 84px; }
     .briefing-controls { grid-template-columns: repeat(3,auto); }
     #briefingRestart { grid-column: 1; grid-row: 3; } #briefingSettings { grid-column: 3; grid-row: 3; }
@@ -431,7 +457,20 @@
     <img id="doctorImage" alt="" width="1672" height="941" draggable="false">
     <video id="doctorVideo" playsinline preload="metadata" disablepictureinpicture hidden></video>
   </figure>
-  <button class="briefing-pause-surface" id="briefingPauseSurface" type="button" aria-label="一時停止して説明の操作を開く" hidden></button>
+  <figure class="briefing-visual" hidden>
+    <img class="briefing-image" id="briefingImage" alt="" draggable="false" width="1600" height="900" hidden>
+    <video class="briefing-loop-video" id="briefingLoopVideo" playsinline muted loop preload="none" disablepictureinpicture aria-hidden="true" hidden></video>
+    <div class="reference-fallback" id="referenceFallback" hidden>
+      <p id="referenceDescription"></p><span id="referenceUnavailable"></span>
+    </div>
+    <div class="briefing-intro" id="briefingIntro" hidden>
+      <p class="briefing-role" id="briefingRole"></p>
+      <p class="briefing-intro-text" id="briefingIntroText"></p>
+    </div>
+  </figure>
+  <button class="briefing-pause-surface" id="briefingPauseSurface" type="button" aria-label="次の文へ進む" hidden></button>
+  <button class="briefing-pause-btn" id="briefingPauseBtn" type="button" aria-label="一時停止" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
+  <p class="bypass-badge" id="bypassBadge" role="status" hidden>通し確認（接続を無視）</p>
 
   <main class="content" id="main">
     <section class="surface settings" id="settingsView" aria-labelledby="pageTitle" aria-hidden="true" hidden inert>
@@ -531,17 +570,6 @@
         <p class="briefing-caption" id="briefingCaption"></p>
         <p class="briefing-mode" id="briefingMode" hidden>スタッフ確認モードです。クエストへ設定は送りません。</p>
       </div>
-      <figure class="briefing-visual">
-        <img class="briefing-image" id="briefingImage" alt="" draggable="false" width="1600" height="900" hidden>
-        <video class="briefing-loop-video" id="briefingLoopVideo" playsinline muted loop preload="none" disablepictureinpicture aria-hidden="true" hidden></video>
-        <div class="reference-fallback" id="referenceFallback" hidden>
-          <p id="referenceDescription"></p><span id="referenceUnavailable"></span>
-        </div>
-        <div class="briefing-intro" id="briefingIntro" hidden>
-          <p class="briefing-role" id="briefingRole"></p>
-          <p class="briefing-intro-text" id="briefingIntroText"></p>
-        </div>
-      </figure>
       <div class="equipment-guide" id="equipmentGuide" hidden>
         <ol class="equipment-steps" id="equipmentSteps">
           <li><svg class="equip-ico" viewBox="0 0 120 100" aria-hidden="true"><circle pathLength="1" cx="66" cy="32" r="18"/><circle pathLength="1" cx="66" cy="32" r="9"/><path pathLength="1" d="M58 48c-2 10-4 22-3 32 1 6 11 6 13 0 2-10 2-22 1-32"/><path class="accent" pathLength="1" d="M40 62H16M23 55l-7 7 7 7"/></svg><span id="equipmentController"></span></li>
@@ -696,10 +724,12 @@
             <button class="staff-action" id="staffAlertSoundBtn" type="button">通知音を確認する</button>
             <button class="staff-action" id="staffSoundBtn" type="button">博士の音声を確認する</button>
             <button class="staff-action" id="staffBriefingBtn" type="button">説明を確認する</button>
+            <button class="staff-action" id="staffBypassBtn" type="button">通し確認（接続を無視）</button>
             <button class="staff-action" id="staffFullscreenBtn" type="button" hidden>全画面にする</button>
           </div>
           <p class="staff-help" id="staffAlertSoundHelp" role="status">引き渡し後に機器の異常が続いたとき、この短い音で知らせます。</p>
           <p class="staff-help" id="staffBriefingHelp"></p>
+          <p class="staff-help" id="staffBypassHelp">タイトルから装着の案内まで、クエストへ接続せず来場者と同じ流れで通して見られます。設定の送信と反映は見せかけです。</p>
           <p class="staff-help" id="staffSoundHelp" role="status">声が聞こえるか確認してください。音量はタブレット本体のボタンで調整します。</p>
         </section>
         <section class="staff-trouble-section" id="staffPending" aria-labelledby="staffPendingTitle" hidden>
@@ -923,6 +953,7 @@
     staffQuest: activeQuest,
     staffChecking: false,
     staffPreview: false,
+    bypass: false,
     restored: false,
     briefing: {
       loadState: 'loading',
@@ -1196,6 +1227,8 @@
   }
 
   function visitorSettingsAccess(status = state.status) {
+    // 通し確認（スタッフ）：接続も段も見ない。
+    if (state.bypass) return { allowed: true, bypass: true };
     if (staffResetRequest) return { allowed: false, wait: 'preparing' };
     if (transport.native && !activeQuest) return { allowed: false, wait: 'preparing' };
     if (!status) return transport.native
@@ -1275,6 +1308,7 @@
     stage.classList.toggle('is-briefing', view === 'briefing');
     if (view !== 'result') stage.classList.remove('is-result-ready');
     if (view !== 'briefing') stage.classList.remove('is-doctor-only');
+    if (view !== 'briefing') stage.classList.remove('has-reference');
     if (view !== 'briefing') stage.classList.remove('is-equipment');
     $('subtitle').hidden = view === 'briefing' && state.briefing.ended;
     document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
@@ -1366,6 +1400,7 @@
     state.restartMessage = restarted;
     state.restored = false;
     state.staffPreview = false;
+    state.bypass = false;
     resetBriefingSession();
     state.briefing.muted = false;
     state.settingsStep = 'language';
@@ -1445,7 +1480,8 @@
     $('briefingStaff').textContent = t.briefing.staff;
     $('briefingContinueSubtitles').textContent = t.briefing.subtitles;
     $('briefingControls').setAttribute('aria-label', t.briefing.controls);
-    $('briefingPauseSurface').setAttribute('aria-label', t.briefing.pause);
+    $('briefingPauseSurface').setAttribute('aria-label', t.briefing.advance);
+    $('briefingPauseBtn').setAttribute('aria-label', t.briefing.pause);
     $('briefingReplay').textContent = t.briefing.replay;
     $('briefingAdvanceHint').textContent = t.briefing.advance;
     $('selectedHeading').textContent = t.selected;
@@ -1669,8 +1705,46 @@
   }
 
   function syncBriefingLoopVideo() {
-    // 参考映像は説明画面に出さない。デコーダも常に解放する。
-    stopBriefingLoopVideo();
+    // 2026-10-14：参考図と壁の一周映像を説明の面に戻した（10-11 の ecdac4ea で隠していた）。
+    if (!isBriefingLoopCue()) { stopBriefingLoopVideo(); return; }
+    const video = $('briefingLoopVideo');
+    const source = assetPath(currentBriefingScene().loopVideo.file);
+    if (video.dataset.source !== source) {
+      video.src = source;
+      video.dataset.source = source;
+      video.muted = true;
+      video.hidden = true;
+      video.onplaying = () => {
+        if (!isBriefingLoopCue() || state.briefing.pauseReasons.size > 0 || document.hidden) return;
+        video.hidden = false;
+        document.querySelector('.briefing-visual').classList.add('is-loop-playing');
+        video.classList.add('is-visible');
+      };
+      video.onerror = () => {
+        if (!isBriefingLoopCue()) return;
+        briefingLoopVideoFailed = true;
+        video.pause();
+        video.classList.remove('is-visible');
+        document.querySelector('.briefing-visual').classList.remove('is-loop-playing');
+        video.hidden = true;
+      };
+      video.load();
+    }
+    if (state.briefing.pauseReasons.size > 0 || document.hidden) {
+      video.pause();
+      return;
+    }
+    if (briefingLoopVideoFailed || !video.paused) return;
+    const token = ++briefingLoopVideoToken;
+    const attempt = video.play();
+    if (attempt?.catch) attempt.catch(() => {
+      if (token !== briefingLoopVideoToken || !isBriefingLoopCue()) return;
+      briefingLoopVideoFailed = true;
+      video.pause();
+      video.classList.remove('is-visible');
+      document.querySelector('.briefing-visual').classList.remove('is-loop-playing');
+      video.hidden = true;
+    });
   }
 
   function stopBriefingMediaWindow(preservePosition = false) {
@@ -1828,8 +1902,11 @@
       clearBriefingMediaTimer();
       try {
         const savedTime = state.briefing.mediaResumeTime;
-        media.currentTime = resume && Number.isFinite(savedTime) && savedTime >= startSec && savedTime < endSec
+        const wanted = resume && Number.isFinite(savedTime) && savedTime >= startSec && savedTime < endSec
           ? savedTime : startSec;
+        // ⚠ 止めた位置のまま再開するときは探さない。探すと Android の WebView は
+        //   動画を読み直し、再開が 0.3〜1 秒止まる（2026-10-14・「再開で止まりすぎ」）。
+        if (!Number.isFinite(media.currentTime) || Math.abs(media.currentTime - wanted) > 0.12) media.currentTime = wanted;
         state.briefing.mediaResumeTime = null;
       } catch (error) {
         handleBriefingMediaFailure();
@@ -1883,6 +1960,7 @@
     setBriefingAuto(false);
     stopBriefingMediaWindow(true);
     renderBriefingControls();
+    syncBriefingLoopVideo();   // 盤を開いたら壁の映像も止める
     $('briefingResume').focus({ preventScroll: true });
     return true;
   }
@@ -1898,6 +1976,7 @@
     state.briefing.mediaPaused = false;
     setBriefingAuto(state.briefing.resumeAuto, true);
     renderBriefingControls();
+    syncBriefingLoopVideo();
     $('briefingPauseSurface').focus({ preventScroll: true });
     return true;
   }
@@ -1933,6 +2012,8 @@
     controls.inert = !panelOpen;
     $('briefingPauseSurface').hidden = panelOpen || complete || state.view !== 'briefing';
     $('briefingPauseSurface').inert = panelOpen || complete || state.view !== 'briefing';
+    $('briefingPauseBtn').hidden = panelOpen || complete || state.view !== 'briefing';
+    $('briefingPauseBtn').inert = panelOpen || complete || state.view !== 'briefing';
     document.querySelector('.stage').classList.toggle('is-briefing-controls', panelOpen);
     $('briefingToggle').textContent = state.briefing.auto ? t.autoOn : t.autoOff;
     $('briefingToggle').setAttribute('aria-label', $('briefingToggle').textContent);
@@ -2094,6 +2175,7 @@
       const copy = T[state.lang].equipment;
       const showGuidance = canShowEquipmentGuidance();
       document.querySelector('.stage').classList.remove('is-doctor-only');
+      document.querySelector('.stage').classList.remove('has-reference');
       document.querySelector('.briefing-visual').hidden = true;
       setText('briefingChapterNumber', '03');
       setText('briefingEyebrow', T[state.lang].journey[3]);
@@ -2155,6 +2237,8 @@
     if (intro) setText('briefingEyebrow', scene.title[state.lang]);
     $('briefingView').dataset.portrait = String(intro);
     document.querySelector('.briefing-visual').hidden = intro;
+    // 参考図（写真・壁の映像・装置の図）があるとき、博士は右へ寄り、左に額が上がる。
+    document.querySelector('.stage').classList.toggle('has-reference', !intro);
     $('briefingIntro').hidden = !intro;
     const image = $('briefingImage');
     image.hidden = intro || state.briefing.imageFailed;
@@ -2367,6 +2451,9 @@
     changeVisual(() => {
       if (state.staffPreview) {
         state.staffPreview = false;
+        state.bypass = false;
+        state.sent = null;
+        state.ui = 'idle';
         stopBriefingPlayback();
         setSurface('title', $('titleStart'));
         render();
@@ -2420,6 +2507,53 @@
     return true;
   }
 
+  function startBypass() {
+    if (state.bypass) {
+      endBypass();
+      return true;
+    }
+    if (state.sent?.seq > 0 || state.view === 'briefing' && !state.staffPreview) {
+      $('staffMessage').textContent = '来場者の設定または説明が進行中です。終了後に通し確認を始めてください。';
+      return false;
+    }
+    if (state.briefing.loadState !== 'ready' || !state.briefing.data) {
+      $('staffMessage').textContent = '説明を準備できませんでした。アプリを開き直してください。';
+      return false;
+    }
+    $('staff').close();
+    stopBriefingPlayback();
+    clearSavedProgress();
+    state.briefing.triggered = false;
+    state.bypass = true;
+    state.staffPreview = true;
+    state.sent = null;
+    state.ui = 'idle';
+    state.settingsStep = 'language';
+    state.titleTransitioning = false;
+    setDraft('ja', false);
+    setFormDisabled(false);
+    changeVisual(() => {
+      setSurface('title', $('titleStart'));
+      render();
+    });
+    return true;
+  }
+
+  function endBypass() {
+    state.bypass = false;
+    state.staffPreview = false;
+    sendGeneration++;
+    state.sent = null;
+    state.ui = 'idle';
+    stopBriefingPlayback();
+    clearSavedProgress();
+    setFormDisabled(false);
+    state.settingsStep = 'language';
+    setSurface('title', $('titleStart'));
+    render();
+    $('staff').close();
+  }
+
   function canAdvanceFromResult() {
     return state.view === 'result'
       && !state.briefing.triggered
@@ -2435,6 +2569,7 @@
 
   function resultKey() {
     if (state.ui === 'confirm' || state.ui === 'sending' || state.ui === 'fail' || state.ui === 'conflict') return state.ui;
+    if (state.bypass) return state.sent ? 'applied' : 'confirm';
     if (state.connection !== 'online' || !state.status) return 'noserver';
     const actual = state.status;
     const sent = state.sent;
@@ -2456,7 +2591,7 @@
     const copy = briefingBlocked
       ? t.briefing[state.briefing.loadState === 'error' ? 'error' : 'loading']
       : t.post[key];
-    const actual = questStatusFresh() ? state.status : null;
+    const actual = state.bypass ? state.sent : (questStatusFresh() ? state.status : null);
     const selected = key === 'confirm' || !state.sent
       ? { lang: state.lang, relief: state.relief }
       : state.sent;
@@ -3241,7 +3376,10 @@
     $('staffCheckBtn').textContent = state.staffChecking ? '接続を確認しています…'
       : key === 'unselected' ? '接続する' : '接続を確認する';
     const visitorBriefingActive = Boolean(state.sent?.seq > 0 || state.view === 'briefing' && !state.staffPreview);
-    $('staffBriefingBtn').disabled = state.briefing.loadState !== 'ready' || visitorBriefingActive;
+    $('staffBriefingBtn').disabled = state.bypass || state.briefing.loadState !== 'ready' || visitorBriefingActive;
+    $('staffBypassBtn').disabled = !state.bypass && (state.briefing.loadState !== 'ready' || visitorBriefingActive);
+    $('staffBypassBtn').textContent = state.bypass ? '通し確認を終える' : '通し確認（接続を無視）';
+    $('bypassBadge').hidden = !state.bypass;
     $('staffBriefingHelp').textContent = visitorBriefingActive
       ? '来場者の設定または説明が進行中です。終了後に説明を確認できます。'
       : 'この確認ではクエストへ設定を送りません。';
@@ -3627,6 +3765,18 @@
     clearSavedProgress();
     resetBriefingSession();
     state.sent = null;
+    if (state.bypass) {
+      // 通し確認：通信しない。選んだ値をそのまま「反映済み」として見せる（最短の待ちは本番と同じ）。
+      state.ui = 'sending';
+      state.sent = { lang: state.lang, relief: state.relief, seq: 0, portalSessionId: 'bypass', targetId: activeQuest };
+      setSurface('result', $('resultTitle'));
+      render();
+      await new Promise((resolve) => setTimeout(resolve, MINIMUM_APPLYING_MS));
+      if (generation !== sendGeneration || !state.bypass) return;
+      state.ui = 'sent';
+      render();
+      return;
+    }
     state.restartMessage = false;
     state.appliedSeen = false;
     state.leftWaitAfterApplied = false;
@@ -3674,6 +3824,8 @@
   }
 
   function poll() {
+    // 通し確認中は実機の状態を読まない（読むと来場者の流れの判定が途中で上書きされる）。
+    if (state.bypass) return Promise.resolve();
     if (pollInFlight) return pollInFlight;
     const generation = targetGeneration;
     const target = activeQuest;
@@ -3737,6 +3889,7 @@
     if (key !== questTickKey) { questTickKey = key; questTickAt = Date.now(); }
   }
   function questStatusFresh() {
+    if (state.bypass) return true;
     return state.connection === 'online' && Boolean(state.status) && questTickAt > 0 && Date.now() - questTickAt <= 4000;
   }
   function preparationAcknowledged(status) {
@@ -3883,7 +4036,9 @@
     stopBriefingMedia();
     resumeBriefing();
   });
-  $('briefingPauseSurface').addEventListener('click', openBriefingControls);
+  // 画面のタップは次のセリフへ。止めるのは右上の一時停止（2026-10-14）。
+  $('briefingPauseSurface').addEventListener('click', () => { moveBriefing(1, 'tap'); });
+  $('briefingPauseBtn').addEventListener('click', openBriefingControls);
   $('briefingResume').addEventListener('click', resumeBriefing);
   $('briefingRestart').addEventListener('click', restartBriefingCue);
   $('briefingPrevious').addEventListener('click', () => {
@@ -3948,6 +4103,7 @@
   }));
   $('staffCheckBtn').addEventListener('click', checkStaffQuest);
   $('staffBriefingBtn').addEventListener('click', startStaffPreview);
+  $('staffBypassBtn').addEventListener('click', startBypass);
   $('staffFullscreenBtn').addEventListener('click', () => {
     enterFullscreen();
     requestWakeLock();
@@ -4098,7 +4254,7 @@
     if (!start || start.pointerId !== event.pointerId || !isBriefingAdvanceTarget(event.target)) return;
     const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
     const scrolled = Math.hypot(window.scrollX - start.scrollX, window.scrollY - start.scrollY);
-    if (moved <= 14 && scrolled <= 4) openBriefingControls();
+    if (moved <= 14 && scrolled <= 4 && !state.briefing.controlsOpen) moveBriefing(1, 'tap');
   });
   document.addEventListener('pointercancel', () => { pointerGesture = null; });
   setSurface('title');
