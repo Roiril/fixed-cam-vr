@@ -22,7 +22,9 @@ Questとタブレットは同じ展示Wi-Fiへ接続する。Questでは「廻�
 
 博士画面のタップでは青い強調表示を出さない。博士の画像と動画と字幕は選択できない。キーボード操作時のボタンの位置表示は保つ。
 
-章を切り替えるときは動画を隠して静止画へ戻してから動画を解放する。次の動画は再生が始まってから表示する。Androidの画面背景も暗色に固定する。再生失敗と背景復帰とスタッフ操作後は操作パネルを出し、明示的な再開を待つ。
+章を切り替えるときは直前の画を保持する。次の画が描画できてから140msで交換する。博士が中央から右へ寄る動きは400ms。資料は120ms遅れて360msで現れる。資料同士は位置を保って220msで替える。字幕全文は即時に表示する。資料の提示へ180msの短い機械音を一度だけ合わせる。同じ資料の再描画と文送りと一時停止・再開では重複させない。背景移行とスタッフ操作と一時停止では予定されていた音も取り消す。返却と装着完了の案内は220ms保持してから一群として表示する。動画と字幕の長さと画像の定義は変えない。音源の再生成は [音と資料の遷移](../tools/visitor-ui/README.md#音と資料の遷移2026-10-15)。
+
+Androidの画面背景は暗色に固定する。再生失敗と背景復帰とスタッフ操作後は操作パネルを出し、明示的な再開を待つ。
 
 2026-10-05のUI点検ではタイトルから装着準備までを通して確認した。操作の文字と補足の大きさを揃える。軽減の効果は選択前から示す。反映前の現在値と反映後の確認値を区別する。反映済み画面にはタップのほかに同じ案内のボタンを置く。
 
@@ -49,6 +51,12 @@ adb -s 122d7871 shell am start -n com.roiril.mawarimi.tablet/.MainActivity
 既存Quest APK内の旧ページは移行前の版として残る。新しいタブレットアプリはそのページを使わない。現在のQuestソースでは旧ページと素材のGETを410にする。次のQuest通常ビルドから博士素材を同梱しない。
 
 ## 通信と検証
+
+`presentation true` はスタッフ確認で12文を通す。描画フレームと音声デコードの増加を測る。
+資料2回と音の実信号2回を照合する。遷移直後の一時停止で予定された音が取り消されることも確認する。
+Questへ設定は送らない。画面は `/sdcard/doctor-presentation-*.png` へ保存する。
+
+2026-10-15のRedmi Pad SE実機試験は32項目が成功した。12文すべてで動画描画と音声デコードを確認した。556回の描画標本で博士が不透明度0になる瞬間はなかった。資料2回に対して追加音の開始と実信号も2回だった。システム音入り録画でも同じ音を2回検出した。元波形との相関は0.9984と0.9864。録画の連続画面で博士の移動と資料の交換を確認した。スピーカーの聴感評価は未実施。本体音量は9/15を保持した。画像とアイコンと説明JSONの5ファイルは変更前とSHA-256が一致した。Webの回帰試験78件と提示処理の試験4件も成功した。導入後のAPKを端末から取得し、ビルドしたAPKとのSHA-256一致を確認した。試験用APKは削除した。
 
 スタッフ画面にはQuestと位置合わせとカメラ3台と素材の確認件数を出す。止まった応答は確認済みの数へ含めない。本体のメディア音量も実数で表示する。消音なら本体の音量ボタンを案内する。アプリは音量を変更しない。取得できない版やブラウザでは本体での確認を案内する。音量表示だけで実際に聞こえることを保証しない。
 
@@ -80,6 +88,7 @@ adb -s 122d7871 shell am instrument -w -e requireQuest true com.roiril.mawarimi.
 ```powershell
 adb -s 122d7871 shell am instrument -w -e playback true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 adb -s 122d7871 shell am instrument -w -e briefing true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
+adb -s 122d7871 shell am instrument -w -e presentation true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 adb -s 122d7871 shell am instrument -w -e equipment true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 adb -s 122d7871 shell am instrument -w -e staffFlow true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 adb -s 122d7871 shell am instrument -w -e staffFinish true com.roiril.mawarimi.tablet.test/.TabletInstrumentation

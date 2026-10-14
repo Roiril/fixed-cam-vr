@@ -329,6 +329,13 @@ const context = {
   },
 };
 context.globalThis = context;
+Object.assign(context.window, {
+  document: context.document,
+  performance: context.performance,
+  matchMedia: context.matchMedia,
+  setTimeout: context.setTimeout,
+  clearTimeout: context.clearTimeout,
+});
 
 for (const match of html.matchAll(/<script\s+[^>]*src="([^"]+)"[^>]*><\/script>/gi)) {
   // 題字の筆の書き出しは見た目だけ（状態も通信も持たない）。canvas と WebGL の無いこの代役では走らせない。
@@ -366,6 +373,7 @@ const exportsSource = `
     resumeBriefing,
     restartBriefingCue,
     beginBriefingCue,
+    presentLoadedReference,
     moveBriefing,
     finishBriefing,
     saveBriefingProgress,
@@ -1544,6 +1552,36 @@ test('通常説明のタップは次の文へ進み、右上の一時停止だ�
   elements.get('briefingPauseBtn').dispatch('click');
   elements.get('briefingRestart').dispatch('click');
   assert.equal(media.paused, false);
+});
+
+test('章の遷移中でも次の入力を予約せず現在位置からすぐ進める', () => {
+  prepareBriefing(clone(briefing));
+  state.briefing.sceneIndex = 0;
+  state.briefing.cueIndex = briefing.scenes[0].cues.ja.length - 1;
+  state.briefing.chapterChanging = true;
+  const moved = runtime.moveBriefing(1, 'tap');
+  assert.equal(moved, true);
+  assert.equal(state.briefing.sceneIndex, 1);
+  assert.equal(state.briefing.cueIndex, 0);
+  assert.equal(state.briefing.pendingMove, 0);
+});
+
+test('装着完了は語尾のあと220ms静止してから案内を一群で出す', () => {
+  motionPreference.matches = false;
+  try {
+    prepareBriefing(clone(briefing));
+    state.staffPreview = true;
+    state.briefing.sceneIndex = briefing.scenes.length - 1;
+    state.briefing.cueIndex = briefing.scenes.at(-1).cues.ja.length - 1;
+    runtime.finishBriefing();
+    assert.equal(state.briefing.ended, false);
+    assert.ok(pendingDelays().includes(220));
+    timers.runOne(220);
+    assert.equal(state.briefing.ended, true);
+  } finally {
+    state.staffPreview = false;
+    motionPreference.matches = true;
+  }
 });
 
 test('字幕だけの自動進行は停止時間を除外し、同じ文の残り時間から再開する', () => {
@@ -3096,6 +3134,40 @@ test('来場者の画面でQuestが6秒以上止まると3言語でスタッフ�
   }
   runtime.resetStaffTimers();
   runtime.renderCallStaff();
+  state.view = 'title';
+});
+
+test('一時停止ボタンは予定された資料提示を取り消し読込完了からの再予約も止める', () => {
+  timers.reset();
+  motionPreference.matches = false;
+  state.view = 'briefing';
+  state.staffPreview = true;
+  state.briefing.data = clone(briefing);
+  state.briefing.sceneIndex = 1;
+  state.briefing.cueIndex = 0;
+  state.briefing.ended = false;
+  state.briefing.pauseReasons.clear();
+  elements.get('staff').open = false;
+  const presentation = context.window.BriefingPresentation;
+  presentation.reset();
+  let shown = 0;
+  presentation.presentReference({ scene: 'pause-wire', initial: true, onStart: () => { shown += 1; } });
+  assert.ok(pendingDelays().includes(120), '検査前は提示予定がある');
+  runtime.openBriefingControls();
+  assert.equal(pendingDelays().includes(120), false, '一時停止の入口が実際の取消処理へ届く');
+  assert.equal(shown, 0);
+  const image = elements.get('briefingImage');
+  image.complete = true;
+  image.naturalWidth = 100;
+  image.dataset.scene = briefing.scenes[1].id;
+  image.dataset.presentationSource = '';
+  assert.equal(runtime.presentLoadedReference(state.briefing.data.scenes[1]), false,
+    '停止後に画像の読込が終わっても音と表示を再予約しない');
+  state.briefing.pauseReasons.clear();
+  image.complete = false;
+  image.naturalWidth = 0;
+  presentation.reset();
+  state.staffPreview = false;
   state.view = 'title';
 });
 

@@ -54,6 +54,7 @@ public final class TabletInstrumentation extends Instrumentation {
     private boolean staffFlow;
     private boolean staffFinish;
     private boolean visitorFocus;
+    private boolean presentation;
     private final AtomicReference<String> staffFinishHtml = new AtomicReference<>();
 
     @Override
@@ -67,6 +68,7 @@ public final class TabletInstrumentation extends Instrumentation {
         staffFlow = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFlow"));
         staffFinish = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFinish"));
         visitorFocus = arguments != null && "true".equalsIgnoreCase(arguments.getString("visitorFocus"));
+        presentation = arguments != null && "true".equalsIgnoreCase(arguments.getString("presentation"));
         start();
     }
 
@@ -74,7 +76,7 @@ public final class TabletInstrumentation extends Instrumentation {
     public void onStart() {
         int resultCode = Activity.RESULT_OK;
         try {
-            if (visitorFocus || staffFinish) runStaffFinishTests(); else if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
+            if (presentation) runPresentationTests(); else if (visitorFocus || staffFinish) runStaffFinishTests(); else if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
             results.putString("summary", "PASS checks=" + checks);
             Log.i(TAG, "PASS checks=" + checks);
         } catch (Throwable error) {
@@ -885,7 +887,8 @@ public final class TabletInstrumentation extends Instrumentation {
             "doctor-staff-finish-(setup|handover|playing|outro|finished|offline|recovered|prepared)-(wide|narrow)\\.png")
             && !(filename.endsWith("handover-narrow.png") || filename.endsWith("playing-narrow.png")
                 || filename.endsWith("outro-narrow.png") || filename.endsWith("offline-narrow.png"));
-        if (!visitorFocusName && !staffFinishName && !"doctor-staff-flow-staff.png".equals(filename)
+        boolean presentationName = filename.matches("doctor-presentation-[a-z0-9-]+\\.png");
+        if (!presentationName && !visitorFocusName && !staffFinishName && !"doctor-staff-flow-staff.png".equals(filename)
             && !"doctor-staff-flow-equipment.png".equals(filename)
             && !"doctor-staff-flow-title.png".equals(filename)) {
             throw new AssertionError("Unexpected staffFlow screenshot name: " + filename);
@@ -1091,6 +1094,95 @@ public final class TabletInstrumentation extends Instrumentation {
         removeMonitor(monitor);
         if (activity == null) throw new AssertionError("Shell Activity launch timed out");
         return activity;
+    }
+
+    private void runPresentationTests() throws Exception {
+        Activity activity = launchFromShell();
+        WebView view = waitForWebView(activity, 10000);
+        waitFor("presentation production page", 15000, () -> evaluateBoolean(view,
+            "document.readyState==='complete'&&typeof BriefingPresentation==='object'&&!!document.getElementById('staff')"));
+        ensureStaffScreen(view);
+        waitFor("presentation preview ready", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('staffBriefingBtn').disabled"));
+        evaluate(view, "BriefingPresentation.unlock();document.getElementById('staffBriefingBtn').click()");
+        waitFor("presentation doctor frame", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('doctorVideo').hidden&&document.getElementById('doctorVideo').currentTime>0.1"));
+        waitFor("presentation cue decoded", 10000, () -> evaluateBoolean(view,
+            "BriefingPresentation.snapshot().decoded"));
+        check("subtitle has no blur or translation", evaluateBoolean(view,
+            "(()=>{const s=getComputedStyle(document.getElementById('subtitleTyped'));return s.filter==='none'&&s.transform==='none';})()"));
+        saveScreenshot("doctor-presentation-introduction.png");
+
+        // A chapter gesture followed immediately by pause must cancel its future sound.
+        evaluate(view, "document.getElementById('briefingPauseSurface').click()");
+        SystemClock.sleep(180);
+        evaluate(view, "document.getElementById('briefingPauseSurface').click();document.getElementById('briefingPauseBtn').click()");
+        JSONObject canceled = evaluateObject(view, "JSON.stringify(BriefingPresentation.snapshot())");
+        SystemClock.sleep(350);
+        JSONObject afterCancel = evaluateObject(view, "JSON.stringify(BriefingPresentation.snapshot())");
+        check("pause cancels pending reference sound", afterCancel.optInt("sourceStartCount") == canceled.optInt("sourceStartCount"));
+        check("pause keeps the doctor stopped", evaluateBoolean(view, "document.getElementById('doctorVideo').paused"));
+        Log.i(TAG, "presentation canceled=" + afterCancel);
+        evaluate(view, "document.getElementById('briefingSettings').click()");
+        waitFor("presentation returned to staff", 5000, () -> evaluateBoolean(view, "document.getElementById('staff').open"));
+
+        evaluate(view, "BriefingPresentation.reset();document.getElementById('staffBriefingBtn').click()");
+        Set<String> rendered = new HashSet<>();
+        Set<String> captured = new HashSet<>();
+        long deadline = SystemClock.elapsedRealtime() + 95000;
+        boolean ended = false;
+        int lastReferenceCount = 0;
+        int visibleSamples = 0;
+        int blackSamples = 0;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            JSONObject sample = evaluateObject(view, "JSON.stringify((()=>{const v=document.getElementById('doctorVideo');"
+                + "const r=v.getBoundingClientRect(),s=getComputedStyle(document.querySelector('.portrait'));"
+                + "return {cue:document.getElementById('sceneCounter').textContent,clock:v.currentTime,"
+                + "file:v.getAttribute('src')||'',frames:v.getVideoPlaybackQuality().totalVideoFrames,"
+                + "audio:v.webkitAudioDecodedByteCount||0,visible:!v.hidden&&r.width>0&&r.height>0,"
+                + "paused:v.paused,muted:v.muted,portraitOpacity:s.opacity,"
+                + "ended:!document.getElementById('equipmentGuide').hidden,presentation:BriefingPresentation.snapshot()};})())");
+            JSONObject effects = sample.getJSONObject("presentation");
+            int referenceCount = effects.optInt("referenceDisplayCount");
+            if (referenceCount != lastReferenceCount) {
+                Log.i(TAG, "presentation reference=" + sample);
+                lastReferenceCount = referenceCount;
+            }
+            if (sample.optBoolean("visible") && !sample.optBoolean("paused") && !sample.optBoolean("muted")
+                && sample.optInt("frames") > 0 && sample.optLong("audio") > 0 && sample.optDouble("clock") > 0.1) {
+                visibleSamples++;
+                if (sample.optDouble("portraitOpacity") < 0.99) blackSamples++;
+                if (rendered.add(sample.optString("cue"))) Log.i(TAG, "presentation rendered=" + sample);
+                String file = sample.optString("file");
+                if (sample.optDouble("clock") > 1.2 && captured.add(file)) {
+                    String name = file.contains("subject") ? "subject" : file.contains("report") ? "report"
+                        : file.contains("wear") ? "wear" : "introduction";
+                    if ("subject".equals(name) || "report".equals(name)) {
+                        double centerFraction = evaluateDouble(view,
+                            "(()=>{const r=document.querySelector('.portrait').getBoundingClientRect();return (r.left+r.width/2)/innerWidth;})()");
+                        check("doctor stays inside the right side of the screen " + name,
+                            centerFraction > 0.60 && centerFraction < 0.76);
+                    }
+                    saveScreenshot("doctor-presentation-" + name + ".png");
+                }
+            }
+            if (sample.optBoolean("ended")) { ended = true; break; }
+            SystemClock.sleep(90);
+        }
+        check("presentation completes all chapters", ended);
+        check("twelve cues render frames and decoded audio", rendered.size() == 12);
+        check("portrait is not faded to black", visibleSamples > 100 && blackSamples == 0);
+        JSONObject effects = evaluateObject(view, "JSON.stringify(BriefingPresentation.snapshot())");
+        check("two reference presentations", effects.optInt("referenceDisplayCount") == 2);
+        check("two actual reference output signals", effects.optInt("soundPlayCount") == 2);
+        check("two source starts without redraw duplicates", effects.optInt("sourceStartCount") == 2);
+        check("reference cue has measured signal", effects.optDouble("peakRms") > 0.00001);
+        Log.i(TAG, "presentation final=" + effects);
+        saveScreenshot("doctor-presentation-equipment.png");
+        results.putString("presentation", effects.toString());
+        results.putInt("renderedCues", rendered.size());
+        results.putInt("visibleSamples", visibleSamples);
+        evaluate(view, "document.getElementById('briefingSettings').click()");
     }
 
     private void runBriefingTests() throws Exception {

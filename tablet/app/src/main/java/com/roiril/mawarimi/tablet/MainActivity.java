@@ -204,7 +204,8 @@ public final class MainActivity extends Activity {
                 return blocked(404, "Not Found");
             }
             if ("/".equals(path)) path = "/index.html";
-            if (!path.equals("/index.html") && !path.startsWith("/asset/") && !path.equals("/tablet-transport.js")) {
+            if (!path.equals("/index.html") && !path.startsWith("/asset/")
+                && !path.equals("/tablet-transport.js") && !path.equals("/briefing-presentation.js")) {
                 return blocked(404, "Not Found");
             }
             if (path.equals("/index.html") && !request.isForMainFrame()) return blocked(403, "Forbidden");
@@ -331,6 +332,7 @@ public final class MainActivity extends Activity {
         if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
         if (lower.endsWith(".webp")) return "image/webp";
         if (lower.endsWith(".mp3")) return "audio/mpeg";
+        if (lower.endsWith(".wav")) return "audio/wav";
         if (lower.endsWith(".mp4")) return "video/mp4";
         return "application/octet-stream";
     }

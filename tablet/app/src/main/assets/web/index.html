@@ -197,7 +197,7 @@
   /* 章が替わるとき：直前の絵（ghost）を残したまま新しい章の最初の絵へ溶かす。黒を挟まない。
      ghost は動画と同じ cover・同じ位置なので、博士が右へ寄る動きの途中でもずれない。 */
   .doctor-ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; opacity: 1; pointer-events: none; }
-  .doctor-ghost.is-fading { opacity: 0; transition: opacity .5s var(--ease); }
+  .doctor-ghost.is-fading { opacity: 0; transition: opacity .14s linear; }
   .stage.is-briefing .portrait::after { background:
       radial-gradient(120% 100% at 50% 40%,transparent 50%,rgba(9,8,7,.7) 100%),
       linear-gradient(0deg,rgba(9,8,7,.94),rgba(9,8,7,.55) 16%,transparent 34%),
@@ -211,28 +211,26 @@
   .briefing { position: relative; }
 
   /* ---- 参考図（写真・壁の一周映像・装置の図）：左に額が上がり、博士は右へ寄る（2026-10-14 復活） ---- */
-  .briefing-visual { position: absolute; z-index: 2; left: max(4.5vw,env(safe-area-inset-left)); top: 47%; width: min(38vw,980px); aspect-ratio: 16 / 9; margin: 0; overflow: hidden; pointer-events: none; background: #050403; border: 1px solid rgba(232,220,196,.22); box-shadow: 0 24px 70px rgba(0,0,0,.75), 0 0 0 7px rgba(9,8,7,.55); transform: translateY(-50%); animation: ref-in .95s .1s var(--ease-out) both; }
-  @keyframes ref-in { from { clip-path: inset(0 100% 0 0); opacity: 0; transform: translate(-26px,-50%); } to { clip-path: inset(0 0 0 0); opacity: 1; transform: translateY(-50%); } }
+  .briefing-visual { position: absolute; z-index: 2; left: max(4.5vw,env(safe-area-inset-left)); top: 47%; width: min(38vw,980px); aspect-ratio: 16 / 9; margin: 0; overflow: hidden; pointer-events: none; background: #050403; border: 1px solid rgba(232,220,196,.22); box-shadow: 0 24px 70px rgba(0,0,0,.75), 0 0 0 7px rgba(9,8,7,.55); opacity: 0; transform: translateY(-50%); transition: opacity .36s var(--ease-out), filter .45s var(--ease); }
+  .briefing-visual.is-presented { opacity: 1; }
   /* 観測装置は額へ入れず、博士と同じ暗い画面へ機材だけを重ねる。 */
-  .briefing-visual.is-device { left: max(3.5vw,env(safe-area-inset-left)); top: 46%; width: min(42vw,980px); background: transparent; border: 0; box-shadow: none; animation: device-in 1.1s .1s var(--ease-out) both; }
+  .briefing-visual.is-device { left: max(3.5vw,env(safe-area-inset-left)); top: 46%; width: min(42vw,980px); background: transparent; border: 0; box-shadow: none; }
   .briefing-visual.is-device::after { display: none; }
   .briefing-image[data-scene="report"], .reference-ghost[data-scene="report"] { object-fit: contain; filter: brightness(.8) saturate(.65); }
-  @keyframes device-in { from { opacity: 0; transform: translateY(calc(-50% + 10px)); } to { opacity: 1; transform: translateY(-50%); } }
   .stage.is-equipment .briefing-visual { display: none; }
-  .briefing-visual.is-leaving { opacity: 0; filter: none; transition: opacity .45s var(--ease); animation: none; }
+  .briefing-visual.is-leaving { opacity: 0; filter: none; }
   .reference-ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: 1; }
-  .reference-ghost.is-fading { opacity: 0; transition: opacity .5s var(--ease); }
+  .reference-ghost.is-fading { opacity: 0; transition: opacity .22s var(--ease); }
   .briefing-visual::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 100% at 50% 50%,transparent 55%,rgba(9,8,7,.55)); box-shadow: inset 0 0 0 1px rgba(232,220,196,.06); }
-  .briefing-image, .briefing-loop-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .6s var(--ease); }
+  .briefing-image, .briefing-loop-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .22s var(--ease); }
   .briefing-image.is-visible, .briefing-loop-video.is-visible { opacity: 1; }
   .briefing-visual.is-loop-playing .briefing-image { opacity: 0; }
   .reference-fallback { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; padding: 20px; text-align: center; color: var(--muted); font: 13px/1.7 var(--sans); }
   .reference-fallback p { margin: 0; }
-  .stage.is-briefing .portrait { left: 0; transition: left .8s var(--ease-out), filter .12s var(--ease); }
-  .stage.has-reference:not(.is-equipment) .portrait { left: 35%; -webkit-mask-image: linear-gradient(90deg,transparent 0,#000 24%); mask-image: linear-gradient(90deg,transparent 0,#000 24%); }
-  .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { transition: left .8s var(--ease-out), filter .45s var(--ease); }
+  .stage.is-briefing .portrait { transform: translateX(0); transition: transform .4s var(--ease-out), filter .12s var(--ease); }
+  .stage.has-reference:not(.is-equipment) .portrait { transform: translateX(17.5%); -webkit-mask-image: linear-gradient(90deg,transparent 0,#000 24%); mask-image: linear-gradient(90deg,transparent 0,#000 24%); }
+  .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { transition: transform .4s var(--ease-out), filter .45s var(--ease); }
   /* 止めたら額も沈め、盤は博士側（右）へ寄せる（額に被せない） */
-  .briefing-visual { transition: filter .45s var(--ease); }
   .stage.is-briefing-controls .briefing-visual { filter: brightness(.45) saturate(.7); }
   .stage.has-reference:not(.is-equipment) .briefing-controls { left: 67%; }
   /* 右上の一時停止（画面のタップは次の文へ進む） */
@@ -278,21 +276,20 @@
   .stage.is-equipment .content { justify-self: center; width: min(100%,1000px); max-width: none; padding: 0 var(--gutter); mix-blend-mode: screen; }
   .stage.is-equipment .briefing-copy { display: block; text-align: center; }
   .stage.is-equipment .briefing-chapter, .stage.is-equipment .briefing-caption { display: none; }
-  .stage.is-equipment .briefing-title { margin: 0 0 clamp(18px,4vh,36px); font: 400 clamp(20px,2.2vw,28px)/1.4 var(--serif); letter-spacing: .2em; animation: settle .7s var(--ease-out) both; }
+  .stage.is-equipment .briefing-title { margin: 0 0 clamp(18px,4vh,36px); font: 400 clamp(20px,2.2vw,28px)/1.4 var(--serif); letter-spacing: .2em; }
   .briefing-mode { margin: 0 0 14px; color: var(--gold); font: 12px/1.5 var(--sans); letter-spacing: .1em; }
   .equipment-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: clamp(14px,3vw,40px); margin: 0; padding: 0; list-style: none; }
-  .equipment-steps li { display: grid; justify-items: center; gap: 16px; text-align: center; font: 400 clamp(14px,1.45vw,17px)/1.7 var(--serif); letter-spacing: .06em; color: rgba(242,236,223,.88); animation: settle .7s var(--ease-out) both; }
-  .equipment-steps li:nth-child(2) { animation-delay: .35s; }
-  .equipment-steps li:nth-child(3) { animation-delay: .7s; }
+  .equipment-steps li { display: grid; justify-items: center; gap: 16px; text-align: center; font: 400 clamp(14px,1.45vw,17px)/1.7 var(--serif); letter-spacing: .06em; color: rgba(242,236,223,.88); }
   .equip-ico { display: block; width: clamp(96px,13vw,150px); height: auto; aspect-ratio: 1 / 1; object-fit: contain; }
-  .equipment-followup { margin: clamp(22px,5vh,40px) 0 0; color: rgba(194,184,168,.85); text-align: center; font: 400 clamp(15px,1.6vw,19px)/1.7 var(--serif); letter-spacing: .06em; animation: settle .7s 1.1s var(--ease-out) both; }
+  .equipment-followup { margin: clamp(22px,5vh,40px) 0 0; color: rgba(194,184,168,.85); text-align: center; font: 400 clamp(15px,1.6vw,19px)/1.7 var(--serif); letter-spacing: .06em; }
   .equipment-staff-status { margin: 12px 0 0; text-align: center; color: var(--gold); font: 13px/1.6 var(--sans); }
   .stage.is-equipment .briefing-controls { grid-template-columns: repeat(2,auto); padding: 0; border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .stage.is-equipment #briefingSettings { grid-column: 1; grid-row: 2; }
   .stage.is-equipment .briefing-replay { grid-column: 2; grid-row: 2; }
   .stage.is-equipment .briefing-mode, .stage.is-equipment .briefing-staff-hint, .stage.is-equipment .briefing-panel-status { display: none; }
   .stage.is-equipment .subtitle { display: none; }
-  .stage.is-equipment .briefing-controls { justify-self: center; grid-column: 1 / -1; animation: settle .6s .9s var(--ease-out) both; }
+  .stage.is-equipment .briefing-copy, .stage.is-equipment .equipment-guide, .stage.is-equipment .briefing-controls { animation: settle .36s var(--ease-out) both; }
+  .stage.is-equipment .briefing-controls { justify-self: center; grid-column: 1 / -1; }
 
   /* 動きを減らす設定：動きは消し、到着だけ即座に */
   @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } .choice::after { clip-path: none; } .choice:not(:has(input:checked))::after { display: none; } }
@@ -308,9 +305,7 @@
     .equipment-steps { grid-template-columns: 1fr; gap: 18px; }
     .briefing-visual { left: 6vw; right: 6vw; top: 6%; width: auto; transform: none; }
     .briefing-visual.is-device { left: 6vw; right: 6vw; top: 6%; width: auto; }
-    @keyframes ref-in { from { clip-path: inset(0 100% 0 0); opacity: 0; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
-    @keyframes device-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-    .stage.has-reference:not(.is-equipment) .portrait { left: 0; top: 34%; -webkit-mask-image: linear-gradient(180deg,transparent 0,#000 22%); mask-image: linear-gradient(180deg,transparent 0,#000 22%); }
+    .stage.has-reference:not(.is-equipment) .portrait { top: 34%; transform: none; -webkit-mask-image: linear-gradient(180deg,transparent 0,#000 22%); mask-image: linear-gradient(180deg,transparent 0,#000 22%); }
     .equip-ico { width: 84px; }
     .briefing-controls { grid-template-columns: repeat(3,auto); }
     #briefingRestart { grid-column: 1; grid-row: 3; } #briefingSettings { grid-column: 3; grid-row: 3; }
@@ -752,6 +747,7 @@
 <audio id="staffSound" src="./asset/report-ja-v2.mp3" preload="none" hidden aria-hidden="true"></audio>
 
 <script src="./tablet-transport.js"></script>
+<script src="./briefing-presentation.js"></script>
 <script>
 (() => {
   'use strict';
@@ -903,6 +899,7 @@
     beta: { name: 'クエスト β', symbol: 'β', host: '192.168.10.32', port: 8090 },
   };
   const transport = globalThis.TabletTransport;
+  const presentationController = window.BriefingPresentation;
   let activeQuest = transport.getQuest()
     || Object.keys(QUESTS).find((key) => location.host === `${QUESTS[key].host}:${QUESTS[key].port}`)
     || null;
@@ -1002,6 +999,7 @@
   let briefingLoopVideoFailed = false;
   let briefingLoopVideoToken = 0;
   let chapterTimer = null;
+  let equipmentTransitionPending = false;
   let pointerGesture = null;
   let wakeLock = null;
   let staffCheckGeneration = 0;
@@ -1188,12 +1186,6 @@
     $('subtitleReserve').textContent = text;
     $('subtitleAnnouncement').textContent = text;
     $('subtitleTyped').textContent = text;
-    // Keep the full sentence available immediately; only soften its arrival
-    // （ぼかしから浮かぶ。文字は最初のフレームから全部そこに在る）。
-    animateElement($('subtitleTyped'), [
-      { opacity: 0, filter: 'blur(6px)', transform: 'translateY(8px)' },
-      { opacity: 1, filter: 'blur(0)', transform: 'none' },
-    ], 520);
   }
 
   function stopReliefPreview() {
@@ -1944,8 +1936,16 @@
     }
   }
 
+  function cancelBriefingPresentation(reason) {
+    equipmentTransitionPending = false;
+    const image = $('briefingImage');
+    if (!image.classList.contains('is-visible')) image.dataset.presentationSource = '';
+    presentationController.cancel(reason);
+  }
+
   function setBriefingPause(reason, paused) {
     if (paused) {
+      cancelBriefingPresentation(reason);
       state.briefing.pauseReasons.add(reason);
       state.briefing.resumeAuto = state.briefing.auto || state.briefing.resumeAuto;
       state.briefing.controlsOpen = true;
@@ -1961,6 +1961,7 @@
 
   function openBriefingControls() {
     if (state.view !== 'briefing' || state.briefing.ended) return false;
+    cancelBriefingPresentation('controls');
     state.briefing.resumeAuto = state.briefing.auto || state.briefing.resumeAuto;
     state.briefing.controlsOpen = true;
     state.briefing.pauseReasons.add('controls');
@@ -1982,6 +1983,7 @@
     }
     state.briefing.controlsOpen = false;
     state.briefing.mediaPaused = false;
+    presentLoadedReference(currentBriefingScene(), false);
     setBriefingAuto(state.briefing.resumeAuto, true);
     renderBriefingControls();
     syncBriefingLoopVideo();
@@ -2167,6 +2169,38 @@
     return state.status?.staffSetup?.reason ? copy.interrupted : copy.waiting;
   }
 
+  function discardReferenceGhost() {
+    if (refGhostTimer) { clearTimeout(refGhostTimer); refGhostTimer = null; }
+    const ghost = $('referenceGhost');
+    ghost.hidden = true;
+    ghost.classList.remove('is-fading');
+  }
+
+  function presentLoadedReference(scene, sound = true) {
+    const image = $('briefingImage');
+    const figure = document.querySelector('.briefing-visual');
+    if (state.view !== 'briefing' || state.briefing.pauseReasons.size > 0
+      || document.hidden || nativePaused || $('staff').open
+      || !scene || scene.layout === 'doctor-center' || state.briefing.imageFailed
+      || image.dataset.scene !== scene.id || !image.complete || image.naturalWidth <= 0) return false;
+    const source = image.getAttribute('src') || '';
+    if (image.dataset.presentationSource === source) return false;
+    image.dataset.presentationSource = source;
+    const initial = !figure.classList.contains('is-presented');
+    presentationController.presentReference({
+      scene: scene.id,
+      initial,
+      sound,
+      onStart: () => {
+        if (currentBriefingScene()?.id !== scene.id || image.getAttribute('src') !== source) return;
+        figure.classList.add('is-presented');
+        image.classList.add('is-visible');
+        releaseReferenceGhost();
+      },
+    });
+    return true;
+  }
+
   function renderBriefingScene() {
     const scene = currentBriefingScene();
     if (!scene) return;
@@ -2184,8 +2218,7 @@
       const showGuidance = canShowEquipmentGuidance();
       document.querySelector('.stage').classList.remove('is-doctor-only');
       document.querySelector('.stage').classList.remove('has-reference');
-      document.querySelector('.briefing-visual').hidden = true;
-      document.querySelector('.briefing-visual').classList.remove('is-device');
+      setReferenceVisual(false);
       setText('briefingChapterNumber', '03');
       setText('briefingEyebrow', T[state.lang].journey[3]);
       setText('briefingTitle', showGuidance ? copy.title : copy.handoff);
@@ -2225,6 +2258,8 @@
     $('briefingRole').textContent = t.role;
     $('briefingIntroText').textContent = scene.caption[state.lang];
     const intro = scene.layout === 'doctor-center';
+    const stage = document.querySelector('.stage');
+    const hadReference = stage.classList.contains('has-reference');
     renderJourney();
     document.querySelector('.stage').style.setProperty('--doctor-anchor', `${scene.doctorAnchor}%`);
     const doctorSource = assetPath(scene.doctorImage);
@@ -2242,12 +2277,12 @@
       };
       $('doctorImage').src = doctorSource;
     }
-    document.querySelector('.stage').classList.toggle('is-doctor-only', intro);
+    stage.classList.toggle('is-doctor-only', intro);
     if (intro) setText('briefingEyebrow', scene.title[state.lang]);
     $('briefingView').dataset.portrait = String(intro);
     setReferenceVisual(!intro);
     // 参考図があるとき、博士は右へ寄る。装置は額なしで左へ重ねる。
-    document.querySelector('.stage').classList.toggle('has-reference', !intro);
+    stage.classList.toggle('has-reference', !intro);
     $('briefingIntro').hidden = !intro;
     const image = $('briefingImage');
     image.hidden = intro || state.briefing.imageFailed;
@@ -2255,9 +2290,11 @@
       image.alt = scene.alt[state.lang];
       const source = assetPath(scene.image);
       if (image.getAttribute('src') !== source || image.dataset.scene !== scene.id) {
-        captureReferenceGhost();   // 直前の絵を残してから差し替える
+        if (hadReference) captureReferenceGhost();
+        else discardReferenceGhost();
         document.querySelector('.briefing-visual').classList.toggle('is-device', scene.id === 'report');
         image.dataset.scene = scene.id;
+        image.dataset.presentationSource = '';
         state.briefing.imageFailed = false;
         image.hidden = false;
         $('referenceFallback').hidden = true;
@@ -2266,13 +2303,16 @@
           state.briefing.imageFailed = false;
           $('referenceFallback').hidden = true;
           image.hidden = false;
-          image.classList.add('is-visible');
-          releaseReferenceGhost();
+          presentLoadedReference(scene);
           renderBriefingControls();
         };
         image.onerror = () => {
+          presentationController.cancel('image-error');
+          image.dataset.presentationSource = '';
+          image.classList.remove('is-visible');
           state.briefing.imageFailed = true;
           image.hidden = true;
+          discardReferenceGhost();
           $('referenceFallback').hidden = false;
           setText('referenceDescription', scene.alt[state.lang]);
           setText('referenceUnavailable', T[state.lang].media.unavailable);
@@ -2283,6 +2323,7 @@
       }
     } else {
       image.dataset.scene = '';
+      image.dataset.presentationSource = '';
       image.onload = null;
       image.onerror = null;
       state.briefing.imageFailed = false;
@@ -2319,8 +2360,10 @@
 
   // 章の切り替え：直前の絵を ghost に写して残し、新しい章の最初の絵が出てから溶かす（黒を挟まない）。
   let ghostTimer = null;
+  let ghostGeneration = 0;
   function captureDoctorGhost() {
     const ghost = $('doctorGhost');
+    ghostGeneration += 1;
     if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
     ghost.classList.remove('is-fading');
     ghost.hidden = true;
@@ -2373,7 +2416,7 @@
     if (ghost.hidden) return;
     if (refGhostTimer) clearTimeout(refGhostTimer);
     ghost.classList.add('is-fading');
-    refGhostTimer = setTimeout(() => { ghost.hidden = true; ghost.classList.remove('is-fading'); refGhostTimer = null; }, 560);
+    refGhostTimer = setTimeout(() => { ghost.hidden = true; ghost.classList.remove('is-fading'); refGhostTimer = null; }, 230);
   }
 
   // 額を消すときは、すぐ消さずに薄れさせる（博士が元の位置へ戻る動きと同時に）。
@@ -2383,61 +2426,101 @@
     if (refLeaveTimer) { clearTimeout(refLeaveTimer); refLeaveTimer = null; }
     if (show) {
       figure.classList.remove('is-leaving');
+      if (figure.hidden) figure.classList.remove('is-presented');
       figure.hidden = false;
       return;
     }
-    if (figure.hidden || reducedMotion.matches) { figure.hidden = true; figure.classList.remove('is-leaving', 'is-device'); return; }
+    presentationController.cancel('reference-hidden');
+    if (figure.hidden || reducedMotion.matches) {
+      figure.hidden = true;
+      figure.classList.remove('is-leaving', 'is-device', 'is-presented');
+      return;
+    }
     figure.classList.add('is-leaving');
-    refLeaveTimer = setTimeout(() => { figure.hidden = true; figure.classList.remove('is-leaving', 'is-device'); refLeaveTimer = null; }, 460);
+    refLeaveTimer = setTimeout(() => {
+      figure.hidden = true;
+      figure.classList.remove('is-leaving', 'is-device', 'is-presented');
+      refLeaveTimer = null;
+    }, 370);
   }
 
-  function releaseDoctorGhost() {
+  function releaseDoctorGhost(settleMs = 0) {
     const ghost = $('doctorGhost');
     if (ghost.hidden) return;
     const image = $('doctorImage');
+    const video = $('doctorVideo');
+    const token = ghostGeneration;
+    const startedAt = performance.now();
     const go = () => {
+      if (token !== ghostGeneration || ghost.hidden) return;
       if (ghostTimer) clearTimeout(ghostTimer);
-      ghost.classList.add('is-fading');
-      ghostTimer = setTimeout(() => { ghost.hidden = true; ghost.classList.remove('is-fading'); ghostTimer = null; }, 560);
+      const fade = () => {
+        if (token !== ghostGeneration || ghost.hidden) return;
+        ghost.classList.add('is-fading');
+        ghostTimer = setTimeout(() => {
+          if (token !== ghostGeneration) return;
+          ghost.hidden = true;
+          ghost.classList.remove('is-fading');
+          ghostTimer = null;
+        }, 150);
+      };
+      const remaining = reducedMotion.matches ? 0 : Math.max(0, settleMs - (performance.now() - startedAt));
+      if (remaining > 0) ghostTimer = setTimeout(fade, remaining);
+      else fade();
     };
-    // 新しい章の最初の絵が描ける状態になってから溶かす。待ちすぎない。
-    if (image.complete && image.naturalWidth > 0) { go(); return; }
-    const once = () => { image.removeEventListener('load', once); go(); };
-    image.addEventListener('load', once);
+    // 新しい動画の最初のフレーム、または静止画フォールバックを描けるまで旧画を保つ。
+    const waitsForVideo = briefingMedia === video;
+    if (waitsForVideo && !video.hidden && video.readyState >= 2) { go(); return; }
+    if (!waitsForVideo && image.complete && image.naturalWidth > 0) { go(); return; }
+    const once = () => go();
+    (waitsForVideo ? video : image).addEventListener(waitsForVideo ? 'playing' : 'load', once, { once: true });
     if (ghostTimer) clearTimeout(ghostTimer);
-    ghostTimer = setTimeout(() => { image.removeEventListener('load', once); go(); }, 900);
+    ghostTimer = setTimeout(go, 900);
   }
 
-  function playChapterTransition(direction) {
+  function finishChapterTransition() {
     if (chapterTimer) clearTimeout(chapterTimer);
+    chapterTimer = null;
+    state.briefing.chapterChanging = false;
+    state.briefing.pendingMove = 0;
+    $('briefingView').classList.remove('is-chapter-changing');
+  }
+
+  function playChapterTransition(direction, doctorSettleMs = 0) {
+    finishChapterTransition();
     state.briefing.chapterChanging = true;
     const view = $('briefingView');
     view.classList.remove('is-chapter-changing');
     view.style.setProperty('--chapter-shift', direction < 0 ? '-9px' : '9px');
     void view.offsetWidth;
     view.classList.add('is-chapter-changing');
-    releaseDoctorGhost();
+    releaseDoctorGhost(doctorSettleMs);
     chapterTimer = setTimeout(() => {
-      chapterTimer = null;
-      state.briefing.chapterChanging = false;
-      view.classList.remove('is-chapter-changing');
-      const pending = state.briefing.pendingMove;
-      state.briefing.pendingMove = 0;
-      if (pending) moveBriefing(pending, 'queued');
-    }, reducedMotion.matches ? 0 : 450);
+      finishChapterTransition();
+    }, reducedMotion.matches ? 0 : Math.max(140, doctorSettleMs + 140));
   }
 
   function waitForStaffHandoff() {
+    if (equipmentTransitionPending) return;
     setBriefingAuto(false);
     stopBriefingMediaWindow();
-    state.briefing.handoffReady = true;
-    state.briefing.wearStarted = false;
-    renderBriefingScene();
-    $('subtitleAnnouncement').textContent = '';
-    $('briefingTitle').focus({ preventScroll: true });
-    saveBriefingProgress();
-    void pulse();
-    // 来場者がタブレットを返してから、明示されたスタッフ入口を長押ししてもらう。
+    equipmentTransitionPending = true;
+    presentationController.holdThen({
+      scene: 'handoff',
+      delayMs: 220,
+      onComplete: () => {
+        equipmentTransitionPending = false;
+        if (state.view !== 'briefing' || state.briefing.ended) return;
+        state.briefing.handoffReady = true;
+        state.briefing.wearStarted = false;
+        renderBriefingScene();
+        $('subtitleAnnouncement').textContent = '';
+        $('briefingTitle').focus({ preventScroll: true });
+        saveBriefingProgress();
+        void pulse();
+        // 来場者がタブレットを返してから、明示されたスタッフ入口を長押ししてもらう。
+      },
+    });
   }
 
   function moveBriefing(delta, source = 'control') {
@@ -2445,10 +2528,7 @@
     const direction = delta < 0 ? -1 : 1;
     if (direction < 0 && atConfirmedWearStart()) return false;
     const userMove = source !== 'auto' && source !== 'queued';
-    if (state.briefing.chapterChanging && userMove) {
-      if (!state.briefing.pendingMove) state.briefing.pendingMove = direction;
-      return false;
-    }
+    if (state.briefing.chapterChanging && userMove) finishChapterTransition();
     const now = performance.now();
     if (userMove && state.briefing.lastMoveAt && now - state.briefing.lastMoveAt < 150) return false;
     if (userMove) state.briefing.lastMoveAt = now;
@@ -2469,7 +2549,11 @@
       waitForStaffHandoff();
       return true;
     }
+    const previousScene = currentBriefingScene();
+    const nextScene = state.briefing.data.scenes[next.sceneIndex];
     const changedChapter = next.sceneIndex !== state.briefing.sceneIndex;
+    const doctorSettleMs = changedChapter
+      && previousScene?.layout === 'doctor-center' && nextScene?.layout !== 'doctor-center' ? 400 : 0;
     const update = () => {
       state.briefing.sceneIndex = next.sceneIndex;
       state.briefing.cueIndex = next.cueIndex;
@@ -2479,7 +2563,7 @@
       state.briefing.resumeAuto = true;
       if (changedChapter) configureBriefingMedia(currentBriefingScene());
       beginBriefingCue();
-      if (changedChapter) playChapterTransition(direction);
+      if (changedChapter) playChapterTransition(direction, doctorSettleMs);
     };
     if (changedChapter) {
       captureDoctorGhost();   // 切り替える前の絵を残す（stopBriefingMedia が動画を隠す前に）
@@ -2497,20 +2581,32 @@
       waitForStaffHandoff();
       return;
     }
+    if (equipmentTransitionPending) return;
     setBriefingAuto(false);
     stopBriefingMediaWindow();
-    state.briefing.ended = true;
-    syncReliefPreview();
-    syncBriefingLoopVideo();
-    renderBriefingScene();
-    $('subtitleAnnouncement').textContent = '';
-    $('briefingTitle').focus({ preventScroll: true });
-    saveBriefingProgress();
-    void pulse();
+    equipmentTransitionPending = true;
+    presentationController.holdThen({
+      scene: 'wear-complete',
+      delayMs: 220,
+      onComplete: () => {
+        equipmentTransitionPending = false;
+        if (state.view !== 'briefing') return;
+        state.briefing.ended = true;
+        syncReliefPreview();
+        syncBriefingLoopVideo();
+        renderBriefingScene();
+        $('subtitleAnnouncement').textContent = '';
+        $('briefingTitle').focus({ preventScroll: true });
+        saveBriefingProgress();
+        void pulse();
+      },
+    });
   }
 
   function stopBriefingPlayback() {
     staffConfirmationRequested = false;
+    equipmentTransitionPending = false;
+    presentationController.reset();
     clearBriefingTimer();
     clearBriefingMediaTimer();
     if (chapterTimer) clearTimeout(chapterTimer);
@@ -2539,8 +2635,12 @@
     state.briefing.mediaPaused = false;
     $('briefingView').classList.remove('is-chapter-changing');
     if (ghostTimer) { clearTimeout(ghostTimer); ghostTimer = null; }
+    ghostGeneration += 1;
     $('doctorGhost').hidden = true;
     $('doctorGhost').classList.remove('is-fading');
+    discardReferenceGhost();
+    if (refLeaveTimer) { clearTimeout(refLeaveTimer); refLeaveTimer = null; }
+    document.querySelector('.briefing-visual').classList.remove('is-leaving', 'is-presented');
   }
 
   function resetBriefingSession() {
@@ -4114,6 +4214,11 @@
   $('briefingToggle').addEventListener('click', () => {});
   $('briefingMute').addEventListener('click', () => {
     state.briefing.muted = !state.briefing.muted;
+    presentationController.setMuted(state.briefing.muted);
+    if (state.briefing.muted && !$('briefingImage').classList.contains('is-visible')) {
+      $('briefingImage').dataset.presentationSource = '';
+    }
+    presentLoadedReference(currentBriefingScene(), false);
     if (briefingMedia) briefingMedia.muted = state.briefing.muted;
     renderBriefingControls();
   });
@@ -4305,6 +4410,7 @@
   };
   document.addEventListener('fullscreenchange', syncFullscreenControls);
   document.addEventListener('keydown', (event) => {
+    if (!event.repeat) void presentationController.unlock();
     if ($('staff').open || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (state.view === 'result' && canAdvanceFromResult()
       && (event.key === 'Enter' || event.key === ' ')
@@ -4339,6 +4445,7 @@
     return Boolean(target.closest('#briefingView, .portrait, #subtitle'));
   }
   document.addEventListener('pointerdown', (event) => {
+    if (event.isPrimary) void presentationController.unlock();
     if (!event.isPrimary || !isBriefingAdvanceTarget(event.target)) {
       pointerGesture = null;
       return;
