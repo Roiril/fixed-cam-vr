@@ -999,7 +999,7 @@ public final class TabletInstrumentation extends Instrumentation {
             "Boolean(window.__doctorTest&&window.__doctorTest.assetsDone)"));
         JSONObject assets = evaluateObject(initialWebView, "JSON.stringify(window.__doctorTest.assets)");
         check("briefing JSON loaded", assets.optBoolean("json"));
-        check("three local images decoded", assets.optInt("images") == 3);
+        check("six local images decoded", assets.optInt("images") == 6);
         Log.i(TAG, "assets " + assets);
 
         evaluate(initialWebView, "window.__doctorTest.runMedia()");
@@ -1323,7 +1323,8 @@ public final class TabletInstrumentation extends Instrumentation {
     private static final String INSTALL_TEST_HARNESS =
         "(function(){var T=window.__doctorTest={assetsDone:false,mediaDone:false,bridgeDone:false};"
         + "Promise.all([fetch('./asset/briefing-v1.json').then(function(r){return r.ok;}),"
-        + "...['briefing-device-v1.png','briefing-survey-v1.png','doctor.jpg'].map(function(n){"
+        + "...['briefing-device-v2.png','briefing-survey-v1.png','doctor.jpg',"
+        + "'equipment-controller-v1.png','equipment-quest-v1.png','equipment-headphones-v1.png'].map(function(n){"
         + "return new Promise(function(ok){var i=new Image();i.onload=function(){ok(i.naturalWidth>0);};"
         + "i.onerror=function(){ok(false);};i.src='./asset/'+n;});})]).then(function(v){"
         + "T.assets={json:v[0],images:v.slice(1).filter(Boolean).length};T.assetsDone=true;});"

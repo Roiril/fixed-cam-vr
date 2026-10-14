@@ -156,7 +156,7 @@
     {
       "id": "report",
       "layout": "doctor-evidence",
-      "image": "briefing-device-v1.png",
+      "image": "briefing-device-v2.png",
       "doctorImage": "report-doctor-v1.jpg",
       "doctorAnchor": 50,
       "alt": {

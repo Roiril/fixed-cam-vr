@@ -44,7 +44,8 @@ mockはQuestへ接続しない。内蔵ブラウザの撮影が縮まないよ�
 ### 台詞と素材
 
 - 正本: `tablet/app/src/main/assets/web/asset/briefing-v1.json`
-- 資料画像: 同じディレクトリの `camera-01-doll.webp` と `briefing-*-v1.png`
+- 資料画像: 同じディレクトリの `camera-01-doll.webp` と `briefing-device-v2.png`。観測装置は手を写さず、Meta Questと左コントローラーだけを示す透過PNG。観測装置の場面だけ額と外影を外し、全体を博士の左へ表示する。明るさ0.8と彩度0.65で画面へ合わせる
+- 装着手順の画像: 同じディレクトリの `equipment-controller-v1.png`、`equipment-quest-v1.png`、`equipment-headphones-v1.png`。黒地に白い輪郭線と赤い印だけを画像生成で描く。`mix-blend-mode: screen` で黒を表示へ重ねず、線だけを見せる。生成時の参照とプロンプトは [equipment-assets.md](equipment-assets.md)
 - 壁の一周動画: 同じディレクトリの `kabe-one-lap-doll-v1.mp4`
 - 音声生成用台本: `tools/visitor-ui/briefing-narration.md`
 - ユーザー指定の Eleven v4 日本語入力: `tools/visitor-ui/elevenlabs-input-ja.md`
