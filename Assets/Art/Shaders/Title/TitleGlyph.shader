@@ -49,6 +49,12 @@ Shader "FixedCamVr/TitleGlyph"
         _AshColor("Ash color", Color) = (0.235, 0.212, 0.190, 1)
 
         _Reveal("Reveal (0..1)", Range(0, 1)) = 1
+        // ⚠ 書き出しの図（`tools/make-title-writeon.py`・2026-10-14）。版と同じチャンネルの意味で、
+        //   R/G/A = その層の墨に筆が届く時刻 / 滲み（ぼかした墨）。無い（黒）と全部の墨が頭で一度に出る。
+        _Write("Write-on time (R=main G=accent A=deco)", 2D) = "black" {}
+        _Bleed("Wet bleed (R=main G=accent A=deco)", 2D) = "black" {}
+        // 墨の濡れ（1 = 書いている最中 / 0 = 乾いた）。乾くと滲みと濡れの照りが消え、現行の版と同じ画になる。
+        _Wet("Wetness (0..1)", Range(0, 1)) = 0
         _Dissolve("Burn (0..1)", Range(0, 1)) = 0
         _Swirl("Swirl (0..1)", Range(0, 1)) = 0
 
@@ -174,8 +180,26 @@ Shader "FixedCamVr/TitleGlyph"
             #define ASH_LIFE 0.35
             #define ASH_RISE 0.055
 
+            // ---- 書き出し（2026-10-14）------------------------------------------------
+            // ⚠⚠ **筆の運びに沿って出す。下からの一様なワイプはやめた。** 時刻は版ごとの図（`_Write`）が持ち、
+            //    筆順どおりに「回 → 廴 → リ → 視 → 払いとルビ」の順で、画の中を墨が流れる距離で進む。
+            // 前線の幅（`_Reveal` の単位）。狭いと墨が「点いた」に見え、広いと「浮かんだ」に見える。
+            #define WRITE_FRONT 0.035
+            // 届いた墨が濡れたままでいる長さ（`_Reveal` の単位 ≒ 0.9 秒 × これ）。
+            #define WET_FALL 0.20
+            // 届いた後も残る濡れの割合（全体が乾く `_Wet` で消える）。
+            #define WET_KEEP 0.30
+            // 濡れた前線の照り。墨の色を明るくするだけで、新しい色は足さない。
+            #define WET_SHEEN 0.38
+            // 滲みの濃さ。墨の外へ広がる薄い縁。暗い地の上で光の暈に見えない量に抑える。
+            #define BLEED_GAIN 0.18
+
             TEXTURE2D(_Art);
             SAMPLER(sampler_Art);
+            TEXTURE2D(_Write);
+            SAMPLER(sampler_Write);
+            TEXTURE2D(_Bleed);
+            SAMPLER(sampler_Bleed);
 
             float _Opacity;
             float4 _InkColor;
@@ -185,6 +209,7 @@ Shader "FixedCamVr/TitleGlyph"
             float4 _CharColor;
             float4 _AshColor;
             float _Reveal;
+            float _Wet;
             float _Dissolve;
             float _Swirl;
             float _ArtAspect;
@@ -345,10 +370,23 @@ Shader "FixedCamVr/TitleGlyph"
                         shape = max(shape, inkj * leftTail * (1.0 - k * (1.0 - SMEAR_TAIL)));
                     }
                 }
-                if (shape <= 0.003 && burning <= 0.0) return half4(0, 0, 0, 0);
+                if (shape <= 0.003 && burning <= 0.0 && _Wet <= 0.001) return half4(0, 0, 0, 0);
 
-                // ---- 出現。下から墨が満ちていく ----
-                float wipe = smoothstep(wuv.y - 0.32, wuv.y + 0.12, _Reveal * 1.42);
+                // ---- 出現。筆が届いた所から墨が置かれる（`_Write`）----
+                // ⚠ `_Reveal` = 1 で必ず全部出る（時刻は 0..1、前線の幅ぶん先へ進めて読む）。
+                float arrive = LayerInk(SAMPLE_TEXTURE2D(_Write, sampler_Write, wuv), i.color.rgb);
+                // ⚠ 時刻は 8 bit なので、前線（WRITE_FRONT ≒ 9 段）が**縞の階段**に割れる（2026-10-14 実測・
+                //   廴の払いの先）。画素ごとに 1.5 段ぶん揺らして縞を粒へ散らす（かすれの版なので粒は馴染む）。
+                arrive += (Hash21(floor(wuv * float2(2048.0, 1024.0)) + 17.0) - 0.5) * (1.5 / 255.0);
+                float age = _Reveal * (1.0 + WRITE_FRONT) - arrive;   // 届いてからの進み
+                float wipe = saturate(age / WRITE_FRONT);
+                // 濡れ。届いた瞬間がいちばん濡れていて、WET_FALL で引き、残りは全体が乾くとき消える。
+                float wetLocal = exp(-max(age, 0.0) / WET_FALL) * step(0.0, age);
+                float wet = saturate(_Wet) * (WET_KEEP + (1.0 - WET_KEEP) * wetLocal) * (1.0 - burning);
+                float crest = exp(-((age - WRITE_FRONT * 0.6) / WRITE_FRONT) * ((age - WRITE_FRONT * 0.6) / WRITE_FRONT));
+                // 滲み。墨の外の薄い縁。届く前の所には出さない（前線より先に滲みが走らない）。
+                float bleed = LayerInk(SAMPLE_TEXTURE2D(_Bleed, sampler_Bleed, wuv), i.color.rgb) * inArt
+                            * saturate(age / (WRITE_FRONT * 1.5)) * wet * BLEED_GAIN;
 
                 // ---- 灰。焼けた所から少し上へ流れて消える ----
                 // 元の墨は下にあるので、**下から引いて**上に出す（1 タップ余分に払う）。
@@ -380,6 +418,8 @@ Shader "FixedCamVr/TitleGlyph"
 
                 float3 rgb = lerp(_InkColor.rgb, _AccentColor.rgb, saturate(i.color.g));
                 rgb *= 1.0 + sheen;
+                // 濡れた前線の照り（墨の色のまま明るく）。乾けば 0。
+                rgb *= 1.0 + WET_SHEEN * crest * saturate(_Wet) * (1.0 - burning);
                 // 焦げは色を**置き換える**（暗くするだけだと「影が差した」に見える）。
                 rgb = lerp(rgb, _CharColor.rgb, charAmt * 0.92);
                 // 閃光は `_GlowColor`（明るい橙）／熾は `_EmberColor`（暗い赤）。**別の色**。
@@ -395,7 +435,11 @@ Shader "FixedCamVr/TitleGlyph"
                 //    いちばん黄色く光っていた）。
                 float3 ashRgb = lerp(_EmberColor.rgb * 0.85, _AshColor.rgb, saturate(aAge * 1.6));
 
-                float aInkA = shape * wipe * op;
+                // 滲みは墨と max で重ねる（足すと墨の中まで明るくなる）。滲みは少し沈んだ墨の色。
+                float inkA = shape * wipe;
+                float bleedA = max(bleed - inkA, 0.0);
+                rgb = (rgb * inkA + rgb * 0.62 * bleedA) / max(inkA + bleedA, 1e-4);
+                float aInkA = (inkA + bleedA) * op;
                 float aAshA = ash * wipe * op * 0.9;
                 float alpha = saturate(aInkA + aAshA);
                 if (alpha <= 0.002) return half4(0, 0, 0, 0);

@@ -173,6 +173,10 @@ $Menus = [ordered]@{
     'title'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.TitlePreview.Run'
                             Desc = 'タイトル画面「廻リ視」を 9 枚 + 閉じる演出 56 枚 PNG 化（両眼の厚み確認つき）'
                             Out = 'Assets/Screenshots/title' }
+    'titlereveal'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.TitleRevealPreview.Run'
+                            Desc = '題字の出（A で呼び出してから 3 秒）を 60fps の連番で Logs/title-reveal/ へ（→ tools/title-reveal-video.py で音つき mp4）'
+                            Set = 'tag=<名前>'
+                            Out = 'Logs/title-reveal' }
     'intro'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.IntroPreview.Run'
                             Desc = '導入演出の段 0〜5（現実→脱色→割れと収束→映像）を PNG 化。-Set frames=1 で遷移の連番と音の発火記録と探針（motion / edge / reveal / frozen / sparkle）'
                             Set = 'frames=1 / peripheral=1（周辺片の六方向探針）/ sparkle=0（結晶と粒を止めた旧描画で連番を撮る・校正用）'

@@ -134,6 +134,8 @@ namespace FixedCamVr.Streaming
         public const string VeilShaderName = "FixedCamVr/TitleVeil";
         public const string GlyphShaderName = "FixedCamVr/TitleGlyph";
         public const string ArtResourcePath = "Title/MawarimiTitle";
+        public const string WriteResourcePath = "Title/MawarimiTitleWrite";
+        public const string BleedResourcePath = "Title/MawarimiTitleBleed";
         public const string FontResourcePath = "Fonts/JapaneseHud SDF";
         private const string TextOverlayShaderName = "TextMeshPro/Distance Field Overlay";
         private const float PromptFontSize = 0.07f;
@@ -145,6 +147,9 @@ namespace FixedCamVr.Streaming
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         private static readonly int ArtId = Shader.PropertyToID("_Art");
         private static readonly int RevealId = Shader.PropertyToID("_Reveal");
+        private static readonly int WetId = Shader.PropertyToID("_Wet");
+        private static readonly int WriteId = Shader.PropertyToID("_Write");
+        private static readonly int BleedId = Shader.PropertyToID("_Bleed");
         private static readonly int DissolveId = Shader.PropertyToID("_Dissolve");
         private static readonly int SwirlId = Shader.PropertyToID("_Swirl");
         private static readonly int ArtAspectId = Shader.PropertyToID("_ArtAspect");
@@ -531,6 +536,15 @@ namespace FixedCamVr.Streaming
             _glyphRenderer = glyphGo.AddComponent<MeshRenderer>();
             _glyphMat = new Material(glyphShader) { name = "TitleGlyph (runtime)" };
             _glyphMat.SetTexture(ArtId, art);
+            // 書き出しの図（筆の届く時刻と滲み・`tools/make-title-writeon.py`）。版と対で焼く。
+            var write = Resources.Load<Texture2D>(WriteResourcePath);
+            var bleed = Resources.Load<Texture2D>(BleedResourcePath);
+            if (write == null || bleed == null)
+                Debug.LogWarning($"[Title] 書き出しの図がありません（write={(write != null ? 1 : 0)} " +
+                                 $"bleed={(bleed != null ? 1 : 0)}）。題字は頭で一度に出ます。" +
+                                 "`py -3.11 tools/make-title-writeon.py` で焼く");
+            if (write != null) _glyphMat.SetTexture(WriteId, write);
+            if (bleed != null) _glyphMat.SetTexture(BleedId, bleed);
             // ⚠ 縦横比は**ここが唯一の供給元**。閉じるときの渦は版の中で解くので、
             //    シェーダ側に別の既定を持たせると渦が楕円になって字が横へ流れる。
             _glyphMat.SetFloat(ArtAspectId, ArtAspect);
@@ -769,6 +783,7 @@ namespace FixedCamVr.Streaming
             {
                 _glyphMat.SetFloat(OpacityId, AppliedGlyph);
                 _glyphMat.SetFloat(RevealId, Mathf.Clamp01(w.reveal));
+                _glyphMat.SetFloat(WetId, Mathf.Clamp01(w.wet));
                 _glyphMat.SetFloat(DissolveId, Mathf.Clamp01(w.dissolve));
                 _glyphMat.SetFloat(SwirlId, Mathf.Clamp01(w.swirl));
                 _glyphMat.SetFloat(FlashPosId, w.flashPos);
