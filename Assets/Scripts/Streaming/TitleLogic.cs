@@ -45,6 +45,11 @@ namespace FixedCamVr.Streaming
         /// z を引くと題字は視界の中で一様に小さくなるので、消滅ではなく<b>遠ざかった</b>と読まれる。
         /// </summary>
         public float swirl;
+        /// <summary>
+        /// 墨の濡れ（1 = 書いている最中 / 0 = 乾いた）。2026-10-14。書き上がってから
+        /// <see cref="TitleLogic.SettleSec"/> で乾く。乾けば滲みと照りが消えて、それまでの版と同じ画になる。
+        /// </summary>
+        public float wet;
         /// <summary>走り抜ける光の位置（0..1 で左から右へ）。</summary>
         public float flashPos;
         /// <summary>走り抜ける光の強さ。</summary>
@@ -96,10 +101,23 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 字が現れ切るまで。
         /// ⚠ **1.7 → 0.6 にした**（2026-08-12）。ユーザー指示は
-        /// 「シネマチックタイトルの音<b>とともに</b>タイトルを表示」で、音の一撃は頭 0.09 秒にある。
+        /// 「シネマチックタイトルの音<b>とともに</b>タイトルを表示」で、当時の音の一撃は頭 0.09 秒にあった。
         /// ゆっくり出すと一撃から取り残される。0 にしないのは、ぱっと出ると「UI が出た」に見えるから。
+        ///
+        /// ⚠⚠ **0.6 → 0.9（2026-10-14・Claude の案。判定はまだ無い — `canon/OPEN.md`）。**
+        /// 音は 0047 で差し替わり、いまの `sfx_title_in` は一撃ではなく<b>うねり</b>
+        /// （50Hz 前後・0.6 秒で立ち上がり、2.4 秒まで張り、5.5 秒で消える）。書き出しは筆順どおりに
+        /// 画を辿る（`tools/make-title-writeon.py`）ので、主の 3 字は 0.8 秒で書き上がり、払いとルビが 0.9 秒で収まる。
         /// </summary>
-        public const float InSec = 0.6f;
+        public const float InSec = 0.9f;
+
+        /// <summary>
+        /// 書き上がってから墨が乾くまで（2026-10-14）。音が張っているあいだ（〜2.4 秒）に乾き切る。
+        /// </summary>
+        public const float SettleSec = 1.6f;
+
+        /// <summary>閉じる演出に入ってから、残っていた濡れが引くまで。</summary>
+        public const float WetOutSec = 0.25f;
 
         /// <summary>
         /// 呼び出した直後の別経路による消去要求を捨てる不感時間。
@@ -214,6 +232,7 @@ namespace FixedCamVr.Streaming
             //    必ず 1 が返り、出現の途中で押されたときに字が一瞬で完成してから消える
             //    （＝ 巻き戻ったように見える）。2026-08-12 にテストが捕まえた。
             _dismissReveal = RevealNow();
+            _dismissWet = WetNow();
             _stage = TitleStage.Out;
             _elapsed = 0f;
             _openElapsed = 0f;
@@ -233,6 +252,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>閉じる演出に入った時点の出現の進み（途中で押されても字が飛ばないように保つ）。</summary>
         private float _dismissReveal = 1f;
+
+        /// <summary>閉じる演出に入った時点の濡れ（そこから <see cref="WetOutSec"/> で引く）。</summary>
+        private float _dismissWet;
 
         /// <summary>時間を進める。</summary>
         public void Tick(float dt, TitleInput input)
@@ -294,11 +316,17 @@ namespace FixedCamVr.Streaming
         {
             if (_stage == TitleStage.Hold) return 1f;
             if (_stage != TitleStage.In) return 1f;
-            // 書き出しの前線は ease-out（2026-10-14）。題字の音の一撃（0.09s）の側へ量を寄せ、
-            // 終わりは静かに収める。dismiss の途中値（_dismissReveal）もこの値を保つので連続する。
-            float x = Clamp01((_elapsed - InDelaySec) / InSec);
-            float u = 1f - x;
-            return 1f - u * u * u;
+            // ⚠ 時間に比例させる。筆の緩急（入筆の溜め・画ごとの尺・筆を上げる間）は書き出しの図
+            //   （`tools/make-title-writeon.py`）が持つ。ここで ease を掛けると、図の緩急と二重になる。
+            return Clamp01((_elapsed - InDelaySec) / InSec);
+        }
+
+        private float WetNow()
+        {
+            if (_stage == TitleStage.In) return 1f;
+            if (_stage == TitleStage.Hold)
+                return 1f - SmoothStep01((_elapsed - InDelaySec - InSec) / SettleSec);
+            return 0f;
         }
 
         /// <summary>いまの段から各層への値を出す。<b>見え方の判断はすべてここ</b>。</summary>
@@ -326,11 +354,12 @@ namespace FixedCamVr.Streaming
                             veil = 1f,
                             glyph = 1f,
                             reveal = r,
+                            wet = 1f,
                         };
                     }
 
                     case TitleStage.Hold:
-                        return new TitleWeights { veil = 1f, glyph = 1f, reveal = 1f };
+                        return new TitleWeights { veil = 1f, glyph = 1f, reveal = 1f, wet = WetNow() };
 
                     case TitleStage.Out:
                     {
@@ -349,6 +378,7 @@ namespace FixedCamVr.Streaming
                             // ⚠ 落とすのは**灰だけになってから**（AshFadeFrom）。
                             glyph = 1f - SmoothStep01(Clamp01((d - AshFadeFrom) / (1f - AshFadeFrom))),
                             reveal = _dismissReveal,
+                            wet = _dismissWet * (1f - Clamp01(_elapsed / WetOutSec)),
                             // ⚠ **ここに緩急を付けない。** SmoothStep だと変化の 6 割が真ん中の
                             //    4 割に集まり、火が一瞬で走り抜けて「焼けた」ではなく「消えた」になる
                             //    （2026-08-13 実測）。焼け際は一定の速さで進むのが正しい。
