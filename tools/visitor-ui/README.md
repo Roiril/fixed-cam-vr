@@ -269,3 +269,17 @@ APK内のHTMLとJSONと画像は元ファイルとのバイト一致を確認し
 ## スタッフの交代操作（2026-10-08）
 
 初回はQuestで位置合わせを行う。カメラの接続待ちでも始められる。手元の案内と床の×印を見て採取し、実物とガイド線を目視する。毎回は回収と清拭の後にタブレットのスタッフ画面でリセットの実完了を待つ。「来場者の画面にする」で渡す。来場者の設定と博士の説明の後はスタッフが条件を確認し「長押しで装着へ進む」を1.2秒押す。受理後に装着案内2文を自動再生する。タブレットを置いて両手で装着を補助する。右AリセットとB確定は予備操作。左X/Y練習と題字の明示開始を残す。スタッフ専用操作は来場者画面へ置かない。予備操作は「困ったとき」にまとめる。Questの`questTick`停止時は古い緑表示を外す。机上の描画検証は実機の通信と音声と着脱の代わりにはならない。
+
+## 題字の筆の書き出し（2026-10-14）
+
+`title-write.js` が題字を Quest と同じ筆順で書き出す。時刻の図 `asset/title-logo-write-v1.png` は
+Quest の図（`Assets/Resources/Title/MawarimiTitleWrite.png`）をタブレットのロゴへ位置合わせして焼く。
+版や Quest の図を焼き直したら、続けてこれも焼き直す（位置合わせの IoU が 0.85 を下回ると止まる）。
+
+```powershell
+py -3.11 tools/make-title-writeon.py
+py -3.11 tools/make-tablet-title-writeon.py
+```
+
+単体の確認は `tools/visitor-ui/preview/title-write-test.html?p=0.45&wet=1`。回帰試験（`verify-runtime.cjs`）は
+canvas と WebGL を持たないので、この script を読み込まない。

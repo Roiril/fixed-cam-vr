@@ -85,6 +85,17 @@ Quest の応答が 6 秒以上古ければ未確認。ページの経過時間�
 | 代役 | [`tools/visitor-portal-stub.py`](../../tools/visitor-portal-stub.py)（Quest 無しで面を机上で通す） |
 | 観測 | `ev=sum visitor=<口が開いているか>/<受けた累計>/<枠の受理番号>/<書いた受理番号>/<書いた回数>`／解析器「## タブレットの口」／logcat `[VisitorPortal]` |
 
+## 見た目（2026-10-14 作り替え・0262「字幕くらいに」・判定待ち）
+
+文字の層は字幕の 1 本だけ（見出し・札・行程・表の見出し・章名・番号は `.visually-gone` 相当で読み上げ用にだけ残す）。
+CSS が読む掛け金は `stage.dataset.view`（title/edit/result/briefing）と `stage.dataset.step`（language/relief）と
+`.stage.is-chapter-changing`（墨の帯）。判断は従来どおり処理側。軽減の説明 `#reliefDesc` は字幕の下（footer）へ移した。
+題字の書き出しは `title-write.js`（WebGL → Canvas2D → img）。⚠ スタッフ画面（`#staff` dialog）が開いている間は
+「見えていない」と数える（裏で書き終えると、来場者に渡した瞬間に完成した絵しか残らない）。`TitleWrite.plays` で回数を数えられる。
+⚠ 字幕の箱に `white-space: pre-line` を掛けない（HTML の改行が空行になり、字幕の箱が 3 行ぶんに伸びた）。
+⚠ 一時停止の盤の登場の動き（中央寄せの translate）を装着画面の操作に掛けない（左へずれた）。
+⚠ 内蔵ブラウザで別の作業者と同じタブを使わない（`tabs_create` で自分のタブを作り、前面にしてから撮る）。
+
 ## 見た目（2026-09-12 全面再設計）
 
 博士を右に置く構図と黒・生成り・朱赤を維持した。

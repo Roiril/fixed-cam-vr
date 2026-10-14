@@ -331,6 +331,8 @@ const context = {
 context.globalThis = context;
 
 for (const match of html.matchAll(/<script\s+[^>]*src="([^"]+)"[^>]*><\/script>/gi)) {
+  // 題字の筆の書き出しは見た目だけ（状態も通信も持たない）。canvas と WebGL の無いこの代役では走らせない。
+  if (path.basename(match[1]) === 'title-write.js') continue;
   const scriptPath = path.resolve(webRoot, match[1]);
   vm.runInNewContext(fs.readFileSync(scriptPath, 'utf8'), context, { filename: scriptPath });
 }
