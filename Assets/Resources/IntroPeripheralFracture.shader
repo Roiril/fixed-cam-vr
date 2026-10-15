@@ -49,6 +49,8 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float4 piece : TEXCOORD1;
                 float4 timing : TEXCOORD2;
                 float4 edges : TEXCOORD3;
+                // R061: 撮影時の部屋の奥行き（IntroRoomDepth.PeripheralChannel）。x = 頂点 / y = 片の中心。部屋が無ければ 1。
+                float2 roomDepth : TEXCOORD4;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -140,6 +142,9 @@ Shader "FixedCamVr/IntroPeripheralFracture"
 
                 float3 captureOrigin = mul(_CaptureHeadToWorld, float4(0.0, 0.0, 0.0, 1.0)).xyz;
                 float3 captureVertex = mul(_CaptureHeadToWorld, float4(v.positionOS.xyz, 1.0)).xyz;
+                // R061: 撮影の瞬間に部屋の面に乗っていた点（写真の範囲判定はここから。中央の片と同じ点を投影する）。
+                float3 restVertex = mul(_CaptureHeadToWorld,
+                    float4(v.positionOS.xyz * v.roomDepth.x, 1.0)).xyz;
                 float3 captureCenter = mul(_CaptureHeadToWorld, float4(v.piece.xyz, 1.0)).xyz;
                 float3 sourceDirection = normalize(captureCenter - captureOrigin);
                 float3 tangent = SafeNormalize(cross(
@@ -177,6 +182,12 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 if (_Mode > 0.5 && eyeDistance < 0.55)
                     worldPosition = _CurrentHeadPosition.xyz
                                   + SafeNormalize(fromEye, sourceDirection) * 0.55;
+                // R061: 振り付けは名目の殻の上（worldPosition）。撮影時の頭を中心に奥行きだけ縮めて部屋へ置く。
+                // 割れる前は頂点ごと、受け渡し（handoff）で片ごとへ、退場へ向かう集結で 1 へ。
+                float depthScale = _Mode < 0.5 ? v.roomDepth.x
+                    : lerp(lerp(v.roomDepth.x, v.roomDepth.y, handoff), 1.0, travel);
+                float3 nominalPosition = worldPosition;
+                worldPosition = captureOrigin + (worldPosition - captureOrigin) * depthScale;
 
                 o.positionCS = TransformWorldToHClip(worldPosition);
                 float3 normal = normalize(mul((float3x3)_CaptureHeadToWorld, v.normalOS));
@@ -186,8 +197,8 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                     radians(lerp(-28.0, 28.0, Hash(v.piece.w + 41.0))) * uSpin);
 
                 // 投影は頂点で同次座標まで求める。除算と撮影範囲の判定は補間後に片眼ごとに行う。
-                o.leftQ = mul(_LeftWorldToUv, float4(captureVertex, 1.0));
-                o.rightQ = mul(_RightWorldToUv, float4(captureVertex, 1.0));
+                o.leftQ = mul(_LeftWorldToUv, float4(restVertex, 1.0));
+                o.rightQ = mul(_RightWorldToUv, float4(restVertex, 1.0));
                 float3 screenNormal = normalize(cross(screenRight, screenUp));
                 float3 screenRay = worldPosition - _CurrentHeadPosition.xyz;
                 float denominator = dot(screenRay, screenNormal);
@@ -243,7 +254,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                     float sparkIntensity;
                     HeroSpark(sparkIndex, p, _CaptureHeadToWorld, _ScreenCenter.xyz,
                               sparkPos, sparkIntensity);
-                    float3 toSpark = sparkPos - worldPosition;
+                    float3 toSpark = sparkPos - nominalPosition;
                     sparkSoft += sparkIntensity / (1.0 + dot(toSpark, toSpark) / 0.25);
                 }
                 baseColor += SparkCoreColor * min(sparkSoft * 0.12, 0.30) * (1.0 - travel) * _SparkLit;

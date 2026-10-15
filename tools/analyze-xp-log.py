@@ -3371,6 +3371,26 @@ def analyze(events, others, exp, warns=None):
                                         "未装着の自動走行では期待どおり。被った走行で出たらカメラ姿勢の取得を疑う")
                     else:
                         verdict("OK", f"静止画の投影は前を向いている（正面 1.6m の uv 左/右 = {proj_last}）")
+                # R061: 破片を置いた奥行き（C# の ShowTelemetryHost.ShatterDepthState と対）。旧ログ（キーが無い）では沈黙する。
+                depths = [v for v in effect_samples(events, "shatDepth") if v not in ("", "-")]
+                if depths:
+                    depth_last = depths[-1]
+                    if depth_last.startswith("room:"):
+                        try:
+                            near, mid, far = (float(x) for x in depth_last[5:].split("/"))
+                        except ValueError:
+                            near = mid = far = None
+                        if near is None:
+                            verdict("WARN", f"破片の奥行きの書式が読めない（shatDepth={depth_last}）")
+                        elif near < 0.595:
+                            verdict("FAIL", f"破片が最短 0.6m より手前に置かれた（shatDepth={depth_last}）— 眼の前に破片が来る")
+                        else:
+                            verdict("OK", f"破片を部屋の奥行きへ置いた（片の中心 最短 {near:.2f} / 中央 {mid:.2f} / 最長 {far:.2f} m）")
+                    elif depth_last == "off:error":
+                        verdict("FAIL", "破片を置く部屋を組めずに 1.6m の殻へ落ちた（shatDepth=off:error）— 実機ログの [IntroVeil] を見る")
+                    else:
+                        verdict("WARN", f"破片は従来の 1.6m の殻（shatDepth={depth_last}。unreg=位置合わせ無し / "
+                                        "noroom=layout.room 未著作 / none=配線無し）— 割れる前の画が壁より奥に描かれる")
                 anchors = fracture_numbers("shatAnchor")
                 if anchors and max(anchors) < 1:
                     verdict("FAIL", "割れ始めの頭の姿勢を固定できていない（shatAnchor=0 のまま）— 破片が頭についてくる")

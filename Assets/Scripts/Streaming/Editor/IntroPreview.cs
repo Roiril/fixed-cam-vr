@@ -512,6 +512,56 @@ namespace FixedCamVr.Streaming.EditorTools
                 _veil.FrozenFrameProvider = CaptureProxySource;
             }
 
+            /// <summary>
+            /// R061: プレビューの部屋。プレビューの頭は段ごとに置き場所が違う（段 4 は床の外 — <see cref="PlaceHead"/>）ので、
+            /// <b>割れ始めの頭がちょうど L 字の角に立つ円</b>（<see cref="WalkGuidePath"/> の spot・角を向く）に居るよう
+            /// 部屋を置く（実機の CourseFrame の代わり）。体験の開始位置は壁から約 0.4m で、近い壁の場合を通す。
+            /// </summary>
+            private static Func<(IntroRoomDepth.Scene? scene, string reason)>? PreviewRoomDepth(
+                ShowLayoutDef? layout, string mode, Transform head, out string label)
+            {
+                if (string.Equals(mode, "off", StringComparison.Ordinal))
+                {
+                    label = "off (1.6m shell)";
+                    return () => (null, "preview");
+                }
+                if (string.Equals(mode, "uniform", StringComparison.Ordinal))
+                {
+                    label = "uniform 1.00m";
+                    return UniformRoomDepth;
+                }
+
+                ShowRoomDef? room = layout != null && layout.hasRoom && layout.room != null && layout.room.HasData()
+                    ? layout.room : null;
+                if (room == null)
+                {
+                    label = "room NOT authored -> 1.6m shell";
+                    return () => (null, "noroom");
+                }
+                WalkGuidePath.Path path = WalkGuidePath.Solve(layout, room);
+                Vector2 spot = path.valid ? path.spot : Vector2.zero;
+                Vector2 facing = WalkGuidePath.TryWallCorner(room, out Vector2 corner, out _, out _, out _)
+                                 && (corner - spot).sqrMagnitude > 1e-4f
+                    ? (corner - spot).normalized : new Vector2(0f, 1f);
+                // course の向き facing を頭の前（+Z）へ回す回転。
+                float facingYawDeg = -Mathf.Atan2(facing.x, facing.y) * Mathf.Rad2Deg;
+                label = FormattableString.Invariant(
+                    $"room (head at course {spot.x:0.00},{spot.y:0.00} eye {EyeH:0.00}m facing {facing.x:0.00},{facing.y:0.00})");
+                return () =>
+                {
+                    Vector3 headPosition = head.position;
+                    float yawDeg = head.eulerAngles.y + facingYawDeg;
+                    Quaternion rot = Quaternion.Euler(0f, yawDeg, 0f);
+                    Vector3 CourseToWorld(Vector2 xz, float height)
+                        => headPosition + rot * new Vector3(xz.x - spot.x, height - EyeH, xz.y - spot.y);
+                    return (IntroRoomDepth.Build(room, CourseToWorld, yawDeg), "room");
+                };
+            }
+
+            /// <summary>全片を 1.0m に置く部屋（倍率が一様 ＝ 撮影位置から見た絵も前後関係も 1.6m の殻と同じ）。</summary>
+            private static (IntroRoomDepth.Scene? scene, string reason) UniformRoomDepth()
+                => (new IntroRoomDepth.Scene { hasFloor = false, farRadius = 1.0f }, "uniform");
+
             private IntroFrozenFrameSource? CaptureProxySource()
             {
                 // Editor の代理画像も本体と同じ GPU 複製を通す。動く窓へ後から絵を足さない。
@@ -651,6 +701,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 showGo.transform.SetParent(root.transform, worldPositionStays: false);
                 var showControl = showGo.AddComponent<ShowControlClient>();
                 showControl.SetLayoutForPreview(layout);
+
+                // --- R061: 破片を置く部屋。割れ始めの頭を L 字の角に立つ円へ置いた部屋を組む（下の PreviewRoomDepth）。
+                //     -Set depth=room（既定）/ uniform（全片 1.0m ＝ 一様な倍率・振り付けの検算）/ off（1.6m の殻）。
+                string depthMode = EditorCliArgs.Get("depth") ?? "room";
+                veil.RoomDepthProvider = PreviewRoomDepth(layout, depthMode, head, out string depthLabel);
+                showLabel += " | depth " + depthLabel;
 
                 // --- 隔離殻（head-lock の全画面）---
                 // ⚠ 封印の箱は 2026-08-15 に退避したのでここでも組まない
@@ -1555,6 +1611,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 const float p = 0.36f;
                 var proof = new System.Text.StringBuilder("{");
                 Func<IntroFrozenFrameSource?>? provider = _veil.FrozenFrameProvider;
+                // R061: この探針は「振った姿勢で割り始めても頭から見た並びは同じ」を校正に使う。部屋の奥行きは
+                // world に固定なので、振ると片ごとの奥行き（＝前後関係）が変わって校正が成り立たない。
+                // 倍率を一様にすれば前後関係も殻と同じなので、ここでは一様の部屋で測る（測るのは world への固定）。
+                var depthProvider = _veil.RoomDepthProvider;
+                _veil.RoomDepthProvider = UniformRoomDepth;
                 try
                 {
                     foreach (bool frozen in new[] { true, false })
@@ -1600,6 +1661,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 {
                     _headYawDeg = 0f;
                     _veil.FrozenFrameProvider = provider;
+                    _veil.RoomDepthProvider = depthProvider;
                     // 探針の走行を捨て、後続の探針が新しい走行から始まるようにする。
                     Render(new Shot(IntroStage.Frame, 4, "probe_anchor_done", 0f, 0), saved);
                 }

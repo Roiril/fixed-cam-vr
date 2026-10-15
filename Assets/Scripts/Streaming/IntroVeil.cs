@@ -191,6 +191,21 @@ namespace FixedCamVr.Streaming
         /// <summary>固定した割れ始めの頭のワールド位置（テスト・診断用）。</summary>
         public Vector3 ShatterAnchorPosition => _captureHeadToWorld.GetColumn(3);
 
+        /// <summary>
+        /// R061: 破片を置く部屋（world 空間）と、組めなかった理由。割れ始めに 1 回だけ呼ぶ。
+        /// 部屋が無ければ（未登録・未著作）破片は従来の 1.6m の殻に乗る。配線は <c>IntroDirector</c>。
+        /// </summary>
+        public Func<(IntroRoomDepth.Scene? scene, string reason)>? RoomDepthProvider { get; set; }
+
+        /// <summary>
+        /// R061: 破片をどの奥行きに置いたか。テレメトリが <c>shatDepth=</c> で出す。
+        /// <c>room:最短/中央/最長</c>（片の中心の半径 m）/ <c>off:理由</c>（1.6m の殻）/ <c>-</c>（まだ割れていない）。
+        /// </summary>
+        public string DepthState { get; private set; } = "-";
+
+        /// <summary>R061: 片の中心の半径を書いた結果（テスト・診断用）。</summary>
+        public IntroRoomDepth.Result DepthResult { get; private set; }
+
         /// <summary>いま覆いが何かを隠しているか（＝導入演出中か）。</summary>
         public bool IsActive => _renderer != null && _renderer.enabled;
 
@@ -431,6 +446,8 @@ namespace FixedCamVr.Streaming
             _fractureBlock = new MaterialPropertyBlock();
             BuildPeripheralFracture();
             BuildSparks();
+            // R061: 奥行きの倍率のチャンネルを最初から持たせる（割れる瞬間に頂点の並びを変えない）。
+            IntroRoomDepth.Reset(_fractureMesh, _peripheralMesh, _sparkMesh);
             BuildWarmRenderers();
         }
 
@@ -1013,6 +1030,48 @@ namespace FixedCamVr.Streaming
             _rightWorldToUv = Matrix4x4.identity;
         }
 
+        /// <summary>
+        /// R061: 割れ始めの頭から部屋へ光線を当て、破片・周辺の片・光の粒へ奥行きの倍率を書く。
+        /// 片 267 + 周辺 60 + 粒 518 で 1 回だけ。部屋が無ければ倍率 1（従来の殻）を書き直す。
+        /// </summary>
+        private void ApplyRoomDepth()
+        {
+            if (_fractureMesh == null) return;
+            IntroRoomDepth.Scene? scene = null;
+            string reason = "none";
+            if (RoomDepthProvider != null)
+            {
+                try
+                {
+                    (scene, reason) = RoomDepthProvider();
+                }
+                catch (Exception ex)
+                {
+                    scene = null;
+                    reason = "error";
+                    Debug.LogWarning($"[IntroVeil] 破片を置く部屋を組めません（1.6m の殻で描く）: {ex.Message}");
+                }
+            }
+            try
+            {
+                IntroRoomDepth.Result result = IntroRoomDepth.ApplyFracture(_fractureMesh, _captureHeadToWorld, scene);
+                if (_peripheralMesh != null)
+                    IntroRoomDepth.ApplyPeripheral(_peripheralMesh, _captureHeadToWorld, scene);
+                if (_sparkMesh != null) IntroRoomDepth.ApplySparks(_sparkMesh, result);
+                DepthResult = result;
+                DepthState = result.applied ? result.Describe(reason) : "off:" + reason;
+                Debug.Log($"[IntroVeil] 破片の奥行き {DepthState}（片 {result.pieces}）");
+            }
+            catch (Exception ex)
+            {
+                // 途中で落ちたら全部 1 へ戻す（片だけ部屋に乗って粒が殻に残る、を作らない）。
+                IntroRoomDepth.Reset(_fractureMesh, _peripheralMesh, _sparkMesh);
+                DepthResult = default;
+                DepthState = "off:error";
+                Debug.LogWarning($"[IntroVeil] 破片の奥行きを書けません（1.6m の殻で描く）: {ex.Message}");
+            }
+        }
+
         /// <summary>割れ始めの頭の姿勢を捨てる。走行の境界と覆いを畳むときだけ。</summary>
         private void ReleaseShatterAnchor()
         {
@@ -1053,6 +1112,8 @@ namespace FixedCamVr.Streaming
             {
                 _captureHeadToWorld = transform.localToWorldMatrix;
                 ShatterAnchored = true;
+                // R061: 静止画を引く前に奥行きを決める（終端を閉じる片の選び直しも同じ奥行きで投影する）。
+                ApplyRoomDepth();
             }
 
             if (w.shatter > FullyOpenEpsilon && !FrozenFrameAttempted)

@@ -56,6 +56,8 @@ Shader "FixedCamVr/IntroSpark"
                 float4 seed : TEXCOORD1;
                 float4 piece : TEXCOORD2;
                 float4 look : TEXCOORD3;
+                // R061: 放出した片の奥行きの倍率（IntroRoomDepth.SparkChannel）。部屋が無ければ 1。
+                float2 roomDepth : TEXCOORD4;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -159,6 +161,7 @@ Shader "FixedCamVr/IntroSpark"
                               heroPos, heroIntensity);
                     posWS = heroPos;
                     intensity = heroIntensity;
+                    travel = HeroSparkTravel((int)v.seed.w, p);
                     sizeM = 0.016;
                     star = 1.0;
                 }
@@ -196,6 +199,11 @@ Shader "FixedCamVr/IntroSpark"
                 right = SparkSafeNormalize(right, float3(1.0, 0.0, 0.0));
                 float3 up = cross(right, forward);
                 float3 world = posWS + (right * v.corner.x + up * v.corner.y) * sizeM;
+
+                // R061: 軌道は名目の殻の上で解き、撮影時の頭を中心に放出した片と同じ倍率で奥行きだけ縮める
+                // （片の手前を横切る粒は片の手前のまま。撮影位置から見た絵は同じ）。集結で 1 へ戻る。
+                float3 captureOrigin = _CaptureHeadToWorld._m03_m13_m23;
+                world = captureOrigin + (world - captureOrigin) * lerp(v.roomDepth.x, 1.0, travel);
 
                 float3 tint = lerp(SparkCoreColor, SparkPalette(v.look.w), 0.35);
                 o.positionCS = TransformWorldToHClip(world);

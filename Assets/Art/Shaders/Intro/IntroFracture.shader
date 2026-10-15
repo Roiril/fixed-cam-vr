@@ -81,13 +81,17 @@ Shader "FixedCamVr/IntroFracture"
                 float4 macro : TEXCOORD2;
                 float4 surface : TEXCOORD3;
                 float4 edgeDistances : TEXCOORD4;
+                // R061: 撮影時の部屋の奥行き（IntroRoomDepth.FractureChannel）。x = 頂点 / y = 片の中心。
+                // 名目の殻（半径 1.6m）に対する倍率で、部屋が無ければ 1。
+                float2 roomDepth : TEXCOORD5;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float3 positionWS : TEXCOORD0;
+                // xyz = 部屋の奥行きへ置いた位置 / w = 名目の位置からの倍率（撮影時の頭が中心）。
+                float4 positionWS : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
                 float3 leftUv : TEXCOORD2;
                 float3 rightUv : TEXCOORD3;
@@ -215,6 +219,10 @@ Shader "FixedCamVr/IntroFracture"
                 float2 pieceNoise2 = IntroShardHash2(v.small.xy + 0.37, v.macro.w + 29.0);
                 float3 rawVertex = FractureShellPoint(v.positionOS.xy);
                 float3 rawPieceCenter = FractureShellPoint(v.small.xy);
+                // R061: 撮影の瞬間に部屋の面に乗っていた点。写真はここから引く（撮影カメラは頭から数 cm ずれているので、
+                // 1.6m の殻の点から引くと中身がその視差ぶんずれる）。撮影位置から見た向きは名目の点と同じ。
+                float3 restVertex = rawVertex * v.roomDepth.x;
+                float3 restPieceCenter = rawPieceCenter * v.roomDepth.y;
                 float3 rawMacroCenter = FractureShellPoint(v.macro.xy);
                 float3 macroRay = normalize(rawMacroCenter);
                 float3 macroTangentX = normalize(float3(1.0, 0.0,
@@ -286,8 +294,8 @@ Shader "FixedCamVr/IntroFracture"
 
                 float3 startCenter = mul(_CaptureHeadToWorld, float4(flightCenter, 1.0)).xyz;
                 float3 sourceRelative = mul((float3x3)_CaptureHeadToWorld, relativeSource);
-                float3 captureWorld = mul(_CaptureHeadToWorld, float4(rawVertex, 1.0)).xyz;
-                float3 captureCenterWorld = mul(_CaptureHeadToWorld, float4(rawPieceCenter, 1.0)).xyz;
+                float3 captureWorld = mul(_CaptureHeadToWorld, float4(restVertex, 1.0)).xyz;
+                float3 captureCenterWorld = mul(_CaptureHeadToWorld, float4(restPieceCenter, 1.0)).xyz;
                 float3 targetCenter = _HasFrozenFrame > 0.5
                     ? FrozenScreenPoint(captureCenterWorld) : ScreenPoint(v.small.xy);
                 float3 targetVertex = _HasFrozenFrame > 0.5
@@ -384,7 +392,13 @@ Shader "FixedCamVr/IntroFracture"
                 float2 monoUv = ProjectFrozenUv(monoMatrix, captureWorld, monoValid);
                 float monoQ = lerp(mul(monoMatrix, float4(captureWorld, 1.0)).w, 1.0, alignment);
                 o.monoUv = float4(monoUv * monoQ, monoQ, monoValid);
-                o.positionWS = worldPosition;
+                // R061: 振り付けは名目の殻の上で解き（ここまでの worldPosition）、最後に撮影時の頭を中心に奥行きだけ縮める。
+                // 撮影位置から見た向きは変わらないので片眼の絵は同じで、両眼には部屋の奥行きで見える。
+                // 割れる前は頂点ごと（面に沿う）、剥がれたら片ごと（形を保って飛ぶ）、着地で 1（スクリーン）。
+                float3 captureOrigin = _CaptureHeadToWorld._m03_m13_m23;
+                float depthScale = lerp(lerp(v.roomDepth.x, v.roomDepth.y, loosen), 1.0, travel);
+                float3 placedPosition = captureOrigin + (worldPosition - captureOrigin) * depthScale;
+                o.positionWS = float4(placedPosition, depthScale);
                 o.normalWS = normalize(normalWorld);
                 o.surface = v.surface.x;
                 o.edgeDistances = v.edgeDistances;
@@ -460,7 +474,7 @@ Shader "FixedCamVr/IntroFracture"
                 o.spark1 = float4(secondPos, secondIntensity);
                 o.sparkSoft = float2(sparkSoft, v.macro.w * 7.13 + v.small.z * 311.0);
 
-                o.positionCS = TransformWorldToHClip(worldPosition);
+                o.positionCS = TransformWorldToHClip(placedPosition);
                 if (_IntroWarm > 0.5) o.positionCS = float4(0.0, 0.0, 0.0, 1.0);
                 return o;
             }
@@ -494,7 +508,11 @@ Shader "FixedCamVr/IntroFracture"
                 float2 sampleUv = saturate(uv);
                 float detail = i.detail.x;
                 float shock = i.detail.z;
-                float3 viewDirection = normalize(_CurrentHeadPosition.xyz - i.positionWS);
+                float3 viewDirection = normalize(_CurrentHeadPosition.xyz - i.positionWS.xyz);
+                // R061: 代表の粒の照り返しは名目の殻の上で決めた距離で解く（撮影位置から見た明るさを変えない）。
+                float3 captureOriginWS = _CaptureHeadToWorld._m03_m13_m23;
+                float3 nominalWS = captureOriginWS
+                    + (i.positionWS.xyz - captureOriginWS) / max(i.positionWS.w, 1e-3);
                 float3 normal = normalize(i.normalWS);
                 float grazing = pow(1.0 - saturate(abs(dot(normal, viewDirection))), 3.0);
                 float3 rimColor = float3(0.96, 0.90, 0.78);   // 生成り寄りの白（題字と同じ側の色）
@@ -511,7 +529,7 @@ Shader "FixedCamVr/IntroFracture"
                 for (int litIndex = 0; litIndex < 2; litIndex++)
                 {
                     float4 sparkSample = litIndex == 0 ? i.spark0 : i.spark1;
-                    float3 toSpark = sparkSample.xyz - i.positionWS;
+                    float3 toSpark = sparkSample.xyz - nominalWS;
                     float sparkDistance = dot(toSpark, toSpark);
                     // 真後ろの粒で半ベクトルが 0 になっても NaN を出さない（_Crystal=0 の一致も守る）。
                     float3 sparkHalf = SafeNormalize(
@@ -645,7 +663,7 @@ Shader "FixedCamVr/IntroFracture"
                 {
                     // R060: 反射と屈折は眼ごとの位置で解く。頭の中心で解くと両眼の鏡面が同じ場所に出て、
                     // ガラスの光沢ではなく面に塗った模様に見える（Editor の片眼の絵では区別できない）。
-                    float3 eyeView = normalize(GetCameraPositionWS() - i.positionWS);
+                    float3 eyeView = normalize(GetCameraPositionWS() - i.positionWS.xyz);
                     float3 opticalNormal = dot(normal, eyeView) >= 0.0 ? normal : -normal;
                     float nv = saturate(dot(opticalNormal, eyeView));
                     float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
@@ -744,8 +762,8 @@ Shader "FixedCamVr/IntroFracture"
 
                 // 全片着地後も p=.930 までは保つ。実ワールド平面の距離なので縦横比による楕円にならない。
                 float2 screenMeters = float2(
-                    dot(i.positionWS - _ScreenCenter.xyz, normalize(_ScreenRight.xyz)),
-                    dot(i.positionWS - _ScreenCenter.xyz, normalize(_ScreenUp.xyz)));
+                    dot(i.positionWS.xyz - _ScreenCenter.xyz, normalize(_ScreenRight.xyz)),
+                    dot(i.positionWS.xyz - _ScreenCenter.xyz, normalize(_ScreenUp.xyz)));
                 float screenRadius = length(screenMeters) / max(length(_ScreenHalf.xy), 1e-4);
                 float radialFade = 1.0;
                 if (_Shatter > 0.930 && _Shatter < 0.995)
