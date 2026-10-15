@@ -71,7 +71,7 @@ py -3.11 tools/visitor-ui/make-briefing-sfx.py --check
 ### 台詞と素材
 
 - 正本: `tablet/app/src/main/assets/web/asset/briefing-v1.json`
-- 資料画像: 同じディレクトリの `camera-01-doll.webp` と `briefing-device-v2.png`。観測装置は手を写さず、Meta Questと左コントローラーだけを示す透過PNG。観測装置の場面だけ額と外影を外し、全体を博士の左へ表示する。明るさ0.8と彩度0.65で画面へ合わせる
+- 資料画像: 同じディレクトリの `camera-01-doll.webp` と `briefing-device-v3.jpg`。観測装置は、黒い布の上に置かれた Meta Quest と左コントローラーの保管記録の写真（荷札「観測装置」・Codex 生成）。他の資料と同じ額へ入れる。旧版の透過図 `briefing-device-v2.png` は使っていない（2026-10-15）
 - 装着手順の画像: 同じディレクトリの `equipment-controller-v1.png`、`equipment-quest-v1.png`、`equipment-headphones-v1.png`。黒地に白い輪郭線と赤い印だけを画像生成で描く。`mix-blend-mode: screen` で黒を表示へ重ねず、線だけを見せる。生成時の参照とプロンプトは [equipment-assets.md](equipment-assets.md)
 - 壁の一周動画: 同じディレクトリの `kabe-one-lap-doll-v1.mp4`
 - 音声生成用台本: `tools/visitor-ui/briefing-narration.md`
@@ -290,9 +290,32 @@ APK内のHTMLとJSONと画像は元ファイルとのバイト一致を確認し
 
 ## 画像
 
-各場面の博士静止画は動画先頭の `tablet/app/src/main/assets/web/asset/*-doctor-v1.jpg`。英仏でも同じ中央配置の静止画を表示する。
+各場面の博士静止画は動画先頭の `tablet/app/src/main/assets/web/asset/*-doctor-v2.jpg`。英仏でも同じ中央配置の静止画を表示する。
 `doctor_v1.png` は男性版の元画像。`doctor_v2_female.png` は未採用の候補。
 日本語音声は `doctor-ja-v2-original.mp3` から4場面へ切り出して同梱済み。全4場面で提供されたリップシンク動画へ元音声を組み込み、先頭フレームの静止画とともに配信する。差し替え時の配信仕様は `.claude/memory/visitor_tablet.md` を参照。
+
+## 博士の目元の闇（2026-10-15・LEDGER 0263）
+
+同梱している博士の動画 `*-ja-v2.mp4` と先頭の静止画 `*-doctor-v2.jpg` は、元の `*-ja-v1.mp4` に目元の闇を焼いたもの。
+下から細く絞った 1 灯が口元から下だけを照らし、目・眉・額は闇に沈む。闇の縁は説明の頭で目の下、
+最後の「ご無事を祈ります」で鼻の下まで下がる（話が進むほど顔が見えなくなる）。リップシンクの口は触らない。
+
+```powershell
+py -3.11 tools/visitor-ui/track-doctor-face.py --sheet <確認用フォルダ>   # 顔を毎コマ追う → doctor-face-track.json
+py -3.11 tools/visitor-ui/shade-doctor-eyes.py --still out.png --scene subject --frame 141  # 1 コマだけ試す
+py -3.11 tools/visitor-ui/shade-doctor-eyes.py            # 4 本を焼き、照合まで
+py -3.11 tools/visitor-ui/shade-doctor-eyes.py --check    # 照合だけ（目元 0.35 倍以下・口元 0.9 倍以上・コマ数一致）
+```
+
+- 追跡は 1 コマ目から各コマへ直接（累積しないので漂わない）。口はリップシンクで動くので、鼻より上の点だけを使う
+- 闇の底（元の 0.10 倍）でも、Redmi の明るさでは冒頭の文で白目が拾えた。両目のまわりだけさらに 0.4 倍へ沈める（`EYE_EXTRA`）。髪と額の輪郭は残す
+- 光の形は Codex に描かせた 2 案（眼窩だけ影 / 下からの細い光）から後者を選び、その画を見本にコードで組んだ。
+  見本は `G:/マイドライブ/shubie/renders/tablet-sinister-20261015/`
+- ⚠ ffmpeg に `-shortest` を付けると映像の末尾が 1〜4 コマ落ちる（音声を copy したとき）。付けない
+- 元の動画を差し替えたら、追跡からやり直す（追跡の JSON は元の動画のコマに結び付いている）
+
+同じ日に、反映の印を研究所の角印 `institute-seal-v1.png`（「怪異研究所印」）へ、
+確認・反映の画面の背景を首を傾げた人形 `entrance-doll-tilt-v1.png` へ替えた。生成の記録は [sinister-assets.md](sinister-assets.md)。
 
 ## スタッフの交代操作（2026-10-08）
 

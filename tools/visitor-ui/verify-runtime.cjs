@@ -1059,10 +1059,10 @@ test('ユーザー指定のEleven v4入力は一つのコードブロックで�
 
 test('日本語の原音声と4場面の博士動画を配信し、新しい台詞を参照する', () => {
   const expectedVideos = {
-    introduction: 'introduction-ja-v1.mp4',
-    subject: 'subject-ja-v1.mp4',
-    report: 'report-ja-v1.mp4',
-    wear: 'wear-ja-v1.mp4',
+    introduction: 'introduction-ja-v2.mp4',
+    subject: 'subject-ja-v2.mp4',
+    report: 'report-ja-v2.mp4',
+    wear: 'wear-ja-v2.mp4',
   };
   for (const scene of briefing.scenes) {
     const filename = `${scene.id}-ja-v2.mp3`;
@@ -1077,8 +1077,8 @@ test('日本語の原音声と4場面の博士動画を配信し、新しい台�
     assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
   }
   const introduction = briefing.scenes.find((scene) => scene.id === 'introduction');
-  assert.equal(introduction.image, 'introduction-doctor-v1.jpg');
-  assert.equal(introduction.doctorImage, 'introduction-doctor-v1.jpg');
+  assert.equal(introduction.image, 'introduction-doctor-v2.jpg');
+  assert.equal(introduction.doctorImage, 'introduction-doctor-v2.jpg');
   assert.equal(introduction.doctorAnchor, 50);
   const subject = briefing.scenes.find((scene) => scene.id === 'subject');
   const report = briefing.scenes.find((scene) => scene.id === 'report');
@@ -1107,7 +1107,7 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   runtime.beginBriefingCue();
   const doctorVideo = elements.get('doctorVideo');
   assert.equal(runtime.getBriefingMedia(), doctorVideo);
-  assert.match(doctorVideo.src, /subject-ja-v1\.mp4$/);
+  assert.match(doctorVideo.src, /subject-ja-v2\.mp4$/);
   const video = elements.get('briefingLoopVideo');
   const before = video.playCount;
   assert.equal(video.hidden, true);

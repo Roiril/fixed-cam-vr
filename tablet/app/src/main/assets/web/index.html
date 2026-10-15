@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#090807">
 <link rel="preload" as="image" href="./asset/entrance-doll-v1.png">
+<link rel="preload" as="image" href="./asset/entrance-doll-tilt-v1.png">
 <link rel="preload" as="image" href="./asset/title-logo-v2.png">
 <title>廻リ視 — 体験の前に</title>
 <!--
@@ -166,11 +167,12 @@
   .status-glyph::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 210deg,rgba(242,236,223,0) 0deg,rgba(242,236,223,.85) 300deg,rgba(242,236,223,0) 360deg); -webkit-mask: radial-gradient(circle,transparent 58%,#000 60%,#000 66%,transparent 68%); mask: radial-gradient(circle,transparent 58%,#000 60%,#000 66%,transparent 68%); }
   .result[data-tone="wait"] .status-glyph::before { animation: enso 1.6s linear infinite; }
   @keyframes enso { to { transform: rotate(360deg); } }
-  .result[data-tone="ok"] .status-glyph::before { background: rgba(242,236,223,.9); animation: enso-close .7s var(--ease-out) both; }
+  .result[data-tone="ok"] .status-glyph::before { background: rgba(242,236,223,.5); animation: enso-close .7s var(--ease-out) both; }
   @keyframes enso-close { from { transform: rotate(-90deg) scale(.92); opacity: .4; } to { transform: none; opacity: 1; } }
   .status-glyph span { font: 400 34px/1 var(--serif); }
-  .result[data-tone="ok"] .status-glyph span { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 6px; background: var(--red); color: var(--ink); font-size: 28px; box-shadow: 0 0 0 1px rgba(242,236,223,.08) inset; animation: stamp .55s .25s cubic-bezier(.3,1.6,.5,1) both; }
-  @keyframes stamp { 0% { transform: scale(1.8) rotate(-12deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: rotate(-4deg); opacity: 1; } }
+  /* 反映したら、研究所の角印が円相の中へ押される（記号の文字は読み上げ用に残し、画面では隠す） */
+  .result[data-tone="ok"] .status-glyph span { display: block; width: 78px; height: 78px; overflow: hidden; color: transparent; font-size: 0; background: center / contain no-repeat url("./asset/institute-seal-v1.png"); animation: stamp .62s .25s cubic-bezier(.2,.9,.25,1) both; }
+  @keyframes stamp { 0% { transform: scale(1.55) rotate(-9deg); opacity: 0; filter: blur(3px); } 42% { transform: scale(.96) rotate(-3deg); opacity: 1; filter: blur(0); } 100% { transform: rotate(-3deg); opacity: .94; } }
   .result[data-tone="error"] .status-glyph { color: var(--error); }
   .result[data-tone="error"] .status-glyph::before { background: conic-gradient(rgba(240,164,154,.85) 0deg 250deg,transparent 250deg); }
   .result-title, .result-detail { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -213,10 +215,6 @@
   /* ---- 参考図（写真・壁の一周映像・装置の図）：左に額が上がり、博士は右へ寄る（2026-10-14 復活） ---- */
   .briefing-visual { position: absolute; z-index: 2; left: max(4.5vw,env(safe-area-inset-left)); top: 47%; width: min(38vw,980px); aspect-ratio: 16 / 9; margin: 0; overflow: hidden; pointer-events: none; background: #050403; border: 1px solid rgba(232,220,196,.22); box-shadow: 0 24px 70px rgba(0,0,0,.75), 0 0 0 7px rgba(9,8,7,.55); opacity: 0; transform: translateY(-50%); transition: opacity .36s var(--ease-out), filter .45s var(--ease); }
   .briefing-visual.is-presented { opacity: 1; }
-  /* 観測装置は額へ入れず、博士と同じ暗い画面へ機材だけを重ねる。 */
-  .briefing-visual.is-device { left: max(3.5vw,env(safe-area-inset-left)); top: 46%; width: min(42vw,980px); background: transparent; border: 0; box-shadow: none; }
-  .briefing-visual.is-device::after { display: none; }
-  .briefing-image[data-scene="report"], .reference-ghost[data-scene="report"] { object-fit: contain; filter: brightness(.8) saturate(.65); }
   .stage.is-equipment .briefing-visual { display: none; }
   .briefing-visual.is-leaving { opacity: 0; filter: none; }
   .reference-ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: 1; }
@@ -304,7 +302,6 @@
     .title-brand { left: 8%; right: 8%; top: 12%; width: auto; }
     .equipment-steps { grid-template-columns: 1fr; gap: 18px; }
     .briefing-visual { left: 6vw; right: 6vw; top: 6%; width: auto; transform: none; }
-    .briefing-visual.is-device { left: 6vw; right: 6vw; top: 6%; width: auto; }
     .stage.has-reference:not(.is-equipment) .portrait { top: 34%; transform: none; -webkit-mask-image: linear-gradient(180deg,transparent 0,#000 22%); mask-image: linear-gradient(180deg,transparent 0,#000 22%); }
     .equip-ico { width: 84px; }
     .briefing-controls { grid-template-columns: repeat(3,auto); }
@@ -1320,10 +1317,19 @@
     $('mediaNotice').hidden = view !== 'briefing';
   }
 
+  // 設定を送った後（確認・反映の画面）だけ、背景の人形が首を傾げている。画面が替わる瞬間に切り替え、
+  // 溶かさない（いつ変わったのかを見せない）。設定へ戻ると元の姿勢に戻る。
+  function syncEntranceDoll(view) {
+    const image = $('entranceImage');
+    const source = view === 'result' ? './asset/entrance-doll-tilt-v1.png' : './asset/entrance-doll-v1.png';
+    if (image.getAttribute('src') !== source) image.setAttribute('src', source);
+  }
+
   function setSurface(view, focusTarget) {
     const surfaces = { title: $('titleView'), edit: $('settingsView'), result: $('resultView'), briefing: $('briefingView') };
     const current = surfaces[view];
     syncViewChrome(view);
+    syncEntranceDoll(view);
     if (state.view === view && !current.hidden) {
       if (view === 'title') {
         current.classList.remove('is-leaving');
@@ -2292,7 +2298,6 @@
       if (image.getAttribute('src') !== source || image.dataset.scene !== scene.id) {
         if (hadReference) captureReferenceGhost();
         else discardReferenceGhost();
-        document.querySelector('.briefing-visual').classList.toggle('is-device', scene.id === 'report');
         image.dataset.scene = scene.id;
         image.dataset.presentationSource = '';
         state.briefing.imageFailed = false;
@@ -2433,13 +2438,13 @@
     presentationController.cancel('reference-hidden');
     if (figure.hidden || reducedMotion.matches) {
       figure.hidden = true;
-      figure.classList.remove('is-leaving', 'is-device', 'is-presented');
+      figure.classList.remove('is-leaving', 'is-presented');
       return;
     }
     figure.classList.add('is-leaving');
     refLeaveTimer = setTimeout(() => {
       figure.hidden = true;
-      figure.classList.remove('is-leaving', 'is-device', 'is-presented');
+      figure.classList.remove('is-leaving', 'is-presented');
       refLeaveTimer = null;
     }, 370);
   }

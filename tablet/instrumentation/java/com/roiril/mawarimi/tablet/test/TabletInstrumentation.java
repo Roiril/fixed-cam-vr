@@ -942,7 +942,7 @@ public final class TabletInstrumentation extends Instrumentation {
         Activity activity = launchFromShell();
         WebView view = waitForWebView(activity, 10000);
         waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
-        String[] files = {"introduction-ja-v1.mp4", "wear-ja-v1.mp4", "subject-ja-v1.mp4", "report-ja-v1.mp4"};
+        String[] files = {"introduction-ja-v2.mp4", "wear-ja-v2.mp4", "subject-ja-v2.mp4", "report-ja-v2.mp4"};
         for (String file : files) {
             for (int start : new int[]{0, 1048576, 1199370}) {
                 byte[] expected = new byte[100000];
