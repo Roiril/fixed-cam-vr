@@ -25,6 +25,10 @@ namespace FixedCamVr.OvrBridge
         private const string CameraPermission = OVRPermissionsRequester.PassthroughCameraAccessPermission;
         private const float MaxStereoDeltaSec = 0.1f;
         private const float MaxFrameAgeSec = 0.25f;
+        private const float StopAfterCaptureSec = 0.3f;
+        // カメラ姿勢と「頭 ∘ LensOffset」の食い違いの許容。超えたら参照空間が合っていないと読む（R060）。
+        private const float MaxPoseDeltaM = 0.15f;
+        private const float MaxPoseDeltaDeg = 20f;
         private static readonly Vector2Int RequestedResolution = new(1280, 1280);
 
         [SerializeField] private IntroDirector? director;
@@ -48,11 +52,13 @@ namespace FixedCamVr.OvrBridge
         private bool _supportConfirmed;
         private bool _providerFailureLogged;
         private float _supportRetryAt;
+        private float _attemptSeenAt = -1f;
 
         private struct FrameSample
         {
             public Texture? texture;
             public Matrix4x4 worldToUv;
+            public Pose worldPose;
             public DateTime timestamp;
             public float observedAt;
         }
@@ -91,6 +97,18 @@ namespace FixedCamVr.OvrBridge
 
             bool shouldPrepare = director.Stage is IntroStage.Real or IntroStage.Degrade
                 or IntroStage.Structure or IntroStage.Frame;
+            // 静止画を取り終えたら（成否に関わらず 1 回きり）カメラを止める。段 4 は体験でいちばん重い 5 秒で、
+            // 2 台のカメラが 60Hz で画を届け続ける分がそのまま食われていた（2026-10-15・R060）。
+            // 複製の Blit が GPU で済むまで数フレーム待ってから止める（借用中のテクスチャを先に手放さない）。
+            if (shouldPrepare && veil != null && veil.FrozenFrameAttempted)
+            {
+                if (_attemptSeenAt < 0f) _attemptSeenAt = Time.unscaledTime;
+                if (Time.unscaledTime - _attemptSeenAt >= StopAfterCaptureSec) shouldPrepare = false;
+            }
+            else
+            {
+                _attemptSeenAt = -1f;
+            }
             if (!shouldPrepare)
             {
                 if (_preparing) StopCameras();
@@ -235,7 +253,7 @@ namespace FixedCamVr.OvrBridge
                 trackingSpace.rotation * trackingPose.rotation);
             RecordSample(ref sample, texture,
                 BuildWorldToUv(worldPose, camera.Intrinsics, camera.CurrentResolution),
-                camera.Timestamp, Time.unscaledTime);
+                worldPose, camera.Timestamp, Time.unscaledTime);
         }
 
         private IntroFrozenFrameSource? ProvideFrozenFrame()
@@ -275,7 +293,8 @@ namespace FixedCamVr.OvrBridge
             // 組み直さないと中央の片は写真の範囲判定で 1 枚も描かれず、周辺の板が中央まで覆う。
             Matrix4x4 leftWorldToUv = left.worldToUv;
             Matrix4x4 rightWorldToUv = right.worldToUv;
-            bool usedHeadPose = TryHeadPoseFallback(ref leftWorldToUv, ref rightWorldToUv);
+            bool usedHeadPose = TryHeadPoseFallback(left.worldPose, right.worldPose,
+                ref leftWorldToUv, ref rightWorldToUv);
             PublishProjectionProbe(leftWorldToUv, rightWorldToUv, usedHeadPose);
 
             Debug.Log($"[IntroCamera] 静止画用の入力取得: left={left.timestamp:O} "
@@ -298,25 +317,63 @@ namespace FixedCamVr.OvrBridge
         }
 
         /// <summary>
-        /// 0236 の退避路。頭の正面 1.6m（破片のシェル半径）の点が左右どちらかのカメラ姿勢の後ろに落ちるなら、
-        /// カメラ姿勢を捨てて左右の眼のアンカーの姿勢で worldToUv を組み直す（内部パラメータは実カメラのまま）。
-        /// 物理のカメラは HMD に固定されているので、頭の姿勢から組んだ投影は多少ずれても前を向く。
-        /// 戻り値 true = 組み直した。
+        /// 0236 の退避路（R060 で判定と組み方を直した）。カメラ姿勢を「頭 ∘ LensOffset」（SDK が
+        /// <c>GetCameraPose</c> の中で使う式を、Unity の頭のアンカーで組んだもの）と突き合わせ、
+        /// 位置が <see cref="MaxPoseDeltaM"/> か向きが <see cref="MaxPoseDeltaDeg"/> を超えて食い違うか、
+        /// 頭の正面 1.6m がカメラの後ろに落ちるなら、参照空間が合っていないと読んで「頭 ∘ LensOffset」で組み直す。
+        /// 旧実装は眼のアンカーで組んでいたので、カメラの前方・下方のずれと傾きを丸ごと捨てていた
+        /// （近い壁ほど凍った瞬間に絵が跳んで大きくなる）。戻り値 true = 組み直した。
         /// </summary>
-        private bool TryHeadPoseFallback(ref Matrix4x4 leftWorldToUv, ref Matrix4x4 rightWorldToUv)
+        private bool TryHeadPoseFallback(Pose leftPose, Pose rightPose,
+            ref Matrix4x4 leftWorldToUv, ref Matrix4x4 rightWorldToUv)
         {
             if (cameraRig == null || cameraRig.centerEyeAnchor == null) return false;
             if (_leftCamera == null || _rightCamera == null) return false;
             Transform head = cameraRig.centerEyeAnchor;
+            Pose leftExpected = HeadLensPose(head, _leftCamera.Intrinsics.LensOffset);
+            Pose rightExpected = HeadLensPose(head, _rightCamera.Intrinsics.LensOffset);
+            float leftDeltaM = Vector3.Distance(leftPose.position, leftExpected.position);
+            float rightDeltaM = Vector3.Distance(rightPose.position, rightExpected.position);
+            float leftDeltaDeg = Quaternion.Angle(leftPose.rotation, leftExpected.rotation);
+            float rightDeltaDeg = Quaternion.Angle(rightPose.rotation, rightExpected.rotation);
             Vector3 probe = head.position + head.forward * 1.6f;
-            if (ProjectsInFront(leftWorldToUv, probe) && ProjectsInFront(rightWorldToUv, probe)) return false;
-            Transform leftEye = cameraRig.leftEyeAnchor != null ? cameraRig.leftEyeAnchor : head;
-            Transform rightEye = cameraRig.rightEyeAnchor != null ? cameraRig.rightEyeAnchor : head;
-            leftWorldToUv = BuildWorldToUv(new Pose(leftEye.position, leftEye.rotation),
-                _leftCamera.Intrinsics, _leftCamera.CurrentResolution);
-            rightWorldToUv = BuildWorldToUv(new Pose(rightEye.position, rightEye.rotation),
-                _rightCamera.Intrinsics, _rightCamera.CurrentResolution);
+            bool behind = !ProjectsInFront(leftWorldToUv, probe) || !ProjectsInFront(rightWorldToUv, probe);
+            bool mismatch = leftDeltaM > MaxPoseDeltaM || rightDeltaM > MaxPoseDeltaM
+                            || leftDeltaDeg > MaxPoseDeltaDeg || rightDeltaDeg > MaxPoseDeltaDeg;
+            Vector3 leftLocal = head.InverseTransformPoint(leftPose.position);
+            Vector3 rightLocal = head.InverseTransformPoint(rightPose.position);
+            Debug.Log(
+                FormattableString.Invariant(
+                    $"[IntroCamera] 撮影時のカメラ姿勢（頭のローカル）: 左 {leftLocal.x:0.000},{leftLocal.y:0.000},{leftLocal.z:0.000} ")
+                + FormattableString.Invariant(
+                    $"右 {rightLocal.x:0.000},{rightLocal.y:0.000},{rightLocal.z:0.000} ／ ")
+                + FormattableString.Invariant(
+                    $"頭∘LensOffset との差 左 {leftDeltaM:0.000}m {leftDeltaDeg:0.0}° 右 {rightDeltaM:0.000}m {rightDeltaDeg:0.0}° ／ ")
+                + $"LensOffset 左 {Describe(_leftCamera.Intrinsics.LensOffset)} 右 {Describe(_rightCamera.Intrinsics.LensOffset)}"
+                + (behind || mismatch ? "（参照空間が合っていない ＝ 頭∘LensOffset で組み直す）" : string.Empty));
+            if (!behind && !mismatch) return false;
+            leftWorldToUv = BuildWorldToUv(leftExpected, _leftCamera.Intrinsics, _leftCamera.CurrentResolution);
+            rightWorldToUv = BuildWorldToUv(rightExpected, _rightCamera.Intrinsics, _rightCamera.CurrentResolution);
             return true;
+        }
+
+        /// <summary>SDK の <c>GetCameraPose</c> と同じ合成（頭の姿勢 ∘ LensOffset）を、Unity の頭のアンカーで組む。</summary>
+        private static Pose HeadLensPose(Transform head, Pose lensOffset)
+        {
+            Quaternion lensRotation = lensOffset.rotation;
+            float magnitude = lensRotation.x * lensRotation.x + lensRotation.y * lensRotation.y
+                              + lensRotation.z * lensRotation.z + lensRotation.w * lensRotation.w;
+            // 内部パラメータが未着の既定値（0 の四元数）なら、レンズのずれは無いものとして頭の姿勢そのものを使う。
+            if (magnitude < 0.5f) return new Pose(head.position, head.rotation);
+            return new Pose(head.position + head.rotation * lensOffset.position,
+                head.rotation * lensRotation);
+        }
+
+        private static string Describe(Pose pose)
+        {
+            Vector3 e = pose.rotation.eulerAngles;
+            return FormattableString.Invariant(
+                $"({pose.position.x:0.000},{pose.position.y:0.000},{pose.position.z:0.000} / {e.x:0.0},{e.y:0.0},{e.z:0.0})");
         }
 
         private void PublishProjectionProbe(Matrix4x4 leftWorldToUv, Matrix4x4 rightWorldToUv, bool usedHeadPose)
@@ -382,12 +439,13 @@ namespace FixedCamVr.OvrBridge
         }
 
         private static void RecordSample(
-            ref FrameSample sample, Texture? texture, Matrix4x4 worldToUv,
+            ref FrameSample sample, Texture? texture, Matrix4x4 worldToUv, Pose worldPose,
             DateTime timestamp, float observedAt)
         {
             if (timestamp == sample.timestamp) return;
             sample.texture = texture;
             sample.worldToUv = worldToUv;
+            sample.worldPose = worldPose;
             sample.timestamp = timestamp;
             sample.observedAt = observedAt;
         }

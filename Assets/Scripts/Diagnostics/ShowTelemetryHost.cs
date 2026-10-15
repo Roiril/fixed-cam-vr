@@ -536,6 +536,10 @@ namespace FixedCamVr.Diagnostics
         private string ShatterCameraState => _veil == null ? "-" : _veil.FrozenFrameStatus;
         /// <summary>割れ始めの頭の姿勢を固定したか。0 のまま Frame が進むと破片が頭についてくる。</summary>
         private string ShatterAnchorState => _veil == null ? "-" : (_veil.ShatterAnchored ? "1" : "0");
+        // R060: 段 4 の描画状態を導入の手前で作り終えたか。0 のまま段 4 へ入ると一撃の頭で止まる。
+        private string ShatterWarmState => _veil == null ? "-" : (_veil.WarmedUp ? "1" : "0");
+        // R060: 覆いの下で見えないスクリーンを描かなかったフレームの累計。導入が走って 0 なら止められていない。
+        private string ScreenOffState => _veil == null ? "-" : _veil.ScreenSuppressedFrames.ToString();
         /// <summary>静止画の投影の検算（0236）。頭の正面 1.6m の uv 左/右、または behind。</summary>
         private string ShatterProjectionState => _veil == null ? "-" : _veil.FrozenFrameProjection;
         /// <summary>この走行で光の粒（0235）を一度でも描いたか。0 ならシェーダかメッシュが剥がれている。</summary>
@@ -1212,6 +1216,10 @@ namespace FixedCamVr.Diagnostics
             _sb.Append("ev=sum");
             _sb.Append(" fps=").Append(fps.ToString("F1"));
             _sb.Append(" worst=").Append(worstMs.ToString("F0"));
+            // R060: 実際に描いている解像度。動的解像度が効いているかはここにしか出ない
+            // （eyeW = 確保した目のテクスチャの幅・rvs = そのうち実際に描いた割合）。
+            _sb.Append(" eyeW=").Append(UnityEngine.XR.XRSettings.eyeTextureWidth);
+            _sb.Append(" rvs=").Append(UnityEngine.XR.XRSettings.renderViewportScale.ToString("F2"));
 
             if (_run != null)
             {
@@ -1238,6 +1246,8 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" shatCopies=").Append(ShatterFrozenCount);
                 _sb.Append(" shatCam=").Append(ShatterCameraState);
                 _sb.Append(" shatAnchor=").Append(ShatterAnchorState);
+                _sb.Append(" shatWarm=").Append(ShatterWarmState);
+                _sb.Append(" scrOff=").Append(ScreenOffState);
                 _sb.Append(" shatProj=").Append(ShatterProjectionState);
                 _sb.Append(" spark=").Append(SparkState);
                 _sb.Append(" sparkN=").Append(SparkCountState);

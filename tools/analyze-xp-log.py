@@ -3376,6 +3376,18 @@ def analyze(events, others, exp, warns=None):
                     verdict("FAIL", "割れ始めの頭の姿勢を固定できていない（shatAnchor=0 のまま）— 破片が頭についてくる")
                 elif anchors:
                     verdict("OK", "割れ始めの頭の姿勢を固定した（破片はワールド空間でその地点に残る）")
+                # R060: 段 4 の描画状態を導入の手前で作ったか。旧ログ（キーが無い）では沈黙する。
+                warms = fracture_numbers("shatWarm")
+                if warms and max(warms) < 1:
+                    verdict("WARN", "段 4 の描画状態を前もって作れていない（shatWarm=0）— 割れる瞬間の 1 フレームが伸びる")
+                elif warms:
+                    verdict("OK", "段 4 の描画状態を導入の手前で作った（shatWarm=1）")
+                # R060: 覆いの下で見えないスクリーンを描かなかったフレーム数。旧ログでは沈黙する。
+                offs = fracture_numbers("scrOff")
+                if offs and max(offs) < 1:
+                    verdict("WARN", "覆いの下で見えないスクリーンを 1 フレームも止めていない（scrOff=0）— 導入の GPU が重いまま")
+                elif offs:
+                    verdict("OK", f"覆いの下で見えないスクリーンを描かなかった（{int(max(offs))} フレーム）")
 
     # -- スクリーンの管の点灯
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。

@@ -71,6 +71,8 @@ Shader "FixedCamVr/IntroSpark"
             float _Shatter;
             float _HasFrozenFrame;
             float _Spark;
+            // R060: 1 なら頂点を 1 点へ潰して何も描かない。段 4 の描画状態を導入の手前で作っておくための描画（IntroVeil.WarmUp）。
+            float _IntroWarm;
             float4x4 _CaptureHeadToWorld;
             float4 _CurrentHeadPosition;
             float4 _ScreenCenter;
@@ -200,6 +202,7 @@ Shader "FixedCamVr/IntroSpark"
                 o.color = float4(tint * intensity, intensity);
                 o.corner = v.corner;
                 o.star = star;
+                if (_IntroWarm > 0.5) o.positionCS = float4(0.0, 0.0, 0.0, 1.0);
                 return o;
             }
 

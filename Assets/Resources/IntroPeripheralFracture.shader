@@ -77,6 +77,8 @@ Shader "FixedCamVr/IntroPeripheralFracture"
             float _Crystal;
             float _Glass;
             float _SparkLit;
+            // R060: 1 なら頂点を 1 点へ潰して何も描かない。段 4 の描画状態を導入の手前で作っておくための描画（IntroVeil.WarmUp）。
+            float _IntroWarm;
             float4x4 _CaptureHeadToWorld;
             float4x4 _LeftWorldToUv;
             float4x4 _RightWorldToUv;
@@ -261,6 +263,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 o.surface = float4(baseColor, rim);
                 o.edges = v.edges;
                 o.phase = float4(handoff, travel, exit, dot(normal, viewDirection));
+                if (_IntroWarm > 0.5) o.positionCS = float4(0.0, 0.0, 0.0, 1.0);
                 return o;
             }
 

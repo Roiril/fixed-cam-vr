@@ -1,6 +1,7 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -54,6 +55,7 @@ namespace FixedCamVr.Streaming
         private static readonly int ScreenFadeId = Shader.PropertyToID("_ScreenFade");
         private static readonly int FractureActiveId = Shader.PropertyToID("_FractureActive");
         private static readonly int ShatterId = Shader.PropertyToID("_Shatter");
+        private static readonly int IntroWarmId = Shader.PropertyToID("_IntroWarm");
         private static readonly int VeilSizeId = Shader.PropertyToID("_VeilSize");
         private static readonly int FeatherAngId = Shader.PropertyToID("_FeatherAng");
         private static readonly int ScreenCenterId = Shader.PropertyToID("_ScreenCenter");
@@ -139,6 +141,18 @@ namespace FixedCamVr.Streaming
         private bool _suppressSparkleForDiagnostics;
         private RenderTexture? _frozenLeft;
         private RenderTexture? _frozenRight;
+        // 静止画の複製先は使い回す（R060）。割れる瞬間に 2 枚の RT を確保・生成すると、その 1 フレームが伸びる。
+        private RenderTexture? _frozenPoolLeft;
+        private RenderTexture? _frozenPoolRight;
+        // 段 4 の描画状態を導入の手前で作っておくための、何も描かない複製（R060）。
+        private readonly List<MeshRenderer> _warmRenderers = new();
+        private readonly List<Material> _warmMaterials = new();
+        private int _warmFramesLeft = -1;
+        private bool _warmDone;
+        /// <summary>段 4 の描画状態を前もって作るときに、潰した描画を何フレーム出すか。</summary>
+        private const int WarmFrames = 3;
+        /// <summary>静止画の解像度の見込み（<c>IntroPassthroughCapture</c> の要求値と同じ）。違えば撮影時に作り直す。</summary>
+        private const int FrozenPoolSize = 1280;
         private Matrix4x4 _leftWorldToUv = Matrix4x4.identity;
         private Matrix4x4 _rightWorldToUv = Matrix4x4.identity;
         private Matrix4x4 _captureHeadToWorld = Matrix4x4.identity;
@@ -417,6 +431,161 @@ namespace FixedCamVr.Streaming
             _fractureBlock = new MaterialPropertyBlock();
             BuildPeripheralFracture();
             BuildSparks();
+            BuildWarmRenderers();
+        }
+
+        /// <summary>
+        /// R060: 段 4 で初めて使う材質の状態（深度を書く覆い・ZTest Equal の色・深度とステンシル・周辺の窓と色・
+        /// 光の粒・隙間の面）を、同じ状態の複製で 1 回ずつ描いておく。Vulkan はこの組み合わせを初めて描く
+        /// フレームで描画状態を作るので、それが割れる瞬間に重なると一撃の頭で 40〜230ms 止まっていた。
+        /// 複製は <c>_IntroWarm</c> = 1 で頂点を 1 点へ潰すので、画には 1 画素も出ない。
+        /// </summary>
+        private void BuildWarmRenderers()
+        {
+            if (_quad != null && _mesh != null && _mat != null)
+                AddWarm(_quad, _mesh, _mat, m => m.SetInt(ZWriteId, 1));
+            if (_gaps != null && _mesh != null && _gapsMat != null)
+                AddWarm(_gaps, _mesh, _gapsMat, null);
+            if (_fracture != null && _fractureMesh != null && _fractureMat != null)
+            {
+                AddWarm(_fracture, _fractureMesh, _fractureMat, m => ConfigureColorMaterial(m, frozen: true));
+                AddWarm(_fracture, _fractureMesh, _fractureMat, m => ConfigureColorMaterial(m, frozen: false));
+            }
+            if (_fractureDepth != null && _fractureMesh != null && _fractureDepthMat != null)
+                AddWarm(_fractureDepth, _fractureMesh, _fractureDepthMat, null);
+            if (_peripheralMesh != null && _peripheralWindowRenderer != null && _peripheralWindowMat != null)
+                AddWarm(_peripheralWindowRenderer.transform, _peripheralMesh, _peripheralWindowMat, null);
+            if (_peripheralMesh != null && _peripheralColorRenderer != null && _peripheralColorMat != null)
+                AddWarm(_peripheralColorRenderer.transform, _peripheralMesh, _peripheralColorMat, null);
+            if (_sparkMesh != null && _sparkRenderer != null && _sparkMat != null)
+                AddWarm(_sparkRenderer.transform, _sparkMesh, _sparkMat, null);
+        }
+
+        private void AddWarm(Transform like, Mesh mesh, Material source, Action<Material>? configure)
+        {
+            var go = new GameObject(like.name + " (warm)");
+            go.transform.SetParent(like.parent, worldPositionStays: false);
+            go.transform.localPosition = like.localPosition;
+            go.transform.localRotation = like.localRotation;
+            go.transform.localScale = like.localScale;
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var renderer = go.AddComponent<MeshRenderer>();
+            var material = new Material(source) { name = source.name + " (warm)" };
+            configure?.Invoke(material);
+            material.SetFloat(IntroWarmId, 1f);
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.allowOcclusionWhenDynamic = false;
+            renderer.enabled = false;
+            _warmRenderers.Add(renderer);
+            _warmMaterials.Add(material);
+        }
+
+        /// <summary>
+        /// 導入が始まって段 4 より前（何も割れていない間）に 1 回だけ、潰した複製を数フレーム描く。
+        /// 静止画の複製先もここで確保して 1 度コピーしておく（RT の生成とコピーの描画状態も先に作る）。
+        /// </summary>
+        private void TickWarmUp(in IntroWeights w)
+        {
+            if (_warmDone || !Application.isPlaying) return;
+            if (w.shatter > FullyOpenEpsilon || w.frame > FullyOpenEpsilon) return;
+            if (_warmFramesLeft < 0)
+            {
+                _warmFramesLeft = WarmFrames;
+                SetWarmVisible(true);
+                try
+                {
+                    EnsureFrozenPool(ref _frozenPoolLeft, FrozenPoolSize, FrozenPoolSize, "IntroFrozenLeft");
+                    EnsureFrozenPool(ref _frozenPoolRight, FrozenPoolSize, FrozenPoolSize, "IntroFrozenRight");
+                    Graphics.Blit(Texture2D.blackTexture, _frozenPoolLeft);
+                    Graphics.Blit(Texture2D.blackTexture, _frozenPoolRight);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[IntroVeil] 静止画の複製先を前もって作れません（割れる瞬間に作ります）: {ex.Message}");
+                }
+                return;
+            }
+            if (--_warmFramesLeft > 0) return;
+            SetWarmVisible(false);
+            _warmDone = true;
+            WarmedUp = true;
+        }
+
+        private void SetWarmVisible(bool visible)
+        {
+            foreach (MeshRenderer renderer in _warmRenderers)
+                if (renderer != null) renderer.enabled = visible;
+        }
+
+        /// <summary>段 4 の描画状態を前もって作り終えたか（テレメトリ用・R060）。</summary>
+        public bool WarmedUp { get; private set; }
+
+        /// <summary>
+        /// R060: 割れる遷移のあいだに描く割合（<c>XRSettings.renderViewportScale</c>）。
+        /// 目のテクスチャは Meta の動的解像度が上限 1.6 倍で確保していて（幅 3264px）、倍率は実測で 1.00 から
+        /// 一度も下がらなかった。段 4 は体験でいちばん重いので、ここだけ約 0.96 倍（0.6 × 1.6）まで下げる。
+        /// </summary>
+        public const float ShatterViewportScale = 0.5f;
+
+        /// <summary>描く割合を 1 秒あたりどれだけ動かすか（急に切り替えると画がにじむ／締まるのが見える）。</summary>
+        private const float ViewportScaleRatePerSec = 1.6f;
+
+        private float _viewportTarget = 1f;
+        private float _viewportCurrent = 1f;
+        private bool _viewportOwned;
+
+        /// <summary>いま割れる遷移のために描く割合を下げているか（テレメトリ用）。</summary>
+        public float ViewportScaleApplied => _viewportOwned ? _viewportCurrent : 1f;
+
+        private void LateUpdate()
+        {
+            if (!Application.isPlaying || !UnityEngine.XR.XRSettings.enabled) return;
+            if (!_viewportOwned && _viewportTarget >= 0.999f) return;
+            _viewportCurrent = Mathf.MoveTowards(_viewportCurrent, _viewportTarget,
+                ViewportScaleRatePerSec * Time.unscaledDeltaTime);
+            // OVRManager の動的解像度は Update で毎フレーム書くので、その後（LateUpdate）で上書きする。
+            UnityEngine.XR.XRSettings.renderViewportScale = _viewportCurrent;
+            ScalableBufferManager.ResizeBuffers(_viewportCurrent, _viewportCurrent);
+            _viewportOwned = _viewportCurrent < 0.999f;
+        }
+
+        private Renderer? _screenRenderer;
+
+        /// <summary>覆いの下で見えないスクリーンの描画を止めているか（テレメトリ用・R060）。</summary>
+        public bool ScreenSuppressed { get; private set; }
+
+        /// <summary>このフレームでスクリーンを描かなかった累計（テレメトリ用・R060）。</summary>
+        public int ScreenSuppressedFrames { get; private set; }
+
+        /// <summary>
+        /// R060: 覆いがスクリーンの色を 0 倍しているか（IntroVeil.shader の frag と同じ条件）。
+        /// 破砕中は映像が出始める（_ScreenFade か _Reveal が 0 を超える）まで RGB を 0 にする。
+        /// 破砕の前は開口が全開・パススルーが全量なら、開口の内側は alpha = 1 − passthrough = 0 で RGB も 0。
+        /// どちらもスクリーンは 1 画素も画に残らないのに、32 か所を引く重いシェーダが全面を描いていた。
+        /// </summary>
+        private bool ScreenFullyHidden(in IntroWeights w)
+        {
+            if (w.live > 0f) return false;
+            if (w.shatter > FullyOpenEpsilon)
+                return !(HasFrozenFrame && w.reveal > 0f);
+            return w.frame <= FullyOpenEpsilon && w.passthrough >= 0.999f;
+        }
+
+        /// <summary>
+        /// 見えないスクリーンを描かない。<c>forceRenderingOff</c> だけを触る（<c>enabled</c> は他が持ちうる）。
+        /// 戻すのは <see cref="SetHidden"/>（覆いを畳むすべての経路）と、条件が外れたフレーム。
+        /// Editor のプレビューでは触らない（絵の探針を変えない）。
+        /// </summary>
+        private void SuppressHiddenScreen(bool hidden)
+        {
+            if (!Application.isPlaying) hidden = false;
+            if (_screenRenderer == null && screenQuad != null) _screenRenderer = screenQuad.GetComponent<Renderer>();
+            if (hidden) ScreenSuppressedFrames++;
+            if (_screenRenderer == null || ScreenSuppressed == hidden) return;
+            _screenRenderer.forceRenderingOff = hidden;
+            ScreenSuppressed = hidden;
         }
 
         // インスタンスごとに持つ（static で共有すると、片方の Destroy でもう片方のメッシュが消える）。
@@ -520,16 +689,21 @@ namespace FixedCamVr.Streaming
         private void ConfigureColorMaterial(bool frozen)
         {
             if (_fractureMat == null) return;
-            _fractureMat.SetInt(ColorMaskId, 15);
-            _fractureMat.SetInt(ZWriteId, 0);
-            _fractureMat.SetInt(ZTestId,
+            ConfigureColorMaterial(_fractureMat, frozen);
+        }
+
+        private static void ConfigureColorMaterial(Material material, bool frozen)
+        {
+            material.SetInt(ColorMaskId, 15);
+            material.SetInt(ZWriteId, 0);
+            material.SetInt(ZTestId,
                 (int)(frozen ? CompareFunction.Equal : CompareFunction.Always));
-            _fractureMat.SetInt(SrcBlendId,
+            material.SetInt(SrcBlendId,
                 (int)(frozen ? BlendMode.SrcAlpha : BlendMode.Zero));
-            _fractureMat.SetInt(DstBlendId,
+            material.SetInt(DstBlendId,
                 (int)(frozen ? BlendMode.OneMinusSrcAlpha : BlendMode.SrcAlpha));
-            _fractureMat.SetInt(SrcBlendAlphaId, (int)BlendMode.Zero);
-            _fractureMat.SetInt(DstBlendAlphaId,
+            material.SetInt(SrcBlendAlphaId, (int)BlendMode.Zero);
+            material.SetInt(DstBlendAlphaId,
                 (int)(frozen ? BlendMode.One : BlendMode.SrcAlpha));
         }
 
@@ -767,8 +941,6 @@ namespace FixedCamVr.Streaming
         private void TryCaptureFrozenFrame()
         {
             FrozenFrameAttempted = true;
-            RenderTexture? left = null;
-            RenderTexture? right = null;
             try
             {
                 IntroFrozenFrameSource? candidate = FrozenFrameProvider?.Invoke();
@@ -779,12 +951,10 @@ namespace FixedCamVr.Streaming
                     || source.Right.width <= 0 || source.Right.height <= 0)
                     return;
 
-                left = CopyFrozenTexture(source.Left, "IntroFrozenLeft");
-                right = CopyFrozenTexture(source.Right, "IntroFrozenRight");
+                RenderTexture left = CopyFrozenTexture(source.Left, ref _frozenPoolLeft, "IntroFrozenLeft");
+                RenderTexture right = CopyFrozenTexture(source.Right, ref _frozenPoolRight, "IntroFrozenRight");
                 _frozenLeft = left;
                 _frozenRight = right;
-                left = null;
-                right = null;
                 _leftWorldToUv = source.LeftWorldToUv;
                 _rightWorldToUv = source.RightWorldToUv;
                 // 開始姿勢は Apply が割れ始めに固定済み（静止画の有無に関わらず同じ行列）。
@@ -797,19 +967,27 @@ namespace FixedCamVr.Streaming
             }
             catch (Exception ex)
             {
+                // 片方だけ複製できた状態を残さない（HasFrozenFrame は両方が揃っているかで決まる）。
+                _frozenLeft = null;
+                _frozenRight = null;
                 Debug.LogWarning($"[IntroVeil] 実景の静止画を複製できません: {ex.Message}");
-            }
-            finally
-            {
-                DestroyFrozenTexture(left);
-                DestroyFrozenTexture(right);
             }
         }
 
-        private static RenderTexture CopyFrozenTexture(Texture source, string name)
+        private static RenderTexture CopyFrozenTexture(Texture source, ref RenderTexture? pool, string name)
         {
-            var copy = new RenderTexture(
-                source.width, source.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default)
+            EnsureFrozenPool(ref pool, source.width, source.height, name);
+            Graphics.Blit(source, pool);
+            return pool!;
+        }
+
+        /// <summary>複製先を寸法が合うものへ揃える。合っていて生きていれば作り直さない。</summary>
+        private static void EnsureFrozenPool(ref RenderTexture? pool, int width, int height, string name)
+        {
+            if (pool != null && pool.width == width && pool.height == height && pool.IsCreated()) return;
+            DestroyFrozenTexture(pool);
+            pool = null;
+            var copy = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default)
             {
                 name = name,
                 filterMode = FilterMode.Bilinear,
@@ -817,25 +995,18 @@ namespace FixedCamVr.Streaming
                 useMipMap = false,
                 autoGenerateMips = false,
             };
-            try
-            {
-                copy.Create();
-                if (!copy.IsCreated())
-                    throw new InvalidOperationException($"{name} RenderTexture の生成に失敗しました。");
-                Graphics.Blit(source, copy);
-                return copy;
-            }
-            catch
+            copy.Create();
+            if (!copy.IsCreated())
             {
                 DestroyFrozenTexture(copy);
-                throw;
+                throw new InvalidOperationException($"{name} RenderTexture の生成に失敗しました。");
             }
+            pool = copy;
         }
 
+        /// <summary>今回の走行の静止画を手放す。複製先の RT は次の走行へ使い回すので壊さない。</summary>
         private void ReleaseFrozenFrame()
         {
-            DestroyFrozenTexture(_frozenLeft);
-            DestroyFrozenTexture(_frozenRight);
             _frozenLeft = null;
             _frozenRight = null;
             _leftWorldToUv = Matrix4x4.identity;
@@ -886,6 +1057,8 @@ namespace FixedCamVr.Streaming
 
             if (w.shatter > FullyOpenEpsilon && !FrozenFrameAttempted)
                 TryCaptureFrozenFrame();
+
+            TickWarmUp(w);
 
             // 何も隠していない状態（枠が開いていて、パススルーも出さない）では描画そのものを止める。
             // 覆いは全画面 1 パスなので、本編中ずっと描くのは無駄。
@@ -941,6 +1114,8 @@ namespace FixedCamVr.Streaming
             bool drawGaps = drawFrozenDepth && w.reveal > FullyOpenEpsilon && w.live < 0.999f;
             if (_gapsRenderer != null) _gapsRenderer.enabled = drawGaps;
             GapsDrawn = drawGaps;
+            SuppressHiddenScreen(ScreenFullyHidden(w));
+            _viewportTarget = w.shatter > FullyOpenEpsilon ? ShatterViewportScale : 1f;
             if (drawShatter)
             {
                 float shatter = Mathf.Clamp01(w.shatter);
@@ -1119,6 +1294,15 @@ namespace FixedCamVr.Streaming
             if (_peripheralWindowRenderer != null) _peripheralWindowRenderer.enabled = false;
             if (_peripheralColorRenderer != null) _peripheralColorRenderer.enabled = false;
             if (_sparkRenderer != null) _sparkRenderer.enabled = false;
+            SuppressHiddenScreen(false);
+            // 割れる遷移が終わったら描く割合を戻す（LateUpdate が滑らかに 1 へ寄せ、着いたら手放す）。
+            _viewportTarget = 1f;
+            // 潰した複製を出している途中で畳まれたら、次の導入でもう一度やり直す。
+            if (_warmFramesLeft >= 0 && !_warmDone)
+            {
+                SetWarmVisible(false);
+                _warmFramesLeft = -1;
+            }
             GapsDrawn = false;
             SparkDrawn = false;
             if (_mat != null) _mat.SetFloat(FractureActiveId, 0f);
@@ -1130,11 +1314,29 @@ namespace FixedCamVr.Streaming
             PublishApertureOpen();
         }
 
-        private void OnDisable() => SetHidden();
+        private void OnDisable()
+        {
+            SetHidden();
+            // 無効になると LateUpdate が回らず、下げた割合が体験の残りへ持ち越される。その場で戻す。
+            if (_viewportOwned && UnityEngine.XR.XRSettings.enabled)
+            {
+                UnityEngine.XR.XRSettings.renderViewportScale = 1f;
+                ScalableBufferManager.ResizeBuffers(1f, 1f);
+            }
+            _viewportOwned = false;
+            _viewportCurrent = 1f;
+        }
 
         private void OnDestroy()
         {
             ReleaseFrozenFrame();
+            DestroyFrozenTexture(_frozenPoolLeft);
+            DestroyFrozenTexture(_frozenPoolRight);
+            _frozenPoolLeft = null;
+            _frozenPoolRight = null;
+            foreach (Material material in _warmMaterials)
+                if (material != null) Destroy(material);
+            _warmMaterials.Clear();
             if (_mat != null) Destroy(_mat);
             if (_fractureMat != null) Destroy(_fractureMat);
             if (_fractureDepthMat != null) Destroy(_fractureDepthMat);
