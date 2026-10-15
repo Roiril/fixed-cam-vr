@@ -93,6 +93,7 @@ Quest の応答が 6 秒以上古ければ未確認。ページの経過時間�
 - 確認・反映の画面だけ `#entranceImage` の src を `entrance-doll-tilt-v1.png` に差し替える（`syncEntranceDoll`。同じ img の src を替えるので drift のアニメと位置がずれない）。タイトルの背景は CSS の別の url で、こちらは替わらない
 - 観測装置は `briefing-device-v3.jpg`（写真）。`is-device`（透過図だけ額を外す特別扱い）は消した
 - 素材の生成記録は `tools/visitor-ui/sinister-assets.md`
+- 2026-10-15 午後、Redmi で実機試験 6 種（既定・playback・briefing・presentation・equipment・visitorFocus）が全 PASS。試験用 APK は `bash tablet/install-confirm.sh` で入れる。visitorFocus の重なりの基準は「字幕が博士の口元より下」（0262 の全面構図に合わせた）
 
 ## 実機で見つけたこと（2026-10-14・USB の Redmi Pad で確認）
 

@@ -81,6 +81,8 @@ adb -s 122d7871 install -r Builds/doctor-tablet-test.apk
 adb -s 122d7871 shell am instrument -w -e requireQuest true com.roiril.mawarimi.tablet.test/.TabletInstrumentation
 ```
 
+Redmi が確認ダイアログを自動拒否して `INSTALL_FAILED_USER_RESTRICTED` になるときは `bash tablet/install-confirm.sh Builds/doctor-tablet-test.apk` で入れる（ダイアログを照合して押す）。
+
 試験は同梱素材の読み込みと動画の実描画とシークと背景停止を確認する。`requireQuest true` はQuest αの通信も必須にする。通常APKには試験操作の入口を含めない。USBインストールが端末に拒否された場合は端末側の確認を行う。
 
 音声付き動画と説明画面の通し再生は次の試験で確認する。短い消音再生だけでは動画の途中読み出しの不具合を検出できない。

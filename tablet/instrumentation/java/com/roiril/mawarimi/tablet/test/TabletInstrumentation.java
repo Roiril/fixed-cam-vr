@@ -382,6 +382,11 @@ public final class TabletInstrumentation extends Instrumentation {
             + "scrollHeight:document.documentElement.scrollHeight,noise:noise.filter(s=>shown(document.querySelector(s))),"
             + "captionVisible:shown(caption),caption:rect(caption),text:document.getElementById('subtitleTyped').textContent,"
             + "doctorVisible:shown(video)||shown(still),videoVisible:shown(video),doctor:rect(shown(video)?video:still),"
+            // 博士の口元が画面のどこに描かれているか（object-fit:cover・object-position 50% 28%）。
+            // 口は元の動画の高さの 0.53〜0.64 を動く（tools/visitor-ui/doctor-face-track.json の全コマ）。いちばん下の 0.64 で見る
+            + "mouthY:(()=>{const e=shown(video)?video:still,r=e.getBoundingClientRect(),"
+            + "nw=e.videoWidth||e.naturalWidth||1280,nh=e.videoHeight||e.naturalHeight||720,"
+            + "k=Math.max(r.width/nw,r.height/nh);return r.y+(r.height-nh*k)*0.28+0.64*nh*k;})(),"
             + "frames:video.webkitDecodedFrameCount||0,time:video.currentTime,paused:video.paused,"
             + "counter:document.getElementById('sceneCounter').textContent};})())");
     }
@@ -399,7 +404,10 @@ public final class TabletInstrumentation extends Instrumentation {
         JSONObject caption = layout.getJSONObject("caption"), doctor = layout.getJSONObject("doctor");
         check(name + " subtitle stays on screen", caption.getDouble("x") >= 0 && caption.getDouble("y") >= 0
             && caption.getDouble("right") <= layout.getInt("width") + 1 && caption.getDouble("bottom") <= layout.getInt("height") + 1);
-        check(name + " doctor and subtitle do not overlap", doctor.getDouble("bottom") <= caption.getDouble("y") + 1);
+        // 2026-10-14 から博士は全面に敷き、字幕は下の暗い帯に重ねる（0262）。2026-10-15 から目元は闇で、
+        // 顔で明るいのは口元だけ（0263）。字幕が口元を覆わないことを見る（口から 0.05 画面高さぶんの余白）
+        check(name + " subtitle stays below the doctor's mouth",
+            caption.getDouble("y") >= layout.getDouble("mouthY") + 0.05 * layout.getInt("height"));
     }
 
     private void openVisitorControls(WebView view) throws Exception {
@@ -1151,7 +1159,10 @@ public final class TabletInstrumentation extends Instrumentation {
             if (sample.optBoolean("visible") && !sample.optBoolean("paused") && !sample.optBoolean("muted")
                 && sample.optInt("frames") > 0 && sample.optLong("audio") > 0 && sample.optDouble("clock") > 0.1) {
                 visibleSamples++;
-                if (sample.optDouble("portraitOpacity") < 0.99) blackSamples++;
+                // 説明に入るときの博士のフェードイン（changeVisual・760ms）は意図した演出なので数えない。
+                // 見たいのは章替わりで黒を挟むこと（最初の文の頭 0.8 秒以外）
+                boolean entranceFade = sample.optString("cue").contains("01 /") && sample.optDouble("clock") < 0.8;
+                if (!entranceFade && sample.optDouble("portraitOpacity") < 0.99) blackSamples++;
                 if (rendered.add(sample.optString("cue"))) Log.i(TAG, "presentation rendered=" + sample);
                 String file = sample.optString("file");
                 if (sample.optDouble("clock") > 1.2 && captured.add(file)) {
