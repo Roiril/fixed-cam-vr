@@ -424,6 +424,9 @@ public final class TabletInstrumentation extends Instrumentation {
         SystemClock.sleep(duration);
         evaluate(view, "document.getElementById('" + id + "').dispatchEvent(new PointerEvent('pointerup',"
             + "{bubbles:true,isPrimary:true,pointerId:22,button:0}))");
+        // 長押しが成立した指を離した直後 400ms の click は本番が捨てる（7acd4b31・誤タップ防止）。
+        // 人の手と同じく少し待ってから次を押す。
+        SystemClock.sleep(500);
     }
 
     private void ensureStaffScreen(WebView view) throws Exception {
@@ -1317,7 +1320,7 @@ public final class TabletInstrumentation extends Instrumentation {
             + "doctorHidden:getComputedStyle(document.querySelector('.portrait')).display==='none',"
             + "subtitleHidden:document.getElementById('subtitle').hidden,paused:document.getElementById('doctorVideo').paused};})())");
         check("equipment text", layout.optString("text").contains("左手にコントローラー")
-            && layout.optString("text").contains("ヘッドフォン") && layout.optString("text").contains("クエスト内に表示"));
+            && layout.optString("text").contains("ヘッドフォン") && layout.optString("text").contains("クエストの中の指示"));
         check("equipment fits tablet", layout.optBoolean("fits"));
         check("replay below equipment", layout.optBoolean("below") && layout.optBoolean("buttonVisible"));
         check("doctor stopped and hidden", layout.optBoolean("doctorHidden") && layout.optBoolean("paused") && layout.optBoolean("subtitleHidden"));
