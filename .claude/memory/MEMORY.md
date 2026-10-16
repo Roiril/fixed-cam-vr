@@ -45,7 +45,7 @@
 > `OPEN` = 未確定とシュビーの案 / `ROUNDS` = 周回の賭けと差）。混ぜない — 規律は `rules/canon-boundary.md`。
 > 作りこみの思想は `.claude/reference/why.md`。
 
-- [visitor_tablet.md](visitor_tablet.md) - 2026-10-03・0259。博士UIはAndroidタブレットの独立APK。画面と動画の正本は `tablet/app/src/main/assets/web/`。PCとQuestは画面の起動に不要。スタッフ設定でα／βを保存してQuestの:8090へ設定だけを送る。実値と反映番号を照合する。UI変更はタブレットAPKを更新する。机上の代役は `tools/visitor-portal-stub.py`。ビルドと導入は `tablet/README.md`。
+- [visitor_tablet.md](visitor_tablet.md) - 2026-10-16・0265で読む順の 1 列（問い → 選択肢と効果 → 進む）と説明の終わりの砂嵐（`signal-cut.js`）。2026-10-03・0259。博士UIはAndroidタブレットの独立APK。画面と動画の正本は `tablet/app/src/main/assets/web/`。PCとQuestは画面の起動に不要。スタッフ設定でα／βを保存してQuestの:8090へ設定だけを送る。実値と反映番号を照合する。UI変更はタブレットAPKを更新する。机上の代役は `tools/visitor-portal-stub.py`。ビルドと導入は `tablet/README.md`。
 - [redmi_tablet_install.md](redmi_tablet_install.md) - RedmiのUSBインストール確認は制限時間で自動拒否する。USER_RESTRICTEDだけで設定がオフとは判断しない。
 - [tablet_apk_zip_names.md](tablet_apk_zip_names.md) - Windows aapt2の資産名をPOSIX形式で再梱包する。Pythonの正規化済みZIP名だけでは検査しない。
 - [tablet_webview_media_range.md](tablet_webview_media_range.md) - WebViewへの資産ストリームは先頭から返す。Rangeの開始位置を二重に進めない。音声付きの通し再生と途中データの照合で確認する。

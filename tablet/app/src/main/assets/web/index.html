@@ -54,7 +54,8 @@
   .skip:focus { transform: none; }
 
   /* ---- 舞台。画・字・操作の 3 層を同じ箱に重ねる ---- */
-  .stage { isolation: isolate; position: relative; display: grid; grid-template: "top" auto "main" minmax(0,1fr) "foot" auto / 100%; height: 100svh; min-height: 100svh; overflow: hidden; background: var(--bg); }
+  .stage { isolation: isolate; position: relative; display: grid; grid-template: "top" auto "main" minmax(0,1fr) "foot" auto / 100%; height: 100svh; min-height: 100svh; overflow: hidden; overflow: clip; background: var(--bg); }
+  /* clip：粒の層（inset -60px）がはみ出していて、focus や scrollIntoView で舞台ごと横へずれた（2026-10-16） */
   .stage::before { content: ""; position: absolute; z-index: 9; inset: -60px; pointer-events: none; background: var(--grain); opacity: .075; mix-blend-mode: screen; animation: grain .9s steps(6) infinite; }
   @keyframes grain { 0% { transform: translate(0,0); } 17% { transform: translate(-22px,14px); } 33% { transform: translate(18px,-26px); } 50% { transform: translate(-30px,-8px); } 67% { transform: translate(26px,20px); } 83% { transform: translate(-10px,30px); } 100% { transform: translate(0,0); } }
 
@@ -65,7 +66,8 @@
   .connection:hover { color: var(--muted); }
   .connection-dot, #connectionText { display: none; }
   .staff-label { padding-left: 10px; border-left: 1px solid rgba(232,220,196,.16); }
-  .fullscreen-return { min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 20px; background: rgba(9,8,7,.6); color: var(--muted); font: 13px/1.4 var(--sans); }
+  /* 全画面への復帰は右上（スタッフ入口の隣）に小さく。左上は読み始めの位置なので注意書きに譲る（0265） */
+  .fullscreen-return { order: 3; min-height: 40px; padding: 6px 12px; border: 1px solid rgba(232,220,196,.12); border-radius: 20px; background: transparent; color: rgba(194,184,168,.42); font: 12px/1.4 var(--sans); letter-spacing: .08em; }
 
   /* ---- 画。全面で、ごく遅く寄る（止まった写真にしない） ---- */
   .portrait { position: absolute; z-index: 0; inset: 0; margin: 0; overflow: hidden; background: var(--bg); }
@@ -90,9 +92,8 @@
   .subtitle-typed { position: absolute; inset: 0; }
   #subtitleTyped { display: inline-block; }
   .footer .subtitle { grid-column: 1; grid-row: 1; }
-  .footer .settings-actions { grid-column: 2; grid-row: 1 / span 2; align-self: end; }
-  .relief-description { grid-column: 1; grid-row: 2; margin: -12px 0 0; color: rgba(194,184,168,.82); font: 14px/1.7 var(--serif); letter-spacing: .05em; white-space: pre-line; text-shadow: 0 0 14px var(--bg); }
-  .stage:not([data-view="edit"]) .relief-description, .stage:not([data-step="relief"]) .relief-description { display: none; }
+  /* 設定と確認では、問いの一文を本文の列（選択肢・値の直上）へ移す。下の帯は使わない（0265） */
+  .stage[data-view="edit"] .footer .subtitle, .stage[data-view="result"] .footer .subtitle { display: none; }
 
   /* ---- 押す所。輪と矢印。名前は小さく横に ---- */
   .primary, .title-start { position: relative; display: inline-flex; align-items: center; gap: 16px; min-height: 64px; padding: 6px 6px 6px 22px; border: 0; background: transparent; color: var(--ink); font: 16px/1.4 var(--serif); letter-spacing: .14em; text-align: left; transition: transform .25s var(--ease), color .25s; }
@@ -104,7 +105,8 @@
   .secondary, .retry { min-height: 48px; padding: 8px 4px; border: 0; background: transparent; color: rgba(194,184,168,.75); font: 14px/1.4 var(--serif); letter-spacing: .12em; text-decoration: underline; text-decoration-color: rgba(232,220,196,.25); text-underline-offset: 6px; transition: color .25s; }
   .secondary:hover, .retry:hover { color: var(--ink); }
   .retry { color: var(--error); }
-  .settings-actions { display: flex; align-items: center; justify-content: flex-end; gap: 22px; }
+  .settings-actions { display: flex; align-items: center; justify-content: flex-start; gap: 26px; margin-top: clamp(16px,3.6vh,32px); }
+  #settingsBackBtn { order: 2; }
 
   /* ==========================================================================
      タイトル
@@ -143,6 +145,10 @@
   @keyframes draw-v { from { transform: scaleY(0); } to { transform: scaleY(1); } }
   .notice-body { margin: 0; max-width: 34em; color: rgba(242,236,223,.86); font: 400 clamp(14px,1.45vw,17px)/1.95 var(--serif); letter-spacing: .07em; white-space: pre-line; text-shadow: 0 0 16px var(--bg); }
   .system-note { margin: 0 0 18px; padding: 8px 0 8px 14px; border-left: 2px solid var(--gold); font: 14px/1.6 var(--serif); color: var(--gold); }
+  /* 読む順：注意 → 問い → 選択肢（と、その意味）→ 進む。左の 1 列に縦に並べる（0265） */
+  .settings-ask, .result-line { margin: 0; font: 400 clamp(17px,1.75vw,22px)/1.6 var(--serif); letter-spacing: .06em; color: var(--ink); text-wrap: balance; text-shadow: 0 1px 2px rgba(0,0,0,.9),0 0 18px rgba(9,8,7,.95); }
+  .settings-ask { margin-bottom: clamp(4px,1.2vh,10px); }
+  .settings-ask:empty, .result-line:empty { display: none; }
   #settingsForm { min-height: 96px; }
   fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
   .choices { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px clamp(26px,4vw,54px); }
@@ -157,6 +163,14 @@
   .choice:has(input:checked)::after { clip-path: inset(0 0 0 0); }
   .choice:has(input:focus-visible) { outline: 1px dashed rgba(215,194,155,.6); outline-offset: 6px; }
   .choice:has(input:disabled) { cursor: default; opacity: .45; }
+  /* 軽減の 2 択は、語のすぐ下に効果を置く。選ぶ前に読める明るさにする（0265） */
+  .choice.is-described { flex-direction: column; align-items: flex-start; gap: 4px; padding-bottom: 6px; }
+  .choice.is-described::after { display: none; }
+  .choice.is-described .choice-text { position: relative; padding-bottom: 12px; }
+  .choice.is-described .choice-text::after { content: ""; position: absolute; left: -6%; right: -6%; bottom: 0; height: 11px; background: var(--red); -webkit-mask: var(--brush) center / 100% 100% no-repeat; mask: var(--brush) center / 100% 100% no-repeat; clip-path: inset(0 100% 0 0); transition: clip-path .5s var(--ease-out); }
+  .choice.is-described:has(input:checked) .choice-text::after { clip-path: inset(0 0 0 0); }
+  .choice-note { max-width: 15em; color: rgba(194,184,168,.86); font: 400 clamp(13px,1.3vw,15px)/1.6 var(--serif); letter-spacing: .05em; white-space: normal; text-shadow: 0 0 14px var(--bg); transition: color .35s var(--ease); }
+  .choice.is-described:has(input:checked) .choice-note { color: var(--ink); }
 
   /* ==========================================================================
      確認・反映（墨の円相。回っている＝待っている／閉じて朱の印＝反映した）
@@ -177,6 +191,9 @@
   @keyframes stamp { 0% { transform: scale(1.55) rotate(-9deg); opacity: 0; filter: blur(3px); } 42% { transform: scale(.96) rotate(-3deg); opacity: 1; filter: blur(0); } 100% { transform: rotate(-3deg); opacity: .94; } }
   .result[data-tone="error"] .status-glyph { color: var(--error); }
   .result[data-tone="error"] .status-glyph::before { background: conic-gradient(rgba(240,164,154,.85) 0deg 250deg,transparent 250deg); }
+  /* 確認の段では印を出さない（矢印の輪が押す所に見えて、本物の「送る」より先に目を取っていた・0265） */
+  .result[data-key="confirm"] .status-glyph { display: none; }
+  .result-line { text-align: center; }
   .result-title, .result-detail { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .values { border-collapse: collapse; font-family: var(--serif); }
   .values thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -291,8 +308,37 @@
   .stage.is-equipment .briefing-copy, .stage.is-equipment .equipment-guide, .stage.is-equipment .briefing-controls { animation: settle .36s var(--ease-out) both; }
   .stage.is-equipment .briefing-controls { justify-self: center; grid-column: 1 / -1; }
 
+  /* ---- 説明の終わり：通信が切れる（signal-cut.js・LEDGER 0265）----
+     止まった博士に砂嵐が乗ってざ・ざ・ざと乱れ、ブラウン管が切れるように横一線へ潰れて消える。
+     黒で一拍置いてから次の画面が溶けて出る。段は stage の data-signal（noise / off / dark / return） */
+  .signal-cut { position: absolute; z-index: 30; inset: 0; width: 100%; height: 100%; pointer-events: auto; }
+  .stage[data-signal] * { pointer-events: none !important; }
+  .stage.is-signal-noise > :not(.signal-cut) { animation: signal-jitter .95s steps(1,end) both; }
+  @keyframes signal-jitter {
+    0% { transform: none; filter: none; }
+    40% { transform: none; filter: brightness(.9); }
+    50% { transform: translate(-6px,0) skewX(-1deg); filter: contrast(1.3) brightness(1.15) saturate(.6); }
+    53% { transform: none; filter: brightness(.85) saturate(.7); }
+    65% { transform: translate(9px,-2px); filter: contrast(1.5) brightness(1.25) saturate(.4); }
+    69% { transform: translate(-3px,0); filter: brightness(.8) saturate(.5); }
+    79% { transform: translate(-14px,3px) skewX(2deg); filter: contrast(1.7) brightness(1.35) saturate(.2); }
+    84% { transform: translate(6px,-1px); filter: brightness(.75) saturate(.3); }
+    90% { transform: translate(-18px,0) skewX(-3deg); filter: contrast(2) brightness(1.5) saturate(0); }
+    95% { transform: translate(12px,2px); filter: contrast(2.2) brightness(1.7) saturate(0); }
+    100% { transform: translate(-8px,0); filter: contrast(2.4) brightness(1.9) saturate(0); }
+  }
+  .stage.is-signal-off { animation: crt-off .26s var(--ease-in) both; }
+  @keyframes crt-off {
+    0% { transform: none; filter: brightness(1.3); opacity: 1; }
+    55% { transform: scale(1.03,.006); filter: brightness(4) contrast(1.5); opacity: 1; }
+    100% { transform: scale(0,.006); filter: brightness(7); opacity: 0; }
+  }
+  .stage.is-signal-dark { opacity: 0; }
+  .stage.is-signal-return { animation: signal-return .65s var(--ease) both; }
+  @keyframes signal-return { from { opacity: 0; } to { opacity: 1; } }
+
   /* 動きを減らす設定：動きは消し、到着だけ即座に */
-  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } .choice::after { clip-path: none; } .choice:not(:has(input:checked))::after { display: none; } }
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } .choice::after, .choice.is-described .choice-text::after { clip-path: none; } .choice:not(:has(input:checked))::after, .choice.is-described:not(:has(input:checked)) .choice-text::after { display: none; } }
 
   /* ---- 縦持ち・狭い画面：本文を上、字幕と操作を下に ---- */
   @media (max-width:760px), (max-aspect-ratio:1/1) {
@@ -300,7 +346,7 @@
     .content { width: 100%; padding: 0 var(--gutter); align-self: end; }
     .portrait::after { background: linear-gradient(0deg,rgba(9,8,7,.97),rgba(9,8,7,.7) 55%,rgba(9,8,7,.3)); }
     .footer { grid-template-columns: 1fr; }
-    .settings-actions { justify-content: space-between; }
+    .settings-actions { justify-content: flex-start; }
     .title-brand { left: 8%; right: 8%; top: 12%; width: auto; }
     .equipment-steps { grid-template-columns: 1fr; gap: 18px; }
     .briefing-visual { left: 6vw; right: 6vw; top: 6%; width: auto; transform: none; }
@@ -483,6 +529,9 @@
       </div>
       <p class="system-note" id="restartNotice" role="status" hidden></p>
 
+      <!-- 問いは選択肢の直上に置く（下の字幕帯だと、選んだ後に読むことになる・LEDGER 0265）。
+           読み上げは字幕の告知が担うので、ここは画面用 -->
+      <p class="settings-ask" id="settingsAsk" aria-hidden="true"></p>
       <form class="settings" id="settingsForm">
         <fieldset id="languageStep">
           <legend id="languageLegend">言語</legend>
@@ -508,19 +557,31 @@
         <fieldset id="reliefStep" aria-hidden="true" hidden inert>
           <legend id="reliefLegend">ホラー軽減</legend>
           <div class="choices two">
-            <label class="choice">
+            <label class="choice is-described">
               <input type="radio" name="relief" value="off" checked>
               <span class="choice-text" id="reliefOff">なし</span>
+              <span class="choice-note" id="reliefOffNote"></span>
               <span class="choice-mark" aria-hidden="true"></span>
             </label>
-            <label class="choice">
+            <label class="choice is-described">
               <input type="radio" name="relief" value="on">
               <span class="choice-text" id="reliefOn">あり</span>
+              <span class="choice-note" id="reliefOnNote"></span>
               <span class="choice-mark" aria-hidden="true"></span>
             </label>
           </div>
         </fieldset>
       </form>
+      <!-- 進む操作は選んだ語のすぐ下（目が選択肢から離れずに届く）。戻るは後ろに小さく -->
+      <div class="settings-actions" id="settingsActions" hidden>
+        <button class="secondary" id="settingsBackBtn" type="button" hidden>戻る</button>
+        <button class="primary" id="settingsNextBtn" type="button">
+          <span id="nextLabel">次へ</span>
+        </button>
+        <button class="primary" id="sendBtn" type="submit" form="settingsForm" hidden>
+          <span id="submitLabel">設定を確認する</span>
+        </button>
+      </div>
     </section>
 
     <section class="surface result" id="resultView" aria-labelledby="resultTitle" aria-hidden="true" hidden inert>
@@ -529,6 +590,8 @@
         <h1 class="result-title" id="resultTitle" tabindex="-1">送信中</h1>
         <p class="result-detail" id="resultDetail"></p>
       </div>
+      <!-- 確認・反映の一文は値の直上（印 → 一文 → 値 → 押す所の順に読む）。読み上げは字幕の告知 -->
+      <p class="result-line" id="resultLine" aria-hidden="true"></p>
       <table class="values">
         <thead>
           <tr>
@@ -594,16 +657,6 @@
       <span class="subtitle-typed"><span id="subtitleTyped"></span></span>
     </div>
     <p class="sr-only" id="subtitleAnnouncement" role="status" aria-live="polite" aria-atomic="true"></p>
-    <p class="relief-description" id="reliefDesc" aria-hidden="true"></p>
-    <div class="settings-actions" id="settingsActions" hidden>
-      <button class="secondary" id="settingsBackBtn" type="button" hidden>戻る</button>
-      <button class="primary" id="settingsNextBtn" type="button">
-        <span id="nextLabel">次へ</span>
-      </button>
-      <button class="primary" id="sendBtn" type="submit" form="settingsForm" hidden>
-        <span id="submitLabel">設定を確認する</span>
-      </button>
-    </div>
     <div class="briefing-controls" id="briefingControls" role="group" aria-label="説明の操作" hidden inert>
       <button class="briefing-control" id="briefingMute" type="button" aria-pressed="false" hidden>音声 ON</button>
       <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button" aria-pressed="false" hidden>自動送り：切</button>
@@ -623,6 +676,7 @@
       </div>
     </div>
   </footer>
+  <canvas class="signal-cut" id="signalCut" aria-hidden="true" hidden></canvas>
 </div>
 
 <dialog class="staff-screen" id="staff" aria-labelledby="staffTitle" lang="ja" data-state="checking">
@@ -750,6 +804,7 @@
 
 <script src="./tablet-transport.js"></script>
 <script src="./briefing-presentation.js"></script>
+<script src="./signal-cut.js"></script>
 <script>
 (() => {
   'use strict';
@@ -760,7 +815,7 @@
       media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: '再開', resumeRequired: '再開すると続きから再生します。', noAudio: '', staff: 'スタッフ画面を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', equipment: 'スタッフが機器を確認しています。このままお待ちください。', unavailable: '画像を表示できません' },
       pageTitle: '体験の前に', noticeLabel: '注意', language: '言語', relief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
-      reliefDesc: 'なし：通常の演出と音量\nあり：音量半分と陽気な曲',
+      reliefOffNote: '通常の演出と音量', reliefOnNote: '音量半分と陽気な曲',
       askLanguage: '使う言語を教えてください。',
       askRelief: '恐怖を軽減するかどうかを決めてください。',
       next: '次へ', back: '戻る',
@@ -806,7 +861,7 @@
       media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Resume', resumeRequired: 'Select Resume to continue from where you paused.', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close the staff screen to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', equipment: 'Staff are checking the equipment. Please wait here.', unavailable: 'Image unavailable' },
       pageTitle: 'Before the experience', noticeLabel: 'Notice', language: 'Language', relief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
-      reliefDesc: 'Off: normal effects and volume\nOn: half volume with a cheerful tune',
+      reliefOffNote: 'Normal effects and volume', reliefOnNote: 'Half volume with a cheerful tune',
       askLanguage: 'Please choose the language you would like to use.',
       askRelief: 'Please choose whether you would like to reduce the horror.',
       next: 'Next', back: 'Back',
@@ -852,7 +907,7 @@
       media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Reprendre', resumeRequired: 'Sélectionnez Reprendre pour continuer à l’endroit de la pause.', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez l’écran du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', equipment: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', unavailable: 'Image indisponible' },
       pageTitle: 'Avant l’expérience', noticeLabel: 'Attention', language: 'Langue', relief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
-      reliefDesc: 'Non : effets et volume normaux\nOui : volume réduit de moitié et musique gaie',
+      reliefOffNote: 'Effets et volume normaux', reliefOnNote: 'Volume réduit de moitié et musique gaie',
       askLanguage: 'Choisissez la langue que vous souhaitez utiliser.',
       askRelief: 'Choisissez si vous souhaitez atténuer l’horreur.',
       next: 'Suivant', back: 'Retour',
@@ -902,6 +957,8 @@
   };
   const transport = globalThis.TabletTransport;
   const presentationController = window.BriefingPresentation;
+  const signalCut = window.SignalCut;
+  const SIGNAL_CUT_GAIN = 0.32;
   let activeQuest = transport.getQuest()
     || Object.keys(QUESTS).find((key) => location.host === `${QUESTS[key].host}:${QUESTS[key].port}`)
     || null;
@@ -1473,7 +1530,8 @@
     $('reliefLegend').textContent = t.relief;
     $('reliefOff').textContent = t.reliefOff;
     $('reliefOn').textContent = t.reliefOn;
-    $('reliefDesc').textContent = t.reliefDesc;
+    $('reliefOffNote').textContent = t.reliefOffNote;
+    $('reliefOnNote').textContent = t.reliefOnNote;
     $('nextLabel').textContent = t.next;
     $('settingsBackBtn').textContent = t.back;
     $('submitLabel').textContent = t.review;
@@ -1507,11 +1565,8 @@
     if (state.view === 'edit') {
       const ask = state.settingsStep === 'language' ? t.askLanguage : t.askRelief;
       setSubtitle(ask, `ask:${state.settingsStep}:${state.lang}`);
+      setText('settingsAsk', ask);
     }
-  }
-
-  function renderReliefDescription() {
-    $('reliefDesc').removeAttribute('aria-hidden');
   }
 
   function isRecord(value) {
@@ -1952,6 +2007,7 @@
     const image = $('briefingImage');
     if (!image.classList.contains('is-visible')) image.dataset.presentationSource = '';
     presentationController.cancel(reason);
+    signalCut?.abort();   // 切れる途中で止めたら、画面を黒に残さない
   }
 
   function setBriefingPause(reason, paused) {
@@ -2531,26 +2587,39 @@
     }, reducedMotion.matches ? 0 : Math.max(140, doctorSettleMs + 140));
   }
 
+  // 博士の説明が終わるときは、通信が切れるように画面ごと消してから次の画面を出す（0265）。
+  // 黒になるまで待ってから描き替える。動きを減らす設定・canvas が使えない環境では従来の 220ms の間だけ。
+  function cutSignalThen(scene, onBlack) {
+    const blackMs = signalCut?.run({
+      gain: state.relief ? SIGNAL_CUT_GAIN / 2 : SIGNAL_CUT_GAIN,
+      muted: state.briefing.muted,
+    }) || 0;
+    presentationController.holdThen({
+      scene,
+      delayMs: blackMs || 220,
+      onComplete: () => {
+        onBlack();
+        signalCut?.release();
+      },
+    });
+  }
+
   function waitForStaffHandoff() {
     if (equipmentTransitionPending) return;
     setBriefingAuto(false);
     stopBriefingMediaWindow();
     equipmentTransitionPending = true;
-    presentationController.holdThen({
-      scene: 'handoff',
-      delayMs: 220,
-      onComplete: () => {
-        equipmentTransitionPending = false;
-        if (state.view !== 'briefing' || state.briefing.ended) return;
-        state.briefing.handoffReady = true;
-        state.briefing.wearStarted = false;
-        renderBriefingScene();
-        $('subtitleAnnouncement').textContent = '';
-        $('briefingTitle').focus({ preventScroll: true });
-        saveBriefingProgress();
-        void pulse();
-        // 来場者がタブレットを返してから、明示されたスタッフ入口を長押ししてもらう。
-      },
+    cutSignalThen('handoff', () => {
+      equipmentTransitionPending = false;
+      if (state.view !== 'briefing' || state.briefing.ended) return;
+      state.briefing.handoffReady = true;
+      state.briefing.wearStarted = false;
+      renderBriefingScene();
+      $('subtitleAnnouncement').textContent = '';
+      $('briefingTitle').focus({ preventScroll: true });
+      saveBriefingProgress();
+      void pulse();
+      // 来場者がタブレットを返してから、明示されたスタッフ入口を長押ししてもらう。
     });
   }
 
@@ -2616,21 +2685,17 @@
     setBriefingAuto(false);
     stopBriefingMediaWindow();
     equipmentTransitionPending = true;
-    presentationController.holdThen({
-      scene: 'wear-complete',
-      delayMs: 220,
-      onComplete: () => {
-        equipmentTransitionPending = false;
-        if (state.view !== 'briefing') return;
-        state.briefing.ended = true;
-        syncReliefPreview();
-        syncBriefingLoopVideo();
-        renderBriefingScene();
-        $('subtitleAnnouncement').textContent = '';
-        $('briefingTitle').focus({ preventScroll: true });
-        saveBriefingProgress();
-        void pulse();
-      },
+    cutSignalThen('wear-complete', () => {
+      equipmentTransitionPending = false;
+      if (state.view !== 'briefing') return;
+      state.briefing.ended = true;
+      syncReliefPreview();
+      syncBriefingLoopVideo();
+      renderBriefingScene();
+      $('subtitleAnnouncement').textContent = '';
+      $('briefingTitle').focus({ preventScroll: true });
+      saveBriefingProgress();
+      void pulse();
     });
   }
 
@@ -2638,6 +2703,7 @@
     staffConfirmationRequested = false;
     equipmentTransitionPending = false;
     presentationController.reset();
+    signalCut?.abort();
     clearBriefingTimer();
     clearBriefingMediaTimer();
     if (chapterTimer) clearTimeout(chapterTimer);
@@ -2836,6 +2902,7 @@
       ? (state.briefing.loadState === 'error' ? 'error' : 'wait')
       : (key === 'applied' ? 'ok' : (key === 'fail' || key === 'conflict' || key === 'noserver' ? 'error' : 'wait'));
     $('resultView').dataset.tone = tone;
+    $('resultView').dataset.key = briefingBlocked ? state.briefing.loadState : key;
     setText('resultGlyph', glyph);
     const appliedTitle = activeQuest && key === 'applied' && !briefingBlocked
       ? ({ ja: `${headsetName()}に反映しました`, en: `Applied to ${headsetName()}`, fr: `Réglages appliqués au ${headsetName()}` })[state.lang]
@@ -2862,6 +2929,7 @@
       ? `${headline.replace(/[。.]$/, '')}${state.lang === 'ja' ? '。' : '. '}`
       : '';
     setSubtitle(`${lead}${t.postSpeech[speechKey]}`, `result:${state.lang}:${speechKey}:${lead}`);
+    setText('resultLine', `${lead}${t.postSpeech[speechKey]}`);
   }
 
   function renderConnection() {
@@ -3878,7 +3946,6 @@
 
   function render() {
     renderText();
-    renderReliefDescription();
     renderSettingsStep();
     renderConnection();
     renderStaff();
@@ -4222,7 +4289,6 @@
     if (event.target.name === 'relief') {
       state.relief = event.target.value === 'on';
       state.reliefPreviewStarted = state.relief;
-      renderReliefDescription();
       syncReliefPreview();
     }
   });
@@ -4441,7 +4507,7 @@
   };
   document.addEventListener('fullscreenchange', syncFullscreenControls);
   document.addEventListener('keydown', (event) => {
-    if (!event.repeat) void presentationController.unlock();
+    if (!event.repeat) { void presentationController.unlock(); void signalCut?.unlock(); }
     if ($('staff').open || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (state.view === 'result' && canAdvanceFromResult()
       && (event.key === 'Enter' || event.key === ' ')
@@ -4476,7 +4542,7 @@
     return Boolean(target.closest('#briefingView, .portrait, #subtitle'));
   }
   document.addEventListener('pointerdown', (event) => {
-    if (event.isPrimary) void presentationController.unlock();
+    if (event.isPrimary) { void presentationController.unlock(); void signalCut?.unlock(); }
     if (!event.isPrimary || !isBriefingAdvanceTarget(event.target)) {
       pointerGesture = null;
       return;

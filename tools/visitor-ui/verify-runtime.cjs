@@ -606,21 +606,39 @@ test('設定は言語から軽減と確認へ進み、戻る操作と三言語�
   assert.equal(state.settingsStep, 'language');
 });
 
-test('軽減効果は未選択でも三言語で常に読める', () => {
+test('軽減効果は未選択でも三言語で常に読め、各選択肢の語の下に置く', () => {
   const expected = {
-    ja: ['なし：通常の演出と音量', 'あり：音量半分と陽気な曲'],
-    en: ['Off: normal effects and volume', 'On: half volume with a cheerful tune'],
-    fr: ['Non : effets et volume normaux', 'Oui : volume réduit de moitié et musique gaie'],
+    ja: ['通常の演出と音量', '音量半分と陽気な曲'],
+    en: ['Normal effects and volume', 'Half volume with a cheerful tune'],
+    fr: ['Effets et volume normaux', 'Volume réduit de moitié et musique gaie'],
   };
   state.view = 'edit';
   state.relief = false;
-  for (const [lang, lines] of Object.entries(expected)) {
+  for (const [lang, [off, on]] of Object.entries(expected)) {
     state.lang = lang;
     runtime.setSettingsStep('relief', false);
-    assert.equal(elements.get('reliefDesc').getAttribute('aria-hidden'), null);
-    for (const line of lines) assert.ok(elements.get('reliefDesc').textContent.includes(line));
+    assert.equal(elements.get('reliefOffNote').textContent, off);
+    assert.equal(elements.get('reliefOnNote').textContent, on);
   }
+  // 選択肢の label の中（語の直後）にあるので、選ぶ前に目に入り、読み上げではその選択肢の名前に含まれる
+  const offLabel = /<label class="choice is-described">[\s\S]*?value="off"[\s\S]*?<\/label>/.exec(html)?.[0] || '';
+  assert.ok(/id="reliefOff"[\s\S]*id="reliefOffNote"/.test(offLabel), '「なし」の説明は語の直後に置く');
+  assert.equal(html.includes('id="reliefDesc"'), false, '選択肢より下の説明欄は置かない');
   state.lang = 'ja';
+});
+
+test('設定の問いは選択肢の直上に出し、進む操作は選択肢の下に置く', () => {
+  state.view = 'edit';
+  state.lang = 'ja';
+  runtime.setSettingsStep('language', false);
+  assert.equal(elements.get('settingsAsk').textContent, '使う言語を教えてください。');
+  runtime.setSettingsStep('relief', false);
+  assert.equal(elements.get('settingsAsk').textContent, '恐怖を軽減するかどうかを決めてください。');
+  const view = /<section class="surface settings"[\s\S]*?<\/section>/.exec(html)?.[0] || '';
+  const order = ['id="noticeBody"', 'id="settingsAsk"', 'id="languageStep"', 'id="reliefStep"', 'id="settingsActions"'].map((id) => view.indexOf(id));
+  assert.ok(order.every((at) => at >= 0), '注意・問い・選択肢・操作は同じ列にある');
+  assert.deepEqual([...order].sort((a, b) => a - b), order, '注意 → 問い → 選択肢 → 操作 の順');
+  state.settingsStep = 'language';
 });
 
 test('確認画面の見出しと操作は三言語に揃う', () => {
