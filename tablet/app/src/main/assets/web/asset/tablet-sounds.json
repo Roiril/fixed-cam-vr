@@ -1,185 +1,134 @@
 {
-  "version": 1,
-  "note": "tools/make-tablet-sounds.py が書く。手で直さない。gainDb は鳴らす側が掛ける（素材の音量は触っていない）",
+  "version": 2,
+  "note": "tools/make-tablet-sounds.py が計算で書く。本編（Quest）の音は使わない（LEDGER 0267）。手で直さない",
   "voiceLufs": -21.0,
   "sounds": {
     "title-in": {
-      "purpose": "題字の書き出し（Quest のタイトルと同じ音）",
-      "targetLufs": -26.0,
+      "purpose": "題字の筆の書き出し（3 画の擦れ・墨のにじみ・低い唸り）",
       "files": [
         {
-          "file": "sfx_title_in.wav",
-          "gainDb": -7.5,
-          "sourceLufs": -18.5,
-          "sec": 5.82
+          "file": "tablet_title_in.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -26.0,
+          "sec": 2.6
         }
       ]
     },
     "title-out": {
-      "purpose": "題字を押して去るとき（Quest と同じ音）",
-      "targetLufs": -28.0,
+      "purpose": "題字が闇へ沈む（落ちていく空気と柔らかな着地）",
       "files": [
         {
-          "file": "sfx_title_out.wav",
-          "gainDb": -4.0,
-          "sourceLufs": -24.0,
-          "sec": 1.6
+          "file": "tablet_title_out.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -28.0,
+          "sec": 1.25
         }
       ]
     },
     "choice": {
-      "purpose": "言語・軽減を選び替えたとき（0153 の 2 本を交互）",
-      "targetLufs": -30.0,
+      "purpose": "言語・軽減を選び替えた（朱の筆の下線を払う音・2 種を交互）",
       "files": [
         {
-          "file": "sfx_lang_1.wav",
-          "gainDb": -1.3,
-          "sourceLufs": -28.7,
-          "sec": 0.53
+          "file": "tablet_choice_1.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -30.0,
+          "sec": 0.32
         },
         {
-          "file": "sfx_lang_2.wav",
-          "gainDb": -2.1,
-          "sourceLufs": -27.9,
-          "sec": 0.522
+          "file": "tablet_choice_2.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -30.0,
+          "sec": 0.32
         }
       ]
     },
     "key": {
-      "purpose": "次へ・戻る・設定に戻る・一時停止など（打鍵 1 打）",
-      "targetLufs": -32.0,
+      "purpose": "次へ・戻る・一時停止など（木の札を叩く・3 種を順に）",
       "files": [
         {
-          "file": "sfx_type_1.wav",
-          "gainDb": -0.8,
-          "sourceLufs": -31.2,
-          "sec": 0.064
+          "file": "tablet_key_1.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.12
         },
         {
-          "file": "sfx_type_2.wav",
-          "gainDb": -1.3,
-          "sourceLufs": -30.7,
-          "sec": 0.064
+          "file": "tablet_key_2.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.12
         },
         {
-          "file": "sfx_type_3.wav",
-          "gainDb": 0.7,
-          "sourceLufs": -32.7,
-          "sec": 0.064
-        },
-        {
-          "file": "sfx_type_4.wav",
-          "gainDb": 0.2,
-          "sourceLufs": -32.2,
-          "sec": 0.064
-        },
-        {
-          "file": "sfx_type_5.wav",
-          "gainDb": -1.2,
-          "sourceLufs": -30.8,
-          "sec": 0.064
-        },
-        {
-          "file": "sfx_type_6.wav",
-          "gainDb": -3.1,
-          "sourceLufs": -28.9,
-          "sec": 0.064
-        },
-        {
-          "file": "sfx_type_7.wav",
-          "gainDb": -1.7,
-          "sourceLufs": -30.3,
-          "sec": 0.064
-        },
-        {
-          "file": "sfx_type_8.wav",
-          "gainDb": -1.0,
-          "sourceLufs": -31.0,
-          "sec": 0.064
+          "file": "tablet_key_3.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.12
         }
       ]
     },
     "send": {
-      "purpose": "この設定を送る（送る瞬間の切替）",
-      "targetLufs": -29.0,
+      "purpose": "この設定を送る（紙が滑って渡る）",
       "files": [
         {
-          "file": "sfx_switch_1.wav",
-          "gainDb": -5.1,
-          "sourceLufs": -23.9,
-          "sec": 0.234
-        }
-      ]
-    },
-    "screen-on": {
-      "purpose": "博士の通信が点く（説明の始まり）",
-      "targetLufs": -27.0,
-      "files": [
-        {
-          "file": "sfx_screen_on.wav",
-          "gainDb": -14.0,
-          "sourceLufs": -13.0,
-          "sec": 0.331
-        }
-      ]
-    },
-    "chapter": {
-      "purpose": "章が切り替わる（カメラの切替）",
-      "targetLufs": -32.0,
-      "files": [
-        {
-          "file": "sfx_switch_2.wav",
-          "gainDb": -14.4,
-          "sourceLufs": -17.6,
-          "sec": 0.059
-        },
-        {
-          "file": "sfx_switch_3.wav",
-          "gainDb": -12.3,
-          "sourceLufs": -19.7,
-          "sec": 0.096
-        },
-        {
-          "file": "sfx_switch_4.wav",
-          "gainDb": -14.0,
-          "sourceLufs": -18.0,
-          "sec": 0.065
-        },
-        {
-          "file": "sfx_switch_5.wav",
-          "gainDb": -11.4,
-          "sourceLufs": -20.6,
-          "sec": 0.117
-        },
-        {
-          "file": "sfx_switch_6.wav",
-          "gainDb": -15.1,
-          "sourceLufs": -16.9,
-          "sec": 0.046
+          "file": "tablet_send.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -29.0,
+          "sec": 0.62
         }
       ]
     },
     "stamp": {
       "purpose": "反映の判子（印が押される瞬間）",
-      "targetLufs": -26.0,
       "files": [
         {
-          "file": "sfx_tablet_stamp.wav",
+          "file": "tablet_stamp.wav",
           "gainDb": 0.0,
           "sourceLufs": -26.0,
           "sec": 0.42
         }
       ]
     },
-    "signal-cut": {
-      "purpose": "説明の終わり（通信が切れる・signal-cut.js と同じ時刻）",
-      "targetLufs": -22.0,
+    "screen-on": {
+      "purpose": "博士が闇から現れる（暗い息とフィルムのパチつき）",
       "files": [
         {
-          "file": "sfx_tablet_signal_cut.wav",
+          "file": "tablet_screen_on.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -27.0,
+          "sec": 1.7
+        }
+      ]
+    },
+    "chapter": {
+      "purpose": "章の切り替え（調書をめくる・3 種を順に）",
+      "files": [
+        {
+          "file": "tablet_chapter_1.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.46
+        },
+        {
+          "file": "tablet_chapter_2.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.46
+        },
+        {
+          "file": "tablet_chapter_3.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.46
+        }
+      ]
+    },
+    "signal-cut": {
+      "purpose": "説明の終わり（砂嵐 → 線へ吸い込まれる → 闇の中の響き・signal-cut.js と同じ時刻）",
+      "files": [
+        {
+          "file": "tablet_signal_cut.wav",
           "gainDb": 0.0,
           "sourceLufs": -22.0,
-          "sec": 2.229
+          "sec": 2.0
         }
       ]
     }

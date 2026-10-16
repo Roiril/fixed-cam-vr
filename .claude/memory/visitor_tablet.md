@@ -10,9 +10,9 @@ metadata:
 
 # タブレットの博士UIを触る前に
 
-## 効果音（2026-10-16・0266）
+## 効果音（2026-10-16・0266 → 0267）
 
-表と作り方は `rules/sound-design.md` の頭の節「博士タブレットの効果音」。鳴らす口は `index.html` の `sfx(name)`（`tablet-sound.js`）。⚠ **終わりの砂嵐の音は `signal-cut.js` の中で合成していたが、純音の掃引とノコギリ波で規約（§3.6）の禁止形だったので外した**。実機（Redmi）で 9 種すべてが鳴らし始め 15 回・信号 15 回で一致（`TabletSound.snapshot()`・デバッグ版の WebView から読んだ）。
+⚠⚠ **本編（Quest）の音は使わない**（0267）。全部 `tools/make-tablet-sounds.py` が画面の動きの時刻表から計算で作る `asset/tablet_*.wav`。表と作り方は `rules/sound-design.md` の頭の節。鳴らす口は `index.html` の `sfx(name)`（`tablet-sound.js`）。実機（Redmi）で 9 種すべてが鳴らし始め 15 回・信号 15 回で一致し、鳴った素材が全部 `tablet_*` であることをデバッグ版の WebView から読んで確かめた。
 
 ## 視線の順と、説明の終わり（2026-10-16・0265）
 

@@ -12,27 +12,30 @@ paths:
   - "tools/sound-*.py"
 ---
 
-## 博士タブレットの効果音（2026-10-16・`canon/LEDGER.md` 0266）
+## 博士タブレットの効果音（2026-10-16・`canon/LEDGER.md` 0266 → **0267**）
 
-タブレットは Quest と同じ装置の音を、同じ意味の操作に当てる（研究所の端末なので、別の楽器を鳴らすと 2 つの機械に聞こえる）。**曲は増やさない**（0256「BGMは、タブレット上では、軽減の画面だけ」）。大きさは博士の声（約 -21 LUFS）より下。
+⚠⚠ **タブレットでは本編（Quest）の音を鳴らさない**（0267 ユーザー逐語「本編で使う音は使わないでほしくて、モーショングラフィックスの動画を作った時みたいに、今回用に新しく作って使って」）。0266 では Quest の題字・言語切替・打鍵・カメラ切替・スクリーンが点く・電源断・砂嵐を流用したが、全部取り消した。
 
-| いつ | 名前 | 音 | 目標 |
+動画のときと同じく、**画面の動きの時刻表から計算で作る**（`tools/make-tablet-sounds.py`）。`Assets/Resources/Sound/` は 1 本も読まない（`verify-tablet-sound.cjs` が名前と中身の一致を落とす）。**曲は作らない**（0256）。大きさは博士の声（約 -21 LUFS）より下。
+
+| いつ（画面の動き） | 名前 | 音 | 目標 |
 |---|---|---|---|
-| 題字の書き出し | `title-in` | `sfx_title_in`（Quest のタイトルと同じ） | -26 LUFS |
-| 題字を押して去る | `title-out` | `sfx_title_out` | -28 |
-| 言語・軽減を選び替えた | `choice` | `sfx_lang_1` → `sfx_lang_2` を交互（0153 と同じ） | -30 |
-| 次へ・戻る・設定に戻る・一時停止など | `key` | 打鍵 `sfx_type_1..8` を順に | -32 |
-| この設定を送る | `send` | `sfx_switch_1` | -29 |
-| 反映の判子 | `stamp` | **合成** `sfx_tablet_stamp`（印が押される 0.51 秒後に予約） | -26 |
-| 説明の始まり・もう一度見る | `screen-on` | `sfx_screen_on`（スクリーンが点く音） | -27 |
-| 章の切り替え | `chapter` | `sfx_switch_2..6` を順に | -32 |
-| 説明の終わり | `signal-cut` | **合成** `sfx_tablet_signal_cut`（`bed_static` ＋ もらった `sfx_power_off`） | -22 |
+| 題字の筆の書き出し（0.9 秒） | `title-in` | 和紙を擦る筆 3 画 ＋ 墨のにじみ ＋ 低い唸り（196Hz の狭帯域と 1.97 倍） | -26 LUFS |
+| 題字が闇へ沈む | `title-out` | 落ちていく空気（帯域ノイズの下降）＋ 0.86 秒の柔らかな着地 | -28 |
+| 朱の筆の下線（0.5 秒） | `choice` | 筆を払う擦れ。2 種を交互 | -30 |
+| 押す所（輪と矢印） | `key` | 木の札を叩く。3 種を順に | -32 |
+| 送る（円相が回り出す） | `send` | 紙が滑って渡る | -29 |
+| 角印（0.51 秒後に予約） | `stamp` | 木の柄が机を打つ胴 ＋ 紙が叩かれる音 | -26 |
+| 博士が闇から現れる（0.76 秒） | `screen-on` | 暗い息の膨らみ ＋ フィルムが回り出すパチつき | -27 |
+| 章の切り替え | `chapter` | 調書をめくる。3 種を順に | -32 |
+| 説明の終わり | `signal-cut` | 自前の砂嵐とパチつき → 線へ吸い込まれる下降 → 闇の中の鈍い響き | -22 |
 
-- 作るのは `py -3.11 tools/make-tablet-sounds.py`。もらった音・焼いた音は**バイト単位で複写**し（§4.5）、大きさは `asset/tablet-sounds.json` の `gainDb` を鳴らす側（`tablet-sound.js`）が掛ける。人が聴く 1 本は `--preview <wav>`
+- 全 14 本が `sound-lint.py` 緑（判定外の名簿には何も載せていない）
+- ⚠ **短い音の共振は長く作ってから切る**（`band()`）。0.12 秒のまま `tone_band` を作ると刻みが 8.3Hz と粗い。さらに**細く長く鳴る木の共振は、減衰する純音として突出に出る**（q 7・35ms で 34dB）。実物の木の鳴りは帯が広く短い（q 3.5・22ms で 12dB）
 - ホラー軽減ありは全部 -6dB。説明の消音にも従う
-- `sfx_tablet_signal_cut` は `sound-lint.py` の `RECORDED`（純度 0.84 は全部もらった電源断から。砂嵐の部分は道具の中で合成音の線で落とす）
 - ⚠ **画の時刻と対**: `signal-cut.js` の `NOISE_MS` / `OFF_MS` / `BURSTS` と `make-tablet-sounds.py` の `NOISE_SEC` / `OFF_SEC` / `BURSTS`。`verify-tablet-sound.cjs` が突き合わせる
-- 観測: `TabletSound.snapshot()` の `started`（鳴らし始めた）と `signal`（解析器に信号が乗った）。実機はデバッグ版（`tablet/build.py --debug`）で WebView の口を開け、`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>` から読む
+- 観測: `TabletSound.snapshot()` の `started`（鳴らし始めた）と `signal`（解析器に信号が乗った）。実機はデバッグ版（`tablet/build.py --debug` → `Builds/doctor-tablet-debug.apk`）で WebView の口を開け、`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>` から読む
+- 人が聴く 1 本は `--preview <wav>`（画面で起きる順と間に並べる）
 
 ## 2026-09-25 入口音の現行仕様
 

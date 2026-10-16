@@ -4,7 +4,7 @@
 // 黒のまま一拍置いてから次の画面を出す。画面の切り替えは呼び出し側（黒になった後）が行う。
 //
 //   run({ sound })        → 黒になるまでの ms を返す（動きを減らす設定・canvas 無しでは 0 で何もしない）
-//                           sound は始まりと同時に呼ぶ関数（音は TabletSound の sfx_tablet_signal_cut。時刻は
+//                           sound は始まりと同時に呼ぶ関数（音は TabletSound の tablet_signal_cut.wav。時刻は
 //                           tools/make-tablet-sounds.py の NOISE_SEC / OFF_SEC と対）
 //   release()             → 黒の間に次の画面を描いたら呼ぶ。一拍おいて溶かして戻す
 //   abort()               → 途中で取り消す（すぐ元の画面に戻す）

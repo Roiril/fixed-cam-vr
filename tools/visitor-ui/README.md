@@ -245,7 +245,7 @@ HTMLに含まれる実際のJavaScriptを使う81件の回帰検証。設定の�
 ### 効果音（2026-10-16・0266）
 
 ```powershell
-py -3.11 tools/make-tablet-sounds.py                      # 複写と合成 → asset/ と tablet-sounds.json
+py -3.11 tools/make-tablet-sounds.py                      # 計算で作る → asset/tablet_*.wav と tablet-sounds.json
 py -3.11 tools/make-tablet-sounds.py --preview <wav>      # 画面の順に並べた試聴用 1 本
 node tools/visitor-ui/verify-tablet-sound.cjs
 ```

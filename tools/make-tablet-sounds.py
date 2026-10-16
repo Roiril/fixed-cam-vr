@@ -1,28 +1,27 @@
-"""博士タブレットの効果音を作る（LEDGER 0266「タブレットは音がないので、音をつけて」）。
+"""博士タブレットの効果音を計算で作る（LEDGER 0266 / 0267）。
 
-    py -3.11 tools/make-tablet-sounds.py            # 書き出し → tablet/.../web/asset/
-    py -3.11 tools/make-tablet-sounds.py --check    # 書かずに測るだけ
+    py -3.11 tools/make-tablet-sounds.py                  # 書き出し → tablet/.../web/asset/
+    py -3.11 tools/make-tablet-sounds.py --check          # 書かずに測るだけ
+    py -3.11 tools/make-tablet-sounds.py --preview <wav>  # 人が聴く 1 本（画面の順に並べる）
 
-方針（rules/sound-design.md）:
-- **Quest と同じ装置の音を、同じ意味の操作に当てる。** 言語の切替音（0153 の 2 本を交互）、
-  打鍵、カメラの切替音、題字の音、スクリーンが点く音。タブレットは研究所の端末で、
-  Quest と別の楽器を鳴らすと 2 つの機械に聞こえる
-- **もらった音・焼いた音はバイト単位で複写する**（§4.5「音量と端の処理だけ」）。
-  音量は書き換えず、鳴らす側が表の `gainDb` を掛ける
-- 新しく合成するのは 2 本だけ: 反映の判子（`sfx_tablet_stamp`）と、説明の終わりに
-  通信が切れる音（`sfx_tablet_signal_cut`。`bed_static` ＝ 信号断の砂嵐 ＋ `sfx_power_off`）
-- **曲は増やさない**（0256「BGMは、タブレット上では、軽減の画面だけ」）
-- 大きさは博士の声（約 -21 LUFS）より下。いちばん大きい「通信が切れる」でも声の 1dB 下
+0267「本編で使う音は使わないでほしくて、モーショングラフィックスの動画を作った時みたいに、
+今回用に新しく作って使って」。
 
-出力: `asset/<name>.wav` と、鳴らす側が読む表 `asset/tablet-sounds.json`。
+- **本編（Quest）の音を 1 本も読まない。** `Assets/Resources/Sound/` には触れない
+  （`verify-tablet-sound.cjs` が同梱の音と本編の音のバイト一致を落とす）
+- 動画のときと同じく、**画面の動きの時刻表から音を作る**。筆の書き出し 0.9 秒、朱の下線 0.5 秒、
+  角印が押される 0.51 秒、博士が闇から現れる 0.76 秒、通信が切れる 0.95 + 0.26 秒
+- 安い電子音にしない（rules/sound-design.md §3.6）: 正弦波を置かない。音程は狭帯域ノイズ（`tone_band`）、
+  動きは帯域ノイズの掃引（`sweep_band`）、共振は整数倍に積まない。正体を 200Hz より下に置かない
+- 乱数の種は固定。同じ版なら同じ波形
+- 曲は作らない（0256「BGMは、タブレット上では、軽減の画面だけ」）
+- 大きさは博士の声（約 -21 LUFS）より下。いちばん大きい「通信が切れる」で声の 1dB 下
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -34,58 +33,139 @@ import soundkit as sk  # noqa: E402
 sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "Assets" / "Resources" / "Sound"
 OUT = ROOT / "tablet" / "app" / "src" / "main" / "assets" / "web" / "asset"
 SR = sk.SR
 PEAK_DB = -3.0
 VOICE_LUFS = -21.0   # 博士の動画 4 本の実測 -20.2〜-22.2（2026-10-16）
 
-# 鳴らす名前 → (素材, 目標 LUFS, 何に当てるか)。素材が複数なら順に回す（乱数で選ばない）。
-COPIES = {
-    "title-in": (["sfx_title_in"], -26.0, "題字の書き出し（Quest のタイトルと同じ音）"),
-    "title-out": (["sfx_title_out"], -28.0, "題字を押して去るとき（Quest と同じ音）"),
-    "choice": (["sfx_lang_1", "sfx_lang_2"], -30.0, "言語・軽減を選び替えたとき（0153 の 2 本を交互）"),
-    "key": ([f"sfx_type_{i}" for i in range(1, 9)], -32.0, "次へ・戻る・設定に戻る・一時停止など（打鍵 1 打）"),
-    "send": (["sfx_switch_1"], -29.0, "この設定を送る（送る瞬間の切替）"),
-    "screen-on": (["sfx_screen_on"], -27.0, "博士の通信が点く（説明の始まり）"),
-    "chapter": ([f"sfx_switch_{i}" for i in range(2, 7)], -32.0, "章が切り替わる（カメラの切替）"),
-}
-SYNTH_TARGET = {"stamp": -26.0, "signal-cut": -22.0}
-
 # 説明の終わりの時刻（signal-cut.js と対。片方だけ直すと音と画がずれる）
 NOISE_SEC = 0.95
 OFF_SEC = 0.26
 BURSTS = [(0.50, 0.58), (0.65, 0.71), (0.79, 0.85)]
+WRITE_SEC = 0.9      # title-write.js の DURATION
+STAMP_IMPACT_MS = 510  # 角印のキーフレーム 42%（.25s の遅れ ＋ .62s × .42）。index.html の予約と対
 
 
-def mono(y: np.ndarray) -> np.ndarray:
-    return y.mean(axis=1) if y.ndim == 2 else y
+def t_of(sec: float) -> np.ndarray:
+    return np.arange(int(round(sec * SR))) / SR
 
 
-def read(name: str) -> np.ndarray:
-    y, sr = sk.read_wav(str(SRC / f"{name}.wav"))
-    assert sr == SR, f"{name} は {sr}Hz（48kHz のはず）"
-    return y
+def fit(y: np.ndarray, sec: float) -> np.ndarray:
+    n = int(round(sec * SR))
+    return y[:n] if len(y) >= n else np.pad(y, (0, n - len(y)))
 
 
 def norm_lufs(y: np.ndarray, target: float) -> np.ndarray:
-    """ラウドネスを target へ。尖頭が -3dBTP を超えるなら丸めてから合わせ直す（make-sounds.py と同じ考え）。"""
-    z = y * 10 ** ((target - sk.lufs(mono(y))) / 20)
+    """ラウドネスを target へ。尖頭が -3dBTP を超えるなら丸めてから合わせ直す。"""
+    z = y * 10 ** ((target - sk.lufs(y)) / 20)
     drive = 0.0
-    while sk.true_peak_db(mono(z)) > PEAK_DB and drive < 14.0:
+    while sk.true_peak_db(z) > PEAK_DB and drive < 14.0:
         drive += 2.0
         z = sk.soft_clip(y, drive)
-        z = z * 10 ** ((target - sk.lufs(mono(z))) / 20)
-    if sk.true_peak_db(mono(z)) > PEAK_DB:
-        z = z * 10 ** ((PEAK_DB - sk.true_peak_db(mono(z))) / 20)
+        z = z * 10 ** ((target - sk.lufs(z)) / 20)
+    if sk.true_peak_db(z) > PEAK_DB:
+        z = z * 10 ** ((PEAK_DB - sk.true_peak_db(z)) / 20)
     return z
 
 
-def stamp() -> np.ndarray:
-    """研究所の角印が紙に押される。木の柄が机を打つ鈍い胴と、紙が叩かれる乾いた音。
+def band(sec: float, freq: float, q: float, seed: int) -> np.ndarray:
+    """短い音の共振。**1 秒ぶん作ってから切り出す。** 0.12 秒のまま `tone_band` を作ると周波数の刻みが
+    8.3Hz と粗く、帯の中が数本の線に偏って発振器に聞こえた（種しだいで突出 36dB・2026-10-16）。"""
+    return sk.tone_band(max(sec, 1.0), freq, q=q, seed=seed)[: int(round(sec * SR))]
 
-    胴は 200Hz より上に置く（タブレットの小さなスピーカーでも残る）。共振は整数倍に積まない（§3.6）。
+
+def grains(sec: float, rate_hz: float, seed: int, depth: float = 0.6) -> np.ndarray:
+    """乾いた筆・紙の毛羽：短い粒で振幅を細かく揺らす（同じ高さで鳴り続ける機械の音にしない）。"""
+    rng = np.random.default_rng(seed)
+    step = max(1, int(SR / rate_hz))
+    n = int(round(sec * SR))
+    g = np.repeat(1 - depth + depth * rng.random(n // step + 2), step)[:n]
+    return np.convolve(g, np.ones(48) / 48, mode="same")
+
+
+def lobe(t: np.ndarray, start: float, end: float, attack: float = 0.02) -> np.ndarray:
+    """筆 1 画ぶんの強さ。入りは速く、抜けは筆を払うように細る。"""
+    u = np.clip((t - start) / max(end - start, 1e-6), 0, 1)
+    rise = np.clip((t - start) / attack, 0, 1)
+    return np.where((t >= start) & (t <= end + 0.08), rise * (1 - u) ** 0.8 * (0.6 + 0.4 * np.sin(np.pi * u) ** 0.5), 0.0)
+
+
+# ---------------------------------------------------------------------------
+# 1 本ずつ
+# ---------------------------------------------------------------------------
+
+def title_in() -> np.ndarray:
+    """題字の筆の書き出し（0.9 秒）と、書き終えた後の墨のにじみ。下で低い唸りが膨らんで引く。
+
+    筆は 3 画（廻・リ・視）に分けて和紙を擦る。乾いた毛羽を粒で付ける。
+    唸りは 196Hz の狭帯域ノイズと、整数倍を外した 1.97 倍。
     """
+    sec = 2.6
+    t = t_of(sec)
+    paper = sk.loop_noise(sec, 900, 6500, slope_db_oct=-2.5, seed=7101)
+    strokes = lobe(t, 0.00, 0.30) + lobe(t, 0.30, 0.52) * 0.8 + lobe(t, 0.50, WRITE_SEC) * 1.1
+    brush = paper * strokes * grains(sec, 90, 7102, depth=0.55)
+    wet = sk.loop_noise(sec, 280, 1100, slope_db_oct=-4.0, seed=7103)
+    wet_env = np.clip((t - 0.7) / 0.25, 0, 1) * np.exp(-np.clip(t - 0.95, 0, None) / 0.55)
+    low = sk.mix((sk.tone_band(sec, 196, q=9, seed=7104), 1.0), (sk.tone_band(sec, 196 * 1.97, q=8, seed=7105), 0.45))
+    low_env = np.clip((t - 0.15) / 0.8, 0, 1) ** 1.5 * np.exp(-np.clip(t - 1.1, 0, None) / 0.6)
+    y = sk.mix((brush, 1.0), (wet * wet_env, 0.22), (low * low_env, 0.5))
+    return norm_lufs(sk.env_fade(y, 0.003, 0.25), -26.0)
+
+
+def title_out() -> np.ndarray:
+    """題字が手前へ寄りながら闇へ沈む（0.9 秒）。空気が落ちていき、最後に柔らかく着く。"""
+    sec = 1.25
+    t = t_of(sec)
+    fall = fit(sk.sweep_band(0.95, 2600, 420, q=2.4, seed=7201, grains=120), sec)
+    fall_env = np.clip(t / 0.35, 0, 1) ** 1.6 * np.clip((0.95 - t) / 0.12, 0, 1)
+    thud = sk.loop_noise(sec, 170, 620, slope_db_oct=-4.0, seed=7202)
+    thud_env = np.where(t >= 0.86, np.exp(-np.clip(t - 0.86, 0, None) / 0.09), 0.0) * np.clip((t - 0.86) / 0.004, 0, 1)
+    body = sk.tone_band(sec, 233, q=7, seed=7203) * np.where(t >= 0.86, np.exp(-np.clip(t - 0.86, 0, None) / 0.16), 0.0)
+    y = sk.mix((fall * fall_env, 1.0), (thud * thud_env, 0.8), (body, 0.45))
+    return norm_lufs(sk.env_fade(y, 0.004, 0.08), -28.0)
+
+
+def choice(variant: int) -> np.ndarray:
+    """朱の筆の下線（0.5 秒の ease-out）。筆を払う短い擦れ。2 種を交互に鳴らす。"""
+    sec = 0.32
+    t = t_of(sec)
+    lo, hi = ((1400, 6200), (1150, 5200))[variant]
+    paper = sk.loop_noise(sec, lo, hi, slope_db_oct=-2.0, seed=7301 + variant)
+    # ease-out の速さで擦る：入りが強く、払って細る
+    u = np.clip(t / 0.26, 0, 1)
+    env = np.clip(t / 0.006, 0, 1) * (1 - u) ** 2.2
+    body = band(sec, (820, 760)[variant], 6, 7303 + variant) * np.exp(-t / 0.05)
+    y = sk.mix((paper * env * grains(sec, 140, 7305 + variant, depth=0.4), 1.0), (body, 0.25))
+    return norm_lufs(sk.env_fade(y, 0.001, 0.04), -30.0)
+
+
+def key(variant: int) -> np.ndarray:
+    """押す所（輪と矢印）。木の札を指で軽く叩く。3 種を順に。共振は 1 : 2.31 で整数倍を外す。"""
+    sec = 0.12
+    t = t_of(sec)
+    f = (1080.0, 1190.0, 1310.0)[variant]
+    knock = sk.loop_noise(sec, 450, 3200, slope_db_oct=-3.0, seed=7401 + variant) * np.exp(-t / 0.012)
+    # 実物の木の鳴りは帯が広く短い。細く長く鳴らすと減衰する純音（発振器）に聞こえる（q 7 で突出 34dB だった）
+    wood = sk.mix((band(sec, f, 3.5, 7404 + variant), 1.0),
+                  (band(sec, f * 2.31, 3.0, 7407 + variant), 0.35)) * np.exp(-t / 0.022)
+    y = sk.mix((knock, 1.0), (wood, 0.4))
+    return norm_lufs(sk.env_fade(y, 0.0005, 0.02), -32.0)
+
+
+def send() -> np.ndarray:
+    """この設定を送る（円相が回り始める）。紙が机の上を滑って向こうへ渡る。"""
+    sec = 0.62
+    t = t_of(sec)
+    slide = fit(sk.sweep_band(0.5, 950, 2300, q=2.8, seed=7501, grains=90), sec)
+    env = np.clip(t / 0.04, 0, 1) * np.clip((0.5 - t) / 0.3, 0, 1) ** 1.2
+    tap = sk.loop_noise(sec, 500, 2600, slope_db_oct=-3.0, seed=7502) * np.exp(-t / 0.014)
+    y = sk.mix((slide * env * grains(sec, 70, 7503, depth=0.35), 1.0), (tap, 0.6))
+    return norm_lufs(sk.env_fade(y, 0.0005, 0.06), -29.0)
+
+
+def stamp() -> np.ndarray:
+    """研究所の角印が紙に押される。木の柄が机を打つ鈍い胴と、紙が叩かれる乾いた音。"""
     sec = 0.42
     n = int(sec * SR)
     body = sk.mix(
@@ -95,13 +175,44 @@ def stamp() -> np.ndarray:
         (sk.tone_band(sec, 262 * 3.06, q=7, seed=6104) * sk.env_ar(sec, 0.002, 0.06, curve=2.6), 0.2),
     )
     slap = sk.loop_noise(sec, 1800, 7000, slope_db_oct=-2.0, seed=6105) * sk.env_ar(sec, 0.0008, 0.018, curve=3.0)
-    # 押し付けた後、紙がわずかに擦れる
     rub = sk.loop_noise(sec, 900, 4200, slope_db_oct=-3.0, seed=6106)
     t = sk.t_axis(sec)
     rub_env = np.clip((t - 0.05) / 0.03, 0, 1) * np.exp(-np.clip(t - 0.08, 0, None) / 0.07)
     y = sk.mix((body, 1.0), (slap, 0.45), (rub * rub_env, 0.08))
     y = sk.env_fade(y[:n], 0.0005, 0.06)
-    return norm_lufs(y, SYNTH_TARGET["stamp"])
+    return norm_lufs(y, -26.0)
+
+
+def screen_on() -> np.ndarray:
+    """博士が闇から現れる（0.76 秒で溶けて出る）。暗い息のような膨らみと、フィルムが回り出すパチつき。"""
+    sec = 1.7
+    t = t_of(sec)
+    breath = sk.loop_noise(sec, 170, 1300, slope_db_oct=-4.0, seed=7601)
+    breath_env = np.clip(t / 0.7, 0, 1) ** 1.8 * np.exp(-np.clip(t - 0.75, 0, None) / 0.45)
+    carrier = sk.mix((sk.tone_band(sec, 233, q=12, seed=7602), 1.0), (sk.tone_band(sec, 233 * 2.71, q=9, seed=7603), 0.35))
+    carrier_env = np.clip((t - 0.1) / 0.6, 0, 1) * np.exp(-np.clip(t - 0.8, 0, None) / 0.5)
+    # パチつき：疎らな粒。最初の 0.6 秒に寄せて、だんだん減る
+    rng = np.random.default_rng(7604)
+    crackle = np.zeros(len(t))
+    for _ in range(26):
+        at = int(abs(rng.normal(0, 0.28)) * SR)
+        if at < len(t) - 400:
+            crackle[at: at + 240] += rng.choice([-1, 1]) * np.exp(-np.arange(240) / 30) * (0.4 + 0.6 * rng.random())
+    crackle = sk.biquad(crackle, "hp", 1500)
+    y = sk.mix((breath * breath_env, 1.0), (carrier * carrier_env, 0.4), (crackle, 0.35))
+    return norm_lufs(sk.env_fade(y, 0.01, 0.2), -27.0)
+
+
+def chapter(variant: int) -> np.ndarray:
+    """章の切り替え（直前の絵が溶ける）。調書を 1 枚めくる。3 種を順に。"""
+    sec = 0.46
+    t = t_of(sec)
+    f0, f1 = ((620, 3100), (700, 2800), (560, 3400))[variant]
+    flip = fit(sk.sweep_band(0.4, f0, f1, q=1.8, seed=7701 + variant, grains=80), sec)
+    env = np.sin(np.pi * np.clip(t / 0.4, 0, 1)) ** 1.3
+    flutter = grains(sec, 55, 7704 + variant, depth=0.5)
+    y = flip * env * flutter
+    return norm_lufs(sk.env_fade(y, 0.002, 0.05), -32.0)
 
 
 def intensity(p: float) -> float:
@@ -115,141 +226,146 @@ def intensity(p: float) -> float:
     return min(1.0, i)
 
 
-def signal_cut() -> np.ndarray:
-    """説明の終わり。止まった博士に砂嵐が乗り、ざ・ざ・ざと強まり、ブラウン管が切れて黙る。
+def signal_cut() -> tuple[np.ndarray, np.ndarray]:
+    """説明の終わり。止まった博士に砂嵐が乗り、ざ・ざ・ざと強まり、画が線へ吸い込まれて黙る。
 
-    砂嵐は `bed_static`（信号断の砂嵐・合成）を画の濃さの曲線で開き、ざ・ざ・ざの頭で強める。
-    消える瞬間（NOISE_SEC）に `sfx_power_off`（もらったブラウン管の電源断）の立ち上がりを合わせる。
-    電源断は音量だけを掛け、切らない・削らない（§4.5）。尾は黒の一拍の中へ流れる。
+    砂嵐は一から作る（受信機が掴めない帯域ノイズ ＋ パチつき）。濃さは画と同じ曲線。
+    潰れる段（0.95〜1.21 秒）は帯域ノイズが高い方から一気に落ちる。黒の中に鈍い響きが残る。
+    戻り値は (全体, 砂嵐の部分)。砂嵐の部分は書き出す前に合成音の線で測る。
     """
-    static = mono(read("bed_static"))
-    off = mono(read("sfx_power_off"))
-    a = np.abs(off)
-    onset = int(np.argmax(a > a.max() * 0.1))
-    start = max(0, int(NOISE_SEC * SR) - onset)
-    n = max(int((NOISE_SEC + OFF_SEC) * SR), start + len(off))
-    y = np.zeros(n)
-
-    seg = static[: int((NOISE_SEC + OFF_SEC) * SR)]
-    t = np.arange(len(seg)) / SR
-    # 濃さ：画と同じ曲線。30ms ごとに強さを少し揺らす（同じ高さで鳴る機械の音にしない・種は固定）
-    rng = np.random.default_rng(6201)
-    step = int(0.03 * SR)
-    flutter = np.repeat(0.75 + 0.5 * rng.random(len(seg) // step + 1), step)[: len(seg)]
-    flutter = np.convolve(flutter, np.ones(96) / 96, mode="same")   # 段差でプチプチ鳴らさない
-    env = np.array([intensity(min(1.0, x / NOISE_SEC)) for x in t])
-    env = np.maximum(env, 0.06) * flutter
-    # 潰れる段：電源断に場所を譲りながら、ぶつっと切れる
-    collapse = np.clip((t - NOISE_SEC) / OFF_SEC, 0, 1)
-    env *= np.where(t < NOISE_SEC, 1.0, (1 - collapse) ** 2 * 0.5)
-    # 濃いほど上が開く（薄いうちは遠くの受信機、強まると目の前で鳴る）
-    dark = sk.biquad(seg, "lp", 1700)
-    bright = seg
-    mixw = np.array([intensity(min(1.0, x / NOISE_SEC)) for x in t])
-    noise = (dark * (1 - mixw) + bright * mixw) * env
-    y[: len(noise)] += noise
-    noise_part = norm_lufs(y[: int(NOISE_SEC * SR)], SYNTH_TARGET["signal-cut"])
-    gain = float(np.max(np.abs(noise_part))) / max(float(np.max(np.abs(y[: int(NOISE_SEC * SR)]))), 1e-9)
-    y *= gain
-    # 合成した砂嵐の部分だけは合成音の線で測る（後ろに足す電源断はもらった音なので、
-    # sound-lint は全体を判定外にしている。そのぶんここで落とす）
-    head = y[: int(NOISE_SEC * SR)]
-    assert sk.tone_purity(head) <= 0.60, f"砂嵐に発振器が居る（純度 {sk.tone_purity(head):.2f}）"
-    assert sk.tonality_db(head) <= 25.0, f"砂嵐に突出したトーン（{sk.tonality_db(head):.1f}dB）"
-    off_gain = 10 ** ((SYNTH_TARGET["signal-cut"] + 1.0 - sk.lufs(off)) / 20)
-    y[start: start + len(off)] += off * off_gain
-    y = sk.env_fade(y, 0.004, 0.03)
-    # 砂嵐と電源断の釣り合い（電源断は砂嵐の頭打ちより 1dB 上）を保ったまま、全体を目標の高さへ
-    y *= 10 ** ((SYNTH_TARGET["signal-cut"] - sk.lufs(y)) / 20)
+    sec = 2.0
+    t = t_of(sec)
+    hiss = sk.loop_noise(sec, 260, 9500, slope_db_oct=-1.4, seed=7801)
+    rng = np.random.default_rng(7802)
+    crackle = np.zeros(len(t))
+    for i in range(int(NOISE_SEC * 420)):
+        at = int(rng.random() ** 0.6 * NOISE_SEC * SR)   # 終わりへ向けて密になる
+        if at < len(t) - 200:
+            crackle[at: at + 160] += rng.choice([-1, 1]) * np.exp(-np.arange(160) / 18) * rng.random()
+    crackle = sk.biquad(crackle, "hp", 1200)
+    hum = sk.tone_band(sec, 245, q=5, seed=7803)
+    p = np.clip(t / NOISE_SEC, 0, 1)
+    env = np.array([intensity(x) for x in p])
+    env = np.maximum(env, 0.05) * grains(sec, 33, 7804, depth=0.5)
+    dark = sk.biquad(hiss, "lp", 1700)
+    static = dark * (1 - env) + hiss * env
+    noise = sk.mix((static, 1.0), (crackle, 0.5 * env.mean() + 0.2), (hum, 0.18)) * env
+    noise *= np.where(t < NOISE_SEC, 1.0, 0.0)
+    # 潰れる段：画が線へ吸い込まれる。帯域が高い方から一気に落ちる
+    suck = fit(np.pad(sk.sweep_band(OFF_SEC, 4200, 260, q=2.6, seed=7805, grains=60), (int(NOISE_SEC * SR), 0)), sec)
+    suck_env = np.where((t >= NOISE_SEC) & (t < NOISE_SEC + OFF_SEC),
+                        (1 - np.clip((t - NOISE_SEC) / OFF_SEC, 0, 1)) ** 0.7, 0.0)
+    crack = sk.loop_noise(sec, 1500, 8000, slope_db_oct=-1.0, seed=7806) * np.where(
+        t >= NOISE_SEC, np.exp(-np.clip(t - NOISE_SEC, 0, None) / 0.012), 0.0)
+    # 黒の中に残る鈍い響き（低い胴は 160Hz より上）
+    thoom = sk.loop_noise(sec, 160, 560, slope_db_oct=-4.0, seed=7807) * np.where(
+        t >= NOISE_SEC + OFF_SEC, np.exp(-np.clip(t - NOISE_SEC - OFF_SEC, 0, None) / 0.28), 0.0) * np.clip(
+        (t - NOISE_SEC - OFF_SEC) / 0.01, 0, 1)
+    head = noise[: int(NOISE_SEC * SR)].copy()
+    y = sk.mix((noise, 1.0), (suck * suck_env, 0.75), (crack, 0.5), (thoom, 0.42))
+    y = sk.env_fade(y, 0.004, 0.08)
+    scale = 10 ** ((-22.0 - sk.lufs(y)) / 20)
+    y *= scale
     tp = sk.true_peak_db(y)
     if tp > PEAK_DB:
         y *= 10 ** ((PEAK_DB - tp) / 20)
-    return y
+    return y, head
 
 
-def measure(name: str, y: np.ndarray) -> dict:
-    m = mono(y)
-    return {
-        "sec": round(len(m) / SR, 3),
-        "lufs": round(sk.lufs(m), 1),
-        "truePeakDb": round(sk.true_peak_db(m), 1),
-        "speakerDb": round(sk.speaker_loss_db(m), 1),
-    }
+SOUNDS = {
+    # 名前: [(ファイル, 作り方)]。複数なら鳴らす側が順に回す（乱数で選ばない）
+    "title-in": [("tablet_title_in.wav", title_in)],
+    "title-out": [("tablet_title_out.wav", title_out)],
+    "choice": [(f"tablet_choice_{i + 1}.wav", lambda i=i: choice(i)) for i in range(2)],
+    "key": [(f"tablet_key_{i + 1}.wav", lambda i=i: key(i)) for i in range(3)],
+    "send": [("tablet_send.wav", send)],
+    "stamp": [("tablet_stamp.wav", stamp)],
+    "screen-on": [("tablet_screen_on.wav", screen_on)],
+    "chapter": [(f"tablet_chapter_{i + 1}.wav", lambda i=i: chapter(i)) for i in range(3)],
+    "signal-cut": [("tablet_signal_cut.wav", lambda: signal_cut()[0])],
+}
+PURPOSE = {
+    "title-in": "題字の筆の書き出し（3 画の擦れ・墨のにじみ・低い唸り）",
+    "title-out": "題字が闇へ沈む（落ちていく空気と柔らかな着地）",
+    "choice": "言語・軽減を選び替えた（朱の筆の下線を払う音・2 種を交互）",
+    "key": "次へ・戻る・一時停止など（木の札を叩く・3 種を順に）",
+    "send": "この設定を送る（紙が滑って渡る）",
+    "stamp": "反映の判子（印が押される瞬間）",
+    "screen-on": "博士が闇から現れる（暗い息とフィルムのパチつき）",
+    "chapter": "章の切り替え（調書をめくる・3 種を順に）",
+    "signal-cut": "説明の終わり（砂嵐 → 線へ吸い込まれる → 闇の中の響き・signal-cut.js と同じ時刻）",
+}
 
-
-# 試聴の並び（秒・名前）。タブレットで実際に起きる順と間。判子は印が押される 0.51 秒後に置く
+# 試聴の並び（秒・名前）。タブレットで実際に起きる順と間
 PREVIEW = [
     (0.3, "title-in"), (4.0, "title-out"),
     (6.0, "choice"), (6.8, "choice"), (8.0, "key"),
     (9.5, "choice"), (10.4, "choice"), (11.6, "key"),
-    (13.0, "send"), (14.5 + 0.51, "stamp"),
+    (13.0, "send"), (14.5 + STAMP_IMPACT_MS / 1000, "stamp"),
     (17.0, "screen-on"), (20.0, "chapter"), (23.0, "chapter"),
     (26.0, "signal-cut"),
 ]
 
 
-def write_preview(path: Path, manifest: dict) -> None:
+def measure(y: np.ndarray) -> dict:
+    return {
+        "sec": round(len(y) / SR, 3),
+        "lufs": round(sk.lufs(y), 1),
+        "truePeakDb": round(sk.true_peak_db(y), 1),
+        "speakerDb": round(sk.speaker_loss_db(y), 1),
+    }
+
+
+def write_preview(path: Path, rendered: dict) -> None:
     out = np.zeros(int(30.0 * SR))
     turns: dict[str, int] = {}
     for at, name in PREVIEW:
-        files = manifest["sounds"][name]["files"]
-        entry = files[turns.get(name, 0) % len(files)]
+        files = rendered[name]
+        y = files[turns.get(name, 0) % len(files)]
         turns[name] = turns.get(name, 0) + 1
-        y = mono(sk.read_wav(str(OUT / entry["file"]))[0]) * 10 ** (entry["gainDb"] / 20)
         start = int(at * SR)
         out[start: start + len(y)] += y[: len(out) - start]
     path.parent.mkdir(parents=True, exist_ok=True)
     sk.write_wav(str(path), out, mono=True)
-    print(f"preview {path}  ({', '.join(f'{at:g}s {n}' for at, n in PREVIEW)})")
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    print(f"preview {path}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="書かずに測るだけ")
-    parser.add_argument("--preview", help="人が聴く 1 本（画面の順に並べ、表の大きさで鳴らす）の書き出し先")
+    parser.add_argument("--preview", help="人が聴く 1 本（画面の順に並べる）の書き出し先")
     args = parser.parse_args()
 
+    # 砂嵐の部分だけは合成音の線で先に測る（全体は sound-lint が見る）
+    _, head = signal_cut()
+    assert sk.tone_purity(head) <= 0.60, f"砂嵐に発振器が居る（純度 {sk.tone_purity(head):.2f}）"
+    assert sk.tonality_db(head) <= 25.0, f"砂嵐に突出したトーン（{sk.tonality_db(head):.1f}dB）"
+
     manifest = {
-        "version": 1,
-        "note": "tools/make-tablet-sounds.py が書く。手で直さない。gainDb は鳴らす側が掛ける（素材の音量は触っていない）",
+        "version": 2,
+        "note": "tools/make-tablet-sounds.py が計算で書く。本編（Quest）の音は使わない（LEDGER 0267）。手で直さない",
         "voiceLufs": VOICE_LUFS,
         "sounds": {},
     }
-    for key, (names, target, purpose) in COPIES.items():
+    rendered: dict[str, list[np.ndarray]] = {}
+    for name, entries in SOUNDS.items():
         files = []
-        for name in names:
-            y = read(name)
-            info = measure(name, y)
-            gain = round(target - info["lufs"], 2)
-            files.append({"file": f"{name}.wav", "gainDb": gain, "sourceLufs": info["lufs"], "sec": info["sec"]})
+        rendered[name] = []
+        for file, make in entries:
+            y = make()
+            info = measure(y)
+            assert info["truePeakDb"] <= PEAK_DB + 0.05, f"{file} の尖頭 {info['truePeakDb']}dBTP"
+            rendered[name].append(y)
+            files.append({"file": file, "gainDb": 0.0, "sourceLufs": info["lufs"], "sec": info["sec"]})
             if not args.check:
-                shutil.copyfile(SRC / f"{name}.wav", OUT / f"{name}.wav")
-                assert sha256(SRC / f"{name}.wav") == sha256(OUT / f"{name}.wav")
-        manifest["sounds"][key] = {"purpose": purpose, "targetLufs": target, "files": files}
-        listed = ", ".join("%s (%+.1fdB)" % (f["file"], f["gainDb"]) for f in files)
-        print(f"{key:11s} {target:6.1f} LUFS  {listed}")
-
-    for key, fn, file in (("stamp", stamp, "sfx_tablet_stamp.wav"), ("signal-cut", signal_cut, "sfx_tablet_signal_cut.wav")):
-        y = fn()
-        info = measure(key, y)
-        print(f"{key:11s} {SYNTH_TARGET[key]:6.1f} LUFS  {file}  {info}")
-        assert info["truePeakDb"] <= PEAK_DB + 0.05, f"{key} の尖頭 {info['truePeakDb']}dBTP"
-        if not args.check:
-            sk.write_wav(str(OUT / file), y, mono=True)
-        manifest["sounds"][key] = {"purpose": {"stamp": "反映の判子（印が押される瞬間）",
-                                              "signal-cut": "説明の終わり（通信が切れる・signal-cut.js と同じ時刻）"}[key],
-                                   "targetLufs": SYNTH_TARGET[key],
-                                   "files": [{"file": file, "gainDb": 0.0, "sourceLufs": info["lufs"], "sec": info["sec"]}]}
-
-    if args.preview:
-        write_preview(Path(args.preview), manifest)
+                sk.write_wav(str(OUT / file), y, mono=True)
+            print(f"{name:11s} {file:26s} {info}")
+        manifest["sounds"][name] = {"purpose": PURPOSE[name], "files": files}
 
     loudest = max(f["sourceLufs"] + f["gainDb"] for s in manifest["sounds"].values() for f in s["files"])
     assert loudest < VOICE_LUFS, f"博士の声（{VOICE_LUFS}）より大きい音がある: {loudest}"
+    if args.preview:
+        write_preview(Path(args.preview), rendered)
     if not args.check:
         path = OUT / "tablet-sounds.json"
         tmp = path.with_suffix(".json.tmp")

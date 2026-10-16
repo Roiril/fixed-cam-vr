@@ -28,6 +28,26 @@ test('画面が鳴らす名前は全部表にあり、表の素材は全部同�
   }
 });
 
+test('本編（Quest）の音を 1 本も使っていない（LEDGER 0267）', () => {
+  const crypto = require('node:crypto');
+  const digest = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const mainDir = path.join(root, 'Assets', 'Resources', 'Sound');
+  const main = new Set(fs.readdirSync(mainDir).filter((f) => f.endsWith('.wav')).map((f) => digest(path.join(mainDir, f))));
+  const mainNames = new Set(fs.readdirSync(mainDir).filter((f) => f.endsWith('.wav')));
+  for (const sound of Object.values(manifest.sounds)) {
+    for (const entry of sound.files) {
+      assert.equal(mainNames.has(entry.file), false, `本編と同じ名前: ${entry.file}`);
+      assert.equal(main.has(digest(path.join(web, 'asset', entry.file))), false, `本編の音と同じ中身: ${entry.file}`);
+    }
+  }
+  const maker = fs.readFileSync(path.join(root, 'tools', 'make-tablet-sounds.py'), 'utf8');
+  // 説明文の言及は数えない。読むコード（read_wav・パスの組み立て）だけを見る
+  assert.equal(/read_wav\(|["']Resources["']|Resources\/Sound["']/.test(maker), false, '作る道具が本編の音を読んでいる');
+  // 同梱の音の置き場に、本編から複写した音が残っていない
+  const stray = fs.readdirSync(path.join(web, 'asset')).filter((f) => mainNames.has(f));
+  assert.deepEqual(Array.from(stray), [], `本編の音が同梱されたまま: ${stray.join(', ')}`);
+});
+
 test('どの音も博士の声より小さい', () => {
   for (const [name, sound] of Object.entries(manifest.sounds)) {
     for (const entry of sound.files) {
