@@ -147,6 +147,21 @@ function testReducedMotion() {
   assert.deepEqual(runtime.timerDelays(), [], '動きを減らす設定では資料と案内を即時に切り替える');
 }
 
+function testReferenceCancelKeepsCompletion() {
+  const runtime = createRuntime();
+  let completed = 0;
+  runtime.api.holdThen({ scene: 'wear-complete', delayMs: 1210, onComplete: () => { completed += 1; } });
+  // 状態の定期取得が資料を隠し直すたびに呼ぶ取消。終わりの待ちは残す（2026-10-16 実機で説明が止まった）
+  runtime.api.cancelReference('reference-hidden');
+  runtime.api.presentReference({ scene: 'wear', initial: true, sound: false, onStart() {} });
+  runtime.runDelay(1210);
+  assert.equal(completed, 1, '資料の取消では終わりの待ちを消さない');
+  runtime.api.holdThen({ scene: 'wear-complete', delayMs: 1210, onComplete: () => { completed += 1; } });
+  runtime.api.cancel('controls');
+  assert.equal(runtime.timerDelays().includes(1210), false, '一時停止の取消では終わりの待ちも消す');
+  assert.equal(completed, 1);
+}
+
 (async () => {
   await testPresentationAndSignal();
   console.log('ok - pending取消・資料交換・実信号RMS・再描画の重複防止');
@@ -156,7 +171,9 @@ function testReducedMotion() {
   console.log('ok - 消音でも資料は表示する');
   testReducedMotion();
   console.log('ok - prefers-reduced-motionでは遷移待ちを置かない');
-  console.log('4 tests passed');
+  testReferenceCancelKeepsCompletion();
+  console.log('ok - 資料の取消は終わりの待ちを残し、一時停止の取消は消す');
+  console.log('5 tests passed');
 })().catch((error) => {
   console.error(error.stack || error);
   process.exitCode = 1;

@@ -19,6 +19,9 @@
   let lastPresentedScene = '';
   let completionTimer = 0;
   let generation = 0;
+  // 終わりの待ち（holdThen）は資料の札と分ける。資料を隠すたびに終わりの待ちまで消え、
+  // 説明が装着の案内へ進まず止まった（2026-10-16 実機・状態の定期取得が 2 秒ごとに資料を隠し直す）
+  let completionGeneration = 0;
   let muted = false;
   let referenceDisplayCount = 0;
   let soundPlayCount = 0;
@@ -152,8 +155,19 @@
     return true;
   }
 
+  // 資料の提示と音だけを取り消す。終わりの待ちは残す
+  function cancelReference(reason = 'cancel') {
+    generation += 1;
+    if (referenceTimer) host.clearTimeout(referenceTimer);
+    referenceTimer = 0;
+    pendingScene = '';
+    stopSound(reason);
+    record('reference-cancel', { reason });
+  }
+
   function cancel(reason = 'cancel') {
     generation += 1;
+    completionGeneration += 1;
     if (referenceTimer) host.clearTimeout(referenceTimer);
     if (completionTimer) host.clearTimeout(completionTimer);
     referenceTimer = 0;
@@ -191,15 +205,15 @@
   }
 
   function holdThen({ scene, delayMs = 220, onComplete }) {
-    generation += 1;
-    const token = generation;
+    completionGeneration += 1;
+    const token = completionGeneration;
     if (completionTimer) host.clearTimeout(completionTimer);
     completionTimer = 0;
     const delay = reducedMotion.matches ? 0 : Math.max(0, delayMs);
     record('completion-hold', { scene, delayMs: delay });
     const complete = () => {
       completionTimer = 0;
-      if (token !== generation || host.document?.hidden) return;
+      if (token !== completionGeneration || host.document?.hidden) return;
       record('completion-present', { scene });
       onComplete?.();
     };
@@ -245,6 +259,7 @@
     presentReference,
     holdThen,
     cancel,
+    cancelReference,
     setMuted,
     reset,
     snapshot,

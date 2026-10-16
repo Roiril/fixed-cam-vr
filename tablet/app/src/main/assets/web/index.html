@@ -2389,7 +2389,7 @@
           renderBriefingControls();
         };
         image.onerror = () => {
-          presentationController.cancel('image-error');
+          presentationController.cancelReference('image-error');
           image.dataset.presentationSource = '';
           image.classList.remove('is-visible');
           state.briefing.imageFailed = true;
@@ -2512,7 +2512,7 @@
       figure.hidden = false;
       return;
     }
-    presentationController.cancel('reference-hidden');
+    presentationController.cancelReference('reference-hidden');
     if (figure.hidden || reducedMotion.matches) {
       figure.hidden = true;
       figure.classList.remove('is-leaving', 'is-presented');
