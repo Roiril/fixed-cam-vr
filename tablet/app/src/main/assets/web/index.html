@@ -40,8 +40,10 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  html { min-height: 100%; background: var(--bg); }
-  body { margin: 0; color: var(--ink); font: 16px/1.6 var(--serif); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; overflow: hidden; }
+  html { min-height: 100%; background: var(--bg); -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; color: var(--ink); font: 16px/1.6 var(--serif); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; overflow: hidden;
+    /* タップで薄青の強調や選択範囲が出ないようにする（2026-10-16）。文字を打つ欄は無い */
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   button, input { font: inherit; }
   button { color: inherit; cursor: pointer; }
   button, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
@@ -255,7 +257,7 @@
   #briefingResume::before { width: 64px; height: 64px; border-color: var(--red); background-color: rgba(168,50,57,.32); background-size: 24px 24px; }
   #briefingPrevious { grid-column: 2; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M12.5 4 6.5 10l6 6' fill='none' stroke='%23f2ecdf' stroke-width='1.4'/%3E%3C/svg%3E"); }
   #briefingNext { grid-column: 4; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M7.5 4l6 6-6 6' fill='none' stroke='%23f2ecdf' stroke-width='1.4'/%3E%3C/svg%3E"); }
-  #briefingRestart { grid-column: 1; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4 3.5v3.3h3.3' fill='none' stroke='%23f2ecdf' stroke-width='1.3'/%3E%3C/svg%3E"); }
+  #briefingToTitle { grid-column: 1; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M3.5 9.5 10 4l6.5 5.5M5.5 8v8h9V8' fill='none' stroke='%23f2ecdf' stroke-width='1.3'/%3E%3C/svg%3E"); }
   #briefingSettings { grid-column: 5; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M3 5h14M3 10h14M3 15h14' stroke='%23f2ecdf' stroke-width='1.1'/%3E%3Ccircle cx='7' cy='5' r='1.8' fill='%23090807' stroke='%23f2ecdf'/%3E%3Ccircle cx='13' cy='10' r='1.8' fill='%23090807' stroke='%23f2ecdf'/%3E%3Ccircle cx='9' cy='15' r='1.8' fill='%23090807' stroke='%23f2ecdf'/%3E%3C/svg%3E"); }
   .briefing-replay { grid-column: 3; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4 3.5v3.3h3.3' fill='none' stroke='%23f2ecdf' stroke-width='1.3'/%3E%3C/svg%3E"); }
   .briefing-panel-status { grid-column: 1 / -1; grid-row: 1; margin: 0 0 4px; color: rgba(194,184,168,.6); font: 11px/1.4 var(--sans); letter-spacing: .16em; text-align: center; font-variant-numeric: tabular-nums; }
@@ -305,7 +307,7 @@
     .stage.has-reference:not(.is-equipment) .portrait { top: 34%; transform: none; -webkit-mask-image: linear-gradient(180deg,transparent 0,#000 22%); mask-image: linear-gradient(180deg,transparent 0,#000 22%); }
     .equip-ico { width: 84px; }
     .briefing-controls { grid-template-columns: repeat(3,auto); }
-    #briefingRestart { grid-column: 1; grid-row: 3; } #briefingSettings { grid-column: 3; grid-row: 3; }
+    #briefingToTitle { grid-column: 1; grid-row: 3; } #briefingSettings { grid-column: 3; grid-row: 3; }
     #briefingPrevious { grid-column: 1; } #briefingResume { grid-column: 2; } #briefingNext { grid-column: 3; }
     /* 狭い画面では右上に置くと章番号に重なる。盤の下の行へ移す。ボタン名は折り返す（仏語ではみ出した） */
     #briefingStaff { position: static; grid-column: 1 / -1; grid-row: 5; justify-self: center; margin-top: 4px; }
@@ -607,7 +609,7 @@
       <button class="briefing-control" id="briefingToggle" data-action="toggle" type="button" aria-pressed="false" hidden>自動送り：切</button>
       <p class="briefing-panel-status" id="briefingPanelStatus"></p>
       <button class="briefing-control" id="briefingResume" type="button">再開</button>
-      <button class="briefing-control" id="briefingRestart" type="button">この文を最初から</button>
+      <button class="briefing-control" id="briefingToTitle" type="button">タイトルに戻る</button>
       <button class="briefing-control" id="briefingPrevious" type="button">前の文</button>
       <button class="briefing-control" id="briefingNext" type="button">次の文</button>
       <button class="briefing-control" id="briefingSettings" type="button">言語・軽減を変更</button>
@@ -794,7 +796,7 @@
         loading: ['説明資料を準備しています', '設定は反映されました。準備が整うまでお待ちください'],
         error: ['説明資料を読み込めません', '再読み込みしてください。続く場合はスタッフへお声がけください'],
         retry: '説明資料を再読み込み', autoOn: '自動送り：入', autoOff: '自動送り：切', previous: '前の文',
-        next: '次の文', settings: '言語・軽減を変更', replay: 'もう一度説明を見る', resume: '再開', restart: 'この文を最初から', staff: 'スタッフ専用（長押し）', hold: '1.5秒長押ししてください', subtitles: '字幕で続ける', controls: '説明の操作', pause: '一時停止して説明の操作を開く', preview: 'スタッフ確認モード',
+        next: '次の文', settings: '言語・軽減を変更', replay: 'もう一度説明を見る', resume: '再開', toTitle: 'タイトルに戻る', staff: 'スタッフ専用（長押し）', hold: '1.5秒長押ししてください', subtitles: '字幕で続ける', controls: '説明の操作', pause: '一時停止して説明の操作を開く', preview: 'スタッフ確認モード',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
       equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'Meta Questを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエスト内に表示される指示に従ってください。', handoff: 'タブレットをスタッフへ返してください', handoffDetail: '確認後にスタッフが装着をお手伝いします', waiting: 'スタッフの確認をお待ちください。', interrupted: 'スタッフが機器を確認しています。このままお待ちください。', recovery: 'Quest の通信が戻るまでスタッフにお預けください。' },
@@ -840,7 +842,7 @@
         loading: ['Preparing the briefing', 'The settings are applied. Please wait while the material loads'],
         error: ['The briefing could not be loaded', 'Reload the briefing. If this continues, ask a member of staff'],
         retry: 'Reload briefing', autoOn: 'Auto advance: On', autoOff: 'Auto advance: Off', previous: 'Previous sentence',
-        next: 'Next sentence', settings: 'Change language / reduced horror', replay: 'Watch the briefing again', resume: 'Resume', restart: 'Restart this sentence', staff: 'Staff only (press and hold)', hold: 'Press and hold for 1.5 seconds', subtitles: 'Continue with subtitles', controls: 'Briefing controls', pause: 'Pause and open briefing controls', preview: 'Staff preview mode',
+        next: 'Next sentence', settings: 'Change language / reduced horror', replay: 'Watch the briefing again', resume: 'Resume', toTitle: 'Back to title', staff: 'Staff only (press and hold)', hold: 'Press and hold for 1.5 seconds', subtitles: 'Continue with subtitles', controls: 'Briefing controls', pause: 'Pause and open briefing controls', preview: 'Staff preview mode',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
       equipment: { title: 'Get ready to begin', next: 'Equipment instructions', quest: 'Put on the Meta Quest headset.', headphones: 'Put on the headphones.', controller: 'Hold the controller in your left hand.', followup: 'Once you are ready, follow the instructions displayed inside the Quest headset.', handoff: 'Please return the tablet to a member of staff', handoffDetail: 'After checking, staff will help you put on the equipment', waiting: 'Please wait while staff checks the equipment.', interrupted: 'Staff are checking the equipment. Please wait here.', recovery: 'Please leave the tablet with staff until the Quest reconnects.' },
@@ -886,7 +888,7 @@
         loading: ['Préparation des explications', 'Les réglages sont appliqués. Veuillez patienter pendant le chargement'],
         error: ['Impossible de charger les explications', 'Rechargez les documents. Si le problème persiste, appelez un membre du personnel'],
         retry: 'Recharger les explications', autoOn: 'Défilement auto : oui', autoOff: 'Défilement auto : non', previous: 'Phrase précédente',
-        next: 'Phrase suivante', settings: 'Modifier langue / horreur atténuée', replay: 'Revoir les explications', resume: 'Reprendre', restart: 'Reprendre cette phrase au début', staff: 'Personnel uniquement (maintenir)', hold: 'Maintenez pendant 1,5 seconde', subtitles: 'Continuer avec les sous-titres', controls: 'Commandes des explications', pause: 'Mettre en pause et ouvrir les commandes', preview: 'Mode de vérification du personnel',
+        next: 'Phrase suivante', settings: 'Modifier langue / horreur atténuée', replay: 'Revoir les explications', resume: 'Reprendre', toTitle: 'Retour au titre', staff: 'Personnel uniquement (maintenir)', hold: 'Maintenez pendant 1,5 seconde', subtitles: 'Continuer avec les sous-titres', controls: 'Commandes des explications', pause: 'Mettre en pause et ouvrir les commandes', preview: 'Mode de vérification du personnel',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
       equipment: { title: 'Préparez votre équipement', next: 'Consignes d’équipement', quest: 'Mettez le casque Meta Quest.', headphones: 'Mettez le casque audio.', controller: 'Tenez la manette dans votre main gauche.', followup: 'Une fois équipé, suivez les instructions affichées dans le casque Quest.', handoff: 'Rendez la tablette au personnel', handoffDetail: 'Après vérification, le personnel vous aidera à vous équiper', waiting: 'Veuillez patienter pendant la vérification du personnel.', interrupted: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', recovery: 'Laissez la tablette au personnel jusqu’au rétablissement du Quest.' },
@@ -1485,7 +1487,7 @@
     $('briefingNext').setAttribute('aria-label', t.briefing.next);
     $('briefingSettings').textContent = t.briefing.settings;
     $('briefingResume').textContent = t.briefing.resume;
-    $('briefingRestart').textContent = t.briefing.restart;
+    $('briefingToTitle').textContent = t.briefing.toTitle;
     $('briefingStaff').textContent = t.briefing.staff;
     $('briefingContinueSubtitles').textContent = t.briefing.subtitles;
     $('briefingControls').setAttribute('aria-label', t.briefing.controls);
@@ -2000,6 +2002,7 @@
     return true;
   }
 
+  // 素材の再読み込み後に今の文を頭から流し直す（操作盤のボタンからは呼ばない）。
   function restartBriefingCue() {
     if (state.briefing.ended) return;
     state.briefing.pauseReasons.delete('controls');
@@ -2012,6 +2015,26 @@
     setBriefingAuto(true);
     startBriefingMediaWindow(false);
     renderBriefingControls();
+  }
+
+  // 説明の途中からタイトル画面へ戻り、言語選択から始め直す（2026-10-16 ユーザー指示）。
+  // 通し確認は接続を見ないまま続ける。来場者は送った設定を保つので、同じ Quest の説明段なら
+  // タイトルから再び始められ、送り直した設定で説明を最初から流す。
+  // スタッフ確認モード（通し確認ではない）はタイトルから送信に進めないので、従来どおりスタッフ画面へ返す。
+  function returnToTitleFromBriefing() {
+    if (state.view !== 'briefing') return;
+    if (state.staffPreview && !state.bypass) { returnToSettings(); return; }
+    clearSavedProgress();
+    stopBriefingMediaWindow();
+    changeVisual(() => {
+      resetBriefingSession();
+      state.ui = 'idle';
+      state.settingsStep = 'language';
+      state.titleTransitioning = false;
+      setFormDisabled(false);
+      setSurface('title', $('titleStart'));
+      render();
+    });
   }
 
   function renderBriefingControls() {
@@ -2053,11 +2076,11 @@
     $('briefingSettings').hidden = false;
     $('subtitle').hidden = complete;
     $('briefingResume').hidden = complete;
-    $('briefingRestart').hidden = complete;
+    $('briefingToTitle').hidden = complete;
     $('briefingStaff').hidden = complete;
     const externalPause = Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls');
     $('briefingResume').disabled = externalPause;
-    $('briefingRestart').disabled = externalPause;
+    $('briefingToTitle').disabled = externalPause;
     $('briefingPrevious').disabled ||= externalPause;
     $('briefingNext').disabled ||= externalPause;
     $('briefingStaff').disabled = false;
@@ -4256,7 +4279,7 @@
   $('briefingPauseSurface').addEventListener('click', () => { moveBriefing(1, 'tap'); });
   $('briefingPauseBtn').addEventListener('click', openBriefingControls);
   $('briefingResume').addEventListener('click', resumeBriefing);
-  $('briefingRestart').addEventListener('click', restartBriefingCue);
+  $('briefingToTitle').addEventListener('click', returnToTitleFromBriefing);
   $('briefingPrevious').addEventListener('click', () => {
     if (Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls')) return;
     state.briefing.pauseReasons.delete('controls');

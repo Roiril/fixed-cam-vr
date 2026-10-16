@@ -1549,9 +1549,6 @@ test('通常説明のタップは次の文へ進み、右上の一時停止だ�
   assert.deepEqual(seeks, [], '再開で currentTime を書き換えている');
   assert.equal(media.__t, 9.9);
   Object.defineProperty(media, 'currentTime', { value: 9.9, writable: true, configurable: true });
-  elements.get('briefingPauseBtn').dispatch('click');
-  elements.get('briefingRestart').dispatch('click');
-  assert.equal(media.paused, false);
 });
 
 test('章の遷移中でも次の入力を予約せず現在位置からすぐ進める', () => {
@@ -1644,6 +1641,67 @@ test('通し確認は接続を見ずにタイトルから装着の案内まで�
   assert.equal(state.view, 'title');
   assert.equal(elements.get('bypassBadge').hidden, true);
   state.connection = 'online';
+});
+
+test('操作盤に「この文を最初から」は無く、通し確認ではタイトルへ戻って最初から通せる', async () => {
+  assert.doesNotMatch(html, /この文を最初から/);
+  prepareBriefing(clone(briefing));
+  state.view = 'title';
+  state.sent = null;
+  state.staffPreview = false;
+  elements.get('staff').open = true;
+  state.connection = 'offline';
+  state.status = { staffSetup: { stage: 'collect' }, portalSessionId: 'x' };
+  runtime.startBypass();
+  state.view = 'edit';
+  state.settingsStep = 'relief';
+  runtime.confirmSettings();
+  const send = runtime.send();
+  await flushPromises();
+  timers.runOne(900);
+  await send;
+  runtime.advanceFromResult();
+  assert.equal(state.view, 'briefing');
+  runtime.openBriefingControls();
+  const toTitle = elements.get('briefingToTitle');
+  assert.equal(toTitle.textContent, 'タイトルに戻る');
+  assert.equal(toTitle.hidden, false);
+  assert.equal(toTitle.disabled, false);
+  toTitle.dispatch('click');
+  timers.runAll?.();
+  assert.equal(state.view, 'title');
+  assert.equal(state.bypass, true, 'タイトルへ戻っても通し確認のまま');
+  assert.equal(state.briefing.triggered, false, 'タイトルから送り直すと説明をもう一度始められる');
+  assert.equal(elements.get('titleStart').disabled, false);
+  runtime.beginFromTitle();
+  timers.runAll?.();
+  assert.equal(state.view, 'edit');
+  assert.equal(state.settingsStep, 'language');
+  elements.get('staff').open = true;
+  runtime.startBypass();
+  assert.equal(state.bypass, false);
+  state.connection = 'online';
+});
+
+test('来場者の説明からタイトルへ戻ると、同じQuestの説明段なら言語選択から始め直せる', () => {
+  prepareBriefing(clone(briefing)); state.staffPreview = false; state.bypass = false; state.ui = 'applied';
+  const status = { ...clone(validStatus), questTick: 830, lang: 'ja', relief: false, appliedSeq: 71, received: 71,
+    staffSetup: { stage: 'explanation', reason: 'explanation', positionConfirmed: true } };
+  state.status = clone(status);
+  state.sent = { lang: 'ja', relief: false, seq: 71, portalSessionId: status.portalSessionId, targetId: runtime.activeQuest() };
+  runtime.observeQuestTick(status);
+  elements.get('staff').open = false;
+  runtime.openBriefingControls();
+  elements.get('briefingToTitle').dispatch('click');
+  timers.runAll?.();
+  assert.equal(state.view, 'title');
+  assert.equal(state.ui, 'idle');
+  assert.equal(runtime.visitorSettingsAccess().allowed, true);
+  assert.equal(elements.get('titleStart').disabled, false);
+  runtime.beginFromTitle();
+  timers.runAll?.();
+  assert.equal(state.view, 'edit');
+  assert.equal(state.settingsStep, 'language');
 });
 
 test('スタッフ入口は短押し・領域外・複数指で取り消し、異常中も1.5秒長押しだけを受け付ける', () => {
