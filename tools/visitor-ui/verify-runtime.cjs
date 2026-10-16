@@ -1937,13 +1937,13 @@ test('博士の音声確認は閉じる操作とタブ非表示で止まり、�
 });
 
 
-test('新APIは10文後に返却を案内し、Questの同一revision確認後だけ装着2文へ進む', async () => {
+test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内し、Questの同一revision確認後だけ装着の準備を出す', async () => {
   prepareBriefing(clone(briefing));
   state.staffPreview = false; state.ui = 'sent';
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
-  const preWearCount = briefing.scenes.slice(0, wearIndex).reduce((count, scene) => count + scene.cues.ja.length, 0);
+  const lastIndex = briefing.scenes.length - 1;
   const totalCount = briefing.scenes.reduce((count, scene) => count + scene.cues.ja.length, 0);
-  assert.equal(preWearCount, 10);
+  assert.equal(wearIndex, lastIndex, '装着の2文が説明の最後にある');
   assert.equal(briefing.scenes[wearIndex].cues.ja.length, 2);
   assert.equal(totalCount, 12);
   const status = { ...clone(validStatus), questTick: 50, lang: 'ja', relief: false,
@@ -1961,180 +1961,171 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
     return { ok: true, status: 200, json: async () => resource === './tablet/pulse' ? { ok: true } : clone(status) };
   };
   fetchHandler = onlineFetch;
-  state.briefing.sceneIndex = wearIndex - 1;
-  for (const [lang, label] of [['ja', 'スタッフへ返す'], ['en', 'Return to staff'], ['fr', 'Remettre au personnel']]) {
-    state.lang = lang;
-    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex - 1].cues[lang].length - 1;
+  const presentation = context.window.BriefingPresentation;
+  const originalHold = presentation.holdThen;
+  const cuts = [];
+  presentation.holdThen = function (options) { cuts.push(options.scene); return originalHold.call(this, options); };
+  try {
+    // report の最終文の次は wear の 1 文目。返却で割り込まない。
+    state.briefing.sceneIndex = wearIndex - 1;
+    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex - 1].cues.ja.length - 1;
     runtime.renderBriefingScene();
-    assert.equal(elements.get('briefingNext').textContent, label);
-    const explanationTotal = state.briefing.data.scenes.slice(0, wearIndex)
-      .reduce((total, scene) => total + scene.cues[lang].length, 0);
-    const expectedEnd = String(explanationTotal).padStart(2, '0');
-    assert.ok(elements.get('sceneCounter').textContent.endsWith(`${expectedEnd} / ${expectedEnd}`), '調査説明の進み具合に確認後の装着2文を含めない');
-  }
-  state.lang = 'ja';
-  runtime.closeStaffScreen();
-  assert.equal(elements.get('staff').open, false);
-  runtime.moveBriefing(1); await flushPromises();
-  assert.equal(state.briefing.handoffReady, true);
-  assert.equal(state.briefing.wearStarted, false);
-  assert.equal(state.briefing.ended, false);
-  assert.equal(posts.at(-1).body.briefingCompleted, true);
-  assert.equal(posts.at(-1).body.staffConfirmed, false);
-  assert.equal(runtime.canShowEquipmentGuidance(), false);
-  assert.equal(elements.get('equipmentSteps').hidden, true);
-  assert.equal(elements.get('briefingTitle').textContent, 'タブレットをスタッフへ返してください');
-  assert.equal(elements.get('equipmentFollowup').textContent, '確認後にスタッフが装着をお手伝いします');
-  for (const [lang, handoff] of [['ja', 'タブレットをスタッフへ返してください'], ['en', 'Please return the tablet to a member of staff'], ['fr', 'Rendez la tablette au personnel']]) {
-    state.lang = lang; runtime.renderBriefingScene();
-    assert.equal(elements.get('briefingTitle').textContent, handoff);
-  }
-  state.lang = 'ja';
-  assert.equal(elements.get('staff').open, false, '返却画面ではスタッフ画面を自動で開かない');
-  const staffEntry = elements.get('staffToggle');
-  staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 70, button: 0 });
-  staffEntry.dispatch('pointerup', { pointerId: 70 });
-  assert.equal(elements.get('staff').open, false, '短押しではスタッフ画面を開かない');
-  assert.match(elements.get('staffLabel').textContent, /1\.5秒長押し/);
-  staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 71, button: 0 });
-  timers.runOne(1500);
-  assert.equal(elements.get('staff').open, true, '返却画面の長押しでスタッフ画面を開く');
-  assert.equal(elements.get('staff').dataset.state, 'confirm');
-  assert.equal(elements.get('staffNowTitle').textContent, '装着の前に確認');
-  assert.equal(elements.get('staffHandback').hidden, false, '返却の案内を3言語で最上段に出す');
-  assert.match(html, /タブレットをスタッフにお渡しください/);
-  assert.match(html, /Please hand the tablet to a member of staff\./);
-  assert.match(html, /Veuillez remettre la tablette à un membre du personnel\./);
-  assert.equal(elements.get('staffCycle3').getAttribute('aria-current'), 'step');
-  assert.equal(elements.get('staffPrepareBtn').hidden, false);
-  assert.equal(elements.get('staffPrepareBtn').disabled, false);
-  assert.equal(elements.get('staffNowItem0Text').textContent, '言語：日本語');
-  assert.equal(elements.get('staffNowItem1Text').textContent, 'ホラー軽減：なし');
-  assert.equal(elements.get('staffNowItem0').dataset.tone, 'ok');
-  const prepare = elements.get('staffPrepareBtn');
-  assert.equal(prepare.dispatch('click'), undefined, 'クリックだけでは進めない');
-  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 7, button: 0 });
-  assert.equal(prepare.capturedPointer, 7);
-  assert.equal(prepare.style['--hold'], '0.02', '押した直後から満ち始める');
-  prepare.dispatch('pointerup', { pointerId: 7 });
-  assert.equal(pendingDelays().includes(1200), false, '離すと取り消す');
-  assert.equal(prepare.style['--hold'], '0');
-  assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 0);
-  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 8, button: 0 });
-  prepare.dispatch('pointerdown', { isPrimary: false, pointerId: 9, button: 0 });
-  assert.equal(pendingDelays().filter(delay => delay === 1200).length, 0, '複数指になったら長押しを取り消す');
-  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 10, button: 0 });
-  timers.runOne(1200); await runtime.staffAction();
-  assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 1, '長押しの完了で一度だけ送る');
-  assert.equal(elements.get('staffPrepareBtn').disabled, true);
-  assert.equal(elements.get('staffNowBody').textContent, 'クエストの確認を待っています。');
-  const request = posts.at(-1).body;
-  assert.equal(state.briefing.wearStarted, false, 'HTTP受理だけでは装着音声へ進めない');
-  status.briefing = { seq: request.seq, revision: request.briefingRevision - 1, tabletSessionId: runtime.tabletSessionId,
-    completed: true, staffConfirmed: true };
-  status.staffSetup = { stage: 'handedOff', reason: '', positionConfirmed: true };
-  status.questTick++; await runtime.poll();
-  assert.equal(state.briefing.wearStarted, false, '古いrevisionでは装着音声へ進めない');
-  assert.equal(elements.get('staff').open, true, '古いrevisionではスタッフ画面を閉じない');
-  status.briefing.revision = request.briefingRevision;
-  status.questTick++; await runtime.poll();
-  assert.equal(state.briefing.wearStarted, true);
-  assert.equal(elements.get('staff').open, false, 'Questの受理でスタッフ画面を閉じて来場者の画面へ戻す');
-  const media = runtime.getBriefingMedia();
-  assert.equal(media.paused, false, 'スタッフの装着確定が受理されたら追加タップなしで案内する');
-  assert.equal(elements.get('briefingControls').hidden, true);
-  assert.equal(state.briefing.mediaWindowActive, true);
-  assert.equal(state.briefing.sceneIndex, wearIndex);
-  assert.equal(state.briefing.cueIndex, 0);
-  assert.equal(state.briefing.ended, false);
-  assert.equal(elements.get('briefingNext').textContent, '次の文', '装着1文目から2文目へ進める');
-  assert.equal(elements.get('briefingPrevious').disabled, true, '確認後の装着1文目は前段へ戻さない');
-  state.briefing.lastMoveAt = 0; state.briefing.chapterChanging = false;
-  assert.equal(runtime.moveBriefing(-1), false);
-  assert.equal(state.briefing.sceneIndex, wearIndex);
-  assert.equal(runtime.canShowEquipmentGuidance(), false);
-  assert.equal(elements.get('equipmentSteps').hidden, true);
-  for (const [lang, label] of [['ja', '装着の案内へ'], ['en', 'Equipment instructions'], ['fr', 'Consignes d’équipement']]) {
-    state.lang = lang;
-    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues[lang].length - 1;
-    runtime.renderBriefingScene();
-    assert.equal(elements.get('briefingNext').textContent, label);
-  }
-  state.lang = 'ja'; state.briefing.cueIndex = 0; runtime.renderBriefingScene();
-
-  runtime.openBriefingControls();
-  const briefingStaff = elements.get('briefingStaff');
-  briefingStaff.dispatch('pointerdown', { isPrimary: true, pointerId: 72, button: 0 });
-  timers.runOne(1500);
-  assert.equal(elements.get('staff').dataset.state, 'wear');
-  assert.equal(elements.get('staffNowTitle').textContent, '装着を手伝う');
-  assert.equal(elements.get('staffNowItem3Text').textContent, 'ヘッドセットの中の案内に従います。体験者が X か Y を押して始めます');
-  assert.equal(elements.get('staffDoneBtn').hidden, false, '装着中は来場者の画面へ戻れる');
-  assert.equal(media.paused, true, 'スタッフ画面を開いている間は案内を止める');
-  elements.get('staffDoneBtn').dispatch('click');
-  assert.equal(elements.get('staff').open, false);
-  const playCount = media.playCount;
-  assert.match(elements.get('mediaMessage').textContent, /続きから/);
-  elements.get('briefingResume').dispatch('click');
-  assert.equal(media.playCount, playCount + 1);
-  assert.equal(state.briefing.wearStarted, true, '装着1文目の音声終了でスタッフ返却へ戻らない');
-  assert.equal(state.briefing.cueIndex, 0);
-
-  for (const [reason, stage] of [['camera', 'devices'], ['content', 'devices'], ['position', 'alignment']]) {
-    status.staffSetup.reason = reason; status.staffSetup.stage = stage; status.questTick++; await runtime.poll();
+    assert.equal(elements.get('briefingNext').textContent, '次の文', 'report の最終文ではまだ返さない');
+    runtime.closeStaffScreen();
+    state.briefing.lastMoveAt = 0; state.briefing.chapterChanging = false;
+    runtime.moveBriefing(1); await flushPromises(); timers.runAll?.(); await flushPromises();
+    assert.equal(state.briefing.sceneIndex, wearIndex, 'report の次は wear へ進む');
     assert.equal(state.briefing.cueIndex, 0);
-    assert.equal(runtime.getBriefingMedia().paused, true);
+    assert.equal(state.briefing.handoffReady, false);
+    assert.equal(state.briefing.ended, false);
+    assert.equal(cuts.length, 0, '説明の途中で砂嵐を出さない');
+    await runtime.pulse();
+    assert.equal(posts.at(-1).body.briefingCompleted, false, 'wear の再生中は説明完了を送らない');
+
+    for (const [lang, label] of [['ja', 'スタッフへ返す'], ['en', 'Return to staff'], ['fr', 'Remettre au personnel']]) {
+      state.lang = lang;
+      state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues[lang].length - 1;
+      runtime.renderBriefingScene();
+      assert.equal(elements.get('briefingNext').textContent, label, '最後の文で「スタッフへ返す」');
+      const total = String(state.briefing.data.scenes.reduce((sum, scene) => sum + scene.cues[lang].length, 0)).padStart(2, '0');
+      assert.ok(elements.get('sceneCounter').textContent.endsWith(`${total} / ${total}`), '進み具合は12文で1本');
+    }
+    state.lang = 'ja';
+    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues.ja.length - 1;
+    state.briefing.lastMoveAt = 0;
+    runtime.moveBriefing(1); await flushPromises();
+    assert.deepEqual(cuts, ['wear-complete'], '砂嵐は説明の最後の1回だけ');
+    assert.equal(state.briefing.ended, true);
+    assert.equal(state.briefing.handoffReady, true);
+    assert.equal(state.briefing.wearStarted, false);
+    assert.equal(posts.at(-1).body.briefingCompleted, true);
+    assert.equal(posts.at(-1).body.staffConfirmed, false);
+    assert.equal(runtime.canShowEquipmentGuidance(), false);
     assert.equal(elements.get('equipmentSteps').hidden, true);
-    assert.match(elements.get('equipmentStaffStatus').textContent, /機器を確認/);
-    status.staffSetup.reason = ''; status.staffSetup.stage = 'handedOff'; status.questTick++; await runtime.poll();
-    const beforeResume = runtime.getBriefingMedia().playCount;
-    assert.equal(state.briefing.cueIndex, 0);
-    assert.match(elements.get('mediaMessage').textContent, /続きから/);
-    elements.get('briefingResume').dispatch('click');
-    assert.equal(runtime.getBriefingMedia().playCount, beforeResume + 1);
+    assert.equal(elements.get('briefingTitle').textContent, 'タブレットをスタッフへ返してください');
+    assert.equal(elements.get('equipmentFollowup').textContent, '確認後にスタッフが装着をお手伝いします');
+    for (const [lang, handoff] of [['ja', 'タブレットをスタッフへ返してください'], ['en', 'Please return the tablet to a member of staff'], ['fr', 'Rendez la tablette au personnel']]) {
+      state.lang = lang; runtime.renderBriefingScene();
+      assert.equal(elements.get('briefingTitle').textContent, handoff);
+    }
+    state.lang = 'ja';
+    assert.equal(elements.get('staff').open, false, '返却画面ではスタッフ画面を自動で開かない');
+    const staffEntry = elements.get('staffToggle');
+    staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 70, button: 0 });
+    staffEntry.dispatch('pointerup', { pointerId: 70 });
+    assert.equal(elements.get('staff').open, false, '短押しではスタッフ画面を開かない');
+    assert.match(elements.get('staffLabel').textContent, /1\.5秒長押し/);
+    staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 71, button: 0 });
+    timers.runOne(1500);
+    assert.equal(elements.get('staff').open, true, '返却画面の長押しでスタッフ画面を開く');
+    assert.equal(elements.get('staff').dataset.state, 'confirm');
+    assert.equal(elements.get('staffNowTitle').textContent, '装着の前に確認');
+    assert.equal(elements.get('staffHandback').hidden, false, '返却の案内を3言語で最上段に出す');
+    assert.match(html, /タブレットをスタッフにお渡しください/);
+    assert.match(html, /Please hand the tablet to a member of staff\./);
+    assert.match(html, /Veuillez remettre la tablette à un membre du personnel\./);
+    assert.equal(elements.get('staffCycle3').getAttribute('aria-current'), 'step');
+    assert.equal(elements.get('staffPrepareBtn').hidden, false);
+    assert.equal(elements.get('staffPrepareBtn').disabled, false);
+    assert.equal(elements.get('staffNowItem0Text').textContent, '言語：日本語');
+    assert.equal(elements.get('staffNowItem1Text').textContent, 'ホラー軽減：なし');
+    assert.equal(elements.get('staffNowItem0').dataset.tone, 'ok');
+    const prepare = elements.get('staffPrepareBtn');
+    assert.equal(prepare.dispatch('click'), undefined, 'クリックだけでは進めない');
+    prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 7, button: 0 });
+    assert.equal(prepare.capturedPointer, 7);
+    assert.equal(prepare.style['--hold'], '0.02', '押した直後から満ち始める');
+    prepare.dispatch('pointerup', { pointerId: 7 });
+    assert.equal(pendingDelays().includes(1200), false, '離すと取り消す');
+    assert.equal(prepare.style['--hold'], '0');
+    assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 0);
+    prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 8, button: 0 });
+    prepare.dispatch('pointerdown', { isPrimary: false, pointerId: 9, button: 0 });
+    assert.equal(pendingDelays().filter(delay => delay === 1200).length, 0, '複数指になったら長押しを取り消す');
+    prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 10, button: 0 });
+    timers.runOne(1200); await runtime.staffAction();
+    assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 1, '長押しの完了で一度だけ送る');
+    assert.equal(elements.get('staffPrepareBtn').disabled, true);
+    assert.equal(elements.get('staffNowBody').textContent, 'クエストの確認を待っています。');
+    const request = posts.at(-1).body;
+    assert.equal(state.briefing.wearStarted, false, 'HTTP受理だけでは装着の準備へ進めない');
+    status.briefing = { seq: request.seq, revision: request.briefingRevision - 1, tabletSessionId: runtime.tabletSessionId,
+      completed: true, staffConfirmed: true };
+    status.staffSetup = { stage: 'handedOff', reason: '', positionConfirmed: true };
+    status.questTick++; await runtime.poll();
+    assert.equal(state.briefing.wearStarted, false, '古いrevisionでは装着の準備へ進めない');
+    assert.equal(elements.get('staff').open, true, '古いrevisionではスタッフ画面を閉じない');
+    assert.equal(elements.get('equipmentSteps').hidden, true);
+    status.briefing.revision = request.briefingRevision;
+    status.questTick++; await runtime.poll();
+    assert.equal(state.briefing.wearStarted, true);
+    assert.equal(elements.get('staff').open, false, 'Questの受理でスタッフ画面を閉じて来場者の画面へ戻す');
+    assert.equal(runtime.canShowEquipmentGuidance(), true);
+    assert.equal(elements.get('equipmentSteps').hidden, false, '受理したら追加タップなしで装着の準備を出す');
+    assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
+    assert.equal(cuts.length, 1, '受理の後に砂嵐を重ねない');
+
+    staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 72, button: 0 });
+    timers.runOne(1500);
+    assert.equal(elements.get('staff').open, true);
+    assert.equal(elements.get('staff').dataset.state, 'wear');
+    assert.equal(elements.get('staffNowTitle').textContent, '装着を手伝う');
+    assert.equal(elements.get('staffNowItem3Text').textContent, 'ヘッドセットの中の案内に従います。体験者が X か Y を押して始めます');
+    assert.equal(elements.get('staffDoneBtn').hidden, false, '装着中は来場者の画面へ戻れる');
+    elements.get('staffDoneBtn').dispatch('click');
+    assert.equal(elements.get('staff').open, false);
+    assert.equal(elements.get('equipmentSteps').hidden, false);
+
+    // 受理のあとで準備が崩れたら装着の準備を隠し、戻れば再び出す。
+    for (const [reason, stage] of [['camera', 'devices'], ['content', 'devices'], ['position', 'alignment']]) {
+      status.staffSetup.reason = reason; status.staffSetup.stage = stage; status.questTick++; await runtime.poll();
+      assert.equal(elements.get('equipmentSteps').hidden, true, reason);
+      assert.match(elements.get('equipmentStaffStatus').textContent, /機器を確認/);
+      status.staffSetup.reason = ''; status.staffSetup.stage = 'handedOff'; status.questTick++; await runtime.poll();
+      assert.equal(elements.get('equipmentSteps').hidden, false, `${reason} から戻ったら再び出す`);
+      assert.equal(elements.get('equipmentStaffStatus').textContent, '');
+    }
+
+    fetchHandler = async () => { throw new TypeError('offline'); };
+    await runtime.poll();
+    assert.equal(elements.get('equipmentSteps').hidden, true);
+    assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
+    fetchHandler = onlineFetch; status.questTick++; await runtime.poll();
+    assert.equal(elements.get('equipmentSteps').hidden, false);
+
+    vm.runInNewContext('globalThis.__savedDateNow = Date.now; Date.now = () => globalThis.__savedDateNow() + 5000;', context);
+    await runtime.poll();
+    assert.equal(elements.get('equipmentSteps').hidden, true, 'Quest の更新が止まったら隠す');
+    assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
+    vm.runInNewContext('Date.now = globalThis.__savedDateNow;', context);
+    status.questTick++; await runtime.poll();
+    assert.equal(elements.get('equipmentSteps').hidden, false);
+    assert.equal(cuts.length, 1);
+  } finally {
+    presentation.holdThen = originalHold;
   }
-
-  fetchHandler = async () => { throw new TypeError('offline'); };
-  await runtime.poll();
-  assert.equal(runtime.getBriefingMedia().paused, true);
-  assert.equal(state.briefing.cueIndex, 0);
-  assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
-  fetchHandler = onlineFetch; status.questTick++; await runtime.poll();
-  assert.match(elements.get('mediaMessage').textContent, /続きから/);
-
-  const realDateNow = vm.runInNewContext('Date.now', context);
-  vm.runInNewContext('globalThis.__savedDateNow = Date.now; Date.now = () => globalThis.__savedDateNow() + 5000;', context);
-  await runtime.poll();
-  assert.equal(runtime.getBriefingMedia().paused, true);
-  assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
-  vm.runInNewContext('Date.now = globalThis.__savedDateNow;', context);
-  status.questTick++; await runtime.poll();
-  assert.equal(state.briefing.cueIndex, 0);
-  assert.match(elements.get('mediaMessage').textContent, /続きから/);
-
-  state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues.ja.length - 1;
-  runtime.finishBriefing(); await flushPromises();
-  assert.equal(state.briefing.ended, true);
-  assert.equal(runtime.canShowEquipmentGuidance(), true);
-  assert.equal(elements.get('equipmentSteps').hidden, false);
 });
 
-test('待機・確認済み・装着途中・終了を復元し、確認済みをfalseで取り消さない', async () => {
+test('返却待ち・確認済み・装着の準備・旧形式の進行を復元し、確認済みをfalseで取り消さない', async () => {
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
   const reportIndex = wearIndex - 1;
+  const lastCue = briefing.scenes[wearIndex].cues.ja.length - 1;
   const baseProgress = { tabletSessionId: runtime.tabletSessionId, targetId: runtime.activeQuest(),
     portalSessionId: 'portal-a', seq: 21, lang: 'ja', relief: false };
   const cases = [
-    { name: 'waiting', confirmed: false, stage: 'ready', progress: { sceneIndex: reportIndex,
+    { name: 'waiting', confirmed: false, stage: 'ready', guidance: false, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: false, ended: true } },
+    { name: 'acknowledged', confirmed: true, stage: 'handedOff', guidance: true, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: false, ended: true } },
+    { name: 'equipment', confirmed: true, stage: 'handedOff', guidance: true, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: true, ended: true } },
+    { name: 'camera recovery', confirmed: true, stage: 'devices', reason: 'camera', guidance: false, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: true, ended: true } },
+    // 2026-10-16 より前の保存（report の後で返却待ち／wear の途中）は説明完了として読む。
+    { name: 'legacy handoff', confirmed: false, stage: 'ready', guidance: false, progress: { sceneIndex: reportIndex,
       cueIndex: briefing.scenes[reportIndex].cues.ja.length - 1, handoffReady: true, wearStarted: false, ended: false } },
-    { name: 'acknowledged', confirmed: true, stage: 'handedOff', progress: { sceneIndex: reportIndex,
-      cueIndex: briefing.scenes[reportIndex].cues.ja.length - 1, handoffReady: true, wearStarted: false, ended: false } },
-    { name: 'wear', confirmed: true, stage: 'handedOff', progress: { sceneIndex: wearIndex,
+    { name: 'legacy wear', confirmed: true, stage: 'handedOff', guidance: true, progress: { sceneIndex: wearIndex,
       cueIndex: 1, handoffReady: true, wearStarted: true, ended: false } },
-    { name: 'camera recovery', confirmed: true, stage: 'devices', reason: 'camera', progress: { sceneIndex: wearIndex,
-      cueIndex: 1, handoffReady: true, wearStarted: true, ended: false } },
-    { name: 'ended', confirmed: true, stage: 'handedOff', progress: { sceneIndex: wearIndex,
-      cueIndex: 1, handoffReady: true, wearStarted: true, ended: true } },
   ];
   const posts = [];
   fetchHandler = async (resource, options = {}) => {
@@ -2156,14 +2147,12 @@ test('待機・確認済み・装着途中・終了を復元し、確認済み�
     assert.equal(posts.at(-1).briefingCompleted, true, item.name);
     assert.equal(posts.at(-1).staffConfirmed, item.confirmed, item.name);
     assert.equal(posts.at(-1).briefingRevision, status.briefing.revision, item.name);
-    if (item.name === 'acknowledged') {
-      assert.equal(state.briefing.wearStarted, true);
-      assert.equal(state.briefing.mediaPaused, true);
-      assert.equal(runtime.getBriefingMedia().playCount, playCountBeforeRestore);
-    }
-    if (item.name === 'wear' || item.name === 'camera recovery') assert.equal(state.briefing.cueIndex, 1);
-    if (item.name === 'camera recovery') assert.equal(state.briefing.pauseReasons.has('equipment'), true);
-    if (item.name === 'ended') assert.equal(state.briefing.ended, true);
+    assert.equal(state.briefing.ended, true, item.name);
+    assert.equal(state.briefing.handoffReady, true, item.name);
+    assert.equal(state.briefing.wearStarted, item.confirmed && item.stage === 'handedOff' || item.progress.wearStarted && item.progress.ended, item.name);
+    assert.equal(elements.get('doctorVideo').playCount, playCountBeforeRestore, `${item.name}: 復元で説明を再生しない`);
+    assert.equal(elements.get('equipmentSteps').hidden, !item.guidance, item.name);
+    assert.equal(elements.get('briefingTitle').textContent, item.guidance ? '装着の準備' : 'タブレットをスタッフへ返してください', item.name);
   }
   const confirmedRevision = posts.at(-1).briefingRevision;
   elements.get('briefingReplay').dispatch('click'); await flushPromises();
@@ -2174,10 +2163,11 @@ test('待機・確認済み・装着途中・終了を復元し、確認済み�
   assert.equal(state.briefing.wearStarted, false);
 });
 
-test('report最終文の自動音声終了でもwearへ直行せず返却待ちに入る', async () => {
+test('report最終文の自動音声終了は返却で割り込まずwearへ進み、wear最終文の自動終了で返却待ちに入る', async () => {
   prepareBriefing(clone(briefing)); state.staffPreview = false; state.ui = 'sent';
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
   const report = briefing.scenes[wearIndex - 1];
+  const wear = briefing.scenes[wearIndex];
   state.briefing.sceneIndex = wearIndex - 1;
   state.briefing.cueIndex = report.cues.ja.length - 1;
   state.status = { ...clone(validStatus), questTick: 301, lang: 'ja', relief: false,
@@ -2191,13 +2181,27 @@ test('report最終文の自動音声終了でもwearへ直行せず返却待ち�
   runtime.configureBriefingMedia(report);
   runtime.setBriefingAuto(true);
   runtime.startBriefingMediaWindow();
-  const media = runtime.getBriefingMedia();
+  let media = runtime.getBriefingMedia();
   media.currentTime = 999;
   media.ontimeupdate();
   await flushPromises();
+  assert.equal(state.briefing.sceneIndex, wearIndex, 'report の自動終了は wear へ進む');
+  assert.equal(state.briefing.cueIndex, 0);
+  assert.equal(state.briefing.handoffReady, false);
+  assert.equal(state.briefing.ended, false);
+
+  state.briefing.cueIndex = wear.cues.ja.length - 1;
+  runtime.configureBriefingMedia(wear);
+  runtime.setBriefingAuto(true);
+  runtime.startBriefingMediaWindow();
+  media = runtime.getBriefingMedia();
+  media.currentTime = 999;
+  media.ontimeupdate();
+  await flushPromises();
+  assert.equal(state.briefing.ended, true, 'wear の自動終了で説明を終える');
   assert.equal(state.briefing.handoffReady, true);
   assert.equal(state.briefing.wearStarted, false);
-  assert.equal(state.briefing.ended, false);
+  assert.equal(elements.get('briefingTitle').textContent, 'タブレットをスタッフへ返してください');
 });
 
 test('旧APIとスタッフ確認モードはwearを含む12文を連続してから終了する', () => {
@@ -2946,8 +2950,7 @@ test('来場者の使用中は反映済みの設定と説明の進みを出し�
   runtime.observeQuestTick(status);
   const posts = recordPosts(() => status);
   runtime.openStaffScreen('manual');
-  const wearIndex = briefing.scenes.findIndex((scene) => scene.id === 'wear');
-  const total = briefing.scenes.slice(0, wearIndex).reduce((count, scene) => count + scene.cues.fr.length, 0);
+  const total = briefing.scenes.reduce((count, scene) => count + scene.cues.fr.length, 0);
   const position = briefing.scenes[0].cues.fr.length + 1;
   assert.equal(elements.get('staff').dataset.state, 'visitorActive');
   assert.equal(elements.get('staffNowTitle').textContent, '来場者が設定と説明を見ています');

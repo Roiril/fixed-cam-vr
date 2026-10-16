@@ -489,26 +489,22 @@ public final class TabletInstrumentation extends Instrumentation {
             "!document.getElementById('staff').open&&!document.getElementById('briefingControls').hidden"));
         check("staff return does not silently resume", evaluateBoolean(view, "document.getElementById('doctorVideo').paused"));
         // Real local media and the production controls remain in use. Only Quest responses are fixtures.
+        // 2026-10-16：博士の 12 文は来場者の手元で通して流れ、返却は最後の砂嵐の後に出る。
+        double cutsBefore = evaluateDouble(view, "SignalCut.snapshot().runs");
         for (int i = 0; i < 14; i++) {
-            if (evaluateBoolean(view, "!document.getElementById('equipmentGuide').hidden")) break;
+            if (evaluateBoolean(view, "document.getElementById('doctorVideo').src.includes('wear-ja')")) break;
             if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
             evaluate(view, "document.getElementById('briefingNext').click()");
             SystemClock.sleep(700);
         }
-        waitFor("visitor handback", 4000, () -> evaluateBoolean(view,
-            "!document.getElementById('equipmentGuide').hidden"));
-        check("handback does not automatically expose staff data", !evaluateBoolean(view, "document.getElementById('staff').open"));
-        check("handback asks to return tablet", evaluateString(view,
-            "document.getElementById('briefingTitle').textContent").contains("スタッフ"));
-        saveScreenshot("doctor-visitor-focus-handback-wide.png");
-        holdVisitorButton(view, "staffToggle", 1650);
-        waitFor("staff confirms returned tablet", 3000, () -> evaluateBoolean(view,
-            "document.getElementById('staff').open&&!document.getElementById('staffPrepareBtn').disabled"));
-        holdVisitorButton(view, "staffPrepareBtn", 1350);
-        waitFor("acknowledged wear briefing", 7000, () -> evaluateBoolean(view,
-            "!document.getElementById('staff').open&&document.getElementById('equipmentGuide').hidden"
-                + "&&document.getElementById('doctorVideo').src.includes('wear-ja')"));
-        waitFor("wear playback starts after acknowledged staff confirmation", 4000, () -> evaluateBoolean(view,
+        waitFor("wear sentences follow the report without a handback", 4000, () -> evaluateBoolean(view,
+            "document.getElementById('doctorVideo').src.includes('wear-ja')&&document.getElementById('equipmentGuide').hidden"
+                + "&&!document.getElementById('staff').open"));
+        check("no signal cut before the final sentence", evaluateDouble(view, "SignalCut.snapshot().runs") == cutsBefore);
+        if (!evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) {
+            evaluate(view, "document.getElementById('briefingResume').click()");
+        }
+        waitFor("wear playback continues in the visitor's hands", 4000, () -> evaluateBoolean(view,
             "document.getElementById('briefingControls').hidden&&!document.getElementById('doctorVideo').paused"));
         SystemClock.sleep(500);
         verifyVisitorFocus(view, "wear-wide", false);
@@ -522,6 +518,34 @@ public final class TabletInstrumentation extends Instrumentation {
             "!document.getElementById('briefingControls').hidden&&document.getElementById('doctorVideo').paused"));
         saveScreenshot("doctor-visitor-focus-offline-wide.png");
         evaluate(view, "globalThis.__visitorFocusOffline=false");
+        waitFor("online briefing resumable", 6000, () -> evaluateBoolean(view,
+            "!document.getElementById('briefingResume').disabled"));
+        for (int i = 0; i < 6; i++) {
+            // 砂嵐が始まったら触らない（一時停止は切れる途中の演出を取り消す）
+            if (evaluateBoolean(view, "!document.getElementById('equipmentGuide').hidden||SignalCut.snapshot().running")) break;
+            if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
+            evaluate(view, "document.getElementById('briefingNext').click()");
+            SystemClock.sleep(700);
+        }
+        waitFor("visitor handback after the final sentence", 6000, () -> evaluateBoolean(view,
+            "!document.getElementById('equipmentGuide').hidden&&document.getElementById('equipmentSteps').hidden"));
+        Log.i(TAG, "visitorFocus signalCut before=" + cutsBefore + " now=" + evaluateString(view, "JSON.stringify(SignalCut.snapshot())"));
+        check("signal cut runs once at the end of the briefing", evaluateDouble(view, "SignalCut.snapshot().runs") == cutsBefore + 1);
+        waitFor("signal cut returns to the handback screen", 4000, () -> evaluateBoolean(view, "!SignalCut.snapshot().running"));
+        SystemClock.sleep(400);
+        check("handback does not automatically expose staff data", !evaluateBoolean(view, "document.getElementById('staff').open"));
+        check("handback asks to return tablet", evaluateString(view,
+            "document.getElementById('briefingTitle').textContent").contains("スタッフ"));
+        saveScreenshot("doctor-visitor-focus-handback-wide.png");
+        holdVisitorButton(view, "staffToggle", 1650);
+        waitFor("staff confirms returned tablet", 3000, () -> evaluateBoolean(view,
+            "document.getElementById('staff').open&&!document.getElementById('staffPrepareBtn').disabled"));
+        holdVisitorButton(view, "staffPrepareBtn", 1350);
+        waitFor("acknowledged equipment guidance", 7000, () -> evaluateBoolean(view,
+            "!document.getElementById('staff').open&&!document.getElementById('equipmentSteps').hidden"));
+        check("acknowledgement does not replay the doctor", evaluateBoolean(view,
+            "document.getElementById('doctorVideo').paused"));
+        saveScreenshot("doctor-visitor-focus-equipment-wide.png");
     }
 
     private void runStaffFinishScenario(Activity activity, WebView view, String source, String scenario,

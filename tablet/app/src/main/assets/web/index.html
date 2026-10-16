@@ -808,7 +808,7 @@
   const T = {
     ja: {
       journey: ['体験の準備', '設定', '調査説明', '装着'],
-      media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: '再開', resumeRequired: '再開すると続きから再生します。', noAudio: '', staff: 'スタッフ画面を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', equipment: 'スタッフが機器を確認しています。このままお待ちください。', unavailable: '画像を表示できません' },
+      media: { muted: '音声を出す', audible: '音声を消す', retry: '再読み込み', failed: '音声・映像を再生できません。字幕で続けられます。', image: '画像を表示できません。字幕で続けられます。', manual: '画面をタップして次へ進みます。', automatic: '自動で次へ進みます。', resume: '再開', resumeRequired: '再開すると続きから再生します。', noAudio: '', staff: 'スタッフ画面を閉じると続けられます。', background: 'アプリに戻ると続けられます。', offline: 'クエストとの通信が戻ると続けられます。', unavailable: '画像を表示できません' },
       pageTitle: '体験の前に', noticeLabel: '注意', language: '言語', relief: 'ホラー軽減',
       reliefOn: 'あり', reliefOff: 'なし',
       reliefOffNote: '通常の演出と音量', reliefOnNote: '音量半分と陽気な曲',
@@ -854,7 +854,7 @@
     },
     en: {
       journey: ['Prepare for the experience', 'Settings', 'Briefing', 'Equip'],
-      media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Resume', resumeRequired: 'Select Resume to continue from where you paused.', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close the staff screen to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', equipment: 'Staff are checking the equipment. Please wait here.', unavailable: 'Image unavailable' },
+      media: { muted: 'Turn sound on', audible: 'Turn sound off', retry: 'Reload', failed: 'Audio or video is unavailable. You can continue with subtitles.', image: 'The image is unavailable. You can continue with subtitles.', manual: 'Tap the screen to continue.', automatic: 'The briefing will advance automatically.', resume: 'Resume', resumeRequired: 'Select Resume to continue from where you paused.', noAudio: 'No voice audio is available. Follow the subtitles. ', staff: 'Close the staff screen to continue.', background: 'Return to the app to continue.', offline: 'The briefing will continue when the Quest connection returns.', unavailable: 'Image unavailable' },
       pageTitle: 'Before the experience', noticeLabel: 'Notice', language: 'Language', relief: 'Reduced horror',
       reliefOn: 'on', reliefOff: 'off',
       reliefOffNote: 'Normal effects and volume', reliefOnNote: 'Half volume with a cheerful tune',
@@ -900,7 +900,7 @@
     },
     fr: {
       journey: ['Préparation', 'Réglages', 'Consignes', 'Équipement'],
-      media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Reprendre', resumeRequired: 'Sélectionnez Reprendre pour continuer à l’endroit de la pause.', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez l’écran du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', equipment: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', unavailable: 'Image indisponible' },
+      media: { muted: 'Activer le son', audible: 'Couper le son', retry: 'Recharger', failed: 'Le son ou la vidéo est indisponible. Vous pouvez suivre les sous-titres.', image: 'L’image est indisponible. Vous pouvez suivre les sous-titres.', manual: 'Touchez l’écran pour continuer.', automatic: 'Le passage à la suite est automatique.', resume: 'Reprendre', resumeRequired: 'Sélectionnez Reprendre pour continuer à l’endroit de la pause.', noAudio: 'Aucune voix n’est disponible. Suivez les sous-titres. ', staff: 'Fermez l’écran du personnel pour continuer.', background: 'Revenez dans l’application pour continuer.', offline: 'Les explications reprendront lorsque la connexion au Quest sera rétablie.', unavailable: 'Image indisponible' },
       pageTitle: 'Avant l’expérience', noticeLabel: 'Attention', language: 'Langue', relief: 'Horreur atténuée',
       reliefOn: 'oui', reliefOff: 'non',
       reliefOffNote: 'Effets et volume normaux', reliefOnNote: 'Volume réduit de moitié et musique gaie',
@@ -1144,15 +1144,17 @@
     state.reliefPreviewStarted = progress.relief;
     state.sent = { lang: progress.lang, relief: progress.relief, seq: progress.seq,
       portalSessionId: progress.portalSessionId, targetId: progress.targetId };
+    // 説明完了と返却待ちは同じ時点（説明の最後の砂嵐）に立つ。2026-10-16 より前の保存は
+    // report の後で返却待ち（handoffReady だけ true）や wear の途中を持つので、完了として扱う。
     state.briefing.handoffReady = Boolean(progress.handoffReady || progress.ended);
-    state.briefing.wearStarted = Boolean(progress.wearStarted || progress.ended);
+    state.briefing.wearStarted = Boolean(progress.ended && progress.wearStarted);
     restorePreparationState(state.status);
     state.ui = 'sent';
     state.appliedSeen = true;
     state.briefing.triggered = true;
     state.briefing.sceneIndex = progress.sceneIndex;
     state.briefing.cueIndex = progress.cueIndex;
-    state.briefing.ended = Boolean(progress.ended);
+    state.briefing.ended = Boolean(progress.ended || state.briefing.handoffReady);
     state.briefing.auto = false;
     state.briefing.resumeAuto = true;
     state.briefing.controlsOpen = !state.briefing.ended;
@@ -2105,10 +2107,7 @@
     const t = T[state.lang].briefing;
     const positions = briefingPositions();
     const position = currentBriefingPosition();
-    const handoffWaiting = requiresStaffHandoff() && state.briefing.handoffReady && !state.briefing.wearStarted;
-    const wearBlocked = requiresStaffHandoff() && state.briefing.wearStarted
-      && !state.briefing.ended && !wearReadinessConfirmed();
-    const complete = state.briefing.ended || handoffWaiting || wearBlocked;
+    const complete = state.briefing.ended;
     const lastCue = position === positions.length - 1;
     const panelOpen = complete || state.briefing.controlsOpen;
     const controls = $('briefingControls');
@@ -2124,15 +2123,14 @@
     $('briefingToggle').setAttribute('aria-pressed', String(state.briefing.auto));
     $('briefingToggle').disabled = state.briefing.ended || state.briefing.pauseReasons.size > 0;
     $('briefingToggle').hidden = complete || lastCue;
-    $('briefingPrevious').disabled = position <= 0 || atConfirmedWearStart();
+    $('briefingPrevious').disabled = position <= 0;
     $('briefingPrevious').hidden = complete;
     $('briefingNext').disabled = state.briefing.ended || positions.length === 0;
     $('briefingNext').hidden = complete;
-    const returnToStaff = requiresStaffHandoff() && nextBriefingPositionIsWear();
-    const nextLabel = returnToStaff
+    const nextLabel = requiresStaffHandoff()
       ? { ja: 'スタッフへ返す', en: 'Return to staff', fr: 'Remettre au personnel' }[state.lang]
       : T[state.lang].equipment.next;
-    $('briefingNext').textContent = returnToStaff || lastCue ? nextLabel : t.next;
+    $('briefingNext').textContent = lastCue ? nextLabel : t.next;
     $('briefingNext').setAttribute('aria-label', $('briefingNext').textContent);
     $('briefingReplay').hidden = !complete;
     $('briefingSettings').hidden = false;
@@ -2157,7 +2155,7 @@
     $('briefingMute').setAttribute('aria-label', $('briefingMute').textContent);
     $('briefingMute').setAttribute('aria-pressed', String(state.briefing.muted));
     const failed = state.briefing.mediaFailed || state.briefing.imageFailed || state.briefing.doctorFailed;
-    const pauseReason = ['staff', 'hidden', 'native', 'offline', 'equipment'].find(reason => state.briefing.pauseReasons.has(reason));
+    const pauseReason = ['staff', 'hidden', 'native', 'offline'].find(reason => state.briefing.pauseReasons.has(reason));
     const guide = state.briefing.auto ? m.automatic : m.manual;
     const noAudio = !hasMedia ? m.noAudio : '';
     const pauseCopy = pauseReason === 'native' || pauseReason === 'hidden' ? m.background : m[pauseReason];
@@ -2188,22 +2186,6 @@
     return !state.staffPreview && Boolean(status?.staffSetup);
   }
 
-  function wearSceneIndex() {
-    return state.briefing.data?.scenes.findIndex(scene => scene.id === 'wear') ?? -1;
-  }
-
-  function nextBriefingPositionIsWear() {
-    const positions = briefingPositions();
-    const next = positions[currentBriefingPosition() + 1];
-    return currentBriefingScene()?.id !== 'wear'
-      && next != null && state.briefing.data.scenes[next.sceneIndex]?.id === 'wear';
-  }
-
-  function atConfirmedWearStart() {
-    return requiresStaffHandoff() && state.briefing.wearStarted
-      && currentBriefingScene()?.id === 'wear' && state.briefing.cueIndex === 0;
-  }
-
   function wearReadinessConfirmed(status = state.status) {
     const setup = status?.staffSetup;
     return requiresStaffHandoff(status)
@@ -2216,40 +2198,23 @@
       && !setup.reason;
   }
 
+  // 博士の説明は 12 文とも来場者の手元で流し、最後の砂嵐のあとで返してもらう（2026-10-16）。
+  // 途中で返すと「健闘を祈ります」が台に置かれたタブレットで流れ、砂嵐も 2 回になっていた。
+  // スタッフの装着確定を Quest が受理したら、スタッフ画面を閉じて装着の準備を出す。
   function advanceToWearIfReady(status = state.status, resumeExplicitly = false) {
-    if (state.briefing.wearStarted || state.briefing.ended || !wearReadinessConfirmed(status)) return false;
-    const sceneIndex = wearSceneIndex();
-    if (sceneIndex < 0) return false;
+    if (state.briefing.wearStarted || !state.briefing.ended || !wearReadinessConfirmed(status)) return false;
     state.briefing.wearStarted = true;
-    state.briefing.sceneIndex = sceneIndex;
-    state.briefing.cueIndex = 0;
     // 装着の確定はスタッフ自身の開始操作。受理後は両手で補助できるよう自動で案内する。
-    // 再読み込みからの復元と通信中断だけは明示の再開を待つ。
+    // 再読み込みからの復元ではスタッフ画面を開いたまま保つ。
     if (!resumeExplicitly && $('staff').open) closeStaffScreen();
-    if ($('staff').open) state.briefing.pauseReasons.add('staff');
-    else state.briefing.pauseReasons.delete('staff');
-    if (resumeExplicitly) state.briefing.pauseReasons.add('controls');
-    else state.briefing.pauseReasons.delete('controls');
-    state.briefing.controlsOpen = state.briefing.pauseReasons.size > 0;
-    state.briefing.resumeAuto = true;
-    state.briefing.auto = !state.briefing.controlsOpen;
-    configureBriefingMedia(currentBriefingScene());
-    beginBriefingCue();
-    if (state.briefing.pauseReasons.size > 0) {
-      state.briefing.mediaPaused = Boolean(briefingMedia);
-      renderBriefingControls();
-    }
+    renderBriefingScene();
+    saveBriefingProgress();
     return true;
   }
 
+  // 受理のあとで準備が崩れたら装着の準備を隠し、戻れば再び出す。説明はもう再生しない。
   function syncWearReadiness(status = state.status) {
-    if (!requiresStaffHandoff(status) || !state.briefing.wearStarted || state.briefing.ended) {
-      if (state.briefing.pauseReasons.has('equipment')) setBriefingPause('equipment', false);
-      return;
-    }
-    const paused = !wearReadinessConfirmed(status);
-    if (state.briefing.pauseReasons.has('equipment') === paused) return;
-    setBriefingPause('equipment', paused);
+    if (state.view === 'briefing' && state.briefing.ended && requiresStaffHandoff(status)) renderBriefingScene();
   }
 
   function canShowEquipmentGuidance(status = state.status) {
@@ -2298,10 +2263,7 @@
   function renderBriefingScene() {
     const scene = currentBriefingScene();
     if (!scene) return;
-    const handoffWaiting = requiresStaffHandoff() && state.briefing.handoffReady && !state.briefing.wearStarted;
-    const wearBlocked = requiresStaffHandoff() && state.briefing.wearStarted
-      && !state.briefing.ended && !wearReadinessConfirmed();
-    const equipment = state.briefing.ended || handoffWaiting || wearBlocked;
+    const equipment = state.briefing.ended;
     document.querySelector('.stage').classList.toggle('is-equipment', equipment);
     $('equipmentGuide').hidden = !equipment;
     $('briefingProgress').hidden = equipment;
@@ -2332,16 +2294,12 @@
     }
     $('briefingAdvanceHint').textContent = T[state.lang].briefing.advance;
     const t = T[state.lang].briefing;
-    const wearIndex = state.briefing.data.scenes.findIndex(item => item.id === 'wear');
-    const splitProgress = requiresStaffHandoff() && wearIndex > 0;
-    const phaseStart = splitProgress && state.briefing.wearStarted ? wearIndex : 0;
-    const phaseEnd = splitProgress && !state.briefing.wearStarted ? wearIndex : state.briefing.data.scenes.length;
-    const sceneTotal = phaseEnd - phaseStart;
+    const sceneTotal = state.briefing.data.scenes.length;
     const cues = scene.cues[state.lang];
-    const positions = briefingPositions().filter(item => item.sceneIndex >= phaseStart && item.sceneIndex < phaseEnd);
+    const positions = briefingPositions();
     const position = positions.findIndex(item => item.sceneIndex === state.briefing.sceneIndex && item.cueIndex === state.briefing.cueIndex);
     const presentation = briefingPresentation(scene);
-    setText('briefingChapterNumber', `${String(state.briefing.sceneIndex - phaseStart + 1).padStart(2, '0')} / ${String(sceneTotal).padStart(2, '0')}`);
+    setText('briefingChapterNumber', `${String(state.briefing.sceneIndex + 1).padStart(2, '0')} / ${String(sceneTotal).padStart(2, '0')}`);
     setText('briefingEyebrow', scene.eyebrow[state.lang]);
     setText('briefingCueNumber', `${state.lang === 'ja' ? '文 ' : state.lang === 'fr' ? 'Phrase ' : 'Sentence '}${state.briefing.cueIndex + 1} / ${cues.length}`);
     setText('briefingTitle', presentation.title);
@@ -2422,15 +2380,11 @@
       state.briefing.imageFailed = false;
       $('referenceFallback').hidden = true;
     }
-    const progressPrefix = splitProgress && state.briefing.wearStarted
-      ? ({ ja: '装着案内 ', en: 'Equipment ', fr: 'Équipement ' })[state.lang]
-      : state.lang === 'ja' ? '説明 ' : state.lang === 'fr' ? 'Explication ' : 'Briefing ';
+    const progressPrefix = state.lang === 'ja' ? '説明 ' : state.lang === 'fr' ? 'Explication ' : 'Briefing ';
     $('sceneCounter').textContent = `${progressPrefix}${String(position + 1).padStart(2, '0')} / ${String(positions.length).padStart(2, '0')}`;
     $('sceneProgress').max = Math.max(1, positions.length);
     $('sceneProgress').value = state.briefing.ended ? positions.length : position + 1;
-    $('sceneProgress').setAttribute('aria-label', splitProgress && state.briefing.wearStarted
-      ? ({ ja: '装着案内の進み具合', en: 'Equipment progress', fr: 'Progression de l’équipement' })[state.lang]
-      : t.progress);
+    $('sceneProgress').setAttribute('aria-label', t.progress);
     renderBriefingControls();
   }
 
@@ -2610,29 +2564,9 @@
     });
   }
 
-  function waitForStaffHandoff() {
-    if (equipmentTransitionPending) return;
-    setBriefingAuto(false);
-    stopBriefingMediaWindow();
-    equipmentTransitionPending = true;
-    cutSignalThen('handoff', () => {
-      equipmentTransitionPending = false;
-      if (state.view !== 'briefing' || state.briefing.ended) return;
-      state.briefing.handoffReady = true;
-      state.briefing.wearStarted = false;
-      renderBriefingScene();
-      $('subtitleAnnouncement').textContent = '';
-      $('briefingTitle').focus({ preventScroll: true });
-      saveBriefingProgress();
-      void pulse();
-      // 来場者がタブレットを返してから、明示されたスタッフ入口を長押ししてもらう。
-    });
-  }
-
   function moveBriefing(delta, source = 'control') {
     if (state.view !== 'briefing' || !state.briefing.data || state.briefing.ended || delta === 0) return false;
     const direction = delta < 0 ? -1 : 1;
-    if (direction < 0 && atConfirmedWearStart()) return false;
     const userMove = source !== 'auto' && source !== 'queued';
     if (state.briefing.chapterChanging && userMove) finishChapterTransition();
     const now = performance.now();
@@ -2649,12 +2583,6 @@
       return true;
     }
     const next = positions[target];
-    if (direction > 0 && requiresStaffHandoff()
-      && !state.briefing.wearStarted
-      && state.briefing.data.scenes[next.sceneIndex]?.id === 'wear') {
-      waitForStaffHandoff();
-      return true;
-    }
     const previousScene = currentBriefingScene();
     const nextScene = state.briefing.data.scenes[next.sceneIndex];
     const changedChapter = next.sceneIndex !== state.briefing.sceneIndex;
@@ -2680,13 +2608,9 @@
     return true;
   }
 
+  // 説明の終わりの砂嵐は 1 回だけ。スタッフ運用では黒の後に返却の案内を出し、
+  // 説明完了（handoffReady）を Quest へ送る。装着の準備はスタッフの確定が受理されてから出す。
   function finishBriefing() {
-    const scene = currentBriefingScene();
-    if (requiresStaffHandoff()
-      && (scene?.id !== 'wear' || state.briefing.cueIndex !== scene.cues[state.lang].length - 1)) {
-      waitForStaffHandoff();
-      return;
-    }
     if (equipmentTransitionPending) return;
     setBriefingAuto(false);
     stopBriefingMediaWindow();
@@ -2695,6 +2619,10 @@
       equipmentTransitionPending = false;
       if (state.view !== 'briefing') return;
       state.briefing.ended = true;
+      if (requiresStaffHandoff()) {
+        state.briefing.handoffReady = true;
+        state.briefing.wearStarted = false;
+      }
       syncReliefPreview();
       syncBriefingLoopVideo();
       renderBriefingScene();
@@ -3424,8 +3352,7 @@
     if (state.view === 'result') return state.ui === 'sending' ? '設定を反映しています' : '設定を確かめています';
     if (state.view === 'briefing') {
       if (state.briefing.handoffReady) return '説明が終わりました';
-      const wearIndex = wearSceneIndex();
-      const positions = briefingPositions().filter((item) => wearIndex < 0 || item.sceneIndex < wearIndex);
+      const positions = briefingPositions();
       const index = positions.findIndex((item) => item.sceneIndex === state.briefing.sceneIndex
         && item.cueIndex === state.briefing.cueIndex);
       return index >= 0 ? `説明 ${index + 1} / ${positions.length}` : '説明を見ています';
