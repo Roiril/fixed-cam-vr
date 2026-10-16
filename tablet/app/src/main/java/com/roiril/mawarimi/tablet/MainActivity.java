@@ -204,8 +204,8 @@ public final class MainActivity extends Activity {
                 return blocked(404, "Not Found");
             }
             if ("/".equals(path)) path = "/index.html";
-            if (!path.equals("/index.html") && !path.startsWith("/asset/")
-                && !path.equals("/tablet-transport.js") && !path.equals("/briefing-presentation.js")) {
+            if (!RequestPolicy.servableWebPath(path)) {
+                Log.w(TAG, "blocked web path=" + path);
                 return blocked(404, "Not Found");
             }
             if (path.equals("/index.html") && !request.isForMainFrame()) return blocked(403, "Forbidden");

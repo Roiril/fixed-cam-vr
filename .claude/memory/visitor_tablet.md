@@ -16,6 +16,8 @@ metadata:
 
 説明の終わり（スタッフへ返す画面・装着の案内の手前）は `signal-cut.js` で通信が切れる形にした。手順と検証は `tools/visitor-ui/README.md`「説明の終わり」。
 
+⚠⚠ **web の js を足したら `RequestPolicy.WEB_SCRIPTS` にも足す。** アプリは `index.html` / `/asset/` / この表の js しか配らず、それ以外は 404 で黙って落ちる（2026-10-16 実機で発覚。`signal-cut.js` と、10-14 から入っていた `title-write.js` の両方が実機で一度も読まれていなかった＝題字の筆の書き出しは実機では素の画像だった）。ブラウザの代役（staff-mock-server）は全部配るので気づけない。`NativePolicyTest` が `index.html` の `<script src>` を全部この表と突き合わせる（`tablet/build.py` が毎回走らせる）。弾いた道は logcat に `blocked web path=` が出る。
+⚠ **舞台全体（動画を含む層）を CSS の transform / filter で潰すと、Android WebView は描かず黒に飛ぶ**（ブラウザでは描ける）。ブラウン管が切れる段は canvas の中で描いた。実機の画面録画は `screenrecord --size 1280x800`（1920×1200 は codec が起動しない）→ 30fps にして 隣り合う画素の差・平均輝度・明るい行の割合 でコマを分ける。
 ⚠ `.stage` は `overflow: clip`。粒の層（`inset: -60px`）がはみ出しており、`overflow: hidden` のままだと focus や `scrollIntoView` で舞台ごと 38px 横へずれた（内蔵ブラウザの ref クリックで再現）。
 ⚠ 内蔵ブラウザの `zoom` は直前の撮影を切り出すだけ。押した直後に `zoom` すると古い画で「選べていない」と誤読する。撮り直してから見る。
 

@@ -310,6 +310,7 @@
 
   /* ---- 説明の終わり：通信が切れる（signal-cut.js・LEDGER 0265）----
      止まった博士に砂嵐が乗ってざ・ざ・ざと乱れ、ブラウン管が切れるように横一線へ潰れて消える。
+     潰れる段は canvas の中で描く（舞台を transform / filter で潰すと、動画を含む層を WebView が描かず黒に飛んだ）。
      黒で一拍置いてから次の画面が溶けて出る。段は stage の data-signal（noise / off / dark / return） */
   .signal-cut { position: absolute; z-index: 30; inset: 0; width: 100%; height: 100%; pointer-events: auto; }
   .stage[data-signal] * { pointer-events: none !important; }
@@ -326,12 +327,6 @@
     90% { transform: translate(-18px,0) skewX(-3deg); filter: contrast(2) brightness(1.5) saturate(0); }
     95% { transform: translate(12px,2px); filter: contrast(2.2) brightness(1.7) saturate(0); }
     100% { transform: translate(-8px,0); filter: contrast(2.4) brightness(1.9) saturate(0); }
-  }
-  .stage.is-signal-off { animation: crt-off .26s var(--ease-in) both; }
-  @keyframes crt-off {
-    0% { transform: none; filter: brightness(1.3); opacity: 1; }
-    55% { transform: scale(1.03,.006); filter: brightness(4) contrast(1.5); opacity: 1; }
-    100% { transform: scale(0,.006); filter: brightness(7); opacity: 0; }
   }
   .stage.is-signal-dark { opacity: 0; }
   .stage.is-signal-return { animation: signal-return .65s var(--ease) both; }

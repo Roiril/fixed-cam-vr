@@ -92,6 +92,11 @@
     const i = t >= NOISE_MS ? 1 : intensity(p);
     const r = rng((t * 977) | 0);
     const tile = noiseTiles[((t / 42) | 0) % noiseTiles.length];
+    if (t >= NOISE_MS) {
+      drawCollapse(ctx, w, h, tile, Math.min(1, (t - NOISE_MS) / OFF_MS));
+      if (frozenAt == null) frame = host.requestAnimationFrame(draw);
+      return;
+    }
     ctx.clearRect(0, 0, w, h);
     // 全体に薄く乗る砂嵐
     ctx.globalAlpha = Math.min(0.94, 0.08 + i * 0.86) * (0.82 + r() * 0.18);
@@ -120,6 +125,29 @@
     }
     ctx.globalAlpha = 1;
     if (frozenAt == null) frame = host.requestAnimationFrame(draw);
+  }
+
+  // ブラウン管が切れる：砂嵐が縦に潰れて光る横一線になり、線が中央の点へ縮んで消える。
+  // 舞台を CSS で潰す形は、動画を含む層だと Android WebView が描かず黒に飛んだ（2026-10-16 実機）。canvas の中だけで描く
+  function drawCollapse(ctx, w, h, tile, q) {
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    const squeeze = Math.min(1, q / 0.55);
+    const shrink = q <= 0.55 ? 0 : (q - 0.55) / 0.45;
+    const bandH = Math.max(1, h * (1 - squeeze) ** 3);
+    const bandW = Math.max(1, w * (1 - shrink ** 0.7));
+    const x = (w - bandW) / 2;
+    const y = (h - bandH) / 2;
+    ctx.drawImage(tile, 0, 0, w, h, x, y, bandW, bandH);
+    // 潰れるほど白く光る
+    ctx.globalAlpha = Math.min(1, 0.15 + squeeze * 0.85);
+    ctx.fillStyle = '#f4efe4';
+    ctx.fillRect(x, y, bandW, bandH);
+    // 線のにじみ
+    ctx.globalAlpha = 0.35 * squeeze * (1 - shrink);
+    ctx.fillRect(x, y - bandH * 1.5 - 1, bandW, bandH * 4 + 2);
+    ctx.globalAlpha = 1;
   }
 
   function ensureAudio() {
@@ -314,9 +342,9 @@
     const phase = ms < NOISE_MS ? 'noise' : (ms < NOISE_MS + OFF_MS ? 'off' : 'dark');
     setPhase(phase);
     canvas.hidden = phase === 'dark';
-    const offset = phase === 'noise' ? ms : ms - NOISE_MS;
+    const offset = ms;
     host.document.getAnimations?.().forEach((animation) => {
-      if (['signal-jitter', 'crt-off'].includes(animation.animationName)) {
+      if (animation.animationName === 'signal-jitter') {
         animation.pause();
         animation.currentTime = offset;
       }

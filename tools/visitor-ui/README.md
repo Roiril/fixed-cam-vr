@@ -250,6 +250,8 @@ HTMLに含まれる実際のJavaScriptを使う81件の回帰検証。設定の�
 node tools/visitor-ui/verify-signal-cut.cjs
 ```
 
+潰れる段は canvas の中で描く（舞台を CSS で潰すと Android WebView は黒に飛んだ）。web に js を足したら `RequestPolicy.WEB_SCRIPTS` にも足す（足さないと実機だけ 404 で読まれない。`NativePolicyTest` が照合する）。
+
 段の進み（砂嵐 → 潰れる → 黒 → 戻る）、取り消し、`release` が来ないときの復帰を時計を進めて確かめる。画は測らない。ブラウザの開発者ツールで `SignalCut.run({muted:true}); SignalCut.freezeAt(760)` と呼ぶと、その時刻の画で止まる。`SignalCut.abort()` で戻す。
 
 | 場面 | 確認する結果 |
