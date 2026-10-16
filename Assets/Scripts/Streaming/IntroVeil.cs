@@ -807,6 +807,16 @@ namespace FixedCamVr.Streaming
         private Vector2 _screenHalf;
 
         /// <summary>
+        /// 枠の中で映像が実際に出ている矩形の比（<see cref="MjpegScreen.ContainScale"/>）。割れ始めに 1 回だけ決める。
+        /// 破片はこの矩形へ組み上がる。枠（16:9）へ組むと、4:3 の映像の左右の黒帯に写真と縁の線が残り、
+        /// 着地した片が映像ではなく黒を見せていた（2026-10-17）。映像が 1 枚も来ていなければ枠全体（砂嵐は枠いっぱいに出る）。
+        /// </summary>
+        private Vector2 _contentScale = Vector2.one;
+
+        /// <summary>破片が組み上がる矩形の、枠に対する比（観測用）。</summary>
+        public Vector2 ContentScale => _contentScale;
+
+        /// <summary>
         /// 覆いの面を置く距離 (m)。<b>スクリーンと同じ距離に置く</b>のが要点で、
         /// <see cref="distance"/> は「その距離での大きさ」を決める基準にしか使わない。
         ///
@@ -904,6 +914,34 @@ namespace FixedCamVr.Streaming
             //    （＝現実がそのまま見えているべき段 1〜3 で四隅が翳る）。ぼけの硬さも一定になる。
             float featherAng = Mathf.Sin(Mathf.Clamp01(feather) * Mathf.Atan2(hh, dist));
             return Mathf.Max(featherAng, 1e-4f);
+        }
+
+        private static readonly int LiveScaleId = Shader.PropertyToID("_LiveScale");
+
+        /// <summary>
+        /// 映像が枠の中に実際に出ている比。実機は <see cref="MjpegScreen"/>、Editor のプレビューはスクリーンの材質の
+        /// <c>_LiveScale</c>（どちらも同じ値の写し）。読めなければ枠全体。
+        /// </summary>
+        private Vector2 ResolveContentScale()
+        {
+            if (screenQuad == null) return Vector2.one;
+            Vector2 scale = Vector2.one;
+            var mjpeg = screenQuad.GetComponent<MjpegScreen>();
+            if (mjpeg != null)
+            {
+                if (mjpeg.HasDecodedSource) scale = mjpeg.ContainScale;
+            }
+            else
+            {
+                if (_screenRenderer == null) _screenRenderer = screenQuad.GetComponent<Renderer>();
+                Material? material = _screenRenderer != null ? _screenRenderer.sharedMaterial : null;
+                if (material != null && material.HasProperty(LiveScaleId))
+                {
+                    Vector4 live = material.GetVector(LiveScaleId);
+                    scale = new Vector2(live.x, live.y);
+                }
+            }
+            return new Vector2(Mathf.Clamp(scale.x, 0.25f, 1f), Mathf.Clamp(scale.y, 0.25f, 1f));
         }
 
         /// <summary>スクリーンの矩形をこの GameObject のローカル空間で解く。</summary>
@@ -1112,6 +1150,7 @@ namespace FixedCamVr.Streaming
             {
                 _captureHeadToWorld = transform.localToWorldMatrix;
                 ShatterAnchored = true;
+                _contentScale = ResolveContentScale();
                 // R061: 静止画を引く前に奥行きを決める（終端を閉じる片の選び直しも同じ奥行きで投影する）。
                 ApplyRoomDepth();
             }
@@ -1197,6 +1236,8 @@ namespace FixedCamVr.Streaming
                 _fractureBlock.SetVector(VeilSizeId,
                     new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
                 Vector3 screenCenterWorld = transform.TransformPoint(_screenCenter);
+                // 破片・周辺片・粒が組み上がる先は、枠ではなく映像が出ている矩形（ResolveContentScale）。
+                Vector2 contentHalf = Vector2.Scale(_screenHalf, _contentScale);
                 Vector3 screenRightWorld = transform.TransformDirection(_screenRight).normalized;
                 Vector3 screenUpWorld = transform.TransformDirection(_screenUp).normalized;
                 _fractureBlock.SetVector(ScreenCenterId,
@@ -1206,7 +1247,7 @@ namespace FixedCamVr.Streaming
                 _fractureBlock.SetVector(ScreenUpId,
                     new Vector4(screenUpWorld.x, screenUpWorld.y, screenUpWorld.z, 0f));
                 _fractureBlock.SetVector(ScreenHalfId,
-                    new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
+                    new Vector4(contentHalf.x, contentHalf.y, 0f, 0f));
                 Vector3 headPosition = transform.position;
                 _fractureBlock.SetVector(CurrentHeadPositionId,
                     new Vector4(headPosition.x, headPosition.y, headPosition.z, 1f));
@@ -1244,7 +1285,7 @@ namespace FixedCamVr.Streaming
                     _peripheralBlock.SetVector(ScreenUpId,
                         new Vector4(screenUpWorld.x, screenUpWorld.y, screenUpWorld.z, 0f));
                     _peripheralBlock.SetVector(ScreenHalfId,
-                        new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
+                        new Vector4(contentHalf.x, contentHalf.y, 0f, 0f));
                     _peripheralBlock.SetVector(CurrentHeadPositionId,
                         new Vector4(headPosition.x, headPosition.y, headPosition.z, 1f));
                     _peripheralWindowRenderer!.SetPropertyBlock(_peripheralBlock);
@@ -1270,7 +1311,7 @@ namespace FixedCamVr.Streaming
                     _sparkBlock.SetVector(ScreenUpId,
                         new Vector4(screenUpWorld.x, screenUpWorld.y, screenUpWorld.z, 0f));
                     _sparkBlock.SetVector(ScreenHalfId,
-                        new Vector4(_screenHalf.x, _screenHalf.y, 0f, 0f));
+                        new Vector4(contentHalf.x, contentHalf.y, 0f, 0f));
                     _sparkRenderer!.SetPropertyBlock(_sparkBlock);
                 }
             }

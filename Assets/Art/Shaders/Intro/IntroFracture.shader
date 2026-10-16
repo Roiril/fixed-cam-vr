@@ -104,7 +104,8 @@ Shader "FixedCamVr/IntroFracture"
                 // x = 予兆の亀裂の光 / y = 破断・一撃の閃き / z = 着地の閃き / w = スロー中の閃き
                 nointerpolation float4 light : TEXCOORD8;
                 // x = 着地の度合い / y = 両眼を同じカメラの写真へ寄せる量（R060・剥がれると 1）/ z = その写真のカメラ（0 左 / 1 右）
-                nointerpolation float3 landedMono : TEXCOORD9;
+                // w = 着地後に残す縁の重み（着地からの経過と片の大きさ）
+                nointerpolation float4 landedMono : TEXCOORD9;
                 // 代表の粒（IntroSpark.hlsl の HeroSpark）のうち、この片にいちばん近い 2 灯。
                 // xyz = world の位置 / w = 明るさ 0..1（0 = まだ生まれていない or 消えた）。
                 nointerpolation float4 spark0 : TEXCOORD10;
@@ -288,7 +289,11 @@ Shader "FixedCamVr/IntroFracture"
                 // 速さ（m/s）。進みの微分 × 行程の長さ ÷ 段の秒数。伸びと着地の閃きに使う。
                 float pullRate = pullPow * pow(max(pullT, 1e-4), pullPow - 1.0) / pullLen;
                 float pullStart = PullStart;
-                float alignment = travel;
+                // 向きは位置より先に揃う（磁石に吸われる方位磁針）。位置は t^k のまま減速せずに嵌まるが、
+                // 向きまで同じ travel で戻すと、最後の 0.3 秒に回転が最速（小片で 150〜215°/s）のまま止まり、
+                // 白い反射帯が 1 フレームに帯幅の数本ぶん飛んで明滅する（HMD でだけ目立つ・2026-10-17）。
+                // 1-(1-t)^2 は着地の瞬間に角速度 0。
+                float alignment = 1.0 - (1.0 - pullT) * (1.0 - pullT);
                 float seal = travel;
                 float detail = crack * (1.0 - seal);
 
@@ -313,9 +318,10 @@ Shader "FixedCamVr/IntroFracture"
                 float pullDistance = length(pullPath);
                 float3 pullDir = SafeNormalize(pullPath, screenNormal);
                 float speed = pullRate * pullDistance / 5.0 * step(1e-4, 1.0 - travel);
-                // 速い片は進行方向に伸びる（後処理の無い VR での速さの表現）。嵌まる直前の 8% で元へ戻す。
+                // 速い片は進行方向に伸びる（後処理の無い VR での速さの表現）。嵌まる前の 0.15 秒で元の形へ戻す
+                // （旧: travel の最後の 8% ＝ 約 35ms・3 フレームで戻り、着地の瞬間に形が跳ねた）。
                 float stretch = StretchMax * saturate(speed / StretchSpeed)
-                              * (1.0 - Ease(0.92, 1.0, travel)) * step(PullStart, p);
+                              * (1.0 - Ease(arrive - 0.030, arrive, p)) * step(PullStart, p);
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
                 if (eyeDistance < 0.55)
@@ -326,8 +332,8 @@ Shader "FixedCamVr/IntroFracture"
                 }
 
                 float3 relativeWorld = lerp(sourceRelative, targetVertex - targetCenter, alignment);
-                // 回転量は引き延ばした時間に比例し、帰還と同時に自然な向きへ揃う。
-                float spinAmount = uSpin * (1.0 - travel);
+                // 回転量は引き延ばした時間に比例し、向きの揃い（alignment）とともに 0 へ減速する。
+                float spinAmount = uSpin * (1.0 - alignment);
                 float3 travelAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroTangentX), screenRight, alignment), screenRight);
                 float3 faceAxis = SafeNormalize(lerp(
@@ -406,10 +412,13 @@ Shader "FixedCamVr/IntroFracture"
                 // 光。予兆は起点から外へ走る亀裂の光 — 先端が明るく、通り過ぎた所は 4 割まで落ちる
                 // （網を一斉に点灯させると「亀裂が走る」ではなく「網目」に見える）。
                 // 一撃は全域が同時に閃き、破断した片はその瞬間にも光る。
+                // 遠い所ほど弱く・通った跡は 2 割まで落とす（網の全体が同時に光ると、亀裂ではなく
+                // Delaunay の三角網＝ワイヤーフレームに見える。起点の近くの放射と輪だけが走って見える形にする）。
                 float glowOn = 0.008 + originDist * 0.040;
                 float glowFront = Ease(glowOn, glowOn + 0.010, p)
-                                * (0.40 + 0.60 * (1.0 - Ease(glowOn + 0.010, glowOn + 0.030, p)))
-                                * (1.0 - Ease(CrackEnd - 0.002, CrackEnd + 0.012, p));
+                                * (0.20 + 0.80 * (1.0 - Ease(glowOn + 0.010, glowOn + 0.030, p)))
+                                * (1.0 - Ease(CrackEnd - 0.002, CrackEnd + 0.012, p))
+                                * lerp(1.0, 0.25, smoothstep(0.15, 0.70, originDist));
                 float shock = Ease(CrackEnd - 0.004, CrackEnd + 0.004, p)
                             * (1.0 - Ease(CrackEnd + 0.004, CrackEnd + 0.045, p));
                 float breakLight = Ease(breakAt, breakAt + 0.005, p)
@@ -425,7 +434,14 @@ Shader "FixedCamVr/IntroFracture"
                 float glint = Ease(0.11, 0.20, p)
                             * (1.0 - lerp(1.0, 0.45, _Crystal) * travel) * step(breakAt, p);
                 o.light = float4(glowFront, breakLight, landingLight, glint);
-                o.landedMono = float3(seal, loosen, monoSource);
+                // 着地後に残す縁の重み。嵌まった瞬間だけ強く、0.25 秒で細い線へ落ち着く。小片ほど弱い
+                // （起点の近くは小片が密集し、同じ強さで描くと映像の中央に白い網の塊ができた・2026-10-17）。
+                // ⚠ 落ち着くのは .905 まで。.900〜.930 は全片が着地した縁を静止して見せる保持（2026-09-18）で、
+                //    探針 probe_landed（.91→.93 が動かない）がそれを固定している。
+                float landedCool = 1.0 - Ease(landAt, min(landAt + 0.050, CloserArrive + 0.005), p);
+                float landedWeight = lerp(0.40, 1.0, landedCool)
+                                   * lerp(0.30, 1.0, smoothstep(0.0, 0.35, sizeRank));
+                o.landedMono = float4(seal, loosen, monoSource, landedWeight);
                 // 遠い片は沈む。着地した面には掛けない（detail で消える）。
                 float fog = saturate((eyeDistance - 1.7) / 2.2) * detail;
                 // 着地から 0.12 秒で透明になり、その場所の映像が現れる（0225）。閃きは露出の途中で消えていく。
@@ -501,7 +517,12 @@ Shader "FixedCamVr/IntroFracture"
                 float valid = monoDominant ? i.monoUv.w : validEye;
                 float photoSource = monoDominant ? monoSource : eyeSource;
                 float edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
-                float field = smoothstep(0.0, 0.018, edge) * step(1e-5, valid);
+                // 割れる前は写真の端をぼかして隠す。剥がれた片は撮影範囲の端で切れた辺もガラスの切り口として
+                // 硬く切る（ぼけた直線の辺が飛んでいると、写真の切り抜きに見える）。剥がれた後は両眼とも同じ
+                // カメラの写真（R060）なので、硬い辺も両眼で一致する。
+                float fieldSoft = smoothstep(0.0, 0.018, edge);
+                float fieldHard = saturate(edge / max(fwidth(edge), 1e-6));
+                float field = lerp(fieldSoft, fieldHard, i.landedMono.y) * step(1e-5, valid);
                 clip(field - 1e-4);
                 // 深度だけの描画も同じ撮影範囲を切る。材質の計算と写真参照は不要。
                 if (_ColorMask < 0.5) return 0.0;
@@ -518,9 +539,15 @@ Shader "FixedCamVr/IntroFracture"
                 float3 rimColor = float3(0.96, 0.90, 0.78);   // 生成り寄りの白（題字と同じ側の色）
                 float edgeDistance = min(min(i.edgeDistances.x, i.edgeDistances.y),
                     min(i.edgeDistances.z, i.edgeDistances.w));
-                float aa = max(fwidth(edgeDistance), 1e-6);
-                // 稜線（1 画素）と、縁に沿う幅のある光の帯（約 1cm）。帯が「厚みのある結晶」に読ませる。
-                float ridge = 1.0 - smoothstep(0.00012, 0.00012 + aa * 1.15, edgeDistance);
+                // 1 画素ぶんの縁距離。fwidth（L1）は線の向きで √2 倍ぶれ、回転中に太さが脈打つので勾配の長さで取る。
+                float aa = max(length(float2(ddx(edgeDistance), ddy(edgeDistance))), 1e-6);
+                // 稜線と、縁に沿う幅のある光の帯（約 1cm）。帯が「厚みのある結晶」に読ませる。
+                // 稜線は画素で決める（2026-10-17）。旧式の芯は 0.6 画素で、画素とのずれで明るさが 25% 変わり、
+                // HMD では頭の微動で線が這った。最低 1.3 画素の幅を取り、世界の幅がそれより細いぶんは明るさで払う。
+                float ridgeWorldPx = 0.00012 / aa;
+                float ridgePx = max(ridgeWorldPx, 1.3);
+                float ridge = saturate(ridgePx * 0.5 + 0.5 - edgeDistance / aa)
+                            * min(1.0, (ridgeWorldPx + 0.6) / ridgePx);
                 float band = exp(-edgeDistance / 0.0011);
                 // 代表の粒の反射（0235 の核心）。近い 2 灯を点光源として鏡面を返す。
                 // HDR が無い（8bit LDR）ので必ずクランプする。
@@ -598,9 +625,12 @@ Shader "FixedCamVr/IntroFracture"
                     float3 halfVector = normalize(lightDirection + viewDirection);
                     float facing = saturate(dot(normal, halfVector));
                     float specular = pow(facing, 36.0) + 0.5 * pow(facing, 12.0);
-                    float edgeGlow = ridge * (0.12 * i.light.x + 0.50 * i.light.y + 0.30 * shock + 0.30 * i.light.z
+                    // 一撃の閃きで縁を光らせるのは割れた片だけ（detail）。割れていない片の縁まで光ると、
+                    // 一撃の瞬間に網の全体がワイヤーフレームとして浮く（面の白みは上の color が持つ）。
+                    float edgeShock = shock * detail;
+                    float edgeGlow = ridge * (0.12 * i.light.x + 0.50 * i.light.y + 0.30 * edgeShock + 0.30 * i.light.z
                                               + detail * (0.07 + 0.18 * grazing))
-                                   + band * (0.05 * i.light.x + 0.28 * i.light.y + 0.20 * shock + 0.16 * i.light.z
+                                   + band * (0.05 * i.light.x + 0.28 * i.light.y + 0.20 * edgeShock + 0.16 * i.light.z
                                              + detail * (0.045 + 0.14 * grazing) * (0.6 + 0.8 * i.light.w));
                     // 加算の自発光層。写真の明暗に掛からないので、暗い実景の上でも結晶が光る。
                     float3 crystal = 0.0;
@@ -723,7 +753,8 @@ Shader "FixedCamVr/IntroFracture"
                     glassEdgeColor = lerp(white, spectrum, 0.14 * bevel);
                     float rimReflection = ridge * (0.28 + 0.52 * fresnel)
                         + bevel * (0.026 + 0.065 * fresnel);
-                    float innerEdge = exp(-abs(edgeDistance - 0.0009) / max(aa, 0.00010))
+                    // 内側の細い研磨線。指数の 1 画素幅は画素とのずれで明るさが 0.6〜1 に這うので、2 画素の三角で引く。
+                    float innerEdge = saturate(1.0 - abs(edgeDistance - 0.0009) / max(aa, 0.00010))
                         * (0.08 + 0.16 * fresnel);
                     float3 polished = body * (1.0 - 0.65 * fresnel)
                         + white * whiteReflection
@@ -747,17 +778,23 @@ Shader "FixedCamVr/IntroFracture"
                 float photoAlpha = saturate(1.0 - _ScreenFade) * (1.0 - i.detail.w);
                 float oldAlpha = photoAlpha;
 
-                float strongRidge = 1.0 - smoothstep(0.00020, 0.00020 + aa * 1.75, edgeDistance);
+                float strongRidgeWorldPx = 0.00020 / aa;
+                float strongRidgePx = max(strongRidgeWorldPx, 1.6);
+                float strongRidge = saturate(strongRidgePx * 0.5 + 0.5 - edgeDistance / aa)
+                                  * min(1.0, (strongRidgeWorldPx + 0.8) / strongRidgePx);
                 float strongBand = exp(-edgeDistance / 0.0019);
                 float flightEdge = saturate(
-                    strongRidge * (0.32 + 0.38 * grazing + 0.28 * i.light.y + 0.22 * shock)
+                    strongRidge * (0.32 + 0.38 * grazing + 0.28 * i.light.y + 0.22 * shock * detail)
                     + strongBand * (0.16 + 0.24 * grazing + 0.18 * i.light.w)) * detail;
                 // 飛行中だけ、広い乳白色の縁を細い二重の研磨面へ。着地後の消去は共通。
                 float polishedEdge = saturate(ridge * (0.32 + 0.38 * grazing)
                     + exp(-edgeDistance / 0.00055) * (0.045 + 0.09 * grazing)) * detail;
                 flightEdge = lerp(flightEdge, polishedEdge, glass);
-                // 戻った小片が中央へ密集しても映像を隠さないよう、着地後は明るさを保って幅を絞る。
-                float landedFrontEdge = saturate(ridge * 0.72 + band * 0.16)
+                // 着地後の縁は画素で決めた細い線（片側 0.6 画素 ＝ 隣の片と合わせて約 1.2 画素）。
+                // 世界の幅で引くと、遠くの小片ほど線が太く密になって映像の中央に白い網の塊ができた（2026-10-17）。
+                // 重み（w）は嵌まった瞬間だけ強く、0.25 秒で落ち着き、小片ほど弱い。
+                float landedLine = saturate(0.6 + 0.5 - edgeDistance / aa);
+                float landedFrontEdge = saturate(landedLine * 0.78 + band * 0.08) * i.landedMono.w
                     * i.landedMono.x * (1.0 - step(0.5, i.surface));
 
                 // 全片着地後も p=.930 までは保つ。実ワールド平面の距離なので縦横比による楕円にならない。

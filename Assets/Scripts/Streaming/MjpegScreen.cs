@@ -103,6 +103,12 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Vector2 ContainScale => _containScale;
 
+        /// <summary>
+        /// 実寸の映像を 1 枚でも受けたか（2x2 の未デコード placeholder ではない）。
+        /// placeholder の間の <see cref="ContainScale"/> は 1:1 扱いの値で、映像の矩形ではない。
+        /// </summary>
+        public bool HasDecodedSource => _lastTexW > 4 && _lastTexH > 4;
+
         // ---- ソース映像の明るさ ----
         //   読み手が 2 つある: ① CG 人形の光量を映像へ寄せる（暗い区間で人形だけ明るいと必ず浮く）
         //                      ② 装置の自動露出の追従遅れ（CameraFeelFx）。

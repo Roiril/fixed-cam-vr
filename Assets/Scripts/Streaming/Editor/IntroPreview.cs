@@ -887,7 +887,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 Render(new Shot(IntroStage.Frame, 4, "probe_edge_reset", 0f, 0), saved);
                 var screen = _head.Find("ScreenQuad");
                 var plane = new Plane(screen.forward, screen.position);
-                float halfDiagonal = new Vector2(screen.lossyScale.x, screen.lossyScale.y).magnitude * 0.5f;
+                // 破片が組み上がるのは枠ではなく映像が出ている矩形（IntroVeil.ContentScale・2026-10-17）。
+                // シェーダの中心からの消去も同じ矩形の半対角で正規化しているので、探針も同じ物差しで測る。
+                Vector2 content = _veil.ContentScale;
+                float halfDiagonal = new Vector2(screen.lossyScale.x * content.x, screen.lossyScale.y * content.y).magnitude * 0.5f;
                 var radius = new float[Width * Height];
                 for (int y = 0; y < Height; y++)
                 for (int x = 0; x < Width; x++)
@@ -895,7 +898,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     Ray ray = _cam.ViewportPointToRay(new Vector3((x + 0.5f) / Width, (y + 0.5f) / Height, 0f));
                     Vector3 local = plane.Raycast(ray, out float distance)
                         ? screen.InverseTransformPoint(ray.GetPoint(distance)) : Vector3.one;
-                    radius[y * Width + x] = Mathf.Abs(local.x) > 0.5f || Mathf.Abs(local.y) > 0.5f
+                    radius[y * Width + x] = Mathf.Abs(local.x) > 0.5f * content.x || Mathf.Abs(local.y) > 0.5f * content.y
                         ? -1f : new Vector2(local.x * screen.lossyScale.x, local.y * screen.lossyScale.y).magnitude / halfDiagonal;
                 }
                 var proof = new System.Text.StringBuilder("{\"samples\":[");

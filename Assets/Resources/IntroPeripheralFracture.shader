@@ -59,7 +59,8 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float4 positionCS : SV_POSITION;
                 float4 leftQ : TEXCOORD0;
                 float4 rightQ : TEXCOORD1;
-                float4 screenQ : TEXCOORD2;
+                // 片単位の退場（集結中にスクリーンの手前へ入った片は片ごと薄くなる）。
+                nointerpolation float pieceClear : TEXCOORD2;
                 float4 edges : TEXCOORD3;
                 // x = 破断の受け渡し / y = 吸引の進み / z = 退場 / w = 頭中心の視線と法線の内積（きらめきの位相・両眼一致）
                 nointerpolation float4 phase : TEXCOORD4;
@@ -175,7 +176,9 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                     radians(lerp(-18.0, 18.0, Hash(v.piece.w + 37.0))) * uSpin);
                 relative = Rotate(relative, sourceDirection,
                     radians(lerp(-28.0, 28.0, Hash(v.piece.w + 41.0))) * uSpin);
-                float shrink = max(exit, 0.001) * (1.0 - 0.11 * handoff);
+                // 吸われるほど縮む（寄った分に比例）。旧: 最後の 0.035 だけで縮んで消え、大きい板が急にしぼんだ。
+                float shrink = max(exit, 0.001) * (1.0 - 0.11 * handoff)
+                             * lerp(1.0, 0.25, smoothstep(0.2, 1.0, travel));
                 float3 worldPosition = _Mode < 0.5 ? captureVertex : center + relative * shrink;
                 float3 fromEye = worldPosition - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
@@ -199,17 +202,23 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 // 投影は頂点で同次座標まで求める。除算と撮影範囲の判定は補間後に片眼ごとに行う。
                 o.leftQ = mul(_LeftWorldToUv, float4(restVertex, 1.0));
                 o.rightQ = mul(_RightWorldToUv, float4(restVertex, 1.0));
+                // 集結中に眼から見てスクリーンの内側へ入った片は、**片ごと**薄くする（2026-10-17）。
+                // 旧: 画素ごとに矩形の内外で切っていたので、片の上に矩形の直線の切れ目と矩形の影が出ていた。
+                // 判定は片の中心（どの頂点でも同じ値）を、名目の殻ではなく置いた位置で眼から投影する。
                 float3 screenNormal = normalize(cross(screenRight, screenUp));
-                float3 screenRay = worldPosition - _CurrentHeadPosition.xyz;
-                float denominator = dot(screenRay, screenNormal);
+                float3 centerPlaced = captureOrigin + (center - captureOrigin) * depthScale;
+                float3 centerRay = centerPlaced - _CurrentHeadPosition.xyz;
+                float centerDen = dot(centerRay, screenNormal);
                 float screenDistance = dot(_ScreenCenter.xyz - _CurrentHeadPosition.xyz, screenNormal);
-                float2 screenNumerator = float2(
-                    dot(_CurrentHeadPosition.xyz - _ScreenCenter.xyz, screenRight) * denominator
-                        + dot(screenRay, screenRight) * screenDistance,
-                    dot(_CurrentHeadPosition.xyz - _ScreenCenter.xyz, screenUp) * denominator
-                        + dot(screenRay, screenUp) * screenDistance);
-                o.screenQ = float4(screenNumerator / max(_ScreenHalf.xy, 1e-4),
-                    denominator, screenDistance * denominator);
+                float rectDistance = 9.0;
+                if (centerDen * screenDistance > 1e-6)
+                {
+                    float3 onPlane = _CurrentHeadPosition.xyz + centerRay * (screenDistance / centerDen);
+                    float3 rel = onPlane - _ScreenCenter.xyz;
+                    rectDistance = max(abs(dot(rel, screenRight)) / max(_ScreenHalf.x, 1e-4),
+                                       abs(dot(rel, screenUp)) / max(_ScreenHalf.y, 1e-4));
+                }
+                o.pieceClear = 1.0 - Ease(PullStart, 0.70, p) * (1.0 - smoothstep(1.05, 1.35, rectDistance));
 
                 // 周辺片は粗い明暗を優先する。8 tap と鏡面計算を頂点へ寄せ、面内では補間する。
                 float2 patch = v.timing.yz + (v.patchUv - 0.5) * 0.085;
@@ -293,6 +302,13 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 float2 photoUv = photoQ.xy / safePhotoW;
                 // 中央片と同じ眼の撮影範囲を補う。片眼ごとの同次座標を面内補間してから判定する。
                 float support = PhotoSupport(photoUv, min(photoQ.z, photoQ.w));
+                // 剥がれた片は両眼とも左カメラの範囲で欠ける（中央の片と同じ R060 の扱い）。眼ごとに判定すると、
+                // 飛んでいる片の欠け方が左右で違って視野闘争になる。
+                if (i.phase.x > 0.5)
+                {
+                    float safeLeftW = abs(i.leftQ.w) > 1e-5 ? i.leftQ.w : (i.leftQ.w < 0.0 ? -1e-5 : 1e-5);
+                    support = PhotoSupport(i.leftQ.xy / safeLeftW, min(i.leftQ.z, i.leftQ.w));
+                }
                 float outsidePhoto = 1.0 - support;
                 clip(outsidePhoto - 0.001);
 
@@ -305,13 +321,7 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                     return float4(alpha, alpha, alpha, alpha);
                 }
 
-                float safeScreenZ = abs(i.screenQ.z) > 1e-5
-                    ? i.screenQ.z : (i.screenQ.z < 0.0 ? -1e-5 : 1e-5);
-                float2 screenClip = i.screenQ.xy / safeScreenZ;
-                float rectDistance = max(abs(screenClip.x), abs(screenClip.y));
-                float insideScreen = (1.0 - smoothstep(0.96, 1.12, rectDistance))
-                    * step(0.0, i.screenQ.w);
-                float screenClear = 1.0 - insideScreen * Ease(PullStart, 0.70, _Shatter);
+                float screenClear = i.pieceClear;
                 clip(i.phase.x * i.phase.z * screenClear - 0.001);
                 float3 rimColor = float3(0.96, 0.90, 0.78);
                 float strongCrack = 1.0 - smoothstep(0.003, 0.016, edgeDistance);
@@ -337,10 +347,10 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                 if (glass > 0.0001)
                 {
                     float fresnel = 0.04 + 0.96 * pow(1.0 - saturate(abs(i.phase.w)), 5.0);
-                    float aa = max(fwidth(edgeDistance), 0.0001);
+                    float aa = max(length(float2(ddx(edgeDistance), ddy(edgeDistance))), 0.0001);
                     float ridge = 1.0 - smoothstep(0.0012, 0.0012 + aa * 1.15, edgeDistance);
                     float bevel = exp(-edgeDistance / 0.0055);
-                    float inner = exp(-abs(edgeDistance - 0.009) / max(aa, 0.001));
+                    float inner = saturate(1.0 - abs(edgeDistance - 0.009) / max(aa, 0.001));
                     float stripCoord = i.reflection.x + (i.edges.x - i.edges.y) * 0.28;
                     float stripAa = max(fwidth(stripCoord), 0.004);
                     float strip = 1.0 - smoothstep(0.004, 0.012 + stripAa, abs(stripCoord - 0.22));
@@ -356,7 +366,9 @@ Shader "FixedCamVr/IntroPeripheralFracture"
                         + edgeTint * polishedRim
                         + white * (strip * 2.4 + secondary * 0.85) * (0.42 + 0.58 * fresnel)
                         + spectrum * (strip * 0.05 + bevel * fresnel * 0.04);
-                    color = lerp(color, min(polished, 0.94), glass * (1.0 - i.phase.y));
+                    // 縁は退場まで磨いた細い縁のまま（旧: travel で非ガラスの太い縁 strongCrack へ戻り、
+                    // 退場の直前だけ縁が 8 画素まで太った）。面の色は surface.rgb が travel で持つ。
+                    color = lerp(color, min(polished, 0.94), glass);
                 }
                 float alpha = i.phase.x * i.phase.z * outsidePhoto * screenClear;
                 return float4(color, alpha);
