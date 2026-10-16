@@ -77,6 +77,15 @@ contain-fit は左右対称なので、これはソース画像の横中央と�
 **Activity は作り直されず、`layout-land` は効かない**。`onConfigurationChanged` で
 自分で `LinearLayout.orientation` と weight を組み替える（`applyShootPanelOrientation`）。
 
+## 2c. 幕の演出を重ねる（v0.17.0・2026-10-17）
+
+「重ね合わせ」で 2 周目 A の幕の動画を左半分へ重ねる。下に敷くのは鏡合わせと同じく**配信 JPEG**。
+動画は同梱で、`MediaMetadataRetriever` で 60 コマ（左半分・RGB_565）へ割って Canvas に描く
+（別の動画面を重ねると矩形を 2 か所で合わせることになる）。
+⚠ ボタンは足さずに鏡合わせと 1 つにした — 7 個目で横持ちの段がはみ出す（`RailMetrics`）。
+実機（カメラ A・2026-10-17 04:21）で両方の濃さと動画の進行を確認。**部屋が消灯中で、位置が合っているかは未判定。**
+撮影は `G:\マイドライブ\shubie\screenshots\curtain-overlay-20261017\`。
+
 ## 3. ⚠⚠ Kotlin のブロックコメントは**入れ子になる**
 
 KDoc の中に `` `/record/*` `` と書いたら「Unclosed comment」でファイル全体が壊れた。
