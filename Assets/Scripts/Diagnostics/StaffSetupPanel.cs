@@ -67,7 +67,8 @@ namespace FixedCamVr.Diagnostics
         public const string CallStaffText = "スタッフをお呼びください\nPlease call a member of staff.\nVeuillez appeler un membre du personnel.";
         public const string WelcomeText = "次の体験者の準備はタブレットで行います";
         public const string NotReadyText = "項目がそろったらヘッドセットを外して台に置きます";
-        public const string ReadyText = "準備ができました\nヘッドセットを台に置きます。次の体験者の準備はタブレットで行います";
+        // 「次の体験者の準備はタブレットで」は本文（WelcomeText）が同じ画面で言っている。ここで繰り返さない。
+        public const string ReadyText = "準備ができました\nヘッドセットを台に置きます";
         public const string RecallHint = "画面が見えないとき：B を 1 秒押す";
         public const string CancelHint = "中止：右トリガーを 2 秒押し続ける（確定前の位置へ戻します）";
         private const string PositionLabel = "位置合わせ", TabletLabel = "タブレット";

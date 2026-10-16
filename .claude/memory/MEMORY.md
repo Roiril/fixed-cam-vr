@@ -2,6 +2,8 @@
 
 - [virtual_walk.md](virtual_walk.md) - 2026-10-14。PC の仮想体験（`menu virtualwalk`）。NPC が歩き、実プレート＋CG 合成が実シェーダ・実 Director を通る。90Hz。前後比較は `tools/virtualwalk-video.py --compare`。エージェントスクリーンは `comms=1` と `tools/virtualwalk-comms.py`。`-Set` は引用しない。見た目の合否は実機。
 
+- [flow_walk_harness.md](flow_walk_harness.md) - 2026-10-17。起動〜準備〜来場者タブレット〜回収〜リセットを押す順に通しで撮る `tools/visitor-ui/flow-walk.cjs`（絵コンテ・期待・`--web-root` で前後比較）。回収の長押しを離した指が「来場者の画面にする」を押していた誤タップほか 7 点を直した。
+
 - [staff_setup.md](staff_setup.md) - 2026-10-10。タブレット中心の準備・交代フロー。Questの並行位置合わせ。機器別の実状態。終幕中のリセット保護。新設定と説明と引き渡しの照合。検証と実機確認の範囲を記載。
 
 - [romi_cart_esp32.md](romi_cart_esp32.md) - 2026-10-07。人形を載せる台車（Pololu Romi）の制御は ESP32 + CP2102N（Joy-Con 2 を BLE で受ける自作スケッチ `jc2-romi`・起動は DISARMED）。この PC では CP210x ドライバ導入後 COM17／Silicon Labs の zip は curl だと 403・アプリ内ブラウザで取る／ピン配置と積載量は未確認。

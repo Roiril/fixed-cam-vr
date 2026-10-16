@@ -165,7 +165,7 @@ public final class TabletInstrumentation extends Instrumentation {
             check("equipment preview fits viewport", equipmentLayout.optBoolean("fits"));
             check("equipment preview has visitor instructions",
                 equipmentLayout.optString("text").contains("左手にコントローラー")
-                    && equipmentLayout.optString("text").contains("Meta Quest")
+                    && equipmentLayout.optString("text").contains("クエストを装着")
                     && equipmentLayout.optString("text").contains("ヘッドフォン"));
             checkButtonBounds(view, "briefingReplay", true);
             checkButtonBounds(view, "briefingSettings", true);

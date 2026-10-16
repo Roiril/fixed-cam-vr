@@ -299,6 +299,8 @@
   .equipment-steps li { display: grid; justify-items: center; gap: 16px; text-align: center; font: 400 clamp(14px,1.45vw,17px)/1.7 var(--serif); letter-spacing: .06em; color: rgba(242,236,223,.88); }
   .equip-ico { display: block; width: clamp(96px,13vw,150px); height: auto; aspect-ratio: 1 / 1; object-fit: contain; }
   .equipment-followup { margin: clamp(22px,5vh,40px) 0 0; color: rgba(194,184,168,.85); text-align: center; font: 400 clamp(15px,1.6vw,19px)/1.7 var(--serif); letter-spacing: .06em; }
+  /* 「くだ／さい」のように語の途中で折り返さない。文節で折る（対応しない WebView では従来どおり） */
+  .equipment-steps li span, .equipment-followup, .result-line { word-break: auto-phrase; }
   .equipment-staff-status { margin: 12px 0 0; text-align: center; color: var(--gold); font: 13px/1.6 var(--sans); }
   .stage.is-equipment .briefing-controls { grid-template-columns: repeat(2,auto); padding: 0; border: 0; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .stage.is-equipment #briefingSettings { grid-column: 1; grid-row: 2; }
@@ -610,7 +612,8 @@
       </table>
       <div class="result-actions">
         <button class="primary" id="applyBtn" type="button" hidden>この設定で始める</button>
-        <button class="primary" id="resultContinueBtn" type="button" hidden>画面をタップして次へ</button>
+        <!-- 0204「画面タップでいいならボタンは不要」。画面には出さず、画面タップと同じ動きの入口としてだけ残す -->
+        <button class="primary visually-gone" id="resultContinueBtn" type="button" hidden>画面をタップして次へ</button>
         <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
         <button class="retry" id="briefingRetryBtn" type="button" hidden>説明資料を再読み込み</button>
         <button class="secondary" id="editBtn" type="button" hidden>設定に戻る</button>
@@ -721,10 +724,10 @@
           <button class="staff-primary" id="staffVisitorBtn" type="button" hidden>来場者の画面にする</button>
           <button class="staff-primary staff-hold" id="staffPrepareBtn" type="button" hidden aria-describedby="staffPrepareHint">長押しで装着へ進む</button>
           <button class="staff-primary staff-hold" id="staffCollectBtn" type="button" hidden aria-describedby="staffCollectHint">長押しで次の準備へ進む</button>
-          <button class="staff-secondary staff-hold" id="staffRestartBtn" type="button" hidden aria-describedby="staffRestartHint">最初からやり直す（長押し）</button>
+          <button class="staff-secondary staff-hold" id="staffRestartBtn" type="button" hidden aria-describedby="staffRestartHint">設定と説明をやり直す（長押し）</button>
           <span class="sr-only" id="staffPrepareHint">1.2 秒押し続けると進みます。</span>
           <span class="sr-only" id="staffCollectHint">1.5 秒押し続けると次の体験者の準備になります。</span>
-          <span class="sr-only" id="staffRestartHint">1.5 秒押し続けると次の体験者の準備になります。</span>
+          <span class="sr-only" id="staffRestartHint">1.5 秒押し続けると準備に戻ります。来場者は言語の選択からやり直します。</span>
         </div>
         <p class="staff-now-message" id="staffNowMessage" role="status" aria-live="polite"></p>
       </section>
@@ -850,7 +853,7 @@
         next: '次の文', settings: '言語・軽減を変更', replay: 'もう一度説明を見る', resume: '再開', toTitle: 'タイトルに戻る', staff: 'スタッフ専用（長押し）', hold: '1.5秒長押ししてください', subtitles: '字幕で続ける', controls: '説明の操作', pause: '一時停止して説明の操作を開く', preview: 'スタッフ確認モード',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
-      equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'Meta Questを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエスト内に表示される指示に従ってください。', handoff: 'タブレットをスタッフへ返してください', handoffDetail: '確認後にスタッフが装着をお手伝いします', waiting: 'スタッフの確認をお待ちください。', interrupted: 'スタッフが機器を確認しています。このままお待ちください。', recovery: 'Quest の通信が戻るまでスタッフにお預けください。' },
+      equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'クエストを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエストの中の指示に従ってください。', handoff: 'タブレットをスタッフへ返してください', handoffDetail: '確認後にスタッフが装着をお手伝いします', waiting: 'スタッフの確認をお待ちください。', interrupted: 'スタッフが機器を確認しています。このままお待ちください。', recovery: 'Quest の通信が戻るまでスタッフにお預けください。' },
     },
     en: {
       journey: ['Prepare for the experience', 'Settings', 'Briefing', 'Equip'],
@@ -2225,7 +2228,8 @@
   function visitorEquipmentStatus() {
     const copy = T[state.lang].equipment;
     if (state.connection !== 'online' || !questStatusFresh()) return copy.recovery;
-    return state.status?.staffSetup?.reason ? copy.interrupted : copy.waiting;
+    // ふだんの待ちは上の 2 行（返す・確認後に手伝う）で足りる。1 行足すのは待ちの中身が変わったときだけ。
+    return state.status?.staffSetup?.reason ? copy.interrupted : '';
   }
 
   function discardReferenceGhost() {
@@ -3473,7 +3477,10 @@
     if (key === 'playing' || key === 'outro' || key === 'finished') return '';
     const blocker = staffStartBlocker(snapshot.status);
     let row = null;
-    if (blocker === 'connection' || blocker === 'stale') row = rows.find((item) => item.id === 'Quest');
+    // 最初の準備では本文が位置合わせの手順そのもの。同じ手順を重ねず、並行して直せる機器の異常を出す。
+    if (key === 'setup' && blocker === 'position') {
+      row = rows.find((item) => (item.id.startsWith('Camera') || item.id === 'Content') && item.tone === 'trouble' && item.fix) ?? null;
+    } else if (blocker === 'connection' || blocker === 'stale') row = rows.find((item) => item.id === 'Quest');
     else if (blocker === 'position') row = rows.find((item) => item.id === 'Position');
     else if (blocker === 'camera') row = rows.find((item) => item.id.startsWith('Camera') && item.tone !== 'ok' && item.fix);
     else if (blocker === 'content') row = rows.find((item) => item.id === 'Content');
@@ -3528,7 +3535,9 @@
     setText('staffTargetState', questRow.value === '—' ? '' : questRow.value);
     $('staffDoneBtn').hidden = !snapshot.visitorFlow || STAFF_NO_RETURN.has(key);
     $('staffDoneBtn').disabled = state.staffChecking || state.clearing;
-    $('staffHandback').hidden = !(snapshot.handback && !snapshot.acknowledged);
+    // 「スタッフ専用」の長押しで開いたなら、読んでいるのはもう受け取ったスタッフ。返却の案内は出さない
+    // （出すと受け取った人に「渡してください」と言い、確認の画面が縦にはみ出す・2026-10-17）。
+    $('staffHandback').hidden = !(snapshot.handback && !snapshot.acknowledged && staffOpenReason !== 'manual');
     for (let step = 1; step <= 5; step++) {
       const item = $(`staffCycle${step}`);
       if (step === staffCycleStep) item.setAttribute('aria-current', 'step');
@@ -3570,7 +3579,7 @@
     $('staffCollectBtn').hidden = !actions.collect;
     $('staffCollectBtn').disabled = !actions.collect || key !== 'finished' || !staffResetAllowed();
     $('staffRestartBtn').hidden = !actions.restart;
-    setText('staffRestartBtn', typeof actions.restart === 'string' ? actions.restart : '最初からやり直す（長押し）');
+    setText('staffRestartBtn', typeof actions.restart === 'string' ? actions.restart : '設定と説明をやり直す（長押し）');
     $('staffRestartBtn').disabled = !staffResetAllowed();
     if ($('staffPrepareBtn').hidden || $('staffPrepareBtn').disabled) prepareHold?.cancel();
     if ($('staffCollectBtn').hidden || $('staffCollectBtn').disabled) collectHold?.cancel();
@@ -3743,6 +3752,32 @@
     }
   }
 
+  // 長押しが成立しても指はまだ画面にある。成立で画面が切り替わると、離した指の click が
+  // 同じ位置に現れた別のボタンへ入る（回収の長押しのあと「来場者の画面にする」が勝手に押され、
+  // 来場者の画面へ飛んだ・2026-10-17 の通し確認で発見）。その指を離して少し経つまで click を捨てる。
+  const HOLD_RELEASE_GUARD_MS = 400;
+  const HOLD_POINTER_MAX_MS = 10000;
+  let heldPointer = null;
+  let holdClickGuardUntil = 0;
+  function guardClicksAfterHold(pointerId) {
+    heldPointer = { id: pointerId, until: performance.now() + HOLD_POINTER_MAX_MS };
+  }
+  function releaseHeldPointer(event) {
+    if (!heldPointer || event.pointerId !== heldPointer.id) return;
+    heldPointer = null;
+    holdClickGuardUntil = performance.now() + HOLD_RELEASE_GUARD_MS;
+  }
+  document.addEventListener('pointerup', releaseHeldPointer, { capture: true });
+  document.addEventListener('pointercancel', releaseHeldPointer, { capture: true });
+  document.addEventListener('click', (event) => {
+    const now = performance.now();
+    // 離した通知が来ないまま残っても、案内をすべて止めたままにはしない。
+    if (heldPointer && now > heldPointer.until) heldPointer = null;
+    if (!heldPointer && now >= holdClickGuardUntil) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, { capture: true });
+
   // 長押しで確定するボタン。押している間は左から満ちる。離すと取り消す。キーボードの Enter / Space も同じ。
   function bindHold(button, durationMs, onComplete, options = {}) {
     let hold = null;
@@ -3770,6 +3805,7 @@
           if (hold !== current) return;
           const shouldComplete = active();
           cancel();
+          if (shouldComplete && current.source === 'pointer') guardClicksAfterHold(current.id);
           if (shouldComplete) onComplete();
         }, durationMs),
         // prefers-reduced-motion でも満ちる量は見せる。CSS の遷移ではなく値を直接書く。

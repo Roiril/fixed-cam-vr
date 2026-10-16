@@ -11,8 +11,11 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 const root = path.resolve(__dirname, '..', '..');
-const webRoot = path.join(root, 'tablet', 'app', 'src', 'main', 'assets', 'web');
 const args = process.argv.slice(2);
+// --web-root で別の版の画面を配れる（直す前と後を同じ代役で比べるとき。flow-walk.cjs --web-root）。
+const webRootIndex = args.indexOf('--web-root');
+const webRoot = webRootIndex >= 0 ? path.resolve(args[webRootIndex + 1])
+  : path.join(root, 'tablet', 'app', 'src', 'main', 'assets', 'web');
 const portIndex = args.indexOf('--port');
 const port = portIndex >= 0 ? Number(args[portIndex + 1]) : 8108;
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('port must be 1024..65535');
@@ -101,6 +104,12 @@ const scenarios = {
   },
   alignment() {
     status.staffSetup = setup('alignment', 'position', { positionConfirmed: false, position: 'recenter' });
+  },
+  // 位置合わせが済み、最初の来場者の前にスタッフがリセットする段（Quest の ResetRequired）。
+  prepare() {
+    status.phase = 'INTRO';
+    status.titleStage = 'Wait';
+    status.staffSetup = setup('reset', '');
   },
   handover() {
     status.phase = 'INTRO';

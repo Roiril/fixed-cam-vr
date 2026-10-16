@@ -1335,10 +1335,10 @@ test('最後の音声が終わると装着案内を表示し、再説明はそ�
   assert.equal(elements.get('subtitle').hidden, true);
   assert.equal(elements.get('equipmentGuide').hidden, false);
   assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
-  assert.equal(elements.get('equipmentQuest').textContent, 'Meta Questを装着してください。');
+  assert.equal(elements.get('equipmentQuest').textContent, 'クエストを装着してください。');
   assert.equal(elements.get('equipmentHeadphones').textContent, 'ヘッドフォンを装着してください。');
   assert.equal(elements.get('equipmentController').textContent, '左手にコントローラーを持ってください。');
-  assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエスト内に表示される指示に従ってください。');
+  assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエストの中の指示に従ってください。');
   assert.equal(elements.get('briefingReplay').hidden, false);
   for (const id of ['briefingPrevious', 'briefingNext', 'briefingToggle', 'briefingMute', 'mediaNotice']) {
     assert.equal(elements.get(id).hidden, true);
@@ -2020,7 +2020,7 @@ test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内
     assert.equal(elements.get('staff').open, true, '返却画面の長押しでスタッフ画面を開く');
     assert.equal(elements.get('staff').dataset.state, 'confirm');
     assert.equal(elements.get('staffNowTitle').textContent, '装着の前に確認');
-    assert.equal(elements.get('staffHandback').hidden, false, '返却の案内を3言語で最上段に出す');
+    assert.equal(elements.get('staffHandback').hidden, true, '長押しで開いたなら読み手は受け取ったスタッフ。返却の案内は出さない');
     assert.match(html, /タブレットをスタッフにお渡しください/);
     assert.match(html, /Please hand the tablet to a member of staff\./);
     assert.match(html, /Veuillez remettre la tablette à un membre du personnel\./);
@@ -2289,6 +2289,20 @@ test('スタッフ欄を閉じている間は来場者画面からリセット�
   let requests = 0; fetchHandler = async () => { requests++; throw new Error('must not send hidden staff actions'); };
   await elements.get('staffPrepareBtn').dispatch('click'); await elements.get('staffResetBtn').dispatch('click');
   assert.equal(requests, 0);
+});
+
+test('最初の準備の対処は本文の位置合わせを繰り返さず、並行して直せるカメラを指す', async () => {
+  prepareStaff(); runtime.resetStaffTimers();
+  const status = { ...clone(validStatus), questTick: 150,
+    staffSetup: { stage: 'setup', reason: 'position', positionConfirmed: false, position: 'needed', content: true,
+      cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'trouble', problem: 'nostream' }, { id: 'C', state: 'ok' }] } };
+  state.status = status; runtime.observeQuestTick(status); runtime.renderStaff();
+  assert.equal(elements.get('staff').dataset.state, 'setup');
+  assert.match(elements.get('staffNowBody').textContent, /右トリガー/);
+  assert.match(elements.get('staffRecovery').textContent, /^対処：スマホ B の FixedCam Streamer/);
+  status.staffSetup.cameras[1] = { id: 'B', state: 'ok' };
+  state.status = status; runtime.renderStaff();
+  assert.equal(elements.get('staffRecovery').textContent, '', '直す機器が無ければ本文の手順だけにする');
 });
 
 test('リセット拒否では成功帯を出さず、同じセッションの機器回復だけを短く知らせる', async () => {
@@ -3000,10 +3014,13 @@ test('装着前の確認は足りない項目を赤で示し、揃うまで長�
   runtime.openStaffScreen('manual');
   const prepare = elements.get('staffPrepareBtn');
   assert.equal(elements.get('staff').dataset.state, 'confirm');
-  assert.equal(elements.get('staffHandback').hidden, false, '返却が未受理なら開き方に関係なく案内する');
+  assert.equal(elements.get('staffHandback').hidden, true, '長押しで開いたスタッフには返却の案内を出さない');
+  runtime.closeStaffScreen();
+  runtime.openStaffScreen('recovery');
+  assert.equal(elements.get('staffHandback').hidden, false, '自分で開いた画面なら、返却が未受理のあいだ3言語で案内する');
   runtime.closeStaffScreen();
   runtime.openStaffScreen('manual');
-  assert.equal(elements.get('staffHandback').hidden, false, '閉じて開き直しても3言語の返却案内を保つ');
+  assert.equal(elements.get('staffHandback').hidden, true, '閉じて長押しで開き直しても出さない');
   assert.deepEqual(visibleStaffItems(), [['ok', '言語：English'], ['ok', 'ホラー軽減：あり'],
     ['trouble', 'カメラ B：映像が止まっています'], ['ok', '位置合わせ']]);
   assert.equal(elements.get('staffNowItem0Mark').textContent, '●');

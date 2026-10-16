@@ -18,6 +18,26 @@
 
 mockはQuestへ接続しない。内蔵ブラウザの撮影が縮まないように開発用の応答だけ全画面要求を抑止する。APKのHTMLは変更しない。長押しの時間と要求IDと説明版の照合は`node tools/visitor-ui/verify-runtime.cjs`で検証する。mockの表示だけで実機の動作を合格にしない。
 
+## 一巡を通しで撮る（flow-walk・2026-10-17）
+
+起動からリセットまで（本編の最中は除く）を、人が押す順に押して毎画面を撮る。
+
+```bash
+node tools/visitor-ui/flow-walk.cjs                 # 日本語の一巡。約 3 分（博士の説明は実時間で流れる）
+node tools/visitor-ui/flow-walk.cjs --lang en
+node tools/visitor-ui/flow-walk.cjs --only launch,reset,after   # 説明を飛ばして準備と回収だけ（約 30 秒）
+node tools/visitor-ui/flow-walk.cjs --web-root <dir>            # 別の版の画面で歩く（直す前と比べる）
+```
+
+- 代役（mock）を空きポートで立て、headless Chrome を Redmi Pad SE と同じ 1097×686 で開く。押すのはタッチ（`Input.dispatchTouchEvent`）。長押しは本当に押し続ける
+- 出力は既定で `G:\マイドライブ\shubie\screenshots\fixed-cam-vr\flow-walk\<時刻>-<言語>\`。`index.html` が絵コンテ（画面・誰が持っているか・次にすること・押せるボタン・見えている文字・期待の合否）。`steps.json` が同じ中身
+- 「見えている」はモーダルが開いていればその中だけで数える。透明度 0.05 未満・`hidden`・`inert` も数えない
+- スタッフ画面がアプリ自身の操作で開閉したら、その呼び出し元を絵コンテに残す（画面が勝手に飛んだ理由はここでしか分からない）
+- `a.expect()` が外れると終了コード 1。今回見つけた誤りを戻さないための期待を区間ごとに置いてある
+- ⚠ 代役の段は Quest の実装の写し（`setup` → `alignment` → `reset` → `settings` …）。Quest の段を変えたら `staff-mock-server.cjs` の場面も直す
+- ⚠ 「全画面」ボタンは代役だけで出る（全画面要求を抑止しているため）。実機の評価に数えない
+- Quest 側のスタッフ画面は `.\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.StaffSetupPreview.Run -Set out=<dir>` で 18 画面を焼いて並べる
+
 ## 音と資料の遷移（2026-10-15）
 
 字幕は全文を即時表示する。説明中は字幕にぼかしと移動を付けない。
@@ -164,7 +184,7 @@ JSON から台本と SRT を再生成する。字幕を別の文面へ手編集�
 - 動きを減らす端末設定ではタイトルと章の遷移も即時にする。
 - 軽減画面の「設定を確認する」で、言語と軽減をまとめた確認画面へ進む。この時点では送信しない。
 - 確認画面の「この設定で始める」で送信する。直後に「設定を反映しています」と表示する。Quest から反映の返答が届いても、最低900msは表示を保つ。反映できても自動では進めない。
-- 「Questに反映しました」の画面をタップすると博士の説明へ進む。説明開始専用のボタンは置かない。
+- 「Questに反映しました」の画面をタップすると博士の説明へ進む。説明開始専用のボタンは置かない（0204）。2026-10-11 に「博士の説明を始める」として画面へ出ていたのを 2026-10-17 に戻した。`resultContinueBtn` は画面に出さず、画面タップと同じ入口として残す（実機試験が押す）。
 - 「設定に戻る」で選択を保ったまま戻る。
 
 色と構図は既存キービジュアルを参照した実装案。
