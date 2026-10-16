@@ -175,6 +175,13 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 cam.fieldOfView = CloseFovDeg;
 
+                // ---- 4 周目 A の③a → ③b の「復帰」だけを通しで撮る（`-Set recovery=1`・0270）----
+                if (EditorCliArgs.Get("recovery") == "1")
+                {
+                    ShootRecovery(panel, logic, apply, root, tmp, cam, dir, dist);
+                    return;
+                }
+
                 // ---- 文面ごとに 1 枚（打ち終わった状態）----
                 // ⚠ **4 通とも撮る。** 枠に収まるかは机上の文字数勘定では決まらず、しかも
                 //    ③ だけが 2 行なので、縦の座り（`CommsPanel.SetNotice` の重心運び）は
@@ -350,6 +357,63 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         private static string Frame(string dir, int i) => Path.Combine(dir, $"f{i:0000}.png");
+
+        /// <summary>
+        /// ③a「止まってください！」→（読ませ終わった縁で同じ面のまま）③b を、侵食度 1 から 30fps で撮る（0270）。
+        /// 出し先は <c>recovery/</c>。コマごとの値（電力・縦の開き・乱れ・顔に残る人形・赤い字）を
+        /// <c>recovery.tsv</c> へ書く — 判定は絵と並べて見る（数値だけでも絵だけでも決まらない）。
+        /// </summary>
+        private static void ShootRecovery(CommsPanel panel, object logic, MethodInfo apply, Transform root,
+                                          TMP_Text tmp, Camera cam, string dir, float dist)
+        {
+            string sub = Path.Combine(dir, "recovery");
+            Directory.CreateDirectory(sub);
+            float dt = 1f / Fps;
+            Disable(logic);
+            ApplyNow(apply, panel, logic);
+            // 乗っ取られ切った後（侵食度 1）から戻ってくる、が本番の姿。
+            SetLevelForPreview(panel, 1f, 0.01f);
+            panel.Deliver(CommsNotice.Halt);
+            PlaceStraightAhead(root, tmp, dist);
+            PropertyInfo doneReading = logic.GetType().GetProperty("DoneReading")!;
+            var tsv = new System.Text.StringBuilder("frame\tsec\tnotice\tpower\tsquash\ttear\tresidue\tred\ttorn\tpanel\n");
+            bool promptSent = false;
+            bool released = false;
+            panel.SetReleasedForPreview(false);
+            int n = 0;
+            const float EndSec = 8.5f;
+            for (float t = 0f; t < EndSec; t += dt)
+            {
+                if (!promptSent && (bool)doneReading.GetValue(logic))
+                {
+                    panel.Deliver(CommsNotice.Prompt);
+                    promptSent = true;
+                }
+                // 読ませる段に入って 1 秒で、体験者の報告が通った（呪いが解けた）ことにする。残りが消えていく所まで撮る。
+                if (promptSent && !released && panel.LastNotice == CommsNotice.Prompt
+                    && (CommsStage)logic.GetType().GetProperty("Stage")!.GetValue(logic) == CommsStage.Hold
+                    && (float)logic.GetType().GetProperty("StageElapsedSec")!.GetValue(logic) >= 1.0f)
+                {
+                    panel.SetReleasedForPreview(true);
+                    released = true;
+                    Debug.Log($"[CommsPreview] 復帰: {n} コマ目で呪いが解けたことにした");
+                }
+                Step(logic, apply, panel, dt);
+                tsv.Append(n).Append('\t').Append(panel.RecoverySec.ToString("F3")).Append('\t')
+                   .Append(panel.LastNotice).Append('\t')
+                   .Append(panel.AppliedPower.ToString("F2")).Append('\t')
+                   .Append(panel.AppliedSquash.ToString("F2")).Append('\t')
+                   .Append(panel.AppliedTear.ToString("F2")).Append('\t')
+                   .Append(panel.AppliedResidue.ToString("F2")).Append('\t')
+                   .Append(panel.RedGlyphs).Append('\t')
+                   .Append(panel.TornBands).Append('\t')
+                   .Append(panel.AppliedPanelAlpha.ToString("F2")).Append('\n');
+                Shoot(cam, Frame(sub, n++));
+            }
+            panel.SetReleasedForPreview(false);
+            File.WriteAllText(Path.Combine(sub, "recovery.tsv"), tsv.ToString());
+            Debug.Log($"[CommsPreview] 復帰（③a → ③b）{n} コマ → {sub}（③b を届けた: {promptSent}）");
+        }
 
         /// <summary>
         /// <c>-Set invasion=0..1</c>。旧 <c>decay=</c> も同じ意味で受け付ける。

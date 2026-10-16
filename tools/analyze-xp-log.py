@@ -1910,6 +1910,37 @@ def analyze(events, others, exp, warns=None):
                 if any(int(e.get("chars") or 0) != 0 for e in possessed):
                     verdict("FAIL", "憑依の出し方なのに打鍵の期待数（chars）が 0 でない — 一気に出るので打鍵は鳴らない約束")
 
+            # ---- 復帰（③a / ③b・`canon/LEDGER.md` 0270）----
+            # ③a「止まってください！」が組まれたら、弱った起動（電力が落ちる）・顔に残る人形・赤い字が画に出るはず。
+            # `ev=commsRecover st=end` は時計が止まった縁の極値（画へ書いた側）。⚠ C# の ShowTelemetryHost と対。
+            halts = [e for e in comms if e.get("id") == "Halt"]
+            rec_end = [e for e in events if e.get("ev") == "commsRecover" and e.get("st") == "end"]
+            rec_begin = [e for e in events if e.get("ev") == "commsRecover" and e.get("st") == "begin"]
+            if halts and not rec_begin:
+                verdict("FAIL", "③a が届いたのに復帰の時計が回っていない（ev=commsRecover が無い）— "
+                                "CommsPanel.CommitNotice の BeginRecovery を見る")
+            elif rec_end:
+                bad = []
+                for e in rec_end:
+                    if fnum(e, "powMin", 1.0) > 0.2:
+                        bad.append(f"電力が落ちていない（powMin {fnum(e, 'powMin', 1.0):.2f}）")
+                    if fnum(e, "resMax", 0.0) < 0.4:
+                        bad.append(f"顔に人形が残っていない（resMax {fnum(e, 'resMax', 0.0):.2f}）")
+                    if int(e.get("redMax") or 0) <= 0:
+                        bad.append("赤い字が 1 字も画に出ていない（redMax 0）")
+                    if fnum(e, "tearMax", 0.0) < 0.5:
+                        bad.append(f"起動の乱れが立っていない（tearMax {fnum(e, 'tearMax', 0.0):.2f}）")
+                if bad:
+                    verdict("FAIL", "③a / ③b の復帰の姿が欠けている: " + " / ".join(sorted(set(bad))))
+                else:
+                    e = rec_end[-1]
+                    verdict("OK", f"③a / ③b が弱った起動で出て、顔に人形・字に赤が残った"
+                                  f"（{len(rec_end)} 回・電力 最小 {fnum(e, 'powMin', 1.0):.2f}・"
+                                  f"人形 {fnum(e, 'resMax', 0.0):.2f}→{fnum(e, 'resEnd', 0.0):.2f}・"
+                                  f"赤い字 最大 {e.get('redMax')}）")
+            elif rec_begin:
+                verdict("WARN", "復帰の時計は回ったが、止まった縁（st=end）が無い — ログの末尾で切れた可能性")
+
             # 「出た初めは通常 → 1s ほどで重なる」。侵食度 > 0 の面（警告を除く）が開いたら、
             # 斑が目標へ届いた縁 `ev=commsCurse sec=` が 1 度は出るはず。
             # ⚠ sec は面が開いてから届くまで。0.4 秒未満なら立ち上がらずに跳んでいる。

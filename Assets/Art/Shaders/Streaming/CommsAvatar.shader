@@ -44,6 +44,10 @@ Shader "FixedCamVr/CommsAvatar"
         _TearShiftB("Tear shift bands 4-7 (m)", Vector) = (0, 0, 0, 0)
         _TearDropA("Tear drop bands 0-3", Vector) = (0, 0, 0, 0)
         _TearDropB("Tear drop bands 4-7", Vector) = (0, 0, 0, 0)
+        // 復帰（`canon/LEDGER.md` 0270）: (残っている割合 0..1, 復帰の時計 秒, 赤へ寄せる割合, 未使用)。
+        // 顔の右側に人形が残る。x = 0 なら 1 画素も変わらない（③a / ③b 以外は 0）。
+        _Residue("Residue (amount, time, tint, -)", Vector) = (0, 0, 0, 0)
+        _ResidueColor("Residue color", Color) = (1, 0.03, 0.01, 1)
 
         // 角の丸み（1 辺に対する割合。0.5 で円）。
         _Radius("Corner radius (0..0.5)", Range(0, 0.5)) = 0.20
@@ -73,6 +77,11 @@ Shader "FixedCamVr/CommsAvatar"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "CommsCurse.hlsl"
 
+            // 復帰（0270）の境目。ぎざぎざの振れ幅（顔の 1 辺に対する割合）/ 柔らかさ / 流れる速さ (m/s)。
+            static const float RESIDUE_RAGGED = 0.45;
+            static const float RESIDUE_SOFT = 0.06;
+            static const float RESIDUE_DRIFT_MS = 0.02;
+
             TEXTURE2D(_Face);
             SAMPLER(sampler_Face);
             TEXTURE2D(_Face2);
@@ -90,6 +99,8 @@ Shader "FixedCamVr/CommsAvatar"
                 float4 _TearShiftB;
                 float4 _TearDropA;
                 float4 _TearDropB;
+                float4 _Residue;
+                float4 _ResidueColor;
                 float _Radius;
                 float _Stroke;
                 float _FaceOn;
@@ -154,6 +165,18 @@ Shader "FixedCamVr/CommsAvatar"
                 float2 fieldPos = panelPos;
                 fieldPos.x -= shift;
                 float k = max(CurseK(CurseField(fieldPos), _FaceMix), CurseSweepK(panelPos, _Sweep));
+                // 復帰（0270）: スイは押し返したが、顔の右側にはまだ人形が居座っている。
+                // 境目は斑の場（地と同じ）でぎざぎざにし、時計でゆっくり縦へ流してうごめかせる
+                // （毎秒 2cm。速いとノイズに、止まると貼り紙に見える）。乱数は振らない。
+                float kRes = 0.0;
+                if (_Residue.x > 0.001)
+                {
+                    float2 q = fieldPos + float2(0.0, -_Residue.y * RESIDUE_DRIFT_MS);
+                    float ragged = (CurseField(q) - 0.5) * RESIDUE_RAGGED;
+                    float edge = 1.0 - _Residue.x;
+                    kRes = saturate((i.uv.x - shift / max(_Size.x, 1e-4) - edge + ragged) / RESIDUE_SOFT);
+                }
+                k = max(k, kRes);
                 float2 faceUv = i.uv;
                 faceUv.x -= shift / max(_Size.x, 1e-4);
                 float inRange = step(0.0, faceUv.x) * step(faceUv.x, 1.0);
@@ -163,7 +186,8 @@ Shader "FixedCamVr/CommsAvatar"
                 float drop = CommsTearDropAt(panelPos.y, _Tear, _TearDropA, _TearDropB);
 
                 float a = saturate(max(ring, face * (1.0 - drop))) * _Tear.y;
-                return half4(_Color.rgb, a * _Opacity);
+                float3 rgb = lerp(_Color.rgb, _ResidueColor.rgb, kRes * saturate(_Residue.z));
+                return half4(rgb, a * _Opacity);
             }
             ENDHLSL
         }

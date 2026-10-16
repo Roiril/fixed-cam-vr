@@ -308,6 +308,9 @@ namespace FixedCamVr.Streaming
         private float _openSec;
         // 乗っ取り開始からの単調な時計。段を移っても、演出が終わってもランリセットまでは戻さない。
         private float _takeoverElapsedSec;
+        // 4 周目 A の③a〜③b の「復帰」の時計（`CommsRecoveryLogic`）。負 = 回っていない。
+        // ③a を組んだ縁で 0 から数え、同じ面のまま③b へ繋いでも数え直さない。面が畳まれたら止める。
+        private float _recoverySec = -1f;
 
         // 差し替え（Swap）で、旧文面が消え切るまで預かる次の連絡。
         private int _pendingChars;
@@ -384,6 +387,35 @@ namespace FixedCamVr.Streaming
 
         /// <summary>出ているか（実行体が面を描くべきか）。</summary>
         public bool Active => _stage != CommsStage.Off;
+
+        /// <summary>
+        /// 「復帰」の時計（秒）。負なら回っていない。<see cref="BeginRecovery"/> から数え、
+        /// 面が畳まれる（<see cref="Disable"/> / 自然に引き切る）まで段をまたいで単調に増える。
+        /// </summary>
+        public float RecoverySec => _stage == CommsStage.Off ? -1f : _recoverySec;
+
+        /// <summary>
+        /// 「復帰」の姿を 0 秒から始める（③a を組んだ縁）。<b>段の尺は 1 つも変えない</b> —
+        /// 姿は <see cref="CommsRecoveryLogic"/> が時計から決め、実行体がその上に重ねる。
+        /// </summary>
+        /// <param name="skipBoot">
+        /// 面が既に開いていて、同じ面のまま③a へ差し替えた（<see cref="CommsStage.Swap"/>）。
+        /// 開いている面を横線まで潰して開き直すと「消えて出直す」（0096 が禁じた形）になるので、弱った起動を飛ばす。
+        /// </param>
+        public void BeginRecovery(bool skipBoot = false)
+            => _recoverySec = skipBoot ? CommsRecoveryLogic.BootSec : 0f;
+
+        /// <summary>
+        /// ③a を経ずに③b が来たとき（③a が押しのけられた等）だけ時計を立てる。
+        /// 回っていれば何もしない（③a から③b へ繋いでも数え直さない）。
+        /// </summary>
+        public void EnsureRecovery()
+        {
+            if (_recoverySec < 0f) _recoverySec = 0f;
+        }
+
+        /// <summary>復帰の時計を止める（③a / ③b 以外の連絡が届いた）。</summary>
+        public void EndRecovery() => _recoverySec = -1f;
 
         /// <summary>
         /// 文字の段の長さ（この文面での実測値。プレビューと卓が読む）。打つ出し方では打ち終わるまで、
@@ -646,6 +678,7 @@ namespace FixedCamVr.Streaming
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;
             _takeoverElapsedSec = 0f;
+            _recoverySec = -1f;
             _swapCommitted = _swapCommitDue = false;
             RestartCurseRamp();
         }
@@ -662,6 +695,7 @@ namespace FixedCamVr.Streaming
             }
             _elapsed += dt;
             _openSec += dt;
+            if (_recoverySec >= 0f) _recoverySec += dt;
             if (_delivery == CommsDelivery.Possessed) _takeoverElapsedSec += dt;
             // 斑は面が出ているあいだだけ進む（段に関わらず 1 本の時計）。
             _curseRampSec += dt;
@@ -924,6 +958,7 @@ namespace FixedCamVr.Streaming
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;
+            _recoverySec = -1f;
             _swapCommitted = _swapCommitDue = false;
             RestartCurseRamp();
         }

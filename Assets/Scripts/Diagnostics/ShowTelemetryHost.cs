@@ -148,16 +148,21 @@ namespace FixedCamVr.Diagnostics
         private string _lastCommsPossessPhase = "Off";
         // 塗り替わりのあいだに画へ書いた乱れの最大（`canon/LEDGER.md` 0231）。段の縁で出し、読ませる段で 0 へ戻す。
         private float _commsTearMax;
+        // 復帰（③a / ③b・`canon/LEDGER.md` 0270）の 1 回ぶんの観測。**画へ書いた側**の極値を持ち、
+        // 時計が止まった縁で `ev=commsRecover st=end` に出す。
+        private bool _recovering;
+        private float _recPowMin = 1f, _recSquashMin = 1f, _recTearMax, _recResMax, _recResLast, _recSecLast;
+        private int _recRedMax, _recRedLast, _recTornMax;
         private int _commsTornMax;
         private float _lastCommsInvasion = -1f;
         // 締めの線を締めのカットの中で踏んだ縁（③a の引き金・`canon/LEDGER.md` 0233）。
         private bool _lastClosingLine;
+        private int _lastRomiCompleted;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
         private int _jackShownAtBegin;
         private string _lastCtrlMode = "";
-        private int _lastRomiCompleted;
 
         // ステータス表示（右 B）の縁。`sec` を出すために「出た時刻」も持つ。
         private bool _lastHudVisible;
@@ -885,6 +890,41 @@ namespace FixedCamVr.Diagnostics
                     _commsTornMax = 0;
                 }
             }
+            // 復帰（0270）の縁。begin は③a を組んだ縁、end は時計が止まった縁（③b を引き切った／別の連絡が来た）。
+            // ⚠ 段の縁ではなく「画に出た側」で数える — 電力が実際に落ちたか（powMin）、顔に人形が残ったか（resMax）、
+            //   赤い字が画に出たか（redMax）。段だけ進んで姿が 1 画素も出ていない、を見落とさない。
+            if (_comms != null)
+            {
+                bool rec = _comms.RecoverySec >= 0f;
+                if (rec && !_recovering)
+                {
+                    _recovering = true;
+                    _recPowMin = _recSquashMin = 1f;
+                    _recTearMax = _recResMax = _recResLast = 0f;
+                    _recRedMax = _recRedLast = _recTornMax = 0;
+                    Emit($"ev=commsRecover st=begin id={_comms.LastNotice} invasion={_comms.InvasionProgress:F2}");
+                }
+                if (rec)
+                {
+                    _recSecLast = _comms.RecoverySec;
+                    _recPowMin = Mathf.Min(_recPowMin, _comms.AppliedPower);
+                    _recSquashMin = Mathf.Min(_recSquashMin, _comms.AppliedSquash);
+                    _recTearMax = Mathf.Max(_recTearMax, _comms.AppliedTear);
+                    _recTornMax = Mathf.Max(_recTornMax, _comms.TornBands);
+                    _recResMax = Mathf.Max(_recResMax, _comms.AppliedResidue);
+                    _recResLast = _comms.AppliedResidue;
+                    _recRedMax = Mathf.Max(_recRedMax, _comms.RedGlyphs);
+                    _recRedLast = _comms.RedGlyphs;
+                }
+                else if (_recovering)
+                {
+                    _recovering = false;
+                    Emit($"ev=commsRecover st=end sec={_recSecLast:F2} powMin={_recPowMin:F2} " +
+                         $"squashMin={_recSquashMin:F2} tearMax={_recTearMax:F2} tornMax={_recTornMax} " +
+                         $"resMax={_recResMax:F2} resEnd={_recResLast:F2} " +
+                         $"redMax={_recRedMax} redEnd={_recRedLast} face={(_comms.AvatarBuilt ? 1 : 0)}");
+                }
+            }
             if (_comms != null && _comms.PossessionPhase.ToString() != _lastCommsPossessPhase)
             {
                 _lastCommsPossessPhase = _comms.PossessionPhase.ToString();
@@ -940,6 +980,16 @@ namespace FixedCamVr.Diagnostics
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             _lastClosingLine = closingLine;
 
+            // 終幕の台車（Romi）への合図。結果が出た縁で 1 行（go = 解除の縁 / cut = 電源断の縁）。
+            // ⚠ 台車が動いたかはここからは分からない（台車は開ループ）。分かるのは「合図が届き ok が返った」まで。
+            RomiCartLink? romi = _show != null ? _show.Romi : null;
+            if (romi != null && romi.Completed != _lastRomiCompleted)
+            {
+                _lastRomiCompleted = romi.Completed;
+                Emit($"ev=romi kind={romi.LastKind} res={romi.LastResult} ms={romi.LastRoundTripMs} " +
+                     $"dry={(romi.LastDry ? 1 : 0)} sent={romi.Sent} ack={romi.Acked}");
+            }
+
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
             // built は「実体を組めたか」、veil / glyph は**実際に書いた不透明度** ＝ 画に出た側。
             // built=0 だと A を押しても何も起きず、導入だけが素通しで始まる（気づける口がここしかない）。
@@ -980,16 +1030,6 @@ namespace FixedCamVr.Diagnostics
                         Emit($"ev=status st=on src={src} sec=0.0");
                     }
                     else
-            // 終幕の台車（Romi）への合図。結果が出た縁で 1 行（go = 解除の縁 / cut = 電源断の縁）。
-            // ⚠ 台車が動いたかはここからは分からない（台車は開ループ）。分かるのは「合図が届き ok が返った」まで。
-            RomiCartLink? romi = _show != null ? _show.Romi : null;
-            if (romi != null && romi.Completed != _lastRomiCompleted)
-            {
-                _lastRomiCompleted = romi.Completed;
-                Emit($"ev=romi kind={romi.LastKind} res={romi.LastResult} ms={romi.LastRoundTripMs} " +
-                     $"dry={(romi.LastDry ? 1 : 0)} sent={romi.Sent} ack={romi.Acked}");
-            }
-
                     {
                         float sec = Mathf.Max(0f, Time.unscaledTime - _hudShownAt);
                         Emit($"ev=status st=off src={src} sec={sec:F1}");
@@ -1506,6 +1546,11 @@ namespace FixedCamVr.Diagnostics
             //   ⚠ 1 つ目が 0 なら毛羽立ち・走り書き・文字の切断が実機で 1 画素も出ていない
             //     （Editor では出るので、この 1 ビットが無いと永久に気づけない — `Unlit/Color` と同じ穴）。
             //   ⚠ 2 つ目は面が開いてから 1 秒で 3 つ目へ寄る。開いた直後の標本で 0 なのは正常。
+            //   commsRec = 復帰（③a / ③b・0270）。**`<時計 秒>/<電力>/<顔に残る人形>/<赤い字の数>`**。
+            //   ③a / ③b 以外は `-`。
+            _sb.Append(" commsRec=").Append(_comms == null || _comms.RecoverySec < 0f
+                ? "-"
+                : $"{_comms.RecoverySec:F2}/{_comms.AppliedPower:F2}/{_comms.AppliedResidue:F2}/{_comms.RedGlyphs}");
             _sb.Append(" commsCurse=").Append(_comms == null
                 ? "-"
                 : $"{(_comms.PlateBuilt ? 1 : 0)}/{_comms.AppliedCurse:F2}/{_comms.CurseTarget:F2}");
@@ -1593,6 +1638,10 @@ namespace FixedCamVr.Diagnostics
                .Append('/').Append(VisitorPrefs.PendingSeq)
                .Append('/').Append(VisitorPrefs.AppliedSeq)
                .Append('/').Append(VisitorPrefs.ApplyCount);
+            //   romi = 終幕の台車への合図 `<送った累計>/<ok が返った累計>`（送るのは解除の縁と電源断の縁だけ）。
+            RomiCartLink? romiSum = _show != null ? _show.Romi : null;
+            _sb.Append(" romi=").Append(romiSum != null ? romiSum.Sent : -1)
+               .Append('/').Append(romiSum != null ? romiSum.Acked : -1);
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
@@ -1638,10 +1687,6 @@ namespace FixedCamVr.Diagnostics
                    .Append(" recPost=").Append(_recorder.IsPostRolling ? 1 : 0)
                    .Append(" recMB=").Append((_recorder.RunBytes / 1048576.0).ToString("F1"));
             // 録画を再生中なら、いま何枚目まで画に出したか（尺だけ進んで絵が出ていないのを見分ける）。
-            //   romi = 終幕の台車への合図 `<送った累計>/<ok が返った累計>`（送るのは解除の縁と電源断の縁だけ）。
-            RomiCartLink? romiSum = _show != null ? _show.Romi : null;
-            _sb.Append(" romi=").Append(romiSum != null ? romiSum.Sent : -1)
-               .Append('/').Append(romiSum != null ? romiSum.Acked : -1);
             if (_lastRecPlayer != null)
                 _sb.Append(" recPlay=").Append(_lastRecPlayer.PresentedCount)
                    .Append('/').Append(_lastRecPlayer.FrameCount);
