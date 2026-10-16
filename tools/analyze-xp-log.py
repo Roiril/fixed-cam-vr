@@ -1368,6 +1368,27 @@ def analyze(events, others, exp, warns=None):
     #      repBuilt = 報告の面を組めたか（0 なら最後の 4 行が 1 文字も出ない）
     #      armed/cue = 著作した合図（run.outro.afterTakeId）が武装したか / そこから始まったか
     #    観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
+    # 終幕の台車（Romi）への合図（RomiCartLink）。go = 解除の縁 / cut = 電源断の縁。
+    #   res: ok / net（届かない）/ disabled（台車側で無効）/ busy（スタッフが手で動かしている）/ pending
+    #   dry=1 は空走（Editor と自動走行）＝ 台車は記録だけして動かない。
+    #   ⚠ 台車が実際に動いたかはここでは分からない（開ループ）。台車のシリアルの EVT ending を見る。
+    romi_ev = [e for e in events if e.get("ev") == "romi"]
+    has_romi = any("romi" in e for e in events if e.get("ev") == "sum")
+    released = any(e.get("ev") == "outro" and e.get("ending") == "Released" for e in events)
+    if romi_ev or (has_romi and released):
+        w("## 終幕の台車（Romi）")
+        for e in romi_ev:
+            w(f"  t={fnum(e,'t',0):7.1f}  {e.get('kind')} res={e.get('res')} {e.get('ms')}ms dry={e.get('dry')}")
+        gos = [e for e in romi_ev if e.get("kind") == "go"]
+        if released and has_romi and not gos:
+            verdict("FAIL", "解除で終わったのに台車へ合図（go）を送っていない — RomiCartLink の配線を確かめる")
+        for e in romi_ev:
+            if e.get("res") not in ("ok",):
+                verdict("WARN", f"台車への合図 {e.get('kind')} が通っていない（res={e.get('res')}）"
+                                "— 台車の電源・網（192.168.10.51）・タブレットの「自動走行」の有効を確かめる")
+        if released and gos and not any(e.get("kind") == "cut" for e in romi_ev):
+            verdict("WARN", "解除の後、電源断の合図（cut）を送っていない — 終幕が始まる前に走行が切れたなら正常")
+
     outro = [e for e in events if e.get("ev") == "outro"]
     if outro:
         w("## 終幕（消えて、報告が出たか）")

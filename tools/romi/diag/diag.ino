@@ -78,13 +78,33 @@ struct Joy {
 // --- ショートカット（一連の動きを台車側で順に実行する。スマホの通信が切れても時間どおりに進む）---
 // 手順の文字列: "s:1:100:40,r:-1:90:40,w:0:500:0"（種類:向き:量:強さ%）
 //   s=直進（量 cm・向き +1 前進/-1 後退）/ r=回転（量 度・向き +1 右/-1 左）/ w=待つ（量 ms）
+//   S / R = 時間で決める直進・回転（量 ms・50〜8000）。較正に頼らないので、終幕の走行はこちらを使う
 struct Step { char m; int d; float v; int duty; };
 struct Seq {
-  bool active = false, running = false;
+  bool active = false, running = false, ending = false;
   Step st[12];
   int n = 0, idx = 0, flip = 0, trim = 0;
   uint32_t nextAt = 0, id = 0, started = 0;
 } seq;
+
+// --- 終幕の自動走行（体験者が最後の異常を解除した合図で、台車が決めた動きをする）---
+// 合図は Quest が送る（POST /ending/go）。待つ → 回転 → 前進 を時間と強さで持ち、NVS に保存する。
+// 時間で持つのは、Quest 側の電源断（報告から約 7.1 秒）と重ねる位置を秒で合わせたいから。
+struct Ending {
+  int en = 1;                                     // 0 = Quest の合図では動かない（タブレットの試走は動く）
+  int delayMs = 3500;                             // 合図から回り始めるまで
+  int rotDir = 1, rotDuty = 40, rotMs = 1400;     // +1 右 / -1 左。40% 1.4 秒 ≒ 180 度（USB 給電の実測）
+  int fwdDir = 1, fwdDuty = 40, fwdMs = 3400;     // +1 前進 / -1 後退。40% 3.4 秒 ≒ 60cm（同上）
+  int stopAtCut = 0;                              // 1 = 電源断の合図（/ending/cut）で台車も止める
+  uint32_t ver = 0;
+} ending;
+struct EndingRun {
+  uint32_t goAt = 0, seqId = 0;
+  int32_t cutMs = -1;                             // 合図から電源断までの実測（Quest が送ってきた時刻）
+  int dry = 0, stopped = 0;
+  String src = "", key = "";                     // key = 送り手が付ける合図の名前（再送で頭からやり直さない）
+} endingLast;
+static uint32_t endingGoCount = 0;
 static const uint32_t SEQ_GAP_MS = 250;   // 動きの間に挟む整定の時間
 static uint32_t seqCounter = 0;
 static bool seqInternal = false;           // seq 自身が startRun を呼ぶときだけ true
@@ -101,6 +121,7 @@ static void stopOutputs() {
 
 // すべて止める。ショートカットも中断する（停止ボタン・切断・シリアルの stop）
 static void stopAll() {
+  if (seq.active && seq.ending) endingLast.stopped = 1;
   if (seq.active) Serial.printf("EVT seq abort id=%u at=%d/%d t=%lu\n", (unsigned)seq.id, seq.idx, seq.n, millis());
   seq.active = false; seq.running = false;
   stopOutputs();
@@ -328,7 +349,9 @@ static int seqParse(const String &str) {
     char m = 0; int d = 0, duty = 0; float v = 0;
     if (sscanf(tok.c_str(), "%c:%d:%f:%d", &m, &d, &v, &duty) < 3) return 0;
     if (m == 'w') { if (v < 0 || v > 20000) return 0; }
-    else {
+    else if (m == 'S' || m == 'R') {
+      if ((d != 1 && d != -1) || v < 50 || v > WEB_MS_MAX || duty < 1 || duty > 100) return 0;
+    } else {
       if ((m != 's' && m != 'r') || (d != 1 && d != -1)) return 0;
       if (planMs(m, duty, v, nullptr) < 0) return 0;
     }
@@ -344,7 +367,7 @@ static int seqStart(const String &str, int flip, int trim, const String &name) {
   if (run.active || joy.active || joy.curL != 0 || joy.curR != 0 || seq.active) return -1;
   int n = seqParse(str);
   if (n <= 0) return -2;
-  seq.n = n; seq.idx = 0; seq.flip = flip; seq.trim = clampi(trim, -20, 20);
+  seq.n = n; seq.idx = 0; seq.flip = flip; seq.trim = clampi(trim, -20, 20); seq.ending = false;
   seq.id = ++seqCounter; seq.started = millis(); seq.nextAt = seq.started; seq.running = false; seq.active = true;
   Serial.printf("EVT seq start id=%u n=%d name=%s steps=%s flip=%d t=%lu\n", (unsigned)seq.id, n, clean(name, 40).c_str(), clean(str, 200).c_str(), flip, millis());
   return (int)seq.id;
@@ -363,7 +386,9 @@ static void seqTick() {
   Step s = seq.st[seq.idx++];
   if (s.m == 'w') { seq.nextAt = now + (uint32_t)s.v; return; }
   seqInternal = true;
-  int id = startRun(s.m, s.d, s.duty, s.v, 0, seq.trim, seq.flip, "seq", "", nullptr, nullptr);
+  bool timed = s.m == 'S' || s.m == 'R';
+  int id = startRun(timed ? (char)(s.m + ('a' - 'A')) : s.m, s.d, s.duty, timed ? 0.f : s.v, timed ? (uint32_t)s.v : 0,
+                    seq.trim, seq.flip, seq.ending ? "ending" : "seq", "", nullptr, nullptr);
   seqInternal = false;
   if (id < 0) {
     Serial.printf("EVT seq error id=%u step=%d code=%d t=%lu\n", (unsigned)seq.id, seq.idx, id, now);
@@ -423,6 +448,174 @@ static void httpScSet() {
   prefs.end();
   Serial.printf("EVT sc saved bytes=%u t=%lu\n", (unsigned)body.length(), millis());
   jsonSend("{\"ok\":1}");
+}
+
+// --- 終幕の自動走行 ---
+static void endingLoad() {
+  prefs.begin("romi", true);
+  ending.en = prefs.getInt("e_en", ending.en);
+  ending.delayMs = prefs.getInt("e_dl", ending.delayMs);
+  ending.rotDir = prefs.getInt("e_rd", ending.rotDir);
+  ending.rotDuty = prefs.getInt("e_ru", ending.rotDuty);
+  ending.rotMs = prefs.getInt("e_rm", ending.rotMs);
+  ending.fwdDir = prefs.getInt("e_fd", ending.fwdDir);
+  ending.fwdDuty = prefs.getInt("e_fu", ending.fwdDuty);
+  ending.fwdMs = prefs.getInt("e_fm", ending.fwdMs);
+  ending.stopAtCut = prefs.getInt("e_sc", ending.stopAtCut);
+  ending.ver = prefs.getUInt("e_ver", 0);
+  prefs.end();
+}
+
+static void endingSave() {
+  ending.ver++;
+  prefs.begin("romi", false);
+  prefs.putInt("e_en", ending.en); prefs.putInt("e_dl", ending.delayMs);
+  prefs.putInt("e_rd", ending.rotDir); prefs.putInt("e_ru", ending.rotDuty); prefs.putInt("e_rm", ending.rotMs);
+  prefs.putInt("e_fd", ending.fwdDir); prefs.putInt("e_fu", ending.fwdDuty); prefs.putInt("e_fm", ending.fwdMs);
+  prefs.putInt("e_sc", ending.stopAtCut); prefs.putUInt("e_ver", ending.ver);
+  prefs.end();
+}
+
+// 平らな JSON（{"a":1,"b":"x"}）から値を 1 つ読む。入れ子は扱わない。見つからなければ false。
+static bool jsonNum(const String &body, const char *key, float *out) {
+  String k = String("\"") + key + "\"";
+  int i = body.indexOf(k);
+  if (i < 0) return false;
+  i = body.indexOf(':', i + k.length());
+  if (i < 0) return false;
+  const char *p = body.c_str() + i + 1;
+  while (*p == ' ') p++;
+  if (*p == 't') { *out = 1; return true; }   // true / false も数として受ける
+  if (*p == 'f') { *out = 0; return true; }
+  char *end = nullptr;
+  float v = strtof(p, &end);
+  if (end == p) return false;
+  *out = v;
+  return true;
+}
+
+static String jsonStr(const String &body, const char *key) {
+  String k = String("\"") + key + "\"";
+  int i = body.indexOf(k);
+  if (i < 0) return "";
+  i = body.indexOf('"', body.indexOf(':', i + k.length()) + 1);
+  if (i < 0) return "";
+  int j = body.indexOf('"', i + 1);
+  return j < 0 ? "" : body.substring(i + 1, j);
+}
+
+// 予定の量（較正から）。時間で動かすので目安にすぎない（電池を入れると速くなる）。
+static float endingEstDeg() {
+  float r = cal.rv * (ending.rotDuty - cal.rd);
+  float t = (ending.rotMs - cal.rt) / 1000.f;
+  return (r > 0 && t > 0) ? r * t : 0;
+}
+static float endingEstCm() {
+  float r = cal.sv * (ending.fwdDuty - cal.sd);
+  float t = (ending.fwdMs - cal.st) / 1000.f;
+  return (r > 0 && t > 0) ? r * t : 0;
+}
+
+static String endingJson() {
+  const char *state = "idle";
+  if (endingLast.goAt) {
+    if (endingLast.dry) state = "dry";
+    else if (seq.active && seq.ending && seq.id == endingLast.seqId) state = "running";
+    else state = endingLast.stopped ? "stopped" : "done";
+  }
+  return "{\"en\":" + String(ending.en) + ",\"delayMs\":" + String(ending.delayMs) + ",\"rotDir\":" + String(ending.rotDir) +
+         ",\"rotDuty\":" + String(ending.rotDuty) + ",\"rotMs\":" + String(ending.rotMs) + ",\"fwdDir\":" + String(ending.fwdDir) +
+         ",\"fwdDuty\":" + String(ending.fwdDuty) + ",\"fwdMs\":" + String(ending.fwdMs) + ",\"stopAtCut\":" + String(ending.stopAtCut) +
+         ",\"ver\":" + String(ending.ver) + ",\"gapMs\":" + String(SEQ_GAP_MS) + ",\"dutyMax\":" + String(WEB_DUTY_MAX * 100 / 1023) +
+         ",\"msMax\":" + String(WEB_MS_MAX) + ",\"estDeg\":" + String(endingEstDeg(), 0) + ",\"estCm\":" + String(endingEstCm(), 1) +
+         ",\"calVer\":" + String(cal.ver) + ",\"busy\":" + String((run.active || seq.active || joyMoving()) ? 1 : 0) +
+         ",\"last\":{\"state\":\"" + state + "\",\"src\":\"" + clean(endingLast.src, 16) + "\",\"agoMs\":" +
+         String(endingLast.goAt ? millis() - endingLast.goAt : 0) + ",\"cutMs\":" + String(endingLast.cutMs) +
+         ",\"count\":" + String(endingGoCount) + "},\"cal\":" + calJson() + "}";
+}
+
+// 返り値: seq id(>0) / 0=空走（dry）/ -1=ジョイスティック操作中 / -4=無効にしてある / -2=動きが 1 つも無い
+static int endingStart(const String &src, bool dry, bool force, const String &key = "") {
+  // 同じ合図の再送（応答が届かなかった Quest が送り直した）なら、走っている動きをやり直さない
+  if (key.length() && key == endingLast.key && endingLast.goAt && millis() - endingLast.goAt < 30000) {
+    Serial.printf("EVT ending dup key=%s t=%lu\n", clean(key, 24).c_str(), millis());
+    return dry ? 0 : (int)endingLast.seqId;
+  }
+  if (!ending.en && !force) return -4;
+  if (ending.rotMs <= 0 && ending.fwdMs <= 0) return -2;
+  if (joyMoving()) return -1;   // スタッフが手で動かしている最中は奪わない
+  endingGoCount++;
+  endingLast.goAt = millis(); endingLast.seqId = 0; endingLast.cutMs = -1; endingLast.dry = dry ? 1 : 0;
+  endingLast.stopped = 0; endingLast.src = src; endingLast.key = key;
+  if (dry) {
+    Serial.printf("EVT ending dry src=%s t=%lu\n", clean(src, 16).c_str(), millis());
+    return 0;
+  }
+  if (run.active || seq.active) {   // 試走やショートカットの途中でも、本番の合図を優先する
+    Serial.printf("EVT ending preempt t=%lu\n", millis());
+    stopAll();
+  }
+  int n = 0;
+  if (ending.delayMs > 0) seq.st[n++] = {'w', 0, (float)ending.delayMs, 0};
+  if (ending.rotMs > 0) seq.st[n++] = {'R', ending.rotDir, (float)ending.rotMs, ending.rotDuty};
+  if (ending.fwdMs > 0) seq.st[n++] = {'S', ending.fwdDir, (float)ending.fwdMs, ending.fwdDuty};
+  seq.n = n; seq.idx = 0; seq.flip = 0; seq.trim = 0; seq.ending = true;
+  seq.id = ++seqCounter; seq.started = millis(); seq.nextAt = seq.started; seq.running = false; seq.active = true;
+  endingLast.seqId = seq.id;
+  Serial.printf("EVT ending go id=%u src=%s force=%d delay=%d rot=%d:%d:%d fwd=%d:%d:%d ver=%u t=%lu\n", (unsigned)seq.id,
+                clean(src, 16).c_str(), force ? 1 : 0, ending.delayMs, ending.rotDir, ending.rotDuty, ending.rotMs, ending.fwdDir,
+                ending.fwdDuty, ending.fwdMs, (unsigned)ending.ver, millis());
+  return (int)seq.id;
+}
+
+// 電源断の合図。時刻を記録し、設定で選ばれていれば台車も止める
+static void endingCut() {
+  if (!endingLast.goAt || endingLast.cutMs >= 0) return;
+  endingLast.cutMs = (int32_t)(millis() - endingLast.goAt);
+  bool running = seq.active && seq.ending && seq.id == endingLast.seqId;
+  if (ending.stopAtCut && running) { stopAll(); endingLast.stopped = 1; }
+  Serial.printf("EVT ending cut at=%ld running=%d stop=%d t=%lu\n", (long)endingLast.cutMs, running ? 1 : 0, endingLast.stopped, millis());
+}
+
+static void httpEndingGet() { jsonSend(endingJson()); }
+
+static void httpEndingSet() {
+  String b = server.arg("plain");
+  float v;
+  struct { const char *k; int *p; int lo, hi; } t[] = {
+    {"en", &ending.en, 0, 1}, {"delayMs", &ending.delayMs, 0, 20000},
+    {"rotDuty", &ending.rotDuty, 10, WEB_DUTY_MAX * 100 / 1023}, {"rotMs", &ending.rotMs, 0, WEB_MS_MAX},
+    {"fwdDuty", &ending.fwdDuty, 10, WEB_DUTY_MAX * 100 / 1023}, {"fwdMs", &ending.fwdMs, 0, WEB_MS_MAX},
+    {"stopAtCut", &ending.stopAtCut, 0, 1}};
+  for (auto &e : t)
+    if (jsonNum(b, e.k, &v)) *e.p = clampi((int)lroundf(v), e.lo, e.hi);
+  if (jsonNum(b, "rotDir", &v)) ending.rotDir = v < 0 ? -1 : 1;
+  if (jsonNum(b, "fwdDir", &v)) ending.fwdDir = v < 0 ? -1 : 1;
+  // 0 は「その動きを省く」。1〜49ms は駆動できないので 50ms へ上げる
+  if (ending.rotMs > 0 && ending.rotMs < 50) ending.rotMs = 50;
+  if (ending.fwdMs > 0 && ending.fwdMs < 50) ending.fwdMs = 50;
+  endingSave();
+  Serial.printf("EVT ending saved ver=%u en=%d delay=%d rot=%d:%d:%d fwd=%d:%d:%d cut=%d t=%lu\n", (unsigned)ending.ver, ending.en,
+                ending.delayMs, ending.rotDir, ending.rotDuty, ending.rotMs, ending.fwdDir, ending.fwdDuty, ending.fwdMs,
+                ending.stopAtCut, millis());
+  jsonSend(endingJson());
+}
+
+static void httpEndingGo() {
+  String b = server.arg("plain");
+  float v;
+  String src = jsonStr(b, "src");
+  if (!src.length()) src = server.arg("src");
+  bool dry = (jsonNum(b, "dry", &v) && v != 0) || server.arg("dry") == "1";
+  bool force = (jsonNum(b, "force", &v) && v != 0) || server.arg("force") == "1";
+  int id = endingStart(src.length() ? src : "?", dry, force, jsonStr(b, "key"));
+  if (id >= 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + ",\"dry\":" + String(dry ? 1 : 0) + ",\"ver\":" + String(ending.ver) + "}");
+  else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : (id == -4 ? "disabled" : "empty")) + "\"}");
+}
+
+static void httpEndingCut() {
+  endingCut();
+  jsonSend("{\"ok\":1,\"cutMs\":" + String(endingLast.cutMs) + ",\"stopped\":" + String(endingLast.stopped) + "}");
 }
 
 static void httpStop() {
@@ -490,6 +683,10 @@ static void startWeb() {
   server.on("/sc", HTTP_GET, httpScGet);
   server.on("/sc", HTTP_POST, httpScSet);
   server.on("/state", HTTP_GET, httpState);
+  server.on("/ending", HTTP_GET, httpEndingGet);
+  server.on("/ending", HTTP_POST, httpEndingSet);
+  server.on("/ending/go", HTTP_POST, httpEndingGo);
+  server.on("/ending/cut", HTTP_POST, httpEndingCut);
   server.on("/res", HTTP_GET, httpRes);
   server.on("/cal", HTTP_GET, httpCal);
   server.on("/info", HTTP_GET, []() { jsonSend(infoJson()); });
@@ -506,6 +703,7 @@ static void help() {
   Serial.println("  d <side 0|1> <dir 0|1> <duty 0..800> <ms 1..4000>   drive one motor, count edges on input pins");
   Serial.println("  scan <ms> | aux <0|1> | raw <pin 16..19> <0|1> | i2c <sda> <scl>");
   Serial.println("  cal | cal set <key>=<v> ...   keys: sv sd st rv rd rt");
+  Serial.println("  ending | ending go | ending dry | ending cut   final-scene auto run (config: GET/POST /ending)");
   Serial.println("  wifi status | wifi scan | wifi set <ssid>|<pass> | wifi ssid <ssid> | wifi clear | wifi kick");
 }
 
@@ -526,6 +724,11 @@ static void handle(String line) {
   else if (line == "adc") adcScan();
   else if (line == "adcall") adcAll();
   else if (line == "cal") Serial.println(calJson());
+  else if (line == "ending") Serial.println(endingJson());
+  else if (line == "ending go" || line == "ending dry") {
+    int id = endingStart("serial", line == "ending dry", true);
+    Serial.println(id >= 0 ? "started" : (id == -1 ? "ERR busy" : "ERR empty"));
+  } else if (line == "ending cut") endingCut();
   else if (line.startsWith("cal set ")) {
     String rest = line.substring(8);
     int pos = 0;
@@ -645,6 +848,7 @@ void setup() {
   esp_task_wdt_reconfigure(&twdt);
   esp_task_wdt_add(NULL);
   calLoad();
+  endingLoad();
   netBegin();       // ブロックしない。接続はイベントとバックオフで進める
   startWeb();
   delay(300);

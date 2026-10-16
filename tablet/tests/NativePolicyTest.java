@@ -20,6 +20,15 @@ public final class NativePolicyTest {
         check(!RequestPolicy.validRequest("x", "alpha", "GET", "http://evil.test/", ""), "path allowlist");
         check(!RequestPolicy.validRequest("../x", "alpha", "GET", "/status", ""), "request id");
         check(!RequestPolicy.validRequest("x", "alpha", "POST", "/set", repeat('x', 16385)), "body limit");
+        check(RequestPolicy.validRequest("x", "cart", "GET", "/ending", ""), "cart ending get");
+        check(RequestPolicy.validRequest("x", "cart", "POST", "/ending", "{}"), "cart ending save");
+        check(RequestPolicy.validRequest("x", "cart", "POST", "/ending/go", "{}"), "cart ending go");
+        check(RequestPolicy.validRequest("x", "cart", "GET", "/stop", ""), "cart stop");
+        check(!RequestPolicy.validRequest("x", "cart", "GET", "/run", ""), "cart run is not allowed");
+        check(!RequestPolicy.validRequest("x", "cart", "POST", "/set", "{}"), "cart has no Quest paths");
+        check(!RequestPolicy.validRequest("x", "alpha", "GET", "/ending", ""), "Quest has no cart paths");
+        check(!RequestPolicy.validQuest("cart"), "cart is not a Quest");
+        check("http://192.168.10.51/ending".equals(RequestPolicy.endpoint("cart", "/ending")), "cart endpoint");
         check("http://192.168.10.31:8090/status".equals(RequestPolicy.endpoint("alpha", "/status")), "alpha endpoint");
         check("http://192.168.10.32:8090/status".equals(RequestPolicy.endpoint("beta", "/status")), "beta endpoint");
         check(RequestPolicy.servableWebPath("/index.html"), "index");

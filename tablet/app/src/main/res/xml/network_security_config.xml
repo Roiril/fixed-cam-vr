@@ -4,5 +4,7 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">192.168.10.31</domain>
         <domain includeSubdomains="false">192.168.10.32</domain>
+        <!-- 終幕の台車 Romi（ESP32）。スタッフ設定の「台車の自動走行」だけが使う -->
+        <domain includeSubdomains="false">192.168.10.51</domain>
     </domain-config>
 </network-security-config>

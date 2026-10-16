@@ -1558,6 +1558,7 @@ namespace FixedCamVr.Streaming
             _deviceId = SystemInfo.deviceUniqueIdentifier ?? "";
             _deviceModel = SystemInfo.deviceModel ?? "";
             EnsureVisitorPortal();
+            EnsureRomiLink();
             // 優先順位: 焼き込み StreamingAssets < 端末キャッシュ < ライブ long-poll（後勝ち）。
             // 焼き込みの読込は UnityWebRequest（Android は jar: URL）なので非同期。
             // registry の Awake（stream 生成）が済んだ後に、この初期化列を回す。
@@ -1588,6 +1589,24 @@ namespace FixedCamVr.Streaming
             if (_portal != null) return;
             var go = new GameObject("[VisitorPortal]");
             _portal = go.AddComponent<VisitorPortal>();
+        }
+
+        private RomiCartLink? _romi;
+
+        /// <summary>終幕で台車（Romi）へ合図を送る口。テレメトリが読む。</summary>
+        public RomiCartLink? Romi => _romi;
+
+        /// <summary>
+        /// 終幕の台車の合図（<c>RomiCartLink</c>）。タブレットの口と同じく<b>シーンには焼かない</b>。
+        /// 台車が網に居なくても体験は変わらない（合図が届かないだけ）。
+        /// </summary>
+        private void EnsureRomiLink()
+        {
+            if (_romi != null) return;
+            _romi = FindObjectOfType<RomiCartLink>();
+            if (_romi != null) return;
+            var go = new GameObject("[RomiCartLink]");
+            _romi = go.AddComponent<RomiCartLink>();
         }
 
         private async Task RunInitAsync()

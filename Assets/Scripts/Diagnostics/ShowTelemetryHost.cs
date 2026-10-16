@@ -157,6 +157,7 @@ namespace FixedCamVr.Diagnostics
         private bool _lastJackActive;
         private int _jackShownAtBegin;
         private string _lastCtrlMode = "";
+        private int _lastRomiCompleted;
 
         // ステータス表示（右 B）の縁。`sec` を出すために「出た時刻」も持つ。
         private bool _lastHudVisible;
@@ -979,6 +980,16 @@ namespace FixedCamVr.Diagnostics
                         Emit($"ev=status st=on src={src} sec=0.0");
                     }
                     else
+            // 終幕の台車（Romi）への合図。結果が出た縁で 1 行（go = 解除の縁 / cut = 電源断の縁）。
+            // ⚠ 台車が動いたかはここからは分からない（台車は開ループ）。分かるのは「合図が届き ok が返った」まで。
+            RomiCartLink? romi = _show != null ? _show.Romi : null;
+            if (romi != null && romi.Completed != _lastRomiCompleted)
+            {
+                _lastRomiCompleted = romi.Completed;
+                Emit($"ev=romi kind={romi.LastKind} res={romi.LastResult} ms={romi.LastRoundTripMs} " +
+                     $"dry={(romi.LastDry ? 1 : 0)} sent={romi.Sent} ack={romi.Acked}");
+            }
+
                     {
                         float sec = Mathf.Max(0f, Time.unscaledTime - _hudShownAt);
                         Emit($"ev=status st=off src={src} sec={sec:F1}");
@@ -1627,6 +1638,10 @@ namespace FixedCamVr.Diagnostics
                    .Append(" recPost=").Append(_recorder.IsPostRolling ? 1 : 0)
                    .Append(" recMB=").Append((_recorder.RunBytes / 1048576.0).ToString("F1"));
             // 録画を再生中なら、いま何枚目まで画に出したか（尺だけ進んで絵が出ていないのを見分ける）。
+            //   romi = 終幕の台車への合図 `<送った累計>/<ok が返った累計>`（送るのは解除の縁と電源断の縁だけ）。
+            RomiCartLink? romiSum = _show != null ? _show.Romi : null;
+            _sb.Append(" romi=").Append(romiSum != null ? romiSum.Sent : -1)
+               .Append('/').Append(romiSum != null ? romiSum.Acked : -1);
             if (_lastRecPlayer != null)
                 _sb.Append(" recPlay=").Append(_lastRecPlayer.PresentedCount)
                    .Append('/').Append(_lastRecPlayer.FrameCount);

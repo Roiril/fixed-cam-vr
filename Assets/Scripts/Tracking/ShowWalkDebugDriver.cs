@@ -142,6 +142,8 @@ namespace FixedCamVr.Tracking
 
         private void Start()
         {
+            // 自動走行では台車を動かさない（合図は空走で送り、経路だけ確かめる）。机の上の台車が落ちる。
+            RomiCartLink.DryRun = true;
             _skipReport = ExtraPresent("xpnomark");
             if (_skipReport) Debug.Log("[XPWalk] 未報告の終幕を検証する（xpnomark）");
             StartCoroutine(DriveRoutine());
