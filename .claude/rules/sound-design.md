@@ -12,6 +12,28 @@ paths:
   - "tools/sound-*.py"
 ---
 
+## 博士タブレットの効果音（2026-10-16・`canon/LEDGER.md` 0266）
+
+タブレットは Quest と同じ装置の音を、同じ意味の操作に当てる（研究所の端末なので、別の楽器を鳴らすと 2 つの機械に聞こえる）。**曲は増やさない**（0256「BGMは、タブレット上では、軽減の画面だけ」）。大きさは博士の声（約 -21 LUFS）より下。
+
+| いつ | 名前 | 音 | 目標 |
+|---|---|---|---|
+| 題字の書き出し | `title-in` | `sfx_title_in`（Quest のタイトルと同じ） | -26 LUFS |
+| 題字を押して去る | `title-out` | `sfx_title_out` | -28 |
+| 言語・軽減を選び替えた | `choice` | `sfx_lang_1` → `sfx_lang_2` を交互（0153 と同じ） | -30 |
+| 次へ・戻る・設定に戻る・一時停止など | `key` | 打鍵 `sfx_type_1..8` を順に | -32 |
+| この設定を送る | `send` | `sfx_switch_1` | -29 |
+| 反映の判子 | `stamp` | **合成** `sfx_tablet_stamp`（印が押される 0.51 秒後に予約） | -26 |
+| 説明の始まり・もう一度見る | `screen-on` | `sfx_screen_on`（スクリーンが点く音） | -27 |
+| 章の切り替え | `chapter` | `sfx_switch_2..6` を順に | -32 |
+| 説明の終わり | `signal-cut` | **合成** `sfx_tablet_signal_cut`（`bed_static` ＋ もらった `sfx_power_off`） | -22 |
+
+- 作るのは `py -3.11 tools/make-tablet-sounds.py`。もらった音・焼いた音は**バイト単位で複写**し（§4.5）、大きさは `asset/tablet-sounds.json` の `gainDb` を鳴らす側（`tablet-sound.js`）が掛ける。人が聴く 1 本は `--preview <wav>`
+- ホラー軽減ありは全部 -6dB。説明の消音にも従う
+- `sfx_tablet_signal_cut` は `sound-lint.py` の `RECORDED`（純度 0.84 は全部もらった電源断から。砂嵐の部分は道具の中で合成音の線で落とす）
+- ⚠ **画の時刻と対**: `signal-cut.js` の `NOISE_MS` / `OFF_MS` / `BURSTS` と `make-tablet-sounds.py` の `NOISE_SEC` / `OFF_SEC` / `BURSTS`。`verify-tablet-sound.cjs` が突き合わせる
+- 観測: `TabletSound.snapshot()` の `started`（鳴らし始めた）と `signal`（解析器に信号が乗った）。実機はデバッグ版（`tablet/build.py --debug`）で WebView の口を開け、`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>` から読む
+
 ## 2026-09-25 入口音の現行仕様
 
 ユーザーが生成動画「Glass_shattering_and_reforming_v…_20260920133909.mp4」の後者を選択した。

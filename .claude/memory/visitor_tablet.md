@@ -10,6 +10,10 @@ metadata:
 
 # タブレットの博士UIを触る前に
 
+## 効果音（2026-10-16・0266）
+
+表と作り方は `rules/sound-design.md` の頭の節「博士タブレットの効果音」。鳴らす口は `index.html` の `sfx(name)`（`tablet-sound.js`）。⚠ **終わりの砂嵐の音は `signal-cut.js` の中で合成していたが、純音の掃引とノコギリ波で規約（§3.6）の禁止形だったので外した**。実機（Redmi）で 9 種すべてが鳴らし始め 15 回・信号 15 回で一致（`TabletSound.snapshot()`・デバッグ版の WebView から読んだ）。
+
 ## 視線の順と、説明の終わり（2026-10-16・0265）
 
 来場者の画面は、読む順に 1 列へ並べる。設定は 注意 → 問い（`#settingsAsk`）→ 選択肢 → 進む（`#settingsActions` は settingsView の中）。軽減の効果は各選択肢の語の直下（`#reliefOffNote` / `#reliefOnNote`。`#reliefDesc` は廃止）。確認・反映は 印 → 一文（`#resultLine`）→ 値 → 押す所。確認の段（`data-key="confirm"`）では矢印の輪を出さない（押す所に見えて本物の「送る」より先に目を取った）。下の字幕帯は設定と確認では隠す。読み上げは従来どおり `#subtitleAnnouncement`。全画面への復帰は右上（スタッフ入口の隣）。

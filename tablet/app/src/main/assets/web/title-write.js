@@ -503,6 +503,8 @@
       if (!ready) { pending = true; return; }
       pending = false;
       api.plays = (api.plays || 0) + 1;   // 観測用（何回書き出したか）
+      // 書き出しの頭で題字の音を鳴らす（index.html が拾う。音の正は tablet-sounds.json）
+      try { document.dispatchEvent(new CustomEvent('titlewrite:play')); } catch (_) { /* */ }
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       layout();
       if (reduced()) { render(1, 0, 1); return; }

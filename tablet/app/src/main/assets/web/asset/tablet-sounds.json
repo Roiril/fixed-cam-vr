@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "note": "tools/make-tablet-sounds.py が書く。手で直さない。gainDb は鳴らす側が掛ける（素材の音量は触っていない）",
+  "voiceLufs": -21.0,
+  "sounds": {
+    "title-in": {
+      "purpose": "題字の書き出し（Quest のタイトルと同じ音）",
+      "targetLufs": -26.0,
+      "files": [
+        {
+          "file": "sfx_title_in.wav",
+          "gainDb": -7.5,
+          "sourceLufs": -18.5,
+          "sec": 5.82
+        }
+      ]
+    },
+    "title-out": {
+      "purpose": "題字を押して去るとき（Quest と同じ音）",
+      "targetLufs": -28.0,
+      "files": [
+        {
+          "file": "sfx_title_out.wav",
+          "gainDb": -4.0,
+          "sourceLufs": -24.0,
+          "sec": 1.6
+        }
+      ]
+    },
+    "choice": {
+      "purpose": "言語・軽減を選び替えたとき（0153 の 2 本を交互）",
+      "targetLufs": -30.0,
+      "files": [
+        {
+          "file": "sfx_lang_1.wav",
+          "gainDb": -1.3,
+          "sourceLufs": -28.7,
+          "sec": 0.53
+        },
+        {
+          "file": "sfx_lang_2.wav",
+          "gainDb": -2.1,
+          "sourceLufs": -27.9,
+          "sec": 0.522
+        }
+      ]
+    },
+    "key": {
+      "purpose": "次へ・戻る・設定に戻る・一時停止など（打鍵 1 打）",
+      "targetLufs": -32.0,
+      "files": [
+        {
+          "file": "sfx_type_1.wav",
+          "gainDb": -0.8,
+          "sourceLufs": -31.2,
+          "sec": 0.064
+        },
+        {
+          "file": "sfx_type_2.wav",
+          "gainDb": -1.3,
+          "sourceLufs": -30.7,
+          "sec": 0.064
+        },
+        {
+          "file": "sfx_type_3.wav",
+          "gainDb": 0.7,
+          "sourceLufs": -32.7,
+          "sec": 0.064
+        },
+        {
+          "file": "sfx_type_4.wav",
+          "gainDb": 0.2,
+          "sourceLufs": -32.2,
+          "sec": 0.064
+        },
+        {
+          "file": "sfx_type_5.wav",
+          "gainDb": -1.2,
+          "sourceLufs": -30.8,
+          "sec": 0.064
+        },
+        {
+          "file": "sfx_type_6.wav",
+          "gainDb": -3.1,
+          "sourceLufs": -28.9,
+          "sec": 0.064
+        },
+        {
+          "file": "sfx_type_7.wav",
+          "gainDb": -1.7,
+          "sourceLufs": -30.3,
+          "sec": 0.064
+        },
+        {
+          "file": "sfx_type_8.wav",
+          "gainDb": -1.0,
+          "sourceLufs": -31.0,
+          "sec": 0.064
+        }
+      ]
+    },
+    "send": {
+      "purpose": "この設定を送る（送る瞬間の切替）",
+      "targetLufs": -29.0,
+      "files": [
+        {
+          "file": "sfx_switch_1.wav",
+          "gainDb": -5.1,
+          "sourceLufs": -23.9,
+          "sec": 0.234
+        }
+      ]
+    },
+    "screen-on": {
+      "purpose": "博士の通信が点く（説明の始まり）",
+      "targetLufs": -27.0,
+      "files": [
+        {
+          "file": "sfx_screen_on.wav",
+          "gainDb": -14.0,
+          "sourceLufs": -13.0,
+          "sec": 0.331
+        }
+      ]
+    },
+    "chapter": {
+      "purpose": "章が切り替わる（カメラの切替）",
+      "targetLufs": -32.0,
+      "files": [
+        {
+          "file": "sfx_switch_2.wav",
+          "gainDb": -14.4,
+          "sourceLufs": -17.6,
+          "sec": 0.059
+        },
+        {
+          "file": "sfx_switch_3.wav",
+          "gainDb": -12.3,
+          "sourceLufs": -19.7,
+          "sec": 0.096
+        },
+        {
+          "file": "sfx_switch_4.wav",
+          "gainDb": -14.0,
+          "sourceLufs": -18.0,
+          "sec": 0.065
+        },
+        {
+          "file": "sfx_switch_5.wav",
+          "gainDb": -11.4,
+          "sourceLufs": -20.6,
+          "sec": 0.117
+        },
+        {
+          "file": "sfx_switch_6.wav",
+          "gainDb": -15.1,
+          "sourceLufs": -16.9,
+          "sec": 0.046
+        }
+      ]
+    },
+    "stamp": {
+      "purpose": "反映の判子（印が押される瞬間）",
+      "targetLufs": -26.0,
+      "files": [
+        {
+          "file": "sfx_tablet_stamp.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -26.0,
+          "sec": 0.42
+        }
+      ]
+    },
+    "signal-cut": {
+      "purpose": "説明の終わり（通信が切れる・signal-cut.js と同じ時刻）",
+      "targetLufs": -22.0,
+      "files": [
+        {
+          "file": "sfx_tablet_signal_cut.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -22.0,
+          "sec": 2.229
+        }
+      ]
+    }
+  }
+}

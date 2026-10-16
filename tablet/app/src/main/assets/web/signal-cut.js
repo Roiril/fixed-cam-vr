@@ -3,10 +3,11 @@
 // 止まった博士の絵に砂嵐が乗り、ざ・ざ・ざと強まり、ブラウン管が切れるように横一線へ潰れて消える。
 // 黒のまま一拍置いてから次の画面を出す。画面の切り替えは呼び出し側（黒になった後）が行う。
 //
-//   run({ gain, muted })  → 黒になるまでの ms を返す（動きを減らす設定・canvas 無しでは 0 で何もしない）
+//   run({ sound })        → 黒になるまでの ms を返す（動きを減らす設定・canvas 無しでは 0 で何もしない）
+//                           sound は始まりと同時に呼ぶ関数（音は TabletSound の sfx_tablet_signal_cut。時刻は
+//                           tools/make-tablet-sounds.py の NOISE_SEC / OFF_SEC と対）
 //   release()             → 黒の間に次の画面を描いたら呼ぶ。一拍おいて溶かして戻す
 //   abort()               → 途中で取り消す（すぐ元の画面に戻す）
-//   unlock()              → 指が触れたときに音の経路を開けておく（自動送りの終わりでも鳴らせるように）
 (() => {
   'use strict';
 
@@ -21,8 +22,6 @@
   const NOISE_FRAMES = 6;
   const reducedMotion = host.matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false };
 
-  let audioContext = null;
-  let noiseBuffer = null;
   let frame = 0;
   let timers = [];
   let running = false;
@@ -31,9 +30,8 @@
   let stageEl = null;
   let canvas = null;
   let noiseTiles = [];
-  let activeNodes = [];
   let runs = 0;
-  let lastGain = 0;
+  let stopSound = null;
   let safetyTimer = 0;
   let frozenAt = null;
 
@@ -150,104 +148,6 @@
     ctx.globalAlpha = 1;
   }
 
-  function ensureAudio() {
-    if (audioContext) return audioContext;
-    const AudioContext = host.AudioContext || host.webkitAudioContext;
-    if (!AudioContext) return null;
-    try { audioContext = new AudioContext(); } catch (error) { audioContext = null; }
-    return audioContext;
-  }
-
-  function unlock() {
-    const context = ensureAudio();
-    if (!context) return Promise.resolve(false);
-    const resume = context.state === 'suspended' ? context.resume() : Promise.resolve();
-    return Promise.resolve(resume).then(() => context.state === 'running').catch(() => false);
-  }
-
-  function noise(context) {
-    if (noiseBuffer && noiseBuffer.sampleRate === context.sampleRate) return noiseBuffer;
-    const length = Math.ceil(context.sampleRate * 1.6);
-    noiseBuffer = context.createBuffer(1, length, context.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    const r = rng(0xabcdef);
-    for (let i = 0; i < length; i += 1) data[i] = r() * 2 - 1;
-    return noiseBuffer;
-  }
-
-  // 音：細いヒスが這い上がり、ざ・ざ・ざで強まり、消える瞬間に音程が落ちて途切れる。下に低い唸り。
-  function playSound(gainValue) {
-    const context = ensureAudio();
-    if (!context || context.state !== 'running' || gainValue <= 0) return false;
-    const t0 = context.currentTime + 0.01;
-    const end = t0 + (NOISE_MS + OFF_MS) / 1000;
-    const master = context.createGain();
-    master.gain.value = gainValue;
-    master.connect(context.destination);
-
-    const hiss = context.createBufferSource();
-    hiss.buffer = noise(context);
-    const band = context.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.setValueAtTime(1800, t0);
-    band.frequency.linearRampToValueAtTime(3200, end);
-    band.Q.value = 0.55;
-    const env = context.createGain();
-    const g = env.gain;
-    g.setValueAtTime(0, t0);
-    g.linearRampToValueAtTime(0.06, t0 + 0.12);
-    g.linearRampToValueAtTime(0.2, t0 + 0.46);
-    for (const [a, b] of BURSTS) {
-      const s = t0 + a * NOISE_MS / 1000;
-      const e = t0 + b * NOISE_MS / 1000;
-      g.setValueAtTime(0.2 + a * 0.4, s);
-      g.linearRampToValueAtTime(0.85, s + 0.012);
-      g.linearRampToValueAtTime(0.5, e - 0.01);
-      g.linearRampToValueAtTime(0.18 + b * 0.3, e);
-    }
-    g.linearRampToValueAtTime(0.95, t0 + 0.92);
-    g.setValueAtTime(0.95, end - 0.03);
-    g.linearRampToValueAtTime(0, end);
-    hiss.connect(band).connect(env).connect(master);
-
-    const hum = context.createOscillator();
-    hum.type = 'sawtooth';
-    hum.frequency.value = 52;
-    const humLow = context.createBiquadFilter();
-    humLow.type = 'lowpass';
-    humLow.frequency.value = 180;
-    const humEnv = context.createGain();
-    humEnv.gain.setValueAtTime(0, t0);
-    humEnv.gain.linearRampToValueAtTime(0.35, t0 + 0.6);
-    humEnv.gain.linearRampToValueAtTime(0.5, end - 0.05);
-    humEnv.gain.linearRampToValueAtTime(0, end);
-    hum.connect(humLow).connect(humEnv).connect(master);
-
-    // 消える瞬間：音程が落ちて切れる
-    const drop = context.createOscillator();
-    drop.type = 'sine';
-    const offAt = t0 + NOISE_MS / 1000;
-    drop.frequency.setValueAtTime(1100, offAt);
-    drop.frequency.exponentialRampToValueAtTime(45, end);
-    const dropEnv = context.createGain();
-    dropEnv.gain.setValueAtTime(0, offAt);
-    dropEnv.gain.linearRampToValueAtTime(0.3, offAt + 0.02);
-    dropEnv.gain.linearRampToValueAtTime(0, end);
-    drop.connect(dropEnv).connect(master);
-
-    hiss.start(t0); hum.start(t0); drop.start(offAt);
-    hiss.stop(end + 0.05); hum.stop(end + 0.05); drop.stop(end + 0.05);
-    activeNodes = [hiss, hum, drop, master];
-    return true;
-  }
-
-  function stopSound() {
-    activeNodes.forEach((node) => {
-      try { if (node.stop) node.stop(); else node.disconnect(); } catch (error) { /* already ended */ }
-    });
-    activeNodes = [];
-  }
-
   function setPhase(phase) {
     if (!stageEl) return;
     stageEl.classList.toggle('is-signal-noise', phase === 'noise');
@@ -266,7 +166,8 @@
     running = false;
     released = false;
     frozenAt = null;
-    stopSound();
+    if (typeof stopSound === "function") stopSound();
+    stopSound = null;
     if (canvas) {
       canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
       canvas.hidden = true;
@@ -281,7 +182,7 @@
     later(cleanup, RETURN_MS);
   }
 
-  function run({ gain = 0.32, muted = false } = {}) {
+  function run({ sound } = {}) {
     if (running) cleanup();
     if (!capable()) return 0;
     stageEl = host.document.querySelector('.stage');
@@ -298,13 +199,12 @@
       return 0;   // 砂嵐を作れなければ、ただのカットで切り替える
     }
     runs += 1;
-    lastGain = muted ? 0 : gain;
     running = true;
     released = false;
     startedAt = now();
     canvas.hidden = false;
     setPhase('noise');
-    if (!muted) playSound(gain);
+    stopSound = typeof sound === 'function' ? sound() : null;
     frame = host.requestAnimationFrame(draw);
     later(() => setPhase('off'), NOISE_MS);
     later(() => {
@@ -337,7 +237,8 @@
     host.clearTimeout(safetyTimer);
     if (frame) host.cancelAnimationFrame?.(frame);
     frame = 0;
-    stopSound();
+    if (typeof stopSound === "function") stopSound();
+    stopSound = null;
     frozenAt = ms;
     const phase = ms < NOISE_MS ? 'noise' : (ms < NOISE_MS + OFF_MS ? 'off' : 'dark');
     setPhase(phase);
@@ -354,9 +255,9 @@
   }
 
   function snapshot() {
-    return { runs, running, phase: stageEl?.dataset.signal || '', gain: lastGain };
+    return { runs, running, phase: stageEl?.dataset.signal || '' };
   }
 
   const publicHost = typeof window === 'object' ? window : host;
-  publicHost.SignalCut = { run, release, abort, unlock, snapshot, freezeAt, NOISE_MS, OFF_MS, DARK_MS, RETURN_MS };
+  publicHost.SignalCut = { run, release, abort, snapshot, freezeAt, NOISE_MS, OFF_MS, DARK_MS, RETURN_MS };
 })();

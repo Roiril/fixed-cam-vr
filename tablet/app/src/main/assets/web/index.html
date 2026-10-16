@@ -800,6 +800,7 @@
 <script src="./tablet-transport.js"></script>
 <script src="./briefing-presentation.js"></script>
 <script src="./signal-cut.js"></script>
+<script src="./tablet-sound.js"></script>
 <script>
 (() => {
   'use strict';
@@ -953,7 +954,16 @@
   const transport = globalThis.TabletTransport;
   const presentationController = window.BriefingPresentation;
   const signalCut = window.SignalCut;
-  const SIGNAL_CUT_GAIN = 0.32;
+  const tabletSound = window.TabletSound;
+  // 効果音（LEDGER 0266）。何をどの大きさで鳴らすかは asset/tablet-sounds.json（tools/make-tablet-sounds.py）。
+  // ホラー軽減ありは半分の大きさ。説明の消音にも従う。曲は鳴らさない（0256）
+  function sfx(name, options) {
+    if (!tabletSound) return false;
+    tabletSound.setRelief(state.relief);
+    tabletSound.setMuted(state.briefing.muted);
+    return tabletSound.play(name, options);
+  }
+  let stampedSent = null;
   let activeQuest = transport.getQuest()
     || Object.keys(QUESTS).find((key) => location.host === `${QUESTS[key].host}:${QUESTS[key].port}`)
     || null;
@@ -1436,6 +1446,7 @@
     requestWakeLock();
     state.titleTransitioning = true;
     $('titleStart').disabled = true;
+    sfx('title-out');
     const finish = () => {
       titleTimer = null;
       state.settingsStep = 'language';
@@ -2570,6 +2581,7 @@
 
   function playChapterTransition(direction, doctorSettleMs = 0) {
     finishChapterTransition();
+    sfx('chapter');
     state.briefing.chapterChanging = true;
     const view = $('briefingView');
     view.classList.remove('is-chapter-changing');
@@ -2586,8 +2598,7 @@
   // 黒になるまで待ってから描き替える。動きを減らす設定・canvas が使えない環境では従来の 220ms の間だけ。
   function cutSignalThen(scene, onBlack) {
     const blackMs = signalCut?.run({
-      gain: state.relief ? SIGNAL_CUT_GAIN / 2 : SIGNAL_CUT_GAIN,
-      muted: state.briefing.muted,
+      sound: () => (sfx('signal-cut') ? () => tabletSound.stop('signal-cut') : null),
     }) || 0;
     presentationController.holdThen({
       scene,
@@ -2768,6 +2779,7 @@
   function startBriefing() {
     if (state.briefing.triggered || state.briefing.loadState !== 'ready' || !state.briefing.data) return;
     state.briefing.triggered = true;
+    sfx('screen-on');
     changeVisual(() => {
       stopBriefingPlayback();
       if (document.hidden) state.briefing.pauseReasons.add('hidden');
@@ -2916,6 +2928,10 @@
     $('editBtn').hidden = key === 'sending';
     $('headsetHeading').textContent = key === 'applied' && !staleApplied ? t.headsetConfirmed : t.headsetCurrent;
     document.querySelector('.stage').classList.toggle('is-result-ready', !staleApplied && !briefingBlocked && key === 'applied');
+    if (tone === 'ok' && key === 'applied' && state.sent && stampedSent !== state.sent) {
+      stampedSent = state.sent;
+      sfx('stamp', { delayMs: reducedMotion.matches ? 0 : 510 });
+    }
     setFormDisabled(key === 'sending');
     const speechKey = briefingBlocked ? state.briefing.loadState : key;
     // 画面には見出しを出さない（字幕だけ）。結果を伝える段では、見出しの一文を字幕の頭に置く。
@@ -4231,6 +4247,7 @@
 
   $('settingsForm').addEventListener('submit', (event) => {
     event.preventDefault();
+    sfx('key');
     if (state.settingsStep === 'language') {
       setSettingsStep('relief');
       return;
@@ -4277,6 +4294,7 @@
     renderTitleEntry();
   });
   $('settingsForm').addEventListener('change', (event) => {
+    if (event.target.name === 'lang' || event.target.name === 'relief') sfx('choice');
     if (event.target.name === 'lang') {
       state.lang = event.target.value;
       render();
@@ -4287,17 +4305,18 @@
       syncReliefPreview();
     }
   });
-  $('settingsNextBtn').addEventListener('click', () => setSettingsStep('relief'));
-  $('settingsBackBtn').addEventListener('click', () => setSettingsStep('language'));
-  $('applyBtn').addEventListener('click', send);
+  $('settingsNextBtn').addEventListener('click', () => { sfx('key'); setSettingsStep('relief'); });
+  $('settingsBackBtn').addEventListener('click', () => { sfx('key'); setSettingsStep('language'); });
+  $('applyBtn').addEventListener('click', () => { sfx('send'); send(); });
   $('resultContinueBtn').addEventListener('click', advanceFromResult);
   $('titleStart').addEventListener('click', beginFromTitle);
   $('titleView').addEventListener('click', beginFromTitle);
   $('fullscreenBtn').addEventListener('click', enterFullscreen);
   $('editBtn').addEventListener('click', () => {
+    sfx('key');
     returnToSettings();
   });
-  $('retryBtn').addEventListener('click', send);
+  $('retryBtn').addEventListener('click', () => { sfx('send'); send(); });
   $('briefingRetryBtn').addEventListener('click', loadBriefingData);
   document.querySelector('.stage').addEventListener('click', (event) => {
     if (!canAdvanceFromResult() || event.target.closest('button, a, input, select, textarea, dialog')) return;
@@ -4338,9 +4357,9 @@
   });
   // 画面のタップは次のセリフへ。止めるのは右上の一時停止（2026-10-14）。
   $('briefingPauseSurface').addEventListener('click', () => { moveBriefing(1, 'tap'); });
-  $('briefingPauseBtn').addEventListener('click', openBriefingControls);
-  $('briefingResume').addEventListener('click', resumeBriefing);
-  $('briefingToTitle').addEventListener('click', returnToTitleFromBriefing);
+  $('briefingPauseBtn').addEventListener('click', () => { sfx('key'); openBriefingControls(); });
+  $('briefingResume').addEventListener('click', () => { sfx('key'); resumeBriefing(); });
+  $('briefingToTitle').addEventListener('click', () => { sfx('key'); returnToTitleFromBriefing(); });
   $('briefingPrevious').addEventListener('click', () => {
     if (Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls')) return;
     state.briefing.pauseReasons.delete('controls');
@@ -4357,8 +4376,9 @@
     state.briefing.resumeAuto = true;
     moveBriefing(1, 'control');
   });
-  $('briefingSettings').addEventListener('click', returnToSettings);
+  $('briefingSettings').addEventListener('click', () => { sfx('key'); returnToSettings(); });
   $('briefingReplay').addEventListener('click', () => {
+    sfx('screen-on');
     stopBriefingPlayback();
     void pulse();
     if (document.hidden) state.briefing.pauseReasons.add('hidden');
@@ -4501,8 +4521,9 @@
     if (!nativePaused) requestWakeLock();
   };
   document.addEventListener('fullscreenchange', syncFullscreenControls);
+  document.addEventListener('titlewrite:play', () => { if (state.view === 'title') sfx('title-in'); });
   document.addEventListener('keydown', (event) => {
-    if (!event.repeat) { void presentationController.unlock(); void signalCut?.unlock(); }
+    if (!event.repeat) { void presentationController.unlock(); void tabletSound?.unlock(); }
     if ($('staff').open || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (state.view === 'result' && canAdvanceFromResult()
       && (event.key === 'Enter' || event.key === ' ')
@@ -4537,7 +4558,7 @@
     return Boolean(target.closest('#briefingView, .portrait, #subtitle'));
   }
   document.addEventListener('pointerdown', (event) => {
-    if (event.isPrimary) { void presentationController.unlock(); void signalCut?.unlock(); }
+    if (event.isPrimary) { void presentationController.unlock(); void tabletSound?.unlock(); }
     if (!event.isPrimary || !isBriefingAdvanceTarget(event.target)) {
       pointerGesture = null;
       return;

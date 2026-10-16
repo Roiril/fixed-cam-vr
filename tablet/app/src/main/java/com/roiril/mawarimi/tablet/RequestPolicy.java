@@ -11,7 +11,7 @@ public final class RequestPolicy {
     // index.html が <script src> で読む js。足したらここにも足す（無いと WebView には 404 で黙って届かない）。
     // NativePolicyTest が index.html の <script src> を全部ここと突き合わせる。
     private static final String[] WEB_SCRIPTS = {
-        "/tablet-transport.js", "/briefing-presentation.js", "/signal-cut.js", "/title-write.js",
+        "/tablet-transport.js", "/briefing-presentation.js", "/signal-cut.js", "/title-write.js", "/tablet-sound.js",
     };
 
     private RequestPolicy() {}

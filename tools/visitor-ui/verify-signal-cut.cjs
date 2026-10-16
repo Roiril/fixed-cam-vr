@@ -129,13 +129,25 @@ test('動きを減らす設定と canvas が無い環境では何もしない（
   }
 });
 
-test('消音なら音量 0 で記録する（音の経路が無くても止まらない）', () => {
+test('音は始まりと同時に 1 度だけ鳴らし、途中で取り消したら止める。最後まで流れたら止めない', () => {
   const rt = createRuntime();
-  rt.api.run({ gain: 0.32, muted: true });
-  assert.equal(rt.api.snapshot().gain, 0);
+  let played = 0;
+  let stopped = 0;
+  const sound = () => { played += 1; return () => { stopped += 1; }; };
+  rt.api.run({ sound });
+  assert.equal(played, 1);
+  rt.advance(400);
   rt.api.abort();
-  rt.api.run({ gain: 0.16, muted: false });
-  assert.equal(rt.api.snapshot().gain, 0.16);
+  assert.equal(stopped, 1, '一時停止などで取り消したら砂嵐の音を残さない');
+  rt.api.run({ sound });
+  rt.advance(rt.api.NOISE_MS + rt.api.OFF_MS);
+  rt.api.release();
+  rt.advance(5000);
+  assert.equal(played, 2);
+  assert.equal(stopped, 2, '最後の片付けで止めても、音はもう鳴り終わっている（2.23 秒 < 黒まで 1.21 ＋ 一拍 0.62 ＋ 戻り 0.65）');
+  rt.api.run({ sound: () => null });   // 音が鳴らせなかったときも画は進む
+  rt.advance(10000);
+  assert.equal(rt.stage.dataset.signal, undefined);
 });
 
 let failed = 0;
