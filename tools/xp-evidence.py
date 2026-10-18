@@ -46,6 +46,25 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import numpy as np
 
+
+def write_png(path: str, frame):
+    """OpenCVのWindows日本語パス非対応を避け、保存失敗を成功件数へ数えない。"""
+    ok, encoded = cv2.imencode(".png", frame)
+    if not ok:
+        raise OSError(f"PNG encode failed: {path}")
+    temporary = path + ".tmp"
+    with open(temporary, "wb") as fh:
+        fh.write(encoded.tobytes())
+    os.replace(temporary, path)
+
+
+def read_png(path: str):
+    with open(path, "rb") as fh:
+        image = cv2.imdecode(np.frombuffer(fh.read(), np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise OSError(f"PNG decode failed: {path}")
+    return image
+
 XP = re.compile(r"\[XP\]\s+(.*)$")
 # logcat -v time の行頭。`07-31 16:49:58.057 I/Unity   (10831): ...`
 LOGCAT_TIME = re.compile(r"^(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s")
@@ -479,7 +498,7 @@ def extract(video: str, moments, outdir: str):
         m.actual_rec = pos_ms / 1000.0 if pos_ms else m.rec_t
         m.mean = float(frame.mean())
         m.path = os.path.join(outdir, out_name(m))
-        cv2.imwrite(m.path, frame)      # フル解像度・無加工（縮小すると細い線が消える）
+        write_png(m.path, frame)      # フル解像度・無加工（縮小すると細い線が消える）
         written += 1
     cap.release()
     return written, fps, dur
@@ -496,7 +515,7 @@ def contact_sheets(moments, outdir: str):
         chunk = shots[page * per: (page + 1) * per]
         tiles = []
         for m in chunk:
-            img = cv2.imread(m.path)
+            img = read_png(m.path)
             if img is None:
                 continue
             h = max(int(img.shape[0] * TILE_W / img.shape[1]), 1)
@@ -519,7 +538,7 @@ def contact_sheets(moments, outdir: str):
                 row.append(np.zeros((th, TILE_W, 3), np.uint8))
             rows_img.append(np.hstack(row))
         path = os.path.join(outdir, "_contact_%d.png" % (page + 1))
-        cv2.imwrite(path, np.vstack(rows_img))
+        write_png(path, np.vstack(rows_img))
         sheets.append(path)
     return sheets
 
@@ -542,7 +561,7 @@ def pair_sheets(moments, outdir: str):
         a, b = d.get("freeze"), d.get("rechead")
         if a is None or b is None:
             continue
-        ia, ib = cv2.imread(a.path), cv2.imread(b.path)
+        ia, ib = read_png(a.path), read_png(b.path)
         if ia is None or ib is None:
             continue
         h = min(ia.shape[0], ib.shape[0])
@@ -558,7 +577,7 @@ def pair_sheets(moments, outdir: str):
         cv2.putText(strip, "the person should stand at the same spot on both sides of the mirror line",
                     (8, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (170, 220, 255), 1, cv2.LINE_AA)
         path = os.path.join(outdir, "_pair_%s.png" % key)
-        cv2.imwrite(path, np.vstack([sheet, strip]))
+        write_png(path, np.vstack([sheet, strip]))
         out.append(path)
     return out
 

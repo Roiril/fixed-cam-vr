@@ -226,6 +226,7 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 - 自動走行の4周目でHalt（XP 120.12秒）とPrompt（121.94秒）を実録画の左右両眼で確認。赤い領域の粗い斑・横線・横ずれが出る。0.3秒/0.6秒後の同じ投影領域で赤マスクのIoUは0.955/0.957。背景映像と圧縮の差を含むがノイズの位置は固定。終了はFinished/lap=4。Unity Errorログ0、シェーダエラー0。端末は検証後スリープ。
 - 自動判定はFAIL 0/WARN 17/OK 83。今回の表示の描画は確認済みだが、90fps目標は未達（警告中の2秒標本で79.3〜80.8fps、出現付近49.9fps・最悪119ms）。通信タイムアウトによる砂嵐、台車go/cutの未接続、コントローラ未接続等も警告に残る。未装着の自動走行なので装着時の読みやすさ・体感・音は未検証。
 - 証拠: `G:/マイドライブ/shubie/renders/comms-static-quest-20261018/`。`verification-report.md`、`target-telemetry.json`、`notice-frames/quest-screen-only.png`、`notice-frames/static-comparison.json`、`capture/20261018_152307_raw.mp4`、同名のXPログとmeta。画面部分の画像は実録画の左眼を切り出して傾きを補正したもの。
+- `tools/xp-evidence.py` の保存は `cv2.imwrite` からPNGエンコード→Pythonのバイト書込→置換へ変更。Windowsの日本語DriveパスでPNGが保存されず、written件数だけ増えていたため。個別画像・索引画像・比較画像をすべて同じ保存関数へ通す。日本語パスへの保存→再デコードで寸法と全画素一致を確認済み。
 
 - 同日の追加指示で、横へ走る細線と帯ごとの横ずれは赤い領域へ限定した。帯は6mm刻み、最大約25mmの横ずれ。赤い背景・顔・文字・縦罫線が共通の細線を読み、正常領域の変位は0。
 - 追加後の実描画は `G:/マイドライブ/shubie/renders/comms-red-glitch-20261018/Screenshots/comms-preview/recovery/`。`screen-only.png` は画面部分の切り出し。シェーダ・コンパイル・例外エラー0。実機は未確認。
