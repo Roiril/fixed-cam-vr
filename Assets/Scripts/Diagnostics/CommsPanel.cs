@@ -616,6 +616,12 @@ namespace FixedCamVr.Diagnostics
         private int _charCount;
         private Material? _panelMat;
         private Material? _dividerMat;
+        private Shader? _recoveryTextShader;
+        private Shader? _normalTextShader;
+        private static readonly int RecoveryId = Shader.PropertyToID("_Recovery");
+        private static readonly int RecoveryRectId = Shader.PropertyToID("_RecoveryRect");
+        private static readonly int RecoveryWorldToPanelId = Shader.PropertyToID("_RecoveryWorldToPanel");
+        private static readonly int RecoveryPanelToWorldId = Shader.PropertyToID("_RecoveryPanelToWorld");
         private Mesh? _panelMesh;
         private TMP_Text? _text;
         private MeshRenderer? _textRenderer;
@@ -2219,6 +2225,47 @@ namespace FixedCamVr.Diagnostics
                 _dividerRenderer.transform.localScale = new Vector3(CommsFaceLayout.DividerW, dividerH, 1f);
             }
             ApplyAvatar(pa, cy, lit, sweep);
+            ApplyRecoverySurface(cy, h);
+        }
+
+        // 同じ面座標・時計・斑を地、顔、縦罫線、全テキストへ渡す。
+        private void ApplyRecoverySurface(float centerY, float height)
+        {
+            var recovery = new Vector4(AppliedResidue, Mathf.Max(0f, RecoverySec), 0f, 0f);
+            var rect = new Vector4(_panelLeftX + _panelW * 0.5f, centerY, _panelW,
+                                   Mathf.Max(CommsFaceLayout.MinBoxH, height));
+            Transform space = _visualRoot != null ? _visualRoot : transform;
+            Matrix4x4 toPanel = space.worldToLocalMatrix;
+            Matrix4x4 toWorld = space.localToWorldMatrix;
+            void Push(Material? material)
+            {
+                if (material == null) return;
+                material.SetVector(RecoveryId, recovery);
+                material.SetVector(RecoveryRectId, rect);
+                material.SetMatrix(RecoveryWorldToPanelId, toPanel);
+                material.SetMatrix(RecoveryPanelToWorldId, toWorld);
+            }
+            Push(_panelMat);
+            Push(_avatarMat);
+            Push(_dividerMat);
+            if (_recoveryTextShader == null)
+                _recoveryTextShader = Resources.Load<Shader>("Shaders/CommsRecoveryText");
+            void PushText(TMP_Text? text)
+            {
+                if (text == null) return;
+                var info = text.textInfo;
+                for (int i = 0; i < info.materialCount; i++)
+                {
+                    Material material = info.meshInfo[i].material;
+                    if (material == null) continue;
+                    if (_normalTextShader == null) _normalTextShader = material.shader;
+                    Shader? shader = AppliedResidue > 0.001f ? _recoveryTextShader : _normalTextShader;
+                    if (shader != null && material.shader != shader) material.shader = shader;
+                    Push(material);
+                }
+            }
+            PushText(_text);
+            PushText(_hint);
         }
 
         private static float TearStrengthAt(CommsPossessionPhase phase, float sweep)
@@ -2326,7 +2373,7 @@ namespace FixedCamVr.Diagnostics
             _avatarMat.SetVector(OriginId, new Vector4(x, centerY, 0f, 0f));
             _avatarMat.SetVector(SizeId, new Vector4(CommsFaceLayout.CellM, CommsFaceLayout.CellM, 0f, 0f));
             _avatarMat.SetVector(SweepId, sweep);
-            // 復帰（0270）: 顔の右側に人形が残る。境目は斑の場でぎざぎざで、ゆっくりうごめく。
+            // 復帰: スクリーン全体と同じ粗い斑で正常表示と赤い人形を重ねる。
             _avatarMat.SetVector(ResidueId, new Vector4(AppliedResidue, Mathf.Max(0f, _logic.RecoverySec),
                                                         ResidueTint, 0f));
             _avatarMat.SetColor(ResidueColorId, LieRed);

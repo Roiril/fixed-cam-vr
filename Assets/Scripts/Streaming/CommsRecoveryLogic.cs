@@ -44,7 +44,7 @@ namespace FixedCamVr.Streaming
     ///   電力は段で上がる（ホールドフレーム・滑らかに上げない）。帯が飛び、抜け、面が横へ引っかかる。
     ///   字が浮かび始める前に終わる。</item>
     /// <item><b>余震</b> — ③b を打っている途中に 2 回だけ、帯の乱れが走り、人形が少し押し返してくる。</item>
-    /// <item><b>残り</b> — 顔の右側に人形が、脅威を言う句に赤が残る。押し返して減るが 0 にはならない。</item>
+    /// <item><b>残り</b> — 顔全体の粗い斑で人形とスイが約半々に混在し、脅威を言う句に赤が残る。</item>
     /// <item><b>解ける</b> — 体験者の報告が通った縁（呪いが解けた・0129）から <see cref="ReleaseSec"/> で 0 へ。</item>
     /// </list>
     ///
@@ -103,7 +103,7 @@ namespace FixedCamVr.Streaming
 
         // ---- 残り ------------------------------------------------------------------
         /// <summary>顔に残る人形の割合（起動の頭 → ③a の終わり → 落ち着いた先）。</summary>
-        public const float ResidueStart = 0.85f, ResidueHalt = 0.55f, ResidueFloor = 0.42f;
+        public const float ResidueStart = 0.60f, ResidueHalt = 0.52f, ResidueFloor = 0.50f;
 
         /// <summary>
         /// 文字の赤 = 顔の残り × これ。<b>顔と文字は同じ 1 本の量を読む</b>（0229 の原則 — 別の曲線にすると

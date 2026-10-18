@@ -137,7 +137,7 @@ namespace FixedCamVr.Streaming.EditorTools
             float[] decays = ParseDecayList();
 
             string outDirRel = OutDirFor(lang);
-            string dir = Path.Combine(Application.dataPath, outDirRel);
+            string dir = Path.Combine(EditorCliArgs.Get("out") ?? Application.dataPath, outDirRel);
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
 
@@ -408,7 +408,10 @@ namespace FixedCamVr.Streaming.EditorTools
                    .Append(panel.RedGlyphs).Append('\t')
                    .Append(panel.TornBands).Append('\t')
                    .Append(panel.AppliedPanelAlpha.ToString("F2")).Append('\n');
-                Shoot(cam, Frame(sub, n++));
+                bool stills = EditorCliArgs.Get("stills") == "1";
+                if (!stills || n == 24 || n == 60 || n == 135 || n == 165)
+                    Shoot(cam, Frame(sub, n));
+                n++;
             }
             panel.SetReleasedForPreview(false);
             File.WriteAllText(Path.Combine(sub, "recovery.tsv"), tsv.ToString());

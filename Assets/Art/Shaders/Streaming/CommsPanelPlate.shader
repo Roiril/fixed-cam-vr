@@ -22,6 +22,8 @@ Shader "FixedCamVr/CommsPanelPlate"
     Properties
     {
         _Color("Plate color (A = opacity)", Color) = (0.039, 0.035, 0.031, 0.72)
+        _Recovery("Recovery amount and time", Vector) = (0, 0, 0, 0)
+        _RecoveryRect("Recovery panel rect", Vector) = (0, 0, 1, 0.3)
         _Ink("Scrawl ink", Color) = (0.8196, 0.7804, 0.7216, 1)
         _InkAlpha("Scrawl opacity (0..1)", Range(0, 1)) = 1
         _Origin("Quad centre (panel-local m)", Vector) = (0, 0, 0, 0)
@@ -59,9 +61,12 @@ Shader "FixedCamVr/CommsPanelPlate"
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         #include "CommsCurse.hlsl"
+        #include "CommsRecovery.hlsl"
 
         CBUFFER_START(UnityPerMaterial)
             float4 _Color;
+            float4 _Recovery;
+            float4 _RecoveryRect;
             float4 _Ink;
             float _InkAlpha;
             float4 _Origin;
@@ -224,6 +229,15 @@ Shader "FixedCamVr/CommsPanelPlate"
                 // 象牙を地の上に置く（over）。明滅は出力の alpha に掛ける（暗い側へだけ）。
                 float outA = (ink + plateA * (1.0 - ink)) * _Tear.y;
                 float3 outRgb = (ink * _Ink.rgb + plateA * (1.0 - ink) * _Color.rgb) / max(ink + plateA * (1.0 - ink), 1e-4);
+                if (_Recovery.x > 0.001)
+                {
+                    float mask = CommsRecoveryMask(pRaw, _Recovery, _RecoveryRect);
+                    float grain = CommsRecoveryGrain(pRaw, _Recovery.y);
+                    // 暗い赤い面と正常な黒い面も、顔・文字と同じ斑で重なる。
+                    outRgb = lerp(_Color.rgb, float3(0.105, 0.012, 0.009), mask);
+                    outRgb *= 0.72 + grain * 0.56;
+                    outA *= 0.9 + grain * 0.1;
+                }
                 return half4(outRgb, outA);
             }
             ENDHLSL

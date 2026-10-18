@@ -80,6 +80,9 @@ namespace FixedCamVr.Streaming.Tests
             Assert.Greater(start, haltEnd, "スイが押し返す");
             Assert.Greater(haltEnd, late);
             Assert.GreaterOrEqual(late, 0.4f, "半分近くは最後まで人形のまま（0270「半分はまだ侵食されていて」）");
+            for (float t = CommsRecoveryLogic.HaltEndSec; t < 30f; t += 0.1f)
+                Assert.That(CommsRecoveryLogic.Sample(t).residue, Is.InRange(0.48f, 0.55f),
+                    "復帰後の正常表示と赤い人形は約1:1を保つ（2026-10-18）");
             CommsRecoverySample s = CommsRecoveryLogic.Sample(30f);
             Assert.AreEqual(s.residue * CommsRecoveryLogic.RedPerResidue, s.red, 1e-6f,
                 "顔と文字は同じ 1 本の量を読む");
