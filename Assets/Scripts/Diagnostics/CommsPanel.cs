@@ -618,6 +618,8 @@ namespace FixedCamVr.Diagnostics
         private Material? _dividerMat;
         private Shader? _recoveryTextShader;
         private Shader? _normalTextShader;
+        private bool _recoveryShaderLoaded;
+        private bool _recoverySurfaceActive;
         private static readonly int RecoveryId = Shader.PropertyToID("_Recovery");
         private static readonly int RecoveryRectId = Shader.PropertyToID("_RecoveryRect");
         private static readonly int RecoveryWorldToPanelId = Shader.PropertyToID("_RecoveryWorldToPanel");
@@ -2189,7 +2191,8 @@ namespace FixedCamVr.Diagnostics
                 _lastShown = shown;
                 VisibleChars = shown;
 
-                CorruptedChars = ApplySplitTruthMesh(reveal, AppliedGlyph);
+                CorruptedChars = shown > 0 ? ApplySplitTruthMesh(reveal, AppliedGlyph) : 0;
+                if (shown == 0) RedGlyphs = 0;
             }
             if (_lieText != null)
             {
@@ -2231,6 +2234,16 @@ namespace FixedCamVr.Diagnostics
         // 同じ面座標・時計・斑を地、顔、縦罫線、全テキストへ渡す。
         private void ApplyRecoverySurface(float centerY, float height)
         {
+            // 起動時に一度だけ読み込む。警告の初出でResources読込を走らせない。
+            if (!_recoveryShaderLoaded)
+            {
+                _recoveryTextShader = Resources.Load<Shader>("Shaders/CommsRecoveryText");
+                _recoveryShaderLoaded = true;
+            }
+            bool active = AppliedResidue > 0.001f;
+            if (!active && !_recoverySurfaceActive) return;
+            // 終了の縁では一度だけ0を書き、本文材質も通常へ戻す。
+            _recoverySurfaceActive = active;
             var recovery = new Vector4(AppliedResidue, Mathf.Max(0f, RecoverySec), 0f, 0f);
             var rect = new Vector4(_panelLeftX + _panelW * 0.5f, centerY, _panelW,
                                    Mathf.Max(CommsFaceLayout.MinBoxH, height));
@@ -2248,8 +2261,6 @@ namespace FixedCamVr.Diagnostics
             Push(_panelMat);
             Push(_avatarMat);
             Push(_dividerMat);
-            if (_recoveryTextShader == null)
-                _recoveryTextShader = Resources.Load<Shader>("Shaders/CommsRecoveryText");
             void PushText(TMP_Text? text)
             {
                 if (text == null) return;
@@ -2260,7 +2271,19 @@ namespace FixedCamVr.Diagnostics
                     if (material == null) continue;
                     if (_normalTextShader == null) _normalTextShader = material.shader;
                     Shader? shader = AppliedResidue > 0.001f ? _recoveryTextShader : _normalTextShader;
-                    if (shader != null && material.shader != shader) material.shader = shader;
+                    if (shader != null && material.shader != shader)
+                    {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+                        long shaderStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+                        material.shader = shader;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+                        double shaderMs = (System.Diagnostics.Stopwatch.GetTimestamp() - shaderStart)
+                            * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
+                        Debug.Log($"[CommsPerfShader] frame={Time.frameCount} now={Time.realtimeSinceStartup:F3} "
+                            + $"recoverySec={RecoverySec:F3} shader={shader.name} setMs={shaderMs:F3}");
+#endif
+                    }
                     Push(material);
                 }
             }

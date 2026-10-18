@@ -1,6 +1,9 @@
 #nullable enable
 using System;
 using UnityEngine;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+using Stopwatch = System.Diagnostics.Stopwatch;
+#endif
 
 namespace FixedCamVr.Streaming
 {
@@ -13,6 +16,16 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public sealed class CameraStream : IDisposable
     {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+        public static readonly StreamWorkTiming LoadImageTiming = new StreamWorkTiming();
+        public static readonly StreamWorkTiming TickTiming = new StreamWorkTiming();
+        public long SuccessfulDecodeCount { get; private set; }
+        public long SkippedOpportunityCount { get; private set; }
+        private float _lastDecodedRealtime = -1f;
+        public float DecodedImageAgeMs => _lastDecodedRealtime < 0f
+            ? -1f : Mathf.Max(0f, Time.realtimeSinceStartup - _lastDecodedRealtime) * 1000f;
+#endif
+
         private readonly CameraSource _source;
         private MjpegStreamReceiver _receiver;
         private readonly Texture2D _texture;
@@ -65,6 +78,7 @@ namespace FixedCamVr.Streaming
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
         public bool IsConnected => _receiver.IsConnected;
+        public bool HasPendingFrame => !_disposed && _receiver.HasPendingFrame;
         public string? LastError => _receiver.LastError;
 
         /// <summary>HMD 着脱 / OS pause で凍結中か。DiscoveryClient は suspend 中を「フレーム断」に数えない。</summary>
@@ -271,10 +285,19 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// メインスレッドから毎フレーム呼ぶ。新フレームがあればテクスチャを更新する。
+        /// メインスレッドから毎フレーム1回呼ぶ。監視は常に進め、許可されたときだけ最新フレームを展開する。
         /// </summary>
-        public void Tick()
+        public void Tick(bool allowDecode = true)
         {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            long started = Stopwatch.GetTimestamp();
+            try { TickCore(allowDecode); }
+            finally { TickTiming.Record(Stopwatch.GetTimestamp() - started); }
+        }
+
+        private void TickCore(bool allowDecode)
+        {
+#endif
             if (_disposed) return;
             float now = Time.realtimeSinceStartup;
             float udt = Time.unscaledDeltaTime;
@@ -294,56 +317,10 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            // 単一スロット最新フレームを取り出す（既に MjpegStreamReceiver 側で「最新だけ」保持）。
-            // バッファは swap で受け渡され、毎フレーム new は発生しない。
-            if (_receiver.TryConsumeFrame(ref _scratch, out int len, out var meta) && len > 0 && _scratch != null)
-            {
-                // markNonReadable=false: 連続 LoadImage 上書きで texture 再利用するため CPU 側を残す。
-                // 戻り値で decode 成否を見る。壊れ JPEG は false（texture は前フレームのまま）なので、
-                // 成功時のみ受信統計を進める（false を成功として数えると健全性検知が全て沈黙する）。
-                bool decoded = _texture.LoadImage(_scratch, markNonReadable: false);
-                if (decoded)
-                {
-                    _decodedEvidence.Decoded(now, meta.receivedTickMs, meta.connection,
-                        ConnectionSerial, MjpegStreamReceiver.NowMs());
-                    _watchdog.OnFrameDecoded(now);
-
-                    // 端末内録画。null チェックだけなので非録画時のコストはゼロに近い。
-                    // 例外で受信ループを殺さない（録画は体験を止めない）。
-                    if (FrameTap != null)
-                    {
-                        try { FrameTap(_scratch, len); }
-                        catch (Exception e) { Debug.LogWarning($"[CameraStream] FrameTap 例外: {e.Message}"); }
-                    }
-
-                    if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
-                        DroppedFrames += (meta.seq - _lastSeq - 1);
-                    _lastSeq = meta.seq;
-
-                    // 遅延の内訳（企画書「視覚遅延は 100ms 程度以内を目標として管理する」）。
-                    //   展開ぶん = 受信スレッドの払い出し → メインスレッドの LoadImage 完了
-                    //   揺らぎぶん = 撮影時刻付きフレームの到着差（窓内最小からの超過）
-                    // **絶対の end-to-end は測っていない**（端末間の時計の基準が違い、引き算できない）。
-                    double decodeMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
-                    EstimatedLatencyMs = (float)decodeMs;
-                    _latency.ObserveDecode((float)decodeMs);
-                    if (meta.captureNs != 0)
-                    {
-                        _latency.ObserveArrival(meta.captureNs / 1_000_000.0, meta.receivedTickMs);
-                    }
-                }
-                else
-                {
-                    // decode 失敗を数える。連続が枚数 or 時間の閾値を超えたら強制再接続（cooldown 尊重）。
-                    if (_watchdog.OnFrameDecodeFailed(now, out int streak, out float sinceSec))
-                    {
-                        // ログは reconnect 発火時のみ（cooldown で >=5s 間隔）＝毎フレームは出さずスロットル済み。
-                        Debug.LogWarning($"[CameraStream] {_source.DisplayName} decode 連続失敗 " +
-                                         $"({streak}枚 / {sinceSec:F1}s 壊れ JPEG). reconnecting.");
-                        _receiver.RequestReconnect();
-                    }
-                }
-            }
+            if (allowDecode) DecodeLatestFrame();
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            else SkippedOpportunityCount++;
+#endif
 
             // /info / /health を内蔵タイマーで定期 refresh（HUD 不在シーンでも動くように）。
             _metaRefreshAccum += udt;
@@ -381,6 +358,64 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        /// <summary>
+        /// 最新JPEGを1枚だけ展開する。監視の時計は進めないので、切替公開前にも呼べる。
+        /// 未選択の背景では呼ばず、受信側の最新スロットを残す。
+        /// </summary>
+        public bool DecodeLatestFrame()
+        {
+            if (_disposed || IsSuspended || Time.unscaledDeltaTime > StreamWatchdogLogic.ResumeGapSec) return false;
+            if (!_receiver.TryConsumeFrame(ref _scratch, out int len, out var meta) || len <= 0 || _scratch == null)
+                return false;
+
+            float now = Time.realtimeSinceStartup;
+            bool decoded;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            long loadStarted = Stopwatch.GetTimestamp();
+            try
+            {
+#endif
+                decoded = _texture.LoadImage(_scratch, markNonReadable: false);
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            }
+            finally { LoadImageTiming.Record(Stopwatch.GetTimestamp() - loadStarted); }
+#endif
+            if (decoded)
+            {
+                _decodedEvidence.Decoded(now, meta.receivedTickMs, meta.connection,
+                    ConnectionSerial, MjpegStreamReceiver.NowMs());
+                _watchdog.OnFrameDecoded(now);
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+                SuccessfulDecodeCount++;
+                _lastDecodedRealtime = now;
+#endif
+
+                // 録画・連番・鮮度の更新は通常のTickと切替直前で同じ処理を通す。
+                if (FrameTap != null)
+                {
+                    try { FrameTap(_scratch, len); }
+                    catch (Exception e) { Debug.LogWarning($"[CameraStream] FrameTap 例外: {e.Message}"); }
+                }
+                if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
+                    DroppedFrames += (meta.seq - _lastSeq - 1);
+                _lastSeq = meta.seq;
+
+                // 到着から展開完了まで。端末間の時計を引いたE2Eではない。
+                double decodeMs = MjpegStreamReceiver.NowMs() - meta.receivedTickMs;
+                EstimatedLatencyMs = (float)decodeMs;
+                _latency.ObserveDecode((float)decodeMs);
+                if (meta.captureNs != 0)
+                    _latency.ObserveArrival(meta.captureNs / 1_000_000.0, meta.receivedTickMs);
+            }
+            else if (_watchdog.OnFrameDecodeFailed(now, out int streak, out float sinceSec))
+            {
+                Debug.LogWarning($"[CameraStream] {_source.DisplayName} decode 連続失敗 " +
+                                 $"({streak}枚 / {sinceSec:F1}s 壊れ JPEG). reconnecting.");
+                _receiver.RequestReconnect();
+            }
+            return decoded;
+        }
+
         public void Dispose()
         {
             if (_disposed) return;
@@ -393,4 +428,51 @@ namespace FixedCamVr.Streaming
             }
         }
     }
+
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+    /// <summary>メインスレッド専用。全インスタンスの累計と、同一フレームの合計時間の最大を持つ。</summary>
+    public sealed class StreamWorkTiming
+    {
+        private long _totalTicks;
+        private long _frameTicks;
+        private long _maxFrameTicks;
+        private int _frame = -1;
+        private int _frameCount;
+        public int PeriodMaxFrameCount { get; private set; }
+
+        public long Count { get; private set; }
+        public double TotalMs => _totalTicks * (1000.0 / Stopwatch.Frequency);
+        public double CurrentFrameMs => _frame == Time.frameCount ? _frameTicks * (1000.0 / Stopwatch.Frequency) : 0.0;
+        public int CurrentFrameCount => _frame == Time.frameCount ? _frameCount : 0;
+
+        internal void Record(long elapsedTicks)
+        {
+            Count++;
+            _totalTicks += elapsedTicks;
+            int frame = Time.frameCount;
+            if (frame != _frame)
+            {
+                _frame = frame;
+                _frameTicks = 0;
+                _frameCount = 0;
+            }
+            _frameCount++;
+            if (_frameCount > PeriodMaxFrameCount) PeriodMaxFrameCount = _frameCount;
+            _frameTicks += elapsedTicks;
+            if (_frameTicks > _maxFrameTicks) _maxFrameTicks = _frameTicks;
+        }
+
+        /// <summary>Probe が期間の境界で読む。累計を保ち、期間内のフレーム最大だけをリセットする。</summary>
+        public double ReadAndResetFrameMaxMs()
+        {
+            double result = _maxFrameTicks * (1000.0 / Stopwatch.Frequency);
+            _maxFrameTicks = 0;
+            _frameTicks = 0;
+            _frame = -1;
+            _frameCount = 0;
+            PeriodMaxFrameCount = 0;
+            return result;
+        }
+    }
+#endif
 }

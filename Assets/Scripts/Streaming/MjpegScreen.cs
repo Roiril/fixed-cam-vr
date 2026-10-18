@@ -1,5 +1,8 @@
 #nullable enable
 using UnityEngine;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+using Stopwatch = System.Diagnostics.Stopwatch;
+#endif
 
 namespace FixedCamVr.Streaming
 {
@@ -18,6 +21,10 @@ namespace FixedCamVr.Streaming
     [RequireComponent(typeof(Renderer))]
     public sealed class MjpegScreen : MonoBehaviour
     {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+        public static readonly StreamWorkTiming SampleLumaTiming = new StreamWorkTiming();
+#endif
+
         private static readonly int LiveTexId = Shader.PropertyToID("_LiveTex");
         private static readonly int LiveScaleId = Shader.PropertyToID("_LiveScale");
         private static readonly int UvRotStepsId = Shader.PropertyToID("_UvRotSteps");
@@ -154,6 +161,9 @@ namespace FixedCamVr.Streaming
             _lumaStamp = now;
             var t = _lastAssigned as Texture2D;
             if (t == null || t.width <= 4 || t.height <= 4) return;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            long started = Stopwatch.GetTimestamp();
+#endif
             try
             {
                 int stepX = Mathf.Max(1, t.width / LumaGrid);
@@ -169,6 +179,9 @@ namespace FixedCamVr.Streaming
                 _lumaMap.EndFrame();
             }
             catch { /* 読めないテクスチャなら諦める（測れないことは体験を止めない） */ }
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            finally { SampleLumaTiming.Record(Stopwatch.GetTimestamp() - started); }
+#endif
         }
 
         private void Awake()

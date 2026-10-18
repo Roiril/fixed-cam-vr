@@ -162,7 +162,9 @@ Shader "FixedCamVr/CommsAvatar"
                 float shift = CommsTearShiftAt(panelPos.y, _Tear, _TearShiftA, _TearShiftB);
                 float2 fieldPos = panelPos;
                 fieldPos.x -= shift;
-                float k = max(CurseK(CurseField(fieldPos), _FaceMix), CurseSweepK(panelPos, _Sweep));
+                float k = CurseSweepK(panelPos, _Sweep);
+                if (_FaceMix > 0.0)
+                    k = max(k, CurseK(CurseField(fieldPos), _FaceMix));
                 // 復帰: 面全体を粗い斑で混在させる（2026-10-18 ユーザー指定）。
                 // 中心反転したノイズとの差を使い、量0.5で左右に偏らず面積も半々にする。
                 // 帯の飛びは既存の乱れと共有。残りが消えるとゆがみも同時に消える。
@@ -170,8 +172,9 @@ Shader "FixedCamVr/CommsAvatar"
                 float2 residueWarp = 0.0;
                 if (_Residue.x > 0.001)
                 {
-                    residueWarp = CommsRecoveryWarp(fieldPos, _Residue, _RecoveryRect) / max(_Size.xy, 1e-4);
-                    kRes = CommsRecoveryMask(fieldPos, _Residue, _RecoveryRect);
+                    float2 warp = CommsRecoveryWarp(fieldPos, _Residue, _RecoveryRect);
+                    residueWarp = warp / max(_Size.xy, 1e-4);
+                    kRes = CommsRecoveryBaseMask(fieldPos - warp, _Residue, _RecoveryRect);
                 }
                 k = max(k, kRes);
                 float2 faceUv = i.uv + residueWarp;

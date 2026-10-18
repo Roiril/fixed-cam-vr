@@ -202,21 +202,26 @@ Shader "FixedCamVr/CommsPanelPlate"
                 // 層 A: 鋭い矩形。**枠そのものなので飛ばない**（本編の枠が乱れで動かないのと同じ）。
                 float sharp = 1.0 - smoothstep(-aa, aa, d);
 
-                // 層 B: 縁が毛羽立ち、外へ煙のようににじむ（「りんかくは不鮮明」）。中身なので帯ごとに飛ぶ。
-                float dB = RectDistance(p);
-                float2 e = p / max(_FrayCell, 1e-4);
-                float fn = CurseValueNoise(e + 5.3) * 0.65 + CurseValueNoise(e * 2.7 + 9.1) * 0.35;
-                float disp = (fn - 0.5) * 2.0 * _Fray;
-                float db = dB + disp;
-                float frayed = 1.0 - smoothstep(-0.004, 0.004, db);
-                float halo = (1.0 - smoothstep(0.0, max(_Halo, 1e-4), db)) * (0.55 + 0.45 * fn) * 0.38;
-                float cursed = saturate(frayed + halo * (1.0 - frayed)) * _CurseDensity;
+                // 呪い側が混ざらない警告/通常表示では、旧効果のノイズ4回を評価しない。
+                float plateA = sharp * _Color.a;
+                if (_Curse > 0.0 || _Sweep.x > 0.0)
+                {
+                    // 層 B: 縁が毛羽立ち、外へ煙のようににじむ（「りんかくは不鮮明」）。中身なので帯ごとに飛ぶ。
+                    float dB = RectDistance(p);
+                    float2 e = p / max(_FrayCell, 1e-4);
+                    float fn = CurseValueNoise(e + 5.3) * 0.65 + CurseValueNoise(e * 2.7 + 9.1) * 0.35;
+                    float disp = (fn - 0.5) * 2.0 * _Fray;
+                    float db = dB + disp;
+                    float frayed = 1.0 - smoothstep(-0.004, 0.004, db);
+                    float halo = (1.0 - smoothstep(0.0, max(_Halo, 1e-4), db)) * (0.55 + 0.45 * fn) * 0.38;
+                    float cursed = saturate(frayed + halo * (1.0 - frayed)) * _CurseDensity;
 
-                // 斑（0229）と、帯ごとに反転する塗り替わり（0230 / 0231）は同じ k に入る。どちらも層 B へ倒す。
-                // ⚠ 帯の反転は**生の y**で決める（帯は面に固定された格子。飛ぶのは帯の中身）。
-                float kSweep = CurseSweepK(pRaw, _Sweep);
-                float k = max(CurseK(CurseField(p), _Curse), kSweep);
-                float plateA = saturate(lerp(sharp, cursed, k)) * _Color.a;
+                    // 斑（0229）と、帯ごとに反転する塗り替わり（0230 / 0231）は同じ k に入る。どちらも層 B へ倒す。
+                    // ⚠ 帯の反転は**生の y**で決める（帯は面に固定された格子。飛ぶのは帯の中身）。
+                    float kSweep = CurseSweepK(pRaw, _Sweep);
+                    float k = max(CurseK(CurseField(p), _Curse), kSweep);
+                    plateA = saturate(lerp(sharp, cursed, k)) * _Color.a;
+                }
 
                 // 呪われた本文は赤い TMP が担う。走り書きと縁の糸線は描かない。
                 float ink = 0.0;

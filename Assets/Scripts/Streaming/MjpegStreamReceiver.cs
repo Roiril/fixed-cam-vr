@@ -88,6 +88,12 @@ namespace FixedCamVr.Streaming
         public long ConnectionSerial => Interlocked.Read(ref _connectionSerial);
         public string? LastError => _lastError;
 
+        /// <summary>消費せずに最新スロットの有無を見る。受信側と同じロックを使う。</summary>
+        public bool HasPendingFrame
+        {
+            get { lock (_slotLock) { return _hasLatest && _latestBuf != null; } }
+        }
+
         public void RequestReconnect()
         {
             CancellationTokenSource? toCancel;

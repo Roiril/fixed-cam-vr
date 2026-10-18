@@ -220,6 +220,8 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 `Assets/Screenshots/comms-preview/motion/evidence.json`。この節はプレビューを回した後に埋める）
 ## 2026-10-18 4周目Aのスクリーン全体の重ね方
 
+- 警告中の追加性能検証は [comms_performance_20261018.md](comms_performance_20261018.md)。採用した静止ノイズの見た目を維持し、解像度を落とさずに重複計算と同期JPEG展開の集中を減らす。実機のfpsと開始時の停止は別々に記録する。
+
 - 最終ユーザー判定「ok採用。ノイズは動かさず静的でいい。反映して。」。粗い斑・粒・横線・横ずれは `COMMS_RECOVERY_NOISE_PHASE=5.5` に固定し、時間では動かさない。以下の10Hz更新・横へ走る記述は採用直前の試作。復帰の出現と報告後の解除は従来どおり。
 - 静止版は `G:/マイドライブ/shubie/renders/comms-static-glitch-20261018/Screenshots/comms-preview/recovery/` に実描画。シェーダ・コンパイル・例外エラー0。時間依存のノイズ式は0。実機は未確認。
 - 実機検証済み（同日）: クエストα `2G0YC1ZF890864` へ139.2MBのAPKを導入。端末上のbase.apkとビルド記録のSHA-256は `016992db30803ef44895b973a4af37653d99309ffbcc392227f75f58c68bf7c7` で一致。buildGuid `c847de3222964fc49fa192ec63ef046f`。βは未接続。
