@@ -196,7 +196,21 @@ namespace FixedCamVr.Tracking
             // --- 導入 ---
             // HMD を被っていない前提で走らせるので、被り検知を無効化する（Development ビルド限定）。
             // これが無いと run.intro.startLineId を使う設定では導入が永久に始まらない。
-            if (_show != null) _show.UserPresentProvider = () => true;
+            if (_show != null)
+            {
+                _show.UserPresentProvider = () => true;
+                _show.StartAuthorizedProvider = () => false;
+            }
+
+            // スタッフ準備が見えている間は題字が譲る。開始許可を開く前に、自動走行だけ準備を解除する。
+            // Tracking は Diagnostics を参照しないので、ステータスのプローブと同じ口で呼ぶ。
+            var staffSetupGo = GameObject.Find("[StaffSetup]");
+            if (staffSetupGo != null)
+            {
+                staffSetupGo.SendMessage("UseAutomation", SendMessageOptions.DontRequireReceiver);
+                Debug.Log("[XPWalk] スタッフ用準備を自動走行用に解除した（開始許可は題字終了まで待つ）");
+                yield return null;
+            }
 
             // コントローラーの無い自動走行では、報告練習の代わりに題字だけを実物の入口から検証する。
             // 開始門は題字が閉じ切るまで false のまま保つ。

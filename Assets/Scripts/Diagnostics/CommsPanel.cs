@@ -711,9 +711,8 @@ namespace FixedCamVr.Diagnostics
         public bool PlateBuilt { get; private set; }
 
         /// <summary>
-        /// 地と縁を組めたか。<b>false なら文字と壊れだけが宙に浮く。</b>
-        /// ⚠⚠ 2026-08-17 まで実機がまさにこれだった（<c>Unlit/Color</c> がビルドから剥がれていた）。
-        /// <b>Editor では出るので、この観測が無いと永久に気づけない。</b>
+        /// 地と縦罫線を両方組めたか。false は少なくとも片方が欠けたことを示す。
+        /// 背景が存在していても縦罫線だけが Player で剥がれることがある。
         /// </summary>
         public bool PanelBuilt => _panelMat != null && _dividerMat != null;
 
@@ -1394,12 +1393,10 @@ namespace FixedCamVr.Diagnostics
             //   原点は従来どおり文面の帯の中心のまま（`CommsFaceLayout` の但し書き）。
             _panelW = CommsFaceLayout.FullW(PanelW);
             _panelLeftX = CommsFaceLayout.LeftX(PanelW);
-            // ⚠⚠ **`Unlit/Color` は実機のビルドに入っていない**（2026-08-17 に走行の画で判明）。
-            //    組み込みシェーダでも、どのマテリアルからも参照されず Always Included にも無ければ
-            //    剥がれる（2026-07-31 の `IntroVeil` と同じ型）。**Editor では出るので気づけない。**
-            //    ⇒ 実機で **1 度も地も縁も描かれておらず、文字と壊れだけが宙に浮いていた。**
-            //    URP の Unlit は URP のマテリアルが参照しているので必ず入っている。そちらを先に引く。
-            Shader? flat = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
+            // 参照されない汎用 Unlit は Player で剥がれる。2026-10-18 は地だけ残り縦罫線が欠けていた。
+            // 色面を Resources から保持し、Editor と Player で同じシェーダを使う。
+            Shader? flat = Resources.Load<Shader>("Shaders/CommsFlat")
+                           ?? Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
             // 地は呪われた双子を描けるシェーダ（0229）。⚠ 引けなければ URP の Unlit へ落として
             //   **地だけは出す**（呪いは顔にしか出なくなる）。落ちたことは `PlateBuilt` が観測に出す。
             Shader? plate = Shader.Find(PlateShaderName);

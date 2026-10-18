@@ -391,7 +391,8 @@ namespace FixedCamVr.Streaming
         {
             if (!titleEnabled) return "タイトルを出さない設定になっている";
             if (!IsBuilt) return "タイトルの実体を組めていない（シェーダが剥がれたか版が無い）";
-            if (IsYielding) return "位置合わせ中は受け付けない";
+            if (showControl?.CourseRegistrationActive ?? false) return "位置合わせ中は受け付けない";
+            if (showControl?.StaffSetupActive ?? false) return "スタッフ用準備中は受け付けない";
             if (_logic.Stage == TitleStage.Done) return "タイトルはもう閉じている（体験はすでに始まっている）";
             if (_logic.Stage == TitleStage.Off) return "タイトルの段が Off（周回リセットで出し直す）";
             if (_logic.Stage == TitleStage.Out) return "いま閉じる演出の最中";

@@ -86,7 +86,7 @@ class EndingLogTests(unittest.TestCase):
 
     def test_halt_missing_after_three_seconds_without_recent_notice_fails(self):
         events = [
-            {"ev": "comms", "id": "BeginHow", "t": "0"},
+            {"ev": "comms", "id": "Begin", "t": "0"},
             {"ev": "seg", "t": "10", "lap": "4", "plap": "4", "cam": "0"},
             {"ev": "sum", "t": "13.1", "_cams": []},
         ]
@@ -112,7 +112,7 @@ class EndingLogTests(unittest.TestCase):
 
     def test_left_half_ending_can_precede_halt(self):
         events = [
-            {"ev": "comms", "id": "BeginHow", "t": "0"},
+            {"ev": "comms", "id": "Begin", "t": "0"},
             {"ev": "seg", "t": "10", "lap": "4", "plap": "4", "cam": "0"},
             {"ev": "outro", "stage": "Dark", "t": "14", "ending": "Trapped", "endingLeft": "1"},
         ]
@@ -227,6 +227,120 @@ class EndingLogTests(unittest.TestCase):
                             for level, text in verdicts))
         self.assertTrue(any(level == "FAIL" and "電源断が 1 画素も" in text
                             for level, text in verdicts))
+
+
+class CurrentXpLogTests(unittest.TestCase):
+    def setUp(self):
+        self.show = {
+            "run": {"introEnabled": False},
+            "cues": [{"id": "used"}, {"id": "unused"}],
+            "timeline": {"schema": 3, "segments": [
+                {"lap": 1, "camera": 0, "takes": [
+                    {"id": "test", "steps": [{"cueId": "used"}]}]}]},
+        }
+
+    def analyze(self, events, others=()):
+        return xp.analyze(events, list(others), xp.expected_from_show(self.show))
+
+    def has(self, verdicts, level, text):
+        return any(lv == level and text in message for lv, message in verdicts)
+
+    def notices(self):
+        return [{"ev": "comms", "id": kind, "t": str(i), "chars": "0"}
+                for i, kind in enumerate(("Walk", "Begin"))]
+
+    def test_baked_config_uses_referenced_cues_but_live_keeps_all(self):
+        for src, count, wanted_level in (("baked", "1", "OK"), ("baked", "2", "FAIL"),
+                                          ("live", "2", "OK"), ("live", "1", "FAIL")):
+            with self.subTest(src=src, count=count):
+                rep, verdicts = self.analyze([{"ev": "config", "src": src, "cues": count}])
+                self.assertTrue(self.has(verdicts, wanted_level, "実機は show.json" if wanted_level == "OK"
+                                         else "実機の設定"))
+                self.assertNotIn("reset-config", "\n".join(rep + [t for _, t in verdicts]))
+
+    def test_baked_cue_references_match_exporter_rules(self):
+        self.show.update({"schedule": {"entries": [{"cueId": "unused"}]},
+                          "control": {"activeCue": "active"}})
+        seg = self.show["timeline"]["segments"][0]
+        seg.update({"cues": [{"cueId": "legacy"}], "hasInsert": True,
+                    "insert": {"cueId": "insert"}})
+        take = seg["takes"][0]
+        take["markStartCueId"] = "mark"
+        take["steps"][0]["overlay2CueId"] = "overlay"
+        self.show["cues"].extend({"id": name} for name in ("active", "legacy", "insert", "mark", "overlay"))
+        self.assertEqual(xp.baked_cue_count(self.show), 6)
+        self.show["timeline"]["schema"] = 2
+        self.assertEqual(xp.baked_cue_count(self.show), 7)
+        self.assertEqual(xp.baked_cue_count({"cues": self.show["cues"]}), 7)
+
+    def test_begin_is_required_and_beginhow_is_optional(self):
+        _, verdicts = self.analyze(self.notices())
+        self.assertTrue(self.has(verdicts, "OK", "本編開始の連絡 Begin"))
+        self.assertFalse(self.has(verdicts, "FAIL", "①の連絡"))
+        _, verdicts = self.analyze([{"ev": "comms", "id": "BeginHow"}])
+        self.assertTrue(self.has(verdicts, "FAIL", "本編開始の連絡 Begin"))
+
+    def test_automation_skips_greeting_but_manual_missing_greeting_fails(self):
+        for others, level in (([("XPWalk", "経路: 0->1 1->2")], "WARN"), ([], "FAIL")):
+            with self.subTest(others=others):
+                _, verdicts = self.analyze(self.notices(), others)
+                self.assertTrue(self.has(verdicts, level, "自己紹介"))
+                self.assertFalse(self.has(verdicts, "OK", "名乗り"))
+
+    def test_recovery_allows_current_boot_power_and_keeps_other_checks(self):
+        good = {"ev": "commsRecover", "st": "end", "powMin": "0.30",
+                "resMax": "0.5", "resEnd": "0.2", "redMax": "2", "tearMax": "0.6"}
+        for changes, level in (({}, "OK"), ({"powMin": "0.31"}, "FAIL"),
+                               ({"resMax": "0"}, "FAIL"), ({"redMax": "0"}, "FAIL"),
+                               ({"tearMax": "0"}, "FAIL")):
+            with self.subTest(changes=changes):
+                _, verdicts = self.analyze(self.notices() + [dict(good, **changes)])
+                self.assertTrue(self.has(verdicts, level, "弱った起動" if level == "OK" else "復帰の姿"))
+
+    def test_async_character_observation_does_not_prove_duplicate_typing(self):
+        # Quest α 2026-10-18: typeN=93、通知の chars 合計=65。
+        for count, level in (("93", "WARN"), ("0", "FAIL")):
+            with self.subTest(count=count):
+                events = self.notices()
+                events[0]["chars"] = "65"
+                events.append({"ev": "sum", "t": "2", "_cams": [], "typeN": count})
+                rep, verdicts = self.analyze(events)
+                self.assertTrue(self.has(verdicts, level, "打鍵"))
+                if count == "93":
+                    self.assertTrue(self.has(verdicts, "WARN", "照合は保留"))
+                    self.assertFalse(self.has(verdicts, "FAIL", "打鍵"))
+                    self.assertIn("typeN=93", "\n".join(rep))
+
+    def test_panel_material_conjunction_does_not_identify_missing_background(self):
+        _, verdicts = self.analyze(self.notices() + [
+            {"ev": "sum", "t": "2", "_cams": [], "commsBg": "0", "commsCurse": "1/0/0"}])
+        self.assertTrue(self.has(verdicts, "FAIL", "背景または縦罫線"))
+        self.assertFalse(any("宙に浮く" in text for _, text in verdicts))
+
+    def test_record_line_only_requires_its_camera_and_observed_crossing(self):
+        self.show["record"] = {"enabled": True, "laps": [1], "startLineId": "rec_line"}
+        self.show["layout"] = {"lines": [{"id": "rec_line", "camera": 0}]}
+        for start, crossed, level in (("0", False, "WARN"), ("0", True, "FAIL"), ("1", True, "OK")):
+            with self.subTest(start=start, crossed=crossed):
+                events = [{"ev": "rec", "v": "stop", "lap": "1", "cam": str(cam),
+                           "start": start if cam == 0 else "0", "frames": "78"}
+                          for cam in range(3)]
+                others = [("SegmentRecorder", "録り始めの線を横切った line=rec_line L1C0 pos=(0,0)")]
+                _, verdicts = self.analyze(events, others if crossed else [])
+                self.assertTrue(self.has(verdicts, level, "録り始めの線"))
+                if level == "OK":
+                    self.assertTrue(self.has(verdicts, "OK", "1/1 区間"))
+                    self.assertFalse(self.has(verdicts, "WARN", "横断を確認できない"))
+
+    def test_screenon_is_in_video_but_bell_and_shatter_are_required(self):
+        for sounds, missing in ((("Bell", "Shatter"), False), (("Shatter",), True)):
+            with self.subTest(sounds=sounds):
+                events = [{"ev": "intro", "stage": "Swap", "t": "1"}]
+                events.extend({"ev": "sfx", "id": sound, "t": "1"} for sound in sounds)
+                _, verdicts = self.analyze(events)
+                self.assertFalse(self.has(verdicts, "FAIL", "ScreenOn"))
+                self.assertEqual(self.has(verdicts, "FAIL", "鈴"), missing)
+                self.assertTrue(self.has(verdicts, "WARN", "音声出力は未検証"))
 
 
 if __name__ == "__main__":
