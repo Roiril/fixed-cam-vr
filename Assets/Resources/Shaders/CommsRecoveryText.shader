@@ -333,6 +333,9 @@ SubShader {
 				float grain = saturate(CommsRecoveryGrain(input.panelPos, _Recovery.y));
 				faceColor.rgb = lerp(float3(0.82, 0.78, 0.72), float3(0.92, 0.035, 0.025), recoveryMask) * faceColor.a;
 				faceColor *= 0.85 + 0.15 * grain;
+				float lines = CommsRecoveryLines(input.panelPos, _Recovery, _RecoveryRect) * recoveryMask;
+				faceColor.rgb = lerp(faceColor.rgb, float3(1.0, 0.08, 0.04) * faceColor.a, lines * 0.65);
+				faceColor *= 1.0 - lines * 0.3;
 			}
 
 			return faceColor * input.color.a;

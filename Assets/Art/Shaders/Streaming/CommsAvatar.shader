@@ -185,6 +185,12 @@ Shader "FixedCamVr/CommsAvatar"
 
                 float a = saturate(max(ring, face * (1.0 - drop))) * _Tear.y;
                 float3 rgb = lerp(_Color.rgb, _ResidueColor.rgb, kRes * saturate(_Residue.z));
+                if (_Residue.x > 0.001)
+                {
+                    float lines = CommsRecoveryLines(panelPos, _Residue, _RecoveryRect) * kRes;
+                    rgb = lerp(rgb, float3(1.0, 0.08, 0.04), lines * 0.7);
+                    a *= 1.0 - lines * 0.35;
+                }
                 return half4(rgb, a * _Opacity);
             }
             ENDHLSL

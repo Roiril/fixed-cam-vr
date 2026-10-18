@@ -9,29 +9,46 @@ float CommsRecoveryNoise(float2 p)
          + 0.26 * CurseValueNoise(p * 13.0 + float2(11.3, 7.1));
 }
 
+float CommsRecoveryBaseMask(float2 p, float4 recovery, float4 rect)
+{
+    if (recovery.x <= 0.001) return 0.0;
+    float2 uv = (p - rect.xy) / max(rect.w, 0.001);
+    float2 drift = float2(recovery.y * 0.025, -recovery.y * 0.035);
+    float field = 0.5 + (CommsRecoveryNoise(uv + drift)
+                       - CommsRecoveryNoise(-uv + drift)) * 0.65;
+    return smoothstep(field - 0.035, field + 0.035, recovery.x);
+}
+
 float2 CommsRecoveryWarp(float2 p, float4 recovery, float4 rect)
 {
     if (recovery.x <= 0.001) return 0.0;
     float strength = saturate(recovery.x * 2.0);
     float2 uv = (p - rect.xy) / max(rect.zw, 0.001);
-    float band = floor(uv.y * 21.0);
-    float tick = floor(recovery.y * 8.0);
+    float band = floor((p.y - rect.y) / 0.006);
+    float tick = floor(recovery.y * 10.0);
     float h = CurseHash21(float2(band, tick));
-    float jump = step(0.77, h) * (h - 0.885) * 0.035;
+    float jump = step(0.58, h) * (CurseHash21(float2(band + 71.0, tick)) - 0.5) * 0.045;
+    float red = CommsRecoveryBaseMask(p, recovery, rect);
     return float2(sin(uv.y * 19.0 + recovery.y * 0.7) * 0.0025 + jump,
-                  sin(uv.x * 15.0 - recovery.y * 0.5) * 0.0010) * strength;
+                  sin(uv.x * 15.0 - recovery.y * 0.5) * 0.0010) * strength * red;
 }
 
 float CommsRecoveryMask(float2 p, float4 recovery, float4 rect)
 {
     if (recovery.x <= 0.001) return 0.0;
-    // 正方形に近い大きな塊を面全体へ。反転差の中心は0.5なので半々を保つ。
-    float2 uv = (p - rect.xy) / max(rect.w, 0.001);
-    float2 drift = float2(recovery.y * 0.025, -recovery.y * 0.035);
-    float2 warp = CommsRecoveryWarp(p, recovery, rect) / max(rect.w, 0.001);
-    float field = 0.5 + (CommsRecoveryNoise(uv + warp + drift)
-                       - CommsRecoveryNoise(-uv - warp + drift)) * 0.65;
-    return smoothstep(field - 0.035, field + 0.035, recovery.x);
+    // 赤の輪郭も帯ごとに横へ裂く。正常領域には変位を掛けない。
+    return CommsRecoveryBaseMask(p - CommsRecoveryWarp(p, recovery, rect), recovery, rect);
+}
+
+// 赤い領域の中を横へ走る、細い明線と暗線。全画面の点滅にはしない。
+float CommsRecoveryLines(float2 p, float4 recovery, float4 rect)
+{
+    float row = floor((p.y - rect.y) / 0.005);
+    float seed = CurseHash21(float2(row, 17.3));
+    float thin = 1.0 - smoothstep(0.10, 0.27, frac((p.y - rect.y) / 0.005));
+    float travel = frac((p.x - rect.x) / 0.28 - recovery.y * 2.1 + seed);
+    float streak = smoothstep(0.02, 0.12, travel) * (1.0 - smoothstep(0.52, 0.9, travel));
+    return thin * streak * step(0.35, seed);
 }
 
 float CommsRecoveryGrain(float2 p, float time)

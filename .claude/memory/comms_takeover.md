@@ -220,8 +220,11 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 `Assets/Screenshots/comms-preview/motion/evidence.json`。この節はプレビューを回した後に埋める）
 ## 2026-10-18 4周目Aのスクリーン全体の重ね方
 
+- 同日の追加指示で、横へ走る細線と帯ごとの横ずれは赤い領域へ限定した。帯は6mm刻み、最大約25mmの横ずれ。赤い背景・顔・文字・縦罫線が共通の細線を読み、正常領域の変位は0。
+- 追加後の実描画は `G:/マイドライブ/shubie/renders/comms-red-glitch-20261018/Screenshots/comms-preview/recovery/`。`screen-only.png` は画面部分の切り出し。シェーダ・コンパイル・例外エラー0。実機は未確認。
+
 - ユーザー指定により、復帰中のスクリーン全体に粗いノイズを掛ける。地・本文・案内・縦罫線・顔が同じ場を読む。正常表示と赤い人形表示の比率は約1:1。右側だけに人形を残す旧境界は廃止。
-- `CommsRecovery.hlsl` は画面高さに約4塊の粗い斑と細かな粒、小さなゆがみ、8Hzで更新する一部の帯の横ずれを共有する。`CommsRecoveryText.shader` はResourcesから読み、復帰中だけTMPの画素ごとに正常色と赤を切り替える。通常時と乗っ取り時は既存の材質へ戻す。
+- `CommsRecovery.hlsl` は画面高さに約4塊の粗い斑と細かな粒、小さなゆがみ、10Hzで更新する赤い帯の横ずれを共有する。`CommsRecoveryText.shader` はResourcesから読み、復帰中だけTMPの画素ごとに正常色と赤を切り替える。通常時と乗っ取り時は既存の材質へ戻す。
 - `CommsRecoveryLogic` の残りは0.60→0.52→0.50。報告で解除されると0へ戻す。文面・尺・赤い文字の配置規則は従来どおり。
 - 実描画の確認: `tools/unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.CommsPreview.Run -Set 'recovery=1','stills=1','out=G:/マイドライブ/shubie/renders/comms-recovery-full-20261018'`。出力先は同パスの `Screenshots/comms-preview/recovery/`。`out`はAssets以外への出力にも対応。`stills=1`は0.8秒・2秒・4.5秒・5.5秒だけ撮影する。
 - `RedGlyphs`は従来の頂点色を数える値。復帰用シェーダが画素へ掛ける赤い斑の面積は数えない。見た目は実描画PNGで確認する。

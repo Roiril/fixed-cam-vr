@@ -236,6 +236,10 @@ Shader "FixedCamVr/CommsPanelPlate"
                     // 暗い赤い面と正常な黒い面も、顔・文字と同じ斑で重なる。
                     outRgb = lerp(_Color.rgb, float3(0.105, 0.012, 0.009), mask);
                     outRgb *= 0.72 + grain * 0.56;
+                    float lines = CommsRecoveryLines(pRaw, _Recovery, _RecoveryRect) * mask;
+                    outRgb = lerp(outRgb, float3(0.24, 0.018, 0.012), lines * 0.75);
+                    float cuts = step(0.84, CurseHash21(float2(floor(pRaw.y / 0.006), floor(_Recovery.y * 10.0))));
+                    outRgb *= 1.0 - cuts * mask * 0.55;
                     outA *= 0.9 + grain * 0.1;
                 }
                 return half4(outRgb, outA);

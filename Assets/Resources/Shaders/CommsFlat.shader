@@ -50,7 +50,12 @@ Shader "FixedCamVr/CommsFlat"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 color = _Color;
                 if (_Recovery.x > 0.001)
+                {
                     color.rgb = lerp(color.rgb, float3(0.92,0.035,0.025), CommsRecoveryMask(input.panelPos, _Recovery, _RecoveryRect));
+                    float lines = CommsRecoveryLines(input.panelPos, _Recovery, _RecoveryRect)
+                                * CommsRecoveryMask(input.panelPos, _Recovery, _RecoveryRect);
+                    color.rgb = lerp(color.rgb, float3(1.0,0.08,0.04), lines * 0.65);
+                }
                 return color;
             }
             ENDHLSL
