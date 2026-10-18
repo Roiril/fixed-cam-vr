@@ -238,7 +238,7 @@ Shader "FixedCamVr/CommsPanelPlate"
                     outRgb *= 0.72 + grain * 0.56;
                     float lines = CommsRecoveryLines(pRaw, _Recovery, _RecoveryRect) * mask;
                     outRgb = lerp(outRgb, float3(0.24, 0.018, 0.012), lines * 0.75);
-                    float cuts = step(0.84, CurseHash21(float2(floor(pRaw.y / 0.006), floor(_Recovery.y * 10.0))));
+                    float cuts = step(0.84, CurseHash21(float2(floor(pRaw.y / 0.006), floor(COMMS_RECOVERY_NOISE_PHASE * 10.0))));
                     outRgb *= 1.0 - cuts * mask * 0.55;
                     outA *= 0.9 + grain * 0.1;
                 }

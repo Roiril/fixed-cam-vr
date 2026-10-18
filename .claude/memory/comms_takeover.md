@@ -220,6 +220,9 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 `Assets/Screenshots/comms-preview/motion/evidence.json`。この節はプレビューを回した後に埋める）
 ## 2026-10-18 4周目Aのスクリーン全体の重ね方
 
+- 最終ユーザー判定「ok採用。ノイズは動かさず静的でいい。反映して。」。粗い斑・粒・横線・横ずれは `COMMS_RECOVERY_NOISE_PHASE=5.5` に固定し、時間では動かさない。以下の10Hz更新・横へ走る記述は採用直前の試作。復帰の出現と報告後の解除は従来どおり。
+- 静止版は `G:/マイドライブ/shubie/renders/comms-static-glitch-20261018/Screenshots/comms-preview/recovery/` に実描画。シェーダ・コンパイル・例外エラー0。時間依存のノイズ式は0。実機は未確認。
+
 - 同日の追加指示で、横へ走る細線と帯ごとの横ずれは赤い領域へ限定した。帯は6mm刻み、最大約25mmの横ずれ。赤い背景・顔・文字・縦罫線が共通の細線を読み、正常領域の変位は0。
 - 追加後の実描画は `G:/マイドライブ/shubie/renders/comms-red-glitch-20261018/Screenshots/comms-preview/recovery/`。`screen-only.png` は画面部分の切り出し。シェーダ・コンパイル・例外エラー0。実機は未確認。
 
