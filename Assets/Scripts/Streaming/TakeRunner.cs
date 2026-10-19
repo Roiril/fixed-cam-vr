@@ -967,6 +967,14 @@ namespace FixedCamVr.Streaming
 
             // 3 周目 A の凍結に入った瞬間で心音同期の画を止める。
             // ラッチは CameraFeelFx が持つため、引き返して以前のカットを再演しても戻らない。
+            // ⚠ 位置で選ぶ・続きから流す録画に第 2 層を重ねていないか（2026-10-19・0275 の実害）。
+            //   鏡版の録画カットを写して作ったら `overlay2CueId: plate_A_right` が残り、**右半分が無人の
+            //   プレートで覆われて、録画の自分が右半分にいる間ずっと消えていた**。ログは全部正常に見えた。
+            if ((step.recFollow || step.recContinue) && !string.IsNullOrEmpty(step.overlay2CueId))
+                Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は録画を位置合わせ / 続きから流すのに、第 2 層 " +
+                                 $"'{step.overlay2CueId}' が画面の一部を覆っている（その部分の録画の自分は見えない）" +
+                                 $"（take={TakeId(d.takeIndex)}）");
+
             // 位置で選ぶ録画（0274）。物差しはここで 1 回だけ組む。
             if (step.recFollow && !continueRec && TakeSchema.IsRecSource(source))
             {
@@ -1307,7 +1315,8 @@ namespace FixedCamVr.Streaming
             _awaitingClipEnd = step.IsUntilClipEnd;
             Debug.Log($"[TakeRunner] 録画を続きから流す lap={step.recLap} camera={step.camera} " +
                       $"rate={rate:0.##} clock={overlay.FramesClockSec:F2}s" +
-                      (float.IsNegativeInfinity(_followMax) ? "" : $" follow={_followMax:F3}"));
+                      (float.IsNegativeInfinity(_followMax) ? "" : $" follow={_followMax:F3}") +
+                      (_stepFrames != null ? $" cpuLuma={_stepFrames.SampleCurrentLuma():F3} {overlay.DiagnoseOverlay(_stepFrames.Texture)}" : ""));
         }
 
         /// <summary>

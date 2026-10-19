@@ -978,6 +978,39 @@ namespace FixedCamVr.Streaming
             _fadeSpeed = Mathf.Max(_target - _strength, 0.01f) / fade;
         }
 
+        /// <summary>
+        /// 観測用（2026-10-19・`canon/LEDGER.md` 0275）: 画面のマテリアルが<b>実際に</b>持っている
+        /// 差し替え素材と強さ、GPU 側で読んだ平均輝度を 1 行にする。
+        /// <paramref name="expect"/> が素材と同じ物か（same）も添える。**CPU 側でコマを載せたことと、
+        /// 画に出ていることは別**なので、両方の輝度を並べて食い違いを見る。重いので数秒に 1 回だけ呼ぶ。
+        /// </summary>
+        public string DiagnoseOverlay(Texture? expect)
+        {
+            if (_material == null) return "mat=null";
+            Texture? t = _material.GetTexture(OverlayTexId);
+            float s = _material.GetFloat(OverlayStrengthId);
+            float gpu = -1f;
+            if (t != null)
+            {
+                RenderTexture rt = RenderTexture.GetTemporary(16, 16, 0, RenderTextureFormat.ARGB32);
+                RenderTexture prev = RenderTexture.active;
+                Graphics.Blit(t, rt);
+                RenderTexture.active = rt;
+                var read = new Texture2D(16, 16, TextureFormat.RGBA32, false);
+                read.ReadPixels(new Rect(0, 0, 16, 16), 0, 0);
+                read.Apply(false);
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+                Color32[] px = read.GetPixels32();
+                float sum = 0f;
+                foreach (Color32 c in px) sum += (0.299f * c.r + 0.587f * c.g + 0.114f * c.b) / 255f;
+                gpu = sum / px.Length;
+                if (Application.isPlaying) Destroy(read); else DestroyImmediate(read);
+            }
+            return $"tex={(t == null ? "null" : t.name)} same={(t != null && ReferenceEquals(t, expect) ? 1 : 0)} " +
+                   $"str={s:F2} target={_target:F2} gpuLuma={gpu:F3} mips={(t is Texture2D t2 ? t2.mipmapCount : -1)}";
+        }
+
         private void SetOverlayTexture(Texture tex, float srcAspect, string cueId)
         {
             if (_material == null) return;

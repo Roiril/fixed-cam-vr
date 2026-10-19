@@ -61,6 +61,9 @@ namespace FixedCamVr.Streaming.Recording
         /// </summary>
         public int PresentedCount { get; private set; }
 
+        /// <summary>いま CPU 側に載っているコマの平均輝度（16 刻みの間引き）。観測用・重いので数秒に 1 回。</summary>
+        public float SampleCurrentLuma() => SampleLuma();
+
         /// <summary>いまテクスチャに載っているコマの番号（まだ無ければ -1）。観測用。</summary>
         public int CursorIndex => _cursor;
 
