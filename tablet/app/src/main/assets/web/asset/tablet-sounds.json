@@ -4,7 +4,7 @@
   "voiceLufs": -21.0,
   "sounds": {
     "title-in": {
-      "purpose": "題字の筆の書き出し（3 画の擦れ・墨のにじみ・低い唸り）",
+      "purpose": "題字の筆の書き出し（3 画の擦れ・墨のにじみ・低い擦れ）",
       "files": [
         {
           "file": "tablet_title_in.wav",
@@ -15,7 +15,7 @@
       ]
     },
     "title-out": {
-      "purpose": "題字が闇へ沈む（落ちていく空気と柔らかな着地）",
+      "purpose": "題字が闇へ沈む（ざらついた空気と柔らかな着地）",
       "files": [
         {
           "file": "tablet_title_out.wav",
@@ -26,47 +26,47 @@
       ]
     },
     "choice": {
-      "purpose": "言語・軽減を選び替えた（朱の筆の下線を払う音・2 種を交互）",
+      "purpose": "言語・軽減を選び替えた（カチカチ・2 種を交互）",
       "files": [
         {
           "file": "tablet_choice_1.wav",
           "gainDb": 0.0,
           "sourceLufs": -30.0,
-          "sec": 0.32
+          "sec": 0.2
         },
         {
           "file": "tablet_choice_2.wav",
           "gainDb": 0.0,
           "sourceLufs": -30.0,
-          "sec": 0.32
+          "sec": 0.2
         }
       ]
     },
     "key": {
-      "purpose": "次へ・戻る・一時停止など（木の札を叩く・3 種を順に）",
+      "purpose": "次へ・戻る・一時停止など（カチッ・3 種を順に）",
       "files": [
         {
           "file": "tablet_key_1.wav",
           "gainDb": 0.0,
           "sourceLufs": -32.0,
-          "sec": 0.12
+          "sec": 0.1
         },
         {
           "file": "tablet_key_2.wav",
           "gainDb": 0.0,
           "sourceLufs": -32.0,
-          "sec": 0.12
+          "sec": 0.1
         },
         {
           "file": "tablet_key_3.wav",
           "gainDb": 0.0,
           "sourceLufs": -32.0,
-          "sec": 0.12
+          "sec": 0.1
         }
       ]
     },
     "send": {
-      "purpose": "この設定を送る（紙が滑って渡る）",
+      "purpose": "この設定を送る（カチカチカチと薄いざらつき）",
       "files": [
         {
           "file": "tablet_send.wav",
@@ -99,30 +99,30 @@
       ]
     },
     "chapter": {
-      "purpose": "章の切り替え（調書をめくる・3 種を順に）",
+      "purpose": "章の切り替え（砂嵐が短く刻まれる乱れ・signal-cut.js の glitch と同じ長さ・3 種を順に）",
       "files": [
         {
           "file": "tablet_chapter_1.wav",
           "gainDb": 0.0,
-          "sourceLufs": -32.0,
-          "sec": 0.46
+          "sourceLufs": -31.0,
+          "sec": 0.42
         },
         {
           "file": "tablet_chapter_2.wav",
           "gainDb": 0.0,
-          "sourceLufs": -32.0,
-          "sec": 0.46
+          "sourceLufs": -31.0,
+          "sec": 0.42
         },
         {
           "file": "tablet_chapter_3.wav",
           "gainDb": 0.0,
-          "sourceLufs": -32.0,
-          "sec": 0.46
+          "sourceLufs": -31.0,
+          "sec": 0.42
         }
       ]
     },
     "signal-cut": {
-      "purpose": "説明の終わり（砂嵐 → 線へ吸い込まれる → 闇の中の響き・signal-cut.js と同じ時刻）",
+      "purpose": "説明の終わり（砂嵐 → 一気に絞られる → 闇の中の響き・signal-cut.js と同じ時刻）",
       "files": [
         {
           "file": "tablet_signal_cut.wav",

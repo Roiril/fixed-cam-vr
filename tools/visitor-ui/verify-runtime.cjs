@@ -2558,8 +2558,13 @@ test('実操作での音声解除はresume失敗を表示し、後の操作で�
       this.state = 'running';
     }
 
-    createOscillator() {
-      return { type: '', frequency: { setValueAtTime() {} }, connect() {},
+    createBuffer(channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      return { sampleRate, length, getChannelData: () => data };
+    }
+
+    createBufferSource() {
+      return { buffer: null, connect() {},
         start: () => { oscillatorStarts++; }, stop() {} };
     }
 
@@ -2594,8 +2599,12 @@ test('予約した通知音は本編・背景・対象変更で残りを停止�
   const gains = [];
   class ActiveAudioContext {
     constructor() { this.state = 'running'; this.currentTime = 20; this.destination = {}; }
-    createOscillator() {
-      const oscillator = { frequency: { setValueAtTime() {} }, starts: [], stops: [], disconnected: false,
+    createBuffer(channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      return { sampleRate, length, getChannelData: () => data };
+    }
+    createBufferSource() {
+      const oscillator = { buffer: null, starts: [], stops: [], disconnected: false,
         connect() {}, start(when) { this.starts.push(when); }, stop(when) { this.stops.push(when); },
         disconnect() { this.disconnected = true; } };
       oscillators.push(oscillator);

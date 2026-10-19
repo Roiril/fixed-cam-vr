@@ -150,6 +150,32 @@ test('音は始まりと同時に 1 度だけ鳴らし、途中で取り消し�
   assert.equal(rt.stage.dataset.signal, undefined);
 });
 
+test('章の切り替えの乱れ：その場で 1 枚描き、後から来た音を 1 度だけ鳴らし、終われば面を消す。操作は止めない', () => {
+  const rt = createRuntime();
+  const { GLITCH_MS } = rt.api;
+  let played = 0;
+  assert.equal(rt.api.glitch(), GLITCH_MS, '位置替えが先に無音で始める');
+  assert.equal(rt.cut.hidden, false, '呼んだその場で面を出す（位置替えを素で見せない）');
+  assert.equal(rt.classes.has('is-signal-glitch'), true);
+  assert.equal(rt.stage.dataset.signal, undefined, '説明の終わりの段（操作を止める印）は立てない');
+  rt.api.glitch({ sound: () => { played += 1; } });
+  rt.api.glitch({ sound: () => { played += 1; } });
+  assert.equal(played, 1, '章の切り替えの音は 1 度だけ');
+  assert.equal(rt.api.snapshot().glitchRuns, 1, '重ねて呼んでも乱れは 1 回');
+  rt.advance(GLITCH_MS + 60);
+  assert.equal(rt.cut.hidden, true, '終われば面を隠す');
+  assert.equal(rt.classes.has('is-signal-glitch'), false);
+  rt.api.glitch({ sound: () => { played += 1; } });
+  assert.equal(played, 2, '次の章ではまた鳴る');
+  assert.equal(rt.api.run({}), rt.api.NOISE_MS + rt.api.OFF_MS, '説明の終わりが来たら乱れを止めて砂嵐へ');
+  assert.equal(rt.classes.has('is-signal-glitch'), false);
+  assert.equal(rt.api.glitch(), 0, '砂嵐の途中には重ねない');
+  const reduced = createRuntime({ reduced: true });
+  let reducedSound = 0;
+  assert.equal(reduced.api.glitch({ sound: () => { reducedSound += 1; } }), 0);
+  assert.equal(reducedSound, 1, '動きを減らす設定でも音は鳴らす');
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try { fn(); console.log(`ok - ${name}`); }

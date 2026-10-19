@@ -216,7 +216,7 @@
   .stage.is-briefing:not(.is-equipment) .topbar, .stage.is-briefing:not(.is-equipment) .content { display: none; }
   .stage.is-briefing .portrait img, .stage.is-briefing .portrait video { object-fit: cover; object-position: 50% 28%; transform: none; animation: none; }
   /* 章が替わるとき：直前の絵（ghost）を残したまま新しい章の最初の絵へ溶かす。黒を挟まない。
-     ghost は動画と同じ cover・同じ位置なので、博士が右へ寄る動きの途中でもずれない。 */
+     ghost は動画と同じ cover・同じ位置なので、博士が右へ寄って切り替わっても（乱れの下で一瞬）ずれない。 */
   .doctor-ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; opacity: 1; pointer-events: none; }
   .doctor-ghost.is-fading { opacity: 0; transition: opacity .14s linear; }
   .stage.is-briefing .portrait::after { background:
@@ -244,9 +244,10 @@
   .briefing-visual.is-loop-playing .briefing-image { opacity: 0; }
   .reference-fallback { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; padding: 20px; text-align: center; color: var(--muted); font: 13px/1.7 var(--sans); }
   .reference-fallback p { margin: 0; }
-  .stage.is-briefing .portrait { transform: translateX(0); transition: transform .4s var(--ease-out), filter .12s var(--ease); }
+  /* 博士の位置替えは滑らせない。signal-cut.js の glitch の下で一瞬に替える（LEDGER 0275「博士がスライドして画面が出てくるのがシュール」） */
+  .stage.is-briefing .portrait { transform: translateX(0); transition: filter .12s var(--ease); }
   .stage.has-reference:not(.is-equipment) .portrait { transform: translateX(17.5%); -webkit-mask-image: linear-gradient(90deg,transparent 0,#000 24%); mask-image: linear-gradient(90deg,transparent 0,#000 24%); }
-  .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { transition: transform .4s var(--ease-out), filter .45s var(--ease); }
+  .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { transition: filter .45s var(--ease); }
   /* 止めたら額も沈め、盤は博士側（右）へ寄せる（額に被せない） */
   .stage.is-briefing-controls .briefing-visual { filter: brightness(.45) saturate(.7); }
   .stage.has-reference:not(.is-equipment) .briefing-controls { left: 67%; }
@@ -329,6 +330,18 @@
     90% { transform: translate(-18px,0) skewX(-3deg); filter: contrast(2) brightness(1.5) saturate(0); }
     95% { transform: translate(12px,2px); filter: contrast(2.2) brightness(1.7) saturate(0); }
     100% { transform: translate(-8px,0); filter: contrast(2.4) brightness(1.9) saturate(0); }
+  }
+  /* 章の切り替えの乱れ（glitch）：短い。画面の操作は止めない */
+  .signal-cut.is-glitch { pointer-events: none; }
+  .stage.is-signal-glitch > :not(.signal-cut) { animation: signal-glitch .36s steps(1,end) both; }
+  @keyframes signal-glitch {
+    0% { transform: translate(-10px,0) skewX(-2deg); filter: contrast(1.6) brightness(1.3) saturate(.3); }
+    18% { transform: translate(14px,-2px); filter: contrast(1.8) brightness(.7) saturate(.2); }
+    34% { transform: translate(-6px,1px) skewX(1deg); filter: contrast(1.4) brightness(1.2) saturate(.4); }
+    52% { transform: translate(4px,0); filter: contrast(1.2) brightness(.9) saturate(.7); }
+    70% { transform: none; filter: brightness(1.05); }
+    84% { transform: translate(-2px,0); filter: none; }
+    100% { transform: none; filter: none; }
   }
   .stage.is-signal-dark { opacity: 0; }
   .stage.is-signal-return { animation: signal-return .65s var(--ease) both; }
@@ -2344,6 +2357,8 @@
     $('briefingView').dataset.portrait = String(intro);
     setReferenceVisual(!intro);
     // 参考図があるとき、博士は右へ寄る。装置は額なしで左へ重ねる。
+    // 寄るときは滑らせず、乱れの下で一瞬に替える（0275）。章の切り替えから来たときは同じ乱れを延ばすだけ
+    if (hadReference !== !intro && !reducedMotion.matches) signalCut?.glitch?.();
     stage.classList.toggle('has-reference', !intro);
     $('briefingIntro').hidden = !intro;
     const image = $('briefingImage');
@@ -2545,7 +2560,9 @@
 
   function playChapterTransition(direction, doctorSettleMs = 0) {
     finishChapterTransition();
-    sfx('chapter');
+    // 章の間は乱れでつなぐ（0275）。音は乱れと同じ長さの砂嵐。乱れを描けない環境でも音は鳴らす
+    if (signalCut?.glitch) signalCut.glitch({ sound: () => sfx('chapter') });
+    else sfx('chapter');
     state.briefing.chapterChanging = true;
     const view = $('briefingView');
     view.classList.remove('is-chapter-changing');
@@ -3044,7 +3061,7 @@
         tone.gain.gain.cancelScheduledValues(now);
         tone.gain.gain.setValueAtTime(0, now);
       } catch (_) {}
-      try { tone.oscillator.stop(now); } catch (_) {}
+      try { tone.source.stop(now); } catch (_) {}
     }
     staffAlertAudio.soundTarget = '';
   }
@@ -3080,30 +3097,51 @@
     const context = staffAlertAudio.context;
     const start = context.currentTime + 0.015;
     staffAlertAudio.soundTarget = target;
-    for (const tone of [{ frequency: 294, at: 0, duration: 0.11 }, { frequency: 349, at: 0.15, duration: 0.13 }]) {
-      const oscillator = context.createOscillator();
+    // 正弦波は置かない（LEDGER 0275「タブレットUIから電子っぽい音は消して」）。ノイズのカチを 2 つ
+    for (const knock of [{ at: 0, level: 0.5, seed: 0x2f1 }, { at: 0.15, level: 0.4, seed: 0x5c7 }]) {
+      const source = context.createBufferSource();
       const gain = context.createGain();
-      const active = { oscillator, gain };
-      const toneStart = start + tone.at;
-      const toneEnd = toneStart + tone.duration;
-      oscillator.onended = () => {
-        try { oscillator.disconnect(); } catch (_) {}
+      const active = { source, gain };
+      const knockStart = start + knock.at;
+      const knockEnd = knockStart + STAFF_ALERT_KNOCK_SEC;
+      source.onended = () => {
+        try { source.disconnect(); } catch (_) {}
         try { gain.disconnect(); } catch (_) {}
         staffAlertAudio.activeTones.delete(active);
         if (staffAlertAudio.activeTones.size === 0) staffAlertAudio.soundTarget = '';
       };
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(tone.frequency, toneStart);
-      gain.gain.setValueAtTime(0.0001, toneStart);
-      gain.gain.exponentialRampToValueAtTime(0.055, toneStart + 0.018);
-      gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
-      oscillator.connect(gain);
+      source.buffer = staffAlertKnock(context, knock.seed);
+      gain.gain.setValueAtTime(knock.level, knockStart);
+      gain.gain.exponentialRampToValueAtTime(0.0001, knockEnd);
+      source.connect(gain);
       gain.connect(context.destination);
       staffAlertAudio.activeTones.add(active);
-      oscillator.start(toneStart);
-      oscillator.stop(toneEnd + 0.01);
+      source.start(knockStart);
+      source.stop(knockEnd + 0.01);
     }
     return true;
+  }
+
+  // カチ 1 つ：高い帯のノイズが 1.5ms で消え、下に 5ms の小さな胴（隣り合う値を均して低くしたノイズ）
+  const STAFF_ALERT_KNOCK_SEC = 0.04;
+  function staffAlertKnock(context, seed) {
+    const rate = context.sampleRate || 48000;
+    const length = Math.max(1, Math.round(rate * STAFF_ALERT_KNOCK_SEC));
+    const buffer = context.createBuffer(1, length, rate);
+    const data = buffer.getChannelData(0);
+    let x = seed >>> 0;
+    const random = () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return (x >>> 0) / 4294967296 * 2 - 1; };
+    let body = 0;
+    let previous = 0;
+    for (let i = 0; i < length; i += 1) {
+      const t = i / rate;
+      const white = random();
+      body += (white - body) * 0.08;
+      const tick = white - previous;   // 差分で高い帯へ寄せる
+      previous = white;
+      data[i] = tick * 0.5 * Math.exp(-t / 0.0015) + body * 1.6 * Math.exp(-t / 0.005);
+    }
+    return buffer;
   }
 
   function observeStaffAlert(now = Date.now(), fresh = false) {

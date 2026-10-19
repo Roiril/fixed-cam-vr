@@ -8,6 +8,10 @@
 //                           tools/make-tablet-sounds.py の NOISE_SEC / OFF_SEC と対）
 //   release()             → 黒の間に次の画面を描いたら呼ぶ。一拍おいて溶かして戻す
 //   abort()               → 途中で取り消す（すぐ元の画面に戻す）
+//   glitch({ sound })     → 章の切り替えをつなぐ短い乱れ（GLITCH_MS）。博士の位置替えは滑らせず、
+//                           この乱れの下で一瞬に切り替える（LEDGER 0275「スライドアニメはやめて、
+//                           グリッジノイズで間をつなぐ」）。最初の 1 枚は呼んだその場で描く（位置替えが素で見えない）。
+//                           走っている間にもう一度呼ぶと終わりを延ばす。音は tablet_chapter_*.wav（GLITCH_SEC と対）
 (() => {
   'use strict';
 
@@ -19,6 +23,7 @@
   const SAFETY_MS = 2600; // release が来なくても黒に閉じ込めない
   // ざ・ざ・ざ（砂嵐が一段ずつ強まる瞬間。NOISE_MS に対する割合）
   const BURSTS = [[0.5, 0.58], [0.65, 0.71], [0.79, 0.85]];
+  const GLITCH_MS = 360;  // 章の切り替えの乱れ（tools/make-tablet-sounds.py の GLITCH_SEC と対）
   const NOISE_FRAMES = 6;
   const reducedMotion = host.matchMedia?.('(prefers-reduced-motion: reduce)') || { matches: false };
 
@@ -182,9 +187,7 @@
     later(cleanup, RETURN_MS);
   }
 
-  function run({ sound } = {}) {
-    if (running) cleanup();
-    if (!capable()) return 0;
+  function prepareCanvas() {
     stageEl = host.document.querySelector('.stage');
     canvas = host.document.getElementById('signalCut');
     const cssW = Math.max(1, stageEl?.clientWidth || host.innerWidth || 1280);
@@ -193,11 +196,107 @@
     const h = Math.ceil(cssH / 2);
     try {
       buildTiles(w, h);
-      canvas.width = w;
-      canvas.height = h;
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      return true;
     } catch (error) {
-      return 0;   // 砂嵐を作れなければ、ただのカットで切り替える
+      return false;   // 砂嵐を作れなければ、ただのカットで切り替える
     }
+  }
+
+  // ---- 章の切り替えの乱れ（短い。黒にはしない。画面の操作は止めない） ----
+  let glitchFrame = 0;
+  let glitchStart = 0;
+  let glitchEnd = 0;
+  let glitchTimer = 0;
+  let glitchRuns = 0;
+  let glitchSounded = false;   // 位置替えが先に無音で乱れを始め、章の切り替えが後から音を足すことがある
+
+  // 強さ：入りで一気に覆い（位置替えを隠す）、後半で引いていく。
+  // 残り時間で決める（延ばしたら強さも戻る。経過で決めると延ばすほど薄くなった）
+  function glitchIntensity(remaining) {
+    const p = Math.min(1, Math.max(0, 1 - remaining / GLITCH_MS));
+    if (p < 0.4) return 0.92;
+    return 0.92 * (1 - (p - 0.4) / 0.6) ** 1.4;
+  }
+
+  function drawGlitch() {
+    glitchFrame = 0;
+    if (!glitchEnd || !canvas) return;
+    const at = now();
+    const t = at - glitchStart;
+    if (at >= glitchEnd) { stopGlitch(); return; }
+    const ctx = canvas.getContext('2d');
+    const { width: w, height: h } = canvas;
+    const i = glitchIntensity(glitchEnd - at);
+    const r = rng((t * 1733) | 0);
+    const tile = noiseTiles[((t / 34) | 0) % noiseTiles.length];
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalAlpha = Math.min(0.9, 0.12 + i * 0.7) * (0.75 + r() * 0.25);
+    ctx.drawImage(tile, (r() * 10 - 5) | 0, (r() * 6 - 3) | 0);
+    const bands = 2 + Math.round(i * 10);
+    for (let k = 0; k < bands; k += 1) {
+      const y = (r() * h) | 0;
+      const bh = Math.max(1, (r() * (6 + i * 30)) | 0);
+      const shift = ((r() - 0.5) * w * 0.18 * (0.3 + i)) | 0;
+      ctx.globalAlpha = 0.55 + r() * 0.45;
+      if (r() < 0.35) { ctx.fillStyle = '#000'; ctx.fillRect(0, y, w, bh); }
+      else ctx.drawImage(tile, 0, (r() * (h - bh)) | 0, w, bh, shift, y, w, bh);
+    }
+    ctx.globalAlpha = 1;
+    glitchFrame = host.requestAnimationFrame(drawGlitch);
+  }
+
+  function stopGlitch() {
+    if (glitchFrame) host.cancelAnimationFrame?.(glitchFrame);
+    glitchFrame = 0;
+    host.clearTimeout(glitchTimer);
+    glitchTimer = 0;
+    glitchEnd = 0;
+    stageEl?.classList?.toggle('is-signal-glitch', false);
+    if (canvas && !running) {
+      canvas.classList?.toggle('is-glitch', false);
+      canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.hidden = true;
+    }
+  }
+
+  function glitch({ sound } = {}) {
+    if (running) return 0;   // 説明の終わりの砂嵐が走っている間は重ねない
+    if (!capable() || !prepareCanvas()) {
+      if (typeof sound === 'function') sound();
+      return 0;
+    }
+    const at = now();
+    if (glitchEnd > at) {
+      glitchEnd = Math.max(glitchEnd, at + GLITCH_MS);
+    } else {
+      glitchStart = at;
+      glitchEnd = at + GLITCH_MS;
+      glitchRuns += 1;
+      glitchSounded = false;
+    }
+    if (!glitchSounded && typeof sound === 'function') {
+      glitchSounded = true;
+      sound();
+    }
+    canvas.classList?.toggle('is-glitch', true);
+    canvas.hidden = false;
+    stageEl?.classList?.toggle('is-signal-glitch', false);
+    void stageEl?.offsetWidth;
+    stageEl?.classList?.toggle('is-signal-glitch', true);
+    if (glitchFrame) host.cancelAnimationFrame?.(glitchFrame);
+    drawGlitch();   // 最初の 1 枚は今描く
+    host.clearTimeout(glitchTimer);
+    glitchTimer = host.setTimeout(stopGlitch, glitchEnd - at + 40);   // rAF が止まっても残さない
+    return GLITCH_MS;
+  }
+
+  function run({ sound } = {}) {
+    if (running) cleanup();
+    stopGlitch();
+    if (!capable()) return 0;
+    if (!prepareCanvas()) return 0;
     runs += 1;
     running = true;
     released = false;
@@ -255,9 +354,18 @@
   }
 
   function snapshot() {
-    return { runs, running, phase: stageEl?.dataset.signal || '' };
+    return { runs, running, phase: stageEl?.dataset.signal || '', glitchRuns, glitching: glitchEnd > now() };
   }
 
+  // 砂嵐の素材は手が空いたときに先に作る。最初の章の切り替えで作ると、画面が 0.4 秒止まって
+  // 乱れが 1 枚の静止画になった（2026-10-19 机上）。大きさが変わったら使う時に作り直す
+  function warmUp() {
+    if (running || glitchEnd || !capable()) return;
+    prepareCanvas();
+  }
+  if (host.requestIdleCallback) host.requestIdleCallback(warmUp, { timeout: 3000 });
+  else host.setTimeout?.(warmUp, 1200);
+
   const publicHost = typeof window === 'object' ? window : host;
-  publicHost.SignalCut = { run, release, abort, snapshot, freezeAt, NOISE_MS, OFF_MS, DARK_MS, RETURN_MS };
+  publicHost.SignalCut = { run, release, abort, glitch, snapshot, freezeAt, NOISE_MS, OFF_MS, DARK_MS, RETURN_MS, GLITCH_MS };
 })();

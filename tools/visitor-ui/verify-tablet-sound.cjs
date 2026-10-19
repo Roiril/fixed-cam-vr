@@ -67,6 +67,24 @@ test('説明の終わりの音と画は同じ時刻で切れる（signal-cut.js 
   assert.equal(jsBursts, `[${pyBursts}]`.replace(/0\.(\d)0\b/g, '0.$1'));
 });
 
+test('章の切り替えの乱れは音と画が同じ長さ（signal-cut.js の GLITCH_MS と GLITCH_SEC は対）', () => {
+  const js = fs.readFileSync(path.join(web, 'signal-cut.js'), 'utf8');
+  const py = fs.readFileSync(path.join(root, 'tools', 'make-tablet-sounds.py'), 'utf8');
+  assert.equal(Number(/GLITCH_MS = (\d+)/.exec(js)?.[1]), Number(/GLITCH_SEC = ([\d.]+)/.exec(py)?.[1]) * 1000);
+  assert.match(html, /signalCut\.glitch\(\{ sound: \(\) => sfx\('chapter'\) \}\)/, '章の切り替えは乱れと一緒に鳴らす');
+});
+
+test('電子音を作らない・鳴らさない（LEDGER 0275）', () => {
+  const py = fs.readFileSync(path.join(root, 'tools', 'make-tablet-sounds.py'), 'utf8');
+  const body = py.split('# 1 本ずつ')[1];
+  assert.equal(/sk\.(tone_band|sweep_band|sweep|sine|cluster)\(/.test(body), false, '音程のある帯・掃引を使っている');
+  for (const file of ['index.html', 'tablet-sound.js', 'signal-cut.js', 'briefing-presentation.js', 'title-write.js', 'romi-panel.js']) {
+    const text = fs.readFileSync(path.join(web, file), 'utf8');
+    assert.equal(/createOscillator\(/.test(text), false, `${file} が発振器を鳴らしている`);
+  }
+  assert.equal(/\.portrait \{[^}]*transition:[^}]*transform/.test(html), false, '博士の位置替えを滑らせている');
+});
+
 function createRuntime({ hidden = false } = {}) {
   const started = [];
   let clock = 0;

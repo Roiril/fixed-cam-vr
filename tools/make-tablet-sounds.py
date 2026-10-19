@@ -11,8 +11,10 @@
   （`verify-tablet-sound.cjs` が同梱の音と本編の音のバイト一致を落とす）
 - 動画のときと同じく、**画面の動きの時刻表から音を作る**。筆の書き出し 0.9 秒、朱の下線 0.5 秒、
   角印が押される 0.51 秒、博士が闇から現れる 0.76 秒、通信が切れる 0.95 + 0.26 秒
-- 安い電子音にしない（rules/sound-design.md §3.6）: 正弦波を置かない。音程は狭帯域ノイズ（`tone_band`）、
-  動きは帯域ノイズの掃引（`sweep_band`）、共振は整数倍に積まない。正体を 200Hz より下に置かない
+- **電子音を置かない**（LEDGER 0275「電子音が合わないので、タブレットUIから電子っぽい音は消して、
+  全部ノイズっぽい音か、カチカチという音にして」）。音程を持つ帯（`tone_band`）も、
+  帯域を滑らせる掃引（`sweep_band`）も使わない。掃引は「ちゅうぃん」と聞こえた（章の切り替え・送る）。
+  使うのは広い帯のノイズと、短いクリック（`click`）だけ。正体を 150Hz より下に置かない
 - 乱数の種は固定。同じ版なら同じ波形
 - 曲は作らない（0256「BGMは、タブレット上では、軽減の画面だけ」）
 - 大きさは博士の声（約 -21 LUFS）より下。いちばん大きい「通信が切れる」で声の 1dB 下
@@ -43,6 +45,7 @@ NOISE_SEC = 0.95
 OFF_SEC = 0.26
 BURSTS = [(0.50, 0.58), (0.65, 0.71), (0.79, 0.85)]
 WRITE_SEC = 0.9      # title-write.js の DURATION
+GLITCH_SEC = 0.36    # signal-cut.js の GLITCH_MS（章の切り替えをつなぐ乱れ）と対
 STAMP_IMPACT_MS = 510  # 角印のキーフレーム 42%（.25s の遅れ ＋ .62s × .42）。index.html の予約と対
 
 
@@ -90,6 +93,24 @@ def lobe(t: np.ndarray, start: float, end: float, attack: float = 0.02) -> np.nd
     return np.where((t >= start) & (t <= end + 0.08), rise * (1 - u) ** 0.8 * (0.6 + 0.4 * np.sin(np.pi * u) ** 0.5), 0.0)
 
 
+def click(sec: float, at: float, level: float, seed: int, lo: float = 1800, hi: float = 9000,
+          decay: float = 0.0016) -> np.ndarray:
+    """カチ 1 つ。高い帯のノイズが 1〜2ms で消え、下に 4ms の小さな胴が付く（樹脂の爪が当たる音）。
+    帯を細くしない・長く鳴らさない。鳴りが残ると音程が出て電子音に寄る。"""
+    n = int(round(sec * SR))
+    y = np.zeros(n)
+    span = int(0.03 * SR)
+    tt = np.arange(span) / SR
+    tick = sk.loop_noise(0.03, lo, hi, slope_db_oct=-1.5, seed=seed) * np.exp(-tt / decay)
+    body = sk.loop_noise(0.03, 420, 1900, slope_db_oct=-3.0, seed=seed + 50) * np.exp(-tt / 0.004)
+    shape = (tick + body * 0.35) * np.clip(tt / 0.0002, 0, 1)
+    start = int(round(at * SR))
+    end = min(n, start + span)
+    if start < n:
+        y[start:end] += level * shape[: end - start]
+    return y
+
+
 # ---------------------------------------------------------------------------
 # 1 本ずつ
 # ---------------------------------------------------------------------------
@@ -98,7 +119,7 @@ def title_in() -> np.ndarray:
     """題字の筆の書き出し（0.9 秒）と、書き終えた後の墨のにじみ。下で低い唸りが膨らんで引く。
 
     筆は 3 画（廻・リ・視）に分けて和紙を擦る。乾いた毛羽を粒で付ける。
-    唸りは 196Hz の狭帯域ノイズと、整数倍を外した 1.97 倍。
+    下で低い擦れが膨らんで引く（音程を持たない 150〜480Hz のノイズ）。
     """
     sec = 2.6
     t = t_of(sec)
@@ -107,61 +128,54 @@ def title_in() -> np.ndarray:
     brush = paper * strokes * grains(sec, 90, 7102, depth=0.55)
     wet = sk.loop_noise(sec, 280, 1100, slope_db_oct=-4.0, seed=7103)
     wet_env = np.clip((t - 0.7) / 0.25, 0, 1) * np.exp(-np.clip(t - 0.95, 0, None) / 0.55)
-    low = sk.mix((sk.tone_band(sec, 196, q=9, seed=7104), 1.0), (sk.tone_band(sec, 196 * 1.97, q=8, seed=7105), 0.45))
+    low = sk.loop_noise(sec, 150, 480, slope_db_oct=-4.0, seed=7104)
     low_env = np.clip((t - 0.15) / 0.8, 0, 1) ** 1.5 * np.exp(-np.clip(t - 1.1, 0, None) / 0.6)
     y = sk.mix((brush, 1.0), (wet * wet_env, 0.22), (low * low_env, 0.5))
     return norm_lufs(sk.env_fade(y, 0.003, 0.25), -26.0)
 
 
 def title_out() -> np.ndarray:
-    """題字が手前へ寄りながら闇へ沈む（0.9 秒）。空気が落ちていき、最後に柔らかく着く。"""
+    """題字が手前へ寄りながら闇へ沈む（0.9 秒）。ざらついた空気が膨らみ、最後に柔らかく着く。
+    帯は動かさない（下降の掃引は「ひゅーん」と電子音に聞こえる）。"""
     sec = 1.25
     t = t_of(sec)
-    fall = fit(sk.sweep_band(0.95, 2600, 420, q=2.4, seed=7201, grains=120), sec)
+    fall = sk.loop_noise(sec, 420, 4200, slope_db_oct=-2.5, seed=7201) * grains(sec, 70, 7204, depth=0.45)
     fall_env = np.clip(t / 0.35, 0, 1) ** 1.6 * np.clip((0.95 - t) / 0.12, 0, 1)
     thud = sk.loop_noise(sec, 170, 620, slope_db_oct=-4.0, seed=7202)
     thud_env = np.where(t >= 0.86, np.exp(-np.clip(t - 0.86, 0, None) / 0.09), 0.0) * np.clip((t - 0.86) / 0.004, 0, 1)
-    body = sk.tone_band(sec, 233, q=7, seed=7203) * np.where(t >= 0.86, np.exp(-np.clip(t - 0.86, 0, None) / 0.16), 0.0)
+    body = sk.loop_noise(sec, 160, 520, slope_db_oct=-4.0, seed=7203) * np.where(t >= 0.86, np.exp(-np.clip(t - 0.86, 0, None) / 0.16), 0.0)
     y = sk.mix((fall * fall_env, 1.0), (thud * thud_env, 0.8), (body, 0.45))
     return norm_lufs(sk.env_fade(y, 0.004, 0.08), -28.0)
 
 
 def choice(variant: int) -> np.ndarray:
-    """朱の筆の下線（0.5 秒の ease-out）。筆を払う短い擦れ。2 種を交互に鳴らす。"""
-    sec = 0.32
-    t = t_of(sec)
-    lo, hi = ((1400, 6200), (1150, 5200))[variant]
-    paper = sk.loop_noise(sec, lo, hi, slope_db_oct=-2.0, seed=7301 + variant)
-    # ease-out の速さで擦る：入りが強く、払って細る
-    u = np.clip(t / 0.26, 0, 1)
-    env = np.clip(t / 0.006, 0, 1) * (1 - u) ** 2.2
-    body = band(sec, (820, 760)[variant], 6, 7303 + variant) * np.exp(-t / 0.05)
-    y = sk.mix((paper * env * grains(sec, 140, 7305 + variant, depth=0.4), 1.0), (body, 0.25))
-    return norm_lufs(sk.env_fade(y, 0.001, 0.04), -30.0)
+    """言語・軽減を選び替えた。カチカチ（2 つ目は少し弱い）。2 種を交互に鳴らす。"""
+    sec = 0.2
+    gap = (0.062, 0.071)[variant]
+    y = sk.mix((click(sec, 0.0, 1.0, 7301 + variant * 10), 1.0),
+               (click(sec, gap, 0.72, 7302 + variant * 10, lo=1600, hi=8000), 1.0))
+    return norm_lufs(sk.env_fade(y, 0.0, 0.02), -30.0)
 
 
 def key(variant: int) -> np.ndarray:
-    """押す所（輪と矢印）。木の札を指で軽く叩く。3 種を順に。共振は 1 : 2.31 で整数倍を外す。"""
-    sec = 0.12
-    t = t_of(sec)
-    f = (1080.0, 1190.0, 1310.0)[variant]
-    knock = sk.loop_noise(sec, 450, 3200, slope_db_oct=-3.0, seed=7401 + variant) * np.exp(-t / 0.012)
-    # 実物の木の鳴りは帯が広く短い。細く長く鳴らすと減衰する純音（発振器）に聞こえる（q 7 で突出 34dB だった）
-    wood = sk.mix((band(sec, f, 3.5, 7404 + variant), 1.0),
-                  (band(sec, f * 2.31, 3.0, 7407 + variant), 0.35)) * np.exp(-t / 0.022)
-    y = sk.mix((knock, 1.0), (wood, 0.4))
-    return norm_lufs(sk.env_fade(y, 0.0005, 0.02), -32.0)
+    """次へ・戻る・一時停止など。カチッ（押し込みのカチと、すぐ後の小さな戻り）。3 種を順に。"""
+    sec = 0.1
+    lo, hi = ((1900, 9000), (1600, 8200), (2200, 9500))[variant]
+    back = (0.018, 0.021, 0.016)[variant]
+    y = sk.mix((click(sec, 0.0, 1.0, 7401 + variant * 10, lo=lo, hi=hi), 1.0),
+               (click(sec, back, 0.38, 7402 + variant * 10, lo=lo + 400, hi=hi), 1.0))
+    return norm_lufs(sk.env_fade(y, 0.0, 0.015), -32.0)
 
 
 def send() -> np.ndarray:
-    """この設定を送る（円相が回り始める）。紙が机の上を滑って向こうへ渡る。"""
+    """この設定を送る（円相が回り始める）。歯車が送られるカチカチカチと、薄いざらつき。"""
     sec = 0.62
     t = t_of(sec)
-    slide = fit(sk.sweep_band(0.5, 950, 2300, q=2.8, seed=7501, grains=90), sec)
-    env = np.clip(t / 0.04, 0, 1) * np.clip((0.5 - t) / 0.3, 0, 1) ** 1.2
-    tap = sk.loop_noise(sec, 500, 2600, slope_db_oct=-3.0, seed=7502) * np.exp(-t / 0.014)
-    y = sk.mix((slide * env * grains(sec, 70, 7503, depth=0.35), 1.0), (tap, 0.6))
-    return norm_lufs(sk.env_fade(y, 0.0005, 0.06), -29.0)
+    ticks = [click(sec, 0.07 * k, 0.95 * 0.86 ** k, 7501 + k * 7, lo=1700 + 120 * (k % 2), hi=8600) for k in range(7)]
+    static = sk.loop_noise(sec, 600, 7000, slope_db_oct=-2.0, seed=7502) * grains(sec, 60, 7503, depth=0.5)
+    static_env = np.clip(t / 0.03, 0, 1) * np.exp(-t / 0.18)
+    y = sk.mix(*[(c, 1.0) for c in ticks], (static * static_env, 0.12))
+    return norm_lufs(sk.env_fade(y, 0.0, 0.06), -29.0)
 
 
 def stamp() -> np.ndarray:
@@ -170,9 +184,7 @@ def stamp() -> np.ndarray:
     n = int(sec * SR)
     body = sk.mix(
         (sk.loop_noise(sec, 190, 760, slope_db_oct=-3.0, seed=6101) * sk.env_ar(sec, 0.002, 0.075, curve=2.6), 1.0),
-        (sk.tone_band(sec, 262, q=9, seed=6102) * sk.env_ar(sec, 0.003, 0.13, curve=2.2), 0.55),
-        (sk.tone_band(sec, 262 * 1.97, q=8, seed=6103) * sk.env_ar(sec, 0.002, 0.09, curve=2.4), 0.35),
-        (sk.tone_band(sec, 262 * 3.06, q=7, seed=6104) * sk.env_ar(sec, 0.002, 0.06, curve=2.6), 0.2),
+        (sk.loop_noise(sec, 160, 420, slope_db_oct=-4.0, seed=6102) * sk.env_ar(sec, 0.003, 0.11, curve=2.2), 0.6),
     )
     slap = sk.loop_noise(sec, 1800, 7000, slope_db_oct=-2.0, seed=6105) * sk.env_ar(sec, 0.0008, 0.018, curve=3.0)
     rub = sk.loop_noise(sec, 900, 4200, slope_db_oct=-3.0, seed=6106)
@@ -184,13 +196,12 @@ def stamp() -> np.ndarray:
 
 
 def screen_on() -> np.ndarray:
-    """博士が闇から現れる（0.76 秒で溶けて出る）。暗い息のような膨らみと、フィルムが回り出すパチつき。"""
+    """博士が闇から現れる（0.76 秒で溶けて出る）。暗い息のような膨らみと、フィルムが回り出すパチつき。
+    唸り（音程のある帯）は置かない。"""
     sec = 1.7
     t = t_of(sec)
     breath = sk.loop_noise(sec, 170, 1300, slope_db_oct=-4.0, seed=7601)
     breath_env = np.clip(t / 0.7, 0, 1) ** 1.8 * np.exp(-np.clip(t - 0.75, 0, None) / 0.45)
-    carrier = sk.mix((sk.tone_band(sec, 233, q=12, seed=7602), 1.0), (sk.tone_band(sec, 233 * 2.71, q=9, seed=7603), 0.35))
-    carrier_env = np.clip((t - 0.1) / 0.6, 0, 1) * np.exp(-np.clip(t - 0.8, 0, None) / 0.5)
     # パチつき：疎らな粒。最初の 0.6 秒に寄せて、だんだん減る
     rng = np.random.default_rng(7604)
     crackle = np.zeros(len(t))
@@ -199,20 +210,38 @@ def screen_on() -> np.ndarray:
         if at < len(t) - 400:
             crackle[at: at + 240] += rng.choice([-1, 1]) * np.exp(-np.arange(240) / 30) * (0.4 + 0.6 * rng.random())
     crackle = sk.biquad(crackle, "hp", 1500)
-    y = sk.mix((breath * breath_env, 1.0), (carrier * carrier_env, 0.4), (crackle, 0.35))
+    y = sk.mix((breath * breath_env, 1.0), (crackle, 0.4))
     return norm_lufs(sk.env_fade(y, 0.01, 0.2), -27.0)
 
 
 def chapter(variant: int) -> np.ndarray:
-    """章の切り替え（直前の絵が溶ける）。調書を 1 枚めくる。3 種を順に。"""
-    sec = 0.46
+    """章の切り替え。画が乱れて次の画へつながる（signal-cut.js の glitch と同じ GLITCH_SEC）。
+    砂嵐を短く刻んで途切れさせる：ザ・ザザッ。3 種を順に。"""
+    sec = GLITCH_SEC + 0.06
     t = t_of(sec)
-    f0, f1 = ((620, 3100), (700, 2800), (560, 3400))[variant]
-    flip = fit(sk.sweep_band(0.4, f0, f1, q=1.8, seed=7701 + variant, grains=80), sec)
-    env = np.sin(np.pi * np.clip(t / 0.4, 0, 1)) ** 1.3
-    flutter = grains(sec, 55, 7704 + variant, depth=0.5)
-    y = flip * env * flutter
-    return norm_lufs(sk.env_fade(y, 0.002, 0.05), -32.0)
+    rng = np.random.default_rng(7701 + variant)
+    hiss = sk.loop_noise(sec, 320, 9000, slope_db_oct=-1.4, seed=7702 + variant)
+    gate = np.zeros(len(t))
+    at = 0.0
+    level = 1.0
+    while at < GLITCH_SEC:
+        span = 0.012 + rng.random() * 0.04
+        if rng.random() < 0.72:
+            a0, a1 = int(at * SR), min(len(t), int((at + span) * SR))
+            gate[a0:a1] = level * (0.55 + 0.45 * rng.random())
+        at += span
+        level *= 0.93
+    gate = np.convolve(gate, np.ones(24) / 24, mode="same")
+    head = int(0.012 * SR)
+    gate[:head] = np.maximum(gate[:head], 0.9)
+    crackle = np.zeros(len(t))
+    for _ in range(40):
+        p = int(rng.random() * GLITCH_SEC * SR)
+        if p < len(t) - 200:
+            crackle[p: p + 160] += rng.choice([-1, 1]) * np.exp(-np.arange(160) / 16) * rng.random()
+    crackle = sk.biquad(crackle, "hp", 1400)
+    y = sk.mix((hiss * gate, 1.0), (crackle, 0.45), (click(sec, 0.0, 0.8, 7705 + variant), 1.0))
+    return norm_lufs(sk.env_fade(y, 0.0, 0.03), -31.0)
 
 
 def intensity(p: float) -> float:
@@ -230,7 +259,7 @@ def signal_cut() -> tuple[np.ndarray, np.ndarray]:
     """説明の終わり。止まった博士に砂嵐が乗り、ざ・ざ・ざと強まり、画が線へ吸い込まれて黙る。
 
     砂嵐は一から作る（受信機が掴めない帯域ノイズ ＋ パチつき）。濃さは画と同じ曲線。
-    潰れる段（0.95〜1.21 秒）は帯域ノイズが高い方から一気に落ちる。黒の中に鈍い響きが残る。
+    潰れる段（0.95〜1.21 秒）は砂嵐が一気に絞られる。黒の中に鈍い響きが残る。
     戻り値は (全体, 砂嵐の部分)。砂嵐の部分は書き出す前に合成音の線で測る。
     """
     sec = 2.0
@@ -243,16 +272,15 @@ def signal_cut() -> tuple[np.ndarray, np.ndarray]:
         if at < len(t) - 200:
             crackle[at: at + 160] += rng.choice([-1, 1]) * np.exp(-np.arange(160) / 18) * rng.random()
     crackle = sk.biquad(crackle, "hp", 1200)
-    hum = sk.tone_band(sec, 245, q=5, seed=7803)
     p = np.clip(t / NOISE_SEC, 0, 1)
     env = np.array([intensity(x) for x in p])
     env = np.maximum(env, 0.05) * grains(sec, 33, 7804, depth=0.5)
     dark = sk.biquad(hiss, "lp", 1700)
     static = dark * (1 - env) + hiss * env
-    noise = sk.mix((static, 1.0), (crackle, 0.5 * env.mean() + 0.2), (hum, 0.18)) * env
+    noise = sk.mix((static, 1.0), (crackle, 0.5 * env.mean() + 0.2)) * env
     noise *= np.where(t < NOISE_SEC, 1.0, 0.0)
-    # 潰れる段：画が線へ吸い込まれる。帯域が高い方から一気に落ちる
-    suck = fit(np.pad(sk.sweep_band(OFF_SEC, 4200, 260, q=2.6, seed=7805, grains=60), (int(NOISE_SEC * SR), 0)), sec)
+    # 潰れる段：画が線へ吸い込まれる。帯は動かさず、砂嵐の大きさだけが一気に落ちる（掃引は電子音に聞こえる）
+    suck = hiss * grains(sec, 90, 7805, depth=0.4)
     suck_env = np.where((t >= NOISE_SEC) & (t < NOISE_SEC + OFF_SEC),
                         (1 - np.clip((t - NOISE_SEC) / OFF_SEC, 0, 1)) ** 0.7, 0.0)
     crack = sk.loop_noise(sec, 1500, 8000, slope_db_oct=-1.0, seed=7806) * np.where(
@@ -285,15 +313,15 @@ SOUNDS = {
     "signal-cut": [("tablet_signal_cut.wav", lambda: signal_cut()[0])],
 }
 PURPOSE = {
-    "title-in": "題字の筆の書き出し（3 画の擦れ・墨のにじみ・低い唸り）",
-    "title-out": "題字が闇へ沈む（落ちていく空気と柔らかな着地）",
-    "choice": "言語・軽減を選び替えた（朱の筆の下線を払う音・2 種を交互）",
-    "key": "次へ・戻る・一時停止など（木の札を叩く・3 種を順に）",
-    "send": "この設定を送る（紙が滑って渡る）",
+    "title-in": "題字の筆の書き出し（3 画の擦れ・墨のにじみ・低い擦れ）",
+    "title-out": "題字が闇へ沈む（ざらついた空気と柔らかな着地）",
+    "choice": "言語・軽減を選び替えた（カチカチ・2 種を交互）",
+    "key": "次へ・戻る・一時停止など（カチッ・3 種を順に）",
+    "send": "この設定を送る（カチカチカチと薄いざらつき）",
     "stamp": "反映の判子（印が押される瞬間）",
     "screen-on": "博士が闇から現れる（暗い息とフィルムのパチつき）",
-    "chapter": "章の切り替え（調書をめくる・3 種を順に）",
-    "signal-cut": "説明の終わり（砂嵐 → 線へ吸い込まれる → 闇の中の響き・signal-cut.js と同じ時刻）",
+    "chapter": "章の切り替え（砂嵐が短く刻まれる乱れ・signal-cut.js の glitch と同じ長さ・3 種を順に）",
+    "signal-cut": "説明の終わり（砂嵐 → 一気に絞られる → 闇の中の響き・signal-cut.js と同じ時刻）",
 }
 
 # 試聴の並び（秒・名前）。タブレットで実際に起きる順と間
