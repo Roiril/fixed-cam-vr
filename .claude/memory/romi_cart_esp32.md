@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 44c10525-d6cb-48d9-a45f-69c3ffad2f1e
-  modified: 2026-10-19T09:50:00.861Z
+  modified: 2026-10-19T10:09:41.297Z
 ---
 
 2026-10-07 調査。台車（Pololu Romi シャーシ）の USB の先は **Romi 純正の 32U4 基板ではなく ESP32**。
@@ -36,7 +36,11 @@ metadata:
 - **終幕の自動走行（romi-diag-5・2026-10-17・LEDGER 0269）**: 体験者が最後の異常を解除すると Quest が `POST /ending/go` を送り、台車は NVS の設定どおり「待つ → 回転 → 前進」をする（時間と強さで持つ。較正は目安の表示にだけ使う）。電源断（終幕の頭）の縁で Quest が `POST /ending/cut` を送り、台車は合図からの時刻を記録し、`stopAtCut` なら止まる。設定は `GET/POST /ending`（平らな JSON・NVS キー `e_en e_dl e_rd e_ru e_rm e_fd e_fu e_fm e_sc e_ver`）。既定は 待ち 3.5 秒・右回り 40% 1.4 秒（≒176 度）・前進 40% 3.4 秒（≒59cm）・電源断で止めない。電源断は報告から約 7.1 秒なので、既定では前進を始めて約 1.9 秒（≒33cm）の所で画面が消える。`en=0` は Quest の合図だけ無視（タブレットの試走 `force:1` は動く）。ジョイスティック操作中は `busy` で断り、時間指定の走行・ショートカットの途中なら止めてから始める。同じ `key` の再送（30 秒以内）は頭からやり直さない。seq の手順に時間指定の `S` / `R`（量 = ms）が増えた。シリアルは `ending` / `ending go` / `ending dry` / `ending cut`。Quest 側は `RomiCartLink`（`ShowControlClient` が起動時に生成・Editor と自動走行は `dry:1` で送る＝台車は記録だけして動かない）、テレメトリは `ev=romi` と `ev=sum romi=<送った>/<ok>`。調整画面は博士タブレットのスタッフ画面「困ったとき」→「台車（Romi）の自動走行」（`romi-panel.js`）。⚠ **2026-10-17 時点で実機へ未書き込み**（台車が USB にも網にも出ていなかった）。
 **2026-10-19 に書き込み済み**（COM17・`romi-diag-5`・NVS の較正 ver 5 は残った）。arduino-cli は PATH に無く `C:\Users\kouga\arduino-cli-home\cli\arduino-cli.exe`（esp32 core 3.3.8 導入済み）。
 Quest α の自動走行（空走）で `ev=romi kind=go res=ok ack=1` / `kind=cut res=ok ack=2`、台車の `last` は `state=dry src=quest cutMs=7106`（報告から電源断まで 7.1 秒の仕様どおり）。
-**実際に走らせる確認（dry:0）は未実施** — 机の上で USB に繋がった状態なので落下の恐れがあり、床に置いて人が見ている時に回す。書き込みは `arduino-cli compile --fqbn esp32:esp32:esp32 --build-path build/esp32.esp32.esp32 .` の後 `upload -p COMxx`（コンパイルは通過・フラッシュ 85%）
+**実走（dry:0）は 2026-10-19 に床の上で確認** — PC から `POST /ending/go {"src":"pc-test","force":1}` を 2 回。
+2 回目をユーザーが目視して「動いた！」。シリアルは `EVT ending go` → `run m=r d=1 duty=40 ms=1400`（dutyL/R=409）→
+`run m=s d=1 duty=40 ms=3400` → `seq done dur=8804ms`。1 回目も台車は同じ手順を done まで実行（目視の判定は無し）。
+**Quest から本番の合図（dry:0）で走らせる経路はまだ** — 自動走行は空走で送るので、人が体験を最後まで回したときに確かめる。
+回転角・前進距離の実測（設定は約 176 度・約 60cm）も未計測。書き込みは `arduino-cli compile --fqbn esp32:esp32:esp32 --build-path build/esp32.esp32.esp32 .` の後 `upload -p COMxx`（コンパイルは通過・フラッシュ 85%）
 - USB シリアルの往復遅延は中央値 15.5ms（p99 16.6ms）、ファーム内の駆動窓は ±3ms
 - Romi シャーシ自体の公式仕様: 直径 165mm・163×149×70mm・160g（電池なし）、Mini Plastic Gearmotor 120:1 HP、ホイール 70×8mm、エンコーダは別売りで軸 1 回転 12 カウント、単三 6 本。**積載量・モーター定格電圧は公式ページに数値が無く、人形の重さに耐えるかは未確認**
 
