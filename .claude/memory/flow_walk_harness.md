@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 7cb6037e-22b0-4910-97e8-f71453ef16de
-  modified: 2026-10-16T19:48:33.755Z
+  modified: 2026-10-19T09:50:04.905Z
 ---
 
 2026-10-17。ユーザー依頼「アプリ起動～スタッフセッティング～体験者タブレット～～～リセットまでのフローを、シュビー視点で見直して…直してほしい。まずは必要なハーネスから」「体験者が体験中以外のフローで」。
@@ -40,5 +40,11 @@ instrumentation 5 種類（requireQuest 27 / equipment 9 / staffFinish 152 / vis
 staffFlow は β が応答せず、β 固定を α に差し替えて流した（リポジトリの試験は β のまま）。
 **手で押す確認（離しても飛ばない・反映画面にボタンが無い）と Quest の 2 行表示は未確認**。
 α が「位置合わせをやり直してください」で止まり、回収画面まで進めなかったため。β には未導入。
+
+2026-10-19 追試: Quest β でも staffFlow 40 項目合格（リポジトリの β 固定のまま）。⚠ Quest が本編の終了状態だと
+通知音の確認で落ちる（試聴を止める正しい挙動）ので、**Quest のアプリを起動し直してから流す**。
+手で押す確認はまだ。自動走行（`ShowWalkDebugDriver`）はスタッフ用準備を `UseAutomation` で飛ばすので、
+タブレットのスタッフの段（リセット → 来場者 → 確認 → 回収）は自動では進まない。**人が HMD で位置合わせを 1 回確定する**のが前提。
+タブレット本番 APK は WebView のデバッグ口を開けていない（`debuggable` 依存）。押す確認は screencap で座標を読み `adb shell input` で行う。
 
 関連: [[staff-setup]] [[visitor-tablet]]
