@@ -417,6 +417,13 @@ namespace FixedCamVr.Streaming.Recording
             });
             _curLap = lap;
             _curCamera = camera;
+            // 入った瞬間から録る区間（record.enterStartSegments・`canon/LEDGER.md` 0272）。
+            // 起点を pts 0 に打つので、録り始めの線（TickStartLine）は HasStartMark を見て打たない。
+            if (cfg.StartsAtEnter(lap, camera))
+            {
+                writer.MarkStart(0);
+                Debug.Log($"[SegmentRecorder] 入った瞬間から録る区間 L{lap}C{camera}");
+            }
             RebindTaps();
             Debug.Log($"[SegmentRecorder] 録画開始 lap={lap} camera={camera} " +
                       $"末尾{limits.tailSec:0.#}s + 切替後{postSec:0.#}s → {path}");

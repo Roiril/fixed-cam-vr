@@ -299,6 +299,33 @@ test('持続の覆い・切替音・人形の呼びかけは往復する — 卓
   assert.equal(st[1].dollCall, true, '呼びかけは 💾 保存で消えない');
 });
 
+test('録画の早送りと続きからの再生は往復する — 卓が保存しても消えない', () => {
+  // 3 周目 A（canon/LEDGER.md 0272）: 等速の録画 → 凍結点で同じ録画を続きから早送り。
+  //   白名簿から漏れると 💾 の一押しで「頭から等速で流し直す」カットに化ける。
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 3, camera: 0,
+      takes: [{
+        id: 'L3C0#0',
+        steps: [
+          { source: 'rec', camera: 0, recLap: 2 },
+          { source: 'rec', camera: 0, recLap: 2, recRate: 3, recContinue: true },
+          { source: 'rec', camera: 0, recLap: 2, recRate: 40 },
+          { source: 'rec', camera: 0, recLap: 2, recRate: -2 },
+        ],
+      }],
+    }],
+  });
+  const st = serializeTimelineV3(tl).segments[0].takes[0].steps;
+  assert.equal(st[0].recRate, 0, '指定していなければ等速（0）');
+  assert.equal(st[0].recContinue, false);
+  assert.equal(st[1].recRate, 3);
+  assert.equal(st[1].recContinue, true);
+  assert.equal(st[2].recRate, 8, '上限で丸める');
+  assert.equal(st[3].recRate, 0, '負は等速へ倒す');
+});
+
 test('覆いの左端は 0..1 へ丸める（枠の外を指す台本を実機へ配らない）', () => {
   const tl = normalizeTimelineV3({
     rev: 1,

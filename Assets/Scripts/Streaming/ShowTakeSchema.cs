@@ -223,6 +223,23 @@ namespace FixedCamVr.Streaming
         public bool dollCall;
 
         /// <summary>
+        /// 端末内録画（<c>source:"rec"</c>）の<b>再生の速さ</b>。0 以下 = 等速
+        /// （<see cref="TakeSchema.ResolveRecRate"/> が 0.25..8 へ丸める）。
+        /// 出どころは <c>canon/LEDGER.md</c> 0272（3 周目 A で凍結点を踏んだら早送りで先へ行ってしまう）。
+        /// </summary>
+        public float recRate;
+
+        /// <summary>
+        /// 画面に出ている<b>同じ録画</b>（<see cref="recLap"/> / <see cref="camera"/> が同じ）を
+        /// <b>頭へ戻さず続きから</b>流す。等速のカットから早送りのカットへ継ぐために使う（0272）。
+        ///
+        /// ⚠ 続けられないとき（録画が出ていない・もう尽きた・別の録画）は<b>このカットを飛ばす</b>。
+        ///   頭から開き直すと、早送りのつもりが「過去の自分が入口へ戻る」画になる。
+        /// ⚠ 入れ替わりのノイズ（<c>transition:"swap"</c>）とは併せられない（画面の差し替えが無いため）。
+        /// </summary>
+        public bool recContinue;
+
+        /// <summary>
         /// 第 2 の差し替え層へ出す素材の cue id（空 = 使わない）。
         /// **左と右へ別の素材を同時に置く**ときだけ要る（左＝録画 / 右＝無人プレート、など）。
         /// </summary>
@@ -594,6 +611,20 @@ namespace FixedCamVr.Streaming
 
         /// <summary>「このカットは端末内録画を映すか」。</summary>
         public static bool IsRecSource(string? source) => source == SourceRec;
+
+        /// <summary>録画の再生速度の下限・上限（卓の timeline-model.js の recRateOf と対）。</summary>
+        public const float MinRecRate = 0.25f;
+        public const float MaxRecRate = 8f;
+
+        /// <summary>
+        /// 録画の再生速度を解決する。0 以下・非数 = 等速（1）。それ以外は
+        /// [<see cref="MinRecRate"/>, <see cref="MaxRecRate"/>] へ丸める。
+        /// </summary>
+        public static float ResolveRecRate(float v)
+        {
+            if (float.IsNaN(v) || v <= 0f) return 1f;
+            return Math.Max(MinRecRate, Math.Min(MaxRecRate, v));
+        }
 
         /// <summary>素材スロット URL（<c>slot://name</c>）ならスロット名を返す。違えば空文字。</summary>
         public static string SlotName(string? url)

@@ -535,6 +535,26 @@ namespace FixedCamVr.Streaming
         public string startLineId = "";
 
         /// <summary>
+        /// **区間へ入った瞬間から録る**区間の一覧（<c>"L&lt;周&gt;C&lt;カメラ&gt;"</c>・例 <c>"L2C0"</c>）。
+        /// 2026-10-19 追加（<c>canon/LEDGER.md</c> 0272）。3 周目 A が入った瞬間から 2 周目 A の録画を
+        /// 流すので、2 周目 A は入りから残っていないといけない。
+        ///
+        /// ⚠ 指した区間では <see cref="startLineId"/> も末尾方式（<see cref="tailSec"/>）も見ない。
+        /// ⚠ 周とカメラの組で指すのは、**録る周すべてを頭から録ると容量を食う**ため
+        ///   （1 周目 A は導入のぶん長い。ラン全体の上限 <see cref="maxTotalMB"/> を使い切ると後の区間が録れない）。
+        /// </summary>
+        public string[] enterStartSegments = Array.Empty<string>();
+
+        /// <summary>この区間を入った瞬間から録るか（<see cref="enterStartSegments"/>）。</summary>
+        public bool StartsAtEnter(int lap, int camera)
+        {
+            if (enterStartSegments == null) return false;
+            string key = $"L{lap}C{camera}";
+            foreach (string s in enterStartSegments) if (s == key) return true;
+            return false;
+        }
+
+        /// <summary>
         /// 旧キー（区間の頭から何秒録るか）。**末尾方式では使わない**。
         /// 端末キャッシュ・焼き込みの古い show.json が持っているので読めるようにだけしてある。
         /// </summary>

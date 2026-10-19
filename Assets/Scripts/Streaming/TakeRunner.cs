@@ -925,11 +925,24 @@ namespace FixedCamVr.Streaming
 
             // オーバーレイ（cue / 全面差し替え素材）を先に組む。§6.4 の「飛ばす」判定に素材の有無が要るため、
             // 画面（カメラ・post）を触る前に決める。
-            OverlayCueData? cue = BuildStepOverlay(step, source, d.takeIndex, d.stepIndex);
+            // 録画を続きから流すカット（recContinue・`canon/LEDGER.md` 0272）は**素材を開き直さない**。
+            //   画面に出ている同じ録画の速さだけを変える。続けられなければ飛ばす（頭から開き直すと
+            //   早送りのつもりが「過去の自分が入口へ戻る」画になる）。
+            bool continueRec = step.recContinue && TakeSchema.IsRecSource(source);
+            OverlayCueData? cue = continueRec ? null : BuildStepOverlay(step, source, d.takeIndex, d.stepIndex);
 
             // --- §6.4 不正値: このカットは実行できない → 画面も post も触らずに即次のカットへ送る ---
             // 「範囲外カメラを registry の clamp 任せで無言に別カメラへ」「素材無しで数秒画面が固まる」を作らない。
-            bool playable = IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex, out string why);
+            string why;
+            bool playable;
+            if (continueRec)
+            {
+                playable = CanContinueRecording(step, out why);
+                if (!playable)
+                    Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は録画を続きから流せない（{why}）→ 飛ばす" +
+                                     $"（take={TakeId(d.takeIndex)}）");
+            }
+            else playable = IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex, out why);
             // 飛ばしたことも取れたことも外へ出す（観測専用。全カットが飛んだ演出を解析が名指しできる）。
             StepResolved?.Invoke(TakeId(d.takeIndex), d.stepIndex, source, step.camera, playable, why);
             if (!playable)
@@ -941,7 +954,8 @@ namespace FixedCamVr.Streaming
 
             // 3 周目 A の凍結に入った瞬間で心音同期の画を止める。
             // ラッチは CameraFeelFx が持つため、引き返して以前のカットを再演しても戻らない。
-            if (step.splitFreeze) _feelFx?.NotifyHeartbeatFreeze();
+            // 早送り版（0272）では凍結が無く、同じ縁は「録画が続きから早送りになる」カット。
+            if (step.splitFreeze || continueRec) _feelFx?.NotifyHeartbeatFreeze();
 
             // いま画面を取っているカットの素材 id（音が読む・`canon/LEDGER.md` 0131）。
             // ⚠ **飛ばす判定の後**（画面を取れなかったカットの id を立てない）。
@@ -978,7 +992,11 @@ namespace FixedCamVr.Streaming
             // ⚠ **CG を触る前に向きを決める。** 向きはデータに無く、「直前に人形が出ていたか」と
             //   「このカットが人形を出すか」から導く（<see cref="TakeSchema.TransSwap"/> の説明）。
             //   前後で同じなら入れ替わりではないので、乱れ遷移へ倒して理由を言う。
-            bool wantSwap = TakeSchema.IsSwapTransition(step.transition);
+            // ⚠ 続きから流すカットは画面を差し替えないので、入れ替わりのノイズは成立しない。
+            bool wantSwap = TakeSchema.IsSwapTransition(step.transition) && !continueRec;
+            if (continueRec && TakeSchema.IsSwapTransition(step.transition))
+                Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は録画を続きから流すので入れ替わりは使えない → 瞬時に継ぐ" +
+                                 $"（take={TakeId(d.takeIndex)}）");
             // ⚠⚠ **DollVisible を読む（IsVisible ではなく）。** 持続の覆い（swapHold）は人の代役を
             //   立てたまま swap のカットへ渡すので、IsVisible だと fromDoll=true に化けて
             //   「人形 → 人形 ＝ 成立しない」へ倒れ、**保持からの引き継ぎが 1 度も走らない**
@@ -1115,7 +1133,8 @@ namespace FixedCamVr.Streaming
                     cue.fadeInSeconds = 0f;   // 「瞬時」はフェードも掛けない（明示指定があればそれを尊重）
                 // カメラは変えないが画面は演出が持つ。覆いがあるときだけ素材の差し替えをその最中に行う。
                 director.TakeHoldBegin(throughCover ? downSec : 0f, throughCover ? upSec : 0f,
-                    () => PlayStepOverlay(cue, step), glitchTrans);
+                    continueRec ? () => ContinueStepOverlay(step) : () => PlayStepOverlay(cue, step),
+                    glitchTrans);
             }
 
             // 視点が急に切り替わった音（カットの `switchSfx`・`canon/LEDGER.md` 0102）。
@@ -1226,6 +1245,44 @@ namespace FixedCamVr.Streaming
             //   だからこの 1 行が「塞げたか」の唯一の証拠になる（走行ログを grep して確かめる）。
             Debug.Log($"[TakeRunner] 覆いのあいだ 1 層目を無人プレートで塞いだ（camera={cam}）");
             return true;
+        }
+
+        /// <summary>
+        /// 画面に出ている録画を、このカットとして続きから流せるか（<c>recContinue</c>）。
+        /// 同じ録画（周・カメラ）が開いていて、まだ尽きていないことが条件。
+        /// </summary>
+        private bool CanContinueRecording(ShowStepDef step, out string why)
+        {
+            if (overlay == null) { why = "overlay 未配線"; return false; }
+            if (_stepFrames == null || !_stepOverlayPlayed) { why = "録画が出ていない"; return false; }
+            if (_stepFramesLap != step.recLap || _stepFramesCam != step.camera)
+            {
+                why = $"出ている録画が別物（出ている L{_stepFramesLap}C{_stepFramesCam} / 指定 L{step.recLap}C{step.camera}）";
+                return false;
+            }
+            if (overlay.IsFinished(_clipToken)) { why = "録画がもう尽きた"; return false; }
+            why = "";
+            return true;
+        }
+
+        /// <summary>
+        /// 画面に出ている録画の速さを変えて、このカットとして続きから流す（<c>recContinue</c>）。
+        /// 素材は開き直さない（<see cref="PlayStepOverlay"/> を通さない）。
+        /// </summary>
+        private void ContinueStepOverlay(ShowStepDef step)
+        {
+            float rate = TakeSchema.ResolveRecRate(step.recRate);
+            // 覆い（dip / glitch）の最中に尽きることがある。そのときはこのカットを畳んで次へ送る。
+            if (overlay == null || !overlay.SetFramesRate(_clipToken, rate))
+            {
+                Debug.LogWarning("[TakeRunner] 続きから流すはずの録画が尽きていた → このカットを畳む");
+                _awaitingClipEnd = false;
+                _logic.SetCurrentStepEnd(Now);
+                return;
+            }
+            _awaitingClipEnd = step.IsUntilClipEnd;
+            Debug.Log($"[TakeRunner] 録画を続きから流す lap={step.recLap} camera={step.camera} " +
+                      $"rate={rate:0.##} clock={overlay.FramesClockSec:F2}s");
         }
 
         private void PlayStepOverlay(OverlayCueData? cue, ShowStepDef step)
@@ -1504,6 +1561,7 @@ namespace FixedCamVr.Streaming
                     id = $"{TakeId(takeIndex)}#{stepIndex}",
                     displayName = _takes[takeIndex].name ?? "",
                     frames = rec,
+                    framesRate = TakeSchema.ResolveRecRate(step.recRate),
                     maskTexture = cue?.maskTexture,
                     maskUrl = cue?.maskUrl ?? "",
                     strength = TakeSchema.Inherit(step.strength, cue?.strength ?? 1f),

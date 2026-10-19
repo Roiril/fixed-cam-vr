@@ -121,8 +121,20 @@ namespace FixedCamVr.Streaming
         public event Action<string, float, float, bool>? ClipLatency;
 
 
-        // フレーム列ソースの再生開始時刻（Time.time）。
-        private float _framesStart;
+        // フレーム列ソースの素材の時計（秒）。毎フレーム「経過 × 速さ」を足す ＝ 途中で速さを
+        // 変えても続きから進む（開始時刻からの差で引くと、速さを変えた瞬間に先へ跳ぶ）。
+        private float _framesClock;
+        private float _framesRate = 1f;
+        private float _framesLastTime;
+        // ロード中に届いた速さの指定（PlayCue 直後の数フレームは素材が未確定）。
+        private int _pendingFramesRateToken = -1;
+        private float _pendingFramesRate = 1f;
+
+        /// <summary>いま流しているフレーム列の素材の時計（秒）。観測用。</summary>
+        public float FramesClockSec => _framesClock;
+
+        /// <summary>いま流しているフレーム列の速さ（1 = 等速）。観測用。</summary>
+        public float FramesRate => _framesRate;
 
         // フェード状態。target に向かって _strength を進める。
         private float _strength;
@@ -309,6 +321,31 @@ namespace FixedCamVr.Streaming
         // ループ動画の最初の一周が終わった世代。次の静止画のロード中も先頭姿勢を保持するために使う。
         private int _lastLoopedToken = -1;
 
+        /// <summary>
+        /// <paramref name="token"/> の発火が流しているフレーム列（端末内録画）の速さを、
+        /// <b>頭へ戻さず続きから</b>変える（3 周目 A の早送り・`canon/LEDGER.md` 0272）。
+        ///
+        /// 変えられたら true。その発火がもう畳まれた・置き換わった・録画ではない・
+        /// <b>録画が尽きて最後のコマで止まっている</b>なら false（呼び出し側はカットを飛ばす）。
+        /// ロード中なら素材が載った瞬間にその速さで始める。
+        /// </summary>
+        public bool SetFramesRate(int token, float rate)
+        {
+            if (token < 0 || token != _logic.Generation) return false;
+            float r = rate > 0f ? rate : 1f;
+            if (_logic.IsLoading(token))
+            {
+                _pendingFramesRateToken = token;
+                _pendingFramesRate = r;
+                return true;
+            }
+            if (_current == null || !_current.SourceIsFrames || _stopWhenFadedOut) return false;
+            if (_framesCueToken != token || _finishedFramesToken == token) return false;
+            _framesRate = r;
+            _current.framesRate = r;
+            return true;
+        }
+
         public bool HasLooped(int token)
             => token >= 0 && token == _logic.Generation && token == _lastLoopedToken;
 
@@ -352,7 +389,12 @@ namespace FixedCamVr.Streaming
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
                 ApplyColorMatch(data);
                 _player!.Stop();
-                _framesStart = Time.time;
+                _framesClock = 0f;
+                _framesLastTime = Time.time;
+                _framesRate = _pendingFramesRateToken == gen
+                    ? _pendingFramesRate
+                    : (data.framesRate > 0f ? data.framesRate : 1f);
+                _pendingFramesRateToken = -1;
                 data.frames!.Tick(0f);
                 SetOverlayTexture(data.frames.Texture, data.frames.Aspect, data.id);
                 BeginFadeIn(data);
@@ -809,7 +851,10 @@ namespace FixedCamVr.Streaming
                 || _framesCueToken != _logic.Generation) return;
             if (_finishedFramesToken == _logic.Generation) return;
             var seq = _current.frames!;
-            if (seq.Tick(Time.time - _framesStart)) return;
+            float now = Time.time;
+            _framesClock += Mathf.Max(0f, now - _framesLastTime) * _framesRate;
+            _framesLastTime = now;
+            if (seq.Tick(_framesClock)) return;
             // 次のカットは元の録画を Dispose する。最終コマを独立した RT へ複写しておく。
             Texture last = seq.Texture;
             if (_material != null && last.width > 0 && last.height > 0)
@@ -837,7 +882,6 @@ namespace FixedCamVr.Streaming
         }
 
         private bool _frozen;
-        private float _freezeStart;
         private bool _pausedByFreeze;
 
         /// <summary>
@@ -845,7 +889,7 @@ namespace FixedCamVr.Streaming
         /// <see cref="CameraFeelFx"/> の画のホールド演出から呼ぶ。
         ///
         /// **ライブだけ止めて録画が動くと「装置が固まった」に見えない**ので、凍らせる間は素材も止める。
-        /// 解除では止まっていた分だけ開始時刻をずらす（＝続きから。飛ばさない）。
+        /// 解除では止まっていた分を素材の時計に足さない（＝続きから。飛ばさない）。
         /// </summary>
         public void SetFrozen(bool on)
         {
@@ -853,11 +897,11 @@ namespace FixedCamVr.Streaming
             _frozen = on;
             if (on)
             {
-                _freezeStart = Time.time;
                 if (_player != null && _player.isPlaying) { _player.Pause(); _pausedByFreeze = true; }
                 return;
             }
-            _framesStart += Time.time - _freezeStart;
+            // 止まっていたあいだは素材の時計に足さない（＝続きから。飛ばさない）。
+            _framesLastTime = Time.time;
             if (_pausedByFreeze)
             {
                 _pausedByFreeze = false;

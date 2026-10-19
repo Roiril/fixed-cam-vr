@@ -29,6 +29,10 @@ namespace FixedCamVr.Streaming
         // ScreenOverlayController が毎フレーム Tick し、終端で自動的に畳む。
         public Recording.IFrameSequence? frames;
 
+        // フレーム列を流す速さ（1 = 等速）。途中で変えるのは ScreenOverlayController.SetFramesRate
+        // （3 周目 A の早送り・canon/LEDGER.md 0272）。
+        public float framesRate = 1f;
+
         public float strength = 1f;
         public bool loop = true;
         public float fadeInSeconds = 0.5f;
