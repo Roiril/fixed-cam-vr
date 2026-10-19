@@ -776,6 +776,7 @@ namespace FixedCamVr.Streaming
         private bool _followCornerOk;
         private CornerProgress _followCorner;
         private float _followMax = float.NegativeInfinity;
+        private float _followLogAt;
 
         /// <summary>いま位置で選んでいる録画の進み具合（最大値）。観測用。位置で選んでいなければ NaN。</summary>
         public float FollowProgress => _followActive && !float.IsNegativeInfinity(_followMax) ? _followMax : float.NaN;
@@ -1332,6 +1333,17 @@ namespace FixedCamVr.Streaming
             if (float.IsNaN(p)) return;
             if (p > _followMax) _followMax = p;
             overlay.SetFramesProgress(_clipToken, _followMax);
+
+            // 0.5 秒ごとに「いま画面に出しているコマ」を 1 行。**進み具合を渡したことと、コマが画に載ったことは別**
+            // なので、コマ番号と載せた枚数（shown）を並べる。shown が増えていなければ画は止まっている。
+            if (Now >= _followLogAt && _stepFrames != null)
+            {
+                _followLogAt = Now + 0.5f;
+                int idx = _stepFrames.CursorIndex;
+                Debug.Log($"[TakeRunner] 位置で選ぶ p={p:F3} max={_followMax:F3} idx={idx}/{_stepFrames.FrameCount} " +
+                          $"recP={_stepFrames.ProgressAt(idx):F3} clock={overlay.FramesClockSec:F2}s " +
+                          $"shown={_stepFrames.PresentedCount} follow={(overlay.FramesFollowing ? 1 : 0)}");
+            }
         }
 
         private void PlayStepOverlay(OverlayCueData? cue, ShowStepDef step)

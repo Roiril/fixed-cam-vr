@@ -61,6 +61,12 @@ namespace FixedCamVr.Streaming.Recording
         /// </summary>
         public int PresentedCount { get; private set; }
 
+        /// <summary>いまテクスチャに載っているコマの番号（まだ無ければ -1）。観測用。</summary>
+        public int CursorIndex => _cursor;
+
+        /// <summary>コマ <paramref name="i"/> の録ったときの進み具合（位置で録っていない・範囲外なら NaN）。観測用。</summary>
+        public float ProgressAt(int i) => _progress != null && i >= 0 && i < _progress.Length ? _progress[i] : float.NaN;
+
         /// <summary>読み出しに失敗したフレーム数（壊れ JPEG・途中で切れたファイル）。</summary>
         public int FailedCount { get; private set; }
 

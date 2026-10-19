@@ -366,6 +366,9 @@ namespace FixedCamVr.Streaming.Recording
                     Debug.Log($"[SegmentRecorder] この試行は使わない L{s.lap}C{s.camera}（{why}）— 次に入ったとき録り直す");
                     continue;
                 }
+                if (s.progressMode)
+                    Debug.Log($"[SegmentRecorder] この試行を使う L{s.lap}C{s.camera} max={s.writer.MaxProgress:F2} " +
+                              $"コマ={s.writer.BufferedFrames}（前へ進んだコマだけ）");
                 s.postRoll = true;
                 s.postEndTime = now + postSec;
                 s.writer.BeginPostRoll(PtsOf(s, now), postSec);
