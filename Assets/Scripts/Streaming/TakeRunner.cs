@@ -770,8 +770,19 @@ namespace FixedCamVr.Streaming
             Apply(d, exitAnchored: true);
         }
 
+        // 録画のコマを体験者の進み具合で選ぶカット（recFollow・`canon/LEDGER.md` 0274）。
+        // 物差しはカットの頭で 1 回だけ組む（毎フレーム組むと配列を new する）。
+        private bool _followActive;
+        private bool _followCornerOk;
+        private CornerProgress _followCorner;
+        private float _followMax = float.NegativeInfinity;
+
+        /// <summary>いま位置で選んでいる録画の進み具合（最大値）。観測用。位置で選んでいなければ NaN。</summary>
+        public float FollowProgress => _followActive && !float.IsNegativeInfinity(_followMax) ? _followMax : float.NaN;
+
         private void Update()
         {
+            TickRecFollow();
             if (_markResponsePlaying && overlay != null &&
                 (overlay.HasLooped(_markResponseToken) || overlay.IsFinished(_markResponseToken)))
             {
@@ -899,6 +910,7 @@ namespace FixedCamVr.Streaming
 
         private void BeginStep(TakeRunnerLogic.Decision d, bool exitAnchored)
         {
+            _followActive = false;
             _markResponseToken = -1;
             _markResponsePlaying = false;
             _markResponseReported = false;
@@ -954,6 +966,17 @@ namespace FixedCamVr.Streaming
 
             // 3 周目 A の凍結に入った瞬間で心音同期の画を止める。
             // ラッチは CameraFeelFx が持つため、引き返して以前のカットを再演しても戻らない。
+            // 位置で選ぶ録画（0274）。物差しはここで 1 回だけ組む。
+            if (step.recFollow && !continueRec && TakeSchema.IsRecSource(source))
+            {
+                _followActive = true;
+                _followMax = float.NegativeInfinity;
+                _followCornerOk = TryResolveCorner(out _followCorner);
+                if (!_followCornerOk)
+                    Debug.LogWarning("[TakeRunner] 位置で選ぶ物差しを組めない（record.progress の壁 / layout.room.walls）" +
+                                     " → 録画は入口のコマで止まる");
+            }
+
             // 早送り版（0272）では凍結が無く、同じ縁は「録画が続きから早送りになる」カット。
             if (step.splitFreeze || continueRec) _feelFx?.NotifyHeartbeatFreeze();
 
@@ -1282,7 +1305,33 @@ namespace FixedCamVr.Streaming
             }
             _awaitingClipEnd = step.IsUntilClipEnd;
             Debug.Log($"[TakeRunner] 録画を続きから流す lap={step.recLap} camera={step.camera} " +
-                      $"rate={rate:0.##} clock={overlay.FramesClockSec:F2}s");
+                      $"rate={rate:0.##} clock={overlay.FramesClockSec:F2}s" +
+                      (float.IsNegativeInfinity(_followMax) ? "" : $" follow={_followMax:F3}"));
+        }
+
+        /// <summary>
+        /// 角を回る進み具合の物差しを組む（録るときの <see cref="SegmentRecorder"/> と同じ壁・同じ式）。
+        /// </summary>
+        private bool TryResolveCorner(out CornerProgress corner)
+        {
+            corner = default;
+            if (showControl == null) return false;
+            ShowRecordProgressDef? def = showControl.RecordConfig?.progress;
+            ShowRoomWallDef[]? walls = showControl.Layout?.room?.walls;
+            return def != null && CornerProgress.TryFromWalls(walls, def.fromWall, def.toWall, out corner);
+        }
+
+        // 位置で選ぶカットのあいだ、体験者の進み具合（の最大）を画面へ渡す。戻っても録画は戻さない。
+        private void TickRecFollow()
+        {
+            if (!_followActive || !_followCornerOk || overlay == null || _clipToken < 0 || showControl == null) return;
+            Func<Vector2>? head = showControl.HeadCourseXZProvider;
+            if (head == null) return;
+            Vector2 xz = head();
+            float p = _followCorner.At(xz.x, xz.y);
+            if (float.IsNaN(p)) return;
+            if (p > _followMax) _followMax = p;
+            overlay.SetFramesProgress(_clipToken, _followMax);
         }
 
         private void PlayStepOverlay(OverlayCueData? cue, ShowStepDef step)
@@ -1488,6 +1537,8 @@ namespace FixedCamVr.Streaming
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。
         private void ReleaseStepState()
         {
+            _followActive = false;
+            _followMax = float.NegativeInfinity;
             _markResponseToken = -1;
             _markResponsePlaying = false;
             _markResponseReported = false;
@@ -1562,6 +1613,7 @@ namespace FixedCamVr.Streaming
                     displayName = _takes[takeIndex].name ?? "",
                     frames = rec,
                     framesRate = TakeSchema.ResolveRecRate(step.recRate),
+                    framesFollow = step.recFollow,
                     maskTexture = cue?.maskTexture,
                     maskUrl = cue?.maskUrl ?? "",
                     strength = TakeSchema.Inherit(step.strength, cue?.strength ?? 1f),

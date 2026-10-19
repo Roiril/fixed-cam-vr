@@ -309,7 +309,7 @@ test('録画の早送りと続きからの再生は往復する — 卓が保存
       takes: [{
         id: 'L3C0#0',
         steps: [
-          { source: 'rec', camera: 0, recLap: 2 },
+          { source: 'rec', camera: 0, recLap: 2, recFollow: true },
           { source: 'rec', camera: 0, recLap: 2, recRate: 3, recContinue: true },
           { source: 'rec', camera: 0, recLap: 2, recRate: 40 },
           { source: 'rec', camera: 0, recLap: 2, recRate: -2 },
@@ -320,6 +320,8 @@ test('録画の早送りと続きからの再生は往復する — 卓が保存
   const st = serializeTimelineV3(tl).segments[0].takes[0].steps;
   assert.equal(st[0].recRate, 0, '指定していなければ等速（0）');
   assert.equal(st[0].recContinue, false);
+  assert.equal(st[0].recFollow, true, '位置で選ぶ指定は 💾 保存で消えない（0274）');
+  assert.equal(st[1].recFollow, false);
   assert.equal(st[1].recRate, 3);
   assert.equal(st[1].recContinue, true);
   assert.equal(st[2].recRate, 8, '上限で丸める');

@@ -176,7 +176,8 @@ export function newStep(over = {}) {
     //   recContinue = 画面に出ている同じ録画（recLap / camera が同じ）を**頭へ戻さず続きから**流す。
     //                 続けられない（録画が出ていない・もう尽きた）ならこのカットは飛ぶ
     // ⚠ **卓にまだ編集 UI が無い**（show.json を手で書く）。白名簿から漏れると 💾 保存で消える。
-    recRate: 0, recContinue: false,
+    //   recFollow   = コマを時間ではなく体験者の進み具合（L 字の角を回る角度）で選ぶ（0274）
+    recRate: 0, recContinue: false, recFollow: false,
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
@@ -266,6 +267,7 @@ function serializeStep(s) {
     // 録画の再生（canon/LEDGER.md 0272）。0 = 等速。Unity 側 TakeSchema.ResolveRecRate と同じ丸め。
     recRate: recRateOf(s.recRate),
     recContinue: !!s.recContinue,
+    recFollow: !!s.recFollow,
     cg: s.cg || '',
     cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };

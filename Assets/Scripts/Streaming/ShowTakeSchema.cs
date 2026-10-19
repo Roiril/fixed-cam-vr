@@ -240,6 +240,16 @@ namespace FixedCamVr.Streaming
         public bool recContinue;
 
         /// <summary>
+        /// 録画のコマを<b>時間ではなく体験者の進み具合で</b>選ぶ（`canon/LEDGER.md` 0274）。
+        /// 体験者が角を回った分だけ録画の自分も進み、止まれば止まる ＝ その位置に自分が居るように見える。
+        /// 物差しは <c>record.progress</c>（録るときと同じ <see cref="Recording.CornerProgress"/>）。
+        /// ⚠ 体験者が戻っても録画は戻さない（最大値で選ぶ）。
+        /// ⚠ 位置で録っていない録画（<c>.prog</c> が無い）では時間どおりに流れる。
+        /// 次のカットの <see cref="recContinue"/> は、選んでいたコマから時間どおりへ移る。
+        /// </summary>
+        public bool recFollow;
+
+        /// <summary>
         /// 第 2 の差し替え層へ出す素材の cue id（空 = 使わない）。
         /// **左と右へ別の素材を同時に置く**ときだけ要る（左＝録画 / 右＝無人プレート、など）。
         /// </summary>

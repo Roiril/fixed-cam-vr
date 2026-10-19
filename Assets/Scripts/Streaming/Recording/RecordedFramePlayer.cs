@@ -22,6 +22,12 @@ namespace FixedCamVr.Streaming.Recording
 
         /// <summary>経過秒に対応するフレームを反映する。終端に達したら false（＝オーバーレイを畳む）。</summary>
         bool Tick(float elapsedSec);
+
+        /// <summary>
+        /// 進み具合 <paramref name="progress"/> に合うコマの時刻（秒）。位置で録っていなければ -1
+        /// （`canon/LEDGER.md` 0274。呼び出し側は時間どおりに流す）。
+        /// </summary>
+        float ClockAtProgress(float progress);
     }
 
     /// <summary>
@@ -35,6 +41,8 @@ namespace FixedCamVr.Streaming.Recording
     {
         private readonly FileStream _fs;
         private readonly RecordedSegmentFormat.FrameRef[] _index;
+        // コマごとの進み具合（位置で録った区間だけ。無ければ null）。
+        private readonly float[]? _progress;
         private readonly Texture2D _tex;
         private byte[] _buf;
         private int _cursor = -1;
@@ -59,10 +67,14 @@ namespace FixedCamVr.Streaming.Recording
         /// <summary>直近に載せたフレームの平均輝度 0..1（暗所で「黒しか出ていない」を見分ける）。</summary>
         public float LastLuma { get; private set; }
 
-        private RecordedFramePlayer(FileStream fs, RecordedSegmentFormat.FrameRef[] index)
+        /// <summary>位置で録った録画か（進み具合のファイルが揃っている）。</summary>
+        public bool HasProgress => _progress != null;
+
+        private RecordedFramePlayer(FileStream fs, RecordedSegmentFormat.FrameRef[] index, float[]? progress)
         {
             _fs = fs;
             _index = index;
+            _progress = progress;
             DurationSec = RecordedSegmentFormat.DurationSec(index);
             _buf = new byte[128 * 1024];
             // ⚠ mipChain は**ライブと同じだけ必要**。3 周目に流れるのはこの録画で、ライブだけ痩せて
@@ -87,7 +99,16 @@ namespace FixedCamVr.Streaming.Recording
                 var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 64 * 1024);
                 RecordedSegmentFormat.FrameRef[] index = RecordedSegmentFormat.BuildIndex(fs);
                 if (index.Length == 0) { fs.Dispose(); return null; }
-                return new RecordedFramePlayer(fs, index);
+                float[]? progress = null;
+                string pp = SegmentRecordWriter.ProgressPath(path);
+                if (File.Exists(pp))
+                {
+                    using var ps = new FileStream(pp, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    progress = RecordedSegmentFormat.ReadProgress(ps, index.Length);
+                    if (progress == null)
+                        Debug.LogWarning($"[RecordedFrame] 進み具合のファイルが合わないので時間どおり流す: {pp}");
+                }
+                return new RecordedFramePlayer(fs, index, progress);
             }
             catch (Exception e)
             {
@@ -105,6 +126,13 @@ namespace FixedCamVr.Streaming.Recording
             if (i != _cursor) { _cursor = i; Present(i); }
             // 終端: 最後のフレームの pts を過ぎたら畳む。
             return elapsedMs <= _index[_index.Length - 1].ptsMs;
+        }
+
+        public float ClockAtProgress(float progress)
+        {
+            if (_progress == null || _index.Length == 0) return -1f;
+            int i = RecordedSegmentFormat.IndexAtProgress(_progress, progress);
+            return _index[i].ptsMs / 1000f;
         }
 
         private void Present(int i)

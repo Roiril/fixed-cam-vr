@@ -1664,6 +1664,14 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
     速さだけ変える）。続けられない（録画が出ていない・別の録画・もう尽きた）ならカットを飛ばす。`swap` とは併せられない。
     素材の時計は「経過 × 速さ」を毎フレーム足す形（開始時刻からの差で引くと、速さを変えた瞬間に先へ跳ぶ）。
     観測は `[TakeRunner] 録画を続きから流す … rate= clock=`。卓の白名簿（`timeline-model.js` の `serializeStep`）に入れてある
+  - **位置で録る・位置で出す**（同日・0274）: `record.progress` で指した区間は、`Recording.CornerProgress`（L 字の角を回る角度・
+    距離は見ない）が最大を超えたコマだけを積み、コマごとの進み具合を `<区間>.mjr.prog`（`PRG1`・f32 列・追い録りは NaN）に書く。
+    試行を採るのは「`adoptAt` まで進み、周回の順で次のカメラへ出た」ときだけで、それ以外は `SegmentRecordWriter.Discard`
+    （ファイルを作らない ＝ 次に入ったら録り直す）。書き出した区間は `_closedKeys` でも覚える（背景の書き出し中に戻ってきた回が
+    ファイルの実在だけ見て上書きするのを防ぐ）。再生はカットの `recFollow`: `TakeRunner` が毎フレーム体験者の進み具合の最大を
+    `ScreenOverlayController.SetFramesProgress` へ渡し、`RecordedFramePlayer.ClockAtProgress` がそれ以下で最も進んだコマの時刻を返す。
+    次の `recContinue` カットはそのコマの時刻から時間どおりへ移る。観測は `[SegmentRecorder] 位置で録る区間` /
+    `この試行は使わない（理由）` と `[TakeRunner] 録画を続きから流す … follow=`
     - ⚠⚠ **3 周目 A の録画の起点は「凍結の線の画像空間の鏡」でなければならない**（鏡版）
       （2026-08-22・`canon/LEDGER.md` 0102）。3 周目 A は左半分だけライブを**左右反転**して読むので
       （`splitFlip`）、鏡の軸は**枠 UV の 0.5**＝ソース画像の横中央。ところが course 空間で

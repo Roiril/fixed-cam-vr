@@ -545,6 +545,12 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public string[] enterStartSegments = Array.Empty<string>();
 
+        /// <summary>
+        /// <b>前へ進んだコマだけを残す</b>区間と、その物差し（`canon/LEDGER.md` 0274）。
+        /// 3 周目 A が体験者の位置に合うコマを出すための録り方。
+        /// </summary>
+        public ShowRecordProgressDef progress = new();
+
         /// <summary>この区間を入った瞬間から録るか（<see cref="enterStartSegments"/>）。</summary>
         public bool StartsAtEnter(int lap, int camera)
         {
@@ -570,6 +576,37 @@ namespace FixedCamVr.Streaming
         {
             if (!enabled || laps == null) return false;
             foreach (int l in laps) if (l == lap) return true;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// <c>record.progress</c>（`canon/LEDGER.md` 0274）。指した区間は<b>時間ではなく位置で</b>録る:
+    ///   - 角を回る進み具合（<see cref="Recording.CornerProgress"/>・<see cref="fromWall"/> → <see cref="toWall"/>）が
+    ///     それまでの最大を超えたコマだけを残す（戻ったぶんは撮影済みなので記録しない）。追い録りは時間どおり
+    ///   - その試行を<b>採るのは</b>、進み具合が <see cref="adoptAt"/> に届き、かつ周回の順で次のカメラへ
+    ///     進んで出ていったときだけ。それ以外（入ってすぐ引き返した等）は書き出さずに捨てるので、
+    ///     次に同じ区間へ入ったときに録り直せる。採った後に戻ってきた回は録り直さない（従来どおり）
+    /// </summary>
+    [Serializable] public sealed class ShowRecordProgressDef
+    {
+        /// <summary>対象の区間（<c>"L&lt;周&gt;C&lt;カメラ&gt;"</c>）。空 = この機能を使わない。</summary>
+        public string[] segments = Array.Empty<string>();
+
+        /// <summary>進み具合 0 の壁（<c>layout.room.walls[].id</c>）。</summary>
+        public string fromWall = "w1";
+
+        /// <summary>進み具合 1 の壁。</summary>
+        public string toWall = "w2";
+
+        /// <summary>試行を採る進み具合の下限（0.5 = 2 枚の壁の二等分線 ＝ A の中央の線）。</summary>
+        public float adoptAt = 0.5f;
+
+        public bool Applies(int lap, int camera)
+        {
+            if (segments == null) return false;
+            string key = $"L{lap}C{camera}";
+            foreach (string s in segments) if (s == key) return true;
             return false;
         }
     }

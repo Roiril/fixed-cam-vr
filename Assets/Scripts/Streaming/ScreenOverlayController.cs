@@ -130,6 +130,13 @@ namespace FixedCamVr.Streaming
         private int _pendingFramesRateToken = -1;
         private float _pendingFramesRate = 1f;
 
+        // 体験者の進み具合でコマを選ぶか（SetFramesProgress）。進み具合が届くまでは NaN（＝入口のコマで待つ）。
+        private bool _framesFollow;
+        private float _framesFollowProgress = float.NaN;
+
+        /// <summary>いまコマを体験者の進み具合で選んでいるか。観測用。</summary>
+        public bool FramesFollowing => _framesFollow;
+
         /// <summary>いま流しているフレーム列の素材の時計（秒）。観測用。</summary>
         public float FramesClockSec => _framesClock;
 
@@ -297,6 +304,7 @@ namespace FixedCamVr.Streaming
             _clipDlSec = 0f;
             _clipCached = false;
             _clipCueId = string.IsNullOrEmpty(data.id) ? (data.displayName ?? "?") : data.id;
+            _framesFollowProgress = float.NaN;
             int gen = _logic.BeginPlay();
             _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
             return gen;
@@ -343,7 +351,20 @@ namespace FixedCamVr.Streaming
             if (_framesCueToken != token || _finishedFramesToken == token) return false;
             _framesRate = r;
             _current.framesRate = r;
+            // 位置で選んでいたなら、いまのコマから時間どおりへ移る（早送りの起点・0274）。
+            _framesFollow = false;
+            _framesLastTime = Time.time;
             return true;
+        }
+
+        /// <summary>
+        /// <paramref name="token"/> の発火が位置で選ぶ録画なら、体験者の進み具合を渡す（毎フレーム）。
+        /// ロード中でも受け取っておき、素材が載った瞬間から使う。発火が置き換わっていれば無視する。
+        /// </summary>
+        public void SetFramesProgress(int token, float progress)
+        {
+            if (token < 0 || token != _logic.Generation) return;
+            _framesFollowProgress = progress;
         }
 
         public bool HasLooped(int token)
@@ -395,6 +416,11 @@ namespace FixedCamVr.Streaming
                     ? _pendingFramesRate
                     : (data.framesRate > 0f ? data.framesRate : 1f);
                 _pendingFramesRateToken = -1;
+                // 位置で選ぶのは「位置で録った録画」のときだけ。そうでなければ時間どおり（`canon/LEDGER.md` 0274）。
+                _framesFollow = data.framesFollow && data.frames!.ClockAtProgress(0f) >= 0f;
+                if (data.framesFollow && !_framesFollow)
+                    Debug.LogWarning("[ScreenOverlay] 位置で録った録画ではないので時間どおりに流す");
+                // 位置で選ぶ値は発火ごとに捨てない（ロード中に届いた分を使う）。PlayCue が NaN に戻す。
                 data.frames!.Tick(0f);
                 SetOverlayTexture(data.frames.Texture, data.frames.Aspect, data.id);
                 BeginFadeIn(data);
@@ -852,6 +878,19 @@ namespace FixedCamVr.Streaming
             if (_finishedFramesToken == _logic.Generation) return;
             var seq = _current.frames!;
             float now = Time.time;
+            if (_framesFollow)
+            {
+                // 体験者の進み具合に合うコマを出す。時計はそのコマの時刻に置く ＝ 早送りへ移ったとき
+                // そこから続く。終端で畳まない（体験者が止まれば最後のコマのまま待つ）。
+                _framesLastTime = now;
+                if (!float.IsNaN(_framesFollowProgress))
+                {
+                    float c = seq.ClockAtProgress(_framesFollowProgress);
+                    if (c >= 0f) _framesClock = c;
+                }
+                seq.Tick(_framesClock);
+                return;
+            }
             _framesClock += Mathf.Max(0f, now - _framesLastTime) * _framesRate;
             _framesLastTime = now;
             if (seq.Tick(_framesClock)) return;

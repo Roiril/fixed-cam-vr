@@ -60,6 +60,59 @@ namespace FixedCamVr.Streaming.Recording
             return true;
         }
 
+        private static readonly byte[] ProgressMagic = { (byte)'P', (byte)'R', (byte)'G', (byte)'1' };
+
+        /// <summary>
+        /// 進み具合のファイル（<c>.mjr.prog</c>・`canon/LEDGER.md` 0274）を書く。
+        /// <code>"PRG1" 4B / u32 count 4B / f32[count]（.mjr のコマと同じ順。NaN = 位置が取れなかったコマ）</code>
+        /// </summary>
+        public static void WriteProgress(Stream dest, float[] progress)
+        {
+            dest.Write(ProgressMagic, 0, ProgressMagic.Length);
+            var bw = new BinaryWriter(dest);
+            bw.Write((uint)progress.Length);
+            foreach (float p in progress) bw.Write(p);
+            bw.Flush();
+        }
+
+        /// <summary>
+        /// 進み具合のファイルを読む。壊れている・コマ数が <paramref name="expectedCount"/> と違うなら null
+        /// （呼び出し側は時間どおりに流す）。
+        /// </summary>
+        public static float[]? ReadProgress(Stream src, int expectedCount)
+        {
+            try
+            {
+                var magic = new byte[4];
+                if (src.Read(magic, 0, 4) != 4) return null;
+                for (int i = 0; i < 4; i++) if (magic[i] != ProgressMagic[i]) return null;
+                var br = new BinaryReader(src);
+                uint n = br.ReadUInt32();
+                if (n != (uint)expectedCount) return null;
+                var p = new float[n];
+                for (int i = 0; i < n; i++) p[i] = br.ReadSingle();
+                return p;
+            }
+            catch (EndOfStreamException) { return null; }
+            catch (IOException) { return null; }
+        }
+
+        /// <summary>
+        /// 進み具合 <paramref name="target"/> に合うコマを選ぶ: 進み具合が target 以下のコマのうち
+        /// 最も進んだもの。1 つも無ければ 0（入口のコマ）。NaN のコマは選ばない。
+        /// </summary>
+        public static int IndexAtProgress(float[] progress, float target)
+        {
+            int best = -1;
+            for (int i = 0; i < progress.Length; i++)
+            {
+                float p = progress[i];
+                if (float.IsNaN(p) || p > target) continue;
+                if (best < 0 || p > progress[best]) best = i;
+            }
+            return best < 0 ? 0 : best;
+        }
+
         /// <summary>フレーム 1 枚を書く。</summary>
         public static void WriteFrame(Stream dest, byte[] jpeg, int length, int ptsMs)
         {

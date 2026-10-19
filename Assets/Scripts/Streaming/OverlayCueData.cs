@@ -33,6 +33,10 @@ namespace FixedCamVr.Streaming
         // （3 周目 A の早送り・canon/LEDGER.md 0272）。
         public float framesRate = 1f;
 
+        // フレーム列を時間ではなく体験者の進み具合で選ぶ（ScreenOverlayController.SetFramesProgress。
+        // 3 周目 A の位置合わせ・canon/LEDGER.md 0274）。位置で録っていない録画では時間どおりに流れる。
+        public bool framesFollow;
+
         public float strength = 1f;
         public bool loop = true;
         public float fadeInSeconds = 0.5f;

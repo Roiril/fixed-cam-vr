@@ -27,6 +27,7 @@ namespace FixedCamVr.Streaming.Tests
             public float DurationSec => 1f;
             public EndedFrames(Texture texture) => Texture = texture;
             public bool Tick(float elapsedSec) => false;
+            public float ClockAtProgress(float progress) => -1f;
             public void Dispose() { }
         }
 
