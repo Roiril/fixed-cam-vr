@@ -24,6 +24,8 @@ namespace FixedCamVr.Streaming
     public sealed class ScreenOverlayController : MonoBehaviour
     {
         private static readonly int OverlayTexId = Shader.PropertyToID("_OverlayTex");
+        private static readonly int OverlayTexBId = Shader.PropertyToID("_OverlayTexB");
+        private static readonly int OverlayBlendId = Shader.PropertyToID("_OverlayBlend");
         private static readonly int OverlayScaleId = Shader.PropertyToID("_OverlayScale");
         private static readonly int MaskTexId = Shader.PropertyToID("_MaskTex");
         private static readonly int OverlayStrengthId = Shader.PropertyToID("_OverlayStrength");
@@ -352,7 +354,9 @@ namespace FixedCamVr.Streaming
             _framesRate = r;
             _current.framesRate = r;
             // 位置で選んでいたなら、いまのコマから時間どおりへ移る（早送りの起点・0274）。
+            // 混ぜていた 2 コマ目は外す（時間どおりの再生は 1 コマずつ）。
             _framesFollow = false;
+            SetOverlayBlend(_current.frames!.Texture, null, 0f);
             _framesLastTime = Time.time;
             return true;
         }
@@ -885,10 +889,20 @@ namespace FixedCamVr.Streaming
                 _framesLastTime = now;
                 if (!float.IsNaN(_framesFollowProgress))
                 {
+                    // 進み具合を挟む 2 コマを混ぜて出す（0278）。2 つの枠は入れ替わるので毎回貼り直す。
                     float c = seq.ClockAtProgress(_framesFollowProgress);
                     if (c >= 0f) _framesClock = c;
+                    float blend = seq.TickProgress(_framesFollowProgress);
+                    if (blend >= 0f)
+                    {
+                        FramesBlend = blend;
+                        SetOverlayBlend(seq.Texture, seq.TextureB, blend);
+                        return;
+                    }
                 }
                 seq.Tick(_framesClock);
+                FramesBlend = 0f;
+                SetOverlayBlend(seq.Texture, null, 0f);
                 return;
             }
             _framesClock += Mathf.Max(0f, now - _framesLastTime) * _framesRate;
@@ -1011,11 +1025,26 @@ namespace FixedCamVr.Streaming
                    $"str={s:F2} target={_target:F2} gpuLuma={gpu:F3} mips={(t is Texture2D t2 ? t2.mipmapCount : -1)}";
         }
 
+        /// <summary>位置で選ぶ録画でいま混ぜている割合（0 = 1 コマだけ）。観測用。</summary>
+        public float FramesBlend { get; private set; }
+
+        // 1 コマ目と 2 コマ目と混ぜ具合を貼る。2 コマ目が無いときは混ぜない（シェーダは 2 コマ目を読まない）。
+        private void SetOverlayBlend(Texture a, Texture? b, float blend)
+        {
+            if (_material == null) return;
+            _material.SetTexture(OverlayTexId, a);
+            _material.SetTexture(OverlayTexBId, b != null && blend > 0f ? b : Texture2D.blackTexture);
+            _material.SetFloat(OverlayBlendId, b != null ? blend : 0f);
+        }
+
         private void SetOverlayTexture(Texture tex, float srcAspect, string cueId)
         {
             if (_material == null) return;
             Vector2 scale = ContainScale(srcAspect);
             _material.SetTexture(OverlayTexId, tex);
+            // 素材を貼り替えたら混ぜ具合は必ず 0 へ（前の録画の 2 コマ目を次の素材に重ねない）。
+            _material.SetFloat(OverlayBlendId, 0f);
+            FramesBlend = 0f;
             _material.SetVector(OverlayScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
             _appliedCueId = cueId ?? "";
             if (_heldFrameRt != null && tex != _heldFrameRt) ReleaseHeldFrame();

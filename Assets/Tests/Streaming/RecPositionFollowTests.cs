@@ -126,6 +126,37 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void 進み具合を挟む2コマを進み具合に比例して混ぜる()
+        {
+            float[] prog = { -0.1f, 0.1f, 0.2f, 0.3f, 0.6f, float.NaN };
+            float t = RecordedSegmentFormat.BlendAtProgress(prog, 0.25f, out int a, out int b);
+            Assert.That((a, b), Is.EqualTo((2, 3)));
+            Assert.That(t, Is.EqualTo(0.5f).Within(1e-4f));
+
+            t = RecordedSegmentFormat.BlendAtProgress(prog, 0.45f, out a, out b);
+            Assert.That((a, b), Is.EqualTo((3, 4)));
+            Assert.That(t, Is.EqualTo(0.5f).Within(1e-4f), "間隔が広い所も進み具合の割合で混ぜる");
+
+            t = RecordedSegmentFormat.BlendAtProgress(prog, 0.2f, out a, out b);
+            Assert.That(a, Is.EqualTo(2));
+            Assert.That(t, Is.EqualTo(0f), "ちょうどコマの上なら混ぜない");
+        }
+
+        [Test]
+        public void 端と追い録りでは混ぜない()
+        {
+            float[] prog = { 0.1f, 0.2f, float.NaN, float.NaN };
+            float t = RecordedSegmentFormat.BlendAtProgress(prog, 5f, out int a, out int b);
+            Assert.That((a, b, t), Is.EqualTo((1, 1, 0f)), "最後の進み具合より先は最後のコマのまま（NaN の追い録りへ混ぜない）");
+
+            t = RecordedSegmentFormat.BlendAtProgress(prog, -1f, out a, out b);
+            Assert.That((a, b, t), Is.EqualTo((0, 0, 0f)), "どれより手前でも入口のコマだけ");
+
+            t = RecordedSegmentFormat.BlendAtProgress(new float[0], 0.3f, out a, out b);
+            Assert.That(t, Is.EqualTo(0f));
+        }
+
+        [Test]
         public void 位置で録った録画は進み具合からコマの時刻を引ける()
         {
             string path = Path.Combine(_dir, "play.mjr");

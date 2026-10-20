@@ -777,6 +777,16 @@ namespace FixedCamVr.Streaming
         private CornerProgress _followCorner;
         private float _followMax = float.NegativeInfinity;
         private float _followLogAt;
+        // 被った走行を後から見直すための集計（0278）。f = 画に出ている「何コマ目か」（混ぜた分の端数つき）。
+        private float _followStartAt;
+        private float _followStartMax = float.NaN;
+        private float _followLastF = float.NaN;
+        private float _followMaxDf;
+        private int _followJumps;
+        private int _followTicks;
+        private int _followShownAtStart;
+        private const float FollowLogInterval = 0.1f;
+        private const float FollowJumpFrames = 0.6f;
 
         /// <summary>いま位置で選んでいる録画の進み具合（最大値）。観測用。位置で選んでいなければ NaN。</summary>
         public float FollowProgress => _followActive && !float.IsNegativeInfinity(_followMax) ? _followMax : float.NaN;
@@ -911,6 +921,7 @@ namespace FixedCamVr.Streaming
 
         private void BeginStep(TakeRunnerLogic.Decision d, bool exitAnchored)
         {
+            EndFollowSummary();
             _followActive = false;
             _markResponseToken = -1;
             _markResponsePlaying = false;
@@ -980,6 +991,14 @@ namespace FixedCamVr.Streaming
             {
                 _followActive = true;
                 _followMax = float.NegativeInfinity;
+                _followStartAt = Now;
+                _followStartMax = float.NaN;
+                _followLastF = float.NaN;
+                _followMaxDf = 0f;
+                _followJumps = 0;
+                _followTicks = 0;
+                _followShownAtStart = _stepFrames != null ? _stepFrames.PresentedCount : 0;
+                _followLogAt = 0f;
                 _followCornerOk = TryResolveCorner(out _followCorner);
                 if (!_followCornerOk)
                     Debug.LogWarning("[TakeRunner] 位置で選ぶ物差しを組めない（record.progress の壁 / layout.room.walls）" +
@@ -1341,18 +1360,45 @@ namespace FixedCamVr.Streaming
             float p = _followCorner.At(xz.x, xz.y);
             if (float.IsNaN(p)) return;
             if (p > _followMax) _followMax = p;
+            if (float.IsNaN(_followStartMax)) _followStartMax = _followMax;
             overlay.SetFramesProgress(_clipToken, _followMax);
+            if (_stepFrames == null) return;
 
-            // 0.5 秒ごとに「いま画面に出しているコマ」を 1 行。**進み具合を渡したことと、コマが画に載ったことは別**
-            // なので、コマ番号と載せた枚数（shown）を並べる。shown が増えていなければ画は止まっている。
-            if (Now >= _followLogAt && _stepFrames != null)
+            // 画に出ている「何コマ目か」（混ぜた分の端数つき）の 1 フレームあたりの動き。
+            // 混ぜていれば歩いた分だけ少しずつ動き、混ぜていなければ 1 コマずつ跳ぶ（0278 の判定材料）。
+            int a = _stepFrames.CursorIndex, b = _stepFrames.CursorIndexB;
+            float w = overlay.FramesBlend;
+            float f = a + (b >= 0 ? (b - a) * w : 0f);
+            if (!float.IsNaN(_followLastF))
             {
-                _followLogAt = Now + 0.5f;
-                int idx = _stepFrames.CursorIndex;
-                Debug.Log($"[TakeRunner] 位置で選ぶ p={p:F3} max={_followMax:F3} idx={idx}/{_stepFrames.FrameCount} " +
-                          $"recP={_stepFrames.ProgressAt(idx):F3} clock={overlay.FramesClockSec:F2}s " +
+                float df = Mathf.Abs(f - _followLastF);
+                if (df > _followMaxDf) _followMaxDf = df;
+                if (df > FollowJumpFrames) _followJumps++;
+            }
+            _followLastF = f;
+            _followTicks++;
+
+            // 0.1 秒ごとに 1 行（被った走行の見直し用・tools/follow-review.py が読む）。
+            // **進み具合を渡したことと、コマが画に載ったことは別**なので、載せた枚数（shown）も並べる。
+            if (Now >= _followLogAt)
+            {
+                _followLogAt = Now + FollowLogInterval;
+                Debug.Log($"[TakeRunner] FOLLOW t={Now - _followStartAt:F2} p={p:F4} max={_followMax:F4} " +
+                          $"a={a} b={b} w={w:F3} f={f:F2} n={_stepFrames.FrameCount} " +
+                          $"recPa={_stepFrames.ProgressAt(a):F4} recPb={(b >= 0 ? _stepFrames.ProgressAt(b) : float.NaN):F4} " +
                           $"shown={_stepFrames.PresentedCount} follow={(overlay.FramesFollowing ? 1 : 0)}");
             }
+        }
+
+        // 位置で選ぶカットが終わった縁で 1 行。被った走行の「カクつき」を数で残す（0278）。
+        private void EndFollowSummary()
+        {
+            if (!_followActive || _followTicks == 0) return;
+            int decoded = _stepFrames != null ? _stepFrames.PresentedCount - _followShownAtStart : -1;
+            Debug.Log($"[TakeRunner] FOLLOW 終了 sec={Now - _followStartAt:F2} max={_followStartMax:F3}->{_followMax:F3} " +
+                      $"lastF={_followLastF:F2} decoded={decoded} ticks={_followTicks} " +
+                      $"maxDf={_followMaxDf:F2} jumps={_followJumps}(>{FollowJumpFrames:F1}コマ/フレーム)");
+            _followTicks = 0;
         }
 
         private void PlayStepOverlay(OverlayCueData? cue, ShowStepDef step)
@@ -1558,6 +1604,7 @@ namespace FixedCamVr.Streaming
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。
         private void ReleaseStepState()
         {
+            EndFollowSummary();
             _followActive = false;
             _followMax = float.NegativeInfinity;
             _markResponseToken = -1;

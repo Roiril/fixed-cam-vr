@@ -1670,7 +1670,10 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
     （ファイルを作らない ＝ 次に入ったら録り直す）。書き出した区間は `_closedKeys` でも覚える（背景の書き出し中に戻ってきた回が
     ファイルの実在だけ見て上書きするのを防ぐ）。再生はカットの `recFollow`: `TakeRunner` が毎フレーム体験者の進み具合の最大を
     `ScreenOverlayController.SetFramesProgress` へ渡し、`RecordedFramePlayer.ClockAtProgress` がそれ以下で最も進んだコマの時刻を返す。
-    次の `recContinue` カットはそのコマの時刻から時間どおりへ移る。観測は `[SegmentRecorder] 位置で録る区間` /
+    次の `recContinue` カットはそのコマの時刻から時間どおりへ移る。
+    位置で選ぶ間は `RecordedFramePlayer.TickProgress` が進み具合を挟む 2 コマを 2 つの枠へ展開し（1 コマ進んだら枠を入れ替えて
+    展開は 1 回）、`ScreenOverlayController` が `_OverlayTex` / `_OverlayTexB` / `_OverlayBlend` を毎フレーム貼る（0278）。
+    素材を貼り替える `SetOverlayTexture` と早送りへ移る `SetFramesRate` は混ぜ具合を 0 へ戻す。観測は `[SegmentRecorder] 位置で録る区間` /
     `この試行は使わない（理由）` と `[TakeRunner] 録画を続きから流す … follow=`
     - ⚠⚠ **3 周目 A の録画の起点は「凍結の線の画像空間の鏡」でなければならない**（鏡版）
       （2026-08-22・`canon/LEDGER.md` 0102）。3 周目 A は左半分だけライブを**左右反転**して読むので

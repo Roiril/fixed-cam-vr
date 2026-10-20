@@ -28,6 +28,15 @@ namespace FixedCamVr.Streaming.Recording
         /// （`canon/LEDGER.md` 0274。呼び出し側は時間どおりに流す）。
         /// </summary>
         float ClockAtProgress(float progress);
+
+        /// <summary>
+        /// 位置で選ぶ再生（`canon/LEDGER.md` 0278）。進み具合を挟む 2 コマを <see cref="Texture"/> と
+        /// <see cref="TextureB"/> に載せ、混ぜ具合を返す（0 = Texture だけ）。位置で録っていなければ -1。
+        /// </summary>
+        float TickProgress(float progress);
+
+        /// <summary><see cref="TickProgress"/> で載せた 2 コマ目（混ぜないときは <see cref="Texture"/> と同じ）。</summary>
+        Texture TextureB { get; }
     }
 
     /// <summary>
@@ -43,12 +52,17 @@ namespace FixedCamVr.Streaming.Recording
         private readonly RecordedSegmentFormat.FrameRef[] _index;
         // コマごとの進み具合（位置で録った区間だけ。無ければ null）。
         private readonly float[]? _progress;
-        private readonly Texture2D _tex;
+        // 2 つの枠。位置で選ぶ再生では A = 進み具合の手前のコマ・B = 次のコマ。
+        // 1 コマ進むと B がそのまま A になるので、枠を入れ替えて新しい B だけを展開する（1 歩で展開 1 回）。
+        private Texture2D _tex;
+        private Texture2D _texB;
         private byte[] _buf;
         private int _cursor = -1;
+        private int _cursorB = -1;
         private bool _disposed;
 
         public Texture Texture => _tex;
+        public Texture TextureB => _cursorB >= 0 ? _texB : _tex;
         public float Aspect { get; private set; } = 16f / 9f;
         public float DurationSec { get; }
 
@@ -66,6 +80,12 @@ namespace FixedCamVr.Streaming.Recording
 
         /// <summary>いまテクスチャに載っているコマの番号（まだ無ければ -1）。観測用。</summary>
         public int CursorIndex => _cursor;
+
+        /// <summary>位置で選ぶ再生の 2 コマ目の番号（混ぜていなければ -1）。観測用。</summary>
+        public int CursorIndexB => _cursorB;
+
+        /// <summary>位置で選ぶ再生の直近の混ぜ具合（0 = 1 コマ目だけ）。観測用。</summary>
+        public float Blend { get; private set; }
 
         /// <summary>コマ <paramref name="i"/> の録ったときの進み具合（位置で録っていない・範囲外なら NaN）。観測用。</summary>
         public float ProgressAt(int i) => _progress != null && i >= 0 && i < _progress.Length ? _progress[i] : float.NaN;
@@ -88,13 +108,17 @@ namespace FixedCamVr.Streaming.Recording
             _buf = new byte[128 * 1024];
             // ⚠ mipChain は**ライブと同じだけ必要**。3 周目に流れるのはこの録画で、ライブだけ痩せて
             //   録画が鮮明だと、切り替わった瞬間に画の素性が変わって差し替えがばれる。
-            _tex = new Texture2D(2, 2, TextureFormat.RGB24, mipChain: true)
+            _tex = NewFrameTexture("RecordedFrame");
+            _texB = NewFrameTexture("RecordedFrameB");
+        }
+
+        private static Texture2D NewFrameTexture(string name)
+            => new Texture2D(2, 2, TextureFormat.RGB24, mipChain: true)
             {
-                name = "RecordedFrame",
+                name = name,
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Trilinear,
             };
-        }
 
         /// <summary>
         /// 録画ファイルを開く。存在しない / 壊れている / フレーム 0 なら null
@@ -132,7 +156,9 @@ namespace FixedCamVr.Streaming.Recording
             int elapsedMs = Mathf.Max(0, Mathf.RoundToInt(elapsedSec * 1000f));
             int i = RecordedSegmentFormat.SeekIndex(_index, elapsedMs, _cursor);
             if (i < 0) i = 0;                       // 先頭より前 → 1 枚目を出す
-            if (i != _cursor) { _cursor = i; Present(i); }
+            _cursorB = -1;   // 時間どおりの再生は 1 コマだけ（位置で選ぶ再生から移った後も混ぜない）
+            Blend = 0f;
+            if (i != _cursor) { _cursor = i; Present(i, _tex); }
             // 終端: 最後のフレームの pts を過ぎたら畳む。
             return elapsedMs <= _index[_index.Length - 1].ptsMs;
         }
@@ -144,7 +170,29 @@ namespace FixedCamVr.Streaming.Recording
             return _index[i].ptsMs / 1000f;
         }
 
-        private void Present(int i)
+        public float TickProgress(float progress)
+        {
+            if (_disposed || _progress == null || _index.Length == 0) return -1f;
+            float t = RecordedSegmentFormat.BlendAtProgress(_progress, progress, out int a, out int b);
+            if (b == a) t = 0f;
+            // 1 コマ進んだ（いまの B が新しい A）→ 枠を入れ替えるだけで展開しない。
+            if (a != _cursor && a == _cursorB)
+            {
+                (_tex, _texB) = (_texB, _tex);
+                _cursor = a;
+                _cursorB = -1;
+            }
+            if (a != _cursor) { _cursor = a; Present(a, _tex); }
+            if (t > 0f)
+            {
+                if (b != _cursorB) { _cursorB = b; Present(b, _texB); }
+            }
+            else _cursorB = -1;
+            Blend = _cursorB >= 0 ? t : 0f;
+            return Blend;
+        }
+
+        private void Present(int i, Texture2D tex)
         {
             RecordedSegmentFormat.FrameRef f = _index[i];
             try
@@ -159,8 +207,8 @@ namespace FixedCamVr.Streaming.Recording
                     got += n;
                 }
                 if (got != f.length) { FailedCount++; return; }             // 途中で切れている → 前のフレームを保つ
-                if (!_tex.LoadImage(_buf, markNonReadable: false)) { FailedCount++; return; }  // 壊れ JPEG は無視
-                if (_tex.height > 0) Aspect = (float)_tex.width / _tex.height;
+                if (!tex.LoadImage(_buf, markNonReadable: false)) { FailedCount++; return; }  // 壊れ JPEG は無視
+                if (tex.height > 0) Aspect = (float)tex.width / tex.height;
                 PresentedCount++;
                 // 最初の 1 枚だけ輝度を測る（毎フレーム GetPixels32 すると重い）。暗所での
                 // 「開けたが真っ黒しか出ていない」を、目視ではなくログで見分けるため。
@@ -201,10 +249,11 @@ namespace FixedCamVr.Streaming.Recording
             if (_disposed) return;
             _disposed = true;
             try { _fs.Dispose(); } catch { }
-            if (_tex != null)
+            foreach (Texture2D t in new[] { _tex, _texB })
             {
-                if (Application.isPlaying) UnityEngine.Object.Destroy(_tex);
-                else UnityEngine.Object.DestroyImmediate(_tex);
+                if (t == null) continue;
+                if (Application.isPlaying) UnityEngine.Object.Destroy(t);
+                else UnityEngine.Object.DestroyImmediate(t);
             }
         }
     }

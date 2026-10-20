@@ -113,6 +113,39 @@ namespace FixedCamVr.Streaming.Recording
             return best < 0 ? 0 : best;
         }
 
+        /// <summary>
+        /// 進み具合 <paramref name="target"/> を挟む 2 コマと、その間の混ぜ具合（0 = <paramref name="a"/> だけ・
+        /// 1 = <paramref name="b"/> だけ）。`canon/LEDGER.md` 0278。
+        ///
+        /// 録画は毎秒 10 コマ前後しか無く、過去の自分が速く歩いた所では 1 コマで 2° 近く進む。
+        /// コマを選ぶだけだと、体験者がそこをゆっくり歩くと同じコマが長く残って一気に飛ぶ。
+        /// 間を混ぜれば、コマ数は同じでも進み具合に比例して画が流れる。
+        ///
+        /// <paramref name="a"/> は <see cref="IndexAtProgress"/> と同じコマ。<paramref name="b"/> はその次に
+        /// 進み具合を持つコマ（追い録りの NaN は飛ばす）。次が無い・<paramref name="a"/> より手前なら
+        /// <paramref name="b"/> = <paramref name="a"/>・0 を返す。
+        /// </summary>
+        public static float BlendAtProgress(float[] progress, float target, out int a, out int b)
+        {
+            a = IndexAtProgress(progress, target);
+            b = a;
+            if (progress.Length == 0) return 0f;
+            float pa = progress[a];
+            if (float.IsNaN(pa) || target <= pa) return 0f;
+            // a より進んだコマのうち最も手前のもの（位置で録った区間は前へ進んだコマだけなので普通は a + 1）。
+            for (int i = 0; i < progress.Length; i++)
+            {
+                float p = progress[i];
+                if (float.IsNaN(p) || p <= pa) continue;
+                if (b == a || p < progress[b]) b = i;
+            }
+            if (b == a) return 0f;
+            float span = progress[b] - pa;
+            if (span <= 1e-6f) return 0f;
+            float t = (target - pa) / span;
+            return t < 0f ? 0f : t > 1f ? 1f : t;
+        }
+
         /// <summary>フレーム 1 枚を書く。</summary>
         public static void WriteFrame(Stream dest, byte[] jpeg, int length, int ptsMs)
         {

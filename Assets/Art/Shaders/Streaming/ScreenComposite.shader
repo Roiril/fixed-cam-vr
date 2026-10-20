@@ -27,6 +27,9 @@ Shader "FixedCamVr/ScreenComposite"
         _CgChromaGain("CG Chroma Gain", Range(0, 2)) = 0.55
         _UvRotSteps("Live UV Rotation (90deg steps, 0-3)", Float) = 0
         _OverlayStrength("Overlay Strength", Range(0, 1)) = 0
+        // 位置で選ぶ録画の 2 コマ目と混ぜ具合（canon/LEDGER.md 0278）。0 なら 2 コマ目は読まない。
+        _OverlayTexB("Overlay B (next recorded frame)", 2D) = "black" {}
+        _OverlayBlend("Overlay B Blend", Range(0, 1)) = 0
         _CgStrength("CG Layer Strength", Range(0, 1)) = 0
         // 差し替え素材を実写へ寄せる色統計マッチング（Reinhard per-channel を gain/offset へ落としたもの）。
         // 卓が cue 保存時に算出して焼く。既定は恒等（gain=1 / offset=0）。
@@ -242,6 +245,7 @@ Shader "FixedCamVr/ScreenComposite"
             TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
             TEXTURE2D(_SwapMaskTex); SAMPLER(sampler_SwapMaskTex);
             TEXTURE2D(_OverlayTex); SAMPLER(sampler_OverlayTex);
+            TEXTURE2D(_OverlayTexB); SAMPLER(sampler_OverlayTexB);
             TEXTURE2D(_MaskTex);    SAMPLER(sampler_MaskTex);
             // CG レイヤ（実カメラの双子の仮想カメラが描く人形）。スクリーン空間・アルファ = 被覆率。
             TEXTURE2D(_CgTex);      SAMPLER(sampler_CgTex);
@@ -291,6 +295,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _CgChromaGain;
                 float _UvRotSteps;
                 float _OverlayStrength;
+                float _OverlayBlend;
                 float _CgStrength;
                 float _Exposure;
                 float _Contrast;
@@ -993,13 +998,25 @@ Shader "FixedCamVr/ScreenComposite"
                 float2 uvO = ContainUv(uv, _OverlayScale.xy, ovIn);
                 // 差し替え素材（録画・プレート）にも**同じだけ**掛ける。片方だけ鮮明だと、
                 // 3 周目に録画へ切り替わった瞬間に画の素性が変わって切替がばれる。
+                // 位置で選ぶ録画は、進み具合を挟む 2 コマを混ぜる（_OverlayBlend・0278）。分岐は uniform なので
+                // 混ぜていない画素では 2 コマ目を 1 回も読まない。3 つの読みすべてに同じ混ぜ具合を掛ける。
                 half3 overlay = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod).rgb;
+                if (_OverlayBlend > 0.001)
+                    overlay = lerp(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod).rgb, _OverlayBlend);
                 if (chromaBias > 0.001)
-                    overlay = SplitChroma(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex,
-                                                                        uvO, lod + chromaBias).rgb);
+                {
+                    half3 oc = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod + chromaBias).rgb;
+                    if (_OverlayBlend > 0.001)
+                        oc = lerp(oc, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod + chromaBias).rgb, _OverlayBlend);
+                    overlay = SplitChroma(overlay, oc);
+                }
                 if (_Glare > 0.001)
-                    overlay += Glare(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex,
-                                                                   uvO, lod + 4.5).rgb);
+                {
+                    half3 og = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod + 4.5).rgb;
+                    if (_OverlayBlend > 0.001)
+                        og = lerp(og, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod + 4.5).rgb, _OverlayBlend);
+                    overlay += Glare(overlay, og);
+                }
                 // 色統計マッチング（卓が焼いた per-channel の gain/offset）。恒等なら何も起きない。
                 overlay = saturate(overlay * _OverlayGain.rgb + _OverlayOffset.rgb) * ovIn;
 
