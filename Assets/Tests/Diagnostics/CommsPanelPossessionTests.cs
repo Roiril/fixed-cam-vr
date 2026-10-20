@@ -401,6 +401,37 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
+        public void RecoveryShaderSwapKeepsTheGlyphQueue_IntoTheNextRun()
+        {
+            // 0279: 復帰の文字シェーダへ替えて戻すと renderQueue が 4000 へ落ち、
+            // 次の体験者の最初の連絡から本文が地（4980）の下に沈んでいた。
+            const int glyphQueue = 4990;
+            _panel.Deliver(CommsNotice.Halt);
+            Advance(1f);
+            Assert.Greater(_panel.AppliedResidue, 0.001f, "Halt の後は復帰の残りが出る（シェーダを替える経路を通る）");
+            AssertGlyphQueue(glyphQueue, "復帰の文字シェーダへ替えた後");
+
+            typeof(CommsPanel).GetMethod("OnRunRestarted", Private)!.Invoke(_panel, null);
+            Advance(6f);
+            Assert.AreEqual(0f, _panel.AppliedResidue, 0.001f, "次のランでは復帰の残りは無い");
+            _panel.Deliver(CommsNotice.Greeting);
+            Advance(3f);
+            AssertGlyphQueue(glyphQueue, "通常のシェーダへ戻した後の次の連絡");
+        }
+
+        private void AssertGlyphQueue(int expected, string when)
+        {
+            var info = Text().textInfo;
+            Assert.Greater(info.materialCount, 0);
+            for (int i = 0; i < info.materialCount; i++)
+            {
+                Material m = info.meshInfo[i].material;
+                if (m == null) continue;
+                Assert.AreEqual(expected, m.renderQueue, $"{when}: 本文 {i} 枚目の材質 {m.shader.name} の描画順");
+            }
+        }
+
+        [Test]
         public void PromptAtFullInvasionIsTypedAndClean()
         {
             int hits = _panel.TypedCount;
