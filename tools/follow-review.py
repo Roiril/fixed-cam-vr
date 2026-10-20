@@ -56,16 +56,22 @@ def cmd_capture(a):
     os.makedirs(CAPTURE_DIR, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = os.path.join(CAPTURE_DIR, f"{stamp}_follow_logcat.log")
-    adb(a.serial, "logcat", "-c")
     print(f"logcat -> {path}  (Ctrl+C or kill to stop)")
+    # 被るときは USB を抜くので、切れたら繋がり直すのを待って続きを取る。
+    # 繋がり直した瞬間の logcat は端末に残っているバッファから流れるので、抜いていた間の行も拾える
+    # （重なった行は report が捨てる）。バッファを越える長さ抜いていると先頭が欠ける。
     cmd = adb_command(resolve_adb(), a.serial, "logcat", "-v", "time", "-s", "Unity:V")
-    with open(path, "wb") as f:
-        p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
-        try:
-            p.wait()
-        except KeyboardInterrupt:
-            p.terminate()
-    return 0
+    wait = adb_command(resolve_adb(), a.serial, "wait-for-device")
+    try:
+        while True:
+            subprocess.run(wait)
+            print(f"{datetime.now():%H:%M:%S} connected")
+            with open(path, "ab") as f:
+                subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT)
+            print(f"{datetime.now():%H:%M:%S} disconnected")
+            time.sleep(2)
+    except KeyboardInterrupt:
+        return 0
 
 
 def cmd_pull(a):
@@ -115,9 +121,13 @@ def read_prog(path, count):
 
 
 def parse_log(path):
-    rows, ends = [], []
+    rows, ends, seen = [], [], set()
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
+            # 繋がり直すたびにバッファが流れ直すので、同じ行が何度も入る。
+            if line in seen:
+                continue
+            seen.add(line)
             m = FOLLOW_RE.search(line)
             if m:
                 d = {k: float(v) if k in ("t", "p", "max", "w", "f") else int(v) for k, v in m.groupdict().items()}
