@@ -123,6 +123,20 @@ EditMode 1965/1965。実機は未走行（並行セッションが Editor を握
 | 見る | `.\tools\unity.ps1 menu comms-preview -Set recovery=1` → `Assets/Screenshots/comms-preview/recovery/`（`recovery.tsv` が電力・開き・乱れ・人形・赤い字の数） |
 | 観測 | `ev=commsRecover st=begin/end`（end に powMin / squashMin / tearMax / resMax / resEnd / redMax）・`ev=sum` の `commsRec` |
 
+### 起動は砂嵐からブロックごとに復号する（2026-10-20・0280）
+
+博士タブレットの通信断（`tablet/.../web/signal-cut.js`）の逆再生。`CommsRecoveryLogic` が段（横線 0.05 / 開く 0.12 /
+復号 0.75 = `BootSec` 0.92）と `boot`（まだ現れていない量）を出し、`CommsRecovery.hlsl` の `CommsBootReveal` が
+面の座標で横長ブロック（行 9mm × 幅 22〜75mm）に割って「抜け / 砂嵐 / 中身」を決める。
+
+- 書く先は **`_Recovery.z`（地・字）と `_Residue.w`（顔）**。⚠ 片方だけ書くと、そこだけ一気に出る
+- 地・顔・字は**同じ格子・同じ順番**を読む。1 ブロックの中で 3 つが同時に出る
+- `boot` > 0.5 はブロックが点いていない、≤ 0.5 は点いたブロックの砂嵐が復号されていく。0 で 1 画素も変わらない
+- 縦罫線はシェーダを持たないので、`boot` が 0.25 を切るまで C# で alpha を落とす
+- 復号は 24Hz の段。ざ・ざ・ざ（`DecodeBursts`）は砂嵐が**強まる**向きなので明るさは落ちない
+- 観測は `ev=commsRecover st=end` の `bootMax`（横線で 0.78）。`analyze-xp-log.py` が 0.5 未満を FAIL
+- 見る: `menu comms-preview -Set recovery=1` の f0000〜f0030
+
 罠と決めたこと:
 
 - ⚠⚠ **電力は上がる方向にしか動かさない。** 最初に 2 回 0 近くへ落としたら約 5Hz の明滅になった（設計批評で指摘）。

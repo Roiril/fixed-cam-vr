@@ -58,4 +58,39 @@ float CommsRecoveryGrain(float2 p, float time)
 {
     return CurseValueNoise(p * 420.0 + floor(COMMS_RECOVERY_NOISE_PHASE * 8.0) * float2(0.31, 0.17));
 }
+
+// ---- ③a の起動（`canon/LEDGER.md` 0280・`CommsRecoveryLogic`）----
+// 面は一度に点かない。横に細長いブロックごとに砂嵐として現れ、砂嵐から中身（地・顔・字）へ復号される。
+// 地・顔・字が同じ格子と同じ順番を読むので、1 つのブロックの中では 3 つが同時に現れる。
+// boot = まだ中身として現れていない量 0..1（0 = 通常の面と 1 画素も変わらない）。
+static const float COMMS_BOOT_ROW_M = 0.009;
+
+// 戻り値 x = 中身を出す量（0 / 1）, y = 砂嵐を出す量 0..1。
+float2 CommsBootReveal(float2 p, float boot, float4 rect)
+{
+    if (boot <= 0.001) return float2(1.0, 0.0);
+    float revealed = 1.0 - boot;
+    float2 q = p - (rect.xy - rect.zw * 0.5);
+    float row = floor(q.y / COMMS_BOOT_ROW_M);
+    float hr = CurseHash21(float2(row, 3.1));
+    float segW = lerp(0.022, 0.075, hr);
+    float seg = floor((q.x + hr * segW) / segW);
+    float h = CurseHash21(float2(row, seg) + float2(17.0, 41.0));
+    float present = step(h, revealed * 2.0);
+    float decoded = step(h, revealed * 2.0 - 1.0);
+    // 復号した後も、全体が晴れ切るまで薄い砂が残る。
+    float settle = saturate(revealed * 2.0 - 1.0);
+    float haze = (1.0 - settle) * (1.0 - settle) * 0.45;
+    return float2(decoded, saturate(present * (1.0 - decoded) + decoded * haze));
+}
+
+// 砂嵐の色。暗い側へ寄せた灰（白い砂嵐は眩しい）。行ごとに明るさを揺らして走査線を残す。
+float3 CommsBootSand(float2 p, float time)
+{
+    float tick = floor(time * 24.0);
+    float2 cell = floor(p / 0.0018);
+    float v = pow(CurseHash21(cell + tick * float2(7.13, 3.71)), 1.35);
+    float scan = fmod(abs(cell.y), 2.0) < 1.0 ? 0.86 : 1.0;
+    return float3(0.91, 0.886, 0.84) * (v * scan * 0.62);
+}
 #endif

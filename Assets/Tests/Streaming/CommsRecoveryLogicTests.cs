@@ -42,24 +42,54 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Boot_IsSteppedHolds_ThenSettlesToFull_BeforeTheTextFloatsIn()
+        public void Boot_OpensFromABrokenLine_IntoSand_ThenDecodesBlockByBlock()
         {
-            // ホールドフレーム: 段の中では値が動かない。
-            Assert.AreEqual(CommsRecoveryLogic.Sample(0.10f).power, CommsRecoveryLogic.Sample(0.20f).power, 1e-6f);
-            Assert.AreEqual(CommsRecoveryLogic.Sample(0.10f).squash, CommsRecoveryLogic.Sample(0.20f).squash, 1e-6f);
-            // 横線から開く。
-            Assert.Less(CommsRecoveryLogic.Sample(0.01f).squash, 0.1f);
+            // 途切れた横線で点く（まだ点いていないブロックがある）。
+            CommsRecoverySample line = CommsRecoveryLogic.Sample(0.01f);
+            Assert.Less(line.squash, 0.1f);
+            Assert.Greater(line.boot, 0.5f, "線の段ではブロックが全部は点いていない");
+            // 開き切った直後は面が砂嵐で埋まっている（中身はまだ 1 つも出ていない）。
+            float opened = CommsRecoveryLogic.LineSec + CommsRecoveryLogic.ExpandSec + 0.01f;
+            Assert.AreEqual(1f, CommsRecoveryLogic.Sample(opened).squash, 1e-6f);
+            Assert.AreEqual(0.5f, CommsRecoveryLogic.Sample(opened).boot, 1e-6f);
+            // 復号の途中は一部だけ中身が出ている。
+            float mid = opened + CommsRecoveryLogic.DecodeSec * 0.6f;
+            Assert.That(CommsRecoveryLogic.Sample(mid).boot, Is.InRange(0.01f, 0.49f));
             float maxSquash = 0f;
             for (float t = 0f; t < CommsRecoveryLogic.BootSec; t += Dt)
                 maxSquash = System.Math.Max(maxSquash, CommsRecoveryLogic.Sample(t).squash);
             Assert.LessOrEqual(maxSquash, 1f, "弱っているので跳ねない");
-            // 字が浮かび始める（開く段の終わり）までに通常の電力・高さへ戻る。
-            Assert.LessOrEqual(CommsRecoveryLogic.BootSec, CommsPanelLogic.InSec + 1e-6f);
+            // 起動が終わると通常の面。
             CommsRecoverySample after = CommsRecoveryLogic.Sample(CommsRecoveryLogic.BootSec + 0.001f);
             Assert.AreEqual(1f, after.power, 1e-6f);
             Assert.AreEqual(1f, after.squash, 1e-6f);
             Assert.AreEqual(0f, after.tear, 1e-6f);
+            Assert.AreEqual(0f, after.boot, 1e-6f);
             Assert.IsFalse(after.booting);
+        }
+
+        [Test]
+        public void Boot_DecodesInHeldSteps_WithThreeSandBursts()
+        {
+            // 段の中では復号の進みが動かない（滑らかに晴らさない）。
+            float start = CommsRecoveryLogic.LineSec + CommsRecoveryLogic.ExpandSec;
+            float stepSec = 1f / CommsRecoveryLogic.BootHoldHz;
+            float t0 = start + stepSec * 10.1f;
+            Assert.AreEqual(CommsRecoveryLogic.Sample(t0).boot,
+                            CommsRecoveryLogic.Sample(t0 + stepSec * 0.8f).boot, 1e-6f);
+            // ざ・ざ・ざ: 砂嵐が晴れていく途中で 3 回だけ強まり直す。
+            int bursts = 0;
+            float prev = CommsRecoveryLogic.DecodeNoise(0f);
+            bool rising = false;
+            for (float d = 0f; d <= 1f; d += 0.002f)
+            {
+                float n = CommsRecoveryLogic.DecodeNoise(d);
+                if (n > prev + 1e-4f && !rising) { bursts++; rising = true; }
+                else if (n < prev - 1e-4f) rising = false;
+                prev = n;
+            }
+            Assert.AreEqual(3, bursts);
+            Assert.AreEqual(0f, CommsRecoveryLogic.DecodeNoise(1f), 1e-6f);
         }
 
         [Test]
@@ -68,7 +98,15 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsRecoveryLogic.BootTearPeak, CommsRecoveryLogic.Sample(0.01f).tear, 1e-6f);
             Assert.LessOrEqual(CommsRecoveryLogic.BootTearPeak, CommsPossessionLogic.TearPeak,
                 "乗っ取りより激しいと「もっと壊れた」に読める");
-            Assert.Less(CommsRecoveryLogic.Sample(0.40f).tear, CommsRecoveryLogic.Sample(0.25f).tear);
+            Assert.Less(CommsRecoveryLogic.Sample(CommsRecoveryLogic.BootSec - 0.05f).tear,
+                        CommsRecoveryLogic.Sample(0.25f).tear);
+        }
+
+        [Test]
+        public void Boot_EndsBeforeTheHaltLeaves()
+        {
+            // 「止まってください！」は読ませる段の途中で晴れ切る（開く 0.45 ＋ 浮かぶ 0.25 ＋ 読ませる 1.1）。
+            Assert.Less(CommsRecoveryLogic.BootSec, CommsRecoveryLogic.HaltEndSec - 0.6f);
         }
 
         [Test]

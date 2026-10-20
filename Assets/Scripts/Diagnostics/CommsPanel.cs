@@ -827,6 +827,12 @@ namespace FixedCamVr.Diagnostics
         /// <summary>直近に面へ掛けた縦の開き 0..1（1 = 正しい高さ）。</summary>
         public float AppliedSquash { get; private set; } = 1f;
 
+        /// <summary>
+        /// 直近に面・顔・字へ書いた「まだ中身として現れていない量」0..1（0280・<see cref="CommsRecoverySample.boot"/>）。
+        /// 0 = 通常の面。⚠ 書く先は `_Recovery.z`（地・字）と `_Residue.w`（顔）。
+        /// </summary>
+        public float AppliedBoot { get; private set; }
+
         /// <summary>直近に顔へ書いた「人形のまま残っている割合」0..1。</summary>
         public float AppliedResidue { get; private set; }
 
@@ -2127,6 +2133,7 @@ namespace FixedCamVr.Diagnostics
             CommsRecoverySample rec = CommsRecoveryLogic.Sample(recSec, promptReveal, _logic.TypeSec, releasedSec);
             AppliedPower = rec.power;
             AppliedSquash = rec.squash;
+            AppliedBoot = rec.boot;
             AppliedResidue = rec.residue;
             _recoveryRed = rec.red;
             AppliedGlyph = Mathf.Clamp01(w.glyph) * rec.power;
@@ -2220,7 +2227,9 @@ namespace FixedCamVr.Diagnostics
             }
             if (_dividerRenderer != null && _dividerMat != null)
             {
-                SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b, 0.68f * pa));
+                // 縦罫線はシェーダのブロックを持たないので、砂嵐が引き切るまで出さない（0280。先に罫線だけ見えると「一気に出た」に戻る）。
+                float dividerK = AppliedBoot > 0f ? Mathf.Clamp01(1f - AppliedBoot * 4f) : 1f;
+                SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b, 0.68f * pa * dividerK));
                 _dividerRenderer.enabled = lit;
                 float dividerH = CommsFaceLayout.DividerH * Smooth01(AppliedOpen);
                 _dividerRenderer.transform.localPosition = new Vector3(
@@ -2244,7 +2253,8 @@ namespace FixedCamVr.Diagnostics
             if (!active && !_recoverySurfaceActive) return;
             // 終了の縁では一度だけ0を書き、本文材質も通常へ戻す。
             _recoverySurfaceActive = active;
-            var recovery = new Vector4(AppliedResidue, Mathf.Max(0f, RecoverySec), 0f, 0f);
+            // z = 起動の「まだ現れていない量」（0280）。0 なら砂嵐のブロックは 1 画素も出ない。
+            var recovery = new Vector4(AppliedResidue, Mathf.Max(0f, RecoverySec), AppliedBoot, 0f);
             var rect = new Vector4(_panelLeftX + _panelW * 0.5f, centerY, _panelW,
                                    Mathf.Max(CommsFaceLayout.MinBoxH, height));
             Transform space = _visualRoot != null ? _visualRoot : transform;
@@ -2403,7 +2413,7 @@ namespace FixedCamVr.Diagnostics
             _avatarMat.SetVector(SweepId, sweep);
             // 復帰: スクリーン全体と同じ粗い斑で正常表示と赤い人形を重ねる。
             _avatarMat.SetVector(ResidueId, new Vector4(AppliedResidue, Mathf.Max(0f, _logic.RecoverySec),
-                                                        ResidueTint, 0f));
+                                                        ResidueTint, AppliedBoot));
             _avatarMat.SetColor(ResidueColorId, LieRed);
             PushTear(_avatarMat);
             _avatarRenderer.enabled = on;

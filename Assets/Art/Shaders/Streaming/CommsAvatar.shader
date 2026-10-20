@@ -194,6 +194,13 @@ Shader "FixedCamVr/CommsAvatar"
                     rgb = lerp(rgb, float3(1.0, 0.08, 0.04), lines * 0.7);
                     a *= 1.0 - lines * 0.35;
                 }
+                if (_Residue.w > 0.001)
+                {
+                    // ③a の起動（0280）: 地と同じブロックで現れる。砂嵐のあいだは顔を出さず、下の地の砂嵐が見える。
+                    float2 boot = CommsBootReveal(panelPos, _Residue.w, _RecoveryRect);
+                    rgb = lerp(rgb, CommsBootSand(panelPos, _Residue.y), boot.y);
+                    a *= boot.x;
+                }
                 return half4(rgb, a * _Opacity);
             }
             ENDHLSL

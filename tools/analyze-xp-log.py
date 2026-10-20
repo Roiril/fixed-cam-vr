@@ -1950,9 +1950,12 @@ def analyze(events, others, exp, warns=None):
             elif rec_end:
                 bad = []
                 for e in rec_end:
-                    # CommsRecoveryLogic.BootKeys の初期電力は 0.30。
+                    # CommsRecoveryLogic の横線の段の電力は 0.30。
                     if fnum(e, "powMin", 1.0) > 0.30:
                         bad.append(f"電力が落ちていない（powMin {fnum(e, 'powMin', 1.0):.2f}）")
+                    # 0280: 砂嵐のブロックから少しずつ現れたか（横線の段で 0.78）。旧い APK は bootMax を出さない。
+                    if "bootMax" in e and fnum(e, "bootMax", 0.0) < 0.5:
+                        bad.append(f"砂嵐から少しずつ現れていない（bootMax {fnum(e, 'bootMax', 0.0):.2f}）")
                     if fnum(e, "resMax", 0.0) < 0.4:
                         bad.append(f"顔に人形が残っていない（resMax {fnum(e, 'resMax', 0.0):.2f}）")
                     if int(e.get("redMax") or 0) <= 0:

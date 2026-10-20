@@ -337,6 +337,12 @@ SubShader {
 				faceColor.rgb = lerp(faceColor.rgb, float3(1.0, 0.08, 0.04) * faceColor.a, lines * 0.65);
 				faceColor *= 1.0 - lines * 0.3;
 			}
+			if (_Recovery.z > 0.001)
+			{
+				// ③a の起動（0280）: 地と同じブロックで現れる。砂嵐のブロックの中では字を出さない。
+				float2 boot = CommsBootReveal(input.panelPos, _Recovery.z, _RecoveryRect);
+				faceColor *= boot.x * (1.0 - boot.y * 0.5);
+			}
 
 			return faceColor * input.color.a;
 		}

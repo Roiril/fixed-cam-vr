@@ -151,7 +151,7 @@ namespace FixedCamVr.Diagnostics
         // 復帰（③a / ③b・`canon/LEDGER.md` 0270）の 1 回ぶんの観測。**画へ書いた側**の極値を持ち、
         // 時計が止まった縁で `ev=commsRecover st=end` に出す。
         private bool _recovering;
-        private float _recPowMin = 1f, _recSquashMin = 1f, _recTearMax, _recResMax, _recResLast, _recSecLast;
+        private float _recPowMin = 1f, _recSquashMin = 1f, _recBootMax, _recTearMax, _recResMax, _recResLast, _recSecLast;
         private int _recRedMax, _recRedLast, _recTornMax;
         private int _commsTornMax;
         private float _lastCommsInvasion = -1f;
@@ -900,6 +900,7 @@ namespace FixedCamVr.Diagnostics
                 {
                     _recovering = true;
                     _recPowMin = _recSquashMin = 1f;
+                    _recBootMax = 0f;
                     _recTearMax = _recResMax = _recResLast = 0f;
                     _recRedMax = _recRedLast = _recTornMax = 0;
                     Emit($"ev=commsRecover st=begin id={_comms.LastNotice} invasion={_comms.InvasionProgress:F2}");
@@ -909,6 +910,7 @@ namespace FixedCamVr.Diagnostics
                     _recSecLast = _comms.RecoverySec;
                     _recPowMin = Mathf.Min(_recPowMin, _comms.AppliedPower);
                     _recSquashMin = Mathf.Min(_recSquashMin, _comms.AppliedSquash);
+                    _recBootMax = Mathf.Max(_recBootMax, _comms.AppliedBoot);
                     _recTearMax = Mathf.Max(_recTearMax, _comms.AppliedTear);
                     _recTornMax = Mathf.Max(_recTornMax, _comms.TornBands);
                     _recResMax = Mathf.Max(_recResMax, _comms.AppliedResidue);
@@ -920,7 +922,7 @@ namespace FixedCamVr.Diagnostics
                 {
                     _recovering = false;
                     Emit($"ev=commsRecover st=end sec={_recSecLast:F2} powMin={_recPowMin:F2} " +
-                         $"squashMin={_recSquashMin:F2} tearMax={_recTearMax:F2} tornMax={_recTornMax} " +
+                         $"squashMin={_recSquashMin:F2} bootMax={_recBootMax:F2} tearMax={_recTearMax:F2} tornMax={_recTornMax} " +
                          $"resMax={_recResMax:F2} resEnd={_recResLast:F2} " +
                          $"redMax={_recRedMax} redEnd={_recRedLast} face={(_comms.AvatarBuilt ? 1 : 0)}");
                 }

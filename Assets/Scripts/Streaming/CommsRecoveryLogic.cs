@@ -22,6 +22,11 @@ namespace FixedCamVr.Streaming
         public float red;
         /// <summary>弱った起動の最中か（<see cref="CommsRecoveryLogic.BootSec"/> まで）。</summary>
         public bool booting;
+        /// <summary>
+        /// 面のうち、まだ中身として現れていない量 0..1（0 = 通常の面と 1 画素も変わらない）。
+        /// 0.5 を超える分はブロックがまだ点いていない、0.5 以下は点いたブロックが砂嵐のまま（<c>CommsRecovery.hlsl</c>）。
+        /// </summary>
+        public float boot;
         /// <summary>余震の最中か。</summary>
         public bool aftershock;
     }
@@ -40,9 +45,10 @@ namespace FixedCamVr.Streaming
     ///
     /// 形は 4 つ:
     /// <list type="number">
-    /// <item><b>弱った起動</b>（0〜<see cref="BootSec"/>）— 横線から縦に開き、半分で 1 度引っかかる。
-    ///   電力は段で上がる（ホールドフレーム・滑らかに上げない）。帯が飛び、抜け、面が横へ引っかかる。
-    ///   字が浮かび始める前に終わる。</item>
+    /// <item><b>弱った起動</b>（0〜<see cref="BootSec"/>）— 博士タブレットで通信が切れる絵（<c>signal-cut.js</c>）の逆再生。
+    ///   途切れた横線で点き、縦へ開くと面は砂嵐のブロックで埋まり、砂嵐がざ・ざ・ざと引きながら
+    ///   ブロックごとに中身（地・顔・字）へ復号される（<c>canon/LEDGER.md</c> 0280「全部一気に出すのではなく、
+    ///   グリッジノイズ的に、少しずつ」）。復号は段で進む（ホールドフレーム）。字が浮かぶ段にも重なる。</item>
     /// <item><b>余震</b> — ③b を打っている途中に 2 回だけ、帯の乱れが走り、人形が少し押し返してくる。</item>
     /// <item><b>残り</b> — 顔全体の粗い斑で人形とスイが約半々に混在し、脅威を言う句に赤が残る。</item>
     /// <item><b>解ける</b> — 体験者の報告が通った縁（呪いが解けた・0129）から <see cref="ReleaseSec"/> で 0 へ。</item>
@@ -57,30 +63,39 @@ namespace FixedCamVr.Streaming
     /// </summary>
     public static class CommsRecoveryLogic
     {
-        // ---- 弱った起動 ------------------------------------------------------------
-        /// <summary>弱った起動の長さ (秒)。開く 0.45 にちょうど重なり、字が浮かび始める前に終わる。</summary>
-        public const float BootSec = 0.45f;
+        // ---- 弱った起動（0280: 砂嵐からブロックごとに復号される）------------------
+        /// <summary>途切れた横線で点いている長さ (秒)。博士タブレットの「線が点へ縮む」の逆。</summary>
+        public const float LineSec = 0.05f;
+
+        /// <summary>横線が縦へ開き切るまで (秒)。開いた面は砂嵐のブロックで埋まる。</summary>
+        public const float ExpandSec = 0.12f;
+
+        /// <summary>砂嵐が引いて中身へ復号されるまで (秒)。博士タブレットの砂嵐（0.95 秒）を逆に回す。</summary>
+        public const float DecodeSec = 0.75f;
 
         /// <summary>
-        /// 起動の段（区間の始まり秒, 電力, 縦の開き, 横の引っかかり m）。<b>段の中は動かさない</b>
-        /// （ホールドフレーム）。最後の段のあと <see cref="BootSec"/> まで 1 へ寄る。電力は段ごとに上がる。
+        /// 弱った起動の長さ (秒)。開く 0.45 と字が浮かぶ 0.25 を越えて、読ませる段の頭まで掛かる
+        /// （段の尺は変えない。字も同じブロックで復号されるので、浮かんだ字は砂嵐の切れ目から読めてくる）。
         /// </summary>
-        private static readonly float[] BootKeys =
-        {
-            // start, power, squash, jitterX
-            0.00f, 0.30f, 0.06f, -0.004f,   // 横線で点く
-            0.08f, 0.55f, 0.45f,  0.006f,   // 半分まで開いて引っかかる
-            0.22f, 0.80f, 0.93f, -0.002f,   // ほぼ開く
-        };
+        public const float BootSec = LineSec + ExpandSec + DecodeSec;
 
-        /// <summary>最後の段が 1 へ寄り始める秒。</summary>
-        public const float SettleStartSec = 0.32f;
+        /// <summary>復号はこの刻みで段になって進む（ホールドフレーム。滑らかに晴らさない）。</summary>
+        public const float BootHoldHz = 24f;
+
+        /// <summary>横線と開く途中で、まだ点いていないブロックの量（<see cref="CommsRecoverySample.boot"/>）。</summary>
+        public const float BootLineGap = 0.78f;
+
+        /// <summary>
+        /// 砂嵐がもう一度強まる区間（復号の進み 0..1）。博士タブレットの ざ・ざ・ざ（<c>signal-cut.js</c> の BURSTS）を
+        /// 逆に並べたもの。強まる方向なので明るさは落ちない（砂嵐は地より明るい）。
+        /// </summary>
+        private static readonly float[] DecodeBursts = { 0.15f, 0.21f, 0.29f, 0.35f, 0.42f, 0.50f };
 
         /// <summary>起動の乱れの強さ（頭）。乗っ取りの頭打ち以下。</summary>
         public const float BootTearPeak = 0.55f;
 
-        /// <summary>起動の乱れが減り始める秒。</summary>
-        public const float BootTearHoldSec = 0.22f;
+        /// <summary>起動の横の引っかかりの最大 (m)。</summary>
+        public const float BootJitterM = 0.006f;
 
         // ---- 余震 ------------------------------------------------------------------
         /// <summary>
@@ -146,25 +161,41 @@ namespace FixedCamVr.Streaming
             if (sec < BootSec)
             {
                 s.booting = true;
-                const int stride = 4;
-                int last = BootKeys.Length / stride - 1;
-                int seg = 0;
-                for (int i = 0; i <= last; i++)
-                    if (sec >= BootKeys[i * stride]) seg = i;
-                s.power = BootKeys[seg * stride + 1];
-                s.squash = BootKeys[seg * stride + 2];
-                s.jitterX = BootKeys[seg * stride + 3];
-                if (seg == last && sec >= SettleStartSec)
+                // 段の刻み。横の引っかかりと復号の進みはこの刻みの中では動かさない。
+                float step = MathF.Floor(sec * BootHoldHz);
+                float jitter = (Hash(1000 + (int)step) - 0.5f) * 2f * BootJitterM;
+                if (sec < LineSec)
                 {
-                    // 最後の段だけは 1 へ寄る（セトリング）。ease-out で、行き過ぎない（弱っているので跳ねない）。
-                    float k = EaseOut((sec - SettleStartSec) / (BootSec - SettleStartSec));
-                    s.power = Lerp(s.power, 1f, k);
-                    s.squash = Lerp(s.squash, 1f, k);
-                    s.jitterX = Lerp(s.jitterX, 0f, k);
+                    // 途切れた横線で点く（まだ点いていないブロックがあるので線は切れ切れ）。
+                    s.power = 0.30f;
+                    s.squash = 0.03f;
+                    s.boot = BootLineGap;
+                    s.tear = BootTearPeak;
+                    s.jitterX = jitter;
                 }
-                s.tear = sec < BootTearHoldSec
-                    ? BootTearPeak
-                    : Lerp(BootTearPeak, 0f, (sec - BootTearHoldSec) / (BootSec - BootTearHoldSec));
+                else if (sec < LineSec + ExpandSec)
+                {
+                    // 縦へ開く。開くほどブロックが点いて、面が砂嵐で埋まる。
+                    float u = (sec - LineSec) / ExpandSec;
+                    float uq = MathF.Floor(u * ExpandSec * BootHoldHz + 1f) / (ExpandSec * BootHoldHz);
+                    s.power = 0.55f;
+                    s.squash = 0.03f + 0.97f * (1f - Cube(1f - u));
+                    s.boot = Lerp(BootLineGap, 0.5f, uq);
+                    s.tear = BootTearPeak;
+                    s.jitterX = jitter;
+                }
+                else
+                {
+                    // 砂嵐が引いていく。復号の進みは段で刻み、ざ・ざ・ざで一瞬だけ砂嵐が戻る。
+                    float d = (sec - LineSec - ExpandSec) / DecodeSec;
+                    float dq = MathF.Floor(d * DecodeSec * BootHoldHz) / (DecodeSec * BootHoldHz);
+                    float noise = DecodeNoise(dq);
+                    s.power = 0.80f + 0.20f * Clamp01(d);
+                    s.squash = 1f;
+                    s.boot = 0.5f * noise;
+                    s.tear = BootTearPeak * noise;
+                    s.jitterX = jitter * noise;
+                }
             }
 
             // ---- 残り（起動の頭 → ③a の終わり → 落ち着いた先）----
@@ -271,6 +302,24 @@ namespace FixedCamVr.Streaming
             // 近い側は量そのまま。遠い側は量が 0.6 を超えてから追いつく（字全体が赤いのは量の大きい字だけ）。
             return near ? amount : Clamp01((amount - 0.6f) / 0.4f);
         }
+
+        /// <summary>
+        /// 復号の進み <paramref name="d"/>（0..1）での砂嵐の強さ 0..1。博士タブレットの砂嵐の強まり方
+        /// （<c>signal-cut.js</c> の <c>intensity</c>）を時間を逆にして読む。頭の 12% は砂嵐だけ。
+        /// </summary>
+        public static float DecodeNoise(float d)
+        {
+            d = Clamp01(d);
+            if (d >= 1f) return 0f;
+            if (d < 0.12f) return 1f;
+            float p = 1f - d;
+            float n = MathF.Pow(p, 1.7f) * 0.75f;
+            for (int i = 0; i + 1 < DecodeBursts.Length; i += 2)
+                if (d >= DecodeBursts[i] && d < DecodeBursts[i + 1]) n += 0.38f;
+            return Clamp01(n);
+        }
+
+        private static float Cube(float v) => v * v * v;
 
         private static float Hash(int i)
         {

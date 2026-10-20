@@ -247,6 +247,13 @@ Shader "FixedCamVr/CommsPanelPlate"
                     outRgb *= 1.0 - cuts * mask * 0.55;
                     outA *= 0.9 + grain * 0.1;
                 }
+                if (_Recovery.z > 0.001)
+                {
+                    // ③a の起動（0280）: まだ点いていないブロックは抜け、点いたブロックは砂嵐、復号したブロックだけ中身。
+                    float2 boot = CommsBootReveal(pRaw, _Recovery.z, _RecoveryRect);
+                    outRgb = lerp(outRgb, CommsBootSand(pRaw, _Recovery.y), boot.y);
+                    outA = lerp(outA * boot.x, sharp * _Tear.y * 0.9, boot.y);
+                }
                 return half4(outRgb, outA);
             }
             ENDHLSL
