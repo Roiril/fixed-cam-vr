@@ -77,12 +77,12 @@
       ]
     },
     "stamp": {
-      "purpose": "反映の判子（印が押される瞬間）",
+      "purpose": "反映の判子（印が押される瞬間の砂嵐のザッ）",
       "files": [
         {
           "file": "tablet_stamp.wav",
           "gainDb": 0.0,
-          "sourceLufs": -26.0,
+          "sourceLufs": -27.0,
           "sec": 0.42
         }
       ]

@@ -179,20 +179,24 @@ def send() -> np.ndarray:
 
 
 def stamp() -> np.ndarray:
-    """研究所の角印が紙に押される。木の柄が机を打つ鈍い胴と、紙が叩かれる乾いた音。"""
+    """研究所の角印が紙に押される瞬間。砂嵐がザッと叩きつけられ、すぐ途切れる。
+    低い胴は置かない（「ぽんっ」と鳴って世界観に合わなかった・LEDGER 0277）。"""
     sec = 0.42
-    n = int(sec * SR)
-    body = sk.mix(
-        (sk.loop_noise(sec, 190, 760, slope_db_oct=-3.0, seed=6101) * sk.env_ar(sec, 0.002, 0.075, curve=2.6), 1.0),
-        (sk.loop_noise(sec, 160, 420, slope_db_oct=-4.0, seed=6102) * sk.env_ar(sec, 0.003, 0.11, curve=2.2), 0.6),
-    )
-    slap = sk.loop_noise(sec, 1800, 7000, slope_db_oct=-2.0, seed=6105) * sk.env_ar(sec, 0.0008, 0.018, curve=3.0)
-    rub = sk.loop_noise(sec, 900, 4200, slope_db_oct=-3.0, seed=6106)
-    t = sk.t_axis(sec)
-    rub_env = np.clip((t - 0.05) / 0.03, 0, 1) * np.exp(-np.clip(t - 0.08, 0, None) / 0.07)
-    y = sk.mix((body, 1.0), (slap, 0.45), (rub * rub_env, 0.08))
-    y = sk.env_fade(y[:n], 0.0005, 0.06)
-    return norm_lufs(y, -26.0)
+    t = t_of(sec)
+    rng = np.random.default_rng(6101)
+    hiss = sk.loop_noise(sec, 700, 9500, slope_db_oct=-1.2, seed=6102)
+    # 当たりで最大、そこから 2 段に刻んで途切れる（ザッ・ザ）
+    hit = np.exp(-t / 0.035) * np.clip(t / 0.0006, 0, 1)
+    tail = np.where((t > 0.07) & (t < 0.13), 0.35 * np.exp(-(t - 0.07) / 0.03), 0.0)
+    gate = (hit + tail) * grains(sec, 160, 6103, depth=0.55)
+    crackle = np.zeros(len(t))
+    for _ in range(36):
+        at = int(abs(rng.normal(0, 0.05)) * SR)
+        if at < len(t) - 200:
+            crackle[at: at + 140] += rng.choice([-1, 1]) * np.exp(-np.arange(140) / 14) * rng.random()
+    crackle = sk.biquad(crackle, "hp", 1600)
+    y = sk.mix((hiss * gate, 1.0), (crackle, 0.4), (click(sec, 0.0, 0.9, 6104, lo=1500, hi=9000), 1.0))
+    return norm_lufs(sk.env_fade(y, 0.0, 0.06), -27.0)
 
 
 def screen_on() -> np.ndarray:
@@ -318,7 +322,7 @@ PURPOSE = {
     "choice": "言語・軽減を選び替えた（カチカチ・2 種を交互）",
     "key": "次へ・戻る・一時停止など（カチッ・3 種を順に）",
     "send": "この設定を送る（カチカチカチと薄いざらつき）",
-    "stamp": "反映の判子（印が押される瞬間）",
+    "stamp": "反映の判子（印が押される瞬間の砂嵐のザッ）",
     "screen-on": "博士が闇から現れる（暗い息とフィルムのパチつき）",
     "chapter": "章の切り替え（砂嵐が短く刻まれる乱れ・signal-cut.js の glitch と同じ長さ・3 種を順に）",
     "signal-cut": "説明の終わり（砂嵐 → 一気に絞られる → 闇の中の響き・signal-cut.js と同じ時刻）",
