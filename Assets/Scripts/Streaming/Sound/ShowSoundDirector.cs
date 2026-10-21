@@ -531,6 +531,7 @@ namespace FixedCamVr.Streaming
                 //    段相対の進みを音のランプに使うと、段の尺を変えたときに音だけが黙って
                 //    速くなる。音は終幕の頭からの経過だけを読み、固定の尺で引く。
                 s.outroElapsedSec = _outro.TotalElapsedSec;
+                s.outroPowerCutSec = _outro.PowerCutAtSec;
             }
             if (_run != null)
             {

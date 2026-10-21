@@ -105,6 +105,10 @@ Shader "FixedCamVr/ScreenComposite"
         // `OutroLogic.ScreenCollapse` が出すのは進みだけ（数字を 2 か所に書かない）。
         // ⚠ 既定 **0**（恒等）。`_ScreenPower` とは逆向きなので取り違えないこと。
         _ScreenCollapse("Screen Collapse (0=normal, 1=gone)", Range(0, 1)) = 0
+        // 終幕: 通信が切れる砂嵐の進み（0 = なし / 1 = 最大。2026-10-21・博士タブレットの消え方）。
+        // 強まり方（ざ・ざ・ざ）・帯の裂け・転がる暗い帯は **このシェーダが持つ**（`CutNoiseIntensity`）。
+        // `OutroLogic.ScreenNoise` が出すのは進みだけ。⚠ 既定 **0**（恒等）。
+        _ScreenNoise("Screen Cut Noise (0=off, 1=full)", Range(0, 1)) = 0
         // 暗部の色を殺す量。安い ISP はノイズリダクションで**暗い所の色差から捨てる**ので、
         // 一様な脱色ではなく「明るい所に色が残り、暗がりが無彩へ落ちる」形になる。
         _ChromaKill("Dark Chroma Kill (ISP noise reduction)", Range(0, 1)) = 0
@@ -336,6 +340,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _IntroLive;
                 float _ScreenPower;
                 float _ScreenCollapse;
+                float _ScreenNoise;
                 float _ExposureBias;
                 float _Echo;
                 float _CoarseBlocks;
@@ -485,70 +490,72 @@ Shader "FixedCamVr/ScreenComposite"
             // ================= 終幕: ブラウン管の電源断 =================
             //
             // 逐語は `canon/LEDGER.md` 0111、設計は `reports/2026-08-23_outro-redesign.html`。
-            // 画が縦に潰れて横一本の線になり、線が中央へ縮んで点になり、残光が消える。
+            // ⚠⚠ **2026-10-21 に形を博士タブレットの消え方（`signal-cut.js` の `drawCollapse`）へ揃えた。**
+            //   ユーザー指定「メインスクリーンの消失の仕方を、タブレットで博士が消えるときと同じような感じに」。
+            //   砂嵐（`_ScreenNoise`）が強まり切った画が、縦に潰れて**光る横一線**になり、線が中央の点へ縮んで消える。
+            //   旧形は「線 0.35s → 点 0.30s → 残光 0.25s」で、線は画の明るさのままだった。
             //
             // ⚠⚠ **形の寸法はここが正**（C# は進み `_ScreenCollapse` だけを出す）。
             //   2 か所に数字を書くと、片方だけ直したときに黙って食い違う。
+            //   ⚠ 曲線の正は `signal-cut.js`（squeeze = q / 0.55・帯の高さ (1 - squeeze)^3・
+            //     幅 1 - shrink^0.7・白み 0.15 + 0.85 squeeze）。あちらを直したらここも直す。
             // ⚠⚠ **一方向。往復も反復もしない。** 反復する明滅は原理的に終端に読めないうえ、
             //   6〜24Hz は光過敏の危険帯（0111 で廃止した旧 `Flicker` がそれだった）。
             // ⚠ **線が育つ向きの動きを 1 フレームも入れない** — 逆向きは「起動しかけ」に反転する。
 
-            // 潰れの内訳（進みに対する割合）。合計 1.0。
-            #define COLLAPSE_SQUEEZE_END 0.389   // ここまでで縦が潰れて線になる（0.9s なら 0.35s）
-            #define COLLAPSE_SHRINK_END  0.722   // ここまでで線が横に縮んで点になる（同 0.30s）
-                                                 // 残り（同 0.25s）は残光が消える
+            // 潰れの内訳（進みに対する割合）。
+            #define COLLAPSE_SQUEEZE_END 0.55    // ここまでで縦が潰れて線になる（0.26s なら 0.14s）
+            #define COLLAPSE_FADE_START  0.90    // 点が消えかけたところから溶かす（最後の 1〜2 コマ）
             // 線の太さ・点の幅（枠に対する割合）
             #define COLLAPSE_LINE_H  0.006
             #define COLLAPSE_POINT_W 0.004
 
-            /// 潰れたぶんの明るさの上限。
+            /// 潰れた線の色。博士タブレットの `#f4efe4`（生成りの白）を linear にしたもの。
             ///
-            /// ⚠⚠ **エネルギー保存にしない。** 1/0.006 ＝ 167 倍になり、暗所の VR で
-            /// 視界の中心に閃光を置くことになる（ユーザーの「目に悪い」と同じ軸の問題を作る）。
-            ///
-            /// ⚠⚠ **1.25 は「白飛びさせない」から決めた値**（`menu outro` の実測・2026-08-23）。
-            /// 素の画の尖頭は 0.797 なので、1.25 を超えたぶんは 1.0 に飽和する ＝
-            /// **装置が元々持っていない光を演出が作る**ことになる。2.5 で焼いたときは
-            /// 白飛びが 0 px → 537 px（画面の 0.10%）へ増えた。
-            ///
-            /// ⚠ **効いているのは post であってプレートではない。** 同日にカメラを据え直した
-            /// 別構図のプレートで測り直しても尖頭は **0.797 のまま**だった（post の露出・
-            /// コントラストが天井を決めているため）。⇒ **プレートが変わっても測り直しは要らないが、
-            /// `show.json` の global post を変えたら測り直す。**
+            /// ⚠⚠ **白で飽和させない（0.85 倍）。** 暗所の VR で視界の中心に純白を置かない。
+            ///   光るのは画面の高さの 0.6% の線と、0.14 秒だけ ＝ 反復しない一回の光。
             /// ⚠ 暗所の実機で眩しくないかは、被って 1 度見るまで確定しない。
-            #define COLLAPSE_GAIN_MAX 1.25
+            #define COLLAPSE_LINE_COLOR (half3(0.905, 0.863, 0.776) * 0.85)
 
             /// 電源断の逆写像とマスク。**c=0 のとき厳密に恒等**（本編・導入は 1 ビットも変わらない）。
             ///
             /// ⚠ 分岐は uniform 同士の比較なので画面全体で一様 ＝ 暗黙の微分は壊れない。
             /// ⚠ マスクは **画面座標（rawUv）で測る** — 潰れた座標で `fwidth` を取ると
             ///   1/squeeze で発散して、線そのものが黙って消える。
-            void CollapseScreen(float c, float2 rawUv, out float2 uv, out float mask, out float gain)
+            /// glow = 線の白み 0..1（画を生成りの白へ寄せる量）。halo = 線のまわりのにじみ 0..1。
+            void CollapseScreen(float c, float2 rawUv, out float2 uv, out float mask,
+                                out float glow, out float halo)
             {
                 uv = rawUv;
                 mask = 1.0;
-                gain = 1.0;
+                glow = 0.0;
+                halo = 0.0;
                 if (c <= 0.0001) return;
 
-                // ① 縦が潰れる → ② 横が縮む → ③ 残光が消える
-                float sq = 1.0 - smoothstep(0.0, COLLAPSE_SQUEEZE_END, c) * (1.0 - COLLAPSE_LINE_H);
-                float sh = 1.0 - smoothstep(COLLAPSE_SQUEEZE_END, COLLAPSE_SHRINK_END, c)
-                                 * (1.0 - COLLAPSE_POINT_W);
-                float fade = 1.0 - smoothstep(COLLAPSE_SHRINK_END, 1.0, c);
+                // ① 縦が潰れて線になる → ② 線が横に縮んで点になる（タブレットと同じ曲線）
+                float squeeze = saturate(c / COLLAPSE_SQUEEZE_END);
+                float shrink = saturate((c - COLLAPSE_SQUEEZE_END) / (1.0 - COLLAPSE_SQUEEZE_END));
+                float k = 1.0 - squeeze;
+                float sq = max(k * k * k, COLLAPSE_LINE_H);
+                float sh = max(1.0 - pow(shrink, 0.7), COLLAPSE_POINT_W);
+                float fade = 1.0 - smoothstep(COLLAPSE_FADE_START, 1.0, c);
 
                 // 画面 → 元の画。潰れた帯の外は範囲外へ出る（そこはマスクが切る）。
-                uv = 0.5 + (rawUv - 0.5) / float2(max(sh, 1e-4), max(sq, 1e-4));
+                uv = 0.5 + (rawUv - 0.5) / float2(sh, sq);
 
                 float2 d = abs(rawUv - 0.5);
                 float aa = fwidth(rawUv.y) + 1e-5;
-                mask = (1.0 - smoothstep(0.5 * sq - aa, 0.5 * sq + aa, d.y))
-                     * (1.0 - smoothstep(0.5 * sh - aa, 0.5 * sh + aa, d.x));
+                float inX = 1.0 - smoothstep(0.5 * sh - aa, 0.5 * sh + aa, d.x);
+                mask = (1.0 - smoothstep(0.5 * sq - aa, 0.5 * sq + aa, d.y)) * inX * fade;
 
-                // 潰れたぶん明るい。**上限つき、しかも縮む段では落とす**
-                // （尖頭を保持すると暗所で残像が残る。実物の電源断も線は一瞬で暗くなる）。
-                float squeezeGain = min(1.0 / max(sq, 1e-4), COLLAPSE_GAIN_MAX);
-                gain = lerp(squeezeGain, 1.0,
-                            smoothstep(COLLAPSE_SQUEEZE_END, COLLAPSE_SHRINK_END, c)) * fade;
+                // 潰れるほど白く光る。⚠ タブレットの 0.15 + 0.85 × squeeze をそのまま写すと、
+                //   帯がまだ太い所で面ごと明るい灰になる（`menu outro` の #49〜51・暗所の VR では閃光）。
+                //   白くするのは帯が線へ細る所だけ（squeeze^2.5）。
+                glow = pow(squeeze, 2.5);
+                // 線のにじみ（タブレット: 帯の 4 倍の高さ・0.35 × squeeze × (1 - shrink)）
+                float haloH = sq * 4.0 + aa * 2.0;
+                halo = 0.35 * pow(squeeze, 3.0) * (1.0 - shrink) * fade * inX
+                     * (1.0 - smoothstep(0.5 * haloH - aa, 0.5 * haloH + aa, d.y));
             }
 
             float Hash21(float2 p)
@@ -640,6 +647,73 @@ Shader "FixedCamVr/ScreenComposite"
             #define SAND_CELL_X 210.0
             #define SAND_CELL_Y 150.0
             #define SAND_HZ     30.0
+
+            // ================= 終幕: 通信が切れる砂嵐（2026-10-21）=================
+            //
+            // 博士タブレットの説明の終わり（`tablet/app/src/main/assets/web/signal-cut.js`）の写し。
+            // 画に砂嵐が乗り、ざ・ざ・ざと 3 度強まり、そのあと電源断（`CollapseScreen`）へ渡す。
+            // ⚠⚠ **正は `signal-cut.js`**（`intensity` / `BURSTS` / 帯の本数と太さ / 転がる帯）。
+            //   あちらを直したらここも直す。
+            // ⚠⚠ **一瞬白むフラッシュ（タブレットの「ざ」の頭の 16%）は移していない。**
+            //   VR の視界の中心で 0.14 秒おきに 3 度白むのは光過敏の側へ寄る（0111 の判断と同じ）。
+            //   強まりは砂嵐の濃さと帯の本数で出す。
+            // ⚠ **乱数の種は時刻ではなく進み**（`_ScreenNoise`）から取る ＝ 同じ進みは同じ絵
+            //   （Editor のプレビューでも動く。`_Time` は batchmode では進まない）。
+
+            /// 砂嵐が強まる区間（進みに対する割合）。`signal-cut.js` の BURSTS と同じ。
+            static const float2 CUT_BURSTS[3] = { float2(0.50, 0.58), float2(0.65, 0.71), float2(0.79, 0.85) };
+            /// 砂嵐の組み替え回数（0.95 秒を 30Hz で刻む ＝ 表示 90Hz で 3 フレーム保つ）
+            #define CUT_FRAMES 28.5
+            /// 砂嵐の明るさ（linear）。⚠ 暗い部屋の映像（linear 0.05 前後）から跳ねさせない
+            ///   （0131「前に移っている映像との差が激しく目がちかちかする」）。乗っ取りの砂の地と同じ桁。
+            #define CUT_STATIC_LEVEL 0.075
+            /// 裂ける帯の行数（枠の縦）。タブレットの帯の太さ 4〜26px / 400px の中ほど。
+            #define CUT_ROWS 48.0
+
+            /// 砂嵐の強さ 0..1。`signal-cut.js` の `intensity(p)` の写し。
+            float CutNoiseIntensity(float p)
+            {
+                float i = pow(saturate(p), 1.7) * 0.75;
+                [unroll] for (int k = 0; k < 3; k++)
+                    i += (p >= CUT_BURSTS[k].x && p < CUT_BURSTS[k].y) ? 0.38 : 0.0;
+                return (p > 0.88) ? 1.0 : saturate(i);
+            }
+
+            /// いまの組み替えの番号（進みから取る・時刻は使わない）。
+            float CutSeed()
+            {
+                return floor(saturate(_ScreenNoise) * CUT_FRAMES)
+                     + floor(saturate(_ScreenCollapse) * 8.0) * 37.0;
+            }
+
+            /// 帯の裂け: 横へずれる量（uv の x へ足す）と、黒く抜ける量 0..1。
+            /// 強まるほど本数が増え、ずれが大きくなる（タブレット: 本数 1 + 9i・ずれ ±6% × (0.3 + i)・3 割が黒）。
+            /// ⚠ 潰れ始めたら裂けない（タブレットも潰れる段は砂嵐の板だけを潰す）。
+            void CutTear(float2 screenUv, float i, out float shiftX, out float black)
+            {
+                shiftX = 0.0;
+                black = 0.0;
+                if (i <= 0.001 || _ScreenCollapse > 0.0001) return;
+                float seed = CutSeed();
+                float row = floor((1.0 - screenUv.y) * CUT_ROWS);
+                float pick = Hash21(float2(row + 3.0, seed));
+                // 1 + 9i 本が CUT_ROWS 行のどこかへ出る（帯の太さ 1〜数行ぶんを含めて 1.6 倍）
+                float on = step(pick, (1.0 + 9.0 * i) * 1.6 / CUT_ROWS);
+                float isBlack = step(Hash21(float2(row + 11.0, seed + 5.0)), 0.3);
+                shiftX = on * (1.0 - isBlack)
+                       * (Hash21(float2(row + 23.0, seed + 9.0)) - 0.5) * 0.12 * (0.3 + i);
+                black = on * isBlack * (0.6 + 0.4 * Hash21(float2(row + 31.0, seed + 13.0)));
+            }
+
+            /// 砂嵐の画 1 枚（linear）。暗い側へ寄せた灰を燐光の色で出す。行ごとに明るさを揺らして走査線を残す。
+            half3 CutStatic(float2 uv)
+            {
+                float seed = CutSeed();
+                float2 cell = floor(uv * float2(SAND_CELL_X, SAND_CELL_Y));
+                float v = pow(Hash21(cell + seed * 1.7), 1.35) / 0.425;   // 平均 1.0
+                float rowK = (fmod(cell.y, 2.0) < 1.0) ? 1.0 : 0.87;
+                return PhosphorColor(0.55) * (CUT_STATIC_LEVEL * v * rowK);
+            }
 
             /// 粗さの出どころは 2 つあり、**粗い方だけ**を掛ける（2 つの格子が干渉すると縞が出る）。
             ///   _Pixelate     著作した値（post 12 項目。卓の FS_POST と同式・硬い格子のまま）
@@ -1109,10 +1183,16 @@ Shader "FixedCamVr/ScreenComposite"
                 //     管の枠ではない。潰れた uv を渡すと `fwidth` が 1/squeeze で発散し、
                 //     角を切る `saturate(-d/aa)` が **線そのものを黙って消す**。
                 float2 rawUv = input.uv;
-                float2 collapseUv; float collapseMask; float collapseGain;
-                CollapseScreen(_ScreenCollapse, rawUv, collapseUv, collapseMask, collapseGain);
+                float2 collapseUv; float collapseMask; float collapseGlow; float collapseHalo;
+                CollapseScreen(_ScreenCollapse, rawUv, collapseUv, collapseMask, collapseGlow, collapseHalo);
 
                 float2 screenUv = collapseUv;
+
+                // 終幕の砂嵐（2026-10-21）。帯の裂けは**全層のサンプル前**に掛ける（画も一緒に裂ける）。
+                // ⚠ 演出の外では cutI=0 ＝ 恒等。
+                float cutI = (_ScreenNoise > 0.0001) ? CutNoiseIntensity(_ScreenNoise) : 0.0;
+                float cutShift; float cutBlack;
+                CutTear(screenUv, cutI, cutShift, cutBlack);
                 // 心音に同期した波状のゆがみ。画面の形と頭の位置は動かさない。
                 // 両端で変位を0へ戻し、containの外へ映像を引き出さない。
                 float2 heartUv = screenUv;
@@ -1132,6 +1212,7 @@ Shader "FixedCamVr/ScreenComposite"
                     heartUv += envelope * 0.022 * wave * direction / float2(aspect, 1.0);
                 }
                 float2 sampleUv = GlitchUv(PixelateUv(heartUv));
+                sampleUv.x += cutShift;
 
                 // 伝送が痩せたぶん（mip）＋ **周辺の解像度低下**（像面湾曲。実レンズは角ほど像がゆるい）。
                 // 角だけぼけるのは静的なので怖さには効かないが、これが無いと「中心も端も等しく鮮明」
@@ -1621,6 +1702,26 @@ Shader "FixedCamVr/ScreenComposite"
                     col *= 1.0 - 0.10 * sl; // わずかに沈む（「映像が来ていない」を残す）
                 }
 
+                // --- 終幕: 通信が切れる砂嵐（2026-10-21・博士タブレットの消え方）---
+                // 画の上に砂嵐が乗り、ざ・ざ・ざと強まる（濃さはタブレットと同じ 0.08 + 0.86i・上限 0.94）。
+                // 帯が裂け、暗い帯が下へ転がる（同期が外れた画）。潰れの段では帯の中身が砂嵐の板になる。
+                // ⚠ 砂嵐の後・時計の前 — 時計は装置が打っているもので、砂嵐に飲まれない（0108）。
+                if (cutI > 0.001)
+                {
+                    float a = min(0.94, 0.08 + cutI * 0.86) * (0.82 + 0.18 * Hash21(float2(CutSeed(), 7.1)));
+                    col = lerp(col, CutStatic(float2(screenUv.x + cutShift, screenUv.y)), a);
+                    // 黒く抜ける帯
+                    col *= 1.0 - cutBlack;
+                    // 下へ転がる暗い帯（タブレット: 高さ 20%・0.55px/ms ≒ 0.95 秒で画の 1.3 倍）。潰れたら出さない。
+                    if (_ScreenCollapse <= 0.0001)
+                    {
+                        float down = 1.0 - screenUv.y;
+                        float barY = fmod(saturate(_ScreenNoise) * 1.31, 1.4) - 0.2;
+                        float inBar = step(barY, down) * step(down, barY + 0.2);
+                        col *= 1.0 - 0.45 * cutI * inBar;
+                    }
+                }
+
                 // --- OSD: 装置が打っている時計（`canon/LEDGER.md` 0108）---
                 //
                 // ユーザーの狙い（逐語）: 「カメラが切り替わって演出が入っても、この表示が
@@ -1658,11 +1759,12 @@ Shader "FixedCamVr/ScreenComposite"
                     col = col * (1.0 - a) + g.rgb * a;
                 }
 
-                // 終幕の電源断。**画が線へ潰れて点になる**（`CollapseScreen` が形を持つ）。
+                // 終幕の電源断。**画が光る線へ潰れて点になる**（`CollapseScreen` が形を持つ）。
                 // ⚠ 管のガラス（下）より前に掛ける — 潰れた線も管の中にあるものなので、
                 //   管の縁の暗さと角の切り落としはその後から掛かるのが正しい順序。
-                // ⚠ 演出の外では mask=1 / gain=1 ＝ 恒等。
-                col *= collapseMask * collapseGain;
+                // ⚠ 演出の外では mask=1 / glow=0 / halo=0 ＝ 恒等。
+                col = lerp(col, COLLAPSE_LINE_COLOR, collapseGlow) * collapseMask;
+                col = max(col, COLLAPSE_LINE_COLOR * collapseHalo);
 
                 // ブラウン管の面。**縁へ向かって落ち、角の外は黒**。
                 // ヴィネット（レンズ）とは別のもの — あちらは光が届かない話で、こちらは管の形。

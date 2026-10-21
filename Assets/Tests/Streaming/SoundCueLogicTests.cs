@@ -312,6 +312,25 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void PowerOff_WaitsForTheTubeToStartCollapsing()
+        {
+            // 2026-10-21 から、終幕の頭は砂嵐（0.95 秒）で、管が潰れるのはその後。
+            // 電源断の音は潰れ始める所（outroPowerCutSec）まで待つ。
+            var l = new SoundCueLogic();
+            var s = SoundShowState.Idle;
+            s.outroActive = true;
+            s.outroStage = OutroStage.Noise;
+            s.outroPowerCutSec = 0.95f;
+            s.outroElapsedSec = 0.5f;
+            Assert.AreEqual(0, CountOf(l, SoundCue.PowerOff, Dt, s), "砂嵐のあいだに電源断が鳴った");
+            s.outroStage = OutroStage.Collapse;
+            s.outroElapsedSec = 0.96f;
+            Assert.AreEqual(1, CountOf(l, SoundCue.PowerOff, Dt, s), "潰れ始めで鳴らない");
+            s.outroElapsedSec = 1.1f;
+            Assert.AreEqual(0, CountOf(l, SoundCue.PowerOff, Dt, s), "2 度鳴った");
+        }
+
+        [Test]
         public void PowerOff_RearmsForTheNextVisitor()
         {
             // ⚠⚠ **導入のラッチ（`ResetIntroLatches`）に相乗りさせない。** あれが落ちるのは

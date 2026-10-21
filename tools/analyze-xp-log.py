@@ -1455,7 +1455,7 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", "終幕の報告の面を組めていない（repBuilt=0）— 最後の 4 行が 1 文字も"
                                 "出ない。日本語フォントの静的ベイクを確かめる（menu hud-font）")
             trapped_outro = any(e.get("ending") == "Trapped" for e in outro)
-            for want in (("Dark", "Report") if trapped_outro else ("Collapse", "Dark", "Report")):
+            for want in (("Dark", "Report") if trapped_outro else ("Noise", "Collapse", "Dark", "Report")):
                 if want not in ostages:
                     verdict("WARN", f"終幕の段 {want} が出ていない")
 
@@ -1483,6 +1483,20 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("FAIL", "電源断が 1 画素も画に出ていない（clMax≒0）— 進みは配っているのに "
                                     "_ScreenCollapse が効いていない。シェーダの焼き直しを確かめる")
+
+            # -- 電源断の前の砂嵐が画に出たか（2026-10-21・博士タブレットの消え方）------
+            #    ShowTelemetryHost の nzMax と対。clMax と同じく段の縁では取れないので最大値で見る。
+            nz_all = [v for v in effect_samples(events, "nzMax") if str(v) not in ("-", "nc")]
+            if not trapped_outro:
+                if not nz_all:
+                    verdict("WARN", "終幕の砂嵐の観測（nzMax）が出ていない — 2026-10-21 より前のビルド")
+                else:
+                    nz_max = max(float(v) for v in nz_all)
+                    if nz_max >= 0.9:
+                        verdict("OK", f"電源断の前に砂嵐が出た（nzMax {nz_max:.2f}）")
+                    else:
+                        verdict("FAIL", f"終幕の砂嵐が出切っていない（nzMax {nz_max:.2f} < 0.9）— "
+                                        "_ScreenNoise を書けていないか、砂嵐の段が飛ばされた")
 
             # 「段が進んだ」ではなく「画に出た」。Report 以降は電力 0 でなければ消えていない。
             # ⚠ Dark は入れない。段の遷移と電力の書き込みは同じフレームで、実行順は未定義なので、

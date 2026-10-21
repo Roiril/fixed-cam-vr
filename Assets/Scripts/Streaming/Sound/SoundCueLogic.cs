@@ -79,7 +79,8 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>「終幕に足す音は 1 本も無い」（0048）はここで覆っている。</b> 画は
         /// 2026-08-23（0111）にブラウン管の電源断へ作り替わっており、
         /// <b>その画に対応する音をユーザーが指定した</b>。
-        /// ⚠ 鳴らす縁は<b>終幕が始まったこと</b>（<c>outroActive</c> の立ち上がり）で、
+        /// ⚠ 鳴らす縁は<b>終幕の頭から <see cref="SoundShowState.outroPowerCutSec"/> 経った所</b>
+        /// （＝ 管が潰れ始める瞬間。2026-10-21 に前へ砂嵐 0.95 秒が入った）で、
         /// 段名は読まない — 段名を読むと、名前を変えた日に黙って無音になる
         /// （<see cref="SoundShowState.outroElapsedSec"/> の注記と同じ轍）。
         /// </summary>
@@ -267,9 +268,12 @@ namespace FixedCamVr.Streaming
             // ⚠ **`ResetIntroLatches` には入れない。** あれは導入の段 0 で落ちるので、
             //    終幕の後に導入へ戻らない限り再武装しない ＝ 2 人目以降が無音になる。
             //    ここは**終幕が終わったフレーム**で自分から再武装する。
+            // ⚠ 2026-10-21 から、潰れ始めるのは終幕の頭ではなく砂嵐（0.95 秒）の後。
+            //    電源断の音は画で管が潰れ始める瞬間（`outroPowerCutSec`）まで待つ。
+            //    段名ではなく経過で待つ（上の注記と同じ理由）。
             if (s.outroActive)
             {
-                if (!_powerOffFired)
+                if (!_powerOffFired && s.outroElapsedSec >= s.outroPowerCutSec)
                 {
                     _powerOffFired = true;
                     Push(SoundCue.PowerOff, ref count);

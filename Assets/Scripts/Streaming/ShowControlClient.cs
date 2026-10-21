@@ -717,19 +717,21 @@ namespace FixedCamVr.Streaming
         // ⚠ キーは 2 度入れ替わっている:
         //    2026-08-15  旧 unswapSec / openSec / restoreSec / holdSec → flickerSec ほか（0048）
         //    2026-08-23  flickerSec → collapseSec（0111・ちかちかを電源断へ置き換えた）
+        //    2026-10-21  noiseSec を足し、collapseSec の既定を 0.9 → 0.26（博士タブレットの消え方へ揃えた）
         //    旧キーしか持たない show.json（焼き込み・端末キャッシュ）では新キーが 0 になり、
         //    Sanitized() が既定へ倒すので**そのまま走る**。
-        public float collapseSec = 0.9f;
+        public float noiseSec = 0.95f;
+        public float collapseSec = 0.26f;
         public float darkSec = 1.2f;
         public float reportFadeSec = 1.5f;
 
         /// <summary>キーごと無い（JsonUtility が 0 で埋めた）形か。</summary>
         public bool LooksUnset() =>
-            !enabled && collapseSec <= 0f && darkSec <= 0f && reportFadeSec <= 0f;
+            !enabled && noiseSec <= 0f && collapseSec <= 0f && darkSec <= 0f && reportFadeSec <= 0f;
 
         public OutroTiming ToTiming() => new OutroTiming
         {
-            collapseSec = collapseSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
+            noiseSec = noiseSec, collapseSec = collapseSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
         }.Sanitized();
     }
 

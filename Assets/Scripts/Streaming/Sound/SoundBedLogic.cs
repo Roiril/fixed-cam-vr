@@ -37,6 +37,13 @@ namespace FixedCamVr.Streaming
         /// 装置の声はその後 0.6 秒かけて引き切る ＝ <b>音が画より少し遅れて終わる</b>。
         /// </summary>
         public float outroElapsedSec;
+
+        /// <summary>
+        /// 終幕の頭から管が潰れ始める（電源が落ちる）までの秒（<c>OutroLogic.PowerCutAtSec</c>）。
+        /// 2026-10-21 に砂嵐の段（0.95 秒）を潰れの前へ足したので、電源断の音はここまで待つ。
+        /// 0 なら終幕の頭で鳴る（帰還不能・旧版と同じ）。
+        /// </summary>
+        public float outroPowerCutSec;
         public ShowPhase phase;
         /// <summary>映像の解像度の劣化（0 = 新しい / 1 = 落ち切った）。<see cref="ScreenDecayLogic"/>。</summary>
         public float decay;

@@ -8,7 +8,8 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// <b>終幕の電源断（ブラウン管が潰れて線 → 点 → 消える）を焼く</b>（<c>canon/LEDGER.md</c> 0111）。
+    /// <b>終幕の砂嵐と電源断（砂嵐が強まる → 光る線へ潰れて点 → 消える）を焼く</b>
+    /// （<c>canon/LEDGER.md</c> 0111・2026-10-21 に博士タブレットの消え方へ揃えた）。
     ///
     /// ⚠⚠ <b>シェーダの誤りは <c>unity.ps1 test</c> に 1 件も出ない。</b> 進みを配る側
     /// （<see cref="OutroLogic"/>）はテストで固定できるが、<b>その進みが画に何を起こすかは
@@ -37,8 +38,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private const string OutDirRel = "Screenshots/outro";
         private const int W = 960, H = 540;
 
-        /// <summary>連番の枚数。0.9 秒を刻むので、1 枚あたり約 30ms（実機の 90fps に近い粒）。</summary>
-        private const int Frames = 30;
+        /// <summary>連番の枚数。砂嵐 0.95 秒 ＋ 潰れ 0.26 秒を刻むので、1 枚あたり約 20ms。</summary>
+        private const int Frames = 60;
 
         /// <summary>撮影台。他の scene 幾何が写り込まないよう、誰も居ない高さへ。</summary>
         private static readonly Vector3 Stage = new Vector3(0f, 2000f, 0f);
@@ -118,7 +119,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 logic.Configure(OutroTiming.Default);
                 logic.Begin();
                 OutroTiming t = OutroTiming.Default;
-                float dt = t.collapseSec / Frames;
+                float dt = (t.noiseSec + t.collapseSec) / Frames;
 
                 float prevCollapse = -1f;
                 float peakLuma = 0f;
@@ -130,7 +131,8 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 for (int i = 0; i <= Frames; i++)
                 {
-                    float c = logic.Stage == OutroStage.Collapse ? logic.ScreenCollapse : 1f;
+                    float c = logic.Stage == OutroStage.Noise ? 0f
+                            : logic.Stage == OutroStage.Collapse ? logic.ScreenCollapse : 1f;
                     // ⚠ 一方向であることは絵の前に数値で確かめる（進みが戻ったら即わかる）。
                     if (c < prevCollapse - 1e-4f)
                     {
@@ -139,7 +141,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     }
                     prevCollapse = c;
 
-                    mat.SetFloat("_ScreenCollapse", c);
+                    // ⚠ 材質へは本番（OutroDirector）と同じ生の値を書く（Dark 以降は潰れ 0・電力 0）。
+                    mat.SetFloat("_ScreenCollapse", logic.ScreenCollapse);
+                    mat.SetFloat("_ScreenNoise", logic.ScreenNoise);
                     mat.SetFloat("_ScreenPower", logic.ScreenPower);
                     // 時計は実装と同じ縁で消す（OutroDirector の OsdCutAt と対）。
                     osd.Suppressed = c > 0.12f;
@@ -158,6 +162,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 // 素の画（潰れる前）の明るさ。線の尖頭がこの何倍かが「眩しさ」の目安になる。
                 mat.SetFloat("_ScreenCollapse", 0f);
+                mat.SetFloat("_ScreenNoise", 0f);
                 mat.SetFloat("_ScreenPower", 1f);
                 osd.Suppressed = false;
                 osd.Tick(FixedTime);
@@ -165,9 +170,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     ShootAndMeasure(cam, Path.Combine(dir, "outro_plain.png"));
 
                 Debug.Log($"[OutroPreview] {Frames + 1} 枚 + 素 1 枚 → Assets/{OutDirRel}/");
-                Debug.Log($"[OutroPreview] 尺 潰れ {t.collapseSec:F2}s / 黒 {t.darkSec:F2}s /"
+                Debug.Log($"[OutroPreview] 尺 砂嵐 {t.noiseSec:F2}s / 潰れ {t.collapseSec:F2}s / 黒 {t.darkSec:F2}s /"
                         + $" 報告 {t.reportFadeSec:F2}s（合計 {t.TotalSec:F2}s）／"
-                        + $" 報告の 1 文字目まで {t.collapseSec + t.darkSec:F2}s（旧構成は 7.2s）");
+                        + $" 報告の 1 文字目まで {t.noiseSec + t.collapseSec + t.darkSec:F2}s（旧構成は 7.2s）");
                 const float TotalPx = W * (float)H;
                 Debug.Log($"[OutroPreview] 素の画 平均 {plainMean:F4} / 尖頭 {plainPeak:F4}"
                         + $" / 白飛び {plainHot} px（{plainHot / TotalPx * 100f:F3}%）");
@@ -175,7 +180,7 @@ namespace FixedCamVr.Streaming.EditorTools
                         + $" ＝ 素の尖頭の {(plainPeak > 1e-5f ? peakLuma / plainPeak : 0f):F2} 倍");
                 Debug.Log($"[OutroPreview] 白飛びが最大のコマ #{hotFrame} {hotMax} px"
                         + $"（画面の {hotMax / TotalPx * 100f:F3}% / 素は {plainHot} px）"
-                        + "  ⚠ **ここが眩しさの実測** — 素より大きく増えるなら COLLAPSE_GAIN_MAX を下げる");
+                        + "  ⚠ **ここが眩しさの実測** — 素より大きく増えるなら COLLAPSE_LINE_COLOR を下げる");
                 Debug.Log($"[OutroPreview] プレート {plateLabel} / post {postLabel}"
                         + $" / OSD {(osdBuilt ? "あり" : "なし")}");
                 Debug.Log("[OutroPreview] ⚠ 線の明るさが暗所の VR で眩しくないかは、被って 1 度見るまで"
@@ -185,11 +190,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 // ⚠ **尖頭と平均を並べる** — 平均は面積が減るぶん必ず下がるので、
                 //   輝度補償が効いているかは尖頭でしか見えない。
                 var sb = new System.Text.StringBuilder("[OutroPreview] 尖頭  : ");
-                for (int i = 0; i <= Frames; i += 3) sb.Append($"#{i}={peaks[i]:F3} ");
+                for (int i = 0; i <= Frames; i += 4) sb.Append($"#{i}={peaks[i]:F3} ");
                 sb.Append("\n[OutroPreview] 白飛び: ");
-                for (int i = 0; i <= Frames; i += 3) sb.Append($"#{i}={hots[i]} ");
+                for (int i = 0; i <= Frames; i += 4) sb.Append($"#{i}={hots[i]} ");
                 sb.Append("\n[OutroPreview] 平均  : ");
-                for (int i = 0; i <= Frames; i += 3) sb.Append($"#{i}={lumas[i]:F3} ");
+                for (int i = 0; i <= Frames; i += 4) sb.Append($"#{i}={lumas[i]:F3} ");
                 Debug.Log(sb.ToString());
             }
             finally

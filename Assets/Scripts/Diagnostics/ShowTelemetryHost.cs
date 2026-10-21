@@ -132,6 +132,8 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>電源断が画へ出た最大値（<c>clMax</c>）。<b>段の縁だけでは取れない</b>。</summary>
         private float _collapseMax;
+        private float _noiseMax;
+        private bool _noiseSeen;
         private bool _collapseSeen;
 
         /// <summary>
@@ -235,6 +237,12 @@ namespace FixedCamVr.Diagnostics
             {
                 _collapseSeen = true;
                 if (_outro.CollapseWritten > _collapseMax) _collapseMax = _outro.CollapseWritten;
+            }
+            // 砂嵐（2026-10-21・博士タブレットの消え方）も段の縁でしか出ないので最大値を拾う（nzMax）。
+            if (_outro != null && _outro.NoiseWritten >= 0f)
+            {
+                _noiseSeen = true;
+                if (_outro.NoiseWritten > _noiseMax) _noiseMax = _outro.NoiseWritten;
             }
 
             PollTransitions(udt);
@@ -1575,6 +1583,11 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" clMax=").Append(_outro == null
                                          ? "-"
                                          : (_collapseSeen ? _collapseMax.ToString("F2") : "nc"));
+            //   nzMax = **終幕の砂嵐が画へ出た最大値**（2026-10-21）。電源断の前に 0 → 1 まで上がるはず。
+            //   帰還不能では 0 が正しい（砂嵐も潰れも見せない）。
+            _sb.Append(" nzMax=").Append(_outro == null
+                                         ? "-"
+                                         : (_noiseSeen ? _noiseMax.ToString("F2") : "nc"));
             //   ctrlL / ctrlR = コントローラの <繋がっている>/<位置が取れている>。
             //   ⚠⚠ **2 つ目が 0 のとき、手元の面（報告の押し方・操作早見表）は出ない。**
             //   2026-08-16 まで接続しか見ておらず、位置が無効なコントローラのアンカーが
