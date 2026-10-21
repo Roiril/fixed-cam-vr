@@ -23,7 +23,7 @@ static const char *AP_PASS = "romi1234";   // 机上の非常口。現場へ持�
 static const uint16_t DISC_PORT = 8830;
 static const char *DISC_PROTO = "fixedcam-discovery/1";
 static const char *DISC_SHOW = "mawarimi";
-static const char *FW_VERSION = "romi-diag-5";
+static const char *FW_VERSION = "romi-diag-6";
 
 static Preferences prefs;
 static String netSsid, netPass, netUuid;

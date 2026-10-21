@@ -33,7 +33,25 @@ static inline bool level(int pin) {
 static const int WEB_DUTY_MAX = 700;    // 元スケッチの上限（0x2BC）に合わせる
 static const int WEB_MS_MAX = 8000;
 static const int RAMP_MS = 120;         // 立ち上げの直線ランプ（スリップを減らす）
-static WebServer server(80);
+// WebServer は接続を 1 本ずつ捌き、接続しただけで要求を送らない相手を最大 5 秒待つ（HTTP_MAX_DATA_WAIT・
+// 上書きできない #define）。ブラウザが先回りして開ける空の接続（Chrome の preconnect）や途中で止まった相手が
+// いると、その間タブレットと Quest の要求が全部待たされ、タブレットの 4 秒の打ち切りで「接続できません」になる。
+// LAN の要求は数十 ms で届くので、0.8 秒何も来ない接続は切って次へ進む（2026-10-21）。
+class RomiWebServer : public WebServer {
+ public:
+  using WebServer::WebServer;
+  uint32_t idleDrops = 0;
+  void dropIdleClient(uint32_t idleMs) {
+    if (_currentStatus != HC_WAIT_READ || !_currentClient || _currentClient.available()) return;
+    if (millis() - _statusChange <= idleMs) return;
+    _currentClient.stop();
+    _currentClient = NetworkClient();
+    _currentStatus = HC_NONE;
+    idleDrops++;
+  }
+};
+static const uint32_t WEB_IDLE_DROP_MS = 800;
+static RomiWebServer server(80);
 
 struct Run {
   bool active = false;
@@ -661,7 +679,8 @@ static String infoJson() {
   return String("{\"proto\":\"") + DISC_PROTO + "\",\"show\":\"" + DISC_SHOW + "\",\"role\":\"cart\",\"id\":\"R\",\"uuid\":\"" + netUuid +
          "\",\"version\":\"" + FW_VERSION + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"rssi\":" + String(WiFi.RSSI()) +
          ",\"up\":" + String(millis() / 1000) + ",\"drops\":" + String(netDrops) + ",\"lastReason\":" + String(netLastReason) +
-         ",\"reset\":\"" + resetName() + "\",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) + "}";
+         ",\"reset\":\"" + resetName() + "\",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) +
+         ",\"idleDrops\":" + String(server.idleDrops) + "}";
 }
 
 static void startWeb() {
@@ -859,6 +878,7 @@ void setup() {
 void loop() {
   static String buf;
   esp_task_wdt_reset();
+  server.dropIdleClient(WEB_IDLE_DROP_MS);
   server.handleClient();
   runTick();
   joyTick();

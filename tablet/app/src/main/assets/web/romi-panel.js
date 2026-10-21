@@ -261,14 +261,28 @@
     $('romiLast').textContent = describeLast();
   }
 
+  // 台車（ESP32 の WebServer）は接続を 1 本ずつしか捌かない。前の読込が終わる前に次を出すと、
+  // 自分の要求同士で順番待ちになり 4 秒の打ち切りに掛かる。読込は 1 本だけにする（2026-10-21）。
+  // 1 回の失敗は電波の揺れで起きる。2 回続いたら（約 2 秒）「接続できません」を出し、繋がれば即消す。
+  const FAILS_BEFORE_TROUBLE = 2;
+  let refreshing = false;
+  let refreshFails = 0;
   async function refresh(keepDraft) {
+    if (refreshing) return;
+    refreshing = true;
     try {
       const data = await request('/ending');
+      refreshFails = 0;
       applyServer(data, { keepDraft });
       setEnabled(true);
     } catch (error) {
-      setStatus('台車に接続できません（192.168.10.51）。台車の電源と Wi-Fi を確かめてください。', 'trouble');
+      refreshFails += 1;
+      if (refreshFails >= FAILS_BEFORE_TROUBLE || !saved) {
+        setStatus('台車に接続できません（192.168.10.51）。台車の電源と Wi-Fi を確かめてください。', 'trouble', 0);
+      }
       if (!saved) setEnabled(false);
+    } finally {
+      refreshing = false;
     }
   }
 

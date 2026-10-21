@@ -46,3 +46,11 @@ Quest α の自動走行（空走）で `ev=romi kind=go res=ok ack=1` / `kind=c
 
 **Why:** 台車の制御を作りこむとき、まず「何が載っていて、どこまで分かっているか」を探し直さないため。
 **How to apply:** 台車を触る話が出たら、まず `[System.IO.Ports.SerialPort]::GetPortNames()` と `Get-PnpDevice -PresentOnly` で CP2102N が COM に出ているかを見る。esptool は `~/.platformio/packages/tool-esptoolpy/esptool.py`（`--after no_reset` で読むだけ、終わりに `--after hard_reset`）。書き込みは元のスケッチを消すので、先に app0（0x10000 から 0x140000）を `read_flash` で退避する。関連: [[quest-fleet-two-devices]]
+
+## 「タブレットから台車に繋がらないことが多い」の切り分け（2026-10-21・ユーザー報告）
+
+**未実測。台車が網にも USB にも出ていなかったので、コードから立てた仮説と手当て。** 確かめるのは `py -3.11 tools/romi/http-probe.py`（素の状態）と `--idle`（空の接続を開けた状態）の比較。
+1. **第一候補（台車側）**: ESP32 の `WebServer`（core 3.3.8）は接続を 1 本ずつ捌き、接続したまま要求を送らない相手を `HTTP_MAX_DATA_WAIT` = 5 秒待つ（`WebServer.cpp` の `HC_WAIT_READ`。`#ifndef` が無く上書きできない）。その間ほかの要求は全部待たされ、タブレットの 4 秒の打ち切りに掛かる。空の接続を作るのは Chrome の preconnect（開発用スマホや PC で `http://192.168.10.51/` の操作画面を開いている）や、電波が切れて途中で止まった相手。→ `romi-diag-6` で `RomiWebServer`（派生クラスで protected の `_currentStatus` / `_statusChange` を読む）が 0.8 秒何も来ない接続を切る。切った回数は `/info` の `idleDrops`。**コンパイルのみ・未書き込み**（書き込みは COM17 で `arduino-cli upload`）
+2. **タブレット側（直した・APK 焼き直し済み・未導入）**: 調整パネルが 1 秒ごとの再読込を前の応答を待たずに重ねていた（自分の要求同士で台車の順番待ち）／1 回の失敗で「接続できません」を出し、その表示を 5 秒消さなかった（直後に繋がっても 5 秒は失敗に見える）→ 読込は 1 本だけ・2 回続けて失敗したら出す・成功で即消す
+3. **タブレット側（直した）**: ネイティブの通信スレッド 2 本を Quest と台車で共有していた。Quest が応答しない間は Quest の要求が接続 5 秒＋読込 8 秒で 2 本とも塞ぐ → 台車は専用の 1 本（接続 2.5 秒・読込 3 秒。画面の 4 秒より先に終わる）
+4. 残る候補は電波（2.4GHz・台車の中の基板アンテナ・モーターの雑音）。`/info` の `rssi` と `drops` で見る。素の状態の計測で失敗が出るならこちら
