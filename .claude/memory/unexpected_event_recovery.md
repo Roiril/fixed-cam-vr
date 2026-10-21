@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: a623a804-563e-4c52-b7c0-4d2940ff269c
-  modified: 2026-10-21T14:30:15.718Z
+  modified: 2026-10-21T14:48:37.637Z
 ---
 
 ユーザー依頼（2026-10-21）「クエストが休止してしまった、なんかバグってる、みたいな想定外の事態の想定を複数パターン検討し、すべて解決するよう、全体としてのデザインを考えて」→「設計書は書かなくて良い、自己レビューで良ければ実装」。
@@ -33,6 +33,14 @@ metadata:
 | 連絡の面が組めない | 乗っ取り待ちが解けず報告が全部止まる | `TakeoverInputBlocked` に `IsBuilt` |
 | 通信の一瞬の揺れ | 1 回の失敗で説明が止まる | タブレットは 2 回連続で offline |
 | 体験の途中で詰まった | タブレットのリセットは本編中拒否・卓の操作は実機に届かない（`BakedOnly`） | 強制リセット（`/tablet/pulse` の `force:true` → `VisitorPortal.ForceResetProvider` → `OvrControllerBridge.TryForceResetFromTablet`） |
+
+## タブレット側（index.html）
+
+- `questStallKind()` が tick の止まりを paused / hung / network / legacy に分ける。hung のときは電源ボタンを案内しない（押すと起きている Quest を休止させる）。focusLost は paused 扱い
+- 本編中の異常は `staffRunProblems` → `#staffRunAlerts`。6 秒続いたら名指し、音は一度だけ（休止して外した・電池・例外・台車は表示だけ）
+- 「困ったとき → 体験を中断してやり直す」1.5 秒長押し → `requestStaffReset(true)`。health の無い旧 Quest に拒否されたら右 A 2 秒を案内する
+- 取得失敗は 2 回連続で offline（`POLL_FAILS_BEFORE_OFFLINE`）
+- 代役は `tools/visitor-ui/staff-mock-server.cjs` の場面 hung / removed / recenter / ctrl-off / aligning。検証は `verify-runtime.cjs`（89 本）と `flow-walk.cjs` の trouble 区間
 
 ## 罠
 

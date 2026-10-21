@@ -16,11 +16,13 @@
 
 `node tools/visitor-ui/staff-mock-server.cjs --port 8108`でlocalhostだけに開発用サーバーを開く。`http://127.0.0.1:8108/`をブラウザで表示する。`POST /_scenario`へ`{"scenario":"setup"}`を送ると初回の準備に切り替わる。`confirm-problem`と`playing`と`outro`と`finished`と`asleep`と`wake`でも確認できる。`GET /_state`で値を確認できる。
 
+代役は新しい Quest と同じ`health`を返す。`asleep`は休止（`paused: true`）、`removed`は体験者が外した休止、`hung`は応答は返るのに`questTick`が止まる固まり。本編中の異常は`playing`の上に`recenter`・`ctrl-off`・`battery-low`・`exceptions`・`cart-fail`・`camera-trouble`を重ね、`healthy`で戻す。`aligning`の間はリセット（force 付きも）を`staffResetRejectedId`で断り、`accept-reset`で受けるへ戻す。`no-health`は health の無い旧 Quest。
+
 mockはQuestへ接続しない。内蔵ブラウザの撮影が縮まないように開発用の応答だけ全画面要求を抑止する。APKのHTMLは変更しない。長押しの時間と要求IDと説明版の照合は`node tools/visitor-ui/verify-runtime.cjs`で検証する。mockの表示だけで実機の動作を合格にしない。
 
 ## 一巡を通しで撮る（flow-walk・2026-10-17）
 
-起動からリセットまで（本編の最中は除く）を、人が押す順に押して毎画面を撮る。
+起動からリセットまでを、人が押す順に押して毎画面を撮る。本編の最中は`trouble`区間で、異常の知らせ（6 秒）・固まり・「体験を中断してやり直す」の拒否と成功だけを見る。
 
 ```bash
 node tools/visitor-ui/flow-walk.cjs                 # 日本語の一巡。約 3 分（博士の説明は実時間で流れる）

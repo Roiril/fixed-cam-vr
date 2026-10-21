@@ -2,7 +2,8 @@
 'use strict';
 
 // 起動 → スタッフの準備 → 来場者のタブレット → 装着 → 回収 → リセット を、人が押す順に押して毎画面を撮る。
-// 本編の最中（playing）は対象外。画面は本番の index.html を代役サーバ（staff-mock-server.cjs）経由で実ブラウザに出す。
+// 本編の最中（playing）は、異常の知らせと「体験を中断してやり直す」だけを見る（trouble 区間）。
+// 画面は本番の index.html を代役サーバ（staff-mock-server.cjs）経由で実ブラウザに出す。
 //
 //   node tools/visitor-ui/flow-walk.cjs                       # 日本語・通常の一巡
 //   node tools/visitor-ui/flow-walk.cjs --lang en --out <dir>
@@ -442,6 +443,46 @@ const SECTIONS = [
       // 長押しを離した指の click が、同じ位置に出た「来場者の画面にする」へ入っていた（2026-10-17）。
       await a.expect(`document.getElementById('staff').open && ${a.visible('staffVisitorBtn')}`,
         '次の準備の長押しを離しても来場者の画面へ勝手に飛ばない（2 人目も 1 人目と同じ手順）');
+    },
+  },
+  {
+    // 本編中の想定外（2026-10-21）。中身の評価ではなく、スタッフに名指しと直し方が届くか・中断できるかだけを見る。
+    id: 'trouble', title: '本編中の異常と体験の中断（スタッフ）',
+    async run(a) {
+      await a.scenario('healthy');
+      await a.scenario('playing');
+      // --only trouble で単独に歩くときは、まだページを開いていない
+      if (!String(await a.eval('location.href')).startsWith('http')) await a.open();
+      await a.waitFor(`document.getElementById('staff').dataset.state === 'playing'`, 8000, '体験中の画面');
+      await a.scenario('ctrl-off');
+      await a.waitVisible('staffRunAlerts', 12000).catch(() => {});
+      await a.shot('run-alert-controller', { who: 'スタッフ', note: '本編中に左コントローラーが切れて 6 秒', doing: '電池と電源を確かめる' });
+      await a.expect(`/左コントローラーが切れています/.test(document.getElementById('staffRunAlerts').innerText)`,
+        '本編中の異常を 6 秒で機器の欄に名指しする');
+      await a.scenario('healthy');
+      await a.scenario('hung');
+      await a.waitFor(`document.getElementById('staff').dataset.state === 'hung'`, 10000, '固まりの画面').catch(() => {});
+      await a.waitFor(`/固まっています/.test(document.getElementById('staffRunAlerts').innerText)`, 12000, '固まりの知らせ').catch(() => {});
+      await a.shot('run-hung', { who: 'スタッフ', note: 'Quest のアプリが固まった（応答は返るのに進まない）', doing: '「体験を中断してやり直す」を試す' });
+      await a.expect(`document.getElementById('staffNowTitle').textContent === 'Quest のアプリが固まっています'`, '休止ではなく固まりとして出す');
+      await a.expect(`!/電源ボタン/.test(document.getElementById('staffMain').innerText)`, '固まった Quest に電源ボタンを押させない');
+      await a.scenario('wake');
+      await a.waitFor(`document.getElementById('staff').dataset.state === 'playing'`, 8000, '体験中へ戻る');
+      await a.tap('#staffTrouble > summary');
+      await sleep(500);
+      await a.scenario('aligning');
+      await a.hold('staffForceResetBtn', 1800);
+      await sleep(1500);
+      await a.shot('force-reset-rejected', { who: 'スタッフ', note: '「体験を中断してやり直す」を長押し。Quest は位置合わせの作業中で断った', doing: '作業を終えてから押す' });
+      await a.expect(`document.getElementById('staffForceMessage').textContent === 'Quest で位置合わせの作業中です。終えてから押す'`, '拒否は理由と次の手を出す');
+      await a.expect(`document.getElementById('staff').dataset.state === 'playing'`, '拒否なら体験中のまま');
+      await a.scenario('accept-reset');
+      await a.hold('staffForceResetBtn', 1800);
+      await a.waitFor(`document.getElementById('staff').dataset.state === 'handover'`, 8000, '次の体験者の準備').catch(() => {});
+      await sleep(500);
+      await a.shot('force-reset-done', { who: 'スタッフ', note: '体験の途中で中断した後', doing: '来場者の画面にする' });
+      await a.expect(`document.getElementById('staff').open && document.getElementById('staff').dataset.state === 'handover' && ${a.visible('staffVisitorBtn')}`,
+        '体験の途中でも中断すると次の体験者の準備へ戻る');
     },
   },
 ];

@@ -462,6 +462,11 @@
   [data-tone="trouble"] > .staff-device-value { color: var(--error); }
   .staff-device-fix { grid-column: 2 / -1; margin: 2px 0 0; color: var(--staff-ink); font-size: 15px; overflow-wrap: anywhere; }
   .staff-device-fix::before { content: "→ "; color: var(--staff-muted); }
+  /* 本編中の異常。機器の一覧の下に、6 秒続いたものだけを並べる */
+  .staff-run-alerts { display: grid; gap: 6px; margin: 12px 0 0; padding: 9px 12px; list-style: none; border-left: 3px solid var(--error); background: rgba(240,164,154,.08); }
+  .staff-run-alerts li { display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 8px; align-items: baseline; color: var(--staff-ink); font-size: 16px; line-height: 1.55; overflow-wrap: anywhere; }
+  #staffForceResetBtn { width: 100%; margin-top: 10px; }
+  #staffForceMessage:empty { display: none; }
   .staff-trouble { border: 1px solid var(--staff-line); border-radius: 6px; background: var(--staff-panel); }
   .staff-trouble > summary { min-height: 48px; padding: 11px 20px; color: var(--staff-ink); font-size: 17px; cursor: pointer; }
   .staff-trouble-body { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px 28px; padding: 4px 20px 20px; }
@@ -787,6 +792,16 @@
           <li class="staff-device" id="devContent" data-tone="none"><span class="staff-mark" id="devContentMark" aria-hidden="true"></span><span class="staff-device-name">体験の素材</span><span class="staff-device-value" id="devContentValue">—</span><span class="staff-device-fix" id="devContentFix" hidden></span></li>
           <li class="staff-device" id="devAudio" data-tone="none"><span class="staff-mark" id="devAudioMark" aria-hidden="true"></span><span class="staff-device-name">タブレット</span><span class="staff-device-value" id="devAudioValue">本体で確認</span><span class="staff-device-fix" id="devAudioFix" hidden></span></li>
         </ul>
+        <ul class="staff-run-alerts" id="staffRunAlerts" role="status" aria-live="polite" aria-label="体験中の異常" hidden>
+          <li id="staffRunAlert0" hidden><span class="staff-mark" id="staffRunAlert0Mark" aria-hidden="true"></span><span id="staffRunAlert0Text"></span></li>
+          <li id="staffRunAlert1" hidden><span class="staff-mark" id="staffRunAlert1Mark" aria-hidden="true"></span><span id="staffRunAlert1Text"></span></li>
+          <li id="staffRunAlert2" hidden><span class="staff-mark" id="staffRunAlert2Mark" aria-hidden="true"></span><span id="staffRunAlert2Text"></span></li>
+          <li id="staffRunAlert3" hidden><span class="staff-mark" id="staffRunAlert3Mark" aria-hidden="true"></span><span id="staffRunAlert3Text"></span></li>
+          <li id="staffRunAlert4" hidden><span class="staff-mark" id="staffRunAlert4Mark" aria-hidden="true"></span><span id="staffRunAlert4Text"></span></li>
+          <li id="staffRunAlert5" hidden><span class="staff-mark" id="staffRunAlert5Mark" aria-hidden="true"></span><span id="staffRunAlert5Text"></span></li>
+          <li id="staffRunAlert6" hidden><span class="staff-mark" id="staffRunAlert6Mark" aria-hidden="true"></span><span id="staffRunAlert6Text"></span></li>
+          <li id="staffRunAlert7" hidden><span class="staff-mark" id="staffRunAlert7Mark" aria-hidden="true"></span><span id="staffRunAlert7Text"></span></li>
+        </ul>
       </section>
     </div>
     <details class="staff-trouble" id="staffTrouble">
@@ -806,6 +821,14 @@
             <button class="staff-action" id="staffCheckBtn" type="button">接続を確認する</button>
             <p class="staff-message" id="staffCheckMessage" role="status" aria-live="polite"></p>
           </div>
+        </section>
+        <!-- 体験の途中・終わりの演出中・位置のずれた後でも、次の体験者の準備へ戻す（Quest へ force 付きのリセットを送る） -->
+        <section class="staff-trouble-section" id="staffForceReset" aria-labelledby="staffForceResetTitle">
+          <h4 id="staffForceResetTitle">体験の中断</h4>
+          <p class="staff-help">体験の途中でも使えます。ヘッドセットを外すのを手伝ってから押します。</p>
+          <button class="staff-secondary staff-hold" id="staffForceResetBtn" type="button" aria-describedby="staffForceResetHint">体験を中断してやり直す（長押し）</button>
+          <span class="sr-only" id="staffForceResetHint">1.5 秒押し続けると体験を止めて、次の体験者の準備に戻ります。</span>
+          <p class="staff-message" id="staffForceMessage" role="status" aria-live="polite"></p>
         </section>
         <section class="staff-trouble-section" aria-labelledby="staffTroubleBackupTitle">
           <h4 id="staffTroubleBackupTitle">予備の操作</h4>
@@ -1099,6 +1122,9 @@
   let titleTimer = null;
   let pollInFlight = null;
   let pollController = null;
+  // /status の取得が続けて失敗した回数。成功で 0 に戻る。2 回続いたら接続できないとみなす。
+  const POLL_FAILS_BEFORE_OFFLINE = 2;
+  let pollFailures = 0;
   let sendGeneration = 0;
   let briefingController = null;
   let briefingTimer = null;
@@ -2983,6 +3009,8 @@
   const STAFF_ENTRY_HOLD_MS = 1500;
   const STAFF_ALERT_DELAY_MS = 6000;
   const STAFF_RECEIPT_MS = 4000;
+  // 固まった Quest の直し方。電源ボタンは案内しない（押すと休止させてしまう）。
+  const QUEST_HUNG_FIX = '困ったときの「体験を中断してやり直す」を試す。直らなければ Quest のアプリを終了して起動し直す';
   let staffNotice = { key: '', text: '' };
   let staffReceiptState = { text: '', until: 0 };
   let staffHealth = { identity: '', observed: false, problem: false };
@@ -2997,6 +3025,8 @@
   let prepareHold = null;
   let collectHold = null;
   let restartHold = null;
+  let forceHold = null;
+  let staffForceNotice = '';
   let staffEntryHold = null;
   let briefingStaffHold = null;
   let staffHoldHintTimer = null;
@@ -3143,6 +3173,11 @@
   function playStaffAlertSound(generation = staffAlertAudio.generation, target = staffAlertTarget()) {
     if (generation !== staffAlertAudio.generation || target !== staffAlertTarget()
       || !staffAlertAudioReady() || !staffAlertPreviewAllowed()) return false;
+    startStaffAlertKnocks(target);
+    return true;
+  }
+
+  function startStaffAlertKnocks(target) {
     const context = staffAlertAudio.context;
     const start = context.currentTime + 0.015;
     staffAlertAudio.soundTarget = target;
@@ -3168,7 +3203,6 @@
       source.start(knockStart);
       source.stop(knockEnd + 0.01);
     }
-    return true;
   }
 
   // カチ 1 つ：高い帯のノイズが 1.5ms で消え、下に 5ms の小さな胴（隣り合う値を均して低くしたノイズ）
@@ -3201,7 +3235,9 @@
     const targetChanged = staffAlert.target && staffAlert.target !== target;
     const pendingTargetChanged = staffAlertAudio.pendingTarget != null && staffAlertAudio.pendingTarget !== target;
     const soundingTargetChanged = staffAlertAudio.activeTones.size > 0 && staffAlertAudio.soundTarget !== target;
-    if (close || hidden || targetChanged || pendingTargetChanged || soundingTargetChanged) cancelStaffAlertSound();
+    // 本編中の知らせ（observeRunAlerts）が鳴らした音は、本編を理由には止めない。背景へ移ったときだけ止める。
+    const runSounding = staffAlertAudio.activeTones.size > 0 && staffAlertAudio.soundTarget === RUN_ALERT_SOUND_TARGET;
+    if (hidden || !runSounding && (close || targetChanged || pendingTargetChanged || soundingTargetChanged)) cancelStaffAlertSound();
     const action = updateStaffAlertState(staffAlert, {
       target,
       acknowledged: Boolean(status) && preparationAcknowledged(status),
@@ -3234,6 +3270,154 @@
     return true;
   }
 
+  // 本編中（体験が始まってから終わりの演出が済むまで）の異常。引き渡し前の知らせ（staffAlert）とは別に持つ。
+  // 6 秒続いたものだけを機器の一覧の下に出し、音のあるものは一度だけ鳴らす。同じ異常が続く間は鳴らし直さない。
+  // 背景に移っていた間に溜まったものは鳴らさずに出す（引き渡し後の知らせと同じ）。
+  const RUN_ALERT_DELAY_MS = 6000;
+  const RUN_ALERT_SLOTS = 8;
+  const RUN_ALERT_SOUND_TARGET = 'run';
+  const runAlert = createRunAlertState();
+  let runAlertBaseline = { portal: '', exceptions: null };
+  let runAlertShownKey = '';
+
+  function createRunAlertState() {
+    return { entries: new Map() };
+  }
+
+  function staffRunActive(status = state.status) {
+    const setup = isRecord(status?.staffSetup) ? status.staffSetup : null;
+    const stage = staffStageOf(setup);
+    if (stage !== 'playing' && stage !== 'ended') return false;
+    const run = isRecord(setup.run) ? setup.run : null;
+    if (run) return stage === 'playing' || run.outro !== 'done';
+    // run の無い旧 Quest は staffScreenState と同じく、END から一定時間で終わりの演出が済んだとみなす。
+    if (stage === 'playing' && status.phase !== 'END') return true;
+    return !(legacyEndSince > 0 && Date.now() - legacyEndSince >= LEGACY_END_SETTLE_MS);
+  }
+
+  // 本編中に見えている異常の一覧。null は「いまは決められない」（取得の失敗直後）で、前の判定を保つ。
+  // partial は休止・固まり・不通のとき。止まる前の値しか無いので、ほかの項目は消さずに伏せる。
+  function staffRunProblems(input) {
+    const status = input.status;
+    if (!status) return null;
+    if (input.connection === 'offline') {
+      return { partial: true, list: [{ key: 'offline', tone: 'trouble', sound: true,
+        text: 'Quest に繋がりません。Quest の電源とアプリを確かめる' }] };
+    }
+    if (input.connection !== 'online' || input.stall === 'network') return null;
+    const health = isRecord(status.health) ? status.health : null;
+    if (health?.paused === true) {
+      return { partial: true, list: health.worn === false ? [{ key: 'removed', tone: 'wait', sound: false,
+        text: '体験者が Quest を外しています。被り直すと続きから再開します' }] : [] };
+    }
+    if (input.stall === 'hung') {
+      return { partial: true, list: [{ key: 'hung', tone: 'trouble', sound: true,
+        text: `Quest のアプリが固まっています。${QUEST_HUNG_FIX}` }] };
+    }
+    if (input.stall) return { partial: true, list: [] };
+    const setup = isRecord(status.staffSetup) ? status.staffSetup : {};
+    const list = [];
+    if (setup.position === 'recenter') {
+      list.push({ key: 'recenter', tone: 'trouble', sound: true,
+        text: '位置の基準が変わりました（Quest を外した・ボタン長押し）。映像の人形や線がずれます。体験を中断してやり直し、位置を合わせ直す' });
+    }
+    if (health?.ctrlL === 'off') {
+      list.push({ key: 'ctrlL', tone: 'trouble', sound: true,
+        text: '左コントローラーが切れています。電池と電源を確かめる（報告ができません）' });
+    }
+    for (const id of STAFF_CAMERA_IDS) {
+      const camera = staffCameraOf(setup, id);
+      if (camera?.state !== 'trouble') continue;
+      const fix = STAFF_CAMERA_PROBLEMS[camera.problem]?.fix(id) || `スマホ ${id} の FixedCam Streamer を確かめる`;
+      list.push({ key: `camera${id}`, tone: 'trouble', sound: true, text: `カメラ ${id} の映像が来ていません。${fix}` });
+    }
+    if (Number.isInteger(health?.battery) && health.battery >= 0 && health.battery <= 15) {
+      list.push({ key: 'battery', tone: 'wait', sound: false,
+        text: `Quest の電池が少なくなっています（${health.battery}%）。体験の後で充電する` });
+    }
+    if (Number.isInteger(health?.exceptions) && Number.isInteger(input.exceptionsBaseline)
+      && health.exceptions > input.exceptionsBaseline) {
+      list.push({ key: 'exceptions', tone: 'trouble', sound: false,
+        text: `Quest で内部エラーが起きました（${health.exceptions - input.exceptionsBaseline} 件）。画や進行がおかしければ体験を中断してやり直す` });
+    }
+    if (health?.cartKind === 'go' && typeof health.cartResult === 'string'
+      && !['ok', 'pending', ''].includes(health.cartResult)) {
+      list.push({ key: 'cart', tone: 'trouble', sound: false, text: '台車へ合図が届きませんでした（終幕で台車が動かない）' });
+    }
+    return { partial: false, list };
+  }
+
+  function updateRunAlertState(machine, input) {
+    if (!input.active) {
+      machine.entries.clear();
+      return 'none';
+    }
+    if (!input.problems) {
+      if (input.hidden) for (const entry of machine.entries.values()) entry.silent = true;
+      return 'none';
+    }
+    let action = 'none';
+    const seen = new Set();
+    for (const problem of input.problems.list) {
+      seen.add(problem.key);
+      let entry = machine.entries.get(problem.key);
+      if (!entry) {
+        entry = { since: input.now, shown: false, silent: false };
+        machine.entries.set(problem.key, entry);
+      }
+      entry.problem = problem;
+      entry.visible = true;
+      if (input.hidden) entry.silent = true;
+      if (entry.shown || input.now - entry.since < RUN_ALERT_DELAY_MS) continue;
+      entry.shown = true;
+      if (problem.sound && action !== 'sound') action = !entry.silent && input.audioReady ? 'sound' : 'consume';
+    }
+    for (const [key, entry] of machine.entries) {
+      if (seen.has(key)) continue;
+      if (input.problems.partial) entry.visible = false;
+      else machine.entries.delete(key);
+    }
+    return action;
+  }
+
+  function shownRunAlerts(machine = runAlert) {
+    return Array.from(machine.entries.values()).filter((entry) => entry.shown && entry.visible).map((entry) => entry.problem);
+  }
+
+  function playRunAlertSound() {
+    if (!staffAlertAudioReady()) return false;
+    startStaffAlertKnocks(RUN_ALERT_SOUND_TARGET);
+    return true;
+  }
+
+  // 表示が変わったら true を返す（取得が詰まって poll が描かない間も、周期の側から描き直すため）。
+  function observeRunAlerts(now = Date.now()) {
+    const status = state.status;
+    const active = !state.staffPreview && !state.bypass && staffRunActive(status);
+    const health = isRecord(status?.health) ? status.health : null;
+    // 内部エラーの数は本編を最初に観測した時点を基準にする。次の体験者（受付が変わる）で取り直す。
+    if (!active) runAlertBaseline = { portal: '', exceptions: null };
+    else if (runAlertBaseline.portal !== status.portalSessionId && state.connection === 'online'
+      && Number.isInteger(health?.exceptions)) {
+      runAlertBaseline = { portal: status.portalSessionId, exceptions: health.exceptions };
+    }
+    const fresh = questStatusFresh();
+    const action = updateRunAlertState(runAlert, {
+      active,
+      now,
+      hidden: document.hidden || nativePaused,
+      audioReady: staffAlertAudioReady(),
+      problems: active ? staffRunProblems({ connection: state.connection, status,
+        stall: questStallKind({ connection: state.connection, status, fresh, pollFailures }),
+        exceptionsBaseline: runAlertBaseline.portal === status?.portalSessionId ? runAlertBaseline.exceptions : null }) : null,
+    });
+    if (action === 'sound') playRunAlertSound();
+    const shownKey = shownRunAlerts().map((problem) => `${problem.key}:${problem.text}`).join('|');
+    const changed = shownKey !== runAlertShownKey;
+    runAlertShownKey = shownKey;
+    return changed;
+  }
+
   function staffStageOf(setup) {
     const stage = typeof setup?.stage === 'string' ? setup.stage : '';
     // 旧 Quest の devices は、新しい setup（初回の位置合わせ前）と同じに扱う。
@@ -3246,7 +3430,7 @@
     if (input.connection !== 'online' || !input.status) return 'checking';
     const setup = isRecord(input.status.staffSetup) ? input.status.staffSetup : null;
     if (!setup) return 'legacy';
-    if (!input.fresh) return 'asleep';
+    if (!input.fresh) return input.stall === 'hung' ? 'hung' : input.stall === 'network' ? 'checking' : 'asleep';
     if (input.resetPending) return 'prepare';
     const stage = staffStageOf(setup);
     const run = isRecord(setup.run) ? setup.run : null;
@@ -3302,6 +3486,8 @@
     if (input.native && !input.quest) quest = empty;
     else if (input.connection === 'offline') quest = { tone: 'trouble', value: '接続できません', fix: '電源と『廻リ視』の起動を確かめる' };
     else if (input.connection !== 'online' || !status) quest = { tone: 'wait', value: '確認しています', fix: '' };
+    else if (!input.fresh && input.stall === 'hung') quest = { tone: 'trouble', value: 'アプリが固まっています', fix: QUEST_HUNG_FIX };
+    else if (!input.fresh && input.stall === 'network') quest = { tone: 'wait', value: '確認しています', fix: '' };
     else if (!input.fresh) quest = Number.isInteger(status.questTick)
       ? { tone: 'wait', value: '休止しています', fix: 'ヘッドセット側面の電源ボタンを 1 回押す' }
       : { tone: 'wait', value: '応答しています', fix: '' };
@@ -3400,12 +3586,14 @@
 
   function staffSnapshot() {
     const status = state.status;
+    const fresh = questStatusFresh();
     return {
       native: Boolean(transport.native),
       quest: activeQuest,
       connection: state.connection,
       status,
-      fresh: questStatusFresh(),
+      fresh,
+      stall: questStallKind({ connection: state.connection, status, fresh, pollFailures }),
       resetPending: Boolean(staffResetRequest),
       visitorFlow: visitorFlowActive(),
       handback: !state.staffPreview && state.view === 'briefing' && state.briefing.handoffReady && currentSendMatchesSession(),
@@ -3482,11 +3670,16 @@
         ], actions: { retry: true } };
       case 'asleep': {
         const items = [];
-        if (staffResetRequest) items.push({ tone: 'wait', text: '準備の要求を保っています。起きると続けます。' });
+        if (staffResetRequest) items.push({ tone: 'wait', text: `${staffResetRequest.force ? '中断' : '準備'}の要求を保っています。起きると続けます。` });
         else if (staffConfirmationRequested && !snapshot.acknowledged) items.push({ tone: 'wait', text: '装着へ進む確認を保っています。起きると続けます。' });
         return { title: 'ヘッドセットが休止しています',
           body: 'ヘッドセット側面の電源ボタンを 1 回押してください。数秒で画面が変わります。', items,
           note: '台に置いて約 15 秒たつと休止します。クエストの設定で自動スリープを長くすると止まりにくくなります。' };
+      }
+      case 'hung': {
+        const items = [];
+        if (staffResetRequest) items.push({ tone: 'wait', text: `${staffResetRequest.force ? '中断' : '準備'}の要求を保っています。動き出すと続けます。` });
+        return { title: 'Quest のアプリが固まっています', body: `${QUEST_HUNG_FIX}。`, items };
       }
       case 'legacy':
         return { title: '古い版のクエストです',
@@ -3567,7 +3760,8 @@
   }
 
   function staffRecoveryText(key, snapshot, rows, audioRow) {
-    if (key === 'playing' || key === 'outro' || key === 'finished') return '';
+    // 固まりは本文が直し方そのもの。同じ手順を重ねない。
+    if (key === 'playing' || key === 'outro' || key === 'finished' || key === 'hung') return '';
     const blocker = staffStartBlocker(snapshot.status);
     let row = null;
     // 最初の準備では本文が位置合わせの手順そのもの。同じ手順を重ねず、並行して直せる機器の異常を出す。
@@ -3584,18 +3778,51 @@
 
   function observeStaffResetResult() {
     if (!staffResetRequest || !state.status) return '';
+    const force = staffResetRequest.force === true;
     if (state.status.staffResetId === staffResetRequest.id
       && state.status.portalSessionId !== staffResetRequest.portalSessionId) {
       staffResetRequest = null;
+      if (force) staffForceNotice = '';
       setStaffReceipt('次の体験者の準備ができました');
       return 'done';
     }
-    if (state.status.staffResetRejectedId === staffResetRequest.id
-      || state.status.portalSessionId !== staffResetRequest.portalSessionId) {
+    if (state.status.staffResetRejectedId === staffResetRequest.id) {
       staffResetRequest = null;
-      return 'failed';
+      return force ? 'forceRejected' : 'failed';
+    }
+    if (state.status.portalSessionId !== staffResetRequest.portalSessionId) {
+      staffResetRequest = null;
+      // 中断の前に Quest のアプリが起動し直した。新しい受付として既存の流れが引き継ぐ。
+      if (force) staffForceNotice = '';
+      return force ? 'forceSuperseded' : 'failed';
     }
     return '';
+  }
+
+  // 「体験を中断してやり直す」。体験の途中・終わりの演出中・位置のずれた後でも送れる（Quest が force で受ける）。
+  function staffForceResetAllowed() {
+    return !staffResetRequest && !state.staffPreview && !state.bypass && state.ui !== 'sending'
+      && state.connection === 'online' && Boolean(state.status?.portalSessionId)
+      && isRecord(state.status?.staffSetup) && !(transport.native && !activeQuest);
+  }
+
+  function renderStaffForceReset() {
+    const button = $('staffForceResetBtn');
+    button.disabled = !staffForceResetAllowed();
+    if (button.disabled) forceHold?.cancel();
+    setText('staffForceMessage', staffResetRequest?.force ? '中断を送りました。Quest の応答を待っています…' : staffForceNotice);
+  }
+
+  function renderStaffRunAlerts() {
+    const shown = shownRunAlerts();
+    $('staffRunAlerts').hidden = shown.length === 0;
+    for (let index = 0; index < RUN_ALERT_SLOTS; index++) {
+      const item = shown[index];
+      $(`staffRunAlert${index}`).hidden = !item;
+      $(`staffRunAlert${index}`).dataset.tone = item?.tone || 'none';
+      setText(`staffRunAlert${index}Mark`, item ? STAFF_MARK[item.tone] : '');
+      setText(`staffRunAlert${index}Text`, item?.text || '');
+    }
   }
 
   function observeClearReceipt() {
@@ -3773,6 +4000,12 @@
     if (resetResult === 'failed') {
       setStaffNotice(key, '準備を始められませんでした。体験の終了と位置合わせを確かめてから、もう一度押してください。');
     }
+    // health の無い旧 Quest は force を知らず、通常の判定（本編中・位置ずれ後は拒否）で断る。
+    if (resetResult === 'forceRejected') {
+      staffForceNotice = isRecord(state.status?.health)
+        ? 'Quest で位置合わせの作業中です。終えてから押す'
+        : 'この Quest は中断を受け付けませんでした。右コントローラーの A を 2 秒押し続けて中断します。';
+    }
     staffCycleStep = staffCycleStepFor(key, staffCycleStep);
     $('staff').dataset.state = key;
     const rows = staffDeviceRows(snapshot);
@@ -3782,8 +4015,10 @@
     renderStaffTop(key, snapshot, rows[0]);
     renderStaffNow(key, snapshot, rows, audioRow);
     renderStaffDevices(rows, audioRow);
+    renderStaffRunAlerts();
     renderStaffReceipt();
     renderStaffTrouble(key);
+    renderStaffForceReset();
     renderCallStaff();
   }
 
@@ -3810,11 +4045,13 @@
     if ($('staff').open) $('staff').close();
   }
 
-  async function requestStaffReset() {
-    if (!$('staff').open || !staffResetAllowed() || !state.status?.portalSessionId) return;
+  async function requestStaffReset(force = false) {
+    if (!$('staff').open || !(force ? staffForceResetAllowed() : staffResetAllowed()) || !state.status?.portalSessionId) return;
     staffResetRequest = { id: `reset-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      portalSessionId: state.status.portalSessionId, settingsSeq: state.status.received };
-    staffConfirmationRequested = false;
+      portalSessionId: state.status.portalSessionId, settingsSeq: state.status.received, force };
+    // 中断は拒否されると今の体験がそのまま続く。装着前の確認を取り消さない（成功すれば受付ごと新しくなる）。
+    if (force) staffForceNotice = '';
+    else staffConfirmationRequested = false;
     renderStaff();
     await pulse();
     await poll();
@@ -3982,6 +4219,7 @@
         state.status = null;
         state.lastReceived = null;
         state.connection = 'checking';
+        pollFailures = 0;
         if (pollInFlight) await pollInFlight;
       }
       await poll();
@@ -4201,6 +4439,7 @@
         state.lastReceived = status.received;
         state.status = status;
         freshStatus = true;
+        pollFailures = 0;
         observeQuestTick(status);
         state.connection = 'online';
         if (state.view === 'briefing' && !state.staffPreview) setBriefingPause('offline', false);
@@ -4214,16 +4453,21 @@
         observeStaffStage(status);
       } catch (error) {
         if (generation !== targetGeneration || target !== activeQuest) return;
-        state.connection = 'offline';
-        if (state.view === 'briefing' && !state.staffPreview) {
-          setBriefingPause('offline', true);
-          syncWearReadiness(state.status);
+        // 1 回の失敗は会場 Wi-Fi の揺れで起きる。2 回続くまでは前の状態を保ち、説明も止めない。
+        pollFailures += 1;
+        if (pollFailures >= POLL_FAILS_BEFORE_OFFLINE) {
+          state.connection = 'offline';
+          if (state.view === 'briefing' && !state.staffPreview) {
+            setBriefingPause('offline', true);
+            syncWearReadiness(state.status);
+          }
+          // 再読み込みの復元を待っている間に通信できなければ、スタッフ画面から始める。
+          if (restoreCandidate && !state.restored) openStaffScreen('startup');
         }
-        // 再読み込みの復元を待っている間に通信できなければ、スタッフ画面から始める。
-        if (restoreCandidate && !state.restored) openStaffScreen('startup');
       }
       observeQuestTrouble();
       observeStaffAlert(Date.now(), freshStatus);
+      observeRunAlerts();
       renderConnection();
       renderStaff();
       if (state.view === 'edit') renderSettingsStep();
@@ -4249,6 +4493,19 @@
     if (state.bypass) return true;
     return state.connection === 'online' && Boolean(state.status) && questTickAt > 0 && Date.now() - questTickAt <= 4000;
   }
+  // questTick が止まった理由。paused = Quest が休止に入った（外した・電源の短押し）／hung = 応答は返るのに
+  // 進まない（アプリが固まった）／network = 直前の取得が失敗していて、まだ決められない／legacy = health の無い旧 Quest。
+  // ⚠ 固まった Quest に電源ボタンを押させると休止させてしまう。休止と固まりは文言を分ける。
+  function questStallKind(input) {
+    const status = input.status;
+    if (input.connection !== 'online' || !status || input.fresh || !Number.isInteger(status.questTick)) return '';
+    if (input.pollFailures > 0) return 'network';
+    const health = isRecord(status.health) ? status.health : null;
+    if (!health) return 'legacy';
+    // システムメニューが前面のときも、アプリは固まっていない（Quest の操作で戻る）。
+    if (health.paused === true || health.focusLost === true) return 'paused';
+    return health.paused === false ? 'hung' : 'legacy';
+  }
   function preparationAcknowledged(status) {
     const proof = status?.briefing;
     return state.sent?.seq > 0 && status.portalSessionId === state.sent.portalSessionId
@@ -4271,6 +4528,8 @@
     const body = { tabletSessionId };
     if (staffResetRequest && staffResetRequest.portalSessionId === state.status?.portalSessionId) {
       Object.assign(body, { portalSessionId: staffResetRequest.portalSessionId, staffReset: true, resetRequestId: staffResetRequest.id, settingsSeq: staffResetRequest.settingsSeq });
+      // force は体験の途中・終幕中・位置ずれ後でも次の体験者へ戻させる。古い Quest は知らずに通常の判定で受ける。
+      if (staffResetRequest.force) body.force = true;
       try { await post('./tablet/pulse', body); } catch (error) { console.warn('staff reset confirmation pending', error); }
       return;
     }
@@ -4312,6 +4571,9 @@
   prepareHold = bindHold($('staffPrepareBtn'), PREPARE_HOLD_MS, () => { staffAction = confirmStaffPreparation(); });
   collectHold = bindHold($('staffCollectBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(); });
   restartHold = bindHold($('staffRestartBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(); });
+  // 長押しは pointerdown から計る。画面切替直後の click を捨てる窓（switchClickGuardUntil）にも、
+  // 説明文の送り（cueShownAt）にも掛からない。
+  forceHold = bindHold($('staffForceResetBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(true); });
   const showStaffHoldHint = (briefing = false) => {
     if (staffHoldHintTimer) clearTimeout(staffHoldHintTimer);
     if (briefing) setText('briefingStaffHint', T[state.lang].briefing.hold);
@@ -4452,6 +4714,7 @@
     prepareHold?.cancel();
     collectHold?.cancel();
     restartHold?.cancel();
+    forceHold?.cancel();
     staffEntryHold?.cancel();
     briefingStaffHold?.cancel();
     staffCheckGeneration++;
@@ -4549,10 +4812,12 @@
       prepareHold?.cancel();
       collectHold?.cancel();
       restartHold?.cancel();
+      forceHold?.cancel();
       staffEntryHold?.cancel();
       briefingStaffHold?.cancel();
     }
     observeStaffAlert();
+    observeRunAlerts();
     setBriefingPause('hidden', document.hidden);
     syncReliefPreview();
     if (!document.hidden) requestWakeLock();
@@ -4564,10 +4829,12 @@
       prepareHold?.cancel();
       collectHold?.cancel();
       restartHold?.cancel();
+      forceHold?.cancel();
       staffEntryHold?.cancel();
       briefingStaffHold?.cancel();
     }
     observeStaffAlert();
+    observeRunAlerts();
     setBriefingPause('native', nativePaused);
     syncReliefPreview();
     if (!nativePaused) requestWakeLock();
@@ -4641,7 +4908,8 @@
   loadBriefingData();
   poll();
   pulse();
-  setInterval(poll, 2000);
+  // 取得が詰まって poll が描かない間も、本編中の異常の 6 秒は数える。
+  setInterval(() => { if (observeRunAlerts()) renderStaff(); void poll(); }, 2000);
   setInterval(pulse, 5000);
 })();
 </script>
