@@ -579,8 +579,10 @@ def sfx_title_in() -> np.ndarray:
     return norm_lufs(sk.widen(y, 0.40, seed=1110), -24.0)
 
 
-def sfx_title_out() -> np.ndarray:
-    """A を押してタイトルが閉じ、封印の箱の立つパススルーへ渡る。
+def sfx_title_out_breath() -> np.ndarray:
+    """**2026-10-14 まで使っていた版**（0261「音と吸い込まれる演出も微妙」で替えた。設計の記録として残す）。
+
+    A を押してタイトルが閉じ、封印の箱の立つパススルーへ渡る。
 
     **息を呑む。** 上へ吸って、りんを手で押さえたように余韻を止める。
     ここで大きな音を出すと「始まった」の合図になってしまい、
@@ -606,6 +608,113 @@ def sfx_title_out() -> np.ndarray:
     y = sk.env_fade(y, 0.004, 0.12)
     return norm_lufs(sk.widen(y, 0.30, seed=1210), -25.0)   # りんより静か（息を呑む）
 
+
+# 題字が閉じる演出の時刻（`TitleLogic`・押した瞬間から）。**画と同じ数字を持つ**。
+# ⚠ `TITLE_OUT_CORE` は渦の中心の墨が奥で消え切る時刻。`TitleWriteOnTests` 側ではなく
+#   `TitleSuckTests.CollapseTime_MatchesTheSound` が、TitleLogic の渦の進みとシェーダの定数から
+#   同じ時刻を計算して突き合わせる（画の尺を変えたら、ここを直さないとテストが落ちる）。
+TITLE_OUT_FLASH = 0.42     # TitleLogic.FlashSec
+TITLE_OUT_GONE = 1.60      # TitleLogic.GlyphGoneSec（DissolveDelaySec + DissolveSec）
+TITLE_OUT_CORE = 1.52      # 渦の中心の墨が奥で消え切る。潰れる一撃をここへ置く
+
+
+def sfx_title_out() -> np.ndarray:
+    """A を押して題字が渦の奥へ吸い込まれる（2026-10-14・`canon/LEDGER.md` 0261）。
+
+    画の時刻に合わせて 3 つの部分を持つ。
+
+    - **押した瞬間の息**（〜0.1 秒）。高い帯の短い吸気。閃光（0.42 秒）と同じ縁
+    - **吸い込み**（〜1.52 秒）。風の帯が 500Hz から 3.5kHz へ**明るくなりながら**厚くなり、
+      左右を回る速さが上がっていく（渦の巻きが速くなるのと同じ向き）。逆再生の溜めの形
+      （下りる帯は「遠ざかる」に聞こえ、0022 で棄てた退きを音で誘うので使わない）。
+      焼ける墨のはぜる粒が、巻きが進むほど増える
+    - **潰れる一撃**（1.52 秒）。35ms だけ息を止めてから、低く潰れる。尾は短く、
+      題字が消え切る 1.60 秒の後はほぼ無音（現実が開くのは静けさの中）
+
+    ⚠ **純音の掃引を使わない**（`sweep_band` の注記「安っぽい電子音」）。動く音は帯域ノイズの粒で作る。
+    ⚠ **左右は振幅だけで回す**（`pan` の流儀）。遅延で広げると Quest の内蔵スピーカーで消える。
+    ⚠⚠ **一撃は中域が主**（180〜2000Hz）。200Hz より下は内蔵スピーカーでほぼ鳴らない —
+       28〜170Hz が主の一撃は、ファイル全体の検査を通っても実機で消える（一撃の窓だけで測る）。
+    ⚠ 音量は -30 LUFS（400ms の最大で -26.6）。中域が主なので内蔵スピーカーでほぼ落ちず、ユーザーが選んだ
+      `sfx_title_in`（-17・内蔵スピーカーで -12.3dB）と導入の山 `sfx_shatter`（400ms の最大 -25.8）を実機で超えない。
+    """
+    sec = 2.2
+    n = int(sec * sk.SR)
+    core = int(TITLE_OUT_CORE * sk.SR)
+
+    # ---- 押した瞬間の息 ----
+    catch_sec = 0.11
+    catch = sk.loop_noise(catch_sec, 1800, 9000, slope_db_oct=-1.5, seed=1301)
+    catch *= sk.env_ar(catch_sec, 0.012, 0.07, curve=2.4)
+    catch = sk.biquad(catch, "hp", 1500, 0.7)
+
+    # ---- 吸い込み：風の帯が明るくなりながら厚くなる ----
+    suck_sec = TITLE_OUT_CORE
+    wind = sk.sweep_band(suck_sec, 500.0, 3500.0, q=2.2, seed=1302, grains=220)
+    wind2 = sk.sweep_band(suck_sec, 900.0, 6000.0, q=3.0, seed=1303, grains=200)
+    u = np.linspace(0.0, 1.0, len(wind), endpoint=False)
+    rise = 0.05 + 0.95 * u ** 2.6
+    air = (wind * 0.85 + wind2 * 0.30) * rise
+    # 回る。左右の振幅だけで、巻きと同じく速くなる（0.5 → 3.2 回/秒）
+    rate = 0.5 + 2.7 * u ** 1.6
+    phase = 2 * np.pi * np.cumsum(rate) / sk.SR
+    p = np.sin(phase) * (0.25 + 0.55 * u)
+    a = (p + 1) * np.pi / 4
+    air_st = np.stack([air * np.cos(a), air * np.sin(a)], axis=1)
+
+    # 胴：中域に居る、ゆっくり上がる幅のある音（粒）。内蔵スピーカーに残る帯
+    body = sk.sweep_band(suck_sec, 180.0, 330.0, q=4.0, seed=1304, grains=160)
+    body_lo = sk.loop_noise(suck_sec, 45, 140, slope_db_oct=-3.0, seed=1305)
+    body = (body * 0.7 + body_lo * 0.35) * (0.03 + 0.97 * u ** 3.0)
+
+    # はぜる粒：焼ける墨。巻きが進むほど密になる
+    rng = np.random.default_rng(1306)
+    crackle = np.zeros(len(u))
+    tick = sk.loop_noise(0.006, 2500, 11000, seed=1307) * np.hanning(int(0.006 * sk.SR))
+    k = 0
+    while True:
+        x = k / max(len(u) - 1, 1)
+        k += int(sk.SR * (0.11 - 0.09 * min(1.0, x * 1.15)) * rng.uniform(0.4, 1.6))
+        if k + len(tick) >= len(u):
+            break
+        crackle[k:k + len(tick)] += tick * rng.uniform(0.25, 1.0) * (0.15 + 0.85 * x)
+
+    # 断ち切る直前に一息だけ強く吸い（70ms）、一撃の 35ms 前で息を止める（間があると一撃が立つ）
+    pull = np.ones(len(u))
+    last = int(0.07 * sk.SR)
+    gap = int(0.035 * sk.SR)
+    pull[-last - gap:-gap] = np.linspace(1.0, 1.35, last)
+    pull[-gap:] = 1.35 * np.cos(np.linspace(0, np.pi / 2, gap)) ** 2
+
+    y = np.zeros((n, 2))
+    y[:len(catch)] += sk.pan(catch, 0.0) * 0.30
+    y[:core, :] += air_st * (pull * 0.60)[:, None]
+    y[:core, :] += sk.pan(body * pull * 0.55, 0.0)
+    y[:core, :] += sk.widen(crackle * 0.16, 0.6, seed=1308)
+
+    # ---- 潰れる一撃（中域が主）----
+    hit_sec = sec - TITLE_OUT_CORE
+    hit_low = sk.loop_noise(hit_sec, 40, 180, slope_db_oct=-3.0, seed=1309)
+    hit_low *= sk.env_ar(hit_sec, 0.004, 0.24, curve=3.0)
+    hit_mid = sk.loop_noise(hit_sec, 180, 900, slope_db_oct=-3.0, seed=1310)
+    hit_mid *= sk.env_ar(hit_sec, 0.002, 0.16, curve=3.0)
+    crunch = sk.loop_noise(hit_sec, 900, 2400, slope_db_oct=-4.0, seed=1314)
+    crunch *= sk.env_ar(hit_sec, 0.001, 0.05, curve=3.4)
+    # 押し潰される胴（粒の掃引・中域）。一撃の頭 0.22 秒で 520Hz から 160Hz へ
+    drop = sk.sweep_band(0.22, 520.0, 160.0, q=5.0, seed=1311, grains=60)
+    drop *= sk.env_ar(0.22, 0.003, 0.15, curve=2.2)
+    hit = hit_low * 0.9 + hit_mid * 1.25 + crunch * 0.45
+    hit[:len(drop)] += drop * 0.9
+    # 短い暗い尾（題字が消え切る 1.60 秒の少し後で静かになる）
+    tail = sk.loop_noise(hit_sec, 90, 1200, slope_db_oct=-6.0, seed=1312)
+    tail *= np.exp(-np.linspace(0, 1, len(tail)) * hit_sec / 0.16)
+    hit += tail * 0.18
+    y[core:core + len(hit), :] += sk.widen(hit, 0.25, seed=1313)[:n - core]
+
+    y = sk.env_fade(y, 0.003, 0.25)
+    # 一撃の尖頭だけを少し丸める。開く音の張り（〜2.4 秒）と重なっても、和が -3dBTP を超えない
+    # （呼び出しから最短 0.4 秒で閉じられる・DismissLockoutSec）。
+    return norm_lufs(sk.soft_clip(y, 4.0), -30.0)
 
 # ===========================================================================
 
