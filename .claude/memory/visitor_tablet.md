@@ -10,6 +10,10 @@ metadata:
 
 # タブレットの博士UIを触る前に
 
+## 誤タップの守り（2026-10-21・LEDGER 0282 の続き）
+
+画面が切り替わった直後 0.5 秒は click を捨てる（`switchClickGuardUntil`。長押しの後の 0.4 秒とは別の札で、同じ capture の click 捨てが両方を見る）。言語の「次へ」と軽減の「この設定で始める」を同じ位置に置いたので、これが無いと二度押しで軽減を飛ばして送る。説明の文は出てから 0.7 秒はタップで送らない（`cueShownAt`）。一時停止の盤は「前・再開・次」だけを上の段に置き、「タイトルに戻る」「言語・軽減を変更」は下の段の両端。⚠ `.stage.has-reference … { left: 67% }` は後ろの `.stage.is-briefing:not(.is-equipment) .briefing-controls` に負けて効いていなかった（盤が額に被っていた）。`is-briefing` を足して強くした。
+
 ## 台車（Romi）の自動走行（2026-10-17・0269）
 
 スタッフ画面「困ったとき」の中の 1 節（`romi-panel.js`）。⚠ **スタッフ画面の折りたたみは「困ったとき」1 つだけ**（`verify-runtime.cjs` が数える）ので、別の `<details>` にしない。送り先は `TabletTransport.request(path, opts, 'cart')` → ネイティブは `192.168.10.51:80` だけ（`RequestPolicy` の `cart`・`network_security_config.xml` に .51）。`setQuest` には通さない。開いている間だけ 1 秒ごとに `GET /ending` を読む。保存・試走の結果は 5 秒残す（再読込の「接続しました」で消えないように）。試走は 3 秒以内の 2 度押し。電源断の目安 7.1 秒は Quest の `RomiCartLink.ReleaseToCutSec` と対。⚠ 代役 DOM（verify-runtime）は `createElement` を持たないので、そこでは組まない。

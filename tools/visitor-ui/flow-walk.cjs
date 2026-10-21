@@ -342,7 +342,12 @@ const SECTIONS = [
       await sleep(400);
       await a.shot('settings-language-picked', { who: '来場者', doing: '次へ' });
       const nextRing = await a.eval(`(() => { const r = document.getElementById('settingsNextBtn').getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);
-      await a.tap('settingsNextBtn');
+      // 二度押し：「次へ」と「この設定で始める」は同じ位置なので、2 回目で軽減を選ばずに送ってしまわないか
+      const nextAt = await a.center('settingsNextBtn');
+      await a.tapAt(nextAt.x, nextAt.y);
+      await a.tapAt(nextAt.x, nextAt.y);
+      await a.expect(`document.getElementById('resultView').hidden && !document.getElementById('reliefStep').hidden`,
+        '「次へ」の二度押しで軽減を飛ばして送らない');
       await sleep(900);
       await a.shot('settings-relief', { who: '来場者', doing: '恐怖の軽減を選ぶ' });
       // 2026-10-21: テンポよく押すと「戻る」に入りかけた。進む輪は言語と軽減で同じ位置、戻るは左上に離す
@@ -376,6 +381,14 @@ const SECTIONS = [
         if (cue && cue !== last) {
           last = cue; count += 1;
           await a.shot(`briefing-${String(count).padStart(2, '0')}`, { who: '来場者', note: '博士の説明（自動送り）', doing: '見る' });
+          if (count === 4) {
+            // 一時停止の盤も撮る（右上を誤って押した来場者が次に見る画面）
+            await a.tap('briefingPauseBtn');
+            await sleep(700);
+            await a.shot('briefing-paused', { who: '来場者', note: '右上の一時停止を押した', doing: '再開' });
+            await a.tap('briefingResume');
+            await sleep(600);
+          }
         }
         if (handback) break;
         await sleep(300);

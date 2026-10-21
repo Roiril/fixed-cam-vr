@@ -62,7 +62,7 @@
   .topbar { grid-area: top; position: relative; z-index: 6; display: flex; align-items: center; gap: 16px; min-height: 64px; padding: max(14px,env(safe-area-inset-top)) max(var(--gutter),env(safe-area-inset-right)) 0 max(var(--gutter),env(safe-area-inset-left)); pointer-events: none; }
   .topbar > * { pointer-events: auto; }
   .brand, .journey { display: none; }
-  .connection { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-left: auto; padding: 4px 0 4px 10px; border: 0; background: transparent; color: rgba(194,184,168,.42); font: 12px/1.4 var(--sans); letter-spacing: .08em; transition: color .3s; }
+  .connection { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-left: auto; padding: 4px 14px 4px 10px; border: 0; border-radius: 22px; background: rgba(9,8,7,.5); color: rgba(194,184,168,.62); font: 12px/1.4 var(--sans); letter-spacing: .08em; transition: color .3s; }
   .connection:hover { color: var(--muted); }
   .connection-dot, #connectionText { display: none; }
   .staff-label { padding-left: 10px; border-left: 1px solid rgba(232,220,196,.16); }
@@ -285,12 +285,24 @@
   #briefingSettings { grid-column: 5; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M3 5h14M3 10h14M3 15h14' stroke='%23f2ecdf' stroke-width='1.1'/%3E%3Ccircle cx='7' cy='5' r='1.8' fill='%23090807' stroke='%23f2ecdf'/%3E%3Ccircle cx='13' cy='10' r='1.8' fill='%23090807' stroke='%23f2ecdf'/%3E%3Ccircle cx='9' cy='15' r='1.8' fill='%23090807' stroke='%23f2ecdf'/%3E%3C/svg%3E"); }
   .briefing-replay { grid-column: 3; grid-row: 2; --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4.5 10a5.5 5.5 0 1 0 1.8-4.1M4 3.5v3.3h3.3' fill='none' stroke='%23f2ecdf' stroke-width='1.3'/%3E%3C/svg%3E"); }
   .briefing-panel-status { grid-column: 1 / -1; grid-row: 1; margin: 0 0 4px; color: rgba(194,184,168,.6); font: 11px/1.4 var(--sans); letter-spacing: .16em; text-align: center; font-variant-numeric: tabular-nums; }
+  /* 説明中の盤：上の段は文の移動と再開だけ。設定やタイトルへ戻る（1 タップで最初からになる）は下の段の両端へ離し、
+     小さくする。右上を誤って押した来場者が盤を叩いても、やり直しに入りにくい（2026-10-21） */
+  .stage.is-briefing:not(.is-equipment) .briefing-controls { grid-template-columns: repeat(3,minmax(96px,auto)); column-gap: 28px; }
+  .stage.is-briefing:not(.is-equipment) #briefingPrevious { grid-column: 1; grid-row: 2; }
+  .stage.is-briefing:not(.is-equipment) #briefingResume { grid-column: 2; grid-row: 2; }
+  .stage.is-briefing:not(.is-equipment) #briefingNext { grid-column: 3; grid-row: 2; }
+  .stage.is-briefing:not(.is-equipment) #briefingToTitle, .stage.is-briefing:not(.is-equipment) #briefingSettings { grid-row: 3; min-height: 52px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(232,220,196,.1); border-radius: 0; color: rgba(194,184,168,.6); font-size: 10.5px; }
+  .stage.is-briefing:not(.is-equipment) #briefingToTitle { grid-column: 1; justify-self: stretch; }
+  .stage.is-briefing:not(.is-equipment) #briefingSettings { grid-column: 3; justify-self: stretch; }
+  .stage.is-briefing:not(.is-equipment) #briefingToTitle::before, .stage.is-briefing:not(.is-equipment) #briefingSettings::before { width: 34px; height: 34px; background-size: 15px 15px; }
+  /* 資料（額）がある間は盤を博士の側へ寄せ、額に被せない（is-briefing の中央寄せより強く指定する） */
+  .stage.is-briefing.has-reference:not(.is-equipment) .briefing-controls { left: 67%; }
   #briefingStaff { position: absolute; right: 10px; top: 6px; display: block; min-width: 0; min-height: 44px; padding: 4px 12px; border-radius: 22px; color: rgba(194,184,168,.45); font-size: 10px; --hold: 0; background: linear-gradient(90deg,rgba(215,194,155,.18) calc(var(--hold) * 100%),transparent 0); }
   #briefingStaff::before { display: none; }
-  .briefing-staff-hint { grid-column: 1 / -1; grid-row: 3; min-height: 1.2em; margin: 0; color: var(--muted); font: 11px/1.5 var(--sans); text-align: center; }
+  .briefing-staff-hint { grid-column: 1 / -1; grid-row: 4; min-height: 1.2em; margin: 0; color: var(--muted); font: 11px/1.5 var(--sans); text-align: center; }
   .briefing-staff-hint:empty { display: none; }
   #briefingToggle, #briefingMute { display: none; }
-  .media-notice { grid-column: 1 / -1; grid-row: 4; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 14px; color: var(--muted); font: 12px/1.5 var(--sans); }
+  .media-notice { grid-column: 1 / -1; grid-row: 5; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 14px; color: var(--muted); font: 12px/1.5 var(--sans); }
   .media-notice:not(:has(#mediaMessage:not(:empty))) { display: none; }
   .media-notice button { min-height: 40px; padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 20px; background: transparent; font-size: 12px; }
 
@@ -433,6 +445,8 @@
   .staff-hold { position: relative; overflow: hidden; isolation: isolate; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .staff-hold::before { content: ""; position: absolute; z-index: -1; inset: 0; background: var(--ok); transform: scaleX(var(--hold,0)); transform-origin: left; }
   .staff-secondary.staff-hold::before { background: rgba(240,164,154,.35); }
+  /* やり直し（設定と説明を捨てる）は、進む長押しの真下に置かない。右端へ離し、間も空ける（2026-10-21） */
+  #staffRestartBtn { margin: 20px 0 0 auto; min-height: 48px; font-size: 15px; color: var(--staff-muted); }
   .staff-now-message { min-height: 1.6em; margin: 0; color: var(--wait); font-size: 16px; }
   .staff-now-message:empty { display: none; }
   .staff-device-list { margin: 8px 0 0; padding: 0; list-style: none; }
@@ -1097,6 +1111,16 @@
   let briefingLoopVideoToken = 0;
   let chapterTimer = null;
   let equipmentTransitionPending = false;
+  // 画面が切り替わった直後の click を捨てる。前の画面をテンポよく押していた指が、
+  // 同じ場所に新しく出たもの（次の段の送る輪・説明の文送り・案内のボタン）を押さないように（2026-10-21）。
+  const VIEW_CLICK_GUARD_MS = 500;
+  const EQUIPMENT_CLICK_GUARD_MS = 900;
+  // 文が出てすぐのタップでは次の文へ送らない（読む前に飛ばした・二度押しで 2 文進んだ）
+  const CUE_TAP_GUARD_MS = 700;
+  let switchClickGuardUntil = 0;
+  function guardClicksAfterSwitch(ms) {
+    switchClickGuardUntil = Math.max(switchClickGuardUntil, performance.now() + ms);
+  }
   let pointerGesture = null;
   let wakeLock = null;
   let staffCheckGeneration = 0;
@@ -1383,6 +1407,8 @@
 
   function setSettingsStep(step, focus = true) {
     if ((step !== 'language' && step !== 'relief') || !visitorSettingsAccess().allowed) return false;
+    // 「次へ」と「この設定で始める」は同じ位置。二度押しで軽減を選ばずに送らない
+    if (state.settingsStep !== step) guardClicksAfterSwitch(VIEW_CLICK_GUARD_MS);
     state.settingsStep = step;
     if (step === 'relief' && state.relief) state.reliefPreviewStarted = true;
     renderSettingsStep();
@@ -1455,6 +1481,7 @@
       }
     }
     state.view = view;
+    guardClicksAfterSwitch(VIEW_CLICK_GUARD_MS);
     renderJourney();
     oldSurface.classList.remove('is-active');
     oldSurface.hidden = true;
@@ -2441,6 +2468,7 @@
     if (!scene || !cue) return;
     clearBriefingTimer();
     state.briefing.cueRemainingMs = cue.durationMs;
+    state.briefing.cueShownAt = performance.now();
     state.briefing.mediaResumeTime = null;
     state.briefing.subtitlesOnly = false;
     setSubtitle(cue.text, `briefing:${scene.id}:${state.lang}:${state.briefing.cueIndex}`);
@@ -3821,14 +3849,9 @@
   // 同じ位置に現れた別のボタンへ入る（回収の長押しのあと「来場者の画面にする」が勝手に押され、
   // 来場者の画面へ飛んだ・2026-10-17 の通し確認で発見）。その指を離して少し経つまで click を捨てる。
   const HOLD_RELEASE_GUARD_MS = 400;
-  const EQUIPMENT_CLICK_GUARD_MS = 900;
   const HOLD_POINTER_MAX_MS = 10000;
   let heldPointer = null;
   let holdClickGuardUntil = 0;
-  // 画面が切り替わった直後の click を捨てる。前の画面を送っていた指が、新しく出たボタンを押さないように。
-  function guardClicksAfterSwitch(ms) {
-    holdClickGuardUntil = Math.max(holdClickGuardUntil, performance.now() + ms);
-  }
   function guardClicksAfterHold(pointerId) {
     heldPointer = { id: pointerId, until: performance.now() + HOLD_POINTER_MAX_MS };
   }
@@ -3843,7 +3866,7 @@
     const now = performance.now();
     // 離した通知が来ないまま残っても、案内をすべて止めたままにはしない。
     if (heldPointer && now > heldPointer.until) heldPointer = null;
-    if (!heldPointer && now >= holdClickGuardUntil) return;
+    if (!heldPointer && now >= holdClickGuardUntil && now >= switchClickGuardUntil) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, { capture: true });
@@ -4382,7 +4405,10 @@
     resumeBriefing();
   });
   // 画面のタップは次のセリフへ。止めるのは右上の一時停止（2026-10-14）。
-  $('briefingPauseSurface').addEventListener('click', () => { moveBriefing(1, 'tap'); });
+  $('briefingPauseSurface').addEventListener('click', () => {
+    if (performance.now() - (state.briefing.cueShownAt || 0) < CUE_TAP_GUARD_MS) return;
+    moveBriefing(1, 'tap');
+  });
   $('briefingPauseBtn').addEventListener('click', () => { sfx('key'); openBriefingControls(); });
   $('briefingResume').addEventListener('click', () => { sfx('key'); resumeBriefing(); });
   $('briefingToTitle').addEventListener('click', () => { sfx('key'); returnToTitleFromBriefing(); });

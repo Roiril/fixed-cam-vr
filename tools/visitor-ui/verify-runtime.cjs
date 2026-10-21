@@ -1527,8 +1527,14 @@ test('通常説明のタップは次の文へ進み、右上の一時停止だ�
   media.onplaying();
   media.currentTime = 1.4;
   const cueIndex = state.briefing.cueIndex;
+  // 文が出てすぐ（0.7 秒未満）のタップでは送らない（二度押しで 2 文進む・読む前に飛ばす）
+  elements.get('briefingPauseSurface').dispatch('click');
+  assert.equal(state.briefing.cueIndex, cueIndex, '出たばかりの文はタップで飛ばさない');
+  const savedNow = context.performance.now;
+  context.performance.now = () => savedNow() + 800;
   // 画面のタップ＝次の文
   elements.get('briefingPauseSurface').dispatch('click');
+  context.performance.now = savedNow;
   assert.equal(state.briefing.cueIndex, cueIndex + 1);
   assert.equal(elements.get('briefingControls').hidden, true);
   assert.equal(media.paused, false);
