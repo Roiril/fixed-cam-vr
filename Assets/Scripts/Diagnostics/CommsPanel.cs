@@ -387,6 +387,8 @@ namespace FixedCamVr.Diagnostics
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
             //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
             CommsNotice.Prompt => "異変があなたを\n取り込もうとしています。\n排除してください。",
+            // ④ 締めの報告で呪いが解けた（0284）。「検出しました」では急なので、終わったことを労う。
+            CommsNotice.MarkCleared => "異変を取り除きました。\nお疲れ様です。",
             _ => "",
         };
 
@@ -423,6 +425,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Halt => "Please stop!",
             // ③ ここだけが体験者自身を名指しする（0096）。
             CommsNotice.Prompt => "An anomaly is trying to\nabsorb you.\nRemove it.",
+            CommsNotice.MarkCleared => "The anomaly is removed.\nThank you for your work.",
             _ => "",
         };
 
@@ -449,6 +452,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Takeover => "Anomalie détectée.",
             CommsNotice.Halt => "Arrêtez-vous !",
             CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber.\nSupprimez-la.",
+            CommsNotice.MarkCleared => "Anomalie éliminée.\nMerci pour votre travail.",
             _ => "",
         };
 
@@ -1102,12 +1106,13 @@ namespace FixedCamVr.Diagnostics
             // ⚠ 誘導そのものを出すか（幾何が解けたか・被っているか）は向こうが決める。
             //    ここは「説明を始めた」という事実だけを渡す。
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
-            CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
             // 締めの報告は、解除が通った同じフレームで ScreenDecayReleased が立つ。
-            // 侵食度 1 のままでも、この返事だけはスイの通常表示へ戻す。
+            // そのときの返事は「検出しました」ではなく「取り除きました。お疲れ様です。」（0284）。
+            // 出方は DeliveryOf が侵食度 1 のままでもスイの通常表示（Typed）にする。
             if (notice == CommsNotice.MarkLogged
                 && runDirector != null && runDirector.ScreenDecayReleased)
-                delivery = CommsDelivery.Typed;
+                notice = CommsNotice.MarkCleared;
+            CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
             // 本番では Takeover が唯一の乗っ取りの縁。それより前の通常報告を赤い嘘へ飛ばさない。
             // プレビューは runDirector を持たないので、侵食度だけで Cursed を直接確認できる。
             if (runDirector != null && !_cue.TakeoverDelivered

@@ -1688,7 +1688,7 @@ def analyze(events, others, exp, warns=None):
             # 成立した報告だけはスイの通常返信へ戻るため、released=1 も照合対象に含める。
             marks = [e for e in events if e.get("ev") == "mark"]
             # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
-            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing")]
+            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")]
             ordinary_marks = [m for m in marks
                               if fnum(m, "invasion", 0.0) < 0.999 or str(m.get("released")) == "1"]
             mark_ok = True
@@ -1722,11 +1722,12 @@ def analyze(events, others, exp, warns=None):
             for m in released_marks:
                 near = [a for a in answers
                         if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
-                if near and near[0].get("id") == "MarkLogged" and near[0].get("delivery") == "Typed":
-                    verdict("OK", "最後の解除後に MarkLogged がスイの通常印字（Typed）で返った")
+                # 0284: 呪いが解けた報告の返事は MarkCleared（「異変を取り除きました。お疲れ様です。」）。
+                if near and near[0].get("id") == "MarkCleared" and near[0].get("delivery") == "Typed":
+                    verdict("OK", "最後の解除後に MarkCleared がスイの通常印字（Typed）で返った")
                 else:
                     got = f"{near[0].get('id')}/{near[0].get('delivery')}" if near else "返信なし"
-                    verdict("FAIL", "最後の解除後の返事が MarkLogged/Typed ではない"
+                    verdict("FAIL", "最後の解除後の返事が MarkCleared/Typed ではない"
                                     f"（実際は {got}）— 侵食1の表示を解除後の返事へ持ち越している")
 
             closing_lap = int(exp.get("laps", 3)) + 1
@@ -2759,7 +2760,7 @@ def analyze(events, others, exp, warns=None):
             else:
                 verdict("OK", f"人形がたくさん出てくる所で笑った（sndDolls 最大 {max(dolls):.2f}）")
             # 押したあとも鳴っていたら、止める経路が壊れている（次の体験者へ持ち越す）。
-            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing")
+            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")
                                                   for e in comms):
                 verdict("WARN", "報告のあとも人形が笑ったまま走行が終わっている"
                                 f"（最後の sndDolls={dolls[-1]:.2f}）")

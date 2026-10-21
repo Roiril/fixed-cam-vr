@@ -320,7 +320,10 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.Greater(_panel.NoticeChars, 0);
             Assert.AreEqual(0f, _panel.AppliedCurse, 1e-5f);
             Assert.AreEqual(0f, _panel.AppliedFaceMix, 1e-5f);
-            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, ShowLang.Ja), Text().text);
+            // 0284: 呪いが解けた報告の返事は「検出しました」ではなく「取り除きました。お疲れ様です。」
+            Assert.AreEqual(CommsNotice.MarkCleared, _panel.LastNotice);
+            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkCleared, ShowLang.Ja), Text().text);
+            Assert.AreEqual("異変を取り除きました。\nお疲れ様です。", Text().text);
         }
 
         [Test]
