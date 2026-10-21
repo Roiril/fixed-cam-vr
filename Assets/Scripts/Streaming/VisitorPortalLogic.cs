@@ -136,7 +136,7 @@ namespace FixedCamVr.Streaming
                                      Func<ShowLang, bool, string, int> onSet, Action onClear,
                                      string portalSessionId = "", Action<string>? onPulse = null,
                                      Action<PreparationPulse>? onPreparation = null, Action<string, int>? onStaffReset = null,
-                                     Action<int>? onClearVersioned = null)
+                                     Action<int>? onClearVersioned = null, Action<string>? onForceReset = null)
         {
             string p = req.path;
             if (req.method == "GET" && (p == "/" || p == "/visitor.html" || p == "/index.html" || p.StartsWith("/asset/")))
@@ -166,6 +166,14 @@ namespace FixedCamVr.Streaming
                         return Json(400, "{\"ok\":false}");
                     if (resetPortal.Groups[1].Value != portalSessionId) return Json(409, "{\"ok\":false}");
                     onPulse?.Invoke(tabletId);
+                    // 強制リセット（体験の途中・固まった・位置がずれた）。設定の番号は照合しない —
+                    // 途中で止めたい場面では、前の体験者の設定が残っていても先へ進めるのが目的。
+                    if (Regex.IsMatch(body, "\"force\"\\s*:\\s*true(?=\\s*[,}])"))
+                    {
+                        if (onForceReset == null) return Json(501, "{\"ok\":false}");
+                        onForceReset(requestId.Groups[1].Value);
+                        return Json(200, "{\"ok\":true}");
+                    }
                     onStaffReset?.Invoke(requestId.Groups[1].Value, expectedSeq);
                     return Json(200, "{\"ok\":true}");
                 }

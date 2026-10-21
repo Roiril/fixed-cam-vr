@@ -320,7 +320,10 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.Greater(_panel.NoticeChars, 0);
             Assert.AreEqual(0f, _panel.AppliedCurse, 1e-5f);
             Assert.AreEqual(0f, _panel.AppliedFaceMix, 1e-5f);
-            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, ShowLang.Ja), Text().text);
+            // 0284: 呪いが解けた報告の返事は「検出しました」ではなく「取り除きました。お疲れ様です。」
+            Assert.AreEqual(CommsNotice.MarkCleared, _panel.LastNotice);
+            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkCleared, ShowLang.Ja), Text().text);
+            Assert.AreEqual("異変を取り除きました。\nお疲れ様です。", Text().text);
         }
 
         [Test]
@@ -398,6 +401,37 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(0, _panel.CorruptedChars);
             Assert.Greater(_panel.VisibleChars, 0);
             Assert.AreEqual(CommsPossessionPhase.Off, _panel.PossessionPhase);
+        }
+
+        [Test]
+        public void RecoveryShaderSwapKeepsTheGlyphQueue_IntoTheNextRun()
+        {
+            // 0279: 復帰の文字シェーダへ替えて戻すと renderQueue が 4000 へ落ち、
+            // 次の体験者の最初の連絡から本文が地（4980）の下に沈んでいた。
+            const int glyphQueue = 4990;
+            _panel.Deliver(CommsNotice.Halt);
+            Advance(1f);
+            Assert.Greater(_panel.AppliedResidue, 0.001f, "Halt の後は復帰の残りが出る（シェーダを替える経路を通る）");
+            AssertGlyphQueue(glyphQueue, "復帰の文字シェーダへ替えた後");
+
+            typeof(CommsPanel).GetMethod("OnRunRestarted", Private)!.Invoke(_panel, null);
+            Advance(6f);
+            Assert.AreEqual(0f, _panel.AppliedResidue, 0.001f, "次のランでは復帰の残りは無い");
+            _panel.Deliver(CommsNotice.Greeting);
+            Advance(3f);
+            AssertGlyphQueue(glyphQueue, "通常のシェーダへ戻した後の次の連絡");
+        }
+
+        private void AssertGlyphQueue(int expected, string when)
+        {
+            var info = Text().textInfo;
+            Assert.Greater(info.materialCount, 0);
+            for (int i = 0; i < info.materialCount; i++)
+            {
+                Material m = info.meshInfo[i].material;
+                if (m == null) continue;
+                Assert.AreEqual(expected, m.renderQueue, $"{when}: 本文 {i} 枚目の材質 {m.shader.name} の描画順");
+            }
         }
 
         [Test]

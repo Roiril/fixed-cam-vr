@@ -258,6 +258,9 @@ def expected_from_show(show: dict):
     exp["recPostSec"] = _pos(rec.get("postSec"), 2.0)
     # 録り始めの線（空 = 末尾方式）。C# の ShowRecordDef.startLineId と対。
     exp["recStartLineId"] = (rec.get("startLineId") or "").strip()
+    exp["recStartLineCamera"] = next((l.get("camera", -1)
+        for l in ((show.get("layout") or {}).get("lines") or [])
+        if l.get("id") == exp["recStartLineId"]), None)
 
     takes = []
     for seg in ((show.get("timeline") or {}).get("segments") or []):
@@ -325,6 +328,7 @@ def expected_from_show(show: dict):
                         if exp["recEnabled"] else set())
 
     exp["config"] = config_from_show(show)
+    exp["bakedCueCount"] = baked_cue_count(show)
     return exp
 
 
@@ -368,6 +372,33 @@ def closing_line_of(show: dict) -> str:
                 if s.get("splitFreeze") and waiting:
                     return waiting
     return ""
+
+
+def baked_cue_count(show: dict) -> int:
+    """export_build.referenced_cue_ids / prepare と同じ参照集合で同梱 cue を数える。"""
+    timeline = show.get("timeline") or {}
+    segments = timeline.get("segments") or []
+    entries = (show.get("schedule") or {}).get("entries") or []
+    cues = show.get("cues") or []
+    if not segments and not entries:
+        return len(cues)
+    ids = set()
+    if not (timeline.get("schema") == 3 and segments):
+        ids.update(e["cueId"] for e in entries if e.get("cueId"))
+    for seg in segments:
+        for take in seg.get("takes") or []:
+            if take.get("markStartCueId"):
+                ids.add(take["markStartCueId"])
+            for step in take.get("steps") or []:
+                ids.update(step[key] for key in ("cueId", "overlay2CueId") if step.get(key))
+        ids.update(c["cueId"] for c in seg.get("cues") or [] if c.get("cueId"))
+        insert = seg.get("insert") or {}
+        if seg.get("hasInsert") and insert.get("cueId"):
+            ids.add(insert["cueId"])
+    active = (show.get("control") or {}).get("activeCue")
+    if active:
+        ids.add(active)
+    return sum(c.get("id") in ids for c in cues)
 
 
 def config_from_show(show: dict) -> dict:
@@ -527,6 +558,8 @@ def analyze(events, others, exp, warns=None):
           f"  rev={last.get('rev')}")
         diffs = []
         for key, want in (exp.get("config") or {}).items():
+            if key == "cues" and src == "baked":
+                want = exp.get("bakedCueCount", want)
             got = last.get(key)
             if got is None:
                 continue  # 実機が出していない項目（古いビルド）は責めない
@@ -534,11 +567,11 @@ def analyze(events, others, exp, warns=None):
                 diffs.append((key, got, want))
         if diffs:
             for k, got, want in diffs:
-                w(f"  ! {k}: 実機={got} / show.json={want}")
+                w(f"  ! {k}: 実機={got} / 期待={want}")
             verdict("FAIL", "実機の設定が PC の show.json と違う（"
                     + ", ".join(f"{k} {g}!={wv}" for k, g, wv in diffs)
-                    + "） — 端末キャッシュを消して配り直す: "
-                      "py -3.11 tools/quest-fleet.py reset-config <serial>")
+                    + ("） — APK の焼き込み設定とビルド元を照合する" if src == "baked" else
+                       "） — 配信した設定と端末キャッシュの版を照合する"))
         else:
             verdict("OK", f"実機は show.json と同じ設定で走った（出所 {src}）")
     w()
@@ -869,19 +902,32 @@ def analyze(events, others, exp, warns=None):
         #    **そのカメラに体験者が写っていない区間では無人の部屋だけ**になる（2026-08-16 実測）。
         want_line = exp.get("recStartLineId") or ""
         if want_line:
-            stops = [e for e in rec_ev if e.get("v") == "stop" and "start" in e]
-            if not stops:
+            line_cam = exp.get("recStartLineCamera")
+            stops = [e for e in rec_ev if e.get("v") == "stop" and "start" in e
+                     and str(e.get("cam")) == str(line_cam)]
+            crossings = set()
+            for ln in rec_lines:
+                m = re.search(r"録り始めの線を横切った line=(\S+) L(\d+)C(\d+)\b", ln)
+                if m and m.group(1) == want_line and str(int(m.group(3))) == str(line_cam):
+                    crossings.add((m.group(2), m.group(3)))
+            w(f"  録り始めの線 '{want_line}': 担当カメラ {line_cam} / 対象の録画 {len(stops)} 区間")
+            if line_cam is None:
+                verdict("WARN", f"録り始めの線 '{want_line}' が layout.lines に無い — 線の録画は未検証")
+            elif not stops:
                 verdict("WARN", f"録り始めの線 '{want_line}' を指しているが観測（start=）が無い — "
-                                "古い APK か ShowTelemetryHost 未更新")
+                                f"担当カメラ {line_cam} の線の録画は未検証")
             else:
                 hit = [e for e in stops if str(e.get("start")) == "1"]
-                if not hit:
-                    verdict("FAIL", f"録り始めの線 '{want_line}' が 1 度も効いていない"
-                                    f"（{len(stops)} 区間すべて末尾方式）— "
-                                    "線の担当カメラと区間のカメラが違う / 線を踏んでいない / "
-                                    "位置合わせが済んでいない のどれか")
-                else:
+                missed = [e for e in stops if (str(e.get("lap")), str(e.get("cam"))) in crossings
+                          and str(e.get("start")) != "1"]
+                if missed:
+                    verdict("FAIL", f"録り始めの線 '{want_line}' を横切った {len(missed)} 区間が末尾方式"
+                                    "（start=0）— 線の記録と保存結果が一致しない")
+                if hit:
                     verdict("OK", f"録り始めの線 '{want_line}' が {len(hit)}/{len(stops)} 区間で効いた")
+                if len(hit) + len(missed) < len(stops):
+                    verdict("WARN", f"録り始めの線 '{want_line}' の横断を確認できない区間がある"
+                                    f"（担当カメラ {line_cam}）— 線を踏んだ場合の録画は未検証")
 
         # 「録れた」の判定は**フレーム数**で行う。バイト数はヘッダだけの空ファイルでも 0 にならない。
         stops = [e for e in rec_ev if e.get("v") == "stop"]
@@ -1368,6 +1414,27 @@ def analyze(events, others, exp, warns=None):
     #      repBuilt = 報告の面を組めたか（0 なら最後の 4 行が 1 文字も出ない）
     #      armed/cue = 著作した合図（run.outro.afterTakeId）が武装したか / そこから始まったか
     #    観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
+    # 終幕の台車（Romi）への合図（RomiCartLink）。go = 解除の縁 / cut = 電源断の縁。
+    #   res: ok / net（届かない）/ disabled（台車側で無効）/ busy（スタッフが手で動かしている）/ pending
+    #   dry=1 は空走（Editor と自動走行）＝ 台車は記録だけして動かない。
+    #   ⚠ 台車が実際に動いたかはここでは分からない（開ループ）。台車のシリアルの EVT ending を見る。
+    romi_ev = [e for e in events if e.get("ev") == "romi"]
+    has_romi = any("romi" in e for e in events if e.get("ev") == "sum")
+    released = any(e.get("ev") == "outro" and e.get("ending") == "Released" for e in events)
+    if romi_ev or (has_romi and released):
+        w("## 終幕の台車（Romi）")
+        for e in romi_ev:
+            w(f"  t={fnum(e,'t',0):7.1f}  {e.get('kind')} res={e.get('res')} {e.get('ms')}ms dry={e.get('dry')}")
+        gos = [e for e in romi_ev if e.get("kind") == "go"]
+        if released and has_romi and not gos:
+            verdict("FAIL", "解除で終わったのに台車へ合図（go）を送っていない — RomiCartLink の配線を確かめる")
+        for e in romi_ev:
+            if e.get("res") not in ("ok",):
+                verdict("WARN", f"台車への合図 {e.get('kind')} が通っていない（res={e.get('res')}）"
+                                "— 台車の電源・網（192.168.10.51）・タブレットの「自動走行」の有効を確かめる")
+        if released and gos and not any(e.get("kind") == "cut" for e in romi_ev):
+            verdict("WARN", "解除の後、電源断の合図（cut）を送っていない — 終幕が始まる前に走行が切れたなら正常")
+
     outro = [e for e in events if e.get("ev") == "outro"]
     if outro:
         w("## 終幕（消えて、報告が出たか）")
@@ -1388,7 +1455,7 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", "終幕の報告の面を組めていない（repBuilt=0）— 最後の 4 行が 1 文字も"
                                 "出ない。日本語フォントの静的ベイクを確かめる（menu hud-font）")
             trapped_outro = any(e.get("ending") == "Trapped" for e in outro)
-            for want in (("Dark", "Report") if trapped_outro else ("Collapse", "Dark", "Report")):
+            for want in (("Dark", "Report") if trapped_outro else ("Noise", "Collapse", "Dark", "Report")):
                 if want not in ostages:
                     verdict("WARN", f"終幕の段 {want} が出ていない")
 
@@ -1416,6 +1483,20 @@ def analyze(events, others, exp, warns=None):
                 else:
                     verdict("FAIL", "電源断が 1 画素も画に出ていない（clMax≒0）— 進みは配っているのに "
                                     "_ScreenCollapse が効いていない。シェーダの焼き直しを確かめる")
+
+            # -- 電源断の前の砂嵐が画に出たか（2026-10-21・博士タブレットの消え方）------
+            #    ShowTelemetryHost の nzMax と対。clMax と同じく段の縁では取れないので最大値で見る。
+            nz_all = [v for v in effect_samples(events, "nzMax") if str(v) not in ("-", "nc")]
+            if not trapped_outro:
+                if not nz_all:
+                    verdict("WARN", "終幕の砂嵐の観測（nzMax）が出ていない — 2026-10-21 より前のビルド")
+                else:
+                    nz_max = max(float(v) for v in nz_all)
+                    if nz_max >= 0.9:
+                        verdict("OK", f"電源断の前に砂嵐が出た（nzMax {nz_max:.2f}）")
+                    else:
+                        verdict("FAIL", f"終幕の砂嵐が出切っていない（nzMax {nz_max:.2f} < 0.9）— "
+                                        "_ScreenNoise を書けていないか、砂嵐の段が飛ばされた")
 
             # 「段が進んだ」ではなく「画に出た」。Report 以降は電力 0 でなければ消えていない。
             # ⚠ Dark は入れない。段の遷移と電力の書き込みは同じフレームで、実行順は未定義なので、
@@ -1553,21 +1634,12 @@ def analyze(events, others, exp, warns=None):
                     else:
                         verdict("FAIL", "通信侵食の値は正しいが、切り替わった区間または表示が違う — "
                                         f"{[(e.get('lap'), e.get('cam'), e.get('cue'), e.get('doll')) for e in positive_invasion]}")
-            # ⚠⚠ **2026-09-06 に①と①b を入れ替えた**（canon/LEDGER.md 0174・ユーザー指定
-            #    「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆に」）。
-            #    ① = BeginHow（押し方）/ ①b = Begin（開始の合図）。**id の綴りは入れ替えていない**。
-            if "BeginHow" in ids:
-                verdict("OK", "導入が明けた直後に①「異変を見つけたら…」が届いた")
+            # 現行の CommsCueLogic は本編開始に Begin を 1 通出す。
+            if "Begin" in ids:
+                verdict("OK", "本編開始の連絡 Begin が届いた")
             else:
-                verdict("FAIL", "①の連絡が届いていない — 本編に入った縁を見ていない"
+                verdict("FAIL", "本編開始の連絡 Begin が届いていない — 本編に入った縁を見ていない"
                                 "（CommsCueLogic.BeginDelaySec / runDirector の配線）")
-
-            # ①b 開始の合図。**①を読ませ終わった縁**で間を置かず続く。
-            # ⚠ ここが欠けると、体験者は押し方だけ読んで「始めてよい」を一度も言われないまま終わる。
-            if "BeginHow" in ids and "Begin" not in ids:
-                verdict("FAIL", "①b『調査を開始してください』が届いていない — "
-                                "開始の合図が 1 度も画に出ていない"
-                                "（CommsPanelLogic.DoneReading / panelDoneReading の配線）")
 
             # ⓪ タイトルの直後の 2 通（canon/LEDGER.md 0079）。**順序が意味を持つ** —
             #    名乗る前に指示が出ると、誰が喋っているのか分からないまま歩かされる。
@@ -1575,13 +1647,17 @@ def analyze(events, others, exp, warns=None):
                 return next((fnum(e, "t", 0.0) for e in comms if e.get("id") == kind), None)
             t_greet, t_walk = _first("Greeting"), _first("Walk")
             t_arrived, t_begin = _first("Arrived"), _first("Begin")
-            t_how = _first("BeginHow")
+            automated = any(tag == "XPWalk" and ("経路:" in ln or "rig=" in ln)
+                            for tag, ln in others)
             if t_greet is None and t_walk is None:
                 verdict("WARN", "タイトル直後の⓪が 1 通も届いていない — 導入で連絡を出していない"
                                 "（CommsPanel の intro 未配線 / 古い APK）")
             else:
                 if t_greet is None:
-                    verdict("FAIL", "⓪a 自己紹介が届いていない（体験の中で AI だと分かる唯一の所）")
+                    if automated:
+                        verdict("WARN", "⓪a 自己紹介は自動走行で省略される — 手動の自己紹介表示は未検証")
+                    else:
+                        verdict("FAIL", "⓪a 自己紹介が届いていない（体験の中で AI だと分かる唯一の所）")
                 if t_walk is None:
                     verdict("FAIL", "⓪b 歩行の指示が届いていない — 矢印と円だけが出て、"
                                     "何をすればよいか画に出ていない")
@@ -1590,20 +1666,8 @@ def analyze(events, others, exp, warns=None):
                         verdict("OK", f"⓪a 名乗り {t_greet:.1f}s → ⓪b 指示 {t_walk:.1f}s の順で届いた")
                     else:
                         verdict("FAIL", "⓪b の指示が⓪a の名乗りより先に出ている")
-                if t_walk is not None and t_how is not None and t_how <= t_walk:
+                if t_walk is not None and t_begin is not None and t_begin <= t_walk:
                     verdict("FAIL", "①が⓪b より先に出ている — 導入と本編の連絡が入れ替わっている")
-            # ①b は①の後（0174 で中身が入れ替わった。順序が逆なら、
-            # 押し方を知らないまま「調査を開始してください」を読むことになる）。
-            if t_begin is not None and t_how is not None:
-                gap = t_begin - t_how
-                if gap <= 0:
-                    verdict("FAIL", "①b『調査を開始してください』が①『異変を見つけたら…』より先に"
-                                    "出ている — 押し方を知らないまま始めさせている（0174）")
-                elif gap > 8.0:
-                    verdict("WARN", f"①→①b が {gap:.1f}s 空いている — 同じ面のまま繋がっていない疑い"
-                                    "（②③に割り込まれた回なら正常）")
-                else:
-                    verdict("OK", f"① {t_how:.1f}s → ①b {gap:.1f}s 後 の順で届いた")
 
             # ⓪c 演出の始まりの告知。**導入演出が始まったのと同じ縁**で出る（0079 の赤入れ 3）。
             # ⚠ 導入まで走らなかった走行では出ないのが正常なので、段 1 を踏んだときだけ判定する。
@@ -1624,7 +1688,7 @@ def analyze(events, others, exp, warns=None):
             # 成立した報告だけはスイの通常返信へ戻るため、released=1 も照合対象に含める。
             marks = [e for e in events if e.get("ev") == "mark"]
             # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
-            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing")]
+            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")]
             ordinary_marks = [m for m in marks
                               if fnum(m, "invasion", 0.0) < 0.999 or str(m.get("released")) == "1"]
             mark_ok = True
@@ -1658,11 +1722,12 @@ def analyze(events, others, exp, warns=None):
             for m in released_marks:
                 near = [a for a in answers
                         if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
-                if near and near[0].get("id") == "MarkLogged" and near[0].get("delivery") == "Typed":
-                    verdict("OK", "最後の解除後に MarkLogged がスイの通常印字（Typed）で返った")
+                # 0284: 呪いが解けた報告の返事は MarkCleared（「異変を取り除きました。お疲れ様です。」）。
+                if near and near[0].get("id") == "MarkCleared" and near[0].get("delivery") == "Typed":
+                    verdict("OK", "最後の解除後に MarkCleared がスイの通常印字（Typed）で返った")
                 else:
                     got = f"{near[0].get('id')}/{near[0].get('delivery')}" if near else "返信なし"
-                    verdict("FAIL", "最後の解除後の返事が MarkLogged/Typed ではない"
+                    verdict("FAIL", "最後の解除後の返事が MarkCleared/Typed ではない"
                                     f"（実際は {got}）— 侵食1の表示を解除後の返事へ持ち越している")
 
             closing_lap = int(exp.get("laps", 3)) + 1
@@ -1765,7 +1830,8 @@ def analyze(events, others, exp, warns=None):
             #    それに合わせて鳴っているかはこの数でしか分からない。
             # ⚠ 完全一致は求めない — 打ち終わる前に次の連絡が届くと（②は押すたび返る）
             #    残りの字は打たれないので、`typeN` は合計より少なくなるのが**正常**。
-            #    見るのは「0 でないこと」と「合計を超えないこと」の 2 つ。
+            #    chars は通知の縁で採られ、非同期 CommitNotice より前の字数を含むことがある。
+            #    比較用の全文字数が確定する計装が無いログでは、超過から二重打鍵を断定しない。
             want_hits = sum(int(e.get("chars") or 0) for e in comms)
             typed_all = [v for v in effect_samples(events, "typeN") if str(v) != "-"]
             typed = typed_all[-1] if typed_all else None
@@ -1777,18 +1843,19 @@ def analyze(events, others, exp, warns=None):
                                 "`menu sound-import` を見る")
             else:
                 n = int(typed)
+                w(f"  打鍵の観測: typeN={n} / 通知時の字数合計 {want_hits}（非同期の全文字数は未確定）")
                 if n <= 0:
                     verdict("FAIL", f"連絡が {len(comms)} 通届いたのに打鍵が 1 発も鳴っていない"
                                     f"（typeN=0 / 字数の合計 {want_hits}）— "
                                     "CommsPanel が TypeAudioCue を掴めていない疑い")
                 elif n > want_hits:
-                    verdict("FAIL", f"打鍵が字数より多い（typeN={n} / 字数の合計 {want_hits}）— "
-                                    "1 文字で 2 発以上鳴っている（Apply の増分の見方）")
+                    verdict("WARN", f"打鍵数と通知時の字数の照合は保留（typeN={n} / 字数の合計 {want_hits}）— "
+                                    "非同期の文字確定前に chars を採るため、二重打鍵かどうかは未検証")
                 elif n < want_hits * 0.5:
                     verdict("WARN", f"打鍵が字数の半分以下（typeN={n} / 合計 {want_hits}）— "
                                     "打ち終わる前に次の連絡が届いて打ち切れていない")
                 else:
-                    verdict("OK", f"打鍵が {n} 発鳴った（字数の合計 {want_hits}・1 文字 1 発）")
+                    verdict("OK", f"打鍵の出力回数は {n} 発（通知時の字数の合計 {want_hits}）")
 
             # ---- 周回の壊れ（`canon/LEDGER.md` 0068 / 0069）----
             # ⚠⚠ 見るのは「強さが動いた」ではなく **実際に化けた字の数（commsCx）**。
@@ -1807,16 +1874,13 @@ def analyze(events, others, exp, warns=None):
                     gl.append(float(v))
                 except (TypeError, ValueError):
                     pass
-            # ⚠⚠ 地と縁（commsBg）。**0 なら文字と壊れだけが宙に浮く。**
-            #    2026-08-17 まで実機がそうだった（`Unlit/Color` がビルドから剥がれていた）。
-            #    Editor のプレビューでは必ず出るので、**この 1 ビットだけが唯一の手掛かり**。
+            # PanelBuilt（commsBg）は _panelMat && _dividerMat。0 だけでは背景不在を断定できない。
             bg = [str(v) for v in effect_samples(events, "commsBg") if str(v) not in ("", "-")]
             if bg and all(v == "0" for v in bg):
-                verdict("FAIL", "連絡の面の地と縁が出ていない（commsBg=0）— 文字と壊れだけが宙に浮く。"
-                                "地のシェーダがビルドから剥がれている疑い"
-                                "（CommsPanel.Build の Shader.Find）")
+                verdict("FAIL", "連絡の面の背景または縦罫線の生成を確認できない（commsBg=0）— "
+                                "_panelMat と _dividerMat のどちらが無いかはこの値だけでは判定できない")
             elif bg:
-                verdict("OK", "連絡の面の地と縁が出ている（commsBg=1）")
+                verdict("OK", "連絡の面の背景と縦罫線の材質を生成できた（commsBg=1）")
 
             # ---- 呪いの斑（`canon/LEDGER.md` 0229）----
             # `commsCurse=<地の双子のシェーダ>/<画へ書いた斑>/<目標>`。
@@ -1888,6 +1952,44 @@ def analyze(events, others, exp, warns=None):
                     verdict("FAIL", "塗り替わりの頭の乱れの音源（sfx_glitch）を掴めていない（sfx=nc）— 画は変わるのに無音")
                 if any(int(e.get("chars") or 0) != 0 for e in possessed):
                     verdict("FAIL", "憑依の出し方なのに打鍵の期待数（chars）が 0 でない — 一気に出るので打鍵は鳴らない約束")
+
+            # ---- 復帰（③a / ③b・`canon/LEDGER.md` 0270）----
+            # ③a「止まってください！」が組まれたら、弱った起動（電力が落ちる）・顔に残る人形・赤い字が画に出るはず。
+            # `ev=commsRecover st=end` は時計が止まった縁の極値（画へ書いた側）。⚠ C# の ShowTelemetryHost と対。
+            halts = [e for e in comms if e.get("id") == "Halt"]
+            rec_end = [e for e in events if e.get("ev") == "commsRecover" and e.get("st") == "end"]
+            rec_begin = [e for e in events if e.get("ev") == "commsRecover" and e.get("st") == "begin"]
+            if halts and not rec_begin:
+                verdict("FAIL", "③a が届いたのに復帰の時計が回っていない（ev=commsRecover が無い）— "
+                                "CommsPanel.CommitNotice の BeginRecovery を見る")
+            elif rec_end:
+                bad = []
+                for e in rec_end:
+                    # CommsRecoveryLogic の横線の段の電力は 0.30。
+                    if fnum(e, "powMin", 1.0) > 0.30:
+                        bad.append(f"電力が落ちていない（powMin {fnum(e, 'powMin', 1.0):.2f}）")
+                    # 0280: 砂嵐のブロックから少しずつ現れたか（横線の段で 0.78）。旧い APK は bootMax を出さない。
+                    # 0283: ③a / ③b は通常（17°）より上（3°）に立つ。旧い APK は pitchMin を出さない。
+                    if "pitchMin" in e and fnum(e, "pitchMin", 90.0) > 8.0:
+                        bad.append(f"③a / ③b が上へ移っていない（pitchMin {fnum(e, 'pitchMin', 90.0):.1f}°）")
+                    if "bootMax" in e and fnum(e, "bootMax", 0.0) < 0.5:
+                        bad.append(f"砂嵐から少しずつ現れていない（bootMax {fnum(e, 'bootMax', 0.0):.2f}）")
+                    if fnum(e, "resMax", 0.0) < 0.4:
+                        bad.append(f"顔に人形が残っていない（resMax {fnum(e, 'resMax', 0.0):.2f}）")
+                    if int(e.get("redMax") or 0) <= 0:
+                        bad.append("赤い字が 1 字も画に出ていない（redMax 0）")
+                    if fnum(e, "tearMax", 0.0) < 0.5:
+                        bad.append(f"起動の乱れが立っていない（tearMax {fnum(e, 'tearMax', 0.0):.2f}）")
+                if bad:
+                    verdict("FAIL", "③a / ③b の復帰の姿が欠けている: " + " / ".join(sorted(set(bad))))
+                else:
+                    e = rec_end[-1]
+                    verdict("OK", f"③a / ③b が弱った起動で出て、顔に人形・字に赤が残った"
+                                  f"（{len(rec_end)} 回・電力 最小 {fnum(e, 'powMin', 1.0):.2f}・"
+                                  f"人形 {fnum(e, 'resMax', 0.0):.2f}→{fnum(e, 'resEnd', 0.0):.2f}・"
+                                  f"赤い字 最大 {e.get('redMax')}）")
+            elif rec_begin:
+                verdict("WARN", "復帰の時計は回ったが、止まった縁（st=end）が無い — ログの末尾で切れた可能性")
 
             # 「出た初めは通常 → 1s ほどで重なる」。侵食度 > 0 の面（警告を除く）が開いたら、
             # 斑が目標へ届いた縁 `ev=commsCurse sec=` が 1 度は出るはず。
@@ -2258,10 +2360,11 @@ def analyze(events, others, exp, warns=None):
     # ---------------- 音（鳴ったか）----------------
     # ⚠⚠ **音は録画に映らない。** 画は `quest-record.py` が撮って人が開けば分かるが、
     #    音は実機で被って聴く以外に確かめる手段が無い（しかもこの作業をしているシュビーは
-    #    耳が聞こえない）。だから**ログが唯一の証拠**で、ここが緑でなければ音は無い。
+    #    耳が聞こえない）。ログは再生指示・内部状態の証拠で、端末から出た音声の実測とは分ける。
     #    観測の出どころは C# の `ShowSoundDirector` / `ShowTelemetryHost`。
     #    **片方だけ直すと沈黙して食い違う**ので、キーを足すときは対で直すこと。
     w("## 音（鳴ったか）")
+    verdict("WARN", "端末から出た音声は未計測 — 音源・再生指示のログだけでは実際の音声出力は未検証")
     sfx_events = [e for e in events if e.get("ev") == "sfx"]
     built = effect_samples(events, "sndBuilt")
     aud = effect_samples(events, "sndAud")
@@ -2601,10 +2704,10 @@ def analyze(events, others, exp, warns=None):
         if "MISSING" in by_id:
             verdict("FAIL", "音源が見つからない節目がある（ev=sfx id=MISSING）")
 
-        # 導入まで走ったなら、3 つの節目は必ず鳴っているはず
+        # 導入まで走ったなら Bell / Shatter の再生指示があるはず。
         # ⚠ 「隔離が閉じる」（SealClose）と「装置が点く」（Swap）は 2026-08-15 に判定から外した。
         #    段が旧構成へ戻って隔離が閉じる段が無くなり、スクリーンが出る瞬間は
-        #    ユーザー指定の音源を持つ ScreenOn が取る（canon/LEDGER.md 0044）。
+        #    ScreenOn は生成動画の音に含むため専用音を重ねない（SoundCueLogic）。
         #    ここに残すと「出るはずのものが出ない」と毎回誤検出する。
         intro_ran = any(e.get("stage") == "Swap" for e in intro)
         if intro_ran:
@@ -2612,15 +2715,14 @@ def analyze(events, others, exp, warns=None):
             #    - 鈴（Bell）は**段 5 のクロスフェードが終わった所**（＝完全にスクリーンに
             #      なったとき）へ。段 5 は 4.5 秒あるので、待ちで取り逃す心配は無い
             #    - ノイズ（ScreenNoise）は**鳴らさない**。ここに残すと毎回誤検出する
-            want_ids = ("Bell", "Shatter", "ScreenOn")
+            want_ids = ("Bell", "Shatter")
             for want, label in (("Bell", "完全にスクリーンになった所の鈴"),
-                                ("Shatter", "現実が割れる"),
-                                ("ScreenOn", "スクリーンが出る")):
+                                ("Shatter", "現実が割れる")):
                 if by_id.get(want, 0) == 0:
                     verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"
                                     f"（ev=sfx id={want} が 0 本）")
             if all(by_id.get(k, 0) > 0 for k in want_ids):
-                verdict("OK", "導入の 3 つの節目が全部鳴った")
+                verdict("OK", "導入の鈴と破砕音の再生指示が出た（ScreenOn は生成動画の音に含む）")
 
         # -- 終幕の電源断（`canon/LEDGER.md` 0125）--------------------------------
         #    ⚠⚠ **音は録画に映らない**ので、`ev=sfx id=PowerOff` が唯一の証拠。
@@ -2658,7 +2760,7 @@ def analyze(events, others, exp, warns=None):
             else:
                 verdict("OK", f"人形がたくさん出てくる所で笑った（sndDolls 最大 {max(dolls):.2f}）")
             # 押したあとも鳴っていたら、止める経路が壊れている（次の体験者へ持ち越す）。
-            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing")
+            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")
                                                   for e in comms):
                 verdict("WARN", "報告のあとも人形が笑ったまま走行が終わっている"
                                 f"（最後の sndDolls={dolls[-1]:.2f}）")
@@ -3371,11 +3473,43 @@ def analyze(events, others, exp, warns=None):
                                         "未装着の自動走行では期待どおり。被った走行で出たらカメラ姿勢の取得を疑う")
                     else:
                         verdict("OK", f"静止画の投影は前を向いている（正面 1.6m の uv 左/右 = {proj_last}）")
+                # R061: 破片を置いた奥行き（C# の ShowTelemetryHost.ShatterDepthState と対）。旧ログ（キーが無い）では沈黙する。
+                depths = [v for v in effect_samples(events, "shatDepth") if v not in ("", "-")]
+                if depths:
+                    depth_last = depths[-1]
+                    if depth_last.startswith("room:"):
+                        try:
+                            near, mid, far = (float(x) for x in depth_last[5:].split("/"))
+                        except ValueError:
+                            near = mid = far = None
+                        if near is None:
+                            verdict("WARN", f"破片の奥行きの書式が読めない（shatDepth={depth_last}）")
+                        elif near < 0.595:
+                            verdict("FAIL", f"破片が最短 0.6m より手前に置かれた（shatDepth={depth_last}）— 眼の前に破片が来る")
+                        else:
+                            verdict("OK", f"破片を部屋の奥行きへ置いた（片の中心 最短 {near:.2f} / 中央 {mid:.2f} / 最長 {far:.2f} m）")
+                    elif depth_last == "off:error":
+                        verdict("FAIL", "破片を置く部屋を組めずに 1.6m の殻へ落ちた（shatDepth=off:error）— 実機ログの [IntroVeil] を見る")
+                    else:
+                        verdict("WARN", f"破片は従来の 1.6m の殻（shatDepth={depth_last}。unreg=位置合わせ無し / "
+                                        "noroom=layout.room 未著作 / none=配線無し）— 割れる前の画が壁より奥に描かれる")
                 anchors = fracture_numbers("shatAnchor")
                 if anchors and max(anchors) < 1:
                     verdict("FAIL", "割れ始めの頭の姿勢を固定できていない（shatAnchor=0 のまま）— 破片が頭についてくる")
                 elif anchors:
                     verdict("OK", "割れ始めの頭の姿勢を固定した（破片はワールド空間でその地点に残る）")
+                # R060: 段 4 の描画状態を導入の手前で作ったか。旧ログ（キーが無い）では沈黙する。
+                warms = fracture_numbers("shatWarm")
+                if warms and max(warms) < 1:
+                    verdict("WARN", "段 4 の描画状態を前もって作れていない（shatWarm=0）— 割れる瞬間の 1 フレームが伸びる")
+                elif warms:
+                    verdict("OK", "段 4 の描画状態を導入の手前で作った（shatWarm=1）")
+                # R060: 覆いの下で見えないスクリーンを描かなかったフレーム数。旧ログでは沈黙する。
+                offs = fracture_numbers("scrOff")
+                if offs and max(offs) < 1:
+                    verdict("WARN", "覆いの下で見えないスクリーンを 1 フレームも止めていない（scrOff=0）— 導入の GPU が重いまま")
+                elif offs:
+                    verdict("OK", f"覆いの下で見えないスクリーンを描かなかった（{int(max(offs))} フレーム）")
 
     # -- スクリーンの管の点灯
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。

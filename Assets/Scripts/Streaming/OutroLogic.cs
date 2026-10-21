@@ -16,6 +16,12 @@ namespace FixedCamVr.Streaming
         /// <summary>出していない。</summary>
         Off,
         /// <summary>
+        /// <b>通信が切れる砂嵐</b>（2026-10-21・博士タブレットの説明の終わりと同じ消え方）。
+        /// 画に砂嵐が乗り、ざ・ざ・ざと 3 度強まる。強まり方はシェーダが持ち、ここは進みだけを出す
+        /// （<see cref="OutroLogic.ScreenNoise"/>）。<b>単調に増え、戻らない</b>。
+        /// </summary>
+        Noise,
+        /// <summary>
         /// <b>ブラウン管の電源断。</b> 画が縦に潰れて横一本の線になり、線が中央へ縮んで点になり、
         /// 残光が消える。<b>単発・一方向・戻らない</b>（反復する明滅は 1 度も無い）。
         /// </summary>
@@ -58,7 +64,12 @@ namespace FixedCamVr.Streaming
     /// <b>意味は「装置が調査を終えて自分で落ちた」</b> — 誰かが外から切った、にはしない
     /// （外部の意図を示唆すると「まだ何かいる」と読まれ、直後に死んだ装置が報告を打つ矛盾も立つ）。
     ///
-    /// <b>形の寸法はシェーダが持ち、ここは進みだけを出す</b>（<c>_ScreenCollapse</c>）。
+    /// ⚠⚠ <b>2026-10-21 に電源断の前へ砂嵐の段（<see cref="OutroStage.Noise"/>）を足した。</b>
+    /// ユーザー指定「メインスクリーンの消失の仕方を、タブレットで博士が消えるときと同じような感じに」。
+    /// 博士タブレットの <c>signal-cut.js</c>（砂嵐がざ・ざ・ざと強まる 0.95 秒 → 横一線に潰れて消える 0.26 秒）と
+    /// 同じ尺と強まり方にした。砂嵐は強まるだけで往復しない（明滅ではない）。
+    ///
+    /// <b>形の寸法はシェーダが持ち、ここは進みだけを出す</b>（<c>_ScreenNoise</c> / <c>_ScreenCollapse</c>）。
     /// 数値として出す理由は 3 つとも変わっていない —
     /// (1) 実際に材質へ書いた値をテレメトリに出せる（「段が進んだ」ではなく「画に出た」の観測）、
     /// (2) EditMode テストで固定できる、(3) 実行のたびに同じ絵になる（乱数を使わない）。
@@ -69,10 +80,18 @@ namespace FixedCamVr.Streaming
         private OutroStage _stage = OutroStage.Off;
         private float _stageElapsed;
         private float _totalElapsed;
+        private float _powerCutAt;
 
         public OutroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
         public float TotalElapsedSec => _totalElapsed;
+
+        /// <summary>
+        /// 終幕の頭から、管が潰れ始める（＝ 電源が落ちる）までの秒。帰還不能（砂嵐も潰れも見せない）は 0。
+        /// <b>電源断の音はここで鳴る</b>（<c>SoundShowState.outroPowerCutSec</c>）。
+        /// ⚠ 2026-10-21 に砂嵐の段を前に足したので、終幕の頭 ＝ 潰れ始め、ではなくなった。
+        /// </summary>
+        public float PowerCutAtSec => _powerCutAt;
 
         /// <summary>計時が進んでいるか（＝ まだ段が残っている）。</summary>
         public bool Active => _stage != OutroStage.Off && _stage != OutroStage.Done;
@@ -98,6 +117,7 @@ namespace FixedCamVr.Streaming
             {
                 switch (_stage)
                 {
+                    case OutroStage.Noise: return Progress(_t.noiseSec);
                     case OutroStage.Collapse: return Progress(_t.collapseSec);
                     case OutroStage.Dark: return Progress(_t.darkSec);
                     case OutroStage.Report: return Progress(_t.reportFadeSec);
@@ -112,9 +132,11 @@ namespace FixedCamVr.Streaming
         /// <summary>頭から始める。</summary>
         public void Begin(bool showCollapse = true)
         {
-            _stage = showCollapse ? OutroStage.Collapse : OutroStage.Dark;
+            // ⚠ 帰還不能（showCollapse=false）は砂嵐も見せない。通常の映像を再び出さないため。
+            _stage = showCollapse ? OutroStage.Noise : OutroStage.Dark;
             _stageElapsed = 0f;
             _totalElapsed = 0f;
+            _powerCutAt = showCollapse ? _t.noiseSec : 0f;
         }
 
         /// <summary>出さない（ラン開始・中止）。</summary>
@@ -123,6 +145,7 @@ namespace FixedCamVr.Streaming
             _stage = OutroStage.Off;
             _stageElapsed = 0f;
             _totalElapsed = 0f;
+            _powerCutAt = 0f;
         }
 
         public OutroEvent Tick(float dt)
@@ -135,6 +158,10 @@ namespace FixedCamVr.Streaming
 
             switch (_stage)
             {
+                case OutroStage.Noise:
+                    if (_stageElapsed >= _t.noiseSec) Advance(OutroStage.Collapse);
+                    return OutroEvent.None;
+
                 case OutroStage.Collapse:
                     if (_stageElapsed >= _t.collapseSec) Advance(OutroStage.Dark);
                     return OutroEvent.None;
@@ -169,6 +196,7 @@ namespace FixedCamVr.Streaming
                 switch (_stage)
                 {
                     case OutroStage.Off: return 1f;
+                    case OutroStage.Noise: return 1f;      // 砂嵐のあいだも電力は届いている
                     case OutroStage.Collapse: return 1f;   // まだ電力は届いている（画が潰れていく）
                     default: return 0f;                    // Dark / Report / Done ＝ 消えたまま
                 }
@@ -189,6 +217,29 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float ScreenCollapse
             => _stage == OutroStage.Collapse ? Progress(_t.collapseSec) : 0f;
+
+        /// <summary>
+        /// <b>砂嵐の進み 0..1</b>（<c>_ScreenNoise</c>）。0 = 砂嵐なし。
+        /// <see cref="OutroStage.Noise"/> のあいだ 0 → 1、<see cref="OutroStage.Collapse"/> のあいだ 1
+        /// （潰れていく帯の中身は砂嵐のまま）。それ以外は 0。
+        ///
+        /// ⚠ <b>強まり方（ざ・ざ・ざの位置・帯の裂け・転がる暗い帯）はシェーダが持つ。</b>
+        /// 形の正は博士タブレットの <c>signal-cut.js</c>（<c>intensity</c> / <c>BURSTS</c>）で、
+        /// シェーダの <c>CutNoiseIntensity</c> がその写し。ここに曲線を持たない。
+        /// ⚠ 単調に増える（戻らない）。
+        /// </summary>
+        public float ScreenNoise
+        {
+            get
+            {
+                switch (_stage)
+                {
+                    case OutroStage.Noise: return Progress(_t.noiseSec);
+                    case OutroStage.Collapse: return 1f;
+                    default: return 0f;
+                }
+            }
+        }
 
         /// <summary>報告の面の不透明度 0..1。</summary>
         public float ReportAlpha
@@ -220,6 +271,11 @@ namespace FixedCamVr.Streaming
     public struct OutroTiming
     {
         /// <summary>
+        /// <b>砂嵐が強まる尺</b>（2026-10-21）。博士タブレットの <c>signal-cut.js</c> の <c>NOISE_MS</c>（950ms）と同じ。
+        /// </summary>
+        public float noiseSec;
+
+        /// <summary>
         /// <b>管が潰れて線になり、点になって消えるまで</b>（2026-08-23・<c>canon/LEDGER.md</c> 0111）。
         /// ⚠ 旧キー <c>flickerSec</c>（電池切れのちかちか・6 秒）の置き換え。
         /// </summary>
@@ -232,7 +288,7 @@ namespace FixedCamVr.Streaming
         public float reportFadeSec;
 
         /// <summary>
-        /// コード既定。<b>合計 3.6s</b>（旧 8.7s）。
+        /// コード既定。<b>合計 3.91s</b>（2026-10-21・砂嵐 0.95 ＋ 潰れ 0.26 ＋ 黒 1.2 ＋ 報告 1.5。旧 3.6s / さらに前 8.7s）。
         ///
         /// 報告の 1 文字目までが <b>2.1 秒</b>（旧 7.2 秒）、打ち終わりまでが
         /// <b>5.5 秒</b>（旧 10.6 秒）。ユーザー判定「テンポが悪く、終わったかがわかりずらい」
@@ -243,13 +299,16 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public static OutroTiming Default => new OutroTiming
         {
-            collapseSec = 0.9f,
+            // ⚠ 2026-10-21 に博士タブレットの消え方（signal-cut.js の NOISE_MS 950 / OFF_MS 260）へ揃えた。
+            //   旧既定は潰れ 0.9 秒だけ。報告の 1 文字目までは 2.1 → 2.41 秒。
+            noiseSec = 0.95f,
+            collapseSec = 0.26f,
             darkSec = 1.2f,
             reportFadeSec = 1.5f,
         };
 
         /// <summary>潰れの尺として受け付ける範囲（秒）。<see cref="PickCollapse"/>。</summary>
-        public const float CollapseMinSec = 0.4f;
+        public const float CollapseMinSec = 0.2f;
         public const float CollapseMaxSec = 2.0f;
 
         /// <summary>0 / 負 / 異常値を既定へ倒す（<c>run.outro</c> が欠けた show.json でも走る）。</summary>
@@ -258,6 +317,7 @@ namespace FixedCamVr.Streaming
             OutroTiming d = Default;
             return new OutroTiming
             {
+                noiseSec = PickNoise(noiseSec, d.noiseSec),
                 collapseSec = PickCollapse(collapseSec, d.collapseSec),
                 darkSec = Pick(darkSec, d.darkSec),
                 reportFadeSec = Pick(reportFadeSec, d.reportFadeSec),
@@ -265,7 +325,14 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>合計（報告を出し切るまで）。</summary>
-        public float TotalSec => collapseSec + darkSec + reportFadeSec;
+        public float TotalSec => noiseSec + collapseSec + darkSec + reportFadeSec;
+
+        /// <summary>砂嵐の尺として受け付ける範囲（秒）。長い砂嵐は「通信が切れた」ではなく故障の画になる。</summary>
+        public const float NoiseMinSec = 0.3f;
+        public const float NoiseMaxSec = 3.0f;
+
+        private static float PickNoise(float v, float def)
+            => v >= NoiseMinSec && v <= NoiseMaxSec ? v : def;
 
         private static float Pick(float v, float def) => v > 0.01f && v < 60f ? v : def;
 

@@ -102,7 +102,30 @@ namespace FixedCamVr.Streaming
             public string ending;
         }
         public Func<StaffStatus>? StaffStatusProvider { get; set; }
+
+        /// <summary>
+        /// 装着とコントローラの実状態（<c>/status</c> の <c>health</c>）。OVR を読むのは
+        /// <c>OvrControllerBridge</c> なので、向こうから差し込む（Streaming は OVR を参照しない規約）。
+        /// </summary>
+        public struct DeviceHealth
+        {
+            public bool valid, worn, ctrlLConnected, ctrlLTracked;
+        }
+        public Func<DeviceHealth>? DeviceHealthProvider { get; set; }
+        // 休止とシステム画面。OnApplicationPause / Focus はメインで来るので、その場で組み直して返せる状態にする。
+        // ⚠ これが無いと、休止で止まった時計とアプリが固まった時計をタブレットが区別できない
+        //    （固まったのに「電源ボタンを押す」と案内すると、起きている Quest を休止させる）。
+        private bool _paused, _focusLost;
+        private int _battery = -1;
+        private long _nextBattery;
+        private RomiCartLink? _cart;
+        private long _nextCartLookup;
         public Func<bool>? StaffResetProvider { get; set; }
+        /// <summary>
+        /// 体験の途中でも次の体験者へ切り替える（タブレットの「強制リセット」）。
+        /// 実際にリセットしたら true。位置合わせが未確定でも通す（戻った先が位置合わせになる）。
+        /// </summary>
+        public Func<bool>? ForceResetProvider { get; set; }
         private string _lastStaffResetId = "", _staffResetRejectedId = "";
         private OutroDirector? _outro;
         private long _nextOutroLookup;
@@ -288,6 +311,18 @@ namespace FixedCamVr.Streaming
             IsListening = false;
         }
 
+        private void OnApplicationPause(bool paused)
+        {
+            _paused = paused;
+            RefreshStatus(force: true);
+        }
+
+        private void OnApplicationFocus(bool focus)
+        {
+            _focusLost = !focus;
+            RefreshStatus(force: true);
+        }
+
         private void Update()
         {
             // 背景スレッドから積まれた要求をここで実行する（static と Unity を触るのはメインだけ）。
@@ -389,8 +424,42 @@ namespace FixedCamVr.Streaming
             sb.Append(",\"model\":").Append(VisitorPortalLogic.JsonString(_model));
             sb.Append(",\"ip\":").Append(VisitorPortalLogic.JsonString(_ip));
             sb.Append(",\"port\":").Append(Port);
+            AppendHealthJson(sb, now);
             sb.Append('}');
             _statusJson = sb.ToString();
+        }
+
+        /// <summary>
+        /// <c>health</c> の JSON。本編中もタブレットが異常を言えるようにする材料
+        /// （休止・システム画面・装着・左コントローラ・電池・例外・時計の飛び・台車）。
+        /// ⚠ 組み直しは 0.5 秒ごとの時計で必ず起きるので、ここは毎回書くだけでよい。
+        /// </summary>
+        private void AppendHealthJson(StringBuilder sb, long now)
+        {
+            if (now >= _nextBattery)
+            {
+                float level = SystemInfo.batteryLevel;   // 取れない機は -1
+                _battery = level < 0f ? -1 : Mathf.RoundToInt(level * 100f);
+                _nextBattery = now + Stopwatch.Frequency * 10;
+            }
+            if (_cart == null && now >= _nextCartLookup)
+            {
+                _cart = FindObjectOfType<RomiCartLink>();
+                _nextCartLookup = now + Stopwatch.Frequency * 2;
+            }
+            DeviceHealth d = DeviceHealthProvider != null ? DeviceHealthProvider() : default;
+            sb.Append(",\"health\":{\"paused\":").Append(_paused ? "true" : "false")
+              .Append(",\"focusLost\":").Append(_focusLost ? "true" : "false")
+              .Append(",\"worn\":").Append(!d.valid ? "null" : d.worn ? "true" : "false")
+              .Append(",\"ctrlL\":").Append(VisitorPortalLogic.JsonString(!d.valid ? ""
+                  : !d.ctrlLConnected ? "off" : !d.ctrlLTracked ? "untracked" : "ok"))
+              .Append(",\"battery\":").Append(_battery)
+              .Append(",\"exceptions\":").Append(RuntimeHealth.ExceptionCount)
+              .Append(",\"lastException\":").Append(VisitorPortalLogic.JsonString(RuntimeHealth.LastException))
+              .Append(",\"clockGaps\":").Append(ShowClock.Gaps)
+              .Append(",\"cartKind\":").Append(VisitorPortalLogic.JsonString(_cart != null ? _cart.LastKind : ""))
+              .Append(",\"cartResult\":").Append(VisitorPortalLogic.JsonString(_cart != null ? _cart.LastResult : ""))
+              .Append('}');
         }
 
         private static bool StatusEquals(in StatusSnapshot a, in StatusSnapshot b)
@@ -543,7 +612,7 @@ namespace FixedCamVr.Streaming
                         lock (_queueLock) res = VisitorPortalLogic.Route(req, Encoding.UTF8.GetString(body, 0, have), _statusJson,
                                                        OnSetFromThread, OnClearFromThread, _portalSessionId,
                                                        id => OnPulseFromThread(id, remoteIp), OnPreparationFromThread, OnStaffResetFromThread,
-                                                       OnClearVersionedFromThread);
+                                                       OnClearVersionedFromThread, OnForceResetFromThread);
                         if (res.status == 400 && req.path == "/set") Interlocked.Increment(ref _rejected);
                     }
                     byte[] bytes = VisitorPortalLogic.Encode(res);
@@ -638,6 +707,25 @@ namespace FixedCamVr.Streaming
                     if (settingsSeq != Volatile.Read(ref _seqIssued) || StaffResetProvider == null || !StaffResetProvider())
                         _staffResetRejectedId = requestId;
                     else _lastStaffResetId = requestId;
+                });
+            }
+        }
+
+        private void OnForceResetFromThread(string requestId)
+        {
+            lock (_queueLock)
+            {
+                string session = _portalSessionId;
+                int reset = ++_staffResetIssued;
+                _queue.Add(() =>
+                {
+                    if (session != _portalSessionId) return;
+                    _staffResetProcessed = Math.Max(_staffResetProcessed, reset);
+                    bool done = false;
+                    try { done = ForceResetProvider != null && ForceResetProvider(); }
+                    catch (Exception e) { UnityEngine.Debug.LogException(e); }
+                    if (done) _lastStaffResetId = requestId; else _staffResetRejectedId = requestId;
+                    UnityEngine.Debug.Log($"[VisitorPortal] 強制リセット {(done ? "実行" : "拒否")} id={requestId}");
                 });
             }
         }

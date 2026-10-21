@@ -521,10 +521,12 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                     // 材質へは本番（OutroDirector）と同じ生の値を書く。潰れ終わると 0 に戻り、電力 0 が隠す。
                     // 記録は「潰れの段を過ぎたら 1」にする（一方向かを数値で見るため）。
                     float rawCollapse = outroLogic.ScreenCollapse;
-                    collapse = outroLogic.Stage == OutroStage.Collapse ? rawCollapse : 1f;
+                    collapse = outroLogic.Stage == OutroStage.Noise ? 0f
+                             : outroLogic.Stage == OutroStage.Collapse ? rawCollapse : 1f;
                     power = outroLogic.ScreenPower;
                     report = outroLogic.ReportAlpha;
                     mat.SetFloat("_ScreenCollapse", rawCollapse);
+                    mat.SetFloat("_ScreenNoise", outroLogic.ScreenNoise);
                     mat.SetFloat("_ScreenPower", power);
                     if (report > 0f)
                     {

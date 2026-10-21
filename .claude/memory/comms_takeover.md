@@ -218,3 +218,37 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 
 （数値は `Logs/comms-takeover-20260914/latest-render.txt` が指す `evidence.json` と
 `Assets/Screenshots/comms-preview/motion/evidence.json`。この節はプレビューを回した後に埋める）
+## 2026-10-18 4周目Aのスクリーン全体の重ね方
+
+- 警告中の追加性能検証は [comms_performance_20261018.md](comms_performance_20261018.md)。採用した静止ノイズの見た目を維持し、解像度を落とさずに重複計算と同期JPEG展開の集中を減らす。実機のfpsと開始時の停止は別々に記録する。
+
+- 最終ユーザー判定「ok採用。ノイズは動かさず静的でいい。反映して。」。粗い斑・粒・横線・横ずれは `COMMS_RECOVERY_NOISE_PHASE=5.5` に固定し、時間では動かさない。以下の10Hz更新・横へ走る記述は採用直前の試作。復帰の出現と報告後の解除は従来どおり。
+- 静止版は `G:/マイドライブ/shubie/renders/comms-static-glitch-20261018/Screenshots/comms-preview/recovery/` に実描画。シェーダ・コンパイル・例外エラー0。時間依存のノイズ式は0。実機は未確認。
+- 実機検証済み（同日）: クエストα `2G0YC1ZF890864` へ139.2MBのAPKを導入。端末上のbase.apkとビルド記録のSHA-256は `016992db30803ef44895b973a4af37653d99309ffbcc392227f75f58c68bf7c7` で一致。buildGuid `c847de3222964fc49fa192ec63ef046f`。βは未接続。
+- 追加確認: 最後の排除受理（XP128.62秒、`ev=mark det=1 res=1 released=1`）後の通常復帰も実録画で確認済み。`MarkLogged delivery=Typed`が届き、白いスイの顔・通常の暗い半透明背景・白い「異常を検出しました」へ戻る。赤い人形・粗い斑・横線は残らない。受理後0.8/1.6/2.4秒を保存し、1.6秒後の左右両眼で目視確認。XP128.99/130.98秒の`commsRec=-`、侵食0、文字切断0も照合。証拠は同Driveフォルダの `after-release/normal-sui-crop.png` と元のraw/eye画像、`timing.json`。アプリの追加修正なし。
+- 自動走行の4周目でHalt（XP 120.12秒）とPrompt（121.94秒）を実録画の左右両眼で確認。赤い領域の粗い斑・横線・横ずれが出る。0.3秒/0.6秒後の同じ投影領域で赤マスクのIoUは0.955/0.957。背景映像と圧縮の差を含むがノイズの位置は固定。終了はFinished/lap=4。Unity Errorログ0、シェーダエラー0。端末は検証後スリープ。
+- 自動判定はFAIL 0/WARN 17/OK 83。今回の表示の描画は確認済みだが、90fps目標は未達（警告中の2秒標本で79.3〜80.8fps、出現付近49.9fps・最悪119ms）。通信タイムアウトによる砂嵐、台車go/cutの未接続、コントローラ未接続等も警告に残る。未装着の自動走行なので装着時の読みやすさ・体感・音は未検証。
+- 証拠: `G:/マイドライブ/shubie/renders/comms-static-quest-20261018/`。`verification-report.md`、`target-telemetry.json`、`notice-frames/quest-screen-only.png`、`notice-frames/static-comparison.json`、`capture/20261018_152307_raw.mp4`、同名のXPログとmeta。画面部分の画像は実録画の左眼を切り出して傾きを補正したもの。
+- `tools/xp-evidence.py` の保存は `cv2.imwrite` からPNGエンコード→Pythonのバイト書込→置換へ変更。Windowsの日本語DriveパスでPNGが保存されず、written件数だけ増えていたため。個別画像・索引画像・比較画像をすべて同じ保存関数へ通す。日本語パスへの保存→再デコードで寸法と全画素一致を確認済み。
+
+- 同日の追加指示で、横へ走る細線と帯ごとの横ずれは赤い領域へ限定した。帯は6mm刻み、最大約25mmの横ずれ。赤い背景・顔・文字・縦罫線が共通の細線を読み、正常領域の変位は0。
+- 追加後の実描画は `G:/マイドライブ/shubie/renders/comms-red-glitch-20261018/Screenshots/comms-preview/recovery/`。`screen-only.png` は画面部分の切り出し。シェーダ・コンパイル・例外エラー0。実機は未確認。
+
+- ユーザー指定により、復帰中のスクリーン全体に粗いノイズを掛ける。地・本文・案内・縦罫線・顔が同じ場を読む。正常表示と赤い人形表示の比率は約1:1。右側だけに人形を残す旧境界は廃止。
+- `CommsRecovery.hlsl` は画面高さに約4塊の粗い斑と細かな粒、小さなゆがみ、10Hzで更新する赤い帯の横ずれを共有する。`CommsRecoveryText.shader` はResourcesから読み、復帰中だけTMPの画素ごとに正常色と赤を切り替える。通常時と乗っ取り時は既存の材質へ戻す。
+- `CommsRecoveryLogic` の残りは0.60→0.52→0.50。報告で解除されると0へ戻す。文面・尺・赤い文字の配置規則は従来どおり。
+- 実描画の確認: `tools/unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.CommsPreview.Run -Set 'recovery=1','stills=1','out=G:/マイドライブ/shubie/renders/comms-recovery-full-20261018'`。出力先は同パスの `Screenshots/comms-preview/recovery/`。`out`はAssets以外への出力にも対応。`stills=1`は0.8秒・2秒・4.5秒・5.5秒だけ撮影する。
+- `RedGlyphs`は従来の頂点色を数える値。復帰用シェーダが画素へ掛ける赤い斑の面積は数えない。見た目は実描画PNGで確認する。
+- 検証: EditMode `CommsRecoveryLogicTests` 12件通過。実シェーダで③a/③bを描画し、5.5秒の画面の赤い画素は約53%。Unityシェーダエラーなし。実機表示は未確認。上記Driveフォルダの `screen-only.png` と `halt-screen-only.png` は実描画から表示部分だけを切り出したもの。
+
+## 2026-10-21 見た目を他の面と揃えた（LEDGER 0285・R070）
+
+ユーザー「デジタル感が強すぎて世界観にマッチしていない」「のっぺりしている」。出る順・秒・同期・同時消去は 1 つも変えていない。
+
+- 文字の版は `tools/make-error-typography.py` で Source Han Serif JP（明朝）＋かすれ（`*-v5.png`）。DSEG14 とドットゴシックは廃止。焼き直したら出力の `opaque` を v 反転して `UnauthorizedAccessEffect.OpaqueUvBounds` へ写す（本番の版は Read/Write 無効）
+- 版の余白を 26px に広げた（シェーダのにじみが quad の縁で四角く切れないため）。そのぶん塊の全幅が増えるので、`TakeoverProductionGraphicSizesKeepRowsSeparate` の 78% 上限に掛かる。WARNING の字間 0.14em はそこから決めた
+- シェーダ Mode 2: 芯の明るさのむら・右へ尾を引くにじみ・24Hz の細かい粒・帯 2.5% だけのまれな横ずれ。模様は `positionOS`（画面のローカル座標）で決める。ワールド座標だと画面のヨー追従で模様が字の上を滑る
+- 三角・感嘆符・バーは版にかすれが無いので `_Wear`（材質ごと）でシェーダが乾かす。文字の材質は 0
+- 空間の要素（Mode 1）は 0 / 1 をやめて砂嵐の断片。列に揃えて降らせるのもやめた。乗っ取りでは工事現場の斜線を出さない
+- 色は頂点色なので sRGB で決めて `.linear` で渡す。警告の赤は `CommsPanel.LieRed` と同じ朱、補足は `HmdTextStyle.Ink` の象牙
+- 実描画: `.\tools\unity.ps1 menu comms-revision -Set out=Logs/comms-v5-20261021`（既定の出力先以外へ出すと unity.ps1 が「出力が更新されていない」と言うが、描画は成功している）

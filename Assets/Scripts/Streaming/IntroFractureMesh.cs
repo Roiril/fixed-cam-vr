@@ -185,6 +185,10 @@ namespace FixedCamVr.Streaming
             mesh.GetUVs(1, pieces);
             mesh.GetUVs(3, surfaces);
             if (pieces.Count != vertices.Length || surfaces.Count != vertices.Length) return 0;
+            // R061: 撮影時の部屋の奥行き（IntroRoomDepth）。シェーダと同じ点を投影する。無ければ 1.6m の殻。
+            var depth = new List<Vector2>(vertices.Length);
+            mesh.GetUVs(IntroRoomDepth.FractureChannel, depth);
+            bool hasDepth = depth.Count == vertices.Length;
 
             var candidates = new Dictionary<Vector3, ClosingCandidate>();
             for (int i = 0; i < vertices.Length; i++)
@@ -194,7 +198,8 @@ namespace FixedCamVr.Streaming
                 var key = new Vector3(piece.x, piece.y, piece.z);
                 if (!candidates.TryGetValue(key, out ClosingCandidate? candidate))
                 {
-                    Vector3 centerWorld = captureHeadToWorld.MultiplyPoint3x4(ShellPoint(key));
+                    Vector3 centerWorld = captureHeadToWorld.MultiplyPoint3x4(
+                        ShellPoint(key) * (hasDepth ? depth[i].y : 1f));
                     bool leftCenterValid = TryProjectFrozenUv(leftWorldToUv, centerWorld, out Vector2 leftCenter);
                     bool rightCenterValid = TryProjectFrozenUv(rightWorldToUv, centerWorld, out Vector2 rightCenter);
                     candidate = new ClosingCandidate(
@@ -208,7 +213,8 @@ namespace FixedCamVr.Streaming
                     candidates.Add(key, candidate);
                 }
 
-                Vector3 captureWorld = captureHeadToWorld.MultiplyPoint3x4(ShellPoint(vertices[i]));
+                Vector3 captureWorld = captureHeadToWorld.MultiplyPoint3x4(
+                    ShellPoint(vertices[i]) * (hasDepth ? depth[i].x : 1f));
                 candidate.vertexCount++;
                 if (TryProjectFrozenUv(leftWorldToUv, captureWorld, out Vector2 leftUv)
                     && IsInsidePhoto(leftUv))

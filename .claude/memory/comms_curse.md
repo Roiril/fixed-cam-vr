@@ -106,3 +106,46 @@ EditMode 1965/1965。実機は未走行（並行セッションが Editor を握
   侵食度 → `Deliver` の順にした（`RunFor` / `ShootReviewFrames` / `ShootMotion` の 3 か所）
 - HLSL の予約語 `line` を引数名にして落ちた（`rules/show-design.md` に書いてある罠）。`Shader error` は
   `unity.ps1 test` には出ない — プレビューの後に Editor.log を `grep "Shader error"` する
+
+## ③a / ③b の「復帰」（2026-10-17・0270・R066）
+
+それまで③a / ③b は斑 0 の通常の面だった。いまは③a を組んだ縁から数える 1 本の時計
+（`CommsPanelLogic.RecoverySec`）で、段の尺を変えずに上へ重ねる。形は `CommsRecoveryLogic`（純ロジック）。
+
+| 何 | どこ |
+|---|---|
+| 時計 | `CommsPanelLogic.BeginRecovery(skipBoot)` / `EnsureRecovery` / `EndRecovery`。⚠ 面が畳まれたら止まる（`Disable` / 自然に引き切る） |
+| 起動・余震・残り・解ける | `CommsRecoveryLogic.Sample(sec, promptReveal, promptTypeSec, releasedSec)` |
+| 電力と縦の開き | `CommsPanel.Apply`（地・顔・文字・下段の濃さに電力を掛ける）・`ApplyRecoveryMotion`（`_visualRoot` の縦の縮み。**枠の中心を軸**にずらす） |
+| 帯の乱れ | 乗っ取りと同じ `ComputeTear`。種は復帰の時計 |
+| 顔の右側の人形 | `CommsAvatar.shader` の `_Residue` / `_ResidueColor`（`_Residue.x = 0` なら 1 画素も変わらない） |
+| 字の赤 | `CommsPanel.ApplySplitTruthMesh` → `SetGlyphRed`（頂点色・片側だけ）。どの字に許すかは `CommsRecoveryLogic.RedAllowed` |
+| 見る | `.\tools\unity.ps1 menu comms-preview -Set recovery=1` → `Assets/Screenshots/comms-preview/recovery/`（`recovery.tsv` が電力・開き・乱れ・人形・赤い字の数） |
+| 観測 | `ev=commsRecover st=begin/end`（end に powMin / squashMin / tearMax / resMax / resEnd / redMax）・`ev=sum` の `commsRec` |
+
+### 起動は砂嵐からブロックごとに復号する（2026-10-20・0280）
+
+博士タブレットの通信断（`tablet/.../web/signal-cut.js`）の逆再生。`CommsRecoveryLogic` が段（横線 0.05 / 開く 0.12 /
+復号 0.75 = `BootSec` 0.92）と `boot`（まだ現れていない量）を出し、`CommsRecovery.hlsl` の `CommsBootReveal` が
+面の座標で横長ブロック（行 9mm × 幅 22〜75mm）に割って「抜け / 砂嵐 / 中身」を決める。
+
+- 書く先は **`_Recovery.z`（地・字）と `_Residue.w`（顔）**。⚠ 片方だけ書くと、そこだけ一気に出る
+- 地・顔・字は**同じ格子・同じ順番**を読む。1 ブロックの中で 3 つが同時に出る
+- `boot` > 0.5 はブロックが点いていない、≤ 0.5 は点いたブロックの砂嵐が復号されていく。0 で 1 画素も変わらない
+- 縦罫線はシェーダを持たないので、`boot` が 0.25 を切るまで C# で alpha を落とす
+- 復号は 24Hz の段。ざ・ざ・ざ（`DecodeBursts`）は砂嵐が**強まる**向きなので明るさは落ちない
+- 観測は `ev=commsRecover st=end` の `bootMax`（横線で 0.78）。`analyze-xp-log.py` が 0.5 未満を FAIL
+- 見る: `menu comms-preview -Set recovery=1` の f0000〜f0030
+
+罠と決めたこと:
+
+- ⚠⚠ **電力は上がる方向にしか動かさない。** 最初に 2 回 0 近くへ落としたら約 5Hz の明滅になった（設計批評で指摘）。
+  `Boot_NeverDimsTheScreen_PowerOnlyRises` が固定する
+- ⚠⚠ **赤は命令の句に載せない**（③b の最後の行は象牙・③a は起動の間に焼け落ちる）。赤は人形の嘘の色
+- ⚠ **顔の赤と字の赤は 1 本の量**（字 = 顔 × 0.55）。0229 の「顔と文字は同じ量を読む」と同じ理由
+- ⚠ **余震は③b の打鍵の進みに結ぶ**（絶対秒だと言語で外れる）。読ませる段には入れない
+- ⚠ **同じ面のまま③a へ差し替わったら起動を飛ばす**（`CommitNotice` の `easeBand`）。開いている面を潰して開き直さない
+- ⚠ **報告が通ったら次の連絡が来ても時計を止めない**（`_releaseAtRec`）。止めると顔が 1 コマでスイへ戻る。
+  消え切った縁（`ReleaseSec`）で `Apply` が止める
+- ⚠ **`CommsPanel.cs` のコメントの日本語も HUD フォントの収集元。** 直したら `menu hud-font` を焼き直す
+  （ビルドの門が落とす）

@@ -36,6 +36,15 @@ float HeroHash(float k, float salt)
     return frac(sin(k * 12.9898 + salt * 78.233) * 43758.5453);
 }
 
+// 代表の粒がスクリーンへ引かれる進み 0..1（HeroSpark の travel と同じ式）。
+// R061: 粒の側（IntroSpark.shader）は奥行きの倍率をこの進みで 1 へ戻す。
+float HeroSparkTravel(int k, float p)
+{
+    float death = lerp(HeroDeathMin, HeroDeathMax, HeroHash((float)k, 2.0));
+    float pullT = saturate((p - PullStart) / max(death - PullStart, 0.01));
+    return pow(pullT, 1.8);
+}
+
 // k: 0..HeroSparkCount-1 / p: 段 4 の進み 0..1
 // captureHeadToWorld: 割れ始めに固定した頭の姿勢（_CaptureHeadToWorld）
 // screenCenterWS: スクリーン矩形の中心（world）。集結でここへ引かれる
@@ -63,8 +72,7 @@ void HeroSpark(int k, float p, float4x4 captureHeadToWorld, float3 screenCenterW
     if (radius > HeroMaxRadius) flight *= HeroMaxRadius / radius;
 
     float death = lerp(HeroDeathMin, HeroDeathMax, h1);
-    float pullT = saturate((p - PullStart) / max(death - PullStart, 0.01));
-    float travel = pow(pullT, 1.8);
+    float travel = HeroSparkTravel(k, p);
     float3 flightWS = mul(captureHeadToWorld, float4(flight, 1.0)).xyz;
     posWS = lerp(flightWS, screenCenterWS, travel);
 

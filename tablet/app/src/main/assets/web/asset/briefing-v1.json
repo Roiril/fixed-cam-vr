@@ -4,8 +4,8 @@
     {
       "id": "introduction",
       "layout": "doctor-center",
-      "image": "introduction-doctor-v1.jpg",
-      "doctorImage": "introduction-doctor-v1.jpg",
+      "image": "introduction-doctor-v2.jpg",
+      "doctorImage": "introduction-doctor-v2.jpg",
       "doctorAnchor": 50,
       "alt": {
         "ja": "黒い背景の前にいる白衣の博士",
@@ -28,7 +28,7 @@
         "fr": "Docteur · Supervision des enquêtes"
       },
       "video": {
-        "ja": "introduction-ja-v1.mp4"
+        "ja": "introduction-ja-v2.mp4"
       },
       "cues": {
         "ja": [
@@ -67,7 +67,7 @@
       "id": "subject",
       "layout": "doctor-evidence",
       "image": "camera-01-doll.webp",
-      "doctorImage": "subject-doctor-v1.jpg",
+      "doctorImage": "subject-doctor-v2.jpg",
       "doctorAnchor": 50,
       "alt": {
         "ja": "実際の撮影場所にある幕と手すりを人形視点で加工した写真",
@@ -94,7 +94,7 @@
         "startCue": 1
       },
       "video": {
-        "ja": "subject-ja-v1.mp4"
+        "ja": "subject-ja-v2.mp4"
       },
       "cues": {
         "ja": [
@@ -156,13 +156,13 @@
     {
       "id": "report",
       "layout": "doctor-evidence",
-      "image": "briefing-device-v1.png",
-      "doctorImage": "report-doctor-v1.jpg",
+      "image": "briefing-device-v3.jpg",
+      "doctorImage": "report-doctor-v2.jpg",
       "doctorAnchor": 50,
       "alt": {
-        "ja": "観測装置と手元のコントローラー",
-        "en": "The observation headset and handheld controller",
-        "fr": "Le dispositif d’observation et sa manette"
+        "ja": "黒い布の上に置かれた観測装置と左コントローラー。装置に「観測装置」と書いた荷札が結ばれている",
+        "en": "The observation headset and left controller on black cloth, with a paper tag reading “Observation device” tied to the headset",
+        "fr": "Le casque d’observation et la manette gauche posés sur un tissu noir, avec une étiquette « dispositif d’observation » attachée au casque"
       },
       "eyebrow": {
         "ja": "異変の報告",
@@ -180,7 +180,7 @@
         "fr": "Manette gauche · Un seul bouton · 1 seconde"
       },
       "video": {
-        "ja": "report-ja-v1.mp4"
+        "ja": "report-ja-v2.mp4"
       },
       "cues": {
         "ja": [
@@ -242,8 +242,8 @@
     {
       "id": "wear",
       "layout": "doctor-center",
-      "image": "wear-doctor-v1.jpg",
-      "doctorImage": "wear-doctor-v1.jpg",
+      "image": "wear-doctor-v2.jpg",
+      "doctorImage": "wear-doctor-v2.jpg",
       "doctorAnchor": 50,
       "alt": {
         "ja": "装置の装着を案内する博士",
@@ -266,7 +266,7 @@
         "fr": "L’agent vous guidera une fois équipé"
       },
       "video": {
-        "ja": "wear-ja-v1.mp4"
+        "ja": "wear-ja-v2.mp4"
       },
       "cues": {
         "ja": [

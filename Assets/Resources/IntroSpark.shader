@@ -56,6 +56,8 @@ Shader "FixedCamVr/IntroSpark"
                 float4 seed : TEXCOORD1;
                 float4 piece : TEXCOORD2;
                 float4 look : TEXCOORD3;
+                // R061: 放出した片の奥行きの倍率（IntroRoomDepth.SparkChannel）。部屋が無ければ 1。
+                float2 roomDepth : TEXCOORD4;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -71,6 +73,8 @@ Shader "FixedCamVr/IntroSpark"
             float _Shatter;
             float _HasFrozenFrame;
             float _Spark;
+            // R060: 1 なら頂点を 1 点へ潰して何も描かない。段 4 の描画状態を導入の手前で作っておくための描画（IntroVeil.WarmUp）。
+            float _IntroWarm;
             float4x4 _CaptureHeadToWorld;
             float4 _CurrentHeadPosition;
             float4 _ScreenCenter;
@@ -144,6 +148,9 @@ Shader "FixedCamVr/IntroSpark"
                             * (1.0 - Ease(death - 0.01, death, p));
                 // 加算で黒地に乗るので芯は 1.0 近くまで振る（0.4 台では灰色の塵にしか見えなかった）。
                 float intensity = born * (lerp(0.85, 1.0, star) * fade + flash) * step(p, death);
+                // 明るさに大小の差を付ける（数個が強く光り、大半は淡い）。同じ明るさの円盤が一様に散ると、
+                // 光の粒ではなく雪に見えた（2026-10-17）。
+                intensity *= lerp(0.18, 1.0, pow(SparkHash(seedB * 5.31 + seedA * 1.73), 3.0));
                 float sizeM = 0.008 * v.look.y;
                 // 閃きの最後は小さく強く（点になって消える）。
                 sizeM *= lerp(1.0, 0.4, Ease(death - 0.03, death - 0.01, p));
@@ -157,6 +164,7 @@ Shader "FixedCamVr/IntroSpark"
                               heroPos, heroIntensity);
                     posWS = heroPos;
                     intensity = heroIntensity;
+                    travel = HeroSparkTravel((int)v.seed.w, p);
                     sizeM = 0.016;
                     star = 1.0;
                 }
@@ -173,13 +181,16 @@ Shader "FixedCamVr/IntroSpark"
                     eyeDistance = 0.55;
                 }
 
-                // 瞬き。位相に頭から見た向きを混ぜて、同じ時刻でも粒ごとに違う明滅にする。
+                // 瞬き。粒ごとの種（seedA）で、同じ時刻でも粒ごとに違う明滅にする。
                 float3 toSpark = SparkSafeNormalize(fromEye, float3(0.0, 0.0, 1.0));
-                // 向きは量子化してから hash に入れる（連続値のまま入れると毎コマ白色雑音になり、
-                // 明滅ではなくストロボになる）。45 段/p ＝ 約 9 回/秒の瞬き。
-                float gaze = dot(toSpark, float3(0.3, 0.9, 0.3));
+                // 瞬きは 45 段/p（約 9 回/秒）の乱数を隣どうし滑らかにつなぐ。段で切り替えると明るさが
+                // コマ単位で跳ね、頭の向きを混ぜると頭の微動で瞬きが起きた（HMD でちらつく）。
+                float twinkleT = p * 45.0;
+                float twinkleStep = floor(twinkleT);
+                float twinkleA = SparkHash(seedA * 13.0 + twinkleStep);
+                float twinkleB = SparkHash(seedA * 13.0 + twinkleStep + 1.0);
                 float twinkle = lerp(0.55, 1.0,
-                    SparkHash(seedA * 13.0 + floor(gaze * 6.0) + floor(p * 45.0)));
+                    lerp(twinkleA, twinkleB, smoothstep(0.0, 1.0, twinkleT - twinkleStep)));
                 intensity *= twinkle;
 
                 // 画素の大きさで切る（遠くて消える・近くて面になる を両方防ぐ）。
@@ -195,11 +206,17 @@ Shader "FixedCamVr/IntroSpark"
                 float3 up = cross(right, forward);
                 float3 world = posWS + (right * v.corner.x + up * v.corner.y) * sizeM;
 
+                // R061: 軌道は名目の殻の上で解き、撮影時の頭を中心に放出した片と同じ倍率で奥行きだけ縮める
+                // （片の手前を横切る粒は片の手前のまま。撮影位置から見た絵は同じ）。集結で 1 へ戻る。
+                float3 captureOrigin = _CaptureHeadToWorld._m03_m13_m23;
+                world = captureOrigin + (world - captureOrigin) * lerp(v.roomDepth.x, 1.0, travel);
+
                 float3 tint = lerp(SparkCoreColor, SparkPalette(v.look.w), 0.35);
                 o.positionCS = TransformWorldToHClip(world);
                 o.color = float4(tint * intensity, intensity);
                 o.corner = v.corner;
                 o.star = star;
+                if (_IntroWarm > 0.5) o.positionCS = float4(0.0, 0.0, 0.0, 1.0);
                 return o;
             }
 
@@ -207,13 +224,13 @@ Shader "FixedCamVr/IntroSpark"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 float d = length(i.corner);
-                float core = pow(saturate(1.0 - d * d), 2.0);
+                float core = pow(saturate(1.0 - d * d), 4.0);
                 // 十字の光芒は上位 20% の粒だけ。
                 float spikes = i.star * 0.35 * (
                       exp(-abs(i.corner.x) * 9.0) * exp(-i.corner.y * i.corner.y * 1.5)
                     + exp(-abs(i.corner.y) * 9.0) * exp(-i.corner.x * i.corner.x * 1.5));
                 // 芯の外に薄い暈を足す（点ではなく光の粒に読ませる）。
-                float halo = 0.18 * saturate(1.0 - d);
+                float halo = 0.12 * saturate(1.0 - d);
                 float shape = saturate(core + spikes + halo);
                 // 芯は生成り寄りの白、縁へ向かうほどパレットの色。
                 float3 color = lerp(SparkCoreColor * i.color.a, i.color.rgb, saturate(d));

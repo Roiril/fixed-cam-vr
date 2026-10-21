@@ -7,7 +7,8 @@ namespace FixedCamVr.Streaming
     /// 終幕（装置が力尽きて、報告を出して終わる）の実行体。<see cref="IntroDirector"/> と対で、
     /// <b>判断は <see cref="OutroLogic"/> にあり、ここは配線だけ</b>を持つ。
     ///
-    /// 段は Collapse（ブラウン管の電源断 ＝ 潰れて線 → 点 → 消える）→ Dark（何も無い黒）
+    /// 段は Noise（通信が切れる砂嵐 ＝ 博士タブレットの消え方・2026-10-21）
+    /// → Collapse（ブラウン管の電源断 ＝ 潰れて線 → 点 → 消える）→ Dark（何も無い黒）
     /// → Report（エンドロール冒頭をフェード表示）→ Done（そのまま次のランまで）。
     ///
     /// ⚠⚠ <b>パススルー・覆い・隔離には触らない</b>（2026-08-15 に作り替えた・
@@ -15,14 +16,14 @@ namespace FixedCamVr.Streaming
     /// 本編の時点で背景は既に黒（<c>PassthroughStyler</c> が導入の後に切っている）ので、
     /// <b>何もしないことが「黒のまま」</b>。始めるときに覆い・隔離・乱れを畳むだけ。
     ///
-    /// ⚠⚠ <b>スクリーンへ書く uniform は 2 本あり、既定が逆向き</b>
-    /// （<c>_ScreenPower</c> = 1 が正常 / <c>_ScreenCollapse</c> = 0 が正常）。
+    /// ⚠⚠ <b>スクリーンへ書く uniform は 3 本あり、既定が逆向き</b>
+    /// （<c>_ScreenPower</c> = 1 が正常 / <c>_ScreenCollapse</c> と <c>_ScreenNoise</c> = 0 が正常）。
     /// <see cref="IntroDirector"/> の <c>_CrtIgnite</c> と同じ罠を持つ — 終幕の値を残したまま
     /// 次の体験者が来ると<b>画がまるごと消える</b>ので、終幕を畳むすべての経路
     /// （終わった / ラン開始 / 相が変わった / <c>OnDisable</c>）で <see cref="ResetScreen"/> を通す。
     /// <b>「書くのをやめる」だけでは最後に書いた値が残る。</b>
     ///
-    /// ⚠⚠ <b>2 本を別々に戻す実装にしない。</b> この codebase は「凍結が解けない」を 4 回
+    /// ⚠⚠ <b>3 本を別々に戻す実装にしない。</b> この codebase は「凍結が解けない」を 4 回
     /// 踏んでいる。戻す先が増えるほど、片方だけ書き戻す経路が生まれる。
     ///
     /// ⚠ 新しい凍結ラッチは足さない。終幕のあいだも画面のカメラ切替は裏で回っており、
@@ -51,10 +52,12 @@ namespace FixedCamVr.Streaming
         // ⚠ 既定が逆向き（power=1 が正常 / collapse=0 が正常）。戻すのは ResetScreen 1 本。
         private static readonly int ScreenPowerId = Shader.PropertyToID("_ScreenPower");
         private static readonly int ScreenCollapseId = Shader.PropertyToID("_ScreenCollapse");
+        private static readonly int ScreenNoiseId = Shader.PropertyToID("_ScreenNoise");
         private Material? _screenMat;
         private bool _warnedNoScreenMat;
         private float _powerWritten = -1f;
         private float _collapseWritten = -1f;
+        private float _noiseWritten = -1f;
 
         /// <summary>
         /// 電源断の頭で時計を消すまでの割合（潰れの進みに対する）。
@@ -87,6 +90,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float TotalElapsedSec => _logic.TotalElapsedSec;
 
+        /// <summary>終幕の頭から管が潰れ始めるまでの秒（電源断の音を鳴らす所）。<see cref="OutroLogic.PowerCutAtSec"/>。</summary>
+        public float PowerCutAtSec => _logic.PowerCutAtSec;
+
         /// <summary>
         /// <b>実際にスクリーンの材質へ書いた電力</b>（<c>_ScreenPower</c>）。掴めていなければ <b>-1</b>。
         /// 「重みが動いた」ではなく「画に出た」の側の観測（<c>rules/streaming.md</c>）。
@@ -103,6 +109,12 @@ namespace FixedCamVr.Streaming
         /// （<c>rules/troubleshooting.md</c>）。
         /// </summary>
         public float CollapseWritten => _screenMat != null ? _collapseWritten : -1f;
+
+        /// <summary>
+        /// <b>実際に材質へ書いた砂嵐の進み</b>（<c>_ScreenNoise</c>）。掴めていなければ <b>-1</b>。
+        /// <see cref="CollapseWritten"/> と同じ理由で要る — 書けていなくても段は進む。
+        /// </summary>
+        public float NoiseWritten => _screenMat != null ? _noiseWritten : -1f;
 
         private void OnEnable() => TrySubscribe();
 
@@ -164,6 +176,7 @@ namespace FixedCamVr.Streaming
             _logic.Begin(showCollapse: !trapped);
             WritePower(_logic.ScreenPower);
             WriteCollapse(_logic.ScreenCollapse);
+            WriteNoise(_logic.ScreenNoise);
             // 導入で使う層は畳んでおく（終幕はどれも使わない）。乱れも畳む —
             // 残ると消えていくスクリーンに縞が乗ったまま体験が終わる。
             veil?.SetHidden();
@@ -196,7 +209,7 @@ namespace FixedCamVr.Streaming
                 //   本編中ずっと nc が出て、解析が偽の FAIL を出す。
                 if (_powerWritten < 0f)
                 {
-                    _idleResolveWait -= Time.unscaledDeltaTime;
+                    _idleResolveWait -= ShowClock.Dt;
                     if (_idleResolveWait <= 0f)
                     {
                         _idleResolveWait = IdleResolveSec;
@@ -206,14 +219,15 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            OutroEvent ev = _logic.Tick(Time.unscaledDeltaTime);
+            OutroEvent ev = _logic.Tick(ShowClock.Dt);
 
-            // 画へ出すのはこの 2 本だけ（報告の面は OutroReport が ReportAlpha を読む）。
-            // ⚠ **順序に意味はないが、必ず両方書く** — 片方だけ書くと、潰れたまま電力が戻る
-            //   / 電力を落としたのに画が潰れない、という中間の絵ができる。
+            // 画へ出すのはこの 3 本だけ（報告の面は OutroReport が ReportAlpha を読む）。
+            // ⚠ **順序に意味はないが、必ず全部書く** — 片方だけ書くと、潰れたまま電力が戻る
+            //   / 電力を落としたのに画が潰れない / 砂嵐が残る、という中間の絵ができる。
             float collapse = _logic.ScreenCollapse;
             WritePower(_logic.ScreenPower);
             WriteCollapse(collapse);
+            WriteNoise(_logic.ScreenNoise);
 
             // 時計は潰れの頭で消す（潰れた座標のまま引くと灰色の帯になる）。
             if (osd != null) osd.Suppressed = collapse > OsdCutAt;
@@ -265,11 +279,21 @@ namespace FixedCamVr.Streaming
             m.SetFloat(ScreenCollapseId, c);
         }
 
+        private void WriteNoise(float v)
+        {
+            var m = ResolveScreenMaterial();
+            if (m == null) return;
+            float n = Mathf.Clamp01(v);
+            if (Mathf.Approximately(n, _noiseWritten)) return;
+            _noiseWritten = n;
+            m.SetFloat(ScreenNoiseId, n);
+        }
+
         /// <summary>
         /// 管をふつうに映っている状態へ戻す。<b>終幕を畳むすべての経路がここを通る</b> —
         /// 通し忘れると最後に書いた値が残って画がまるごと消える。
         ///
-        /// ⚠⚠ <b>3 つを必ず一緒に戻す</b>（電力 1 / 潰れ 0 / 時計を出す）。
+        /// ⚠⚠ <b>4 つを必ず一緒に戻す</b>（電力 1 / 潰れ 0 / 砂嵐 0 / 時計を出す）。
         /// 別々に戻す実装にすると、片方だけ書き戻す経路が必ず生まれる —
         /// この codebase は「凍結が解けない」を 4 回踏んでいる。
         /// </summary>
@@ -277,6 +301,7 @@ namespace FixedCamVr.Streaming
         {
             WritePower(1f);
             WriteCollapse(0f);
+            WriteNoise(0f);
             if (osd != null) osd.Suppressed = false;
         }
     }

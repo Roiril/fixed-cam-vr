@@ -171,6 +171,13 @@ export function newStep(over = {}) {
     //   dollCall  = 画の差し替えと同時に人形の呼びかけ「あーそぼー」を 1 回鳴らす
     //               （canon/LEDGER.md 0109。立てているのは 2 周目 C の追いつき pov_4 だけ）
     swapHold: false, swapMinX: 0, switchSfx: false, dollCall: false,
+    // 端末内録画の再生（canon/LEDGER.md 0272。3 周目 A の早送りだけが使う）。
+    //   recRate     = 再生の速さ（0 以下 = 等速。0.25..8 へ丸める）
+    //   recContinue = 画面に出ている同じ録画（recLap / camera が同じ）を**頭へ戻さず続きから**流す。
+    //                 続けられない（録画が出ていない・もう尽きた）ならこのカットは飛ぶ
+    // ⚠ **卓にまだ編集 UI が無い**（show.json を手で書く）。白名簿から漏れると 💾 保存で消える。
+    //   recFollow   = コマを時間ではなく体験者の進み具合（L 字の角を回る角度）で選ぶ（0274）
+    recRate: 0, recContinue: false, recFollow: false,
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
@@ -212,6 +219,12 @@ export const takeId = (lap, camera, index) => `L${lap}C${camera}#${index}`;
 // 判別子は保存時に既定へ倒す（Unity 側 TakeSchema.Normalize* と同じ倒し先）。
 // 未知値をそのまま書き戻すと、実機で毎回警告ログが出るだけの無効値が show.json に残る。
 const oneOf = (v, allowed, def) => (allowed.includes(v) ? v : def);
+// 録画の再生速度。0 以下・非数 = 0（等速の意味）。それ以外は 0.25..8。
+const recRateOf = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.max(0.25, Math.min(8, n));
+};
 
 function serializeStep(s) {
   const out = {
@@ -251,6 +264,10 @@ function serializeStep(s) {
     swapMinX: Math.max(0, Math.min(1, num(s.swapMinX, 0))),
     switchSfx: !!s.switchSfx,
     dollCall: !!s.dollCall,
+    // 録画の再生（canon/LEDGER.md 0272）。0 = 等速。Unity 側 TakeSchema.ResolveRecRate と同じ丸め。
+    recRate: recRateOf(s.recRate),
+    recContinue: !!s.recContinue,
+    recFollow: !!s.recFollow,
     cg: s.cg || '',
     cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
   };

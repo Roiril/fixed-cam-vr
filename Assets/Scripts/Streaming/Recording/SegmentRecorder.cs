@@ -48,7 +48,14 @@ namespace FixedCamVr.Streaming.Recording
             public float startTime;      // Time.realtimeSinceStartup（pts の 0 点）
             public bool postRoll;        // true = 切り替え済み。postEndTime で閉じる
             public float postEndTime;
+            // 位置で録る区間（record.progress・`canon/LEDGER.md` 0274）。
+            public bool progressMode;
+            public CornerProgress corner;
         }
+
+        // 書き出した区間（"L<周>C<カメラ>"）。**ファイルの実在だけで見ると、書き出しが背景スレッドで
+        // 走っている数百 ms のあいだに同じ区間へ戻ってきた回を「未録画」と読み、採った試行を上書きする**。
+        private readonly HashSet<string> _closedKeys = new();
 
         // 現区間（postRoll=false）は高々 1 本、追い録り（postRoll=true）も高々 1 本。
         private readonly List<Segment> _segments = new(2);
@@ -198,6 +205,7 @@ namespace FixedCamVr.Streaming.Recording
             _budgetWarned = false;
             _curLap = -1;
             _curCamera = -1;
+            _closedKeys.Clear();
             PurgeAllRuns();
         }
 
@@ -345,9 +353,22 @@ namespace FixedCamVr.Streaming.Recording
             // ② 出ていった区間を追い録りへ回す。**閉じない** — 過去の自分が曲がり切るまで録る。
             //    録らない設定（record OFF / 対象外の周）でも先にここを通す。そうしないと
             //    「3 周目に入った瞬間に 2 周目の録画が切れる」になる。
-            foreach (Segment s in _segments)
+            for (int i = _segments.Count - 1; i >= 0; i--)
             {
+                Segment s = _segments[i];
                 if (s.postRoll) continue;
+                // 位置で録る区間は、ちゃんと中央を越えて次の区間へ進んだ試行だけを採る（0274）。
+                // 採らない試行は書き出さずに捨てる ＝ 次に入ったとき録り直せる。
+                if (s.progressMode && !AdoptProgressAttempt(s, camera, cfg, out string why))
+                {
+                    s.writer.Discard();
+                    _segments.RemoveAt(i);
+                    Debug.Log($"[SegmentRecorder] この試行は使わない L{s.lap}C{s.camera}（{why}）— 次に入ったとき録り直す");
+                    continue;
+                }
+                if (s.progressMode)
+                    Debug.Log($"[SegmentRecorder] この試行を使う L{s.lap}C{s.camera} max={s.writer.MaxProgress:F2} " +
+                              $"コマ={s.writer.BufferedFrames}（前へ進んだコマだけ）");
                 s.postRoll = true;
                 s.postEndTime = now + postSec;
                 s.writer.BeginPostRoll(PtsOf(s, now), postSec);
@@ -417,10 +438,67 @@ namespace FixedCamVr.Streaming.Recording
             });
             _curLap = lap;
             _curCamera = camera;
+            // 入った瞬間から録る区間（record.enterStartSegments・`canon/LEDGER.md` 0272）。
+            // 起点を pts 0 に打つので、録り始めの線（TickStartLine）は HasStartMark を見て打たない。
+            if (cfg.StartsAtEnter(lap, camera))
+            {
+                writer.MarkStart(0);
+                Debug.Log($"[SegmentRecorder] 入った瞬間から録る区間 L{lap}C{camera}");
+            }
+            // 位置で録る区間（0274）。物差しが組めなければ時間どおり録る（何も残らない、を作らない）。
+            Segment opened = _segments[_segments.Count - 1];
+            if (cfg.progress != null && cfg.progress.Applies(lap, camera))
+            {
+                ShowRoomWallDef[]? walls = showControl != null ? showControl.Layout?.room?.walls : null;
+                if (CornerProgress.TryFromWalls(walls, cfg.progress.fromWall, cfg.progress.toWall, out CornerProgress corner))
+                {
+                    opened.progressMode = true;
+                    opened.corner = corner;
+                    writer.EnableProgress();
+                    Debug.Log($"[SegmentRecorder] 位置で録る区間 L{lap}C{camera}（前へ進んだコマだけ・採るのは {cfg.progress.adoptAt:0.##} 以上で次の区間へ進んだ試行）");
+                }
+                else
+                {
+                    Debug.LogWarning($"[SegmentRecorder] 位置で録る物差しを組めない（壁 {cfg.progress.fromWall} / {cfg.progress.toWall}）"
+                                     + $" → L{lap}C{camera} は時間どおり録る");
+                }
+            }
             RebindTaps();
             Debug.Log($"[SegmentRecorder] 録画開始 lap={lap} camera={camera} " +
                       $"末尾{limits.tailSec:0.#}s + 切替後{postSec:0.#}s → {path}");
             SegmentOpened?.Invoke(lap, camera);
+        }
+
+        /// <summary>
+        /// 位置で録った試行を採るか（0274）: 進み具合が <c>adoptAt</c>（中央の線）に届き、
+        /// かつ周回の順で次のカメラへ進んだときだけ。入ってすぐ引き返した回などは捨てる。
+        /// </summary>
+        private bool AdoptProgressAttempt(Segment s, int enteredCamera, ShowRecordDef? cfg, out string why)
+        {
+            float adoptAt = cfg?.progress != null ? cfg.progress.adoptAt : 0.5f;
+            if (s.writer.MaxProgress < adoptAt)
+            {
+                why = $"中央まで進んでいない max={s.writer.MaxProgress:F2} < {adoptAt:0.##}";
+                return false;
+            }
+            int next = NextCameraInCourse(s.camera);
+            if (next >= 0 && enteredCamera != next)
+            {
+                why = $"次の区間へ進んでいない（入った先 cam={enteredCamera}・次は cam={next}）";
+                return false;
+            }
+            why = "";
+            return true;
+        }
+
+        // 周回の順（layout.course.order）でこのカメラの次。順が無ければ -1（＝向きは見ない）。
+        private int NextCameraInCourse(int camera)
+        {
+            int[]? order = showControl != null ? showControl.Layout?.course?.order : null;
+            if (order == null || order.Length == 0) return -1;
+            for (int i = 0; i < order.Length; i++)
+                if (order[i] == camera) return order[(i + 1) % order.Length];
+            return -1;
         }
 
         /// <summary>この区間の pts（区間先頭からの経過 ms）。</summary>
@@ -433,6 +511,7 @@ namespace FixedCamVr.Streaming.Recording
         {
             foreach (Segment s in _segments)
                 if (s.lap == lap && s.camera == camera) return true;
+            if (_closedKeys.Contains($"L{lap}C{camera}")) return true;
             return !string.IsNullOrEmpty(ResolveRecorded(lap, camera));
         }
 
@@ -463,6 +542,7 @@ namespace FixedCamVr.Streaming.Recording
         private void Close(Segment s)
         {
             string path = s.writer.Path;
+            _closedKeys.Add($"L{s.lap}C{s.camera}");
             s.writer.Dispose();          // 末尾を書き出す（この後で WrittenBytes / Capped が確定する）
             _lastBytes = s.writer.WrittenBytes;
             _lastFrames = s.writer.WrittenFrames;
@@ -516,7 +596,13 @@ namespace FixedCamVr.Streaming.Recording
             {
                 Segment s = _segments[i];
                 if (!ReferenceEquals(s.stream, stream)) continue;
-                s.writer.TryAppend(jpeg, length, PtsOf(s, now));
+                float progress = float.NaN;
+                if (s.progressMode && !s.postRoll && showControl != null && showControl.HeadCourseXZProvider != null)
+                {
+                    Vector2 xz = showControl.HeadCourseXZProvider();
+                    progress = s.corner.At(xz.x, xz.y);
+                }
+                s.writer.TryAppend(jpeg, length, PtsOf(s, now), progress);
             }
         }
 

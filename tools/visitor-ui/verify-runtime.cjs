@@ -329,8 +329,17 @@ const context = {
   },
 };
 context.globalThis = context;
+Object.assign(context.window, {
+  document: context.document,
+  performance: context.performance,
+  matchMedia: context.matchMedia,
+  setTimeout: context.setTimeout,
+  clearTimeout: context.clearTimeout,
+});
 
 for (const match of html.matchAll(/<script\s+[^>]*src="([^"]+)"[^>]*><\/script>/gi)) {
+  // 題字の筆の書き出しは見た目だけ（状態も通信も持たない）。canvas と WebGL の無いこの代役では走らせない。
+  if (path.basename(match[1]) === 'title-write.js') continue;
   const scriptPath = path.resolve(webRoot, match[1]);
   vm.runInNewContext(fs.readFileSync(scriptPath, 'utf8'), context, { filename: scriptPath });
 }
@@ -364,6 +373,7 @@ const exportsSource = `
     resumeBriefing,
     restartBriefingCue,
     beginBriefingCue,
+    presentLoadedReference,
     moveBriefing,
     finishBriefing,
     saveBriefingProgress,
@@ -371,7 +381,9 @@ const exportsSource = `
     restoreProgress: (progress) => { restoreCandidate = progress; state.restored = false; return tryRestoreBriefing(); },
     wasChangedByAnotherPage,
     showPageConflict,
-    confirmSettings,
+    startBypass,
+    canAdvanceFromResult,
+    advanceFromResult,
     setSettingsStep,
     syncReliefPreview,
     checkStaffQuest,
@@ -402,6 +414,16 @@ const exportsSource = `
     cancelStaffAlertSound,
     previewStaffAlertSound,
     staffResetAllowed,
+    staffForceResetAllowed,
+    questStallKind,
+    staffRunActive,
+    staffRunProblems,
+    createRunAlertState,
+    updateRunAlertState,
+    shownRunAlerts,
+    observeRunAlerts,
+    runAlert,
+    pollFailures: () => pollFailures,
     openStaffScreen,
     closeStaffScreen,
     observeStaffStage,
@@ -418,6 +440,11 @@ const exportsSource = `
       staffReceiptState = { text: '', until: 0 };
       staffHealth = { identity: '', observed: false, problem: false };
       staffMediaVolume = null;
+      pollFailures = 0;
+      staffForceNotice = '';
+      runAlert.entries.clear();
+      runAlertBaseline = { portal: '', exceptions: null };
+      runAlertShownKey = '';
     },
     setQuestTroubleSince: (value) => { questTroubleSince = value; },
     setLegacyEndSince: (value) => { legacyEndSince = value; },
@@ -533,7 +560,6 @@ test('新しい受付はリセット完了前の入口を閉じ、settingsと同
   status = { ...status, questTick: 203, staffSetup: { stage: 'devices', reason: '', positionConfirmed: true } };
   state.status = status;
   runtime.observeQuestTick(status);
-  assert.equal(runtime.confirmSettings(), false);
   await runtime.send();
   assert.equal(state.view, 'title');
 
@@ -574,62 +600,80 @@ test('設定は言語から軽減と確認へ進み、戻る操作と三言語�
   assert.equal(elements.get('reliefStep').hidden, false);
   assert.equal(elements.get('settingsBackBtn').hidden, false);
   assert.equal(elements.get('sendBtn').hidden, false);
-  assert.equal(elements.get('submitLabel').textContent, '設定を確認する');
+  assert.equal(elements.get('submitLabel').textContent, 'この設定で始める');
 
   state.lang = 'en';
   runtime.setSettingsStep('language', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Please choose the language you would like to use.');
   runtime.setSettingsStep('relief', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Please choose whether you would like to reduce the horror.');
-  assert.equal(elements.get('submitLabel').textContent, 'Review settings');
+  assert.equal(elements.get('submitLabel').textContent, 'Start with these settings');
 
   state.lang = 'fr';
   runtime.setSettingsStep('language', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez la langue que vous souhaitez utiliser.');
   runtime.setSettingsStep('relief', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez si vous souhaitez atténuer l’horreur.');
-  assert.equal(elements.get('submitLabel').textContent, 'Vérifier les réglages');
+  assert.equal(elements.get('submitLabel').textContent, 'Commencer avec ces réglages');
   elements.get('settingsBackBtn').dispatch('click');
   assert.equal(state.settingsStep, 'language');
 });
 
-test('軽減効果は未選択でも三言語で常に読める', () => {
+test('軽減効果は未選択でも三言語で常に読め、各選択肢の語の下に置く', () => {
   const expected = {
-    ja: ['なし：通常の演出と音量', 'あり：音量半分と陽気な曲'],
-    en: ['Off: normal effects and volume', 'On: half volume with a cheerful tune'],
-    fr: ['Non : effets et volume normaux', 'Oui : volume réduit de moitié et musique gaie'],
+    ja: ['通常の演出と音量', '音量半分と陽気な曲'],
+    en: ['Normal effects and volume', 'Half volume with a cheerful tune'],
+    fr: ['Effets et volume normaux', 'Volume réduit de moitié et musique gaie'],
   };
   state.view = 'edit';
   state.relief = false;
-  for (const [lang, lines] of Object.entries(expected)) {
+  for (const [lang, [off, on]] of Object.entries(expected)) {
     state.lang = lang;
     runtime.setSettingsStep('relief', false);
-    assert.equal(elements.get('reliefDesc').getAttribute('aria-hidden'), null);
-    for (const line of lines) assert.ok(elements.get('reliefDesc').textContent.includes(line));
+    assert.equal(elements.get('reliefOffNote').textContent, off);
+    assert.equal(elements.get('reliefOnNote').textContent, on);
   }
+  // 選択肢の label の中（語の直後）にあるので、選ぶ前に目に入り、読み上げではその選択肢の名前に含まれる
+  const offLabel = /<label class="choice is-described">[\s\S]*?value="off"[\s\S]*?<\/label>/.exec(html)?.[0] || '';
+  assert.ok(/id="reliefOff"[\s\S]*id="reliefOffNote"/.test(offLabel), '「なし」の説明は語の直後に置く');
+  assert.equal(html.includes('id="reliefDesc"'), false, '選択肢より下の説明欄は置かない');
   state.lang = 'ja';
 });
 
-test('確認画面の見出しと操作は三言語に揃う', () => {
-  const copies = {
-    ja: ['設定内容の確認', 'この設定を送る', '設定に戻る'],
-    en: ['Review settings', 'Send these settings', 'Back to settings'],
-    fr: ['Vérification des réglages', 'Envoyer ces réglages', 'Retour aux réglages'],
-  };
-  state.connection = 'online';
-  state.status = clone(validStatus);
-  for (const [lang, [heading, apply, edit]] of Object.entries(copies)) {
-    state.view = 'edit';
-    state.ui = 'idle';
-    state.lang = lang;
-    runtime.setSettingsStep('relief', false);
-    assert.equal(runtime.confirmSettings(), true);
-    assert.equal(elements.get('resultTitle').textContent, heading);
-    assert.equal(elements.get('applyBtn').textContent, apply);
-    assert.equal(elements.get('editBtn').textContent, edit);
-    elements.get('editBtn').dispatch('click');
-    assert.equal(state.view, 'edit');
+test('設定の問いは選択肢の直上に出し、進む操作は選択肢の下に置く', () => {
+  state.view = 'edit';
+  state.lang = 'ja';
+  runtime.setSettingsStep('language', false);
+  assert.equal(elements.get('settingsAsk').textContent, '使う言語を教えてください。');
+  runtime.setSettingsStep('relief', false);
+  assert.equal(elements.get('settingsAsk').textContent, '恐怖を軽減するかどうかを決めてください。');
+  const view = /<section class="surface settings"[\s\S]*?<\/section>/.exec(html)?.[0] || '';
+  const order = ['id="noticeBody"', 'id="settingsAsk"', 'id="languageStep"', 'id="reliefStep"', 'id="settingsActions"'].map((id) => view.indexOf(id));
+  assert.ok(order.every((at) => at >= 0), '注意・問い・選択肢・操作は同じ列にある');
+  assert.deepEqual([...order].sort((a, b) => a - b), order, '注意 → 問い → 選択肢 → 操作 の順');
+  state.settingsStep = 'language';
+});
+
+test('戻る操作は上の帯に置き、進む操作（輪・画面タップ）の近くに置かない', () => {
+  // 2026-10-21: 「設定に戻る」が送る輪の隣と、画面タップで進む反映画面の中央にあり、テンポよく押すと入りかけた
+  const topbar = /<header class="topbar">[\s\S]*?<\/header>/.exec(html)?.[0] || '';
+  for (const id of ['settingsBackBtn', 'editBtn']) {
+    assert.ok(topbar.includes(`id="${id}"`), `${id} は上の帯にある`);
+    assert.equal((html.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} は 1 つだけ`);
   }
+  const actions = /<div class="settings-actions"[\s\S]*?<\/div>/.exec(html)?.[0] || '';
+  assert.ok(!actions.includes('settingsBackBtn'), '進む操作の並びに戻るを置かない');
+  const result = /<section class="surface result"[\s\S]*?<\/section>/.exec(html)?.[0] || '';
+  assert.ok(!result.includes('editBtn'), '画面タップで進む反映画面の中に戻るを置かない');
+  assert.equal(html.includes('id="applyBtn"'), false, '確認だけの段は置かない');
+  for (const [lang, edit] of [['ja', '設定に戻る'], ['en', 'Back to settings'], ['fr', 'Retour aux réglages']]) {
+    state.lang = lang; runtime.renderText();
+    assert.equal(elements.get('editBtn').textContent, edit);
+  }
+  state.lang = 'ja';
+  state.view = 'edit';
+  runtime.setSettingsStep('language', false);
+  assert.equal(elements.get('editBtn').hidden, true, '設定の画面では「設定に戻る」を出さない');
 });
 
 test('軽減音は軽減選択中だけ再生し、画面を離れると先頭へ戻る', async () => {
@@ -703,7 +747,7 @@ test('軽減音は反映確認・送信・博士説明では再生せず音量�
   assert.equal(preview.paused, false);
   elements.get('settingsForm').dispatch('submit');
   assert.equal(state.view, 'result');
-  assert.equal(state.ui, 'confirm');
+  assert.equal(state.ui, 'sending');
   assert.equal(preview.paused, true);
   assert.equal(preview.currentTime, 0);
 
@@ -737,7 +781,7 @@ test('軽減音は反映確認・送信・博士説明では再生せず音量�
   state.reliefPreviewStarted = false;
 });
 
-test('確認画面はPOSTせず、900msの送信表示後に受理番号と実値で反映を判定する', async () => {
+test('軽減の画面から確認の段を挟まずに送り、900msの送信表示後に受理番号と実値で反映を判定する', async () => {
   const requests = [];
   const lastRequest = { tabletSessionId: runtime.tabletSessionId, seq: 7, lang: 'en', relief: true };
   let status = { ...validStatus, lang: 'ja', relief: false, appliedSeq: 7, received: 1, lastRequest };
@@ -760,33 +804,22 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   const preview = runtime.getReliefPreview();
   assert.equal(preview.paused, false);
   elements.get('settingsForm').dispatch('submit');
-  assert.equal(state.ui, 'confirm');
+  assert.equal(state.ui, 'sending', '「この設定で始める」でそのまま送る');
   assert.equal(state.view, 'result');
-  assert.equal(requests.length, 0, '確認画面へ進むだけでは通信しない');
-  assert.equal(elements.get('resultTitle').textContent, 'Review settings');
-  assert.equal(elements.get('selectedLanguage').textContent, 'English');
+  assert.equal(elements.get('selectedLanguage').textContent, 'English', '送っている間は選んだ値を見せる');
   assert.equal(elements.get('selectedRelief').textContent, 'on');
-  assert.equal(elements.get('applyBtn').hidden, false);
-  assert.equal(elements.get('editBtn').hidden, false);
+  assert.equal(elements.get('editBtn').hidden, true, '送っている間は戻らせない');
   assert.equal(preview.paused, true);
-
-  elements.get('editBtn').dispatch('click');
-  assert.equal(state.view, 'edit');
-  assert.equal(state.settingsStep, 'language');
-  runtime.setSettingsStep('relief', false);
-  elements.get('settingsForm').dispatch('submit');
-  assert.equal(requests.length, 0, '設定へ戻っても確認までは通信しない');
-
-  const sending = elements.get('applyBtn').dispatch('click');
   await flushPromises();
-  assert.equal(state.ui, 'sending');
   assert.equal(runtime.resultKey(), 'sending');
   assert.equal(elements.get('resultTitle').textContent, 'Applying settings');
-  assert.equal(requests[0].resource, './set');
-  assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true,
+  assert.equal(requests.filter(r => r.resource === './set').length, 1);
+  const setRequest = requests.find(r => r.resource === './set');
+  assert.deepEqual(JSON.parse(setRequest.options.body), { lang: 'en', relief: true,
     tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' });
   timers.runOne(900);
-  await sending;
+  await flushPromises(); await flushPromises();
+  assert.equal(elements.get('editBtn').hidden, false, '送った後は上の帯から設定へ戻れる');
   assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7,
     portalSessionId: 'portal-a', targetId: null }));
   assert.equal(runtime.resultKey(), 'waiting');
@@ -820,17 +853,16 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   assert.equal(elements.get('headsetHeading').textContent, 'Settings confirmed on Quest');
 });
 
-test('確認前は現在値と未送信を示し反映後だけ明示ボタンで進める', async () => {
+test('反映前は現在のクエストの値を示し、反映後だけ次へ進める', async () => {
   state.lang = 'ja';
-  state.view = 'edit';
-  state.ui = 'idle';
+  state.view = 'result';
+  state.ui = 'sending';
   state.sent = null;
   state.status = clone(validStatus);
   state.connection = 'online';
-  runtime.setSettingsStep('relief', false);
-  elements.get('settingsForm').dispatch('submit');
+  runtime.renderText();
+  runtime.renderResult();
   assert.equal(elements.get('headsetHeading').textContent, '現在のクエスト');
-  assert.equal(elements.get('resultDetail').textContent, '言語とホラー軽減を確認してください。クエストへは未送信です');
   assert.equal(elements.get('resultContinueBtn').hidden, true);
 
   state.sent = { lang: 'ja', relief: false, seq: 12, portalSessionId: 'portal-a', targetId: null };
@@ -1046,10 +1078,10 @@ test('ユーザー指定のEleven v4入力は一つのコードブロックで�
 
 test('日本語の原音声と4場面の博士動画を配信し、新しい台詞を参照する', () => {
   const expectedVideos = {
-    introduction: 'introduction-ja-v1.mp4',
-    subject: 'subject-ja-v1.mp4',
-    report: 'report-ja-v1.mp4',
-    wear: 'wear-ja-v1.mp4',
+    introduction: 'introduction-ja-v2.mp4',
+    subject: 'subject-ja-v2.mp4',
+    report: 'report-ja-v2.mp4',
+    wear: 'wear-ja-v2.mp4',
   };
   for (const scene of briefing.scenes) {
     const filename = `${scene.id}-ja-v2.mp3`;
@@ -1064,8 +1096,8 @@ test('日本語の原音声と4場面の博士動画を配信し、新しい台�
     assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
   }
   const introduction = briefing.scenes.find((scene) => scene.id === 'introduction');
-  assert.equal(introduction.image, 'introduction-doctor-v1.jpg');
-  assert.equal(introduction.doctorImage, 'introduction-doctor-v1.jpg');
+  assert.equal(introduction.image, 'introduction-doctor-v2.jpg');
+  assert.equal(introduction.doctorImage, 'introduction-doctor-v2.jpg');
   assert.equal(introduction.doctorAnchor, 50);
   const subject = briefing.scenes.find((scene) => scene.id === 'subject');
   const report = briefing.scenes.find((scene) => scene.id === 'report');
@@ -1081,34 +1113,46 @@ test('日本語の原音声と4場面の博士動画を配信し、新しい台�
   assert.match(report.cues.ja[2].text, /1秒間/);
 });
 
-test('参考動画は説明中も停止して非表示のまま解放する', () => {
+test('壁の動画は次の文から始まり、文送りでは再生位置を変えずにループし、止めると止まる', () => {
   assert.match(html, /<video[^>]*id="briefingLoopVideo"[^>]*\bmuted\b[^>]*\bloop\b/);
   const data = clone(briefing);
   const scene = data.scenes[1];
   assert.ok(fs.existsSync(path.join(assetRoot, scene.loopVideo.file)));
   prepareBriefing(data);
+  elements.get('staff').open = false;
   state.briefing.sceneIndex = 1;
   state.briefing.cueIndex = 0;
   runtime.configureBriefingMedia(scene);
   runtime.beginBriefingCue();
   const doctorVideo = elements.get('doctorVideo');
   assert.equal(runtime.getBriefingMedia(), doctorVideo);
-  assert.match(doctorVideo.src, /subject-ja-v1\.mp4$/);
+  assert.match(doctorVideo.src, /subject-ja-v2\.mp4$/);
   const video = elements.get('briefingLoopVideo');
   const before = video.playCount;
   assert.equal(video.hidden, true);
 
   runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.cueIndex, 1);
-  assert.equal(video.playCount, before);
-  assert.equal(video.hidden, true);
-  assert.equal(video.dataset.source || '', '');
-  assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), false);
+  assert.equal(video.playCount, before + 1);
+  video.onplaying();
+  assert.equal(video.hidden, false);
+  assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), true);
+  video.currentTime = 4.2;
+  const loadCount = video.loadCount;
 
   runtime.moveBriefing(1, 'auto');
   runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.cueIndex, 3);
-  assert.equal(video.playCount, before);
+  assert.equal(video.currentTime, 4.2);
+  assert.equal(video.playCount, before + 1);
+  assert.equal(video.loadCount, loadCount);
+
+  // 一時停止の盤を開くと壁の映像も止まり、再開すると続きから動く。
+  runtime.openBriefingControls();
+  assert.equal(video.paused, true);
+  elements.get('briefingResume').dispatch('click');
+  assert.equal(video.paused, false);
+  assert.equal(video.currentTime, 4.2);
 
   runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.sceneIndex, 2);
@@ -1292,10 +1336,10 @@ test('最後の音声が終わると装着案内を表示し、再説明はそ�
   assert.equal(elements.get('subtitle').hidden, true);
   assert.equal(elements.get('equipmentGuide').hidden, false);
   assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
-  assert.equal(elements.get('equipmentQuest').textContent, 'Meta Questを装着してください。');
+  assert.equal(elements.get('equipmentQuest').textContent, 'クエストを装着してください。');
   assert.equal(elements.get('equipmentHeadphones').textContent, 'ヘッドフォンを装着してください。');
   assert.equal(elements.get('equipmentController').textContent, '左手にコントローラーを持ってください。');
-  assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエスト内に表示される指示に従ってください。');
+  assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエストの中の指示に従ってください。');
   assert.equal(elements.get('briefingReplay').hidden, false);
   for (const id of ['briefingPrevious', 'briefingNext', 'briefingToggle', 'briefingMute', 'mediaNotice']) {
     assert.equal(elements.get(id).hidden, true);
@@ -1487,7 +1531,7 @@ test('媒体失敗時は静止画と字幕を保ち、オート解除後に再�
   assert.equal(elements.get('subtitleTyped').textContent, subtitle);
 });
 
-test('通常説明のタップは文を送らず停止し、再開と文頭再生を明示操作だけで行う', () => {
+test('通常説明のタップは次の文へ進み、右上の一時停止だけが止める。再開は止めた位置から探さずに続く', () => {
   const data = clone(briefing);
   prepareBriefing(data);
   elements.get('staff').open = false;
@@ -1498,20 +1542,68 @@ test('通常説明のタップは文を送らず停止し、再開と文頭再�
   media.onplaying();
   media.currentTime = 1.4;
   const cueIndex = state.briefing.cueIndex;
+  // 文が出てすぐ（0.7 秒未満）のタップでは送らない（二度押しで 2 文進む・読む前に飛ばす）
   elements.get('briefingPauseSurface').dispatch('click');
-  assert.equal(state.briefing.cueIndex, cueIndex);
+  assert.equal(state.briefing.cueIndex, cueIndex, '出たばかりの文はタップで飛ばさない');
+  const savedNow = context.performance.now;
+  context.performance.now = () => savedNow() + 800;
+  // 画面のタップ＝次の文
+  elements.get('briefingPauseSurface').dispatch('click');
+  context.performance.now = savedNow;
+  assert.equal(state.briefing.cueIndex, cueIndex + 1);
+  assert.equal(elements.get('briefingControls').hidden, true);
+  assert.equal(media.paused, false);
+  // 右上の一時停止＝止まる（音声と動画を同じ位置で）
+  assert.equal(elements.get('briefingPauseBtn').hidden, false);
+  media.currentTime = 9.9;
+  elements.get('briefingPauseBtn').dispatch('click');
   assert.equal(state.briefing.auto, false);
   assert.equal(media.paused, true);
-  assert.equal(media.currentTime, 1.4);
+  assert.equal(media.currentTime, 9.9);
   assert.equal(elements.get('briefingControls').hidden, false);
   assert.equal(elements.get('briefingControls').inert, false);
+  assert.equal(elements.get('briefingPauseBtn').hidden, true);
+  assert.equal(elements.get('briefingPauseSurface').hidden, true);
+  // すぐ再開：止めた位置のまま。位置を探し直さない（探すと WebView が読み直して止まる）
+  const seeks = [];
+  const timeDescriptor = { get: () => media.__t ?? 9.9, set: (v) => { seeks.push(v); media.__t = v; } };
+  media.__t = 9.9;
+  Object.defineProperty(media, 'currentTime', { ...timeDescriptor, configurable: true });
   elements.get('briefingResume').dispatch('click');
-  assert.equal(media.currentTime, 1.4);
   assert.equal(media.paused, false);
-  elements.get('briefingPauseSurface').dispatch('click');
-  elements.get('briefingRestart').dispatch('click');
-  assert.equal(media.currentTime, 0);
-  assert.equal(media.paused, false);
+  assert.deepEqual(seeks, [], '再開で currentTime を書き換えている');
+  assert.equal(media.__t, 9.9);
+  Object.defineProperty(media, 'currentTime', { value: 9.9, writable: true, configurable: true });
+});
+
+test('章の遷移中でも次の入力を予約せず現在位置からすぐ進める', () => {
+  prepareBriefing(clone(briefing));
+  state.briefing.sceneIndex = 0;
+  state.briefing.cueIndex = briefing.scenes[0].cues.ja.length - 1;
+  state.briefing.chapterChanging = true;
+  const moved = runtime.moveBriefing(1, 'tap');
+  assert.equal(moved, true);
+  assert.equal(state.briefing.sceneIndex, 1);
+  assert.equal(state.briefing.cueIndex, 0);
+  assert.equal(state.briefing.pendingMove, 0);
+});
+
+test('装着完了は語尾のあと220ms静止してから案内を一群で出す', () => {
+  motionPreference.matches = false;
+  try {
+    prepareBriefing(clone(briefing));
+    state.staffPreview = true;
+    state.briefing.sceneIndex = briefing.scenes.length - 1;
+    state.briefing.cueIndex = briefing.scenes.at(-1).cues.ja.length - 1;
+    runtime.finishBriefing();
+    assert.equal(state.briefing.ended, false);
+    assert.ok(pendingDelays().includes(220));
+    timers.runOne(220);
+    assert.equal(state.briefing.ended, true);
+  } finally {
+    state.staffPreview = false;
+    motionPreference.matches = true;
+  }
 });
 
 test('字幕だけの自動進行は停止時間を除外し、同じ文の残り時間から再開する', () => {
@@ -1526,12 +1618,112 @@ test('字幕だけの自動進行は停止時間を除外し、同じ文の残�
   const duration = data.scenes[0].cues.en[0].durationMs;
   assert.ok(pendingDelays().includes(duration));
   context.performance.now = () => 2500;
-  elements.get('briefingPauseSurface').dispatch('click');
+  elements.get('briefingPauseBtn').dispatch('click');
   assert.equal(state.briefing.cueIndex, 0);
   elements.get('briefingResume').dispatch('click');
   assert.ok(pendingDelays().includes(duration - 1500));
   context.performance.now = () => 1000;
   state.lang = 'ja';
+});
+
+test('通し確認は接続を見ずにタイトルから装着の案内まで通り、終えると元の入口へ戻る', async () => {
+  prepareBriefing(clone(briefing));
+  state.view = 'title';
+  state.sent = null;
+  state.staffPreview = false;
+  elements.get('staff').open = true;
+  state.connection = 'offline';
+  state.status = { staffSetup: { stage: 'collect' }, portalSessionId: 'x' };   // 実機なら入口が閉じている段
+  assert.equal(runtime.visitorSettingsAccess().allowed, false);
+  runtime.startBypass();
+  assert.equal(state.bypass, true);
+  assert.equal(state.staffPreview, true);
+  assert.equal(state.view, 'title');
+  assert.equal(runtime.visitorSettingsAccess().allowed, true);
+  assert.equal(elements.get('bypassBadge').hidden, false);
+  // 設定 → 送る（通信しない）→ 反映済み
+  state.view = 'edit';
+  state.settingsStep = 'relief';
+  const send = runtime.send();
+  assert.equal(state.view, 'result');
+  assert.equal(runtime.resultKey(), 'sending');
+  await flushPromises();
+  timers.runOne(900);   // 最短の「反映しています」（MINIMUM_APPLYING_MS）
+  await send;
+  assert.equal(runtime.resultKey(), 'applied');
+  assert.equal(state.sent.seq, 0, '通し確認は受理番号を作らない');
+  assert.equal(runtime.canAdvanceFromResult(), true);
+  runtime.advanceFromResult();
+  assert.equal(state.view, 'briefing');
+  assert.equal(state.briefing.pauseReasons.has('offline'), false, '接続が無くても説明を止めない');
+  // 通し確認の終わり
+  elements.get('staff').open = true;
+  runtime.startBypass();
+  assert.equal(state.bypass, false);
+  assert.equal(state.staffPreview, false);
+  assert.equal(state.view, 'title');
+  assert.equal(elements.get('bypassBadge').hidden, true);
+  state.connection = 'online';
+});
+
+test('操作盤に「この文を最初から」は無く、通し確認ではタイトルへ戻って最初から通せる', async () => {
+  assert.doesNotMatch(html, /この文を最初から/);
+  prepareBriefing(clone(briefing));
+  state.view = 'title';
+  state.sent = null;
+  state.staffPreview = false;
+  elements.get('staff').open = true;
+  state.connection = 'offline';
+  state.status = { staffSetup: { stage: 'collect' }, portalSessionId: 'x' };
+  runtime.startBypass();
+  state.view = 'edit';
+  state.settingsStep = 'relief';
+  const send = runtime.send();
+  await flushPromises();
+  timers.runOne(900);
+  await send;
+  runtime.advanceFromResult();
+  assert.equal(state.view, 'briefing');
+  runtime.openBriefingControls();
+  const toTitle = elements.get('briefingToTitle');
+  assert.equal(toTitle.textContent, 'タイトルに戻る');
+  assert.equal(toTitle.hidden, false);
+  assert.equal(toTitle.disabled, false);
+  toTitle.dispatch('click');
+  timers.runAll?.();
+  assert.equal(state.view, 'title');
+  assert.equal(state.bypass, true, 'タイトルへ戻っても通し確認のまま');
+  assert.equal(state.briefing.triggered, false, 'タイトルから送り直すと説明をもう一度始められる');
+  assert.equal(elements.get('titleStart').disabled, false);
+  runtime.beginFromTitle();
+  timers.runAll?.();
+  assert.equal(state.view, 'edit');
+  assert.equal(state.settingsStep, 'language');
+  elements.get('staff').open = true;
+  runtime.startBypass();
+  assert.equal(state.bypass, false);
+  state.connection = 'online';
+});
+
+test('来場者の説明からタイトルへ戻ると、同じQuestの説明段なら言語選択から始め直せる', () => {
+  prepareBriefing(clone(briefing)); state.staffPreview = false; state.bypass = false; state.ui = 'applied';
+  const status = { ...clone(validStatus), questTick: 830, lang: 'ja', relief: false, appliedSeq: 71, received: 71,
+    staffSetup: { stage: 'explanation', reason: 'explanation', positionConfirmed: true } };
+  state.status = clone(status);
+  state.sent = { lang: 'ja', relief: false, seq: 71, portalSessionId: status.portalSessionId, targetId: runtime.activeQuest() };
+  runtime.observeQuestTick(status);
+  elements.get('staff').open = false;
+  runtime.openBriefingControls();
+  elements.get('briefingToTitle').dispatch('click');
+  timers.runAll?.();
+  assert.equal(state.view, 'title');
+  assert.equal(state.ui, 'idle');
+  assert.equal(runtime.visitorSettingsAccess().allowed, true);
+  assert.equal(elements.get('titleStart').disabled, false);
+  runtime.beginFromTitle();
+  timers.runAll?.();
+  assert.equal(state.view, 'edit');
+  assert.equal(state.settingsStep, 'language');
 });
 
 test('スタッフ入口は短押し・領域外・複数指で取り消し、異常中も1.5秒長押しだけを受け付ける', () => {
@@ -1749,13 +1941,13 @@ test('博士の音声確認は閉じる操作とタブ非表示で止まり、�
 });
 
 
-test('新APIは10文後に返却を案内し、Questの同一revision確認後だけ装着2文へ進む', async () => {
+test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内し、Questの同一revision確認後だけ装着の準備を出す', async () => {
   prepareBriefing(clone(briefing));
   state.staffPreview = false; state.ui = 'sent';
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
-  const preWearCount = briefing.scenes.slice(0, wearIndex).reduce((count, scene) => count + scene.cues.ja.length, 0);
+  const lastIndex = briefing.scenes.length - 1;
   const totalCount = briefing.scenes.reduce((count, scene) => count + scene.cues.ja.length, 0);
-  assert.equal(preWearCount, 10);
+  assert.equal(wearIndex, lastIndex, '装着の2文が説明の最後にある');
   assert.equal(briefing.scenes[wearIndex].cues.ja.length, 2);
   assert.equal(totalCount, 12);
   const status = { ...clone(validStatus), questTick: 50, lang: 'ja', relief: false,
@@ -1773,180 +1965,173 @@ test('新APIは10文後に返却を案内し、Questの同一revision確認後�
     return { ok: true, status: 200, json: async () => resource === './tablet/pulse' ? { ok: true } : clone(status) };
   };
   fetchHandler = onlineFetch;
-  state.briefing.sceneIndex = wearIndex - 1;
-  for (const [lang, label] of [['ja', 'スタッフへ返す'], ['en', 'Return to staff'], ['fr', 'Remettre au personnel']]) {
-    state.lang = lang;
-    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex - 1].cues[lang].length - 1;
+  const presentation = context.window.BriefingPresentation;
+  const originalHold = presentation.holdThen;
+  const cuts = [];
+  presentation.holdThen = function (options) { cuts.push(options.scene); return originalHold.call(this, options); };
+  try {
+    // report の最終文の次は wear の 1 文目。返却で割り込まない。
+    state.briefing.sceneIndex = wearIndex - 1;
+    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex - 1].cues.ja.length - 1;
     runtime.renderBriefingScene();
-    assert.equal(elements.get('briefingNext').textContent, label);
-    const explanationTotal = state.briefing.data.scenes.slice(0, wearIndex)
-      .reduce((total, scene) => total + scene.cues[lang].length, 0);
-    const expectedEnd = String(explanationTotal).padStart(2, '0');
-    assert.ok(elements.get('sceneCounter').textContent.endsWith(`${expectedEnd} / ${expectedEnd}`), '調査説明の進み具合に確認後の装着2文を含めない');
-  }
-  state.lang = 'ja';
-  runtime.closeStaffScreen();
-  assert.equal(elements.get('staff').open, false);
-  runtime.moveBriefing(1); await flushPromises();
-  assert.equal(state.briefing.handoffReady, true);
-  assert.equal(state.briefing.wearStarted, false);
-  assert.equal(state.briefing.ended, false);
-  assert.equal(posts.at(-1).body.briefingCompleted, true);
-  assert.equal(posts.at(-1).body.staffConfirmed, false);
-  assert.equal(runtime.canShowEquipmentGuidance(), false);
-  assert.equal(elements.get('equipmentSteps').hidden, true);
-  assert.equal(elements.get('briefingTitle').textContent, 'タブレットをスタッフへ返してください');
-  assert.equal(elements.get('equipmentFollowup').textContent, '確認後にスタッフが装着をお手伝いします');
-  for (const [lang, handoff] of [['ja', 'タブレットをスタッフへ返してください'], ['en', 'Please return the tablet to a member of staff'], ['fr', 'Rendez la tablette au personnel']]) {
-    state.lang = lang; runtime.renderBriefingScene();
-    assert.equal(elements.get('briefingTitle').textContent, handoff);
-  }
-  state.lang = 'ja';
-  assert.equal(elements.get('staff').open, false, '返却画面ではスタッフ画面を自動で開かない');
-  const staffEntry = elements.get('staffToggle');
-  staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 70, button: 0 });
-  staffEntry.dispatch('pointerup', { pointerId: 70 });
-  assert.equal(elements.get('staff').open, false, '短押しではスタッフ画面を開かない');
-  assert.match(elements.get('staffLabel').textContent, /1\.5秒長押し/);
-  staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 71, button: 0 });
-  timers.runOne(1500);
-  assert.equal(elements.get('staff').open, true, '返却画面の長押しでスタッフ画面を開く');
-  assert.equal(elements.get('staff').dataset.state, 'confirm');
-  assert.equal(elements.get('staffNowTitle').textContent, '装着の前に確認');
-  assert.equal(elements.get('staffHandback').hidden, false, '返却の案内を3言語で最上段に出す');
-  assert.match(html, /タブレットをスタッフにお渡しください/);
-  assert.match(html, /Please hand the tablet to a member of staff\./);
-  assert.match(html, /Veuillez remettre la tablette à un membre du personnel\./);
-  assert.equal(elements.get('staffCycle3').getAttribute('aria-current'), 'step');
-  assert.equal(elements.get('staffPrepareBtn').hidden, false);
-  assert.equal(elements.get('staffPrepareBtn').disabled, false);
-  assert.equal(elements.get('staffNowItem0Text').textContent, '言語：日本語');
-  assert.equal(elements.get('staffNowItem1Text').textContent, 'ホラー軽減：なし');
-  assert.equal(elements.get('staffNowItem0').dataset.tone, 'ok');
-  const prepare = elements.get('staffPrepareBtn');
-  assert.equal(prepare.dispatch('click'), undefined, 'クリックだけでは進めない');
-  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 7, button: 0 });
-  assert.equal(prepare.capturedPointer, 7);
-  assert.equal(prepare.style['--hold'], '0.02', '押した直後から満ち始める');
-  prepare.dispatch('pointerup', { pointerId: 7 });
-  assert.equal(pendingDelays().includes(1200), false, '離すと取り消す');
-  assert.equal(prepare.style['--hold'], '0');
-  assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 0);
-  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 8, button: 0 });
-  prepare.dispatch('pointerdown', { isPrimary: false, pointerId: 9, button: 0 });
-  assert.equal(pendingDelays().filter(delay => delay === 1200).length, 0, '複数指になったら長押しを取り消す');
-  prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 10, button: 0 });
-  timers.runOne(1200); await runtime.staffAction();
-  assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 1, '長押しの完了で一度だけ送る');
-  assert.equal(elements.get('staffPrepareBtn').disabled, true);
-  assert.equal(elements.get('staffNowBody').textContent, 'クエストの確認を待っています。');
-  const request = posts.at(-1).body;
-  assert.equal(state.briefing.wearStarted, false, 'HTTP受理だけでは装着音声へ進めない');
-  status.briefing = { seq: request.seq, revision: request.briefingRevision - 1, tabletSessionId: runtime.tabletSessionId,
-    completed: true, staffConfirmed: true };
-  status.staffSetup = { stage: 'handedOff', reason: '', positionConfirmed: true };
-  status.questTick++; await runtime.poll();
-  assert.equal(state.briefing.wearStarted, false, '古いrevisionでは装着音声へ進めない');
-  assert.equal(elements.get('staff').open, true, '古いrevisionではスタッフ画面を閉じない');
-  status.briefing.revision = request.briefingRevision;
-  status.questTick++; await runtime.poll();
-  assert.equal(state.briefing.wearStarted, true);
-  assert.equal(elements.get('staff').open, false, 'Questの受理でスタッフ画面を閉じて来場者の画面へ戻す');
-  const media = runtime.getBriefingMedia();
-  assert.equal(media.paused, false, 'スタッフの装着確定が受理されたら追加タップなしで案内する');
-  assert.equal(elements.get('briefingControls').hidden, true);
-  assert.equal(state.briefing.mediaWindowActive, true);
-  assert.equal(state.briefing.sceneIndex, wearIndex);
-  assert.equal(state.briefing.cueIndex, 0);
-  assert.equal(state.briefing.ended, false);
-  assert.equal(elements.get('briefingNext').textContent, '次の文', '装着1文目から2文目へ進める');
-  assert.equal(elements.get('briefingPrevious').disabled, true, '確認後の装着1文目は前段へ戻さない');
-  state.briefing.lastMoveAt = 0; state.briefing.chapterChanging = false;
-  assert.equal(runtime.moveBriefing(-1), false);
-  assert.equal(state.briefing.sceneIndex, wearIndex);
-  assert.equal(runtime.canShowEquipmentGuidance(), false);
-  assert.equal(elements.get('equipmentSteps').hidden, true);
-  for (const [lang, label] of [['ja', '装着の案内へ'], ['en', 'Equipment instructions'], ['fr', 'Consignes d’équipement']]) {
-    state.lang = lang;
-    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues[lang].length - 1;
-    runtime.renderBriefingScene();
-    assert.equal(elements.get('briefingNext').textContent, label);
-  }
-  state.lang = 'ja'; state.briefing.cueIndex = 0; runtime.renderBriefingScene();
-
-  runtime.openBriefingControls();
-  const briefingStaff = elements.get('briefingStaff');
-  briefingStaff.dispatch('pointerdown', { isPrimary: true, pointerId: 72, button: 0 });
-  timers.runOne(1500);
-  assert.equal(elements.get('staff').dataset.state, 'wear');
-  assert.equal(elements.get('staffNowTitle').textContent, '装着を手伝う');
-  assert.equal(elements.get('staffNowItem3Text').textContent, 'ヘッドセットの中の案内に従います。体験者が X か Y を押して始めます');
-  assert.equal(elements.get('staffDoneBtn').hidden, false, '装着中は来場者の画面へ戻れる');
-  assert.equal(media.paused, true, 'スタッフ画面を開いている間は案内を止める');
-  elements.get('staffDoneBtn').dispatch('click');
-  assert.equal(elements.get('staff').open, false);
-  const playCount = media.playCount;
-  assert.match(elements.get('mediaMessage').textContent, /続きから/);
-  elements.get('briefingResume').dispatch('click');
-  assert.equal(media.playCount, playCount + 1);
-  assert.equal(state.briefing.wearStarted, true, '装着1文目の音声終了でスタッフ返却へ戻らない');
-  assert.equal(state.briefing.cueIndex, 0);
-
-  for (const [reason, stage] of [['camera', 'devices'], ['content', 'devices'], ['position', 'alignment']]) {
-    status.staffSetup.reason = reason; status.staffSetup.stage = stage; status.questTick++; await runtime.poll();
+    assert.equal(elements.get('briefingNext').textContent, '次の文', 'report の最終文ではまだ返さない');
+    runtime.closeStaffScreen();
+    state.briefing.lastMoveAt = 0; state.briefing.chapterChanging = false;
+    runtime.moveBriefing(1); await flushPromises(); timers.runAll?.(); await flushPromises();
+    assert.equal(state.briefing.sceneIndex, wearIndex, 'report の次は wear へ進む');
     assert.equal(state.briefing.cueIndex, 0);
-    assert.equal(runtime.getBriefingMedia().paused, true);
-    assert.equal(elements.get('equipmentSteps').hidden, true);
-    assert.match(elements.get('equipmentStaffStatus').textContent, /機器を確認/);
-    status.staffSetup.reason = ''; status.staffSetup.stage = 'handedOff'; status.questTick++; await runtime.poll();
-    const beforeResume = runtime.getBriefingMedia().playCount;
-    assert.equal(state.briefing.cueIndex, 0);
-    assert.match(elements.get('mediaMessage').textContent, /続きから/);
-    elements.get('briefingResume').dispatch('click');
-    assert.equal(runtime.getBriefingMedia().playCount, beforeResume + 1);
+    assert.equal(state.briefing.handoffReady, false);
+    assert.equal(state.briefing.ended, false);
+    assert.equal(cuts.length, 0, '説明の途中で砂嵐を出さない');
+    await runtime.pulse();
+    assert.equal(posts.at(-1).body.briefingCompleted, false, 'wear の再生中は説明完了を送らない');
+
+    for (const [lang, label] of [['ja', '装着の案内へ'], ['en', 'Equipment instructions'], ['fr', 'Consignes d’équipement']]) {
+      state.lang = lang;
+      state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues[lang].length - 1;
+      runtime.renderBriefingScene();
+      assert.equal(elements.get('briefingNext').textContent, label, '最後の文の次は装着の案内（返すのは案内を読んだ後）');
+      const total = String(state.briefing.data.scenes.reduce((sum, scene) => sum + scene.cues[lang].length, 0)).padStart(2, '0');
+      assert.ok(elements.get('sceneCounter').textContent.endsWith(`${total} / ${total}`), '進み具合は12文で1本');
+    }
+    state.lang = 'ja';
+    state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues.ja.length - 1;
+    state.briefing.lastMoveAt = 0;
+    runtime.moveBriefing(1); await flushPromises();
+    assert.deepEqual(cuts, ['wear-complete'], '砂嵐は説明の最後の1回だけ');
+    assert.equal(state.briefing.ended, true);
+    assert.equal(state.briefing.handoffReady, true);
+    assert.equal(state.briefing.wearStarted, false);
+    assert.equal(posts.at(-1).body.briefingCompleted, true);
+    assert.equal(posts.at(-1).body.staffConfirmed, false);
+    // 2026-10-21: 案内は砂嵐の直後に来場者が読み、読み終えてから返す。スタッフの確定を待たない
+    assert.equal(runtime.canShowEquipmentGuidance(), true);
+    assert.equal(elements.get('equipmentSteps').hidden, false, '砂嵐の直後に装着の案内を出す');
+    assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
+    assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエストの中の指示に従ってください。');
+    assert.equal(elements.get('equipmentHandback').hidden, false, '案内の最後に返却の一行');
+    for (const [lang, handoff] of [['ja', '読み終わったら、スタッフにタブレットを渡してください。'],
+      ['en', 'When you have finished reading, please hand the tablet to a member of staff.'],
+      ['fr', 'Après lecture, remettez la tablette à un membre du personnel.']]) {
+      state.lang = lang; runtime.renderBriefingScene();
+      assert.equal(elements.get('equipmentHandback').textContent, handoff);
+    }
+    state.lang = 'ja'; runtime.renderBriefingScene();
+    assert.equal(elements.get('staff').open, false, '返却を待つ画面ではスタッフ画面を自動で開かない');
+    assert.equal(elements.get('briefingSettings').hidden, true, '説明の後の言語の変更は案内に置かない（送った指が入る）');
+    assert.equal(elements.get('briefingReplay').hidden, false);
+    const staffEntry = elements.get('briefingStaff');
+    assert.equal(staffEntry.hidden, false, 'スタッフの入口を案内の画面に見える形で置く');
+    staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 70, button: 0 });
+    staffEntry.dispatch('pointerup', { pointerId: 70 });
+    assert.equal(elements.get('staff').open, false, '短押しではスタッフ画面を開かない');
+    assert.match(elements.get('briefingStaffHint').textContent, /1\.5秒長押し/);
+    staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 71, button: 0 });
+    timers.runOne(1500);
+    assert.equal(elements.get('staff').open, true, '案内の画面の長押しでスタッフ画面を開く');
+    assert.equal(elements.get('staff').dataset.state, 'confirm');
+    assert.equal(elements.get('staffNowTitle').textContent, '装着の前に確認');
+    assert.equal(elements.get('staffHandback').hidden, true, '長押しで開いたなら読み手は受け取ったスタッフ。返却の案内は出さない');
+    assert.match(html, /タブレットをスタッフにお渡しください/);
+    assert.match(html, /Please hand the tablet to a member of staff\./);
+    assert.match(html, /Veuillez remettre la tablette à un membre du personnel\./);
+    assert.equal(elements.get('staffCycle3').getAttribute('aria-current'), 'step');
+    assert.equal(elements.get('staffPrepareBtn').hidden, false);
+    assert.equal(elements.get('staffPrepareBtn').disabled, false);
+    assert.equal(elements.get('staffNowItem0Text').textContent, '言語：日本語');
+    assert.equal(elements.get('staffNowItem1Text').textContent, 'ホラー軽減：なし');
+    assert.equal(elements.get('staffNowItem0').dataset.tone, 'ok');
+    const prepare = elements.get('staffPrepareBtn');
+    assert.equal(prepare.dispatch('click'), undefined, 'クリックだけでは進めない');
+    prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 7, button: 0 });
+    assert.equal(prepare.capturedPointer, 7);
+    assert.equal(prepare.style['--hold'], '0.02', '押した直後から満ち始める');
+    prepare.dispatch('pointerup', { pointerId: 7 });
+    assert.equal(pendingDelays().includes(1200), false, '離すと取り消す');
+    assert.equal(prepare.style['--hold'], '0');
+    assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 0);
+    prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 8, button: 0 });
+    prepare.dispatch('pointerdown', { isPrimary: false, pointerId: 9, button: 0 });
+    assert.equal(pendingDelays().filter(delay => delay === 1200).length, 0, '複数指になったら長押しを取り消す');
+    prepare.dispatch('pointerdown', { isPrimary: true, pointerId: 10, button: 0 });
+    timers.runOne(1200); await runtime.staffAction();
+    assert.equal(posts.filter(p => p.body.staffConfirmed === true).length, 1, '長押しの完了で一度だけ送る');
+    assert.equal(elements.get('staffPrepareBtn').disabled, true);
+    assert.equal(elements.get('staffNowBody').textContent, 'クエストの確認を待っています。');
+    const request = posts.at(-1).body;
+    assert.equal(state.briefing.wearStarted, false, 'HTTP受理だけでは装着の準備へ進めない');
+    status.briefing = { seq: request.seq, revision: request.briefingRevision - 1, tabletSessionId: runtime.tabletSessionId,
+      completed: true, staffConfirmed: true };
+    status.staffSetup = { stage: 'handedOff', reason: '', positionConfirmed: true };
+    status.questTick++; await runtime.poll();
+    assert.equal(state.briefing.wearStarted, false, '古いrevisionでは装着の準備へ進めない');
+    assert.equal(elements.get('staff').dataset.state, 'confirm', '古いrevisionでは装着の手伝いへ進めない');
+    assert.equal(elements.get('equipmentHandback').hidden, false);
+    status.briefing.revision = request.briefingRevision;
+    status.questTick++; await runtime.poll();
+    assert.equal(state.briefing.wearStarted, true);
+    // 受理の後もタブレットはスタッフの手にある。スタッフ画面のまま装着の手伝いへ進む
+    assert.equal(elements.get('staff').open, true, 'Questの受理でスタッフ画面を閉じない');
+    assert.equal(elements.get('staff').dataset.state, 'wear');
+    assert.equal(cuts.length, 1, '受理の後に砂嵐を重ねない');
+    assert.equal(elements.get('staffNowTitle').textContent, '装着を手伝う');
+    assert.equal(elements.get('staffNowItem3Text').textContent, 'ヘッドセットの中の案内に従います。体験者が X か Y を押して始めます');
+    assert.equal(elements.get('staffDoneBtn').hidden, false, '装着中は来場者の画面へ戻れる');
+    elements.get('staffDoneBtn').dispatch('click');
+    assert.equal(elements.get('staff').open, false);
+    assert.equal(elements.get('equipmentSteps').hidden, false);
+    assert.equal(elements.get('equipmentHandback').hidden, true, '受理の後は「渡してください」を出さない');
+    assert.equal(elements.get('briefingStaff').hidden, true, '受理の後は案内の画面にスタッフの入口を大きく置かない');
+
+    // 受理のあとで準備が崩れたら、案内は残したまま待ちの中身を一言足し、戻れば消す。
+    for (const [reason, stage] of [['camera', 'devices'], ['content', 'devices'], ['position', 'alignment']]) {
+      status.staffSetup.reason = reason; status.staffSetup.stage = stage; status.questTick++; await runtime.poll();
+      assert.equal(elements.get('equipmentSteps').hidden, false, reason);
+      assert.match(elements.get('equipmentStaffStatus').textContent, /機器を確認/);
+      status.staffSetup.reason = ''; status.staffSetup.stage = 'handedOff'; status.questTick++; await runtime.poll();
+      assert.equal(elements.get('equipmentStaffStatus').textContent, '', `${reason} から戻ったら消す`);
+    }
+
+    fetchHandler = async () => { throw new TypeError('offline'); };
+    await runtime.poll();
+    assert.equal(elements.get('equipmentStaffStatus').textContent, '', '1 回の取得失敗では前の状態を保つ');
+    await runtime.poll();
+    assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
+    fetchHandler = onlineFetch; status.questTick++; await runtime.poll();
+    assert.equal(elements.get('equipmentStaffStatus').textContent, '');
+
+    vm.runInNewContext('globalThis.__savedDateNow = Date.now; Date.now = () => globalThis.__savedDateNow() + 5000;', context);
+    await runtime.poll();
+    assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/, 'Quest の更新が止まったら一言足す');
+    vm.runInNewContext('Date.now = globalThis.__savedDateNow;', context);
+    status.questTick++; await runtime.poll();
+    assert.equal(elements.get('equipmentStaffStatus').textContent, '');
+    assert.equal(cuts.length, 1);
+  } finally {
+    presentation.holdThen = originalHold;
   }
-
-  fetchHandler = async () => { throw new TypeError('offline'); };
-  await runtime.poll();
-  assert.equal(runtime.getBriefingMedia().paused, true);
-  assert.equal(state.briefing.cueIndex, 0);
-  assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
-  fetchHandler = onlineFetch; status.questTick++; await runtime.poll();
-  assert.match(elements.get('mediaMessage').textContent, /続きから/);
-
-  const realDateNow = vm.runInNewContext('Date.now', context);
-  vm.runInNewContext('globalThis.__savedDateNow = Date.now; Date.now = () => globalThis.__savedDateNow() + 5000;', context);
-  await runtime.poll();
-  assert.equal(runtime.getBriefingMedia().paused, true);
-  assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
-  vm.runInNewContext('Date.now = globalThis.__savedDateNow;', context);
-  status.questTick++; await runtime.poll();
-  assert.equal(state.briefing.cueIndex, 0);
-  assert.match(elements.get('mediaMessage').textContent, /続きから/);
-
-  state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues.ja.length - 1;
-  runtime.finishBriefing(); await flushPromises();
-  assert.equal(state.briefing.ended, true);
-  assert.equal(runtime.canShowEquipmentGuidance(), true);
-  assert.equal(elements.get('equipmentSteps').hidden, false);
 });
 
-test('待機・確認済み・装着途中・終了を復元し、確認済みをfalseで取り消さない', async () => {
+test('返却待ち・確認済み・装着の準備・旧形式の進行を復元し、確認済みをfalseで取り消さない', async () => {
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
   const reportIndex = wearIndex - 1;
+  const lastCue = briefing.scenes[wearIndex].cues.ja.length - 1;
   const baseProgress = { tabletSessionId: runtime.tabletSessionId, targetId: runtime.activeQuest(),
     portalSessionId: 'portal-a', seq: 21, lang: 'ja', relief: false };
   const cases = [
-    { name: 'waiting', confirmed: false, stage: 'ready', progress: { sceneIndex: reportIndex,
+    { name: 'waiting', confirmed: false, stage: 'ready', guidance: false, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: false, ended: true } },
+    { name: 'acknowledged', confirmed: true, stage: 'handedOff', guidance: true, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: false, ended: true } },
+    { name: 'equipment', confirmed: true, stage: 'handedOff', guidance: true, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: true, ended: true } },
+    { name: 'camera recovery', confirmed: true, stage: 'devices', reason: 'camera', guidance: false, progress: { sceneIndex: wearIndex,
+      cueIndex: lastCue, handoffReady: true, wearStarted: true, ended: true } },
+    // 2026-10-16 より前の保存（report の後で返却待ち／wear の途中）は説明完了として読む。
+    { name: 'legacy handoff', confirmed: false, stage: 'ready', guidance: false, progress: { sceneIndex: reportIndex,
       cueIndex: briefing.scenes[reportIndex].cues.ja.length - 1, handoffReady: true, wearStarted: false, ended: false } },
-    { name: 'acknowledged', confirmed: true, stage: 'handedOff', progress: { sceneIndex: reportIndex,
-      cueIndex: briefing.scenes[reportIndex].cues.ja.length - 1, handoffReady: true, wearStarted: false, ended: false } },
-    { name: 'wear', confirmed: true, stage: 'handedOff', progress: { sceneIndex: wearIndex,
+    { name: 'legacy wear', confirmed: true, stage: 'handedOff', guidance: true, progress: { sceneIndex: wearIndex,
       cueIndex: 1, handoffReady: true, wearStarted: true, ended: false } },
-    { name: 'camera recovery', confirmed: true, stage: 'devices', reason: 'camera', progress: { sceneIndex: wearIndex,
-      cueIndex: 1, handoffReady: true, wearStarted: true, ended: false } },
-    { name: 'ended', confirmed: true, stage: 'handedOff', progress: { sceneIndex: wearIndex,
-      cueIndex: 1, handoffReady: true, wearStarted: true, ended: true } },
   ];
   const posts = [];
   fetchHandler = async (resource, options = {}) => {
@@ -1968,14 +2153,13 @@ test('待機・確認済み・装着途中・終了を復元し、確認済み�
     assert.equal(posts.at(-1).briefingCompleted, true, item.name);
     assert.equal(posts.at(-1).staffConfirmed, item.confirmed, item.name);
     assert.equal(posts.at(-1).briefingRevision, status.briefing.revision, item.name);
-    if (item.name === 'acknowledged') {
-      assert.equal(state.briefing.wearStarted, true);
-      assert.equal(state.briefing.mediaPaused, true);
-      assert.equal(runtime.getBriefingMedia().playCount, playCountBeforeRestore);
-    }
-    if (item.name === 'wear' || item.name === 'camera recovery') assert.equal(state.briefing.cueIndex, 1);
-    if (item.name === 'camera recovery') assert.equal(state.briefing.pauseReasons.has('equipment'), true);
-    if (item.name === 'ended') assert.equal(state.briefing.ended, true);
+    assert.equal(state.briefing.ended, true, item.name);
+    assert.equal(state.briefing.handoffReady, true, item.name);
+    assert.equal(state.briefing.wearStarted, item.confirmed && item.stage === 'handedOff' || item.progress.wearStarted && item.progress.ended, item.name);
+    assert.equal(elements.get('doctorVideo').playCount, playCountBeforeRestore, `${item.name}: 復元で説明を再生しない`);
+    assert.equal(elements.get('equipmentSteps').hidden, false, `${item.name}: 説明を終えていれば案内を出す`);
+    assert.equal(elements.get('briefingTitle').textContent, '装着の準備', item.name);
+    assert.equal(elements.get('equipmentHandback').hidden, state.briefing.wearStarted, `${item.name}: 確定の前だけ返却の一行`);
   }
   const confirmedRevision = posts.at(-1).briefingRevision;
   elements.get('briefingReplay').dispatch('click'); await flushPromises();
@@ -1986,10 +2170,11 @@ test('待機・確認済み・装着途中・終了を復元し、確認済み�
   assert.equal(state.briefing.wearStarted, false);
 });
 
-test('report最終文の自動音声終了でもwearへ直行せず返却待ちに入る', async () => {
+test('report最終文の自動音声終了は返却で割り込まずwearへ進み、wear最終文の自動終了で返却待ちに入る', async () => {
   prepareBriefing(clone(briefing)); state.staffPreview = false; state.ui = 'sent';
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
   const report = briefing.scenes[wearIndex - 1];
+  const wear = briefing.scenes[wearIndex];
   state.briefing.sceneIndex = wearIndex - 1;
   state.briefing.cueIndex = report.cues.ja.length - 1;
   state.status = { ...clone(validStatus), questTick: 301, lang: 'ja', relief: false,
@@ -2003,13 +2188,28 @@ test('report最終文の自動音声終了でもwearへ直行せず返却待ち�
   runtime.configureBriefingMedia(report);
   runtime.setBriefingAuto(true);
   runtime.startBriefingMediaWindow();
-  const media = runtime.getBriefingMedia();
+  let media = runtime.getBriefingMedia();
   media.currentTime = 999;
   media.ontimeupdate();
   await flushPromises();
+  assert.equal(state.briefing.sceneIndex, wearIndex, 'report の自動終了は wear へ進む');
+  assert.equal(state.briefing.cueIndex, 0);
+  assert.equal(state.briefing.handoffReady, false);
+  assert.equal(state.briefing.ended, false);
+
+  state.briefing.cueIndex = wear.cues.ja.length - 1;
+  runtime.configureBriefingMedia(wear);
+  runtime.setBriefingAuto(true);
+  runtime.startBriefingMediaWindow();
+  media = runtime.getBriefingMedia();
+  media.currentTime = 999;
+  media.ontimeupdate();
+  await flushPromises();
+  assert.equal(state.briefing.ended, true, 'wear の自動終了で説明を終える');
   assert.equal(state.briefing.handoffReady, true);
   assert.equal(state.briefing.wearStarted, false);
-  assert.equal(state.briefing.ended, false);
+  assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
+  assert.equal(elements.get('equipmentHandback').hidden, false);
 });
 
 test('旧APIとスタッフ確認モードはwearを含む12文を連続してから終了する', () => {
@@ -2097,6 +2297,20 @@ test('スタッフ欄を閉じている間は来場者画面からリセット�
   let requests = 0; fetchHandler = async () => { requests++; throw new Error('must not send hidden staff actions'); };
   await elements.get('staffPrepareBtn').dispatch('click'); await elements.get('staffResetBtn').dispatch('click');
   assert.equal(requests, 0);
+});
+
+test('最初の準備の対処は本文の位置合わせを繰り返さず、並行して直せるカメラを指す', async () => {
+  prepareStaff(); runtime.resetStaffTimers();
+  const status = { ...clone(validStatus), questTick: 150,
+    staffSetup: { stage: 'setup', reason: 'position', positionConfirmed: false, position: 'needed', content: true,
+      cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'trouble', problem: 'nostream' }, { id: 'C', state: 'ok' }] } };
+  state.status = status; runtime.observeQuestTick(status); runtime.renderStaff();
+  assert.equal(elements.get('staff').dataset.state, 'setup');
+  assert.match(elements.get('staffNowBody').textContent, /右トリガー/);
+  assert.match(elements.get('staffRecovery').textContent, /^対処：スマホ B の FixedCam Streamer/);
+  status.staffSetup.cameras[1] = { id: 'B', state: 'ok' };
+  state.status = status; runtime.renderStaff();
+  assert.equal(elements.get('staffRecovery').textContent, '', '直す機器が無ければ本文の手順だけにする');
 });
 
 test('リセット拒否では成功帯を出さず、同じセッションの機器回復だけを短く知らせる', async () => {
@@ -2352,8 +2566,13 @@ test('実操作での音声解除はresume失敗を表示し、後の操作で�
       this.state = 'running';
     }
 
-    createOscillator() {
-      return { type: '', frequency: { setValueAtTime() {} }, connect() {},
+    createBuffer(channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      return { sampleRate, length, getChannelData: () => data };
+    }
+
+    createBufferSource() {
+      return { buffer: null, connect() {},
         start: () => { oscillatorStarts++; }, stop() {} };
     }
 
@@ -2388,8 +2607,12 @@ test('予約した通知音は本編・背景・対象変更で残りを停止�
   const gains = [];
   class ActiveAudioContext {
     constructor() { this.state = 'running'; this.currentTime = 20; this.destination = {}; }
-    createOscillator() {
-      const oscillator = { frequency: { setValueAtTime() {} }, starts: [], stops: [], disconnected: false,
+    createBuffer(channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      return { sampleRate, length, getChannelData: () => data };
+    }
+    createBufferSource() {
+      const oscillator = { buffer: null, starts: [], stops: [], disconnected: false,
         connect() {}, start(when) { this.starts.push(when); }, stop(when) { this.stops.push(when); },
         disconnect() { this.disconnected = true; } };
       oscillators.push(oscillator);
@@ -2690,6 +2913,7 @@ test('接続できないときは確かめる3項目と再確認を出し、ま�
   prepareStaff(); runtime.resetStaffTimers();
   fetchHandler = async () => { throw new TypeError('offline'); };
   await runtime.poll();
+  await runtime.poll();
   runtime.openStaffScreen('manual');
   assert.equal(elements.get('staff').dataset.state, 'offline');
   assert.equal(elements.get('staffNowTitle').textContent, 'クエストに接続できません');
@@ -2758,8 +2982,7 @@ test('来場者の使用中は反映済みの設定と説明の進みを出し�
   runtime.observeQuestTick(status);
   const posts = recordPosts(() => status);
   runtime.openStaffScreen('manual');
-  const wearIndex = briefing.scenes.findIndex((scene) => scene.id === 'wear');
-  const total = briefing.scenes.slice(0, wearIndex).reduce((count, scene) => count + scene.cues.fr.length, 0);
+  const total = briefing.scenes.reduce((count, scene) => count + scene.cues.fr.length, 0);
   const position = briefing.scenes[0].cues.fr.length + 1;
   assert.equal(elements.get('staff').dataset.state, 'visitorActive');
   assert.equal(elements.get('staffNowTitle').textContent, '来場者が設定と説明を見ています');
@@ -2809,10 +3032,13 @@ test('装着前の確認は足りない項目を赤で示し、揃うまで長�
   runtime.openStaffScreen('manual');
   const prepare = elements.get('staffPrepareBtn');
   assert.equal(elements.get('staff').dataset.state, 'confirm');
-  assert.equal(elements.get('staffHandback').hidden, false, '返却が未受理なら開き方に関係なく案内する');
+  assert.equal(elements.get('staffHandback').hidden, true, '長押しで開いたスタッフには返却の案内を出さない');
+  runtime.closeStaffScreen();
+  runtime.openStaffScreen('recovery');
+  assert.equal(elements.get('staffHandback').hidden, false, '自分で開いた画面なら、返却が未受理のあいだ3言語で案内する');
   runtime.closeStaffScreen();
   runtime.openStaffScreen('manual');
-  assert.equal(elements.get('staffHandback').hidden, false, '閉じて開き直しても3言語の返却案内を保つ');
+  assert.equal(elements.get('staffHandback').hidden, true, '閉じて長押しで開き直しても出さない');
   assert.deepEqual(visibleStaffItems(), [['ok', '言語：English'], ['ok', 'ホラー軽減：あり'],
     ['trouble', 'カメラ B：映像が止まっています'], ['ok', '位置合わせ']]);
   assert.equal(elements.get('staffNowItem0Mark').textContent, '●');
@@ -3025,16 +3251,467 @@ test('来場者の画面でQuestが6秒以上止まると3言語でスタッフ�
   state.view = 'title';
 });
 
+test('一時停止ボタンは予定された資料提示を取り消し読込完了からの再予約も止める', () => {
+  timers.reset();
+  motionPreference.matches = false;
+  state.view = 'briefing';
+  state.staffPreview = true;
+  state.briefing.data = clone(briefing);
+  state.briefing.sceneIndex = 1;
+  state.briefing.cueIndex = 0;
+  state.briefing.ended = false;
+  state.briefing.pauseReasons.clear();
+  elements.get('staff').open = false;
+  const presentation = context.window.BriefingPresentation;
+  presentation.reset();
+  let shown = 0;
+  presentation.presentReference({ scene: 'pause-wire', initial: true, onStart: () => { shown += 1; } });
+  assert.ok(pendingDelays().includes(120), '検査前は提示予定がある');
+  runtime.openBriefingControls();
+  assert.equal(pendingDelays().includes(120), false, '一時停止の入口が実際の取消処理へ届く');
+  assert.equal(shown, 0);
+  const image = elements.get('briefingImage');
+  image.complete = true;
+  image.naturalWidth = 100;
+  image.dataset.scene = briefing.scenes[1].id;
+  image.dataset.presentationSource = '';
+  assert.equal(runtime.presentLoadedReference(state.briefing.data.scenes[1]), false,
+    '停止後に画像の読込が終わっても音と表示を再予約しない');
+  state.briefing.pauseReasons.clear();
+  image.complete = false;
+  image.naturalWidth = 0;
+  presentation.reset();
+  state.staffPreview = false;
+  state.view = 'title';
+});
+
+// ---- 展示中の想定外（2026-10-21）：通信の揺れ・休止と固まり・本編中の異常・体験の中断 ----
+
+function runHealth(overrides = {}) {
+  return { paused: false, focusLost: false, worn: true, ctrlL: 'ok', battery: 80, exceptions: 2,
+    lastException: '', clockGaps: 0, cartKind: '', cartResult: '', ...overrides };
+}
+
+function runSetup(overrides = {}) {
+  return { stage: 'playing', reason: '', positionConfirmed: true, position: 'confirmed', content: true,
+    cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'ok' }, { id: 'C', state: 'ok' }],
+    run: { phase: 'RUN', lap: 1, laps: 3, sec: 10, outro: 'off', ending: '' }, ...overrides };
+}
+
+function visibleRunAlerts() {
+  return [0, 1, 2, 3, 4, 5, 6, 7]
+    .filter((index) => !elements.get(`staffRunAlert${index}`).hidden)
+    .map((index) => elements.get(`staffRunAlert${index}Text`).textContent);
+}
+
+function installRunAudio() {
+  const audio = { starts: 0 };
+  class RunAudioContext {
+    constructor() { this.state = 'running'; this.currentTime = 40; this.destination = {}; }
+    createBuffer(channels, length, sampleRate) {
+      const data = new Float32Array(length);
+      return { sampleRate, length, getChannelData: () => data };
+    }
+    createBufferSource() {
+      return { buffer: null, connect() {}, start: () => { audio.starts++; }, stop() {}, disconnect() {} };
+    }
+    createGain() {
+      return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {} },
+        connect() {}, disconnect() {} };
+    }
+  }
+  runtime.staffAlertAudio.context = new RunAudioContext();
+  runtime.staffAlertAudio.unlocked = true;
+  runtime.staffAlertAudio.activeTones.clear();
+  return audio;
+}
+
+function removeRunAudio() {
+  runtime.cancelStaffAlertSound();
+  runtime.staffAlertAudio.activeTones.clear();
+  runtime.staffAlertAudio.context = null;
+  runtime.staffAlertAudio.unlocked = false;
+}
+
+test('/status の取得は2回続けて失敗するまでofflineにせず、説明も止めない', async () => {
+  prepareStaff(); runtime.resetStaffTimers();
+  let status = { ...clone(validStatus), questTick: 1000 };
+  const online = async () => ({ ok: true, status: 200, json: async () => clone(status) });
+  const failing = async () => { throw new TypeError('offline'); };
+  fetchHandler = online;
+  await runtime.poll();
+  state.view = 'briefing';
+  state.briefing.pauseReasons.clear();
+  fetchHandler = failing;
+  await runtime.poll();
+  assert.equal(state.connection, 'online', '1 回目は前の状態を保つ');
+  assert.equal(runtime.pollFailures(), 1);
+  assert.equal(state.briefing.pauseReasons.has('offline'), false, '1 回の失敗では説明を止めない');
+  await runtime.poll();
+  assert.equal(state.connection, 'offline', '2 回続いたら接続できないとみなす');
+  assert.equal(state.briefing.pauseReasons.has('offline'), true);
+  status = { ...status, questTick: 1001 };
+  fetchHandler = online;
+  await runtime.poll();
+  assert.equal(state.connection, 'online');
+  assert.equal(runtime.pollFailures(), 0, '成功で数え直す');
+  assert.equal(state.briefing.pauseReasons.has('offline'), false);
+  fetchHandler = failing;
+  await runtime.poll();
+  assert.equal(state.connection, 'online', '成功を挟んだ後の 1 回目も保つ');
+  runtime.stopBriefingPlayback();
+  state.briefing.pauseReasons.clear();
+  state.view = 'title';
+  runtime.resetStaffTimers();
+});
+
+test('questTickが止まったら休止と固まりを分け、固まりには電源ボタンを案内しない', () => {
+  const base = { connection: 'online', fresh: false, pollFailures: 0 };
+  const statusWith = (health) => ({ ...clone(validStatus), questTick: 5, ...(health ? { health } : {}) });
+  assert.equal(runtime.questStallKind({ ...base, status: statusWith() }), 'legacy', 'health の無い旧 Quest');
+  assert.equal(runtime.questStallKind({ ...base, status: statusWith(runHealth({ paused: true })) }), 'paused');
+  assert.equal(runtime.questStallKind({ ...base, status: statusWith(runHealth()) }), 'hung');
+  assert.equal(runtime.questStallKind({ ...base, pollFailures: 1, status: statusWith(runHealth()) }), 'network',
+    '直前の取得が失敗していれば決めない');
+  assert.equal(runtime.questStallKind({ ...base, fresh: true, status: statusWith(runHealth()) }), '');
+  assert.equal(runtime.questStallKind({ ...base, connection: 'offline', status: statusWith(runHealth()) }), '');
+
+  const S = (input) => runtime.staffScreenState(input);
+  assert.equal(S(staffInput({ fresh: false, stall: 'hung' })), 'hung');
+  assert.equal(S(staffInput({ fresh: false, stall: 'paused' })), 'asleep');
+  assert.equal(S(staffInput({ fresh: false, stall: 'legacy' })), 'asleep');
+  assert.equal(S(staffInput({ fresh: false, stall: 'network' })), 'checking');
+  const rows = (input) => Object.fromEntries(runtime.staffDeviceRows(input).map((row) => [row.id, row]));
+  const hung = rows(staffInput({ fresh: false, stall: 'hung' })).Quest;
+  assert.deepEqual([hung.tone, hung.value], ['trouble', 'アプリが固まっています']);
+  assert.match(hung.fix, /体験を中断してやり直す/);
+  assert.doesNotMatch(hung.fix, /電源ボタン/, '固まった Quest に電源ボタンを押させない');
+  assert.equal(rows(staffInput({ fresh: false, stall: 'network' })).Quest.fix, '');
+  assert.equal(rows(staffInput({ fresh: false, stall: 'paused' })).Quest.fix, 'ヘッドセット側面の電源ボタンを 1 回押す');
+
+  prepareStaff(); runtime.resetStaffTimers();
+  state.status = { ...clone(validStatus), questTick: 1100, health: runHealth(),
+    staffSetup: { stage: 'settings', reason: 'settings', positionConfirmed: true } };
+  runtime.observeQuestTick(state.status);
+  shiftClock(5000);
+  try {
+    runtime.renderStaff();
+    assert.equal(elements.get('staff').dataset.state, 'hung');
+    assert.equal(elements.get('staffNowTitle').textContent, 'Quest のアプリが固まっています');
+    assert.equal(elements.get('staffNowBody').textContent,
+      '困ったときの「体験を中断してやり直す」を試す。直らなければ Quest のアプリを終了して起動し直す。');
+    assert.equal(elements.get('staffRecovery').hidden, true, '本文と同じ手順を重ねない');
+    assert.doesNotMatch(elements.get('devQuestFix').textContent, /電源ボタン/);
+    state.status.health = runHealth({ paused: true });
+    runtime.renderStaff();
+    assert.equal(elements.get('staff').dataset.state, 'asleep', 'paused なら従来どおり休止');
+    assert.equal(elements.get('staffNowTitle').textContent, 'ヘッドセットが休止しています');
+    delete state.status.health;
+    runtime.renderStaff();
+    assert.equal(elements.get('staffNowTitle').textContent, 'ヘッドセットが休止しています', 'health の無い旧 Quest は従来の文言');
+  } finally {
+    restoreClock();
+  }
+});
+
+test('本編中の異常は6秒続いたら一度だけ鳴らし、続く間と不通の後は鳴らし直さない', () => {
+  const machine = runtime.createRunAlertState();
+  const P = (list, partial = false) => ({ partial, list });
+  const camera = { key: 'cameraB', tone: 'trouble', sound: true, text: 'カメラ B の映像が来ていません。' };
+  const battery = { key: 'battery', tone: 'wait', sound: false, text: 'Quest の電池が少なくなっています（12%）。' };
+  const ctrl = { key: 'ctrlL', tone: 'trouble', sound: true, text: '左コントローラーが切れています。' };
+  const offline = { key: 'offline', tone: 'trouble', sound: true, text: 'Quest に繋がりません。' };
+  const U = (overrides) => runtime.updateRunAlertState(machine, { active: true, hidden: false, audioReady: true,
+    now: 0, problems: P([]), ...overrides });
+  const shown = () => Array.from(runtime.shownRunAlerts(machine), (problem) => problem.key);
+  assert.equal(U({ now: 0, problems: P([camera]) }), 'none');
+  assert.equal(U({ now: 5999, problems: P([camera]) }), 'none');
+  assert.deepEqual(shown(), [], '6 秒までは出さない');
+  assert.equal(U({ now: 6000, problems: P([camera]) }), 'sound');
+  assert.deepEqual(shown(), ['cameraB']);
+  assert.equal(U({ now: 20000, problems: P([camera]) }), 'none', '続く間は鳴らし直さない');
+  assert.equal(U({ now: 21000, problems: null }), 'none');
+  assert.deepEqual(shown(), ['cameraB'], '取得の失敗直後は前の判定を保つ');
+  assert.equal(U({ now: 22000, problems: P([offline], true) }), 'none');
+  assert.deepEqual(shown(), [], '不通の間は止まる前の値を伏せる');
+  assert.equal(U({ now: 28000, problems: P([offline], true) }), 'sound', '不通も 6 秒で知らせる');
+  assert.deepEqual(shown(), ['offline']);
+  assert.equal(U({ now: 29000, problems: P([camera]) }), 'none', '不通の前から続くカメラは鳴らし直さない');
+  assert.deepEqual(shown(), ['cameraB']);
+  U({ now: 30000, problems: P([]) });
+  assert.deepEqual(shown(), [], '直ったら消す');
+  U({ now: 31000, problems: P([camera]) });
+  assert.equal(U({ now: 37000, problems: P([camera]) }), 'sound', '直った後の新しい異常は知らせる');
+  U({ now: 40000, problems: P([camera, battery]) });
+  assert.equal(U({ now: 46000, problems: P([camera, battery]) }), 'none', '音の無いものは出すだけ');
+  assert.deepEqual(shown(), ['cameraB', 'battery']);
+  U({ now: 50000, hidden: true, problems: P([camera, battery, ctrl]) });
+  assert.equal(U({ now: 56000, problems: P([camera, battery, ctrl]) }), 'consume', '背景中に始まったものは鳴らさずに出す');
+  assert.deepEqual(shown(), ['cameraB', 'battery', 'ctrlL']);
+  U({ now: 60000, problems: P([camera]) });
+  U({ now: 61000, problems: P([camera, ctrl]) });
+  assert.equal(U({ now: 67000, audioReady: false, problems: P([camera, ctrl]) }), 'consume', '音が出せない間に来たら後から鳴らさない');
+  assert.equal(U({ now: 68000, problems: P([camera, ctrl]) }), 'none');
+  assert.equal(U({ active: false, now: 70000, problems: null }), 'none');
+  assert.equal(machine.entries.size, 0, '本編が終わったら全部消す');
+});
+
+test('本編中の異常を名指しし、休止・固まり・不通の間は止まる前の値を並べない', () => {
+  const status = { ...clone(validStatus), questTick: 9,
+    staffSetup: runSetup({ position: 'recenter',
+      cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'trouble', problem: 'stale' }, { id: 'C', state: 'checking' }] }),
+    health: runHealth({ ctrlL: 'off', battery: 12, exceptions: 5, cartKind: 'go', cartResult: 'net' }) };
+  const R = (overrides = {}) => runtime.staffRunProblems({ connection: 'online', status, stall: '', exceptionsBaseline: 3, ...overrides });
+  const all = R();
+  assert.equal(all.partial, false);
+  assert.deepEqual(Array.from(all.list).map((problem) => [problem.key, problem.sound]), [
+    ['recenter', true], ['ctrlL', true], ['cameraB', true], ['battery', false], ['exceptions', false], ['cart', false]]);
+  assert.deepEqual(Array.from(all.list).map((problem) => problem.text), [
+    '位置の基準が変わりました（Quest を外した・ボタン長押し）。映像の人形や線がずれます。体験を中断してやり直し、位置を合わせ直す',
+    '左コントローラーが切れています。電池と電源を確かめる（報告ができません）',
+    'カメラ B の映像が来ていません。スマホ B の FixedCam Streamer を開き直す',
+    'Quest の電池が少なくなっています（12%）。体験の後で充電する',
+    'Quest で内部エラーが起きました（2 件）。画や進行がおかしければ体験を中断してやり直す',
+    '台車へ合図が届きませんでした（終幕で台車が動かない）',
+  ]);
+  const keys = (health, overrides) => {
+    const saved = status.health;
+    status.health = { ...saved, ...health };
+    try { return Array.from(R(overrides).list).map((problem) => problem.key); } finally { status.health = saved; }
+  };
+  assert.deepEqual(keys({ ctrlL: 'untracked', battery: -1, exceptions: 3, cartResult: 'pending' }), ['recenter', 'cameraB'],
+    'untracked・電池の不明・増えていない例外・待ちの台車は出さない');
+  assert.deepEqual(keys({ ctrlL: 'ok', battery: 16, exceptions: 3, cartResult: 'ok' }), ['recenter', 'cameraB']);
+  assert.ok(keys({ battery: 15 }).includes('battery'));
+  assert.ok(keys({ battery: 0 }).includes('battery'));
+  assert.ok(keys({ cartResult: 'timeout' }).includes('cart'), 'ok / pending / 空 以外の結果は届かなかったとする');
+  assert.ok(!keys({ cartResult: '' }).includes('cart'));
+  assert.ok(!keys({ cartKind: 'cut', cartResult: 'net' }).includes('cart'), '止める合図（cut）は対象外');
+  assert.ok(!keys({}, { exceptionsBaseline: null }).includes('exceptions'), '本編開始の基準が無ければ数えない');
+
+  const offline = R({ connection: 'offline' });
+  assert.deepEqual([offline.partial, Array.from(offline.list).map((problem) => problem.text)],
+    [true, ['Quest に繋がりません。Quest の電源とアプリを確かめる']]);
+  const hung = R({ stall: 'hung' });
+  assert.deepEqual(Array.from(hung.list).map((problem) => [problem.key, problem.sound]), [['hung', true]]);
+  assert.match(hung.list[0].text, /^Quest のアプリが固まっています。/);
+  assert.doesNotMatch(hung.list[0].text, /電源ボタン/);
+  assert.equal(R({ stall: 'network' }), null, '取得の失敗直後は決めない');
+  assert.equal(R({ connection: 'checking' }), null);
+  const saved = status.health;
+  status.health = runHealth({ paused: true, worn: false });
+  assert.deepEqual(Array.from(R().list).map((problem) => [problem.key, problem.sound, problem.text]),
+    [['removed', false, '体験者が Quest を外しています。被り直すと続きから再開します']]);
+  status.health = runHealth({ paused: true, worn: null });
+  assert.deepEqual([R().partial, Array.from(R().list)], [true, []], '外したと分からない休止は名指ししない');
+  delete status.health;
+  assert.deepEqual(Array.from(R().list).map((problem) => problem.key), ['recenter', 'cameraB'], 'health の無い旧 Quest は位置とカメラだけ');
+  status.health = saved;
+  assert.equal(runtime.staffRunActive({ ...status, staffSetup: runSetup({ stage: 'ended', run: { outro: 'playing' } }) }), true);
+  assert.equal(runtime.staffRunActive({ ...status, staffSetup: runSetup({ stage: 'ended', run: { outro: 'done' } }) }), false,
+    '終わりの演出が済んだら本編ではない');
+  assert.equal(runtime.staffRunActive({ ...status, staffSetup: runSetup({ stage: 'handedOff' }) }), false);
+});
+
+test('本編中に6秒続いた異常は機器の欄に名指しし、音のあるものだけ短い音で一度知らせる', async () => {
+  prepareStaff(); runtime.resetStaffTimers();
+  const audio = installRunAudio();
+  let status = { ...clone(validStatus), questTick: 1200, phase: 'RUN', health: runHealth(), staffSetup: runSetup() };
+  recordPosts(() => status);
+  try {
+    await runtime.poll();
+    assert.equal(elements.get('staff').dataset.state, 'playing');
+    assert.equal(elements.get('staffRunAlerts').hidden, true);
+    status = { ...status, questTick: 1201, health: runHealth({ ctrlL: 'off', exceptions: 3, battery: 10 }) };
+    await runtime.poll();
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '6 秒までは出さない');
+    shiftClock(6000);
+    status = { ...status, questTick: 1202 };
+    await runtime.poll();
+    assert.equal(elements.get('staffRunAlerts').hidden, false);
+    assert.deepEqual(visibleRunAlerts(), [
+      '左コントローラーが切れています。電池と電源を確かめる（報告ができません）',
+      'Quest の電池が少なくなっています（10%）。体験の後で充電する',
+      'Quest で内部エラーが起きました（1 件）。画や進行がおかしければ体験を中断してやり直す',
+    ]);
+    assert.equal(elements.get('staffRunAlert0').dataset.tone, 'trouble');
+    assert.equal(elements.get('staffRunAlert1').dataset.tone, 'wait');
+    assert.equal(audio.starts, 2, '短い音（カチ 2 つ）を一度');
+    status = { ...status, questTick: 1203 };
+    await runtime.poll();
+    assert.equal(audio.starts, 2, '同じ異常が続く間は鳴らし直さない');
+    runtime.observeStaffAlert(Date.now(), true);
+    assert.equal(runtime.staffAlertAudio.activeTones.size, 2, '本編中の知らせは引き渡し前の通知の停止で切らない');
+
+    fetchHandler = async () => { throw new TypeError('offline'); };
+    await runtime.poll();
+    assert.equal(state.connection, 'online');
+    assert.equal(elements.get('staffRunAlerts').hidden, false, '1 回の失敗では表示を変えない');
+    await runtime.poll();
+    assert.equal(state.connection, 'offline');
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '不通は 6 秒続くまで出さず、止まる前の値は伏せる');
+    shiftClock(12000);
+    assert.equal(runtime.observeRunAlerts(), true, '取得が詰まっても周期の側から数える');
+    runtime.renderStaff();
+    assert.deepEqual(visibleRunAlerts(), ['Quest に繋がりません。Quest の電源とアプリを確かめる']);
+    assert.equal(audio.starts, 4);
+    status = { ...status, questTick: 1204 };
+    recordPosts(() => status);
+    await runtime.poll();
+    assert.deepEqual(visibleRunAlerts().length, 3, '戻ったら前からの異常を出し直す');
+    assert.equal(audio.starts, 4, '不通の前から続いていた異常は鳴らし直さない');
+
+    status = { ...status, questTick: 1205, staffSetup: runSetup({ position: 'recenter' }), health: runHealth() };
+    await runtime.poll();
+    shiftClock(18000);
+    status = { ...status, questTick: 1206 };
+    await runtime.poll();
+    assert.deepEqual(visibleRunAlerts(), ['位置の基準が変わりました（Quest を外した・ボタン長押し）。映像の人形や線がずれます。体験を中断してやり直し、位置を合わせ直す']);
+    assert.equal(audio.starts, 6);
+
+    status = { ...status, questTick: 1207, health: runHealth({ paused: true, worn: false }) };
+    await runtime.poll();
+    shiftClock(30000);
+    await runtime.poll();
+    assert.deepEqual(visibleRunAlerts(), ['体験者が Quest を外しています。被り直すと続きから再開します']);
+    assert.equal(audio.starts, 6, '外したことは音を鳴らさずに出す');
+    assert.equal(elements.get('staff').dataset.state, 'asleep');
+
+    status = { ...status, questTick: 1208, phase: 'END', health: runHealth(),
+      staffSetup: runSetup({ stage: 'ended', run: { phase: 'END', lap: 3, laps: 3, sec: 170, outro: 'done', ending: 'released' } }) };
+    await runtime.poll();
+    assert.equal(elements.get('staff').dataset.state, 'finished');
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '終わりの演出が済んだら消す');
+  } finally {
+    restoreClock();
+    removeRunAudio();
+    runtime.resetStaffTimers();
+  }
+});
+
+test('本編中に固まったQuestは固まりとして知らせ、引き渡し前の通知と同じく背景中の分は鳴らさない', async () => {
+  prepareStaff(); runtime.resetStaffTimers();
+  const audio = installRunAudio();
+  let status = { ...clone(validStatus), questTick: 1250, phase: 'RUN', health: runHealth(), staffSetup: runSetup() };
+  recordPosts(() => status);
+  try {
+    await runtime.poll();
+    shiftClock(5000);
+    await runtime.poll();
+    assert.equal(elements.get('staff').dataset.state, 'hung');
+    assert.equal(elements.get('devQuestValue').textContent, 'アプリが固まっています');
+    shiftClock(11000);
+    await runtime.poll();
+    assert.deepEqual(visibleRunAlerts(),
+      ['Quest のアプリが固まっています。困ったときの「体験を中断してやり直す」を試す。直らなければ Quest のアプリを終了して起動し直す']);
+    assert.equal(audio.starts, 2);
+    shiftClock(12000);
+    status = { ...status, questTick: 1251, staffSetup: runSetup({
+      cameras: [{ id: 'A', state: 'trouble', problem: 'nostream' }, { id: 'B', state: 'ok' }, { id: 'C', state: 'ok' }] }) };
+    await runtime.poll();
+    document.hidden = true;
+    runtime.observeRunAlerts();
+    document.hidden = false;
+    shiftClock(19000);
+    status = { ...status, questTick: 1252 };
+    await runtime.poll();
+    assert.deepEqual(visibleRunAlerts(), ['カメラ A の映像が来ていません。スマホ A の FixedCam Streamer を開き、Wi-Fi を確かめる']);
+    assert.equal(audio.starts, 2, '背景に移っていた間に溜まった分は鳴らさない');
+  } finally {
+    document.hidden = false;
+    restoreClock();
+    removeRunAudio();
+    runtime.resetStaffTimers();
+  }
+});
+
+test('「体験を中断してやり直す」は本編中も1.5秒の長押しでforce付きのリセットを送り、拒否と成功を分ける', async () => {
+  prepareStaff(); runtime.resetStaffTimers();
+  const dialogStart = html.indexOf('<dialog class="staff-screen"');
+  const dialogEnd = html.indexOf('</dialog>', dialogStart);
+  const buttonAt = html.indexOf('id="staffForceResetBtn"');
+  assert.ok(buttonAt > dialogStart && buttonAt < dialogEnd, '来場者の画面には出さない（スタッフ画面の中だけ）');
+  assert.ok(buttonAt > html.indexOf('id="staffTrouble"'), '「困ったとき」の中に置く');
+  let status = { ...clone(validStatus), questTick: 1300, phase: 'RUN', health: runHealth(), staffSetup: runSetup() };
+  const posts = recordPosts(() => status);
+  await runtime.poll();
+  const button = elements.get('staffForceResetBtn');
+  assert.equal(elements.get('staff').dataset.state, 'playing');
+  assert.equal(button.disabled, false, '本編中も押せる');
+  assert.equal(runtime.staffResetAllowed(), false, '通常の準備は本編中に出さないまま');
+  assert.equal(button.dispatch('click'), undefined);
+  button.dispatch('pointerdown', { isPrimary: true, pointerId: 40, button: 0 });
+  button.dispatch('pointerup', { pointerId: 40 });
+  assert.equal(posts.filter((body) => body.staffReset).length, 0, 'クリックと短押しでは送らない');
+  button.dispatch('pointerdown', { isPrimary: true, pointerId: 41, button: 0 });
+  timers.runOne(1500); await runtime.staffAction();
+  const first = posts.filter((body) => body.staffReset);
+  assert.equal(first.length, 1);
+  assert.deepEqual([first[0].force, first[0].portalSessionId, first[0].settingsSeq], [true, 'portal-a', 0]);
+  assert.equal(button.disabled, true, '応答を待つ間は重ねて送らない');
+  assert.equal(elements.get('staffForceMessage').textContent, '中断を送りました。Quest の応答を待っています…');
+  await runtime.pulse();
+  assert.equal(posts.filter((body) => body.staffReset).at(-1).force, true, '再送も force を保つ');
+
+  status = { ...status, questTick: 1301, staffResetRejectedId: first[0].resetRequestId };
+  await runtime.poll();
+  assert.equal(elements.get('staffForceMessage').textContent, 'Quest で位置合わせの作業中です。終えてから押す');
+  assert.equal(elements.get('staff').dataset.state, 'playing', '拒否なら体験はそのまま続く');
+  assert.equal(button.disabled, false);
+
+  button.dispatch('pointerdown', { isPrimary: true, pointerId: 42, button: 0 });
+  timers.runOne(1500); await runtime.staffAction();
+  const second = posts.filter((body) => body.staffReset).at(-1);
+  assert.notEqual(second.resetRequestId, first[0].resetRequestId);
+  assert.equal(second.force, true);
+  status = { ...clone(validStatus), questTick: 1302, portalSessionId: 'portal-after-force', visitorGeneration: 5,
+    staffResetId: second.resetRequestId, health: runHealth(),
+    staffSetup: { stage: 'settings', reason: 'settings', positionConfirmed: true, position: 'confirmed', content: true,
+      cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'ok' }, { id: 'C', state: 'ok' }] } };
+  await runtime.poll();
+  assert.equal(elements.get('staffReceipt').textContent, '次の体験者の準備ができました');
+  assert.equal(elements.get('staff').dataset.state, 'handover', '成功したら次の体験者の準備へ戻る');
+  assert.equal(elements.get('staffForceMessage').textContent, '');
+
+  status = { ...clone(validStatus), questTick: 1303, portalSessionId: 'portal-legacy', phase: 'RUN', staffSetup: runSetup() };
+  await runtime.poll();
+  elements.get('staffForceResetBtn').dispatch('pointerdown', { isPrimary: true, pointerId: 43, button: 0 });
+  timers.runOne(1500); await runtime.staffAction();
+  const legacy = posts.filter((body) => body.staffReset).at(-1);
+  status = { ...status, questTick: 1304, staffResetRejectedId: legacy.resetRequestId };
+  await runtime.poll();
+  assert.equal(elements.get('staffForceMessage').textContent,
+    'この Quest は中断を受け付けませんでした。右コントローラーの A を 2 秒押し続けて中断します。', 'health の無い旧 Quest');
+
+  fetchHandler = async () => { throw new TypeError('offline'); };
+  await runtime.poll(); await runtime.poll();
+  assert.equal(button.disabled, true, '繋がらない間は送らない');
+  state.staffPreview = true; state.connection = 'online';
+  assert.equal(runtime.staffForceResetAllowed(), false, 'スタッフの説明確認中は送らない');
+  state.staffPreview = false;
+  runtime.resetStaffTimers();
+});
+
 (async () => {
   await flushPromises();
   timers.reset();
   let failed = 0;
+  let finished = 0;
+  // ⚠ 解決しない Promise を待つテストがあると、Node は何も言わず終了コード 0 で抜ける（2026-10-14 に実際に起きた）。
+  process.on('exit', () => {
+    if (finished < tests.length) {
+      console.error(`not ok - ${tests.length - finished} 本のテストが終わらないまま終了した（最後は「${tests[finished]?.name}」）`);
+      process.exitCode = 1;
+    }
+  });
   for (const { name, body } of tests) {
     try {
       await body();
+      finished += 1;
       console.log(`ok - ${name}`);
     } catch (error) {
       failed += 1;
+      finished += 1;
       console.error(`not ok - ${name}`);
       console.error(error.stack || error);
     }

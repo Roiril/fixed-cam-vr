@@ -24,6 +24,8 @@ namespace FixedCamVr.Streaming
     public sealed class ScreenOverlayController : MonoBehaviour
     {
         private static readonly int OverlayTexId = Shader.PropertyToID("_OverlayTex");
+        private static readonly int OverlayTexBId = Shader.PropertyToID("_OverlayTexB");
+        private static readonly int OverlayBlendId = Shader.PropertyToID("_OverlayBlend");
         private static readonly int OverlayScaleId = Shader.PropertyToID("_OverlayScale");
         private static readonly int MaskTexId = Shader.PropertyToID("_MaskTex");
         private static readonly int OverlayStrengthId = Shader.PropertyToID("_OverlayStrength");
@@ -121,8 +123,27 @@ namespace FixedCamVr.Streaming
         public event Action<string, float, float, bool>? ClipLatency;
 
 
-        // フレーム列ソースの再生開始時刻（Time.time）。
-        private float _framesStart;
+        // フレーム列ソースの素材の時計（秒）。毎フレーム「経過 × 速さ」を足す ＝ 途中で速さを
+        // 変えても続きから進む（開始時刻からの差で引くと、速さを変えた瞬間に先へ跳ぶ）。
+        private float _framesClock;
+        private float _framesRate = 1f;
+        private float _framesLastTime;
+        // ロード中に届いた速さの指定（PlayCue 直後の数フレームは素材が未確定）。
+        private int _pendingFramesRateToken = -1;
+        private float _pendingFramesRate = 1f;
+
+        // 体験者の進み具合でコマを選ぶか（SetFramesProgress）。進み具合が届くまでは NaN（＝入口のコマで待つ）。
+        private bool _framesFollow;
+        private float _framesFollowProgress = float.NaN;
+
+        /// <summary>いまコマを体験者の進み具合で選んでいるか。観測用。</summary>
+        public bool FramesFollowing => _framesFollow;
+
+        /// <summary>いま流しているフレーム列の素材の時計（秒）。観測用。</summary>
+        public float FramesClockSec => _framesClock;
+
+        /// <summary>いま流しているフレーム列の速さ（1 = 等速）。観測用。</summary>
+        public float FramesRate => _framesRate;
 
         // フェード状態。target に向かって _strength を進める。
         private float _strength;
@@ -285,6 +306,7 @@ namespace FixedCamVr.Streaming
             _clipDlSec = 0f;
             _clipCached = false;
             _clipCueId = string.IsNullOrEmpty(data.id) ? (data.displayName ?? "?") : data.id;
+            _framesFollowProgress = float.NaN;
             int gen = _logic.BeginPlay();
             _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
             return gen;
@@ -308,6 +330,46 @@ namespace FixedCamVr.Streaming
 
         // ループ動画の最初の一周が終わった世代。次の静止画のロード中も先頭姿勢を保持するために使う。
         private int _lastLoopedToken = -1;
+
+        /// <summary>
+        /// <paramref name="token"/> の発火が流しているフレーム列（端末内録画）の速さを、
+        /// <b>頭へ戻さず続きから</b>変える（3 周目 A の早送り・`canon/LEDGER.md` 0272）。
+        ///
+        /// 変えられたら true。その発火がもう畳まれた・置き換わった・録画ではない・
+        /// <b>録画が尽きて最後のコマで止まっている</b>なら false（呼び出し側はカットを飛ばす）。
+        /// ロード中なら素材が載った瞬間にその速さで始める。
+        /// </summary>
+        public bool SetFramesRate(int token, float rate)
+        {
+            if (token < 0 || token != _logic.Generation) return false;
+            float r = rate > 0f ? rate : 1f;
+            if (_logic.IsLoading(token))
+            {
+                _pendingFramesRateToken = token;
+                _pendingFramesRate = r;
+                return true;
+            }
+            if (_current == null || !_current.SourceIsFrames || _stopWhenFadedOut) return false;
+            if (_framesCueToken != token || _finishedFramesToken == token) return false;
+            _framesRate = r;
+            _current.framesRate = r;
+            // 位置で選んでいたなら、いまのコマから時間どおりへ移る（早送りの起点・0274）。
+            // 混ぜていた 2 コマ目は外す（時間どおりの再生は 1 コマずつ）。
+            _framesFollow = false;
+            SetOverlayBlend(_current.frames!.Texture, null, 0f);
+            _framesLastTime = Time.time;
+            return true;
+        }
+
+        /// <summary>
+        /// <paramref name="token"/> の発火が位置で選ぶ録画なら、体験者の進み具合を渡す（毎フレーム）。
+        /// ロード中でも受け取っておき、素材が載った瞬間から使う。発火が置き換わっていれば無視する。
+        /// </summary>
+        public void SetFramesProgress(int token, float progress)
+        {
+            if (token < 0 || token != _logic.Generation) return;
+            _framesFollowProgress = progress;
+        }
 
         public bool HasLooped(int token)
             => token >= 0 && token == _logic.Generation && token == _lastLoopedToken;
@@ -352,7 +414,17 @@ namespace FixedCamVr.Streaming
                 _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
                 ApplyColorMatch(data);
                 _player!.Stop();
-                _framesStart = Time.time;
+                _framesClock = 0f;
+                _framesLastTime = Time.time;
+                _framesRate = _pendingFramesRateToken == gen
+                    ? _pendingFramesRate
+                    : (data.framesRate > 0f ? data.framesRate : 1f);
+                _pendingFramesRateToken = -1;
+                // 位置で選ぶのは「位置で録った録画」のときだけ。そうでなければ時間どおり（`canon/LEDGER.md` 0274）。
+                _framesFollow = data.framesFollow && data.frames!.ClockAtProgress(0f) >= 0f;
+                if (data.framesFollow && !_framesFollow)
+                    Debug.LogWarning("[ScreenOverlay] 位置で録った録画ではないので時間どおりに流す");
+                // 位置で選ぶ値は発火ごとに捨てない（ロード中に届いた分を使う）。PlayCue が NaN に戻す。
                 data.frames!.Tick(0f);
                 SetOverlayTexture(data.frames.Texture, data.frames.Aspect, data.id);
                 BeginFadeIn(data);
@@ -809,7 +881,33 @@ namespace FixedCamVr.Streaming
                 || _framesCueToken != _logic.Generation) return;
             if (_finishedFramesToken == _logic.Generation) return;
             var seq = _current.frames!;
-            if (seq.Tick(Time.time - _framesStart)) return;
+            float now = Time.time;
+            if (_framesFollow)
+            {
+                // 体験者の進み具合に合うコマを出す。時計はそのコマの時刻に置く ＝ 早送りへ移ったとき
+                // そこから続く。終端で畳まない（体験者が止まれば最後のコマのまま待つ）。
+                _framesLastTime = now;
+                if (!float.IsNaN(_framesFollowProgress))
+                {
+                    // 進み具合を挟む 2 コマを混ぜて出す（0278）。2 つの枠は入れ替わるので毎回貼り直す。
+                    float c = seq.ClockAtProgress(_framesFollowProgress);
+                    if (c >= 0f) _framesClock = c;
+                    float blend = seq.TickProgress(_framesFollowProgress);
+                    if (blend >= 0f)
+                    {
+                        FramesBlend = blend;
+                        SetOverlayBlend(seq.Texture, seq.TextureB, blend);
+                        return;
+                    }
+                }
+                seq.Tick(_framesClock);
+                FramesBlend = 0f;
+                SetOverlayBlend(seq.Texture, null, 0f);
+                return;
+            }
+            _framesClock += Mathf.Max(0f, now - _framesLastTime) * _framesRate;
+            _framesLastTime = now;
+            if (seq.Tick(_framesClock)) return;
             // 次のカットは元の録画を Dispose する。最終コマを独立した RT へ複写しておく。
             Texture last = seq.Texture;
             if (_material != null && last.width > 0 && last.height > 0)
@@ -837,7 +935,6 @@ namespace FixedCamVr.Streaming
         }
 
         private bool _frozen;
-        private float _freezeStart;
         private bool _pausedByFreeze;
 
         /// <summary>
@@ -845,7 +942,7 @@ namespace FixedCamVr.Streaming
         /// <see cref="CameraFeelFx"/> の画のホールド演出から呼ぶ。
         ///
         /// **ライブだけ止めて録画が動くと「装置が固まった」に見えない**ので、凍らせる間は素材も止める。
-        /// 解除では止まっていた分だけ開始時刻をずらす（＝続きから。飛ばさない）。
+        /// 解除では止まっていた分を素材の時計に足さない（＝続きから。飛ばさない）。
         /// </summary>
         public void SetFrozen(bool on)
         {
@@ -853,11 +950,11 @@ namespace FixedCamVr.Streaming
             _frozen = on;
             if (on)
             {
-                _freezeStart = Time.time;
                 if (_player != null && _player.isPlaying) { _player.Pause(); _pausedByFreeze = true; }
                 return;
             }
-            _framesStart += Time.time - _freezeStart;
+            // 止まっていたあいだは素材の時計に足さない（＝続きから。飛ばさない）。
+            _framesLastTime = Time.time;
             if (_pausedByFreeze)
             {
                 _pausedByFreeze = false;
@@ -895,11 +992,59 @@ namespace FixedCamVr.Streaming
             _fadeSpeed = Mathf.Max(_target - _strength, 0.01f) / fade;
         }
 
+        /// <summary>
+        /// 観測用（2026-10-19・`canon/LEDGER.md` 0275）: 画面のマテリアルが<b>実際に</b>持っている
+        /// 差し替え素材と強さ、GPU 側で読んだ平均輝度を 1 行にする。
+        /// <paramref name="expect"/> が素材と同じ物か（same）も添える。**CPU 側でコマを載せたことと、
+        /// 画に出ていることは別**なので、両方の輝度を並べて食い違いを見る。重いので数秒に 1 回だけ呼ぶ。
+        /// </summary>
+        public string DiagnoseOverlay(Texture? expect)
+        {
+            if (_material == null) return "mat=null";
+            Texture? t = _material.GetTexture(OverlayTexId);
+            float s = _material.GetFloat(OverlayStrengthId);
+            float gpu = -1f;
+            if (t != null)
+            {
+                RenderTexture rt = RenderTexture.GetTemporary(16, 16, 0, RenderTextureFormat.ARGB32);
+                RenderTexture prev = RenderTexture.active;
+                Graphics.Blit(t, rt);
+                RenderTexture.active = rt;
+                var read = new Texture2D(16, 16, TextureFormat.RGBA32, false);
+                read.ReadPixels(new Rect(0, 0, 16, 16), 0, 0);
+                read.Apply(false);
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+                Color32[] px = read.GetPixels32();
+                float sum = 0f;
+                foreach (Color32 c in px) sum += (0.299f * c.r + 0.587f * c.g + 0.114f * c.b) / 255f;
+                gpu = sum / px.Length;
+                if (Application.isPlaying) Destroy(read); else DestroyImmediate(read);
+            }
+            return $"tex={(t == null ? "null" : t.name)} same={(t != null && ReferenceEquals(t, expect) ? 1 : 0)} " +
+                   $"str={s:F2} target={_target:F2} gpuLuma={gpu:F3} mips={(t is Texture2D t2 ? t2.mipmapCount : -1)}";
+        }
+
+        /// <summary>位置で選ぶ録画でいま混ぜている割合（0 = 1 コマだけ）。観測用。</summary>
+        public float FramesBlend { get; private set; }
+
+        // 1 コマ目と 2 コマ目と混ぜ具合を貼る。2 コマ目が無いときは混ぜない（シェーダは 2 コマ目を読まない）。
+        private void SetOverlayBlend(Texture a, Texture? b, float blend)
+        {
+            if (_material == null) return;
+            _material.SetTexture(OverlayTexId, a);
+            _material.SetTexture(OverlayTexBId, b != null && blend > 0f ? b : Texture2D.blackTexture);
+            _material.SetFloat(OverlayBlendId, b != null ? blend : 0f);
+        }
+
         private void SetOverlayTexture(Texture tex, float srcAspect, string cueId)
         {
             if (_material == null) return;
             Vector2 scale = ContainScale(srcAspect);
             _material.SetTexture(OverlayTexId, tex);
+            // 素材を貼り替えたら混ぜ具合は必ず 0 へ（前の録画の 2 コマ目を次の素材に重ねない）。
+            _material.SetFloat(OverlayBlendId, 0f);
+            FramesBlend = 0f;
             _material.SetVector(OverlayScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
             _appliedCueId = cueId ?? "";
             if (_heldFrameRt != null && tex != _heldFrameRt) ReleaseHeldFrame();

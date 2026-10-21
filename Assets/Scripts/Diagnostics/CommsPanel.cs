@@ -121,6 +121,17 @@ namespace FixedCamVr.Diagnostics
         private const float PitchOffsetDeg = 17f;
 
         /// <summary>
+        /// ③a「止まってください！」と③b の連絡だけ、下へ振る角度（度）。
+        /// ⚠ 4 周目 A は画面の下側に大量の人形が並ぶので、通常の下の帯（17°）だと人形に被る
+        /// （2026-10-21・<c>canon/LEDGER.md</c> 0283「普通のエージェントスクリーンより上にずらして」）。
+        /// 3° なら面は視線のすぐ下・映像の上半分（カーテンの辺り）に立つ。
+        /// </summary>
+        private const float ClosingPitchOffsetDeg = 3f;
+
+        /// <summary>通常の位置と③a / ③b の位置を行き来するときの寄せの時間 (秒)。面が開いたまま跳ばない。</summary>
+        private const float PitchMoveSec = 0.35f;
+
+        /// <summary>
         /// <b>文面の帯</b>の幅 (m)。1.5m 先で 0.76m ＝ <b>見かけ 28°</b>。
         ///
         /// ⚠⚠ <b>これは面の全幅ではない</b>（2026-08-17・<c>canon/LEDGER.md</c> 0071）。
@@ -260,6 +271,20 @@ namespace FixedCamVr.Diagnostics
         private static readonly Color Ivory = new Color(209f / 255f, 199f / 255f, 184f / 255f, 1f);
         // TMP の頂点色は線形空間で描かれる。出力画像で朱赤になるよう変換しておく。
         private static readonly Color LieRed = new Color(1f, 48f / 255f, 24f / 255f, 1f).linear;
+        /// <summary>
+        /// 復帰（0270）で顔に残った人形を嘘の一文の赤へ寄せる割合。⚠ 1 にしない — 顔は墨 1 色の版なので、
+        /// 全部赤くすると「赤い絵が貼ってある」に見える。残っているのが呪いだと分かる程度に寄せる。
+        /// </summary>
+        private const float ResidueTint = 0.65f;
+        // 復帰（0270）で文字に残る赤の量（`CommsRecoveryLogic.RedOf` の閾値）。Apply が毎フレーム書く。
+        private float _recoveryRed;
+        // 復帰の時計で、呪いが解けた（報告が通った）時刻。負 = まだ解けていない。
+        private float _releaseAtRec = -1f;
+        // プレビュー用: 呪いが解けたことにする（runDirector を持たないため）。
+        private bool _releasedForPreview;
+
+        /// <summary>プレビュー用。呪いが解けた（報告が通った）ことにする。</summary>
+        public void SetReleasedForPreview(bool released) => _releasedForPreview = released;
 
         /// <summary>版の中の字の大きさ。<b>倍率は <see cref="TextScale"/> が transform で掛ける。</b></summary>
         private const float FontSize = 0.07f;
@@ -362,6 +387,8 @@ namespace FixedCamVr.Diagnostics
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
             //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
             CommsNotice.Prompt => "異変があなたを\n取り込もうとしています。\n排除してください。",
+            // ④ 締めの報告で呪いが解けた（0284）。「検出しました」では急なので、終わったことを労う。
+            CommsNotice.MarkCleared => "異変を取り除きました。\nお疲れ様です。",
             _ => "",
         };
 
@@ -398,6 +425,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Halt => "Please stop!",
             // ③ ここだけが体験者自身を名指しする（0096）。
             CommsNotice.Prompt => "An anomaly is trying to\nabsorb you.\nRemove it.",
+            CommsNotice.MarkCleared => "The anomaly is removed.\nThank you for your work.",
             _ => "",
         };
 
@@ -424,6 +452,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Takeover => "Anomalie détectée.",
             CommsNotice.Halt => "Arrêtez-vous !",
             CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber.\nSupprimez-la.",
+            CommsNotice.MarkCleared => "Anomalie éliminée.\nMerci pour votre travail.",
             _ => "",
         };
 
@@ -589,6 +618,8 @@ namespace FixedCamVr.Diagnostics
         };
         private static readonly int LineRevealId = Shader.PropertyToID("_LineReveal");
         // TextMeshPro の材質が持つステンシル（`TMP_SDF Overlay.shader`）。
+        private static readonly int ResidueId = Shader.PropertyToID("_Residue");
+        private static readonly int ResidueColorId = Shader.PropertyToID("_ResidueColor");
         private static readonly int StencilId = Shader.PropertyToID("_Stencil");
         private static readonly int StencilCompId = Shader.PropertyToID("_StencilComp");
         private static readonly int StencilReadMaskId = Shader.PropertyToID("_StencilReadMask");
@@ -600,6 +631,14 @@ namespace FixedCamVr.Diagnostics
         private int _charCount;
         private Material? _panelMat;
         private Material? _dividerMat;
+        private Shader? _recoveryTextShader;
+        private Shader? _normalTextShader;
+        private bool _recoveryShaderLoaded;
+        private bool _recoverySurfaceActive;
+        private static readonly int RecoveryId = Shader.PropertyToID("_Recovery");
+        private static readonly int RecoveryRectId = Shader.PropertyToID("_RecoveryRect");
+        private static readonly int RecoveryWorldToPanelId = Shader.PropertyToID("_RecoveryWorldToPanel");
+        private static readonly int RecoveryPanelToWorldId = Shader.PropertyToID("_RecoveryPanelToWorld");
         private Mesh? _panelMesh;
         private TMP_Text? _text;
         private MeshRenderer? _textRenderer;
@@ -621,6 +660,7 @@ namespace FixedCamVr.Diagnostics
         private bool _leftTracked = true;
         private string _hintBody = "";
         private bool _yawSeeded;
+        private float _pitchNow = PitchOffsetDeg;
         // 報告の縁を取るために、直前に見た回数を覚えておく（ShowControlClient が真実源）。
         private int _lastMarkCount;
         private bool _promptReadableNotified;
@@ -695,9 +735,8 @@ namespace FixedCamVr.Diagnostics
         public bool PlateBuilt { get; private set; }
 
         /// <summary>
-        /// 地と縁を組めたか。<b>false なら文字と壊れだけが宙に浮く。</b>
-        /// ⚠⚠ 2026-08-17 まで実機がまさにこれだった（<c>Unlit/Color</c> がビルドから剥がれていた）。
-        /// <b>Editor では出るので、この観測が無いと永久に気づけない。</b>
+        /// 地と縦罫線を両方組めたか。false は少なくとも片方が欠けたことを示す。
+        /// 背景が存在していても縦罫線だけが Player で剥がれることがある。
         /// </summary>
         public bool PanelBuilt => _panelMat != null && _dividerMat != null;
 
@@ -794,6 +833,28 @@ namespace FixedCamVr.Diagnostics
         /// <summary>直近のフレームで飛んでいる帯の数（乱れが画へ出た側の観測）。</summary>
         public int TornBands { get; private set; }
 
+        // ---- 復帰（③a / ③b・`canon/LEDGER.md` 0270・`CommsRecoveryLogic`）----
+        /// <summary>復帰の時計（③a を組んでからの秒）。負なら③a / ③b ではない。</summary>
+        public float RecoverySec => _logic.RecoverySec;
+
+        /// <summary>直近に面へ掛けた電力 0..1（「画に出た」側。1 = 通常）。</summary>
+        public float AppliedPower { get; private set; } = 1f;
+
+        /// <summary>直近に面へ掛けた縦の開き 0..1（1 = 正しい高さ）。</summary>
+        public float AppliedSquash { get; private set; } = 1f;
+
+        /// <summary>
+        /// 直近に面・顔・字へ書いた「まだ中身として現れていない量」0..1（0280・<see cref="CommsRecoverySample.boot"/>）。
+        /// 0 = 通常の面。⚠ 書く先は `_Recovery.z`（地・字）と `_Residue.w`（顔）。
+        /// </summary>
+        public float AppliedBoot { get; private set; }
+
+        /// <summary>直近に顔へ書いた「人形のまま残っている割合」0..1。</summary>
+        public float AppliedResidue { get; private set; }
+
+        /// <summary>直近のフレームで赤が残っている字の数（実際に画に出ている字だけ）。</summary>
+        public int RedGlyphs { get; private set; }
+
         /// <summary>面だけに書いた揺れの強さ（0 = 静止 / 1 = Sweep 中）。</summary>
         public float AppliedShake { get; private set; }
 
@@ -827,8 +888,10 @@ namespace FixedCamVr.Diagnostics
                && _logic.Stage == CommsStage.Hold;
 
         /// <summary>乗っ取りの発火待ちから表示終了まで、報告入力を受け付けない。</summary>
+        /// ⚠ 面が組めていない（<see cref="IsBuilt"/> が偽）ときは止めない。乗っ取りは画に出せないので
+        ///    発火待ちが永久に解けず、本編の最後まで報告が 1 回も通らなくなる（4-A の解除もできない）。
         public bool TakeoverInputBlocked
-            => isActiveAndEnabled
+            => isActiveAndEnabled && IsBuilt
                && (TakeoverVisible
                    || (runDirector != null && runDirector.Phase == ShowPhase.Run
                        && timeline != null && !timeline.Suppressed
@@ -1045,12 +1108,13 @@ namespace FixedCamVr.Diagnostics
             // ⚠ 誘導そのものを出すか（幾何が解けたか・被っているか）は向こうが決める。
             //    ここは「説明を始めた」という事実だけを渡す。
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
-            CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
             // 締めの報告は、解除が通った同じフレームで ScreenDecayReleased が立つ。
-            // 侵食度 1 のままでも、この返事だけはスイの通常表示へ戻す。
+            // そのときの返事は「検出しました」ではなく「取り除きました。お疲れ様です。」（0284）。
+            // 出方は DeliveryOf が侵食度 1 のままでもスイの通常表示（Typed）にする。
             if (notice == CommsNotice.MarkLogged
                 && runDirector != null && runDirector.ScreenDecayReleased)
-                delivery = CommsDelivery.Typed;
+                notice = CommsNotice.MarkCleared;
+            CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
             // 本番では Takeover が唯一の乗っ取りの縁。それより前の通常報告を赤い嘘へ飛ばさない。
             // プレビューは runDirector を持たないので、侵食度だけで Cursed を直接確認できる。
             if (runDirector != null && !_cue.TakeoverDelivered
@@ -1089,6 +1153,14 @@ namespace FixedCamVr.Diagnostics
         private void CommitNotice(CommsNotice notice, CommsDelivery delivery, bool easeBand)
         {
             ResetPossessionVisual();
+            // ⚠ 復帰の時計（0270）は③a を組んだ縁で 0 から。③b は同じ面のまま繋ぐので数え直さない
+            //   （③a が押しのけられて③b だけ来たら、そこから始める）。それ以外の連絡で止める。
+            //   ⚠ 同じ面のまま差し替えた③a（easeBand）は弱った起動を飛ばす（開いている面を潰して開き直さない）。
+            //   ⚠ 報告が通って残りが消えていく最中（`_releaseAtRec`）は、次の連絡が来ても時計を止めない —
+            //     止めると顔が 1 コマでスイへ戻る。消え切った縁で `Apply` が止める。
+            if (notice == CommsNotice.Halt) { _logic.BeginRecovery(skipBoot: easeBand); _releaseAtRec = -1f; }
+            else if (notice == CommsNotice.Prompt) _logic.EnsureRecovery();
+            else if (_releaseAtRec < 0f) _logic.EndRecovery();
             _cursedFromStart = delivery == CommsDelivery.Cursed;
             SetNotice(notice, _cursedFromStart ? TakeoverLieText(ShowLanguage.Current) : null, easeBand);
             if (delivery == CommsDelivery.Possessed || _cursedFromStart) SetLieNotice();
@@ -1307,6 +1379,7 @@ namespace FixedCamVr.Diagnostics
             float headYaw = head.eulerAngles.y;
             if (!_yawSeeded || dt > ResumeGapSec)
             {
+                if (!_yawSeeded) _pitchNow = PitchTargetDeg;
                 _yawFollow.Reseat(_yawSeeded ? _yawFollow.CurrentYaw : headYaw);
                 _yawSeeded = true;
             }
@@ -1319,11 +1392,22 @@ namespace FixedCamVr.Diagnostics
             // 追従したヨーから見て「外側へ振って、下げて、手前に置く」。
             // ⚠ 面は体験者の方を向ける（板が斜めを向いていると読めない）。
             Quaternion yaw = Quaternion.Euler(0f, _yawFollow.CurrentYaw + YawOffsetDeg, 0f);
-            Vector3 dir = yaw * Quaternion.Euler(PitchOffsetDeg, 0f, 0f) * Vector3.forward;
+            // ⚠ ③a / ③b だけ上へ（0283）。同じ面のまま切り替わるときは寄せる（跳ばない）。
+            _pitchNow = Mathf.MoveTowards(_pitchNow, PitchTargetDeg,
+                                          (PitchOffsetDeg - ClosingPitchOffsetDeg) / PitchMoveSec * dt);
+            Vector3 dir = yaw * Quaternion.Euler(_pitchNow, 0f, 0f) * Vector3.forward;
             Vector3 basePos = head.position + dir * DistanceM;
             _root.rotation = Quaternion.LookRotation(basePos - head.position, Vector3.up);
             _root.position = basePos;
         }
+
+        /// <summary>いまの連絡が立つべき下への角度（③a / ③b だけ上の位置・0283）。</summary>
+        private float PitchTargetDeg
+            => LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt
+                ? ClosingPitchOffsetDeg : PitchOffsetDeg;
+
+        /// <summary>直近に面を置いた下への角度（度・観測と検証用）。</summary>
+        public float AppliedPitchDeg => _pitchNow;
 
         private void Build()
         {
@@ -1354,12 +1438,10 @@ namespace FixedCamVr.Diagnostics
             //   原点は従来どおり文面の帯の中心のまま（`CommsFaceLayout` の但し書き）。
             _panelW = CommsFaceLayout.FullW(PanelW);
             _panelLeftX = CommsFaceLayout.LeftX(PanelW);
-            // ⚠⚠ **`Unlit/Color` は実機のビルドに入っていない**（2026-08-17 に走行の画で判明）。
-            //    組み込みシェーダでも、どのマテリアルからも参照されず Always Included にも無ければ
-            //    剥がれる（2026-07-31 の `IntroVeil` と同じ型）。**Editor では出るので気づけない。**
-            //    ⇒ 実機で **1 度も地も縁も描かれておらず、文字と壊れだけが宙に浮いていた。**
-            //    URP の Unlit は URP のマテリアルが参照しているので必ず入っている。そちらを先に引く。
-            Shader? flat = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
+            // 参照されない汎用 Unlit は Player で剥がれる。2026-10-18 は地だけ残り縦罫線が欠けていた。
+            // 色面を Resources から保持し、Editor と Player で同じシェーダを使う。
+            Shader? flat = Resources.Load<Shader>("Shaders/CommsFlat")
+                           ?? Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
             // 地は呪われた双子を描けるシェーダ（0229）。⚠ 引けなければ URP の Unlit へ落として
             //   **地だけは出す**（呪いは顔にしか出なくなる）。落ちたことは `PlateBuilt` が観測に出す。
             Shader? plate = Shader.Find(PlateShaderName);
@@ -1745,6 +1827,11 @@ namespace FixedCamVr.Diagnostics
             float boundaryPanel = Mathf.Lerp(_panelLeftX, _panelLeftX + _panelW, AppliedSweep);
             float boundaryLocal = (boundaryPanel - _text.transform.localPosition.x) / TextScale;
             int overwritten = 0;
+            int red = 0;
+            // 赤を残すのは③a / ③b だけ。命令の句（③b の最後の行）は象牙のまま（`CommsRecoveryLogic.RedAllowed`）。
+            bool isPrompt = LastNotice == CommsNotice.Prompt;
+            bool closingNotice = isPrompt || LastNotice == CommsNotice.Halt;
+            int lastLine = Mathf.Max(0, info.lineCount - 1);
             for (int i = 0; i < info.characterCount; i++)
             {
                 TMP_CharacterInfo ch = info.characterInfo[i];
@@ -1775,8 +1862,22 @@ namespace FixedCamVr.Diagnostics
                 }
                 alpha *= TearAlphaAt(panelY);
                 ShiftGlyphX(info, ch, TearShiftAt(panelY) / TextScale);
+                // 復帰（0270）: 呪いの赤が字の片側に残り、反対側へ向かって引いていく。字は切らない（読める）。
+                // 句読点には残さない（点だけが赤いと汚れに見える）。
+                bool punct = ch.character == '。' || ch.character == '、' || ch.character == '！'
+                             || ch.character == '.' || ch.character == ',' || ch.character == '!';
+                float redK = closingNotice && !punct
+                             && CommsRecoveryLogic.RedAllowed(isPrompt, ch.lineNumber, lastLine)
+                    ? CommsRecoveryLogic.RedOf(i, _recoveryRed) : 0f;
+                if (!isPrompt) redK = Mathf.Min(redK, CommsRecoveryLogic.HaltRedCap(Mathf.Max(0f, RecoverySec)));
+                if (redK > 0.001f)
+                {
+                    SetGlyphRed(info, ch, CommsRecoveryLogic.RedSideOf(i), redK);
+                    if (alpha > 0.05f) red++;
+                }
                 SetGlyphAlpha(info, ch, alpha);
             }
+            RedGlyphs = red;
             _text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices | TMP_VertexDataUpdateFlags.Colors32
                                    | TMP_VertexDataUpdateFlags.Uv0);
             return overwritten;
@@ -1851,6 +1952,26 @@ namespace FixedCamVr.Diagnostics
                 int vi = ch.vertexIndex + k;
                 Color32 c = colors[vi];
                 c.a = (byte)(c.a * (byte)Mathf.RoundToInt(Mathf.Clamp01(alpha) * 255f) / 255);
+                colors[vi] = c;
+            }
+        }
+
+        /// <summary>
+        /// 字の 4 隅の色を、象牙（組んだときの色）から嘘の一文と同じ赤へ寄せる（0270）。
+        /// alpha は触らない（<see cref="SetGlyphAlpha"/> が後で掛ける）。
+        /// </summary>
+        private static void SetGlyphRed(TMP_TextInfo info, TMP_CharacterInfo ch, int side, float amount)
+        {
+            Color32[] colors = info.meshInfo[ch.materialReferenceIndex].colors32;
+            Color32 redC = LieRed;
+            for (int k = 0; k < 4; k++)
+            {
+                int vi = ch.vertexIndex + k;
+                Color32 c = colors[vi];
+                float w = CommsRecoveryLogic.CornerRed(side, k, amount);
+                byte a = c.a;
+                c = Color32.Lerp(c, redC, w);
+                c.a = a;
                 colors[vi] = c;
             }
         }
@@ -2022,16 +2143,42 @@ namespace FixedCamVr.Diagnostics
                 SweepCount++;
             }
 
-            AppliedGlyph = Mathf.Clamp01(w.glyph);
-            AppliedOpen = Mathf.Clamp01(w.open);
+            // ⚠ 復帰（③a / ③b・0270）の姿。段の重みの**上に**重ねるだけで、段の尺は変えない。
+            //   回っていなければ Idle（電力 1・開き 1・乱れ 0・残り 0）＝ 従来の面と 1 画素も変わらない。
+            float recSec = _logic.RecoverySec;
+            // 呪いが解けた縁（体験者の報告が通った・0129）から、残りを ReleaseSec で 0 へ戻す。
+            bool released = _releasedForPreview || (runDirector != null && runDirector.ScreenDecayReleased);
+            if (recSec < 0f) _releaseAtRec = -1f;
+            else if (released && _releaseAtRec < 0f) _releaseAtRec = recSec;
+            float releasedSec = _releaseAtRec >= 0f ? recSec - _releaseAtRec : -1f;
+            if (releasedSec > CommsRecoveryLogic.ReleaseSec)
+            {
+                _logic.EndRecovery();
+                _releaseAtRec = -1f;
+                recSec = -1f;
+                releasedSec = -1f;
+            }
+            // 余震は③b の打鍵に結ぶ（言語で打つ尺が違うので絶対秒にしない）。
+            float promptReveal = LastNotice == CommsNotice.Prompt && _logic.Stage == CommsStage.Type
+                ? Mathf.Clamp01(w.reveal) : -1f;
+            CommsRecoverySample rec = CommsRecoveryLogic.Sample(recSec, promptReveal, _logic.TypeSec, releasedSec);
+            AppliedPower = rec.power;
+            AppliedSquash = rec.squash;
+            AppliedBoot = rec.boot;
+            AppliedResidue = rec.residue;
+            _recoveryRed = rec.red;
+            AppliedGlyph = Mathf.Clamp01(w.glyph) * rec.power;
+            // ⚠ 弱った起動のあいだは、開く段のフェード（open・panel・body の立ち上がり）を電力と縦の開きが置き換える。
+            //   重ねると起動の頭の 0.2 秒が既存のフェードに覆われて 1 画素も見えない（プレビューの絵で見つけた）。
+            AppliedOpen = rec.booting ? 1f : Mathf.Clamp01(w.open);
             // 斑の量は `CommsPanelLogic` が面の開いた縁から 1 秒で立ち上げる（0229）。
             // 憑依の出し方では塗り替わる前 0・塗り替わった後 1（前線の進みは `AppliedSweep`）。
             AppliedCurse = _cursedFromStart || keepDollState ? 1f : Mathf.Clamp01(w.curse);
             float reveal = w.reveal;
-            ApplyHint(Mathf.Clamp01(w.hint));
-            float pa = Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen);
+            ApplyHint(Mathf.Clamp01(w.hint) * rec.power);
+            float pa = rec.booting ? rec.power : Mathf.Clamp01(w.panel) * Smooth01(AppliedOpen) * rec.power;
             AppliedPanelAlpha = Mathf.Lerp(PanelAlpha, TakeoverPanelAlpha, TakeoverReadFocus) * pa;
-            AppliedBody = Mathf.Clamp01(w.body);
+            AppliedBody = rec.booting ? 1f : Mathf.Clamp01(w.body);
             ApplyPossessionMotion(poss.phase, AppliedSweep);
 
             // ⚠⚠ **枠は「出ている帯」だけを覆う**（2026-08-16・`canon/LEDGER.md` 0065）。
@@ -2055,11 +2202,13 @@ namespace FixedCamVr.Diagnostics
             var sweep = new Vector4(AppliedSweep, _panelLeftX, _panelLeftX + _panelW,
                                     CommsCurseLogic.TearBandM);
             _tearTop = top;
-            AppliedTear = TearStrengthAt(poss.phase, AppliedSweep);
+            // 乱れは乗っ取り（0231）か復帰（0270）のどちらか。同じ帯の飛び・脱落を使う ＝ 同じ装置の壊れ方。
+            AppliedTear = rec.active ? rec.tear : TearStrengthAt(poss.phase, AppliedSweep);
             int bandCount = Mathf.Clamp(CommsCurseLogic.SweepBandCount(top, bottom),
                                         0, CommsCurseLogic.TearMaxBands);
-            CommsCurseLogic.ComputeTear(AppliedTear, TakeoverElapsedSec, bandCount,
-                                        _tearShift, _tearDrop, out _tearFlicker);
+            CommsCurseLogic.ComputeTear(AppliedTear, rec.active ? _logic.RecoverySec : TakeoverElapsedSec,
+                                        bandCount, _tearShift, _tearDrop, out _tearFlicker);
+            ApplyRecoveryMotion(rec, cy);
             int torn = 0;
             for (int i = 0; i < _tearShift.Length; i++) if (Mathf.Abs(_tearShift[i]) > 0.0001f) torn++;
             TornBands = torn;
@@ -2080,7 +2229,8 @@ namespace FixedCamVr.Diagnostics
                 _lastShown = shown;
                 VisibleChars = shown;
 
-                CorruptedChars = ApplySplitTruthMesh(reveal, AppliedGlyph);
+                CorruptedChars = shown > 0 ? ApplySplitTruthMesh(reveal, AppliedGlyph) : 0;
+                if (shown == 0) RedGlyphs = 0;
             }
             if (_lieText != null)
             {
@@ -2108,7 +2258,9 @@ namespace FixedCamVr.Diagnostics
             }
             if (_dividerRenderer != null && _dividerMat != null)
             {
-                SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b, 0.68f * pa));
+                // 縦罫線はシェーダのブロックを持たないので、砂嵐が引き切るまで出さない（0280。先に罫線だけ見えると「一気に出た」に戻る）。
+                float dividerK = AppliedBoot > 0f ? Mathf.Clamp01(1f - AppliedBoot * 4f) : 1f;
+                SetFlatColor(_dividerMat, new Color(Ivory.r, Ivory.g, Ivory.b, 0.68f * pa * dividerK));
                 _dividerRenderer.enabled = lit;
                 float dividerH = CommsFaceLayout.DividerH * Smooth01(AppliedOpen);
                 _dividerRenderer.transform.localPosition = new Vector3(
@@ -2116,6 +2268,73 @@ namespace FixedCamVr.Diagnostics
                 _dividerRenderer.transform.localScale = new Vector3(CommsFaceLayout.DividerW, dividerH, 1f);
             }
             ApplyAvatar(pa, cy, lit, sweep);
+            ApplyRecoverySurface(cy, h);
+        }
+
+        // 同じ面座標・時計・斑を地、顔、縦罫線、全テキストへ渡す。
+        private void ApplyRecoverySurface(float centerY, float height)
+        {
+            // 起動時に一度だけ読み込む。警告の初出でResources読込を走らせない。
+            if (!_recoveryShaderLoaded)
+            {
+                _recoveryTextShader = Resources.Load<Shader>("Shaders/CommsRecoveryText");
+                _recoveryShaderLoaded = true;
+            }
+            bool active = AppliedResidue > 0.001f;
+            if (!active && !_recoverySurfaceActive) return;
+            // 終了の縁では一度だけ0を書き、本文材質も通常へ戻す。
+            _recoverySurfaceActive = active;
+            // z = 起動の「まだ現れていない量」（0280）。0 なら砂嵐のブロックは 1 画素も出ない。
+            var recovery = new Vector4(AppliedResidue, Mathf.Max(0f, RecoverySec), AppliedBoot, 0f);
+            var rect = new Vector4(_panelLeftX + _panelW * 0.5f, centerY, _panelW,
+                                   Mathf.Max(CommsFaceLayout.MinBoxH, height));
+            Transform space = _visualRoot != null ? _visualRoot : transform;
+            Matrix4x4 toPanel = space.worldToLocalMatrix;
+            Matrix4x4 toWorld = space.localToWorldMatrix;
+            void Push(Material? material)
+            {
+                if (material == null) return;
+                material.SetVector(RecoveryId, recovery);
+                material.SetVector(RecoveryRectId, rect);
+                material.SetMatrix(RecoveryWorldToPanelId, toPanel);
+                material.SetMatrix(RecoveryPanelToWorldId, toWorld);
+            }
+            Push(_panelMat);
+            Push(_avatarMat);
+            Push(_dividerMat);
+            void PushText(TMP_Text? text)
+            {
+                if (text == null) return;
+                var info = text.textInfo;
+                for (int i = 0; i < info.materialCount; i++)
+                {
+                    Material material = info.meshInfo[i].material;
+                    if (material == null) continue;
+                    if (_normalTextShader == null) _normalTextShader = material.shader;
+                    Shader? shader = AppliedResidue > 0.001f ? _recoveryTextShader : _normalTextShader;
+                    if (shader != null && material.shader != shader)
+                    {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+                        long shaderStart = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+                        // ⚠ シェーダを替えると renderQueue はそのシェーダの既定（Overlay = 4000）へ戻る。
+                        // 戻すと本文が地（4980）より先に描かれ、次の体験者の最初の連絡から字が消える・薄く見える
+                        // （2026-10-20・`canon/LEDGER.md` 0279）。替える前の値を必ず書き戻す。
+                        int queue = material.renderQueue;
+                        material.shader = shader;
+                        material.renderQueue = queue;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+                        double shaderMs = (System.Diagnostics.Stopwatch.GetTimestamp() - shaderStart)
+                            * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
+                        Debug.Log($"[CommsPerfShader] frame={Time.frameCount} now={Time.realtimeSinceStartup:F3} "
+                            + $"recoverySec={RecoverySec:F3} shader={shader.name} setMs={shaderMs:F3}");
+#endif
+                    }
+                    Push(material);
+                }
+            }
+            PushText(_text);
+            PushText(_hint);
         }
 
         private static float TearStrengthAt(CommsPossessionPhase phase, float sweep)
@@ -2170,6 +2389,20 @@ namespace FixedCamVr.Diagnostics
             _visualRoot.localRotation = rotation;
         }
 
+        /// <summary>
+        /// 復帰（0270）の縦の開きと横の引っかかりを面へ書く。<see cref="ApplyPossessionMotion"/> の後に呼ぶ
+        /// （あちらが位置と回転を決め、こちらは縮みと、縮みの中心を枠の中心へ保つずれを足す）。
+        /// ⚠ 縮みは<b>枠の中心</b>を軸にする。面の根を軸にすると、縮むたびに枠が根の高さへ吸い寄せられる。
+        /// </summary>
+        private void ApplyRecoveryMotion(in CommsRecoverySample rec, float centerY)
+        {
+            if (_visualRoot == null) return;
+            float sq = rec.active ? Mathf.Clamp(rec.squash, 0.02f, 1f) : 1f;
+            _visualRoot.localScale = new Vector3(1f, sq, 1f);
+            if (!rec.active) return;
+            _visualRoot.localPosition += new Vector3(rec.jitterX, centerY * (1f - sq), 0f);
+        }
+
         /// <summary>憑依の出し方の縁と嘘の一文の状態を落とす（連絡が届いた縁・畳む縁・ラン開始）。</summary>
         private void ResetPossessionVisual()
         {
@@ -2209,6 +2442,10 @@ namespace FixedCamVr.Diagnostics
             _avatarMat.SetVector(OriginId, new Vector4(x, centerY, 0f, 0f));
             _avatarMat.SetVector(SizeId, new Vector4(CommsFaceLayout.CellM, CommsFaceLayout.CellM, 0f, 0f));
             _avatarMat.SetVector(SweepId, sweep);
+            // 復帰: スクリーン全体と同じ粗い斑で正常表示と赤い人形を重ねる。
+            _avatarMat.SetVector(ResidueId, new Vector4(AppliedResidue, Mathf.Max(0f, _logic.RecoverySec),
+                                                        ResidueTint, AppliedBoot));
+            _avatarMat.SetColor(ResidueColorId, LieRed);
             PushTear(_avatarMat);
             _avatarRenderer.enabled = on;
             _avatarRenderer.transform.localPosition = new Vector3(x, centerY, CommsFaceLayout.DepthM);

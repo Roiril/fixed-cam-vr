@@ -56,6 +56,10 @@ function Invoke-SafeUnityCli([string[]]$Arguments, [string]$LogPath, [int]$MaskR
     $script:HideUnityTokenLine = $false
     $script:UnityLogMaskFailed = $false
     $safeArguments = @($Arguments | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    # ⚠ PowerShell 5.1 は native の stderr を 2>&1 で ErrorRecord に包む。呼び出し元の
+    #    $ErrorActionPreference = 'Stop' のままだと 1 行目で例外になり、終了コードもコンパイルエラーの
+    #    拾い出しも通らずに落ちる（2026-10-15・CS1503 が「unity.exe : 」の 1 行にしか出なかった）。
+    $ErrorActionPreference = 'Continue'
     & $Cli @safeArguments 2>&1 | ForEach-Object {
         $line = [string]$_
         if ($script:HideUnityTokenLine) {

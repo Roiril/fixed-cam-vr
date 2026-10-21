@@ -127,7 +127,8 @@ def run_native_tests(javac: Path, java: Path):
         TABLET_DIR / "tests" / "NativePolicyTest.java",
     ]
     run([javac, "-encoding", "UTF-8", "-source", "8", "-target", "8", "-d", test_classes, *sources])
-    run([java, "-cp", test_classes, "com.roiril.mawarimi.tablet.NativePolicyTest"])
+    run([java, "-cp", test_classes, "com.roiril.mawarimi.tablet.NativePolicyTest",
+         TABLET_DIR / "app" / "src" / "main" / "assets" / "web" / "index.html"])
 
 
 def create_debug_keystore(keytool: Path, keystore: Path):

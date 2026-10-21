@@ -44,6 +44,11 @@ Shader "FixedCamVr/CommsAvatar"
         _TearShiftB("Tear shift bands 4-7 (m)", Vector) = (0, 0, 0, 0)
         _TearDropA("Tear drop bands 0-3", Vector) = (0, 0, 0, 0)
         _TearDropB("Tear drop bands 4-7", Vector) = (0, 0, 0, 0)
+        // 復帰（`canon/LEDGER.md` 0270）: (残っている割合 0..1, 復帰の時計 秒, 赤へ寄せる割合, 未使用)。
+        // 顔全体の粗いノイズでスイと人形を編み合わせる。x = 0 なら通常表示。
+        _Residue("Residue (amount, time, tint, -)", Vector) = (0, 0, 0, 0)
+        _ResidueColor("Residue color", Color) = (1, 0.03, 0.01, 1)
+        _RecoveryRect("Recovery panel rect", Vector) = (0, 0, 1, 0.3)
 
         // 角の丸み（1 辺に対する割合。0.5 で円）。
         _Radius("Corner radius (0..0.5)", Range(0, 0.5)) = 0.20
@@ -72,6 +77,7 @@ Shader "FixedCamVr/CommsAvatar"
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "CommsCurse.hlsl"
+            #include "CommsRecovery.hlsl"
 
             TEXTURE2D(_Face);
             SAMPLER(sampler_Face);
@@ -90,6 +96,9 @@ Shader "FixedCamVr/CommsAvatar"
                 float4 _TearShiftB;
                 float4 _TearDropA;
                 float4 _TearDropB;
+                float4 _Residue;
+                float4 _ResidueColor;
+                float4 _RecoveryRect;
                 float _Radius;
                 float _Stroke;
                 float _FaceOn;
@@ -153,17 +162,46 @@ Shader "FixedCamVr/CommsAvatar"
                 float shift = CommsTearShiftAt(panelPos.y, _Tear, _TearShiftA, _TearShiftB);
                 float2 fieldPos = panelPos;
                 fieldPos.x -= shift;
-                float k = max(CurseK(CurseField(fieldPos), _FaceMix), CurseSweepK(panelPos, _Sweep));
-                float2 faceUv = i.uv;
+                float k = CurseSweepK(panelPos, _Sweep);
+                if (_FaceMix > 0.0)
+                    k = max(k, CurseK(CurseField(fieldPos), _FaceMix));
+                // 復帰: 面全体を粗い斑で混在させる（2026-10-18 ユーザー指定）。
+                // 中心反転したノイズとの差を使い、量0.5で左右に偏らず面積も半々にする。
+                // 帯の飛びは既存の乱れと共有。残りが消えるとゆがみも同時に消える。
+                float kRes = 0.0;
+                float2 residueWarp = 0.0;
+                if (_Residue.x > 0.001)
+                {
+                    float2 warp = CommsRecoveryWarp(fieldPos, _Residue, _RecoveryRect);
+                    residueWarp = warp / max(_Size.xy, 1e-4);
+                    kRes = CommsRecoveryBaseMask(fieldPos - warp, _Residue, _RecoveryRect);
+                }
+                k = max(k, kRes);
+                float2 faceUv = i.uv + residueWarp;
                 faceUv.x -= shift / max(_Size.x, 1e-4);
-                float inRange = step(0.0, faceUv.x) * step(faceUv.x, 1.0);
+                float inRange = step(0.0, faceUv.x) * step(faceUv.x, 1.0)
+                              * step(0.0, faceUv.y) * step(faceUv.y, 1.0);
                 float a1 = SAMPLE_TEXTURE2D(_Face, sampler_Face, faceUv).a;
                 float a2 = SAMPLE_TEXTURE2D(_Face2, sampler_Face2, faceUv).a;
                 float face = lerp(a1, a2, k) * _FaceOn * inner * inRange;
                 float drop = CommsTearDropAt(panelPos.y, _Tear, _TearDropA, _TearDropB);
 
                 float a = saturate(max(ring, face * (1.0 - drop))) * _Tear.y;
-                return half4(_Color.rgb, a * _Opacity);
+                float3 rgb = lerp(_Color.rgb, _ResidueColor.rgb, kRes * saturate(_Residue.z));
+                if (_Residue.x > 0.001)
+                {
+                    float lines = CommsRecoveryLines(panelPos, _Residue, _RecoveryRect) * kRes;
+                    rgb = lerp(rgb, float3(1.0, 0.08, 0.04), lines * 0.7);
+                    a *= 1.0 - lines * 0.35;
+                }
+                if (_Residue.w > 0.001)
+                {
+                    // ③a の起動（0280）: 地と同じブロックで現れる。砂嵐のあいだは顔を出さず、下の地の砂嵐が見える。
+                    float2 boot = CommsBootReveal(panelPos, _Residue.w, _RecoveryRect);
+                    rgb = lerp(rgb, CommsBootSand(panelPos, _Residue.y), boot.y);
+                    a *= boot.x;
+                }
+                return half4(rgb, a * _Opacity);
             }
             ENDHLSL
         }

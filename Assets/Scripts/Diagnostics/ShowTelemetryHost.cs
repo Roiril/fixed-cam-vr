@@ -132,6 +132,8 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>電源断が画へ出た最大値（<c>clMax</c>）。<b>段の縁だけでは取れない</b>。</summary>
         private float _collapseMax;
+        private float _noiseMax;
+        private bool _noiseSeen;
         private bool _collapseSeen;
 
         /// <summary>
@@ -148,10 +150,16 @@ namespace FixedCamVr.Diagnostics
         private string _lastCommsPossessPhase = "Off";
         // 塗り替わりのあいだに画へ書いた乱れの最大（`canon/LEDGER.md` 0231）。段の縁で出し、読ませる段で 0 へ戻す。
         private float _commsTearMax;
+        // 復帰（③a / ③b・`canon/LEDGER.md` 0270）の 1 回ぶんの観測。**画へ書いた側**の極値を持ち、
+        // 時計が止まった縁で `ev=commsRecover st=end` に出す。
+        private bool _recovering;
+        private float _recPowMin = 1f, _recSquashMin = 1f, _recBootMax, _recPitchMin = 90f, _recTearMax, _recResMax, _recResLast, _recSecLast;
+        private int _recRedMax, _recRedLast, _recTornMax;
         private int _commsTornMax;
         private float _lastCommsInvasion = -1f;
         // 締めの線を締めのカットの中で踏んだ縁（③a の引き金・`canon/LEDGER.md` 0233）。
         private bool _lastClosingLine;
+        private int _lastRomiCompleted;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
@@ -229,6 +237,12 @@ namespace FixedCamVr.Diagnostics
             {
                 _collapseSeen = true;
                 if (_outro.CollapseWritten > _collapseMax) _collapseMax = _outro.CollapseWritten;
+            }
+            // 砂嵐（2026-10-21・博士タブレットの消え方）も段の縁でしか出ないので最大値を拾う（nzMax）。
+            if (_outro != null && _outro.NoiseWritten >= 0f)
+            {
+                _noiseSeen = true;
+                if (_outro.NoiseWritten > _noiseMax) _noiseMax = _outro.NoiseWritten;
             }
 
             PollTransitions(udt);
@@ -536,8 +550,14 @@ namespace FixedCamVr.Diagnostics
         private string ShatterCameraState => _veil == null ? "-" : _veil.FrozenFrameStatus;
         /// <summary>割れ始めの頭の姿勢を固定したか。0 のまま Frame が進むと破片が頭についてくる。</summary>
         private string ShatterAnchorState => _veil == null ? "-" : (_veil.ShatterAnchored ? "1" : "0");
+        // R060: 段 4 の描画状態を導入の手前で作り終えたか。0 のまま段 4 へ入ると一撃の頭で止まる。
+        private string ShatterWarmState => _veil == null ? "-" : (_veil.WarmedUp ? "1" : "0");
+        // R060: 覆いの下で見えないスクリーンを描かなかったフレームの累計。導入が走って 0 なら止められていない。
+        private string ScreenOffState => _veil == null ? "-" : _veil.ScreenSuppressedFrames.ToString();
         /// <summary>静止画の投影の検算（0236）。頭の正面 1.6m の uv 左/右、または behind。</summary>
         private string ShatterProjectionState => _veil == null ? "-" : _veil.FrozenFrameProjection;
+        /// <summary>R061: 破片を置いた奥行き。room:最短/中央/最長（m）・off:理由（1.6m の殻）・-（まだ割れていない）。</summary>
+        private string ShatterDepthState => _veil == null ? "-" : _veil.DepthState;
         /// <summary>この走行で光の粒（0235）を一度でも描いたか。0 ならシェーダかメッシュが剥がれている。</summary>
         private string SparkState => _veil == null ? "-" : (_veil.SparkEverDrawn ? "1" : "0");
         /// <summary>組めた光の粒の数（流れ ＋ 代表）。0 はメッシュを組めていない。</summary>
@@ -765,6 +785,7 @@ namespace FixedCamVr.Diagnostics
                      $"shatStyle=frozen shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
                      $"shatFrozen={ShatterFrozenState} shatCopies={ShatterFrozenCount} " +
                      $"shatCam={ShatterCameraState} shatAnchor={ShatterAnchorState} shatProj={ShatterProjectionState} " +
+                     $"shatDepth={ShatterDepthState} " +
                      // 0235: 光の粒。spark は「画に出た」側で、sparkN は組めた粒の数。
                      $"spark={SparkState} sparkN={SparkCountState} " +
                      // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
@@ -877,6 +898,45 @@ namespace FixedCamVr.Diagnostics
                     _commsTornMax = 0;
                 }
             }
+            // 復帰（0270）の縁。begin は③a を組んだ縁、end は時計が止まった縁（③b を引き切った／別の連絡が来た）。
+            // ⚠ 段の縁ではなく「画に出た側」で数える — 電力が実際に落ちたか（powMin）、顔に人形が残ったか（resMax）、
+            //   赤い字が画に出たか（redMax）。段だけ進んで姿が 1 画素も出ていない、を見落とさない。
+            if (_comms != null)
+            {
+                bool rec = _comms.RecoverySec >= 0f;
+                if (rec && !_recovering)
+                {
+                    _recovering = true;
+                    _recPowMin = _recSquashMin = 1f;
+                    _recBootMax = 0f;
+                    _recPitchMin = 90f;
+                    _recTearMax = _recResMax = _recResLast = 0f;
+                    _recRedMax = _recRedLast = _recTornMax = 0;
+                    Emit($"ev=commsRecover st=begin id={_comms.LastNotice} invasion={_comms.InvasionProgress:F2}");
+                }
+                if (rec)
+                {
+                    _recSecLast = _comms.RecoverySec;
+                    _recPowMin = Mathf.Min(_recPowMin, _comms.AppliedPower);
+                    _recSquashMin = Mathf.Min(_recSquashMin, _comms.AppliedSquash);
+                    _recBootMax = Mathf.Max(_recBootMax, _comms.AppliedBoot);
+                    _recPitchMin = Mathf.Min(_recPitchMin, _comms.AppliedPitchDeg);
+                    _recTearMax = Mathf.Max(_recTearMax, _comms.AppliedTear);
+                    _recTornMax = Mathf.Max(_recTornMax, _comms.TornBands);
+                    _recResMax = Mathf.Max(_recResMax, _comms.AppliedResidue);
+                    _recResLast = _comms.AppliedResidue;
+                    _recRedMax = Mathf.Max(_recRedMax, _comms.RedGlyphs);
+                    _recRedLast = _comms.RedGlyphs;
+                }
+                else if (_recovering)
+                {
+                    _recovering = false;
+                    Emit($"ev=commsRecover st=end sec={_recSecLast:F2} powMin={_recPowMin:F2} " +
+                         $"squashMin={_recSquashMin:F2} bootMax={_recBootMax:F2} pitchMin={_recPitchMin:F1} tearMax={_recTearMax:F2} tornMax={_recTornMax} " +
+                         $"resMax={_recResMax:F2} resEnd={_recResLast:F2} " +
+                         $"redMax={_recRedMax} redEnd={_recRedLast} face={(_comms.AvatarBuilt ? 1 : 0)}");
+                }
+            }
             if (_comms != null && _comms.PossessionPhase.ToString() != _lastCommsPossessPhase)
             {
                 _lastCommsPossessPhase = _comms.PossessionPhase.ToString();
@@ -931,6 +991,16 @@ namespace FixedCamVr.Diagnostics
                      $"sec={(_timeline != null ? _timeline.ClosingLineCrossedSec : -1f):F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             _lastClosingLine = closingLine;
+
+            // 終幕の台車（Romi）への合図。結果が出た縁で 1 行（go = 解除の縁 / cut = 電源断の縁）。
+            // ⚠ 台車が動いたかはここからは分からない（台車は開ループ）。分かるのは「合図が届き ok が返った」まで。
+            RomiCartLink? romi = _show != null ? _show.Romi : null;
+            if (romi != null && romi.Completed != _lastRomiCompleted)
+            {
+                _lastRomiCompleted = romi.Completed;
+                Emit($"ev=romi kind={romi.LastKind} res={romi.LastResult} ms={romi.LastRoundTripMs} " +
+                     $"dry={(romi.LastDry ? 1 : 0)} sent={romi.Sent} ack={romi.Acked}");
+            }
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
             // built は「実体を組めたか」、veil / glyph は**実際に書いた不透明度** ＝ 画に出た側。
@@ -1212,6 +1282,10 @@ namespace FixedCamVr.Diagnostics
             _sb.Append("ev=sum");
             _sb.Append(" fps=").Append(fps.ToString("F1"));
             _sb.Append(" worst=").Append(worstMs.ToString("F0"));
+            // R060: 実際に描いている解像度。動的解像度が効いているかはここにしか出ない
+            // （eyeW = 確保した目のテクスチャの幅・rvs = そのうち実際に描いた割合）。
+            _sb.Append(" eyeW=").Append(UnityEngine.XR.XRSettings.eyeTextureWidth);
+            _sb.Append(" rvs=").Append(UnityEngine.XR.XRSettings.renderViewportScale.ToString("F2"));
 
             if (_run != null)
             {
@@ -1238,7 +1312,10 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" shatCopies=").Append(ShatterFrozenCount);
                 _sb.Append(" shatCam=").Append(ShatterCameraState);
                 _sb.Append(" shatAnchor=").Append(ShatterAnchorState);
+                _sb.Append(" shatWarm=").Append(ShatterWarmState);
+                _sb.Append(" scrOff=").Append(ScreenOffState);
                 _sb.Append(" shatProj=").Append(ShatterProjectionState);
+                _sb.Append(" shatDepth=").Append(ShatterDepthState);
                 _sb.Append(" spark=").Append(SparkState);
                 _sb.Append(" sparkN=").Append(SparkCountState);
             }
@@ -1481,6 +1558,11 @@ namespace FixedCamVr.Diagnostics
             //   ⚠ 1 つ目が 0 なら毛羽立ち・走り書き・文字の切断が実機で 1 画素も出ていない
             //     （Editor では出るので、この 1 ビットが無いと永久に気づけない — `Unlit/Color` と同じ穴）。
             //   ⚠ 2 つ目は面が開いてから 1 秒で 3 つ目へ寄る。開いた直後の標本で 0 なのは正常。
+            //   commsRec = 復帰（③a / ③b・0270）。**`<時計 秒>/<電力>/<顔に残る人形>/<赤い字の数>`**。
+            //   ③a / ③b 以外は `-`。
+            _sb.Append(" commsRec=").Append(_comms == null || _comms.RecoverySec < 0f
+                ? "-"
+                : $"{_comms.RecoverySec:F2}/{_comms.AppliedPower:F2}/{_comms.AppliedResidue:F2}/{_comms.RedGlyphs}");
             _sb.Append(" commsCurse=").Append(_comms == null
                 ? "-"
                 : $"{(_comms.PlateBuilt ? 1 : 0)}/{_comms.AppliedCurse:F2}/{_comms.CurseTarget:F2}");
@@ -1503,6 +1585,11 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" clMax=").Append(_outro == null
                                          ? "-"
                                          : (_collapseSeen ? _collapseMax.ToString("F2") : "nc"));
+            //   nzMax = **終幕の砂嵐が画へ出た最大値**（2026-10-21）。電源断の前に 0 → 1 まで上がるはず。
+            //   帰還不能では 0 が正しい（砂嵐も潰れも見せない）。
+            _sb.Append(" nzMax=").Append(_outro == null
+                                         ? "-"
+                                         : (_noiseSeen ? _noiseMax.ToString("F2") : "nc"));
             //   ctrlL / ctrlR = コントローラの <繋がっている>/<位置が取れている>。
             //   ⚠⚠ **2 つ目が 0 のとき、手元の面（報告の押し方・操作早見表）は出ない。**
             //   2026-08-16 まで接続しか見ておらず、位置が無効なコントローラのアンカーが
@@ -1568,6 +1655,10 @@ namespace FixedCamVr.Diagnostics
                .Append('/').Append(VisitorPrefs.PendingSeq)
                .Append('/').Append(VisitorPrefs.AppliedSeq)
                .Append('/').Append(VisitorPrefs.ApplyCount);
+            //   romi = 終幕の台車への合図 `<送った累計>/<ok が返った累計>`（送るのは解除の縁と電源断の縁だけ）。
+            RomiCartLink? romiSum = _show != null ? _show.Romi : null;
+            _sb.Append(" romi=").Append(romiSum != null ? romiSum.Sent : -1)
+               .Append('/').Append(romiSum != null ? romiSum.Acked : -1);
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。

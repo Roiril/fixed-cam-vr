@@ -105,7 +105,8 @@ namespace FixedCamVr.Streaming.Tests
             MethodInfo method, object sample, Matrix4x4 matrix,
             DateTime timestamp, float observedAt)
         {
-            object?[] args = { sample, null, matrix, timestamp, observedAt };
+            // R060 からカメラのワールド姿勢も一緒に持つ（頭 ∘ LensOffset との突き合わせに使う）。
+            object?[] args = { sample, null, matrix, Pose.identity, timestamp, observedAt };
             method.Invoke(null, args);
             return args[0]!;
         }

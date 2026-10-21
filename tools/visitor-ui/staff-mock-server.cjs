@@ -11,8 +11,11 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 
 const root = path.resolve(__dirname, '..', '..');
-const webRoot = path.join(root, 'tablet', 'app', 'src', 'main', 'assets', 'web');
 const args = process.argv.slice(2);
+// --web-root で別の版の画面を配れる（直す前と後を同じ代役で比べるとき。flow-walk.cjs --web-root）。
+const webRootIndex = args.indexOf('--web-root');
+const webRoot = webRootIndex >= 0 ? path.resolve(args[webRootIndex + 1])
+  : path.join(root, 'tablet', 'app', 'src', 'main', 'assets', 'web');
 const portIndex = args.indexOf('--port');
 const port = portIndex >= 0 ? Number(args[portIndex + 1]) : 8108;
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('port must be 1024..65535');
@@ -22,6 +25,8 @@ let generation = 1;
 let tick = 1;
 let frozen = false;
 let failStatus = false;
+// Quest の位置合わせ作業中を真似る（force 付きでもリセットを断る）。
+let rejectReset = false;
 let status;
 
 function cameras(overrides = {}) {
@@ -43,12 +48,19 @@ function setup(stage, reason = '', extra = {}) {
   };
 }
 
+// 新しい Quest が /status に載せる体の状態（VisitorPortalLogic の health）。
+function health(extra = {}) {
+  return { paused: false, focusLost: false, worn: true, ctrlL: 'ok', battery: 80, exceptions: 0,
+    lastException: '', clockGaps: 0, cartKind: '', cartResult: '', ...extra };
+}
+
 function resetState() {
   sequence = 0;
   generation += 1;
   tick += 1;
   frozen = false;
   failStatus = false;
+  rejectReset = false;
   status = {
     ok: true,
     lang: 'ja',
@@ -67,6 +79,7 @@ function resetState() {
     staffResetRejectedId: '',
     briefing: null,
     staffSetup: setup('settings', 'settings'),
+    health: health(),
     ip: '127.0.0.1',
     port,
   };
@@ -101,6 +114,12 @@ const scenarios = {
   },
   alignment() {
     status.staffSetup = setup('alignment', 'position', { positionConfirmed: false, position: 'recenter' });
+  },
+  // 位置合わせが済み、最初の来場者の前にスタッフがリセットする段（Quest の ResetRequired）。
+  prepare() {
+    status.phase = 'INTRO';
+    status.titleStage = 'Wait';
+    status.staffSetup = setup('reset', '');
   },
   handover() {
     status.phase = 'INTRO';
@@ -157,13 +176,60 @@ const scenarios = {
       run: { phase: 'END', lap: 3, laps: 3, sec: 176, outro: 'done', ending: 'released' },
     });
   },
+  // 休止（HMD を外した・電源の短押し）。休止に入る直前の状態に paused が載り、questTick が止まる。
   asleep() {
+    status.health = health({ ...status.health, paused: true });
+    frozen = true;
+  },
+  // 体験者が外した（休止 + 装着していない）。
+  removed() {
+    status.health = health({ ...status.health, paused: true, worn: false });
+    frozen = true;
+  },
+  // 応答は返るのに進まない（アプリが固まった）。
+  hung() {
+    status.health = health({ ...status.health, paused: false });
     frozen = true;
   },
   wake() {
     frozen = false;
+    status.health = health({ ...status.health, paused: false, worn: true });
     tick += 1;
     status.questTick = tick;
+  },
+  // 本編中の異常（RUN の上に重ねる）。
+  recenter() {
+    status.staffSetup = { ...status.staffSetup, position: 'recenter' };
+  },
+  'ctrl-off'() {
+    status.health = health({ ...status.health, ctrlL: 'off' });
+  },
+  'battery-low'() {
+    status.health = health({ ...status.health, battery: 12 });
+  },
+  exceptions() {
+    status.health = health({ ...status.health, exceptions: (status.health?.exceptions || 0) + 2 });
+  },
+  'cart-fail'() {
+    status.health = health({ ...status.health, cartKind: 'go', cartResult: 'net' });
+  },
+  'camera-trouble'() {
+    status.staffSetup = { ...status.staffSetup, cameras: cameras({ B: { state: 'trouble', problem: 'stale' } }) };
+  },
+  healthy() {
+    frozen = false;
+    status.health = health();
+    status.staffSetup = { ...status.staffSetup, position: 'confirmed', cameras: cameras() };
+  },
+  aligning() {
+    rejectReset = true;
+  },
+  'accept-reset'() {
+    rejectReset = false;
+  },
+  // health の無い旧 Quest。
+  'no-health'() {
+    delete status.health;
   },
   offline() {
     failStatus = true;
@@ -171,6 +237,7 @@ const scenarios = {
   online() {
     failStatus = false;
     frozen = false;
+    if (status.health) status.health = health({ ...status.health, paused: false, worn: true });
     tick += 1;
     status.questTick = tick;
   },
@@ -329,7 +396,9 @@ async function handlePost(request, response, pathname) {
       json(response, 400, { ok: false, error: 'tablet_session_required' });
       return;
     }
-    if (body.staffReset === true && body.portalSessionId === status.portalSessionId) {
+    if (body.staffReset === true && body.portalSessionId === status.portalSessionId && rejectReset) {
+      status = { ...status, staffResetRejectedId: body.resetRequestId };
+    } else if (body.staffReset === true && body.portalSessionId === status.portalSessionId) {
       const oldId = body.resetRequestId;
       const nextPortal = randomUUID();
       generation += 1;
@@ -341,8 +410,12 @@ async function handlePost(request, response, pathname) {
         pending: null,
         appliedSeq: 0,
         briefing: null,
+        phase: 'INTRO',
+        titleStage: 'Wait',
         staffSetup: setup('settings', 'settings'),
+        health: status.health ? health() : undefined,
       };
+      if (!status.health) delete status.health;
     } else if (body.portalSessionId === status.portalSessionId && Number.isSafeInteger(body.seq)) {
       status.briefing = {
         tabletSessionId: body.tabletSessionId,
@@ -379,7 +452,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   if (request.method === 'GET' && pathname === '/_state') {
-    json(response, 200, { ok: true, frozen, failStatus, scenarios: Object.keys(scenarios), status });
+    json(response, 200, { ok: true, frozen, failStatus, rejectReset, scenarios: Object.keys(scenarios), status });
     return;
   }
   if (request.method === 'GET' && pathname === '/_report') {

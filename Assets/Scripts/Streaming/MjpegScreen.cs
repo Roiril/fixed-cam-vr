@@ -1,5 +1,8 @@
 #nullable enable
 using UnityEngine;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+using Stopwatch = System.Diagnostics.Stopwatch;
+#endif
 
 namespace FixedCamVr.Streaming
 {
@@ -18,6 +21,10 @@ namespace FixedCamVr.Streaming
     [RequireComponent(typeof(Renderer))]
     public sealed class MjpegScreen : MonoBehaviour
     {
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+        public static readonly StreamWorkTiming SampleLumaTiming = new StreamWorkTiming();
+#endif
+
         private static readonly int LiveTexId = Shader.PropertyToID("_LiveTex");
         private static readonly int LiveScaleId = Shader.PropertyToID("_LiveScale");
         private static readonly int UvRotStepsId = Shader.PropertyToID("_UvRotSteps");
@@ -103,6 +110,12 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public Vector2 ContainScale => _containScale;
 
+        /// <summary>
+        /// 実寸の映像を 1 枚でも受けたか（2x2 の未デコード placeholder ではない）。
+        /// placeholder の間の <see cref="ContainScale"/> は 1:1 扱いの値で、映像の矩形ではない。
+        /// </summary>
+        public bool HasDecodedSource => _lastTexW > 4 && _lastTexH > 4;
+
         // ---- ソース映像の明るさ ----
         //   読み手が 2 つある: ① CG 人形の光量を映像へ寄せる（暗い区間で人形だけ明るいと必ず浮く）
         //                      ② 装置の自動露出の追従遅れ（CameraFeelFx）。
@@ -148,6 +161,9 @@ namespace FixedCamVr.Streaming
             _lumaStamp = now;
             var t = _lastAssigned as Texture2D;
             if (t == null || t.width <= 4 || t.height <= 4) return;
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            long started = Stopwatch.GetTimestamp();
+#endif
             try
             {
                 int stepX = Mathf.Max(1, t.width / LumaGrid);
@@ -163,6 +179,9 @@ namespace FixedCamVr.Streaming
                 _lumaMap.EndFrame();
             }
             catch { /* 読めないテクスチャなら諦める（測れないことは体験を止めない） */ }
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+            finally { SampleLumaTiming.Record(Stopwatch.GetTimestamp() - started); }
+#endif
         }
 
         private void Awake()

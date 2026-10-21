@@ -770,8 +770,30 @@ namespace FixedCamVr.Streaming
             Apply(d, exitAnchored: true);
         }
 
+        // 録画のコマを体験者の進み具合で選ぶカット（recFollow・`canon/LEDGER.md` 0274）。
+        // 物差しはカットの頭で 1 回だけ組む（毎フレーム組むと配列を new する）。
+        private bool _followActive;
+        private bool _followCornerOk;
+        private CornerProgress _followCorner;
+        private float _followMax = float.NegativeInfinity;
+        private float _followLogAt;
+        // 被った走行を後から見直すための集計（0278）。f = 画に出ている「何コマ目か」（混ぜた分の端数つき）。
+        private float _followStartAt;
+        private float _followStartMax = float.NaN;
+        private float _followLastF = float.NaN;
+        private float _followMaxDf;
+        private int _followJumps;
+        private int _followTicks;
+        private int _followShownAtStart;
+        private const float FollowLogInterval = 0.1f;
+        private const float FollowJumpFrames = 0.6f;
+
+        /// <summary>いま位置で選んでいる録画の進み具合（最大値）。観測用。位置で選んでいなければ NaN。</summary>
+        public float FollowProgress => _followActive && !float.IsNegativeInfinity(_followMax) ? _followMax : float.NaN;
+
         private void Update()
         {
+            TickRecFollow();
             if (_markResponsePlaying && overlay != null &&
                 (overlay.HasLooped(_markResponseToken) || overlay.IsFinished(_markResponseToken)))
             {
@@ -899,6 +921,8 @@ namespace FixedCamVr.Streaming
 
         private void BeginStep(TakeRunnerLogic.Decision d, bool exitAnchored)
         {
+            EndFollowSummary();
+            _followActive = false;
             _markResponseToken = -1;
             _markResponsePlaying = false;
             _markResponseReported = false;
@@ -925,11 +949,24 @@ namespace FixedCamVr.Streaming
 
             // オーバーレイ（cue / 全面差し替え素材）を先に組む。§6.4 の「飛ばす」判定に素材の有無が要るため、
             // 画面（カメラ・post）を触る前に決める。
-            OverlayCueData? cue = BuildStepOverlay(step, source, d.takeIndex, d.stepIndex);
+            // 録画を続きから流すカット（recContinue・`canon/LEDGER.md` 0272）は**素材を開き直さない**。
+            //   画面に出ている同じ録画の速さだけを変える。続けられなければ飛ばす（頭から開き直すと
+            //   早送りのつもりが「過去の自分が入口へ戻る」画になる）。
+            bool continueRec = step.recContinue && TakeSchema.IsRecSource(source);
+            OverlayCueData? cue = continueRec ? null : BuildStepOverlay(step, source, d.takeIndex, d.stepIndex);
 
             // --- §6.4 不正値: このカットは実行できない → 画面も post も触らずに即次のカットへ送る ---
             // 「範囲外カメラを registry の clamp 任せで無言に別カメラへ」「素材無しで数秒画面が固まる」を作らない。
-            bool playable = IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex, out string why);
+            string why;
+            bool playable;
+            if (continueRec)
+            {
+                playable = CanContinueRecording(step, out why);
+                if (!playable)
+                    Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は録画を続きから流せない（{why}）→ 飛ばす" +
+                                     $"（take={TakeId(d.takeIndex)}）");
+            }
+            else playable = IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex, out why);
             // 飛ばしたことも取れたことも外へ出す（観測専用。全カットが飛んだ演出を解析が名指しできる）。
             StepResolved?.Invoke(TakeId(d.takeIndex), d.stepIndex, source, step.camera, playable, why);
             if (!playable)
@@ -941,7 +978,35 @@ namespace FixedCamVr.Streaming
 
             // 3 周目 A の凍結に入った瞬間で心音同期の画を止める。
             // ラッチは CameraFeelFx が持つため、引き返して以前のカットを再演しても戻らない。
-            if (step.splitFreeze) _feelFx?.NotifyHeartbeatFreeze();
+            // ⚠ 位置で選ぶ・続きから流す録画に第 2 層を重ねていないか（2026-10-19・0275 の実害）。
+            //   鏡版の録画カットを写して作ったら `overlay2CueId: plate_A_right` が残り、**右半分が無人の
+            //   プレートで覆われて、録画の自分が右半分にいる間ずっと消えていた**。ログは全部正常に見えた。
+            if ((step.recFollow || step.recContinue) && !string.IsNullOrEmpty(step.overlay2CueId))
+                Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は録画を位置合わせ / 続きから流すのに、第 2 層 " +
+                                 $"'{step.overlay2CueId}' が画面の一部を覆っている（その部分の録画の自分は見えない）" +
+                                 $"（take={TakeId(d.takeIndex)}）");
+
+            // 位置で選ぶ録画（0274）。物差しはここで 1 回だけ組む。
+            if (step.recFollow && !continueRec && TakeSchema.IsRecSource(source))
+            {
+                _followActive = true;
+                _followMax = float.NegativeInfinity;
+                _followStartAt = Now;
+                _followStartMax = float.NaN;
+                _followLastF = float.NaN;
+                _followMaxDf = 0f;
+                _followJumps = 0;
+                _followTicks = 0;
+                _followShownAtStart = _stepFrames != null ? _stepFrames.PresentedCount : 0;
+                _followLogAt = 0f;
+                _followCornerOk = TryResolveCorner(out _followCorner);
+                if (!_followCornerOk)
+                    Debug.LogWarning("[TakeRunner] 位置で選ぶ物差しを組めない（record.progress の壁 / layout.room.walls）" +
+                                     " → 録画は入口のコマで止まる");
+            }
+
+            // 早送り版（0272）では凍結が無く、同じ縁は「録画が続きから早送りになる」カット。
+            if (step.splitFreeze || continueRec) _feelFx?.NotifyHeartbeatFreeze();
 
             // いま画面を取っているカットの素材 id（音が読む・`canon/LEDGER.md` 0131）。
             // ⚠ **飛ばす判定の後**（画面を取れなかったカットの id を立てない）。
@@ -978,7 +1043,11 @@ namespace FixedCamVr.Streaming
             // ⚠ **CG を触る前に向きを決める。** 向きはデータに無く、「直前に人形が出ていたか」と
             //   「このカットが人形を出すか」から導く（<see cref="TakeSchema.TransSwap"/> の説明）。
             //   前後で同じなら入れ替わりではないので、乱れ遷移へ倒して理由を言う。
-            bool wantSwap = TakeSchema.IsSwapTransition(step.transition);
+            // ⚠ 続きから流すカットは画面を差し替えないので、入れ替わりのノイズは成立しない。
+            bool wantSwap = TakeSchema.IsSwapTransition(step.transition) && !continueRec;
+            if (continueRec && TakeSchema.IsSwapTransition(step.transition))
+                Debug.LogWarning($"[TakeRunner] カット {d.stepIndex + 1} は録画を続きから流すので入れ替わりは使えない → 瞬時に継ぐ" +
+                                 $"（take={TakeId(d.takeIndex)}）");
             // ⚠⚠ **DollVisible を読む（IsVisible ではなく）。** 持続の覆い（swapHold）は人の代役を
             //   立てたまま swap のカットへ渡すので、IsVisible だと fromDoll=true に化けて
             //   「人形 → 人形 ＝ 成立しない」へ倒れ、**保持からの引き継ぎが 1 度も走らない**
@@ -1115,7 +1184,8 @@ namespace FixedCamVr.Streaming
                     cue.fadeInSeconds = 0f;   // 「瞬時」はフェードも掛けない（明示指定があればそれを尊重）
                 // カメラは変えないが画面は演出が持つ。覆いがあるときだけ素材の差し替えをその最中に行う。
                 director.TakeHoldBegin(throughCover ? downSec : 0f, throughCover ? upSec : 0f,
-                    () => PlayStepOverlay(cue, step), glitchTrans);
+                    continueRec ? () => ContinueStepOverlay(step) : () => PlayStepOverlay(cue, step),
+                    glitchTrans);
             }
 
             // 視点が急に切り替わった音（カットの `switchSfx`・`canon/LEDGER.md` 0102）。
@@ -1226,6 +1296,109 @@ namespace FixedCamVr.Streaming
             //   だからこの 1 行が「塞げたか」の唯一の証拠になる（走行ログを grep して確かめる）。
             Debug.Log($"[TakeRunner] 覆いのあいだ 1 層目を無人プレートで塞いだ（camera={cam}）");
             return true;
+        }
+
+        /// <summary>
+        /// 画面に出ている録画を、このカットとして続きから流せるか（<c>recContinue</c>）。
+        /// 同じ録画（周・カメラ）が開いていて、まだ尽きていないことが条件。
+        /// </summary>
+        private bool CanContinueRecording(ShowStepDef step, out string why)
+        {
+            if (overlay == null) { why = "overlay 未配線"; return false; }
+            if (_stepFrames == null || !_stepOverlayPlayed) { why = "録画が出ていない"; return false; }
+            if (_stepFramesLap != step.recLap || _stepFramesCam != step.camera)
+            {
+                why = $"出ている録画が別物（出ている L{_stepFramesLap}C{_stepFramesCam} / 指定 L{step.recLap}C{step.camera}）";
+                return false;
+            }
+            if (overlay.IsFinished(_clipToken)) { why = "録画がもう尽きた"; return false; }
+            why = "";
+            return true;
+        }
+
+        /// <summary>
+        /// 画面に出ている録画の速さを変えて、このカットとして続きから流す（<c>recContinue</c>）。
+        /// 素材は開き直さない（<see cref="PlayStepOverlay"/> を通さない）。
+        /// </summary>
+        private void ContinueStepOverlay(ShowStepDef step)
+        {
+            float rate = TakeSchema.ResolveRecRate(step.recRate);
+            // 覆い（dip / glitch）の最中に尽きることがある。そのときはこのカットを畳んで次へ送る。
+            if (overlay == null || !overlay.SetFramesRate(_clipToken, rate))
+            {
+                Debug.LogWarning("[TakeRunner] 続きから流すはずの録画が尽きていた → このカットを畳む");
+                _awaitingClipEnd = false;
+                _logic.SetCurrentStepEnd(Now);
+                return;
+            }
+            _awaitingClipEnd = step.IsUntilClipEnd;
+            Debug.Log($"[TakeRunner] 録画を続きから流す lap={step.recLap} camera={step.camera} " +
+                      $"rate={rate:0.##} clock={overlay.FramesClockSec:F2}s" +
+                      (float.IsNegativeInfinity(_followMax) ? "" : $" follow={_followMax:F3}") +
+                      (_stepFrames != null ? $" cpuLuma={_stepFrames.SampleCurrentLuma():F3} {overlay.DiagnoseOverlay(_stepFrames.Texture)}" : ""));
+        }
+
+        /// <summary>
+        /// 角を回る進み具合の物差しを組む（録るときの <see cref="SegmentRecorder"/> と同じ壁・同じ式）。
+        /// </summary>
+        private bool TryResolveCorner(out CornerProgress corner)
+        {
+            corner = default;
+            if (showControl == null) return false;
+            ShowRecordProgressDef? def = showControl.RecordConfig?.progress;
+            ShowRoomWallDef[]? walls = showControl.Layout?.room?.walls;
+            return def != null && CornerProgress.TryFromWalls(walls, def.fromWall, def.toWall, out corner);
+        }
+
+        // 位置で選ぶカットのあいだ、体験者の進み具合（の最大）を画面へ渡す。戻っても録画は戻さない。
+        private void TickRecFollow()
+        {
+            if (!_followActive || !_followCornerOk || overlay == null || _clipToken < 0 || showControl == null) return;
+            Func<Vector2>? head = showControl.HeadCourseXZProvider;
+            if (head == null) return;
+            Vector2 xz = head();
+            float p = _followCorner.At(xz.x, xz.y);
+            if (float.IsNaN(p)) return;
+            if (p > _followMax) _followMax = p;
+            if (float.IsNaN(_followStartMax)) _followStartMax = _followMax;
+            overlay.SetFramesProgress(_clipToken, _followMax);
+            if (_stepFrames == null) return;
+
+            // 画に出ている「何コマ目か」（混ぜた分の端数つき）の 1 フレームあたりの動き。
+            // 混ぜていれば歩いた分だけ少しずつ動き、混ぜていなければ 1 コマずつ跳ぶ（0278 の判定材料）。
+            int a = _stepFrames.CursorIndex, b = _stepFrames.CursorIndexB;
+            float w = overlay.FramesBlend;
+            float f = a + (b >= 0 ? (b - a) * w : 0f);
+            if (!float.IsNaN(_followLastF))
+            {
+                float df = Mathf.Abs(f - _followLastF);
+                if (df > _followMaxDf) _followMaxDf = df;
+                if (df > FollowJumpFrames) _followJumps++;
+            }
+            _followLastF = f;
+            _followTicks++;
+
+            // 0.1 秒ごとに 1 行（被った走行の見直し用・tools/follow-review.py が読む）。
+            // **進み具合を渡したことと、コマが画に載ったことは別**なので、載せた枚数（shown）も並べる。
+            if (Now >= _followLogAt)
+            {
+                _followLogAt = Now + FollowLogInterval;
+                Debug.Log($"[TakeRunner] FOLLOW t={Now - _followStartAt:F2} p={p:F4} max={_followMax:F4} " +
+                          $"a={a} b={b} w={w:F3} f={f:F2} n={_stepFrames.FrameCount} " +
+                          $"recPa={_stepFrames.ProgressAt(a):F4} recPb={(b >= 0 ? _stepFrames.ProgressAt(b) : float.NaN):F4} " +
+                          $"shown={_stepFrames.PresentedCount} follow={(overlay.FramesFollowing ? 1 : 0)}");
+            }
+        }
+
+        // 位置で選ぶカットが終わった縁で 1 行。被った走行の「カクつき」を数で残す（0278）。
+        private void EndFollowSummary()
+        {
+            if (!_followActive || _followTicks == 0) return;
+            int decoded = _stepFrames != null ? _stepFrames.PresentedCount - _followShownAtStart : -1;
+            Debug.Log($"[TakeRunner] FOLLOW 終了 sec={Now - _followStartAt:F2} max={_followStartMax:F3}->{_followMax:F3} " +
+                      $"lastF={_followLastF:F2} decoded={decoded} ticks={_followTicks} " +
+                      $"maxDf={_followMaxDf:F2} jumps={_followJumps}(>{FollowJumpFrames:F1}コマ/フレーム)");
+            _followTicks = 0;
         }
 
         private void PlayStepOverlay(OverlayCueData? cue, ShowStepDef step)
@@ -1431,6 +1604,9 @@ namespace FixedCamVr.Streaming
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。
         private void ReleaseStepState()
         {
+            EndFollowSummary();
+            _followActive = false;
+            _followMax = float.NegativeInfinity;
             _markResponseToken = -1;
             _markResponsePlaying = false;
             _markResponseReported = false;
@@ -1504,6 +1680,8 @@ namespace FixedCamVr.Streaming
                     id = $"{TakeId(takeIndex)}#{stepIndex}",
                     displayName = _takes[takeIndex].name ?? "",
                     frames = rec,
+                    framesRate = TakeSchema.ResolveRecRate(step.recRate),
+                    framesFollow = step.recFollow,
                     maskTexture = cue?.maskTexture,
                     maskUrl = cue?.maskUrl ?? "",
                     strength = TakeSchema.Inherit(step.strength, cue?.strength ?? 1f),

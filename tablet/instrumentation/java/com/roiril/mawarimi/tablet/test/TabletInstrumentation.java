@@ -54,6 +54,7 @@ public final class TabletInstrumentation extends Instrumentation {
     private boolean staffFlow;
     private boolean staffFinish;
     private boolean visitorFocus;
+    private boolean presentation;
     private final AtomicReference<String> staffFinishHtml = new AtomicReference<>();
 
     @Override
@@ -67,6 +68,7 @@ public final class TabletInstrumentation extends Instrumentation {
         staffFlow = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFlow"));
         staffFinish = arguments != null && "true".equalsIgnoreCase(arguments.getString("staffFinish"));
         visitorFocus = arguments != null && "true".equalsIgnoreCase(arguments.getString("visitorFocus"));
+        presentation = arguments != null && "true".equalsIgnoreCase(arguments.getString("presentation"));
         start();
     }
 
@@ -74,7 +76,7 @@ public final class TabletInstrumentation extends Instrumentation {
     public void onStart() {
         int resultCode = Activity.RESULT_OK;
         try {
-            if (visitorFocus || staffFinish) runStaffFinishTests(); else if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
+            if (presentation) runPresentationTests(); else if (visitorFocus || staffFinish) runStaffFinishTests(); else if (staffFlow) runStaffFlowTests(); else if (equipment) runEquipmentTests(); else if (briefing) runBriefingTests(); else if (playback) runPlaybackTests(); else runFunctionalTests();
             results.putString("summary", "PASS checks=" + checks);
             Log.i(TAG, "PASS checks=" + checks);
         } catch (Throwable error) {
@@ -163,7 +165,7 @@ public final class TabletInstrumentation extends Instrumentation {
             check("equipment preview fits viewport", equipmentLayout.optBoolean("fits"));
             check("equipment preview has visitor instructions",
                 equipmentLayout.optString("text").contains("左手にコントローラー")
-                    && equipmentLayout.optString("text").contains("Meta Quest")
+                    && equipmentLayout.optString("text").contains("クエストを装着")
                     && equipmentLayout.optString("text").contains("ヘッドフォン"));
             checkButtonBounds(view, "briefingReplay", true);
             checkButtonBounds(view, "briefingSettings", true);
@@ -352,9 +354,7 @@ public final class TabletInstrumentation extends Instrumentation {
         evaluate(view, "(()=>{const e=document.querySelector('input[name=lang][value=" + lang + "]');"
             + "e.checked=true;e.dispatchEvent(new Event('change',{bubbles:true}));"
             + "document.getElementById('settingsNextBtn').click();document.getElementById('sendBtn').click();})()");
-        waitFor("visitor confirmation", 5000, () -> evaluateBoolean(view,
-            "!document.getElementById('applyBtn').hidden"));
-        evaluate(view, "document.getElementById('applyBtn').click()");
+        // 確認だけの段は無い。「この設定で始める」でそのまま送る（2026-10-21）
         waitFor("visitor settings applied", 8000, () -> evaluateBoolean(view,
             "!document.getElementById('resultContinueBtn').hidden"));
         evaluate(view, "document.getElementById('resultContinueBtn').click()");
@@ -380,6 +380,11 @@ public final class TabletInstrumentation extends Instrumentation {
             + "scrollHeight:document.documentElement.scrollHeight,noise:noise.filter(s=>shown(document.querySelector(s))),"
             + "captionVisible:shown(caption),caption:rect(caption),text:document.getElementById('subtitleTyped').textContent,"
             + "doctorVisible:shown(video)||shown(still),videoVisible:shown(video),doctor:rect(shown(video)?video:still),"
+            // 博士の口元が画面のどこに描かれているか（object-fit:cover・object-position 50% 28%）。
+            // 口は元の動画の高さの 0.53〜0.64 を動く（tools/visitor-ui/doctor-face-track.json の全コマ）。いちばん下の 0.64 で見る
+            + "mouthY:(()=>{const e=shown(video)?video:still,r=e.getBoundingClientRect(),"
+            + "nw=e.videoWidth||e.naturalWidth||1280,nh=e.videoHeight||e.naturalHeight||720,"
+            + "k=Math.max(r.width/nw,r.height/nh);return r.y+(r.height-nh*k)*0.28+0.64*nh*k;})(),"
             + "frames:video.webkitDecodedFrameCount||0,time:video.currentTime,paused:video.paused,"
             + "counter:document.getElementById('sceneCounter').textContent};})())");
     }
@@ -397,13 +402,15 @@ public final class TabletInstrumentation extends Instrumentation {
         JSONObject caption = layout.getJSONObject("caption"), doctor = layout.getJSONObject("doctor");
         check(name + " subtitle stays on screen", caption.getDouble("x") >= 0 && caption.getDouble("y") >= 0
             && caption.getDouble("right") <= layout.getInt("width") + 1 && caption.getDouble("bottom") <= layout.getInt("height") + 1);
-        check(name + " doctor and subtitle do not overlap", doctor.getDouble("bottom") <= caption.getDouble("y") + 1);
+        // 2026-10-14 から博士は全面に敷き、字幕は下の暗い帯に重ねる（0262）。2026-10-15 から目元は闇で、
+        // 顔で明るいのは口元だけ（0263）。字幕が口元を覆わないことを見る（口から 0.05 画面高さぶんの余白）
+        check(name + " subtitle stays below the doctor's mouth",
+            caption.getDouble("y") >= layout.getDouble("mouthY") + 0.05 * layout.getInt("height"));
     }
 
     private void openVisitorControls(WebView view) throws Exception {
-        evaluate(view, "(()=>{const e=document.getElementById('subtitle'),r=e.getBoundingClientRect();"
-            + "for(const type of ['pointerdown','pointerup'])e.dispatchEvent(new PointerEvent(type,"
-            + "{bubbles:true,isPrimary:true,pointerId:21,button:0,clientX:r.x+r.width/2,clientY:r.y+r.height/2}));})()");
+        // 2026-10-14：画面のタップは次の文へ進む。止めるのは右上の一時停止ボタンだけ。
+        evaluate(view, "document.getElementById('briefingPauseBtn').click()");
         waitFor("visitor controls visible", 3000, () -> evaluateBoolean(view,
             "!document.getElementById('briefingControls').hidden"));
     }
@@ -415,6 +422,9 @@ public final class TabletInstrumentation extends Instrumentation {
         SystemClock.sleep(duration);
         evaluate(view, "document.getElementById('" + id + "').dispatchEvent(new PointerEvent('pointerup',"
             + "{bubbles:true,isPrimary:true,pointerId:22,button:0}))");
+        // 長押しが成立した指を離した直後 400ms の click は本番が捨てる（7acd4b31・誤タップ防止）。
+        // 人の手と同じく少し待ってから次を押す。
+        SystemClock.sleep(500);
     }
 
     private void ensureStaffScreen(WebView view) throws Exception {
@@ -422,7 +432,10 @@ public final class TabletInstrumentation extends Instrumentation {
         boolean speaking = evaluateBoolean(view,
             "!document.getElementById('briefingView').hidden&&document.getElementById('equipmentGuide').hidden");
         if (speaking && evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
-        holdVisitorButton(view, speaking ? "briefingStaff" : "staffToggle", 1650);
+        // 装着の案内で返却を待つ間は、右上の入口を隠して案内の下に入口を出す
+        boolean handback = !speaking && evaluateBoolean(view,
+            "!document.getElementById('equipmentGuide').hidden&&!document.getElementById('briefingStaff').hidden");
+        holdVisitorButton(view, speaking || handback ? "briefingStaff" : "staffToggle", 1650);
         waitFor("staff screen opened deliberately", 3000, () -> evaluateBoolean(view, "document.getElementById('staff').open"));
     }
 
@@ -452,7 +465,7 @@ public final class TabletInstrumentation extends Instrumentation {
         check("doctor decodes additional real frames", evaluateDouble(view,
             "document.getElementById('doctorVideo').webkitDecodedFrameCount") > framesBefore);
         openVisitorControls(view);
-        check("tap did not skip the sentence", before.equals(evaluateString(view,
+        check("pause button did not skip the sentence", before.equals(evaluateString(view,
             "document.getElementById('sceneCounter').textContent")));
         double stopped = evaluateDouble(view, "document.getElementById('doctorVideo').currentTime");
         SystemClock.sleep(600);
@@ -480,26 +493,22 @@ public final class TabletInstrumentation extends Instrumentation {
             "!document.getElementById('staff').open&&!document.getElementById('briefingControls').hidden"));
         check("staff return does not silently resume", evaluateBoolean(view, "document.getElementById('doctorVideo').paused"));
         // Real local media and the production controls remain in use. Only Quest responses are fixtures.
+        // 2026-10-16：博士の 12 文は来場者の手元で通して流れ、返却は最後の砂嵐の後に出る。
+        double cutsBefore = evaluateDouble(view, "SignalCut.snapshot().runs");
         for (int i = 0; i < 14; i++) {
-            if (evaluateBoolean(view, "!document.getElementById('equipmentGuide').hidden")) break;
+            if (evaluateBoolean(view, "document.getElementById('doctorVideo').src.includes('wear-ja')")) break;
             if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
             evaluate(view, "document.getElementById('briefingNext').click()");
             SystemClock.sleep(700);
         }
-        waitFor("visitor handback", 4000, () -> evaluateBoolean(view,
-            "!document.getElementById('equipmentGuide').hidden"));
-        check("handback does not automatically expose staff data", !evaluateBoolean(view, "document.getElementById('staff').open"));
-        check("handback asks to return tablet", evaluateString(view,
-            "document.getElementById('briefingTitle').textContent").contains("スタッフ"));
-        saveScreenshot("doctor-visitor-focus-handback-wide.png");
-        holdVisitorButton(view, "staffToggle", 1650);
-        waitFor("staff confirms returned tablet", 3000, () -> evaluateBoolean(view,
-            "document.getElementById('staff').open&&!document.getElementById('staffPrepareBtn').disabled"));
-        holdVisitorButton(view, "staffPrepareBtn", 1350);
-        waitFor("acknowledged wear briefing", 7000, () -> evaluateBoolean(view,
-            "!document.getElementById('staff').open&&document.getElementById('equipmentGuide').hidden"
-                + "&&document.getElementById('doctorVideo').src.includes('wear-ja')"));
-        waitFor("wear playback starts after acknowledged staff confirmation", 4000, () -> evaluateBoolean(view,
+        waitFor("wear sentences follow the report without a handback", 4000, () -> evaluateBoolean(view,
+            "document.getElementById('doctorVideo').src.includes('wear-ja')&&document.getElementById('equipmentGuide').hidden"
+                + "&&!document.getElementById('staff').open"));
+        check("no signal cut before the final sentence", evaluateDouble(view, "SignalCut.snapshot().runs") == cutsBefore);
+        if (!evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) {
+            evaluate(view, "document.getElementById('briefingResume').click()");
+        }
+        waitFor("wear playback continues in the visitor's hands", 4000, () -> evaluateBoolean(view,
             "document.getElementById('briefingControls').hidden&&!document.getElementById('doctorVideo').paused"));
         SystemClock.sleep(500);
         verifyVisitorFocus(view, "wear-wide", false);
@@ -513,6 +522,37 @@ public final class TabletInstrumentation extends Instrumentation {
             "!document.getElementById('briefingControls').hidden&&document.getElementById('doctorVideo').paused"));
         saveScreenshot("doctor-visitor-focus-offline-wide.png");
         evaluate(view, "globalThis.__visitorFocusOffline=false");
+        waitFor("online briefing resumable", 6000, () -> evaluateBoolean(view,
+            "!document.getElementById('briefingResume').disabled"));
+        for (int i = 0; i < 6; i++) {
+            // 砂嵐が始まったら触らない（一時停止は切れる途中の演出を取り消す）
+            if (evaluateBoolean(view, "!document.getElementById('equipmentGuide').hidden||SignalCut.snapshot().running")) break;
+            if (evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
+            evaluate(view, "document.getElementById('briefingNext').click()");
+            SystemClock.sleep(700);
+        }
+        // 装着の案内は返す前に来場者が読む。最後の行が「読み終わったら渡す」（2026-10-21）
+        waitFor("visitor equipment guide with handback line after the final sentence", 6000, () -> evaluateBoolean(view,
+            "!document.getElementById('equipmentGuide').hidden&&!document.getElementById('equipmentSteps').hidden"
+                + "&&!document.getElementById('equipmentHandback').hidden"));
+        Log.i(TAG, "visitorFocus signalCut before=" + cutsBefore + " now=" + evaluateString(view, "JSON.stringify(SignalCut.snapshot())"));
+        check("signal cut runs once at the end of the briefing", evaluateDouble(view, "SignalCut.snapshot().runs") == cutsBefore + 1);
+        waitFor("signal cut returns to the handback screen", 4000, () -> evaluateBoolean(view, "!SignalCut.snapshot().running"));
+        SystemClock.sleep(400);
+        check("handback does not automatically expose staff data", !evaluateBoolean(view, "document.getElementById('staff').open"));
+        check("handback asks to return tablet", evaluateString(view,
+            "document.getElementById('equipmentHandback').textContent").contains("スタッフ"));
+        saveScreenshot("doctor-visitor-focus-handback-wide.png");
+        holdVisitorButton(view, "briefingStaff", 1650);
+        waitFor("staff confirms returned tablet", 3000, () -> evaluateBoolean(view,
+            "document.getElementById('staff').open&&!document.getElementById('staffPrepareBtn').disabled"));
+        holdVisitorButton(view, "staffPrepareBtn", 1350);
+        // 受理の後もタブレットはスタッフの手にある。スタッフ画面のまま「装着を手伝う」へ進む
+        waitFor("acknowledged staff wear screen", 7000, () -> evaluateBoolean(view,
+            "document.getElementById('staff').open&&document.getElementById('staff').dataset.state==='wear'"));
+        check("acknowledgement does not replay the doctor", evaluateBoolean(view,
+            "document.getElementById('doctorVideo').paused"));
+        saveScreenshot("doctor-visitor-focus-equipment-wide.png");
     }
 
     private void runStaffFinishScenario(Activity activity, WebView view, String source, String scenario,
@@ -886,7 +926,8 @@ public final class TabletInstrumentation extends Instrumentation {
             "doctor-staff-finish-(setup|handover|playing|outro|finished|offline|recovered|prepared)-(wide|narrow)\\.png")
             && !(filename.endsWith("handover-narrow.png") || filename.endsWith("playing-narrow.png")
                 || filename.endsWith("outro-narrow.png") || filename.endsWith("offline-narrow.png"));
-        if (!visitorFocusName && !staffFinishName && !"doctor-staff-flow-staff.png".equals(filename)
+        boolean presentationName = filename.matches("doctor-presentation-[a-z0-9-]+\\.png");
+        if (!presentationName && !visitorFocusName && !staffFinishName && !"doctor-staff-flow-staff.png".equals(filename)
             && !"doctor-staff-flow-equipment.png".equals(filename)
             && !"doctor-staff-flow-title.png".equals(filename)) {
             throw new AssertionError("Unexpected staffFlow screenshot name: " + filename);
@@ -940,7 +981,7 @@ public final class TabletInstrumentation extends Instrumentation {
         Activity activity = launchFromShell();
         WebView view = waitForWebView(activity, 10000);
         waitFor("page ready", 15000, () -> "complete".equals(evaluateString(view, "document.readyState")));
-        String[] files = {"introduction-ja-v1.mp4", "wear-ja-v1.mp4", "subject-ja-v1.mp4", "report-ja-v1.mp4"};
+        String[] files = {"introduction-ja-v2.mp4", "wear-ja-v2.mp4", "subject-ja-v2.mp4", "report-ja-v2.mp4"};
         for (String file : files) {
             for (int start : new int[]{0, 1048576, 1199370}) {
                 byte[] expected = new byte[100000];
@@ -1000,7 +1041,7 @@ public final class TabletInstrumentation extends Instrumentation {
             "Boolean(window.__doctorTest&&window.__doctorTest.assetsDone)"));
         JSONObject assets = evaluateObject(initialWebView, "JSON.stringify(window.__doctorTest.assets)");
         check("briefing JSON loaded", assets.optBoolean("json"));
-        check("three local images decoded", assets.optInt("images") == 3);
+        check("six local images decoded", assets.optInt("images") == 6);
         Log.i(TAG, "assets " + assets);
 
         evaluate(initialWebView, "window.__doctorTest.runMedia()");
@@ -1092,6 +1133,98 @@ public final class TabletInstrumentation extends Instrumentation {
         removeMonitor(monitor);
         if (activity == null) throw new AssertionError("Shell Activity launch timed out");
         return activity;
+    }
+
+    private void runPresentationTests() throws Exception {
+        Activity activity = launchFromShell();
+        WebView view = waitForWebView(activity, 10000);
+        waitFor("presentation production page", 15000, () -> evaluateBoolean(view,
+            "document.readyState==='complete'&&typeof BriefingPresentation==='object'&&!!document.getElementById('staff')"));
+        ensureStaffScreen(view);
+        waitFor("presentation preview ready", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('staffBriefingBtn').disabled"));
+        evaluate(view, "BriefingPresentation.unlock();document.getElementById('staffBriefingBtn').click()");
+        waitFor("presentation doctor frame", 10000, () -> evaluateBoolean(view,
+            "!document.getElementById('doctorVideo').hidden&&document.getElementById('doctorVideo').currentTime>0.1"));
+        waitFor("presentation cue decoded", 10000, () -> evaluateBoolean(view,
+            "BriefingPresentation.snapshot().decoded"));
+        check("subtitle has no blur or translation", evaluateBoolean(view,
+            "(()=>{const s=getComputedStyle(document.getElementById('subtitleTyped'));return s.filter==='none'&&s.transform==='none';})()"));
+        saveScreenshot("doctor-presentation-introduction.png");
+
+        // A chapter gesture followed immediately by pause must cancel its future sound.
+        evaluate(view, "document.getElementById('briefingPauseSurface').click()");
+        SystemClock.sleep(180);
+        evaluate(view, "document.getElementById('briefingPauseSurface').click();document.getElementById('briefingPauseBtn').click()");
+        JSONObject canceled = evaluateObject(view, "JSON.stringify(BriefingPresentation.snapshot())");
+        SystemClock.sleep(350);
+        JSONObject afterCancel = evaluateObject(view, "JSON.stringify(BriefingPresentation.snapshot())");
+        check("pause cancels pending reference sound", afterCancel.optInt("sourceStartCount") == canceled.optInt("sourceStartCount"));
+        check("pause keeps the doctor stopped", evaluateBoolean(view, "document.getElementById('doctorVideo').paused"));
+        Log.i(TAG, "presentation canceled=" + afterCancel);
+        evaluate(view, "document.getElementById('briefingSettings').click()");
+        waitFor("presentation returned to staff", 5000, () -> evaluateBoolean(view, "document.getElementById('staff').open"));
+
+        evaluate(view, "BriefingPresentation.reset();document.getElementById('staffBriefingBtn').click()");
+        Set<String> rendered = new HashSet<>();
+        Set<String> captured = new HashSet<>();
+        long deadline = SystemClock.elapsedRealtime() + 95000;
+        boolean ended = false;
+        int lastReferenceCount = 0;
+        int visibleSamples = 0;
+        int blackSamples = 0;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            JSONObject sample = evaluateObject(view, "JSON.stringify((()=>{const v=document.getElementById('doctorVideo');"
+                + "const r=v.getBoundingClientRect(),s=getComputedStyle(document.querySelector('.portrait'));"
+                + "return {cue:document.getElementById('sceneCounter').textContent,clock:v.currentTime,"
+                + "file:v.getAttribute('src')||'',frames:v.getVideoPlaybackQuality().totalVideoFrames,"
+                + "audio:v.webkitAudioDecodedByteCount||0,visible:!v.hidden&&r.width>0&&r.height>0,"
+                + "paused:v.paused,muted:v.muted,portraitOpacity:s.opacity,"
+                + "ended:!document.getElementById('equipmentGuide').hidden,presentation:BriefingPresentation.snapshot()};})())");
+            JSONObject effects = sample.getJSONObject("presentation");
+            int referenceCount = effects.optInt("referenceDisplayCount");
+            if (referenceCount != lastReferenceCount) {
+                Log.i(TAG, "presentation reference=" + sample);
+                lastReferenceCount = referenceCount;
+            }
+            if (sample.optBoolean("visible") && !sample.optBoolean("paused") && !sample.optBoolean("muted")
+                && sample.optInt("frames") > 0 && sample.optLong("audio") > 0 && sample.optDouble("clock") > 0.1) {
+                visibleSamples++;
+                // 説明に入るときの博士のフェードイン（changeVisual・760ms）は意図した演出なので数えない。
+                // 見たいのは章替わりで黒を挟むこと（最初の文の頭 0.8 秒以外）
+                boolean entranceFade = sample.optString("cue").contains("01 /") && sample.optDouble("clock") < 0.8;
+                if (!entranceFade && sample.optDouble("portraitOpacity") < 0.99) blackSamples++;
+                if (rendered.add(sample.optString("cue"))) Log.i(TAG, "presentation rendered=" + sample);
+                String file = sample.optString("file");
+                if (sample.optDouble("clock") > 1.2 && captured.add(file)) {
+                    String name = file.contains("subject") ? "subject" : file.contains("report") ? "report"
+                        : file.contains("wear") ? "wear" : "introduction";
+                    if ("subject".equals(name) || "report".equals(name)) {
+                        double centerFraction = evaluateDouble(view,
+                            "(()=>{const r=document.querySelector('.portrait').getBoundingClientRect();return (r.left+r.width/2)/innerWidth;})()");
+                        check("doctor stays inside the right side of the screen " + name,
+                            centerFraction > 0.60 && centerFraction < 0.76);
+                    }
+                    saveScreenshot("doctor-presentation-" + name + ".png");
+                }
+            }
+            if (sample.optBoolean("ended")) { ended = true; break; }
+            SystemClock.sleep(90);
+        }
+        check("presentation completes all chapters", ended);
+        check("twelve cues render frames and decoded audio", rendered.size() == 12);
+        check("portrait is not faded to black", visibleSamples > 100 && blackSamples == 0);
+        JSONObject effects = evaluateObject(view, "JSON.stringify(BriefingPresentation.snapshot())");
+        check("two reference presentations", effects.optInt("referenceDisplayCount") == 2);
+        check("two actual reference output signals", effects.optInt("soundPlayCount") == 2);
+        check("two source starts without redraw duplicates", effects.optInt("sourceStartCount") == 2);
+        check("reference cue has measured signal", effects.optDouble("peakRms") > 0.00001);
+        Log.i(TAG, "presentation final=" + effects);
+        saveScreenshot("doctor-presentation-equipment.png");
+        results.putString("presentation", effects.toString());
+        results.putInt("renderedCues", rendered.size());
+        results.putInt("visibleSamples", visibleSamples);
+        evaluate(view, "document.getElementById('briefingSettings').click()");
     }
 
     private void runBriefingTests() throws Exception {
@@ -1191,7 +1324,7 @@ public final class TabletInstrumentation extends Instrumentation {
             + "doctorHidden:getComputedStyle(document.querySelector('.portrait')).display==='none',"
             + "subtitleHidden:document.getElementById('subtitle').hidden,paused:document.getElementById('doctorVideo').paused};})())");
         check("equipment text", layout.optString("text").contains("左手にコントローラー")
-            && layout.optString("text").contains("ヘッドフォン") && layout.optString("text").contains("クエスト内に表示"));
+            && layout.optString("text").contains("ヘッドフォン") && layout.optString("text").contains("クエストの中の指示"));
         check("equipment fits tablet", layout.optBoolean("fits"));
         check("replay below equipment", layout.optBoolean("below") && layout.optBoolean("buttonVisible"));
         check("doctor stopped and hidden", layout.optBoolean("doctorHidden") && layout.optBoolean("paused") && layout.optBoolean("subtitleHidden"));
@@ -1324,7 +1457,8 @@ public final class TabletInstrumentation extends Instrumentation {
     private static final String INSTALL_TEST_HARNESS =
         "(function(){var T=window.__doctorTest={assetsDone:false,mediaDone:false,bridgeDone:false};"
         + "Promise.all([fetch('./asset/briefing-v1.json').then(function(r){return r.ok;}),"
-        + "...['briefing-device-v1.png','briefing-survey-v1.png','doctor.jpg'].map(function(n){"
+        + "...['briefing-device-v2.png','briefing-survey-v1.png','doctor.jpg',"
+        + "'equipment-controller-v1.png','equipment-quest-v1.png','equipment-headphones-v1.png'].map(function(n){"
         + "return new Promise(function(ok){var i=new Image();i.onload=function(){ok(i.naturalWidth>0);};"
         + "i.onerror=function(){ok(false);};i.src='./asset/'+n;});})]).then(function(v){"
         + "T.assets={json:v[0],images:v.slice(1).filter(Boolean).length};T.assetsDone=true;});"

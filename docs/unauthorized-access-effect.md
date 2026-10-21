@@ -93,12 +93,15 @@ Editor では自動再生せず `Sample` でのみ時刻を進める。
 
 ## 素材
 
-- `Assets/Art/Textures/UnauthorizedAccess/wordmark-v3.png`: DSEG14 Modern Bold で組んだ英字。1406 × 257 px。
-- `subtitle-v3.png`: DotGothic16 で組んだ日本語。805 × 107 px。
+- `Assets/Art/Textures/UnauthorizedAccess/wordmark-v5.png`: Source Han Serif JP（明朝）で組んだ `WARNING`。かすれを焼き込み済み。1386 × 220 px。
+- `subtitle-v5.png` / `context-v5.png` / `attempt-v5.png` / `failed-v5.png`: 同じ明朝の `不正アクセス` / `接続元不明` / `遮断を執行` / `失敗`。
 - `triangle-v3.png`: 単体で画像生成した三角記号。1254 × 1254 px。
 - `signal-tear-v3.png`: 単体で画像生成した信号の断裂。2172 × 724 px。
-- `context-v4.png`: 実フォントの対象と接続元。1003 × 107 px。
-- `attempt-v4.png` / `failed-v4.png`: 対処と結果。508 × 107 px / 409 × 107 px。
+
+2026-10-21 に v3 / v4 の 14 セグメント表示（DSEG14）とドットゴシックを廃止した（`canon/LEDGER.md` 0285「デジタル感が強すぎる」「のっぺりしている」）。
+v5 の質感（字の芯の明るさのむら・にじみ・時間で動く粒・まれな細い帯の横ずれ・図形の乾いたかすれ）はシェーダが付ける。
+空間の要素は 0 と 1 の字をやめ、砂嵐の断片を描く。乗っ取りでは工事現場の斜線を出さない。
+版を焼き直したら `UnauthorizedAccessEffect.OpaqueUvBounds` の値も直す（本番の版は Read/Write 無効で、実行時に測れない）。
 - `ErrorFx.mat`: 専用シェーダを参照する材質。ビルド時にシェーダの参照を保持する。
 
 参考はユーザー指定の `error1.jpg` と `error2.gif`。

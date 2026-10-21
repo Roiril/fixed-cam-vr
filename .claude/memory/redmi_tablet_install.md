@@ -13,3 +13,8 @@ description: Redmi Pad SEのUSBインストール確認が制限時間で自動�
 利用者がUSBでの画面取得と端末操作を明示した後、uiautomatorの現在の画面でダイアログの見出しとアプリ名を照合した。有効な「インストール」の位置を読み取ってADBで押し、通常APKと試験APKの両方がSuccessになった。確認は15秒以内に行う。「この選択を記憶」は変更しない。ADBから端末の設定保護を解除しない。
 
 博士アプリの成果物は `Builds/doctor-tablet.apk`。機能試験は `Builds/doctor-tablet-test.apk`。導入はpm pathでも確認する。画面の実描画と機能試験が通るまでは動作確認済みと報告しない。
+
+## 自動で押す（2026-10-15）
+
+`bash tablet/install-confirm.sh <apk>` が上の手順を 1 本にしたもの（install を裏で走らせ、ダイアログの見出しとアプリ名を照合して「インストール」を押す）。
+⚠ Git Bash から `adb exec-out cat /sdcard/ui.xml` を打つと `/sdcard` が `C:/Program Files/Git/sdcard` に化けて空を読み、押せないまま自動拒否される。`MSYS_NO_PATHCONV=1` を付ける（スクリプトは対処済み）。

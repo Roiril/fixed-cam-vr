@@ -22,6 +22,8 @@ Shader "FixedCamVr/CommsPanelPlate"
     Properties
     {
         _Color("Plate color (A = opacity)", Color) = (0.039, 0.035, 0.031, 0.72)
+        _Recovery("Recovery amount and time", Vector) = (0, 0, 0, 0)
+        _RecoveryRect("Recovery panel rect", Vector) = (0, 0, 1, 0.3)
         _Ink("Scrawl ink", Color) = (0.8196, 0.7804, 0.7216, 1)
         _InkAlpha("Scrawl opacity (0..1)", Range(0, 1)) = 1
         _Origin("Quad centre (panel-local m)", Vector) = (0, 0, 0, 0)
@@ -59,9 +61,12 @@ Shader "FixedCamVr/CommsPanelPlate"
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         #include "CommsCurse.hlsl"
+        #include "CommsRecovery.hlsl"
 
         CBUFFER_START(UnityPerMaterial)
             float4 _Color;
+            float4 _Recovery;
+            float4 _RecoveryRect;
             float4 _Ink;
             float _InkAlpha;
             float4 _Origin;
@@ -197,21 +202,26 @@ Shader "FixedCamVr/CommsPanelPlate"
                 // 層 A: 鋭い矩形。**枠そのものなので飛ばない**（本編の枠が乱れで動かないのと同じ）。
                 float sharp = 1.0 - smoothstep(-aa, aa, d);
 
-                // 層 B: 縁が毛羽立ち、外へ煙のようににじむ（「りんかくは不鮮明」）。中身なので帯ごとに飛ぶ。
-                float dB = RectDistance(p);
-                float2 e = p / max(_FrayCell, 1e-4);
-                float fn = CurseValueNoise(e + 5.3) * 0.65 + CurseValueNoise(e * 2.7 + 9.1) * 0.35;
-                float disp = (fn - 0.5) * 2.0 * _Fray;
-                float db = dB + disp;
-                float frayed = 1.0 - smoothstep(-0.004, 0.004, db);
-                float halo = (1.0 - smoothstep(0.0, max(_Halo, 1e-4), db)) * (0.55 + 0.45 * fn) * 0.38;
-                float cursed = saturate(frayed + halo * (1.0 - frayed)) * _CurseDensity;
+                // 呪い側が混ざらない警告/通常表示では、旧効果のノイズ4回を評価しない。
+                float plateA = sharp * _Color.a;
+                if (_Curse > 0.0 || _Sweep.x > 0.0)
+                {
+                    // 層 B: 縁が毛羽立ち、外へ煙のようににじむ（「りんかくは不鮮明」）。中身なので帯ごとに飛ぶ。
+                    float dB = RectDistance(p);
+                    float2 e = p / max(_FrayCell, 1e-4);
+                    float fn = CurseValueNoise(e + 5.3) * 0.65 + CurseValueNoise(e * 2.7 + 9.1) * 0.35;
+                    float disp = (fn - 0.5) * 2.0 * _Fray;
+                    float db = dB + disp;
+                    float frayed = 1.0 - smoothstep(-0.004, 0.004, db);
+                    float halo = (1.0 - smoothstep(0.0, max(_Halo, 1e-4), db)) * (0.55 + 0.45 * fn) * 0.38;
+                    float cursed = saturate(frayed + halo * (1.0 - frayed)) * _CurseDensity;
 
-                // 斑（0229）と、帯ごとに反転する塗り替わり（0230 / 0231）は同じ k に入る。どちらも層 B へ倒す。
-                // ⚠ 帯の反転は**生の y**で決める（帯は面に固定された格子。飛ぶのは帯の中身）。
-                float kSweep = CurseSweepK(pRaw, _Sweep);
-                float k = max(CurseK(CurseField(p), _Curse), kSweep);
-                float plateA = saturate(lerp(sharp, cursed, k)) * _Color.a;
+                    // 斑（0229）と、帯ごとに反転する塗り替わり（0230 / 0231）は同じ k に入る。どちらも層 B へ倒す。
+                    // ⚠ 帯の反転は**生の y**で決める（帯は面に固定された格子。飛ぶのは帯の中身）。
+                    float kSweep = CurseSweepK(pRaw, _Sweep);
+                    float k = max(CurseK(CurseField(p), _Curse), kSweep);
+                    plateA = saturate(lerp(sharp, cursed, k)) * _Color.a;
+                }
 
                 // 呪われた本文は赤い TMP が担う。走り書きと縁の糸線は描かない。
                 float ink = 0.0;
@@ -224,6 +234,26 @@ Shader "FixedCamVr/CommsPanelPlate"
                 // 象牙を地の上に置く（over）。明滅は出力の alpha に掛ける（暗い側へだけ）。
                 float outA = (ink + plateA * (1.0 - ink)) * _Tear.y;
                 float3 outRgb = (ink * _Ink.rgb + plateA * (1.0 - ink) * _Color.rgb) / max(ink + plateA * (1.0 - ink), 1e-4);
+                if (_Recovery.x > 0.001)
+                {
+                    float mask = CommsRecoveryMask(pRaw, _Recovery, _RecoveryRect);
+                    float grain = CommsRecoveryGrain(pRaw, _Recovery.y);
+                    // 暗い赤い面と正常な黒い面も、顔・文字と同じ斑で重なる。
+                    outRgb = lerp(_Color.rgb, float3(0.105, 0.012, 0.009), mask);
+                    outRgb *= 0.72 + grain * 0.56;
+                    float lines = CommsRecoveryLines(pRaw, _Recovery, _RecoveryRect) * mask;
+                    outRgb = lerp(outRgb, float3(0.24, 0.018, 0.012), lines * 0.75);
+                    float cuts = step(0.84, CurseHash21(float2(floor(pRaw.y / 0.006), floor(COMMS_RECOVERY_NOISE_PHASE * 10.0))));
+                    outRgb *= 1.0 - cuts * mask * 0.55;
+                    outA *= 0.9 + grain * 0.1;
+                }
+                if (_Recovery.z > 0.001)
+                {
+                    // ③a の起動（0280）: まだ点いていないブロックは抜け、点いたブロックは砂嵐、復号したブロックだけ中身。
+                    float2 boot = CommsBootReveal(pRaw, _Recovery.z, _RecoveryRect);
+                    outRgb = lerp(outRgb, CommsBootSand(pRaw, _Recovery.y), boot.y);
+                    outA = lerp(outA * boot.x, sharp * _Tear.y * 0.9, boot.y);
+                }
                 return half4(outRgb, outA);
             }
             ENDHLSL

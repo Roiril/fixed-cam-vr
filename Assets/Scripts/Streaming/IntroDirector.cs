@@ -207,6 +207,26 @@ namespace FixedCamVr.Streaming
                 var anchor = GameObject.Find("CenterEyeAnchor");
                 if (anchor != null) head = anchor.transform;
             }
+            // R061: 破片を置く部屋。覆いは ShowControlClient を知らないのでここから渡す（Editor のプレビューは自前で渡す）。
+            if (veil != null && veil.RoomDepthProvider == null) veil.RoomDepthProvider = BuildRoomDepth;
+        }
+
+        /// <summary>
+        /// R061: 破片を置く部屋（world 空間）。<b>位置合わせが済んでいて <c>layout.room</c> がある時だけ</b>組む —
+        /// 未登録だと course→world が identity へ落ちて現実の全然違う所に壁を置くことになるので、
+        /// そのときは従来の 1.6m の殻に戻す（理由はテレメトリの <c>shatDepth=off:…</c>）。
+        /// </summary>
+        private (IntroRoomDepth.Scene? scene, string reason) BuildRoomDepth()
+        {
+            if (showControl == null) return (null, "noshow");
+            var registered = showControl.CourseRegisteredProvider;
+            if (registered == null || !registered()) return (null, "unreg");
+            var toWorld = showControl.CourseToWorldProvider;
+            var yaw = showControl.CourseYawProvider;
+            if (toWorld == null || yaw == null) return (null, "nocourse");
+            ShowRoomDef? room = showControl.Room;
+            if (room == null || !room.HasData()) return (null, "noroom");
+            return (IntroRoomDepth.Build(room, toWorld, yaw()), "room");
         }
 
         private void OnIntroDefChanged(ShowIntroDef def)

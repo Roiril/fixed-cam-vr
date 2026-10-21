@@ -2,9 +2,13 @@
 
 - [virtual_walk.md](virtual_walk.md) - 2026-10-14。PC の仮想体験（`menu virtualwalk`）。NPC が歩き、実プレート＋CG 合成が実シェーダ・実 Director を通る。90Hz。前後比較は `tools/virtualwalk-video.py --compare`。エージェントスクリーンは `comms=1` と `tools/virtualwalk-comms.py`。`-Set` は引用しない。見た目の合否は実機。
 
+- [flow_walk_harness.md](flow_walk_harness.md) - 2026-10-17。起動〜準備〜来場者タブレット〜回収〜リセットを押す順に通しで撮る `tools/visitor-ui/flow-walk.cjs`（絵コンテ・期待・`--web-root` で前後比較）。回収の長押しを離した指が「来場者の画面にする」を押していた誤タップほか 7 点を直した。
+
+- [unexpected_event_recovery.md](unexpected_event_recovery.md) - 2026-10-21。Quest の休止・固まり・通信の揺れ・本編中の異常・詰まりからの復帰。休止を数えない `ShowClock`／`/status` の `health`／タブレットの強制リセット（`force:true`）／要再登録の永続／リセット工程の隔離。卓の操作は実機に届かない。
+
 - [staff_setup.md](staff_setup.md) - 2026-10-10。タブレット中心の準備・交代フロー。Questの並行位置合わせ。機器別の実状態。終幕中のリセット保護。新設定と説明と引き渡しの照合。検証と実機確認の範囲を記載。
 
-- [romi_cart_esp32.md](romi_cart_esp32.md) - 2026-10-07。人形を載せる台車（Pololu Romi）の制御は ESP32 + CP2102N（Joy-Con 2 を BLE で受ける自作スケッチ `jc2-romi`・起動は DISARMED）。この PC では CP210x ドライバ導入後 COM17／Silicon Labs の zip は curl だと 403・アプリ内ブラウザで取る／ピン配置と積載量は未確認。
+- [romi_cart_esp32.md](romi_cart_esp32.md) - 2026-10-17 終幕の自動走行（解除で /ending/go・電源断で /ending/cut・設定は台車の NVS・調整は博士タブレットの「困ったとき」）。2026-10-07。人形を載せる台車（Pololu Romi）の制御は ESP32 + CP2102N（Joy-Con 2 を BLE で受ける自作スケッチ `jc2-romi`・起動は DISARMED）。この PC では CP210x ドライバ導入後 COM17／Silicon Labs の zip は curl だと 403・アプリ内ブラウザで取る／ピン配置と積載量は未確認。
 
 - [experience_shots.md](experience_shots.md) - 2026-09-30。左グリップで体験中の画を 4 種類（スクリーン・生映像・合成のみ・体験者の視界）端末へ PNG 保存。**展示本番の機は `quest-shots.py off`**（体験者が握り込むと撃たれる・Dev ビルドは既定 ON）／④にパススルーは入らない／**描いた直後に一時カメラを壊すと RT が消える**／`adb pull` は 0 バイト・`exec-out cat` で取る／実機は未検証。
 
@@ -26,9 +30,9 @@
 
 - [closing_line_halt.md](closing_line_halt.md) - 2026-09-19の線判定の記録。2026-09-21に[ending_result.md](ending_result.md)で入場3秒の条件も有効にした。
 
-- [comms_curse.md](comms_curse.md) - 2026-09-18（0229）。連絡の面の壊れを「呪われた双子の画面が斑で重なる」形へ。斑の場は HLSL と C# の写し 1 対（顔・地・走り書き・文字の切断が共有）／**文字は地が書くステンシル bit 8 を TMP の材質が読んで切る**（1 パスでは書けない・fontMaterials 全部・ステンシルが無い形式では CPU の alpha 0 が保険）／面積は侵食度に等号で結ばない（0.25→22%・0.75→55%・1→全面）／「出た初めは通常 → 1 秒で重なる」は CommsPanelLogic が持つ（**0.25 だけ**）／**0.75 以降は斑ではなく前線**（0230・→ comms_takeover.md）。
+- [comms_curse.md](comms_curse.md) - 2026-09-18（0229）。**2026-10-17（0270）: ③a / ③b は「何とか戻ってきた」姿（弱った起動・顔の右に残る人形・脅威の句に残る赤・報告で消える）。電力は上げる方向だけ・赤は命令に載せない。**連絡の面の壊れを「呪われた双子の画面が斑で重なる」形へ。斑の場は HLSL と C# の写し 1 対（顔・地・走り書き・文字の切断が共有）／**文字は地が書くステンシル bit 8 を TMP の材質が読んで切る**（1 パスでは書けない・fontMaterials 全部・ステンシルが無い形式では CPU の alpha 0 が保険）／面積は侵食度に等号で結ばない（0.25→22%・0.75→55%・1→全面）／「出た初めは通常 → 1 秒で重なる」は CommsPanelLogic が持つ（**0.25 だけ**）／**0.75 以降は斑ではなく前線**（0230・→ comms_takeover.md）。
 
-- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) - 2026-09-15（0221〜0226・**採用済み**・実機 3 走行で割れる遷移を確認）。**2026-09-19（0235・R053）: 面を「光を通す結晶」へ・破断と同時に 512＋6 粒の光を飛ばし、代表 6 粒の反射で片が順に瞬く。`_Crystal/_SparkLit/_Spark`=0 で旧描画と画素一致（校正済み）／きらめきの格子は写真 uv ではなく辺までの距離（両眼一致）／明るさの持ち上げは detail で掛ける／std/mean は「くすみ」の指標にならない。** 現実が割れる遷移を映画の速度変化へ書き直した。集結は中心の磁石（漂いが止まり、全片が同時に引かれ、重い片ほど遅れて一気に加速、減速せずに嵌まる）。**着地した破片からその場所の映像**（ステンシルで隙間だけ黒・描画順 4900/4901/4902/4903）。ScreenOn は閉じる瞬間。段 4 は 5.0 秒（5 か所＋卓の show.json）。時計の表はシェーダ 1 つで、音と IntroLogic はその写し。形は起点からの網、質感はガラスの縁の光。短い窓の LUFS は −70 を返す／速い粒は半分の長さ／平均乱数は 0.1 を下回らない。
+- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) - 2026-09-15（0221〜0226・**採用済み**・実機 3 走行で割れる遷移を確認）。**2026-10-15（R061）: 破片は 1.6m の殻ではなく撮影時の部屋の面に乗る（片ごとに面を 1 つ・振り付けは名目の殻で解いて撮影時の頭を中心に奥行きだけ縮める・`shatDepth=`）。****2026-09-19（0235・R053）: 面を「光を通す結晶」へ・破断と同時に 512＋6 粒の光を飛ばし、代表 6 粒の反射で片が順に瞬く。`_Crystal/_SparkLit/_Spark`=0 で旧描画と画素一致（校正済み）／きらめきの格子は写真 uv ではなく辺までの距離（両眼一致）／明るさの持ち上げは detail で掛ける／std/mean は「くすみ」の指標にならない。** 現実が割れる遷移を映画の速度変化へ書き直した。集結は中心の磁石（漂いが止まり、全片が同時に引かれ、重い片ほど遅れて一気に加速、減速せずに嵌まる）。**着地した破片からその場所の映像**（ステンシルで隙間だけ黒・描画順 4900/4901/4902/4903）。ScreenOn は閉じる瞬間。段 4 は 5.0 秒（5 か所＋卓の show.json）。時計の表はシェーダ 1 つで、音と IntroLogic はその写し。形は起点からの網、質感はガラスの縁の光。短い窓の LUFS は −70 を返す／速い粒は半分の長さ／平均乱数は 0.1 を下回らない。
 
 - [staff_status_view.md](staff_status_view.md) - 2026-09-14。右 B のステータスは押しているあいだだけ出す。トグルをやめた理由／黒の上に描く 3 点（3D TMP・Overlay・queue 5000。sortingOrder では越えられない）／題字を譲らせない／faceButtonHeld から B を外した／電池 API は使わない／`ev=status` と `hudSec` と heartbeat `statusHud` の読み方。
 
@@ -45,7 +49,7 @@
 > `OPEN` = 未確定とシュビーの案 / `ROUNDS` = 周回の賭けと差）。混ぜない — 規律は `rules/canon-boundary.md`。
 > 作りこみの思想は `.claude/reference/why.md`。
 
-- [visitor_tablet.md](visitor_tablet.md) - 2026-10-03・0259。博士UIはAndroidタブレットの独立APK。画面と動画の正本は `tablet/app/src/main/assets/web/`。PCとQuestは画面の起動に不要。スタッフ設定でα／βを保存してQuestの:8090へ設定だけを送る。実値と反映番号を照合する。UI変更はタブレットAPKを更新する。机上の代役は `tools/visitor-portal-stub.py`。ビルドと導入は `tablet/README.md`。
+- [visitor_tablet.md](visitor_tablet.md) - 2026-10-16・0265で読む順の 1 列（問い → 選択肢と効果 → 進む）と説明の終わりの砂嵐（`signal-cut.js`）。2026-10-03・0259。博士UIはAndroidタブレットの独立APK。画面と動画の正本は `tablet/app/src/main/assets/web/`。PCとQuestは画面の起動に不要。スタッフ設定でα／βを保存してQuestの:8090へ設定だけを送る。実値と反映番号を照合する。UI変更はタブレットAPKを更新する。机上の代役は `tools/visitor-portal-stub.py`。ビルドと導入は `tablet/README.md`。
 - [redmi_tablet_install.md](redmi_tablet_install.md) - RedmiのUSBインストール確認は制限時間で自動拒否する。USER_RESTRICTEDだけで設定がオフとは判断しない。
 - [tablet_apk_zip_names.md](tablet_apk_zip_names.md) - Windows aapt2の資産名をPOSIX形式で再梱包する。Pythonの正規化済みZIP名だけでは検査しない。
 - [tablet_webview_media_range.md](tablet_webview_media_range.md) - WebViewへの資産ストリームは先頭から返す。Rangeの開始位置を二重に進めない。音声付きの通し再生と途中データの照合で確認する。

@@ -6,6 +6,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WebServer.h>
+#include <lwip/sockets.h>
 #include <esp_task_wdt.h>
 #include "soc/gpio_reg.h"
 #include "net.h"
@@ -33,7 +34,111 @@ static inline bool level(int pin) {
 static const int WEB_DUTY_MAX = 700;    // 元スケッチの上限（0x2BC）に合わせる
 static const int WEB_MS_MAX = 8000;
 static const int RAMP_MS = 120;         // 立ち上げの直線ランプ（スリップを減らす）
-static WebServer server(80);
+// 素の WebServer は接続を 1 本ずつ捌き、届いた接続の要求を「来るまで待って」読む。
+//   ・接続しただけで何も送らない相手（Chrome の preconnect）を最大 5 秒待つ（HTTP_MAX_DATA_WAIT）
+//   ・要求の途中で止まった相手（電波が切れた・本文が来ない POST）を読み終わるまで最大 5 秒止まる
+// どちらもその間ループごと止まる。タブレット・Quest の要求は全部待たされて打ち切られ、走行の停止も遅れる
+// （2026-10-21 の試験で loopMaxMs 5005・タブレット 6 回中 5 回失敗）。
+// そこで、受けた接続を最大 WEB_PENDING_MAX 本まで並べて置き、ソケットを MSG_PEEK で覗いて
+// 「要求が全部届いた」ものだけを素の WebServer に渡す（渡した時点で読み切れるので待たない）。
+// 届かないまま WEB_PENDING_DROP_MS たった接続は、ほかを待たせずに捨てる。
+// ⚠ 素の handleClient の中身（HC_WAIT_READ で読み、終われば HC_NONE に戻す）に依存する。core を上げたら読み直す
+#if !defined(ESP_ARDUINO_VERSION) || ESP_ARDUINO_VERSION != ESP_ARDUINO_VERSION_VAL(3, 3, 8)
+#error "RomiWebServer は arduino-esp32 3.3.8 の WebServer::handleClient の中身に合わせてある。版を変えたら確かめ直す"
+#endif
+static const int WEB_PENDING_MAX = 6;            // ソケットは全体で 16 本（待ち受け・UDP・mDNS の分を残す）
+static const uint32_t WEB_PENDING_DROP_MS = 3000;
+static const size_t WEB_PEEK_MAX = 4608;         // いちばん大きい要求（POST /sc の 3500 バイト＋ヘッダ）が入る
+class RomiWebServer : public WebServer {
+ public:
+  using WebServer::WebServer;
+  uint32_t idleDrops = 0;     // 要求が届かないまま捨てた接続
+  uint32_t fullDrops = 0;     // 並びが満杯で捨てた接続（古い方から）
+  uint32_t served = 0;
+
+  void handleClient() override {
+    // 素の handleClient は HC_NONE のとき accept と読み込みを同じ呼び出しでするので、受けるのはこちらでやる
+    for (int guard = 0; guard < WEB_PENDING_MAX; guard++) {
+      NetworkClient c = _server.accept();
+      if (!c) break;
+      if (_pendingN == WEB_PENDING_MAX) { dropPending(0); fullDrops++; }
+      _pending[_pendingN] = c;
+      _pendingAt[_pendingN] = millis();
+      _pendingN++;
+    }
+    for (int i = 0; i < _pendingN;) {
+      int state = requestState(_pending[i]);
+      if (state > 0) {                        // 全部届いた: 素の WebServer に読ませて返す
+        _currentClient = _pending[i];
+        removePending(i);
+        _currentStatus = HC_WAIT_READ;
+        _statusChange = millis();
+        WebServer::handleClient();
+        if (_currentStatus != HC_NONE) {      // 念のため（素の版は SSE 以外で接続を残さない）
+          _currentClient = NetworkClient();
+          _currentStatus = HC_NONE;
+        }
+        served++;
+        continue;
+      }
+      if (state < 0 || millis() - _pendingAt[i] > WEB_PENDING_DROP_MS) {
+        if (state == 0) idleDrops++;
+        dropPending(i);
+        continue;
+      }
+      i++;
+    }
+    if (_pendingN == 0) delay(1);             // 素の版と同じく、待つ相手が居なければ 1ms 譲る
+  }
+
+ private:
+  NetworkClient _pending[WEB_PENDING_MAX];
+  uint32_t _pendingAt[WEB_PENDING_MAX] = {};
+  int _pendingN = 0;
+  static uint8_t _peekBuf[WEB_PEEK_MAX];
+
+  void removePending(int i) {
+    for (int k = i; k + 1 < _pendingN; k++) { _pending[k] = _pending[k + 1]; _pendingAt[k] = _pendingAt[k + 1]; }
+    _pendingN--;
+    _pending[_pendingN] = NetworkClient();
+  }
+  void dropPending(int i) {
+    _pending[i].stop();
+    removePending(i);
+  }
+  // 1: 要求が全部届いた  0: まだ  -1: 相手が閉じた・壊れた
+  static int requestState(NetworkClient &c) {
+    int fd = c.fd();
+    if (fd < 0) return -1;
+    // ⚠ lwIP の MSG_PEEK は届いた最初の 1 片しか見せない（ヘッダと本文を別のパケットで送る相手＝Python・
+    // UnityWebRequest では本文が見えない）。届いた総量は FIONREAD で数え、覗き見はヘッダを読むのにだけ使う
+    int n = recv(fd, _peekBuf, sizeof(_peekBuf) - 1, MSG_PEEK | MSG_DONTWAIT);
+    if (n == 0) return -1;                                   // 何も送らずに閉じた
+    if (n < 0) return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
+    int total = 0;
+    if (ioctl(fd, FIONREAD, &total) < 0 || total < n) total = n;
+    _peekBuf[n] = 0;
+    const char *head = (const char *)_peekBuf;
+    const char *end = strstr(head, "\r\n\r\n");
+    // ヘッダが最初の 1 片に収まっていない: 後ろの片も届いていれば素の版に読ませる（ふつうは起きない）
+    if (!end) return (total > n || n >= (int)sizeof(_peekBuf) - 1) ? 1 : 0;
+    size_t headerLen = (end - head) + 4;
+    long length = 0;
+    for (const char *p = head; p && p < end;) {              // Content-Length（大文字小文字を問わない）
+      const char *line = p;
+      const char *nl = strstr(line, "\r\n");
+      if (strncasecmp(line, "Content-Length:", 15) == 0) length = strtol(line + 15, nullptr, 10);
+      p = nl ? nl + 2 : nullptr;
+    }
+    if (length <= 0) return 1;
+    return total >= (int)(headerLen + length) ? 1 : 0;
+  }
+};
+uint8_t RomiWebServer::_peekBuf[WEB_PEEK_MAX];
+// ループが止まった最長時間（ms）。走行の停止・ジョイスティックの安全停止はループで回るので、ここが伸びると止まるのが遅れる。
+// /info?clear=1 で 0 に戻す（試験の区切り）
+static uint32_t loopLastAt = 0, loopMaxMs = 0, loopMaxAtMs = 0;
+static RomiWebServer server(80);
 
 struct Run {
   bool active = false;
@@ -78,13 +183,33 @@ struct Joy {
 // --- ショートカット（一連の動きを台車側で順に実行する。スマホの通信が切れても時間どおりに進む）---
 // 手順の文字列: "s:1:100:40,r:-1:90:40,w:0:500:0"（種類:向き:量:強さ%）
 //   s=直進（量 cm・向き +1 前進/-1 後退）/ r=回転（量 度・向き +1 右/-1 左）/ w=待つ（量 ms）
+//   S / R = 時間で決める直進・回転（量 ms・50〜8000）。較正に頼らないので、終幕の走行はこちらを使う
 struct Step { char m; int d; float v; int duty; };
 struct Seq {
-  bool active = false, running = false;
+  bool active = false, running = false, ending = false;
   Step st[12];
   int n = 0, idx = 0, flip = 0, trim = 0;
   uint32_t nextAt = 0, id = 0, started = 0;
 } seq;
+
+// --- 終幕の自動走行（体験者が最後の異常を解除した合図で、台車が決めた動きをする）---
+// 合図は Quest が送る（POST /ending/go）。待つ → 回転 → 前進 を時間と強さで持ち、NVS に保存する。
+// 時間で持つのは、Quest 側の電源断（報告から約 7.1 秒）と重ねる位置を秒で合わせたいから。
+struct Ending {
+  int en = 1;                                     // 0 = Quest の合図では動かない（タブレットの試走は動く）
+  int delayMs = 3500;                             // 合図から回り始めるまで
+  int rotDir = 1, rotDuty = 40, rotMs = 1400;     // +1 右 / -1 左。40% 1.4 秒 ≒ 180 度（USB 給電の実測）
+  int fwdDir = 1, fwdDuty = 40, fwdMs = 3400;     // +1 前進 / -1 後退。40% 3.4 秒 ≒ 60cm（同上）
+  int stopAtCut = 0;                              // 1 = 電源断の合図（/ending/cut）で台車も止める
+  uint32_t ver = 0;
+} ending;
+struct EndingRun {
+  uint32_t goAt = 0, seqId = 0;
+  int32_t cutMs = -1;                             // 合図から電源断までの実測（Quest が送ってきた時刻）
+  int dry = 0, stopped = 0;
+  String src = "", key = "";                     // key = 送り手が付ける合図の名前（再送で頭からやり直さない）
+} endingLast;
+static uint32_t endingGoCount = 0;
 static const uint32_t SEQ_GAP_MS = 250;   // 動きの間に挟む整定の時間
 static uint32_t seqCounter = 0;
 static bool seqInternal = false;           // seq 自身が startRun を呼ぶときだけ true
@@ -101,6 +226,7 @@ static void stopOutputs() {
 
 // すべて止める。ショートカットも中断する（停止ボタン・切断・シリアルの stop）
 static void stopAll() {
+  if (seq.active && seq.ending) endingLast.stopped = 1;
   if (seq.active) Serial.printf("EVT seq abort id=%u at=%d/%d t=%lu\n", (unsigned)seq.id, seq.idx, seq.n, millis());
   seq.active = false; seq.running = false;
   stopOutputs();
@@ -328,7 +454,9 @@ static int seqParse(const String &str) {
     char m = 0; int d = 0, duty = 0; float v = 0;
     if (sscanf(tok.c_str(), "%c:%d:%f:%d", &m, &d, &v, &duty) < 3) return 0;
     if (m == 'w') { if (v < 0 || v > 20000) return 0; }
-    else {
+    else if (m == 'S' || m == 'R') {
+      if ((d != 1 && d != -1) || v < 50 || v > WEB_MS_MAX || duty < 1 || duty > 100) return 0;
+    } else {
       if ((m != 's' && m != 'r') || (d != 1 && d != -1)) return 0;
       if (planMs(m, duty, v, nullptr) < 0) return 0;
     }
@@ -344,7 +472,7 @@ static int seqStart(const String &str, int flip, int trim, const String &name) {
   if (run.active || joy.active || joy.curL != 0 || joy.curR != 0 || seq.active) return -1;
   int n = seqParse(str);
   if (n <= 0) return -2;
-  seq.n = n; seq.idx = 0; seq.flip = flip; seq.trim = clampi(trim, -20, 20);
+  seq.n = n; seq.idx = 0; seq.flip = flip; seq.trim = clampi(trim, -20, 20); seq.ending = false;
   seq.id = ++seqCounter; seq.started = millis(); seq.nextAt = seq.started; seq.running = false; seq.active = true;
   Serial.printf("EVT seq start id=%u n=%d name=%s steps=%s flip=%d t=%lu\n", (unsigned)seq.id, n, clean(name, 40).c_str(), clean(str, 200).c_str(), flip, millis());
   return (int)seq.id;
@@ -363,7 +491,9 @@ static void seqTick() {
   Step s = seq.st[seq.idx++];
   if (s.m == 'w') { seq.nextAt = now + (uint32_t)s.v; return; }
   seqInternal = true;
-  int id = startRun(s.m, s.d, s.duty, s.v, 0, seq.trim, seq.flip, "seq", "", nullptr, nullptr);
+  bool timed = s.m == 'S' || s.m == 'R';
+  int id = startRun(timed ? (char)(s.m + ('a' - 'A')) : s.m, s.d, s.duty, timed ? 0.f : s.v, timed ? (uint32_t)s.v : 0,
+                    seq.trim, seq.flip, seq.ending ? "ending" : "seq", "", nullptr, nullptr);
   seqInternal = false;
   if (id < 0) {
     Serial.printf("EVT seq error id=%u step=%d code=%d t=%lu\n", (unsigned)seq.id, seq.idx, id, now);
@@ -425,6 +555,178 @@ static void httpScSet() {
   jsonSend("{\"ok\":1}");
 }
 
+// --- 終幕の自動走行 ---
+static void endingLoad() {
+  prefs.begin("romi", true);
+  ending.en = prefs.getInt("e_en", ending.en);
+  ending.delayMs = prefs.getInt("e_dl", ending.delayMs);
+  ending.rotDir = prefs.getInt("e_rd", ending.rotDir);
+  ending.rotDuty = prefs.getInt("e_ru", ending.rotDuty);
+  ending.rotMs = prefs.getInt("e_rm", ending.rotMs);
+  ending.fwdDir = prefs.getInt("e_fd", ending.fwdDir);
+  ending.fwdDuty = prefs.getInt("e_fu", ending.fwdDuty);
+  ending.fwdMs = prefs.getInt("e_fm", ending.fwdMs);
+  ending.stopAtCut = prefs.getInt("e_sc", ending.stopAtCut);
+  ending.ver = prefs.getUInt("e_ver", 0);
+  prefs.end();
+}
+
+static void endingSave() {
+  ending.ver++;
+  prefs.begin("romi", false);
+  prefs.putInt("e_en", ending.en); prefs.putInt("e_dl", ending.delayMs);
+  prefs.putInt("e_rd", ending.rotDir); prefs.putInt("e_ru", ending.rotDuty); prefs.putInt("e_rm", ending.rotMs);
+  prefs.putInt("e_fd", ending.fwdDir); prefs.putInt("e_fu", ending.fwdDuty); prefs.putInt("e_fm", ending.fwdMs);
+  prefs.putInt("e_sc", ending.stopAtCut); prefs.putUInt("e_ver", ending.ver);
+  prefs.end();
+}
+
+// 平らな JSON（{"a":1,"b":"x"}）から値を 1 つ読む。入れ子は扱わない。見つからなければ false。
+static bool jsonNum(const String &body, const char *key, float *out) {
+  String k = String("\"") + key + "\"";
+  int i = body.indexOf(k);
+  if (i < 0) return false;
+  i = body.indexOf(':', i + k.length());
+  if (i < 0) return false;
+  const char *p = body.c_str() + i + 1;
+  while (*p == ' ') p++;
+  if (*p == 't') { *out = 1; return true; }   // true / false も数として受ける
+  if (*p == 'f') { *out = 0; return true; }
+  char *end = nullptr;
+  float v = strtof(p, &end);
+  if (end == p) return false;
+  *out = v;
+  return true;
+}
+
+static String jsonStr(const String &body, const char *key) {
+  String k = String("\"") + key + "\"";
+  int i = body.indexOf(k);
+  if (i < 0) return "";
+  i = body.indexOf('"', body.indexOf(':', i + k.length()) + 1);
+  if (i < 0) return "";
+  int j = body.indexOf('"', i + 1);
+  return j < 0 ? "" : body.substring(i + 1, j);
+}
+
+// 予定の量（較正から）。時間で動かすので目安にすぎない（電池を入れると速くなる）。
+static float endingEstDeg() {
+  float r = cal.rv * (ending.rotDuty - cal.rd);
+  float t = (ending.rotMs - cal.rt) / 1000.f;
+  return (r > 0 && t > 0) ? r * t : 0;
+}
+static float endingEstCm() {
+  float r = cal.sv * (ending.fwdDuty - cal.sd);
+  float t = (ending.fwdMs - cal.st) / 1000.f;
+  return (r > 0 && t > 0) ? r * t : 0;
+}
+
+static String endingJson() {
+  const char *state = "idle";
+  if (endingLast.goAt) {
+    if (endingLast.dry) state = "dry";
+    else if (seq.active && seq.ending && seq.id == endingLast.seqId) state = "running";
+    else state = endingLast.stopped ? "stopped" : "done";
+  }
+  return "{\"en\":" + String(ending.en) + ",\"delayMs\":" + String(ending.delayMs) + ",\"rotDir\":" + String(ending.rotDir) +
+         ",\"rotDuty\":" + String(ending.rotDuty) + ",\"rotMs\":" + String(ending.rotMs) + ",\"fwdDir\":" + String(ending.fwdDir) +
+         ",\"fwdDuty\":" + String(ending.fwdDuty) + ",\"fwdMs\":" + String(ending.fwdMs) + ",\"stopAtCut\":" + String(ending.stopAtCut) +
+         ",\"ver\":" + String(ending.ver) + ",\"gapMs\":" + String(SEQ_GAP_MS) + ",\"dutyMax\":" + String(WEB_DUTY_MAX * 100 / 1023) +
+         ",\"msMax\":" + String(WEB_MS_MAX) + ",\"estDeg\":" + String(endingEstDeg(), 0) + ",\"estCm\":" + String(endingEstCm(), 1) +
+         ",\"calVer\":" + String(cal.ver) + ",\"busy\":" + String((run.active || seq.active || joyMoving()) ? 1 : 0) +
+         ",\"last\":{\"state\":\"" + state + "\",\"src\":\"" + clean(endingLast.src, 16) + "\",\"agoMs\":" +
+         String(endingLast.goAt ? millis() - endingLast.goAt : 0) + ",\"cutMs\":" + String(endingLast.cutMs) +
+         ",\"count\":" + String(endingGoCount) + "},\"cal\":" + calJson() + "}";
+}
+
+// 返り値: seq id(>0) / 0=空走（dry）/ -1=ジョイスティック操作中 / -4=無効にしてある / -2=動きが 1 つも無い
+// lateMs: 合図が遅れて届いた分（Quest が送り直した時間）。最初の待ちから差し引き、画面の電源断との間合いを保つ
+static int endingStart(const String &src, bool dry, bool force, const String &key = "", uint32_t lateMs = 0) {
+  // 同じ合図の再送（応答が届かなかった Quest が送り直した）なら、走っている動きをやり直さない
+  if (key.length() && key == endingLast.key && endingLast.goAt && millis() - endingLast.goAt < 30000) {
+    Serial.printf("EVT ending dup key=%s t=%lu\n", clean(key, 24).c_str(), millis());
+    return dry ? 0 : (int)endingLast.seqId;
+  }
+  if (!ending.en && !force) return -4;
+  if (ending.rotMs <= 0 && ending.fwdMs <= 0) return -2;
+  if (joyMoving()) return -1;   // スタッフが手で動かしている最中は奪わない
+  endingGoCount++;
+  if (lateMs > 10000) lateMs = 10000;
+  endingLast.goAt = millis() - lateMs; endingLast.seqId = 0; endingLast.cutMs = -1; endingLast.dry = dry ? 1 : 0;
+  endingLast.stopped = 0; endingLast.src = src; endingLast.key = key;
+  if (dry) {
+    Serial.printf("EVT ending dry src=%s t=%lu\n", clean(src, 16).c_str(), millis());
+    return 0;
+  }
+  if (run.active || seq.active) {   // 試走やショートカットの途中でも、本番の合図を優先する
+    Serial.printf("EVT ending preempt t=%lu\n", millis());
+    stopAll();
+  }
+  int n = 0;
+  int delayMs = ending.delayMs > (int)lateMs ? ending.delayMs - (int)lateMs : 0;
+  if (delayMs > 0) seq.st[n++] = {'w', 0, (float)delayMs, 0};
+  if (ending.rotMs > 0) seq.st[n++] = {'R', ending.rotDir, (float)ending.rotMs, ending.rotDuty};
+  if (ending.fwdMs > 0) seq.st[n++] = {'S', ending.fwdDir, (float)ending.fwdMs, ending.fwdDuty};
+  seq.n = n; seq.idx = 0; seq.flip = 0; seq.trim = 0; seq.ending = true;
+  seq.id = ++seqCounter; seq.started = millis(); seq.nextAt = seq.started; seq.running = false; seq.active = true;
+  endingLast.seqId = seq.id;
+  Serial.printf("EVT ending go id=%u src=%s force=%d late=%u delay=%d rot=%d:%d:%d fwd=%d:%d:%d ver=%u t=%lu\n", (unsigned)seq.id,
+                clean(src, 16).c_str(), force ? 1 : 0, (unsigned)lateMs, delayMs, ending.rotDir, ending.rotDuty, ending.rotMs, ending.fwdDir,
+                ending.fwdDuty, ending.fwdMs, (unsigned)ending.ver, millis());
+  return (int)seq.id;
+}
+
+// 電源断の合図。時刻を記録し、設定で選ばれていれば台車も止める
+static void endingCut() {
+  if (!endingLast.goAt || endingLast.cutMs >= 0) return;
+  endingLast.cutMs = (int32_t)(millis() - endingLast.goAt);
+  bool running = seq.active && seq.ending && seq.id == endingLast.seqId;
+  if (ending.stopAtCut && running) { stopAll(); endingLast.stopped = 1; }
+  Serial.printf("EVT ending cut at=%ld running=%d stop=%d t=%lu\n", (long)endingLast.cutMs, running ? 1 : 0, endingLast.stopped, millis());
+}
+
+static void httpEndingGet() { jsonSend(endingJson()); }
+
+static void httpEndingSet() {
+  String b = server.arg("plain");
+  float v;
+  struct { const char *k; int *p; int lo, hi; } t[] = {
+    {"en", &ending.en, 0, 1}, {"delayMs", &ending.delayMs, 0, 20000},
+    {"rotDuty", &ending.rotDuty, 10, WEB_DUTY_MAX * 100 / 1023}, {"rotMs", &ending.rotMs, 0, WEB_MS_MAX},
+    {"fwdDuty", &ending.fwdDuty, 10, WEB_DUTY_MAX * 100 / 1023}, {"fwdMs", &ending.fwdMs, 0, WEB_MS_MAX},
+    {"stopAtCut", &ending.stopAtCut, 0, 1}};
+  for (auto &e : t)
+    if (jsonNum(b, e.k, &v)) *e.p = clampi((int)lroundf(v), e.lo, e.hi);
+  if (jsonNum(b, "rotDir", &v)) ending.rotDir = v < 0 ? -1 : 1;
+  if (jsonNum(b, "fwdDir", &v)) ending.fwdDir = v < 0 ? -1 : 1;
+  // 0 は「その動きを省く」。1〜49ms は駆動できないので 50ms へ上げる
+  if (ending.rotMs > 0 && ending.rotMs < 50) ending.rotMs = 50;
+  if (ending.fwdMs > 0 && ending.fwdMs < 50) ending.fwdMs = 50;
+  endingSave();
+  Serial.printf("EVT ending saved ver=%u en=%d delay=%d rot=%d:%d:%d fwd=%d:%d:%d cut=%d t=%lu\n", (unsigned)ending.ver, ending.en,
+                ending.delayMs, ending.rotDir, ending.rotDuty, ending.rotMs, ending.fwdDir, ending.fwdDuty, ending.fwdMs,
+                ending.stopAtCut, millis());
+  jsonSend(endingJson());
+}
+
+static void httpEndingGo() {
+  String b = server.arg("plain");
+  float v;
+  String src = jsonStr(b, "src");
+  if (!src.length()) src = server.arg("src");
+  bool dry = (jsonNum(b, "dry", &v) && v != 0) || server.arg("dry") == "1";
+  bool force = (jsonNum(b, "force", &v) && v != 0) || server.arg("force") == "1";
+  uint32_t lateMs = (jsonNum(b, "lateMs", &v) && v > 0) ? (uint32_t)v : 0;
+  int id = endingStart(src.length() ? src : "?", dry, force, jsonStr(b, "key"), lateMs);
+  if (id >= 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + ",\"dry\":" + String(dry ? 1 : 0) + ",\"ver\":" + String(ending.ver) + "}");
+  else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : (id == -4 ? "disabled" : "empty")) + "\"}");
+}
+
+static void httpEndingCut() {
+  endingCut();
+  jsonSend("{\"ok\":1,\"cutMs\":" + String(endingLast.cutMs) + ",\"stopped\":" + String(endingLast.stopped) + "}");
+}
+
 static void httpStop() {
   stopAll();
   Serial.printf("EVT stop t=%lu\n", millis());
@@ -468,7 +770,9 @@ static String infoJson() {
   return String("{\"proto\":\"") + DISC_PROTO + "\",\"show\":\"" + DISC_SHOW + "\",\"role\":\"cart\",\"id\":\"R\",\"uuid\":\"" + netUuid +
          "\",\"version\":\"" + FW_VERSION + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"rssi\":" + String(WiFi.RSSI()) +
          ",\"up\":" + String(millis() / 1000) + ",\"drops\":" + String(netDrops) + ",\"lastReason\":" + String(netLastReason) +
-         ",\"reset\":\"" + resetName() + "\",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) + "}";
+         ",\"reset\":\"" + resetName() + "\",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) +
+         ",\"idleDrops\":" + String(server.idleDrops) + ",\"fullDrops\":" + String(server.fullDrops) + ",\"served\":" + String(server.served) + ",\"loopMaxMs\":" + String(loopMaxMs) +
+         ",\"loopMaxAgoMs\":" + String(loopMaxMs ? millis() - loopMaxAtMs : 0) + "}";
 }
 
 static void startWeb() {
@@ -490,9 +794,17 @@ static void startWeb() {
   server.on("/sc", HTTP_GET, httpScGet);
   server.on("/sc", HTTP_POST, httpScSet);
   server.on("/state", HTTP_GET, httpState);
+  server.on("/ending", HTTP_GET, httpEndingGet);
+  server.on("/ending", HTTP_POST, httpEndingSet);
+  server.on("/ending/go", HTTP_POST, httpEndingGo);
+  server.on("/ending/cut", HTTP_POST, httpEndingCut);
   server.on("/res", HTTP_GET, httpRes);
   server.on("/cal", HTTP_GET, httpCal);
-  server.on("/info", HTTP_GET, []() { jsonSend(infoJson()); });
+  server.on("/info", HTTP_GET, []() {
+    String body = infoJson();
+    if (server.hasArg("clear")) { loopMaxMs = 0; loopMaxAtMs = 0; }
+    jsonSend(body);
+  });
   server.on("/health", HTTP_GET, []() { jsonSend("{\"ok\":1,\"up\":" + String(millis() / 1000) + ",\"busy\":" + String(run.active ? 1 : 0) + "}"); });
   server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
   server.begin();
@@ -506,6 +818,7 @@ static void help() {
   Serial.println("  d <side 0|1> <dir 0|1> <duty 0..800> <ms 1..4000>   drive one motor, count edges on input pins");
   Serial.println("  scan <ms> | aux <0|1> | raw <pin 16..19> <0|1> | i2c <sda> <scl>");
   Serial.println("  cal | cal set <key>=<v> ...   keys: sv sd st rv rd rt");
+  Serial.println("  ending | ending go | ending dry | ending cut   final-scene auto run (config: GET/POST /ending)");
   Serial.println("  wifi status | wifi scan | wifi set <ssid>|<pass> | wifi ssid <ssid> | wifi clear | wifi kick");
 }
 
@@ -526,6 +839,11 @@ static void handle(String line) {
   else if (line == "adc") adcScan();
   else if (line == "adcall") adcAll();
   else if (line == "cal") Serial.println(calJson());
+  else if (line == "ending") Serial.println(endingJson());
+  else if (line == "ending go" || line == "ending dry") {
+    int id = endingStart("serial", line == "ending dry", true);
+    Serial.println(id >= 0 ? "started" : (id == -1 ? "ERR busy" : "ERR empty"));
+  } else if (line == "ending cut") endingCut();
   else if (line.startsWith("cal set ")) {
     String rest = line.substring(8);
     int pos = 0;
@@ -645,6 +963,7 @@ void setup() {
   esp_task_wdt_reconfigure(&twdt);
   esp_task_wdt_add(NULL);
   calLoad();
+  endingLoad();
   netBegin();       // ブロックしない。接続はイベントとバックオフで進める
   startWeb();
   delay(300);
@@ -655,6 +974,9 @@ void setup() {
 void loop() {
   static String buf;
   esp_task_wdt_reset();
+  uint32_t loopNow = millis();
+  if (loopLastAt && loopNow - loopLastAt > loopMaxMs) { loopMaxMs = loopNow - loopLastAt; loopMaxAtMs = loopNow; }
+  loopLastAt = loopNow;
   server.handleClient();
   runTick();
   joyTick();

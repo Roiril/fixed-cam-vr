@@ -81,13 +81,17 @@ Shader "FixedCamVr/IntroFracture"
                 float4 macro : TEXCOORD2;
                 float4 surface : TEXCOORD3;
                 float4 edgeDistances : TEXCOORD4;
+                // R061: 撮影時の部屋の奥行き（IntroRoomDepth.FractureChannel）。x = 頂点 / y = 片の中心。
+                // 名目の殻（半径 1.6m）に対する倍率で、部屋が無ければ 1。
+                float2 roomDepth : TEXCOORD5;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float3 positionWS : TEXCOORD0;
+                // xyz = 部屋の奥行きへ置いた位置 / w = 名目の位置からの倍率（撮影時の頭が中心）。
+                float4 positionWS : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
                 float3 leftUv : TEXCOORD2;
                 float3 rightUv : TEXCOORD3;
@@ -99,13 +103,17 @@ Shader "FixedCamVr/IntroFracture"
                 float4 edgeDistances : TEXCOORD7;
                 // x = 予兆の亀裂の光 / y = 破断・一撃の閃き / z = 着地の閃き / w = スロー中の閃き
                 nointerpolation float4 light : TEXCOORD8;
-                nointerpolation float landed : TEXCOORD9;
+                // x = 着地の度合い / y = 両眼を同じカメラの写真へ寄せる量（R060・剥がれると 1）/ z = その写真のカメラ（0 左 / 1 右）
+                // w = 着地後に残す縁の重み（着地からの経過と片の大きさ）
+                nointerpolation float4 landedMono : TEXCOORD9;
                 // 代表の粒（IntroSpark.hlsl の HeroSpark）のうち、この片にいちばん近い 2 灯。
                 // xyz = world の位置 / w = 明るさ 0..1（0 = まだ生まれていない or 消えた）。
                 nointerpolation float4 spark0 : TEXCOORD10;
                 nointerpolation float4 spark1 : TEXCOORD11;
                 // x = 6 灯の柔らかい照りの総和 / y = 片ごとの種（薄膜の色の位相）
                 nointerpolation float2 sparkSoft : TEXCOORD12;
+                // 片ごとに選んだカメラの写真の uv（xy は q を掛けた同次座標・z = q・w = 撮影範囲の判定）。
+                float4 monoUv : TEXCOORD13;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -128,6 +136,8 @@ Shader "FixedCamVr/IntroFracture"
             float4 _FrozenLeftTex_TexelSize;
             float4 _FrozenRightTex_TexelSize;
             float _SparkLit;
+            // R060: 1 なら頂点を 1 点へ潰して何も描かない。段 4 の描画状態を導入の手前で作っておくための描画（IntroVeil.WarmUp）。
+            float _IntroWarm;
             float4 _VeilSize;
             float4 _ScreenCenter;
             float4 _ScreenRight;
@@ -191,6 +201,13 @@ Shader "FixedCamVr/IntroFracture"
                      + normalize(_ScreenUp.xyz) * (_ScreenHalf.y * (uv.y * 2.0 - 1.0));
             }
 
+            float3 SampleFrozen(float source, float2 uv)
+            {
+                return source < 0.5
+                    ? SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, uv).rgb
+                    : SAMPLE_TEXTURE2D(_FrozenRightTex, sampler_FrozenRightTex, uv).rgb;
+            }
+
             Varyings vert(Attributes v)
             {
                 Varyings o;
@@ -203,6 +220,10 @@ Shader "FixedCamVr/IntroFracture"
                 float2 pieceNoise2 = IntroShardHash2(v.small.xy + 0.37, v.macro.w + 29.0);
                 float3 rawVertex = FractureShellPoint(v.positionOS.xy);
                 float3 rawPieceCenter = FractureShellPoint(v.small.xy);
+                // R061: 撮影の瞬間に部屋の面に乗っていた点。写真はここから引く（撮影カメラは頭から数 cm ずれているので、
+                // 1.6m の殻の点から引くと中身がその視差ぶんずれる）。撮影位置から見た向きは名目の点と同じ。
+                float3 restVertex = rawVertex * v.roomDepth.x;
+                float3 restPieceCenter = rawPieceCenter * v.roomDepth.y;
                 float3 rawMacroCenter = FractureShellPoint(v.macro.xy);
                 float3 macroRay = normalize(rawMacroCenter);
                 float3 macroTangentX = normalize(float3(1.0, 0.0,
@@ -268,14 +289,18 @@ Shader "FixedCamVr/IntroFracture"
                 // 速さ（m/s）。進みの微分 × 行程の長さ ÷ 段の秒数。伸びと着地の閃きに使う。
                 float pullRate = pullPow * pow(max(pullT, 1e-4), pullPow - 1.0) / pullLen;
                 float pullStart = PullStart;
-                float alignment = travel;
+                // 向きは位置より先に揃う（磁石に吸われる方位磁針）。位置は t^k のまま減速せずに嵌まるが、
+                // 向きまで同じ travel で戻すと、最後の 0.3 秒に回転が最速（小片で 150〜215°/s）のまま止まり、
+                // 白い反射帯が 1 フレームに帯幅の数本ぶん飛んで明滅する（HMD でだけ目立つ・2026-10-17）。
+                // 1-(1-t)^2 は着地の瞬間に角速度 0。
+                float alignment = 1.0 - (1.0 - pullT) * (1.0 - pullT);
                 float seal = travel;
                 float detail = crack * (1.0 - seal);
 
                 float3 startCenter = mul(_CaptureHeadToWorld, float4(flightCenter, 1.0)).xyz;
                 float3 sourceRelative = mul((float3x3)_CaptureHeadToWorld, relativeSource);
-                float3 captureWorld = mul(_CaptureHeadToWorld, float4(rawVertex, 1.0)).xyz;
-                float3 captureCenterWorld = mul(_CaptureHeadToWorld, float4(rawPieceCenter, 1.0)).xyz;
+                float3 captureWorld = mul(_CaptureHeadToWorld, float4(restVertex, 1.0)).xyz;
+                float3 captureCenterWorld = mul(_CaptureHeadToWorld, float4(restPieceCenter, 1.0)).xyz;
                 float3 targetCenter = _HasFrozenFrame > 0.5
                     ? FrozenScreenPoint(captureCenterWorld) : ScreenPoint(v.small.xy);
                 float3 targetVertex = _HasFrozenFrame > 0.5
@@ -293,9 +318,10 @@ Shader "FixedCamVr/IntroFracture"
                 float pullDistance = length(pullPath);
                 float3 pullDir = SafeNormalize(pullPath, screenNormal);
                 float speed = pullRate * pullDistance / 5.0 * step(1e-4, 1.0 - travel);
-                // 速い片は進行方向に伸びる（後処理の無い VR での速さの表現）。嵌まる直前の 8% で元へ戻す。
+                // 速い片は進行方向に伸びる（後処理の無い VR での速さの表現）。嵌まる前の 0.15 秒で元の形へ戻す
+                // （旧: travel の最後の 8% ＝ 約 35ms・3 フレームで戻り、着地の瞬間に形が跳ねた）。
                 float stretch = StretchMax * saturate(speed / StretchSpeed)
-                              * (1.0 - Ease(0.92, 1.0, travel)) * step(PullStart, p);
+                              * (1.0 - Ease(arrive - 0.030, arrive, p)) * step(PullStart, p);
                 float3 fromEye = centerWorld - _CurrentHeadPosition.xyz;
                 float eyeDistance = length(fromEye);
                 if (eyeDistance < 0.55)
@@ -306,8 +332,8 @@ Shader "FixedCamVr/IntroFracture"
                 }
 
                 float3 relativeWorld = lerp(sourceRelative, targetVertex - targetCenter, alignment);
-                // 回転量は引き延ばした時間に比例し、帰還と同時に自然な向きへ揃う。
-                float spinAmount = uSpin * (1.0 - travel);
+                // 回転量は引き延ばした時間に比例し、向きの揃い（alignment）とともに 0 へ減速する。
+                float spinAmount = uSpin * (1.0 - alignment);
                 float3 travelAxis = SafeNormalize(lerp(
                     mul((float3x3)_CaptureHeadToWorld, macroTangentX), screenRight, alignment), screenRight);
                 float3 faceAxis = SafeNormalize(lerp(
@@ -350,7 +376,35 @@ Shader "FixedCamVr/IntroFracture"
                 o.leftUv = float3(leftUv * leftQ, leftQ);
                 o.rightUv = float3(rightUv * rightQ, rightQ);
                 o.projectionValidity = float2(leftValid, rightValid);
-                o.positionWS = worldPosition;
+
+                // R060: 剥がれた片は両眼とも同じカメラの写真を引く。眼ごとのカメラのままだと、写真の中身が
+                // 撮影時の左右の視差を抱えたまま片と一緒に飛び、片の面と別の奥行きに浮く。片が回るとその視差が
+                // 縦へ回って二重像になる（動画は片眼なので出ない）。剥がれる 0.1 秒（loosen）で寄せ、一撃の閃きが覆う。
+                // カメラは全片で左に揃える（隣の片が別のカメラを引くと継ぎ目で中身が視差ぶん跳ぶ）。
+                // 左で写っていない片だけ右へ逃がす。
+                float centerLeftValid;
+                float centerRightValid;
+                float2 centerLeftUv = ProjectFrozenUv(_LeftWorldToUv, captureCenterWorld, centerLeftValid);
+                float2 centerRightUv = ProjectFrozenUv(_RightWorldToUv, captureCenterWorld, centerRightValid);
+                float leftMargin = min(min(centerLeftUv.x, centerLeftUv.y),
+                    min(1.0 - centerLeftUv.x, 1.0 - centerLeftUv.y));
+                float rightMargin = min(min(centerRightUv.x, centerRightUv.y),
+                    min(1.0 - centerRightUv.x, 1.0 - centerRightUv.y));
+                bool leftUsable = centerLeftValid > 1e-5 && leftMargin > 0.0;
+                bool rightBetter = centerRightValid > 1e-5 && rightMargin > leftMargin;
+                float monoSource = leftUsable || !rightBetter ? 0.0 : 1.0;
+                float4x4 monoMatrix = monoSource < 0.5 ? _LeftWorldToUv : _RightWorldToUv;
+                float monoValid;
+                float2 monoUv = ProjectFrozenUv(monoMatrix, captureWorld, monoValid);
+                float monoQ = lerp(mul(monoMatrix, float4(captureWorld, 1.0)).w, 1.0, alignment);
+                o.monoUv = float4(monoUv * monoQ, monoQ, monoValid);
+                // R061: 振り付けは名目の殻の上で解き（ここまでの worldPosition）、最後に撮影時の頭を中心に奥行きだけ縮める。
+                // 撮影位置から見た向きは変わらないので片眼の絵は同じで、両眼には部屋の奥行きで見える。
+                // 割れる前は頂点ごと（面に沿う）、剥がれたら片ごと（形を保って飛ぶ）、着地で 1（スクリーン）。
+                float3 captureOrigin = _CaptureHeadToWorld._m03_m13_m23;
+                float depthScale = lerp(lerp(v.roomDepth.x, v.roomDepth.y, loosen), 1.0, travel);
+                float3 placedPosition = captureOrigin + (worldPosition - captureOrigin) * depthScale;
+                o.positionWS = float4(placedPosition, depthScale);
                 o.normalWS = normalize(normalWorld);
                 o.surface = v.surface.x;
                 o.edgeDistances = v.edgeDistances;
@@ -358,10 +412,13 @@ Shader "FixedCamVr/IntroFracture"
                 // 光。予兆は起点から外へ走る亀裂の光 — 先端が明るく、通り過ぎた所は 4 割まで落ちる
                 // （網を一斉に点灯させると「亀裂が走る」ではなく「網目」に見える）。
                 // 一撃は全域が同時に閃き、破断した片はその瞬間にも光る。
+                // 遠い所ほど弱く・通った跡は 2 割まで落とす（網の全体が同時に光ると、亀裂ではなく
+                // Delaunay の三角網＝ワイヤーフレームに見える。起点の近くの放射と輪だけが走って見える形にする）。
                 float glowOn = 0.008 + originDist * 0.040;
                 float glowFront = Ease(glowOn, glowOn + 0.010, p)
-                                * (0.40 + 0.60 * (1.0 - Ease(glowOn + 0.010, glowOn + 0.030, p)))
-                                * (1.0 - Ease(CrackEnd - 0.002, CrackEnd + 0.012, p));
+                                * (0.20 + 0.80 * (1.0 - Ease(glowOn + 0.010, glowOn + 0.030, p)))
+                                * (1.0 - Ease(CrackEnd - 0.002, CrackEnd + 0.012, p))
+                                * lerp(1.0, 0.25, smoothstep(0.15, 0.70, originDist));
                 float shock = Ease(CrackEnd - 0.004, CrackEnd + 0.004, p)
                             * (1.0 - Ease(CrackEnd + 0.004, CrackEnd + 0.045, p));
                 float breakLight = Ease(breakAt, breakAt + 0.005, p)
@@ -377,7 +434,14 @@ Shader "FixedCamVr/IntroFracture"
                 float glint = Ease(0.11, 0.20, p)
                             * (1.0 - lerp(1.0, 0.45, _Crystal) * travel) * step(breakAt, p);
                 o.light = float4(glowFront, breakLight, landingLight, glint);
-                o.landed = seal;
+                // 着地後に残す縁の重み。嵌まった瞬間だけ強く、0.25 秒で細い線へ落ち着く。小片ほど弱い
+                // （起点の近くは小片が密集し、同じ強さで描くと映像の中央に白い網の塊ができた・2026-10-17）。
+                // ⚠ 落ち着くのは .905 まで。.900〜.930 は全片が着地した縁を静止して見せる保持（2026-09-18）で、
+                //    探針 probe_landed（.91→.93 が動かない）がそれを固定している。
+                float landedCool = 1.0 - Ease(landAt, min(landAt + 0.050, CloserArrive + 0.005), p);
+                float landedWeight = lerp(0.40, 1.0, landedCool)
+                                   * lerp(0.30, 1.0, smoothstep(0.0, 0.35, sizeRank));
+                o.landedMono = float4(seal, loosen, monoSource, landedWeight);
                 // 遠い片は沈む。着地した面には掛けない（detail で消える）。
                 float fog = saturate((eyeDistance - 1.7) / 2.2) * detail;
                 // 着地から 0.12 秒で透明になり、その場所の映像が現れる（0225）。閃きは露出の途中で消えていく。
@@ -426,7 +490,8 @@ Shader "FixedCamVr/IntroFracture"
                 o.spark1 = float4(secondPos, secondIntensity);
                 o.sparkSoft = float2(sparkSoft, v.macro.w * 7.13 + v.small.z * 311.0);
 
-                o.positionCS = TransformWorldToHClip(worldPosition);
+                o.positionCS = TransformWorldToHClip(placedPosition);
+                if (_IntroWarm > 0.5) o.positionCS = float4(0.0, 0.0, 0.0, 1.0);
                 return o;
             }
 
@@ -436,97 +501,54 @@ Shader "FixedCamVr/IntroFracture"
                 if (_HasFrozenFrame < 0.5)
                     return float4(0.0, 0.0, 0.0, saturate(_ScreenFade));
 
+                float eyeSource = unity_StereoEyeIndex == 0 ? 0.0 : 1.0;
                 float3 projected = unity_StereoEyeIndex == 0 ? i.leftUv : i.rightUv;
-                float2 uv = projected.xy / max(projected.z, 1e-5);
-                float valid = unity_StereoEyeIndex == 0
+                float2 uvEye = projected.xy / max(projected.z, 1e-5);
+                float validEye = unity_StereoEyeIndex == 0
                     ? i.projectionValidity.x : i.projectionValidity.y;
+                // R060: 剥がれた片は両眼とも同じカメラの写真（頂点で選んだ monoSource）を引く。
+                // 左眼で左カメラが選ばれた片は寄せる前後で同じ uv なので、左眼の絵は 1 画素も変わらない。
+                float mono = i.landedMono.y;
+                float monoSource = i.landedMono.z;
+                bool sameSource = abs(monoSource - eyeSource) < 0.5;
+                float2 uvMono = i.monoUv.xy / max(i.monoUv.z, 1e-5);
+                bool monoDominant = mono >= 0.5 && !sameSource;
+                float2 uv = monoDominant ? uvMono : uvEye;
+                float valid = monoDominant ? i.monoUv.w : validEye;
+                float photoSource = monoDominant ? monoSource : eyeSource;
                 float edge = min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y));
-                float field = smoothstep(0.0, 0.018, edge) * step(1e-5, valid);
+                // 割れる前は写真の端をぼかして隠す。剥がれた片は撮影範囲の端で切れた辺もガラスの切り口として
+                // 硬く切る（ぼけた直線の辺が飛んでいると、写真の切り抜きに見える）。剥がれた後は両眼とも同じ
+                // カメラの写真（R060）なので、硬い辺も両眼で一致する。
+                float fieldSoft = smoothstep(0.0, 0.018, edge);
+                float fieldHard = saturate(edge / max(fwidth(edge), 1e-6));
+                float field = lerp(fieldSoft, fieldHard, i.landedMono.y) * step(1e-5, valid);
                 clip(field - 1e-4);
                 // 深度だけの描画も同じ撮影範囲を切る。材質の計算と写真参照は不要。
                 if (_ColorMask < 0.5) return 0.0;
                 float2 sampleUv = saturate(uv);
-                float3 photo = unity_StereoEyeIndex == 0
-                    ? SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, sampleUv).rgb
-                    : SAMPLE_TEXTURE2D(_FrozenRightTex, sampler_FrozenRightTex, sampleUv).rgb;
                 float detail = i.detail.x;
-                // 結晶は写真より明るくコントラストが立つ（0235）。_Crystal=0 で旧値へ戻る。
-                // ⚠ 持ち上げは飛んでいる度合い（detail）で掛ける。破断前の面は生のパススルーから
-                //    差し替わった直後の静止画なので、ここを明るくすると凍った瞬間に画がポンと跳ねる。
-                float lumRaw = dot(photo, float3(0.299, 0.587, 0.114));
-                float liftAmount = _Crystal * detail;
-                // 明るさは少しだけ、コントラストは大きく（明るさを上げすぎると霜の付いた樹脂になる）。
-                float lift = lerp(1.0, 0.92, liftAmount);     // 0.96 → 0.88（体は暗く、光る所だけ光る）
-                float liftC = lerp(1.0, 1.20, liftAmount);    // 1.04 → 1.25
-                float gray = saturate((lumRaw - 0.5) * (_PhotoContrast * liftC) + 0.5);
-                gray = saturate(gray * (_PhotoBrightness * lift));
-                // 暗部を沈める（結晶は暗い所が暗く、光る所だけが光る）。_Crystal=0 で γ = 1。
-                gray = pow(gray, lerp(1.0, 1.6, liftAmount)) * field;
-
                 float shock = i.detail.z;
-                float3 viewDirection = normalize(_CurrentHeadPosition.xyz - i.positionWS);
+                float3 viewDirection = normalize(_CurrentHeadPosition.xyz - i.positionWS.xyz);
+                // R061: 代表の粒の照り返しは名目の殻の上で決めた距離で解く（撮影位置から見た明るさを変えない）。
+                float3 captureOriginWS = _CaptureHeadToWorld._m03_m13_m23;
+                float3 nominalWS = captureOriginWS
+                    + (i.positionWS.xyz - captureOriginWS) / max(i.positionWS.w, 1e-3);
                 float3 normal = normalize(i.normalWS);
-                float3 lightDirection = normalize(-normalize(cross(_ScreenRight.xyz, _ScreenUp.xyz))
-                    + normalize(_ScreenUp.xyz) * 0.70 - normalize(_ScreenRight.xyz) * 0.45);
-                float directionalShade = 0.68 + 0.32 * saturate(dot(normal, lightDirection));
-                float shade = lerp(1.0, directionalShade, detail);
-
-                // 薄膜干渉の色。片ごとに固有で、面の斜めと縁で強い（正面は生成り白のまま）。
-                // 視線は _CurrentHeadPosition 由来なので両眼で一致する（眼ごとの位置を混ぜない）。
-                float fres = pow(1.0 - saturate(abs(dot(normal, viewDirection))), 5.0);
-                float pieceHash = frac(sin(i.sparkSoft.y * 12.9898) * 43758.5453);
-                float spinPhase = 0.5 + 0.5 * dot(normal, normalize(_ScreenRight.xyz));
-                float iridPhase = pieceHash * 0.5 + 0.5 + 0.35 * fres + 0.12 * spinPhase;
-                float3 irid = SparkPalette(iridPhase);
-                // 色相だけ移して輝度は保つ（彩度の上限 0.28）。
-                float3 iridTint = irid / max(dot(irid, float3(0.299, 0.587, 0.114)), 1e-3);
-                float3 faceTint = lerp(float3(1.0, 1.0, 1.0), iridTint, 0.35 * _Crystal * detail);
-
-                // 一撃の閃きは線ではなく面を白ませる（線だけ光らせるとワイヤーフレームに見える）。
-                float3 color = gray.xxx * (1.0 + 0.35 * i.light.y + 0.45 * shock);
-                color *= faceTint;
-
-                // 結晶: 斜めから見た面の艶と、回転で流れる鏡面の閃き（鋭い芯と柔らかい艶）。飛んでいる間だけ。
                 float grazing = pow(1.0 - saturate(abs(dot(normal, viewDirection))), 3.0);
-                float3 halfVector = normalize(lightDirection + viewDirection);
-                float facing = saturate(dot(normal, halfVector));
-                float specular = pow(facing, 36.0) + 0.5 * pow(facing, 12.0);
                 float3 rimColor = float3(0.96, 0.90, 0.78);   // 生成り寄りの白（題字と同じ側の色）
                 float edgeDistance = min(min(i.edgeDistances.x, i.edgeDistances.y),
                     min(i.edgeDistances.z, i.edgeDistances.w));
-                float aa = max(fwidth(edgeDistance), 1e-6);
-                // 稜線（1 画素）と、縁に沿う幅のある光の帯（約 1cm）。帯が「厚みのある結晶」に読ませる。
-                float ridge = 1.0 - smoothstep(0.00012, 0.00012 + aa * 1.15, edgeDistance);
+                // 1 画素ぶんの縁距離。fwidth（L1）は線の向きで √2 倍ぶれ、回転中に太さが脈打つので勾配の長さで取る。
+                float aa = max(length(float2(ddx(edgeDistance), ddy(edgeDistance))), 1e-6);
+                // 稜線と、縁に沿う幅のある光の帯（約 1cm）。帯が「厚みのある結晶」に読ませる。
+                // 稜線は画素で決める（2026-10-17）。旧式の芯は 0.6 画素で、画素とのずれで明るさが 25% 変わり、
+                // HMD では頭の微動で線が這った。最低 1.3 画素の幅を取り、世界の幅がそれより細いぶんは明るさで払う。
+                float ridgeWorldPx = 0.00012 / aa;
+                float ridgePx = max(ridgeWorldPx, 1.3);
+                float ridge = saturate(ridgePx * 0.5 + 0.5 - edgeDistance / aa)
+                            * min(1.0, (ridgeWorldPx + 0.6) / ridgePx);
                 float band = exp(-edgeDistance / 0.0011);
-                float edgeGlow = ridge * (0.12 * i.light.x + 0.50 * i.light.y + 0.30 * shock + 0.30 * i.light.z
-                                          + detail * (0.07 + 0.18 * grazing))
-                               + band * (0.05 * i.light.x + 0.28 * i.light.y + 0.20 * shock + 0.16 * i.light.z
-                                         + detail * (0.045 + 0.14 * grazing) * (0.6 + 0.8 * i.light.w));
-                // 加算の自発光層。写真の明暗に掛からないので、暗い実景の上でも結晶が光る。
-                float3 crystal = 0.0;
-                // 薄膜の帯（斜め〜縁）。
-                crystal += irid * fres * fres * (0.30 * detail + 0.16 * i.light.w);
-                // 面のきらめき場。位相は頭中心の視線なので両眼で揃う。
-                // ⚠ 面の座標は写真の uv ではなく辺までの距離（i.edgeDistances）から取る。写真の uv は
-                //    左右の撮影カメラの視差ぶん眼ごとにずれるので、格子を uv で切ると点の場所が両眼で食い違う。
-                //    辺までの距離はメッシュのローカル値で、どちらの眼でも同じ（1 単位 ≈ 10.7m・0.0012 ≈ 1.3cm）。
-                float2 cellUv = i.edgeDistances.xy * 1000.0;
-                float2 cell = floor(cellUv);
-                float cellHash = frac(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
-                float2 cellLocal = frac(cellUv) - 0.5;
-                float cellPoint = smoothstep(0.30, 0.06, length(cellLocal));
-                float viewFacing = dot(viewDirection, normal);
-                float twinkle = smoothstep(0.55, 0.95,
-                    sin(viewFacing * 9.0 + cellHash * 6.283 + _Shatter * 26.0) * 0.5 + 0.5);
-                // 遠い片・小さい片ではちらつくので消す（1 格子が 2 画素を切ったら描かない）。
-                float cellLod = saturate(1.0 - fwidth(cellUv.x) * 2.0);
-                crystal += SparkCoreColor * cellPoint * twinkle * 1.40 * detail
-                         * step(0.955, cellHash) * cellLod;
-                // コースティクスの帯。片が回ると面を 1〜2 本の明るい帯が横切る（座標は同じ理由で辺までの距離）。
-                float caustic = exp(-pow((frac(i.edgeDistances.x * 40.0 + i.edgeDistances.y * 21.0 + spinPhase)
-                    - 0.5) * 11.0, 2.0));
-                crystal += SparkCoreColor * caustic * 0.10 * detail * (0.4 + 0.6 * fres);
-
                 // 代表の粒の反射（0235 の核心）。近い 2 灯を点光源として鏡面を返す。
                 // HDR が無い（8bit LDR）ので必ずクランプする。
                 float3 sparkLit = 0.0;
@@ -534,7 +556,7 @@ Shader "FixedCamVr/IntroFracture"
                 for (int litIndex = 0; litIndex < 2; litIndex++)
                 {
                     float4 sparkSample = litIndex == 0 ? i.spark0 : i.spark1;
-                    float3 toSpark = sparkSample.xyz - i.positionWS;
+                    float3 toSpark = sparkSample.xyz - nominalWS;
                     float sparkDistance = dot(toSpark, toSpark);
                     // 真後ろの粒で半ベクトルが 0 になっても NaN を出さない（_Crystal=0 の一致も守る）。
                     float3 sparkHalf = SafeNormalize(
@@ -552,50 +574,135 @@ Shader "FixedCamVr/IntroFracture"
                 sparkLit += SparkCoreColor * i.sparkSoft.x * lerp(0.05, 0.008, saturate(_Glass * _Crystal));
                 sparkLit = min(sparkLit, lerp(0.8, 1.1, saturate(_Glass * _Crystal))) * detail * _SparkLit;
 
-                // 実景の明暗は残す。飛んでいる間はわずかに暖かく、着地で素の写真へ戻る。
-                color = color * shade * lerp(float3(1.0, 1.0, 1.0),
-                            lerp(float3(0.94, 0.97, 1.03), float3(1.02, 0.99, 0.95), _Crystal), detail)
-                      + rimColor * edgeGlow * field
-                      + float3(0.90, 0.92, 0.96) * specular * (0.32 * i.light.w + 0.10 * detail) * field
-                      + rimColor * grazing * 0.06 * detail * field;
-
-                crystal *= _Crystal;
-                float3 glow = crystal + sparkLit;
-                // 明るい写真の上では抑える（白飛びさせない）。
-                glow *= 1.0 - 0.5 * saturate(gray * 2.0 - 0.8);
-                glow = min(glow, 1.6);
-                color += glow * field;
-
-                color *= 1.0 - lerp(0.30, 0.18, _Crystal) * i.detail.y;
-                if (i.surface >= 0.5)
+                float glass = saturate(_Glass * _Crystal);
+                float glassFlight = glass * detail;
+                // R060: 飛んでいる間（glassFlight = 1）は下の材質の色を磨いたガラスが丸ごと置き換える
+                // （lerp(color, polished, 1)）。結果に乗らない計算と写真の 1 回の参照を省く。段 4 は体験でいちばん重い。
+                float3 color = 0.0;
+                if (glassFlight < 0.999)
                 {
-                    // 裏は暗く、側面（結晶の厚み）は明るく光を返す。
-                    float sideShade = 0.35 + lerp(1.6, 2.0, _Crystal) * saturate(dot(normal, lightDirection));
-                    color = (i.surface < 1.5
-                        ? float3(0.020, 0.022, 0.026) + rimColor * band * 0.10 * detail
-                        : lerp(float3(0.16, 0.17, 0.18), float3(0.26, 0.24, 0.20), _Crystal) * sideShade
-                            + rimColor * (0.30 * i.light.y + 0.25 * shock + 0.10 * detail
-                                          + 0.08 * grazing * detail)
-                            + sparkLit * 0.5) * field;
+                    float3 photo = SampleFrozen(photoSource, sampleUv);
+                    if (!sameSource && mono > 0.001 && mono < 0.999)
+                    {
+                        float3 photoEye = SampleFrozen(eyeSource, saturate(uvEye));
+                        float3 photoMono = SampleFrozen(monoSource, saturate(uvMono));
+                        photo = lerp(photoEye, photoMono, mono);
+                    }
+                    // 結晶は写真より明るくコントラストが立つ（0235）。_Crystal=0 で旧値へ戻る。
+                    // ⚠ 持ち上げは飛んでいる度合い（detail）で掛ける。破断前の面は生のパススルーから
+                    //    差し替わった直後の静止画なので、ここを明るくすると凍った瞬間に画がポンと跳ねる。
+                    float lumRaw = dot(photo, float3(0.299, 0.587, 0.114));
+                    float liftAmount = _Crystal * detail;
+                    // 明るさは少しだけ、コントラストは大きく（明るさを上げすぎると霜の付いた樹脂になる）。
+                    float lift = lerp(1.0, 0.92, liftAmount);     // 0.96 → 0.88（体は暗く、光る所だけ光る）
+                    float liftC = lerp(1.0, 1.20, liftAmount);    // 1.04 → 1.25
+                    float gray = saturate((lumRaw - 0.5) * (_PhotoContrast * liftC) + 0.5);
+                    gray = saturate(gray * (_PhotoBrightness * lift));
+                    // 暗部を沈める（結晶は暗い所が暗く、光る所だけが光る）。_Crystal=0 で γ = 1。
+                    gray = pow(gray, lerp(1.0, 1.6, liftAmount)) * field;
+
+                    float3 lightDirection = normalize(-normalize(cross(_ScreenRight.xyz, _ScreenUp.xyz))
+                        + normalize(_ScreenUp.xyz) * 0.70 - normalize(_ScreenRight.xyz) * 0.45);
+                    float directionalShade = 0.68 + 0.32 * saturate(dot(normal, lightDirection));
+                    float shade = lerp(1.0, directionalShade, detail);
+
+                    // 薄膜干渉の色。片ごとに固有で、面の斜めと縁で強い（正面は生成り白のまま）。
+                    // 視線は _CurrentHeadPosition 由来なので両眼で一致する（眼ごとの位置を混ぜない）。
+                    float fres = pow(1.0 - saturate(abs(dot(normal, viewDirection))), 5.0);
+                    float pieceHash = frac(sin(i.sparkSoft.y * 12.9898) * 43758.5453);
+                    float spinPhase = 0.5 + 0.5 * dot(normal, normalize(_ScreenRight.xyz));
+                    float iridPhase = pieceHash * 0.5 + 0.5 + 0.35 * fres + 0.12 * spinPhase;
+                    float3 irid = SparkPalette(iridPhase);
+                    // 色相だけ移して輝度は保つ（彩度の上限 0.28）。
+                    float3 iridTint = irid / max(dot(irid, float3(0.299, 0.587, 0.114)), 1e-3);
+                    float3 faceTint = lerp(float3(1.0, 1.0, 1.0), iridTint, 0.35 * _Crystal * detail);
+
+                    // 一撃の閃きは線ではなく面を白ませる（線だけ光らせるとワイヤーフレームに見える）。
+                    color = gray.xxx * (1.0 + 0.35 * i.light.y + 0.45 * shock);
+                    color *= faceTint;
+
+                    // 結晶: 斜めから見た面の艶と、回転で流れる鏡面の閃き（鋭い芯と柔らかい艶）。飛んでいる間だけ。
+                    float3 halfVector = normalize(lightDirection + viewDirection);
+                    float facing = saturate(dot(normal, halfVector));
+                    float specular = pow(facing, 36.0) + 0.5 * pow(facing, 12.0);
+                    // 一撃の閃きで縁を光らせるのは割れた片だけ（detail）。割れていない片の縁まで光ると、
+                    // 一撃の瞬間に網の全体がワイヤーフレームとして浮く（面の白みは上の color が持つ）。
+                    float edgeShock = shock * detail;
+                    float edgeGlow = ridge * (0.12 * i.light.x + 0.50 * i.light.y + 0.30 * edgeShock + 0.30 * i.light.z
+                                              + detail * (0.07 + 0.18 * grazing))
+                                   + band * (0.05 * i.light.x + 0.28 * i.light.y + 0.20 * edgeShock + 0.16 * i.light.z
+                                             + detail * (0.045 + 0.14 * grazing) * (0.6 + 0.8 * i.light.w));
+                    // 加算の自発光層。写真の明暗に掛からないので、暗い実景の上でも結晶が光る。
+                    float3 crystal = 0.0;
+                    // 薄膜の帯（斜め〜縁）。
+                    crystal += irid * fres * fres * (0.30 * detail + 0.16 * i.light.w);
+                    // 面のきらめき場。位相は頭中心の視線なので両眼で揃う。
+                    // ⚠ 面の座標は写真の uv ではなく辺までの距離（i.edgeDistances）から取る。写真の uv は
+                    //    左右の撮影カメラの視差ぶん眼ごとにずれるので、格子を uv で切ると点の場所が両眼で食い違う。
+                    //    辺までの距離はメッシュのローカル値で、どちらの眼でも同じ（1 単位 ≈ 10.7m・0.0012 ≈ 1.3cm）。
+                    float2 cellUv = i.edgeDistances.xy * 1000.0;
+                    float2 cell = floor(cellUv);
+                    float cellHash = frac(sin(dot(cell, float2(127.1, 311.7))) * 43758.5453);
+                    float2 cellLocal = frac(cellUv) - 0.5;
+                    float cellPoint = smoothstep(0.30, 0.06, length(cellLocal));
+                    float viewFacing = dot(viewDirection, normal);
+                    float twinkle = smoothstep(0.55, 0.95,
+                        sin(viewFacing * 9.0 + cellHash * 6.283 + _Shatter * 26.0) * 0.5 + 0.5);
+                    // 遠い片・小さい片ではちらつくので消す（1 格子が 2 画素を切ったら描かない）。
+                    float cellLod = saturate(1.0 - fwidth(cellUv.x) * 2.0);
+                    crystal += SparkCoreColor * cellPoint * twinkle * 1.40 * detail
+                             * step(0.955, cellHash) * cellLod;
+                    // コースティクスの帯。片が回ると面を 1〜2 本の明るい帯が横切る（座標は同じ理由で辺までの距離）。
+                    float caustic = exp(-pow((frac(i.edgeDistances.x * 40.0 + i.edgeDistances.y * 21.0 + spinPhase)
+                        - 0.5) * 11.0, 2.0));
+                    crystal += SparkCoreColor * caustic * 0.10 * detail * (0.4 + 0.6 * fres);
+
+                    // 実景の明暗は残す。飛んでいる間はわずかに暖かく、着地で素の写真へ戻る。
+                    color = color * shade * lerp(float3(1.0, 1.0, 1.0),
+                                lerp(float3(0.94, 0.97, 1.03), float3(1.02, 0.99, 0.95), _Crystal), detail)
+                          + rimColor * edgeGlow * field
+                          + float3(0.90, 0.92, 0.96) * specular * (0.32 * i.light.w + 0.10 * detail) * field
+                          + rimColor * grazing * 0.06 * detail * field;
+
+                    crystal *= _Crystal;
+                    float3 glow = crystal + sparkLit;
+                    // 明るい写真の上では抑える（白飛びさせない）。
+                    glow *= 1.0 - 0.5 * saturate(gray * 2.0 - 0.8);
+                    glow = min(glow, 1.6);
+                    color += glow * field;
+
+                    color *= 1.0 - lerp(0.30, 0.18, _Crystal) * i.detail.y;
+                    if (i.surface >= 0.5)
+                    {
+                        // 裏は暗く、側面（結晶の厚み）は明るく光を返す。
+                        float sideShade = 0.35 + lerp(1.6, 2.0, _Crystal) * saturate(dot(normal, lightDirection));
+                        color = (i.surface < 1.5
+                            ? float3(0.020, 0.022, 0.026) + rimColor * band * 0.10 * detail
+                            : lerp(float3(0.16, 0.17, 0.18), float3(0.26, 0.24, 0.20), _Crystal) * sideShade
+                                + rimColor * (0.30 * i.light.y + 0.25 * shock + 0.10 * detail
+                                              + 0.08 * grazing * detail)
+                                + sparkLit * 0.5) * field;
+                    }
                 }
 
                 // 磨いたガラス。背景のパススルーはUnityの色バッファに無いので、
                 // 破断時に保持した写真を透過像に使う。元の対応UVから数画素だけ曲げる。
                 // alphaを開けて現在の現実を見せる処理ではない。
-                float glass = saturate(_Glass * _Crystal);
-                float glassFlight = glass * detail;
                 float3 glassEdgeColor = rimColor;
                 if (glassFlight > 0.0001)
                 {
-                    float3 opticalNormal = dot(normal, viewDirection) >= 0.0 ? normal : -normal;
-                    float nv = saturate(dot(opticalNormal, viewDirection));
+                    // R060: 反射と屈折は眼ごとの位置で解く。頭の中心で解くと両眼の鏡面が同じ場所に出て、
+                    // ガラスの光沢ではなく面に塗った模様に見える（Editor の片眼の絵では区別できない）。
+                    float3 eyeView = normalize(GetCameraPositionWS() - i.positionWS.xyz);
+                    float3 opticalNormal = dot(normal, eyeView) >= 0.0 ? normal : -normal;
+                    float nv = saturate(dot(opticalNormal, eyeView));
                     float fresnel = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
-                    float3 ray = refract(-viewDirection, opticalNormal, 0.666667);
-                    float3 bend = ray + viewDirection;
+                    float3 ray = refract(-eyeView, opticalNormal, 0.666667);
+                    float3 bend = ray + eyeView;
                     float3 captureRight = _CaptureHeadToWorld._m00_m10_m20;
                     float3 captureUp = _CaptureHeadToWorld._m01_m11_m21;
                     float2 bendPlane = float2(dot(bend, captureRight), dot(bend, captureUp));
-                    float2 texel = unity_StereoEyeIndex == 0
+                    float2 texel = photoSource < 0.5
                         ? abs(_FrozenLeftTex_TexelSize.xy) : abs(_FrozenRightTex_TexelSize.xy);
                     float bevel = exp(-edgeDistance / 0.00065);
                     float uvGuard = smoothstep(0.005, 0.035, edge);
@@ -605,7 +712,7 @@ Shader "FixedCamVr/IntroFracture"
                     float2 uvG = clamp(sampleUv + offset, texel, 1.0 - texel);
                     float2 uvB = clamp(sampleUv + offset * 0.88, texel, 1.0 - texel);
                     float3 transmitted;
-                    if (unity_StereoEyeIndex == 0)
+                    if (photoSource < 0.5)
                     {
                         transmitted.r = SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, uvR).r;
                         transmitted.g = SAMPLE_TEXTURE2D(_FrozenLeftTex, sampler_FrozenLeftTex, uvG).g;
@@ -625,7 +732,7 @@ Shader "FixedCamVr/IntroFracture"
                         saturate(_RealityRetention));
                     float3 body = lerp(transmittedLuma.xxx, transmitted, 0.24)
                         * transmission * float3(1.0, 0.985, 0.96);
-                    float3 reflected = reflect(-viewDirection, opticalNormal);
+                    float3 reflected = reflect(-eyeView, opticalNormal);
                     // 撮影時の部屋に固定した二つの長い光源。回転と視点移動で反射だけが流れる。
                     // 景色を作る環境マップや、毎フレーム動く写真の再投影は使わない。
                     float3 r = mul(transpose((float3x3)_CaptureHeadToWorld), reflected);
@@ -646,7 +753,8 @@ Shader "FixedCamVr/IntroFracture"
                     glassEdgeColor = lerp(white, spectrum, 0.14 * bevel);
                     float rimReflection = ridge * (0.28 + 0.52 * fresnel)
                         + bevel * (0.026 + 0.065 * fresnel);
-                    float innerEdge = exp(-abs(edgeDistance - 0.0009) / max(aa, 0.00010))
+                    // 内側の細い研磨線。指数の 1 画素幅は画素とのずれで明るさが 0.6〜1 に這うので、2 画素の三角で引く。
+                    float innerEdge = saturate(1.0 - abs(edgeDistance - 0.0009) / max(aa, 0.00010))
                         * (0.08 + 0.16 * fresnel);
                     float3 polished = body * (1.0 - 0.65 * fresnel)
                         + white * whiteReflection
@@ -670,23 +778,29 @@ Shader "FixedCamVr/IntroFracture"
                 float photoAlpha = saturate(1.0 - _ScreenFade) * (1.0 - i.detail.w);
                 float oldAlpha = photoAlpha;
 
-                float strongRidge = 1.0 - smoothstep(0.00020, 0.00020 + aa * 1.75, edgeDistance);
+                float strongRidgeWorldPx = 0.00020 / aa;
+                float strongRidgePx = max(strongRidgeWorldPx, 1.6);
+                float strongRidge = saturate(strongRidgePx * 0.5 + 0.5 - edgeDistance / aa)
+                                  * min(1.0, (strongRidgeWorldPx + 0.8) / strongRidgePx);
                 float strongBand = exp(-edgeDistance / 0.0019);
                 float flightEdge = saturate(
-                    strongRidge * (0.32 + 0.38 * grazing + 0.28 * i.light.y + 0.22 * shock)
+                    strongRidge * (0.32 + 0.38 * grazing + 0.28 * i.light.y + 0.22 * shock * detail)
                     + strongBand * (0.16 + 0.24 * grazing + 0.18 * i.light.w)) * detail;
                 // 飛行中だけ、広い乳白色の縁を細い二重の研磨面へ。着地後の消去は共通。
                 float polishedEdge = saturate(ridge * (0.32 + 0.38 * grazing)
                     + exp(-edgeDistance / 0.00055) * (0.045 + 0.09 * grazing)) * detail;
                 flightEdge = lerp(flightEdge, polishedEdge, glass);
-                // 戻った小片が中央へ密集しても映像を隠さないよう、着地後は明るさを保って幅を絞る。
-                float landedFrontEdge = saturate(ridge * 0.72 + band * 0.16)
-                    * i.landed * (1.0 - step(0.5, i.surface));
+                // 着地後の縁は画素で決めた細い線（片側 0.6 画素 ＝ 隣の片と合わせて約 1.2 画素）。
+                // 世界の幅で引くと、遠くの小片ほど線が太く密になって映像の中央に白い網の塊ができた（2026-10-17）。
+                // 重み（w）は嵌まった瞬間だけ強く、0.25 秒で落ち着き、小片ほど弱い。
+                float landedLine = saturate(0.6 + 0.5 - edgeDistance / aa);
+                float landedFrontEdge = saturate(landedLine * 0.78 + band * 0.08) * i.landedMono.w
+                    * i.landedMono.x * (1.0 - step(0.5, i.surface));
 
                 // 全片着地後も p=.930 までは保つ。実ワールド平面の距離なので縦横比による楕円にならない。
                 float2 screenMeters = float2(
-                    dot(i.positionWS - _ScreenCenter.xyz, normalize(_ScreenRight.xyz)),
-                    dot(i.positionWS - _ScreenCenter.xyz, normalize(_ScreenUp.xyz)));
+                    dot(i.positionWS.xyz - _ScreenCenter.xyz, normalize(_ScreenRight.xyz)),
+                    dot(i.positionWS.xyz - _ScreenCenter.xyz, normalize(_ScreenUp.xyz)));
                 float screenRadius = length(screenMeters) / max(length(_ScreenHalf.xy), 1e-4);
                 float radialFade = 1.0;
                 if (_Shatter > 0.930 && _Shatter < 0.995)

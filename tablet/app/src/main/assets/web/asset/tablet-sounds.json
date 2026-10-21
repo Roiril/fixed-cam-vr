@@ -1,0 +1,136 @@
+{
+  "version": 2,
+  "note": "tools/make-tablet-sounds.py が計算で書く。本編（Quest）の音は使わない（LEDGER 0267）。手で直さない",
+  "voiceLufs": -21.0,
+  "sounds": {
+    "title-in": {
+      "purpose": "題字の筆の書き出し（3 画の擦れ・墨のにじみ・低い擦れ）",
+      "files": [
+        {
+          "file": "tablet_title_in.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -26.0,
+          "sec": 2.6
+        }
+      ]
+    },
+    "title-out": {
+      "purpose": "題字が闇へ沈む（ざらついた空気と柔らかな着地）",
+      "files": [
+        {
+          "file": "tablet_title_out.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -28.0,
+          "sec": 1.25
+        }
+      ]
+    },
+    "choice": {
+      "purpose": "言語・軽減を選び替えた（カチカチ・2 種を交互）",
+      "files": [
+        {
+          "file": "tablet_choice_1.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -30.0,
+          "sec": 0.2
+        },
+        {
+          "file": "tablet_choice_2.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -30.0,
+          "sec": 0.2
+        }
+      ]
+    },
+    "key": {
+      "purpose": "次へ・戻る・一時停止など（カチッ・3 種を順に）",
+      "files": [
+        {
+          "file": "tablet_key_1.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.1
+        },
+        {
+          "file": "tablet_key_2.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.1
+        },
+        {
+          "file": "tablet_key_3.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -32.0,
+          "sec": 0.1
+        }
+      ]
+    },
+    "send": {
+      "purpose": "この設定を送る（カチカチカチと薄いざらつき）",
+      "files": [
+        {
+          "file": "tablet_send.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -29.0,
+          "sec": 0.62
+        }
+      ]
+    },
+    "stamp": {
+      "purpose": "反映の判子（印が押される瞬間の砂嵐のザッ）",
+      "files": [
+        {
+          "file": "tablet_stamp.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -27.0,
+          "sec": 0.42
+        }
+      ]
+    },
+    "screen-on": {
+      "purpose": "博士が闇から現れる（暗い息とフィルムのパチつき）",
+      "files": [
+        {
+          "file": "tablet_screen_on.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -27.0,
+          "sec": 1.7
+        }
+      ]
+    },
+    "chapter": {
+      "purpose": "章の切り替え（砂嵐が短く刻まれる乱れ・signal-cut.js の glitch と同じ長さ・3 種を順に）",
+      "files": [
+        {
+          "file": "tablet_chapter_1.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -31.0,
+          "sec": 0.42
+        },
+        {
+          "file": "tablet_chapter_2.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -31.0,
+          "sec": 0.42
+        },
+        {
+          "file": "tablet_chapter_3.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -31.0,
+          "sec": 0.42
+        }
+      ]
+    },
+    "signal-cut": {
+      "purpose": "説明の終わり（砂嵐 → 一気に絞られる → 闇の中の響き・signal-cut.js と同じ時刻）",
+      "files": [
+        {
+          "file": "tablet_signal_cut.wav",
+          "gainDb": 0.0,
+          "sourceLufs": -22.0,
+          "sec": 2.0
+        }
+      ]
+    }
+  }
+}

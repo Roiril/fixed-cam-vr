@@ -535,6 +535,32 @@ namespace FixedCamVr.Streaming
         public string startLineId = "";
 
         /// <summary>
+        /// **区間へ入った瞬間から録る**区間の一覧（<c>"L&lt;周&gt;C&lt;カメラ&gt;"</c>・例 <c>"L2C0"</c>）。
+        /// 2026-10-19 追加（<c>canon/LEDGER.md</c> 0272）。3 周目 A が入った瞬間から 2 周目 A の録画を
+        /// 流すので、2 周目 A は入りから残っていないといけない。
+        ///
+        /// ⚠ 指した区間では <see cref="startLineId"/> も末尾方式（<see cref="tailSec"/>）も見ない。
+        /// ⚠ 周とカメラの組で指すのは、**録る周すべてを頭から録ると容量を食う**ため
+        ///   （1 周目 A は導入のぶん長い。ラン全体の上限 <see cref="maxTotalMB"/> を使い切ると後の区間が録れない）。
+        /// </summary>
+        public string[] enterStartSegments = Array.Empty<string>();
+
+        /// <summary>
+        /// <b>前へ進んだコマだけを残す</b>区間と、その物差し（`canon/LEDGER.md` 0274）。
+        /// 3 周目 A が体験者の位置に合うコマを出すための録り方。
+        /// </summary>
+        public ShowRecordProgressDef progress = new();
+
+        /// <summary>この区間を入った瞬間から録るか（<see cref="enterStartSegments"/>）。</summary>
+        public bool StartsAtEnter(int lap, int camera)
+        {
+            if (enterStartSegments == null) return false;
+            string key = $"L{lap}C{camera}";
+            foreach (string s in enterStartSegments) if (s == key) return true;
+            return false;
+        }
+
+        /// <summary>
         /// 旧キー（区間の頭から何秒録るか）。**末尾方式では使わない**。
         /// 端末キャッシュ・焼き込みの古い show.json が持っているので読めるようにだけしてある。
         /// </summary>
@@ -550,6 +576,37 @@ namespace FixedCamVr.Streaming
         {
             if (!enabled || laps == null) return false;
             foreach (int l in laps) if (l == lap) return true;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// <c>record.progress</c>（`canon/LEDGER.md` 0274）。指した区間は<b>時間ではなく位置で</b>録る:
+    ///   - 角を回る進み具合（<see cref="Recording.CornerProgress"/>・<see cref="fromWall"/> → <see cref="toWall"/>）が
+    ///     それまでの最大を超えたコマだけを残す（戻ったぶんは撮影済みなので記録しない）。追い録りは時間どおり
+    ///   - その試行を<b>採るのは</b>、進み具合が <see cref="adoptAt"/> に届き、かつ周回の順で次のカメラへ
+    ///     進んで出ていったときだけ。それ以外（入ってすぐ引き返した等）は書き出さずに捨てるので、
+    ///     次に同じ区間へ入ったときに録り直せる。採った後に戻ってきた回は録り直さない（従来どおり）
+    /// </summary>
+    [Serializable] public sealed class ShowRecordProgressDef
+    {
+        /// <summary>対象の区間（<c>"L&lt;周&gt;C&lt;カメラ&gt;"</c>）。空 = この機能を使わない。</summary>
+        public string[] segments = Array.Empty<string>();
+
+        /// <summary>進み具合 0 の壁（<c>layout.room.walls[].id</c>）。</summary>
+        public string fromWall = "w1";
+
+        /// <summary>進み具合 1 の壁。</summary>
+        public string toWall = "w2";
+
+        /// <summary>試行を採る進み具合の下限（0.5 = 2 枚の壁の二等分線 ＝ A の中央の線）。</summary>
+        public float adoptAt = 0.5f;
+
+        public bool Applies(int lap, int camera)
+        {
+            if (segments == null) return false;
+            string key = $"L{lap}C{camera}";
+            foreach (string s in segments) if (s == key) return true;
             return false;
         }
     }
@@ -660,19 +717,21 @@ namespace FixedCamVr.Streaming
         // ⚠ キーは 2 度入れ替わっている:
         //    2026-08-15  旧 unswapSec / openSec / restoreSec / holdSec → flickerSec ほか（0048）
         //    2026-08-23  flickerSec → collapseSec（0111・ちかちかを電源断へ置き換えた）
+        //    2026-10-21  noiseSec を足し、collapseSec の既定を 0.9 → 0.26（博士タブレットの消え方へ揃えた）
         //    旧キーしか持たない show.json（焼き込み・端末キャッシュ）では新キーが 0 になり、
         //    Sanitized() が既定へ倒すので**そのまま走る**。
-        public float collapseSec = 0.9f;
+        public float noiseSec = 0.95f;
+        public float collapseSec = 0.26f;
         public float darkSec = 1.2f;
         public float reportFadeSec = 1.5f;
 
         /// <summary>キーごと無い（JsonUtility が 0 で埋めた）形か。</summary>
         public bool LooksUnset() =>
-            !enabled && collapseSec <= 0f && darkSec <= 0f && reportFadeSec <= 0f;
+            !enabled && noiseSec <= 0f && collapseSec <= 0f && darkSec <= 0f && reportFadeSec <= 0f;
 
         public OutroTiming ToTiming() => new OutroTiming
         {
-            collapseSec = collapseSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
+            noiseSec = noiseSec, collapseSec = collapseSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
         }.Sanitized();
     }
 
@@ -1558,6 +1617,7 @@ namespace FixedCamVr.Streaming
             _deviceId = SystemInfo.deviceUniqueIdentifier ?? "";
             _deviceModel = SystemInfo.deviceModel ?? "";
             EnsureVisitorPortal();
+            EnsureRomiLink();
             // 優先順位: 焼き込み StreamingAssets < 端末キャッシュ < ライブ long-poll（後勝ち）。
             // 焼き込みの読込は UnityWebRequest（Android は jar: URL）なので非同期。
             // registry の Awake（stream 生成）が済んだ後に、この初期化列を回す。
@@ -1588,6 +1648,24 @@ namespace FixedCamVr.Streaming
             if (_portal != null) return;
             var go = new GameObject("[VisitorPortal]");
             _portal = go.AddComponent<VisitorPortal>();
+        }
+
+        private RomiCartLink? _romi;
+
+        /// <summary>終幕で台車（Romi）へ合図を送る口。テレメトリが読む。</summary>
+        public RomiCartLink? Romi => _romi;
+
+        /// <summary>
+        /// 終幕の台車の合図（<c>RomiCartLink</c>）。タブレットの口と同じく<b>シーンには焼かない</b>。
+        /// 台車が網に居なくても体験は変わらない（合図が届かないだけ）。
+        /// </summary>
+        private void EnsureRomiLink()
+        {
+            if (_romi != null) return;
+            _romi = FindObjectOfType<RomiCartLink>();
+            if (_romi != null) return;
+            var go = new GameObject("[RomiCartLink]");
+            _romi = go.AddComponent<RomiCartLink>();
         }
 
         private async Task RunInitAsync()
@@ -1821,20 +1899,21 @@ namespace FixedCamVr.Streaming
             Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムライン / BGM をリセット");
             _reportTally.Reset();   // 押した回数と報告した異変の数（体験 1 回ぶんの状態・memory/show_run_skeleton.md）
             _dwell.Reset();   // 計時中の部分区間は「体験者 1 人分の滞在」として成立しないので捨てる
-            cueScheduler?.ResetRun();
-            timelineDirector?.ResetRun();
-            ResolveBgmDirector()?.ResetRun();
+            // 工程ごとに隔離する（1 つが投げても後ろの初期化を飛ばさない・RuntimeHealth）。
+            RuntimeHealth.Step("cue", () => cueScheduler?.ResetRun());
+            RuntimeHealth.Step("timeline", () => timelineDirector?.ResetRun());
+            RuntimeHealth.Step("bgm", () => ResolveBgmDirector()?.ResetRun());
             // ⚠⚠ 体験の音も落とす。**ここが抜けていると 2 人目以降で 2 つ壊れる**（2026-09-04 に発見）:
             //   ① 人形の笑いの方角が 1 人目のまま（`PickLaughSpots` は Awake でしか引かないので、
             //      0130「ランダムな位置」が 1 人目にしか成立していなかった）
             //   ② 前の体験者の一撃・敷く音・頭出しラッチが次のタイトル画面へ流れ込む
             // どちらも**画にも録画にも 1 ビットも出ない**（音は録画に映らない）。
-            ResolveSoundDirector()?.ResetRun();
+            RuntimeHealth.Step("sound", () => ResolveSoundDirector()?.ResetRun());
             // 端末内録画も世代を切り替える（前の体験者の映像を次のランへ持ち越さない・端末に残さない）。
-            ResolveRecorder()?.ResetRun(_knownRunEpoch);
-            RunReset?.Invoke();
+            RuntimeHealth.Step("recorder", () => ResolveRecorder()?.ResetRun(_knownRunEpoch));
+            RuntimeHealth.Raise("RunReset", RunReset);
             // 骨格も頭から（導入があれば導入から）。ここが「新しい体験者」の唯一の入口。
-            ResolveRunDirector()?.BeginRun();
+            RuntimeHealth.Step("run", () => ResolveRunDirector()?.BeginRun());
         }
 
         /// <summary>
@@ -1850,14 +1929,14 @@ namespace FixedCamVr.Streaming
             ReleaseLiveHolds();
             _reportTally.Reset();   // 押した回数と報告した異変の数（体験 1 回ぶんの状態・memory/show_run_skeleton.md）
             _dwell.Reset();
-            cueScheduler?.ResetRun();
-            timelineDirector?.ResetRun();
-            ResolveBgmDirector()?.ResetRun();
-            ResolveSoundDirector()?.ResetRun();   // 卓経由（TriggerRunReset）と対称に保つ
+            RuntimeHealth.Step("cue", () => cueScheduler?.ResetRun());
+            RuntimeHealth.Step("timeline", () => timelineDirector?.ResetRun());
+            RuntimeHealth.Step("bgm", () => ResolveBgmDirector()?.ResetRun());
+            RuntimeHealth.Step("sound", () => ResolveSoundDirector()?.ResetRun());   // 卓経由（TriggerRunReset）と対称に保つ
             // 現地は卓と runEpoch を共有できないので、録画側は自分で世代を進める。
-            ResolveRecorder()?.ResetRunLocal();
-            RunReset?.Invoke();
-            ResolveRunDirector()?.BeginRun();
+            RuntimeHealth.Step("recorder", () => ResolveRecorder()?.ResetRunLocal());
+            RuntimeHealth.Raise("RunReset", RunReset);
+            RuntimeHealth.Step("run", () => ResolveRunDirector()?.BeginRun());
         }
 
         /// <summary>

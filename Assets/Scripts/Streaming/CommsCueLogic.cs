@@ -101,6 +101,13 @@ namespace FixedCamVr.Streaming
         /// 「異常があなたを取り込もうとしています。排除してください。」
         /// </summary>
         Prompt,
+        /// <summary>
+        /// ④ 4 周目 A の締めの報告が通って<b>呪いが解けた</b>ときの返事「異変を取り除きました。お疲れ様です。」
+        /// （2026-10-21・<c>canon/LEDGER.md</c> 0284。それまでは②の「異常を検出しました」をそのまま返していて急だった）。
+        /// 選ぶのは <c>CommsPanel.Deliver</c>（②a が届いた同じフレームに呪いが解けていれば差し替える）。
+        /// ⚠ 侵食度 1 のままでも出方はスイの通常の印字（<see cref="CommsDelivery.Typed"/>）。
+        /// </summary>
+        MarkCleared,
     }
 
     /// <summary>
@@ -365,6 +372,7 @@ namespace FixedCamVr.Streaming
             => IsOnboarding(notice) ? CommsDelivery.Fade
              : notice == CommsNotice.Halt ? CommsDelivery.Fade
              : notice == CommsNotice.Prompt ? CommsDelivery.Typed
+             : notice == CommsNotice.MarkCleared ? CommsDelivery.Typed
              : notice == CommsNotice.Takeover ? CommsDelivery.Possessed
              : invasionProgress >= CommsCurseLogic.PossessedLevel ? CommsDelivery.Cursed
              : CommsDelivery.Typed;

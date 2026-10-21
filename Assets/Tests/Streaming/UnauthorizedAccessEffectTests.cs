@@ -556,17 +556,17 @@ namespace FixedCamVr.Streaming.Tests
             try
             {
                 var effect = ConfigureTakeoverEffect(host, out material, out textures);
-                failed = new Texture2D(211, 107) { name = "failed-v4" };
+                failed = new Texture2D(254, 141) { name = "failed-v5" };
                 effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
                     textures[4], textures[5], failed);
                 effect.Play(anchor.transform, ReferenceSize);
                 effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFailureSec, true, 1f);
 
                 Bounds bounds = MeshBounds(effect, "Unauthorized Access Failure");
-                float visibleMinX = bounds.min.x + bounds.size.x * (10f / 211f);
-                float visibleMaxX = bounds.min.x + bounds.size.x * (200f / 211f);
-                float visibleMinY = bounds.min.y + bounds.size.y * (8f / 107f);
-                float visibleMaxY = bounds.min.y + bounds.size.y * (99f / 107f);
+                float visibleMinX = bounds.min.x + bounds.size.x * (30f / 254f);
+                float visibleMaxX = bounds.min.x + bounds.size.x * (227f / 254f);
+                float visibleMinY = bounds.min.y + bounds.size.y * (25f / 141f);
+                float visibleMaxY = bounds.min.y + bounds.size.y * (116f / 141f);
                 Assert.AreEqual(.06f * ReferenceSize.x, (visibleMinX + visibleMaxX) * .5f, .0001f);
                 Assert.AreEqual(-.065f * ReferenceSize.y, (visibleMinY + visibleMaxY) * .5f, .0001f);
                 Assert.AreEqual(.085f * ReferenceSize.y, visibleMaxY - visibleMinY, .0001f);
@@ -633,12 +633,12 @@ namespace FixedCamVr.Streaming.Tests
                 material = new Material(shader!);
                 textures = new[]
                 {
-                    new Texture2D(1406, 257) { name = "wordmark-v3" },
-                    new Texture2D(607, 107) { name = "subtitle-v3" },
+                    new Texture2D(1386, 220) { name = "wordmark-v5" },
+                    new Texture2D(657, 138) { name = "subtitle-v5" },
                     NewTexture("symbol"), NewTexture("noise"),
-                    new Texture2D(508, 107) { name = "context-v4" },
-                    new Texture2D(508, 107) { name = "attempt-v4" },
-                    new Texture2D(211, 107) { name = "failed-v4" },
+                    new Texture2D(555, 143) { name = "context-v5" },
+                    new Texture2D(555, 141) { name = "attempt-v5" },
+                    new Texture2D(254, 141) { name = "failed-v5" },
                 };
                 var effect = host.AddComponent<UnauthorizedAccessEffect>();
                 effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
@@ -647,9 +647,9 @@ namespace FixedCamVr.Streaming.Tests
                 effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFailureSec, true, 1f);
                 AssertTakeoverTextDoesNotOverlap(effect);
                 Assert.AreEqual(.26f * ReferenceSize.y,
-                    VisibleCenterY(effect, "Unauthorized Access Warning Bands", 8f / 257f, 249f / 257f), .0001f);
+                    VisibleCenterY(effect, "Unauthorized Access Warning Bands", 24f / 220f, 195f / 220f), .0001f);
                 Assert.AreEqual(.17f * ReferenceSize.y,
-                    VisibleHeight(effect, "Unauthorized Access Warning Bands", 8f / 257f, 249f / 257f), .0001f);
+                    VisibleHeight(effect, "Unauthorized Access Warning Bands", 24f / 220f, 195f / 220f), .0001f);
             }
             finally
             {

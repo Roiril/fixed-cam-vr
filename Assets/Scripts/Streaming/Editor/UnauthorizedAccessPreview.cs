@@ -22,13 +22,13 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(AssetDir);
             Directory.CreateDirectory(Path.GetDirectoryName(PrefabPath)!);
             AssetDatabase.Refresh();
-            var texture = ImportTexture("wordmark-v3.png");
-            var subtitle = ImportTexture("subtitle-v3.png");
+            var texture = ImportTexture("wordmark-v5.png");
+            var subtitle = ImportTexture("subtitle-v5.png");
             var symbol = ImportTexture("triangle-v3.png");
             var interference = ImportTexture("signal-tear-v3.png");
-            var context = ImportTexture("context-v4.png");
-            var attempt = ImportTexture("attempt-v4.png");
-            var failed = ImportTexture("failed-v4.png");
+            var context = ImportTexture("context-v5.png");
+            var attempt = ImportTexture("attempt-v5.png");
+            var failed = ImportTexture("failed-v5.png");
             var shader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/UnauthorizedAccessFx.shader");
             if (shader == null) throw new InvalidOperationException("UnauthorizedAccessFx shader missing");
             if (ShaderUtil.ShaderHasError(shader))

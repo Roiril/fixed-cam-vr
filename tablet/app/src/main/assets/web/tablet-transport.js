@@ -10,6 +10,8 @@
   const pending = new Map();
   const allowedTargets = new Set(['alpha', 'beta']);
   const allowedRequests = new Set(['GET /status', 'POST /set', 'POST /clear', 'POST /tablet/pulse']);
+  // 終幕の台車 Romi（ESP32）。スタッフ設定の「台車の自動走行」だけが使う。接続先の選択（setQuest）とは別。
+  const cartRequests = new Set(['GET /ending', 'POST /ending', 'POST /ending/go', 'GET /stop', 'GET /info']);
   let nextRequestId = 1;
 
   function abortError() {
@@ -53,12 +55,18 @@
     }
   }
 
+  // ブラウザで試すときの台車の代役（tools/romi/webui-stub.py）。?cart=http://127.0.0.1:8123 で向ける。
+  function cartBase() {
+    try { return new URLSearchParams(location.search).get('cart') || '/cart'; } catch (error) { return '/cart'; }
+  }
+
   function request(path, options = {}, target = '') {
-    if (!native) return fetch(path, options);
+    if (!native) return target === 'cart' ? fetch(cartBase() + path, options) : fetch(path, options);
     const method = String(options.method || 'GET').toUpperCase();
     const normalizedPath = normalizePath(path);
-    if (!allowedTargets.has(target)) return Promise.reject(new Error('Quest is not selected'));
-    if (!allowedRequests.has(`${method} ${normalizedPath}`)) {
+    const cart = target === 'cart';
+    if (!cart && !allowedTargets.has(target)) return Promise.reject(new Error('Quest is not selected'));
+    if (!(cart ? cartRequests : allowedRequests).has(`${method} ${normalizedPath}`)) {
       return Promise.reject(new Error('request is not allowed'));
     }
     const signal = options.signal;

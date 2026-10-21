@@ -31,7 +31,7 @@ namespace FixedCamVr.Tests.Streaming
             logic.Disable();
             Assert.AreEqual(1f, logic.ScreenPower);
             logic.Begin();
-            Assert.AreEqual(OutroStage.Collapse, logic.Stage);
+            Assert.AreEqual(OutroStage.Noise, logic.Stage);
         }
 
         [Test]
@@ -39,26 +39,33 @@ namespace FixedCamVr.Tests.Streaming
         {
             var l = Make();
             l.Begin();
-            Assert.AreEqual(OutroStage.Collapse, l.Stage);
+            Assert.AreEqual(OutroStage.Noise, l.Stage, "2026-10-21 から砂嵐が先");
             Assert.IsTrue(l.Active);
             Assert.IsTrue(l.Presenting);
             // 潰れているあいだ電力は 1 のまま（消え方は ScreenCollapse が持つ・二重に暗くしない）。
             Assert.AreEqual(1f, l.ScreenPower, 1e-4f);
             Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f, "始まった瞬間はまだふつうの画");
+            Assert.AreEqual(0f, l.ScreenNoise, 1e-4f, "砂嵐も 0 から始まる");
             Assert.AreEqual(0f, l.ReportAlpha, 1e-4f, "報告はまだ出さない");
         }
 
         [Test]
-        public void Stages_CollapseThenDarkThenReport()
+        public void Stages_NoiseThenCollapseThenDarkThenReport()
         {
             var l = Make();
             l.Begin();
             OutroTiming t = OutroTiming.Default;
 
+            l.Tick(t.noiseSec);
+            Assert.AreEqual(OutroStage.Collapse, l.Stage);
+            Assert.AreEqual(1f, l.ScreenNoise, 1e-4f, "潰れていく帯の中身は砂嵐のまま");
+            Assert.AreEqual(1f, l.ScreenPower, 1e-4f);
+
             l.Tick(t.collapseSec);
             Assert.AreEqual(OutroStage.Dark, l.Stage);
             Assert.AreEqual(0f, l.ScreenPower, 1e-4f, "消えた後は 0 のまま");
             Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f, "段を出たら潰れの進みは 0 へ戻す");
+            Assert.AreEqual(0f, l.ScreenNoise, 1e-4f, "段を出たら砂嵐も 0 へ戻す");
             Assert.AreEqual(0f, l.ReportAlpha, 1e-4f);
 
             l.Tick(t.darkSec);
@@ -73,9 +80,10 @@ namespace FixedCamVr.Tests.Streaming
         {
             // ⚠⚠ ユーザー判定「テンポが悪く、終わったかがわかりずらい」（`canon/LEDGER.md` 0111）。
             //    旧構成は 7.2 秒（ちかちか 6.0 ＋ 黒 1.2）だった。ここが伸びたら回帰。
+            //    2026-10-21 に砂嵐 0.95 秒を足して 2.1 → 2.41 秒（博士タブレットの消え方へ揃えた）。
             OutroTiming t = OutroTiming.Default;
-            float toFirstChar = t.collapseSec + t.darkSec;
-            Assert.LessOrEqual(toFirstChar, 2.2f,
+            float toFirstChar = t.noiseSec + t.collapseSec + t.darkSec;
+            Assert.LessOrEqual(toFirstChar, 2.5f,
                 "終わってから報告が出始めるまでが長い（旧 7.2 秒に戻っていないか）");
         }
 
@@ -87,6 +95,7 @@ namespace FixedCamVr.Tests.Streaming
             var l = Make();
             l.Begin();
             OutroTiming t = OutroTiming.Default;
+            l.Tick(t.noiseSec);
             l.Tick(t.collapseSec);
             l.Tick(t.darkSec);
             l.Tick(t.reportFadeSec);
@@ -106,6 +115,7 @@ namespace FixedCamVr.Tests.Streaming
             var l = Make();
             l.Begin();
             OutroTiming t = OutroTiming.Default;
+            l.Tick(t.noiseSec);
             l.Tick(t.collapseSec);
             l.Tick(t.darkSec);                       // → Report
             Assert.AreEqual(OutroStage.Report, l.Stage);
@@ -124,6 +134,7 @@ namespace FixedCamVr.Tests.Streaming
             Assert.AreEqual(OutroStage.Off, l.Stage);
             Assert.AreEqual(1f, l.ScreenPower, 1e-4f);
             Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f, "出していない間は潰れも 0（恒等）");
+            Assert.AreEqual(0f, l.ScreenNoise, 1e-4f, "出していない間は砂嵐も 0（恒等）");
             Assert.AreEqual(0f, l.ReportAlpha, 1e-4f);
             Assert.IsFalse(l.Presenting);
         }
@@ -154,6 +165,7 @@ namespace FixedCamVr.Tests.Streaming
             //   (a) 光過敏の危険帯（6〜24Hz）を作り、(b) 原理的に終端に読めない。
             var l = Make();
             l.Begin();
+            l.Tick(OutroTiming.Default.noiseSec);
             float prev = -1f;
             for (int i = 0; i < 90; i++)
             {
@@ -171,10 +183,11 @@ namespace FixedCamVr.Tests.Streaming
             // 乱数を使っていない（同じ版は同じ絵）。音の合成と同じ流儀。
             var a = Make(); var b = Make();
             a.Begin(); b.Begin();
-            for (int i = 0; i < 40; i++)
+            for (int i = 0; i < 80; i++)
             {
                 a.Tick(0.02f); b.Tick(0.02f);
                 Assert.AreEqual(a.ScreenCollapse, b.ScreenCollapse, 0f);
+                Assert.AreEqual(a.ScreenNoise, b.ScreenNoise, 0f);
             }
         }
 
@@ -185,6 +198,7 @@ namespace FixedCamVr.Tests.Streaming
             // 電力まで落とすと、線になる前に画が沈んで「潰れた」が読めなくなる。
             var l = Make();
             l.Begin();
+            l.Tick(OutroTiming.Default.noiseSec);
             for (int i = 0; i < 8; i++)
             {
                 l.Tick(OutroTiming.Default.collapseSec / 10f);
@@ -198,10 +212,11 @@ namespace FixedCamVr.Tests.Streaming
         {
             // run.outro が無い / 旧キーしか無い show.json（全部 0）でも走り切る。
             var t = new OutroTiming().Sanitized();
+            Assert.AreEqual(OutroTiming.Default.noiseSec, t.noiseSec, 1e-4f);
             Assert.AreEqual(OutroTiming.Default.collapseSec, t.collapseSec, 1e-4f);
             Assert.AreEqual(OutroTiming.Default.darkSec, t.darkSec, 1e-4f);
             Assert.AreEqual(OutroTiming.Default.reportFadeSec, t.reportFadeSec, 1e-4f);
-            Assert.AreEqual(3.6f, t.TotalSec, 1e-3f, "合計が変わったら解析の期待値も直すこと");
+            Assert.AreEqual(3.91f, t.TotalSec, 1e-3f, "合計が変わったら解析の期待値も直すこと");
         }
 
         [Test]
@@ -220,12 +235,61 @@ namespace FixedCamVr.Tests.Streaming
             Assert.AreEqual(1.4f, ok.collapseSec, 1e-4f);
         }
 
+        // --- 通信が切れる砂嵐（2026-10-21・博士タブレットの消え方）---------------
+
+        [Test]
+        public void Timing_MatchesTheDoctorTabletSignalCut()
+        {
+            // ⚠ 正は tablet/app/src/main/assets/web/signal-cut.js（NOISE_MS 950 / OFF_MS 260）。
+            //   あちらを直したらここも直す。
+            Assert.AreEqual(0.95f, OutroTiming.Default.noiseSec, 1e-4f);
+            Assert.AreEqual(0.26f, OutroTiming.Default.collapseSec, 1e-4f);
+        }
+
+        [Test]
+        public void Noise_RisesOnlyAndHandsOverToTheCollapse()
+        {
+            var l = Make();
+            l.Begin();
+            float prev = -1f;
+            float dt = OutroTiming.Default.noiseSec / 40f;
+            for (int i = 0; i < 100 && l.Stage == OutroStage.Noise; i++)
+            {
+                Assert.GreaterOrEqual(l.ScreenNoise, prev, "砂嵐の進みが戻った");
+                Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f, "砂嵐のあいだはまだ潰れない");
+                Assert.AreEqual(1f, l.ScreenPower, 1e-4f, "砂嵐のあいだも電力は届いている");
+                prev = l.ScreenNoise;
+                l.Tick(dt);
+            }
+            Assert.AreEqual(OutroStage.Collapse, l.Stage);
+            Assert.AreEqual(1f, l.ScreenNoise, 1e-4f);
+        }
+
+        [Test]
+        public void PowerCutAt_IsTheEndOfTheNoise_AndZeroWhenTrapped()
+        {
+            var l = Make();
+            l.Begin();
+            Assert.AreEqual(OutroTiming.Default.noiseSec, l.PowerCutAtSec, 1e-4f);
+            l.Begin(showCollapse: false);
+            Assert.AreEqual(0f, l.PowerCutAtSec, 1e-4f, "帰還不能は砂嵐を見せないので頭で落ちる");
+            l.Disable();
+            Assert.AreEqual(0f, l.PowerCutAtSec, 1e-4f);
+        }
+
+        [Test]
+        public void Timing_RefusesANoiseThatIsNotACut()
+        {
+            var t = new OutroTiming { noiseSec = 8f, collapseSec = 0.26f, darkSec = 1.2f, reportFadeSec = 1.5f }.Sanitized();
+            Assert.AreEqual(OutroTiming.Default.noiseSec, t.noiseSec, 1e-4f);
+        }
+
         [Test]
         public void Def_WithOnlyTheOldKeysStillRunsWithDefaults()
         {
             // 旧 show.json（flickerSec しか持たない / さらに古い unswapSec ほか）は
             // JsonUtility が新キーを 0 で埋める。enabled は生きているので既定で走ること。
-            var def = new ShowOutroDef { enabled = true, collapseSec = 0f, darkSec = 0f, reportFadeSec = 0f };
+            var def = new ShowOutroDef { enabled = true, noiseSec = 0f, collapseSec = 0f, darkSec = 0f, reportFadeSec = 0f };
             Assert.IsFalse(def.LooksUnset(), "enabled が立っているので「キーごと無い」ではない");
             OutroTiming t = def.ToTiming();
             Assert.AreEqual(OutroTiming.Default.collapseSec, t.collapseSec, 1e-4f);
@@ -236,7 +300,7 @@ namespace FixedCamVr.Tests.Streaming
         [Test]
         public void Def_LooksUnsetWhenJsonUtilityZeroedEverything()
         {
-            var def = new ShowOutroDef { enabled = false, collapseSec = 0f, darkSec = 0f, reportFadeSec = 0f };
+            var def = new ShowOutroDef { enabled = false, noiseSec = 0f, collapseSec = 0f, darkSec = 0f, reportFadeSec = 0f };
             Assert.IsTrue(def.LooksUnset());
         }
     }

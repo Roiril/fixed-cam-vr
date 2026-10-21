@@ -114,6 +114,31 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
+        public void NeedsReRegistration_SurvivesAppRestart_UntilConfirmedAgain()
+        {
+            // 2026-10-21: 印をメモリにしか持たず、アプリを落として起動し直すと
+            // ずれた位置合わせが「有効」として読み込まれていた。
+            CourseFrame frame = MakeFrame(out string path);
+            frame.SetRegistration(new Vector2(0.2f, 0.3f), 12f, 0.05f, 3, save: false);
+            frame.SaveRegistration();
+            UnityEngine.TestTools.LogAssert.ignoreFailingMessages = true;
+            frame.MarkNeedsReRegistration();
+            UnityEngine.TestTools.LogAssert.ignoreFailingMessages = false;
+
+            CourseFrame reloaded = MakeFrame(out string path2);
+            File.Copy(path, path2, overwrite: true);
+            reloaded.LoadRegistration();
+            Assert.That(reloaded.HasRegistration, Is.True);
+            Assert.That(reloaded.NeedsReRegistration, Is.True, "再起動しても要再登録のまま");
+
+            reloaded.SetRegistration(new Vector2(0.2f, 0.3f), 12f, 0.05f, 3, save: true);
+            CourseFrame again = MakeFrame(out string path3);
+            File.Copy(path2, path3, overwrite: true);
+            again.LoadRegistration();
+            Assert.That(again.NeedsReRegistration, Is.False, "確定し直せば印は降りる");
+        }
+
+        [Test]
         public void OldRegistrationFileLoadsWithoutFloor()
         {
             // 床の高さを測っていない旧ファイル。originY=0 を「床が一致している」と読むと、

@@ -54,11 +54,15 @@ namespace FixedCamVr.Streaming
         private static readonly int ReadRect2Id = Shader.PropertyToID("_ReadRect2");
         private static readonly int ReadRect3Id = Shader.PropertyToID("_ReadRect3");
         private static readonly int ReadMaskStrengthId = Shader.PropertyToID("_ReadMaskStrength");
-        private static readonly Color AlertRed = new Color(1f, .06f, .085f, 1f);
-        private static readonly Color SubtitleRed = new Color(1f, .13f, .14f, 1f);
-        private static readonly Color ContextTint = new Color(.83f, .70f, .64f, 1f);
-        private static readonly Color AttemptTint = new Color(1f, .47f, .30f, 1f);
-        private static readonly Color FailureTint = new Color(1f, .18f, .19f, 1f);
+        private static readonly int WearId = Shader.PropertyToID("_Wear");
+        // 2026-10-21（canon/LEDGER.md 0285）: 原色の赤とピンク寄りの赤をやめ、他の面と同じ色の系統へ寄せた。
+        // 頂点色は sRGB 変換を通らないので、sRGB で決めた色を linear へ直して渡す。
+        // 警告の赤 = スイの面の嘘の赤（CommsPanel.LieRed）と同じ朱。補足の象牙 = HmdTextStyle.Ink。
+        private static readonly Color AlertRed = new Color(232f / 255f, 52f / 255f, 30f / 255f, 1f).linear;
+        private static readonly Color SubtitleRed = new Color(214f / 255f, 66f / 255f, 44f / 255f, 1f).linear;
+        private static readonly Color ContextTint = new Color(209f / 255f, 199f / 255f, 184f / 255f, 1f).linear;
+        private static readonly Color AttemptTint = new Color(1f, .55f, .40f, 1f).linear;
+        private static readonly Color FailureTint = new Color(1f, 48f / 255f, 24f / 255f, 1f).linear;
 
         private static readonly float[] BundlePositions =
         {
@@ -370,10 +374,11 @@ namespace FixedCamVr.Streaming
         private void BuildMaterials()
         {
             if (fxMaterial == null) return;
+            // 文字の版はかすれを焼いてある。焼いていない図形（三角・感嘆符・バー）だけシェーダで乾かす。
             _symbolMaterial = CreateRuntimeMaterial("Unauthorized Access Symbol", 2f,
-                symbolGraphic != null ? symbolGraphic : Texture2D.whiteTexture, 1f, 3448);
+                symbolGraphic != null ? symbolGraphic : Texture2D.whiteTexture, 1f, 3448, .30f);
             _decorationMaterial = CreateRuntimeMaterial("Unauthorized Access Decorations", 2f,
-                Texture2D.whiteTexture, 1f, 3449);
+                Texture2D.whiteTexture, 1f, 3449, .30f);
             _warningMaterial = CreateRuntimeMaterial("Unauthorized Access Warning", 2f,
                 warningGraphic != null ? warningGraphic : Texture2D.whiteTexture, 1f, 3450);
             _subtitleMaterial = CreateRuntimeMaterial("Unauthorized Access Subtitle", 2f,
@@ -383,7 +388,7 @@ namespace FixedCamVr.Streaming
             _statusMaterial = CreateRuntimeMaterial("Unauthorized Access Status", 2f,
                 attemptGraphic != null ? attemptGraphic : Texture2D.whiteTexture, 1f, 3453);
             _blockBarMaterial = CreateRuntimeMaterial("Unauthorized Access Block Bar", 2f,
-                Texture2D.whiteTexture, 1f, 3453);
+                Texture2D.whiteTexture, 1f, 3453, .18f);
             _failureMaterial = CreateRuntimeMaterial("Unauthorized Access Failure", 2f,
                 failedGraphic != null ? failedGraphic : Texture2D.whiteTexture, 1f, 3454);
             _glyphMaterial = CreateRuntimeMaterial("Unauthorized Access Glyph", 1f,
@@ -394,13 +399,14 @@ namespace FixedCamVr.Streaming
         }
 
         private Material CreateRuntimeMaterial(string materialName, float mode, Texture texture, float strength,
-            int renderQueue = -1)
+            int renderQueue = -1, float wear = 0f)
         {
             var material = new Material(fxMaterial!) { name = materialName + " (runtime)" };
             material.SetTexture(MainTexId, texture);
             material.SetColor(ColorId, Color.white);
             material.SetFloat(ModeId, mode);
             material.SetFloat(StrengthId, strength);
+            material.SetFloat(WearId, wear);
             if (renderQueue >= 0) material.renderQueue = renderQueue;
             return material;
         }
@@ -552,9 +558,9 @@ namespace FixedCamVr.Streaming
         {
             if (_screenRoot != null) SetWorldUnitLocalScale(_screenRoot);
             _warningWidth = size.x * 1.06f;
-            _warningHeight = _warningWidth / TextureAspect(warningGraphic, 1406f / 257f);
+            _warningHeight = _warningWidth / TextureAspect(warningGraphic, 1386f / 220f);
             _subtitleWidth = size.x * .76f;
-            _subtitleHeight = _subtitleWidth / TextureAspect(subtitleGraphic, 805f / 107f);
+            _subtitleHeight = _subtitleWidth / TextureAspect(subtitleGraphic, 657f / 138f);
             _symbolSize = size.y * 1.16f;
             _contextWidth = size.x * .70f;
             _contextHeight = _contextWidth / TextureAspect(contextGraphic, 5.4f);
@@ -562,9 +568,9 @@ namespace FixedCamVr.Streaming
             _statusWidth = _statusHeight * TextureAspect(attemptGraphic != null ? attemptGraphic : failedGraphic, 4.2f);
             EnsureTakeoverLayoutMeasurements();
             _takeoverWarningLayout = TakeoverLayout(warningGraphic, _warningOpaqueUv,
-                TakeoverWarningVisibleHeight, .06f, TakeoverWarningY, 1406f / 257f, size);
+                TakeoverWarningVisibleHeight, .06f, TakeoverWarningY, 1386f / 220f, size);
             _takeoverSubtitleLayout = TakeoverLayout(subtitleGraphic, _subtitleOpaqueUv,
-                TakeoverJapaneseVisibleHeight, -.12f, TakeoverMessageY, 805f / 107f, size);
+                TakeoverJapaneseVisibleHeight, -.12f, TakeoverMessageY, 657f / 138f, size);
             _takeoverContextLayout = TakeoverLayout(contextGraphic, _contextOpaqueUv,
                 TakeoverJapaneseVisibleHeight, .23f, TakeoverMessageY, 5.4f, size);
             _takeoverStatusLayout = TakeoverLayout(attemptGraphic, _statusOpaqueUv,
@@ -599,16 +605,18 @@ namespace FixedCamVr.Streaming
         {
             if (texture == null || texture.width <= 0 || texture.height <= 0) return new Rect(0f, 0f, 1f, 1f);
             // 本番画像はRead/Write無効。元PNGから測った不透明画素範囲を名前と寸法で照合する。
-            if (texture.name == "wordmark-v3" && texture.width == 1406 && texture.height == 257)
-                return Rect.MinMaxRect(32f / 1406f, 8f / 257f, 1374f / 1406f, 249f / 257f);
-            if (texture.name == "subtitle-v3" && texture.width == 607 && texture.height == 107)
-                return Rect.MinMaxRect(11f / 607f, 8f / 107f, 593f / 607f, 99f / 107f);
-            if (texture.name == "context-v4" && texture.width == 508 && texture.height == 107)
-                return Rect.MinMaxRect(11f / 508f, 8f / 107f, 494f / 508f, 99f / 107f);
-            if (texture.name == "attempt-v4" && texture.width == 508 && texture.height == 107)
-                return Rect.MinMaxRect(10f / 508f, 8f / 107f, 497f / 508f, 99f / 107f);
-            if (texture.name == "failed-v4" && texture.width == 211 && texture.height == 107)
-                return Rect.MinMaxRect(10f / 211f, 8f / 107f, 200f / 211f, 99f / 107f);
+            // 値は tools/make-error-typography.py の出力（opaque = PIL の上原点）を v 反転して写したもの。
+            // 版を焼き直したら必ずここも直す（寸法が変わると照合が外れて余白込みの大きさで並ぶ）。
+            if (texture.name == "wordmark-v5" && texture.width == 1386 && texture.height == 220)
+                return Rect.MinMaxRect(27f / 1386f, 24f / 220f, 1359f / 1386f, 195f / 220f);
+            if (texture.name == "subtitle-v5" && texture.width == 657 && texture.height == 138)
+                return Rect.MinMaxRect(28f / 657f, 25f / 138f, 620f / 657f, 113f / 138f);
+            if (texture.name == "context-v5" && texture.width == 555 && texture.height == 143)
+                return Rect.MinMaxRect(27f / 555f, 27f / 143f, 525f / 555f, 118f / 143f);
+            if (texture.name == "attempt-v5" && texture.width == 555 && texture.height == 141)
+                return Rect.MinMaxRect(28f / 555f, 25f / 141f, 523f / 555f, 116f / 141f);
+            if (texture.name == "failed-v5" && texture.width == 254 && texture.height == 141)
+                return Rect.MinMaxRect(30f / 254f, 25f / 141f, 227f / 254f, 116f / 141f);
             return new Rect(0f, 0f, 1f, 1f);
         }
 
@@ -744,7 +752,9 @@ namespace FixedCamVr.Streaming
                 int vertex = (firstQuad + i) * 4;
                 SetParallelogramVertices(_decorationVertices, vertex, x, centerY, .003f,
                     stripeWidth, height, shear);
-                SetQuadColor(_decorationColors, vertex, WithAlpha(AlertRed, alpha * reveal * ending));
+                // 乗っ取りでは工事現場の斜線を出さない（0285。この作品で唯一の「標識」の語彙だった）。
+                float shown = _takeoverMode ? 0f : 1f;
+                SetQuadColor(_decorationColors, vertex, WithAlpha(AlertRed, alpha * reveal * ending * shown));
             }
         }
 
@@ -943,9 +953,11 @@ namespace FixedCamVr.Streaming
             float flowTime = GlyphFlowTime(seconds);
             if (glyph.Kind == GlyphKind.Middle)
             {
-                xPosition = BundleX(glyph.Bundle) * _screenSize.x + (glyph.X - .5f) * .12f;
+                // 2026-10-21（0285）: 列に揃えて降らせると「コンピュータの中の雨」に見える。
+                // 列を捨て、散らばった砂嵐の断片がゆっくり下へ流れる形にした。
+                xPosition = Mathf.Lerp(BundleX(0), BundleX(BundlePositions.Length - 1), glyph.X) * _screenSize.x;
                 float range = _screenSize.y * 1.38f;
-                yPosition = Mathf.Repeat(glyph.Y * range - flowTime * glyph.Speed + range, range) - range * .58f;
+                yPosition = Mathf.Repeat(glyph.Y * range - flowTime * glyph.Speed * .3f + range, range) - range * .58f;
             }
             else if (glyph.Kind == GlyphKind.Far)
             {
@@ -993,7 +1005,7 @@ namespace FixedCamVr.Streaming
                     strip.Width * _screenSize.x, strip.Height);
                 float pulse = .62f + firstTear * .38f + secondTear * .72f + (seconds >= 3.65f ? .12f : 0f);
                 SetQuadColor(_interferenceColors, i * 4,
-                    new Color(1f, .06f, .085f, Mathf.Clamp01(strip.Alpha * reveal * pulse)));
+                    WithAlpha(AlertRed, Mathf.Clamp01(strip.Alpha * reveal * pulse)));
             }
             _interferenceMesh.SetVertices(_interferenceVertices);
             _interferenceMesh.SetColors(_interferenceColors);
@@ -1252,10 +1264,11 @@ namespace FixedCamVr.Streaming
                 GlyphKind.Middle => Range(random, .22f, .52f),
                 _ => Range(random, .16f, .38f),
             };
+            // 砂嵐の断片は主画面の砂嵐と同じ無彩寄り。赤は警告の朱を暗くしたものだけ残す（0285）。
             int choice = random.Next(10);
-            if (choice < 4) return new Color(.93f, .055f, .07f, alpha);
-            if (choice < 8) return new Color(.34f, .014f, .022f, alpha);
-            return new Color(1f, .38f, .3f, alpha);
+            if (choice < 4) return WithAlpha(AlertRed * .8f, alpha);
+            if (choice < 8) return WithAlpha(new Color(.45f, .40f, .36f, 1f), alpha);
+            return WithAlpha(ContextTint, alpha);
         }
 
         private static float Range(System.Random random, float min, float max) =>

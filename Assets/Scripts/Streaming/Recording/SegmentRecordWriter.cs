@@ -77,8 +77,23 @@ namespace FixedCamVr.Streaming.Recording
             public readonly byte[] buf;
             public readonly int length;
             public readonly int ptsMs;
-            public Item(byte[] buf, int length, int ptsMs) { this.buf = buf; this.length = length; this.ptsMs = ptsMs; }
+            public readonly float progress;   // 位置で録る区間の進み具合（それ以外は NaN）
+            public Item(byte[] buf, int length, int ptsMs, float progress)
+            {
+                this.buf = buf; this.length = length; this.ptsMs = ptsMs; this.progress = progress;
+            }
         }
+
+        /// <summary>
+        /// 位置で録る区間で「前へ進んだ」とみなす進み具合の刻み（`canon/LEDGER.md` 0274）。
+        /// 0.004 は 90° の角で約 0.36°。体の揺れで同じ場所のコマが積み重ならない程度。
+        /// </summary>
+        public const float ProgressStep = 0.004f;
+
+        // 位置で録るか（EnableProgress）。立っていると、追い録りの前は進み具合が最大を超えたコマだけ積む。
+        private bool _progressMode;
+        private float _maxProgress = float.NegativeInfinity;
+        private bool _discarded;
 
         private readonly Queue<Item> _ring = new(64);
         private readonly ConcurrentBag<byte[]> _pool = new();
@@ -191,6 +206,43 @@ namespace FixedCamVr.Streaming.Recording
         /// <summary>このセグメントのファイルパス。</summary>
         public string Path => _path;
 
+        /// <summary>
+        /// 進み具合のファイル（<c>.mjr</c> と同じ順にコマごとの進み具合を持つ）。
+        /// 位置で録った区間だけ書く。形式は <see cref="RecordedSegmentFormat.WriteProgress"/>。
+        /// </summary>
+        public static string ProgressPath(string mjrPath) => mjrPath + ".prog";
+
+        /// <summary>
+        /// <b>位置で録る</b>（`canon/LEDGER.md` 0274）。以後、追い録りの前は進み具合が
+        /// それまでの最大を <see cref="ProgressStep"/> 以上超えたコマだけを積む ＝ 戻ったぶんは撮影済みなので積まない。
+        /// 進み具合が取れないコマ（NaN）は時間どおり積む（位置が取れない現場で 1 枚も残らない、を作らない）。
+        /// </summary>
+        public void EnableProgress() => _progressMode = true;
+
+        /// <summary>位置で録っているか。</summary>
+        public bool ProgressMode => _progressMode;
+
+        /// <summary>積んだコマの進み具合の最大（1 枚も無ければ負の無限大）。</summary>
+        public float MaxProgress => _maxProgress;
+
+        /// <summary>
+        /// この試行を<b>書き出さずに捨てる</b>（採らなかった試行）。ファイルは作らないので、
+        /// 次に同じ区間へ入ったとき録り直せる。
+        /// </summary>
+        public void Discard()
+        {
+            if (_stopped) return;
+            _stopped = true;
+            _discarded = true;
+            foreach (Item item in _ring) _pool.Add(item.buf);
+            _ring.Clear();
+            _ringBytes = RecordedSegmentFormat.HeaderBytes;
+            _flushDone = true;
+        }
+
+        /// <summary>捨てた試行か。</summary>
+        public bool Discarded => _discarded;
+
         public SegmentRecordWriter(string path, Limits limits)
         {
             _path = path;
@@ -203,7 +255,7 @@ namespace FixedCamVr.Streaming.Recording
         /// fpsCap による間引きで捨てたときは false（リングに載れば true）。
         /// 載せた結果あふれた古いフレームは黙って落ちる（それがこのクラスの仕事）。
         /// </summary>
-        public bool TryAppend(byte[] jpeg, int length, int ptsMs)
+        public bool TryAppend(byte[] jpeg, int length, int ptsMs, float progress = float.NaN)
         {
             if (_stopped || length <= 0 || length > RecordedSegmentFormat.MaxFrameBytes) return false;
             // 追い録りの上限を過ぎたら受けない（呼び出し側が閉じ忘れても窓は伸びない）。
@@ -211,10 +263,16 @@ namespace FixedCamVr.Streaming.Recording
             if (_limits.minFrameIntervalSec > 0f && _lastPtsMs >= 0
                 && (ptsMs - _lastPtsMs) < _limits.minFrameIntervalSec * 1000f - 1f)
                 return false;
+            // 位置で録る区間は、前へ進んだコマだけ（追い録りは時間どおり ＝ 過去の自分が画面の外まで歩いて出る）。
+            if (_progressMode && _anchorPtsMs < 0 && !float.IsNaN(progress))
+            {
+                if (_ring.Count > 0 && progress < _maxProgress + ProgressStep) return false;
+            }
+            if (!float.IsNaN(progress) && _anchorPtsMs < 0 && progress > _maxProgress) _maxProgress = progress;
 
             if (!_pool.TryTake(out byte[]? buf) || buf.Length < length) buf = new byte[Math.Max(length, 96 * 1024)];
             Buffer.BlockCopy(jpeg, 0, buf, 0, length);
-            _ring.Enqueue(new Item(buf, length, ptsMs));
+            _ring.Enqueue(new Item(buf, length, ptsMs, progress));
             _ringBytes += RecordedSegmentFormat.FrameHeaderBytes + length;
             _lastPtsMs = ptsMs;
 
@@ -302,6 +360,13 @@ namespace FixedCamVr.Streaming.Recording
                     frames++;
                 }
                 fs.Flush();
+                if (_progressMode)
+                {
+                    var prog = new float[items.Length];
+                    for (int i = 0; i < items.Length; i++) prog[i] = items[i].progress;
+                    using var ps = new FileStream(ProgressPath(_path), FileMode.Create, FileAccess.Write, FileShare.Read);
+                    RecordedSegmentFormat.WriteProgress(ps, prog);
+                }
                 Interlocked.Exchange(ref _written, written);
                 Interlocked.Exchange(ref _writtenFrames, frames);
             }

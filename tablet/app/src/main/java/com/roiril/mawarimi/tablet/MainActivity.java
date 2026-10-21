@@ -51,6 +51,14 @@ public final class MainActivity extends Activity {
 
     private final ThreadPoolExecutor requestExecutor = new ThreadPoolExecutor(
         2, 2, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(16));
+    // 台車（ESP32）は別の列にする。Quest が応答しない間（休止・β 未起動）は Quest の要求が
+    // 接続待ち 5 秒＋読込 8 秒で 2 本とも塞ぎ、台車の要求が画面側の 4 秒の打ち切りまで順番を待っていた。
+    // 台車の WebServer は 1 本ずつしか捌かないので、こちらも 1 本で足りる（2026-10-21）。
+    private final ThreadPoolExecutor cartExecutor = new ThreadPoolExecutor(
+        1, 1, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(4));
+    // 画面側の打ち切り（romi-panel.js の 4 秒）より先に終わらせ、取り消し後もスレッドを握り続けない
+    private static final int CART_CONNECT_TIMEOUT_MS = 2500;
+    private static final int CART_READ_TIMEOUT_MS = 3000;
     private final ConcurrentHashMap<String, PendingRequest> pendingRequests = new ConcurrentHashMap<>();
     private WebView webView;
     private SharedPreferences preferences;
@@ -179,6 +187,7 @@ public final class MainActivity extends Activity {
         for (PendingRequest request : pendingRequests.values()) request.cancel();
         pendingRequests.clear();
         requestExecutor.shutdownNow();
+        cartExecutor.shutdownNow();
         if (webView != null) {
             webView.removeJavascriptInterface("TabletHost");
             webView.destroy();
@@ -204,7 +213,8 @@ public final class MainActivity extends Activity {
                 return blocked(404, "Not Found");
             }
             if ("/".equals(path)) path = "/index.html";
-            if (!path.equals("/index.html") && !path.startsWith("/asset/") && !path.equals("/tablet-transport.js")) {
+            if (!RequestPolicy.servableWebPath(path)) {
+                Log.w(TAG, "blocked web path=" + path);
                 return blocked(404, "Not Found");
             }
             if (path.equals("/index.html") && !request.isForMainFrame()) return blocked(403, "Forbidden");
@@ -331,6 +341,7 @@ public final class MainActivity extends Activity {
         if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
         if (lower.endsWith(".webp")) return "image/webp";
         if (lower.endsWith(".mp3")) return "audio/mpeg";
+        if (lower.endsWith(".wav")) return "audio/wav";
         if (lower.endsWith(".mp4")) return "video/mp4";
         return "application/octet-stream";
     }
@@ -382,7 +393,8 @@ public final class MainActivity extends Activity {
                 return;
             }
             try {
-                requestExecutor.execute(() -> executeRequest(pending, quest, method, path, body == null ? "" : body));
+                ("cart".equals(quest) ? cartExecutor : requestExecutor)
+                    .execute(() -> executeRequest(pending, quest, method, path, body == null ? "" : body));
             } catch (RuntimeException error) {
                 pendingRequests.remove(requestId, pending);
                 callbackFailure(requestId, "request queue full");
@@ -406,8 +418,9 @@ public final class MainActivity extends Activity {
             pending.connection = connection;
             connection.setInstanceFollowRedirects(false);
             connection.setUseCaches(false);
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(8000);
+            boolean cart = "cart".equals(quest);
+            connection.setConnectTimeout(cart ? CART_CONNECT_TIMEOUT_MS : 5000);
+            connection.setReadTimeout(cart ? CART_READ_TIMEOUT_MS : 8000);
             connection.setRequestMethod(method);
             connection.setRequestProperty("Accept", "application/json");
             if ("POST".equals(method)) {

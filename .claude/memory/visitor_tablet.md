@@ -5,14 +5,38 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 94dc6571-7165-4a32-9334-39ae2473a8c9
-  modified: 2026-10-03T04:10:00.000Z
+  modified: 2026-10-15T01:59:42.198Z
 ---
 
 # タブレットの博士UIを触る前に
 
+## 誤タップの守り（2026-10-21・LEDGER 0282 の続き）
+
+画面が切り替わった直後 0.5 秒は click を捨てる（`switchClickGuardUntil`。長押しの後の 0.4 秒とは別の札で、同じ capture の click 捨てが両方を見る）。言語の「次へ」と軽減の「この設定で始める」を同じ位置に置いたので、これが無いと二度押しで軽減を飛ばして送る。説明の文は出てから 0.7 秒はタップで送らない（`cueShownAt`）。一時停止の盤は「前・再開・次」だけを上の段に置き、「タイトルに戻る」「言語・軽減を変更」は下の段の両端。⚠ `.stage.has-reference … { left: 67% }` は後ろの `.stage.is-briefing:not(.is-equipment) .briefing-controls` に負けて効いていなかった（盤が額に被っていた）。`is-briefing` を足して強くした。
+
+## 台車（Romi）の自動走行（2026-10-17・0269）
+
+スタッフ画面「困ったとき」の中の 1 節（`romi-panel.js`）。⚠ **スタッフ画面の折りたたみは「困ったとき」1 つだけ**（`verify-runtime.cjs` が数える）ので、別の `<details>` にしない。送り先は `TabletTransport.request(path, opts, 'cart')` → ネイティブは `192.168.10.51:80` だけ（`RequestPolicy` の `cart`・`network_security_config.xml` に .51）。`setQuest` には通さない。開いている間だけ 1 秒ごとに `GET /ending` を読む。保存・試走の結果は 5 秒残す（再読込の「接続しました」で消えないように）。試走は 3 秒以内の 2 度押し。電源断の目安 7.1 秒は Quest の `RomiCartLink.ReleaseToCutSec` と対。⚠ 代役 DOM（verify-runtime）は `createElement` を持たないので、そこでは組まない。
+
+## 効果音（2026-10-16・0266 → 0267）
+
+⚠⚠ **本編（Quest）の音は使わない**（0267）。全部 `tools/make-tablet-sounds.py` が画面の動きの時刻表から計算で作る `asset/tablet_*.wav`。表と作り方は `rules/sound-design.md` の頭の節。鳴らす口は `index.html` の `sfx(name)`（`tablet-sound.js`）。実機（Redmi）で 9 種すべてが鳴らし始め 15 回・信号 15 回で一致し、鳴った素材が全部 `tablet_*` であることをデバッグ版の WebView から読んで確かめた。
+
+## 視線の順と、説明の終わり（2026-10-16・0265）
+
+来場者の画面は、読む順に 1 列へ並べる。設定は 注意 → 問い（`#settingsAsk`）→ 選択肢 → 進む（`#settingsActions` は settingsView の中）。軽減の効果は各選択肢の語の直下（`#reliefOffNote` / `#reliefOnNote`。`#reliefDesc` は廃止）。確認・反映は 印 → 一文（`#resultLine`）→ 値 → 押す所。確認の段（`data-key="confirm"`）では矢印の輪を出さない（押す所に見えて本物の「送る」より先に目を取った）。下の字幕帯は設定と確認では隠す。読み上げは従来どおり `#subtitleAnnouncement`。全画面への復帰は右上（スタッフ入口の隣）。
+
+説明の終わり（12文目の後）は `signal-cut.js` で通信が切れる形にした。2026-10-16から砂嵐は1回だけ。2026-10-21からその黒の後は装着の準備（来場者が読む）と「読み終わったら、スタッフにタブレットを渡してください。」。以前はreportの後で返却を挟み、装着2文の後にもう一度切れていた。手順と検証は `tools/visitor-ui/README.md`「説明の終わり」。
+
+⚠⚠ **web の js を足したら `RequestPolicy.WEB_SCRIPTS` にも足す。** アプリは `index.html` / `/asset/` / この表の js しか配らず、それ以外は 404 で黙って落ちる（2026-10-16 実機で発覚。`signal-cut.js` と、10-14 から入っていた `title-write.js` の両方が実機で一度も読まれていなかった＝題字の筆の書き出しは実機では素の画像だった）。ブラウザの代役（staff-mock-server）は全部配るので気づけない。`NativePolicyTest` が `index.html` の `<script src>` を全部この表と突き合わせる（`tablet/build.py` が毎回走らせる）。弾いた道は logcat に `blocked web path=` が出る。
+⚠ **舞台全体（動画を含む層）を CSS の transform / filter で潰すと、Android WebView は描かず黒に飛ぶ**（ブラウザでは描ける）。ブラウン管が切れる段は canvas の中で描いた。実機の画面録画は `screenrecord --size 1280x800`（1920×1200 は codec が起動しない）→ 30fps にして 隣り合う画素の差・平均輝度・明るい行の割合 でコマを分ける。
+⚠⚠ **資料を隠す取消は `BriefingPresentation.cancelReference`、一時停止などの取消は `cancel`。** 以前は 1 つの札で、状態の定期取得が 2 秒ごとに `renderBriefingScene` → `setReferenceVisual(false)` → `cancel` を呼ぶたびに「終わったら装着の案内へ」の待ち（`holdThen`）まで消えていた。待ちが 220ms のころも 2 秒周期に当たれば止まる穴で、1.2 秒に伸ばしたら実機試験 briefing / presentation が毎回止まって見つかった（`verify-presentation.cjs` に回帰試験）。
+⚠ `.stage` は `overflow: clip`。粒の層（`inset: -60px`）がはみ出しており、`overflow: hidden` のままだと focus や `scrollIntoView` で舞台ごと 38px 横へずれた（内蔵ブラウザの ref クリックで再現）。
+⚠ 内蔵ブラウザの `zoom` は直前の撮影を切り出すだけ。押した直後に `zoom` すると古い画で「選べていない」と誤読する。撮り直してから見る。
+
 ## 毎回の体験者準備（2026-10-08）
 
-スタッフの主画面はタブレット。起動時から全画面で「準備 → 来場者 → 装着 → 体験 → 回収」を示す。Questで行うのは位置合わせと目視確認。機器の接続待ちでも位置合わせを始められる。毎回は清拭・機器確認の後、タブレットでリセットの実完了を待つ。「来場者の画面にする」でタブレットを渡し、新しい設定と博士の説明を進める。スタッフへ返されたら実値と機器を確認し、「長押しで装着へ進む」を押し続ける。Questの応答後に博士の装着案内2文が自動で進む。右AリセットとB確定は予備操作。左X/Yの練習と題字の明示開始は維持する。詳細は[スタッフ起動・交代フロー](staff_setup.md)。
+スタッフの主画面はタブレット。起動時から全画面で「準備 → 来場者 → 装着 → 体験 → 回収」を示す。Questで行うのは位置合わせと目視確認。機器の接続待ちでも位置合わせを始められる。毎回は清拭・機器確認の後、タブレットでリセットの実完了を待つ。「来場者の画面にする」でタブレットを渡し、新しい設定と博士の説明を進める。博士の12文は来場者の手元で通して流れ、最後の砂嵐の直後に装着の準備（3枚の絵）と「読み終わったら、スタッフにタブレットを渡してください。」が出る。スタッフは案内の下の「スタッフ専用（長押し）」で開き、実値と機器を確認し、「長押しで装着へ進む」を押し続ける。Questの応答後はスタッフ画面のまま「装着を手伝う」へ進む（2026-10-21）。博士はもう話さない。右AリセットとB確定は予備操作。左X/Yの練習と題字の明示開始は維持する。詳細は[スタッフ起動・交代フロー](staff_setup.md)。
 
 リセットは通信セッションと`visitorGeneration`を更新し、旧設定・受理情報・説明とスタッフ確定を破棄する。`/tablet/pulse`は説明終了／スタッフ確定の版を現在の設定に結び付ける。POST受理だけでは確定表示をしない。戻る／再説明で確定を無効化する。`questTick`が止まった状態を緑表示しない。Quest休止中の実行と非装着復帰は実機確認が必要。新プロトコルを使うため、Questとタブレットの両APK更新が必要。
 
@@ -85,10 +109,51 @@ Quest の応答が 6 秒以上古ければ未確認。ページの経過時間�
 | 代役 | [`tools/visitor-portal-stub.py`](../../tools/visitor-portal-stub.py)（Quest 無しで面を机上で通す） |
 | 観測 | `ev=sum visitor=<口が開いているか>/<受けた累計>/<枠の受理番号>/<書いた受理番号>/<書いた回数>`／解析器「## タブレットの口」／logcat `[VisitorPortal]` |
 
+## 名乗らない組織の素材（2026-10-15・0263・判定待ち）
+
+博士の動画は `*-ja-v2.mp4`（目元を闇に沈めた版）。元の `*-ja-v1.mp4` は焼き直しの入力として残す（APK にも入っているが参照していない）。
+顔の追跡 `track-doctor-face.py` → 闇の焼き込み `shade-doctor-eyes.py`。手順と罠は `tools/visitor-ui/README.md`「博士の目元の闇」。
+- 反映の印は `institute-seal-v1.png`（CSS の背景画像。✓ の文字は読み上げ用に残して画面では隠す）
+- 確認・反映の画面だけ `#entranceImage` の src を `entrance-doll-tilt-v1.png` に差し替える（`syncEntranceDoll`。同じ img の src を替えるので drift のアニメと位置がずれない）。タイトルの背景は CSS の別の url で、こちらは替わらない
+- 観測装置は `briefing-device-v3.jpg`（写真）。`is-device`（透過図だけ額を外す特別扱い）は消した
+- 素材の生成記録は `tools/visitor-ui/sinister-assets.md`
+- 2026-10-15 午後、Redmi で実機試験 6 種（既定・playback・briefing・presentation・equipment・visitorFocus）が全 PASS。試験用 APK は `bash tablet/install-confirm.sh` で入れる。visitorFocus の重なりの基準は「字幕が博士の口元より下」（0262 の全面構図に合わせた）
+
+## 実機で見つけたこと（2026-10-14・USB の Redmi Pad で確認）
+
+- **参考図と壁の映像が出なかった理由**：10-11 の `ecdac4ea`（博士と字幕へ絞る）が `syncBriefingLoopVideo` を「常に解放」に変え、
+  本文ごと `display:none` にしていた。壊れたのではなく**意図して隠していた**。今回の作り替えでも踏襲して隠したまま焼いたので
+  実機で目に付いた。額を舞台の直下へ出し、博士を右へ寄せて復活させた（`has-reference`）
+  - 2026-10-19（LEDGER 0275）: 右へ寄る動きは**滑らせない**。`SignalCut.glitch()`（0.36 秒の砂嵐と横の帯）の下で一瞬に替える。
+    章の切り替えは毎回この乱れと `chapter`（砂嵐を刻む音）でつなぐ。⚠ 砂嵐の素材を初回に作ると 0.4 秒止まるので、起動後の空き時間に先に作る。
+    ⚠ 乱れの強さは残り時間で決める（経過で決めると、延ばすほど薄くなった）。タブレットの音は電子音を置かずノイズとカチだけ
+- **再開が止まる理由**：再開で `media.currentTime = 止めた位置` を毎回書いていた。同じ位置でも WebView は動画を読み直す。
+  0.12 秒以内なら書かない
+- ⚠ **verify-runtime は、解決しない Promise を待つテストがあると何も言わず終了コード 0 で抜けた**。完了数を数えて落とすようにした
+- 実機の操作は `adb -s 122d7871 shell input tap <x> <y>`（横向き 1920×1200 の座標）。`screencap` で確かめる
+- 通し確認（`state.bypass`）：接続を見ずにタイトルから装着の案内まで。`state.staffPreview` も立てるので、説明側は確認モードと同じ扱い
+
+- **章の切り替え（2026-10-14）**：墨の帯（画面を覆う）は実機で 0.3 秒の真っ黒＋字幕消えになったので廃止。
+  `captureDoctorGhost`（直前の博士の絵を canvas に写して残す）→ 新しい章の最初の絵（poster＝動画の先頭フレーム）が描けたら
+  `releaseDoctorGhost` で溶かす。額も `captureReferenceGhost` で同じ。額を消すときは `setReferenceVisual(false)` で薄れさせる。
+  録画で確かめる手：`adb shell screenrecord`（⚠ MSYS の path 変換で `/sdcard/...` が壊れるので `MSYS_NO_PATHCONV=1`）→ pull →
+  ffmpeg で 30fps の小さな画にして、平均輝度が局所の中央値の 75% を割る区間を数える。修正前は 3 回・0.27〜0.37 秒、修正後は 0 回
+
+## 見た目（2026-10-14 作り替え・0262「字幕くらいに」・判定待ち）
+
+文字の層は字幕の 1 本だけ（見出し・札・行程・表の見出し・章名・番号は `.visually-gone` 相当で読み上げ用にだけ残す）。
+CSS が読む掛け金は `stage.dataset.view`（title/edit/result/briefing）と `stage.dataset.step`（language/relief）と
+`.stage.is-chapter-changing`（墨の帯）。判断は従来どおり処理側。軽減の説明 `#reliefDesc` は字幕の下（footer）へ移した。
+題字の書き出しは `title-write.js`（WebGL → Canvas2D → img）。⚠ スタッフ画面（`#staff` dialog）が開いている間は
+「見えていない」と数える（裏で書き終えると、来場者に渡した瞬間に完成した絵しか残らない）。`TitleWrite.plays` で回数を数えられる。
+⚠ 字幕の箱に `white-space: pre-line` を掛けない（HTML の改行が空行になり、字幕の箱が 3 行ぶんに伸びた）。
+⚠ 一時停止の盤の登場の動き（中央寄せの translate）を装着画面の操作に掛けない（左へずれた）。
+⚠ 内蔵ブラウザで別の作業者と同じタブを使わない（`tabs_create` で自分のタブを作り、前面にしてから撮る）。
+
 ## 見た目（2026-09-12 全面再設計）
 
 博士を右に置く構図と黒・生成り・朱赤を維持した。
-左は注意事項を示す。言語3択の画面を送ると、ホラー軽減2択の画面へ移る。次の画面で両方の選択をまとめて確認し、「この設定で始める」で送信する。送信直後から最低900msは「設定を反映しています」と表示する。Quest の `/status` に届く適用後の受理番号と両設定の実値が一致して初めて完了にする。軽減を「あり」にすると、`Sound/bed_relief.wav` から変換した `tablet/app/src/main/assets/web/asset/bed-relief-tablet-v1.mp3` をタブレットでループ再生する。タブレットでは軽減の選択画面だけで鳴らす。確認画面と博士説明では止める。「なし」の選択でも止める。タブ非表示とスタッフ画面では一時停止する。
+左は注意事項を示す。言語3択の画面を送ると、ホラー軽減2択の画面へ移る。軽減の画面の「この設定で始める」でそのまま送信する（2026-10-21 に確認だけの段を外した）。送信直後から最低900msは「設定を反映しています」と表示する。Quest の `/status` に届く適用後の受理番号と両設定の実値が一致して初めて完了にする。軽減を「あり」にすると、`Sound/bed_relief.wav` から変換した `tablet/app/src/main/assets/web/asset/bed-relief-tablet-v1.mp3` をタブレットでループ再生する。タブレットでは軽減の選択画面だけで鳴らす。確認画面と博士説明では止める。「なし」の選択でも止める。タブ非表示とスタッフ画面では一時停止する。
 矢印の循環選択は廃止した。全候補を直接押すネイティブのラジオ入力になった。
 縦持ちと狭幅では縦に並べる。注意事項を低い画面で隠す旧CSSは廃止した。
 RECと時計は置かない。接続表示はヘッドセットの応答に基づく。

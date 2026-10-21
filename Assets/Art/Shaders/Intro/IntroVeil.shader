@@ -77,6 +77,8 @@ Shader "FixedCamVr/IntroVeil"
             float _FractureActive;
             float _Reveal;
             float _GapsMode;
+            // R060: 1 なら頂点を 1 点へ潰して何も描かない。段 4 の描画状態を導入の手前で作っておくための描画（IntroVeil.WarmUp）。
+            float _IntroWarm;
             float4 _FramePlane0;
             float4 _FramePlane1;
             float4 _FramePlane2;
@@ -95,6 +97,7 @@ Shader "FixedCamVr/IntroVeil"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
                 o.uv = v.uv;
+                if (_IntroWarm > 0.5) o.positionCS = float4(0.0, 0.0, 0.0, 1.0);
                 return o;
             }
 

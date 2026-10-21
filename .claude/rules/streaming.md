@@ -99,6 +99,11 @@ iPhone は既製の MJPEG 配信アプリで代替する。実運用想定: iPho
 | **水平** | 縦中央に横線 ＋ 傾きが 1° 以内かで色が変わる | カメラ A だけ ON |
 | **三分割** | 3×3 | 手動 |
 | **🪞 鏡で確かめる** | 左半分を**右半分の鏡像**に置き換えて出す。継ぎ目が消える所が左右対称。ずれを数値でも出す | 手動 |
+| **幕の演出**（v0.17.0） | 2 周目 A の `stain_A_press_flutter` の動画を**左半分へループで重ねる**（本番の濃さ / 透かし 55%）。生成時と同じ位置に据わっているかを布の縁で見る | 手動 |
+
+⚠ 幕の動画は**配信アプリに同梱**（`fixed-cam-streamer/app/src/main/assets/curtain/`）。
+`static-inputs/stain_A_press_pingpong_*` を差し替えたら**配信アプリも焼き直す**（片方だけだと別の動画で位置を合わせることになる）。
+鏡合わせと幕は同じ「重ね合わせ」ボタンから選ぶ（どちらも左半分を差し替えるので排他）。
 
 ⚠⚠ **鏡の軸は「配信画像の横中央」であって `splitX` ではない。** 受け側は枠 UV の 0.5 で
 反転する（`ScreenComposite.shader` の `uvSrc.x = 1.0 - uvSrc.x`）ので、分割位置を動かしても
@@ -1651,7 +1656,26 @@ DTO へ追加し、**熱で降格している間は lag 判定を抑止**する�
     - ⚠ **2 度目の横断は無視する**（行ったり来たりで起点が動くと走行ごとに違う映像になる）
     - 観測は `ev=rec v=stop` の **`start=`**（1 = 線から / 0 = 末尾方式）。
       **枚数では区別できない**ので、「線を指したのに効いていない」はここでしか分からない
-    - ⚠⚠ **3 周目 A の録画の起点は「凍結の線の画像空間の鏡」でなければならない**
+  - **`record.enterStartSegments`**（2026-10-19・`canon/LEDGER.md` 0272）: `"L<周>C<カメラ>"` の一覧。
+    指した区間は**入った瞬間から**録る（起点を pts 0 に打つので線も末尾方式も見ない。30 秒の上限は残る）。
+    3 周目 A の早送り版が `["L2C0"]` を使う。周とカメラの組で指すのは、1 周目 A まで頭から録ると導入のぶん容量を食うため
+  - **カットの `recRate` / `recContinue`**（同日・0272）: `recRate` は録画の再生の速さ（0 以下 = 等速・0.25..8 へ丸める）。
+    `recContinue` は**画面に出ている同じ録画を頭へ戻さず続きから**流す（素材を開き直さず、`ScreenOverlayController.SetFramesRate` で
+    速さだけ変える）。続けられない（録画が出ていない・別の録画・もう尽きた）ならカットを飛ばす。`swap` とは併せられない。
+    素材の時計は「経過 × 速さ」を毎フレーム足す形（開始時刻からの差で引くと、速さを変えた瞬間に先へ跳ぶ）。
+    観測は `[TakeRunner] 録画を続きから流す … rate= clock=`。卓の白名簿（`timeline-model.js` の `serializeStep`）に入れてある
+  - **位置で録る・位置で出す**（同日・0274）: `record.progress` で指した区間は、`Recording.CornerProgress`（L 字の角を回る角度・
+    距離は見ない）が最大を超えたコマだけを積み、コマごとの進み具合を `<区間>.mjr.prog`（`PRG1`・f32 列・追い録りは NaN）に書く。
+    試行を採るのは「`adoptAt` まで進み、周回の順で次のカメラへ出た」ときだけで、それ以外は `SegmentRecordWriter.Discard`
+    （ファイルを作らない ＝ 次に入ったら録り直す）。書き出した区間は `_closedKeys` でも覚える（背景の書き出し中に戻ってきた回が
+    ファイルの実在だけ見て上書きするのを防ぐ）。再生はカットの `recFollow`: `TakeRunner` が毎フレーム体験者の進み具合の最大を
+    `ScreenOverlayController.SetFramesProgress` へ渡し、`RecordedFramePlayer.ClockAtProgress` がそれ以下で最も進んだコマの時刻を返す。
+    次の `recContinue` カットはそのコマの時刻から時間どおりへ移る。
+    位置で選ぶ間は `RecordedFramePlayer.TickProgress` が進み具合を挟む 2 コマを 2 つの枠へ展開し（1 コマ進んだら枠を入れ替えて
+    展開は 1 回）、`ScreenOverlayController` が `_OverlayTex` / `_OverlayTexB` / `_OverlayBlend` を毎フレーム貼る（0278）。
+    素材を貼り替える `SetOverlayTexture` と早送りへ移る `SetFramesRate` は混ぜ具合を 0 へ戻す。観測は `[SegmentRecorder] 位置で録る区間` /
+    `この試行は使わない（理由）` と `[TakeRunner] 録画を続きから流す … follow=`
+    - ⚠⚠ **3 周目 A の録画の起点は「凍結の線の画像空間の鏡」でなければならない**（鏡版）
       （2026-08-22・`canon/LEDGER.md` 0102）。3 周目 A は左半分だけライブを**左右反転**して読むので
       （`splitFlip`）、鏡の軸は**枠 UV の 0.5**＝ソース画像の横中央。ところが course 空間で
       対角軸に対する鏡像として置くと、**カメラ A が対称軸の真上に無い限り画面上では対称に写らない**
@@ -3276,6 +3300,9 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
   ⚠ `/unity/status` は従来どおり最後の 1 台
 - 観測: `ev=boot id=`（端末 ID の頭 6 桁）／ `ev=sum visitor=<口>/<受けた>/<枠の受理>/<書いた受理>/<回数>`。
   判定は `analyze-xp-log.py` の「## タブレットの口」。**`ShowTelemetryHost` と対で直す**
+- **想定外の事態の口**（2026-10-21）: `/status` の `health`（`paused` / `focusLost` / `worn` / `ctrlL` / `battery` /
+  `exceptions` / `clockGaps` / `cartKind` / `cartResult`）と、`/tablet/pulse` の staff reset に `force:true` を足した
+  **強制リセット**（体験の途中でも戻す・拒否は位置合わせ作業中だけ）。全体は [memory/unexpected_event_recovery.md](../memory/unexpected_event_recovery.md)
 - 画面を直したらタブレットAPKを焼き直す。Quest APKの更新は不要。単体起動とスタッフの説明確認にPCもQuestも不要。
 - 見た目は DBH 風を廻リ視へ落としたもの（0188）。案内役は研究所の博士（`tablet/app/src/main/assets/web/asset/doctor.jpg`・Codex 生成）。
   作法と罠は `memory/visitor_tablet.md`「見た目」

@@ -15,6 +15,9 @@ namespace FixedCamVr.Streaming
 
         private CameraStream[] _streams = Array.Empty<CameraStream>();
         private int _activeIndex;
+        private bool[] _decodePriority = Array.Empty<bool>();
+        private bool[] _backgroundExcluded = Array.Empty<bool>();
+        private readonly StreamDecodeScheduler _decodeScheduler = new StreamDecodeScheduler();
 
         public int Count => _streams.Length;
         public int ActiveIndex => _activeIndex;
@@ -25,6 +28,8 @@ namespace FixedCamVr.Streaming
         {
             int n = sources.Length;
             _streams = new CameraStream[n];
+            _decodePriority = new bool[n];
+            _backgroundExcluded = new bool[n];
             for (int i = 0; i < n; i++)
             {
                 if (sources[i] == null)
@@ -62,7 +67,17 @@ namespace FixedCamVr.Streaming
             // これが無いとラッチが固着し次回 Suspend() が no-op 化する（状態機械の非整合）。
             if (_suspended && Time.unscaledDeltaTime > StreamWatchdogLogic.ResumeGapSec)
                 Resume("resume-gap");
-            foreach (var s in _streams) s?.Tick();
+            for (int i = 0; i < _streams.Length; i++)
+            {
+                _decodePriority[i] = _streams[i] == null || i == _activeIndex || _streams[i].FrameTap != null;
+                _backgroundExcluded[i] = _decodePriority[i] || !_streams[i].HasPendingFrame;
+            }
+            int background = _decodeScheduler.NextBackground(_backgroundExcluded);
+            // 表示中と録画中を先に処理する。全台の監視は各フレームちょうど1回だけ。
+            for (int i = 0; i < _streams.Length; i++)
+                if (_decodePriority[i]) _streams[i]?.Tick(allowDecode: true);
+            for (int i = 0; i < _streams.Length; i++)
+                if (!_decodePriority[i]) _streams[i]?.Tick(allowDecode: i == background);
         }
 
         // HMD を外す / システムメニューで Quest ランタイムが描画ループ(=この Update)を凍結する。
@@ -186,6 +201,7 @@ namespace FixedCamVr.Streaming
                 index = Mathf.Clamp(index, 0, _streams.Length - 1);
             }
             if (index == _activeIndex) return;
+            _streams[index]?.DecodeLatestFrame();
             _activeIndex = index;
             ActiveChanged?.Invoke(_activeIndex);
         }
@@ -199,6 +215,7 @@ namespace FixedCamVr.Streaming
             if (_streams.Length == 0) return;
             int wrapped = WrapIndex(index, _streams.Length);
             if (wrapped == _activeIndex) return;
+            _streams[wrapped]?.DecodeLatestFrame();
             _activeIndex = wrapped;
             ActiveChanged?.Invoke(_activeIndex);
         }
