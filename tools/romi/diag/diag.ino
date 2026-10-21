@@ -6,6 +6,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WebServer.h>
+#include <lwip/sockets.h>
 #include <esp_task_wdt.h>
 #include "soc/gpio_reg.h"
 #include "net.h"
@@ -33,24 +34,110 @@ static inline bool level(int pin) {
 static const int WEB_DUTY_MAX = 700;    // 元スケッチの上限（0x2BC）に合わせる
 static const int WEB_MS_MAX = 8000;
 static const int RAMP_MS = 120;         // 立ち上げの直線ランプ（スリップを減らす）
-// WebServer は接続を 1 本ずつ捌き、接続しただけで要求を送らない相手を最大 5 秒待つ（HTTP_MAX_DATA_WAIT・
-// 上書きできない #define）。ブラウザが先回りして開ける空の接続（Chrome の preconnect）や途中で止まった相手が
-// いると、その間タブレットと Quest の要求が全部待たされ、タブレットの 4 秒の打ち切りで「接続できません」になる。
-// LAN の要求は数十 ms で届くので、0.8 秒何も来ない接続は切って次へ進む（2026-10-21）。
+// 素の WebServer は接続を 1 本ずつ捌き、届いた接続の要求を「来るまで待って」読む。
+//   ・接続しただけで何も送らない相手（Chrome の preconnect）を最大 5 秒待つ（HTTP_MAX_DATA_WAIT）
+//   ・要求の途中で止まった相手（電波が切れた・本文が来ない POST）を読み終わるまで最大 5 秒止まる
+// どちらもその間ループごと止まる。タブレット・Quest の要求は全部待たされて打ち切られ、走行の停止も遅れる
+// （2026-10-21 の試験で loopMaxMs 5005・タブレット 6 回中 5 回失敗）。
+// そこで、受けた接続を最大 WEB_PENDING_MAX 本まで並べて置き、ソケットを MSG_PEEK で覗いて
+// 「要求が全部届いた」ものだけを素の WebServer に渡す（渡した時点で読み切れるので待たない）。
+// 届かないまま WEB_PENDING_DROP_MS たった接続は、ほかを待たせずに捨てる。
+// ⚠ 素の handleClient の中身（HC_WAIT_READ で読み、終われば HC_NONE に戻す）に依存する。core を上げたら読み直す
+#if !defined(ESP_ARDUINO_VERSION) || ESP_ARDUINO_VERSION != ESP_ARDUINO_VERSION_VAL(3, 3, 8)
+#error "RomiWebServer は arduino-esp32 3.3.8 の WebServer::handleClient の中身に合わせてある。版を変えたら確かめ直す"
+#endif
+static const int WEB_PENDING_MAX = 6;            // ソケットは全体で 16 本（待ち受け・UDP・mDNS の分を残す）
+static const uint32_t WEB_PENDING_DROP_MS = 3000;
+static const size_t WEB_PEEK_MAX = 4608;         // いちばん大きい要求（POST /sc の 3500 バイト＋ヘッダ）が入る
 class RomiWebServer : public WebServer {
  public:
   using WebServer::WebServer;
-  uint32_t idleDrops = 0;
-  void dropIdleClient(uint32_t idleMs) {
-    if (_currentStatus != HC_WAIT_READ || !_currentClient || _currentClient.available()) return;
-    if (millis() - _statusChange <= idleMs) return;
-    _currentClient.stop();
-    _currentClient = NetworkClient();
-    _currentStatus = HC_NONE;
-    idleDrops++;
+  uint32_t idleDrops = 0;     // 要求が届かないまま捨てた接続
+  uint32_t fullDrops = 0;     // 並びが満杯で捨てた接続（古い方から）
+  uint32_t served = 0;
+
+  void handleClient() override {
+    // 素の handleClient は HC_NONE のとき accept と読み込みを同じ呼び出しでするので、受けるのはこちらでやる
+    for (int guard = 0; guard < WEB_PENDING_MAX; guard++) {
+      NetworkClient c = _server.accept();
+      if (!c) break;
+      if (_pendingN == WEB_PENDING_MAX) { dropPending(0); fullDrops++; }
+      _pending[_pendingN] = c;
+      _pendingAt[_pendingN] = millis();
+      _pendingN++;
+    }
+    for (int i = 0; i < _pendingN;) {
+      int state = requestState(_pending[i]);
+      if (state > 0) {                        // 全部届いた: 素の WebServer に読ませて返す
+        _currentClient = _pending[i];
+        removePending(i);
+        _currentStatus = HC_WAIT_READ;
+        _statusChange = millis();
+        WebServer::handleClient();
+        if (_currentStatus != HC_NONE) {      // 念のため（素の版は SSE 以外で接続を残さない）
+          _currentClient = NetworkClient();
+          _currentStatus = HC_NONE;
+        }
+        served++;
+        continue;
+      }
+      if (state < 0 || millis() - _pendingAt[i] > WEB_PENDING_DROP_MS) {
+        if (state == 0) idleDrops++;
+        dropPending(i);
+        continue;
+      }
+      i++;
+    }
+    if (_pendingN == 0) delay(1);             // 素の版と同じく、待つ相手が居なければ 1ms 譲る
+  }
+
+ private:
+  NetworkClient _pending[WEB_PENDING_MAX];
+  uint32_t _pendingAt[WEB_PENDING_MAX] = {};
+  int _pendingN = 0;
+  static uint8_t _peekBuf[WEB_PEEK_MAX];
+
+  void removePending(int i) {
+    for (int k = i; k + 1 < _pendingN; k++) { _pending[k] = _pending[k + 1]; _pendingAt[k] = _pendingAt[k + 1]; }
+    _pendingN--;
+    _pending[_pendingN] = NetworkClient();
+  }
+  void dropPending(int i) {
+    _pending[i].stop();
+    removePending(i);
+  }
+  // 1: 要求が全部届いた  0: まだ  -1: 相手が閉じた・壊れた
+  static int requestState(NetworkClient &c) {
+    int fd = c.fd();
+    if (fd < 0) return -1;
+    // ⚠ lwIP の MSG_PEEK は届いた最初の 1 片しか見せない（ヘッダと本文を別のパケットで送る相手＝Python・
+    // UnityWebRequest では本文が見えない）。届いた総量は FIONREAD で数え、覗き見はヘッダを読むのにだけ使う
+    int n = recv(fd, _peekBuf, sizeof(_peekBuf) - 1, MSG_PEEK | MSG_DONTWAIT);
+    if (n == 0) return -1;                                   // 何も送らずに閉じた
+    if (n < 0) return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
+    int total = 0;
+    if (ioctl(fd, FIONREAD, &total) < 0 || total < n) total = n;
+    _peekBuf[n] = 0;
+    const char *head = (const char *)_peekBuf;
+    const char *end = strstr(head, "\r\n\r\n");
+    // ヘッダが最初の 1 片に収まっていない: 後ろの片も届いていれば素の版に読ませる（ふつうは起きない）
+    if (!end) return (total > n || n >= (int)sizeof(_peekBuf) - 1) ? 1 : 0;
+    size_t headerLen = (end - head) + 4;
+    long length = 0;
+    for (const char *p = head; p && p < end;) {              // Content-Length（大文字小文字を問わない）
+      const char *line = p;
+      const char *nl = strstr(line, "\r\n");
+      if (strncasecmp(line, "Content-Length:", 15) == 0) length = strtol(line + 15, nullptr, 10);
+      p = nl ? nl + 2 : nullptr;
+    }
+    if (length <= 0) return 1;
+    return total >= (int)(headerLen + length) ? 1 : 0;
   }
 };
-static const uint32_t WEB_IDLE_DROP_MS = 800;
+uint8_t RomiWebServer::_peekBuf[WEB_PEEK_MAX];
+// ループが止まった最長時間（ms）。走行の停止・ジョイスティックの安全停止はループで回るので、ここが伸びると止まるのが遅れる。
+// /info?clear=1 で 0 に戻す（試験の区切り）
+static uint32_t loopLastAt = 0, loopMaxMs = 0, loopMaxAtMs = 0;
 static RomiWebServer server(80);
 
 struct Run {
@@ -553,7 +640,8 @@ static String endingJson() {
 }
 
 // 返り値: seq id(>0) / 0=空走（dry）/ -1=ジョイスティック操作中 / -4=無効にしてある / -2=動きが 1 つも無い
-static int endingStart(const String &src, bool dry, bool force, const String &key = "") {
+// lateMs: 合図が遅れて届いた分（Quest が送り直した時間）。最初の待ちから差し引き、画面の電源断との間合いを保つ
+static int endingStart(const String &src, bool dry, bool force, const String &key = "", uint32_t lateMs = 0) {
   // 同じ合図の再送（応答が届かなかった Quest が送り直した）なら、走っている動きをやり直さない
   if (key.length() && key == endingLast.key && endingLast.goAt && millis() - endingLast.goAt < 30000) {
     Serial.printf("EVT ending dup key=%s t=%lu\n", clean(key, 24).c_str(), millis());
@@ -563,7 +651,8 @@ static int endingStart(const String &src, bool dry, bool force, const String &ke
   if (ending.rotMs <= 0 && ending.fwdMs <= 0) return -2;
   if (joyMoving()) return -1;   // スタッフが手で動かしている最中は奪わない
   endingGoCount++;
-  endingLast.goAt = millis(); endingLast.seqId = 0; endingLast.cutMs = -1; endingLast.dry = dry ? 1 : 0;
+  if (lateMs > 10000) lateMs = 10000;
+  endingLast.goAt = millis() - lateMs; endingLast.seqId = 0; endingLast.cutMs = -1; endingLast.dry = dry ? 1 : 0;
   endingLast.stopped = 0; endingLast.src = src; endingLast.key = key;
   if (dry) {
     Serial.printf("EVT ending dry src=%s t=%lu\n", clean(src, 16).c_str(), millis());
@@ -574,14 +663,15 @@ static int endingStart(const String &src, bool dry, bool force, const String &ke
     stopAll();
   }
   int n = 0;
-  if (ending.delayMs > 0) seq.st[n++] = {'w', 0, (float)ending.delayMs, 0};
+  int delayMs = ending.delayMs > (int)lateMs ? ending.delayMs - (int)lateMs : 0;
+  if (delayMs > 0) seq.st[n++] = {'w', 0, (float)delayMs, 0};
   if (ending.rotMs > 0) seq.st[n++] = {'R', ending.rotDir, (float)ending.rotMs, ending.rotDuty};
   if (ending.fwdMs > 0) seq.st[n++] = {'S', ending.fwdDir, (float)ending.fwdMs, ending.fwdDuty};
   seq.n = n; seq.idx = 0; seq.flip = 0; seq.trim = 0; seq.ending = true;
   seq.id = ++seqCounter; seq.started = millis(); seq.nextAt = seq.started; seq.running = false; seq.active = true;
   endingLast.seqId = seq.id;
-  Serial.printf("EVT ending go id=%u src=%s force=%d delay=%d rot=%d:%d:%d fwd=%d:%d:%d ver=%u t=%lu\n", (unsigned)seq.id,
-                clean(src, 16).c_str(), force ? 1 : 0, ending.delayMs, ending.rotDir, ending.rotDuty, ending.rotMs, ending.fwdDir,
+  Serial.printf("EVT ending go id=%u src=%s force=%d late=%u delay=%d rot=%d:%d:%d fwd=%d:%d:%d ver=%u t=%lu\n", (unsigned)seq.id,
+                clean(src, 16).c_str(), force ? 1 : 0, (unsigned)lateMs, delayMs, ending.rotDir, ending.rotDuty, ending.rotMs, ending.fwdDir,
                 ending.fwdDuty, ending.fwdMs, (unsigned)ending.ver, millis());
   return (int)seq.id;
 }
@@ -626,7 +716,8 @@ static void httpEndingGo() {
   if (!src.length()) src = server.arg("src");
   bool dry = (jsonNum(b, "dry", &v) && v != 0) || server.arg("dry") == "1";
   bool force = (jsonNum(b, "force", &v) && v != 0) || server.arg("force") == "1";
-  int id = endingStart(src.length() ? src : "?", dry, force, jsonStr(b, "key"));
+  uint32_t lateMs = (jsonNum(b, "lateMs", &v) && v > 0) ? (uint32_t)v : 0;
+  int id = endingStart(src.length() ? src : "?", dry, force, jsonStr(b, "key"), lateMs);
   if (id >= 0) jsonSend("{\"ok\":1,\"id\":" + String(id) + ",\"dry\":" + String(dry ? 1 : 0) + ",\"ver\":" + String(ending.ver) + "}");
   else jsonSend(String("{\"ok\":0,\"err\":\"") + (id == -1 ? "busy" : (id == -4 ? "disabled" : "empty")) + "\"}");
 }
@@ -680,7 +771,8 @@ static String infoJson() {
          "\",\"version\":\"" + FW_VERSION + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"rssi\":" + String(WiFi.RSSI()) +
          ",\"up\":" + String(millis() / 1000) + ",\"drops\":" + String(netDrops) + ",\"lastReason\":" + String(netLastReason) +
          ",\"reset\":\"" + resetName() + "\",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) +
-         ",\"idleDrops\":" + String(server.idleDrops) + "}";
+         ",\"idleDrops\":" + String(server.idleDrops) + ",\"fullDrops\":" + String(server.fullDrops) + ",\"served\":" + String(server.served) + ",\"loopMaxMs\":" + String(loopMaxMs) +
+         ",\"loopMaxAgoMs\":" + String(loopMaxMs ? millis() - loopMaxAtMs : 0) + "}";
 }
 
 static void startWeb() {
@@ -708,7 +800,11 @@ static void startWeb() {
   server.on("/ending/cut", HTTP_POST, httpEndingCut);
   server.on("/res", HTTP_GET, httpRes);
   server.on("/cal", HTTP_GET, httpCal);
-  server.on("/info", HTTP_GET, []() { jsonSend(infoJson()); });
+  server.on("/info", HTTP_GET, []() {
+    String body = infoJson();
+    if (server.hasArg("clear")) { loopMaxMs = 0; loopMaxAtMs = 0; }
+    jsonSend(body);
+  });
   server.on("/health", HTTP_GET, []() { jsonSend("{\"ok\":1,\"up\":" + String(millis() / 1000) + ",\"busy\":" + String(run.active ? 1 : 0) + "}"); });
   server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
   server.begin();
@@ -878,7 +974,9 @@ void setup() {
 void loop() {
   static String buf;
   esp_task_wdt_reset();
-  server.dropIdleClient(WEB_IDLE_DROP_MS);
+  uint32_t loopNow = millis();
+  if (loopLastAt && loopNow - loopLastAt > loopMaxMs) { loopMaxMs = loopNow - loopLastAt; loopMaxAtMs = loopNow; }
+  loopLastAt = loopNow;
   server.handleClient();
   runTick();
   joyTick();

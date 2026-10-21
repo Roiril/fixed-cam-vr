@@ -35,9 +35,11 @@ static uint32_t netFails = 0;       // 連続失敗（バックオフの段）
 static uint32_t netNextTry = 0, netAttemptAt = 0, netDownSince = 0, netUpSince = 0, netLastAnnounce = 0;
 static WiFiUDP udp;
 
+// 1,2,4,8,8,… 秒。上限は 8 秒（2026-10-21 に 30 秒から縮めた）。ルーターが戻ってから台車が繋がるまでの
+// 最悪値がこの上限になる。展示中に 30 秒待つのは長い。走査を増やしても他の機器への害は無い
 static uint32_t backoffMs(uint32_t fails) {
-  uint32_t s = fails >= 5 ? 30 : (1u << fails);   // 1,2,4,8,16,30
-  return (s > 30 ? 30 : s) * 1000u;
+  uint32_t s = fails >= 3 ? 8 : (1u << fails);
+  return s * 1000u;
 }
 
 static const char *reasonName(int r) {

@@ -28,8 +28,11 @@ namespace FixedCamVr.Streaming
         /// <summary>報告から電源断（終幕の頭）までの目安（秒）。タブレットの時刻表と対。正本は show.json の締めのカット。</summary>
         public const float ReleaseToCutSec = 7.1f;
 
-        private const int TimeoutSec = 2;
-        private const float RetryDelaySec = 0.3f;
+        // 1 回の待ちは 1 秒（LAN の往復は 30ms 前後）。Go は届くまで 3 秒間送り直す。台車の Wi-Fi の再接続は
+        // 実測で約 1 秒（2026-10-21 net-torture の kick）。以前の「2 秒 × 2 回」は、切れた 1 回目で 2 秒を使い切っていた。
+        private const int TimeoutSec = 1;
+        private const float RetryDelaySec = 0.2f;
+        private const float GoRetryWindowSec = 3.0f;
 
         /// <summary>自動走行が立てる。立っている間は台車を動かさない（空走で合図だけ送る）。</summary>
         public static bool DryRun;
@@ -79,20 +82,22 @@ namespace FixedCamVr.Streaming
             if (kind == "go") _goKey++;
             // key は再送で台車が頭からやり直さないための名前（起動ごとに変わる時刻を混ぜる）
             string key = $"q{(int)(Time.realtimeSinceStartup * 10f)}-{_goKey}";
-            string body = kind == "go"
-                ? $"{{\"src\":\"quest\",\"dry\":{(dry ? 1 : 0)},\"key\":\"{key}\"}}"
-                : "{\"src\":\"quest\"}";
+            float firstAt = Time.realtimeSinceStartup;
             Sent++;
             LastKind = kind;
             LastDry = dry;
             LastResult = "pending";
             Debug.Log($"[Romi] 合図 {kind} を送る（{(dry ? "空走" : "本番")}・http://{Host}{path}）");
 
-            // Go だけ 1 回だけ送り直す（key が同じなので台車は二重に始めない）。Cut は遅れて届くと意味が無いので送り直さない。
-            int attempts = kind == "go" ? 2 : 1;
-            for (int i = 0; i < attempts; i++)
+            // Go は 3 秒間送り直す（key が同じなので台車は二重に始めない）。遅れた分は lateMs で伝え、台車が最初の待ちから
+            // 差し引く（画面の電源断との間合いを保つ）。Cut は遅れて届くと意味が無いので送り直さない。
+            for (int i = 0; ; i++)
             {
                 float t0 = Time.realtimeSinceStartup;
+                int lateMs = (int)((t0 - firstAt) * 1000f);
+                string body = kind == "go"
+                    ? $"{{\"src\":\"quest\",\"dry\":{(dry ? 1 : 0)},\"key\":\"{key}\",\"lateMs\":{lateMs}}}"
+                    : "{\"src\":\"quest\"}";
                 using var req = new UnityWebRequest($"http://{Host}{path}", "POST");
                 req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
                 req.downloadHandler = new DownloadHandlerBuffer();
@@ -112,8 +117,10 @@ namespace FixedCamVr.Streaming
                     yield break;
                 }
                 LastResult = "net";
-                Debug.LogWarning($"[Romi] 合図 {kind} が台車に届かない（{req.error}・{LastRoundTripMs}ms）");
-                if (i + 1 < attempts) yield return new WaitForSecondsRealtime(RetryDelaySec);
+                Debug.LogWarning($"[Romi] 合図 {kind} が台車に届かない（{req.error}・{LastRoundTripMs}ms・{i + 1} 回目）");
+                bool retry = kind == "go" && Time.realtimeSinceStartup + RetryDelaySec - firstAt < GoRetryWindowSec;
+                if (!retry) break;
+                yield return new WaitForSecondsRealtime(RetryDelaySec);
             }
             Completed++;
         }
