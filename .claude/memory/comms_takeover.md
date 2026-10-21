@@ -240,3 +240,15 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 - 実描画の確認: `tools/unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.CommsPreview.Run -Set 'recovery=1','stills=1','out=G:/マイドライブ/shubie/renders/comms-recovery-full-20261018'`。出力先は同パスの `Screenshots/comms-preview/recovery/`。`out`はAssets以外への出力にも対応。`stills=1`は0.8秒・2秒・4.5秒・5.5秒だけ撮影する。
 - `RedGlyphs`は従来の頂点色を数える値。復帰用シェーダが画素へ掛ける赤い斑の面積は数えない。見た目は実描画PNGで確認する。
 - 検証: EditMode `CommsRecoveryLogicTests` 12件通過。実シェーダで③a/③bを描画し、5.5秒の画面の赤い画素は約53%。Unityシェーダエラーなし。実機表示は未確認。上記Driveフォルダの `screen-only.png` と `halt-screen-only.png` は実描画から表示部分だけを切り出したもの。
+
+## 2026-10-21 見た目を他の面と揃えた（LEDGER 0285・R070）
+
+ユーザー「デジタル感が強すぎて世界観にマッチしていない」「のっぺりしている」。出る順・秒・同期・同時消去は 1 つも変えていない。
+
+- 文字の版は `tools/make-error-typography.py` で Source Han Serif JP（明朝）＋かすれ（`*-v5.png`）。DSEG14 とドットゴシックは廃止。焼き直したら出力の `opaque` を v 反転して `UnauthorizedAccessEffect.OpaqueUvBounds` へ写す（本番の版は Read/Write 無効）
+- 版の余白を 26px に広げた（シェーダのにじみが quad の縁で四角く切れないため）。そのぶん塊の全幅が増えるので、`TakeoverProductionGraphicSizesKeepRowsSeparate` の 78% 上限に掛かる。WARNING の字間 0.14em はそこから決めた
+- シェーダ Mode 2: 芯の明るさのむら・右へ尾を引くにじみ・24Hz の細かい粒・帯 2.5% だけのまれな横ずれ。模様は `positionOS`（画面のローカル座標）で決める。ワールド座標だと画面のヨー追従で模様が字の上を滑る
+- 三角・感嘆符・バーは版にかすれが無いので `_Wear`（材質ごと）でシェーダが乾かす。文字の材質は 0
+- 空間の要素（Mode 1）は 0 / 1 をやめて砂嵐の断片。列に揃えて降らせるのもやめた。乗っ取りでは工事現場の斜線を出さない
+- 色は頂点色なので sRGB で決めて `.linear` で渡す。警告の赤は `CommsPanel.LieRed` と同じ朱、補足は `HmdTextStyle.Ink` の象牙
+- 実描画: `.\tools\unity.ps1 menu comms-revision -Set out=Logs/comms-v5-20261021`（既定の出力先以外へ出すと unity.ps1 が「出力が更新されていない」と言うが、描画は成功している）

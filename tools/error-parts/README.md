@@ -9,11 +9,17 @@
 入力は `Assets/Art/Fonts/UnauthorizedAccess/` の未改変フォント。
 出力は `Assets/Art/Textures/UnauthorizedAccess/`。
 
-- `wordmark-v3.png`: DSEG14 Modern Bold の `WARNING`。
-- `subtitle-v3.png`: DotGothic16 の `不正アクセス検出`。
-- `context-v4.png`: DotGothic16 の `映像回線　接続元不明`。
-- `attempt-v4.png`: DotGothic16 の `遮断を試行`。
-- `failed-v4.png`: DotGothic16 の `遮断失敗`。
+- `wordmark-v5.png`: Source Han Serif JP（明朝）の `WARNING`。字間 0.14em。
+- `subtitle-v5.png`: 同じ明朝の `不正アクセス`。
+- `context-v5.png`: 同じ明朝の `接続元不明`。
+- `attempt-v5.png`: 同じ明朝の `遮断を執行`。
+- `failed-v5.png`: 同じ明朝の `失敗`。
+
+v5（2026-10-21・`canon/LEDGER.md` 0285）で DSEG14 とドットゴシックをやめ、題字と同じ系統の明朝＋かすれにした。
+かすれは抜きたい割合から閾値を逆算して焼く（題字の `tools/make-title-art.py` と同じ作法）。
+PIL の雑音は乱数の種を固定できないので、焼き直すたびにかすれの模様は変わる。
+焼き直したら出力の `opaque` を v 反転して `UnauthorizedAccessEffect.OpaqueUvBounds` へ写す。
+フォントは `Assets/Art/Fonts/SourceHanSerifJP-Regular.otf`（OFL・リポジトリ同梱）。
 
 書体の字形は画像生成しない。字間はスクリプトで指定する。
 色と細い暗色の縁は Unity の専用シェーダで付ける。
@@ -30,6 +36,7 @@
 
 - [DSEG v0.46](https://github.com/keshikan/DSEG/releases/tag/v0.46)。作者 keshikan。SIL OFL 1.1。
 - [DotGothic16](https://github.com/fontworks-fonts/DotGothic16)。SIL OFL 1.1。
+- v5 は [Source Han Serif](https://github.com/adobe-fonts/source-han-serif)。SIL OFL 1.1（上の 2 つは v4 までの記録）。
 
 フォントごとのライセンスを同じディレクトリへ同梱する。
 
