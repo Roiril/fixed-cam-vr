@@ -121,6 +121,17 @@ namespace FixedCamVr.Diagnostics
         private const float PitchOffsetDeg = 17f;
 
         /// <summary>
+        /// ③a「止まってください！」と③b の連絡だけ、下へ振る角度（度）。
+        /// ⚠ 4 周目 A は画面の下側に大量の人形が並ぶので、通常の下の帯（17°）だと人形に被る
+        /// （2026-10-21・<c>canon/LEDGER.md</c> 0283「普通のエージェントスクリーンより上にずらして」）。
+        /// 3° なら面は視線のすぐ下・映像の上半分（カーテンの辺り）に立つ。
+        /// </summary>
+        private const float ClosingPitchOffsetDeg = 3f;
+
+        /// <summary>通常の位置と③a / ③b の位置を行き来するときの寄せの時間 (秒)。面が開いたまま跳ばない。</summary>
+        private const float PitchMoveSec = 0.35f;
+
+        /// <summary>
         /// <b>文面の帯</b>の幅 (m)。1.5m 先で 0.76m ＝ <b>見かけ 28°</b>。
         ///
         /// ⚠⚠ <b>これは面の全幅ではない</b>（2026-08-17・<c>canon/LEDGER.md</c> 0071）。
@@ -645,6 +656,7 @@ namespace FixedCamVr.Diagnostics
         private bool _leftTracked = true;
         private string _hintBody = "";
         private bool _yawSeeded;
+        private float _pitchNow = PitchOffsetDeg;
         // 報告の縁を取るために、直前に見た回数を覚えておく（ShowControlClient が真実源）。
         private int _lastMarkCount;
         private bool _promptReadableNotified;
@@ -1360,6 +1372,7 @@ namespace FixedCamVr.Diagnostics
             float headYaw = head.eulerAngles.y;
             if (!_yawSeeded || dt > ResumeGapSec)
             {
+                if (!_yawSeeded) _pitchNow = PitchTargetDeg;
                 _yawFollow.Reseat(_yawSeeded ? _yawFollow.CurrentYaw : headYaw);
                 _yawSeeded = true;
             }
@@ -1372,11 +1385,22 @@ namespace FixedCamVr.Diagnostics
             // 追従したヨーから見て「外側へ振って、下げて、手前に置く」。
             // ⚠ 面は体験者の方を向ける（板が斜めを向いていると読めない）。
             Quaternion yaw = Quaternion.Euler(0f, _yawFollow.CurrentYaw + YawOffsetDeg, 0f);
-            Vector3 dir = yaw * Quaternion.Euler(PitchOffsetDeg, 0f, 0f) * Vector3.forward;
+            // ⚠ ③a / ③b だけ上へ（0283）。同じ面のまま切り替わるときは寄せる（跳ばない）。
+            _pitchNow = Mathf.MoveTowards(_pitchNow, PitchTargetDeg,
+                                          (PitchOffsetDeg - ClosingPitchOffsetDeg) / PitchMoveSec * dt);
+            Vector3 dir = yaw * Quaternion.Euler(_pitchNow, 0f, 0f) * Vector3.forward;
             Vector3 basePos = head.position + dir * DistanceM;
             _root.rotation = Quaternion.LookRotation(basePos - head.position, Vector3.up);
             _root.position = basePos;
         }
+
+        /// <summary>いまの連絡が立つべき下への角度（③a / ③b だけ上の位置・0283）。</summary>
+        private float PitchTargetDeg
+            => LastNotice == CommsNotice.Halt || LastNotice == CommsNotice.Prompt
+                ? ClosingPitchOffsetDeg : PitchOffsetDeg;
+
+        /// <summary>直近に面を置いた下への角度（度・観測と検証用）。</summary>
+        public float AppliedPitchDeg => _pitchNow;
 
         private void Build()
         {

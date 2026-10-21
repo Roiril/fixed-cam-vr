@@ -1968,6 +1968,9 @@ def analyze(events, others, exp, warns=None):
                     if fnum(e, "powMin", 1.0) > 0.30:
                         bad.append(f"電力が落ちていない（powMin {fnum(e, 'powMin', 1.0):.2f}）")
                     # 0280: 砂嵐のブロックから少しずつ現れたか（横線の段で 0.78）。旧い APK は bootMax を出さない。
+                    # 0283: ③a / ③b は通常（17°）より上（3°）に立つ。旧い APK は pitchMin を出さない。
+                    if "pitchMin" in e and fnum(e, "pitchMin", 90.0) > 8.0:
+                        bad.append(f"③a / ③b が上へ移っていない（pitchMin {fnum(e, 'pitchMin', 90.0):.1f}°）")
                     if "bootMax" in e and fnum(e, "bootMax", 0.0) < 0.5:
                         bad.append(f"砂嵐から少しずつ現れていない（bootMax {fnum(e, 'bootMax', 0.0):.2f}）")
                     if fnum(e, "resMax", 0.0) < 0.4:
