@@ -106,7 +106,15 @@
   .secondary:hover, .retry:hover { color: var(--ink); }
   .retry { color: var(--error); }
   .settings-actions { display: flex; align-items: center; justify-content: flex-start; gap: 26px; margin-top: clamp(16px,3.6vh,32px); }
-  #settingsBackBtn { order: 2; }
+  /* 言語の「次へ」と軽減の「この設定で始める」で、押す輪を同じ位置に置く（ラベルの長さで輪が横へ動かない） */
+  .settings-actions .primary { flex-direction: row-reverse; padding: 6px 22px 6px 6px; }
+  .settings-actions .primary:not(:disabled)::before { right: auto; left: 6px; }
+  .settings-actions .primary:hover::after { transform: none; }
+  /* 戻るは左上。進む操作から離し、矢印も逆向きにする */
+  .nav-back { display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 14px 6px 4px; border: 0; background: transparent; color: rgba(194,184,168,.72); font: 14px/1.4 var(--serif); letter-spacing: .12em; transition: color .25s; }
+  .nav-back::before { content: ""; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(232,220,196,.3); background: center / 12px 12px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M14 8H3M7 3.5 2.5 8 7 12.5' fill='none' stroke='%23f2ecdf' stroke-width='1.2'/%3E%3C/svg%3E"); }
+  .nav-back:hover, .nav-back:active { color: var(--ink); }
+  .nav-back[hidden] { display: none; }
 
   /* ==========================================================================
      タイトル
@@ -169,7 +177,7 @@
   .choice.is-described .choice-text { position: relative; padding-bottom: 12px; }
   .choice.is-described .choice-text::after { content: ""; position: absolute; left: -6%; right: -6%; bottom: 0; height: 11px; background: var(--red); -webkit-mask: var(--brush) center / 100% 100% no-repeat; mask: var(--brush) center / 100% 100% no-repeat; clip-path: inset(0 100% 0 0); transition: clip-path .5s var(--ease-out); }
   .choice.is-described:has(input:checked) .choice-text::after { clip-path: inset(0 0 0 0); }
-  .choice-note { max-width: 15em; color: rgba(194,184,168,.86); font: 400 clamp(13px,1.3vw,15px)/1.6 var(--serif); letter-spacing: .05em; white-space: normal; text-shadow: 0 0 14px var(--bg); transition: color .35s var(--ease); }
+  .choice-note { max-width: 22em; color: rgba(194,184,168,.86); font: 400 clamp(13px,1.3vw,15px)/1.6 var(--serif); letter-spacing: .05em; white-space: normal; text-shadow: 0 0 14px var(--bg); transition: color .35s var(--ease); }
   .choice.is-described:has(input:checked) .choice-note { color: var(--ink); }
 
   /* ==========================================================================
@@ -191,8 +199,6 @@
   @keyframes stamp { 0% { transform: scale(1.55) rotate(-9deg); opacity: 0; filter: blur(3px); } 42% { transform: scale(.96) rotate(-3deg); opacity: 1; filter: blur(0); } 100% { transform: rotate(-3deg); opacity: .94; } }
   .result[data-tone="error"] .status-glyph { color: var(--error); }
   .result[data-tone="error"] .status-glyph::before { background: conic-gradient(rgba(240,164,154,.85) 0deg 250deg,transparent 250deg); }
-  /* 確認の段では印を出さない（矢印の輪が押す所に見えて、本物の「送る」より先に目を取っていた・0265） */
-  .result[data-key="confirm"] .status-glyph { display: none; }
   .result-line { text-align: center; }
   .result-title, .result-detail { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .values { border-collapse: collapse; font-family: var(--serif); }
@@ -310,6 +316,15 @@
   .stage.is-equipment .subtitle { display: none; }
   .stage.is-equipment .briefing-copy, .stage.is-equipment .equipment-guide, .stage.is-equipment .briefing-controls { animation: settle .36s var(--ease-out) both; }
   .stage.is-equipment .briefing-controls { justify-self: center; grid-column: 1 / -1; }
+  /* 返却の一行：読む順の最後。案内の文と同じ書体で、朱の線を引いて区切る */
+  .equipment-handback { width: fit-content; max-width: 100%; margin: clamp(20px,4.5vh,36px) auto 0; padding-top: clamp(14px,3vh,22px); border-top: 1px solid rgba(168,50,57,.6); color: var(--ink); text-align: center; font: 400 clamp(17px,1.85vw,22px)/1.7 var(--serif); letter-spacing: .08em; word-break: auto-phrase; }
+  .equipment-handback[hidden] { display: none; }
+  /* 返却を待つあいだは、スタッフの入口を下の操作の右に見える形で置く（右上の小さな入口は隠す） */
+  .stage.is-handback #staffToggle { visibility: hidden; }
+  .stage.is-equipment #briefingStaff { position: relative; right: auto; top: auto; grid-column: 2; grid-row: 2; align-self: center; min-height: 56px; padding: 8px 22px; border: 1px solid rgba(215,194,155,.55); border-radius: 28px; color: var(--gold); font: 13px/1.4 var(--sans); letter-spacing: .08em; background: linear-gradient(90deg,rgba(215,194,155,.32) calc(var(--hold) * 100%),rgba(9,8,7,.4) 0); }
+  .stage.is-equipment .briefing-controls:has(#briefingStaff:not([hidden])) { column-gap: clamp(22px,4vw,48px); }
+  .stage.is-equipment .briefing-controls:has(#briefingStaff:not([hidden])) .briefing-replay { grid-column: 1; }
+  .stage.is-equipment .briefing-controls:has(#briefingStaff:not([hidden])) .briefing-staff-hint { display: block; grid-column: 1 / -1; grid-row: 3; }
 
   /* ---- 説明の終わり：通信が切れる（signal-cut.js・LEDGER 0265）----
      止まった博士に砂嵐が乗ってざ・ざ・ざと乱れ、ブラウン管が切れるように横一線へ潰れて消える。
@@ -489,6 +504,10 @@
     </div>
   </section>
   <header class="topbar">
+    <!-- 戻る操作は左上に分けて置く。進む操作（矢印の輪・画面タップ）の近くに置くと、
+         テンポよく押した指が「戻る」に入る（2026-10-21）。.content の外なのは、切り替えの動き（transform）で揺れないため -->
+    <button class="nav-back" id="settingsBackBtn" type="button" hidden>戻る</button>
+    <button class="nav-back" id="editBtn" type="button" hidden>設定に戻る</button>
     <p class="brand" translate="no"><img src="./asset/title-logo-v2.png" alt="廻リ視" width="1210" height="531" draggable="false"></p>
     <button class="fullscreen-return" id="fullscreenBtn" type="button" hidden>全画面</button>
     <ol class="journey" id="journey" aria-label="体験の準備">
@@ -582,14 +601,13 @@
           </div>
         </fieldset>
       </form>
-      <!-- 進む操作は選んだ語のすぐ下（目が選択肢から離れずに届く）。戻るは後ろに小さく -->
+      <!-- 進む操作は選んだ語のすぐ下（目が選択肢から離れずに届く）。言語と軽減で輪が同じ位置に来るよう、輪を左に置く -->
       <div class="settings-actions" id="settingsActions" hidden>
-        <button class="secondary" id="settingsBackBtn" type="button" hidden>戻る</button>
         <button class="primary" id="settingsNextBtn" type="button">
           <span id="nextLabel">次へ</span>
         </button>
         <button class="primary" id="sendBtn" type="submit" form="settingsForm" hidden>
-          <span id="submitLabel">設定を確認する</span>
+          <span id="submitLabel">この設定で始める</span>
         </button>
       </div>
     </section>
@@ -624,12 +642,10 @@
         </tbody>
       </table>
       <div class="result-actions">
-        <button class="primary" id="applyBtn" type="button" hidden>この設定で始める</button>
         <!-- 0204「画面タップでいいならボタンは不要」。画面には出さず、画面タップと同じ動きの入口としてだけ残す -->
         <button class="primary visually-gone" id="resultContinueBtn" type="button" hidden>画面をタップして次へ</button>
         <button class="retry" id="retryBtn" type="button" hidden>もう一度送る</button>
         <button class="retry" id="briefingRetryBtn" type="button" hidden>説明資料を再読み込み</button>
-        <button class="secondary" id="editBtn" type="button" hidden>設定に戻る</button>
       </div>
     </section>
 
@@ -653,6 +669,7 @@
           <li><img class="equip-ico" src="./asset/equipment-headphones-v1.png" alt="" aria-hidden="true" draggable="false"><span id="equipmentHeadphones"></span></li>
         </ol>
         <p class="equipment-followup" id="equipmentFollowup"></p>
+        <p class="equipment-handback" id="equipmentHandback" hidden></p>
         <p class="equipment-staff-status" id="equipmentStaffStatus" aria-live="polite"></p>
       </div>
       <div class="briefing-progress" id="briefingProgress">
@@ -838,13 +855,12 @@
       askRelief: '恐怖を軽減するかどうかを決めてください。',
       next: '次へ', back: '戻る',
       notice: '本作品にはホラー表現および、\n不安や恐怖を感じる演出が含まれます\n\n体験中に気分が悪くなった場合は、\nその場で立ち止まり、ヘッドセットを外して\nスタッフにお声がけください',
-      review: '設定を確認する', apply: 'この設定を送る', edit: '設定に戻る', retry: 'もう一度送る',
+      apply: 'この設定で始める', edit: '設定に戻る', retry: 'もう一度送る',
       selected: '選んだ設定', headset: 'クエスト', headsetCurrent: '現在のクエスト', headsetConfirmed: 'クエストで確認した設定', item: '項目', continue: '博士の説明を始める',
       restarted: 'ヘッドセットが再起動しました。同じ選択を確認して、もう一度送ってください。',
       staff: 'スタッフ専用', staffOpen: 'スタッフ専用画面を長押しで開く', skip: '設定へ移動', fullscreen: '全画面', fullscreenEnter: '全画面にする',
       connection: { checking: '接続を確認中…', online: '接続済み', offline: '接続を確認できません' },
       post: {
-        confirm: ['設定内容の確認', '言語とホラー軽減を確認してください。クエストへは未送信です'],
         sending: ['設定を反映しています', 'クエストからの反映確認を待っています'],
         applied: ['クエストに反映しました', '説明中は画面に触れると一時停止します'],
         waiting: ['反映を待っています', 'クエストの注意書き画面で反映されます'],
@@ -854,7 +870,6 @@
         conflict: ['設定が変更されました', '別のページで設定が変更されました。設定を確認してください。'],
       },
       postSpeech: {
-        confirm: '言語とホラー軽減の設定を確認してください。',
         sending: 'クエストからの反映確認を待っています。少しお待ちください。',
         applied: '画面をタップして次へ',
         waiting: 'クエストの注意書き画面で反映されます。確認を待っています。',
@@ -872,7 +887,7 @@
         next: '次の文', settings: '言語・軽減を変更', replay: 'もう一度説明を見る', resume: '再開', toTitle: 'タイトルに戻る', staff: 'スタッフ専用（長押し）', hold: '1.5秒長押ししてください', subtitles: '字幕で続ける', controls: '説明の操作', pause: '一時停止して説明の操作を開く', preview: 'スタッフ確認モード',
         role: '案内担当', progress: '説明の進み具合', advance: '次の文へ進む',
       },
-      equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'クエストを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエストの中の指示に従ってください。', handoff: 'タブレットをスタッフへ返してください', handoffDetail: '確認後にスタッフが装着をお手伝いします', waiting: 'スタッフの確認をお待ちください。', interrupted: 'スタッフが機器を確認しています。このままお待ちください。', recovery: 'Quest の通信が戻るまでスタッフにお預けください。' },
+      equipment: { title: '装着の準備', next: '装着の案内へ', quest: 'クエストを装着してください。', headphones: 'ヘッドフォンを装着してください。', controller: '左手にコントローラーを持ってください。', followup: '装着が終わったら、クエストの中の指示に従ってください。', handoff: '読み終わったら、スタッフにタブレットを渡してください。', interrupted: 'スタッフが機器を確認しています。このままお待ちください。', recovery: 'Quest の通信が戻るまでスタッフにお預けください。' },
     },
     en: {
       journey: ['Prepare for the experience', 'Settings', 'Briefing', 'Equip'],
@@ -884,13 +899,12 @@
       askRelief: 'Please choose whether you would like to reduce the horror.',
       next: 'Next', back: 'Back',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
-      review: 'Review settings', apply: 'Send these settings', edit: 'Back to settings', retry: 'Send again',
+      apply: 'Start with these settings', edit: 'Back to settings', retry: 'Send again',
       selected: 'Selected settings', headset: 'Quest', headsetCurrent: 'Current Quest settings', headsetConfirmed: 'Settings confirmed on Quest', item: 'Item', continue: 'Start the briefing',
       restarted: 'The headset restarted. Check the retained settings, then send them again.',
       staff: 'Staff only', staffOpen: 'Press and hold to open the staff screen', skip: 'Skip to settings', fullscreen: 'Full screen', fullscreenEnter: 'Enter full screen',
       connection: { checking: 'Checking connection…', online: 'Headset connected', offline: 'Connection unknown' },
       post: {
-        confirm: ['Review settings', 'Check the language and reduced horror setting. Nothing has been sent to Quest yet'],
         sending: ['Applying settings', 'Waiting for confirmation from Quest'],
         applied: ['Applied to Quest', 'Tap the screen during the briefing to pause it'],
         waiting: ['Waiting for the settings to apply', 'Quest will apply them on the notice screen'],
@@ -900,7 +914,6 @@
         conflict: ['Settings changed', 'Settings were changed on another page. Please check the settings.'],
       },
       postSpeech: {
-        confirm: 'Check the language and reduced horror settings.',
         sending: 'I am waiting for confirmation from Quest. Please wait a moment.',
         applied: 'Tap the screen to continue',
         waiting: 'Quest will apply them on the notice screen. Waiting for confirmation.',
@@ -918,7 +931,7 @@
         next: 'Next sentence', settings: 'Change language / reduced horror', replay: 'Watch the briefing again', resume: 'Resume', toTitle: 'Back to title', staff: 'Staff only (press and hold)', hold: 'Press and hold for 1.5 seconds', subtitles: 'Continue with subtitles', controls: 'Briefing controls', pause: 'Pause and open briefing controls', preview: 'Staff preview mode',
         role: 'Guide', progress: 'Briefing progress', advance: 'Continue to the next sentence',
       },
-      equipment: { title: 'Get ready to begin', next: 'Equipment instructions', quest: 'Put on the Meta Quest headset.', headphones: 'Put on the headphones.', controller: 'Hold the controller in your left hand.', followup: 'Once you are ready, follow the instructions displayed inside the Quest headset.', handoff: 'Please return the tablet to a member of staff', handoffDetail: 'After checking, staff will help you put on the equipment', waiting: 'Please wait while staff checks the equipment.', interrupted: 'Staff are checking the equipment. Please wait here.', recovery: 'Please leave the tablet with staff until the Quest reconnects.' },
+      equipment: { title: 'Get ready to begin', next: 'Equipment instructions', quest: 'Put on the Meta Quest headset.', headphones: 'Put on the headphones.', controller: 'Hold the controller in your left hand.', followup: 'Once you are ready, follow the instructions displayed inside the Quest headset.', handoff: 'When you have finished reading, please hand the tablet to a member of staff.', interrupted: 'Staff are checking the equipment. Please wait here.', recovery: 'Please leave the tablet with staff until the Quest reconnects.' },
     },
     fr: {
       journey: ['Préparation', 'Réglages', 'Consignes', 'Équipement'],
@@ -930,13 +943,12 @@
       askRelief: 'Choisissez si vous souhaitez atténuer l’horreur.',
       next: 'Suivant', back: 'Retour',
       notice: "Cette expérience contient des scènes\nd'horreur, conçues pour inquiéter\nou effrayer.\n\nSi vous vous sentez mal, arrêtez-vous,\nretirez le casque et prévenez\nun membre du personnel.",
-      review: 'Vérifier les réglages', apply: 'Envoyer ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
+      apply: 'Commencer avec ces réglages', edit: 'Retour aux réglages', retry: 'Renvoyer',
       selected: 'Réglages choisis', headset: 'Quest', headsetCurrent: 'Réglages actuels du Quest', headsetConfirmed: 'Réglages confirmés sur le Quest', item: 'Élément', continue: 'Commencer les explications',
       restarted: 'Le casque a redémarré. Vérifiez les réglages conservés, puis renvoyez-les.',
       staff: 'Personnel uniquement', staffOpen: 'Maintenez pour ouvrir l’écran du personnel', skip: 'Aller aux réglages', fullscreen: 'Plein écran', fullscreenEnter: 'Passer en plein écran',
       connection: { checking: 'Vérification de la connexion…', online: 'Casque connecté', offline: 'Connexion non vérifiable' },
       post: {
-        confirm: ['Vérification des réglages', 'Vérifiez la langue et l’atténuation de l’horreur. Rien n’a encore été envoyé au Quest'],
         sending: ['Application des réglages', 'En attente de la confirmation du Quest'],
         applied: ['Réglages appliqués au Quest', 'Touchez l’écran pendant les explications pour faire une pause'],
         waiting: ['En attente de l’application des réglages', 'Le Quest les appliquera sur l’écran d’avertissement'],
@@ -946,7 +958,6 @@
         conflict: ['Réglages modifiés', 'Les réglages ont été modifiés sur une autre page. Veuillez les vérifier.'],
       },
       postSpeech: {
-        confirm: 'Vérifiez la langue et l’atténuation de l’horreur.',
         sending: 'J’attends la confirmation du Quest. Veuillez patienter.',
         applied: 'Touchez l’écran pour continuer',
         waiting: 'Le Quest les appliquera sur l’écran d’avertissement. J’attends sa confirmation.',
@@ -964,7 +975,7 @@
         next: 'Phrase suivante', settings: 'Modifier langue / horreur atténuée', replay: 'Revoir les explications', resume: 'Reprendre', toTitle: 'Retour au titre', staff: 'Personnel uniquement (maintenir)', hold: 'Maintenez pendant 1,5 seconde', subtitles: 'Continuer avec les sous-titres', controls: 'Commandes des explications', pause: 'Mettre en pause et ouvrir les commandes', preview: 'Mode de vérification du personnel',
         role: 'Guide', progress: 'Progression des explications', advance: 'Continuer vers la phrase suivante',
       },
-      equipment: { title: 'Préparez votre équipement', next: 'Consignes d’équipement', quest: 'Mettez le casque Meta Quest.', headphones: 'Mettez le casque audio.', controller: 'Tenez la manette dans votre main gauche.', followup: 'Une fois équipé, suivez les instructions affichées dans le casque Quest.', handoff: 'Rendez la tablette au personnel', handoffDetail: 'Après vérification, le personnel vous aidera à vous équiper', waiting: 'Veuillez patienter pendant la vérification du personnel.', interrupted: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', recovery: 'Laissez la tablette au personnel jusqu’au rétablissement du Quest.' },
+      equipment: { title: 'Préparez votre équipement', next: 'Consignes d’équipement', quest: 'Mettez le casque Meta Quest.', headphones: 'Mettez le casque audio.', controller: 'Tenez la manette dans votre main gauche.', followup: 'Une fois équipé, suivez les instructions affichées dans le casque Quest.', handoff: 'Après lecture, remettez la tablette à un membre du personnel.', interrupted: 'Le personnel vérifie l’équipement. Veuillez patienter ici.', recovery: 'Laissez la tablette au personnel jusqu’au rétablissement du Quest.' },
     },
   };
 
@@ -1189,7 +1200,7 @@
     renderBriefingScene();
     stopBriefingMediaWindow();
     state.briefing.mediaPaused = true;
-    if (!advanceToWearIfReady(state.status, true)) syncWearReadiness(state.status);
+    if (!advanceToWearIfReady(state.status)) syncWearReadiness(state.status);
     renderBriefingControls();
     return true;
   }
@@ -1365,6 +1376,8 @@
     $('settingsNextBtn').disabled = blocked;
     $('settingsBackBtn').disabled = blocked;
     $('sendBtn').disabled = blocked;
+    // 「設定に戻る」は確認・反映の画面だけ（上の帯にあるので、他の画面へ持ち越さない）
+    if (state.view !== 'result') $('editBtn').hidden = true;
     syncReliefPreview();
   }
 
@@ -1564,8 +1577,7 @@
     $('reliefOnNote').textContent = t.reliefOnNote;
     $('nextLabel').textContent = t.next;
     $('settingsBackBtn').textContent = t.back;
-    $('submitLabel').textContent = t.review;
-    $('applyBtn').textContent = t.apply;
+    $('submitLabel').textContent = t.apply;
     $('resultContinueBtn').textContent = t.continue;
     $('editBtn').textContent = t.edit;
     $('retryBtn').textContent = t.retry;
@@ -2149,17 +2161,18 @@
     $('briefingPrevious').hidden = complete;
     $('briefingNext').disabled = state.briefing.ended || positions.length === 0;
     $('briefingNext').hidden = complete;
-    const nextLabel = requiresStaffHandoff()
-      ? { ja: 'スタッフへ返す', en: 'Return to staff', fr: 'Remettre au personnel' }[state.lang]
-      : T[state.lang].equipment.next;
-    $('briefingNext').textContent = lastCue ? nextLabel : t.next;
+    // 最後の文の次は、スタッフ運用でも装着の案内（返すのは案内を読んだ後）
+    $('briefingNext').textContent = lastCue ? T[state.lang].equipment.next : t.next;
     $('briefingNext').setAttribute('aria-label', $('briefingNext').textContent);
     $('briefingReplay').hidden = !complete;
-    $('briefingSettings').hidden = false;
+    // 説明を聞き終えた後の言語の変更は、スタッフ画面の「設定と説明をやり直す」で行う。
+    // 来場者の装着の案内には置かない（説明の最後をテンポよく送った指が入ると、設定からやり直しになる）
+    $('briefingSettings').hidden = complete && requiresStaffHandoff();
     $('subtitle').hidden = complete;
     $('briefingResume').hidden = complete;
     $('briefingToTitle').hidden = complete;
-    $('briefingStaff').hidden = complete;
+    // 装着の案内では、スタッフが受け取ってから長押しする入口を見える所に置く（右上の小さな入口は見つけにくかった）
+    $('briefingStaff').hidden = complete && !awaitingStaffHandback();
     const externalPause = Array.from(state.briefing.pauseReasons).some(reason => reason !== 'controls');
     $('briefingResume').disabled = externalPause;
     $('briefingToTitle').disabled = externalPause;
@@ -2222,32 +2235,37 @@
 
   // 博士の説明は 12 文とも来場者の手元で流し、最後の砂嵐のあとで返してもらう（2026-10-16）。
   // 途中で返すと「健闘を祈ります」が台に置かれたタブレットで流れ、砂嵐も 2 回になっていた。
-  // スタッフの装着確定を Quest が受理したら、スタッフ画面を閉じて装着の準備を出す。
-  function advanceToWearIfReady(status = state.status, resumeExplicitly = false) {
+  // 装着の案内は砂嵐の直後に来場者が読み、読み終えてから返す（2026-10-21）。以前は返した後、
+  // スタッフの確定の後に出していたので、案内を読むはずの来場者の手にタブレットが無かった。
+  // スタッフの装着確定を Quest が受理したら、スタッフ画面のまま「装着を手伝う」へ進む（閉じない）。
+  function advanceToWearIfReady(status = state.status) {
     if (state.briefing.wearStarted || !state.briefing.ended || !wearReadinessConfirmed(status)) return false;
     state.briefing.wearStarted = true;
-    // 装着の確定はスタッフ自身の開始操作。受理後は両手で補助できるよう自動で案内する。
-    // 再読み込みからの復元ではスタッフ画面を開いたまま保つ。
-    if (!resumeExplicitly && $('staff').open) closeStaffScreen();
     renderBriefingScene();
     saveBriefingProgress();
     return true;
   }
 
-  // 受理のあとで準備が崩れたら装着の準備を隠し、戻れば再び出す。説明はもう再生しない。
+  // 受理のあとで準備が崩れたら来場者の画面に一言足し、戻れば消す。説明はもう再生しない。
   function syncWearReadiness(status = state.status) {
     if (state.view === 'briefing' && state.briefing.ended && requiresStaffHandoff(status)) renderBriefingScene();
   }
 
-  function canShowEquipmentGuidance(status = state.status) {
-    if (state.staffPreview || !status?.staffSetup) return state.briefing.ended;
-    return state.briefing.ended && wearReadinessConfirmed(status);
+  // 案内は説明が終わった時点で出す。スタッフの確定を待たない。
+  function canShowEquipmentGuidance() {
+    return state.briefing.ended;
+  }
+
+  // 返却を待っているあいだ（スタッフがまだ確定していない）は「渡してください」の一行を出す。
+  function awaitingStaffHandback(status = state.status) {
+    return requiresStaffHandoff(status) && state.briefing.ended && !state.briefing.wearStarted;
   }
 
   function visitorEquipmentStatus() {
     const copy = T[state.lang].equipment;
+    // 返す前は「渡してください」で足りる。確定の後でスタッフが来場者の画面へ戻したときだけ、待ちの中身を一言足す。
+    if (!requiresStaffHandoff() || !state.briefing.wearStarted) return '';
     if (state.connection !== 'online' || !questStatusFresh()) return copy.recovery;
-    // ふだんの待ちは上の 2 行（返す・確認後に手伝う）で足りる。1 行足すのは待ちの中身が変わったときだけ。
     return state.status?.staffSetup?.reason ? copy.interrupted : '';
   }
 
@@ -2294,23 +2312,27 @@
     $('briefingCueNumber').hidden = equipment;
     if (equipment) {
       const copy = T[state.lang].equipment;
-      const showGuidance = canShowEquipmentGuidance();
+      const handback = awaitingStaffHandback();
       document.querySelector('.stage').classList.remove('is-doctor-only');
       document.querySelector('.stage').classList.remove('has-reference');
       setReferenceVisual(false);
       setText('briefingChapterNumber', '03');
       setText('briefingEyebrow', T[state.lang].journey[3]);
-      setText('briefingTitle', showGuidance ? copy.title : copy.handoff);
+      setText('briefingTitle', copy.title);
       setText('equipmentQuest', copy.quest);
       setText('equipmentHeadphones', copy.headphones);
       setText('equipmentController', copy.controller);
-      $('equipmentSteps').hidden = !showGuidance;
-      setText('equipmentFollowup', showGuidance ? copy.followup : copy.handoffDetail);
-      setText('equipmentStaffStatus', showGuidance ? '' : visitorEquipmentStatus());
+      $('equipmentSteps').hidden = false;
+      setText('equipmentFollowup', copy.followup);
+      // 読む順の最後に置く一行。読み終えた来場者がそのままスタッフへ渡す
+      setText('equipmentHandback', handback ? copy.handoff : '');
+      $('equipmentHandback').hidden = !handback;
+      setText('equipmentStaffStatus', visitorEquipmentStatus());
+      document.querySelector('.stage').classList.toggle('is-handback', handback);
       $('briefingSettings').textContent = state.staffPreview ? 'スタッフ画面に戻る' : T[state.lang].briefing.settings;
       $('briefingMode').hidden = !state.staffPreview;
       $('briefingAdvanceHint').textContent = '';
-      document.title = `廻リ視 — ${showGuidance ? copy.title : copy.handoff}`;
+      document.title = `廻リ視 — ${copy.title}`;
       renderJourney();
       renderBriefingControls();
       return;
@@ -2646,6 +2668,8 @@
       equipmentTransitionPending = false;
       if (state.view !== 'briefing') return;
       state.briefing.ended = true;
+      // 砂嵐の最後まで画面を送り続けた指が、出てきた案内のボタンに入らないようにする
+      guardClicksAfterSwitch(EQUIPMENT_CLICK_GUARD_MS);
       if (requiresStaffHandoff()) {
         state.briefing.handoffReady = true;
         state.briefing.wearStarted = false;
@@ -2830,8 +2854,8 @@
   }
 
   function resultKey() {
-    if (state.ui === 'confirm' || state.ui === 'sending' || state.ui === 'fail' || state.ui === 'conflict') return state.ui;
-    if (state.bypass) return state.sent ? 'applied' : 'confirm';
+    if (state.ui === 'sending' || state.ui === 'fail' || state.ui === 'conflict') return state.ui;
+    if (state.bypass) return state.sent ? 'applied' : 'sending';
     if (state.connection !== 'online' || !state.status) return 'noserver';
     const actual = state.status;
     const sent = state.sent;
@@ -2847,19 +2871,18 @@
   function renderResult() {
     const t = T[state.lang];
     const key = resultKey();
-    const settingsAllowed = visitorSettingsAccess().allowed;
     const staleApplied = key === 'applied' && !questStatusFresh();
     const briefingBlocked = key === 'applied' && state.briefing.loadState !== 'ready';
     const copy = briefingBlocked
       ? t.briefing[state.briefing.loadState === 'error' ? 'error' : 'loading']
       : t.post[key];
     const actual = state.bypass ? state.sent : (questStatusFresh() ? state.status : null);
-    const selected = key === 'confirm' || !state.sent
+    const selected = !state.sent
       ? { lang: state.lang, relief: state.relief }
       : state.sent;
     const glyph = briefingBlocked
       ? (state.briefing.loadState === 'error' ? '×' : '…')
-      : { confirm: '→', sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', conflict: '!', noserver: '?' }[key];
+      : { sending: '…', waiting: '…', later: '⌛', applied: '✓', fail: '×', conflict: '!', noserver: '?' }[key];
     const tone = staleApplied ? 'wait' : briefingBlocked
       ? (state.briefing.loadState === 'error' ? 'error' : 'wait')
       : (key === 'applied' ? 'ok' : (key === 'fail' || key === 'conflict' || key === 'noserver' ? 'error' : 'wait'));
@@ -2875,8 +2898,6 @@
     $('selectedRelief').textContent = selected.relief ? t.reliefOn : t.reliefOff;
     $('headsetLanguage').textContent = actual && actual.lang ? (LANG_NAME[actual.lang] || actual.lang) : '—';
     $('headsetRelief').textContent = actual && typeof actual.relief === 'boolean' ? (actual.relief ? t.reliefOn : t.reliefOff) : '—';
-    $('applyBtn').hidden = key !== 'confirm';
-    $('applyBtn').disabled = key === 'confirm' && !settingsAllowed;
     $('retryBtn').hidden = key !== 'fail';
     $('briefingRetryBtn').hidden = !(key === 'applied' && state.briefing.loadState === 'error');
     $('resultContinueBtn').hidden = briefingBlocked || key !== 'applied';
@@ -3800,9 +3821,14 @@
   // 同じ位置に現れた別のボタンへ入る（回収の長押しのあと「来場者の画面にする」が勝手に押され、
   // 来場者の画面へ飛んだ・2026-10-17 の通し確認で発見）。その指を離して少し経つまで click を捨てる。
   const HOLD_RELEASE_GUARD_MS = 400;
+  const EQUIPMENT_CLICK_GUARD_MS = 900;
   const HOLD_POINTER_MAX_MS = 10000;
   let heldPointer = null;
   let holdClickGuardUntil = 0;
+  // 画面が切り替わった直後の click を捨てる。前の画面を送っていた指が、新しく出たボタンを押さないように。
+  function guardClicksAfterSwitch(ms) {
+    holdClickGuardUntil = Math.max(holdClickGuardUntil, performance.now() + ms);
+  }
   function guardClicksAfterHold(pointerId) {
     heldPointer = { id: pointerId, until: performance.now() + HOLD_POINTER_MAX_MS };
   }
@@ -4131,17 +4157,6 @@
     render();
   }
 
-  function confirmSettings() {
-    if (state.view !== 'edit' || state.settingsStep !== 'relief' || !visitorSettingsAccess().allowed) return false;
-    state.ui = 'confirm';
-    changeVisual(() => {
-      setFormDisabled(false);
-      setSurface('result', $('resultTitle'));
-      render();
-    });
-    return true;
-  }
-
   function poll() {
     // 通し確認中は実機の状態を読まない（読むと来場者の流れの判定が途中で上書きされる）。
     if (state.bypass) return Promise.resolve();
@@ -4254,12 +4269,16 @@
 
   $('settingsForm').addEventListener('submit', (event) => {
     event.preventDefault();
-    sfx('key');
     if (state.settingsStep === 'language') {
+      sfx('key');
       setSettingsStep('relief');
       return;
     }
-    confirmSettings();
+    // 確認だけの段は挟まない。選んだ 2 つは送った後の画面に並び、そこから戻れる（2026-10-21）
+    if (state.view !== 'edit' || !visitorSettingsAccess().allowed) return;
+    sfx('send');
+    // send() は最初の await までに結果の画面へ切り替える。その切り替えに通常の画面遷移の動きを付ける
+    changeVisual(() => { void send(); });
   });
   $('staffResetBtn').addEventListener('click', () => {
     if ($('staffResetBtn').disabled || $('staffResetBtn').hidden) return staffAction;
@@ -4285,7 +4304,8 @@
     onShort: () => showStaffHoldHint(false),
   });
   briefingStaffHold = bindHold($('briefingStaff'), STAFF_ENTRY_HOLD_MS, () => openStaffScreen('manual'), {
-    active: () => state.view === 'briefing' && state.briefing.controlsOpen && !$('staff').open,
+    active: () => state.view === 'briefing' && !$('staff').open
+      && (state.briefing.controlsOpen || document.querySelector('.stage').classList.contains('is-equipment')),
     onShort: () => showStaffHoldHint(true),
   });
   $('staffRetryBtn').addEventListener('click', () => {
@@ -4314,7 +4334,6 @@
   });
   $('settingsNextBtn').addEventListener('click', () => { sfx('key'); setSettingsStep('relief'); });
   $('settingsBackBtn').addEventListener('click', () => { sfx('key'); setSettingsStep('language'); });
-  $('applyBtn').addEventListener('click', () => { sfx('send'); send(); });
   $('resultContinueBtn').addEventListener('click', advanceFromResult);
   $('titleStart').addEventListener('click', beginFromTitle);
   $('titleView').addEventListener('click', beginFromTitle);

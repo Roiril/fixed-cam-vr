@@ -59,3 +59,10 @@ registration.json に保存されるだけで、`positionConfirmed` は false �
 タブレット本番 APK は WebView のデバッグ口を開けていない（`debuggable` 依存）。押す確認は screencap で座標を読み `adb shell input` で行う。
 
 関連: [[staff-setup]] [[visitor-tablet]]
+
+2026-10-21（LEDGER 0282）: 確認だけの段を外し、装着の準備を返却の前に出す流れへ変えたので期待を差し替えた
+（進む輪が言語と軽減で同じ位置／戻るが左上／反映画面の「設定に戻る」が上の帯／砂嵐の直後に案内と返却の一行／
+確定の後はスタッフ画面の `wear`）。説明の終わりの検出は `equipmentGuide` が見えたかで取る
+（以前の `staffHandback` / `briefingStaff` は 10-16 以降どちらも出ず、240 秒の上限まで待っていた）。
+⚠ 「準備を始める」は状態の取得周期しだいで 1.5 秒の固定待ちに間に合わないことがある（10-21 に 1 回）→ `waitVisible` で待つ。
+⚠ 反映中（最短 0.9 秒）の判定は撮影の前にする。撮るあいだに反映済みへ進む。

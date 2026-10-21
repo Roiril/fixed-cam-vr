@@ -309,7 +309,9 @@ const SECTIONS = [
       await sleep(1500);
       await a.shot('alignment-in-progress', { who: 'スタッフ（Quest を被っている）', note: 'Quest で位置合わせ中', doing: '位置合わせを終える' });
       await a.scenario('prepare');
-      await sleep(1500);
+      // 状態の取得は周期なので、固定の待ちだけだとボタンが出る前に撮ることがある（2026-10-21 に 1 回）
+      await a.waitVisible('staffResetBtn', 8000).catch(() => {});
+      await sleep(300);
       await a.shot('setup-done', { who: 'スタッフ', note: '機器と位置がそろった。最初の来場者の前', doing: '準備を始める' });
     },
   },
@@ -339,20 +341,27 @@ const SECTIONS = [
       await a.tap(`input[name=lang][value=${LANG}]`);
       await sleep(400);
       await a.shot('settings-language-picked', { who: '来場者', doing: '次へ' });
+      const nextRing = await a.eval(`(() => { const r = document.getElementById('settingsNextBtn').getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);
       await a.tap('settingsNextBtn');
       await sleep(900);
       await a.shot('settings-relief', { who: '来場者', doing: '恐怖の軽減を選ぶ' });
+      // 2026-10-21: テンポよく押すと「戻る」に入りかけた。進む輪は言語と軽減で同じ位置、戻るは左上に離す
+      await a.expect(`(() => { const r = document.getElementById('sendBtn').getBoundingClientRect();
+        return Math.abs(r.left - ${nextRing.x}) < 2 && Math.abs(r.top - ${nextRing.y}) < 2; })()`, '進む輪は言語と軽減で同じ位置');
+      await a.expect(`(() => { const b = document.getElementById('settingsBackBtn').getBoundingClientRect(), s = document.getElementById('sendBtn').getBoundingClientRect();
+        return b.bottom < 120 && b.bottom < s.top - 200; })()`, '戻るは左上に置き、進む操作から離す');
       await a.tap('input[name=relief][value=off]');
       await sleep(400);
-      await a.shot('settings-relief-picked', { who: '来場者', doing: '送る／始める' });
+      await a.shot('settings-relief-picked', { who: '来場者', doing: '「この設定で始める」' });
       await a.tap('sendBtn');
-      await sleep(1200);
-      await a.shot('settings-review', { who: '来場者', doing: '設定を確かめて送る' });
-      await a.tap('applyBtn');
+      // 反映中は最短 0.9 秒。撮影に時間がかかるので、撮る前に判定する
+      await a.expect(`!document.getElementById('resultView').hidden && document.getElementById('editBtn').hidden`, '確認だけの段を挟まずに送り、送っている間は戻らせない');
       await sleep(1800);
       await a.shot('settings-sent', { who: '来場者', doing: '画面をタップして博士の説明へ' });
       // 0204「画面タップでいいならボタンは不要」。画面の言うとおりに画面をタップする。
       await a.expect(`!(${a.hasButtonLabel('博士の説明を始める')})`, '反映の画面に説明開始の専用ボタンを出さない（LEDGER 0204）');
+      await a.expect(`(() => { const e = document.getElementById('editBtn').getBoundingClientRect(); return !document.getElementById('editBtn').hidden && e.bottom < 120; })()`,
+        '「設定に戻る」は画面タップで進む範囲の外（上の帯）');
       await a.tap('resultLine');
       await sleep(1500);
       // 博士の説明。字幕が変わるたびに撮る（自動送り）。
@@ -363,7 +372,7 @@ const SECTIONS = [
       let count = 0;
       while (Date.now() < end) {
         const cue = await a.eval(`(document.getElementById('subtitleReserve')?.textContent || document.getElementById('briefingTitle')?.innerText || '').trim()`);
-        const handback = await a.eval(a.visible('staffHandback')) || await a.eval(a.visible('briefingStaff'));
+        const handback = await a.eval(a.visible('equipmentGuide'));
         if (cue && cue !== last) {
           last = cue; count += 1;
           await a.shot(`briefing-${String(count).padStart(2, '0')}`, { who: '来場者', note: '博士の説明（自動送り）', doing: '見る' });
@@ -372,14 +381,19 @@ const SECTIONS = [
         await sleep(300);
       }
       await sleep(1200);
-      await a.shot('handback', { who: '来場者 → スタッフ', note: '説明が終わった。来場者がタブレットを返す', doing: 'スタッフが「スタッフ専用」を長押し' });
+      await a.shot('handback', { who: '来場者 → スタッフ', note: '説明が終わった。装着の案内を読み、タブレットを返す', doing: 'スタッフが受け取って「スタッフ専用」を長押し' });
+      // 2026-10-21: 案内は返す前に来場者が読む。返すのは読み終えてから
+      await a.expect(`${a.visible('equipmentSteps')} && ${a.visible('equipmentHandback')}`, '砂嵐の直後に装着の案内と「読み終わったら渡す」を出す');
+      await a.expect(a.visible('briefingStaff'), 'スタッフの入口が案内の画面に見える形である');
+      if (LANG === 'ja') {
+        await a.expect(`!/Meta Quest|クエスト内/.test(document.getElementById('equipmentGuide').innerText)`, '機器の呼び名を「クエスト」に揃える');
+      }
     },
   },
   {
     id: 'confirm', title: '装着前の確認（スタッフ）',
     async run(a) {
-      const entry = (await a.eval(a.visible('briefingStaff'))) ? 'briefingStaff' : 'staffToggle';
-      await a.hold(entry, 1700);
+      await a.hold('briefingStaff', 1700);
       await sleep(1200);
       await a.shot('staff-confirm', { who: 'スタッフ', note: '今回の設定と機器を確認する画面', doing: '「長押しで装着へ進む」' });
       await a.expect(`!(${a.visible('staffHandback')})`, '自分で開いたスタッフに「スタッフにお渡しください」を出さない');
@@ -387,12 +401,8 @@ const SECTIONS = [
       await a.waitVisible('staffPrepareBtn', 8000);
       await a.hold('staffPrepareBtn', 1400);
       await sleep(1500);
-      await a.shot('wear-guide', { who: 'スタッフ／来場者', note: '装着の準備', doing: 'HMD とヘッドフォンを着ける' });
-      if (LANG === 'ja') {
-        await a.expect(`!/Meta Quest|クエスト内/.test(document.getElementById('equipmentGuide').innerText)`, '機器の呼び名を「クエスト」に揃える');
-      }
-      await sleep(4000);
-      await a.shot('wear-guide-later', { who: 'スタッフ／来場者', note: '装着の準備（4 秒後）', doing: 'HMD とヘッドフォンを着ける' });
+      await a.shot('wear-staff', { who: 'スタッフ', note: '確定の後。タブレットはスタッフの手にあるので、スタッフ画面のまま', doing: '装着を手伝う' });
+      await a.expect(`document.getElementById('staff').open && document.getElementById('staff').dataset.state === 'wear'`, '確定の後はスタッフ画面の「装着を手伝う」へ進む（来場者の画面へ戻さない）');
     },
   },
   {
@@ -405,7 +415,9 @@ const SECTIONS = [
       await sleep(1500);
       await a.shot('outro', { who: 'スタッフ', note: '終わりの演出中（まだ外さない）', doing: '待つ' });
       await a.scenario('finished');
-      await sleep(1500);
+      // 「準備を始める」と同じく、状態の取得周期しだいで固定の待ちに間に合わない（2026-10-21・仏語の走行で 1 回）
+      await a.waitVisible('staffCollectBtn', 8000).catch(() => {});
+      await sleep(300);
       await a.shot('finished', { who: 'スタッフ', note: '体験が終わった', doing: 'HMD を外す・回収・清拭 → 次の準備' });
       if (!(await a.eval(a.visible('staffCollectBtn')))) {
         await a.shot('finished-no-collect', { who: 'スタッフ', note: '⚠ 次の準備ボタンが見えない' });

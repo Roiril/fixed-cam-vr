@@ -381,7 +381,6 @@ const exportsSource = `
     restoreProgress: (progress) => { restoreCandidate = progress; state.restored = false; return tryRestoreBriefing(); },
     wasChangedByAnotherPage,
     showPageConflict,
-    confirmSettings,
     startBypass,
     canAdvanceFromResult,
     advanceFromResult,
@@ -546,7 +545,6 @@ test('新しい受付はリセット完了前の入口を閉じ、settingsと同
   status = { ...status, questTick: 203, staffSetup: { stage: 'devices', reason: '', positionConfirmed: true } };
   state.status = status;
   runtime.observeQuestTick(status);
-  assert.equal(runtime.confirmSettings(), false);
   await runtime.send();
   assert.equal(state.view, 'title');
 
@@ -587,21 +585,21 @@ test('設定は言語から軽減と確認へ進み、戻る操作と三言語�
   assert.equal(elements.get('reliefStep').hidden, false);
   assert.equal(elements.get('settingsBackBtn').hidden, false);
   assert.equal(elements.get('sendBtn').hidden, false);
-  assert.equal(elements.get('submitLabel').textContent, '設定を確認する');
+  assert.equal(elements.get('submitLabel').textContent, 'この設定で始める');
 
   state.lang = 'en';
   runtime.setSettingsStep('language', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Please choose the language you would like to use.');
   runtime.setSettingsStep('relief', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Please choose whether you would like to reduce the horror.');
-  assert.equal(elements.get('submitLabel').textContent, 'Review settings');
+  assert.equal(elements.get('submitLabel').textContent, 'Start with these settings');
 
   state.lang = 'fr';
   runtime.setSettingsStep('language', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez la langue que vous souhaitez utiliser.');
   runtime.setSettingsStep('relief', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Choisissez si vous souhaitez atténuer l’horreur.');
-  assert.equal(elements.get('submitLabel').textContent, 'Vérifier les réglages');
+  assert.equal(elements.get('submitLabel').textContent, 'Commencer avec ces réglages');
   elements.get('settingsBackBtn').dispatch('click');
   assert.equal(state.settingsStep, 'language');
 });
@@ -641,26 +639,26 @@ test('設定の問いは選択肢の直上に出し、進む操作は選択肢�
   state.settingsStep = 'language';
 });
 
-test('確認画面の見出しと操作は三言語に揃う', () => {
-  const copies = {
-    ja: ['設定内容の確認', 'この設定を送る', '設定に戻る'],
-    en: ['Review settings', 'Send these settings', 'Back to settings'],
-    fr: ['Vérification des réglages', 'Envoyer ces réglages', 'Retour aux réglages'],
-  };
-  state.connection = 'online';
-  state.status = clone(validStatus);
-  for (const [lang, [heading, apply, edit]] of Object.entries(copies)) {
-    state.view = 'edit';
-    state.ui = 'idle';
-    state.lang = lang;
-    runtime.setSettingsStep('relief', false);
-    assert.equal(runtime.confirmSettings(), true);
-    assert.equal(elements.get('resultTitle').textContent, heading);
-    assert.equal(elements.get('applyBtn').textContent, apply);
-    assert.equal(elements.get('editBtn').textContent, edit);
-    elements.get('editBtn').dispatch('click');
-    assert.equal(state.view, 'edit');
+test('戻る操作は上の帯に置き、進む操作（輪・画面タップ）の近くに置かない', () => {
+  // 2026-10-21: 「設定に戻る」が送る輪の隣と、画面タップで進む反映画面の中央にあり、テンポよく押すと入りかけた
+  const topbar = /<header class="topbar">[\s\S]*?<\/header>/.exec(html)?.[0] || '';
+  for (const id of ['settingsBackBtn', 'editBtn']) {
+    assert.ok(topbar.includes(`id="${id}"`), `${id} は上の帯にある`);
+    assert.equal((html.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} は 1 つだけ`);
   }
+  const actions = /<div class="settings-actions"[\s\S]*?<\/div>/.exec(html)?.[0] || '';
+  assert.ok(!actions.includes('settingsBackBtn'), '進む操作の並びに戻るを置かない');
+  const result = /<section class="surface result"[\s\S]*?<\/section>/.exec(html)?.[0] || '';
+  assert.ok(!result.includes('editBtn'), '画面タップで進む反映画面の中に戻るを置かない');
+  assert.equal(html.includes('id="applyBtn"'), false, '確認だけの段は置かない');
+  for (const [lang, edit] of [['ja', '設定に戻る'], ['en', 'Back to settings'], ['fr', 'Retour aux réglages']]) {
+    state.lang = lang; runtime.renderText();
+    assert.equal(elements.get('editBtn').textContent, edit);
+  }
+  state.lang = 'ja';
+  state.view = 'edit';
+  runtime.setSettingsStep('language', false);
+  assert.equal(elements.get('editBtn').hidden, true, '設定の画面では「設定に戻る」を出さない');
 });
 
 test('軽減音は軽減選択中だけ再生し、画面を離れると先頭へ戻る', async () => {
@@ -734,7 +732,7 @@ test('軽減音は反映確認・送信・博士説明では再生せず音量�
   assert.equal(preview.paused, false);
   elements.get('settingsForm').dispatch('submit');
   assert.equal(state.view, 'result');
-  assert.equal(state.ui, 'confirm');
+  assert.equal(state.ui, 'sending');
   assert.equal(preview.paused, true);
   assert.equal(preview.currentTime, 0);
 
@@ -768,7 +766,7 @@ test('軽減音は反映確認・送信・博士説明では再生せず音量�
   state.reliefPreviewStarted = false;
 });
 
-test('確認画面はPOSTせず、900msの送信表示後に受理番号と実値で反映を判定する', async () => {
+test('軽減の画面から確認の段を挟まずに送り、900msの送信表示後に受理番号と実値で反映を判定する', async () => {
   const requests = [];
   const lastRequest = { tabletSessionId: runtime.tabletSessionId, seq: 7, lang: 'en', relief: true };
   let status = { ...validStatus, lang: 'ja', relief: false, appliedSeq: 7, received: 1, lastRequest };
@@ -791,33 +789,22 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   const preview = runtime.getReliefPreview();
   assert.equal(preview.paused, false);
   elements.get('settingsForm').dispatch('submit');
-  assert.equal(state.ui, 'confirm');
+  assert.equal(state.ui, 'sending', '「この設定で始める」でそのまま送る');
   assert.equal(state.view, 'result');
-  assert.equal(requests.length, 0, '確認画面へ進むだけでは通信しない');
-  assert.equal(elements.get('resultTitle').textContent, 'Review settings');
-  assert.equal(elements.get('selectedLanguage').textContent, 'English');
+  assert.equal(elements.get('selectedLanguage').textContent, 'English', '送っている間は選んだ値を見せる');
   assert.equal(elements.get('selectedRelief').textContent, 'on');
-  assert.equal(elements.get('applyBtn').hidden, false);
-  assert.equal(elements.get('editBtn').hidden, false);
+  assert.equal(elements.get('editBtn').hidden, true, '送っている間は戻らせない');
   assert.equal(preview.paused, true);
-
-  elements.get('editBtn').dispatch('click');
-  assert.equal(state.view, 'edit');
-  assert.equal(state.settingsStep, 'language');
-  runtime.setSettingsStep('relief', false);
-  elements.get('settingsForm').dispatch('submit');
-  assert.equal(requests.length, 0, '設定へ戻っても確認までは通信しない');
-
-  const sending = elements.get('applyBtn').dispatch('click');
   await flushPromises();
-  assert.equal(state.ui, 'sending');
   assert.equal(runtime.resultKey(), 'sending');
   assert.equal(elements.get('resultTitle').textContent, 'Applying settings');
-  assert.equal(requests[0].resource, './set');
-  assert.deepEqual(JSON.parse(requests[0].options.body), { lang: 'en', relief: true,
+  assert.equal(requests.filter(r => r.resource === './set').length, 1);
+  const setRequest = requests.find(r => r.resource === './set');
+  assert.deepEqual(JSON.parse(setRequest.options.body), { lang: 'en', relief: true,
     tabletSessionId: runtime.tabletSessionId, portalSessionId: 'portal-a' });
   timers.runOne(900);
-  await sending;
+  await flushPromises(); await flushPromises();
+  assert.equal(elements.get('editBtn').hidden, false, '送った後は上の帯から設定へ戻れる');
   assert.equal(JSON.stringify(state.sent), JSON.stringify({ lang: 'en', relief: true, seq: 7,
     portalSessionId: 'portal-a', targetId: null }));
   assert.equal(runtime.resultKey(), 'waiting');
@@ -851,17 +838,16 @@ test('確認画面はPOSTせず、900msの送信表示後に受理番号と実�
   assert.equal(elements.get('headsetHeading').textContent, 'Settings confirmed on Quest');
 });
 
-test('確認前は現在値と未送信を示し反映後だけ明示ボタンで進める', async () => {
+test('反映前は現在のクエストの値を示し、反映後だけ次へ進める', async () => {
   state.lang = 'ja';
-  state.view = 'edit';
-  state.ui = 'idle';
+  state.view = 'result';
+  state.ui = 'sending';
   state.sent = null;
   state.status = clone(validStatus);
   state.connection = 'online';
-  runtime.setSettingsStep('relief', false);
-  elements.get('settingsForm').dispatch('submit');
+  runtime.renderText();
+  runtime.renderResult();
   assert.equal(elements.get('headsetHeading').textContent, '現在のクエスト');
-  assert.equal(elements.get('resultDetail').textContent, '言語とホラー軽減を確認してください。クエストへは未送信です');
   assert.equal(elements.get('resultContinueBtn').hidden, true);
 
   state.sent = { lang: 'ja', relief: false, seq: 12, portalSessionId: 'portal-a', targetId: null };
@@ -1634,13 +1620,11 @@ test('通し確認は接続を見ずにタイトルから装着の案内まで�
   assert.equal(state.view, 'title');
   assert.equal(runtime.visitorSettingsAccess().allowed, true);
   assert.equal(elements.get('bypassBadge').hidden, false);
-  // 設定 → 確認 → 送る（通信しない）→ 反映済み
+  // 設定 → 送る（通信しない）→ 反映済み
   state.view = 'edit';
   state.settingsStep = 'relief';
-  runtime.confirmSettings();
-  assert.equal(state.view, 'result');
-  assert.equal(runtime.resultKey(), 'confirm');
   const send = runtime.send();
+  assert.equal(state.view, 'result');
   assert.equal(runtime.resultKey(), 'sending');
   await flushPromises();
   timers.runOne(900);   // 最短の「反映しています」（MINIMUM_APPLYING_MS）
@@ -1673,7 +1657,6 @@ test('操作盤に「この文を最初から」は無く、通し確認では�
   runtime.startBypass();
   state.view = 'edit';
   state.settingsStep = 'relief';
-  runtime.confirmSettings();
   const send = runtime.send();
   await flushPromises();
   timers.runOne(900);
@@ -1982,11 +1965,11 @@ test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内
     await runtime.pulse();
     assert.equal(posts.at(-1).body.briefingCompleted, false, 'wear の再生中は説明完了を送らない');
 
-    for (const [lang, label] of [['ja', 'スタッフへ返す'], ['en', 'Return to staff'], ['fr', 'Remettre au personnel']]) {
+    for (const [lang, label] of [['ja', '装着の案内へ'], ['en', 'Equipment instructions'], ['fr', 'Consignes d’équipement']]) {
       state.lang = lang;
       state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues[lang].length - 1;
       runtime.renderBriefingScene();
-      assert.equal(elements.get('briefingNext').textContent, label, '最後の文で「スタッフへ返す」');
+      assert.equal(elements.get('briefingNext').textContent, label, '最後の文の次は装着の案内（返すのは案内を読んだ後）');
       const total = String(state.briefing.data.scenes.reduce((sum, scene) => sum + scene.cues[lang].length, 0)).padStart(2, '0');
       assert.ok(elements.get('sceneCounter').textContent.endsWith(`${total} / ${total}`), '進み具合は12文で1本');
     }
@@ -2000,24 +1983,31 @@ test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内
     assert.equal(state.briefing.wearStarted, false);
     assert.equal(posts.at(-1).body.briefingCompleted, true);
     assert.equal(posts.at(-1).body.staffConfirmed, false);
-    assert.equal(runtime.canShowEquipmentGuidance(), false);
-    assert.equal(elements.get('equipmentSteps').hidden, true);
-    assert.equal(elements.get('briefingTitle').textContent, 'タブレットをスタッフへ返してください');
-    assert.equal(elements.get('equipmentFollowup').textContent, '確認後にスタッフが装着をお手伝いします');
-    for (const [lang, handoff] of [['ja', 'タブレットをスタッフへ返してください'], ['en', 'Please return the tablet to a member of staff'], ['fr', 'Rendez la tablette au personnel']]) {
+    // 2026-10-21: 案内は砂嵐の直後に来場者が読み、読み終えてから返す。スタッフの確定を待たない
+    assert.equal(runtime.canShowEquipmentGuidance(), true);
+    assert.equal(elements.get('equipmentSteps').hidden, false, '砂嵐の直後に装着の案内を出す');
+    assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
+    assert.equal(elements.get('equipmentFollowup').textContent, '装着が終わったら、クエストの中の指示に従ってください。');
+    assert.equal(elements.get('equipmentHandback').hidden, false, '案内の最後に返却の一行');
+    for (const [lang, handoff] of [['ja', '読み終わったら、スタッフにタブレットを渡してください。'],
+      ['en', 'When you have finished reading, please hand the tablet to a member of staff.'],
+      ['fr', 'Après lecture, remettez la tablette à un membre du personnel.']]) {
       state.lang = lang; runtime.renderBriefingScene();
-      assert.equal(elements.get('briefingTitle').textContent, handoff);
+      assert.equal(elements.get('equipmentHandback').textContent, handoff);
     }
-    state.lang = 'ja';
-    assert.equal(elements.get('staff').open, false, '返却画面ではスタッフ画面を自動で開かない');
-    const staffEntry = elements.get('staffToggle');
+    state.lang = 'ja'; runtime.renderBriefingScene();
+    assert.equal(elements.get('staff').open, false, '返却を待つ画面ではスタッフ画面を自動で開かない');
+    assert.equal(elements.get('briefingSettings').hidden, true, '説明の後の言語の変更は案内に置かない（送った指が入る）');
+    assert.equal(elements.get('briefingReplay').hidden, false);
+    const staffEntry = elements.get('briefingStaff');
+    assert.equal(staffEntry.hidden, false, 'スタッフの入口を案内の画面に見える形で置く');
     staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 70, button: 0 });
     staffEntry.dispatch('pointerup', { pointerId: 70 });
     assert.equal(elements.get('staff').open, false, '短押しではスタッフ画面を開かない');
-    assert.match(elements.get('staffLabel').textContent, /1\.5秒長押し/);
+    assert.match(elements.get('briefingStaffHint').textContent, /1\.5秒長押し/);
     staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 71, button: 0 });
     timers.runOne(1500);
-    assert.equal(elements.get('staff').open, true, '返却画面の長押しでスタッフ画面を開く');
+    assert.equal(elements.get('staff').open, true, '案内の画面の長押しでスタッフ画面を開く');
     assert.equal(elements.get('staff').dataset.state, 'confirm');
     assert.equal(elements.get('staffNowTitle').textContent, '装着の前に確認');
     assert.equal(elements.get('staffHandback').hidden, true, '長押しで開いたなら読み手は受け取ったスタッフ。返却の案内は出さない');
@@ -2054,52 +2044,45 @@ test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内
     status.staffSetup = { stage: 'handedOff', reason: '', positionConfirmed: true };
     status.questTick++; await runtime.poll();
     assert.equal(state.briefing.wearStarted, false, '古いrevisionでは装着の準備へ進めない');
-    assert.equal(elements.get('staff').open, true, '古いrevisionではスタッフ画面を閉じない');
-    assert.equal(elements.get('equipmentSteps').hidden, true);
+    assert.equal(elements.get('staff').dataset.state, 'confirm', '古いrevisionでは装着の手伝いへ進めない');
+    assert.equal(elements.get('equipmentHandback').hidden, false);
     status.briefing.revision = request.briefingRevision;
     status.questTick++; await runtime.poll();
     assert.equal(state.briefing.wearStarted, true);
-    assert.equal(elements.get('staff').open, false, 'Questの受理でスタッフ画面を閉じて来場者の画面へ戻す');
-    assert.equal(runtime.canShowEquipmentGuidance(), true);
-    assert.equal(elements.get('equipmentSteps').hidden, false, '受理したら追加タップなしで装着の準備を出す');
-    assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
-    assert.equal(cuts.length, 1, '受理の後に砂嵐を重ねない');
-
-    staffEntry.dispatch('pointerdown', { isPrimary: true, pointerId: 72, button: 0 });
-    timers.runOne(1500);
-    assert.equal(elements.get('staff').open, true);
+    // 受理の後もタブレットはスタッフの手にある。スタッフ画面のまま装着の手伝いへ進む
+    assert.equal(elements.get('staff').open, true, 'Questの受理でスタッフ画面を閉じない');
     assert.equal(elements.get('staff').dataset.state, 'wear');
+    assert.equal(cuts.length, 1, '受理の後に砂嵐を重ねない');
     assert.equal(elements.get('staffNowTitle').textContent, '装着を手伝う');
     assert.equal(elements.get('staffNowItem3Text').textContent, 'ヘッドセットの中の案内に従います。体験者が X か Y を押して始めます');
     assert.equal(elements.get('staffDoneBtn').hidden, false, '装着中は来場者の画面へ戻れる');
     elements.get('staffDoneBtn').dispatch('click');
     assert.equal(elements.get('staff').open, false);
     assert.equal(elements.get('equipmentSteps').hidden, false);
+    assert.equal(elements.get('equipmentHandback').hidden, true, '受理の後は「渡してください」を出さない');
+    assert.equal(elements.get('briefingStaff').hidden, true, '受理の後は案内の画面にスタッフの入口を大きく置かない');
 
-    // 受理のあとで準備が崩れたら装着の準備を隠し、戻れば再び出す。
+    // 受理のあとで準備が崩れたら、案内は残したまま待ちの中身を一言足し、戻れば消す。
     for (const [reason, stage] of [['camera', 'devices'], ['content', 'devices'], ['position', 'alignment']]) {
       status.staffSetup.reason = reason; status.staffSetup.stage = stage; status.questTick++; await runtime.poll();
-      assert.equal(elements.get('equipmentSteps').hidden, true, reason);
+      assert.equal(elements.get('equipmentSteps').hidden, false, reason);
       assert.match(elements.get('equipmentStaffStatus').textContent, /機器を確認/);
       status.staffSetup.reason = ''; status.staffSetup.stage = 'handedOff'; status.questTick++; await runtime.poll();
-      assert.equal(elements.get('equipmentSteps').hidden, false, `${reason} から戻ったら再び出す`);
-      assert.equal(elements.get('equipmentStaffStatus').textContent, '');
+      assert.equal(elements.get('equipmentStaffStatus').textContent, '', `${reason} から戻ったら消す`);
     }
 
     fetchHandler = async () => { throw new TypeError('offline'); };
     await runtime.poll();
-    assert.equal(elements.get('equipmentSteps').hidden, true);
     assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
     fetchHandler = onlineFetch; status.questTick++; await runtime.poll();
-    assert.equal(elements.get('equipmentSteps').hidden, false);
+    assert.equal(elements.get('equipmentStaffStatus').textContent, '');
 
     vm.runInNewContext('globalThis.__savedDateNow = Date.now; Date.now = () => globalThis.__savedDateNow() + 5000;', context);
     await runtime.poll();
-    assert.equal(elements.get('equipmentSteps').hidden, true, 'Quest の更新が止まったら隠す');
-    assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/);
+    assert.match(elements.get('equipmentStaffStatus').textContent, /通信が戻るまで/, 'Quest の更新が止まったら一言足す');
     vm.runInNewContext('Date.now = globalThis.__savedDateNow;', context);
     status.questTick++; await runtime.poll();
-    assert.equal(elements.get('equipmentSteps').hidden, false);
+    assert.equal(elements.get('equipmentStaffStatus').textContent, '');
     assert.equal(cuts.length, 1);
   } finally {
     presentation.holdThen = originalHold;
@@ -2151,8 +2134,9 @@ test('返却待ち・確認済み・装着の準備・旧形式の進行を復�
     assert.equal(state.briefing.handoffReady, true, item.name);
     assert.equal(state.briefing.wearStarted, item.confirmed && item.stage === 'handedOff' || item.progress.wearStarted && item.progress.ended, item.name);
     assert.equal(elements.get('doctorVideo').playCount, playCountBeforeRestore, `${item.name}: 復元で説明を再生しない`);
-    assert.equal(elements.get('equipmentSteps').hidden, !item.guidance, item.name);
-    assert.equal(elements.get('briefingTitle').textContent, item.guidance ? '装着の準備' : 'タブレットをスタッフへ返してください', item.name);
+    assert.equal(elements.get('equipmentSteps').hidden, false, `${item.name}: 説明を終えていれば案内を出す`);
+    assert.equal(elements.get('briefingTitle').textContent, '装着の準備', item.name);
+    assert.equal(elements.get('equipmentHandback').hidden, state.briefing.wearStarted, `${item.name}: 確定の前だけ返却の一行`);
   }
   const confirmedRevision = posts.at(-1).briefingRevision;
   elements.get('briefingReplay').dispatch('click'); await flushPromises();
@@ -2201,7 +2185,8 @@ test('report最終文の自動音声終了は返却で割り込まずwearへ進�
   assert.equal(state.briefing.ended, true, 'wear の自動終了で説明を終える');
   assert.equal(state.briefing.handoffReady, true);
   assert.equal(state.briefing.wearStarted, false);
-  assert.equal(elements.get('briefingTitle').textContent, 'タブレットをスタッフへ返してください');
+  assert.equal(elements.get('briefingTitle').textContent, '装着の準備');
+  assert.equal(elements.get('equipmentHandback').hidden, false);
 });
 
 test('旧APIとスタッフ確認モードはwearを含む12文を連続してから終了する', () => {

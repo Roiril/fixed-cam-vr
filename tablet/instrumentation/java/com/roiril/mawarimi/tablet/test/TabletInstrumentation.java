@@ -354,9 +354,7 @@ public final class TabletInstrumentation extends Instrumentation {
         evaluate(view, "(()=>{const e=document.querySelector('input[name=lang][value=" + lang + "]');"
             + "e.checked=true;e.dispatchEvent(new Event('change',{bubbles:true}));"
             + "document.getElementById('settingsNextBtn').click();document.getElementById('sendBtn').click();})()");
-        waitFor("visitor confirmation", 5000, () -> evaluateBoolean(view,
-            "!document.getElementById('applyBtn').hidden"));
-        evaluate(view, "document.getElementById('applyBtn').click()");
+        // 確認だけの段は無い。「この設定で始める」でそのまま送る（2026-10-21）
         waitFor("visitor settings applied", 8000, () -> evaluateBoolean(view,
             "!document.getElementById('resultContinueBtn').hidden"));
         evaluate(view, "document.getElementById('resultContinueBtn').click()");
@@ -434,7 +432,10 @@ public final class TabletInstrumentation extends Instrumentation {
         boolean speaking = evaluateBoolean(view,
             "!document.getElementById('briefingView').hidden&&document.getElementById('equipmentGuide').hidden");
         if (speaking && evaluateBoolean(view, "document.getElementById('briefingControls').hidden")) openVisitorControls(view);
-        holdVisitorButton(view, speaking ? "briefingStaff" : "staffToggle", 1650);
+        // 装着の案内で返却を待つ間は、右上の入口を隠して案内の下に入口を出す
+        boolean handback = !speaking && evaluateBoolean(view,
+            "!document.getElementById('equipmentGuide').hidden&&!document.getElementById('briefingStaff').hidden");
+        holdVisitorButton(view, speaking || handback ? "briefingStaff" : "staffToggle", 1650);
         waitFor("staff screen opened deliberately", 3000, () -> evaluateBoolean(view, "document.getElementById('staff').open"));
     }
 
@@ -530,22 +531,25 @@ public final class TabletInstrumentation extends Instrumentation {
             evaluate(view, "document.getElementById('briefingNext').click()");
             SystemClock.sleep(700);
         }
-        waitFor("visitor handback after the final sentence", 6000, () -> evaluateBoolean(view,
-            "!document.getElementById('equipmentGuide').hidden&&document.getElementById('equipmentSteps').hidden"));
+        // 装着の案内は返す前に来場者が読む。最後の行が「読み終わったら渡す」（2026-10-21）
+        waitFor("visitor equipment guide with handback line after the final sentence", 6000, () -> evaluateBoolean(view,
+            "!document.getElementById('equipmentGuide').hidden&&!document.getElementById('equipmentSteps').hidden"
+                + "&&!document.getElementById('equipmentHandback').hidden"));
         Log.i(TAG, "visitorFocus signalCut before=" + cutsBefore + " now=" + evaluateString(view, "JSON.stringify(SignalCut.snapshot())"));
         check("signal cut runs once at the end of the briefing", evaluateDouble(view, "SignalCut.snapshot().runs") == cutsBefore + 1);
         waitFor("signal cut returns to the handback screen", 4000, () -> evaluateBoolean(view, "!SignalCut.snapshot().running"));
         SystemClock.sleep(400);
         check("handback does not automatically expose staff data", !evaluateBoolean(view, "document.getElementById('staff').open"));
         check("handback asks to return tablet", evaluateString(view,
-            "document.getElementById('briefingTitle').textContent").contains("スタッフ"));
+            "document.getElementById('equipmentHandback').textContent").contains("スタッフ"));
         saveScreenshot("doctor-visitor-focus-handback-wide.png");
-        holdVisitorButton(view, "staffToggle", 1650);
+        holdVisitorButton(view, "briefingStaff", 1650);
         waitFor("staff confirms returned tablet", 3000, () -> evaluateBoolean(view,
             "document.getElementById('staff').open&&!document.getElementById('staffPrepareBtn').disabled"));
         holdVisitorButton(view, "staffPrepareBtn", 1350);
-        waitFor("acknowledged equipment guidance", 7000, () -> evaluateBoolean(view,
-            "!document.getElementById('staff').open&&!document.getElementById('equipmentSteps').hidden"));
+        // 受理の後もタブレットはスタッフの手にある。スタッフ画面のまま「装着を手伝う」へ進む
+        waitFor("acknowledged staff wear screen", 7000, () -> evaluateBoolean(view,
+            "document.getElementById('staff').open&&document.getElementById('staff').dataset.state==='wear'"));
         check("acknowledgement does not replay the doctor", evaluateBoolean(view,
             "document.getElementById('doctorVideo').paused"));
         saveScreenshot("doctor-visitor-focus-equipment-wide.png");
