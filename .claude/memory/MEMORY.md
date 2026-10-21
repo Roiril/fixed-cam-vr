@@ -4,6 +4,8 @@
 
 - [flow_walk_harness.md](flow_walk_harness.md) - 2026-10-17。起動〜準備〜来場者タブレット〜回収〜リセットを押す順に通しで撮る `tools/visitor-ui/flow-walk.cjs`（絵コンテ・期待・`--web-root` で前後比較）。回収の長押しを離した指が「来場者の画面にする」を押していた誤タップほか 7 点を直した。
 
+- [unexpected_event_recovery.md](unexpected_event_recovery.md) - 2026-10-21。Quest の休止・固まり・通信の揺れ・本編中の異常・詰まりからの復帰。休止を数えない `ShowClock`／`/status` の `health`／タブレットの強制リセット（`force:true`）／要再登録の永続／リセット工程の隔離。卓の操作は実機に届かない。
+
 - [staff_setup.md](staff_setup.md) - 2026-10-10。タブレット中心の準備・交代フロー。Questの並行位置合わせ。機器別の実状態。終幕中のリセット保護。新設定と説明と引き渡しの照合。検証と実機確認の範囲を記載。
 
 - [romi_cart_esp32.md](romi_cart_esp32.md) - 2026-10-17 終幕の自動走行（解除で /ending/go・電源断で /ending/cut・設定は台車の NVS・調整は博士タブレットの「困ったとき」）。2026-10-07。人形を載せる台車（Pololu Romi）の制御は ESP32 + CP2102N（Joy-Con 2 を BLE で受ける自作スケッチ `jc2-romi`・起動は DISARMED）。この PC では CP210x ドライバ導入後 COM17／Silicon Labs の zip は curl だと 403・アプリ内ブラウザで取る／ピン配置と積載量は未確認。

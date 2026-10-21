@@ -3300,6 +3300,9 @@ albedo に比例**していた。すると暗い部位ほど影と光の差が�
   ⚠ `/unity/status` は従来どおり最後の 1 台
 - 観測: `ev=boot id=`（端末 ID の頭 6 桁）／ `ev=sum visitor=<口>/<受けた>/<枠の受理>/<書いた受理>/<回数>`。
   判定は `analyze-xp-log.py` の「## タブレットの口」。**`ShowTelemetryHost` と対で直す**
+- **想定外の事態の口**（2026-10-21）: `/status` の `health`（`paused` / `focusLost` / `worn` / `ctrlL` / `battery` /
+  `exceptions` / `clockGaps` / `cartKind` / `cartResult`）と、`/tablet/pulse` の staff reset に `force:true` を足した
+  **強制リセット**（体験の途中でも戻す・拒否は位置合わせ作業中だけ）。全体は [memory/unexpected_event_recovery.md](../memory/unexpected_event_recovery.md)
 - 画面を直したらタブレットAPKを焼き直す。Quest APKの更新は不要。単体起動とスタッフの説明確認にPCもQuestも不要。
 - 見た目は DBH 風を廻リ視へ落としたもの（0188）。案内役は研究所の博士（`tablet/app/src/main/assets/web/asset/doctor.jpg`・Codex 生成）。
   作法と罠は `memory/visitor_tablet.md`「見た目」

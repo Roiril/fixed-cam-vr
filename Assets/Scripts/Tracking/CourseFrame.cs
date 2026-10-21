@@ -142,6 +142,9 @@ namespace FixedCamVr.Tracking
             public float originY;
             public float floorSpreadM;
             public int regSchema;
+            // 要再登録の印（2026-10-21）。保存しないと、アプリを落として起動し直しただけで
+            // ずれた位置合わせが「有効」として読み込まれていた。B で確定したときだけ false で書く。
+            public bool needsReReg;
         }
 
         private void Awake()
@@ -289,6 +292,8 @@ namespace FixedCamVr.Tracking
             if (_needsReRegistration) return;
             _needsReRegistration = true;
             Debug.LogWarning("[CourseFrame] OS recenter 検知 — 登録が無効化されました。右トリガー 2 秒長押しで再登録してください。");
+            // 印をファイルにも残す（再起動で消さない）。保存済みの登録が無ければ書く先が無い。
+            if (_hasRegistration && File.Exists(RegistrationPath)) WriteRegistrationFile();
         }
 
         /// <summary>登録を identity へ戻し、保存ファイルを削除する。</summary>
@@ -329,6 +334,7 @@ namespace FixedCamVr.Tracking
                 // 読むと、実際にはズレたまま「合っている」と表示することになる。
                 originY = _regSchema >= FloorSchema ? data.originY : 0f;
                 _floorSpreadM = _regSchema >= FloorSchema ? data.floorSpreadM : 0f;
+                _needsReRegistration = data.needsReReg;   // 旧ファイルは false
                 _hasRegistration = true;
                 Debug.Log($"[CourseFrame] registration 適用: origin=({originXZ.x:F3},{originXZ.y:F3}) yaw={yawDeg:F1}°" +
                           $" 床y={(_regSchema >= FloorSchema ? originY.ToString("F3") + "m" : "未測定")}" +
@@ -346,6 +352,11 @@ namespace FixedCamVr.Tracking
         {
             _savedAtIso = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
             _hasRegistration = true; // 確定＝有効な登録あり（disk 書込が失敗してもセッション内は有効）
+            WriteRegistrationFile();
+        }
+
+        private void WriteRegistrationFile()
+        {
             try
             {
                 var data = new RegistrationData
@@ -359,6 +370,7 @@ namespace FixedCamVr.Tracking
                     originY = originY,
                     floorSpreadM = _floorSpreadM,
                     regSchema = _regSchema,
+                    needsReReg = _needsReRegistration,
                 };
                 // ⚠⚠ `.tmp` へ書いてから差し替える（2026-08-30）。素の WriteAllText は既存ファイルを
                 //    先に truncate するので、そこで電源が落ちると**壊れた registration.json が残る**。

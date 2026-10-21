@@ -48,11 +48,11 @@ namespace FixedCamVr.Streaming
         public void NotifyClosingAreaPresence(bool? inside)
         {
             _insideClosingArea = inside;
-            _closingAreaObservedAt = Time.unscaledTime;
+            _closingAreaObservedAt = ShowClock.Now;
         }
 
         public float ClosingPromptElapsedSec => _endingDecision.PromptReadableAt < 0f
-            ? -1f : Time.unscaledTime - _endingDecision.PromptReadableAt;
+            ? -1f : ShowClock.Now - _endingDecision.PromptReadableAt;
 
         /// <summary>③b が全文表示され、締めの報告を受け付けられる状態か。</summary>
         public bool ClosingPromptReadable => _endingDecision.PromptReadable;
@@ -116,7 +116,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>③b の全文が見えた縁。連絡面から一度だけ届く。</summary>
         public void NotifyClosingPromptReadable()
-            => _endingDecision.NotifyPromptReadable(Time.unscaledTime);
+            => _endingDecision.NotifyPromptReadable(ShowClock.Now);
 
         /// <summary>締めのカットを報告で解除した縁。</summary>
         public void NotifyClosingMarkReleased() => _endingDecision.NotifyReleased();
@@ -265,17 +265,17 @@ namespace FixedCamVr.Streaming
             //    人形に付き従う劣化（aura）・乱れは、それまで**体験の終了でしか戻していなかった**。
             //    現場は途中で打ち切って交代することがある（気分が悪くなった / 時間が押している /
             //    演出が固まった）ので、その経路では**前の体験者の画の状態が次のランへ持ち越される**。
-            _feel?.ResetAll();
-            _glitch?.ResetAll();
+            RuntimeHealth.Step("feel", () => _feel?.ResetAll());
+            RuntimeHealth.Step("glitch", () => _glitch?.ResetAll());
             // ⚠⚠ **警告音の育ちも落とす**（2026-09-04・0145）。乱れの育ちと同じ理由で、
             //    落とさないと次の体験者は 1 発目から最大の警告を聞く。
             //    画にも録画にも出ないので、走行の `swAlert` の 2 つ目でしか気づけない。
-            _switchCue?.ResetRun();
+            RuntimeHealth.Step("switchCue", () => _switchCue?.ResetRun());
             // ⚠⚠ **言語切替の音も落とす**（2026-09-04）。もらった 2 本を交互に鳴らす順番は
             //    体験者ごとに 1 本目からで、`rules/sound-design.md` の「次の人には同じ順で聞こえる」が
             //    そう決めている。**この配線だけが漏れていて、`ResetRun` の呼び出し元が
             //    Assets 全体に 1 つも無かった**（`memory/visitor_sound_reset.md` と同じ型）。
-            _langSwitchCue?.ResetRun();
+            RuntimeHealth.Step("langCue", () => _langSwitchCue?.ResetRun());
             // 終幕の合図も落とす。**ユーザーが「周回リセットのときにリセットされるフラグ」と
             // 名指ししたもの**（canon/LEDGER.md 0048）。落とす場所はここ 1 つ。
             _ending.ResetRun();
@@ -296,17 +296,17 @@ namespace FixedCamVr.Streaming
             //    号令元の順序を入れ替える手もあるが、**導入を挟まない設定**（`introEnabled:false`）では
             //    `_logic.BeginRun()` が即 `RunBegan` を返して `OnRunBegan` → `BeginMainRun` →
             //    `RunReset` が走るので、号令元の残りと二重リセットになる。ここで落とす方が安全。
-            timelineDirector?.ResetRun();
+            RuntimeHealth.Step("timeline", () => timelineDirector?.ResetRun());
             // ⚠⚠ **録画係も同じ理由でここで落とす**（2026-09-04）。上の演出と同型で、こちらは
             //    **録画**が導入中に開く。開いてしまうと本編で開き直せないので
             //    （`SegmentRecorder.SegmentAlreadyRecorded` が「録画済み」と読む）、3 周目に流す
             //    映像が導入の末尾で固定される。**実害は B / C で打ち切って交代したとき**
             //    （3 周目 B / C が `recLap:1` を読む）。3 周目 A は `recLap:2` なので影響しない。
             //    ⚠ epoch は進めない（卓の runEpoch とずれると前の体験者のファイルを再生する）。
-            _recorder?.ResetRunKeepEpoch();
+            RuntimeHealth.Step("recorder", () => _recorder?.ResetRunKeepEpoch());
             if (ev == ShowRunEvent.RunBegan) OnRunBegan();
             NotifyPhaseIfChanged();
-            RunRestarted?.Invoke();
+            RuntimeHealth.Raise("RunRestarted", RunRestarted);
         }
 
         /// <summary>導入を今すぐ終える（卓 / 現地のスタッフ操作）。</summary>
@@ -404,7 +404,7 @@ namespace FixedCamVr.Streaming
             // 中止と「まだ終わっていない」を区別して現場へ出すため（StatusHud の異常 1 件・黒の 1 行）。
             bool introAborted = _intro != null && _intro.Aborted;
 
-            ShowRunEvent ev = _logic.Tick(Time.unscaledDeltaTime, atStart, takeRunning, introCompleted,
+            ShowRunEvent ev = _logic.Tick(ShowClock.Dt, atStart, takeRunning, introCompleted,
                                           introAborted,
                                           _ending.Armed || (timelineDirector != null
                                               && timelineDirector.ClosingAreaSec >= 0f));
@@ -447,10 +447,10 @@ namespace FixedCamVr.Streaming
                                      && timelineDirector.TryGetEndingDollFootUv(out dollFootUv);
             bool endingDollOnLeftHalf = EndingDecisionLogic.IsFootOnLeftHalf(
                 dollFootProjected, dollFootUv.x, dollFootUv.y);
-            _endingDecision.Tick(Time.unscaledTime, segmentKnown,
+            _endingDecision.Tick(ShowClock.Now, segmentKnown,
                                  segmentKnown ? lap : -1, segmentKnown ? camera : -1,
                                  _insideClosingArea == false && _closingAreaObservedAt >= 0f
-                                 && Time.unscaledTime - _closingAreaObservedAt <= .25f,
+                                 && ShowClock.Now - _closingAreaObservedAt <= .25f,
                                  endingDollOnLeftHalf);
 
             if (takeEnded)
@@ -503,7 +503,7 @@ namespace FixedCamVr.Streaming
                     segmentLap, segmentCamera, showControl != null ? showControl.CourseOrder : null);
             }
 
-            _decay.Tick(Time.unscaledDeltaTime, _logic.Phase == ShowPhase.Run,
+            _decay.Tick(ShowClock.Dt, _logic.Phase == ShowPhase.Run,
                         _logic.Lap, _logic.TotalLaps, _logic.LapElapsedSec,
                         timelineDirector != null && timelineDirector.DollPovShowing,
                         timelineDirector != null && timelineDirector.DollReplacementShowing,

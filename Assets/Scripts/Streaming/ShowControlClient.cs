@@ -1899,20 +1899,21 @@ namespace FixedCamVr.Streaming
             Debug.Log($"[ShowControl] ラン開始（runEpoch={_knownRunEpoch}）: 周回 / cue / タイムライン / BGM をリセット");
             _reportTally.Reset();   // 押した回数と報告した異変の数（体験 1 回ぶんの状態・memory/show_run_skeleton.md）
             _dwell.Reset();   // 計時中の部分区間は「体験者 1 人分の滞在」として成立しないので捨てる
-            cueScheduler?.ResetRun();
-            timelineDirector?.ResetRun();
-            ResolveBgmDirector()?.ResetRun();
+            // 工程ごとに隔離する（1 つが投げても後ろの初期化を飛ばさない・RuntimeHealth）。
+            RuntimeHealth.Step("cue", () => cueScheduler?.ResetRun());
+            RuntimeHealth.Step("timeline", () => timelineDirector?.ResetRun());
+            RuntimeHealth.Step("bgm", () => ResolveBgmDirector()?.ResetRun());
             // ⚠⚠ 体験の音も落とす。**ここが抜けていると 2 人目以降で 2 つ壊れる**（2026-09-04 に発見）:
             //   ① 人形の笑いの方角が 1 人目のまま（`PickLaughSpots` は Awake でしか引かないので、
             //      0130「ランダムな位置」が 1 人目にしか成立していなかった）
             //   ② 前の体験者の一撃・敷く音・頭出しラッチが次のタイトル画面へ流れ込む
             // どちらも**画にも録画にも 1 ビットも出ない**（音は録画に映らない）。
-            ResolveSoundDirector()?.ResetRun();
+            RuntimeHealth.Step("sound", () => ResolveSoundDirector()?.ResetRun());
             // 端末内録画も世代を切り替える（前の体験者の映像を次のランへ持ち越さない・端末に残さない）。
-            ResolveRecorder()?.ResetRun(_knownRunEpoch);
-            RunReset?.Invoke();
+            RuntimeHealth.Step("recorder", () => ResolveRecorder()?.ResetRun(_knownRunEpoch));
+            RuntimeHealth.Raise("RunReset", RunReset);
             // 骨格も頭から（導入があれば導入から）。ここが「新しい体験者」の唯一の入口。
-            ResolveRunDirector()?.BeginRun();
+            RuntimeHealth.Step("run", () => ResolveRunDirector()?.BeginRun());
         }
 
         /// <summary>
@@ -1928,14 +1929,14 @@ namespace FixedCamVr.Streaming
             ReleaseLiveHolds();
             _reportTally.Reset();   // 押した回数と報告した異変の数（体験 1 回ぶんの状態・memory/show_run_skeleton.md）
             _dwell.Reset();
-            cueScheduler?.ResetRun();
-            timelineDirector?.ResetRun();
-            ResolveBgmDirector()?.ResetRun();
-            ResolveSoundDirector()?.ResetRun();   // 卓経由（TriggerRunReset）と対称に保つ
+            RuntimeHealth.Step("cue", () => cueScheduler?.ResetRun());
+            RuntimeHealth.Step("timeline", () => timelineDirector?.ResetRun());
+            RuntimeHealth.Step("bgm", () => ResolveBgmDirector()?.ResetRun());
+            RuntimeHealth.Step("sound", () => ResolveSoundDirector()?.ResetRun());   // 卓経由（TriggerRunReset）と対称に保つ
             // 現地は卓と runEpoch を共有できないので、録画側は自分で世代を進める。
-            ResolveRecorder()?.ResetRunLocal();
-            RunReset?.Invoke();
-            ResolveRunDirector()?.BeginRun();
+            RuntimeHealth.Step("recorder", () => ResolveRecorder()?.ResetRunLocal());
+            RuntimeHealth.Raise("RunReset", RunReset);
+            RuntimeHealth.Step("run", () => ResolveRunDirector()?.BeginRun());
         }
 
         /// <summary>

@@ -262,6 +262,14 @@ namespace FixedCamVr.OvrBridge
         {
             if (showControl?.Portal != null && showControl.Portal.StaffResetProvider == null)
                 showControl.Portal.StaffResetProvider = TryResetVisitorFromTablet;
+            if (showControl?.Portal != null && showControl.Portal.ForceResetProvider == null)
+                showControl.Portal.ForceResetProvider = TryForceResetFromTablet;
+            if (showControl?.Portal != null && showControl.Portal.DeviceHealthProvider == null)
+                showControl.Portal.DeviceHealthProvider = () => new VisitorPortal.DeviceHealth
+                {
+                    valid = true, worn = OVRPlugin.userPresent,
+                    ctrlLConnected = _lConnected, ctrlLTracked = _lTracked,
+                };
             // 接続状態と物理ボタンは最初に一度だけ読む。SDK の Down は切断前の状態を持ち越し得るため、
             // 再接続後の解放を確認した入力から Down を組み立てる。
             bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
@@ -706,6 +714,20 @@ namespace FixedCamVr.OvrBridge
             if (!StaffSetupLogic.CanResetFromTablet(_staffSetup.Logic.Started, runFinished, outroPlaying)) return false;
             ResetRun();
             return _staffSetup.Logic.VisitorStage == VisitorPreparationStage.SettingsRequired;
+        }
+
+        /// <summary>
+        /// タブレットの強制リセット。体験の途中・終幕中・位置がずれた後でも次の体験者へ戻す
+        /// （右 A 2 秒長押しと同じ処理。HMD の右コントローラが手元に無いときの出口）。
+        /// 位置合わせの作業中だけは拒否する（スタッフが HMD で点を採っている最中に画を奪わない）。
+        /// </summary>
+        private bool TryForceResetFromTablet()
+        {
+            if (_modeLogic.Current != ControllerModeLogic.Mode.Normal
+                || (courseRegistration != null && courseRegistration.IsActive)) return false;
+            Debug.Log("[OvrBridge] タブレットの強制リセットで体験を頭から始める");
+            ResetRun();
+            return true;
         }
 
         private void ResetRun()

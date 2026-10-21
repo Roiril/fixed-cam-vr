@@ -209,7 +209,7 @@ namespace FixedCamVr.Streaming
                 //   本編中ずっと nc が出て、解析が偽の FAIL を出す。
                 if (_powerWritten < 0f)
                 {
-                    _idleResolveWait -= Time.unscaledDeltaTime;
+                    _idleResolveWait -= ShowClock.Dt;
                     if (_idleResolveWait <= 0f)
                     {
                         _idleResolveWait = IdleResolveSec;
@@ -219,7 +219,7 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            OutroEvent ev = _logic.Tick(Time.unscaledDeltaTime);
+            OutroEvent ev = _logic.Tick(ShowClock.Dt);
 
             // 画へ出すのはこの 3 本だけ（報告の面は OutroReport が ReportAlpha を読む）。
             // ⚠ **順序に意味はないが、必ず全部書く** — 片方だけ書くと、潰れたまま電力が戻る

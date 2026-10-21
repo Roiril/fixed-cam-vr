@@ -44,7 +44,10 @@ namespace FixedCamVr.Streaming
             }
 
             // 終わった相から出た ＝ 次の体験者。合図を送り直せるようにする。
-            if (_lastPhase == ShowPhase.Finished && phase != ShowPhase.Finished)
+            // ⚠ 導入へ戻った縁も次の体験者（本編の途中・解除から終幕までの 7.1 秒にリセットされた回）。
+            //    Finished だけを見ていると、Go を送った直後に打ち切った回で印が残り、次の人に Go が出なかった。
+            if ((_lastPhase == ShowPhase.Finished && phase != ShowPhase.Finished)
+                || (phase == ShowPhase.Intro && _lastPhase != ShowPhase.Intro))
             {
                 _goSent = false;
                 _cutSent = false;

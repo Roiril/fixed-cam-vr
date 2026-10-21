@@ -888,8 +888,10 @@ namespace FixedCamVr.Diagnostics
                && _logic.Stage == CommsStage.Hold;
 
         /// <summary>乗っ取りの発火待ちから表示終了まで、報告入力を受け付けない。</summary>
+        /// ⚠ 面が組めていない（<see cref="IsBuilt"/> が偽）ときは止めない。乗っ取りは画に出せないので
+        ///    発火待ちが永久に解けず、本編の最後まで報告が 1 回も通らなくなる（4-A の解除もできない）。
         public bool TakeoverInputBlocked
-            => isActiveAndEnabled
+            => isActiveAndEnabled && IsBuilt
                && (TakeoverVisible
                    || (runDirector != null && runDirector.Phase == ShowPhase.Run
                        && timeline != null && !timeline.Suppressed
