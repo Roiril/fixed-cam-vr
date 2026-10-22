@@ -8,7 +8,7 @@ metadata:
   modified: 2026-08-22T08:54:31.865Z
 ---
 
-2026-07-29 に企画書（学会論文版）の要求へ合わせて足したもの。契約は `.claude/rules/streaming.md`。
+2026-07-29 に企画書（学会論文版）の要求へ合わせて足したもの。契約は `.claude/reference/archive/streaming-2026-10-22.md`。
 
 **映像の乱れ（グリッチ）**
 

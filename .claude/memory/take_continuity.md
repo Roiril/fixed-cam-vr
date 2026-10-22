@@ -8,7 +8,7 @@ metadata:
   modified: 2026-07-29T05:03:11.740Z
 ---
 
-2026-07-29（同日 2 回目）。契約は `.claude/rules/streaming.md` の「演出の連続と、継ぎ目の遷移」節、
+2026-07-29（同日 2 回目）。契約は `.claude/reference/archive/streaming-2026-10-22.md` の「演出の連続と、継ぎ目の遷移」節、
 経緯は `.claude/plans/2026-07-29_take-continuity.md`。
 
 **待ちの持ち越し（`wait:"chain"`）は因果条件で絞る。**
@@ -49,6 +49,6 @@ Up 相でも 0 から張り直さず折り返す（旧実装は「黒 → 明る
 ⚠ **画で確かめるなら `xp-evidence.py` の offset を信じない**（2 回とも 2 秒以上ずれていた）。
 録画の中で画面が切り替わった瞬間を自分で探して起点にする。
 
-契約と実測は `rules/streaming.md`「素材は先に落としておく」。
+契約と実測は `reference/archive/streaming-2026-10-22.md`「素材は先に落としておく」。
 
 関連: [[show_run_skeleton]] [[glitch_and_latency]]

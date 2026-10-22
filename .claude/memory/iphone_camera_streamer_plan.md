@@ -17,4 +17,4 @@ metadata:
   - **Unity の iOS ビルドは Mac+Xcode 必須**（Windows 単独で iPhone に入れられない）→ 却下。低遅延を突き詰めるなら将来 WebRTC（Quest 側に com.unity.webrtc 受信実装が要る大仕事）。
 - **Android は自作 fixed-cam-streamer 据え置き**（TCP調整・AE fps固定・/info回転・/health の作り込みがある）。web 統一は PWA の品質を実測してから判断。
 
-関連: [[camera_fleet]]（実機3台構成）。show.json の cameras[].host 差し替えで接続先を変えられる仕組みは既に実装済み（rules/streaming.md「show.json = 設定契約」）。
+関連: [[camera_fleet]]（実機3台構成）。show.json の cameras[].host 差し替えで接続先を変えられる仕組みは既に実装済み（reference/archive/streaming-2026-10-22.md「show.json = 設定契約」）。

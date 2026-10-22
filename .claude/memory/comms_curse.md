@@ -3,7 +3,7 @@
 2026-09-18。`canon/LEDGER.md` 0229（ユーザーのスケッチ「エージェントスクリーンのバグり方」）。
 それまでの壊れ（固定位置の字抜け・行の横ずれ・赤の残像 ＝ 引き算）を撤去し、
 **通常の画面の上に、呪われた双子の画面が斑（まだら）で重なる**形にした。世界観の判定は LEDGER、
-契約は `rules/show-design.md`「連絡の面は表示イベントで壊れていく」。**ここは焼く側の罠と実測だけ**。
+契約は `reference/archive/show-design-2026-10-22.md`「連絡の面は表示イベントで壊れていく」。**ここは焼く側の罠と実測だけ**。
 
 ## 部品
 
@@ -104,7 +104,7 @@ EditMode 1965/1965。実機は未走行（並行セッションが Editor を握
 - プレビューの文面ごとの静止画は**侵食度を立てる前に `Deliver` していた**（0230 で気づいた）。出し方は届いた瞬間の
   侵食度で決まるので、順序が逆だと 0.75 の面が「打つ出し方 ＋ 斑 55%」という本番に無い姿で焼ける。
   侵食度 → `Deliver` の順にした（`RunFor` / `ShootReviewFrames` / `ShootMotion` の 3 か所）
-- HLSL の予約語 `line` を引数名にして落ちた（`rules/show-design.md` に書いてある罠）。`Shader error` は
+- HLSL の予約語 `line` を引数名にして落ちた（`reference/archive/show-design-2026-10-22.md` に書いてある罠）。`Shader error` は
   `unity.ps1 test` には出ない — プレビューの後に Editor.log を `grep "Shader error"` する
 
 ## ③a / ③b の「復帰」（2026-10-17・0270・R066）

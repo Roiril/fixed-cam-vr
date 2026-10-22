@@ -10,8 +10,8 @@ metadata:
 
 `canon/LEDGER.md` 0102 の実装（2026-08-22）。設計書は
 [reports/2026-08-22_approach-redesign.html](../../reports/2026-08-22_approach-redesign.html)、
-契約は `rules/streaming.md`（持続の覆い / 切替音 / 録り始めの線）と
-`rules/show-design.md`（接近の弧）が正本。ここは**その 2 つに書けない実装の罠**だけ。
+契約は `reference/archive/streaming-2026-10-22.md`（持続の覆い / 切替音 / 録り始めの線）と
+`reference/archive/show-design-2026-10-22.md`（接近の弧）が正本。ここは**その 2 つに書けない実装の罠**だけ。
 
 ## ⚠⚠ 0119（2026-08-23）で、持続の覆いを立てているカットが 0 になった
 

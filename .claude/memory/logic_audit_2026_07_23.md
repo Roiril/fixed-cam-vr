@@ -13,7 +13,7 @@ metadata:
 監査（確定 8 + low 3）→ opus 設計 6 体 → opus 実装 6 体で全件根本修正。監査レポート:
 `reports/2026-07-23_logic-audit.html`。検証済み物証: **EditMode 364/364**（+119 増）・**streamer JVM 31/31**（基盤新設）・**node 5/5**（web 契約）。
 
-**修正の骨子**（詳細は rules/streaming.md・unity-vr.md の 2026-07-23 監査修正マーク）:
+**修正の骨子**（詳細は reference/archive/streaming-2026-10-22.md・unity-vr.md の 2026-07-23 監査修正マーク）:
 
 1. ✅ present-flag 契約 → `TimelinePresentFlags.Reconcile`（AND 確定・3 経路一律）+ Web は `timeline-model.js` 抽出でキー省略。共有 fixture `Assets/Tests/Fixtures/show_timeline_canonical.json`（再生成は `UPDATE_FIXTURE=1 node --test`）
 2. ✅ B ボタン全死 → StreamingLogic.prefab 全書換 + `StreamingLogicPrefabFieldsTests`（missing/stale 機械監査）

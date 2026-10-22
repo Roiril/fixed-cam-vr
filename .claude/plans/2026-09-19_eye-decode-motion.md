@@ -1,7 +1,8 @@
 ---
 title: 闇の目の出現と消失を「行が届く・ブロックが落ちる」へ（0240）
 date: 2026-09-19
-status: 実装済み（2026-09-19・Opus サブエージェント）。Editor の門は通過・実機は未走行。差は ROUNDS R058
+status: done
+statusNote: 実装済み（2026-09-19・Opus サブエージェント）。Editor の門は通過・実機は未走行。差は ROUNDS R058
 scope: Assets/Art/Shaders/Streaming/AnomalyEyes.shader だけ。C# の時計・座席表・観測は触らない
 ---
 

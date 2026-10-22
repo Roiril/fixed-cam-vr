@@ -30,7 +30,7 @@ metadata:
   ここを暖色へ振ると人形だけ二重に暖かくなって浮く
 - **信号ロストの砂嵐 `_SignalLost`（灰色）** — 装置の故障表示。暖色にすると「演出」に見える
 - **隔離殻 `ContainmentShell`（純黒）** — alpha しか書かない。色を持たない
-- **StatusHud / ControllerGuidePanel の文字色** — スタッフしか見ない面（`rules/show-design.md` の
+- **StatusHud / ControllerGuidePanel の文字色** — スタッフしか見ない面（`reference/archive/show-design-2026-10-22.md` の
   「HMD に出す文言の規約」）。世界観の外なので触っていない
 
 ## 罠

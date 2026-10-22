@@ -9,7 +9,7 @@ metadata:
 ---
 
 **素材まわりを触る前に、この 4 つを確認する。**（2026-07-30 に立て直した。設計は
-[[.claude/plans/2026-07-30_material-flow-rebuild.md]]、契約は `rules/streaming.md`）
+[[.claude/plans/2026-07-30_material-flow-rebuild.md]]、契約は `reference/archive/streaming-2026-10-22.md`）
 
 ## 1. マスクは「スクリーン枠空間 16:9」で焼く。素材の座標系ではない
 

@@ -9,7 +9,7 @@ metadata:
 ---
 
 CG 人形を実写映像へなじませる基盤は 2026-07-27 に作り直した。契約の正本は
-[.claude/plans/2026-07-27_cg-compositing-rebuild.md] と [.claude/rules/streaming.md] の「合成の作り直し」節。
+[.claude/plans/2026-07-27_cg-compositing-rebuild.md] と [.claude/reference/archive/streaming-2026-10-22.md] の「合成の作り直し」節。
 ここには**触る前に知らないと事故る前提**だけ書く。
 
 ## 触る前に知るべきこと
@@ -56,7 +56,7 @@ CG 人形を実写映像へなじませる基盤は 2026-07-27 に作り直し�
 
 ## 「CG っぽい」の原因は、陰影より先に**時間**（2026-08-06）
 
-見た目を合わせ込む前に、この 3 つが効く。詳細は [.claude/rules/streaming.md] の「なじませ 2」節。
+見た目を合わせ込む前に、この 3 つが効く。詳細は [.claude/reference/archive/streaming-2026-10-22.md] の「なじませ 2」節。
 
 - **人形は実写のフレームが進んだ時だけ描く**（`ShowCgLayer.RenderIfDue`）。仮想カメラは
   `enabled=false` にして手動 `Render()`。**自動描画に戻すと 90Hz で回って、人形と腕だけが滑らかに動く**

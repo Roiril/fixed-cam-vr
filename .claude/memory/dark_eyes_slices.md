@@ -10,7 +10,7 @@ metadata:
 
 # 闇の目を「版」で描く（0238）を触る前に
 
-契約は `rules/streaming.md`「見え — 壊れた画像データでできた目」。ここは**次に触る人が踏みそうな罠**と、2 周（R055 → R056）で分かったこと。
+契約は `reference/archive/streaming-2026-10-22.md`「見え — 壊れた画像データでできた目」。ここは**次に触る人が踏みそうな罠**と、2 周（R055 → R056）で分かったこと。
 参考画像は `tools/eyes-ref/dejime.jpg`、Codex が描いた個体は `tools/eyes-ref/gen/glitch_*.png`、版は `Assets/Resources/Eyes/EyeGlitch.png`。
 照合の数値は `canon/ROUNDS.md` R055 / R056、比較の絵は `logs/eyes-look/`。
 

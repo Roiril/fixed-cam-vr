@@ -1,135 +1,51 @@
 ---
 name: git-workflow
-description: fixed-cam-vr 固有の Git 作業フロー補完。基本ルールはグローバル `~/.claude/CLAUDE.md` を参照
+description: fixed-cam-vr 固有の Git 作業フロー補完（並行セッション前提の pathspec コミット・ユーザー所有ファイル）。基本ルールはグローバル `~/.claude/CLAUDE.md`
 ---
 
 # Git 作業フロー（fixed-cam-vr 固有）
 
-ブランチ戦略 / merge / push / 禁止事項などの **基本ルールはグローバル** `~/.claude/CLAUDE.md` を参照。本ファイルはこのプロジェクトでしか成り立たない補完情報のみ。
+基本（branch / merge / push の判断・コミットメッセージ）はグローバル `~/.claude/CLAUDE.md`。
+ここはこのリポジトリでしか成り立たないことだけ。旧版の全文と実害の経緯は
+`reference/archive/git-workflow-2026-10-22.md`。
 
-## 並列タスクと worktree
+## 並行セッションが同じ working copy にいる
 
-複数の独立した変更を同時進行するときは Agent ツールに `isolation: "worktree"` を渡して隔離 worktree で起動する。
-
-### 起動の判断
-
-| 状況 | 並列化 |
-|---|---|
-| 領域が独立（例：Streaming / Tracking / Fx / Editor / Config） | ◎ |
-| 同じファイルを触る可能性 | × 単発で逐次 |
-| Unity MCP のシーン編集が必要 | × シュビー本体で（MCP は単一インスタンス） |
-| 計画書 1 本の執筆 | × 一貫性が崩れる |
-
-### worktree の罠（重要）
-
-エージェントの worktree は **起動時点の `master` を base** にする。後続で master を進めても **その worktree からは見えない**。前提が古いと「該当ファイルが存在しない」と誤検知して中断することがある。
-
-→ 対策：
-- エージェント起動前に master を最新化しておく
-- プロンプトに「該当ファイルが直近で追加された可能性あり」と明記する
-- それでも誤検知したらシュビー本体で書く
-
-### 統合（cherry-pick）
-
-エージェント完了後、各 worktree のコミット SHA を時系列で `git cherry-pick` で master へ取り込む。
+index は 1 つで共有される。**コミットは必ず明示 pathspec で、ファイル名まで列挙する。**
 
 ```bash
-git cherry-pick <SHA1> <SHA2> <SHA3> ...
+git commit -F <scratchpad のメッセージファイル> -- <ファイル> <ファイル> ...
 ```
 
-衝突したら個別解決。新規ファイルだけのコミットは衝突しないので並列タスクの設計時に **「新規ファイルのみで衝突回避」を意識**する。
+- **ディレクトリを渡さない。** 中にある他セッションの未コミット変更が丸ごと入る
+- 打つ前に `git status --short -- <列挙したパス>` の行数と列挙数が一致するか数える
+- 相手も同じファイルを編集中なら、pathspec でも相手の行が入る。コミット直後に
+  `git show --stat HEAD` を自分の差分と比べる。混ざったら作業ツリーは戻さず、自分の版を
+  `git hash-object -w` → `git update-index --cacheinfo` で入れ直し、相手に `SendMessage` で知らせる
+- コミットに含めた差分が新しい型・メソッドを呼ぶなら、**定義側のファイルも同じコミットに入っているか**見る。
+  dirty な作業ツリーでのコンパイル成功は、コミット内容の成功を意味しない
 
-## ユーザー所有ファイル（`git add` で巻き込み禁止）
+## ユーザー所有ファイル
 
-シュビーがコミットに含めてはいけないファイル。`git status` で見えても `git add .` / `git add -A` は使わず、対象ファイルを **個別指定**して避ける。
+`hooks/guard-owned-files.js` が、次を含む `git commit` と `git commit -a` を止める。
+意図して含めるときだけ、コマンド末尾に `# allow-owned` を付け、理由を報告に書く。
 
 | ファイル | 理由 |
 |---|---|
 | `.claude/settings.json` | ユーザーのローカル権限・MCP 設定 |
-| `ProjectSettings/*` | Unity Project Setup Tool / Quality 設定の調整中（CLAUDE.md 禁止事項） |
-| `Packages/manifest.json` | 依存追加削除はユーザー事前報告 |
-| `Assets/Settings/Cameras/Phone*.asset` の `host` 変更 | 現場で書き換えるローカル値、コミットすると次回ビルドで他の現場が壊れる |
-| `Assets/Settings/ShowServer.asset` の `host` 変更 | 同上（オペレータ卓サーバの接続先。Editor+Link は 127.0.0.1、Quest 単体は PC の LAN IP） |
-| `docs/ivrc-*.md` | ユーザー作のドキュメント |
-| `Assets/Editor/Layouts/FixedCamVr.wlt` | ユーザーが触っている可能性、変更検知時はユーザーに確認 |
-| `.claude/worktrees/` | エージェント worktree の一時ディレクトリ |
+| `ProjectSettings/*`（`EditorBuildSettings.asset` を除く） | 調整中 |
+| `Packages/manifest.json` | 依存の追加削除は fable アドバイザー手続き |
+| `Assets/Settings/Cameras/Phone*.asset` / `Assets/Settings/ShowServer.asset` | 現場で書き換える host |
+| `Assets/Settings/URP-*.asset` / `Assets/XR/**/*.asset` | ビルドの副産物 |
+| `docs/ivrc-*.md` / `Assets/Editor/Layouts/FixedCamVr.wlt` | ユーザー作 |
+| `.claude/worktrees/` | エージェント worktree |
 
-ただし以下は例外的にシュビーがコミットして良い：
-- 自動生成 `.meta` ファイル（Unity が必須とする）
-- `Packages/packages-lock.json`（manage_packages で追加した時）
-- `ProjectSettings/EditorBuildSettings.asset`（Build Settings 整理時、変更内容を明示的に説明）
+コミットしてよい例外: 自動生成の `.meta`、`Packages/packages-lock.json`（パッケージを足した時）、
+`ProjectSettings/EditorBuildSettings.asset`（変更内容を説明する）。
 
-## 並列作業時は pathspec コミット必須（index 共有事故の防止）
+## 並列エージェントと worktree
 
-**同一 working copy で並列エージェントが同時に git を触ると index（ステージング領域）は 1 つで共有される。**
-`git add <自分のファイル>` で個別指定しても、相手のエージェントが同時に `git add` を走らせると、
-**相手のステージ済みファイルが自分の `git commit` に混入する**（2026-06-15 実害：別アプリの作業の commit が
-廻リ視側の未コミット作業 `ZoneCalibrator.cs` 等を巻き込んだ）。
-
-→ **対策：コミットは必ず明示 pathspec で行う。**
-
-```bash
-git commit -F <msgfile> -- <自分のファイルを列挙>
-```
-
-`git commit -- <paths>` は index の状態に依存せず**列挙したパスだけ**を確定するので、相手の `add` が
-混ざらない（並列前提のこのプロジェクトでは index 状態を信用しない）。`git add` + 無指定 `git commit` は
-単独作業時のみ。やり直しが要る時は `git reset --soft HEAD~1` → pathspec で再コミット（履歴未 push なら安全）。
-
-### ⚠⚠ pathspec に**ディレクトリを渡さない**（2026-08-17 実害）
-
-`git commit -- .claude/memory` のようにディレクトリを渡すと、**その中にある他セッションの
-未コミット変更が丸ごと入る**。「明示 pathspec で打った」という自覚があるぶん、
-無指定コミットより気づきにくい（実際に気づいたのは commit 後の `5 files changed` を数えたとき）。
-
-- **ファイル名まで列挙する。** 新規ファイルが多くて面倒でも、そこは省かない
-- **打つ前に `git status --short -- <列挙したパス>` を見て、行数と列挙数が一致するか数える**
-- 巻き込んだと分かったら、**中身は戻さない**（相手の作業中のファイルをディスク上で巻き戻す方が高い）。
-  そのまま置いて、報告する
-
-コミットメッセージに全角コロンや改行を含むので、`-m` の直書きより **メッセージファイル + `-F`** が安全
-（Bash で `@'...'@` は here-string にならず `@` が混入する。PowerShell の here-string と混同しない）。
-
-### ⚠⚠ 同じファイルを相手も編集中なら、pathspec でも相手の変更が入る（2026-10-20 実害）
-
-pathspec が絞るのは**ファイル**であって**行**ではない。`git diff --stat` で自分の 5 行だけを確かめてから
-コミットするまでの数十秒に、並行セッションが同じ `CommsPanel.cs` を書き換え、**相手の作業中の変更
-（相手の未コミットの別ファイルに依存）ごとコミット・push した** ＝ origin がコンパイル不能になった。
-
-- 相手が触っていそうなファイル（`ListAgents` で同じ領域の名前のセッションが居る・`git status` に
-  自分の知らない M がある）は、**コミットの直後に `git show --stat HEAD` の行数を自分の差分と比べる**
-- 混ざったら、**作業ツリーは戻さずに**自分の版だけを blob にして入れ直す:
-  `git hash-object -w <自分の版>` → `git update-index --cacheinfo 100644,<blob>,<path>` → 無指定 `git commit`
-  （作業ツリーの相手の変更は M のまま残る）。相手には `SendMessage` で知らせる
-
-### pathspec コミットの依存漏れチェック（2026-07-24 実害）
-
-pathspec コミットは「列挙したファイルだけ」を確定するため、**コミットに含めた差分が参照する新 API の
-定義ファイルを列挙し忘れると、push 先がコンパイル不能になる**（実害: FacilitatorPanel が参照する
-`GameSwitcher.GetGameId` の定義側を含め忘れ、origin/master が壊れた状態で push された。別セッションが
-aef9950 で補完）。push 前チェック:
-
-1. `git status --short` で**同機能で触ったはずのファイルが M のまま残っていないか**見る（残っていたら「意図して残すのか・入れ忘れか」を自問）
-2. コミット差分に**新しいメソッド/型の呼び出し**が入るときは、その定義ファイルが同コミット（または既コミット）に入っているか確認
-3. 確実なのは push 前にコンパイル確認（Unity なら refresh + Console エラー 0 / `run_tests`）— dirty working tree でのコンパイル成功は「コミット内容の成功」を意味しない点に注意（漏れたファイルがローカルには居るため通ってしまう。これが本実害の機序）
-
-## ドキュメント同期チェック（コミット前）
-
-構造を変えるコミット（ディレクトリ新設 / 標準ツール移行 / サブプロジェクト追加 / メニュー追加 / シーン構成変更）では、**同じコミットで参照ドキュメントもスイープする**：
-
-- `unity-vr.md` のディレクトリ構成図 / `README.md` のディレクトリ・ドキュメント一覧
-- 旧標準に言及する memory（例: DroidCam 標準時代の記述）→ 非推奨マーク or 更新
-- 逆方向も同じ：rules/memory に新しい罠・規約を書いた時は、既存コードを grep してスイープする（2026-06-10 の MjpegScreen Texture2D 未初期化の教訓 — [fixed_cam_review_backlog.md](../memory/fixed_cam_review_backlog.md)）
-
-「コードだけ直してドキュメントが古いまま」を 2 回検出済み（2026-06-10 レビューで一括是正）。3 回目を出さない。
-
-## ハンドオフ
-
-長時間セッションの終わり / 大きな機能完了時 / 翌日に持ち越す時は **次セッション貼り付け用プロンプト** を出力する。`handoff` スキル推奨。最低限含める：
-
-- master HEAD SHA
-- 動作確認済み / 残課題
-- 直近で追加した機能の使い方
-- 必読ドキュメント（README / TROUBLESHOOTING / 直近の plan）
-
-加えて、再発しうる罠は **TROUBLESHOOTING.md** か **`.claude/rules/`** か **`.claude/memory/`** に追記して恒久化する（CLAUDE.md「自己改善ループ」原則）。
+- 領域が独立しているときだけ `isolation: "worktree"` で並列にする。同じファイル・Unity のシーン編集・
+  計画書 1 本の執筆は逐次
+- worktree は**起動時点の HEAD** を base にする。起動前に最新化し、「直近で足したファイルがある」と
+  プロンプトに書く。完了したら SHA を時系列で `git cherry-pick` する

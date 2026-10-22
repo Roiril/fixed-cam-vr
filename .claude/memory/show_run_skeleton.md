@@ -9,7 +9,7 @@ metadata:
 ---
 
 2026-07-29 に企画書が学会論文版（`PR0490_1.pdf`）へ差し替わり、「3 区間を 3 周・導入を含め 3 分以内」が
-体験の骨格として実装された。契約の正本は `.claude/rules/streaming.md` の「体験の骨格」節、
+体験の骨格として実装された。契約の正本は `.claude/reference/archive/streaming-2026-10-22.md` の「体験の骨格」節、
 実装記録は `.claude/plans/2026-07-29_proposal-v3-implementation.md`。
 
 触る前に知っておくべき 4 つ。**どれも「そうしないと壊れる」理由がある**：

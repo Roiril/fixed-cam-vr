@@ -152,7 +152,7 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 | **IP Camera Lite**（iPhone 標準） | 8081 | `/video` | Basic 認証（既定 admin/admin）。CameraSource の username/password に入力 |
 | DroidCam / IP Webcam | 4747 / 8080 | `/mjpegfeed?WxH` / `/video` | フォールバック |
 
-配信側の設置のコツ（露出ロック・auto-IDLE・前面維持）は [fixed-cam-streamer README](https://github.com/Roiril/fixed-cam-streamer)、層別の切り分けは [.claude/rules/troubleshooting.md](.claude/rules/troubleshooting.md)。
+配信側の設置のコツ（露出ロック・auto-IDLE・前面維持）は [fixed-cam-streamer README](https://github.com/Roiril/fixed-cam-streamer)、層別の切り分けは [troubleshoot スキル](.claude/skills/troubleshoot/SKILL.md)。
 
 ## 入力早見表
 
@@ -253,7 +253,7 @@ bash tools/run-quest-xp-test.sh walk 300
 | [tools/web-compositor/README.md](tools/web-compositor/README.md) | 当日の設営と点検、演出編集、映像合成検証ツール |
 | [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)（別リポ） | 配信側 Android アプリ |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | コミット規約・ブランチ運用 |
-| [.claude/rules/](.claude/rules/) | 領域別の作業規約（streaming / meta-xr / unity-vr / troubleshooting 等） |
+| [.claude/rules/](.claude/rules/) | コードの契約（話題別。索引は streaming.md）。経緯の全文は `.claude/reference/archive/` |
 | [.claude/plans/](.claude/plans/) | 実装計画書（完了済みは git log 参照） |
 
 # ディレクトリ

@@ -169,7 +169,7 @@ ScreenDecayLogic.BlocksFor(progress)   // 800 → 267 を線形で
 `ShowCompositePreview` のプレート、**全部 mipChain:true + Trilinear**。1 つでも漏れると
 そこだけ鮮明になり、切り替わった瞬間に画の素性が変わって差し替えがばれる。
 
-詳細と実測値は `rules/streaming.md` の「周回で痩せる伝送は mip で作る」節。
+詳細と実測値は `reference/archive/streaming-2026-10-22.md` の「周回で痩せる伝送は mip で作る」節。
 
 ⚠ **量子化を 2 回重ねない。** 著作した `_Pixelate` と `_CoarseBlocks` は
 **粗い方だけ**を掛ける（`min`）。両方掛けると 2 つの格子が干渉して、
@@ -177,7 +177,7 @@ ScreenDecayLogic.BlocksFor(progress)   // 800 → 267 を線形で
 
 ## ⚠ この演出は 2026-08-06 の設計判断を覆している
 
-`rules/streaming.md`「やってはいけないこと」に**「周回で単調に劣化させない」**と書いてある。
+`reference/archive/streaming-2026-10-22.md`「やってはいけないこと」に**「周回で単調に劣化させない」**と書いてある。
 理由は「一番見せたい 1 周目の自分（3 周目の背景に流れる録画）が一番見えなくなる」。
 2026-08-12 にユーザーが正面から覆した（LEDGER 0012）ので実装したが、**懸念は消えていない**。
 

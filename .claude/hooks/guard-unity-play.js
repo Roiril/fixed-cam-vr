@@ -2,7 +2,7 @@
 // PreToolUse ガード: Unity MCP の manage_editor action=play をブロックする。
 //
 // 背景: Link/HMD 未接続で OVR シーンを Play すると EnterPlayMode がデッドロックし
-// Unity ごと落ちる（.claude/rules/mcp-unity.md の既知事故。2026-06-29 / 2026-07-23 の 2 回実害）。
+// Unity ごと落ちる（.claude/reference/mcp-unity.md の既知事故。2026-06-29 / 2026-07-23 の 2 回実害）。
 // 「ルールに書いてあるのに読まれず実行される」を防ぐため、hook で機械的に強制する。
 //
 // 解錠（ワンショット）: Link または Meta XR Simulator の接続を確認した上で

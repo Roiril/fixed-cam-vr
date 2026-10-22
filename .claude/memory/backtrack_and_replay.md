@@ -8,8 +8,8 @@ metadata:
   modified: 2026-08-17T21:02:17.252Z
 ---
 
-2026-08-17。契約は `.claude/rules/streaming.md` の「周回数は 2 つある」と
-「引き返したら、途中で切れた演出を頭から出し直す」、体験側の要点は `rules/show-design.md`
+2026-08-17。契約は `.claude/reference/archive/streaming-2026-10-22.md` の「周回数は 2 つある」と
+「引き返したら、途中で切れた演出を頭から出し直す」、体験側の要点は `reference/archive/show-design-2026-10-22.md`
 「体験者は引き返す」。
 
 **周回数は 2 つある。混ぜると片方が必ず壊れる。**

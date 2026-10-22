@@ -113,7 +113,7 @@ adb 用に立てた `MSYS_NO_PATHCONV=1` が `/dev/null` の変換まで止め�
 **How to apply:**
 - host 変更は `Assets/Settings/Cameras/Phone0X.asset` を MCP `manage_scriptable_object` で書き換え（ローカル値・コミット禁止 — [[git-workflow]] のユーザー所有ファイル規約）
 - 全端末超広角可: Pixel は streamer のレンズ選択（実測 FOV ≈128°）、iPhone は IP Camera Lite の「Back Ultra Wide Camera」選択（13 Pro 実機確認済み）
-- iPhone の配信が重い（≈30Mbps）/ ウォーターマーク等の運用注意は [.claude/rules/streaming.md](../rules/streaming.md) の「iPhone（iOS）ソース」参照
+- iPhone の配信が重い（≈30Mbps）/ ウォーターマーク等の運用注意は [.claude/reference/archive/streaming-2026-10-22.md](../reference/archive/streaming-2026-10-22.md) の「iPhone（iOS）ソース」参照
 - 3 セッション前の旧 IP（Pixel=192.168.11.8 / 11.12 等）がログや asset に残っていても気にしない（DHCP 変動）
 
 

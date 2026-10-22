@@ -23,7 +23,7 @@ metadata:
 
 1. **卓と実機のどちらが正しいかを先に決める**。実機側の駆動点は `LapCounter → CueScheduler.CameraEntered → TimelineDirector → TakeRunner`、卓側は `createShowRunner.step`。**片方にしかない初期化**（シード・リセット・購読）が最初の容疑者
 2. 再現は Unity を開かずに **node で show.json を直接食わせる**のが速い（`buildScenarioConfig` → `runScenario` に歩きサンプルを渡すだけ）。ブラウザ操作より桁違いに速く、証拠も正確
-3. 契約の正本は [plans/2026-07-27_position-trigger.md](../plans/2026-07-27_position-trigger.md) §3 と [rules/streaming.md](../rules/streaming.md)。**実装が契約と逆になっていないか**を条文単位で照合する（#2 はまさにそれ）
+3. 契約の正本は [plans/2026-07-27_position-trigger.md](../plans/2026-07-27_position-trigger.md) §3 と [reference/archive/streaming-2026-10-22.md](../reference/archive/streaming-2026-10-22.md)。**実装が契約と逆になっていないか**を条文単位で照合する（#2 はまさにそれ）
 
 ## 4 件目（同日・別報告）: 演出が黙って消える
 

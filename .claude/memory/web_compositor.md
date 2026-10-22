@@ -51,7 +51,7 @@
 - できないこと（パネル下部にも常時明示）: VR のスケール感・立体視、dip の体感時間、MJPEG の実レイテンシ・砂嵐、
   位置合わせ・recenter・触覚、Quest の性能。**卓で通っても実機確認は要る**
 
-**2026-07-25 BGM オーサリング**（契約は rules/streaming.md「BGM」が正）:
+**2026-07-25 BGM オーサリング**（契約は reference/archive/streaming-2026-10-22.md「BGM」が正）:
 
 - 旧 = `[Bgm]` の AudioSource 1 本で固定ループ。新 = **タイムライン区間で切替/停止/ループ範囲**（`bgmTracks[]` + ラン既定 `bgm` + `segments[].bgm`）
 - 音源は `tools/web-compositor/audio/`（**gitignore**）。卓の「🎵 BGM ライブラリ」で登録 → 区間インスペクタで指示 → 📦 エクスポートで `sa://assets/` へ焼き込み
@@ -94,7 +94,7 @@ Unity 実機が読む（接続先を Web から差し替え・DHCP ズレ復旧�
 未設定なら global `post` にフォールバック。受信内容は実機が `persistentDataPath/show_config.json` にキャッシュし
 **PC 不在でも前回設定で起動**（焼き込み .asset < 端末キャッシュ < ライブ long-poll の後勝ち）。console タブの
 カメラカードに「🎨 画像加工」、multicam.html の IP も localStorage → show.json に一本化。詳細は
-rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to-quest.md。
+reference/archive/streaming-2026-10-22.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to-quest.md。
 
 ## 場所と起動
 
@@ -116,7 +116,7 @@ rules/streaming.md「show.json = 設定契約」/ plans/2026-06-16_web-config-to
 | `serve.ps1` | 起動スクリプト |
 | `sim.html` / `sim.js` | Unity なしで動作確認する仮想 Quest（show.json long-poll。schedule / course.order も表示） |
 | `floormap-plate.html` | **人に見せる用のフロアマップ**（2026-08-24）。壁・塗られた床・カメラ A〜C だけを、卓と同じ配色・同じ座標で描く。位置合わせ点 / 通過ライン / 開始位置 / 部屋のプロキシは出さない。⚠ **配色は `palette.js` を import。描画定数（SIZE 460 / PAD 46 / EXTENT 0.95 / 各 alpha / 線幅）は `floormap.js` の `render()` の写しなので、向こうを変えたらここも変える。** PNG は headless Chrome の `--screenshot` で焼く（`?scale=N` で倍率・`?bg=none` で透過） |
-| `schedule.js` | **タイムライン UI**（2026-07-19 マトリクスから全面改装）。「1周目: A\|B\|C → 2周目: …」を course.order 順に横連結、区間クリックで cue 割当（delaySec / once）。データモデルは schedule.entries のまま。**⚠ タイムラインで直接いじれるのは cueId / delaySec / once の 3 つだけ**。マスク・素材・フェード・trim は cue 側（カメラ列で作成 → 周ごとに別 cue を割当）、**画像加工 post はカメラ単位で周ごと変更不可**（rules/streaming.md「編集の粒度と自由度」が正） |
+| `schedule.js` | **タイムライン UI**（2026-07-19 マトリクスから全面改装）。「1周目: A\|B\|C → 2周目: …」を course.order 順に横連結、区間クリックで cue 割当（delaySec / once）。データモデルは schedule.entries のまま。**⚠ タイムラインで直接いじれるのは cueId / delaySec / once の 3 つだけ**。マスク・素材・フェード・trim は cue 側（カメラ列で作成 → 周ごとに別 cue を割当）、**画像加工 post はカメラ単位で周ごと変更不可**（reference/archive/streaming-2026-10-22.md「編集の粒度と自由度」が正） |
 
 **撤去済み（2026-06-16）**: `main.js` / `sources.js` / `cue-editor.js` / `console.js` / `multicam.html`（プロンプト・ギャラリー・2 タブ・別ページ合成エディタ）。**⚠ `pipeline.js`（色統計マッチング→ラプラシアン）はユーザー要望で復活し現役**（app.js が import、境界ブレンドバーが駆動）。以降の「合成パイプライン」節は現役の説明として読む。AI 動画生成の知見は末尾に残す。
 
@@ -171,7 +171,7 @@ ffmpeg。H.264/yuv420p/音声なし = Quest の VideoPlayer が最も確実に�
 | GET | `/cam?host=&port=&path=&auth=user:pass` | **MJPEG プロキシ**。Basic 認証をサーバが肩代わり（ブラウザは `<img>` の URL 埋め込み認証をブロックするため iPhone/IP Camera Lite はこれ必須）。`multicam.html`（3 台同時ビュー、IP 編集可・localStorage 保存・自動再接続・クリック拡大）とコンソールのカメラカードが利用 |
 | POST | `/export-build` | **ビルド焼き込みエクスポート**（2026-07-17〜）。show.json + cue 参照アセットを `Assets/StreamingAssets/show/` へコピーし URL を `sa://assets/<file>` に書換（欠損参照はエラーにせず verbatim 残置・毎回 assets/ 掃除・同一ファイル dedupe）。**カメラ host も verbatim 焼き込み**なのでビルド直前に現場でエクスポートし直す。出力はコミット禁止（gitignore 済み） |
 
-**cue の複数化（2026-07-17〜）**: `cue_<camId>` 固定 1 個 → 1 カメラに複数 cue（`cue_<camId>_<n>`、新規/複製/削除/選択編集）。演出 ON は選択中 cue を発火。周回スケジュール（`schedule.entries[] = {lap, camera(index), cueId, delaySec, once}`）と `layout.course.order`（フロアマップの「周回コース」で編集、order[0]=スタート、CW/CCW トグル、grid 塗りから角度順提案）は Unity 側 LapCounter / CueScheduler が消費。詳細契約は rules/streaming.md。
+**cue の複数化（2026-07-17〜）**: `cue_<camId>` 固定 1 個 → 1 カメラに複数 cue（`cue_<camId>_<n>`、新規/複製/削除/選択編集）。演出 ON は選択中 cue を発火。周回スケジュール（`schedule.entries[] = {lap, camera(index), cueId, delaySec, once}`）と `layout.course.order`（フロアマップの「周回コース」で編集、order[0]=スタート、CW/CCW トグル、grid 塗りから角度順提案）は Unity 側 LapCounter / CueScheduler が消費。詳細契約は reference/archive/streaming-2026-10-22.md。
 
 ### multicam.html の合成エディタ（2026-06-12、3 段マトリクス構成）
 

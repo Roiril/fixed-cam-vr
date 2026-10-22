@@ -1,7 +1,8 @@
 ---
 date: 2026-05-04
 phase: 3
-status: in-progress
+status: archived
+statusNote: in-progress → 2026-10-22 のハーネス整理で棚上げ。いま進めるものは canon/
 goal: Phase 0〜3 を Quest 3 実機で連続体験できるデモを完成させ、現場での切り分け手順を整備する
 ---
 

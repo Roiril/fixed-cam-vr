@@ -23,18 +23,22 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 
 | やること | 入口 |
 |---|---|
-| 1 周回す（予測 → 安い門 → 焼く → 見る → 台帳） | `skills/work-round` |
-| ユーザーに見せて赤入れをもらう | `skills/direction-round` |
+| 1 周回す（読む → 参照を置く → 予測 → 安い門 → 焼く → 見る → 台帳） | `skills/work-round` |
+| ユーザーに見せて赤入れをもらう（前後・試した版・隣の場面を並べ 1 点訊く） | `skills/direction-round` |
+| 体験を頭から終わりまで通して見直す | `skills/show-review` |
+| 「動かない」を層で切り分ける | `skills/troubleshoot` |
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |
 | 説明資料用に体験中の画を撮る（左グリップ → 4 種類。**展示本番の機は OFF**） | [memory/experience_shots.md](.claude/memory/experience_shots.md)（取り出しは `py -3.11 tools/quest-shots.py pull`） |
-
 | 音を触る（BGM・効果音・環境音・遷移） | `rules/sound-design.md`（**先に読む**） |
 
 **世界観の正本は `.claude/canon/`。**
 
+- `NOW.md` — **体験の現在形。** 場面ごとに体験者に見えることと、誰が決めたか（LEDGER 番号 / 未判定）。
+  何かを作りこむ前に、その場面の行を読む。ずれは `py -3.11 tools/canon-now.py --check`
 - `LEDGER.md` — ユーザーが口にした判定。**逐語**。要約したら値が消える
-- `OPEN.md` — まだ聞いていないこと（既定つき）と、**シュビーの案（未判定）**
-- `ROUNDS.md` — 焼く前の賭けと予測、焼いた後の差。初見の配給
+- `OPEN.md` — 問（既定つき）・**シュビーの案**・実装済みで未判定のもの。判定が出たものは `OPEN-closed.md`
+- `TASTE.md` — 場面をまたいで繰り返した判定の**シュビーの読み**（否定と肯定の逐語の対）。出す前の自己点検に使う
+- `ROUNDS.md` — 焼く前の賭けと予測、焼いた後の差
 
 ⚠ **発案は自由。昇格は禁止。** シュビーの世界観の案を `LEDGER.md` へ入れてよいのは、
 ユーザーが口にしたときだけ。沈黙は同意ではない。規律は `rules/canon-boundary.md`。
@@ -127,11 +131,12 @@ Unity 2022.3.62f2 LTS / URP / Quest 3（Android・IL2CPP・ARM64）/ Meta XR All
 | Unity / Windows 一般・スキル | `~/.claude/`（**ここに複製しない**。同名スキルを両方に置くとどちらが載るか判別できない） |
 | ユーザーが言った世界観の判定 | `.claude/canon/` |
 | 技術の罠・実装の経緯 | `.claude/memory/`（`MEMORY.md` が索引） |
-| 領域ごとの規約 | `.claude/rules/`（scope は **`paths:`**。`globs:` は Claude Code が認識しない） |
-| 滅多に使わない手順・退避路 | `.claude/reference/`（**明示的に読むまで載らない**。広い `paths:` の rule に混ぜない） |
-| 実装の段の記録 | `.claude/plans/`（索引は [plans/README.md](.claude/plans/README.md)。いま進めるものは `canon/`） |
+| コードの契約（破ると壊れること） | `.claude/rules/` の話題別 rule（索引は `rules/streaming.md`。scope は **`paths:`**。`globs:` は認識されない）。**現行の契約だけ**を書き、変わったら行を書き換える |
+| 経緯の全文・滅多に使わない手順・退避路 | `.claude/reference/`（**明示的に読むまで載らない**）。旧 rule の全文は `reference/archive/`（凍結） |
+| 実装の段の記録 | `.claude/plans/`（索引は [plans/README.md](.claude/plans/README.md)。status は active / done / archived） |
 
-**機能を変えたらドキュメントも同じコミットで直す** → `rules/doc-sync.md`。
+**機能を変えたらドキュメントも同じコミットで置き換える**（積まない）→ `rules/doc-sync.md`。
+`.claude/` を触ったら `py -3.11 tools/harness-check.py`（Edit / Write の直後に hook も流す）。
 
 ## 応答スタイル
 

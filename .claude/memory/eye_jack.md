@@ -1,6 +1,6 @@
 # 目の視界ジャック（当日写真）を触る前に
 
-`canon/LEDGER.md` 0099 の実装。契約の正本は `rules/streaming.md`「目の視界ジャック」節。
+`canon/LEDGER.md` 0099 の実装。契約の正本は `reference/archive/streaming-2026-10-22.md`「目の視界ジャック」節。
 ここは**次に触る人が踏みそうな罠**だけ。
 
 ## 1. ⚠⚠ 「全開で発火」は多数派に届かない
