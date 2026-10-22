@@ -8,7 +8,7 @@
 
 - [staff_setup.md](staff_setup.md) - 2026-10-10。タブレット中心の準備・交代フロー。Questの並行位置合わせ。機器別の実状態。終幕中のリセット保護。新設定と説明と引き渡しの照合。検証と実機確認の範囲を記載。
 
-- [romi_cart_esp32.md](romi_cart_esp32.md) - 2026-10-17 終幕の自動走行（解除で /ending/go・電源断で /ending/cut・設定は台車の NVS・調整は博士タブレットの「困ったとき」）。2026-10-07。人形を載せる台車（Pololu Romi）の制御は ESP32 + CP2102N（Joy-Con 2 を BLE で受ける自作スケッチ `jc2-romi`・起動は DISARMED）。この PC では CP210x ドライバ導入後 COM17／Silicon Labs の zip は curl だと 403・アプリ内ブラウザで取る／ピン配置と積載量は未確認。
+- [romi_cart_esp32.md](romi_cart_esp32.md) - 2026-10-22 Wi-Fi 越しの書き換え（`tools/romi/ota.py push`・落ちたら前の版へ自動で戻る・合言葉は `ROMI_OTA_PASS`）とジョイスティックの途切れの計器。2026-10-17 終幕の自動走行（解除で /ending/go・電源断で /ending/cut・設定は台車の NVS・調整は博士タブレットの「困ったとき」）。2026-10-07。人形を載せる台車（Pololu Romi）の制御は ESP32 + CP2102N（Joy-Con 2 を BLE で受ける自作スケッチ `jc2-romi`・起動は DISARMED）。この PC では CP210x ドライバ導入後 COM17／Silicon Labs の zip は curl だと 403・アプリ内ブラウザで取る／ピン配置と積載量は未確認。
 
 - [experience_shots.md](experience_shots.md) - 2026-09-30。左グリップで体験中の画を 4 種類（スクリーン・生映像・合成のみ・体験者の視界）端末へ PNG 保存。**展示本番の機は `quest-shots.py off`**（体験者が握り込むと撃たれる・Dev ビルドは既定 ON）／④にパススルーは入らない／**描いた直後に一時カメラを壊すと RT が消える**／`adb pull` は 0 バイト・`exec-out cat` で取る／実機は未検証。
 

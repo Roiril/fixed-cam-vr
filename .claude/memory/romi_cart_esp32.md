@@ -17,7 +17,7 @@ metadata:
 - **ピン配置（元スケッチの逆アセンブルから確定・実機で確認済み）**: side0 = **左**車輪 DIR=GPIO18 / PWM=GPIO19、side1 = **右**車輪 DIR=GPIO16 / PWM=GPIO17、AUX=GPIO2（起動時 LOW・用途未確定）。PWM は 20kHz・10bit。**左右とも同じ dir で同じ向きに回る**（dir=0 → 手前、dir=1 → 奥。左右の反転補正は不要）。**モーターは電池なしでも USB（5V）給電だけで回る**（初期に「電池が入っている」と書いたのは誤り。2026-10-07 にユーザーが「ずっと乾電池を入れていなかった」と訂正）
 - **付いていないもの（実測）**: エンコーダ（候補 18 ピンを駆動中に監視して変化なし）、I2C 機器（8 組のピンで 0 件）、バッテリ分圧（ADC は全て浮き電位）。**現状は完全な開ループ**
 - ビルド元は別の PC の `Documents\Arduino`（NimBLE-Arduino 使用）で、元ソースはこの PC に無い。**元ファームの全フラッシュは `output/romi/esp32-flash-backup-20261007.bin`（4MB・git 管理外）にバックアップ済み**。復元は `esptool.py --port COMxx write_flash 0x0 <bin>`
-- 今は **診断・制御ファーム `tools/romi/diag/`（diag.ino + net.h + webui.h・`romi-diag-4`）が焼いてある**（元の Joy-Con 操作は動かない）。シリアル操作は `py -3.11 tools/romi/rc.py "info" "g s 1 40 30 0" ...`（`g` は目標指定の走行。`help` で一覧）。ビルドは Arduino IDE 同梱の arduino-cli、FQBN `esp32:esp32:esp32`（ESP32 コア 3.3.8）。**PlatformIO の ESP32 は Arduino コア 2.x で `ledcAttach` が無いので使えない**
+- 今は **診断・制御ファーム `tools/romi/diag/`（diag.ino + net.h + ota.h + webui.h・2026-10-22 から `romi-diag-7`）が焼いてある**。**書き換えは Wi-Fi 越しにできる**（`ota.py push`・末尾の節）（元の Joy-Con 操作は動かない）。シリアル操作は `py -3.11 tools/romi/rc.py "info" "g s 1 40 30 0" ...`（`g` は目標指定の走行。`help` で一覧）。ビルドは Arduino IDE 同梱の arduino-cli、FQBN `esp32:esp32:esp32`（ESP32 コア 3.3.8）。**PlatformIO の ESP32 は Arduino コア 2.x で `ledcAttach` が無いので使えない**
 - **ネットワーク（診断ファーム v4・2026-10-07 に堅牢化）**: Romi は**開発用ルーターの 2.4GHz `kougaku-lab-exp-g`（ch6）に参加**する（Quest・タブレット・PC の有線 LAN 192.168.10.x と同じネットワーク）。**IP は静的 `192.168.10.51`**（展示網の割り当て規則: PC .10 / カメラ .21-.23 / Quest .31 .32 / タブレット .41 / **Romi .51**。ゲートウェイと DNS は .1）、名前は **`http://romi.local/`**。
   - **堅牢化は他機器（Quest・配信スマホ）の方針に合わせた**（実装は `tools/romi/diag/net.h`）: ①切断は指数バックオフで再接続（1→2→4→8→16→30 秒・つながればリセット）②20 秒結果が出なければ無線を張り直す ③**UDP :8830 の発見 `fixedcam-discovery/1` に `role:"cart" id:"R"` で参加**（probe へ unicast 応答・5 秒毎に broadcast announce・別 show トークンは無視。Quest と PC 卓は role が camera / show-server 以外を無視するので影響なし）④60 秒つながらなければ非常用 AP `ROMI-DIAG` を足し、復旧して 15 秒で畳む ⑤10 分つながらず走行中でなければ再起動 ⑥ループが 30 秒止まれば WDT で再起動。`/info`（uuid・RSSI・切断回数・理由）と `/health` あり
   - **実測（2026-10-07）**: 強制切断 → **1.2 秒で同じ IP に復旧**。つながらない状況 → バックオフが設計どおり進み **60.2 秒で非常用 AP が上がり（Quest の走査で −33 dBm・ch6・WPA2 を確認）**、網が戻ると自動で LAN に復帰して AP を畳んだ（最悪 30 秒＝バックオフ上限）。試験は `py -3.11 tools/romi/nettest.py discovery|kick|outage|restore` と、ファームの `wifi fake <ssid>` / `wifi unfake`（RAM 上だけ偽 SSID にする。NVS は触らない）
@@ -68,3 +68,16 @@ Quest α の自動走行（空走）で `ev=romi kind=go res=ok ack=1` / `kind=c
 - `/info` に `loopMaxMs`（`?clear=1` で 0 に戻す）・`idleDrops`・`fullDrops`・`served`
 - **Quest の合図（`RomiCartLink`）**: Go は 1 回 1 秒で、**最初から 3 秒の間は送り直す**（以前は 2 秒 × 2 回で、瞬断の 1 回目で 2 秒を使い切った）。遅れた分を `lateMs` で送り、台車が最初の待ち（3.5 秒）から差し引いて画面の電源断との間合いを保つ。**Quest の APK は未焼き**（この変更は次の Quest ビルドから）
 - ⚠ 未解決: 2026-10-21 の書き込み前に `/info` の `reset` が **`INT_WDT`** だった。この日の試験（ソーク 10 分を含む）では再発していない。出たら `reset` と `up` を記録する
+
+## 無線での書き換えと、無線の途切れの計器（2026-10-22・romi-diag-7）
+
+**USB を挿さずにファームを書き換えられる**（`tools/romi/diag/ota.h` = ArduinoOTA・UDP/TCP 3232）。
+`py -3.11 tools/romi/ota.py push`（既定は `diag/build/esp32.esp32.esp32/diag.ino.bin`。先に `arduino-cli compile` を回す）。
+- 合言葉は User 環境変数 `ROMI_OTA_PASS` と台車の NVS（`otapw`）だけ。初回に `ota.py setpass COM17` で作って入れた（USB が要るのはこの 1 回）。台車を初期化したら入れ直す。未設定なら OTA は閉じている（`/info` の `ota.on`）
+- 1.1MB の転送は **13〜16 秒**、その間台車は止まる（始まりで `stopAll`）。**走行中は招待に応じず、止まってから受ける**（espota が招待を 10 回 × `-t` 秒送り直すので、その間に止まれば通る。試験: 15 秒の待ちだけのショートカット中に送る → 待ちが明けて書き換わった）
+- **新しい版は初回起動で「確認待ち」（`img=pending`）。STA が 10 秒続いたら正常と決める。** 決める前に落ちればブートローダが前の版へ戻す。`ota.py crashtest`（起動 3 秒で必ず再起動する版 `-DROMI_OTA_CRASH_TEST` を送る）で実測: app1 `pending` → 再起動 → **4.7 秒後に元の app0 `valid` で応答**。⚠ arduino-esp32 の `verifyRollbackLater()` は C の弱いシンボルなので **`extern "C"` を付けないと上書きにならず、黙って即 `valid` になる**（1 回目はこれで戻す仕組みが効いていなかった）
+- 書き換えのたびに app0 / app1 が入れ替わる（`/info` の `ota.app`）。NVS（Wi-Fi・較正 ver 5・終幕設定）は残る
+- **ジョイスティックの計器**: `/info` に `joyGapMaxMs`（/joy の間隔の最大）と `joyDeadman`（動かしている最中に 400ms 途切れて止まった回数）。シリアルの `EVT joy end` の `reason` が `timeout` / `release` に分かれた。`?clear=1` で 0 に戻る
+- **`py -3.11 tools/romi/joy-jitter.py --sec 90 [--load]`** は操作画面と同じ送り方（60ms・250ms で重ね送り・打ち切り 500ms）で x=0 y=0 を送る（台車は動かない）。PC（有線）から 90 秒 1479 回: 失敗 0・最大 100ms・誤った安全停止 0。タブレットと Quest の負荷を重ねても同じ。⚠ **開発用スマホ（5GHz の Wi-Fi 越し）からは未計測**。スマホで操作した後に `/info` の `joyGapMaxMs` と `joyDeadman` を読めば分かる
+- 回帰: `net-torture.py` 6 場面は diag-6 でも diag-7 でも全部合格（idle / partial / burst でタブレットと Quest の失敗 0・`loopMaxMs` 25 以下）
+- ⚠ POST /seq を Python から送るときは `Content-Type: text/plain`（既定の form だと本文が `plain` に入らず `bad`）
