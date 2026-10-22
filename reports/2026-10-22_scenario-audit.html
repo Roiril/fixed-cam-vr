@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>現行シナリオの監査 2026-10-22</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ（v2 / 2026-10-19）
+ *
+ * 正本: ~/.claude/reference/design-tokens.md
+ *   → このファイルは派生。値を変えたいときは正本を直してからここへ配る。
+ *
+ * 使い方: style タグの中へ**全文インライン展開**する。
+ *   ⚠ このファイルの中に閉じタグの文字列を書かないこと。HTML の style 要素は
+ *     CSS コメントの中だろうと最初の閉じタグで終わるので、**以降の CSS が本文として画面に出る**
+ *     （2026-08-17 実害）。
+ *   外部参照は禁止（output-format.md: 単一ファイル・CDN 禁止・恒久的に開ける状態）。
+ * ============================================================ */
+
+:root {
+  /* --- color: light（既定） --------------------------------- */
+  --paper:   #ffffff;
+  --surface: #f4f4f4;
+  --ink:     #1a1a1a;
+  --mute:    #5c5c5c;
+  --line:    #dcdcdc;
+  --link:    #1a5fb4;  /* 必ず下線と併用 */
+  --visited: #6b3fa0;
+  --accent:  #d7261e;  /* 強調。1 画面に 1〜2 か所 */
+
+  /* --- type ------------------------------------------------- */
+  --gothic: "Noto Sans JP", "Yu Gothic Medium", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;    /* 12px  チップ・脚注 */
+  --fs-sm:   .875rem;   /* 14px  キャプション・表・出典 */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-md:   1.25rem;   /* 20px  リード・h3 */
+  --fs-lg:   1.5rem;    /* 24px  h2 */
+  --fs-xl:   2.75rem;   /* 44px  h1 */
+
+  /* --- space（4px 系列。この外の値を書かない） ---------------- */
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 38ic;      /* 本文の行長（1 行 38 字） */
+  --wide: 72rem;        /* 図・広い表を段から出すときの上限 */
+}
+
+/* --- color: dark（重ねる面ほど明るく。OS 設定とページ属性の両方に追随） --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121212; --surface: #1e1e1e; --ink: #ececec; --mute: #a8a8a8;
+    --line: #333333;  --link: #7fb0ff; --visited: #c3a3ff; --accent: #ff6b5e;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121212; --surface: #1e1e1e; --ink: #ececec; --mute: #a8a8a8;
+  --line: #333333;  --link: #7fb0ff; --visited: #c3a3ff; --accent: #ff6b5e;
+}
+:root[data-theme="light"] {
+  --paper: #ffffff; --surface: #f4f4f4; --ink: #1a1a1a; --mute: #5c5c5c;
+  --line: #dcdcdc;  --link: #1a5fb4; --visited: #6b3fa0; --accent: #d7261e;
+}
+
+/* ============================================================
+ * base
+ * ============================================================ */
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+}
+.wrap { max-width: calc(var(--measure) + var(--sp-8)); margin: 0 auto; padding: var(--sp-16) var(--sp-4); }
+/* 図・広い表を本文の段から出す。.wrap を閉じてから置く */
+.wide { max-width: var(--wide); margin: var(--sp-8) auto; padding: 0 var(--sp-4); }
+
+/* --- 見出し（ゴシックの太字。階層は大きさで作り、罫を付けない） -------- */
+h1, h2, h3 { font-weight: 700; line-height: 1.4; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); line-height: 1.25; margin: 0 0 var(--sp-4); }
+h2 { font-size: var(--fs-lg); margin: var(--sp-16) 0 var(--sp-4); }
+h3 { font-size: var(--fs-md); margin: var(--sp-12) 0 var(--sp-2); }
+
+p  { margin: var(--sp-3) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--link); text-decoration: underline; text-underline-offset: .2em; }
+a:visited { color: var(--visited); }
+a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }                             /* 構造上の強調＝色なし */
+em { font-style: normal; font-weight: 700; color: var(--accent); }         /* 意味強調＝1 画面に 1〜2 回 */
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-12) 0; }
+
+/* ============================================================
+ * 部品
+ * ============================================================ */
+
+/* タイトル直下の日付・対象 */
+.meta { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-12); }
+
+/* 結論の先出し（冒頭に置く大きめの段落。囲まない） */
+.lead { font-size: var(--fs-md); line-height: 1.7; margin: 0 0 var(--sp-6); }
+
+/* 囲み（要約・注意）。罫で縁取らず、面の地色で示す */
+.box { background: var(--surface); padding: var(--sp-4) var(--sp-6); margin: var(--sp-6) 0; }
+.box > :first-child { margin-top: 0; }
+.box > :last-child  { margin-bottom: 0; }
+
+/* 並列する要素（3 列を目的にしない。中身の数で自然に折り返す） */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--sp-4); margin: var(--sp-6) 0;
+}
+.card { background: var(--surface); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+/* 時系列 */
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li { display: grid; grid-template-columns: 7em 1fr; gap: var(--sp-4); margin: 0 0 var(--sp-3); }
+.tl .date { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tl .headline { color: var(--ink); }
+
+/* 状態ラベル */
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.6;
+  padding: 0 var(--sp-2); margin-left: var(--sp-1); vertical-align: middle;
+  background: var(--surface); color: var(--ink);
+}
+.chip.hot { background: var(--accent); color: var(--paper); font-weight: 700; }
+
+/* 表（必ず .tblwrap で囲む — 横スクロールは body ではなく表の側で） */
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); line-height: 1.6; }
+th, td { padding: var(--sp-2) var(--sp-3) var(--sp-2) 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+th { font-weight: 700; white-space: nowrap; border-bottom: 2px solid var(--ink); }
+td { font-variant-numeric: tabular-nums; }
+/* 1 列目は項目名。短い語が 1〜2 字ずつ折り返されるのを防ぐ（長ければ .tblwrap が横に送る） */
+td:first-child { white-space: nowrap; font-weight: 700; }
+
+/* 図 */
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); line-height: 1.6; color: var(--mute); margin-top: var(--sp-2); max-width: var(--measure); }
+
+/* 問いと答え */
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; margin-top: var(--sp-4); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+/* コード */
+code { font-family: var(--mono); font-size: .9em; background: var(--surface); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--surface); padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+/* 弱い情報・末尾の注記 */
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); line-height: 1.7; color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-16); padding-top: var(--sp-4);
+}
+.note a { overflow-wrap: anywhere; }
+
+/* ============================================================
+ * responsive / motion / print
+ * ============================================================ */
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-12) var(--sp-4); }
+  h1 { font-size: 2rem; }
+  h2 { margin-top: var(--sp-12); }
+  .tl > li { grid-template-columns: 1fr; gap: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --surface: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --link: #000; --visited: #000; --accent: #000;
+  }
+  .wrap, .wide { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .box, .grid, .tblwrap, figure { break-inside: avoid; }
+}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>現行シナリオの監査 — 4-A の「止まってください！」が人形 End に追い越される</h1>
+<p class="meta">2026-10-22 ／ 対象: ブランチ feature/tablet-ui-motion（8a25a895）、配布中の show.json rev 1283、LEDGER 0207〜0286</p>
+
+<p class="lead">体験が止まって抜けられなくなる経路は見つかりませんでした。いちばん重いのは 4-A です。3-A を位置合わせ版にしたとき凍結の線が台本から消えたので、「止まってください！」は入ってから 3 秒の時計でしか出ません。人形 End の判定は 1 カット目から有効なので、その 3 秒のあいだに画面の左半分へ歩いた人は警告を見ないまま人形 End になります。</p>
+
+<h2>見たものと見方</h2>
+<p>体験の流れを 3 つの視点で通しました。正規ルートの物語と時系列、体験者の逸脱、スタッフ運用と来場者の入れ替わりです。視点ごとに独立したサブエージェントがコードを追いました。重い指摘はわたしが該当行を開いて照合しています。</p>
+<p>確度は 2 段階で書きます。「確定」はコードと設定で経路を追えたものです。「推定」は起きる頻度や見え方を実機でしか確かめられないものです。実機は走らせていません。</p>
+
+<h2>現行の流れ</h2>
+<ol class="tl">
+<li><span class="date">準備</span><span class="headline">博士タブレットで言語・注意・説明 → スタッフへ渡す → HMD 装着</span></li>
+<li><span class="date">導入</span><span class="headline">左 X/Y の練習 → 「報告できました。装置は正常です。」→ スイが名乗る → 題字（短押し）→ 床の矢印と円まで歩く → 現実が割れてスクリーンへ</span></li>
+<li><span class="date">1 周目</span><span class="headline">A 演出なし ／ B 手形（報告で消える）／ C 演出なし</span></li>
+<li><span class="date">2 周目</span><span class="headline">A 幕の顔の染み ／ B バックルームズへ飛ぶ ／ C 予備動作 → 線を越えると人形視点 4 カット → 追いつき → 乗っ取り</span></li>
+<li><span class="date">3 周目</span><span class="headline">A 2-A の録画を位置合わせで出し、中央の線で早送り → 人形が残る ／ B・C 1 周目の録画 ＋ 人形 → 無人の部屋</span></li>
+<li><span class="date">4-A</span><span class="headline">大量の人形 → 「止まってください！」→ 催促 → 報告すれば帰還、しなければ帰還不能 ／ 人形が左半分へ入れば人形 End</span></li>
+<li><span class="date">終幕</span><span class="headline">砂嵐 → 電源断 → エンドロール冒頭（結末・報告数・写真）→ 15 秒で閉じる。帰還なら台車が動く</span></li>
+</ol>
+
+<h2>指摘の一覧</h2>
+<div class="tblwrap"><table>
+<thead><tr><th>番号</th><th>場面</th><th>何が起きるか</th><th>重さ</th><th>確度</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>4-A</td><td>警告より先に人形 End が成立する</td><td><span class="chip hot">高</span></td><td>確定（頻度は推定）</td></tr>
+<tr><td>2</td><td>2-C → 4-A</td><td>乗っ取りを見ていない人に「呪いから戻った」姿が出る</td><td><span class="chip">中</span></td><td>確定</td></tr>
+<tr><td>3</td><td>2-C → 3-A</td><td>乗っ取り後の砂嵐が 3-A の頭 5 秒を覆う</td><td><span class="chip">中</span></td><td>確定（見え方は推定）</td></tr>
+<tr><td>4</td><td>引き返し</td><td>1-B の手と 2-A の染みが出し直されない</td><td><span class="chip">中</span></td><td>確定</td></tr>
+<tr><td>5</td><td>2-B → 2-A</td><td>A に居るのにカメラ B のライブが最長 41 秒映る</td><td><span class="chip">中</span></td><td>確定</td></tr>
+<tr><td>6</td><td>1 周目の逆走</td><td>3 周目 B・C で逆向きに歩く録画が流れる</td><td><span class="chip">中</span></td><td>確定</td></tr>
+<tr><td>7</td><td>4-A</td><td>左コントローラが切れると報告できないまま帰還不能</td><td><span class="chip">中</span></td><td>確定</td></tr>
+<tr><td>8</td><td>終幕</td><td>結果に分母（異常総数 8）が出ず、外した判定の記録も無い</td><td><span class="chip">中</span></td><td>確定</td></tr>
+<tr><td>9</td><td>リセット</td><td>タイトルを組めない構成ではリセットが完了しない</td><td><span class="chip">中</span></td><td>確定（条件付き）</td></tr>
+<tr><td>10</td><td>リセット</td><td>完了したリセットをタブレットが「失敗」と読む</td><td><span class="chip">中</span></td><td>確定（頻度は推定）</td></tr>
+<tr><td>11</td><td>連続来場</td><td>前の人の台車の失敗が次の人の本編中に警告で出る</td><td><span class="chip">中</span></td><td>確定</td></tr>
+<tr><td>12〜17</td><td>各所</td><td>軽い取りこぼし 6 件（下の節）</td><td><span class="chip">低</span></td><td>確定・推定</td></tr>
+</tbody></table></div>
+
+<h2>高 — 4-A の順序</h2>
+<h3>1. 「止まってください！」より先に人形 End が成立する</h3>
+<p><strong>場面。</strong>4-A に入った体験者が、それまでの周と同じように歩き続けたとき。</p>
+<p><strong>起きること。</strong>締めの線は台本から導いています。「左半分を凍らせるカットの直前に待っていた線」です（<code>ShowTakeSchema.cs:578</code>）。3-A を位置合わせ版（0274）にしたとき凍結のカットが無くなったので、この関数は空を返します。配布中の show.json に <code>splitFreeze: true</code> のカットは 1 本もありません。そのため③a は「4-A に入ってから 3 秒」の時計でしか出ません（<code>CommsCueLogic.cs:448</code>）。起点はゾーン確定なので、実際に入ってからはおよそ 3.5 秒です。</p>
+<p>一方、人形 End の判定は催促の全文表示を待ちません（<code>EndingDecisionLogic.cs:55</code>）。4-A の 1 カット目から人形が体験者の位置に立つので、足が画面の左半分に入った時点で成立します（<code>TakeRunner.cs:246</code>）。画面の中心線は L 字の角の近くを通り、0.5 m/s で歩くと 2.2 秒で届きます。報告は催促を読み切るまで受け付けないので、押して逃れることもできません。</p>
+<p><strong>根拠。</strong>0247「凍結線を踏むもしくはそこに入ってから 3s」。0233「止まってくださいは凍結点の場所で出す」。0178「止まってください！以降の流れは全員に見せる」。2026-09-25 の人形 End は催促を待たない、と show-design に書いてありますが、当時は凍結線が先に③a を出していました。</p>
+<p><strong>直す方向。</strong>締めの線を台本の推論に頼らず、明示のキーで指せるようにします（既存の <code>line_freeze</code> を当てられます）。あわせて、左半分の判定を③a を表示した後に限ります。</p>
+
+<h2>中 — 物語の前提が崩れるもの</h2>
+<h3>2. 乗っ取りを見ていない人に「呪いから戻った」姿が出る</h3>
+<p>2-C の接近は <code>policy: yield</code> なので、線を越えて 4.1 秒以内に C を出ると追いつきのカットが自然完了しません。乗っ取りは起きず、劇伴も替わりません（<code>TakeRunner.cs:1505</code>、<code>:1596</code>）。線は C の出口まで 0.7 m ほどの所にあり、2-C の実測滞在は約 7 秒なので珍しいルートではありません。それでも 4-A の③a では復帰の表示が無条件に始まります（<code>CommsPanel.cs:1161</code>）。弱った起動・顔に残る人形・赤字が、呪いを一度も見ていない人に出ます。</p>
+<p>0270 は「呪われていた状況から何とか戻ってきた姿」です。乗っ取りを見なかった人に何を出すかは決まっていません。復帰の表示を乗っ取りが届いた回だけにするのが筋です。</p>
+
+<h3>3. 乗っ取り後の砂嵐が 3-A の頭 5 秒を覆う</h3>
+<p>追いつきの最後のカットが終わると砂嵐が始まり、乗っ取りの警告が消える約 7 秒後まで続きます（<code>CameraFeelFx.cs:150</code>）。10-20 の自動走行では 3-A の滞在 9.2 秒のうち 5.0 秒が砂嵐の下でした。そのあいだも位置合わせの録画は裏で進んでいます。0279 で「違和感なく再生された」と判定された中央の線の手前の部分が、多くの人には砂嵐で見えないことになります。重ならないには 2-C に約 12.6 秒とどまる必要があります。</p>
+<p>直す方向は 2 つあります。砂嵐のあいだは 3-A の進み具合の最大値を据え置き、見せ始めを砂嵐の後へずらす方法。あるいは乗っ取りの尺と 3-A の関係をユーザーの判定に回す方法です。</p>
+
+<h3>4. 引き返すと 1-B の手と 2-A の染みが出し直されない</h3>
+<p>報告せずに 1-C → 2-A → 1-C → 2-A と戻った場合です。染みの演出は <code>hold</code> で、尺は「次にカメラが切り替わるまで」です。ゾーンが変わると尺が閉じて完走扱いになり、<code>once</code> なので戻っても武装されません（<code>TakeRunnerLogic.cs:756</code>、<code>:464</code>）。出し直しの仕組みが効くのは <code>yield</code> の演出だけで、テストもそこしか見ていません。streaming.md にあるユーザーの例「報告済みでない限りはもう一度出す」に反します。</p>
+
+<h3>5. A に居るのにカメラ B のライブが最長 41 秒映る</h3>
+<p>2-B に入って 4 秒以内に 2-A へ戻った場合です。バックルームズの演出は <code>hold</code> で、前の 2 カットは秒の尺なのでゾーンが変わっても続きます。3 カット目は「カメラ B のライブを次の切り替わりまで」なので、体験者が A に居るあいだ無人の B が映ります。止まるのは次のゾーン変化か、watchdog の 45 秒です。固定視点が自分を映すという前提が崩れます。3 カット目のカメラを「いまのゾーン」にすれば消えます。</p>
+
+<h3>6. 1 周目に逆走すると、3 周目に逆向きの録画が流れる</h3>
+<p>1-A から B を通らずに C へ出た場合、一度も居たことのない区間なので区間の周は 1 になり、(1, C) が録られます（<code>LapCounter.cs:107</code>）。一度録れた区間は録り直さないので（<code>SegmentRecorder.cs:510</code>）、正しい順で通った 1-C は残らず、3-C はその逆向きの断片を流します。「前へ進んで次のカメラへ出た試行だけ使う」は 2-A にしか掛かっていません。1-B と 1-C にも同じ条件を掛けるのが筋です。</p>
+
+<h3>7. 4-A で左コントローラが切れると、報告できないまま帰還不能になる</h3>
+<p>締めの判定は報告の入力が使えるかを見ていません（<code>EndingDecisionLogic.cs:61</code>）。HMD 内の再接続案内は題字の段にしか出ず、タブレットに出るだけです。切れているあいだは 15 秒を数えないか、「調査中断」側に倒すのが筋です。</p>
+
+<h3>8. 結果に分母が出ず、外した判定の記録も無い</h3>
+<p>エンドロール冒頭に出るのは結末名と「報告数 N」の 2 行です（<code>OutroReportText.cs:22</code>）。異常総数 8 件は計算されてログにも出ていますが、画面には出ません。0247 のユーザーの言葉は次のとおりです。</p>
+<blockquote>異常の本当の数を分母にし、報告した回数を分子にし</blockquote>
+<p>show-design の 2026-09-25 節に「旧報告書の説明文と分母とタイプ打ちは廃止」とありますが、LEDGER に対応する発話がありません。ユーザーが分母を外すと言ったのかを後から追えません。分母を戻すか、判定を聞いて逐語で記録します。memory の ending_result.md と MEMORY.md の索引は、まだ分母が出ている前提で書かれています。</p>
+
+<h2>中 — 運用と来場者の入れ替わり</h2>
+<h3>9. タイトルを組めない構成ではリセットが完了しない</h3>
+<p>リセットの完了は「タイトルの番号が進み、かつ段が Wait」で判定しています（<code>OvrControllerBridge.cs:760</code>）。タイトルの実体を組めないとき（シェーダの剥がれ・版の欠落）は、<code>BeginTitle</code> が番号だけ進めて段を Off に落とします（<code>TitleScreen.cs:305</code>）。すると毎回 <code>NewVisitor()</code> へ落ちて「リセットが要る」のまま残り、来場者を始められません。タブレットは「準備を始められませんでした」を出し続けます。show-design は「タイトルが壊れると二度と始まらない、は構造的に作らない」と書いています。完了の判定を「相が導入へ戻った」に替えれば、タイトルに依存しなくなります。</p>
+
+<h3>10. 完了したリセットをタブレットが「失敗」と読む</h3>
+<p>リセットの最初に新しいセッション ID を公開します。要求 ID を書くのは、録画の全削除を含む重い処理が終わった後です（<code>VisitorPortal.cs:225</code>、<code>:707</code>）。そのあいだ HTTP は中間の状態を返し、タブレットは押した直後に問い合わせます。「セッションが変わったのに要求 ID が無い」状態を受け取ると、通常リセットは失敗、強制リセットは別の操作に追い越されたと表示します（<code>index.html:3793</code>）。Quest 側は実際にはリセット済みです。要求 ID をセッション ID と同じロックの中で書けば消えます。</p>
+
+<h3>11. 前の人の台車の失敗が、次の人の本編中に警告で出る</h3>
+<p>台車の最後の合図と結果はリセットで戻りません（<code>RomiCartLink.cs:50</code>）。前の人の終幕で合図が届かなかった場合、次の人の本編中ずっと「台車へ合図が届きませんでした」がタブレットに出ます（<code>index.html:3343</code>）。スタッフが本編中に台車を触りに行きかねません。内部エラーの件数には体験者ごとの基準値の取り直しがありますが、台車にはありません。</p>
+
+<h2>低 — 軽い取りこぼし</h2>
+<ul>
+<li><strong>12.</strong> 報告が受理された後の帰還カット 7.1 秒の途中で本編の上限 300 秒に達すると、帰還の結末が「調査中断」に上書きされます（<code>ShowRunDirector.cs:541</code>）。</li>
+<li><strong>13.</strong> 3 周目の区間に 120 秒とどまると watchdog が演出を畳み、人形化した区間に生身のライブが戻ります。</li>
+<li><strong>14.</strong> 受付前から押し続けた人は、一度離すまで数えられません。案内は出ないので、押しっぱなしのまま 15 秒で帰還不能になります。推定です。</li>
+<li><strong>15.</strong> コントローラが切れている間に来た振動の予約がリセットで落ちず、次の人がつないだ瞬間に 1 回鳴ります（<code>OvrControllerBridge.cs:382</code>）。</li>
+<li><strong>16.</strong> 台車が動き出した後に強制リセットしても台車は止まりません。<code>/stop</code> はありますが、リセット経路から送っていません。推定です。</li>
+<li><strong>17.</strong> 2-C の予備動作の 2 カット目が「カメラ B のライブ 0.6 秒」で、C に居る人に B が一瞬映ります。予備動作を 2-B から 2-C へ移したとき（0107）の名残に見えます。推定です。</li>
+</ul>
+
+<h2>文書のずれ</h2>
+<p>実装は正しく、文書だけが古いものです。次のセッションがこれを契約として読むので、直しておく価値があります。</p>
+<ul>
+<li><code>rules/show-design.md</code> の冒頭の節（優先される側）が「3-A の凍結カット」「凍結線 OR 3 秒」のままで、位置合わせ版の節と食い違っています。</li>
+<li>同じ節の「解除後は通常の異常検出結果を返す」は、0284 の「異変を取り除きました。お疲れ様です。」に置き換わっています。</li>
+<li><code>rules/streaming.md</code> の時計の節は 4-A を「最後」「LAST」と書いていますが、実装は 0247 どおり「終了」「END」「FIN」です。</li>
+<li><code>memory/hmd_onboarding.md</code> の導入の順番と完了文が古く、実装は練習 → 「報告できました。装置は正常です。」→ 名乗りの順です。</li>
+</ul>
+
+<h2>問題なしと確かめた点</h2>
+<ul>
+<li>導入の順番は 0244 と 2026-09-24 の判定に一致します。</li>
+<li>分母 8 の数え方は配布台本の 9 本と一致します（2-C の 2 本を 1 件に数える）。対応表から漏れた演出はありません。</li>
+<li>正規ルートなら 2-A の位置つき録画は必ず作られ、3-A の録画カットに第 2 層は付いていません（0276 の対策は維持）。</li>
+<li>報告と帰還不能が同じフレームに重なると報告が勝ちます。テストがあります。</li>
+<li>帰りの A で引き返しても、終了判定は進行の周で数えるので体験は終わります。</li>
+<li>HMD を外した休止は 15 秒の計時にも本編の時計にも入りません。</li>
+<li>2 人目以降の音・言語・ホラー軽減・録画・報告数・連絡の面の侵食は、本番のリセット経路から戻っています。</li>
+<li>終幕は報告の出始めから 15 秒で閉じます（0286）。0284 の返事は解除と同じフレームで切り替わります。</li>
+</ul>
+
+<p class="note">導入中の逸脱（歩行誘導の円へ行かない、箱の至近に立つ、位置合わせ中の操作）は深く追えていません。尺は 10-20 の自動走行で導入 47 秒と本編 86 秒でした。HMD の練習と人の歩く速さを足すと目安の 180 秒の近くになります。強制されている上限は 300 秒だけです。どの指摘もまだ直していません。</p>
+</div>
+</body>
+</html>
