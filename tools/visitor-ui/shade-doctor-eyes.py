@@ -12,11 +12,15 @@
   - 闇の縁は説明の頭で目の下（0.36d）、おしまいで鼻の下（0.64d）。説明が進むほど下がる
   - 闇の中でも両目のまわりはさらに沈める（白目を拾わせない）
 
-闇は光ではなく、画面の側が目を塞いでいるものとして見せる（2026-10-22 ユーザー指摘
-「暗いところが目の動きに合わせてぬるぬるついてくるのは少し変」）:
+闇は照明の陰ではなく、画面の側が目を描くのを拒んでいるものとして見せる（2026-10-22）:
   - 闇は顔に滑らかについていかない。止まったまま、目がずれたら一気に掴み直す（HOLD / SNAP）
-  - 掴み直した直後は縁が荒れる（BURST）
-  - 縁に近づくほど画が壊れる。横に裂ける行・ずれるブロック・色のずれ・黒い四角
+    （1 回目の指摘「暗いところが目の動きに合わせてぬるぬるついてくるのは少し変」）
+  - 闇の奥は静かな黒のまま。壊れるのは縁だけ。縁の上の数行は、行の途中まで描かれて止まった走査線になる。
+    縁に近い行ほど多く長く、奥ほど少なく短い。画面が目の高さの行を描き切れずにいる
+  - ときどき顔の数行だけが横に滑り、闇の中へはみ出す。色は元の画の色だけで、明るさは元を超えない
+  - 荒れるのは闇が掴み直す瞬間だけ。それ以外のコマは縁の段がわずかに揺れるだけ
+  （2〜4 回目でブロック・白く光る縞・UI 色の縞を試し、「粗目」「色が浮く」「白が多い・グリッチが多すぎる」で
+  すべて捨てた。足すほど安っぽくなる。控えめにすること自体が「力で塞いでいる」見え方になる）
 """
 import argparse
 import json
@@ -38,8 +42,8 @@ VERSION = "v2"
 FLOOR = 0.10
 # 闇の中で両目のまわりだけ追加で落とす割合（0.6 なら闇の底のさらに 0.4 倍）
 EYE_EXTRA = 0.6
-# 闇の縁の幅（目の間隔 d に対する比）
-SOFT = 0.17
+# 闇の縁の幅（目の間隔 d に対する比）。照明のぼけに見せないよう、元の 0.17 より狭い
+SOFT = 0.07
 # 闇の縁の高さ（両目の中点から下へ、d 単位）。説明の頭からおしまいへ向けて少しずつ下がる。
 # 0.36 = 目の下まで闇 / 0.64 = 鼻の下まで闇。章の境目で値がつながる
 EDGE_START, EDGE_END = 0.36, 0.64
@@ -49,16 +53,22 @@ SCENE_SEC = {"introduction": 15.64, "subject": 20.76, "report": 19.72, "wear": 9
 # 闇の追従。目が SNAP_DIST（d 単位）以上ずれるか、HOLD_MIN〜HOLD_MAX コマ止まったら掴み直す
 SNAP_DIST = 0.045
 HOLD_MIN, HOLD_MAX = 5, 12
-# 掴み直した直後の荒れ。ずれの大きさで強さを決め、1 コマごとに BURST_DECAY 倍で引く
-BURST_FULL = 0.09
-BURST_DECAY = 0.6
+# 掴み直した直後の荒れ。ずれが BURST_FROM〜BURST_FULL（d 単位）で 0〜1。小さな掴み直しは荒らさない。
+# 1 コマごとに BURST_DECAY 倍で引く
+BURST_FROM, BURST_FULL = 0.06, 0.14
+BURST_DECAY = 0.55
 # 掴み直しが無くても、ときどき縁が荒れる（1 コマあたりの確率）
-BURST_SPONTANEOUS = 0.025
-# 壊れる帯の幅（d 単位）。縁から闇の内側へ GLITCH_IN、外側へ GLITCH_OUT。
-# 外側は口元（1.05d ± 0.22d）にかからないように狭く取る
-GLITCH_IN, GLITCH_OUT = 0.50, 0.14
-# ブロックの大きさ（画素）。映像の符号化の単位に近い横長
-BLOCK_W, BLOCK_H = 16, 8
+BURST_SPONTANEOUS = 0.012
+
+# 縁の上で、行の途中まで描かれて止まった走査線が残る深さ（d 単位）。静かなときと荒れたとき
+SCAN_CALM, SCAN_BURST = 0.20, 0.38
+# 走査線の描き直しの間隔（コマ）。毎コマ変えると細かく震えて砂嵐に見える
+STEP_HOLD = 3
+# 顔の行が横に滑って闇へはみ出す本数（1 コマあたりの平均）。静かなときと荒れたとき
+SLIP_CALM, SLIP_BURST = 0.6, 7.0
+# はみ出した行の明るさ（元の何倍か）と、彩度をどこまで残すか
+SLIP_GAIN = 0.7
+SLIP_SATURATE = 0.6
 
 
 def smoothstep(e0, e1, x):
@@ -77,11 +87,8 @@ def edge_at(scene, frame_index, fps=25.0):
     return EDGE_START + (EDGE_END - EDGE_START) * t
 
 
-def shade(shape, eyes, edge):
-    """闇の倍率 gain（1 = 元のまま、FLOOR = 闇の底）と、壊れる帯の強さ band（0〜1）を返す。
-
-    eyes = [[lx, ly], [rx, ry]]（画素）。縁は顔の傾きに合わせて傾き、頬の側でわずかに持ち上がる。
-    """
+def face_frame(shape, eyes):
+    """顔座標。u = 横（d 単位）、v = 縦（d 単位・下向き）、s = 縁を測る縦（頬の側で少し持ち上がる）"""
     h, w = shape[:2]
     (lx, ly), (rx, ry) = eyes
     cx, cy = (lx + rx) / 2, (ly + ry) / 2
@@ -93,7 +100,13 @@ def shade(shape, eyes, edge):
     u = (px * ca + py * sa) / d
     v = (-px * sa + py * ca) / d
     s = v + 0.07 * np.clip(u, -1.6, 1.6) ** 2 + 0.04 * u
-    face = smoothstep(edge - SOFT, edge + SOFT, s)
+    return u, v, s, d, cx
+
+
+def gain_map(u, v, s, edge, scan):
+    """1 = 元のまま、FLOOR = 闇の底。scan は縁の上に残る走査線（scan_cut）。"""
+    # 縁から下は顔がそのまま見え、縁から上は走査線だけが描かれる
+    face = np.maximum(smoothstep(edge - 0.3 * SOFT, edge + 0.5 * SOFT, s), scan)
     # 顔から離れた背景には縁を引かない（横一直線の境目が出る）。上ほど暗いなだらかな暗がりにする
     room = 0.08 + 0.62 * smoothstep(-1.2, 3.2, v)
     # 顔の幅の外は背景の暗がりへ。肩と白衣の高さ（v > 1.6）より下は顔の光のまま
@@ -105,14 +118,7 @@ def shade(shape, eyes, edge):
     # 髪と額の輪郭は FLOOR のまま残す
     e = ((np.abs(u) - 0.5) / 0.36) ** 2 + ((v + 0.02) / 0.22) ** 2
     sockets = 1.0 - smoothstep(0.6, 1.4, e)
-    gain = gain * (1.0 - EYE_EXTRA * sockets * (1.0 - lit))
-    # 壊れる帯: 闇の奥では静か、縁に近づくほど強い。縁を越えるとすぐ消える。顔の幅の外には出さない
-    band = smoothstep(edge - GLITCH_IN, edge - 0.03, s) * (1.0 - smoothstep(edge + 0.02, edge + GLITCH_OUT, s))
-    band *= 1.0 - smoothstep(1.0, 1.7, np.abs(u))
-    band *= 1.0 - smoothstep(1.3, 1.6, v)
-    # 闇の奥まで浅く染み込ませる（縁だけの帯に見せない）
-    band = band ** 0.7
-    return gain, band, d
+    return gain * (1.0 - EYE_EXTRA * sockets * (1.0 - lit))
 
 
 def plan_scene(rows, seed):
@@ -134,102 +140,85 @@ def plan_scene(rows, seed):
             cur = e.copy()
             held = 0
             limit = int(rng.integers(HOLD_MIN, HOLD_MAX + 1))
-            burst = max(burst, min(1.0, 0.25 + dev / BURST_FULL))
+            # 小さな掴み直しは荒らさない。大きく外れかけたときだけ
+            burst = max(burst, float(smoothstep(BURST_FROM, BURST_FULL, dev)))
         else:
             held += 1
         if rng.random() < BURST_SPONTANEOUS:
-            burst = max(burst, float(rng.uniform(0.5, 1.0)))
+            burst = max(burst, float(rng.uniform(0.4, 0.8)))
         out.append((cur.tolist(), burst))
         burst *= BURST_DECAY
     return out
 
 
-def block_field(shape):
-    h, w = shape[:2]
-    by = (np.arange(h) // BLOCK_H)[:, None]
-    bx = (np.arange(w) // BLOCK_W)[None, :]
-    return by, bx, (h + BLOCK_H - 1) // BLOCK_H, (w + BLOCK_W - 1) // BLOCK_W
+def _row_noise(rng, h, sigma):
+    """行ごとの乱数（標準偏差 1）。近い行どうしが似る"""
+    n = rng.normal(0.0, 1.0, h + 64)
+    k = np.exp(-0.5 * (np.arange(-24, 25) / sigma) ** 2)
+    k /= np.sqrt((k ** 2).sum())
+    return np.convolve(n, k, "same")[32:32 + h]
 
 
-def block_mean(a, nby, nbx):
-    h, w = a.shape
-    p = np.zeros((nby * BLOCK_H, nbx * BLOCK_W), np.float32)
-    p[:h, :w] = a
-    return p.reshape(nby, BLOCK_H, nbx, BLOCK_W).mean(axis=(1, 3))
+def scan_cut(u, s, edge, d, burst, frame_index, seed):
+    """縁の上の、行の途中まで描かれて止まった走査線（0〜1）。
+
+    縁に近い行ほど多く・長く描かれ、闇の奥へ行くほど本数が減って短くなる。どの行がどこまで描かれるかは
+    STEP_HOLD コマ続ける。描かれた部分は元の画の色のまま、奥ほど暗い。
+    """
+    h, w = s.shape
+    rng = np.random.default_rng((seed, frame_index // STEP_HOLD))
+    depth = SCAN_CALM + (SCAN_BURST - SCAN_CALM) * burst
+    r = (edge - s) / depth                       # 0 = 縁、1 = 走査線が届く奥
+    on = rng.random(h)[:, None]                  # 行ごとの「生き残りやすさ」
+    centre = rng.uniform(-0.7, 0.7, h)[:, None]  # 描かれる区間の中心（u）。行ごとにばらす
+    reach = (0.25 + 1.0 * rng.random(h) ** 2)[:, None]  # 区間の長さの個体差（短い行が多い）
+    half = np.sqrt(np.clip(1.0 - r, 0.0, 1.0)) * reach  # 奥ほど短い
+    ends = 0.02
+    seg = 1.0 - smoothstep(half - ends, half + ends, np.abs(u - centre))
+    alive = (on > r) & (r >= 0.0) & (r < 1.0)
+    return seg * alive * (1.0 - 0.55 * np.clip(r, 0.0, 1.0))
 
 
-def glitch(img, band, d, burst, frame_index, seed):
-    """縁の帯の中で画を壊す。img は闇を掛けた後の float の画。"""
-    h, w = band.shape
-    # ブロックの模様は 2 コマごとに変える（12.5fps でかくつく）。行の裂けは毎コマ
-    rb = np.random.default_rng((seed, frame_index // 2))
-    rr = np.random.default_rng((seed, frame_index, 1))
-    amp = 0.55 + 0.75 * burst
-    by, bx, nby, nbx = block_field(band.shape)
-    xs = np.arange(w)[None, :].repeat(h, 0)
-    rows = np.arange(h)[:, None].repeat(w, 1)
-    out = img.copy()
-
-    # 1) 行が横に裂ける。数行ずつの束が帯の中だけ横へずれる
-    row_band = band.max(axis=1)
-    y = 0
-    while y < h:
-        hgt = int(rr.integers(1, 7))
-        if row_band[y] > 0.05 and rr.random() < row_band[y] * 0.55 * amp:
-            dx = int(rr.normal(0, 0.16 + 0.22 * burst) * d)
-            sl = slice(y, min(h, y + hgt))
-            src = np.clip(xs[sl] - dx, 0, w - 1)
-            torn = img[rows[sl], src]
-            hit = band[sl] > rr.uniform(0.08, 0.5)
-            out[sl][hit] = torn[hit]
-        y += hgt
-
-    # 2) ブロック単位の破損。縁に近いブロックほど壊れる
-    bb = block_mean(band, nby, nbx)
-    eaten = rb.random((nby, nbx)) < np.clip(bb ** 1.2 * 0.9 * amp, 0, 0.95)
-    kind = rb.random((nby, nbx))
-    dxb = (rb.integers(-6, 7, (nby, nbx)) * BLOCK_W * (0.6 + burst)).astype(np.int32)
-    # 下の明るい顔を闇の中へ引きずり上げるブロックも混ぜる（縦は 0〜2 ブロック）
-    dyb = (rb.integers(0, 3, (nby, nbx)) * BLOCK_H).astype(np.int32)
-    e_px = eaten[by, bx]
-    k_px = kind[by, bx]
-    #  a. 黒い四角。闇が角張った形で縁を押し出す
-    black = e_px & (k_px < 0.42)
-    out[black] *= 0.12
-    #  b. 横にずれたブロック。別の場所の画が四角く差し込まれる
-    shift = e_px & (k_px >= 0.42) & (k_px < 0.78)
-    src = np.clip(xs + dxb[by, bx], 0, w - 1)
-    srcy = np.clip(rows + dyb[by, bx], 0, h - 1)
-    out[shift] = img[srcy, src][shift]
-    #  c. 色の割れ。赤と青が左右へ分かれ、階調が潰れる
-    split = e_px & (k_px >= 0.78)
-    k = max(2, int(0.05 * d * (1 + burst)))
-    sp = img.copy()
-    sp[..., 2] = img[rows, np.clip(xs + k, 0, w - 1), 2]
-    sp[..., 0] = img[rows, np.clip(xs - k, 0, w - 1), 0]
-    sp = np.floor(sp / 48.0) * 48.0 + 12.0
-    out[split] = sp[split]
-
-    # 3) 走査線の欠け。帯の中の 1 行だけが暗く抜ける / 白く光る
-    for yy in np.nonzero(row_band > 0.3)[0]:
-        p = rr.random()
-        if p < 0.05 * amp:
-            hit = band[yy] > 0.3
-            out[yy, hit] *= 0.2
-        elif p < 0.058 * amp:
-            # 白く光るのは行の一部だけ（全幅だと目隠しの棒の縁取りに見える）
-            x0 = int(rr.integers(0, w))
-            seg = np.zeros(w, bool)
-            seg[x0:x0 + int(rr.uniform(0.2, 0.9) * d)] = True
-            hit = (band[yy] > 0.45) & seg
-            out[yy, hit] = out[yy, hit] * 0.4 + 140.0
+def slip(out, frame, u, s, edge, d, cx, burst, frame_index, seed):
+    """顔の数行が横に滑って闇へはみ出す。縁のすぐ下の行の画を、闇の側の行へ横にずらして置く。"""
+    h, w = out.shape[:2]
+    rng = np.random.default_rng((seed, frame_index, 1))
+    n = rng.poisson(SLIP_CALM + (SLIP_BURST - SLIP_CALM) * burst)
+    if n == 0:
+        return out
+    col = np.arange(w, dtype=np.float32)
+    mid = int(np.clip(cx, 0, w - 1))
+    # 顔の中心の列で、縁の高さにある行
+    edge_y = int(np.argmin(np.abs(s[:, mid] - edge)))
+    for _ in range(n):
+        hgt = int(rng.integers(1, 3 + int(2 * burst)))
+        # はみ出す先: 縁から闇の側へ（荒れるほど奥まで）
+        y = edge_y - int(rng.uniform(0.02, 0.15 + 0.2 * burst) * d)
+        # 元の行: 縁のすぐ下の、まだ見えている顔
+        ys = edge_y + int(rng.uniform(0.04, 0.16) * d)
+        if y < 0 or ys + hgt > h:
+            continue
+        dx = int(rng.choice([-1, 1]) * rng.uniform(0.04, 0.25 + 0.35 * burst) * d)
+        length = rng.uniform(0.4, 1.1 + 0.6 * burst) * d
+        x0 = mid + rng.uniform(-0.8, 0.8) * d - length / 2
+        # 端は数画素でほどける（定規で切った帯に見せない）
+        ramp = 0.06 * d
+        a = smoothstep(x0, x0 + ramp, col) * (1.0 - smoothstep(x0 + length - ramp, x0 + length, col))
+        a = a * (1.0 - smoothstep(1.2, 1.6, np.abs(u[y, :])))
+        src = frame[ys:ys + hgt][:, np.clip(np.arange(w) - dx, 0, w - 1)].astype(np.float32)
+        lum = (src @ np.array([0.114, 0.587, 0.299], np.float32))[..., None]
+        src = (lum + SLIP_SATURATE * (src - lum)) * SLIP_GAIN
+        alpha = a[None, :, None]
+        out[y:y + hgt] = out[y:y + hgt] * (1.0 - alpha) + src * alpha
     return out
 
 
 def apply(frame, anchor, edge, burst, frame_index, seed, grain=True):
-    gain, band, d = shade(frame.shape, anchor, edge)
+    u, v, s, d, cx = face_frame(frame.shape, anchor)
+    scan = scan_cut(u, s, edge, d, burst, frame_index, seed)
+    gain = gain_map(u, v, s, edge, scan)
     f = frame.astype(np.float32) * gain[..., None]
-    f = glitch(f, band, d, burst, frame_index, seed)
+    f = slip(f, frame, u, s, edge, d, cx, burst, frame_index, seed)
     if grain:
         # 闇の中の量子化の縞を散らす
         rng = np.random.default_rng((seed, frame_index, 2))
@@ -355,6 +344,7 @@ def main():
         anchor, burst = plan_scene(track[args.scene]["rows"], scene_seed(args.scene))[args.frame]
         cv2.imwrite(str(args.still), apply(frame, anchor, edge_at(args.scene, args.frame), burst,
                                             args.frame, scene_seed(args.scene)))
+        print(f"burst {burst:.2f}")
         return
     for scene in SCENES:
         dst, poster, n = render_scene(scene, track[scene]["rows"])
