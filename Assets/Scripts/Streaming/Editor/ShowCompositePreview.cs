@@ -127,6 +127,20 @@ namespace FixedCamVr.Streaming.EditorTools
             return Mathf.Clamp01(v);
         }
 
+        /// <summary><c>-Set dlight=&lt;EV&gt;</c>（人形について回る光だまりの試し値）。無ければ null ＝ 本番の値。</summary>
+        private static float? ParseActorLightArg()
+        {
+            string? raw = EditorCliArgs.Get("dlight");
+            if (string.IsNullOrEmpty(raw)) return null;
+            if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float v))
+            {
+                Debug.LogWarning($"[CgViz] dlight の値を読めない: '{raw}'（本番の値で撮る）");
+                return null;
+            }
+            return Mathf.Clamp(v, 0f, 6f);
+        }
+
         private static void Execute(string? explicitShowJsonPath)
         {
             // CLI（batchmode）は空シーンで始まる。枠のアスペクトはシーンの MjpegScreen が正なので
@@ -142,6 +156,7 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 stage = Stage.Create(outDir);
                 stage.DecayProgress = ParseDecayArg();
+                stage.ActorLightEvOverride = ParseActorLightArg();
 
                 ShowJson? show = LoadShow(explicitShowJsonPath, out string showPath);
                 if (show == null)
@@ -1179,6 +1194,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
 
                 _actorHeightM = Mathf.Max(0.05f, def.heightM);
+                _actorId = def.id;
                 _actor.name = $"[CgVizActor:{def.id}]";
                 _actor.transform.SetParent(_root.transform, worldPositionStays: true);
                 SetLayerRecursive(_actor.transform, _cgLayer);
@@ -1240,6 +1256,7 @@ namespace FixedCamVr.Streaming.EditorTools
             /// <summary>人形に付き従う劣化（カットの <c>aura</c>）。0 なら書かない。</summary>
             private float _aura;
             private float _actorHeightM = 0.4f;
+            private string _actorId = "";
 
             public void SetAura(float aura) => _aura = Mathf.Clamp01(aura);
 
@@ -1457,6 +1474,18 @@ namespace FixedCamVr.Streaming.EditorTools
                                               contain, _aura, out focus);
                 _compositeMat.SetVector("_ActorFocus", focus);
 
+                // 人形について回る光だまり（本番と同じ式・同じ条件 = 人形を描いている間だけ）。
+                // シェーダが夜間モードの強さを掛けるので、decay=0 の絵には出ない。
+                Vector4 light = new Vector4(0.5f, 0.5f, 0.2f, 0f);
+                if (applyFeel && _actor != null
+                    && ShowCgLayer.IsDoll(cgVisible, _actorId)
+                    && ShowCgLayer.TryActorLight(_cgCam, _actor.transform.position, _actorHeightM,
+                                                 contain, ActorLightEvOverride ?? ShowCgLayer.ActorLightEv,
+                                                 out light)
+                    && light.w > 0f)
+                    caption += $"\nactor light {light.w:0.00} EV x night mode";
+                _compositeMat.SetVector("_ActorLight", light);
+
                 // 入れ替わりのノイズ。矩形は `ShowCgLayer.TryActorFocus`（本番と同じ式）で解く。
                 Vector4 swapRect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
                 if (_swapActive && _actor != null
@@ -1525,9 +1554,17 @@ namespace FixedCamVr.Streaming.EditorTools
             /// </summary>
             public float DecayProgress { get; set; }
 
-            /// <summary>出力名に付く印（`_d066`）。並べて見るために要る。</summary>
+            /// <summary>
+            /// 光だまりの強さの試し値（`-Set dlight=1.5`・EV）。null = 本番の
+            /// <see cref="ShowCgLayer.ActorLightEv"/>。値を決めるときに並べて見るためだけのもの。
+            /// </summary>
+            public float? ActorLightEvOverride { get; set; }
+
+            /// <summary>出力名に付く印（`_d066` / `_L150`）。並べて見るために要る。</summary>
             public string NameSuffix =>
-                DecayProgress > 0.0005f ? $"_d{Mathf.RoundToInt(DecayProgress * 100f):000}" : "";
+                (DecayProgress > 0.0005f ? $"_d{Mathf.RoundToInt(DecayProgress * 100f):000}" : "")
+                + (ActorLightEvOverride.HasValue
+                    ? $"_L{Mathf.RoundToInt(ActorLightEvOverride.Value * 100f):000}" : "");
 
             public string Save(string fileName)
             {

@@ -212,6 +212,28 @@ def effect_samples(events, key: str, t_from: float = None, t_to: float = None):
     return out
 
 
+def cg_fields(v) -> list:
+    """`cg=<層が描かれているか>/<人形か>/<光だまりの EV>` を分解する（C# の ShowTelemetryHost.CgState と対）。
+    旧ログは 1 つ（`cg=1`）か 2 つ。"""
+    return str(v).split("/") if v not in (None, "", "-") else []
+
+
+def cg_is_doll(v) -> bool:
+    f = cg_fields(v)
+    return len(f) >= 2 and f[1] == "1"
+
+
+def cg_light_ev(v):
+    """光だまりの EV。3 つ目が無い旧ログは None。"""
+    f = cg_fields(v)
+    if len(f) < 3:
+        return None
+    try:
+        return float(f[2])
+    except ValueError:
+        return None
+
+
 def timed_samples(events, key: str):
     """<see cref="effect_samples"/> と同じだが **(時刻, 値) の組**で返す。
 
@@ -2846,8 +2868,9 @@ def analyze(events, others, exp, warns=None):
                 #    2 周目 C の保持（代役）を「人形が立っている」と読んで
                 #    「立っているのに笑っていない」と誤って FAIL を出していた。
                 #    旧ログ（1 桁の `cg=1`）は人形かを区別できないので**判定から外す**。
+                # ⚠ 2026-10-22 から 3 つ目（光だまりの EV）が付くので、末尾ではなく 2 つ目を読む。
                 mute = [e for e in events
-                        if e.get("ev") == "sum" and str(e.get("cg", "")).endswith("/1")
+                        if e.get("ev") == "sum" and cg_is_doll(e.get("cg", ""))
                         and (fnum(e, "sndDolls", 0.0) or 0.0) <= 0.05
                         and "sndSwap" in e and (fnum(e, "sndSwap", 0.0) or 0.0) <= 0.01]
                 if len(mute) >= 2:
@@ -3071,6 +3094,28 @@ def analyze(events, others, exp, warns=None):
     # 2026-07-31 に FAIL ゼロ・演出 7 本 OK と判定した走行の画を録ったら、導入演出が 1 段も
     # 出ていなかった（パススルー未初期化 / シェーダのビルド剥がれ / カメラ背景が不透明）。
     # ここは「その結果、画・音に何かが出たか」だけを見る節。
+    # ---------------- 人形について回る光だまり ----------------
+    # `canon/LEDGER.md` 0287。人形に変わった後は夜間モードの明暗曲線が黒を潰し、
+    # 黒いカーテンの前の黒髪が背景ごと消えていた。人形を描いている間は人形の頭のあたりに
+    # 光だまりを書く（`cg=` の 3 つ目・EV）。C# の `ShowTelemetryHost.CgState` と対で直す。
+    cg_rows = [e for e in events if e.get("ev") == "sum" and "cg" in e]
+    lit = [(cg_is_doll(e["cg"]), cg_light_ev(e["cg"])) for e in cg_rows]
+    if any(ev is not None for _d, ev in lit):
+        w("## 人形について回る光だまり")
+        doll_dark = sum(1 for d, ev in lit if d and ev is not None and ev <= 0.0)
+        doll_lit = [ev for d, ev in lit if d and ev is not None and ev > 0.0]
+        leak = sum(1 for d, ev in lit if not d and ev is not None and ev > 0.0)
+        w(f"  人形が出ていた標本 {doll_dark + len(doll_lit)} / 光だまりあり {len(doll_lit)}"
+          + (f"（{max(doll_lit):.2f} EV）" if doll_lit else ""))
+        if doll_dark >= 2:
+            verdict("FAIL", f"人形が出ているのに光だまりを書いていない標本が {doll_dark} 回"
+                            " — 人形の黒髪が夜間モードの黒に溶けて頭が消える（ShowCgLayer.WriteActorLight）")
+        elif doll_lit:
+            verdict("OK", f"人形が出ている間は光だまりを書いていた（{len(doll_lit)} 標本）")
+        if leak >= 2:
+            verdict("FAIL", f"人形が居ないのに光だまりが残っている標本が {leak} 回"
+                            " — 何も無い所が明るく浮く（ClearActorLight の漏れ）")
+
     # ---------------- 乱れ（回数で大きくなったか）----------------
     # `canon/LEDGER.md` 0055。起きるたびに強さ・尺・音が少しずつ上がり、終盤で頭打ちになる。
     # ⚠ level（glitch=）だけ見ても**台本が強いのか回数で育ったのか区別できない**ので、

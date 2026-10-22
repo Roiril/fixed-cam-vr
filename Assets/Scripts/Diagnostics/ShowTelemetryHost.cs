@@ -625,10 +625,14 @@ namespace FixedCamVr.Diagnostics
         /// （2026-08-22）。覆いの形を出す<b>人の代役</b>でも 1 つ目は 1 になるので、
         /// <c>analyze-xp-log.py</c> が「人形が立っているのに笑っていない」と誤判定していた。
         /// 人形かを訊く側は<b>必ず 2 つ目を読む</b>（C# の <see cref="Cg.ShowCgLayer.DollVisible"/> と対）。
+        ///
+        /// 3 つ目（2026-10-22〜・<c>canon/LEDGER.md</c> 0287）: 人形について回る光だまりの強さ（EV）。
+        /// 人形が出ているのに 0 なら、夜間モードの黒に黒髪が溶けて頭が消えている。
+        /// <c>analyze-xp-log.py</c> の <c>cg_light_ev</c> と対で直す。
         /// </summary>
         private string CgState => _cg == null
             ? "-"
-            : $"{(_cg.IsVisible ? 1 : 0)}/{(_cg.DollVisible ? 1 : 0)}";
+            : $"{(_cg.IsVisible ? 1 : 0)}/{(_cg.DollVisible ? 1 : 0)}/{_cg.ActorLightShownEv:F2}";
 
         /// <summary>
         /// 入れ替わりのノイズ —

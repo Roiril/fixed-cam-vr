@@ -121,6 +121,9 @@ Shader "FixedCamVr/ScreenComposite"
         // 人形に付き従う劣化。(中心 u, 中心 v, 半径, 強さ)。ShowCgLayer が人形の投影から供給する。
         // 対象に紐づく非一様な乱れ＝機材のせいにできない＝原因が世界の側にあることになる。
         _ActorFocus("Actor Focus (cx, cy, radius, amount)", Vector) = (0.5, 0.5, 0.2, 0)
+        // 人形について回る光だまり（canon/LEDGER.md 0287）。(中心 u, 中心 v, 半径, 強さ EV)。
+        // 夜間モードの強さ（_Mono）で掛かる。ShowCgLayer が人形の頭のあたりの投影から供給する。
+        _ActorLight("Actor Light (cx, cy, radius, ev)", Vector) = (0.5, 0.5, 0.2, 0)
         // 焼き付き / ホールド。指定した瞬間の画を 1 枚だけ保持して混ぜる（フレーム履歴は持たない
         // ＝決定的で、同じ show.json は同じ絵になる）。1.0 で完全に止まって見える。
         // ソースはライブ映像と同じなので contain-fit も _LiveScale を共用する。
@@ -327,6 +330,7 @@ Shader "FixedCamVr/ScreenComposite"
                 float _GlitchSeed;
                 // 同じく別系統。CameraFeelFx（撮像の質と残像）と ShowCgLayer（_ActorFocus）が駆動。
                 float4 _ActorFocus;
+                float4 _ActorLight;
                 float _NoiseDark;
                 float _NoiseFixed;
                 float _SrcFrame;
@@ -505,7 +509,17 @@ Shader "FixedCamVr/ScreenComposite"
 
             // 潰れの内訳（進みに対する割合）。
             #define COLLAPSE_SQUEEZE_END 0.55    // ここまでで縦が潰れて線になる（0.26s なら 0.14s）
-            #define COLLAPSE_FADE_START  0.90    // 点が消えかけたところから溶かす（最後の 1〜2 コマ）
+            // 人形について回る光だまりの形（_ActorLight の半径 = 人形の見かけの半高に対する倍率）。
+            // INNER までは満額、OUTER で 0。人形の 1 頭ぶん外側まで背景が地として持ち上がる大きさ。
+            #define ACTOR_LIGHT_INNER    0.5
+            #define ACTOR_LIGHT_OUTER    2.4
+            // 光だまりが人形そのものに掛かる割合（0 = 背後だけを照らす）。
+            // 0 だと、周囲の暗さへ光量を寄せて沈んだ人形（暗い区間で 0.3 倍前後）が沈んだまま残る。
+            #define ACTOR_LIGHT_ON_DOLL  0.5
+            // 光だまりの中心で足す明かり（linear・露出の前）。露出は掛け算なので、JPEG で 0 に
+            // 潰れた黒の背景はいくら上げても 0 のまま。黒の上にも薄い地を作り、黒髪の輪郭を抜く。
+            #define ACTOR_LIGHT_FLOOR    0.012
+            #define COLLAPSE_FADE_START  0.90   // 点が消えかけたところから溶かす（最後の 1〜2 コマ）
             // 線の太さ・点の幅（枠に対する割合）
             #define COLLAPSE_LINE_H  0.006
             #define COLLAPSE_POINT_W 0.004
@@ -1507,7 +1521,26 @@ Shader "FixedCamVr/ScreenComposite"
                 //    _ExposureBias だけは別系統（装置の自動露出が遅れて追いつくぶん）。
                 // ⚠ 夜間モードは**増感**で成り立つ（だから粒が増える）。色を抜いて周辺を落とすだけだと
                 //    真っ暗になって「装置が壊れた」ではなく「何も映っていない」になる。
-                col = max(col, 0.0) * exp2(_Exposure + _ExposureBias + saturate(_Mono) * 0.95);
+                // 人形について回る光だまり（canon/LEDGER.md 0287）。夜間モードの明暗曲線は
+                // 表示輝度 0.10 以下をほぼ 0 へ潰すので、黒いカーテンの前に立つ人形の黒髪が
+                // 背景と同じ黒になり、頭ごと消えていた。**曲線の手前で**人形の頭のあたりだけ
+                // 露出を上げると、背景の布が地として持ち上がり、黒髪の輪郭がその上に抜ける。
+                // 曲線・脱色・粗さは全域同じまま（式を人形用に分けない）。
+                float actorLightEv = 0.0;
+                if (_ActorLight.w > 0.001 && _Mono > 0.001)
+                {
+                    float2 ld = (screenUv - _ActorLight.xy) * float2(_FrameAspect, 1.0);
+                    float lr = max(_ActorLight.z, 0.01);
+                    float lw = saturate(_Mono)
+                             * (1.0 - smoothstep(lr * ACTOR_LIGHT_INNER, lr * ACTOR_LIGHT_OUTER, length(ld)));
+                    // 人形そのものには半分だけ（背後から主に照らされている形）。満額掛けると白い着物と
+                    // 顔がさらに飛び、黒髪だけが持ち上がって輪郭の差が縮む。
+                    half onDoll = 1.0 - aCg * s * (1.0 - ACTOR_LIGHT_ON_DOLL);
+                    actorLightEv = _ActorLight.w * lw * onDoll;
+                    // 黒の上の地は人形の外だけ（人形に足すと黒髪が灰色に浮いて輪郭が消える）。
+                    col += ACTOR_LIGHT_FLOOR * lw * saturate(_ActorLight.w * 0.5) * (1.0 - aCg * s);
+                }
+                col = max(col, 0.0) * exp2(_Exposure + _ExposureBias + saturate(_Mono) * 0.95 + actorLightEv);
                 col.r *= 1.0 + 0.25 * _Temperature;
                 col.b *= 1.0 - 0.25 * _Temperature;
                 // 色かぶり（緑↔マゼンタ）: 色温度と直交する軸。安物 CMOS + 蛍光灯の緑寄りを作る。

@@ -373,6 +373,7 @@ namespace FixedCamVr.Streaming.Cg
             // 人形が消えたら荒れも消す。Hide の後は LateUpdate が早期 return するので、
             // ここで明示的に落とさないと「何も居ない所の画だけが荒れている」が残る。
             ClearActorFocus();
+            ClearActorLight();
             if (_virtualCam != null) _virtualCam.enabled = false;
             if (_actorInstance != null) _actorInstance.SetActive(false);
             if (_roomProxy != null) _roomProxy.gameObject.SetActive(false);
@@ -426,6 +427,7 @@ namespace FixedCamVr.Streaming.Cg
             // 人形に付き従う劣化の中心と大きさ。描画を間引いても位置は毎フレーム更新する
             // （荒れだけが人形から遅れて付いてくると、それ自体が別の不自然さになる）。
             WriteActorFocus();
+            WriteActorLight();
         }
 
         // ---- 入れ替わりのノイズ（canon/LEDGER.md 0089）----
@@ -540,6 +542,81 @@ namespace FixedCamVr.Streaming.Cg
 
         private void ClearActorFocus()
             => _material?.SetVector(ActorFocusId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
+
+        // ---- 人形について回る光だまり（canon/LEDGER.md 0287）----
+
+        /// <summary>
+        /// 光だまりの強さ（EV）。シェーダはこれに夜間モードの強さ（<c>_Mono</c>）を掛けて使う。
+        ///
+        /// 人形に変わった後は夜間モードが 1 のままで、その明暗曲線は表示輝度 0.10 以下を
+        /// ほぼ 0 へ潰す。黒いカーテンの前の黒髪が背景と同じ黒になり、人形の頭が消えていた
+        /// （2026-10-22・ユーザー「人形だという認識が持てない」）。背景の布を潰れない所まで
+        /// 持ち上げる量。
+        ///
+        /// 2026-10-22 に `menu composite -Set decay=1,dlight=…` で 0 / 1.0 / 1.5 / 2.0 / 3.0 を並べて決めた。
+        /// 1.0 では黒髪の輪郭が弱い。2.0 以上は背後の布が照明を当てたように光る。
+        /// 1.5 で 3-A の頭の内外の表示輝度の差が 0.003 → 0.51。
+        /// </summary>
+        public const float ActorLightEv = 1.5f;
+
+        /// <summary>
+        /// 光だまりの中心の高さ（人形の背丈に対する割合）。市松人形は頭が大きく、
+        /// 読ませたいのはおかっぱの頭の輪郭なので、胴の中ほどではなく頭のあたりに置く。
+        /// </summary>
+        public const float ActorLightCenterK = 0.70f;
+
+        /// <summary>いまシェーダへ書いている光だまりの強さ（EV）。書いていなければ 0。観測用。</summary>
+        public float ActorLightShownEv { get; private set; }
+
+        private static readonly int ActorLightId = Shader.PropertyToID("_ActorLight");
+
+        private void ClearActorLight()
+        {
+            ActorLightShownEv = 0f;
+            _material?.SetVector(ActorLightId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
+        }
+
+        // 人形（代役ではない）を描いている間だけ書く。代役（入れ替わりの人型）を照らすと、
+        // 人がまだ人形になっていないうちから光だまりが出て、入れ替わりを先に明かしてしまう。
+        private void WriteActorLight()
+        {
+            if (_material == null) return;
+            if (!DollVisible || _actorInstance == null || _virtualCam == null)
+            {
+                ClearActorLight();
+                return;
+            }
+            float h = Mathf.Max(0.05f, EffectiveHeightM > 0f ? EffectiveHeightM : 0.4f);
+            Vector2 s = _screen != null ? _screen.ContainScale : Vector2.one;
+            if (!TryActorLight(_virtualCam, _actorInstance.transform.position, h, s, ActorLightEv,
+                               out Vector4 light))
+            {
+                ClearActorLight();
+                return;
+            }
+            _material.SetVector(ActorLightId, light);
+            ActorLightShownEv = light.w;
+        }
+
+        /// <summary>
+        /// 光だまりの中心・半径（枠 UV 空間）と強さ。半径は人形の見かけの半高（<see cref="TryActorFocus"/> と同じ測り方）。
+        /// <b>Editor の合成プレビューもこれを呼ぶ</b>（式を写すと片方だけ直したときに黙って食い違う）。
+        /// カメラの後ろに居るときは false。
+        /// </summary>
+        public static bool TryActorLight(Camera cam, Vector3 footWorld, float heightM,
+                                         Vector2 containScale, float ev, out Vector4 light)
+        {
+            light = new Vector4(0.5f, 0.5f, 0.2f, 0f);
+            if (cam == null) return false;
+            float h = Mathf.Max(0.05f, heightM);
+            Vector3 center = footWorld + Vector3.up * (h * ActorLightCenterK);
+            if (!TryFrameUv(cam, center, containScale, out Vector2 c)) return false;
+            TryFrameUv(cam, footWorld + Vector3.up * (h * 0.5f), containScale, out Vector2 mid);
+            TryFrameUv(cam, footWorld + Vector3.up * h, containScale, out Vector2 top);
+            float radius = Mathf.Clamp(Mathf.Abs(top.y - mid.y), 0.02f, 0.6f);
+            light = new Vector4(c.x, c.y, radius, Mathf.Max(0f, ev));
+            return true;
+        }
 
         // 人形の投影中心と見かけの半径を**枠 UV 空間**で書く（シェーダはこの空間で距離を測る）。
         private void WriteActorFocus()
@@ -707,7 +784,12 @@ namespace FixedCamVr.Streaming.Cg
             // カメラの enabled は常に false（描画は RenderIfDue の手動 Render）。
             // 出し始めは待たずに 1 枚描く — ここで刻みを待つと、人形が出る瞬間だけ遅れて見える。
             if (on) _lastRenderTime = -999f;
-            else _lastRenderedDollFootValid = false;
+            else
+            {
+                _lastRenderedDollFootValid = false;
+                // 人形が居ないのに光だまりだけが残ると、何も無い所が明るく浮く。
+                ClearActorLight();
+            }
             if (_actorInstance != null) _actorInstance.SetActive(on);
             // プロキシと接地影は人形と生死を共にする（人形が居ないのに部屋の深度だけ書いても意味が無い）。
             if (_roomProxy != null) _roomProxy.gameObject.SetActive(on);
