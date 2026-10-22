@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 94dc6571-7165-4a32-9334-39ae2473a8c9
-  modified: 2026-10-15T01:59:42.198Z
+  modified: 2026-10-22T02:43:07.410Z
 ---
 
 # タブレットの博士UIを触る前に
@@ -112,7 +112,7 @@ Quest の応答が 6 秒以上古ければ未確認。ページの経過時間�
 ## 名乗らない組織の素材（2026-10-15・0263・判定待ち）
 
 博士の動画は `*-ja-v2.mp4`（目元を闇に沈めた版）。元の `*-ja-v1.mp4` は焼き直しの入力として残す（APK にも入っているが参照していない）。
-顔の追跡 `track-doctor-face.py` → 闇の焼き込み `shade-doctor-eyes.py`。手順と罠は `tools/visitor-ui/README.md`「博士の目元の闇」。
+顔の追跡 `track-doctor-face.py` → 闇の焼き込み `shade-doctor-eyes.py`。2026-10-22 から闇は顔に滑らかについていかず、止まって一気に掴み直し、縁がグリッチで壊れる（画面が目を塞ぐ見せ方）。手順と罠は `tools/visitor-ui/README.md`「博士の目元の闇」。
 - 反映の印は `institute-seal-v1.png`（CSS の背景画像。✓ の文字は読み上げ用に残して画面では隠す）
 - 確認・反映の画面だけ `#entranceImage` の src を `entrance-doll-tilt-v1.png` に差し替える（`syncEntranceDoll`。同じ img の src を替えるので drift のアニメと位置がずれない）。タイトルの背景は CSS の別の url で、こちらは替わらない
 - 観測装置は `briefing-device-v3.jpg`（写真）。`is-device`（透過図だけ額を外す特別扱い）は消した
