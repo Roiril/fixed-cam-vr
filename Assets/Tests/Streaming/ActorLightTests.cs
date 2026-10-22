@@ -83,5 +83,12 @@ namespace FixedCamVr.Streaming.Tests
             // 0 にすると人形の頭が夜間モードの黒に溶ける状態へ黙って戻る。
             Assert.Greater(ShowCgLayer.ActorLightEv, 0f);
         }
+
+        [Test]
+        public void ShippedDollRedKeep_IsTheJudgedValue()
+        {
+            // canon/LEDGER.md 0289「人形だけ0.6」。変えるならユーザーの判定を取り直す。
+            Assert.AreEqual(0.6f, ShowCgLayer.DollRedKeep, 1e-6f);
+        }
     }
 }

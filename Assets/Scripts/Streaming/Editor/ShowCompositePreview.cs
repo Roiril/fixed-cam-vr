@@ -143,17 +143,17 @@ namespace FixedCamVr.Streaming.EditorTools
 
         /// <summary>
         /// <c>-Set red=&lt;0..1&gt;,redmode=doll|all</c>（夜間モードで赤だけ少し残す試し・0288）。
-        /// 戻り値は <c>_RedKeep</c> の (画面全体, 人形の上)。無ければ (0, 0)。
+        /// 戻り値は <c>_RedKeep</c> の (画面全体, 人形の上)。無ければ null ＝ 本番の値（人形の上 <see cref="ShowCgLayer.DollRedKeep"/>）。
         /// </summary>
-        private static Vector2 ParseRedKeepArg()
+        private static Vector2? ParseRedKeepArg()
         {
             string? raw = EditorCliArgs.Get("red");
-            if (string.IsNullOrEmpty(raw)) return Vector2.zero;
+            if (string.IsNullOrEmpty(raw)) return null;
             if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
                                 System.Globalization.CultureInfo.InvariantCulture, out float v))
             {
-                Debug.LogWarning($"[CgViz] red の値を読めない: '{raw}'（赤を残さない）");
-                return Vector2.zero;
+                Debug.LogWarning($"[CgViz] red の値を読めない: '{raw}'（本番の値で撮る）");
+                return null;
             }
             v = Mathf.Clamp01(v);
             return EditorCliArgs.Get("redmode") == "all" ? new Vector2(v, 0f) : new Vector2(0f, v);
@@ -175,7 +175,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 stage = Stage.Create(outDir);
                 stage.DecayProgress = ParseDecayArg();
                 stage.ActorLightEvOverride = ParseActorLightArg();
-                stage.RedKeep = ParseRedKeepArg();
+                stage.RedKeepOverride = ParseRedKeepArg();
 
                 ShowJson? show = LoadShow(explicitShowJsonPath, out string showPath);
                 if (show == null)
@@ -1583,16 +1583,19 @@ namespace FixedCamVr.Streaming.EditorTools
             /// </summary>
             public float? ActorLightEvOverride { get; set; }
 
-            /// <summary>夜間モードで赤を残す試し値（画面全体, 人形の上）。`-Set red=…,redmode=…`。</summary>
-            public Vector2 RedKeep { get; set; }
+            /// <summary>夜間モードで赤を残す試し値（画面全体, 人形の上）。`-Set red=…,redmode=…`。null = 本番の値。</summary>
+            public Vector2? RedKeepOverride { get; set; }
+
+            /// <summary>実際に書く値。本番は人形の上だけ <see cref="ShowCgLayer.DollRedKeep"/>。</summary>
+            private Vector2 RedKeep => RedKeepOverride ?? new Vector2(0f, ShowCgLayer.DollRedKeep);
 
             /// <summary>出力名に付く印（`_d066` / `_L150` / `_Rd030` / `_Ra030`）。並べて見るために要る。</summary>
             public string NameSuffix =>
                 (DecayProgress > 0.0005f ? $"_d{Mathf.RoundToInt(DecayProgress * 100f):000}" : "")
                 + (ActorLightEvOverride.HasValue
                     ? $"_L{Mathf.RoundToInt(ActorLightEvOverride.Value * 100f):000}" : "")
-                + (RedKeep.x > 0f ? $"_Ra{Mathf.RoundToInt(RedKeep.x * 100f):000}" : "")
-                + (RedKeep.y > 0f ? $"_Rd{Mathf.RoundToInt(RedKeep.y * 100f):000}" : "");
+                + (RedKeepOverride.HasValue
+                    ? $"_Ra{Mathf.RoundToInt(RedKeep.x * 100f):000}_Rd{Mathf.RoundToInt(RedKeep.y * 100f):000}" : "");
 
             public string Save(string fileName)
             {

@@ -565,15 +565,25 @@ namespace FixedCamVr.Streaming.Cg
         /// </summary>
         public const float ActorLightCenterK = 0.70f;
 
+        /// <summary>
+        /// 夜間モードで人形の上だけ残す赤の量（0..1・<c>_RedKeep.y</c>）。canon/LEDGER.md 0289
+        /// 「人形だけ0.6」。赤が乗るのは着物の暗い所（袖・裾）で、明るい面は白いまま。
+        /// 画面全体（<c>_RedKeep.x</c>）は採らない — 暗部の色ノイズを赤として拾いカーテンが濁る（R072）。
+        /// </summary>
+        public const float DollRedKeep = 0.6f;
+
         /// <summary>いまシェーダへ書いている光だまりの強さ（EV）。書いていなければ 0。観測用。</summary>
         public float ActorLightShownEv { get; private set; }
 
         private static readonly int ActorLightId = Shader.PropertyToID("_ActorLight");
+        private static readonly int RedKeepId = Shader.PropertyToID("_RedKeep");
 
+        // 光だまりと人形の赤は「人形を描いている間だけ」で生死を共にする（書く条件が同じ）。
         private void ClearActorLight()
         {
             ActorLightShownEv = 0f;
             _material?.SetVector(ActorLightId, new Vector4(0.5f, 0.5f, 0.2f, 0f));
+            _material?.SetVector(RedKeepId, Vector4.zero);
         }
 
         // 人形（代役ではない）を描いている間だけ書く。代役（入れ替わりの人型）を照らすと、
@@ -595,6 +605,7 @@ namespace FixedCamVr.Streaming.Cg
                 return;
             }
             _material.SetVector(ActorLightId, light);
+            _material.SetVector(RedKeepId, new Vector4(0f, DollRedKeep, 0f, 0f));
             ActorLightShownEv = light.w;
         }
 

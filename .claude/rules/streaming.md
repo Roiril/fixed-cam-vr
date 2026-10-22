@@ -1467,6 +1467,7 @@ uniform は **`_Mono` 1 本だけ**で、夜間モードらしさはそこから
 そのため人形を描いている間だけ、頭のあたりに**光だまり**（`_ActorLight`・唯一の writer は
 `ShowCgLayer.WriteActorLight`・1.5 EV × `_Mono`）を曲線の手前で掛ける。曲線そのものは全域同じ。
 `aura`（著作値・3-B / 3-C に無い）とは独立。プレビューは `menu composite -Set decay=1,dlight=<EV>`。
+同じ条件で人形の上だけ赤を 0.6 残す（`_RedKeep.y`・0289）。脱色の例外はこの 1 つだけで、画面全体には残さない。
 詳細は `memory/screen_decay.md`。
 
 #### ⚠⚠ 周回で痩せる伝送は **mip** で作る（旧: サンプル位置の量子化）
