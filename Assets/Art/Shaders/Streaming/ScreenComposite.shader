@@ -1642,7 +1642,13 @@ Shader "FixedCamVr/ScreenComposite"
                     float band = floor(screenUv.y * 24.0);
                     float bandPick = Hash21(float2(band + 5.0, t + 2.0));
                     float amt = saturate(g * 1.5) * step(1.0 - 0.75 * g, bandPick);
-                    half3 bed = col + PhosphorColor(0.55) * SAND_FLOOR_LIVE;
+                    // 映像の外の黒帯（4:3 を 16:9 の枠へ収めた左右）は、黒に掛け算すると砂が消える。
+                    // 0055 の帯は黒帯まで横切るのが特徴なので、黒帯の中だけ地を暗い部屋の映像の平均
+                    // （linear の明るさ 0.015 ≒ sRGB 33）まで上げる。旧実装のように灰へ跳ねさせない。
+                    float inImage;
+                    ContainUv(screenUv, _LiveScale.xy, inImage);
+                    float floorK = lerp(0.027, SAND_FLOOR_LIVE, inImage);
+                    half3 bed = col + PhosphorColor(0.55) * floorK;
                     half3 sand = bed * (SAND_LO + st * (2.0 - SAND_LO * 2.0))
                                + SAND_TINT * ((add - 0.5) * (2.0 * SAND_ADD));
                     col = lerp(col, max(sand, 0.0), amt);
