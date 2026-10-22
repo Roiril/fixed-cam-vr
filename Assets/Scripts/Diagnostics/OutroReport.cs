@@ -230,7 +230,7 @@ namespace FixedCamVr.Diagnostics
             if (_endingFrames != null)
                 SetEndingImages(_endingFrames.ReleasedShot, _endingFrames.TrappedShot);
             bool wanted = alpha > 0;
-            _music?.SetPresented(wanted, Time.unscaledDeltaTime);
+            _music?.SetPresented(wanted, Time.unscaledDeltaTime, outro != null ? outro.CloseLevel : 1);
             if (!wanted)
             {
                 _presented = false;

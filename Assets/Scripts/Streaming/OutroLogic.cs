@@ -30,12 +30,18 @@ namespace FixedCamVr.Streaming
         Dark,
         /// <summary>報告の文字が浮かぶ。</summary>
         Report,
-        /// <summary>出し切った。<b>文字はここでも出したまま</b>（次のランで <see cref="OutroLogic.Disable"/>）。</summary>
+        /// <summary>
+        /// 出し切った。<b>報告は <see cref="OutroTiming.holdSec"/> のあいだ出したまま、
+        /// <see cref="OutroTiming.closeFadeSec"/> かけて曲ごと溶けて閉じる</b>（2026-10-22）。
+        /// 閉じた後は黒のまま次のランを待つ（<see cref="OutroLogic.Disable"/>）。
+        /// ⚠ 閉じる途中も段は Done のまま。博士タブレットの「done」とリセットの可否は
+        /// Done への到達で決まっており、閉じ終わるまで待たせない。
+        /// </summary>
         Done,
     }
 
     /// <summary>段が終わった合図。</summary>
-    public enum OutroEvent { None, Finished }
+    public enum OutroEvent { None, Finished, Closed }
 
     /// <summary>
     /// 終幕（本編 → 装置が力尽きて、報告を出して終わる）の判断・計時。UnityEngine 非依存・dt 注入。
@@ -81,6 +87,7 @@ namespace FixedCamVr.Streaming
         private float _stageElapsed;
         private float _totalElapsed;
         private float _powerCutAt;
+        private float _doneElapsed;
 
         public OutroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
@@ -95,6 +102,25 @@ namespace FixedCamVr.Streaming
 
         /// <summary>計時が進んでいるか（＝ まだ段が残っている）。</summary>
         public bool Active => _stage != OutroStage.Off && _stage != OutroStage.Done;
+
+        /// <summary>報告と曲が閉じ切ったか（Done の中で保持とフェードアウトを終えた）。</summary>
+        public bool Closed => _stage == OutroStage.Done && _doneElapsed >= _t.holdSec + _t.closeFadeSec;
+
+        /// <summary>
+        /// 閉じる側の残り 1..0（2026-10-22）。報告の面と結果曲の両方がここを掛ける —
+        /// <b>面と曲を別々の時計で消さない</b>（片方だけ残る終わり方になる）。
+        /// Done の保持が終わるまで 1、<see cref="OutroTiming.closeFadeSec"/> かけて 0。
+        /// </summary>
+        public float CloseLevel
+        {
+            get
+            {
+                if (_stage != OutroStage.Done) return 1f;
+                float sec = _doneElapsed - _t.holdSec;
+                if (sec <= 0f) return 1f;
+                return _t.closeFadeSec <= 0f ? 0f : 1f - Clamp01(sec / _t.closeFadeSec);
+            }
+        }
 
         /// <summary>
         /// 画に何かを出している / 出したままか。<b><see cref="OutroStage.Done"/> でも true</b> —
@@ -136,6 +162,7 @@ namespace FixedCamVr.Streaming
             _stage = showCollapse ? OutroStage.Noise : OutroStage.Dark;
             _stageElapsed = 0f;
             _totalElapsed = 0f;
+            _doneElapsed = 0f;
             _powerCutAt = showCollapse ? _t.noiseSec : 0f;
         }
 
@@ -145,12 +172,21 @@ namespace FixedCamVr.Streaming
             _stage = OutroStage.Off;
             _stageElapsed = 0f;
             _totalElapsed = 0f;
+            _doneElapsed = 0f;
             _powerCutAt = 0f;
         }
 
         public OutroEvent Tick(float dt)
         {
             if (dt < 0f) dt = 0f;
+            if (_stage == OutroStage.Done)
+            {
+                // 報告を出し切った後の保持と、曲ごとのフェードアウト。閉じ切った時に 1 回だけ Closed。
+                if (Closed) return OutroEvent.None;
+                _doneElapsed += dt;
+                _totalElapsed += dt;
+                return Closed ? OutroEvent.Closed : OutroEvent.None;
+            }
             if (!Active) return OutroEvent.None;
 
             _stageElapsed += dt;
@@ -173,6 +209,7 @@ namespace FixedCamVr.Streaming
                 case OutroStage.Report:
                     if (_stageElapsed < _t.reportFadeSec) return OutroEvent.None;
                     _stage = OutroStage.Done;
+                    _doneElapsed = 0f;
                     return OutroEvent.Finished;
 
                 default:
@@ -249,7 +286,7 @@ namespace FixedCamVr.Streaming
                 switch (_stage)
                 {
                     case OutroStage.Report: return Progress(_t.reportFadeSec);
-                    case OutroStage.Done: return 1f;
+                    case OutroStage.Done: return CloseLevel;
                     default: return 0f;
                 }
             }
@@ -284,8 +321,18 @@ namespace FixedCamVr.Streaming
         /// <summary>消えてから報告が出るまでの、何も無い黒。</summary>
         public float darkSec;
 
-        /// <summary>報告の文字が浮かび上がるまで。<b>出た後は消えない</b>（次のランまで）。</summary>
+        /// <summary>報告の文字が浮かび上がるまで。</summary>
         public float reportFadeSec;
+
+        /// <summary>
+        /// 報告を出し切ってから閉じ始めるまで（2026-10-22）。ユーザー指定
+        /// 「エンディングの音楽と画面も、フェードで15sくらいで閉じるようにしてほしい」。
+        /// 報告の出始めから閉じ切るまで <c>reportFadeSec + holdSec + closeFadeSec</c> ＝ 既定 15 秒。
+        /// </summary>
+        public float holdSec;
+
+        /// <summary>報告の面と結果曲が溶けて消えるまで（2026-10-22）。</summary>
+        public float closeFadeSec;
 
         /// <summary>
         /// コード既定。<b>合計 3.91s</b>（2026-10-21・砂嵐 0.95 ＋ 潰れ 0.26 ＋ 黒 1.2 ＋ 報告 1.5。旧 3.6s / さらに前 8.7s）。
@@ -305,6 +352,9 @@ namespace FixedCamVr.Streaming
             collapseSec = 0.26f,
             darkSec = 1.2f,
             reportFadeSec = 1.5f,
+            // 報告の出始めから 1.5 + 9.5 + 4.0 = 15 秒で閉じ切る（2026-10-22）。
+            holdSec = 9.5f,
+            closeFadeSec = 4.0f,
         };
 
         /// <summary>潰れの尺として受け付ける範囲（秒）。<see cref="PickCollapse"/>。</summary>
@@ -321,11 +371,16 @@ namespace FixedCamVr.Streaming
                 collapseSec = PickCollapse(collapseSec, d.collapseSec),
                 darkSec = Pick(darkSec, d.darkSec),
                 reportFadeSec = Pick(reportFadeSec, d.reportFadeSec),
+                holdSec = Pick(holdSec, d.holdSec),
+                closeFadeSec = Pick(closeFadeSec, d.closeFadeSec),
             };
         }
 
-        /// <summary>合計（報告を出し切るまで）。</summary>
+        /// <summary>合計（報告を出し切るまで）。閉じる側は含めない（<see cref="ReportToCloseSec"/>）。</summary>
         public float TotalSec => noiseSec + collapseSec + darkSec + reportFadeSec;
+
+        /// <summary>報告の出始めから、面と曲が閉じ切るまで。</summary>
+        public float ReportToCloseSec => reportFadeSec + holdSec + closeFadeSec;
 
         /// <summary>砂嵐の尺として受け付ける範囲（秒）。長い砂嵐は「通信が切れた」ではなく故障の画になる。</summary>
         public const float NoiseMinSec = 0.3f;

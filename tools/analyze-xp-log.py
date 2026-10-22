@@ -1541,6 +1541,23 @@ def analyze(events, others, exp, warns=None):
                     verdict("WARN", "結果曲の再生位置の前進を確認できない。観測時間が短い可能性")
                 else:
                     verdict("OK", f"結果曲の再生位置が進んだ（{min(seconds):.2f}〜{max(seconds):.2f}秒）")
+            # 報告の出始めから 15 秒で面と曲が溶けて閉じる（2026-10-22）。
+            # ⚠ C# の ShowTelemetryHost の repClose と対。走行が閉じる前に切れれば WARN に留める。
+            close_all = [fnum(e, "repClose", None) for e in events
+                         if e.get("ev") == "sum" and e.get("repClose") not in (None, "-")]
+            close_all = [v for v in close_all if v is not None]
+            if done and not close_all:
+                verdict("WARN", "エンディングを閉じる観測（repClose）が出ていない — 古い APK か走行が短い")
+            elif close_all and min(close_all) <= 0.01:
+                music_after = [e for e in events if e.get("ev") == "sum"
+                               and e.get("repClose") not in (None, "-") and fnum(e, "repClose", 1) <= 0.01
+                               and fnum(e, "repMusicPlay", 0) == 1 and fnum(e, "repMusicVol", 0) > .01]
+                if music_after:
+                    verdict("FAIL", "エンディングの面は閉じたのに曲が鳴り続けている（repClose=0 で repMusicVol>0）")
+                else:
+                    verdict("OK", "エンディングの面と曲がフェードで閉じた（repClose → 0）")
+            elif close_all:
+                verdict("WARN", f"エンディングが閉じ切る前に走行が切れた（repClose 最小 {min(close_all):.2f}）")
             shown_all = [v for v in effect_samples(events, "repShown") if str(v) != "-"]
             typed_all = [v for v in effect_samples(events, "repTypeN") if str(v) != "-"]
             if report_style == "roll" and not shown_all:

@@ -48,6 +48,7 @@ Resources 配下の OutroReportPlate.shader は APK 同梱対象。
 Nocturnal Waters.mp3 を 48 kHz stereo PCM に復号した bgm_nocturnal_waters.wav を使う。
 原曲と PCM16 の SHA256 は一致。音の加工はしない。元の -15.07 LUFS に対して音量 0.3576 で約 -24 LUFS。
 結果表示開始に頭出し。1.5 秒でフェードイン。2D ループ。非表示/無効化で即停止。
+2026-10-22 から、報告の出始めから 15 秒で面と曲が同じ進みでフェードアウトして閉じる（`OutroLogic.CloseLevel`・LEDGER 0286）。
 取り込みは CompressedInMemory / Vorbis 0.42 / preload / normalize off / stereo。
 
 ## 再生成と観測

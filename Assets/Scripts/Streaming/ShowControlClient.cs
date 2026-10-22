@@ -724,6 +724,9 @@ namespace FixedCamVr.Streaming
         public float collapseSec = 0.26f;
         public float darkSec = 1.2f;
         public float reportFadeSec = 1.5f;
+        //    2026-10-22  holdSec / closeFadeSec を足した（報告の出始めから 15 秒で面と曲が閉じる）
+        public float holdSec = 9.5f;
+        public float closeFadeSec = 4.0f;
 
         /// <summary>キーごと無い（JsonUtility が 0 で埋めた）形か。</summary>
         public bool LooksUnset() =>
@@ -732,6 +735,7 @@ namespace FixedCamVr.Streaming
         public OutroTiming ToTiming() => new OutroTiming
         {
             noiseSec = noiseSec, collapseSec = collapseSec, darkSec = darkSec, reportFadeSec = reportFadeSec,
+            holdSec = holdSec, closeFadeSec = closeFadeSec,
         }.Sanitized();
     }
 

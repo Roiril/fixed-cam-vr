@@ -1578,6 +1578,11 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" repMusicPlay=").Append(_report != null && _report.MusicPlaying ? 1 : 0);
             _sb.Append(" repMusicVol=").Append(_report != null ? _report.MusicVolume.ToString("F3") : "0");
             _sb.Append(" repMusicSec=").Append(_report != null ? _report.MusicSeconds.ToString("F2") : "0");
+            //   repClose = 終幕の閉じる側の残り 1..0（2026-10-22）。報告の出始めから 15 秒で 0 になり、
+            //           面と曲が同時に消える。終幕の外は `-`。
+            _sb.Append(" repClose=").Append(_outro == null || !_outro.Presenting
+                                            ? "-"
+                                            : _outro.CloseLevel.ToString("F2"));
             //   clMax = **電源断が画へ出た最大値**（`canon/LEDGER.md` 0111）。
             //   ⚠⚠ `ev=outro` は段の縁でしか出ないので、そこの `cl` は必ず頭の値（≒0）になる。
             //     潰れ切ったかは**走行全体の最大値**でしか取れない（敷く音を最大値で見るのと同じ理屈・

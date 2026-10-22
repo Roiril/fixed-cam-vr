@@ -809,9 +809,16 @@ Unity 側が面倒を見る**。全画面 1 パスで幾何を解きたくなっ
 | `Collapse` | **0.26s** | **ブラウン管の電源断。** 砂嵐の画が縦に潰れて光る横一線になり（0.14s）、線が中央の点へ縮んで消える。**単発・一方向・戻らない** |
 | `Dark` | 1.2s | 何も無い黒。間 |
 | `Report` | 1.5s | エンドロール冒頭が溶けて出る |
-| `Done` | — | **文字を出したまま次のランを待つ**（`Active` は落ちるが `Presenting` は立つ） |
+| `Done` | 9.5s ＋ 4.0s | **報告を保持してから、面と結果曲が同じ進みで溶けて閉じる**（`holdSec` / `closeFadeSec`・2026-10-22・`canon/LEDGER.md` 0286）。報告の出始めから 15 秒。閉じた後は黒のまま次のランを待つ（`Active` は落ちるが `Presenting` は立つ） |
 
 合計 **3.91 秒**（旧 3.6 秒 / さらに前 8.7 秒）。`run.outro` の `noiseSec` / `collapseSec` / `darkSec` / `reportFadeSec` で調整。
+閉じる側は `holdSec` / `closeFadeSec`（`OutroTiming.ReportToCloseSec` = 15 秒）。
+
+- ⚠ **閉じる途中も段は `Done` のまま。** 博士タブレットの `done`（`VisitorPortal.OutroCode`）とリセットの可否
+  （`OvrControllerBridge`）は `Done` への到達で決まっているので、閉じ終わるまで待たせない
+- ⚠ **面と曲は同じ時計で閉じる**（`OutroLogic.CloseLevel`）。面は `ReportAlpha` 経由、曲は `OutroReport` が
+  `OutroResultMusic.SetPresented` の第 3 引数で音量へ掛ける。別々に数えると片方だけ残る終わり方になる
+- 観測は `ev=sum` の **`repClose`**（1..0）。`analyze-xp-log.py` が「閉じたのに曲が鳴っている」を FAIL にする
 **報告が出始めるまで 2.41 秒**（旧 2.1 秒）。
 
 - 形の正は `signal-cut.js`（`NOISE_MS` 950 / `OFF_MS` 260 / `BURSTS` / `intensity` / `drawCollapse`）。

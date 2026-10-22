@@ -90,7 +90,7 @@ namespace FixedCamVr.Tests.Streaming
         [Test]
         public void Done_KeepsTheReportUpAndTheScreenOff()
         {
-            // 報告は次のランまで消えない。Active は落ちるが Presenting は立ったまま
+            // 報告は保持のあいだ消えない。Active は落ちるが Presenting は立ったまま
             //（Director がここを見て配り続ける）。
             var l = Make();
             l.Begin();
@@ -106,7 +106,95 @@ namespace FixedCamVr.Tests.Streaming
             Assert.AreEqual(1f, l.ReportAlpha, 1e-4f);
             Assert.AreEqual(0f, l.ScreenPower, 1e-4f);
             Assert.AreEqual(0f, l.ScreenCollapse, 1e-4f);
-            Assert.AreEqual(OutroEvent.None, l.Tick(60f), "終わった後は何も起きない");
+            Assert.AreEqual(1f, l.CloseLevel, 1e-4f);
+            Assert.IsFalse(l.Closed);
+        }
+
+        // --- 報告と曲を 15 秒で閉じる（2026-10-22）---------------------------------
+
+        private static OutroLogic MakeDone()
+        {
+            var l = Make();
+            l.Begin();
+            OutroTiming t = OutroTiming.Default;
+            l.Tick(t.noiseSec);
+            l.Tick(t.collapseSec);
+            l.Tick(t.darkSec);
+            l.Tick(t.reportFadeSec);
+            Assert.AreEqual(OutroStage.Done, l.Stage);
+            return l;
+        }
+
+        [Test]
+        public void Timing_ClosesFifteenSecondsAfterTheReportBegins()
+        {
+            // ユーザー指定「エンディングの音楽と画面も、フェードで15sくらいで閉じる」。
+            Assert.AreEqual(15f, OutroTiming.Default.ReportToCloseSec, 1e-3f);
+            Assert.Greater(OutroTiming.Default.closeFadeSec, 2f, "閉じ方は一瞬ではなくフェード");
+        }
+
+        [Test]
+        public void Done_HoldsThenFadesTheReportOut_AndClosesOnce()
+        {
+            var l = MakeDone();
+            OutroTiming t = OutroTiming.Default;
+
+            Assert.AreEqual(OutroEvent.None, l.Tick(t.holdSec - 0.01f));
+            Assert.AreEqual(1f, l.ReportAlpha, 1e-4f, "保持のあいだは出したまま");
+
+            l.Tick(0.01f + t.closeFadeSec * 0.5f);
+            Assert.AreEqual(0.5f, l.CloseLevel, 1e-3f);
+            Assert.AreEqual(0.5f, l.ReportAlpha, 1e-3f, "面は閉じる進みをそのまま読む");
+            Assert.AreEqual(OutroStage.Done, l.Stage, "閉じる途中も段は Done（タブレットの done を遅らせない）");
+
+            Assert.AreEqual(OutroEvent.Closed, l.Tick(t.closeFadeSec * 0.5f));
+            Assert.IsTrue(l.Closed);
+            Assert.AreEqual(0f, l.ReportAlpha, 1e-4f);
+            Assert.AreEqual(0f, l.ScreenPower, 1e-4f, "閉じた後も黒のまま（現実へ戻さない）");
+            Assert.IsTrue(l.Presenting, "電力 0 を配り続ける");
+            Assert.AreEqual(OutroEvent.None, l.Tick(60f), "閉じた後は何も起きない");
+        }
+
+        [Test]
+        public void CloseLevel_OnlyFalls()
+        {
+            var l = MakeDone();
+            float prev = 2f;
+            for (int i = 0; i < 400; i++)
+            {
+                Assert.LessOrEqual(l.CloseLevel, prev, "閉じる進みが戻った");
+                prev = l.CloseLevel;
+                l.Tick(0.05f);
+            }
+            Assert.AreEqual(0f, l.CloseLevel, 1e-4f);
+        }
+
+        [Test]
+        public void NextRun_StartsWithTheReportClosedAndTheCloseClockReset()
+        {
+            var l = MakeDone();
+            l.Tick(60f);
+            Assert.IsTrue(l.Closed);
+            l.Disable();
+            Assert.IsFalse(l.Closed);
+            Assert.AreEqual(1f, l.CloseLevel, 1e-4f);
+            l.Begin(showCollapse: false);
+            l.Tick(OutroTiming.Default.darkSec);
+            l.Tick(OutroTiming.Default.reportFadeSec);
+            Assert.AreEqual(OutroStage.Done, l.Stage);
+            Assert.AreEqual(1f, l.ReportAlpha, 1e-4f, "前のランの閉じた時計を持ち越さない");
+        }
+
+        [Test]
+        public void Timing_CloseFallsBackToDefaultsWhenUnset()
+        {
+            // 新キーを持たない show.json（JsonUtility が 0 で埋める）でも 15 秒で閉じる。
+            var def = new ShowOutroDef { enabled = true, holdSec = 0f, closeFadeSec = 0f };
+            OutroTiming t = def.ToTiming();
+            Assert.AreEqual(OutroTiming.Default.holdSec, t.holdSec, 1e-4f);
+            Assert.AreEqual(OutroTiming.Default.closeFadeSec, t.closeFadeSec, 1e-4f);
+            Assert.AreEqual(OutroTiming.Default.holdSec, new ShowOutroDef().holdSec, 1e-4f, "既定は 2 か所で一致させる");
+            Assert.AreEqual(OutroTiming.Default.closeFadeSec, new ShowOutroDef().closeFadeSec, 1e-4f);
         }
 
         [Test]

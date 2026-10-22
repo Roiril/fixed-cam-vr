@@ -134,6 +134,29 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
+        public void CloseLevelFadesTheMusicOutOnTheSameCurveAsTheFadeIn()
+        {
+            // 2026-10-22。面と同じ閉じる進みを音量へ掛ける（面が消え切る瞬間に 0）。
+            var go = new GameObject("outro-result-music-close-test");
+            try
+            {
+                var music = CreateMusic(go);
+                music.SetPresented(true, 1.5f, 1f);
+                Assert.AreEqual(FullVolume, music.Volume, .0001f);
+                music.SetPresented(true, .1f, .5f);
+                Assert.AreEqual(Perceptual(.5f), music.Volume, .0001f, "閉じる側も聴感曲線");
+                music.SetPresented(true, .1f, 0f);
+                Assert.AreEqual(0f, music.Volume, .0001f);
+                music.SetPresented(false, 0f);
+                Assert.IsFalse(music.IsPlaying);
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        [Test]
         public void MissingClipNeverStartsOrAccumulatesVolume()
         {
             var go = new GameObject("outro-result-music-missing-test");
