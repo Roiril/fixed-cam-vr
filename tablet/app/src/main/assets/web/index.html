@@ -1144,6 +1144,11 @@
   // 文が出てすぐのタップでは次の文へ送らない（読む前に飛ばした・二度押しで 2 文進んだ）
   const CUE_TAP_GUARD_MS = 700;
   let switchClickGuardUntil = 0;
+  // ホラー軽減は安全のための選択。画面が出てから少しの間は「この設定で始める」を受け付けない。
+  // 0.5 秒の窓（上）だけだと、テンポよく 2 回押した 2 回目が窓の外へ出たときに、
+  // 軽減の説明を一度も見ないまま送られる（2026-10-22 の通し撮影で起きた）。
+  const RELIEF_MIN_VIEW_MS = 1200;
+  let reliefShownAt = 0;
   function guardClicksAfterSwitch(ms) {
     switchClickGuardUntil = Math.max(switchClickGuardUntil, performance.now() + ms);
   }
@@ -1435,6 +1440,7 @@
     if ((step !== 'language' && step !== 'relief') || !visitorSettingsAccess().allowed) return false;
     // 「次へ」と「この設定で始める」は同じ位置。二度押しで軽減を選ばずに送らない
     if (state.settingsStep !== step) guardClicksAfterSwitch(VIEW_CLICK_GUARD_MS);
+    if (step === 'relief' && state.settingsStep !== 'relief') reliefShownAt = performance.now();
     state.settingsStep = step;
     if (step === 'relief' && state.relief) state.reliefPreviewStarted = true;
     renderSettingsStep();
@@ -4558,6 +4564,7 @@
     }
     // 確認だけの段は挟まない。選んだ 2 つは送った後の画面に並び、そこから戻れる（2026-10-21）
     if (state.view !== 'edit' || !visitorSettingsAccess().allowed) return;
+    if (performance.now() - reliefShownAt < RELIEF_MIN_VIEW_MS) return;
     sfx('send');
     // send() は最初の await までに結果の画面へ切り替える。その切り替えに通常の画面遷移の動きを付ける
     changeVisual(() => { void send(); });
