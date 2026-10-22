@@ -1610,15 +1610,28 @@ Shader "FixedCamVr/ScreenComposite"
 
                 // --- 演出の乱れ（色の成分）。位置ずれは既に sampleUv へ掛かっている ---
                 // 帯ごとに濃さを変える。一様に混ぜると「フィルタ」に見えて伝送障害に見えない。
+                //
+                // ⚠⚠ **砂は置き換えではなく掛け算**（2026-10-22。信号ロストの砂 0131 と同じ理由・同じ定数）。
+                //   旧実装は `lerp(col, 灰, amt)` で平均 0.5 の灰を混ぜていて、暗い部屋の映像に対して
+                //   帯だけが linear で 5〜10 倍明るかった（実測 sRGB 帯 80〜106 / 周り 33）。
+                //   いまは平均 1.0 の乗数なので、帯の局所の明るさは映像のまま動かず、形だけが砂へ潰れる。
+                //   ⚠ 掛け算だけだと暗い所で帯が読めなくなるので、`SAND_ADD` の平均 0 の粒と
+                //   `SAND_FLOOR_LIVE` の地を足す（どちらも砂嵐と同じ値。片方だけ直さない）。
+                //   ⚠ 混ぜ具合は旧 `g × 0.5` より強い（`g × 1.5`）。明るさの段差が消えたぶん、
+                //   帯は質感の差でしか読めないので、同じ強さでは育ちが見えなくなる。
                 if (_Glitch > 0.001)
                 {
                     float g = saturate(_Glitch);
                     float t = floor(_GlitchSeed * 42.0);
                     float st = Hash21(screenUv * 300.0 + t);
+                    float add = Hash21(screenUv * 300.0 + t + 19.0);
                     float band = floor(screenUv.y * 24.0);
                     float bandPick = Hash21(float2(band + 5.0, t + 2.0));
-                    float amt = g * 0.5 * step(1.0 - 0.75 * g, bandPick);
-                    col = lerp(col, half3(st, st, st), saturate(amt));
+                    float amt = saturate(g * 1.5) * step(1.0 - 0.75 * g, bandPick);
+                    half3 bed = col + PhosphorColor(0.55) * SAND_FLOOR_LIVE;
+                    half3 sand = bed * (SAND_LO + st * (2.0 - SAND_LO * 2.0))
+                               + SAND_TINT * ((add - 0.5) * (2.0 * SAND_ADD));
+                    col = lerp(col, max(sand, 0.0), amt);
                     col *= 1.0 - 0.22 * g * Hash21(float2(t, 9.3)); // 同期崩れの明滅
                 }
 
