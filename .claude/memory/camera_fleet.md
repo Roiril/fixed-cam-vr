@@ -152,3 +152,7 @@ for c in st['cameras']:
     print(c['id'], round(i['tiltPitchDeg']-cal.get('pitchDeg',0),1), round(i['tiltRollDeg']-cal.get('rollDeg',0),1))
 "
 ```
+
+## 配信の受信を PC から測る（2026-10-22）
+`py -3.11 tools/stream-probe.py`（A・B・C を同時に受け、最初の 1 枚・受信 fps・間隔の p99／最大・通し番号の欠け・/health の熱を出す。`--cycles N` で休止からの立ち上がりを繰り返す）。
+2026-10-22 の実測（PC 有線・3 台同時 30 秒）: 3 台とも 29.5fps・欠け 0・最初の 1 枚 25〜92ms・200ms を越える間隔が 30 秒に 1 回（最大 294ms）。休止中でも `thermalStatus` 3〜4・`throttleStage` 2・電池 42〜43℃（充電しっぱなし）。**版は A が 0.17.0、B・C が 0.16.0 で揃っていない**。⚠ Quest は 5GHz 無線で受けるので、この数字は配信側の健全さだけを示す
