@@ -124,6 +124,9 @@ Shader "FixedCamVr/ScreenComposite"
         // 人形について回る光だまり（canon/LEDGER.md 0287）。(中心 u, 中心 v, 半径, 強さ EV)。
         // 夜間モードの強さ（_Mono）で掛かる。ShowCgLayer が人形の頭のあたりの投影から供給する。
         _ActorLight("Actor Light (cx, cy, radius, ev)", Vector) = (0.5, 0.5, 0.2, 0)
+        // 夜間モードで赤だけ少し残す試し（canon/LEDGER.md 0288・R072）。x = 画面全体 / y = 人形の上だけ。
+        // 0 なら従来の完全な無彩。
+        _RedKeep("Red Keep (all, doll)", Vector) = (0, 0, 0, 0)
         // 焼き付き / ホールド。指定した瞬間の画を 1 枚だけ保持して混ぜる（フレーム履歴は持たない
         // ＝決定的で、同じ show.json は同じ絵になる）。1.0 で完全に止まって見える。
         // ソースはライブ映像と同じなので contain-fit も _LiveScale を共用する。
@@ -331,6 +334,7 @@ Shader "FixedCamVr/ScreenComposite"
                 // 同じく別系統。CameraFeelFx（撮像の質と残像）と ShowCgLayer（_ActorFocus）が駆動。
                 float4 _ActorFocus;
                 float4 _ActorLight;
+                float4 _RedKeep;
                 float _NoiseDark;
                 float _NoiseFixed;
                 float _SrcFrame;
@@ -1561,6 +1565,16 @@ Shader "FixedCamVr/ScreenComposite"
                                        * saturate(luma * 3.33) * saturate(_ChromaKill);
                 // 人形の知覚へ移ると色が抜ける。強度 1 で完全な無彩。
                 sat *= 1.0 - saturate(_Mono);
+                // 赤だけ少し残す（0288 の試し）。赤みは「R が G・B より抜けている割合」で測る。
+                // 暗い画素の色は粒の色ノイズで振れるので、明るさでも絞る。
+                if (_Mono > 0.001 && (_RedKeep.x > 0.001 || _RedKeep.y > 0.001))
+                {
+                    half mx = max(col.r, max(col.g, col.b));
+                    half redness = saturate((col.r - max(col.g, col.b)) / max(mx, 1e-4));
+                    redness = smoothstep(0.20, 0.60, redness) * smoothstep(0.004, 0.03, mx);
+                    half keep = saturate(_RedKeep.x + _RedKeep.y * aCg * s) * redness * saturate(_Mono);
+                    sat = max(sat, keep);
+                }
                 col = lerp(luma.xxx, col, sat);
 
                 // 採用した比較稿の明暗曲線。合成済みの映像全体へ同じ処理を掛ける。
