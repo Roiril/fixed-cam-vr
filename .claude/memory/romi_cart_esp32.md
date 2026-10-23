@@ -39,7 +39,7 @@ Quest α の自動走行（空走）で `ev=romi kind=go res=ok ack=1` / `kind=c
 **実走（dry:0）は 2026-10-19 に床の上で確認** — PC から `POST /ending/go {"src":"pc-test","force":1}` を 2 回。
 2 回目をユーザーが目視して「動いた！」。シリアルは `EVT ending go` → `run m=r d=1 duty=40 ms=1400`（dutyL/R=409）→
 `run m=s d=1 duty=40 ms=3400` → `seq done dur=8804ms`。1 回目も台車は同じ手順を done まで実行（目視の判定は無し）。
-**Quest から本番の合図（dry:0）で走らせる経路はまだ** — 自動走行は空走で送るので、人が体験を最後まで回したときに確かめる。
+**Quest から本番の合図（dry:0）で走らせる経路はまだ** — 自動走行は空走で送るので、人が体験を最後まで回したときに確かめる。Quest β（10-22 の APK）の自動走行で空走の合図は通った（2026-10-23: go 30ms・cut 54ms・どちらも 1 回目で ack・台車の `cutMs` 7223）。⚠ Quest β の時計は 2026-08-30 のままずれていて、logcat の日付も 08-30 になる。
 回転角・前進距離の実測（設定は約 176 度・約 60cm）も未計測。書き込みは `arduino-cli compile --fqbn esp32:esp32:esp32 --build-path build/esp32.esp32.esp32 .` の後 `upload -p COMxx`（コンパイルは通過・フラッシュ 85%）
 - USB シリアルの往復遅延は中央値 15.5ms（p99 16.6ms）、ファーム内の駆動窓は ±3ms
 - Romi シャーシ自体の公式仕様: 直径 165mm・163×149×70mm・160g（電池なし）、Mini Plastic Gearmotor 120:1 HP、ホイール 70×8mm、エンコーダは別売りで軸 1 回転 12 カウント、単三 6 本。**積載量・モーター定格電圧は公式ページに数値が無く、人形の重さに耐えるかは未確認**
@@ -78,6 +78,6 @@ Quest α の自動走行（空走）で `ev=romi kind=go res=ok ack=1` / `kind=c
 - **新しい版は初回起動で「確認待ち」（`img=pending`）。STA が 10 秒続いたら正常と決める。** 決める前に落ちればブートローダが前の版へ戻す。`ota.py crashtest`（起動 3 秒で必ず再起動する版 `-DROMI_OTA_CRASH_TEST` を送る）で実測: app1 `pending` → 再起動 → **4.7 秒後に元の app0 `valid` で応答**。⚠ arduino-esp32 の `verifyRollbackLater()` は C の弱いシンボルなので **`extern "C"` を付けないと上書きにならず、黙って即 `valid` になる**（1 回目はこれで戻す仕組みが効いていなかった）
 - 書き換えのたびに app0 / app1 が入れ替わる（`/info` の `ota.app`）。NVS（Wi-Fi・較正 ver 5・終幕設定）は残る
 - **ジョイスティックの計器**: `/info` に `joyGapMaxMs`（/joy の間隔の最大）と `joyDeadman`（動かしている最中に 400ms 途切れて止まった回数）。シリアルの `EVT joy end` の `reason` が `timeout` / `release` に分かれた。`?clear=1` で 0 に戻る
-- **`py -3.11 tools/romi/joy-jitter.py --sec 90 [--load]`** は操作画面と同じ送り方（60ms・250ms で重ね送り・打ち切り 500ms）で x=0 y=0 を送る（台車は動かない）。PC（有線）から 90 秒 1479 回: 失敗 0・最大 100ms・誤った安全停止 0。タブレットと Quest の負荷を重ねても同じ。⚠ **開発用スマホ（5GHz の Wi-Fi 越し）からは未計測**。スマホで操作した後に `/info` の `joyGapMaxMs` と `joyDeadman` を読めば分かる
+- **`py -3.11 tools/romi/joy-jitter.py --sec 90 [--load]`** は操作画面と同じ送り方（60ms・250ms で重ね送り・打ち切り 500ms）で x=0 y=0 を送る（台車は動かない）。PC（有線）から 90 秒 1479 回: 失敗 0・最大 100ms・誤った安全停止 0。タブレットと Quest の負荷を重ねても同じ。**5GHz の Wi-Fi 越し（Quest β・2026-10-23）**: `tools/romi/joy-from-device.sh` を端末に push して `adb shell sh` で 60 秒（nc で 1 本ずつ・間隔は中央 87ms）。688 回すべて 200・往復は中央 53ms／最大 146ms・台車の `joyGapMaxMs` 184・`joyDeadman` 0。開発用スマホでも同じ手順で測れる
 - 回帰: `net-torture.py` 6 場面は diag-6 でも diag-7 でも全部合格（idle / partial / burst でタブレットと Quest の失敗 0・`loopMaxMs` 25 以下）
 - ⚠ POST /seq を Python から送るときは `Content-Type: text/plain`（既定の form だと本文が `plain` に入らず `bad`）
