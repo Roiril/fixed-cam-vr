@@ -38,6 +38,8 @@ paths:
   - "Assets/Tests/Streaming/VisitorPrefs*Tests.cs"
   - "Assets/Tests/Streaming/ShotPng*Tests.cs"
   - "Assets/Tests/Streaming/ExperienceShot*Tests.cs"
+  - "Assets/Scripts/Streaming/Replay/**"
+  - "Assets/Tests/Streaming/XpRec*Tests.cs"
 ---
 
 # 配信と接続
@@ -78,6 +80,8 @@ paths:
 - 例外の計数と工程の隔離 — `RuntimeHealth.ExceptionCount` / `Step` 〔memory/unexpected_event_recovery.md〕
 - 録画は `temporaryCachePath/rec/<runEpoch>/L<lap>C<cam>.mjr`。既定は切替の 3 秒前〜2 秒後、`maxTotalMB` はラン全体 — `SegmentRecordWriter.DefaultTailSec` / `DefaultPostSec` / `RecordedSegmentFormat` 〔S:1628-1731〕
 - 左グリップ撮影は Dev で ON・Release で OFF、`shots/OFF` が勝つ — `ExperienceShotLogic.IsEnabled` 〔memory/experience_shots.md〕
+- 体験の記録は `files/xprec/<日時>/`。`xprec/ON` があるときだけ、スタッフの準備画面が閉じた瞬間から録る。映像は展開できた JPEG をそのまま残す — `ExperienceRecorder` / `XpRecFormat` / `CameraStream.AnyFrameDecoded` 〔memory/experience_replay.md〕
+- 再生中（`XpReplay.Active`）は焼き込みだけで動き、卓・heartbeat・:8090・発見・配信スマホへ繋がない。カメラの JPEG は `XpReplay.Feed` から来る — `ShowControlClient.BakedOnly` / `CameraStream.TryTakeFrame` 〔memory/experience_replay.md〕
 ## 罠（破ると壊れる）
 - 止まった配信も `/health.fps` は 30 前後を返す。`encodeIdle` で見る。`latestFrameAgeMs=-1` は未生成 〔S:74-86〕。`totalFrames=0` は需要駆動で故障ではない 〔memory/camera_fleet.md〕
 - 未初期化 `Texture2D` は Quest で白ノイズ。mipChain 無しだと劣化が効かない 〔S:215, S:1473-1506〕

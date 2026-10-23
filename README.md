@@ -180,6 +180,15 @@ py -3.11 tools/quest-shots.py pull --delete   # → logs/shots/<serial>/<日時_
 py -3.11 tools/quest-shots.py off             # 展示本番の前に（アプリを再起動すると反映）
 ```
 
+**紹介動画を広い画角で撮る（体験の記録と再生）**: Quest の録画は片眼の中心しか写らないので、体験 1 回ぶんの入力（頭と両手の姿勢・コントローラ・3 台のカメラの JPEG）を Quest で記録し、PC の Editor で本番の Main シーンへ流し直して撮る。スクリーン外の演出・エージェント画面・音も本番の処理で出る（パススルーの現実は入らない）。詳細は [memory/experience_replay.md](.claude/memory/experience_replay.md)。
+
+```powershell
+py -3.11 tools/quest-xprec.py on --serial <機>          # 次の引き渡しから録る（既定は OFF）
+py -3.11 tools/quest-xprec.py pull --serial <機> --delete  # → Logs/xprec/<日時>/
+.\tools\unity.ps1 replay -Set rec=latest,view=eye     # 頭の位置から広角（view=follow で後ろ上から）
+py -3.11 tools/quest-xprec.py off --serial <機>         # 展示本番の機は OFF
+```
+
 ステータス（StatusHud）は単一サーフェスで、lap / 現在ゾーン / 次の cue 予定 / 信号 ●●○ / 要再登録 を緩追従（deadzone + SmoothDamp）で 1 枚に表示。登録中は登録ガイダンスを強制表示する。モード状態（NORMAL/REG）は heartbeat（`mode`）でも Web 卓に出る。旧 Run/Staff・左手・スティック・操作チートシート（StaffPanel）・cue 試射は撤去した。
 
 ---

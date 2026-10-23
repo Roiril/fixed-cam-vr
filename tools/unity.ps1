@@ -11,6 +11,7 @@
 #   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
 #   .\tools\unity.ps1 menu scene                # Setup Main Demo Scene
 #   .\tools\unity.ps1 menu actor -Set actor=Ichimatsu
+#   .\tools\unity.ps1 replay -Set rec=latest,view=eye   # Quest の体験の記録を PC で流し直して広角の mp4 に
 #   .\tools\unity.ps1 raw editors -i
 #
 # なぜ CLI なのか（旧経路との違い）:
@@ -23,7 +24,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw')]
+    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay')]
     [string]$Action,
 
     [Parameter(Position = 1)]
@@ -686,6 +687,49 @@ switch ($Action) {
             "✓ {0}  {1:HH:mm:ss}" -f $out, $after | Write-Host -ForegroundColor Green
         }
         elseif ($code -eq 0) { Write-Host "✓ 実行した（出力は上の Editor.log を見る）" -ForegroundColor Green }
+        exit $code
+    }
+
+    'replay' {
+        # 体験の記録（Quest の ExperienceRecorder）を本番の Main シーンへ流し直し、広い画角で mp4 にする。
+        # ⚠ `unity run` は -quit を必ず張る。Play は executeMethod が返った後も走り続けるので、
+        #    ここだけは Unity.exe を直接 batchmode で起こし、終わったら Editor 側が自分で閉じる（XpReplayRun）。
+        Assert-NotLocked
+        $edCandidates = @(
+            (Join-Path $env:USERPROFILE "Unity\Editors\$EditorVersion\Editor\Unity.exe"),
+            (Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$EditorVersion\Editor\Unity.exe")
+        )
+        $ed = $edCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $ed) { Write-Host "✗ Unity.exe が無い（$($edCandidates -join ' / ')）" -ForegroundColor Red; exit 1 }
+
+        $fcv = @()
+        foreach ($kv in $Set) {
+            foreach ($one in ($kv -split ',')) {
+                if ($one -notmatch '^[^=]+=.') { Write-Host "-Set は key=value（受け取ったもの: $one）" -ForegroundColor Red; exit 2 }
+                $fcv += '-fcv'; $fcv += $one
+            }
+        }
+        $log = New-UnityInvocationLog 'replay'
+        $argList = @('-batchmode', '-projectPath', $Root,
+                     '-executeMethod', 'FixedCamVr.Streaming.EditorTools.Replay.XpReplayRun.Run',
+                     '-logFile', $log) + $fcv
+        # 引数に空白があれば引用する（Start-Process は配列をそのまま連結する）
+        $quoted = $argList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
+        Write-Host "体験の再生と撮影（記録の尺 + 起動に 1 分前後）" -ForegroundColor Cyan
+        $p = Start-Process -FilePath $ed -ArgumentList $quoted -PassThru -WindowStyle Hidden
+        # 上限は 40 分（15 分の記録を遅い PC で撮っても収まる）。超えたら落とす。
+        if (-not $p.WaitForExit(40 * 60 * 1000)) {
+            Write-Host "✗ 40 分で終わらなかったので止めた" -ForegroundColor Red
+            try { $p.Kill() } catch { }
+        }
+        $code = $p.ExitCode
+        try { Protect-UnityLogFile -Path $log } catch { }
+        if (Test-Path $log) {
+            Get-Content $log -Encoding UTF8 | Where-Object { $_ -match '^\[(Replay|XpRec)\]|error CS\d+' } |
+                Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
+        }
+        if ($code -eq 0) { Write-Host "✓ 終わった（全文は $log）" -ForegroundColor Green }
+        else { Write-Host "✗ exit=$code（全文は $log）" -ForegroundColor Red }
         exit $code
     }
 

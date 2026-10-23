@@ -1029,7 +1029,8 @@ namespace FixedCamVr.Streaming
         private Material? _material;
         private int _rev = -1;
         [NonSerialized] private bool _bakedOnlyOverride; // EditMode テストで Player のゲートを駆動する。
-        private bool BakedOnly => !Application.isEditor || _bakedOnlyOverride;
+        // 体験の再生（PC）も焼き込みだけで動く。端末と同じ著作を読み、卓へは繋がない。
+        private bool BakedOnly => !Application.isEditor || _bakedOnlyOverride || Replay.XpReplay.Active;
         public string ContentId { get; private set; } = "";
         public string ContentPolicy => BakedShowManifest.Policy;
         public bool ContentVerified { get; private set; }
@@ -1647,7 +1648,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void EnsureVisitorPortal()
         {
-            if (_portal != null) return;
+            if (_portal != null || Replay.XpReplay.Active) return;   // 再生はタブレットを待たない
             _portal = FindObjectOfType<VisitorPortal>();
             if (_portal != null) return;
             var go = new GameObject("[VisitorPortal]");
@@ -1780,7 +1781,7 @@ namespace FixedCamVr.Streaming
             }
             _loopCts = CancellationTokenSource.CreateLinkedTokenSource(destroyCancellationToken);
             if (!BakedOnly) _ = PollLoopAsync(_loopCts.Token);
-            _ = HeartbeatLoopAsync(_loopCts.Token);
+            if (!Replay.XpReplay.Active) _ = HeartbeatLoopAsync(_loopCts.Token);
         }
 
         private void OnDisable()
@@ -1837,7 +1838,7 @@ namespace FixedCamVr.Streaming
             if (!isActiveAndEnabled) return;
             _loopCts = CancellationTokenSource.CreateLinkedTokenSource(destroyCancellationToken);
             if (!BakedOnly) _ = PollLoopAsync(_loopCts.Token);
-            _ = HeartbeatLoopAsync(_loopCts.Token);
+            if (!Replay.XpReplay.Active) _ = HeartbeatLoopAsync(_loopCts.Token);
         }
 
         /// <summary>

@@ -75,6 +75,7 @@
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
+- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest で入力を記録し PC で本番を流し直して広角 mp4（`unity.ps1 replay`）。時計は実時間
 - [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。いまの正は CLI と `quest-record.py --walk`
 
 ## 機材・ビルド・ネットワーク

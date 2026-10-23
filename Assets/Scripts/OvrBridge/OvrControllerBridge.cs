@@ -2,6 +2,7 @@
 using FixedCamVr.Diagnostics;
 using FixedCamVr.Input;
 using FixedCamVr.Streaming;
+using FixedCamVr.Streaming.Replay;
 using FixedCamVr.Tracking;
 using UnityEngine;
 
@@ -158,7 +159,7 @@ namespace FixedCamVr.OvrBridge
             //    出せない現場で**体験が二度と始まらない**（2026-07-31 のシェーダ剥がれと同型）。
             if (showControl != null)
             {
-                showControl.UserPresentProvider = () => OVRPlugin.userPresent;
+                showControl.UserPresentProvider = () => UserPresent;
                 showControl.StartAuthorizedProvider = () => _onboarding.StartAuthorized;
             }
 
@@ -212,6 +213,7 @@ namespace FixedCamVr.OvrBridge
             }
 
             TrySubscribeRecenter();
+            ExperienceRecorder.Ensure();
             courseRegistration?.DeferStartupForStaffSetup();
             _staffSetup = StaffSetupPanel.Ensure();
             if (showControl != null)
@@ -258,6 +260,30 @@ namespace FixedCamVr.OvrBridge
             else courseFrame?.MarkNeedsReRegistration();
         }
 
+        /// <summary>被っているか。再生中は記録の値。</summary>
+        private static bool UserPresent => XpReplay.Override != null
+            ? XpReplay.Override().Has(RawInput.UserPresent)
+            : OVRPlugin.userPresent;
+
+        private RawInput ReadRawInput()
+        {
+            if (XpReplay.Override != null) return XpReplay.Override();
+            bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
+            bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
+            return RawInput.From(
+                lConnected,
+                lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch),
+                rConnected,
+                rConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.RTouch),
+                OVRInput.Get(OVRInput.RawButton.X, OVRInput.Controller.LTouch),
+                OVRInput.Get(OVRInput.RawButton.Y, OVRInput.Controller.LTouch),
+                OVRInput.Get(primaryButton, OVRInput.Controller.RTouch),
+                OVRInput.Get(statusButton, OVRInput.Controller.RTouch),
+                OVRInput.Get(OVRInput.RawButton.RIndexTrigger, OVRInput.Controller.RTouch),
+                OVRInput.Get(OVRInput.RawButton.LHandTrigger, OVRInput.Controller.LTouch),
+                OVRPlugin.userPresent);
+        }
+
         private void Update()
         {
             if (showControl?.Portal != null && showControl.Portal.StaffResetProvider == null)
@@ -267,21 +293,24 @@ namespace FixedCamVr.OvrBridge
             if (showControl?.Portal != null && showControl.Portal.DeviceHealthProvider == null)
                 showControl.Portal.DeviceHealthProvider = () => new VisitorPortal.DeviceHealth
                 {
-                    valid = true, worn = OVRPlugin.userPresent,
+                    valid = true, worn = UserPresent,
                     ctrlLConnected = _lConnected, ctrlLTracked = _lTracked,
                 };
             // 接続状態と物理ボタンは最初に一度だけ読む。SDK の Down は切断前の状態を持ち越し得るため、
             // 再接続後の解放を確認した入力から Down を組み立てる。
-            bool lConnected = OVRInput.IsControllerConnected(OVRInput.Controller.LTouch);
-            bool lTracked = lConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.LTouch);
-            bool rConnected = OVRInput.IsControllerConnected(OVRInput.Controller.RTouch);
-            bool rTracked = rConnected && OVRInput.GetControllerPositionValid(OVRInput.Controller.RTouch);
-            bool xRawHeld = OVRInput.Get(OVRInput.RawButton.X, OVRInput.Controller.LTouch);
-            bool yRawHeld = OVRInput.Get(OVRInput.RawButton.Y, OVRInput.Controller.LTouch);
-            bool aRawHeld = OVRInput.Get(primaryButton, OVRInput.Controller.RTouch);
-            bool bRawHeld = OVRInput.Get(statusButton, OVRInput.Controller.RTouch);
-            bool triggerRawHeld = OVRInput.Get(OVRInput.RawButton.RIndexTrigger, OVRInput.Controller.RTouch);
-            bool gripRawHeld = OVRInput.Get(OVRInput.RawButton.LHandTrigger, OVRInput.Controller.LTouch);
+            // 体験の記録（`ExperienceRecorder`）はここで読んだ生の値を残し、PC の再生はここへ同じ値を差し戻す。
+            RawInput raw = ReadRawInput();
+            XpReplay.Live = raw;
+            bool lConnected = raw.Has(RawInput.LConnected);
+            bool lTracked = raw.Has(RawInput.LTracked);
+            bool rConnected = raw.Has(RawInput.RConnected);
+            bool rTracked = raw.Has(RawInput.RTracked);
+            bool xRawHeld = raw.Has(RawInput.X);
+            bool yRawHeld = raw.Has(RawInput.Y);
+            bool aRawHeld = raw.Has(RawInput.A);
+            bool bRawHeld = raw.Has(RawInput.B);
+            bool triggerRawHeld = raw.Has(RawInput.RTrigger);
+            bool gripRawHeld = raw.Has(RawInput.LGrip);
 
             ControllerConnectionGate.Result leftConnection =
                 _leftConnectionGate.Tick(lConnected, xRawHeld || yRawHeld);
@@ -474,7 +503,7 @@ namespace FixedCamVr.OvrBridge
             HmdOnboardingAction onboardingAction = _onboarding.Tick(new HmdOnboardingInput
             {
                 dt = regActive || setupBlocked ? 0f : Time.unscaledDeltaTime,
-                hmdPresent = OVRManager.instance == null || OVRPlugin.userPresent,
+                hmdPresent = OVRManager.instance == null || UserPresent,
                 leftConnected = _lConnected,
                 leftPositionValid = _lTracked,
                 xHeld = xHeld && mode == ControllerModeLogic.Mode.Normal,
@@ -584,7 +613,7 @@ namespace FixedCamVr.OvrBridge
                 default:
                     // B 短押しは体験者を迎える段の引き渡しだけ。初回の段では画面の呼び戻し（B 1 秒）だけが効く。
                     var setupAction = _setupButton.Tick(bHeld, Time.unscaledDeltaTime,
-                        _staffSetup != null && _staffSetup.Visible && (OVRManager.instance == null || OVRPlugin.userPresent) && rTracked && !aHeld && !rTrigger,
+                        _staffSetup != null && _staffSetup.Visible && (OVRManager.instance == null || UserPresent) && rTracked && !aHeld && !rTrigger,
                         _staffSetup != null && _staffSetup.Logic.Stage == StaffSetupStage.Welcome
                             && _staffSetup.Logic.ReadyToHandOff);
                     if (setupAction == StaffSetupButtonAction.RecallScreen) _staffSetup?.RecallScreen();

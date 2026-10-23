@@ -26,6 +26,7 @@ paths:
 ## 契約
 ### 入力
 - 左は体験者、右はスタッフ。左で読むのは `RawButton.X|Y` だけ（左トリガー・握り・スティック押し込みは読まない） — `OvrControllerBridge.Update` / `TutorialDoesNotAcceptTriggerOrGripBecauseTheyAreNotInputs` 〔出典: show-design:203-211 / LEDGER 0042・0196〕
+- 生の入力（接続・追跡・ボタン・被り）は `OvrControllerBridge.ReadRawInput` の 1 か所で読み、`XpReplay.Live` に置く。再生中は記録の値を返す。OVRInput を他所で直接読まない — `RawInput` 〔memory/experience_replay.md〕
 - 左 X/Y 1 秒長押しが報告。1 押し 1 回。dt は 0.25 秒で切る — `VisitorMarkHoldLogic.DefaultHoldSec` 〔show-design:281 / LEDGER 0059〕
 - Normal: 右 A 2 秒で体験者リセット。右 B は押している間だけステータス（離して 0.3 秒で消える）。右トリガー 2 秒で位置合わせ。2 秒は const — `ControllerModeLogic.Tick` / `OvrControllerBridge.LongPressSec` / `StatusViewLogic.ReleaseGraceSec` 〔show-design:190-192,278 / staff_status_view〕
 - Registration: 右 A で点を採る（0.5 秒ホールド平均）。Verify と Review では A がやり直し。右 B は Verify で確定保存、Review で保存せず出る。右トリガー 2 秒でキャンセル — `CourseRegistrationController.Feed` 〔show-design:193-195〕
