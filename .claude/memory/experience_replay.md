@@ -67,7 +67,7 @@ py -3.11 tools/quest-xprec.py off --serial <機>     # 展示本番の機は OFF
 - ⚠ batchmode では `WaitForEndOfFrame` が来ない。撮影は `[DefaultExecutionOrder(32000)]` の LateUpdate で自分で描く
 - ⚠ `unity run` は `-quit` を必ず張るので、Play を続ける再生は `unity.ps1 replay` が Unity.exe を直接 batchmode で起こす
 - ⚠ 撮影の重さはほぼ GPU。この PC（Intel UHD）で 1080p の 1 コマが MSAA 4 で 55ms・MSAA 1 で 22ms
-  （30fps 出力で繰り返し 49% → 10%）。圧縮は Intel Quick Sync（`h264_qsv`）が使えればそちらで、待ちは 1ms。
+  （30fps 出力で繰り返し 49% → 10%。全編 198 秒では 28ms・繰り返し 15%）。圧縮は Intel Quick Sync（`h264_qsv`）が使えればそちらで、待ちは 1ms。
   x264 を CPU で回すと再生と取り合う。終わりの行「1 コマあたり」で内訳が出る
 - ⚠ `view=follow` は頭の 1.4m 後ろに立つので、導入の隔離の殻（ContainmentShell）が前を塞ぐ。本編から使う
 - ⚠ 自動走行（`--walk`）の記録は HMD が机に置かれたまま。頭がスクリーンを向かないので、eye でもスクリーンが端に寄る。
