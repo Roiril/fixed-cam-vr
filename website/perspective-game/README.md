@@ -9,3 +9,5 @@
 通常の URL では元の操作画面を表示します。`?embedded=1` で開くと操作画面を隠し、描画用の canvas を全画面に広げます。親ページとの通信は同一オリジンの `postMessage` に限定します。メッセージの `type` は `mawarimi-handheld` です。
 
 親からの操作は `{ action: 'mode', mode: 'fps' | 'tps' | 'fixed' }`、`{ action: 'key', code: 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD' | 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'ShiftLeft', pressed: boolean }`、`{ action: 'release' }`、`{ action: 'reset' }` です。いずれも `type` が必要です。ゲームからは初回描画後に `{ event: 'ready' }`、視点の状態に `{ event: 'state', mode }`、エラー表示時に `{ event: 'error' }`、Escape キーで `{ event: 'escape' }` を送ります。各イベントにも同じ `type` が付きます。
+
+2026-10-27: 同梱JSの描画ループに window.MAWARIMI_GAME_ACTIVE !== false の休止条件を追加しました。元プロジェクトは変更していません。親は { action: 'active', active: boolean } を送り、画面外・非表示中・入口表示中の更新と描画を休止します。再表示時は既存状態で再開します。

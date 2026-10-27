@@ -14,6 +14,8 @@
   let ready = false;
   let focusOnReady = false;
   let restoreFocus = null;
+  let inView = false;
+  let autoStart = true;
   const inertElements = [];
   if (!config.gameUrl) return;
   const url = new URL(config.gameUrl, location.href);
@@ -26,6 +28,14 @@
   function release() {
     send('release');
     controls.forEach(button => button.classList.remove('is-held'));
+  }
+  function syncActivity() {
+    const active = inView && !document.hidden &&
+      !document.documentElement.classList.contains('entrance-pending') &&
+      !document.querySelector('#entrance[open]');
+    if (active && autoStart && !frame) start();
+    if (!active) release();
+    send('active', { active: Boolean(active) });
   }
   function setExpanded(value) {
     release();
@@ -58,6 +68,7 @@
     }
   }
   function stop() {
+    autoStart = false;
     release();
     clearTimeout(timeout);
     frame?.remove();
@@ -82,6 +93,7 @@
     frame.allow = 'fullscreen';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-pointer-lock');
     frame.src = url.href;
+    frame.addEventListener('load', syncActivity);
     stage.append(frame);
     timeout = setTimeout(() => {
       if (!ready) {
@@ -91,14 +103,19 @@
     }, 20000);
     if (focusClose) close.focus({ preventScroll: true });
   }
-  launch.addEventListener('click', () => start(true));
+  launch.addEventListener('click', () => { start(true); syncActivity(); });
   close.addEventListener('click', stop);
   expand.addEventListener('click', () => setExpanded(!player.classList.contains('is-expanded')));
   window.addEventListener('message', event => {
     if (!frame || event.source !== frame.contentWindow || event.origin !== url.origin || event.data?.type !== 'mawarimi-handheld') return;
     const message = event.data;
+    if (message.event === 'activity' && typeof message.active === 'boolean' && Number.isFinite(message.frames)) {
+      frame.dataset.active = String(message.active);
+      frame.dataset.frames = String(message.frames);
+    }
     if (message.event === 'ready') {
       ready = true;
+      syncActivity();
       clearTimeout(timeout);
       frame.style.visibility = '';
       state.textContent = '';
@@ -162,9 +179,21 @@
       stick.classList.remove('is-held');
     });
   });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+  document.addEventListener('visibilitychange', syncActivity);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && player.classList.contains('is-expanded')) setExpanded(false);
   });
-  start();
+  // Preserve automatic power-on, but do not compete with the entrance or render offscreen.
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(entries => {
+      inView = entries[0].isIntersecting;
+      syncActivity();
+    });
+    observer.observe(player);
+  } else {
+    inView = true;
+    syncActivity();
+  }
+  new MutationObserver(syncActivity).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(syncActivity).observe(document.body, { childList: true });
 })();

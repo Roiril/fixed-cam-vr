@@ -234,7 +234,7 @@
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       const display = { width: 0, height: 0, scale: 0 };
       function resize() {
-        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const ratio = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(2073600 / (window.innerWidth * window.innerHeight)));
         display.width = Math.max(1, Math.round(window.innerWidth * ratio));
         display.height = Math.max(1, Math.round(window.innerHeight * ratio));
         display.scale = Math.min(display.width * 0.82 / TITLE_WIDTH, display.height * 0.48 / TITLE_HEIGHT, 1000 * ratio / TITLE_WIDTH);
@@ -280,7 +280,7 @@
       return {
         resize,
         render,
-        scale: () => display.scale / Math.min(window.devicePixelRatio || 1, 2),
+        scale: () => display.scale * window.innerWidth / display.width,
         dispose() {
           buffers.forEach((buffer) => gl.deleteBuffer(buffer));
           gl.deleteTexture(texture);
@@ -370,10 +370,12 @@
     let hiddenAt = 0;
     let origin = [0.5, 0.5];
     let pointer = [0, 0];
+    let pointerRaf = 0;
     function finish(allowAudioTail = false) {
       if (finished) return;
       finished = true;
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(pointerRaf);
       clearTimeout(timer);
       if (allowAudioTail !== true) sound?.dispose();
       boot.release();
@@ -402,6 +404,7 @@
     async function begin() {
       if (started || finished) return;
       started = true;
+      cancelAnimationFrame(pointerRaf);
       // Resume in the click/keyboard gesture, before any asynchronous work.
       const unlocked = sound?.unlock().catch(() => { sound?.dispose(); sound = null; });
       if (renderer && !reduced) {
@@ -460,11 +463,12 @@
     dialog.addEventListener('pointermove', (event) => {
       if (started || !renderer || finished) return;
       pointer = [event.clientX / window.innerWidth * 2 - 1, event.clientY / window.innerHeight * 2 - 1];
-      try {
-        renderer.render(0, origin, pointer);
-      } catch (_) {
-        finish();
-      }
+      if (pointerRaf) return;
+      pointerRaf = requestAnimationFrame(() => {
+        pointerRaf = 0;
+        if (started || finished || document.hidden) return;
+        try { renderer.render(0, origin, pointer); } catch (_) { finish(); }
+      });
     });
     canvas.addEventListener('webglcontextlost', (event) => {
       event.preventDefault();
