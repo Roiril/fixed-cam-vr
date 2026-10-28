@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 """題字の出の連番（`menu titlereveal`）を音つきの mp4 にする（2026-10-14）。
 
-    py -3.11 tools/title-reveal-video.py <after のフォルダ> [<before のフォルダ>]
+    py -3.11 tools/title-reveal-video.py <after のフォルダ> [<before のフォルダ>] [--sound=<wav>]
+
+閉じる演出の連番（`-Set close=1`）なら `sfx_title_out` を A で閉じた縁に重ねる。
 
 before を渡すと上下に並べる（上 = BEFORE / 下 = AFTER。見出しはフォルダ名から焼く）。
 出力は after のフォルダへ:
@@ -23,7 +25,8 @@ import tempfile
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SOUND = os.path.join(ROOT, "Assets", "Resources", "Sound", "sfx_title_in.wav")
+SOUND_IN = os.path.join(ROOT, "Assets", "Resources", "Sound", "sfx_title_in.wav")
+SOUND_OUT = os.path.join(ROOT, "Assets", "Resources", "Sound", "sfx_title_out.wav")
 FPS = 60
 
 
@@ -34,7 +37,7 @@ def font(size: int):
     return ImageFont.load_default()
 
 
-def load(run: str) -> tuple[list[str], float]:
+def load(run: str) -> tuple[list[str], float, str]:
     tl = os.path.join(run, "timeline.tsv")
     if not os.path.exists(tl):
         sys.exit(f"timeline.tsv が無い: {run}")
@@ -42,25 +45,30 @@ def load(run: str) -> tuple[list[str], float]:
         rows = list(csv.DictReader(f, delimiter="\t"))
     frames = []
     summon = None
+    closing = any(r["stage"] == "Out" for r in rows)
     for r in rows:
         p = os.path.join(run, f"f{int(r['frame']):04d}.png")
         if not os.path.exists(p):
             sys.exit(f"コマが欠けている: {p}")
         frames.append(p)
-        if summon is None and r["stage"] != "Wait":
+        if summon is None and ((closing and r["stage"] == "Out") or (not closing and r["stage"] != "Wait")):
             summon = int(r["frame"]) / FPS
     if summon is None:
         sys.exit(f"題字を呼び出したコマが無い: {run}")
-    return frames, summon
+    return frames, summon, SOUND_OUT if closing else SOUND_IN
 
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     if len(sys.argv) < 2:
         sys.exit(__doc__)
-    after = os.path.abspath(sys.argv[1])
-    before = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 else None
-    fa, summon = load(after)
+    args = [a for a in sys.argv[1:] if not a.startswith("--sound=")]
+    override = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--sound=")), None)
+    after = os.path.abspath(args[0])
+    before = os.path.abspath(args[1]) if len(args) > 1 else None
+    fa, summon, SOUND = load(after)
+    if override:
+        SOUND = os.path.abspath(override)   # 旧い音で撮った画に旧い音を当てるとき
     fb = load(before)[0] if before else None
     if fb and len(fb) != len(fa):
         sys.exit(f"コマ数が違う: before {len(fb)} / after {len(fa)}")
@@ -68,7 +76,9 @@ def main() -> int:
         sys.exit(f"音が無い: {SOUND}")
 
     # 題字の外接矩形（after の最後のコマ）に余白を付けて切り出す。
-    last = Image.open(fa[-1]).convert("L").point(lambda v: 255 if v > 40 else 0)
+    # 閉じる演出では最後のコマが空なので、最初のコマで測る。
+    probe = fa[-1] if SOUND == SOUND_IN else fa[0]
+    last = Image.open(probe).convert("L").point(lambda v: 255 if v > 40 else 0)
     bb = last.getbbox()
     if bb is None:
         sys.exit("最後のコマに題字が写っていない")
@@ -100,9 +110,9 @@ def main() -> int:
         out = os.path.join(after, "title_reveal.mp4")
         delay_ms = int(round(summon * 1000))
         subprocess.run([ff, "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", os.path.join(tmp, "%05d.png"),
-                        "-i", SOUND, "-filter_complex", f"[1:a]adelay={delay_ms}|{delay_ms},afade=t=out:st={len(fa) / FPS - 0.4:.3f}:d=0.4[a]",
+                        "-i", SOUND, "-filter_complex", f"[1:a]adelay={delay_ms}|{delay_ms},afade=t=out:st={len(fa) / FPS - 0.4:.3f}:d=0.4,apad[a]",
                         "-map", "0:v", "-map", "[a]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16",
-                        "-c:a", "aac", "-b:a", "192k", "-shortest", out + ".tmp.mp4"], check=True)
+                        "-c:a", "aac", "-b:a", "192k", "-t", f"{len(fa) / FPS:.3f}", out + ".tmp.mp4"], check=True)
         os.replace(out + ".tmp.mp4", out)
         slow = os.path.join(after, "title_reveal_slow.mp4")
         subprocess.run([ff, "-y", "-loglevel", "error", "-framerate", str(FPS // 3), "-i", os.path.join(tmp, "%05d.png"),

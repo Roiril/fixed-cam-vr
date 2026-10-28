@@ -63,3 +63,6 @@
 *.dylib binary
 *.bundle binary
 *.unitypackage binary
+
+# GitHub の言語集計から検証レポートを外す（画像を base64 で抱えた生成物）
+reports/** linguist-generated

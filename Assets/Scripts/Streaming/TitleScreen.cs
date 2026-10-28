@@ -1,6 +1,7 @@
 #nullable enable
 
 using TMPro;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace FixedCamVr.Streaming
@@ -148,6 +149,7 @@ namespace FixedCamVr.Streaming
         private static readonly int ArtId = Shader.PropertyToID("_Art");
         private static readonly int RevealId = Shader.PropertyToID("_Reveal");
         private static readonly int WetId = Shader.PropertyToID("_Wet");
+        private static readonly int PlateSizeId = Shader.PropertyToID("_PlateSize");
         private static readonly int WriteId = Shader.PropertyToID("_Write");
         private static readonly int BleedId = Shader.PropertyToID("_Bleed");
         private static readonly int DissolveId = Shader.PropertyToID("_Dissolve");
@@ -549,6 +551,9 @@ namespace FixedCamVr.Streaming
             // ⚠ 縦横比は**ここが唯一の供給元**。閉じるときの渦は版の中で解くので、
             //    シェーダ側に別の既定を持たせると渦が楕円になって字が横へ流れる。
             _glyphMat.SetFloat(ArtAspectId, ArtAspect);
+            // 版の実寸 (m)。側面（厚み）を視線に沿って読むとき、m を版の座標へ直すのに使う。
+            float plateH = Mathf.Max(titleHeightM, 0.05f);
+            _glyphMat.SetVector(PlateSizeId, new Vector4(plateH * ArtAspect, plateH, 0f, 0f));
             ConfigureRenderer(_glyphRenderer, _glyphMat);
             _glyphRoot = glyphGo.transform;
 
@@ -693,22 +698,29 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>奥の層から先に並べる</b>。半透明は深度で並べ替えられない（ZWrite Off / ZTest Always）ので、
         /// メッシュ内の三角形の順序がそのまま描画順になる。手前から並べると奥が上書きして層が裏返る。
         /// </summary>
+        // ---- 漏斗（2026-10-14・`canon/LEDGER.md` 0261「吸い込まれるような演出」「今のに奥行きを持たせて立体的に」）----
+        /// <summary>
+        /// 面の分割（横 × 縦）。閉じるとき、渦に捕まった所の頂点を奥へ押して<b>漏斗</b>にするので、
+        /// 平らな 4 頂点では曲がらない。厚み（側面）は面のシェーダが視線に沿って読むので、板は重ねない。
+        /// </summary>
+        private const int GridX = 40, GridY = 36;
+
         private Mesh BuildGlyphMesh()
         {
             float h = Mathf.Max(titleHeightM, 0.05f);
             float w = h * ArtAspect;
 
-            var verts = new Vector3[3 * 4];
-            var uv0 = new Vector2[3 * 4];
-            var uv1 = new Vector2[3 * 4];
-            var cols = new Color[3 * 4];
-            var tris = new int[3 * 6];
-            int v = 0, t = 0;
+            var verts = new List<Vector3>();
+            var uv0 = new List<Vector2>();
+            var uv1 = new List<Vector2>();
+            var cols = new List<Color>();
+            var tris = new List<int>();
 
             // 添え（払い・ルビ・罫）→ 主（廻・リ）→ 朱（視）の順に、奥から手前へ。
-            AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t, w, h, LayerZDeco,  new Color(0f, 0f, 1f, 1f));
-            AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t, w, h, LayerZMain,  new Color(1f, 0f, 0f, 1f));
-            AddQuad(verts, uv0, uv1, cols, tris, ref v, ref t, w, h, LayerZAccent, new Color(0f, 1f, 0f, 1f));
+            // **透明で深度を書かないので、描く順が前後になる**。
+            AddGrid(verts, uv0, uv1, cols, tris, w, h, LayerZDeco, new Color(0f, 0f, 1f, 1f));
+            AddGrid(verts, uv0, uv1, cols, tris, w, h, LayerZMain, new Color(1f, 0f, 0f, 1f));
+            AddGrid(verts, uv0, uv1, cols, tris, w, h, LayerZAccent, new Color(0f, 1f, 0f, 1f));
 
             var m = new Mesh { name = "TitleGlyphMesh" };
             m.SetVertices(verts);
@@ -717,11 +729,15 @@ namespace FixedCamVr.Streaming
             m.SetColors(cols);
             m.SetTriangles(tris, 0);
             m.RecalculateBounds();
+            // 漏斗で頂点を奥へ押すので、そのぶん境界を広げておく（切られて消えないように）。
+            Bounds b = m.bounds;
+            b.Expand(new Vector3(0f, 0f, 1.0f));
+            m.bounds = b;
             return m;
         }
 
         /// <summary>
-        /// 版 1 枚を、指定の奥行きに、縦横比を保って置く。
+        /// 版 1 枚を、指定の奥行きに、縦横比を保って、<b>格子に割って</b>置く。
         ///
         /// ⚠⚠ <b>面は版より大きく張る</b>（<see cref="CanvasY"/>）。版は 2:1 で横に長く、
         /// 閉じるときに渦が字を回すので、<b>横の端にあった墨が縦へ回り込む</b>。
@@ -730,36 +746,33 @@ namespace FixedCamVr.Streaming
         /// 縦にその円が入るだけ張る。<b>uv は 0..1 の外へはみ出させる</b>ので版は伸びない
         /// （外側は空。シェーダの <c>InArt</c> が切る）。
         /// </summary>
-        private void AddQuad(Vector3[] verts, Vector2[] uv0, Vector2[] uv1, Color[] cols, int[] tris,
-                             ref int v, ref int t, float w, float h, float z, Color col)
+        private static void AddGrid(List<Vector3> verts, List<Vector2> uv0, List<Vector2> uv1,
+                                    List<Color> cols, List<int> tris, float w, float h, float z, Color col)
         {
-            int b = v;
+            int b = verts.Count;
             float hw = w * 0.5f * CanvasX;
             float hh = h * 0.5f * CanvasY;
-            verts[v + 0] = new Vector3(-hw, -hh, z);
-            verts[v + 1] = new Vector3(hw, -hh, z);
-            verts[v + 2] = new Vector3(-hw, hh, z);
-            verts[v + 3] = new Vector3(hw, hh, z);
-
             // 版は 1 枚まるごと使う。PNG の 1 行目が v=1（上）に入るので上下は合っている。
-            // 面を広げたぶん uv は 0..1 の外まで伸びる（そこは空）。
             float u0 = 0.5f - 0.5f * CanvasX, u1 = 0.5f + 0.5f * CanvasX;
             float v0 = 0.5f - 0.5f * CanvasY, v1 = 0.5f + 0.5f * CanvasY;
-            uv0[v + 0] = new Vector2(u0, v0);
-            uv0[v + 1] = new Vector2(u1, v0);
-            uv0[v + 2] = new Vector2(u0, v1);
-            uv0[v + 3] = new Vector2(u1, v1);
-
-            uv1[v + 0] = new Vector2(u0, v0);
-            uv1[v + 1] = new Vector2(u1, v0);
-            uv1[v + 2] = new Vector2(u0, v1);
-            uv1[v + 3] = new Vector2(u1, v1);
-
-            cols[v + 0] = col; cols[v + 1] = col; cols[v + 2] = col; cols[v + 3] = col;
-
-            tris[t + 0] = b + 0; tris[t + 1] = b + 2; tris[t + 2] = b + 1;
-            tris[t + 3] = b + 2; tris[t + 4] = b + 3; tris[t + 5] = b + 1;
-            v += 4; t += 6;
+            for (int y = 0; y <= GridY; y++)
+            for (int x = 0; x <= GridX; x++)
+            {
+                float fx = x / (float)GridX, fy = y / (float)GridY;
+                verts.Add(new Vector3(Mathf.Lerp(-hw, hw, fx), Mathf.Lerp(-hh, hh, fy), z));
+                var uv = new Vector2(Mathf.Lerp(u0, u1, fx), Mathf.Lerp(v0, v1, fy));
+                uv0.Add(uv);
+                uv1.Add(uv);
+                cols.Add(col);
+            }
+            int row = GridX + 1;
+            for (int y = 0; y < GridY; y++)
+            for (int x = 0; x < GridX; x++)
+            {
+                int i = b + y * row + x;
+                tris.Add(i); tris.Add(i + row); tris.Add(i + 1);
+                tris.Add(i + row); tris.Add(i + row + 1); tris.Add(i + 1);
+            }
         }
 
         // ---- 配布 ----------------------------------------------------------------

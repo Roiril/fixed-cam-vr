@@ -154,5 +154,28 @@
     "purity": 0.0,
     "loop": false,
     "mono": true
+  },
+  "sfx_title_out": {
+    "sec": 2.2,
+    "true_peak_db": -17.27,
+    "lufs": -30.0,
+    "crest_db": 18.7,
+    "centroid_hz": 2010,
+    "bands_db": {
+      "sub": -6.9,
+      "low": -4.3,
+      "mid": -5.7,
+      "high": -8.1,
+      "air": -27.2
+    },
+    "dc": 5e-05,
+    "mono_db": -0.15,
+    "speaker_db": -1.5,
+    "sharp": 0.95,
+    "rough": 0.08,
+    "tonal_db": 13.2,
+    "purity": 0.32,
+    "loop": false,
+    "mono": false
   }
 }
