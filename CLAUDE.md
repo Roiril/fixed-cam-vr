@@ -2,6 +2,7 @@
 
 Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の無線映像を VR 内スクリーンへ出し、
 実写に CG を合成して見せるホラー体験。**実装は終わっている。ここから先は作りこみの段。**
+（namespace `FixedCamVr.*` / パッケージ ID `com.roiril.mawarimi`。ユーザーは「fixedcam」「廻リ視」「本体」「カメラ」と呼ぶ）
 
 ## ⚠ 企画書は読まない（2026-08-08 ユーザー宣言）
 
@@ -135,6 +136,11 @@ Unity 2022.3.62f2 LTS / URP / Quest 3（Android・IL2CPP・ARM64）/ Meta XR All
 | コードの契約（破ると壊れること） | `.claude/rules/` の話題別 rule（索引は `rules/streaming.md`。scope は **`paths:`**。`globs:` は認識されない）。**現行の契約だけ**を書き、変わったら行を書き換える |
 | 経緯の全文・滅多に使わない手順・退避路 | `.claude/reference/`（**明示的に読むまで載らない**）。旧 rule の全文は `reference/archive/`（凍結） |
 | 実装の段の記録 | `.claude/plans/`（索引は [plans/README.md](.claude/plans/README.md)。status は active / done / archived） |
+
+**Codex も同じ正本を読み書きする**（2026-10-28〜）。ルートの `AGENTS.md` は Codex の SessionStart hook が
+この CLAUDE.md・常時 rules・`memory/MEMORY.md` から組み立てる**生成物**（git 管理外）。**手で書かない・直さない。**
+`.agents/skills` は `.claude/skills` への junction（同じ hook が作る）。例外は `website/AGENTS.md`（両者が読むサイト用の正本）。
+Codex 用の Unity MCP 登録は `.codex/config.toml`（マシン固有・git 管理外）。
 
 **機能を変えたらドキュメントも同じコミットで置き換える**（積まない）→ `rules/doc-sync.md`。
 `.claude/` を触ったら `py -3.11 tools/harness-check.py`（Edit / Write の直後に hook も流す）。
