@@ -199,6 +199,7 @@ tools/web-compositor/prompts.json
 tools/web-compositor/atelier.json.tmp
 tools/web-compositor/show.json
 tools/web-compositor/show.json.bak
+tools/web-compositor/show.json.bak-*
 tools/web-compositor/show.json.tmp
 tools/web-compositor/masks/
 tools/web-compositor/audio/
@@ -235,3 +236,7 @@ tools/doll-rig/out/
 # Codex 等の別エージェントのローカル設定（config はマシン固有・skills は .claude/skills への junction）
 .codex/
 .agents/
+
+# 検証・生成の出力（昇格した 6 件だけ追跡済み）と配信 UI のプレビュー PNG。残すものは Drive（rules/drive-offload）
+output/
+tools/visitor-ui/preview/
