@@ -565,6 +565,11 @@ switch ($Action) {
         $outXml = Join-Path $Root "Logs\test-$mode.xml"
         New-Item -ItemType Directory -Force (Split-Path $outXml) | Out-Null
 
+        # ⚠⚠ 走る前に前回の XML を消す（2026-10-28 実害）。Unity が起動できない（ライセンス切れ等）と
+        #    XML が書き換わらず、**5 日前の「全 2248 通過」がエラーの隣に緑で出る**。
+        #    XML があること ＝ 今回走ったこと、にしておく。
+        Remove-Item -LiteralPath $outXml -Force -ErrorAction SilentlyContinue
+
         # ⚠⚠ コンパイルエラーがあると Unity は **古いアセンブリでテストを走らせる**（2026-08-17 実害）。
         #    XML は普通に結果を返すので、**直したはずの行がいつまでも失敗し続ける**（30 分溶かした）。
         #    CLI の標準出力に出るのは `Scripts have compiler errors.` の 1 行だけで、
