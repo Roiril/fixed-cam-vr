@@ -78,7 +78,7 @@ test('電子音を作らない・鳴らさない（LEDGER 0275）', () => {
   const py = fs.readFileSync(path.join(root, 'tools', 'make-tablet-sounds.py'), 'utf8');
   const body = py.split('# 1 本ずつ')[1];
   assert.equal(/sk\.(tone_band|sweep_band|sweep|sine|cluster)\(/.test(body), false, '音程のある帯・掃引を使っている');
-  for (const file of ['index.html', 'tablet-sound.js', 'signal-cut.js', 'briefing-presentation.js', 'title-write.js', 'romi-panel.js']) {
+  for (const file of ['index.html', 'tablet-sound.js', 'signal-cut.js', 'briefing-presentation.js', 'title-write.js']) {
     const text = fs.readFileSync(path.join(web, file), 'utf8');
     assert.equal(/createOscillator\(/.test(text), false, `${file} が発振器を鳴らしている`);
   }

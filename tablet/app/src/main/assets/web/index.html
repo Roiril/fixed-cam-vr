@@ -858,11 +858,6 @@
           <p class="staff-help">別の受付と設定が混ざったときに使います。取り消すと装着前の確認も無効になります。来場者が言語とホラー軽減を選び直します。</p>
           <button class="staff-clear" id="clearBtn" type="button">未開始の設定を取り消す</button>
         </section>
-        <!-- 終幕の台車（Romi）の自動走行。中身は romi-panel.js が組む（台車の NVS を読み書きする） -->
-        <section class="staff-trouble-section romi-section" id="staffCart" aria-labelledby="staffCartTitle">
-          <h4 id="staffCartTitle">台車（Romi）の自動走行</h4>
-          <div id="romiPanel"></div>
-        </section>
       </div>
       <p class="staff-message staff-trouble-message" id="staffMessage" role="status" aria-live="polite"></p>
     </details>
@@ -876,7 +871,6 @@
 <script src="./briefing-presentation.js"></script>
 <script src="./signal-cut.js"></script>
 <script src="./tablet-sound.js"></script>
-<script src="./romi-panel.js"></script>
 <script>
 (() => {
   'use strict';
@@ -3345,10 +3339,6 @@
       && health.exceptions > input.exceptionsBaseline) {
       list.push({ key: 'exceptions', tone: 'trouble', sound: false,
         text: `Quest で内部エラーが起きました（${health.exceptions - input.exceptionsBaseline} 件）。画や進行がおかしければ体験を中断してやり直す` });
-    }
-    if (health?.cartKind === 'go' && typeof health.cartResult === 'string'
-      && !['ok', 'pending', ''].includes(health.cartResult)) {
-      list.push({ key: 'cart', tone: 'trouble', sound: false, text: '台車へ合図が届きませんでした（終幕で台車が動かない）' });
     }
     return { partial: false, list };
   }
