@@ -155,6 +155,9 @@ $Menus = [ordered]@{
                             Out = 'Assets/Scenes/FxSandbox.unity' }
 
     # ---- Diagnostics 廻リ視（見る・測る）----
+    'screen-study'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ScreenStudyPreview.Run'
+                            Desc = '最新の無人写真で現行スクリーンとガラス・筐体の4案を比較（Editor専用・本編は変更しない）'
+                            Out = $null }
     'composite'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.Run'
                             Desc = '実写プレート × CG 人形の合成を PNG 化（合成品質の一次証拠）'
                             Set = 'show=<show.json のパス> / decay=<0..1 周回で進む解像度の劣化>'
