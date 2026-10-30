@@ -1436,26 +1436,36 @@ def analyze(events, others, exp, warns=None):
     #      repBuilt = 報告の面を組めたか（0 なら最後の 4 行が 1 文字も出ない）
     #      armed/cue = 著作した合図（run.outro.afterTakeId）が武装したか / そこから始まったか
     #    観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
-    # 終幕の台車（Romi）への合図（RomiCartLink）。go = 解除の縁 / cut = 電源断の縁。
-    #   res: ok / net（届かない）/ disabled（台車側で無効）/ busy（スタッフが手で動かしている）/ pending
-    #   dry=1 は空走（Editor と自動走行）＝ 台車は記録だけして動かない。
-    #   ⚠ 台車が実際に動いたかはここでは分からない（開ループ）。台車のシリアルの EVT ending を見る。
-    romi_ev = [e for e in events if e.get("ev") == "romi"]
-    has_romi = any("romi" in e for e in events if e.get("ev") == "sum")
+    # 帰還の別れの人形（EndingFarewellDoll・LEDGER 0291）。報告で戻った後、締めの CG 人形が 1 体だけ
+    #   体験者の左に右向きで立ち、後ろを向いてゆっくり下がって消える。帰還End の写真は見つめている段で撮る。
+    #   phase: anchoring → appear → face → turn → retreat → done（出せなければ unavailable）
+    #   cg = CG 層が実際に描いているか / dollU・visU = 人形と体験者の足元の枠 UV（人形が左なら dollU < visU）
+    #   sum の farewell = <見つめる段まで届いた回数>/<消え切った回数>
+    fw_ev = [e for e in events if e.get("ev") == "farewell"]
+    has_fw = any("farewell" in e for e in events if e.get("ev") == "sum")
     released = any(e.get("ev") == "outro" and e.get("ending") == "Released" for e in events)
-    if romi_ev or (has_romi and released):
-        w("## 終幕の台車（Romi）")
-        for e in romi_ev:
-            w(f"  t={fnum(e,'t',0):7.1f}  {e.get('kind')} res={e.get('res')} {e.get('ms')}ms dry={e.get('dry')}")
-        gos = [e for e in romi_ev if e.get("kind") == "go"]
-        if released and has_romi and not gos:
-            verdict("FAIL", "解除で終わったのに台車へ合図（go）を送っていない — RomiCartLink の配線を確かめる")
-        for e in romi_ev:
-            if e.get("res") not in ("ok",):
-                verdict("WARN", f"台車への合図 {e.get('kind')} が通っていない（res={e.get('res')}）"
-                                "— 台車の電源・網（192.168.10.51）・タブレットの「自動走行」の有効を確かめる")
-        if released and gos and not any(e.get("kind") == "cut" for e in romi_ev):
-            verdict("WARN", "解除の後、電源断の合図（cut）を送っていない — 終幕が始まる前に走行が切れたなら正常")
+    if fw_ev or (has_fw and released):
+        w("## 帰還の別れの人形")
+        for e in fw_ev:
+            w(f"  t={fnum(e,'t',0):7.1f}  {e.get('phase')} cg={e.get('cg')} anchored={e.get('anchored')} "
+              f"doll=({e.get('dollU')},{e.get('dollV')}) visitor=({e.get('visU')},{e.get('visV')}) "
+              f"screen={e.get('screen')}")
+        faces = [e for e in fw_ev if e.get("phase") == "face"]
+        if released and has_fw and not faces:
+            if any(e.get("phase") == "unavailable" for e in fw_ev):
+                verdict("WARN", "帰還の別れの人形を出せなかった（較正・位置合わせ・頭の追跡のどれか）"
+                                "— 帰還End の写真は人形なしになる")
+            else:
+                verdict("FAIL", "帰還で終わったのに別れの人形が見つめる段まで届いていない — EndingFarewellDoll の配線を確かめる")
+        for e in faces:
+            if str(e.get("cg")) != "1":
+                verdict("FAIL", "別れの人形が見つめる段に入ったのに CG 層が描いていない（cg=0）")
+            elif fnum(e, "dollU", -1) >= fnum(e, "visU", -1):
+                verdict("FAIL", f"別れの人形が体験者の左に居ない（doll u={e.get('dollU')} / visitor u={e.get('visU')}）")
+            else:
+                verdict("OK", f"別れの人形が体験者の左で見つめた（doll u={e.get('dollU')} / visitor u={e.get('visU')}）")
+        if faces and not any(e.get("phase") == "done" for e in fw_ev):
+            verdict("WARN", "別れの人形が消え切る前に締めが終わった（電源断に掛かった）")
 
     outro = [e for e in events if e.get("ev") == "outro"]
     if outro:

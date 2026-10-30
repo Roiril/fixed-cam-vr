@@ -29,7 +29,7 @@ metadata:
 | 電池 | 誰も読んでいない | `health.battery`（SystemInfo・10 秒ごと） |
 | 例外 | logcat だけ | `RuntimeHealth` が数え `health.exceptions` / `lastException` |
 | リセット途中の例外 | 後ろの初期化が飛び一部だけ前の人の状態が残る | `RuntimeHealth.Step` / `Raise` で工程ごとに隔離（`ShowControlClient` の 2 経路・`ShowRunDirector.BeginRun`） |
-| 解除〜終幕の 7.1 秒にリセット | 台車の `_goSent` が残り次の人に Go が出ない | 導入へ戻った縁でも印を落とす |
+| 解除〜終幕の 7.1 秒にリセット | （台車は 10-30 に廃止）別れの人形が出たまま残る | `TakeRunner.ResetRun` が `EndingFarewellDoll.ResetRun` で畳む |
 | 連絡の面が組めない | 乗っ取り待ちが解けず報告が全部止まる | `TakeoverInputBlocked` に `IsBuilt` |
 | 通信の一瞬の揺れ | 1 回の失敗で説明が止まる | タブレットは 2 回連続で offline |
 | 体験の途中で詰まった | タブレットのリセットは本編中拒否・卓の操作は実機に届かない（`BakedOnly`） | 強制リセット（`/tablet/pulse` の `force:true` → `VisitorPortal.ForceResetProvider` → `OvrControllerBridge.TryForceResetFromTablet`） |

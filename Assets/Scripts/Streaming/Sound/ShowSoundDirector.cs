@@ -572,7 +572,9 @@ namespace FixedCamVr.Streaming
             //    ないもの」に人形の笑いが付く**。実測（2026-08-22 走行 20260822_080731）:
             //    2 周目 C の保持中に sndSwap 0 → 2.29 / swell 0 → 0.71 まで育っていた。
             //    人形の声が鳴り始めてよいのは、晴れて実体が出た縁だけ。
-            if (_cg != null) s.dollPresent = _cg.DollVisible;
+            // ⚠ 帰還の別れの人形（0291）は笑わせない。報告で現実へ戻った後なので、
+            //    人形の声が戻ると「呪いが解けていない」に聞こえる（0050 の逆）。
+            if (_cg != null) s.dollPresent = _cg.DollVisible && !_cg.FarewellActive;
             return s;
         }
 

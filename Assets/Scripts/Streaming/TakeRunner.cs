@@ -117,6 +117,7 @@ namespace FixedCamVr.Streaming
         private ShowCgLayer? _cgLayer;
         private CameraFeelFx? _feelFx;
         private EndingFrameCapture? _endingCapture;
+        private EndingFarewellDoll? _farewell;
         private string _endingTakeId = "";
         private bool _endingReleased;
 
@@ -154,9 +155,7 @@ namespace FixedCamVr.Streaming
         {
             get
             {
-                bool endingTakeActive = _logic.IsActive
-                                        && !string.IsNullOrEmpty(_endingTakeId)
-                                        && ActiveTakeId == _endingTakeId;
+                bool endingTakeActive = EndingTakeActive;
                 ShowStepDef? step = GetStep(_logic.ActiveTakeIndex, _logic.ActiveStepIndex);
                 bool liveSource = step != null
                                   && TakeSchema.NormalizeSource(step.source, out _) == TakeSchema.SourceLive;
@@ -170,28 +169,95 @@ namespace FixedCamVr.Streaming
                 bool trappedCgVisible = _cgLayer != null && _cgLayer.DollVisible;
                 bool swapActive = director != null && director.SwapActive;
                 bool transitionActive = director != null && director.Dipping;
+                bool farewellFacing = _farewell != null && _farewell.Facing;
+                bool plainAllowed = _farewell == null || _farewell.AllowsPlainReleasedShot;
                 return ResolveEndingShotWindow(endingTakeActive, _logic.IsWaitingForMark,
                     _endingReleased, liveSource, primaryMatches, secondaryMatches, trappedCgVisible,
                     primaryActive, secondaryActive, cgActive,
-                    swapActive, transitionActive);
+                    swapActive, transitionActive, farewellFacing, plainAllowed);
             }
         }
 
-        /// <summary>終幕写真の窓判定。Unity の描画状態を引数へ分離し、EditMode で固定する。</summary>
+        /// <summary>
+        /// 終幕写真の窓判定。Unity の描画状態を引数へ分離し、EditMode で固定する。
+        ///
+        /// 帰還の写真は<b>別れの人形が体験者の方を向いて立っている間</b>に撮る（0291・右に体験者・左に人形）。
+        /// 人形が出る前（<paramref name="plainReleasedAllowed"/>）は CG の無い帰還の画を仮に撮り、
+        /// 人形が見つめる段で上書きする。人形が後ろを向いた後と消えた後は撮らない（最後に撮れた画を残す）。
+        /// 人形を出せなかったときだけ、CG の無い帰還の画が写真になる。
+        /// </summary>
         public static EndingShotWindow ResolveEndingShotWindow(
             bool endingTakeActive, bool waitingForMark, bool reportReleased, bool liveSource,
             bool trappedPrimaryVisible, bool trappedSecondaryVisible, bool trappedCgVisible,
             bool primaryActive, bool secondaryActive, bool cgActive,
-            bool swapActive, bool transitionActive)
+            bool swapActive, bool transitionActive,
+            bool farewellFacing = false, bool plainReleasedAllowed = true)
         {
             if (!endingTakeActive || swapActive || transitionActive) return EndingShotWindow.None;
             if (!reportReleased && waitingForMark
                 && trappedPrimaryVisible && trappedSecondaryVisible && trappedCgVisible)
                 return EndingShotWindow.Trapped;
-            if (reportReleased && liveSource && !primaryActive && !secondaryActive && !cgActive)
-                return EndingShotWindow.Released;
+            if (reportReleased && liveSource && !primaryActive && !secondaryActive)
+            {
+                if (farewellFacing && cgActive) return EndingShotWindow.Released;
+                if (plainReleasedAllowed && !cgActive) return EndingShotWindow.Released;
+            }
             return EndingShotWindow.None;
         }
+
+        /// <summary>締めの take（<c>run.outro.afterTakeId</c>）が走っているか。</summary>
+        public bool EndingTakeActive => _logic.IsActive && !string.IsNullOrEmpty(_endingTakeId)
+                                        && ActiveTakeId == _endingTakeId;
+
+        /// <summary>
+        /// 報告済みで、締めのライブのカットが画面を取り、入れ替わりと乱れの遷移が終わっている。
+        /// 別れの人形（<see cref="EndingFarewellDoll"/>）が出てよい条件。
+        /// </summary>
+        public bool EndingReleasedLiveReady
+        {
+            get
+            {
+                if (!EndingTakeActive || !_endingReleased) return false;
+                ShowStepDef? step = GetStep(_logic.ActiveTakeIndex, _logic.ActiveStepIndex);
+                bool live = step != null
+                            && TakeSchema.NormalizeSource(step.source, out _) == TakeSchema.SourceLive;
+                bool swap = director != null && director.SwapActive;
+                bool dipping = director != null && director.Dipping;
+                return live && !swap && !dipping;
+            }
+        }
+
+        /// <summary>いまのカットの構図のカメラ index（未指定なら直近の確定ゾーン）。</summary>
+        public int ActiveStepCameraIndex
+        {
+            get
+            {
+                ShowStepDef? step = GetStep(_logic.ActiveTakeIndex, _logic.ActiveStepIndex);
+                return step != null && step.camera >= 0 ? step.camera : ResolveLatestZoneCamera();
+            }
+        }
+
+        /// <summary>
+        /// 締めで体験者の位置に立っていた人形の actor id。いまのカットより前で、人の代役でない cg を持つ
+        /// 最後のカットから取る。無ければ空。
+        /// </summary>
+        public string EndingDollActorId
+        {
+            get
+            {
+                if (!EndingTakeActive) return "";
+                int ti = _logic.ActiveTakeIndex;
+                for (int si = _logic.ActiveStepIndex; si >= 0; si--)
+                {
+                    ShowStepDef? s = GetStep(ti, si);
+                    if (s != null && s.HasCg && s.cg != TakeSchema.SwapHumanActorId) return s.cg;
+                }
+                return "";
+            }
+        }
+
+        /// <summary>別れの人形の実行体（テレメトリが読む）。</summary>
+        public EndingFarewellDoll? Farewell => _farewell;
 
         /// <summary>
         /// <b>いま画面を取っているカットの素材 id</b>（<c>steps[].cueId</c>）。演出が走っていなければ空。
@@ -378,6 +444,11 @@ namespace FixedCamVr.Streaming
             if (_endingCapture == null && overlay != null)
                 _endingCapture = overlay.gameObject.AddComponent<EndingFrameCapture>();
             _endingCapture?.Bind(this);
+
+            // 帰還の別れの人形（0291）。終幕写真と同じく、シーンに配線が無くても自分で載せる。
+            _farewell = GetComponent<EndingFarewellDoll>();
+            if (_farewell == null) _farewell = gameObject.AddComponent<EndingFarewellDoll>();
+            _farewell.Bind(this, _cgLayer);
 
             // 闇の目（canon/LEDGER.md 0075）。**シーンに居なければ自分で載せる** — 群れは
             // 頭に付いて動くだけで親を選ばないので、どこに載っていても同じ絵になる。
@@ -754,6 +825,7 @@ namespace FixedCamVr.Streaming
             DollCatchUpCompletedCount = 0;
             PresentationAbortCount = 0;
             _endingReleased = false;
+            _farewell?.ResetRun();
         }
 
         /// <summary>ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。</summary>

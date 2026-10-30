@@ -42,6 +42,54 @@ class EndingLogTests(unittest.TestCase):
         )
         return events
 
+    def farewell_events(self, phases, doll_u="0.40", vis_u="0.65", cg="1"):
+        events = self.report_events(ending="Released")
+        for e in events:
+            if e.get("ev") == "sum":
+                e["farewell"] = "1/1" if "done" in phases else "0/0"
+        events.extend({"ev": "farewell", "t": str(10 + i), "phase": ph, "cg": cg, "anchored": "1",
+                       "dollU": doll_u, "dollV": "0.30", "visU": vis_u, "visV": "0.30", "screen": "1"}
+                      for i, ph in enumerate(phases))
+        return events
+
+    def test_farewell_left_of_visitor_passes(self):
+        verdicts = self.verdicts(self.farewell_events(["anchoring", "appear", "face", "turn", "retreat", "done"]))
+        self.assertTrue(any(level == "OK" and "別れの人形が体験者の左" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "別れの人形" in text for level, text in verdicts))
+
+    def test_farewell_on_the_right_fails(self):
+        verdicts = self.verdicts(self.farewell_events(["appear", "face", "done"], doll_u="0.80", vis_u="0.60"))
+        self.assertTrue(any(level == "FAIL" and "左に居ない" in text for level, text in verdicts))
+
+    def test_farewell_without_render_fails(self):
+        verdicts = self.verdicts(self.farewell_events(["appear", "face", "done"], cg="0"))
+        self.assertTrue(any(level == "FAIL" and "cg=0" in text for level, text in verdicts))
+
+    def test_released_without_farewell_fails(self):
+        events = self.report_events(ending="Released")
+        for e in events:
+            if e.get("ev") == "sum":
+                e["farewell"] = "0/0"
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "見つめる段まで届いていない" in text for level, text in verdicts))
+
+    def test_farewell_unavailable_only_warns(self):
+        verdicts = self.verdicts(self.farewell_events(["anchoring", "unavailable"]))
+        self.assertTrue(any(level == "WARN" and "出せなかった" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "別れの人形" in text for level, text in verdicts))
+
+    def test_farewell_cut_by_power_off_warns(self):
+        verdicts = self.verdicts(self.farewell_events(["appear", "face", "turn"]))
+        self.assertTrue(any(level == "WARN" and "消え切る前" in text for level, text in verdicts))
+
+    def test_trapped_does_not_ask_for_farewell(self):
+        events = self.report_events(ending="Trapped")
+        for e in events:
+            if e.get("ev") == "sum":
+                e["farewell"] = "0/0"
+        verdicts = self.verdicts(events)
+        self.assertFalse(any("別れの人形" in text for level, text in verdicts))
+
     def test_halt_by_line_without_line_event(self):
         events = [
             {"ev": "comms", "id": "Halt", "t": "1", "cline": "1", "closing": "0.5"},

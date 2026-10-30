@@ -277,6 +277,10 @@ namespace FixedCamVr.Streaming.Cg
         /// </summary>
         public void Apply(string actorId, string cgMode, int cameraIndex, ShowPlacementDef? placement = null)
         {
+            // 別れのモードは BeginFarewell を通ったときだけ立つ。カットの Apply は必ず通常の人形に戻す。
+            _farewell = _farewellPending;
+            _farewellPending = false;
+            _farewellAnchored = false;
             if (string.IsNullOrEmpty(actorId)) { Hide(); return; }
             if (_layer < 0 || _material == null) return;
             if (showControl == null) { Debug.LogWarning("[ShowCgLayer] ShowControlClient が居ないので CG を出せない"); return; }
@@ -363,6 +367,9 @@ namespace FixedCamVr.Streaming.Cg
             // 乗っ取っていた背丈と影の倍率も必ず戻す（残すと次のカットの人形が砂の大きさで出る）。
             _swapHeightM = 0f;
             _groundMul = 1f;
+            _farewell = false;
+            _farewellPending = false;
+            _farewellAnchored = false;
             _visible = false;
             _rendering = false;
             _actorDef = null;
@@ -417,17 +424,123 @@ namespace FixedCamVr.Streaming.Cg
             if (showControl?.HeadCourseXZProvider != null)
                 _courseTrack.Push(Time.unscaledTime, showControl.HeadCourseXZProvider());
             UpdateBodyYaw(Time.deltaTime);
+            if (_farewell && !_farewellAnchored && !TryAnchorFarewell())
+            {
+                // 立ち位置が解けるまでは 1 画素も見せない（体験者の位置に一瞬だけ立つのを防ぐ）。
+                SetStrength(0f);
+                return;
+            }
             PlaceActor(_actorDef);
             ApplyGroundContact(_actorDef, lightDir);
             if (_actorRig != null && _actorRig.HasRig)
-                _actorRig.Drive(CurrentBody(), _actorInstance!.transform.eulerAngles.y, Time.deltaTime,
-                                _bodyYawDeg);
+            {
+                // 別れの人形は体験者の分身ではない。腕を体験者に合わせず、体側へ降ろしたまま立たせる。
+                float actorYaw = _actorInstance!.transform.eulerAngles.y;
+                _actorRig.Drive(_farewell ? ShowBodyInput.None : CurrentBody(), actorYaw, Time.deltaTime,
+                                _farewell ? actorYaw : _bodyYawDeg);
+            }
+            if (_farewell) SetStrength(_farewellSample.alpha);
             // 位置・腕は毎フレーム進めるが、**絵にするのは実写が進んだ時だけ**。
             RenderIfDue();
             // 人形に付き従う劣化の中心と大きさ。描画を間引いても位置は毎フレーム更新する
             // （荒れだけが人形から遅れて付いてくると、それ自体が別の不自然さになる）。
             WriteActorFocus();
             WriteActorLight();
+        }
+
+        // ---- 帰還の別れの人形（canon/LEDGER.md 0291）----
+
+        private bool _farewell;
+        private bool _farewellPending;
+        private bool _farewellAnchored;
+        private EndingFarewellLogic.Anchor _farewellAnchor;
+        private EndingFarewellLogic.Sample _farewellSample;
+        private float _farewellFaceYawDeg;
+        private float _farewellTurnFromYawDeg;
+
+        /// <summary>見つめている間、体験者の動きへ向きを追わせる速さ（度/秒）。首だけで追う程度に鈍くする。</summary>
+        private const float FarewellTrackDegPerSec = 90f;
+
+        /// <summary>別れの人形を出しているか（立ち位置が解ける前も含む）。</summary>
+        public bool FarewellActive => _farewell && _visible;
+
+        /// <summary>別れの人形の立ち位置が解けたか。解けるまでは画に出ない。</summary>
+        public bool FarewellAnchored => FarewellActive && _farewellAnchored;
+
+        /// <summary>解けた立ち位置（観測用）。<see cref="FarewellAnchored"/> のときだけ意味がある。</summary>
+        public EndingFarewellLogic.Anchor FarewellAnchor => _farewellAnchor;
+
+        /// <summary>
+        /// 別れの人形を出す。体験者の分身（follow）ではなく、体験者の左に立つ 1 体として描く。
+        /// 立ち位置は次の Tick で、較正済みのカメラと体験者の足元から解く
+        /// （<see cref="EndingFarewellLogic.TrySolve"/>）。出せなければ false。
+        /// </summary>
+        public bool BeginFarewell(string actorId, int cameraIndex)
+        {
+            if (string.IsNullOrEmpty(actorId) || actorId == TakeSchema.SwapHumanActorId) return false;
+            _farewellSample = EndingFarewellLogic.SampleAt(0f);
+            _farewellPending = true;
+            Apply(actorId, TakeSchema.CgFollow, cameraIndex);
+            _farewellPending = false;
+            if (_visible && _farewell) return true;
+            if (_visible) Hide();
+            _farewell = false;
+            return false;
+        }
+
+        /// <summary>別れの人形の段（不透明度・回り具合・下がった距離）を渡す。</summary>
+        public void SetFarewellSample(in EndingFarewellLogic.Sample sample) => _farewellSample = sample;
+
+        /// <summary>体験者の足元（ワールド・映像の遅延ぶん過去）。頭が取れていなければ false。</summary>
+        private bool TryVisitorFootWorld(out Vector3 foot)
+        {
+            foot = Vector3.zero;
+            if (showControl?.HeadCourseXZProvider == null) return false;
+            if (!_courseTrack.TrySample(Time.unscaledTime - VideoLatencySec, out Vector2 xz))
+                xz = showControl.HeadCourseXZProvider();
+            foot = CourseToWorld(xz, 0f);
+            return true;
+        }
+
+        private bool TryAnchorFarewell()
+        {
+            if (_virtualCam == null || !TryVisitorFootWorld(out Vector3 visitor)) return false;
+            Vector2 sc = _screen != null ? _screen.ContainScale : Vector2.one;
+            if (!EndingFarewellLogic.TrySolve(_virtualCam, sc, visitor, out EndingFarewellLogic.Anchor a))
+                return false;
+            _farewellAnchor = a;
+            _farewellFaceYawDeg = EndingFarewellLogic.FaceYawDeg(a.foot, visitor);
+            _farewellTurnFromYawDeg = _farewellFaceYawDeg;
+            _farewellAnchored = true;
+            Debug.Log($"[ShowCgLayer] 別れの人形の立ち位置 doll uv=({a.dollUv.x:0.00},{a.dollUv.y:0.00}) " +
+                      $"visitor uv=({a.visitorUv.x:0.00},{a.visitorUv.y:0.00}) screen={(a.fromScreen ? 1 : 0)}");
+            return true;
+        }
+
+        private void PlaceFarewell(Transform t)
+        {
+            EndingFarewellLogic.Sample s = _farewellSample;
+            Vector3 pos = _farewellAnchor.foot + _farewellAnchor.retreatDir * s.retreatM;
+            if (_actorRig == null || !_actorRig.HasRig)
+                pos.y += Mathf.Max(0.2f, EffectiveHeightM) * 0.5f;   // 代用カプセルは中心が原点
+            t.position = pos;
+
+            float yaw;
+            if (s.turn01 <= 0f)
+            {
+                // 見つめている間は体験者の方へ向き続ける（体験者が動いても目を離さない）。
+                if (TryVisitorFootWorld(out Vector3 visitor))
+                    _farewellFaceYawDeg = Mathf.MoveTowardsAngle(_farewellFaceYawDeg,
+                        EndingFarewellLogic.FaceYawDeg(_farewellAnchor.foot, visitor),
+                        FarewellTrackDegPerSec * Time.deltaTime);
+                _farewellTurnFromYawDeg = _farewellFaceYawDeg;
+                yaw = _farewellFaceYawDeg;
+            }
+            else
+            {
+                yaw = EndingFarewellLogic.TurnYawDeg(_farewellTurnFromYawDeg, _farewellAnchor.awayYawDeg, s.turn01);
+            }
+            t.rotation = Quaternion.Euler(0f, yaw, 0f);
         }
 
         // ---- 入れ替わりのノイズ（canon/LEDGER.md 0089）----
@@ -1457,6 +1570,11 @@ namespace FixedCamVr.Streaming.Cg
             }
 
             Transform t = _actorInstance.transform;
+            if (_farewell)
+            {
+                PlaceFarewell(t);
+                return;
+            }
             // 足元は床（course y=0）。リグの実寸に合わせて縮尺済みなので原点＝足元でよい。
             Vector3 pos = CourseToWorld(xz, 0f);
             if (_actorRig == null || !_actorRig.HasRig)

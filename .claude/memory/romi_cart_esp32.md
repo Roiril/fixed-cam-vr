@@ -8,6 +8,9 @@ metadata:
   modified: 2026-10-19T10:09:41.297Z
 ---
 
+⚠ **2026-10-30 から使わない**（LEDGER 0291）。Quest は合図を送らない（`RomiCartLink` を削除）。終幕の代わりは
+[[ending-farewell-doll]]。以下は台車を再び使うときのための記録。
+
 2026-10-07 調査。台車（Pololu Romi シャーシ）の USB の先は **Romi 純正の 32U4 基板ではなく ESP32**。
 
 - USB-UART は **CP2102N（VID 10C4 / PID EA60）**。この PC では初接続時に **ドライバ未導入（コード 28）** で COM が出なかった。Silicon Labs の CP210x Universal Windows Driver 11.6.0.420（Microsoft 署名・WHQL）を入れて **COM17** になった。基板を挿し直すと番号が変わりうる

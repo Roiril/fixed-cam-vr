@@ -1,16 +1,14 @@
 ---
 name: ending
-description: 最後の A・締めの線・③a・帰還 End / 人形 End・解除・エンドロール・台車の現行の契約。経緯と旧い記述は reference/archive/ の凍結版
+description: 最後の A・締めの線・③a・帰還 End / 人形 End・解除・別れの人形・エンドロールの現行の契約。経緯と旧い記述は reference/archive/ の凍結版
 paths:
   - "Assets/Scripts/Diagnostics/ShowEndingFader.cs"
   - "Assets/Scripts/Streaming/**/Ending*.cs"
   - "Assets/Scripts/Streaming/**/Outro*.cs"
-  - "Assets/Scripts/Streaming/RomiCart*.cs"
   - "Assets/Scripts/Streaming/VisitorReportTally.cs"
   - "Assets/Scripts/Diagnostics/Outro*.cs"
   - "Assets/Tests/**/Ending*Tests.cs"
   - "Assets/Tests/**/Outro*Tests.cs"
-  - "Assets/Tests/Streaming/RomiCartLinkLogicTests.cs"
   - "Assets/Tests/Streaming/VisitorReportTallyTests.cs"
 ---
 
@@ -35,8 +33,10 @@ paths:
 - 終幕の合図は、演出が走っているのを見た後、止まった縁で 1 回だけ出る。介入があれば武装を外す。落ちるのは `BeginRun` だけ — `EndingCueLogic` / `ResetRun_IsTheOnlyWayBack` 〔出典: show-design:930-940〕
 - 解除の時刻: 劣化は `ScreenDecayLogic.ReleaseSec`（0.5 秒）で戻り、入れ替わりは 2.6 秒で戻る。続いて④「異変を取り除きました。お疲れ様です。」が出る — `ScreenDecayLogic.ReleaseSec` / `CommsNotice.MarkCleared` 〔出典: show-design:946-958〕
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
-- 台車には解除の縁で `/ending/go` を 1 回送る。帰還の電源断の縁で `/ending/cut` を送る。Trapped と Interrupted では cut を送らない。Editor と自動走行では `dry:1` — `RomiCartLinkLogic.Tick` / `Trapped_NeverSendsAnything` 〔出典: show-design:15-17〕
-- 台車の動きの中身は台車の NVS が持つ — `RomiCartLink` 〔出典: memory/romi_cart_esp32.md〕〔未照合: ファーム〕
+- 台車（Romi）は使わない。Quest は台車へ何も送らない（`RomiCartLink` は 2026-10-30 に削除）〔出典: LEDGER 0291〕
+- 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空いた縁に、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる 1.15 → 後ろを向く 0.75 → 下がって消える 2.0 秒（0.45m・最後 1.1 秒で消える）。電源断（7.1 秒）より前に消え切る — `EndingFarewellLogic` / `EndingFarewellDoll` / `Timeline_FitsBetweenTheSwapAndThePowerCut` 〔出典: LEDGER 0291〕
+- 立ち位置は体験者の足元から枠 UV で左へ 0.18 ずらした同じ行の床。床の上で 0.5〜1.2m に収まらなければカメラの左右方向で置き直す。見つめる間は体験者の方を向き続け、後ろを向いた後は「体験者から離れる＋カメラから遠ざかる 0.6」の向きへ下がる — `EndingFarewellLogic.TrySolve` / `Anchor_StandsLeftOfTheVisitor_OnTheFloor_AndRetreatsAwayFromThem` 〔出典: LEDGER 0291〕
+- 別れの人形は体験者の分身ではない。腕は体験者に合わせず、笑わない（`dollPresent` から外す）。立ち位置が解けるまで強さ 0 — `ShowCgLayer.BeginFarewell` / `ShowSoundDirector`（`FarewellActive`）〔出典: コード〕
 - 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 9.5 秒 ＋ 閉じる 4.0 秒）— `OutroTiming.Default` / `Timing_MatchesTheDoctorTabletSignalCut` 〔出典: show-design:806-826〕
 - Trapped では砂嵐も潰れも出さない。同じフレームに電力を落とし、Dark から始める — `OutroDirector.Begin` / `Trapped_StartsDarkWithoutShowingLive_ThenResetsForTheNextVisitor` 〔出典: show-design:830〕
 - 面と曲は `CloseLevel` 1 本の時計で閉じる。閉じた後は黒のままで、パススルーへは戻さない。閉じている途中も段は Done — `OutroLogic.CloseLevel` / `VisitorPortal.OutroCode` 〔出典: show-design:813-822〕
@@ -45,6 +45,7 @@ paths:
 - エンドロールは結末名（帰還End / 人形End / 中断）と「報告数 N」と写真。分母は出さない — `OutroReportText.Title` / `CountLine` 〔出典: memory/ending_roll.md, LEDGER 0290〕
 - 報告数は押した回数。表示を始めた時点で固定する — `OutroReport.Capture`（`VisitorMarkCount`）〔出典: LEDGER 0247〕
 - 写真はラン内だけ GPU に保持する。撮れなければ代わりの画を入れない — `EndingFrameCapture` / `RunRestartAndDisableDiscardBothVisitorsShots` 〔出典: memory/ending_roll.md〕
+- 帰還の写真は別れの人形が見つめる段（右に体験者・左に人形）で撮る。人形が出る前は CG の無い帰還を仮に撮って上書きし、後ろを向いた後と消えた後は撮らない。出せなかったときだけ CG の無い帰還が写真になる — `TakeRunner.ResolveEndingShotWindow`（`farewellFacing` / `plainReleasedAllowed`）/ `Released_IsTakenWhileTheFarewellDollFacesTheVisitor` 〔出典: LEDGER 0291〕
 
 ## 罠（破ると壊れる）
 - `ReportedAnomalyCount` と `VisitorReportTally` のコメントは「終幕はこれを出す」と書くが、実装は `VisitorMarkCount` を出す（0247 が 0234 を覆した）。コメントを信じて差し替えない 〔コード〕
@@ -52,12 +53,15 @@ paths:
 - `afterTakeId` の演出を `dismissible` にすると、終幕が早く撃たれる 〔streaming:2543〕
 - 締めのカットを伸ばすと watchdog（48 秒）の猶予が減る 〔show-design:959〕
 - 終幕を畳むときは必ず `OutroDirector.ResetScreen` を通す。既定値の向きが逆なので、1 つずつ戻さない 〔show-design:863〕
-- `CurseReleasedCount` はラン開始でも 0 に戻らない。増えた縁で見る 〔`RomiCartLinkLogic`〕
-- 未修正: 4-A で左コントローラの接続が切れると帰還不能になる。台車の失敗が次の人へ持ち越される 〔scenario_audit_20261022〕
+- `CurseReleasedCount` はラン開始でも 0 に戻らない。増えた縁で見る 〔`OvrControllerBridge`〕
+- 未修正: 4-A で左コントローラの接続が切れると帰還不能になる 〔scenario_audit_20261022〕
+- 締めのライブのカットを短くするか入れ替わりを長くすると、別れの人形が消え切る前に電源断へ入る（`ev=farewell` に done が出ない）。尺を動かすなら `EndingFarewellLogic.TotalSec` と対で 〔コード〕
+- 別れの人形は `ShowCgLayer` の 1 体の器を使う。入れ替わりの人形が消える前（`SwapActive`）に出そうとしない 〔コード〕
+- 観測 `ev=farewell` / `ev=sum farewell=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す 〔コード〕
 
 ## 深く読むとき
 - 終幕の段・シェーダ・観測 → show-design-2026-10-22.md:789-929 / memory/ending_result.md
 - 合図と 7.1 秒の内訳 → show-design:930-962
 - ③a・③b → show-design:1300-1450 / memory/closing_line_halt.md
 - untilMark・解除 → streaming-2026-10-22.md:1404-1420, 2495-2560
-- エンドロール → memory/ending_roll.md　台車 → memory/romi_cart_esp32.md
+- エンドロール → memory/ending_roll.md　別れの人形 → memory/ending_farewell_doll.md　台車（不使用）→ memory/romi_cart_esp32.md

@@ -159,7 +159,7 @@ namespace FixedCamVr.Diagnostics
         private float _lastCommsInvasion = -1f;
         // 締めの線を締めのカットの中で踏んだ縁（③a の引き金・`canon/LEDGER.md` 0233）。
         private bool _lastClosingLine;
-        private int _lastRomiCompleted;
+        private EndingFarewellLogic.Phase _lastFarewellPhase = EndingFarewellLogic.Phase.Idle;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
@@ -996,14 +996,24 @@ namespace FixedCamVr.Diagnostics
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             _lastClosingLine = closingLine;
 
-            // 終幕の台車（Romi）への合図。結果が出た縁で 1 行（go = 解除の縁 / cut = 電源断の縁）。
-            // ⚠ 台車が動いたかはここからは分からない（台車は開ループ）。分かるのは「合図が届き ok が返った」まで。
-            RomiCartLink? romi = _show != null ? _show.Romi : null;
-            if (romi != null && romi.Completed != _lastRomiCompleted)
+            // 帰還の別れの人形（0291）。段が変わった縁で 1 行。Idle へ戻る縁（締めの終わり・交代）は出さない。
+            // ⚠ 段だけでは「画に出た」の証拠にならない。cg = CG 層が実際に描いているか（IsVisible）と、
+            //    解けた立ち位置（人形と体験者の足元の枠 UV）を並べる。人形が体験者の左に居るかは u で見る。
+            EndingFarewellDoll? farewell = _takes != null ? _takes.Farewell : null;
+            if (farewell != null && farewell.Phase != _lastFarewellPhase)
             {
-                _lastRomiCompleted = romi.Completed;
-                Emit($"ev=romi kind={romi.LastKind} res={romi.LastResult} ms={romi.LastRoundTripMs} " +
-                     $"dry={(romi.LastDry ? 1 : 0)} sent={romi.Sent} ack={romi.Acked}");
+                _lastFarewellPhase = farewell.Phase;
+                if (farewell.Phase != EndingFarewellLogic.Phase.Idle)
+                {
+                    ShowCgLayer? fcg = _cg;
+                    var a = fcg != null ? fcg.FarewellAnchor : default;
+                    bool anchored = fcg != null && fcg.FarewellAnchored;
+                    Emit($"ev=farewell phase={farewell.Phase.ToString().ToLowerInvariant()} " +
+                         $"cg={(fcg != null && fcg.IsVisible ? 1 : 0)} anchored={(anchored ? 1 : 0)} " +
+                         $"dollU={(anchored ? a.dollUv.x : -1f):F2} dollV={(anchored ? a.dollUv.y : -1f):F2} " +
+                         $"visU={(anchored ? a.visitorUv.x : -1f):F2} visV={(anchored ? a.visitorUv.y : -1f):F2} " +
+                         $"screen={(anchored && a.fromScreen ? 1 : 0)}");
+                }
             }
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
@@ -1664,10 +1674,10 @@ namespace FixedCamVr.Diagnostics
                .Append('/').Append(VisitorPrefs.PendingSeq)
                .Append('/').Append(VisitorPrefs.AppliedSeq)
                .Append('/').Append(VisitorPrefs.ApplyCount);
-            //   romi = 終幕の台車への合図 `<送った累計>/<ok が返った累計>`（送るのは解除の縁と電源断の縁だけ）。
-            RomiCartLink? romiSum = _show != null ? _show.Romi : null;
-            _sb.Append(" romi=").Append(romiSum != null ? romiSum.Sent : -1)
-               .Append('/').Append(romiSum != null ? romiSum.Acked : -1);
+            //   farewell = 帰還の別れの人形 `<見つめる段まで届いた回数>/<消え切った回数>`（0291）。
+            EndingFarewellDoll? farewellSum = _takes != null ? _takes.Farewell : null;
+            _sb.Append(" farewell=").Append(farewellSum != null ? farewellSum.FacedCount : -1)
+               .Append('/').Append(farewellSum != null ? farewellSum.CompletedCount : -1);
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。

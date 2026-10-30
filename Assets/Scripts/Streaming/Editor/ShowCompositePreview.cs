@@ -1163,6 +1163,48 @@ namespace FixedCamVr.Streaming.EditorTools
             /// </summary>
             public Vector3 ActorFootWorld => _actor != null ? _actor.transform.position : Vector3.zero;
 
+            /// <summary>人形を描く仮想カメラ（本番の ShowCgLayer の仮想カメラと同じ姿勢・内部行列）。</summary>
+            public Camera CgCamera => _cgCam;
+
+            /// <summary>出力先のディレクトリ。</summary>
+            public string OutDir => _outDir;
+
+            /// <summary>CG 層の強さ（本番の <c>_CgStrength</c>）。別れの人形の現れ・消えに使う。既定 1。</summary>
+            public float CgStrength { get; set; } = 1f;
+
+            /// <summary><see cref="Composite"/> と同じ contain-fit を、描く前に求める。</summary>
+            public Vector2 ContainFor(Plate plate)
+            {
+                float srcAspect = (float)plate.width / Mathf.Max(1, plate.height);
+                return srcAspect < _frameAspect
+                    ? new Vector2(srcAspect / _frameAspect, 1f)
+                    : new Vector2(1f, _frameAspect / srcAspect);
+            }
+
+            /// <summary>
+            /// ワールドの足元へ直接立てる（course を経ない）。別れの人形の立ち位置は
+            /// <see cref="EndingFarewellLogic.TrySolve"/> がワールドで返すので、本番と同じ値をそのまま置く。
+            /// </summary>
+            public void PlaceActorAtWorld(ShowActorDef def, Vector3 worldFoot, float yawDeg, Geometry geom)
+            {
+                EnsureActor(def);
+                if (_actor == null) return;
+                _actor.SetActive(true);
+                Transform t = _actor.transform;
+                Vector3 pos = worldFoot;
+                if (_rig == null || !_rig.HasRig)
+                    pos.y += Mathf.Max(0.2f, def.heightM) * 0.5f;
+                t.position = pos;
+                t.rotation = Quaternion.Euler(0f, yawDeg, 0f);
+                if (_rig != null && _rig.HasRig)
+                {
+                    _rig.ResetPose();
+                    for (int i = 0; i < ActorSettleFrames; i++)
+                        _rig.Drive(ShowBodyInput.None, yawDeg, 1f / 30f);
+                }
+                ApplyLightAndGround(def, geom);
+            }
+
             public void HideActor()
             {
                 if (_actor != null) _actor.SetActive(false);
@@ -1450,7 +1492,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _compositeMat.SetVector("_CgScale", new Vector4(contain.x, contain.y, 0f, 0f));
                 _compositeMat.SetFloat("_UvRotSteps", 0f);
                 _compositeMat.SetFloat("_OverlayStrength", 0f);
-                _compositeMat.SetFloat("_CgStrength", cgVisible ? 1f : 0f);
+                _compositeMat.SetFloat("_CgStrength", cgVisible ? Mathf.Clamp01(CgStrength) : 0f);
 
                 _compositeMat.SetFloat("_Exposure", post.exposure);
                 _compositeMat.SetFloat("_Contrast", post.contrast);

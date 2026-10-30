@@ -192,6 +192,9 @@ $Menus = [ordered]@{
                            Desc = '終幕の結果画面 3 言語・2 結末と中断。専用フォント生成と実描画'
                            Out = 'Assets/Resources/Fonts/OutroReport SDF.asset'
                            Src = @('Assets/Scripts/Diagnostics/OutroReportText.cs') }
+    'farewell'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.RunFarewell'
+                            Desc = '帰還の別れの人形（0291）を実プレート × 実合成で段ごとに PNG 化と帰還End の写真'
+                            Out = 'Logs/ending-farewell-preview' }
     'hud'              = @{ Method = 'FixedCamVr.Streaming.EditorTools.HudPreviewScreenshot.Capture'
                             Desc = 'HMD 内のステータス・操作パネルを PNG 化'
                             Out = 'Assets/Screenshots/hud-preview' }

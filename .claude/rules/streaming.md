@@ -19,7 +19,7 @@ paths:
 | [show-run.md](show-run.md) | ShowRun* / ShowClock / Take* / Timeline* / CueScheduler / Zone* / Segment* / LineCross / StartSpot / Approach / Overlay* / CameraSwitch* / Bgm* / LapCounter |
 | [intro-title.md](intro-title.md) | Intro* / Title* / ContainmentShell / CrtScreenMesh / Attic / HmdOnboardingLogic |
 | [comms.md](comms.md) | Comms* / UnauthorizedAccessEffect / AlertEscalation / HorrorRelief / ShowLanguage |
-| [ending.md](ending.md) | Ending* / Outro* / RomiCart* / VisitorReportTally |
+| [ending.md](ending.md) | Ending* / Outro* / VisitorReportTally |
 | [screen-post.md](screen-post.md) | ScreenComposite・MjpegScreen / CameraFeel* / ScreenDecay / Osd* / SignalLost / Heartbeat* / Fx/** |
 | [screen-swap-eyes.md](screen-swap-eyes.md) | Glitch* / Swap* / AnomalyEyes* / Eye* |
 | [screen-cg.md](screen-cg.md) | Streaming/Cg/** と CG 人形の合成 |

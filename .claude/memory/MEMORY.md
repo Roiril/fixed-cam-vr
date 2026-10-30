@@ -16,7 +16,8 @@
 - [closing_line_halt.md](closing_line_halt.md) — 4-A の③a は締めの線を踏んだ瞬間（0233）。入場 3 秒は ending_result
 - [ending_result.md](ending_result.md) — 最後の A の警告・帰還不能・解除・人形 End の条件と報告数の集計
 - [ending_roll.md](ending_roll.md) — 帰還 End / 人形 End のエンドロール冒頭。ランごとの合成済み写真
-- [romi_cart_esp32.md](romi_cart_esp32.md) — 人形の台車（ESP32・Joy-Con 2）。終幕の自動走行／Wi-Fi 書き換え `tools/romi/ota.py`
+- [ending_farewell_doll.md](ending_farewell_doll.md) — 帰還の別れの人形（0291）。CG 層の器を別れのモードで使う・写真は見つめる段
+- [romi_cart_esp32.md](romi_cart_esp32.md) — ⚠ 10-30 から不使用。人形の台車（ESP32・Joy-Con 2）の記録
 - [visitor_sound_reset.md](visitor_sound_reset.md) — 2 人目以降だけ壊れる型。ResetRun が本番から呼ばれていなかった
 - [unexpected_event_recovery.md](unexpected_event_recovery.md) — 休止・固まり・通信の揺れからの復帰。休止を数えない ShowClock／強制リセット
 - [experience_fixes_2026_09_24.md](experience_fixes_2026_09_24.md) — 3-A/4-A の素材の同梱漏れ・導入の順序・最後のお願いまで報告をロック
