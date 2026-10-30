@@ -427,7 +427,8 @@ namespace FixedCamVr.Streaming
         /// <paramref name="lines"/> は通過ラインの今フレームの結果（<see cref="LineCrossLogic.StateView"/>）。
         /// null なら at=line の演出は発火しない（位置が取れない環境＝従来どおりの動き）。
         /// </summary>
-        public Decision Tick(float now, int latestZoneCam, LineCrossLogic.State[]? lines = null)
+        public Decision Tick(float now, int latestZoneCam, LineCrossLogic.State[]? lines = null,
+                             bool holdCurrentStep = false)
         {
             // ① 開始条件を満たした瞬間を **必ず記録する**（画面が塞がっていても取りこぼさない）。
             //    ライントリガーは「横切った」という事象で、猶予 CrossLatchSec（0.6s）で消えるため、
@@ -448,12 +449,14 @@ namespace FixedCamVr.Streaming
 
             if (_running)
             {
+                // 写真と退場を待った時間を watchdog に誤算入しない。
+                if (holdCurrentStep) _deadline = Math.Max(_deadline, now + 1f);
                 // ⚠ **報告を watchdog より先に見る。** 同じフレームで両方揃ったら、体験者の行為の方を
                 //   理由にする（画も「乱れて消えた」になり、押した手応えが返る）。畳む先は同じ
                 //   EndTakeDecision なので、後片付けの経路は 1 本のまま増えない。
                 if (_dismissPending) return DismissDecision(latestZoneCam);
 
-                if (now >= _deadline)
+                if (!holdCurrentStep && now >= _deadline)
                     return EndTakeDecision(latestZoneCam, EndReason.Watchdog);
 
                 // ⚠ ここで武装中の演出を決着させない（旧実装はしていた）。
@@ -461,7 +464,7 @@ namespace FixedCamVr.Streaming
                 //   その区間に居るあいだは Ready のまま待ち、この演出が終わった次の Tick で発火する。
                 //   区間を出れば OnZoneCommitted が ifMissed どおりに決着させる（不変条件 4 は不変）。
 
-                if (now >= _stepEnd)
+                if (!holdCurrentStep && now >= _stepEnd)
                 {
                     int next = _activeStep + 1;
                     float[] durs = _defs[_activeTake].stepDurSec;

@@ -24,10 +24,20 @@ namespace FixedCamVr.Streaming
         public EndingFarewellLogic.Phase Phase => _logic.Current;
 
         /// <summary>写真を撮ってよい（体験者の方を向いて不透明に立っている）。</summary>
-        public bool Facing => _logic.Current == EndingFarewellLogic.Phase.Face && _cg != null && _cg.FarewellAnchored;
+        public bool Facing => _logic.Current == EndingFarewellLogic.Phase.Face && _cg != null && _cg.FarewellPhotoReady;
 
-        /// <summary>人形が出る前・出せなかったときは、人形なしの帰還の画を撮ってよい。</summary>
-        public bool AllowsPlainReleasedShot => _logic.AllowsPlainReleasedShot;
+        public bool Completed => _logic.Current == EndingFarewellLogic.Phase.Done;
+        public bool ShotCaptured { get; private set; }
+
+        public void NotifyShotCaptured()
+        {
+            if (!Facing) return;
+            ShotCaptured = true;
+            _logic.NotifyShotCaptured();
+        }
+
+        /// <summary>帰還写真には所定位置で向き合った人と人形が必要（0293）。</summary>
+        public bool AllowsPlainReleasedShot => false;
 
         /// <summary>この体験者で見つめる段まで届いた回数（テレメトリの集計用・ラン開始で 0）。</summary>
         public int FacedCount { get; private set; }
@@ -50,6 +60,7 @@ namespace FixedCamVr.Streaming
             if (_cg != null && _cg.FarewellActive) _cg.Hide();
             _logic.Reset();
             _beginAccepted = false;
+            ShotCaptured = false;
             FacedCount = 0;
             CompletedCount = 0;
             _lastPhase = EndingFarewellLogic.Phase.Idle;
@@ -72,14 +83,18 @@ namespace FixedCamVr.Streaming
                 _beginAccepted = _cg != null && _cg.BeginFarewell(actor, _runner.ActiveStepCameraIndex);
                 if (!_beginAccepted)
                     Debug.LogWarning($"[EndingFarewellDoll] 別れの人形 '{actor}' を出せない" +
-                                     "（姿勢・較正・位置合わせ・actors[] のどれかが無い）→ 人形なしで帰還の写真を撮る");
+                                     "（姿勢・較正・位置合わせ・actors[] のどれかが無い）→ 写真を撮らず再試行を待つ");
             }
             if (_cg != null && _cg.FarewellActive) _cg.SetFarewellSample(step.sample);
             if (step.hide && _cg != null && _cg.FarewellActive) _cg.Hide();
             if (_logic.Current == EndingFarewellLogic.Phase.Unavailable && _lastPhase == EndingFarewellLogic.Phase.Anchoring
                 && anchored == false)
                 Debug.LogWarning("[EndingFarewellDoll] 別れの人形の立ち位置が解けない（頭の追跡か較正が無い）→ 出さない");
-            if (_logic.Current == EndingFarewellLogic.Phase.Idle) _beginAccepted = false;
+            if (_logic.Current == EndingFarewellLogic.Phase.Idle)
+            {
+                _beginAccepted = false;
+                ShotCaptured = false;
+            }
 
             if (_logic.Current == _lastPhase) return;
             if (_logic.Current == EndingFarewellLogic.Phase.Face) FacedCount++;

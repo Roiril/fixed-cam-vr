@@ -33,7 +33,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             // 事務室（カメラの背景）
             const float RoomW = 9f, RoomD = 9f, RoomH = 2.7f;
             Box(root, "Floor", new Vector3(0f, floorY - 0.01f, 0f), new Vector3(RoomW, 0.02f, RoomD), carpet);
-            Box(root, "Ceiling", new Vector3(0f, floorY + RoomH, 0f), new Vector3(RoomW, 0.02f, RoomD), ceiling);
+            Box(root, "Ceiling", new Vector3(0f, floorY + RoomH, 0f), new Vector3(RoomW, 0.02f, RoomD), ceiling).layer = 28;
             Box(root, "WallN", new Vector3(0f, floorY + RoomH * 0.5f, RoomD * 0.5f), new Vector3(RoomW, RoomH, 0.1f), wall);
             Box(root, "WallS", new Vector3(0f, floorY + RoomH * 0.5f, -RoomD * 0.5f), new Vector3(RoomW, RoomH, 0.1f), wall);
             Box(root, "WallE", new Vector3(RoomW * 0.5f, floorY + RoomH * 0.5f, 0f), new Vector3(0.1f, RoomH, RoomD), wall);
@@ -41,7 +41,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             for (int i = -1; i <= 1; i++)
                 for (int j = -1; j <= 1; j++)
                     Box(root, $"Light{i}{j}", new Vector3(i * 2.6f, floorY + RoomH - 0.02f, j * 2.6f),
-                        new Vector3(0.3f, 0.01f, 1.2f), panel);
+                        new Vector3(0.3f, 0.01f, 1.2f), panel).layer = 28;
             // 机・棚（背景に奥行きを出す）
             Box(root, "Desk1", new Vector3(2.6f, floorY + 0.36f, 1.6f), new Vector3(1.4f, 0.72f, 0.7f), desk);
             Box(root, "Desk2", new Vector3(-2.4f, floorY + 0.36f, -2.2f), new Vector3(1.4f, 0.72f, 0.7f), desk);
@@ -69,6 +69,16 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                     rod.transform.rotation = w.transform.rotation;
                 }
             }
+
+            // 著作された備品はナビゲーションと同じ高さ・寸法で描く。
+            if (layout.room?.props != null)
+                foreach (ShowRoomBoxDef p in layout.room.props)
+                {
+                    if (p == null || !p.IsUsable()) continue;
+                    GameObject prop = Box(root, "Prop " + p.id,
+                        new Vector3(p.x, floorY + p.y + p.h * .5f, p.z), new Vector3(p.w, p.h, p.d), desk);
+                    prop.transform.rotation = Quaternion.Euler(0f, p.yawDeg, 0f);
+                }
 
             // 光（layout.room.light があれば向き・強さを使う）
             var sunGo = new GameObject("Sun");

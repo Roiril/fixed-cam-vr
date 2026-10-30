@@ -1,5 +1,6 @@
 #nullable enable
 using UnityEngine;
+using System.Collections.Generic;
 
 namespace FixedCamVr.Streaming
 {
@@ -37,25 +38,26 @@ namespace FixedCamVr.Streaming
 
         // ---- 時刻表 -------------------------------------------------------------------
         //
-        // 締めのライブのカットは報告から 7.1 秒（show.json）。そのうち入れ替わり（人形 → 人）が 2.6 秒を使うので、
-        // 人形に残るのは約 4.5 秒。全体を 4.25 秒に収め、電源断の前に消え切るようにする。
+        // 写真待ちは Face の末尾で保持する。写真が成功した後だけ回転と退場へ進み、
+        // TakeRunner は人形が消え切るまで締めのライブを保持する（LEDGER 0293）。
 
         /// <summary>現れる（不透明度 0 → 1）。</summary>
         public const float AppearSec = 0.35f;
-        /// <summary>体験者の方を向いて立つ。写真の窓。</summary>
+        /// <summary>体験者の方を向いて立つ最短尺。写真未成立ならこの段を保持する。</summary>
         public const float FaceSec = 1.15f;
         /// <summary>後ろを向く。</summary>
         public const float TurnSec = 0.75f;
         /// <summary>下がる。最後の <see cref="FadeOutSec"/> で消える。</summary>
-        public const float RetreatSec = 2.0f;
+        public const float RetreatSec = 6.0f;
         /// <summary>下がりながら消える尺。</summary>
-        public const float FadeOutSec = 1.1f;
-        /// <summary>下がる距離 (m)。0.22 m/s 前後の「ゆっくり」。</summary>
+        public const float FadeOutSec = 4.5f;
+        /// <summary>退場の名目進行パラメータ。PoseAt は 0..RetreatM を折れ線の全長へ写す。</summary>
         public const float RetreatM = 0.45f;
         /// <summary>立ち位置が解けるのを待つ上限。超えたら出さない。</summary>
         public const float AnchorTimeoutSec = 0.5f;
 
         public const float TotalSec = AppearSec + FaceSec + TurnSec + RetreatSec;
+        private const float RetreatEaseFraction = 0.25f;
 
         // ---- 立ち位置 -----------------------------------------------------------------
 
@@ -89,7 +91,7 @@ namespace FixedCamVr.Streaming
             public float alpha;
             /// <summary>体験者の方 → 後ろ の回り具合 0..1（緩急つき）。</summary>
             public float turn01;
-            /// <summary>立ち位置から下がった距離 (m)。</summary>
+            /// <summary>退場の名目進行パラメータ。実距離は Anchor の折れ線長から求める。</summary>
             public float retreatM;
 
             /// <summary>写真を撮ってよい（体験者の方を向いて不透明に立っている）。</summary>
@@ -109,6 +111,12 @@ namespace FixedCamVr.Streaming
         public Phase Current { get; private set; } = Phase.Idle;
         public float ElapsedSec { get; private set; }
         private float _anchorWaitSec;
+        private bool _shotCaptured;
+
+        public void NotifyShotCaptured()
+        {
+            if (Current == Phase.Face) _shotCaptured = true;
+        }
 
         /// <summary>写真の窓が別れの人形を待たずに開いてよいか（人形が出る前・出せなかった場合）。</summary>
         public bool AllowsPlainReleasedShot => Current == Phase.Idle || Current == Phase.Unavailable;
@@ -122,6 +130,7 @@ namespace FixedCamVr.Streaming
             Current = Phase.Idle;
             ElapsedSec = 0f;
             _anchorWaitSec = 0f;
+            _shotCaptured = false;
         }
 
         /// <summary>
@@ -176,6 +185,7 @@ namespace FixedCamVr.Streaming
                     {
                         step.hide = true;
                         Current = Phase.Unavailable;
+                        _anchorWaitSec = 0f;
                     }
                     break;
 
@@ -185,13 +195,23 @@ namespace FixedCamVr.Streaming
                 case Phase.Retreat:
                     if (!cgShowing)
                     {
-                        // 誰かが CG 層を畳んだ（カットの終わり・中止）。もう出さない。
-                        Current = Phase.Done;
+                        // 締めが続いているのに器を失った。未完了を Done にせず再試行する。
+                        Current = Phase.Unavailable;
+                        _anchorWaitSec = 0f;
+                        _shotCaptured = false;
                         break;
                     }
                     ElapsedSec += dt;
+                    // 写真が GPU へ写るまで、向き合った姿勢を保つ。
+                    if (!_shotCaptured)
+                        ElapsedSec = Mathf.Min(ElapsedSec, AppearSec + FaceSec - 0.0001f);
                     Current = SampleAt(ElapsedSec).phase;
                     if (Current == Phase.Done) step.hide = true;
+                    break;
+
+                case Phase.Unavailable:
+                    _anchorWaitSec += dt;
+                    if (_anchorWaitSec >= 1f && releasedLiveReady && cgFree) Reset();
                     break;
             }
 
@@ -223,7 +243,7 @@ namespace FixedCamVr.Streaming
 
             // 下がる。歩き出しだけ緩め、あとは一定の速さ（止まりながら消えると「置かれた」に見える）。
             float u = Mathf.Clamp01(t / RetreatSec);
-            const float ease = 0.25f;
+            const float ease = RetreatEaseFraction;
             float dist = u < ease
                 ? u * u / (2f * ease)
                 : ease / 2f + (u - ease);
@@ -246,8 +266,14 @@ namespace FixedCamVr.Streaming
         {
             /// <summary>人形の足元（ワールド）。</summary>
             public Vector3 foot;
+            /// <summary>L 字壁の内側の、体験者が写真を撮る位置。</summary>
+            public Vector3 visitorTargetFoot;
+            public Vector3 wallCorner, wallEndA, wallEndB;
+            public float visitorHeightM, visitorRadiusM, wallHalfThicknessM, dollBodyRadiusM;
             /// <summary>下がる向き（床の上の単位ベクトル）。</summary>
             public Vector3 retreatDir;
+            public Vector3 retreatCorner, retreatEnd, cameraPosition;
+            public bool hasRetreatPath;
             /// <summary>後ろを向いた後のヨー（度）。</summary>
             public float awayYawDeg;
             /// <summary>人形と体験者の足元の枠 UV（観測用）。</summary>
@@ -255,6 +281,282 @@ namespace FixedCamVr.Streaming
             /// <summary>画面のずらしで決まったか（false ならカメラの左右方向で置き直した）。</summary>
             public bool fromScreen;
         }
+
+        public const float PhotoPositionToleranceM = 0.20f;
+        public const float PhotoYawToleranceDeg = 35f;
+        public const float PhotoWallClearanceM = 0.04f;
+        public const float PhotoFrameMargin = 0.005f;
+        public const float RetreatMaxSpeedMps = 0.35f;
+        // 本番人形 heightM=.4 の CPU bounds: x 最大 .15675569 / z 最大 .07268838。
+        // 全回転の保守上限 .17278873m を包む値（2026-10-30 保存プレート計測）。
+        public const float DefaultDollBodyRadiusM = 0.174f;
+
+        /// <summary>L 字の内側に対面する 2 点を固定する。壁の端点は床上のワールド座標。</summary>
+        public static bool TrySolveAtWall(Camera cam, Vector2 containScale, Vector3 corner,
+                                          Vector3 endA, Vector3 endB, out Anchor anchor,
+                                          float visitorHeightM = 1.65f, float visitorRadiusM = 0.36f,
+                                          float dollHeightM = 0.4f, float wallHalfThicknessM = 0.02f,
+                                          System.Func<Vector3, float, bool>? canStand = null,
+                                          System.Func<Vector3, Vector3, bool>? pairAccepted = null,
+                                          float dollBodyRadiusM = DefaultDollBodyRadiusM,
+                                          System.Func<Anchor, bool>? trajectoryAccepted = null)
+        {
+            anchor = default;
+            Vector3 a = Flat(endA - corner), b = Flat(endB - corner);
+            if (cam == null || a.magnitude < 0.5f || b.magnitude < 0.5f
+                || Mathf.Abs(Vector3.Dot(a.normalized, b.normalized)) > 0.15f
+                || visitorHeightM <= 0f || visitorRadiusM <= 0f || dollHeightM <= 0f) return false;
+            Vector3 axisA = a.normalized, axisB = b.normalized;
+            float dollRadius = Mathf.Max(0.08f, dollBodyRadiusM);
+            var visitors = new List<Vector3>();
+            var dolls = new List<Vector3>();
+            // 端点より先の開いた側も候補に含める。壁際に寄せて頭を切る固定比率には戻さない。
+            const float grid = 0.025f;
+            for (float x = grid; x <= a.magnitude + 0.25f; x += grid)
+                for (float z = grid; z <= b.magnitude + 0.25f; z += grid)
+                {
+                    Vector3 p = corner + axisA * x + axisB * z;
+                    float clearance = Mathf.Min(DistanceToWall(p, corner, endA), DistanceToWall(p, corner, endB))
+                                      - wallHalfThicknessM;
+                    if (clearance >= PhotoWallClearanceM
+                        && (canStand == null || canStand(p, 0.25f))
+                        && PointFitsFrame(cam, p) && PointFitsFrame(cam, p + Vector3.up * visitorHeightM)) visitors.Add(p);
+                    if (clearance >= dollRadius + PhotoWallClearanceM
+                        && (canStand == null || canStand(p, dollRadius))
+                        && FitsFrame(cam, p, dollHeightM, dollRadius)) dolls.Add(p);
+                }
+            float best = float.PositiveInfinity;
+            Vector3 doll = default, visitor = default;
+            Vector3 retreatCorner = default, retreatEnd = default;
+            int gapPairs = 0, orderedPairs = 0, framedPairs = 0;
+            foreach (Vector3 v in visitors)
+            {
+                Cg.ShowCgLayer.TryFrameUv(cam, v, containScale, out Vector2 vu);
+                foreach (Vector3 d in dolls)
+                {
+                    float gap = Vector3.Distance(v, d);
+                    // 人形の高さに重なる足・下腿の断面と、人形の円断面の表面間を測る。
+                    // 最大身体半径に任意の余裕を足した距離で、対面写真の候補を捨てない。
+                    float footGap = gap - FootHalfDepth(visitorHeightM, visitorRadiusM) - dollRadius;
+                    float legGap = gap - 0.13f - dollRadius;
+                    if (Mathf.Min(footGap, legGap) < PhotoWallClearanceM) continue;
+                    gapPairs++;
+                    Cg.ShowCgLayer.TryFrameUv(cam, d, containScale, out Vector2 du);
+                    if (du.x >= vu.x) continue;
+                    orderedPairs++;
+                    float score = Mathf.Abs(gap - 0.75f) + Mathf.Abs(vu.y - du.y) * 2f
+                                  + Mathf.Abs(vu.x - 0.65f) + Mathf.Abs(du.x - 0.40f);
+                    if (score >= best) continue;
+                    if (!VisitorFits(cam, v, visitorHeightM, visitorRadiusM, FaceYawDeg(v, d),
+                        corner, endA, endB, wallHalfThicknessM, canStand)) continue;
+                    if (!TryRetreatPath(cam, d, v, corner, endA, endB, dollRadius, dollHeightM,
+                        wallHalfThicknessM, canStand, out Vector3 bend, out Vector3 end)) continue;
+                    if (pairAccepted != null && !pairAccepted(v, d)) continue;
+                    if (trajectoryAccepted != null)
+                    {
+                        var trial = new Anchor
+                        {
+                            foot = d, visitorTargetFoot = v, retreatCorner = bend, retreatEnd = end,
+                            cameraPosition = cam.transform.position, hasRetreatPath = true,
+                            retreatDir = Flat(bend - d).normalized,
+                            awayYawDeg = AwayYaw(d, v, cam.transform.position),
+                            wallCorner = corner, wallEndA = endA, wallEndB = endB,
+                            visitorHeightM = visitorHeightM, visitorRadiusM = visitorRadiusM,
+                            wallHalfThicknessM = wallHalfThicknessM, dollUv = du, visitorUv = vu,
+                            dollBodyRadiusM = dollRadius,
+                        };
+                        if (!trajectoryAccepted(trial)) continue;
+                    }
+                    framedPairs++;
+                    best = score; visitor = v; doll = d; retreatCorner = bend; retreatEnd = end;
+                }
+            }
+            if (float.IsPositiveInfinity(best))
+            {
+                Debug.LogWarning($"[EndingFarewell] placement unavailable visitors={visitors.Count} dolls={dolls.Count} " +
+                    $"separated={gapPairs} ordered={orderedPairs} framed={framedPairs}");
+                return false;
+            }
+            Debug.Log($"[EndingFarewell] placement visitor=({visitor.x:0.000},{visitor.z:0.000}) " +
+                $"doll=({doll.x:0.000},{doll.z:0.000}) gap={Vector3.Distance(visitor, doll):0.000}m");
+            Vector3 retreat = Flat(retreatCorner - doll).normalized;
+            Cg.ShowCgLayer.TryFrameUv(cam, doll, containScale, out Vector2 dollUv);
+            Cg.ShowCgLayer.TryFrameUv(cam, visitor, containScale, out Vector2 visitorUv);
+            anchor = new Anchor
+            {
+                foot = doll, visitorTargetFoot = visitor, retreatDir = retreat,
+                awayYawDeg = AwayYaw(doll, visitor, cam.transform.position), dollUv = dollUv,
+                visitorUv = visitorUv, fromScreen = false,
+                wallCorner = corner, wallEndA = endA, wallEndB = endB,
+                visitorHeightM = visitorHeightM, visitorRadiusM = visitorRadiusM,
+                wallHalfThicknessM = wallHalfThicknessM,
+                dollBodyRadiusM = dollRadius,
+                retreatCorner = retreatCorner, retreatEnd = retreatEnd,
+                cameraPosition = cam.transform.position, hasRetreatPath = true,
+            };
+            return true;
+        }
+
+        /// <summary>本番と保存プレートが共有する退場の位置と向き。</summary>
+        public static void PoseAt(in Anchor anchor, in Sample sample, float faceYawDeg,
+                                  out Vector3 foot, out float yawDeg)
+        {
+            foot = anchor.foot;
+            if (anchor.hasRetreatPath)
+            {
+                float first = Vector3.Distance(anchor.foot, anchor.retreatCorner);
+                float second = Vector3.Distance(anchor.retreatCorner, anchor.retreatEnd);
+                float progress = sample.phase == Phase.Done ? 1f : Mathf.Clamp01(sample.retreatM / RetreatM);
+                float distance = progress * (first + second);
+                foot = distance <= first
+                    ? Vector3.Lerp(anchor.foot, anchor.retreatCorner, first > 1e-5f ? distance / first : 1f)
+                    : Vector3.Lerp(anchor.retreatCorner, anchor.retreatEnd, second > 1e-5f ? (distance - first) / second : 1f);
+            }
+            else foot += anchor.retreatDir * (sample.phase == Phase.Done ? RetreatM : sample.retreatM);
+            float away = anchor.hasRetreatPath
+                ? AwayYaw(foot, anchor.visitorTargetFoot, anchor.cameraPosition) : anchor.awayYawDeg;
+            yawDeg = TurnYawDeg(faceYawDeg, away, sample.phase == Phase.Done ? 1f : sample.turn01);
+        }
+
+        private static float AwayYaw(Vector3 foot, Vector3 visitor, Vector3 camera)
+        {
+            Vector3 away = Flat(foot - visitor).normalized + Flat(foot - camera).normalized;
+            return YawOf(away.sqrMagnitude > 1e-6f ? away : Flat(foot - camera));
+        }
+
+        private static bool TryRetreatPath(Camera cam, Vector3 foot, Vector3 visitor, Vector3 corner,
+                                            Vector3 endA, Vector3 endB, float radius, float height, float halfWall,
+                                            System.Func<Vector3, float, bool>? canStand,
+                                            out Vector3 bend, out Vector3 end)
+        {
+            bend = end = default;
+            float best = float.PositiveInfinity;
+            float clearance = radius + halfWall + PhotoWallClearanceM + 0.01f;
+            for (int exit = 0; exit < 2; exit++)
+            {
+                Vector3 endpoint = exit == 0 ? endA : endB;
+                Vector3 other = exit == 0 ? endB : endA;
+                Vector3 along = Flat(endpoint - corner).normalized;
+                Vector3 side = Flat(other - corner).normalized;
+                Vector3 p = endpoint + along * clearance
+                            + side * Mathf.Max(Vector3.Dot(foot - corner, side), clearance);
+                Vector3 q = endpoint + along * clearance - side * (clearance * 2f);
+                if (Vector3.Distance(q, cam.transform.position) <= Vector3.Distance(foot, cam.transform.position) + 0.04f)
+                    continue;
+                if (ProjectedHeight(cam, q, height) >= ProjectedHeight(cam, foot, height) * 0.97f) continue;
+                if (!GrowsAway(foot, p, visitor) || !GrowsAway(p, q, visitor)) continue;
+                if (!SegmentClearsWalls(foot, p, corner, endA, endB, clearance)
+                    || !SegmentClearsWalls(p, q, corner, endA, endB, clearance)) continue;
+                if (canStand != null && (!canStand(p, radius) || !canStand(q, radius))) continue;
+                float length = Vector3.Distance(foot, p) + Vector3.Distance(p, q);
+                // SampleAt の加速曲線の最大速度。名目 RetreatM の速度で代用しない。
+                if (length / (RetreatSec * (1f - RetreatEaseFraction * 0.5f)) > RetreatMaxSpeedMps) continue;
+                if (length >= best) continue;
+                best = length; bend = p; end = q;
+            }
+            return !float.IsPositiveInfinity(best);
+        }
+
+        private static bool GrowsAway(Vector3 from, Vector3 to, Vector3 origin)
+            => Vector3.Dot(Flat(from - origin), Flat(to - from)) >= -1e-6f;
+
+        private static float ProjectedHeight(Camera cam, Vector3 foot, float height)
+            => Mathf.Abs(cam.WorldToViewportPoint(foot + Vector3.up * height).y - cam.WorldToViewportPoint(foot).y);
+
+        private static bool SegmentClearsWalls(Vector3 from, Vector3 to, Vector3 corner,
+                                                Vector3 endA, Vector3 endB, float clearance)
+        {
+            return !CrossesWall(from, to, corner, endA) && !CrossesWall(from, to, corner, endB)
+                   && DistanceBetweenSegments(from, to, corner, endA) >= clearance - 1e-5f
+                   && DistanceBetweenSegments(from, to, corner, endB) >= clearance - 1e-5f;
+        }
+
+        private static float DistanceBetweenSegments(Vector3 from, Vector3 to, Vector3 a, Vector3 b)
+            => Mathf.Min(Mathf.Min(DistanceToWall(from, a, b), DistanceToWall(to, a, b)),
+                         Mathf.Min(DistanceToWall(a, from, to), DistanceToWall(b, from, to)));
+
+        private static float DistanceToWall(Vector3 p, Vector3 a, Vector3 b)
+        {
+            Vector3 d = Flat(b - a);
+            if (d.sqrMagnitude < 1e-8f) return Flat(p - a).magnitude;
+            return Flat(p - a - d * Mathf.Clamp01(Vector3.Dot(Flat(p - a), d) / d.sqrMagnitude)).magnitude;
+        }
+
+        private static bool FitsFrame(Camera cam, Vector3 foot, float height, float radius)
+        {
+            // 上下端と胴幅を投影。足先や頭まで胴の最大半径を使う円柱は実際より過大になるため、
+            // 頭は 0.11m・足は 0.14m を上限とし、胴だけ全半径で調べる。
+            for (int layer = 0; layer < 3; layer++)
+            {
+                float y = layer == 0 ? 0f : layer == 1 ? height * 0.5f : height;
+                float r = layer == 0 ? Mathf.Min(radius, 0.14f) : layer == 1 ? radius : Mathf.Min(radius, 0.11f);
+                for (int i = 0; i < 8; i++)
+                {
+                    float angle = i * Mathf.PI * 0.25f;
+                    Vector3 p = cam.WorldToViewportPoint(foot + new Vector3(Mathf.Cos(angle) * r, y, Mathf.Sin(angle) * r));
+                    if (p.z <= cam.nearClipPlane || p.x < PhotoFrameMargin || p.x > 1f - PhotoFrameMargin
+                        || p.y < PhotoFrameMargin || p.y > 1f - PhotoFrameMargin)
+                        return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool PointFitsFrame(Camera cam, Vector3 point)
+        {
+            Vector3 uv = cam.WorldToViewportPoint(point);
+            return uv.z > cam.nearClipPlane && uv.x >= PhotoFrameMargin && uv.x <= 1f - PhotoFrameMargin
+                   && uv.y >= PhotoFrameMargin && uv.y <= 1f - PhotoFrameMargin;
+        }
+
+        // 全身の最大半径（肩や下げた手を含む）は足の長さではない。
+        private static float FootHalfDepth(float height, float bodyRadius)
+            => Mathf.Min(bodyRadius, 0.20f * height / 1.65f);
+
+        /// <summary>頭・肩と胴・足を別の幅と厚みにして、体験者の向きで回した実寸を確認する。</summary>
+        private static bool VisitorFits(Camera? cam, Vector3 foot, float height, float footExtent,
+                                          float yaw, Vector3 corner, Vector3 endA, Vector3 endB, float halfWall,
+                                          System.Func<Vector3, float, bool>? canStand = null)
+        {
+            Quaternion rotation = Quaternion.Euler(0f, yaw, 0f);
+            for (int layer = 0; layer < 4; layer++)
+            {
+                float y = layer == 0 ? 0f : layer == 1 ? height * 0.45f : layer == 2 ? height * 0.82f : height;
+                float halfWidth = layer == 0 ? 0.11f : layer == 3 ? 0.10f : 0.25f;
+                float halfDepth = layer == 0 ? FootHalfDepth(height, footExtent) : layer == 3 ? 0.11f : 0.13f;
+                for (int x = -1; x <= 1; x += 2)
+                    for (int z = -1; z <= 1; z += 2)
+                    {
+                        Vector3 point = foot + rotation * new Vector3(x * halfWidth, y, z * halfDepth);
+                        if (cam != null && !PointFitsFrame(cam, point)) return false;
+                        if (canStand != null && !canStand(point, 0f)) return false;
+                        float clearance = Mathf.Min(DistanceToWall(point, corner, endA), DistanceToWall(point, corner, endB));
+                        if (clearance < halfWall + PhotoWallClearanceM
+                            || CrossesWall(foot, point, corner, endA) || CrossesWall(foot, point, corner, endB)) return false;
+                    }
+            }
+            return true;
+        }
+
+        private static bool CrossesWall(Vector3 from, Vector3 to, Vector3 a, Vector3 b)
+        {
+            Vector3 p = Flat(to - from), q = Flat(b - a), r = Flat(a - from);
+            float cross = p.x * q.z - p.z * q.x;
+            if (Mathf.Abs(cross) < 1e-6f) return false;
+            float t = (r.x * q.z - r.z * q.x) / cross;
+            float u = (r.x * p.z - r.z * p.x) / cross;
+            return t >= 0f && t <= 1f && u >= 0f && u <= 1f;
+        }
+
+        /// <summary>所定の位置と、互いに向き合った向きが揃ったときだけ写真を撮る。</summary>
+        public static bool IsPhotoReady(in Anchor anchor, Vector3 visitorFoot,
+                                         float visitorYawDeg, float dollYawDeg, Camera? cam = null)
+            => Flat(visitorFoot - anchor.visitorTargetFoot).magnitude <= PhotoPositionToleranceM
+               && (anchor.visitorRadiusM <= 0f
+                   || VisitorFits(cam, visitorFoot, anchor.visitorHeightM, anchor.visitorRadiusM,
+                       visitorYawDeg, anchor.wallCorner, anchor.wallEndA, anchor.wallEndB, anchor.wallHalfThicknessM))
+               && Mathf.Abs(Mathf.DeltaAngle(visitorYawDeg, FaceYawDeg(visitorFoot, anchor.foot))) <= PhotoYawToleranceDeg
+               && Mathf.Abs(Mathf.DeltaAngle(dollYawDeg, FaceYawDeg(anchor.foot, visitorFoot))) <= PhotoYawToleranceDeg;
 
         /// <summary>
         /// 体験者の足元から、画面の中で左へ <see cref="ScreenGapU"/> ずらした床の点に人形を立てる。

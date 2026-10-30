@@ -98,8 +98,11 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 - ⚠ **音は録画に映らない。** 画は `quest-record.py` が撮れるが、音は実機で聴く以外に確かめる手段が無い。
   だから `ev=sfx` / `sndBuilt` / `sndAud` / `sndLpf` が唯一の証拠になる → `rules/sound-design.md` §7。
   人に聴かせるのは `py -3.11 tools/sound-preview.py` の 9 本
-- **PC 側の安い門**: `.\tools\unity.ps1 menu virtualwalk -Set laps=1` → `py -3.11 tools/virtualwalk-video.py`
-  （NPC が歩き実シェーダ・実 Director を通した目の絵。時刻・順序・曲線・重なりだけ判定。実機の代わりではない — `rules/visual-verification.md`）
+- **PC 側の安い門**: `.\tools\unity.ps1 menu virtualwalk -Set laps=1,route=all` → `py -3.11 tools/virtualwalk-video.py <各走行フォルダ>`
+  （色付きNPCの実歩行・全身の壁回避と、実シェーダ・実 Director を通した目の絵。実機の代わりではない — `rules/visual-verification.md`）
+- **保存写真での合成・終幕**: `.\tools\unity.ps1 menu plate-validation -Set stills=1`。
+  A〜Cの無人写真にRemyと人形を重ね、全身画内・実足底・壁と相互の離隔・遮蔽を測る。
+  呪い解除から写真の成功待ち・背面退場・同じ写真入りエンディングまでPNG/動画用連番と数値をDriveへ残す（`memory/virtual_walk.md`）。
 - **被らないと分からないもの**（立体感・スケール・酔い・怖さの強度）は溜めて 1 回にまとめる →
   `rules/visual-verification.md`
 - ⚠ **検証出力は放っておくと 1 日で数 GB 積む**（1 走行の mp4 が 300〜450MB）。

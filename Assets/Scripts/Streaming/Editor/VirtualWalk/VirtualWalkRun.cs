@@ -34,7 +34,8 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
     /// ⚠ シェーダの <c>_Time.y</c>（砂嵐・点灯）は進まない。この 2 つはここでは判定しない。
     ///
     /// 使い方: <c>.\tools\unity.ps1 menu virtualwalk -Set laps=1</c>
-    /// → <c>Logs/virtualwalk/&lt;時刻&gt;/</c> に f00000.jpg…（30fps）・frames.tsv（90Hz）・events.tsv
+    /// → Drive の <c>shubie/renders/virtualwalk/&lt;時刻&gt;/</c> に目線・立体・真上の連番（30fps）、
+    /// frames.tsv（90Hz）・events.tsv・navigation.json（壁・体幅・境界の寸法）
     /// → <c>py -3.11 tools/virtualwalk-video.py &lt;そのフォルダ&gt;</c> で mp4 と指標。
     /// </summary>
     public static class VirtualWalkRun
@@ -51,7 +52,6 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
         private const float ScreenDropM = 0.28f;           // ScreenAnchor.heightOffset（下へ）
         private const float ScreenW = 2.3704f, ScreenH = 1.3333f;
         private const float WalkSpeed = 0.5f;              // ShowWalkDebugDriver と同じ
-        private const float StrideM = 1.3f;                // 2 歩 = 1 周期
         private const string CgLayerName = "ShowCg";
         private static readonly DateTime OsdStart = new DateTime(2026, 10, 14, 17, 20, 0);
 
@@ -104,8 +104,8 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
 
             string projectRoot = Directory.GetParent(Application.dataPath)!.FullName;
             string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            string outDir = Path.Combine(projectRoot, "Logs", "virtualwalk", tag.Length > 0 ? stamp + "_" + tag : stamp);
-            Directory.CreateDirectory(outDir);
+            string outputRoot = EditorCliArgs.Get("out") ?? @"G:\マイドライブ\shubie\renders\virtualwalk";
+            string outDir = Path.Combine(outputRoot, tag.Length > 0 ? stamp + "_" + tag : stamp);
 
             Root? show = LoadShow(projectRoot, out string showPath);
             if (show?.layout?.grid == null || show.cameras == null || show.cameras.Length == 0)
@@ -114,23 +114,30 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 return;
             }
 
-            // Main.unity を汚さない。空の場面で組む（batchmode なので保存の確認は出ない）。
-            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            try
+            string requestedRoute = EditorCliArgs.Get("route") ?? "forward";
+            string[] routes = requestedRoute == "all" ? new[] { "forward", "reverse", "backtrack" } : new[] { requestedRoute };
+            foreach (string route in routes)
             {
-                Execute(show, showPath, projectRoot, outDir, laps, dwellSec, eyeW, eyeH, outro, maxSec,
-                        glitchStills, commsOn, takeoverAt);
-            }
-            finally
-            {
-                foreach (UnityEngine.Object o in _trash) if (o != null) UnityEngine.Object.DestroyImmediate(o);
-                _trash.Clear();
+                string directory = requestedRoute == "all" ? outDir + "_" + route : outDir;
+                Directory.CreateDirectory(directory);
+                // 各走行を空の場面で独立して組む。Main.unity は保存しない。
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                try
+                {
+                    Execute(show, showPath, projectRoot, directory, laps, dwellSec, eyeW, eyeH, outro, maxSec,
+                            glitchStills, commsOn, takeoverAt, route);
+                }
+                finally
+                {
+                    foreach (UnityEngine.Object o in _trash) if (o != null) UnityEngine.Object.DestroyImmediate(o);
+                    _trash.Clear();
+                }
             }
         }
 
         private static void Execute(Root show, string showPath, string projectRoot, string outDir, int laps,
                                     float dwellSec, int eyeW, int eyeH, bool outro, float maxSec,
-                                    bool glitchStills, bool commsOn, float takeoverAt)
+                                    bool glitchStills, bool commsOn, float takeoverAt, string routeKind)
         {
             ShowLayoutDef layout = show.layout!;
             float floorY = layout.room != null ? layout.room.floorY : 0f;
@@ -150,14 +157,15 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             // ---- 部屋: プレートが揃っていれば遮蔽（深度だけ）だけ。欠けたカメラがあれば仮想の部屋も組む ----
             BuildOccluders(layout, floorY, cgLayer);
             Camera? roomCam = null;
+            // 実写を使うときも、第三者視点には同じ壁・床・備品を描く。
+            VirtualRoom.Build(layout, floorY, _trash);
             if (needRoom)
             {
-                VirtualRoom.Build(layout, floorY, _trash);
                 var go = new GameObject("RoomCam");
                 _trash.Add(go);
                 roomCam = go.AddComponent<Camera>();
                 roomCam.enabled = false;
-                roomCam.cullingMask = ~((1 << ScreenLayer) | (1 << cgLayer));
+                roomCam.cullingMask = ~((1 << ScreenLayer) | (1 << cgLayer) | (1 << WalkEvidence.Layer));
                 roomCam.clearFlags = CameraClearFlags.SolidColor;
                 roomCam.backgroundColor = new Color(0.02f, 0.02f, 0.02f, 1f);
                 for (int i = 0; i < camCount; i++)
@@ -187,8 +195,10 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             npc.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             float bindHeight = MeasureHeight(npc);
             npc.transform.localScale = Vector3.one * (bindHeight > 0.01f ? VisitorHeightM / bindHeight : 1f);
-            NpcWalkPose? pose = NpcWalkPose.Bind(npc.transform);
-            if (pose?.Head == null) { Debug.LogError("[VirtualWalk] Remy の骨を掴めない"); return; }
+            using var avatar = new VisitorAvatar(npc, _trash);
+            if (Mathf.Abs(avatar.StandingHeightM - VisitorHeightM) > .005f)
+                throw new InvalidOperationException($"体験者の立位身長が違う: {avatar.StandingHeightM:F4} / {VisitorHeightM:F4}m");
+            Debug.Log("[VirtualWalk] Avatar " + avatar.Description);
             Transform hmd = VirtualRoom.BuildHmd(_trash);
             SetLayerRecursive(npc, cgLayer);
             SetLayerRecursive(hmd.gameObject, cgLayer);
@@ -335,24 +345,41 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             _trash.Add(readTex);
 
             // ---- 道筋とゾーン（実ロジック） ----
-            int[,] map = WalkRouteLogic.BuildCells(layout.grid!, out int rows, out int cols);
             int[] order = layout.course?.order is { Length: > 0 } o ? o : new[] { 0, 1, 2 };
-            List<WalkRouteLogic.Waypoint> route = WalkRouteLogic.BuildRoute(map, rows, cols, layout.grid!.tileM,
-                                                                             order, laps, dwellSec, out string routeLog);
-            if (route.Count < 2) { Debug.LogError("[VirtualWalk] 道筋が作れない（grid を確認）"); return; }
+            if (routeKind == "reverse") order = new[] { order[0] }.Concat(order.Skip(1).Reverse()).ToArray();
+            else if (routeKind == "backtrack")
+            {
+                var visits = new List<int> { order[0] };
+                foreach (int cam in order.Skip(1)) { visits.Add(cam); visits.Add(order[0]); }
+                // BuildRoute 自身が先頭への帰還を足す。
+                visits.RemoveAt(visits.Count - 1);
+                order = visits.ToArray();
+            }
+            else if (routeKind != "forward") throw new ArgumentException("route は forward / reverse / backtrack");
+            // 候補経路は立位の全身円で探す。歩行で広がる手足も実スキンの掃引で検査する。
+            float bodyRadius = ArgFloat("radius", Mathf.Ceil(avatar.IdleBodyRadiusM * 100f) / 100f);
+            if (bodyRadius + .001f < avatar.IdleBodyRadiusM)
+                throw new ArgumentException($"radius={bodyRadius:F3}m は立位の実寸 {avatar.IdleBodyRadiusM:F3}m より小さい");
+            var navigation = new WalkNavigation(layout, bodyRadius, ArgFloat("margin", 0.04f),
+                                                ArgFloat("padding", 0.5f), VisitorHeightM);
+            List<WalkRouteLogic.Waypoint> route = navigation.BuildRoute(order, laps, dwellSec, out string routeLog);
+            if (route.Count < 2) throw new InvalidOperationException("安全な道筋を作れない: " + routeLog);
+            using var evidence = new WalkEvidence(layout, navigation, route, outDir, floorY, eyeW, _trash);
             ZonePickLogic.Box[] zones = BuildZones(layout, out float hyst);
             var yaw = new YawFollowLogic();
 
             // ---- 走らせる ----
             var tsv = new StringBuilder();
-            tsv.AppendLine("tick\tt\tx\tz\tbodyYaw\tscreenYaw\tpick\tactive\tdipping\tdim\tglitch\tglitchCount\tcollapse\tpower\treport");
+            tsv.AppendLine("tick\tt\tx\tz\tbodyYaw\tscreenYaw\tpick\tactive\tdipping\tdim\tglitch\tglitchCount\tcollapse\tpower\treport\tspeed\theadingError\tclearance\tboundaryClearance\tanimTime\tmeshClearance");
             var events = new StringBuilder();
             Vector2 pos = route[0].Course;
             int wp = 1;
             float hold = route[0].HoldSec;
             float bodyYaw = YawTo(route[0].Course, route[1].Course);
             yaw.Reseat(bodyYaw);
-            float phase = 0f, walk01 = 0f;
+            float walk01 = 0f, speed = 0f, distanceWalked = 0f, minClearance = float.PositiveInfinity;
+            bool routeCompleted = false;
+            Vector2[]? previousFootprint = null;
             int pick = -1, tick = 0, frame = 0;
             bool wasDipping = false, glitchArmed = true, outroStarted = false;
             float glitchOnSince = -1f, lastGlitchSfx = -10f, endHold = 0f;
@@ -365,42 +392,66 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             {
                 // 1) 歩く
                 bool walking = false;
+                Vector2 previousPos = pos;
+                float headingError = 0f;
                 if (!outroStarted)
                 {
                     if (hold > 0f) hold -= dt;
                     else if (wp < route.Count)
                     {
                         Vector2 d = route[wp].Course - pos;
-                        float step = WalkSpeed * dt;
-                        if (d.magnitude <= step)
+                        float desiredYaw = Mathf.Atan2(d.x, d.y) * Mathf.Rad2Deg;
+                        bodyYaw = Mathf.MoveTowardsAngle(bodyYaw, desiredYaw, 120f * dt);
+                        headingError = Mathf.Abs(Mathf.DeltaAngle(bodyYaw, desiredYaw));
+                        // 向き直る間は移動しない。角へ近づくと止まれる速度まで減速する。
+                        speed = headingError <= 2f
+                            ? Mathf.MoveTowards(speed, Mathf.Min(WalkSpeed, Mathf.Sqrt(2f * 0.8f * d.magnitude)), 0.8f * dt)
+                            : 0f;
+                        float step = speed * dt;
+                        if (d.magnitude <= Mathf.Max(step, 0.001f))
                         {
                             pos = route[wp].Course;
-                            hold = route[wp].HoldSec;
+                            hold = Mathf.Max(route[wp].HoldSec, .18f); // 足を揃えてから角を回る。
                             wp++;
+                            speed = 0f;
                         }
                         else
                         {
                             pos += d.normalized * step;
-                            walking = true;
-                            bodyYaw = Mathf.MoveTowardsAngle(bodyYaw, Mathf.Atan2(d.x, d.y) * Mathf.Rad2Deg, 240f * dt);
+                            walking = step > 0f;
                         }
                     }
                     else if (outro)
                     {
+                        routeCompleted = true;
                         outroStarted = true;
                         outroLogic.Begin();
                         events.Append(F(simTime)).Append("\toutro\tbegin\n");
                     }
-                    else break;
+                    else { routeCompleted = true; break; }
                 }
-                walk01 = Mathf.MoveTowards(walk01, walking ? 1f : 0f, dt / 0.35f);
-                phase += walking ? WalkSpeed * dt / StrideM * Mathf.PI * 2f : dt * 0.6f;
+                float traveled = Vector2.Distance(previousPos, pos);
+                if (!navigation.CanTraverse(previousPos, pos))
+                    throw new InvalidOperationException($"壁または歩行範囲に接触 t={simTime:F3}, pos={pos}");
+                distanceWalked += traveled;
+                float clearance = navigation.Clearance(pos);
+                minClearance = Mathf.Min(minClearance, clearance);
+                Rect bounds = navigation.Bounds;
+                float boundaryClearance = Mathf.Min(pos.x - bounds.xMin, bounds.xMax - pos.x,
+                    pos.y - bounds.yMin, bounds.yMax - pos.y) - navigation.BodyRadiusM;
+                walk01 = Mathf.MoveTowards(walk01, walking ? Mathf.Clamp01(speed / WalkSpeed) : 0f, dt / 0.12f);
 
                 Quaternion bodyRot = Quaternion.Euler(0f, bodyYaw, 0f);
                 npc.transform.SetPositionAndRotation(new Vector3(pos.x, floorY, pos.y), bodyRot);
-                pose.Apply(phase, walk01, 0f);
+                avatar.Apply(distanceWalked, walk01);
+                Vector2[] footprint = avatar.Footprint();
+                float meshClearance = navigation.SweptFootprintClearance(previousFootprint ?? footprint, footprint);
+                // 全身にも指定した余白を要求。さらに5mmをフレーム間の回転曲線の余裕として残す。
+                if (meshClearance < navigation.WallMarginM + .005f)
+                    throw new InvalidOperationException($"全身の掃引が障害物へ接触 t={simTime:F3}, pos={pos}, clearance={meshClearance:F4}");
+                previousFootprint = footprint;
                 Vector3 bodyFwd = bodyRot * Vector3.forward;
-                hmd.SetPositionAndRotation(pose.Head!.position + Vector3.up * 0.085f + bodyFwd * 0.10f, bodyRot);
+                hmd.SetPositionAndRotation(avatar.Head.position + Vector3.up * 0.085f + bodyFwd * 0.10f, bodyRot);
                 Vector3 eyePos = new Vector3(pos.x, floorY + VisitorHeightM - EyeBelowTopM, pos.y) + bodyFwd * 0.04f;
 
                 // 2) ゾーン → 実 Director（dwell・cooldown・dip・切替の乱れ）
@@ -565,7 +616,10 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                    .Append(pick >= 0 ? zones[pick].CameraIndex : -1).Append('\t').Append(registry.ActiveIndex).Append('\t')
                    .Append(director.Dipping ? 1 : 0).Append('\t').Append(F(mat.GetFloat("_SwitchDim"))).Append('\t')
                    .Append(F(gl)).Append('\t').Append(glitch.Count).Append('\t')
-                   .Append(F(collapse)).Append('\t').Append(F(power)).Append('\t').Append(F(report)).Append('\n');
+                   .Append(F(collapse)).Append('\t').Append(F(power)).Append('\t').Append(F(report)).Append('\t')
+                   .Append(F(traveled / dt)).Append('\t').Append(F(headingError)).Append('\t')
+                   .Append(F(clearance)).Append('\t').Append(F(boundaryClearance)).Append('\t')
+                   .Append(F(avatar.AnimationTime)).Append('\t').Append(F(meshClearance)).Append('\n');
 
                 // 5) 30fps で書き出す（数値は 90Hz で残っている）
                 if (tick % OutEvery == 0)
@@ -605,6 +659,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                         File.WriteAllBytes(path, png ? readTex.EncodeToPNG() : readTex.EncodeToJPG(90));
                     }
                     Shoot(Path.Combine(outDir, $"f{frame:00000}.jpg"), false);
+                    evidence.Capture(frame, pos, bodyYaw);
                     frame++;
 
                     // 乱れの見た目を強さを揃えて比べる静止画（0055 の中盤 0.32 と上限 0.6・組み替え 3 通り）。
@@ -632,7 +687,9 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 simTime += dt;
             }
 
+            if (!routeCompleted) throw new InvalidOperationException($"maxsec={maxSec} 内に経路が完了しなかった");
             File.WriteAllText(Path.Combine(outDir, "frames.tsv"), tsv.ToString());
+            evidence.WriteSummary(routeKind, routeLog, distanceWalked, minClearance, avatar.Description, frame);
             File.WriteAllText(Path.Combine(outDir, "events.tsv"), "t\tkind\tdetail\n" + events);
             if (comms != null) File.WriteAllText(Path.Combine(outDir, "comms.tsv"), commsTsv.ToString());
             string plates = string.Join(" ", views.Select(v => v.id + (v.plate ? ":plate" : ":room")));
@@ -798,15 +855,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
         }
 
         private static float MeasureHeight(GameObject go)
-        {
-            bool any = false;
-            var b = new Bounds();
-            foreach (Renderer r in go.GetComponentsInChildren<Renderer>())
-            {
-                if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
-            }
-            return any ? b.size.y : 0f;
-        }
+            => VisitorAvatar.MeasurePoseHeight(go);
 
         private static void SetLayerRecursive(GameObject go, int layer)
         {
@@ -822,7 +871,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
         private static float ArgFloat(string key, float def)
             => float.TryParse(EditorCliArgs.Get(key), NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : def;
 
-        private static string F(float v) => v.ToString("F3", CultureInfo.InvariantCulture);
+        private static string F(float v) => v.ToString("F6", CultureInfo.InvariantCulture);
 
         /// <summary>EditMode で MonoBehaviour を手で回す（SwitchWiringTests と同じ流儀）。</summary>
         private static class Refl

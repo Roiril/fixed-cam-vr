@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import re
@@ -45,7 +46,7 @@ except ImportError as e:
     raise SystemExit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNS = ROOT / "Logs/virtualwalk"
+RUNS = Path("G:/マイドライブ/shubie/renders/virtualwalk")
 FPS = 30                      # 書き出しのコマ数（VirtualWalkRun の 90Hz ÷ OutEvery 3）
 TICK_PER_FRAME = 3
 SOUND_SEC = 0.26              # 切替の乱れの音は固定長のクリップ
@@ -134,7 +135,7 @@ def load_run(folder: Path) -> Run:
     if len(rows) < 2:
         raise Fail(f"frames.tsv の行が少ない（{len(rows)} 行）: {folder}")
     try:
-        cols = {c: np.array([float(r[header.index(c)]) for r in rows], dtype=np.float64) for c in FRAME_COLS}
+        cols = {c: np.array([float(r[header.index(c)]) for r in rows], dtype=np.float64) for c in header}
     except ValueError as e:
         raise Fail(f"frames.tsv に数値でない値がある: {e}") from e
     t = cols["t"]
@@ -552,10 +553,14 @@ def verify_mp4(path: Path, expected: int) -> tuple[int, float, int]:
     return int(frames), float(secs), path.stat().st_size
 
 
-def encode_dir(run: Run, out: Path) -> None:
+def encode_dir(run: Run, out: Path, source: Path | None = None) -> None:
+    source = source or run.dir
+    indices = sorted(int(m.group(1)) for p in source.iterdir() if (m := JPG_RE.match(p.name)))
+    if indices != list(range(run.n_jpg)):
+        raise Fail(f"映像の連番が揃っていない: {source}")
     tmp = out.with_name(out.stem + ".tmp.mp4")
     cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-v", "error",
-           "-framerate", str(FPS), "-start_number", "0", "-i", str(run.dir / "f%05d.jpg"),
+           "-framerate", str(FPS), "-start_number", "0", "-i", str(source / "f%05d.jpg"),
            "-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2",   # H.264 は縦横とも偶数
            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-movflags", "+faststart", str(tmp)]
     r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -624,6 +629,51 @@ def summary_line(m: dict) -> str:
 
 def do_single(folder: Path) -> int:
     run = load_run(folder)
+    # 新しい仮想歩行は画面の変化に加えて、実際の移動の離隔・向きも判定する。
+    navigation_path = folder / "navigation.json"
+    if navigation_path.is_file():
+        nav = json.loads(navigation_path.read_text(encoding="utf-8-sig"))
+        required = ("speed", "headingError", "clearance", "boundaryClearance", "animTime", "meshClearance")
+        if any(c not in run.cols for c in required):
+            raise Fail("歩行検証の列が不足している")
+        if not all(np.isfinite(run.cols[c]).all() for c in required):
+            raise Fail("歩行検証の数値に非有限値がある")
+        min_clearance = float(run.cols["clearance"].min())
+        moving = run.cols["speed"] > .02
+        max_heading = float(run.cols["headingError"][moving].max()) if moving.any() else 0.
+        if min_clearance < nav["wallMarginM"] - .002:
+            raise Fail(f"壁との余白が不足: {min_clearance:.3f}m")
+        if run.cols["boundaryClearance"].min() < -.002 or max_heading > 2.1:
+            raise Fail("歩行範囲からのはみ出し、または横滑りがある")
+        mesh_clearance = float(run.cols["meshClearance"].min())
+        if mesh_clearance < nav["wallMarginM"] + .00499:
+            raise Fail(f"手足を含む全身の掃引が壁または外縁へ接触: {mesh_clearance:.4f}m")
+        if not moving.any() or np.ptp(run.cols["animTime"][moving]) < .1:
+            raise Fail("歩行または歩行モーションが進んでいない")
+        # C# の自己申告と別に、保存された壁寸法と実移動から離隔・向きを計算する。
+        positions = np.column_stack((run.cols["x"], run.cols["z"]))
+        independent_min = math.inf
+        for wall in nav["walls"]:
+            a = np.array((wall["x1"], wall["z1"]))
+            b = np.array((wall["x2"], wall["z2"]))
+            axis = b - a
+            along = np.clip((positions - a) @ axis / max(float(axis @ axis), 1e-12), 0, 1)
+            distances = np.linalg.norm(positions - (a + along[:, None] * axis), axis=1)
+            independent_min = min(independent_min, float(distances.min()) - wall["thick"] / 2 - nav["bodyRadiusM"])
+        # 90Hz の両端の誤差内でも壁を跨がないよう、最大1刻みの移動距離を余裕から引く。
+        movement = np.diff(positions, axis=0)
+        lengths = np.linalg.norm(movement, axis=1)
+        if independent_min - float(lengths.max()) < nav["wallMarginM"] - .01:
+            raise Fail(f"別計算でも壁に接近: 体との余白 {independent_min:.3f}m")
+        real_moving = lengths > .001
+        directions = np.degrees(np.arctan2(movement[:, 0], movement[:, 1]))
+        errors = np.abs(delta_angle(run.cols["bodyYaw"][1:], directions))
+        if real_moving.any() and errors[real_moving].max() > 4.:
+            raise Fail("移動ベクトルと体の向きが一致しない")
+        for view in ("observer", "overhead"):
+            encode_dir(run, folder / f"{view}.mp4", folder / view)
+            verify_mp4(folder / f"{view}.mp4", run.n_jpg)
+        print(f"歩行検証: 立位包絡と壁の余白 最小 {min_clearance:.3f}m / 全身掃引の余白 最小 {mesh_clearance:.3f}m / 移動中の向き誤差 最大 {max_heading:.2f}°")
     m = analyze(run)
     mp4 = folder / "walk.mp4"
     encode_dir(run, mp4)

@@ -128,8 +128,12 @@ $Menus = [ordered]@{
                             Set = 'show=<show.json のパス>'
                             Out = 'Assets/Screenshots/walkguide-preview/eye_5_hold.png' }
     'virtualwalk'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.VirtualWalkRun.Run'
-                            Desc = 'PC の仮想体験: 仮想の部屋を NPC が歩き、固定カメラの映像が実シェーダ・実 Director を通る。NPC の目の絵を Logs/virtualwalk/ へ（→ tools/virtualwalk-video.py で mp4）'
+                            Desc = 'PC の仮想体験: 色付き NPC が壁と全身の形を考慮して歩く。route=all で順/逆/引き返しを一括検証。画像は Drive の renders/virtualwalk へ（→ tools/virtualwalk-video.py で mp4）'
                             Set = 'laps=<周回 既定 1> / dwell=<各カメラの滞在秒 既定 3> / w=<出力の幅 既定 960> / outro=0|1 / maxsec=<上限秒>'
+                            Out = $null }
+    'plate-validation' = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.PlateValidation.Run'
+                            Desc = '保存済み A-C 写真へ Remy と人形を多位置合成し、接地・遮蔽・解除から終幕まで検証する。-Set stills=1。出力は Drive の renders/plate-validation'
+                            Src = @()
                             Out = $null }
     'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
                             Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら 3 言語ぶん通す）'

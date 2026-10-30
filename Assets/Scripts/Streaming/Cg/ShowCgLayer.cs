@@ -457,6 +457,8 @@ namespace FixedCamVr.Streaming.Cg
         private EndingFarewellLogic.Sample _farewellSample;
         private float _farewellFaceYawDeg;
         private float _farewellTurnFromYawDeg;
+        private bool _farewellFaceRendered;
+        private float _farewellRenderedYawDeg;
 
         /// <summary>見つめている間、体験者の動きへ向きを追わせる速さ（度/秒）。首だけで追う程度に鈍くする。</summary>
         private const float FarewellTrackDegPerSec = 90f;
@@ -467,18 +469,32 @@ namespace FixedCamVr.Streaming.Cg
         /// <summary>別れの人形の立ち位置が解けたか。解けるまでは画に出ない。</summary>
         public bool FarewellAnchored => FarewellActive && _farewellAnchored;
 
+        public bool FarewellPhotoReady
+        {
+            get
+            {
+                if (!FarewellAnchored || !_farewellFaceRendered || _actorInstance == null
+                    || !TryVisitorFootWorld(out Vector3 visitor)) return false;
+                ShowBodyInput body = CurrentBody();
+                return body.HasHead && FarewellFloorContains(visitor, 0.25f)
+                    && EndingFarewellLogic.IsPhotoReady(_farewellAnchor, visitor,
+                        body.HeadYawDeg, _farewellRenderedYawDeg, _virtualCam);
+            }
+        }
+
         /// <summary>解けた立ち位置（観測用）。<see cref="FarewellAnchored"/> のときだけ意味がある。</summary>
         public EndingFarewellLogic.Anchor FarewellAnchor => _farewellAnchor;
 
         /// <summary>
         /// 別れの人形を出す。体験者の分身（follow）ではなく、体験者の左に立つ 1 体として描く。
         /// 立ち位置は次の Tick で、較正済みのカメラと体験者の足元から解く
-        /// （<see cref="EndingFarewellLogic.TrySolve"/>）。出せなければ false。
+        /// （<see cref="EndingFarewellLogic.TrySolveAtWall"/>）。出せなければ false。
         /// </summary>
         public bool BeginFarewell(string actorId, int cameraIndex)
         {
             if (string.IsNullOrEmpty(actorId) || actorId == TakeSchema.SwapHumanActorId) return false;
             _farewellSample = EndingFarewellLogic.SampleAt(0f);
+            _farewellFaceRendered = false;
             _farewellPending = true;
             Apply(actorId, TakeSchema.CgFollow, cameraIndex);
             _farewellPending = false;
@@ -498,7 +514,7 @@ namespace FixedCamVr.Streaming.Cg
             if (showControl?.HeadCourseXZProvider == null) return false;
             if (!_courseTrack.TrySample(Time.unscaledTime - VideoLatencySec, out Vector2 xz))
                 xz = showControl.HeadCourseXZProvider();
-            foot = CourseToWorld(xz, 0f);
+            foot = CourseToWorld(xz, showControl.Room?.floorY ?? 0f);
             return true;
         }
 
@@ -506,7 +522,32 @@ namespace FixedCamVr.Streaming.Cg
         {
             if (_virtualCam == null || !TryVisitorFootWorld(out Vector3 visitor)) return false;
             Vector2 sc = _screen != null ? _screen.ContainScale : Vector2.one;
-            if (!EndingFarewellLogic.TrySolve(_virtualCam, sc, visitor, out EndingFarewellLogic.Anchor a))
+            ShowRoomWallDef[]? walls = showControl?.Room?.walls;
+            if (walls == null) return false;
+            bool solved = false;
+            EndingFarewellLogic.Anchor a = default;
+            float floorY = showControl?.Room?.floorY ?? 0f;
+            ShowBodyInput body = CurrentBody();
+            float visitorHeight = body.HasHead ? Mathf.Clamp(body.HeadPos.y - visitor.y + 0.12f, 1.2f, 2.1f) : 1.65f;
+            for (int i = 0; i < walls.Length && !solved; i++)
+                for (int j = i + 1; j < walls.Length && !solved; j++)
+                {
+                    ShowRoomWallDef first = walls[i], second = walls[j];
+                    if (first == null || second == null || !first.IsUsable() || !second.IsUsable()) continue;
+                    Vector2[] p = { new Vector2(first.x1, first.z1), new Vector2(first.x2, first.z2) };
+                    Vector2[] q = { new Vector2(second.x1, second.z1), new Vector2(second.x2, second.z2) };
+                    for (int k = 0; k < 2 && !solved; k++)
+                        for (int m = 0; m < 2 && !solved; m++)
+                            if (Vector2.Distance(p[k], q[m]) < 0.02f)
+                                solved = EndingFarewellLogic.TrySolveAtWall(_virtualCam, sc,
+                                    CourseToWorld(p[k], floorY), CourseToWorld(p[1 - k], floorY),
+                                    CourseToWorld(q[1 - m], floorY), out a,
+                                    visitorHeightM: visitorHeight, dollHeightM: EffectiveHeightM,
+                                    wallHalfThicknessM: Mathf.Max(first.thick, second.thick) * 0.5f,
+                                    canStand: FarewellFloorContains,
+                                    dollBodyRadiusM: EndingFarewellLogic.DefaultDollBodyRadiusM * EffectiveHeightM / 0.4f);
+                }
+            if (!solved)
                 return false;
             _farewellAnchor = a;
             _farewellFaceYawDeg = EndingFarewellLogic.FaceYawDeg(a.foot, visitor);
@@ -517,10 +558,23 @@ namespace FixedCamVr.Streaming.Cg
             return true;
         }
 
+        private bool FarewellFloorContains(Vector3 point, float radius)
+        {
+            ShowRoomDef? room = showControl?.Room;
+            if (room == null) return false;
+            Vector3 origin = CourseToWorld(Vector2.zero, room.floorY);
+            Vector3 right = CourseToWorld(Vector2.right, room.floorY) - origin;
+            Vector3 forward = CourseToWorld(Vector2.up, room.floorY) - origin;
+            Vector3 delta = point - origin;
+            const float floorPaddingM = 0.5f;
+            return Mathf.Abs(Vector3.Dot(delta, right.normalized)) + radius <= room.floorW * 0.5f + floorPaddingM
+                   && Mathf.Abs(Vector3.Dot(delta, forward.normalized)) + radius <= room.floorD * 0.5f + floorPaddingM;
+        }
+
         private void PlaceFarewell(Transform t)
         {
             EndingFarewellLogic.Sample s = _farewellSample;
-            Vector3 pos = _farewellAnchor.foot + _farewellAnchor.retreatDir * s.retreatM;
+            EndingFarewellLogic.PoseAt(_farewellAnchor, s, _farewellTurnFromYawDeg, out Vector3 pos, out float poseYaw);
             if (_actorRig == null || !_actorRig.HasRig)
                 pos.y += Mathf.Max(0.2f, EffectiveHeightM) * 0.5f;   // 代用カプセルは中心が原点
             t.position = pos;
@@ -538,7 +592,7 @@ namespace FixedCamVr.Streaming.Cg
             }
             else
             {
-                yaw = EndingFarewellLogic.TurnYawDeg(_farewellTurnFromYawDeg, _farewellAnchor.awayYawDeg, s.turn01);
+                yaw = poseYaw;
             }
             t.rotation = Quaternion.Euler(0f, yaw, 0f);
         }
@@ -868,6 +922,11 @@ namespace FixedCamVr.Streaming.Cg
             _lastRenderedSeq = seq;
             _lastRenderTime = now;
             _virtualCam.Render();
+            if (_farewell)
+            {
+                _farewellFaceRendered = _farewellSample.phase == EndingFarewellLogic.Phase.Face;
+                _farewellRenderedYawDeg = _actorInstance != null ? _actorInstance.transform.eulerAngles.y : 0f;
+            }
             _lastRenderedDollFootUv = footUv;
             _lastRenderedDollFootValid = footValid;
         }

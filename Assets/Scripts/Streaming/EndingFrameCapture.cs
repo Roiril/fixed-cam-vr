@@ -94,7 +94,11 @@ namespace FixedCamVr.Streaming
 
             if (!CaptureWindow(window)) yield break;
             if (window == EndingShotWindow.Trapped) _trappedCount++;
-            else if (window == EndingShotWindow.Released) _releasedCount++;
+            else if (window == EndingShotWindow.Released)
+            {
+                _releasedCount++;
+                _runner.NotifyEndingFarewellCaptured();
+            }
         }
 
         /// <summary>
@@ -142,7 +146,11 @@ namespace FixedCamVr.Streaming
             if (window != EndingShotWindow.None && CaptureWindow(window))
             {
                 if (window == EndingShotWindow.Trapped) _trappedCount++;
-                else if (window == EndingShotWindow.Released) _releasedCount++;
+                else if (window == EndingShotWindow.Released)
+                {
+                    _releasedCount++;
+                    _runner?.NotifyEndingFarewellCaptured();
+                }
             }
             _frozen = true;
             Debug.Log($"[EndingFrameCapture] 固定 generation={_generation} shots={ShotCount} " +

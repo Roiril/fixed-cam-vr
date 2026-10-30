@@ -40,6 +40,19 @@ namespace FixedCamVr.Streaming.Tests
         // ---- 基本（enter / 多段カット） ----
 
         [Test]
+        public void HeldPhotoStep_DoesNotEndOrWatchdogUntilTheFarewellCompletes()
+        {
+            var l = Make(Enter(4, 0, 0f, 7.1f));
+            Enter(l, 4, 0, 0f);
+            l.Tick(0f, 0);
+            Assert.That(l.Tick(60f, 0, holdCurrentStep: true).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+            Assert.That(l.IsActive, Is.True);
+            var done = l.Tick(60.1f, 0);
+            Assert.That(done.action, Is.EqualTo(TakeRunnerLogic.Action.EndTake));
+            Assert.That(done.reason, Is.EqualTo(TakeRunnerLogic.EndReason.Completed));
+        }
+
+        [Test]
         public void Enter_NoOffset_FiresOnNextTick()
         {
             var l = Make(Enter(1, 0, 0f, 2f));

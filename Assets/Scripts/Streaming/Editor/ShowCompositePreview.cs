@@ -593,6 +593,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 // Edit Mode では Awake / Start が走らないので long-poll もキャッシュ読みも起きない。
                 // 使うのは「layout を配る器」としての面だけ（SetLayoutForPreview → Room）。
                 var showControl = showGo.AddComponent<ShowControlClient>();
+                showControl.CourseToWorldProvider = (xz, y) => new Vector3(StageOriginX + xz.x, y, xz.y);
+                showControl.CourseYawProvider = () => 0f;
 
                 var proxyGo = new GameObject("[CgRoomProxy]");
                 proxyGo.transform.SetParent(root.transform, worldPositionStays: false);

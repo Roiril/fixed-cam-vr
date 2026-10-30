@@ -13,10 +13,11 @@ namespace FixedCamVr.Streaming.Tests
         // ---- 時刻表 -------------------------------------------------------------------
 
         [Test]
-        public void Timeline_FitsBetweenTheSwapAndThePowerCut()
+        public void Timeline_LeavesSixSecondsToRetreatAndFadesDuringMotion()
         {
-            // 締めのライブは報告から 7.1 秒、入れ替わりが 2.6 秒。残り 4.5 秒の中で消え切る。
-            Assert.That(EndingFarewellLogic.TotalSec, Is.LessThanOrEqualTo(7.1f - 2.6f - 0.2f));
+            Assert.That(EndingFarewellLogic.RetreatSec, Is.EqualTo(6f));
+            Assert.That(EndingFarewellLogic.FadeOutSec, Is.EqualTo(4.5f));
+            Assert.That(EndingFarewellLogic.FadeOutSec, Is.LessThan(EndingFarewellLogic.RetreatSec));
         }
 
         [Test]
@@ -50,18 +51,16 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Retreat_IsMonotonicAndSlow()
+        public void RetreatParameter_IsMonotonic()
         {
             float start = EndingFarewellLogic.AppearSec + EndingFarewellLogic.FaceSec + EndingFarewellLogic.TurnSec;
-            float prev = 0f, maxSpeed = 0f;
+            float prev = 0f;
             for (float t = start; t < EndingFarewellLogic.TotalSec; t += Dt)
             {
                 float d = EndingFarewellLogic.SampleAt(t).retreatM;
                 Assert.That(d, Is.GreaterThanOrEqualTo(prev - 1e-5f));
-                maxSpeed = Mathf.Max(maxSpeed, (d - prev) / Dt);
                 prev = d;
             }
-            Assert.That(maxSpeed, Is.LessThan(0.35f), "ゆっくり下がる（0.35 m/s 未満）");
         }
 
         // ---- 段 -------------------------------------------------------------------------
@@ -92,6 +91,7 @@ namespace FixedCamVr.Streaming.Tests
             for (int i = 0; i < (int)((EndingFarewellLogic.TotalSec + 1f) / Dt); i++)
             {
                 var s = Run(l);
+                if (s.sample.Facing) l.NotifyShotCaptured();
                 sawFace |= s.sample.Facing;
                 sawHide |= s.hide;
                 if (l.Current == Phase.Done) break;
@@ -137,16 +137,118 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void SomeoneElseHidingTheLayer_EndsTheFarewell()
+        public void SomeoneElseHidingTheLayer_RetriesInsteadOfClaimingCompletion()
         {
             var l = new EndingFarewellLogic();
             Run(l);
             Run(l);
             Run(l, showing: false);
-            Assert.That(l.Current, Is.EqualTo(Phase.Done));
+            Assert.That(l.Current, Is.EqualTo(Phase.Unavailable));
         }
 
         // ---- 立ち位置 -------------------------------------------------------------------
+
+        [Test]
+        public void Face_WaitsForThePhotoBeforeTurning()
+        {
+            var l = new EndingFarewellLogic();
+            Run(l);
+            Run(l);
+            for (int i = 0; i < 900; i++) Run(l);
+            Assert.That(l.Current, Is.EqualTo(Phase.Face));
+            Assert.That(l.ElapsedSec, Is.LessThan(EndingFarewellLogic.AppearSec + EndingFarewellLogic.FaceSec));
+            l.NotifyShotCaptured();
+            Assert.That(Run(l).sample.phase, Is.EqualTo(Phase.Turn));
+        }
+
+        [Test]
+        public void WallAnchor_FitsTheVisitorWithWallClearanceAndRequiresMutualFacing()
+        {
+            Camera cam = MakeEndingCamera(out GameObject go);
+            cam.transform.position += Vector3.up * 0.12f;
+            try
+            {
+                Vector3 corner = new Vector3(-0.5f, 0.12f, 0.5f);
+                Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner,
+                    corner + Vector3.right * 0.955f, corner + Vector3.back * 0.955f, out var a), Is.True);
+                Assert.That(a.foot.y, Is.EqualTo(0.12f));
+                Assert.That(a.visitorTargetFoot.y, Is.EqualTo(0.12f));
+                Assert.That(a.dollUv.x, Is.LessThan(a.visitorUv.x));
+                foreach (Vector3 point in new[] { a.visitorTargetFoot, a.visitorTargetFoot + Vector3.up * 1.65f })
+                {
+                    Vector3 uv = cam.WorldToViewportPoint(point);
+                    Assert.That(uv.x, Is.InRange(EndingFarewellLogic.PhotoFrameMargin, 1f - EndingFarewellLogic.PhotoFrameMargin), "頭と足が画面に入る");
+                    Assert.That(uv.y, Is.InRange(EndingFarewellLogic.PhotoFrameMargin, 1f - EndingFarewellLogic.PhotoFrameMargin), "頭と足が画面に入る");
+                }
+                Vector3 horizontal = corner + Vector3.right * Mathf.Clamp(a.visitorTargetFoot.x - corner.x, 0f, 0.955f);
+                Vector3 vertical = corner + Vector3.back * Mathf.Clamp(corner.z - a.visitorTargetFoot.z, 0f, 0.955f);
+                float clearance = Mathf.Min(Vector3.Distance(a.visitorTargetFoot, horizontal),
+                    Vector3.Distance(a.visitorTargetFoot, vertical)) - 0.02f;
+                Assert.That(clearance, Is.GreaterThanOrEqualTo(EndingFarewellLogic.PhotoWallClearanceM - 1e-5f));
+                float visitorYaw = EndingFarewellLogic.FaceYawDeg(a.visitorTargetFoot, a.foot);
+                float dollYaw = EndingFarewellLogic.FaceYawDeg(a.foot, a.visitorTargetFoot);
+                Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot, visitorYaw, dollYaw), Is.True);
+                Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot + Vector3.right,
+                    visitorYaw, dollYaw), Is.False);
+                Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot,
+                    visitorYaw + 90f, dollYaw), Is.False);
+                Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot,
+                    visitorYaw, dollYaw + 90f), Is.False);
+                Vector3 end = a.foot + a.retreatDir * EndingFarewellLogic.RetreatM;
+                Assert.That(end.x, Is.GreaterThan(corner.x));
+                Assert.That(end.z, Is.LessThan(corner.z));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void Photo_RefusesAPositionWhoseBodyCrossesTheWall()
+        {
+            var a = new EndingFarewellLogic.Anchor
+            {
+                foot = new Vector3(0.5f, 0f, 3.5f), visitorTargetFoot = new Vector3(0.1f, 0f, 3.5f),
+                wallCorner = new Vector3(0f, 0f, 4f), wallEndA = new Vector3(0.955f, 0f, 4f),
+                wallEndB = new Vector3(0f, 0f, 3.045f), visitorHeightM = 1.65f, visitorRadiusM = 0.354f,
+                wallHalfThicknessM = 0.02f,
+            };
+            Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot, 90f, -90f), Is.False,
+                "足元は壁の内側でも、体の厚みが壁を横切る位置では撮らない");
+        }
+
+        [Test]
+        public void WallAnchor_ContinuesSearchingWhenTheActualBodyRejectsACandidate()
+        {
+            Camera cam = MakeEndingCamera(out GameObject go);
+            // 候補の再探索を測るfixture。保存Aの狭い画角の合否は別テストで測る。
+            cam.transform.position = new Vector3(2f, 1.4f, -2f);
+            cam.transform.LookAt(new Vector3(0f, 0.9f, 0f));
+            cam.ResetProjectionMatrix();
+            cam.fieldOfView = 60f;
+            try
+            {
+                Vector3 corner = new Vector3(-0.5f, 0.12f, 0.5f);
+                int measured = 0;
+                Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner,
+                    corner + Vector3.right * 0.955f, corner + Vector3.back * 0.955f, out _,
+                    pairAccepted: (visitor, doll) => ++measured >= 2), Is.True);
+                Assert.That(measured, Is.GreaterThanOrEqualTo(2), "実体が不合格の候補で止めず次を測る");
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void WallAnchor_RefusesACameraThatCannotFrameTheVisitor()
+        {
+            Camera cam = MakeCamera(out GameObject go);
+            try
+            {
+                cam.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+                Vector3 corner = new Vector3(0f, 0f, 4f);
+                Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner,
+                    corner + Vector3.right * 0.955f, corner + Vector3.back * 0.955f, out _), Is.False);
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
 
         private static Camera MakeCamera(out GameObject go)
         {
@@ -159,6 +261,65 @@ namespace FixedCamVr.Streaming.Tests
             go.transform.position = new Vector3(0f, 2.2f, 0f);
             go.transform.rotation = Quaternion.Euler(25f, 0f, 0f);
             return cam;
+        }
+
+        private static Camera MakeEndingCamera(out GameObject go)
+        {
+            Camera cam = MakeCamera(out go);
+            cam.transform.position = new Vector3(1.038f, 0.944f, -0.988f);
+            cam.transform.rotation = Quaternion.Euler(3.95f, -47f, -0.98f);
+            cam.projectionMatrix = Cg.ShowCgLayer.BuildProjectionMatrix(399.425f, 399.425f,
+                320f, 240f, 640, 480, cam.nearClipPlane, cam.farClipPlane);
+            return cam;
+        }
+
+        [Test]
+        public void Retreat_ShowsItsBackAndClearsTheWall_ThenEndsFartherFromBothObservers()
+        {
+            Camera cam = MakeEndingCamera(out GameObject go);
+            try
+            {
+                Vector3 corner = new Vector3(-0.5f, 0f, 0.5f);
+                Vector3 endA = corner + Vector3.right * 0.955f;
+                Vector3 endB = corner + Vector3.back * 0.955f;
+                Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner, endA, endB, out var a), Is.True);
+                float face = EndingFarewellLogic.FaceYawDeg(a.foot, a.visitorTargetFoot);
+                float previous = Vector3.Distance(a.foot, a.visitorTargetFoot);
+                Vector3 previousFoot = a.foot;
+                float maximumSpeed = 0f;
+                float retreatAt = EndingFarewellLogic.AppearSec + EndingFarewellLogic.FaceSec + EndingFarewellLogic.TurnSec;
+                for (int i = 0; i <= 100; i++)
+                {
+                    var s = EndingFarewellLogic.SampleAt(retreatAt + EndingFarewellLogic.RetreatSec * i / 100f);
+                    EndingFarewellLogic.PoseAt(a, s, face, out Vector3 foot, out float yaw);
+                    Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+                    Assert.That(Vector3.Dot(forward, a.visitorTargetFoot - foot), Is.LessThan(0f), "人へ背を向ける");
+                    Assert.That(Vector3.Dot(forward, cam.transform.position - foot), Is.LessThan(0f), "カメラへ背を向ける");
+                    float distance = Vector3.Distance(foot, a.visitorTargetFoot);
+                    Assert.That(distance, Is.GreaterThanOrEqualTo(previous - 1e-5f));
+                    previous = distance;
+                    if (i > 0) maximumSpeed = Mathf.Max(maximumSpeed,
+                        Vector3.Distance(previousFoot, foot) / (EndingFarewellLogic.RetreatSec / 100f));
+                    previousFoot = foot;
+                    Assert.That(Mathf.Min(SegmentDistance(foot, corner, endA), SegmentDistance(foot, corner, endB))
+                        - a.dollBodyRadiusM - 0.02f, Is.GreaterThanOrEqualTo(EndingFarewellLogic.PhotoWallClearanceM - 1e-5f));
+                }
+                Assert.That(maximumSpeed, Is.LessThanOrEqualTo(EndingFarewellLogic.RetreatMaxSpeedMps), "実際の道筋の距離/秒");
+                var done = new EndingFarewellLogic.Sample { phase = Phase.Done };
+                EndingFarewellLogic.PoseAt(a, done, face, out Vector3 last, out _);
+                Assert.That(Vector3.Distance(last, a.retreatEnd), Is.LessThan(1e-4f), "Done で初期位置へ戻らない");
+                Assert.That(Vector3.Distance(last, cam.transform.position), Is.GreaterThan(Vector3.Distance(a.foot, cam.transform.position)));
+                float before = Mathf.Abs(cam.WorldToViewportPoint(a.foot + Vector3.up * 0.4f).y - cam.WorldToViewportPoint(a.foot).y);
+                float after = Mathf.Abs(cam.WorldToViewportPoint(last + Vector3.up * 0.4f).y - cam.WorldToViewportPoint(last).y);
+                Assert.That(after, Is.LessThan(before));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        private static float SegmentDistance(Vector3 point, Vector3 a, Vector3 b)
+        {
+            Vector3 delta = b - a;
+            return Vector3.Distance(point, a + delta * Mathf.Clamp01(Vector3.Dot(point - a, delta) / delta.sqrMagnitude));
         }
 
         [Test]

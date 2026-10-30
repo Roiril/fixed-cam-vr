@@ -169,8 +169,8 @@ namespace FixedCamVr.Streaming
                 bool trappedCgVisible = _cgLayer != null && _cgLayer.DollVisible;
                 bool swapActive = director != null && director.SwapActive;
                 bool transitionActive = director != null && director.Dipping;
-                bool farewellFacing = _farewell != null && _farewell.Facing;
-                bool plainAllowed = _farewell == null || _farewell.AllowsPlainReleasedShot;
+                bool farewellFacing = _farewell != null && _farewell.Facing && !_farewell.ShotCaptured;
+                bool plainAllowed = _farewell != null && _farewell.AllowsPlainReleasedShot;
                 return ResolveEndingShotWindow(endingTakeActive, _logic.IsWaitingForMark,
                     _endingReleased, liveSource, primaryMatches, secondaryMatches, trappedCgVisible,
                     primaryActive, secondaryActive, cgActive,
@@ -182,9 +182,8 @@ namespace FixedCamVr.Streaming
         /// 終幕写真の窓判定。Unity の描画状態を引数へ分離し、EditMode で固定する。
         ///
         /// 帰還の写真は<b>別れの人形が体験者の方を向いて立っている間</b>に撮る（0291・右に体験者・左に人形）。
-        /// 人形が出る前（<paramref name="plainReleasedAllowed"/>）は CG の無い帰還の画を仮に撮り、
-        /// 人形が見つめる段で上書きする。人形が後ろを向いた後と消えた後は撮らない（最後に撮れた画を残す）。
-        /// 人形を出せなかったときだけ、CG の無い帰還の画が写真になる。
+        /// 本番は位置・向きと撮影成功を待つ（0293）。<paramref name="plainReleasedAllowed"/> は
+        /// プレビュー互換の入口で、本番からは false を渡す。後ろを向いた後と消えた後は撮らない。
         /// </summary>
         public static EndingShotWindow ResolveEndingShotWindow(
             bool endingTakeActive, bool waitingForMark, bool reportReleased, bool liveSource,
@@ -258,6 +257,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>別れの人形の実行体（テレメトリが読む）。</summary>
         public EndingFarewellDoll? Farewell => _farewell;
+
+        public void NotifyEndingFarewellCaptured() => _farewell?.NotifyShotCaptured();
 
         /// <summary>
         /// <b>いま画面を取っているカットの素材 id</b>（<c>steps[].cueId</c>）。演出が走っていなければ空。
@@ -891,7 +892,9 @@ namespace FixedCamVr.Streaming
 
             LineCrossLogic.State[]? lines = TickLines();
             int latest = ResolveLatestZoneCamera();
-            TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, lines);
+            bool holdFarewell = EndingReleasedLiveReady
+                                && (_farewell == null || !_farewell.Completed);
+            TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, lines, holdFarewell);
             Apply(d, exitAnchored: false);
 
             // 締めの線を踏んだ縁を 1 行出す（③a の引き金・0233）。「線は踏まれたのに③a が出ない」と
