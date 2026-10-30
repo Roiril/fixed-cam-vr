@@ -188,7 +188,12 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(Vector3.Dot(a.retreatDir, fromCam), Is.GreaterThan(0f));
                 // 後ろを向く = 体験者の方から大きく回る。
                 float turn = Mathf.Abs(Mathf.DeltaAngle(faceYaw, a.awayYawDeg));
-                Assert.That(turn, Is.GreaterThan(120f));
+                Assert.That(turn, Is.GreaterThan(100f));
+                // 後ろを向いた後は背中がカメラへ向く（奥へ向かう成分が大きい）。
+                Vector3 awayDir = Quaternion.Euler(0f, a.awayYawDeg, 0f) * Vector3.forward;
+                Vector3 camFwd = cam.transform.forward;
+                camFwd.y = 0f;
+                Assert.That(Vector3.Dot(awayDir, camFwd.normalized), Is.GreaterThan(0.7f), "背中を見せる");
             }
             finally { Object.DestroyImmediate(go); }
         }
@@ -203,6 +208,26 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(EndingFarewellLogic.TrySolve(cam, new Vector2(0.75f, 1f), visitor, out var a), Is.True);
                 Assert.That(a.dollUv.x, Is.LessThan(a.visitorUv.x));
                 Assert.That(Vector3.Distance(a.foot, visitor), Is.GreaterThanOrEqualTo(EndingFarewellLogic.MinGapM - 1e-3f));
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void Anchor_VisitorCloseToTheCamera_PutsTheDollFullyInFrame()
+        {
+            // 体験者がカメラに近く足元が画の下にはみ出しているとき、人形を同じ奥行きに置くと
+            // 頭だけが下端に覗く。人形は奥へ下げて足元を画に入れる。
+            Camera cam = MakeCamera(out GameObject go);
+            try
+            {
+                var contain = new Vector2(0.75f, 1f);
+                var visitor = new Vector3(0.2f, 0f, 1.2f);
+                Assert.That(Cg.ShowCgLayer.TryFrameUv(cam, visitor, contain, out Vector2 vuv), Is.True);
+                Assert.That(vuv.y, Is.LessThan(0f), "前提: 体験者の足元は画の外");
+                Assert.That(EndingFarewellLogic.TrySolve(cam, contain, visitor, out var a), Is.True);
+                Assert.That(a.dollUv.y, Is.GreaterThanOrEqualTo(EndingFarewellLogic.MinFootV - 1e-3f), "人形の足元は画の中");
+                Assert.That(a.dollUv.x, Is.LessThan(a.visitorUv.x), "体験者の左");
+                Assert.That(a.fromScreen, Is.True);
             }
             finally { Object.DestroyImmediate(go); }
         }

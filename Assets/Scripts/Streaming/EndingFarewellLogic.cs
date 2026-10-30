@@ -63,11 +63,23 @@ namespace FixedCamVr.Streaming
         public const float ScreenGapU = 0.18f;
         /// <summary>人形の足元を寄せてよい左端（枠 UV）。これより左は画の縁に掛かる。</summary>
         public const float MinU = 0.10f;
+        /// <summary>
+        /// 人形の足元の下限（枠 UV の v・0 = 下端）。体験者がカメラに近く足元が画の外にあるときは、
+        /// 人形を同じ奥行きに置くと頭だけが画の下端に覗く（2026-10-30 のプレビューで実際にそうなった）。
+        /// その場合は人形を奥へ下げて全身を画に入れる。
+        /// </summary>
+        public const float MinFootV = 0.08f;
+        /// <summary>人形の足元の上限（枠 UV の v）。これより上は奥の壁際になる。</summary>
+        public const float MaxFootV = 0.60f;
         /// <summary>体験者との床の上の距離の範囲 (m)。外れたらカメラの左右方向へこの範囲で置き直す。</summary>
         public const float MinGapM = 0.5f;
-        public const float MaxGapM = 1.2f;
-        /// <summary>下がる向きに混ぜる「カメラから遠ざかる」成分。0 なら体験者から真横へ離れるだけ。</summary>
-        public const float AwayFromCameraMix = 0.6f;
+        public const float MaxGapM = 2.5f;
+        /// <summary>
+        /// 下がる向きに混ぜる「カメラから遠ざかる」成分。0 なら体験者から真横へ離れるだけ。
+        /// 0.6 では後ろを向いても左向きの横顔に近く（カメラの奥への向き 0.53）、背中が読めなかった
+        /// （2026-10-30 のプレビュー）。1.5 で奥への向きが 0.8 を超え、背中を見せて奥へ遠ざかる。
+        /// </summary>
+        public const float AwayFromCameraMix = 1.5f;
 
         /// <summary>1 フレームの見え方。</summary>
         public struct Sample
@@ -246,6 +258,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 体験者の足元から、画面の中で左へ <see cref="ScreenGapU"/> ずらした床の点に人形を立てる。
+        /// 足元の高さ（v）は体験者と揃えるが、<see cref="MinFootV"/>〜<see cref="MaxFootV"/> に収める。
         /// 床は体験者の足元と同じ高さの水平面。
         /// </summary>
         /// <param name="cam">人形を描く仮想カメラ（実カメラの較正済み姿勢）。</param>
@@ -265,7 +278,8 @@ namespace FixedCamVr.Streaming
             bool fromScreen = false;
             Vector3 foot = visitorFoot;
             float u = Mathf.Max(MinU, visitorUv.x - ScreenGapU);
-            if (TryFloorAtFrameUv(cam, containScale, new Vector2(u, visitorUv.y), visitorFoot.y, out Vector3 hit))
+            float v = Mathf.Clamp(visitorUv.y, MinFootV, MaxFootV);
+            if (TryFloorAtFrameUv(cam, containScale, new Vector2(u, v), visitorFoot.y, out Vector3 hit))
             {
                 float gap = Flat(hit - visitorFoot).magnitude;
                 if (gap >= MinGapM && gap <= MaxGapM && Vector3.Dot(hit - visitorFoot, camRight) < 0f)

@@ -23,12 +23,20 @@ namespace FixedCamVr.Streaming.EditorTools
         public static void RunFarewell()
         {
             string root = Directory.GetParent(Application.dataPath)!.FullName;
-            string outDir = Path.Combine(root, "Logs/ending-farewell-preview");
-            if (Directory.Exists(outDir))
-                foreach (string f in Directory.GetFiles(outDir, "*.png")) File.Delete(f);
-            Directory.CreateDirectory(outDir);
+            string baseDir = Path.Combine(root, "Logs/ending-farewell-preview");
+            if (Directory.Exists(baseDir)) Directory.Delete(baseDir, true);
+            // right: 4-A で体験者が立つ右半分（足元が画に入る）。centroid: 締めのゾーンの重心（カメラに近く足元が画の外）。
+            RunFarewellCase(root, Path.Combine(baseDir, "right"), RightHalfVisitorUv);
+            RunFarewellCase(root, Path.Combine(baseDir, "centroid"), null);
+        }
 
-            using FarewellScene scene = FarewellScene.Build(root, outDir);
+        /// <summary>体験者の代役を立てる枠 UV（右半分・足元が画に入る位置）。</summary>
+        private static readonly Vector2 RightHalfVisitorUv = new Vector2(0.68f, 0.18f);
+
+        private static void RunFarewellCase(string root, string outDir, Vector2? visitorUv)
+        {
+            Directory.CreateDirectory(outDir);
+            using FarewellScene scene = FarewellScene.Build(root, outDir, visitorUv);
             var tsv = new StringBuilder("file\tt\tphase\talpha\tturn01\tretreatM\tdollU\tdollV\tvisU\tvisV\n");
             var saved = new List<string>();
 
@@ -49,11 +57,15 @@ namespace FixedCamVr.Streaming.EditorTools
             saved.Add(scene.Shot("key_4_fading.png", fading, tsv));
             // 3. 帰還End の写真（見つめる段の最後の画。本番の EndingFrameCapture と同じく caption なし）。
             scene.SaveEndingPhoto("released-photo.png", face);
+            // 4. 向きの確認（灰色の地・カメラの近く・同じヨー）。実景では人形が小さく暗く、頭の光だまりと顔の区別が付かない。
+            foreach (var (label, t) in new[] { ("face", face), ("turn", turn), ("away", retreat) })
+                saved.Add(scene.OrientationShot($"orient_{label}.png", t));
 
             File.WriteAllText(Path.Combine(outDir, "timeline.tsv"), tsv.ToString());
             File.WriteAllText(Path.Combine(outDir, "README.txt"),
                 "Design preview of the farewell doll (LEDGER 0291). Not a visitor recording.\n" +
-                $"Plate: {scene.PlateLabel}\nVisitor stand-in: actors[] visitor at the closing zone centroid.\n" +
+                $"Plate: {scene.PlateLabel}\nVisitor stand-in: actors[] visitor " +
+                (visitorUv.HasValue ? $"at frame uv {visitorUv.Value}" : "at the closing zone centroid") + "\n" +
                 $"Anchor: {scene.AnchorText}\n");
             Debug.Log($"[FarewellPreview] {saved.Count} 枚 → {outDir}  {scene.AnchorText}");
         }
@@ -61,7 +73,7 @@ namespace FixedCamVr.Streaming.EditorTools
         /// <summary>帰還End の見本写真（体験者の代役 ＋ 見つめる別れの人形）。<see cref="CreateEndingSamples"/> が使う。</summary>
         private static Texture2D CreateFarewellReleasedSample(string root, string outDir)
         {
-            using FarewellScene scene = FarewellScene.Build(root, outDir);
+            using FarewellScene scene = FarewellScene.Build(root, outDir, RightHalfVisitorUv);
             float face = EndingFarewellLogic.AppearSec + EndingFarewellLogic.FaceSec - 0.05f;
             return scene.RenderEndingPhoto(face);
         }
@@ -90,7 +102,7 @@ namespace FixedCamVr.Streaming.EditorTools
                              $"faceYaw={EndingFarewellLogic.FaceYawDeg(anchor.foot, visitorFoot):0} awayYaw={anchor.awayYawDeg:0}";
             }
 
-            public static FarewellScene Build(string root, string outDir)
+            public static FarewellScene Build(string root, string outDir, Vector2? visitorUv)
             {
                 string showPath = Path.Combine(root, "tools/web-compositor/show.json");
                 ShowJson show = LoadShow(showPath, out _) ?? throw new InvalidOperationException("Missing show.json");
@@ -122,12 +134,23 @@ namespace FixedCamVr.Streaming.EditorTools
                     // 体験者の代役を立てて実写へ焼き込む（本番では映像の中の本人）。
                     stage.SetPlateLuma(plate);
                     stage.UseActor(visitor);
+                    Vector2 contain = stage.ContainFor(plate);
                     stage.PlaceActor(visitor, stand, yaw, geom);
+                    if (visitorUv.HasValue)
+                    {
+                        // 指定の枠 UV の床に立てる。床の高さはゾーン重心に立てたときの足元と同じ。
+                        float floorY = stage.ActorFootWorld.y;
+                        if (!EndingFarewellLogic.TryFloorAtFrameUv(stage.CgCamera, contain, visitorUv.Value, floorY,
+                                                                   out Vector3 at))
+                            throw new InvalidOperationException("Visitor uv does not hit the floor");
+                        Vector3 toCam = stage.CgCamera.transform.position - at;
+                        float faceCam = Mathf.Atan2(toCam.x, toCam.z) * Mathf.Rad2Deg;
+                        stage.PlaceActorAtWorld(visitor, at, faceCam, geom);
+                    }
                     Vector3 visitorFoot = stage.ActorFootWorld;
                     Plate baked = stage.BakeActorIntoPlate(plate, "+visitor");
 
                     // 別れの人形の立ち位置は本番と同じ関数で解く。
-                    Vector2 contain = stage.ContainFor(plate);
                     if (!EndingFarewellLogic.TrySolve(stage.CgCamera, contain, visitorFoot, out var anchor))
                         throw new InvalidOperationException("Farewell anchor did not resolve");
                     stage.UseActor(doll);
@@ -175,6 +198,32 @@ namespace FixedCamVr.Streaming.EditorTools
                    .Append('\t').Append(_anchor.visitorUv.x.ToString("0.000")).Append('\t').Append(_anchor.visitorUv.y.ToString("0.000"))
                    .Append('\n');
                 return path;
+            }
+
+            /// <summary>
+            /// 向きだけを見る画。人形をカメラの正面 1.1m の床に、見つめる・回る・下がる段と同じワールドのヨーで立てる。
+            /// 地は灰色の一様な板（実景・光だまりの影響を外す）。
+            /// </summary>
+            public string OrientationShot(string file, float t)
+            {
+                EndingFarewellLogic.Sample s = EndingFarewellLogic.SampleAt(t);
+                float faceYaw = EndingFarewellLogic.FaceYawDeg(_anchor.foot, _visitorFoot);
+                float yawDeg = EndingFarewellLogic.TurnYawDeg(faceYaw, _anchor.awayYawDeg, s.turn01);
+                Transform cam = _stage.CgCamera.transform;
+                Vector3 fwd = cam.forward;
+                fwd.y = 0f;
+                Vector3 at = cam.position + fwd.normalized * 1.1f;
+                at.y = _anchor.foot.y;
+                _stage.PlaceActorAtWorld(_doll, at, yawDeg, _geom);
+                _stage.CgStrength = 1f;
+                Plate gray = _stage.MakeFlatPlate(0.45f);
+                Vector3 camRight = cam.right;
+                Vector3 dir = Quaternion.Euler(0f, yawDeg, 0f) * Vector3.forward;
+                _stage.Composite(gray, true, new PostParams(),
+                    $"orientation check t={t:0.00}s {s.phase} yaw {yawDeg:0}  " +
+                    $"facing·camRight {Vector3.Dot(dir, camRight):0.00}  facing·camFwd {Vector3.Dot(dir, fwd.normalized):0.00}",
+                    applyFeel: false);
+                return _stage.Save(file);
             }
 
             public Texture2D RenderEndingPhoto(float t)

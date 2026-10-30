@@ -35,7 +35,7 @@ paths:
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
 - 台車（Romi）は使わない。Quest は台車へ何も送らない（`RomiCartLink` は 2026-10-30 に削除）〔出典: LEDGER 0291〕
 - 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空いた縁に、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる 1.15 → 後ろを向く 0.75 → 下がって消える 2.0 秒（0.45m・最後 1.1 秒で消える）。電源断（7.1 秒）より前に消え切る — `EndingFarewellLogic` / `EndingFarewellDoll` / `Timeline_FitsBetweenTheSwapAndThePowerCut` 〔出典: LEDGER 0291〕
-- 立ち位置は体験者の足元から枠 UV で左へ 0.18 ずらした同じ行の床。床の上で 0.5〜1.2m に収まらなければカメラの左右方向で置き直す。見つめる間は体験者の方を向き続け、後ろを向いた後は「体験者から離れる＋カメラから遠ざかる 0.6」の向きへ下がる — `EndingFarewellLogic.TrySolve` / `Anchor_StandsLeftOfTheVisitor_OnTheFloor_AndRetreatsAwayFromThem` 〔出典: LEDGER 0291〕
+- 立ち位置は体験者の足元から枠 UV で左へ 0.18 ずらした床。足元の高さは体験者に揃えるが枠の v 0.08〜0.60 に収める（体験者の足が画の外でも人形は全身を出す）。床の上で 0.5〜2.5m に収まらなければカメラの左右方向で置き直す。見つめる間は体験者の方を向き続け、後ろを向いた後は「体験者から離れる＋カメラから遠ざかる 1.5」の向き（背中を見せて奥へ）へ下がる — `EndingFarewellLogic.TrySolve` / `Anchor_StandsLeftOfTheVisitor_OnTheFloor_AndRetreatsAwayFromThem` 〔出典: LEDGER 0291〕
 - 別れの人形は体験者の分身ではない。腕は体験者に合わせず、笑わない（`dollPresent` から外す）。立ち位置が解けるまで強さ 0 — `ShowCgLayer.BeginFarewell` / `ShowSoundDirector`（`FarewellActive`）〔出典: コード〕
 - 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 9.5 秒 ＋ 閉じる 4.0 秒）— `OutroTiming.Default` / `Timing_MatchesTheDoctorTabletSignalCut` 〔出典: show-design:806-826〕
 - Trapped では砂嵐も潰れも出さない。同じフレームに電力を落とし、Dark から始める — `OutroDirector.Begin` / `Trapped_StartsDarkWithoutShowingLive_ThenResetsForTheNextVisitor` 〔出典: show-design:830〕
