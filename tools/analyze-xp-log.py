@@ -3627,6 +3627,20 @@ def analyze(events, others, exp, warns=None):
                 pass
         return out
 
+    reference_material = effect_samples(events, "crtRef")
+    if reference_material:
+        any_effect_key = True
+        case_aspects = _decay_nums("crtCase")
+        frame_aspects = _decay_nums("crtFrame")
+        if "0" in reference_material:
+            verdict("FAIL", "参照CRTの筐体または反射マップが描画材質に届いていない（crtRef=0）")
+        elif not case_aspects or any(abs(v - 1280 / 1030) > 0.002 for v in case_aspects):
+            verdict("FAIL", "参照CRTの物理比率が参照画像と違う（crtCase）")
+        elif not frame_aspects or any(abs(v - 16 / 9) > 0.002 for v in frame_aspects):
+            verdict("FAIL", "参照CRTのCG・マスク用論理16:9が崩れている（crtFrame）")
+        else:
+            verdict("OK", "参照CRTの材質・物理比率・論理16:9が一致")
+
     decay_mat = effect_samples(events, "coarseMat")
     if decay_mat:
         any_effect_key = True

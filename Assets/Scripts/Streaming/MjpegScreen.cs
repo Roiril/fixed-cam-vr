@@ -8,8 +8,8 @@ namespace FixedCamVr.Streaming
 {
     /// <summary>
     /// 固定枠スクリーン（web-compositor モデル）。
-    /// Quad の Transform は authored のまま不変。映像は FixedCamVr/ScreenComposite シェーダへ
-    /// テクスチャと contain-fit スケールを渡して letterbox 表示する。
+    /// 著作・CG・マスクの論理枠は16:9。参照筐体を持つ画面は初期化時に物理比率だけを変更し、
+    /// シェーダの共通表示変換で黒帯を除く。素材ごとにTransformを変形しない。
     /// 旧実装の ApplyOrient（/info メタで Transform を回転・変形）は廃止 —
     /// streamer は常に正立フレームを送る（.claude/rules/streaming.md）ため回転は不要で、
     /// アスペクトはデコード済み Texture の実寸から毎フレーム追従する。
@@ -61,10 +61,36 @@ namespace FixedCamVr.Streaming
         {
             get
             {
+                if (ReferenceSurfaceActive) return CrtReferenceScreen.LogicalAspect;
                 if (screenAspectOverride > 0f) return screenAspectOverride;
                 var s = transform.localScale;
                 return s.y > 1e-5f ? Mathf.Abs(s.x / s.y) : 1f;
             }
+        }
+
+        public bool ReferenceSurfaceActive { get; private set; }
+
+        /// <summary>物理表示だけを参照比率へ。素材/CG/マスクの論理16:9は変更しない。</summary>
+        public void EnableReferenceSurface()
+        {
+            if (ReferenceSurfaceActive || GetComponent<CrtScreenMesh>() == null) return;
+            if (_renderer == null) _renderer = GetComponent<Renderer>();
+            if (_renderer == null) return;
+            if (_material == null)
+            {
+                if (Application.isPlaying) _material = _renderer.material;
+                else if (_renderer.sharedMaterial != null)
+                {
+                    _material = new Material(_renderer.sharedMaterial) { hideFlags = HideFlags.DontSave };
+                    _renderer.sharedMaterial = _material;
+                }
+            }
+            if (_material == null || !CrtReferenceScreen.Apply(_material)) return;
+            ReferenceSurfaceActive = true;
+            Vector3 scale = transform.localScale;
+            scale.x = Mathf.Abs(scale.y) * CrtReferenceScreen.CaseAspect;
+            transform.localScale = scale;
+            _lastScreenAspect = -1f;
         }
 
         // ---- ソース映像の実寸（CG レイヤが RT の寸法・画角・contain 枠を合わせるために読む）----
@@ -199,7 +225,8 @@ namespace FixedCamVr.Streaming
                 enabled = false;
                 return;
             }
-            _material = _renderer.material; // インスタンス化（スクリーンは 1 枚想定）
+            if (_material == null) _material = _renderer.material; // インスタンス化（スクリーンは 1 枚想定）
+            EnableReferenceSurface();
 
             if (!UseRegistry)
             {

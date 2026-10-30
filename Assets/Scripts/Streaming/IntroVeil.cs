@@ -941,6 +941,8 @@ namespace FixedCamVr.Streaming
                     scale = new Vector2(live.x, live.y);
                 }
             }
+            if (mjpeg != null && mjpeg.ReferenceSurfaceActive)
+                return CrtReferenceScreen.VisibleScale(scale);
             return new Vector2(Mathf.Clamp(scale.x, 0.25f, 1f), Mathf.Clamp(scale.y, 0.25f, 1f));
         }
 
@@ -1236,6 +1238,12 @@ namespace FixedCamVr.Streaming
                 _fractureBlock.SetVector(VeilSizeId,
                     new Vector4(size.x, size.y, PlaneDistanceResolved, 0f));
                 Vector3 screenCenterWorld = transform.TransformPoint(_screenCenter);
+                if (screenQuad != null)
+                {
+                    var referenceScreen = screenQuad.GetComponent<MjpegScreen>();
+                    if (referenceScreen != null && referenceScreen.ReferenceSurfaceActive)
+                        screenCenterWorld = CrtReferenceScreen.ApertureCenter(screenQuad);
+                }
                 // 破片・周辺片・粒が組み上がる先は、枠ではなく映像が出ている矩形（ResolveContentScale）。
                 Vector2 contentHalf = Vector2.Scale(_screenHalf, _contentScale);
                 Vector3 screenRightWorld = transform.TransformDirection(_screenRight).normalized;

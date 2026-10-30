@@ -1300,6 +1300,10 @@ namespace FixedCamVr.Diagnostics
             // （eyeW = 確保した目のテクスチャの幅・rvs = そのうち実際に描いた割合）。
             _sb.Append(" eyeW=").Append(UnityEngine.XR.XRSettings.eyeTextureWidth);
             _sb.Append(" rvs=").Append(UnityEngine.XR.XRSettings.renderViewportScale.ToString("F2"));
+            if (_feel != null)
+                _sb.Append(" crtRef=").Append(_feel.ReferenceScreenReady ? 1 : 0)
+                   .Append(" crtCase=").Append(_feel.ReferenceScreenPhysicalAspect.ToString("F4", System.Globalization.CultureInfo.InvariantCulture))
+                   .Append(" crtFrame=").Append(_feel.ReferenceScreenLogicalAspect.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
 
             if (_run != null)
             {

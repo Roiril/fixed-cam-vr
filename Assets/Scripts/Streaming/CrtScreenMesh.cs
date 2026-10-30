@@ -38,7 +38,22 @@ namespace FixedCamVr.Streaming
         //   付いていることだけで、形は毎回ここで組み直す（`MainDemoSceneSetup` も Build を呼ばない）。
         //   ⚠ OnValidate から MeshFilter を触ると Unity が
         //   「SendMessage cannot be called during OnValidate」を出すので、そこでも組まない。
-        private void Awake() => Build();
+        private void Awake()
+        {
+            GetComponent<MjpegScreen>()?.EnableReferenceSurface();
+            Build();
+        }
+
+        private void LateUpdate()
+        {
+            var screen = GetComponent<MjpegScreen>();
+            if (screen == null || !screen.ReferenceSurfaceActive) return;
+            var eye = Camera.main;
+            var renderer = GetComponent<Renderer>();
+            if (eye == null || renderer == null) return;
+            Vector3 view = transform.InverseTransformPoint(eye.transform.position);
+            renderer.sharedMaterial.SetVector("_CrtView", new Vector4(view.x, view.y, view.z, 0));
+        }
 
         private void OnDestroy()
         {

@@ -97,6 +97,17 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool HasMaterial => _material != null;
 
+        public bool ReferenceScreenReady => screen != null && screen.ReferenceSurfaceActive && _material != null
+            && _material.GetFloat("_CrtReference") > 0.5f && _material.GetTexture("_CrtFrameTex") != null
+            && _material.GetTexture("_CrtCaseColorTex") != null
+            && _material.GetTexture("_CrtGlassTex") != null
+            && _material.GetTexture("_CrtNormalTex") != null
+            && _material.GetTexture("_CrtGradeTex") != null
+            && _material.GetTexture("_CrtReflectanceTex") != null;
+        public float ReferenceScreenPhysicalAspect => screen != null
+            ? Mathf.Abs(screen.transform.localScale.x / Mathf.Max(screen.transform.localScale.y, 1e-5f)) : 0;
+        public float ReferenceScreenLogicalAspect => screen != null ? screen.ScreenAspect : 0;
+
         /// <summary>心音から画へ書いた波紋の強さ。診断用。</summary>
         public float AppliedHeartRipple { get; private set; }
 

@@ -155,6 +155,9 @@ $Menus = [ordered]@{
                             Out = 'Assets/Scenes/FxSandbox.unity' }
 
     # ---- Diagnostics 廻リ視（見る・測る）----
+    'crt-reference'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtReferencePreview.Run'
+                            Desc = '参照画像から作った本番CRTの材質を実写A-Cで描画し、色・反射・夜間モードを確認'
+                            Out = $null }
     'screen-study'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ScreenStudyPreview.Run'
                             Desc = '最新の無人写真で現行スクリーンとガラス・筐体の4案を比較（Editor専用・本編は変更しない）'
                             Out = $null }

@@ -14,6 +14,7 @@ paths:
   - "Assets/Scripts/Streaming/Heartbeat*.cs"
   - "Assets/Scripts/Streaming/SourceLumaMap.cs"
   - "Assets/Scripts/Streaming/CrtScreenMesh.cs"
+  - "Assets/Scripts/Streaming/CrtReferenceScreen.cs"
   - "Assets/Scripts/Streaming/HeadYawFollow.cs"
   - "Assets/Scripts/Streaming/YawFollowLogic.cs"
   - "Assets/Scripts/Fx/**"
@@ -35,14 +36,15 @@ paths:
 体験者に見えることは `canon/NOW.md`、経緯は `reference/archive/streaming-2026-10-22.md`（S:）・`reference/archive/show-design-2026-10-22.md`（D:）。出典の行番号はその凍結版のもの。
 
 ## 契約
-- スクリーン Quad の Transform は不変。フィット・合成・post はすべて `ScreenComposite` の UV 空間で行う — `MjpegScreen.ContainScale` → `_LiveScale` 〔出典: S:336-344〕
-- ソースは contain-fit、外は黒帯。枠は 16:9 固定 — `ScreenFrameAspectTests` 〔出典: S:341, S:360-362〕
+- 著作・CG・マスクの論理枠は16:9。参照筐体を持つMjpegScreenは初期化時だけ物理Transformの幅を高さ×1280/1030へ変更する。素材ごとのTransform変形はしない — `CrtReferenceScreen` / `MjpegScreen.EnableReferenceSurface` / `CrtReferenceScreenTests`。
+- ソースは論理16:9へcontain-fit。参照画面は開口から論理の中央4:3へ全層共通で写すため、4:3ソースの左右の黒帯は表示しない。参照素材のない画面は従来の16:9と黒帯を保つ — `ScreenComposite.frag` / `ScreenFrameAspectTests`。
 - マスクだけは contain-fit を通らず、枠空間（16:9）の生 uv で読む。`_MaskScale` は無い — `ScreenComposite.SampleBase` / `ScreenFrameAspectTests` 〔出典: S:351-364〕
 - frag の順序: 電源断の uv → 終幕の裂け → 心音の波紋 → 低解像度化 → 乱れ uv → 素材（mip）→ CG → ほどけ → レンズ（周辺光量・心音ビネット）→ センサ（粒・色ノイズ・固定パターン）→ ISP（光だまり・露出・色温度・色かぶり・コントラスト・黒浮き・彩度・赤残し）→ 明暗曲線 → 走査線 → aura → 著作の粒 → 乱れの砂 → 管の点灯 → 信号断の砂 → 終幕の砂 → OSD → 電源断の線 → 管の縁・角 → `_SwitchDim` → `_ScreenPower` — `ScreenComposite.frag` 〔出典: S:1192-1211, S:1330-1334〕
 - 戻す alpha は必ず 1 — `ScreenComposite.frag` の `return half4(saturate(col), 1)` 〔出典: S:1858-1864〕
 - post は linear 空間で計算される（`contrast` の中心は linear 0.5 ＝ sRGB 0.73） — `ScreenComposite.frag` 〔出典: S:1160-1186〕
 - post 12 項目は Unity と卓の FS_POST で同じ式。項を足すときは shader / `shaders.js` / `common.js` / `pipeline.js` の 4 か所を同時に直す — `FS_POST`（tools/web-compositor） 〔出典: S:1507-1515〕
-- 卓に無い「装置の挙動」（`_NoiseDark` `_NoiseFixed` `_ExposureBias` `_SrcFrame` `_ChromaKill` `_Glare` `_Mono` `_CoarseBlocks` `_Echo` `_HeartRipple` `_HeartTime` `_HeartVignette` `_Crt*`）は post の外の別 uniform。書くのは `CameraFeelFx` だけ — `CameraFeelFx` 〔出典: S:1095-1098, S:1229-1235〕
+- 卓に無い「装置の挙動」はpostの外のuniform。従来のノイズ・露出追従・夜間・管の角などは`CameraFeelFx`、参照筐体の素材・開口・補正は`CrtReferenceScreen`、視点は`CrtScreenMesh`が書く。卓のpost12項目へ混ぜない。
+- 参照材質を触る前に`reference/crt-reference-material.md`（色空間・処理順・診断field）を読む。
 - `feel` はキーが無くても既定で効く。既定は C# / 卓 / サーバの 3 者で揃える — `CameraFeelFx.Configure` / `FEEL_DEFAULT` / `capture-server.py _default_show` 〔出典: S:1111-1112〕
 - 粒はソース画素で刻み、時計は受信フレーム番号 — `_SrcFrame` ← `MjpegScreen.SourceFrameId` 〔出典: S:1213-1222〕
 - 色ノイズは 10 フレームに 1 度引き直して補間し、強さは輝度の粒の 0.55 倍 — `ScreenComposite.frag`（`cn *= rsqrt(...)` / `amp * 0.55`） 〔出典: S:1116-1130〕
@@ -57,7 +59,8 @@ paths:
 - 著作の `_Pixelate` は硬い格子のまま、`_CoarseBlocks` と粗い方だけ掛ける — `PixelateUv` 〔出典: S:1504-1505〕
 - 夜間モードは `_Mono` 1 本から +0.95EV・粒 ×2.6・周辺 +0.16・コントラスト +0.10・輝度重み (0.52,0.34,0.14) を派生させる — `ScreenComposite.frag` 〔出典: S:1442-1464〕
 - 明暗曲線は表示 sRGB で `t=saturate((y-0.10)/0.60)`、`target=0.90·smoothstep(t)+0.10·y` を `_Mono` で補間 — `ScreenComposite.frag` 〔出典: memory/screen_decay.md〕
-- 管の形: 曲面はメッシュ（膨らみ 0.055）、角丸と縁の暗さはシェーダ（0.07 / 0.34 / 0.17） — `CrtScreenMesh.bulge` / `CameraFeelFx.CrtRound` `CrtEdge` `CrtEdgeWidth` 〔出典: S:1241-1249〕
+- 管の曲面はメッシュ（膨らみ0.055）。参照画面の外形は生成Frameのalpha、枠RGBは元参照CaseColor、透過むらは生成Glass、視点による反射差は生成Reflectanceで描く。生成画像の枠RGBは使わない。参照が無い画面だけ従来の数式による角と縁（0.07 / 0.34 / 0.17）を使う。
+- 参照素材はResources/CrtReference。NPOT None・非圧縮・mip・Trilinear。CaseColorはsRGB、GlassとReflectanceはlinear。枠を重ねるのはOSDより後、SwitchDim/ScreenPowerより前。最終alphaは1。夜間モードへ進むと参照の通常映像補正だけが弱まり、筐体は残る。
 - 信号断の砂は平均 1.0 の乗数。`_SignalFloor`=1 は下に画が 1 枚も無いときだけ地を持ち上げる — `SignalLostFx` / `SAND_LO` `SAND_ADD` `SAND_FLOOR_LIVE` `SAND_FLOOR_DEAD` 〔出典: S:276-295、LEDGER 0131〕
 - 2-C の追いつき後、乗っ取りの面が消えるまで主画面は物語の砂嵐で実写を隠す — `CameraFeelFx.BeginTakeoverStatic` → `SignalLostFx.SetNarrativeStatic` / `_NarrativeStatic` 〔出典: D:1641〕
 - 心音の波紋とビネットは乗っ取り警告の自然完了で始まり、3-A の凍結でそのラン中は戻らない。波紋は `bed_heart` の再生位置で引く — `HeartbeatScreenLogic.ShouldApply` / `HeartbeatPulseLogic.Evaluate` / `CameraFeelFx.HeartVignetteBase` 〔出典: D:1641、HeartbeatScreenTests〕〔未照合: LEDGER の該当番号〕

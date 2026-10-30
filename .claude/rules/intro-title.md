@@ -55,6 +55,7 @@ paths:
 - 段 4 は頭の角速度 45°/s 以下を待つ（最大 3 秒）。`shatter` = p を破片・粒・音が読む。frame = SmoothStep(.84,.90)、reveal = (.68,.70)、live = (.895,.905) — `IntroLogic.MaxHeadTurnForFrame` / `ShatterClock_EqualsFrameProgress_ForDrawingAndSound` 〔出典: memory/intro_fracture_cinematic.md〕
 - 振り付けの時計の正は `IntroFracture.shader` 先頭の表と `IntroFractureTime.hlsl`（PullStart .56 / ArriveFirst .70 / ArriveSpan .17 / CloserArrive .90） 〔出典: memory/intro_fracture_cinematic.md〕
 - 中央も含めて全体を割り、同じ片が映像の出ている矩形へ組み上がる。終端の矩形を先に別の窓で描かない — `IntroFractureMesh` / `IntroVeil.ContentScale` 〔出典: show-design:62-64〕
+- 参照CRTの到着矩形は`CrtReferenceScreen.VisibleScale`と`ApertureCenter`で取る。論理containの0.75を二重に掛けない。覆いの全開は筐体を含むQuad全体、破片の到着先は映像の開口 — `IntroVeil.ResolveContentScale` / `CrtReferenceScreenTests`。
 - 像は割れ始めに 1 回だけ凍結し、撮影時の姿勢にワールド固定。片は撮影時の部屋の面へ置き（無ければ 1.6m の殻）、剥がれたら両眼とも左カメラの写真。静止画が無ければ旧 alpha 窓へ退避して再試行しない — `IntroVeil.ShatterAnchored` / `ApplyRoomDepth` / `IntroVeil_ShatterAnchorStaysAtStartPoseWhileHeadMoves` / `IntroVeil_NullFrozenFrameFallsBackWithoutRetrying` 〔出典: memory/intro_fracture_cinematic.md / presentation_redesign.md〕
 - `_IntroLive` は `live>0 || reveal>0` の 0/1。混合量は覆いの `_ScreenFade` だけ。`ignite` は全段 1 で、畳むすべての経路で 1 へ戻す — `IntroDirector.WriteIgnite` / `ResetIgnite` / `Ignite_IsAlwaysOne` 〔出典: streaming:851, 889-897〕
 - 段 5 は live 1 の静止 1.6 秒、乱れなし。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec` / `Swap_StillRunsWithStaticWhenNoCameraFrameArrives` 〔出典: streaming:866 / LEDGER 0060〕

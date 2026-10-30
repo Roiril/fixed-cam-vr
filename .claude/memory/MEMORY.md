@@ -43,6 +43,7 @@
 - [cg_actor_and_layer_traps.md](cg_actor_and_layer_traps.md) — CG 人形の罠 4 つ（レイヤ外部編集の消失・EditMode スキニング固着・Remy は Generic）
 - [swap_veil_mask.md](swap_veil_mask.md) — 黒い覆いは背景差分か CG の 2 系統。差分は linear・黒い服は 29% しか覆えない
 - [screen_decay.md](screen_decay.md) — 位置と人形状態に連動する画面の劣化。人形の頭の光だまり `_ActorLight`（10-22）
+- [crt_reference_screen.md](crt_reference_screen.md) — 参照画像から直接素材化するCRT。論理16:9と物理筐体の分離、盲検比較と色収差の黒帯混入
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る

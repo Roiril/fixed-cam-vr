@@ -79,6 +79,22 @@ Shader "FixedCamVr/ScreenComposite"
         // 片方だけ動いた絵（色は残っているのに粒だけ多い等）が作れてしまう。
         _Mono("Night Mode (0=color, 1=IR monochrome)", Range(0, 1)) = 0
         [Header(CRT tube shape)]
+        _CrtReference("Reference casing enabled", Float) = 0
+        _CrtFrameTex("Reference casing RGBA", 2D) = "black" {}
+        _CrtCaseColorTex("Original reference casing color", 2D) = "black" {}
+        _CrtGlassTex("Reference neutral glass transmission", 2D) = "gray" {}
+        _CrtNormalTex("Reference glass normal RGB", 2D) = "bump" {}
+        _CrtGradeTex("Image-fitted display luminance", 2D) = "gray" {}
+        _CrtGradeBypass("Image grade calibration bypass", Float) = 0
+        _CrtOpticalSpread("Image measured RGB spread in reference pixels", Vector) = (1.04, 0.84, 0.82, 0)
+        _CrtOpticalConvergence("Image measured red and blue offset in reference pixels", Vector) = (0.98, 1.79, 0, 0)
+        _CrtFieldStrength("Low frequency reference illumination style", Range(0, 1)) = 0
+        _CrtDisplayContrast("Reference display contrast", Range(0.5, 2)) = 1
+        _CrtReflectanceTex("Reference reflectance", 2D) = "black" {}
+        _CrtAperture("Reference aperture xywh", Vector) = (0, 0, 1, 1)
+        _CrtLogicalCrop("Logical crop xy", Vector) = (1, 1, 0, 0)
+        _CrtImageAdjustment("Reference image exposure contrast saturation temperature", Vector) = (0, 0, 0, 0)
+        _CrtView("Local eye direction", Vector) = (0, 0, -1, 0)
         // ブラウン管の見た目。**形（曲面）はメッシュが持つ**（CrtScreenMesh）ので、ここは
         // 面の中で完結するものだけ — 角の丸みと、管の縁が落ちる暗さ。
         _CrtRound("CRT Corner Round", Range(0, 0.5)) = 0
@@ -253,6 +269,13 @@ Shader "FixedCamVr/ScreenComposite"
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
             TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
+            TEXTURE2D(_CrtFrameTex); SAMPLER(sampler_CrtFrameTex);
+            // All reference assets use the same clamp/trilinear state, also on Quest.
+            TEXTURE2D(_CrtCaseColorTex);
+            TEXTURE2D(_CrtGlassTex);
+            TEXTURE2D(_CrtNormalTex);
+            TEXTURE2D(_CrtGradeTex);
+            TEXTURE2D(_CrtReflectanceTex);
             TEXTURE2D(_SwapMaskTex); SAMPLER(sampler_SwapMaskTex);
             TEXTURE2D(_OverlayTex); SAMPLER(sampler_OverlayTex);
             TEXTURE2D(_OverlayTexB); SAMPLER(sampler_OverlayTexB);
@@ -342,6 +365,16 @@ Shader "FixedCamVr/ScreenComposite"
                 float _Glare;
                 float _Mono;
                 float _CrtRound;
+                float _CrtReference;
+                float4 _CrtAperture;
+                float4 _CrtLogicalCrop;
+                float4 _CrtImageAdjustment;
+                float4 _CrtView;
+                float _CrtGradeBypass;
+                float4 _CrtOpticalSpread;
+                float4 _CrtOpticalConvergence;
+                float _CrtFieldStrength;
+                float _CrtDisplayContrast;
                 float _CrtEdge;
                 float _CrtEdgeWidth;
                 float _CrtIgnite;
@@ -1050,7 +1083,9 @@ Shader "FixedCamVr/ScreenComposite"
             ///   その場合この式は**恒等に 0** になる。閾値方式だと明るい画素が二重加算されて飛ぶ。
             half3 Glare(half3 sharp, half3 wide)
             {
-                return max(wide - max(sharp, 0.45), 0.0) * (_Glare * 2.2);
+                float reference = saturate(_CrtReference) * (1.0 - saturate(_Mono));
+                return max(wide - max(sharp, lerp(0.45, 0.18, reference)), 0.0)
+                    * (_Glare * lerp(2.2, 4.4, reference));
             }
 
             half3 SampleBase(float2 uv, float lod, float chromaBias)
@@ -1070,7 +1105,8 @@ Shader "FixedCamVr/ScreenComposite"
                     live = SplitChroma(live, SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex,
                                                                   uvL, lod + chromaBias).rgb);
                 if (_Glare > 0.001)
-                    live += Glare(live, SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, lod + 4.5).rgb);
+                    live += Glare(live, SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL,
+                        lod + lerp(4.5, 1.0, saturate(_CrtReference) * (1.0 - saturate(_Mono)))).rgb);
                 live *= liveIn;
 
                 // 凍らせた 1 枚を混ぜる。1.0 = 完全に止まって見える（ホールド）、
@@ -1104,9 +1140,10 @@ Shader "FixedCamVr/ScreenComposite"
                 }
                 if (_Glare > 0.001)
                 {
-                    half3 og = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod + 4.5).rgb;
+                    float glareLod = lod + lerp(4.5, 1.0, saturate(_CrtReference) * (1.0 - saturate(_Mono)));
+                    half3 og = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, glareLod).rgb;
                     if (_OverlayBlend > 0.001)
-                        og = lerp(og, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod + 4.5).rgb, _OverlayBlend);
+                        og = lerp(og, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, glareLod).rgb, _OverlayBlend);
                     overlay += Glare(overlay, og);
                 }
                 // 色統計マッチング（卓が焼いた per-channel の gain/offset）。恒等なら何も起きない。
@@ -1190,6 +1227,51 @@ Shader "FixedCamVr/ScreenComposite"
             }
 
 
+            half3 GradeSensorColor(half3 col, float actorLightEv, half aCg, float s, float referenceMix)
+            {
+                float4 referenceAdjust = _CrtImageAdjustment * _CrtReference * (1.0 - saturate(_Mono));
+                col = max(col, 0.0) * exp2(_Exposure + referenceAdjust.x + _ExposureBias + saturate(_Mono) * 0.95 + actorLightEv);
+                col.r *= 1.0 + 0.25 * (_Temperature + referenceAdjust.w);
+                col.b *= 1.0 - 0.25 * (_Temperature + referenceAdjust.w);
+                col.g *= 1.0 + 0.25 * _Tint;
+                col.r *= 1.0 - 0.12 * _Tint;
+                col.b *= 1.0 - 0.12 * _Tint;
+                col = (col - 0.5) * (_Contrast + referenceAdjust.y + saturate(_Mono) * 0.10) + 0.5;
+                col = col * (1.0 - _Lift) + _Lift;
+                half luma = lerp(dot(col, half3(0.299, 0.587, 0.114)),
+                                 dot(col, half3(0.52, 0.34, 0.14)), saturate(_Mono));
+                half sat = _Saturation + referenceAdjust.z + max(1.0 - _Saturation - referenceAdjust.z, 0.0)
+                                       * saturate(luma * 3.33) * saturate(_ChromaKill);
+                sat *= 1.0 - saturate(_Mono);
+                if (_Mono > 0.001 && (_RedKeep.x > 0.001 || _RedKeep.y > 0.001))
+                {
+                    half mx = max(col.r, max(col.g, col.b));
+                    half redness = saturate((col.r - max(col.g, col.b)) / max(mx, 1e-4));
+                    redness = smoothstep(0.20, 0.60, redness) * smoothstep(0.004, 0.03, mx);
+                    half keep = saturate(_RedKeep.x + _RedKeep.y * aCg * s) * redness * saturate(_Mono);
+                    sat = max(sat, keep);
+                }
+                col = lerp(luma.xxx, col, sat);
+                if (referenceMix > 0.0001)
+                {
+                    float3 display = LinearToSRGB(saturate(col));
+                    float y = dot(display, float3(0.299, 0.587, 0.114));
+                    float fitted = SAMPLE_TEXTURE2D_LOD(_CrtGradeTex, sampler_CrtFrameTex,
+                        float2((saturate(y) * 255.0 + 0.5) / 256.0, 0.5), 0).r;
+                    col = SRGBToLinear(saturate(display + referenceMix * (1.0 - _CrtGradeBypass) * (fitted - y)));
+                }
+                if (_Mono > 0.0)
+                {
+                    float3 displayColor = LinearToSRGB(saturate(col));
+                    float displayLuma = dot(displayColor, float3(0.299, 0.587, 0.114));
+                    float t = saturate((displayLuma - 0.10) / 0.60);
+                    float targetLuma = 0.90 * t * t * (3.0 - 2.0 * t) + 0.10 * displayLuma;
+                    displayColor = saturate(displayColor + saturate(_Mono) * (targetLuma - displayLuma));
+                    col = SRGBToLinear(displayColor);
+                }
+                return col;
+            }
+
             half4 frag(Varyings input) : SV_Target
             {
                 // 枠の座標（post FX の空間。卓の FS_POST と一致させる側）と、
@@ -1200,11 +1282,25 @@ Shader "FixedCamVr/ScreenComposite"
                 //   ⚠ **管のガラス（`CrtSdf`）だけは `rawUv` を使う** — 潰れるのは中の画で、
                 //     管の枠ではない。潰れた uv を渡すと `fwidth` が 1/squeeze で発散し、
                 //     角を切る `saturate(-d/aa)` が **線そのものを黙って消す**。
-                float2 rawUv = input.uv;
+                float2 surfaceUv = input.uv;
+                float2 apertureUv = _CrtReference > 0.5
+                    ? (surfaceUv - _CrtAperture.xy) / _CrtAperture.zw : surfaceUv;
+                float2 rawUv = _CrtReference > 0.5
+                    ? (apertureUv - 0.5) * _CrtLogicalCrop.xy + 0.5 : apertureUv;
+                float2 glassRefraction = 0.0;
+                float3 glassNormal = float3(0.0, 0.0, 1.0);
+                if (_CrtReference > 0.5)
+                {
+                    glassNormal = normalize(SAMPLE_TEXTURE2D(_CrtNormalTex, sampler_CrtFrameTex, surfaceUv).rgb * 2.0 - 1.0);
+                    glassRefraction = glassNormal.xy / max(glassNormal.z, 0.35) * 0.025 * _CrtLogicalCrop.xy;
+                    rawUv += glassRefraction;
+                }
                 float2 collapseUv; float collapseMask; float collapseGlow; float collapseHalo;
-                CollapseScreen(_ScreenCollapse, rawUv, collapseUv, collapseMask, collapseGlow, collapseHalo);
+                CollapseScreen(_ScreenCollapse, apertureUv, collapseUv, collapseMask, collapseGlow, collapseHalo);
 
-                float2 screenUv = collapseUv;
+                float2 screenUv = _CrtReference > 0.5
+                    ? (collapseUv - 0.5) * _CrtLogicalCrop.xy + 0.5 : collapseUv;
+                screenUv += glassRefraction;
 
                 // 終幕の砂嵐（2026-10-21）。帯の裂けは**全層のサンプル前**に掛ける（画も一緒に裂ける）。
                 // ⚠ 演出の外では cutI=0 ＝ 恒等。
@@ -1237,21 +1333,47 @@ Shader "FixedCamVr/ScreenComposite"
                 // というレンズの存在しない絵になる。
                 float2 dir = screenUv - 0.5;
                 float r2 = saturate(dot(dir, dir) * 4.0);
-                float lod = CoarseLod() + saturate(r2 - 0.45) * 0.7;
+                float referenceMix = saturate(_CrtReference) * (1.0 - saturate(_Mono));
+                float baseLod = CoarseLod() + saturate(r2 - 0.45) * 0.7;
                 float chromaBias = ChromaLodBias();
+                float2 sourceInset = _LiveTex_TexelSize.xy * _LiveScale.xy * 0.5;
+                float2 contentMin = 0.5 - _LiveScale.xy * 0.5 + sourceInset;
+                float2 contentMax = 0.5 + _LiveScale.xy * 0.5 - sourceInset;
+                if (_CrtReference > 0.5) sampleUv = clamp(sampleUv, contentMin, contentMax);
+                float3 referenceLod = max(log2(max(_CrtOpticalSpread.xyz, 0.01)
+                    * max(_LiveTex_TexelSize.z, 2.0) / max(1280.0 * _CrtAperture.z, 1.0) * 3.4641), 0.0);
+                float lod = baseLod;
+                if (referenceMix > 0.0001)
+                {
+                    lod = lerp(baseLod, max(baseLod, referenceLod.g), referenceMix);
+                }
 
                 // 1-2) ライブ × 差し替え素材。色収差は放射方向に RGB をずらす（端ほど強い）。
                 half3 col;
-                if (_Aberration > 0.001)
+                float aberration = _Aberration;
+                if (aberration > 0.001 || referenceMix > 0.0001)
                 {
                     float2 c = sampleUv - 0.5;
                     float r = saturate(length(c) * 2.0);
-                    float2 off = c * (r * r) * _Aberration * 0.02;
-                    col.r = SampleBase(sampleUv + off, lod, chromaBias).r;
-                    col.g = SampleBase(sampleUv, lod, chromaBias).g;
-                    col.b = SampleBase(sampleUv - off, lod, chromaBias).b;
+                    float2 off = c * (r * r) * aberration * 0.02;
+                    float2 redUv = sampleUv + off;
+                    float2 blueUv = sampleUv - off;
+                    float2 referencePixelUv = _CrtLogicalCrop.xy / max(float2(1280, 1030) * _CrtAperture.zw, 1.0);
+                    float2 radial = (apertureUv - 0.5) * (2.0 / 0.68);
+                    redUv += referenceMix * radial * referencePixelUv * _CrtOpticalConvergence.x;
+                    blueUv -= referenceMix * radial * referencePixelUv * _CrtOpticalConvergence.y;
+                    if (_CrtReference > 0.5)
+                    {
+                        redUv = clamp(redUv, contentMin, contentMax);
+                        blueUv = clamp(blueUv, contentMin, contentMax);
+                    }
+                    half3 redSample = SampleBase(redUv, lerp(lod, max(lod, referenceLod.r), referenceMix), chromaBias);
+                    half3 centerSample = SampleBase(sampleUv, lod, chromaBias);
+                    half3 blueSample = SampleBase(blueUv, lerp(lod, max(lod, referenceLod.b), referenceMix), chromaBias);
+                    col = half3(redSample.r, centerSample.g, blueSample.b);
                 }
                 else col = SampleBase(sampleUv, lod, chromaBias);
+
 
                 // 2.5) CG レイヤ（人形）。**ポスト FX の前**に重ねるのが要点 —
                 //      映像と同じ露出・彩度・ヴィネット・走査線・グレインを浴びて初めて
@@ -1478,6 +1600,7 @@ Shader "FixedCamVr/ScreenComposite"
                     //   完全に消すと「のっぺりした低解像度」になり、暗視カメラの手触りが無くなる。
                     float amp = (sqrt(y) * 0.030 + _NoiseDark * 0.30)
                               * (1.0 + saturate(_Mono) * 2.6) / max(pow(grainPx, 0.6), 1.0);
+                    amp *= 1.0 - referenceMix;
                     if (amp > 0.0005)
                     {
                         col += (Hash21(np + t) - 0.5) * amp;
@@ -1513,11 +1636,12 @@ Shader "FixedCamVr/ScreenComposite"
                         col += cn * amp * 0.55;
                     }
                     // 固定パターン（画素ごとの感度ばらつき）は**乗算**。明るい所ほど出て、黒には浮かない。
-                    if (_NoiseFixed > 0.001)
+                    float fixedStrength = _NoiseFixed * (1.0 - referenceMix);
+                    if (fixedStrength > 0.001)
                     {
                         float f = (Hash21(floor(srcPx)) - 0.5)
                                 + (Hash21(floor(srcPx * 0.04)) - 0.5) * 1.8;
-                        col *= 1.0 + f * _NoiseFixed;
+                        col *= 1.0 + f * fixedStrength;
                     }
                 }
 
@@ -1544,51 +1668,7 @@ Shader "FixedCamVr/ScreenComposite"
                     // 黒の上の地は人形の外だけ（人形に足すと黒髪が灰色に浮いて輪郭が消える）。
                     col += ACTOR_LIGHT_FLOOR * lw * saturate(_ActorLight.w * 0.5) * (1.0 - aCg * s);
                 }
-                col = max(col, 0.0) * exp2(_Exposure + _ExposureBias + saturate(_Mono) * 0.95 + actorLightEv);
-                col.r *= 1.0 + 0.25 * _Temperature;
-                col.b *= 1.0 - 0.25 * _Temperature;
-                // 色かぶり（緑↔マゼンタ）: 色温度と直交する軸。安物 CMOS + 蛍光灯の緑寄りを作る。
-                col.g *= 1.0 + 0.25 * _Tint;
-                col.r *= 1.0 - 0.12 * _Tint;
-                col.b *= 1.0 - 0.12 * _Tint;
-                // 夜間モードは中間調が減って白と黒に寄る（照らされた所と、届かない闇）。
-                col = (col - 0.5) * (_Contrast + saturate(_Mono) * 0.10) + 0.5;
-                // 黒浮き: **コントラストの後**に黒の床を上げる（前だと潰されて意味が無い）。
-                col = col * (1.0 - _Lift) + _Lift;
-                // 夜間モードでは赤外カットフィルタが外れるので**赤いものが明るく写る**。
-                // ただの脱色（Rec.601）だと赤い着物が灰色に沈むが、実物の暗視映像では白く浮く。
-                half luma = lerp(dot(col, half3(0.299, 0.587, 0.114)),
-                                 dot(col, half3(0.52, 0.34, 0.14)), saturate(_Mono));
-                // 彩度。_ChromaKill が立っていると**暗い所ほど色が死ぬ** — 安い ISP のノイズリダクションは
-                // 暗部の色差から捨てるので、一様な脱色（＝フィルタ）ではなくこの形になる。
-                half sat = _Saturation + max(1.0 - _Saturation, 0.0)
-                                       * saturate(luma * 3.33) * saturate(_ChromaKill);
-                // 人形の知覚へ移ると色が抜ける。強度 1 で完全な無彩。
-                sat *= 1.0 - saturate(_Mono);
-                // 赤だけ少し残す（0288 の試し）。赤みは「R が G・B より抜けている割合」で測る。
-                // 暗い画素の色は粒の色ノイズで振れるので、明るさでも絞る。
-                if (_Mono > 0.001 && (_RedKeep.x > 0.001 || _RedKeep.y > 0.001))
-                {
-                    half mx = max(col.r, max(col.g, col.b));
-                    half redness = saturate((col.r - max(col.g, col.b)) / max(mx, 1e-4));
-                    redness = smoothstep(0.20, 0.60, redness) * smoothstep(0.004, 0.03, mx);
-                    half keep = saturate(_RedKeep.x + _RedKeep.y * aCg * s) * redness * saturate(_Mono);
-                    sat = max(sat, keep);
-                }
-                col = lerp(luma.xxx, col, sat);
-
-                // 採用した比較稿の明暗曲線。合成済みの映像全体へ同じ処理を掛ける。
-                // 曲線は表示用 sRGB で定義されているため、linear のまま計算しない。
-                // 0 では色変換も飛ばして元の画を保つ。乱れ・管の縁・終幕はこの後。
-                if (_Mono > 0.0)
-                {
-                    float3 displayColor = LinearToSRGB(saturate(col));
-                    float displayLuma = dot(displayColor, float3(0.299, 0.587, 0.114));
-                    float t = saturate((displayLuma - 0.10) / 0.60);
-                    float targetLuma = 0.90 * t * t * (3.0 - 2.0 * t) + 0.10 * displayLuma;
-                    displayColor = saturate(displayColor + saturate(_Mono) * (targetLuma - displayLuma));
-                    col = SRGBToLinear(displayColor);
-                }
+                col = GradeSensorColor(col, actorLightEv, aCg, s, referenceMix);
 
                 if (_Scanline > 0.001)
                 {
@@ -1836,7 +1916,7 @@ Shader "FixedCamVr/ScreenComposite"
                 // ヴィネット（レンズ）とは別のもの — あちらは光が届かない話で、こちらは管の形。
                 // だから post の最後（切替の暗転より前）に、枠の座標で掛ける。
                 // ⚠⚠ **`screenUv` ではなく `rawUv`** — 潰れるのは中の画で、管の枠ではない（上）。
-                if (_CrtEdge > 0.001 || _CrtRound > 0.001)
+                if (_CrtReference < 0.5 && (_CrtEdge > 0.001 || _CrtRound > 0.001))
                 {
                     float d = CrtSdf(rawUv);
                     // 縁の内側 _CrtEdgeWidth のあいだで暗くなる（管のガラスが厚くなる所）
@@ -1848,6 +1928,35 @@ Shader "FixedCamVr/ScreenComposite"
                 }
 
                 // dip-to-black: 切替の一瞬だけ黒へ（CCTV の瞬断）。
+                if (_CrtReference > 0.5)
+                {
+                    // 画像の約5x4の明暗だけを演出として移す。材質の物理計測ではない。
+                    float2 eyeShift = clamp(_CrtView.xy / max(abs(_CrtView.z), 0.25), -1.0, 1.0) * 0.006;
+                    float reflectAtRest = SAMPLE_TEXTURE2D(_CrtReflectanceTex, sampler_CrtFrameTex, surfaceUv).r;
+                    float reflectAtEye = SAMPLE_TEXTURE2D(_CrtReflectanceTex, sampler_CrtFrameTex, surfaceUv + eyeShift).r;
+                    if (_CrtFieldStrength * referenceMix > 0.0001)
+                    {
+                        float3 referenceField = SAMPLE_TEXTURE2D_LOD(_CrtCaseColorTex, sampler_CrtFrameTex, surfaceUv, 8.0).rgb;
+                        float3 fieldGain = clamp(referenceField / 0.25328954, 0.015, 4.0);
+                        col *= lerp(1.0, fieldGain, saturate(_CrtFieldStrength) * referenceMix);
+                    }
+                    float3 displayContrast = saturate((LinearToSRGB(max(col, 0.0)) - 0.5) * _CrtDisplayContrast + 0.5);
+                    col = lerp(col, SRGBToLinear(displayContrast), referenceMix);
+                    // ガラスはカメラISPより後。先に掛けると後段の明暗曲線が縁の暗さを持ち上げる。
+                    float transmission = SAMPLE_TEXTURE2D(_CrtGlassTex, sampler_CrtFrameTex, surfaceUv).r;
+                    transmission = pow(saturate(transmission * 2.0), 1.6);
+                    float opticalDepth = max(rcp(max(glassNormal.z, 0.35)) - 1.0, 0.0);
+                    transmission *= exp(-4.0 * opticalDepth);
+                    col = col * transmission + (1.0 - transmission) * 0.006;
+                    float3 eyeDirection = normalize(float3(_CrtView.xy, -_CrtView.z));
+                    float facing = saturate(dot(glassNormal, eyeDirection));
+                    float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);
+                    col += reflectAtEye * fresnel * 0.30;
+                    half4 casing = SAMPLE_TEXTURE2D_LOD(_CrtFrameTex, sampler_CrtFrameTex, surfaceUv, 0.4);
+                    casing.rgb = SAMPLE_TEXTURE2D(_CrtCaseColorTex, sampler_CrtFrameTex, surfaceUv).rgb;
+                    casing.rgb += (reflectAtEye - reflectAtRest) * 0.12;
+                    col = lerp(col, casing.rgb, casing.a);
+                }
                 col *= 1.0 - saturate(_SwitchDim);
 
                 // 終幕: 装置に届いている電力。**いちばん最後に掛ける** — 電池が切れるのは
