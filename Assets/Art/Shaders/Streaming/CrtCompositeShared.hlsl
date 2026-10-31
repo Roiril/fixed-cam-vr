@@ -4,6 +4,7 @@
 
 TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
 TEXTURE2D(_CrtFrameTex); SAMPLER(sampler_CrtFrameTex);
+TEXTURE2D(_CrtScreenMaskTex);
 #if defined(CRT_RUNTIME_PREGLASS)
 // This pass omits the casing texture. Keep its shared clamp/linear sampler explicit
 // so stripping the unused texture cannot orphan the sampler on D3D/Vulkan.
@@ -130,6 +131,8 @@ CBUFFER_START(UnityPerMaterial)
     float _CrtSignalRuntime;
     float _CrtSignalProfileSelected;
     float _CrtSignalGain;
+    float _CrtCenterEv, _CrtCenterRadius, _CrtCenterFalloff, _CrtTintStrength, _CrtTintCoolness;
+    float _CrtScreenOnly;
     float _CrtSignalBandwidth;
     float _CrtSignalReady;
     float _CrtRuntimePsfReady;
@@ -1879,5 +1882,11 @@ half4 frag(Varyings input) : SV_Target
     //   スクリーンの面に部屋が透けて出た。**管が点いていない間スクリーンが黒い矩形として
     //   立っている**問題（箱の面から約 2.0m 以上下がると箱の外へはみ出す）は実在するが、
     //   直すならここではない — 面の存在ごと消す側（Renderer）で解くこと。
+    // Keep the adopted image RGB, including the existing glass/case transition inside the contour.
+    // Discard only after all color derivatives are evaluated. Interior alpha stays opaque.
+    #if defined(CRT_SIGNAL_RUNTIME)
+    if (_CrtScreenOnly > .5 && _CrtReference > .5)
+        clip(SAMPLE_TEXTURE2D_LOD(_CrtScreenMaskTex, sampler_CrtFrameTex, surfaceUv, 0).a - .5);
+    #endif
     return half4(saturate(col), 1);
 }

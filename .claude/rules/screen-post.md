@@ -17,6 +17,7 @@ paths:
   - "Assets/Scripts/Streaming/CrtReferenceScreen.cs"
   - "Assets/Scripts/Streaming/CrtSignal*.cs"
   - "Assets/Art/Shaders/Streaming/CrtCompositeShared.hlsl"
+  - "Assets/Art/Shaders/Streaming/CrtSignalAdjustment.hlsl"
   - "Assets/Art/Shaders/Streaming/CrtRuntime*.shader"
   - "Assets/Scripts/Streaming/HeadYawFollow.cs"
   - "Assets/Scripts/Streaming/YawFollowLogic.cs"

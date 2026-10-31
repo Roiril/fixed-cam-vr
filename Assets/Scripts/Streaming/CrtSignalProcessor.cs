@@ -86,6 +86,8 @@ namespace FixedCamVr.Streaming
                 BindPsf(_composition, sigma, phase);
                 Graphics.Blit(Texture2D.blackTexture, _preGlass!, _composition, _preGlassPass);
                 _filter.SetFloat("_Gain", _composition.GetFloat("_CrtSignalGain")); _filter.SetFloat("_Bandwidth", _composition.GetFloat("_CrtSignalBandwidth"));
+                _filter.SetFloat("_CenterEv", _composition.GetFloat("_CrtCenterEv")); _filter.SetFloat("_CenterRadius", _composition.GetFloat("_CrtCenterRadius")); _filter.SetFloat("_CenterFalloff", _composition.GetFloat("_CrtCenterFalloff"));
+                _filter.SetFloat("_TintStrength", _composition.GetFloat("_CrtTintStrength")); _filter.SetFloat("_TintCoolness", _composition.GetFloat("_CrtTintCoolness")); _filter.SetVector("_Aperture", _composition.GetVector("_CrtAperture"));
                 Graphics.Blit(_preGlass, _processed!, _filter, 0);
                 ProcessedFrames++;
                 BindPsf(state, sigma, phase);
@@ -104,7 +106,11 @@ namespace FixedCamVr.Streaming
             if (destination == null || !destination.IsCreated()) return false;
             if (!PrepareDisplay(state, generation, true)) return false;
             RenderTexture? previous = RenderTexture.active;
-            try { Graphics.Blit(Texture2D.blackTexture, destination, state, 0); ExplicitCaptures++; return true; }
+            try
+            {
+                if (state.GetFloat("_CrtScreenOnly") > .5f) { RenderTexture.active = destination; GL.Clear(true, true, Color.clear); }
+                Graphics.Blit(Texture2D.blackTexture, destination, state, 0); ExplicitCaptures++; return true;
+            }
             finally { RenderTexture.active = previous; }
         }
 

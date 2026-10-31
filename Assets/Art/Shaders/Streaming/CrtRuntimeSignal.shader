@@ -5,6 +5,12 @@ Shader "Hidden/FixedCamVr/CrtRuntimeSignal"
         _MainTex("Canonical linear pre-glass", 2D) = "black" {}
         _Bandwidth("Luma/chroma bandwidth", Float) = 1
         _Gain("Uniform display RGB gain", Float) = .85
+        _CenterEv("Center exposure EV", Float) = 0
+        _CenterRadius("Center radius", Float) = .8
+        _CenterFalloff("Center falloff", Float) = 2
+        _TintStrength("Thin tint strength", Float) = 0
+        _TintCoolness("Neutral to cool", Float) = .55
+        _Aperture("Image aperture xywh", Vector) = (0, 0, 1, 1)
     }
     SubShader
     {
@@ -17,6 +23,7 @@ Shader "Hidden/FixedCamVr/CrtRuntimeSignal"
             #pragma vertex vert_img
             #pragma fragment Filter
             #include "UnityCG.cginc"
+            #include "CrtSignalAdjustment.hlsl"
             // Core14.0.12 Color.hlsl sRGB formulas, with private names and float precision.
             // PositivePow(base,power) is pow(abs(base),power). Do not use UnityCG's approximations.
             float CrtSignalSRGBToLinear(float c)
@@ -40,6 +47,8 @@ Shader "Hidden/FixedCamVr/CrtRuntimeSignal"
             Texture2D<float4> _MainTex;
             float4 _MainTex_TexelSize;
             float _Bandwidth, _Gain;
+            float4 _Aperture;
+            float _CenterEv, _CenterRadius, _CenterFalloff, _TintStrength, _TintCoolness;
             float4 SignalAt(int2 pixel)
             {
                 return _MainTex.Load(int3(clamp(pixel, int2(0, 0), int2(_MainTex_TexelSize.zw) - 1), 0));
@@ -48,7 +57,8 @@ Shader "Hidden/FixedCamVr/CrtRuntimeSignal"
             {
                 int2 pixel = int2(input.pos.xy);
                 float4 source = SignalAt(pixel);
-                if (_Bandwidth < .5 && _Gain == 1) return source;
+                if (_Bandwidth < .5 && _Gain == 1)
+                    return CrtAdjustSignal(source, pixel, _MainTex_TexelSize, _Aperture, _CenterEv, _CenterRadius, _CenterFalloff, _TintStrength, _TintCoolness);
                 float3 rgb = CrtSignalLinearToSRGB(max(source.rgb, 0));
                 if (_Bandwidth > .5)
                 {
@@ -64,7 +74,8 @@ Shader "Hidden/FixedCamVr/CrtRuntimeSignal"
                     }
                     rgb = ySum / yWeight + cSum / cWeight;
                 }
-                return float4(CrtSignalSRGBToLinear(max(rgb * _Gain, 0)), source.a);
+                return CrtAdjustSignal(float4(CrtSignalSRGBToLinear(max(rgb * _Gain, 0)), source.a), pixel, _MainTex_TexelSize, _Aperture,
+                    _CenterEv, _CenterRadius, _CenterFalloff, _TintStrength, _TintCoolness);
             }
             ENDHLSL
         }

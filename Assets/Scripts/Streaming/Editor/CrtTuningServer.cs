@@ -194,6 +194,8 @@ namespace FixedCamVr.Streaming.EditorTools
                     _material.SetFloat("_Aberration", config.post.aberration); _material.SetFloat("_Pixelate", config.post.pixelate);
                     CameraFeelFx.WriteUniforms(_material, feel.NoiseDark, feel.NoiseFixed, 0, 0, ScreenDecayLogic.BlocksFor(.5f), 0, .5f);
                     CrtSignalProfile.ApplySelected(_material); _material.SetFloat("_CrtSignalProfileSelected", 0);
+                    // Web adjustment remains a single Editor pass; the CSS mask controls its framing.
+                    _material.SetFloat("_CrtCenterEv", 0); _material.SetFloat("_CrtTintStrength", 0); _material.SetFloat("_CrtScreenOnly", 0);
                     Shader shader = AssetDatabase.LoadAssetAtPath<Shader>("Assets/Art/Shaders/Streaming/Editor/CrtTuningAdjustment.shader");
                     if (shader == null || !shader.isSupported) throw new InvalidOperationException("Tuning adjustment shader is unsupported");
                     _adjustment = Own(new Material(shader) { hideFlags = HideFlags.HideAndDontSave });

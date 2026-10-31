@@ -100,6 +100,13 @@ Shader "FixedCamVr/ScreenComposite"
         [HideInInspector] _CrtSignalRuntime("Selected runtime signal profile", Float) = 0
         [HideInInspector] _CrtSignalProfileSelected("Keep selected optical profile during synchronous capture", Float) = 0
         [HideInInspector] _CrtSignalGain("Runtime display RGB gain", Float) = 1
+        [HideInInspector] _CrtCenterEv("Selected center exposure EV", Float) = 0
+        [HideInInspector] _CrtCenterRadius("Selected center radius", Float) = .8
+        [HideInInspector] _CrtCenterFalloff("Selected center falloff", Float) = 2
+        [HideInInspector] _CrtTintStrength("Selected thin tint strength", Float) = 0
+        [HideInInspector] _CrtTintCoolness("Selected neutral to cool", Float) = .55
+        [HideInInspector] _CrtScreenOnly("Clip outside the selected screen contour", Float) = 0
+        [HideInInspector] _CrtScreenMaskTex("Selected screen contour", 2D) = "white" {}
         [HideInInspector] _CrtSignalBandwidth("Runtime luma/chroma bandwidth", Float) = 0
         [HideInInspector] _CrtSignalReady("Processed surface is valid", Float) = 0
         [HideInInspector] _CrtProcessedSignalTex("Canonical processed surface", 2D) = "black" {}

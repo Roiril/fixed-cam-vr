@@ -1,6 +1,6 @@
 # 参照CRT材質の技術詳細
 
-現行実装の契約。0298で明るさ＋解像感の方向が選ばれ、0300で通常加工を重ねた右下を次の基準にした。見た目の96%条件は未達。
+現行実装の契約。0302で、枠なしの開口形状と直前に提示した加工が本編へ採用された。独立評価の96%条件は未達で、ユーザーの採用判定とは分けて記録する。
 
 - 参照筐体のRGBは元参照のCaseColor、開口alphaはFrameから読む。Reflectance/Glass/Normal/Gradeはlinear、Frame/CaseColorはsRGB。NormalはDefault importerのRGBを自前で[-1,1]へ展開する。参照素材は同じClamp/Trilinear samplerを共有する。
 - 参照画面の通常時は画像由来のISP補正と単調1D曲線を合成済み映像へ掛ける。夜間では通常時の補正を弱め、既存の夜間曲線を保持する。ISPの共通実装は`GradeSensorColor`。
@@ -27,7 +27,9 @@
 
 ## 本編の信号処理
 
-`CrtSignalProfile`が選択された方向の試作値を持つ。gain .85、warp .06、Gaussian sigma .85/.65/.65、convergence倍率1.8、ImageAdjustment.w=-.32、displayContrast1.16、glare0。具体値はシュビーの試作値。通常Mono/CoarseBlocksは従来のDirectorから受け取り、.5へ固定しない。
+`CrtSignalProfile`が選択された方向の値を持つ。gain .85、warp .06、Gaussian sigma .85/.65/.65、convergence倍率1.8、ImageAdjustment.w=-.32、displayContrast1.16、glare0。0302の採用画像に合わせ、ガラス前のlinear信号へ中心EV .12/radius .8/falloff2、薄い色strength .025/coolness .55を一回だけ適用する。具体値は提示した画像の試作値で、ユーザーの個別数値指定ではない。通常Mono/CoarseBlocksは従来のDirectorから受け取り、.5へ固定しない。
+
+選択profileは元Frameの開口の50%輪郭に沿って外側をdiscardする。曲面mesh・logical crop・合成UVは変更しない。外側へ色/depthを書かず、映像内部はalpha1を保つ。Transparent blendで内側を現実へ透かさない。開口内の筐体RGBとの境界混合は採用PNGと同じに保つ。
 
 `MjpegScreen`の`CrtSignalProcessor`はraw LiveTextureを保持したまま、専用linear mipと2種類のfullRGB PSFを用意する。source世代・寸法・CoarseLOD等の変化でsource cacheを更新する。2倍格子の位相を合わせたH/V分離で、fractional LODのdense参照との最大差.003・二次moment差2%以内を固定した。sigma0の差分検出はraw入力を読み続ける。
 
@@ -37,7 +39,7 @@
 
 ## Web調整
 
-`tools/unity.ps1 crt-tune`でlocalhost専用のEditor調整を起動する。Web UIは`tools/crt-tuner/`。0300の右下（通常Mono .5、gain .85）を比較用の固定基準にし、中心EVと薄い中性〜寒色の乗算をガラス前へ加える。スライダーは実Unityのmaterialへ渡し、ブラウザ側の別シェーダで模倣しない。追加0では基準へ戻す。中心/色はEditor専用の試作で、設定JSONやブラウザの値を本編/Questへ自動保存しない。
+`tools/unity.ps1 crt-tune`でlocalhost専用のEditor調整を起動する。Web UIは`tools/crt-tuner/`。0300の右下（通常Mono .5、gain .85）を比較用の固定基準にする。スライダーは実Unityのmaterialへ渡し、ブラウザ側の別シェーダで模倣しない。中心/色はEditorと本編で二重適用しない。設定JSONやブラウザの値を本編/Questへ自動保存せず、採用画像の値を明示して本編へ反映する。
 
 比較レポートはGoogle Docs: https://docs.google.com/document/d/1IEGXhPRB9DNk19YbKHU3UINeosqQiwHT19fW5GbEf-w/edit
 画像・manifest・PDF検品は`G:/マイドライブ/shubie/reports/2026-10-30_crt-reference/`。0295以降の加工感評価は旧評価と区別する。
