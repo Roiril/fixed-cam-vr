@@ -45,12 +45,13 @@
 - [screen_decay.md](screen_decay.md) — 位置と人形状態に連動する画面の劣化。人形の頭の光だまり `_ActorLight`（10-22）
 - [crt_reference_screen.md](crt_reference_screen.md) — 参照画像から直接素材化するCRT。論理16:9と物理筐体の分離、盲検比較と色収差の黒帯混入
 - [crt_reference_evaluation_scope.md](crt_reference_evaluation_scope.md) — 枠・ガラス・映像を含むユーザー条件への訂正。旧診断scoreを補正せず、manifestを正規化して照合する
-- [crt_processing_order_calibration.md](crt_processing_order_calibration.md) — Grade/PSF順序診断のraw-copy正負校正。初回混入と画素中心の誤差
-- [crt_psf_mip_color_space.md](crt_psf_mip_color_space.md) — sRGB mipの点光量減衰。PSF専用Float linear mip/Gaussianの色空間とmoment校正
-- [crt_softness_glare_probe.md](crt_softness_glare_probe.md) — linear PSFのLOD+1とglare除去の2x2対照。64点の光量保存と約4倍の二次moment
-- [crt_signal_stage_precision.md](crt_signal_stage_precision.md) — Float RTを挟む無処理対照の1byte差。HDR flagを棄却し診断出力型float4で旧hashへ一致
+- [crt_processing_order_calibration.md](crt_processing_order_calibration.md) — Grade/PSF順のraw-copy校正
+- [crt_psf_mip_color_space.md](crt_psf_mip_color_space.md) — sRGB mipの光量減衰とlinear PSF校正
+- [crt_softness_glare_probe.md](crt_softness_glare_probe.md) — PSFのLOD+1とglare除去の2x2対照
+- [crt_signal_stage_precision.md](crt_signal_stage_precision.md) — Float RTの1byte差と出力型float4
 - [crt_cutout_validation.md](crt_cutout_validation.md) — 開口境界のCPU/GPU判定差。承認PNGとの照合と実alphaを使う深度の正負校正
-- [crt_reference_rule_layout.md](crt_reference_rule_layout.md) — 材質の詳細はreferenceへ。screen-postの12,000bytes上限と読む導線
+- [crt_reference_rule_layout.md](crt_reference_rule_layout.md) — CRT材質のreference導線とrule上限
+- [screen_effect_study_20261101.md](screen_effect_study_20261101.md) — 11-01追加加工と動画追跡の独立試作
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る
