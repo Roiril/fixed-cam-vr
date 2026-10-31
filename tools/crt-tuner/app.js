@@ -398,8 +398,24 @@
       $('file-message').textContent = error.message;
     } finally { $('json-file').value = ''; }
   });
-  $('save-png').addEventListener('click', () => {
-    if (currentBlob && renderedRevision === revision) download(currentBlob, `crt-${renderedCamera}.png`);
+  $('show-frame').addEventListener('change', () => {
+    document.documentElement.dataset.showFrame = String($('show-frame').checked);
+  });
+  $('save-png').addEventListener('click', async () => {
+    if (!currentBlob || renderedRevision !== revision) return;
+    if ($('show-frame').checked) { download(currentBlob, `crt-${renderedCamera}.png`); return; }
+    const mask = new Image();
+    mask.src = '/screen-mask.png';
+    try {
+      await mask.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280; canvas.height = 1030;
+      const context = canvas.getContext('2d');
+      context.drawImage($('current-image'), 0, 0, 1280, 1030);
+      context.globalCompositeOperation = 'destination-in';
+      context.drawImage(mask, 0, 0, 1280, 1030);
+      canvas.toBlob(blob => { if (blob) download(blob, `crt-screen-${renderedCamera}.png`); }, 'image/png');
+    } catch { $('file-message').textContent = '切り抜き用の形を読み込めません。もう一度保存してください。'; }
   });
   $('retry').addEventListener('click', () => {
     if (!config) { initialize(); return; }

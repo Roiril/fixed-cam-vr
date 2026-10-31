@@ -111,12 +111,12 @@ namespace FixedCamVr.Streaming.EditorTools
             string path = request.Url.AbsolutePath;
             if (request.HttpMethod == "GET")
             {
-                string? staticFile = path == "/" ? "index.html" : path == "/app.js" ? "app.js" : path == "/style.css" ? "style.css" : null;
+                string? staticFile = path == "/" ? "index.html" : path == "/app.js" ? "app.js" : path == "/style.css" ? "style.css" : path == "/screen-mask.png" ? "screen-mask.png" : null;
                 if (staticFile != null)
                 {
                     string file = Path.Combine(tuner.Root, "tools/crt-tuner", staticFile);
                     if (!File.Exists(file)) { Error(response, 404, "画面ファイルがありません。"); return false; }
-                    Send(response, File.ReadAllBytes(file), staticFile.EndsWith(".js", StringComparison.Ordinal) ? "text/javascript; charset=utf-8" : staticFile.EndsWith(".css", StringComparison.Ordinal) ? "text/css; charset=utf-8" : "text/html; charset=utf-8");
+                    Send(response, File.ReadAllBytes(file), staticFile.EndsWith(".png", StringComparison.Ordinal) ? "image/png" : staticFile.EndsWith(".js", StringComparison.Ordinal) ? "text/javascript; charset=utf-8" : staticFile.EndsWith(".css", StringComparison.Ordinal) ? "text/css; charset=utf-8" : "text/html; charset=utf-8");
                 }
                 else if (path == "/reference.jpg") Send(response, File.ReadAllBytes(Path.Combine(tuner.Root, "Assets/Resources/CrtReference/CaseColor.jpg")), "image/jpeg");
                 else if (path == "/api/config") Send(response, Encoding.UTF8.GetBytes(tuner.ConfigJson), "application/json; charset=utf-8");

@@ -69,6 +69,15 @@ legend { padding: 0; margin-bottom: 4px; }
 figure { margin: 0; min-width: 0; }
 .image-frame { width: 100%; aspect-ratio: 1280 / 1030; position: relative; background: var(--surface); }
 .image-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+html:not([data-show-frame="true"]) #current-image,
+html:not([data-show-frame="true"]) #baseline-image {
+  mask-image: url('/screen-mask.png');
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-image: url('/screen-mask.png');
+  -webkit-mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+}
 .image-empty { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; margin: 0; text-align: center; color: var(--mute); font-size: .875rem; }
 figcaption { margin-top: 8px; font-size: .875rem; color: var(--mute); overflow-wrap: anywhere; }
 .preview-footer { margin-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
