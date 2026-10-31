@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace FixedCamVr.Streaming.EditorTools
 {
-    public static class CrtReferencePreview
+    public static partial class CrtReferencePreview
     {
         private const string Output = "G:/マイドライブ/shubie/reports/2026-10-30_crt-reference";
         [Serializable] private sealed class Config { public PostParams post = new PostParams(); public ShowFeelDef? feel; }

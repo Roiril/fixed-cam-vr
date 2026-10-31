@@ -86,6 +86,14 @@ Shader "FixedCamVr/ScreenComposite"
         _CrtNormalTex("Reference glass normal RGB", 2D) = "bump" {}
         _CrtGradeTex("Image-fitted display luminance", 2D) = "gray" {}
         _CrtGradeBypass("Image grade calibration bypass", Float) = 0
+        [HideInInspector] _CrtOrderStage("Editor processing order stage", Float) = 0
+        [HideInInspector] _CrtOrderGradeFirst("Editor processing order grade first", Float) = 0
+        [HideInInspector] _CrtPsfStage("Editor PSF calibration stage", Float) = 0
+        [HideInInspector] _CrtPsfSigma("Editor calibrated Gaussian source sigma", Vector) = (0, 0, 0, 0)
+        [HideInInspector] _CrtPsfLod("Editor PSF calibration mip level", Vector) = (0, 0, 0, 0)
+        [HideInInspector] _CrtPsfMode("Editor PSF mode", Float) = 0
+        [HideInInspector] _CrtPsfLinearTex("Editor linear PSF source", 2D) = "black" {}
+        [HideInInspector] _CrtPsfLinearLod("Editor calibrated linear mip level", Vector) = (0, 0, 0, 0)
         _CrtOpticalSpread("Image measured RGB spread in reference pixels", Vector) = (1.04, 0.84, 0.82, 0)
         _CrtOpticalConvergence("Image measured red and blue offset in reference pixels", Vector) = (0.98, 1.79, 0, 0)
         _CrtFieldStrength("Low frequency reference illumination style", Range(0, 1)) = 0
@@ -265,6 +273,8 @@ Shader "FixedCamVr/ScreenComposite"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma shader_feature_local _ CRT_ORDER_DIAGNOSTIC
+            #pragma shader_feature_local _ CRT_PSF_DIAGNOSTIC
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
@@ -275,6 +285,7 @@ Shader "FixedCamVr/ScreenComposite"
             TEXTURE2D(_CrtGlassTex);
             TEXTURE2D(_CrtNormalTex);
             TEXTURE2D(_CrtGradeTex);
+            TEXTURE2D(_CrtPsfLinearTex);
             TEXTURE2D(_CrtReflectanceTex);
             TEXTURE2D(_SwapMaskTex); SAMPLER(sampler_SwapMaskTex);
             TEXTURE2D(_OverlayTex); SAMPLER(sampler_OverlayTex);
@@ -371,6 +382,13 @@ Shader "FixedCamVr/ScreenComposite"
                 float4 _CrtImageAdjustment;
                 float4 _CrtView;
                 float _CrtGradeBypass;
+                float _CrtOrderStage;
+                float _CrtOrderGradeFirst;
+                float _CrtPsfStage;
+                float4 _CrtPsfSigma;
+                float4 _CrtPsfLod;
+                float _CrtPsfMode;
+                float4 _CrtPsfLinearLod;
                 float4 _CrtOpticalSpread;
                 float4 _CrtOpticalConvergence;
                 float _CrtFieldStrength;
@@ -404,6 +422,14 @@ Shader "FixedCamVr/ScreenComposite"
                 Varyings o;
                 o.positionHCS = TransformObjectToHClip(input.positionOS.xyz);
                 o.uv = input.uv;
+                #if defined(CRT_ORDER_DIAGNOSTIC)
+                if (_CrtOrderStage > 0.5 && _CrtOrderStage < 2.5)
+                    o.positionHCS = float4((input.uv * 2.0 - 1.0) * float2(1.0, _ProjectionParams.x), 0, 1);
+                #endif
+                #if defined(CRT_PSF_DIAGNOSTIC)
+                if (_CrtPsfStage > 0.5)
+                    o.positionHCS = float4((input.uv * 2.0 - 1.0) * float2(1.0, _ProjectionParams.x), 0, 1);
+                #endif
                 return o;
             }
 
@@ -1088,7 +1114,31 @@ Shader "FixedCamVr/ScreenComposite"
                     * (_Glare * lerp(2.2, 4.4, reference));
             }
 
-            half3 SampleBase(float2 uv, float lod, float chromaBias)
+            half3 SampleLivePsf(float2 uv, float lod, float sigma, float linearLod)
+            {
+                #if defined(CRT_PSF_DIAGNOSTIC)
+                if (_CrtPsfMode > 0.5 && _CrtPsfMode < 1.5)
+                    return SAMPLE_TEXTURE2D_LOD(_CrtPsfLinearTex, sampler_LiveTex, uv, linearLod).rgb;
+                if (_CrtPsfMode > 1.5 && sigma > 0.001)
+                {
+                    // Dense, positive, normalized source-space kernel. No separated sparse taps.
+                    float3 sum = 0.0;
+                    float weight = 0.0;
+                    [loop] for (int y = -4; y <= 4; y++)
+                    [loop] for (int x = -4; x <= 4; x++)
+                    {
+                        float w = exp(-float(x * x + y * y) / (2.0 * sigma * sigma));
+                        sum += SAMPLE_TEXTURE2D_LOD(_CrtPsfLinearTex, sampler_LiveTex,
+                            uv + float2(x, y) * _LiveTex_TexelSize.xy, 0).rgb * w;
+                        weight += w;
+                    }
+                    return sum / max(weight, 1e-6);
+                }
+                #endif
+                return SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uv, lod).rgb;
+            }
+
+            half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, float linearLod)
             {
                 // 左右分割（canon/LEDGER.md 0050）。分割位置より左は**左右反転して**ライブを読む。
                 // ⚠ 反転が効くのは live と凍結だけ。差し替え素材（録画・生成画像）は反転しない —
@@ -1100,7 +1150,7 @@ Shader "FixedCamVr/ScreenComposite"
 
                 float liveIn;
                 float2 uvL = ContainUv(RotateUvSteps(uvSrc, _UvRotSteps), _LiveScale.xy, liveIn);
-                half3 live = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, lod).rgb;
+                half3 live = SampleLivePsf(uvL, lod, gaussianSigma, linearLod);
                 if (chromaBias > 0.001)
                     live = SplitChroma(live, SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex,
                                                                   uvL, lod + chromaBias).rgb);
@@ -1204,8 +1254,8 @@ Shader "FixedCamVr/ScreenComposite"
                 float lodB = lod + max(_SwapMask.w - 2.0, 0.0);
                 half3 plA = SAMPLE_TEXTURE2D_LOD(_SwapMaskTex, sampler_SwapMaskTex, uvP, lodA).rgb;
                 half3 plB = SAMPLE_TEXTURE2D_LOD(_SwapMaskTex, sampler_SwapMaskTex, uvP, lodB).rgb;
-                half3 curA = SampleBase(uv0, lodA, 0.0);
-                half3 curB = SampleBase(uv0, lodB, 0.0);
+                half3 curA = SampleBase(uv0, lodA, 0.0, 0.0, 0.0);
+                half3 curB = SampleBase(uv0, lodB, 0.0, 0.0, 0.0);
                 float dA = max(abs(curA.r - plA.r), max(abs(curA.g - plA.g), abs(curA.b - plA.b)));
                 float dB = max(abs(curB.r - plB.r), max(abs(curB.g - plB.g), abs(curB.b - plB.b)));
                 float d = max(dA, dB);
@@ -1274,6 +1324,43 @@ Shader "FixedCamVr/ScreenComposite"
 
             half4 frag(Varyings input) : SV_Target
             {
+                #if defined(CRT_PSF_DIAGNOSTIC)
+                if (_CrtPsfStage > 0.5)
+                    return half4(SampleLivePsf(input.uv, _CrtPsfLod.r, _CrtPsfSigma.r, _CrtPsfLinearLod.r).r,
+                                 SampleLivePsf(input.uv, _CrtPsfLod.g, _CrtPsfSigma.g, _CrtPsfLinearLod.g).g,
+                                 SampleLivePsf(input.uv, _CrtPsfLod.b, _CrtPsfSigma.b, _CrtPsfLinearLod.b).b, 1);
+                #endif
+                #if defined(CRT_ORDER_DIAGNOSTIC)
+                // Editor-only source-space experiment. Both arms have identical RT/mip sampling.
+                // Refraction, lens/sensor effects and casing are applied once by stage 3 below.
+                if (_CrtOrderStage > 0.5 && _CrtOrderStage < 2.5)
+                {
+                    float2 uv = input.uv;
+                    half3 ordered;
+                    if (_CrtOrderStage < 1.5)
+                        ordered = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uv, 0).rgb;
+                    else
+                    {
+                        float3 psfLod = max(log2(max(_CrtOpticalSpread.xyz, 0.01)
+                            * max(_LiveTex_TexelSize.z, 2.0) / max(1280.0 * _CrtAperture.z, 1.0) * 3.4641), 0.0);
+                        float2 logical = (uv - 0.5) * _LiveScale.xy + 0.5;
+                        float2 radial = (logical - 0.5) / _CrtLogicalCrop.xy * (2.0 / 0.68);
+                        float2 pixelUv = _CrtLogicalCrop.xy / max(float2(1280, 1030) * _CrtAperture.zw, 1.0)
+                            / _LiveScale.xy;
+                        float2 lo = _LiveTex_TexelSize.xy * 0.5;
+                        float2 hi = 1.0 - lo;
+                        half3 red = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex,
+                            clamp(uv + radial * pixelUv * _CrtOpticalConvergence.x, lo, hi), psfLod.r).rgb;
+                        half3 green = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, clamp(uv, lo, hi), psfLod.g).rgb;
+                        half3 blue = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex,
+                            clamp(uv - radial * pixelUv * _CrtOpticalConvergence.y, lo, hi), psfLod.b).rgb;
+                        ordered = half3(red.r, green.g, blue.b);
+                    }
+                    if ((_CrtOrderStage < 1.5) == (_CrtOrderGradeFirst > 0.5))
+                        ordered = GradeSensorColor(ordered, 0, 0, 0, 1);
+                    return half4(ordered, 1);
+                }
+                #endif
                 // 枠の座標（post FX の空間。卓の FS_POST と一致させる側）と、
                 // テクスチャを引く座標（低解像度化 → 乱れ の順に劣化させた側）を分ける。
                 //
@@ -1342,6 +1429,9 @@ Shader "FixedCamVr/ScreenComposite"
                 if (_CrtReference > 0.5) sampleUv = clamp(sampleUv, contentMin, contentMax);
                 float3 referenceLod = max(log2(max(_CrtOpticalSpread.xyz, 0.01)
                     * max(_LiveTex_TexelSize.z, 2.0) / max(1280.0 * _CrtAperture.z, 1.0) * 3.4641), 0.0);
+                #if defined(CRT_ORDER_DIAGNOSTIC)
+                if (_CrtOrderStage > 2.5) referenceLod = 0.0;
+                #endif
                 float lod = baseLod;
                 if (referenceMix > 0.0001)
                 {
@@ -1359,6 +1449,9 @@ Shader "FixedCamVr/ScreenComposite"
                     float2 redUv = sampleUv + off;
                     float2 blueUv = sampleUv - off;
                     float2 referencePixelUv = _CrtLogicalCrop.xy / max(float2(1280, 1030) * _CrtAperture.zw, 1.0);
+                    #if defined(CRT_ORDER_DIAGNOSTIC)
+                    if (_CrtOrderStage > 2.5) referencePixelUv = 0.0;
+                    #endif
                     float2 radial = (apertureUv - 0.5) * (2.0 / 0.68);
                     redUv += referenceMix * radial * referencePixelUv * _CrtOpticalConvergence.x;
                     blueUv -= referenceMix * radial * referencePixelUv * _CrtOpticalConvergence.y;
@@ -1367,12 +1460,12 @@ Shader "FixedCamVr/ScreenComposite"
                         redUv = clamp(redUv, contentMin, contentMax);
                         blueUv = clamp(blueUv, contentMin, contentMax);
                     }
-                    half3 redSample = SampleBase(redUv, lerp(lod, max(lod, referenceLod.r), referenceMix), chromaBias);
-                    half3 centerSample = SampleBase(sampleUv, lod, chromaBias);
-                    half3 blueSample = SampleBase(blueUv, lerp(lod, max(lod, referenceLod.b), referenceMix), chromaBias);
+                    half3 redSample = SampleBase(redUv, lerp(lod, max(lod, referenceLod.r), referenceMix), chromaBias, _CrtPsfSigma.r, _CrtPsfLinearLod.r);
+                    half3 centerSample = SampleBase(sampleUv, lod, chromaBias, _CrtPsfSigma.g, _CrtPsfLinearLod.g);
+                    half3 blueSample = SampleBase(blueUv, lerp(lod, max(lod, referenceLod.b), referenceMix), chromaBias, _CrtPsfSigma.b, _CrtPsfLinearLod.b);
                     col = half3(redSample.r, centerSample.g, blueSample.b);
                 }
-                else col = SampleBase(sampleUv, lod, chromaBias);
+                else col = SampleBase(sampleUv, lod, chromaBias, 0.0, 0.0);
 
 
                 // 2.5) CG レイヤ（人形）。**ポスト FX の前**に重ねるのが要点 —
@@ -1668,7 +1761,10 @@ Shader "FixedCamVr/ScreenComposite"
                     // 黒の上の地は人形の外だけ（人形に足すと黒髪が灰色に浮いて輪郭が消える）。
                     col += ACTOR_LIGHT_FLOOR * lw * saturate(_ActorLight.w * 0.5) * (1.0 - aCg * s);
                 }
-                col = GradeSensorColor(col, actorLightEv, aCg, s, referenceMix);
+                #if defined(CRT_ORDER_DIAGNOSTIC)
+                if (_CrtOrderStage < 2.5)
+                #endif
+                    col = GradeSensorColor(col, actorLightEv, aCg, s, referenceMix);
 
                 if (_Scanline > 0.001)
                 {

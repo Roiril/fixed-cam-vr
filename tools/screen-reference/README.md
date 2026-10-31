@@ -144,7 +144,28 @@ RGB位置差は測定値そのものに戻す。元参照の室内照明を別�
 画像素材による筐体・透過・法線・反射・単調曲線と論理/物理座標の分離を残す。整理版も実描画の2枚判定を受け、96%未達なら完成にはしない。
 
 28結果: 86%。本編28版+除去比較の追加11枚=39枚で96%なし。
-現行比較では次の改善方向を識別できていない。判定対象の意図確認待ちであり、完成/再現不能の結論ではない。
+0295でプロジェクトの無人画像を映し、元参照との加工感を比べて調整する指示を受領。確認待ちは解消し、調整を継続。加工感に絞った28の新評価は73%。旧評価の86%とは連続させない。
 
 28の確認用APK: Driveのround-28.apk（146,108,414bytes、SHA256 1489a027f5fcb86175d28dc359021b6fec2397a46f1e801230d69eca778cbfbe）。
 build-validation.jsonで描画と同じshader/CRT設定hash、VR/focusaware、compile、2288 tests、退避11ファイル不変を記録。Quest未接続のため実機未検証。
+
+Google Docsの比較レポート: https://docs.google.com/document/d/1IEGXhPRB9DNk19YbKHU3UINeosqQiwHT19fW5GbEf-w/edit
+画像136か所と39件採点表をnative要素で配置し、PDF全41ページをDriveのdocs-qaへ描画した。加工感の新しい比較を同じ文書へ追加する。
+
+加工感の順序比較（processing-order-01）: Grade/PSFの前後だけを交換したRT経路の対照をA/B/Cで描画。raw-copy正負校正を通った23PNGとmanifestを保存。候補の独立評価は64/66/68%。本番singlepassとの差には共通RT再サンプルとlens/sensor/glareの相対順序も含む。採用しない。各入力のcontrol/variantと参照の比較も同じGoogle Docsへ追加する。
+
+processing-optics-01: spread×1/0.5とconvergence×1/2.5の12枚。現行3枚は28hashと一致。加工感評価はA73/63/62/62、B58/67/56/62、C64/60/62/58%。A現行は既存73%を再利用。他11枚を新規評価。既定を変えない。
+
+processing-psf-linear-01: 元写真と同じLoadImageのmip生成を校正すると、encoded平均を後からsRGB decodeして白点の線形光量がR約14%/G・B約18%へ落ちていた。PSF専用のFloat linear mipとGaussianは光量約1、旧との二次moment差2%以内。A/B/Cの9枚を描き、旧3枚は28hashと一致。加工感評価はlinear/GaussianがA62/58、B62/64、C62/64%。物理校正合格だけでは見た目の採用に至らず、通常設定は維持。
+
+processing-softness-01: linear mipのLODとLOD+1、glare0.55/0の2×2。光量を保って二次momentは約4倍だが、強いぼけは56〜62%。glare0だけはA64/B62/C62%。12枚とhash/校正値を保存。元の床の縞と横棒の反射線も評価へ影響するため、2画像の言葉だけで加工の原因と断定しない。
+
+processing-tone-01: Gradeだけを現行/16〜240のS字/32〜224のS字にした9枚。新2LUTの全256byte、別の整数式、GPU保持値、PNG再読込が一致。現行3枚は前段linearMipとhash一致。穏やか/強の診断評価はA65/58、B60/58、C58/48。採用しない。
+
+評価範囲の訂正: 「筐体だけ一致しても映像加工の差は埋めない」はエージェントの追加解釈で、ユーザーは筐体を除外していない。枠・ガラス・映像を含むユーザー条件へ戻し、同じ28版を一度だけ校正した結果84%。映像だけに限定した73%等は別系列として残し、実装改善へ換算しない。固定評価文はDriveのevaluation-scope-20261031.json（技術記録はmemory/crt_reference_evaluation_scope.md）。
+
+processing-candidate-01: source sigma(.85,.65,.65)のlinearGaussian、convergence測定値×1.8、ImageAdjustment.w=-.32の統合候補。Grade・DisplayContrast1.16・Glare.55と元素材を保持。A/B/Cの訂正後の判定83/78/82%、96未達。全6枚の対照は28hashへ一致。通常設定は変えていない。
+
+診断checkpointのEditModeは2288/2288通過。18source/metaの前後hash差0、既存11ファイルもpre-build-28から不変。結果/XML/マスク済みログはDriveのprocessing-checkpoint/。未採用の診断は現在のfeatureブランチへ保存し、他PCへ同期する。
+
+manifestを消費するときは`evidence-index.py <実験フォルダ...>`で実在とhashを先に照合する。captures[]、photos[].capture、順序実験のsinglepass/control/variantを正規化し、実在するファイル名からラベルを作る。condition値や配列名を推測しない。
