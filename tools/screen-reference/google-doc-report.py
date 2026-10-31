@@ -20,6 +20,8 @@ paragraphs, image_groups, text_parts, scores = [], {}, [], []
 native_tables = []
 normalize = runpy.run_path(str(Path(__file__).with_name("evidence-index.py")))["read_evidence"]
 cursor = 1
+section_id = 0
+reference_sections = set()
 
 
 def read(path):
@@ -31,7 +33,9 @@ def sha(path):
 
 
 def add(text, style="NORMAL_TEXT"):
-    global cursor
+    global cursor, section_id
+    if style == "HEADING_1":
+        section_id += 1
     text = text.rstrip("\n") + "\n"
     length = len(text.encode("utf-16-le")) // 2
     paragraphs.append({"start": cursor, "end": cursor + length, "style": style})
@@ -53,6 +57,17 @@ def picture(path, index, width=220):
 
 
 def pair(left, right, caption):
+    # Repeating the full reference in every pair makes Google's PDF export
+    # exceed the download limit. Keep it once per section and retain every
+    # candidate screenshot, with an accurate single-image caption.
+    if Path(left).resolve() == reference.resolve():
+        if section_id in reference_sections:
+            assert "右：" in caption, caption
+            start = add("□", "IMAGE")
+            picture(right, start)
+            add("参照との比較：" + caption.split("右：", 1)[1], "CAPTION")
+            return
+        reference_sections.add(section_id)
     start = add("□ □", "IMAGE")
     picture(left, start)
     picture(right, start + 2)
@@ -84,8 +99,9 @@ add("参照画像から再現したCRTスクリーンの比較", "TITLE")
 add("廻リ視 ／ 2026年10月31日 ／ 確認用・見た目の完成条件は未達", "SUBTITLE")
 add("参照画像を直接素材化したスクリーンを本編へ実装した。96%以上の完了条件は未達。枠・ガラス・映像を含むユーザー条件へ評価範囲を訂正し、同じ28版を一度校正した結果は84%。旧評価86%と映像だけの診断73%は別条件であり、点数を実装改善へ換算しない。", "LEAD")
 add("先行した言語化による4案はユーザーが却下した。その後は参照画像を画像生成へ直接入力し、筐体の開口とガラスの素材を作った。枠のRGBには元JPEGそのものを使っている。")
+add("追加指定0296では周辺ほど像が伸びる昔のレンズの歪みを求められた。続く0297『色褪せではなく、色の濃淡など、相対的な差はそのままに、全体的に何かを落として昭和風にするみたいな』を受け、単なる脱彩度の解釈を訂正した。色の振幅を保って明るさと空間的な細かさを落とす案は、エージェントの解釈として試作中。")
 
-add("現在の実描画", "HEADING_1")
+add("本編の旧28版（比較の基準）", "HEADING_1")
 current = OUT / "round-28/02.png"
 assert sha(current) == next(c["sha256"] for c in manifest["captures"] if c["file"] == "A_front.png")
 pair(reference, current, "左：ユーザーの参照　右：28版・Unity実描画／訂正後のユーザー条件84%（画像は同じ）")
@@ -178,19 +194,129 @@ if (OUT / "ai-processing-guide-3.png").exists():
     add("画像を直接入力した加工見本3", "HEADING_2")
     pair(reference, OUT / "ai-processing-guide-3.png", "左：参照　右：AI加工見本3／映像限定診断66%・Unity実描画ではない")
     add("元参照と28版Aを直接入力して生成。原写真や本番の背景へ代用せず、完成証拠へ含めない。")
-candidate = OUT / "processing-candidate-01"
-if (candidate / "judgments.json").exists():
-    add("ユーザー条件での統合候補", "HEADING_1")
-    add("枠・ガラス・映像を含む範囲へ訂正した新候補の比較。家具と部屋の内容・配置・撮影構図は除外。28版の校正84%を基準にし、映像だけの診断点数と連続させない。通常設定はまだ変更していない。")
+add("ユーザー条件での新候補", "HEADING_1")
+add("枠・ガラス・映像を含む範囲へ訂正した新候補の比較。家具と部屋の内容・配置・撮影構図は除外。28版の校正84%を基準にし、映像だけの診断点数と連続させない。通常設定はまだ変更していない。")
+candidate_notes = {
+    "01": "Gaussian幅・色ずれ・白の色を同時に替えた統合候補。差を1項目へ帰属させない。",
+    "02": "候補01から赤の位置差だけを1.756584→0へ戻した。青の位置差やGaussian幅は保持。",
+    "03": "候補01からGlareだけを0.55→0へ替えた。赤の位置差は候補01を保持。",
+    "04": "候補03のGlare0を保持し、Gaussian幅だけを(.85,.65,.65)→(1.4,1.1,1.1)へ替えた。",
+    "05": "候補03からGradeの適用だけを外した。Liftや色温度・ぼけ幅は保持。灰色の霞の指摘は続き、採用していない。",
+}
+for candidate in sorted(OUT.glob("processing-candidate-[0-9][0-9]")):
+    if not (candidate / "judgments.json").exists():
+        raise FileNotFoundError(f"Candidate is still pending judgment: {candidate}")
+    number = candidate.name[-2:]
+    add(candidate.name, "HEADING_2")
+    add(candidate_notes[number])
     judgments = {j["plate"]: j for j in read(candidate / "judgments.json")["rows"]}
-    for capture in normalize(candidate)["rows"]:
-        if capture["metadata"].get("condition") != "integrated":
-            continue
-        j = judgments[capture["plate"]]
-        assert sha(candidate / f"blind-{capture['plate']}/02.png") == capture["sha256"]
-        add(f"統合候補{capture['plate']} ／ {j['score']}%", "HEADING_2")
-        pair(reference, Path(capture["path"]), f"左：参照　右：{capture['file']}／訂正後のユーザー条件{j['score']}%")
-        add("評価の要約：" + j["feedback_summary"])
+    captures = normalize(candidate)["rows"]
+    for plate in "ABC":
+        filename = f"{plate}_candidate.png" if number == "01" else f"{plate}_candidate{number}.png"
+        capture = next(c for c in captures if c["file"] == filename)
+        j = judgments[plate]
+        assert sha(candidate / f"blind-{plate}/02.png") == capture["sha256"]
+        pair(reference, Path(capture["path"]), f"左：参照　右：{candidate.name}/{filename}／ユーザー条件{j['score']}%")
+        if "differences" in j:
+            for difference in j["differences"]:
+                add(difference)
+        else:
+            add("評価の要約：" + j["feedback_summary"])
+if (OUT / "ai-processing-guide-4.png").exists():
+    guide = read(OUT / "blind-image-04/judgment.json")
+    assert sha(OUT / "blind-image-04/02.png") == sha(OUT / "ai-processing-guide-4.png")
+    add("未加工の写真と参照を直接入力したAI見本4", "HEADING_2")
+    pair(reference, OUT / "ai-processing-guide-4.png", f"左：参照　右：AI加工見本4／{guide['score']}%・Unity実描画ではない")
+    add("プロジェクトの未加工の無人写真Aと参照だけを直接入力した。元の写真や完成証拠の代用には使わない。")
+    for difference in guide["differences"]:
+        add(difference)
+
+known_scores = {}
+for folder_name in ("processing-faded-lens-01", "processing-signal-01", "processing-signal-02", "processing-human-stack-01"):
+    for judgment in read(OUT / folder_name / "judgments.json")["rows"]:
+        digest = judgment["sha256"]
+        if digest in known_scores:
+            assert known_scores[digest] == judgment["score"], "Conflicting same-image scores in this evaluation scope"
+        known_scores[digest] = judgment["score"]
+        assert sha(Path(judgment["blind"]) / "02.png") == digest
+
+
+def selected_matrix(folder_name, title, note, labels):
+    directory = OUT / folder_name
+    captures = normalize(directory)["rows"]
+    add(title, "HEADING_1")
+    add(note)
+    start = add("□", "IMAGE")
+    picture(directory / "A_comparison.png", start, width=450)
+    add("同じ無人写真Aを使った実描画の比較。ラベルは実在ファイルとhashから作った。", "CAPTION")
+    table = [["条件", "A", "B", "C"]]
+    for condition, label in labels.items():
+        table.append([label] + [
+            str(known_scores[c["sha256"]]) + "%" if c["sha256"] in known_scores else "未採点"
+            for plate in "ABC" for c in [next(r for r in captures if r["plate"] == plate and r["metadata"]["condition"] == condition)]
+        ])
+    native_tables.append({"index": cursor, "rows": table})
+    add("")
+    add("基準と同じ画像はhashを照合して既存判定を再利用。未採点の比較版へ点数を推定していない。独立評価者には参照と実描画の2枚だけを渡した。方向の選択と96%到達は区別する。")
+    conditions = list(labels)
+
+    def caption(capture):
+        score = known_scores.get(capture["sha256"])
+        return labels[capture["metadata"]["condition"]] + (f"／{score}%" if score is not None else "／未採点")
+
+    for plate in "ABC":
+        by_condition = {c["metadata"]["condition"]: c for c in captures if c["plate"] == plate}
+        assert set(labels) <= set(by_condition)
+        add("同じ写真での比較 " + plate, "HEADING_2")
+        first = by_condition[conditions[0]]
+        pair(reference, Path(first["path"]), "左：参照　右：" + caption(first))
+        left, right = by_condition[conditions[1]], by_condition[conditions[2]]
+        pair(Path(left["path"]), Path(right["path"]), "左：" + caption(left) + "　右：" + caption(right))
+        if len(conditions) == 4:
+            last = by_condition[conditions[3]]
+            pair(reference, Path(last["path"]), "左：参照　右：" + caption(last))
+
+
+selected_matrix("processing-signal-01", "選ばれた方向：明るさと解像感を落とす",
+    "0297の訂正を受け、彩度を下げず、広い色面の相対差を保つ処理へ変更した。明るさは表示RGBを一律0.90倍、解像感は輝度sigma.6／色差sigma2の正規化水平9tap。0298でユーザーが両方の右下を選び、さらに少し暗くする指示を出した。選択されたbothの3枚を独立採点し、他の2案は比較用・未採点。",
+    {"baseline": "歪みを保った基準", "gainOnly": "明るさのみ", "bandwidthOnly": "解像感のみ", "both": "両方（選択方向）"})
+selected_matrix("processing-signal-02", "選ばれた右下をさらに暗くする",
+    "0298に沿い、帯域と色の関係を保ち、表示RGBの明るさだけを0.90/0.85/0.80倍で比較した。主試作は0.85、0.80は強めの比較版。数値はエージェントの試作値で、ユーザーが指定した数値とは記録しない。0.90は前のbothと全3枚hash一致。",
+    {"gain090": "前回右下0.90", "gain085": "主試作0.85", "gain080": "強め比較0.80"})
+selected_matrix("processing-human-stack-01", "人形化前の通常加工を重ねた追加版",
+    "0299の追加依頼による比較。post/feel/AGCは既に入るため二重適用せず、runtimeのNormalTargetFor/BlocksForから通常時上限mono.5／blocks533.5を取得して追加した。初期Aは0、初周Bは1/6、Cは1/3と複数段階があり、.5を代表に選んだのはエージェントの解釈。人形化後の1は使わない。Gaussianにも追加版限定でCoarseLodを接続し、明暗縞の実際の減衰を校正した。追加版は未採用で、本編の進行を.5へ固定しない。",
+    {"base090": "前回右下0.90", "base085": "主試作0.85", "stack090": "0.90＋通常加工", "stack085": "0.85＋通常加工"})
+
+faded = OUT / "processing-faded-lens-01"
+if (faded / "manifest.json").exists():
+    add("訂正前の比較：脱彩度と周辺の歪み", "HEADING_1")
+    add("0296を受けて、候補03を基準に色だけ・歪みだけ・両方を描いた。単なる脱彩度は0297でユーザーから訂正されたため、低彩度の案を採用済みとは扱わない。次の試作はwarpOnlyの色へ戻す。")
+    start = add("□", "IMAGE")
+    picture(faded / "A_comparison.png", start, width=450)
+    add("4条件のUnity実描画。画像内容は変更せず、ファイル名とhashを添えて配置した比較用パネル。", "CAPTION")
+    captures = normalize(faded)["rows"]
+    judgments = {(j["plate"], j["condition"]): j for j in read(faded / "judgments.json")["rows"]}
+    table = [["条件", "A", "B", "C"], ["候補03（同画像）", "86%", "84%", "84%"]]
+    labels = {"fadeOnly": "脱彩度", "warpOnly": "歪み", "both": "脱彩度＋歪み"}
+    for condition, label in labels.items():
+        table.append([label] + [str(judgments[(plate, condition)]["score"]) + "%" for plate in "ABC"])
+    native_tables.append({"index": cursor, "rows": table})
+    add("")
+    add("基準3枚は既存候補03とhash一致し、同じ画像の判定を再利用した。ほか9枚はfreshの2画像比較。新shaderを含むEditMode2,288件は全件通過。4画像層のGPUずれは0、点像誤差最大0.02363px。")
+    for plate in "ABC":
+        by_condition = {c["metadata"]["condition"]: c for c in captures if c["plate"] == plate}
+        baseline = by_condition["baseline03"]
+        assert baseline["sha256"] == sha(OUT / "processing-candidate-03" / f"{plate}_candidate03.png")
+        add("4条件の比較 " + plate, "HEADING_2")
+        pair(reference, Path(baseline["path"]), f"左：参照　右：基準{plate}／同画像の既存判定")
+        for condition in labels:
+            j = judgments[(plate, condition)]
+            assert sha(Path(j["blind"]) / "02.png") == by_condition[condition]["sha256"]
+        left, right = judgments[(plate, "fadeOnly")], judgments[(plate, "warpOnly")]
+        pair(Path(by_condition["fadeOnly"]["path"]), Path(by_condition["warpOnly"]["path"]),
+             f"左：脱彩度／{left['score']}%　右：歪み／{right['score']}%")
+        j = judgments[(plate, "both")]
+        pair(reference, Path(by_condition["both"]["path"]), f"左：参照　右：両方{plate}／{j['score']}%")
 
 add("無人写真・夜間・反射", "HEADING_1")
 add("入力は2026年9月24日の現場保存分。Aは17:22:09、Bは17:22:10、Cは17:22:11に保存された。全反復で元の640×480 JPEGを固定し、生成した部屋へ差し替えていない。")
@@ -225,7 +351,7 @@ add("NormalはRGBの法線データとして読む。GlassはISP後のガラス�
 add("試験用Palette、core配分、局所照明の正規化、追加の微細粒、空間PSFは整理版から撤去した。参照の室内照明を別室へ固定するfieldも通常時は0とし、診断の比較だけに残している。")
 
 add("全28版の実描画と判定", "HEADING_1")
-add("以下は各時点の実描画。左は常に同じ参照画像。右がその回のUnity出力。各画像の存在とmanifestのSHA-256を照合している。")
+add("以下は各時点のUnity実描画。参照は各節の最初に掲載し、同じ参照の繰り返しを省く。候補のスクショは全て残し、各画像の存在とmanifestのSHA-256を照合している。")
 for folder in sorted(OUT.glob("round-[0-9][0-9]")):
     j, m = read(folder / "judgment.json"), read(folder / "manifest.json")
     capture = next(c for c in m["captures"] if c["file"] == "A_front.png")
@@ -278,9 +404,9 @@ add("参照の襖と縦枠の60走査線からRGBの広がりと位置差を推�
 add("証跡と現在の状態", "HEADING_1")
 add("保存先：G:\\マイドライブ\\shubie\\reports\\2026-10-30_crt-reference\\")
 add("round-NN：各実描画・参照・判定。ablation-study-01：除去比較と当時のソース。manifest.json：入力と材質のハッシュ。generation-provenance.json：画像生成の入力とプロンプト。grade-fit.json：明暗曲線の全256値。build-validation.json：ビルドと検証。")
-add("本編実装は4a922443、資料の配置記録はd71c366c。後続の診断は検証済みのcheckpointとしてfeature/tablet-ui-motionへ保存する。採用と96%以上の完成判定は未確定。ユーザー調整中だった既存ファイルはコミットへ含めていない。")
+add("本編実装4a922443、配置記録d71c366c、診断とDocs再構成コードeaef4a5dはfeature/tablet-ui-motionへpush済み。後続の候補は同じブランチに保存する。採用と96%以上の完成判定は未確定。ユーザー調整中の既存ファイルはコミットへ含めていない。")
 add("この文書は確認用の比較報告。96%到達や採用の確定、再現不能の結論を示すものではない。")
-add("採点一覧", "HEADING_1")
+add("初期28反復と除去比較の採点一覧", "HEADING_1")
 add("実描画39枚の独立判定。A_v1_f1は27版と同じため重複計上しない。校正用の再評価とAI見本の点数も含めない。")
 assert len(scores) == 39
 

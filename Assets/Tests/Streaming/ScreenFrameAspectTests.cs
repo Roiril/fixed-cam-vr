@@ -102,6 +102,8 @@ namespace FixedCamVr.Streaming.Tests
             // 上の 2 つのテストは不要になる。そのときはこのテストごと設計を見直すこと。
             string shader = File.ReadAllText(Path.Combine(
                 RepoRoot, "Assets", "Art", "Shaders", "Streaming", "ScreenComposite.shader"));
+            shader += File.ReadAllText(Path.Combine(
+                RepoRoot, "Assets", "Art", "Shaders", "Streaming", "CrtCompositeShared.hlsl"));
             Assert.That(shader.Contains("_MaskScale"), Is.False,
                 "シェーダに _MaskScale が入った。マスクが contain-fit を通るようになったなら、" +
                 "卓（common.js / make-diff-mask.py）が枠空間へ寄せている前提が変わる。");

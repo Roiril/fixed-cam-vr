@@ -16,6 +16,8 @@ namespace FixedCamVr.Streaming
         public const int Width = 1280;
         public const int Height = 720;
 
+        private static readonly int CrtSignalRuntimeId = Shader.PropertyToID("_CrtSignalRuntime");
+
         [Tooltip("合成結果を描く ScreenComposite の Renderer。null なら同じ GameObject から取得。")]
         [SerializeField] private Renderer? screenRenderer;
 
@@ -119,6 +121,8 @@ namespace FixedCamVr.Streaming
             RenderTexture? previous = RenderTexture.active;
             try
             {
+                if (material.HasProperty(CrtSignalRuntimeId) && material.GetFloat(CrtSignalRuntimeId) > 0.5f)
+                    return CrtSignalProcessor.Capture(material, destination);
                 Graphics.Blit(Texture2D.blackTexture, destination, material, 0);
                 return true;
             }

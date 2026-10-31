@@ -1,0 +1,18 @@
+# CRTの調整
+
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/unity.ps1 crt-tune`
+で起動し、`http://127.0.0.1:8107/`を開く。終了は同じコマンドの末尾へ`stop`を付ける。
+この画面はUnityの実際の素材と加工を使って描画する。起動中は同じプロジェクトのビルド・テストを待つ。
+
+基準は0300で「だいぶ近づいてきている」と判定された右下。
+通常加工0.5・表示RGB gain0.85を使う比較用の固定場面で、本編の進行は変更しない。
+「ベースに戻す」で追加補正を0へ戻す。「提案に戻す」は中心+0.12EV・薄い寒色2.5%を含む試作値へ戻す。
+スライダーと数値入力は同じ値を扱う。A/B/Cの無人写真、変更前、参照画像を切り替えて比較できる。
+
+調整値はブラウザへ保存する。「設定を保存」でJSON、「PNGを保存」で表示中の画像を残せる。
+設定を読み込んでも`show.json`やQuestの値へは保存しない。中心と色の追加処理はEditorの比較用。
+本編への採用は調整値が決まった後に、同じガラス前の処理位置へ反映する。
+
+APIはlocalhost専用。`GET /api/config`が調整範囲と初期値、
+`POST /api/render`が`{camera,parameters}`に対応する実GPU PNGを返す。
+実装は`CrtTuningServer`と`CrtTuningAdjustment.shader`。新しい依存は使わない。

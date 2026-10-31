@@ -150,7 +150,7 @@ RGB位置差は測定値そのものに戻す。元参照の室内照明を別�
 build-validation.jsonで描画と同じshader/CRT設定hash、VR/focusaware、compile、2288 tests、退避11ファイル不変を記録。Quest未接続のため実機未検証。
 
 Google Docsの比較レポート: https://docs.google.com/document/d/1IEGXhPRB9DNk19YbKHU3UINeosqQiwHT19fW5GbEf-w/edit
-画像136か所と39件採点表をnative要素で配置し、PDF全41ページをDriveのdocs-qaへ描画した。加工感の新しい比較を同じ文書へ追加する。
+画像と採点表はnative要素で配置する。初回136か所のPDF全41ページと、172か所へ増やした変更ページはDriveのdocs-qaへ描画して確認した。後続の追加数と最新PDF検証の状態はDriveのgoogle-docs-work.jsonに記録する。
 
 加工感の順序比較（processing-order-01）: Grade/PSFの前後だけを交換したRT経路の対照をA/B/Cで描画。raw-copy正負校正を通った23PNGとmanifestを保存。候補の独立評価は64/66/68%。本番singlepassとの差には共通RT再サンプルとlens/sensor/glareの相対順序も含む。採用しない。各入力のcontrol/variantと参照の比較も同じGoogle Docsへ追加する。
 
@@ -168,4 +168,10 @@ processing-candidate-01: source sigma(.85,.65,.65)のlinearGaussian、convergenc
 
 診断checkpointのEditModeは2288/2288通過。18source/metaの前後hash差0、既存11ファイルもpre-build-28から不変。結果/XML/マスク済みログはDriveのprocessing-checkpoint/。未採用の診断は現在のfeatureブランチへ保存し、他PCへ同期する。
 
+eaef4a5dまでfeature/tablet-ui-motionへpush済み。候補02は01の赤位置差だけを0にしてA/B/C各78%。候補03は01のGlareだけを0にしてA86/B84/C84%。どちらも旧28対照3枚と前候補01の3枚をhash一致で再現し、変更propertyだけを照合した。候補04は03からGaussian幅だけを広げる比較。これらEditor helperの追加後は実描画をcompile・校正・画像hashで検証し、2288件全件はeaef4a5d時点の結果と区別する。
+
 manifestを消費するときは`evidence-index.py <実験フォルダ...>`で実在とhashを先に照合する。captures[]、photos[].capture、順序実験のsinglepass/control/variantを正規化し、実在するファイル名からラベルを作る。condition値や配列名を推測しない。
+
+0296の`processing-faded-lens-01`は基準03/脱彩度/周辺歪み/両方と旧28対照で15枚。新9枚の判定は脱彩度A86/B82/C84、歪みA86/B88/C84、両方A87/B83/C86%。新shader後のEditMode2288件全件通過、source22点と既存dirty18点のhash不変を確認。`source-archive.json`は絶対・相対混在の元snapshotをrepo相対へ正規化し、`source/`に22点をhash一致で保存した。比較用パネルは`py -3.11 tools/screen-reference/faded-lens-comparison.py`で実在PNGだけから作る。
+
+0297でユーザーが単なる脱彩度を訂正したため、低彩度の案を通常設定へは採用しない。次はwarpOnlyの色を基準に、表示RGBを共通に0.90倍する案と、輝度/色差の空間的な細かさだけを正規化フィルタで落とす案を`processing-signal-01`で比較する。一定色と広い色面の相対差を保つ校正を門にする。どの量を落とすかはエージェントの試作解釈で、採用判定ではない。

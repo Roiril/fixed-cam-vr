@@ -41,6 +41,9 @@ namespace FixedCamVr.Streaming
         private const int HmdMaxHeight = 2048;
 
         private static readonly int LiveTexId = Shader.PropertyToID("_LiveTex");
+        private static readonly int CrtRuntimePsfTexId = Shader.PropertyToID("_CrtRuntimePsfTex");
+        private static readonly int CrtProcessedSignalTexId = Shader.PropertyToID("_CrtProcessedSignalTex");
+        private static readonly int CrtSignalReadyId = Shader.PropertyToID("_CrtSignalReady");
         private static readonly int OverlayStrengthId = Shader.PropertyToID("_OverlayStrength");
         private static readonly int Overlay2StrengthId = Shader.PropertyToID("_Overlay2Strength");
         private static readonly int CgStrengthId = Shader.PropertyToID("_CgStrength");
@@ -362,6 +365,10 @@ namespace FixedCamVr.Streaming
             try
             {
                 clone.SetTexture(LiveTexId, Texture2D.blackTexture);
+                // ライブを含んだ処理済み信号は持ち越さず、黒へ置き換えた入力から同期で組み直す。
+                if (clone.HasProperty(CrtRuntimePsfTexId)) clone.SetTexture(CrtRuntimePsfTexId, null);
+                if (clone.HasProperty(CrtProcessedSignalTexId)) clone.SetTexture(CrtProcessedSignalTexId, null);
+                if (clone.HasProperty(CrtSignalReadyId)) clone.SetFloat(CrtSignalReadyId, 0f);
                 return EndingFrameCapture.CaptureComposite(clone, destination);
             }
             finally

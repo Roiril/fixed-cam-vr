@@ -24,7 +24,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay')]
+    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay', 'crt-tune')]
     [string]$Action,
 
     [Parameter(Position = 1)]
@@ -706,6 +706,55 @@ switch ($Action) {
         }
         elseif ($code -eq 0) { Write-Host "✓ 実行した（出力は上の Editor.log を見る）" -ForegroundColor Green }
         exit $code
+    }
+
+    'crt-tune' {
+        $crtUrl = 'http://127.0.0.1:8107/'
+        $crtHealth = $null
+        try { $crtHealth = Invoke-RestMethod -Uri ($crtUrl + 'api/health') -TimeoutSec 2 } catch { }
+        if ($App -eq 'stop') {
+            if ($crtHealth.app -ne 'crt-tuner') { Write-Host 'CRTの調整は起動していません。'; exit 0 }
+            Invoke-RestMethod -Method Post -Uri ($crtUrl + 'api/stop') -TimeoutSec 5 | Out-Null
+            Write-Host 'CRTの調整を終了しました。'
+            exit 0
+        }
+        if ($App) { Write-Error '使い方: tools/unity.ps1 crt-tune [stop]'; exit 2 }
+        if ($crtHealth.app -eq 'crt-tuner') { Write-Host "CRTの調整: $crtUrl"; exit 0 }
+        if (Get-NetTCPConnection -LocalPort 8107 -State Listen -ErrorAction SilentlyContinue) {
+            Write-Error 'ポート8107は別のアプリが使用しています。停止せずに状態を確認してください。'; exit 1
+        }
+        Assert-NotLocked
+        $crtEditors = @(
+            (Join-Path $env:USERPROFILE "Unity\Editors\$EditorVersion\Editor\Unity.exe"),
+            (Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$EditorVersion\Editor\Unity.exe")
+        )
+        $crtEditor = $crtEditors | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if (-not $crtEditor) { Write-Error 'Unity Editorが見つかりません。'; exit 1 }
+        $crtLogDir = 'G:\マイドライブ\shubie\logs\crt-tuner'
+        New-Item -ItemType Directory -Path $crtLogDir -Force | Out-Null
+        $crtLog = Join-Path $crtLogDir ((Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+        $crtArguments = @('-batchmode', '-projectPath', $Root,
+            '-executeMethod', 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.Run', '-logFile', $crtLog)
+        $crtQuoted = $crtArguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
+        $crtProcess = Start-Process -FilePath $crtEditor -ArgumentList $crtQuoted -PassThru -WindowStyle Hidden
+        Write-Host 'CRTの調整を起動しています。'
+        $crtReady = $false
+        for ($crtAttempt = 0; $crtAttempt -lt 240; $crtAttempt++) {
+            if ($crtProcess.HasExited) { break }
+            try {
+                $crtHealth = Invoke-RestMethod -Uri ($crtUrl + 'api/health') -TimeoutSec 1
+                if ($crtHealth.app -eq 'crt-tuner') { $crtReady = $true; break }
+            } catch { }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $crtReady) {
+            if ($crtProcess.HasExited) { try { Protect-UnityLogFile -Path $crtLog } catch { } }
+            Write-Error "起動を確認できませんでした。PID: $($crtProcess.Id)。状態を確認してから再実行してください。"
+            exit 1
+        }
+        Write-Host "CRTの調整: $crtUrl"
+        Write-Host '終了: tools/unity.ps1 crt-tune stop（起動中は同じプロジェクトのビルドを待機）'
+        exit 0
     }
 
     'replay' {

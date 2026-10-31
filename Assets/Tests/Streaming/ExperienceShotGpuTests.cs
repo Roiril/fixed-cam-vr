@@ -67,8 +67,9 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(new Color32(0, 0, 255, 255), (Color32)back.GetPixel(1, 6), "PNG の左上=青");
         }
 
-        [Test]
-        public void CompositeWithoutLive_KeepsTheOverlay_DropsTheLive_AndLeavesTheOriginalUntouched()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CompositeWithoutLive_KeepsTheOverlay_DropsTheLive_AndLeavesTheOriginalUntouched(bool runtime)
         {
             Shader? shader = Shader.Find("FixedCamVr/ScreenComposite");
             if (shader == null) Assert.Ignore("ScreenComposite が見つからない（シェーダ未取り込み）");
@@ -108,6 +109,16 @@ namespace FixedCamVr.Streaming.Tests
             material.SetVector("_OverlayScale", new Vector4(1, 1, 0, 0));
             material.SetTexture("_MaskTex", mask);
             material.SetFloat("_OverlayStrength", 1f);
+            if (material.HasProperty("_CrtSignalRuntime"))
+                material.SetFloat("_CrtSignalRuntime", runtime ? 1f : 0f);
+            Texture2D staleSignal = Solid(new Color32(0, 0, 255, 255));
+            if (runtime)
+            {
+                Assert.IsTrue(material.HasProperty("_CrtSignalRuntime"));
+                material.SetTexture("_CrtRuntimePsfTex", staleSignal);
+                material.SetTexture("_CrtProcessedSignalTex", staleSignal);
+                material.SetFloat("_CrtSignalReady", 1f);
+            }
 
             var shown = Track(new RenderTexture(64, 36, 0, RenderTextureFormat.ARGB32));
             var layers = Track(new RenderTexture(64, 36, 0, RenderTextureFormat.ARGB32));
@@ -128,6 +139,13 @@ namespace FixedCamVr.Streaming.Tests
             Assert.Greater(layersRight.g, layersRight.r + 40,
                 $"③ 右は素材の緑が残る＝描けている（{layersRight.r},{layersRight.g},{layersRight.b}）");
             Assert.AreSame(live, material.GetTexture("_LiveTex"), "画面の材質は書き換えていない");
+            if (runtime)
+            {
+                Assert.AreEqual(1f, material.GetFloat("_CrtSignalRuntime"));
+                Assert.AreEqual(1f, material.GetFloat("_CrtSignalReady"));
+                Assert.AreSame(staleSignal, material.GetTexture("_CrtRuntimePsfTex"));
+                Assert.AreSame(staleSignal, material.GetTexture("_CrtProcessedSignalTex"));
+            }
         }
 
         [Test]

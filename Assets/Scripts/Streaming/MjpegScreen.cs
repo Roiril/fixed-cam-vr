@@ -1,5 +1,6 @@
 #nullable enable
 using UnityEngine;
+using UnityEngine.Rendering;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
 using Stopwatch = System.Diagnostics.Stopwatch;
 #endif
@@ -47,6 +48,10 @@ namespace FixedCamVr.Streaming
         private byte[]? _scratch;
         private Renderer? _renderer;
         private Material? _material;
+        private CrtSignalProcessor? _signalProcessor;
+        private int _lastSignalFrame = -1;
+
+        public CrtSignalProcessor? SignalProcessor => _signalProcessor;
         private Texture? _lastAssigned;
         private int _lastTexW;
         private int _lastTexH;
@@ -86,6 +91,7 @@ namespace FixedCamVr.Streaming
                 }
             }
             if (_material == null || !CrtReferenceScreen.Apply(_material)) return;
+            CrtSignalProfile.ApplySelected(_material);
             ReferenceSurfaceActive = true;
             Vector3 scale = transform.localScale;
             scale.x = Mathf.Abs(scale.y) * CrtReferenceScreen.CaseAspect;
@@ -245,6 +251,9 @@ namespace FixedCamVr.Streaming
 
         private void OnEnable()
         {
+            RenderPipelineManager.beginCameraRendering -= PrepareSignal;
+            RenderPipelineManager.beginCameraRendering += PrepareSignal;
+            _lastSignalFrame = -1;
             if (UseRegistry) return;
 
             string url = !string.IsNullOrEmpty(overrideUrl) ? overrideUrl : source?.BuildUrl() ?? "";
@@ -261,6 +270,9 @@ namespace FixedCamVr.Streaming
 
         private void OnDisable()
         {
+            RenderPipelineManager.beginCameraRendering -= PrepareSignal;
+            _signalProcessor?.Dispose(); _signalProcessor = null;
+            if (_material != null && _material.HasProperty("_CrtSignalRuntime")) _material.SetFloat("_CrtSignalRuntime", 0);
             _receiver?.Dispose();
             _receiver = null;
         }
@@ -284,6 +296,7 @@ namespace FixedCamVr.Streaming
         private void AssignLive(Texture tex)
         {
             if (_material == null) return;
+            if (_signalProcessor != null) CrtSignalProcessor.InvalidateBindings(_material);
             _material.SetTexture(LiveTexId, tex);
             _lastAssigned = tex;
             _lastTexW = 0;
@@ -349,6 +362,25 @@ namespace FixedCamVr.Streaming
             }
             UpdateContainScale();
             SampleLuma();
+        }
+
+        private void PrepareSignal(ScriptableRenderContext context, Camera camera)
+        {
+            // CGのmanual Camera.Render、撮影用camera、他のscreenはHMDの更新時計にしない。
+            if (!isActiveAndEnabled || !ReferenceSurfaceActive || _material == null || camera != Camera.main
+                || camera.cameraType != CameraType.Game || _lastSignalFrame == Time.frameCount) return;
+            _lastSignalFrame = Time.frameCount;
+            try
+            {
+                _signalProcessor ??= new CrtSignalProcessor();
+                CrtSignalProfile.ApplySelected(_material);
+                _signalProcessor.PrepareDisplay(_material, SourceFrameId);
+            }
+            catch (System.Exception e)
+            {
+                CrtSignalProcessor.InvalidateBindings(_material);
+                Debug.LogError("[CrtSignal] スクリーン信号を構成できません: " + e);
+            }
         }
     }
 }
