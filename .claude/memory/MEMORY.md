@@ -48,6 +48,7 @@
 - [crt_processing_order_calibration.md](crt_processing_order_calibration.md) — Grade/PSF順序診断のraw-copy正負校正。初回混入と画素中心の誤差
 - [crt_psf_mip_color_space.md](crt_psf_mip_color_space.md) — sRGB mipの点光量減衰。PSF専用Float linear mip/Gaussianの色空間とmoment校正
 - [crt_softness_glare_probe.md](crt_softness_glare_probe.md) — linear PSFのLOD+1とglare除去の2x2対照。64点の光量保存と約4倍の二次moment
+- [crt_signal_stage_precision.md](crt_signal_stage_precision.md) — Float RTを挟む無処理対照の1byte差。HDR flagを棄却し診断出力型float4で旧hashへ一致
 - [crt_reference_rule_layout.md](crt_reference_rule_layout.md) — 材質の詳細はreferenceへ。screen-postの12,000bytes上限と読む導線
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
