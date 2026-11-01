@@ -727,6 +727,8 @@ switch ($Action) {
             Write-Error 'ポート8107は別のアプリが使用しています。停止せずに状態を確認してください。'; exit 1
         }
         Assert-NotLocked
+        & py -3.11 (Join-Path $Root 'tools/crt-tuner/prepare-pov-frames.py')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         $crtEditors = @(
             (Join-Path $env:USERPROFILE "Unity\Editors\$EditorVersion\Editor\Unity.exe"),
             (Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$EditorVersion\Editor\Unity.exe")

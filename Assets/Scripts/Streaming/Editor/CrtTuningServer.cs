@@ -24,9 +24,12 @@ namespace FixedCamVr.Streaming.EditorTools
             public float min, max, step, @default, @base;
         }
         [Serializable] private sealed class Group { public string id = "", label = ""; public Control[] controls = Array.Empty<Control>(); }
+        [Serializable] private sealed class Source { public string id = "", label = ""; }
         [Serializable] private sealed class Metadata
         {
             public int version = 1;
+            public string mode = "normal", defaultSource = "live";
+            public Source[] sources = Array.Empty<Source>();
             public string[] cameras = { "A", "B", "C" };
             public string baseLabel = "本編採用版・枠なし（通常加工0.5）";
             public string unknownParameters = "ignore";
@@ -41,7 +44,7 @@ namespace FixedCamVr.Streaming.EditorTools
             public float exposure = 0, contrast = 0, saturation = 0, temperature = 0, tint = 0, lift = 0, vignette = 0, grain = 0, scanline = 0;
             public float lensWarp = 0, sigmaR = 0, sigmaGB = 0, convergenceMultiplier = 0, noiseDark = 0, noiseFixed = 0;
         }
-        [Serializable] private sealed class RenderRequest { public string camera = ""; public ParameterValues? parameters; }
+        [Serializable] private sealed class RenderRequest { public string camera = "", mode = "normal", source = "live"; public ParameterValues? parameters; }
 
         public static void Run()
         {
@@ -119,9 +122,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     Send(response, File.ReadAllBytes(file), staticFile.EndsWith(".png", StringComparison.Ordinal) ? "image/png" : staticFile.EndsWith(".js", StringComparison.Ordinal) ? "text/javascript; charset=utf-8" : staticFile.EndsWith(".css", StringComparison.Ordinal) ? "text/css; charset=utf-8" : "text/html; charset=utf-8");
                 }
                 else if (path == "/reference.jpg") Send(response, File.ReadAllBytes(Path.Combine(tuner.Root, "Assets/Resources/CrtReference/CaseColor.jpg")), "image/jpeg");
-                else if (path == "/api/config") Send(response, Encoding.UTF8.GetBytes(tuner.ConfigJson), "application/json; charset=utf-8");
+                else if (path == "/api/config") Send(response, Encoding.UTF8.GetBytes(tuner.Configuration(request.QueryString["mode"] ?? "normal")), "application/json; charset=utf-8");
                 else if (path == "/api/health") Send(response, Encoding.UTF8.GetBytes("{\"app\":\"crt-tuner\",\"ready\":true,\"renderer\":\"Unity GPU\",\"sequence\":" + tuner.Sequence + "}"), "application/json; charset=utf-8");
-                else if (path == "/baseline/A.png" || path == "/baseline/B.png" || path == "/baseline/C.png") Send(response, tuner.Baseline(path.Substring(10, 1)), "image/png");
+                else if (path == "/baseline/A.png" || path == "/baseline/B.png" || path == "/baseline/C.png") Send(response, tuner.Baseline(path.Substring(10, 1), request.QueryString["mode"] ?? "normal", request.QueryString["source"] ?? "live"), "image/png");
                 else Error(response, 404, "見つかりません。");
                 return false;
             }
@@ -138,10 +141,15 @@ namespace FixedCamVr.Streaming.EditorTools
                 body.Write(buffer, 0, read);
             }
             var parsed = new RenderRequest { parameters = tuner.Values(false) };
-            JsonUtility.FromJsonOverwrite(new UTF8Encoding(false, true).GetString(body.ToArray()), parsed);
+            string json = new UTF8Encoding(false, true).GetString(body.ToArray());
+            JsonUtility.FromJsonOverwrite(json, parsed);
+            Tuner.ValidateSelection(parsed.mode, parsed.source);
+            // Partial requests inherit the selected mode's values, including the doll noise level.
+            parsed = new RenderRequest { parameters = tuner.Values(false, parsed.mode) };
+            JsonUtility.FromJsonOverwrite(json, parsed);
             if (!Tuner.ValidCamera(parsed.camera)) throw new ArgumentException("camera must be A, B or C");
             if (parsed.parameters == null) throw new ArgumentException("parameters must be an object of numbers");
-            var watch = Stopwatch.StartNew(); byte[] png = tuner.Render(parsed.camera, tuner.Resolve(parsed.parameters)); watch.Stop();
+            var watch = Stopwatch.StartNew(); byte[] png = tuner.Render(parsed.camera, tuner.Resolve(parsed.parameters), source: parsed.source); watch.Stop();
             response.Headers["X-Render-Ms"] = watch.Elapsed.TotalMilliseconds.ToString("0.0", CultureInfo.InvariantCulture);
             response.Headers["X-Render-Sequence"] = tuner.Sequence.ToString(CultureInfo.InvariantCulture);
             Send(response, png, "image/png"); return false;
@@ -165,13 +173,15 @@ namespace FixedCamVr.Streaming.EditorTools
         private sealed class Tuner : IDisposable
         {
             public readonly string Root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            public string ConfigJson { get; }
+            public string ConfigJson => Configuration("normal");
             public long Sequence { get; private set; }
             private readonly List<UnityEngine.Object> _objects = new List<UnityEngine.Object>();
             private readonly Dictionary<string, Control> _controls = new Dictionary<string, Control>(StringComparer.Ordinal);
             private readonly Dictionary<string, float> _baseline = new Dictionary<string, float>(StringComparer.Ordinal);
             private readonly Dictionary<string, byte[]> _baselineImages = new Dictionary<string, byte[]>(StringComparer.Ordinal);
             private readonly Texture2D[] _photos = new Texture2D[3];
+            private readonly Dictionary<string, Texture2D> _pov = new Dictionary<string, Texture2D>(StringComparer.Ordinal);
+            private readonly Group[] _groups;
             private readonly float[] _bias = new float[3];
             private readonly Material _material, _adjustment;
             private readonly Camera _camera;
@@ -186,8 +196,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 {
                     Config config = JsonUtility.FromJson<Config>(File.ReadAllText(Path.Combine(Root, "tools/web-compositor/show.json"))) ?? throw new InvalidDataException("Missing show settings");
                     CameraFeelFx.Settings feel = CameraFeelFx.Settings.Resolve(config.feel);
-                    Group[] groups = BuildControls(config.post, feel);
-                    ConfigJson = JsonUtility.ToJson(new Metadata { groups = groups, defaults = Values(false), baseline = Values(true) });
+                    _groups = BuildControls(config.post, feel);
                     _material = Own(new Material(CrtSignalResources.Load().Composite) { hideFlags = HideFlags.HideAndDontSave });
                     if (!CrtReferenceScreen.Apply(_material)) throw new InvalidOperationException("Missing reference maps");
                     _material.SetVector("_LiveScale", new Vector4(.75f, 1, 0, 0)); _material.SetVector("_CgScale", new Vector4(.75f, 1, 0, 0));
@@ -268,12 +277,45 @@ namespace FixedCamVr.Streaming.EditorTools
                 var control = new Control { key = key, label = label, min = min, max = max, step = step, @base = baseline, @default = initial ?? baseline, unit = unit };
                 _controls.Add(key, control); _baseline.Add(key, baseline); return control;
             }
-            public ParameterValues Values(bool baseline)
+            public ParameterValues Values(bool baseline, string mode = "normal")
             {
+                ValidateMode(mode);
                 var result = new ParameterValues();
                 foreach (Control c in _controls.Values)
                     typeof(ParameterValues).GetField(c.key)!.SetValue(result, baseline ? c.@base : c.@default);
+                if (mode == "doll") { result.mono = 1; result.noiseDark = ScreenDecayLogic.NoiseTargetFor(2, 2, new[] { 0, 1, 2 }); }
                 return result;
+            }
+            public string Configuration(string mode)
+            {
+                ValidateMode(mode);
+                // Copy controls so one mode cannot change the metadata cached by the other.
+                Group[] groups = JsonUtility.FromJson<Metadata>(JsonUtility.ToJson(new Metadata { groups = _groups })).groups;
+                ParameterValues defaults = Values(false, mode), baseline = Values(true, mode);
+                foreach (Group group in groups) foreach (Control control in group.controls)
+                {
+                    control.@default = (float)typeof(ParameterValues).GetField(control.key)!.GetValue(defaults);
+                    control.@base = (float)typeof(ParameterValues).GetField(control.key)!.GetValue(baseline);
+                }
+                var sources = new List<Source> { new Source { id = "live", label = "無人写真" } };
+                if (mode == "doll")
+                {
+                    string[] labels = { "遠景", "①遠い", "②近い", "③すぐそこ", "④追いつき" };
+                    for (int i = 0; i < labels.Length; i++) sources.Add(new Source { id = "pov_" + i, label = labels[i] });
+                }
+                return JsonUtility.ToJson(new Metadata { mode = mode, defaultSource = mode == "doll" ? "pov_0" : "live", sources = sources.ToArray(),
+                    groups = groups, defaults = defaults, baseline = baseline, baseLabel = mode == "doll" ? "人形視点（2-C）" : "本編採用版・枠なし（通常加工0.5）" });
+            }
+            private static void ValidateMode(string mode)
+            {
+                if (mode != "normal" && mode != "doll") throw new ArgumentException("mode must be normal or doll");
+            }
+            public static void ValidateSelection(string mode, string source)
+            {
+                ValidateMode(mode);
+                if (source == "live") return;
+                if (mode == "doll" && TakeRunner.IsDollPovCue(source)) return;
+                throw new ArgumentException("source is not available in this mode");
             }
             public static bool ValidCamera(string camera) => camera == "A" || camera == "B" || camera == "C";
             public Dictionary<string, float> Resolve(ParameterValues requested)
@@ -287,13 +329,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 return result;
             }
-            public byte[] Baseline(string camera)
+            public byte[] Baseline(string camera, string mode = "normal", string source = "live")
             {
-                if (!_baselineImages.TryGetValue(camera, out byte[] image)) { image = Render(camera, _baseline); _baselineImages.Add(camera, image); }
+                ValidateSelection(mode, source);
+                string key = mode + "/" + source + "/" + camera;
+                if (!_baselineImages.TryGetValue(key, out byte[] image)) { image = Render(camera, Resolve(Values(true, mode)), source: source); _baselineImages.Add(key, image); }
                 return image;
             }
-            public byte[] Render(string camera, Dictionary<string, float> p, bool adoptedRuntime = false)
+            public byte[] Render(string camera, Dictionary<string, float> p, bool adoptedRuntime = false, string source = "live")
             {
+                if (!ValidCamera(camera)) throw new ArgumentException("camera must be A, B or C");
+                if (source != "live" && !TakeRunner.IsDollPovCue(source)) throw new ArgumentException("Unknown source");
+                SetSource(source);
                 _material.SetFloat("_CrtSignalProfileSelected", adoptedRuntime ? 1 : 0);
                 _material.SetFloat("_CrtScreenOnly", adoptedRuntime ? 1 : 0);
                 _material.SetFloat("_CrtCenterEv", 0); _material.SetFloat("_CrtTintStrength", 0);
@@ -329,6 +376,31 @@ namespace FixedCamVr.Streaming.EditorTools
                     _readback.ReadPixels(new Rect(0, 0, _final.width, _final.height), 0, 0); _readback.Apply(); return _readback.EncodeToPNG();
                 }
                 finally { RenderTexture.active = previous; }
+            }
+            private void SetSource(string source)
+            {
+                bool overlay = source != "live";
+                Texture texture = Texture2D.blackTexture;
+                Vector4 scale = new Vector4(1, 1, 0, 0);
+                if (overlay)
+                {
+                    if (!_pov.TryGetValue(source, out Texture2D frame))
+                    {
+                        string path = Path.Combine("G:/マイドライブ/shubie/reports/2026-11-01_crt-pov-tuner/frames", source + ".png");
+                        frame = Own(new Texture2D(2, 2, TextureFormat.RGB24, true, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear });
+                        if (!frame.LoadImage(File.ReadAllBytes(path))) throw new InvalidDataException("Cannot load POV frame: " + source);
+                        _pov.Add(source, frame);
+                    }
+                    texture = frame;
+                    float aspect = (float)frame.width / frame.height;
+                    float screenAspect = CrtReferenceScreen.LogicalAspect;
+                    scale = aspect < screenAspect ? new Vector4(aspect / screenAspect, 1, 0, 0) : new Vector4(1, screenAspect / aspect, 0, 0);
+                }
+                _material.SetTexture("_OverlayTex", texture); _material.SetTexture("_OverlayTexB", Texture2D.blackTexture);
+                _material.SetTexture("_MaskTex", overlay ? Texture2D.whiteTexture : Texture2D.blackTexture);
+                _material.SetVector("_OverlayScale", scale); _material.SetFloat("_OverlayStrength", overlay ? 1 : 0); _material.SetFloat("_OverlayBlend", 0);
+                _material.SetVector("_OverlayGain", new Vector4(1, 1, 1, 0)); _material.SetVector("_OverlayOffset", Vector4.zero);
+                _material.SetFloat("_Overlay2Strength", 0);
             }
             private T Own<T>(T value) where T : UnityEngine.Object { _objects.Add(value); return value; }
             private RenderTexture Target(RenderTextureFormat format, RenderTextureReadWrite color, int depth)

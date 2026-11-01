@@ -3,15 +3,22 @@
 (() => {
   const $ = id => document.getElementById(id);
   const storageKey = 'fixedcam-crt-tuner-adopted-0302';
+  const dollStorageKey = 'fixedcam-crt-tuner-doll-v1';
+  const activeModeKey = 'fixedcam-crt-tuner-active-mode';
   const legacyStorageKey = 'fixedcam-crt-tuner-v1';
   const controls = new Map();
   const inputs = new Map();
   let config;
   let parameters = {};
   let camera;
+  let mode = 'normal';
+  let source = 'live';
   let revision = 0;
   let renderedRevision = -1;
   let renderedCamera;
+  let renderedMode;
+  let renderedSource;
+  let renderedLabel;
   let currentUrl;
   let currentBlob;
   let inFlight = false;
@@ -19,7 +26,9 @@
   let renderTimer;
   let retryTimer;
   let loadingConfig = false;
+  let retryMode;
   let previousView = 'current';
+  let controlsEpoch = 0;
 
   function status(message) {
     $('status').textContent = message;
@@ -45,12 +54,32 @@
   }
 
   function snapshot() {
-    return { version: 1, camera, parameters: { ...parameters }, baseLabel: config.baseLabel };
+    return { version: 1, mode, source, camera, parameters: { ...parameters }, baseLabel: config.baseLabel };
+  }
+
+  const modeLabel = value => value === 'doll' ? '人形視点' : '通常画面';
+  const sourceLabel = value => config.sources.find(item => item.id === value)?.label ?? value;
+
+  function updateSourceControls() {
+    const pov = source !== 'live';
+    for (const key of ['sigmaR', 'sigmaGB', 'convergenceMultiplier']) {
+      const fields = inputs.get(key);
+      fields.range.disabled = pov;
+      fields.number.disabled = pov;
+    }
+    const monochrome = parameters.mono >= 1;
+    for (const field of [inputs.get('saturation').range, inputs.get('saturation').number]) field.disabled = monochrome;
+    $('source-note').hidden = !pov && !monochrome;
+    $('source-note').textContent = [
+      pov ? '人形視点素材では、本編と同じく赤・緑青のぼけと色の位置ずれを使いません。これらは無人写真を選ぶと調整できます。' : '',
+      monochrome ? '加工量1では白黒になるため、彩度は加工量を下げると調整できます。' : ''
+    ].filter(Boolean).join(' ');
   }
 
   function persist() {
     try {
-      localStorage.setItem(storageKey, JSON.stringify(snapshot()));
+      localStorage.setItem(mode === 'doll' ? dollStorageKey : storageKey, JSON.stringify(snapshot()));
+      localStorage.setItem(activeModeKey, mode);
     } catch {
       $('file-message').textContent = 'このブラウザに保存できません。設定をファイルに保存できます。';
     }
@@ -59,7 +88,7 @@
   function updateCaption() {
     if (!currentUrl) return;
     const suffix = renderedRevision === revision ? '' : ' · 最新の描画を待っています';
-    $('current-caption').textContent = `現在の調整 · カメラ ${renderedCamera}${suffix}`;
+    $('current-caption').textContent = `現在の調整 · ${renderedLabel}${suffix}`;
     $('save-png').disabled = renderedRevision !== revision;
   }
 
@@ -80,10 +109,14 @@
     if (parameters[key] === normalized) return;
     parameters[key] = normalized;
     syncControl(key, skipNumber);
+    if (key === 'mono') updateSourceControls();
     changed();
   }
 
   function makeControl(control, index) {
+    // Removing a focused old input can emit blur during a mode's DOM rebuild.
+    // Ignore that input instead of writing its value into the new mode.
+    const epoch = controlsEpoch;
     const wrapper = document.createElement('div');
     wrapper.className = 'control';
     const heading = document.createElement('div');
@@ -110,17 +143,21 @@
       input.step = control.step;
       input.name = `${control.key}-${input.type}`;
     }
-    range.addEventListener('input', () => setValue(control.key, range.valueAsNumber, false));
+    range.addEventListener('input', () => {
+      if (epoch === controlsEpoch) setValue(control.key, range.valueAsNumber, false);
+    });
     number.addEventListener('input', () => {
-      if (Number.isFinite(number.valueAsNumber)) setValue(control.key, number.valueAsNumber, true);
+      if (epoch === controlsEpoch && Number.isFinite(number.valueAsNumber)) setValue(control.key, number.valueAsNumber, true);
     });
     const commitNumber = () => {
+      if (epoch !== controlsEpoch) return;
       if (Number.isFinite(number.valueAsNumber)) setValue(control.key, number.valueAsNumber, false);
       syncControl(control.key);
     };
     number.addEventListener('change', commitNumber);
     number.addEventListener('blur', commitNumber);
     number.addEventListener('keydown', event => {
+      if (epoch !== controlsEpoch) return;
       if (event.key === 'Enter') { event.preventDefault(); commitNumber(); }
       if (event.key === 'Escape') { event.preventDefault(); syncControl(control.key); }
     });
@@ -138,8 +175,10 @@
   }
 
   function buildControls() {
+    controlsEpoch += 1;
     const fragment = document.createDocumentFragment();
-    const priority = group => /center|centre|中心/.test(`${group.id} ${group.label}`) ? 0
+    const priority = group => mode === 'doll' && group.id === 'signal' ? -1
+      : /center|centre|中心/.test(`${group.id} ${group.label}`) ? 0
       : /cold|tint|冷|寒色|色づけ/i.test(`${group.id} ${group.label}`) ? 1 : 2;
     const groups = [...config.groups].sort((a, b) => priority(a) - priority(b));
     let index = 0;
@@ -148,9 +187,12 @@
       const section = document.createElement(primary ? 'section' : 'details');
       section.className = 'control-group';
       const heading = document.createElement(primary ? 'h2' : 'summary');
-      heading.textContent = group.label;
+      heading.textContent = group.id === 'signal' ? '画面の加工量' : group.label;
       section.append(heading);
-      for (const control of group.controls) section.append(makeControl(control, index++));
+      for (const control of group.controls) {
+        if (control.key === 'mono') control.label = mode === 'doll' ? '人形視点の加工量' : '通常画面の加工量';
+        section.append(makeControl(control, index++));
+      }
       fragment.append(section);
     }
     $('groups').replaceChildren(fragment);
@@ -177,7 +219,20 @@
       $('cameras').append(label);
     }
     $('base-label').textContent = `ベース：${config.baseLabel}`;
-    for (const id of ['camera-options', 'reset-baseline', 'reset-defaults', 'save-json', 'load-json']) $(id).disabled = false;
+    $('mode').value = mode;
+    $('source').replaceChildren();
+    for (const item of config.sources) {
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = item.label;
+      $('source').append(option);
+    }
+    $('source').value = source;
+    updateSourceControls();
+    $('mode-note').textContent = mode === 'doll'
+      ? '本編2-Cの人形視点が基準です。加工量1・暗部ノイズ0.175から調整できます。人形視点の素材は各動画の0.5秒の静止コマです。'
+      : '本人が調整した本編の採用値が基準です。加工量0.5・暗部ノイズ0.05から調整できます。';
+    for (const id of ['camera-options', 'mode', 'source', 'reset-baseline', 'reset-defaults', 'save-json', 'load-json']) $(id).disabled = false;
   }
 
   function readSettings(value) {
@@ -185,6 +240,11 @@
       || !value.parameters || typeof value.parameters !== 'object' || Array.isArray(value.parameters)) {
       throw new Error('この設定ファイルは読み込めません。バージョンとカメラを確認してください。');
     }
+    const settingsMode = value.mode ?? 'normal';
+    if (!['normal', 'doll'].includes(settingsMode)) throw new Error('設定ファイルの画面モードが不正です。');
+    if (settingsMode !== mode) throw new Error(`「${modeLabel(settingsMode)}」に切り替えてから設定を読み込んでください。`);
+    const settingsSource = value.source ?? 'live';
+    if (!config.sources.some(item => item.id === settingsSource)) throw new Error('この画面では使えない素材が指定されています。');
     const result = { ...config.defaults };
     let known = 0;
     for (const [key, control] of controls) {
@@ -197,15 +257,18 @@
       known += 1;
     }
     if (!known) throw new Error('この画面で使える調整値がありません。');
-    return { camera: value.camera, parameters: result };
+    return { camera: value.camera, source: settingsSource, parameters: result };
   }
 
   function applySettings(settings) {
-    const cameraChanged = camera !== settings.camera;
+    const cameraChanged = camera !== settings.camera || source !== settings.source;
     camera = settings.camera;
+    source = settings.source;
     parameters = { ...settings.parameters };
     for (const key of controls.keys()) syncControl(key);
     for (const input of $('cameras').querySelectorAll('input')) input.checked = input.value === camera;
+    $('source').value = source;
+    updateSourceControls();
     if (cameraChanged) loadBaseline();
     changed();
   }
@@ -222,8 +285,9 @@
   }
 
   function loadBaseline() {
-    $('baseline-caption').textContent = `本編の採用値 · カメラ ${camera} · ${config.baseLabel}`;
-    loadImage('baseline', `/baseline/${encodeURIComponent(camera)}.png`, '基準画像を読み込めません。再接続で読み直せます。');
+    $('baseline-caption').textContent = `本編の採用値 · ${modeLabel(mode)} · ${sourceLabel(source)} · カメラ ${camera}`;
+    const query = new URLSearchParams({mode, source});
+    loadImage('baseline', `/baseline/${encodeURIComponent(camera)}.png?${query}`, '基準画像を読み込めません。再接続で読み直せます。');
   }
 
   function updateView() {
@@ -253,12 +317,13 @@
     inFlight = true;
     const requestedRevision = revision;
     const request = snapshot();
+    const requestLabel = `${modeLabel(mode)} · ${sourceLabel(source)} · カメラ ${camera}`;
     let candidateUrl;
     try {
       status('Unityで描画しています…');
       const response = await fetch('/api/render', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ camera: request.camera, parameters: request.parameters }), cache: 'no-store'
+        body: JSON.stringify({ camera: request.camera, mode: request.mode, source: request.source, parameters: request.parameters }), cache: 'no-store'
       });
       if (!response.ok) throw new Error(`render ${response.status}`);
       const blob = await response.blob();
@@ -271,6 +336,9 @@
       candidateUrl = undefined;
       currentBlob = blob;
       renderedCamera = request.camera;
+      renderedMode = request.mode;
+      renderedSource = request.source;
+      renderedLabel = requestLabel;
       renderedRevision = requestedRevision;
       $('current-image').src = currentUrl;
       $('current-image').hidden = false;
@@ -316,6 +384,10 @@
     if (!value || value.version !== 1 || !Array.isArray(value.groups) || !Array.isArray(value.cameras)
       || !value.cameras.length || !value.cameras.every(name => typeof name === 'string')
       || typeof value.baseLabel !== 'string' || !value.defaults || !value.baseline) throw new Error('invalid config');
+    if (!['normal', 'doll'].includes(value.mode) || !Array.isArray(value.sources) || !value.sources.length
+      || !value.sources.every(item => typeof item.id === 'string' && typeof item.label === 'string')
+      || new Set(value.sources.map(item => item.id)).size !== value.sources.length
+      || !value.sources.some(item => item.id === value.defaultSource)) throw new Error('invalid sources');
     const metadata = new Map();
     for (const group of value.groups) {
       if (typeof group.id !== 'string' || typeof group.label !== 'string' || !Array.isArray(group.controls)) throw new Error('invalid group');
@@ -334,33 +406,49 @@
     return metadata;
   }
 
-  async function initialize() {
+  async function initialize(targetMode = mode) {
     if (loadingConfig) return;
     loadingConfig = true;
+    $('file-message').textContent = '';
+    retryMode = targetMode;
+    revision += 1;
+    pending = false;
+    $('save-png').disabled = true;
+    $('mode').disabled = true;
+    $('source').disabled = true;
     try {
       status('設定を読み込んでいます…');
-      const response = await fetch('/api/config', { cache: 'no-store' });
+      const response = await fetch(`/api/config?mode=${encodeURIComponent(targetMode)}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('config unavailable');
       const value = await response.json();
       const metadata = validateConfig(value);
+      if (value.mode !== targetMode) throw new Error('wrong mode');
       config = value;
+      mode = targetMode;
       controls.clear();
+      inputs.clear();
       for (const [key, control] of metadata) controls.set(key, control);
-      camera = config.cameras[0];
+      camera = mode === 'doll' && config.cameras.includes('C') ? 'C' : config.cameras[0];
+      source = config.defaultSource;
       parameters = Object.fromEntries([...controls].map(([key, control]) => [key, normalize(config.defaults[key], control)]));
       try {
-        $('restore-previous').hidden = !localStorage.getItem(legacyStorageKey);
-        const saved = localStorage.getItem(storageKey);
+        $('restore-previous').hidden = mode !== 'normal' || !localStorage.getItem(legacyStorageKey);
+        const saved = localStorage.getItem(mode === 'doll' ? dollStorageKey : storageKey);
         if (saved) {
           const restored = readSettings(JSON.parse(saved));
           camera = restored.camera;
+          source = restored.source;
           parameters = restored.parameters;
-          $('file-message').textContent = '前回の調整値を復元しました。';
+          $('file-message').textContent = `${modeLabel(mode)}の前回の調整値を復元しました。`;
         }
       } catch {
         $('file-message').textContent = '前回の設定を復元できなかったため、本編の採用値で開きました。';
       }
       buildControls();
+      retryMode = undefined;
+      $('current-image').hidden = true;
+      $('current-empty').hidden = false;
+      $('current-empty').textContent = `${modeLabel(mode)}を描画しています…`;
       loadBaseline();
       loadImage('reference', '/reference.jpg', '参照画像を読み込めません。再接続で読み直せます。');
       $('retry').hidden = true;
@@ -370,8 +458,21 @@
       $('retry').hidden = false;
     } finally {
       loadingConfig = false;
+      $('mode').disabled = false;
+      $('mode').value = mode;
     }
   }
+
+  $('mode').addEventListener('change', () => {
+    if (config) persist();
+    initialize($('mode').value);
+  });
+  $('source').addEventListener('change', () => {
+    source = $('source').value;
+    updateSourceControls();
+    loadBaseline();
+    changed();
+  });
 
   $('view').addEventListener('change', updateView);
   $('compare-toggle').addEventListener('click', () => {
@@ -379,8 +480,8 @@
     else { previousView = $('view').value; $('view').value = 'baseline'; }
     updateView();
   });
-  $('reset-baseline').addEventListener('click', () => applySettings(readSettings({ version: 1, camera, parameters: config.baseline })));
-  $('reset-defaults').addEventListener('click', () => applySettings(readSettings({ version: 1, camera, parameters: config.defaults })));
+  $('reset-baseline').addEventListener('click', () => applySettings(readSettings({ version: 1, mode, source, camera, parameters: config.baseline })));
+  $('reset-defaults').addEventListener('click', () => applySettings(readSettings({ version: 1, mode, source, camera, parameters: config.defaults })));
   $('restore-previous').addEventListener('click', () => {
     try {
       applySettings(readSettings(JSON.parse(localStorage.getItem(legacyStorageKey))));
@@ -388,7 +489,7 @@
     } catch { $('file-message').textContent = '更新前の調整値を読み込めません。'; }
   });
   $('save-json').addEventListener('click', () => {
-    download(new Blob([JSON.stringify(snapshot(), null, 2) + '\n'], { type: 'application/json' }), `crt-${camera}.json`);
+    download(new Blob([JSON.stringify(snapshot(), null, 2) + '\n'], { type: 'application/json' }), `crt-${mode}-${source}-${camera}.json`);
     $('file-message').textContent = '現在の調整値を保存しました。';
   });
   $('load-json').addEventListener('click', () => $('json-file').click());
@@ -411,21 +512,28 @@
   });
   $('save-png').addEventListener('click', async () => {
     if (!currentBlob || renderedRevision !== revision) return;
-    if ($('show-frame').checked) { download(currentBlob, `crt-${renderedCamera}.png`); return; }
+    const filename = `${renderedMode}-${renderedSource}-${renderedCamera}`;
+    const savedBlob = currentBlob;
+    if ($('show-frame').checked) { download(savedBlob, `crt-${filename}.png`); return; }
     const mask = new Image();
     mask.src = '/screen-mask.png';
+    const savedImage = new Image();
+    const savedUrl = URL.createObjectURL(savedBlob);
+    savedImage.src = savedUrl;
     try {
-      await mask.decode();
+      await Promise.all([mask.decode(), savedImage.decode()]);
       const canvas = document.createElement('canvas');
       canvas.width = 1280; canvas.height = 1030;
       const context = canvas.getContext('2d');
-      context.drawImage($('current-image'), 0, 0, 1280, 1030);
+      context.drawImage(savedImage, 0, 0, 1280, 1030);
       context.globalCompositeOperation = 'destination-in';
       context.drawImage(mask, 0, 0, 1280, 1030);
-      canvas.toBlob(blob => { if (blob) download(blob, `crt-screen-${renderedCamera}.png`); }, 'image/png');
+      canvas.toBlob(blob => { if (blob) download(blob, `crt-screen-${filename}.png`); }, 'image/png');
     } catch { $('file-message').textContent = '切り抜き用の形を読み込めません。もう一度保存してください。'; }
+    finally { URL.revokeObjectURL(savedUrl); }
   });
   $('retry').addEventListener('click', () => {
+    if (retryMode !== undefined) { initialize(retryMode); return; }
     if (!config) { initialize(); return; }
     loadBaseline();
     loadImage('reference', '/reference.jpg', '参照画像を読み込めません。');
@@ -440,5 +548,6 @@
     clearTimeout(renderTimer);
     clearTimeout(retryTimer);
   });
-  initialize();
+  try { mode = localStorage.getItem(activeModeKey) === 'doll' ? 'doll' : 'normal'; } catch { }
+  initialize(mode);
 })();

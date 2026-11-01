@@ -46,4 +46,10 @@ Profileの再適用は固定加工だけを所有し、Directorが書いた動�
 `tools/unity.ps1 crt-tune`でlocalhost専用のEditor調整を起動する。Web UIは`tools/crt-tuner/`。基準と初期値は0303の採用した23値。スライダーは実Unityのmaterialへ渡し、ブラウザ側の別シェーダで模倣しない。中心/色はEditorと本編で二重適用しない。ブラウザ保存値は保持する。設定JSONやブラウザの値を本編/Questへ自動保存せず、採用の指示があったときだけ明示して本編へ反映する。
 
 比較レポートはGoogle Docs: https://docs.google.com/document/d/1IEGXhPRB9DNk19YbKHU3UINeosqQiwHT19fW5GbEf-w/edit
+
+0304のWeb人形視点モードは本編2-CのMono1/noise .175を基準にする。通常と人形のブラウザ保存値を分ける。
+実POV5動画の各0.5秒の静止コマと、無人写真の対照を選べる。実POVは本編と同じOverlay経路へ入力する。
+本編OverlayにはLiveTexのPSF/色ずれが掛からないため、実POV素材ではsigmaR/sigmaGB/convergenceを無効表示にする。Mono1では彩度も効かず、Monoを下げると有効化する。
+これは加工の調整用で、動画再生・カット切替・実機表示の検証ではない。UI操作だけでは本編採用値を変更しない。
+コマの生成・hash検証・API契約は`tools/crt-tuner/README.md`。生成物は`G:/マイドライブ/shubie/reports/2026-11-01_crt-pov-tuner/`。
 画像・manifest・PDF検品は`G:/マイドライブ/shubie/reports/2026-10-30_crt-reference/`。0295以降の加工感評価は旧評価と区別する。
