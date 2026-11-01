@@ -236,29 +236,29 @@ namespace FixedCamVr.Streaming.EditorTools
                 return new[]
                 {
                     new Group { id = "center", label = "中心の明るさ", controls = new[] {
-                        Add("centerEv", "中心を明るくする", 0, 1, .01f, CrtSignalProfile.CenterEv, "EV"),
-                        Add("centerRadius", "明るくする範囲", .2f, 1.5f, .01f, CrtSignalProfile.CenterRadius),
-                        Add("centerFalloff", "外側へのなだらかさ", 1, 6, .1f, CrtSignalProfile.CenterFalloff) } },
+                        Add("centerEv", "中心の明るさ", -6, 6, .01f, CrtSignalProfile.CenterEv, "EV"),
+                        Add("centerRadius", "明るくする範囲", .05f, 4, .01f, CrtSignalProfile.CenterRadius),
+                        Add("centerFalloff", "外側へのなだらかさ", .1f, 16, .1f, CrtSignalProfile.CenterFalloff) } },
                     new Group { id = "color", label = "薄い色づけ", controls = new[] {
-                        Add("tintStrength", "色づけの強さ", 0, .2f, .001f, CrtSignalProfile.TintStrength),
+                        Add("tintStrength", "色づけの強さ", 0, 1, .001f, CrtSignalProfile.TintStrength),
                         Add("tintCoolness", "中性色から寒色へ", 0, 1, .01f, CrtSignalProfile.TintCoolness) } },
                     new Group { id = "signal", label = "画面と通常加工", controls = new[] {
-                        Add("signalGain", "画面の明るさ", .5f, 1.2f, .01f, CrtSignalProfile.Gain),
+                        Add("signalGain", "画面の明るさ", 0, 4, .01f, CrtSignalProfile.Gain),
                         Add("mono", "通常加工の量", 0, 1, .01f, .5f),
                         Add("bandwidth", "輝度と色の帯域制限", 0, 1, 1, 1) } },
                     new Group { id = "post", label = "映像の調整", controls = new[] {
-                        Add("exposure", "露出", -4, 2, .01f, post.exposure, "EV"), Add("contrast", "コントラスト", .5f, 2, .01f, post.contrast),
-                        Add("saturation", "彩度", 0, 2, .01f, post.saturation), Add("temperature", "色温度", -1, 1, .01f, post.temperature),
-                        Add("tint", "緑とマゼンタ", -1, 1, .01f, post.tint), Add("lift", "黒の明るさ", 0, .3f, .001f, post.lift),
-                        Add("vignette", "周辺の暗さ", 0, 1, .01f, post.vignette), Add("grain", "粒の強さ", 0, 1, .01f, post.grain),
-                        Add("scanline", "走査線の強さ", 0, 1, .01f, post.scanline) } },
+                        Add("exposure", "露出", -10, 10, .01f, post.exposure, "EV"), Add("contrast", "コントラスト", -4, 8, .01f, post.contrast),
+                        Add("saturation", "彩度", -4, 8, .01f, post.saturation), Add("temperature", "色温度", -5, 5, .01f, post.temperature),
+                        Add("tint", "緑とマゼンタ", -5, 5, .01f, post.tint), Add("lift", "黒の明るさ", -1, 1, .001f, post.lift),
+                        Add("vignette", "周辺の暗さ", 0, 1, .01f, post.vignette), Add("grain", "粒の強さ", 0, 4, .01f, post.grain),
+                        Add("scanline", "走査線の強さ", 0, 4, .01f, post.scanline) } },
                     new Group { id = "optics", label = "レンズ", controls = new[] {
-                        Add("lensWarp", "レンズのゆがみ", 0, .14f, .001f, CrtSignalProfile.LensWarp),
-                        Add("sigmaR", "赤のぼけ", 0, 2, .01f, CrtSignalProfile.Sigma.x, "px"),
-                        Add("sigmaGB", "緑と青のぼけ", 0, 2, .01f, CrtSignalProfile.Sigma.y, "px"),
-                        Add("convergenceMultiplier", "色の位置ずれ", 0, 3, .01f, 1.8f) } },
+                        Add("lensWarp", "レンズのゆがみ", -.2f, 1, .001f, CrtSignalProfile.LensWarp),
+                        Add("sigmaR", "赤のぼけ", 0, 8, .01f, CrtSignalProfile.Sigma.x, "px"),
+                        Add("sigmaGB", "緑と青のぼけ", 0, 8, .01f, CrtSignalProfile.Sigma.y, "px"),
+                        Add("convergenceMultiplier", "色の位置ずれ", -10, 10, .01f, 1.8f) } },
                     new Group { id = "noise", label = "カメラのノイズ", controls = new[] {
-                        Add("noiseDark", "暗部のノイズ", 0, .5f, .001f, feel.NoiseDark), Add("noiseFixed", "固定ノイズ", 0, .3f, .001f, feel.NoiseFixed) } }
+                        Add("noiseDark", "暗部のノイズ", 0, 2, .001f, feel.NoiseDark), Add("noiseFixed", "固定ノイズ", 0, 2, .001f, feel.NoiseFixed) } }
                 };
             }
 
