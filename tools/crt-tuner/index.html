@@ -22,6 +22,7 @@
           <select id="mode" disabled>
             <option value="normal">通常画面</option>
             <option value="doll">人形視点</option>
+            <option value="transformed">人形化後（無人＋人形）</option>
           </select>
         </label>
         <label class="view-label" for="source">映す素材
@@ -76,7 +77,7 @@
         <button id="reset-defaults" type="button" disabled>初期値に戻す</button>
       </div>
       <p id="base-label" class="note"></p>
-      <p id="mode-note" class="note">通常画面と人形視点を切り替えて調整できます。</p>
+      <p id="mode-note" class="note">通常画面・人形視点・人形化後を切り替えて調整できます。</p>
       <p id="source-note" class="note" hidden></p>
       <div id="groups" aria-busy="true"></div>
       <div class="file-actions">
@@ -86,7 +87,7 @@
         <input id="json-file" type="file" accept="application/json,.json" hidden>
       </div>
       <p id="file-message" class="note" role="status" aria-live="polite"></p>
-      <p class="note">通常画面と人形視点の調整値は別々に自動保存されます。本編へは自動反映しません。</p>
+      <p class="note">各画面の調整値は別々に自動保存されます。本編へは自動反映しません。</p>
     </aside>
   </main>
 </body>

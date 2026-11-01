@@ -43,6 +43,11 @@ Profileの再適用は固定加工だけを所有し、Directorが書いた動�
 
 ## Web調整
 
+0305で人形化後（無人＋人形）を追加。通常/人形視点とは別保存し、Mono1/noise .2を基準にする。
+最新の無人原板と実CGを別テクスチャで合成し、加工済みPNGへ再び加工を掛けない。
+各カメラの区間内で全身が見える代表位置に固定した静止プレビューで、実体験中の追従と時間進行は再現しない。
+CG素材ではLiveTexのPSF/色ずれの入力も有効。POV素材だけ無効にする。
+
 `tools/unity.ps1 crt-tune`でlocalhost専用のEditor調整を起動する。Web UIは`tools/crt-tuner/`。基準と初期値は0303の採用した23値。スライダーは実Unityのmaterialへ渡し、ブラウザ側の別シェーダで模倣しない。中心/色はEditorと本編で二重適用しない。ブラウザ保存値は保持する。設定JSONやブラウザの値を本編/Questへ自動保存せず、採用の指示があったときだけ明示して本編へ反映する。
 
 比較レポートはGoogle Docs: https://docs.google.com/document/d/1IEGXhPRB9DNk19YbKHU3UINeosqQiwHT19fW5GbEf-w/edit

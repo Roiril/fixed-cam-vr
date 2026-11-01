@@ -188,6 +188,7 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly RenderTexture _final, _adjusted;
             private readonly Texture2D _readback;
             private readonly CrtSignalProcessor _processor;
+            private ShowCompositePreview.CrtTuningDollSource? _dollSource;
             public Material Material => _material;
 
             public Tuner()
@@ -283,7 +284,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 var result = new ParameterValues();
                 foreach (Control c in _controls.Values)
                     typeof(ParameterValues).GetField(c.key)!.SetValue(result, baseline ? c.@base : c.@default);
-                if (mode == "doll") { result.mono = 1; result.noiseDark = ScreenDecayLogic.NoiseTargetFor(2, 2, new[] { 0, 1, 2 }); }
+                if (mode == "doll" || mode == "transformed")
+                {
+                    result.mono = 1;
+                    result.noiseDark = mode == "transformed" ? CrtSignalProfile.EndNoiseDark
+                        : ScreenDecayLogic.NoiseTargetFor(2, 2, new[] { 0, 1, 2 });
+                }
                 return result;
             }
             public string Configuration(string mode)
@@ -303,18 +309,20 @@ namespace FixedCamVr.Streaming.EditorTools
                     string[] labels = { "遠景", "①遠い", "②近い", "③すぐそこ", "④追いつき" };
                     for (int i = 0; i < labels.Length; i++) sources.Add(new Source { id = "pov_" + i, label = labels[i] });
                 }
-                return JsonUtility.ToJson(new Metadata { mode = mode, defaultSource = mode == "doll" ? "pov_0" : "live", sources = sources.ToArray(),
-                    groups = groups, defaults = defaults, baseline = baseline, baseLabel = mode == "doll" ? "人形視点（2-C）" : "本編採用版・枠なし（通常加工0.5）" });
+                if (mode == "transformed") sources.Add(new Source { id = "cg_doll", label = "無人写真＋CG人形" });
+                return JsonUtility.ToJson(new Metadata { mode = mode, defaultSource = mode == "doll" ? "pov_0" : mode == "transformed" ? "cg_doll" : "live", sources = sources.ToArray(),
+                    groups = groups, defaults = defaults, baseline = baseline, baseLabel = mode == "doll" ? "人形視点（2-C）" : mode == "transformed" ? "人形化後（3-A〜4-A）" : "本編採用版・枠なし（通常加工0.5）" });
             }
             private static void ValidateMode(string mode)
             {
-                if (mode != "normal" && mode != "doll") throw new ArgumentException("mode must be normal or doll");
+                if (mode != "normal" && mode != "doll" && mode != "transformed") throw new ArgumentException("mode must be normal, doll or transformed");
             }
             public static void ValidateSelection(string mode, string source)
             {
                 ValidateMode(mode);
                 if (source == "live") return;
                 if (mode == "doll" && TakeRunner.IsDollPovCue(source)) return;
+                if (mode == "transformed" && source == "cg_doll") return;
                 throw new ArgumentException("source is not available in this mode");
             }
             public static bool ValidCamera(string camera) => camera == "A" || camera == "B" || camera == "C";
@@ -339,14 +347,14 @@ namespace FixedCamVr.Streaming.EditorTools
             public byte[] Render(string camera, Dictionary<string, float> p, bool adoptedRuntime = false, string source = "live")
             {
                 if (!ValidCamera(camera)) throw new ArgumentException("camera must be A, B or C");
-                if (source != "live" && !TakeRunner.IsDollPovCue(source)) throw new ArgumentException("Unknown source");
-                SetSource(source);
+                if (source != "live" && source != "cg_doll" && !TakeRunner.IsDollPovCue(source)) throw new ArgumentException("Unknown source");
                 _material.SetFloat("_CrtSignalProfileSelected", adoptedRuntime ? 1 : 0);
                 _material.SetFloat("_CrtScreenOnly", adoptedRuntime ? 1 : 0);
                 _material.SetFloat("_CrtCenterEv", 0); _material.SetFloat("_CrtTintStrength", 0);
                 _camera.backgroundColor = adoptedRuntime ? Color.clear : Color.black;
                 int index = camera[0] - 'A'; _material.SetTexture("_LiveTex", _photos[index]);
-                CameraFeelFx.WriteUniforms(_material, p["noiseDark"], p["noiseFixed"], _bias[index], 0, p["mono"] > 0 ? ScreenDecayLogic.BlocksFor(p["mono"]) : 0, 0, p["mono"]);
+                float bias = SetSource(source, camera, _bias[index]);
+                CameraFeelFx.WriteUniforms(_material, p["noiseDark"], p["noiseFixed"], bias, 0, p["mono"] > 0 ? ScreenDecayLogic.BlocksFor(p["mono"]) : 0, 0, p["mono"]);
                 _material.SetFloat("_Glare", 0);
                 foreach (string key in new[] { "exposure", "contrast", "saturation", "temperature", "tint", "lift", "vignette", "grain", "scanline" })
                     _material.SetFloat("_" + char.ToUpperInvariant(key[0]) + key.Substring(1), p[key]);
@@ -377,9 +385,14 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 finally { RenderTexture.active = previous; }
             }
-            private void SetSource(string source)
+            private float SetSource(string source, string camera, float bias)
             {
-                bool overlay = source != "live";
+                _material.SetTexture("_CgTex", Texture2D.blackTexture); _material.SetFloat("_CgStrength", 0);
+                _material.SetVector("_LiveScale", new Vector4(.75f, 1, 0, 0)); _material.SetVector("_CgScale", new Vector4(.75f, 1, 0, 0));
+                _material.SetVector("_CgLens", new Vector4(0, .5f, .5f, 0)); _material.SetVector("_CgFocalN", new Vector4(1, 1, 0, 0));
+                _material.SetVector("_ActorFocus", new Vector4(.5f, .5f, .2f, 0)); _material.SetVector("_ActorLight", new Vector4(.5f, .5f, .2f, 0));
+                _material.SetVector("_RedKeep", Vector4.zero);
+                bool overlay = TakeRunner.IsDollPovCue(source);
                 Texture texture = Texture2D.blackTexture;
                 Vector4 scale = new Vector4(1, 1, 0, 0);
                 if (overlay)
@@ -401,6 +414,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 _material.SetVector("_OverlayScale", scale); _material.SetFloat("_OverlayStrength", overlay ? 1 : 0); _material.SetFloat("_OverlayBlend", 0);
                 _material.SetVector("_OverlayGain", new Vector4(1, 1, 1, 0)); _material.SetVector("_OverlayOffset", Vector4.zero);
                 _material.SetFloat("_Overlay2Strength", 0);
+                if (source == "cg_doll")
+                {
+                    _dollSource ??= new ShowCompositePreview.CrtTuningDollSource();
+                    bias = _dollSource.WriteTo(_material, camera);
+                }
+                return bias;
             }
             private T Own<T>(T value) where T : UnityEngine.Object { _objects.Add(value); return value; }
             private RenderTexture Target(RenderTextureFormat format, RenderTextureReadWrite color, int depth)
@@ -411,6 +430,7 @@ namespace FixedCamVr.Streaming.EditorTools
             public void Dispose()
             {
                 _processor?.Dispose();
+                _dollSource?.Dispose(); _dollSource = null;
                 for (int i = _objects.Count - 1; i >= 0; i--) { if (_objects[i] is RenderTexture target) target.Release(); UnityEngine.Object.DestroyImmediate(_objects[i]); }
                 _objects.Clear();
             }

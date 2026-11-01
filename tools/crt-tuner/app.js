@@ -4,6 +4,9 @@
   const $ = id => document.getElementById(id);
   const storageKey = 'fixedcam-crt-tuner-adopted-0302';
   const dollStorageKey = 'fixedcam-crt-tuner-doll-v1';
+  const transformedStorageKey = 'fixedcam-crt-tuner-transformed-v1';
+  const modeNames = { normal: '通常画面', doll: '人形視点', transformed: '人形化後' };
+  const settingsKey = value => ({ normal: storageKey, doll: dollStorageKey, transformed: transformedStorageKey })[value];
   const activeModeKey = 'fixedcam-crt-tuner-active-mode';
   const legacyStorageKey = 'fixedcam-crt-tuner-v1';
   const controls = new Map();
@@ -57,11 +60,11 @@
     return { version: 1, mode, source, camera, parameters: { ...parameters }, baseLabel: config.baseLabel };
   }
 
-  const modeLabel = value => value === 'doll' ? '人形視点' : '通常画面';
+  const modeLabel = value => modeNames[value];
   const sourceLabel = value => config.sources.find(item => item.id === value)?.label ?? value;
 
   function updateSourceControls() {
-    const pov = source !== 'live';
+    const pov = source.startsWith('pov_');
     for (const key of ['sigmaR', 'sigmaGB', 'convergenceMultiplier']) {
       const fields = inputs.get(key);
       fields.range.disabled = pov;
@@ -78,7 +81,7 @@
 
   function persist() {
     try {
-      localStorage.setItem(mode === 'doll' ? dollStorageKey : storageKey, JSON.stringify(snapshot()));
+      localStorage.setItem(settingsKey(mode), JSON.stringify(snapshot()));
       localStorage.setItem(activeModeKey, mode);
     } catch {
       $('file-message').textContent = 'このブラウザに保存できません。設定をファイルに保存できます。';
@@ -177,7 +180,7 @@
   function buildControls() {
     controlsEpoch += 1;
     const fragment = document.createDocumentFragment();
-    const priority = group => mode === 'doll' && group.id === 'signal' ? -1
+    const priority = group => mode !== 'normal' && group.id === 'signal' ? -1
       : /center|centre|中心/.test(`${group.id} ${group.label}`) ? 0
       : /cold|tint|冷|寒色|色づけ/i.test(`${group.id} ${group.label}`) ? 1 : 2;
     const groups = [...config.groups].sort((a, b) => priority(a) - priority(b));
@@ -190,7 +193,7 @@
       heading.textContent = group.id === 'signal' ? '画面の加工量' : group.label;
       section.append(heading);
       for (const control of group.controls) {
-        if (control.key === 'mono') control.label = mode === 'doll' ? '人形視点の加工量' : '通常画面の加工量';
+        if (control.key === 'mono') control.label = `${modeLabel(mode)}の加工量`;
         section.append(makeControl(control, index++));
       }
       fragment.append(section);
@@ -229,7 +232,9 @@
     }
     $('source').value = source;
     updateSourceControls();
-    $('mode-note').textContent = mode === 'doll'
+    $('mode-note').textContent = mode === 'transformed'
+      ? '本編3-A以降の人形化後が基準です。無人写真に本編の人形を合成します。人形は各カメラの区間内に固定した静止画です。加工量1・暗部ノイズ0.2から調整できます。'
+      : mode === 'doll'
       ? '本編2-Cの人形視点が基準です。加工量1・暗部ノイズ0.175から調整できます。人形視点の素材は各動画の0.5秒の静止コマです。'
       : '本人が調整した本編の採用値が基準です。加工量0.5・暗部ノイズ0.05から調整できます。';
     for (const id of ['camera-options', 'mode', 'source', 'reset-baseline', 'reset-defaults', 'save-json', 'load-json']) $(id).disabled = false;
@@ -241,7 +246,7 @@
       throw new Error('この設定ファイルは読み込めません。バージョンとカメラを確認してください。');
     }
     const settingsMode = value.mode ?? 'normal';
-    if (!['normal', 'doll'].includes(settingsMode)) throw new Error('設定ファイルの画面モードが不正です。');
+    if (!Object.hasOwn(modeNames, settingsMode)) throw new Error('設定ファイルの画面モードが不正です。');
     if (settingsMode !== mode) throw new Error(`「${modeLabel(settingsMode)}」に切り替えてから設定を読み込んでください。`);
     const settingsSource = value.source ?? 'live';
     if (!config.sources.some(item => item.id === settingsSource)) throw new Error('この画面では使えない素材が指定されています。');
@@ -384,7 +389,7 @@
     if (!value || value.version !== 1 || !Array.isArray(value.groups) || !Array.isArray(value.cameras)
       || !value.cameras.length || !value.cameras.every(name => typeof name === 'string')
       || typeof value.baseLabel !== 'string' || !value.defaults || !value.baseline) throw new Error('invalid config');
-    if (!['normal', 'doll'].includes(value.mode) || !Array.isArray(value.sources) || !value.sources.length
+    if (!Object.hasOwn(modeNames, value.mode) || !Array.isArray(value.sources) || !value.sources.length
       || !value.sources.every(item => typeof item.id === 'string' && typeof item.label === 'string')
       || new Set(value.sources.map(item => item.id)).size !== value.sources.length
       || !value.sources.some(item => item.id === value.defaultSource)) throw new Error('invalid sources');
@@ -433,7 +438,7 @@
       parameters = Object.fromEntries([...controls].map(([key, control]) => [key, normalize(config.defaults[key], control)]));
       try {
         $('restore-previous').hidden = mode !== 'normal' || !localStorage.getItem(legacyStorageKey);
-        const saved = localStorage.getItem(mode === 'doll' ? dollStorageKey : storageKey);
+        const saved = localStorage.getItem(settingsKey(mode));
         if (saved) {
           const restored = readSettings(JSON.parse(saved));
           camera = restored.camera;
@@ -548,6 +553,9 @@
     clearTimeout(renderTimer);
     clearTimeout(retryTimer);
   });
-  try { mode = localStorage.getItem(activeModeKey) === 'doll' ? 'doll' : 'normal'; } catch { }
+  try {
+    const savedMode = localStorage.getItem(activeModeKey);
+    mode = Object.hasOwn(modeNames, savedMode) ? savedMode : 'normal';
+  } catch { }
   initialize(mode);
 })();

@@ -449,7 +449,7 @@ namespace FixedCamVr.Streaming.EditorTools
             public string label;
         }
 
-        private sealed class Stage : IDisposable
+        private sealed partial class Stage : IDisposable
         {
             private readonly GameObject _root;
             private readonly string _outDir;
