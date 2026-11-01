@@ -138,22 +138,29 @@ def effect_sheet(motion_directory: Path, key: str, times: list[float]) -> Path:
     return target
 
 
-def build(still_base: Path, still_image: Path, still_preview: Path, still_process: Path, still_audit: Path, motion_directory: Path, motion_audit: Path, motion_input: str, still_atlas_directory: Path | None, draft: bool = False) -> None:
+def build(still_base: Path, still_image: Path, still_preview: Path, still_process: Path, still_audit: Path, motion_directory: Path, motion_audit: Path, motion_input: str, still_atlas_directory: Path | None, draft: bool = False, unmet_report: bool = False) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     still = json.loads(still_audit.read_text(encoding="utf-8"))
     processing = json.loads(still_process.read_text(encoding="utf-8"))
     image_edit = processing.get("kind") == "image_edit_mockup"
     if image_edit and still.get("geometry_preserved") is not True:
         raise ValueError("Image-edit still must pass the independent geometry check")
-    if processing.get("round") in (32, 33, 34, 36) and (still.get("geometry_preserved") is not True or still.get("content_preserved") is not True):
+    if processing.get("round") in (32, 33, 34, 36, 37) and (still.get("geometry_preserved") is not True or still.get("content_preserved") is not True):
         raise ValueError("Selected still must pass independent geometry and content checks")
     motion = json.loads(motion_audit.read_text(encoding="utf-8"))
     scores = [score(still), score(motion)]
     complete = min(scores) >= 85
-    if not complete and not draft:
+    if draft and unmet_report:
+        raise ValueError("Choose a progress report or an explicit unmet-result report")
+    if unmet_report and complete:
+        raise ValueError("An unmet-result report requires an unmet threshold")
+    if not complete and not (draft or unmet_report):
         raise ValueError(f"Completion threshold not met: {scores}")
     report_path = OUT / ("report-progress.html" if draft else "report.html")
-    completion_text = "指定された85%以上の条件を見た目の試作で満たしました。" if complete else "静止画は指定された85%に達していないため、作業途中の記録です。"
+    completion_text = "指定された85%以上の条件を見た目の試作で満たしました。" if complete else "静止画は指定された85%に達していません。依頼全体の合格条件は未達です。" if unmet_report else "静止画は指定された85%に達していないため、作業途中の記録です。"
+    unmet_block = ""
+    if unmet_report:
+        unmet_block = '''<p>静止画は37版の処理試作と4版の画像編集を比較しました。第23版の83%が最高で、その後の14版は上回りませんでした。点数だけを得る追加調整は止め、最良の実物を保存しています。</p><p>残っている差は、白い短片の硬さです。参照では細い白黒線が近接して束になり、薄い横にじみが続きます。候補には太い欠片が残り、床の細い線の密度と中間階調も十分には近づきませんでした。</p><p>新しい変換を改善へ結び付ける観察が得られなかったため、静止画の調整をここで止めました。同じ加工の別画像や加工前後の対は、線の位置と接続の関係を確かめる手掛かりになります。85%の条件は変更していません。</p>'''
     if still.get("diagnostic_only") or still.get("pass_candidate") is False:
         raise ValueError("Exploratory target evaluation cannot satisfy the completion condition")
     if still.get("selected_candidate_path") and Path(still["selected_candidate_path"]).resolve() != still_image.resolve():
@@ -278,6 +285,21 @@ def build(still_base: Path, still_image: Path, still_preview: Path, still_proces
         excluded = material_review["excluded_ids"]
         excluded_text = " / ".join(str(value) for value in excluded)
         static_material_block = f'''<div class="wide"><details class="target-study"><summary>参照から得た微細模様の検品表を開く</summary><p>候補は{len(material_manifest['items'])}片。この表には除外した例も含まれます。ID {excluded_text} の{len(excluded)}片は元の物体の角や接続部を連想するため使用しませんでした。人物と文字を含まないROIから採取していますが、残る微細な形にも元の物体の影響はあり得ます。</p>{''.join(material_figures)}</details></div>'''
+    if processing.get("round") == 37:
+        static_kind = "測定した横ずれを使う固定入力の試作"
+        static_scope_lead = "静止画は固定したB画像の階調を保ち、参照から測った行ごとの横ずれを加えた試作です。動画版は参照由来の素材を使うブラウザの試作です。"
+        static_method = "太い矩形の欠けを加えない明暗の下地を使います。参照の窓の縁について、明暗が半分になる位置を行ごとに測り、大きな傾きと湾曲を引いて横ずれの配列を作りました。この配列で現在の画像の各行を横へずらし、弱い横にじみの有無を比較しています。白黒への二値化や、白い欠片の追加は行いません。"
+        static_reference_note = "青い色相とキャラクターは再現対象から外しました。参照から使うのは窓の縁で測った水平変位の数列です。参照のRGBや輪郭の明暗残差を出力へ貼り付ける処理はありません。"
+        static_scope = "既存の完成済みB画像を入力素材として使います。窓の左右で同じ横ずれが起きたことや、これが元映像の加工原因であることは証明していません。測定値には元の形や反射の影響が残り得ます。別の映像での見た目と、ライブ映像の時間的な安定性は未検証です。"
+        static_check = "横ずれと追加のにじみをOFFにすると、入力した下地とRGBAの全画素が一致します。この下地は明暗処理を済ませた画像で、未追加の現行Bへ戻す切替も別に用意しました。最終画像のalphaと透明域のRGB、開口内側2pxは元の現行Bと一致します。平坦色で変化がないことと、明暗の段差で横ずれと弱い尾が出ることを分けて検査しました。Questでの実時間性能は未検証です。"
+        material_manifest = {"reference": processing["reference"], "field": processing["field"], "completed_base_input": processing["completed_base_input"]}
+        material_files = [Path(processing["completed_base_input"]["path"])]
+        if sha(material_files[0]) != processing["completed_base_input"]["sha256"] or processing["reference"]["sha256"] != sha(REFERENCE_IMAGE):
+            raise ValueError("Measured-displacement material source changed")
+        names = ["source-crossings-and-row-displacements.png", "row-displacement-field.npz", "effective-row-displacements.csv"]
+        names += [f"reference-window-{side}-{suffix}" for side in ("left", "right") for suffix in ("ROI.png", "measurements.npz", "measurements.csv")]
+        material_files.extend(still_process.parent / name for name in names)
+        static_material_block = f'''<div class="wide"><details><summary>横ずれの測定記録を開く</summary><figure><img src="{uri(material_files[1],'image/png')}" alt="窓縁の位置と傾きを引いた水平変位、出力へ使う行ごとの変位"><figcaption>人物を含まない窓の左右を測定。欠測行を補い、出力の高さへ反転接続した変位配列を使いました。黒い実測線と灰色の比較線は同一の処理原因を証明するものではありません。</figcaption></figure></details></div>'''
     sheet = closure_sheet(movie_directory)
     preview = reference_preview()
     target_image = OUT / "target-study/imagegen-target.png"
@@ -304,6 +326,7 @@ button:focus-visible{{outline:2px solid var(--link);outline-offset:4px}}td,th{{v
 </style></head><body><main>
 <div class="wrap"><h1>スクリーンの追加加工<br>動画の動きと閉じ方</h1><p class="meta">2026-11-01 ／ 本編に組み込まない独立試作</p>
 <p class="lead">静止画の加工感は独立評価で{scores[0]:g}%。動画の動きと閉じ方は{scores[1]:g}%でした。{completion_text}本編への組み込みは行っていません。</p>
+{unmet_block}
 <p>{static_scope_lead}</p>
 <p>いまの曲面スクリーンとCRT加工を含むUnityの描画結果を固定し、その画素の上に加工を加えました。別スレッドで進んでいるスクリーンの実装とは、編集するファイルを分けています。</p>
 <p>点数は比較担当のサブエージェントが画像と連続コマから判断した主観値です。画素の一致率ではありません。実装担当と評価担当を分け、評価担当へ目標点や前の採点を伝えずに比較しています。</p>
@@ -367,13 +390,30 @@ document.getElementById('play-both').onclick=()=>playAt(0);document.getElementBy
     inputs = [REFERENCE_IMAGE, REFERENCE_VIDEO, baseline_source, before, still_image, still_process, movie, still_audit, motion_audit,
               target_image, OUT / "target-study/prompt.txt", motion_release_path, still_preview, motion_preview,
               OUT / "report-reference-manifest.json", sheet, preview, CSS] + material_files + generation_files
+    if unmet_report:
+        evidence_path = OUT / "static-temporal-evidence/manifest.json"
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if evidence["source_sha256"] != sha(REFERENCE_VIDEO):
+            raise ValueError("Additional reference-video evidence came from another source")
+        inputs.append(evidence_path)
+        for item in evidence["frames"]:
+            path = evidence_path.parent / item["file"]
+            if sha(path) != item["sha256"]:
+                raise ValueError("Additional reference-video evidence changed")
+            inputs.append(path)
+    inputs.extend(sorted((OUT / "audits").glob("*.json")))
+    inputs = list(dict.fromkeys(inputs))
     manifest = {"date": "2026-11-01", "completion_threshold": 85, "complete": complete, "draft": draft, "selected_scores": {"still": scores[0], "motion": scores[1]},
+                "report_complete": not draft,
+                "outcome": "threshold_met" if complete else "threshold_unmet",
+                "unmet_result_report": unmet_report,
+                "stop_rationale": "No new observation supported a concrete improving transform after round 37; preserve 83/85 without regrading or changing the threshold" if unmet_report else None,
                 "scores_are_subjective": True, "integrated_into_production": False,
                 "selected_motion_input": motion_input,
                 "report": {"path": report_path.name, "sha256": sha(report_path), "bytes": report_path.stat().st_size},
-                "selected_still_kind": "fixed_input_composite" if processing.get("round") == 34 else "reference_microtexture_transfer" if processing.get("round") in (32, 33) else processing.get("kind", "computed_filter"),
-                "legacy_still_filter_highest_similarity": 83 if processing.get("round") in (32, 33, 34) else None,
-                "executable_still_filter_highest_similarity": 83 if image_edit or processing.get("round") == 34 else scores[0],
+                "selected_still_kind": "fixed_input_row_displacement" if processing.get("round") == 37 else "fixed_input_composite" if processing.get("round") == 34 else "reference_microtexture_transfer" if processing.get("round") in (32, 33) else processing.get("kind", "computed_filter"),
+                "legacy_still_filter_highest_similarity": 83 if processing.get("round") in (32, 33, 34, 37) else None,
+                "executable_still_filter_highest_similarity": 83 if image_edit or processing.get("round") in (34, 37) else scores[0],
                 "image_generation": {"mode": "built-in image_gen", "selected_still_is_image_edit": image_edit,
                                      "selected_prompt": str(still_process.parent / "prompt.txt") if image_edit else None,
                                      "exploratory_target": {"excluded_from_pass_candidate": True, "prompt": "target-study/prompt.txt"}},
@@ -398,6 +438,8 @@ if __name__ == "__main__":
     parser.add_argument("--motion-dir", required=True, type=Path)
     parser.add_argument("--motion-input", choices=["a", "b"], default="a")
     parser.add_argument("--still-atlas-dir", type=Path)
-    parser.add_argument("--draft", action="store_true", help="Write an explicitly incomplete progress report without declaring completion")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--draft", action="store_true", help="Write an explicitly incomplete progress report without declaring completion")
+    mode.add_argument("--unmet-report", action="store_true", help="Deliver the report with complete=false and the unmet threshold stated explicitly")
     args = parser.parse_args()
-    build(args.still_base, args.still_image, args.still_preview, args.still_process, args.still_audit, args.motion_dir, args.motion_audit, args.motion_input, args.still_atlas_dir, args.draft)
+    build(args.still_base, args.still_image, args.still_preview, args.still_process, args.still_audit, args.motion_dir, args.motion_audit, args.motion_input, args.still_atlas_dir, args.draft, args.unmet_report)

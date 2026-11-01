@@ -4,6 +4,8 @@
 
 生成物の保存先: `G:\マイドライブ\shubie\reports\2026-11-01_screen-effect-study\`。
 
+到達点は静止83%・動画85%。静止画の85%条件は未達。37版と4版の画像編集を比較した後、改善を支える新観察がなく見た目の追加調整を止めた。`report.html` は未達を明記した納品レポート。`manifest.json` の `report_complete:true` は報告書の完成であり、依頼の条件は `complete:false`・`outcome:threshold_unmet` として残す。
+
 ## 入力の固定
 
 - 元スクリーンショット: `C:\Users\kouga\Downloads\Screenshot_20261101-004612.png`。
@@ -56,7 +58,7 @@ py -3.11 tools/screen-effect-study-20261101/still/offline-round23.py --camera B 
 
 36版は完成済みの23版と33版の下地を入力素材として読み、細部だけを横に短く連なる確率的な白黒線へ寄せる試作。新しい物体の画像や参照の色は加えない。画像を入力材料に使うことと、任意のライブ映像で動作確認したフィルタを区別する。最高74%。横筋は増えたが、硬い欠けと床の中間階調の不足が残った。
 
-37版は同じ明暗の下地を保ち、参照の窓の縁から測った行ごとの水平変位配列だけで横へ再標本化する試作。弱い横にじみの有無も比較する。参照のRGBや物体の画像を貼り付ける方式ではなく、元の加工原因を特定したという主張でもない。生成中。
+37版は同じ明暗の下地を保ち、参照の窓の縁から測った行ごとの水平変位配列だけで横へ再標本化する試作。弱い横にじみの有無も比較した。最高68%。参照のRGBや物体の画像を貼り付ける方式ではなく、元の加工原因を特定したという主張でもない。左右の窓縁の同じ行の変位の相関は−0.151で、共通の行ずれを裏付けなかった。細い短線の束より連続した鋸歯が強く見え、最高83%を更新しなかった。
 
 ## 動画
 
@@ -93,7 +95,18 @@ py -3.11 tools/screen-effect-study-20261101/motion/build.py
 
 静止画はフル画像2枚を開いて比較する。動画は両MP4の時刻対応フレームと高密度の連続コマで比較する。動画の実時間再生をした評価としては扱わない。初回や不採用の版と評価は消さずに残す。
 
-`build-report.py` は明示した最終候補と評価記録を受け取る。いずれかの総合点が85未満なら最終レポート生成を停止する。最高点のファイルを自動選択する処理はない。`--draft` なら未達を明記した `report-progress.html` と `manifest-progress.json` を作り、最終版とは別に保存する。
+`build-report.py` は明示した候補と評価記録を受け取る。通常はいずれかの総合点が85未満ならレポート生成を停止する。最高点のファイルを自動選択する処理はない。`--draft` は作業途中の `report-progress.html` を作る。`--unmet-report` は未達の結果を報告するためだけの指定で、`report.html` を作っても `complete:false` と未達の理由を残す。85%の合格条件を変更する指定ではない。
+
+最良実物を使った今回の未達レポートは次の引数で再生成する。既存の納品物は先にコピーして保存する。
+
+```powershell
+$study='G:/マイドライブ/shubie/reports/2026-11-01_screen-effect-study'
+py -3.11 tools/screen-effect-study-20261101/build-report.py --still-base "$study/still/round-11/base-B.png" --still-image "$study/still/round-23/B-standard-on-black.png" --still-preview "$study/still/round-23/preview.html" --still-process "$study/still/round-23/manifest.json" --still-audit "$study/audits/still-23.json" --motion-dir "$study/motion/round-07" --motion-input b --motion-audit "$study/audits/motion-07.json" --still-atlas-dir "$study/still/round-23" --unmet-report
+node tools/screen-effect-study-20261101/check-report.mjs
+py -3.11 tools/screen-effect-study-20261101/verify-delivery.py
+```
+
+`static-temporal-evidence/` は参照動画の初頭を追加観察した記録。2fpsの名目時刻と実際のVFR入力の時刻を混同しない。別場面にも横筋は見えるが、加工前の像がなく、新しい処理方式を支持する証拠は得られなかった。
 
 画像編集版を選択した場合は `kind:image_edit_mockup` と形状保持判定を検査し、レポートの冒頭にも実行フィルタ83%との違いを明記する。画像生成は同じ指示文から同じ画素が出ることを保証しないため、保存したPNGとSHA-256を比較の正本とする。
 
