@@ -1,0 +1,42 @@
+[
+  {
+    "path": "tools/web-compositor/show.json",
+    "sha256": "3b81bc074dd082b9bff5eb13c6d0438f89e6c88aee4e60db4e40f967fda30ea5",
+    "bytes": 48064
+  },
+  {
+    "path": "tools/web-compositor/calib.js",
+    "sha256": "d99c47e68e2fe316297036ad359775bd3cdc9d824cd751cf410d618585759ea1",
+    "bytes": 35063
+  },
+  {
+    "path": "tools/web-compositor/align-model.js",
+    "sha256": "28ff561d3d5c9c45ff6f5c2b1afb4cb94f8ec65b0cf9ac536a7e4b37abfccf5a",
+    "bytes": 20022
+  },
+  {
+    "path": "Assets/Scripts/Streaming/Editor/VirtualWalk/VirtualRoom.cs",
+    "sha256": "29dddd7bde9c2cb5ba6a4ba62ab42383ee9b1e8f2babe6f1c1a8ebe3d56abc2a",
+    "bytes": 11284
+  },
+  {
+    "path": "tools/screen-effect-study-20261101/motion/motion-track.json",
+    "sha256": "d3909b429d1f0f2ec8a5f4dad60d54fbfea4975e837cc570f59f615a84ddb9d8",
+    "bytes": 21273
+  },
+  {
+    "path": "tools/web-compositor/captures/plate_B_20260924_172210_4abb5bae.jpg",
+    "sha256": "342fdbe7daac0ea93982e4df7e53c06b5b154aed096dcbe547d4e09349d12f36",
+    "bytes": 22014
+  },
+  {
+    "path": "tools/screen-effect-study-20261101/motion/motion.js",
+    "sha256": "849d98faee0c2458b8647d651f9896301436d2c1a81b3250621743ecc191a01e",
+    "bytes": 8504
+  },
+  {
+    "path": "G:\\\u30de\u30a4\u30c9\u30e9\u30a4\u30d6\\shubie\\reports\\2026-11-01_screen-effect-study\\motion\\round-07\\assets\\base-b.png",
+    "sha256": "0904e52f2b13cf069ddb4e01a18f5a8c519e66e62a36583952dc8c568d0299fe",
+    "use": "alpha channel only; RGB never mapped to world"
+  }
+]

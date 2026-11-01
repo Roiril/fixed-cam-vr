@@ -1,0 +1,2 @@
+# Frozen input/source hashes include line endings. Preserve their original bytes.
+* -text

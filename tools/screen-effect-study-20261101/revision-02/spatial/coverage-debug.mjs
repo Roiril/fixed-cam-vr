@@ -1,0 +1,2 @@
+import{assets}from'./assets.js';import{makeGeometry,unproject,sub,dot,cross,add,mul}from'./geometry.js';
+const c=assets.camera,g=makeGeometry(c,assets.room),C=[c.x,c.y,c.z],ray=sub(unproject(449.5,342.5,1,c),C);let hits=[];for(const p of g.planes){const n=cross(p.u,p.v),z=dot(sub(p.o,C),n)/dot(ray,n),d=sub(add(C,mul(ray,z)),p.o),a=[dot(d,p.u)/dot(p.u,p.u),dot(d,p.v)/dot(p.v,p.v)];if(z>.04&&a.every(v=>v>=-.01&&v<=1.01))hits.push({id:p.id,z,a});}console.log(JSON.stringify(hits));

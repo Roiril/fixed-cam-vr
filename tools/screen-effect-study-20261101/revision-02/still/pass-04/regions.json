@@ -1,0 +1,212 @@
+{
+  "scope": "B-only manually authored prototype; not semantic recognition or an arbitrary-input filter",
+  "input_size": [
+    1280,
+    1030
+  ],
+  "regions": [
+    {
+      "name": "wall-board-vertical",
+      "points": [
+        [
+          639,
+          110
+        ],
+        [
+          638,
+          150
+        ],
+        [
+          640,
+          200
+        ],
+        [
+          635,
+          250
+        ],
+        [
+          635,
+          300
+        ],
+        [
+          631,
+          350
+        ],
+        [
+          634,
+          400
+        ],
+        [
+          634,
+          450
+        ],
+        [
+          635,
+          500
+        ],
+        [
+          636,
+          550
+        ],
+        [
+          637,
+          600
+        ],
+        [
+          641,
+          620
+        ]
+      ],
+      "radius": 10,
+      "atlas": 0
+    },
+    {
+      "name": "clothing-left-vertical",
+      "points": [
+        [
+          691,
+          350
+        ],
+        [
+          693,
+          400
+        ],
+        [
+          695,
+          450
+        ],
+        [
+          697,
+          500
+        ],
+        [
+          698,
+          550
+        ],
+        [
+          699,
+          600
+        ],
+        [
+          699,
+          620
+        ]
+      ],
+      "radius": 10,
+      "atlas": 1
+    },
+    {
+      "name": "cloth-right-above-metal-crossbar",
+      "points": [
+        [
+          977,
+          235
+        ],
+        [
+          978,
+          250
+        ],
+        [
+          990,
+          300
+        ],
+        [
+          997,
+          350
+        ],
+        [
+          1000,
+          380
+        ]
+      ],
+      "radius": 10,
+      "atlas": 1
+    }
+  ],
+  "protect_polygons": [
+    {
+      "name": "floor",
+      "points": [
+        [
+          0,
+          630
+        ],
+        [
+          1279,
+          630
+        ],
+        [
+          1279,
+          1029
+        ],
+        [
+          0,
+          1029
+        ]
+      ]
+    }
+  ],
+  "protect_polylines": [
+    {
+      "name": "hanger-diagonal-wire",
+      "points": [
+        [
+          755,
+          409
+        ],
+        [
+          781,
+          336
+        ],
+        [
+          815,
+          267
+        ],
+        [
+          850,
+          202
+        ],
+        [
+          881,
+          155
+        ],
+        [
+          906,
+          133
+        ],
+        [
+          932,
+          136
+        ],
+        [
+          919,
+          165
+        ],
+        [
+          897,
+          195
+        ]
+      ],
+      "width": 14
+    },
+    {
+      "name": "right-thin-frame",
+      "points": [
+        [
+          1022,
+          391
+        ],
+        [
+          1054,
+          485
+        ],
+        [
+          1093,
+          597
+        ]
+      ],
+      "width": 14
+    }
+  ],
+  "observation": "B-specific: orange wall/board seam, clothing left edge, upper right cloth edge. The upper right cloth edge was viewed at native size and followed using the printed positive gradient positions. Blue thin polylines are spatial-only exclusions for hanger/cable and metal frame; floor is spatial-only excluded. No semantic detector. Unsharp/tone still apply in these blue areas."
+}

@@ -1,0 +1,173 @@
+{
+  "scope": "B-only manually authored board surfaces, wire and carpet; no automatic semantic recognition",
+  "line_core_width": 18,
+  "core_transition_px": 12,
+  "line_polylines": [
+    {
+      "name": "hanger-diagonal-and-curved-return",
+      "points": [
+        [
+          755,
+          409
+        ],
+        [
+          781,
+          336
+        ],
+        [
+          815,
+          267
+        ],
+        [
+          850,
+          202
+        ],
+        [
+          881,
+          155
+        ],
+        [
+          906,
+          133
+        ],
+        [
+          932,
+          136
+        ],
+        [
+          919,
+          165
+        ],
+        [
+          897,
+          195
+        ],
+        [
+          867,
+          258
+        ],
+        [
+          837,
+          324
+        ],
+        [
+          801,
+          386
+        ],
+        [
+          776,
+          425
+        ],
+        [
+          760,
+          416
+        ],
+        [
+          755,
+          409
+        ]
+      ]
+    },
+    {
+      "name": "white-metal-frame",
+      "points": [
+        [
+          1022,
+          391
+        ],
+        [
+          1054,
+          485
+        ],
+        [
+          1093,
+          597
+        ]
+      ]
+    }
+  ],
+  "carpet_polygon": [
+    [
+      646,
+      650
+    ],
+    [
+      1205,
+      642
+    ],
+    [
+      1205,
+      920
+    ],
+    [
+      1165,
+      934
+    ],
+    [
+      798,
+      949
+    ],
+    [
+      511,
+      944
+    ]
+  ],
+  "surface_polygons": [
+    {
+      "name": "upper-board-surface",
+      "points": [
+        [
+          125,
+          108
+        ],
+        [
+          615,
+          90
+        ],
+        [
+          620,
+          617
+        ],
+        [
+          120,
+          647
+        ]
+      ]
+    },
+    {
+      "name": "lower-board-surface",
+      "points": [
+        [
+          120,
+          654
+        ],
+        [
+          620,
+          626
+        ],
+        [
+          511,
+          936
+        ],
+        [
+          136,
+          915
+        ]
+      ]
+    }
+  ],
+  "surface_transition_px": 20,
+  "surface_mean_sigma": 4,
+  "surface_detail_gain": 0.1,
+  "vertical_support_radius": 18,
+  "scale_disclosure": "Reference active width1440px, B aperture width approximately1110-1120px. Reference half-support24px becomes about18.5px; authored broad vertical half-support fixed to18px. Gain/blur sigma unchanged.",
+  "observation": "Surface polygons follow the actual upper/lower board faces with20px inward falloff, excluding glass and broad boundaries. Wire/carpet paths are exactly pass06. No LUT in sharpened wire/carpet targets.",
+  "wire_unsharp": {
+    "sigma": 0.9,
+    "gain": 1
+  },
+  "floor_unsharp": {
+    "sigma": 1.1,
+    "gain": 0.75
+  }
+}
