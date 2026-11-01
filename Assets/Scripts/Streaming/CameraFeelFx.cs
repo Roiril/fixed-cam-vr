@@ -71,6 +71,7 @@ namespace FixedCamVr.Streaming
         private float _noiseDark = ShowFeelDef.DefaultNoiseDark;
         private float _noiseFixed = ShowFeelDef.DefaultNoiseFixed;
         private float _selectedNoiseDark = CrtSignalProfile.NoiseDark;
+        private float _dollProfileBlend;
         private float _agc = ShowFeelDef.DefaultAgc;
 
         /// <summary>いまの露出バイアス (EV)。診断用。</summary>
@@ -93,6 +94,7 @@ namespace FixedCamVr.Streaming
         public float AppliedNoiseDark => _material != null ? _material.GetFloat(NoiseDarkId) : -1;
         public float AppliedMono => _material != null ? _material.GetFloat(MonoId) : -1;
         public float AppliedBlocks => _material != null ? _material.GetFloat(CoarseBlocksId) : -1;
+        public float AppliedDollProfileBlend => _material != null ? _material.GetFloat("_CrtDollProfileBlend") : -1;
 
         /// <summary>
         /// 書く先（スクリーンの Renderer のマテリアル）を掴めているか。
@@ -128,7 +130,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 夜間モードへの進み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
         /// **量子化と同じ <see cref="ScreenDecayLogic.Shown"/> を渡す。**
-        /// 通常は 0.5 固定。人形視点と CG 人形化で 1。報告後は量子化と一緒に 0.5 へ戻る。
+        /// 通常は 0.5 固定。人形視点は1、CG人形化は採用値。報告後は0.5へ戻る。
         /// </summary>
         public void SetMono(float progress) => Mono = Mathf.Clamp01(progress);
 
@@ -137,9 +139,11 @@ namespace FixedCamVr.Streaming
         /// <see cref="ShowRunDirector.LateUpdate"/> から呼び、同フレームに確定した素材表示を
         /// 次の描画へ 1 フレーム遅れず渡す。
         /// </summary>
-        public void SetScreenDecay(float blocks, float progress, float noiseDark = CrtSignalProfile.NoiseDark)
+        public void SetScreenDecay(float blocks, float progress, float noiseDark = CrtSignalProfile.NoiseDark,
+                                   float dollProfileBlend = 0f)
         {
-            _selectedNoiseDark = Mathf.Clamp(noiseDark, CrtSignalProfile.NoiseDark, CrtSignalProfile.EndNoiseDark);
+            _selectedNoiseDark = Mathf.Clamp(noiseDark, CrtSignalProfile.NoiseDark, CrtSignalProfile.DollNoiseDark);
+            _dollProfileBlend = Mathf.Clamp01(dollProfileBlend);
             SetCoarseBlocks(blocks);
             SetMono(progress);
             Write();
@@ -562,7 +566,11 @@ namespace FixedCamVr.Streaming
                              CoarseBlocks,
                              screen != null ? screen.SourceFrameId : 0f,
                              Mono);
-            if (selected) CrtSignalProfile.ApplySelected(_material!);
+            if (selected)
+            {
+                _material!.SetFloat("_CrtDollProfileBlend", _dollProfileBlend);
+                CrtSignalProfile.ApplySelected(_material);
+            }
         }
     }
 }

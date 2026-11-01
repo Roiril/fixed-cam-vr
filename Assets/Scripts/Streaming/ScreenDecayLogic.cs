@@ -16,7 +16,7 @@ namespace FixedCamVr.Streaming
     /// <summary>
     /// 音が読む単調な装置の劣化と、主映像へ出す加工を分けて保持する。
     /// 通常mono/粗さは採用初期値で固定。暗部ノイズだけを確定区間位置で進める。
-    /// 実際の人形視点ではmono1、人形化後はmono1/noise終端を保持する。
+    /// 実際の人形視点ではmono1、人形化後は採用した人形加工を保持する。
     /// 解除は終了相でもReleaseKを進めて初期画へ戻し、音のProgressは保持する。
     /// </summary>
     public sealed class ScreenDecayLogic
@@ -64,7 +64,7 @@ namespace FixedCamVr.Streaming
         /// <summary>通常のライブ映像の固定mono。音が読む装置の劣化は1まで進み続ける。</summary>
         public const float NormalMax = 0.5f;
 
-        /// <summary>CG 人形化の乱れの中で 0.5 → 1 へ渡る目安。</summary>
+        /// <summary>CG 人形化の乱れの中で通常から人形加工へ渡る目安。</summary>
         public const float DollMorphSec = 0.5f;
 
         private float _progress;
@@ -81,6 +81,8 @@ namespace FixedCamVr.Streaming
         private float _normalTarget = NormalMax;
         private float _noiseTarget = CrtSignalProfile.NoiseDark;
         private float _releaseNoiseFrom;
+        private float _dollProfileBlend;
+        private float _releaseDollBlendFrom;
 
         // 画に出る状態は、通常位置と「いま本当に出ている素材」で決まる。
         private float _shown = NormalMax;
@@ -102,7 +104,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float Progress => _progress;
 
-        /// <summary>通常は0.5。人形視点/人形化は1。解除は採用初期値0.5へ戻す。</summary>
+        /// <summary>通常は0.5。人形視点は1。CGは採用値へ進み、解除で0.5へ戻す。</summary>
         public float Shown => _shown;
 
         /// <summary>通常画面の固定mono。テレメトリが <see cref="Shown"/> と照合する。</summary>
@@ -110,7 +112,11 @@ namespace FixedCamVr.Streaming
         public float NoiseTarget => _noiseTarget;
         public float NoiseDark => _released
             ? _releaseNoiseFrom + (CrtSignalProfile.NoiseDark - _releaseNoiseFrom) * ReleaseK
-            : (_dollLatched || _dollSeen ? CrtSignalProfile.EndNoiseDark : _noiseTarget);
+            : _noiseTarget + (CrtSignalProfile.DollNoiseDark - _noiseTarget) * DollProfileBlend;
+
+        /// <summary>CG人形加工の独立した混合率。POVは通常光学値を使う。</summary>
+        public float DollProfileBlend => _shownMode == ScreenDecayShownMode.DollPov ? 0f : _released
+            ? _releaseDollBlendFrom * (1f - ReleaseK) : _dollProfileBlend;
 
         /// <summary>いまの <see cref="Shown"/> を決めた表示状態。</summary>
         public ScreenDecayShownMode ShownMode => _shownMode;
@@ -148,6 +154,7 @@ namespace FixedCamVr.Streaming
         {
             if (_released) return;
             _releaseNoiseFrom = NoiseDark;
+            _releaseDollBlendFrom = DollProfileBlend;
             _released = true;
             _releaseSec = 0f;
             _releaseFrom = _shown;
@@ -179,6 +186,8 @@ namespace FixedCamVr.Streaming
             _normalTarget = NormalMax;
             _noiseTarget = CrtSignalProfile.NoiseDark;
             _releaseNoiseFrom = CrtSignalProfile.NoiseDark;
+            _dollProfileBlend = 0f;
+            _releaseDollBlendFrom = 0f;
             _shown = NormalMax;
             _dollMorphSec = 0f;
             _dollSeen = false;
@@ -255,7 +264,8 @@ namespace FixedCamVr.Streaming
 
             if (_dollLatched)
             {
-                _shown = 1f;
+                _dollProfileBlend = 1f;
+                _shown = CrtSignalProfile.DollMono;
                 _shownMode = ScreenDecayShownMode.DollHold;
                 return;
             }
@@ -275,14 +285,16 @@ namespace FixedCamVr.Streaming
                         _dollMorphSec += dt;
                         k = Clamp01(_dollMorphSec / DollMorphSec);
                     }
-                    _shown = NormalMax + (1f - NormalMax) * Smooth(k);
+                    _dollProfileBlend = Smooth(k);
+                    _shown = NormalMax + (CrtSignalProfile.DollMono - NormalMax) * _dollProfileBlend;
                     _shownMode = ScreenDecayShownMode.DollMorph;
                     return;
                 }
 
-                // 遷移が解けた最初の読める CG フレームで 1。以後はカメラや相が変わっても保持する。
+                // 遷移が解けた最初の読める CG フレームで採用値。以後も保持する。
                 _dollLatched = true;
-                _shown = 1f;
+                _dollProfileBlend = 1f;
+                _shown = CrtSignalProfile.DollMono;
                 _shownMode = ScreenDecayShownMode.DollHold;
                 return;
             }
@@ -291,12 +303,14 @@ namespace FixedCamVr.Streaming
             if (_dollSeen)
             {
                 _dollLatched = true;
-                _shown = 1f;
+                _dollProfileBlend = 1f;
+                _shown = CrtSignalProfile.DollMono;
                 _shownMode = ScreenDecayShownMode.DollHold;
                 return;
             }
 
             _shown = normal;
+            _dollProfileBlend = 0f;
             _shownMode = ScreenDecayShownMode.Normal;
         }
 

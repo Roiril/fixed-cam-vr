@@ -54,7 +54,7 @@ paths:
 - 色ノイズは 10 フレームに 1 度引き直して補間し、強さは輝度の粒の 0.55 倍 — `ScreenComposite.frag`（`cn *= rsqrt(...)` / `amp * 0.55`） 〔出典: S:1116-1130〕
 - 固定パターンは乗算 — `_NoiseFixed` 〔出典: S:1222〕
 - ホールドは必ず秒で明け、中止・終了で `ResetAll`。ホールド中は素材の時計も止める — `CameraFeelLogic` / `CameraFeelFx.ResetAll` / `ScreenOverlayController.SetFrozen` 〔出典: S:1113-1114, S:1135-1136〕
-- 通常加工は初期からMono=.5・粗さ固定。暗部ノイズだけ確定区間で.05→.2（1-A〜3-A）。時間で進めない。逆走・人形・解除は`reference/crt-reference-material.md` — LEDGER 0303。
+- 通常加工は初期からMono=.5・粗さ固定。暗部ノイズだけ確定区間で.05→.2（1-A〜3-A）。時間で進めない。CG人形化後は0306の専用加工（Mono.56/noise.34）へ移し、POVはMono1を維持。詳細は`reference/crt-reference-material.md` — LEDGER 0303 / 0306。
 - 2-C の人形視点は表示中だけ 1。3-A の人形化は乱れの実進捗で 1 へ上がり、4-A の報告まで保持する — `ScreenDecayLogic`（`ScreenDecayShownMode.DollPov/DollMorph/DollHold`） 〔出典: memory/screen_decay.md、LEDGER 0242〕
 - 4-A の報告でMonoとノイズは0.5秒で採用初期値へ戻る。終了相でも進む — `ScreenDecayLogic.Release` / `ReleaseSec`、LEDGER 0303 / 0083。
 - `Progress` は単調で戻らない（音が読む）。画は `Shown` だけを読む — `ScreenDecayLogic.Progress` / `Shown` 〔出典: S:1419-1430〕

@@ -3688,7 +3688,7 @@ def analyze(events, others, exp, warns=None):
                          if e.get("ev") == "sum" and e.get("coarse") is not None]
             w(f"  呪いの解除: 視界を戻し始めた（画に出た進み 最小 {min(after):.2f}）"
               if after else "  呪いの解除: 視界を戻し始めた")
-            adopted_profile = any(e.get("screenProfile") == "web20261101" for e in events)
+            adopted_profile = any(e.get("screenProfile") in ("web20261101", "oldweb20261101", "dollweb20261101") for e in events)
             release_target = .5 if adopted_profile else 0
             if after and min(abs(v - release_target) for v in after) > 0.05:
                 verdict("FAIL", f"呪いが解けたのに視界が戻り切っていない（画の進み {min(after):.2f} 止まり）— "
@@ -3726,7 +3726,8 @@ def analyze(events, others, exp, warns=None):
         # CG 人形化だけが 1 になる。mode と coarseShown を対で見て、状態だけ立った配線を通さない。
         mode_samples = [(str(e.get("coarseMode", "")), fnum(e, "coarseShown"), fnum(e, "coarsePos"))
                         for e in events
-                        if e.get("ev") == "sum" and e.get("coarseMode") is not None]
+                        if e.get("ev") == "sum" and e.get("coarseMode") is not None
+                        and e.get("screenProfile") != "dollweb20261101"]
         if mode_samples:
             normal = [shown for mode, shown, _pos in mode_samples if mode == "Normal" and shown is not None]
             normal_position = [(shown, pos) for mode, shown, pos in mode_samples
@@ -3756,10 +3757,11 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", "観測した CG 人形化後の標本で劣化 1 を確認した")
 
     # 導入のあいだは 0 でなければならない（「1 周目の最初は今くらいの解像度」）。
-    adopted = [e for e in events if e.get("ev") == "sum" and e.get("screenProfile") == "web20261101"]
+    adopted = [e for e in events if e.get("ev") == "sum" and e.get("screenProfile") in ("web20261101", "oldweb20261101", "dollweb20261101")]
     if adopted:
         errors = []
         for e in adopted:
+            doll_profile = e.get("screenProfile") == "dollweb20261101"
             shown, mono, blocks = (fnum(e, k) for k in ("coarseShown", "monoMat", "blocksMat"))
             noise, actual_noise, pos = (fnum(e, k) for k in ("noiseShown", "noiseMat", "noisePos"))
             if any(v is None or not math.isfinite(v) for v in (shown, mono, blocks, noise, actual_noise, pos)):
@@ -3767,16 +3769,33 @@ def analyze(events, others, exp, warns=None):
                 continue
             if abs(mono - shown) > .011 or abs(blocks - (800 + (267 - 800) * shown)) > 1.1:
                 errors.append("mono/粗さが材質へ届いていない")
-            if abs(noise - actual_noise) > .002 or not .049 <= actual_noise <= .201:
+            if abs(noise - actual_noise) > .002 or not .049 <= actual_noise <= (.341 if doll_profile else .201):
                 errors.append("暗部ノイズが材質へ届いていない")
             if e.get("coarseMode") == "Normal" and (abs(shown - .5) > .011 or abs(noise - pos) > .002):
                 errors.append("通常画の固定mono/位置ノイズが不一致")
-            if e.get("coarseMode") == "DollHold" and abs(noise - .2) > .002:
+            if e.get("coarseMode") == "DollHold" and abs(noise - (.34 if doll_profile else .2)) > .002:
                 errors.append("人形化後の暗部ノイズが保持されていない")
+            if doll_profile:
+                blend, material_blend = (fnum(e, k) for k in ("dollProfileBlend", "dollProfileMat"))
+                if any(v is None or not math.isfinite(v) for v in (blend, material_blend)):
+                    errors.append("人形加工の混合率が不足")
+                    continue
+                if not 0 <= blend <= 1 or abs(blend - material_blend) > .002:
+                    errors.append("人形加工の混合率が材質へ届いていない")
+                mode = e.get("coarseMode")
+                if mode in ("Normal", "DollPov") and abs(blend) > .002:
+                    errors.append("通常または人形視点にCG人形加工が残っている")
+                if mode == "DollPov" and abs(shown - 1) > .011:
+                    errors.append("人形視点のmonoが1でない")
+                if mode == "DollHold" and (abs(shown - .56) > .011 or abs(blend - 1) > .002):
+                    errors.append("人形化後のmono/加工が保持されていない")
+                if mode == "DollMorph" and (abs(shown - (.5 + .06 * blend)) > .011
+                        or abs(noise - (pos + (.34 - pos) * blend)) > .002):
+                    errors.append("人形化の進捗とmono/ノイズが一致しない")
         if errors:
-            verdict("FAIL", "採用画面 web20261101: " + "; ".join(sorted(set(errors))))
+            verdict("FAIL", "採用画面 web20261101/dollweb20261101: " + "; ".join(sorted(set(errors))))
         else:
-            verdict("OK", "採用画面 web20261101: 通常mono .5・位置ノイズと実材質が一致")
+            verdict("OK", "採用画面 web20261101/dollweb20261101: 通常・人形加工と実材質が一致")
     else:
         w("  画面加工の記録形式: legacy（web20261101 の実材質照合対象外）")
     decay_intro = _decay_nums("coarse", t_to=run_t)

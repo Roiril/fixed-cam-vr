@@ -13,9 +13,13 @@ namespace FixedCamVr.Streaming
         public const float Vignette = 1, Grain = .02f, Scanline = .68f, ConvergenceMultiplier = 10;
         public const float NoiseDark = .05f, NoiseFixed = .098f, EndNoiseDark = .2f;
         public static readonly Vector3 Sigma = new Vector3(2.25f, .65f, .65f);
+        public const float DollMono = .56f, DollNoiseDark = .34f, DollNoiseFixed = .241f;
+        public const float DollGrain = 0, DollScanline = 1.47f;
+        public static readonly Vector3 DollSigma = new Vector3(5.26f, 3.28f, 3.28f);
 
         public static void ApplySelected(Material material)
         {
+            float blend = Mathf.Clamp01(material.GetFloat("_CrtDollProfileBlend"));
             Vector4 adjustment = CrtReferenceScreen.ImageAdjustment; adjustment.w = -.32f;
             material.SetVector("_CrtImageAdjustment", adjustment);
             material.SetVector("_CrtOpticalConvergence", CrtReferenceScreen.OpticalConvergence * ConvergenceMultiplier);
@@ -24,10 +28,10 @@ namespace FixedCamVr.Streaming
             material.SetFloat("_Exposure", Exposure); material.SetFloat("_Contrast", Contrast);
             material.SetFloat("_Saturation", Saturation); material.SetFloat("_Temperature", Temperature);
             material.SetFloat("_Tint", Tint); material.SetFloat("_Lift", Lift);
-            material.SetFloat("_Vignette", Vignette); material.SetFloat("_Grain", Grain); material.SetFloat("_Scanline", Scanline);
-            material.SetFloat("_NoiseFixed", NoiseFixed);
+            material.SetFloat("_Vignette", Vignette); material.SetFloat("_Grain", Mathf.Lerp(Grain, DollGrain, blend)); material.SetFloat("_Scanline", Mathf.Lerp(Scanline, DollScanline, blend));
+            material.SetFloat("_NoiseFixed", Mathf.Lerp(NoiseFixed, DollNoiseFixed, blend));
             material.SetFloat("_CrtLensWarp", LensWarp);
-            material.SetVector("_CrtPsfSigma", Sigma);
+            material.SetVector("_CrtPsfSigma", Vector3.Lerp(Sigma, DollSigma, blend));
             material.SetFloat("_CrtSignalGain", Gain);
             material.SetFloat("_CrtSignalBandwidth", Bandwidth);
             material.SetFloat("_CrtSignalRuntime", 1);

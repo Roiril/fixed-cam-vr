@@ -139,6 +139,7 @@ namespace FixedCamVr.Streaming
         public float ScreenDecayNormalTarget => _decay.NormalTarget;
         public float ScreenNoiseTarget => _decay.NoiseTarget;
         public float ScreenNoiseDark => _decay.NoiseDark;
+        public float ScreenDollProfileBlend => _decay.DollProfileBlend;
 
         /// <summary>画の劣化を決めた表示状態（テレメトリ用）。</summary>
         public ScreenDecayShownMode ScreenDecayShownMode => _decay.ShownMode;
@@ -263,7 +264,7 @@ namespace FixedCamVr.Streaming
             // 解像度の劣化を落とす**唯一の場所**。次の体験者は今の解像度から始める。
             // 終了では落とさない（落とすと演出を見せ切っている最中に画が急に鮮明になる）。
             _decay.Reset();
-            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark);
+            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark, _decay.DollProfileBlend);
             // ⚠⚠ **画の状態も落とす**（2026-08-14）。凍結（hold）・焼き付き（burn）・
             //    人形に付き従う劣化（aura）・乱れは、それまで**体験の終了でしか戻していなかった**。
             //    現場は途中で打ち切って交代することがある（気分が悪くなった / 時間が押している /
@@ -517,7 +518,7 @@ namespace FixedCamVr.Streaming
             // 色が抜けるのも**同じ進み**。通常は0.5固定。人形視点とCG人形化で1になる。
             // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。
             // ⚠ 戻すときも同じ 1 本なので、解像度と色は必ず一緒に戻る。
-            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark);
+            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark, _decay.DollProfileBlend);
         }
 
         private bool AtStartZone()

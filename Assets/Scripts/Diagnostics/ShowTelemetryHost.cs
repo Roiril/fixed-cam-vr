@@ -1694,7 +1694,9 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" coarse=").Append(_run.ScreenDecay.ToString("F2"));
                 _sb.Append(" coarseShown=").Append(_run.ScreenDecayShown.ToString("F2"));
                 _sb.Append(" coarsePos=").Append(_run.ScreenDecayNormalTarget.ToString("F2"));
-                _sb.Append(" screenProfile=web20261101");
+                _sb.Append(" screenProfile=dollweb20261101");
+                _sb.Append(" dollProfileBlend=").Append(_run.ScreenDollProfileBlend.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" dollProfileMat=").Append((_feel != null ? _feel.AppliedDollProfileBlend : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 _sb.Append(" noisePos=").Append(_run.ScreenNoiseTarget.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 _sb.Append(" noiseShown=").Append(_run.ScreenNoiseDark.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 _sb.Append(" noiseMat=").Append((_feel != null ? _feel.AppliedNoiseDark : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));

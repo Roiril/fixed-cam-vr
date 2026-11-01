@@ -233,7 +233,7 @@
     $('source').value = source;
     updateSourceControls();
     $('mode-note').textContent = mode === 'transformed'
-      ? '本編3-A以降の人形化後が基準です。無人写真に本編の人形を合成します。人形は各カメラの区間内に固定した静止画です。加工量1・暗部ノイズ0.2から調整できます。'
+      ? `本編3-A以降の人形化後が基準です。無人写真に本編の人形を合成します。人形は各カメラの区間内に固定した静止画です。加工量${format(config.baseline.mono, controls.get('mono'))}・暗部ノイズ${format(config.baseline.noiseDark, controls.get('noiseDark'))}から調整できます。`
       : mode === 'doll'
       ? '本編2-Cの人形視点が基準です。加工量1・暗部ノイズ0.175から調整できます。人形視点の素材は各動画の0.5秒の静止コマです。'
       : '本人が調整した本編の採用値が基準です。加工量0.5・暗部ノイズ0.05から調整できます。';

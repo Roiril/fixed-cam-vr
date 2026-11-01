@@ -158,6 +158,9 @@ $Menus = [ordered]@{
     'crt-selected'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateSelectedProfile'
                             Desc = 'Web採用画像と本編の初期RGB・輪郭・位置ノイズをGPUで照合する'
                             Out = $null }
+    'crt-doll-selected' = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateDollSelectedProfile'
+                            Desc = '人形化後のWeb採用値と本編の実CG・遷移・解除をGPUで照合する'
+                            Out = $null }
     'crt-reference'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtReferencePreview.Run'
                             Desc = '参照画像から作った本番CRTの材質を実写A-Cで描画し、色・反射・夜間モードを確認'
                             Out = $null }

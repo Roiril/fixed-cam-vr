@@ -99,6 +99,7 @@ Shader "FixedCamVr/ScreenComposite"
         [HideInInspector] _CrtStyleProbe("Editor lens calibration probe", Float) = 0
         [HideInInspector] _CrtSignalRuntime("Selected runtime signal profile", Float) = 0
         [HideInInspector] _CrtSignalProfileSelected("Keep selected optical profile during synchronous capture", Float) = 0
+        [HideInInspector] _CrtDollProfileBlend("Selected doll profile blend", Float) = 0
         [HideInInspector] _CrtSignalGain("Runtime display RGB gain", Float) = 1
         [HideInInspector] _CrtCenterEv("Selected center exposure EV", Float) = 0
         [HideInInspector] _CrtCenterRadius("Selected center radius", Float) = .8

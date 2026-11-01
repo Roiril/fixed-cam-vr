@@ -125,6 +125,41 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void DollProfile_ReapplicationAndSynchronousClonePreserveBlendAndDynamics()
+        {
+            Material material = State(Solid(Color.gray));
+            material.SetFloat("_CrtDollProfileBlend", 1);
+            material.SetFloat("_Mono", CrtSignalProfile.DollMono);
+            material.SetFloat("_NoiseDark", CrtSignalProfile.DollNoiseDark);
+            material.SetFloat("_CoarseBlocks", ScreenDecayLogic.BlocksFor(CrtSignalProfile.DollMono));
+            foreach (float blend in new[] { 0f, .5f, 1f })
+            {
+                material.SetFloat("_CrtDollProfileBlend", blend);
+                material.SetFloat("_Grain", 99); material.SetFloat("_Scanline", 99);
+                CrtSignalProfile.ApplySelected(material);
+                using var processor = new CrtSignalProcessor();
+                Assert.IsTrue(processor.PrepareDisplay(material, 1));
+                Assert.AreEqual(Mathf.Lerp(CrtSignalProfile.Grain, CrtSignalProfile.DollGrain, blend), material.GetFloat("_Grain"));
+                Assert.AreEqual(Mathf.Lerp(CrtSignalProfile.Scanline, CrtSignalProfile.DollScanline, blend), material.GetFloat("_Scanline"));
+                Assert.AreEqual(Mathf.Lerp(CrtSignalProfile.NoiseFixed, CrtSignalProfile.DollNoiseFixed, blend), material.GetFloat("_NoiseFixed"));
+                Assert.AreEqual((Vector4)Vector3.Lerp(CrtSignalProfile.Sigma, CrtSignalProfile.DollSigma, blend), material.GetVector("_CrtPsfSigma"));
+                Assert.AreEqual(CrtSignalProfile.DollMono, material.GetFloat("_Mono"));
+                Assert.AreEqual(CrtSignalProfile.DollNoiseDark, material.GetFloat("_NoiseDark"));
+                var clone = Track(new Material(material));
+                CrtSignalProfile.ApplySelected(clone);
+                Assert.AreEqual(blend, clone.GetFloat("_CrtDollProfileBlend"));
+                Assert.AreEqual(material.GetVector("_CrtPsfSigma"), clone.GetVector("_CrtPsfSigma"));
+                var target = Track(new RenderTexture(64, 36, 0, RenderTextureFormat.ARGB32));
+                Assert.IsTrue(target.Create());
+                Assert.IsTrue(CrtSignalProcessor.Capture(clone, target));
+                Assert.AreEqual(blend, clone.GetFloat("_CrtDollProfileBlend"));
+                Assert.AreEqual(CrtSignalProfile.DollMono, clone.GetFloat("_Mono"));
+                Assert.AreEqual(CrtSignalProfile.DollNoiseDark, clone.GetFloat("_NoiseDark"));
+                Assert.AreEqual(material.GetFloat("_Scanline"), clone.GetFloat("_Scanline"));
+            }
+        }
+
+        [Test]
         public void HeldSource_ReusesOnlyPsf_WhileAgcAndOverlayStillChangeThePreGlassImage()
         {
             Material material = State(Solid(new Color(.08f, .04f, .02f, 1)));

@@ -286,9 +286,17 @@ namespace FixedCamVr.Streaming.EditorTools
                     typeof(ParameterValues).GetField(c.key)!.SetValue(result, baseline ? c.@base : c.@default);
                 if (mode == "doll" || mode == "transformed")
                 {
-                    result.mono = 1;
-                    result.noiseDark = mode == "transformed" ? CrtSignalProfile.EndNoiseDark
+                    result.mono = mode == "transformed" ? CrtSignalProfile.DollMono : 1;
+                    result.noiseDark = mode == "transformed" ? CrtSignalProfile.DollNoiseDark
                         : ScreenDecayLogic.NoiseTargetFor(2, 2, new[] { 0, 1, 2 });
+                }
+                if (mode == "transformed")
+                {
+                    result.grain = CrtSignalProfile.DollGrain;
+                    result.scanline = CrtSignalProfile.DollScanline;
+                    result.sigmaR = CrtSignalProfile.DollSigma.x;
+                    result.sigmaGB = CrtSignalProfile.DollSigma.y;
+                    result.noiseFixed = CrtSignalProfile.DollNoiseFixed;
                 }
                 return result;
             }
@@ -344,11 +352,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (!_baselineImages.TryGetValue(key, out byte[] image)) { image = Render(camera, Resolve(Values(true, mode)), source: source); _baselineImages.Add(key, image); }
                 return image;
             }
-            public byte[] Render(string camera, Dictionary<string, float> p, bool adoptedRuntime = false, string source = "live")
+            public byte[] Render(string camera, Dictionary<string, float> p, bool adoptedRuntime = false, string source = "live", float dollProfileBlend = 0)
             {
                 if (!ValidCamera(camera)) throw new ArgumentException("camera must be A, B or C");
                 if (source != "live" && source != "cg_doll" && !TakeRunner.IsDollPovCue(source)) throw new ArgumentException("Unknown source");
                 _material.SetFloat("_CrtSignalProfileSelected", adoptedRuntime ? 1 : 0);
+                _material.SetFloat("_CrtDollProfileBlend", dollProfileBlend);
                 _material.SetFloat("_CrtScreenOnly", adoptedRuntime ? 1 : 0);
                 _material.SetFloat("_CrtCenterEv", 0); _material.SetFloat("_CrtTintStrength", 0);
                 _camera.backgroundColor = adoptedRuntime ? Color.clear : Color.black;
@@ -361,6 +370,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _material.SetFloat("_CrtSignalGain", p["signalGain"]); _material.SetFloat("_CrtSignalBandwidth", p["bandwidth"] >= .5f ? 1 : 0);
                 _material.SetFloat("_CrtLensWarp", p["lensWarp"]); _material.SetVector("_CrtPsfSigma", new Vector3(p["sigmaR"], p["sigmaGB"], p["sigmaGB"]));
                 _material.SetVector("_CrtOpticalConvergence", CrtReferenceScreen.OpticalConvergence * p["convergenceMultiplier"]);
+                if (adoptedRuntime) CrtSignalProfile.ApplySelected(_material);
                 if (!_processor.PrepareDisplay(_material, index)) throw new InvalidOperationException("Runtime CRT signal could not be prepared");
                 if (!adoptedRuntime)
                 {
