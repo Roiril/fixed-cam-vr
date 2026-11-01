@@ -25,21 +25,21 @@
         <label class="view-label" for="view">表示
           <select id="view">
             <option value="current">現在の調整</option>
-            <option value="compare">変更前と並べる</option>
-            <option value="baseline">変更前の基準</option>
+            <option value="compare">本編の採用値と並べる</option>
+            <option value="baseline">本編の採用値</option>
             <option value="reference">元の参照画像</option>
           </select>
         </label>
-        <button id="compare-toggle" type="button" aria-pressed="false">元の基準と比較</button>
+        <button id="compare-toggle" type="button" aria-pressed="false">本編の採用値と比較</button>
         <label><input id="show-frame" type="checkbox"> 黒い外枠を表示</label>
       </div>
       <div id="images" class="images" data-view="current">
         <figure id="baseline-figure" hidden>
           <div class="image-frame">
-            <img id="baseline-image" width="1280" height="1030" alt="変更前の基準画像" hidden>
+            <img id="baseline-image" width="1280" height="1030" alt="本編で採用したスクリーンの基準画像" hidden>
             <p id="baseline-empty" class="image-empty">基準画像を読み込んでいます…</p>
           </div>
-          <figcaption id="baseline-caption">変更前の基準</figcaption>
+          <figcaption id="baseline-caption">本編の採用値</figcaption>
         </figure>
         <figure id="current-figure">
           <div class="image-frame">
@@ -63,14 +63,16 @@
     </section>
     <aside id="controls" class="adjustments" aria-label="調整項目" tabindex="-1">
       <div class="reset-actions">
-        <button id="reset-baseline" type="button" disabled>ベースに戻す</button>
-        <button id="reset-defaults" type="button" disabled>提案に戻す</button>
+        <button id="reset-baseline" type="button" disabled>本編の採用値に戻す</button>
+        <button id="reset-defaults" type="button" disabled>初期値に戻す</button>
       </div>
       <p id="base-label" class="note"></p>
+      <p class="note">枠なしの曲面スクリーン。中心の明るさと薄い寒色は本編の採用値です。通常加工0.5の場面で比較します。</p>
       <div id="groups" aria-busy="true"></div>
       <div class="file-actions">
         <button id="save-json" type="button" disabled>設定を保存</button>
         <button id="load-json" type="button" disabled>設定を読み込む…</button>
+        <button id="restore-previous" type="button" hidden>更新前の調整を読み込む</button>
         <input id="json-file" type="file" accept="application/json,.json" hidden>
       </div>
       <p id="file-message" class="note" role="status" aria-live="polite"></p>

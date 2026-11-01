@@ -2,7 +2,8 @@
 
 (() => {
   const $ = id => document.getElementById(id);
-  const storageKey = 'fixedcam-crt-tuner-v1';
+  const storageKey = 'fixedcam-crt-tuner-adopted-0302';
+  const legacyStorageKey = 'fixedcam-crt-tuner-v1';
   const controls = new Map();
   const inputs = new Map();
   let config;
@@ -221,7 +222,7 @@
   }
 
   function loadBaseline() {
-    $('baseline-caption').textContent = `変更前の基準 · カメラ ${camera} · ${config.baseLabel}`;
+    $('baseline-caption').textContent = `本編の採用値 · カメラ ${camera} · ${config.baseLabel}`;
     loadImage('baseline', `/baseline/${encodeURIComponent(camera)}.png`, '基準画像を読み込めません。再接続で読み直せます。');
   }
 
@@ -348,6 +349,7 @@
       camera = config.cameras[0];
       parameters = Object.fromEntries([...controls].map(([key, control]) => [key, normalize(config.defaults[key], control)]));
       try {
+        $('restore-previous').hidden = !localStorage.getItem(legacyStorageKey);
         const saved = localStorage.getItem(storageKey);
         if (saved) {
           const restored = readSettings(JSON.parse(saved));
@@ -356,7 +358,7 @@
           $('file-message').textContent = '前回の調整値を復元しました。';
         }
       } catch {
-        $('file-message').textContent = '前回の設定を復元できなかったため、提案の値で開きました。';
+        $('file-message').textContent = '前回の設定を復元できなかったため、本編の採用値で開きました。';
       }
       buildControls();
       loadBaseline();
@@ -379,6 +381,12 @@
   });
   $('reset-baseline').addEventListener('click', () => applySettings(readSettings({ version: 1, camera, parameters: config.baseline })));
   $('reset-defaults').addEventListener('click', () => applySettings(readSettings({ version: 1, camera, parameters: config.defaults })));
+  $('restore-previous').addEventListener('click', () => {
+    try {
+      applySettings(readSettings(JSON.parse(localStorage.getItem(legacyStorageKey))));
+      $('file-message').textContent = '更新前の調整値を読み込みました。本編の採用値と比較できます。';
+    } catch { $('file-message').textContent = '更新前の調整値を読み込めません。'; }
+  });
   $('save-json').addEventListener('click', () => {
     download(new Blob([JSON.stringify(snapshot(), null, 2) + '\n'], { type: 'application/json' }), `crt-${camera}.json`);
     $('file-message').textContent = '現在の調整値を保存しました。';

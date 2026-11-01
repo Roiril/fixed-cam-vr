@@ -28,7 +28,7 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             public int version = 1;
             public string[] cameras = { "A", "B", "C" };
-            public string baseLabel = "右下（通常加工0.5・明るさ0.85）";
+            public string baseLabel = "本編採用版・枠なし（通常加工0.5）";
             public string unknownParameters = "ignore";
             public Group[] groups = Array.Empty<Group>();
             public ParameterValues defaults = new ParameterValues(), baseline = new ParameterValues();
@@ -236,12 +236,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 return new[]
                 {
                     new Group { id = "center", label = "中心の明るさ", controls = new[] {
-                        Add("centerEv", "中心を明るくする", 0, 1, .01f, 0, "EV", .12f),
-                        Add("centerRadius", "明るくする範囲", .2f, 1.5f, .01f, .8f),
-                        Add("centerFalloff", "外側へのなだらかさ", 1, 6, .1f, 2) } },
+                        Add("centerEv", "中心を明るくする", 0, 1, .01f, CrtSignalProfile.CenterEv, "EV"),
+                        Add("centerRadius", "明るくする範囲", .2f, 1.5f, .01f, CrtSignalProfile.CenterRadius),
+                        Add("centerFalloff", "外側へのなだらかさ", 1, 6, .1f, CrtSignalProfile.CenterFalloff) } },
                     new Group { id = "color", label = "薄い色づけ", controls = new[] {
-                        Add("tintStrength", "色づけの強さ", 0, .2f, .001f, 0, "", .025f),
-                        Add("tintCoolness", "中性色から寒色へ", 0, 1, .01f, .55f) } },
+                        Add("tintStrength", "色づけの強さ", 0, .2f, .001f, CrtSignalProfile.TintStrength),
+                        Add("tintCoolness", "中性色から寒色へ", 0, 1, .01f, CrtSignalProfile.TintCoolness) } },
                     new Group { id = "signal", label = "画面と通常加工", controls = new[] {
                         Add("signalGain", "画面の明るさ", .5f, 1.2f, .01f, CrtSignalProfile.Gain),
                         Add("mono", "通常加工の量", 0, 1, .01f, .5f),
