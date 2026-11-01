@@ -92,6 +92,9 @@ namespace FixedCamVr.Streaming
             }
             if (_material == null || !CrtReferenceScreen.Apply(_material)) return;
             CrtSignalProfile.ApplySelected(_material);
+            CameraFeelFx.WriteUniforms(_material, CrtSignalProfile.NoiseDark, CrtSignalProfile.NoiseFixed,
+                0, 0, ScreenDecayLogic.BlocksFor(CrtSignalProfile.Mono), 0, CrtSignalProfile.Mono);
+            CrtSignalProfile.ApplySelected(_material);
             ReferenceSurfaceActive = true;
             Vector3 scale = transform.localScale;
             scale.x = Mathf.Abs(scale.y) * CrtReferenceScreen.CaseAspect;

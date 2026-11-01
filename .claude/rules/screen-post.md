@@ -54,9 +54,9 @@ paths:
 - 色ノイズは 10 フレームに 1 度引き直して補間し、強さは輝度の粒の 0.55 倍 — `ScreenComposite.frag`（`cn *= rsqrt(...)` / `amp * 0.55`） 〔出典: S:1116-1130〕
 - 固定パターンは乗算 — `_NoiseFixed` 〔出典: S:1222〕
 - ホールドは必ず秒で明け、中止・終了で `ResetAll`。ホールド中は素材の時計も止める — `CameraFeelLogic` / `CameraFeelFx.ResetAll` / `ScreenOverlayController.SetFrozen` 〔出典: S:1113-1114, S:1135-1136〕
-- 通常の画面加工 `Shown` は確定区間で決まる。1-A=0、1-B=1/6、1-C=1/3、2-A 以後=0.5。経過秒と歩行速度は使わない — `ScreenDecayLogic.NormalTargetFor` / `NormalMax` / `ScreenDecayLogicTests.通常加工は滞在秒数に依存せず位置確定時に切り替わる` 〔出典: memory/screen_decay.md、LEDGER 0243〕
+- 通常加工は初期からMono=.5・粗さ固定。暗部ノイズだけ確定区間で.05→.2（1-A〜3-A）。時間で進めない。逆走・人形・解除は`reference/crt-reference-material.md` — LEDGER 0303。
 - 2-C の人形視点は表示中だけ 1。3-A の人形化は乱れの実進捗で 1 へ上がり、4-A の報告まで保持する — `ScreenDecayLogic`（`ScreenDecayShownMode.DollPov/DollMorph/DollHold`） 〔出典: memory/screen_decay.md、LEDGER 0242〕
-- 4-A の締めが報告で進むと `Shown` は 0.5 秒で 0 へ戻る。終了相へ移っても進む — `ScreenDecayLogic.Release` / `ReleaseSec`=0.5 〔出典: memory/screen_decay.md、LEDGER 0083 / 0242〕
+- 4-A の報告でMonoとノイズは0.5秒で採用初期値へ戻る。終了相でも進む — `ScreenDecayLogic.Release` / `ReleaseSec`、LEDGER 0303 / 0083。
 - `Progress` は単調で戻らない（音が読む）。画は `Shown` だけを読む — `ScreenDecayLogic.Progress` / `Shown` 〔出典: S:1419-1430〕
 - 解像度と夜間モードは同じ 1 本で書く — `CameraFeelFx.SetScreenDecay(blocks, progress)` 〔出典: S:1444-1461〕
 - 伝送の痩せは mip で作る。ブロック数は C# が出す（800 → 267）。色差は +1 段 — `ScreenDecayLogic.BlocksFor` / `CoarseLod` / `ChromaLodBias` 〔出典: S:1473-1499、memory/screen_decay.md〕

@@ -58,7 +58,11 @@ namespace FixedCamVr.Streaming
                 _composition.CopyPropertiesFromMaterial(state);
                 // CameraFeel writes its legacy glare in LateUpdate. The selected profile owns only
                 // its fixed optical values; synchronous captures still use current mono/AGC/CG/OSD.
-                if (state.GetFloat("_CrtSignalProfileSelected") > .5f) CrtSignalProfile.ApplySelected(_composition);
+                if (state.GetFloat("_CrtSignalProfileSelected") > .5f)
+                {
+                    CrtSignalProfile.ApplySelected(state);
+                    CrtSignalProfile.ApplySelected(_composition);
+                }
                 // Stable player passes never borrow an Editor diagnostic variant or its auxiliary source.
                 _composition.shaderKeywords = Array.Empty<string>();
                 _composition.SetFloat("_CrtSignalRuntime", 1);

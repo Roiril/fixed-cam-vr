@@ -1,6 +1,6 @@
 # 参照CRT材質の技術詳細
 
-現行実装の契約。0302で、枠なしの開口形状と直前に提示した加工が本編へ採用された。独立評価の96%条件は未達で、ユーザーの採用判定とは分けて記録する。
+現行実装の契約。枠なしの開口形状は0302、ユーザーがWebで調整した現在の加工は0303で本編へ採用された。独立評価の96%条件は未達で、ユーザーの採用判定とは分けて記録する。
 
 - 参照筐体のRGBは元参照のCaseColor、開口alphaはFrameから読む。Reflectance/Glass/Normal/Gradeはlinear、Frame/CaseColorはsRGB。NormalはDefault importerのRGBを自前で[-1,1]へ展開する。参照素材は同じClamp/Trilinear samplerを共有する。
 - 参照画面の通常時は画像由来のISP補正と単調1D曲線を合成済み映像へ掛ける。夜間では通常時の補正を弱め、既存の夜間曲線を保持する。ISPの共通実装は`GradeSensorColor`。
@@ -27,7 +27,11 @@
 
 ## 本編の信号処理
 
-`CrtSignalProfile`が選択された方向の値を持つ。gain .85、warp .06、Gaussian sigma .85/.65/.65、convergence倍率1.8、ImageAdjustment.w=-.32、displayContrast1.16、glare0。0302の採用画像に合わせ、ガラス前のlinear信号へ中心EV .12/radius .8/falloff2、薄い色strength .025/coolness .55を一回だけ適用する。具体値は提示した画像の試作値で、ユーザーの個別数値指定ではない。通常Mono/CoarseBlocksは従来のDirectorから受け取り、.5へ固定しない。
+`CrtSignalProfile`が0303の採用値を持つ。gain .85、warp .155、Gaussian sigma 2.25/.65/.65、convergence倍率10、ImageAdjustment.w=-.32、displayContrast1.16、glare0。ガラス前のlinear信号へ中心EV 3.63/radius 1.68/falloff3、色strength1/coolness1を一回だけ適用する。postはexposure -1.75、contrast1.12、saturation .83、temperature .38、tint0、lift0、vignette1、grain .02、scanline .68。固定ノイズ .098、帯域制限on。これらはユーザーが操作した画面から全23値を取得したもの。採用元JSONと実GPU画像は`G:/マイドライブ/shubie/reports/2026-11-01_screen-profile-adoption/`。
+
+通常Monoは初期から.5、CoarseBlocksはBlocksFor(.5)で固定。暗部ノイズだけが確定したsegmentLapとCourseOrder内indexを読み、`clamp01(((lap-1)*N+index)/(2*N))`で.05→.2へ進む。ABC順は1A=.05、1B=.075、1C=.1、2A=.125、2B=.15、2C=.175、3A=.2。時間と最大到達履歴では進めず、逆走では区間値へ戻る。人形化後は.2を保持する。2Cの実表示中の人形視点と3A人形化では独立にMono1と既存の粗さを使う。解除は共通ReleaseKで初期Mono=.5/ノイズ=.05へ戻し、次の体験者も初期状態から始める。音が読むProgressは変更しない。
+
+Profileの再適用は固定加工だけを所有し、Directorが書いた動的Mono/ノイズ/粗さを上書きしない。CameraFeelFxが実際に描くfeel値を書く。実ノイズと位置目標をテレメトリで対にし、material未解決や後段上書きを検出する。
 
 選択profileは元Frameの開口の50%輪郭に沿って外側をdiscardする。曲面mesh・logical crop・合成UVは変更しない。外側へ色/depthを書かず、映像内部はalpha1を保つ。Transparent blendで内側を現実へ透かさない。開口内の筐体RGBとの境界混合は採用PNGと同じに保つ。
 
@@ -39,7 +43,7 @@
 
 ## Web調整
 
-`tools/unity.ps1 crt-tune`でlocalhost専用のEditor調整を起動する。Web UIは`tools/crt-tuner/`。0300の右下（通常Mono .5、gain .85）を比較用の固定基準にする。スライダーは実Unityのmaterialへ渡し、ブラウザ側の別シェーダで模倣しない。中心/色はEditorと本編で二重適用しない。設定JSONやブラウザの値を本編/Questへ自動保存せず、採用画像の値を明示して本編へ反映する。
+`tools/unity.ps1 crt-tune`でlocalhost専用のEditor調整を起動する。Web UIは`tools/crt-tuner/`。基準と初期値は0303の採用した23値。スライダーは実Unityのmaterialへ渡し、ブラウザ側の別シェーダで模倣しない。中心/色はEditorと本編で二重適用しない。ブラウザ保存値は保持する。設定JSONやブラウザの値を本編/Questへ自動保存せず、採用の指示があったときだけ明示して本編へ反映する。
 
 比較レポートはGoogle Docs: https://docs.google.com/document/d/1IEGXhPRB9DNk19YbKHU3UINeosqQiwHT19fW5GbEf-w/edit
 画像・manifest・PDF検品は`G:/マイドライブ/shubie/reports/2026-10-30_crt-reference/`。0295以降の加工感評価は旧評価と区別する。

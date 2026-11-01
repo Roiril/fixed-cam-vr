@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -3687,7 +3688,9 @@ def analyze(events, others, exp, warns=None):
                          if e.get("ev") == "sum" and e.get("coarse") is not None]
             w(f"  呪いの解除: 視界を戻し始めた（画に出た進み 最小 {min(after):.2f}）"
               if after else "  呪いの解除: 視界を戻し始めた")
-            if after and min(after) > 0.05:
+            adopted_profile = any(e.get("screenProfile") == "web20261101" for e in events)
+            release_target = .5 if adopted_profile else 0
+            if after and min(abs(v - release_target) for v in after) > 0.05:
                 verdict("FAIL", f"呪いが解けたのに視界が戻り切っていない（画の進み {min(after):.2f} 止まり）— "
                                 "ScreenDecayLogic の戻しが途中で止まっている疑い"
                                 "（相が Run を出た所で凍っていないか）")
@@ -3753,6 +3756,29 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", "観測した CG 人形化後の標本で劣化 1 を確認した")
 
     # 導入のあいだは 0 でなければならない（「1 周目の最初は今くらいの解像度」）。
+    adopted = [e for e in events if e.get("ev") == "sum" and e.get("screenProfile") == "web20261101"]
+    if adopted:
+        errors = []
+        for e in adopted:
+            shown, mono, blocks = (fnum(e, k) for k in ("coarseShown", "monoMat", "blocksMat"))
+            noise, actual_noise, pos = (fnum(e, k) for k in ("noiseShown", "noiseMat", "noisePos"))
+            if any(v is None or not math.isfinite(v) for v in (shown, mono, blocks, noise, actual_noise, pos)):
+                errors.append("材質の観測値が不足")
+                continue
+            if abs(mono - shown) > .011 or abs(blocks - (800 + (267 - 800) * shown)) > 1.1:
+                errors.append("mono/粗さが材質へ届いていない")
+            if abs(noise - actual_noise) > .002 or not .049 <= actual_noise <= .201:
+                errors.append("暗部ノイズが材質へ届いていない")
+            if e.get("coarseMode") == "Normal" and (abs(shown - .5) > .011 or abs(noise - pos) > .002):
+                errors.append("通常画の固定mono/位置ノイズが不一致")
+            if e.get("coarseMode") == "DollHold" and abs(noise - .2) > .002:
+                errors.append("人形化後の暗部ノイズが保持されていない")
+        if errors:
+            verdict("FAIL", "採用画面 web20261101: " + "; ".join(sorted(set(errors))))
+        else:
+            verdict("OK", "採用画面 web20261101: 通常mono .5・位置ノイズと実材質が一致")
+    else:
+        w("  画面加工の記録形式: legacy（web20261101 の実材質照合対象外）")
     decay_intro = _decay_nums("coarse", t_to=run_t)
     if decay_intro and max(decay_intro) > 0.001:
         any_effect_key = True

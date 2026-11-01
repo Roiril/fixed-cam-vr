@@ -70,6 +70,7 @@ namespace FixedCamVr.Streaming
         // （設定を書かないと怖くならない、では現場で使われない）。
         private float _noiseDark = ShowFeelDef.DefaultNoiseDark;
         private float _noiseFixed = ShowFeelDef.DefaultNoiseFixed;
+        private float _selectedNoiseDark = CrtSignalProfile.NoiseDark;
         private float _agc = ShowFeelDef.DefaultAgc;
 
         /// <summary>いまの露出バイアス (EV)。診断用。</summary>
@@ -88,7 +89,10 @@ namespace FixedCamVr.Streaming
         /// いま書いている「枠を横切るブロック数」（0 = 量子化していない）。診断用。
         /// 決めるのは <see cref="ScreenDecayLogic"/>、回すのは <see cref="ShowRunDirector"/>。
         /// </summary>
-        public float CoarseBlocks { get; private set; }
+        public float CoarseBlocks { get; private set; } = ScreenDecayLogic.BlocksFor(CrtSignalProfile.Mono);
+        public float AppliedNoiseDark => _material != null ? _material.GetFloat(NoiseDarkId) : -1;
+        public float AppliedMono => _material != null ? _material.GetFloat(MonoId) : -1;
+        public float AppliedBlocks => _material != null ? _material.GetFloat(CoarseBlocksId) : -1;
 
         /// <summary>
         /// 書く先（スクリーンの Renderer のマテリアル）を掴めているか。
@@ -124,7 +128,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 夜間モードへの進み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
         /// **量子化と同じ <see cref="ScreenDecayLogic.Shown"/> を渡す。**
-        /// 通常は 0.5 まで。人形視点と CG 人形化で 1。報告後は量子化と一緒に 0 へ戻る。
+        /// 通常は 0.5 固定。人形視点と CG 人形化で 1。報告後は量子化と一緒に 0.5 へ戻る。
         /// </summary>
         public void SetMono(float progress) => Mono = Mathf.Clamp01(progress);
 
@@ -133,15 +137,16 @@ namespace FixedCamVr.Streaming
         /// <see cref="ShowRunDirector.LateUpdate"/> から呼び、同フレームに確定した素材表示を
         /// 次の描画へ 1 フレーム遅れず渡す。
         /// </summary>
-        public void SetScreenDecay(float blocks, float progress)
+        public void SetScreenDecay(float blocks, float progress, float noiseDark = CrtSignalProfile.NoiseDark)
         {
+            _selectedNoiseDark = Mathf.Clamp(noiseDark, CrtSignalProfile.NoiseDark, CrtSignalProfile.EndNoiseDark);
             SetCoarseBlocks(blocks);
             SetMono(progress);
             Write();
         }
 
         /// <summary>いま書いている夜間モードの進み 0..1。診断用。</summary>
-        public float Mono { get; private set; }
+        public float Mono { get; private set; } = CrtSignalProfile.Mono;
 
         /// <summary>画を止める（カットの <c>hold</c>）。</summary>
         public void Hold(float sec) => _logic.Hold(sec);
@@ -547,11 +552,17 @@ namespace FixedCamVr.Streaming
             // ⚠ 解像度の劣化は <see cref="ResetAll"/> で畳まない。畳むと**終了の瞬間に画が急に鮮明になる**
             //    （終了条件が立ってから走行中の演出を見せ切る猶予がある）。落とすのは体験者の交代だけで、
             //    その号令は ShowRunDirector.BeginRun が ScreenDecayLogic.Reset へ出す。
-            => WriteUniforms(_material, _noiseDark, _noiseFixed,
+        {
+            bool selected = _material != null && _material.HasProperty("_CrtSignalProfileSelected")
+                && _material.GetFloat("_CrtSignalProfileSelected") > .5f;
+            WriteUniforms(_material, selected ? _selectedNoiseDark : _noiseDark,
+                             selected ? CrtSignalProfile.NoiseFixed : _noiseFixed,
                              _logic.ExposureBias * _agc,
                              _echoTex != null ? _logic.Echo : 0f,
                              CoarseBlocks,
                              screen != null ? screen.SourceFrameId : 0f,
                              Mono);
+            if (selected) CrtSignalProfile.ApplySelected(_material!);
+        }
     }
 }

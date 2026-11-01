@@ -19,6 +19,7 @@
 
 | 日付 | slug | 内容 |
 |---|---|---|
+| 11-01 | `live-screen-profile` | Web採用値の本編固定・位置で増える暗部ノイズ・実機検証 |
 | 05-03 | `phase4-offscreen-cg` | スクリーン外 3D 演出 / CG 合成 |
 | 05-03 | `video-fx-research` | 映像加工 / CG 合成手法の検討 |
 | 05-04 | `phase3-onsite-demo` | Phase 3 までの実機デモ統合 |

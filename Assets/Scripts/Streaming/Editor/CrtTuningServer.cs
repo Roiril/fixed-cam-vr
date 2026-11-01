@@ -14,7 +14,7 @@ using Debug = UnityEngine.Debug;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>本編と同じGPU描画を使うローカル調整卓。設定やシーンは保存しない。</summary>
-    public static class CrtTuningServer
+    public static partial class CrtTuningServer
     {
         private const int MaxBody = 64 * 1024;
         [Serializable] private sealed class Config { public PostParams post = new PostParams(); public ShowFeelDef? feel = null; }
@@ -178,6 +178,7 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly RenderTexture _final, _adjusted;
             private readonly Texture2D _readback;
             private readonly CrtSignalProcessor _processor;
+            public Material Material => _material;
 
             public Tuner()
             {
@@ -244,21 +245,21 @@ namespace FixedCamVr.Streaming.EditorTools
                         Add("tintCoolness", "中性色から寒色へ", 0, 1, .01f, CrtSignalProfile.TintCoolness) } },
                     new Group { id = "signal", label = "画面と通常加工", controls = new[] {
                         Add("signalGain", "画面の明るさ", 0, 4, .01f, CrtSignalProfile.Gain),
-                        Add("mono", "通常加工の量", 0, 1, .01f, .5f),
-                        Add("bandwidth", "輝度と色の帯域制限", 0, 1, 1, 1) } },
+                        Add("mono", "通常加工の量", 0, 1, .01f, CrtSignalProfile.Mono),
+                        Add("bandwidth", "輝度と色の帯域制限", 0, 1, 1, CrtSignalProfile.Bandwidth) } },
                     new Group { id = "post", label = "映像の調整", controls = new[] {
-                        Add("exposure", "露出", -10, 10, .01f, post.exposure, "EV"), Add("contrast", "コントラスト", -4, 8, .01f, post.contrast),
-                        Add("saturation", "彩度", -4, 8, .01f, post.saturation), Add("temperature", "色温度", -5, 5, .01f, post.temperature),
-                        Add("tint", "緑とマゼンタ", -5, 5, .01f, post.tint), Add("lift", "黒の明るさ", -1, 1, .001f, post.lift),
-                        Add("vignette", "周辺の暗さ", 0, 1, .01f, post.vignette), Add("grain", "粒の強さ", 0, 4, .01f, post.grain),
-                        Add("scanline", "走査線の強さ", 0, 4, .01f, post.scanline) } },
+                        Add("exposure", "露出", -10, 10, .01f, CrtSignalProfile.Exposure, "EV"), Add("contrast", "コントラスト", -4, 8, .01f, CrtSignalProfile.Contrast),
+                        Add("saturation", "彩度", -4, 8, .01f, CrtSignalProfile.Saturation), Add("temperature", "色温度", -5, 5, .01f, CrtSignalProfile.Temperature),
+                        Add("tint", "緑とマゼンタ", -5, 5, .01f, CrtSignalProfile.Tint), Add("lift", "黒の明るさ", -1, 1, .001f, CrtSignalProfile.Lift),
+                        Add("vignette", "周辺の暗さ", 0, 1, .01f, CrtSignalProfile.Vignette), Add("grain", "粒の強さ", 0, 4, .01f, CrtSignalProfile.Grain),
+                        Add("scanline", "走査線の強さ", 0, 4, .01f, CrtSignalProfile.Scanline) } },
                     new Group { id = "optics", label = "レンズ", controls = new[] {
                         Add("lensWarp", "レンズのゆがみ", -.2f, 1, .001f, CrtSignalProfile.LensWarp),
                         Add("sigmaR", "赤のぼけ", 0, 8, .01f, CrtSignalProfile.Sigma.x, "px"),
                         Add("sigmaGB", "緑と青のぼけ", 0, 8, .01f, CrtSignalProfile.Sigma.y, "px"),
-                        Add("convergenceMultiplier", "色の位置ずれ", -10, 10, .01f, 1.8f) } },
+                        Add("convergenceMultiplier", "色の位置ずれ", -10, 10, .01f, CrtSignalProfile.ConvergenceMultiplier) } },
                     new Group { id = "noise", label = "カメラのノイズ", controls = new[] {
-                        Add("noiseDark", "暗部のノイズ", 0, 2, .001f, feel.NoiseDark), Add("noiseFixed", "固定ノイズ", 0, 2, .001f, feel.NoiseFixed) } }
+                        Add("noiseDark", "暗部のノイズ", 0, 2, .001f, CrtSignalProfile.NoiseDark), Add("noiseFixed", "固定ノイズ", 0, 2, .001f, CrtSignalProfile.NoiseFixed) } }
                 };
             }
 
@@ -291,8 +292,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 if (!_baselineImages.TryGetValue(camera, out byte[] image)) { image = Render(camera, _baseline); _baselineImages.Add(camera, image); }
                 return image;
             }
-            public byte[] Render(string camera, Dictionary<string, float> p)
+            public byte[] Render(string camera, Dictionary<string, float> p, bool adoptedRuntime = false)
             {
+                _material.SetFloat("_CrtSignalProfileSelected", adoptedRuntime ? 1 : 0);
+                _material.SetFloat("_CrtScreenOnly", adoptedRuntime ? 1 : 0);
+                _material.SetFloat("_CrtCenterEv", 0); _material.SetFloat("_CrtTintStrength", 0);
+                _camera.backgroundColor = adoptedRuntime ? Color.clear : Color.black;
                 int index = camera[0] - 'A'; _material.SetTexture("_LiveTex", _photos[index]);
                 CameraFeelFx.WriteUniforms(_material, p["noiseDark"], p["noiseFixed"], _bias[index], 0, p["mono"] > 0 ? ScreenDecayLogic.BlocksFor(p["mono"]) : 0, 0, p["mono"]);
                 _material.SetFloat("_Glare", 0);
@@ -302,14 +307,27 @@ namespace FixedCamVr.Streaming.EditorTools
                 _material.SetFloat("_CrtLensWarp", p["lensWarp"]); _material.SetVector("_CrtPsfSigma", new Vector3(p["sigmaR"], p["sigmaGB"], p["sigmaGB"]));
                 _material.SetVector("_CrtOpticalConvergence", CrtReferenceScreen.OpticalConvergence * p["convergenceMultiplier"]);
                 if (!_processor.PrepareDisplay(_material, index)) throw new InvalidOperationException("Runtime CRT signal could not be prepared");
-                _adjustment.SetFloat("_CenterEv", p["centerEv"]); _adjustment.SetFloat("_CenterRadius", p["centerRadius"]); _adjustment.SetFloat("_CenterFalloff", p["centerFalloff"]);
-                _adjustment.SetFloat("_TintStrength", p["tintStrength"]); _adjustment.SetFloat("_TintCoolness", p["tintCoolness"]);
-                Graphics.Blit(_processor.Processed, _adjusted, _adjustment, 0);
-                _material.SetTexture("_CrtProcessedSignalTex", _adjusted);
+                if (!adoptedRuntime)
+                {
+                    _adjustment.SetFloat("_CenterEv", p["centerEv"]); _adjustment.SetFloat("_CenterRadius", p["centerRadius"]); _adjustment.SetFloat("_CenterFalloff", p["centerFalloff"]);
+                    _adjustment.SetFloat("_TintStrength", p["tintStrength"]); _adjustment.SetFloat("_TintCoolness", p["tintCoolness"]);
+                    Graphics.Blit(_processor.Processed, _adjusted, _adjustment, 0);
+                    _material.SetTexture("_CrtProcessedSignalTex", _adjusted);
+                }
                 // Render the curved screen once, after replacing only its processed signal.
                 Compile(_material); _camera.Render(); Sequence++;
                 RenderTexture? previous = RenderTexture.active;
-                try { RenderTexture.active = _final; _readback.ReadPixels(new Rect(0, 0, _final.width, _final.height), 0, 0); _readback.Apply(); return _readback.EncodeToPNG(); }
+                try
+                {
+                    RenderTexture.active = _final;
+                    if (adoptedRuntime)
+                    {
+                        var rgba = new Texture2D(1280, 1030, TextureFormat.RGBA32, false, false);
+                        try { rgba.ReadPixels(new Rect(0, 0, 1280, 1030), 0, 0); rgba.Apply(); return rgba.EncodeToPNG(); }
+                        finally { UnityEngine.Object.DestroyImmediate(rgba); }
+                    }
+                    _readback.ReadPixels(new Rect(0, 0, _final.width, _final.height), 0, 0); _readback.Apply(); return _readback.EncodeToPNG();
+                }
                 finally { RenderTexture.active = previous; }
             }
             private T Own<T>(T value) where T : UnityEngine.Object { _objects.Add(value); return value; }

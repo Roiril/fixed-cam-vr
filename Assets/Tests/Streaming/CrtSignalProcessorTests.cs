@@ -93,6 +93,7 @@ namespace FixedCamVr.Streaming.Tests
             material.SetFloat("_SrcFrame", 123);
             material.SetFloat("_ExposureBias", -.6f);
             material.SetFloat("_OverlayStrength", .42f);
+            material.SetFloat("_NoiseDark", .175f);
 
             CrtSignalProfile.ApplySelected(material);
 
@@ -101,13 +102,38 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(material.GetFloat("_SrcFrame"), Is.EqualTo(123));
             Assert.That(material.GetFloat("_ExposureBias"), Is.EqualTo(-.6f));
             Assert.That(material.GetFloat("_OverlayStrength"), Is.EqualTo(.42f));
+            Assert.That(material.GetFloat("_NoiseDark"), Is.EqualTo(.175f));
+            Assert.That(material.GetFloat("_Exposure"), Is.EqualTo(-1.75f));
+            Assert.That(material.GetFloat("_Contrast"), Is.EqualTo(1.12f));
             Assert.That(material.GetTexture("_LiveTex"), Is.SameAs(live));
+        }
+
+        [Test]
+        public void PrepareDisplay_AppliesFinalSelectedPostAndPreservesDynamicMonoAndNoise()
+        {
+            Material material = State(Solid(Color.gray));
+            material.SetFloat("_Exposure", 4); material.SetFloat("_Glare", .55f);
+            material.SetFloat("_Mono", 1); material.SetFloat("_NoiseDark", .2f);
+            material.SetFloat("_CoarseBlocks", ScreenDecayLogic.BlocksFor(1));
+            using var processor = new CrtSignalProcessor();
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            Assert.AreEqual(CrtSignalProfile.Exposure, material.GetFloat("_Exposure"));
+            Assert.AreEqual(0, material.GetFloat("_Glare"));
+            Assert.AreEqual(1, material.GetFloat("_Mono"));
+            Assert.AreEqual(.2f, material.GetFloat("_NoiseDark"));
+            Assert.AreEqual(ScreenDecayLogic.BlocksFor(1), material.GetFloat("_CoarseBlocks"));
         }
 
         [Test]
         public void HeldSource_ReusesOnlyPsf_WhileAgcAndOverlayStillChangeThePreGlassImage()
         {
             Material material = State(Solid(new Color(.08f, .04f, .02f, 1)));
+            // Cache/AGC is measured with an unclipped post response, independently of the adopted dark grade.
+            material.SetFloat("_CrtSignalProfileSelected", 0);
+            material.SetFloat("_Exposure", 0); material.SetFloat("_Contrast", 1);
+            material.SetFloat("_Saturation", 1); material.SetFloat("_Temperature", 0);
+            material.SetFloat("_Vignette", 0); material.SetFloat("_Grain", 0);
+            material.SetFloat("_Scanline", 0); material.SetFloat("_NoiseFixed", 0);
             material.SetTexture("_OverlayTex", Solid(new Color(.02f, .3f, .02f, 1)));
             material.SetTexture("_MaskTex", Texture2D.whiteTexture);
             using var processor = new CrtSignalProcessor();

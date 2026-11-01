@@ -155,6 +155,9 @@ $Menus = [ordered]@{
                             Out = 'Assets/Scenes/FxSandbox.unity' }
 
     # ---- Diagnostics 廻リ視（見る・測る）----
+    'crt-selected'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateSelectedProfile'
+                            Desc = 'Web採用画像と本編の初期RGB・輪郭・位置ノイズをGPUで照合する'
+                            Out = $null }
     'crt-reference'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtReferencePreview.Run'
                             Desc = '参照画像から作った本番CRTの材質を実写A-Cで描画し、色・反射・夜間モードを確認'
                             Out = $null }
