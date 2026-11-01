@@ -38,13 +38,22 @@ def atomic_text(path: Path, value: str) -> None:
 
 
 def score(record: dict) -> float:
-    value = record["overall_similarity"]
+    value = record["overall_similarity"] if "overall_similarity" in record else record["similarity_percent"]
     if isinstance(value, str):
         value = value.rstrip("%")
     value = float(value)
     if not 0 <= value <= 100:
         raise ValueError(value)
     return value
+
+
+def reviewed_hash(record: dict, selected: Path) -> str:
+    value = record.get("candidate_sha256")
+    if isinstance(value, dict):
+        value = value.get(str(selected)) or value.get(selected.name)
+    if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdefABCDEF" for c in value):
+        raise ValueError(f"Review must identify the selected file with SHA-256: {selected}")
+    return value.lower()
 
 
 def run(args: list[str]) -> dict:
@@ -136,6 +145,8 @@ def build(still_base: Path, still_image: Path, still_preview: Path, still_proces
     image_edit = processing.get("kind") == "image_edit_mockup"
     if image_edit and still.get("geometry_preserved") is not True:
         raise ValueError("Image-edit still must pass the independent geometry check")
+    if processing.get("round") in (32, 33, 34, 36) and (still.get("geometry_preserved") is not True or still.get("content_preserved") is not True):
+        raise ValueError("Selected still must pass independent geometry and content checks")
     motion = json.loads(motion_audit.read_text(encoding="utf-8"))
     scores = [score(still), score(motion)]
     complete = min(scores) >= 85
@@ -147,7 +158,9 @@ def build(still_base: Path, still_image: Path, still_preview: Path, still_proces
         raise ValueError("Exploratory target evaluation cannot satisfy the completion condition")
     if still.get("selected_candidate_path") and Path(still["selected_candidate_path"]).resolve() != still_image.resolve():
         raise ValueError("Selected still differs from independently evaluated still")
-    if still.get("candidate_sha256") and still["candidate_sha256"].lower() != sha(still_image):
+    if still.get("selected_image") and Path(still["selected_image"]).resolve() != still_image.resolve():
+        raise ValueError("Selected still differs from independently evaluated image")
+    if reviewed_hash(still, still_image) != sha(still_image):
         raise ValueError("Selected still hash differs from independently evaluated still")
     if not still_preview.is_file():
         raise FileNotFoundError(still_preview)
@@ -158,7 +171,7 @@ def build(still_base: Path, still_image: Path, still_preview: Path, still_proces
     if not motion_preview.is_file():
         raise FileNotFoundError(motion_preview)
     motion_preview_link = html.escape(motion_preview.relative_to(OUT).as_posix(), quote=True)
-    if motion.get("candidate_sha256") and motion["candidate_sha256"].lower() != sha(movie):
+    if reviewed_hash(motion, movie) != sha(movie):
         raise ValueError("Selected video differs from independently evaluated video")
     movie_probe = run(["ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(movie)])
     motion_release_path = motion_directory / "release-manifest.json"
@@ -181,9 +194,11 @@ def build(still_base: Path, still_image: Path, still_preview: Path, still_proces
     static_scope = "選択した加工は現在の入力に応答するコードで計算しています。方向を探すために作った生成画像は、別の探索記録として残しています。"
     static_check = "静止加工では、OFF時のRGBA一致と開口のalpha不変を検査しました。計算はPythonで行い、切替画面は計算済みの画像を表示します。ライブ映像へ適用したときのちらつきや時間的な安定性は未検証です。最終候補の計算方法と検証値は保存した処理記録に記載しています。"
     static_kind = "追加加工"
+    static_scope_lead = "静止画は計算による加工です。動画版はブラウザで実行する試作です。"
     executable_block = ""
     generation_files = []
     if image_edit:
+        static_scope_lead = "静止画の最終版は画像編集による見た目の試作です。実行できるフィルタ版の最高評価は83%です。動画版はブラウザで実行する試作です。"
         if still_atlas_directory is not None:
             raise ValueError("Image-edit still cannot be presented as an executed atlas filter")
         static_kind = "画像編集による見た目の試作"
@@ -225,6 +240,44 @@ def build(still_base: Path, still_image: Path, still_preview: Path, still_proces
     if processing.get("round") == 28:
         static_method = "参照の輪郭から得た明暗の残差を、横方向の差を計算する短いフィルタへ変換しました。現在の画像の各行へ作用させ、物の明暗差に応じた細線と横へのにじみを作ります。大きな面を同じ濃さの粒で埋めず、細部の多い領域で強く現れるようにしました。"
         static_reference_note += "参照由来の明暗残差を加工素材として使います。元の部屋やキャラクターのRGBを貼り付ける処理はありません。"
+    if processing.get("round") in (30, 31):
+        static_method = "元画像の境界を細く整理した後、1画素高の行ごとに横へ少しずらします。遅れた明暗を重ね、輪郭から細い明暗の対が出るようにしました。既存の矩形の欠けを使う下地は外し、現在の画像から計算しています。"
+    if processing.get("round") in (32, 33, 34):
+        static_kind = "参照の微細模様を転写する見た目試作"
+        static_scope_lead = "静止画は参照の細かな明暗模様を移す見た目試作です。元の映像で使われた加工方法を特定・再現したという結果ではありません。動画版も参照由来の素材を使うブラウザの試作です。"
+        static_method = "参照の窓と机と床から、細かな明暗の模様を小さな素材として取り出しました。現在の画像の輪郭の向きと明暗差が近い部分へ対応させ、高周波の成分を置き換えます。広い無地面への転写は抑え、物の大きな配置が変わらないよう8画素単位の平均を元画像へ合わせました。"
+        static_reference_note = "青い色相とキャラクターは再現対象から外しました。参照の人物を含まない部分から得た明暗模様を素材として使います。細かな成分にも元の配線などの形が残り得るため、加工だけを分離できたとは言えません。"
+        static_scope = "この方式は参照の微細模様を転写する試作です。辞書素材を単独で並べて確認し、元のB画像と比べて物体の追加や消失を検査しました。8画素単位の平均が一致することだけで内容の保持を認定していません。実際の加工原因や、他の映像にも同じ見た目が得られる汎用性は未検証です。"
+        if processing.get("round") == 33:
+            static_method = "現在の画像から明暗の基調を作り、太い矩形の欠けは加えません。その輪郭の向きと明暗差が近い参照の微細模様を対応させます。細線を平均して薄める方式と、境目でつなぐ方式を比較しました。8画素単位の平均は、追加の明暗処理を済ませた下地へ合わせています。元の未追加画像と同じ明るさを保つ方式ではありません。"
+        if processing.get("round") == 34:
+            static_kind = "固定したB画像への合成試作"
+            static_scope_lead = "静止画は固定したB画像への合成試作です。83%の処理出力を下地にし、参照から得た細線の差分を重ねました。任意の映像へ適用するフィルタとしての検証は行っていません。動画版は参照由来の素材を使うブラウザの試作です。"
+            static_method = "輪郭の横ほつれが残る第23版を下地にしました。第33版で作った細線の出力から、その版の下地を引き、明暗の基調を含まない差分を作ります。この差分からさらに大きい変化を取り除き、細い成分だけを重ねました。広い面を静かに保ちながら、床や輪郭の近くへ細い横線を加える構成です。"
+            static_scope = "保存したB画像の組み合わせを使う合成試作です。使った下地と差分の出所をSHA-256付きで記録しました。現在の同じB画像から作った素材を使っていますが、別の映像でも同じ処理が成り立つ汎用性や、ライブ映像での安定性は未検証です。参照の微細模様には元の物体の細線が残り得ます。素材単独と元Bの両方で内容を照合しています。"
+            static_check = "追加した細線をOFFにすると、83%版の下地とRGBAの全画素が一致します。差分を0にした計算でも同じ結果です。最終画像の開口のalphaと透明な部分のRGB、内側2pxは元の現行Bと一致します。元の現行Bへの切替も別に用意しました。Pythonで計算した固定画像の比較であり、時間変化やQuestの実時間性能は未検証です。"
+        dictionary_directory = still_process.parent if processing.get("round") == 32 else OUT / "still/round-32"
+        dictionary_path = dictionary_directory / "dictionary-manifest.json"
+        review_path = dictionary_directory / "dictionary-review.json"
+        material_manifest = json.loads(dictionary_path.read_text(encoding="utf-8"))
+        material_review = json.loads(review_path.read_text(encoding="utf-8"))
+        if material_manifest["source_sha256"] != sha(REFERENCE_IMAGE):
+            raise ValueError("Texture material reference differs from the frozen original")
+        material_files = [dictionary_path, review_path, *sorted(dictionary_directory.glob("dictionary*.npz"))]
+        material_figures = []
+        for filename, expected_hash in material_manifest["sheets"].items():
+            page = dictionary_directory / filename
+            if sha(page) != expected_hash:
+                raise ValueError(f"Dictionary inspection sheet changed: {page}")
+            material_files.append(page)
+            material_figures.append(f'<figure><div class="pixel-box"><img src="{uri(page,"image/png")}" alt="{html.escape(filename)}"></div><figcaption>{html.escape(filename)}。番号と出所を添えた検品表。</figcaption></figure>')
+        material_files.extend(sorted(dictionary_directory.glob("reference-ROI-*.png")))
+        if processing.get("round") == 34:
+            material_files.extend([OUT / "still/round-23/B-standard.png", OUT / "still/round-33/B-dense.png",
+                                   OUT / "still/round-33/B-baseline-protected.png", OUT / "still/round-33/manifest.json"])
+        excluded = material_review["excluded_ids"]
+        excluded_text = " / ".join(str(value) for value in excluded)
+        static_material_block = f'''<div class="wide"><details class="target-study"><summary>参照から得た微細模様の検品表を開く</summary><p>候補は{len(material_manifest['items'])}片。この表には除外した例も含まれます。ID {excluded_text} の{len(excluded)}片は元の物体の角や接続部を連想するため使用しませんでした。人物と文字を含まないROIから採取していますが、残る微細な形にも元の物体の影響はあり得ます。</p>{''.join(material_figures)}</details></div>'''
     sheet = closure_sheet(movie_directory)
     preview = reference_preview()
     target_image = OUT / "target-study/imagegen-target.png"
@@ -232,7 +285,7 @@ def build(still_base: Path, still_image: Path, still_preview: Path, still_proces
     audit_rows = []
     for path in sorted((OUT / "audits").glob("*.json")):
         item = json.loads(path.read_text(encoding="utf-8"))
-        if "overall_similarity" in item:
+        if "overall_similarity" in item or "similarity_percent" in item:
             audit_rows.append(f"<tr><td>{html.escape(path.stem)}</td><td>{score(item):g}%</td></tr>")
     audit_details = "".join(f"<h3>{name}</h3><pre>{html.escape(json.dumps(record, ensure_ascii=False, indent=2))}</pre>"
                             for name, record in (("静止画の最終評価原文", still), ("動画の最終評価原文", motion)))
@@ -251,7 +304,7 @@ button:focus-visible{{outline:2px solid var(--link);outline-offset:4px}}td,th{{v
 </style></head><body><main>
 <div class="wrap"><h1>スクリーンの追加加工<br>動画の動きと閉じ方</h1><p class="meta">2026-11-01 ／ 本編に組み込まない独立試作</p>
 <p class="lead">静止画の加工感は独立評価で{scores[0]:g}%。動画の動きと閉じ方は{scores[1]:g}%でした。{completion_text}本編への組み込みは行っていません。</p>
-<p>{'静止画の最終版は画像編集による見た目の試作です。実行できるフィルタ版の最高評価は83%です。動画版はブラウザで実行する試作です。' if image_edit else '静止画は計算による加工です。動画版はブラウザで実行する試作です。'}</p>
+<p>{static_scope_lead}</p>
 <p>いまの曲面スクリーンとCRT加工を含むUnityの描画結果を固定し、その画素の上に加工を加えました。別スレッドで進んでいるスクリーンの実装とは、編集するファイルを分けています。</p>
 <p>点数は比較担当のサブエージェントが画像と連続コマから判断した主観値です。画素の一致率ではありません。実装担当と評価担当を分け、評価担当へ目標点や前の採点を伝えずに比較しています。</p>
 <div class="actions"><a href="{still_preview_link}">静止画の加工前後を切り替える</a><a href="{motion_preview_link}">動画を再生・シークする</a></div>
@@ -304,8 +357,11 @@ button:focus-visible{{outline:2px solid var(--link);outline-offset:4px}}td,th{{v
 </div></main><script>
 const videos=[document.getElementById('reference-video'),document.getElementById('candidate-video')];
 document.getElementById('pixel-zoom').onclick=function(){{const native=this.getAttribute('aria-pressed')!=='true';this.setAttribute('aria-pressed',String(native));this.textContent=native?'画像を画面幅へ戻す':'画像を原寸で見る';document.querySelectorAll('.pixel-box').forEach(box=>box.classList.toggle('native-pixels',native));}};
-async function playAt(time){{try{{await Promise.all(videos.map(video=>video.error?Promise.reject(video.error):video.readyState?Promise.resolve():new Promise((resolve,reject)=>{{video.addEventListener('loadedmetadata',resolve,{{once:true}});video.addEventListener('error',reject,{{once:true}});}})));for(const video of videos){{video.pause();video.currentTime=time;}}const results=await Promise.allSettled(videos.map(v=>v.play()));document.getElementById('play-status').textContent=results.some(r=>r.status==='rejected')?'再生できない動画は各プレイヤーの再生ボタンを押してください。':'同じ時刻から再生しています。ブラウザによる僅かな同期ずれは生じます。';}}catch{{document.getElementById('play-status').textContent='動画を読み込めません。元のMP4を確認してください。';}}}}
-document.getElementById('play-both').onclick=()=>playAt(0);document.getElementById('ending-both').onclick=()=>playAt(11);document.getElementById('pause-both').onclick=()=>videos.forEach(v=>v.pause());
+let syncFrame=0,playRequest=0;
+function stopSync(){{cancelAnimationFrame(syncFrame);syncFrame=0;}}
+function followReference(){{const [reference,candidate]=videos;if(reference.paused||reference.ended){{stopSync();return;}}if(!candidate.paused&&!candidate.ended&&!candidate.seeking&&Math.abs(candidate.currentTime-reference.currentTime)>.08)candidate.currentTime=Math.min(reference.currentTime,candidate.duration);syncFrame=requestAnimationFrame(followReference);}}
+async function playAt(time){{const request=++playRequest;stopSync();try{{await Promise.all(videos.map(video=>video.error?Promise.reject(video.error):video.readyState?Promise.resolve():new Promise((resolve,reject)=>{{video.addEventListener('loadedmetadata',resolve,{{once:true}});video.addEventListener('error',reject,{{once:true}});}})));if(request!==playRequest)return;for(const video of videos){{video.pause();video.currentTime=time;}}const results=await Promise.allSettled(videos.map(v=>v.play()));if(request!==playRequest)return;const rejected=results.some(r=>r.status==='rejected');if(!rejected){{videos[1].currentTime=videos[0].currentTime;followReference();}}document.getElementById('play-status').textContent=rejected?'再生できない動画は各プレイヤーの再生ボタンを押してください。':'同じ時刻から再生しています。参照動画に合わせて同期ずれを補正します。';}}catch{{document.getElementById('play-status').textContent='動画を読み込めません。元のMP4を確認してください。';}}}}
+document.getElementById('play-both').onclick=()=>playAt(0);document.getElementById('ending-both').onclick=()=>playAt(11);document.getElementById('pause-both').onclick=()=>{{++playRequest;stopSync();videos.forEach(v=>v.pause());}};
 </script></body></html>'''
     atomic_text(report_path, document)
     inputs = [REFERENCE_IMAGE, REFERENCE_VIDEO, baseline_source, before, still_image, still_process, movie, still_audit, motion_audit,
@@ -315,8 +371,9 @@ document.getElementById('play-both').onclick=()=>playAt(0);document.getElementBy
                 "scores_are_subjective": True, "integrated_into_production": False,
                 "selected_motion_input": motion_input,
                 "report": {"path": report_path.name, "sha256": sha(report_path), "bytes": report_path.stat().st_size},
-                "selected_still_kind": processing.get("kind", "computed_filter"),
-                "executable_still_filter_highest_similarity": 83 if image_edit else scores[0],
+                "selected_still_kind": "fixed_input_composite" if processing.get("round") == 34 else "reference_microtexture_transfer" if processing.get("round") in (32, 33) else processing.get("kind", "computed_filter"),
+                "legacy_still_filter_highest_similarity": 83 if processing.get("round") in (32, 33, 34) else None,
+                "executable_still_filter_highest_similarity": 83 if image_edit or processing.get("round") == 34 else scores[0],
                 "image_generation": {"mode": "built-in image_gen", "selected_still_is_image_edit": image_edit,
                                      "selected_prompt": str(still_process.parent / "prompt.txt") if image_edit else None,
                                      "exploratory_target": {"excluded_from_pass_candidate": True, "prompt": "target-study/prompt.txt"}},

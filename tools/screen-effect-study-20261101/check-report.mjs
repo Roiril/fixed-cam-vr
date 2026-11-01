@@ -60,8 +60,10 @@ try{
   const media=await evaluate("[...document.querySelectorAll('video')].map(video=>({width:video.videoWidth,height:video.videoHeight,duration:video.duration,error:video.error?.message??null}))");
   if(media.length!==2||media.some(video=>video.error||video.width!==1170||video.height!==540||!Number.isFinite(video.duration)))throw Error(JSON.stringify(media));
   const seek=await evaluate("(async()=>{await document.getElementById('ending-both').onclick();document.getElementById('pause-both').onclick();return {times:[...document.querySelectorAll('video')].map(video=>video.currentTime),status:document.getElementById('play-status').textContent};})()");
-  if(seek.times.some(time=>time<10.9||time>11.5)||!seek.status)throw Error(JSON.stringify(seek));
-  results.push({media,seek});
+  if(seek.times.some(time=>time<10.9||time>11.5)||Math.abs(seek.times[0]-seek.times[1])>.05||!seek.status)throw Error(JSON.stringify(seek));
+  const playback=await evaluate("(async()=>{await document.getElementById('ending-both').onclick();await new Promise(resolve=>setTimeout(resolve,700));document.getElementById('pause-both').onclick();return {times:[...document.querySelectorAll('video')].map(video=>video.currentTime),paused:[...document.querySelectorAll('video')].every(video=>video.paused)};})()");
+  if(!playback.paused||playback.times.some(time=>time<11.5||time>12.5)||Math.abs(playback.times[0]-playback.times[1])>.12)throw Error(JSON.stringify(playback));
+  results.push({media,seek,playback});
   for(const [name,width,dark] of [['desktop-light',1400,false],['mobile-light',375,false],['mobile-dark',375,true]]){
     await call('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<500});
     await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:dark?'dark':'light'}]});
@@ -89,6 +91,10 @@ try{
   await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
   const shot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
   fs.writeFileSync(path.join(output,`${prefix}-still-comparison.png`),Buffer.from(shot.data,'base64'));
+  await evaluate("document.getElementById('reference-video').closest('.wide').scrollIntoView()");
+  await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+  const motionShot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+  fs.writeFileSync(path.join(output,`${prefix}-motion-comparison.png`),Buffer.from(motionShot.data,'base64'));
   fs.writeFileSync(path.join(output,`${prefix}-layout-check.json`),JSON.stringify(results,null,2));
   console.log(JSON.stringify(results));
 } finally {
