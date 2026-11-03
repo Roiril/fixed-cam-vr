@@ -512,7 +512,7 @@ namespace FixedCamVr.Streaming
             var timeline = FindObjectOfType<TimelineDirector>();
             if (timeline != null)
             {
-                info.segmentLap = timeline.CurrentLap;
+                info.segmentLap = timeline.SegmentLap;
                 info.activeTake = timeline.ActiveTakeId;
                 info.activeStepCue = timeline.ActiveStepCueId;
             }

@@ -13,7 +13,7 @@ metadata:
 「体験者は引き返す」。
 
 **周回数は 2 つある。混ぜると片方が必ず壊れる。**
-`LapCounterLogic.CurrentLap`（進行・単調増加・終了判定）と `SegmentLap`（区間・逆走で戻る・
+`LapCounterLogic.ProgressLap`（進行・単調増加・終了判定。2026-11-03 まで `CurrentLap`）と `SegmentLap`（区間・逆走で戻る・
 演出／録画／post／BGM の区間キー）。`CueScheduler.CameraEntered` を 3 引数にして、
 購読者にどちらかを**コンパイラが選ばせる**。`ShowRunDirector.NotifyLap` へ区間の周を渡すと、
 帰りの A で 1 区間引き返した瞬間に**体験が終わらなくなる**（出口は `lap > totalLaps` の 1 本だけ）。

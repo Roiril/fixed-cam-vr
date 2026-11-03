@@ -270,6 +270,18 @@ li{margin-bottom:8px}
 <li><code>SegmentLap</code> を読むべき場所（演出・録画・BGM・滞在・画面の劣化）は、すべて区間の周を読んでいました。終了判定は進行の周を読んでいました。名前は危ういですが、いまの実装は正しく使い分けています。</li>
 </ul>
 
+<h2>直したこと（2026-11-03）</h2>
+<ul>
+<li>終幕の報告数の照合。画面に組んだ数を <code>ev=outro repN=</code> に出し、押した回数と比べる形にした。画面が内部の集計を出していたら落ちることをテストで確かめた。</li>
+<li>周の名前。区間の周の <code>CurrentLap</code> を <code>SegmentLap</code> に、進行の周の <code>CurrentLap</code> を <code>ProgressLap</code> に変えた。<code>CurrentLap</code> という名前はもう無い。</li>
+<li>ログのキー。<code>lap=</code> はどの行でも区間の周、<code>plap=</code> はどの行でも進行の周にした。解析器は古いログも読める。</li>
+<li><code>RunReset</code> を <code>LapCountReset</code> に改名した。購読者が 1 つだけで、その購読者は 3 つの場面すべてで周を数え直す必要があるため、分けずに役目どおりの名前にした。</li>
+<li>最後の A の判定を <code>ShowRunDefaults.IsClosingSegment</code> の 1 か所にまとめた。卓と照合する式と一致することをテストで固定した。</li>
+<li>人形の判定は動作を変えず、「代役以外はすべて人形」という規則をコメントに書いた。</li>
+<li>古い文書（3 周目の背景・終わり方の出口の数・壁・件数）とコメントを直した。用語の対応表を <code>.claude/rules/glossary.md</code> に置いた。</li>
+</ul>
+<p>あなたの言葉そのもの（カメラ・A・webUI など）は変えていません。右端の空欄に書いてもらえたら、用語の対応表に反映します。</p>
+
 <h2>調べ方の限界</h2>
 <ul>
 <li>あなたの言葉は LEDGER に残った逐語だけです。チャットで話して LEDGER に入らなかった言葉は数えていません。CLAUDE.md の「本体」「fixedcam」は、そちらで使っているのかもしれません。</li>

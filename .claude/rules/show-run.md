@@ -50,7 +50,9 @@ paths:
 - 本編へ入る条件は「導入演出が終わった ∧ スタート区間 ∧ 中止でない ∧ introMinSec 経過」。スタッフの明示操作は常に通す — `ShowRunLogic.Tick(introCompleted, introAborted)` / `IntroDirector.Completed` 〔出典: show-design:409-427, 963-981〕
 - 導入・終了の間、区間進行を止めるのは 1 点だけ。カメラ切替は止めない — `CueScheduler.SetShowGate` 〔出典: streaming:804-806〕
 - 導入 → 本編は録画を消さない。新しい体験者の号令元は卓と現地の 2 つで、体験 1 回ぶんの状態はどちらからも `BeginRun` で落とす — `ShowControlClient.BeginMainRun` / `TriggerRunReset` / `BeginNewVisitorRunLocal` / `ShowRunDirector.BeginRun` 〔出典: memory/show_run_skeleton.md〕
-- 周は 2 つ。進行の周は単調増加で終了判定に使う。区間の周は引き返すと戻り、演出・録画・post・BGM の区間キーになる — `LapCounterLogic.CurrentLap` / `SegmentLap` / `CueScheduler.CameraEntered(camera, segmentLap, progressLap)` 〔出典: streaming:443-457〕
+- 周は 2 つ。進行の周は単調増加で終了判定に使う。区間の周は引き返すと戻り、演出・録画・post・BGM の区間キーになる。コードの名前は進行が `ProgressLap`、区間が `SegmentLap` で、`CurrentLap` という名前は使わない — `LapCounterLogic.ProgressLap` / `SegmentLap` / `TimelineDirector.SegmentLap` / `CueScheduler.CameraEntered(camera, segmentLap, progressLap)` 〔出典: streaming:443-457〕
+- テレメトリのキーは `lap=` が常に区間の周、`plap=` が常に進行の周。解析器は旧ログのため `plap` が無ければ `lap` に落ちる — `ShowTelemetryHost.OnZoneCommitted` 〔コード〕
+- `ShowControlClient.LapCountReset` は周の数え直しの合図で、新しい体験者（卓・現地）と導入から本編へ移るときの 3 か所で発火する。体験者が替わった合図として購読しない — `BeginMainRun` 〔コード〕
 - 前進は `prev == order[pos] && cam == order[pos+1]` のときだけ。`order[0]` へ戻ると lap++。区間の周は進行の周を超えない — `LapCounterLogic.Feed` / `LapCounterTests.SegmentLap_NeverExceedsProgressLap` 〔出典: streaming:460-466〕
 - 周回の時計は dwell 0.5s で確定し、画面の凍結・dip・卓の固定に左右されない — `ZoneProgressionLogic.DefaultDwellSec` / `CameraSwitchDirector.ZoneCommitted` 〔出典: streaming:436-441〕
 - 到達可能な区間は `lap <= totalLaps || (lap == totalLaps+1 && cam == order[0])` — `ShowRunReach.IsSegmentReachable` / `ShowRunReachTests` 〔出典: streaming:758-767〕

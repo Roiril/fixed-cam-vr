@@ -289,8 +289,8 @@ namespace FixedCamVr.Streaming
             ApplyGate();
             // ⚠⚠ **ゲートを閉じた「後」にもう一度武装を落とす**（2026-08-30）。
             //    ラン開始の号令元（`ShowControlClient.TriggerRunReset` / `BeginNewVisitorRunLocal`）は
-            //    `timelineDirector.ResetRun()` → `RunReset?.Invoke()` → ここ、の順で走る。
-            //    中央の `RunReset` は `LapCounter.ResetRun` → `SeedCurrentZone` →
+            //    `timelineDirector.ResetRun()` → `LapCountReset?.Invoke()` → ここ、の順で走る。
+            //    中央の `LapCountReset` は `LapCounter.ResetRun` → `SeedCurrentZone` →
             //    `CueScheduler.NotifyCameraEntered` → `TakeRunnerLogic.ArmEnterTakes` まで届くが、
             //    **その時点ではまだ前の相のゲートが開いている**（閉じるのは直上の `ApplyGate`）。
             //    ＝ 前の体験者が本編を走っている最中にラン開始を押すと、シード先のカメラに
@@ -299,7 +299,7 @@ namespace FixedCamVr.Streaming
             //    watchdog（既定 45 秒）まで導入の裏で居座る。
             //    号令元の順序を入れ替える手もあるが、**導入を挟まない設定**（`introEnabled:false`）では
             //    `_logic.BeginRun()` が即 `RunBegan` を返して `OnRunBegan` → `BeginMainRun` →
-            //    `RunReset` が走るので、号令元の残りと二重リセットになる。ここで落とす方が安全。
+            //    `LapCountReset` が走るので、号令元の残りと二重リセットになる。ここで落とす方が安全。
             RuntimeHealth.Step("timeline", () => timelineDirector?.ResetRun());
             // ⚠⚠ **録画係も同じ理由でここで落とす**（2026-09-04）。上の演出と同型で、こちらは
             //    **録画**が導入中に開く。開いてしまうと本編で開き直せないので

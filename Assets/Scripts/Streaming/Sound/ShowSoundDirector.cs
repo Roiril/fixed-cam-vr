@@ -549,7 +549,7 @@ namespace FixedCamVr.Streaming
                 s.camera = _timeline.CurrentCamera;
                 // ⚠ **区間の周**を読む（進行の周ではない・`rules/show-design.md`「周回数は 2 つある」）。
                 //    呪いの 2 本は「体験者がいま居る区間」で決まる。
-                s.lap = _timeline.CurrentLap;
+                s.lap = _timeline.SegmentLap;
             }
             // ⚠ **呪いが排除されたか**（0129 / 0131）。画が戻るのと同じ 1 本を読む。
             if (_run != null) s.curseReleased = _run.ScreenDecayReleased;

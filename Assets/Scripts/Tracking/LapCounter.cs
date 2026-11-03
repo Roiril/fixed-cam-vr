@@ -11,7 +11,7 @@ namespace FixedCamVr.Tracking
     ///
     /// <b>周回数は 2 つある。</b>混ぜると必ず事故になるので、名前で分けてある（2026-08-17）:
     ///
-    ///   - <see cref="CurrentLap"/>（<b>進行の周</b>）= 進行ポインタが数えた周。**単調増加で減らない**。
+    ///   - <see cref="ProgressLap"/>（<b>進行の周</b>）= 進行ポインタが数えた周。**単調増加で減らない**。
     ///     体験の終了判定（<c>lap &gt; totalLaps</c>）・StatusHud の「N周目／全3周」・heartbeat が読む
     ///   - <see cref="SegmentLap"/>（<b>区間の周</b>）= <b>いま体験者が居る区間</b>の周。**逆走で戻る**。
     ///     演出・区間 post・区間 BGM・端末内録画・実測滞在が読む区間キー (lap, camera) の lap
@@ -59,11 +59,11 @@ namespace FixedCamVr.Tracking
         /// <b>進行の周</b>（1 始まり・単調増加）。順方向に 1 周踏破したときだけ上がる。
         /// 終了判定・HUD・heartbeat 用。区間キーには <see cref="SegmentLap"/> を使うこと。
         /// </summary>
-        public int CurrentLap => _lap;
+        public int ProgressLap => _lap;
 
         /// <summary>
         /// <b>区間の周</b> ＝ 直近の <see cref="Feed"/> / <see cref="Seed"/> で確定した区間の周。
-        /// 順方向なら <see cref="CurrentLap"/> と同じ。逆走なら「前にそのカメラに居たときの周」。
+        /// 順方向なら <see cref="ProgressLap"/> と同じ。逆走なら「前にそのカメラに居たときの周」。
         /// </summary>
         public int SegmentLap => _segLap;
 
@@ -173,7 +173,7 @@ namespace FixedCamVr.Tracking
                  "null なら registry.ActiveChanged を無差別購読（従来挙動）。")]
         [SerializeField] private CameraSwitchDirector? director;
 
-        [Tooltip("巡回順（layout.course.order）と CourseChanged / RunReset の供給元。")]
+        [Tooltip("巡回順（layout.course.order）と CourseChanged / LapCountReset の供給元。")]
         [SerializeField] private ShowControlClient? showControl;
 
         [Tooltip("進入イベントを橋渡しするスケジューラ。null なら周回カウントのみ行う。")]
@@ -195,7 +195,10 @@ namespace FixedCamVr.Tracking
         /// <b>進行の周</b>（1 始まり・単調増加）。HUD・heartbeat・終了判定が読む。
         /// 区間キーの周は <see cref="LapCounterLogic.SegmentLap"/>（逆走で戻る）で、別物。
         /// </summary>
-        public int CurrentLap => _logic.CurrentLap;
+        public int ProgressLap => _logic.ProgressLap;
+
+        /// <summary><b>区間の周</b>（逆走で戻る）。テレメトリ <c>ev=zone lap=</c> が読む。</summary>
+        public int SegmentLap => _logic.SegmentLap;
 
         /// <summary>コース順（order）内の現在確定位置。StatusHud の「次の cue」照会に渡す。</summary>
         public int Position => _logic.Position;
@@ -213,9 +216,9 @@ namespace FixedCamVr.Tracking
             if (showControl != null)
             {
                 showControl.CourseChanged += OnCourseChanged;
-                showControl.RunReset += OnRunReset;
-                _lapProvider ??= () => _logic.CurrentLap;
-                showControl.CurrentLapProvider = _lapProvider;
+                showControl.LapCountReset += OnLapCountReset;
+                _lapProvider ??= () => _logic.ProgressLap;
+                showControl.ProgressLapProvider = _lapProvider;
             }
             _subscribed = true;
         }
@@ -228,15 +231,15 @@ namespace FixedCamVr.Tracking
             if (showControl != null)
             {
                 showControl.CourseChanged -= OnCourseChanged;
-                showControl.RunReset -= OnRunReset;
-                if (ReferenceEquals(showControl.CurrentLapProvider, _lapProvider))
-                    showControl.CurrentLapProvider = null;
+                showControl.LapCountReset -= OnLapCountReset;
+                if (ReferenceEquals(showControl.ProgressLapProvider, _lapProvider))
+                    showControl.ProgressLapProvider = null;
             }
             _subscribed = false;
         }
 
         // runEpoch 変化（Web の「ラン開始」）を ShowControlClient から受けて周回・cue をリセットする。
-        private void OnRunReset() => ResetRun();
+        private void OnLapCountReset() => ResetRun();
 
         private void Start() => ApplyOrder();
 
@@ -293,7 +296,7 @@ namespace FixedCamVr.Tracking
                 ? zoneCam
                 : registry.ActiveIndex;
             int segLap = _logic.Seed(camera);
-            cueScheduler?.NotifyCameraEntered(camera, segLap, _logic.CurrentLap);
+            cueScheduler?.NotifyCameraEntered(camera, segLap, _logic.ProgressLap);
         }
 
         private void OnCourseChanged() => ApplyOrder();
@@ -302,12 +305,12 @@ namespace FixedCamVr.Tracking
         {
             bool advanced = _logic.Feed(camera);
             if (logChanges && advanced)
-                Debug.Log($"[LapCounter] lap → {_logic.CurrentLap}（camera={camera} でスタート領域へ復帰）");
-            if (logChanges && _logic.SegmentLap != _logic.CurrentLap)
+                Debug.Log($"[LapCounter] lap → {_logic.ProgressLap}（camera={camera} でスタート領域へ復帰）");
+            if (logChanges && _logic.SegmentLap != _logic.ProgressLap)
                 Debug.Log($"[LapCounter] 引き返し: camera={camera} は {_logic.SegmentLap} 周目の区間として扱う" +
-                          $"（進行は {_logic.CurrentLap} 周目）");
+                          $"（進行は {_logic.ProgressLap} 周目）");
             // lap を更新した後に進入を橋渡しする（scheduler は最新 lap で評価される）。
-            cueScheduler?.NotifyCameraEntered(camera, _logic.SegmentLap, _logic.CurrentLap);
+            cueScheduler?.NotifyCameraEntered(camera, _logic.SegmentLap, _logic.ProgressLap);
         }
 
         private static string FormatOrder(int[] order)

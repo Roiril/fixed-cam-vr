@@ -102,7 +102,7 @@ namespace FixedCamVr.Streaming.Recording
         /// 最後に開いた区間の周（1 始まり・まだ 1 度も開いていなければ -1）。
         /// <b>画面に映っているカメラとは別物</b>（演出中は食い違う）。診断・テレメトリ用。
         /// </summary>
-        public int CurrentLap => _curLap;
+        public int SegmentLap => _curLap;
 
         /// <summary>最後に開いた区間の録画対象カメラ index（まだ開いていなければ -1）。</summary>
         public int CurrentCamera => _curCamera;
@@ -218,8 +218,8 @@ namespace FixedCamVr.Streaming.Recording
         /// <summary>
         /// <b>epoch を進めずに、開いてしまった書き手を閉じて捨てる。</b>
         ///
-        /// ⚠⚠ ラン開始の号令は `RunReset?.Invoke()` → <c>ShowRunDirector.BeginRun</c> の順で走るが、
-        ///   <c>RunReset</c> の時点では**ゲートがまだ前の相のまま開いている**（閉じるのは
+        /// ⚠⚠ ラン開始の号令は `LapCountReset?.Invoke()` → <c>ShowRunDirector.BeginRun</c> の順で走るが、
+        ///   <c>LapCountReset</c> の時点では**ゲートがまだ前の相のまま開いている**（閉じるのは
         ///   <c>BeginRun</c> の中の <c>ApplyGate</c>）。そのため周回リセットの再シードが
         ///   <c>OnCameraEntered</c> までそのまま届き、**導入中に lap=1 の区間が開く**。
         ///   本編に入って再シードされても <see cref="SegmentAlreadyRecorded"/> が「録画済み」と

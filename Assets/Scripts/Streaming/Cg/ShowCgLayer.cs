@@ -219,6 +219,10 @@ namespace FixedCamVr.Streaming.Cg
         /// <summary>
         /// 「いま出ている CG を<b>人形</b>として読んでよいか」の判定（純関数・テストで固定）。
         /// 実体を持たないので <see cref="Tests"/> から直接呼べる。
+        ///
+        /// ⚠ <b>規則は「人の代役（visitor）以外はすべて人形」。</b>show.json の actors は doll と visitor の 2 つだけなので
+        /// これで足りる。人形でも代役でもない CG（小物・別の人物など）を actors に足すときは、
+        /// ここが人形として扱い、笑い声と入れ替わりの判定に入れてしまう。そのときはここを直す。
         /// </summary>
         public static bool IsDoll(bool visible, string actorId)
             => visible && !string.IsNullOrEmpty(actorId) && actorId != TakeSchema.SwapHumanActorId;

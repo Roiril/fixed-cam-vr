@@ -171,7 +171,7 @@ namespace FixedCamVr.Tracking
                     trace.Add(new Event { kind = "zone", t = tMs, a = zoneCam, b = -1, id = "" });
 
                     if (lap.Feed(zoneCam))
-                        trace.Add(new Event { kind = "lap", t = tMs, a = lap.CurrentLap, b = -1, id = "" });
+                        trace.Add(new Event { kind = "lap", t = tMs, a = lap.ProgressLap, b = -1, id = "" });
 
                     // 区間キーは **区間の周**（逆走で戻る）。`lap` イベントは進行の周のまま
                     // （卓の表示は「N周目／全3周」なので単調でなければ読めない）。

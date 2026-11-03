@@ -59,7 +59,7 @@ namespace FixedCamVr.Streaming
                 return;
             }
             if (!_promptReadable) return;
-            if (outsideClosingArea || (segmentKnown && (lap != 4 || camera != 0))
+            if (outsideClosingArea || (segmentKnown && !ShowRunDefaults.IsClosingSegment(lap, camera))
                 || now - _promptReadableAt >= PromptLimitSec)
                 Outcome = ShowEndingOutcome.Trapped;
         }

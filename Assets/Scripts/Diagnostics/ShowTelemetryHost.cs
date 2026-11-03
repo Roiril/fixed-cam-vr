@@ -331,7 +331,7 @@ namespace FixedCamVr.Diagnostics
                 _recorder.SegmentClosed += OnRecSegmentClosed;
                 _subRec = true;
                 // 録画係は show.json 適用時に生まれるので、解決が遅れて最初の開始を取り逃すことがある。
-                if (_recorder.IsRecording) OnRecSegmentOpened(_recorder.CurrentLap, _recorder.CurrentCamera);
+                if (_recorder.IsRecording) OnRecSegmentOpened(_recorder.SegmentLap, _recorder.CurrentCamera);
             }
         }
 
@@ -359,8 +359,13 @@ namespace FixedCamVr.Diagnostics
         // ---------------------------------------------------------------- イベント
 
         // ショーの時計（人の居場所）。画面が演出で塞がっていても進むのが正しい挙動。
+        //
+        // ⚠⚠ **キー名の約束: `lap=` は常に区間の周（逆走で戻る）、`plap=` は常に進行の周（単調増加）。**
+        //   どの ev でも同じ。2026-11-03 までは ev=zone / phase / mark / comms / sum の `lap=` が進行の周で、
+        //   ev=seg / commsInvasion / rec の `lap=` が区間の周だった（同じキーで意味が逆）。
+        //   解析器は旧ログのため `plap` が無ければ `lap` に落ちて読む。
         private void OnZoneCommitted(int camera)
-            => Emit($"ev=zone cam={camera} lap={(_lap != null ? _lap.CurrentLap : -1)}");
+            => Emit($"ev=zone cam={camera} lap={(_lap != null ? _lap.SegmentLap : -1)} plap={(_lap != null ? _lap.ProgressLap : -1)}");
 
         // 画面の切替（誰が画面を握ったか）。src=Zone/Manual/Override/Insert/External。
         private void OnSwitchCommitted(int camera, CameraSwitchDirector.SwitchSource src)
@@ -376,7 +381,7 @@ namespace FixedCamVr.Diagnostics
             => Emit($"ev=seg lap={lap} cam={camera} plap={progressLap}");
 
         private void OnPhaseChanged(ShowPhase phase)
-            => Emit($"ev=phase v={phase} lap={(_run != null ? _run.Lap : -1)} " +
+            => Emit($"ev=phase v={phase} plap={(_run != null ? _run.Lap : -1)} " +
                     $"elapsed={(_run != null ? _run.RunElapsedSec : 0f):F1}");
 
         private void OnActiveChanged(int index) => Emit($"ev=active cam={index}");
@@ -837,12 +842,15 @@ namespace FixedCamVr.Diagnostics
                      // ⚠ 周回の壊れ（commsGl / commsGlMat）は **`ev=sum` の側**に出す。
                      //   ここ（`ev=outro`）は終幕の縁でしか出ないので、判定の材料にならない。
                      $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
+                     // repN = 結果画面に実際に組んだ分子（OutroReport.CapturedReports）。組む前は -1。
+                     // 解析器はこれを ev=mark n= の最後の値と照合する（marks は今の押下数で、画に出た値ではない）。
+                     $"repN={(_report != null && _report.Presented ? _report.CapturedReports : -1)} " +
                      $"ending={(_run != null ? _run.EndingOutcome.ToString() : "-")} " +
                      $"endingLeft={(_run != null && _run.EndingTrappedByLeftHalf ? 1 : 0)} " +
                      $"anomalyTotal={(_show != null ? _show.TotalAnomalyCount : -1)} " +
                      $"promptAge={(_run != null ? _run.ClosingPromptElapsedSec : -1f):F2} " +
                      // anomalies = 報告した異変の数（同じ演出は 1・`canon/LEDGER.md` 0234）。
-                     // 内部の重複除外件数。結果画面の分子は marks、分母は anomalyTotal。
+                     // 画面に出さない内部の集計。結果画面の分子は repN（押した回数・0247）、分母は anomalyTotal。
                      $"anomalies={(_show != null ? _show.ReportedAnomalyCount : -1)} " +
                      // 合図（run.outro.afterTakeId）が武装したか / 撃ったか。
                      // 著作していなければ両方 0 のままで、終わり方は従来どおり。
@@ -856,7 +864,7 @@ namespace FixedCamVr.Diagnostics
             if (_show != null && _show.VisitorMarkCount != _lastMarkCount)
             {
                 _lastMarkCount = _show.VisitorMarkCount;
-                Emit($"ev=mark n={_lastMarkCount} lap={(_run != null ? _run.Lap : -1)} " +
+                Emit($"ev=mark n={_lastMarkCount} plap={(_run != null ? _run.Lap : -1)} " +
                      $"cam={(_switch != null && _switch.TryGetCurrentZoneCamera(out int mc) ? mc : -1)}"
                      // det = 報告時に異常演出が表示されていたか。通信面の返答はこれで分かれる。
                      // res = 解除処理が通ったか。主映像の解除と進行の診断に残す。
@@ -880,7 +888,7 @@ namespace FixedCamVr.Diagnostics
             {
                 _lastCommsInvasion = _comms.InvasionProgress;
                 Emit($"ev=commsInvasion v={_lastCommsInvasion:F2} " +
-                     $"lap={(_timeline != null ? _timeline.CurrentLap : -1)} " +
+                     $"lap={(_timeline != null ? _timeline.SegmentLap : -1)} " +
                      $"cam={(_timeline != null ? _timeline.CurrentCamera : -1)} " +
                      $"cue={(_timeline != null ? _timeline.ActiveStepCueId : "")} " +
                      $"doll={(_timeline != null && _timeline.DollReplacementShowing ? 1 : 0)}");
@@ -967,7 +975,7 @@ namespace FixedCamVr.Diagnostics
             {
                 _lastCommsPulse = _comms.PulseCount;
                 Emit($"ev=comms id={_comms.LastNotice} n={_lastCommsPulse} " +
-                     $"built={(_comms.IsBuilt ? 1 : 0)} lap={(_run != null ? _run.Lap : -1)} " +
+                     $"built={(_comms.IsBuilt ? 1 : 0)} plap={(_run != null ? _run.Lap : -1)} " +
                      // chars = この文面で鳴るはずの打鍵の数（改行を除く）。
                      // 解析器が合計と `typeN` を突き合わせる（`canon/LEDGER.md` 0056）。
                      $"chars={_comms.NoticeChars} delivery={_comms.Delivery} " +
@@ -1308,7 +1316,7 @@ namespace FixedCamVr.Diagnostics
             if (_run != null)
             {
                 _sb.Append(" phase=").Append(_run.Phase);
-                _sb.Append(" lap=").Append(_run.Lap);
+                _sb.Append(" plap=").Append(_run.Lap);
                 _sb.Append(" run=").Append(_run.RunElapsedSec.ToString("F0"));
                 if (_run.Phase == ShowPhase.Intro)
                     _sb.Append(" intro=").Append(_run.IntroElapsedSec.ToString("F0"));

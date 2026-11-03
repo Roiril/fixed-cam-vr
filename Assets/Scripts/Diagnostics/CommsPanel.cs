@@ -2472,7 +2472,7 @@ namespace FixedCamVr.Diagnostics
         private void ObserveInvasion()
         {
             if (_decayOverride >= 0f || timeline == null) return;
-            _invasion.Observe(timeline.CurrentLap, timeline.CurrentCamera,
+            _invasion.Observe(timeline.SegmentLap, timeline.CurrentCamera,
                               timeline.ActiveStepCueId, timeline.DollReplacementShowing);
         }
 

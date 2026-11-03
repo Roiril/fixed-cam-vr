@@ -36,13 +36,13 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 押した回数（受け付けた報告の数）。締めの猶予（<c>TakeRunnerLogic.MarkGraceSec</c>）で
-        /// 捨てた分は<b>呼ばれない</b>ので入らない。スタッフの面（<c>StatusHud</c>）と
-        /// <c>ev=mark n=</c> が読む。
+        /// 捨てた分は<b>呼ばれない</b>ので入らない。<b>終幕の結果画面の分子はこれ</b>（<c>canon/LEDGER.md</c> 0247）。
+        /// ほかにスタッフの面（<c>StatusHud</c>）と <c>ev=mark n=</c> が読む。
         /// </summary>
         public int PressCount { get; private set; }
 
         /// <summary>
-        /// 報告した異変の数（同じ演出は 1 回だけ）。<b>終幕の「報告した怪異の数」はこれ。</b>
+        /// 報告した異変の数（同じ演出は 1 回だけ）。画面には出さない内部の集計（<c>canon/LEDGER.md</c> 0234）。
         /// </summary>
         public int AnomalyCount => _reported.Count;
 

@@ -52,6 +52,31 @@ class EndingLogTests(unittest.TestCase):
                       for i, ph in enumerate(phases))
         return events
 
+    def report_count_events(self, rep_n):
+        # 同じ演出 L1C1#0 へ 2 回、演出の無い所で 1 回押す → 押した回数 3 / 報告した異変 1
+        marks = [
+            {"ev": "mark", "t": "10", "n": "1", "det": "1", "take": "L1C1#0", "new": "1", "anom": "1"},
+            {"ev": "mark", "t": "11", "n": "2", "det": "1", "take": "L1C1#0", "new": "0", "anom": "1"},
+            {"ev": "mark", "t": "20", "n": "3", "det": "0", "take": "-", "new": "0", "anom": "1"},
+        ]
+        take = [{"ev": "take", "st": "begin", "id": "L1C1#0", "t": "9"}]
+        outro = [{"ev": "outro", "stage": "Report", "t": "30", "marks": "3", "anomalies": "1", "repN": rep_n}]
+        return take + marks + outro
+
+    def test_result_screen_count_matches_presses(self):
+        verdicts = self.verdicts(self.report_count_events("3"))
+        self.assertTrue(any(level == "OK" and "押した 3 回" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "結果画面に出た報告数" in text for level, text in verdicts))
+
+    def test_result_screen_showing_anomaly_count_fails(self):
+        # 画面が内部の集計（異変 1）を出していたら、押した回数 3 と食い違うので落ちる
+        verdicts = self.verdicts(self.report_count_events("1"))
+        self.assertTrue(any(level == "FAIL" and "結果画面に出た報告数（repN=1）" in text for level, text in verdicts))
+
+    def test_result_screen_not_composed_yet_is_not_judged(self):
+        verdicts = self.verdicts(self.report_count_events("-1"))
+        self.assertFalse(any(level == "FAIL" and "結果画面に出た報告数" in text for level, text in verdicts))
+
     def test_farewell_left_of_visitor_passes(self):
         verdicts = self.verdicts(self.farewell_events(["anchoring", "appear", "face", "turn", "retreat", "done"]))
         self.assertTrue(any(level == "OK" and "別れの人形が体験者の左" in text for level, text in verdicts))
@@ -204,6 +229,18 @@ class EndingLogTests(unittest.TestCase):
     def test_closing_mark_before_prompt_readable_fails(self):
         events = [
             {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "0",
+             "invasion": "1", "released": "0", "promptReady": "0"},
+            {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
+             "released": "0", "promptReady": "0", "delivery": "Possessed", "chars": "0"},
+        ]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "promptReady=0" in text
+                            for level, text in verdicts))
+
+    def test_closing_mark_reads_progress_lap_from_plap(self):
+        # 2026-11-03 から ev=mark の進行の周は plap。lap が区間の周（引き返して 3）でも締めとして扱う
+        events = [
+            {"ev": "mark", "t": "10", "plap": "4", "lap": "3", "det": "1", "res": "0",
              "invasion": "1", "released": "0", "promptReady": "0"},
             {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
              "released": "0", "promptReady": "0", "delivery": "Possessed", "chars": "0"},

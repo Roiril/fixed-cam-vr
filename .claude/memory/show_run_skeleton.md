@@ -1,6 +1,6 @@
 ---
 name: show-run-skeleton
-description: 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム判定／導入で録画を消さない／凍結ラッチを増やさない／終わり方の出口は 4 つ（終幕の合図・周回・時間切れ・卓）
+description: 体験の骨格（導入→3周→終了）を触る前に：ゲートは CueScheduler 1 点／終了は次フレーム判定／導入で録画を消さない／凍結ラッチを増やさない／終わり方の出口は 5 つ（終幕の合図・締めの判定・周回・時間切れ・卓）
 metadata: 
   node_type: memory
   type: project
@@ -48,7 +48,7 @@ metadata:
 ⚠ **繋がっていないことはテストでは捕まらない** — 既存のテストは `ResetRun` を自分で呼んでおり、
 **呼ぶ前提を自分で作っていた**ので、呼び出し元が無い穴を素通しした。
 
-## 終わり方の出口が 4 つになった（2026-08-15）
+## 終わり方の出口は 5 つ
 
 `canon/LEDGER.md` 0048 で **終幕の合図**（`run.outro.afterTakeId` が指す演出の終了）が入った。
 判断は [`EndingCueLogic`](../../Assets/Scripts/Streaming/EndingCueLogic.cs)、
@@ -61,6 +61,7 @@ metadata:
 | `endGraceSec` / `endHoldMaxSec` | 周を走り切って、走行中の演出を見せ切った |
 | `hardLimitSec` | 時間切れ（既定 300 秒） |
 | `RequestFinish` | 卓の ⏹ / 導入中の終了 |
+| **締めの判定**（Trapped） | 最後の A で報告せずに時間切れ・A を出た・人形の足が左半分（`EndingDecisionLogic`・`rules/ending.md`） |
 
 ⚠ **出口を足しただけで、1 つも外していない。** 合図が指す演出が最後まで走らない現場でも体験は必ず終わる。
 ⚠ **合図は「走っていない」だけを見ない** — 演出が始まる前も `ActiveTakeId` は空なので、

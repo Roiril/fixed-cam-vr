@@ -45,7 +45,7 @@ namespace FixedCamVr.Streaming
 
         public int PendingCount => _pending.Count;
         public bool HasCurrent => _has;
-        public int CurrentLap => _lap;
+        public int SegmentLap => _lap;
         public int CurrentCamera => _camera;
 
         /// <summary>

@@ -284,6 +284,20 @@ namespace FixedCamVr.Streaming
 
         /// <summary>走行中の演出を見せ切る上限 (秒)。帰りの A で流す録画は 20〜40 秒になる。</summary>
         public const float EndHoldMaxSec = 60f;
+
+        /// <summary>
+        /// 最後の A（帰りの A・4-A）の区間の周。締めの演出 <c>L4C0#0</c> と <c>ShowAnomalyCatalog</c> が
+        /// 3 周を前提に固定で書かれているので、ここも show.json の totalLaps から計算せず固定値にする。
+        /// 周回数を変えるときは著作と一緒にここを直す。
+        /// </summary>
+        public const int ClosingLap = TotalLaps + 1;
+
+        /// <summary>最後の A の区間のカメラ番号（A = 0）。</summary>
+        public const int ClosingCamera = 0;
+
+        /// <summary>区間（区間の周, カメラ）が最後の A か。<c>TimelineDirector</c> と <c>EndingDecisionLogic</c> が共有する。</summary>
+        public static bool IsClosingSegment(int segmentLap, int camera)
+            => segmentLap == ClosingLap && camera == ClosingCamera;
     }
 
     /// <summary>

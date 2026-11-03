@@ -1316,11 +1316,18 @@ namespace FixedCamVr.Streaming
         private float _switchDwellSec;
         private float _switchCooldownSec;
 
-        /// <summary>ラン開始（runEpoch 変化）で発火する。LapCounter が購読して周回・cue をリセットする。</summary>
-        public event Action? RunReset;
+        /// <summary>
+        /// <b>周の数え直しの合図。</b>LapCounter が購読して周回・位置・cue をリセットする。
+        /// 発火するのは 3 か所: 卓の新しい体験者（runEpoch 変化・<see cref="TriggerRunReset"/>）、
+        /// 現地の新しい体験者（<see cref="BeginNewVisitorRunLocal"/>）、<b>導入から本編へ移るとき</b>（<see cref="BeginMainRun"/>）。
+        /// ⚠ <b>「体験者が替わった」合図ではない。</b>体験 1 回ぶんの状態（録画・報告数など）を落とす処理を
+        /// ここへ購読させると、導入から本編へ移る時点で 1 周目の録画を消す。それは号令元 2 か所に直接書く。
+        /// （2026-11-03 まで RunReset という名前で、名前が「体験者が替わった」と読めた。）
+        /// </summary>
+        public event Action? LapCountReset;
 
         /// <summary>heartbeat に載せる現在周回数の供給元（LapCounter が注入。null なら -1）。</summary>
-        public Func<int>? CurrentLapProvider;
+        public Func<int>? ProgressLapProvider;
 
         // heartbeat に載せる HMD の course space XZ・現在ゾーンラベルの供給元。
         // Streaming → Tracking の参照を作らないため Func で注入する（ZoneLayoutApplier が設定）。
@@ -1897,7 +1904,7 @@ namespace FixedCamVr.Streaming
             RuntimeHealth.Step("sound", () => ResolveSoundDirector()?.ResetRun());
             // 端末内録画も世代を切り替える（前の体験者の映像を次のランへ持ち越さない・端末に残さない）。
             RuntimeHealth.Step("recorder", () => ResolveRecorder()?.ResetRun(_knownRunEpoch));
-            RuntimeHealth.Raise("RunReset", RunReset);
+            RuntimeHealth.Raise("LapCountReset", LapCountReset);
             // 骨格も頭から（導入があれば導入から）。ここが「新しい体験者」の唯一の入口。
             RuntimeHealth.Step("run", () => ResolveRunDirector()?.BeginRun());
         }
@@ -1921,7 +1928,7 @@ namespace FixedCamVr.Streaming
             RuntimeHealth.Step("sound", () => ResolveSoundDirector()?.ResetRun());   // 卓経由（TriggerRunReset）と対称に保つ
             // 現地は卓と runEpoch を共有できないので、録画側は自分で世代を進める。
             RuntimeHealth.Step("recorder", () => ResolveRecorder()?.ResetRunLocal());
-            RuntimeHealth.Raise("RunReset", RunReset);
+            RuntimeHealth.Raise("LapCountReset", LapCountReset);
             RuntimeHealth.Step("run", () => ResolveRunDirector()?.BeginRun());
         }
 
@@ -1972,7 +1979,7 @@ namespace FixedCamVr.Streaming
             cueScheduler?.ResetRun();
             timelineDirector?.ResetRun();
             ResolveBgmDirector()?.ResetRun();
-            RunReset?.Invoke();   // LapCounter が lap=1 / pos=0 / 現在ゾーンの再シード
+            LapCountReset?.Invoke();   // LapCounter が lap=1 / pos=0 / 現在ゾーンの再シード
         }
 
         // 骨格の実行体。既存シーンに未配置でも自分で載せる（prefab / シーンの SerializeField 欠落で
@@ -2987,10 +2994,10 @@ namespace FixedCamVr.Streaming
         /// 紙（調査依頼書）の「違和感を認めるたび、手元のボタンを一度押してください。
         /// ボタンを押した時刻は、自動的に記録されます」が指しているのがこれ。
         ///
-        /// ⚠⚠ <b>終幕の「報告した怪異の数」はこれではない</b>（2026-09-19・<c>canon/LEDGER.md</c> 0234・
-        /// ユーザー逐語「1つの異変に対して報告したら内部では1だけカウントするようにしてほしい」）。
-        /// あちらは <see cref="ReportedAnomalyCount"/>。押した回数を読むのはスタッフの面（<c>StatusHud</c>）と
-        /// <c>ev=mark n=</c> だけ。
+        /// ⚠⚠ <b>終幕の結果画面の分子はこれ</b>（<c>canon/LEDGER.md</c> 0247 が 0234 を覆した。
+        /// 「報告した異変の数ではないよね。ボタンを押した回数が現状は記録されてるはず」）。
+        /// 読むのは <c>OutroReport.Capture</c>・スタッフの面（<c>StatusHud</c>）・<c>ev=mark n=</c>。
+        /// 同じ演出への押し直しを 1 と数える内部の集計は <see cref="ReportedAnomalyCount"/>。
         ///
         /// ⚠ <b>体験の進行には 1 ビットも使わない。</b> 押さなくても体験は同じように進む
         /// （判定に使うと、押さなかった人が失敗した気になる）。唯一の例外が 4 周目 A の締め
@@ -3005,7 +3012,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// <b>報告した異変の数</b>（2026-09-19・<c>canon/LEDGER.md</c> 0234）。同じ演出のあいだに何度押しても 1。
         /// 演出の無い所で押しても増えない（<see cref="VisitorMarkCount"/> には残る）。ラン開始で 0 に戻る。
-        /// <b>終幕の「報告した怪異の数」（<c>OutroReport</c>）はこれを出す。</b>
+        /// <b>画面には出さない内部の集計。</b>結果画面の分子は <see cref="VisitorMarkCount"/>（<c>canon/LEDGER.md</c> 0247）。
         /// 数え方は <see cref="VisitorReportTally"/>。
         /// ⭐ 後々の分岐（報告数によるエンディング・0234「まだしないが」）の材料はこれ。押した回数は使わない。
         /// </summary>
@@ -3042,7 +3049,8 @@ namespace FixedCamVr.Streaming
 
         public bool LastMarkSuppressed { get; private set; }
 
-        public int LastMarkLap { get; private set; } = -1;
+        /// <summary>直近の報告を受けた瞬間の区間の周（逆走で戻る方）。区間が未確定なら -1。</summary>
+        public int LastMarkSegmentLap { get; private set; } = -1;
 
         /// <summary>
         /// <b>呪いが排除されて画がリアルタイム映像へ戻った回数</b>（2026-09-05・
@@ -3105,8 +3113,9 @@ namespace FixedCamVr.Streaming
             LastMarkDollReplacementShowing = timelineDirector != null
                 && timelineDirector.DollReplacementShowing;
             LastMarkSuppressed = timelineDirector != null && timelineDirector.Suppressed;
-            LastMarkLap = timelineDirector != null ? timelineDirector.CurrentLap
-                                                   : (CurrentLapProvider != null ? CurrentLapProvider() : -1);
+            // 区間の周だけを入れる。進行の周（CurrentLapProvider）で埋めると、引き返した体験者で
+            // 意味の違う値が同じ欄に混ざる。区間が取れなければ -1。
+            LastMarkSegmentLap = timelineDirector != null ? timelineDirector.SegmentLap : -1;
             // 報告で段が進む前に凍らせる。untilMark はこの直後に終了するため、後から見ると
             // 「何も映っていなかった」に変わってしまう。
             bool anomalyShowing = timelineDirector != null && timelineDirector.AnomalyShowing;
@@ -3564,7 +3573,7 @@ namespace FixedCamVr.Streaming
                     hb.contentPolicy = ContentPolicy;
                     hb.contentVerified = ContentVerified;
                     hb.buildGuid = Application.buildGUID ?? "";
-                    hb.lap = CurrentLapProvider != null ? CurrentLapProvider() : -1;
+                    hb.lap = ProgressLapProvider != null ? ProgressLapProvider() : -1;
                     hb.cam = registry != null ? registry.ActiveIndex : -1;
                     if (HeadCourseXZProvider != null)
                     {

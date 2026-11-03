@@ -176,12 +176,12 @@ namespace FixedCamVr.Streaming
         public int CurrentCamera => _hasCurrent ? _curCam : -1;
 
         /// <summary>いま体験者が居る区間の周（1 始まり・逆走で戻る）。区間未確定なら -1。</summary>
-        public int CurrentLap => _hasCurrent ? _curLap : -1;
+        public int SegmentLap => _hasCurrent ? _curLap : -1;
 
         /// <summary>いま体験者が居る確定区間を返す。演出素材が映しているカメラではなく実位置。</summary>
         public bool TryGetCurrentSegment(out int lap, out int camera)
         {
-            lap = CurrentLap;
+            lap = SegmentLap;
             camera = CurrentCamera;
             return _hasCurrent;
         }
@@ -267,7 +267,7 @@ namespace FixedCamVr.Streaming
         //   （進行の周で貼ると、まだ通っていない先の周の演出が消費される）。
         private void OnCameraEntered(int camera, int lap, int progressLap)
         {
-            if (lap == 4 && camera == 0 && _closingAreaEnteredAt < 0f)
+            if (ShowRunDefaults.IsClosingSegment(lap, camera) && _closingAreaEnteredAt < 0f)
                 _closingAreaEnteredAt = Time.unscaledTime;
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;

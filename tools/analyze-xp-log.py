@@ -603,7 +603,7 @@ def analyze(events, others, exp, warns=None):
     w("## 体験の骨格")
     phases = [e for e in events if e.get("ev") == "phase"]
     for p in phases:
-        w(f"  t={fnum(p,'t',0):7.1f}  相={p.get('v')}  lap={p.get('lap','-')}  経過={p.get('elapsed','-')}")
+        w(f"  t={fnum(p,'t',0):7.1f}  相={p.get('v')}  進行の周={p.get('plap', p.get('lap','-'))}  経過={p.get('elapsed','-')}")
     seen = [p.get("v") for p in phases]
     # ログの先頭が落ちているときは「相の記録が無い」を欠落として扱わない（そこは観測できていない）。
     # 区間が進んでいる＝本編に入った証拠なので、そちらを見る。
@@ -1651,7 +1651,7 @@ def analyze(events, others, exp, warns=None):
         w("## AIエージェントからの連絡")
         for e in comms:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
-              f"built={e.get('built')} lap={e.get('lap')} chars={e.get('chars')} "
+              f"built={e.get('built')} plap={e.get('plap', e.get('lap'))} chars={e.get('chars')} "
               f"sfx={e.get('sfx')} decay={e.get('decay')} "
               f"invasion={e.get('invasion')} released={e.get('released')} "
               f"promptReady={e.get('promptReady')} wait={e.get('wait')}")
@@ -1782,7 +1782,7 @@ def analyze(events, others, exp, warns=None):
 
             closing_lap = int(exp.get("laps", 3)) + 1
             premature_closing_marks = [m for m in marks
-                                       if int(fnum(m, "lap", -1)) == closing_lap
+                                       if int(fnum(m, "plap", fnum(m, "lap", -1))) == closing_lap
                                        and "promptReady" in m
                                        and str(m.get("promptReady")) == "0"]
             if premature_closing_marks:
@@ -2860,6 +2860,8 @@ def analyze(events, others, exp, warns=None):
         swap = timed_samples(events, "sndSwap")
         swell = timed_samples(events, "sndSwell")
         # 区間の窓（`ev=zone` の次の区間まで）。増えてよいのは 3 周目 C だけ。
+        # ⚠ `lap` は区間の周（音が読むのと同じ。引き返すと戻る）。2026-11-03 より前のログ（plap が無い）では
+        #   進行の周が入っているので、3-A から 2-C へ引き返した走行では窓がずれる。
         zones = [(fnum(e, "t", 0.0), int(fnum(e, "cam", -1)), int(fnum(e, "lap", -1)))
                  for e in events if e.get("ev") == "zone"]
         zones.sort()
@@ -3216,9 +3218,10 @@ def analyze(events, others, exp, warns=None):
     # ------------------------------------------------------------------
     # 報告した異変の数（canon/LEDGER.md 0234「1つの異変に対して報告したら内部では1だけカウント」）
     #
-    # ⚠⚠ 押した回数（ev=mark n=）と報告した異変の数（anom=）は**別物**。終幕の「報告した怪異の数」に
-    #    出るのは anom の方で、同じ演出のあいだに何度押しても 1。演出の無い所（det=0）で押しても増えない。
-    #    観測の出どころは C# の ShowTelemetryHost（ev=mark take= new= anom= / ev=outro anomalies=）。
+    # ⚠⚠ 押した回数（ev=mark n=）と報告した異変の数（anom=）は**別物**。
+    #    終幕の結果画面の分子は押した回数（n）の方（canon/LEDGER.md 0247 が 0234 を覆した）。
+    #    anom は同じ演出のあいだに何度押しても 1、演出の無い所（det=0）で押しても増えない内部の集計。
+    #    観測の出どころは C# の ShowTelemetryHost（ev=mark n= take= new= anom= / ev=outro repN= anomalies=）。
     #    **片方だけ直すと沈黙して食い違う。**
     # ⚠ 2026-09-19 より前のログには anom= が無い。その走行では数えない（FAIL にしない）。
     # ⚠ n はラン開始で 0 へ戻る（その縁の ev=mark n=0 は押下ではない）。ラン（体験者）ごとに分けて見る。
@@ -3228,7 +3231,9 @@ def analyze(events, others, exp, warns=None):
         w("## 報告した異変の数（押した回数とは別に数える）")
         played_takes = sorted({str(e.get("id")) for e in events
                                if e.get("ev") == "take" and e.get("st") == "begin" and e.get("id")})
-        outros = [e for e in events if e.get("ev") == "outro" and e.get("anomalies") is not None]
+        # repN = 結果画面に実際に組んだ分子。-1 は「まだ組んでいない」。2026-11-03 より前のログには無い。
+        outros = [e for e in events if e.get("ev") == "outro" and e.get("repN") is not None
+                  and fnum(e, "repN", -1.0) >= 0]
         runs = []
         for m in tallied:
             if not runs or fnum(m, "n", 0.0) <= fnum(runs[-1][-1], "n", 0.0):
@@ -3246,7 +3251,7 @@ def analyze(events, others, exp, warns=None):
             label = f"ラン {ri + 1}: " if len(runs) > 1 else ""
             w(f"  {label}押した {len(run)} 回 / 報告した異変 {anom_last} 件 / 出た演出 {len(played_takes)} 本")
             for m in run:
-                w(f"    t={fnum(m, 't', 0.0):6.1f} lap={m.get('lap')} take={m.get('take')} det={m.get('det')} "
+                w(f"    t={fnum(m, 't', 0.0):6.1f} plap={m.get('plap', m.get('lap'))} take={m.get('take')} det={m.get('det')} "
                   f"new={m.get('new')} anom={m.get('anom')}")
 
             ok = True
@@ -3272,12 +3277,14 @@ def analyze(events, others, exp, warns=None):
                 ok = False
                 verdict("FAIL", "演出の無い所での報告（det=0）が異変に数えられた: "
                                 + ", ".join(f"t={fnum(m, 't', 0.0):.1f}" for m in ghost))
-            # 4. 終幕に出た数（ev=outro anomalies=）と一致
+            # 4. 結果画面に組んだ分子（ev=outro repN=）が、このランで押した回数（最後の ev=mark n=）と一致
+            #    （0247: 画面に出すのは押した回数。表示を始めた時点で固定するので、後の押下は入らない）
             near_outro = [e for e in outros if t0 <= fnum(e, "t", 0.0) < t1]
-            if near_outro and str(near_outro[-1].get("anomalies")) != str(anom_last):
+            presses_last = int(fnum(run[-1], "n", 0.0))
+            if near_outro and int(fnum(near_outro[-1], "repN", -1.0)) != presses_last:
                 ok = False
-                verdict("FAIL", f"終幕の報告に出た数（anomalies={near_outro[-1].get('anomalies')}）が"
-                                f"報告した異変の数 {anom_last} と違う")
+                verdict("FAIL", f"結果画面に出た報告数（repN={near_outro[-1].get('repN')}）が"
+                                f"押した回数 {presses_last} と違う — OutroReport.Capture が読む値がずれている")
             # 5. 出た演出より多くは数えられない
             if played_takes and anom_last > len(played_takes):
                 ok = False

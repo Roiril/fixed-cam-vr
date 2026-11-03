@@ -78,5 +78,18 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(ShowRunReach.IsReturnSegment(3, 0, 3, Order), Is.False);
             Assert.That(ShowRunReach.IsReturnSegment(4, 1, 3, Order), Is.False);
         }
+
+        // 実機の判定（固定値の ShowRunDefaults.IsClosingSegment）と、卓と突き合わせる式
+        // （IsReturnSegment）は、既定の 3 周・順路 A→B→C で同じ区間を指す。どちらかを変えたらここで割れる。
+        [Test]
+        public void ClosingSegment_MatchesReturnSegment_ForTheDefaultShow()
+        {
+            for (int lap = 1; lap <= 5; lap++)
+                for (int cam = 0; cam < 3; cam++)
+                    Assert.That(ShowRunDefaults.IsClosingSegment(lap, cam),
+                        Is.EqualTo(ShowRunReach.IsReturnSegment(lap, cam, ShowRunDefaults.TotalLaps, Order)),
+                        $"lap={lap} cam={cam}");
+            Assert.That(ShowRunDefaults.IsClosingSegment(4, 0), Is.True, "最後の A は区間の周 4・カメラ A");
+        }
     }
 }

@@ -18,7 +18,7 @@ paths:
 体験者に見えることは `canon/NOW.md`、経緯は `reference/archive/streaming-2026-10-22.md`（S:）・`reference/archive/show-design-2026-10-22.md`（D:）。出典の行番号はその凍結版のもの。
 
 ## 契約
-- 最後の A は lap 4・camera 0 の固定値で判定する — `TimelineDirector.OnCameraEntered` / `EndingDecisionLogic.Tick` 〔出典: コード〕
+- 最後の A は区間の周 4・camera 0 の固定値で判定する。値と判定は `ShowRunDefaults.ClosingLap` / `ClosingCamera` / `IsClosingSegment` の 1 か所 — `TimelineDirector.OnCameraEntered` / `EndingDecisionLogic.Tick` 〔出典: コード〕
 - 締めは `run.outro.afterTakeId`（`L4C0#0`）。人形 4 秒 → `untilMark` → `live`。ライブは設定の 7.1 秒を最短とし、写真と退場が済むまで保持する — `TakeRunner.Update` 〔出典: LEDGER 0293〕
 - ③a は締めの線を踏む OR 最終 A 確定進入から 3 秒。消費しない。面が空くまで待つ — `CommsCueLogic.HaltAfterClosingSec` / `TheStopCall_WaitsForThePanel_AndIsNeverLost` 〔出典: show-design-2026-10-22.md:1351〕
 - 締めの線は `splitFreeze` 直前の `untilLine` の線から導く。別のキーは作らない。締めの中だけで記録し、入る前 0.6 秒の横断も数える — `TakeSchema.ResolveClosingLineId` / `TakeRunnerLogic.ClosingLineCrossed` / `LineCrossLogic.CrossLatchSec` 〔出典: memory/closing_line_halt.md〕
@@ -45,11 +45,11 @@ paths:
 - 尺の許容は砂嵐 0.3〜3 秒、潰れ 0.2〜2 秒。外れた値や欠けたキーは既定値に戻す — `OutroTiming.PickCollapse` / `ShowOutroDef.LooksUnset` 〔出典: show-design:899-907〕
 - エンドロールは結末名（帰還End / 人形End / 中断）と「報告数 N」と写真。分母は出さない — `OutroReportText.Title` / `CountLine` 〔出典: memory/ending_roll.md, LEDGER 0290〕
 - 報告数は押した回数。表示を始めた時点で固定する — `OutroReport.Capture`（`VisitorMarkCount`）〔出典: LEDGER 0247〕
+- 画面に組んだ分子を `ev=outro repN=` に出し、解析器がそのランの最後の `ev=mark n=` と照合する。`anomalies=`（同じ演出は 1・0234）は画面に出さない内部の集計 — `OutroReport.Presented` / `analyze-xp-log.py` 〔コード〕
 - 写真はラン内だけ GPU に保持する。撮れなければ代わりの画を入れない — `EndingFrameCapture` / `RunRestartAndDisableDiscardBothVisitorsShots` 〔出典: memory/ending_roll.md〕
 - 帰還の写真は別れの人形が見つめる段で、位置と向きが成立した 1 コマを撮る。GPU 合成成功を `NotifyEndingFarewellCaptured` で返した後は上書きしない。条件未成立・人形を出せないときは撮らず再試行を待つ — `EndingFrameCapture` / `EndingFarewellDoll.Facing` 〔出典: LEDGER 0293〕
 
 ## 罠（破ると壊れる）
-- `ReportedAnomalyCount` と `VisitorReportTally` のコメントは「終幕はこれを出す」と書くが、実装は `VisitorMarkCount` を出す（0247 が 0234 を覆した）。コメントを信じて差し替えない 〔コード〕
 - 武装と結末を落とすのは `ShowRunDirector.BeginRun` の 1 か所だけ 〔show-design:940〕
 - `afterTakeId` の演出を `dismissible` にすると、終幕が早く撃たれる 〔streaming:2543〕
 - 締めのカットを伸ばすと watchdog（48 秒）の猶予が減る 〔show-design:959〕

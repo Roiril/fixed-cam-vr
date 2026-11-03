@@ -1,6 +1,6 @@
 ---
 name: sim-device-divergence
-description: 卓のショーシミュレータが実機と食い違った 3 件（2026-07-27）。「卓で沈黙／卓だけ再生」を疑う時の最初の 3 点
+description: 卓のショーシミュレータが実機と食い違った 5 件（2026-07-27〜08-05）。「卓で沈黙／卓だけ再生」を疑う時の最初の 3 点
 metadata: 
   node_type: memory
   type: project

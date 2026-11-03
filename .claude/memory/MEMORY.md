@@ -9,7 +9,7 @@
 - [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) — 07-23 監査 11 件は修正済み。実機確認のチェックリストだけ残る
 
 ## 体験の骨格・演出の連続
-- [show_run_skeleton.md](show_run_skeleton.md) — ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／終わり方の出口は 4 つ
+- [show_run_skeleton.md](show_run_skeleton.md) — ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／終わり方の出口は 5 つ
 - [take_continuity.md](take_continuity.md) — 持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が持つ
 - [backtrack_and_replay.md](backtrack_and_replay.md) — 引き返し。周は 2 つ／前進は直前のカメラも見る／once は決着した回数／録画は上書きしない
 - [approach_and_veil_hold.md](approach_and_veil_hold.md) — 接近の再設計。startCovered で画面差し替えが消える／保持中の Hide で人形が消える
@@ -76,7 +76,7 @@
 - [tablet_apk_zip_names.md](tablet_apk_zip_names.md) — Windows の aapt2 は資産名に `\` を残す。raw の名前で検査する
 - [tablet_webview_media_range.md](tablet_webview_media_range.md) — WebView への資産ストリームは先頭から返す。Range を二重に進めない
 - [flow_walk_harness.md](flow_walk_harness.md) — 起動〜回収〜リセットを押す順に通しで撮る `tools/visitor-ui/flow-walk.cjs`
-- [l_wall_geometry.md](l_wall_geometry.md) — ⚠ L 字の壁は 2 辺とも 0.955m。show.json の `room.walls` は信じない
+- [l_wall_geometry.md](l_wall_geometry.md) — ⚠ L 字の壁は 2 辺とも 0.955m。`room.walls` は 09-11 に直った。等長でなければ疑う
 - [hmd_text_style.md](hmd_text_style.md) — HMD の文字の正は `HmdTextStyle`。3D TMP の 0.1 倍・`menu text-audit`
 - [hud_font_and_preview.md](hud_font_and_preview.md) — HMD 内の文言を変えたらフォント再生成。見た目は HudPreviewScreenshot
 
