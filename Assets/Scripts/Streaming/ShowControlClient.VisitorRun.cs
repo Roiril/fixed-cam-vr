@@ -284,7 +284,7 @@ namespace FixedCamVr.Streaming
             LastMarkDollReplacementShowing = timelineDirector != null
                 && timelineDirector.DollReplacementShowing;
             LastMarkSuppressed = timelineDirector != null && timelineDirector.Suppressed;
-            // 区間の周だけを入れる。進行の周（CurrentLapProvider）で埋めると、引き返した体験者で
+            // 区間の周だけを入れる。進行の周（ProgressLapProvider）で埋めると、引き返した体験者で
             // 意味の違う値が同じ欄に混ざる。区間が取れなければ -1。
             LastMarkSegmentLap = timelineDirector != null ? timelineDirector.SegmentLap : -1;
             // 報告で段が進む前に凍らせる。untilMark はこの直後に終了するため、後から見ると
