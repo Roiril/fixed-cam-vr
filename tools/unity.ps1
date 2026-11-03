@@ -9,7 +9,7 @@
 #   .\tools\unity.ps1 build fixedcam -NoExport  # 前回焼き込んだ著作のまま焼く
 #   .\tools\unity.ps1 test
 #   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
-#   .\tools\unity.ps1 menu scene                # Setup Main Demo Scene
+#   .\tools\unity.ps1 menu scene                # Build Main Scene
 #   .\tools\unity.ps1 menu actor -Set actor=Ichimatsu
 #   .\tools\unity.ps1 replay -Set rec=latest,view=eye   # Quest の体験の記録を PC で流し直して広角の mp4 に
 #   .\tools\unity.ps1 raw editors -i
@@ -72,10 +72,10 @@ $MethodPrefix = 'FixedCamVr.EditorTools.BuildVariants.'
 # ので、build と同じく出力で判定する（ログにしか出ないものは空にしてある）。
 $Menus = [ordered]@{
     # ---- Setup（作る・焼く）----
-    'scene'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.MainDemoSceneSetup.Setup'
+    'scene'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.MainSceneBuilder.Setup'
                             Desc = 'Main シーンへ演出・HUD・ゾーンを配置して保存（⚠ ビルド前に必須）'
                             Out = 'Assets/Scenes/Main.unity'
-                            Src = @('Assets/Scripts/Streaming/Editor/MainDemoSceneSetup.cs') }
+                            Src = @('Assets/Scripts/Streaming/Editor/MainSceneBuilder.cs') }
     'hud-font'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.JapaneseHudFontSetup.Generate'
                             Desc = 'HMD 内の日本語フォントを再ベイク（⚠ 文言を足したら必須。忘れると実機で豆腐）'
                             Out = 'Assets/Resources/Fonts/JapaneseHud SDF.asset'

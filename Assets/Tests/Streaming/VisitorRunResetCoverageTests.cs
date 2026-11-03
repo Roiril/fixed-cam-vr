@@ -27,10 +27,6 @@ namespace FixedCamVr.Streaming.Tests
         /// <summary>(定義のあるファイル:メソッド名 / 呼び出しのあるファイル / 呼び出しの文字列 / 経路の説明)</summary>
         private static readonly (string Key, string CallerFile, string Call, string Route)[] Table =
         {
-            // ---- 号令元（自分が号令を出す側。部品ではない）
-            ("OvrBridge/OvrControllerBridge.cs:ResetRun", "OvrBridge/OvrControllerBridge.cs", "show.BeginNewVisitorRunLocal()",
-                "右 A 2 秒長押し → ShowControlClient.BeginNewVisitorRunLocal"),
-
             // ---- ShowControlClient.ResetForNewVisitor が直接落とす
             ("Streaming/CueScheduler.cs:ResetRun", "Streaming/ShowControlClient.VisitorRun.cs", "cueScheduler?.ResetRun()", "ResetForNewVisitor"),
             ("Streaming/TimelineDirector.cs:ResetRun", "Streaming/ShowControlClient.VisitorRun.cs", "timelineDirector?.ResetRun()", "ResetForNewVisitor（BeginRun でもう一度）"),

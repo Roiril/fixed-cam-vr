@@ -174,7 +174,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// <b>最終 A の確定進入からの秒数</b>。まだ着いていなければ負。
-        /// 供給は <c>TimelineDirector.ClosingAreaSec</c>。締めの演出が始まる前も進む。
+        /// 供給は <c>TimelineDirector.ClosingSegmentSec</c>。締めの演出が始まる前も進む。
         /// 線を踏めば早く出る。踏まなくても 3 秒で出る。
         /// </summary>
         public float closingSec;

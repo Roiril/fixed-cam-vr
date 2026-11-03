@@ -9,7 +9,7 @@ namespace FixedCamVr.Streaming
     /// 実際の画面適用（カメラ切替 / オーバーレイ / post）は <see cref="TakeRunner"/> が行う。
     /// <see cref="InsertLogic"/> の後継で、**1 本の演出が複数カットを持てる**点が本質的な差。
     ///
-    /// 契約の正本は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6.3。要点:
+    /// 現行の契約は <c>.claude/rules/show-run.md</c>。設計の経緯は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6.3（当時の記録）。要点:
     ///   1. 同時に走る演出は 1 本。**別の演出が画面を持っているあいだは、その区間に居る限り武装したまま待つ**
     ///      （2026-07-27 変更。旧実装は待たずに即決着させて捨てていた ＝ 著作した演出が黙って消えた。
     ///      設計 §7 の「捨てる」根拠は「**演出中に通過した**区間の演出を遅れて出すと文脈が壊れる」であって、

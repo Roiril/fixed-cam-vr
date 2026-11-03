@@ -41,16 +41,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 {
                     "FixedCamVr.Streaming.Tests",
                     "FixedCamVr.Tracking.Tests",
+                    "FixedCamVr.Diagnostics.Tests",
+                    "FixedCamVr.Input.Tests",
                     "FixedCamVr.Fx.Tests"
                 }
             }));
-            Debug.Log("[FixedCamVr] EditMode tests launched (Streaming / Tracking / Fx). See Test Runner window for results.");
+            Debug.Log("[FixedCamVr] EditMode tests launched (Streaming / Tracking / Diagnostics / Input / Fx). See Test Runner window for results.");
         }
 
         private static bool _pingInFlight;
 
-        [MenuItem(Root + "Diagnostics/Ping DroidCams", priority = 230)]
-        public static async void PingDroidCams() => await PingCamerasAsync();
+        [MenuItem(Root + "Diagnostics/Ping Cameras", priority = 230)]
+        public static async void PingCamerasFromMenu() => await PingCamerasAsync();
 
         /// <summary>
         /// CLI（<c>unity.ps1 menu ping-cams</c>）用の同期版。
@@ -69,7 +71,7 @@ namespace FixedCamVr.Streaming.EditorTools
             // 連打防止（async void なので前回完了前に再入する可能性がある）
             if (_pingInFlight)
             {
-                Debug.Log("[FixedCamVr] Ping DroidCams は実行中です。");
+                Debug.Log("[FixedCamVr] Ping Cameras は実行中です。");
                 return;
             }
 

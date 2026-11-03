@@ -17,13 +17,13 @@
 |---|---|
 | 重み `IntroWeights.sealBox` | **全段 0**。`IntroLogicTests.SealedBox_NeverAppears_InAnyStage` が固定する |
 | `IntroDirector` | 毎フレーム `sealedBox?.SetHidden()` を呼ぶ（`Apply(w)` ではない ＝ 意図の明示） |
-| シーンの `[SealBox]` / `[SealBoxShadow]` | **まだ在る**（`MainDemoSceneSetup` が作る）。描画は上の 2 つで止まっている |
+| シーンの `[SealBox]` / `[SealBoxShadow]` | **まだ在る**（`MainSceneBuilder` が作る）。描画は上の 2 つで止まっている |
 | 唸り `bed_seal` | `SoundBedLogic.Target` が `g.seal = 0` を返す（音源は残っている） |
 | テレメトリ `box=` / `boxBuilt=` | 外した（常に 0 が並ぶと誤検出の材料になる） |
 | `menu sealedbox` / `menu shatter` | **動く**。体験に出ないだけで、箱の絵は今でも焼ける |
 
 ⚠ **シーンからはまだ消していない。** 2026-08-15 の時点で `Main.unity` と
-`MainDemoSceneSetup.cs` は別のシュビーが編集中だったため触っていない
+`MainSceneBuilder.cs` は別のシュビーが編集中だったため触っていない
 （同じファイルを並行セッションが編集しているときは触らない）。消すなら下の「シーンから外す」を通す。
 
 ## 退避したファイル
@@ -76,6 +76,6 @@
 
 ## シーンから外す（まだやっていない）
 
-1. `MainDemoSceneSetup.cs` の `[SealBox]` / `[SealBoxShadow]` の生成を落とす
+1. `MainSceneBuilder.cs` の `[SealBox]` / `[SealBoxShadow]` の生成を落とす
 2. `.\tools\unity.ps1 menu scene` を実行して `Main.unity` を焼き直す
 3. `IntroDirector` の `sealedBox` SerializeField を消す（**シーンの参照が先に消えていること**）

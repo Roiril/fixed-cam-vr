@@ -40,7 +40,7 @@ paths:
   パススルーが切れて一気に黒くなった）。
   「パススルーが一切出ない」の真因は `_insightPassthroughSupport = 0` と、
   `IntroVeil` シェーダがビルドから剥がれていたこと（下記 `Shader.Find` の罠）の 2 つ。
-  設定するのは `MainDemoSceneSetup.EnsurePassthroughStyler`
+  設定するのは `MainSceneBuilder.EnsurePassthroughStyler`
 - **⚠ ただし「覆いが走っていない時間」には現実を見せる手段が 1 つも無かった**（2026-08-09 実害）。
   alpha 0 を書く面は `IntroVeil` だけで、しかもそれは導入・終幕の専用。つまり
   **演出の外側（起動直後・位置合わせ中・本編前）は原理的に現実が 1 画素も出ない**。

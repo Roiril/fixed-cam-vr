@@ -411,7 +411,7 @@ namespace FixedCamVr.Streaming
             ShowRunEvent ev = _logic.Tick(ShowClock.Dt, atStart, takeRunning, introCompleted,
                                           introAborted,
                                           _ending.Armed || (timelineDirector != null
-                                              && timelineDirector.ClosingAreaSec >= 0f));
+                                              && timelineDirector.ClosingSegmentSec >= 0f));
 
             // ⚠ ゲートは**イベントを配る前に**合わせる。RunBegan の処理は
             // BeginMainRun → LapCounter.ResetRun → SeedCurrentZone → CueScheduler.NotifyCameraEntered

@@ -15,7 +15,7 @@ namespace FixedCamVr.OvrBridge
     /// **人形を出していない間は GetHandState すら呼ばない**（<see cref="ShowCgLayer.WantsBody"/> が false）。
     /// スタッフのコントローラとの同居は OVRManager の
     /// <c>SimultaneousHandsAndControllersEnabled</c> + <c>launchSimultaneousHandsControllersOnStartup</c>
-    /// （どちらもビルド時に立てる必要がある＝シーンの OVRManager 側。MainDemoSceneSetup が設定する）。
+    /// （どちらもビルド時に立てる必要がある＝シーンの OVRManager 側。MainSceneBuilder が設定する）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class OvrHandTrackingBridge : MonoBehaviour
@@ -129,7 +129,7 @@ namespace FixedCamVr.OvrBridge
             if (!m.SimultaneousHandsAndControllersEnabled || !m.launchSimultaneousHandsControllersOnStartup)
                 Debug.LogWarning("[OvrHandTracking] OVRManager の同時使用（hands + controllers）が OFF。" +
                                  "スタッフがコントローラを持つと体験者の手が取れなくなる。" +
-                                 "Tools/FixedCamVr/Setup/Setup Main Demo Scene を再実行して有効化する。");
+                                 "Tools/FixedCamVr/Setup/Build Main Scene を再実行して有効化する。");
         }
     }
 }

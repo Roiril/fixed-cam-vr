@@ -56,7 +56,7 @@
 - 旧 = `[Bgm]` の AudioSource 1 本で固定ループ。新 = **タイムライン区間で切替/停止/ループ範囲**（`bgmTracks[]` + ラン既定 `bgm` + `segments[].bgm`）
 - 音源は `tools/web-compositor/audio/`（**gitignore**）。卓の「🎵 BGM ライブラリ」で登録 → 区間インスペクタで指示 → 📦 エクスポートで `sa://assets/` へ焼き込み
 - タイムライン下の **BGM 帯**が「今どの曲が鳴っているか」を carry-forward で表示（▶切替 / ≡同曲調整 / ■停止）。JS ミラー `resolveBgmLane` は Unity `BgmPlanLogic` と同セマンティクス（テストで固定）
-- **⚠ Unity は `Setup Main Demo Scene` の再実行が要る**（[Bgm] を BgmDirector 化。未実行なら旧固定ループのまま＝安全側に縮退）
+- **⚠ Unity は `Build Main Scene` の再実行が要る**（[Bgm] を BgmDirector 化。未実行なら旧固定ループのまま＝安全側に縮退）
 - 擬似トラック `__default__` = APK 同梱クリップ（音源を二重に置かず「元の曲へ戻す」を書ける）
 
 **2026-07-25 本番運用の安全装置**（設計判断ごと README「本番運用の安全装置」が正。ここは要点だけ）:

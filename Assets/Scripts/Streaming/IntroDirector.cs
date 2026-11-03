@@ -8,7 +8,7 @@ namespace FixedCamVr.Streaming
     /// 導入演出（パススルー → 2D スクリーン）を回す実行体。
     /// 判定はすべて純ロジック <see cref="IntroLogic"/> にあり、ここは<b>観測と配布</b>だけを持つ。
     ///
-    /// 設計の正本は <c>.claude/plans/2026-07-30_intro-passthrough-to-screen.md</c>。要点:
+    /// 現行の契約は <c>.claude/rules/intro-title.md</c>。設計の経緯は <c>.claude/plans/2026-07-30_intro-passthrough-to-screen.md</c>（当時の記録）。要点:
     ///   - <b><see cref="ShowPhase"/> を増やさない</b>。これは <see cref="ShowPhase.Intro"/> の内側の
     ///     サブ状態で、ゲート・終了判定・heartbeat・卓・シミュレータへの分岐を増やさない
     ///   - <b>視点は 1 度も動かさない</b>。動かすのは現実の側の身分（現実 → 映像）
@@ -500,8 +500,8 @@ namespace FixedCamVr.Streaming
         /// <c>layout.startSpot</c> の円に留まったら true になる。
         ///
         /// ⚠ <b>course 座標なので位置合わせが済んでいないと判定できない。</b> 未登録なら常に false を返し、
-        /// スタッフ操作へ縮退する（<see cref="PromptText"/> がその理由を HMD 内で言う）。
-        /// 黙って false を返すだけだと、現場で「立っても始まらない」が理由なしに起きる。
+        /// スタッフ操作へ縮退する。理由を体験者へ言う面（旧 PromptText）は撤去済みで、いまは
+        /// 位置合わせが済むまで準備画面（StaffSetupPanel）が体験者を通さない。
         /// </summary>
         private bool IsAtStartSpot()
         {
@@ -619,7 +619,7 @@ namespace FixedCamVr.Streaming
         private bool _warnedApproachOverridesLine;
         private bool _warnedApproachNotArmed;
         private float _approachWaitSec;
-        /// <summary>いま開始を判定しているのが「体験エリアへの接近」か（<see cref="PromptText"/> が読む）。</summary>
+        /// <summary>いま開始を判定しているのが「体験エリアへの接近」か。</summary>
         private bool _startsByApproach;
         private bool _wasRegistering;
         private bool _startLineResolved;          // layout.lines から実際に引けたか

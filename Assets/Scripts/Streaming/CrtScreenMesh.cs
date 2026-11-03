@@ -35,7 +35,7 @@ namespace FixedCamVr.Streaming
 
         // ⚠ **組むのは実行時だけ。** 生成した Mesh はアセットではないので、Editor で差し替えたまま
         //   シーンを保存すると壊れた参照が焼かれる。シーンに残すのはこのコンポーネントが
-        //   付いていることだけで、形は毎回ここで組み直す（`MainDemoSceneSetup` も Build を呼ばない）。
+        //   付いていることだけで、形は毎回ここで組み直す（`MainSceneBuilder` も Build を呼ばない）。
         //   ⚠ OnValidate から MeshFilter を触ると Unity が
         //   「SendMessage cannot be called during OnValidate」を出すので、そこでも組まない。
         private void Awake()

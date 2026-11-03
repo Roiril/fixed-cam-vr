@@ -76,19 +76,8 @@ namespace FixedCamVr.Streaming
             public float dropM;
         }
 
-        /// <summary>
-        /// 笑いを置く方角の刻み（度）。4 声を <b>90° ごとの区画</b>へ 1 つずつ入れる。
-        /// ⚠ 完全な一様乱数にすると 2 体が重なる回ができ、「周囲の」が成立しない回が出る。
-        ///
-        /// ⚠⚠ <b>2026-09-04（<c>canon/LEDGER.md</c> 0139）から、笑いはこの輪を使っていない。</b>
-        /// 人形はスクリーンの中に見えているので、鳴らす先は画面上のその場所
-        /// （<see cref="LaughAimLogic"/>）。仕組みは残してあるので、戻すなら
-        /// <c>ShowSoundDirector.LaughFollowsScreen</c> を false にする。
-        /// </summary>
-        public const float LaughSectorDeg = 90f;
-
-        /// <summary>区画の中で振る幅（±度）。区画の境を越えない値。</summary>
-        public const float LaughJitterDeg = 35f;
+        // 笑いを置く方角は <see cref="PickLaughSpots"/> が体数から決める（360°/体数 の区画へ 1 体ずつ、
+        // 区画の 1/3 だけ振る）。2026-11-03 まで「90° の区画・±35°」の定数がここにあったが、どこからも使われていなかった。
 
         // ---- 人形の呼びかけ（後ろ）---------------------------------------------
 

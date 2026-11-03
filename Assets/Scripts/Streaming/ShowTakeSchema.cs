@@ -8,7 +8,7 @@ namespace FixedCamVr.Streaming
     /// **剛体**（尺が決まっている）。中に <see cref="ShowStepDef"/>（カット）を順に持つ。
     ///
     /// v2 の <c>cues[]</c>（オーバーレイ）と <c>insert</c>（カメラ差し込み）を 1 語彙へ畳んだもの。
-    /// 契約の正本は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6。
+    /// 現行の契約は <c>.claude/rules/show-run.md</c>。設計の経緯は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6（当時の記録）。
     ///
     /// JsonUtility の「null 入れ子を既定値で書く」罠を避けるため、<c>start</c> / <c>source</c> / <c>dur</c> は
     /// オブジェクトにせず**フラットな文字列判別子 + 値**で持つ。present-flag が要るのは post だけ。

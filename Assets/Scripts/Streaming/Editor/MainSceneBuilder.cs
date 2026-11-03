@@ -11,13 +11,14 @@ using UnityEngine.SceneManagement;
 namespace FixedCamVr.Streaming.EditorTools
 {
     /// <summary>
-    /// Main.unity に Phase 2.7 用 [Zones] / [Tracker] と Phase 3 まで通しデモ用 DebugHud を
-    /// 自動配置するメニュー。再実行可能（既存配置は削除して再生成）。
+    /// <b>本番のシーン Assets/Scenes/Main.unity を組み直す正本。</b>体験に要る GameObject とコンポーネントを
+    /// 毎回作り直して配線する（再実行可能。既存の配置は消して作り直す）。
     ///
-    /// Unity MCP やシーン編集が落ちている時の保険、および現場での再現性確保のために用意。
-    /// 実行手順は <c>docs/onsite-checklist.md</c> 参照。
+    /// ⚠ シーンを手で編集した値はこれを回すと消える。値を変えたいときはここ（またはここが読む設定）を直す。
+    /// CLI は <c>.\tools\unity.ps1 menu scene</c>。ビルドの前に必ず回す。
+    /// 2026-11-03 まで MainSceneBuilder という名前だった（「デモ」ではなく本番のシーンを作る）。
     /// </summary>
-    public static class MainDemoSceneSetup
+    public static class MainSceneBuilder
     {
         private const string MainScenePath = "Assets/Scenes/Main.unity";
         private const string CenterEyePath = "OVRCameraRig/TrackingSpace/CenterEyeAnchor";
@@ -98,7 +99,7 @@ namespace FixedCamVr.Streaming.EditorTools
         // 解析 CSV と実挙動の判定がズレるため 1 本化）。
         private const float HysteresisShrink = 0.15f;
 
-        [MenuItem("Tools/FixedCamVr/Setup/Setup Main Demo Scene", priority = 50)]
+        [MenuItem("Tools/FixedCamVr/Setup/Build Main Scene", priority = 50)]
         public static void Setup()
         {
             var scene = SceneManager.GetActiveScene();
@@ -117,12 +118,12 @@ namespace FixedCamVr.Streaming.EditorTools
                         "OK");
                     return;
                 }
-                Debug.Log($"[MainDemoSceneSetup] アクティブシーンが {scene.path} だったので {MainScenePath} を開きます。");
+                Debug.Log($"[MainSceneBuilder] アクティブシーンが {scene.path} だったので {MainScenePath} を開きます。");
                 EditorSceneManager.OpenScene(MainScenePath, OpenSceneMode.Single);
                 scene = SceneManager.GetActiveScene();
                 if (scene.path != MainScenePath)
                 {
-                    Debug.LogError($"[MainDemoSceneSetup] {MainScenePath} を開けませんでした。");
+                    Debug.LogError($"[MainSceneBuilder] {MainScenePath} を開けませんでした。");
                     return;
                 }
             }
@@ -161,28 +162,28 @@ namespace FixedCamVr.Streaming.EditorTools
             var logic = GameObject.Find(LogicGroupName);
             if (logic == null)
             {
-                Debug.LogError($"[MainDemoSceneSetup] '{LogicGroupName}' が見つかりません。Main.unity の Hierarchy 構造を確認してください。");
+                Debug.LogError($"[MainSceneBuilder] '{LogicGroupName}' が見つかりません。Main.unity の Hierarchy 構造を確認してください。");
                 return;
             }
 
             var streaming = GameObject.Find($"{LogicGroupName}/{StreamingName}");
             if (streaming == null)
             {
-                Debug.LogError($"[MainDemoSceneSetup] '{StreamingName}' が見つかりません。Streaming Prefab Instance を Main に配置してください。");
+                Debug.LogError($"[MainSceneBuilder] '{StreamingName}' が見つかりません。Streaming Prefab Instance を Main に配置してください。");
                 return;
             }
 
             var registry = streaming.GetComponent<CameraStreamRegistry>();
             if (registry == null)
             {
-                Debug.LogError($"[MainDemoSceneSetup] '{StreamingName}' に CameraStreamRegistry がありません。");
+                Debug.LogError($"[MainSceneBuilder] '{StreamingName}' に CameraStreamRegistry がありません。");
                 return;
             }
 
             var ovrBridge = streaming.GetComponent("OvrControllerBridge") as MonoBehaviour;
             if (ovrBridge == null)
             {
-                Debug.LogWarning($"[MainDemoSceneSetup] '{StreamingName}' に OvrControllerBridge がありません。HUD トグル連携はスキップ。");
+                Debug.LogWarning($"[MainSceneBuilder] '{StreamingName}' に OvrControllerBridge がありません。HUD トグル連携はスキップ。");
             }
 
             // ControllerHaptics（右コントローラ振動）を [Streaming] に冪等 get-or-add。Assembly-CSharp 型のため
@@ -196,13 +197,13 @@ namespace FixedCamVr.Streaming.EditorTools
             }
             else
             {
-                Debug.LogWarning("[MainDemoSceneSetup] ControllerHaptics 型が解決できません（Assembly-CSharp 未コンパイル?）。触覚フィードバックの配線をスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] ControllerHaptics 型が解決できません（Assembly-CSharp 未コンパイル?）。触覚フィードバックの配線をスキップ。");
             }
 
             var centerEye = GameObject.Find(CenterEyePath);
             if (centerEye == null)
             {
-                Debug.LogError($"[MainDemoSceneSetup] '{CenterEyePath}' が見つかりません。OVRCameraRig が === Rig === 配下にあるか確認してください。");
+                Debug.LogError($"[MainSceneBuilder] '{CenterEyePath}' が見つかりません。OVRCameraRig が === Rig === 配下にあるか確認してください。");
                 return;
             }
 
@@ -212,7 +213,7 @@ namespace FixedCamVr.Streaming.EditorTools
             //      Screen は prefab instance で削除再生成しないので GetComponent 優先（無ければ AddComponent）。
             var overlay = Object.FindObjectOfType<ScreenOverlayController>(includeInactive: true);
             if (overlay == null)
-                Debug.LogWarning("[MainDemoSceneSetup] ScreenOverlayController が見つかりません。Director/SignalLostFx/CueScheduler の配線をスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] ScreenOverlayController が見つかりません。Director/SignalLostFx/CueScheduler の配線をスキップ。");
 
             CameraSwitchDirector? director = null;
             SignalLostFx? signalFx = null;
@@ -320,7 +321,7 @@ namespace FixedCamVr.Streaming.EditorTools
             int cgLayerIndex = LayerMask.NameToLayer(CgLayerName);
             if (cgLayerIndex < 0)
             {
-                Debug.LogWarning($"[MainDemoSceneSetup] レイヤ '{CgLayerName}' が未定義。CG 人形は出ません" +
+                Debug.LogWarning($"[MainSceneBuilder] レイヤ '{CgLayerName}' が未定義。CG 人形は出ません" +
                                  "（Project Settings > Tags and Layers に追加）。");
             }
             else
@@ -352,7 +353,7 @@ namespace FixedCamVr.Streaming.EditorTools
             }
             else
             {
-                Debug.LogWarning("[MainDemoSceneSetup] OvrHandTrackingBridge 型が解決できません（Assembly-CSharp 未コンパイル?）。人形の腕は動きません。");
+                Debug.LogWarning("[MainSceneBuilder] OvrHandTrackingBridge 型が解決できません（Assembly-CSharp 未コンパイル?）。人形の腕は動きません。");
             }
 
             EnableSimultaneousHandsAndControllers();
@@ -397,7 +398,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
             var rightHand = GameObject.Find(RightHandPath);
             if (rightHand == null)
-                Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が見つかりません。登録の先端位置が headTransform にフォールバックします。");
+                Debug.LogWarning($"[MainSceneBuilder] '{RightHandPath}' が見つかりません。登録の先端位置が headTransform にフォールバックします。");
 
             // 2.7. ShowControlClient.zoneTrackerToDisable を新 Tracker へ再配線。
             //      旧 Tracker は DeleteIfExists で消えるため、放置すると参照が missing になり
@@ -412,7 +413,7 @@ namespace FixedCamVr.Streaming.EditorTools
             }
             else
             {
-                Debug.LogWarning("[MainDemoSceneSetup] ShowControlClient が見つかりません。zoneTrackerToDisable の再配線はスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] ShowControlClient が見つかりません。zoneTrackerToDisable の再配線はスキップ。");
             }
 
             // 2.75. DiscoveryClient（cameraId → 現在 IP を実時間解決し、断が続いたカメラを /info 照合の上で自動張替）。
@@ -541,8 +542,8 @@ namespace FixedCamVr.Streaming.EditorTools
             // 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す面）。覆いと同じ GameObject に
             // 載せる — どちらも CenterEyeAnchor 直下の全画面パスで、描画順だけが違う（覆い 4900 → 殻 4910）。
             var containment = CreateContainmentShell(introVeil.gameObject, showControl);
-            // 封印の箱（外から見た隔離）。world 空間の箱なので親の transform に依存しないが、
-            // 隔離殻と同じ GameObject に載せて「境界を持つのはここ」を 1 箇所に見せる。
+            // 封印の箱（外から見た隔離）。⚠ 2026-08-15 に体験から外した（重み sealBox は全段 0 で、描かれも鳴りもしない）。
+            // シーンには置いたままにしてある。理由と、シーンから外す・戻す手順は .claude/reference/attic-sealed-box.md。
             var sealedBox = CreateSealedBox(introVeil.gameObject, showControl);
             // 3.25. 歩行誘導（床の矢印と円）。タイトルの直後、体験者を所定の位置まで歩かせる
             //       （canon/LEDGER.md 0079）。**world 空間の床の印**なので Logic 直下・head 非親。
@@ -692,7 +693,7 @@ namespace FixedCamVr.Streaming.EditorTools
             if (rightHand != null)
                 guidePanel = CreateControllerGuidePanel(logic.transform, rightHand.transform, centerEye.transform, statusHud);
             else
-                Debug.LogWarning($"[MainDemoSceneSetup] '{RightHandPath}' が無いため ControllerGuidePanel の生成をスキップ。");
+                Debug.LogWarning($"[MainSceneBuilder] '{RightHandPath}' が無いため ControllerGuidePanel の生成をスキップ。");
 
             // 4.3. 報告の押し方とゲージは **[Comms] の下段** へ移した（2026-08-16・canon/LEDGER.md 0058）。
             //      左コントローラに追従する面（VisitorMarkPanel）は消してある。
@@ -730,7 +731,7 @@ namespace FixedCamVr.Streaming.EditorTools
             EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = trackerGo;
-            Debug.Log("[MainDemoSceneSetup] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右 A 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・右 B を押している間だけ表示・黒の上に描く） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / [Comms]（接続確認・報告練習・本編の連絡とゲージ） / OutroReport（終幕の報告 4 行） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（報告練習後に自動表示し、左 X/Y 短押しで閉じる） / OvrBridge（左 X/Y: 報告練習・本編報告・題字開始。右手: A 長押し=体験者リセット / B=押している間ステータス / トリガー長押し=登録。右グリップは未使用）。シーン保存済み。" +
+            Debug.Log("[MainSceneBuilder] 完了。Zones=4（静的フォールバック・推測配置） / Tracker（Director 経由切替） / CourseFrame + ZoneLayoutApplier（show.json layout で生成） / CourseRegistrationController（トリガー 2 秒長押し→N 点登録、A=マーク/B=確定。スティックナッジ廃止） / LapCounter + CueScheduler（周回×ゾーンで cue 自動発火・ライブ優先。周回は director の Zone 切替のみ数え、手動/Web固定/外部/インサートは不算入。runEpoch 変化 or 右 A 2 秒長押しでランリセット） / TimelineDirector + TakeRunner（show.json timeline: 区間の演出・カット / 区間 post 上書き / 区間 BGM。v2 の cue・インサートは読み込み時に演出へ変換。timeline 不在時は従来 schedule で動く） / CameraSwitchDirector + SwitchAudioCue + SignalLostFx（切替作法・フェイルソフト・Screen 上） / [Bgm]（BgmDirector: 区間 BGM 切替・ループ範囲・クロスフェード。show.json 未指定なら従来の固定ループ） / StartupFader / StatusHud（単一サーフェス・緩追従・右 B を押している間だけ表示・黒の上に描く） / ControllerGuidePanel（スタッフ専用・右コントローラ追従・モード別操作早見表） / [Comms]（接続確認・報告練習・本編の連絡とゲージ） / OutroReport（終幕の報告 4 行） / Diagnostics（[HudDump] ログ + HMD 軌跡 CSV + Editor H） / Title（報告練習後に自動表示し、左 X/Y 短押しで閉じる） / OvrBridge（左 X/Y: 報告練習・本編報告・題字開始。右手: A 長押し=体験者リセット / B=押している間ステータス / トリガー長押し=登録。右グリップは未使用）。シーン保存済み。" +
                       "次は URP-Balanced-Renderer.asset に FullScreenPassRendererFeature を追加（手動）。" +
                       "詳細: docs/onsite-checklist.md");
         }
@@ -747,13 +748,13 @@ namespace FixedCamVr.Streaming.EditorTools
             var type = System.Type.GetType("OVRManager, Oculus.VR");
             if (type == null)
             {
-                Debug.LogWarning("[MainDemoSceneSetup] OVRManager 型が解決できません。素手 + コントローラ同時使用の設定をスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] OVRManager 型が解決できません。素手 + コントローラ同時使用の設定をスキップ。");
                 return;
             }
             var manager = Object.FindObjectOfType(type, includeInactive: true) as MonoBehaviour;
             if (manager == null)
             {
-                Debug.LogWarning("[MainDemoSceneSetup] シーンに OVRManager が居ません。素手 + コントローラ同時使用の設定をスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] シーンに OVRManager が居ません。素手 + コントローラ同時使用の設定をスキップ。");
                 return;
             }
 
@@ -777,7 +778,7 @@ namespace FixedCamVr.Streaming.EditorTools
             if (changed)
             {
                 EditorUtility.SetDirty(manager);
-                Debug.Log("[MainDemoSceneSetup] OVRManager: 素手 + コントローラの同時使用と、起動時のカメラ権限要求を有効化しました" +
+                Debug.Log("[MainSceneBuilder] OVRManager: 素手 + コントローラの同時使用と、起動時のカメラ権限要求を有効化しました" +
                           "（CG 人形の腕を体験者の手で動かすため。スタッフは右 A / B / トリガーを使用。" +
                           "カメラ権限は導入で実景を破片へ貼るため）。");
             }
@@ -914,7 +915,7 @@ namespace FixedCamVr.Streaming.EditorTools
             return shell;
         }
 
-        // 封印の箱。**外から見た隔離**（canon/LEDGER.md 0003）。段 0 で体験エリアの外に居るあいだだけ出る。
+        // 封印の箱。**外から見た隔離**（canon/LEDGER.md 0003）。⚠ 2026-08-15 から体験には出ない（attic-sealed-box.md）。
         private static SealedBox CreateSealedBox(GameObject veilGo, ShowControlClient? showControl)
         {
             var box = veilGo.GetComponent<SealedBox>();
@@ -1036,19 +1037,19 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             if (rig == null)
             {
-                Debug.LogWarning("[MainDemoSceneSetup] OVRCameraRig が見つかりません。導入演出のパススルー加工はスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] OVRCameraRig が見つかりません。導入演出のパススルー加工はスキップ。");
                 return;
             }
             var layerType = System.Type.GetType("OVRPassthroughLayer, Oculus.VR");
             if (layerType == null)
             {
-                Debug.LogWarning("[MainDemoSceneSetup] OVRPassthroughLayer が見つかりません（Meta XR SDK 未導入？）。導入演出のパススルー加工はスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] OVRPassthroughLayer が見つかりません（Meta XR SDK 未導入？）。導入演出のパススルー加工はスキップ。");
                 return;
             }
             if (rig.GetComponent(layerType) == null)
             {
                 rig.gameObject.AddComponent(layerType);
-                Debug.Log("[MainDemoSceneSetup] OVRCameraRig に OVRPassthroughLayer を追加（導入演出用・既定 Underlay）。");
+                Debug.Log("[MainSceneBuilder] OVRCameraRig に OVRPassthroughLayer を追加（導入演出用・既定 Underlay）。");
             }
 
             // ⚠ **背景は不透明な黒 (a=1) にする。透明 (a=0) にしてはいけない。**
@@ -1076,7 +1077,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var stylerType = System.Type.GetType("FixedCamVr.OvrBridge.PassthroughStyler, Assembly-CSharp");
             if (stylerType == null)
             {
-                Debug.LogWarning("[MainDemoSceneSetup] PassthroughStyler が見つかりません。導入演出のパススルー加工はスキップ。");
+                Debug.LogWarning("[MainSceneBuilder] PassthroughStyler が見つかりません。導入演出のパススルー加工はスキップ。");
                 return;
             }
             if (rig.GetComponent(stylerType) == null) rig.gameObject.AddComponent(stylerType);
@@ -1143,7 +1144,7 @@ namespace FixedCamVr.Streaming.EditorTools
             }
             if (found < SoundProbeResources.Length)
             {
-                Debug.LogWarning($"[MainDemoSceneSetup] 音源が足りません（Resources/Sound/ に "
+                Debug.LogWarning($"[MainSceneBuilder] 音源が足りません（Resources/Sound/ に "
                                  + $"{found}/{SoundProbeResources.Length} 本）。"
                                  + "`py -3.11 tools/make-sounds.py` を走らせてから焼き直すこと。");
             }
@@ -1179,7 +1180,7 @@ namespace FixedCamVr.Streaming.EditorTools
         {
             var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(BgmClipPath);
             if (clip == null)
-                Debug.LogWarning($"[MainDemoSceneSetup] BGM クリップが見つかりません: {BgmClipPath}。既定クリップなしで [Bgm] を作ります。");
+                Debug.LogWarning($"[MainSceneBuilder] BGM クリップが見つかりません: {BgmClipPath}。既定クリップなしで [Bgm] を作ります。");
 
             var existing = parent.Find(BgmName);
             GameObject go;
@@ -1418,7 +1419,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var p = so.FindProperty(propName);
             if (p == null)
             {
-                Debug.LogWarning($"[MainDemoSceneSetup] FindProperty 失敗: {so.targetObject.GetType().Name}.{propName}");
+                Debug.LogWarning($"[MainSceneBuilder] FindProperty 失敗: {so.targetObject.GetType().Name}.{propName}");
                 return;
             }
             p.objectReferenceValue = value;
@@ -1429,7 +1430,7 @@ namespace FixedCamVr.Streaming.EditorTools
             var p = so.FindProperty(propName);
             if (p == null || !p.isArray)
             {
-                Debug.LogWarning($"[MainDemoSceneSetup] 配列プロパティが見つかりません: {propName}");
+                Debug.LogWarning($"[MainSceneBuilder] 配列プロパティが見つかりません: {propName}");
                 return;
             }
             p.arraySize = zones.Length;

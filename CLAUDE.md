@@ -29,6 +29,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | ユーザーに見せて赤入れをもらう（前後・試した版・隣の場面を並べ 1 点訊く） | `skills/direction-round` |
 | 体験を頭から終わりまで通して見直す | `skills/show-review` |
 | 「動かない」を層で切り分ける | `skills/troubleshoot` |
+| コードを初めて読む（体験 1 回の流れとクラスの持ち主） | [Assets/Scripts/README.md](Assets/Scripts/README.md) |
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |
 | 説明資料用に体験中の画を撮る（左グリップ → 4 種類。**展示本番の機は OFF**） | [memory/experience_shots.md](.claude/memory/experience_shots.md)（取り出しは `py -3.11 tools/quest-shots.py pull`） |
 | 紹介動画を広い画角で撮る（Quest で記録 → PC で本番を流し直して mp4） | [memory/experience_replay.md](.claude/memory/experience_replay.md)（`tools/quest-xprec.py on` → `pull` → `.\tools\unity.ps1 replay`） |
@@ -62,7 +63,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 .\tools\unity.ps1 build fixedcam  # → Builds/mawarimi.apk
 .\tools\unity.ps1 test
 .\tools\unity.ps1 menu            # Editor の機能を CLI から呼ぶ（引数なしで一覧）
-.\tools\unity.ps1 menu scene      # 例: Setup Main Demo Scene（ビルド前に必須）
+.\tools\unity.ps1 menu scene      # 例: Build Main Scene（ビルド前に必須）
 ```
 
 - **Editor のメニューは `menu` から全部呼べる**（2026-08-09〜）。Setup 6 種・プレビュー / 検証 18 種。
@@ -88,6 +89,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | C 例外 | Unity の例外・警告 | 実機 logcat |
 
 - **`py -3.11 tools/quest-record.py --sec 45 --walk` の 1 回で A・B・C が揃う**（HMD 不要）。
+- 実機を使わない門は 2 つ: `.\tools\unity.ps1 test`（C#）と `py -3.11 tools/test-tools.py`（解析器・現場の道具・ログの書き手と読み手の照合）
   依存は `tools/requirements.txt`
 - ⚠⚠ **機を指定するなら `--serial`。`ANDROID_SERIAL` は効かない**（走行は自分で機を選び直す）。
   焼いた APK を**両機に入れてから**走らせるのがいちばん安い — 古い APK の機に当たると

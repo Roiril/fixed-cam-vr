@@ -17,5 +17,5 @@ paths:
 | 尺・秒数・区間の割り当て | `show.json`（現場の値）と実装。文書に秒数を写さない |
 | 経緯の全文 | `reference/archive/show-design-2026-10-22.md`（凍結） |
 
-シーン（`Main.unity`）は `.\tools\unity.ps1 menu scene`（Setup Main Demo Scene）が組む。手で編集した値は
+シーン（`Main.unity`）は `.\tools\unity.ps1 menu scene`（Build Main Scene）が組む。手で編集した値は
 次の Setup で消えるので、変えるなら Setup のコード側を直す。

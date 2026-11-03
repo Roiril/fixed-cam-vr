@@ -174,7 +174,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     var comp = Object.FindObjectOfType(s.Type, includeInactive: true) as MonoBehaviour;
                     if (comp == null)
                     {
-                        sb.Append($"  {s.Name,-16} — シーンに居ません（Setup Main Demo Scene を先に）\n");
+                        sb.Append($"  {s.Name,-16} — シーンに居ません（Build Main Scene を先に）\n");
                         bad++;
                         continue;
                     }

@@ -52,15 +52,20 @@
 
 - 開発期間：2026年4月から開発を続けています
 - コミット：1,300回以上
-- C#：本体251ファイル（約8万3千行）。自動テスト180ファイル（約2,200ケース）
+- C#：実行時のコード222ファイル（約7万1千行）、Editorの道具73ファイル。自動テスト186ファイル（約2,300ケース）
 
 ## コードの場所
 
+体験1回の流れをどのクラスが持っているかは [`Assets/Scripts/README.md`](Assets/Scripts/README.md) にまとめています。
+
 | 場所 | 内容 |
 |---|---|
-| [`Assets/Scripts/Streaming/`](Assets/Scripts/Streaming/) | カメラ映像の受信と表示 |
-| [`Assets/Scripts/Tracking/`](Assets/Scripts/Tracking/) | 体験者の位置からカメラを選ぶ処理 |
-| [`Assets/Scripts/Fx/`](Assets/Scripts/Fx/) | 映像の加工（色調・走査線・グリッチ） |
+| [`Assets/Scripts/Streaming/`](Assets/Scripts/Streaming/) | 体験の大部分。進行・演出・画面の加工・音・CGの人形・導入と終幕と、カメラ映像の受信（名前は最初の役目の名残で、受信は全体の約7%） |
+| [`Assets/Scripts/Tracking/`](Assets/Scripts/Tracking/) | 体験者の位置から区画を決める処理・周回の数え方・位置合わせ |
+| [`Assets/Scripts/Diagnostics/`](Assets/Scripts/Diagnostics/) | 体験者とスタッフが見る面（AIエージェントの連絡の面・終幕・準備画面）と、検証用のログ |
+| [`Assets/Scripts/OvrBridge/`](Assets/Scripts/OvrBridge/) | Quest のコントローラ入力とパススルー（Meta XR SDK に触れるのはここだけ） |
+| [`Assets/Scripts/Input/`](Assets/Scripts/Input/) | コントローラの長押しやモードの判定（SDK に依存しない純ロジック） |
+| [`Assets/Scripts/Fx/`](Assets/Scripts/Fx/) | 映像加工の試作。本番のシーンでは使っていない |
 | [`Assets/Tests/`](Assets/Tests/) | 自動テスト |
 | [`tools/web-compositor/`](tools/web-compositor/) | 演出を編集・確認するWebの運用卓（JavaScript、Pythonのサーバ） |
 | [`tablet/`](tablet/) | 体験者への説明とスタッフの操作に使うAndroidタブレットのアプリ |
@@ -122,8 +127,8 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 
 ## 実装状況
 
-用途未定の独立した表示部品として [不正アクセスのエラー演出](docs/unauthorized-access-effect.md) を用意した。
-崩れる警告文字と奥行きのある数字を 7 秒で再生する。本編の進行には未接続。
+[不正アクセスのエラー演出](docs/unauthorized-access-effect.md) は、崩れる警告文字と奥行きのある数字の表示部品。
+本編ではAIエージェントの連絡の面が乗っ取られる場面（`CommsTakeoverError`）が使う。
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -333,7 +338,7 @@ bash tools/run-quest-xp-test.sh walk 300
 
 | ファイル | 内容 |
 |---|---|
-| **[docs/proposal/](docs/proposal/)** | **企画書（唯一の正）**。体験の要求はすべてここが根拠 |
+| [docs/proposal/](docs/proposal/) | 企画段階の企画書。作りこみの段では読まない（2026-08-08）。体験の骨格は実装と `tools/analyze-xp-log.py` が守っている |
 | [docs/archive/](docs/archive/) | 廃止した資料（旧版の企画書）。**参照しない** |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 配信不通 / HMD 真っ黒 / FPS 低下 / 実機検証で得た知見 |
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場での 60 秒チェック → 切り分けフロー |

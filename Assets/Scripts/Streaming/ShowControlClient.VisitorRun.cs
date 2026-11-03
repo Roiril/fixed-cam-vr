@@ -69,9 +69,9 @@ namespace FixedCamVr.Streaming
         /// 卓が掛けたままの占有を先に外すこと（<see cref="ReleaseLiveHolds"/>）と、
         /// 卓と runEpoch を共有できないので録画の世代を自分で進めること。
         /// </summary>
-        public void BeginNewVisitorRunLocal()
+        public void BeginNewVisitorRunLocal(string origin = "現地")
         {
-            Debug.Log("[ShowControl] ラン開始（現地・右 A 2 秒長押し）");
+            Debug.Log($"[ShowControl] ラン開始（{origin}）");
             ReleaseLiveHolds();
             ResetForNewVisitor(() => ResolveRecorder()?.ResetRunLocal());
         }
@@ -84,7 +84,7 @@ namespace FixedCamVr.Streaming
         ///   1. この並び（報告数・滞在・cue・演出・BGM・音・録画・周の数え直し）
         ///   2. <see cref="ShowRunDirector.BeginRun"/>（画面の劣化・画の状態・警告音・言語切替の音・終幕の判定。
         ///      導入を挟まない設定でも必ず通る）
-        ///   3. <see cref="ShowRunDirector.RunRestarted"/> の購読（連絡の面・ステータス・心音・終幕の写真・題字）
+        ///   3. <see cref="ShowRunDirector.RunRestarted"/> の購読（連絡の面・ステータス・心音に合わせた画の加工・終幕の写真・題字・導入）
         /// 対応表と「書き忘れたら落ちるテスト」は <c>Tests/Streaming/VisitorRunResetCoverageTests</c>。
         ///
         /// ⚠ <b>順番を変えない。</b>周の数え直し（<see cref="LapCountReset"/>）は演出のリセットの後、
@@ -250,7 +250,7 @@ namespace FixedCamVr.Streaming
         public bool IsVisitorMarkBlocked
             => CourseRegistrationActive
                || (VisitorMarkBlockedProvider?.Invoke() ?? false)
-               || (timelineDirector != null && timelineDirector.ClosingAreaSec >= 0f
+               || (timelineDirector != null && timelineDirector.ClosingSegmentSec >= 0f
                    && !(ResolveRunDirector()?.ClosingPromptReadable ?? false));
 
         /// <summary>報告の長押しが始まった。件数は増やさず、該当演出の画だけを動かす。</summary>

@@ -764,7 +764,7 @@ namespace FixedCamVr.Streaming
         /// | 何 | どこ |
         /// |---|---|
         /// | 装置の唸り・砂嵐 | スクリーン（<c>ScreenAnchor</c> が運んでいる Transform） |
-        /// | 人形の笑い 4 声 | 頭を中心とした輪の <see cref="_laughBearings"/> |
+        /// | 人形の笑い（体ごとに 1 声・同時に最大 15） | 頭を中心とした輪（<see cref="SpatialAudio.PickLaughSpots"/>） |
         ///
         /// ⚠⚠ <b>笑いは頭の位置に付いていく（向きには付いていかない）。</b> 体験者は区間ごとに
         /// 歩くので、ワールドへ釘で留めると「周囲に居る」が保てない。方角はワールドで固定なので、

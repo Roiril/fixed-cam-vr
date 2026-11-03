@@ -6,8 +6,10 @@ using UnityEngine;
 namespace FixedCamVr.Tracking
 {
     /// <summary>
-    /// 毎フレーム head の位置を見て、最も優先度の高い包含ゾーンを選び、
-    /// CameraStreamRegistry のアクティブカメラを切り替える。
+    /// 毎フレーム head の位置を見て、最も優先度の高い包含ゾーンを選び、そのカメラへの切替を
+    /// <c>CameraSwitchDirector.RequestZone</c> へ頼む（Director が無いときだけ Registry を直接切り替える）。
+    /// もう 1 つの仕事として、体験者が実際に最後の A の領域に居るかを <c>ShowRunDirector.NotifyClosingAreaPresence</c>
+    /// へ渡す。これは終わり方（帰還End / 人形End）の判定の入力になる。
     /// 境界フリッカ防止に「現ゾーンは shrink 判定 / 他ゾーンは正規判定」のヒステリシスを掛ける。
     /// </summary>
     [DisallowMultipleComponent]
@@ -91,6 +93,9 @@ namespace FixedCamVr.Tracking
         /// <summary>ランタイムでヒステリシス幅を差し替える（layout.hysteresisM の反映用）。</summary>
         public void SetHysteresisShrink(float value) => hysteresisShrink = Mathf.Max(0f, value);
 
+        /// <summary>いま効いている区間判定のヒステリシス幅 (m)。layout から上書きされた後の値。</summary>
+        public float HysteresisShrink => hysteresisShrink;
+
         /// <summary>
         /// 現在ゾーンの記憶（_current）を無効化し、次 Update で現在位置から再 Pick させる。
         /// 同一ゾーンに滞在したままでも通常経路（<c>director.RequestZone</c> → dwell → Zone commit）で
@@ -132,7 +137,7 @@ namespace FixedCamVr.Tracking
             }
 
             if (_runDirector == null) _runDirector = FindObjectOfType<ShowRunDirector>();
-            bool? inClosingArea = CameraPresenceAt(0, head.position);
+            bool? inClosingArea = CameraPresenceAt(ShowRunDefaults.ClosingCamera, head.position);
             var headDevice = UnityEngine.XR.InputDevices.GetDeviceAtXRNode(UnityEngine.XR.XRNode.Head);
             if (headDevice.isValid && headDevice.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked,
                     out bool tracked) && !tracked) inClosingArea = null;

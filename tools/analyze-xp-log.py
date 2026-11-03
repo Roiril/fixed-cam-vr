@@ -3315,7 +3315,7 @@ def analyze(events, others, exp, warns=None):
         if total_n > 0 and clear_n > 0:
             verdict("FAIL", f"カメラ背景が透明なカメラが {clear_n} 台ある（{bg}）— "
                             "枠の外を黒く閉じる演出が原理的に出ない（乗算ブレンドは alpha を戻せない）。"
-                            "MainDemoSceneSetup は (0,0,0,1) を焼くので Setup Main Demo Scene を再実行する")
+                            "MainSceneBuilder は (0,0,0,1) を焼くので Build Main Scene を再実行する")
         elif total_n > 0:
             verdict("OK", f"カメラ背景は全て不透明（{bg}）— 覆いが穴を開ける方式で正しい")
     if boot and "font" in boot:

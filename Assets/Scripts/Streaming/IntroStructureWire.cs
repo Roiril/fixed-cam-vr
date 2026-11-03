@@ -9,7 +9,7 @@ namespace FixedCamVr.Streaming
     /// <summary>
     /// 導入演出の段 3。<b>現実の上に部屋の構造の線とカメラの位置の印を重ねる</b>層。
     ///
-    /// 設計の正本は <c>.claude/plans/2026-07-30_intro-passthrough-to-screen.md</c> §4。要点:
+    /// 現行の契約は <c>.claude/rules/intro-title.md</c>。設計の経緯は <c>.claude/plans/2026-07-30_intro-passthrough-to-screen.md</c> §4（当時の記録）。要点:
     ///   - ここは「自分がどこから見られているか」を知る段で、<b>情報表示ではない</b>。
     ///     だから<b>数字も文字も出さない</b>（出すと較正画面に見える）
     ///   - 線は現実に<b>直接</b>重なる。位置合わせの残差がそのまま目に触れるので、

@@ -378,7 +378,7 @@ node --test "tools/web-compositor/*.test.mjs"
 - ラン開始（▶ ラン開始 / 右 A 2 秒長押し）で**ラン既定 BGM へ戻る**
 - 区間の値 `-1` は「トラック既定を継承」
 
-> **⚠ Unity 側は `Tools/FixedCamVr/Setup/Setup Main Demo Scene` を 1 回再実行**して [Bgm] を
+> **⚠ Unity 側は `Tools/FixedCamVr/Setup/Build Main Scene` を 1 回再実行**して [Bgm] を
 > BgmDirector 化する必要がある（旧 AudioSource だけのシーンでは BGM 指示が無視され、従来の
 > 固定ループがそのまま鳴り続ける＝安全側に縮退）。
 

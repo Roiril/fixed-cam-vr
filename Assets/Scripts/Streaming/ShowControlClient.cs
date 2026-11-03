@@ -594,7 +594,7 @@ namespace FixedCamVr.Streaming
             _material = renderer != null ? renderer.material : null;
 
             // 入れ替わりの差分マスク（0095）へ無人プレートを配る。SwapMorphFx は同じ
-            // Screen GameObject に居る（MainDemoSceneSetup）。居なければ配線しないだけで、
+            // Screen GameObject に居る（MainSceneBuilder）。居なければ配線しないだけで、
             // 入れ替わりは CG の形へ縮退する（SwapMorphFx 側が警告を出す）。
             _swapFx = GetComponent<SwapMorphFx>();
             if (_swapFx == null) _swapFx = FindObjectOfType<SwapMorphFx>();
@@ -810,7 +810,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 導入演出の実行体。**居なければ null を返すだけで自動生成はしない** — 導入は
         /// シーンに焼かれた覆い・線・パススルー面と組でしか成立しないので、
-        /// コンポーネントだけ湧かせても何も見えない（`Setup Main Demo Scene` の再実行が要る）。
+        /// コンポーネントだけ湧かせても何も見えない（`Build Main Scene` の再実行が要る）。
         /// </summary>
         private IntroDirector? _introDirector;
         private IntroDirector? ResolveIntroDirector()

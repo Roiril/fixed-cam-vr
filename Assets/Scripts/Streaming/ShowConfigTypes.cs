@@ -619,17 +619,18 @@ namespace FixedCamVr.Streaming
     /// 「経路を 3 周する／体験全体は導入を含め 3 分以内／各周およそ 30 秒／導入で固定視点に慣れてから開始」を
     /// データにしたもの。**キーが無い show.json でも既定値で成立する**（従来どおり無限に走る、にはしない —
     /// 終端が無いことこそが現状の欠落なので、既定でも 3 周で終わる）。
+    /// 既定値は <see cref="ShowRunDefaults"/> が正（ここは JsonUtility のための写し。値を直書きしない）。
     /// </summary>
     [Serializable] public sealed class ShowRunDef
     {
         /// <summary>走り切る周数。0 / 負値 = コード既定 3。</summary>
-        public int totalLaps = 3;
+        public int totalLaps = ShowRunDefaults.TotalLaps;
 
         /// <summary>導入（固定視点に慣らす自由歩行）を挟むか。</summary>
         public bool introEnabled = true;
 
         /// <summary>導入の最低尺 (秒)。これを過ぎ、かつスタート区間に居れば本編へ移る。</summary>
-        public float introMinSec = 20f;
+        public float introMinSec = ShowRunDefaults.IntroMinSec;
 
         /// <summary>導入を自動で終わらせるか。false ならスタッフの明示操作（卓 / 現地）だけで進む。</summary>
         public bool introAutoAdvance = true;
@@ -638,13 +639,13 @@ namespace FixedCamVr.Streaming
         /// 目安の尺 (秒)。**体験を止めない** — 超過を卓に知らせるだけの表示用。
         /// 著作した演出を黙って間引く実装にはしない（作者に発見手段が無くなる）。
         /// </summary>
-        public float targetSec = 180f;
+        public float targetSec = ShowRunDefaults.TargetSec;
 
         /// <summary>強制終了 (秒)。動かない・固まった体験者への保険。0 / 負値 = 無効。</summary>
-        public float hardLimitSec = 300f;
+        public float hardLimitSec = ShowRunDefaults.HardLimitSec;
 
         /// <summary>終了時に黒へ落とす時間 (秒)。</summary>
-        public float endFadeSec = 1.5f;
+        public float endFadeSec = ShowRunDefaults.EndFadeSec;
 
         /// <summary>
         /// 導入演出（パススルー → 2D スクリーン）。キーが無ければコード既定で成立する。
@@ -670,10 +671,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float endHoldMaxSec = ShowRunDefaults.EndHoldMaxSec;
 
-        /// <summary>コード既定の周数。</summary>
-        public const int DefaultTotalLaps = 3;
-
-        public int ResolveTotalLaps() => totalLaps > 0 ? totalLaps : DefaultTotalLaps;
+        public int ResolveTotalLaps() => totalLaps > 0 ? totalLaps : ShowRunDefaults.TotalLaps;
 
         public float ResolveEndGraceSec() => endGraceSec > 0f ? endGraceSec : ShowRunDefaults.EndGraceSec;
 

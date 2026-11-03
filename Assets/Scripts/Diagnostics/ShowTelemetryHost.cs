@@ -990,7 +990,7 @@ namespace FixedCamVr.Diagnostics
                      $"curse={_comms.AppliedCurse:F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)} " +
                      // closing = 最終 A の確定進入からの秒。③a は cline=1 OR closing>=3。
-                     $"closing={(_timeline != null ? _timeline.ClosingAreaSec : -1f):F2} " +
+                     $"closing={(_timeline != null ? _timeline.ClosingSegmentSec : -1f):F2} " +
                      $"cline={(_timeline != null && _timeline.ClosingLineCrossed ? 1 : 0)}");
             }
 

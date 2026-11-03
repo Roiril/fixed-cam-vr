@@ -275,7 +275,7 @@ course 空間で対称に置いても、カメラ A が対称軸の真上に無�
 
 **この節では撮影前に動作するベース APK を用意する。当日素材を採用した後、最終 APK をもう一度作る。**
 
-- [ ] `Main.unity` を開いて **Tools > FixedCamVr > Setup > Setup Main Demo Scene**
+- [ ] `Main.unity` を開いて **Tools > FixedCamVr > Setup > Build Main Scene**
       （CLI なら `.\tools\unity.ps1 menu scene`）
 - [ ] **URP RendererFeature の配線**（Phase 3 FX を実機で出すために必須）
    - `Assets/Settings/URP-Balanced-Renderer.asset` を Inspector で開く
@@ -448,13 +448,13 @@ HMD内で選び直す操作は無い。
 - [ ] ゾーン境界を細かく出入り → 切替が暴れない（shrink 0.15m のヒステリシス）
 - [ ] 全ゾーン外に出る → 直前のカメラが維持される（`keepLastWhenOutside` 既定 ON）
 
-> ゾーン形状（5/4 実機計測から逆算した既定値、`MainDemoSceneSetup` で自動配置）:
+> ゾーン形状（5/4 実機計測から逆算した既定値、`MainSceneBuilder` で自動配置）:
 > - Center: pos=(0,1,0) / halfExtents=(0.5, 2, 1.2) → x ∈ [-0.5, +0.5]
 > - Right:  pos=(+0.9,1,0) / halfExtents=(0.5, 2, 1.2) → x ∈ [+0.4, +1.4]
 > - Left:   pos=(-0.9,1,0) / halfExtents=(0.5, 2, 1.2) → x ∈ [-1.4, -0.4]
 >
 > 隣接ゾーン同士が **0.1m オーバーラップ**しており、配列順（Center/Right/Left）で先勝ち = 中央寄りでは Center に張り付く設計。実プレイレンジ x≈±1.3m で Right/Left に深く入れる。
-> 部屋が極端に狭い／広い場合は `MainDemoSceneSetup.cs` で値を再調整。
+> 部屋が極端に狭い／広い場合は `MainSceneBuilder.cs` で値を再調整。
 
 ### Phase 3（映像加工）
 
@@ -543,7 +543,7 @@ HMD 装着者しか見えない値を、PC 側 Console / MCP からも読める�
 「歩いてもカメラが切り替わらない」等、**ゾーン形状を実測ベースで詰めたい時のみ**有効化する一時計測コンポーネント。
 [`Assets/Scripts/Diagnostics/HmdTrajectoryRecorder.cs`](../Assets/Scripts/Diagnostics/HmdTrajectoryRecorder.cs)。
 
-- Setup Main Demo Scene を実行すると `Diagnostics` コンテナに **自動でアタッチされる**（常時 ON 想定ではないので、調査が終わったら GameObject から Component を削除して良い）。
+- Build Main Scene を実行すると `Diagnostics` コンテナに **自動でアタッチされる**（常時 ON 想定ではないので、調査が終わったら GameObject から Component を削除して良い）。
 - 出力: 1 Hz で `[HmdTrace #N t=X.X] pos=(x,y,z) zone=Label cam=N conn=0|1 Center=in/inShrunk Right=in/inShrunk Left=in/inShrunk`
   - `in` = AABB に含まれるか（0/1）
   - `inShrunk` = `hysteresisShrink=0.15m` を効かせた縮小 AABB に含まれるか（0/1）

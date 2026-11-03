@@ -33,8 +33,13 @@ namespace FixedCamVr.OvrBridge
     /// 導入では左コントローラの接続と位置を確認し、同じ 1 秒長押しを一度練習する。
     /// 練習は本編の報告件数へ渡さない。題字が出たあとは X / Y の短押しで本編へ進む。
     /// HMD 非装着→SignalLostFx / OS recenter→CourseRegistrationController.NotifyRecentered のパッシブ系は現状維持。
+    ///
+    /// ファイルの分け方（partial class。中身は 1 つのコンポーネント）:
+    ///   - <c>OvrControllerBridge.cs</c>              … 起動・生の入力の読み取り・毎フレームの分配（<c>Update</c>）
+    ///   - <c>OvrControllerBridge.Onboarding.cs</c>   … 導入の段を画面と連絡の面へ映す
+    ///   - <c>OvrControllerBridge.VisitorReset.cs</c> … 現地の「新しい体験者」の号令（右 A 長押し・タブレット）
     /// </summary>
-    public sealed class OvrControllerBridge : MonoBehaviour
+    public sealed partial class OvrControllerBridge : MonoBehaviour
     {
         [Tooltip("トラッキングロスト（HMD 非装着）を通知する SignalLostFx（Screen 上）。null なら通知しない。")]
         [SerializeField] private SignalLostFx? signalFx;
@@ -197,7 +202,7 @@ namespace FixedCamVr.OvrBridge
             _modeLogic.Configure(LongPressSec);
             _modeLogic.Reset(ControllerModeLogic.Mode.Normal);
             _modeLogic.ModeChanged += OnModeChanged;
-            _modeLogic.RunResetRequested += ResetRun;
+            _modeLogic.RunResetRequested += OnRunResetRequested;
             guidePanel?.SetRegistration(courseRegistration);
             PushModeLabel(_modeLogic.Current); // 初期状態 NORMAL を StatusHud / heartbeat へ
 
@@ -231,7 +236,7 @@ namespace FixedCamVr.OvrBridge
         private void OnDestroy()
         {
             _modeLogic.ModeChanged -= OnModeChanged;
-            _modeLogic.RunResetRequested -= ResetRun;
+            _modeLogic.RunResetRequested -= OnRunResetRequested;
             if (courseRegistration != null)
             {
                 courseRegistration.PointCaptured -= OnRegPointCaptured;
@@ -284,6 +289,16 @@ namespace FixedCamVr.OvrBridge
                 OVRPlugin.userPresent);
         }
 
+        // 1 フレームの順番（節の見出しと対応）:
+        //   1. 生の入力を 1 回だけ読む（XpReplay.Live へ置く）・接続の縁で長押しを捨てる
+        //   2. パッシブ状態（HMD の装着・表示レート）
+        //   3. 体験者の手（左）・連絡が届いた振動・締めの振動（右）
+        //   4. モード遷移（右トリガー 2 秒 = 位置合わせ / 右 A 2 秒 = 新しい体験者）
+        //   5. 導入（左の接続確認 → 報告の練習 → 題字）
+        //   6. 本編の報告（左 X / Y の 1 秒長押し）
+        //   7. ステータス表示（右 B を押しているあいだ）
+        //   8. モード別の入力分配（位置合わせ中は右 A / B を登録へ）
+        // 順番を変えない。導入（5）が終わるまで本編の報告（6）は数えない、などの依存がある。
         private void Update()
         {
             if (showControl?.Portal != null && showControl.Portal.StaffResetProvider == null)
@@ -452,7 +467,7 @@ namespace FixedCamVr.OvrBridge
                 Debug.Log("[Haptics] 締めの合図（右・スタッフ）— 呪いが排除されて画がライブへ戻った");
             }
 
-            // ---- モード遷移（副作用は OnModeChanged / ResetRun が担う）----
+            // ---- モード遷移（副作用は OnModeChanged / ResetVisitor が担う）----
             // A の操作中に人差し指がトリガーへ掛かっても、位置合わせの長押しには数えない。
             // ⚠⚠ **B は外してある**（2026-09-14）。B は押しているあいだステータスを読む操作なので、
             //    含めると**早見表を読みながらトリガー長押しで位置合わせへ入れない**。
@@ -656,151 +671,6 @@ namespace FixedCamVr.OvrBridge
             if (cam == null) return null;
             Transform eye = _cameraRig.leftEyeAnchor != null ? _cameraRig.leftEyeAnchor : cam.transform;
             return new ExperienceShotCapture.HmdView(cam, eye);
-        }
-
-        /// <summary>
-        /// 導入の段をスタッフの面（<see cref="StatusHud"/>）の言葉にする。
-        ///
-        /// ⚠ <b>enum の名前をそのまま出さない</b>（開発語）。読むのは現場のスタッフで、
-        /// 知りたいのは「いま何を待っているか」だけ。
-        /// ⚠ 導入が終わったら空にする — 本編の 1 行目は周回なので、段が残ると嘘になる。
-        /// </summary>
-        private static string IntroStepLabel(HmdOnboardingStage stage) => stage switch
-        {
-            HmdOnboardingStage.Greeting => "名乗り",
-            HmdOnboardingStage.WaitingForController => "左の接続待ち",
-            HmdOnboardingStage.ControllerConfirmed => "報告の練習",
-            HmdOnboardingStage.Tutorial => "報告の練習",
-            HmdOnboardingStage.TutorialAccepted => "報告の練習",
-            HmdOnboardingStage.Reminder => "報告の練習",
-            HmdOnboardingStage.TitleTransition => "題字",
-            HmdOnboardingStage.Title => "題字",
-            HmdOnboardingStage.TitleDismissing => "題字",
-            _ => "",   // Complete
-        };
-
-        // 直近に push した導入の段（変わったときだけ書きに行く）。
-        private HmdOnboardingStage _pushedIntroStage = (HmdOnboardingStage)(-1);
-
-        private void ApplyOnboardingPresentation()
-        {
-            if (_staffSetup == null || _staffSetup.BlocksVisitor)
-            {
-                comms?.ClearOnboardingNotice();
-                titleScreen?.SetStartGuidance(TitleStartGuidance.Hidden);
-                return;
-            }
-            // 導入の段をスタッフの面へ。⚠ **導入の状態機械は Assembly-CSharp 側にしか無い**ので、
-            //    StatusHud からは見えない（Diagnostics は OVR も導入の入力も知らない）。
-            if (_onboarding.Stage != _pushedIntroStage)
-            {
-                _pushedIntroStage = _onboarding.Stage;
-                statusHud?.SetIntroStep(IntroStepLabel(_pushedIntroStage));
-            }
-
-            CommsNotice notice = NoticeFor(_onboarding.Prompt);
-            if (notice == CommsNotice.None) comms?.ClearOnboardingNotice();
-            else comms?.SetOnboardingNotice(notice);
-
-            TitleStartGuidance guidance = TitleStartGuidance.Hidden;
-            if (_onboarding.Stage == HmdOnboardingStage.Title)
-            {
-                if (!_lConnected) guidance = TitleStartGuidance.Reconnect;
-                else if (!_lTracked) guidance = TitleStartGuidance.MoveIntoView;
-                else if (_onboarding.NeedsRelease) guidance = TitleStartGuidance.Release;
-                else if (_onboarding.TitleLongPressHint) guidance = TitleStartGuidance.ShortPress;
-                else guidance = TitleStartGuidance.Ready;
-            }
-            titleScreen?.SetStartGuidance(guidance);
-        }
-
-        private static CommsNotice NoticeFor(HmdOnboardingPrompt prompt) => prompt switch
-        {
-            HmdOnboardingPrompt.Greeting => CommsNotice.Greeting,
-            HmdOnboardingPrompt.ControllerDisconnected => CommsNotice.ControllerDisconnected,
-            HmdOnboardingPrompt.ControllerUntracked => CommsNotice.ControllerUntracked,
-            HmdOnboardingPrompt.ControllerStaff => CommsNotice.ControllerStaff,
-            HmdOnboardingPrompt.ControllerConfirmed => CommsNotice.ControllerConfirmed,
-            HmdOnboardingPrompt.Tutorial => CommsNotice.Tutorial,
-            HmdOnboardingPrompt.TutorialShort => CommsNotice.TutorialShort,
-            HmdOnboardingPrompt.TutorialAccepted => CommsNotice.TutorialAccepted,
-            HmdOnboardingPrompt.TutorialReconnect => CommsNotice.TutorialReconnect,
-            HmdOnboardingPrompt.Reminder => CommsNotice.TutorialReminder,
-            _ => CommsNotice.None,
-        };
-
-        // ランリセット（現地手段）。LapCounter.ResetRun が周回リセット + cue 発火済みクリア + 現在ゾーン再シードを行う。
-        // LapCounter 未配線なら CueScheduler 単独で発火済みだけクリアする（周回は動かないが安全側）。
-        private bool TryResetVisitorFromTablet()
-        {
-            if (_staffSetup == null || !_staffSetup.Logic.PositionConfirmed
-                || _modeLogic.Current != ControllerModeLogic.Mode.Normal
-                || (courseRegistration != null && courseRegistration.IsActive)) return false;
-            var run = FindObjectOfType<ShowRunDirector>();
-            var outro = FindObjectOfType<OutroDirector>();
-            bool runFinished = run != null && run.Phase == ShowPhase.Finished;
-            bool outroPlaying = outro != null && outro.Stage != OutroStage.Off && outro.Stage != OutroStage.Done;
-            if (!StaffSetupLogic.CanResetFromTablet(_staffSetup.Logic.Started, runFinished, outroPlaying)) return false;
-            ResetRun();
-            return _staffSetup.Logic.VisitorStage == VisitorPreparationStage.SettingsRequired;
-        }
-
-        /// <summary>
-        /// タブレットの強制リセット。体験の途中・終幕中・位置がずれた後でも次の体験者へ戻す
-        /// （右 A 2 秒長押しと同じ処理。HMD の右コントローラが手元に無いときの出口）。
-        /// 位置合わせの作業中だけは拒否する（スタッフが HMD で点を採っている最中に画を奪わない）。
-        /// </summary>
-        private bool TryForceResetFromTablet()
-        {
-            if (_modeLogic.Current != ControllerModeLogic.Mode.Normal
-                || (courseRegistration != null && courseRegistration.IsActive)) return false;
-            Debug.Log("[OvrBridge] タブレットの強制リセットで体験を頭から始める");
-            ResetRun();
-            return true;
-        }
-
-        private void ResetRun()
-        {
-            // **号令元は ShowControlClient 1 か所に寄せる**（卓の ▶ ラン開始と同じ経路）。
-            // 個別に叩いていた旧実装は、実測滞在が前の体験者の分と混ざる・体験の骨格（相）が
-            // 戻らない、という非対称を持っていた。
-            var show = FindObjectOfType<ShowControlClient>();
-            int previousTitleSequence = titleScreen != null ? titleScreen.Sequence : -1;
-            if (show?.Portal != null) show.Portal.BeginVisitorSession();
-            else VisitorPrefs.BeginVisitor();
-            if (show != null)
-            {
-                show.BeginNewVisitorRunLocal();
-            }
-            else
-            {
-                // ShowControlClient が居ないシーン（診断用の最小構成など）向けのフォールバック。
-                // ⚠ 本番の Main シーンでは通らない。報告数と滞在は ShowControlClient が持つので、ここでは落とせない
-                //   （落とす相手が居ない）。本番の並びは ShowControlClient.ResetForNewVisitor。
-                // 走行中の演出を先に畳む（不変条件 8）。これが無いと、演出が画面を凍結したまま周回だけ
-                // リセットされ、卓が無い現場では watchdog（45s）まで出口が無くなる。
-                FindObjectOfType<TimelineDirector>()?.ResetRun();
-                FindObjectOfType<FixedCamVr.Streaming.Recording.SegmentRecorder>()?.ResetRunLocal();
-                if (lapCounter != null) lapCounter.ResetRun();
-                else cueScheduler?.ResetRun();
-                FindObjectOfType<BgmDirector>()?.ResetRun();
-                FindObjectOfType<ShowSoundDirector>()?.ResetRun();
-                FindObjectOfType<ShowRunDirector>()?.BeginRun();
-            }
-            // 体験者が代わるので、進行中の報告の長押しと余韻も落とす。
-            // 実リセット完了を確認。通常のTitle.Sequence通知と二重に新訪問を作らない。
-            if (titleScreen != null && titleScreen.Sequence != previousTitleSequence && titleScreen.Stage == TitleStage.Wait)
-            {
-                _titleSequence = titleScreen.Sequence;
-                _onboarding.Reset();
-                _setupButton.Tick(false, 0f, false);
-                _staffSetup?.VisitorResetCompleted();
-            }
-            else _staffSetup?.NewVisitor();
-            _markNeedsRelease = true;
-            _markHold.Reset();
-            haptics?.Fire(); // 長押し発火（ランリセット）
-            Debug.Log("[OvrBridge] Normal: 体験者リセット（右 A 2 秒長押し）");
         }
 
         // ---- 登録フローの触覚（購読は Assembly-CSharp 側・Tracking は OVRInput 非依存）----

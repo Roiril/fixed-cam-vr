@@ -1264,7 +1264,7 @@ namespace FixedCamVr.Diagnostics
                 introWaiting = introWaiting,
                 panelDoneReading = _logic.DoneReading,
                 // ③a は締めの線を踏むか、最終 A の確定進入から 3 秒。演出の開始は待たない。
-                closingSec = timeline != null ? timeline.ClosingAreaSec : -1f,
+                closingSec = timeline != null ? timeline.ClosingSegmentSec : -1f,
                 closingLineDefined = timeline != null && timeline.ClosingLineDefined,
                 closingLineCrossed = timeline != null && timeline.ClosingLineCrossed,
                 dollCatchUpShowing = timeline != null && timeline.DollCallShowing,
