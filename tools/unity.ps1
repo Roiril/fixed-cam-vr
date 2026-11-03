@@ -131,6 +131,10 @@ $Menus = [ordered]@{
                             Desc = 'PC の仮想体験: 色付き NPC が壁と全身の形を考慮して歩く。route=all で順/逆/引き返しを一括検証。画像は Drive の renders/virtualwalk へ（→ tools/virtualwalk-video.py で mp4）'
                             Set = 'laps=<周回 既定 1> / dwell=<各カメラの滞在秒 既定 3> / w=<出力の幅 既定 960> / outro=0|1 / maxsec=<上限秒>'
                             Out = $null }
+    'twin'             = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.TwinStill.Run'
+                            Desc = 'デジタルツインの静止画（hero / wide / low / close / rec / overhead）を 1 回で撮る。仮想体験と同じ部屋・光・仕上げ。rec は固定カメラの肩越し（画面に映像が流れる）。出力は Drive の renders/twin'
+                            Set = 'tag=<名前> / w=<幅 既定 1920> / npc=<x;z> / yaw=<度> / t=<埃の時刻 秒> / cam=<映っているカメラ 0-2> / recfrac・recback・recright・recup・recyaw・recpitch・recfov・recfill・rechaze・recshade（rec の撮り方）/ closeorbit・closeyaw'
+                            Out = $null }
     'plate-validation' = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.PlateValidation.Run'
                             Desc = '保存済み A-C 写真へ Remy と人形を多位置合成し、接地・遮蔽・解除から終幕まで検証する。-Set stills=1。出力は Drive の renders/plate-validation'
                             Src = @()

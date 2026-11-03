@@ -55,7 +55,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
         private const string CgLayerName = "ShowCg";
         private static readonly DateTime OsdStart = new DateTime(2026, 10, 14, 17, 20, 0);
 
-        [Serializable] private sealed class Root
+        [Serializable] internal sealed class Root
         {
             public ShowLayoutDef? layout;
             public Cam[]? cameras;
@@ -63,7 +63,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             public Control? control;
         }
 
-        [Serializable] private sealed class Cam
+        [Serializable] internal sealed class Cam
         {
             public string id = "";
             public ShowCameraPoseDef? pose;
@@ -72,9 +72,9 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             public bool hasCalib;
         }
 
-        [Serializable] private sealed class Control { public float switchGlitch; }
+        [Serializable] internal sealed class Control { public float switchGlitch; }
 
-        private sealed class View
+        internal sealed class View
         {
             public string id = "";
             public Texture? live;          // 実プレート（無ければ仮想部屋の RT）
@@ -157,15 +157,15 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             // ---- 部屋: プレートが揃っていれば遮蔽（深度だけ）だけ。欠けたカメラがあれば仮想の部屋も組む ----
             BuildOccluders(layout, floorY, cgLayer);
             Camera? roomCam = null;
-            // 実写を使うときも、第三者視点には同じ壁・床・備品を描く。
-            VirtualRoom.Build(layout, floorY, _trash);
+            // 実写を使うときも、第三者視点にはデジタルツイン（同じ壁・ゾーン・固定カメラの位置）を描く。
+            using VirtualRoom twin = VirtualRoom.Build(layout, floorY, Marks(views), _trash);
             if (needRoom)
             {
                 var go = new GameObject("RoomCam");
                 _trash.Add(go);
                 roomCam = go.AddComponent<Camera>();
                 roomCam.enabled = false;
-                roomCam.cullingMask = ~((1 << ScreenLayer) | (1 << cgLayer) | (1 << WalkEvidence.Layer));
+                roomCam.cullingMask = ~((1 << ScreenLayer) | (1 << cgLayer) | (1 << WalkEvidence.Layer) | (1 << VirtualRoom.GizmoLayer));
                 roomCam.clearFlags = CameraClearFlags.SolidColor;
                 roomCam.backgroundColor = new Color(0.02f, 0.02f, 0.02f, 1f);
                 for (int i = 0; i < camCount; i++)
@@ -181,27 +181,10 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             LightCg(layout);
 
             // ---- 人（体験者の代役。本番の CG 層に載る） ----
-            var prefab = Resources.Load<GameObject>("ShowActors/Remy");
-            if (prefab == null) { Debug.LogError("[VirtualWalk] ShowActors/Remy が無い"); return; }
-            var npc = UnityEngine.Object.Instantiate(prefab);
-            npc.name = "NPC (visitor)";
-            _trash.Add(npc);
-            foreach (var mb in npc.GetComponentsInChildren<MonoBehaviour>()) mb.enabled = false;
-            foreach (var smr in npc.GetComponentsInChildren<SkinnedMeshRenderer>())
-            {
-                smr.updateWhenOffscreen = true;
-                smr.forceMatrixRecalculationPerRender = true;
-            }
-            npc.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-            float bindHeight = MeasureHeight(npc);
-            npc.transform.localScale = Vector3.one * (bindHeight > 0.01f ? VisitorHeightM / bindHeight : 1f);
-            using var avatar = new VisitorAvatar(npc, _trash);
-            if (Mathf.Abs(avatar.StandingHeightM - VisitorHeightM) > .005f)
-                throw new InvalidOperationException($"体験者の立位身長が違う: {avatar.StandingHeightM:F4} / {VisitorHeightM:F4}m");
-            Debug.Log("[VirtualWalk] Avatar " + avatar.Description);
-            Transform hmd = VirtualRoom.BuildHmd(_trash);
-            SetLayerRecursive(npc, cgLayer);
-            SetLayerRecursive(hmd.gameObject, cgLayer);
+            GameObject? npc = SpawnVisitor(cgLayer, _trash, out VisitorAvatar? spawned, out Transform hmd);
+            if (npc == null || spawned == null) return;
+            using VisitorAvatar avatar = spawned;
+            twin.SetActor(npc);
 
             // CG を描く仮想カメラ（ShowCgLayer.EnsureCamera と同じ設定）
             var cgGo = new GameObject("CgCam");
@@ -364,7 +347,9 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                                                 ArgFloat("padding", 0.5f), VisitorHeightM);
             List<WalkRouteLogic.Waypoint> route = navigation.BuildRoute(order, laps, dwellSec, out string routeLog);
             if (route.Count < 2) throw new InvalidOperationException("安全な道筋を作れない: " + routeLog);
-            using var evidence = new WalkEvidence(layout, navigation, route, outDir, floorY, eyeW, _trash);
+            using var evidence = new WalkEvidence(layout, navigation, route, outDir, floorY, eyeW, twin, _trash);
+            var feedLens = new TwinLens("Feed", 256, 192, TwinLens.Grade.Plan, _trash);
+            List<VirtualRoom.CameraMark> feedMarks = Marks(views);
             ZonePickLogic.Box[] zones = BuildZones(layout, out float hyst);
             var yaw = new YawFollowLogic();
 
@@ -626,12 +611,18 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 {
                     int active = Mathf.Clamp(registry.ActiveIndex, 0, camCount - 1);
                     View v = views[active];
+                    if (active < feedMarks.Count)
+                    {
+                        twin.Feed(feedLens, feedMarks[active], simTime, frame);
+                        twin.SetScreenFeed(active, feedLens.Output);
+                    }
+                    else twin.SetActiveCamera(active);
                     if (!v.plate && roomCam != null)
                     {
                         roomCam.transform.SetPositionAndRotation(v.pos, v.rot);
                         roomCam.projectionMatrix = v.proj;
                         roomCam.targetTexture = (RenderTexture)v.live!;
-                        roomCam.Render();
+                        using (twin.BeginShot(simTime)) roomCam.Render();
                         roomCam.targetTexture = null;
                     }
                     cgCam.transform.SetPositionAndRotation(v.pos, v.rot);
@@ -659,7 +650,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                         File.WriteAllBytes(path, png ? readTex.EncodeToPNG() : readTex.EncodeToJPG(90));
                     }
                     Shoot(Path.Combine(outDir, $"f{frame:00000}.jpg"), false);
-                    evidence.Capture(frame, pos, bodyYaw);
+                    evidence.Capture(frame, pos, bodyYaw, simTime);
                     frame++;
 
                     // 乱れの見た目を強さを揃えて比べる静止画（0055 の中盤 0.32 と上限 0.6・組み替え 3 通り）。
@@ -702,7 +693,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
 
         // ---------- 部品 ----------
 
-        private static View MakeView(Cam def, string projectRoot)
+        internal static View MakeView(Cam def, string projectRoot)
         {
             var v = new View { id = def.id };
             ShowCameraCalibDef? c = def.hasCalib && def.calib != null && def.calib.IsUsable()
@@ -809,19 +800,48 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             mat.SetFloat("_ScanlineCount", p.ResolveScanlineCount());
         }
 
+        /// <summary>固定カメラの位置と画角（デジタルツインの三脚と視野）。</summary>
+        internal static List<VirtualRoom.CameraMark> Marks(IEnumerable<View> views)
+        {
+            var marks = new List<VirtualRoom.CameraMark>();
+            foreach (View v in views)
+                if (v.proj.m11 > 0f)
+                    marks.Add(new VirtualRoom.CameraMark(v.id, v.pos, v.rot, 2f * Mathf.Atan(1f / v.proj.m11) * Mathf.Rad2Deg));
+            return marks;
+        }
+
+        /// <summary>体験者の代役（Remy・立位 1.65m・HMD つき）を本番の CG 層へ置く。</summary>
+        internal static GameObject? SpawnVisitor(int cgLayer, List<UnityEngine.Object> trash, out VisitorAvatar? avatar, out Transform hmd)
+        {
+            avatar = null;
+            hmd = null!;
+            var prefab = Resources.Load<GameObject>("ShowActors/Remy");
+            if (prefab == null) { Debug.LogError("[VirtualWalk] ShowActors/Remy が無い"); return null; }
+            var npc = UnityEngine.Object.Instantiate(prefab);
+            npc.name = "NPC (visitor)";
+            trash.Add(npc);
+            foreach (var mb in npc.GetComponentsInChildren<MonoBehaviour>()) mb.enabled = false;
+            foreach (var smr in npc.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                smr.updateWhenOffscreen = true;
+                smr.forceMatrixRecalculationPerRender = true;
+            }
+            npc.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            float bindHeight = MeasureHeight(npc);
+            npc.transform.localScale = Vector3.one * (bindHeight > 0.01f ? VisitorHeightM / bindHeight : 1f);
+            avatar = new VisitorAvatar(npc, trash);
+            if (Mathf.Abs(avatar.StandingHeightM - VisitorHeightM) > .005f)
+                throw new InvalidOperationException($"体験者の立位身長が違う: {avatar.StandingHeightM:F4} / {VisitorHeightM:F4}m");
+            Debug.Log("[VirtualWalk] Avatar " + avatar.Description);
+            hmd = VirtualRoom.BuildHmd(trash);
+            SetLayerRecursive(npc, cgLayer);
+            SetLayerRecursive(hmd.gameObject, cgLayer);
+            return npc;
+        }
+
         private static ZonePickLogic.Box[] BuildZones(ShowLayoutDef layout, out float hyst)
         {
-            ShowGridDef g = layout.grid!;
-            float w = layout.floor != null && layout.floor.w > 0f ? layout.floor.w : 1.8f;
-            float d = layout.floor != null && layout.floor.d > 0f ? layout.floor.d : 1.8f;
-            var input = new ZoneLayoutSolver.GridLayoutInput
-            {
-                floorW = w, floorD = d, overlapM = layout.overlapM, hysteresisM = layout.hysteresisM,
-                tileM = g.tileM, cols = g.cols, rows = g.rows,
-                cells = ZoneLayoutSolver.ParseGridCells(g.cells, g.rows, g.cols),
-            };
-            List<ZoneLayoutSolver.ZoneRect> rects = ZoneLayoutSolver.SolveGrid(input);
-            hyst = ZoneLayoutSolver.ClampHysteresis(layout.hysteresisM, layout.overlapM);
+            List<ZoneLayoutSolver.ZoneRect> rects = VirtualRoom.SolveZones(layout, out hyst);
             var boxes = new ZonePickLogic.Box[rects.Count];
             for (int i = 0; i < rects.Count; i++)
             {
@@ -831,7 +851,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             return boxes;
         }
 
-        private static Root? LoadShow(string projectRoot, out string used)
+        internal static Root? LoadShow(string projectRoot, out string used)
         {
             used = "(なし)";
             string? explicitPath = EditorCliArgs.Get("show");
@@ -857,7 +877,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
         private static float MeasureHeight(GameObject go)
             => VisitorAvatar.MeasurePoseHeight(go);
 
-        private static void SetLayerRecursive(GameObject go, int layer)
+        internal static void SetLayerRecursive(GameObject go, int layer)
         {
             go.layer = layer;
             foreach (Transform c in go.transform) SetLayerRecursive(c.gameObject, layer);

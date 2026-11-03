@@ -314,6 +314,7 @@ adb -s <serial> install -r --no-streaming Builds\mawarimi.apk
 | Editor プレビュー | 合成の絵・HMD 内の文字・人形・位置合わせ | `.\tools\unity.ps1 menu <名前>` → `Assets/Screenshots/<種類>/` |
 | 結果画面 | 3 言語の帰還・未報告・中断 | `.\tools\unity.ps1 menu ending-record` → 専用フォントと `Assets/Screenshots/ending/` |
 | PC の仮想体験（2026-10-14〜） | 切替・暗転・乱れの**時刻・順序・曲線・重なり**、画面の追従遅れ、終幕の進み | `.\tools\unity.ps1 menu virtualwalk -Set laps=1` → `Logs/virtualwalk/<日時>/` → `py -3.11 tools/virtualwalk-video.py`（mp4 と `report.md`。前後比較は `--compare <before> <after>`）。NPC が経路を歩き、実プレート × 実シェーダ・実 Director を 90Hz で通した NPC の目の絵。⚠ 実機の代わりではない（圧縮・伝送・遅延・両眼・実ディスプレイ無し。砂嵐と点灯は進まない） |
+| デジタルツインの静止画（2026-11-04〜） | 第三者視点の部屋（裸電球の廃室・カーテンのブース・固定カメラ A/B/C の三脚と視野・床のゾーン）の見た目 | `.\tools\unity.ps1 menu twin -Set tag=<名前>` → Drive の `renders/twin/<日時>/` に hero / wide / low / close / rec / overhead（rec は固定カメラ A の肩越しで、画面に A の映像が流れる）。wide は仮想体験の `observer.mp4` と同じ画角（[memory/twin_room.md](.claude/memory/twin_room.md)） |
 | Flat デバッグシーン | 廻リ視のストリーミング系 | **Ctrl+Shift+D** → Play → Tab/数字で切替（OVR 無しの通常シーン） |
 | streaming-offline-test | スマホ実機なしで MJPEG E2E | fake server を立てて検証（[スキル](.claude/skills/streaming-offline-test/SKILL.md)） |
 | Quest Link | 実機に近い Editor Play | Build Target = Standalone のまま、XR Plug-in（Windows）で Oculus を有効化 → Link 接続 → Play。**72Hz 上限**なので性能評価は実機 APK で |
