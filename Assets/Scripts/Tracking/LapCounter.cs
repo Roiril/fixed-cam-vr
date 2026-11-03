@@ -296,7 +296,7 @@ namespace FixedCamVr.Tracking
                 ? zoneCam
                 : registry.ActiveIndex;
             int segLap = _logic.Seed(camera);
-            cueScheduler?.NotifyCameraEntered(camera, segLap, _logic.ProgressLap);
+            cueScheduler?.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: segLap, progressLap: _logic.ProgressLap));
         }
 
         private void OnCourseChanged() => ApplyOrder();
@@ -310,7 +310,7 @@ namespace FixedCamVr.Tracking
                 Debug.Log($"[LapCounter] 引き返し: camera={camera} は {_logic.SegmentLap} 周目の区間として扱う" +
                           $"（進行は {_logic.ProgressLap} 周目）");
             // lap を更新した後に進入を橋渡しする（scheduler は最新 lap で評価される）。
-            cueScheduler?.NotifyCameraEntered(camera, _logic.SegmentLap, _logic.ProgressLap);
+            cueScheduler?.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: _logic.SegmentLap, progressLap: _logic.ProgressLap));
         }
 
         private static string FormatOrder(int[] order)

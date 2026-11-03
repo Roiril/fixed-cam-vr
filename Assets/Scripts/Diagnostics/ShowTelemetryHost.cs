@@ -377,8 +377,8 @@ namespace FixedCamVr.Diagnostics
         //   `plap` = 進行の周（単調増加・終了判定）。食い違っていたら体験者が引き返している。
         //   1 つしか出さないと「引き返して演出が再演された」と「著作が二重に置かれている」を
         //   走行のログから区別できない。
-        private void OnCameraEntered(int camera, int lap, int progressLap)
-            => Emit($"ev=seg lap={lap} cam={camera} plap={progressLap}");
+        private void OnCameraEntered(SegmentEntry e)
+            => Emit($"ev=seg lap={e.SegmentLap} cam={e.Camera} plap={e.ProgressLap}");
 
         private void OnPhaseChanged(ShowPhase phase)
             => Emit($"ev=phase v={phase} plap={(_run != null ? _run.Lap : -1)} " +

@@ -775,6 +775,8 @@ namespace FixedCamVr.OvrBridge
             else
             {
                 // ShowControlClient が居ないシーン（診断用の最小構成など）向けのフォールバック。
+                // ⚠ 本番の Main シーンでは通らない。報告数と滞在は ShowControlClient が持つので、ここでは落とせない
+                //   （落とす相手が居ない）。本番の並びは ShowControlClient.ResetForNewVisitor。
                 // 走行中の演出を先に畳む（不変条件 8）。これが無いと、演出が画面を凍結したまま周回だけ
                 // リセットされ、卓が無い現場では watchdog（45s）まで出口が無くなる。
                 FindObjectOfType<TimelineDirector>()?.ResetRun();
@@ -782,6 +784,7 @@ namespace FixedCamVr.OvrBridge
                 if (lapCounter != null) lapCounter.ResetRun();
                 else cueScheduler?.ResetRun();
                 FindObjectOfType<BgmDirector>()?.ResetRun();
+                FindObjectOfType<ShowSoundDirector>()?.ResetRun();
                 FindObjectOfType<ShowRunDirector>()?.BeginRun();
             }
             // 体験者が代わるので、進行中の報告の長押しと余韻も落とす。

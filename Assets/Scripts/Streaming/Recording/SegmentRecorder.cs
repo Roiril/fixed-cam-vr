@@ -340,8 +340,9 @@ namespace FixedCamVr.Streaming.Recording
         //   `L1C2.mjr` へ上書きする ＝ 3 周目に流れるのは「その場所で最後に自分がした動き」になる。
         //   進行の周で書くと、体験者が一度も達していない周の録画ができ、
         //   3 周目のカットが指す `recLap` と食い違って**黙って飛ぶ**。
-        private void OnCameraEntered(int camera, int lap, int progressLap)
+        private void OnCameraEntered(SegmentEntry entry)
         {
+            int camera = entry.Camera, lap = entry.SegmentLap;   // 録画の区間キーは区間の周
             float now = Time.realtimeSinceStartup;
             ShowRecordDef? cfg = showControl != null ? showControl.RecordConfig : null;
             float postSec = cfg != null ? cfg.PostSec : SegmentRecordWriter.DefaultPostSec;

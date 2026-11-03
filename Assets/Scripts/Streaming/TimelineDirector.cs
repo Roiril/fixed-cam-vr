@@ -265,8 +265,9 @@ namespace FixedCamVr.Streaming
         // ⚠ 読むのは **区間の周**（lap・逆走で戻る）。進行の周（progressLap）は使わない —
         //   引き返した先は「前にそこに居たときの区間」として演出・post・BGM を貼るのが正しい
         //   （進行の周で貼ると、まだ通っていない先の周の演出が消費される）。
-        private void OnCameraEntered(int camera, int lap, int progressLap)
+        private void OnCameraEntered(SegmentEntry entry)
         {
+            int camera = entry.Camera, lap = entry.SegmentLap;   // 演出の区間キーは区間の周
             if (ShowRunDefaults.IsClosingSegment(lap, camera) && _closingAreaEnteredAt < 0f)
                 _closingAreaEnteredAt = Time.unscaledTime;
             bool hadPrev = _hasCurrent;

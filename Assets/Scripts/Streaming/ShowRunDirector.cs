@@ -382,7 +382,7 @@ namespace FixedCamVr.Streaming
         //   ここへ渡すと「帰りの A に着いた体験者が 1 区間引き返した瞬間に周回が 3 へ落ちて、
         //   体験が終わらなくなる」。終了判定は `lap > totalLaps` の 1 本しか無いので、
         //   ここを間違えると出口が丸ごと消える。
-        private void OnCameraEntered(int camera, int lap, int progressLap) => _logic.NotifyLap(progressLap);
+        private void OnCameraEntered(SegmentEntry entry) => _logic.NotifyLap(entry.ProgressLap);
 
         private void Update()
         {

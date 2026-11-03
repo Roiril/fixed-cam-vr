@@ -624,7 +624,7 @@ namespace FixedCamVr.Streaming
         private bool _wasRegistering;
         private bool _startLineResolved;          // layout.lines から実際に引けたか
         private bool _startLineWarned;            // 警告は 1 回だけ（未着なら毎フレーム引き直すので）
-        private string _startLineApplied = " ";   // 未同期を表す番兵（"" は「指定なし」と区別する）
+        private string _startLineApplied = "\0";   // 未同期を表す番兵（"" は「指定なし」と区別する）
         private bool _startLineCrossed;
 
         private void SyncStartLine(string lineId)
