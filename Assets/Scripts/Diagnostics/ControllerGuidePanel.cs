@@ -28,7 +28,7 @@ namespace FixedCamVr.Diagnostics
     /// 追従させず、常に頭へ正対（billboard）させ、手を捻っても文字が回らないようにする。
     ///
     /// OVRInput には依存しない（Diagnostics asmdef の方針）。接続状態・モードは
-    /// OvrControllerBridge が <see cref="SetControllerConnected"/> / <see cref="SetMode"/> で push する。
+    /// OvrControllerBridge が <see cref="SetControllerState"/> / <see cref="SetMode"/> で push する。
     /// </summary>
     public sealed class ControllerGuidePanel : MonoBehaviour
     {

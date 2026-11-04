@@ -37,7 +37,7 @@ namespace FixedCamVr.Streaming
 
         [Tooltip("線を走る光の強さ。0 で模様だけ、上げるほど光が強く流れる。")]
         // ⚠ 2026-08-13 に 1.0 → 1.35（canon/LEDGER.md 0029「赤い光をもう少しだけ強めに」）。
-        //    ⚠⚠ **3 箇所に現れる**（ここ / MainDemoSceneSetup / SealedBoxPreview のフォールバック）。
+        //    ⚠⚠ **3 箇所に現れる**（ここ / MainSceneBuilder / SealedBoxPreview のフォールバック）。
         //    シーンに焼かれた値が SerializeField の初期値より優先されるので、ここだけ直しても
         //    実機には届かない（`menu scene` の再実行も要る）。
         [SerializeField, Range(0f, 3f)] private float glowGain = 1.35f;

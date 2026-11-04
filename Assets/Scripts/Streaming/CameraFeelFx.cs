@@ -70,6 +70,8 @@ namespace FixedCamVr.Streaming
         // （設定を書かないと怖くならない、では現場で使われない）。
         private float _noiseDark = ShowFeelDef.DefaultNoiseDark;
         private float _noiseFixed = ShowFeelDef.DefaultNoiseFixed;
+        private float _selectedNoiseDark = CrtSignalProfile.NoiseDark;
+        private float _dollProfileBlend;
         private float _agc = ShowFeelDef.DefaultAgc;
 
         /// <summary>いまの露出バイアス (EV)。診断用。</summary>
@@ -88,7 +90,11 @@ namespace FixedCamVr.Streaming
         /// いま書いている「枠を横切るブロック数」（0 = 量子化していない）。診断用。
         /// 決めるのは <see cref="ScreenDecayLogic"/>、回すのは <see cref="ShowRunDirector"/>。
         /// </summary>
-        public float CoarseBlocks { get; private set; }
+        public float CoarseBlocks { get; private set; } = ScreenDecayLogic.BlocksFor(CrtSignalProfile.Mono);
+        public float AppliedNoiseDark => _material != null ? _material.GetFloat(NoiseDarkId) : -1;
+        public float AppliedMono => _material != null ? _material.GetFloat(MonoId) : -1;
+        public float AppliedBlocks => _material != null ? _material.GetFloat(CoarseBlocksId) : -1;
+        public float AppliedDollProfileBlend => _material != null ? _material.GetFloat("_CrtDollProfileBlend") : -1;
 
         /// <summary>
         /// 書く先（スクリーンの Renderer のマテリアル）を掴めているか。
@@ -96,6 +102,24 @@ namespace FixedCamVr.Streaming
         /// テレメトリが出す（「状態が進んだ」ではなく「効果が出た」を観測するため）。
         /// </summary>
         public bool HasMaterial => _material != null;
+
+        public bool ReferenceScreenReady => screen != null && screen.ReferenceSurfaceActive && _material != null
+            && _material.GetFloat("_CrtReference") > 0.5f && _material.GetTexture("_CrtFrameTex") != null
+            && _material.GetTexture("_CrtCaseColorTex") != null
+            && _material.GetTexture("_CrtGlassTex") != null
+            && _material.GetTexture("_CrtNormalTex") != null
+            && _material.GetTexture("_CrtGradeTex") != null
+            && _material.GetTexture("_CrtReflectanceTex") != null;
+        public float ReferenceScreenPhysicalAspect => screen != null
+            ? Mathf.Abs(screen.transform.localScale.x / Mathf.Max(screen.transform.localScale.y, 1e-5f)) : 0;
+        public float ReferenceScreenLogicalAspect => screen != null ? screen.ScreenAspect : 0;
+        public bool LensFisheyeApplied => screen != null && screen.FisheyeApplied;
+
+        /// <summary>人形視点が出ている間はカメラのレンズを外す。</summary>
+        public void SetDollPovShowing(bool showing)
+        {
+            if (screen != null) screen.DollPovShowing = showing;
+        }
 
         /// <summary>心音から画へ書いた波紋の強さ。診断用。</summary>
         public float AppliedHeartRipple { get; private set; }
@@ -113,7 +137,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 夜間モードへの進み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
         /// **量子化と同じ <see cref="ScreenDecayLogic.Shown"/> を渡す。**
-        /// 通常は 0.5 まで。人形視点と CG 人形化で 1。報告後は量子化と一緒に 0 へ戻る。
+        /// 通常は 0.5 固定。人形視点は1、CG人形化は採用値。報告後は0.5へ戻る。
         /// </summary>
         public void SetMono(float progress) => Mono = Mathf.Clamp01(progress);
 
@@ -122,15 +146,18 @@ namespace FixedCamVr.Streaming
         /// <see cref="ShowRunDirector.LateUpdate"/> から呼び、同フレームに確定した素材表示を
         /// 次の描画へ 1 フレーム遅れず渡す。
         /// </summary>
-        public void SetScreenDecay(float blocks, float progress)
+        public void SetScreenDecay(float blocks, float progress, float noiseDark = CrtSignalProfile.NoiseDark,
+                                   float dollProfileBlend = 0f)
         {
+            _selectedNoiseDark = Mathf.Clamp(noiseDark, CrtSignalProfile.NoiseDark, CrtSignalProfile.DollNoiseDark);
+            _dollProfileBlend = Mathf.Clamp01(dollProfileBlend);
             SetCoarseBlocks(blocks);
             SetMono(progress);
             Write();
         }
 
         /// <summary>いま書いている夜間モードの進み 0..1。診断用。</summary>
-        public float Mono { get; private set; }
+        public float Mono { get; private set; } = CrtSignalProfile.Mono;
 
         /// <summary>画を止める（カットの <c>hold</c>）。</summary>
         public void Hold(float sec) => _logic.Hold(sec);
@@ -536,11 +563,21 @@ namespace FixedCamVr.Streaming
             // ⚠ 解像度の劣化は <see cref="ResetAll"/> で畳まない。畳むと**終了の瞬間に画が急に鮮明になる**
             //    （終了条件が立ってから走行中の演出を見せ切る猶予がある）。落とすのは体験者の交代だけで、
             //    その号令は ShowRunDirector.BeginRun が ScreenDecayLogic.Reset へ出す。
-            => WriteUniforms(_material, _noiseDark, _noiseFixed,
+        {
+            bool selected = _material != null && _material.HasProperty("_CrtSignalProfileSelected")
+                && _material.GetFloat("_CrtSignalProfileSelected") > .5f;
+            WriteUniforms(_material, selected ? _selectedNoiseDark : _noiseDark,
+                             selected ? CrtSignalProfile.NoiseFixed : _noiseFixed,
                              _logic.ExposureBias * _agc,
                              _echoTex != null ? _logic.Echo : 0f,
                              CoarseBlocks,
                              screen != null ? screen.SourceFrameId : 0f,
                              Mono);
+            if (selected)
+            {
+                _material!.SetFloat("_CrtDollProfileBlend", _dollProfileBlend);
+                CrtSignalProfile.ApplySelected(_material);
+            }
+        }
     }
 }

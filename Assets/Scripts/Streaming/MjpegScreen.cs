@@ -1,5 +1,6 @@
 #nullable enable
 using UnityEngine;
+using UnityEngine.Rendering;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
 using Stopwatch = System.Diagnostics.Stopwatch;
 #endif
@@ -8,8 +9,8 @@ namespace FixedCamVr.Streaming
 {
     /// <summary>
     /// 固定枠スクリーン（web-compositor モデル）。
-    /// Quad の Transform は authored のまま不変。映像は FixedCamVr/ScreenComposite シェーダへ
-    /// テクスチャと contain-fit スケールを渡して letterbox 表示する。
+    /// 著作・CG・マスクの論理枠は16:9。参照筐体を持つ画面は初期化時に物理比率だけを変更し、
+    /// シェーダの共通表示変換で黒帯を除く。素材ごとにTransformを変形しない。
     /// 旧実装の ApplyOrient（/info メタで Transform を回転・変形）は廃止 —
     /// streamer は常に正立フレームを送る（.claude/rules/streaming.md）ため回転は不要で、
     /// アスペクトはデコード済み Texture の実寸から毎フレーム追従する。
@@ -47,6 +48,10 @@ namespace FixedCamVr.Streaming
         private byte[]? _scratch;
         private Renderer? _renderer;
         private Material? _material;
+        private CrtSignalProcessor? _signalProcessor;
+        private int _lastSignalFrame = -1;
+
+        public CrtSignalProcessor? SignalProcessor => _signalProcessor;
         private Texture? _lastAssigned;
         private int _lastTexW;
         private int _lastTexH;
@@ -61,10 +66,47 @@ namespace FixedCamVr.Streaming
         {
             get
             {
+                if (ReferenceSurfaceActive) return CrtReferenceScreen.LogicalAspect;
                 if (screenAspectOverride > 0f) return screenAspectOverride;
                 var s = transform.localScale;
                 return s.y > 1e-5f ? Mathf.Abs(s.x / s.y) : 1f;
             }
+        }
+
+        public bool ReferenceSurfaceActive { get; private set; }
+
+        /// <summary>人形視点の素材が出ている間はカメラのレンズを掛けない（<see cref="CameraLensLogic"/>）。</summary>
+        public bool DollPovShowing { get; set; }
+
+        /// <summary>いまマテリアルに魚眼が書かれているか。診断用。</summary>
+        public bool FisheyeApplied => _material != null && _material.HasProperty(CameraLensLogic.PropertyId)
+            && _material.GetVector(CameraLensLogic.PropertyId).x > 0f;
+
+        /// <summary>物理表示だけを参照比率へ。素材/CG/マスクの論理16:9は変更しない。</summary>
+        public void EnableReferenceSurface()
+        {
+            if (ReferenceSurfaceActive || GetComponent<CrtScreenMesh>() == null) return;
+            if (_renderer == null) _renderer = GetComponent<Renderer>();
+            if (_renderer == null) return;
+            if (_material == null)
+            {
+                if (Application.isPlaying) _material = _renderer.material;
+                else if (_renderer.sharedMaterial != null)
+                {
+                    _material = new Material(_renderer.sharedMaterial) { hideFlags = HideFlags.DontSave };
+                    _renderer.sharedMaterial = _material;
+                }
+            }
+            if (_material == null || !CrtReferenceScreen.Apply(_material)) return;
+            CrtSignalProfile.ApplySelected(_material);
+            CameraFeelFx.WriteUniforms(_material, CrtSignalProfile.NoiseDark, CrtSignalProfile.NoiseFixed,
+                0, 0, ScreenDecayLogic.BlocksFor(CrtSignalProfile.Mono), 0, CrtSignalProfile.Mono);
+            CrtSignalProfile.ApplySelected(_material);
+            ReferenceSurfaceActive = true;
+            Vector3 scale = transform.localScale;
+            scale.x = Mathf.Abs(scale.y) * CrtReferenceScreen.CaseAspect;
+            transform.localScale = scale;
+            _lastScreenAspect = -1f;
         }
 
         // ---- ソース映像の実寸（CG レイヤが RT の寸法・画角・contain 枠を合わせるために読む）----
@@ -199,7 +241,8 @@ namespace FixedCamVr.Streaming
                 enabled = false;
                 return;
             }
-            _material = _renderer.material; // インスタンス化（スクリーンは 1 枚想定）
+            if (_material == null) _material = _renderer.material; // インスタンス化（スクリーンは 1 枚想定）
+            EnableReferenceSurface();
 
             if (!UseRegistry)
             {
@@ -218,6 +261,9 @@ namespace FixedCamVr.Streaming
 
         private void OnEnable()
         {
+            RenderPipelineManager.beginCameraRendering -= PrepareSignal;
+            RenderPipelineManager.beginCameraRendering += PrepareSignal;
+            _lastSignalFrame = -1;
             if (UseRegistry) return;
 
             string url = !string.IsNullOrEmpty(overrideUrl) ? overrideUrl : source?.BuildUrl() ?? "";
@@ -234,6 +280,9 @@ namespace FixedCamVr.Streaming
 
         private void OnDisable()
         {
+            RenderPipelineManager.beginCameraRendering -= PrepareSignal;
+            _signalProcessor?.Dispose(); _signalProcessor = null;
+            if (_material != null && _material.HasProperty("_CrtSignalRuntime")) _material.SetFloat("_CrtSignalRuntime", 0);
             _receiver?.Dispose();
             _receiver = null;
         }
@@ -257,6 +306,7 @@ namespace FixedCamVr.Streaming
         private void AssignLive(Texture tex)
         {
             if (_material == null) return;
+            if (_signalProcessor != null) CrtSignalProcessor.InvalidateBindings(_material);
             _material.SetTexture(LiveTexId, tex);
             _lastAssigned = tex;
             _lastTexW = 0;
@@ -303,6 +353,8 @@ namespace FixedCamVr.Streaming
             {
                 var active = registry!.GetActive();
                 if (active == null || _material == null) return;
+                // ⚠ 映像の差し替えと同じフレームで書く。先に切り替わると 1 コマだけ別のレンズで出る。
+                CameraLensLogic.Apply(_material, registry.GetSource(registry.ActiveIndex)?.CameraId, DollPovShowing);
                 var tex = active.Texture;
                 if (!ReferenceEquals(tex, _lastAssigned)) AssignLive(tex);
                 _sourceFrame = active.LastFrameSeq;
@@ -322,6 +374,25 @@ namespace FixedCamVr.Streaming
             }
             UpdateContainScale();
             SampleLuma();
+        }
+
+        private void PrepareSignal(ScriptableRenderContext context, Camera camera)
+        {
+            // CGのmanual Camera.Render、撮影用camera、他のscreenはHMDの更新時計にしない。
+            if (!isActiveAndEnabled || !ReferenceSurfaceActive || _material == null || camera != Camera.main
+                || camera.cameraType != CameraType.Game || _lastSignalFrame == Time.frameCount) return;
+            _lastSignalFrame = Time.frameCount;
+            try
+            {
+                _signalProcessor ??= new CrtSignalProcessor();
+                CrtSignalProfile.ApplySelected(_material);
+                _signalProcessor.PrepareDisplay(_material, SourceFrameId);
+            }
+            catch (System.Exception e)
+            {
+                CrtSignalProcessor.InvalidateBindings(_material);
+                Debug.LogError("[CrtSignal] スクリーン信号を構成できません: " + e);
+            }
         }
     }
 }

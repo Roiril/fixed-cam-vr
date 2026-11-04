@@ -305,6 +305,7 @@ namespace FixedCamVr.Streaming
 
         private void OnEnable()
         {
+            if (Replay.XpReplay.Active) return;   // 再生は電話を探さない
             if (!discoveryEnabled)
             {
                 Debug.Log("[Discovery] discoveryEnabled=false: 発見機構を停止（静的 IP 運用へ縮退）。");

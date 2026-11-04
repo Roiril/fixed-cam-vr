@@ -15,7 +15,7 @@ metadata:
 
 `canon/LEDGER.md` 0102 の接近を「当日ミスなく撮る」ための環境（2026-08-22）。
 設計書は [reports/2026-08-22_approach-shoot-console.html](../../reports/2026-08-22_approach-shoot-console.html)、
-契約は `rules/streaming.md`（動画素材の先読み）、卓の説明は
+契約は `reference/archive/streaming-2026-10-22.md`（動画素材の先読み）、卓の説明は
 [tools/web-compositor/README.md](../../tools/web-compositor/README.md) の「撮影コンソール」節。
 ここは**その 3 つに書けない罠**だけ。
 

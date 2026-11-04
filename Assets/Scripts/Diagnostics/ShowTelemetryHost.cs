@@ -159,7 +159,7 @@ namespace FixedCamVr.Diagnostics
         private float _lastCommsInvasion = -1f;
         // 締めの線を締めのカットの中で踏んだ縁（③a の引き金・`canon/LEDGER.md` 0233）。
         private bool _lastClosingLine;
-        private int _lastRomiCompleted;
+        private EndingFarewellLogic.Phase _lastFarewellPhase = EndingFarewellLogic.Phase.Idle;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
@@ -331,7 +331,7 @@ namespace FixedCamVr.Diagnostics
                 _recorder.SegmentClosed += OnRecSegmentClosed;
                 _subRec = true;
                 // 録画係は show.json 適用時に生まれるので、解決が遅れて最初の開始を取り逃すことがある。
-                if (_recorder.IsRecording) OnRecSegmentOpened(_recorder.CurrentLap, _recorder.CurrentCamera);
+                if (_recorder.IsRecording) OnRecSegmentOpened(_recorder.SegmentLap, _recorder.CurrentCamera);
             }
         }
 
@@ -359,8 +359,13 @@ namespace FixedCamVr.Diagnostics
         // ---------------------------------------------------------------- イベント
 
         // ショーの時計（人の居場所）。画面が演出で塞がっていても進むのが正しい挙動。
+        //
+        // ⚠⚠ **キー名の約束: `lap=` は常に区間の周（逆走で戻る）、`plap=` は常に進行の周（単調増加）。**
+        //   どの ev でも同じ。2026-11-03 までは ev=zone / phase / mark / comms / sum の `lap=` が進行の周で、
+        //   ev=seg / commsInvasion / rec の `lap=` が区間の周だった（同じキーで意味が逆）。
+        //   解析器は旧ログのため `plap` が無ければ `lap` に落ちて読む。
         private void OnZoneCommitted(int camera)
-            => Emit($"ev=zone cam={camera} lap={(_lap != null ? _lap.CurrentLap : -1)}");
+            => Emit($"ev=zone cam={camera} lap={(_lap != null ? _lap.SegmentLap : -1)} plap={(_lap != null ? _lap.ProgressLap : -1)}");
 
         // 画面の切替（誰が画面を握ったか）。src=Zone/Manual/Override/Insert/External。
         private void OnSwitchCommitted(int camera, CameraSwitchDirector.SwitchSource src)
@@ -372,11 +377,11 @@ namespace FixedCamVr.Diagnostics
         //   `plap` = 進行の周（単調増加・終了判定）。食い違っていたら体験者が引き返している。
         //   1 つしか出さないと「引き返して演出が再演された」と「著作が二重に置かれている」を
         //   走行のログから区別できない。
-        private void OnCameraEntered(int camera, int lap, int progressLap)
-            => Emit($"ev=seg lap={lap} cam={camera} plap={progressLap}");
+        private void OnCameraEntered(SegmentEntry e)
+            => Emit($"ev=seg lap={e.SegmentLap} cam={e.Camera} plap={e.ProgressLap}");
 
         private void OnPhaseChanged(ShowPhase phase)
-            => Emit($"ev=phase v={phase} lap={(_run != null ? _run.Lap : -1)} " +
+            => Emit($"ev=phase v={phase} plap={(_run != null ? _run.Lap : -1)} " +
                     $"elapsed={(_run != null ? _run.RunElapsedSec : 0f):F1}");
 
         private void OnActiveChanged(int index) => Emit($"ev=active cam={index}");
@@ -625,10 +630,14 @@ namespace FixedCamVr.Diagnostics
         /// （2026-08-22）。覆いの形を出す<b>人の代役</b>でも 1 つ目は 1 になるので、
         /// <c>analyze-xp-log.py</c> が「人形が立っているのに笑っていない」と誤判定していた。
         /// 人形かを訊く側は<b>必ず 2 つ目を読む</b>（C# の <see cref="Cg.ShowCgLayer.DollVisible"/> と対）。
+        ///
+        /// 3 つ目（2026-10-22〜・<c>canon/LEDGER.md</c> 0287）: 人形について回る光だまりの強さ（EV）。
+        /// 人形が出ているのに 0 なら、夜間モードの黒に黒髪が溶けて頭が消えている。
+        /// <c>analyze-xp-log.py</c> の <c>cg_light_ev</c> と対で直す。
         /// </summary>
         private string CgState => _cg == null
             ? "-"
-            : $"{(_cg.IsVisible ? 1 : 0)}/{(_cg.DollVisible ? 1 : 0)}";
+            : $"{(_cg.IsVisible ? 1 : 0)}/{(_cg.DollVisible ? 1 : 0)}/{_cg.ActorLightShownEv:F2}";
 
         /// <summary>
         /// 入れ替わりのノイズ —
@@ -833,12 +842,15 @@ namespace FixedCamVr.Diagnostics
                      // ⚠ 周回の壊れ（commsGl / commsGlMat）は **`ev=sum` の側**に出す。
                      //   ここ（`ev=outro`）は終幕の縁でしか出ないので、判定の材料にならない。
                      $"marks={(_show != null ? _show.VisitorMarkCount : -1)} " +
+                     // repN = 結果画面に実際に組んだ分子（OutroReport.CapturedReports）。組む前は -1。
+                     // 解析器はこれを ev=mark n= の最後の値と照合する（marks は今の押下数で、画に出た値ではない）。
+                     $"repN={(_report != null && _report.Presented ? _report.CapturedReports : -1)} " +
                      $"ending={(_run != null ? _run.EndingOutcome.ToString() : "-")} " +
                      $"endingLeft={(_run != null && _run.EndingTrappedByLeftHalf ? 1 : 0)} " +
                      $"anomalyTotal={(_show != null ? _show.TotalAnomalyCount : -1)} " +
                      $"promptAge={(_run != null ? _run.ClosingPromptElapsedSec : -1f):F2} " +
                      // anomalies = 報告した異変の数（同じ演出は 1・`canon/LEDGER.md` 0234）。
-                     // 内部の重複除外件数。結果画面の分子は marks、分母は anomalyTotal。
+                     // 画面に出さない内部の集計。結果画面の分子は repN（押した回数・0247）、分母は anomalyTotal。
                      $"anomalies={(_show != null ? _show.ReportedAnomalyCount : -1)} " +
                      // 合図（run.outro.afterTakeId）が武装したか / 撃ったか。
                      // 著作していなければ両方 0 のままで、終わり方は従来どおり。
@@ -852,7 +864,7 @@ namespace FixedCamVr.Diagnostics
             if (_show != null && _show.VisitorMarkCount != _lastMarkCount)
             {
                 _lastMarkCount = _show.VisitorMarkCount;
-                Emit($"ev=mark n={_lastMarkCount} lap={(_run != null ? _run.Lap : -1)} " +
+                Emit($"ev=mark n={_lastMarkCount} plap={(_run != null ? _run.Lap : -1)} " +
                      $"cam={(_switch != null && _switch.TryGetCurrentZoneCamera(out int mc) ? mc : -1)}"
                      // det = 報告時に異常演出が表示されていたか。通信面の返答はこれで分かれる。
                      // res = 解除処理が通ったか。主映像の解除と進行の診断に残す。
@@ -876,7 +888,7 @@ namespace FixedCamVr.Diagnostics
             {
                 _lastCommsInvasion = _comms.InvasionProgress;
                 Emit($"ev=commsInvasion v={_lastCommsInvasion:F2} " +
-                     $"lap={(_timeline != null ? _timeline.CurrentLap : -1)} " +
+                     $"lap={(_timeline != null ? _timeline.SegmentLap : -1)} " +
                      $"cam={(_timeline != null ? _timeline.CurrentCamera : -1)} " +
                      $"cue={(_timeline != null ? _timeline.ActiveStepCueId : "")} " +
                      $"doll={(_timeline != null && _timeline.DollReplacementShowing ? 1 : 0)}");
@@ -963,7 +975,7 @@ namespace FixedCamVr.Diagnostics
             {
                 _lastCommsPulse = _comms.PulseCount;
                 Emit($"ev=comms id={_comms.LastNotice} n={_lastCommsPulse} " +
-                     $"built={(_comms.IsBuilt ? 1 : 0)} lap={(_run != null ? _run.Lap : -1)} " +
+                     $"built={(_comms.IsBuilt ? 1 : 0)} plap={(_run != null ? _run.Lap : -1)} " +
                      // chars = この文面で鳴るはずの打鍵の数（改行を除く）。
                      // 解析器が合計と `typeN` を突き合わせる（`canon/LEDGER.md` 0056）。
                      $"chars={_comms.NoticeChars} delivery={_comms.Delivery} " +
@@ -978,7 +990,7 @@ namespace FixedCamVr.Diagnostics
                      $"curse={_comms.AppliedCurse:F2} " +
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)} " +
                      // closing = 最終 A の確定進入からの秒。③a は cline=1 OR closing>=3。
-                     $"closing={(_timeline != null ? _timeline.ClosingAreaSec : -1f):F2} " +
+                     $"closing={(_timeline != null ? _timeline.ClosingSegmentSec : -1f):F2} " +
                      $"cline={(_timeline != null && _timeline.ClosingLineCrossed ? 1 : 0)}");
             }
 
@@ -992,14 +1004,24 @@ namespace FixedCamVr.Diagnostics
                      $"wait={(_timeline != null && _timeline.IsWaitingForVisitorMark ? 1 : 0)}");
             _lastClosingLine = closingLine;
 
-            // 終幕の台車（Romi）への合図。結果が出た縁で 1 行（go = 解除の縁 / cut = 電源断の縁）。
-            // ⚠ 台車が動いたかはここからは分からない（台車は開ループ）。分かるのは「合図が届き ok が返った」まで。
-            RomiCartLink? romi = _show != null ? _show.Romi : null;
-            if (romi != null && romi.Completed != _lastRomiCompleted)
+            // 帰還の別れの人形（0291）。段が変わった縁で 1 行。Idle へ戻る縁（締めの終わり・交代）は出さない。
+            // ⚠ 段だけでは「画に出た」の証拠にならない。cg = CG 層が実際に描いているか（IsVisible）と、
+            //    解けた立ち位置（人形と体験者の足元の枠 UV）を並べる。人形が体験者の左に居るかは u で見る。
+            EndingFarewellDoll? farewell = _takes != null ? _takes.Farewell : null;
+            if (farewell != null && farewell.Phase != _lastFarewellPhase)
             {
-                _lastRomiCompleted = romi.Completed;
-                Emit($"ev=romi kind={romi.LastKind} res={romi.LastResult} ms={romi.LastRoundTripMs} " +
-                     $"dry={(romi.LastDry ? 1 : 0)} sent={romi.Sent} ack={romi.Acked}");
+                _lastFarewellPhase = farewell.Phase;
+                if (farewell.Phase != EndingFarewellLogic.Phase.Idle)
+                {
+                    ShowCgLayer? fcg = _cg;
+                    var a = fcg != null ? fcg.FarewellAnchor : default;
+                    bool anchored = fcg != null && fcg.FarewellAnchored;
+                    Emit($"ev=farewell phase={farewell.Phase.ToString().ToLowerInvariant()} " +
+                         $"cg={(fcg != null && fcg.IsVisible ? 1 : 0)} anchored={(anchored ? 1 : 0)} " +
+                         $"dollU={(anchored ? a.dollUv.x : -1f):F2} dollV={(anchored ? a.dollUv.y : -1f):F2} " +
+                         $"visU={(anchored ? a.visitorUv.x : -1f):F2} visV={(anchored ? a.visitorUv.y : -1f):F2} " +
+                         $"screen={(anchored && a.fromScreen ? 1 : 0)}");
+                }
             }
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
@@ -1286,11 +1308,16 @@ namespace FixedCamVr.Diagnostics
             // （eyeW = 確保した目のテクスチャの幅・rvs = そのうち実際に描いた割合）。
             _sb.Append(" eyeW=").Append(UnityEngine.XR.XRSettings.eyeTextureWidth);
             _sb.Append(" rvs=").Append(UnityEngine.XR.XRSettings.renderViewportScale.ToString("F2"));
+            if (_feel != null)
+                _sb.Append(" crtRef=").Append(_feel.ReferenceScreenReady ? 1 : 0)
+                   .Append(" crtCase=").Append(_feel.ReferenceScreenPhysicalAspect.ToString("F4", System.Globalization.CultureInfo.InvariantCulture))
+                   .Append(" crtFrame=").Append(_feel.ReferenceScreenLogicalAspect.ToString("F4", System.Globalization.CultureInfo.InvariantCulture))
+                   .Append(" lensFish=").Append(_feel.LensFisheyeApplied ? 1 : 0);
 
             if (_run != null)
             {
                 _sb.Append(" phase=").Append(_run.Phase);
-                _sb.Append(" lap=").Append(_run.Lap);
+                _sb.Append(" plap=").Append(_run.Lap);
                 _sb.Append(" run=").Append(_run.RunElapsedSec.ToString("F0"));
                 if (_run.Phase == ShowPhase.Intro)
                     _sb.Append(" intro=").Append(_run.IntroElapsedSec.ToString("F0"));
@@ -1578,6 +1605,11 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" repMusicPlay=").Append(_report != null && _report.MusicPlaying ? 1 : 0);
             _sb.Append(" repMusicVol=").Append(_report != null ? _report.MusicVolume.ToString("F3") : "0");
             _sb.Append(" repMusicSec=").Append(_report != null ? _report.MusicSeconds.ToString("F2") : "0");
+            //   repClose = 終幕の閉じる側の残り 1..0（2026-10-22）。報告の出始めから 15 秒で 0 になり、
+            //           面と曲が同時に消える。終幕の外は `-`。
+            _sb.Append(" repClose=").Append(_outro == null || !_outro.Presenting
+                                            ? "-"
+                                            : _outro.CloseLevel.ToString("F2"));
             //   clMax = **電源断が画へ出た最大値**（`canon/LEDGER.md` 0111）。
             //   ⚠⚠ `ev=outro` は段の縁でしか出ないので、そこの `cl` は必ず頭の値（≒0）になる。
             //     潰れ切ったかは**走行全体の最大値**でしか取れない（敷く音を最大値で見るのと同じ理屈・
@@ -1655,22 +1687,30 @@ namespace FixedCamVr.Diagnostics
                .Append('/').Append(VisitorPrefs.PendingSeq)
                .Append('/').Append(VisitorPrefs.AppliedSeq)
                .Append('/').Append(VisitorPrefs.ApplyCount);
-            //   romi = 終幕の台車への合図 `<送った累計>/<ok が返った累計>`（送るのは解除の縁と電源断の縁だけ）。
-            RomiCartLink? romiSum = _show != null ? _show.Romi : null;
-            _sb.Append(" romi=").Append(romiSum != null ? romiSum.Sent : -1)
-               .Append('/').Append(romiSum != null ? romiSum.Acked : -1);
+            //   farewell = 帰還の別れの人形 `<見つめる段まで届いた回数>/<消え切った回数>`（0291）。
+            EndingFarewellDoll? farewellSum = _takes != null ? _takes.Farewell : null;
+            _sb.Append(" farewell=").Append(farewellSum != null ? farewellSum.FacedCount : -1)
+               .Append('/').Append(farewellSum != null ? farewellSum.CompletedCount : -1);
             // 周回で進む解像度の劣化（canon/LEDGER.md 0012）。
             // **進みだけ出しても意味が無い** — 書く先を掴めていなければ画は 1 画素も変わらないので、
             // 「実際に書いたブロック数」と「書く先があるか」を対で出す。
             if (_run != null)
             {
                 // ⚠⚠ **生（coarse）と画に出た側（coarseShown）は別物**（`canon/LEDGER.md` 0083）。
-                //    呪いが解けると画だけが 0 へ戻り、生は単調のまま — 音（装置の声の痩せ）と
+                //    呪いが解けると画だけが採用初期値0.5へ戻り、生は単調のまま — 音（装置の声の痩せ）と
                 //    AI の侵食が生を読んでいるので、そちらを戻すと「直った」を音で宣言してしまう。
                 //    **対で出さないと「解けたのか / そもそも劣化していないのか」が走行から読めない。**
                 _sb.Append(" coarse=").Append(_run.ScreenDecay.ToString("F2"));
                 _sb.Append(" coarseShown=").Append(_run.ScreenDecayShown.ToString("F2"));
                 _sb.Append(" coarsePos=").Append(_run.ScreenDecayNormalTarget.ToString("F2"));
+                _sb.Append(" screenProfile=dollweb20261101");
+                _sb.Append(" dollProfileBlend=").Append(_run.ScreenDollProfileBlend.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" dollProfileMat=").Append((_feel != null ? _feel.AppliedDollProfileBlend : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" noisePos=").Append(_run.ScreenNoiseTarget.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" noiseShown=").Append(_run.ScreenNoiseDark.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" noiseMat=").Append((_feel != null ? _feel.AppliedNoiseDark : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" monoMat=").Append((_feel != null ? _feel.AppliedMono : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" blocksMat=").Append((_feel != null ? _feel.AppliedBlocks : -1).ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
                 _sb.Append(" coarseMode=").Append(_run.ScreenDecayShownMode);
                 _sb.Append(" cbx=").Append(_run.ScreenDecayBlocks.ToString("F0"));
                 _sb.Append(" coarseMat=").Append(CoarseMaterialState);

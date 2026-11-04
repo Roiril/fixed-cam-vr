@@ -38,7 +38,12 @@
     const message = event.data;
     if (!message || typeof message !== 'object' || message.type !== type) return;
 
-    if (message.action === 'mode' && modes.has(message.mode)) {
+    if (message.action === 'active' && typeof message.active === 'boolean') {
+      window.MAWARIMI_GAME_ACTIVE = message.active;
+      world.dataset.active = String(message.active);
+      if (!message.active) for (const code of [...pressed]) dispatchKey(code, false);
+      notify('activity', { active: message.active, frames: Number(world.dataset.frames || 0) });
+    } else if (message.action === 'mode' && modes.has(message.mode)) {
       document.querySelector(`button[data-mode="${message.mode}"]`)?.click();
     } else if (message.action === 'key' && keys.has(message.code) && typeof message.pressed === 'boolean') {
       dispatchKey(message.code, message.pressed);

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -210,6 +211,28 @@ def effect_samples(events, key: str, t_from: float = None, t_to: float = None):
             continue
         out.append(e[key])
     return out
+
+
+def cg_fields(v) -> list:
+    """`cg=<層が描かれているか>/<人形か>/<光だまりの EV>` を分解する（C# の ShowTelemetryHost.CgState と対）。
+    旧ログは 1 つ（`cg=1`）か 2 つ。"""
+    return str(v).split("/") if v not in (None, "", "-") else []
+
+
+def cg_is_doll(v) -> bool:
+    f = cg_fields(v)
+    return len(f) >= 2 and f[1] == "1"
+
+
+def cg_light_ev(v):
+    """光だまりの EV。3 つ目が無い旧ログは None。"""
+    f = cg_fields(v)
+    if len(f) < 3:
+        return None
+    try:
+        return float(f[2])
+    except ValueError:
+        return None
 
 
 def timed_samples(events, key: str):
@@ -449,14 +472,23 @@ def config_from_show(show: dict) -> dict:
     }
 
 
+# PC のツイン走行（tools/twin-verify.py）で意味を持たない判定。合否に数えず「対象外」と書く。
+# 実機の機能が無いだけなので、ここに入れるのは PC に存在しない物だけ。走行の不具合を隠す語を入れない。
+PC_NOT_APPLICABLE = re.compile(
+    r"受信 fps|表示 fps|最悪フレーム時間|パススルー|タブレットの口|端末から出た音声"
+)
+
+
 def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
-    verdicts = []     # (level, text) level: OK / WARN / FAIL
+    verdicts = []     # (level, text) level: OK / WARN / FAIL / NA
 
     def w(line=""):
         rep.append(line)
 
     def verdict(level, text):
+        if exp.get("pc") and PC_NOT_APPLICABLE.search(text):
+            level = "NA"
         verdicts.append((level, text))
 
     for level, text in analyze_takeover(events):
@@ -580,7 +612,7 @@ def analyze(events, others, exp, warns=None):
     w("## 体験の骨格")
     phases = [e for e in events if e.get("ev") == "phase"]
     for p in phases:
-        w(f"  t={fnum(p,'t',0):7.1f}  相={p.get('v')}  lap={p.get('lap','-')}  経過={p.get('elapsed','-')}")
+        w(f"  t={fnum(p,'t',0):7.1f}  相={p.get('v')}  進行の周={p.get('plap', p.get('lap','-'))}  経過={p.get('elapsed','-')}")
     seen = [p.get("v") for p in phases]
     # ログの先頭が落ちているときは「相の記録が無い」を欠落として扱わない（そこは観測できていない）。
     # 区間が進んでいる＝本編に入った証拠なので、そちらを見る。
@@ -1414,26 +1446,36 @@ def analyze(events, others, exp, warns=None):
     #      repBuilt = 報告の面を組めたか（0 なら最後の 4 行が 1 文字も出ない）
     #      armed/cue = 著作した合図（run.outro.afterTakeId）が武装したか / そこから始まったか
     #    観測の出どころは C# の `ShowTelemetryHost`。**片方だけ直すと沈黙して食い違う。**
-    # 終幕の台車（Romi）への合図（RomiCartLink）。go = 解除の縁 / cut = 電源断の縁。
-    #   res: ok / net（届かない）/ disabled（台車側で無効）/ busy（スタッフが手で動かしている）/ pending
-    #   dry=1 は空走（Editor と自動走行）＝ 台車は記録だけして動かない。
-    #   ⚠ 台車が実際に動いたかはここでは分からない（開ループ）。台車のシリアルの EVT ending を見る。
-    romi_ev = [e for e in events if e.get("ev") == "romi"]
-    has_romi = any("romi" in e for e in events if e.get("ev") == "sum")
+    # 帰還の別れの人形（EndingFarewellDoll・LEDGER 0291）。報告で戻った後、締めの CG 人形が 1 体だけ
+    #   体験者の左に右向きで立ち、後ろを向いてゆっくり下がって消える。帰還End の写真は見つめている段で撮る。
+    #   phase: anchoring → appear → face → turn → retreat → done（出せなければ unavailable）
+    #   cg = CG 層が実際に描いているか / dollU・visU = 人形と体験者の足元の枠 UV（人形が左なら dollU < visU）
+    #   sum の farewell = <見つめる段まで届いた回数>/<消え切った回数>
+    fw_ev = [e for e in events if e.get("ev") == "farewell"]
+    has_fw = any("farewell" in e for e in events if e.get("ev") == "sum")
     released = any(e.get("ev") == "outro" and e.get("ending") == "Released" for e in events)
-    if romi_ev or (has_romi and released):
-        w("## 終幕の台車（Romi）")
-        for e in romi_ev:
-            w(f"  t={fnum(e,'t',0):7.1f}  {e.get('kind')} res={e.get('res')} {e.get('ms')}ms dry={e.get('dry')}")
-        gos = [e for e in romi_ev if e.get("kind") == "go"]
-        if released and has_romi and not gos:
-            verdict("FAIL", "解除で終わったのに台車へ合図（go）を送っていない — RomiCartLink の配線を確かめる")
-        for e in romi_ev:
-            if e.get("res") not in ("ok",):
-                verdict("WARN", f"台車への合図 {e.get('kind')} が通っていない（res={e.get('res')}）"
-                                "— 台車の電源・網（192.168.10.51）・タブレットの「自動走行」の有効を確かめる")
-        if released and gos and not any(e.get("kind") == "cut" for e in romi_ev):
-            verdict("WARN", "解除の後、電源断の合図（cut）を送っていない — 終幕が始まる前に走行が切れたなら正常")
+    if fw_ev or (has_fw and released):
+        w("## 帰還の別れの人形")
+        for e in fw_ev:
+            w(f"  t={fnum(e,'t',0):7.1f}  {e.get('phase')} cg={e.get('cg')} anchored={e.get('anchored')} "
+              f"doll=({e.get('dollU')},{e.get('dollV')}) visitor=({e.get('visU')},{e.get('visV')}) "
+              f"screen={e.get('screen')}")
+        faces = [e for e in fw_ev if e.get("phase") == "face"]
+        if released and has_fw and not faces:
+            if any(e.get("phase") == "unavailable" for e in fw_ev):
+                verdict("WARN", "帰還の別れの人形を出せなかった（較正・位置合わせ・頭の追跡のどれか）"
+                                "— 帰還End の写真は人形なしになる")
+            else:
+                verdict("FAIL", "帰還で終わったのに別れの人形が見つめる段まで届いていない — EndingFarewellDoll の配線を確かめる")
+        for e in faces:
+            if str(e.get("cg")) != "1":
+                verdict("FAIL", "別れの人形が見つめる段に入ったのに CG 層が描いていない（cg=0）")
+            elif fnum(e, "dollU", -1) >= fnum(e, "visU", -1):
+                verdict("FAIL", f"別れの人形が体験者の左に居ない（doll u={e.get('dollU')} / visitor u={e.get('visU')}）")
+            else:
+                verdict("OK", f"別れの人形が体験者の左で見つめた（doll u={e.get('dollU')} / visitor u={e.get('visU')}）")
+        if faces and not any(e.get("phase") == "done" for e in fw_ev):
+            verdict("WARN", "別れの人形が消え切る前に締めが終わった（電源断に掛かった）")
 
     outro = [e for e in events if e.get("ev") == "outro"]
     if outro:
@@ -1541,6 +1583,23 @@ def analyze(events, others, exp, warns=None):
                     verdict("WARN", "結果曲の再生位置の前進を確認できない。観測時間が短い可能性")
                 else:
                     verdict("OK", f"結果曲の再生位置が進んだ（{min(seconds):.2f}〜{max(seconds):.2f}秒）")
+            # 報告の出始めから 15 秒で面と曲が溶けて閉じる（2026-10-22）。
+            # ⚠ C# の ShowTelemetryHost の repClose と対。走行が閉じる前に切れれば WARN に留める。
+            close_all = [fnum(e, "repClose", None) for e in events
+                         if e.get("ev") == "sum" and e.get("repClose") not in (None, "-")]
+            close_all = [v for v in close_all if v is not None]
+            if done and not close_all:
+                verdict("WARN", "エンディングを閉じる観測（repClose）が出ていない — 古い APK か走行が短い")
+            elif close_all and min(close_all) <= 0.01:
+                music_after = [e for e in events if e.get("ev") == "sum"
+                               and e.get("repClose") not in (None, "-") and fnum(e, "repClose", 1) <= 0.01
+                               and fnum(e, "repMusicPlay", 0) == 1 and fnum(e, "repMusicVol", 0) > .01]
+                if music_after:
+                    verdict("FAIL", "エンディングの面は閉じたのに曲が鳴り続けている（repClose=0 で repMusicVol>0）")
+                else:
+                    verdict("OK", "エンディングの面と曲がフェードで閉じた（repClose → 0）")
+            elif close_all:
+                verdict("WARN", f"エンディングが閉じ切る前に走行が切れた（repClose 最小 {min(close_all):.2f}）")
             shown_all = [v for v in effect_samples(events, "repShown") if str(v) != "-"]
             typed_all = [v for v in effect_samples(events, "repTypeN") if str(v) != "-"]
             if report_style == "roll" and not shown_all:
@@ -1601,7 +1660,7 @@ def analyze(events, others, exp, warns=None):
         w("## AIエージェントからの連絡")
         for e in comms:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('id')} n={e.get('n')} "
-              f"built={e.get('built')} lap={e.get('lap')} chars={e.get('chars')} "
+              f"built={e.get('built')} plap={e.get('plap', e.get('lap'))} chars={e.get('chars')} "
               f"sfx={e.get('sfx')} decay={e.get('decay')} "
               f"invasion={e.get('invasion')} released={e.get('released')} "
               f"promptReady={e.get('promptReady')} wait={e.get('wait')}")
@@ -1699,8 +1758,8 @@ def analyze(events, others, exp, warns=None):
                                 "押しても返らない報告がある（装置が壊れて見える）")
             for m in ordinary_marks:
                 near = [a for a in answers if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
-                if not near:
-                    continue
+                if not near or str(m.get("released")) == "1":
+                    continue  # 解除の返事（MarkCleared・0284）は下の released_marks で見る
                 # 古いログには det が無いため res を退避値として読む。
                 detected = m.get("det") if m.get("det") is not None else m.get("res")
                 possessed_mark = (fnum(m, "invasion", 0.0) >= 0.75 - 1e-6
@@ -1732,7 +1791,7 @@ def analyze(events, others, exp, warns=None):
 
             closing_lap = int(exp.get("laps", 3)) + 1
             premature_closing_marks = [m for m in marks
-                                       if int(fnum(m, "lap", -1)) == closing_lap
+                                       if int(fnum(m, "plap", fnum(m, "lap", -1))) == closing_lap
                                        and "promptReady" in m
                                        and str(m.get("promptReady")) == "0"]
             if premature_closing_marks:
@@ -2810,6 +2869,8 @@ def analyze(events, others, exp, warns=None):
         swap = timed_samples(events, "sndSwap")
         swell = timed_samples(events, "sndSwell")
         # 区間の窓（`ev=zone` の次の区間まで）。増えてよいのは 3 周目 C だけ。
+        # ⚠ `lap` は区間の周（音が読むのと同じ。引き返すと戻る）。2026-11-03 より前のログ（plap が無い）では
+        #   進行の周が入っているので、3-A から 2-C へ引き返した走行では窓がずれる。
         zones = [(fnum(e, "t", 0.0), int(fnum(e, "cam", -1)), int(fnum(e, "lap", -1)))
                  for e in events if e.get("ev") == "zone"]
         zones.sort()
@@ -2829,10 +2890,14 @@ def analyze(events, others, exp, warns=None):
                 #    2 周目 C の保持（代役）を「人形が立っている」と読んで
                 #    「立っているのに笑っていない」と誤って FAIL を出していた。
                 #    旧ログ（1 桁の `cg=1`）は人形かを区別できないので**判定から外す**。
+                # ⚠ 2026-10-22 から 3 つ目（光だまりの EV）が付くので、末尾ではなく 2 つ目を読む。
+                # 別れの人形は笑わない（`ShowCgLayer.BeginFarewell`）。出ている間の標本は数えない。
+                farewell_t = [fnum(e, "t", 0.0) for e in events if e.get("ev") == "farewell"]
                 mute = [e for e in events
-                        if e.get("ev") == "sum" and str(e.get("cg", "")).endswith("/1")
+                        if e.get("ev") == "sum" and cg_is_doll(e.get("cg", ""))
                         and (fnum(e, "sndDolls", 0.0) or 0.0) <= 0.05
-                        and "sndSwap" in e and (fnum(e, "sndSwap", 0.0) or 0.0) <= 0.01]
+                        and "sndSwap" in e and (fnum(e, "sndSwap", 0.0) or 0.0) <= 0.01
+                        and not (farewell_t and min(farewell_t) <= fnum(e, "t", 0.0) <= max(farewell_t))]
                 if len(mute) >= 2:
                     verdict("FAIL", f"映像の中に人形が立っているのに笑っていない（cg=…/1 で sndSwap=0 が "
                                     f"{len(mute)} 回）— bed_doll_one を掴めているか、"
@@ -3054,6 +3119,35 @@ def analyze(events, others, exp, warns=None):
     # 2026-07-31 に FAIL ゼロ・演出 7 本 OK と判定した走行の画を録ったら、導入演出が 1 段も
     # 出ていなかった（パススルー未初期化 / シェーダのビルド剥がれ / カメラ背景が不透明）。
     # ここは「その結果、画・音に何かが出たか」だけを見る節。
+    # ---------------- 人形について回る光だまり ----------------
+    # `canon/LEDGER.md` 0287。人形に変わった後は夜間モードの明暗曲線が黒を潰し、
+    # 黒いカーテンの前の黒髪が背景ごと消えていた。人形を描いている間は人形の頭のあたりに
+    # 光だまりを書く（`cg=` の 3 つ目・EV）。C# の `ShowTelemetryHost.CgState` と対で直す。
+    # 別れの人形の立ち位置が解けていない間は、層が開いていても人形は強さ 0 で描かれない。
+    cg_rows = []
+    unanchored = False
+    for e in sorted((x for x in events if x.get("ev") in ("sum", "farewell")), key=lambda x: fnum(x, "t", 0.0)):
+        if e.get("ev") == "farewell":
+            unanchored = e.get("anchored") == "0" and e.get("phase") != "done"
+        elif "cg" in e and not unanchored:
+            cg_rows.append(e)
+    lit = [(cg_is_doll(e["cg"]), cg_light_ev(e["cg"])) for e in cg_rows]
+    if any(ev is not None for _d, ev in lit):
+        w("## 人形について回る光だまり")
+        doll_dark = sum(1 for d, ev in lit if d and ev is not None and ev <= 0.0)
+        doll_lit = [ev for d, ev in lit if d and ev is not None and ev > 0.0]
+        leak = sum(1 for d, ev in lit if not d and ev is not None and ev > 0.0)
+        w(f"  人形が出ていた標本 {doll_dark + len(doll_lit)} / 光だまりあり {len(doll_lit)}"
+          + (f"（{max(doll_lit):.2f} EV）" if doll_lit else ""))
+        if doll_dark >= 2:
+            verdict("FAIL", f"人形が出ているのに光だまりを書いていない標本が {doll_dark} 回"
+                            " — 人形の黒髪が夜間モードの黒に溶けて頭が消える（ShowCgLayer.WriteActorLight）")
+        elif doll_lit:
+            verdict("OK", f"人形が出ている間は光だまりを書いていた（{len(doll_lit)} 標本）")
+        if leak >= 2:
+            verdict("FAIL", f"人形が居ないのに光だまりが残っている標本が {leak} 回"
+                            " — 何も無い所が明るく浮く（ClearActorLight の漏れ）")
+
     # ---------------- 乱れ（回数で大きくなったか）----------------
     # `canon/LEDGER.md` 0055。起きるたびに強さ・尺・音が少しずつ上がり、終盤で頭打ちになる。
     # ⚠ level（glitch=）だけ見ても**台本が強いのか回数で育ったのか区別できない**ので、
@@ -3143,9 +3237,10 @@ def analyze(events, others, exp, warns=None):
     # ------------------------------------------------------------------
     # 報告した異変の数（canon/LEDGER.md 0234「1つの異変に対して報告したら内部では1だけカウント」）
     #
-    # ⚠⚠ 押した回数（ev=mark n=）と報告した異変の数（anom=）は**別物**。終幕の「報告した怪異の数」に
-    #    出るのは anom の方で、同じ演出のあいだに何度押しても 1。演出の無い所（det=0）で押しても増えない。
-    #    観測の出どころは C# の ShowTelemetryHost（ev=mark take= new= anom= / ev=outro anomalies=）。
+    # ⚠⚠ 押した回数（ev=mark n=）と報告した異変の数（anom=）は**別物**。
+    #    終幕の結果画面の分子は押した回数（n）の方（canon/LEDGER.md 0247 が 0234 を覆した）。
+    #    anom は同じ演出のあいだに何度押しても 1、演出の無い所（det=0）で押しても増えない内部の集計。
+    #    観測の出どころは C# の ShowTelemetryHost（ev=mark n= take= new= anom= / ev=outro repN= anomalies=）。
     #    **片方だけ直すと沈黙して食い違う。**
     # ⚠ 2026-09-19 より前のログには anom= が無い。その走行では数えない（FAIL にしない）。
     # ⚠ n はラン開始で 0 へ戻る（その縁の ev=mark n=0 は押下ではない）。ラン（体験者）ごとに分けて見る。
@@ -3155,7 +3250,9 @@ def analyze(events, others, exp, warns=None):
         w("## 報告した異変の数（押した回数とは別に数える）")
         played_takes = sorted({str(e.get("id")) for e in events
                                if e.get("ev") == "take" and e.get("st") == "begin" and e.get("id")})
-        outros = [e for e in events if e.get("ev") == "outro" and e.get("anomalies") is not None]
+        # repN = 結果画面に実際に組んだ分子。-1 は「まだ組んでいない」。2026-11-03 より前のログには無い。
+        outros = [e for e in events if e.get("ev") == "outro" and e.get("repN") is not None
+                  and fnum(e, "repN", -1.0) >= 0]
         runs = []
         for m in tallied:
             if not runs or fnum(m, "n", 0.0) <= fnum(runs[-1][-1], "n", 0.0):
@@ -3173,7 +3270,7 @@ def analyze(events, others, exp, warns=None):
             label = f"ラン {ri + 1}: " if len(runs) > 1 else ""
             w(f"  {label}押した {len(run)} 回 / 報告した異変 {anom_last} 件 / 出た演出 {len(played_takes)} 本")
             for m in run:
-                w(f"    t={fnum(m, 't', 0.0):6.1f} lap={m.get('lap')} take={m.get('take')} det={m.get('det')} "
+                w(f"    t={fnum(m, 't', 0.0):6.1f} plap={m.get('plap', m.get('lap'))} take={m.get('take')} det={m.get('det')} "
                   f"new={m.get('new')} anom={m.get('anom')}")
 
             ok = True
@@ -3199,12 +3296,14 @@ def analyze(events, others, exp, warns=None):
                 ok = False
                 verdict("FAIL", "演出の無い所での報告（det=0）が異変に数えられた: "
                                 + ", ".join(f"t={fnum(m, 't', 0.0):.1f}" for m in ghost))
-            # 4. 終幕に出た数（ev=outro anomalies=）と一致
+            # 4. 結果画面に組んだ分子（ev=outro repN=）が、このランで押した回数（最後の ev=mark n=）と一致
+            #    （0247: 画面に出すのは押した回数。表示を始めた時点で固定するので、後の押下は入らない）
             near_outro = [e for e in outros if t0 <= fnum(e, "t", 0.0) < t1]
-            if near_outro and str(near_outro[-1].get("anomalies")) != str(anom_last):
+            presses_last = int(fnum(run[-1], "n", 0.0))
+            if near_outro and int(fnum(near_outro[-1], "repN", -1.0)) != presses_last:
                 ok = False
-                verdict("FAIL", f"終幕の報告に出た数（anomalies={near_outro[-1].get('anomalies')}）が"
-                                f"報告した異変の数 {anom_last} と違う")
+                verdict("FAIL", f"結果画面に出た報告数（repN={near_outro[-1].get('repN')}）が"
+                                f"押した回数 {presses_last} と違う — OutroReport.Capture が読む値がずれている")
             # 5. 出た演出より多くは数えられない
             if played_takes and anom_last > len(played_takes):
                 ok = False
@@ -3235,7 +3334,7 @@ def analyze(events, others, exp, warns=None):
         if total_n > 0 and clear_n > 0:
             verdict("FAIL", f"カメラ背景が透明なカメラが {clear_n} 台ある（{bg}）— "
                             "枠の外を黒く閉じる演出が原理的に出ない（乗算ブレンドは alpha を戻せない）。"
-                            "MainDemoSceneSetup は (0,0,0,1) を焼くので Setup Main Demo Scene を再実行する")
+                            "MainSceneBuilder は (0,0,0,1) を焼くので Build Main Scene を再実行する")
         elif total_n > 0:
             verdict("OK", f"カメラ背景は全て不透明（{bg}）— 覆いが穴を開ける方式で正しい")
     if boot and "font" in boot:
@@ -3555,6 +3654,34 @@ def analyze(events, others, exp, warns=None):
                 pass
         return out
 
+    reference_material = effect_samples(events, "crtRef")
+    if reference_material:
+        any_effect_key = True
+        case_aspects = _decay_nums("crtCase")
+        frame_aspects = _decay_nums("crtFrame")
+        if "0" in reference_material:
+            verdict("FAIL", "参照CRTの筐体または反射マップが描画材質に届いていない（crtRef=0）")
+        elif not case_aspects or any(abs(v - 1280 / 1030) > 0.002 for v in case_aspects):
+            verdict("FAIL", "参照CRTの物理比率が参照画像と違う（crtCase）")
+        elif not frame_aspects or any(abs(v - 16 / 9) > 0.002 for v in frame_aspects):
+            verdict("FAIL", "参照CRTのCG・マスク用論理16:9が崩れている（crtFrame）")
+        else:
+            verdict("OK", "参照CRTの材質・物理比率・論理16:9が一致")
+
+    # C の魚眼（0308）。人形視点では外れるので、C に居た間に 1 度でも掛かったかと、
+    # C 以外で掛かっていないかを見る。
+    lens_pairs = [(fnum(e, "cam", -1.0), str(e.get("lensFish", ""))) for e in events if "lensFish" in e]
+    if lens_pairs:
+        any_effect_key = True
+        on_c = [v for cam, v in lens_pairs if cam == 2]
+        # 切替のフレームで 1 標本だけ食い違うことがあるので、2 標本以上で落とす。
+        if sum(1 for cam, v in lens_pairs if v == "1" and cam != 2) >= 2:
+            verdict("FAIL", "カメラ C 以外の映像に魚眼が掛かっている（lensFish）")
+        elif on_c and "1" not in on_c:
+            verdict("FAIL", "カメラ C を映している間に魚眼が 1 度も掛からなかった（lensFish）")
+        elif on_c:
+            verdict("OK", "魚眼はカメラ C の間だけ掛かった")
+
     decay_mat = effect_samples(events, "coarseMat")
     if decay_mat:
         any_effect_key = True
@@ -3601,7 +3728,9 @@ def analyze(events, others, exp, warns=None):
                          if e.get("ev") == "sum" and e.get("coarse") is not None]
             w(f"  呪いの解除: 視界を戻し始めた（画に出た進み 最小 {min(after):.2f}）"
               if after else "  呪いの解除: 視界を戻し始めた")
-            if after and min(after) > 0.05:
+            adopted_profile = any(e.get("screenProfile") in ("web20261101", "oldweb20261101", "dollweb20261101") for e in events)
+            release_target = .5 if adopted_profile else 0
+            if after and min(abs(v - release_target) for v in after) > 0.05:
                 verdict("FAIL", f"呪いが解けたのに視界が戻り切っていない（画の進み {min(after):.2f} 止まり）— "
                                 "ScreenDecayLogic の戻しが途中で止まっている疑い"
                                 "（相が Run を出た所で凍っていないか）")
@@ -3637,7 +3766,8 @@ def analyze(events, others, exp, warns=None):
         # CG 人形化だけが 1 になる。mode と coarseShown を対で見て、状態だけ立った配線を通さない。
         mode_samples = [(str(e.get("coarseMode", "")), fnum(e, "coarseShown"), fnum(e, "coarsePos"))
                         for e in events
-                        if e.get("ev") == "sum" and e.get("coarseMode") is not None]
+                        if e.get("ev") == "sum" and e.get("coarseMode") is not None
+                        and e.get("screenProfile") != "dollweb20261101"]
         if mode_samples:
             normal = [shown for mode, shown, _pos in mode_samples if mode == "Normal" and shown is not None]
             normal_position = [(shown, pos) for mode, shown, pos in mode_samples
@@ -3667,6 +3797,48 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", "観測した CG 人形化後の標本で劣化 1 を確認した")
 
     # 導入のあいだは 0 でなければならない（「1 周目の最初は今くらいの解像度」）。
+    adopted = [e for e in events if e.get("ev") == "sum" and e.get("screenProfile") in ("web20261101", "oldweb20261101", "dollweb20261101")]
+    if adopted:
+        errors = []
+        for e in adopted:
+            doll_profile = e.get("screenProfile") == "dollweb20261101"
+            shown, mono, blocks = (fnum(e, k) for k in ("coarseShown", "monoMat", "blocksMat"))
+            noise, actual_noise, pos = (fnum(e, k) for k in ("noiseShown", "noiseMat", "noisePos"))
+            if any(v is None or not math.isfinite(v) for v in (shown, mono, blocks, noise, actual_noise, pos)):
+                errors.append("材質の観測値が不足")
+                continue
+            # 粗さは mono から求める。coarseShown は小数 2 桁で、戻る途中だと丸めだけで 2.7 ブロックずれる。
+            if abs(mono - shown) > .011 or abs(blocks - (800 + (267 - 800) * mono)) > 1.1:
+                errors.append("mono/粗さが材質へ届いていない")
+            if abs(noise - actual_noise) > .002 or not .049 <= actual_noise <= (.341 if doll_profile else .201):
+                errors.append("暗部ノイズが材質へ届いていない")
+            if e.get("coarseMode") == "Normal" and (abs(shown - .5) > .011 or abs(noise - pos) > .002):
+                errors.append("通常画の固定mono/位置ノイズが不一致")
+            if e.get("coarseMode") == "DollHold" and abs(noise - (.34 if doll_profile else .2)) > .002:
+                errors.append("人形化後の暗部ノイズが保持されていない")
+            if doll_profile:
+                blend, material_blend = (fnum(e, k) for k in ("dollProfileBlend", "dollProfileMat"))
+                if any(v is None or not math.isfinite(v) for v in (blend, material_blend)):
+                    errors.append("人形加工の混合率が不足")
+                    continue
+                if not 0 <= blend <= 1 or abs(blend - material_blend) > .002:
+                    errors.append("人形加工の混合率が材質へ届いていない")
+                mode = e.get("coarseMode")
+                if mode in ("Normal", "DollPov") and abs(blend) > .002:
+                    errors.append("通常または人形視点にCG人形加工が残っている")
+                if mode == "DollPov" and abs(shown - 1) > .011:
+                    errors.append("人形視点のmonoが1でない")
+                if mode == "DollHold" and (abs(shown - .56) > .011 or abs(blend - 1) > .002):
+                    errors.append("人形化後のmono/加工が保持されていない")
+                if mode == "DollMorph" and (abs(shown - (.5 + .06 * blend)) > .011
+                        or abs(noise - (pos + (.34 - pos) * blend)) > .002):
+                    errors.append("人形化の進捗とmono/ノイズが一致しない")
+        if errors:
+            verdict("FAIL", "採用画面 web20261101/dollweb20261101: " + "; ".join(sorted(set(errors))))
+        else:
+            verdict("OK", "採用画面 web20261101/dollweb20261101: 通常・人形加工と実材質が一致")
+    else:
+        w("  画面加工の記録形式: legacy（web20261101 の実材質照合対象外）")
     decay_intro = _decay_nums("coarse", t_to=run_t)
     if decay_intro and max(decay_intro) > 0.001:
         any_effect_key = True
@@ -4196,6 +4368,8 @@ def main():
     ap.add_argument("log")
     ap.add_argument("--show", default="tools/web-compositor/show.json")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--pc", action="store_true",
+                    help="PC のツイン走行として読む（配信 fps・表示 fps・パススルー・タブレットは対象外）")
     args = ap.parse_args()
 
     events, others = load_events(args.log)
@@ -4205,18 +4379,23 @@ def main():
         with open(args.show, "r", encoding="utf-8") as fh:
             show = json.load(fh)
     exp = expected_from_show(show)
+    if args.pc:
+        exp["pc"] = True
+    # 実機は本番の calib で走る。PC の走行はどちらもあるので tools/twin-verify.py が照合する。
+    if not args.pc:
+        exp.setdefault("config", {})["calib"] = "show"
 
     rep, verdicts = analyze(events, others, exp, warns)
 
     out = args.out or os.path.splitext(args.log)[0] + "-report.md"
-    order = {"FAIL": 0, "WARN": 1, "OK": 2}
+    order = {"FAIL": 0, "WARN": 1, "OK": 2, "NA": 3}
     verdicts.sort(key=lambda v: order.get(v[0], 3))
     with open(out, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(f"# 実機テスト所見 — {os.path.basename(args.log)}\n\n")
         fh.write("## 判定\n\n")
         for lv, tx in verdicts:
             mark = {"FAIL": "❌", "WARN": "⚠", "OK": "✅"}.get(lv, "・")
-            fh.write(f"- {mark} {tx}\n")
+            fh.write(f"- {mark} {'（PC では対象外）' if lv == 'NA' else ''}{tx}\n")
         fh.write("\n---\n\n")
         fh.write("\n".join(rep))
         fh.write("\n")

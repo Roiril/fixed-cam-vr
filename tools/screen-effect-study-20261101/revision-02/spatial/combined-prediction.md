@@ -1,0 +1,3 @@
+1. 既存の参照由来global運動を2m基準の代理roll/translationへ変え、flat2m面で同じ相似投影になる。
+2. combinedではglobalの時間リズムを保ち、面の奥行差と既存の局所変形が相似変換を除いた残差として残る。
+3. 元UV境界ではglobal相似へ戻す投影依存拘束と固定表示の1.35倍viewport cropを開示する。元RGBの貼戻し・穴埋めは行わない。

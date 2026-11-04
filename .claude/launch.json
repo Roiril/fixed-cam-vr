@@ -24,6 +24,17 @@
       "autoPort": false
     },
     {
+      "name": "twin-game",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-3.11",
+        "tools/twin-game/serve.py",
+        "8133"
+      ],
+      "port": 8133,
+      "autoPort": false
+    },
+    {
       "name": "website",
       "runtimeExecutable": "node",
       "runtimeArgs": [

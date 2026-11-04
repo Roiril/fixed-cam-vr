@@ -9,7 +9,7 @@ metadata:
 ---
 
 2026-08-23 の調査。報告は [reports/2026-08-23_swap-mask.html](../../reports/2026-08-23_swap-mask.html)。
-契約は `rules/streaming.md`（「覆いの形」の表・無人プレートの実機配線）が正本。
+契約は `reference/archive/streaming-2026-10-22.md`（「覆いの形」の表・無人プレートの実機配線）が正本。
 ここは**そこに数値が無かったこと**だけ。
 
 ## 1. 覆いの形は 2 系統。カットごとに片方だけが効く

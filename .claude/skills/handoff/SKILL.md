@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: 次セッションへの引き継ぎプロンプトを生成。ユーザーが「セッション終わり / 引き継ぎ作って / 中断する」等を示唆した時に呼ぶ。git 状態 + Unity MCP 状態 + 直近完了タスクを構造化し、コピペで次セッションを即再開できる形で出力する。
+description: 次セッションへの引き継ぎプロンプトを生成。ユーザーが「セッション終わり / 引き継ぎ作って / 中断する」等を示唆した時に呼ぶ。git 状態 + Unity CLI の状態 + 直近完了タスクを構造化し、コピペで次セッションを即再開できる形で出力する。
 ---
 
 # 引き継ぎプロンプト生成
@@ -12,8 +12,8 @@ description: 次セッションへの引き継ぎプロンプトを生成。ユ�
 1. `git log --oneline -10` で直近のコミット
 2. `git status -s` で未コミット差分
 3. todo list の状態（completed / in_progress / pending）
-4. Unity MCP の接続状態（`mcpforunity://instances` を読む。失敗ならその旨記載）
-5. 直近のコンソール状態（`read_console` が叩けるなら最近のエラー）
+4. Unity の状態（`.\tools\unity.ps1 doctor` の要点。MCP はこの PC に未登録なので既定では見ない）
+5. 進行中の canon（`canon/ROUNDS.md` の最後の周・`canon/OPEN.md` の「実装済み・未判定」に足したもの）
 6. リポジトリの絶対パス（`git rev-parse --show-toplevel`）。**機体ごとに違うので毎回取る**
 
 ## 出力テンプレート
@@ -35,13 +35,13 @@ description: 次セッションへの引き継ぎプロンプトを生成。ユ�
 - [ ] ...
 - [ ] ...
 
-## Unity MCP 状態
-<connected? / instance / 注意点>
+## Unity の状態
+<doctor の要点 / 焼いた APK と入れた機>
 
 ## 必読
 - CLAUDE.md
 - .claude/memory/MEMORY.md（特に <該当ファイル>）
-- 領域に応じた .claude/rules/
+- canon/NOW.md の該当場面と、領域に応じた .claude/rules/
 
 ## 次にやること
 1. ...

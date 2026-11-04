@@ -354,7 +354,7 @@ stream」では発火しないようにした）で、これが**前回のビル
 ## ここで見つけて直した 2 件
 
 - **導入演出が Degrade で打ち切られる** → `ShowRunLogic` の導入終了条件に「演出が進行中でない」を追加。
-  契約は [streaming.md](../rules/streaming.md) の「体験の骨格」節。
+  契約は [streaming.md](../reference/archive/streaming-2026-10-22.md) の「体験の骨格」節。
   修正後は **Black → Real → Degrade → Structure → Frame** まで進むようになった（3.5 秒 → 8.7 秒）
 - **lag 判定の誤爆で本編 69 秒に再接続 152 回** → 分母を `min(phone_fps, 30)` で頭打ち。
   配信 60fps のとき受信 40fps でも誤爆していた（`recv=39.8/phone=59.4`）。
@@ -371,7 +371,7 @@ stream」では発火しないようにした）で、これが**前回のビル
 - 卓は JS の `??` で null → global へフォールバックするので**プレビューは正しい**。
   だから実機を見るまで誰も気づけない
 - 修正: `post != null && !post.IsDefaultLike()`（全 11 軸が既定かを見る）。
-  契約は [streaming.md](../rules/streaming.md)、回帰は `TimelinePresentFlagsTests`
+  契約は [streaming.md](../reference/archive/streaming-2026-10-22.md)、回帰は `TimelinePresentFlagsTests`
 - **教訓**: 「卓がどう書くか」に依存する present 判定は破れる。**Unity 側で防御する**。
   そして `[XP]` の `mat=` / `post=` のように**実効値をログに出す**のが唯一の発見手段だった
 

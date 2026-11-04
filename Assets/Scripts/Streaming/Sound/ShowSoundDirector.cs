@@ -549,7 +549,7 @@ namespace FixedCamVr.Streaming
                 s.camera = _timeline.CurrentCamera;
                 // ⚠ **区間の周**を読む（進行の周ではない・`rules/show-design.md`「周回数は 2 つある」）。
                 //    呪いの 2 本は「体験者がいま居る区間」で決まる。
-                s.lap = _timeline.CurrentLap;
+                s.lap = _timeline.SegmentLap;
             }
             // ⚠ **呪いが排除されたか**（0129 / 0131）。画が戻るのと同じ 1 本を読む。
             if (_run != null) s.curseReleased = _run.ScreenDecayReleased;
@@ -572,7 +572,9 @@ namespace FixedCamVr.Streaming
             //    ないもの」に人形の笑いが付く**。実測（2026-08-22 走行 20260822_080731）:
             //    2 周目 C の保持中に sndSwap 0 → 2.29 / swell 0 → 0.71 まで育っていた。
             //    人形の声が鳴り始めてよいのは、晴れて実体が出た縁だけ。
-            if (_cg != null) s.dollPresent = _cg.DollVisible;
+            // ⚠ 帰還の別れの人形（0291）は笑わせない。報告で現実へ戻った後なので、
+            //    人形の声が戻ると「呪いが解けていない」に聞こえる（0050 の逆）。
+            if (_cg != null) s.dollPresent = _cg.DollVisible && !_cg.FarewellActive;
             return s;
         }
 
@@ -762,7 +764,7 @@ namespace FixedCamVr.Streaming
         /// | 何 | どこ |
         /// |---|---|
         /// | 装置の唸り・砂嵐 | スクリーン（<c>ScreenAnchor</c> が運んでいる Transform） |
-        /// | 人形の笑い 4 声 | 頭を中心とした輪の <see cref="_laughBearings"/> |
+        /// | 人形の笑い（体ごとに 1 声・同時に最大 15） | 頭を中心とした輪（<see cref="SpatialAudio.PickLaughSpots"/>） |
         ///
         /// ⚠⚠ <b>笑いは頭の位置に付いていく（向きには付いていかない）。</b> 体験者は区間ごとに
         /// 歩くので、ワールドへ釘で留めると「周囲に居る」が保てない。方角はワールドで固定なので、

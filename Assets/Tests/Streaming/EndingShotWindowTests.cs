@@ -9,9 +9,10 @@ namespace FixedCamVr.Streaming.Tests
             bool endingTake = true, bool waitingForMark = false, bool released = false,
             bool live = false, bool primary = false, bool secondary = false, bool cg = false,
             bool primaryActive = false, bool secondaryActive = false, bool cgActive = false,
-            bool swap = false, bool transition = false)
+            bool swap = false, bool transition = false, bool farewellFacing = false, bool plainAllowed = true)
             => TakeRunner.ResolveEndingShotWindow(endingTake, waitingForMark, released, live,
-                primary, secondary, cg, primaryActive, secondaryActive, cgActive, swap, transition);
+                primary, secondary, cg, primaryActive, secondaryActive, cgActive, swap, transition,
+                farewellFacing, plainAllowed);
 
         [Test]
         public void Trapped_RequiresTheEndingTakeAndEveryVisibleLayer()
@@ -47,6 +48,24 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(Window(released: true, live: true, cgActive: true), Is.EqualTo(EndingShotWindow.None));
             Assert.That(Window(released: true, live: true, swap: true), Is.EqualTo(EndingShotWindow.None));
             Assert.That(Window(released: true, live: true, transition: true), Is.EqualTo(EndingShotWindow.None));
+        }
+
+        [Test]
+        public void Released_IsTakenWhileTheFarewellDollFacesTheVisitor()
+        {
+            // 0291: 右に体験者・左に別れの人形が体験者を向いて立つ画を帰還の写真にする。
+            Assert.That(Window(released: true, live: true, cgActive: true, farewellFacing: true, plainAllowed: false),
+                Is.EqualTo(EndingShotWindow.Released));
+            Assert.That(Window(released: true, live: true, cgActive: true, farewellFacing: false, plainAllowed: false),
+                Is.EqualTo(EndingShotWindow.None), "後ろを向いた後・下がっている間は撮らない");
+            Assert.That(Window(released: true, live: true, cgActive: false, farewellFacing: false, plainAllowed: false),
+                Is.EqualTo(EndingShotWindow.None), "消えた後に人形なしの画で上書きしない");
+            Assert.That(Window(released: true, live: true, cgActive: false, farewellFacing: false, plainAllowed: true),
+                Is.EqualTo(EndingShotWindow.Released), "人形を出せなかったときは人形なしの帰還を撮る");
+            Assert.That(Window(released: true, live: true, cgActive: true, farewellFacing: true, plainAllowed: false,
+                swap: true), Is.EqualTo(EndingShotWindow.None));
+            Assert.That(Window(released: false, live: true, cgActive: true, farewellFacing: true),
+                Is.EqualTo(EndingShotWindow.None), "報告前は帰還の写真を撮らない");
         }
 
         [Test]

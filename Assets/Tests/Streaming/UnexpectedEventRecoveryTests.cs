@@ -47,21 +47,6 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(ShowEndingOutcome.Pending, d.Outcome, "休止していた時間で帰還不能にしない");
         }
 
-        // ---- 台車の印 ---------------------------------------------------------------
-
-        [Test]
-        public void Cart_ResetDuringTheSevenSeconds_StillSendsGoToTheNextVisitor()
-        {
-            var l = new RomiCartLinkLogic();
-            l.Tick(0, ShowPhase.Run, ShowEndingOutcome.Pending);
-            Assert.IsTrue(l.Tick(1, ShowPhase.Run, ShowEndingOutcome.Pending).go);
-            // 解除から終幕までのあいだに右 A（またはタブレット）でリセット → 導入へ戻る。
-            l.Tick(1, ShowPhase.Intro, ShowEndingOutcome.Pending);
-            Assert.IsFalse(l.GoSentThisRun, "次の体験者へ印を持ち越さない");
-            l.Tick(1, ShowPhase.Run, ShowEndingOutcome.Pending);
-            Assert.IsTrue(l.Tick(2, ShowPhase.Run, ShowEndingOutcome.Pending).go);
-        }
-
         // ---- 強制リセットの口 ---------------------------------------------------------
 
         private static VisitorPortalLogic.Response Pulse(string body, Action<string>? onForce,

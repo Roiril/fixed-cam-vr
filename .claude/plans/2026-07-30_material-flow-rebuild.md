@@ -1,5 +1,6 @@
 ---
-status: in-progress
+status: archived
+statusNote: in-progress → 2026-10-22 のハーネス整理で棚上げ。いま進めるものは canon/
 created: 2026-07-30
 updated: 2026-07-30
 slug: material-flow-rebuild

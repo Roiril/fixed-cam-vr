@@ -1,0 +1,34 @@
+{
+  "stage": "A_observation_and_prediction",
+  "finalVideoRendered": false,
+  "reference": "G:/マイドライブ/shubie/reports/2026-11-01_screen-effect-study/sources/screen-20261101-004528.mp4",
+  "referenceSHA256": "2c6fd4039eedfbe4d8fd13fe8dc5b818ce355ba6a722accb285c4410f67e4fa8",
+  "oldComparisonSHA256": "fc99f590045d482b99e5408ed4b6fe7596129199a26984e751d8b32fdd8b5601",
+  "evidence": "G:/マイドライブ/shubie/reports/2026-11-01_screen-effect-study/revision-02/motion/evidence/manifest.json",
+  "inspection": {"referenceNativeFramesViewed":40,"oldNativeFramesViewed":40,"indexIsProof":false,"resamplingForNativeViews":false},
+  "coordinateConvention": "Reference active rectangle x450..1889,y0..1079. Observations are screen-space, not measured world geometry.",
+  "observations": [
+    {"nominalTime":[2.6,2.9],"finding":"遊具の場面には大きな黒靄がまだ見えない。2.9秒でも床と左右の物が見える。"},
+    {"nominalTime":[3.0,3.3],"finding":"左下と下辺から丸みのある黒い塊が先行する。右下と右上が追いかける。縁は細点と半透明の色残りを含み、均一なぼかし幅ではない。左右対称の縮小ではない。"},
+    {"nominalTime":[3.3,3.9],"finding":"上中央に遊具の奥壁と天井の小窓が残り、左右と下はほぼ黒い。小窓は縮みながら内側も侵食される。黒い領域内には赤い斜めの薄片と異なる大きさの白粒が独立して動く。小窓の縁だけに粒が集まるわけではない。"},
+    {"nominalTime":[3.6,4.1],"finding":"右下の新背景の小片が先に見え、下辺の床が続く。4.0〜4.1秒には中央下にも灰色の新背景が現れる。上の旧背景小窓と下の新背景露出は同時に存在する。"},
+    {"nominalTime":[4.2,4.6],"finding":"新背景の穴は中央下から左右と上へ広がる。下辺の床は早く開き、上と両側に黒い塊が残る。旧背景小窓は穴だらけになり消える。残る黒い前線には粒状の薄い領域がある。"},
+    {"nominalTime":[4.7,5.0],"finding":"黒い塊は主に上側と角に残って退く。白粒と赤片はその後もしばらく残る。覆い率だけを戻した対称の開閉とは異なる。"},
+    {"nominalTime":[11.0,11.6],"finding":"終盤の新しい靄は上と左右から入り、中央と床を残す。導入で先行した左下とは順序が違う。"},
+    {"nominalTime":[11.8,12.4],"finding":"上の幅広い塊が下へ進む。両側が狭まり、床側にも黒い塊が生じる。残像は暗くなり、前線周囲に密な細点が見える。中央の面は濃淡を伴って削れる。"},
+    {"nominalTime":[12.6,13.2],"finding":"12.6秒は中央下に暗い新背景の残りが複数あり、12.8秒以後は背景として識別できる面が消える。白粒と赤片が残って消える。13.2秒はほぼ黒。"}
+  ],
+  "oldDifferences": [
+    {"id":"D1","times":[3.1,3.2,3.3,4.2,4.4],"finding":"旧版は前線の内外に平らな灰色の段が並ぶ。参照は広い黒塊と粒状の透過が連続している。旧コードの10fps alpha画像2枚の加重合成は、離れた輪郭を中間の灰色板として残す。", "implementationEvidence":"旧reference-effects.js sequence/sample/tile、旧extract_effects.py ratio threshold + morphology + unknown nearest fill。soften_front.pyの再構成対象は11.5<=t<12.8だけで、導入3〜5秒は旧硬いalphaのまま。"},
+    {"id":"D2","times":[4.0,4.1,4.2,4.3,4.5],"finding":"旧4.1秒は左下へ大きな明部が開く。参照は右下の小片と下辺が先行し、上の旧背景小窓が残る間に中央下で新しい穴が育つ。旧版は別背景の露出を同じ1枚のmatteへ押し込み、上下の時間差を失っている。", "implementationEvidence":"旧extract_effects.pyのbaseTimeが4.2秒で2.5から5.7へ切替、4.12〜5.3のcoverage gateも独立の退場場を持たない。"},
+    {"id":"D3","times":[11.8,12.0,12.2,12.4,12.6],"finding":"旧版終盤は大きな一枚の明部が左に残り、内側が平らに見える。参照は中央下の複数の残りと下辺の明部が異なる速さで消える。前線の細粒と濃淡の流れが不足している。", "implementationEvidence":"旧soften_front.pyは単一のSDFの狭いbandへnoiseを加える。内部全体の独立移流と複数透過場はない。"}
+  ],
+  "requiredModel": {
+    "alphaFields":"入場A、旧背景を残す上部窓、新背景を開く退場B、終盤Cを独立の時間場にする。source RGBを再生しない。輪郭SDF/密度を補間した後にalphaを作り、硬いalphaフレーム同士のクロスフェードを使わない。",
+    "texture":"大きい塊の濃淡、前線の不均一な半透明帯、細粒の欠けを別スケールで作る。時間ごとのrandom再抽選でなく、速度場に沿った移流で模様を保持する。赤片/白粒は現行凍結素材をhash確認して別層保持可能。",
+    "exit":"新背景は右下小片→下辺→中央下→左右上方へ露出。上の旧背景窓の侵食と新背景穴の拡大を別制御。旧背景を使えない試作でも、二つの透過の履歴を別制御する。",
+    "spatial":"背景のglobal affine/keystone強化は今回の空間変形の代用にしない。親から確定するカメラ/床/カーテンへの写像と局所変形方式を受けて実装する。"
+  },
+  "notEstablished": ["単眼参照からの真の三次元深度や物理的な煙速度は復元していない。","元背景と同じRGB/人物を除去したalpha抽出物はまだ作っていない。","境界幅の数値フィットと速度場の実測は次段。ここでの方向は時系列目視。"],
+  "parentDependencies": ["採用Bの1280x1030に対するraw640x480 camera UV写像", "床とカーテンの可視面/深度/境界の確定", "世界座標での変形方式とamplitude envelope", "同一背景を保つ比較用render仕様"]
+}

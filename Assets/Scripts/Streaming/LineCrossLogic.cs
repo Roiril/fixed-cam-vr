@@ -15,7 +15,7 @@ namespace FixedCamVr.Streaming
     /// 発火するかどうかを決めるのは <see cref="TakeRunnerLogic"/> で、ここは
     /// 「今フレーム、どのラインを、どちら向きに横切ったか」しか答えない。
     ///
-    /// 契約の正本は <c>.claude/plans/2026-07-27_position-trigger.md</c> §3。要点:
+    /// 現行の契約は <c>.claude/rules/show-run.md</c>。設計の経緯は <c>.claude/plans/2026-07-27_position-trigger.md</c> §3（当時の記録）。要点:
     ///   1. 判定は**毎フレームの移動線分 × ライン線分の交差**（端の外を回り込んだら横切っていない）
     ///   2. 横切った直後は、線から <see cref="RearmMarginM"/> 離れるまで再検出しない
     ///      （線上での立ち止まり・トラッキング揺れで連発しないため）

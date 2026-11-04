@@ -1,6 +1,8 @@
 #nullable enable
 using FixedCamVr.Streaming;
 using NUnit.Framework;
+using System.Reflection;
+using UnityEngine;
 
 namespace FixedCamVr.Streaming.Tests
 {
@@ -18,6 +20,181 @@ namespace FixedCamVr.Streaming.Tests
     public sealed class ScreenDecayLogicTests
     {
         private const float Dt = 1f / 72f;
+
+        [Test]
+        public void 未選択材質のFeel設定は採用値で上書きしない()
+        {
+            var node = new GameObject("Legacy feel"); node.SetActive(false);
+            var material = new Material(CrtSignalResources.Load().Composite);
+            try
+            {
+                var feel = node.AddComponent<CameraFeelFx>();
+                typeof(CameraFeelFx).GetField("_material", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(feel, material);
+                feel.Configure(new ShowFeelDef { noiseDark = .123f, noiseFixed = .2f });
+                material.SetFloat("_Exposure", 2);
+                typeof(CameraFeelFx).GetMethod("Write", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(feel, null);
+                Assert.AreEqual(0, material.GetFloat("_CrtSignalProfileSelected"));
+                Assert.AreEqual(.123f, material.GetFloat("_NoiseDark"));
+                Assert.AreEqual(.2f, material.GetFloat("_NoiseFixed"));
+                Assert.AreEqual(CameraFeelFx.Glare, material.GetFloat("_Glare"));
+                Assert.AreEqual(2, material.GetFloat("_Exposure"));
+            }
+            finally { Object.DestroyImmediate(node); Object.DestroyImmediate(material); }
+        }
+
+        [Test]
+        public void 実DirectorからFeel材質へ初期位置逆走人形保持解除交代が届く()
+        {
+            const BindingFlags fields = BindingFlags.Instance | BindingFlags.NonPublic;
+            var node = new GameObject("Selected screen wiring"); node.SetActive(false);
+            var material = new Material(CrtSignalResources.Load().Composite);
+            int oldFrame = (int)typeof(ShowClock).GetField("_frame", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null);
+            float oldDt = (float)typeof(ShowClock).GetField("_dt", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null);
+            try
+            {
+                var run = node.AddComponent<ShowRunDirector>();
+                var timeline = node.AddComponent<TimelineDirector>();
+                var control = node.AddComponent<ShowControlClient>();
+                var feel = node.AddComponent<CameraFeelFx>();
+                CrtSignalProfile.ApplySelected(material);
+                control.SetLayoutForPreview(new ShowLayoutDef { course = new ShowCourseDef { order = new[] { 0, 1, 2 } } });
+                typeof(CameraFeelFx).GetField("_material", fields)!.SetValue(feel, material);
+                typeof(ShowRunDirector).GetField("_feel", fields)!.SetValue(run, feel);
+                typeof(ShowRunDirector).GetField("timelineDirector", fields)!.SetValue(run, timeline);
+                typeof(ShowRunDirector).GetField("showControl", fields)!.SetValue(run, control);
+                var tick = typeof(ShowRunDirector).GetMethod("TickScreenDecay", fields)!;
+                typeof(ShowClock).GetField("_frame", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, Time.frameCount);
+                typeof(ShowClock).GetField("_dt", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, .25f);
+                tick.Invoke(run, null);
+                Assert.AreEqual(.5f, feel.AppliedMono);
+                Assert.AreEqual(.05f, feel.AppliedNoiseDark);
+                typeof(TimelineDirector).GetField("_hasCurrent", fields)!.SetValue(timeline, true);
+                foreach (int position in new[] { 0, 1, 2, 3, 4, 5, 6, 6, 1 })
+                {
+                    typeof(TimelineDirector).GetField("_curLap", fields)!.SetValue(timeline, position / 3 + 1);
+                    typeof(TimelineDirector).GetField("_curCam", fields)!.SetValue(timeline, position % 3);
+                    tick.Invoke(run, null);
+                    Assert.AreEqual(.05f + .025f * position, feel.AppliedNoiseDark, .00001f);
+                    Assert.AreEqual(.5f, feel.AppliedMono);
+                    Assert.AreEqual(ScreenDecayLogic.BlocksFor(.5f), feel.AppliedBlocks);
+                    Assert.AreEqual(0, material.GetFloat("_Glare"));
+                    Assert.AreEqual(CrtSignalProfile.Exposure, material.GetFloat("_Exposure"));
+                }
+                var decay = (ScreenDecayLogic)typeof(ShowRunDirector).GetField("_decay", fields)!.GetValue(run);
+                decay.Tick(Dt, true, 3, 3, 0, dollShowing: true);
+                tick.Invoke(run, null);
+                Assert.AreEqual(CrtSignalProfile.DollMono, feel.AppliedMono);
+                Assert.AreEqual(CrtSignalProfile.DollNoiseDark, feel.AppliedNoiseDark);
+                Assert.AreEqual(1, feel.AppliedDollProfileBlend);
+                Assert.AreEqual(CrtSignalProfile.DollScanline, material.GetFloat("_Scanline"));
+                run.ReleaseScreenDecay(); tick.Invoke(run, null); tick.Invoke(run, null);
+                Assert.AreEqual(.5f, feel.AppliedMono);
+                Assert.AreEqual(.05f, feel.AppliedNoiseDark, .00001f);
+                Assert.AreEqual(0, feel.AppliedDollProfileBlend);
+                Assert.AreEqual(CrtSignalProfile.Scanline, material.GetFloat("_Scanline"));
+                run.BeginRun();
+                Assert.AreEqual(.5f, feel.AppliedMono);
+                Assert.AreEqual(.05f, feel.AppliedNoiseDark);
+                Assert.AreEqual(ScreenDecayLogic.BlocksFor(.5f), feel.AppliedBlocks);
+            }
+            finally
+            {
+                Object.DestroyImmediate(node); Object.DestroyImmediate(material);
+                typeof(ShowClock).GetField("_frame", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, oldFrame);
+                typeof(ShowClock).GetField("_dt", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, oldDt);
+            }
+        }
+
+        [Test]
+        public void 採用通常画は導入から固定しノイズだけ七位置で進む()
+        {
+            var logic = new ScreenDecayLogic();
+            Assert.AreEqual(.5f, logic.Shown);
+            Assert.AreEqual(ScreenDecayLogic.BlocksFor(.5f), logic.ShownBlocks);
+            int[] order = { 0, 1, 2 };
+            for (int i = 0; i <= 6; i++)
+            {
+                float target = ScreenDecayLogic.NoiseTargetFor(i / 3 + 1, i % 3, order);
+                logic.Tick(Dt, true, i / 3 + 1, 3, 999, noiseTarget: target);
+                Assert.AreEqual(.05f + .025f * i, logic.NoiseDark, .00001f);
+                Assert.AreEqual(.5f, logic.Shown);
+                Assert.AreEqual(ScreenDecayLogic.BlocksFor(.5f), logic.ShownBlocks);
+            }
+            logic.Tick(.25f, true, 1, 3, 999, noiseTarget: ScreenDecayLogic.NoiseTargetFor(1, 1, order));
+            Assert.AreEqual(.075f, logic.NoiseDark, .00001f, "逆走で位置へ戻る");
+            for (int i = 0; i < 2000; i++) logic.Tick(.25f, true, 1, 3, 999);
+            Assert.AreEqual(.075f, logic.NoiseDark, .00001f, "停滞時間では増えない");
+        }
+
+        [Test]
+        public void 人形加工の途中解除は開始時の混合率を保持し交代で消える()
+        {
+            var logic = new ScreenDecayLogic();
+            logic.Tick(Dt, true, 3, 3, 0, dollShowing: true, dollTransitioning: true,
+                       dollTransition01: .5f, noiseTarget: .2f);
+            logic.Release();
+            Assert.AreEqual(.5f, logic.DollProfileBlend);
+            logic.Tick(.25f, false, 4, 3, 0);
+            Assert.AreEqual(.25f, logic.DollProfileBlend, .00001f);
+            Assert.AreEqual(.515f, logic.Shown, .00001f);
+            Assert.AreEqual(.16f, logic.NoiseDark, .00001f);
+            logic.Reset();
+            Assert.AreEqual(0, logic.DollProfileBlend);
+            logic.Tick(Dt, true, 1, 3, 0);
+            Assert.AreEqual(ScreenDecayShownMode.Normal, logic.ShownMode);
+            Assert.AreEqual(.05f, logic.NoiseDark);
+        }
+
+        [Test]
+        public void ノイズ位置は任意順路と不正入力と大きな周数を扱う()
+        {
+            Assert.AreEqual(.06875f, ScreenDecayLogic.NoiseTargetFor(1, 0, new[] { 2, 0, 4, 1 }), .00001f);
+            Assert.AreEqual(.05f, ScreenDecayLogic.NoiseTargetFor(0, 0, new[] { 0 }));
+            Assert.AreEqual(.05f, ScreenDecayLogic.NoiseTargetFor(1, 0, null));
+            Assert.AreEqual(.05f, ScreenDecayLogic.NoiseTargetFor(1, 0, System.Array.Empty<int>()));
+            Assert.AreEqual(.05f, ScreenDecayLogic.NoiseTargetFor(1, 7, new[] { 0 }));
+            Assert.AreEqual(.2f, ScreenDecayLogic.NoiseTargetFor(int.MaxValue, 0, new[] { 0 }));
+            var logic = new ScreenDecayLogic();
+            logic.Tick(float.NaN, true, 1, 3, 0, noiseTarget: .2f);
+            logic.Tick(float.PositiveInfinity, true, 1, 3, 0, noiseTarget: .2f);
+            logic.Tick(Dt, true, 1, 3, 0, noiseTarget: float.NaN);
+            Assert.AreEqual(.05f, logic.NoiseDark);
+        }
+
+        [Test]
+        public void 人形視点と人形化と解除と交代はノイズを独立に扱う()
+        {
+            var logic = new ScreenDecayLogic();
+            logic.Tick(Dt, true, 2, 3, 0, dollPovShowing: true, noiseTarget: .175f);
+            Assert.AreEqual(1, logic.Shown);
+            Assert.AreEqual(.175f, logic.NoiseDark);
+            Assert.AreEqual(0, logic.DollProfileBlend);
+            logic.Tick(Dt, true, 3, 3, 0, dollShowing: true, dollTransitioning: true, dollTransition01: .5f, noiseTarget: .2f);
+            Assert.AreEqual(.53f, logic.Shown);
+            Assert.AreEqual(.5f, logic.DollProfileBlend);
+            Assert.AreEqual(.27f, logic.NoiseDark, .00001f);
+            logic.Tick(Dt, true, 3, 3, 0, dollShowing: true);
+            logic.Tick(Dt, true, 1, 3, 0, noiseTarget: .05f);
+            Assert.AreEqual(CrtSignalProfile.DollMono, logic.Shown);
+            Assert.AreEqual(CrtSignalProfile.DollNoiseDark, logic.NoiseDark, "人形化後は逆走でも保持");
+            Assert.AreEqual(1, logic.DollProfileBlend);
+            float progress = logic.Progress;
+            logic.Release();
+            logic.Tick(.25f, false, 4, 3, 0);
+            Assert.AreEqual(.53f, logic.Shown, .00001f);
+            Assert.AreEqual(.195f, logic.NoiseDark, .00001f);
+            Assert.AreEqual(.5f, logic.DollProfileBlend, .00001f);
+            logic.Release();
+            logic.Tick(.25f, false, 4, 3, 0);
+            Assert.AreEqual(.5f, logic.Shown);
+            Assert.AreEqual(.05f, logic.NoiseDark, .00001f);
+            Assert.AreEqual(0, logic.DollProfileBlend);
+            Assert.AreEqual(progress, logic.Progress, "解除は音の進みを戻さない");
+            logic.Reset();
+            Assert.AreEqual(.5f, logic.Shown);
+            Assert.AreEqual(.05f, logic.NoiseDark);
+            Assert.IsFalse(logic.Released);
+        }
 
         /// <summary>本編を <paramref name="sec"/> 秒進める（周の経過も一緒に進む）。</summary>
         private static void Run(ScreenDecayLogic l, float sec, int lap, int totalLaps, float lapElapsedAtStart,
@@ -230,9 +407,9 @@ namespace FixedCamVr.Streaming.Tests
         public void 通常加工の位置目標は標準順路の確定区間で決まる()
         {
             int[] order = { 0, 1, 2 };
-            Assert.AreEqual(0f, ScreenDecayLogic.NormalTargetFor(1, 0, order), 0.001f, "1-A");
-            Assert.AreEqual(1f / 6f, ScreenDecayLogic.NormalTargetFor(1, 1, order), 0.001f, "1-B");
-            Assert.AreEqual(1f / 3f, ScreenDecayLogic.NormalTargetFor(1, 2, order), 0.001f, "1-C");
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 0, order), 0.001f, "1-A");
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 1, order), 0.001f, "1-B");
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 2, order), 0.001f, "1-C");
             Assert.AreEqual(0.5f, ScreenDecayLogic.NormalTargetFor(2, 0, order), 0.001f, "2-A");
             Assert.AreEqual(0.5f, ScreenDecayLogic.NormalTargetFor(4, 2, order), 0.001f, "帰りも中程度");
         }
@@ -241,11 +418,11 @@ namespace FixedCamVr.Streaming.Tests
         public void 通常加工の位置目標は非標準順路にも対応する()
         {
             int[] order = { 2, 0, 4, 1 };
-            Assert.AreEqual(0f, ScreenDecayLogic.NormalTargetFor(1, 2, order), 0.001f);
-            Assert.AreEqual(0.125f, ScreenDecayLogic.NormalTargetFor(1, 0, order), 0.001f);
-            Assert.AreEqual(0.25f, ScreenDecayLogic.NormalTargetFor(1, 4, order), 0.001f);
-            Assert.AreEqual(0.375f, ScreenDecayLogic.NormalTargetFor(1, 1, order), 0.001f);
-            Assert.AreEqual(0f, ScreenDecayLogic.NormalTargetFor(1, 9, order), 0.001f,
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 2, order), 0.001f);
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 0, order), 0.001f);
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 4, order), 0.001f);
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 1, order), 0.001f);
+            Assert.AreEqual(.5f, ScreenDecayLogic.NormalTargetFor(1, 9, order), 0.001f,
                 "順路に無いカメラは位置未確定として加工しない");
         }
 
@@ -259,7 +436,7 @@ namespace FixedCamVr.Streaming.Tests
             float first = l.Shown;
             l.Tick(0.25f, true, 1, 3, lapElapsedSec: 99f, normalTarget: at1B);
 
-            Assert.AreEqual(1f / 6f, first, 0.001f);
+            Assert.AreEqual(.5f, first, 0.001f);
             Assert.AreEqual(first, l.Shown, 0.001f, "同じ区間では dt と滞在秒が変わっても同値");
         }
 
@@ -271,7 +448,7 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Tick(Dt, true, 1, 3, 0f,
                    normalTarget: ScreenDecayLogic.NormalTargetFor(1, 2, order));
-            Assert.AreEqual(1f / 3f, l.Shown, 0.001f, "A から C へ飛ばしても即座に C の値");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "A から C へ飛ばしても即座に C の値");
 
             l.Tick(Dt, true, 2, 3, 0f,
                    normalTarget: ScreenDecayLogic.NormalTargetFor(2, 2, order));
@@ -279,12 +456,12 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Tick(Dt, true, 1, 3, 80f,
                    normalTarget: ScreenDecayLogic.NormalTargetFor(1, 1, order));
-            Assert.AreEqual(1f / 6f, l.Shown, 0.001f, "逆走した B は最初に通った B と同値");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "逆走した B は最初に通った B と同値");
 
             l.Reset();
             l.Tick(Dt, true, 1, 3, 0f,
                    normalTarget: ScreenDecayLogic.NormalTargetFor(1, 1, order));
-            Assert.AreEqual(1f / 6f, l.Shown, 0.001f, "リセット後も同じ B は同値");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "リセット後も同じ B は同値");
         }
 
         [Test]
@@ -334,7 +511,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void CG人形化は乱れの中で0_5から1へ進み_読めた後は保持する()
+        public void CG人形化は乱れの中で採用値へ進み_読めた後は保持する()
         {
             ScreenDecayLogic l = Cursed();
             float previous = l.Shown;
@@ -346,19 +523,33 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(l.Shown, Is.GreaterThanOrEqualTo(previous));
                 previous = l.Shown;
             }
-            Assert.That(l.Shown, Is.GreaterThan(0.99f));
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, .001f);
+            Assert.AreEqual(1, l.DollProfileBlend, .001f);
             Assert.AreEqual(ScreenDecayShownMode.DollMorph, l.ShownMode);
 
             l.Tick(Dt, true, 3, 3, t, dollShowing: true, dollTransitioning: false);
-            Assert.AreEqual(1f, l.Shown, 0.001f, "最初の読める CG フレームは 1");
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f, "最初の読めるCGフレームは採用値");
             Assert.AreEqual(ScreenDecayShownMode.DollHold, l.ShownMode);
 
             l.Tick(Dt, false, 4, 3, 0f, dollShowing: false, dollTransitioning: false);
-            Assert.AreEqual(1f, l.Shown, 0.001f, "カメラと相が変わっても報告までは下げない");
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f, "カメラと相が変わっても報告までは下げない");
         }
 
         [Test]
-        public void CG人形化は著作された乱れの実進捗で終端までに1へ届く()
+        public void 人形CGが乱れの途中で畳まれても既存の表示ラッチを保つ()
+        {
+            var logic = new ScreenDecayLogic();
+            logic.Tick(Dt, true, 3, 3, 0, dollShowing: true, dollTransitioning: true, dollTransition01: .25f);
+            Assert.That(logic.DollProfileBlend, Is.GreaterThan(0).And.LessThan(1));
+            logic.Tick(Dt, false, 3, 3, 0);
+            Assert.AreEqual(ScreenDecayShownMode.DollHold, logic.ShownMode);
+            Assert.AreEqual(1, logic.DollProfileBlend);
+            Assert.AreEqual(CrtSignalProfile.DollMono, logic.Shown);
+            Assert.AreEqual(CrtSignalProfile.DollNoiseDark, logic.NoiseDark);
+        }
+
+        [Test]
+        public void CG人形化は著作された乱れの実進捗で採用値へ届く()
         {
             ScreenDecayLogic l = Cursed();
             l.Tick(Dt, true, 3, 3, 0f, dollShowing: true, dollTransitioning: true,
@@ -367,15 +558,15 @@ namespace FixedCamVr.Streaming.Tests
 
             l.Tick(Dt, true, 3, 3, Dt, dollShowing: true, dollTransitioning: true,
                    dollTransition01: 0.5f);
-            Assert.AreEqual(0.75f, l.Shown, 0.001f);
+            Assert.AreEqual(0.53f, l.Shown, 0.001f);
 
             l.Tick(Dt, true, 3, 3, Dt * 2f, dollShowing: true, dollTransitioning: true,
                    dollTransition01: 1f);
-            Assert.AreEqual(1f, l.Shown, 0.001f, "220ms の乱れでも消える前に 1 へ届く");
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f, "220msの乱れでも終端に届く");
         }
 
         [Test]
-        public void CG素材ロードが遅れても最初に読めるフレームは1になる()
+        public void CG素材ロードが遅れても最初に読めるフレームは採用値になる()
         {
             ScreenDecayLogic l = Cursed();
             for (int i = 0; i < 30; i++)
@@ -383,7 +574,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(0.5f, l.Shown, 0.001f, "まだ出ていない CG で強くしない");
 
             l.Tick(Dt, true, 3, 3, 1f, dollShowing: true, dollTransitioning: false);
-            Assert.AreEqual(1f, l.Shown, 0.001f);
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f);
             Assert.AreEqual(ScreenDecayShownMode.DollHold, l.ShownMode);
         }
 
@@ -400,12 +591,12 @@ namespace FixedCamVr.Streaming.Tests
         public void 十三状態の強度は展示資料の標本と一致する()
         {
             var l = new ScreenDecayLogic();
-            Assert.AreEqual(0f, l.Shown, 0.001f, "1-A");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "1-A");
 
             Run(l, 10f, 1, 3, 0f, normalTarget: 1f / 6f);
-            Assert.AreEqual(1f / 6f, l.Shown, 0.01f, "1-B");
+            Assert.AreEqual(.5f, l.Shown, 0.01f, "1-B");
             Run(l, 10f, 1, 3, 10f, normalTarget: 1f / 3f);
-            Assert.AreEqual(1f / 3f, l.Shown, 0.01f, "1-C");
+            Assert.AreEqual(.5f, l.Shown, 0.01f, "1-C");
             Run(l, 10f, 1, 3, 20f, normalTarget: 0.5f);
             Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-A");
             Assert.AreEqual(0.5f, l.Shown, 0.01f, "2-B");
@@ -416,14 +607,14 @@ namespace FixedCamVr.Streaming.Tests
             l.Tick(Dt, true, 3, 3, 0f);
             Assert.AreEqual(0.5f, l.Shown, 0.001f, "3-A before");
             l.Tick(Dt, true, 3, 3, Dt, dollShowing: true, dollTransitioning: false);
-            Assert.AreEqual(1f, l.Shown, 0.001f, "3-A after");
-            Assert.AreEqual(1f, l.Shown, 0.001f, "3-B");
-            Assert.AreEqual(1f, l.Shown, 0.001f, "3-C");
-            Assert.AreEqual(1f, l.Shown, 0.001f, "4-A before");
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f, "3-A after");
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f, "3-B");
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f, "3-C");
+            Assert.AreEqual(CrtSignalProfile.DollMono, l.Shown, 0.001f, "4-A before");
 
             l.Release();
             Run(l, ScreenDecayLogic.ReleaseSec, 4, 3, 0f);
-            Assert.AreEqual(0f, l.Shown, 0.001f, "4-A after");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "4-A after");
         }
 
         // ---- 呪いが解ける（canon/LEDGER.md 0083）----
@@ -451,8 +642,8 @@ namespace FixedCamVr.Streaming.Tests
 
             Run(l, ScreenDecayLogic.ReleaseSec, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
 
-            Assert.AreEqual(0f, l.Shown, 0.001f, "画に出る進みは戻り切る");
-            Assert.AreEqual(0f, l.ShownBlocks, "量子化しない ＝ 1 周目の頭とまったく同じ画");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "画に出る進みは戻り切る");
+            Assert.AreEqual(ScreenDecayLogic.BlocksFor(.5f), l.ShownBlocks, "量子化しない ＝ 1 周目の頭とまったく同じ画");
         }
 
         [Test]
@@ -461,7 +652,7 @@ namespace FixedCamVr.Streaming.Tests
             ScreenDecayLogic l = Cursed();
             l.Release();
             l.Tick(ScreenDecayLogic.ReleaseSec, running: false, lap: 4, totalLaps: 3, lapElapsedSec: 0f);
-            Assert.AreEqual(0f, l.Shown, 0.001f);
+            Assert.AreEqual(.5f, l.Shown, 0.001f);
         }
 
         /// <summary>
@@ -483,7 +674,7 @@ namespace FixedCamVr.Streaming.Tests
 
             Assert.That(l.Progress, Is.GreaterThanOrEqualTo(raw),
                 "装置は呪いとは無関係に使い込まれている（単調のまま）");
-            Assert.AreEqual(0f, l.Shown, 0.001f, "画だけが戻る");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "画だけが戻る");
         }
 
         /// <summary>
@@ -510,6 +701,7 @@ namespace FixedCamVr.Streaming.Tests
         public void 戻る途中は滑らかで_いきなり切り替わらない()
         {
             ScreenDecayLogic l = Cursed();
+            l.Tick(Dt, true, 3, 3, 0f, dollShowing: true);
             float before = l.Shown;
             l.Release();
 
@@ -527,7 +719,7 @@ namespace FixedCamVr.Streaming.Tests
             Run(l, ScreenDecayLogic.ReleaseSec, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
 
             Run(l, 20f, lap: 3, totalLaps: 3, lapElapsedAtStart: 0f);   // 目標は 1.0 のまま
-            Assert.AreEqual(0f, l.Shown, 0.001f, "解除の係数は落ちないので画は鮮明なまま");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "解除の係数は落ちないので画は鮮明なまま");
         }
 
         /// <summary>
@@ -547,13 +739,14 @@ namespace FixedCamVr.Streaming.Tests
                 t += Dt;
                 l.Tick(Dt, running: false, lap: 4, totalLaps: 3, lapElapsedSec: t);
             }
-            Assert.AreEqual(0f, l.Shown, 0.001f, "終了の相でも戻り切る");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "終了の相でも戻り切る");
         }
 
         [Test]
         public void 二度目の報告では速さが変わらない()
         {
             ScreenDecayLogic l = Cursed();
+            l.Tick(Dt, true, 3, 3, 0f, dollShowing: true);
             l.Release();
             Run(l, ScreenDecayLogic.ReleaseSec * 0.5f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
             float half = l.Shown;
@@ -562,7 +755,7 @@ namespace FixedCamVr.Streaming.Tests
             Run(l, ScreenDecayLogic.ReleaseSec * 0.5f, lap: 4, totalLaps: 3, lapElapsedAtStart: 0f);
 
             Assert.That(l.Shown, Is.LessThan(half), "巻き戻らない");
-            Assert.AreEqual(0f, l.Shown, 0.001f, "同じ尺で戻り切る（押すたびに戻し直さない）");
+            Assert.AreEqual(.5f, l.Shown, 0.001f, "同じ尺で戻り切る（押すたびに戻し直さない）");
         }
 
         [Test]

@@ -1,0 +1,3 @@
+左板の実面に沿う2polygon内部を指定のsigma4とdetail .10でLUTへ渡すと、06で残った粗い反復grainが減り、面と境界を区別できると予測する。
+06のコード/カーペットの形を維持し、LUTを通さない指定unsharpへcoreを置き換えると、元のsoftnessが少し減って細線と床模様のcontrastが上がると予測する。
+縦support18とgain/σ/3pathsおよび他部gradeは維持する。線幅・overshoot・移行部の不調和が出た場合は実測と原寸で不足として残し、追加探索しない。

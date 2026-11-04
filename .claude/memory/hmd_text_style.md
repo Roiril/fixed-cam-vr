@@ -1,6 +1,6 @@
 # HMD 内テキストの正と、2 回踏んだ罠
 
-制定 2026-08-16（`canon/LEDGER.md` 0052）。**契約は `rules/show-design.md`「HMD に出す文言の規約」が正本。**
+制定 2026-08-16（`canon/LEDGER.md` 0052）。**契約は `reference/archive/show-design-2026-10-22.md`「HMD に出す文言の規約」が正本。**
 ここは実装の経緯と、次のシュビーが踏みそうな罠だけ。
 
 ## 大きさ・色・書式の正は 1 か所

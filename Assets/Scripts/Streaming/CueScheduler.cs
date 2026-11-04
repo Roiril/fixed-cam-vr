@@ -5,6 +5,32 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
+    /// <b>体験者が区間へ入った</b>という知らせ（<see cref="CueScheduler.CameraEntered"/>）。
+    /// 周は 2 つあり、引き返すと食い違う。どちらを読むかは受け取る側が名前で選ぶ:
+    ///   - <see cref="SegmentLap"/> = 区間の周（逆走で戻る）。演出・区間 post / BGM・録画・滞在の区間キー
+    ///   - <see cref="ProgressLap"/> = 進行の周（単調増加）。体験の終了判定だけが読む
+    /// int を 3 つ並べて渡していた頃は、順番を取り違えてもコンパイルが通った。
+    /// </summary>
+    public readonly struct SegmentEntry
+    {
+        /// <summary>区間のカメラ番号（A = 0）。</summary>
+        public readonly int Camera;
+        /// <summary>区間の周（1 始まり・逆走で戻る）。</summary>
+        public readonly int SegmentLap;
+        /// <summary>進行の周（1 始まり・単調増加）。</summary>
+        public readonly int ProgressLap;
+
+        public SegmentEntry(int camera, int segmentLap, int progressLap)
+        {
+            Camera = camera;
+            SegmentLap = segmentLap;
+            ProgressLap = progressLap;
+        }
+
+        public override string ToString() => $"cam={Camera} segmentLap={SegmentLap} progressLap={ProgressLap}";
+    }
+
+    /// <summary>
     /// 事前オーサリング済みスケジュール（何周目のどのカメラで cue を出すか）の
     /// 純粋な判定ロジック。MonoBehaviour（<see cref="CueScheduler"/>）から分離して EditMode テスト可能にする。
     ///
@@ -168,8 +194,8 @@ namespace FixedCamVr.Streaming
         private CueScheduleLogic.CueOverride _pendingOv;
 
         /// <summary>
-        /// ゾーン進入（LapCounter 由来）を受けた直後に発火する。引数は
-        /// <c>(camera, segmentLap, progressLap)</c>。
+        /// ゾーン進入（LapCounter 由来）を受けた直後に発火する。引数は <see cref="SegmentEntry"/>
+        /// （カメラ・区間の周・進行の周を名前つきで運ぶ）。
         ///
         /// ⚠⚠ <b>周回数が 2 つあるのは、逆走で戻ったときに両者が食い違うから</b>（2026-08-17）。
         ///   - <b>segmentLap</b> = いま体験者が居る区間の周（逆走で戻る）。
@@ -178,14 +204,15 @@ namespace FixedCamVr.Streaming
         ///     <b>体験の終了判定はこちら</b>（<see cref="ShowRunLogic.NotifyLap"/>）。
         ///     segmentLap を渡すと、帰りの A で引き返した瞬間に周回が戻って<b>体験が終わらなくなる</b>
         ///
-        /// 3 引数にしてあるのは、購読者に「どちらの周を使うか」をコンパイラが必ず選ばせるため。
+        /// 2 つの周を両方運ぶのは、購読者に「どちらの周を使うか」を必ず選ばせるため。
         /// 片方だけ暗黙に流すと、選び間違いが沈黙したまま実機でしか出ない。
+        /// 名前つきの型にしてあるのは、int を 3 つ並べると順番を取り違えてもコンパイルが通るため。
         ///
         /// TimelineDirector が購読して区間 post / インサートを分配する（Insert source の切替はここに来ないので
         /// 周回・区間追跡は体験者のゾーン進行だけを見る）。cue 評価の後に発火するため、インサート cue が
         /// 区間 cue より後に PlayCue され最後の命令が勝つ。
         /// </summary>
-        public event Action<int, int, int>? CameraEntered;
+        public event Action<SegmentEntry>? CameraEntered;
 
         private void Awake()
         {
@@ -273,16 +300,14 @@ namespace FixedCamVr.Streaming
         /// （トリガーゾーンを抜けたら遅延中の cue は取り消す）。
         /// </summary>
         /// <param name="camera">確定したゾーンのカメラ index。</param>
-        /// <param name="lap">
-        /// <b>区間の周</b>（逆走で戻る）。cue の (lap, camera) 一致はこれで見る —
-        /// 引き返した先は「前にそこに居たときの周」として扱う（<see cref="CameraEntered"/> の注記）。
+        /// <param name="entry">
+        /// cue の (lap, camera) 一致は <b>区間の周</b>（<see cref="SegmentEntry.SegmentLap"/>・逆走で戻る）で見る —
+        /// 引き返した先は「前にそこに居たときの周」として扱う。<b>進行の周</b>（<see cref="SegmentEntry.ProgressLap"/>）は
+        /// ここでは使わず <see cref="CameraEntered"/> へ中継するだけ（終了判定を持つ <c>ShowRunDirector</c> が読む）。
         /// </param>
-        /// <param name="progressLap">
-        /// <b>進行の周</b>（単調増加）。ここでは使わず <see cref="CameraEntered"/> へ中継するだけ。
-        /// 終了判定を持つ購読者（<c>ShowRunDirector</c>）が読む。
-        /// </param>
-        public void NotifyCameraEntered(int camera, int lap, int progressLap)
+        public void NotifyCameraEntered(SegmentEntry entry)
         {
+            int camera = entry.Camera, lap = entry.SegmentLap;
             // 本編の外（導入中・終了後）は区間進行を一切下流へ流さない。演出の武装・端末内録画・
             // 区間 post / BGM・実測滞在がまとめて止まる（下流それぞれに条件を配ると必ず片方を忘れる）。
             // 画面のカメラ切替は Director 側なのでここでは止まらない — 導入では映像は出したいから。
@@ -309,7 +334,7 @@ namespace FixedCamVr.Streaming
             // cue 評価の後に TimelineDirector（区間 post / インサート）を駆動する。
             // 進入は Insert source ではここへ来ない（LapCounter が Zone のみ Feed するため）ので、
             // これが「体験者のゾーン進行」の単一かつ deterministic な信号になる。
-            CameraEntered?.Invoke(camera, lap, progressLap);
+            CameraEntered?.Invoke(entry);
         }
 
         private void Update()

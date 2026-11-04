@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻リ視のクラス設計 — 現状と課題（2026-11-02）</title>
+<style>
+:root{--paper:#fff;--surface:#f4f4f4;--ink:#1a1a1a;--mute:#5c5c5c;--line:#dcdcdc;--link:#1a5fb4;--accent:#d7261e}
+@media (prefers-color-scheme:dark){:root{--paper:#121212;--surface:#1e1e1e;--ink:#ececec;--mute:#a8a8a8;--line:#333;--link:#7fb0ff;--accent:#ff6b5e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Noto Sans JP","Yu Gothic Medium","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;font-size:1rem;line-height:1.8}
+main{max-width:38ic;margin:0 auto;padding:48px 16px 64px}
+.wide{max-width:72rem}
+h1{font-size:2.75rem;line-height:1.25;margin:0 0 16px}
+@media (max-width:30rem){h1{font-size:2rem}}
+h2{font-size:1.5rem;line-height:1.4;margin:64px 0 16px}
+h3{font-size:1.25rem;line-height:1.4;margin:48px 0 12px}
+p{margin:0 0 16px}
+.meta{color:var(--mute);font-size:.875rem;margin-bottom:32px}
+.box{background:var(--surface);padding:16px 24px;margin:24px 0}
+.box p:last-child{margin:0}
+em{font-style:normal;color:var(--accent);font-weight:700}
+code{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:.875rem;background:var(--surface);padding:0 4px}
+table{border-collapse:collapse;width:100%;font-size:.875rem;line-height:1.6;margin:16px 0 24px}
+th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line)}
+th{border-bottom:2px solid var(--line)}
+.scroll{overflow-x:auto}
+dl{margin:0 0 16px}
+dt{font-weight:700;margin-top:16px}
+dd{margin:0}
+ol,ul{padding-left:24px;margin:0 0 16px}
+li{margin-bottom:8px}
+.diagram{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:.875rem;line-height:1.6;background:var(--surface);padding:16px;white-space:pre;overflow-x:auto}
+.note{color:var(--mute);font-size:.875rem}
+</style>
+</head>
+<body>
+<main>
+<h1>廻リ視のクラス設計 — 現状と課題</h1>
+<div class="meta">2026-11-02 調査。対象は <code>Assets/Scripts</code> の C# 288 ファイル・約 9.4 万行。構造担当とドメイン担当の 2 つの調査を突き合わせ、主要な指摘はコードで裏を取った。</div>
+
+<h2>結論</h2>
+<p><strong>作り直しは要りません。</strong>一番大事な「体験のルール」と「Unity の画面操作」がきちんと分かれていて、ルールの部分には 2,000 件を超える自動テストがあります。この規模の個人制作としては良い状態です。</p>
+<p>弱いのは 3 点です。1 つのクラスに仕事が集まりすぎている所があります。部品同士が相手を毎回探し回っています。「体験 1 回ぶん」をまとめてリセットする担当がいません。3 点目は <em>2 人目の体験者からだけ壊れる不具合</em>を実際に 4 回起こしています。</p>
+<p>DDD（ドメイン駆動設計）は全面的には入れません。役に立つ考え方を 3 つだけ借ります。</p>
+
+<h2>先に用語</h2>
+<dl>
+<dt>クラス</dt>
+<dd>データと処理をひとまとめにした設計図。1 ファイルにだいたい 1 つ書く。</dd>
+<dt>MonoBehaviour</dt>
+<dd>Unity の画面上の物体（GameObject）に貼り付けて動くクラス。毎フレーム <code>Update()</code> が呼ばれる。Unity が無いと動かないので、自動テストがしにくい。</dd>
+<dt>純粋な C# クラス</dt>
+<dd>Unity に頼らない普通のクラス。「入力を渡すと答えが返る」だけなので、テストで何万回でも試せる。</dd>
+<dt>asmdef（アセンブリ定義）</dt>
+<dd>コードを箱に分ける仕組み。箱 A が箱 B を使ってよいかを宣言する。逆向きに使おうとするとコンパイルが通らない。</dd>
+<dt>依存</dt>
+<dd>クラス A がクラス B を使っていること。依存が多いほど、B を変えたときに A が壊れやすい。</dd>
+<dt>DDD（ドメイン駆動設計）</dt>
+<dd>業務の言葉（ここなら「周」「区間」「人形」「来場者」）をそのまま型としてコードに作り、ルールを画面や通信から切り離して置く設計の流儀。大規模な業務システムで生まれた。</dd>
+</dl>
+
+<h2>いまの全体の形</h2>
+<p>コードは 6 つの箱に分かれています。矢印は「使っている」向きです。</p>
+<div class="diagram">OvrBridge（Quest のコントローラ）──→ 下の全部
+
+Diagnostics（画面の表示・ログ・連絡の面）
+    │
+    ↓
+Tracking（体験者の位置）
+    │
+    ↓
+Streaming（映像受信 ＋ 体験の進行 ＋ 演出 ＋ 音 ＋ CG）
+
+Input（入力の判定）   Fx（画面効果の試作）  ← どこにも頼らない</div>
+<p>循環（A が B を使い、B も A を使う）はありません。これは良い点です。</p>
+<p>ただし箱の名前と中身が合っていません。<code>Streaming</code> は本来「映像の受信」という意味ですが、映像の受信は全体の 7% だけです。残りは体験の進行・導入・演出・音・CG で、<strong>実質「体験の全部」が入っています</strong>。<code>Diagnostics</code>（診断）にも、体験者が見る連絡の面（<code>CommsPanel</code>）が入っています。</p>
+
+<h2>良くできている点</h2>
+
+<h3>ルールと画面操作が分かれている</h3>
+<p>名前が <code>〜Logic</code> で終わるクラスが 54 個あります。たとえば <code>TakeRunnerLogic</code> は「どの演出を、いつ、どのカットで出すか」だけを決めます。実際に画面を切り替えるのは相方の <code>TakeRunner</code>（MonoBehaviour）です。</p>
+<p>54 個のうち、Unity の物体に貼り付くものも、時計を自分で読むものも 0 個です。時刻は引数で受け取ります。だからテストで「45 秒経った」を一瞬で再現できます。50 個には対応するテストがあります。</p>
+<p>この形は「Humble Object（へりくだった物体）」と呼ばれる定番の手法です。DDD が目指す「ルールを外の世界から切り離す」の中心部分は、すでにできています。</p>
+
+<h3>状態の持ち主がそれぞれ 1 つ</h3>
+<p>体験の大きな流れ（導入 → 本編 → 終了）は <code>ShowRunLogic</code> 1 つが持っています。周の数え方は <code>LapCounterLogic</code>、終わり方の判定は <code>EndingDecisionLogic</code> です。同じ情報を 2 か所で持って食い違う、という事故が起きにくい作りです。</p>
+
+<h3>その他</h3>
+<ul>
+<li>状態を「覚えておく」より「毎フレーム計算し直す」形が多い。古い値が残る事故が構造的に起きない</li>
+<li>Quest 専用の SDK を触るのは <code>OvrBridge</code> だけ。SDK が変わっても直す場所が 1 か所</li>
+<li>自動テストは約 2,300 件。すべて Unity を起動せずに回る</li>
+<li>コメントからユーザーの判定（LEDGER の番号）へ辿れる。なぜその値なのかが失われない</li>
+</ul>
+
+<h2>課題</h2>
+<p>重要な順に並べました。</p>
+
+<div class="scroll">
+<table>
+<tr><th>重大度</th><th>何が問題か</th><th>何が困るか</th><th>どこ</th></tr>
+<tr><td><em>高</em></td><td>「体験 1 回ぶん」をリセットする担当がいない</td><td>新しい部品を足したとき、リセットの呼び出しを書き忘れると 2 人目以降の体験者だけ壊れる。1 人目のテストでは気づけない。実例が 4 件ある</td><td><code>ResetRun</code> を持つクラスが 19 個。呼び出す並びが 4 か所に複製され、うち 1 か所（<code>OvrControllerBridge.cs:780</code>）は音のリセットが抜けて既に食い違っている</td></tr>
+<tr><td><em>高</em></td><td><code>ShowControlClient</code> が何でも抱えている</td><td>3,656 行・メソッド約 108 個。設定の読み込み、通信、演出への設定配り、報告の受付、他クラス同士の値の中継まで全部ここ。31 クラスがこれに頼っているので、1 か所直すと影響が読めない</td><td><code>Assets/Scripts/Streaming/ShowControlClient.cs</code></td></tr>
+<tr><td>中</td><td>部品が相手を自分で探し回っている</td><td><code>FindObjectOfType</code>（シーン全体から型で探す命令）が 210 か所。誰が誰に頼っているかがコードの宣言から見えない。探すたびに少し重い</td><td>多いのは <code>ShowTelemetryHost</code>（33 回）、<code>OvrControllerBridge</code>、<code>TakeRunner</code></td></tr>
+<tr><td>中</td><td>設定の型の置き場所が悪い</td><td>show.json の形を表すクラス 36 個が <code>ShowControlClient.cs</code> の中にある。そのせいで箱の依存の向きが歪み、型を <code>Behaviour</code> や <code>Func</code> でぼかして渡す回避策が生まれている</td><td><code>ShowControlClient.cs</code> の 1〜980 行</td></tr>
+<tr><td>中</td><td>2 種類の「周」が同じ <code>int</code></td><td>進むだけの周と、引き返すと戻る周がある。どちらも <code>int</code> なので取り違えてもコンパイルが通る。取り違えると体験が終わらなくなる罠が既に記録されている</td><td><code>ShowRunDirector.cs:379</code> 付近</td></tr>
+<tr><td>中</td><td>演出の分類がコードに直書き</td><td>「どの演出を異常として数えるか」が演出の ID の一覧としてコードに書いてある。卓で ID を変えると、異常数の分母が黙ってずれる</td><td><code>ShowAnomalyCatalog.cs:45</code>、<code>TakeRunner.cs:348</code></td></tr>
+<tr><td>中</td><td>テストが private な中身を名前で覗いている</td><td>236 か所。変数名を変えるとコンパイルは通るのにテストだけ落ちる</td><td>多いのは <code>CommsPanel</code> と <code>VisitorPortal</code> のテスト</td></tr>
+<tr><td>低</td><td>ファイルに見えない文字（NUL）が 1 つ</td><td>grep がこのファイルをバイナリ扱いし、検索や自動検査から黙って外れる</td><td><code>IntroDirector.cs:627</code></td></tr>
+<tr><td>低</td><td>退避したはずのコードが使われている</td><td><code>Attic</code>（屋根裏＝しまったもの）の中身を本番が呼んでいる。消してよいか判断できない</td><td><code>TitleScreen.cs</code> ほか</td></tr>
+</table>
+</div>
+
+<h3>なぜ「1 回ぶんのリセット」が一番重いのか</h3>
+<p>このプロジェクトは展示で何十人も続けて体験します。1 人目が終わったら、周の数・演出の済み印・録画・音・報告をすべて初期状態へ戻す必要があります。</p>
+<p>いまは「戻す」命令を各部品が個別に持ち、それを呼ぶ並びが 4 か所に書き写されています。部品を 1 つ足したら 4 か所すべてに追記しなければなりません。忘れても 1 人目は正常に動くので、展示当日まで気づけません。</p>
+<p>直し方は単純です。<code>RunScope</code> のような担当を 1 つ作り、リセットが必要な部品はそこに登録します。号令はすべてそこを通します。さらに「<code>ResetRun</code> を持つクラスは全部登録されているか」を自動テストで確かめれば、書き忘れはテストで落ちます。</p>
+
+<h2>DDD を入れるべきか</h2>
+<p><strong>全面的には入れません。</strong>2 つの調査が独立に同じ結論でした。</p>
+<p>理由は 3 つあります。</p>
+<ol>
+<li>この作品の中身は「何秒にどの画を出すか」という時間の振り付けです。DDD が得意な「たくさんの業務データを正しく扱う」場面ではありません。体験者は 1 人、プログラムも 1 つです</li>
+<li>DDD で一番得をする部分（ルールを切り離してテストする）は、<code>〜Logic</code> の分離ですでに手に入っています</li>
+<li>過去の不具合の多くは「呼ぶ順番」の誤りでした。DDD でよく足す層やイベントの仕組みは、その順番を見えにくくします</li>
+</ol>
+<p>借りる考え方は次の 3 つです。</p>
+<div class="scroll">
+<table>
+<tr><th>借りる考え方</th><th>DDD での呼び名</th><th>ここでやること</th></tr>
+<tr><td>まとまりに持ち主を 1 つ置く</td><td>集約（Aggregate）</td><td>体験 1 回ぶんの状態を <code>RunScope</code> 1 つが持つ</td></tr>
+<tr><td>業務の言葉を型にする</td><td>値オブジェクト（Value Object）</td><td>2 種類の周と区間を別々の型にする。取り違えるとコンパイルで止まる</td></tr>
+<tr><td>ルールの値をデータとして持つ</td><td>ドメイン知識の明示化</td><td>「異常として数える演出」を show.json の属性にする</td></tr>
+</table>
+</div>
+<p>やらないもの：リポジトリ層（保存するのは JSON と録画だけで抽象化する相手が無い）、イベントバス（順番が見えなくなる）、ルール専用の箱の分割（得るものが小さい）。</p>
+
+<h2>直すならこの順</h2>
+<ol>
+<li><strong>体験 1 回ぶんのリセットを 1 か所に集める。</strong>先に今の呼び出し順をテストで固定してから動かす。ラン開始の順序は過去に何度も壊れた箇所なので、順番は変えない</li>
+<li><strong>show.json の型を一番下の箱へ移す。</strong>動作は変わらず、依存の歪みと回避策が消える</li>
+<li><strong><code>ShowControlClient</code> を 3 つに分ける。</strong>設定の読み込みと配布／通信と報告／値の中継口</li>
+<li><strong>周と区間を型にする。</strong>コンパイラが直すべき場所を全部指してくれるので、機械的に進む</li>
+<li><strong>演出の分類を show.json へ移す。</strong>卓・焼き込み・解析スクリプトを同時に直す必要がある</li>
+</ol>
+<p>1 は次の展示の前にやる価値があります。2 以降は作品をいつまで保守するかで価値が変わります。調整済みの体験を壊す危険があるので、展示の直前には避けます。</p>
+
+<h2>数値</h2>
+<div class="scroll">
+<table>
+<tr><th>項目</th><th>値</th></tr>
+<tr><td>C# ファイル（Assets/Scripts）</td><td>288（うち実行時コード約 7.1 万行）</td></tr>
+<tr><td>MonoBehaviour</td><td>87〜88</td></tr>
+<tr><td>純粋なルールのクラス（〜Logic）</td><td>54（テストあり 50）</td></tr>
+<tr><td>テスト</td><td>185 ファイル・約 2,300 件</td></tr>
+<tr><td>FindObjectOfType 系</td><td>210 か所</td></tr>
+<tr><td>シングルトン（Instance）</td><td>2</td></tr>
+<tr><td>ShowControlClient の中継口（public Func）</td><td>18</td></tr>
+<tr><td>C# のイベント</td><td>29（UnityEvent は 0）</td></tr>
+</table>
+</div>
+<p>行数の多いクラス（実行時）は次のとおりです。</p>
+<div class="scroll">
+<table>
+<tr><th>行数</th><th>クラス</th><th>持っているもの</th></tr>
+<tr><td>3,656</td><td>ShowControlClient</td><td>設定・通信・配布・報告・中継</td></tr>
+<tr><td>2,592</td><td>CommsPanel</td><td>スイの連絡の面</td></tr>
+<tr><td>1,872</td><td>TakeRunner</td><td>演出を画面へ適用する側</td></tr>
+<tr><td>1,794</td><td>ShowTelemetryHost</td><td>検証用のログ出し（35 クラスを参照）</td></tr>
+<tr><td>1,674</td><td>ShowCgLayer</td><td>CG 人形の合成</td></tr>
+<tr><td>1,463</td><td>IntroVeil</td><td>導入の覆い</td></tr>
+</table>
+</div>
+<p class="note">実行時コードの 27% がコメントです。ファイルが大きく見える一因ですが、構造の問題ではありません。</p>
+</main>
+</body>
+</html>

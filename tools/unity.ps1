@@ -9,8 +9,9 @@
 #   .\tools\unity.ps1 build fixedcam -NoExport  # 前回焼き込んだ著作のまま焼く
 #   .\tools\unity.ps1 test
 #   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
-#   .\tools\unity.ps1 menu scene                # Setup Main Demo Scene
+#   .\tools\unity.ps1 menu scene                # Build Main Scene
 #   .\tools\unity.ps1 menu actor -Set actor=Ichimatsu
+#   .\tools\unity.ps1 replay -Set rec=latest,view=eye   # Quest の体験の記録を PC で流し直して広角の mp4 に
 #   .\tools\unity.ps1 raw editors -i
 #
 # なぜ CLI なのか（旧経路との違い）:
@@ -23,7 +24,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw')]
+    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay', 'twin-run', 'crt-tune')]
     [string]$Action,
 
     [Parameter(Position = 1)]
@@ -71,10 +72,10 @@ $MethodPrefix = 'FixedCamVr.EditorTools.BuildVariants.'
 # ので、build と同じく出力で判定する（ログにしか出ないものは空にしてある）。
 $Menus = [ordered]@{
     # ---- Setup（作る・焼く）----
-    'scene'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.MainDemoSceneSetup.Setup'
+    'scene'            = @{ Method = 'FixedCamVr.Streaming.EditorTools.MainSceneBuilder.Setup'
                             Desc = 'Main シーンへ演出・HUD・ゾーンを配置して保存（⚠ ビルド前に必須）'
                             Out = 'Assets/Scenes/Main.unity'
-                            Src = @('Assets/Scripts/Streaming/Editor/MainDemoSceneSetup.cs') }
+                            Src = @('Assets/Scripts/Streaming/Editor/MainSceneBuilder.cs') }
     'hud-font'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.JapaneseHudFontSetup.Generate'
                             Desc = 'HMD 内の日本語フォントを再ベイク（⚠ 文言を足したら必須。忘れると実機で豆腐）'
                             Out = 'Assets/Resources/Fonts/JapaneseHud SDF.asset'
@@ -127,8 +128,16 @@ $Menus = [ordered]@{
                             Set = 'show=<show.json のパス>'
                             Out = 'Assets/Screenshots/walkguide-preview/eye_5_hold.png' }
     'virtualwalk'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.VirtualWalkRun.Run'
-                            Desc = 'PC の仮想体験: 仮想の部屋を NPC が歩き、固定カメラの映像が実シェーダ・実 Director を通る。NPC の目の絵を Logs/virtualwalk/ へ（→ tools/virtualwalk-video.py で mp4）'
+                            Desc = 'PC の仮想体験: 色付き NPC が壁と全身の形を考慮して歩く（path=rail は手すり沿いの実際の道）。route=all で順/逆/引き返しを一括検証。画像は Drive の renders/virtualwalk へ（→ tools/virtualwalk-video.py で mp4）'
                             Set = 'laps=<周回 既定 1> / dwell=<各カメラの滞在秒 既定 3> / w=<出力の幅 既定 960> / outro=0|1 / maxsec=<上限秒>'
+                            Out = $null }
+    'twin'             = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.TwinStill.Run'
+                            Desc = 'デジタルツインの静止画（hero / wide / low / close / rec / overhead）を 1 回で撮る。仮想体験と同じ部屋・光・仕上げ。rec は固定カメラの肩越し（画面に映像が流れる）。出力は Drive の renders/twin'
+                            Set = 'tag=<名前> / w=<幅 既定 1920> / npc=<x;z> / yaw=<度> / t=<埃の時刻 秒> / cam=<映っているカメラ 0-2> / recfrac・recback・recright・recup・recyaw・recpitch・recfov・recfill・rechaze・recshade（rec の撮り方）/ closeorbit・closeyaw'
+                            Out = $null }
+    'plate-validation' = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.PlateValidation.Run'
+                            Desc = '保存済み A-C 写真へ Remy と人形を多位置合成し、接地・遮蔽・解除から終幕まで検証する。-Set stills=1。出力は Drive の renders/plate-validation'
+                            Src = @()
                             Out = $null }
     'text-audit'       = @{ Method = 'FixedCamVr.Streaming.EditorTools.HmdTextAudit.Run'
                             Desc = 'HMD 内の文字を全面まとめて測る（1 文字の見かけ角 / 枠からのはみ出し。⚠ 大きさ・文言を触ったら 3 言語ぶん通す）'
@@ -150,6 +159,21 @@ $Menus = [ordered]@{
                             Out = 'Assets/Scenes/FxSandbox.unity' }
 
     # ---- Diagnostics 廻リ視（見る・測る）----
+    'crt-selected'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateSelectedProfile'
+                            Desc = 'Web採用画像と本編の初期RGB・輪郭・位置ノイズをGPUで照合する'
+                            Out = $null }
+    'crt-lens'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.RenderCameraLens'
+                            Desc = 'カメラごとのレンズを本編の信号処理で A/B/C・人形・人形視点の PNG にする。-Set out=<空のフォルダ>'
+                            Out = $null }
+    'crt-doll-selected' = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateDollSelectedProfile'
+                            Desc = '人形化後のWeb採用値と本編の実CG・遷移・解除をGPUで照合する'
+                            Out = $null }
+    'crt-reference'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtReferencePreview.Run'
+                            Desc = '参照画像から作った本番CRTの材質を実写A-Cで描画し、色・反射・夜間モードを確認'
+                            Out = $null }
+    'screen-study'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.ScreenStudyPreview.Run'
+                            Desc = '最新の無人写真で現行スクリーンとガラス・筐体の4案を比較（Editor専用・本編は変更しない）'
+                            Out = $null }
     'composite'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.Run'
                             Desc = '実写プレート × CG 人形の合成を PNG 化（合成品質の一次証拠）'
                             Set = 'show=<show.json のパス> / decay=<0..1 周回で進む解像度の劣化>'
@@ -191,6 +215,9 @@ $Menus = [ordered]@{
                            Desc = '終幕の結果画面 3 言語・2 結末と中断。専用フォント生成と実描画'
                            Out = 'Assets/Resources/Fonts/OutroReport SDF.asset'
                            Src = @('Assets/Scripts/Diagnostics/OutroReportText.cs') }
+    'farewell'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.ShowCompositePreview.RunFarewell'
+                            Desc = '帰還の別れの人形（0291）を実プレート × 実合成で段ごとに PNG 化と帰還End の写真'
+                            Out = 'Logs/ending-farewell-preview' }
     'hud'              = @{ Method = 'FixedCamVr.Streaming.EditorTools.HudPreviewScreenshot.Capture'
                             Desc = 'HMD 内のステータス・操作パネルを PNG 化'
                             Out = 'Assets/Screenshots/hud-preview' }
@@ -564,6 +591,11 @@ switch ($Action) {
         $outXml = Join-Path $Root "Logs\test-$mode.xml"
         New-Item -ItemType Directory -Force (Split-Path $outXml) | Out-Null
 
+        # ⚠⚠ 走る前に前回の XML を消す（2026-10-28 実害）。Unity が起動できない（ライセンス切れ等）と
+        #    XML が書き換わらず、**5 日前の「全 2248 通過」がエラーの隣に緑で出る**。
+        #    XML があること ＝ 今回走ったこと、にしておく。
+        Remove-Item -LiteralPath $outXml -Force -ErrorAction SilentlyContinue
+
         # ⚠⚠ コンパイルエラーがあると Unity は **古いアセンブリでテストを走らせる**（2026-08-17 実害）。
         #    XML は普通に結果を返すので、**直したはずの行がいつまでも失敗し続ける**（30 分溶かした）。
         #    CLI の標準出力に出るのは `Scripts have compiler errors.` の 1 行だけで、
@@ -686,6 +718,102 @@ switch ($Action) {
             "✓ {0}  {1:HH:mm:ss}" -f $out, $after | Write-Host -ForegroundColor Green
         }
         elseif ($code -eq 0) { Write-Host "✓ 実行した（出力は上の Editor.log を見る）" -ForegroundColor Green }
+        exit $code
+    }
+
+    'crt-tune' {
+        $crtUrl = 'http://127.0.0.1:8107/'
+        $crtHealth = $null
+        try { $crtHealth = Invoke-RestMethod -Uri ($crtUrl + 'api/health') -TimeoutSec 2 } catch { }
+        if ($App -eq 'stop') {
+            if ($crtHealth.app -ne 'crt-tuner') { Write-Host 'CRTの調整は起動していません。'; exit 0 }
+            Invoke-RestMethod -Method Post -Uri ($crtUrl + 'api/stop') -TimeoutSec 5 | Out-Null
+            Write-Host 'CRTの調整を終了しました。'
+            exit 0
+        }
+        if ($App) { Write-Error '使い方: tools/unity.ps1 crt-tune [stop]'; exit 2 }
+        if ($crtHealth.app -eq 'crt-tuner') { Write-Host "CRTの調整: $crtUrl"; exit 0 }
+        if (Get-NetTCPConnection -LocalPort 8107 -State Listen -ErrorAction SilentlyContinue) {
+            Write-Error 'ポート8107は別のアプリが使用しています。停止せずに状態を確認してください。'; exit 1
+        }
+        Assert-NotLocked
+        & py -3.11 (Join-Path $Root 'tools/crt-tuner/prepare-pov-frames.py')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $crtEditors = @(
+            (Join-Path $env:USERPROFILE "Unity\Editors\$EditorVersion\Editor\Unity.exe"),
+            (Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$EditorVersion\Editor\Unity.exe")
+        )
+        $crtEditor = $crtEditors | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if (-not $crtEditor) { Write-Error 'Unity Editorが見つかりません。'; exit 1 }
+        $crtLogDir = 'G:\マイドライブ\shubie\logs\crt-tuner'
+        New-Item -ItemType Directory -Path $crtLogDir -Force | Out-Null
+        $crtLog = Join-Path $crtLogDir ((Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+        $crtArguments = @('-batchmode', '-projectPath', $Root,
+            '-executeMethod', 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.Run', '-logFile', $crtLog)
+        $crtQuoted = $crtArguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
+        $crtProcess = Start-Process -FilePath $crtEditor -ArgumentList $crtQuoted -PassThru -WindowStyle Hidden
+        Write-Host 'CRTの調整を起動しています。'
+        $crtReady = $false
+        for ($crtAttempt = 0; $crtAttempt -lt 240; $crtAttempt++) {
+            if ($crtProcess.HasExited) { break }
+            try {
+                $crtHealth = Invoke-RestMethod -Uri ($crtUrl + 'api/health') -TimeoutSec 1
+                if ($crtHealth.app -eq 'crt-tuner') { $crtReady = $true; break }
+            } catch { }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $crtReady) {
+            if ($crtProcess.HasExited) { try { Protect-UnityLogFile -Path $crtLog } catch { } }
+            Write-Error "起動を確認できませんでした。PID: $($crtProcess.Id)。状態を確認してから再実行してください。"
+            exit 1
+        }
+        Write-Host "CRTの調整: $crtUrl"
+        Write-Host '終了: tools/unity.ps1 crt-tune stop（起動中は同じプロジェクトのビルドを待機）'
+        exit 0
+    }
+
+    { $_ -in 'replay', 'twin-run' } {
+        # replay: 体験の記録（Quest の ExperienceRecorder）を本番の Main シーンへ流し直し、広い画角で mp4 にする。
+        # twin-run: HMD も Quest も無しに本番の Main シーンを通し、体験の記録を作る（入口は tools/twin-verify.py）。
+        # ⚠ `unity run` は -quit を必ず張る。Play は executeMethod が返った後も走り続けるので、
+        #    ここだけは Unity.exe を直接 batchmode で起こし、終わったら Editor 側が自分で閉じる（XpReplayRun）。
+        Assert-NotLocked
+        $edCandidates = @(
+            (Join-Path $env:USERPROFILE "Unity\Editors\$EditorVersion\Editor\Unity.exe"),
+            (Join-Path ${env:ProgramFiles} "Unity\Hub\Editor\$EditorVersion\Editor\Unity.exe")
+        )
+        $ed = $edCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $ed) { Write-Host "✗ Unity.exe が無い（$($edCandidates -join ' / ')）" -ForegroundColor Red; exit 1 }
+
+        $fcv = @()
+        foreach ($kv in $Set) {
+            foreach ($one in ($kv -split ',')) {
+                if ($one -notmatch '^[^=]+=.') { Write-Host "-Set は key=value（受け取ったもの: $one）" -ForegroundColor Red; exit 2 }
+                $fcv += '-fcv'; $fcv += $one
+            }
+        }
+        $log = New-UnityInvocationLog $Action
+        $playMethod = if ($Action -eq 'twin-run') { 'XpTwinRun' } else { 'XpReplayRun' }
+        $argList = @('-batchmode', '-projectPath', $Root,
+                     '-executeMethod', "FixedCamVr.Streaming.EditorTools.Replay.$playMethod.Run",
+                     '-logFile', $log) + $fcv
+        # 引数に空白があれば引用する（Start-Process は配列をそのまま連結する）
+        $quoted = $argList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
+        Write-Host "$(if ($Action -eq 'twin-run') { 'ツイン走行（体験の尺 + 起動に 1 分前後）' } else { '体験の再生と撮影（記録の尺 + 起動に 1 分前後）' })" -ForegroundColor Cyan
+        $p = Start-Process -FilePath $ed -ArgumentList $quoted -PassThru -WindowStyle Hidden
+        # 上限は 40 分（15 分の記録を遅い PC で撮っても収まる）。超えたら落とす。
+        if (-not $p.WaitForExit(40 * 60 * 1000)) {
+            Write-Host "✗ 40 分で終わらなかったので止めた" -ForegroundColor Red
+            try { $p.Kill() } catch { }
+        }
+        $code = $p.ExitCode
+        try { Protect-UnityLogFile -Path $log } catch { }
+        if (Test-Path $log) {
+            Get-Content $log -Encoding UTF8 | Where-Object { $_ -match '^\[(Replay|XpRec|Twin|XPWalk)\]|error CS\d+' } |
+                Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
+        }
+        if ($code -eq 0) { Write-Host "✓ 終わった（全文は $log）" -ForegroundColor Green }
+        else { Write-Host "✗ exit=$code（全文は $log）" -ForegroundColor Red }
         exit $code
     }
 

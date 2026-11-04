@@ -1,0 +1,24 @@
+import fs from 'node:fs';import path from 'node:path';import os from 'node:os';import {spawn,spawnSync} from 'node:child_process';
+const root='G:/マイドライブ/shubie/reports/2026-11-01_screen-effect-study/motion';
+const input=process.argv.includes('--alternate')?'b':'a';const out=path.join(root,'round-07',...(input==='b'?['alternate-b']:[]));fs.mkdirSync(out,{recursive:true});
+function publish(name,data){const target=path.join(out,name),temporary=target+'.tmp';fs.writeFileSync(temporary,data);fs.renameSync(temporary,target);}
+const lockPath=path.join(root,'capture.lock');const lock=fs.openSync(lockPath,'wx');fs.writeFileSync(lock,JSON.stringify({pid:process.pid,started:new Date().toISOString(),out}));fs.closeSync(lock);
+const profile=path.join(os.tmpdir(),'codex-motion-'+Date.now());
+const chrome=spawn('C:/Users/kouga/.cache/remotion-chs/chrome-headless-shell.exe',['--headless','--no-sandbox','--remote-debugging-port=0','--use-angle=d3d11','--disable-gpu-sandbox',`--user-data-dir=${profile}`,'http://127.0.0.1:8143'],{stdio:'ignore',windowsHide:true});
+try{let tabs;for(let i=0;i<80;i++){try{const port=Number(fs.readFileSync(path.join(profile,'DevToolsActivePort'),'utf8').split('\n')[0]);tabs=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();if(tabs.length)break;}catch{}await new Promise(r=>setTimeout(r,200));}if(!tabs?.length)throw Error('Own headless browser did not become ready');
+const ws=new WebSocket(tabs[0].webSocketDebuggerUrl);await new Promise(r=>ws.addEventListener('open',r,{once:true}));let id=0,pending=new Map();ws.addEventListener('message',e=>{let a=JSON.parse(e.data);if(a.id){let p=pending.get(a.id);pending.delete(a.id);a.error?p.reject(a.error):p.resolve(a.result);}});function cdp(method,params={}){return new Promise((resolve,reject)=>{let n=++id;pending.set(n,{resolve,reject});ws.send(JSON.stringify({id:n,method,params}));});}async function evaluate(expression){const r=await cdp('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;}
+for(let i=0;i<80;i++){if(await evaluate('Boolean(window.motionStudy?.ready)'))break;await new Promise(r=>setTimeout(r,150));}
+console.log('ready',await evaluate('window.motionStudy?.ready'));
+await evaluate('window.motionStudy.canvas.width=1170;window.motionStudy.canvas.height=540;');
+const times=[0,1,2,3,3.5,4,4.5,5,6,7,8,9,10,11,11.4,11.5,11.6,11.7,11.8,11.9,12,12.1,12.2,12.3,12.4,12.5,12.6,12.7,12.8,12.9,13,13.1,13.2,13.3,13.4,13.6,13.8,13.9,14,14.1,14.2,14.4,15,15.4];
+async function frame(t,options={}){return Buffer.from(await evaluate(`window.motionStudy.renderAt(${t},${JSON.stringify({input,...options})});window.motionStudy.canvas.toDataURL('image/png').split(',')[1]`),'base64');}
+for(let t of times)publish(`prototype-${t.toFixed(3).padStart(6,'0')}.png`,await frame(t));
+for(let t of [11.4,11.5,11.8,12.2,12.4,12.6,12.8,13.6,14.4])for(let control of [false,true])publish(`${control?'control':'background'}-${t.toFixed(3).padStart(6,'0')}.png`,await frame(t,{dust:0,foreground:false,...(control?{invasion:0}:{})}));
+const first=await frame(12.4);await frame(2);const again=await frame(12.4);if(!first.equals(again))throw Error('Non deterministic render');
+if(process.argv.includes('--stills-only')){console.log('stills complete');ws.close();process.exitCode=0;}else{
+const temporary=path.join(out,`motion-prototype-${Date.now()}.tmp.mp4`);
+const ff=spawn('ffmpeg',['-hide_banner','-loglevel','error','-y','-f','image2pipe','-vcodec','png','-r','30','-i','pipe:0','-an','-c:v','libx264','-crf','18','-pix_fmt','yuv420p','-movflags','+faststart',temporary],{stdio:['pipe','inherit','inherit'],windowsHide:true});
+const done=new Promise((resolve,reject)=>{ff.on('error',reject);ff.on('close',code=>code?reject(Error('ffmpeg '+code)):resolve());});
+for(let i=0;i<469;i++){const data=await frame(i/30);if(!ff.stdin.write(data))await new Promise(r=>ff.stdin.once('drain',r));if(i%120===0)console.log('render',i,'/ 469');}ff.stdin.end();await done;
+const probe=spawnSync('ffprobe',['-v','error','-show_entries','stream=codec_name,width,height,nb_frames','-of','json',temporary],{encoding:'utf8',windowsHide:true});if(probe.status!==0)throw Error('ffprobe failed: '+probe.stderr);const stream=JSON.parse(probe.stdout).streams[0];if(stream.width!==1170||stream.height!==540||Number(stream.nb_frames)!==469)throw Error('Unexpected exported stream '+JSON.stringify(stream));fs.renameSync(temporary,path.join(out,'motion-prototype.mp4'));
+publish('verification.json',JSON.stringify({version:'7.0.0',input,frames:469,fps:30,duration:469/30,width:1170,height:540,deterministic:true,times,sourceDerivedEffectAssets:true,originalSceneRGBReplayedAsBackground:false},null,2));console.log('complete');ws.close();}}finally{chrome.kill();fs.unlinkSync(lockPath);}

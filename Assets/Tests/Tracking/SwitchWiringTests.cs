@@ -197,7 +197,7 @@ namespace FixedCamVr.Tracking.Tests
             timeline.SetTimeline(new[] { SegmentWithLiveTake(1, 0, takeCam: 2, durSec: 30f) });
 
             // ゾーン0進入（seed 相当）。演出を武装。pos は order[0]=cam0。
-            cueScheduler.NotifyCameraEntered(0, 1, 1);
+            cueScheduler.NotifyCameraEntered(new SegmentEntry(0, segmentLap: 1, progressLap: 1));
 
             Invoke(runner, "Update");   // 進入 +0s → カット開始 → director.InsertBegin(2)
             PumpDirector(dir);          // begin dip → active=2
@@ -220,13 +220,13 @@ namespace FixedCamVr.Tracking.Tests
 
             Assert.That(reg.ActiveIndex, Is.EqualTo(1), "演出終了後は実ゾーン(cam1)へ復帰しているはず");
             Assert.That(lap.Position, Is.EqualTo(1), "復帰の画面切替では二重に進まない");
-            Assert.That(lap.CurrentLap, Is.EqualTo(1), "lap は二重加算されない");
+            Assert.That(lap.ProgressLap, Is.EqualTo(1), "lap は二重加算されない");
 
             // 二重カウントが無いことの追試: 次に cam2 へゾーン移動すれば pos は 2 へ 1 段だけ進む。
             dir.RequestZone(2);
             PumpDirector(dir);
             Assert.That(lap.Position, Is.EqualTo(2), "ポインタは 1→2 へ 1 段進む（スキップ・二重進行なし）");
-            Assert.That(lap.CurrentLap, Is.EqualTo(1));
+            Assert.That(lap.ProgressLap, Is.EqualTo(1));
         }
 
         // ---- T5: override 解除後、同一ゾーン滞在のまま表示がゾーンカメラへ復帰 ----
@@ -332,7 +332,7 @@ namespace FixedCamVr.Tracking.Tests
             dir.RequestZone(2);
             Assert.That(dir.SwitchSuppressed, Is.True, "override 前に stale 保留(2)が積まれている");
             Assert.That(lap.Position, Is.EqualTo(0));
-            Assert.That(lap.CurrentLap, Is.EqualTo(1));
+            Assert.That(lap.ProgressLap, Is.EqualTo(1));
 
             // Web override → cam1（"B"）。第一級凍結 + stale 保留の無条件クリア。
             InvokeApply(show, rev: 1, cameraOverride: "B");
@@ -342,7 +342,7 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(reg.ActiveIndex, Is.EqualTo(1),
                 "override 固定: 修正なしなら stale 保留(2)が cooldown 後に Zone commit して 2 に化ける");
             Assert.That(lap.Position, Is.EqualTo(0), "override 中は周回ポインタが進まない（Override は数えず stale commit も起きない）");
-            Assert.That(lap.CurrentLap, Is.EqualTo(1));
+            Assert.That(lap.ProgressLap, Is.EqualTo(1));
 
             // override 解除 → 同一ゾーン滞在のままゾーンカメラ(0)へ復帰（既存 T5 の自己回復と両立）。
             InvokeApply(show, rev: 2, cameraOverride: "");

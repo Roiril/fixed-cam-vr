@@ -284,7 +284,7 @@ namespace FixedCamVr.Streaming.Tests
         };
 
         private static void EnterZone(Rig rig, int camera)
-            => rig.Scheduler.NotifyCameraEntered(camera, 1, 1);
+            => rig.Scheduler.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: 1, progressLap: 1));
 
         private static void Frame(Rig rig)
         {

@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: done
+statusNote: implemented
 ---
 
 # タイトル画面「廻リ視」— 暗い地の題字から、封印の箱の立つ現実へ

@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>言葉の対応調査 — コード・文書・あなたの言葉（2026-11-03）</title>
+<style>
+:root{--paper:#fff;--surface:#f4f4f4;--ink:#1a1a1a;--mute:#5c5c5c;--line:#dcdcdc;--link:#1a5fb4;--accent:#d7261e}
+@media (prefers-color-scheme:dark){:root{--paper:#121212;--surface:#1e1e1e;--ink:#ececec;--mute:#a8a8a8;--line:#333;--link:#7fb0ff;--accent:#ff6b5e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Noto Sans JP","Yu Gothic Medium","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;font-size:1rem;line-height:1.8}
+main{max-width:38ic;margin:0 auto;padding:48px 16px 64px}
+.wide{max-width:96rem;margin:0 auto;padding:0 16px}
+h1{font-size:2.75rem;line-height:1.25;margin:0 0 16px}
+@media (max-width:30rem){h1{font-size:2rem}}
+h2{font-size:1.5rem;line-height:1.4;margin:64px 0 16px}
+h3{font-size:1.25rem;line-height:1.4;margin:48px 0 12px}
+p{margin:0 0 16px}
+.meta{color:var(--mute);font-size:.875rem;margin-bottom:32px}
+.box{background:var(--surface);padding:16px 24px;margin:24px 0}
+.box p:last-child{margin:0}
+em{font-style:normal;color:var(--accent);font-weight:700}
+code{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:.8125rem;background:var(--surface);padding:0 4px;word-break:break-all}
+table{border-collapse:collapse;width:100%;font-size:.8125rem;line-height:1.6;margin:16px 0 24px}
+th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line)}
+th{border-bottom:2px solid var(--line);white-space:nowrap}
+td:first-child{font-weight:700;white-space:nowrap}
+td.blank{background:var(--surface);min-width:12rem}
+.scroll{overflow-x:auto}
+.hi{color:var(--accent);font-weight:700;white-space:nowrap}
+.md{color:var(--ink);font-weight:700;white-space:nowrap}
+.lo{color:var(--mute);font-weight:700;white-space:nowrap}
+ol,ul{padding-left:24px;margin:0 0 16px}
+li{margin-bottom:8px}
+.note{color:var(--mute);font-size:.875rem}
+</style>
+</head>
+<body>
+<main>
+<h1>言葉の対応調査 — コード・文書・あなたの言葉</h1>
+<div class="meta">2026-11-03 調査。コード（<code>Assets/Scripts</code> の C# と <code>tools/analyze-xp-log.py</code>）、文書（<code>CLAUDE.md</code>・<code>.claude/</code>・<code>reports/</code>）、あなたの言葉（<code>canon/LEDGER.md</code> の逐語）を 3 つの担当で別々に調べた。そのあと突き合わせ、危うさが高いものはファイルを開いて確かめた。コードは何も変えていない。</div>
+
+<h2>結論</h2>
+<p>3 つの場所で言葉が一番ずれているのは<em>「周」</em>と<em>「カメラ」</em>です。どちらも、コード・文書・あなたの言葉のそれぞれで、1 つの語が 2〜5 個の意味を持っています。</p>
+<p>コードの中では <code>CurrentLap</code> が危険です。<code>LapCounter</code> では「進行の周」、<code>TimelineDirector</code> など 3 つのクラスでは「区間の周」を指します。同じ名前で意味が逆です。</p>
+<p>名前のずれが検証の穴になっている所が 1 つあります。終幕の画面に出る報告数と、解析器が照合している数が別の値です。いまの照合は同じ値どうしを比べているので、必ず通ります。</p>
+<p>あなたの言葉の側で目立つのは 2 点です。</p>
+<ul>
+<li>CLAUDE.md には、あなたが廻リ視を「本体」「fixedcam」と呼ぶと書いてあります。LEDGER の逐語には、どちらも 1 回も出てきません。あなたが書く作品名は「廻り視」（り がひらがな）か「固定カメラプロジェクト」です。</li>
+<li>「区間」「ラン」「覆い」「プレート」「帰還End」は、AI の注記にはたくさん出てきます。あなたの逐語にはほとんど出てきません。どれも AI が持ち込んだ言葉です。</li>
+</ul>
+
+<h2>読み方</h2>
+<ul>
+<li>表は危うさの高い順に並べています。<span class="hi">高</span>は取り違えると不具合になるもの、または実際になったもの。<span class="md">中</span>は人と AI の会話で取り違えが起きうるもの。<span class="lo">低</span>は揺れているだけのものです。</li>
+<li>「あなたの言葉」の列は LEDGER の逐語から拾ったものです。番号は LEDGER の項目番号です。LEDGER に残っていない普段の言葉は拾えていません。</li>
+<li>右端の灰色の列は空けてあります。あなたがその言葉で何を指しているかを書き込んでください。</li>
+</ul>
+</main>
+
+<div class="wide">
+<h2>用語の対応表</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>用語</th><th>危うさ</th><th>コードでの名前</th><th>文書での呼び方</th><th>あなたの言葉（LEDGER）</th><th>何がずれているか</th><th>あなたの認識</th></tr></thead>
+<tbody>
+
+<tr><td>周</td><td class="hi">高</td>
+<td><code>LapCounter.CurrentLap</code> は進行の周（LapCounter.cs:62）。<code>TimelineDirector.CurrentLap</code>（:179）・<code>SegmentRecorder.CurrentLap</code>（:105）・<code>SegmentDwellLog.CurrentLap</code>（:48）は区間の周。区間の周の正式名は <code>SegmentLap</code>（LapCounter.cs:68）</td>
+<td>「進行の周」「区間の周」と区別して書いてある（show-run.md:53）。ただし CLAUDE.md:15 と why.md:65 は「3 区間を 3 周 → 終幕」と書き、4-A（lap 4）を数えていない</td>
+<td>「1周目A」（0087 まで）、「3-A」「4-A」（0087 から）。「周回」16 回。「週」の誤記が 3 か所（0048・0088・0115）</td>
+<td>同じ <code>CurrentLap</code> が、クラスによって逆の意味になる。終了判定に区間の周を渡すと、引き返した人の体験が終わらない。テレメトリの <code>lap=</code> も行によって中身が違う（<code>ev=zone</code> は進行の周、<code>ev=seg</code> は区間の周）</td>
+<td class="blank"></td></tr>
+
+<tr><td>カメラ</td><td class="hi">高</td>
+<td>番号 <code>camera</code>（0〜2）、文字 <code>cameraId</code>（"A"〜"D"）、アセット名 <code>Phone01</code>〜<code>03</code>。take id <code>L1C1</code> の C はカメラ番号（0 から数える）</td>
+<td>配信スマホ、HMD の Camera、パススルーのカメラ、CG の仮想カメラ。番号は A/B/C・0/1/2・Phone01〜03・「カメラ01」の 4 系統。CLAUDE.md:5 は「アプリ自体をカメラと呼ぶ」と書く</td>
+<td>5 つの意味。配信スマホ（0293「実機のカメラAはずれた位置」）、映像（0045「カメラ映像」）、区間の切り替わり（0057「カメラが切り替わるときの音」）、作品名（「固定カメラプロジェクト」）、絵の中の視線（0135「全部カメラを見ている」）。「カメラ」単独でアプリを指した例は無い</td>
+<td><code>L1C1</code> は 1-B、<code>L3C2</code> は 3-C。文字の C とカメラ C が混ざる。CLAUDE.md の「アプリ = カメラ」は LEDGER に根拠が無い</td>
+<td class="blank"></td></tr>
+
+<tr><td>A / B / C</td><td class="hi">高</td>
+<td>区間は <code>camera</code> 番号、ボタンは右コントローラの A</td>
+<td>区間・カメラの両方に使う</td>
+<td>4 つの意味。区間（0247「報告せずにAを出ようとしたり」）、カメラ（0050「カメラA」）、コントローラの A ボタン（0007・0014）、案の記号（0180「私はAがいい」）</td>
+<td>「A を押す」「A に入る」「A がいい」が同じ文字で並ぶ。会話の文脈で決まるだけで、書いた文字からは区別できない</td>
+<td class="blank"></td></tr>
+
+<tr><td>報告の数</td><td class="hi">高</td>
+<td>押した回数 <code>VisitorMarkCount</code> と、異変の数 <code>ReportedAnomalyCount</code>（同じ演出は 1 回と数える）の 2 つ</td>
+<td>「報告」は体験者の X/Y 操作。show-run.md:62 では「捨てたら報告する」と、ログを出す意味でも使う</td>
+<td>0234「1つの異変に対して報告したら内部では1だけカウントするようにしてほしい」。「記録」も 3 つの意味（報告が残ること、2-A のコマを残すこと、押した回数）</td>
+<td>終幕の画面は <code>VisitorMarkCount</code> を出している（OutroReport.cs:244）。ShowControlClient.cs:2990 のコメントは「終幕は <code>ReportedAnomalyCount</code>」と書いていて、実装と合わない。analyze-xp-log.py:3275 は <code>ev=outro anomalies=</code> を「終幕に出た数」と呼んで照合しているが、送る側（ShowTelemetryHost.cs:846）も同じ <code>ReportedAnomalyCount</code> なので必ず一致する。画面に出た数は検証されていない</td>
+<td class="blank"></td></tr>
+
+<tr><td>ラン / Run</td><td class="hi">高</td>
+<td><code>BeginRun</code>・<code>ResetRun</code> は導入を含む体験 1 回。<code>ShowPhase.Run</code> は本編だけ。<code>RunReset</code> は説明に「ラン開始で発火」とあるが、導入から本編へ移るとき（ShowControlClient.cs:1975）にも発火する</td>
+<td>「ラン」「体験 1 回ぶん」「本編」「走行」。<code>BeginMainRun</code> と <code>TriggerRunReset</code> の取り違えは罠として記録済み（visitor_sound_reset.md）</td>
+<td>使用 0 回。あなたは「体験」「1周目」で話している</td>
+<td>「新しい体験者が来た」合図だと思って <code>RunReset</code> を購読すると、導入から本編へ移る時点で 1 周目の録画などを消す。2 人目の体験者だけ壊れる不具合は、この境目で 4 回起きている</td>
+<td class="blank"></td></tr>
+
+<tr><td>位置合わせ</td><td class="hi">高</td>
+<td><code>CourseRegistration*</code> と <code>StaffSetupStage.Alignment</code>（同じ工程に 2 つの名前）。カメラの較正は <code>ShowCameraCalibDef</code>、ゾーンは <code>ZoneCalibrator</code></td>
+<td>4 つの意味。HMD のコース登録（staff-input.md:40）、「3-A の位置合わせ版」＝録画のコマを体験者の進み具合に合わせること（NOW.md:66）、較正（カメラと CG）、校正（ゾーン）</td>
+<td>3 つの意味。スタッフが床を合わせる作業（0017・0184）、録画と凍結点を揃えること（0050）、卓でのカメラ校正（0120）</td>
+<td>「位置合わせを直して」と言われたとき、床・録画・カメラのどれかが決まらない</td>
+<td class="blank"></td></tr>
+
+<tr><td>作品名</td><td class="md">中</td>
+<td>namespace <code>FixedCamVr</code>、パッケージ <code>com.roiril.mawarimi</code>、ビルド対象名 <code>fixedcam</code>、APK <code>mawarimi.apk</code></td>
+<td>「廻リ視」（リ がカタカナ）。CLAUDE.md:5 は呼び名として「fixedcam」「廻リ視」「本体」「カメラ」を挙げる。公式サイトも「廻リ視」で、「廻り視」は別表記として登録されている</td>
+<td>「廻り視」17 回（すべて り がひらがな）、「固定カメラプロジェクト」10 項目、「まわりみ」2 回、「Mawarimi」1 回。「本体」「fixedcam」「廻リ視」は 0 回</td>
+<td>CLAUDE.md の呼び名の一覧は、LEDGER に根拠が無い。チャットだけで使っているなら LEDGER には残らないので、ここは確かめられない</td>
+<td class="blank"></td></tr>
+
+<tr><td>本体</td><td class="md">中</td>
+<td>無し</td>
+<td>4 つの意味。アプリの別名（CLAUDE.md:5）、Quest の個体（visitor_tablet.md:67）、タブレット端末（staff_setup.md:11）、音の主部（sound-design.md:619）</td>
+<td>逐語に 0 回。注記では音の主部の意味で使われている（LEDGER 1066 行「本体が 0.2 秒しかなく」）</td>
+<td>CLAUDE.md の「アプリ = 本体」を AI が読むと、音の話の「本体」と混ざる</td>
+<td class="blank"></td></tr>
+
+<tr><td>異変 / 異常 / 怪異</td><td class="md">中</td>
+<td><code>ShowAnomalyCatalog</code>、<code>TotalAnomalyCount</code>（Anomaly）</td>
+<td>NOW.md と画面の文言は「異変」、コードの説明とクラス設計レポートは「異常」。画面には「異常を検出しました」と「異状は検出されませんでした」が同じ行に並ぶ（NOW.md:75）</td>
+<td>「異変」25、「異常」23、「怪異」16。同じものを 3 語で呼ぶ。「演出」で同じ単位を指すこともある（0234）</td>
+<td>「異常」と「異状」は字が違う。意図した使い分けかは文書から分からない</td>
+<td class="blank"></td></tr>
+
+<tr><td>異変を消すこと</td><td class="md">中</td>
+<td><code>Released</code>、<code>CurseReleasedCount</code>、テレメトリの <code>coarseRel</code></td>
+<td>「解除」「排除」「取り除く」「帰還」</td>
+<td>「解呪」（0096）→「対処／抹消」（0105）→「排除」（0123）→「取り除きました」（0284）と変わってきた。地の文では「解除」（0081・0269）</td>
+<td>台詞として決めた語と、説明で使う語が混ざっている。どれが現行の台詞かは NOW.md を見ないと分からない</td>
+<td class="blank"></td></tr>
+
+<tr><td>覆い</td><td class="md">中</td>
+<td><code>IntroVeil</code>（導入の全面）、<code>SwapDiffAt</code>・<code>swapHold</code>（すり替わりの黒）</td>
+<td>「導入の覆い」「黒い覆い」「持続の覆い」が同じ「覆い」</td>
+<td>「覆い」は自分では使っていない。「黒いの」「黒いマスク」「黒いノイズ」「ノイズ」。ただし「マスク」は合成範囲（0137）、「ノイズ」は音（0030）や加工の値（0303）も指す</td>
+<td>「覆い」は AI の語で、導入とすり替わりの 2 つを指す。あなたの「ノイズ」「マスク」はさらに別の意味も持つ</td>
+<td class="blank"></td></tr>
+
+<tr><td>人形</td><td class="md">中</td>
+<td><code>ShowActor*</code>・<code>Doll*</code>、<code>Ichimatsu</code> と <code>Ichimatsu2</code>。<code>IsDoll</code> は「actor id が <code>visitor</code> 以外ならすべて人形」と判定する（ShowCgLayer.cs:223）</td>
+<td>CG 人形、実物の市松人形、人形になった体験者、別れの人形（ending.md:41 は「分身ではない」と明記）、スイの顔が替わった人形、人形視点。Remy（体験者の代役）が「CG 人形の罠」の項目に入っている</td>
+<td>107 回。0050「右の自分は気づいたら人形に代わっている」など</td>
+<td>人形でない CG を足すと、コードはそれも人形として笑わせる（推測。いまは該当する actor が無い）</td>
+<td class="blank"></td></tr>
+
+<tr><td>終わり方の名前</td><td class="md">中</td>
+<td><code>ShowEndingOutcome.Released / Trapped / Interrupted</code></td>
+<td>「帰還End」「人形End」「中断」。旧名「帰還確認」「帰還不能」「調査中断」が一部に残る（MEMORY.md:17）。「帰還End」と「帰還 End」の表記揺れ</td>
+<td>「帰還エンディング」、「人形から戻れなくなってしまったEND」。「帰還End」「人形End」は逐語に無い</td>
+<td>名前は AI が短くしたもの。「帰還不能」は旧名なのか、4-A の状態の説明なのかが文書で混ざっている</td>
+<td class="blank"></td></tr>
+
+<tr><td>最後の A（4-A）</td><td class="md">中</td>
+<td>固定値 <code>lap==4 &amp;&amp; camera==0</code> の所（TimelineDirector.cs:270、EndingDecisionLogic.cs:62）と、<code>totalLaps+1</code> で計算する所（ShowRunLogic.cs:308）が混在</td>
+<td>「最後の A」「帰りの A」「4 周目 A」「4-A」「最終 A」</td>
+<td>5 つの呼び名。「4周目A」（0048）、「4-A」、「最後」（0167「4周目と書くと混乱する」）、「終了」（0247）、「最後のA」。体験者には「3周」と言う</td>
+<td>コードは周回数を変えると食い違う。言葉は、体験者向けに「3 周」、内部で「4-A」と数え方が 2 つある</td>
+<td class="blank"></td></tr>
+
+<tr><td>呪い</td><td class="md">中</td>
+<td>解除は <code>ScreenDecay*</code>、テレメトリは <code>coarse*</code>。<code>CurseGain</code> は 3 周目 B の音、<code>CommsCurseLogic</code> は通信面の斑</td>
+<td>「呪い」「侵食」「斑」「乗っ取り」</td>
+<td>16 回。0083「呪いのせいという事にする」</td>
+<td>同じ呪いの解除がコード・テレメトリ・文書で 3 つの名前になる。「Curse」も音と通信面の 2 系統</td>
+<td class="blank"></td></tr>
+
+<tr><td>Cue</td><td class="md">中</td>
+<td>5 つの意味。素材 id の <code>cueId</code>、旧スケジュール、音の <code>SoundCue</code>、卓の <code>activeCue</code>、終幕の <code>EndingCue</code>。<code>CueScheduler</code> は実際は区間に入ったことを配る中継（:312）</td>
+<td>「cue」</td>
+<td>使用なし</td>
+<td>名前が仕事と合っていない。スケジューラだと思って読むと構造を誤解する</td>
+<td class="blank"></td></tr>
+
+<tr><td>録画 / 走行</td><td class="md">中</td>
+<td><code>SegmentRecorder</code>（体験中の録画）、<code>tools/quest-record.py</code>（検証の録画）</td>
+<td>「走行」は、検証の自動走行・演出が実行中であること・体験 1 回の 3 つの意味（show-run.md:57、sound-design.md:644）</td>
+<td>「録画」は体験中の録画（0274）と実機キャプチャ（0236「クエストの生録画」）の 2 つ。「走行」は使っていない</td>
+<td>「録画が出ない」が、体験の中の録画か、検証の録画かで別の不具合になる</td>
+<td class="blank"></td></tr>
+
+<tr><td>BGM / 劇伴</td><td class="md">中</td>
+<td><code>HorrBGM</code>（BgmDirector.cs:371）</td>
+<td>「劇伴」33 回（AI の語）、「環境音」</td>
+<td>「HorrorBGM」（0088・0115）と綴る。0088 で「劇伴ってなに？」と訊き、HorrorBGM を「昔使ってたずっと流す用」、背景BGM を「周ごと」と定義した。「環境音」も自分で使う（0049・0115）</td>
+<td>あなたの綴りとコードの綴りが違う。「劇伴」はあなたが使わない語</td>
+<td class="blank"></td></tr>
+
+<tr><td>webUI / 卓</td><td class="md">中</td>
+<td><code>tools/web-compositor</code>、<code>VisitorPortal</code>（:8090）</td>
+<td>「卓」「オペレータ卓」「撮影コンソール」「博士タブレット」「来場者の画面」</td>
+<td>「webUI」が 4 つの UI を指す。卓（0120）、笑い声の調整 UI（0118）、博士のタブレット（0193）、加工の調整 UI（0300）。「メインのウェブ卓」（0187）</td>
+<td>あなたの「webUI」から、どの画面かを特定できない</td>
+<td class="blank"></td></tr>
+
+<tr><td>入れ替わり / Swap</td><td class="lo">低</td>
+<td>3 つの意味。導入の段 <code>IntroStage.Swap</code>、人形との入れ替わり <code>TransSwap</code>・<code>SwapMorphFx</code>、通信面の文面差し替え <code>SwapTextOutSec</code></td>
+<td>「入れ替わり」「すり替わり」「人形化」「ほどけ」</td>
+<td>「すり替え」（0050「1周目Aの録画にすり替え」）</td>
+<td>コードの Swap が 3 系統。文書と言葉は「入れ替わり」でほぼ揃っている</td>
+<td class="blank"></td></tr>
+
+<tr><td>カット</td><td class="lo">低</td>
+<td>コメントの「カット」は step（ShowTakeSchema.cs:97）。<code>ShowCutDef</code> はゾーンの切れ目、<code>TransCut</code> は遷移の種類</td>
+<td>「カット」94 回（演出の 1 単位）</td>
+<td>動画や音を切る意味でしか使っていない</td>
+<td>同じ語でコードに 3 つ、あなたの言葉にもう 1 つの意味がある</td>
+<td class="blank"></td></tr>
+
+<tr><td>区間</td><td class="lo">低</td>
+<td><code>Segment*</code>、<code>Zone*</code>、<code>ShowTimelineSegmentDef(lap,camera)</code></td>
+<td>「区間」「ゾーン」「セグメント」。「1-A」と「A」の両方を区間と呼ぶ</td>
+<td>1 回だけ（0108）。ふだんは「3-A」のように番号で呼ぶ</td>
+<td>「区間」は AI の語。「A」だけだと、区間か、全周の A か決まらない</td>
+<td class="blank"></td></tr>
+
+<tr><td>上司</td><td class="lo">低</td>
+<td>無し</td>
+<td>ほぼ出てこない</td>
+<td>3 つのもの。スタッフ（0036）、エージェントの前身（0056。0067 で AI エージェントに変更）、博士（0255）</td>
+<td>時期によって指す相手が変わった。現行は博士</td>
+<td class="blank"></td></tr>
+
+<tr><td>その他の多義</td><td class="lo">低</td>
+<td>actor id <code>"visitor"</code> は体験者でなく CG の代役（ShowTakeSchema.cs:492）</td>
+<td>「プレート」は無人の背景写真と、ツール名 gen-plate（素材全般）の 2 つ。「マーク」は画面では地点の記録、コードでは報告</td>
+<td>「設定」は物語の設定と言語・軽減の設定。「タイトル」は Quest・タブレット・スライドの 3 つ。「壁」は実物と生成素材の血の壁など</td>
+<td>どれも文脈で区別できる範囲</td>
+<td class="blank"></td></tr>
+
+</tbody>
+</table>
+</div>
+</div>
+
+<main>
+<h2>AI が持ち込んだ言葉</h2>
+<p>LEDGER の注記には多く出てきて、あなたの逐語にはほとんど出てこない言葉です。AI どうしの会話や文書の中だけで定着しています。あなたが話すときに通じない可能性があります。</p>
+<ul>
+<li>区間（注記 52 回・逐語 1 回）、ラン（逐語 0 回）、take、カット</li>
+<li>覆い、締め、台本、素材、連絡</li>
+<li>帰還End・人形End・帰還不能（あなたの言葉は「帰還エンディング」「人形から戻れなくなってしまったEND」）</li>
+<li>プレート、veil、swap、視界ジャック（あなたの言葉は「視界がジャック」）、封印の箱（あなたの言葉は「封印されてそうな感じの箱」）</li>
+<li>前線、斑、熾、帯、管、合図、来場者、場面</li>
+<li>劇伴（0088 で意味を訊かれた）、目の写真（0152 で「目の写真って何？」と訊かれた）</li>
+</ul>
+<p class="note">「闇の目」は逐語に 1 回（0084）ありますが、AI の項目名をなぞった形に見えます。これは推測です。</p>
+
+<h2>文書どうしの食い違い</h2>
+<p>文書が古くなっているものです。名前の問題とは別に、直す必要があります。</p>
+<ul>
+<li>CLAUDE.md:16 と why.md:66 は「1 周目の録画を 3 周目の背景に」と書いています。NOW.md:66 では、3-A に出すのは 2 周目 A の録画です。1 周目の録画を使うのは 3-B と 3-C です。</li>
+<li>終わり方の出口の数が、show_run_skeleton.md と MEMORY.md:12 では 4 つ、show-run.md:58 では 5 つです（人形End が加わった後）。</li>
+<li>L 字の壁について、MEMORY.md:76 は「<code>room.walls</code> は信じない」、本文の l_wall_geometry.md は「いまは読んでよい」と書いています。</li>
+<li>sim_device_divergence の件数が、MEMORY.md:86 では 5 件、本文では 3 件です。</li>
+<li>ShowControlClient.cs:2990 のコメント（終幕の報告数）が実装と合っていません（表の「報告の数」）。</li>
+</ul>
+
+<h2>揃っていた言葉</h2>
+<ul>
+<li>体験者と来場者。来場者はタブレットを持っている段階、体験者は HMD を被った後で、文書の使い分けはほぼ一貫しています。コードはどちらも <code>Visitor</code> です。</li>
+<li>乱れ・砂嵐・信号断。<code>GlitchFx</code>・<code>SignalLost</code> との対応が screen-swap-eyes.md に書いてあります。</li>
+<li>スイ・連絡の面・エージェント画面。NOW.md:21 に別名の表があり、<code>CommsPanel</code> まで辿れます。</li>
+<li>α / β。Quest 2 台の呼び名として、あなたの言葉（0185「クエストα、β」）・文書・シリアルの対応が揃っています。</li>
+<li><code>SegmentLap</code> を読むべき場所（演出・録画・BGM・滞在・画面の劣化）は、すべて区間の周を読んでいました。終了判定は進行の周を読んでいました。名前は危ういですが、いまの実装は正しく使い分けています。</li>
+</ul>
+
+<h2>直したこと（2026-11-03）</h2>
+<ul>
+<li>終幕の報告数の照合。画面に組んだ数を <code>ev=outro repN=</code> に出し、押した回数と比べる形にした。画面が内部の集計を出していたら落ちることをテストで確かめた。</li>
+<li>周の名前。区間の周の <code>CurrentLap</code> を <code>SegmentLap</code> に、進行の周の <code>CurrentLap</code> を <code>ProgressLap</code> に変えた。<code>CurrentLap</code> という名前はもう無い。</li>
+<li>ログのキー。<code>lap=</code> はどの行でも区間の周、<code>plap=</code> はどの行でも進行の周にした。解析器は古いログも読める。</li>
+<li><code>RunReset</code> を <code>LapCountReset</code> に改名した。購読者が 1 つだけで、その購読者は 3 つの場面すべてで周を数え直す必要があるため、分けずに役目どおりの名前にした。</li>
+<li>最後の A の判定を <code>ShowRunDefaults.IsClosingSegment</code> の 1 か所にまとめた。卓と照合する式と一致することをテストで固定した。</li>
+<li>人形の判定は動作を変えず、「代役以外はすべて人形」という規則をコメントに書いた。</li>
+<li>古い文書（3 周目の背景・終わり方の出口の数・壁・件数）とコメントを直した。用語の対応表を <code>.claude/rules/glossary.md</code> に置いた。</li>
+</ul>
+<p>あなたの言葉そのもの（カメラ・A・webUI など）は変えていません。右端の空欄に書いてもらえたら、用語の対応表に反映します。</p>
+
+<h2>調べ方の限界</h2>
+<ul>
+<li>あなたの言葉は LEDGER に残った逐語だけです。チャットで話して LEDGER に入らなかった言葉は数えていません。CLAUDE.md の「本体」「fixedcam」は、そちらで使っているのかもしれません。</li>
+<li>LEDGER の逐語には、AI の文面をあなたが貼って赤を入れた箇所があります（0094・0105・0155・0242）。そこにある語はあなたが選んだ語ではないので、数から外しています。</li>
+<li>出現回数は文字列の一致で数えています。「周」が「周り」に含まれるような重なりは、目で見て外していません。回数は目安です。</li>
+<li>テレメトリの <code>lap=</code> の食い違いから解析器が偽の FAIL を出す、という指摘は、コードを読んだうえでの推測です。実際の走行ログでは確かめていません。</li>
+</ul>
+</main>
+</body>
+</html>

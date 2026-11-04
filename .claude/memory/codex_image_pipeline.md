@@ -30,7 +30,7 @@ metadata:
 - 納品前に両画像の寸法と左右の黒帯が黒であることを読み取りで検査し、黒帯付き画像を開いて構図を確認する。納品の主リンクは16:9版にする。
 - 元の4:3画像も別名で残す。この指定は動画生成への入力形式であり、スマホ配信や実機素材を16:9へ変更する指示ではない。
 
-既存の変換手順と、4:3入力で上下を切られた実測は [dolls-gather.md](../../tools/gen-plate/video/dolls-gather.md) の「入力の作り方」。Codexはルート `AGENTS.md`、Claude Codeはルート `CLAUDE.md` からこの節へ誘導する。
+既存の変換手順と、4:3入力で上下を切られた実測は [dolls-gather.md](../../tools/gen-plate/video/dolls-gather.md) の「入力の作り方」。Codex と Claude Code はどちらもルート `CLAUDE.md` からこの節へ誘導される（2026-10-28 に AGENTS.md を廃止）。
 
 ---
 

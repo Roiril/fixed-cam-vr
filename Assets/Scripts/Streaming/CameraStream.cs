@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using FixedCamVr.Streaming.Replay;
 using UnityEngine;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
 using Stopwatch = System.Diagnostics.Stopwatch;
@@ -77,8 +78,21 @@ namespace FixedCamVr.Streaming
 
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
-        public bool IsConnected => _receiver.IsConnected;
-        public bool HasPendingFrame => !_disposed && _receiver.HasPendingFrame;
+        public bool IsConnected => XpReplay.Feed != null || _receiver.IsConnected;
+        public bool HasPendingFrame => !_disposed
+            && (XpReplay.Feed is { } feed ? feed.HasPending(SourceKey) : _receiver.HasPendingFrame);
+
+        /// <summary>
+        /// 記録と再生でカメラを名指す鍵（<c>CameraSource</c> のアセット名。Phone01 など）。
+        /// 表示名は卓で変わりうるので使わない。
+        /// </summary>
+        public string SourceKey => _source.name;
+
+        /// <summary>
+        /// どのカメラでも、JPEG を展開できたら呼ばれる（体験の記録 <c>ExperienceRecorder</c> が使う）。
+        /// <see cref="FrameTap"/> と同じく<b>同期的にコピーすること</b>。
+        /// </summary>
+        public static event Action<CameraStream, byte[], int>? AnyFrameDecoded;
         public string? LastError => _receiver.LastError;
 
         /// <summary>HMD 着脱 / OS pause で凍結中か。DiscoveryClient は suspend 中を「フレーム断」に数えない。</summary>
@@ -166,6 +180,7 @@ namespace FixedCamVr.Streaming
         {
             if (_disposed) return;
             _started = true;
+            if (XpReplay.Active) return;
             _receiver.Start();
 
             // /info を起動直後に 1 回。以降は RefreshMetadataAsync を HUD 等が定期的に呼ぶ
@@ -207,7 +222,7 @@ namespace FixedCamVr.Streaming
             // 遅延の窓も捨てる（別端末の時計を基準にした最小値を持ち越すと揺らぎが嘘になる）。
             _latency.Reset();
             _watchdog.NotifyEndpointChanged(Time.realtimeSinceStartup);
-            if (_started)
+            if (_started && !XpReplay.Active)
             {
                 // suspend 中でも必ず起動する。受信スレッドは suspend 中も温存する設計
                 // （SetSuspended は Tick を止めるだけ）なので起動は無害。旧実装は suspend 中の
@@ -225,6 +240,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public async System.Threading.Tasks.Task RefreshMetadataAsync()
         {
+            if (XpReplay.Active) return;
             if (_metaInflight) return;
             _metaInflight = true;
             int gen = _endpointGen; // この呼び出しが属するエンドポイント世代
@@ -266,6 +282,7 @@ namespace FixedCamVr.Streaming
         /// <summary>HudDump 等から呼ばれる任意のリフレッシュ。/health は時間経過で値が変わるので明示更新。</summary>
         public async System.Threading.Tasks.Task RefreshHealthAsync()
         {
+            if (XpReplay.Active) return;
             if (_healthInflight) return;
             _healthInflight = true;
             int gen = _endpointGen; // この呼び出しが属するエンドポイント世代
@@ -365,7 +382,7 @@ namespace FixedCamVr.Streaming
         public bool DecodeLatestFrame()
         {
             if (_disposed || IsSuspended || Time.unscaledDeltaTime > StreamWatchdogLogic.ResumeGapSec) return false;
-            if (!_receiver.TryConsumeFrame(ref _scratch, out int len, out var meta) || len <= 0 || _scratch == null)
+            if (!TryTakeFrame(out int len, out var meta) || len <= 0 || _scratch == null)
                 return false;
 
             float now = Time.realtimeSinceStartup;
@@ -396,6 +413,11 @@ namespace FixedCamVr.Streaming
                     try { FrameTap(_scratch, len); }
                     catch (Exception e) { Debug.LogWarning($"[CameraStream] FrameTap 例外: {e.Message}"); }
                 }
+                if (AnyFrameDecoded != null)
+                {
+                    try { AnyFrameDecoded(this, _scratch, len); }
+                    catch (Exception e) { Debug.LogWarning($"[CameraStream] AnyFrameDecoded 例外: {e.Message}"); }
+                }
                 if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
                     DroppedFrames += (meta.seq - _lastSeq - 1);
                 _lastSeq = meta.seq;
@@ -414,6 +436,18 @@ namespace FixedCamVr.Streaming
                 _receiver.RequestReconnect();
             }
             return decoded;
+        }
+
+        // 再生中はファイルの記録から、それ以外は MJPEG の受信から、最新のコマを 1 枚取る。
+        private bool TryTakeFrame(out int length, out MjpegStreamReceiver.FrameMeta meta)
+        {
+            if (XpReplay.Feed is { } feed)
+            {
+                if (!feed.TryConsume(SourceKey, ref _scratch, out length, out long seq)) { meta = default; return false; }
+                meta = new MjpegStreamReceiver.FrameMeta(0, seq, MjpegStreamReceiver.NowMs(), ConnectionSerial);
+                return true;
+            }
+            return _receiver.TryConsumeFrame(ref _scratch, out length, out meta);
         }
 
         public void Dispose()

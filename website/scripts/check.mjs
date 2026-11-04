@@ -228,7 +228,7 @@ const video = html.match(/<video\b[^>]*id="footage-player"[^>]*>/)?.[0] ?? "";
 if (!video || /\s(?:src|poster|autoplay)=?/.test(video) || !video.includes('preload="none"')) errors.push("footage must not expose or fetch media before the spoiler gate opens");
 if (!html.includes('<div id="game-stage" class="game-stage"></div>')) errors.push("the perspective experience must create its iframe in JavaScript");
 if ((html.match(/<iframe\b/g)?.length ?? 0) !== 1) errors.push("only the requested trailer may be embedded in the initial HTML");
-if (!sources[10].includes('  start();') || !sources[12].includes("app.dataset.mode !== 'fixed'")) errors.push("the handheld game must open automatically in fixed view");
+if (!sources[10].includes('if (active && autoStart && !frame) start();') || !sources[12].includes("app.dataset.mode !== 'fixed'")) errors.push("the handheld game must open automatically in fixed view when visible");
 for (const file of sourceFiles.filter(file => file.endsWith(".js"))) {
   const syntax = spawnSync(process.execPath, ["--check", join(websiteRoot, file)], { encoding: "utf8" });
   if (syntax.status !== 0) errors.push(`${file}: ${syntax.stderr}`);

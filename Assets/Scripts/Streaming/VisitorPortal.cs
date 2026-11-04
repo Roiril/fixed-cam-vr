@@ -118,8 +118,6 @@ namespace FixedCamVr.Streaming
         private bool _paused, _focusLost;
         private int _battery = -1;
         private long _nextBattery;
-        private RomiCartLink? _cart;
-        private long _nextCartLookup;
         public Func<bool>? StaffResetProvider { get; set; }
         /// <summary>
         /// 体験の途中でも次の体験者へ切り替える（タブレットの「強制リセット」）。
@@ -442,11 +440,6 @@ namespace FixedCamVr.Streaming
                 _battery = level < 0f ? -1 : Mathf.RoundToInt(level * 100f);
                 _nextBattery = now + Stopwatch.Frequency * 10;
             }
-            if (_cart == null && now >= _nextCartLookup)
-            {
-                _cart = FindObjectOfType<RomiCartLink>();
-                _nextCartLookup = now + Stopwatch.Frequency * 2;
-            }
             DeviceHealth d = DeviceHealthProvider != null ? DeviceHealthProvider() : default;
             sb.Append(",\"health\":{\"paused\":").Append(_paused ? "true" : "false")
               .Append(",\"focusLost\":").Append(_focusLost ? "true" : "false")
@@ -457,8 +450,6 @@ namespace FixedCamVr.Streaming
               .Append(",\"exceptions\":").Append(RuntimeHealth.ExceptionCount)
               .Append(",\"lastException\":").Append(VisitorPortalLogic.JsonString(RuntimeHealth.LastException))
               .Append(",\"clockGaps\":").Append(ShowClock.Gaps)
-              .Append(",\"cartKind\":").Append(VisitorPortalLogic.JsonString(_cart != null ? _cart.LastKind : ""))
-              .Append(",\"cartResult\":").Append(VisitorPortalLogic.JsonString(_cart != null ? _cart.LastResult : ""))
               .Append('}');
         }
 

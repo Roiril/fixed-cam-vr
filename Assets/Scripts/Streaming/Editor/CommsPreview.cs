@@ -376,7 +376,7 @@ namespace FixedCamVr.Streaming.EditorTools
             panel.Deliver(CommsNotice.Halt);
             PlaceStraightAhead(root, tmp, dist);
             PropertyInfo doneReading = logic.GetType().GetProperty("DoneReading")!;
-            var tsv = new System.Text.StringBuilder("frame\tsec\tnotice\tpower\tsquash\ttear\tresidue\tred\ttorn\tpanel\n");
+            var tsv = new System.Text.StringBuilder("frame\tsec\tnotice\tpower\tsquash\ttear\tresidue\tred\ttorn\tpanel\treleased\n");
             bool promptSent = false;
             bool released = false;
             panel.SetReleasedForPreview(false);
@@ -396,6 +396,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 {
                     panel.SetReleasedForPreview(true);
                     released = true;
+                    // 本番も締めの報告が通った同フレームでスイの返事へ切り替わる。
+                    panel.Deliver(CommsNotice.MarkCleared);
                     Debug.Log($"[CommsPreview] 復帰: {n} コマ目で呪いが解けたことにした");
                 }
                 Step(logic, apply, panel, dt);
@@ -407,12 +409,14 @@ namespace FixedCamVr.Streaming.EditorTools
                    .Append(panel.AppliedResidue.ToString("F2")).Append('\t')
                    .Append(panel.RedGlyphs).Append('\t')
                    .Append(panel.TornBands).Append('\t')
-                   .Append(panel.AppliedPanelAlpha.ToString("F2")).Append('\n');
+                   .Append(panel.AppliedPanelAlpha.ToString("F2")).Append('\t').Append(released).Append('\n');
                 bool stills = EditorCliArgs.Get("stills") == "1";
-                if (!stills || n == 24 || n == 60 || n == 135 || n == 165)
+                if (!stills || n == 24 || n == 60 || n == 135 || n == 165 || n == 210 || n == 254)
                     Shoot(cam, Frame(sub, n));
                 n++;
             }
+            if (!released || panel.AppliedResidue > 0.001f || panel.AppliedTear > 0.001f)
+                throw new System.InvalidOperationException("[CommsPreview] Closing release did not clear the doll residue and tearing.");
             panel.SetReleasedForPreview(false);
             File.WriteAllText(Path.Combine(sub, "recovery.tsv"), tsv.ToString());
             Debug.Log($"[CommsPreview] 復帰（③a → ③b）{n} コマ → {sub}（③b を届けた: {promptSent}）");

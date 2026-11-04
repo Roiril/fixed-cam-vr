@@ -285,7 +285,7 @@
       }
       let width=1,height=1;
       function resize() {
-        const ratio=Math.min(devicePixelRatio||1,1.75);
+        const ratio=Math.min(devicePixelRatio||1,1.5,Math.sqrt(2073600/(innerWidth*innerHeight)));
         width=Math.max(1,Math.round(innerWidth*ratio)); height=Math.max(1,Math.round(innerHeight*ratio));
         canvas.width=width; canvas.height=height; gl.viewport(0,0,width,height);
       }

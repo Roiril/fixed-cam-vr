@@ -1,0 +1,20 @@
+{
+  "scope":"B-only manually traced semantic line cores, carpet polygon, and plain board interiors; not automatic recognition",
+  "line_core_width":18,
+  "core_transition_px":12,
+  "line_polylines":[
+    {"name":"hanger-diagonal-and-curved-return","points":[[755,409],[781,336],[815,267],[850,202],[881,155],[906,133],[932,136],[919,165],[897,195],[867,258],[837,324],[801,386],[776,425],[760,416],[755,409]]},
+    {"name":"white-metal-frame","points":[[1022,391],[1054,485],[1093,597]]}
+  ],
+  "carpet_polygon":[[646,650],[1205,642],[1205,920],[1165,934],[798,949],[511,944]],
+  "surface_polygons":[
+    {"name":"upper-plain-board","points":[[150,145],[580,135],[580,580],[160,580]]},
+    {"name":"lower-plain-board","points":[[160,710],[535,710],[465,875],[160,875]]}
+  ],
+  "surface_transition_px":20,
+  "surface_mean_sigma":2,
+  "surface_detail_gain":0.4,
+  "vertical_support_radius":18,
+  "scale_disclosure":"Reference active width1440px, B aperture width approximately1110-1120px. Reference half-support24px becomes about18.5px; authored broad vertical half-support fixed to18px. Gain/blur sigma unchanged.",
+  "observation":"Lines and carpet were traced after native raw wire/carpet crops with a coordinate grid were opened. Carpet follows the actual diagonal board/carpet boundary. Surface polygons stay away from the opening, board edges, horizontal board joint and carpet boundary. The old rectangular full-nativecable and whole-y630 floor masks are not used."
+}

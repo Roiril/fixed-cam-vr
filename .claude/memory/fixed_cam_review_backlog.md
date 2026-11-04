@@ -23,7 +23,7 @@ metadata:
 1. OvrBridge / Fx 系 57 ファイルに `#nullable enable` 未付与（一括追加可、機能影響なし）
 2. StreamMetadataFetcher: HttpClient.Timeout(5s) と CTS(3s) の二重タイムアウト → `Timeout.InfiniteTimeSpan` + CTS 一本化
 3. StreamMetadata / StreamHealth の public フィールドは JsonUtility 用 DTO（規約例外）→ コメントで意図明示
-4. DroidCam 互換コード（CameraSource 既定値・Ping DroidCams メニュー）は意図的保持。Phase 4 で削除判断
+4. DroidCam 互換コード（CameraSource 既定値・Ping Cameras メニュー。2026-11-03 まで Ping DroidCams）は意図的保持。Phase 4 で削除判断
 5. /info 定期 refresh は 1.5s 間隔 → スマホ回転の反映が最大 1.5s 遅れる（仕様として許容中）
 
 **How to apply:** fixed-cam 側を再度触るセッションで 1–2 を先に消化する。

@@ -7,7 +7,7 @@
     "dev": "node server.mjs",
     "start": "node server.mjs dist",
     "build": "node scripts/build.mjs",
-    "check": "node scripts/check.mjs && node scripts/check-entrance.mjs",
+    "check": "node scripts/check.mjs && node scripts/check-entrance.mjs && node scripts/check-performance.mjs",
     "sync:entrance": "node scripts/sync-entrance.mjs",
     "fonts": "node scripts/fetch-fonts.mjs"
   }

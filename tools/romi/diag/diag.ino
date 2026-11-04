@@ -1,4 +1,4 @@
-// Romi 台車の制御・診断ファーム（ESP32）。v4: 目標（cm / 度）指定の Web 操作 + 堅牢なネットワーク。
+// Romi 台車の制御・診断ファーム（ESP32）。v4: 目標（cm / 度）指定の Web 操作 + 堅牢なネットワーク。v7: 無線書き換え（ota.h）。
 // 元のスケッチ（Romi / Joy-Con 2 control v3）の逆アセンブルから得たピン:
 //   side0=左: DIR=18 PWM=19 / side1=右: DIR=16 PWM=17 / AUX=2
 // 安全: 起動時は全出力 LOW。駆動は時間・PWM に上限があり、終わると必ず止める。
@@ -10,6 +10,7 @@
 #include <esp_task_wdt.h>
 #include "soc/gpio_reg.h"
 #include "net.h"
+#include "ota.h"
 #include "webui.h"
 #include "icon.h"
 
@@ -179,6 +180,8 @@ struct Joy {
   float curL = 0, curR = 0;       // いまの出力（なめらかに追従）
   int flip = 0;
 } joy;
+// 無線の途切れの計器: /joy の間隔の最大と、動かしている最中に更新が途切れて止まった回数（誤った安全停止を含む）
+static uint32_t joyGapMaxMs = 0, joyDeadman = 0;
 
 // --- ショートカット（一連の動きを台車側で順に実行する。スマホの通信が切れても時間どおりに進む）---
 // 手順の文字列: "s:1:100:40,r:-1:90:40,w:0:500:0"（種類:向き:量:強さ%）
@@ -408,6 +411,7 @@ static int joySet(float x, float y, int capPct, int flip) {
   joy.tgtL = toCount(l);
   joy.tgtR = toCount(r);
   joy.flip = flip;
+  if (joy.active && millis() - joy.last > joyGapMaxMs) joyGapMaxMs = millis() - joy.last;
   if (!joy.active) {
     joy.started = millis();
     Serial.printf("EVT joy start cap=%d flip=%d t=%lu\n", capPct, flip, millis());
@@ -422,9 +426,11 @@ static void joyTick() {
   uint32_t now = millis();
   if (!joyMoving()) { joy.lastTick = now; return; }
   if (joy.active && now - joy.last > JOY_TIMEOUT_MS) {
+    bool driving = joy.tgtL != 0 || joy.tgtR != 0;   // 0 を送ったあとの途切れは「離した」、動かしている最中なら途切れ
+    if (driving) joyDeadman++;
     joy.active = false;
     joy.tgtL = joy.tgtR = 0;
-    Serial.printf("EVT joy end dur=%lums reason=%s t=%lu\n", now - joy.started, "timeout-or-release", now);
+    Serial.printf("EVT joy end dur=%lums reason=%s t=%lu\n", now - joy.started, driving ? "timeout" : "release", now);
   }
   uint32_t dt = now - joy.lastTick;
   if (dt == 0) return;
@@ -772,7 +778,8 @@ static String infoJson() {
          ",\"up\":" + String(millis() / 1000) + ",\"drops\":" + String(netDrops) + ",\"lastReason\":" + String(netLastReason) +
          ",\"reset\":\"" + resetName() + "\",\"heap\":" + String(ESP.getFreeHeap()) + ",\"busy\":" + String(run.active ? 1 : 0) + ",\"calVer\":" + String(cal.ver) +
          ",\"idleDrops\":" + String(server.idleDrops) + ",\"fullDrops\":" + String(server.fullDrops) + ",\"served\":" + String(server.served) + ",\"loopMaxMs\":" + String(loopMaxMs) +
-         ",\"loopMaxAgoMs\":" + String(loopMaxMs ? millis() - loopMaxAtMs : 0) + "}";
+         ",\"loopMaxAgoMs\":" + String(loopMaxMs ? millis() - loopMaxAtMs : 0) +
+         ",\"joyGapMaxMs\":" + String(joyGapMaxMs) + ",\"joyDeadman\":" + String(joyDeadman) + ",\"ota\":" + otaJson() + "}";
 }
 
 static void startWeb() {
@@ -802,7 +809,7 @@ static void startWeb() {
   server.on("/cal", HTTP_GET, httpCal);
   server.on("/info", HTTP_GET, []() {
     String body = infoJson();
-    if (server.hasArg("clear")) { loopMaxMs = 0; loopMaxAtMs = 0; }
+    if (server.hasArg("clear")) { loopMaxMs = 0; loopMaxAtMs = 0; joyGapMaxMs = 0; joyDeadman = 0; }
     jsonSend(body);
   });
   server.on("/health", HTTP_GET, []() { jsonSend("{\"ok\":1,\"up\":" + String(millis() / 1000) + ",\"busy\":" + String(run.active ? 1 : 0) + "}"); });
@@ -819,6 +826,7 @@ static void help() {
   Serial.println("  scan <ms> | aux <0|1> | raw <pin 16..19> <0|1> | i2c <sda> <scl>");
   Serial.println("  cal | cal set <key>=<v> ...   keys: sv sd st rv rd rt");
   Serial.println("  ending | ending go | ending dry | ending cut   final-scene auto run (config: GET/POST /ending)");
+  Serial.println("  ota | ota pass <password 8+> | ota clear   wireless firmware update (tools/romi/ota.py)");
   Serial.println("  wifi status | wifi scan | wifi set <ssid>|<pass> | wifi ssid <ssid> | wifi clear | wifi kick");
 }
 
@@ -863,6 +871,7 @@ static void handle(String line) {
     calSave();
     Serial.println(calJson());
   }
+  else if (otaSerial(line)) {}
   else if (line == "wifi status") Serial.println(netStatus());
   else if (line == "wifi kick") { Serial.println("kicking STA (expect auto reconnect)"); WiFi.disconnect(false, false); }
   else if (line.startsWith("wifi fake ")) {   // 試験用: RAM 上の SSID だけ偽物にして「つながらない状況」を作る（NVS は触らない）
@@ -966,6 +975,7 @@ void setup() {
   endingLoad();
   netBegin();       // ブロックしない。接続はイベントとバックオフで進める
   startWeb();
+  otaBegin(stopAll);
   delay(300);
   Serial.println();
   Serial.printf("ROMI %s ready (type help) net: %s\n", FW_VERSION, netStatus().c_str());
@@ -982,6 +992,7 @@ void loop() {
   joyTick();
   seqTick();
   netTick(run.active || joyMoving() || seq.active);
+  otaTick(run.active || joyMoving() || seq.active, netUp, netUpSince);
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == '\n' || ch == '\r') { handle(buf); buf = ""; }

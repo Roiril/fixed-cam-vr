@@ -33,6 +33,9 @@ namespace FixedCamVr.Streaming.EditorTools
             Texture2D mask = LoadEndingAsset(root, crowdCue.maskUrl);
             string dir = Path.Combine(root, "Logs/ending-roll-preview");
             Directory.CreateDirectory(dir);
+            // 帰還の写真は、右に体験者・左に体験者を見つめる別れの人形（0291）。
+            // ⚠ 舞台（Stage）を 2 つ同時に立てると出力の板が重なって画が潰れる。先に作って片付けてから次を立てる。
+            released = CreateFarewellReleasedSample(root, dir);
             using var sample = Stage.Create(dir);
             try
             {
@@ -43,9 +46,6 @@ namespace FixedCamVr.Streaming.EditorTools
                 var camera = show.CameraAt(0);
                 Geometry geometry = sample.AimVirtualCamera(camera, plate.width, plate.height);
                 if (!geometry.usable) throw new InvalidOperationException("Closing camera has no calibration");
-                sample.HideActor();
-                sample.Composite(plate, false, show.CameraPost(0) ?? show.post ?? new PostParams(), "");
-                released = sample.ReadEndingTexture();
                 ShowCompositePreviewPlan.Shot? closing = ShowCompositePreviewPlan.CollectShots(show.timeline)
                     .Find(s => s.takeId == "L4C0#0" && s.step.durKind == "untilMark");
                 if (closing == null) throw new InvalidOperationException("Missing closing untilMark step");
@@ -64,6 +64,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 File.WriteAllBytes(Path.Combine(dir, "sample-doll.png"), trapped.EncodeToPNG());
                 File.WriteAllText(Path.Combine(dir, "sample-source.txt"),
                     "Design sample. Not a visitor recording.\nReturn: " + plateCue.sourceUrl +
+                    " + visitor stand-in at the closing zone centroid + farewell doll (EndingFarewellLogic)" +
                     "\nDoll crowd: " + crowdCue.sourceUrl + "\nDoll placement: closing zone centroid.\n");
             }
             finally

@@ -9,7 +9,7 @@ namespace FixedCamVr.Streaming
     /// 実際の画面適用（カメラ切替 / オーバーレイ / post）は <see cref="TakeRunner"/> が行う。
     /// <see cref="InsertLogic"/> の後継で、**1 本の演出が複数カットを持てる**点が本質的な差。
     ///
-    /// 契約の正本は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6.3。要点:
+    /// 現行の契約は <c>.claude/rules/show-run.md</c>。設計の経緯は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6.3（当時の記録）。要点:
     ///   1. 同時に走る演出は 1 本。**別の演出が画面を持っているあいだは、その区間に居る限り武装したまま待つ**
     ///      （2026-07-27 変更。旧実装は待たずに即決着させて捨てていた ＝ 著作した演出が黙って消えた。
     ///      設計 §7 の「捨てる」根拠は「**演出中に通過した**区間の演出を遅れて出すと文脈が壊れる」であって、
@@ -427,7 +427,8 @@ namespace FixedCamVr.Streaming
         /// <paramref name="lines"/> は通過ラインの今フレームの結果（<see cref="LineCrossLogic.StateView"/>）。
         /// null なら at=line の演出は発火しない（位置が取れない環境＝従来どおりの動き）。
         /// </summary>
-        public Decision Tick(float now, int latestZoneCam, LineCrossLogic.State[]? lines = null)
+        public Decision Tick(float now, int latestZoneCam, LineCrossLogic.State[]? lines = null,
+                             bool holdCurrentStep = false)
         {
             // ① 開始条件を満たした瞬間を **必ず記録する**（画面が塞がっていても取りこぼさない）。
             //    ライントリガーは「横切った」という事象で、猶予 CrossLatchSec（0.6s）で消えるため、
@@ -448,12 +449,14 @@ namespace FixedCamVr.Streaming
 
             if (_running)
             {
+                // 写真と退場を待った時間を watchdog に誤算入しない。
+                if (holdCurrentStep) _deadline = Math.Max(_deadline, now + 1f);
                 // ⚠ **報告を watchdog より先に見る。** 同じフレームで両方揃ったら、体験者の行為の方を
                 //   理由にする（画も「乱れて消えた」になり、押した手応えが返る）。畳む先は同じ
                 //   EndTakeDecision なので、後片付けの経路は 1 本のまま増えない。
                 if (_dismissPending) return DismissDecision(latestZoneCam);
 
-                if (now >= _deadline)
+                if (!holdCurrentStep && now >= _deadline)
                     return EndTakeDecision(latestZoneCam, EndReason.Watchdog);
 
                 // ⚠ ここで武装中の演出を決着させない（旧実装はしていた）。
@@ -461,7 +464,7 @@ namespace FixedCamVr.Streaming
                 //   その区間に居るあいだは Ready のまま待ち、この演出が終わった次の Tick で発火する。
                 //   区間を出れば OnZoneCommitted が ifMissed どおりに決着させる（不変条件 4 は不変）。
 
-                if (now >= _stepEnd)
+                if (!holdCurrentStep && now >= _stepEnd)
                 {
                     int next = _activeStep + 1;
                     float[] durs = _defs[_activeTake].stepDurSec;

@@ -130,13 +130,16 @@ namespace FixedCamVr.Streaming
         public float ScreenDecay => _decay.Progress;
 
         /// <summary>
-        /// <b>いま画に出ている劣化の進み 0..1</b>（テレメトリ用）。呪いが解けると 0 へ戻る。
+        /// <b>いま画に出ている加工の進み</b>（テレメトリ用）。呪いが解けると採用初期値0.5へ戻る。
         /// 「装置は使い込まれたまま、呪いだけが解けた」を分けて観測するために <see cref="ScreenDecay"/> と対で出す。
         /// </summary>
         public float ScreenDecayShown => _decay.Shown;
 
-        /// <summary>確定した区間位置から求めた通常画面の加工値（テレメトリ用）。</summary>
+        /// <summary>通常画面の固定mono（テレメトリ用）。</summary>
         public float ScreenDecayNormalTarget => _decay.NormalTarget;
+        public float ScreenNoiseTarget => _decay.NoiseTarget;
+        public float ScreenNoiseDark => _decay.NoiseDark;
+        public float ScreenDollProfileBlend => _decay.DollProfileBlend;
 
         /// <summary>画の劣化を決めた表示状態（テレメトリ用）。</summary>
         public ScreenDecayShownMode ScreenDecayShownMode => _decay.ShownMode;
@@ -261,6 +264,7 @@ namespace FixedCamVr.Streaming
             // 解像度の劣化を落とす**唯一の場所**。次の体験者は今の解像度から始める。
             // 終了では落とさない（落とすと演出を見せ切っている最中に画が急に鮮明になる）。
             _decay.Reset();
+            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark, _decay.DollProfileBlend);
             // ⚠⚠ **画の状態も落とす**（2026-08-14）。凍結（hold）・焼き付き（burn）・
             //    人形に付き従う劣化（aura）・乱れは、それまで**体験の終了でしか戻していなかった**。
             //    現場は途中で打ち切って交代することがある（気分が悪くなった / 時間が押している /
@@ -285,8 +289,8 @@ namespace FixedCamVr.Streaming
             ApplyGate();
             // ⚠⚠ **ゲートを閉じた「後」にもう一度武装を落とす**（2026-08-30）。
             //    ラン開始の号令元（`ShowControlClient.TriggerRunReset` / `BeginNewVisitorRunLocal`）は
-            //    `timelineDirector.ResetRun()` → `RunReset?.Invoke()` → ここ、の順で走る。
-            //    中央の `RunReset` は `LapCounter.ResetRun` → `SeedCurrentZone` →
+            //    `timelineDirector.ResetRun()` → `LapCountReset?.Invoke()` → ここ、の順で走る。
+            //    中央の `LapCountReset` は `LapCounter.ResetRun` → `SeedCurrentZone` →
             //    `CueScheduler.NotifyCameraEntered` → `TakeRunnerLogic.ArmEnterTakes` まで届くが、
             //    **その時点ではまだ前の相のゲートが開いている**（閉じるのは直上の `ApplyGate`）。
             //    ＝ 前の体験者が本編を走っている最中にラン開始を押すと、シード先のカメラに
@@ -295,7 +299,7 @@ namespace FixedCamVr.Streaming
             //    watchdog（既定 45 秒）まで導入の裏で居座る。
             //    号令元の順序を入れ替える手もあるが、**導入を挟まない設定**（`introEnabled:false`）では
             //    `_logic.BeginRun()` が即 `RunBegan` を返して `OnRunBegan` → `BeginMainRun` →
-            //    `RunReset` が走るので、号令元の残りと二重リセットになる。ここで落とす方が安全。
+            //    `LapCountReset` が走るので、号令元の残りと二重リセットになる。ここで落とす方が安全。
             RuntimeHealth.Step("timeline", () => timelineDirector?.ResetRun());
             // ⚠⚠ **録画係も同じ理由でここで落とす**（2026-09-04）。上の演出と同型で、こちらは
             //    **録画**が導入中に開く。開いてしまうと本編で開き直せないので
@@ -378,7 +382,7 @@ namespace FixedCamVr.Streaming
         //   ここへ渡すと「帰りの A に着いた体験者が 1 区間引き返した瞬間に周回が 3 へ落ちて、
         //   体験が終わらなくなる」。終了判定は `lap > totalLaps` の 1 本しか無いので、
         //   ここを間違えると出口が丸ごと消える。
-        private void OnCameraEntered(int camera, int lap, int progressLap) => _logic.NotifyLap(progressLap);
+        private void OnCameraEntered(SegmentEntry entry) => _logic.NotifyLap(entry.ProgressLap);
 
         private void Update()
         {
@@ -407,7 +411,7 @@ namespace FixedCamVr.Streaming
             ShowRunEvent ev = _logic.Tick(ShowClock.Dt, atStart, takeRunning, introCompleted,
                                           introAborted,
                                           _ending.Armed || (timelineDirector != null
-                                              && timelineDirector.ClosingAreaSec >= 0f));
+                                              && timelineDirector.ClosingSegmentSec >= 0f));
 
             // ⚠ ゲートは**イベントを配る前に**合わせる。RunBegan の処理は
             // BeginMainRun → LapCounter.ResetRun → SeedCurrentZone → CueScheduler.NotifyCameraEntered
@@ -485,8 +489,8 @@ namespace FixedCamVr.Streaming
         /// 音が読む装置の劣化と、画へ出す人形状態連動の加工を進める。
         ///
         /// <see cref="ScreenDecayLogic.Progress"/> は本編の周回でだけ進み、音へ渡る単調値。
-        /// <see cref="ScreenDecayLogic.Shown"/> は通常 0.5 まで。実表示中の人形視点と CG 人形化で 1 になり、
-        /// 報告後は終了相でも 0 まで戻る。
+        /// <see cref="ScreenDecayLogic.Shown"/> は通常0.5固定。実表示中の人形視点とCG人形化で1になり、
+        /// 報告後は終了相でも0.5まで戻る。暗部ノイズだけは確定区間位置から求める。
         ///
         /// ⚠ 押す先（<see cref="CameraFeelFx"/>）は <see cref="ResolveRefs"/> で 1 回だけ引く。
         /// ここで毎フレーム <c>FindObjectOfType</c> を撃つと 90Hz でシーン全走査になる。
@@ -495,11 +499,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void TickScreenDecay()
         {
-            float normalTarget = 0f;
+            float noiseTarget = CrtSignalProfile.NoiseDark;
             if (timelineDirector != null &&
                 timelineDirector.TryGetCurrentSegment(out int segmentLap, out int segmentCamera))
             {
-                normalTarget = ScreenDecayLogic.NormalTargetFor(
+                noiseTarget = ScreenDecayLogic.NoiseTargetFor(
                     segmentLap, segmentCamera, showControl != null ? showControl.CourseOrder : null);
             }
 
@@ -509,12 +513,13 @@ namespace FixedCamVr.Streaming
                         timelineDirector != null && timelineDirector.DollReplacementShowing,
                         timelineDirector != null && timelineDirector.DollReplacementTransitioning,
                         timelineDirector != null ? timelineDirector.DollReplacementTransition01 : 1f,
-                        normalTarget);
+                        ScreenDecayLogic.NormalMax, noiseTarget);
             // ⚠⚠ 画へ書くのは **Shown**。生の Progress は音が読む単調値で、画の人形状態には使わない。
-            // 色が抜けるのも**同じ進み**。通常は 0.5 まで。人形視点と CG 人形化で 1 になる。
+            // 色が抜けるのも**同じ進み**。通常は0.5固定。人形視点とCG人形化で1になる。
             // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。
             // ⚠ 戻すときも同じ 1 本なので、解像度と色は必ず一緒に戻る。
-            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown);
+            _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark, _decay.DollProfileBlend);
+            _feel?.SetDollPovShowing(timelineDirector != null && timelineDirector.DollPovShowing);
         }
 
         private bool AtStartZone()

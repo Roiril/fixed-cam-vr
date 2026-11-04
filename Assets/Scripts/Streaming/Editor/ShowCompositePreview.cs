@@ -127,6 +127,38 @@ namespace FixedCamVr.Streaming.EditorTools
             return Mathf.Clamp01(v);
         }
 
+        /// <summary><c>-Set dlight=&lt;EV&gt;</c>（人形について回る光だまりの試し値）。無ければ null ＝ 本番の値。</summary>
+        private static float? ParseActorLightArg()
+        {
+            string? raw = EditorCliArgs.Get("dlight");
+            if (string.IsNullOrEmpty(raw)) return null;
+            if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float v))
+            {
+                Debug.LogWarning($"[CgViz] dlight の値を読めない: '{raw}'（本番の値で撮る）");
+                return null;
+            }
+            return Mathf.Clamp(v, 0f, 6f);
+        }
+
+        /// <summary>
+        /// <c>-Set red=&lt;0..1&gt;,redmode=doll|all</c>（夜間モードで赤だけ少し残す試し・0288）。
+        /// 戻り値は <c>_RedKeep</c> の (画面全体, 人形の上)。無ければ null ＝ 本番の値（人形の上 <see cref="ShowCgLayer.DollRedKeep"/>）。
+        /// </summary>
+        private static Vector2? ParseRedKeepArg()
+        {
+            string? raw = EditorCliArgs.Get("red");
+            if (string.IsNullOrEmpty(raw)) return null;
+            if (!float.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float v))
+            {
+                Debug.LogWarning($"[CgViz] red の値を読めない: '{raw}'（本番の値で撮る）");
+                return null;
+            }
+            v = Mathf.Clamp01(v);
+            return EditorCliArgs.Get("redmode") == "all" ? new Vector2(v, 0f) : new Vector2(0f, v);
+        }
+
         private static void Execute(string? explicitShowJsonPath)
         {
             // CLI（batchmode）は空シーンで始まる。枠のアスペクトはシーンの MjpegScreen が正なので
@@ -142,6 +174,8 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 stage = Stage.Create(outDir);
                 stage.DecayProgress = ParseDecayArg();
+                stage.ActorLightEvOverride = ParseActorLightArg();
+                stage.RedKeepOverride = ParseRedKeepArg();
 
                 ShowJson? show = LoadShow(explicitShowJsonPath, out string showPath);
                 if (show == null)
@@ -415,7 +449,7 @@ namespace FixedCamVr.Streaming.EditorTools
             public string label;
         }
 
-        private sealed class Stage : IDisposable
+        private sealed partial class Stage : IDisposable
         {
             private readonly GameObject _root;
             private readonly string _outDir;
@@ -559,6 +593,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 // Edit Mode では Awake / Start が走らないので long-poll もキャッシュ読みも起きない。
                 // 使うのは「layout を配る器」としての面だけ（SetLayoutForPreview → Room）。
                 var showControl = showGo.AddComponent<ShowControlClient>();
+                showControl.CourseToWorldProvider = (xz, y) => new Vector3(StageOriginX + xz.x, y, xz.y);
+                showControl.CourseYawProvider = () => 0f;
 
                 var proxyGo = new GameObject("[CgRoomProxy]");
                 proxyGo.transform.SetParent(root.transform, worldPositionStays: false);
@@ -1129,6 +1165,48 @@ namespace FixedCamVr.Streaming.EditorTools
             /// </summary>
             public Vector3 ActorFootWorld => _actor != null ? _actor.transform.position : Vector3.zero;
 
+            /// <summary>人形を描く仮想カメラ（本番の ShowCgLayer の仮想カメラと同じ姿勢・内部行列）。</summary>
+            public Camera CgCamera => _cgCam;
+
+            /// <summary>出力先のディレクトリ。</summary>
+            public string OutDir => _outDir;
+
+            /// <summary>CG 層の強さ（本番の <c>_CgStrength</c>）。別れの人形の現れ・消えに使う。既定 1。</summary>
+            public float CgStrength { get; set; } = 1f;
+
+            /// <summary><see cref="Composite"/> と同じ contain-fit を、描く前に求める。</summary>
+            public Vector2 ContainFor(Plate plate)
+            {
+                float srcAspect = (float)plate.width / Mathf.Max(1, plate.height);
+                return srcAspect < _frameAspect
+                    ? new Vector2(srcAspect / _frameAspect, 1f)
+                    : new Vector2(1f, _frameAspect / srcAspect);
+            }
+
+            /// <summary>
+            /// ワールドの足元へ直接立てる（course を経ない）。別れの人形の立ち位置は
+            /// <see cref="EndingFarewellLogic.TrySolve"/> がワールドで返すので、本番と同じ値をそのまま置く。
+            /// </summary>
+            public void PlaceActorAtWorld(ShowActorDef def, Vector3 worldFoot, float yawDeg, Geometry geom)
+            {
+                EnsureActor(def);
+                if (_actor == null) return;
+                _actor.SetActive(true);
+                Transform t = _actor.transform;
+                Vector3 pos = worldFoot;
+                if (_rig == null || !_rig.HasRig)
+                    pos.y += Mathf.Max(0.2f, def.heightM) * 0.5f;
+                t.position = pos;
+                t.rotation = Quaternion.Euler(0f, yawDeg, 0f);
+                if (_rig != null && _rig.HasRig)
+                {
+                    _rig.ResetPose();
+                    for (int i = 0; i < ActorSettleFrames; i++)
+                        _rig.Drive(ShowBodyInput.None, yawDeg, 1f / 30f);
+                }
+                ApplyLightAndGround(def, geom);
+            }
+
             public void HideActor()
             {
                 if (_actor != null) _actor.SetActive(false);
@@ -1179,6 +1257,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
 
                 _actorHeightM = Mathf.Max(0.05f, def.heightM);
+                _actorId = def.id;
                 _actor.name = $"[CgVizActor:{def.id}]";
                 _actor.transform.SetParent(_root.transform, worldPositionStays: true);
                 SetLayerRecursive(_actor.transform, _cgLayer);
@@ -1240,6 +1319,7 @@ namespace FixedCamVr.Streaming.EditorTools
             /// <summary>人形に付き従う劣化（カットの <c>aura</c>）。0 なら書かない。</summary>
             private float _aura;
             private float _actorHeightM = 0.4f;
+            private string _actorId = "";
 
             public void SetAura(float aura) => _aura = Mathf.Clamp01(aura);
 
@@ -1414,7 +1494,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _compositeMat.SetVector("_CgScale", new Vector4(contain.x, contain.y, 0f, 0f));
                 _compositeMat.SetFloat("_UvRotSteps", 0f);
                 _compositeMat.SetFloat("_OverlayStrength", 0f);
-                _compositeMat.SetFloat("_CgStrength", cgVisible ? 1f : 0f);
+                _compositeMat.SetFloat("_CgStrength", cgVisible ? Mathf.Clamp01(CgStrength) : 0f);
 
                 _compositeMat.SetFloat("_Exposure", post.exposure);
                 _compositeMat.SetFloat("_Contrast", post.contrast);
@@ -1456,6 +1536,22 @@ namespace FixedCamVr.Streaming.EditorTools
                     ShowCgLayer.TryActorFocus(_cgCam, _actor.transform.position, _actorHeightM,
                                               contain, _aura, out focus);
                 _compositeMat.SetVector("_ActorFocus", focus);
+
+                // 人形について回る光だまり（本番と同じ式・同じ条件 = 人形を描いている間だけ）。
+                // シェーダが夜間モードの強さを掛けるので、decay=0 の絵には出ない。
+                Vector4 light = new Vector4(0.5f, 0.5f, 0.2f, 0f);
+                if (applyFeel && _actor != null
+                    && ShowCgLayer.IsDoll(cgVisible, _actorId)
+                    && ShowCgLayer.TryActorLight(_cgCam, _actor.transform.position, _actorHeightM,
+                                                 contain, ActorLightEvOverride ?? ShowCgLayer.ActorLightEv,
+                                                 out light)
+                    && light.w > 0f)
+                    caption += $"\nactor light {light.w:0.00} EV x night mode";
+                _compositeMat.SetVector("_ActorLight", light);
+                _compositeMat.SetVector("_RedKeep", applyFeel
+                    ? new Vector4(RedKeep.x, RedKeep.y, 0f, 0f) : Vector4.zero);
+                if (applyFeel && (RedKeep.x > 0f || RedKeep.y > 0f))
+                    caption += $"\nred keep all {RedKeep.x:0.00} / doll {RedKeep.y:0.00}";
 
                 // 入れ替わりのノイズ。矩形は `ShowCgLayer.TryActorFocus`（本番と同じ式）で解く。
                 Vector4 swapRect = new Vector4(0.5f, 0.5f, 0.2f, 0f);
@@ -1525,9 +1621,25 @@ namespace FixedCamVr.Streaming.EditorTools
             /// </summary>
             public float DecayProgress { get; set; }
 
-            /// <summary>出力名に付く印（`_d066`）。並べて見るために要る。</summary>
+            /// <summary>
+            /// 光だまりの強さの試し値（`-Set dlight=1.5`・EV）。null = 本番の
+            /// <see cref="ShowCgLayer.ActorLightEv"/>。値を決めるときに並べて見るためだけのもの。
+            /// </summary>
+            public float? ActorLightEvOverride { get; set; }
+
+            /// <summary>夜間モードで赤を残す試し値（画面全体, 人形の上）。`-Set red=…,redmode=…`。null = 本番の値。</summary>
+            public Vector2? RedKeepOverride { get; set; }
+
+            /// <summary>実際に書く値。本番は人形の上だけ <see cref="ShowCgLayer.DollRedKeep"/>。</summary>
+            private Vector2 RedKeep => RedKeepOverride ?? new Vector2(0f, ShowCgLayer.DollRedKeep);
+
+            /// <summary>出力名に付く印（`_d066` / `_L150` / `_Rd030` / `_Ra030`）。並べて見るために要る。</summary>
             public string NameSuffix =>
-                DecayProgress > 0.0005f ? $"_d{Mathf.RoundToInt(DecayProgress * 100f):000}" : "";
+                (DecayProgress > 0.0005f ? $"_d{Mathf.RoundToInt(DecayProgress * 100f):000}" : "")
+                + (ActorLightEvOverride.HasValue
+                    ? $"_L{Mathf.RoundToInt(ActorLightEvOverride.Value * 100f):000}" : "")
+                + (RedKeepOverride.HasValue
+                    ? $"_Ra{Mathf.RoundToInt(RedKeep.x * 100f):000}_Rd{Mathf.RoundToInt(RedKeep.y * 100f):000}" : "");
 
             public string Save(string fileName)
             {

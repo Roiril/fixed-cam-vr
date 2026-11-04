@@ -7,8 +7,8 @@ namespace FixedCamVr.Tracking
 {
     /// <summary>
     /// grid（カメラのタイル割り当て）から歩行ルートを機械的に作る純ロジック。
-    /// Quest の <see cref="ShowWalkDebugDriver"/> と Editor の仮想歩行ツールが**同じ経路**を使うため、
-    /// リフレクションを挟まずに共有できる public static に切り出してある。
+    /// Quest の <see cref="ShowWalkDebugDriver"/> 用の区画巡回と、共有のgrid解釈。
+    /// Editor のアバター検証は壁・体幅を考慮する <see cref="WalkNavigation"/> で経路を作る。
     /// </summary>
     public static class WalkRouteLogic
     {

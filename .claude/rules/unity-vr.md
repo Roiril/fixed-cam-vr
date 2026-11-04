@@ -17,10 +17,11 @@ paths:
 Assets/
 ├── Scenes/                  # *.unity（命名: PascalCase）
 ├── Scripts/
-│   ├── Streaming/           # MJPEG 取り込み（asmdef: FixedCamVr.Streaming）
-│   ├── Diagnostics/         # HUD / ログ / StartupFader
-│   ├── Tracking/            # PlayerZone（HMD 座標駆動）
-│   ├── Fx/                  # ポスト FX（Blit/Compute/Particles/Source）
+│   ├── Streaming/           # 体験の大部分（名前は名残。中身は Scripts/README.md）
+│   ├── Diagnostics/         # 体験者・スタッフの面と検証ログ
+│   ├── Tracking/            # 位置・区画・周回・位置合わせ
+│   ├── Input/               # 長押し・モードの判定
+│   ├── Fx/                  # 映像加工の試作（本番未使用）
 │   ├── OvrBridge/           # OVRInput 接点（asmdef なし = Assembly-CSharp。意図的）
 │   └── <Feature>/Editor/    # 各機能の Editor 拡張（別 asmdef）
 ├── Prefabs/<Feature>/
@@ -82,9 +83,8 @@ mtime。**新しい焼き直し工程を足したら `Src` / `Out` と `$BakeGua
 
 ## 体験そのものの仕様はここに無い
 
-ゾーン / 位置合わせ / コントローラ入力 / 導入・終幕 / 周回カウント / HMD に出す文言の規約は
-**[show-design.md](show-design.md)**（`Assets/Scripts/{Streaming,Tracking,Diagnostics,Input,OvrBridge}`
-とシーンを触るときに載る）。配信と show.json の契約は [streaming.md](streaming.md)。
+契約は話題別の rule（索引 [streaming.md](streaming.md)）、体験者に見えることは `canon/NOW.md`、
+クラスの地図は [Assets/Scripts/README.md](../../Assets/Scripts/README.md)。
 
 ## ⚠ `renderQueue` が 5000 を超えると URP はそれを 1 度も描かない（2026-07-31 実害）
 
@@ -195,7 +195,7 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 - フェードアウトは 0.5s 程度。alpha は `PerceptualFade.Darken(1−t)`（見た目の明るさで緩急。2026-10-14 まで線形 alpha）
 - 完了したら GameObject ごと破棄（Update を残さない）
 
-実装は [`StartupFader`](../../Assets/Scripts/Diagnostics/StartupFader.cs)。`MainDemoSceneSetup` で自動配置される。
+実装は [`StartupFader`](../../Assets/Scripts/Diagnostics/StartupFader.cs)。`MainSceneBuilder` で自動配置される。
 
 ## Editor 拡張メニュー設計
 
@@ -204,7 +204,7 @@ VR では **Play 開始から最初の安定フレームまで** の間、以下
 | サブメニュー | priority 範囲 | 用途 |
 |---|---|---|
 | 直下（ショートカット可） | 0〜49 | ユーザー常用（Open Main Scene 等） |
-| `Setup/` | 50〜99 | シーン構築・アセット生成（Setup Main Demo Scene 等） |
+| `Setup/` | 50〜99 | シーン構築・アセット生成（Build Main Scene 等） |
 | `Layout/` | 100〜199 | Editor レイアウト管理（ユーザー初期設定） |
 | `Diagnostics/` | 200〜299 | シュビーが叩く検証ツール（Ping / Run Tests / Preview Registration Viz / Preview Show Actor / Preview Show Composite 等） |
 

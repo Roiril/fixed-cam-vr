@@ -29,4 +29,4 @@ Quest が接続するカメラ IP は **show.json でも卓でもなく `Assets/
 
 直し方：卓 state（`curl http://<PC>:8099/state?rev=-1`）の `cameras[].host` が現在の実機 IP の真値。`Phone0X.asset` の host をそれに合わせて編集 → refresh → 再ビルド → 再インストール。**host はローカル値＝コミットしない**（git-workflow.md）。恒久対策は streamer 側を固定IP化 or DHCP 予約。
 
-関連: [[web_compositor]]（卓サーバ /command stopCue・setPost）、quest-build スキル、rules/streaming.md
+関連: [[web_compositor]]（卓サーバ /command stopCue・setPost）、quest-build スキル、reference/archive/streaming-2026-10-22.md

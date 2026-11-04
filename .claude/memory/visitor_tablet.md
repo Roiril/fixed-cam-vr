@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 94dc6571-7165-4a32-9334-39ae2473a8c9
-  modified: 2026-10-15T01:59:42.198Z
+  modified: 2026-10-22T02:43:07.410Z
 ---
 
 # タブレットの博士UIを触る前に
@@ -15,6 +15,8 @@ metadata:
 画面が切り替わった直後 0.5 秒は click を捨てる（`switchClickGuardUntil`。長押しの後の 0.4 秒とは別の札で、同じ capture の click 捨てが両方を見る）。言語の「次へ」と軽減の「この設定で始める」を同じ位置に置いたので、これが無いと二度押しで軽減を飛ばして送る。説明の文は出てから 0.7 秒はタップで送らない（`cueShownAt`）。一時停止の盤は「前・再開・次」だけを上の段に置き、「タイトルに戻る」「言語・軽減を変更」は下の段の両端。⚠ `.stage.has-reference … { left: 67% }` は後ろの `.stage.is-briefing:not(.is-equipment) .briefing-controls` に負けて効いていなかった（盤が額に被っていた）。`is-briefing` を足して強くした。
 
 ## 台車（Romi）の自動走行（2026-10-17・0269）
+
+⚠ 2026-10-30 から台車は使わない（0291）。Quest は合図を送らず、`health.cartKind` も出さない。このパネルはまだ画面に残っている。
 
 スタッフ画面「困ったとき」の中の 1 節（`romi-panel.js`）。⚠ **スタッフ画面の折りたたみは「困ったとき」1 つだけ**（`verify-runtime.cjs` が数える）ので、別の `<details>` にしない。送り先は `TabletTransport.request(path, opts, 'cart')` → ネイティブは `192.168.10.51:80` だけ（`RequestPolicy` の `cart`・`network_security_config.xml` に .51）。`setQuest` には通さない。開いている間だけ 1 秒ごとに `GET /ending` を読む。保存・試走の結果は 5 秒残す（再読込の「接続しました」で消えないように）。試走は 3 秒以内の 2 度押し。電源断の目安 7.1 秒は Quest の `RomiCartLink.ReleaseToCutSec` と対。⚠ 代役 DOM（verify-runtime）は `createElement` を持たないので、そこでは組まない。
 
@@ -112,7 +114,7 @@ Quest の応答が 6 秒以上古ければ未確認。ページの経過時間�
 ## 名乗らない組織の素材（2026-10-15・0263・判定待ち）
 
 博士の動画は `*-ja-v2.mp4`（目元を闇に沈めた版）。元の `*-ja-v1.mp4` は焼き直しの入力として残す（APK にも入っているが参照していない）。
-顔の追跡 `track-doctor-face.py` → 闇の焼き込み `shade-doctor-eyes.py`。手順と罠は `tools/visitor-ui/README.md`「博士の目元の闇」。
+顔の追跡 `track-doctor-face.py` → 闇の焼き込み `shade-doctor-eyes.py`。2026-10-22 から闇は顔に滑らかについていかず、止まって一気に掴み直す。縁は行の途中まで描かれて止まった走査線でほどける（元の色のまま・控えめ）。ブロック・発光する縞・UI 色の縞は「粗目」「浮く」「多すぎる」で不採用。手順と罠は `tools/visitor-ui/README.md`「博士の目元の闇」。
 - 反映の印は `institute-seal-v1.png`（CSS の背景画像。✓ の文字は読み上げ用に残して画面では隠す）
 - 確認・反映の画面だけ `#entranceImage` の src を `entrance-doll-tilt-v1.png` に差し替える（`syncEntranceDoll`。同じ img の src を替えるので drift のアニメと位置がずれない）。タイトルの背景は CSS の別の url で、こちらは替わらない
 - 観測装置は `briefing-device-v3.jpg`（写真）。`is-device`（透過図だけ額を外す特別扱い）は消した

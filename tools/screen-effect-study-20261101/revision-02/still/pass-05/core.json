@@ -1,0 +1,176 @@
+{
+  "scope": "B-only manually authored raw-preservation core, including complete semantic wire routes and complete nativecable/nativefloor ROIs; not automatic recognition",
+  "core_polygons": [
+    {
+      "name": "floor",
+      "points": [
+        [
+          0,
+          630
+        ],
+        [
+          1279,
+          630
+        ],
+        [
+          1279,
+          1029
+        ],
+        [
+          0,
+          1029
+        ]
+      ]
+    },
+    {
+      "name": "hanger-metal-and-cables",
+      "points": [
+        [
+          742,
+          305
+        ],
+        [
+          790,
+          180
+        ],
+        [
+          854,
+          94
+        ],
+        [
+          942,
+          96
+        ],
+        [
+          977,
+          152
+        ],
+        [
+          941,
+          260
+        ],
+        [
+          900,
+          350
+        ],
+        [
+          856,
+          446
+        ],
+        [
+          800,
+          511
+        ],
+        [
+          754,
+          456
+        ]
+      ]
+    },
+    {
+      "name": "right-metal-frames",
+      "points": [
+        [
+          985,
+          360
+        ],
+        [
+          1145,
+          350
+        ],
+        [
+          1200,
+          626
+        ],
+        [
+          1000,
+          626
+        ]
+      ]
+    }
+  ],
+  "core_polylines": [
+    {
+      "name": "hanger-diagonal-wire",
+      "points": [
+        [
+          755,
+          409
+        ],
+        [
+          781,
+          336
+        ],
+        [
+          815,
+          267
+        ],
+        [
+          850,
+          202
+        ],
+        [
+          881,
+          155
+        ],
+        [
+          906,
+          133
+        ],
+        [
+          932,
+          136
+        ],
+        [
+          919,
+          165
+        ],
+        [
+          897,
+          195
+        ]
+      ],
+      "width": 14
+    },
+    {
+      "name": "right-thin-frame",
+      "points": [
+        [
+          1022,
+          391
+        ],
+        [
+          1054,
+          485
+        ],
+        [
+          1093,
+          597
+        ]
+      ],
+      "width": 14
+    }
+  ],
+  "core_complete_ROIs": [
+    {
+      "name": "complete-nativecable-environment",
+      "box": [
+        735,
+        85,
+        1010,
+        560
+      ]
+    },
+    {
+      "name": "complete-nativefloor",
+      "box": [
+        680,
+        740,
+        1100,
+        900
+      ]
+    }
+  ],
+  "transition_pixels": 12,
+  "observation": "Cable route and surroundings were inspected from pass03 nativecable and authored overlay before defining this core. Complete nativecable ROI also contains the upper cloth-right boundary, so preserving its entire RGBA conflicts with retaining that spatial effect."
+}

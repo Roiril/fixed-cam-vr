@@ -18,7 +18,7 @@ namespace FixedCamVr.Streaming
     /// <c>Streaming</c> は <c>Diagnostics</c> を参照できないので、いちばん下のここが唯一の配線点。
     ///
     /// ⚠ <b>ここに表示用の文字列は置かない</b>（<see cref="ShowLanguage"/> と同じ）。
-    /// 面に出す言い回しを持っているのは <c>TitleNotice</c> だけで、理由はフォントの静的ベイク
+    /// HMD の面には出さない（言語と軽減はタブレットで選ぶ。HMD の注意書き <c>TitleNotice</c> は退役した）。理由はフォントの静的ベイク
     /// （<c>JapaneseHudFontSetup.CollectHudCharset()</c> の収集元に無いファイルへ非 ASCII を
     /// 書くと、<b>実機で豆腐になるのに警告が 1 件も出ない</b>）。
     ///

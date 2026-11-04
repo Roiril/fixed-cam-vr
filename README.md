@@ -52,15 +52,20 @@
 
 - 開発期間：2026年4月から開発を続けています
 - コミット：1,300回以上
-- C#：本体251ファイル（約8万3千行）。自動テスト180ファイル（約2,200ケース）
+- C#：実行時のコード222ファイル（約7万1千行）、Editorの道具73ファイル。自動テスト186ファイル（約2,300ケース）
 
 ## コードの場所
 
+体験1回の流れをどのクラスが持っているかは [`Assets/Scripts/README.md`](Assets/Scripts/README.md) にまとめています。
+
 | 場所 | 内容 |
 |---|---|
-| [`Assets/Scripts/Streaming/`](Assets/Scripts/Streaming/) | カメラ映像の受信と表示 |
-| [`Assets/Scripts/Tracking/`](Assets/Scripts/Tracking/) | 体験者の位置からカメラを選ぶ処理 |
-| [`Assets/Scripts/Fx/`](Assets/Scripts/Fx/) | 映像の加工（色調・走査線・グリッチ） |
+| [`Assets/Scripts/Streaming/`](Assets/Scripts/Streaming/) | 体験の大部分。進行・演出・画面の加工・音・CGの人形・導入と終幕と、カメラ映像の受信（名前は最初の役目の名残で、受信は全体の約7%） |
+| [`Assets/Scripts/Tracking/`](Assets/Scripts/Tracking/) | 体験者の位置から区画を決める処理・周回の数え方・位置合わせ |
+| [`Assets/Scripts/Diagnostics/`](Assets/Scripts/Diagnostics/) | 体験者とスタッフが見る面（AIエージェントの連絡の面・終幕・準備画面）と、検証用のログ |
+| [`Assets/Scripts/OvrBridge/`](Assets/Scripts/OvrBridge/) | Quest のコントローラ入力とパススルー（Meta XR SDK に触れるのはここだけ） |
+| [`Assets/Scripts/Input/`](Assets/Scripts/Input/) | コントローラの長押しやモードの判定（SDK に依存しない純ロジック） |
+| [`Assets/Scripts/Fx/`](Assets/Scripts/Fx/) | 映像加工の試作。本番のシーンでは使っていない |
 | [`Assets/Tests/`](Assets/Tests/) | 自動テスト |
 | [`tools/web-compositor/`](tools/web-compositor/) | 演出を編集・確認するWebの運用卓（JavaScript、Pythonのサーバ） |
 | [`tablet/`](tablet/) | 体験者への説明とスタッフの操作に使うAndroidタブレットのアプリ |
@@ -122,8 +127,8 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 
 ## 実装状況
 
-用途未定の独立した表示部品として [不正アクセスのエラー演出](docs/unauthorized-access-effect.md) を用意した。
-崩れる警告文字と奥行きのある数字を 7 秒で再生する。本編の進行には未接続。
+[不正アクセスのエラー演出](docs/unauthorized-access-effect.md) は、崩れる警告文字と奥行きのある数字の表示部品。
+本編ではAIエージェントの連絡の面が乗っ取られる場面（`CommsTakeoverError`）が使う。
 
 | Phase | 内容 | 状態 |
 |---|---|---|
@@ -231,7 +236,7 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 | **IP Camera Lite**（iPhone 標準） | 8081 | `/video` | Basic 認証（既定 admin/admin）。CameraSource の username/password に入力 |
 | DroidCam / IP Webcam | 4747 / 8080 | `/mjpegfeed?WxH` / `/video` | フォールバック |
 
-配信側の設置のコツ（露出ロック・auto-IDLE・前面維持）は [fixed-cam-streamer README](https://github.com/Roiril/fixed-cam-streamer)、層別の切り分けは [.claude/rules/troubleshooting.md](.claude/rules/troubleshooting.md)。
+配信側の設置のコツ（露出ロック・auto-IDLE・前面維持）は [fixed-cam-streamer README](https://github.com/Roiril/fixed-cam-streamer)、層別の切り分けは [troubleshoot スキル](.claude/skills/troubleshoot/SKILL.md)。
 
 ## 入力早見表
 
@@ -257,6 +262,15 @@ Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定�
 ```powershell
 py -3.11 tools/quest-shots.py pull --delete   # → logs/shots/<serial>/<日時_通し番号>/ へ取り出して端末から消す
 py -3.11 tools/quest-shots.py off             # 展示本番の前に（アプリを再起動すると反映）
+```
+
+**紹介動画を広い画角で撮る（体験の記録と再生）**: Quest の録画は片眼の中心しか写らないので、体験 1 回ぶんの入力（頭と両手の姿勢・コントローラ・3 台のカメラの JPEG）を Quest で記録し、PC の Editor で本番の Main シーンへ流し直して撮る。スクリーン外の演出・エージェント画面・音も本番の処理で出る（パススルーの現実は入らない）。詳細は [memory/experience_replay.md](.claude/memory/experience_replay.md)。
+
+```powershell
+py -3.11 tools/quest-xprec.py on --serial <機>          # 次の引き渡しから録る（既定は OFF）
+py -3.11 tools/quest-xprec.py pull --serial <機> --delete  # → Logs/xprec/<日時>/
+.\tools\unity.ps1 replay -Set rec=latest,view=eye     # 頭の位置から広角（view=follow で後ろ上から）
+py -3.11 tools/quest-xprec.py off --serial <機>         # 展示本番の機は OFF
 ```
 
 ステータス（StatusHud）は単一サーフェスで、lap / 現在ゾーン / 次の cue 予定 / 信号 ●●○ / 要再登録 を緩追従（deadzone + SmoothDamp）で 1 枚に表示。登録中は登録ガイダンスを強制表示する。モード状態（NORMAL/REG）は heartbeat（`mode`）でも Web 卓に出る。旧 Run/Staff・左手・スティック・操作チートシート（StaffPanel）・cue 試射は撤去した。
@@ -300,6 +314,8 @@ adb -s <serial> install -r --no-streaming Builds\mawarimi.apk
 | Editor プレビュー | 合成の絵・HMD 内の文字・人形・位置合わせ | `.\tools\unity.ps1 menu <名前>` → `Assets/Screenshots/<種類>/` |
 | 結果画面 | 3 言語の帰還・未報告・中断 | `.\tools\unity.ps1 menu ending-record` → 専用フォントと `Assets/Screenshots/ending/` |
 | PC の仮想体験（2026-10-14〜） | 切替・暗転・乱れの**時刻・順序・曲線・重なり**、画面の追従遅れ、終幕の進み | `.\tools\unity.ps1 menu virtualwalk -Set laps=1` → `Logs/virtualwalk/<日時>/` → `py -3.11 tools/virtualwalk-video.py`（mp4 と `report.md`。前後比較は `--compare <before> <after>`）。NPC が経路を歩き、実プレート × 実シェーダ・実 Director を 90Hz で通した NPC の目の絵。⚠ 実機の代わりではない（圧縮・伝送・遅延・両眼・実ディスプレイ無し。砂嵐と点灯は進まない） |
+| HMD なしの通し検証（2026-11-05〜） | 本番の Main シーンを導入から終幕まで。演出の順序・録画の周・報告・結末 | `py -3.11 tools/twin-verify.py` → `tools/twin-game/verify.html` |
+| デジタルツインの静止画（2026-11-04〜） | 第三者視点の部屋（裸電球の廃室・カーテンのブース・固定カメラ A/B/C の三脚と視野・床のゾーン）の見た目 | `.\tools\unity.ps1 menu twin -Set tag=<名前>` → Drive の `renders/twin/<日時>/` に hero / wide / low / close / rec / overhead（rec は固定カメラ A の肩越しで、画面に A の映像が流れる）。wide は仮想体験の `observer.mp4` と同じ画角（[memory/twin_room.md](.claude/memory/twin_room.md)） |
 | Flat デバッグシーン | 廻リ視のストリーミング系 | **Ctrl+Shift+D** → Play → Tab/数字で切替（OVR 無しの通常シーン） |
 | streaming-offline-test | スマホ実機なしで MJPEG E2E | fake server を立てて検証（[スキル](.claude/skills/streaming-offline-test/SKILL.md)） |
 | Quest Link | 実機に近い Editor Play | Build Target = Standalone のまま、XR Plug-in（Windows）で Oculus を有効化 → Link 接続 → Play。**72Hz 上限**なので性能評価は実機 APK で |
@@ -324,7 +340,7 @@ bash tools/run-quest-xp-test.sh walk 300
 
 | ファイル | 内容 |
 |---|---|
-| **[docs/proposal/](docs/proposal/)** | **企画書（唯一の正）**。体験の要求はすべてここが根拠 |
+| [docs/proposal/](docs/proposal/) | 企画段階の企画書。作りこみの段では読まない（2026-08-08）。体験の骨格は実装と `tools/analyze-xp-log.py` が守っている |
 | [docs/archive/](docs/archive/) | 廃止した資料（旧版の企画書）。**参照しない** |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 配信不通 / HMD 真っ黒 / FPS 低下 / 実機検証で得た知見 |
 | [docs/onsite-checklist.md](docs/onsite-checklist.md) | 現場での 60 秒チェック → 切り分けフロー |
@@ -332,7 +348,7 @@ bash tools/run-quest-xp-test.sh walk 300
 | [tools/web-compositor/README.md](tools/web-compositor/README.md) | 当日の設営と点検、演出編集、映像合成検証ツール |
 | [Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)（別リポ） | 配信側 Android アプリ |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | コミット規約・ブランチ運用 |
-| [.claude/rules/](.claude/rules/) | 領域別の作業規約（streaming / meta-xr / unity-vr / troubleshooting 等） |
+| [.claude/rules/](.claude/rules/) | コードの契約（話題別。索引は streaming.md）。経緯の全文は `.claude/reference/archive/` |
 | [.claude/plans/](.claude/plans/) | 実装計画書（完了済みは git log 参照） |
 
 # ディレクトリ

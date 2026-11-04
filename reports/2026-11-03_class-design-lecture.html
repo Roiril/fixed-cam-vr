@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻リ視のクラス設計を読む（2026-11-03）</title>
+<style>
+/* ============================================================
+ * report.css — 単一ファイル HTML レポート用テーマ（v2 / 2026-10-19）
+ *
+ * 正本: ~/.claude/reference/design-tokens.md
+ *   → このファイルは派生。値を変えたいときは正本を直してからここへ配る。
+ *
+ * 使い方: style タグの中へ**全文インライン展開**する。
+ *   ⚠ このファイルの中に閉じタグの文字列を書かないこと。HTML の style 要素は
+ *     CSS コメントの中だろうと最初の閉じタグで終わるので、**以降の CSS が本文として画面に出る**
+ *     （2026-08-17 実害）。
+ *   外部参照は禁止（output-format.md: 単一ファイル・CDN 禁止・恒久的に開ける状態）。
+ * ============================================================ */
+
+:root {
+  /* --- color: light（既定） --------------------------------- */
+  --paper:   #ffffff;
+  --surface: #f4f4f4;
+  --ink:     #1a1a1a;
+  --mute:    #5c5c5c;
+  --line:    #dcdcdc;
+  --link:    #1a5fb4;  /* 必ず下線と併用 */
+  --visited: #6b3fa0;
+  --accent:  #d7261e;  /* 強調。1 画面に 1〜2 か所 */
+
+  /* --- type ------------------------------------------------- */
+  --gothic: "Noto Sans JP", "Yu Gothic Medium", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono:   ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --fs-xs:   .75rem;    /* 12px  チップ・脚注 */
+  --fs-sm:   .875rem;   /* 14px  キャプション・表・出典 */
+  --fs-base: 1rem;      /* 16px  本文 */
+  --fs-md:   1.25rem;   /* 20px  リード・h3 */
+  --fs-lg:   1.5rem;    /* 24px  h2 */
+  --fs-xl:   2.75rem;   /* 44px  h1 */
+
+  /* --- space（4px 系列。この外の値を書かない） ---------------- */
+  --sp-1: .25rem; --sp-2: .5rem;  --sp-3: .75rem; --sp-4: 1rem;
+  --sp-6: 1.5rem; --sp-8: 2rem;   --sp-12: 3rem;  --sp-16: 4rem;
+
+  --measure: 38ic;      /* 本文の行長（1 行 38 字） */
+  --wide: 72rem;        /* 図・広い表を段から出すときの上限 */
+}
+
+/* --- color: dark（重ねる面ほど明るく。OS 設定とページ属性の両方に追随） --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121212; --surface: #1e1e1e; --ink: #ececec; --mute: #a8a8a8;
+    --line: #333333;  --link: #7fb0ff; --visited: #c3a3ff; --accent: #ff6b5e;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121212; --surface: #1e1e1e; --ink: #ececec; --mute: #a8a8a8;
+  --line: #333333;  --link: #7fb0ff; --visited: #c3a3ff; --accent: #ff6b5e;
+}
+:root[data-theme="light"] {
+  --paper: #ffffff; --surface: #f4f4f4; --ink: #1a1a1a; --mute: #5c5c5c;
+  --line: #dcdcdc;  --link: #1a5fb4; --visited: #6b3fa0; --accent: #d7261e;
+}
+
+/* ============================================================
+ * base
+ * ============================================================ */
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--gothic);
+  font-size: var(--fs-base);
+  line-height: 1.8;
+}
+.wrap { max-width: calc(var(--measure) + var(--sp-8)); margin: 0 auto; padding: var(--sp-16) var(--sp-4); }
+/* 図・広い表を本文の段から出す。.wrap を閉じてから置く */
+.wide { max-width: var(--wide); margin: var(--sp-8) auto; padding: 0 var(--sp-4); }
+
+/* --- 見出し（ゴシックの太字。階層は大きさで作り、罫を付けない） -------- */
+h1, h2, h3 { font-weight: 700; line-height: 1.4; text-wrap: balance; }
+h1 { font-size: var(--fs-xl); line-height: 1.25; margin: 0 0 var(--sp-4); }
+h2 { font-size: var(--fs-lg); margin: var(--sp-16) 0 var(--sp-4); }
+h3 { font-size: var(--fs-md); margin: var(--sp-12) 0 var(--sp-2); }
+
+p  { margin: var(--sp-3) 0; }
+ul, ol { margin: var(--sp-2) 0 var(--sp-4); padding-left: 1.4em; }
+li { margin: var(--sp-1) 0; }
+
+a { color: var(--link); text-decoration: underline; text-underline-offset: .2em; }
+a:visited { color: var(--visited); }
+a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+strong { font-weight: 700; color: var(--ink); }                             /* 構造上の強調＝色なし */
+em { font-style: normal; font-weight: 700; color: var(--accent); }         /* 意味強調＝1 画面に 1〜2 回 */
+
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--sp-12) 0; }
+
+/* ============================================================
+ * 部品
+ * ============================================================ */
+
+/* タイトル直下の日付・対象 */
+.meta { color: var(--mute); font-size: var(--fs-sm); margin: 0 0 var(--sp-12); }
+
+/* 結論の先出し（冒頭に置く大きめの段落。囲まない） */
+.lead { font-size: var(--fs-md); line-height: 1.7; margin: 0 0 var(--sp-6); }
+
+/* 囲み（要約・注意）。罫で縁取らず、面の地色で示す */
+.box { background: var(--surface); padding: var(--sp-4) var(--sp-6); margin: var(--sp-6) 0; }
+.box > :first-child { margin-top: 0; }
+.box > :last-child  { margin-bottom: 0; }
+
+/* 並列する要素（3 列を目的にしない。中身の数で自然に折り返す） */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--sp-4); margin: var(--sp-6) 0;
+}
+.card { background: var(--surface); padding: var(--sp-3) var(--sp-4); }
+.card b { display: block; margin-bottom: var(--sp-1); }
+.card span { font-size: var(--fs-sm); color: var(--mute); }
+
+/* 時系列 */
+.tl { list-style: none; padding: 0; margin: var(--sp-6) 0; }
+.tl > li { display: grid; grid-template-columns: 7em 1fr; gap: var(--sp-4); margin: 0 0 var(--sp-3); }
+.tl .date { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tl .headline { color: var(--ink); }
+
+/* 状態ラベル */
+.chip {
+  display: inline-block; font-size: var(--fs-xs); line-height: 1.6;
+  padding: 0 var(--sp-2); margin-left: var(--sp-1); vertical-align: middle;
+  background: var(--surface); color: var(--ink);
+}
+.chip.hot { background: var(--accent); color: var(--paper); font-weight: 700; }
+
+/* 表（必ず .tblwrap で囲む — 横スクロールは body ではなく表の側で） */
+.tblwrap { overflow-x: auto; margin: var(--sp-4) 0 var(--sp-6); }
+table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); line-height: 1.6; }
+th, td { padding: var(--sp-2) var(--sp-3) var(--sp-2) 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+th { font-weight: 700; white-space: nowrap; border-bottom: 2px solid var(--ink); }
+td { font-variant-numeric: tabular-nums; }
+/* 1 列目は項目名。短い語が 1〜2 字ずつ折り返されるのを防ぐ（長ければ .tblwrap が横に送る） */
+td:first-child { white-space: nowrap; font-weight: 700; }
+
+/* 図 */
+figure { margin: var(--sp-6) 0; }
+figure img, figure svg { max-width: 100%; height: auto; display: block; }
+figcaption { font-size: var(--fs-sm); line-height: 1.6; color: var(--mute); margin-top: var(--sp-2); max-width: var(--measure); }
+
+/* 問いと答え */
+.qa { margin: var(--sp-4) 0; }
+.qa dt { font-weight: 700; margin-top: var(--sp-4); }
+.qa dd { margin: 0 0 var(--sp-2) 1em; }
+
+/* コード */
+code { font-family: var(--mono); font-size: .9em; background: var(--surface); padding: .1em .35em; }
+th code, td code { white-space: nowrap; }
+pre {
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6;
+  background: var(--surface); padding: var(--sp-3) var(--sp-4); overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+
+/* 弱い情報・末尾の注記 */
+.muted { color: var(--mute); }
+.note {
+  font-size: var(--fs-sm); line-height: 1.7; color: var(--mute);
+  border-top: 1px solid var(--line); margin-top: var(--sp-16); padding-top: var(--sp-4);
+}
+.note a { overflow-wrap: anywhere; }
+
+/* ============================================================
+ * responsive / motion / print
+ * ============================================================ */
+@media (max-width: 30rem) {
+  .wrap { padding: var(--sp-12) var(--sp-4); }
+  h1 { font-size: 2rem; }
+  h2 { margin-top: var(--sp-12); }
+  .tl > li { grid-template-columns: 1fr; gap: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  :root {
+    --paper: #fff; --surface: #f2f2f2; --ink: #000; --mute: #555;
+    --line: #bbb; --link: #000; --visited: #000; --accent: #000;
+  }
+  .wrap, .wide { max-width: none; padding: 0; }
+  h2 { break-after: avoid; }
+  .box, .grid, .tblwrap, figure { break-inside: avoid; }
+}
+
+:root { --fig-paper: #ffffff; }
+.fig { overflow-x: auto; }
+.fig svg { width: 100%; min-width: 36rem; height: auto; background: var(--fig-paper); padding: var(--sp-2); }
+figcaption { overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>廻リ視のクラス設計を読む</h1>
+<p class="meta">2026-11-03。11-02 の「エンジニアリングの基礎」の続き。基礎の 5 章（クラス）、8 章（イベント）、9・10 章（コードのまとまりと依存）、17 章（DDD）を、廻リ視の実際のクラスに当てはめる。数はこの日のコードで数えた。</p>
+
+<p class="lead">廻リ視のクラス設計は、9 つの考え方で読めます。箱の依存の向き、判断と Unity の部品の分け方、1 クラス 1 役目、2 種類の周、値オブジェクト、イベント、リセットの経路、名前、テストです。どれも、11-03 の作業で実際に直した場所を例にしています。</p>
+
+<h2>1. この資料の地図</h2>
+<p>下の図は、この資料で扱う考え方を 6 つの枝に分けたものです。章の番号は本文の見出しと同じです。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig1" xmlns="http://www.w3.org/2000/svg" viewBox="6 4 158 88" 
+     role="img" aria-labelledby="fig1-t fig1-d">
+<title id="fig1-t">廻リ視のクラス設計で理解すること</title>
+<desc id="fig1-d">中央の「廻リ視のクラス設計」から 6 本の枝が出ている。部品の分け方、大きさと役目、部品のつなぎ方、データの形、状態の持ち方、守り方。各枝の下に、この資料で扱う章の名前がある。</desc>
+<style>
+  #fig1 text { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig1 .core { font-size: 2.9px; font-weight: bold; }
+  #fig1 .br   { font-size: 2.7px; font-weight: bold; }
+  #fig1 .lf   { font-size: 2.3px; fill: #333; }
+  #fig1 .node { fill: #ededed; stroke: #000; stroke-width: .35; }
+  #fig1 .ln   { fill: none; stroke: #000; stroke-width: .3; }
+  #fig1 .ul   { fill: none; stroke: #000; stroke-width: .3; }
+</style>
+
+<rect x="62" y="40" width="46" height="12" class="node"/>
+<text x="85" y="47.2" class="core" text-anchor="middle">廻リ視のクラス設計</text>
+
+<path d="M62,44 C56,44 62,15 56,15" class="ln"/>
+<path d="M62,46 L56,46" class="ln"/>
+<path d="M62,48 C56,48 62,79 56,79" class="ln"/>
+<path d="M56,15 L12,15" class="ul"/>
+<path d="M56,46 L12,46" class="ul"/>
+<path d="M56,79 L12,79" class="ul"/>
+
+<text x="54" y="13.6" class="br" text-anchor="end">部品の分け方</text>
+<text x="54" y="19.4" class="lf" text-anchor="end">箱と依存の向き（2 章）</text>
+<text x="54" y="23.4" class="lf" text-anchor="end">判断と Unity の部品を分ける（3 章）</text>
+
+<text x="54" y="44.6" class="br" text-anchor="end">大きさと役目</text>
+<text x="54" y="50.4" class="lf" text-anchor="end">1 つのクラスに 1 つの役目（4 章）</text>
+<text x="54" y="54.4" class="lf" text-anchor="end">大きいクラスの分け方（4 章）</text>
+
+<text x="54" y="77.6" class="br" text-anchor="end">部品のつなぎ方</text>
+<text x="54" y="83.4" class="lf" text-anchor="end">イベントで知らせる（7 章）</text>
+<text x="54" y="87.4" class="lf" text-anchor="end">実行時の中継口（2 章）</text>
+
+<path d="M108,44 C114,44 108,15 114,15" class="ln"/>
+<path d="M108,46 L114,46" class="ln"/>
+<path d="M108,48 C114,48 108,79 114,79" class="ln"/>
+<path d="M114,15 L158,15" class="ul"/>
+<path d="M114,46 L158,46" class="ul"/>
+<path d="M114,79 L158,79" class="ul"/>
+
+<text x="116" y="13.6" class="br">データの形</text>
+<text x="116" y="19.4" class="lf">2 種類の周（5 章）</text>
+<text x="116" y="23.4" class="lf">値オブジェクト（6 章）</text>
+
+<text x="116" y="44.6" class="br">状態の持ち方</text>
+<text x="116" y="50.4" class="lf">体験 1 回ぶんの状態（8 章）</text>
+<text x="116" y="54.4" class="lf">リセットの 3 つの経路（8 章）</text>
+
+<text x="116" y="77.6" class="br">守り方</text>
+<text x="116" y="83.4" class="lf">名前と言葉を揃える（9 章）</text>
+<text x="116" y="87.4" class="lf">テストで止める（10 章）</text>
+</svg><figcaption>図 1. 廻リ視のクラス設計を読むための 6 つの観点と、それを扱う章。</figcaption></figure></div>
+<div class="wrap">
+<p>先に、この資料で使う言葉を並べます。</p>
+<div class="tblwrap"><table>
+<thead><tr><th>言葉</th><th>意味</th></tr></thead>
+<tbody>
+<tr><td>アセンブリ（asmdef）</td><td>コードを分ける単位。Unity では asmdef ファイルで決める。別のアセンブリを使うには、使うことを宣言する</td></tr>
+<tr><td>依存</td><td>A が B を使っていること。B を変えると A が壊れることがある</td></tr>
+<tr><td>MonoBehaviour</td><td>Unity の GameObject に貼って動かすクラス。動かすには Unity が要る</td></tr>
+<tr><td>純粋な C# クラス</td><td>Unity を使わないクラス。廻リ視では名前の末尾が Logic のものが多い</td></tr>
+<tr><td>責務（役目）</td><td>そのクラスが受け持つ仕事</td></tr>
+<tr><td>値オブジェクト</td><td>値そのものを表す小さな型。中身が同じなら同じものとして扱う</td></tr>
+<tr><td>イベント</td><td>「何かが起きた」と知らせる仕組み。知らせを受け取りたい側が購読する</td></tr>
+<tr><td>状態</td><td>体験の途中で変わり、覚えておく必要がある値。周回数や報告数</td></tr>
+</tbody></table></div>
+
+<h2>2. 箱と依存の向き</h2>
+<p>廻リ視の実行時のコードは、6 つの箱（アセンブリ）に分かれています。図 2 の矢印は「使う」の向きです。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 96" 
+     role="img" aria-labelledby="fig2-t fig2-d">
+<title id="fig2-t">廻リ視の箱（アセンブリ）と依存の向き</title>
+<desc id="fig2-d">上から OvrBridge、Diagnostics、Tracking、Streaming の順に並び、矢印は上の箱が下の箱を使う向きだけに引かれている。Streaming はどの箱も使わない。Input と Fx はどこにも頼らない。Streaming から Tracking の値を読むときは、実行時に差し込まれた Func を通す。</desc>
+<style>
+  #fig2 text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig2 .thing{ font-size: 2.7px; font-weight: bold; }
+  #fig2 .desc { font-size: 2.3px; fill: #333; }
+  #fig2 .node { fill: #fff; stroke: #000; stroke-width: .35; }
+  #fig2 .base { fill: #ededed; stroke: #000; stroke-width: .35; }
+  #fig2 .edge { fill: none; stroke: #000; stroke-width: .3; marker-end: url(#fig2-ar); }
+  #fig2 .edgec{ fill: none; stroke: #000; stroke-width: .28; stroke-dasharray: 1.2 .8; marker-end: url(#fig2-ar); }
+</style>
+<defs>
+  <marker id="fig2-ar" viewBox="0 0 2 1.6" refX="2" refY=".8" markerWidth="2" markerHeight="1.6"
+          markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+    <path d="M0,0 L2,.8 L0,1.6 z" fill="#000"/>
+  </marker>
+</defs>
+
+<rect x="54" y="6" width="62" height="13" class="node"/>
+<text x="85" y="11.4" class="thing" text-anchor="middle">OvrBridge</text>
+<text x="85" y="16" class="desc" text-anchor="middle">Meta XR SDK に触れる唯一の箱</text>
+
+<rect x="54" y="30" width="62" height="13" class="node"/>
+<text x="85" y="35.4" class="thing" text-anchor="middle">Diagnostics</text>
+<text x="85" y="40" class="desc" text-anchor="middle">体験者・スタッフが見る面と検証ログ</text>
+
+<rect x="54" y="54" width="62" height="13" class="node"/>
+<text x="85" y="59.4" class="thing" text-anchor="middle">Tracking</text>
+<text x="85" y="64" class="desc" text-anchor="middle">位置・区画・周の数え方・位置合わせ</text>
+
+<rect x="54" y="78" width="62" height="13" class="base"/>
+<text x="85" y="83.4" class="thing" text-anchor="middle">Streaming</text>
+<text x="85" y="88" class="desc" text-anchor="middle">体験のほぼ全部。映像の受信は約 7%</text>
+
+<rect x="128" y="54" width="36" height="13" class="node"/>
+<text x="146" y="59.4" class="thing" text-anchor="middle">Input</text>
+<text x="146" y="64" class="desc" text-anchor="middle">長押し・モードの判定</text>
+
+<rect x="6" y="78" width="36" height="13" class="node"/>
+<text x="24" y="83.4" class="thing" text-anchor="middle">Fx</text>
+<text x="24" y="88" class="desc" text-anchor="middle">試作。どこにも頼らない</text>
+
+<path d="M85,19 L85,29.6" class="edge"/>
+<text x="87" y="25.6" class="desc">使う（参照する）</text>
+<path d="M85,43 L85,53.6" class="edge"/>
+<path d="M85,67 L85,77.6" class="edge"/>
+<path d="M54,38 L48,38 L48,84.5 L53.6,84.5" class="edge"/>
+<path d="M116,36.5 L146,36.5 L146,53.6" class="edge"/>
+
+<path d="M116,84.5 L122,84.5 L122,61 L116.4,61" class="edgec"/>
+<text x="124" y="74" class="desc">実行時に Tracking の</text>
+<text x="124" y="77.4" class="desc">値を読む口（Func）</text>
+</svg><figcaption>図 2. 廻リ視の箱と依存の向き。実線は「上の箱が下の箱を使う」。破線は、下の箱が実行時に上の箱の値を読む口。</figcaption></figure></div>
+<div class="wrap">
+<h3>読み方</h3>
+<ul>
+<li>矢印は下向きだけです。Streaming はどの箱も使いません。</li>
+<li>Input と Fx は、ほかのどの箱も使いません。</li>
+<li>OvrBridge は asmdef を持たないので、Unity の既定の箱（Assembly-CSharp）に入ります。この箱は全部の箱を使えます。Meta XR SDK に触れるのはここだけです。</li>
+</ul>
+
+<h3>向きを決める理由</h3>
+<p>Unity は、箱どうしが互いを使う形（循環）を許しません。コンパイルが通りません。</p>
+<p>向きが一方なら、下の箱は上の箱を知らずにテストできます。Streaming のテストは、Tracking や Diagnostics を用意せずに書けます。</p>
+
+<h3>向きに逆らう用事の扱い</h3>
+<p>Streaming の <code>ShowControlClient</code> は、卓へ送る heartbeat に「いま何周目か」を載せます。周を数えているのは上の箱の Tracking にある <code>LapCounter</code> です。Streaming から Tracking は使えません。</p>
+<p>そこで、Tracking の側が起動時に「周回数を返す関数」を Streaming に渡します。</p>
+<pre><code>// Tracking/LapCounter.cs（上の箱）
+showControl.ProgressLapProvider = () =&gt; _logic.ProgressLap;
+
+// Streaming/ShowControlClient.cs（下の箱）
+public Func&lt;int&gt;? ProgressLapProvider;
+hb.lap = ProgressLapProvider != null ? ProgressLapProvider() : -1;</code></pre>
+<p>Streaming が知っているのは「int を返す関数」だけで、<code>LapCounter</code> という型は知りません。<code>ShowControlClient</code> には、このような中継口が 18 個あります。</p>
+<p>代償もあります。型の上では繋がっていないので、値がどこから来るかを知るには、関数を代入している場所を探す必要があります。</p>
+
+<h3>部品が相手を探す</h3>
+<p>実行時のコードには <code>FindObjectOfType</code> が 219 か所あります。シーン全体から型で相手を探す命令です。手軽ですが、誰が誰を使っているかがクラスの宣言から見えません。新しく読む人が依存を追いにくい原因の 1 つです。</p>
+
+<dl class="qa">
+<dt>Q1. Streaming が Tracking を直接使えないのはなぜか。</dt>
+<dd>Tracking が Streaming を使っているから。互いに使うと循環になり、Unity はコンパイルを通さない。</dd>
+<dt>Q2. 中継口（Func）の代償は何か。</dt>
+<dd>型の上で繋がっていないので、値の出どころをコードの宣言から追えない。関数を代入している場所を探す必要がある。</dd>
+</dl>
+
+<h2>3. 判断と Unity の部品を分ける</h2>
+<p>MonoBehaviour は Unity が無いと動きません。そこで、判断の部分だけを Unity を使わないクラスに移し、MonoBehaviour はそれを呼ぶだけにします。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 166 66" 
+     role="img" aria-labelledby="fig3-t fig3-d">
+<title id="fig3-t">ShowRunDirector と ShowRunLogic の分け方</title>
+<desc id="fig3-d">Unity が毎フレーム ShowRunDirector の Update を呼ぶ。Director は入力を集めて ShowRunLogic の Tick に渡し、返ってきた出来事を画面や他の部品に反映する。ShowRunLogic は Unity を使わないので、テストが同じ入力で直接呼べる。</desc>
+<style>
+  #fig3 text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig3 .thing{ font-size: 2.7px; font-weight: bold; }
+  #fig3 .soft { font-size: 2.6px; font-style: italic; }
+  #fig3 .desc { font-size: 2.3px; fill: #333; }
+  #fig3 .area { font-size: 2.6px; font-weight: bold; fill: #666; }
+  #fig3 .node { fill: #fff; stroke: #000; stroke-width: .35; }
+  #fig3 .pure { fill: #ededed; stroke: #000; stroke-width: .35; }
+  #fig3 .div  { fill: none; stroke: #000; stroke-width: .25; stroke-dasharray: 1.4 1; }
+  #fig3 .edge { fill: none; stroke: #000; stroke-width: .3; marker-end: url(#fig3-ar); }
+</style>
+<defs>
+  <marker id="fig3-ar" viewBox="0 0 2 1.6" refX="2" refY=".8" markerWidth="2" markerHeight="1.6"
+          markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+    <path d="M0,0 L2,.8 L0,1.6 z" fill="#000"/>
+  </marker>
+</defs>
+
+<path d="M100,4 L100,64" class="div"/>
+<text x="50" y="9" class="area" text-anchor="middle">Unity が要る</text>
+<text x="133" y="9" class="area" text-anchor="middle">Unity が要らない</text>
+
+<rect x="6" y="18" width="28" height="16" class="node"/>
+<text x="20" y="24.6" class="thing" text-anchor="middle">Unity</text>
+<text x="20" y="29.6" class="desc" text-anchor="middle">シーン・時計・入力</text>
+
+<rect x="46" y="18" width="46" height="16" class="node"/>
+<text x="69" y="24.4" class="soft" text-anchor="middle">ShowRunDirector</text>
+<text x="69" y="29.6" class="desc" text-anchor="middle">部品を探し、結果を画へ</text>
+
+<rect x="110" y="18" width="48" height="16" class="pure"/>
+<text x="134" y="24.4" class="soft" text-anchor="middle">ShowRunLogic</text>
+<text x="134" y="29.6" class="desc" text-anchor="middle">入力から出来事を決める</text>
+
+<rect x="110" y="48" width="48" height="14" class="node"/>
+<text x="134" y="53.8" class="soft" text-anchor="middle">ShowRunLogicTests</text>
+<text x="134" y="58.6" class="desc" text-anchor="middle">シーンも実機も使わない</text>
+
+<path d="M34,26 L45.6,26" class="edge"/>
+<text x="40" y="24.2" class="desc" text-anchor="middle">Update()</text>
+
+<path d="M92,22.5 L109.6,22.5" class="edge"/>
+<text x="105.4" y="20.8" class="desc" text-anchor="middle">入力</text>
+<path d="M110,29.5 L92.4,29.5" class="edge"/>
+<text x="105.4" y="33.4" class="desc" text-anchor="middle">出来事</text>
+
+<path d="M134,48 L134,34.4" class="edge"/>
+<text x="136" y="42.6" class="desc">同じ入力で直接呼ぶ</text>
+</svg><figcaption>図 3. ShowRunDirector（MonoBehaviour）と ShowRunLogic（純粋な C#）。判断は右に置き、テストは右だけを直接呼ぶ。</figcaption></figure></div>
+<div class="wrap">
+<p>実際のコードでは、<code>ShowRunDirector</code> が毎フレーム入力を集めて <code>ShowRunLogic.Tick</code> に渡します。</p>
+<pre><code>// Streaming/ShowRunDirector.cs
+ShowRunEvent ev = _logic.Tick(ShowClock.Dt, atStart, takeRunning,
+                              introCompleted, introAborted, ...);</code></pre>
+<p><code>Tick</code> は「経過秒・スタート区画に居るか・演出が走っているか」などを受け取り、「本編が始まった」「体験が終わった」などの出来事を返します。<code>ShowRunLogic</code> は画面も音も触りません。</p>
+
+<div class="tblwrap"><table>
+<thead><tr><th>置き場</th><th>入れるもの</th><th>例</th></tr></thead>
+<tbody>
+<tr><td>Logic（純粋な C#）</td><td>判断。入力から答えを決めること</td><td>いつ本編へ移るか・周の数え方・終わり方の判定</td></tr>
+<tr><td>MonoBehaviour</td><td>Unity との出入り</td><td>部品を探す・時計を読む・画面と音に反映する</td></tr>
+</tbody></table></div>
+
+<p>廻リ視には名前の末尾が Logic のクラスが 63 個あり、名前が <code>〜LogicTests</code> のテストファイルが 55 個あります。テストは約 2,300 件あります。Unity をバッチで起動して回しますが、シーンも実機も使いません。</p>
+<p>この分け方には Humble Object パターンという名前があります。Unity の側を、判断を持たない薄い部品にしておく方法です。</p>
+<p>図 3 の右のテストは Unity をバッチで起動して回りますが、シーンも部品も用意しません。<code>ShowRunLogic</code> を <code>new</code> して <code>Tick</code> を呼ぶだけです。</p>
+
+<dl class="qa">
+<dt>Q1. 判断を MonoBehaviour の中に書くと、何が困るか。</dt>
+<dd>テストするのに Unity が要る。シーンと部品を用意しないと判断を確かめられない。</dd>
+<dt>Q2. 「周を数える」は Logic と MonoBehaviour のどちらに置くか。</dt>
+<dd>Logic。入力（どのカメラの区画に入ったか）から答え（何周目か）を決める判断なので。実際に <code>LapCounterLogic</code> が持っている。</dd>
+</dl>
+
+<h2>4. 1 つのクラスに 1 つの役目</h2>
+<p>クラスを変える理由が 1 つだけになるように分ける、という原則があります。単一責任の原則と呼びます。役目が多いクラスは、1 か所を直すと関係のない役目まで壊すことがあり、読む人も全体を読まないと目的の場所にたどり着けません。</p>
+
+<div class="tblwrap"><table>
+<thead><tr><th>クラス</th><th>行数</th><th>持っている役目</th></tr></thead>
+<tbody>
+<tr><td><code>ShowControlClient</code></td><td>2,781（5 ファイル）</td><td>設定・卓との通信・リセット・報告・中継口</td></tr>
+<tr><td><code>CommsPanel</code></td><td>2,592</td><td>スイの連絡の面</td></tr>
+<tr><td><code>TakeRunner</code></td><td>1,872</td><td>演出を画面へ適用する</td></tr>
+<tr><td><code>ShowTelemetryHost</code></td><td>1,802</td><td>検証用のログ</td></tr>
+<tr><td><code>ShowCgLayer</code></td><td>1,678</td><td>CG の人形の合成</td></tr>
+</tbody></table></div>
+<p class="muted">行数にはコメントを含む。実行時のコードの約 27% がコメント。</p>
+
+<p>11-03 に <code>ShowControlClient</code>（3,670 行）を役目ごとのファイルに分けました。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 78" 
+     role="img" aria-labelledby="fig4-t fig4-d">
+<title id="fig4-t">ShowControlClient を役目ごとのファイルに分けた形</title>
+<desc id="fig4-d">Unity から見ると ShowControlClient は 1 つの部品のままで、中身は partial で 5 つのファイルに分かれている。本体、体験 1 回ぶん、卓とのやり取り、焼き込みとキャッシュ、素材。show.json の形を表す型は別の ShowConfigTypes.cs にあり、本体がそれを使う。</desc>
+<style>
+  #fig4 text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig4 .soft { font-size: 2.6px; font-style: italic; }
+  #fig4 .desc { font-size: 2.3px; fill: #333; }
+  #fig4 .area { font-size: 2.6px; font-weight: bold; fill: #666; }
+  #fig4 .node { fill: #fff; stroke: #000; stroke-width: .35; }
+  #fig4 .comp { fill: #ededed; stroke: #000; stroke-width: .35; }
+  #fig4 .tie  { fill: none; stroke: #000; stroke-width: .25; }
+  #fig4 .edge { fill: none; stroke: #000; stroke-width: .3; marker-end: url(#fig4-ar); }
+</style>
+<defs>
+  <marker id="fig4-ar" viewBox="0 0 2 1.6" refX="2" refY=".8" markerWidth="2" markerHeight="1.6"
+          markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+    <path d="M0,0 L2,.8 L0,1.6 z" fill="#000"/>
+  </marker>
+</defs>
+
+<rect x="6" y="30" width="46" height="18" class="comp"/>
+<text x="29" y="37.4" class="soft" text-anchor="middle">ShowControlClient</text>
+<text x="29" y="42.6" class="desc" text-anchor="middle">Unity から見ると 1 つの部品</text>
+
+<text x="78" y="6.6" class="area">partial: 同じクラスを 5 つのファイルに書く</text>
+
+<path d="M52,36 L78,15.5" class="tie"/>
+<path d="M52,38 L78,28.5" class="tie"/>
+<path d="M52,39 L78,41.5" class="tie"/>
+<path d="M52,40 L78,54.5" class="tie"/>
+<path d="M52,42 L78,67.5" class="tie"/>
+
+<rect x="78" y="10" width="88" height="11" class="node"/>
+<text x="81" y="14.6" class="soft">ShowControlClient.cs</text>
+<text x="81" y="18.8" class="desc">起動と終了・設定の保持・画像加工の適用・中継口　1,147 行</text>
+
+<rect x="78" y="23" width="88" height="11" class="node"/>
+<text x="81" y="27.6" class="soft">ShowControlClient.VisitorRun.cs</text>
+<text x="81" y="31.8" class="desc">体験 1 回ぶん（リセット・滞在・報告）　323 行</text>
+
+<rect x="78" y="36" width="88" height="11" class="node"/>
+<text x="81" y="40.6" class="soft">ShowControlClient.Live.cs</text>
+<text x="81" y="44.8" class="desc">卓とのやり取り（状態の受信・コマンド・heartbeat）　657 行</text>
+
+<rect x="78" y="49" width="88" height="11" class="node"/>
+<text x="81" y="53.6" class="soft">ShowControlClient.BakedAndCache.cs</text>
+<text x="81" y="57.8" class="desc">焼き込みの show.json と端末のキャッシュ　335 行</text>
+
+<rect x="78" y="62" width="88" height="11" class="node"/>
+<text x="81" y="66.6" class="soft">ShowControlClient.Assets.cs</text>
+<text x="81" y="70.8" class="desc">素材の URL・無人プレート・先読み　319 行</text>
+
+<path d="M29,48 L29,61.6" class="edge"/>
+<text x="31" y="56" class="desc">使う</text>
+<rect x="6" y="62" width="46" height="11" class="node"/>
+<text x="29" y="66.6" class="soft" text-anchor="middle">ShowConfigTypes.cs</text>
+<text x="29" y="70.8" class="desc" text-anchor="middle">show.json の形（別の型）　966 行</text>
+</svg><figcaption>図 4. ShowControlClient を partial で 5 つのファイルに分けた形。show.json の型は別の型として ShowConfigTypes.cs に移した。</figcaption></figure></div>
+<div class="wrap">
+<p>partial は、1 つのクラスを複数のファイルに分けて書く C# の機能です。コンパイルすると 1 つのクラスに戻ります。Unity から見た部品も 1 つのままなので、シーンの設定は何も変わりません。</p>
+<p>限界もあります。ファイルは分かれましたが、役目どうしは同じクラスの変数を共有したままです。本当に分けるには、別々のクラスにして、必要な値だけを受け渡す形にする必要があります。そうしなかったのは、部品が増えるとシーン（<code>Main.unity</code>）の組み直しが要り、いまそのファイルには別の作業の変更が載っているためです。</p>
+
+<dl class="qa">
+<dt>Q1. partial でファイルを分けると、何が良くなり、何が変わらないか。</dt>
+<dd>読む場所がファイル名で分かるようになる。役目どうしが同じ変数を共有していることは変わらない。</dd>
+</dl>
+
+<h2>5. 2 種類の周</h2>
+<p>廻リ視では A → B → C の 3 区画を 3 周します。体験者は途中で引き返すことがあります。引き返したとき、「何周目か」には 2 つの意味が生まれます。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 62" 
+     role="img" aria-labelledby="fig5-t fig5-d">
+<title id="fig5-t">進行の周と区間の周が、引き返したときに食い違う例</title>
+<desc id="fig5-d">体験者が A、B、C、A と進み、C へ引き返してから A、B へ戻る。進行の周は 1、1、1、2、2、2、2 で減らない。区間の周は 1、1、1、2、1、2、2 で、引き返した C だけ 1 に戻る。</desc>
+<style>
+  #fig5 text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig5 .row  { font-size: 2.6px; font-weight: bold; }
+  #fig5 .code { font-size: 2.3px; font-style: italic; fill: #333; }
+  #fig5 .desc { font-size: 2.3px; fill: #333; }
+  #fig5 .zone { font-size: 3.4px; font-weight: bold; }
+  #fig5 .val  { font-size: 3.4px; }
+  #fig5 .rule { fill: none; stroke: #b0b0b0; stroke-width: .2; }
+  #fig5 .time { fill: none; stroke: #000; stroke-width: .3; marker-end: url(#fig5-ar); }
+  #fig5 .hot  { fill: none; stroke: #D55E00; stroke-width: .5; }
+</style>
+<defs>
+  <marker id="fig5-ar" viewBox="0 0 2 1.6" refX="2" refY=".8" markerWidth="2" markerHeight="1.6"
+          markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+    <path d="M0,0 L2,.8 L0,1.6 z" fill="#000"/>
+  </marker>
+</defs>
+
+<text x="42" y="9.8" class="desc" text-anchor="end">歩いた順</text>
+<path d="M44,9 L162,9" class="time"/>
+
+<path d="M6,14 L163,14" class="rule"/>
+<path d="M6,26 L163,26" class="rule"/>
+<path d="M6,38 L163,38" class="rule"/>
+<path d="M6,50 L163,50" class="rule"/>
+<path d="M44,14 L44,50" class="rule"/>
+<path d="M61,14 L61,50" class="rule"/>
+<path d="M78,14 L78,50" class="rule"/>
+<path d="M95,14 L95,50" class="rule"/>
+<path d="M112,14 L112,50" class="rule"/>
+<path d="M129,14 L129,50" class="rule"/>
+<path d="M146,14 L146,50" class="rule"/>
+<path d="M163,14 L163,50" class="rule"/>
+
+<text x="7" y="21.2" class="row">居る区画</text>
+<text x="7" y="31" class="row">進行の周</text>
+<text x="7" y="35" class="desc"><tspan class="code">ProgressLap</tspan><tspan class="desc">　終了判定に使う</tspan></text>
+<text x="7" y="43" class="row">区間の周</text>
+<text x="7" y="47" class="desc"><tspan class="code">SegmentLap</tspan><tspan class="desc">　演出と録画に使う</tspan></text>
+
+<text x="52.5" y="21.4" class="zone" text-anchor="middle">A</text>
+<text x="69.5" y="21.4" class="zone" text-anchor="middle">B</text>
+<text x="86.5" y="21.4" class="zone" text-anchor="middle">C</text>
+<text x="103.5" y="21.4" class="zone" text-anchor="middle">A</text>
+<text x="120.5" y="20" class="zone" text-anchor="middle">C</text>
+<text x="120.5" y="24.2" class="desc" text-anchor="middle">引き返した</text>
+<text x="137.5" y="21.4" class="zone" text-anchor="middle">A</text>
+<text x="154.5" y="21.4" class="zone" text-anchor="middle">B</text>
+
+<text x="52.5" y="33.4" class="val" text-anchor="middle">1</text>
+<text x="69.5" y="33.4" class="val" text-anchor="middle">1</text>
+<text x="86.5" y="33.4" class="val" text-anchor="middle">1</text>
+<text x="103.5" y="33.4" class="val" text-anchor="middle">2</text>
+<text x="120.5" y="33.4" class="val" text-anchor="middle">2</text>
+<text x="137.5" y="33.4" class="val" text-anchor="middle">2</text>
+<text x="154.5" y="33.4" class="val" text-anchor="middle">2</text>
+
+<text x="52.5" y="45.4" class="val" text-anchor="middle">1</text>
+<text x="69.5" y="45.4" class="val" text-anchor="middle">1</text>
+<text x="86.5" y="45.4" class="val" text-anchor="middle">1</text>
+<text x="103.5" y="45.4" class="val" text-anchor="middle">2</text>
+<text x="120.5" y="45.4" class="val" text-anchor="middle">1</text>
+<text x="137.5" y="45.4" class="val" text-anchor="middle">2</text>
+<text x="154.5" y="45.4" class="val" text-anchor="middle">2</text>
+
+<rect x="113" y="27" width="15" height="22" class="hot"/>
+<text x="120.5" y="55.6" class="desc" text-anchor="middle">進行は 2 のまま、区間は 1 周目の C に戻る</text>
+</svg><figcaption>図 5. 1 周目の C から 2 周目の A へ進み、C へ引き返して A、B へ戻ったときの 2 つの周。テスト LapCounterTests.Backtrack_SegmentLapReturnsToPreviousVisit_ProgressLapDoesNot と同じ並び。</figcaption></figure></div>
+<div class="wrap">
+<div class="tblwrap"><table>
+<thead><tr><th>周</th><th>決まり</th><th>使う所</th></tr></thead>
+<tbody>
+<tr><td>進行の周 <code>ProgressLap</code></td><td>順路どおりに 1 周したときだけ増える。減らない</td><td>体験が終わったかの判定</td></tr>
+<tr><td>区間の周 <code>SegmentLap</code></td><td>いま居る区画に、前に居たときの周。引き返すと戻る</td><td>その区画の演出・録画・BGM・滞在の計測</td></tr>
+</tbody></table></div>
+
+<p>取り違えると、次のことが起きます。</p>
+<ul>
+<li>終了判定に区間の周を使うと、最後の A で引き返した人の周が戻り、体験が終わらない。</li>
+<li>演出に進行の周を使うと、引き返した C で 2 周目 C の演出が先に出てしまう。1 回だけ出す設定（once）の演出は、本当に 2 周目の C に来たときにはもう出ない。</li>
+</ul>
+<p>11-03 まで、どちらの周も <code>CurrentLap</code> という同じ名前で呼ばれていました。クラスによって意味が逆でした。いまは名前で区別しています。</p>
+
+<dl class="qa">
+<dt>Q1. 図 5 の右端（B）で、2 つの周がどちらも 2 なのはなぜか。</dt>
+<dd>引き返した後で順路（A → B）に戻ったので、区間の周も 2 周目の区画として数えられるから。</dd>
+<dt>Q2. 体験の終了判定に使うのはどちらか。</dt>
+<dd>進行の周。減らないので、引き返しても終わりが遠のかない。</dd>
+</dl>
+
+<h2>6. 値オブジェクト</h2>
+<p>値オブジェクトは、値そのものを表す小さな型です。基礎の 5 章の struct を、次の 4 つを守って使います。</p>
+<div class="tblwrap"><table>
+<thead><tr><th>性質</th><th>意味</th></tr></thead>
+<tbody>
+<tr><td>中身で比べる</td><td>中身が同じなら同じものとして扱う。「どの実体か」は問わない</td></tr>
+<tr><td>作った後に変えない</td><td>中身を変えたいときは新しく作る。C# では <code>readonly struct</code> と書く</td></tr>
+<tr><td>意味のある名前を持つ</td><td>型の名前と各値の名前で、何を表しているかが分かる</td></tr>
+<tr><td>正しくない値を作らせない</td><td>作るときに範囲などを確かめる</td></tr>
+</tbody></table></div>
+
+<p>11-03 に、区画へ入ったという知らせを値オブジェクト <code>SegmentEntry</code> にしました。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 60" 
+     role="img" aria-labelledby="fig6-t fig6-d">
+<title id="fig6-t">区画へ入った知らせを、int 3 つから SegmentEntry に変えた前後</title>
+<desc id="fig6-d">前は int を 3 つ並べて渡していたので、どれが区間の周かは型から分からず、順番を入れ違えてもコンパイルが通った。後は SegmentEntry という型にまとめ、Camera、SegmentLap、ProgressLap の名前で読み書きする。</desc>
+<style>
+  #fig6 text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig6 .soft { font-size: 2.6px; font-style: italic; }
+  #fig6 .desc { font-size: 2.3px; fill: #333; }
+  #fig6 .area { font-size: 2.6px; font-weight: bold; fill: #666; }
+  #fig6 .slot { font-size: 2.6px; }
+  #fig6 .cell { fill: #ededed; stroke: #000; stroke-width: .3; }
+  #fig6 .box  { fill: #fff; stroke: #000; stroke-width: .35; }
+  #fig6 .rule { fill: none; stroke: #b0b0b0; stroke-width: .2; }
+</style>
+
+<path d="M85,4 L85,58" class="rule"/>
+<text x="43" y="8" class="area" text-anchor="middle">前　int を 3 つ並べる</text>
+<text x="127" y="8" class="area" text-anchor="middle">後　名前の付いた 1 つの型</text>
+
+<text x="43" y="17" class="soft" text-anchor="middle">NotifyCameraEntered(0, 1, 2)</text>
+<rect x="16" y="22" width="16" height="9" class="cell"/>
+<text x="24" y="27.6" class="slot" text-anchor="middle">int</text>
+<rect x="35" y="22" width="16" height="9" class="cell"/>
+<text x="43" y="27.6" class="slot" text-anchor="middle">int</text>
+<rect x="54" y="22" width="16" height="9" class="cell"/>
+<text x="62" y="27.6" class="slot" text-anchor="middle">int</text>
+<text x="43" y="39" class="desc" text-anchor="middle">どれが区間の周か、型からは分からない</text>
+<text x="43" y="43.4" class="desc" text-anchor="middle">(0, 2, 1) と入れ違えてもコンパイルが通る</text>
+
+<text x="127" y="17" class="soft" text-anchor="middle">NotifyCameraEntered(new SegmentEntry(…))</text>
+<rect x="99" y="21" width="56" height="27" class="box"/>
+<text x="102" y="25.6" class="soft">SegmentEntry</text>
+<rect x="102" y="28" width="50" height="5.4" class="cell"/>
+<text x="104" y="31.6" class="slot">Camera = 0</text>
+<rect x="102" y="34.4" width="50" height="5.4" class="cell"/>
+<text x="104" y="38" class="slot">SegmentLap = 1</text>
+<rect x="102" y="40.8" width="50" height="5.4" class="cell"/>
+<text x="104" y="44.4" class="slot">ProgressLap = 2</text>
+<text x="127" y="53.6" class="desc" text-anchor="middle">受け取る側は entry.SegmentLap のように名前で読む</text>
+</svg><figcaption>図 6. 区画へ入った知らせの渡し方。左は int を 3 つ並べた前、右は SegmentEntry にした後。</figcaption></figure></div>
+<div class="wrap">
+<pre><code>// Streaming/CueScheduler.cs
+public readonly struct SegmentEntry
+{
+    public readonly int Camera;       // 区画のカメラ番号（A = 0）
+    public readonly int SegmentLap;   // 区間の周
+    public readonly int ProgressLap;  // 進行の周
+    public SegmentEntry(int camera, int segmentLap, int progressLap) { ... }
+}
+
+// 作る側は、名前を付けて渡す
+cueScheduler.NotifyCameraEntered(
+    new SegmentEntry(camera, segmentLap: segLap, progressLap: _logic.ProgressLap));</code></pre>
+<p>前は int を 3 つ並べていたので、2 つ目と 3 つ目を入れ違えてもコンパイルが通りました。どちらも int だからです。いまは受け取る側が <code>entry.SegmentLap</code> と名前で読みます。</p>
+<p><code>SegmentEntry</code> はまだ 4 つ目の性質（正しくない値を作らせない）を持っていません。周が 0 以下でも作れます。</p>
+
+<h3>廻リ視の中の例</h3>
+<div class="tblwrap"><table>
+<thead><tr><th>型</th><th>種類</th><th>理由</th></tr></thead>
+<tbody>
+<tr><td><code>SegmentEntry</code></td><td>値オブジェクト</td><td>カメラと 2 つの周の組。作った後に変えない</td></tr>
+<tr><td><code>ShowBodyInput</code></td><td>値オブジェクト</td><td>体験者の頭と手の姿勢の組（<code>readonly struct</code>）</td></tr>
+<tr><td><code>Vector3</code></td><td>値オブジェクト</td><td>Unity の位置。中身が同じなら同じ位置</td></tr>
+<tr><td><code>ShowEndingOutcome</code></td><td>列挙型（enum）</td><td>帰還 End・人形 End・中断のどれか。種類を表す</td></tr>
+<tr><td><code>ShowRunDef</code> など</td><td>データを運ぶだけの型</td><td>show.json を読むための型。JsonUtility が書き込むので変えられる形にしてある</td></tr>
+<tr><td>体験者・カメラ</td><td>値ではない</td><td>中身が変わっても同じ人・同じカメラ。DDD ではエンティティと呼ぶ</td></tr>
+</tbody></table></div>
+
+<h3>まだ値オブジェクトにしていない所</h3>
+<p>周そのものは、いまも int です。区間の周と進行の周を別々の型にすれば、取り違えはコンパイルで止まります。まだしていないのは、周が show.json・ログ・演出の ID（<code>L2C1#0</code>）など多くの場所で数として計算・保存されていて、変える範囲が広いからです。11-03 は、取り違えが実際に起きやすかった受け渡しの 1 か所（<code>SegmentEntry</code>）から始めました。</p>
+
+<dl class="qa">
+<dt>Q1. 値オブジェクトと、ただの int の違いを 1 つ挙げよ。</dt>
+<dd>名前と型を持つので、別の意味の値と取り違えたときにコンパイルで止まる。</dd>
+<dt>Q2. show.json を読む <code>ShowRunDef</code> が値オブジェクトでないのはなぜか。</dt>
+<dd>JsonUtility が外から値を書き込むので、作った後に変えない形にできないから。データを運ぶだけの型として扱う。</dd>
+</dl>
+
+<h2>7. イベントで知らせる</h2>
+<p>体験者が区画に入ると、何人もの部品がそれを知りたがります。<code>CueScheduler</code> は、その知らせをイベント <code>CameraEntered</code> で配ります。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig7" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 80" 
+     role="img" aria-labelledby="fig7-t fig7-d">
+<title id="fig7-t">区画へ入った知らせ（CameraEntered）の配り先</title>
+<desc id="fig7-d">LapCounter が区画への進入を CueScheduler に渡す。CueScheduler は導入中なら止め、本編なら CameraEntered イベントで SegmentEntry を 5 つの購読者に配る。ShowRunDirector だけが進行の周を読み、ほかは区間の周を読む。</desc>
+<style>
+  #fig7 text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig7 .soft { font-size: 2.6px; font-style: italic; }
+  #fig7 .desc { font-size: 2.3px; fill: #333; }
+  #fig7 .area { font-size: 2.6px; font-weight: bold; fill: #666; }
+  #fig7 .node { fill: #fff; stroke: #000; stroke-width: .35; }
+  #fig7 .pub  { fill: #ededed; stroke: #000; stroke-width: .35; }
+  #fig7 .edge { fill: none; stroke: #000; stroke-width: .3; marker-end: url(#fig7-ar); }
+</style>
+<defs>
+  <marker id="fig7-ar" viewBox="0 0 2 1.6" refX="2" refY=".8" markerWidth="2" markerHeight="1.6"
+          markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+    <path d="M0,0 L2,.8 L0,1.6 z" fill="#000"/>
+  </marker>
+</defs>
+
+<rect x="6" y="34" width="34" height="13" class="node"/>
+<text x="23" y="39.4" class="soft" text-anchor="middle">LapCounter</text>
+<text x="23" y="44" class="desc" text-anchor="middle">区画への進入を数える</text>
+
+<path d="M40,40.5 L51.6,40.5" class="edge"/>
+<text x="46" y="38.6" class="desc" text-anchor="middle">進入</text>
+
+<rect x="52" y="34" width="36" height="13" class="pub"/>
+<text x="70" y="39.4" class="soft" text-anchor="middle">CueScheduler</text>
+<text x="70" y="44" class="desc" text-anchor="middle">導入中は配らない</text>
+
+<text x="104" y="6.6" class="area">CameraEntered（SegmentEntry）を購読する部品</text>
+
+<path d="M88,38 L103.6,15.5" class="edge"/>
+<path d="M88,39.5 L103.6,29.5" class="edge"/>
+<path d="M88,40.5 L103.6,43.5" class="edge"/>
+<path d="M88,41.5 L103.6,57.5" class="edge"/>
+<path d="M88,43 L103.6,71.5" class="edge"/>
+
+<rect x="104" y="10" width="62" height="11" class="node"/>
+<text x="107" y="14.6" class="soft">TimelineDirector</text>
+<text x="107" y="18.8" class="desc">区間の周で、その区画の演出を走らせる</text>
+
+<rect x="104" y="24" width="62" height="11" class="node"/>
+<text x="107" y="28.6" class="soft">SegmentRecorder</text>
+<text x="107" y="32.8" class="desc">区間の周で、その区画の映像を録る</text>
+
+<rect x="104" y="38" width="62" height="11" class="node"/>
+<text x="107" y="42.6" class="soft">ShowRunDirector</text>
+<text x="107" y="46.8" class="desc">進行の周で、走り切ったかを判定する</text>
+
+<rect x="104" y="52" width="62" height="11" class="node"/>
+<text x="107" y="56.6" class="soft">ShowControlClient</text>
+<text x="107" y="60.8" class="desc">区間の周で、区画ごとの滞在を測る</text>
+
+<rect x="104" y="66" width="62" height="11" class="node"/>
+<text x="107" y="70.6" class="soft">ShowTelemetryHost</text>
+<text x="107" y="74.8" class="desc">両方の周をログに書く（lap= / plap=）</text>
+</svg><figcaption>図 7. 区画へ入った知らせの配り先。進行の周を読むのは ShowRunDirector だけで、ほかは区間の周を読む。</figcaption></figure></div>
+<div class="wrap">
+<p><code>CueScheduler</code> は、誰が受け取るかを知りません。受け取りたい部品が自分で購読します。購読する部品を足しても、<code>CueScheduler</code> は変えなくて済みます。</p>
+<p>導入の途中は、ここで知らせを止めます。止める場所が 1 か所なので、演出・録画・BGM・滞在がまとめて止まります。部品ごとに「導入中なら何もしない」と書くと、どれか 1 つを書き忘れます。</p>
+
+<h3>気をつけること</h3>
+<ul>
+<li>受け取る側は、自分に必要な値を名前で選ぶ。図 7 の右の列がその選び方。</li>
+<li>購読者が呼ばれる順番に頼らない。C# は購読した順に呼ぶが、Unity は部品どうしの <code>OnEnable</code> の順番を保証しない（Script Execution Order で指定しない限り）ので、購読の順番も決まらない。</li>
+<li>イベントの名前は、実際に発火する場面と合わせる。周を数え直す合図は、11-03 まで <code>RunReset</code> という名前で、「体験者が替わった」と読めた。実際には導入から本編へ移るときにも発火する。いまは <code>LapCountReset</code>（周の数え直し）と呼ぶ。</li>
+</ul>
+
+<dl class="qa">
+<dt>Q1. 購読者を足しても CueScheduler を変えなくてよいのはなぜか。</dt>
+<dd>CueScheduler は配り先を知らず、受け取りたい側が自分で購読するから。</dd>
+<dt>Q2. <code>LapCountReset</code> を「体験者が替わった合図」として購読すると、何が起きるか。</dt>
+<dd>導入から本編へ移るときにも発火するので、そこで 1 人目の録画などを消してしまう。</dd>
+</dl>
+
+<h2>8. 体験 1 回ぶんの状態とリセット</h2>
+<p>展示では数十人が続けて体験します。次の人が始まる前に、前の人の状態（報告数・周・演出の済み印・録画・音・画面の劣化）を全部戻す必要があります。</p>
+</div>
+<div class="wide"><figure class="fig"><svg id="fig8" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 102" 
+     role="img" aria-labelledby="fig8-t fig8-d">
+<title id="fig8-t">体験者が替わるときのリセットの 3 つの段</title>
+<desc id="fig8-d">現地と卓の 2 つの入口が、どちらも ResetForNewVisitor を通る。そこで報告数・滞在・演出・音・録画を落とし、周を数え直し、最後に ShowRunDirector.BeginRun を呼ぶ。BeginRun は画面の劣化や終幕の判定を落とし、最後に RunRestarted で残りの部品に知らせる。VisitorRunResetCoverageTests がこの 3 段のどこで各部品を落とすかを表と照合する。</desc>
+<style>
+  #fig8 text  { font-family: Helvetica, Arial, "Yu Gothic", sans-serif; fill: #000; }
+  #fig8 .soft { font-size: 2.6px; font-style: italic; }
+  #fig8 .desc { font-size: 2.3px; fill: #333; }
+  #fig8 .node { fill: #fff; stroke: #000; stroke-width: .35; }
+  #fig8 .main { fill: #ededed; stroke: #000; stroke-width: .35; }
+  #fig8 .edge { fill: none; stroke: #000; stroke-width: .3; marker-end: url(#fig8-ar); }
+  #fig8 .brk  { fill: none; stroke: #000; stroke-width: .25; stroke-dasharray: 1.4 1; }
+</style>
+<defs>
+  <marker id="fig8-ar" viewBox="0 0 2 1.6" refX="2" refY=".8" markerWidth="2" markerHeight="1.6"
+          markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+    <path d="M0,0 L2,.8 L0,1.6 z" fill="#000"/>
+  </marker>
+</defs>
+
+<rect x="6" y="6" width="52" height="11" class="node"/>
+<text x="32" y="10.6" class="soft" text-anchor="middle">BeginNewVisitorRunLocal</text>
+<text x="32" y="14.8" class="desc" text-anchor="middle">現地（右 A 2 秒・タブレット）</text>
+<rect x="66" y="6" width="52" height="11" class="node"/>
+<text x="92" y="10.6" class="soft" text-anchor="middle">TriggerRunReset</text>
+<text x="92" y="14.8" class="desc" text-anchor="middle">卓（runEpoch が変わった）</text>
+
+<path d="M32,17 L32,29.6" class="edge"/>
+<path d="M92,17 L92,29.6" class="edge"/>
+<text x="62" y="25" class="desc" text-anchor="middle">どちらも同じ並び</text>
+
+<rect x="6" y="30" width="112" height="18" class="main"/>
+<text x="9" y="35" class="soft">ShowControlClient.ResetForNewVisitor</text>
+<text x="9" y="40" class="desc">① 報告数・滞在・cue・演出・BGM・音・録画を落とす</text>
+<text x="9" y="44.4" class="desc">　 周を数え直す（LapCountReset を発火）</text>
+
+<path d="M62,48 L62,59.6" class="edge"/>
+<text x="64" y="55" class="desc">最後に呼ぶ</text>
+
+<rect x="6" y="60" width="112" height="16" class="main"/>
+<text x="9" y="65" class="soft">ShowRunDirector.BeginRun</text>
+<text x="9" y="70.4" class="desc">② 画面の劣化・画の状態・警告音・言語の音・終幕の判定を落とす</text>
+
+<path d="M62,76 L62,85.6" class="edge"/>
+<text x="64" y="81.8" class="desc">最後に知らせる</text>
+
+<rect x="6" y="86" width="112" height="14" class="main"/>
+<text x="9" y="90.6" class="soft">RunRestarted を購読する部品</text>
+<text x="9" y="95.8" class="desc">③ 連絡の面・ステータス・心音の画・終幕の写真・題字・導入</text>
+
+<path d="M122,30 L125,30 L125,100 L122,100" class="brk"/>
+<rect x="129" y="56" width="37" height="20" class="node"/>
+<text x="147.5" y="61" class="soft" text-anchor="middle">VisitorRunReset</text>
+<text x="147.5" y="64.4" class="soft" text-anchor="middle">CoverageTests</text>
+<text x="147.5" y="68.8" class="desc" text-anchor="middle">どの部品をどの段で</text>
+<text x="147.5" y="72.4" class="desc" text-anchor="middle">落とすかを表と照合</text>
+<path d="M125,66 L129,66" class="brk"/>
+</svg><figcaption>図 8. 体験者が替わるときのリセットの流れ。2 つの入口は同じ並びを通り、①②③の順に落とす。</figcaption></figure></div>
+<div class="wrap">
+<p>②の <code>BeginRun</code> は、体験の進行を受け付ける門を閉じたあとで、演出と録画をもう一度落とします。門が開いたまま周を数え直すと、導入の途中に本編の演出が始まってしまうからです。順番に意味があるので、並びは変えません。</p>
+<p>11-03 まで、①の並びは卓と現地の 2 か所に書き写されていました。部品を足したときに片方だけ書き足すと、1 人目は正常で、2 人目から壊れます。この形の不具合が 4 回起きています。いまは 1 つのメソッドにまとめ、さらにテストで書き忘れを止めます。</p>
+
+<p><code>VisitorRunResetCoverageTests</code> は、ソースを読んで <code>ResetRun</code> を持つ部品を全部拾い、次のような表と照合します。表に無い部品が見つかると落ちます。</p>
+<div class="tblwrap"><table>
+<thead><tr><th>部品</th><th>落とす場所</th><th>段</th></tr></thead>
+<tbody>
+<tr><td><code>CueScheduler</code></td><td><code>ResetForNewVisitor</code></td><td>①</td></tr>
+<tr><td><code>SwitchAudioCue</code></td><td><code>BeginRun</code></td><td>②</td></tr>
+<tr><td><code>WalkGuide</code></td><td><code>IntroDirector</code>（<code>RunRestarted</code> の購読）</td><td>③</td></tr>
+</tbody></table></div>
+<p class="muted">実際の表は 27 行。</p>
+<p>DDD には「関係するデータのまとまりに、持ち主を 1 つ置く」という考え方があり、集約と呼びます。廻リ視は DDD を全面的には使っていませんが、体験 1 回ぶんの状態を落とす並びを 1 か所にしたのは、この考え方を借りたものです。</p>
+
+<dl class="qa">
+<dt>Q1. 新しい部品に <code>ResetRun</code> を書いたが、どこからも呼んでいない。何が起きるか。</dt>
+<dd>1 人目は正常で、2 人目から前の人の状態が残る。テストが「表に無い部品」として落とすので、ビルド前に気づける。</dd>
+</dl>
+
+<h2>9. 名前と言葉を揃える</h2>
+<p>コード・文書・人が話す言葉で、同じものを同じ名前で呼ぶことを、DDD ではユビキタス言語と呼びます。11-03 の調査で、廻リ視ではここが一番ずれていると分かりました。</p>
+<div class="tblwrap"><table>
+<thead><tr><th>あなたの言葉</th><th>指していたもの</th><th>コード</th></tr></thead>
+<tbody>
+<tr><td>周・N 周目</td><td>体験者向けは 3 周。内部は最後の A（4-A）まで数える</td><td><code>ProgressLap</code> / <code>SegmentLap</code></td></tr>
+<tr><td>カメラ</td><td>配信スマホ・映像・区画の切り替わり・作品名・絵の中の視線</td><td><code>camera</code>（0〜2）/ <code>cameraId</code>（A〜C）</td></tr>
+<tr><td>A / B / C</td><td>区画・カメラ・右コントローラの A ボタン・案の記号</td><td>区画は <code>camera</code> の番号</td></tr>
+<tr><td>位置合わせ</td><td>床の登録・録画と凍結点を揃える・カメラの較正</td><td><code>CourseRegistration*</code> ほか</td></tr>
+</tbody></table></div>
+<p>人の言葉が 1 語で複数を指すのは普通のことです。揃えるのはコードの側です。コードの名前は 1 つの意味に絞り、人の言葉との対応は <code>.claude/rules/glossary.md</code> に書いてあります。</p>
+<p>AI はコードを読むとき、名前から意味を推測します。名前が実際の仕事と違うと、その推測ごと間違えます。</p>
+
+<h3>名前を変えると壊れるもの</h3>
+<ul>
+<li>Unity が保存したフィールド名。シーンや prefab の値が消える。プロパティやメソッドの名前なら影響しない。</li>
+<li>文字列で書かれた名前。<code>tools/unity.ps1</code> の <code>-executeMethod</code>、テストのアセンブリ名、ログのキー。コンパイルでは気づけない。</li>
+</ul>
+<p>フォルダの <code>Streaming</code> は、中身の 7% しか映像の受信ではありませんが、改名していません。2 つ目の理由で壊れるものが多いからです。代わりに <code>Assets/Scripts/README.md</code> に実際の中身を書いてあります。</p>
+
+<dl class="qa">
+<dt>Q1. <code>CurrentLap</code> を <code>ProgressLap</code> に変えても、シーンの値が消えなかったのはなぜか。</dt>
+<dd>プロパティの名前で、Unity はプロパティを保存しないから。</dd>
+</dl>
+
+<h2>10. テストで設計を守る</h2>
+<p>設計の決まりは、文書に書くだけでは守られません。読み落とされるからです。廻リ視では、決まりをテストにして、破ったら落ちるようにしています。</p>
+<div class="tblwrap"><table>
+<thead><tr><th>種類</th><th>何を止めるか</th><th>例</th><th>速さ</th></tr></thead>
+<tbody>
+<tr><td>判断のテスト</td><td>Logic の答えの誤り</td><td><code>LapCounterTests</code></td><td>数分（Unity をバッチで起動）・実機なし</td></tr>
+<tr><td>配線のテスト</td><td>呼び出しの書き忘れ</td><td><code>VisitorRunResetCoverageTests</code></td><td>同上（Unity のテストと一緒に回る）</td></tr>
+<tr><td>書き手と読み手の照合</td><td>ログのキーの食い違い</td><td><code>tools/test_telemetry_contract.py</code></td><td>1 秒未満</td></tr>
+<tr><td>実機の走行</td><td>画面に実際に出たか</td><td><code>tools/quest-record.py --walk</code></td><td>数分・実機あり</td></tr>
+</tbody></table></div>
+<p>テストを作ったら、通る場合と落ちる場合の両方を試します。11-03 の終幕の報告数の照合は、それまで同じ値どうしを比べていて、何が起きても通っていました。いまのテストは、画面が正しい数を出す場合に通り、別の数を出す場合に落ちることを確かめてあります。</p>
+
+<dl class="qa">
+<dt>Q1. 同じ値どうしを比べるテストは、なぜ役に立たないか。</dt>
+<dd>何が起きても一致するので、間違いがあっても落ちない。</dd>
+</dl>
+
+<h2>総仕上げの課題</h2>
+<ol>
+<li><code>Assets/Scripts/README.md</code> を開き、「新しい体験者」の段の持ち主を、右 A 長押しからコードで辿る。<code>OvrControllerBridge.VisitorReset.cs</code> → <code>ShowControlClient.VisitorRun.cs</code> → <code>ShowRunDirector.BeginRun</code> の順に開く。</li>
+<li><code>LapCounterTests</code> の引き返しのテストを読み、図 5 の 7 列の値と照らし合わせる。</li>
+<li><code>ShowRunLogic.Tick</code> の引数を並べ、どれが Unity から来る値かを分ける。</li>
+<li><code>SegmentEntry</code> に 4 つ目の性質（周が 1 以上でなければ作れない）を足すとしたら、どこに何を書くかを考える。足した後、どのテストが落ちうるかも考える。</li>
+</ol>
+
+<p class="note">関連資料: reports/2026-11-02_engineering-basics.html（基礎）／ reports/2026-11-02_class-design-audit.html（クラス設計の現状と課題）／ reports/2026-11-03_naming-consistency.html（言葉の対応調査）／ Assets/Scripts/README.md（コードの地図）。図の数値と並びは 2026-11-03 のコードとテストから取った。</p>
+</div>
+</body>
+</html>

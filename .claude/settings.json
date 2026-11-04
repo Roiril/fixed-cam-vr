@@ -38,6 +38,26 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-unity-play.js\""
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-owned-files.js\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/harness-check-on-edit.js\""
+          }
+        ]
       }
     ]
   }

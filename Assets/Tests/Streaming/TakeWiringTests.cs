@@ -149,7 +149,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         // ゾーン確定を（LapCounter 相当の経路で）流す。
-        private static void EnterZone(Rig rig, int camera, int lap) => rig.Scheduler.NotifyCameraEntered(camera, lap, lap);
+        private static void EnterZone(Rig rig, int camera, int lap) => rig.Scheduler.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: lap, progressLap: lap));
 
         // TakeRunner.Update + Director.Update を 1 フレーム分回す。
         private static void Frame(Rig rig)
@@ -163,21 +163,21 @@ namespace FixedCamVr.Streaming.Tests
         {
             Rig rig = MakeRig();
             rig.Timeline.SetTimeline(Array.Empty<ShowTimelineSegmentDef>());
-            Assert.That(rig.Timeline.ClosingAreaSec, Is.LessThan(0f));
+            Assert.That(rig.Timeline.ClosingSegmentSec, Is.LessThan(0f));
             EnterZone(rig, 0, 3);
-            Assert.That(rig.Timeline.ClosingAreaSec, Is.LessThan(0f));
+            Assert.That(rig.Timeline.ClosingSegmentSec, Is.LessThan(0f));
 
             EnterZone(rig, 0, 4);
-            Assert.That(rig.Timeline.ClosingAreaSec, Is.GreaterThanOrEqualTo(0f));
+            Assert.That(rig.Timeline.ClosingSegmentSec, Is.GreaterThanOrEqualTo(0f));
             EnterZone(rig, 1, 4);
-            Assert.That(rig.Timeline.ClosingAreaSec, Is.GreaterThanOrEqualTo(0f),
+            Assert.That(rig.Timeline.ClosingSegmentSec, Is.GreaterThanOrEqualTo(0f),
                         "確定区間を離れても到着からの時計は残る");
             EnterZone(rig, 0, 4);
-            Assert.That(rig.Timeline.ClosingAreaSec, Is.GreaterThanOrEqualTo(0f),
+            Assert.That(rig.Timeline.ClosingSegmentSec, Is.GreaterThanOrEqualTo(0f),
                         "同じランで再進入しても時計を始め直さない");
 
             rig.Timeline.ResetRun();
-            Assert.That(rig.Timeline.ClosingAreaSec, Is.LessThan(0f));
+            Assert.That(rig.Timeline.ClosingSegmentSec, Is.LessThan(0f));
         }
 
         // ---- 多段カット（要求の演出形） ----

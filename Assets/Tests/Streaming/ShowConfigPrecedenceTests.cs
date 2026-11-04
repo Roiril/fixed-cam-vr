@@ -363,7 +363,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(File.ReadAllText(CachePath(show)), Is.EqualTo(JsonUtility.ToJson(cfg)));
         }
 
-        // ---- 8) runEpoch 既知値初期化：ApplyBaked / LoadAndApplyCache は RunReset を発火しない ----
+        // ---- 8) runEpoch 既知値初期化：ApplyBaked / LoadAndApplyCache は LapCountReset を発火しない ----
 
         [Test]
         public void LoadAndApplyCache_DropsCacheWrittenByAnotherApk()
@@ -397,11 +397,11 @@ namespace FixedCamVr.Streaming.Tests
         {
             var show = MakeShow();
             int resets = 0;
-            show.RunReset += () => resets++;
+            show.LapCountReset += () => resets++;
 
             InvokeM(show, "ApplyBaked", MakeState(rev: 1, control: MakeControl(runEpoch: 3)));
             Assert.That((int)GetF(show, "_knownRunEpoch"), Is.EqualTo(3));
-            Assert.That(resets, Is.EqualTo(0), "ApplyBaked の runEpoch 取り込みは RunReset を発火しない");
+            Assert.That(resets, Is.EqualTo(0), "ApplyBaked の runEpoch 取り込みは LapCountReset を発火しない");
 
             object cfg = Activator.CreateInstance(CachedT)!;
             CachedT.GetField("runEpoch")!.SetValue(cfg, 4);
@@ -411,17 +411,17 @@ namespace FixedCamVr.Streaming.Tests
             File.WriteAllText(CachePath(show), JsonUtility.ToJson(cfg));
             InvokeM(show, "LoadAndApplyCache");
             Assert.That((int)GetF(show, "_knownRunEpoch"), Is.EqualTo(4));
-            Assert.That(resets, Is.EqualTo(0), "キャッシュの runEpoch 復元も RunReset を発火しない");
+            Assert.That(resets, Is.EqualTo(0), "キャッシュの runEpoch 復元も LapCountReset を発火しない");
         }
 
-        // ---- 9) runEpoch 変化：Apply で既知値と異なると RunReset を 1 回発火 ----
+        // ---- 9) runEpoch 変化：Apply で既知値と異なると LapCountReset を 1 回発火 ----
 
         [Test]
         public void RunEpoch_ChangeFiresResetOnce()
         {
             var show = MakeShow();
             int resets = 0;
-            show.RunReset += () => resets++;
+            show.LapCountReset += () => resets++;
             SetF(show, "_knownRunEpoch", 1);
 
             InvokeM(show, "Apply", MakeState(rev: 1, control: MakeControl(runEpoch: 2)));

@@ -565,17 +565,17 @@ namespace FixedCamVr.Diagnostics
             }
             else
             {
-                bool hasLap = lapCounter != null && lapCounter.CurrentLap >= 1;
+                bool hasLap = lapCounter != null && lapCounter.ProgressLap >= 1;
                 // 走り切る周数を超えた周＝「帰りのスタート区間」（体験はここで終わる）。
                 // 「4周目/3周」と出ると壊れて見えるので、そこだけ言い方を変える。
-                if (hasLap && run != null && lapCounter!.CurrentLap > run.TotalLaps)
+                if (hasLap && run != null && lapCounter!.ProgressLap > run.TotalLaps)
                 {
                     // 「もどり」だけでは何のことか分からない（開発語）。体験の位置を言う。
                     sb.Append("最後の区間");
                 }
                 else if (hasLap)
                 {
-                    sb.Append(lapCounter!.CurrentLap);
+                    sb.Append(lapCounter!.ProgressLap);
                     sb.Append("周目");
                     // UI の区切りは全角（`X／Y` と揃える）。半角のままにしてよいのは
                     // 時刻 `1:05` やゾーン名 `C:North` のような**データそのもの**の中だけ。
@@ -599,7 +599,7 @@ namespace FixedCamVr.Diagnostics
 
             // 行3（次の cue がある時のみ）: 次の演出：{lap}周目 カメラ{c+1}
             if (cueScheduler != null && lapCounter != null && lapCounter.Order.Length > 0
-                && cueScheduler.TryGetNextCue(lapCounter.CurrentLap, lapCounter.Position, lapCounter.Order, out var next))
+                && cueScheduler.TryGetNextCue(lapCounter.ProgressLap, lapCounter.Position, lapCounter.Order, out var next))
             {
                 // ⚠ cue の id は出さない。`cue_B_2` を読んでもスタッフには何もできない（開発語で、
                 // 直し方にも繋がらない）。知りたいのは「次に何かが起きるのはどこか」だけ。

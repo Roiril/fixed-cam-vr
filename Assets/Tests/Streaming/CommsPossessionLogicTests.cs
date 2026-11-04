@@ -404,7 +404,7 @@ namespace FixedCamVr.Streaming.Tests
             {
                 var control = go.AddComponent<ShowControlClient>();
                 var timeline = go.AddComponent<TimelineDirector>();
-                typeof(TimelineDirector).GetField("_closingAreaEnteredAt", Private)!
+                typeof(TimelineDirector).GetField("_closingSegmentEnteredAt", Private)!
                     .SetValue(timeline, UnityEngine.Time.unscaledTime);
                 typeof(ShowControlClient).GetField("timelineDirector", Private)!
                     .SetValue(control, timeline);

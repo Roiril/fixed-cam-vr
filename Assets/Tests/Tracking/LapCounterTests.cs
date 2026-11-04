@@ -23,7 +23,7 @@ namespace FixedCamVr.Tracking.Tests
         public void Initial_LapIsOne_PositionZero()
         {
             var l = Make(0, 1, 2);
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
             Assert.That(l.Position, Is.EqualTo(0));
         }
 
@@ -35,12 +35,12 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(l.Feed(1), Is.False); // pos 0→1
             Assert.That(l.Feed(2), Is.False); // pos 1→2
             Assert.That(l.Feed(0), Is.True);  // pos 2→0（1 周完了）
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
             Assert.That(l.Position, Is.EqualTo(0));
         }
 
         // ---- 区間の周（逆走で戻る）----
-        // 進行の周（CurrentLap）は単調増加で終了判定が読む。区間の周（SegmentLap）は
+        // 進行の周（ProgressLap）は単調増加で終了判定が読む。区間の周（SegmentLap）は
         // 「いま体験者が居る区間」の周で、引き返すと前にそこに居たときの値へ戻る。
         // これが無いと `1周目C → 2周目A → 引き返して C` が (2,C) と読まれ、**体験者が
         // 2 周目の B を一度も通らないまま 2 周目 C の演出が消費される**（once なので二度と出ない）。
@@ -54,11 +54,11 @@ namespace FixedCamVr.Tracking.Tests
             l.Feed(1); Assert.That(l.SegmentLap, Is.EqualTo(1));  // 1-B
             l.Feed(2); Assert.That(l.SegmentLap, Is.EqualTo(1));  // 1-C
             l.Feed(0); Assert.That(l.SegmentLap, Is.EqualTo(2));  // 2-A（1 周完了）
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
 
             l.Feed(2);
             Assert.That(l.SegmentLap, Is.EqualTo(1), "引き返した C は 1 周目の区間として扱う");
-            Assert.That(l.CurrentLap, Is.EqualTo(2), "進行の周は減らない（終了判定が壊れる）");
+            Assert.That(l.ProgressLap, Is.EqualTo(2), "進行の周は減らない（終了判定が壊れる）");
 
             l.Feed(0);
             Assert.That(l.SegmentLap, Is.EqualTo(2), "戻った A は 2 周目の区間");
@@ -86,7 +86,7 @@ namespace FixedCamVr.Tracking.Tests
             l.Feed(1); Assert.That(l.SegmentLap, Is.EqualTo(2));   // 2-B
             l.Feed(2); Assert.That(l.SegmentLap, Is.EqualTo(2));   // 2-C
             Assert.That(l.Feed(0), Is.True, "2 周目を踏破して lap 3");
-            Assert.That(l.CurrentLap, Is.EqualTo(3));
+            Assert.That(l.ProgressLap, Is.EqualTo(3));
         }
 
         [Test]
@@ -98,7 +98,7 @@ namespace FixedCamVr.Tracking.Tests
             foreach (int cam in new[] { 1, 2, 0, 2, 1, 2, 0, 1, 2, 0, 0, 1 })
             {
                 l.Feed(cam);
-                Assert.That(l.SegmentLap, Is.LessThanOrEqualTo(l.CurrentLap),
+                Assert.That(l.SegmentLap, Is.LessThanOrEqualTo(l.ProgressLap),
                     $"camera={cam} で区間の周が進行の周を追い越した");
                 Assert.That(l.SegmentLap, Is.GreaterThanOrEqualTo(1));
             }
@@ -111,7 +111,7 @@ namespace FixedCamVr.Tracking.Tests
             l.Seed(0);
             l.Feed(1); l.Feed(2); l.Feed(0);                       // 2-A
             Assert.That(l.Seed(2), Is.EqualTo(1), "一度居た C のシードは 1 周目の区間");
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
             Assert.That(l.Position, Is.EqualTo(0), "シードは進行を動かさない");
         }
 
@@ -136,7 +136,7 @@ namespace FixedCamVr.Tracking.Tests
             // 現在 pos=0（cam 0）。同じ cam 0 が来ても期待次 = cam 1 と不一致 → 不進行。
             Assert.That(l.Feed(0), Is.False);
             Assert.That(l.Position, Is.EqualTo(0));
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
         }
 
         [Test]
@@ -158,7 +158,7 @@ namespace FixedCamVr.Tracking.Tests
             // 逆走: pos=2 で期待次 = cam 0（wrap）。cam 1 へ戻っても前進せず、pos も減らない。
             Assert.That(l.Feed(1), Is.False);
             Assert.That(l.Position, Is.EqualTo(2));
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
         }
 
         [Test]
@@ -169,11 +169,11 @@ namespace FixedCamVr.Tracking.Tests
             Assert.That(l.Feed(0), Is.False); // 戻り（期待次=cam2）→ 不進行
             Assert.That(l.Feed(1), Is.False); // 期待次=cam2、cam1 は同一位置カメラ → 不進行
             Assert.That(l.Position, Is.EqualTo(1));
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
             // 正しい順方向に戻れば進む
             Assert.That(l.Feed(2), Is.False); // pos 1→2
             Assert.That(l.Feed(0), Is.True);  // 1 周完了
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
         }
 
         [Test]
@@ -185,7 +185,7 @@ namespace FixedCamVr.Tracking.Tests
                 l.Feed(1);
                 l.Feed(2);
                 Assert.That(l.Feed(0), Is.True, $"周回 {lap - 1} 完了で lap {lap} になるはず");
-                Assert.That(l.CurrentLap, Is.EqualTo(lap));
+                Assert.That(l.ProgressLap, Is.EqualTo(lap));
             }
         }
 
@@ -196,18 +196,18 @@ namespace FixedCamVr.Tracking.Tests
             l.Feed(1);
             l.Feed(2);
             l.Feed(0); // lap 2
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
 
             // order 差し替え → スタート状態へリセット
             l.SetOrder(new[] { 2, 1, 0 });
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
             Assert.That(l.Position, Is.EqualTo(0));
 
             // 新 order の順方向: 2(start)→1→0→2 で lap 2
             Assert.That(l.Feed(1), Is.False); // pos 0→1
             Assert.That(l.Feed(0), Is.False); // pos 1→2
             Assert.That(l.Feed(2), Is.True);  // pos 2→0（新 start=cam2 へ復帰）
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
         }
 
         [Test]
@@ -219,7 +219,7 @@ namespace FixedCamVr.Tracking.Tests
             l.Feed(0); // lap 2, pos 0
             l.Feed(1); // pos 1
             l.Reset();
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
             Assert.That(l.Position, Is.EqualTo(0));
             Assert.That(l.Order, Is.EqualTo(new[] { 0, 1, 2 }));
         }
@@ -229,7 +229,7 @@ namespace FixedCamVr.Tracking.Tests
         {
             var l = new LapCounterLogic();
             Assert.That(l.Feed(0), Is.False);
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
         }
 
         // ---- 何が周回を進めるか ----
@@ -252,10 +252,10 @@ namespace FixedCamVr.Tracking.Tests
             FeedIfZone(l, 2, isZone: false);  // Web override でカメラ 2 へ（無視）
             // 進行ポインタは Zone だけで進む（手動 / override では動かない）。
             Assert.That(l.Position, Is.EqualTo(1));
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
             FeedIfZone(l, 2, isZone: true);   // ゾーン進行 1→2
             Assert.That(FeedIfZone(l, 0, isZone: true), Is.True); // 2→0 で 1 周完了
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
         }
 
         [Test]
@@ -269,7 +269,7 @@ namespace FixedCamVr.Tracking.Tests
                 FeedIfZone(l, 2, isZone: false);
                 FeedIfZone(l, 0, isZone: false);
             }
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
             Assert.That(l.Position, Is.EqualTo(0));
         }
 
@@ -286,7 +286,7 @@ namespace FixedCamVr.Tracking.Tests
             // 体験者が続けてゾーン進行 2→0 → ちょうど 1 周ぶんだけ前進する（手動往復は透過）。
             Assert.That(FeedIfZone(l, 2, isZone: true), Is.False); // pos 1→2
             Assert.That(FeedIfZone(l, 0, isZone: true), Is.True);  // pos 2→0（lap 2）
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
         }
 
         [Test]
@@ -298,11 +298,11 @@ namespace FixedCamVr.Tracking.Tests
             FeedIfZone(l, 2, isZone: false);   // exit インサート差し込み（画面のみ）
             FeedIfZone(l, 0, isZone: false);   // インサート復帰（画面のみ）
             Assert.That(l.Position, Is.EqualTo(1));
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
             // 体験者ゾーン進行だけで 1 周完了する（インサートは透過）。
             FeedIfZone(l, 2, isZone: true);    // 1→2
             Assert.That(FeedIfZone(l, 0, isZone: true), Is.True); // 2→0 で lap 2
-            Assert.That(l.CurrentLap, Is.EqualTo(2));
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
         }
 
         [Test]
@@ -318,7 +318,7 @@ namespace FixedCamVr.Tracking.Tests
             // 演出終了後の画面復帰（Insert source）は時計を動かさない = 二重カウントしない。
             FeedIfZone(l, 2, isZone: false);
             Assert.That(l.Position, Is.EqualTo(2));
-            Assert.That(l.CurrentLap, Is.EqualTo(1));
+            Assert.That(l.ProgressLap, Is.EqualTo(1));
         }
     }
 }

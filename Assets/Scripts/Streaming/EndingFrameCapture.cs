@@ -16,6 +16,8 @@ namespace FixedCamVr.Streaming
         public const int Width = 1280;
         public const int Height = 720;
 
+        private static readonly int CrtSignalRuntimeId = Shader.PropertyToID("_CrtSignalRuntime");
+
         [Tooltip("合成結果を描く ScreenComposite の Renderer。null なら同じ GameObject から取得。")]
         [SerializeField] private Renderer? screenRenderer;
 
@@ -85,7 +87,9 @@ namespace FixedCamVr.Streaming
 
         private IEnumerator CaptureAtEndOfFrame(EndingShotWindow window, int generation)
         {
-            yield return new WaitForEndOfFrame();
+            // batchmode では WaitForEndOfFrame が再開しない。PC の走行と再生は次のフレームの頭で撮る。
+            if (Application.isBatchMode) yield return null;
+            else yield return new WaitForEndOfFrame();
             _pending = null;
             // 前の体験者で予約された仕事を、新しい体験者の写真へ混ぜない。
             // 同じフレームの別 LateUpdate がカットを進めた場合も、古い分類へ新しい画を入れない。
@@ -94,7 +98,11 @@ namespace FixedCamVr.Streaming
 
             if (!CaptureWindow(window)) yield break;
             if (window == EndingShotWindow.Trapped) _trappedCount++;
-            else if (window == EndingShotWindow.Released) _releasedCount++;
+            else if (window == EndingShotWindow.Released)
+            {
+                _releasedCount++;
+                _runner.NotifyEndingFarewellCaptured();
+            }
         }
 
         /// <summary>
@@ -115,6 +123,8 @@ namespace FixedCamVr.Streaming
             RenderTexture? previous = RenderTexture.active;
             try
             {
+                if (material.HasProperty(CrtSignalRuntimeId) && material.GetFloat(CrtSignalRuntimeId) > 0.5f)
+                    return CrtSignalProcessor.Capture(material, destination);
                 Graphics.Blit(Texture2D.blackTexture, destination, material, 0);
                 return true;
             }
@@ -142,7 +152,11 @@ namespace FixedCamVr.Streaming
             if (window != EndingShotWindow.None && CaptureWindow(window))
             {
                 if (window == EndingShotWindow.Trapped) _trappedCount++;
-                else if (window == EndingShotWindow.Released) _releasedCount++;
+                else if (window == EndingShotWindow.Released)
+                {
+                    _releasedCount++;
+                    _runner?.NotifyEndingFarewellCaptured();
+                }
             }
             _frozen = true;
             Debug.Log($"[EndingFrameCapture] 固定 generation={_generation} shots={ShotCount} " +

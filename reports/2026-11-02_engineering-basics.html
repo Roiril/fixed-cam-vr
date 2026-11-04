@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>エンジニアリングの基礎 — 廻リ視のコードで学ぶ</title>
+<style>
+:root{--paper:#fff;--surface:#f4f4f4;--ink:#1a1a1a;--mute:#5c5c5c;--line:#dcdcdc;--link:#1a5fb4;--visited:#6b3fa0;--accent:#d7261e}
+@media (prefers-color-scheme:dark){:root{--paper:#121212;--surface:#1e1e1e;--ink:#ececec;--mute:#a8a8a8;--line:#333333;--link:#7fb0ff;--visited:#c3a3ff;--accent:#ff6b5e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Noto Sans JP","Yu Gothic Medium","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;font-size:1rem;line-height:1.8}
+main{max-width:38ic;margin:0 auto;padding:48px 16px 64px}
+h1{font-size:2.75rem;line-height:1.25;margin:0 0 16px}
+@media (max-width:30rem){h1{font-size:2rem}}
+h2{font-size:1.5rem;line-height:1.4;margin:64px 0 16px}
+h3{font-size:1.25rem;line-height:1.4;margin:48px 0 12px}
+p{margin:0 0 16px}
+a{color:var(--link)} a:visited{color:var(--visited)}
+.meta{color:var(--mute);font-size:.875rem;margin-bottom:32px}
+.box{background:var(--surface);padding:16px 24px;margin:24px 0}
+.box p:last-child,.box ul:last-child{margin-bottom:0}
+em{font-style:normal;color:var(--accent);font-weight:700}
+code{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:.875rem;background:var(--surface);padding:0 4px}
+pre{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:.875rem;line-height:1.6;background:var(--surface);padding:16px;overflow-x:auto;margin:16px 0 24px}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;font-size:.875rem;line-height:1.6;margin:16px 0 24px}
+th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--line)}
+th{border-bottom:2px solid var(--line)}
+.scroll{overflow-x:auto}
+ol,ul{padding-left:24px;margin:0 0 16px}
+li{margin-bottom:8px}
+details{background:var(--surface);padding:12px 16px;margin:12px 0}
+summary{cursor:pointer;font-weight:700}
+details p:last-child{margin-bottom:0}
+.q{margin:24px 0 8px;font-weight:700}
+.note{color:var(--mute);font-size:.875rem}
+nav ol{font-size:.875rem;line-height:1.6}
+nav li{margin-bottom:4px}
+dt{font-weight:700;margin-top:12px}
+dd{margin:0}
+</style>
+</head>
+<body>
+<main>
+<h1>エンジニアリングの基礎</h1>
+<div class="meta">2026-11-02。例はすべて廻リ視（fixed-cam-vr）の実際のコードから取った。言語は C#。</div>
+
+<h2>この資料の使い方</h2>
+<p>17 章あります。前の章の言葉を使って次の章を説明するので、上から順に読んでください。</p>
+<p>各章の終わりに確認問題があります。答えを開く前に、自分の言葉で答えを書いてください。書けなかった問題は、その章を読み直します。</p>
+<p>「自分で見る」の欄は、このリポジトリで実際にファイルを開いたりコマンドを打ったりする課題です。読むだけで終わらせず、手を動かすと定着します。</p>
+
+<nav>
+<ol>
+<li><a href="#c1">プログラムが動くまで</a></li>
+<li><a href="#c2">値と型</a></li>
+<li><a href="#c3">変数と関数</a></li>
+<li><a href="#c4">条件・繰り返し・状態</a></li>
+<li><a href="#c5">クラスとオブジェクト</a></li>
+<li><a href="#c6">継承とインタフェース</a></li>
+<li><a href="#c7">Unity の仕組み</a></li>
+<li><a href="#c8">イベント</a></li>
+<li><a href="#c9">コードのまとまり</a></li>
+<li><a href="#c10">依存と設計の原則</a></li>
+<li><a href="#c11">テスト</a></li>
+<li><a href="#c12">Git</a></li>
+<li><a href="#c13">デバッグの手順</a></li>
+<li><a href="#c14">ビルドと実機</a></li>
+<li><a href="#c15">ネットワーク</a></li>
+<li><a href="#c16">非同期処理</a></li>
+<li><a href="#c17">設計の流儀（レイヤ・DDD）</a></li>
+</ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="c1">1. プログラムが動くまで</h2>
+
+<h3>ソースコードと実行ファイル</h3>
+<p>人が書く文章がソースコードです。C# なら <code>.cs</code> ファイルに書きます。CPU はこれをそのまま読めません。</p>
+<p>そこで<strong>コンパイラ</strong>という道具が、ソースコードを CPU が実行できる形に変換します。この変換を<strong>コンパイル</strong>と呼びます。</p>
+<p>コンパイラは変換のついでに、文法の誤りと型の誤り（2 章）を探します。見つかるとコンパイルが失敗し、実行ファイルは作られません。これを<strong>コンパイルエラー</strong>と呼びます。</p>
+<p>実行中に起きる誤りは<strong>実行時エラー</strong>です。たとえば何も入っていない変数を使おうとしたときに起きます。コンパイルエラーは書いた直後に分かり、実行時エラーは動かすまで分かりません。だから、誤りをコンパイルエラーの側へ寄せる工夫が設計の大きなテーマになります。</p>
+
+<h3>廻リ視の場合</h3>
+<ol>
+<li><code>Assets/Scripts</code> の <code>.cs</code> を Unity がコンパイルする</li>
+<li>ビルドで Quest 用の実行ファイル <code>Builds/mawarimi.apk</code> を作る</li>
+<li>APK を Quest に入れて起動する</li>
+</ol>
+<p>APK は Android アプリの配布形式です。Quest の OS は Android をもとにしているので、この形式を使います。</p>
+
+<h3>フレーム</h3>
+<p>ゲームや VR は、画面を 1 秒間に何十回も描き直します。1 回の描き直しを<strong>フレーム</strong>と呼びます。Quest 3 は 1 秒に 90 回です。1 フレームに使える時間は約 11 ミリ秒です。</p>
+<p>この時間を超えると描き直しが間に合わず、画面がカクつきます。VR ではこれが酔いにつながります。プロジェクトの規約に「90 FPS 維持」があるのはこのためです。FPS は Frames Per Second（1 秒あたりのフレーム数）です。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. コンパイルエラーと実行時エラーの違いは？</summary><p>コンパイルエラーはコンパイルの段階で見つかり、実行ファイルが作られない。実行時エラーは動かしてみて初めて起きる。前者は書いた直後に気づけるので、後者より安く直せる。</p></details>
+<details><summary>Q2. Quest 3 で 1 フレームに使える時間はおよそ何ミリ秒？</summary><p>1000 ÷ 90 ≒ 11 ミリ秒。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c2">2. 値と型</h2>
+<p>プログラムが扱うデータを<strong>値</strong>と呼びます。すべての値には<strong>型</strong>があります。型は「その値がどんな種類のデータか」と「何ができるか」を決めます。</p>
+
+<div class="scroll">
+<table>
+<tr><th>型</th><th>中身</th><th>例</th></tr>
+<tr><td><code>int</code></td><td>整数</td><td><code>3</code>（周の数）</td></tr>
+<tr><td><code>float</code></td><td>小数</td><td><code>0.15f</code>（メートル）。末尾の <code>f</code> は float の印</td></tr>
+<tr><td><code>bool</code></td><td>真か偽の 2 択</td><td><code>true</code> / <code>false</code></td></tr>
+<tr><td><code>string</code></td><td>文字列</td><td><code>"2026/09/06 14:23:45"</code></td></tr>
+<tr><td><code>DateTime</code></td><td>日時</td><td><code>new DateTime(2026, 9, 6, 14, 23, 45)</code></td></tr>
+<tr><td><code>Vector3</code></td><td>x, y, z の 3 つの float</td><td>頭の位置</td></tr>
+</table>
+</div>
+
+<h3>型が誤りを止める</h3>
+<p>型が合わない使い方はコンパイルエラーになります。</p>
+<pre><code>int lap = "3";      // エラー：string を int に入れられない
+int lap = 3;        // OK</code></pre>
+<p>ただし同じ型どうしの取り違えは止まりません。廻リ視には「進むだけの周」と「引き返すと戻る周」があり、どちらも <code>int</code> です。</p>
+<pre><code>void NotifyLap(int progressLap) { ... }
+
+int segmentLap = 2;
+NotifyLap(segmentLap);   // 意味が違う値を渡しているのに、コンパイルは通る</code></pre>
+<p>これを防ぐには、意味ごとに別の型を作ります（5 章・17 章の「値オブジェクト」）。</p>
+
+<h3>enum（列挙型）</h3>
+<p>決まった選択肢だけを取る値には <code>enum</code> を使います。廻リ視の体験の段階はこう書かれています。</p>
+<pre><code>// Assets/Scripts/Streaming/ShowRunLogic.cs
+public enum ShowPhase
+{
+    Intro,     // 導入
+    Run,       // 本編
+    Finished,  // 終了
+}</code></pre>
+<p>これを <code>string</code> で <code>"intro"</code> と書くこともできます。しかし <code>"intoro"</code> と打ち間違えてもコンパイラは気づきません。<code>ShowPhase.Intoro</code> ならコンパイルエラーになります。</p>
+
+<h3>null</h3>
+<p><code>null</code> は「何も入っていない」を表す特別な値です。null の変数を使おうとすると実行時エラーになります。</p>
+<p>型名の後ろの <code>?</code> は「null が入るかもしれない」という印です。</p>
+<pre><code>// Assets/Scripts/Tracking/PlayerZoneTracker.cs
+public PlayerZone? CurrentZone => _current;   // まだどのゾーンにも入っていなければ null</code></pre>
+<p>ファイルの先頭の <code>#nullable enable</code> を書くと、コンパイラが「null かもしれない値を確かめずに使っている」箇所を警告します。実行時エラーをコンパイルの段階へ寄せる工夫の 1 つです。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 状態を string ではなく enum で持つ利点は？</summary><p>選択肢以外の値を入れるとコンパイルエラーになる。打ち間違いを実行前に見つけられる。</p></details>
+<details><summary>Q2. <code>float? x</code> の <code>?</code> は何を表す？</summary><p>x に null が入りうること。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c3">3. 変数と関数</h2>
+
+<h3>変数</h3>
+<p>値に名前を付けて置いておく場所が<strong>変数</strong>です。</p>
+<pre><code>int totalLaps = 3;   // 型 名前 = 最初の値;
+totalLaps = 4;       // 後から入れ替えられる</code></pre>
+<p>入れ替えられたくない値には <code>const</code>（コンパイル時に決まる定数）か <code>readonly</code>（最初に一度だけ決まる）を付けます。</p>
+
+<h3>関数（メソッド）</h3>
+<p>処理に名前を付けたものが<strong>関数</strong>です。C# ではクラスの中に書くので<strong>メソッド</strong>と呼びます。</p>
+<pre><code>// Assets/Scripts/Streaming/OsdClockLogic.cs（読みやすく整えた）
+public static string Format(DateTime t)
+{
+    return string.Format("{0:D4}/{1:D2}/{2:D2} {3:D2}:{4:D2}:{5:D2}",
+                         t.Year, t.Month, t.Day, t.Hour, t.Minute, t.Second);
+}</code></pre>
+<div class="scroll">
+<table>
+<tr><th>部分</th><th>名前</th><th>意味</th></tr>
+<tr><td><code>string</code></td><td>戻り値の型</td><td>この関数が返す値の型。何も返さないなら <code>void</code></td></tr>
+<tr><td><code>Format</code></td><td>関数名</td><td>呼ぶときに使う名前</td></tr>
+<tr><td><code>DateTime t</code></td><td>引数</td><td>呼ぶ側から受け取る値</td></tr>
+<tr><td><code>return ...</code></td><td>戻り値</td><td>呼ぶ側へ返す値</td></tr>
+</table>
+</div>
+<p>呼ぶ側はこう書きます。</p>
+<pre><code>string s = OsdClockLogic.Format(DateTime.Now);</code></pre>
+
+<h3>副作用と純粋関数</h3>
+<p>関数が戻り値を返す以外に外の世界を変えることを<strong>副作用</strong>と呼びます。画面に描く、ファイルに書く、変数を書き換える、音を鳴らす、などです。</p>
+<p>副作用が無く、同じ引数なら必ず同じ戻り値を返す関数を<strong>純粋関数</strong>と呼びます。<code>Format</code> は純粋関数です。2026/9/6 14:23:45 を渡せば、何回呼んでも <code>"2026/09/06 14:23:45"</code> が返ります。</p>
+<p>純粋関数は確かめやすく、壊れにくい関数です。11 章のテストで、この性質が効いてきます。</p>
+<p>逆に <code>DateTime.Now</code>（今の時刻）を関数の中で読むと、呼ぶたびに結果が変わります。だから <code>Format</code> は時刻を中で読まず、引数で受け取っています。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 次の関数は純粋関数か？ <code>int Add(int a, int b) { return a + b; }</code></summary><p>純粋関数。外の世界を変えず、同じ引数なら同じ結果を返す。</p></details>
+<details><summary>Q2. 次の関数は純粋関数か？ <code>void Log(string s) { Debug.Log(s); }</code></summary><p>純粋関数ではない。ログを書くという副作用がある。</p></details>
+<details><summary>Q3. Format が時刻を中で読まず引数で受け取るのはなぜ？</summary><p>中で今の時刻を読むと、呼ぶたびに結果が変わって確かめられないから。引数にすれば、確かめる側が好きな時刻を渡せる。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c4">4. 条件・繰り返し・状態</h2>
+
+<h3>条件分岐</h3>
+<pre><code>if (lap &gt; totalLaps)
+{
+    // 周を走り切った
+}
+else
+{
+    // まだ途中
+}</code></pre>
+<p>選択肢が多いときは <code>switch</code> を使います。</p>
+<pre><code>switch (phase)
+{
+    case ShowPhase.Intro:    ...; break;
+    case ShowPhase.Run:      ...; break;
+    case ShowPhase.Finished: ...; break;
+}</code></pre>
+
+<h3>繰り返し</h3>
+<pre><code>for (int i = 0; i &lt; zones.Length; i++)   // i を 0 から 1 ずつ増やし、zones の数だけ回す
+{
+    var z = zones[i];
+}
+
+foreach (var z in zones)                // 配列の要素を先頭から 1 つずつ取り出す
+{
+}</code></pre>
+<p><code>zones</code> は<strong>配列</strong>です。同じ型の値を並べたもので、<code>zones[0]</code> が先頭です。番号（<strong>添字</strong>）は 0 から数えます。</p>
+
+<h3>状態と状態機械</h3>
+<p>プログラムが「今どういう状況か」を覚えている値を<strong>状態</strong>と呼びます。</p>
+<p>状態がいくつかの段階を持ち、決まった条件で次の段階へ移る仕組みを<strong>状態機械</strong>（ステートマシン）と呼びます。段階の移り変わりを<strong>遷移</strong>と呼びます。</p>
+<p>廻リ視の骨格は状態機械です。</p>
+<pre><code>Intro ──(導入が終わった かつ スタート区間に居る)──→ Run ──(周を走り切った 等)──→ Finished
+  ↑                                                                              │
+  └───────────────────────(次の体験者のためにリセット)───────────────────────────┘</code></pre>
+<p>これを持つのが <code>ShowRunLogic</code> です。毎フレーム <code>Tick</code> というメソッドが呼ばれ、条件を見て遷移するかを決めます。</p>
+<pre><code>// Assets/Scripts/Streaming/ShowRunLogic.cs:184（引数の一部）
+public ShowRunEvent Tick(float dt, bool atStartZone, bool takeRunning, bool introCompleted = true, ...)</code></pre>
+<p><code>dt</code> は前のフレームから経った秒数です（delta time の略）。状態機械は今の時刻を自分で読まず、経過時間を引数で受け取っています。3 章の純粋関数と同じ考え方です。</p>
+<p>状態の持ち主は 1 つにするのが原則です。同じ状態を 2 か所で持つと、片方だけ更新されて食い違います。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 配列 <code>a</code> に要素が 3 つあるとき、最後の要素は何と書く？</summary><p><code>a[2]</code>。添字は 0 から数える。</p></details>
+<details><summary>Q2. 状態の持ち主を 1 つにするのはなぜ？</summary><p>2 か所で持つと、片方だけ更新されて値が食い違うから。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c5">5. クラスとオブジェクト</h2>
+
+<h3>クラス</h3>
+<p><strong>クラス</strong>は、データ（<strong>フィールド</strong>）と処理（<strong>メソッド</strong>）をまとめた型の定義です。<code>int</code> や <code>string</code> と同じく型の 1 つで、自分で作れる点が違います。</p>
+<pre><code>public class Counter
+{
+    private int _count;            // フィールド：このクラスが持つデータ
+
+    public void Add()              // メソッド：このクラスができること
+    {
+        _count = _count + 1;
+    }
+
+    public int Count =&gt; _count;    // プロパティ：外から読むための口
+}</code></pre>
+
+<h3>オブジェクト（インスタンス）</h3>
+<p>クラスは定義なので、それだけでは動きません。<code>new</code> でクラスから実体を作ります。この実体を<strong>オブジェクト</strong>または<strong>インスタンス</strong>と呼びます。</p>
+<pre><code>var a = new Counter();
+var b = new Counter();
+a.Add();
+a.Add();
+b.Add();
+// a.Count は 2、b.Count は 1</code></pre>
+<p>同じクラスから作っても、<code>a</code> と <code>b</code> は別々の <code>_count</code> を持ちます。</p>
+
+<h3>static</h3>
+<p><code>static</code> を付けたメソッドやフィールドは、インスタンスではなくクラスそのものに属します。<code>new</code> せずに <code>クラス名.メソッド名</code> で呼べます。</p>
+<pre><code>OsdClockLogic.Format(t);   // static メソッド。new OsdClockLogic() は要らない</code></pre>
+<p>static なフィールドはプログラム全体で 1 つしかありません。どこからでも書き換えられるので、誰がいつ変えたか追えなくなります。値を持たない static メソッドは安全ですが、static な状態は少ないほど良いとされます。</p>
+
+<h3>public と private（カプセル化）</h3>
+<div class="scroll">
+<table>
+<tr><th>修飾子</th><th>誰が使えるか</th></tr>
+<tr><td><code>private</code></td><td>そのクラスの中だけ</td></tr>
+<tr><td><code>internal</code></td><td>同じアセンブリ（9 章）の中だけ</td></tr>
+<tr><td><code>public</code></td><td>どこからでも</td></tr>
+</table>
+</div>
+<p>上の <code>Counter</code> では <code>_count</code> が private です。外からは <code>Add()</code> で 1 増やすことしかできません。<code>_count = -5</code> のような、ありえない値を外から入れられません。</p>
+<p>このように、データを隠して決まった操作だけを外に出すことを<strong>カプセル化</strong>と呼びます。クラスが自分のデータの正しさを自分で守れます。</p>
+<p>プロジェクトの規約に「public フィールド禁止」とあるのはこのためです。</p>
+
+<h3>プロパティ</h3>
+<p><code>public int Count =&gt; _count;</code> は<strong>プロパティ</strong>です。外からはフィールドのように <code>a.Count</code> と読めますが、中身はメソッドです。読み取り専用の口を作るのによく使います。</p>
+
+<h3>class と struct</h3>
+<p><code>struct</code> もデータと処理をまとめた型です。違いは渡し方です。</p>
+<ul>
+<li><code>class</code> は<strong>参照型</strong>。変数に入っているのは実体の場所。代入すると同じ実体を 2 つの変数が指す</li>
+<li><code>struct</code> は<strong>値型</strong>。変数に実体そのものが入る。代入すると中身がコピーされる</li>
+</ul>
+<pre><code>var a = new Counter();   // class
+var b = a;               // b と a は同じ Counter を指す
+b.Add();                 // a.Count も 1 になる</code></pre>
+<p><code>Vector3</code> や <code>DateTime</code> は struct です。小さなデータのまとまりに使います。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. クラスとインスタンスの違いは？</summary><p>クラスは型の定義。インスタンスは new でクラスから作った実体で、それぞれが自分のフィールドを持つ。</p></details>
+<details><summary>Q2. フィールドを private にして、操作をメソッドだけに絞る利点は？</summary><p>ありえない値を外から入れられなくなる。データの正しさをクラスが自分で守れる。</p></details>
+<details><summary>Q3. static な状態が少ないほうが良いのはなぜ？</summary><p>どこからでも書き換えられるので、誰がいつ変えたかを追えなくなるから。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c6">6. 継承とインタフェース</h2>
+
+<h3>継承</h3>
+<p>既存のクラスの機能を引き継いで新しいクラスを作ることを<strong>継承</strong>と呼びます。元のクラスを<strong>基底クラス</strong>（親）、新しいクラスを<strong>派生クラス</strong>（子）と呼びます。</p>
+<pre><code>// Assets/Scripts/Streaming/ScreenOsd.cs:34
+public sealed class ScreenOsd : MonoBehaviour</code></pre>
+<p><code>: MonoBehaviour</code> は「<code>MonoBehaviour</code> を継承する」という意味です。<code>MonoBehaviour</code> は Unity が用意したクラスで、継承すると Unity の物体に貼り付けて動かせるようになります（7 章）。</p>
+<p><code>sealed</code> は「このクラスをさらに継承させない」という印です。</p>
+
+<h3>インタフェース</h3>
+<p><strong>インタフェース</strong>は「このメソッドを持っていること」という約束だけを書いた型です。中身の処理は書きません。</p>
+<pre><code>public interface IResettable
+{
+    void ResetRun();
+}
+
+public class BgmDirector : IResettable
+{
+    public void ResetRun() { /* BGM を初期状態に戻す */ }
+}</code></pre>
+<p>使う側は相手の具体的なクラスを知らなくても、<code>IResettable</code> として <code>ResetRun()</code> を呼べます。</p>
+<pre><code>foreach (IResettable r in all) r.ResetRun();</code></pre>
+<p class="note">この IResettable は説明用で、廻リ視には無い。廻リ視には ResetRun を持つクラスが 19 個あるが、共通のインタフェースが無いので、まとめて呼ぶことができない。前回の調査で一番重い課題とした点はここにつながる。</p>
+
+<h3>継承よりインタフェース</h3>
+<p>C# では基底クラスを 1 つしか持てません。インタフェースはいくつでも実装できます。また継承は親の中身に強く縛られます。そのため「機能を共有したいだけなら、継承より小さなインタフェースや、別クラスを持たせる形を選ぶ」のが一般的な指針です。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. <code>class A : MonoBehaviour</code> の <code>:</code> は何を表す？</summary><p>A が MonoBehaviour を継承していること。</p></details>
+<details><summary>Q2. インタフェースがあると何ができる？</summary><p>具体的なクラスを知らなくても、約束したメソッドを呼べる。違うクラスをまとめて同じように扱える。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c7">7. Unity の仕組み</h2>
+
+<h3>GameObject とコンポーネント</h3>
+<p>Unity のシーンに置く物体はすべて <strong>GameObject</strong> です。GameObject 自体は位置と名前しか持ちません。</p>
+<p>機能は<strong>コンポーネント</strong>として GameObject に貼り付けます。カメラ、音源、見た目のメッシュ、そして自分で書いた MonoBehaviour のクラスも、すべてコンポーネントです。</p>
+<p>1 つの GameObject に複数のコンポーネントを貼れます。たとえば廻リ視のシーンには <code>[Tracker]</code> という GameObject があり、そこに <code>PlayerZoneTracker</code> などが貼られています。</p>
+
+<h3>MonoBehaviour は new しない</h3>
+<p>普通のクラスは自分で <code>new</code> します。MonoBehaviour は違います。シーンに貼ってあれば、シーンを開いたときに Unity がインスタンスを作ります。コードから足すときは <code>AddComponent&lt;T&gt;()</code> を使います。</p>
+
+<h3>Unity が呼ぶメソッド</h3>
+<p>MonoBehaviour に決まった名前のメソッドを書くと、Unity が決まった時に呼びます。</p>
+<div class="scroll">
+<table>
+<tr><th>メソッド</th><th>呼ばれる時</th></tr>
+<tr><td><code>Awake()</code></td><td>インスタンスが作られた直後に 1 回</td></tr>
+<tr><td><code>Start()</code></td><td>最初のフレームの前に 1 回</td></tr>
+<tr><td><code>Update()</code></td><td>毎フレーム</td></tr>
+<tr><td><code>LateUpdate()</code></td><td>毎フレーム、全員の Update の後</td></tr>
+<tr><td><code>OnDestroy()</code></td><td>消される時</td></tr>
+</table>
+</div>
+<p>自分では呼ばず、Unity に呼ばれる。この形は「制御の反転」と呼ばれます。自分のコードが主導権を持たないので、<em>どのコンポーネントの Update が先に呼ばれるかは基本的に決まっていない</em>点に注意が要ります。</p>
+
+<h3>SerializeField と Inspector</h3>
+<pre><code>// Assets/Scripts/Tracking/PlayerZoneTracker.cs
+[SerializeField] private float hysteresisShrink = 0.15f;</code></pre>
+<p><code>[SerializeField]</code> を付けた private フィールドは、Unity の画面（<strong>Inspector</strong>）に表示され、そこで値を変えられます。変えた値はシーンのファイルに保存されます。</p>
+<p>注意点があります。シーンに保存された値は、コードの初期値（ここでは <code>0.15f</code>）より優先されます。コードの初期値を直しても、シーンに古い値が保存されていれば古い値で動きます。</p>
+
+<h3>他のコンポーネントを手に入れる 3 つの方法</h3>
+<div class="scroll">
+<table>
+<tr><th>方法</th><th>書き方</th><th>性質</th></tr>
+<tr><td>Inspector で繋ぐ</td><td><code>[SerializeField] private CameraSwitchDirector? director;</code></td><td>誰が誰を使うかがフィールドの宣言で見える</td></tr>
+<tr><td>同じ GameObject から取る</td><td><code>GetComponent&lt;T&gt;()</code></td><td>範囲が狭く、速い</td></tr>
+<tr><td>シーン全体から探す</td><td><code>FindObjectOfType&lt;T&gt;()</code></td><td>どこからでも探せるが遅い。誰が誰を使うかがコードを読まないと分からない</td></tr>
+</table>
+</div>
+<p>廻リ視には 3 つ目が 210 か所あります。10 章で詳しく扱います。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. GameObject とコンポーネントの関係は？</summary><p>GameObject は物体の入れ物で、機能はコンポーネントとして貼り付ける。MonoBehaviour のクラスもコンポーネントの 1 つ。</p></details>
+<details><summary>Q2. SerializeField の初期値を直したのに挙動が変わらない。何を疑う？</summary><p>シーンや prefab に古い値が保存されていて、そちらが優先されていること。</p></details>
+<details><summary>Q3. Update の中で毎フレーム FindObjectOfType を呼ぶと何が困る？</summary><p>シーン全体を毎フレーム探すので重い。1 フレーム 11 ミリ秒の予算を食う。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c8">8. イベント</h2>
+<p>あるクラスで何かが起きたとき、それを知りたい別のクラスへ知らせる仕組みが<strong>イベント</strong>です。</p>
+<pre><code>// 知らせる側 — Assets/Scripts/Tracking/PlayerZoneTracker.cs
+public event Action&lt;PlayerZone?, PlayerZone&gt;? ZoneChanged;
+
+// ゾーンが変わったら
+ZoneChanged?.Invoke(oldZone, newZone);</code></pre>
+<pre><code>// 知りたい側 — Assets/Scripts/Tracking/ZoneLayoutApplier.cs:54
+tracker.ZoneChanged += OnZoneChanged;     // 登録（購読）する
+
+private void OnZoneChanged(PlayerZone? oldZone, PlayerZone newZone)
+{
+    // ゾーンが変わったときの処理
+}</code></pre>
+<p><code>Action&lt;A, B&gt;</code> は「A と B を受け取って何も返さない関数」の型です。<code>+=</code> で登録し、<code>-=</code> で解除します。<code>?.Invoke</code> は「登録者がいれば呼ぶ」です。</p>
+
+<h3>イベントの利点</h3>
+<p>知らせる側は、誰が聞いているかを知りません。<code>PlayerZoneTracker</code> は、周を数えるクラスがあることも、配置を直すクラスがあることも知らずに済みます。聞く側を増やしても、知らせる側を直す必要がありません。</p>
+
+<h3>イベントの注意点</h3>
+<ul>
+<li><strong>解除を忘れる。</strong>聞く側が消えても登録が残ると、消えた相手を呼んでエラーになる。<code>OnDestroy</code> で <code>-=</code> する</li>
+<li><strong>順番が見えない。</strong>登録者が複数いると、どの順で呼ばれるかがコードから読みにくい</li>
+<li><strong>引数の意味が位置でしか分からない。</strong>廻リ視の <code>CameraEntered</code> は <code>Action&lt;int,int,int&gt;</code> で、3 つの int のどれが何かは型からは分からない。名前付きの struct にまとめると取り違えにくい</li>
+</ul>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. イベントを使うと、知らせる側のクラスにとって何が良い？</summary><p>誰が聞いているかを知らずに済む。聞く側を増やしても、知らせる側を直さなくてよい。</p></details>
+<details><summary>Q2. <code>Action&lt;int,int,int&gt;</code> のイベントの問題は？</summary><p>3 つの int の意味が順番でしか分からず、取り違えてもコンパイルが通る。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c9">9. コードのまとまり</h2>
+<p>コードは小さい単位から順に、次のようにまとまっています。</p>
+<div class="scroll">
+<table>
+<tr><th>単位</th><th>中身</th><th>廻リ視の例</th></tr>
+<tr><td>メソッド</td><td>処理 1 つ</td><td><code>Format</code></td></tr>
+<tr><td>クラス</td><td>データと処理のまとまり</td><td><code>OsdClockLogic</code></td></tr>
+<tr><td>ファイル</td><td>クラスを書いた <code>.cs</code>。ふつう 1 ファイル 1 クラス</td><td><code>OsdClockLogic.cs</code></td></tr>
+<tr><td>名前空間</td><td>クラス名の住所。同じ名前のクラスを区別する</td><td><code>FixedCamVr.Streaming</code></td></tr>
+<tr><td>フォルダ</td><td>ファイルの置き場所</td><td><code>Assets/Scripts/Streaming/</code></td></tr>
+<tr><td>アセンブリ</td><td>コンパイルの単位。Unity では <code>.asmdef</code> で区切る</td><td><code>FixedCamVr.Streaming</code></td></tr>
+<tr><td>パッケージ</td><td>外部から取り込むライブラリ</td><td>Meta XR SDK</td></tr>
+</table>
+</div>
+
+<h3>名前空間</h3>
+<pre><code>namespace FixedCamVr.Streaming
+{
+    public sealed class OsdClockLogic { ... }
+}</code></pre>
+<p>別の名前空間から使うときは、ファイルの先頭に <code>using FixedCamVr.Streaming;</code> と書きます。</p>
+
+<h3>アセンブリ</h3>
+<p>アセンブリには 2 つの役割があります。</p>
+<ol>
+<li><strong>依存の許可。</strong><code>.asmdef</code> に「どのアセンブリを使ってよいか」を書く。書いていないアセンブリのクラスを使うとコンパイルエラーになる。循環（A が B を使い、B も A を使う）は作れない</li>
+<li><strong>コンパイルの単位。</strong>変えたアセンブリと、それに頼るアセンブリだけを再コンパイルする</li>
+</ol>
+<p>廻リ視のアセンブリの依存はこうなっています。</p>
+<pre><code>Diagnostics ──→ Tracking ──→ Streaming
+     └──────→ Input
+OvrBridge（asmdef なし）──→ 全部</code></pre>
+<p>Streaming は Tracking を使えません。だから Streaming のクラスは Tracking のクラスを型として書けず、<code>Behaviour</code>（全コンポーネント共通の親）や <code>Func</code>（関数の型）でぼかして受け取っています。これが前回の調査で「依存の向きが歪んでいる」とした箇所です。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 名前空間とアセンブリの違いは？</summary><p>名前空間はクラス名の住所で、コンパイルの区切りではない。アセンブリはコンパイルの単位で、使ってよい相手を宣言で縛れる。</p></details>
+<details><summary>Q2. アセンブリ A が B を使っているとき、B が A を使うとどうなる？</summary><p>循環になるので、Unity はコンパイルできない。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c10">10. 依存と設計の原則</h2>
+
+<h3>依存</h3>
+<p>クラス A がクラス B を使っているとき、「A は B に<strong>依存</strong>している」と言います。B を変えると A が壊れる可能性があります。</p>
+<p>依存はゼロにできません。目標は次の 3 つです。</p>
+<ul>
+<li>依存の数を減らす</li>
+<li>依存の向きを揃える（変わりやすいものが、変わりにくいものに頼る）</li>
+<li>依存が宣言から見えるようにする</li>
+</ul>
+
+<h3>結合度と凝集度</h3>
+<dl>
+<dt>結合度</dt>
+<dd>クラス同士がどれだけ互いに頼り合っているか。<strong>低いほど良い。</strong>1 つ直したときの影響が狭くなる。</dd>
+<dt>凝集度</dt>
+<dd>1 つのクラスの中身が、どれだけ同じ目的に向いているか。<strong>高いほど良い。</strong>何をするクラスかが一言で言える。</dd>
+</dl>
+<p>廻リ視の <code>ShowControlClient</code>（3,656 行）は、設定の読み込み・通信・各所への配布・報告の受付・値の中継を全部持っています。凝集度が低く、31 クラスから頼られているので結合度が高い状態です。</p>
+
+<h3>単一責任の原則</h3>
+<p>「1 つのクラスが変わる理由は 1 つにする」という原則です。<code>ShowControlClient</code> は、通信方式が変わっても、報告の仕様が変わっても、設定の形が変わっても直すことになります。変わる理由が多すぎます。</p>
+
+<h3>依存を外から渡す</h3>
+<p>必要な相手を自分で探すのではなく、外から渡してもらう形を<strong>依存性の注入</strong>（Dependency Injection、DI）と呼びます。</p>
+<pre><code>// 自分で探す（廻リ視に多い形）
+var timeline = FindObjectOfType&lt;TimelineDirector&gt;();
+
+// 外から渡してもらう
+[SerializeField] private TimelineDirector? timeline;   // Inspector か、シーンを組むコードが入れる</code></pre>
+<p>外から渡す形には 3 つの利点があります。</p>
+<ol>
+<li>フィールドを見れば、このクラスが誰に頼っているかが分かる</li>
+<li>探す処理が無いので速い</li>
+<li>テストで、本物の代わりに試験用の相手を渡せる</li>
+</ol>
+
+<h3>その他の原則</h3>
+<dl>
+<dt>DRY（Don't Repeat Yourself）</dt>
+<dd>同じ知識を 2 か所に書かない。片方だけ直して食い違うから。廻リ視ではリセットの呼び出しの並びが 4 か所に書き写され、1 か所で音のリセットが抜けている。</dd>
+<dt>YAGNI（You Aren't Gonna Need It）</dt>
+<dd>今要らない機能を先回りして作らない。使われない仕組みは、読む手間と壊れる場所を増やすだけになる。</dd>
+<dt>関心の分離</dt>
+<dd>違う種類の仕事を別の場所に置く。廻リ視の「判断は Logic、画面への反映は MonoBehaviour」がこの例。</dd>
+</dl>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 結合度と凝集度は、それぞれ高い方が良い？低い方が良い？</summary><p>結合度は低い方が良い。凝集度は高い方が良い。</p></details>
+<details><summary>Q2. FindObjectOfType で探す形と、SerializeField で渡す形の違いを 2 つ挙げて。</summary><p>渡す形は、誰に頼っているかがフィールドで見える。探す処理が無いので速い。テストで試験用の相手を渡せる。（このうち 2 つ）</p></details>
+<details><summary>Q3. リセットの並びが 4 か所にあることは、どの原則に反している？</summary><p>DRY。同じ知識を複数の場所に書いたので、1 か所だけ直し忘れて食い違った。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c11">11. テスト</h2>
+
+<h3>テストとは</h3>
+<p><strong>テスト</strong>は「このコードがこう動くはず」を確かめるコードです。一度書けば、何回でも自動で確かめられます。</p>
+<p>関数やクラスを 1 つずつ確かめるテストを<strong>単体テスト</strong>（ユニットテスト）と呼びます。廻リ視には約 2,300 件あります。</p>
+
+<h3>実際のテスト</h3>
+<pre><code>// Assets/Tests/Streaming/OsdClockLogicTests.cs
+[Test]
+public void Format_MatchesTheReferenceShot()
+{
+    Assert.AreEqual("2026/09/06 14:23:45",
+                    OsdClockLogic.Format(new DateTime(2026, 9, 6, 14, 23, 45)));
+}</code></pre>
+<ul>
+<li><code>[Test]</code>：このメソッドがテストだという印</li>
+<li><code>Assert.AreEqual(期待値, 実際の値)</code>：2 つが等しくなければテストを失敗にする</li>
+<li>メソッド名：何を確かめるかを文として書く</li>
+</ul>
+<p>テストは 3 段で書くのが基本です。準備する（Arrange）、実行する（Act）、確かめる（Assert）。</p>
+
+<h3>なぜテストを書くのか</h3>
+<ol>
+<li><strong>壊したことにすぐ気づける。</strong>別の場所を直したせいで前の機能が壊れることを<strong>デグレード</strong>（退行）と呼ぶ。テストがあれば直した直後に分かる</li>
+<li><strong>安心して作り直せる。</strong>中の書き方を変えても、テストが通れば外から見た動きは変わっていない</li>
+<li><strong>仕様の記録になる。</strong>テストを読めば、そのコードがどう動くべきかが分かる</li>
+</ol>
+
+<h3>テストしやすい設計</h3>
+<p><code>Format</code> がテストしやすいのは純粋関数だからです。一方、MonoBehaviour のテストは難しくなります。Unity の起動、シーンの用意、フレームが進むのを待つ必要があるからです。</p>
+<p>そこで廻リ視は、判断を Logic クラスに寄せ、MonoBehaviour は値を集めて渡すだけにしています。</p>
+<pre><code>ScreenOsd（MonoBehaviour）           OsdClockLogic（Logic）
+  毎フレーム Update()                    Format(時刻) → 文字列
+  今の時刻を読む          ──渡す──→      NeedsRedraw(時刻, 前回) → bool
+  返ってきた文字を画面に描く ←─返す──</code></pre>
+<p>テストは右側だけを確かめます。左側はほとんど判断をしないので、壊れる余地が小さくなります。この分け方を <strong>Humble Object パターン</strong>と呼びます。</p>
+
+<h3>テストで分からないこと</h3>
+<p>テストが確かめるのは、書いた条件だけです。画面にどう見えるか、実機で間に合うか、怖いかは確かめられません。廻リ視が実機の録画（<code>quest-record.py</code>）を別に持っているのはこのためです。</p>
+
+<h3>自分で見る</h3>
+<p>Unity のテストはこのコマンドで全部回ります。数分かかります。</p>
+<pre><code>.\tools\unity.ps1 test</code></pre>
+<p><code>Assets/Tests/Streaming/OsdClockLogicTests.cs</code> を開き、テスト名だけを上から読んでください。時刻表示の仕様が読み取れるはずです。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. デグレードとは？</summary><p>別の箇所を直したせいで、以前動いていた機能が壊れること。</p></details>
+<details><summary>Q2. Logic クラスがテストしやすい理由は？</summary><p>Unity に頼らず、値を引数で受けて戻り値で返すから。Unity を起動せずに、好きな値を渡して結果を確かめられる。</p></details>
+<details><summary>Q3. テストが全部通れば、体験は正しく動いていると言える？</summary><p>言えない。テストは書いた条件だけを確かめる。見た目・実機の性能・体験の質は別の方法で確かめる。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c12">12. Git</h2>
+
+<h3>Git とは</h3>
+<p><strong>Git</strong> はファイルの変更履歴を記録する道具です。いつ、誰が、何を、なぜ変えたかが残り、いつでも前の状態に戻せます。</p>
+
+<h3>用語</h3>
+<dl>
+<dt>リポジトリ</dt><dd>履歴を記録しているフォルダ全体。廻リ視なら <code>fixed-cam-vr</code>。</dd>
+<dt>コミット</dt><dd>変更を 1 まとまりとして履歴に記録すること。記録したもの自体もコミットと呼ぶ。各コミットには <code>8505a557</code> のような番号（ハッシュ）が付く。</dd>
+<dt>ステージ（add）</dt><dd>次のコミットに含めるファイルを選ぶこと。</dd>
+<dt>ブランチ</dt><dd>履歴の枝。本流（<code>master</code>）を壊さずに、別の枝で作業できる。今の作業ブランチは <code>feature/tablet-ui-motion</code>。</dd>
+<dt>マージ</dt><dd>枝の変更を別の枝へ取り込むこと。</dd>
+<dt>リモート</dt><dd>GitHub など、別の場所にあるリポジトリの写し。<code>origin</code> と呼ぶことが多い。</dd>
+<dt>push / pull</dt><dd>push は手元のコミットをリモートへ送る。pull はリモートのコミットを手元へ取り込む。</dd>
+<dt>コンフリクト</dt><dd>2 つの枝が同じ行を別々に変えていて、自動で取り込めない状態。人が選んで直す。</dd>
+</dl>
+
+<h3>基本の流れ</h3>
+<pre><code>git status                      # 何が変わっているか見る
+git diff                        # 変わった中身を見る
+git add &lt;ファイル&gt;              # コミットに含めるファイルを選ぶ
+git commit -m "fix：〇〇を修正"  # 記録する
+git push origin &lt;ブランチ名&gt;     # GitHub へ送る</code></pre>
+
+<h3>良いコミットの条件</h3>
+<ul>
+<li>1 つのコミットに 1 つの目的。関係ない変更を混ぜない</li>
+<li>メッセージで「何を変えたか」が分かる。このプロジェクトは <code>種類：日本語の要約</code> の形</li>
+<li>コミットした時点で動く状態にする</li>
+</ul>
+
+<h3>自分で見る</h3>
+<pre><code>git log --oneline -10</code></pre>
+<p>直近 10 件のコミットが出ます。どれか 1 つの番号を選んで、次を打つと、そのコミットで何が変わったかが見えます。</p>
+<pre><code>git show --stat &lt;番号&gt;</code></pre>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. ブランチを切って作業する利点は？</summary><p>本流を壊さずに作業できる。うまくいかなければ枝ごと捨てられる。</p></details>
+<details><summary>Q2. コミットに関係ない変更を混ぜると何が困る？</summary><p>後で片方だけ取り消したくなったとき、分けて戻せない。履歴を読んでも何の変更か分からない。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c13">13. デバッグの手順</h2>
+<p>プログラムが期待どおりに動かない原因（<strong>バグ</strong>）を探して直すことを<strong>デバッグ</strong>と呼びます。思いつきで直すと、別の場所を壊したり、直ったように見えて残ったりします。手順で進めます。</p>
+<ol>
+<li><strong>症状を正確に書く。</strong>「動かない」ではなく「2 人目の体験者のとき、導入で音が鳴らない」</li>
+<li><strong>再現する。</strong>毎回起こせる手順を見つける。再現できないものは、直ったかどうかも確かめられない</li>
+<li><strong>範囲を絞る。</strong>どこまでは正しく、どこからおかしいかを見つける。廻リ視なら、配信のスマホ／ネットワーク／Unity／Meta XR／ビルドのどこか（<code>troubleshoot</code> スキルがこの順に切り分ける）</li>
+<li><strong>仮説を立てて確かめる。</strong>「リセットが音の状態を戻していないのでは」→ ログで確かめる</li>
+<li><strong>直す。</strong>原因を直す。症状だけを隠さない</li>
+<li><strong>再発を防ぐ。</strong>同じバグを捕まえるテストを書く</li>
+</ol>
+
+<h3>ログ</h3>
+<p>プログラムの途中で状況を書き出すのが<strong>ログ</strong>です。</p>
+<pre><code>Debug.Log($"[XP] ev=seg lap={lap} cam={cam}");</code></pre>
+<p><code>$"..."</code> の中の <code>{lap}</code> には変数の値が入ります。廻リ視は <code>[XP]</code> で始まるログを決まった形で出し、<code>tools/analyze-xp-log.py</code> が自動で読んで、体験が正しく進んだかを判定します。</p>
+
+<h3>観測を疑う</h3>
+<p>ログが出ていないことは、処理が起きていない証拠になりません。ログを出す側が壊れていることもあります。廻リ視には「ログは全部正常なのに、実機の画には何も出ていなかった」事故が何度も記録されています。結論の前に、別の手段（録画など）で同じ場面を確かめます。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 再現手順を先に見つけるのはなぜ？</summary><p>再現できなければ、直したあとに直ったかを確かめられないから。</p></details>
+<details><summary>Q2. バグを直したあとにテストを書くのはなぜ？</summary><p>同じバグが戻ってきたときに、自動で気づけるようにするため。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c14">14. ビルドと実機</h2>
+<dl>
+<dt>ビルド</dt>
+<dd>ソースコードと素材から、配布できる実行ファイルを作ること。廻リ視は <code>.\tools\unity.ps1 build fixedcam</code> で <code>Builds/mawarimi.apk</code> を作る。</dd>
+<dt>Development Build と Release</dt>
+<dd>開発用はログやデバッグ機能を含む。提出・展示用の Release は含まない分、軽い。</dd>
+<dt>IL2CPP / ARM64</dt>
+<dd>C# を C++ に変換してから、Quest の CPU（ARM64）用にコンパイルする方式。実機で速く動く代わりにビルドが遅い。</dd>
+<dt>adb</dt>
+<dd>Android Debug Bridge。PC から USB で Android 端末（Quest を含む）を操作する道具。<code>adb install</code> でアプリを入れ、<code>adb logcat</code> で端末のログを読む。</dd>
+<dt>CLI</dt>
+<dd>Command Line Interface。画面のボタンではなく、コマンドを打って操作する方式。手順を文字で残せて、自動化できる。廻リ視は Unity の操作をすべて <code>tools/unity.ps1</code> の CLI に集めている。</dd>
+</dl>
+
+<h3>Editor と実機の違い</h3>
+<p>Unity の Editor で動いても、実機で同じに動くとは限りません。廻リ視で実際に起きた例です。</p>
+<ul>
+<li>実行時に名前で探すシェーダが、ビルドで外されて実機だけ画が出ない</li>
+<li>パススルー（現実の部屋の映像）は実機にしか無い</li>
+<li>実機は PC より遅いので、Editor では間に合う処理が間に合わない</li>
+</ul>
+<p>だから最後は実機で確かめます。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. Editor で動いたのに実機で動かない。理由として考えられるものを 2 つ。</summary><p>ビルドでファイルやシェーダが外れた。実機にしか無い機能（パススルー等）が関わっている。実機の性能が足りない。（このうち 2 つ）</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c15">15. ネットワーク</h2>
+<p>廻リ視は、スマホが撮った映像を Wi-Fi で Quest へ送っています。この仕組みを理解するための用語です。</p>
+<dl>
+<dt>IP アドレス</dt>
+<dd>ネットワーク上の機器の番号。<code>192.168.1.23</code> の形。家庭や会場の Wi-Fi では、ルーターが接続のたびに配ることが多く（DHCP）、同じ機器でも番号が変わりうる。</dd>
+<dt>ポート</dt>
+<dd>1 台の機器の中で、どのプログラム宛てかを区別する番号。<code>192.168.1.23:8090</code> の <code>8090</code>。</dd>
+<dt>サーバとクライアント</dt>
+<dd>サービスを提供する側がサーバ、使う側がクライアント。廻リ視ではスマホが映像のサーバ、Quest がクライアント。</dd>
+<dt>HTTP</dt>
+<dd>Web で使う通信の約束事。クライアントが「これをください」（リクエスト）と送り、サーバが返す（レスポンス）。</dd>
+<dt>JSON</dt>
+<dd>データを文字で表す形式の 1 つ。<code>{"totalLaps": 3, "lang": "ja"}</code> のように書く。廻リ視の体験の設定 <code>show.json</code> はこの形式。</dd>
+<dt>MJPEG</dt>
+<dd>JPEG の静止画を次々に送ることで動画にする方式。仕組みが単純で、受け取った 1 枚ずつをすぐ表示できる。</dd>
+<dt>遅延</dt>
+<dd>カメラが撮ってから画面に出るまでの時間。廻リ視は 100 ミリ秒以内を目標にしている。</dd>
+</dl>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 昨日まで繋がっていたスマホに今日繋がらない。最初に疑うことは？</summary><p>IP アドレスが変わったこと。DHCP で配られた番号は接続のたびに変わりうる。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c16">16. 非同期処理</h2>
+<p>ファイルの読み込みや通信は、終わるまでに時間がかかります。その間プログラム全体を止めると、VR では画面が固まり、酔いの原因になります。</p>
+<p>そこで「待っている間に他の処理を進め、終わったら続きをやる」書き方をします。これを<strong>非同期処理</strong>と呼びます。C# では <code>async</code> と <code>await</code> を使います。</p>
+<pre><code>// Assets/Scripts/Streaming/BgmDirector.cs（整えた）
+private async Task StartTrackAsync(ShowBgmDef def)
+{
+    AudioClip? clip = await LoadClipAsync(track.url);   // 読み込みが終わるまで、ここで「待つ」
+    // ここから先は、読み込みが終わってから実行される
+}</code></pre>
+<ul>
+<li><code>async</code>：このメソッドの中で <code>await</code> を使うという印</li>
+<li><code>await</code>：処理の終わりを待つ。待っている間、Unity は他のフレームを描き続ける</li>
+<li><code>Task</code>：「いつか終わる処理」を表す型</li>
+</ul>
+
+<h3>注意点</h3>
+<ul>
+<li><strong>待っている間に状況が変わる。</strong>読み込み中に体験者が交代しているかもしれない。続きを実行する前に、まだ必要かを確かめる。中止の合図には <code>CancellationToken</code> を使う</li>
+<li><strong>例外が消える形がある。</strong><code>async void</code> にすると、中で起きたエラーを呼び出し側が受け取れない。<code>async Task</code> にする（廻リ視の <code>async void</code> は 0 件）</li>
+</ul>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. 通信を非同期で書かないと、VR では何が起きる？</summary><p>通信が終わるまで画面の描き直しが止まり、画面が固まる。酔いにつながる。</p></details>
+
+<!-- ============================================================ -->
+<h2 id="c17">17. 設計の流儀（レイヤ・DDD）</h2>
+<p>ここまでの原則を、大きなプログラム全体の形にまとめた考え方がいくつかあります。代表的な 2 つを説明します。</p>
+
+<h3>レイヤードアーキテクチャ</h3>
+<p>コードを役割で層に分け、上の層が下の層だけを使うようにする形です。</p>
+<div class="scroll">
+<table>
+<tr><th>層</th><th>役割</th><th>廻リ視で近いもの</th></tr>
+<tr><td>表示層</td><td>画面に出す・入力を受ける</td><td><code>ScreenOsd</code>、<code>CommsPanel</code></td></tr>
+<tr><td>アプリケーション層</td><td>処理の順番を組み立てる</td><td><code>ShowRunDirector</code>、<code>TakeRunner</code></td></tr>
+<tr><td>ドメイン層</td><td>体験のルールそのもの</td><td><code>ShowRunLogic</code>、<code>TakeRunnerLogic</code></td></tr>
+<tr><td>インフラ層</td><td>通信・ファイル・外部機器</td><td>MJPEG の受信、<code>show.json</code> の読み込み</td></tr>
+</table>
+</div>
+<p>大事なのは、ドメイン層が他のどの層にも頼らないことです。ルールが画面や通信の都合で変わらなくなり、テストもしやすくなります。</p>
+
+<h3>DDD（ドメイン駆動設計）</h3>
+<p><strong>ドメイン</strong>は、そのソフトウェアが扱う対象の世界です。廻リ視なら「体験」「周」「区間」「人形」「来場者」の世界です。</p>
+<p>DDD は、そのドメインの言葉と規則をそのままコードの型と構造にする流儀です。主な道具は次のとおりです。</p>
+<dl>
+<dt>ユビキタス言語</dt>
+<dd>開発者と作り手が同じ言葉を使い、その言葉をそのままクラス名・メソッド名にする。廻リ視の「周」「区間」「take」はこれに近い。</dd>
+<dt>値オブジェクト</dt>
+<dd>意味ごとに小さな型を作る。「進行の周」と「区間の周」を別の型にすれば、取り違えはコンパイルエラーになる（2 章の問題の解決）。</dd>
+<dt>エンティティ</dt>
+<dd>番号で区別され、時間とともに状態が変わるもの。廻リ視なら「来場者」「体験 1 回（ラン）」。</dd>
+<dt>集約</dt>
+<dd>一緒に正しさを保つべきデータのまとまりと、その持ち主。外からは持ち主を通してだけ変える。廻リ視なら「体験 1 回ぶんの状態」を 1 つの持ち主にまとめ、リセットもそこを通す（前回の課題 1 の解決）。</dd>
+<dt>リポジトリ</dt>
+<dd>データの保存と取り出しを隠す窓口。ドメイン層が「どこに保存されるか」を知らずに済む。</dd>
+</dl>
+
+<h3>流儀は道具であって目的ではない</h3>
+<p>DDD は、規則の多い業務システムを長く保守するために生まれました。小さなプログラムに全部を入れると、層と型が増えるだけで得るものが少なくなります。</p>
+<p>前回の調査では、廻リ視には DDD を全面的には入れず、値オブジェクトと集約の考え方だけを借りると判断しました。設計の流儀は、今のコードで実際に起きている問題を解決するかどうかで選びます。</p>
+
+<p class="q">確認問題</p>
+<details><summary>Q1. ドメイン層が他の層に頼らないと何が良い？</summary><p>ルールが画面や通信の都合で変わらなくなる。Unity や通信無しでテストできる。</p></details>
+<details><summary>Q2. 「進行の周」と「区間の周」を別の型にするのは、DDD のどの道具？</summary><p>値オブジェクト。</p></details>
+<details><summary>Q3. 小さなプログラムに DDD を全部入れない理由は？</summary><p>層と型が増えて読む量と直す場所が増えるのに、解決する問題が少ないから。</p></details>
+
+<!-- ============================================================ -->
+<h2>総仕上げの課題</h2>
+<p>全部読み終えたら、次の 3 つに自分の言葉で答えてください。答えは書かずに置きます。書けたら、そのまま質問として持ってきてください。</p>
+<ol>
+<li><code>Assets/Scripts/Streaming/ScreenOsd.cs</code> の <code>Update()</code> を読み、どの行が「値を集める」「Logic に渡す」「画面に出す」かを分けて書く</li>
+<li><code>Assets/Scripts/OvrBridge/OvrControllerBridge.cs</code> の 776〜786 行を読み、この書き方が 10 章のどの原則に反しているかを説明する</li>
+<li>ResetRun を持つクラスを 19 個まとめてリセットする仕組みを、6 章のインタフェースを使って設計する（コードは書かなくてよい。クラス名と、誰が誰を呼ぶかだけ）</li>
+</ol>
+
+<p class="note">次に学ぶなら：C# の公式チュートリアル（learn.microsoft.com の C# ドキュメント）、Unity の公式マニュアルの「スクリプト」の章、Git の公式書籍「Pro Git」の 1〜3 章。</p>
+</main>
+</body>
+</html>

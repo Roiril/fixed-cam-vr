@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>CRTの調整</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#controls">調整項目へ</a>
+  <header class="page-header">
+    <h1>CRTの調整</h1>
+    <p id="status" role="status" aria-live="polite">設定を読み込んでいます…</p>
+    <button id="retry" type="button" hidden>再接続</button>
+  </header>
+  <main class="workspace">
+    <section class="preview" aria-label="画像の比較">
+      <div class="preview-toolbar">
+        <label class="view-label" for="mode">調整する画面
+          <select id="mode" disabled>
+            <option value="normal">通常画面</option>
+            <option value="doll">人形視点</option>
+            <option value="transformed">人形化後（無人＋人形）</option>
+          </select>
+        </label>
+        <label class="view-label" for="source">映す素材
+          <select id="source" disabled></select>
+        </label>
+        <fieldset id="camera-options" disabled>
+          <legend>カメラ</legend>
+          <div id="cameras" class="choices"></div>
+        </fieldset>
+        <label class="view-label" for="view">表示
+          <select id="view">
+            <option value="current">現在の調整</option>
+            <option value="compare">本編の採用値と並べる</option>
+            <option value="baseline">本編の採用値</option>
+            <option value="reference">元の参照画像</option>
+          </select>
+        </label>
+        <button id="compare-toggle" type="button" aria-pressed="false">本編の採用値と比較</button>
+        <label><input id="show-frame" type="checkbox"> 黒い外枠を表示</label>
+      </div>
+      <div id="images" class="images" data-view="current">
+        <figure id="baseline-figure" hidden>
+          <div class="image-frame">
+            <img id="baseline-image" width="1280" height="1030" alt="本編で採用したスクリーンの基準画像" hidden>
+            <p id="baseline-empty" class="image-empty">基準画像を読み込んでいます…</p>
+          </div>
+          <figcaption id="baseline-caption">本編の採用値</figcaption>
+        </figure>
+        <figure id="current-figure">
+          <div class="image-frame">
+            <img id="current-image" width="1280" height="1030" alt="現在の調整をUnityで描画した画像" hidden>
+            <p id="current-empty" class="image-empty">Unityの最初の描画を待っています…</p>
+          </div>
+          <figcaption id="current-caption">現在の調整 · 描画待ち</figcaption>
+        </figure>
+        <figure id="reference-figure" hidden>
+          <div class="image-frame">
+            <img id="reference-image" width="1280" height="1030" alt="元のCRT参照画像" hidden>
+            <p id="reference-empty" class="image-empty">参照画像を読み込んでいます…</p>
+          </div>
+          <figcaption>元の参照画像</figcaption>
+        </figure>
+      </div>
+      <div class="preview-footer">
+        <p id="render-info">画像の縦横比は固定です。</p>
+        <button id="save-png" type="button" disabled>PNGを保存</button>
+      </div>
+    </section>
+    <aside id="controls" class="adjustments" aria-label="調整項目" tabindex="-1">
+      <div class="reset-actions">
+        <button id="reset-baseline" type="button" disabled>本編の採用値に戻す</button>
+        <button id="reset-defaults" type="button" disabled>初期値に戻す</button>
+      </div>
+      <p id="base-label" class="note"></p>
+      <p id="mode-note" class="note">通常画面・人形視点・人形化後を切り替えて調整できます。</p>
+      <p id="source-note" class="note" hidden></p>
+      <div id="groups" aria-busy="true"></div>
+      <div class="file-actions">
+        <button id="save-json" type="button" disabled>設定を保存</button>
+        <button id="load-json" type="button" disabled>設定を読み込む…</button>
+        <button id="restore-previous" type="button" hidden>更新前の調整を読み込む</button>
+        <input id="json-file" type="file" accept="application/json,.json" hidden>
+      </div>
+      <p id="file-message" class="note" role="status" aria-live="polite"></p>
+      <p class="note">各画面の調整値は別々に自動保存されます。本編へは自動反映しません。</p>
+    </aside>
+  </main>
+</body>
+</html>

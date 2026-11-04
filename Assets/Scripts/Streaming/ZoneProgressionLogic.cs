@@ -12,9 +12,9 @@ namespace FixedCamVr.Streaming
     /// 演出中は周回カウントごと止まっていた。そのため <c>InsertController</c> が復帰時に
     /// 「実は Zone だった」と偽装発火して周回の辻褄を合わせていた（その偽装は本分離で廃止）。
     ///
-    /// ⚠ **所在は暫定**。段 C で <c>ShotDirector</c> を新設する際に、画面層（<see cref="CameraSwitchDirector"/>）から
-    ///   人の層へ移す。今はシーン / prefab の配線変更による実機事故（SerializeField 欠落の実績あり）を
-    ///   避けるため画面層のコンポーネントに同居させている。
+    /// ⚠ **所在は画面層**（<see cref="CameraSwitchDirector"/> に同居）。人の層へ移すために計画した
+    ///   <c>ShotDirector</c> は作られていない。シーン / prefab の配線変更による実機事故
+    ///   （SerializeField 欠落の実績あり）を避けるため、ここに置いたままにしている。
     /// </summary>
     public sealed class ZoneProgressionLogic
     {

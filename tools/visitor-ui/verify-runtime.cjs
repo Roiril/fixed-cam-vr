@@ -735,6 +735,30 @@ test('軽減音は軽減選択中だけ再生し、画面を離れると先頭�
   elements.get('settingsForm').dispatch('change', { target: off });
 });
 
+// 軽減の画面は出てから 1.2 秒は送らない（RELIEF_MIN_VIEW_MS）。画面を見た後の押下として送る。
+function submitAfterReliefShown() {
+  const savedNow = context.performance.now;
+  context.performance.now = () => savedNow() + 1300;
+  try { elements.get('settingsForm').dispatch('submit'); }
+  finally { context.performance.now = savedNow; }
+}
+
+test('軽減の画面が出てすぐの「この設定で始める」は送らない（テンポの速い二度押し）', () => {
+  state.view = 'edit';
+  state.ui = 'idle';
+  state.status = clone(validStatus);
+  state.connection = 'online';
+  runtime.setSettingsStep('language', false);
+  runtime.setSettingsStep('relief', false);
+  elements.get('settingsForm').dispatch('submit');
+  assert.equal(state.view, 'edit', '出てすぐは送らない');
+  assert.equal(state.ui, 'idle');
+  submitAfterReliefShown();
+  assert.equal(state.ui, 'sending', '画面を見た後なら送る');
+  state.ui = 'idle';
+  state.view = 'edit';
+});
+
 test('軽減音は反映確認・送信・博士説明では再生せず音量も変えない', () => {
   const preview = runtime.getReliefPreview();
   state.view = 'edit';
@@ -745,7 +769,7 @@ test('軽減音は反映確認・送信・博士説明では再生せず音量�
   runtime.setSettingsStep('relief', false);
   elements.get('settingsForm').dispatch('change', { target: radioElements.get('relief:on') });
   assert.equal(preview.paused, false);
-  elements.get('settingsForm').dispatch('submit');
+  submitAfterReliefShown();
   assert.equal(state.view, 'result');
   assert.equal(state.ui, 'sending');
   assert.equal(preview.paused, true);
@@ -803,7 +827,7 @@ test('軽減の画面から確認の段を挟まずに送り、900msの送信表
   runtime.syncReliefPreview();
   const preview = runtime.getReliefPreview();
   assert.equal(preview.paused, false);
-  elements.get('settingsForm').dispatch('submit');
+  submitAfterReliefShown();
   assert.equal(state.ui, 'sending', '「この設定で始める」でそのまま送る');
   assert.equal(state.view, 'result');
   assert.equal(elements.get('selectedLanguage').textContent, 'English', '送っている間は選んだ値を見せる');

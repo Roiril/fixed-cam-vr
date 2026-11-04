@@ -14,36 +14,10 @@ namespace FixedCamVr.Streaming
     }
 
     /// <summary>
-    /// 装置の劣化と、人形の状態に連動する画面加工（UnityEngine 非依存・dt 注入）。
-    /// <see cref="ShowRunDirector"/> が回し、<see cref="CameraFeelFx"/> がシェーダへ書く。
-    ///
-    /// 値は 2 本ある。<see cref="Progress"/> は周回で 0 → 1 へ単調に進む装置の劣化で、音が読む。
-    /// <see cref="Shown"/> は画へ出す値で、通常は確定した区間位置から <see cref="NormalMax"/> まで。
-    /// 2-C の人形視点では 1。
-    /// 3-A の CG 人形化では乱れの中で 1 へ進み、最初の読める CG フレームから報告まで 1 を保持する。
-    ///
-    /// 出どころは <c>canon/LEDGER.md</c> 0012 —
-    /// 「1 周目の最初は今くらいの解像度」「3 周目にはだいぶ粗い」
-    /// 「急に落ちるではなくばれないように、周を重ねるごとに着実に粗くなっていく」。
-    ///
-    /// <b>なぜ post ではないのか</b>: post 12 項目は shader / 卓の FS_POST / common.js / pipeline.js の
-    /// 4 箇所を手作業で同期していて機械テストが無い。そこへ時間の関数を持ち込むと必ず沈黙して食い違う
-    /// （<see cref="CameraFeelLogic"/> と同じ理由で別系統にしてある）。
-    ///
-    /// <b>落ち切るのは最後の周へ入った瞬間</b>（3 周なら 3 周目の A）。そこから先は動かない
-    /// （`canon/LEDGER.md` 0013）。最後の周は**録画が流れる周**なので、その最中に画が動き続けると
-    /// 「もう壊れ切った装置で過去を見せられている」ではなく「いま壊れつつある」になる。
-    ///
-    /// <b>段差を作らない仕掛けは 3 つ。1 つでも外すと階段になる</b>:
-    ///   1. <b>周の中も進む</b> — 目標は <c>(lap-1 + 経過/LapRefSec) / (totalLaps-1)</c> の連続量。
-    ///      周の番号だけで決めると、周の変わり目で必ず段差が出る
-    ///   2. <b>単調</b> — 下がらない。下がると「直った」に見えて、装置が壊れていくという筋が崩れる
-    ///   3. <b>上げ幅の頭打ち</b>（<see cref="MaxRisePerSec"/>）— 速く歩いて周が飛んでも滑って渡る。
-    ///      自然な進みは 1/60 ≒ 0.017/秒 なので、2 倍までは許して段差だけ潰す
-    ///
-    /// ⚠ <b><see cref="Progress"/> が進むのは本編（<see cref="ShowPhase.Run"/>）だけ。</b>
-    /// 導入と終了では保持し、体験者の交代（BeginRun）だけで 0 へ戻す。
-    /// <see cref="Shown"/> の解除は例外で、終了相へ移っても <see cref="ReleaseSec"/> の時計を進める。
+    /// 音が読む単調な装置の劣化と、主映像へ出す加工を分けて保持する。
+    /// 通常mono/粗さは採用初期値で固定。暗部ノイズだけを確定区間位置で進める。
+    /// 実際の人形視点ではmono1、人形化後は採用した人形加工を保持する。
+    /// 解除は終了相でもReleaseKを進めて初期画へ戻し、音のProgressは保持する。
     /// </summary>
     public sealed class ScreenDecayLogic
     {
@@ -87,10 +61,10 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float ReleaseSec = 0.5f;
 
-        /// <summary>通常のライブ映像で画へ出す上限。装置の劣化そのものは 1 まで進み続ける。</summary>
+        /// <summary>通常のライブ映像の固定mono。音が読む装置の劣化は1まで進み続ける。</summary>
         public const float NormalMax = 0.5f;
 
-        /// <summary>CG 人形化の乱れの中で 0.5 → 1 へ渡る目安。</summary>
+        /// <summary>CG 人形化の乱れの中で通常から人形加工へ渡る目安。</summary>
         public const float DollMorphSec = 0.5f;
 
         private float _progress;
@@ -103,11 +77,15 @@ namespace FixedCamVr.Streaming
         private float _releaseSec;
         private float _releaseFrom;
 
-        // 通常画面の加工は、滞在時間ではなく確定した区間位置で決まる。
-        private float _normalTarget;
+        // 通常monoは固定。暗部ノイズだけを確定区間位置で決める。
+        private float _normalTarget = NormalMax;
+        private float _noiseTarget = CrtSignalProfile.NoiseDark;
+        private float _releaseNoiseFrom;
+        private float _dollProfileBlend;
+        private float _releaseDollBlendFrom;
 
         // 画に出る状態は、通常位置と「いま本当に出ている素材」で決まる。
-        private float _shown;
+        private float _shown = NormalMax;
         private float _dollMorphSec;
         private bool _dollSeen;
         private bool _dollLatched;
@@ -126,29 +104,26 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float Progress => _progress;
 
-        /// <summary>
-        /// <b>画に出す進み。</b>通常は <see cref="NormalMax"/> で止まる。人形視点のカット中は 1。
-        /// CG 人形化で 1 に達した後は報告まで保持し、呪いが解けると
-        /// <see cref="ReleaseSec"/> かけて 0 へ落ちる。
-        /// 解像度（<see cref="ShownBlocks"/>）と色（<c>SetMono</c>）が<b>この 1 本を共有する</b>ので、
-        /// 両方が必ず一緒に戻る。
-        ///
-        /// ⚠ <b>片方だけ先に戻さない。</b> 色の側は露出 +0.95EV・粒 ×2.6・周辺光量・コントラストを
-        /// 派生させているので、ずらすと<b>順方向では絶対に作れない画</b>
-        /// （色があって粗い／鮮明な暗視）が数秒出る。
-        /// </summary>
+        /// <summary>通常は0.5。人形視点は1。CGは採用値へ進み、解除で0.5へ戻す。</summary>
         public float Shown => _shown;
 
-        /// <summary>確定した区間位置から求めた通常画面の加工値。テレメトリが <see cref="Shown"/> と照合する。</summary>
+        /// <summary>通常画面の固定mono。テレメトリが <see cref="Shown"/> と照合する。</summary>
         public float NormalTarget => _normalTarget;
+        public float NoiseTarget => _noiseTarget;
+        public float NoiseDark => _released
+            ? _releaseNoiseFrom + (CrtSignalProfile.NoiseDark - _releaseNoiseFrom) * ReleaseK
+            : _noiseTarget + (CrtSignalProfile.DollNoiseDark - _noiseTarget) * DollProfileBlend;
+
+        /// <summary>CG人形加工の独立した混合率。POVは通常光学値を使う。</summary>
+        public float DollProfileBlend => _shownMode == ScreenDecayShownMode.DollPov ? 0f : _released
+            ? _releaseDollBlendFrom * (1f - ReleaseK) : _dollProfileBlend;
 
         /// <summary>いまの <see cref="Shown"/> を決めた表示状態。</summary>
         public ScreenDecayShownMode ShownMode => _shownMode;
 
         /// <summary>
         /// <see cref="Shown"/> に対応する「枠を横切るブロック数」。<b>0 = 量子化しない。</b>
-        /// ⚠ しきい値の門を <see cref="Blocks"/> と同じように通す。通さないと戻り切った所で
-        /// <see cref="FineBlocks"/>（800 ＝「ほとんど無変化」）が書かれ、**厳密な無変化にならない**。
+        /// 通常と解除後は <see cref="NormalMax"/> に対応する固定値を使う。
         /// </summary>
         public float ShownBlocks => Shown <= OffThreshold ? 0f : BlocksFor(Shown);
 
@@ -178,6 +153,8 @@ namespace FixedCamVr.Streaming
         public void Release()
         {
             if (_released) return;
+            _releaseNoiseFrom = NoiseDark;
+            _releaseDollBlendFrom = DollProfileBlend;
             _released = true;
             _releaseSec = 0f;
             _releaseFrom = _shown;
@@ -206,8 +183,12 @@ namespace FixedCamVr.Streaming
             _released = false;
             _releaseSec = 0f;
             _releaseFrom = 0f;
-            _normalTarget = 0f;
-            _shown = 0f;
+            _normalTarget = NormalMax;
+            _noiseTarget = CrtSignalProfile.NoiseDark;
+            _releaseNoiseFrom = CrtSignalProfile.NoiseDark;
+            _dollProfileBlend = 0f;
+            _releaseDollBlendFrom = 0f;
+            _shown = NormalMax;
             _dollMorphSec = 0f;
             _dollSeen = false;
             _dollLatched = false;
@@ -226,12 +207,14 @@ namespace FixedCamVr.Streaming
         public void Tick(float dt, bool running, int lap, int totalLaps, float lapElapsedSec,
                          bool dollPovShowing = false, bool dollShowing = false,
                          bool dollTransitioning = false, float dollTransition01 = -1f,
-                         float normalTarget = -1f)
+                         float normalTarget = -1f, float noiseTarget = -1f)
         {
-            if (dt <= 0f) return;
+            if (dt <= 0f || float.IsNaN(dt) || float.IsInfinity(dt)) return;
             float visualDt = dt;
             if (dt > MaxStepSec) dt = MaxStepSec;
-            if (normalTarget >= 0f) _normalTarget = Clamp(normalTarget, 0f, NormalMax);
+            _normalTarget = NormalMax;
+            if (!float.IsNaN(noiseTarget) && !float.IsInfinity(noiseTarget) && noiseTarget >= 0f)
+                _noiseTarget = Clamp(noiseTarget, CrtSignalProfile.NoiseDark, CrtSignalProfile.EndNoiseDark);
 
             // 解除の進み。
             // ⚠⚠ **running を条件にしない。** 報告 → 現実の 3 秒 → 終幕 は連続した 1 つの出来事で、
@@ -240,7 +223,7 @@ namespace FixedCamVr.Streaming
             if (_released && _releaseSec < ReleaseSec)
             {
                 _releaseSec += visualDt;
-                _shown = _releaseFrom * (1f - ReleaseK);
+                _shown = _releaseFrom + (NormalMax - _releaseFrom) * ReleaseK;
                 _shownMode = ScreenDecayShownMode.Release;
             }
 
@@ -281,7 +264,8 @@ namespace FixedCamVr.Streaming
 
             if (_dollLatched)
             {
-                _shown = 1f;
+                _dollProfileBlend = 1f;
+                _shown = CrtSignalProfile.DollMono;
                 _shownMode = ScreenDecayShownMode.DollHold;
                 return;
             }
@@ -301,14 +285,16 @@ namespace FixedCamVr.Streaming
                         _dollMorphSec += dt;
                         k = Clamp01(_dollMorphSec / DollMorphSec);
                     }
-                    _shown = NormalMax + (1f - NormalMax) * Smooth(k);
+                    _dollProfileBlend = Smooth(k);
+                    _shown = NormalMax + (CrtSignalProfile.DollMono - NormalMax) * _dollProfileBlend;
                     _shownMode = ScreenDecayShownMode.DollMorph;
                     return;
                 }
 
-                // 遷移が解けた最初の読める CG フレームで 1。以後はカメラや相が変わっても保持する。
+                // 遷移が解けた最初の読める CG フレームで採用値。以後も保持する。
                 _dollLatched = true;
-                _shown = 1f;
+                _dollProfileBlend = 1f;
+                _shown = CrtSignalProfile.DollMono;
                 _shownMode = ScreenDecayShownMode.DollHold;
                 return;
             }
@@ -317,12 +303,14 @@ namespace FixedCamVr.Streaming
             if (_dollSeen)
             {
                 _dollLatched = true;
-                _shown = 1f;
+                _dollProfileBlend = 1f;
+                _shown = CrtSignalProfile.DollMono;
                 _shownMode = ScreenDecayShownMode.DollHold;
                 return;
             }
 
             _shown = normal;
+            _dollProfileBlend = 0f;
             _shownMode = ScreenDecayShownMode.Normal;
         }
 
@@ -352,18 +340,18 @@ namespace FixedCamVr.Streaming
             return Clamp01((lap - 1 + within) / span);
         }
 
-        /// <summary>
-        /// 確定した区間位置から通常画面の加工値を求める。1 周目は順路内の位置を 0..<see cref="NormalMax"/>
-        /// へ等分し、2 周目以降は <see cref="NormalMax"/>。時間と通過履歴を読まないので、逆走・飛ばし・
-        /// リセット後も同じ <paramref name="segmentLap"/> と <paramref name="camera"/> は同じ値になる。
-        /// </summary>
+        /// <summary>通常monoは位置・時間に依存せず固定。既存プレビューの入口も同じ値を返す。</summary>
         public static float NormalTargetFor(int segmentLap, int camera, int[]? courseOrder)
+            => NormalMax;
+
+        /// <summary>確定区間の位置だけで暗部ノイズを決める。3周目の頭から終端。逆走は位置へ戻す。</summary>
+        public static float NoiseTargetFor(int segmentLap, int camera, int[]? courseOrder)
         {
-            if (segmentLap < 1 || courseOrder == null || courseOrder.Length == 0) return 0f;
+            if (segmentLap < 1 || courseOrder == null || courseOrder.Length == 0) return CrtSignalProfile.NoiseDark;
             int index = Array.IndexOf(courseOrder, camera);
-            if (index < 0) return 0f;
-            if (segmentLap >= 2) return NormalMax;
-            return NormalMax * index / courseOrder.Length;
+            if (index < 0) return CrtSignalProfile.NoiseDark;
+            float position = Clamp01((float)(((double)segmentLap - 1 + (double)index / courseOrder.Length) / 2d));
+            return CrtSignalProfile.NoiseDark + (CrtSignalProfile.EndNoiseDark - CrtSignalProfile.NoiseDark) * position;
         }
 
         /// <summary>

@@ -31,7 +31,7 @@ namespace FixedCamVr.Diagnostics
         [Tooltip("ログ出力間隔（秒）。ゆっくり歩く前提なら 1.0 で十分。")]
         [SerializeField, Min(0.1f)] private float sampleInterval = 1.0f;
 
-        [Tooltip("Tracker と揃える hysteresis shrink (m)。inShrunk 列の判定に使用。")]
+        [Tooltip("Tracker が無いときだけ使う hysteresis shrink (m)。Tracker があればその実効値を読む。")]
         [SerializeField, Min(0f)] private float hysteresisShrink = 0.15f;
 
         private float _accum;
@@ -98,7 +98,7 @@ namespace FixedCamVr.Diagnostics
                 var z = zones[i];
                 if (z == null) continue;
                 bool inFull = z.Contains(p);
-                bool inShr = z.Contains(p, hysteresisShrink);
+                bool inShr = z.Contains(p, tracker != null ? tracker.HysteresisShrink : hysteresisShrink);
                 _sb.Append(' ').Append(z.Label).Append('=');
                 _sb.Append(inFull ? '1' : '0');
                 _sb.Append('/');

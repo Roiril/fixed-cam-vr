@@ -194,7 +194,7 @@ namespace FixedCamVr.Tracking.EditorTools
         }
 
         // 登録ガイダンス HUD（StatusHud）の位置・サイズ感を eye アングルで検証する追加パス（+2 枚）。
-        // HUD の見た目は本番と同一シーム（<see cref="MainDemoSceneSetup.CreateStatusHudVisual"/>）で組む。
+        // HUD の見た目は本番と同一シーム（<see cref="MainSceneBuilder.CreateStatusHudVisual"/>）で組む。
         // head = eye カメラにして、eye アングルへ置いてから SendMessage で内容解決・配置を 1 回駆動する。
         private static void RenderHudPass(GameObject root, Camera cam, RenderTexture rt, Texture2D tex,
             string outDir, CourseFrame frame, CourseRegistrationController ctrl,
@@ -202,7 +202,7 @@ namespace FixedCamVr.Tracking.EditorTools
         {
             // head = eye カメラ。CreateStatusHudVisual は本番 CreateStatusHud と同一の見た目を組む
             // （パネル 720x320・スケール 0.001・fontSize 34・distance 1.6 等）。
-            StatusHud hud = MainDemoSceneSetup.CreateStatusHudVisual(root.transform, cam.transform, ctrl, frame);
+            StatusHud hud = MainSceneBuilder.CreateStatusHudVisual(root.transform, cam.transform, ctrl, frame);
             TMP_Text? hudTmp = hud.GetComponentInChildren<TMP_Text>();
 
             // 登録モード（Capture）へ入れてガイダンスを非空にする。save:false 経路のため HasRegistration=false

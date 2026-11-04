@@ -16,7 +16,7 @@ CPU に描かせたもの。**「読めるか」は答えていない** — 1 �
 |---|---|
 | 2 秒長押し / 1 押し 1 回 / dt を 0.25s で切る | `Assets/Scripts/Input/VisitorMarkHoldLogic.cs` |
 | 文言とゲージ（10 目盛・█░） | `Assets/Scripts/Diagnostics/VisitorMarkGuidance.cs` |
-| 1 文字 0.015m・手元まで約 0.45m | `MainDemoSceneSetup.CreateVisitorMarkPanel` |
+| 1 文字 0.015m・手元まで約 0.45m | `MainSceneBuilder.CreateVisitorMarkPanel` |
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ IDLE_LINE = "(X,Yで異変を報告)"
 HOLDING_HEAD = "報告中"
 CONFIRMED_LINE = "報告しました"
 
-# ---- 見かけの大きさ（MainDemoSceneSetup.CreateVisitorMarkPanel）----
+# ---- 見かけの大きさ（MainSceneBuilder.CreateVisitorMarkPanel）----
 CHAR_M = 30 * 0.0005          # fontSize 30 × canvas scale 0.0005 = 1 文字 0.015m
 HAND_DIST_M = 0.45            # 頭から左手の面まで（腕を下げた姿勢の概算）
 CHAR_DEG = math.degrees(2 * math.atan(CHAR_M / 2 / HAND_DIST_M))

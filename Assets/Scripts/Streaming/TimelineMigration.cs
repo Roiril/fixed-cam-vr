@@ -11,7 +11,7 @@ namespace FixedCamVr.Streaming
     ///
     /// Web 側の同名変換（<c>tools/web-compositor/timeline-model.js</c> の <c>migrateV2Segment</c>）と
     /// **同じ結果**を返すこと。共有 fixture で両側を突き合わせる。
-    /// 契約の正本は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6.5。
+    /// 現行の契約は <c>.claude/rules/show-run.md</c>。設計の経緯は <c>.claude/plans/2026-07-25_shot-timeline-foundation.md</c> §6.5（当時の記録）。
     ///
     /// 純粋（UnityEngine 非依存）。
     /// </summary>

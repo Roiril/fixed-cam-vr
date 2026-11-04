@@ -178,7 +178,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 周回と異世界をシーンから読む（<c>canon/LEDGER.md</c> 0167）。
         ///
-        /// ⚠ 読むのは <b>区間の周</b>（<see cref="TimelineDirector.CurrentLap"/>）— 体験者が
+        /// ⚠ 読むのは <b>区間の周</b>（<see cref="TimelineDirector.SegmentLap"/>）— 体験者が
         /// いま立っている区間で、逆走すれば戻る。進行の周を出すと、引き返した人の画面だけが
         /// 実際より先に進む。<c>rules/show-design.md</c>「周回数は 2 つある」。
         /// ⚠ 異世界の判定は <see cref="TakeRunner.OtherworldActive"/> 1 本に寄せてある
@@ -190,7 +190,7 @@ namespace FixedCamVr.Streaming
             if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
             if (run == null) run = FindObjectOfType<ShowRunDirector>();
             if (takes == null) takes = FindObjectOfType<TakeRunner>();
-            SetShowState(timeline != null ? timeline.CurrentLap : -1,
+            SetShowState(timeline != null ? timeline.SegmentLap : -1,
                          run != null ? run.TotalLaps : ShowRunDefaults.TotalLaps,
                          takes != null && takes.OtherworldActive,
                          ShowLanguage.Current);

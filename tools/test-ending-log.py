@@ -42,6 +42,98 @@ class EndingLogTests(unittest.TestCase):
         )
         return events
 
+    def laugh_events(self, farewell):
+        events = [{"ev": "sum", "t": str(t), "_cams": [], "cg": "1/1/0.00", "sndBuilt": "1", "sndDolls": "0", "sndSwap": "0"} for t in (10, 12, 14)]
+        events.append({"ev": "sum", "t": "1", "_cams": [], "cg": "0/0/0.00", "sndDolls": "0", "sndSwap": "1"})
+        if farewell:
+            events += [{"ev": "farewell", "t": "9", "phase": "appear"}, {"ev": "farewell", "t": "15", "phase": "done"}]
+        return events
+
+    def test_unanchored_farewell_is_not_a_doll_without_light(self):
+        rows = [{"ev": "sum", "t": str(t), "_cams": [], "cg": "1/1/0.00"} for t in (10, 12, 14)]
+        text = "光だまり"
+        self.assertTrue(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(rows)))
+        rows = rows + [{"ev": "farewell", "t": "9", "phase": "anchoring", "anchored": "0"}]
+        self.assertFalse(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(rows)))
+
+    def test_silent_doll_fails_but_the_farewell_doll_may_stay_silent(self):
+        text = "笑っていない"
+        self.assertTrue(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(self.laugh_events(False))))
+        self.assertFalse(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(self.laugh_events(True))))
+
+    def farewell_events(self, phases, doll_u="0.40", vis_u="0.65", cg="1"):
+        events = self.report_events(ending="Released")
+        for e in events:
+            if e.get("ev") == "sum":
+                e["farewell"] = "1/1" if "done" in phases else "0/0"
+        events.extend({"ev": "farewell", "t": str(10 + i), "phase": ph, "cg": cg, "anchored": "1",
+                       "dollU": doll_u, "dollV": "0.30", "visU": vis_u, "visV": "0.30", "screen": "1"}
+                      for i, ph in enumerate(phases))
+        return events
+
+    def report_count_events(self, rep_n):
+        # 同じ演出 L1C1#0 へ 2 回、演出の無い所で 1 回押す → 押した回数 3 / 報告した異変 1
+        marks = [
+            {"ev": "mark", "t": "10", "n": "1", "det": "1", "take": "L1C1#0", "new": "1", "anom": "1"},
+            {"ev": "mark", "t": "11", "n": "2", "det": "1", "take": "L1C1#0", "new": "0", "anom": "1"},
+            {"ev": "mark", "t": "20", "n": "3", "det": "0", "take": "-", "new": "0", "anom": "1"},
+        ]
+        take = [{"ev": "take", "st": "begin", "id": "L1C1#0", "t": "9"}]
+        outro = [{"ev": "outro", "stage": "Report", "t": "30", "marks": "3", "anomalies": "1", "repN": rep_n}]
+        return take + marks + outro
+
+    def test_result_screen_count_matches_presses(self):
+        verdicts = self.verdicts(self.report_count_events("3"))
+        self.assertTrue(any(level == "OK" and "押した 3 回" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "結果画面に出た報告数" in text for level, text in verdicts))
+
+    def test_result_screen_showing_anomaly_count_fails(self):
+        # 画面が内部の集計（異変 1）を出していたら、押した回数 3 と食い違うので落ちる
+        verdicts = self.verdicts(self.report_count_events("1"))
+        self.assertTrue(any(level == "FAIL" and "結果画面に出た報告数（repN=1）" in text for level, text in verdicts))
+
+    def test_result_screen_not_composed_yet_is_not_judged(self):
+        verdicts = self.verdicts(self.report_count_events("-1"))
+        self.assertFalse(any(level == "FAIL" and "結果画面に出た報告数" in text for level, text in verdicts))
+
+    def test_farewell_left_of_visitor_passes(self):
+        verdicts = self.verdicts(self.farewell_events(["anchoring", "appear", "face", "turn", "retreat", "done"]))
+        self.assertTrue(any(level == "OK" and "別れの人形が体験者の左" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "別れの人形" in text for level, text in verdicts))
+
+    def test_farewell_on_the_right_fails(self):
+        verdicts = self.verdicts(self.farewell_events(["appear", "face", "done"], doll_u="0.80", vis_u="0.60"))
+        self.assertTrue(any(level == "FAIL" and "左に居ない" in text for level, text in verdicts))
+
+    def test_farewell_without_render_fails(self):
+        verdicts = self.verdicts(self.farewell_events(["appear", "face", "done"], cg="0"))
+        self.assertTrue(any(level == "FAIL" and "cg=0" in text for level, text in verdicts))
+
+    def test_released_without_farewell_fails(self):
+        events = self.report_events(ending="Released")
+        for e in events:
+            if e.get("ev") == "sum":
+                e["farewell"] = "0/0"
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "見つめる段まで届いていない" in text for level, text in verdicts))
+
+    def test_farewell_unavailable_only_warns(self):
+        verdicts = self.verdicts(self.farewell_events(["anchoring", "unavailable"]))
+        self.assertTrue(any(level == "WARN" and "出せなかった" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "別れの人形" in text for level, text in verdicts))
+
+    def test_farewell_cut_by_power_off_warns(self):
+        verdicts = self.verdicts(self.farewell_events(["appear", "face", "turn"]))
+        self.assertTrue(any(level == "WARN" and "消え切る前" in text for level, text in verdicts))
+
+    def test_trapped_does_not_ask_for_farewell(self):
+        events = self.report_events(ending="Trapped")
+        for e in events:
+            if e.get("ev") == "sum":
+                e["farewell"] = "0/0"
+        verdicts = self.verdicts(events)
+        self.assertFalse(any("別れの人形" in text for level, text in verdicts))
+
     def test_halt_by_line_without_line_event(self):
         events = [
             {"ev": "comms", "id": "Halt", "t": "1", "cline": "1", "closing": "0.5"},
@@ -156,6 +248,18 @@ class EndingLogTests(unittest.TestCase):
     def test_closing_mark_before_prompt_readable_fails(self):
         events = [
             {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "0",
+             "invasion": "1", "released": "0", "promptReady": "0"},
+            {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
+             "released": "0", "promptReady": "0", "delivery": "Possessed", "chars": "0"},
+        ]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "promptReady=0" in text
+                            for level, text in verdicts))
+
+    def test_closing_mark_reads_progress_lap_from_plap(self):
+        # 2026-11-03 から ev=mark の進行の周は plap。lap が区間の周（引き返して 3）でも締めとして扱う
+        events = [
+            {"ev": "mark", "t": "10", "plap": "4", "lap": "3", "det": "1", "res": "0",
              "invasion": "1", "released": "0", "promptReady": "0"},
             {"ev": "comms", "id": "MarkLogged", "t": "10.1", "invasion": "1",
              "released": "0", "promptReady": "0", "delivery": "Possessed", "chars": "0"},

@@ -1,5 +1,6 @@
 ---
-status: planned
+status: archived
+statusNote: planned → 2026-10-22 のハーネス整理で棚上げ。いま進めるものは canon/
 owner: shubie
 created: 2026-05-03
 slug: phase4-offscreen-cg

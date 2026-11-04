@@ -349,6 +349,11 @@ const SECTIONS = [
       await a.tapAt(nextAt.x, nextAt.y);
       await a.expect(`document.getElementById('resultView').hidden && !document.getElementById('reliefStep').hidden`,
         '「次へ」の二度押しで軽減を飛ばして送らない');
+      // テンポよく押した 3 回目は画面切替の窓（0.5 秒）の外に出る。軽減の説明を見ないまま送らないこと（2026-10-22）
+      await sleep(150);
+      await a.tapAt(nextAt.x, nextAt.y);
+      await a.expect(`document.getElementById('resultView').hidden && !document.getElementById('reliefStep').hidden`,
+        '軽減の画面が出てすぐの押下では送らない');
       await sleep(900);
       await a.shot('settings-relief', { who: '来場者', doing: '恐怖の軽減を選ぶ' });
       // 2026-10-21: テンポよく押すと「戻る」に入りかけた。進む輪は言語と軽減で同じ位置、戻るは左上に離す

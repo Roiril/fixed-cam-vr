@@ -113,7 +113,7 @@ adb 用に立てた `MSYS_NO_PATHCONV=1` が `/dev/null` の変換まで止め�
 **How to apply:**
 - host 変更は `Assets/Settings/Cameras/Phone0X.asset` を MCP `manage_scriptable_object` で書き換え（ローカル値・コミット禁止 — [[git-workflow]] のユーザー所有ファイル規約）
 - 全端末超広角可: Pixel は streamer のレンズ選択（実測 FOV ≈128°）、iPhone は IP Camera Lite の「Back Ultra Wide Camera」選択（13 Pro 実機確認済み）
-- iPhone の配信が重い（≈30Mbps）/ ウォーターマーク等の運用注意は [.claude/rules/streaming.md](../rules/streaming.md) の「iPhone（iOS）ソース」参照
+- iPhone の配信が重い（≈30Mbps）/ ウォーターマーク等の運用注意は [.claude/reference/archive/streaming-2026-10-22.md](../reference/archive/streaming-2026-10-22.md) の「iPhone（iOS）ソース」参照
 - 3 セッション前の旧 IP（Pixel=192.168.11.8 / 11.12 等）がログや asset に残っていても気にしない（DHCP 変動）
 
 
@@ -152,3 +152,7 @@ for c in st['cameras']:
     print(c['id'], round(i['tiltPitchDeg']-cal.get('pitchDeg',0),1), round(i['tiltRollDeg']-cal.get('rollDeg',0),1))
 "
 ```
+
+## 配信の受信を PC から測る（2026-10-22）
+`py -3.11 tools/stream-probe.py`（A・B・C を同時に受け、最初の 1 枚・受信 fps・間隔の p99／最大・通し番号の欠け・/health の熱を出す。`--cycles N` で休止からの立ち上がりを繰り返す）。
+2026-10-22 の実測（PC 有線・3 台同時 30 秒）: 3 台とも 29.5fps・欠け 0・最初の 1 枚 25〜92ms・200ms を越える間隔が 30 秒に 1 回（最大 294ms）。休止中でも `thermalStatus` 3〜4・`throttleStage` 2・電池 42〜43℃（充電しっぱなし）。**版は A が 0.17.0、B・C が 0.16.0 で揃っていない**。⚠ Quest は 5GHz 無線で受けるので、この数字は配信側の健全さだけを示す

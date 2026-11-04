@@ -8,7 +8,9 @@ namespace FixedCamVr.Diagnostics
     /// 終了結果を表示している間だけ流す曲。
     /// フェードインは<b>聴感が直線</b>になる形（<see cref="SoundFade.Curve.Perceptual"/>・2026-10-14）。
     /// 以前は振幅を一定速度で動かしていて（<c>MoveTowards</c>）、聴感は入りの頭で急に立ち上がり、
-    /// 後半はほとんど変わらなく聞こえた。フェードアウトは無い（表示が終わったら即停止）。
+    /// 後半はほとんど変わらなく聞こえた。
+    /// フェードアウトは終幕の閉じる進み（<c>OutroDirector.CloseLevel</c>）に同じ形で掛ける（2026-10-22）。
+    /// 面と同じ時計なので、面が消え切る瞬間に音量も 0 になる。表示が消えたら停止する。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class OutroResultMusic : MonoBehaviour
@@ -43,7 +45,7 @@ namespace FixedCamVr.Diagnostics
             _source.volume = 0f;
         }
 
-        public void SetPresented(bool wanted, float deltaTime)
+        public void SetPresented(bool wanted, float deltaTime, float closeLevel = 1f)
         {
             if (_source == null) return;
             if (!wanted || !isActiveAndEnabled)
@@ -69,8 +71,10 @@ namespace FixedCamVr.Diagnostics
             if (!float.IsNaN(deltaTime) && !float.IsInfinity(deltaTime))
             {
                 _fadeSeconds = Mathf.Min(FadeInSeconds, _fadeSeconds + Mathf.Max(0f, deltaTime));
+                float close = float.IsNaN(closeLevel) ? 1f : Mathf.Clamp01(closeLevel);
                 _source.volume = MusicGain *
-                    SoundFade.Gain(_fadeSeconds / FadeInSeconds, SoundFade.Curve.Perceptual);
+                    SoundFade.Gain(_fadeSeconds / FadeInSeconds, SoundFade.Curve.Perceptual) *
+                    SoundFade.Gain(close, SoundFade.Curve.Perceptual);
             }
         }
 

@@ -54,7 +54,10 @@ namespace FixedCamVr.Diagnostics
         public int ReportChars { get; private set; }
         public int TypedCount => 0;
         public bool TypeSfxBuilt => false;
+        /// <summary>結果画面に渡した分子（押した回数）。<see cref="Presented"/> が false のあいだは前の値が残る。</summary>
         public int CapturedReports { get; private set; }
+        /// <summary>このランの結果画面の文字を組んだか。<c>ev=outro repN=</c> はこれが true のときだけ値を出す。</summary>
+        public bool Presented => _presented;
         public int CapturedTotal { get; private set; }
         public ShowEndingOutcome CapturedOutcome { get; private set; }
         public IReadOnlyList<TMP_Text> Fields => _fields;
@@ -230,7 +233,7 @@ namespace FixedCamVr.Diagnostics
             if (_endingFrames != null)
                 SetEndingImages(_endingFrames.ReleasedShot, _endingFrames.TrappedShot);
             bool wanted = alpha > 0;
-            _music?.SetPresented(wanted, Time.unscaledDeltaTime);
+            _music?.SetPresented(wanted, Time.unscaledDeltaTime, outro != null ? outro.CloseLevel : 1);
             if (!wanted)
             {
                 _presented = false;

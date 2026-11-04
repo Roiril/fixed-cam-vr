@@ -37,7 +37,7 @@ namespace FixedCamVr.Streaming
         private ShowTimelineSegmentDef[] _segments = Array.Empty<ShowTimelineSegmentDef>();
         private bool _hasCurrent;
         private int _curLap, _curCam;
-        private float _closingAreaEnteredAt = -1f;
+        private float _closingSegmentEnteredAt = -1f;
         private bool _subscribed;
 
         private void Awake()
@@ -116,9 +116,12 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float ClosingTakeSec => takeRunner != null ? takeRunner.ClosingTakeSec : -1f;
 
-        /// <summary>最終 A の確定進入からの秒数。離脱後も進み、未到達なら負。</summary>
-        public float ClosingAreaSec => _closingAreaEnteredAt < 0f
-            ? -1f : Time.unscaledTime - _closingAreaEnteredAt;
+        /// <summary>
+        /// 最後の A の<b>区間</b>（区間の周 4・カメラ A）に確定進入してからの秒数。離脱後も進み、未到達なら負。
+        /// 体験者が実際に A の領域に居るかは別物で、<c>ShowRunDirector.NotifyClosingAreaPresence</c> が持つ。
+        /// </summary>
+        public float ClosingSegmentSec => _closingSegmentEnteredAt < 0f
+            ? -1f : Time.unscaledTime - _closingSegmentEnteredAt;
 
         /// <summary>締めの線（3 周目 A の凍結点）の id。台本に無ければ空（0233）。</summary>
         public string ClosingLineId => takeRunner != null ? takeRunner.ClosingLineId : "";
@@ -176,12 +179,12 @@ namespace FixedCamVr.Streaming
         public int CurrentCamera => _hasCurrent ? _curCam : -1;
 
         /// <summary>いま体験者が居る区間の周（1 始まり・逆走で戻る）。区間未確定なら -1。</summary>
-        public int CurrentLap => _hasCurrent ? _curLap : -1;
+        public int SegmentLap => _hasCurrent ? _curLap : -1;
 
         /// <summary>いま体験者が居る確定区間を返す。演出素材が映しているカメラではなく実位置。</summary>
         public bool TryGetCurrentSegment(out int lap, out int camera)
         {
-            lap = CurrentLap;
+            lap = SegmentLap;
             camera = CurrentCamera;
             return _hasCurrent;
         }
@@ -255,7 +258,7 @@ namespace FixedCamVr.Streaming
         public void ResetRun()
         {
             _hasCurrent = false;
-            _closingAreaEnteredAt = -1f;
+            _closingSegmentEnteredAt = -1f;
             takeRunner?.ResetRun();
         }
 
@@ -265,10 +268,11 @@ namespace FixedCamVr.Streaming
         // ⚠ 読むのは **区間の周**（lap・逆走で戻る）。進行の周（progressLap）は使わない —
         //   引き返した先は「前にそこに居たときの区間」として演出・post・BGM を貼るのが正しい
         //   （進行の周で貼ると、まだ通っていない先の周の演出が消費される）。
-        private void OnCameraEntered(int camera, int lap, int progressLap)
+        private void OnCameraEntered(SegmentEntry entry)
         {
-            if (lap == 4 && camera == 0 && _closingAreaEnteredAt < 0f)
-                _closingAreaEnteredAt = Time.unscaledTime;
+            int camera = entry.Camera, lap = entry.SegmentLap;   // 演出の区間キーは区間の周
+            if (ShowRunDefaults.IsClosingSegment(lap, camera) && _closingSegmentEnteredAt < 0f)
+                _closingSegmentEnteredAt = Time.unscaledTime;
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;
 

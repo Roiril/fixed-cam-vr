@@ -11,7 +11,7 @@ metadata:
 配信アプリ（[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) v0.13.0・2026-08-23）に
 **据える／撮る**の面を足した。設計書は
 [reports/2026-08-23_streamer-ux.html](../../reports/2026-08-23_streamer-ux.html)、
-契約は `rules/streaming.md`「配信アプリの画面」、現場の手順は
+契約は `reference/archive/streaming-2026-10-22.md`「配信アプリの画面」、現場の手順は
 [docs/onsite-checklist.md](../../docs/onsite-checklist.md) §0.2b / §0.2d。
 ここは**その 3 つに書けない罠**だけ。
 
