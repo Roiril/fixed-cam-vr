@@ -33,6 +33,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |
 | 説明資料用に体験中の画を撮る（左グリップ → 4 種類。**展示本番の機は OFF**） | [memory/experience_shots.md](.claude/memory/experience_shots.md)（取り出しは `py -3.11 tools/quest-shots.py pull`） |
 | 紹介動画を広い画角で撮る（Quest で記録 → PC で本番を流し直して mp4） | [memory/experience_replay.md](.claude/memory/experience_replay.md)（`tools/quest-xprec.py on` → `pull` → `.\tools\unity.ps1 replay`） |
+| 写実のデジタルツイン（広報の静止画・固定カメラの動画・ゲームのように見るビューア） | [tools/twin/](tools/twin/README.md) と [tools/twin-game/](tools/twin-game/README.md)。監査の点と罠は [memory/twin_cycles.md](.claude/memory/twin_cycles.md) |
 | 音を触る（BGM・効果音・環境音・遷移） | `rules/sound-design.md`（**先に読む**） |
 
 **世界観の正本は `.claude/canon/`。**

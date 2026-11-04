@@ -46,4 +46,6 @@ wide は `virtualwalk` の `observer.mp4` と同じ画角。動画は従来ど�
 合格は余裕ゼロ。残りは hero の錆（灰色のまま）・hero 右と rec 左の黒い空き・真上の HMD の板・close の腿の縁。
 監査役の推す掲載順は rec → close → low（演出の判定ではないので canon に入れない）
 
+2026-11-04 以降、写実の画は [[twin_cycles]] が持つ。ここは本物の Director を通す検証の部屋。機材の配置は `tools/twin/rig.json`（`TwinRig`）を読む。
+
 関連: [[virtual_walk]]

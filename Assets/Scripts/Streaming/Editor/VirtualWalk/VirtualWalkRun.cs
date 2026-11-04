@@ -806,7 +806,17 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             var marks = new List<VirtualRoom.CameraMark>();
             foreach (View v in views)
                 if (v.proj.m11 > 0f)
-                    marks.Add(new VirtualRoom.CameraMark(v.id, v.pos, v.rot, 2f * Mathf.Atan(1f / v.proj.m11) * Mathf.Rad2Deg));
+                {
+                    // 部屋に立てる機材は企画書の配置。実プレートへの合成は v.pos / v.rot（calib）のまま
+                    Vector3 markPos = v.pos;
+                    Quaternion markRot = v.rot;
+                    if (TwinRig.TryPose(v.id, out Vector3 rigPos, out Quaternion rigRot))
+                    {
+                        markPos = rigPos;
+                        markRot = rigRot;
+                    }
+                    marks.Add(new VirtualRoom.CameraMark(v.id, markPos, markRot, 2f * Mathf.Atan(1f / v.proj.m11) * Mathf.Rad2Deg));
+                }
             return marks;
         }
 

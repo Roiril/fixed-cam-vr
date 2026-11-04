@@ -1,0 +1,127 @@
+{
+ "cameras": {
+  "A": {
+   "mount": "tripod",
+   "text": "カメラAは三脚上",
+   "fromFig4M": 0.0
+  },
+  "B": {
+   "mount": "floor",
+   "text": "カメラBは床上",
+   "fromFig4M": 0.32
+  },
+  "C": {
+   "mount": "arm",
+   "text": "カメラCは棚に取り付けたアーム",
+   "fromFig4M": 0.0
+  }
+ },
+ "routes": {
+  "backtrack": {
+   "A": {
+    "minDistM": 0.82,
+    "ok": true
+   },
+   "B": {
+    "minDistM": 0.349,
+    "ok": true
+   },
+   "C": {
+    "minDistM": 0.252,
+    "ok": true
+   },
+   "shelf": {
+    "minDistM": 0.508,
+    "ok": true
+   },
+   "inFrame": {
+    "A": {
+     "n": 903,
+     "any": 0.831,
+     "full": 0.166
+    },
+    "B": {
+     "n": 375,
+     "any": 0.944,
+     "full": 0.717
+    },
+    "C": {
+     "n": 192,
+     "any": 1.0,
+     "full": 1.0
+    }
+   }
+  },
+  "forward": {
+   "A": {
+    "minDistM": 0.82,
+    "ok": true
+   },
+   "B": {
+    "minDistM": 0.349,
+    "ok": true
+   },
+   "C": {
+    "minDistM": 0.011,
+    "ok": true
+   },
+   "shelf": {
+    "minDistM": 0.409,
+    "ok": true
+   },
+   "inFrame": {
+    "A": {
+     "n": 548,
+     "any": 0.892,
+     "full": 0.193
+    },
+    "B": {
+     "n": 338,
+     "any": 0.994,
+     "full": 0.76
+    },
+    "C": {
+     "n": 133,
+     "any": 1.0,
+     "full": 1.0
+    }
+   }
+  },
+  "reverse": {
+   "A": {
+    "minDistM": 0.82,
+    "ok": true
+   },
+   "B": {
+    "minDistM": 0.374,
+    "ok": true
+   },
+   "C": {
+    "minDistM": 0.007,
+    "ok": true
+   },
+   "shelf": {
+    "minDistM": 0.409,
+    "ok": true
+   },
+   "inFrame": {
+    "A": {
+     "n": 541,
+     "any": 0.828,
+     "full": 0.081
+    },
+    "B": {
+     "n": 222,
+     "any": 0.905,
+     "full": 0.671
+    },
+    "C": {
+     "n": 254,
+     "any": 0.768,
+     "full": 0.654
+    }
+   }
+  }
+ },
+ "failures": []
+}

@@ -75,7 +75,7 @@
 - [redmi_tablet_install.md](redmi_tablet_install.md) — Redmi の USB インストール確認は時間で自動拒否する
 - [tablet_apk_zip_names.md](tablet_apk_zip_names.md) — Windows の aapt2 は資産名に `\` を残す。raw の名前で検査する
 - [tablet_webview_media_range.md](tablet_webview_media_range.md) — WebView への資産ストリームは先頭から返す。Range を二重に進めない
-- [flow_walk_harness.md](flow_walk_harness.md) — 起動〜回収〜リセットを押す順に通しで撮る `tools/visitor-ui/flow-walk.cjs`
+- [flow_walk_harness.md](flow_walk_harness.md) — 起動〜回収〜リセットを通しで撮る `flow-walk.cjs`
 - [l_wall_geometry.md](l_wall_geometry.md) — ⚠ L 字の壁は 2 辺とも 0.955m。`room.walls` は 09-11 に直った。等長でなければ疑う
 - [hmd_text_style.md](hmd_text_style.md) — HMD の文字の正は `HmdTextStyle`。3D TMP の 0.1 倍・`menu text-audit`
 - [hud_font_and_preview.md](hud_font_and_preview.md) — HMD 内の文言を変えたらフォント再生成。見た目は HudPreviewScreenshot
@@ -84,10 +84,11 @@
 - [onsite_experience_test.md](onsite_experience_test.md) — 実機を丸ごと検証する 4 点（[XP]・自動走行・判定・機の選択）と解析が嘘をつく経路
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
 - [twin_room.md](twin_room.md) — ツインの部屋。光は撮影時だけ・`menu twin`・霞で GPU 落ち
+- [twin_cycles.md](twin_cycles.md) — 写実のツイン（Cycles）。盲検の点と服・毛・布の罠
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
 - [experience_replay.md](experience_replay.md) — 紹介動画用。Quest で入力を記録し PC で本番を流し直して広角 mp4（`unity.ps1 replay`）。時計は実時間
-- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。いまの正は CLI と `quest-record.py --walk`
+- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。いまの正は CLI
 
 ## 機材・ビルド・ネットワーク
 - [quest_fleet_two_devices.md](quest_fleet_two_devices.md) — **α = `2G0YC1ZF890864` / β = `2G0YC1ZF7S06BW`**。機ごとに必ず食い違う 4 つ
@@ -117,4 +118,4 @@
 - [proposal_single_source.md](proposal_single_source.md) — 企画書は読まない（08-08）。骨格は実装と機械が守る
 - [harness_design.md](harness_design.md) — CLAUDE.md / .claude/ の役割分担と根拠
 
-手のアプリ（TableDuo / MyCobotHand）の memory は 2026-09-28 に table-duo-vr へ移した。
+手のアプリの memory は 2026-09-28 に table-duo-vr へ移した。

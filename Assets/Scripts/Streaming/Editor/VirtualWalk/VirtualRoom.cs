@@ -663,6 +663,20 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             }
         }
 
+        private bool _shelfBuilt;
+
+        /// <summary>C のアームを留める軽量ラック（柱 4 本と棚板 4 段）。</summary>
+        private void BuildShelf(List<CombineInstance> parts, Bounds b, List<Object> trash)
+        {
+            _shelfBuilt = true;
+            float h = b.size.y;
+            foreach (float x in new[] { b.min.x, b.max.x })
+                foreach (float z in new[] { b.min.z, b.max.z })
+                    TwinMeshes.AddBox(parts, new Vector3(x, _floorY + h * 0.5f, z), new Vector3(0.018f, h * 0.5f, 0.018f), Quaternion.identity, trash);
+            foreach (float y in new[] { 0.14f, 0.72f, 1.28f, h - 0.006f })
+                TwinMeshes.AddBox(parts, new Vector3(b.center.x, _floorY + y, b.center.z), new Vector3(b.extents.x + 0.012f, 0.006f, b.extents.z + 0.012f), Quaternion.identity, trash);
+        }
+
         private void BuildCameraMarks(GameObject root, IReadOnlyList<CameraMark> cameras, Material metal, Material phone, List<Object> trash)
         {
             Shader line = Need("FixedCamVr/Twin/Line");
@@ -711,19 +725,50 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 Part(root, "Phone screen " + m.Id, screenMesh, screen, GizmoLayer);
 
                 var stand = new List<CombineInstance>();
-                Vector3 foot = new Vector3(bodyC.x, _floorY, bodyC.z) + new Vector3(fwd.x, 0, fwd.z).normalized * 0.025f;   // 三脚はレンズ側（画面の前に脚と柱を出さない）
+                Vector3 foot = new Vector3(bodyC.x, _floorY, bodyC.z) + new Vector3(fwd.x, 0, fwd.z).normalized * 0.025f;   // 脚はレンズ側（画面の前に脚と柱を出さない）
                 float clampY = bodyC.y - 0.045f;
-                float hubY = Mathf.Min(clampY - 0.04f, 1.15f + _floorY);
-                float spread = Mathf.Clamp((hubY - _floorY) * 0.32f, 0.07f, 0.34f);
-                Vector3 hub = new Vector3(foot.x, hubY, foot.z);
-                TwinMeshes.AddCylinder(stand, hub, new Vector3(foot.x, clampY, foot.z), 0.008f, 10, trash);
-                TwinMeshes.AddBox(stand, new Vector3(foot.x, clampY + 0.006f, foot.z), new Vector3(0.02f, 0.008f, 0.02f), m.Rotation, trash);
-                // 連結は本体の裏（レンズ側）。画面側に出すと画面を横切る
-                TwinMeshes.AddBox(stand, (new Vector3(foot.x, clampY + 0.012f, foot.z) + bodyC) * 0.5f + fwd * 0.004f, new Vector3(0.006f, 0.02f, 0.006f), m.Rotation, trash);
-                for (int k = 0; k < 3; k++)
+                switch (TwinRig.Mount(m.Id))
                 {
-                    float a = (k * 120f + 30f) * Mathf.Deg2Rad;
-                    TwinMeshes.AddCylinder(stand, hub, foot + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * spread + Vector3.up * 0.004f, 0.0065f, 8, trash);
+                    case "floor":
+                    {
+                        // B: 床置きの黒い台（図 1）。足の板・背板・低い受け
+                        Vector3 flat = new Vector3(fwd.x, 0f, fwd.z).normalized;
+                        Quaternion yaw = Quaternion.LookRotation(flat, Vector3.up);
+                        Vector3 baseC = new Vector3(bodyC.x, _floorY, bodyC.z);
+                        TwinMeshes.AddBox(stand, baseC + Vector3.up * 0.003f, new Vector3(0.1f, 0.003f, 0.075f), yaw, trash);
+                        TwinMeshes.AddBox(stand, baseC + Vector3.up * 0.073f - flat * 0.043f, new Vector3(0.09f, 0.067f, 0.019f), yaw, trash);
+                        TwinMeshes.AddBox(stand, baseC + Vector3.up * 0.02f + flat * 0.026f, new Vector3(0.09f, 0.014f, 0.014f), yaw, trash);
+                        break;
+                    }
+                    case "arm":
+                    {
+                        // C: 棚の上段の前梁に留めたアーム（企画書 2 節・図 1）
+                        Bounds shelf = TwinRig.ShelfBounds;
+                        var clampAt = new Vector3(bodyC.x + 0.02f, shelf.max.y - 0.02f, shelf.min.z - 0.012f);
+                        TwinMeshes.AddBox(stand, clampAt, new Vector3(0.024f, 0.03f, 0.03f), Quaternion.identity, trash);
+                        Vector3 p1 = clampAt + new Vector3(-0.02f, 0.17f, -0.05f);
+                        TwinMeshes.AddCylinder(stand, clampAt, p1, 0.0105f, 10, trash);
+                        TwinMeshes.AddCylinder(stand, p1, bodyC + fwd * 0.012f, 0.0085f, 10, trash);
+                        if (!_shelfBuilt) BuildShelf(stand, shelf, trash);
+                        break;
+                    }
+                    default:
+                    {
+                        // A: 三脚（図 1）
+                        float hubY = Mathf.Min(clampY - 0.04f, 1.15f + _floorY);
+                        float spread = Mathf.Clamp((hubY - _floorY) * 0.32f, 0.07f, 0.34f);
+                        Vector3 hub = new Vector3(foot.x, hubY, foot.z);
+                        TwinMeshes.AddCylinder(stand, hub, new Vector3(foot.x, clampY, foot.z), 0.008f, 10, trash);
+                        TwinMeshes.AddBox(stand, new Vector3(foot.x, clampY + 0.006f, foot.z), new Vector3(0.02f, 0.008f, 0.02f), m.Rotation, trash);
+                        // 連結は本体の裏（レンズ側）。画面側に出すと画面を横切る
+                        TwinMeshes.AddBox(stand, (new Vector3(foot.x, clampY + 0.012f, foot.z) + bodyC) * 0.5f + fwd * 0.004f, new Vector3(0.006f, 0.02f, 0.006f), m.Rotation, trash);
+                        for (int k = 0; k < 3; k++)
+                        {
+                            float a = (k * 120f + 30f) * Mathf.Deg2Rad;
+                            TwinMeshes.AddCylinder(stand, hub, foot + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * spread + Vector3.up * 0.004f, 0.0065f, 8, trash);
+                        }
+                        break;
+                    }
                 }
                 Part(root, "Stand " + m.Id, TwinMeshes.Combine(stand, trash, "stand"), StandMat(metal, trash), GizmoLayer);
 
