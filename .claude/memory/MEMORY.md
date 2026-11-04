@@ -1,10 +1,10 @@
 # Project Memory Index
 
-技術の罠・実装の経緯の索引。**1 行 1 フック**（詳しくは本文）。世界観・演出の判定は `.claude/canon/`（混ぜない — `rules/canon-boundary.md`）。
-足すときは該当する領域の節へ 1 行。段落を書かない（`tools/harness-check.py` が字数と対応を見る）。
+技術の罠・実装の経緯の索引。**1 行 1 フック**。世界観・演出の判定は `.claude/canon/`（混ぜない — `rules/canon-boundary.md`）。
+足すときは該当の節へ 1 行（`tools/harness-check.py` が字数を見る）。
 
 ## いま開いている指摘
-- [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で締めの線が消え、③a より先に人形 End が成立しうること
+- [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうること
 - [fixed_cam_review_backlog.md](fixed_cam_review_backlog.md) — 06-10 レビューの残り。rules に罠を足したら既存コードもスイープする
 - [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) — 07-23 監査 11 件は修正済み。実機確認のチェックリストだけ残る
 
@@ -19,12 +19,12 @@
 - [ending_farewell_doll.md](ending_farewell_doll.md) — 帰還の別れの人形（0291）。CG 層の器を別れのモードで使う・写真は見つめる段
 - [romi_cart_esp32.md](romi_cart_esp32.md) — ⚠ 10-30 から不使用。人形の台車（ESP32・Joy-Con 2）の記録
 - [visitor_sound_reset.md](visitor_sound_reset.md) — 2 人目以降だけ壊れる型。ResetRun が本番から呼ばれていなかった
-- [unexpected_event_recovery.md](unexpected_event_recovery.md) — 休止・固まり・通信の揺れからの復帰。休止を数えない ShowClock／強制リセット
+- [unexpected_event_recovery.md](unexpected_event_recovery.md) — 休止・固まり・通信の揺れからの復帰。ShowClock／強制リセット
 - [experience_fixes_2026_09_24.md](experience_fixes_2026_09_24.md) — 3-A/4-A の素材の同梱漏れ・導入の順序・最後のお願いまで報告をロック
 
 ## タイトルと導入
 - [title_screen.md](title_screen.md) — 壁を隠すのは描画順／題字は焼いた版 1 枚／組めなければ素通しへ倒す
-- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) — 現実が割れてスクリーンになる遷移。破片は部屋の面に乗る・描画順 4900〜4903・光の粒
+- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) — 現実が割れてスクリーンになる遷移。破片は部屋の面に乗る・描画順 4900〜4903
 - [presentation_redesign.md](presentation_redesign.md) — 導入とエージェント画面の再構築（0207）。割れた実景はワールド固定
 - [sealbox_surface.md](sealbox_surface.md) — 封印の箱の地と熾。磨耗を明るく置き換えるとカビに見える／鏡面項を書かない
 - [key_visual.md](key_visual.md) — キービジュアル。照明だけ描き直させ、Sobel の相関で物が動いていないか見る
@@ -40,11 +40,11 @@
 
 ## 画面の加工・合成・目
 - [cg_compositing.md](cg_compositing.md) — CG 合成。像空間の 3 点・画角は 1 度測って固定・なじませは数値と絵を並べる
-- [cg_actor_and_layer_traps.md](cg_actor_and_layer_traps.md) — CG 人形の罠 4 つ（レイヤ外部編集の消失・EditMode スキニング固着・Remy は Generic）
+- [cg_actor_and_layer_traps.md](cg_actor_and_layer_traps.md) — CG 人形の罠 4 つ（レイヤ外部編集・EditMode スキニング固着・Remy は Generic）
 - [swap_veil_mask.md](swap_veil_mask.md) — 黒い覆いは背景差分か CG の 2 系統。差分は linear・黒い服は 29% しか覆えない
 - [screen_decay.md](screen_decay.md) — 位置と人形状態に連動する画面の劣化。人形の頭の光だまり `_ActorLight`（10-22）
-- [crt_reference_screen.md](crt_reference_screen.md) — 参照画像から直接素材化するCRT。論理16:9と物理筐体の分離、盲検比較と色収差の黒帯混入
-- [crt_reference_evaluation_scope.md](crt_reference_evaluation_scope.md) — 枠・ガラス・映像を含むユーザー条件への訂正。旧診断scoreを補正せず、manifestを正規化して照合する
+- [crt_reference_screen.md](crt_reference_screen.md) — 参照画像を素材化するCRT。論理16:9と物理筐体の分離・色収差の黒帯混入
+- [crt_reference_evaluation_scope.md](crt_reference_evaluation_scope.md) — 評価範囲は枠・ガラス・映像を含む。旧scoreを補正せず、manifestを正規化して照合する
 - [crt_processing_order_calibration.md](crt_processing_order_calibration.md) — Grade/PSF順のraw-copy校正
 - [crt_psf_mip_color_space.md](crt_psf_mip_color_space.md) — sRGB mipの光量減衰とlinear PSF校正
 - [crt_softness_glare_probe.md](crt_softness_glare_probe.md) — PSFのLOD+1とglare除去の2x2対照
@@ -52,6 +52,7 @@
 - [crt_cutout_validation.md](crt_cutout_validation.md) — 開口境界のCPU/GPU判定差。承認PNGとの照合と実alphaを使う深度の正負校正
 - [crt_reference_rule_layout.md](crt_reference_rule_layout.md) — CRT材質のreference導線とrule上限
 - [screen_effect_study_20261101.md](screen_effect_study_20261101.md) — 11-01追加加工と動画追跡の独立試作
+- [cam_c_lens_study.md](cam_c_lens_study.md) — C を cam1 の魚眼へ寄せる研究。変形だけでは届かない・`_CrtLensWarp` は逆向き
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る
@@ -81,13 +82,13 @@
 - [hud_font_and_preview.md](hud_font_and_preview.md) — HMD 内の文言を変えたらフォント再生成。見た目は HudPreviewScreenshot
 
 ## 検証・計器
-- [onsite_experience_test.md](onsite_experience_test.md) — 実機を丸ごと検証する 4 点（[XP]・自動走行・判定・機の選択）と解析が嘘をつく経路
+- [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証 4 点（[XP]・自動走行・判定・機の選択）と解析が嘘をつく経路
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
 - [twin_room.md](twin_room.md) — ツインの部屋。光は撮影時だけ・`menu twin`・霞で GPU 落ち
 - [twin_cycles.md](twin_cycles.md) — 写実のツイン。配置は写真から解く・盲検の点
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
-- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest で入力を記録し PC で本番を流し直して広角 mp4（`unity.ps1 replay`）。時計は実時間
+- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4（`unity.ps1 replay`）
 - [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。いまの正は CLI
 
 ## 機材・ビルド・ネットワーク
