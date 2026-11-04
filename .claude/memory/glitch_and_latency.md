@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9c9e9742-4d99-47bc-8b46-e7eb4d64ed2b
-  modified: 2026-08-22T08:54:31.865Z
+  modified: 2026-11-04T21:43:43.017Z
 ---
 
 2026-07-29 に企画書（学会論文版）の要求へ合わせて足したもの。契約は `.claude/reference/archive/streaming-2026-10-22.md`。
@@ -18,6 +18,8 @@ metadata:
   ここを層ごとに掛けると継ぎ目だけ無傷で残り、企画書の狙いが消える。
 - 出口は 4 つ：カットの遷移 `glitch` / カット頭の `steps[].glitch` / `control.switchGlitch` / 卓の `⚡`（`glitchEpoch`）。
   単発と持続は **max 合成**（加算だと飽和して遷移の形が潰れる）。
+
+乱れの見た目を変えるなら先に `~/.claude/reference/glitch-noise.md`（参照 7 枚の実測と再現。現行の等高 24 帯は対照と同じ配分。11-05）。
 
 **post が 12 項目になった**
 
