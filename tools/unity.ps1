@@ -162,6 +162,9 @@ $Menus = [ordered]@{
     'crt-selected'     = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateSelectedProfile'
                             Desc = 'Web採用画像と本編の初期RGB・輪郭・位置ノイズをGPUで照合する'
                             Out = $null }
+    'crt-lens'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.RenderCameraLens'
+                            Desc = 'カメラごとのレンズを本編の信号処理で A/B/C・人形・人形視点の PNG にする。-Set out=<空のフォルダ>'
+                            Out = $null }
     'crt-doll-selected' = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateDollSelectedProfile'
                             Desc = '人形化後のWeb採用値と本編の実CG・遷移・解除をGPUで照合する'
                             Out = $null }

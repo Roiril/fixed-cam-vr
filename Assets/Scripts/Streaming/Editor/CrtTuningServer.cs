@@ -371,6 +371,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 _material.SetFloat("_CrtLensWarp", p["lensWarp"]); _material.SetVector("_CrtPsfSigma", new Vector3(p["sigmaR"], p["sigmaGB"], p["sigmaGB"]));
                 _material.SetVector("_CrtOpticalConvergence", CrtReferenceScreen.OpticalConvergence * p["convergenceMultiplier"]);
                 if (adoptedRuntime) CrtSignalProfile.ApplySelected(_material);
+                CameraLensLogic.Apply(_material, camera, TakeRunner.IsDollPovCue(source));
                 if (!_processor.PrepareDisplay(_material, index)) throw new InvalidOperationException("Runtime CRT signal could not be prepared");
                 if (!adoptedRuntime)
                 {

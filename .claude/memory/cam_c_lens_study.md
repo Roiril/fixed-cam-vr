@@ -1,6 +1,6 @@
 ---
 name: cam-c-lens-study
-description: カメラ C を cam1（魚眼）の見え方へ寄せる研究。参照のレンズの解き方と、変形だけでは届かない理由。本編の _CrtLensWarp は逆向き。
+description: カメラ C の魚眼（0308 で版 3 を本編へ）。参照のレンズの解き方、変形だけでは届かない理由、実装の罠。
 metadata:
   node_type: memory
   type: project
@@ -8,7 +8,7 @@ metadata:
   modified: 2026-11-04T15:30:11.242Z
 ---
 
-0307 の研究（2026-11-05）。採否は未判定。レポートは `reports/2026-11-05_cam-c-lens-study.html`、画と数値は
+0307 の研究（2026-11-05）。0308 で本人が版 3 を選び、本編へ入れた（`CameraLensLogic`）。レポートは `reports/2026-11-05_cam-c-lens-study.html`、画と数値は
 `G:\マイドライブ\shubie\reports\2026-11-05_cam-c-lens-study\`。道具は `tools/lens-study/`（再生成の手順は README）。
 
 **分かったこと**
@@ -27,4 +27,18 @@ metadata:
 - ツインの C を全周で撮ると、スマホ本体とレンズの筒が 75 度より外を塞ぐ。`clip_start=0.04` で抜く。比較の画では C の右側の近い面も変わるので、向きの照合は左半分だけで行う
 - ツインの壁の材質は実際の部屋と違う（剥げた塗装）。外側の形と範囲を見る用途に限り、色を抜いて使う
 
-**未確認**: 本編シェーダ・人が映る場面・HMD。実装するなら C の区間だけ切り替える。合成と録画マスクは共通の論理 UV を通るので一緒に動く見込み（未検証）。
+**契約**
+
+- C の映像だけ等立体角の魚眼。`CameraLensLogic` が値の正で、`MjpegScreen.Update` が映像と同じフレームに `_CrtFisheye` を書く
+- A と B と人形視点は `_CrtFisheye` が 0 で、`_CrtLensWarp` のまま。ソースの外は黒
+- 全層が同じ座標を読むので CG・録画・覆いは一緒に曲がる — `CameraLensLogicTests`
+- 枠の論理座標で書かれる `_ActorLight` / `_ActorFocus` は、魚眼のときだけ `actorUv`（レンズ後）で比べる。`screenUv` だと人形から光だまりが離れる
+- 観測は `lensFish`。`ShowTelemetryHost` と `analyze-xp-log.py` を対で直す
+
+**本編へ入れたときの罠**
+
+- 本編の信号処理を通すのは `CRT_RUNTIME_PREGLASS` のパスだけ。`menu composite` と `plate-validation` はこの枝を通らず、レンズが映らない。画を見るのは `menu crt-lens`（`Tuner.Render` が実際の処理を通す）
+- A と B が変わっていないことは `2026-11-01_screen-profile-adoption/gpu/` の PNG と比べると分かる（差 0）
+- 区間ではなく映しているカメラで切り替える。2-C の予備動作は C の区間で B のライブを映す
+
+**未確認**: 実機・HMD・カメラの実映像での曲がり方（無人写真とツインの計算のみ）。

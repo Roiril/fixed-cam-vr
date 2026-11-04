@@ -96,6 +96,7 @@ Shader "FixedCamVr/ScreenComposite"
         [HideInInspector] _CrtPsfLinearTex("Editor linear PSF source", 2D) = "black" {}
         [HideInInspector] _CrtPsfLinearLod("Editor calibrated linear mip level", Vector) = (0, 0, 0, 0)
         [HideInInspector] _CrtLensWarp("Editor radial lens inverse warp", Float) = 0
+        [HideInInspector] _CrtFisheye("Camera fisheye: source focal, screen focal", Vector) = (0, 0, 0, 0)
         [HideInInspector] _CrtStyleProbe("Editor lens calibration probe", Float) = 0
         [HideInInspector] _CrtSignalRuntime("Selected runtime signal profile", Float) = 0
         [HideInInspector] _CrtSignalProfileSelected("Keep selected optical profile during synchronous capture", Float) = 0

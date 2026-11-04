@@ -127,6 +127,7 @@ CBUFFER_START(UnityPerMaterial)
     float _CrtPsfRespectDecayLod;
     float4 _CrtPsfLinearLod;
     float _CrtLensWarp;
+    float4 _CrtFisheye;
     float _CrtStyleProbe;
     float _CrtSignalRuntime;
     float _CrtSignalProfileSelected;
@@ -1196,10 +1197,30 @@ half4 frag(Varyings input) : SV_Target
         float2 direction = p / max(radius, 0.12);
         heartUv += envelope * 0.022 * wave * direction / float2(aspect, 1.0);
     }
+    float lensInside = 1.0;
+    float2 actorUv = screenUv;
     #if defined(CRT_STYLE_DIAGNOSTIC) || defined(CRT_RUNTIME_PREGLASS)
     // Physical lens coordinates are shared by all image layers, including monochrome.
     // Keep screenUv for the casing, glass, and device OSD. Zero is an exact identity.
-    if (abs(_CrtLensWarp) > 1e-8)
+    if (_CrtFisheye.x > 1e-5)
+    {
+        // 等立体角の魚眼（LEDGER 0308）。式は CameraLensLogic.SourceFromScreen と同じ。
+        // ソースの幅を 1 とする正方の座標で解く。横と縦を別々に正規化すると円にならない。
+        float sourceAspect = _FrameAspect * _LiveScale.x / max(_LiveScale.y, 1e-3);
+        float2 fishP = (heartUv - 0.5) / max(_LiveScale.xy, 1e-3) * float2(1.0, 1.0 / max(sourceAspect, 1e-3));
+        float fishR = length(fishP);
+        // 90 度の手前で止める。tan が裏返ると映像の反対側を読む。
+        float fishTheta = 2.0 * asin(min(fishR / (2.0 * _CrtFisheye.y), 0.7));
+        float fishGain = fishR > 1e-5 ? _CrtFisheye.x * tan(fishTheta) / fishR : _CrtFisheye.x / _CrtFisheye.y;
+        fishP *= fishGain;
+        heartUv = 0.5 + fishP * float2(1.0, sourceAspect) * _LiveScale.xy;
+        // ソースの外は引き伸ばさず黒にする。後段の粒と走査線は黒の上にも乗る。
+        float2 fishEdge = 0.5 - abs(fishP * float2(1.0, sourceAspect));
+        lensInside = smoothstep(0.0, 0.006, min(fishEdge.x, fishEdge.y));
+        // 人形の光だまりと aura は枠の論理座標で書かれているので、読む座標を人形と揃える。
+        actorUv = heartUv;
+    }
+    else if (abs(_CrtLensWarp) > 1e-8)
     {
         float2 lensP = (heartUv - 0.5) / max(_CrtLogicalCrop.xy, 1e-4) * 2.0;
         float lensRadius2 = dot(lensP, lensP) * 0.5;
@@ -1461,6 +1482,7 @@ half4 frag(Varyings input) : SV_Target
     col = col * (1.0 - aCg * s) + rgbCg * s;
     // ⚠ **ほどけは最後。** 映像も人形（実機）も代役（Editor）も、まとめてこの下に入る。
     col = lerp(col, swapCol, swapMix);
+    col *= lensInside;
 
     // ================= ここから撮像の順（レンズ → センサ → ISP）=================
     // ⚠⚠ 旧実装は **現像 → レンズ → センサ** の逆順だった。だから
@@ -1554,7 +1576,7 @@ half4 frag(Varyings input) : SV_Target
     float actorLightEv = 0.0;
     if (_ActorLight.w > 0.001 && _Mono > 0.001)
     {
-        float2 ld = (screenUv - _ActorLight.xy) * float2(_FrameAspect, 1.0);
+        float2 ld = (actorUv - _ActorLight.xy) * float2(_FrameAspect, 1.0);
         float lr = max(_ActorLight.z, 0.01);
         float lw = saturate(_Mono)
                  * (1.0 - smoothstep(lr * ACTOR_LIGHT_INNER, lr * ACTOR_LIGHT_OUTER, length(ld)));
@@ -1582,7 +1604,7 @@ half4 frag(Varyings input) : SV_Target
     float aura = 0.0;
     if (_ActorFocus.w > 0.001)
     {
-        float2 ad = (screenUv - _ActorFocus.xy) * float2(_FrameAspect, 1.0);
+        float2 ad = (actorUv - _ActorFocus.xy) * float2(_FrameAspect, 1.0);
         float ar = max(_ActorFocus.z, 0.01);
         aura = saturate(_ActorFocus.w) * (1.0 - smoothstep(ar * 0.6, ar * 2.6, length(ad)));
     }

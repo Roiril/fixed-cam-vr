@@ -519,6 +519,7 @@ namespace FixedCamVr.Streaming
             // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。
             // ⚠ 戻すときも同じ 1 本なので、解像度と色は必ず一緒に戻る。
             _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark, _decay.DollProfileBlend);
+            _feel?.SetDollPovShowing(timelineDirector != null && timelineDirector.DollPovShowing);
         }
 
         private bool AtStartZone()

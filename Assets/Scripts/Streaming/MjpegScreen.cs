@@ -75,6 +75,13 @@ namespace FixedCamVr.Streaming
 
         public bool ReferenceSurfaceActive { get; private set; }
 
+        /// <summary>人形視点の素材が出ている間はカメラのレンズを掛けない（<see cref="CameraLensLogic"/>）。</summary>
+        public bool DollPovShowing { get; set; }
+
+        /// <summary>いまマテリアルに魚眼が書かれているか。診断用。</summary>
+        public bool FisheyeApplied => _material != null && _material.HasProperty(CameraLensLogic.PropertyId)
+            && _material.GetVector(CameraLensLogic.PropertyId).x > 0f;
+
         /// <summary>物理表示だけを参照比率へ。素材/CG/マスクの論理16:9は変更しない。</summary>
         public void EnableReferenceSurface()
         {
@@ -346,6 +353,8 @@ namespace FixedCamVr.Streaming
             {
                 var active = registry!.GetActive();
                 if (active == null || _material == null) return;
+                // ⚠ 映像の差し替えと同じフレームで書く。先に切り替わると 1 コマだけ別のレンズで出る。
+                CameraLensLogic.Apply(_material, registry.GetSource(registry.ActiveIndex)?.CameraId, DollPovShowing);
                 var tex = active.Texture;
                 if (!ReferenceEquals(tex, _lastAssigned)) AssignLive(tex);
                 _sourceFrame = active.LastFrameSeq;

@@ -43,10 +43,11 @@ paths:
 - 著作・CG・マスクの論理枠は16:9。参照筐体を持つMjpegScreenは初期化時だけ物理Transformの幅を高さ×1280/1030へ変更する。素材ごとのTransform変形はしない — `CrtReferenceScreen` / `MjpegScreen.EnableReferenceSurface` / `CrtReferenceScreenTests`。
 - ソースは論理16:9へcontain-fit。参照画面は開口から論理の中央4:3へ全層共通で写すため、4:3ソースの左右の黒帯は表示しない。参照素材のない画面は従来の16:9と黒帯を保つ — `ScreenComposite.frag` / `ScreenFrameAspectTests`。
 - マスクだけは contain-fit を通らず、枠空間（16:9）の生 uv で読む。`_MaskScale` は無い — `ScreenComposite.SampleBase` / `ScreenFrameAspectTests` 〔出典: S:351-364〕
-- frag の順序: 電源断の uv → 終幕の裂け → 心音の波紋 → 低解像度化 → 乱れ uv → 素材（mip）→ CG → ほどけ → レンズ（周辺光量・心音ビネット）→ センサ（粒・色ノイズ・固定パターン）→ ISP（光だまり・露出・色温度・色かぶり・コントラスト・黒浮き・彩度・赤残し）→ 明暗曲線 → 走査線 → aura → 著作の粒 → 乱れの砂 → 管の点灯 → 信号断の砂 → 終幕の砂 → OSD → 電源断の線 → 管の縁・角 → `_SwitchDim` → `_ScreenPower` — `ScreenComposite.frag` 〔出典: S:1192-1211, S:1330-1334〕
+- frag の順序: 電源断の uv → 終幕の裂け → 心音の波紋 → カメラのレンズ → 低解像度化 → 乱れ uv → 素材（mip）→ CG → ほどけ → レンズ（周辺光量・心音ビネット）→ センサ（粒・色ノイズ・固定パターン）→ ISP（光だまり・露出・色温度・色かぶり・コントラスト・黒浮き・彩度・赤残し）→ 明暗曲線 → 走査線 → aura → 著作の粒 → 乱れの砂 → 管の点灯 → 信号断の砂 → 終幕の砂 → OSD → 電源断の線 → 管の縁・角 → `_SwitchDim` → `_ScreenPower` — `ScreenComposite.frag` 〔出典: S:1192-1211, S:1330-1334〕
 - 戻す alpha は必ず 1 — `ScreenComposite.frag` の `return half4(saturate(col), 1)` 〔出典: S:1858-1864〕
 - post は linear 空間で計算される（`contrast` の中心は linear 0.5 ＝ sRGB 0.73） — `ScreenComposite.frag` 〔出典: S:1160-1186〕
 - post 12 項目は Unity と卓の FS_POST で同じ式。項を足すときは shader / `shaders.js` / `common.js` / `pipeline.js` の 4 か所を同時に直す — `FS_POST`（tools/web-compositor） 〔出典: S:1507-1515〕
+- C の映像は魚眼（0308）— `CameraLensLogic`。契約は memory/cam_c_lens_study.md
 - 卓に無い「装置の挙動」はpostの外のuniform。従来のノイズ・露出追従・夜間・管の角などは`CameraFeelFx`、参照筐体の素材・開口・補正は`CrtReferenceScreen`、視点は`CrtScreenMesh`が書く。卓のpost12項目へ混ぜない。
 - 参照材質を触る前に`reference/crt-reference-material.md`（色空間・処理順・診断field）を読む。
 - `feel` はキーが無くても既定で効く。既定は C# / 卓 / サーバの 3 者で揃える — `CameraFeelFx.Configure` / `FEEL_DEFAULT` / `capture-server.py _default_show` 〔出典: S:1111-1112〕

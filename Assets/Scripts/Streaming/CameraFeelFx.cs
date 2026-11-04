@@ -113,6 +113,13 @@ namespace FixedCamVr.Streaming
         public float ReferenceScreenPhysicalAspect => screen != null
             ? Mathf.Abs(screen.transform.localScale.x / Mathf.Max(screen.transform.localScale.y, 1e-5f)) : 0;
         public float ReferenceScreenLogicalAspect => screen != null ? screen.ScreenAspect : 0;
+        public bool LensFisheyeApplied => screen != null && screen.FisheyeApplied;
+
+        /// <summary>人形視点が出ている間はカメラのレンズを外す。</summary>
+        public void SetDollPovShowing(bool showing)
+        {
+            if (screen != null) screen.DollPovShowing = showing;
+        }
 
         /// <summary>心音から画へ書いた波紋の強さ。診断用。</summary>
         public float AppliedHeartRipple { get; private set; }

@@ -3668,6 +3668,20 @@ def analyze(events, others, exp, warns=None):
         else:
             verdict("OK", "参照CRTの材質・物理比率・論理16:9が一致")
 
+    # C の魚眼（0308）。人形視点では外れるので、C に居た間に 1 度でも掛かったかと、
+    # C 以外で掛かっていないかを見る。
+    lens_pairs = [(fnum(e, "cam", -1.0), str(e.get("lensFish", ""))) for e in events if "lensFish" in e]
+    if lens_pairs:
+        any_effect_key = True
+        on_c = [v for cam, v in lens_pairs if cam == 2]
+        # 切替のフレームで 1 標本だけ食い違うことがあるので、2 標本以上で落とす。
+        if sum(1 for cam, v in lens_pairs if v == "1" and cam != 2) >= 2:
+            verdict("FAIL", "カメラ C 以外の映像に魚眼が掛かっている（lensFish）")
+        elif on_c and "1" not in on_c:
+            verdict("FAIL", "カメラ C を映している間に魚眼が 1 度も掛からなかった（lensFish）")
+        elif on_c:
+            verdict("OK", "魚眼はカメラ C の間だけ掛かった")
+
     decay_mat = effect_samples(events, "coarseMat")
     if decay_mat:
         any_effect_key = True

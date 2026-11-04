@@ -21,6 +21,23 @@ class ScreenProfileLogTests(unittest.TestCase):
         _, verdicts = xp.analyze([event], [], xp.expected_from_show({}))
         return [(level, text) for level, text in verdicts if "web20261101" in text]
 
+    def lens_verdicts(self, *pairs):
+        events = [dict(self.sample(t=str(i), _t=float(i)), cam=str(cam), lensFish=fish) for i, (cam, fish) in enumerate(pairs)]
+        _, verdicts = xp.analyze(events, [], xp.expected_from_show({}))
+        return [level for level, text in verdicts if "魚眼" in text]
+
+    def test_fisheye_only_on_camera_c_passes(self):
+        self.assertEqual(self.lens_verdicts((0, "0"), (2, "1"), (2, "1")), ["OK"])
+
+    def test_fisheye_missing_on_camera_c_fails(self):
+        self.assertEqual(self.lens_verdicts((2, "0"), (2, "0")), ["FAIL"])
+
+    def test_fisheye_on_other_camera_fails(self):
+        self.assertEqual(self.lens_verdicts((0, "1"), (1, "1"), (2, "1")), ["FAIL"])
+
+    def test_one_sample_at_the_switch_is_allowed(self):
+        self.assertEqual(self.lens_verdicts((2, "1"), (1, "1"), (1, "0")), ["OK"])
+
     def test_normal_material_passes(self):
         self.assertEqual([level for level, _ in self.profile_verdicts(self.sample())], ["OK"])
 

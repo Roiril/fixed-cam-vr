@@ -1311,7 +1311,8 @@ namespace FixedCamVr.Diagnostics
             if (_feel != null)
                 _sb.Append(" crtRef=").Append(_feel.ReferenceScreenReady ? 1 : 0)
                    .Append(" crtCase=").Append(_feel.ReferenceScreenPhysicalAspect.ToString("F4", System.Globalization.CultureInfo.InvariantCulture))
-                   .Append(" crtFrame=").Append(_feel.ReferenceScreenLogicalAspect.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+                   .Append(" crtFrame=").Append(_feel.ReferenceScreenLogicalAspect.ToString("F4", System.Globalization.CultureInfo.InvariantCulture))
+                   .Append(" lensFish=").Append(_feel.LensFisheyeApplied ? 1 : 0);
 
             if (_run != null)
             {
