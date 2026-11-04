@@ -1,7 +1,7 @@
 """体験者の代役。企画書の図 1 と同じ黒い長袖・黒いカーゴ・白い Quest 3。歩きは Unity の仮想体験の記録に従う。
 
 - 骨は Remy（Assets/ThirdParty/Mixamo/Remy.fbx）、動きは Walking.fbx を骨ごとの世界回転の差で移す
-- 歩幅は実際の体験者の遅さ（0.5m/s）に合わせて縮める（素材 1.6m/s をゆっくり再生すると大股のスローモーションになる）
+- 歩幅は実際の体験者の遅さ（0.25m/s。tools/walk-guide）に合わせて縮める（素材 1.6m/s をゆっくり再生すると大股のスローモーションになる）
 - 右手は手すりの近くでは手すりをたどる（企画書 2 節「右手で壁の手すりをたどりながら歩く」）
 """
 from __future__ import annotations
@@ -798,13 +798,9 @@ class Person:
         self.ik.chain_count = 2
         self.ik.use_tail = True
         self.ik.influence = 0.0
-        self.rails = []
-        for w in tc.walls_from_show(self.ctx["show"]):
-            a, b = tc.u2b(w["x1"], 1.02, w["z1"]), tc.u2b(w["x2"], 1.02, w["z2"])
-            t = (b - a).normalized()
-            n = Vector((-t.y, t.x, 0))
-            for s in (1, -1):
-                self.rails.append((a + n * s * 0.048 - t * 0.05, b + n * s * 0.048 + t * 0.1))
+        # 手すりの輪（_build_rail と同じ形）を線分で持つ
+        loop = [p + Vector((0, 0, tc.RAIL_Y)) for p in tc.rail_loop(*tc.frame_from_show(self.ctx["show"]))]
+        self.rails = [(loop[i], loop[(i + 1) % len(loop)]) for i in range(len(loop))]
 
     def _nearest_rail(self, p: Vector):
         best, bd = None, 9.0

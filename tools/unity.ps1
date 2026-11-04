@@ -128,7 +128,7 @@ $Menus = [ordered]@{
                             Set = 'show=<show.json のパス>'
                             Out = 'Assets/Screenshots/walkguide-preview/eye_5_hold.png' }
     'virtualwalk'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.VirtualWalkRun.Run'
-                            Desc = 'PC の仮想体験: 色付き NPC が壁と全身の形を考慮して歩く。route=all で順/逆/引き返しを一括検証。画像は Drive の renders/virtualwalk へ（→ tools/virtualwalk-video.py で mp4）'
+                            Desc = 'PC の仮想体験: 色付き NPC が壁と全身の形を考慮して歩く（path=rail は手すり沿いの実際の道）。route=all で順/逆/引き返しを一括検証。画像は Drive の renders/virtualwalk へ（→ tools/virtualwalk-video.py で mp4）'
                             Set = 'laps=<周回 既定 1> / dwell=<各カメラの滞在秒 既定 3> / w=<出力の幅 既定 960> / outro=0|1 / maxsec=<上限秒>'
                             Out = $null }
     'twin'             = @{ Method = 'FixedCamVr.Streaming.EditorTools.VirtualWalk.TwinStill.Run'

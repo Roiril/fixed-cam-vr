@@ -14,8 +14,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 OUT = HERE.parent / "twin-game" / "data"
-WALK = Path(r"G:\マイドライブ\shubie\renders\virtualwalk")
-SOURCE = "20261030_222807_verified-height_"
 SHOW = ROOT / "Assets" / "StreamingAssets" / "show" / "show.json"
 CYCLE_M = 0.86
 
@@ -27,7 +25,7 @@ def main() -> int:
     show = json.loads(SHOW.read_text(encoding="utf-8-sig"))
     layout = show["layout"]
     twin = {
-        "room": {"x": [-1.75, 4.6], "z": [-4.6, 1.75], "h": 3.2, "bulb": [0.02, 2.55, -0.02]},
+        "room": {"x": [rig["room"]["xMin"], 4.6], "z": [-4.6, rig["room"]["zMax"]], "h": 3.2, "bulb": [0.02, 2.55, -0.02]},
         "walls": layout["room"]["walls"],
         "grid": layout["grid"],
         "cameras": rig["cameras"],
@@ -43,7 +41,7 @@ def main() -> int:
             if i:
                 dist += math.hypot(float(r["x"]) - float(rows[i - 1]["x"]), float(r["z"]) - float(rows[i - 1]["z"]))
             table.append([float(r["t"]), float(r["x"]), float(r["z"]), float(r["bodyYaw"]), int(float(r["active"])), float(r["dim"]), float(r["glitch"]), float(r["speed"]), round(dist, 4), float(r["meshClearance"])])
-        ev_path = WALK / (SOURCE + route) / "events.tsv"
+        ev_path = HERE / "routes" / f"{route}.events.tsv"
         events = []
         if ev_path.exists():
             for e in csv.DictReader(ev_path.open(encoding="utf-8"), delimiter="\t"):

@@ -33,7 +33,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
     /// 見た目の合否は実機（<c>quest-capture</c>）で出す。
     /// ⚠ シェーダの <c>_Time.y</c>（砂嵐・点灯）は進まない。この 2 つはここでは判定しない。
     ///
-    /// 使い方: <c>.\tools\unity.ps1 menu virtualwalk -Set laps=1</c>
+    /// 使い方: <c>.\tools\unity.ps1 menu virtualwalk -Set laps=1</c>（<c>path=rail</c> で手すり沿いの実際の道を歩く）
     /// → Drive の <c>shubie/renders/virtualwalk/&lt;時刻&gt;/</c> に目線・立体・真上の連番（30fps）、
     /// frames.tsv（90Hz）・events.tsv・navigation.json（壁・体幅・境界の寸法）
     /// → <c>py -3.11 tools/virtualwalk-video.py &lt;そのフォルダ&gt;</c> で mp4 と指標。
@@ -345,7 +345,14 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 throw new ArgumentException($"radius={bodyRadius:F3}m は立位の実寸 {avatar.IdleBodyRadiusM:F3}m より小さい");
             var navigation = new WalkNavigation(layout, bodyRadius, ArgFloat("margin", 0.04f),
                                                 ArgFloat("padding", 0.5f), VisitorHeightM);
-            List<WalkRouteLogic.Waypoint> route = navigation.BuildRoute(order, laps, dwellSec, out string routeLog);
+            // path=rail は体験者が手すりをたどる実際の道。枠に寄るので、体の外形で避ける探索と余白の検査はしない
+            bool railWalk = (EditorCliArgs.Get("path") ?? "clear") == "rail";
+            float walkSpeed = railWalk ? ArgFloat("speed", 0.25f) : WalkSpeed;
+            RailFrame(layout, out Vector2 railCorner, out Vector2 railEndX, out Vector2 railEndZ, railWalk);
+            string routeLog;
+            List<WalkRouteLogic.Waypoint> route = railWalk
+                ? RailWalkRoute.Build(railCorner, railEndX, railEndZ, routeKind, laps, dwellSec, out routeLog)
+                : navigation.BuildRoute(order, laps, dwellSec, out routeLog);
             if (route.Count < 2) throw new InvalidOperationException("安全な道筋を作れない: " + routeLog);
             using var evidence = new WalkEvidence(layout, navigation, route, outDir, floorY, eyeW, twin, _trash);
             var feedLens = new TwinLens("Feed", 256, 192, TwinLens.Grade.Plan, _trash);
@@ -389,16 +396,19 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                         bodyYaw = Mathf.MoveTowardsAngle(bodyYaw, desiredYaw, 120f * dt);
                         headingError = Mathf.Abs(Mathf.DeltaAngle(bodyYaw, desiredYaw));
                         // 向き直る間は移動しない。角へ近づくと止まれる速度まで減速する。
-                        speed = headingError <= 2f
-                            ? Mathf.MoveTowards(speed, Mathf.Min(WalkSpeed, Mathf.Sqrt(2f * 0.8f * d.magnitude)), 0.8f * dt)
+                        // 手すりの道は点が密な曲線なので、途中の点では止まらない。止まるのは大きく向き直すときと終点だけ
+                        bool stopAtPoint = !railWalk || route[wp].HoldSec > 0f || wp == route.Count - 1;
+                        float speedLimit = stopAtPoint ? Mathf.Min(walkSpeed, Mathf.Sqrt(2f * 0.8f * d.magnitude)) : walkSpeed;
+                        speed = headingError <= (railWalk ? 40f : 2f)
+                            ? Mathf.MoveTowards(speed, speedLimit, 0.8f * dt)
                             : 0f;
                         float step = speed * dt;
                         if (d.magnitude <= Mathf.Max(step, 0.001f))
                         {
                             pos = route[wp].Course;
-                            hold = Mathf.Max(route[wp].HoldSec, .18f); // 足を揃えてから角を回る。
+                            hold = stopAtPoint ? Mathf.Max(route[wp].HoldSec, .18f) : 0f; // 足を揃えてから角を回る。
                             wp++;
-                            speed = 0f;
+                            if (stopAtPoint) speed = 0f;
                         }
                         else
                         {
@@ -416,7 +426,12 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                     else { routeCompleted = true; break; }
                 }
                 float traveled = Vector2.Distance(previousPos, pos);
-                if (!navigation.CanTraverse(previousPos, pos))
+                if (railWalk)
+                {
+                    if (RailWalkRoute.DistanceToFrame(pos, railCorner, railEndX, railEndZ) < RailWalkRoute.WalkOffsetM - 0.03f)
+                        throw new InvalidOperationException($"手すりの道から枠の側へ外れた t={simTime:F3}, pos={pos}");
+                }
+                else if (!navigation.CanTraverse(previousPos, pos))
                     throw new InvalidOperationException($"壁または歩行範囲に接触 t={simTime:F3}, pos={pos}");
                 distanceWalked += traveled;
                 float clearance = navigation.Clearance(pos);
@@ -424,7 +439,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 Rect bounds = navigation.Bounds;
                 float boundaryClearance = Mathf.Min(pos.x - bounds.xMin, bounds.xMax - pos.x,
                     pos.y - bounds.yMin, bounds.yMax - pos.y) - navigation.BodyRadiusM;
-                walk01 = Mathf.MoveTowards(walk01, walking ? Mathf.Clamp01(speed / WalkSpeed) : 0f, dt / 0.12f);
+                walk01 = Mathf.MoveTowards(walk01, walking ? Mathf.Clamp01(speed / walkSpeed) : 0f, dt / 0.12f);
 
                 Quaternion bodyRot = Quaternion.Euler(0f, bodyYaw, 0f);
                 npc.transform.SetPositionAndRotation(new Vector3(pos.x, floorY, pos.y), bodyRot);
@@ -432,7 +447,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 Vector2[] footprint = avatar.Footprint();
                 float meshClearance = navigation.SweptFootprintClearance(previousFootprint ?? footprint, footprint);
                 // 全身にも指定した余白を要求。さらに5mmをフレーム間の回転曲線の余裕として残す。
-                if (meshClearance < navigation.WallMarginM + .005f)
+                if (!railWalk && meshClearance < navigation.WallMarginM + .005f)
                     throw new InvalidOperationException($"全身の掃引が障害物へ接触 t={simTime:F3}, pos={pos}, clearance={meshClearance:F4}");
                 previousFootprint = footprint;
                 Vector3 bodyFwd = bodyRot * Vector3.forward;
@@ -680,7 +695,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
 
             if (!routeCompleted) throw new InvalidOperationException($"maxsec={maxSec} 内に経路が完了しなかった");
             File.WriteAllText(Path.Combine(outDir, "frames.tsv"), tsv.ToString());
-            evidence.WriteSummary(routeKind, routeLog, distanceWalked, minClearance, avatar.Description, frame);
+            evidence.WriteSummary(routeKind, routeLog, distanceWalked, minClearance, avatar.Description, frame, railWalk ? "rail" : "clear");
             File.WriteAllText(Path.Combine(outDir, "events.tsv"), "t\tkind\tdetail\n" + events);
             if (comms != null) File.WriteAllText(Path.Combine(outDir, "comms.tsv"), commsTsv.ToString());
             string plates = string.Join(" ", views.Select(v => v.id + (v.plate ? ":plate" : ":room")));
@@ -800,6 +815,21 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             mat.SetFloat("_ScanlineCount", p.ResolveScanlineCount());
         }
 
+        /// <summary>L の枠の角と 2 つの端。path=rail のときだけ必須。</summary>
+        private static void RailFrame(ShowLayoutDef layout, out Vector2 corner, out Vector2 endX, out Vector2 endZ, bool required)
+        {
+            corner = endX = endZ = Vector2.zero;
+            ShowRoomWallDef[]? walls = layout.room?.walls;
+            if (walls == null || walls.Length != 2)
+            {
+                if (required) throw new InvalidOperationException("path=rail には layout.room.walls の 2 枚が要る");
+                return;
+            }
+            corner = new Vector2(walls[0].x1, walls[0].z1);
+            endX = new Vector2(walls[0].x2, walls[0].z2);
+            endZ = new Vector2(walls[1].x2, walls[1].z2);
+        }
+
         /// <summary>固定カメラの位置と画角（デジタルツインの三脚と視野）。</summary>
         internal static List<VirtualRoom.CameraMark> Marks(IEnumerable<View> views)
         {
@@ -807,15 +837,17 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             foreach (View v in views)
                 if (v.proj.m11 > 0f)
                 {
-                    // 部屋に立てる機材は企画書の配置。実プレートへの合成は v.pos / v.rot（calib）のまま
+                    // 部屋に立てる機材は保存写真から解いた配置（tools/twin/rig.json）。実プレートへの合成は v.pos / v.rot（calib）のまま
                     Vector3 markPos = v.pos;
                     Quaternion markRot = v.rot;
-                    if (TwinRig.TryPose(v.id, out Vector3 rigPos, out Quaternion rigRot))
+                    float markFov = 2f * Mathf.Atan(1f / v.proj.m11) * Mathf.Rad2Deg;
+                    if (TwinRig.TryPose(v.id, out Vector3 rigPos, out Quaternion rigRot, out float rigVFov))
                     {
                         markPos = rigPos;
                         markRot = rigRot;
+                        markFov = rigVFov;
                     }
-                    marks.Add(new VirtualRoom.CameraMark(v.id, markPos, markRot, 2f * Mathf.Atan(1f / v.proj.m11) * Mathf.Rad2Deg));
+                    marks.Add(new VirtualRoom.CameraMark(v.id, markPos, markRot, markFov));
                 }
             return marks;
         }

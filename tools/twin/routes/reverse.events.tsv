@@ -1,0 +1,11 @@
+t	kind	detail
+1.955559	sfx_switch	dipStart
+2.033337	commit	cam=2 src=Zone
+2.177780	glitch_visual_end	dur=0.222221
+7.511146	sfx_switch	dipStart
+7.588924	commit	cam=1 src=Zone
+7.733371	glitch_visual_end	dur=0.222225
+13.855670	sfx_switch	dipStart
+13.933450	commit	cam=0 src=Zone
+14.089010	glitch_visual_end	dur=0.233336
+25.832770	outro	begin

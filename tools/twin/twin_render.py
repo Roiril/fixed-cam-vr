@@ -6,6 +6,7 @@ EXR は Logs/twin-cycles/ に置き、仕上げ（twin_post.py）を別プロセ
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import subprocess
@@ -90,7 +91,7 @@ def aim(cam, pos, target, lens=None, hfov=None, sensor=36.0, fstop=None, focus=N
         d.lens = 0.5 * sensor / math.tan(math.radians(hfov) / 2)
     elif lens is not None:
         d.lens = lens
-    d.clip_start = 0.02
+    d.clip_start = 0.003  # B のレンズは壁から 2.5cm。手前を切ると壁に穴が開く
     d.clip_end = 40
     cam.matrix_world = matrix if matrix is not None else tc.look_matrix(Vector(pos), Vector(target), roll)
     d.dof.use_dof = fstop is not None
@@ -98,6 +99,21 @@ def aim(cam, pos, target, lens=None, hfov=None, sensor=36.0, fstop=None, focus=N
         d.dof.aperture_fstop = fstop
         d.dof.focus_distance = focus if focus else (Vector(target) - Vector(pos)).length
         d.dof.aperture_blades = 7
+
+
+def route_mid_times(route="forward"):
+    """担当カメラごとに、いちばん長く担当している区間の真ん中の時刻。"""
+    rows = list(csv.DictReader((Path(__file__).resolve().parent / "routes" / f"{route}.tsv").open(encoding="utf-8"), delimiter="\t"))
+    best = {}
+    start = 0
+    for i in range(1, len(rows) + 1):
+        if i == len(rows) or rows[i]["active"] != rows[start]["active"]:
+            cam = "ABC"[int(float(rows[start]["active"]))]
+            t0, t1 = float(rows[start]["t"]), float(rows[i - 1]["t"])
+            if cam not in best or t1 - t0 > best[cam][1] - best[cam][0]:
+                best[cam] = (t0, t1)
+            start = i
+    return {c: (a + b) / 2 for c, (a, b) in best.items()}
 
 
 def shots(ctx, person_at=None):
@@ -113,12 +129,13 @@ def shots(ctx, person_at=None):
         "close": dict(pos=(head.x + 0.95, head.y - 1.0, 1.42), target=(head.x - 0.05, head.y + 0.02, 1.32), lens=50, fstop=1.8, focus=1.38),
         "rail": dict(pos=(-0.05, -0.28, 1.17), target=(-0.36, 0.4, 0.96), lens=35, fstop=2.0, focus=0.55),
         "bulb": dict(pos=(0.65, -0.5, 1.65), target=(b.x, b.y, b.z + 0.08), lens=45, fstop=2.0, focus=1.45),
-        "wall": dict(pos=(-0.95, 0.25, 1.28), target=(-1.75, 0.95, 1.05), lens=35, fstop=4.0, focus=1.0),
-        "floor": dict(pos=(-1.1, 0.9, 0.42), target=(-1.45, 1.45, 0.02), lens=35, fstop=2.8, focus=0.75),
+        "wall": dict(pos=(-0.66, 0.2, 1.28), target=(-1.06, 0.75, 1.05), lens=28, fstop=4.0, focus=0.7),
+        "floor": dict(pos=(-0.8, 0.8, 0.42), target=(-1.0, 1.2, 0.02), lens=35, fstop=2.8, focus=0.6),
     }
+    mid = route_mid_times()
     for cid, m in views.items():
         cam = next(c for c in ctx["rig"]["cameras"] if c["id"] == cid)
-        out[cid] = dict(matrix=m, hfov=cam["hfovDeg"], sensor=36.0, look="phone", aspect=4 / 3, t={"A": 3.0, "B": 13.5, "C": 22.0}[cid])
+        out[cid] = dict(matrix=m, hfov=cam["hfovDeg"], sensor=36.0, look="phone", aspect=4 / 3, t=mid[cid])
     # 機材の肩越し（図 1 の配置が読める画）
     a, bb, c = [Vector(tc.u2b(*x["pos"])) for x in ctx["rig"]["cameras"]]
     out["rigA"] = dict(pos=(a.x + 0.55, a.y - 0.75, 1.05), target=(a.x - 0.25, a.y + 0.3, 0.75), lens=35, fstop=2.2, focus=1.05)

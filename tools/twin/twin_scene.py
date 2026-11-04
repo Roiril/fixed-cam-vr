@@ -131,7 +131,8 @@ def _curtain(name, a: Vector, b: Vector, height: float, seed: int, mat):
             prof = prof + 0.1 * math.sin(2 * math.pi * f) ** 2 * math.cos(drift[k] * down * 3)
             fs = f * f * (3 - 2 * f)
             amp = amps[k] + (amps[k + 1] - amps[k]) * fs
-            wid = w if k == 0 else (cuts[k] - cuts[k - 1]) + (w - (cuts[k] - cuts[k - 1])) * min(1.0, f * 2)
+            # 隣の襞の幅へ渡す補間は f=0,1 で傾き 0（直線だと山の頂点で折れ、襞に白い縦線が出る疑いがある）
+            wid = w if k == 0 else (cuts[k] - cuts[k - 1]) + (w - (cuts[k] - cuts[k - 1])) * fs
             gather = 0.01 + 0.02 * (1 - math.exp(-down * 5.0))
             off = prof * gather * amp * (wid / 0.11) * (1 + 0.55 * down)
             # 大きなうねり。上は竿に揃い、下は手すりと床で乱れる
@@ -139,8 +140,8 @@ def _curtain(name, a: Vector, b: Vector, height: float, seed: int, mat):
             off += 0.016 * down * math.sin(u * 9.3 + ph[3] - down * 3.1)
             off += 0.006 * math.sin(v * 13 + u * 6 + ph[4]) * down
             off += 0.002 * math.sin(v * 37 + u * 21 + ph[5])
-            # 手すりの高さ（1.02m）で押されて段がつく
-            off += 0.008 * math.exp(-((z - 1.02) / 0.09) ** 2) * math.sin(u * 8 + ph[6])
+            # 手すりの高さで押されて段がつく
+            off += 0.008 * math.exp(-((z - tc.RAIL_Y) / 0.09) ** 2) * math.sin(u * 8 + ph[6])
             hem = math.exp(-z / 0.09)
             off += hem * 0.012 * math.sin(u * 14 + ph[7])
             p = a + t * u + n * off + Vector((0, 0, z))
@@ -172,7 +173,8 @@ def build_booth(show, mats):
         if sum(1 for q in ends if abs(q[0] - e[0]) + abs(q[1] - e[1]) < 0.01) >= 2:
             corner = e
     posts = []
-    H = walls[0]["h"]
+    # 実物の枠の寸法。竿（上桟）を実測の高さに置くよう、布とクリップの基準をその少し下にする
+    H = tc.FRAME_TOP - 0.015
     for i, w in enumerate(walls):
         a = u2b(w["x1"], 0, w["z1"])
         b = u2b(w["x2"], 0, w["z2"])
@@ -180,16 +182,8 @@ def build_booth(show, mats):
         cloth_h = H - 0.015
         # 枠の竿よりカーテンは内寄り。外側の手すりを避けるため少し中へ
         ob, pleats = _curtain(f"Curtain {w['id']}", a + t * 0.012, b - t * 0.004, cloth_h, 17 + i * 31, mats["curtain"])
-        # 竿・手すり（両面）: プレート A/C のとおり。手すりは柱の少し先まで出る
+        # 竿: プレート A/C のとおり
         add_cyl(f"Rod {w['id']}", a + Vector((0, 0, H + 0.015)) - t * 0.02, b + Vector((0, 0, H + 0.015)) + t * 0.02, 0.0135, pipe)
-        n = Vector((-t.y, t.x, 0))
-        for side in (1, -1):
-            # 手すりの影は襞の上でジグザグの棘になり、布の模様に見えるので落とさない
-            rail = add_cyl(f"Rail {w['id']} {side}", a + n * side * 0.088 + Vector((0, 0, 1.02)) - t * 0.05, b + n * side * 0.088 + Vector((0, 0, 1.02)) + t * 0.1, 0.0135, pipe)
-            rail.visible_shadow = False
-            for e in (a + t * 0.12, b - t * 0.04):
-                add_cyl(f"Bracket {w['id']} {side}", e + Vector((0, 0, 1.02)), e + n * side * 0.09 + Vector((0, 0, 1.02)), 0.009, pipe)
-                add_cyl(f"Joint {w['id']} {side}", e + n * side * 0.088 + Vector((0, 0, 1.02)) - t * 0.018, e + n * side * 0.088 + Vector((0, 0, 1.02)) + t * 0.018, 0.0185, pipe)
         # クリップ（プレートのカーテンクリップ）
         for k, along in enumerate(pleats):
             rk = random.Random(k * 7 + i)
@@ -202,13 +196,42 @@ def build_booth(show, mats):
         for e in (a, b):
             if not any((e - q).length < 0.01 for q in posts):
                 posts.append(e)
+    _build_rail(show, pipe)
     for e in posts:
-        add_cyl("Post", e, e + Vector((0, 0, H + 0.055)), 0.0145, pipe)
-        add_cyl("Post top", e + Vector((0, 0, H - 0.02)), e + Vector((0, 0, H + 0.06)), 0.0195, pipe)
-        add_cyl("Post mid", e + Vector((0, 0, 0.99)), e + Vector((0, 0, 1.05)), 0.0195, pipe)
+        add_cyl("Post", e, e + Vector((0, 0, H + 0.03)), 0.0145, pipe)
+        add_cyl("Post top", e + Vector((0, 0, H - 0.02)), e + Vector((0, 0, H + 0.035)), 0.0195, pipe)
+        add_cyl("Post mid", e + Vector((0, 0, tc.RAIL_Y - 0.03)), e + Vector((0, 0, tc.RAIL_Y + 0.03)), 0.0195, pipe)
         add_lathe("Post base", [(0.0, 0.021), (0.1, 0.021), (0.104, 0.018), (0.106, 0.004), (0.104, 0.0), (0, 0)], mats["base"], "Booth", center=(e.x, e.y, 0))
         add_lathe("Post boss", [(0, 0.075), (0.016, 0.075), (0.024, 0.062), (0.03, 0.03), (0.04, 0.021)], pipe, "Booth", center=(e.x, e.y, 0))
     return posts
+
+
+def _build_rail(show, pipe):
+    """手すりは L を 1 周する 1 本の輪（プレート A・B・C）。端で U に折り返し、外の角は丸く回る。脚は 2 本ずつ床まで。"""
+    corner, end_x, end_z = tc.frame_from_show(show)
+    cx, cy = corner
+    d = tc.RAIL_D
+    y = tc.RAIL_Y
+    lift = Vector((0, 0, y))
+    # 手すりの影は襞の上でジグザグの棘になり、布の模様に見えるので落とさない
+    loop = tc.add_poly_tube("Rail loop", [p + lift for p in tc.rail_loop(corner, end_x, end_z)], 0.0135, pipe, cyclic=True)
+    loop.visible_shadow = False
+    legs = [
+        (end_z[0] - d, end_z[1]), (end_z[0] + d, end_z[1]),  # w2 の端
+        (end_x[0], end_x[1] + d), (end_x[0], end_x[1] - d),  # w1 の端
+        (cx - d, cy), (cx, cy + d),  # 外の角
+        (cx + d, cy), (cx, cy - d),  # 内の角
+    ]
+    # 内の角は手すりが支柱の手前まで伸びて脚で受ける（プレート A の角に脚が 2 本見える）
+    for sx, sy in ((cx + d, cy), (cx, cy - d)):
+        stub = add_cyl("Rail stub", Vector((cx + d, cy - d, y)), Vector((sx, sy, y)), 0.0135, pipe)
+        stub.visible_shadow = False
+    for x, yy in legs:
+        add_cyl("Rail leg", (x, yy, 0.0), (x, yy, y), 0.0105, pipe)
+        add_cyl("Rail foot", (x, yy, 0.0), (x, yy, 0.075), 0.017, pipe)
+    # 外側の床を這う棒（プレート C）
+    for a, b in (((cx, cy + d), (end_x[0], end_x[1] + d)), ((cx - d, cy), (end_z[0] - d, end_z[1]))):
+        add_cyl("Floor bar", (a[0], a[1], 0.014), (b[0], b[1], 0.014), 0.009, pipe)
 
 
 def _phone(name, m: Matrix, mats, screen_mat=None):
@@ -280,7 +303,7 @@ def build_tripod(cam, mats, m: Matrix, phone_center: Vector):
 
 
 def build_cradle(cam, mats, m: Matrix, phone_center: Vector, cable_to: Vector):
-    """B: 床上の黒いスマホ台（図 1）。金属の足と箱、USB ケーブル。"""
+    """B: 床に立てかけたスマホ（プレート B）。レンズは床から 3cm で、手前に写るものは無い。支えは背中側だけ。"""
     black, mount = mats["mount"], mats["pipe"]
     fx = m.to_3x3() @ Vector((1, 0, 0))
     fy = Vector((fx.y * -1, fx.x, 0)).normalized()
@@ -288,13 +311,11 @@ def build_cradle(cam, mats, m: Matrix, phone_center: Vector, cable_to: Vector):
     o = Vector((phone_center.x, phone_center.y, 0))
     rot = Matrix((fx2, fy, (0, 0, 1))).transposed().to_4x4()
     rot.translation = o
-    plate = add_box("Cradle foot", (-0.1, -0.075, 0.0), (0.1, 0.075, 0.006), mount, "Rig", bevel=0.0015)
+    plate = add_box("Cradle foot", (-0.068, -0.075, 0.0), (0.09, -0.012, 0.006), mount, "Rig", bevel=0.0015)
     plate.matrix_world = rot
-    # 局所 +Y がレンズの向き。背板はスマホの画面側、低い受けはレンズの下（画角を塞がない）
-    back = add_box("Cradle back", (-0.09, -0.062, 0.006), (0.09, -0.024, 0.14), black, "Rig", bevel=0.003)
+    # 局所 +Y がレンズの向き。背板はスマホの画面側だけ（前に置くと床が隠れる）
+    back = add_box("Cradle back", (-0.066, -0.062, 0.006), (0.08, -0.024, 0.1), black, "Rig", bevel=0.003)
     back.matrix_world = rot
-    lip = add_box("Cradle lip", (-0.09, 0.012, 0.006), (0.09, 0.04, 0.034), black, "Rig", bevel=0.003)
-    lip.matrix_world = rot
     # スマホの短辺の USB 端子へ差した L 字のプラグから床へ
     port = phone_center + (m.to_3x3() @ Vector((0.0772, 0, 0)))
     add_cyl("Cradle plug", port, port + fx2 * 0.022, 0.0046, mats["mount"], "Rig", seg=14)
@@ -311,7 +332,7 @@ def build_shelf(rig, mats):
         # L アングルの柱（穴あきの見え方は法線の縞で）
         add_box("Rack post a", (x - 0.018, y - 0.018, 0), (x + 0.018, y - 0.0145, z1), mats["steel_x"], "Rig")
         add_box("Rack post b", (x - 0.018, y - 0.018, 0), (x - 0.0145, y + 0.018, z1), mats["steel_y"], "Rig")
-    levels = [0.14, 0.72, 1.28, 1.82]
+    levels = [0.14, 0.72, 1.28, s["max"][1] - 0.02]
     for z in levels:
         add_box(f"Rack shelf {z}", (x0 - 0.012, y0 - 0.012, z - 0.012), (x1 + 0.012, y1 + 0.012, z), steel, "Rig", bevel=0.0015)
         add_box(f"Rack beam f {z}", (x0, y0 - 0.02, z - 0.045), (x1, y0 - 0.012, z), steel, "Rig", bevel=0.001)
@@ -417,6 +438,26 @@ def build_arm(cam, mats, m: Matrix, phone_center: Vector, rig):
     add_tube("Arm cable", [port + side * 0.02, port + side * 0.05 + Vector((0.0, 0.015, -0.05)), port + side * 0.06 + Vector((0.01, 0.07, -0.13)), p1 + Vector((0.06, 0.03, -0.02)), clamp + Vector((0.07, 0.02, -0.08)), clamp + Vector((0.1, 0.1, -0.28)), clamp + Vector((0.13, 0.24, -0.5))], 0.0019, mats["cable"], "Rig")
     # クランプの締めねじとゴムのあて
     add_cyl("Arm knob", clamp + Vector((0, -0.012, -0.095)), clamp + Vector((0, -0.012, -0.07)), 0.011, mats["mount"], "Rig", seg=10)
+
+
+def build_room_parts(rig, mats):
+    """実物の部屋にあって写真に写るもの。西の壁の奥の白い柱と、棚の南面に下がる黒い布（プレート B・C）。"""
+    room = rig["room"]
+    pil = room["pillar"]
+    x0, y1 = tc.ROOM_X[0], tc.ROOM_Y[1]
+    h = tc.ROOM_H
+    faces = [
+        ("Pillar south", Vector((x0, pil["zMin"], 0)), Vector((pil["xMax"] - x0, 0, 0))),
+        ("Pillar east", Vector((pil["xMax"], pil["zMin"], 0)), Vector((0, y1 - pil["zMin"], 0))),
+    ]
+    for name, o, u in faces:
+        ob = add_mesh(name, [o, o + u, o + u + Vector((0, 0, h)), o + Vector((0, 0, h))], [(0, 1, 2, 3)], mats["wall"], "Room")
+        uv = ob.data.uv_layers.new(name="UVMap")
+        for lo, co in zip(ob.data.loops, [(0, 0), (u.length / 4.8, 0), (u.length / 4.8, 1), (0, 1)]):
+            uv.data[lo.index].uv = (co[0] + 0.37, co[1])
+    c = room["cloth"]
+    black = tm.plain("rack_cloth", (0.006, 0.006, 0.008), 0.92, 0.2)
+    _curtain("Rack cloth", Vector((c["xMin"], c["z"], 0)), Vector((c["xMax"], c["z"], 0)), c["h"], 91, black)
 
 
 def build_rig(rig, mats, screens=None):
@@ -639,6 +680,7 @@ def build_all(air_density=0.016, dust=1500, screens=None):
     build_conduit(mats)
     build_booth(show, mats)
     build_shelf(rig, mats)
+    build_room_parts(rig, mats)
     views = build_rig(rig, mats, screens)
     build_bulb(mats)
     build_debris(mats)

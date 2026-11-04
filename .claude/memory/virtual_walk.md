@@ -2,7 +2,10 @@
 name: virtual_walk
 description: 2026-10-14。PC の仮想体験（NPC が歩き、実プレート＋CG 合成の映像が実シェーダ・実 Director を通る）で演出を前後比較する手順と、その計器の限界
 metadata:
+  node_type: memory
   type: project
+  originSessionId: 4fdd3ed6-802c-433c-bc44-9a53e7a95ebc
+  modified: 2026-11-04T12:45:39.956Z
 ---
 
 2026-10-14 ユーザー指示「動作検証は、PCで仮想的な体験環境を作って、その中でNPCを歩かせてその視点から見てチェックするように」で作った。
@@ -25,6 +28,8 @@ metadata:
 足し、体半径ぶん内側へ制限する。現場の 1.8m 四方だけでは体幅を取った外回りが成立しない。
 `padding=0` はその条件で失敗することを確認する検証。会場の通行可能性を保証する値ではない。
 `radius`・`margin`・`padding` は明示設定でき、使用値を `navigation.json` に保存する。
+
+**手すりの道（`path=rail`・2026-11-04）**: `-Set path=rail` で体験者の実際の道（枠の芯から 0.24m・0.25m/s・`RailWalkRoute`）を歩く。枠に寄るので全身の余白は検査せず、枠から離れすぎと近づきすぎだけ止める。既定（`clear`）は全身の余白の検証で、実際の歩き方ではない。写実のツインの経路はこちらを取り込む（[[twin_cycles]]）。
 
 **色と歩行**: 検証専用 `VisitorAvatar` が Remy の埋込み色画像を使い、保存済みの Mixamo Walking を
 基準姿勢と骨長の差を補正して再生する。位相は移動距離から決める。本番の Remy prefab・材質は変えない。

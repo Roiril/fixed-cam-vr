@@ -641,12 +641,14 @@ def do_single(folder: Path) -> int:
         min_clearance = float(run.cols["clearance"].min())
         moving = run.cols["speed"] > .02
         max_heading = float(run.cols["headingError"][moving].max()) if moving.any() else 0.
-        if min_clearance < nav["wallMarginM"] - .002:
+        # path=rail は手すりをたどる実際の道。体の外形の余白は成り立たないので検査しない（枠からの距離は C# 側で止める）
+        rail_walk = nav.get("path") == "rail"
+        if not rail_walk and min_clearance < nav["wallMarginM"] - .002:
             raise Fail(f"壁との余白が不足: {min_clearance:.3f}m")
-        if run.cols["boundaryClearance"].min() < -.002 or max_heading > 2.1:
+        if not rail_walk and (run.cols["boundaryClearance"].min() < -.002 or max_heading > 2.1):
             raise Fail("歩行範囲からのはみ出し、または横滑りがある")
         mesh_clearance = float(run.cols["meshClearance"].min())
-        if mesh_clearance < nav["wallMarginM"] + .00499:
+        if not rail_walk and mesh_clearance < nav["wallMarginM"] + .00499:
             raise Fail(f"手足を含む全身の掃引が壁または外縁へ接触: {mesh_clearance:.4f}m")
         if not moving.any() or np.ptp(run.cols["animTime"][moving]) < .1:
             raise Fail("歩行または歩行モーションが進んでいない")
@@ -663,12 +665,12 @@ def do_single(folder: Path) -> int:
         # 90Hz の両端の誤差内でも壁を跨がないよう、最大1刻みの移動距離を余裕から引く。
         movement = np.diff(positions, axis=0)
         lengths = np.linalg.norm(movement, axis=1)
-        if independent_min - float(lengths.max()) < nav["wallMarginM"] - .01:
+        if not rail_walk and independent_min - float(lengths.max()) < nav["wallMarginM"] - .01:
             raise Fail(f"別計算でも壁に接近: 体との余白 {independent_min:.3f}m")
         real_moving = lengths > .001
         directions = np.degrees(np.arctan2(movement[:, 0], movement[:, 1]))
         errors = np.abs(delta_angle(run.cols["bodyYaw"][1:], directions))
-        if real_moving.any() and errors[real_moving].max() > 4.:
+        if not rail_walk and real_moving.any() and errors[real_moving].max() > 4.:
             raise Fail("移動ベクトルと体の向きが一致しない")
         for view in ("observer", "overhead"):
             encode_dir(run, folder / f"{view}.mp4", folder / view)

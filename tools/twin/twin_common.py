@@ -15,16 +15,63 @@ RIG = Path(__file__).resolve().parent / "rig.json"
 RENDERS = Path(os.environ.get("TWIN_RENDERS", r"G:\マイドライブ\shubie\renders\twin-cycles"))
 WORK = Path(os.environ.get("TWIN_WORK", str(ROOT / "Logs" / "twin-cycles")))
 
-# 部屋の殻は Unity の VirtualRoom と同じ（奥の 2 面は L の角の 1.25m 後ろ、天井 3.2m、電球 2.55m）
-ROOM_X = (-1.75, 4.6)
-ROOM_Y = (-4.6, 1.75)
+# 部屋の殻。奥の 2 面は実物の部屋の壁（rig.json の room）。Unity の VirtualRoom も同じ値を読む
+_ROOM = json.loads(RIG.read_text(encoding="utf-8"))["room"]
+ROOM_X = (_ROOM["xMin"], 4.6)
+ROOM_Y = (-4.6, _ROOM["zMax"])
 ROOM_H = 3.2
 BULB = Vector((0.02, -0.02, 2.55))
 GRID_HALF = 0.9
 
+# 実物の枠の実測（tools/walk-guide/build_walk_guide.py。元は Joint.blend）
+FRAME_TOP = 1.853  # 上桟の高さ
+RAIL_Y = 0.948  # 手すりの高さ
+RAIL_D = 0.08  # 枠の芯から手すりまで
+RAIL_EXT = 0.045  # 手すりが支柱より先へ出る長さ（U の芯まで）
+
 
 def u2b(x: float, y: float, z: float) -> Vector:
     return Vector((x, z, y))
+
+
+def rail_loop(corner, end_x, end_z) -> list[Vector]:
+    """手すりの輪（Blender の xy・閉路）。内側の 2 本は角で突き当たり、外側は角と 2 つの端を回る。"""
+    cx, cy = corner
+    ex = end_x[0] + RAIL_EXT
+    sy = end_z[1] - RAIL_EXT
+    d = RAIL_D
+    pts = [Vector((cx + d, cy - d, 0)), Vector((cx + d, sy, 0))]
+
+    def arc(ox, oy, start, sweep, n):
+        for i in range(1, n + 1):
+            a = start + sweep * i / n
+            pts.append(Vector((ox + d * math.cos(a), oy + d * math.sin(a), 0)))
+
+    arc(cx, sy, 0.0, -math.pi, 14)  # w2 の端
+    pts.append(Vector((cx - d, cy, 0)))
+    arc(cx, cy, math.pi, -0.5 * math.pi, 8)  # 外の角
+    pts.append(Vector((ex, cy + d, 0)))
+    arc(ex, cy, 0.5 * math.pi, -math.pi, 14)  # w1 の端
+    return pts
+
+
+def add_poly_tube(name, points, r, mat=None, coll="Room", cyclic=False) -> bpy.types.Object:
+    """折れ線をそのままなぞる管。"""
+    c = bpy.data.curves.new(name, "CURVE")
+    c.dimensions = "3D"
+    c.bevel_depth = r
+    c.bevel_resolution = 4
+    c.use_fill_caps = True
+    s = c.splines.new("POLY")
+    s.points.add(len(points) - 1)
+    for sp, p in zip(s.points, points):
+        sp.co = (p.x, p.y, p.z, 1.0)
+    s.use_cyclic_u = cyclic
+    ob = bpy.data.objects.new(name, c)
+    collection(coll).objects.link(ob)
+    if mat is not None:
+        c.materials.append(mat)
+    return ob
 
 
 def load_show() -> dict:
@@ -37,6 +84,12 @@ def load_rig() -> dict:
 
 def walls_from_show(show: dict) -> list[dict]:
     return [w for w in show["layout"]["room"]["walls"]]
+
+
+def frame_from_show(show: dict):
+    """L の枠の角・+x の端・-z の端（Blender の xy）。"""
+    w1, w2 = walls_from_show(show)
+    return (w1["x1"], w1["z1"]), (w1["x2"], w1["z2"]), (w2["x2"], w2["z2"])
 
 
 def collection(name: str) -> bpy.types.Collection:

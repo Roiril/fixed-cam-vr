@@ -93,7 +93,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
 
         [Serializable] private sealed class Summary
         {
-            public string route = "", routeLog = "", avatar = "";
+            public string route = "", routeLog = "", avatar = "", path = "clear";
             public float bodyRadiusM, wallMarginM, distanceM, minWallClearanceM;
             public Rect bounds;
             public int frames;
@@ -102,9 +102,9 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
             public ShowRoomBoxDef[] props = Array.Empty<ShowRoomBoxDef>();
         }
 
-        public void WriteSummary(string route, string log, float distance, float clearance, string avatar, int frames)
+        public void WriteSummary(string route, string log, float distance, float clearance, string avatar, int frames, string path)
         {
-            var summary = new Summary { route = route, routeLog = log, avatar = avatar,
+            var summary = new Summary { route = route, routeLog = log, avatar = avatar, path = path,
                 bodyRadiusM = _navigation.BodyRadiusM, wallMarginM = _navigation.WallMarginM,
                 bounds = _navigation.Bounds, distanceM = distance, minWallClearanceM = clearance, frames = frames,
                 waypoints = _route.ConvertAll(w => w.Course).ToArray(),

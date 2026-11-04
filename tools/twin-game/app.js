@@ -193,7 +193,7 @@
     const ul = $("rigcheck"); ul.innerHTML = "";
     if (S.check) {
       for (const [k, c] of Object.entries(S.check.cameras)) {
-        const li = document.createElement("li"); li.textContent = `${k}: ${c.text}（図4 と ${c.fromFig4M.toFixed(2)}m）`; ul.appendChild(li);
+        const li = document.createElement("li"); li.textContent = `${k}: ${c.text}（写真との差 ${c.plateRmsPx.toFixed(1)}px）`; ul.appendChild(li);
       }
       const rr = S.check.routes[S.routeName];
       if (rr) for (const k of ["A", "B", "C"]) {

@@ -26,6 +26,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
         public const int GizmoLayer = 27;       // ツインの注記と機材（固定カメラの代役の画には写さない）
         private const string AssetDir = "Assets/Editor/VirtualWalkAssets/Twin/";
         private const float RoomH = 3.2f;
+        private const float RailY = 0.948f;   // 実物の手すりの高さ（tools/walk-guide の実測）
 
         public readonly struct CameraMark
         {
@@ -173,14 +174,10 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 if (ends.FindAll(q => (q - e).sqrMagnitude < 0.01f).Count >= 2) corner = e;
 
             // ---- 部屋の殻（内向きの面。隅と床際に遮蔽を焼く） ----
-            // 奥（L の角の側）はカーテンの 1.2m 後ろ。歩行範囲（床 + 0.5m）と固定カメラより外。開いた側は撮る場所を残す
+            // 奥（L の角の側）は実物の部屋の壁（tools/twin/rig.json の room）。開いた側は撮る場所を残す
             float sx = corner.x < 0f ? -1f : 1f, sz = corner.y < 0f ? -1f : 1f;
-            float backX = Mathf.Max(Mathf.Abs(corner.x) + 1.2f, 1.75f), backZ = Mathf.Max(Mathf.Abs(corner.y) + 1.2f, 1.75f);
-            foreach (CameraMark m in cameras)
-            {
-                if (Mathf.Sign(m.Position.x) == sx) backX = Mathf.Max(backX, Mathf.Abs(m.Position.x) + 0.35f);
-                if (Mathf.Sign(m.Position.z) == sz) backZ = Mathf.Max(backZ, Mathf.Abs(m.Position.z) + 0.35f);
-            }
+            Vector2 roomBack = TwinRig.RoomBack;
+            float backX = Mathf.Abs(roomBack.x), backZ = Mathf.Abs(roomBack.y);
             const float Open = 4.6f;
             float x0 = sx < 0f ? -backX : -Open, x1 = sx < 0f ? Open : backX;
             float z0 = sz < 0f ? -backZ : -Open, z1 = sz < 0f ? Open : backZ;
@@ -303,7 +300,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                 if (Vector2.Dot(n, -(a + b) * 0.5f) < 0f) n = -n;    // 枠の横棒はブースの内側
                 const float Off = 0.045f;
                 TwinMeshes.AddCylinder(frame, P(a - t * 0.02f, floorY + w.h + 0.015f), P(b + t * 0.02f, floorY + w.h + 0.015f), 0.015f, 14, trash);
-                TwinMeshes.AddCylinder(frame, P(a + n * Off, floorY + 1.02f), P(b + n * Off, floorY + 1.02f), 0.015f, 14, trash);
+                TwinMeshes.AddCylinder(frame, P(a + n * Off, floorY + RailY), P(b + n * Off, floorY + RailY), 0.015f, 14, trash);
                 // カーテンを竿に吊るリングとフック（約 10cm おき）
                 foreach (float u in hooks)
                 {
@@ -316,7 +313,7 @@ namespace FixedCamVr.Streaming.EditorTools.VirtualWalk
                                   Quaternion.Euler(0f, Mathf.Atan2(t.x, t.y) * Mathf.Rad2Deg, 0f), trash);
                 // 中段の横棒を柱へ留める継手
                 foreach (Vector2 e in new[] { a, b })
-                    TwinMeshes.AddCylinder(frame, P(e, floorY + 1.02f), P(e + n * (Off + 0.02f), floorY + 1.02f), 0.019f, 14, trash);
+                    TwinMeshes.AddCylinder(frame, P(e, floorY + RailY), P(e + n * (Off + 0.02f), floorY + RailY), 0.019f, 14, trash);
                 foreach (Vector2 e in new[] { a, b })
                     if (!posts.Exists(q => (q - e).sqrMagnitude < 0.01f)) posts.Add(e);
                 focus += (a + b) * 0.5f;
