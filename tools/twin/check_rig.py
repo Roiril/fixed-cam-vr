@@ -89,7 +89,7 @@ def main() -> int:
             fail.append(f"{path.stem}: 棚への離隔 {dshelf:.3f}m（要 0.39m）")
         # 担当カメラの画に入っている割合
         cams = RIG["cameras"]
-        vis = {"A": [0, 0, 0], "B": [0, 0, 0], "C": [0, 0, 0]}
+        vis = {"A": [0, 0, 0, 0], "B": [0, 0, 0, 0], "C": [0, 0, 0, 0]}
         for r in rows:
             cid = "ABC"[int(float(r["active"]))]
             cam = next(c for c in cams if c["id"] == cid)
@@ -101,7 +101,8 @@ def main() -> int:
             v[0] += 1
             v[1] += 1 if (head or body) else 0
             v[2] += 1 if (head and feet) else 0
-        res["inFrame"] = {k: {"n": v[0], "any": round(v[1] / max(v[0], 1), 3), "full": round(v[2] / max(v[0], 1), 3)} for k, v in vis.items()}
+            v[3] += 1 if head else 0
+        res["inFrame"] = {k: {"n": v[0], "any": round(v[1] / max(v[0], 1), 3), "full": round(v[2] / max(v[0], 1), 3), "head": round(v[3] / max(v[0], 1), 3)} for k, v in vis.items()}
         for k, v in res["inFrame"].items():
             if v["n"] and v["any"] < 0.75:
                 fail.append(f"{path.stem}: {k} の担当区間で人が映る割合 {v['any']:.2f}")
