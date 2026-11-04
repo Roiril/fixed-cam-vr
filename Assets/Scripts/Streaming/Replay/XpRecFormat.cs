@@ -147,6 +147,7 @@ namespace FixedCamVr.Streaming.Replay
         public int[] cameraFrames = Array.Empty<int>();
         public long bytes;
         public bool capped;                  // 容量の上限に当たって映像を落としたか
+        public string calibOverride = "";    // ツイン走行の calib の差し替え（XpReplay.CalibOverrideJson。実機の記録では空）
         public string registrationJson = ""; // 記録の頭の registration.json の本文（無ければ空）
     }
 }

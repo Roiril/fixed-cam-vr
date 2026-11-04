@@ -28,10 +28,23 @@ namespace FixedCamVr.Streaming.Replay
         /// <summary>再生中のカメラ映像の出どころ。null なら MJPEG を受ける。</summary>
         public static IFrameFeed? Feed { get; private set; }
 
-        public static void Begin(Func<RawInput> input, IFrameFeed feed)
+        /// <summary>再生中でも体験の記録を録るか（ツイン走行は走った結果を記録に残し、同じ再生で撮る）。</summary>
+        public static bool RecordWhileActive { get; private set; }
+
+        /// <summary>
+        /// この走行に限り show.json の calib を置き換える JSON（<see cref="CalibOverrideFile"/>）。空なら本番の calib のまま。
+        /// ツインの映像は rig.json の姿勢で撮れているので、CG 人形もその姿勢で描く。ディスクの show.json は変えない。
+        /// </summary>
+        public static string CalibOverrideJson { get; private set; } = "";
+
+        public static bool CalibOverridden => CalibOverrideJson.Length > 0;
+
+        public static void Begin(Func<RawInput> input, IFrameFeed feed, bool recordWhileActive = false, string calibOverrideJson = "")
         {
             Override = input;
             Feed = feed;
+            RecordWhileActive = recordWhileActive;
+            CalibOverrideJson = calibOverrideJson ?? "";
             Active = true;
         }
 
@@ -40,6 +53,34 @@ namespace FixedCamVr.Streaming.Replay
             Active = false;
             Override = null;
             Feed = null;
+            RecordWhileActive = false;
+            CalibOverrideJson = "";
+        }
+
+        [Serializable]
+        private sealed class CalibOverrideEntry
+        {
+            public string id = "";
+            public ShowCameraCalibDef calib = new();
+        }
+
+        [Serializable]
+        private sealed class CalibOverrideFile
+        {
+            public CalibOverrideEntry[] cams = Array.Empty<CalibOverrideEntry>();
+        }
+
+        /// <summary>
+        /// カメラ id の差し替え先を引く。読み込んだ show.json へ当てるのは
+        /// <c>ShowControlClient.ApplyTwinCalib</c>（照合の後・適用の前の 1 か所）。無ければ null。
+        /// </summary>
+        public static ShowCameraCalibDef? CalibOverrideFor(string id)
+        {
+            if (!CalibOverridden) return null;
+            CalibOverrideFile file = JsonUtility.FromJson<CalibOverrideFile>(CalibOverrideJson) ?? new CalibOverrideFile();
+            foreach (CalibOverrideEntry e in file.cams)
+                if (e.id == id) return e.calib;
+            return null;
         }
 
         /// <summary>カメラ 1 台ぶんの映像の出どころ。</summary>

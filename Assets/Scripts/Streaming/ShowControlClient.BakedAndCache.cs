@@ -42,6 +42,7 @@ namespace FixedCamVr.Streaming
                 }
                 var state = JsonUtility.FromJson<ShowState>(configJson);
                 if (state == null) throw new InvalidDataException("show.json が空");
+                ApplyTwinCalib(state);
                 ApplyBaked(state);
                 if (BakedOnly)
                 {
@@ -51,6 +52,22 @@ namespace FixedCamVr.Streaming
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception e) { ContentId = ""; ContentVerified = false; Debug.LogError($"[ShowControl] 焼き込み show.json 読込失敗: {e.Message}"); }
+        }
+
+        // ツイン走行だけ、calib を映像を撮った配置へ差し替える（Replay.XpReplay.CalibOverrideJson）。lensId は本番の値を残す。
+        private static void ApplyTwinCalib(ShowState state)
+        {
+            if (!Replay.XpReplay.CalibOverridden || state.cameras == null) return;
+            int applied = 0;
+            foreach (CameraDef? cam in state.cameras)
+            {
+                ShowCameraCalibDef? calib = cam != null ? Replay.XpReplay.CalibOverrideFor(cam.id) : null;
+                if (cam == null || calib == null) continue;
+                calib.lensId = cam.calib?.lensId ?? "";
+                cam.calib = calib;
+                applied++;
+            }
+            Debug.Log($"[Replay] calib をツインの配置へ差し替えた（{applied} 台）");
         }
 
         // 焼き込み値をフィールドへ流し込む（最下位優先。接続反映・イベント発火は InitializeAsync が一括で行う）。

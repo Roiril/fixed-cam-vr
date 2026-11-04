@@ -12,6 +12,7 @@ description: 廻リ視を頭から終わりまで通して見て、体験全体�
 ## 1. 通しの画を作る（安い順）
 
 ```powershell
+# 本番の Main シーンをそのまま通すなら py -3.11 tools/twin-verify.py（memory/twin_verify.md）
 .\tools\unity.ps1 menu virtualwalk -Set laps=4,maxsec=300,tag=review
 ```
 

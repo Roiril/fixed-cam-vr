@@ -33,6 +33,14 @@ class ScreenProfileLogTests(unittest.TestCase):
     def test_wrong_blocks_material_fails(self):
         self.assertEqual([level for level, _ in self.profile_verdicts(self.sample(blocksMat="0"))], ["FAIL"])
 
+    def test_rounded_shown_value_during_release_passes(self):
+        event = self.sample(coarseMode="Release", coarseShown=".53", monoMat=".534", blocksMat="515.1")
+        self.assertNotIn("FAIL", [level for level, _ in self.profile_verdicts(event)])
+
+    def test_blocks_are_compared_with_the_material_mono(self):
+        event = self.sample(coarseShown=".53", monoMat=".534", blocksMat="530")
+        self.assertEqual([level for level, _ in self.profile_verdicts(event)], ["FAIL"])
+
     def test_nonfinite_material_fails(self):
         self.assertEqual([level for level, _ in self.profile_verdicts(self.sample(monoMat="NaN"))], ["FAIL"])
 

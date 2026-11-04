@@ -42,6 +42,25 @@ class EndingLogTests(unittest.TestCase):
         )
         return events
 
+    def laugh_events(self, farewell):
+        events = [{"ev": "sum", "t": str(t), "_cams": [], "cg": "1/1/0.00", "sndBuilt": "1", "sndDolls": "0", "sndSwap": "0"} for t in (10, 12, 14)]
+        events.append({"ev": "sum", "t": "1", "_cams": [], "cg": "0/0/0.00", "sndDolls": "0", "sndSwap": "1"})
+        if farewell:
+            events += [{"ev": "farewell", "t": "9", "phase": "appear"}, {"ev": "farewell", "t": "15", "phase": "done"}]
+        return events
+
+    def test_unanchored_farewell_is_not_a_doll_without_light(self):
+        rows = [{"ev": "sum", "t": str(t), "_cams": [], "cg": "1/1/0.00"} for t in (10, 12, 14)]
+        text = "光だまり"
+        self.assertTrue(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(rows)))
+        rows = rows + [{"ev": "farewell", "t": "9", "phase": "anchoring", "anchored": "0"}]
+        self.assertFalse(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(rows)))
+
+    def test_silent_doll_fails_but_the_farewell_doll_may_stay_silent(self):
+        text = "笑っていない"
+        self.assertTrue(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(self.laugh_events(False))))
+        self.assertFalse(any(v[0] == "FAIL" and text in v[1] for v in self.verdicts(self.laugh_events(True))))
+
     def farewell_events(self, phases, doll_u="0.40", vis_u="0.65", cg="1"):
         events = self.report_events(ending="Released")
         for e in events:

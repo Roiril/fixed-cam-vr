@@ -49,6 +49,7 @@ py -3.11 tools/twin/check_rig.py
 | `twin_post.py` | 写真の仕上げ（自動露出・レンズのかぶり・色ずれ・ノイズ・シャープ・JPEG） |
 | `twin_render.py` | Cycles の設定と撮影。`still` と `seq` |
 | `prep_textures.py` | 生成した素材写真から色（`<名前>.jpg`）と面の情報（`<名前>_s.jpg`。R 高さ・G 層・B 細かい明暗）を作る。缶のラベルと箱の印刷はコードで組む。生成元は Drive `renders/twin-cycles/textures-src`（`v2/` が追加分） |
+| `make_pack.py` | HMD なしの通し検証（`tools/twin-verify.py`）へ渡す束。焼いた動画を周の印つきの MJR と無人写真へ変える |
 | `audit_prompt.md` | 監査の文面（基準を動かさないため固定） |
 
 ## 配置の決め方

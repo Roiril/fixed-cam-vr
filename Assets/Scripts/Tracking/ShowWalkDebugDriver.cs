@@ -40,6 +40,29 @@ namespace FixedCamVr.Tracking
     [DisallowMultipleComponent]
     public sealed class ShowWalkDebugDriver : MonoBehaviour
     {
+        /// <summary>
+        /// 歩かせる側が差し替える所（PC のツイン走行 <c>XpTwinDriver</c>）。null なら Quest の自動走行のまま。
+        /// 実機の自動走行はコントローラが無いので題字と報告を直接呼ぶが、ツイン走行は生の入力から人と同じ順で通す。
+        /// </summary>
+        public interface IHost
+        {
+            float WalkSpeedMps { get; }
+            bool SkipReport { get; }
+            /// <summary>左の確認・報告の練習・題字を入力で通す。</summary>
+            IEnumerator PassOnboarding();
+            /// <summary>本編の道筋。</summary>
+            List<WalkRouteLogic.Waypoint> BuildRoute(ShowLayoutDef layout, int laps, float dwellSec, out string log);
+            /// <summary>帰りの A で、道の上を線の先まで進む点列。</summary>
+            List<Vector2> ClosingPath(Vector2 from);
+            /// <summary>左 X を 1 回長押しする。押している間は <see cref="ReportPressing"/> が true。</summary>
+            void PressReport();
+            bool ReportPressing { get; }
+            /// <summary>別れの写真の立ち位置と人形の位置（course）。人は人形が見えたら向き合う。</summary>
+            bool TryGetFarewellStand(out Vector2 stand, out Vector2 doll);
+        }
+
+        public static IHost? Host;
+
         /// <summary>起動してから歩き始めるまでの待ち（show.json 受信・ゾーン生成・登録ロードを待つ）。</summary>
         private const float StartupDelaySec = 8f;
 
@@ -142,7 +165,7 @@ namespace FixedCamVr.Tracking
 
         private void Start()
         {
-            _skipReport = ExtraPresent("xpnomark");
+            _skipReport = ExtraPresent("xpnomark") || (Host != null && Host.SkipReport);
             if (_skipReport) Debug.Log("[XPWalk] 未報告の終幕を検証する（xpnomark）");
             StartCoroutine(DriveRoutine());
         }
@@ -183,7 +206,10 @@ namespace FixedCamVr.Tracking
 
             var map = WalkRouteLogic.BuildCells(grid, out int rows, out int cols);
             int laps = _run != null ? _run.TotalLaps : 3;
-            var route = WalkRouteLogic.BuildRoute(map, rows, cols, grid.tileM, order, laps, DwellSec, out string routeLog);
+            string routeLog;
+            List<WalkRouteLogic.Waypoint> route = Host != null
+                ? Host.BuildRoute(layout!, laps, DwellSec, out routeLog)
+                : WalkRouteLogic.BuildRoute(map, rows, cols, grid.tileM, order, laps, DwellSec, out routeLog);
             if (route.Count == 0)
             {
                 Debug.LogError("[XPWalk] 経路生成に失敗 — 終了");
@@ -194,7 +220,11 @@ namespace FixedCamVr.Tracking
             // --- 導入 ---
             // HMD を被っていない前提で走らせるので、被り検知を無効化する（Development ビルド限定）。
             // これが無いと run.intro.startLineId を使う設定では導入が永久に始まらない。
-            if (_show != null)
+            if (Host != null)
+            {
+                yield return StartCoroutine(Host.PassOnboarding());
+            }
+            else if (_show != null)
             {
                 _show.UserPresentProvider = () => true;
                 _show.StartAuthorizedProvider = () => false;
@@ -202,7 +232,7 @@ namespace FixedCamVr.Tracking
 
             // スタッフ準備が見えている間は題字が譲る。開始許可を開く前に、自動走行だけ準備を解除する。
             // Tracking は Diagnostics を参照しないので、ステータスのプローブと同じ口で呼ぶ。
-            var staffSetupGo = GameObject.Find("[StaffSetup]");
+            var staffSetupGo = Host == null ? GameObject.Find("[StaffSetup]") : null;
             if (staffSetupGo != null)
             {
                 staffSetupGo.SendMessage("UseAutomation", SendMessageOptions.DontRequireReceiver);
@@ -212,7 +242,7 @@ namespace FixedCamVr.Tracking
 
             // コントローラーの無い自動走行では、報告練習の代わりに題字だけを実物の入口から検証する。
             // 開始門は題字が閉じ切るまで false のまま保つ。
-            var title = FindObjectOfType<TitleScreen>();
+            var title = Host == null ? FindObjectOfType<TitleScreen>() : null;
             if (title != null && title.IsBlocking)
             {
                 if (ExtraPresent("relief"))
@@ -253,14 +283,14 @@ namespace FixedCamVr.Tracking
                     ? $"[XPWalk] タイトルが {TitleWaitLimitSec:F0}s で閉じ切らなかった — そのまま進む"
                     : $"[XPWalk] タイトルが閉じ切った（{titleWait:F1}s）");
             }
-            else if (title == null)
+            else if (title == null && Host == null)
             {
                 Debug.Log("[XPWalk] タイトルがシーンに居ない（そのまま導入へ）");
             }
 
             // 自動走行には左コントローラーが無い。題字の検証後だけ開始門を開く。
             // OvrControllerBridge はこの上書きを見て導入面を畳み、本編の連絡へ返す。
-            if (_show != null) _show.StartAuthorizedProvider = () => true;
+            if (_show != null && Host == null) _show.StartAuthorizedProvider = () => true;
             yield return null;
 
             // 開始ラインが著作されていれば、実機と同じ入り方をする ＝ その線を横切ってから中へ入る。
@@ -345,9 +375,17 @@ namespace FixedCamVr.Tracking
             // 帰りの A では前の周の録画が流れ切るのを待つので、run.endHoldMaxSec ぶんの余裕を見る。
             float tailLimit = _run != null ? Mathf.Max(30f, ShowRunDefaults.EndHoldMaxSec + 10f) : 30f;
             float tail = 0f;
+            bool stood = false;
             while (_run != null && _run.Phase != ShowPhase.Finished && tail < tailLimit)
             {
                 tail += Time.deltaTime;
+                if (!stood && Host != null && Host.TryGetFarewellStand(out Vector2 stand, out Vector2 doll))
+                {
+                    stood = true;
+                    Debug.Log($"[XPWalk] 別れの人形と向き合う 立つ所=({stand.x:F2},{stand.y:F2}) 人形=({doll.x:F2},{doll.y:F2})");
+                    yield return StartCoroutine(WalkTo(stand));
+                    FaceCourse(doll);
+                }
                 yield return null;
             }
             Debug.Log($"[XPWalk] 走行終了 phase={(_run != null ? _run.Phase.ToString() : "?")} " +
@@ -415,7 +453,22 @@ namespace FixedCamVr.Tracking
                 if (!_skipReport && !_reported && _show != null && _timeline != null && _timeline.IsWaitingForVisitorMark)
                 {
                     _waitedSec += Time.deltaTime;
-                    if (_waitedSec >= ReportHesitateSec && !_show.IsVisitorMarkBlocked && !_show.IsMarkTooEarly)
+                    if (Host != null)
+                    {
+                        if (_markBase >= 0 && !Host.ReportPressing)
+                        {
+                            _reported = _show.VisitorMarkCount > _markBase;
+                            _markBase = -1;
+                        }
+                        else if (_markBase < 0 && !_reported && _waitedSec >= ReportHesitateSec
+                                 && !_show.IsVisitorMarkBlocked && !_show.IsMarkTooEarly)
+                        {
+                            _markBase = _show.VisitorMarkCount;
+                            Host.PressReport();
+                            Debug.Log($"[XPWalk] 異変を左 X の長押しで報告する（{_waitedSec:0.0}s ためらった）");
+                        }
+                    }
+                    else if (_waitedSec >= ReportHesitateSec && !_show.IsVisitorMarkBlocked && !_show.IsMarkTooEarly)
                     {
                         _reported = _show.RecordVisitorMark();
                         if (_reported)
@@ -499,6 +552,18 @@ namespace FixedCamVr.Tracking
                 Debug.Log($"[XPWalk] 締めの線 '{id}' は入り際に踏んでいた（closing={_timeline.ClosingLineCrossedSec:F2}s）");
                 yield break;
             }
+            if (Host != null)
+            {
+                // 手すりの道は線をまたぐので、枠から離れずに道の上を進む。
+                Vector3 h = _head != null ? _head.position : Vector3.zero;
+                foreach (Vector2 p in Host.ClosingPath(new Vector2(h.x, h.z)))
+                {
+                    if (_timeline.ClosingLineCrossed) break;
+                    yield return StartCoroutine(WalkTo(p));
+                }
+                Debug.Log($"[XPWalk] 締めの線 '{id}' へ道の上を進んだ crossed={_timeline.ClosingLineCrossed}");
+                yield break;
+            }
             Debug.Log($"[XPWalk] 締めの線 '{id}' を横切る ({before.x:F2},{before.y:F2}) → ({after.x:F2},{after.y:F2})");
             yield return StartCoroutine(WalkTo(before));
             yield return StartCoroutine(WalkTo(after));
@@ -512,6 +577,9 @@ namespace FixedCamVr.Tracking
 
         // 締めのカットが待ち始めてからの経過（ためらい）。
         private float _waitedSec;
+
+        // Host の長押しを始めた時点の報告数（押していなければ -1）。
+        private int _markBase = -1;
 
         /// <summary>
         /// Minimum hesitation after the closing take starts waiting.
@@ -612,16 +680,18 @@ namespace FixedCamVr.Tracking
         ///
         /// 回すのは<b>頭の位置を軸にした rig の yaw</b>。rig の原点で回すと頭ごと平行移動してしまう。
         /// </summary>
-        private void FaceCourseOrigin()
+        private void FaceCourseOrigin() => FaceCourse(Vector2.zero);
+
+        private void FaceCourse(Vector2 course)
         {
             if (_rig == null || _head == null || _frame == null) return;
             Vector3 headW = _head.position;
-            Vector3 to = _frame.CourseToWorld(Vector2.zero, 1.2f) - headW;
+            Vector3 to = _frame.CourseToWorld(course, 1.2f) - headW;
             to.y = 0f;
             if (to.sqrMagnitude < 1e-4f) return;
             float want = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
             _rig.RotateAround(headW, Vector3.up, Mathf.DeltaAngle(_head.eulerAngles.y, want));
-            Debug.Log($"[XPWalk] 体験エリアの方を向く（yaw {want:F0}°）");
+            Debug.Log($"[XPWalk] ({course.x:F2},{course.y:F2}) の方を向く（yaw {want:F0}°）");
         }
 
         private IEnumerator WalkTo(Vector2 courseTarget)
@@ -638,11 +708,18 @@ namespace FixedCamVr.Tracking
                 Vector3 targetW = _frame.CourseToWorld(courseTarget, 0f);
                 var d = new Vector2(targetW.x - headW.x, targetW.z - headW.z);
                 float dist = d.magnitude;
-                if (dist <= ArriveEps) yield break;
+                if (dist <= (Host != null ? 0.01f : ArriveEps)) yield break;
 
-                float step = WalkSpeed * Time.deltaTime;
+                float step = (Host != null ? Host.WalkSpeedMps : WalkSpeed) * Time.deltaTime;
                 Vector2 move = dist <= step ? d : d.normalized * step;
                 _rig.position += new Vector3(move.x, 0f, move.y);
+                if (Host != null)
+                {
+                    // 被っている人と同じく、歩く向きを見る（スクリーンは頭のヨーを追う）。
+                    float want = Mathf.Atan2(d.x, d.y) * Mathf.Rad2Deg;
+                    float turn = Mathf.MoveTowardsAngle(_head.eulerAngles.y, want, 120f * Time.deltaTime);
+                    _rig.RotateAround(_head.position, Vector3.up, Mathf.DeltaAngle(_head.eulerAngles.y, turn));
+                }
                 yield return null;
             }
             Debug.LogWarning($"[XPWalk] 到達できないまま 60s ({courseTarget.x:F2},{courseTarget.y:F2})");

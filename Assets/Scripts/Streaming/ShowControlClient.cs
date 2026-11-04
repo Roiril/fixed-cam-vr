@@ -232,7 +232,7 @@ namespace FixedCamVr.Streaming
                    $"lines={(_layout?.lines?.Length ?? 0)} laps={(_run?.totalLaps ?? -1)} " +
                    $"intro={(introOn ? 1 : 0)} startLine={startLine} " +
                    $"rec={((_record?.enabled ?? false) ? 1 : 0)} recLaps={recLaps} " +
-                   $"closingLine={closingLine}";
+                   $"closingLine={closingLine} calib={(Replay.XpReplay.CalibOverridden ? "twin" : "show")}";
         }
 
         // 卓からの手動グリッチ / 導入終了 / 体験終了の世代カウンタ（runEpoch と同じ「変化のみ発火」方式）。

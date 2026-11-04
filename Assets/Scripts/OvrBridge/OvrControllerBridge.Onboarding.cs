@@ -12,6 +12,9 @@ namespace FixedCamVr.OvrBridge
     // 全体の入口とファイルの一覧は OvrControllerBridge.cs の先頭。
     public sealed partial class OvrControllerBridge
     {
+        /// <summary>導入の段（ツイン走行が人と同じ順にボタンを押すために読む）。</summary>
+        public HmdOnboardingStage OnboardingStage => _onboarding.Stage;
+
         /// <summary>
         /// 導入の段をスタッフの面（<see cref="StatusHud"/>）の言葉にする。
         ///

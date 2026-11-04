@@ -79,6 +79,7 @@
 - `Diagnostics/ShowTelemetryHost` — 実機のログ `[XP]` を書く。通常のログ（`Debug.Log`）のスタックトレースをアプリ全体で切る
 - `Diagnostics/VeilAlignmentProbe` / `OvrBridge/CommsPerformanceProbe` — 検証用の計器
 - `OvrBridge/XpReplayDriver` — PC で体験の記録を流し直す（Editor だけ）
+- `OvrBridge/XpTwinDriver` — HMD も Quest も無しでツインの映像を流し、入力だけで体験を通す（Editor だけ）
 - `Tracking/RegVizDebugDriver` / `Tracking/ShowWalkDebugDriver` — 位置合わせの可視化と自動歩行（検証用）
 
 ## 確かめ方

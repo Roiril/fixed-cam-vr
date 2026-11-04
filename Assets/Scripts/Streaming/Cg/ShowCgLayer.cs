@@ -473,6 +473,49 @@ namespace FixedCamVr.Streaming.Cg
         /// <summary>別れの人形の立ち位置が解けたか。解けるまでは画に出ない。</summary>
         public bool FarewellAnchored => FarewellActive && _farewellAnchored;
 
+        /// <summary>別れの写真を止めている条件の名前（揃っていれば空）。<see cref="FarewellPhotoReady"/> と同じ順に見る。</summary>
+        public string FarewellPhotoBlock
+        {
+            get
+            {
+                if (!FarewellAnchored) return "anchor";
+                if (!_farewellFaceRendered) return "faceRender";
+                if (_actorInstance == null) return "actor";
+                if (!TryVisitorFootWorld(out Vector3 visitor)) return "visitorFoot";
+                ShowBodyInput body = CurrentBody();
+                if (!body.HasHead) return "head";
+                if (!FarewellFloorContains(visitor, 0.25f)) return "floor";
+                return EndingFarewellLogic.PhotoBlock(_farewellAnchor, visitor, body.HeadYawDeg, _farewellRenderedYawDeg, _virtualCam);
+            }
+        }
+
+        /// <summary>
+        /// 立つ所から半径 <paramref name="radiusM"/> の円周 16 点のうち、人形の方を向いて立てば写真が成立する割合。
+        /// 位置の許容は <see cref="EndingFarewellLogic.PhotoPositionToleranceM"/> だが、全身が枠に入る条件の方が先に効く。
+        /// </summary>
+        public float FarewellStandShare(float radiusM)
+        {
+            if (!FarewellAnchored) return 0f;
+            int ok = 0;
+            for (int i = 0; i < 16; i++)
+            {
+                float a = i * Mathf.PI / 8f;
+                Vector3 p = _farewellAnchor.visitorTargetFoot + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * radiusM;
+                float yaw = EndingFarewellLogic.FaceYawDeg(p, _farewellAnchor.foot);
+                float dollYaw = EndingFarewellLogic.FaceYawDeg(_farewellAnchor.foot, p);
+                if (EndingFarewellLogic.IsPhotoReady(_farewellAnchor, p, yaw, dollYaw, _virtualCam)) ok++;
+            }
+            return ok / 16f;
+        }
+
+        /// <summary>別れの写真で体験者が立つ所と人形の足元（ワールド）。立ち位置が解けるまで false。</summary>
+        public bool TryGetFarewellStand(out Vector3 visitorFoot, out Vector3 dollFoot)
+        {
+            visitorFoot = _farewellAnchor.visitorTargetFoot;
+            dollFoot = _farewellAnchor.foot;
+            return FarewellAnchored;
+        }
+
         public bool FarewellPhotoReady
         {
             get

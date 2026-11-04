@@ -551,12 +551,23 @@ namespace FixedCamVr.Streaming
         /// <summary>所定の位置と、互いに向き合った向きが揃ったときだけ写真を撮る。</summary>
         public static bool IsPhotoReady(in Anchor anchor, Vector3 visitorFoot,
                                          float visitorYawDeg, float dollYawDeg, Camera? cam = null)
-            => Flat(visitorFoot - anchor.visitorTargetFoot).magnitude <= PhotoPositionToleranceM
-               && (anchor.visitorRadiusM <= 0f
-                   || VisitorFits(cam, visitorFoot, anchor.visitorHeightM, anchor.visitorRadiusM,
-                       visitorYawDeg, anchor.wallCorner, anchor.wallEndA, anchor.wallEndB, anchor.wallHalfThicknessM))
-               && Mathf.Abs(Mathf.DeltaAngle(visitorYawDeg, FaceYawDeg(visitorFoot, anchor.foot))) <= PhotoYawToleranceDeg
-               && Mathf.Abs(Mathf.DeltaAngle(dollYawDeg, FaceYawDeg(anchor.foot, visitorFoot))) <= PhotoYawToleranceDeg;
+            => PhotoBlock(anchor, visitorFoot, visitorYawDeg, dollYawDeg, cam).Length == 0;
+
+        /// <summary>写真を止めている条件の名前（揃っていれば空）。立ち位置・全身・人の向き・人形の向きの順に見る。</summary>
+        public static string PhotoBlock(in Anchor anchor, Vector3 visitorFoot,
+                                        float visitorYawDeg, float dollYawDeg, Camera? cam = null)
+        {
+            if (Flat(visitorFoot - anchor.visitorTargetFoot).magnitude > PhotoPositionToleranceM) return "position";
+            if (anchor.visitorRadiusM > 0f
+                && !VisitorFits(cam, visitorFoot, anchor.visitorHeightM, anchor.visitorRadiusM,
+                    visitorYawDeg, anchor.wallCorner, anchor.wallEndA, anchor.wallEndB, anchor.wallHalfThicknessM))
+                return "visitorFit";
+            if (Mathf.Abs(Mathf.DeltaAngle(visitorYawDeg, FaceYawDeg(visitorFoot, anchor.foot))) > PhotoYawToleranceDeg)
+                return "visitorYaw";
+            if (Mathf.Abs(Mathf.DeltaAngle(dollYawDeg, FaceYawDeg(anchor.foot, visitorFoot))) > PhotoYawToleranceDeg)
+                return "dollYaw";
+            return "";
+        }
 
         /// <summary>
         /// 体験者の足元から、画面の中で左へ <see cref="ScreenGapU"/> ずらした床の点に人形を立てる。

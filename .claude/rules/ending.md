@@ -47,7 +47,7 @@ paths:
 - 報告数は押した回数。表示を始めた時点で固定する — `OutroReport.Capture`（`VisitorMarkCount`）〔出典: LEDGER 0247〕
 - 画面に組んだ分子を `ev=outro repN=` に出し、解析器がそのランの最後の `ev=mark n=` と照合する。`anomalies=`（同じ演出は 1・0234）は画面に出さない内部の集計 — `OutroReport.Presented` / `analyze-xp-log.py` 〔コード〕
 - 写真はラン内だけ GPU に保持する。撮れなければ代わりの画を入れない — `EndingFrameCapture` / `RunRestartAndDisableDiscardBothVisitorsShots` 〔出典: memory/ending_roll.md〕
-- 帰還の写真は別れの人形が見つめる段で、位置と向きが成立した 1 コマを撮る。GPU 合成成功を `NotifyEndingFarewellCaptured` で返した後は上書きしない。条件未成立・人形を出せないときは撮らず再試行を待つ — `EndingFrameCapture` / `EndingFarewellDoll.Facing` 〔出典: LEDGER 0293〕
+- 帰還の写真は別れの人形が見つめる段で、位置と向きが成立した 1 コマを撮る。GPU 合成成功を `NotifyEndingFarewellCaptured` で返した後は上書きしない。条件未成立・人形を出せないときは撮らず再試行を待つ。batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭で撮る — `EndingFrameCapture` / `EndingFarewellDoll.Facing` 〔出典: LEDGER 0293〕
 
 ## 罠（破ると壊れる）
 - 武装と結末を落とすのは `ShowRunDirector.BeginRun` の 1 か所だけ 〔show-design:940〕

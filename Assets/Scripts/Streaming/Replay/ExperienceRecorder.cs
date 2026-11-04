@@ -78,7 +78,7 @@ namespace FixedCamVr.Streaming.Replay
 
         private void LateUpdate()
         {
-            if (XpReplay.Active) return;   // 再生中に録り直さない
+            if (XpReplay.Active && !XpReplay.RecordWhileActive) return;   // 再生中に録り直さない
             if (_show == null) _show = FindObjectOfType<ShowControlClient>();
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
             if (_registry == null) _registry = FindObjectOfType<CameraStreamRegistry>();
@@ -138,6 +138,7 @@ namespace FixedCamVr.Streaming.Replay
                     showSha = _show != null ? _show.ContentId : "",
                     startReason = reason,
                     registrationJson = ReadRegistration(),
+                    calibOverride = XpReplay.CalibOverrideJson,
                 };
                 var cams = new List<string>();
                 if (_registry != null)
@@ -156,13 +157,22 @@ namespace FixedCamVr.Streaming.Replay
             }
         }
 
-        private void Stop(string reason)
+        /// <summary>いま録っている記録を閉じ、書き切るのを待つ（ツイン走行が Play を出る前に呼ぶ）。録っていなければ null。</summary>
+        public string? FinishAndWait(string reason, int waitMs)
+        {
+            Session? s = _session;
+            if (s == null) return null;
+            Stop(reason, waitMs);
+            return s.Dir;
+        }
+
+        private void Stop(string reason, int waitMs = 300)
         {
             Session? s = _session;
             if (s == null) return;
             _session = null;
             float dur = Time.unscaledTime - s.t0;
-            s.Finish(reason, dur);
+            s.Finish(reason, dur, waitMs);
             Debug.Log($"[XP] t={Time.realtimeSinceStartup:F2} ev=xprec state=stop why={reason} sec={dur:F1} frames={s.Frames} " +
                       $"jpeg={s.JpegCount} mb={s.Bytes / (1024f * 1024f):F0} capped={(s.Capped ? 1 : 0)}");
         }
@@ -223,6 +233,7 @@ namespace FixedCamVr.Streaming.Replay
         {
             public readonly float t0;
             private readonly string _dir;
+            public string Dir => _dir;
             private readonly XpRecMeta _meta;
             private readonly ConcurrentQueue<Item> _queue = new();
             private readonly ConcurrentBag<byte[]> _pool = new();
@@ -291,7 +302,7 @@ namespace FixedCamVr.Streaming.Replay
                 _signal.Set();
             }
 
-            public void Finish(string reason, float durationSec)
+            public void Finish(string reason, float durationSec, int waitMs)
             {
                 _meta.stopReason = reason;
                 _meta.durationSec = durationSec;
@@ -299,7 +310,7 @@ namespace FixedCamVr.Streaming.Replay
                 _closing = true;
                 _signal.Set();
                 // 書き残しを待つ上限は短く（メインスレッドを止める時間の上限）。間に合わなくても背景が書き切る。
-                _thread.Join(300);
+                _thread.Join(waitMs);
             }
 
             private void Run()

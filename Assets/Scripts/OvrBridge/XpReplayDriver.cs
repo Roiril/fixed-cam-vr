@@ -83,7 +83,7 @@ public sealed class XpReplayDriver : MonoBehaviour
             DontDestroyOnLoad(go);
             var d = go.AddComponent<XpReplayDriver>();
             if (!d.Load(dir)) { Fail("記録を読めない: " + dir); Destroy(go); return; }
-            XpReplay.Begin(d.CurrentInput, d._feed);
+            XpReplay.Begin(d.CurrentInput, d._feed, false, d._meta.calibOverride);
             go.AddComponent<XpReplayCapture>();
             Instance = d;
             Debug.Log($"[Replay] 再生を準備した: {dir} 尺 {d.Duration:F1}s {d._track.Length} 行 " +

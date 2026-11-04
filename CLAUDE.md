@@ -32,6 +32,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | コードを初めて読む（体験 1 回の流れとクラスの持ち主） | [Assets/Scripts/README.md](Assets/Scripts/README.md) |
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |
 | 説明資料用に体験中の画を撮る（左グリップ → 4 種類。**展示本番の機は OFF**） | [memory/experience_shots.md](.claude/memory/experience_shots.md)（取り出しは `py -3.11 tools/quest-shots.py pull`） |
+| HMD を被らずに本番シーンを最初から最後まで通す（ツインの映像・判定・目線の動画・見る面） | `py -3.11 tools/twin-verify.py`（[memory/twin_verify.md](.claude/memory/twin_verify.md)。見る面は `tools/twin-game/verify.html`） |
 | 紹介動画を広い画角で撮る（Quest で記録 → PC で本番を流し直して mp4） | [memory/experience_replay.md](.claude/memory/experience_replay.md)（`tools/quest-xprec.py on` → `pull` → `.\tools\unity.ps1 replay`） |
 | 写実のデジタルツイン（広報の静止画・固定カメラの動画・ゲームのように見るビューア） | [tools/twin/](tools/twin/README.md) と [tools/twin-game/](tools/twin-game/README.md)。監査の点と罠は [memory/twin_cycles.md](.claude/memory/twin_cycles.md) |
 | 音を触る（BGM・効果音・環境音・遷移） | `rules/sound-design.md`（**先に読む**） |
@@ -90,6 +91,8 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | C 例外 | Unity の例外・警告 | 実機 logcat |
 
 - **`py -3.11 tools/quest-record.py --sec 45 --walk` の 1 回で A・B・C が揃う**（HMD 不要）。
+- **HMD も Quest も配信スマホも無しで体験を通す**: `py -3.11 tools/twin-verify.py`。本番の Main シーンへツインの映像を流し、
+  左 X だけで導入から終幕まで走り、解析器と周の印で判定して目線の動画を残す。実機の代わりではない（圧縮・遅延・両眼・ディスプレイ・パススルーは入らない）
 - 実機を使わない門は 2 つ: `.\tools\unity.ps1 test`（C#）と `py -3.11 tools/test-tools.py`（解析器・現場の道具・ログの書き手と読み手の照合）
   依存は `tools/requirements.txt`
 - ⚠⚠ **機を指定するなら `--serial`。`ANDROID_SERIAL` は効かない**（走行は自分で機を選び直す）。

@@ -3,9 +3,11 @@
 - /            … tools/twin-game/ の静的ファイル
 - /game/...    … Drive の renders/twin-cycles/game/（固定カメラの動画）
 - /walk/...    … Drive の renders/virtualwalk/（本物の Director を通した HMD の画 walk.mp4）
+- /runs/...    … Drive の renders/twin-verify/（tools/twin-verify.py の走行。/runs/index.json は新しい順の一覧）
 """
 from __future__ import annotations
 
+import json
 import mimetypes
 import os
 import re
@@ -17,6 +19,7 @@ from urllib.parse import unquote, urlparse
 HERE = Path(__file__).resolve().parent
 GAME = Path(os.environ.get("TWIN_GAME", r"G:\マイドライブ\shubie\renders\twin-cycles\game"))
 WALK = Path(r"G:\マイドライブ\shubie\renders\virtualwalk")
+RUNS = Path(r"G:\マイドライブ\shubie\renders\twin-verify")
 mimetypes.add_type("video/mp4", ".mp4")
 mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("text/javascript", ".js")
@@ -30,14 +33,27 @@ class H(BaseHTTPRequestHandler):
         path = unquote(urlparse(self.path).path)
         if path == "/":
             path = "/index.html"
-        for prefix, root in (("/game/", GAME), ("/walk/", WALK)):
+        for prefix, root in (("/game/", GAME), ("/walk/", WALK), ("/runs/", RUNS)):
             if path.startswith(prefix):
                 p = (root / path[len(prefix):]).resolve()
                 return p if str(p).startswith(str(root.resolve())) else None
         p = (HERE / path.lstrip("/")).resolve()
         return p if str(p).startswith(str(HERE)) else None
 
+    def _run_index(self):
+        names = sorted((d.name for d in RUNS.iterdir() if (d / "verdict.json").is_file()), reverse=True) if RUNS.is_dir() else []
+        body = json.dumps(names, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
+        if urlparse(self.path).path == "/runs/index.json":
+            self._run_index()
+            return
         p = self._resolve()
         if p is None or not p.is_file():
             self.send_error(404)

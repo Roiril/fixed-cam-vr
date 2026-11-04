@@ -472,14 +472,23 @@ def config_from_show(show: dict) -> dict:
     }
 
 
+# PC のツイン走行（tools/twin-verify.py）で意味を持たない判定。合否に数えず「対象外」と書く。
+# 実機の機能が無いだけなので、ここに入れるのは PC に存在しない物だけ。走行の不具合を隠す語を入れない。
+PC_NOT_APPLICABLE = re.compile(
+    r"受信 fps|表示 fps|最悪フレーム時間|パススルー|タブレットの口|端末から出た音声"
+)
+
+
 def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
-    verdicts = []     # (level, text) level: OK / WARN / FAIL
+    verdicts = []     # (level, text) level: OK / WARN / FAIL / NA
 
     def w(line=""):
         rep.append(line)
 
     def verdict(level, text):
+        if exp.get("pc") and PC_NOT_APPLICABLE.search(text):
+            level = "NA"
         verdicts.append((level, text))
 
     for level, text in analyze_takeover(events):
@@ -1749,8 +1758,8 @@ def analyze(events, others, exp, warns=None):
                                 "押しても返らない報告がある（装置が壊れて見える）")
             for m in ordinary_marks:
                 near = [a for a in answers if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
-                if not near:
-                    continue
+                if not near or str(m.get("released")) == "1":
+                    continue  # 解除の返事（MarkCleared・0284）は下の released_marks で見る
                 # 古いログには det が無いため res を退避値として読む。
                 detected = m.get("det") if m.get("det") is not None else m.get("res")
                 possessed_mark = (fnum(m, "invasion", 0.0) >= 0.75 - 1e-6
@@ -2882,10 +2891,13 @@ def analyze(events, others, exp, warns=None):
                 #    「立っているのに笑っていない」と誤って FAIL を出していた。
                 #    旧ログ（1 桁の `cg=1`）は人形かを区別できないので**判定から外す**。
                 # ⚠ 2026-10-22 から 3 つ目（光だまりの EV）が付くので、末尾ではなく 2 つ目を読む。
+                # 別れの人形は笑わない（`ShowCgLayer.BeginFarewell`）。出ている間の標本は数えない。
+                farewell_t = [fnum(e, "t", 0.0) for e in events if e.get("ev") == "farewell"]
                 mute = [e for e in events
                         if e.get("ev") == "sum" and cg_is_doll(e.get("cg", ""))
                         and (fnum(e, "sndDolls", 0.0) or 0.0) <= 0.05
-                        and "sndSwap" in e and (fnum(e, "sndSwap", 0.0) or 0.0) <= 0.01]
+                        and "sndSwap" in e and (fnum(e, "sndSwap", 0.0) or 0.0) <= 0.01
+                        and not (farewell_t and min(farewell_t) <= fnum(e, "t", 0.0) <= max(farewell_t))]
                 if len(mute) >= 2:
                     verdict("FAIL", f"映像の中に人形が立っているのに笑っていない（cg=…/1 で sndSwap=0 が "
                                     f"{len(mute)} 回）— bed_doll_one を掴めているか、"
@@ -3111,7 +3123,14 @@ def analyze(events, others, exp, warns=None):
     # `canon/LEDGER.md` 0287。人形に変わった後は夜間モードの明暗曲線が黒を潰し、
     # 黒いカーテンの前の黒髪が背景ごと消えていた。人形を描いている間は人形の頭のあたりに
     # 光だまりを書く（`cg=` の 3 つ目・EV）。C# の `ShowTelemetryHost.CgState` と対で直す。
-    cg_rows = [e for e in events if e.get("ev") == "sum" and "cg" in e]
+    # 別れの人形の立ち位置が解けていない間は、層が開いていても人形は強さ 0 で描かれない。
+    cg_rows = []
+    unanchored = False
+    for e in sorted((x for x in events if x.get("ev") in ("sum", "farewell")), key=lambda x: fnum(x, "t", 0.0)):
+        if e.get("ev") == "farewell":
+            unanchored = e.get("anchored") == "0" and e.get("phase") != "done"
+        elif "cg" in e and not unanchored:
+            cg_rows.append(e)
     lit = [(cg_is_doll(e["cg"]), cg_light_ev(e["cg"])) for e in cg_rows]
     if any(ev is not None for _d, ev in lit):
         w("## 人形について回る光だまり")
@@ -3774,7 +3793,8 @@ def analyze(events, others, exp, warns=None):
             if any(v is None or not math.isfinite(v) for v in (shown, mono, blocks, noise, actual_noise, pos)):
                 errors.append("材質の観測値が不足")
                 continue
-            if abs(mono - shown) > .011 or abs(blocks - (800 + (267 - 800) * shown)) > 1.1:
+            # 粗さは mono から求める。coarseShown は小数 2 桁で、戻る途中だと丸めだけで 2.7 ブロックずれる。
+            if abs(mono - shown) > .011 or abs(blocks - (800 + (267 - 800) * mono)) > 1.1:
                 errors.append("mono/粗さが材質へ届いていない")
             if abs(noise - actual_noise) > .002 or not .049 <= actual_noise <= (.341 if doll_profile else .201):
                 errors.append("暗部ノイズが材質へ届いていない")
@@ -4334,6 +4354,8 @@ def main():
     ap.add_argument("log")
     ap.add_argument("--show", default="tools/web-compositor/show.json")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--pc", action="store_true",
+                    help="PC のツイン走行として読む（配信 fps・表示 fps・パススルー・タブレットは対象外）")
     args = ap.parse_args()
 
     events, others = load_events(args.log)
@@ -4343,18 +4365,23 @@ def main():
         with open(args.show, "r", encoding="utf-8") as fh:
             show = json.load(fh)
     exp = expected_from_show(show)
+    if args.pc:
+        exp["pc"] = True
+    # 実機は本番の calib で走る。PC の走行はどちらもあるので tools/twin-verify.py が照合する。
+    if not args.pc:
+        exp.setdefault("config", {})["calib"] = "show"
 
     rep, verdicts = analyze(events, others, exp, warns)
 
     out = args.out or os.path.splitext(args.log)[0] + "-report.md"
-    order = {"FAIL": 0, "WARN": 1, "OK": 2}
+    order = {"FAIL": 0, "WARN": 1, "OK": 2, "NA": 3}
     verdicts.sort(key=lambda v: order.get(v[0], 3))
     with open(out, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(f"# 実機テスト所見 — {os.path.basename(args.log)}\n\n")
         fh.write("## 判定\n\n")
         for lv, tx in verdicts:
             mark = {"FAIL": "❌", "WARN": "⚠", "OK": "✅"}.get(lv, "・")
-            fh.write(f"- {mark} {tx}\n")
+            fh.write(f"- {mark} {'（PC では対象外）' if lv == 'NA' else ''}{tx}\n")
         fh.write("\n---\n\n")
         fh.write("\n".join(rep))
         fh.write("\n")

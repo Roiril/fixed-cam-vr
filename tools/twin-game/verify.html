@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廻り視 HMD なしの動作検証</title>
+<style>
+/* 値は ~/.claude/reference/design-tokens.md の派生 */
+:root {
+  --paper: #ffffff; --surface: #f4f4f4; --ink: #1a1a1a; --mute: #5c5c5c; --line: #dcdcdc;
+  --link: #1a5fb4; --accent: #d7261e;
+  --gothic: "Noto Sans JP", "Yu Gothic Medium", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", Consolas, "Courier New", monospace;
+  --fs-xs: .75rem; --fs-sm: .875rem; --fs-base: 1rem; --fs-md: 1.25rem;
+  --sp-1: .25rem; --sp-2: .5rem; --sp-3: .75rem; --sp-4: 1rem; --sp-6: 1.5rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #121212; --surface: #1e1e1e; --ink: #ececec; --mute: #a8a8a8; --line: #333333; --link: #7fb0ff; --accent: #ff6b5e; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: var(--fs-sm)/1.6 var(--gothic); }
+body { display: grid; grid-template-rows: auto 1fr; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4); }
+h1 { margin: 0; font-size: var(--fs-md); font-weight: 700; }
+#result { font-weight: 700; }
+#result.bad { color: var(--accent); }
+.counts, .muted { color: var(--mute); }
+select, button { height: 2rem; padding: 0 var(--sp-3); font: inherit; color: var(--ink); background: var(--surface); border: 0; cursor: pointer; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+button:focus-visible, select:focus-visible, canvas:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 26rem; gap: var(--sp-4); padding: 0 var(--sp-4) var(--sp-4); min-height: 0; }
+#left { display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; min-width: 0; }
+video { flex: 1; min-height: 0; width: 100%; background: #000; }
+#controls { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+#time { font-family: var(--mono); }
+#timeline { width: 100%; height: 3rem; display: block; cursor: pointer; background: var(--surface); }
+#right { overflow: auto; min-height: 0; }
+h2 { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-base); }
+h2:first-child { margin-top: 0; }
+#caveats { margin: 0; padding: var(--sp-3); background: var(--surface); }
+#caveats p { margin: 0 0 var(--sp-2); }
+#caveats p:last-child { margin: 0; }
+ul { list-style: none; margin: 0; padding: 0; }
+#verdicts li { padding: var(--sp-1) 0; }
+#verdicts li.FAIL { font-weight: 700; color: var(--accent); }
+#verdicts li.NA, #verdicts li.OK { color: var(--mute); }
+#verdicts b { display: inline-block; min-width: 3em; font-family: var(--mono); font-size: var(--fs-xs); font-weight: 400; }
+#events button { display: flex; width: 100%; height: auto; gap: var(--sp-2); padding: 2px var(--sp-1); text-align: left; background: none; }
+#events button:hover { background: var(--surface); }
+#events li.now button { background: var(--surface); font-weight: 700; }
+#events .t { flex: none; width: 4em; font-family: var(--mono); color: var(--mute); }
+#empty { padding: var(--sp-6); }
+#novideo { padding: var(--sp-6); background: var(--surface); }
+@media (max-width: 860px) {
+  body { display: block; height: auto; }
+  main { display: block; }
+  video { height: 56vw; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>HMD なしの動作検証</h1>
+  <span id="result"></span>
+  <span class="counts" id="counts"></span>
+  <select id="run" aria-label="走行を選ぶ"></select>
+</header>
+<main>
+  <section id="left" aria-label="体験の映像">
+    <video id="video" controls playsinline preload="auto"></video>
+    <div id="novideo" hidden>この走行は動画を撮っていません。判定と出来事だけ見られます。</div>
+    <div id="controls">
+      <button id="v-eye" aria-pressed="true">体験者の目線</button>
+      <button id="v-follow" aria-pressed="false">後ろの上から</button>
+      <span id="time">0:00.0</span>
+      <span class="muted">音は Unity が鳴らした音です。実機の聞こえとは違います。</span>
+    </div>
+    <canvas id="timeline" tabindex="0" aria-label="時間軸。クリックで移動" height="48"></canvas>
+  </section>
+  <aside id="right">
+    <div id="caveats"></div>
+    <h2>判定</h2>
+    <ul id="verdicts"></ul>
+    <h2>出来事</h2>
+    <ul id="events"></ul>
+  </aside>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const S = { stamp: "", view: "eye", verdict: null, events: [] };
+  const LEVEL = { FAIL: "NG", WARN: "注意", OK: "OK" };
+  const video = $("video");
+
+  const fmt = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+  const j = async url => { const r = await fetch(url, { cache: "no-store" }); if (!r.ok) throw new Error(url); return r.json(); };
+
+  function setView(view) {
+    const have = S.verdict?.videos || {};
+    if (!have[view]) view = have.eye ? "eye" : have.follow ? "follow" : view;
+    const t = video.currentTime || 0, playing = !video.paused;
+    S.view = view;
+    $("v-eye").setAttribute("aria-pressed", view === "eye");
+    $("v-follow").setAttribute("aria-pressed", view === "follow");
+    $("v-eye").hidden = !have.eye;
+    $("v-follow").hidden = !have.follow;
+    const none = !have[view];
+    video.hidden = none;
+    $("novideo").hidden = !none;
+    if (none) { video.removeAttribute("src"); video.load(); return; }
+    video.src = `/runs/${S.stamp}/${have[view]}`;
+    video.onloadedmetadata = () => { video.currentTime = t; if (playing) video.play(); drawTimeline(); };
+  }
+
+  function renderVerdicts() {
+    const v = S.verdict, n = v.counts;
+    $("result").textContent = v.pass ? "通った" : "通っていない";
+    $("result").className = v.pass ? "" : "bad";
+    $("counts").textContent = `NG ${n.FAIL}　注意 ${n.WARN}　OK ${n.OK}`;
+    const list = $("verdicts");
+    list.replaceChildren(...v.verdicts.map(x => {
+      const li = document.createElement("li");
+      li.className = x.level;
+      const b = document.createElement("b");
+      b.textContent = LEVEL[x.level] || "対象外";
+      li.append(b, x.text);
+      return li;
+    }));
+    const r = v.run || {};
+    const gaps = Object.entries(v.calibGapPx || {}).map(([k, g]) => `${k} ${g}px`).join("　");
+    const c = $("caveats");
+    c.replaceChildren(...[
+      `走行 ${r.result}。${r.sec} 秒。${r.lap} 周目で終了。報告 ${r.marks} 回。例外 ${r.exceptions} 件。`,
+      (v.args?.calib === "show"
+        ? `人形は本番の位置合わせの値で描いています。映像はツインなので人形は床に合いません。`
+        : `人形はツインの配置へ合わせて描いています。ここで通っても本番の位置合わせが合っている証拠にはなりません。`)
+        + `本番の値とツインの配置の差は ${gaps} です。`,
+      `映像は頭の位置に合うコマを選んでいます。立ち止まっている間、人は歩きの 1 コマで止まって見えます。3 周目の録画の中身はツインの映像で、印の番号で周を見ています。`,
+      `圧縮と遅延、両眼、ディスプレイ、パススルーはここに入っていません。`,
+    ].map(t => { const p = document.createElement("p"); p.textContent = t; return p; }));
+  }
+
+  function renderEvents() {
+    const list = $("events");
+    list.replaceChildren(...S.events.map(e => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      const t = document.createElement("span");
+      t.className = "t";
+      t.textContent = fmt(Math.max(0, e.t));
+      const s = document.createElement("span");
+      s.textContent = `${e.ev} ${e.text}`;
+      b.append(t, s);
+      b.onclick = () => { video.currentTime = Math.max(0, e.t); };
+      li.append(b);
+      return li;
+    }));
+  }
+
+  function duration() {
+    if (isFinite(video.duration) && video.duration > 0) return video.duration;
+    return S.events.length ? S.events[S.events.length - 1].t : 1;
+  }
+
+  function drawTimeline() {
+    const cv = $("timeline"), g = cv.getContext("2d");
+    const W = cv.width = cv.clientWidth * devicePixelRatio, H = cv.height = cv.clientHeight * devicePixelRatio;
+    const css = getComputedStyle(document.documentElement);
+    g.clearRect(0, 0, W, H);
+    const d = duration();
+    g.fillStyle = css.getPropertyValue("--mute");
+    for (const e of S.events) {
+      if (e.ev !== "seg" && e.ev !== "take" && e.ev !== "phase") continue;
+      g.fillRect(e.t / d * W, H * .25, Math.max(1, devicePixelRatio), H * .5);
+    }
+    g.fillStyle = css.getPropertyValue("--accent");
+    for (const e of S.events) {
+      if (e.ev !== "mark") continue;
+      g.fillRect(e.t / d * W - devicePixelRatio, 0, 2 * devicePixelRatio, H);
+    }
+    g.fillStyle = css.getPropertyValue("--ink");
+    g.fillRect((video.currentTime || 0) / d * W - devicePixelRatio, 0, 2 * devicePixelRatio, H);
+  }
+
+  let lastNow = -1;
+  function tick() {
+    const t = video.currentTime || 0;
+    $("time").textContent = `${fmt(t)} / ${fmt(duration())}`;
+    drawTimeline();
+    let now = -1;
+    for (let i = 0; i < S.events.length && S.events[i].t <= t; i++) now = i;
+    if (now !== lastNow) {
+      const items = $("events").children;
+      items[lastNow]?.classList.remove("now");
+      items[now]?.classList.add("now");
+      lastNow = now;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  async function load(stamp) {
+    S.stamp = stamp;
+    S.verdict = await j(`/runs/${stamp}/verdict.json`);
+    S.events = await j(`/runs/${stamp}/events.json`).catch(() => []);
+    lastNow = -1;
+    renderVerdicts();
+    renderEvents();
+    video.currentTime = 0;
+    setView(S.view);
+    const u = new URL(location);
+    u.searchParams.set("run", stamp);
+    history.replaceState(null, "", u);
+  }
+
+  async function init() {
+    const runs = await j("/runs/index.json").catch(() => []);
+    if (!runs.length) {
+      document.querySelector("main").innerHTML = '<p id="empty">まだ走行がありません。py -3.11 tools/twin-verify.py で 1 回走らせます。</p>';
+      return;
+    }
+    const sel = $("run");
+    sel.replaceChildren(...runs.map(s => { const o = document.createElement("option"); o.value = o.textContent = s; return o; }));
+    sel.onchange = () => load(sel.value);
+    const want = new URLSearchParams(location.search).get("run");
+    sel.value = runs.includes(want) ? want : runs[0];
+    await load(sel.value);
+    $("v-eye").onclick = () => setView("eye");
+    $("v-follow").onclick = () => setView("follow");
+    $("timeline").onclick = ev => {
+      const r = ev.currentTarget.getBoundingClientRect();
+      video.currentTime = (ev.clientX - r.left) / r.width * duration();
+    };
+    addEventListener("resize", drawTimeline);
+    window.verify = { state: () => ({ stamp: S.stamp, view: S.view, t: video.currentTime, dur: duration(), events: S.events.length, pass: S.verdict?.pass, src: video.currentSrc }), seek: t => { video.currentTime = t; } };
+    requestAnimationFrame(tick);
+  }
+  init();
+})();
+</script>
+</body>
+</html>

@@ -24,7 +24,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay', 'crt-tune')]
+    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay', 'twin-run', 'crt-tune')]
     [string]$Action,
 
     [Parameter(Position = 1)]
@@ -769,8 +769,9 @@ switch ($Action) {
         exit 0
     }
 
-    'replay' {
-        # 体験の記録（Quest の ExperienceRecorder）を本番の Main シーンへ流し直し、広い画角で mp4 にする。
+    { $_ -in 'replay', 'twin-run' } {
+        # replay: 体験の記録（Quest の ExperienceRecorder）を本番の Main シーンへ流し直し、広い画角で mp4 にする。
+        # twin-run: HMD も Quest も無しに本番の Main シーンを通し、体験の記録を作る（入口は tools/twin-verify.py）。
         # ⚠ `unity run` は -quit を必ず張る。Play は executeMethod が返った後も走り続けるので、
         #    ここだけは Unity.exe を直接 batchmode で起こし、終わったら Editor 側が自分で閉じる（XpReplayRun）。
         Assert-NotLocked
@@ -788,13 +789,14 @@ switch ($Action) {
                 $fcv += '-fcv'; $fcv += $one
             }
         }
-        $log = New-UnityInvocationLog 'replay'
+        $log = New-UnityInvocationLog $Action
+        $playMethod = if ($Action -eq 'twin-run') { 'XpTwinRun' } else { 'XpReplayRun' }
         $argList = @('-batchmode', '-projectPath', $Root,
-                     '-executeMethod', 'FixedCamVr.Streaming.EditorTools.Replay.XpReplayRun.Run',
+                     '-executeMethod', "FixedCamVr.Streaming.EditorTools.Replay.$playMethod.Run",
                      '-logFile', $log) + $fcv
         # 引数に空白があれば引用する（Start-Process は配列をそのまま連結する）
         $quoted = $argList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
-        Write-Host "体験の再生と撮影（記録の尺 + 起動に 1 分前後）" -ForegroundColor Cyan
+        Write-Host "$(if ($Action -eq 'twin-run') { 'ツイン走行（体験の尺 + 起動に 1 分前後）' } else { '体験の再生と撮影（記録の尺 + 起動に 1 分前後）' })" -ForegroundColor Cyan
         $p = Start-Process -FilePath $ed -ArgumentList $quoted -PassThru -WindowStyle Hidden
         # 上限は 40 分（15 分の記録を遅い PC で撮っても収まる）。超えたら落とす。
         if (-not $p.WaitForExit(40 * 60 * 1000)) {
@@ -804,7 +806,7 @@ switch ($Action) {
         $code = $p.ExitCode
         try { Protect-UnityLogFile -Path $log } catch { }
         if (Test-Path $log) {
-            Get-Content $log -Encoding UTF8 | Where-Object { $_ -match '^\[(Replay|XpRec)\]|error CS\d+' } |
+            Get-Content $log -Encoding UTF8 | Where-Object { $_ -match '^\[(Replay|XpRec|Twin|XPWalk)\]|error CS\d+' } |
                 Select-Object -Last 40 | ForEach-Object { Write-Host "  $_" }
         }
         if ($code -eq 0) { Write-Host "✓ 終わった（全文は $log）" -ForegroundColor Green }

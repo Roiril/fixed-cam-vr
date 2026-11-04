@@ -13,6 +13,13 @@ py -3.11 tools/twin-game/serve.py 8133   # → http://localhost:8133/
 | 1 2 3 / 0 | カメラ A B C / 自動 |
 | L / M / H / D | 線 / 地図 / HMD の画 / 検証 |
 
+## HMD なしの動作検証の面（verify.html）
+
+`http://localhost:8133/verify.html`。`tools/twin-verify.py` の走行を選び、目線の動画と判定と出来事を並べて見る。
+出来事を押すとその時刻へ飛ぶ。時間軸の赤は報告。走行は Drive の `renders/twin-verify/` をサーバが `/runs/` で配る。
+
+`index.html` の「HMD の画」は仮想体験の記録（時間軸が `routes/` と同じ）で、verify.html の走行とは別物。
+
 ## シュビーが検証するとき
 
 動画が無い経路でも、線の表示（壁・区画・経路・体の円）だけで確かめられる。経路を変えたら再レンダなしで見える。
