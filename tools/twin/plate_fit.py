@@ -2,6 +2,7 @@
 
     py -3.11 tools/twin/plate_fit.py              # 解いて表示
     py -3.11 tools/twin/plate_fit.py --out <dir>  # 枠を重ねた画も書く
+    py -3.11 tools/twin/plate_fit.py --only A --write  # 1 台だけ解き直す。画角と他の台は rig.json のまま（他の台の動画を焼き直さずに済む）
 
 観測は plate_obs.json（画素を読んだ点と線）。投影は tools/web-compositor/calib.js の projectPoint と同じ式。
 画角は 3 台で共通（同じ機種の同じレンズ）。比較のため 1 台ごとに解いた画角も出す。
@@ -123,6 +124,18 @@ def solve_single(cid, f0):
     return lm(fun, init_vec(cid) + [f0], CAM_STEPS + [0.4])
 
 
+def solve_only(cid, f):
+    """画角を止めて 1 台だけ解く。"""
+    return lm(lambda x: residuals_cam(cid, x, f), init_vec(cid), CAM_STEPS)
+
+
+def plate_path(cid):
+    """A だけ過去の写真を tools/twin/plates に置いている（plate_obs.json の _source）。"""
+    name = OBS["plates"][cid]
+    local = HERE / "plates" / name
+    return local if local.exists() else ROOT / "Assets" / "StreamingAssets" / "show" / "assets" / name
+
+
 def hfov(f):
     return 2 * math.degrees(math.atan(CX / f))
 
@@ -133,7 +146,7 @@ def overlay(cid, v, f, out_dir):
     fr = OBS["frame"]
     (cx, cz), (ax, az), (bx, bz) = fr["corner"], fr["endW1"], fr["endW2"]
     top, rail = fr["topY"], fr["railY"]
-    im = Image.open(ROOT / "Assets" / "StreamingAssets" / "show" / "assets" / OBS["plates"][cid]).convert("RGB")
+    im = Image.open(plate_path(cid)).convert("RGB")
     d = ImageDraw.Draw(im)
     segs = []
     for ex, ez in ((ax, az), (bx, bz)):
@@ -161,9 +174,11 @@ def write_rig(res) -> None:
     """解を rig.json のカメラへ移す。向きは pos + 視線 2m の lookAt と roll で持つ（TwinRig・look_matrix と同じ形）。"""
     path = HERE / "rig.json"
     rig = json.loads(path.read_text(encoding="utf-8"))
-    rig["_fit"] = {"hfovDeg": res["hfovDeg"], "fPx": res["fPx"], "rmsPx": {c: res["cameras"][c]["rmsPx"] for c in CAMS}}
+    rig["_fit"] = {"hfovDeg": res["hfovDeg"], "fPx": res["fPx"], "rmsPx": {**rig.get("_fit", {}).get("rmsPx", {}), **{c: s["rmsPx"] for c, s in res["cameras"].items()}}}
     for cam in rig["cameras"]:
-        s = res["cameras"][cam["id"]]
+        s = res["cameras"].get(cam["id"])
+        if s is None:
+            continue
         fwd = rot(s["pitchDeg"], s["yawDeg"], s["rollDeg"])[:, 2]
         pos = np.array([s["x"], s["y"], s["z"]])
         cam["pos"] = [float(v) for v in pos]
@@ -182,7 +197,23 @@ def main() -> int:
     ap.add_argument("--out")
     ap.add_argument("--json", help="解を JSON で書く")
     ap.add_argument("--write", action="store_true", help="解を rig.json へ書く（機材の種類・棚・部屋の寸法は rig.json のまま）")
+    ap.add_argument("--only", choices=list(CAMS), help="この 1 台だけ解く。画角は rig.json の値に止める")
     a = ap.parse_args()
+    if a.only:
+        rig = json.loads((HERE / "rig.json").read_text(encoding="utf-8"))
+        f = float(rig["_fit"]["fPx"])
+        v, rr = solve_only(a.only, f)
+        rms = math.sqrt(float(rr @ rr) / len(rr))
+        print(f"{a.only}: 位置 x={v[0]:+.3f} 高さ={v[1]:.3f} z={v[2]:+.3f}  yaw={v[3]:+.1f} pitch={v[4]:+.1f} roll={v[5]:+.1f}  rms {rms:.2f}px（f={f}）")
+        xs, rs = solve_single(a.only, f)
+        print(f"  画角も解くと: 水平 {hfov(xs[6]):.1f} 度  rms {math.sqrt(float(rs @ rs) / len(rs)):.2f}px  位置 {xs[0]:+.3f},{xs[1]:.3f},{xs[2]:+.3f}")
+        if a.out:
+            overlay(a.only, v, f, a.out)
+        if a.write:
+            write_rig({"fPx": rig["_fit"]["fPx"], "hfovDeg": rig["_fit"]["hfovDeg"], "cameras": {a.only: {
+                "x": round(float(v[0]), 3), "y": round(float(v[1]), 3), "z": round(float(v[2]), 3),
+                "yawDeg": round(float(v[3]), 2), "pitchDeg": round(float(v[4]), 2), "rollDeg": round(float(v[5]), 2), "rmsPx": round(rms, 2)}}})
+        return 0
     x, r = solve_joint()
     f = x[-1]
     print(f"共通の画角: 水平 {hfov(f):.1f} 度（f={f:.1f}px）  全体 rms {math.sqrt(float(r @ r) / len(r)):.2f}px")

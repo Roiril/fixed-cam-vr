@@ -14,7 +14,7 @@
 
 ⚠ 実機の代わりではない。圧縮・遅延・両眼・ディスプレイ・パススルーは入らない。音はここでは聴けても実機の聞こえではない。
 ⚠ PASS は人形が実写に合っていることを意味しない。既定は APK と同じ本番の値で、ツインの画には合わない（report の頭に差を出す）。
-   人形を画に合わせて見るなら --calib twin。カメラ A の配置によっては別れの人形の立ち位置が解けず、結末は中断になる。
+   人形を画に合わせて見るなら --calib twin。実際のレンズの値では別れの人形の立ち位置が解けず、結末は中断になる。
 """
 from __future__ import annotations
 
@@ -185,7 +185,10 @@ def main() -> int:
     rec = run_info.get("recDir", "")
     videos = {}
     replay_compare = ""
-    if not a.no_video and rc_run == 0 and rec:
+    # 走行が終わったあとの Editor の終了処理で落ちることがある（記録と判定は揃っている）。撮影は走行の結果で決める。
+    if rc_run != 0 and run_info.get("result") == "ok":
+        verdicts.insert(0, {"level": "WARN", "text": f"走行のあと Editor の終了処理で落ちた（exit={rc_run}）。走行の記録は揃っている"})
+    if not a.no_video and run_info.get("result") == "ok" and rec:
         for view, off in (("eye", a.no_eye), ("follow", not a.follow)):
             if off:
                 continue
@@ -243,7 +246,8 @@ def main() -> int:
     # C: を食うものは残さない。
     if videos:
         shutil.rmtree(work, ignore_errors=True)
-    if rec and not a.keep_rec and Path(rec).is_dir():
+    # 撮れなかった走行の記録は残す（再生で撮り直せる）。
+    if rec and not a.keep_rec and Path(rec).is_dir() and (videos or a.no_video):
         shutil.rmtree(rec, ignore_errors=True)
 
     print(f"{'PASS' if ok else 'NOT PASS'} FAIL={n['FAIL']} WARN={n['WARN']} OK={n['OK']}")
