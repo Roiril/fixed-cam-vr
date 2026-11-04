@@ -70,8 +70,12 @@ def tm_cloth(name, base):
     tone = g.noise(gen, 12.0, 4.0, 0.5).outputs["Fac"]
     c = g.mix(g.smooth(tone, 0.32, 0.68), tm.rgb(*[v * 0.82 for v in base]), tm.rgb(*[v * 1.25 for v in base]))
     c = g.mix(g.smooth(l, 0.05, 0.3), tm.rgb(*[v * 0.55 for v in base]), c)
-    n = g.bump(l, 0.05, 1.0)
-    return g.finish(g.principled(c, 0.82, 0.26, normal=n, sheen=0.1))
+    # 綾織の目（8cm 四方）。皺の形は _shirt_folds が刻むので、ここは糸の細かさを足す
+    wv = g.mapping(g.tc.outputs["Object"], scale=(12.5, 12.5, 12.5), loc=(0.2, 0.1, 0.3))
+    wh, _, wd = g.split(g.image("cloth_weave_s", wv, srgb=False, box=True).outputs[0])
+    c = g.mix(1.0, c, g.gray(g.add(0.55, g.mul(wd, 0.9))), "MULTIPLY")
+    n = g.bump(g.add(g.mul(l, 0.016), g.mul(wh, 0.0009)), 1.0, 1.0)
+    return g.finish(g.principled(c, g.add(0.74, g.mul(wd, 0.14)), 0.2, normal=n, sheen=0.06))
 
 
 def skin_material(img_diffuse, normal_img=None):
@@ -316,7 +320,7 @@ class Person:
             c0, ax0, rt0, r0x, r0y = arm_rings[0]
             arm_rings.insert(0, (c0 - ax0 * 0.05, ax0, rt0, r0x * 0.82, r0y * 0.82))
         is_arm = lambda nm: "Arm" in nm or "Hand" in nm
-        cloth_top = tm_cloth("shirt", (0.0062, 0.0062, 0.0068))
+        cloth_top = tm_cloth("shirt", (0.014, 0.014, 0.015))
         shirt = self._garment("Shirt", [torso], [tops], cloth_top, self._shirt_folds, allow=lambda nm: not is_arm(nm))
         sleeve_r = self._garment("Sleeve R", [rarm], [body, tops], cloth_top, self._shirt_folds, smooth=6, allow=lambda nm: is_arm(nm) and "Right" in nm)
         sleeve_l = self._garment("Sleeve L", [larm], [body, tops], cloth_top, self._shirt_folds, smooth=6, allow=lambda nm: is_arm(nm) and "Left" in nm)
@@ -336,7 +340,7 @@ class Person:
             side.normalize()
             cc = mid + side * 0.066
             pockets.append([(cc + Vector((0, 0, z)), Vector((0, 0, 1)), rt_axis, 0.05 * k, 0.06 * k) for z, k in ((-0.085, 0.7), (-0.06, 1.0), (0.06, 1.0), (0.085, 0.7))])
-        pants = self._garment("Pants", [pelvis, rleg, lleg, *pockets], [bottoms, body], tm_cloth("pants", (0.0052, 0.0052, 0.0056)), self._pants_folds, allow=lambda nm: not is_arm(nm) and "Spine" not in nm)
+        pants = self._garment("Pants", [pelvis, rleg, lleg, *pockets], [bottoms, body], tm_cloth("pants", (0.012, 0.012, 0.013)), self._pants_folds, allow=lambda nm: not is_arm(nm) and "Spine" not in nm)
         tops.hide_render = True
         bottoms.hide_render = True
         self.garments = [shirt, sleeve_r, sleeve_l, pants]

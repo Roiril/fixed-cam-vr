@@ -45,10 +45,10 @@ py -3.11 tools/twin/check_rig.py
 | `routes/*.tsv` | Unity の仮想体験（`path=rail`）の記録。手すりから 0.16m の道を歩く。30Hz に間引き |
 | `twin_scene.py` | 部屋・カーテン・棚・三脚・床置き台・アーム・電球 |
 | `twin_person.py` | 代役。黒い長袖とカーゴ・毛の髪・Quest 3。歩きと右手の手すり |
-| `twin_materials.py` | 材質。`textures/` の素材写真と手続きの組み合わせ |
+| `twin_materials.py` | 材質。素材写真を土台に、汚れは形から決める（AO の隅・出っ張った縁の欠け・上向きの面の埃・高さ・金具の下の筋） |
 | `twin_post.py` | 写真の仕上げ（自動露出・レンズのかぶり・色ずれ・ノイズ・シャープ・JPEG） |
 | `twin_render.py` | Cycles の設定と撮影。`still` と `seq` |
-| `prep_textures.py` | 生成した素材写真のつなぎ目を消す。生成元は Drive `renders/twin-cycles/textures-src` |
+| `prep_textures.py` | 生成した素材写真から色（`<名前>.jpg`）と面の情報（`<名前>_s.jpg`。R 高さ・G 層・B 細かい明暗）を作る。缶のラベルと箱の印刷はコードで組む。生成元は Drive `renders/twin-cycles/textures-src`（`v2/` が追加分） |
 | `audit_prompt.md` | 監査の文面（基準を動かさないため固定） |
 
 ## 配置の決め方

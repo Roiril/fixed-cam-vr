@@ -90,7 +90,9 @@ def process(hdr: np.ndarray, look: str = "photo", seed: int = 1, exposure: float
     chroma = rng.normal(0, 1, (h // 2, w // 2, 3)).astype(np.float32)
     chroma = cv2.resize(cv2.GaussianBlur(chroma, (0, 0), 0.8), (w, h), interpolation=cv2.INTER_CUBIC)
     chroma = chroma - chroma.mean(-1, keepdims=True)
-    y = y + sigma * (grain + chroma * p["chroma"] * 1.6)
+    # 飽和した画素には雑音が乗らない（白飛びの上の粒は後から足した印）
+    keep = np.clip((0.985 - lum) / 0.08, 0, 1)
+    y = y + sigma * keep * (grain + chroma * p["chroma"] * 1.6)
     y = y + p["black"]
     # カメラ内シャープ
     blur = cv2.GaussianBlur(y, (0, 0), 1.1)

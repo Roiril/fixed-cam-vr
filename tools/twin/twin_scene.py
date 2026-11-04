@@ -46,13 +46,26 @@ def build_shell(mats):
                 uvl.data[li_].uv = (ii / nu * u.length / 4.8 + seed * 0.29, jj / nv * v.length / tc.ROOM_H)
         return ob
 
+    def dice(ob, px=3.0):
+        """材質の高さで面を実際に動かす。画面の細かさに合わせて割るので、影が段差に落ちる。"""
+        m = ob.modifiers.new("dice", "SUBSURF")
+        m.subdivision_type = "SIMPLE"
+        m.use_adaptive_subdivision = True
+        m.adaptive_space = "PIXEL"
+        m.adaptive_pixel_size = px
+
     W, D = x1 - x0, y1 - y0
     grid("Floor", Vector((x0, y0, 0)), Vector((W, 0, 0)), Vector((0, D, 0)), 40, 40, mats["floor"], 0.0015, 1)
     grid("Ceiling", Vector((x0, y1, h)), Vector((W, 0, 0)), Vector((0, -D, 0)), 40, 40, mats["ceiling"], 0.006, 2)
-    grid("Wall +y", Vector((x1, y1, 0)), Vector((-W, 0, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 3)
-    grid("Wall -y", Vector((x0, y0, 0)), Vector((W, 0, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 4)
-    grid("Wall -x", Vector((x0, y1, 0)), Vector((0, -D, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 5)
-    grid("Wall +x", Vector((x1, y0, 0)), Vector((0, D, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 6)
+    dice(grid("Wall +y", Vector((x1, y1, 0)), Vector((-W, 0, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 3))
+    dice(grid("Wall -y", Vector((x0, y0, 0)), Vector((W, 0, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 4))
+    dice(grid("Wall -x", Vector((x0, y1, 0)), Vector((0, -D, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 5))
+    dice(grid("Wall +x", Vector((x1, y0, 0)), Vector((0, D, 0)), Vector((0, 0, h)), 90, 45, mats["wall"], 0.006, 6))
+    # 入隅の塗り溜まり（面と面が刃物の線で交わらないように）
+    r = 0.017
+    for a0, a1 in [((x0, y1, 0), (x0, y1, h)), ((x1, y1, 0), (x1, y1, h)), ((x0, y0, 0), (x0, y0, h)), ((x1, y0, 0), (x1, y0, h)),
+                   ((x0, y0, h), (x0, y1, h)), ((x1, y0, h), (x1, y1, h)), ((x0, y0, h), (x1, y0, h)), ((x0, y1, h), (x1, y1, h))]:
+        add_cyl("Corner bead", a0, a1, r, mats["corner"], "Room", seg=16)
     # 幅木（欠けた木）
     b = mats["baseboard"]
     for name, a0, a1 in [("Base +y", (x0, y1 - 0.016, 0), (x1, y1, 0.09)), ("Base -x", (x0, y0, 0), (x0 + 0.016, y1, 0.09)),
@@ -71,7 +84,12 @@ def build_conduit(mats):
     for z in [0.48, 1.06, 1.68, 2.3, 2.9]:
         add_box(f"Clamp {z}", (x0 + 0.002, py - 0.03, z - 0.012), (px + 0.02, py + 0.03, z + 0.012), rust, bevel=0.002)
     # 分電箱
-    add_box("Junction", (x0 + 0.003, py + 0.06, 1.18), (x0 + 0.075, py + 0.2, 1.38), mats["panel"], bevel=0.004)
+    add_box("Junction", (x0 + 0.003, py + 0.06, 1.18), (x0 + 0.07, py + 0.2, 1.38), mats["panel"], bevel=0.004)
+    add_box("Junction lid", (x0 + 0.07, py + 0.054, 1.174), (x0 + 0.077, py + 0.206, 1.386), mats["panel"], bevel=0.002)
+    for sy, sz in [(0.068, 1.186), (0.192, 1.186), (0.068, 1.374), (0.192, 1.374)]:
+        add_cyl("Junction screw", (x0 + 0.077, py + sy, sz), (x0 + 0.0795, py + sy, sz), 0.0042, rust, seg=12)
+    add_cyl("Junction gland", (x0 + 0.042, py + 0.13, 1.372), (x0 + 0.042, py + 0.13, 1.405), 0.0165, rust, seg=16)
+    add_cyl("Junction gland 2", (x0 + 0.042, py + 0.0, 1.27), (x0 + 0.042, py + 0.06, 1.27), 0.013, rust, seg=16)
     add_cyl("Conduit h", (x0 + 0.042, py + 0.13, 1.38), (x0 + 0.042, py + 0.13, 2.74), 0.011, rust)
     add_cyl("Conduit t", (x0 + 0.042, py + 0.13, 2.74), (x0 + 0.042, y1 - 0.04, 2.74), 0.011, rust)
     add_cyl("Conduit t2", (x0 + 0.042, y1 - 0.04, 2.74), (0.6, y1 - 0.04, 2.74), 0.011, rust)
@@ -322,6 +340,84 @@ def build_cradle(cam, mats, m: Matrix, phone_center: Vector, cable_to: Vector):
     add_tube("Cradle cable", [port + fx2 * 0.02, port + fx2 * 0.05 - Vector((0, 0, 0.035)), o + fx2 * 0.16 + Vector((0, 0, 0.012)), o + fx2 * 0.32 + fy * 0.05 + Vector((0, 0, 0.003)), cable_to], 0.0019, mats["cable"], "Rig")
 
 
+def _slotted_flange(name, origin, along, z1, mat):
+    """穴あきアングルの片面。幅 36mm、中央に 14×32mm の長穴が 60mm おき。厚みは Solidify。"""
+    cols = [0.0, 0.011, 0.025, 0.036]
+    rows = [0.0]
+    z = 0.024
+    while z + 0.032 < z1 - 0.01:
+        rows += [z, z + 0.032]
+        z += 0.06
+    rows.append(z1)
+    index, verts, faces = {}, [], []
+
+    def vid(i, j):
+        k = (i, j)
+        if k not in index:
+            index[k] = len(verts)
+            verts.append(origin + along * cols[i] + Vector((0, 0, rows[j])))
+        return index[k]
+
+    for j in range(len(rows) - 1):
+        hole = j % 2 == 1
+        for i in range(3):
+            if i == 1 and hole:
+                continue
+            faces.append((vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)))
+    ob = add_mesh(name, verts, faces, mat, "Rig")
+    sol = ob.modifiers.new("thick", "SOLIDIFY")
+    sol.thickness = 0.0018
+    return ob
+
+
+def _paint_can(idx, cx, cy, z, r, hh, tilt, rot, mats):
+    """ペンキ缶。胴・巻き締めのふち・つる。紙ラベルは少し浮いて端がめくれる。"""
+    ob = add_lathe(f"Can {idx}", [(0, 0), (r, 0), (r + 0.002, 0.004), (r + 0.002, 0.016), (r, 0.018), (r, hh - 0.016), (r + 0.003, hh - 0.012), (r + 0.003, hh - 0.002), (r - 0.006, hh), (r - 0.008, hh - 0.006), (0, hh - 0.006)],
+                   mats["can"], "Rig", center=(0, 0, 0))
+    ob.location = (cx, cy, z + (r * math.sin(tilt)))
+    ob.rotation_euler = (tilt, 0.0, rot)
+    for v in ob.data.vertices:
+        t = math.atan2(v.co.y, v.co.x)
+        dent = 0.0018 * math.sin(t * 3 + idx) * math.sin(v.co.z * 31 + idx)
+        v.co.x += math.cos(t) * dent
+        v.co.y += math.sin(t) * dent
+    # 紙ラベル
+    a0 = -2.4 + idx * 0.5
+    sweep = [4.4, 3.3, 3.9][idx]
+    nu, nv = 48, 14
+    verts, faces, uvs = [], [], []
+    for j in range(nv + 1):
+        for i in range(nu + 1):
+            u, v = i / nu, j / nv
+            peel = max(0.0, u - 0.8) / 0.2 * max(0.0, v - 0.35) / 0.65
+            rr = r + 0.0024 + peel * 0.016
+            ang = a0 + u * sweep
+            verts.append((math.cos(ang) * rr, math.sin(ang) * rr, hh * (0.2 + 0.56 * v) + peel * 0.003))
+            uvs.append((u * min(1.0, sweep / 4.4), v))
+    for j in range(nv):
+        for i in range(nu):
+            k = j * (nu + 1) + i
+            faces.append((k, k + 1, k + nu + 2, k + nu + 1))
+    lab = add_mesh(f"Can label {idx}", verts, faces, mats[f"label_{idx}"], "Rig", smooth=True)
+    uvl = lab.data.uv_layers.new(name="UVMap")
+    for lo in lab.data.loops:
+        uvl.data[lo.index].uv = uvs[lo.vertex_index]
+    lab.location, lab.rotation_euler = ob.location, ob.rotation_euler
+    # つる（針金）。寝かせて缶の肩に掛かる
+    side = 0.72 + idx * 0.7
+    e0 = Vector((math.cos(side) * (r + 0.002), math.sin(side) * (r + 0.002), hh - 0.03))
+    e1 = Vector((-e0.x, -e0.y, hh - 0.03))
+    mid_dir = Vector((-e0.y, e0.x, 0)).normalized()
+    pts = [e0, e0 * 1.03 + Vector((0, 0, 0.016)), mid_dir * (r * 1.06) + Vector((0, 0, hh - 0.012)), e1 * 1.03 + Vector((0, 0, 0.016)), e1]
+    bail = add_tube(f"Can bail {idx}", pts, 0.0012, mats["bolt"], "Rig", res=16)
+    bail.location, bail.rotation_euler = ob.location, ob.rotation_euler
+    for e, nm in ((e0, "a"), (e1, "b")):
+        n = e.normalized()
+        ear = add_cyl(f"Can ear {idx}{nm}", e, e + n * 0.003, 0.0065, mats["bolt"], "Rig", seg=12)
+        ear.location, ear.rotation_euler = ob.location, ob.rotation_euler
+    return ob
+
+
 def build_shelf(rig, mats):
     """C のアームを留める軽量ラック（実プレート C）。"""
     s = rig["shelf"]
@@ -329,10 +425,11 @@ def build_shelf(rig, mats):
     x1, z1, y1 = s["max"]
     steel = mats["shelf_steel"]
     for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]:
-        # L アングルの柱（穴あきの見え方は法線の縞で）
-        add_box("Rack post a", (x - 0.018, y - 0.018, 0), (x + 0.018, y - 0.0145, z1), mats["steel_x"], "Rig")
-        add_box("Rack post b", (x - 0.018, y - 0.018, 0), (x - 0.0145, y + 0.018, z1), mats["steel_y"], "Rig")
-    levels = [0.14, 0.72, 1.28, s["max"][1] - 0.02]
+        # L アングルの柱。長穴は形として開ける（縁に光と影が乗る）
+        _slotted_flange("Rack post a", Vector((x - 0.018, y - 0.018, 0)), Vector((1, 0, 0)), z1, steel)
+        _slotted_flange("Rack post b", Vector((x - 0.018, y - 0.018, 0)), Vector((0, 1, 0)), z1, steel)
+    # 棚板の高さはプレート A から読んだ値（下段・0.8m・1.17m・最上段）
+    levels = [0.14, 0.8, 1.17, s["max"][1] - 0.02]
     for z in levels:
         add_box(f"Rack shelf {z}", (x0 - 0.012, y0 - 0.012, z - 0.012), (x1 + 0.012, y1 + 0.012, z), steel, "Rig", bevel=0.0015)
         add_box(f"Rack beam f {z}", (x0, y0 - 0.02, z - 0.045), (x1, y0 - 0.012, z), steel, "Rig", bevel=0.001)
@@ -358,6 +455,15 @@ def build_shelf(rig, mats):
             v.co = Vector((x, y, zz))
         bm.to_mesh(me)
         bm.free()
+        # 正面（-y）だけに印刷。box_print は範囲の外が「インク無し」
+        uvl = me.uv_layers.new(name="UVMap")
+        for poly in me.polygons:
+            for li_ in poly.loop_indices:
+                co = me.vertices[me.loops[li_].vertex_index].co
+                if poly.normal.y < -0.7:
+                    uvl.data[li_].uv = (co.x / (w * 0.84) + 0.5, (co.z - hh * 0.1) / (min(w * 0.84 * 2 / 3, hh * 0.78)))
+                else:
+                    uvl.data[li_].uv = (-1.0, -1.0)
         ob = bpy.data.objects.new(name, me)
         tc.collection("Rig").objects.link(ob)
         ob.location = (cx, cy, z)
@@ -367,7 +473,10 @@ def build_shelf(rig, mats):
         bev = ob.modifiers.new("b", "BEVEL")
         bev.width = 0.002
         bev.limit_method = "ANGLE"
-        # 上蓋の隙間とガムテープの切れ端
+        # 蓋の合わせ目と、ガムテープの切れ端
+        seam = add_box(name + " seam", (-0.0016, -d / 2 + 0.002, hh - 0.0155), (0.0016, d / 2 - 0.002, hh - 0.0115), mats["rubber"], "Rig")
+        seam.location = (cx, cy, z)
+        seam.rotation_euler[2] = ob.rotation_euler[2]
         if rnd.random() < 0.7:
             l = d * rnd.uniform(0.45, 1.0)
             tw = 0.048
@@ -376,40 +485,24 @@ def build_shelf(rig, mats):
             tape.rotation_euler[2] = ob.rotation_euler[2]
         return ob
 
-    box("Rack box 1", x0 + 0.3, y0 + 0.19, 0.73, 0.4, 0.3, 0.24)
-    box("Rack box 2", x0 + 0.86, y0 + 0.18, 1.285, 0.34, 0.27, 0.2)
+    box("Rack box 1", x0 + 0.3, y0 + 0.19, 0.805, 0.4, 0.3, 0.24)
+    box("Rack box 2", x0 + 0.86, y0 + 0.18, 1.175, 0.34, 0.27, 0.2)
     box("Rack box 3", x0 + 0.29, y0 + 0.2, 0.145, 0.44, 0.31, 0.3)
     # ペンキ缶（大きさと潰れ方を変える。ラベルと垂れ）
-    cans = [(x0 + 0.84, y0 + 0.14, 0.72, 0.082, 0.19, 0.0, 0.14), (x0 + 1.03, y0 + 0.2, 0.72, 0.058, 0.12, 0.0, -0.06), (x0 + 0.34, y0 + 0.22, 1.28, 0.1, 0.235, 0.35, 0.3)]
+    cans = [(x0 + 0.84, y0 + 0.14, 0.8, 0.082, 0.19, 0.0, 0.14), (x0 + 1.03, y0 + 0.2, 0.8, 0.058, 0.12, 0.0, -0.06), (x0 + 0.34, y0 + 0.22, 1.17, 0.1, 0.235, 0.0, 0.3)]
     for i, (cx, cy, z, r, hh, tilt, rot) in enumerate(cans):
-        ob = add_lathe(f"Can {i}", [(0, 0), (r, 0), (r + 0.002, 0.004), (r + 0.002, 0.016), (r, 0.018), (r, hh - 0.016), (r + 0.003, hh - 0.012), (r + 0.003, hh - 0.002), (r - 0.006, hh), (r - 0.008, hh - 0.006), (0, hh - 0.006)],
-                       mats["can"], "Rig", center=(0, 0, 0))
-        ob.location = (cx, cy, z + (r * math.sin(tilt)))
-        ob.rotation_euler = (tilt, 0.0, rot)
-        for v in ob.data.vertices:
-            t = math.atan2(v.co.y, v.co.x)
-            dent = 0.004 * math.sin(t * 3 + i) * math.sin(v.co.z * 31 + i)
-            v.co.x += math.cos(t) * dent
-            v.co.y += math.sin(t) * dent
-        # 紙のラベル（半分はがれている）
-        lab = []
-        faces = []
-        for q in range(12):
-            ang = -1.6 + q / 11 * rnd.uniform(1.3, 1.9)
-            lab += [(math.cos(ang) * (r + 0.0012), math.sin(ang) * (r + 0.0012), hh * 0.22), (math.cos(ang) * (r + 0.0012), math.sin(ang) * (r + 0.0012), hh * 0.72)]
-        for q in range(11):
-            faces.append((2 * q, 2 * q + 2, 2 * q + 3, 2 * q + 1))
+        _paint_can(i, cx, cy, z, r, hh, tilt, rot, mats)
     # 束ねたケーブル（棚の段から垂れる）
     for k in range(3):
-        pts = [Vector((x0 + 0.5 + k * 0.05, y0 + 0.02, 0.72 - 0.004))]
+        pts = [Vector((x0 + 0.5 + k * 0.05, y0 + 0.02, 0.8 - 0.004))]
         for m in range(5):
-            pts.append(Vector((x0 + 0.5 + k * 0.05 + rnd.uniform(-0.04, 0.04), y0 - 0.03 - rnd.uniform(0, 0.03), 0.72 - 0.1 * (m + 1))))
+            pts.append(Vector((x0 + 0.5 + k * 0.05 + rnd.uniform(-0.04, 0.04), y0 - 0.03 - rnd.uniform(0, 0.03), 0.8 - 0.1 * (m + 1))))
         add_tube(f"Rack cable {k}", pts, 0.0028, mats["cable"], "Rig")
     # 棚のボルト
     for (x, y) in [(x0, y0), (x1, y0)]:
         for z in levels:
             for dx in (-0.012, 0.012):
-                add_cyl("Rack bolt", (x + dx, y - 0.0195, z - 0.03), (x + dx, y - 0.024, z - 0.03), 0.0045, mats["can"], "Rig", seg=6)
+                add_cyl("Rack bolt", (x + dx, y - 0.0195, z - 0.03), (x + dx, y - 0.024, z - 0.03), 0.0045, mats["bolt"], "Rig", seg=6)
     return levels
 
 
@@ -553,11 +646,11 @@ def build_debris(mats):
         return x0 + (x1 - x0) * s, y0 + d
 
     # 塗膜の片（薄く反った不定形）
-    for _ in range(520):
+    for _ in range(180):
         x, y = place()
         if not (x0 < x < x1 and y0 < y < y1):
             continue
-        size = 0.003 + rnd.random() ** 4 * 0.022
+        size = 0.0015 + rnd.random() ** 6 * 0.006
         seg = 14
         ph = [rnd.random() * 6.28 for _ in range(4)]
         curl = rnd.uniform(-0.25, 0.45)
@@ -586,7 +679,7 @@ def build_debris(mats):
             x, y = rnd.uniform(x0, x1), rnd.uniform(y0, y1)
         if not (x0 < x < x1 and y0 < y < y1):
             continue
-        r = 0.0005 + rnd.random() ** 5 * 0.006
+        r = 0.0004 + rnd.random() ** 7 * 0.0032
         b = n
         k = rnd.randint(4, 6)
         apex = b + k
@@ -599,7 +692,7 @@ def build_debris(mats):
         n += k + 1
         for q in range(k):
             faces.append((b + q, b + (q + 1) % k, apex))
-    add_mesh("Debris grit", verts, faces, mats["grit"], "Room")
+    add_mesh("Debris grit", verts, faces, mats["grit"], "Room", smooth=True)
 
 
 def build_dust(count=1500):
@@ -630,17 +723,27 @@ def build_air(density):
     x0, x1 = tc.ROOM_X
     y0, y1 = tc.ROOM_Y
     m = tm.volume_material(density)
-    return add_box("Air", (x0 + 0.002, y0 + 0.002, 0.002), (x1 - 0.002, y1 - 0.002, tc.ROOM_H - 0.002), m, "Air")
+    # 壁の外まで広げる。箱の面が部屋の中にあると、材質の AO が面に当たって壁が斑に暗くなる
+    return add_box("Air", (x0 - 0.1, y0 - 0.1, -0.1), (x1 + 0.1, y1 + 0.1, tc.ROOM_H + 0.1), m, "Air")
+
+
+def _wall_streaks():
+    """-x の壁の金具の下に垂れる錆の筋。位置は build_conduit と同じ。"""
+    py = -0.9
+    out = [(py, z - 0.012, 0.03, 0.34 + (z % 0.37)) for z in [0.48, 1.06, 1.68, 2.3, 2.9]]
+    out.append((py + 0.13, 1.18, 0.07, 0.52))
+    return out
 
 
 def make_mats():
     return {
-        "wall": tm.wall_material(),
+        "wall": tm.wall_material(_wall_streaks()),
+        "corner": tm.corner_material(),
         "floor": tm.floor_material(),
         "ceiling": tm.ceiling_material(),
         "curtain": tm.curtain_material(),
         "rust": tm.rust_metal(),
-        "pipe": tm.painted_metal((0.012, 0.012, 0.013), 0.32),
+        "pipe": tm.painted_metal((0.014, 0.014, 0.015), 0.34, dust=0.5),
         "base": tm.painted_metal((0.022, 0.022, 0.023), 0.5),
         "mount": tm.worn_plastic(),
         "rubber": tm.plain("rubber", (0.008, 0.008, 0.008), 0.72, 0.3),
@@ -650,24 +753,26 @@ def make_mats():
         "bulb_glass": tm.glass_emission(),
         "cord": tm.plain("cord", (0.018, 0.016, 0.014), 0.9, 0.2, bumpk=0.0008, scale=900.0),
         "porcelain": tm.plain("porcelain", (0.3, 0.29, 0.25), 0.34),
-        "panel": tm.painted_metal((0.07, 0.085, 0.08), 0.5, chip=1.0),
+        "panel": tm.rust_metal(2.2),
         "switch": tm.plain("switch", (0.3, 0.27, 0.2), 0.45),
         "door": tm.painted_metal((0.045, 0.085, 0.078), 0.6, chip=1.2),
         "baseboard": tm.painted_metal((0.02, 0.034, 0.03), 0.62, chip=1.3),
         "debris": tm.debris(),
-        "grit": tm.plain("grit", (0.14, 0.135, 0.12), 0.9, 0.3),
+        "grit": tm.plain("grit", (0.09, 0.087, 0.08), 0.92, 0.25),
         "paper": tm.plain("paper", (0.28, 0.25, 0.2), 0.85, 0.3),
         "phone_body": tm.plain("phone_body", (0.02, 0.021, 0.023), 0.42, 0.5),
         "bar": tm.plain("bar", (0.12, 0.12, 0.12), 0.34, 0.5, 1.0),
         "lens": tm.plain("lens", (0.005, 0.005, 0.006), 0.06, 0.7),
         "screen": tm.phone_screen(),
         "cable": tm.plain("cable", (0.02, 0.02, 0.021), 0.48, 0.45),
-        "shelf_steel": tm.slotted_steel(),
-        "steel_x": tm.slotted_steel("x"),
-        "steel_y": tm.slotted_steel("y"),
-        "can": tm.painted_metal((0.11, 0.11, 0.1), 0.42, chip=1.6),
+        "shelf_steel": tm.shelf_steel(),
+        "can": tm.tin_can(),
         "cardboard": tm.cardboard(),
-        "tape": tm.plain("tape", (0.2, 0.135, 0.07), 0.34, 0.5),
+        "tape": tm.packing_tape(),
+        "bolt": tm.plain("bolt", (0.32, 0.32, 0.3), 0.48, 0.5, 1.0, bumpk=0.0002),
+        "label_0": tm.paper_label("can_label_a"),
+        "label_1": tm.paper_label("can_label_b"),
+        "label_2": tm.paper_label("can_label_c"),
         "black_cloth": tm.plain("black_cloth", (0.012, 0.012, 0.014), 0.86, 0.3, bumpk=0.0014, scale=240.0),
     }
 

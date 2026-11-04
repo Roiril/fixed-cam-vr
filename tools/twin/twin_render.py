@@ -57,6 +57,10 @@ def setup_cycles(w, h, spp, volume=True):
     c.sample_clamp_direct = 0.0
     c.caustics_reflective = False
     c.caustics_refractive = False
+    # 壁の段差（材質の高さ）を割る細かさ。画面の外は粗くする
+    c.dicing_rate = 1.0
+    c.offscreen_dicing_scale = 24.0
+    c.max_subdivisions = 8
     if hasattr(c, "volume_step_rate"):
         c.volume_step_rate = 2.0
     s.render.resolution_x = w
@@ -136,6 +140,11 @@ def shots(ctx, person_at=None):
     for cid, m in views.items():
         cam = next(c for c in ctx["rig"]["cameras"] if c["id"] == cid)
         out[cid] = dict(matrix=m, hfov=cam["hfovDeg"], sensor=36.0, look="phone", aspect=4 / 3, t=mid[cid])
+    # 素材の確認用: 棚の正面と、缶の寄り
+    sh_ = ctx["rig"]["shelf"]
+    scx, scy = (sh_["min"][0] + sh_["max"][0]) / 2, sh_["min"][2]
+    out["shelf"] = dict(pos=(scx + 0.05, scy - 0.62, 1.05), target=(scx, scy + 0.2, 0.86), lens=20, fstop=4.0, focus=0.75)
+    out["cans"] = dict(pos=(sh_["min"][0] + 0.75, scy - 0.45, 0.98), target=(sh_["min"][0] + 0.86, scy + 0.16, 0.82), lens=40, fstop=2.8, focus=0.6)
     # 機材の肩越し（図 1 の配置が読める画）
     a, bb, c = [Vector(tc.u2b(*x["pos"])) for x in ctx["rig"]["cameras"]]
     out["rigA"] = dict(pos=(a.x + 0.55, a.y - 0.75, 1.05), target=(a.x - 0.25, a.y + 0.3, 0.75), lens=35, fstop=2.2, focus=1.05)
@@ -361,7 +370,7 @@ def main():
     ap.add_argument("--shots", default="hero")
     ap.add_argument("--w", type=int, default=960)
     ap.add_argument("--spp", type=int, default=128)
-    ap.add_argument("--air", type=float, default=0.016)
+    ap.add_argument("--air", type=float, default=0.008)
     ap.add_argument("--dust", type=int, default=1500)
     ap.add_argument("--person", type=int, default=0)
     ap.add_argument("--time", type=float, default=5.0)
