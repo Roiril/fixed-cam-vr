@@ -824,6 +824,17 @@ float SwapFront(float2 uv)
 //     「隣り合う行が別の場所を読んでいる」ことだけで足りる。
 //     線と地の差は**ずれの大きさ**で作る（`lineAmt` が色ではなく距離に掛かる）。
 
+// 帯の番号（LEDGER 0310）。粗い 12 区画を 1〜32 本へ割る。多くは細く、まれに太い。割り方と位置は
+// 組み替えごとに変わる。帯を選ぶ確率は高さに依らないので、乱れた面積は等高 24 帯のときと同じ。
+float GlitchBandId(float y, float t, float salt)
+{
+    float yy = y * 12.0 + Hash21(float2(t, salt + 71.0));
+    float cell = floor(yy);
+    float r = Hash21(float2(cell + salt, t + 5.0));
+    float n = floor(1.5 + 31.0 * r * r * sqrt(r));
+    return cell * 33.0 + floor(frac(yy) * n);
+}
+
             // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
 // 強いときは垂直の同期ずれも足す。**全層のサンプル前**に掛けるので、ライブ・差し替え素材・
 // マスク・CG が一緒にずれる = 差し替えの継ぎ目も一緒に乱れて隠れる（企画書 2.3）。
@@ -833,7 +844,7 @@ float2 GlitchUv(float2 uv)
     if (_Glitch <= 0.001) return uv;
     float g = saturate(_Glitch);
     float t = floor(_GlitchSeed * 18.0);       // 約 18Hz で組み替わる
-    float band = floor(uv.y * 24.0);
+    float band = GlitchBandId(uv.y, t, 0.0);
     float pick = Hash21(float2(band, t));
     float amt = Hash21(float2(band + 37.0, t + 11.0));
     float active = step(1.0 - 0.6 * g, pick);  // 強いほど多くの帯が飛ぶ
@@ -1641,7 +1652,7 @@ half4 frag(Varyings input) : SV_Target
         float t = floor(_GlitchSeed * 42.0);
         float st = Hash21(screenUv * 300.0 + t);
         float add = Hash21(screenUv * 300.0 + t + 19.0);
-        float band = floor(screenUv.y * 24.0);
+        float band = GlitchBandId(screenUv.y, t, 5.0);
         float bandPick = Hash21(float2(band + 5.0, t + 2.0));
         float amt = saturate(g * 1.5) * step(1.0 - 0.75 * g, bandPick);
         // 映像の外の黒帯（4:3 を 16:9 の枠へ収めた左右）は、黒に掛け算すると砂が消える。

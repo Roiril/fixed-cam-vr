@@ -24,6 +24,7 @@ paths:
 ## 契約
 - 乱れは `_Glitch` / `_GlitchSeed`。書くのは `GlitchFx` だけ。信号断の砂が後に掛かるので信号断が勝つ — `GlitchFx` 〔出典: S:1030-1032〕
 - 乱れは 2 段。全層のサンプル前 uv をずらし、post の後に砂を掛ける — `GlitchUv` / `ScreenComposite.frag` 〔出典: S:1033-1034〕
+- 帯は不揃い（LEDGER 0310）。粗い 12 区画を 1〜32 本へ割り、横ずれと砂で別々に引く。動かすのは行全体 — `GlitchBandId`
 - 乱れの砂は信号断と同じ乗算・同じ定数。混ぜ具合は `g×1.5`。黒帯の中だけ地を 0.027 へ上げる — `SAND_*` / `ContainUv` 〔出典: S:1035-1040〕
 - 持続と単発は max で合成 — `GlitchEnvelopeLogic` 〔出典: S:1047-1048〕
 - 乱れは起きた回数の 3 乗で育つ。12 回で頭打ち、強さの上限 0.60、尺の上限 0.50s。倍率と頭打ちは別 — `GlitchEscalationLogic.Exponent` `SaturateAtCount` `MaxLevel` `MaxHoldSec` `LevelAtMax` 〔出典: S:1050-1074、LEDGER 0055 / 0057〕
