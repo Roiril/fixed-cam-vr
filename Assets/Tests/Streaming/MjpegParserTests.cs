@@ -14,7 +14,7 @@ namespace FixedCamVr.Streaming.Tests
     /// <summary>
     /// MjpegStreamReceiver のバイト列パーサ（framing / dechunk / boundary / part-header）を
     /// fixture で決定論的に固定する。backlog の実バグクラス（chunked prefix 混入で色チカチカ・
-    /// boundary 未検出）を回帰固定する。
+    /// boundary 未検出）と、Content-Length による確定（次の境界を待たない）を回帰固定する。
     ///
     /// framing / dechunk / boundary / part-header はソース変更ゼロで reflection 駆動する。
     /// ヘッダ検証（ReadResponseHeadersAsync）のみ引数型を NetworkStream→Stream に広げた 1 行 seam に依存し、
@@ -300,6 +300,184 @@ namespace FixedCamVr.Streaming.Tests
             Exception? ex = RunParseMultipart(r, junk, "--frame");
             Assert.That(ex, Is.TypeOf<IOException>());
             Assert.That(ex!.Message, Does.Contain("accumulator"));
+        }
+
+        // ---- Content-Length で 1 枚を確定する ----
+
+        private static byte[] Jpeg(params byte[] body)
+        {
+            byte[] jpeg = new byte[body.Length + 4];
+            jpeg[0] = 0xFF;
+            jpeg[1] = 0xD8;
+            Array.Copy(body, 0, jpeg, 2, body.Length);
+            jpeg[jpeg.Length - 2] = 0xFF;
+            jpeg[jpeg.Length - 1] = 0xD9;
+            return jpeg;
+        }
+
+        private static byte[] PartWithLength(string contentLength, byte[] payload, long seq, string lengthKey = "Content-Length")
+        {
+            using var ms = new MemoryStream();
+            byte[] head = Ascii(
+                "--frame\r\nContent-Type: image/jpeg\r\n" +
+                $"{lengthKey}: {contentLength}\r\n" +
+                $"X-Capture-Ns: {seq * 10}\r\nX-Frame-Seq: {seq}\r\n\r\n");
+            ms.Write(head, 0, head.Length);
+            ms.Write(payload, 0, payload.Length);
+            return ms.ToArray();
+        }
+
+        private static byte[] Concat(params byte[][] parts)
+        {
+            using var ms = new MemoryStream();
+            foreach (byte[] p in parts) ms.Write(p, 0, p.Length);
+            return ms.ToArray();
+        }
+
+        [Test]
+        public void ContentLength_PublishesBeforeNextBoundaryArrives()
+        {
+            byte[] jpeg = Jpeg(1, 2, 3);
+            byte[] wire = PartWithLength(jpeg.Length.ToString(), jpeg, seq: 5);
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out long captureNs, out long seq), Is.True,
+                "次の --frame を待たず、宣言された長さが揃った時点で確定する");
+            Assert.That(payload, Is.EqualTo(jpeg));
+            Assert.That(captureNs, Is.EqualTo(50L));
+            Assert.That(seq, Is.EqualTo(5L));
+        }
+
+        [Test]
+        public void ContentLength_HeaderNameIsCaseInsensitive()
+        {
+            byte[] jpeg = Jpeg(7);
+            byte[] wire = PartWithLength(jpeg.Length.ToString(), jpeg, seq: 1, lengthKey: "content-LENGTH");
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out _, out _), Is.True);
+            Assert.That(payload, Is.EqualTo(jpeg));
+        }
+
+        [Test]
+        public void ContentLength_PayloadContainingBoundaryBytesIsNotCut()
+        {
+            byte[] jpeg = Jpeg(Concat(new byte[] { 1 }, Ascii("--frame"), new byte[] { 2 }));
+            byte[] wire = PartWithLength(jpeg.Length.ToString(), jpeg, seq: 1);
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out _, out _), Is.True);
+            Assert.That(payload, Is.EqualTo(jpeg), "長さで切るので、途中の --frame と同じ並びで割れない");
+        }
+
+        [Test]
+        public void ContentLength_DoesNotPublishUntilWholePayloadArrives()
+        {
+            byte[] jpeg = Jpeg(1, 2, 3, 4);
+            byte[] whole = PartWithLength(jpeg.Length.ToString(), jpeg, seq: 1);
+            byte[] wire = new byte[whole.Length - 1];
+            Array.Copy(whole, wire, wire.Length);
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out _, out _, out _), Is.False, "1 バイト足りない間は確定しない");
+        }
+
+        [Test]
+        public void ContentLength_ByteByByteDeliveryPublishesEveryFrameIntact()
+        {
+            byte[] first = Jpeg(1, 1, 1);
+            byte[] second = Jpeg(2, 2);
+            byte[] wire = Concat(
+                PartWithLength(first.Length.ToString(), first, seq: 1), Ascii("\r\n"),
+                PartWithLength(second.Length.ToString(), second, seq: 2));
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new OneByteStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out _, out long seq), Is.True);
+            Assert.That(payload, Is.EqualTo(second), "パケットが細切れでも末尾の CRLF を挟んで次の 1 枚を読める");
+            Assert.That(seq, Is.EqualTo(2L));
+        }
+
+        [Test]
+        public void ContentLength_TooLongFallsBackToBoundary()
+        {
+            byte[] jpeg = Jpeg(1, 2, 3);
+            byte[] wire = Concat(
+                PartWithLength((jpeg.Length + 100).ToString(), jpeg, seq: 1),
+                Ascii("\r\n--frame\r\n"));
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out _, out _), Is.True, "長さが嘘でも次の境界で復帰する");
+            Assert.That(payload, Is.EqualTo(jpeg));
+        }
+
+        [Test]
+        public void ContentLength_TooShortFallsBackToBoundary()
+        {
+            byte[] jpeg = Jpeg(1, 2, 3, 4, 5, 6);
+            byte[] wire = Concat(
+                PartWithLength((jpeg.Length - 3).ToString(), jpeg, seq: 1),
+                Ascii("\r\n--frame\r\n"));
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out _, out _), Is.True);
+            Assert.That(payload, Is.EqualTo(jpeg), "途中で切れた JPEG を確定しない");
+        }
+
+        [TestCase("abc")]
+        [TestCase("0")]
+        [TestCase("-5")]
+        [TestCase("16777217")]
+        [TestCase("99999999999999999999")]
+        public void ContentLength_InvalidValueFallsBackToBoundary(string value)
+        {
+            byte[] jpeg = Jpeg(1, 2, 3);
+            byte[] wire = Concat(PartWithLength(value, jpeg, seq: 1), Ascii("\r\n--frame\r\n"));
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out _, out _), Is.True);
+            Assert.That(payload, Is.EqualTo(jpeg));
+        }
+
+        [Test]
+        public void ContentLength_IsNotReadAcrossNextBoundary()
+        {
+            // 1 つ目のパートのヘッダが終わらないまま次の境界が来たら、2 つ目のヘッダと混ぜない。
+            byte[] jpeg = Jpeg(9, 9);
+            byte[] wire = Concat(
+                Ascii("--frame\r\nContent-Length: 1\r\n"),
+                PartWithLength(jpeg.Length.ToString(), jpeg, seq: 2));
+
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+
+            Assert.That(TryConsume(r, out byte[] payload, out _, out long seq), Is.True);
+            Assert.That(payload, Is.EqualTo(jpeg));
+            Assert.That(seq, Is.EqualTo(2L));
+        }
+
+        // 1 回の Read で 1 バイトだけ返す Stream（パケット分割の最悪形）。
+        private sealed class OneByteStream : MemoryStream
+        {
+            public OneByteStream(byte[] data) : base(data) { }
+            public override int Read(byte[] buffer, int offset, int count) => base.Read(buffer, offset, Math.Min(count, 1));
+            public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+                => Task.FromResult(Read(buffer, offset, count));
         }
 
         // 'x' を延々返す Stream（boundary を一切含まない）。total バイトで EOF する。

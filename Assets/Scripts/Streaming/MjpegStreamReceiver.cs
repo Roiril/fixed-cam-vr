@@ -20,6 +20,7 @@ namespace FixedCamVr.Streaming
     /// - 生 Socket で HTTP GET を直接送り、NoDelay / SO_RCVBUF を完全制御（Unity Mono BCL に
     ///   SocketsHttpHandler が無いため HttpClient ベースは使わない）
     /// - キュー深度 = 1（最新のみ）。受信側でも古フレームは即破棄して滞留させない
+    /// - パートの Content-Length で 1 枚を確定し、次の境界を待たない（無ければ境界で区切る）
     /// - パート毎に X-Capture-Ns / X-Frame-Seq を抜き出して、消費側で歯抜け / 古フレ判定可能
     /// - フレームバッファはダブルバッファリング（受信側 / 消費側で所有権 swap、コピー無し）
     /// </summary>
@@ -544,6 +545,13 @@ namespace FixedCamVr.Streaming
             int b1 = IndexOf(acc, 0, len, boundary);
             if (b1 < 0) return 0;
             int searchFrom = b1 + boundary.Length;
+
+            // 配信側は次のフレームを撮るまで次の境界を送らない。境界を待つと 1 フレーム間隔ぶん遅れるので、
+            // Content-Length が信用できるならそれで先に確定する。
+            int consumedByLength = TryPublishByContentLength(acc, len, searchFrom, boundary);
+            if (consumedByLength > 0) return consumedByLength;
+
+            // Content-Length が無い・値が不正・まだ揃っていない場合は、次の境界で区切る。
             int b2 = IndexOf(acc, searchFrom, len, boundary);
             if (b2 < 0) return 0;
 
@@ -558,9 +566,36 @@ namespace FixedCamVr.Streaming
             if (payloadLen <= 0) return b2;
 
             // パートヘッダから X-Capture-Ns / X-Frame-Seq を抜く
-            long captureNs = 0L, seq = 0L;
-            ParsePartHeaders(acc, headerStart, headerEnd, out captureNs, out seq);
+            ParsePartHeaders(acc, headerStart, headerEnd, out long captureNs, out long seq, out _);
+            PublishFrame(acc, payloadStart, payloadLen, captureNs, seq);
+            return b2;
+        }
 
+        // Content-Length ぶん揃っていて末尾が JPEG の終端なら publish し、消費バイト数を返す。
+        // それ以外は 0 を返し、呼び出し側の境界探索に任せる（長さが嘘のカメラでも次の境界で復帰できる）。
+        // 末尾の CRLF は確定条件に入れない。残っても次回の境界探索が読み飛ばす。
+        private int TryPublishByContentLength(byte[] acc, int len, int headerStart, byte[] boundary)
+        {
+            int headerEnd = IndexOf(acc, headerStart, len, CrlfCrlf);
+            if (headerEnd < 0) return 0;
+            // ヘッダの途中に次の境界があるなら、別のパートのヘッダと混ざっている。
+            if (IndexOf(acc, headerStart, headerEnd, boundary) >= 0) return 0;
+
+            ParsePartHeaders(acc, headerStart, headerEnd, out long captureNs, out long seq, out long contentLength);
+            if (contentLength < 2 || contentLength > MaxFrameBytes) return 0;
+
+            int payloadLen = (int)contentLength;
+            int payloadStart = headerEnd + CrlfCrlf.Length;
+            int frameEnd = payloadStart + payloadLen;
+            if (frameEnd > len) return 0;
+            if (acc[frameEnd - 2] != 0xFF || acc[frameEnd - 1] != 0xD9) return 0;
+
+            PublishFrame(acc, payloadStart, payloadLen, captureNs, seq);
+            return frameEnd;
+        }
+
+        private void PublishFrame(byte[] acc, int payloadStart, int payloadLen, long captureNs, long seq)
+        {
             // 受信側でも「最新だけ」保持する。
             // 古い未消費フレームがある場合はそのまま捨てる（ここでバッファ swap してアロケーション最小化）。
             lock (_slotLock)
@@ -587,7 +622,6 @@ namespace FixedCamVr.Streaming
                 _latestMeta = new FrameMeta(captureNs, seq, NowMs(), ConnectionSerial);
                 _hasLatest = true;
             }
-            return b2;
         }
 
         // 受信スレッドから呼ばれるため Unity API を避け、プロセス起動からの monotonic ms を使う。
@@ -596,12 +630,13 @@ namespace FixedCamVr.Streaming
         private static readonly Stopwatch _sw = Stopwatch.StartNew();
         public static long NowMs() => _sw.ElapsedMilliseconds;
 
-        // ヘッダ領域 (headerStart..headerEnd) から X-Capture-Ns / X-Frame-Seq を読む。
+        // ヘッダ領域 (headerStart..headerEnd) から X-Capture-Ns / X-Frame-Seq / Content-Length を読む。
         // 単純な ASCII スキャン（依存ゼロ・GC 圧無し）。見つからなければ 0。
-        private static void ParsePartHeaders(byte[] acc, int headerStart, int headerEnd, out long captureNs, out long seq)
+        private static void ParsePartHeaders(byte[] acc, int headerStart, int headerEnd, out long captureNs, out long seq, out long contentLength)
         {
             captureNs = 0;
             seq = 0;
+            contentLength = 0;
             int i = headerStart;
             while (i < headerEnd)
             {
@@ -612,6 +647,8 @@ namespace FixedCamVr.Streaming
                     captureNs = ParseLongAfterColon(acc, i + XCaptureNsKey.Length, lineEnd);
                 else if (StartsWithIgnoreCase(acc, i, lineEnd, XFrameSeqKey))
                     seq = ParseLongAfterColon(acc, i + XFrameSeqKey.Length, lineEnd);
+                else if (StartsWithIgnoreCase(acc, i, lineEnd, ContentLengthKey))
+                    contentLength = ParseLongAfterColon(acc, i + ContentLengthKey.Length, lineEnd);
 
                 i = lineEnd + Crlf.Length;
             }
@@ -650,6 +687,7 @@ namespace FixedCamVr.Streaming
         private static readonly byte[] Crlf = { 0x0D, 0x0A };
         private static readonly byte[] XCaptureNsKey = System.Text.Encoding.ASCII.GetBytes("x-capture-ns");
         private static readonly byte[] XFrameSeqKey  = System.Text.Encoding.ASCII.GetBytes("x-frame-seq");
+        private static readonly byte[] ContentLengthKey = System.Text.Encoding.ASCII.GetBytes("content-length");
 
         private static int IndexOf(byte[] hay, int start, int end, byte[] needle)
         {
