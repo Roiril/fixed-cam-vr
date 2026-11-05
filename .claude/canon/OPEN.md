@@ -1528,7 +1528,7 @@ design-critic は P1（差し替えの段）と片づけの消え方だけを採
 
 ## 案 / 2026-11-05 / シュビー — 乱れと消灯を `glitch-noise.md` の実測から直す（0055 / 0238 / 0265 / 0281 / 0111）
 
-状態: 案。未実装。
+状態: 案。未実装。乱れの案 6〜8 は比較動画を作り、判定待ち（`G:/マイドライブ/shubie/reports/2026-11-05_glitch-time-compare/`）。消灯の案 1〜5 は未着手。
 
 比較の絵は `G:/マイドライブ/shubie/reports/2026-11-05_shutoff-study/`（`tablet_now_vs_idea.jpg`・`main_current.jpg`・`jpeg_break.jpg`）。下段の案は Python の試し絵で、実機も動きも見ていない。
 
