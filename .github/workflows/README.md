@@ -16,7 +16,7 @@
 ## 必要シークレット
 
 `Settings > Secrets and variables > Actions > New repository secret` から登録する。
-**シークレットが 1 つでも未設定だとジョブはスキップされる**（`if: ${{ secrets.UNITY_LICENSE != '' }}`）。
+**シークレットが 1 つでも未設定だとテストのジョブはスキップされる**（`check-secrets` ジョブが判定して notice を出す）。スキップはテストの成功ではない。ジョブの `if` では `secrets` を参照できず、書くとワークフロー全体が無効になる。
 
 | シークレット名 | 用途 |
 |---|---|
