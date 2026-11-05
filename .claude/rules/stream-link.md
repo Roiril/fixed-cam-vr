@@ -63,6 +63,7 @@ paths:
 - host 未設定の枠は繋がないのが正常。1 台の失敗で他を止めない — `MjpegStreamReceiver`/ `CameraStreamRegistry.Awake` 〔S:3354-3367〕
 ### 受信と健全性
 - 汎用 MJPEG。boundary は Content-Type、chunked 自動、X-* と /info /health は任意。username 空なら認証なし — `MjpegStreamReceiver.ParseBoundary` / `CameraSource.BasicAuthToken` / `MjpegParserTests` 〔S:36-39, S:48〕
+- 1 枚はパートの Content-Length で確定し、次の境界を待たない。長さが不正か末尾が JPEG の終端でないときは次の境界で区切る — `MjpegStreamReceiver.TryPublishByContentLength` / `MjpegParserTests` 〔出典: コード〕
 - NoDelay・受信 64KB・接続 3 秒。バックオフ 1→30 秒、確立後の切断は 1 秒から — `MjpegStreamReceiver._connectionEstablished` / `DelayWithReconnect` 〔S:214, S:3371-3380〕
 - 表示中と録画中は毎フレーム展開し、他は 1 フレーム 1 台ずつ — `StreamDecodeScheduler.NextBackground` 〔出典: コード〕
 - 判定は `StreamWatchdogLogic`。lag は比 0.7 未満が 1.5 秒（熱降格中は抑止）、stall 10 秒、展開失敗 30 枚か 2 秒、resume-gap 0.5 秒で suspend も解く — `LagThresholdRatio` / `StallReconnectSec` / `StreamHealth.IsHot` / `StreamWatchdogLogicTests` 〔S:228, S:1568, S:3374-3378〕
