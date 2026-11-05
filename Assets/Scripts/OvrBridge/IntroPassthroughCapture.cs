@@ -95,7 +95,8 @@ namespace FixedCamVr.OvrBridge
             ResolveAndBind();
             if (director == null) return;
 
-            bool shouldPrepare = director.Stage is IntroStage.Real or IntroStage.Degrade
+            // テレビ方式は現実を撮らない（カメラ 2 台ぶんの負荷を掛けない）。
+            bool shouldPrepare = !director.Weights.tv && director.Stage is IntroStage.Real or IntroStage.Degrade
                 or IntroStage.Structure or IntroStage.Frame;
             // 静止画を取り終えたら（成否に関わらず 1 回きり）カメラを止める。段 4 は体験でいちばん重い 5 秒で、
             // 2 台のカメラが 60Hz で画を届け続ける分がそのまま食われていた（2026-10-15・R060）。

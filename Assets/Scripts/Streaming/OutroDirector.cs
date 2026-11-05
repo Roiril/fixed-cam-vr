@@ -197,9 +197,10 @@ namespace FixedCamVr.Streaming
         private void Stop()
         {
             _logic.Disable();
-            veil?.SetHidden();
-            shell?.SetHidden();
-            glitch?.ResetAll();
+            // ⚠ 終了時は相手が先に破棄されていることがある。`?.` は Unity の null 判定を通らないので明示する。
+            if (veil != null) veil.SetHidden();
+            if (shell != null) shell.SetHidden();
+            if (glitch != null) glitch.ResetAll();
             ResetScreen();
         }
 

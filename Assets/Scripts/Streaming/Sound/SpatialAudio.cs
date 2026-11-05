@@ -139,6 +139,8 @@ namespace FixedCamVr.Streaming
             "bed_dolls_grow_b_1", "bed_dolls_grow_b_2",
             "bed_dolls_grow_b_3", "bed_dolls_grow_b_4",
             "sfx_doll_call",
+            // 帰還の別れの人形のオルゴール（0312）。人形の位置から鳴る。
+            "bed_farewell_music_box",
             // 封印の箱（2026-08-15 から鳴らない。モノで焼いてあるので名簿に残す）
             "bed_seal",
         };

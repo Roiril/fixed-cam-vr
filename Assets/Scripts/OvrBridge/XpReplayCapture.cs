@@ -49,6 +49,7 @@ public sealed class XpReplayCapture : MonoBehaviour
 
     private XpReplayDriver _driver = null!;
     private Camera? _cam;
+    private FixedCamVr.Streaming.MjpegScreen[]? _screens;
     private RenderTexture? _rt;
     private Texture2D? _readback;
     private int _w, _h, _fps;
@@ -275,6 +276,11 @@ public sealed class XpReplayCapture : MonoBehaviour
         _cam.aspect = _w / (float)_h;
         CopyUrp(eye, _cam);
         PlaceCamera();
+
+        // 目のカメラは batchmode で描かれず、MjpegScreen の信号の前段が回らない。HMD と同じ経路の画を撮るためここで回す。
+        _screens ??= FindObjectsOfType<FixedCamVr.Streaming.MjpegScreen>(true);
+        foreach (FixedCamVr.Streaming.MjpegScreen screen in _screens)
+            if (screen != null) screen.PrepareSignalNow();
 
         _cam.Render();
         RenderTexture prev = RenderTexture.active;

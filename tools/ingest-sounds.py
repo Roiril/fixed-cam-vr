@@ -40,6 +40,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, "logs", "sound", "ingest")
 OUT = os.path.join(ROOT, "Assets", "Resources", "Sound")
 DOWNLOADS = os.path.join(os.path.expanduser("~"), "Downloads")
+WRONG_ROOM = r"G:/マイドライブ/shubie/fixed-cam-vr-assets/wrong-room"
 
 
 def emit(name: str, y, peak_db: float = -3.0):
@@ -152,6 +153,14 @@ PLAN = [
     ("ホワイトノイズ.mp3", "bed_white", "lufs", -28.0,
      "**呪いが排除された後**（報告が通ってから終わりまで）。⚠ 素材は 15 分あるので "
      "`SLICE` で 20 秒だけ取って輪にする。高さは退いた劇伴（`HorrBGM` 実効 -27.7）に合わせる"),
+    # Wrong Room（Parallel Minds）から選ばれた 2 本（`canon/LEDGER.md` 0312）。
+    # ⚠ 焼いた wav は git 管理外（ライセンスが音単体の再配布を禁じ、このリポジトリは公開）。
+    (os.path.join(WRONG_ROOM, "PMH_MusicBox_Am_MissingPins_01.wav"),
+     "bed_farewell_music_box", "lufs", -27.0,
+     "帰還の別れの人形から鳴るオルゴール。人形の位置から 3D で鳴る。遠ざかりは実行時の音量"),
+    (os.path.join(WRONG_ROOM, "PMH_Drop_Swallowed_01.wav"),
+     "sfx_doll_end_fall", "lufs", -24.0,
+     "人形 End で黒へ落ちる瞬間。誰も鳴らしていない音なので 2D"),
     # ⚠ 尖頭で揃えると波高 21dB のぶん実力より小さく出るので `lufs!`（`sfx_screen_on` と同じ）。
     ("大きい目が出現.mp3", "sfx_eye_big", "lufs!", -18.0,
      "**最初の大きい目が見開く瞬間**に、いちばん大きいところが来るよう頭へ無音を足してある"

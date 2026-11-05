@@ -303,6 +303,9 @@ namespace FixedCamVr.Streaming
         /// <summary>dip-to-black 演出の実行中か（HUD 表示用）。</summary>
         public bool Dipping => _dip != DipState.Idle;
 
+        /// <summary>暗転の底を越え、画面の差し替えが済んだ。</summary>
+        public bool DipPastCover => _dip == DipState.Up;
+
         /// <summary>
         /// 現在の dip / 乱れ遷移の全尺に対する進み 0..1。Down と Up を実尺で連結する。
         /// 遷移外は 1。
@@ -880,7 +883,7 @@ namespace FixedCamVr.Streaming
         private void ClearTransitionVisual()
         {
             SetDim(0f);
-            glitchFx?.SetSustain(0f);
+            if (glitchFx != null) glitchFx.SetSustain(0f);
         }
 
         /// <summary>遷移の進み具合 (0-1) を、黒 or 乱れのどちらかへ流す。</summary>

@@ -45,6 +45,9 @@ namespace FixedCamVr.Streaming
         [Tooltip("スクリーンの実体。管の点灯（_CrtIgnite）を書く先の材質をここから取る。null なら実行時に探す。")]
         [SerializeField] private MjpegScreen? screen;
 
+        [Tooltip("スクリーンの置き場。テレビ方式の段 3〜5 は部屋に据える。null なら実行時に探す。")]
+        [SerializeField] private ScreenAnchor? screenAnchor;
+
         [Tooltip("起動時の黒が明けたとみなす秒数。StartupFader の最大待ち (4s) + フェード (0.5s) より長く。")]
         [SerializeField, Min(0f)] private float blackClearSec = 5f;
 
@@ -113,8 +116,12 @@ namespace FixedCamVr.Streaming
         /// 「状態が進んだではなく効果が出た」）。<c>ShowTelemetryHost</c> が読む。
         /// </summary>
         public float IgniteWritten => _screenMat != null ? _igniteWritten : -1f;
-        /// <summary>スクリーンの材質へ実際に書いた <c>_IntroLive</c>（0/1 の表示ゲート）。掴めていなければ -1。</summary>
+        /// <summary>スクリーンの材質へ実際に書いた <c>_IntroLive</c>。掴めていなければ -1。</summary>
         public float LiveGateWritten => _screenMat != null ? _liveWritten : -1f;
+        /// <summary>スクリーンの材質へ実際に書いた <c>_CrtTvCase</c>（テレビの筐体の明るさ）。掴めていなければ -1。</summary>
+        public float TvCaseWritten => _screenMat != null ? _tvCaseWritten : -1f;
+        /// <summary>導入の方式。重みの <c>tv</c> は演出の外で false になるので、走行の方式はこちらで読む。</summary>
+        public IntroTransition Transition => _logic.Transition;
 
         /// <summary>輪郭線の色（<c>PassthroughStyler</c> が読む）。</summary>
         public Color EdgeColor => _def.ResolveEdgeColor();
@@ -134,10 +141,14 @@ namespace FixedCamVr.Streaming
         //    必ず 1 を書き戻す。「書くのをやめる」だけでは最後に書いた 0 が残る。
         private static readonly int CrtIgniteId = Shader.PropertyToID("_CrtIgnite");
         private static readonly int IntroLiveId = Shader.PropertyToID("_IntroLive");
+        private static readonly int TvCaseId = Shader.PropertyToID("_CrtTvCase");
+        private static readonly int TvDarkId = Shader.PropertyToID("_CrtTvDark");
         private Material? _screenMat;
         private bool _warnedNoScreenMat;
         private float _igniteWritten = -1f;
         private float _liveWritten = -1f;
+        private float _tvCaseWritten = -1f;
+        private float _tvDarkWritten = -1f;
 
         private void Awake()
         {
@@ -179,13 +190,14 @@ namespace FixedCamVr.Streaming
             _subscribed = false;
             // 自分が出した覆いを残して去らない（外したら従来どおり本編の見えになる）。
             _logic.Disable();
-            veil?.SetHidden();
-            structureWire?.SetHidden();
-            shell?.SetHidden();
-            sealedBox?.SetHidden();
-            glitch?.ResetAll();
+            // ⚠ 終了時は相手が先に破棄されていることがある。`?.` は Unity の null 判定を通らないので明示する。
+            if (veil != null) veil.SetHidden();
+            if (structureWire != null) structureWire.SetHidden();
+            if (shell != null) shell.SetHidden();
+            if (sealedBox != null) sealedBox.SetHidden();
+            if (glitch != null) glitch.ResetAll();
             // ⚠ 自分が Update を止めるので、誘導は自分で畳んで去る（残すと床の光が残る）。
-            walkGuide?.ResetRun();
+            if (walkGuide != null) walkGuide.ResetRun();
             _guiding = false;
             ResetIgnite();
         }
@@ -202,6 +214,7 @@ namespace FixedCamVr.Streaming
             if (showControl == null) showControl = FindObjectOfType<ShowControlClient>();
             if (walkGuide == null) walkGuide = FindObjectOfType<WalkGuide>();
             if (screen == null) screen = FindObjectOfType<MjpegScreen>();
+            if (screenAnchor == null) screenAnchor = FindObjectOfType<ScreenAnchor>();
             if (head == null)
             {
                 var anchor = GameObject.Find("CenterEyeAnchor");
@@ -374,12 +387,12 @@ namespace FixedCamVr.Streaming
             glitch?.SetSustain(w.glitch * Mathf.Clamp01(_def.glitchOnSwap));
             // スクリーンの管の点灯と、映像を出してよいか。書く先は MjpegScreen の材質。
             //
-            // ⚠⚠ **`_IntroLive` は「出してよいか」の 0/1 で、混ぜ具合ではない**（2026-08-15）。
-            //    現実 → カメラ映像のクロスフェードは**覆いの alpha**（`_ScreenFade`）が持つ。
-            //    ここにも同じ重みを渡すと**二重に掛かって**、混ざっている最中の映像が暗く沈む
-            //    （合成は `アプリの rgb + 現実 × (1 - alpha)` なので、rgb を絞ると足す側が減る）。
-            // 0225: 着地した破片がその場所の映像を見せる区間（reveal）も、映像は出してよい。
-            WriteIgnite(w.ignite, (w.live > 0f || w.reveal > 0f) ? 1f : 0f);
+            // `_IntroLive` の式は方式で変わるので `IntroWeights.LiveGate` 1 か所に置く（プレビューも同じものを読む）。
+            WriteIgnite(w.ignite, w.LiveGate, w.tvCase, w.tvDark);
+            // テレビは黒のうちに頭の正面へ置いて部屋に据える（0309）。段 5 が終われば下の ResetIgnite が解く。
+            if (w.tv && _logic.Stage is IntroStage.Structure or IntroStage.Frame or IntroStage.Swap
+                && screenAnchor != null && !screenAnchor.IntroHeld)
+                screenAnchor.HoldInFrontOfHead();
 
             if (ev == IntroEvent.Finished) FinishIntro(restartClock: true);
             else if (ev == IntroEvent.Aborted) AbortIntro();
@@ -695,25 +708,37 @@ namespace FixedCamVr.Streaming
         /// 「管が点き切った瞬間に映像も出る」ことになり、重み <c>live</c> が 0 のままなのに
         /// 画には映像が出る（2026-08-13 に Editor プレビューの絵で見つけた食い違い）。
         /// 実物のブラウン管も、電源を入れてから絵が出るまで暖機の時間がある。
+        /// <paramref name="tvCase"/> と <paramref name="tvDark"/> はテレビの筐体とガラス（0 で本編と同じ）。
         /// </summary>
-        private void WriteIgnite(float v, float live)
+        private void WriteIgnite(float v, float live, float tvCase, float tvDark)
         {
             var m = ResolveScreenMaterial();
             if (m == null) return;
             float c = Mathf.Clamp01(v);
             float l = Mathf.Clamp01(live);
-            if (Mathf.Approximately(c, _igniteWritten) && Mathf.Approximately(l, _liveWritten)) return;
+            float tc = Mathf.Clamp01(tvCase);
+            float td = Mathf.Clamp01(tvDark);
+            if (Mathf.Approximately(c, _igniteWritten) && Mathf.Approximately(l, _liveWritten)
+                && Mathf.Approximately(tc, _tvCaseWritten) && Mathf.Approximately(td, _tvDarkWritten)) return;
             _igniteWritten = c;
             _liveWritten = l;
+            _tvCaseWritten = tc;
+            _tvDarkWritten = td;
             m.SetFloat(CrtIgniteId, c);
             m.SetFloat(IntroLiveId, l);
+            m.SetFloat(TvCaseId, tc);
+            m.SetFloat(TvDarkId, td);
         }
 
         /// <summary>
-        /// 管を点いた状態へ戻す。<b>演出を畳むすべての経路がここを通る</b> —
+        /// スクリーンを本編の見えへ戻し、テレビの据え置きも解く。<b>演出を畳むすべての経路がここを通る</b> —
         /// 通し忘れると最後に書いた 0 が残って画がまるごと消える。
         /// </summary>
-        private void ResetIgnite() => WriteIgnite(1f, 1f);
+        private void ResetIgnite()
+        {
+            WriteIgnite(1f, 1f, 0f, 0f);
+            if (screenAnchor != null) screenAnchor.ReleaseIntroHold();
+        }
 
         /// <summary>
         /// 枠の中に本編のスクリーンが来ているか。<b>枠は head-lock なので常に正面</b>で、

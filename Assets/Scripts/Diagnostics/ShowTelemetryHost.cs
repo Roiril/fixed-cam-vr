@@ -466,6 +466,10 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : (_intro.IgniteWritten < 0f ? "nc" : _intro.IgniteWritten.ToString("F2"));
         /// <summary>スクリーンの表示ゲート <c>_IntroLive</c> に実際に書いた値（0225 で reveal でも開く）。</summary>
+        private string TvCaseState => _intro == null
+            ? "-"
+            : (_intro.TvCaseWritten < 0f ? "nc" : _intro.TvCaseWritten.ToString("F2"));
+
         private string LiveGateState => _intro == null
             ? "-"
             : (_intro.LiveGateWritten < 0f ? "nc" : _intro.LiveGateWritten.ToString("F2"));
@@ -791,14 +795,15 @@ namespace FixedCamVr.Diagnostics
                      $"shellRev={ShellRevealState} " +
                      // 連続開口は段 4 のあいだだけ動く。Frame → Swap の行に閉じ切った実測が載る。
                      $"aper={ApertureState} aperQ={ApertureQuadState} aperRect={ApertureRectState} " +
-                     $"shatStyle=frozen shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
+                     $"shatStyle={(_intro != null && _intro.Transition == IntroTransition.Tv ? "tv" : "frozen")} shat={ShatterState} shatC={ShatterPieceState} shatDraw={ShatterDrawState} " +
                      $"shatFrozen={ShatterFrozenState} shatCopies={ShatterFrozenCount} " +
                      $"shatCam={ShatterCameraState} shatAnchor={ShatterAnchorState} shatProj={ShatterProjectionState} " +
                      $"shatDepth={ShatterDepthState} " +
                      // 0235: 光の粒。spark は「画に出た」側で、sparkN は組めた粒の数。
                      $"spark={SparkState} sparkN={SparkCountState} " +
-                     // 管は導入の全段で 1（点いていて、まだ何も映していない）。0 が出たら画が消えている。
-                     $"ignite={IgniteState} " +
+                     // 管。テレビ方式は段 4 で 0 → 1、割れる遷移は全段 1。tvCase はテレビの筐体の明るさ。
+                     // scrHid はスクリーンを描かずにいるか。テレビが闇から出るまでは 1（段 3 の黒に縁が浮く形を捕まえる）。
+                     $"ignite={IgniteState} tvCase={TvCaseState} scrHid={(_veil == null ? "-" : _veil.ScreenSuppressed ? "1" : "0")} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
                      // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
                      $"auth={(_show != null && _show.StartAuthorized ? 1 : 0)}");
@@ -1332,7 +1337,9 @@ namespace FixedCamVr.Diagnostics
                 // 連続開口も同じ理由。段 4 の途中の到達点はここでしか取れない。
                 _sb.Append(" aper=").Append(ApertureState);
                 _sb.Append(" aperQ=").Append(ApertureQuadState);
-                _sb.Append(" shatStyle=frozen shat=").Append(ShatterState);
+                _sb.Append(" shatStyle=").Append(_intro.Transition == IntroTransition.Tv ? "tv" : "frozen");
+                _sb.Append(" tvCase=").Append(TvCaseState);
+                _sb.Append(" shat=").Append(ShatterState);
                 _sb.Append(" shatC=").Append(ShatterPieceState);
                 _sb.Append(" shatDraw=").Append(ShatterDrawState);
                 _sb.Append(" shatFrozen=").Append(ShatterFrozenState);
@@ -1502,6 +1509,8 @@ namespace FixedCamVr.Diagnostics
             //      しかも素材は正体が 150Hz より下にあるので、**実機の内蔵スピーカーでも聞こえない**
             //      （内蔵SP -21.1dB）。耳でも確かめられない ＝ この数字しか無い。
             _sb.Append(" sndHeart=").Append(_sound == null ? "-" : _sound.HeartGain.ToString("F2"));
+            //   sndFarewell = 帰還の別れのオルゴール（0312）。人形が現れてから消えるまで立つ。
+            _sb.Append(" sndFarewell=").Append(_sound == null ? "-" : _sound.FarewellBoxGain.ToString("F2"));
             //   sndEye = 目が開く音（0131）。<一撃の累計>/<大きい目を鳴らせたか>。
             //   ⚠ **目が開いた数（`eyes` の 2 つ目）と対で見る** — 開いているのに 0 なら鳴っていない。
             _sb.Append(" sndEye=").Append(EyeSfxState);
@@ -1714,6 +1723,8 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" coarseMode=").Append(_run.ScreenDecayShownMode);
                 _sb.Append(" cbx=").Append(_run.ScreenDecayBlocks.ToString("F0"));
                 _sb.Append(" coarseMat=").Append(CoarseMaterialState);
+                _sb.Append(" warp=").Append((_feel != null ? _feel.AppliedRoomWarp : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" warpMat=").Append((_feel != null ? _feel.RoomWarpMaterial : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 if (_run.ScreenDecayReleased) _sb.Append(" coarseRel=1");
             }
             if (_overlay != null)

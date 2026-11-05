@@ -12,7 +12,7 @@
 | スタッフの準備 | `Diagnostics/StaffSetupPanel` ＋ `Input/StaffSetupLogic`。タブレットとは `Streaming/VisitorPortal`（:8090）。位置合わせは `Tracking/CourseRegistrationController` | 引き渡し（Welcome 段の検査が通る） |
 | 新しい体験者 | 右 A 2 秒・タブレット → `OvrBridge/OvrControllerBridge.VisitorReset.cs` → `ShowControlClient.BeginNewVisitorRunLocal`。卓からは `TriggerRunReset`。どちらも `ShowControlClient.ResetForNewVisitor`（`.VisitorRun.cs`）を通る | `ShowRunDirector.BeginRun` |
 | HMD 内の導入（練習 → 名乗り → 題字） | 状態機械は `Input/HmdOnboardingLogic`。入力を渡すのは `OvrControllerBridge.Update`、画面に映すのは `OvrControllerBridge.Onboarding.cs`。題字は `Streaming/TitleScreen` | 題字を X / Y の短押しで閉じる |
-| 導入演出（パススルーが割れてスクリーンになる） | `Streaming/IntroDirector`（段は `IntroLogic`）。床の矢印は `Streaming/WalkGuide` | `ShowRunDirector` が本編へ移し、`ShowControlClient.BeginMainRun` |
+| 導入演出（パススルーが暗転し、テレビが出て点く） | `Streaming/IntroDirector`（段は `IntroLogic`）。床の矢印は `Streaming/WalkGuide` | `ShowRunDirector` が本編へ移し、`ShowControlClient.BeginMainRun` |
 | 本編（3 区間 × 3 周） | 位置 → 区画: `Tracking/PlayerZoneTracker` → `Streaming/CameraSwitchDirector`。周の数え方: `Tracking/LapCounter`。区画へ入った知らせ（`SegmentEntry`）は `Streaming/CueScheduler.CameraEntered` から配られる | 下の「区画へ入った知らせを受け取る部品」 |
 | 最後の A と終わり方 | `Streaming/EndingDecisionLogic`（`ShowRunDirector` が回す）。最後の A の区画は `ShowRunDefaults.IsClosingSegment` | 帰還End / 人形End / 中断 |
 | 終幕 | `Streaming/OutroDirector`（段）・`Diagnostics/OutroReport`（エンドロール）・`Streaming/EndingFarewellDoll`（別れの人形） | 次の体験者のリセットを待つ |

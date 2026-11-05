@@ -74,6 +74,7 @@ namespace FixedCamVr.Streaming
         private readonly YawFollowLogic _yawFollow = new();
         private bool _yawSeeded;
         private bool _followFrozen;
+        private bool _introHeld;
         private bool _wasFrozen;
         private bool _setupFrozen;
         public void SetSetupFrozen(bool frozen) => _setupFrozen = frozen;
@@ -104,6 +105,23 @@ namespace FixedCamVr.Streaming
 
         /// <summary>現在追従を凍結中か。</summary>
         public bool FollowFrozen => _followFrozen;
+
+        /// <summary>
+        /// 導入のテレビを部屋に据える（0309）。頭の正面へ置き直してから、解除まで動かさない。
+        /// <see cref="SetFollowFrozen"/> は <c>SignalLostFx</c> がトラッキングの状態で書き続けるので別に持つ。
+        /// 解除後は現在のヨーから滑らかに追従へ戻る。
+        /// </summary>
+        public void HoldInFrontOfHead()
+        {
+            if (head != null) ApplyPose(head.eulerAngles.y);
+            _introHeld = true;
+        }
+
+        /// <summary><see cref="HoldInFrontOfHead"/> を解く。</summary>
+        public void ReleaseIntroHold() => _introHeld = false;
+
+        /// <summary>導入のテレビを据えているか。</summary>
+        public bool IntroHeld => _introHeld;
 
         private void SetLocked(bool value)
         {
@@ -146,7 +164,7 @@ namespace FixedCamVr.Streaming
             if (!yawOnly)
             {
                 // フルフォロー（フォールバック）: 緩急なし。凍結中は保持。
-                if (_followFrozen) { _wasFrozen = true; return; }
+                if (_followFrozen || _introHeld) { _wasFrozen = true; return; }
                 Vector3 fwdFull = head.forward;
                 Vector3 posFull = head.position + fwdFull * distance;
                 posFull.y += heightOffset;
@@ -156,7 +174,7 @@ namespace FixedCamVr.Streaming
             }
 
             // 凍結中は最後の良ポーズを維持（head 追従を止める = 暴れ防止）。
-            if (_followFrozen)
+            if (_followFrozen || _introHeld)
             {
                 _wasFrozen = true;
                 return;

@@ -40,18 +40,18 @@ SRC = os.path.join(ROOT, "Assets", "Resources", "Sound")
 OUT = os.path.join(ROOT, "logs", "sound")
 
 # --- 段の尺（`IntroLogic.IntroTiming.Default` の写し）------------------------
-# ⚠ 2026-08-15 に旧構成へ戻した（`canon/LEDGER.md` 0044）。封印の箱を退避したので
-#   「箱の中に入ってから固定視点」が成立しない。いまは 5 段 12.7 秒（段 4 は 0221 で 5.0 秒）:
-#   段 1 素通し / 段 2 格下げ / 段 3 輪郭（段 2 と重なる）/ 段 4 割れる / 段 5 映像だけになる。
+# いまは 5 段 10.8 秒（`canon/LEDGER.md` 0309）:
+#   段 1 素通し / 段 2 暗転 / 段 3 テレビが出る（段 2 と重なる）/ 段 4 電源と映像 / 段 5 静止。
 #   ⚠ `IntroTiming.Default` と同じ値にしておく（ずれると、聴いて決めた間が実機と違う）。
-REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 3.5, 2.5, 5.0, 1.6
+REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 1.5, 3.8, 3.0, 1.6
 # 段 3 は段 2 の後半から重なるので、単独で流れるのはこれだけ（`IntroTiming.TotalSec` と同じ式）。
 STRUCTURE = max(STRUCTURE_SRC - DEGRADE * (1 - 0.6), 0.5)
-# ⚠⚠ **2026-08-16 に「入れ替えが終わった所」へ移した**（`canon/LEDGER.md` 0057）。
-#    0225 の `live = SmoothStep(0.895, 0.905, p)` が 0.999 へ届く進み（枠を閉じる瞬間）。
-#    `SoundCueLogic.ScreenOnAt`（live の閾値）と対。片方だけ直すと聴いて決めた間が実機と違う。
-SCREEN_ON_AT = 0.895 + (0.905 - 0.895) * 0.9816297461411884
+# テレビの電源は段 4 の頭（`SoundCueLogic`）。音は 0057 の「スクリーンが出る音」。
+SCREEN_ON_AT = 0.0
+# 割れる遷移（旧方式）の比較用。段 4 の尺は 5.0 秒に固定だった。
 SHATTER_AT = 0.02
+SHATTER_FRAME = 5.0
+SHATTER_SCREEN_ON_AT = 0.895 + (0.905 - 0.895) * 0.9816297461411884
 INTRO_DSP_LEAD = 0.035
 # 鈴が鳴るまで（段 5 の頭から）。`IntroLogic.SwapCrossfadeSec` ＝ `SoundCueLogic.BellAfterSwapSec`。
 BELL_AFTER_SWAP = 1.2
@@ -65,8 +65,8 @@ MATERIALS = [
     ("sfx_title_in", "A で題字が立つ（もらった「Tone Downer (Reverb)」・2026-08-15 差し替え）", 0),
     ("sfx_title_out", "2 秒後に題字が消える（息を呑む）", 0),
     ("sfx_seal_close", "【鳴らない】隔離が閉じる（もらった「黒い中に入るときの金属音」）", 0),
-    ("sfx_shatter", "段 4 — 現実が割れて吸い込まれる（もらった一撃を小刻みに並べたもの）", 0),
-    ("sfx_screen_on", "段 4 の終わり — スクリーンが出る（もらった Cyber14-1）。**導入の山**", 0),
+    ("sfx_shatter", "【鳴らない】旧方式の割れる音（`transition=shatter` のときだけ）", 0),
+    ("sfx_screen_on", "段 4 の頭 — テレビの電源が入る（もらった Cyber14-1）。**導入の山**", 0),
     ("sfx_screen_noise", "【鳴らない】その後のノイズ — 2026-08-16 に外した（音源は残してある）", 0),
     ("sfx_swap", "【鳴らない】装置が点く — 同じ縁をもらった音（sfx_screen_on）が取った", 0),
     ("sfx_switch_1", "カメラ切替（もらった「カメラ切り替え」・**変種 1/6**。残り 5 本は preview_switch）", 0),
@@ -236,10 +236,10 @@ def build_intro() -> np.ndarray:
     t_glyph_out = t_a + 2.0                  # 2 秒で題字が消え始める
     t_black = t_glyph_out + 1.3              # 黒が開いてパススルー（段 0）
     t_real = t_black + 7.0                   # 近づいて段 1（素通し）
-    t_degrade = t_real + REAL                # 段 2 — 色が抜ける
-    t_structure = t_degrade + DEGRADE        # 段 3 — 輪郭だけ
-    t_frame = t_structure + STRUCTURE        # 段 4 — 割れる
-    t_swap = t_frame + FRAME                 # 段 5 — 映像だけになる
+    t_degrade = t_real + REAL                # 段 2 — 暗転
+    t_structure = t_degrade + DEGRADE        # 段 3 — 黒の後、テレビが出る
+    t_frame = t_structure + STRUCTURE        # 段 4 — 電源が入り、映像が映る
+    t_swap = t_frame + FRAME                 # 段 5 — 静止して筐体が沈む
     t_run = t_swap + SWAP                    # 本編
     total = t_run + 10.0
     n = int(total * sk.SR)
@@ -278,7 +278,6 @@ def build_intro() -> np.ndarray:
     #    ①段 4 の頭で割れる（一撃 → スロー → 集結の 4.15 秒）②静けさ約 0.27 秒 ③枠を閉じる瞬間に
     #    スクリーンが出る ④段 5 ＋ 1.2 秒で**完全にスクリーンになった**鈴。
     #    **ノイズ（`sfx_screen_noise`）は鳴らさない。** ここへ戻さないこと。
-    lay(mix, load("sfx_shatter"), t_frame + FRAME * SHATTER_AT + INTRO_DSP_LEAD)
     lay(mix, load("sfx_screen_on"), t_frame + FRAME * SCREEN_ON_AT + INTRO_DSP_LEAD)
     lay(mix, load("amb_bell"), t_swap + BELL_AFTER_SWAP + INTRO_DSP_LEAD)
     # ⚠ 切替は**変種を回す**（2026-08-23・`canon/LEDGER.md` 0112）。
@@ -870,12 +869,12 @@ def build_break() -> np.ndarray:
     lay(out, new, at)
     at += 3.5
     # ③ 段 4 の通し（0057 の並び）
-    lay(out, new, at + FRAME * SHATTER_AT + INTRO_DSP_LEAD)
-    lay(out, load("sfx_screen_on"), at + FRAME * SCREEN_ON_AT + INTRO_DSP_LEAD)
-    lay(out, load("amb_bell"), at + FRAME + BELL_AFTER_SWAP + INTRO_DSP_LEAD)
+    lay(out, new, at + SHATTER_FRAME * SHATTER_AT + INTRO_DSP_LEAD)
+    lay(out, load("sfx_screen_on"), at + SHATTER_FRAME * SHATTER_SCREEN_ON_AT + INTRO_DSP_LEAD)
+    lay(out, load("amb_bell"), at + SHATTER_FRAME + BELL_AFTER_SWAP + INTRO_DSP_LEAD)
     print(f"   0.5s 新しい割れる音だけ   "
           f"{'4.5s 旧 → 7.5s 新（敷く音の上）' if prev is not None else '（旧版が無いので比べは飛ばす）'}   "
-          f"{at:.1f}s 段 4 の通し（割れる → 静けさ {FRAME * (SCREEN_ON_AT - SHATTER_AT) - len(new) / sk.SR:.2f}s → "
+          f"{at:.1f}s 段 4 の通し（割れる → 静けさ {SHATTER_FRAME * (SHATTER_SCREEN_ON_AT - SHATTER_AT) - len(new) / sk.SR:.2f}s → "
           f"スクリーン → 鈴）")
     return out
 

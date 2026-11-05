@@ -17,6 +17,8 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 AUDIT = Path(r"G:\マイドライブ\shubie\renders\twin-cycles\audit")
 PLATES = ROOT / "Assets" / "StreamingAssets" / "show" / "assets"
+PLATES_LOCAL = ROOT / "tools" / "twin" / "plates"
+PLATE_NAMES = json.loads((ROOT / "tools" / "twin" / "plate_obs.json").read_text(encoding="utf-8"))["plates"]
 OLD = Path(r"G:\マイドライブ\shubie\renders\twin\20261104_043901_v59")
 CROP = (1000, 640)
 
@@ -53,10 +55,10 @@ def main() -> int:
             im.crop((x, y, x + cw, y + ch)).save(out / f"{nm}.png")
             key[nm] = {"kind": "render", "shot": p.stem, "view": "crop", "box": [x, y, cw, ch]}
     for cid in "ABC":
-        cands = sorted(PLATES.glob(f"plate_{cid}_2026*.jpg"))
+        cands = [c for c in (PLATES_LOCAL / PLATE_NAMES[cid], PLATES / PLATE_NAMES[cid]) if c.exists()]
         if not cands:
             raise SystemExit(f"[audit] 実写のプレートが無い: {cid}")
-        im = Image.open(cands[-1]).convert("RGB")
+        im = Image.open(cands[0]).convert("RGB")
         nm = name_for("real-" + cid, salt)
         im.save(out / f"{nm}.png")
         key[nm] = {"kind": "anchor_real", "shot": cands[-1].name, "view": "full"}

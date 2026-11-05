@@ -41,7 +41,8 @@ paths:
 - 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 9.5 秒 ＋ 閉じる 4.0 秒）— `OutroTiming.Default` / `Timing_MatchesTheDoctorTabletSignalCut` 〔出典: show-design:806-826〕
 - Trapped では砂嵐も潰れも出さない。同じフレームに電力を落とし、Dark から始める — `OutroDirector.Begin` / `Trapped_StartsDarkWithoutShowingLive_ThenResetsForTheNextVisitor` 〔出典: show-design:830〕
 - 面と曲は `CloseLevel` 1 本の時計で閉じる。閉じた後は黒のままで、パススルーへは戻さない。閉じている途中も段は Done — `OutroLogic.CloseLevel` / `VisitorPortal.OutroCode` 〔出典: show-design:813-822〕
-- 終幕の音は電源断の 1 本だけ。`PowerCutAtSec` で鳴り、段名は読まない — `Outro_FiresOnlyThePowerOff_AndOnlyOnce` 〔出典: show-design:890-898〕
+- 終幕の一撃は 1 本だけ。帰還と中断は電源断、人形 End は電源断の代わりに黒へ落ちる音（`DollEndFall`）。`PowerCutAtSec` で鳴り、段名は読まない — `Outro_FiresOnlyThePowerOff_AndOnlyOnce` / `TrappedOutro_FiresTheFallInsteadOfPowerOff_OnlyOnce` 〔出典: show-design:890-898、LEDGER 0312〕
+- 別れの人形の位置からオルゴールが鳴る。現れる間に立ち上がり、見つめる間は保ち、後ろを向いてから消えるまで -30dB へ下げ、最後の 1 秒で閉じる — `EndingFarewellLogic.MusicBoxGain` / `ShowSoundDirector.ApplyFarewellBox` 〔出典: LEDGER 0312。下げ幅と尺は実装判断〕
 - 尺の許容は砂嵐 0.3〜3 秒、潰れ 0.2〜2 秒。外れた値や欠けたキーは既定値に戻す — `OutroTiming.PickCollapse` / `ShowOutroDef.LooksUnset` 〔出典: show-design:899-907〕
 - エンドロールは結末名（帰還End / 人形End / 中断）と「報告数 N」と写真。分母は出さない — `OutroReportText.Title` / `CountLine` 〔出典: memory/ending_roll.md, LEDGER 0290〕
 - 報告数は押した回数。表示を始めた時点で固定する — `OutroReport.Capture`（`VisitorMarkCount`）〔出典: LEDGER 0247〕

@@ -339,6 +339,9 @@ namespace FixedCamVr.Streaming
         public bool DollReplacementTransitioning => _logic.IsActive && _activeStepDollReplacement
                                                      && director != null && director.Dipping;
 
+        /// <summary>CG 人形化の遷移が画を覆い切った。空間の歪みはここで終わる（LEDGER 0313）。</summary>
+        public bool DollReplacementCovered => DollReplacementTransitioning && director != null && director.DipPastCover;
+
         /// <summary>CG 人形化の乱れ遷移の進み。遷移外は 1。</summary>
         public float DollReplacementTransition01 => director != null ? director.TransitionProgress01 : 1f;
 

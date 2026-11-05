@@ -87,6 +87,12 @@ namespace FixedCamVr.Streaming
         PowerOff,
 
         /// <summary>
+        /// <b>人形 End で黒へ落ちる</b>（<c>canon/LEDGER.md</c> 0312）。この終わり方は管が潰れないので、
+        /// <see cref="PowerOff"/> の代わりに終幕の頭で 1 度鳴る。
+        /// </summary>
+        DollEndFall,
+
+        /// <summary>
         /// <b>目が 1 つ開く</b>（<c>canon/LEDGER.md</c> 0131・ユーザー提供の太鼓）。
         /// 6 種を回して音程と音量を散らす（切替音と同じ仕組み）。
         ///
@@ -161,6 +167,7 @@ namespace FixedCamVr.Streaming
         private bool _titleWasVisible;
         // ⚠ `SealClose` / `Swap` のラッチは持たない（2026-08-15 に鳴らさなくなった）。
         private bool _shatterFired;
+        private bool _screenOnFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
         private bool _glyphWasShowing;
@@ -204,6 +211,7 @@ namespace FixedCamVr.Streaming
         private void ResetIntroLatches()
         {
             _shatterFired = false;
+            _screenOnFired = false;
             _bellFired = false;
             _swapSec = 0f;
         }
@@ -249,7 +257,13 @@ namespace FixedCamVr.Streaming
                     _shatterFired = true;
                     Push(SoundCue.Shatter, ref count);
                 }
-                // 生成動画の音に帰還まで含まれるため、旧 ScreenOn は重ねない。
+                // テレビの電源（0309）。音は 0057 でユーザーが指定した「スクリーンが出る音」。
+                // 割れる遷移（tv=false）は生成動画の音に帰還まで含まれるため、ScreenOn を重ねない。
+                if (!_screenOnFired && s.introWeights.tv && s.introStage == IntroStage.Frame)
+                {
+                    _screenOnFired = true;
+                    Push(SoundCue.ScreenOn, ref count);
+                }
                 // ⚠⚠ **その後のノイズ（`ScreenNoise`）は 2026-08-16 に鳴らさなくなった**
                 //    （`canon/LEDGER.md` 0057・ユーザー指示「ノイズは鳴らさない」）。
                 //    スクリーンが出る音を差し替えたので、後ろに足す音が要らなくなった。
@@ -276,7 +290,7 @@ namespace FixedCamVr.Streaming
                 if (!_powerOffFired && s.outroElapsedSec >= s.outroPowerCutSec)
                 {
                     _powerOffFired = true;
-                    Push(SoundCue.PowerOff, ref count);
+                    Push(s.outroTrapped ? SoundCue.DollEndFall : SoundCue.PowerOff, ref count);
                 }
             }
             else _powerOffFired = false;
@@ -347,6 +361,8 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Bell: return 0.45f;
                 // 終幕の頭。劇伴は 2.0 秒かけて退く途中なので、まだ鳴っている上に置かれる。
                 case SoundCue.PowerOff: return 0.60f;
+                // 人形 End。黒へ落ちた瞬間に劇伴を深く引き、落ちる音だけを前へ出す（0312）。
+                case SoundCue.DollEndFall: return 0.90f;
                 case SoundCue.Creak: return 0.15f;   // 退かせすぎると芝居がかる
                 // 大きい目が見開く所。3 周目 C の山なので深く退かせる
                 case SoundCue.EyeBig: return 0.75f;
@@ -374,6 +390,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Bell: return "amb_bell";
                 case SoundCue.DollCall: return "sfx_doll_call";
                 case SoundCue.PowerOff: return "sfx_power_off";
+                case SoundCue.DollEndFall: return "sfx_doll_end_fall";
                 case SoundCue.EyeOpen: return "sfx_eye";        // 6 種
                 case SoundCue.EyeBig: return "sfx_eye_big";
                 default: return "";

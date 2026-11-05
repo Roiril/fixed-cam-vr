@@ -26,7 +26,7 @@ paths:
   - "Assets/Resources/Intro*.shader"
 ---
 
-# タイトルと導入（装着 → 題字 → 歩行誘導 → 割れてスクリーンへ）
+# タイトルと導入（装着 → 題字 → 歩行誘導 → 暗転してテレビへ）
 
 **現行の契約だけを書く。** 変わったら行を書き換える（日付の節を足さない・`rules/doc-sync.md`）。
 体験者に見えることは `canon/NOW.md`、経緯は `reference/archive/streaming-2026-10-22.md`（S:）・`reference/archive/show-design-2026-10-22.md`（D:）。出典の行番号はその凍結版のもの。
@@ -46,38 +46,35 @@ paths:
 
 ### 導入（IntroStage）
 - `ShowPhase.Intro` 内の段 Black→Real→Degrade→Structure→Frame→Swap→Done。相も段も増やさない。重みは `IntroLogic.Weights` 1 本 — `IntroStage` 〔出典: streaming:940-944〕
-- 尺の既定 1.5 / 3.5 / 2.5 / 5.0 / 1.6 秒・max 20、合計 12.7 秒（段 3 は段 2 の .6 から重なる）。4 か所一致 — `IntroTiming.Default` / `ShowIntroDef` / 卓 2 か所 / `TotalSec_AccountsForTheStructureOverlap` 〔出典: streaming:933, 1000〕
+- 方式は `IntroTransition`。既定は `Tv`（0309）、`run.intro.transition="shatter"` で割れる遷移（尺は `IntroTiming.Shatter` に固定。契約は memory/intro_fracture_cinematic.md の冒頭）
+- 尺の既定 1.5 / 1.5 / 3.8 / 3.0 / 1.6 秒・max 20、合計 10.8 秒（段 3 は段 2 の .6 から重なる）。`IntroTiming.Default` / `ShowIntroDef` / 卓 2 か所 / `sound-preview.py` で一致 — `IntroTvTests.TotalSec_MatchesTheTable`
 - 段 0 は現実が見え、時間で進まず maxSec に数えない。自動の出口はすべて `startAuthorized`（練習と題字の完了 ∧ スタッフ用準備の開始）を通る。⏭ は通さない。未配線は true — `IntroInput.startAuthorized` / `OvrControllerBridge` / `Black_StaffOverrideStillWorksBeforeTheAPress` 〔出典: show-design:487-505〕
 - 誘導が予約・指示中は出口が「円に着いた」1 つ。30 秒で諦めて従来判定へ — `IntroInput.guidingToSpot` / `WalkGuideLogic.GatesStart` / `HoldMaxSec` 〔出典: show-design:578-593〕
 - 従来判定は接近（境界から 1.0m・0.4 秒）・安全網（外を見てから中へ）・救済（中に立って 1.0 秒）。位置が解けない間は中／外を更新しない。武装し直しは 1 か所 — `ConcealStartSec` / `IntroDirector.TryOutsideBoxM` / `RearmStartSignal` 〔出典: show-design:459-535〕
 - 位置合わせ中は凍結して覆い・殻・誘導を畳み ignite を戻す。recenter は中止、復帰は位置合わせの確定 1 段。本編へ入るのは完走 — `IntroDirector.Aborted` / `TryRecoverFromAbort` / `Completed` 〔出典: show-design:409-444, 963〕
-- 段 2 は彩度だけを滑らかに抜く。輪郭・粒・乱れ・線は使わない。段 3 は終端の静止。構造線は既定 OFF — `Degrade_OnlyDrainsColourSmoothly` / `IntroStructureWire.SetSources` 〔出典: コード（streaming:838 の「色→コントラスト→輪郭→粒」は旧）・streaming:974〕
-- 段 4 は頭の角速度 45°/s 以下を待つ（最大 3 秒）。`shatter` = p を破片・粒・音が読む。frame = SmoothStep(.84,.90)、reveal = (.68,.70)、live = (.895,.905) — `IntroLogic.MaxHeadTurnForFrame` / `ShatterClock_EqualsFrameProgress_ForDrawingAndSound` 〔出典: memory/intro_fracture_cinematic.md〕
-- 振り付けの時計の正は `IntroFracture.shader` 先頭の表と `IntroFractureTime.hlsl`（PullStart .56 / ArriveFirst .70 / ArriveSpan .17 / CloserArrive .90） 〔出典: memory/intro_fracture_cinematic.md〕
-- 中央も含めて全体を割り、同じ片が映像の出ている矩形へ組み上がる。終端の矩形を先に別の窓で描かない — `IntroFractureMesh` / `IntroVeil.ContentScale` 〔出典: show-design:62-64〕
-- 参照CRTの到着矩形は`CrtReferenceScreen.VisibleScale`と`ApertureCenter`で取る。論理containの0.75を二重に掛けない。覆いの全開は筐体を含むQuad全体、破片の到着先は映像の開口 — `IntroVeil.ResolveContentScale` / `CrtReferenceScreenTests`。
-- 像は割れ始めに 1 回だけ凍結し、撮影時の姿勢にワールド固定。片は撮影時の部屋の面へ置き（無ければ 1.6m の殻）、剥がれたら両眼とも左カメラの写真。静止画が無ければ旧 alpha 窓へ退避して再試行しない — `IntroVeil.ShatterAnchored` / `ApplyRoomDepth` / `IntroVeil_ShatterAnchorStaysAtStartPoseWhileHeadMoves` / `IntroVeil_NullFrozenFrameFallsBackWithoutRetrying` 〔出典: memory/intro_fracture_cinematic.md / presentation_redesign.md〕
-- `_IntroLive` は `live>0 || reveal>0` の 0/1。混合量は覆いの `_ScreenFade` だけ。`ignite` は全段 1 で、畳むすべての経路で 1 へ戻す — `IntroDirector.WriteIgnite` / `ResetIgnite` / `Ignite_IsAlwaysOne` 〔出典: streaming:851, 889-897〕
-- 段 5 は live 1 の静止 1.6 秒、乱れなし。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec` / `Swap_StillRunsWithStaticWhenNoCameraFrameArrives` 〔出典: streaming:866 / LEDGER 0060〕
+- 段 2 は暗転だけ。色は抜かず、輪郭・粒・乱れ・線も使わない。全画素を同じ係数で落とすので覆いの `_ScreenFade` は `1 - passthrough`。構造線は既定 OFF — `IntroTvTests.Darken_FallsFromRealityToBlack_WithoutBreaking`
+- 段 3 は黒の保持（`TvBlackHoldShare`）の後、筐体 `tvCase` とガラスの灯り（`1 - tvDark`）を同じ量で上げる。スクリーンは段 3 に入る黒のうちに頭の正面へ据え（`ScreenAnchor.HoldInFrontOfHead`）、畳む経路で解除する
+- テレビが出るまでスクリーンは描かない（`IntroVeil.TvScreenHidden`）。描くと暗転と黒の保持に矩形や縁が浮く。覆いが要らなくなる段 3 の経路でも止めを掛け直す — `IntroVeil.Apply`、観測 `scrHid=`
+- 段 4 は頭の角速度 45°/s 以下を待つ（最大 3 秒）。電源 `ignite` = p/`TvIgniteShare`、映像 `live` は `TvLiveFrom` から `PerceptualFade.Reveal`。頭で `SoundCue.ScreenOn` — `IntroLogic.MaxHeadTurnForFrame` / `IntroTvTests.Frame_PowersOnFirst_ThenTheImageComes`
+- `_IntroLive` の式は `IntroWeights.LiveGate` 1 か所。テレビは live そのもの、割れる遷移は 0/1。`ignite` はテレビの段 1〜4 で 0 から上がり、演出の外は 1。畳むすべての経路で 1 へ戻す — `IntroDirector.WriteIgnite` / `ResetIgnite`
+- 段 5 は live 1 の静止 1.6 秒で、乱れなし。筐体を闇へ沈めて本編の枠なしの形（0302）で終わる。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec` / `IntroTvTests.Swap_SinksTheCase_AndDoneIsTheMainShowLook`
 - 殻は導入で描かない（終幕だけ）。封印の箱は全段 0 で毎フレーム `SetHidden` — `ContainmentShellLogicTests.Intro_NeverPaintsTheShellAtAll` / `SealedBox_NeverAppears_InAnyStage` 〔出典: streaming:858, 898〕
 - 開口は「眼とスクリーンの 4 辺を通る平面」。全開は厳密に全開、`AnchorK` .15 まで頭の正面から寄せる。C# と shader が同じ式。ブラウン管の曲面は角を動かさない — `IntroVeil.SignedDistance` / `Open_CoversWholeFov_AtEveryHeadPitch` / `CrtScreenMesh` 〔出典: streaming:948-971〕
 
 ## 罠（破ると壊れる）
 - 描画順 4900 覆い（`Blend Zero SrcColor, Zero SrcAlpha`）→ 4901 破片深度（ステンシル bit 32）→ 4902 隙間 → 4903 破片色 → 4904 周辺窓 → 4906 周辺色 → 4907 粒 → 4910 殻 → 4950 題字の黒 → 4960 題字 → 4995 開始案内。5000 を超えると描かれない — `IntroVeilOrderTests` / `IntroVeil.FractureStencilBit` 〔出典: memory/intro_fracture_cinematic.md / show-design:707〕
 - ステンシルは URP が使っていない前提（`overrideStencilState: 0`）。殻 ref 1・破片 bit 32 〔出典: show-design:711〕
-- 覆いの下のスクリーンは `forceRenderingOff`、段 4 は `IntroVeil.ShatterViewportScale` 0.5。畳むすべての経路で戻す 〔出典: memory/intro_fracture_cinematic.md〕
+- 段 4 の `IntroVeil.ShatterViewportScale` 0.5 は割れる遷移だけ。スクリーンの `forceRenderingOff` は畳むすべての経路で戻す 〔出典: memory/intro_fracture_cinematic.md〕
 - `run.intro` 欠落は全部 0 になる → `ShowIntroDef.LooksUnset` で既定へ 〔出典: streaming:972〕
-- `IntroPreview` は `_IntroLive` の式を写している。変えたら対で直す 〔出典: memory/intro_fracture_cinematic.md〕
-- 名目の殻 1.6m は 3 か所 — `IntroRoomDepth.ShellRadius` / `IntroPeripheralFractureMesh.Radius` / `IntroFractureTime.hlsl` / `ShellRadius_MatchesTheShaderAndThePeripheralMesh`
-- 起点は shader の tan(−0.16, 0.12) と `IntroFractureMesh.ImpactX/Y` が対 〔出典: memory/intro_fracture_cinematic.md〕
-- 未装着ではパススルーカメラの姿勢が使えない → `IntroPassthroughCapture.TryHeadPoseFallback`（`shatProj=…(head)`） 〔出典: memory/intro_fracture_cinematic.md〕
-- 観測は「画に出た」側。`shatCam` / `shatAnchor` / `shatDepth` / `shatWarm` / `ignite=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す（`ilive=` / `sig=` / `rvs=` は C# だけ）
-- 導入の音は shatter ≥ .02 で `sfx_shatter` 1 本。ScreenOn は鳴らさない。`ingest-sounds.py` の `SWARM_*`（ArriveSpan .13）は旧レシピで写しではない — `SoundCueLogic.ShatterFireAt` 〔出典: rules/sound-design.md 2026-09-25 節〕
+- `IntroPreview` は `IntroDirector.WriteIgnite` が書く値と `TvScreenHidden` を写している。変えたら対で直す。`menu intro -Set style=shatter|tv` で方式を選ぶ（`tv` は show.json の尺を読まない）
+- 観測は「画に出た」側。`shatStyle=tv` / `tvCase=` / `ignite=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す（`ilive=` / `sig=` / `rvs=` は C# だけ）
+- 導入の音はテレビの電源 `ScreenOn`（段 4 の頭）と段 5 の鈴。`sfx_shatter` は割れる遷移だけ — `IntroTvTests.ScreenOn_FiresOnce_WhenThePowerComesOn`
 - 題字の版を焼き直したら `ORDER_LO/HI` を測り直す 〔出典: memory/title_screen.md §4.5〕 〔未照合〕
 - `menu title` / `menu intro` は追従を映さない。`menu title` は `TitlePreview.Summoned` 経由で、hold の最大輝度 120 未満は LogError 〔出典: memory/title_screen.md §5〕
 
 ## 深く読むとき
-- 割れる遷移の数値・質感・fps → memory/intro_fracture_cinematic.md（R065 / R060 / R061 / 0235 の節）
+- テレビの登場 → memory/intro_tv_reveal.md
+- 割れる遷移の契約・数値・質感・fps → memory/intro_fracture_cinematic.md
 - 凍結像と投影・撮影権限 → memory/presentation_redesign.md の 1〜100 行
 - 題字の版・渦・焼け → memory/title_screen.md
 - 開始判定の経緯 → archive/show-design-2026-10-22.md:395-660

@@ -1,6 +1,6 @@
 ---
 name: cam-c-lens-study
-description: カメラ C の魚眼（0308 で版 3 を本編へ）。参照のレンズの解き方、変形だけでは届かない理由、実装の罠。
+description: カメラ B と C の魚眼（0308 で C に版 3、0316 で B へ。A は入れない）。参照のレンズの解き方、変形だけでは届かない理由、実装の罠、A に入れるときの障害。
 metadata:
   node_type: memory
   type: project
@@ -29,8 +29,8 @@ metadata:
 
 **契約**
 
-- C の映像だけ等立体角の魚眼。`CameraLensLogic` が値の正で、`MjpegScreen.Update` が映像と同じフレームに `_CrtFisheye` を書く
-- A と B と人形視点は `_CrtFisheye` が 0 で、`_CrtLensWarp` のまま。ソースの外は黒
+- B と C の映像は同じ等立体角の魚眼。`tools/twin/rig.json` で同じ焦点距離（288.33px）なので値も同じ。`CameraLensLogic` が値の正で、`MjpegScreen.Update` が映像と同じフレームに `_CrtFisheye` を書く
+- A と人形視点は `_CrtFisheye` が 0 で、`_CrtLensWarp` のまま。ソースの外は黒
 - 全層が同じ座標を読むので CG・録画・覆いは一緒に曲がる — `CameraLensLogicTests`
 - 枠の論理座標で書かれる `_ActorLight` / `_ActorFocus` は、魚眼のときだけ `actorUv`（レンズ後）で比べる。`screenUv` だと人形から光だまりが離れる
 - 観測は `lensFish`。`ShowTelemetryHost` と `analyze-xp-log.py` を対で直す
@@ -38,7 +38,13 @@ metadata:
 **本編へ入れたときの罠**
 
 - 本編の信号処理を通すのは `CRT_RUNTIME_PREGLASS` のパスだけ。`menu composite` と `plate-validation` はこの枝を通らず、レンズが映らない。画を見るのは `menu crt-lens`（`Tuner.Render` が実際の処理を通す）
-- A と B が変わっていないことは `2026-11-01_screen-profile-adoption/gpu/` の PNG と比べると分かる（差 0）
+- 前の版（0303）の A と B は `2026-11-01_screen-profile-adoption/gpu/` に残っている。A はこれと差 0 になるはず
 - 区間ではなく映しているカメラで切り替える。2-C の予備動作は C の区間で B のライブを映す
+
+**A に入れるときの障害（0315 で試し、0316 で取りやめ）**
+
+- 別れの写真は A のレンズを通る。上下の中央は Viewport の .0715〜.9285 しか画面に出ない
+- 今の show.json の A（fx=399）では、全身がその内側に入る位置が L 字の内側に無い（身長 1.65m で候補 23 組すべて足の四隅で落ちる）。fx=288 の校正なら解ける
+- 解けないと別れが出ないまま止まるので、入れるなら `TrySolveAtWall` を枠 2 段（レンズ後 → Viewport）にして足元の切れを受け入れる必要がある
 
 **未確認**: 実機・HMD・カメラの実映像での曲がり方（無人写真とツインの計算のみ）。

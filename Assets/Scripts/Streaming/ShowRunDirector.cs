@@ -356,7 +356,7 @@ namespace FixedCamVr.Streaming
             if (cueScheduler != null && _subscribed) cueScheduler.CameraEntered -= OnCameraEntered;
             _subscribed = false;
             // 自分が閉じたゲートを開けたまま去る（このコンポーネントを外したら従来どおり常に流れる）。
-            cueScheduler?.SetShowGate(true);
+            if (cueScheduler != null) cueScheduler.SetShowGate(true);
         }
 
         private void ResolveRefs()
@@ -520,6 +520,11 @@ namespace FixedCamVr.Streaming
             // ⚠ 戻すときも同じ 1 本なので、解像度と色は必ず一緒に戻る。
             _feel?.SetScreenDecay(_decay.ShownBlocks, _decay.Shown, _decay.NoiseDark, _decay.DollProfileBlend);
             _feel?.SetDollPovShowing(timelineDirector != null && timelineDirector.DollPovShowing);
+            // 空間の歪みは人形化の暗転で終わる。人形にならないまま 4-A へ入った走行は、次の切り替えの暗転で畳む。
+            if (timelineDirector != null
+                && (timelineDirector.DollReplacementCovered
+                    || (timelineDirector.ClosingSegmentSec >= 0f && switchDirector != null && switchDirector.DipPastCover)))
+                _feel?.NotifyRoomWarpCovered();
         }
 
         private bool AtStartZone()

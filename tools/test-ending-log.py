@@ -446,6 +446,63 @@ class CurrentXpLogTests(unittest.TestCase):
                 self.assertEqual(self.has(verdicts, "FAIL", "鈴"), missing)
                 self.assertTrue(self.has(verdicts, "WARN", "音声出力は未検証"))
 
+    def test_tv_intro_requires_the_power_sound_instead_of_the_shatter(self):
+        for sounds, missing in ((("Bell", "ScreenOn"), False), (("Bell", "Shatter"), True)):
+            with self.subTest(sounds=sounds):
+                events = [{"ev": "intro", "stage": "Swap", "t": "1", "shatStyle": "tv"}]
+                events.extend({"ev": "sfx", "id": sound, "t": "1"} for sound in sounds)
+                _, verdicts = self.analyze(events)
+                self.assertEqual(self.has(verdicts, "FAIL", "「テレビの電源」の音"), missing)
+                self.assertFalse(self.has(verdicts, "FAIL", "現実が割れる"))
+
+    def test_tv_intro_does_not_require_the_aperture_or_the_shards(self):
+        # 走行の途中で印が変わるログも落とさない（演出の外で frozen を出す版があった）。
+        events = [{"ev": "intro", "stage": "Swap", "t": "1", "shatStyle": "tv", "aper": "0.00",
+                   "shat": "0.00", "shatC": "0", "shatCam": "none", "shatAnchor": "0",
+                   "tvCase": "1.00", "ignite": "0.00"},
+                  {"ev": "intro", "stage": "Off", "t": "2", "shatStyle": "frozen", "aper": "0.00",
+                   "shat": "0.00", "tvCase": "0.00", "ignite": "1.00"}]
+        _, verdicts = self.analyze(events)
+        for word in ("開口", "破片", "割れていない", "shatCam", "実景"):
+            self.assertFalse(self.has(verdicts, "FAIL", word), word)
+
+    def test_shatter_intro_still_requires_the_aperture(self):
+        events = [{"ev": "intro", "stage": "Swap", "t": "1", "shatStyle": "frozen", "aper": "0.00"}]
+        _, verdicts = self.analyze(events)
+        self.assertTrue(self.has(verdicts, "FAIL", "開口が動いていない"))
+
+    def test_tv_intro_fails_when_the_screen_is_drawn_in_the_black(self):
+        def run(hid):
+            events = [{"ev": "intro", "stage": "Degrade", "t": "1", "shatStyle": "tv", "scrHid": "1",
+                       "tvCase": "0.00", "ignite": "0.00"},
+                      {"ev": "intro", "stage": "Structure", "t": "2", "shatStyle": "tv", "scrHid": hid,
+                       "tvCase": "0.00", "ignite": "0.00"}]
+            return self.analyze(events)[1]
+
+        self.assertTrue(self.has(run("1"), "OK", "スクリーンを描いていない"))
+        self.assertTrue(self.has(run("0"), "FAIL", "スクリーンを描いている"))
+
+    def test_tv_intro_checks_the_case_and_the_power_reached_the_picture(self):
+        def run(case_values, ignite_values):
+            events = [{"ev": "intro", "stage": "Swap", "t": str(i), "shatStyle": "tv",
+                       "tvCase": c, "ignite": g, "veil": "1"}
+                      for i, (c, g) in enumerate(zip(case_values, ignite_values))]
+            return self.analyze(events)[1]
+
+        good = run(("0.00", "1.00", "0.00"), ("0.00", "1.00", "1.00"))
+        self.assertTrue(self.has(good, "OK", "テレビの筐体が出て"))
+        self.assertTrue(self.has(good, "OK", "テレビの電源が入り"))
+
+        # 段は進んだのに画に何も出ていない形を落とす
+        no_case = run(("0.00", "0.00", "0.00"), ("0.00", "1.00", "1.00"))
+        self.assertTrue(self.has(no_case, "FAIL", "テレビの筐体が画に出ていない"))
+        stuck_case = run(("0.00", "1.00", "1.00"), ("0.00", "1.00", "1.00"))
+        self.assertTrue(self.has(stuck_case, "FAIL", "筐体が残っている"))
+        no_power = run(("0.00", "1.00", "0.00"), ("1.00", "1.00", "1.00"))
+        self.assertTrue(self.has(no_power, "FAIL", "電源が入る様子が画に無い"))
+        dark_end = run(("0.00", "1.00", "0.00"), ("0.00", "1.00", "0.40"))
+        self.assertTrue(self.has(dark_end, "FAIL", "管が消えたまま"))
+
 
 if __name__ == "__main__":
     unittest.main()

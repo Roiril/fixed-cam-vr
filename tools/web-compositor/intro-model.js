@@ -1,8 +1,7 @@
 // 導入演出（show.json `run.intro`）の判定。DOM 非依存の純関数だけを置く。
 //
-// 導入は「素通しの現実が格下げされ、割れて、スクリーンの枠へ吸い込まれ、その中に自分が居る」
-// 12.7 秒の遷移（2026-08-15 に旧構成へ戻した。封印の箱を退避したので「箱の中に入ってから
-// 固定視点」が成立しない — canon/LEDGER.md 0044）。
+// 導入は「素通しの現実が暗転し、闇からテレビが出て、電源が入り、カメラの映像が映る」
+// 10.8 秒の遷移（canon/LEDGER.md 0309）。
 // **導入は 1 種類でよく、演出（takes）として著作可能にしない** — 自由度を持たせると
 // 「導入が壊れている show.json」を作れてしまう。だから編集面は段ごとの秒と
 // on/off だけで、ここに置く判定もそれだけを見る。
@@ -23,11 +22,11 @@ import { roomFromLayout, roomHasData, isWallUsable, isBoxUsable, FLOOR_MIN_M } f
 export const INTRO_DEFAULT = {
   enabled: true,
   maxSec: 20,
-  // 段 1 素通し / 段 2 格下げ / 段 3 輪郭（段 2 と重なる）/ 段 4 割れる / 段 5 映像
+  // 段 1 素通し / 段 2 暗転 / 段 3 テレビが出る（段 2 と重なる）/ 段 4 電源と映像 / 段 5 静止
   realSec: 1.5,
-  degradeSec: 3.5,
-  structureSec: 2.5,
-  frameSec: 5.0,
+  degradeSec: 1.5,
+  structureSec: 3.8,
+  frameSec: 3.0,
   swapSec: 1.6,
   // 生成り。純白は蛍光灯の下の点検作業に見える（LEDGER 0010「全体的に暖色に」）。
   // Unity 側 ShowIntroDef.edgeColor / capture-server.py の _default_show と対。
@@ -114,7 +113,7 @@ export function introStageSec(intro) {
   return Math.round(sum * 10) / 10;
 }
 
-/** 「演出 12.7s / 慣らし 20s」— ⚙ 欄と本番前チェックで同じ文を出す。 */
+/** 「演出 10.8s / 慣らし 20s」— ⚙ 欄と本番前チェックで同じ文を出す。 */
 export function introDurationLabel(intro, introMinSec) {
   const warm = Math.max(0, parseFloat(introMinSec) || 0);
   return `演出 ${introStageSec(intro)}s / 慣らし ${warm}s`;
@@ -289,7 +288,7 @@ export function introPreflightRow({ run, layout, cameras } = {}) {
     }
   }
   // 慣らし歩行（introMinSec）は**導入相全体の下限**なので、演出がそれを食う。
-  //   演出 12.7s に対し introMinSec が 4s だと、演出の途中で本編へ移って**演出が切り落とされる**。
+  //   演出 10.8s に対し introMinSec が 4s だと、演出の途中で本編へ移って**演出が切り落とされる**。
   //   RestartIntroClock は演出が終わった時にしか打たれないので、実機は黙って途中で切り替わる。
   const warmSec = Math.max(0, parseFloat(run && run.introMinSec) || 0);
   const stageSec = introStageSec(intro);

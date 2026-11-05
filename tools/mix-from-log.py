@@ -50,6 +50,7 @@ CUES = {
     "Shatter": ("sfx_shatter", 1), "ScreenOn": ("sfx_screen_on", 1),
     "Glitch": ("sfx_glitch", 3), "Bell": ("amb_bell", 1),
     "DollCall": ("sfx_doll_call", 1), "PowerOff": ("sfx_power_off", 1),
+    "DollEndFall": ("sfx_doll_end_fall", 1),
     "EyeOpen": ("sfx_eye", 6), "EyeBig": ("sfx_eye_big", 1),
 }
 
@@ -68,6 +69,7 @@ BEDS = {
     "sndWhite": ["bed_white"],
     # 心音（0175）。追いつき → 3 周目 A の入れ替わりのあいだ 1 本だけ鳴る。
     "sndHeart": ["bed_heart"],
+    "sndFarewell": ["bed_farewell_music_box"],
 }
 
 # 卓が配る劇伴（`show.json` の volume 込み）。

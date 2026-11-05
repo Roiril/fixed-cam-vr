@@ -516,6 +516,15 @@ namespace FixedCamVr.Streaming.Cg
             return FarewellAnchored;
         }
 
+        /// <summary>別れの人形のいまの胴の高さ（ワールド）。音を人形から鳴らすために読む（0312）。</summary>
+        public bool TryGetFarewellDollWorld(out Vector3 position)
+        {
+            position = default;
+            if (!FarewellAnchored || _actorInstance == null) return false;
+            position = _actorInstance.transform.position + Vector3.up * (EffectiveHeightM * 0.5f);
+            return true;
+        }
+
         public bool FarewellPhotoReady
         {
             get

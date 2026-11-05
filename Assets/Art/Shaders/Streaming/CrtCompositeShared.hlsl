@@ -3,6 +3,7 @@
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
 TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
+TEXTURE2D(_RoomWarpTex); SAMPLER(sampler_RoomWarpTex);
 TEXTURE2D(_CrtFrameTex); SAMPLER(sampler_CrtFrameTex);
 TEXTURE2D(_CrtScreenMaskTex);
 #if defined(CRT_RUNTIME_PREGLASS)
@@ -85,6 +86,8 @@ CBUFFER_START(UnityPerMaterial)
     float _HeartRipple;
     float _HeartTime;
     float _HeartVignette;
+    float _RoomWarp;
+    float _RoomWarpZoom;
     float _Grain;
     float _Scanline;
     float _ScanlineCount;
@@ -146,6 +149,8 @@ CBUFFER_START(UnityPerMaterial)
     float _CrtEdge;
     float _CrtEdgeWidth;
     float _CrtIgnite;
+    float _CrtTvCase;
+    float _CrtTvDark;
     float _IntroLive;
     float _ScreenPower;
     float _ScreenCollapse;
@@ -824,6 +829,17 @@ float SwapFront(float2 uv)
 //     「隣り合う行が別の場所を読んでいる」ことだけで足りる。
 //     線と地の差は**ずれの大きさ**で作る（`lineAmt` が色ではなく距離に掛かる）。
 
+// 帯の番号（LEDGER 0310）。粗い 12 区画を 1〜32 本へ割る。多くは細く、まれに太い。割り方と位置は
+// 組み替えごとに変わる。帯を選ぶ確率は高さに依らないので、乱れた面積は等高 24 帯のときと同じ。
+float GlitchBandId(float y, float t, float salt)
+{
+    float yy = y * 12.0 + Hash21(float2(t, salt + 71.0));
+    float cell = floor(yy);
+    float r = Hash21(float2(cell + salt, t + 5.0));
+    float n = floor(1.5 + 31.0 * r * r * sqrt(r));
+    return cell * 33.0 + floor(frac(yy) * n);
+}
+
             // 演出としての「映像の乱れ」の位置ずれ成分。帯（走査線ブロック）の一部だけを水平に飛ばし、
 // 強いときは垂直の同期ずれも足す。**全層のサンプル前**に掛けるので、ライブ・差し替え素材・
 // マスク・CG が一緒にずれる = 差し替えの継ぎ目も一緒に乱れて隠れる（企画書 2.3）。
@@ -833,7 +849,7 @@ float2 GlitchUv(float2 uv)
     if (_Glitch <= 0.001) return uv;
     float g = saturate(_Glitch);
     float t = floor(_GlitchSeed * 18.0);       // 約 18Hz で組み替わる
-    float band = floor(uv.y * 24.0);
+    float band = GlitchBandId(uv.y, t, 0.0);
     float pick = Hash21(float2(band, t));
     float amt = Hash21(float2(band + 37.0, t + 11.0));
     float active = step(1.0 - 0.6 * g, pick);  // 強いほど多くの帯が飛ぶ
@@ -1228,6 +1244,19 @@ half4 frag(Varyings input) : SV_Target
     }
     #endif
     float2 sampleUv = GlitchUv(PixelateUv(heartUv));
+    // 空間の歪み（LEDGER 0313）。写真・録画・CG・マスクは同じ座標を読むので一緒に動く。
+    // 画面に固定された物（低解像度のブロック・砂・時計・固定パターン）は動かさない。
+    // ⚠ 0 は厳密に恒等。
+    float2 roomWarpDelta = float2(0.0, 0.0);
+    if (_RoomWarp > 0.0001)
+    {
+        float2 content = (sampleUv - 0.5) / max(_LiveScale.xy, 1e-3);
+        float2 roomOffset = SAMPLE_TEXTURE2D_LOD(_RoomWarpTex, sampler_RoomWarpTex, content + 0.5, 0).rg;
+        float roomAmount = saturate(_RoomWarp);
+        roomWarpDelta = (content * (lerp(1.0, _RoomWarpZoom, roomAmount) - 1.0) + roomOffset * roomAmount) * _LiveScale.xy;
+        sampleUv += roomWarpDelta;
+        actorUv += roomWarpDelta;
+    }
     sampleUv.x += cutShift;
 
     // 伝送が痩せたぶん（mip）＋ **周辺の解像度低下**（像面湾曲。実レンズは角ほど像がゆるい）。
@@ -1504,7 +1533,7 @@ half4 frag(Varyings input) : SV_Target
     {
         // 刻むのは**ソース画素**。枠空間で刻むと、粗くなった画より粒の方が細かくなる
         // ＝ 符号化は粒を真っ先に捨てるので物理的に起こりえない絵になる。
-        float2 srcUv = (sampleUv - 0.5) / max(_LiveScale.xy, 1e-3) + 0.5;
+        float2 srcUv = (sampleUv - roomWarpDelta - 0.5) / max(_LiveScale.xy, 1e-3) + 0.5;
         float2 srcPx = srcUv * max(_LiveTex_TexelSize.zw, float2(2.0, 2.0));
         float grainPx = max(exp2(lod), 1.0);
         float2 np = floor(srcPx / grainPx);
@@ -1641,7 +1670,7 @@ half4 frag(Varyings input) : SV_Target
         float t = floor(_GlitchSeed * 42.0);
         float st = Hash21(screenUv * 300.0 + t);
         float add = Hash21(screenUv * 300.0 + t + 19.0);
-        float band = floor(screenUv.y * 24.0);
+        float band = GlitchBandId(screenUv.y, t, 5.0);
         float bandPick = Hash21(float2(band + 5.0, t + 2.0));
         float amt = saturate(g * 1.5) * step(1.0 - 0.75 * g, bandPick);
         // 映像の外の黒帯（4:3 を 16:9 の枠へ収めた左右）は、黒に掛け算すると砂が消える。
@@ -1871,6 +1900,7 @@ half4 frag(Varyings input) : SV_Target
     return float4(col, 1);
     #endif
     #endif
+    half3 tvOutside = 0.0;
     if (_CrtReference > 0.5)
     {
         float2 eyeShift = clamp(_CrtView.xy / max(abs(_CrtView.z), 0.25), -1.0, 1.0) * 0.006;
@@ -1881,15 +1911,18 @@ half4 frag(Varyings input) : SV_Target
         transmission = pow(saturate(transmission * 2.0), 1.6);
         float opticalDepth = max(rcp(max(glassNormal.z, 0.35)) - 1.0, 0.0);
         transmission *= exp(-4.0 * opticalDepth);
-        col = col * transmission + (1.0 - transmission) * 0.006;
+        // 導入のテレビ（0309）。消えた管は闇の中で見えない。_CrtTvDark = 0 で本編と同じ。
+        half tvLit = 1.0 - saturate(_CrtTvDark);
+        col = col * transmission + (1.0 - transmission) * 0.006 * tvLit;
         float3 eyeDirection = normalize(float3(_CrtView.xy, -_CrtView.z));
         float facing = saturate(dot(glassNormal, eyeDirection));
         float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);
-        col += reflectAtEye * fresnel * 0.30;
+        col += reflectAtEye * fresnel * 0.30 * tvLit;
         half4 casing = SAMPLE_TEXTURE2D_LOD(_CrtFrameTex, sampler_CrtFrameTex, surfaceUv, 0.4);
         casing.rgb = SAMPLE_TEXTURE2D(_CrtCaseColorTex, sampler_CrtFrameTex, surfaceUv).rgb;
         casing.rgb += (reflectAtEye - reflectAtRest) * 0.12;
-        col = lerp(col, casing.rgb, casing.a);
+        tvOutside = lerp(col, casing.rgb, casing.a);
+        col = lerp(col, casing.rgb * tvLit, casing.a);
     }
     col *= 1.0 - saturate(_SwitchDim);
 
@@ -1908,7 +1941,21 @@ half4 frag(Varyings input) : SV_Target
     // Discard only after all color derivatives are evaluated. Interior alpha stays opaque.
     #if defined(CRT_SIGNAL_RUNTIME)
     if (_CrtScreenOnly > .5 && _CrtReference > .5)
-        clip(SAMPLE_TEXTURE2D_LOD(_CrtScreenMaskTex, sampler_CrtFrameTex, surfaceUv, 0).a - .5);
+    {
+        half screenMask = SAMPLE_TEXTURE2D_LOD(_CrtScreenMaskTex, sampler_CrtFrameTex, surfaceUv, 0).a;
+        if (_CrtTvCase > 0.0)
+        {
+            // 導入のテレビ（0309）。輪郭の外の筐体を、上からの灯りで闇から出す。
+            // 参照の筐体は暗い樹脂なので、写真の明るさのままだと闇に沈む。外周は闇へ溶かして、四角い板の輪郭を見せない。
+            // 輪郭の判定は本編の clip と同じ .5。沈み切った時に本編と 1 画素も変わらない。
+            float2 tvP = (surfaceUv - float2(0.5, 0.60)) * float2(1.25, 1.45);
+            float tvSpot = saturate(1.0 - dot(tvP, tvP));
+            float2 tvEdge = min(surfaceUv, 1.0 - surfaceUv);
+            tvSpot *= smoothstep(0.0, 0.06, min(tvEdge.x, tvEdge.y));
+            if (screenMask < 0.5) col = tvOutside * 2.2 * tvSpot * _CrtTvCase;
+        }
+        else clip(screenMask - .5);
+    }
     #endif
     return half4(saturate(col), 1);
 }

@@ -203,6 +203,12 @@ tools/web-compositor/show.json.bak-*
 tools/web-compositor/show.json.tmp
 tools/web-compositor/masks/
 tools/web-compositor/audio/
+# Wrong Room（Parallel Minds）の音。ライセンスが音単体の再配布を禁じるので公開リポジトリへ置かない。
+# 焼き方は `py -3.11 tools/ingest-sounds.py --only bed_farewell_music_box sfx_doll_end_fall`（原本は Drive）。
+Assets/Resources/Sound/bed_farewell_music_box.wav
+Assets/Resources/Sound/bed_farewell_music_box.wav.meta
+Assets/Resources/Sound/sfx_doll_end_fall.wav
+Assets/Resources/Sound/sfx_doll_end_fall.wav.meta
 # 目の視界ジャックの当日写真（canon/LEDGER.md 0099）。会場で撮った写真そのものなので
 # コミットしない（人が写る・体験日ごとに入れ替わる）。norm/ はサーバが作り直せる。
 tools/web-compositor/eyejack/

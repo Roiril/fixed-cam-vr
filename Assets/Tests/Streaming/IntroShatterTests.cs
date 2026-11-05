@@ -28,7 +28,7 @@ namespace FixedCamVr.Streaming.Tests
         private static IntroLogic AtFrame()
         {
             var l = new IntroLogic();
-            l.Configure(IntroTiming.Default);
+            l.Configure(IntroTiming.Shatter);
             l.Begin();
             for (int i = 0; i < 4; i++)
             {
@@ -43,7 +43,7 @@ namespace FixedCamVr.Streaming.Tests
         public void ShatterClock_EqualsFrameProgress_ForDrawingAndSound()
         {
             var l = AtFrame();
-            l.Tick(IntroTiming.Default.frameSec * 0.4f, Ready());
+            l.Tick(IntroTiming.Shatter.frameSec * 0.4f, Ready());
             Assert.AreEqual(0.4f, l.Weights.shatter, 1e-4f,
                 "破片描画と SoundCueLogic / SoundBedLogic が読む時計を変えている");
             Assert.AreEqual(0f, l.Weights.grain, 1e-5f);
@@ -58,7 +58,7 @@ namespace FixedCamVr.Streaming.Tests
             float previousFrame = l.Weights.frame;
             for (int i = 1; i < 20; i++)
             {
-                l.Tick(IntroTiming.Default.frameSec / 20f, Ready());
+                l.Tick(IntroTiming.Shatter.frameSec / 20f, Ready());
                 Assert.GreaterOrEqual(l.Weights.shatter, previousShatter, $"標本 {i} で破砕が戻った");
                 Assert.GreaterOrEqual(l.Weights.frame, previousFrame, $"標本 {i} で終端矩形が戻った");
                 previousShatter = l.Weights.shatter;
@@ -66,7 +66,7 @@ namespace FixedCamVr.Streaming.Tests
             }
             Assert.AreEqual(IntroStage.Frame, l.Stage);
             l.RequestAdvance();
-            l.Tick(IntroTiming.Default.frameSec / 20f, Ready());
+            l.Tick(IntroTiming.Shatter.frameSec / 20f, Ready());
             Assert.AreEqual(IntroStage.Swap, l.Stage);
             Assert.AreEqual(0f, l.Weights.shatter, "Swap では破片の描画を終了する");
             Assert.AreEqual(1f, l.Weights.frame, 1e-5f, "終端がスクリーン矩形まで確定していない");
@@ -77,14 +77,14 @@ namespace FixedCamVr.Streaming.Tests
         {
             var l = AtFrame();
             // 0225: 着地した破片からその場所の映像が現れ（.70〜）、枠を閉じる .90 で全面が映像になる。
-            l.Tick(IntroTiming.Default.frameSec * 0.89f, Ready());
+            l.Tick(IntroTiming.Shatter.frameSec * 0.89f, Ready());
             Assert.AreEqual(0f, l.Weights.live, 1e-5f);
             Assert.AreEqual(1f, l.Weights.reveal, 1e-5f, "着地した破片が映像を見せる区間に入っていない");
 
-            l.Tick(IntroTiming.Default.frameSec * 0.01f, Ready());
+            l.Tick(IntroTiming.Shatter.frameSec * 0.01f, Ready());
             Assert.That(l.Weights.live, Is.InRange(0.01f, 0.99f));
 
-            l.Tick(IntroTiming.Default.frameSec * 0.02f, Ready());
+            l.Tick(IntroTiming.Shatter.frameSec * 0.02f, Ready());
             Assert.AreEqual(1f, l.Weights.live, 1e-5f);
             Assert.AreEqual(1f, l.Weights.frame, 1e-5f, "映像の終端とスクリーン矩形が揃っていない");
         }

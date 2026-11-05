@@ -2636,6 +2636,17 @@ def analyze(events, others, exp, warns=None):
         else:
             verdict("WARN", "心音の観測が無い（sndHeart）— この計装より前のビルドのログ")
 
+        # -- 帰還の別れのオルゴール（0312）
+        farewell_box = timed_samples(events, "sndFarewell")
+        faced = any(e.get("ev") == "farewell" and e.get("phase") == "face" for e in events)
+        if farewell_box and faced:
+            pk = _peak(farewell_box)
+            if pk is not None and pk > 0.5:
+                verdict("OK", f"別れのオルゴールが鳴った（最大 {pk:.2f}）")
+            else:
+                verdict("FAIL", "別れの人形が出たのにオルゴールが鳴っていない — "
+                                "`bed_farewell_music_box` を焼いたか（ingest-sounds.py）を見る")
+
         # -- 目が開く音（0131）
         #    ⚠ **目が開いた数と対で見る。** 開いているのに 0 なら鳴っていない。
         eye_sfx = effect_samples(events, "sndEye")
@@ -2774,14 +2785,17 @@ def analyze(events, others, exp, warns=None):
             #    - 鈴（Bell）は**段 5 のクロスフェードが終わった所**（＝完全にスクリーンに
             #      なったとき）へ。段 5 は 4.5 秒あるので、待ちで取り逃す心配は無い
             #    - ノイズ（ScreenNoise）は**鳴らさない**。ここに残すと毎回誤検出する
-            want_ids = ("Bell", "Shatter")
-            for want, label in (("Bell", "完全にスクリーンになった所の鈴"),
-                                ("Shatter", "現実が割れる")):
+            # テレビ方式（0309）は電源の音、割れる遷移は破砕音。割れる遷移の ScreenOn は生成動画の音に含む。
+            tv_intro = "tv" in effect_samples(events, "shatStyle")
+            intro_sounds = (("Bell", "完全にスクリーンになった所の鈴"),
+                            ("ScreenOn", "テレビの電源") if tv_intro else ("Shatter", "現実が割れる"))
+            for want, label in intro_sounds:
                 if by_id.get(want, 0) == 0:
                     verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"
                                     f"（ev=sfx id={want} が 0 本）")
-            if all(by_id.get(k, 0) > 0 for k in want_ids):
-                verdict("OK", "導入の鈴と破砕音の再生指示が出た（ScreenOn は生成動画の音に含む）")
+            if all(by_id.get(want, 0) > 0 for want, _ in intro_sounds):
+                verdict("OK", "導入の鈴と電源の音の再生指示が出た" if tv_intro
+                        else "導入の鈴と破砕音の再生指示が出た（ScreenOn は生成動画の音に含む）")
 
         # -- 終幕の電源断（`canon/LEDGER.md` 0125）--------------------------------
         #    ⚠⚠ **音は録画に映らない**ので、`ev=sfx id=PowerOff` が唯一の証拠。
@@ -2789,7 +2803,17 @@ def analyze(events, others, exp, warns=None):
         #       （音源が焼かれていない / Resources に入っていない / 発声器が起きていない）。
         #    ⚠ **終幕まで走った走行だけ見る**（途中で切れた走行で毎回 FAIL を出さない）。
         outro_ran = any(e.get("stage") in ("Collapse", "Dark", "Report", "Done") for e in outro)
-        if outro_ran:
+        trapped_end = any(e.get("ending") == "Trapped" for e in outro)
+        if outro_ran and trapped_end:
+            # 人形 End は電源断の代わりに黒へ落ちる音が鳴る（0312）。
+            n_fall = by_id.get("DollEndFall", 0)
+            n_off = by_id.get("PowerOff", 0)
+            if n_fall != 1 or n_off != 0:
+                verdict("FAIL", f"人形 End の音が設計と違う（DollEndFall={n_fall} / PowerOff={n_off}）— "
+                                "`sfx_doll_end_fall` を焼いたか（ingest-sounds.py）を見る")
+            else:
+                verdict("OK", "人形 End で黒へ落ちる音が 1 度だけ鳴った")
+        elif outro_ran:
             n_off = by_id.get("PowerOff", 0)
             if n_off == 0:
                 verdict("FAIL", "終幕まで進んだのに電源が落ちる音が鳴っていない"
@@ -3438,8 +3462,12 @@ def analyze(events, others, exp, warns=None):
     # -- 段 4 の連続開口（全視野から本編スクリーンへ閉じる）
     # `aper` は IntroVeil が単一 quad へ実際に配った閉じ量の最大値。
     # 基底面を検査する。0208 の破片は別メッシュなので下で独立に検査する。
+    # テレビ方式（0309）は開口を閉じず、破片も使わない。下の電源の判定が同じ役目を持つ。
+    fracture_styles = set(effect_samples(events, "shatStyle"))
     aper_all = [v for v in effect_samples(events, "aper") if v not in ("", "-")]
-    if aper_all:
+    if "tv" in fracture_styles:
+        any_effect_key = True
+    elif aper_all:
         any_effect_key = True
         anums = []
         for v in aper_all:
@@ -3511,8 +3539,7 @@ def analyze(events, others, exp, warns=None):
             verdict("FAIL", "旧破砕ログのセル格子が 0 枚（IntroVeilShatterMesh を組めていない）")
 
     # 0208 の不揃いな破片。旧ログにはこの印が無いため適用しない。
-    fracture_styles = set(effect_samples(events, "shatStyle"))
-    if fracture_styles.intersection({"art", "frozen"}):
+    if "tv" not in fracture_styles and fracture_styles.intersection({"art", "frozen"}):
         any_effect_key = True
         def fracture_numbers(key):
             values = []
@@ -3614,7 +3641,48 @@ def analyze(events, others, exp, warns=None):
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。
     #    0 が出たら画がまるごと消えている。
     ig_all = [v for v in effect_samples(events, "ignite") if v not in ("", "-")]
-    if ig_all:
+    tv_intro = "tv" in fracture_styles
+    if tv_intro:
+        # テレビ方式（0309）。筐体が画に出たか・電源が 0 から上がったか・本編までに本編の見えへ戻ったか。
+        any_effect_key = True
+        def _tv_numbers(key):
+            out = []
+            for value in effect_samples(events, key):
+                try:
+                    out.append(float(value))
+                except (ValueError, TypeError):
+                    pass
+            return out
+        cases = _tv_numbers("tvCase")
+        ignites = _tv_numbers("ignite")
+        complete = "Swap" in stages or "Done" in stages
+        w(f"  テレビ: 筐体 最大 {max(cases, default=-1):.2f} / 最後 {cases[-1] if cases else -1:.2f}  "
+          f"電源 最小 {min(ignites, default=-1):.2f} / 最後 {ignites[-1] if ignites else -1:.2f}")
+        if complete:
+            if not cases or max(cases) < 0.9:
+                verdict("FAIL", "テレビの筐体が画に出ていない（tvCase が上がっていない）— "
+                                "IntroDirector.WriteIgnite と材質の _CrtTvCase を見る")
+            elif cases[-1] > 0.001:
+                verdict("FAIL", f"導入の後も筐体が残っている（tvCase={cases[-1]:.2f}）— ResetIgnite を通っていない")
+            else:
+                verdict("OK", "テレビの筐体が出て、本編までに沈んだ")
+            if not ignites or min(ignites) > 0.5:
+                verdict("FAIL", "テレビの電源が入る様子が画に無い（ignite が低い値を通っていない）")
+            elif ignites[-1] < 0.999:
+                verdict("FAIL", f"走行の終わりで管が消えたまま（ignite={ignites[-1]:.2f}）— 畳む経路で 1 へ戻していない")
+            else:
+                verdict("OK", "テレビの電源が入り、管は点いたまま本編へ入った")
+        # 暗転と黒の保持でスクリーンを描いていないか。旧ログには scrHid が無いので判定しない。
+        hid_in_dark = [e.get("scrHid") for e in events
+                       if e.get("ev") == "intro" and e.get("stage") in ("Degrade", "Structure")
+                       and e.get("scrHid") not in (None, "", "-")]
+        if hid_in_dark:
+            if "0" in hid_in_dark:
+                verdict("FAIL", "暗転か黒の保持でスクリーンを描いている（scrHid=0）— 闇にガラスの縁が浮く。"
+                                "IntroVeil.SuppressHiddenScreen を見る")
+            else:
+                verdict("OK", "テレビが出るまでスクリーンを描いていない")
+    elif ig_all:
         any_effect_key = True
         if "nc" in ig_all:
             verdict("FAIL", "スクリーンの管の点灯を書く先を掴めていない（ignite=nc）— "
@@ -3668,19 +3736,33 @@ def analyze(events, others, exp, warns=None):
         else:
             verdict("OK", "参照CRTの材質・物理比率・論理16:9が一致")
 
-    # C の魚眼（0308）。人形視点では外れるので、C に居た間に 1 度でも掛かったかと、
-    # C 以外で掛かっていないかを見る。
+    # B と C の魚眼（0308 / 0316）。人形視点では外れるので、映した各カメラで 1 度でも掛かったかと、
+    # それ以外（A を含む）で掛かっていないかを見る。
     lens_pairs = [(fnum(e, "cam", -1.0), str(e.get("lensFish", ""))) for e in events if "lensFish" in e]
     if lens_pairs:
         any_effect_key = True
-        on_c = [v for cam, v in lens_pairs if cam == 2]
+        lens_cameras = {1: "B", 2: "C"}
+        by_camera = {index: [v for cam, v in lens_pairs if cam == index] for index in lens_cameras}
+        missing = [name for index, name in lens_cameras.items() if by_camera[index] and "1" not in by_camera[index]]
         # 切替のフレームで 1 標本だけ食い違うことがあるので、2 標本以上で落とす。
-        if sum(1 for cam, v in lens_pairs if v == "1" and cam != 2) >= 2:
-            verdict("FAIL", "カメラ C 以外の映像に魚眼が掛かっている（lensFish）")
-        elif on_c and "1" not in on_c:
-            verdict("FAIL", "カメラ C を映している間に魚眼が 1 度も掛からなかった（lensFish）")
-        elif on_c:
-            verdict("OK", "魚眼はカメラ C の間だけ掛かった")
+        if sum(1 for cam, v in lens_pairs if v == "1" and cam not in lens_cameras) >= 2:
+            verdict("FAIL", "カメラ B・C 以外の映像に魚眼が掛かっている（lensFish）")
+        elif missing:
+            verdict("FAIL", f"カメラ {'・'.join(missing)} を映している間に魚眼が 1 度も掛からなかった（lensFish）")
+        elif any(by_camera.values()):
+            verdict("OK", "魚眼はカメラ B と C の間だけ掛かった")
+
+    # 空間の歪み（0313）。書いた強さが材質へ届いたかを見る。出たかどうかは 2-C の追いつきに左右されるので、
+    # 1 度も出なかった走行は WARN に留める。
+    warp_pairs = [(fnum(e, "warp"), fnum(e, "warpMat")) for e in events if "warp" in e and "warpMat" in e]
+    if warp_pairs:
+        any_effect_key = True
+        if sum(1 for shown, mat in warp_pairs if shown is None or mat is None or abs(shown - mat) > .002) >= 2:
+            verdict("FAIL", "空間の歪みが材質へ届いていない（warp / warpMat）")
+        elif max(shown for shown, _ in warp_pairs) <= 0:
+            verdict("WARN", "空間の歪みが 1 度も出なかった（2-C の追いつきに来ていない走行なら正常）")
+        else:
+            verdict("OK", f"空間の歪みが出た（最大 {max(shown for shown, _ in warp_pairs):.2f}）")
 
     decay_mat = effect_samples(events, "coarseMat")
     if decay_mat:

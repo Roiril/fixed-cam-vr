@@ -19,7 +19,7 @@ py -3.11 tools/twin/audit_score.py "<監査フォルダ>" <監査役の JSON>   
 動画は 1 コマ約 2 秒（RTX 4090 Laptop）。
 
 ```powershell
-& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python tools/twin/twin_render.py -- seq --route forward --cams A,B,C --w 960 --spp 48 --plate-spp 512
+& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python tools/twin/twin_render.py -- seq --route forward --cams A,B,C --w 640 --spp 48 --plate-spp 512
 py -3.11 tools/twin/seq_post.py forward     # 仕上げて Drive の renders/twin-cycles/game/forward/<cam>.mp4 へ
 py -3.11 tools/twin/export_game.py          # ビューアの data/ を更新
 ```
@@ -54,11 +54,13 @@ py -3.11 tools/twin/check_rig.py
 
 ## 配置の決め方
 
-位置・向き・画角は保存した無人写真（`plate_*_20260924_*.jpg`）から解く。実物の枠の寸法（`tools/walk-guide`）を基準にし、写真の点と線に枠が重なるようにする。
+位置・向き・画角は保存した無人写真から解く。B と C は `plate_*_20260924_*.jpg`、A は `plates/plate_A_20260905_193511.jpg`。実物の枠の寸法（`tools/walk-guide`）を基準にし、写真の点と線に枠が重なるようにする。
+
+A だけ写真が古いのは、9/24 の写真では A が動いているため。本番の calib は 9/5 19:39 にこの写真で解いてある。1 台だけ解き直すときは `plate_fit.py --only A --write`（画角と他の台は変わらないので、その台の動画だけ焼き直せばよい）。
 
 | カメラ | 機材 | 解いた置き方 |
 |---|---|---|
-| A | 三脚 | L の内側を対角に見る。高さ 1.01m |
+| A | 三脚 | L の角を正面に見る。高さ 0.93m |
 | B | 床 | 西の壁のすぐ脇。レンズは床から 3cm で、上へ 13 度あおる |
 | C | 棚のアーム | L の北面を上から見る。高さ 1.87m。横へ 30 度傾いている |
 

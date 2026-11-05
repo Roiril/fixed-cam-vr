@@ -1,12 +1,12 @@
 # Project Memory Index
 
 技術の罠・実装の経緯の索引。**1 行 1 フック**。世界観・演出の判定は `.claude/canon/`（混ぜない — `rules/canon-boundary.md`）。
-足すときは該当の節へ 1 行（`tools/harness-check.py` が字数を見る）。
+足すときは該当の節へ 1 行。
 
 ## いま開いている指摘
 - [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうること
 - [fixed_cam_review_backlog.md](fixed_cam_review_backlog.md) — 06-10 レビューの残り。rules に罠を足したら既存コードもスイープする
-- [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) — 07-23 監査 11 件は修正済み。実機確認のチェックリストだけ残る
+- [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) — 07-23 監査。実機確認のリストだけ残る
 
 ## 体験の骨格・演出の連続
 - [show_run_skeleton.md](show_run_skeleton.md) — ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／終わり方の出口は 5 つ
@@ -24,7 +24,8 @@
 
 ## タイトルと導入
 - [title_screen.md](title_screen.md) — 壁を隠すのは描画順／題字は焼いた版 1 枚／組めなければ素通しへ倒す
-- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) — 現実が割れてスクリーンになる遷移。破片は部屋の面に乗る・描画順 4900〜4903
+- [intro_tv_reveal.md](intro_tv_reveal.md) — 導入の既定（0309）。暗転 → テレビ → 電源 → 映像
+- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) — 旧来の割れる遷移（shatter）
 - [presentation_redesign.md](presentation_redesign.md) — 導入とエージェント画面の再構築（0207）。割れた実景はワールド固定
 - [sealbox_surface.md](sealbox_surface.md) — 封印の箱の地と熾。磨耗を明るく置き換えるとカビに見える／鏡面項を書かない
 - [key_visual.md](key_visual.md) — キービジュアル。照明だけ描き直させ、Sobel の相関で物が動いていないか見る
@@ -34,7 +35,7 @@
 - [comms_curse.md](comms_curse.md) — 呪いの斑と前線。文字はステンシル bit 8 で切る／③a・③b は弱って戻る姿（0270）
 - [comms_face.md](comms_face.md) — スイの顔を焼く罠。明暗が逆なので肌を塗らないと顔が消える
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) — 時刻境界の float 比較。境界ぴったりと低 FPS を別に試す
-- [comms_performance_20261018.md](comms_performance_20261018.md) — 10-18 警告表示中の fps 低下を、見た目を変えずに 90fps へ戻した測定と削減
+- [comms_performance_20261018.md](comms_performance_20261018.md) — 10-18 警告表示中の fps 低下を 90fps へ戻した測定
 - [unauthorized_access_effect.md](unauthorized_access_effect.md) — 独立エラー演出の部品。描画順と映像面からの距離。現行は comms_takeover
 - [show_language.md](show_language.md) — 日本語 / English / Français。訳す面の線・訳文の置き場はフォントのベイクが決める
 
@@ -42,9 +43,10 @@
 - [cg_compositing.md](cg_compositing.md) — CG 合成。像空間の 3 点・画角は 1 度測って固定・なじませは数値と絵を並べる
 - [cg_actor_and_layer_traps.md](cg_actor_and_layer_traps.md) — CG 人形の罠 4 つ（レイヤ外部編集・EditMode スキニング固着・Remy は Generic）
 - [swap_veil_mask.md](swap_veil_mask.md) — 黒い覆いは背景差分か CG の 2 系統。差分は linear・黒い服は 29% しか覆えない
+- [room_warp.md](room_warp.md) — 空間の歪み（0313）。3D で変形して投影し直す。奥行きは平面 1 枚
 - [screen_decay.md](screen_decay.md) — 位置と人形状態に連動する画面の劣化。人形の頭の光だまり `_ActorLight`（10-22）
 - [crt_reference_screen.md](crt_reference_screen.md) — 参照画像を素材化するCRT。論理16:9と物理筐体の分離・色収差の黒帯混入
-- [crt_reference_evaluation_scope.md](crt_reference_evaluation_scope.md) — 評価範囲は枠・ガラス・映像を含む。旧scoreを補正せず、manifestを正規化して照合する
+- [crt_reference_evaluation_scope.md](crt_reference_evaluation_scope.md) — 評価範囲は枠・ガラス・映像を含む。manifestを正規化して照合する
 - [crt_processing_order_calibration.md](crt_processing_order_calibration.md) — Grade/PSF順のraw-copy校正
 - [crt_psf_mip_color_space.md](crt_psf_mip_color_space.md) — sRGB mipの光量減衰とlinear PSF校正
 - [crt_softness_glare_probe.md](crt_softness_glare_probe.md) — PSFのLOD+1とglare除去の2x2対照
@@ -52,7 +54,7 @@
 - [crt_cutout_validation.md](crt_cutout_validation.md) — 開口境界のCPU/GPU判定差。承認PNGとの照合と実alphaを使う深度の正負校正
 - [crt_reference_rule_layout.md](crt_reference_rule_layout.md) — CRT材質のreference導線とrule上限
 - [screen_effect_study_20261101.md](screen_effect_study_20261101.md) — 11-01追加加工と動画追跡の独立試作
-- [cam_c_lens_study.md](cam_c_lens_study.md) — C の魚眼（版 3）。変形だけでは届かない・見るのは `menu crt-lens`
+- [cam_c_lens_study.md](cam_c_lens_study.md) — B と C の魚眼（版 3）。見るのは `menu crt-lens`・A は別れが解けない
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る
@@ -65,10 +67,11 @@
 
 ## 音
 - [sound_pipeline.md](sound_pipeline.md) — 音を作る道具と耳を使わない判定。計器が 4 回嘘をついた・3D 化で音量が下がる
+- [wrong_room_sounds.md](wrong_room_sounds.md) — Wrong Room の 2 本は git に入れない。別の PC は焼く
 
 ## 準備・入力・来場者
 - [staff_setup.md](staff_setup.md) — タブレット中心の準備・交代。Quest の並行位置合わせ・終幕中のリセット保護
-- [hmd_onboarding.md](hmd_onboarding.md) — 被った後：左コントローラ確認 → X/Y の報告練習 → 短押しでタイトル
+- [hmd_onboarding.md](hmd_onboarding.md) — 被った後の左手の確認と報告の練習
 - [onboarding_audit_20261009.md](onboarding_audit_20261009.md) — 起動〜引き渡しの画面改善。位置合わせのやり直しは A を離してから採取
 - [controller_input_final.md](controller_input_final.md) — 体験者は左 X / Y だけ。スタッフは右 A / B / トリガー。左グリップは撮影
 - [staff_status_view.md](staff_status_view.md) — 右 B のステータスは押している間だけ。黒の上に描く 3 点
@@ -89,8 +92,8 @@
 - [twin_cycles.md](twin_cycles.md) — 写実のツイン。配置は写真から解く・盲検の点
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
-- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4（`unity.ps1 replay`）
-- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。いまの正は CLI
+- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4
+- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。正は CLI
 
 ## 機材・ビルド・ネットワーク
 - [quest_fleet_two_devices.md](quest_fleet_two_devices.md) — **α = `2G0YC1ZF890864` / β = `2G0YC1ZF7S06BW`**。機ごとに必ず食い違う 4 つ
@@ -103,7 +106,7 @@
 - [streamer_operator_ui.md](streamer_operator_ui.md) — 配信スマホ側の面（補助線・鏡合わせ・撮影パネル・卓の自動発見）
 - [approach_shoot_console.md](approach_shoot_console.md) — 当日の素材撮り。停滞は `ev=clip` にしか出ない
 - [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）
-- [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) — 却下済み。go2rtc 中継なら Unity 改修ゼロ
+- [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) — 却下済み（go2rtc 中継）
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) — iPhone はデモなら IP Cam Lite。自作は PWA＋WS
 - [droidcam_endpoint.md](droidcam_endpoint.md) — フォールバック専用の DroidCam
 - [web_compositor.md](web_compositor.md) — `tools/web-compositor`（卓・合成検証・プロンプト管理・サーバ API）
@@ -120,4 +123,4 @@
 - [proposal_single_source.md](proposal_single_source.md) — 企画書は読まない（08-08）。骨格は実装と機械が守る
 - [harness_design.md](harness_design.md) — CLAUDE.md / .claude/ の役割分担と根拠
 
-手のアプリの memory は 2026-09-28 に table-duo-vr へ移した。
+手のアプリの memory は table-duo-vr。

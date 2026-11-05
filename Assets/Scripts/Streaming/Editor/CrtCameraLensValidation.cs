@@ -8,11 +8,11 @@ namespace FixedCamVr.Streaming.EditorTools
 {
     public static partial class CrtTuningServer
     {
-        /// <summary>カメラごとのレンズを本編の信号処理で描く（LEDGER 0308）。A と B は前の版との差を見る対照。</summary>
+        /// <summary>カメラごとのレンズを本編の信号処理で描く（LEDGER 0308 / 0316）。A は前の版との差を見る対照。</summary>
         [MenuItem("Tools/FixedCamVr/Diagnostics/Render Camera Lens", priority = 278)]
         public static void RenderCameraLens()
         {
-            string output = EditorCliArgs.Get("out") ?? "G:/マイドライブ/shubie/reports/2026-11-05_cam-c-lens-study/gpu";
+            string output = EditorCliArgs.Get("out") ?? "G:/マイドライブ/shubie/reports/2026-11-06_cam-b-lens/gpu";
             if (Directory.Exists(output) && Directory.GetFileSystemEntries(output).Length != 0) throw new IOException("Output must be empty: " + output);
             Directory.CreateDirectory(output);
             bool oldAsync = ShaderUtil.allowAsyncCompilation;
@@ -28,14 +28,14 @@ namespace FixedCamVr.Streaming.EditorTools
                     decay.Tick(.01f, true, 1, 3, 0, noiseTarget: ScreenDecayLogic.NoiseTargetFor(1, 0, new[] { 0, 1, 2 }));
                     var values = new Dictionary<string, float>(normal) { ["mono"] = decay.Shown, ["noiseDark"] = decay.NoiseDark };
                     Write(output, plate + "_position_0.png", tuner.Render(plate, values, true));
-                    AssertLens(tuner.Material, plate == CameraLensLogic.FisheyeCameraId, plate);
+                    AssertLens(tuner.Material, CameraLensLogic.UsesFisheye(plate, false), plate);
                 }
 
                 Dictionary<string, float> doll = tuner.Resolve(tuner.Values(true, "transformed"));
                 foreach (string plate in new[] { "B", "C" })
                 {
                     Write(output, plate + "_doll.png", tuner.Render(plate, doll, true, source: "cg_doll", dollProfileBlend: 1));
-                    AssertLens(tuner.Material, plate == CameraLensLogic.FisheyeCameraId, plate + " doll");
+                    AssertLens(tuner.Material, CameraLensLogic.UsesFisheye(plate, false), plate + " doll");
                 }
 
                 Dictionary<string, float> pov = tuner.Resolve(tuner.Values(true, "doll"));

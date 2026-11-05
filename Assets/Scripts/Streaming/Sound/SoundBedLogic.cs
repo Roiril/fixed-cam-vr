@@ -44,6 +44,9 @@ namespace FixedCamVr.Streaming
         /// 0 なら終幕の頭で鳴る（帰還不能・旧版と同じ）。
         /// </summary>
         public float outroPowerCutSec;
+
+        /// <summary>人形 End の終幕か（0312）。電源断の代わりに黒へ落ちる音を鳴らす。</summary>
+        public bool outroTrapped;
         public ShowPhase phase;
         /// <summary>映像の解像度の劣化（0 = 新しい / 1 = 落ち切った）。<see cref="ScreenDecayLogic"/>。</summary>
         public float decay;
@@ -866,11 +869,14 @@ namespace FixedCamVr.Streaming
                 case IntroStage.Real:
                     return 0f;
                 case IntroStage.Degrade:
-                    return 0.55f * Clamp01(s.introWeights.degrade);
+                    // テレビ方式の段 2 は暗転なので、現実が消えるぶんだけ装置が近づく。
+                    return 0.55f * Clamp01(s.introWeights.tv
+                        ? 1f - s.introWeights.passthrough : s.introWeights.degrade);
                 case IntroStage.Structure:
                     return 0.55f;
                 case IntroStage.Frame:
-                    return 0.55f + 0.30f * Clamp01(s.introWeights.shatter);
+                    return 0.55f + 0.30f * Clamp01(s.introWeights.tv
+                        ? s.introWeights.ignite : s.introWeights.shatter);
                 case IntroStage.Swap:
                     return 0.85f + 0.15f * Clamp01(s.introWeights.live);
                 default:
