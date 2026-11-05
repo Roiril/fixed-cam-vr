@@ -25,11 +25,37 @@ on:
       - master
   pull_request:
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
+  # ジョブの if では secrets を参照できない（書くとワークフロー全体が無効になる）。
+  # step の env で受けて判定し、結果を outputs で次のジョブへ渡す。
+  check-secrets:
+    name: Check Unity secrets
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if [ -n "$UNITY_LICENSE" ] && [ -n "$UNITY_EMAIL" ] && [ -n "$UNITY_PASSWORD" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=EditMode tests skipped::Unity secrets are not set, so the tests did not run on CI."
+          fi
+
   editmode-tests:
     name: EditMode Tests (Unity 2022.3.62f2)
+    needs: check-secrets
+    if: ${{ needs.check-secrets.outputs.available == 'true' }}
     runs-on: ubuntu-latest
-    if: ${{ secrets.UNITY_LICENSE != '' }}
 
     steps:
       - name: Checkout
