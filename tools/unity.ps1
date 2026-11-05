@@ -165,6 +165,9 @@ $Menus = [ordered]@{
     'crt-lens'         = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.RenderCameraLens'
                             Desc = 'カメラごとのレンズを本編の信号処理で A/B/C・人形・人形視点の PNG にする。-Set out=<空のフォルダ>'
                             Out = $null }
+    'room-warp'        = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.RenderRoomWarp'
+                            Desc = '空間の歪み（0313）を本編の信号処理で A/B/C の PNG にする。-Set out=<空のフォルダ>'
+                            Out = $null }
     'crt-doll-selected' = @{ Method = 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.ValidateDollSelectedProfile'
                             Desc = '人形化後のWeb採用値と本編の実CG・遷移・解除をGPUで照合する'
                             Out = $null }

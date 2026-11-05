@@ -3,6 +3,7 @@
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
 TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
+TEXTURE2D(_RoomWarpTex); SAMPLER(sampler_RoomWarpTex);
 TEXTURE2D(_CrtFrameTex); SAMPLER(sampler_CrtFrameTex);
 TEXTURE2D(_CrtScreenMaskTex);
 #if defined(CRT_RUNTIME_PREGLASS)
@@ -85,6 +86,8 @@ CBUFFER_START(UnityPerMaterial)
     float _HeartRipple;
     float _HeartTime;
     float _HeartVignette;
+    float _RoomWarp;
+    float _RoomWarpZoom;
     float _Grain;
     float _Scanline;
     float _ScanlineCount;
@@ -1241,6 +1244,19 @@ half4 frag(Varyings input) : SV_Target
     }
     #endif
     float2 sampleUv = GlitchUv(PixelateUv(heartUv));
+    // 空間の歪み（LEDGER 0313）。写真・録画・CG・マスクは同じ座標を読むので一緒に動く。
+    // 画面に固定された物（低解像度のブロック・砂・時計・固定パターン）は動かさない。
+    // ⚠ 0 は厳密に恒等。
+    float2 roomWarpDelta = float2(0.0, 0.0);
+    if (_RoomWarp > 0.0001)
+    {
+        float2 content = (sampleUv - 0.5) / max(_LiveScale.xy, 1e-3);
+        float2 roomOffset = SAMPLE_TEXTURE2D_LOD(_RoomWarpTex, sampler_RoomWarpTex, content + 0.5, 0).rg;
+        float roomAmount = saturate(_RoomWarp);
+        roomWarpDelta = (content * (lerp(1.0, _RoomWarpZoom, roomAmount) - 1.0) + roomOffset * roomAmount) * _LiveScale.xy;
+        sampleUv += roomWarpDelta;
+        actorUv += roomWarpDelta;
+    }
     sampleUv.x += cutShift;
 
     // 伝送が痩せたぶん（mip）＋ **周辺の解像度低下**（像面湾曲。実レンズは角ほど像がゆるい）。
@@ -1517,7 +1533,7 @@ half4 frag(Varyings input) : SV_Target
     {
         // 刻むのは**ソース画素**。枠空間で刻むと、粗くなった画より粒の方が細かくなる
         // ＝ 符号化は粒を真っ先に捨てるので物理的に起こりえない絵になる。
-        float2 srcUv = (sampleUv - 0.5) / max(_LiveScale.xy, 1e-3) + 0.5;
+        float2 srcUv = (sampleUv - roomWarpDelta - 0.5) / max(_LiveScale.xy, 1e-3) + 0.5;
         float2 srcPx = srcUv * max(_LiveTex_TexelSize.zw, float2(2.0, 2.0));
         float grainPx = max(exp2(lod), 1.0);
         float2 np = floor(srcPx / grainPx);

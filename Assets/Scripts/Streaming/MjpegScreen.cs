@@ -79,6 +79,9 @@ namespace FixedCamVr.Streaming
         public bool DollPovShowing { get; set; }
 
         /// <summary>いまマテリアルに魚眼が書かれているか。診断用。</summary>
+        /// <summary>いま映しているカメラの ID（A〜C）。登録が無ければ null。</summary>
+        public string? ActiveCameraId => UseRegistry ? registry!.GetSource(registry.ActiveIndex)?.CameraId : null;
+
         public bool FisheyeApplied => _material != null && _material.HasProperty(CameraLensLogic.PropertyId)
             && _material.GetVector(CameraLensLogic.PropertyId).x > 0f;
 

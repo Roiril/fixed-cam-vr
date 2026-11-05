@@ -1723,6 +1723,8 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" coarseMode=").Append(_run.ScreenDecayShownMode);
                 _sb.Append(" cbx=").Append(_run.ScreenDecayBlocks.ToString("F0"));
                 _sb.Append(" coarseMat=").Append(CoarseMaterialState);
+                _sb.Append(" warp=").Append((_feel != null ? _feel.AppliedRoomWarp : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                _sb.Append(" warpMat=").Append((_feel != null ? _feel.RoomWarpMaterial : -1).ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
                 if (_run.ScreenDecayReleased) _sb.Append(" coarseRel=1");
             }
             if (_overlay != null)

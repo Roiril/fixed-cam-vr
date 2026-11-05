@@ -12,6 +12,7 @@ paths:
   - "Assets/Scripts/Streaming/SignalLostFx.cs"
   - "Assets/Scripts/Streaming/PerceptualFade.cs"
   - "Assets/Scripts/Streaming/Heartbeat*.cs"
+  - "Assets/**/RoomWarp*.cs"
   - "Assets/Scripts/Streaming/SourceLumaMap.cs"
   - "Assets/Scripts/Streaming/CrtScreenMesh.cs"
   - "Assets/Scripts/Streaming/CrtReferenceScreen.cs"
@@ -43,7 +44,7 @@ paths:
 - 著作・CG・マスクの論理枠は16:9。参照筐体を持つMjpegScreenは初期化時だけ物理Transformの幅を高さ×1280/1030へ変更する。素材ごとのTransform変形はしない — `CrtReferenceScreen` / `MjpegScreen.EnableReferenceSurface` / `CrtReferenceScreenTests`。
 - ソースは論理16:9へcontain-fit。参照画面は開口から論理の中央4:3へ全層共通で写すため、4:3ソースの左右の黒帯は表示しない。参照素材のない画面は従来の16:9と黒帯を保つ — `ScreenComposite.frag` / `ScreenFrameAspectTests`。
 - マスクだけは contain-fit を通らず、枠空間（16:9）の生 uv で読む。`_MaskScale` は無い — `ScreenComposite.SampleBase` / `ScreenFrameAspectTests` 〔出典: S:351-364〕
-- frag の順序: 電源断の uv → 終幕の裂け → 心音の波紋 → カメラのレンズ → 低解像度化 → 乱れ uv → 素材（mip）→ CG → ほどけ → レンズ（周辺光量・心音ビネット）→ センサ（粒・色ノイズ・固定パターン）→ ISP（光だまり・露出・色温度・色かぶり・コントラスト・黒浮き・彩度・赤残し）→ 明暗曲線 → 走査線 → aura → 著作の粒 → 乱れの砂 → 管の点灯 → 信号断の砂 → 終幕の砂 → OSD → 電源断の線 → 管の縁・角 → `_SwitchDim` → `_ScreenPower` — `ScreenComposite.frag` 〔出典: S:1192-1211, S:1330-1334〕
+- frag の順序: 電源断の uv → 終幕の裂け → 心音の波紋 → カメラのレンズ → 低解像度化 → 乱れ uv → 空間の歪み（memory/room_warp.md）→ 素材（mip）→ CG → ほどけ → レンズ（周辺光量・心音ビネット）→ センサ（粒・色ノイズ・固定パターン）→ ISP（光だまり・露出・色温度・色かぶり・コントラスト・黒浮き・彩度・赤残し）→ 明暗曲線 → 走査線 → aura → 著作の粒 → 乱れの砂 → 管の点灯 → 信号断の砂 → 終幕の砂 → OSD → 電源断の線 → 管の縁・角 → `_SwitchDim` → `_ScreenPower` — `ScreenComposite.frag` 〔出典: S:1192-1211, S:1330-1334〕
 - 戻す alpha は必ず 1 — `ScreenComposite.frag` の `return half4(saturate(col), 1)` 〔出典: S:1858-1864〕
 - post は linear 空間で計算される（`contrast` の中心は linear 0.5 ＝ sRGB 0.73） — `ScreenComposite.frag` 〔出典: S:1160-1186〕
 - post 12 項目は Unity と卓の FS_POST で同じ式。項を足すときは shader / `shaders.js` / `common.js` / `pipeline.js` の 4 か所を同時に直す — `FS_POST`（tools/web-compositor） 〔出典: S:1507-1515〕
@@ -84,9 +85,7 @@ paths:
 - 管の縁と角は `rawUv` で引く。潰れた uv を渡すと線が消える — `CrtSdf(rawUv)` 〔出典: D:858-870〕
 - 曲面メッシュの 4 隅・4 辺は動かさない — `CrtScreenMeshTests` 〔出典: S:1254-1256〕
 - メッシュは Awake でだけ組む。シーンへ焼かない
-- OSD の v を反転しない／矩形の内外を分岐にしない／版は 1 セルずつ描く 〔出典: S:1366-1386〕
-- OSD のセル並びは `make-osd-font.py` と対 — `OsdClockLogicTests.Glyphs_MatchTheBakingScript` 〔出典: S:1388-1391〕
-- OSD はシーンに焼かないと出ない（`menu scene`）。観測 `osd=-`
+- OSD を触る前に `reference/osd-clock.md`（v の向き・セル並び・シーンへの焼き込み）
 - 合成プレビューは `CameraFeelFx.WriteUniforms` と `CameraFeelLogic.SteadyBiasFor` を通す。独自の既定を持つと実機より綺麗な絵になる 〔出典: S:3097-3109〕
 - 観測項目は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す（`coarse` / `coarseShown` / `coarsePos` / `cbx` / `coarseMat` / `osd` / `osdLap`） 〔出典: S:1427-1430、memory/screen_decay.md〕
 

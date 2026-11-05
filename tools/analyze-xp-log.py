@@ -3750,6 +3750,18 @@ def analyze(events, others, exp, warns=None):
         elif on_c:
             verdict("OK", "魚眼はカメラ C の間だけ掛かった")
 
+    # 空間の歪み（0313）。書いた強さが材質へ届いたかを見る。出たかどうかは 2-C の追いつきに左右されるので、
+    # 1 度も出なかった走行は WARN に留める。
+    warp_pairs = [(fnum(e, "warp"), fnum(e, "warpMat")) for e in events if "warp" in e and "warpMat" in e]
+    if warp_pairs:
+        any_effect_key = True
+        if sum(1 for shown, mat in warp_pairs if shown is None or mat is None or abs(shown - mat) > .002) >= 2:
+            verdict("FAIL", "空間の歪みが材質へ届いていない（warp / warpMat）")
+        elif max(shown for shown, _ in warp_pairs) <= 0:
+            verdict("WARN", "空間の歪みが 1 度も出なかった（2-C の追いつきに来ていない走行なら正常）")
+        else:
+            verdict("OK", f"空間の歪みが出た（最大 {max(shown for shown, _ in warp_pairs):.2f}）")
+
     decay_mat = effect_samples(events, "coarseMat")
     if decay_mat:
         any_effect_key = True

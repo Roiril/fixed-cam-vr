@@ -6,7 +6,7 @@
 ## いま開いている指摘
 - [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうること
 - [fixed_cam_review_backlog.md](fixed_cam_review_backlog.md) — 06-10 レビューの残り。rules に罠を足したら既存コードもスイープする
-- [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) — 07-23 監査 11 件は修正済み。実機確認のチェックリストだけ残る
+- [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) — 07-23 監査。実機確認のリストだけ残る
 
 ## 体験の骨格・演出の連続
 - [show_run_skeleton.md](show_run_skeleton.md) — ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／終わり方の出口は 5 つ
@@ -43,9 +43,10 @@
 - [cg_compositing.md](cg_compositing.md) — CG 合成。像空間の 3 点・画角は 1 度測って固定・なじませは数値と絵を並べる
 - [cg_actor_and_layer_traps.md](cg_actor_and_layer_traps.md) — CG 人形の罠 4 つ（レイヤ外部編集・EditMode スキニング固着・Remy は Generic）
 - [swap_veil_mask.md](swap_veil_mask.md) — 黒い覆いは背景差分か CG の 2 系統。差分は linear・黒い服は 29% しか覆えない
+- [room_warp.md](room_warp.md) — 空間の歪み（0313）。3D で変形して投影し直す。奥行きは平面 1 枚
 - [screen_decay.md](screen_decay.md) — 位置と人形状態に連動する画面の劣化。人形の頭の光だまり `_ActorLight`（10-22）
 - [crt_reference_screen.md](crt_reference_screen.md) — 参照画像を素材化するCRT。論理16:9と物理筐体の分離・色収差の黒帯混入
-- [crt_reference_evaluation_scope.md](crt_reference_evaluation_scope.md) — 評価範囲は枠・ガラス・映像を含む。旧scoreを補正せず、manifestを正規化して照合する
+- [crt_reference_evaluation_scope.md](crt_reference_evaluation_scope.md) — 評価範囲は枠・ガラス・映像を含む。manifestを正規化して照合する
 - [crt_processing_order_calibration.md](crt_processing_order_calibration.md) — Grade/PSF順のraw-copy校正
 - [crt_psf_mip_color_space.md](crt_psf_mip_color_space.md) — sRGB mipの光量減衰とlinear PSF校正
 - [crt_softness_glare_probe.md](crt_softness_glare_probe.md) — PSFのLOD+1とglare除去の2x2対照
@@ -70,7 +71,7 @@
 
 ## 準備・入力・来場者
 - [staff_setup.md](staff_setup.md) — タブレット中心の準備・交代。Quest の並行位置合わせ・終幕中のリセット保護
-- [hmd_onboarding.md](hmd_onboarding.md) — 被った後：左コントローラ確認 → X/Y の報告練習 → 短押しでタイトル
+- [hmd_onboarding.md](hmd_onboarding.md) — 被った後の左手の確認と報告の練習
 - [onboarding_audit_20261009.md](onboarding_audit_20261009.md) — 起動〜引き渡しの画面改善。位置合わせのやり直しは A を離してから採取
 - [controller_input_final.md](controller_input_final.md) — 体験者は左 X / Y だけ。スタッフは右 A / B / トリガー。左グリップは撮影
 - [staff_status_view.md](staff_status_view.md) — 右 B のステータスは押している間だけ。黒の上に描く 3 点
@@ -91,7 +92,7 @@
 - [twin_cycles.md](twin_cycles.md) — 写実のツイン。配置は写真から解く・盲検の点
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
-- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4（`unity.ps1 replay`）
+- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4
 - [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。正は CLI
 
 ## 機材・ビルド・ネットワーク

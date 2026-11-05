@@ -43,6 +43,19 @@ namespace FixedCamVr.Streaming
         private static readonly int CoarseBlocksId = Shader.PropertyToID("_CoarseBlocks");
         private static readonly int HeartRippleId = Shader.PropertyToID("_HeartRipple");
         private static readonly int HeartTimeId = Shader.PropertyToID("_HeartTime");
+        private static readonly int RoomWarpId = Shader.PropertyToID("_RoomWarp");
+        private static readonly int RoomWarpZoomId = Shader.PropertyToID("_RoomWarpZoom");
+        private static readonly int RoomWarpTexId = Shader.PropertyToID("_RoomWarpTex");
+
+        /// <summary>場を計算する回数。映像の刻みに揃える。滑らかに動かすと画と別の層に見える。</summary>
+        private const float RoomWarpFieldHz = 15f;
+
+        private readonly RoomWarpLogic _roomWarp = new RoomWarpLogic();
+        private readonly float[] _roomWarpField = new float[RoomWarpField.GridWidth * RoomWarpField.GridHeight * 2];
+        private ushort[]? _roomWarpPixels;
+        private Texture2D? _roomWarpTex;
+        private RoomWarpSpec? _roomWarpSpec;
+        private int _roomWarpStep = -1;
         private static readonly int HeartVignetteId = Shader.PropertyToID("_HeartVignette");
         public const float HeartVignetteBase = 0.66f;
         public const float HeartVignettePulse = 0.16f;
@@ -124,6 +137,12 @@ namespace FixedCamVr.Streaming
         /// <summary>心音から画へ書いた波紋の強さ。診断用。</summary>
         public float AppliedHeartRipple { get; private set; }
 
+        /// <summary>今フレーム材質へ書いた空間の歪みの強さ。診断用。</summary>
+        public float AppliedRoomWarp { get; private set; }
+
+        /// <summary>材質に実際に入っている空間の歪みの強さ。書く先が無ければ -1。診断用。</summary>
+        public float RoomWarpMaterial => _material != null && _material.HasProperty(RoomWarpId) ? _material.GetFloat(RoomWarpId) : -1f;
+
         /// <summary>心音区間で画へ書いた周辺の暗さ。診断用。</summary>
         public float AppliedHeartVignette { get; private set; }
 
@@ -186,7 +205,11 @@ namespace FixedCamVr.Streaming
         {
             if (_signalLostFx == null) _signalLostFx = GetComponent<SignalLostFx>();
             _signalLostFx?.SetNarrativeStatic(true);
+            _roomWarp.Begin();
         }
+
+        /// <summary>人形化の暗転で画が隠れた。空間の歪みをここで畳む。⚠ <see cref="ResetAll"/> では畳まない（カットの中止で消えないように）。</summary>
+        public void NotifyRoomWarpCovered() => _roomWarp.NotifyCovered();
 
         /// <summary>乗っ取り画面の完了、または中止で通常の受信状態へ戻す。</summary>
         public void CancelTakeoverStatic()
@@ -327,6 +350,7 @@ namespace FixedCamVr.Streaming
         private void OnEnable()
         {
             _logic.Reset();
+            _roomWarp.Reset();
             CancelTakeoverStatic();
             _heartbeatScreen.Reset();
             ResolveHeartbeatRefs();
@@ -337,6 +361,8 @@ namespace FixedCamVr.Streaming
         private void OnDisable()
         {
             _logic.Reset();
+            _roomWarp.Reset();
+            WriteRoomWarp(0f);
             CancelTakeoverStatic();
             // 自分を外したら画は素へ戻す（このコンポーネントが無い状態と同じ画にして去る）。
             // ⚠ これは「終了で畳む」とは別の話 — 終了しても Update は回り続けるので値は保たれる。
@@ -353,6 +379,11 @@ namespace FixedCamVr.Streaming
         private void OnDestroy()
         {
             UnhookHeartbeatRun();
+            if (_roomWarpTex != null)
+            {
+                if (Application.isPlaying) Destroy(_roomWarpTex); else DestroyImmediate(_roomWarpTex);
+                _roomWarpTex = null;
+            }
             if (_echoTex == null) return;
             _echoTex.Release();
             if (Application.isPlaying) Destroy(_echoTex); else DestroyImmediate(_echoTex);
@@ -388,8 +419,11 @@ namespace FixedCamVr.Streaming
             {
                 AppliedHeartRipple = 0f;
                 AppliedHeartVignette = 0f;
+                AppliedRoomWarp = 0f;
                 return;
             }
+
+            TickRoomWarp();
 
             bool apply = _heartbeatScreen.ShouldApply(
                 _heartbeatRun != null && _heartbeatRun.Phase == ShowPhase.Run,
@@ -441,9 +475,57 @@ namespace FixedCamVr.Streaming
 
         private void OnHeartbeatRunRestarted()
         {
+            _roomWarp.Reset();
             CancelTakeoverStatic();
             _heartbeatScreen.Reset();
             ClearHeartbeat();
+        }
+
+        private void TickRoomWarp()
+        {
+            bool allowed = _heartbeatRun != null && _heartbeatRun.Phase == ShowPhase.Run
+                           && !(_heartbeatTimeline != null && _heartbeatTimeline.Suppressed)
+                           && !(_heartbeatShow != null && _heartbeatShow.CourseRegistrationActive);
+            float amount = _roomWarp.Tick(ShowClock.Dt, allowed);
+            RoomWarpSpec? spec = screen != null ? RoomWarpField.SpecFor(screen.ActiveCameraId) : null;
+            if (amount <= 0f || spec == null)
+            {
+                WriteRoomWarp(0f);
+                return;
+            }
+
+            int step = Mathf.FloorToInt(_roomWarp.Elapsed * RoomWarpFieldHz);
+            if (_roomWarpTex == null || step != _roomWarpStep || !ReferenceEquals(spec, _roomWarpSpec))
+            {
+                if (_roomWarpTex == null)
+                {
+                    _roomWarpTex = new Texture2D(RoomWarpField.GridWidth, RoomWarpField.GridHeight, TextureFormat.RGHalf, false, true)
+                    {
+                        filterMode = FilterMode.Bilinear,
+                        wrapMode = TextureWrapMode.Clamp,
+                        name = "RoomWarpField",
+                    };
+                    _roomWarpPixels = new ushort[_roomWarpField.Length];
+                }
+
+                RoomWarpField.FillGrid(spec, step / (double)RoomWarpFieldHz, _roomWarpField);
+                for (int i = 0; i < _roomWarpField.Length; i++)
+                    _roomWarpPixels![i] = Mathf.FloatToHalf(_roomWarpField[i]);
+                _roomWarpTex.SetPixelData(_roomWarpPixels!, 0);
+                _roomWarpTex.Apply(false, false);
+                _roomWarpStep = step;
+                _roomWarpSpec = spec;
+            }
+
+            _material!.SetTexture(RoomWarpTexId, _roomWarpTex);
+            _material.SetFloat(RoomWarpZoomId, RoomWarpField.Overscan);
+            WriteRoomWarp(amount);
+        }
+
+        private void WriteRoomWarp(float amount)
+        {
+            AppliedRoomWarp = amount;
+            if (_material != null) _material.SetFloat(RoomWarpId, amount);
         }
 
         private void ClearHeartbeat() => WriteHeartbeat(0f, 0f, 0f);

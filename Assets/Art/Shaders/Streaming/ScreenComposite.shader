@@ -46,6 +46,9 @@ Shader "FixedCamVr/ScreenComposite"
         _HeartRipple("Heartbeat Ripple", Range(0, 1)) = 0
         _HeartTime("Seconds Since First Heartbeat", Float) = 0
         _HeartVignette("Heartbeat Vignette", Range(0, 1)) = 0
+        _RoomWarp("Room Warp", Range(0, 1)) = 0
+        _RoomWarpZoom("Room Warp Zoom", Float) = 1
+        _RoomWarpTex("Room Warp Offsets", 2D) = "black" {}
         _Grain("Grain", Range(0, 0.3)) = 0
         _Scanline("Scanline", Range(0, 1)) = 0
         _ScanlineCount("Scanline Count", Float) = 240
