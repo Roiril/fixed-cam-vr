@@ -3736,19 +3736,21 @@ def analyze(events, others, exp, warns=None):
         else:
             verdict("OK", "参照CRTの材質・物理比率・論理16:9が一致")
 
-    # C の魚眼（0308）。人形視点では外れるので、C に居た間に 1 度でも掛かったかと、
-    # C 以外で掛かっていないかを見る。
+    # B と C の魚眼（0308 / 0316）。人形視点では外れるので、映した各カメラで 1 度でも掛かったかと、
+    # それ以外（A を含む）で掛かっていないかを見る。
     lens_pairs = [(fnum(e, "cam", -1.0), str(e.get("lensFish", ""))) for e in events if "lensFish" in e]
     if lens_pairs:
         any_effect_key = True
-        on_c = [v for cam, v in lens_pairs if cam == 2]
+        lens_cameras = {1: "B", 2: "C"}
+        by_camera = {index: [v for cam, v in lens_pairs if cam == index] for index in lens_cameras}
+        missing = [name for index, name in lens_cameras.items() if by_camera[index] and "1" not in by_camera[index]]
         # 切替のフレームで 1 標本だけ食い違うことがあるので、2 標本以上で落とす。
-        if sum(1 for cam, v in lens_pairs if v == "1" and cam != 2) >= 2:
-            verdict("FAIL", "カメラ C 以外の映像に魚眼が掛かっている（lensFish）")
-        elif on_c and "1" not in on_c:
-            verdict("FAIL", "カメラ C を映している間に魚眼が 1 度も掛からなかった（lensFish）")
-        elif on_c:
-            verdict("OK", "魚眼はカメラ C の間だけ掛かった")
+        if sum(1 for cam, v in lens_pairs if v == "1" and cam not in lens_cameras) >= 2:
+            verdict("FAIL", "カメラ B・C 以外の映像に魚眼が掛かっている（lensFish）")
+        elif missing:
+            verdict("FAIL", f"カメラ {'・'.join(missing)} を映している間に魚眼が 1 度も掛からなかった（lensFish）")
+        elif any(by_camera.values()):
+            verdict("OK", "魚眼はカメラ B と C の間だけ掛かった")
 
     # 空間の歪み（0313）。書いた強さが材質へ届いたかを見る。出たかどうかは 2-C の追いつきに左右されるので、
     # 1 度も出なかった走行は WARN に留める。

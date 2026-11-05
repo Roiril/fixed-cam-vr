@@ -26,17 +26,20 @@ class ScreenProfileLogTests(unittest.TestCase):
         _, verdicts = xp.analyze(events, [], xp.expected_from_show({}))
         return [level for level, text in verdicts if "魚眼" in text]
 
-    def test_fisheye_only_on_camera_c_passes(self):
-        self.assertEqual(self.lens_verdicts((0, "0"), (2, "1"), (2, "1")), ["OK"])
+    def test_fisheye_on_b_and_c_passes(self):
+        self.assertEqual(self.lens_verdicts((0, "0"), (1, "1"), (2, "1")), ["OK"])
 
-    def test_fisheye_missing_on_camera_c_fails(self):
-        self.assertEqual(self.lens_verdicts((2, "0"), (2, "0")), ["FAIL"])
+    def test_fisheye_missing_on_camera_b_fails(self):
+        self.assertEqual(self.lens_verdicts((1, "0"), (1, "0"), (2, "1")), ["FAIL"])
 
-    def test_fisheye_on_other_camera_fails(self):
-        self.assertEqual(self.lens_verdicts((0, "1"), (1, "1"), (2, "1")), ["FAIL"])
+    def test_fisheye_on_camera_a_fails(self):
+        self.assertEqual(self.lens_verdicts((0, "1"), (0, "1"), (2, "1")), ["FAIL"])
 
     def test_one_sample_at_the_switch_is_allowed(self):
-        self.assertEqual(self.lens_verdicts((2, "1"), (1, "1"), (1, "0")), ["OK"])
+        self.assertEqual(self.lens_verdicts((2, "1"), (0, "1"), (0, "0")), ["OK"])
+
+    def test_doll_pov_off_while_the_camera_was_on_passes(self):
+        self.assertEqual(self.lens_verdicts((2, "1"), (2, "0"), (2, "1")), ["OK"])
 
     def test_normal_material_passes(self):
         self.assertEqual([level for level, _ in self.profile_verdicts(self.sample())], ["OK"])

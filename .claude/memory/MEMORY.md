@@ -54,7 +54,7 @@
 - [crt_cutout_validation.md](crt_cutout_validation.md) — 開口境界のCPU/GPU判定差。承認PNGとの照合と実alphaを使う深度の正負校正
 - [crt_reference_rule_layout.md](crt_reference_rule_layout.md) — CRT材質のreference導線とrule上限
 - [screen_effect_study_20261101.md](screen_effect_study_20261101.md) — 11-01追加加工と動画追跡の独立試作
-- [cam_c_lens_study.md](cam_c_lens_study.md) — C の魚眼（版 3）。変形だけでは届かない・見るのは `menu crt-lens`
+- [cam_c_lens_study.md](cam_c_lens_study.md) — B と C の魚眼（版 3）。見るのは `menu crt-lens`・A は別れが解けない
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る

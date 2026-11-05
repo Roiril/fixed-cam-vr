@@ -48,7 +48,7 @@ paths:
 - 戻す alpha は必ず 1 — `ScreenComposite.frag` の `return half4(saturate(col), 1)` 〔出典: S:1858-1864〕
 - post は linear 空間で計算される（`contrast` の中心は linear 0.5 ＝ sRGB 0.73） — `ScreenComposite.frag` 〔出典: S:1160-1186〕
 - post 12 項目は Unity と卓の FS_POST で同じ式。項を足すときは shader / `shaders.js` / `common.js` / `pipeline.js` の 4 か所を同時に直す — `FS_POST`（tools/web-compositor） 〔出典: S:1507-1515〕
-- C の映像は魚眼（0308）— `CameraLensLogic`。契約は memory/cam_c_lens_study.md
+- B と C の映像は魚眼（0308 / 0316）— `CameraLensLogic`。契約は memory/cam_c_lens_study.md
 - 卓に無い「装置の挙動」はpostの外のuniform。従来のノイズ・露出追従・夜間・管の角などは`CameraFeelFx`、参照筐体の素材・開口・補正は`CrtReferenceScreen`、視点は`CrtScreenMesh`が書く。卓のpost12項目へ混ぜない。
 - 参照材質を触る前に`reference/crt-reference-material.md`（色空間・処理順・診断field）を読む。
 - `feel` はキーが無くても既定で効く。既定は C# / 卓 / サーバの 3 者で揃える — `CameraFeelFx.Configure` / `FEEL_DEFAULT` / `capture-server.py _default_show` 〔出典: S:1111-1112〕

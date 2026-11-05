@@ -4,14 +4,12 @@ using UnityEngine;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// カメラごとのレンズ（LEDGER 0308）。C の映像だけ等立体角の魚眼へ写し直す。
+    /// カメラごとのレンズ（LEDGER 0308 / 0316）。B と C の映像を同じ等立体角の魚眼へ写し直す。A は掛けない。
     /// 座標はソースの幅を 1 とした中心原点。式はシェーダの <c>_CrtFisheye</c> の枝と同じ。
     /// </summary>
     public static class CameraLensLogic
     {
-        public const string FisheyeCameraId = "C";
-
-        /// <summary>C の無人画像のピンホール焦点距離（幅 640 で 288.33px。tools/twin/rig.json）。</summary>
+        /// <summary>無人画像のピンホール焦点距離（幅 640 で 288.33px。tools/twin/rig.json の B と C に共通）。</summary>
         public const float SourceFocal = 288.33f / 640f;
 
         /// <summary>版 3。ソースの左右の端が、画面の左右の端の中央へちょうど来る魚眼の焦点距離。</summary>
@@ -22,9 +20,9 @@ namespace FixedCamVr.Streaming
 
         public static readonly int PropertyId = Shader.PropertyToID("_CrtFisheye");
 
-        /// <summary>人形視点は C の映像ではないので掛けない。</summary>
+        /// <summary>人形視点はカメラの映像ではないので掛けない。</summary>
         public static bool UsesFisheye(string? cameraId, bool dollPovShowing)
-            => cameraId == FisheyeCameraId && !dollPovShowing;
+            => cameraId is "B" or "C" && !dollPovShowing;
 
         public static Vector4 Uniform(string? cameraId, bool dollPovShowing)
             => UsesFisheye(cameraId, dollPovShowing) ? new Vector4(SourceFocal, ScreenFocal, 0, 0) : Vector4.zero;

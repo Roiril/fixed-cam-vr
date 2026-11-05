@@ -10,11 +10,13 @@ namespace FixedCamVr.Streaming.Tests
         private const float SourceAspect = 4f / 3f;
 
         [TestCase("A", false, false)]
-        [TestCase("B", false, false)]
+        [TestCase("B", false, true)]
         [TestCase("C", false, true)]
+        [TestCase("B", true, false)]
         [TestCase("C", true, false)]
+        [TestCase("D", false, false)]
         [TestCase(null, false, false)]
-        public void OnlyCameraC_UsesTheFisheye_AndNotDuringDollPov(string? camera, bool pov, bool expected)
+        public void CamerasBC_UseTheFisheye_AndNotDuringDollPov(string? camera, bool pov, bool expected)
         {
             Assert.That(CameraLensLogic.UsesFisheye(camera, pov), Is.EqualTo(expected));
             Assert.That(CameraLensLogic.Uniform(camera, pov).x > 0, Is.EqualTo(expected));
