@@ -10,6 +10,22 @@ metadata:
 
 # 現実が割れる遷移（0221〜0225 の版）
 
+**2026-11-05 の 0309 で既定から外れた。** いまの既定はテレビ方式（[intro_tv_reveal.md](intro_tv_reveal.md)）。
+コードは `run.intro.transition="shatter"` で動く形のまま残してある。破片一式を消すかは本人の判定の後で決める。
+
+## 割れる遷移の契約（`IntroTiming.Shatter`）
+
+- 尺は 1.5 / 3.5 / 2.5 / 5.0 / 1.6 秒に固定（振り付けが 5.0 秒に合わせてある）。段 2 は彩度だけを抜く
+- `shatter` = p を破片・粒・音が読む。frame = SmoothStep(.84,.90)、reveal = (.68,.70)、live = (.895,.905)
+- 振り付けの時計の正は `IntroFracture.shader` 先頭の表と `IntroFractureTime.hlsl`（PullStart .56 / ArriveFirst .70 / ArriveSpan .17 / CloserArrive .90）
+- 中央も含めて全体を割り、同じ片が映像の出ている矩形へ組み上がる。終端の矩形を先に別の窓で描かない — `IntroFractureMesh` / `IntroVeil.ContentScale`
+- 参照 CRT の到着矩形は `CrtReferenceScreen.VisibleScale` と `ApertureCenter`。論理 contain の 0.75 を二重に掛けない — `IntroVeil.ResolveContentScale`
+- 像は割れ始めに 1 回だけ凍結し、撮影時の姿勢にワールド固定。片は撮影時の部屋の面へ置き（無ければ 1.6m の殻）、剥がれたら両眼とも左カメラの写真。静止画が無ければ旧 alpha 窓へ退避して再試行しない — `IntroVeil.ShatterAnchored` / `ApplyRoomDepth`
+- 名目の殻 1.6m は `IntroRoomDepth.ShellRadius` / `IntroPeripheralFractureMesh.Radius` / `IntroFractureTime.hlsl` の 3 か所。起点は shader の tan(−0.16, 0.12) と `IntroFractureMesh.ImpactX/Y` が対
+- 未装着ではパススルーカメラの姿勢が使えない → `IntroPassthroughCapture.TryHeadPoseFallback`
+- 音は shatter ≥ .02 で `sfx_shatter`。`ingest-sounds.py` の `SWARM_*`（ArriveSpan .13）は旧レシピで写しではない
+- `_IntroLive` は `live>0 || reveal>0` の 0/1。`ignite` は全段 1。観測は `shatCam` / `shatAnchor` / `shatDepth` / `shatWarm`
+
 ## 組み上がる先・線の太さ・着地直前の向き（2026-10-17・R065）
 
 ユーザー「もっときれいに美しくするにはどうすればいいか…根本的に美しくするための変更～ちょっとしたイージング～枠線の太さ調整」。

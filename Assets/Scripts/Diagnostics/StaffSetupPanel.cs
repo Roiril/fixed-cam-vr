@@ -500,7 +500,7 @@ namespace FixedCamVr.Diagnostics
             if (_statusPortal != null && _statusPortal.StaffStatusProvider == _statusProvider)
                 _statusPortal.StaffStatusProvider = null;
             if (Instance == this) Instance = null;
-            _anchor?.SetSetupFrozen(false);
+            if (_anchor != null) _anchor.SetSetupFrozen(false);
             if (_registration != null)
             { _registration.RegistrationConfirmed -= PositionConfirmed; _registration.RegistrationReviewed -= PositionConfirmed; }
             if (_backMaterial != null) { if (Application.isPlaying) Destroy(_backMaterial); else DestroyImmediate(_backMaterial); }

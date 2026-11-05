@@ -121,6 +121,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly int SignalLostId = Shader.PropertyToID("_SignalLost");
         private static readonly int SignalFloorId = Shader.PropertyToID("_SignalFloor");
         private static readonly int LiveTexId = Shader.PropertyToID("_LiveTex");
+        private static readonly int TvCaseId = Shader.PropertyToID("_CrtTvCase");
+        private static readonly int TvDarkId = Shader.PropertyToID("_CrtTvDark");
 
         // public なのは CLI（`unity.ps1 menu intro`）が -executeMethod で直接呼ぶため。
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Intro", priority = 238)]
@@ -166,7 +168,9 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 stage = Stage.Create(outDir);
                 stage.SetGlass(!glassOff);
-                foreach (Shot shot in BuildShots()) stage.Render(shot, saved);
+                bool tv = stage.Timing.transition == IntroTransition.Tv;
+                if (tv) renderProbes = false;   // 破片の探針。テレビ方式には測るものが無い
+                foreach (Shot shot in tv ? BuildTvShots() : BuildShots()) stage.Render(shot, saved);
                 if (string.Equals(EditorCliArgs.Get("retention"), "1", StringComparison.Ordinal))
                     stage.VerifyRealityRetention(saved);
                 if (string.Equals(EditorCliArgs.Get("peripheral"), "1", StringComparison.Ordinal))
@@ -179,7 +183,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     var cues = new SoundCueLogic();
                     cues.ResetRun();
                     stage.SetSparkleForFrames(!sparkleOff);
-                    foreach (Shot shot in BuildFrameSequence(stage.Timing))
+                    foreach (Shot shot in tv ? BuildTvSequence(stage.Timing) : BuildFrameSequence(stage.Timing))
                         stage.Render(shot, saved, framesTsv, cuesTsv, cues);
                     stage.SetSparkleForFrames(true);
 
@@ -338,6 +342,53 @@ namespace FixedCamVr.Streaming.EditorTools
         }
 
         /// <summary>
+        /// テレビ方式（0309）の段を撮る。暗転で矩形が浮かないこと・筐体が闇から出ること・
+        /// 電源の順序・映像の立ち上がり・カメラ無しの砂嵐・畳んだ後が本編と同じことを見る。
+        /// </summary>
+        private static IEnumerable<Shot> BuildTvShots()
+        {
+            yield return new Shot(IntroStage.Real, 1, "real", 0.5f, 50);
+            foreach (float p in new[] { 0f, 0.35f, 0.55f, 0.75f, 0.999f })
+                yield return new Shot(IntroStage.Degrade, 2, "darken", p, Mathf.RoundToInt(p * 100f));
+            foreach (float p in new[] { 0.1f, 0.4f, 0.55f, 0.7f, 0.85f, 0.999f })
+                yield return new Shot(IntroStage.Structure, 3, "appear", p, Mathf.RoundToInt(p * 100f));
+            foreach (float p in new[] { 0.03f, 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 0.999f })
+                yield return new Shot(IntroStage.Frame, 4, "power", p, Mathf.RoundToInt(p * 100f));
+            foreach (float p in new[] { 0f, 0.5f, 0.999f })
+                yield return new Shot(IntroStage.Swap, 5, "settle", p, Mathf.RoundToInt(p * 100f));
+            // p=1 で状態機械は Done へ送るので、重みは本編と同じ（Inactive）になる。
+            yield return new Shot(IntroStage.Swap, 6, "done", 1f, 100);
+
+            // カメラが 1 台も繋がっていない現場（0025）。点く途中に砂が先に出ないこと、映像の所で砂が出ること。
+            yield return new Shot(IntroStage.Frame, 4, "power", 0.3f, 30, noSignal: true);
+            yield return new Shot(IntroStage.Frame, 4, "power", 0.999f, 100, noSignal: true);
+            yield return new Shot(IntroStage.Swap, 6, "done", 1f, 100, noSignal: true);
+        }
+
+        /// <summary><c>-Set frames=1</c>（テレビ方式）。暗転から本編までの 30fps 連番。</summary>
+        private static IEnumerable<Shot> BuildTvSequence(IntroTiming timing)
+        {
+            int n = 0;
+            float own = Mathf.Max(timing.structureSec - timing.degradeSec * (1f - IntroLogic.StructureOverlapAt),
+                                  IntroLogic.StructureMinOwnSec);
+            foreach ((IntroStage stage, int index, string name, float sec) in new[]
+                     {
+                         (IntroStage.Degrade, 2, "darken", timing.degradeSec),
+                         (IntroStage.Structure, 3, "appear", own),
+                         (IntroStage.Frame, 4, "power", timing.frameSec),
+                         (IntroStage.Swap, 5, "settle", timing.swapSec),
+                     })
+            {
+                int frames = Mathf.Max(1, Mathf.CeilToInt(sec * SequenceFps));
+                for (int i = 0; i < frames; i++)
+                {
+                    float p = Mathf.Min(0.999f, (float)i / frames);
+                    yield return new Shot(stage, index, name, p, Mathf.RoundToInt(p * 100f), sequenceIndex: n++);
+                }
+            }
+        }
+
+        /// <summary>
         /// <c>-Set frames=1</c> のときに出す段 4 → 5 の 30fps 連番。
         /// 最終標本は各段の終了直前に置き、状態機械が次段へ送った値を誤って前段として保存しない。
         /// </summary>
@@ -481,6 +532,11 @@ namespace FixedCamVr.Streaming.EditorTools
             private readonly string _screenMatLabel;
             private readonly string _showLabel;
             private readonly IntroTiming _timing;
+            private readonly Transform _screen;
+            /// <summary>テレビ方式の前段（本番の HMD と同じ経路）。割れる遷移では使わない。</summary>
+            private CrtSignalProcessor? _signal;
+            private long _signalGeneration;
+            private Mesh? _curvedMesh;
             private float _igniteWritten = -1f;
             /// <summary>頭のヨー（度）。割れた実景がその場に残るかを測る探針だけが動かす。</summary>
             private float _headYawDeg;
@@ -499,8 +555,9 @@ namespace FixedCamVr.Streaming.EditorTools
                           Texture2D reality, Texture2D? plate, Texture2D sceneTex,
                           RenderTexture outRt, Texture2D readback, int outW, int outH,
                           string plateLabel, string screenMatLabel, string showLabel,
-                          IntroTiming timing)
+                          IntroTiming timing, Transform screen)
             {
+                _screen = screen;
                 _outDir = outDir; _root = root; _head = head; _cam = cam; _screenMat = screenMat;
                 _veil = veil; _shell = shell; _halfM = halfM;
                 _capRoot = capRoot; _outCam = outCam; _stageMat = stageMat; _caption = caption;
@@ -609,6 +666,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 ShowIntroDef? introDef = show?.run?.intro;
                 if (introDef != null && introDef.LooksUnset) introDef = null;
                 IntroTiming timing = introDef != null ? introDef.ToTiming() : IntroTiming.Default;
+                // `-Set style=shatter` で割れる遷移を撮る（`-Set style=tv` は show.json を読まずコード既定）。
+                string? style = EditorCliArgs.Get("style");
+                if (style == "shatter") timing = IntroTiming.Shatter;
+                else if (style == "tv") timing = IntroTiming.Default;
+                bool tvStyle = timing.transition == IntroTransition.Tv;
+                showLabel += $" | {(tvStyle ? "tv" : "shatter")}";
                 showLabel += introDef != null
                     ? $" | intro {timing.realSec:0.0}/{timing.degradeSec:0.0}/{timing.structureSec:0.0}/" +
                       $"{timing.frameSec:0.0}/{timing.swapSec:0.0}s = {timing.TotalSec:0.0}s"
@@ -684,7 +747,26 @@ namespace FixedCamVr.Streaming.EditorTools
                 screenRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 screenRenderer.receiveShadows = false;
 
-                ConfigureScreenMaterial(screenMat, plate, reality, screenScale.x / screenScale.y);
+                // テレビ方式は本番の HMD と同じ面で撮る（参照の筐体・曲面・前段つきの runtime 経路）。
+                // 映像の収まりは論理 16:9（MjpegScreen.ScreenAspect と同じ）。
+                ConfigureScreenMaterial(screenMat, plate, reality,
+                    tvStyle ? CrtReferenceScreen.LogicalAspect : screenScale.x / screenScale.y);
+                Mesh? curvedMesh = null;
+                CrtSignalProcessor? signal = null;
+                if (tvStyle)
+                {
+                    if (!CrtReferenceScreen.Apply(screenMat))
+                        throw new InvalidOperationException("参照の筐体を組めない");
+                    CrtSignalProfile.ApplySelected(screenMat);
+                    CameraFeelFx.WriteUniforms(screenMat, CrtSignalProfile.NoiseDark, CrtSignalProfile.NoiseFixed,
+                        0, 0, ScreenDecayLogic.BlocksFor(CrtSignalProfile.Mono), 0, CrtSignalProfile.Mono);
+                    CrtSignalProfile.ApplySelected(screenMat);
+                    screenScale.x = Mathf.Abs(screenScale.y) * CrtReferenceScreen.CaseAspect;
+                    screen.localScale = screenScale;
+                    curvedMesh = CrtScreenMesh.BuildMesh(48, 0.055f);
+                    screen.GetComponent<MeshFilter>().sharedMesh = curvedMesh;
+                    signal = new CrtSignalProcessor();
+                }
 
                 // --- 覆い（本物の IntroVeil。開口の平面と global の配布まで実機と同じ）---
                 var veil = AddIntroComponent<IntroVeil>(head, "IntroVeil", null);
@@ -785,7 +867,11 @@ namespace FixedCamVr.Streaming.EditorTools
                 return new Stage(outDir, root, head, cam, screenMat, veil, shell, halfM,
                                  capRoot, outCam, stageMat, caption,
                                  reality, plate, sceneTex, outRt, readback, outW, outH,
-                                 plateLabel, screenMatLabel, showLabel, timing);
+                                 plateLabel, screenMatLabel, showLabel, timing, screen)
+                {
+                    _signal = signal,
+                    _curvedMesh = curvedMesh,
+                };
             }
 
             // ---- 1 枚ぶん ----
@@ -805,12 +891,12 @@ namespace FixedCamVr.Streaming.EditorTools
                 _veil.Apply(w);
                 _shell.Apply(w);
 
-                // 実機と同じく _IntroLive は 0/1 の表示ゲート。混合量は IntroVeil の
-                // _ScreenFade だけが持つ。ここへ w.live を直接入れると二重に暗くなる。
+                // 実機（IntroDirector.WriteIgnite）と同じ値を書く。_IntroLive の式は LiveGate 1 か所。
                 _igniteWritten = Mathf.Clamp01(w.ignite);
                 _screenMat.SetFloat(CrtIgniteId, _igniteWritten);
-                // 0225: 着地した破片がその場所の映像を見せる区間（reveal）も出してよい（IntroDirector と同じ式）。
-                _screenMat.SetFloat(IntroLiveId, (w.live > 0f || w.reveal > 0f) ? 1f : 0f);
+                _screenMat.SetFloat(IntroLiveId, w.LiveGate);
+                _screenMat.SetFloat(TvCaseId, Mathf.Clamp01(w.tvCase));
+                _screenMat.SetFloat(TvDarkId, Mathf.Clamp01(w.tvDark));
                 _screenMat.SetFloat(GlitchId, 0f);
                 // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
                 _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
@@ -821,6 +907,18 @@ namespace FixedCamVr.Streaming.EditorTools
                 //   状態なので、プレートを敷いたままだと砂の下に部屋が残り、
                 //   `canon/LEDGER.md` 0025 の現場（砂だけで体験が流れる）を 1 枚も映さない。
                 _screenMat.SetTexture(LiveTexId, shot.noSignal ? Texture2D.blackTexture : (_liveTexOverride ?? _liveTex));
+
+                // 実機の IntroVeil.SuppressHiddenScreen と同じ。覆いはプレビューでは触らない約束なのでここで写す。
+                _screen.GetComponent<Renderer>().forceRenderingOff = IntroVeil.TvScreenHidden(w);
+
+                if (_signal != null)
+                {
+                    // 実機は `MjpegScreen.PrepareSignal` と `CrtScreenMesh.LateUpdate` がやること。
+                    Vector3 view = _screen.InverseTransformPoint(_cam.transform.position);
+                    _screenMat.SetVector("_CrtView", new Vector4(view.x, view.y, view.z, 0f));
+                    if (!_signal.PrepareDisplay(_screenMat, ++_signalGeneration, forceSource: true))
+                        throw new InvalidOperationException("スクリーンの前段を構成できない");
+                }
 
                 // 覆い・殻は自分で子 GameObject を作る（レイヤは継がない）。撮る直前に揃える。
                 SetLayerRecursive(_root.transform, IntroLayer);
@@ -1845,7 +1943,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     $"base quads={_veil.ApertureQuads} | " +
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +
-                    $"crtIgnite={_igniteWritten:0.00}" +
+                    $"crtIgnite={_igniteWritten:0.00} tvCase={w.tvCase:0.00} tvDark={w.tvDark:0.00}" +
                     (shot.noSignal ? "  signalLost=1.00 (no camera connected)" : "") + "\n" +
                     $"reality {_plateLabel} | screen mat {_screenMatLabel} | {_showLabel}";
             }
@@ -1877,6 +1975,8 @@ namespace FixedCamVr.Streaming.EditorTools
             public void Dispose()
             {
                 RenderTexture.active = null;
+                _signal?.Dispose();
+                if (_curvedMesh != null) UnityEngine.Object.DestroyImmediate(_curvedMesh);
                 if (_outRt != null)
                 {
                     _outCam.targetTexture = null;

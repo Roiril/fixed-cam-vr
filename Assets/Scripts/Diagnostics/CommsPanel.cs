@@ -983,7 +983,7 @@ namespace FixedCamVr.Diagnostics
 
         private void OnDisable()
         {
-            _feelFx?.CancelTakeoverStatic();
+            if (_feelFx != null) _feelFx.CancelTakeoverStatic();
             _logic.Disable();
             _cue.ResetRun();
             _promptReadableNotified = false;
@@ -993,8 +993,8 @@ namespace FixedCamVr.Diagnostics
             _onboardingNotice = CommsNotice.None;
             ResetPossessionVisual();
             Apply(CommsWeights.Hidden);
-            typeSfx?.StopAll();
-            sweepSfx?.StopAll();
+            if (typeSfx != null) typeSfx.StopAll();
+            if (sweepSfx != null) sweepSfx.StopAll();
         }
 
         private void OnDestroy()
@@ -1050,7 +1050,7 @@ namespace FixedCamVr.Diagnostics
 
         private void OnRunRestarted()
         {
-            _feelFx?.CancelTakeoverStatic();
+            if (_feelFx != null) _feelFx.CancelTakeoverStatic();
             _onboardingActive = false;
             _onboardingNotice = CommsNotice.None;
             _cue.ResetRun();
@@ -1064,8 +1064,8 @@ namespace FixedCamVr.Diagnostics
             ResetPossessionVisual();
             Apply(CommsWeights.Hidden);
             // 前の体験者の打鍵を次のランへ持ち越さない（`ShowSoundDirector.ResetRun` と同じ流儀）。
-            typeSfx?.StopAll();
-            sweepSfx?.StopAll();
+            if (typeSfx != null) typeSfx.StopAll();
+            if (sweepSfx != null) sweepSfx.StopAll();
         }
 
         /// <summary>連絡を 1 通出す。<b>すでに出ていれば頭から出し直す</b>（重ねない）。</summary>
@@ -1216,8 +1216,8 @@ namespace FixedCamVr.Diagnostics
                 if (_visualRoot != null) _visualRoot.gameObject.SetActive(!registrationActive);
                 if (registrationActive)
                 {
-                    typeSfx?.StopAll();
-                    sweepSfx?.StopAll();
+                    if (typeSfx != null) typeSfx.StopAll();
+                    if (sweepSfx != null) sweepSfx.StopAll();
                 }
             }
             if (registrationActive) return;
@@ -1250,7 +1250,7 @@ namespace FixedCamVr.Diagnostics
             if (!inRun && _lieActive)
             {
                 // 本編を出たら嘘の一文は畳む（終幕・中止に持ち越さない）。
-                _feelFx?.CancelTakeoverStatic();
+                if (_feelFx != null) _feelFx.CancelTakeoverStatic();
                 ResetPossessionVisual();
                 _logic.Disable();
             }
@@ -1330,7 +1330,7 @@ namespace FixedCamVr.Diagnostics
             _presentationAbortedThisFrame = count > _lastPresentationAbortCount;
             _lastPresentationAbortCount = count;
             if (!_presentationAbortedThisFrame && !(timeline != null && timeline.Suppressed)) return false;
-            _feelFx?.CancelTakeoverStatic();
+            if (_feelFx != null) _feelFx.CancelTakeoverStatic();
             if (_logic.Delivery != CommsDelivery.Possessed || !_logic.Active) return false;
             ResetPossessionVisual();
             _logic.Disable();

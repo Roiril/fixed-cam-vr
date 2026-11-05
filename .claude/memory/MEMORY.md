@@ -24,7 +24,8 @@
 
 ## タイトルと導入
 - [title_screen.md](title_screen.md) — 壁を隠すのは描画順／題字は焼いた版 1 枚／組めなければ素通しへ倒す
-- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) — 現実が割れてスクリーンになる遷移。破片は部屋の面に乗る・描画順 4900〜4903
+- [intro_tv_reveal.md](intro_tv_reveal.md) — 導入の既定（0309）。暗転 → テレビ → 電源 → 映像
+- [intro_fracture_cinematic.md](intro_fracture_cinematic.md) — 旧来の割れる遷移（shatter）
 - [presentation_redesign.md](presentation_redesign.md) — 導入とエージェント画面の再構築（0207）。割れた実景はワールド固定
 - [sealbox_surface.md](sealbox_surface.md) — 封印の箱の地と熾。磨耗を明るく置き換えるとカビに見える／鏡面項を書かない
 - [key_visual.md](key_visual.md) — キービジュアル。照明だけ描き直させ、Sobel の相関で物が動いていないか見る
@@ -34,7 +35,7 @@
 - [comms_curse.md](comms_curse.md) — 呪いの斑と前線。文字はステンシル bit 8 で切る／③a・③b は弱って戻る姿（0270）
 - [comms_face.md](comms_face.md) — スイの顔を焼く罠。明暗が逆なので肌を塗らないと顔が消える
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) — 時刻境界の float 比較。境界ぴったりと低 FPS を別に試す
-- [comms_performance_20261018.md](comms_performance_20261018.md) — 10-18 警告表示中の fps 低下を、見た目を変えずに 90fps へ戻した測定と削減
+- [comms_performance_20261018.md](comms_performance_20261018.md) — 10-18 警告表示中の fps 低下を 90fps へ戻した測定
 - [unauthorized_access_effect.md](unauthorized_access_effect.md) — 独立エラー演出の部品。描画順と映像面からの距離。現行は comms_takeover
 - [show_language.md](show_language.md) — 日本語 / English / Français。訳す面の線・訳文の置き場はフォントのベイクが決める
 

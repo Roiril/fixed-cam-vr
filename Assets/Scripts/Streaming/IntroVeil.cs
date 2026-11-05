@@ -506,6 +506,7 @@ namespace FixedCamVr.Streaming
         private void TickWarmUp(in IntroWeights w)
         {
             if (_warmDone || !Application.isPlaying) return;
+            if (w.tv) return;   // テレビ方式は割れないので、破片の描画状態を作らない
             if (w.shatter > FullyOpenEpsilon || w.frame > FullyOpenEpsilon) return;
             if (_warmFramesLeft < 0)
             {
@@ -584,11 +585,18 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private bool ScreenFullyHidden(in IntroWeights w)
         {
+            if (w.tv) return TvScreenHidden(w);
             if (w.live > 0f) return false;
             if (w.shatter > FullyOpenEpsilon)
                 return !(HasFrozenFrame && w.reveal > 0f);
             return w.frame <= FullyOpenEpsilon && w.passthrough >= 0.999f;
         }
+
+        /// <summary>
+        /// テレビ方式（0309）でテレビがまだ闇から出ていない間。暗転の途中で矩形が浮かないよう、この間は 1 画素も描かない。
+        /// </summary>
+        public static bool TvScreenHidden(in IntroWeights w)
+            => w.tv && w.tvCase <= 0f && w.ignite <= 0f && w.live <= 0f;
 
         /// <summary>
         /// 見えないスクリーンを描かない。<c>forceRenderingOff</c> だけを触る（<c>enabled</c> は他が持ちうる）。
@@ -1167,7 +1175,13 @@ namespace FixedCamVr.Streaming
             // Frame を描いた後の Swap では閉じ切った開口を 1 枚のまま静止して描く。
             // これにより frame=1 は実際の描画経路を通り、終端の観測値も捏造にならない。
             bool needed = w.frame < 0.999f || w.passthrough > 0.001f || ApertureDrawn;
-            if (!needed) { SetHidden(); return; }
+            if (!needed)
+            {
+                SetHidden();
+                // 段 3 の黒の保持は覆いが要らなくなるが、テレビはまだ出ていない。ここで描くとガラスの縁が闇に浮く。
+                SuppressHiddenScreen(TvScreenHidden(w));
+                return;
+            }
 
             _renderer.enabled = true;
             float featherAng = BuildFramePlanes(w.frame);
@@ -1176,7 +1190,9 @@ namespace FixedCamVr.Streaming
             for (int i = 0; i < FramePlaneIds.Length; i++) _mat.SetVector(FramePlaneIds[i], _planes[i]);
             for (int i = 0; i < ScreenPlaneIds.Length; i++) _mat.SetVector(ScreenPlaneIds[i], _screenPlanes[i]);
             _mat.SetFloat(PassthroughId, Mathf.Clamp01(w.passthrough));
-            _mat.SetFloat(ScreenFadeId, Mathf.Clamp01(w.live));
+            // テレビ方式の暗転は全画素を同じ係数で落とす。shader は矩形の内側だけ alpha を _ScreenFade へ
+            // 置き換えるので、外と同じ値（1 - passthrough）を渡す。live を渡すと暗転の途中で矩形が浮く。
+            _mat.SetFloat(ScreenFadeId, w.tv ? 1f - Mathf.Clamp01(w.passthrough) : Mathf.Clamp01(w.live));
             _mat.SetFloat(FractureActiveId, w.shatter > FullyOpenEpsilon ? 1f : 0f);
             // 0225: 着地した破片が映像を見せる区間。静止画が取れなかった経路（旧 alpha 窓）では使わない。
             _mat.SetFloat(RevealId, HasFrozenFrame ? Mathf.Clamp01(w.reveal) : 0f);

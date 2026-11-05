@@ -138,6 +138,9 @@ Shader "FixedCamVr/ScreenComposite"
         // ⚠ 既定 **1**（点いている）。0 を既定にすると、この uniform を書かない場面
         //   （本編・終幕・卓のプレビュー・Editor の合成プレビュー）で画がまるごと消える。
         _CrtIgnite("CRT Ignition (0=off, 1=on)", Range(0, 1)) = 1
+        // 導入のテレビ（0309）。どちらも 0 で本編と同じ。
+        [HideInInspector] _CrtTvCase("TV case light outside the contour (0=clip)", Range(0, 1)) = 0
+        [HideInInspector] _CrtTvDark("TV glass and inner case darkness", Range(0, 1)) = 0
         // 映像そのものの出方（導入の段 4）。**管が点くこととは別**。
         // ⚠ 分けていないと「管が点き切った瞬間に映像も出る」ことになり、重み `live` が
         //   0 のままなのに画には映像が出る ＝ 重みと画が食い違う（2026-08-13 に絵で見つけた）。

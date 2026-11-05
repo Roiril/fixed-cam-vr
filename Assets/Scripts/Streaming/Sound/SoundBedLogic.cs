@@ -866,11 +866,14 @@ namespace FixedCamVr.Streaming
                 case IntroStage.Real:
                     return 0f;
                 case IntroStage.Degrade:
-                    return 0.55f * Clamp01(s.introWeights.degrade);
+                    // テレビ方式の段 2 は暗転なので、現実が消えるぶんだけ装置が近づく。
+                    return 0.55f * Clamp01(s.introWeights.tv
+                        ? 1f - s.introWeights.passthrough : s.introWeights.degrade);
                 case IntroStage.Structure:
                     return 0.55f;
                 case IntroStage.Frame:
-                    return 0.55f + 0.30f * Clamp01(s.introWeights.shatter);
+                    return 0.55f + 0.30f * Clamp01(s.introWeights.tv
+                        ? s.introWeights.ignite : s.introWeights.shatter);
                 case IntroStage.Swap:
                     return 0.85f + 0.15f * Clamp01(s.introWeights.live);
                 default:

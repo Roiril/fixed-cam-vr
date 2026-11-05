@@ -146,8 +146,8 @@ namespace FixedCamVr.Diagnostics
 
         private void StopEffect()
         {
-            _audio?.StopAll();
-            _effect?.Stop();
+            if (_audio != null) _audio.StopAll();
+            if (_effect != null) _effect.Stop();
             if (_active) Debug.Log("[XP] ev=commsError active=0 screen=0 spatial=0");
             _active = false;
             _blockFailedLogged = false;

@@ -146,6 +146,8 @@ CBUFFER_START(UnityPerMaterial)
     float _CrtEdge;
     float _CrtEdgeWidth;
     float _CrtIgnite;
+    float _CrtTvCase;
+    float _CrtTvDark;
     float _IntroLive;
     float _ScreenPower;
     float _ScreenCollapse;
@@ -1882,6 +1884,7 @@ half4 frag(Varyings input) : SV_Target
     return float4(col, 1);
     #endif
     #endif
+    half3 tvOutside = 0.0;
     if (_CrtReference > 0.5)
     {
         float2 eyeShift = clamp(_CrtView.xy / max(abs(_CrtView.z), 0.25), -1.0, 1.0) * 0.006;
@@ -1892,15 +1895,18 @@ half4 frag(Varyings input) : SV_Target
         transmission = pow(saturate(transmission * 2.0), 1.6);
         float opticalDepth = max(rcp(max(glassNormal.z, 0.35)) - 1.0, 0.0);
         transmission *= exp(-4.0 * opticalDepth);
-        col = col * transmission + (1.0 - transmission) * 0.006;
+        // 導入のテレビ（0309）。消えた管は闇の中で見えない。_CrtTvDark = 0 で本編と同じ。
+        half tvLit = 1.0 - saturate(_CrtTvDark);
+        col = col * transmission + (1.0 - transmission) * 0.006 * tvLit;
         float3 eyeDirection = normalize(float3(_CrtView.xy, -_CrtView.z));
         float facing = saturate(dot(glassNormal, eyeDirection));
         float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);
-        col += reflectAtEye * fresnel * 0.30;
+        col += reflectAtEye * fresnel * 0.30 * tvLit;
         half4 casing = SAMPLE_TEXTURE2D_LOD(_CrtFrameTex, sampler_CrtFrameTex, surfaceUv, 0.4);
         casing.rgb = SAMPLE_TEXTURE2D(_CrtCaseColorTex, sampler_CrtFrameTex, surfaceUv).rgb;
         casing.rgb += (reflectAtEye - reflectAtRest) * 0.12;
-        col = lerp(col, casing.rgb, casing.a);
+        tvOutside = lerp(col, casing.rgb, casing.a);
+        col = lerp(col, casing.rgb * tvLit, casing.a);
     }
     col *= 1.0 - saturate(_SwitchDim);
 
@@ -1919,7 +1925,21 @@ half4 frag(Varyings input) : SV_Target
     // Discard only after all color derivatives are evaluated. Interior alpha stays opaque.
     #if defined(CRT_SIGNAL_RUNTIME)
     if (_CrtScreenOnly > .5 && _CrtReference > .5)
-        clip(SAMPLE_TEXTURE2D_LOD(_CrtScreenMaskTex, sampler_CrtFrameTex, surfaceUv, 0).a - .5);
+    {
+        half screenMask = SAMPLE_TEXTURE2D_LOD(_CrtScreenMaskTex, sampler_CrtFrameTex, surfaceUv, 0).a;
+        if (_CrtTvCase > 0.0)
+        {
+            // 導入のテレビ（0309）。輪郭の外の筐体を、上からの灯りで闇から出す。
+            // 参照の筐体は暗い樹脂なので、写真の明るさのままだと闇に沈む。外周は闇へ溶かして、四角い板の輪郭を見せない。
+            // 輪郭の判定は本編の clip と同じ .5。沈み切った時に本編と 1 画素も変わらない。
+            float2 tvP = (surfaceUv - float2(0.5, 0.60)) * float2(1.25, 1.45);
+            float tvSpot = saturate(1.0 - dot(tvP, tvP));
+            float2 tvEdge = min(surfaceUv, 1.0 - surfaceUv);
+            tvSpot *= smoothstep(0.0, 0.06, min(tvEdge.x, tvEdge.y));
+            if (screenMask < 0.5) col = tvOutside * 2.2 * tvSpot * _CrtTvCase;
+        }
+        else clip(screenMask - .5);
+    }
     #endif
     return half4(saturate(col), 1);
 }

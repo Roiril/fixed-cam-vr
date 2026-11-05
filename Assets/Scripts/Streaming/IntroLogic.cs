@@ -9,11 +9,12 @@ namespace FixedCamVr.Streaming
     /// <see cref="ShowPhase.Intro"/> の**内側**のサブ状態で、ゲート・終了判定・heartbeat・卓・
     /// シミュレータへの分岐を増やさないための設計。
     ///
-        /// 段名と進行骨格は既存のまま保つ。現実の彩度が落ちて静止した後、
-        /// 全視野が割れ、全片が本編スクリーンの矩形へ再構成される。
+    /// 段名と進行骨格は既存のまま保つ。現行（<see cref="IntroTransition.Tv"/>・<c>canon/LEDGER.md</c> 0309）は
+    /// 現実が暗転し、闇からテレビが出て、電源が入り、カメラ映像が映る。
     ///
-    /// 段は <b>Black → Real → Degrade → Structure → Frame → Swap</b> の 5 段 12.7 秒
-    /// （段 3 は段 2 と重なるので単純和ではない。段 4 は 2026-09-15 に 2.5 → 5.0 秒・0221）。
+    /// 段は <b>Black → Real → Degrade → Structure → Frame → Swap</b> の 5 段 10.8 秒
+    /// （段 3 は段 2 と重なるので単純和ではない）。段名は割れる遷移の時代のもので、
+    /// テレビ方式での中身は各段の説明のとおり。
     /// </summary>
     public enum IntroStage
     {
@@ -23,17 +24,16 @@ namespace FixedCamVr.Streaming
         Black,
         /// <summary>段 1。素のパススルー。何も演出しない（段 2 の変化を読ませるための比較対象）。</summary>
         Real,
-        /// <summary>段 2。現実の彩度だけが滑らかに落ちる。</summary>
+        /// <summary>段 2。現実が暗転する（割れる遷移では彩度が落ちる）。</summary>
         Degrade,
-        /// <summary>段 3。彩度が落ち切った現実を静止して見せる。</summary>
+        /// <summary>段 3。黒の後、闇からテレビが出る（割れる遷移では灰色の現実を静止して見せる）。</summary>
         Structure,
         /// <summary>
-        /// 段 4。全視野の現実が割れ、全片が本編スクリーンの矩形へ滑らかに集まる。
-        /// 矩形になった現実を短く見せた後、同じ全片をカメラ映像へクロスフェードする。
+        /// 段 4。テレビの電源が入り、カメラ映像が映る（割れる遷移では現実が割れて矩形へ集まる）。
         /// </summary>
         Frame,
         /// <summary>
-        /// 段 5。枠の中がカメラ映像へ。<b>枠の中に自分が居る。</b>
+        /// 段 5。映像を静止して見せ、筐体が闇へ沈む。<b>映像の中に自分が居る。</b>
         /// 映像が来ていなければ<b>砂嵐</b>が出る（段を飛ばさない・<c>canon/LEDGER.md</c> 0025）。
         /// </summary>
         Swap,
@@ -51,10 +51,24 @@ namespace FixedCamVr.Streaming
         Aborted,
     }
 
+    /// <summary>現実からスクリーンへ渡す方式。show.json の <c>run.intro.transition</c>。</summary>
+    public enum IntroTransition
+    {
+        /// <summary>暗転 → テレビが出る → 電源 → 映像（<c>canon/LEDGER.md</c> 0309）。既定。</summary>
+        Tv,
+        /// <summary>
+        /// 現実が割れて矩形へ集まる（0208 / 0221〜0226）。<b>0309 で置き換えた旧方式。</b>
+        /// 本人の判定が出るまで比較用に残している。尺は <see cref="IntroTiming.Shatter"/> で固定。
+        /// </summary>
+        Shatter,
+    }
+
     /// <summary>段ごとの尺（秒）。show.json の <c>run.intro</c> がそのまま入る。</summary>
     [Serializable]
     public struct IntroTiming
     {
+        /// <summary>方式。既定値（0）はテレビ。</summary>
+        public IntroTransition transition;
         public float realSec;
         public float degradeSec;
         public float structureSec;
@@ -64,9 +78,8 @@ namespace FixedCamVr.Streaming
         public float maxSec;
 
         /// <summary>
-        /// コード既定。**合計 12.7 秒**（段 3 は段 2 と重なるので単純和ではない。
-        /// 段 4 は 2026-09-15 に 2.5 → 5.0 秒 — 映画の速度変化（一撃 → スロー → 集結）に
-        /// 2.5 秒ではスローが 1 秒も取れない・`canon/LEDGER.md` 0221）。
+        /// コード既定（テレビ方式）。**合計 10.8 秒**（段 3 は段 2 と重なるので単純和ではない）。
+        ///   素の現実 1.5 / 暗転 1.5 / 黒 0.8 + テレビが出る 2.4 / 電源から映像まで 3.0 / 静止 1.6
         ///
         /// ⚠ この値は 4 箇所に現れる。**全部一致していること**:
         ///   ここ / <c>ShowIntroDef</c> / 卓の <c>intro-model.js</c> の <c>INTRO_DEFAULT</c> /
@@ -74,6 +87,15 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public static IntroTiming Default => new IntroTiming
         {
+            transition = IntroTransition.Tv,
+            realSec = 1.5f, degradeSec = 1.5f, structureSec = 3.8f,
+            frameSec = 3.0f, swapSec = 1.6f, maxSec = 20f,
+        };
+
+        /// <summary>割れる遷移の尺。合計 12.7 秒。振り付けが段 4 = 5.0 秒に合わせてあるので固定（0221）。</summary>
+        public static IntroTiming Shatter => new IntroTiming
+        {
+            transition = IntroTransition.Shatter,
             realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
             frameSec = 5.0f, swapSec = 1.6f, maxSec = 20f,
         };
@@ -81,9 +103,10 @@ namespace FixedCamVr.Streaming
         /// <summary>不正値を潰した複製。0 や負値はコード既定へ戻す（黙って 0 秒の段を作らない）。</summary>
         public IntroTiming Sanitized()
         {
-            var d = Default;
+            var d = transition == IntroTransition.Shatter ? Shatter : Default;
             return new IntroTiming
             {
+                transition = transition,
                 realSec = realSec > 0f ? realSec : d.realSec,
                 degradeSec = degradeSec > 0f ? degradeSec : d.degradeSec,
                 structureSec = structureSec > 0f ? structureSec : d.structureSec,
@@ -158,12 +181,32 @@ namespace FixedCamVr.Streaming
         /// ⚠⚠ <b>既定は 1。</b> 0 を書いたままにすると画がまるごと消えるので、
         /// 演出を出していない全期間（<see cref="Inactive"/>・終幕・中止・無効化）は必ず 1。
         ///
-        /// ⚠ <b>旧構成へ戻した 2026-08-15 以降、導入の全段でも 1。</b> 管は最初から点いていて、
-        /// まだ何も映していない（<c>live = 0</c>）。装置は現場に据えてあるものなので、
-        /// 体験者が来る前から電源が入っている方が筋が通る。
-        /// 消えた管（<c>ignite = 0</c>）だと、素通しのパススルーの中に<b>黒い矩形</b>が浮くだけになる。
+        /// テレビ方式では段 4 まで 0 で、段 4 で 0 → 1 へ上がる（これが電源）。
+        /// 割れる遷移では全段 1（管は最初から点いていて、まだ何も映していない）。
         /// </summary>
         public float ignite;
+
+        /// <summary>テレビ方式か（<see cref="IntroTransition.Tv"/>）。方式で配り方が変わる層はここを読む。</summary>
+        public bool tv;
+
+        /// <summary>
+        /// テレビの筐体（輪郭の外）の明るさ。<c>_CrtTvCase</c> へ渡る。
+        /// <b>0 のときは従来どおり輪郭で切り抜く</b>（0302 の枠なしの形。本編はこれ）。
+        /// </summary>
+        public float tvCase;
+
+        /// <summary>
+        /// 消えたテレビのガラスと輪郭の内側を暗くする量。<c>_CrtTvDark</c> へ渡る。
+        /// 1 = 闇の中で見えない / 0 = 本編と同じ（既定）。
+        /// </summary>
+        public float tvDark;
+
+        /// <summary>
+        /// <c>_IntroLive</c> へ書く値。テレビ方式は映像の出方そのもの。
+        /// 割れる遷移は「出してよいか」の 0/1 で、混合量は覆いの <c>_ScreenFade</c> が持つ
+        /// （両方に掛けると二重に暗くなる）。
+        /// </summary>
+        public float LiveGate => tv ? live : (live > 0f || reveal > 0f ? 1f : 0f);
 
         /// <summary>
         /// 隔離殻の強さ。1 = 会場が黒に落ち、実物の壁と足元の床だけが残る（<see cref="ContainmentShell"/>）。
@@ -197,6 +240,7 @@ namespace FixedCamVr.Streaming
             passthrough = 0f, degrade = 0f, edge = 0f, structure = 0f,
             frame = 1f, live = 1f, grain = 0f, glitch = 0f,
             ignite = 1f,
+            tv = false, tvCase = 0f, tvDark = 0f,
             shell = 0f, shellReveal = 0f, sealBox = 0f,
         };
     }
@@ -285,8 +329,8 @@ namespace FixedCamVr.Streaming
     ///
     /// 要点:
     ///   - <b>視点は 1 度も動かさない</b>。動かすのは現実の側の身分（現実 → 映像）
-    ///   - 枠は本編のスクリーンそのもの。開口と不透明度だけを動かすので「枠を運ぶ」処理が無い
-        ///   - 段 2 と段 3 の尺の重なりは維持する。見た目は彩度の終端を静止して保つ
+    ///   - テレビは本編のスクリーンそのもの。材質の値だけを動かすので「テレビを運ぶ」処理が無い
+    ///   - 段 2 と段 3 の尺の重なりは維持する
     ///   - <b>手を上げたことは検出しない</b>（<c>canon/LEDGER.md</c> 0034 で合図ごと廃止）
     /// </summary>
     public sealed class IntroLogic
@@ -389,6 +433,9 @@ namespace FixedCamVr.Streaming
         public bool Holding => _holdSec > 0f;
 
         public void Configure(IntroTiming timing) => _t = timing.Sanitized();
+
+        /// <summary>いまの方式。</summary>
+        public IntroTransition Transition => _t.transition;
 
         /// <summary>導入演出を頭から始める。</summary>
         public void Begin()
@@ -524,9 +571,7 @@ namespace FixedCamVr.Streaming
                 {
                     // 段 3 の尺は「段 2 の後半から始まって段 3 が終わるまで」。重なる分を引く。
                     // ⚠ この式は IntroTiming.TotalSec と卓の introStageSec が共有している。
-                    float own = _t.structureSec - _t.degradeSec * (1f - StructureOverlapAt);
-                    if (own < StructureMinOwnSec) own = StructureMinOwnSec;
-                    if (!advance && _stageElapsed < own) return IntroEvent.None;
+                    if (!advance && _stageElapsed < StructureOwnSec) return IntroEvent.None;
                     // 頭を振っている間は枠を閉じ始めない（見ていない方向で閉じると出来事を見逃す）。
                     if (!advance && input.headTurnDegPerSec > MaxHeadTurnForFrame && _holdSec < MaxHoldSec)
                     {
@@ -607,9 +652,100 @@ namespace FixedCamVr.Streaming
         /// いまの段から各層への重みを出す。<b>見え方の判断はすべてここ</b>（Director は配るだけ）。
         ///
         /// ⚠ <c>sealBox</c> は全段 0（封印の箱は 2026-08-15 に退避した）。
-        /// <c>ignite</c> は全段 1（管は最初から点いていて、まだ何も映していない）。
         /// </summary>
-        public IntroWeights Weights
+        public IntroWeights Weights => _t.transition == IntroTransition.Tv ? TvWeights : ShatterWeights;
+
+        /// <summary>
+        /// テレビ方式の重み（<c>canon/LEDGER.md</c> 0309）。
+        ///
+        /// 段 3 の前半は黒だけ。そこからテレビが闇から出る。段 4 の頭で電源が入り
+        /// （<c>_CrtIgnite</c> の縁 → 走査が開く → 満ちる）、後半で映像が上がる。段 5 で筐体が沈み、
+        /// 終わったときの見えは本編と同じになる。
+        ///
+        /// ⚠ 段 3 以降は <c>frame = 1</c> ＋ <c>passthrough = 0</c>。覆いは何も隠さないので描かない。
+        /// </summary>
+        private IntroWeights TvWeights
+        {
+            get
+            {
+                switch (_stage)
+                {
+                    case IntroStage.Off:
+                    case IntroStage.Done:
+                        return IntroWeights.Inactive;
+
+                    case IntroStage.Black:
+                    case IntroStage.Real:
+                        return new IntroWeights
+                        {
+                            tv = true, passthrough = 1f, frame = 0f, live = 0f, ignite = 0f, tvDark = 1f,
+                        };
+
+                    case IntroStage.Degrade:
+                        return new IntroWeights
+                        {
+                            tv = true,
+                            passthrough = 1f - PerceptualFade.Darken(Progress(_t.degradeSec)),
+                            frame = 0f, live = 0f, ignite = 0f, tvDark = 1f,
+                        };
+
+                    case IntroStage.Structure:
+                    {
+                        float appear = PerceptualFade.Reveal(
+                            (Progress(StructureOwnSec) - TvBlackHoldShare) / (1f - TvBlackHoldShare));
+                        return new IntroWeights
+                        {
+                            tv = true, passthrough = 0f, frame = 1f, live = 0f, ignite = 0f,
+                            tvCase = appear, tvDark = 1f - appear,
+                        };
+                    }
+
+                    case IntroStage.Frame:
+                    {
+                        float p = Progress(_t.frameSec);
+                        return new IntroWeights
+                        {
+                            tv = true, passthrough = 0f, frame = 1f,
+                            ignite = Clamp01(p / TvIgniteShare),
+                            live = PerceptualFade.Reveal((p - TvLiveFrom) / (1f - TvLiveFrom)),
+                            tvCase = 1f, tvDark = 0f,
+                        };
+                    }
+
+                    case IntroStage.Swap:
+                        return new IntroWeights
+                        {
+                            tv = true, passthrough = 0f, frame = 1f, live = 1f, ignite = 1f,
+                            tvCase = 1f - PerceptualFade.Darken(Progress(_t.swapSec)), tvDark = 0f,
+                        };
+
+                    default:
+                        return IntroWeights.Inactive;
+                }
+            }
+        }
+
+        /// <summary>段 3 のうち、黒だけを見せる割合（既定の尺で 0.8 秒）。</summary>
+        public const float TvBlackHoldShare = 0.25f;
+
+        /// <summary>段 4 のうち、管が点き切るまでの割合（既定の尺で 2.1 秒）。</summary>
+        public const float TvIgniteShare = 0.70f;
+
+        /// <summary>段 4 のうち、映像が上がり始める進み（既定の尺で 1.86 秒）。走査の帯が満ちてから。</summary>
+        public const float TvLiveFrom = 0.62f;
+
+        /// <summary>段 3 が単独で流れる秒数。段 2 と重なるぶんを引く（<see cref="IntroTiming.TotalSec"/> と同じ式）。</summary>
+        private float StructureOwnSec
+        {
+            get
+            {
+                float own = _t.structureSec - _t.degradeSec * (1f - StructureOverlapAt);
+                return own < StructureMinOwnSec ? StructureMinOwnSec : own;
+            }
+        }
+
+        /// <summary>割れる遷移の重み（<see cref="IntroTransition.Shatter"/>）。</summary>
+        private IntroWeights ShatterWeights
         {
             get
             {

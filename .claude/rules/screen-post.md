@@ -80,13 +80,13 @@ paths:
 - ソースに `mipChain` が無いと LOD が黙って無視され、そこだけ鮮明になる。`CameraStream` / `MjpegScreen` / `RecordedFramePlayer` / `ScreenOverlayController` / プレビューのプレートは全部 mipChain + Trilinear 〔出典: S:1500-1503〕
 - `_Mono` を色・粒・露出で別 uniform に分けない。順方向で作れない画が出る 〔出典: S:1459-1461〕
 - 判断は Unity が出した PNG で行う。Python で再現するなら linear で計算して最後に sRGB へ戻す 〔出典: S:1183-1186〕
-- 暗さを変えたら粒も測り直す（粒は linear 加算） 〔出典: S:1179-1182〕
+- 暗さを変えたら粒も測り直す（粒は linear 加算）
 - 管の縁と角は `rawUv` で引く。潰れた uv を渡すと線が消える — `CrtSdf(rawUv)` 〔出典: D:858-870〕
 - 曲面メッシュの 4 隅・4 辺は動かさない — `CrtScreenMeshTests` 〔出典: S:1254-1256〕
-- メッシュは Awake でだけ組む。シーンへ焼かない 〔出典: S:1258-1261〕
+- メッシュは Awake でだけ組む。シーンへ焼かない
 - OSD の v を反転しない／矩形の内外を分岐にしない／版は 1 セルずつ描く 〔出典: S:1366-1386〕
 - OSD のセル並びは `make-osd-font.py` と対 — `OsdClockLogicTests.Glyphs_MatchTheBakingScript` 〔出典: S:1388-1391〕
-- OSD はシーンに焼かないと出ない（`menu scene`）。観測 `osd=-` 〔出典: S:1402-1403〕
+- OSD はシーンに焼かないと出ない（`menu scene`）。観測 `osd=-`
 - 合成プレビューは `CameraFeelFx.WriteUniforms` と `CameraFeelLogic.SteadyBiasFor` を通す。独自の既定を持つと実機より綺麗な絵になる 〔出典: S:3097-3109〕
 - 観測項目は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す（`coarse` / `coarseShown` / `coarsePos` / `cbx` / `coarseMat` / `osd` / `osdLap`） 〔出典: S:1427-1430、memory/screen_decay.md〕
 
@@ -96,6 +96,7 @@ paths:
 - 時計の版・書式 → S:1270-1403
 - 管の形・点灯 → S:1241-1268
 - 暖色の置き場 → memory/warm_palette.md
+- 導入のテレビ `_CrtTvCase` / `_CrtTvDark` → memory/intro_tv_reveal.md
 - 信号断・追従 → S:231-330
 
 ---

@@ -765,15 +765,21 @@ namespace FixedCamVr.Streaming
         /// <summary>演出の上限 (秒)。超えたら段を飛ばして映像を出す（条件待ちで固まらないための保険）。</summary>
         public float maxSec = 20f;
 
-        /// <summary>段 1。素のパススルー（段 2 の変化を読ませるための比較対象）。</summary>
+        /// <summary>
+        /// 現実からスクリーンへ渡す方式。空（既定）はテレビ（0309）。<c>"shatter"</c> は割れる遷移で、
+        /// 尺は下の値を読まず <see cref="IntroTiming.Shatter"/> に固定する（振り付けが 5.0 秒に合わせてある）。
+        /// </summary>
+        public string transition = "";
+
+        /// <summary>段 1。素のパススルー。</summary>
         public float realSec = 1.5f;
-        /// <summary>段 2。色が抜け、コントラストが上がり、実物の輪郭が浮く。</summary>
-        public float degradeSec = 3.5f;
-        /// <summary>段 3。輪郭だけの世界（段 2 の後半から重なる）。</summary>
-        public float structureSec = 2.5f;
-        /// <summary>段 4。現実が割れてスクリーンへ吸い込まれ、枠が閉じる。</summary>
-        public float frameSec = 5.0f;
-        /// <summary>段 5。枠の中がカメラ映像へ。</summary>
+        /// <summary>段 2。現実が暗転する。</summary>
+        public float degradeSec = 1.5f;
+        /// <summary>段 3。黒の後、闇からテレビが出る（段 2 の後半から重なる）。</summary>
+        public float structureSec = 3.8f;
+        /// <summary>段 4。テレビの電源が入り、カメラ映像が映る。</summary>
+        public float frameSec = 3.0f;
+        /// <summary>段 5。映像を静止して見せ、筐体が闇へ沈む。</summary>
         public float swapSec = 1.6f;
 
         /// <summary>
@@ -818,11 +824,14 @@ namespace FixedCamVr.Streaming
         public bool LooksUnset =>
             !enabled && maxSec <= 0f && realSec <= 0f && degradeSec <= 0f && swapSec <= 0f;
 
-        public IntroTiming ToTiming() => new IntroTiming
-        {
-            realSec = realSec, degradeSec = degradeSec, structureSec = structureSec,
-            frameSec = frameSec, swapSec = swapSec, maxSec = maxSec,
-        }.Sanitized();
+        public IntroTiming ToTiming() => transition == "shatter"
+            ? IntroTiming.Shatter
+            : new IntroTiming
+            {
+                transition = IntroTransition.Tv,
+                realSec = realSec, degradeSec = degradeSec, structureSec = structureSec,
+                frameSec = frameSec, swapSec = swapSec, maxSec = maxSec,
+            }.Sanitized();
 
         /// <summary>輪郭線の色を解く（解けなければ生成り）。</summary>
         public Color ResolveEdgeColor()

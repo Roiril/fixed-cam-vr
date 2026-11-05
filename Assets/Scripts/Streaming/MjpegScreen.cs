@@ -379,8 +379,18 @@ namespace FixedCamVr.Streaming
         private void PrepareSignal(ScriptableRenderContext context, Camera camera)
         {
             // CGのmanual Camera.Render、撮影用camera、他のscreenはHMDの更新時計にしない。
-            if (!isActiveAndEnabled || !ReferenceSurfaceActive || _material == null || camera != Camera.main
-                || camera.cameraType != CameraType.Game || _lastSignalFrame == Time.frameCount) return;
+            if (camera != Camera.main || camera.cameraType != CameraType.Game) return;
+            PrepareSignalNow();
+        }
+
+        /// <summary>
+        /// HMD の更新時計で信号の前段を回す。再生の撮影は batchmode で目のカメラが描かれないので、
+        /// 撮る直前にここを呼ぶ。呼ばないと HMD と別のシェーダ経路（枠が消えない）の画が撮れる。
+        /// </summary>
+        public void PrepareSignalNow()
+        {
+            if (!isActiveAndEnabled || !ReferenceSurfaceActive || _material == null
+                || _lastSignalFrame == Time.frameCount) return;
             _lastSignalFrame = Time.frameCount;
             try
             {

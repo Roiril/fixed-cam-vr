@@ -161,6 +161,7 @@ namespace FixedCamVr.Streaming
         private bool _titleWasVisible;
         // ⚠ `SealClose` / `Swap` のラッチは持たない（2026-08-15 に鳴らさなくなった）。
         private bool _shatterFired;
+        private bool _screenOnFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
         private bool _glyphWasShowing;
@@ -204,6 +205,7 @@ namespace FixedCamVr.Streaming
         private void ResetIntroLatches()
         {
             _shatterFired = false;
+            _screenOnFired = false;
             _bellFired = false;
             _swapSec = 0f;
         }
@@ -249,7 +251,13 @@ namespace FixedCamVr.Streaming
                     _shatterFired = true;
                     Push(SoundCue.Shatter, ref count);
                 }
-                // 生成動画の音に帰還まで含まれるため、旧 ScreenOn は重ねない。
+                // テレビの電源（0309）。音は 0057 でユーザーが指定した「スクリーンが出る音」。
+                // 割れる遷移（tv=false）は生成動画の音に帰還まで含まれるため、ScreenOn を重ねない。
+                if (!_screenOnFired && s.introWeights.tv && s.introStage == IntroStage.Frame)
+                {
+                    _screenOnFired = true;
+                    Push(SoundCue.ScreenOn, ref count);
+                }
                 // ⚠⚠ **その後のノイズ（`ScreenNoise`）は 2026-08-16 に鳴らさなくなった**
                 //    （`canon/LEDGER.md` 0057・ユーザー指示「ノイズは鳴らさない」）。
                 //    スクリーンが出る音を差し替えたので、後ろに足す音が要らなくなった。

@@ -880,7 +880,7 @@ namespace FixedCamVr.Streaming
         private void ClearTransitionVisual()
         {
             SetDim(0f);
-            glitchFx?.SetSustain(0f);
+            if (glitchFx != null) glitchFx.SetSustain(0f);
         }
 
         /// <summary>遷移の進み具合 (0-1) を、黒 or 乱れのどちらかへ流す。</summary>

@@ -2774,14 +2774,17 @@ def analyze(events, others, exp, warns=None):
             #    - 鈴（Bell）は**段 5 のクロスフェードが終わった所**（＝完全にスクリーンに
             #      なったとき）へ。段 5 は 4.5 秒あるので、待ちで取り逃す心配は無い
             #    - ノイズ（ScreenNoise）は**鳴らさない**。ここに残すと毎回誤検出する
-            want_ids = ("Bell", "Shatter")
-            for want, label in (("Bell", "完全にスクリーンになった所の鈴"),
-                                ("Shatter", "現実が割れる")):
+            # テレビ方式（0309）は電源の音、割れる遷移は破砕音。割れる遷移の ScreenOn は生成動画の音に含む。
+            tv_intro = "tv" in effect_samples(events, "shatStyle")
+            intro_sounds = (("Bell", "完全にスクリーンになった所の鈴"),
+                            ("ScreenOn", "テレビの電源") if tv_intro else ("Shatter", "現実が割れる"))
+            for want, label in intro_sounds:
                 if by_id.get(want, 0) == 0:
                     verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"
                                     f"（ev=sfx id={want} が 0 本）")
-            if all(by_id.get(k, 0) > 0 for k in want_ids):
-                verdict("OK", "導入の鈴と破砕音の再生指示が出た（ScreenOn は生成動画の音に含む）")
+            if all(by_id.get(want, 0) > 0 for want, _ in intro_sounds):
+                verdict("OK", "導入の鈴と電源の音の再生指示が出た" if tv_intro
+                        else "導入の鈴と破砕音の再生指示が出た（ScreenOn は生成動画の音に含む）")
 
         # -- 終幕の電源断（`canon/LEDGER.md` 0125）--------------------------------
         #    ⚠⚠ **音は録画に映らない**ので、`ev=sfx id=PowerOff` が唯一の証拠。
@@ -3438,8 +3441,12 @@ def analyze(events, others, exp, warns=None):
     # -- 段 4 の連続開口（全視野から本編スクリーンへ閉じる）
     # `aper` は IntroVeil が単一 quad へ実際に配った閉じ量の最大値。
     # 基底面を検査する。0208 の破片は別メッシュなので下で独立に検査する。
+    # テレビ方式（0309）は開口を閉じず、破片も使わない。下の電源の判定が同じ役目を持つ。
+    fracture_styles = set(effect_samples(events, "shatStyle"))
     aper_all = [v for v in effect_samples(events, "aper") if v not in ("", "-")]
-    if aper_all:
+    if "tv" in fracture_styles:
+        any_effect_key = True
+    elif aper_all:
         any_effect_key = True
         anums = []
         for v in aper_all:
@@ -3511,8 +3518,7 @@ def analyze(events, others, exp, warns=None):
             verdict("FAIL", "旧破砕ログのセル格子が 0 枚（IntroVeilShatterMesh を組めていない）")
 
     # 0208 の不揃いな破片。旧ログにはこの印が無いため適用しない。
-    fracture_styles = set(effect_samples(events, "shatStyle"))
-    if fracture_styles.intersection({"art", "frozen"}):
+    if "tv" not in fracture_styles and fracture_styles.intersection({"art", "frozen"}):
         any_effect_key = True
         def fracture_numbers(key):
             values = []
@@ -3614,7 +3620,48 @@ def analyze(events, others, exp, warns=None):
     # ⚠ 2026-08-15 から導入の全段で 1（点いていて、まだ何も映していない）。
     #    0 が出たら画がまるごと消えている。
     ig_all = [v for v in effect_samples(events, "ignite") if v not in ("", "-")]
-    if ig_all:
+    tv_intro = "tv" in fracture_styles
+    if tv_intro:
+        # テレビ方式（0309）。筐体が画に出たか・電源が 0 から上がったか・本編までに本編の見えへ戻ったか。
+        any_effect_key = True
+        def _tv_numbers(key):
+            out = []
+            for value in effect_samples(events, key):
+                try:
+                    out.append(float(value))
+                except (ValueError, TypeError):
+                    pass
+            return out
+        cases = _tv_numbers("tvCase")
+        ignites = _tv_numbers("ignite")
+        complete = "Swap" in stages or "Done" in stages
+        w(f"  テレビ: 筐体 最大 {max(cases, default=-1):.2f} / 最後 {cases[-1] if cases else -1:.2f}  "
+          f"電源 最小 {min(ignites, default=-1):.2f} / 最後 {ignites[-1] if ignites else -1:.2f}")
+        if complete:
+            if not cases or max(cases) < 0.9:
+                verdict("FAIL", "テレビの筐体が画に出ていない（tvCase が上がっていない）— "
+                                "IntroDirector.WriteIgnite と材質の _CrtTvCase を見る")
+            elif cases[-1] > 0.001:
+                verdict("FAIL", f"導入の後も筐体が残っている（tvCase={cases[-1]:.2f}）— ResetIgnite を通っていない")
+            else:
+                verdict("OK", "テレビの筐体が出て、本編までに沈んだ")
+            if not ignites or min(ignites) > 0.5:
+                verdict("FAIL", "テレビの電源が入る様子が画に無い（ignite が低い値を通っていない）")
+            elif ignites[-1] < 0.999:
+                verdict("FAIL", f"走行の終わりで管が消えたまま（ignite={ignites[-1]:.2f}）— 畳む経路で 1 へ戻していない")
+            else:
+                verdict("OK", "テレビの電源が入り、管は点いたまま本編へ入った")
+        # 暗転と黒の保持でスクリーンを描いていないか。旧ログには scrHid が無いので判定しない。
+        hid_in_dark = [e.get("scrHid") for e in events
+                       if e.get("ev") == "intro" and e.get("stage") in ("Degrade", "Structure")
+                       and e.get("scrHid") not in (None, "", "-")]
+        if hid_in_dark:
+            if "0" in hid_in_dark:
+                verdict("FAIL", "暗転か黒の保持でスクリーンを描いている（scrHid=0）— 闇にガラスの縁が浮く。"
+                                "IntroVeil.SuppressHiddenScreen を見る")
+            else:
+                verdict("OK", "テレビが出るまでスクリーンを描いていない")
+    elif ig_all:
         any_effect_key = True
         if "nc" in ig_all:
             verdict("FAIL", "スクリーンの管の点灯を書く先を掴めていない（ignite=nc）— "

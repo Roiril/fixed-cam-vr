@@ -159,7 +159,7 @@ namespace FixedCamVr.Streaming
         {
             // 自分を外したら画は素へ戻す（このコンポーネントが無い状態と同じ画にして去る）。
             Opacity = 0f;
-            _material?.SetVector(OsdRectId, Vector4.zero);
+            if (_material != null) _material.SetVector(OsdRectId, Vector4.zero);
         }
 
         private void OnDestroy()

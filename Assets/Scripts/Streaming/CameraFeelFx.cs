@@ -192,7 +192,7 @@ namespace FixedCamVr.Streaming
         public void CancelTakeoverStatic()
         {
             if (_signalLostFx == null) _signalLostFx = GetComponent<SignalLostFx>();
-            _signalLostFx?.SetNarrativeStatic(false);
+            if (_signalLostFx != null) _signalLostFx.SetNarrativeStatic(false);
         }
 
         /// <summary>3 周目 A の凍結へ入った。同じランでは以後再開しない。</summary>

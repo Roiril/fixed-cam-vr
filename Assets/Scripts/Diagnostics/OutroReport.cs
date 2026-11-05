@@ -238,7 +238,7 @@ namespace FixedCamVr.Diagnostics
             {
                 _presented = false;
                 ApplyAlpha(0);
-                typeSfx?.StopAll();
+                if (typeSfx != null) typeSfx.StopAll();
                 _follow?.SnapToHead();
                 return;
             }
@@ -286,8 +286,8 @@ namespace FixedCamVr.Diagnostics
         {
             _presented = false;
             ApplyAlpha(0);
-            _music?.SetPresented(false, 0);
-            typeSfx?.StopAll();
+            if (_music != null) _music.SetPresented(false, 0);
+            if (typeSfx != null) typeSfx.StopAll();
         }
 
         private void OnDestroy()

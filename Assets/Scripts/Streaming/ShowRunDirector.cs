@@ -356,7 +356,7 @@ namespace FixedCamVr.Streaming
             if (cueScheduler != null && _subscribed) cueScheduler.CameraEntered -= OnCameraEntered;
             _subscribed = false;
             // 自分が閉じたゲートを開けたまま去る（このコンポーネントを外したら従来どおり常に流れる）。
-            cueScheduler?.SetShowGate(true);
+            if (cueScheduler != null) cueScheduler.SetShowGate(true);
         }
 
         private void ResolveRefs()

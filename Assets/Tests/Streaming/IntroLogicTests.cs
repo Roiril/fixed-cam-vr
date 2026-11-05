@@ -22,11 +22,8 @@ namespace FixedCamVr.Streaming.Tests
     public sealed class IntroLogicTests
     {
         // コード既定と同じ尺で試す。独自の長い尺で試すと、条件待ちの上限との関係が実運用とずれる。
-        private static readonly IntroTiming T = new IntroTiming
-        {
-            realSec = 1.5f, degradeSec = 3.5f, structureSec = 2.5f,
-            frameSec = 5.0f, swapSec = 1.6f, maxSec = 20f,
-        };
+        // ⚠ このファイルは旧方式（割れる遷移）の契約。テレビ方式の重みは IntroTvTests。段の進み方は同じ。
+        private static readonly IntroTiming T = IntroTiming.Shatter;
 
         /// <summary>段 3 が単独で流れる秒数（段 2 と重なるぶんを引いたもの）。</summary>
         private static float StructureOwnSec(IntroTiming t)
@@ -388,7 +385,7 @@ namespace FixedCamVr.Streaming.Tests
             // ⚠ 2026-08-16 に段 5 を 4.5 → 1.6 秒へ詰めた（`canon/LEDGER.md` 0058）。
             //    鈴（段 5 ＋ 1.2 秒）の後に 3.3 秒の無音の間が残っていた。
             Assert.AreEqual(12.7f, T.TotalSec, 0.001f);
-            Assert.AreEqual(12.7f, IntroTiming.Default.TotalSec, 0.001f);
+            Assert.AreEqual(12.7f, IntroTiming.Shatter.TotalSec, 0.001f);
             Assert.Less(T.TotalSec, T.realSec + T.degradeSec + T.structureSec + T.frameSec + T.swapSec,
                 "重なりが効いていない（単純和になっている）");
         }
@@ -425,7 +422,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Default_RunsEndToEndWithinMaxSec()
         {
             var l = new IntroLogic();
-            l.Configure(IntroTiming.Default);
+            l.Configure(T);
             l.Begin();
             l.RequestAdvance();
             l.Tick(0.1f, Ready(outsideM: 2f));
@@ -435,7 +432,7 @@ namespace FixedCamVr.Streaming.Tests
             var outside = Ready(outsideM: 2f);
             while (ev == IntroEvent.None && ticks < 1000) { ev = l.Tick(0.05f, outside); ticks++; }
             Assert.AreEqual(IntroEvent.Finished, ev);
-            Assert.LessOrEqual(l.TotalElapsedSec, IntroTiming.Default.maxSec,
+            Assert.LessOrEqual(l.TotalElapsedSec, T.maxSec,
                 $"打ち切りに頼らず自力で終わること（{l.TotalElapsedSec}s）");
         }
 
