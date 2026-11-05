@@ -97,6 +97,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private BedVoice _heart = new BedVoice();
 
+        /// <summary>帰還の別れの人形のオルゴール（<c>canon/LEDGER.md</c> 0312）。人形の位置から鳴る。</summary>
+        private BedVoice _farewellBox = new BedVoice();
+        private bool _farewellBoxAudible;
+
+        /// <summary>止めるときに音を閉じる尺 (秒)。途中で畳まれてもぶつ切りにしない。</summary>
+        private const float FarewellBoxReleaseSec = 0.15f;
+
         /// <summary>
         /// <b>笑いの 1 層</b>（体ごとの声の束・2026-09-04・<c>canon/LEDGER.md</c> 0139）。
         ///
@@ -236,6 +243,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public float HeartGain { get; private set; }
 
+        /// <summary>別れのオルゴールの音量（0..1・0312）。音は録画に映らないのでここが証拠。</summary>
+        public float FarewellBoxGain { get; private set; }
+
         /// <summary>無音で回っている時間も含め、心音そのものの再生位置を返す。</summary>
         public bool TryGetHeartPlayback(out float seconds, out float gain)
         {
@@ -347,6 +357,7 @@ namespace FixedCamVr.Streaming
             _white = MakeBed("White", "bed_white", spatial: false);
             // ⚠ 心音も 2D（0175）。体験者自身の鼓動なので出どころを作らない。
             _heart = MakeBed("Heart", "bed_heart", spatial: false);
+            _farewellBox = MakeBed("FarewellBox", "bed_farewell_music_box", spatial: true);
             SpatialAudio.PickLaughSpots(_laughSpots);
 
             // ⚠⚠ **ステレオのまま 3D に置かれていないかを起動時に数える。**
@@ -532,6 +543,7 @@ namespace FixedCamVr.Streaming
                 //    速くなる。音は終幕の頭からの経過だけを読み、固定の尺で引く。
                 s.outroElapsedSec = _outro.TotalElapsedSec;
                 s.outroPowerCutSec = _outro.PowerCutAtSec;
+                s.outroTrapped = _run != null && _run.EndingOutcome == ShowEndingOutcome.Trapped;
             }
             if (_run != null)
             {
@@ -708,6 +720,7 @@ namespace FixedCamVr.Streaming
             // 心音（0175）。⚠ **置き換えではなく足す**ので、劇伴の取り分（`score`）には触らない。
             HeartGain = Set(_heart, g.heart * m);
             sum += HeartGain;
+            sum += ApplyFarewellBox(m);
             // ⚠ **鳴り始めは必ず輪の同じ所から。** 12 秒の輪を常時回しているので、
             //    頭出ししないと**体験者ごとに違う所から笑い出す**（走行の再現性が消える）。
             // ⚠⚠ **体ぜんぶを同じ所へ頭出しする**（0139）。表は 8 体の掛け合いとして composed して
@@ -756,6 +769,35 @@ namespace FixedCamVr.Streaming
             }
 
             PlaceBeds();
+        }
+
+        /// <summary>
+        /// 別れのオルゴールの音量と置き場所を書く（0312）。鳴り始めは毎回素材の頭から。
+        /// 人形の位置を掴めなければ 2D へ落とす。
+        /// </summary>
+        private float ApplyFarewellBox(float master)
+        {
+            EndingFarewellDoll? doll = _takes != null ? _takes.Farewell : null;
+            float target = (doll != null ? doll.MusicBoxGain : 0f) * master;
+            // 立ち上がりと下がりは時刻表が持つ。途中で畳まれた（0 へ跳ぶ）ときだけここで閉じる。
+            float next = target >= FarewellBoxGain - 0.25f
+                ? target
+                : Mathf.MoveTowards(FarewellBoxGain, target, Time.unscaledDeltaTime / FarewellBoxReleaseSec);
+            bool audible = next > 0.0005f;
+            if (audible && !_farewellBoxAudible && _farewellBox.src != null && _farewellBox.ok)
+                _farewellBox.src.time = 0f;
+            _farewellBoxAudible = audible;
+            FarewellBoxGain = next;
+            if (_farewellBox.src != null && _farewellBox.ok)
+            {
+                if (_cg != null && _cg.TryGetFarewellDollWorld(out Vector3 at))
+                {
+                    _farewellBox.src.transform.position = at;
+                    if (_farewellBox.src.spatialBlend < 1f) SpatialAudio.Configure(_farewellBox.src);
+                }
+                else if (audible) SpatialAudio.MakeFlat(_farewellBox.src);
+            }
+            return Set(_farewellBox, next);
         }
 
         /// <summary>
@@ -876,6 +918,9 @@ namespace FixedCamVr.Streaming
             LastCue = SoundCue.None;
             // 次の体験者でも同じ所から笑いが入る（頭出しの縁を作り直す）。
             _dolls.audible = _dollOne.audible = _dollGrowA.audible = _dollGrowB.audible = false;
+            _farewellBoxAudible = false;
+            FarewellBoxGain = 0f;
+            Set(_farewellBox, 0f);
             // ⚠ **方角は体験者ごとに引き直す**（`canon/LEDGER.md` 0130「ランダムな位置」）。
             //    走行のあいだは動かさない — 鳴っている最中に動かすと、人形が歩いて聞こえる。
             SpatialAudio.PickLaughSpots(_laughSpots);

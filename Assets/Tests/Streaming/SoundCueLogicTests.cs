@@ -312,6 +312,25 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void TrappedOutro_FiresTheFallInsteadOfPowerOff_OnlyOnce()
+        {
+            var l = new SoundCueLogic();
+            var s = SoundShowState.Idle;
+            s.outroActive = true;
+            s.outroTrapped = true;
+            s.outroStage = OutroStage.Dark;
+
+            var fired = l.Tick(Dt, s, 0f, out int n);
+            Assert.AreEqual(1, n);
+            Assert.AreEqual(SoundCue.DollEndFall, fired[0]);
+            Assert.AreEqual("sfx_doll_end_fall", SoundCueLogic.ResourceName(SoundCue.DollEndFall));
+
+            s.outroElapsedSec = 1f;
+            l.Tick(Dt, s, 0f, out int again);
+            Assert.AreEqual(0, again, "人形 End の音が 2 度鳴っている");
+        }
+
+        [Test]
         public void PowerOff_WaitsForTheTubeToStartCollapsing()
         {
             // 2026-10-21 から、終幕の頭は砂嵐（0.95 秒）で、管が潰れるのはその後。

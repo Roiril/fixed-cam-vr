@@ -1,7 +1,7 @@
 # Project Memory Index
 
 技術の罠・実装の経緯の索引。**1 行 1 フック**。世界観・演出の判定は `.claude/canon/`（混ぜない — `rules/canon-boundary.md`）。
-足すときは該当の節へ 1 行（`tools/harness-check.py` が字数を見る）。
+足すときは該当の節へ 1 行。
 
 ## いま開いている指摘
 - [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうること
@@ -66,6 +66,7 @@
 
 ## 音
 - [sound_pipeline.md](sound_pipeline.md) — 音を作る道具と耳を使わない判定。計器が 4 回嘘をついた・3D 化で音量が下がる
+- [wrong_room_sounds.md](wrong_room_sounds.md) — Wrong Room の 2 本は git に入れない。別の PC は焼く
 
 ## 準備・入力・来場者
 - [staff_setup.md](staff_setup.md) — タブレット中心の準備・交代。Quest の並行位置合わせ・終幕中のリセット保護
@@ -91,7 +92,7 @@
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
 - [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4（`unity.ps1 replay`）
-- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。いまの正は CLI
+- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。正は CLI
 
 ## 機材・ビルド・ネットワーク
 - [quest_fleet_two_devices.md](quest_fleet_two_devices.md) — **α = `2G0YC1ZF890864` / β = `2G0YC1ZF7S06BW`**。機ごとに必ず食い違う 4 つ
@@ -104,7 +105,7 @@
 - [streamer_operator_ui.md](streamer_operator_ui.md) — 配信スマホ側の面（補助線・鏡合わせ・撮影パネル・卓の自動発見）
 - [approach_shoot_console.md](approach_shoot_console.md) — 当日の素材撮り。停滞は `ev=clip` にしか出ない
 - [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）
-- [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) — 却下済み。go2rtc 中継なら Unity 改修ゼロ
+- [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) — 却下済み（go2rtc 中継）
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) — iPhone はデモなら IP Cam Lite。自作は PWA＋WS
 - [droidcam_endpoint.md](droidcam_endpoint.md) — フォールバック専用の DroidCam
 - [web_compositor.md](web_compositor.md) — `tools/web-compositor`（卓・合成検証・プロンプト管理・サーバ API）
@@ -121,4 +122,4 @@
 - [proposal_single_source.md](proposal_single_source.md) — 企画書は読まない（08-08）。骨格は実装と機械が守る
 - [harness_design.md](harness_design.md) — CLAUDE.md / .claude/ の役割分担と根拠
 
-手のアプリの memory は 2026-09-28 に table-duo-vr へ移した。
+手のアプリの memory は table-duo-vr。

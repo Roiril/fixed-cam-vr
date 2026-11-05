@@ -55,6 +55,7 @@ MONO3D = {
     *(f"bed_dolls_grow_a_{i}" for i in range(1, 3)),  # 3 周目 C で入る 2 体
     *(f"bed_dolls_grow_b_{i}" for i in range(1, 5)),  # 同・さらに 4 体
     "sfx_doll_call",
+    "bed_farewell_music_box",                         # 別れの人形（0312）
     # 封印の箱（2026-08-15 から鳴らない。モノで焼いてあるので名簿に残す）
     "bed_seal",
 }

@@ -1509,6 +1509,8 @@ namespace FixedCamVr.Diagnostics
             //      しかも素材は正体が 150Hz より下にあるので、**実機の内蔵スピーカーでも聞こえない**
             //      （内蔵SP -21.1dB）。耳でも確かめられない ＝ この数字しか無い。
             _sb.Append(" sndHeart=").Append(_sound == null ? "-" : _sound.HeartGain.ToString("F2"));
+            //   sndFarewell = 帰還の別れのオルゴール（0312）。人形が現れてから消えるまで立つ。
+            _sb.Append(" sndFarewell=").Append(_sound == null ? "-" : _sound.FarewellBoxGain.ToString("F2"));
             //   sndEye = 目が開く音（0131）。<一撃の累計>/<大きい目を鳴らせたか>。
             //   ⚠ **目が開いた数（`eyes` の 2 つ目）と対で見る** — 開いているのに 0 なら鳴っていない。
             _sb.Append(" sndEye=").Append(EyeSfxState);

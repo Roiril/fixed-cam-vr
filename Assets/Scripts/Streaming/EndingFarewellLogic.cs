@@ -57,6 +57,24 @@ namespace FixedCamVr.Streaming
         public const float AnchorTimeoutSec = 0.5f;
 
         public const float TotalSec = AppearSec + FaceSec + TurnSec + RetreatSec;
+
+        /// <summary>人形が後ろを向き始めてから消えるまでにオルゴールを下げる量 (dB・0312)。</summary>
+        public const float MusicBoxDepartDb = -30f;
+        /// <summary>人形が消え切る手前でオルゴールを無音へ閉じる尺 (秒)。</summary>
+        public const float MusicBoxCloseSec = 1f;
+
+        /// <summary>
+        /// 別れのオルゴールの音量 0..1（<c>canon/LEDGER.md</c> 0312）。現れる間に立ち上がり、
+        /// 見つめる間は保ち（写真待ちで伸びても同じ）、後ろを向いてから消えるまでで下がる。
+        /// </summary>
+        public static float MusicBoxGain(Phase phase, float t)
+        {
+            if (phase < Phase.Appear || phase > Phase.Retreat) return 0f;
+            float gain = Mathf.Clamp01(t / AppearSec);
+            float departAt = AppearSec + FaceSec;
+            gain *= Mathf.Pow(10f, MusicBoxDepartDb * Mathf.Clamp01((t - departAt) / (TotalSec - departAt)) / 20f);
+            return gain * Mathf.Clamp01((TotalSec - t) / MusicBoxCloseSec);
+        }
         private const float RetreatEaseFraction = 0.25f;
 
         // ---- 立ち位置 -----------------------------------------------------------------

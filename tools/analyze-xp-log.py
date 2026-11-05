@@ -2636,6 +2636,17 @@ def analyze(events, others, exp, warns=None):
         else:
             verdict("WARN", "心音の観測が無い（sndHeart）— この計装より前のビルドのログ")
 
+        # -- 帰還の別れのオルゴール（0312）
+        farewell_box = timed_samples(events, "sndFarewell")
+        faced = any(e.get("ev") == "farewell" and e.get("phase") == "face" for e in events)
+        if farewell_box and faced:
+            pk = _peak(farewell_box)
+            if pk is not None and pk > 0.5:
+                verdict("OK", f"別れのオルゴールが鳴った（最大 {pk:.2f}）")
+            else:
+                verdict("FAIL", "別れの人形が出たのにオルゴールが鳴っていない — "
+                                "`bed_farewell_music_box` を焼いたか（ingest-sounds.py）を見る")
+
         # -- 目が開く音（0131）
         #    ⚠ **目が開いた数と対で見る。** 開いているのに 0 なら鳴っていない。
         eye_sfx = effect_samples(events, "sndEye")
@@ -2792,7 +2803,17 @@ def analyze(events, others, exp, warns=None):
         #       （音源が焼かれていない / Resources に入っていない / 発声器が起きていない）。
         #    ⚠ **終幕まで走った走行だけ見る**（途中で切れた走行で毎回 FAIL を出さない）。
         outro_ran = any(e.get("stage") in ("Collapse", "Dark", "Report", "Done") for e in outro)
-        if outro_ran:
+        trapped_end = any(e.get("ending") == "Trapped" for e in outro)
+        if outro_ran and trapped_end:
+            # 人形 End は電源断の代わりに黒へ落ちる音が鳴る（0312）。
+            n_fall = by_id.get("DollEndFall", 0)
+            n_off = by_id.get("PowerOff", 0)
+            if n_fall != 1 or n_off != 0:
+                verdict("FAIL", f"人形 End の音が設計と違う（DollEndFall={n_fall} / PowerOff={n_off}）— "
+                                "`sfx_doll_end_fall` を焼いたか（ingest-sounds.py）を見る")
+            else:
+                verdict("OK", "人形 End で黒へ落ちる音が 1 度だけ鳴った")
+        elif outro_ran:
             n_off = by_id.get("PowerOff", 0)
             if n_off == 0:
                 verdict("FAIL", "終幕まで進んだのに電源が落ちる音が鳴っていない"

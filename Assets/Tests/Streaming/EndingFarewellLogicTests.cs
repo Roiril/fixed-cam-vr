@@ -21,6 +21,20 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void MusicBox_RisesHoldsThenRecedesUntilTheDollIsGone()
+        {
+            float departAt = EndingFarewellLogic.AppearSec + EndingFarewellLogic.FaceSec;
+            Assert.That(EndingFarewellLogic.MusicBoxGain(Phase.Idle, 0f), Is.EqualTo(0f));
+            Assert.That(EndingFarewellLogic.MusicBoxGain(Phase.Appear, 0f), Is.EqualTo(0f).Within(1e-4f));
+            Assert.That(EndingFarewellLogic.MusicBoxGain(Phase.Face, departAt - 0.001f), Is.EqualTo(1f).Within(1e-3f));
+            float mid = (departAt + EndingFarewellLogic.TotalSec - EndingFarewellLogic.MusicBoxCloseSec) * 0.5f;
+            float atMid = EndingFarewellLogic.MusicBoxGain(Phase.Retreat, mid);
+            Assert.That(atMid, Is.GreaterThan(0.01f).And.LessThan(1f));
+            Assert.That(EndingFarewellLogic.MusicBoxGain(Phase.Retreat, EndingFarewellLogic.TotalSec), Is.EqualTo(0f).Within(1e-4f));
+            Assert.That(EndingFarewellLogic.MusicBoxGain(Phase.Done, EndingFarewellLogic.TotalSec), Is.EqualTo(0f));
+        }
+
+        [Test]
         public void SampleAt_AppearsFacesTurnsThenRetreatsAndFades()
         {
             var s0 = EndingFarewellLogic.SampleAt(0f);

@@ -27,6 +27,9 @@ namespace FixedCamVr.Streaming
         public bool Facing => _logic.Current == EndingFarewellLogic.Phase.Face && _cg != null && _cg.FarewellPhotoReady;
 
         public bool Completed => _logic.Current == EndingFarewellLogic.Phase.Done;
+
+        /// <summary>別れのオルゴールの音量 0..1（0312）。</summary>
+        public float MusicBoxGain => EndingFarewellLogic.MusicBoxGain(_logic.Current, _logic.ElapsedSec);
         public bool ShotCaptured { get; private set; }
 
         public void NotifyShotCaptured()

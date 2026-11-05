@@ -44,6 +44,9 @@ namespace FixedCamVr.Streaming
         /// 0 なら終幕の頭で鳴る（帰還不能・旧版と同じ）。
         /// </summary>
         public float outroPowerCutSec;
+
+        /// <summary>人形 End の終幕か（0312）。電源断の代わりに黒へ落ちる音を鳴らす。</summary>
+        public bool outroTrapped;
         public ShowPhase phase;
         /// <summary>映像の解像度の劣化（0 = 新しい / 1 = 落ち切った）。<see cref="ScreenDecayLogic"/>。</summary>
         public float decay;
