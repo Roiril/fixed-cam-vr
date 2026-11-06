@@ -694,6 +694,14 @@ namespace FixedCamVr.Diagnostics
         /// ⚠⚠ <b>音は録画に映らない。</b> 目が開いているのに一撃が 0 なら、
         /// 音源を掴めていないか（大きい目の側は 0 で出る）、間引きが壊れている。
         /// </summary>
+        /// <summary>
+        /// 増えるスクリーン（0317）。組めたか / 点いた枚数 / 取り込みの累計。
+        /// ⚠ 取り込みが 0 のままなら面に画が 1 度も入っていない（シェーダと枚数が生きていても何も映らない）。
+        /// </summary>
+        private string ScreenMultiplyState => _eyes == null || _eyes.Wall == null
+            ? "-"
+            : $"{(_eyes.Wall.IsBuilt ? 1 : 0)}/{_eyes.Wall.OpenCount}/{_eyes.Wall.CaptureCount}";
+
         private string EyeSfxState => _eyes == null
             ? "-"
             : $"{_eyes.EyeSfxCount}/{(_eyes.EyeBigSfxFired ? 1 : 0)}";
@@ -1432,6 +1440,7 @@ namespace FixedCamVr.Diagnostics
             //     指したのに 1 画素も出ていない（1/0/1.00 ＝ 座席表を組めていない）は**別の壊れ方**。
             //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。
             _sb.Append(" eyes=").Append(EyesState);
+            _sb.Append(" scrMul=").Append(ScreenMultiplyState);
             //   osd = 装置が打っている時計（`canon/LEDGER.md` 0108）。組めたか/刻んだ回数/不透明度。
             //   ⚠ **本編で 1/0/… なら時計が止まっている**（秒が変わっても敷き直していない）。
             //     画には「時計が無い」としか出ないので、ここが唯一の手掛かり。

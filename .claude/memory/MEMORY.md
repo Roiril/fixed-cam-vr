@@ -1,7 +1,6 @@
 # Project Memory Index
 
 技術の罠・実装の経緯の索引。**1 行 1 フック**。世界観・演出の判定は `.claude/canon/`（混ぜない — `rules/canon-boundary.md`）。
-足すときは該当の節へ 1 行。
 
 ## いま開いている指摘
 - [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうること
@@ -17,7 +16,7 @@
 - [ending_result.md](ending_result.md) — 最後の A の警告・帰還不能・解除・人形 End の条件と報告数の集計
 - [ending_roll.md](ending_roll.md) — 帰還 End / 人形 End のエンドロール冒頭。ランごとの合成済み写真
 - [ending_farewell_doll.md](ending_farewell_doll.md) — 帰還の別れの人形（0291）。CG 層の器を別れのモードで使う・写真は見つめる段
-- [romi_cart_esp32.md](romi_cart_esp32.md) — ⚠ 10-30 から不使用。人形の台車（ESP32・Joy-Con 2）の記録
+- [romi_cart_esp32.md](romi_cart_esp32.md) — ⚠ 10-30 から不使用の人形の台車
 - [visitor_sound_reset.md](visitor_sound_reset.md) — 2 人目以降だけ壊れる型。ResetRun が本番から呼ばれていなかった
 - [unexpected_event_recovery.md](unexpected_event_recovery.md) — 休止・固まり・通信の揺れからの復帰。ShowClock／強制リセット
 - [experience_fixes_2026_09_24.md](experience_fixes_2026_09_24.md) — 3-A/4-A の素材の同梱漏れ・導入の順序・最後のお願いまで報告をロック
@@ -57,6 +56,7 @@
 - [cam_c_lens_study.md](cam_c_lens_study.md) — B と C の魚眼（版 3）。見るのは `menu crt-lens`・A は別れが解けない
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
+- [screen_multiply.md](screen_multiply.md) — 3-C の増えるスクリーン（0317・試作）
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る
 - [dark_eyes_slices.md](dark_eyes_slices.md) — 闇の目は Codex に描かせた壊れた画像の版。手続きの帯は「整然・チープ」で不採用
 - [eye_jack.md](eye_jack.md) — 目の視界ジャック（当日写真）。全開で発火は多数派に届かない／正規化を端末でしない
@@ -108,7 +108,7 @@
 - [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）
 - [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) — 却下済み（go2rtc 中継）
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) — iPhone はデモなら IP Cam Lite。自作は PWA＋WS
-- [droidcam_endpoint.md](droidcam_endpoint.md) — フォールバック専用の DroidCam
+- [droidcam_endpoint.md](droidcam_endpoint.md) — 予備の DroidCam
 - [web_compositor.md](web_compositor.md) — `tools/web-compositor`（卓・合成検証・プロンプト管理・サーバ API）
 
 ## Unity・SDK

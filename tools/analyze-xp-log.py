@@ -4278,6 +4278,20 @@ def analyze(events, others, exp, warns=None):
         elif want_eyes and opened:
             verdict("OK", f"目が開いた（同時に最大 {max(opened)} 個）")
 
+        # 増えるスクリーン（0317・試作）。<組めたか>/<点いた枚数>/<取り込みの累計>。
+        wall = [str(v).split("/") for v in effect_samples(events, "scrMul") if str(v).count("/") == 2]
+        if wall:
+            wall_lit = max(int(p[1]) for p in wall)
+            wall_cap = max(int(p[2]) for p in wall)
+            w(f"  増えるスクリーン: 同時に最大 {wall_lit} 枚 / 取り込み {wall_cap} 回")
+            if all(p[0] == "0" for p in wall):
+                verdict("FAIL", "増えるスクリーンを組めていない（scrMul の 1 つ目が 0）— "
+                                "Resources/ScreenMultiply のシェーダか取り込みの器を見る")
+            elif want_eyes and wall_lit > 0 and wall_cap == 0:
+                verdict("FAIL", f"スクリーンが {wall_lit} 枚点いたのに画を 1 度も取り込んでいない — 面は何も映していない")
+            elif want_eyes and wall_lit > 0:
+                verdict("OK", f"スクリーンが増えた（最大 {wall_lit} 枚・取り込み {wall_cap} 回）")
+
         # 固着。目はカットの中でしか指されないので、演出が終わった後に残っていたら
         # 次の体験者の視界に最初から目が居ることになる。
         take_evs2 = [e for e in events if e.get("ev") == "take"]
