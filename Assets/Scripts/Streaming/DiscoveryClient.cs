@@ -517,7 +517,8 @@ namespace FixedCamVr.Streaming
                 _breakAccum[i] = 0f;
                 return;
             }
-            bool broken = !stream.IsConnected || stream.ReceivedFps <= 0f;
+            // 届いていても読めていなければ断。背景カメラも約 3 回/秒は展開するので 0 にはならない。
+            bool broken = !stream.IsConnected || stream.DecodedFps <= 0f;
             if (broken) _breakAccum[i] += Time.unscaledDeltaTime;
             else _breakAccum[i] = 0f;
         }
@@ -573,7 +574,7 @@ namespace FixedCamVr.Streaming
                 var stream = registry.Get(i);
                 if (stream == null) continue;
                 if (stream.IsSuspended) continue;
-                if (!stream.IsConnected || stream.ReceivedFps <= 0f) return true;
+                if (!stream.IsConnected || stream.DecodedFps <= 0f) return true;
             }
             return false;
         }

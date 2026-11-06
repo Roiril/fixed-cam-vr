@@ -324,9 +324,18 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             // 背景スレッドから積まれた要求をここで実行する（static と Unity を触るのはメインだけ）。
-            Action[] batch;
-            lock (_queueLock) { batch = _queue.ToArray(); _queue.Clear(); }
-            foreach (var a in batch) a();
+            // 要求はほとんどのフレームで 0 件。空なら配列を作らない。
+            Action[]? batch = null;
+            lock (_queueLock)
+            {
+                if (_queue.Count > 0)
+                {
+                    batch = _queue.ToArray();
+                    _queue.Clear();
+                }
+            }
+            if (batch != null)
+                foreach (var a in batch) a();
             RefreshStatus(force: false);
         }
 

@@ -65,8 +65,9 @@ paths:
 - 汎用 MJPEG。boundary は Content-Type、chunked 自動、X-* と /info /health は任意。username 空なら認証なし — `MjpegStreamReceiver.ParseBoundary` / `CameraSource.BasicAuthToken` / `MjpegParserTests` 〔S:36-39, S:48〕
 - 1 枚はパートの Content-Length で確定し、次の境界を待たない。長さが不正か末尾が JPEG の終端でないときは次の境界で区切る — `MjpegStreamReceiver.TryPublishByContentLength` / `MjpegParserTests` 〔出典: コード〕
 - NoDelay・受信 64KB・接続 3 秒。バックオフ 1→30 秒、確立後の切断は 1 秒から — `MjpegStreamReceiver._connectionEstablished` / `DelayWithReconnect` 〔S:214, S:3371-3380〕
-- 表示中と録画中は毎フレーム展開し、他は 1 フレーム 1 台ずつ — `StreamDecodeScheduler.NextBackground` 〔出典: コード〕
-- 判定は `StreamWatchdogLogic`。lag は比 0.7 未満が 1.5 秒（熱降格中は抑止）、stall 10 秒、展開失敗 30 枚か 2 秒、resume-gap 0.5 秒で suspend も解く — `LagThresholdRatio` / `StallReconnectSec` / `StreamHealth.IsHot` / `StreamWatchdogLogicTests` 〔S:228, S:1568, S:3374-3378〕
+- 表示中と録画中は届いた分を毎フレーム展開する。背景は 1 台あたり毎秒 3 回までで、1 フレームに 1 台ずつ。録画・xprec の記録・リプレイの間は背景も全コマ展開する。切替先は公開前に最新を展開する — `StreamDecodeScheduler.BackgroundDue` / `NextBackground` / `CameraStream.HasFrameObservers` 〔memory/comms_performance_20261018.md〕
+- 計器の意味。`rx=` は到着、`dfps=` は展開、`dfail=` は展開失敗の累計、`drop=` は `X-Frame-Seq` の飛び（送り手と経路の欠落）。受信側の間引きは drop に入らない — `StreamWatchdogLogic.OnFramesArrived` / `DecodedFps` / `MjpegStreamReceiver.SeqGapFrames` 〔出典: コード〕
+- 判定は `StreamWatchdogLogic`。lag は到着 fps の比 0.7 未満が 1.5 秒（熱降格中は抑止）、stall 10 秒、展開失敗 30 枚か 2 秒、resume-gap 0.5 秒で suspend も解く — `LagThresholdRatio` / `StallReconnectSec` / `StreamHealth.IsHot` / `StreamWatchdogLogicTests` 〔S:228, S:1568, S:3374-3378〕
 - 張り直しは世代で旧 /info /health を捨て、suspend 中も新 receiver を起動する — `CameraStream.EndpointGeneration` 〔S:3375〕
 - 映っている証拠は同じ接続で 1.5 秒以内の実展開 — `DecodedFrameEvidence.FreshSec` / `CameraStream.HasFreshDecodedFrame` 〔出典: コード〕
 - 遅延は絶対値を出さず分けて出す — `LatencyEstimatorLogic.ArrivalJitterMs` / `DecodeMs` / `PresentMs` / `SourceAgeMs` 〔S:1553-1566〕

@@ -479,6 +479,21 @@ PC_NOT_APPLICABLE = re.compile(
 )
 
 
+def decode_verdicts(idx, rx_dfps, dfail):
+    """届いているのに展開できていない状態を拾う。dfps の無い古いログは rx_dfps が空で、判定しない。
+
+    背景のカメラは毎秒 3 回しか展開しないので、dfps の下限は 1 で見る。
+    `rx=` は到着の fps なので、これが無いと展開の全滅が受信の数字に隠れる。
+    """
+    verdicts = []
+    starved = sum(1 for rx, dfps in rx_dfps if rx >= 5 and dfps < 1)
+    if starved > 2:
+        verdicts.append(("FAIL", f"カメラ {idx} は届いているのに展開できていない（要約 {starved} 回）"))
+    if dfail > 0:
+        verdicts.append(("WARN", f"カメラ {idx} の JPEG 展開の失敗が累計 {dfail:.0f} 枚"))
+    return verdicts
+
+
 def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
     verdicts = []     # (level, text) level: OK / WARN / FAIL / NA
@@ -1044,13 +1059,17 @@ def analyze(events, others, exp, warns=None):
 
     # ---------------- 映像の安定性 ----------------
     w("## 映像の安定性")
-    per_cam = defaultdict(lambda: {"rx": [], "tx": [], "jit": [], "dec": [], "age": [], "drop": 0, "off": 0, "n": 0})
+    per_cam = defaultdict(lambda: {"rx": [], "dfps": [], "rx_dfps": [], "dfail": 0, "tx": [], "jit": [], "dec": [], "age": [], "drop": 0, "off": 0, "n": 0})
     for s in sums:
         for c in s["_cams"]:
             idx = c.get("_idx", "?")
             d = per_cam[idx]
             d["n"] += 1
-            for k in ("rx", "tx", "jit", "dec", "age"):
+            rx_now, dfps_now = fnum(c, "rx"), fnum(c, "dfps")
+            if rx_now is not None and dfps_now is not None:
+                d["rx_dfps"].append((rx_now, dfps_now))
+            d["dfail"] = max(d["dfail"], fnum(c, "dfail", 0) or 0)
+            for k in ("rx", "dfps", "tx", "jit", "dec", "age"):
                 v = fnum(c, k)
                 if v is None:
                     continue
@@ -1082,12 +1101,15 @@ def analyze(events, others, exp, warns=None):
             w(f"  カメラ {idx}: show.json で host 未設定（接続しないのが正しい）")
             continue
         w(f"  カメラ {idx}:")
-        w(f"    受信 fps  {stats(d['rx'])}")
+        w(f"    到着 fps  {stats(d['rx'])}")
+        w(f"    展開 fps  {stats(d['dfps'])}（背景のカメラは毎秒 3 回が正しい）")
         w(f"    配信 fps  {stats(d['tx'])}")
         w(f"    到着の揺らぎ ms {stats(d['jit'])}")
         w(f"    展開 ms   {stats(d['dec'])}")
         w(f"    配信側の鮮度 ms {stats(d['age'])}")
-        w(f"    取りこぼし累計 {d['drop']:.0f} / 未接続だったサマリ {d['off']}/{d['n']}")
+        w(f"    送り手と経路の欠落 累計 {d['drop']:.0f} / 展開の失敗 累計 {d['dfail']:.0f} / 未接続だったサマリ {d['off']}/{d['n']}")
+        for level, message in decode_verdicts(idx, d["rx_dfps"], d["dfail"]):
+            verdict(level, message)
         if d["rx"]:
             lowest = min(d["rx"])
             avg = sum(d["rx"]) / len(d["rx"])

@@ -1804,6 +1804,8 @@ namespace FixedCamVr.Diagnostics
                     _sb.Append(" |c").Append(i);
                     _sb.Append(" con=").Append(s.IsConnected ? 1 : 0);
                     _sb.Append(" rx=").Append(s.ReceivedFps.ToString("F1"));
+                    _sb.Append(" dfps=").Append(s.DecodedFps.ToString("F1"));
+                    _sb.Append(" dfail=").Append(s.DecodeFailures);
                     StreamHealth? h = s.Health;
                     _sb.Append(" tx=").Append(h != null ? h.fps.ToString("F1") : "-");
                     _sb.Append(" drop=").Append(s.DroppedFrames);

@@ -44,6 +44,7 @@ namespace FixedCamVr.Tracking
         [SerializeField] private bool logChanges = true;
 
         private PlayerZone? _current;
+        private ZonePickLogic.Box[]? _pickBoxes;
         private float _accum;
         private ShowRunDirector? _runDirector;
 
@@ -171,7 +172,9 @@ namespace FixedCamVr.Tracking
             // 判定の中身は純ロジック（ZonePickLogic）へ委譲する。Web シミュレータの JS ミラーと
             // 同じセマンティクスを共有し、drift を golden トレース比較で機械検出できるようにするため
             // （計画 2026-07-25_show-simulator.md 段 S1）。ここは PlayerZone ↔ Box の詰め替えだけ。
-            var boxes = new ZonePickLogic.Box[zones.Length];
+            if (_pickBoxes == null || _pickBoxes.Length != zones.Length)
+                _pickBoxes = new ZonePickLogic.Box[zones.Length];
+            ZonePickLogic.Box[] boxes = _pickBoxes;
             int current = -1;
             for (int i = 0; i < zones.Length; i++)
             {

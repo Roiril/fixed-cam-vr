@@ -96,7 +96,10 @@ namespace FixedCamVr.Streaming.Recording
         private bool _discarded;
 
         private readonly Queue<Item> _ring = new(64);
-        private readonly ConcurrentBag<byte[]> _pool = new();
+        // 区間をまたいで使い回す。書き出しの終わりで捨てていた頃は 1 回の走行で約 58MB のゴミになっていた。
+        private static readonly ConcurrentBag<byte[]> SharedPool = new();
+        private static long _sharedPoolBytes;
+        private const long MaxSharedPoolBytes = 64L * 1024 * 1024;
         private readonly Limits _limits;
         private readonly string _path;
         private readonly int _tailMs;
@@ -234,7 +237,7 @@ namespace FixedCamVr.Streaming.Recording
             if (_stopped) return;
             _stopped = true;
             _discarded = true;
-            foreach (Item item in _ring) _pool.Add(item.buf);
+            foreach (Item item in _ring) ReturnBuffer(item.buf);
             _ring.Clear();
             _ringBytes = RecordedSegmentFormat.HeaderBytes;
             _flushDone = true;
@@ -270,7 +273,7 @@ namespace FixedCamVr.Streaming.Recording
             }
             if (!float.IsNaN(progress) && _anchorPtsMs < 0 && progress > _maxProgress) _maxProgress = progress;
 
-            if (!_pool.TryTake(out byte[]? buf) || buf.Length < length) buf = new byte[Math.Max(length, 96 * 1024)];
+            byte[] buf = RentBuffer(length);
             Buffer.BlockCopy(jpeg, 0, buf, 0, length);
             _ring.Enqueue(new Item(buf, length, ptsMs, progress));
             _ringBytes += RecordedSegmentFormat.FrameHeaderBytes + length;
@@ -306,8 +309,31 @@ namespace FixedCamVr.Streaming.Recording
                 if (tooBig) _capped = true;   // 末尾を丸ごと残せていない（尺が縮む）
                 _ring.Dequeue();
                 _ringBytes -= RecordedSegmentFormat.FrameHeaderBytes + head.length;
-                _pool.Add(head.buf);
+                ReturnBuffer(head.buf);
             }
+        }
+
+        // 小さすぎる在庫は捨てて作り直す。64KB 単位に切り上げるので、1 枚ごとの大きさの揺れでは作り直さない。
+        private static byte[] RentBuffer(int length)
+        {
+            if (SharedPool.TryTake(out byte[]? pooled))
+            {
+                Interlocked.Add(ref _sharedPoolBytes, -pooled.Length);
+                if (pooled.Length >= length) return pooled;
+            }
+            const int Unit = 64 * 1024;
+            return new byte[Math.Max(96 * 1024, (length + Unit - 1) / Unit * Unit)];
+        }
+
+        // 上限を超えた分は GC に任せる。上限を決めないと、いちばん長い区間のぶんを抱え続ける。
+        private static void ReturnBuffer(byte[] buf)
+        {
+            if (Interlocked.Add(ref _sharedPoolBytes, buf.Length) > MaxSharedPoolBytes)
+            {
+                Interlocked.Add(ref _sharedPoolBytes, -buf.Length);
+                return;
+            }
+            SharedPool.Add(buf);
         }
 
         /// <summary>
@@ -389,6 +415,7 @@ namespace FixedCamVr.Streaming.Recording
             finally
             {
                 try { fs?.Dispose(); } catch { }
+                foreach (Item item in items) ReturnBuffer(item.buf);
                 _flushDone = true;   // 失敗経路でも「もう待っても増えない」を伝える
             }
         }

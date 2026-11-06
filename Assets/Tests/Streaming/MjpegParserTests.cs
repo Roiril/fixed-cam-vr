@@ -471,6 +471,56 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(seq, Is.EqualTo(2L));
         }
 
+        // 境界の探し直しを途中から続けても、読みの切れ目をまたいだ境界を見落とさない。
+        [Test]
+        public void Boundary_SplitAcrossReads_IsFoundWithoutContentLength()
+        {
+            byte[] first = Ascii("--fr--fra");
+            byte[] second = { 9, 8, 7 };
+            byte[] wire = BuildMultipart("--frame", new[]
+            {
+                ("X-Frame-Seq: 1\r\n\r\n", first),
+                ("X-Frame-Seq: 2\r\n\r\n", second),
+            });
+            var r = NewReceiver();
+            RunParseMultipart(r, new OneByteStream(wire), "--frame");
+
+            Assert.That(r.PublishedFrames, Is.EqualTo(2));
+            Assert.That(TryConsume(r, out byte[] payload, out _, out long seq), Is.True);
+            Assert.That(payload, Is.EqualTo(second));
+            Assert.That(seq, Is.EqualTo(2L));
+        }
+
+        // チャンクの長さと CRLF を読み溜めから取っても、小さく切れて届く形で本体がずれない。
+        [Test]
+        public void Chunked_DeliveredOneByteAtATime_DecodesIntact()
+        {
+            byte[] a = { 1, 2, 3 };
+            byte[] b = new byte[300];
+            for (int i = 0; i < b.Length; i++) b[i] = (byte)i;
+            byte[] c = { 200 };
+            Stream chunked = NewChunkedReadStream(new OneByteStream(BuildChunked(a, b, c)));
+            byte[] expected = new byte[a.Length + b.Length + c.Length];
+            Array.Copy(a, 0, expected, 0, a.Length);
+            Array.Copy(b, 0, expected, a.Length, b.Length);
+            Array.Copy(c, 0, expected, a.Length + b.Length, c.Length);
+            Assert.That(ReadAll(chunked), Is.EqualTo(expected));
+        }
+
+        // 飛んだ番号は送り手と経路の欠落。受信側の間引きは数えない。
+        [Test]
+        public void SeqGap_CountsOnlyMissingSenderFrames()
+        {
+            byte[] wire = Concat(
+                PartWithLength("6", Jpeg(1, 2), 10),
+                PartWithLength("6", Jpeg(3, 4), 11),
+                PartWithLength("6", Jpeg(5, 6), 14));
+            var r = NewReceiver();
+            RunParseMultipart(r, new MemoryStream(wire), "--frame");
+            Assert.That(r.PublishedFrames, Is.EqualTo(3));
+            Assert.That(r.SeqGapFrames, Is.EqualTo(2));
+        }
+
         // 1 回の Read で 1 バイトだけ返す Stream（パケット分割の最悪形）。
         private sealed class OneByteStream : MemoryStream
         {

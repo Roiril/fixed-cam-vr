@@ -36,6 +36,7 @@ namespace FixedCamVr.Streaming
 
         private readonly StreamWatchdogLogic _watchdog = new StreamWatchdogLogic();
         private readonly DecodedFrameEvidence _decodedEvidence = new DecodedFrameEvidence();
+        private long _publishedSeen;   // 受信スレッドの累計をどこまで数えたか
         private long _metadataConnection = -1;
         public int EndpointGeneration => _endpointGen;
         public long ConnectionSerial => _receiver.ConnectionSerial;
@@ -74,7 +75,13 @@ namespace FixedCamVr.Streaming
         // 直近フレームの seq。歯抜け検出用。
         private long _lastSeq;
         public long LastFrameSeq => _lastSeq;
-        public long DroppedFrames { get; private set; }
+
+        /// <summary>配信側か経路で消えたコマの累計（X-Frame-Seq の飛び）。展開の間引きでは増えない。</summary>
+        public long DroppedFrames => XpReplay.Feed != null ? _feedGapFrames : _receiver.SeqGapFrames;
+        private long _feedGapFrames;
+
+        /// <summary>LoadImage が失敗した累計（壊れ JPEG）。テレメトリ <c>dfail=</c>。</summary>
+        public long DecodeFailures { get; private set; }
 
         public string DisplayName => _source.DisplayName;
         public Texture2D Texture => _texture;
@@ -93,6 +100,9 @@ namespace FixedCamVr.Streaming
         /// <see cref="FrameTap"/> と同じく<b>同期的にコピーすること</b>。
         /// </summary>
         public static event Action<CameraStream, byte[], int>? AnyFrameDecoded;
+
+        /// <summary><see cref="AnyFrameDecoded"/> の購読があるか。あれば背景カメラも全コマ展開する。</summary>
+        public static bool HasFrameObservers => AnyFrameDecoded != null;
         public string? LastError => _receiver.LastError;
 
         /// <summary>HMD 着脱 / OS pause で凍結中か。DiscoveryClient は suspend 中を「フレーム断」に数えない。</summary>
@@ -117,8 +127,11 @@ namespace FixedCamVr.Streaming
         /// <summary>fixed-cam-streamer の /health から取得した最新の統計。未取得なら null。</summary>
         public StreamHealth? Health => _health;
 
-        /// <summary>Unity 受信側の実 fps（直近 1 秒の Texture2D.LoadImage 回数）。</summary>
+        /// <summary>Unity 受信側の到着 fps（直近 1 秒に受信スレッドが確定した枚数。テレメトリ <c>rx=</c>）。</summary>
         public float ReceivedFps => _watchdog.ReceivedFps;
+
+        /// <summary>展開成功の fps（直近 1 秒の LoadImage 成功回数。テレメトリ <c>dfps=</c>）。背景カメラは約 3。</summary>
+        public float DecodedFps => _watchdog.DecodedFps;
 
         /// <summary>
         /// 外部から強制的に MJPEG 接続を張り直す。デバッグ用ホットキーや lag 手動発火に使う。
@@ -202,6 +215,7 @@ namespace FixedCamVr.Streaming
             if (_disposed) return;
             try { _receiver.Dispose(); } catch { }
             _receiver = new MjpegStreamReceiver(_source.BuildUrl(), basicAuthToken: _source.BasicAuthToken);
+            _publishedSeen = 0;
             // メタ/統計と計測ウィンドウは接続先が変わったらリセット。
             // 世代を進めて in-flight フェッチの結果を無効化し、inflight ガードも解除する
             // （旧: 旧フェッチが in-flight だと新エンドポイントの /info 取得がブロックされ、
@@ -217,7 +231,7 @@ namespace FixedCamVr.Streaming
             // X-Frame-Seq は端末・接続ごとに独立した系列。旧系列を持ち越すと別端末の seq と
             // 比較して偽の DroppedFrames を計上する。E2E 推定値も旧接続由来なのでクリア。
             _lastSeq = 0;
-            DroppedFrames = 0;
+            _feedGapFrames = 0;
             EstimatedLatencyMs = 0f;
             // 遅延の窓も捨てる（別端末の時計を基準にした最小値を持ち越すと揺らぎが嘘になる）。
             _latency.Reset();
@@ -325,14 +339,20 @@ namespace FixedCamVr.Streaming
             // (OnApplicationPause(false)/Focus(true)) を確実には配送しないため、
             // 巨大 dt を「フリーズ明け」と判定し、計測ウィンドウを全リセットし suspend を解除して
             // この 1 フレームをスキップする（A1: BeginTick 内で _suspended=false）。
+            long published = _receiver.PublishedFrames;
             if (_watchdog.BeginTick(now, udt))
             {
+                _publishedSeen = published;   // 凍結中に届いた分は窓へ入れない
                 _decodedEvidence.Invalidate(MjpegStreamReceiver.NowMs());
                 _metaRefreshAccum = 0f;
                 _healthRefreshAccum = 0f;
                 Debug.Log($"[HmdLife] {_source.DisplayName} resume-gap (dt={udt:F2}s) -> reset");
                 return;
             }
+
+            // 到着を数える。suspend 中は数えない（復帰の窓が膨らんで fps が嘘になる）。
+            if (!IsSuspended) _watchdog.OnFramesArrived((int)(published - _publishedSeen));
+            _publishedSeen = published;
 
             if (allowDecode) DecodeLatestFrame();
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
@@ -401,6 +421,8 @@ namespace FixedCamVr.Streaming
             {
                 _decodedEvidence.Decoded(now, meta.receivedTickMs, meta.connection,
                     ConnectionSerial, MjpegStreamReceiver.NowMs());
+                // 再生には受信スレッドが無いので、取れた 1 枚を到着として数える。
+                if (XpReplay.Feed != null) _watchdog.OnFramesArrived(1);
                 _watchdog.OnFrameDecoded(now);
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
                 SuccessfulDecodeCount++;
@@ -418,8 +440,8 @@ namespace FixedCamVr.Streaming
                     try { AnyFrameDecoded(this, _scratch, len); }
                     catch (Exception e) { Debug.LogWarning($"[CameraStream] AnyFrameDecoded 例外: {e.Message}"); }
                 }
-                if (_lastSeq != 0 && meta.seq > _lastSeq + 1)
-                    DroppedFrames += (meta.seq - _lastSeq - 1);
+                if (XpReplay.Feed != null && _lastSeq != 0 && meta.seq > _lastSeq + 1)
+                    _feedGapFrames += meta.seq - _lastSeq - 1;
                 _lastSeq = meta.seq;
 
                 // 到着から展開完了まで。端末間の時計を引いたE2Eではない。
@@ -429,11 +451,15 @@ namespace FixedCamVr.Streaming
                 if (meta.captureNs != 0)
                     _latency.ObserveArrival(meta.captureNs / 1_000_000.0, meta.receivedTickMs);
             }
-            else if (_watchdog.OnFrameDecodeFailed(now, out int streak, out float sinceSec))
+            else
             {
-                Debug.LogWarning($"[CameraStream] {_source.DisplayName} decode 連続失敗 " +
-                                 $"({streak}枚 / {sinceSec:F1}s 壊れ JPEG). reconnecting.");
-                _receiver.RequestReconnect();
+                DecodeFailures++;
+                if (_watchdog.OnFrameDecodeFailed(now, out int streak, out float sinceSec))
+                {
+                    Debug.LogWarning($"[CameraStream] {_source.DisplayName} decode 連続失敗 " +
+                                     $"({streak}枚 / {sinceSec:F1}s 壊れ JPEG). reconnecting.");
+                    _receiver.RequestReconnect();
+                }
             }
             return decoded;
         }

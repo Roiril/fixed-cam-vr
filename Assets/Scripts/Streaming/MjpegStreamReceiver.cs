@@ -87,6 +87,15 @@ namespace FixedCamVr.Streaming
         public bool IsConnected => _isConnected;
         private long _connectionSerial;
         public long ConnectionSerial => Interlocked.Read(ref _connectionSerial);
+
+        // 1 枚として確定した累計。展開するかどうかに関わらず増えるので、到着の fps はこれで測る。
+        private long _publishedFrames;
+        public long PublishedFrames => Interlocked.Read(ref _publishedFrames);
+
+        // X-Frame-Seq の飛びの累計（配信側か経路で消えたコマ）。展開を間引いても増えない。
+        private long _lastPublishedSeq;
+        private long _seqGapFrames;
+        public long SeqGapFrames => Interlocked.Read(ref _seqGapFrames);
         public string? LastError => _lastError;
 
         /// <summary>消費せずに最新スロットの有無を見る。受信側と同じロックを使う。</summary>
@@ -404,9 +413,10 @@ namespace FixedCamVr.Streaming
             private readonly Stream _inner;
             private int _bytesLeftInChunk;
             private bool _eof;
-            // チャンク境界パース用の再利用バッファ。チャンク毎の new をゼロにする
-            // （30fps × 数チャンク/フレームで毎秒百個規模の小アロケーションになるため）。
-            private readonly byte[] _one = new byte[1];
+            // チャンクの長さと CRLF は読み溜めから取る。1 バイトずつ読むと 1 チャンクごとに
+            // 数回のソケット読みと Task が要る（16KB のチャンク × 30fps × 3 台で毎秒数千回）。
+            private readonly byte[] _buffer = new byte[64 * 1024];
+            private int _bufferPos, _bufferLen;
             private readonly byte[] _crlf = new byte[2];
 
             public ChunkedReadStream(Stream inner) { _inner = inner; }
@@ -439,7 +449,17 @@ namespace FixedCamVr.Streaming
                     _bytesLeftInChunk = size;
                 }
                 int toRead = Math.Min(count, _bytesLeftInChunk);
-                int n = await _inner.ReadAsync(buffer, offset, toRead, ct);
+                int n;
+                if (_bufferPos < _bufferLen)
+                {
+                    n = Math.Min(toRead, _bufferLen - _bufferPos);
+                    Buffer.BlockCopy(_buffer, _bufferPos, buffer, offset, n);
+                    _bufferPos += n;
+                }
+                else
+                {
+                    n = await _inner.ReadAsync(buffer, offset, toRead, ct);
+                }
                 if (n <= 0) { _eof = true; return 0; }
                 _bytesLeftInChunk -= n;
                 if (_bytesLeftInChunk == 0)
@@ -460,9 +480,8 @@ namespace FixedCamVr.Streaming
                 bool inExtension = false; // ';' 以降の chunk extension は読み飛ばす
                 while (true)
                 {
-                    int n = await _inner.ReadAsync(_one, 0, 1, ct);
-                    if (n <= 0) throw new IOException("EOF in chunk size");
-                    byte b = _one[0];
+                    if (_bufferPos >= _bufferLen) await FillAsync("EOF in chunk size", ct);
+                    byte b = _buffer[_bufferPos++];
                     if (sawCR && b == 0x0A) break;
                     sawCR = false;
                     if (b == 0x0D) { sawCR = true; continue; }
@@ -484,14 +503,21 @@ namespace FixedCamVr.Streaming
 
             private async Task ReadCrlfAsync(CancellationToken ct)
             {
-                int got = 0;
-                while (got < 2)
+                for (int got = 0; got < 2; got++)
                 {
-                    int n = await _inner.ReadAsync(_crlf, got, 2 - got, ct);
-                    if (n <= 0) throw new IOException("EOF on chunk CRLF");
-                    got += n;
+                    if (_bufferPos >= _bufferLen) await FillAsync("EOF on chunk CRLF", ct);
+                    _crlf[got] = _buffer[_bufferPos++];
                 }
                 if (_crlf[0] != 0x0D || _crlf[1] != 0x0A) throw new IOException("expected CRLF after chunk");
+            }
+
+            // 読み溜めが空のときだけ呼ぶ。届いている分だけで返るので、待ち時間は 1 バイト読みと変わらない。
+            private async Task FillAsync(string eofMessage, CancellationToken ct)
+            {
+                int n = await _inner.ReadAsync(_buffer, 0, _buffer.Length, ct);
+                if (n <= 0) throw new IOException(eofMessage);
+                _bufferPos = 0;
+                _bufferLen = n;
             }
         }
 
@@ -512,6 +538,7 @@ namespace FixedCamVr.Streaming
             byte[] acc = new byte[256 * 1024];
             int accLen = 0;
             byte[] boundaryBytes = System.Text.Encoding.ASCII.GetBytes(boundary);
+            _boundaryScanResume = 0;
 
             while (!ct.IsCancellationRequested)
             {
@@ -535,9 +562,13 @@ namespace FixedCamVr.Streaming
                     int remain = accLen - consumed;
                     if (remain > 0) Buffer.BlockCopy(acc, consumed, acc, 0, remain);
                     accLen = remain;
+                    _boundaryScanResume = 0;
                 }
             }
         }
+
+        // 次の境界をどこまで探し終えたか（acc の先頭からの位置）。acc を詰めたら 0 へ戻す。受信スレッド専用。
+        private int _boundaryScanResume;
 
         // 先頭から 1 フレーム抜き出して publish。消費したバイト数を返す。0 ならまだ揃っていない。
         private int TryExtractFrame(byte[] acc, int len, byte[] boundary)
@@ -552,8 +583,13 @@ namespace FixedCamVr.Streaming
             if (consumedByLength > 0) return consumedByLength;
 
             // Content-Length が無い・値が不正・まだ揃っていない場合は、次の境界で区切る。
-            int b2 = IndexOf(acc, searchFrom, len, boundary);
-            if (b2 < 0) return 0;
+            // 受け足すたびに頭から探すと、1 枚が大きいほど同じ範囲を何度も読むので、探し終えた所から続ける。
+            int b2 = IndexOf(acc, Math.Max(searchFrom, _boundaryScanResume), len, boundary);
+            if (b2 < 0)
+            {
+                _boundaryScanResume = Math.Max(searchFrom, len - boundary.Length + 1);
+                return 0;
+            }
 
             int headerEnd = IndexOf(acc, searchFrom, b2, CrlfCrlf);
             if (headerEnd < 0) return b2;
@@ -596,6 +632,14 @@ namespace FixedCamVr.Streaming
 
         private void PublishFrame(byte[] acc, int payloadStart, int payloadLen, long captureNs, long seq)
         {
+            Interlocked.Increment(ref _publishedFrames);
+            if (seq != 0)
+            {
+                if (_lastPublishedSeq != 0 && seq > _lastPublishedSeq + 1)
+                    Interlocked.Add(ref _seqGapFrames, seq - _lastPublishedSeq - 1);
+                _lastPublishedSeq = seq;
+            }
+
             // 受信側でも「最新だけ」保持する。
             // 古い未消費フレームがある場合はそのまま捨てる（ここでバッファ swap してアロケーション最小化）。
             lock (_slotLock)

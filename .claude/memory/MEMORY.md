@@ -34,7 +34,7 @@
 - [comms_curse.md](comms_curse.md) — 呪いの斑と前線。文字はステンシル bit 8 で切る／③a・③b は弱って戻る姿（0270）
 - [comms_face.md](comms_face.md) — スイの顔を焼く罠。明暗が逆なので肌を塗らないと顔が消える
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) — 時刻境界の float 比較。境界ぴったりと低 FPS を別に試す
-- [comms_performance_20261018.md](comms_performance_20261018.md) — 10-18 警告表示中の fps 低下を 90fps へ戻した測定
+- [comms_performance_20261018.md](comms_performance_20261018.md) — fps の実測（10-18）と軽量化（11-06）
 - [unauthorized_access_effect.md](unauthorized_access_effect.md) — 独立エラー演出の部品。描画順と映像面からの距離。現行は comms_takeover
 - [show_language.md](show_language.md) — 日本語 / English / Français。訳す面の線・訳文の置き場はフォントのベイクが決める
 

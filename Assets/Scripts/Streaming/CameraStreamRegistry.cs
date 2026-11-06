@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using FixedCamVr.Streaming.Replay;
 using UnityEngine;
 
 namespace FixedCamVr.Streaming
@@ -17,6 +18,7 @@ namespace FixedCamVr.Streaming
         private int _activeIndex;
         private bool[] _decodePriority = Array.Empty<bool>();
         private bool[] _backgroundExcluded = Array.Empty<bool>();
+        private float[] _backgroundDueAt = Array.Empty<float>();
         private readonly StreamDecodeScheduler _decodeScheduler = new StreamDecodeScheduler();
 
         public int Count => _streams.Length;
@@ -30,6 +32,7 @@ namespace FixedCamVr.Streaming
             _streams = new CameraStream[n];
             _decodePriority = new bool[n];
             _backgroundExcluded = new bool[n];
+            _backgroundDueAt = new float[n];
             for (int i = 0; i < n; i++)
             {
                 if (sources[i] == null)
@@ -67,12 +70,17 @@ namespace FixedCamVr.Streaming
             // これが無いとラッチが固着し次回 Suspend() が no-op 化する（状態機械の非整合）。
             if (_suspended && Time.unscaledDeltaTime > StreamWatchdogLogic.ResumeGapSec)
                 Resume("resume-gap");
+            float now = Time.realtimeSinceStartup;
+            // 体験の記録と再生は全コマが要る。それ以外の背景は間引く（LoadImage は 1 回約 4ms）。
+            bool fullRate = XpReplay.Active || CameraStream.HasFrameObservers;
             for (int i = 0; i < _streams.Length; i++)
             {
                 _decodePriority[i] = _streams[i] == null || i == _activeIndex || _streams[i].FrameTap != null;
-                _backgroundExcluded[i] = _decodePriority[i] || !_streams[i].HasPendingFrame;
+                _backgroundExcluded[i] = _decodePriority[i] || !_streams[i].HasPendingFrame
+                    || !StreamDecodeScheduler.BackgroundDue(now, _backgroundDueAt[i], fullRate);
             }
             int background = _decodeScheduler.NextBackground(_backgroundExcluded);
+            if (background >= 0) _backgroundDueAt[background] = now + StreamDecodeScheduler.BackgroundIntervalSec;
             // 表示中と録画中を先に処理する。全台の監視は各フレームちょうど1回だけ。
             for (int i = 0; i < _streams.Length; i++)
                 if (_decodePriority[i]) _streams[i]?.Tick(allowDecode: true);
