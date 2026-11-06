@@ -67,6 +67,7 @@ paths:
 - 明暗曲線は表示 sRGB で `t=saturate((y-0.10)/0.60)`、`target=0.90·smoothstep(t)+0.10·y` を `_Mono` で補間 — `ScreenComposite.frag` 〔出典: memory/screen_decay.md〕
 - 管の曲面はメッシュ（膨らみ0.055）。参照画面の外形は生成Frameのalpha、枠RGBは元参照CaseColor、透過むらは生成Glass、視点による反射差は生成Reflectanceで描く。生成画像の枠RGBは使わない。参照が無い画面だけ従来の数式による角と縁（0.07 / 0.34 / 0.17）を使う。
 - 参照素材はResources/CrtReference。NPOT None・非圧縮・mip・Trilinear。CaseColorはsRGB、GlassとReflectanceはlinear。枠を重ねるのはOSDより後、SwitchDim/ScreenPowerより前。最終alphaは1。夜間モードへ進むと参照の通常映像補正だけが弱まり、筐体は残る。
+- pre-glass は帯域有効時 sRGB で渡す — `_CrtPreGlassEncoded`
 - 信号断の砂は平均 1.0 の乗数。`_SignalFloor`=1 は下に画が 1 枚も無いときだけ地を持ち上げる — `SignalLostFx` / `SAND_LO` `SAND_ADD` `SAND_FLOOR_LIVE` `SAND_FLOOR_DEAD` 〔出典: S:276-295、LEDGER 0131〕
 - 2-C の追いつき後、乗っ取りの面が消えるまで主画面は物語の砂嵐で実写を隠す — `CameraFeelFx.BeginTakeoverStatic` → `SignalLostFx.SetNarrativeStatic` / `_NarrativeStatic` 〔出典: D:1641〕
 - 心音の波紋とビネットは乗っ取り警告の自然完了で始まり、3-A の凍結でそのラン中は戻らない。波紋は `bed_heart` の再生位置で引く — `HeartbeatScreenLogic.ShouldApply` / `HeartbeatPulseLogic.Evaluate` / `CameraFeelFx.HeartVignetteBase` 〔出典: D:1641、HeartbeatScreenTests〕〔未照合: LEDGER の該当番号〕

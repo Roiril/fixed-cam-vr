@@ -113,6 +113,7 @@ Shader "FixedCamVr/ScreenComposite"
         [HideInInspector] _CrtScreenOnly("Clip outside the selected screen contour", Float) = 0
         [HideInInspector] _CrtScreenMaskTex("Selected screen contour", 2D) = "white" {}
         [HideInInspector] _CrtSignalBandwidth("Runtime luma/chroma bandwidth", Float) = 0
+        [HideInInspector] _CrtPreGlassEncoded("Pre-glass hands sRGB values to the band filter", Float) = 0
         [HideInInspector] _CrtSignalReady("Processed surface is valid", Float) = 0
         [HideInInspector] _CrtProcessedSignalTex("Canonical processed surface", 2D) = "black" {}
         [HideInInspector] _CrtRuntimePsfTex("Native source Gaussian", 2D) = "black" {}

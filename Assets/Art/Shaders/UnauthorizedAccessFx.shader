@@ -64,6 +64,9 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 half4 color : COLOR;
                 float3 positionWS : TEXCOORD2;
                 float3 positionOS : TEXCOORD3;
+                // 読ませる面の座標での眼と、この画素の点。眼は 1 枚の中で変わらず、点は面の上で直線的に動く。
+                nointerpolation float3 readEye : TEXCOORD4;
+                float3 readPoint : TEXCOORD5;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
             Varyings Vert(Attributes input)
@@ -74,6 +77,8 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
                 output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 output.positionOS = input.positionOS.xyz;
+                output.readEye = mul(_ReadWorldToLocal, float4(GetCameraPositionWS(), 1)).xyz;
+                output.readPoint = mul(_ReadWorldToLocal, float4(output.positionWS, 1)).xyz;
                 output.uv = input.uv;
                 output.glyph = input.glyph;
                 output.color = input.color;
@@ -102,14 +107,13 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 float2 outside = abs(planePoint - rect.xy) - rect.zw;
                 return 1 - smoothstep(0, .06, max(outside.x, outside.y));
             }
-            float ReadMask(float3 positionWS)
+            float ReadMask(Varyings input)
             {
                 if (_ReadMaskStrength < .001) return 1;
                 // Project through the fragment onto the text plane from the current eye.
                 // This preserves depth while protecting letters even after head movement.
-                float3 eye = mul(_ReadWorldToLocal, float4(GetCameraPositionWS(), 1)).xyz;
-                float3 fragmentLocal = mul(_ReadWorldToLocal, float4(positionWS, 1)).xyz;
-                float3 ray = fragmentLocal - eye;
+                float3 eye = input.readEye;
+                float3 ray = input.readPoint - eye;
                 if (abs(ray.z) < .0001) return 1;
                 float travel = -eye.z / ray.z;
                 if (travel < 0) return 1;
@@ -121,6 +125,10 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
             half InkAt(float2 uv)
             {
                 return SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv).a;
+            }
+            half InkAtGrad(float2 uv, float2 dx, float2 dy)
+            {
+                return SAMPLE_TEXTURE2D_GRAD(_MainTex, sampler_MainTex, uv, dx, dy).a;
             }
             half4 FragGlowingInk(Varyings input, half4 tint)
             {
@@ -166,18 +174,30 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 halo = saturate(halo * .8 + trail * .55);
 
                 // 芯: 太い所ほど明るく白へ寄る（発光体の中心）。
-                half nearAvg = (InkAt(uv + float2(t.x * 1.5, 0)) + InkAt(uv - float2(t.x * 1.5, 0))
-                    + InkAt(uv + float2(0, t.y * 1.5)) + InkAt(uv - float2(0, t.y * 1.5))) * .25;
-                half core = smoothstep(.85, 1, min(ink, nearAvg));
+                // ink が .85 以下なら min も .85 以下で core は 0 なので、周りを読まない。
+                float2 uvDx = ddx(uv), uvDy = ddy(uv);
+                half core = 0;
+                [branch] if (ink > .85)
+                {
+                    half nearAvg = (InkAtGrad(uv + float2(t.x * 1.5, 0), uvDx, uvDy) + InkAtGrad(uv - float2(t.x * 1.5, 0), uvDx, uvDy)
+                        + InkAtGrad(uv + float2(0, t.y * 1.5), uvDx, uvDy) + InkAtGrad(uv - float2(0, t.y * 1.5), uvDx, uvDy)) * .25;
+                    core = smoothstep(.85, 1, min(ink, nearAvg));
+                }
 
-                // 明るさのむら（3cm 程度の斑）と、時間で動く細かい粒（1.4mm・24Hz）。
-                float density = .72 + .42 * ValueNoise(os * 38);
+                // 時間で動く細かい粒（1.4mm・24Hz）。
                 float frame = floor(_Time.y * 24.0);
                 float g = Hash21(floor(os * 700) + frame * 7.13);
                 float grainK = .86 + .28 * g;
 
-                half3 hot = lerp(tint.rgb, half3(1, .86, .70), .45);
-                half3 inkCol = lerp(tint.rgb, hot, core * .4) * density * grainK;
+                // 字の色は下の lerp で ink を重みに読むだけなので、字の無い画素ではむらを計算しない。
+                half3 inkCol = 0;
+                [branch] if (ink > 0)
+                {
+                    // 明るさのむら（3cm 程度の斑）。
+                    float density = .72 + .42 * ValueNoise(os * 38);
+                    half3 hot = lerp(tint.rgb, half3(1, .86, .70), .45);
+                    inkCol = lerp(tint.rgb, hot, core * .4) * density * grainK;
+                }
                 half3 glowCol = tint.rgb * .75;
                 half3 dark = half3(.008, .003, .005);
 
@@ -223,7 +243,7 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 tint = input.color * _Color;
-                tint.a *= ReadMask(input.positionWS);
+                tint.a *= ReadMask(input);
                 if (_Mode > 1.5) return FragGlowingInk(input, tint);
                 if (_Mode < .5)
                 {

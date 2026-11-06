@@ -159,12 +159,127 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        private static Color[] AllPixels(RenderTexture target)
+        {
+            RenderTexture? previous = RenderTexture.active;
+            var read = new Texture2D(target.width, target.height, TextureFormat.RGBAFloat, false, true);
+            try
+            {
+                RenderTexture.active = target;
+                read.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0, false);
+                return read.GetPixels();
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                Object.DestroyImmediate(read);
+            }
+        }
+
+        private Texture2D Pattern(int width, int height)
+        {
+            var texture = Track(new Texture2D(width, height, TextureFormat.RGBA32, true, true)
+            {
+                filterMode = FilterMode.Trilinear,
+                wrapMode = TextureWrapMode.Clamp,
+            });
+            var pixels = new Color[width * height];
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    pixels[y * width + x] = new Color((x * 7 % 16) / 15f, (y * 5 % 12) / 11f, (x + y) % 2, 1);
+            texture.SetPixels(pixels);
+            texture.Apply();
+            return texture;
+        }
+
+        // pre-glass で 1 度だけ符号化する経路と、タップごとに符号化する元の経路が同じ画を出すこと。
+        [Test]
+        public void EncodedPreGlass_ProducesTheSameProcessedImageAsEncodingEachTap()
+        {
+            Material material = State(Pattern(64, 48));
+            using var processor = new CrtSignalProcessor();
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            Color[] encoded = AllPixels(processor.Processed!);
+
+            material.SetFloat("_CrtSignalProfileSelected", 0);
+            material.SetFloat("_CrtSignalBandwidth", 0);
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            var filter = Track(new Material(CrtSignalResources.Load().SignalFilter));
+            filter.SetFloat("_Gain", CrtSignalProfile.Gain);
+            filter.SetFloat("_Bandwidth", CrtSignalProfile.Bandwidth);
+            filter.SetFloat("_SourceEncoded", 0);
+            filter.SetFloat("_CenterEv", CrtSignalProfile.CenterEv);
+            filter.SetFloat("_CenterRadius", CrtSignalProfile.CenterRadius);
+            filter.SetFloat("_CenterFalloff", CrtSignalProfile.CenterFalloff);
+            filter.SetFloat("_TintStrength", CrtSignalProfile.TintStrength);
+            filter.SetFloat("_TintCoolness", CrtSignalProfile.TintCoolness);
+            filter.SetVector("_Aperture", material.GetVector("_CrtAperture"));
+            RenderTexture target = RenderTexture.GetTemporary(CrtSignalProfile.Width, CrtSignalProfile.Height, 0,
+                RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
+            try
+            {
+                Graphics.Blit(processor.PreGlass, target, filter, 0);
+                Color[] eachTap = AllPixels(target);
+                Assert.That(eachTap.Length, Is.EqualTo(encoded.Length));
+                float worst = 0;
+                for (int i = 0; i < encoded.Length; i++)
+                {
+                    worst = Mathf.Max(worst, Mathf.Abs(encoded[i].r - eachTap[i].r));
+                    worst = Mathf.Max(worst, Mathf.Abs(encoded[i].g - eachTap[i].g));
+                    worst = Mathf.Max(worst, Mathf.Abs(encoded[i].b - eachTap[i].b));
+                }
+                Assert.That(worst, Is.LessThan(1e-5f));
+            }
+            finally { RenderTexture.ReleaseTemporary(target); }
+        }
+
+        [Test]
+        public void Mips_AreBuiltOnlyWhileTheGaussianReadsACoarserLevel()
+        {
+            Material material = State(Solid(Color.gray));
+            material.SetFloat("_CoarseBlocks", 0);
+            using var processor = new CrtSignalProcessor();
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            Assert.That(processor.MipBuilds, Is.Zero);
+
+            material.SetFloat("_CoarseBlocks", 8);
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            Assert.That(processor.MipBuilds, Is.EqualTo(1), "粗さが付いた瞬間に作る");
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            Assert.That(processor.MipBuilds, Is.EqualTo(1), "同じ入力なら作り直さない");
+            Assert.IsTrue(processor.PrepareDisplay(material, 2));
+            Assert.That(processor.MipBuilds, Is.EqualTo(2), "新しいコマでは作り直す");
+        }
+
+        [Test]
+        public void CoarseLodFlip_ReplacesOnlyThePsfTargets_AndRebindsThem()
+        {
+            Material material = State(Solid(Color.gray));
+            material.SetFloat("_CoarseBlocks", 0);
+            using var processor = new CrtSignalProcessor();
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            RenderTexture linear = processor.LinearSource!, preGlass = processor.PreGlass!, processed = processor.Processed!;
+            int width = processor.PsfSource!.width;
+
+            material.SetFloat("_CoarseBlocks", 8);
+            Assert.IsTrue(processor.PrepareDisplay(material, 1));
+            Assert.That(processor.LinearSource, Is.SameAs(linear));
+            Assert.That(processor.PreGlass, Is.SameAs(preGlass));
+            Assert.That(processor.Processed, Is.SameAs(processed));
+            Assert.That(processor.PsfSource!.width, Is.EqualTo(width * 2));
+            Assert.That(material.GetTexture("_CrtRuntimePsfTex"), Is.SameAs(processor.PsfSource));
+            Assert.That(material.GetTexture("_CrtProcessedSignalTex"), Is.SameAs(processed));
+            Assert.That(material.GetFloat("_CrtSignalReady"), Is.EqualTo(1f));
+        }
+
         [Test]
         public void HeldSource_ReusesOnlyPsf_WhileAgcAndOverlayStillChangeThePreGlassImage()
         {
             Material material = State(Solid(new Color(.08f, .04f, .02f, 1)));
             // Cache/AGC is measured with an unclipped post response, independently of the adopted dark grade.
             material.SetFloat("_CrtSignalProfileSelected", 0);
+            // The band filter off keeps PreGlass linear, so the AGC ratio reads directly.
+            material.SetFloat("_CrtSignalBandwidth", 0);
             material.SetFloat("_Exposure", 0); material.SetFloat("_Contrast", 1);
             material.SetFloat("_Saturation", 1); material.SetFloat("_Temperature", 0);
             material.SetFloat("_Vignette", 0); material.SetFloat("_Grain", 0);

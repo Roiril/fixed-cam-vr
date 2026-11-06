@@ -398,7 +398,8 @@ namespace FixedCamVr.Streaming
             try
             {
                 _signalProcessor ??= new CrtSignalProcessor();
-                CrtSignalProfile.ApplySelected(_material);
+                // OnDisable が落とした実行フラグだけ戻す。固定値は PrepareDisplay が書く。
+                CrtSignalProfile.EnableRuntime(_material);
                 _signalProcessor.PrepareDisplay(_material, SourceFrameId);
             }
             catch (System.Exception e)

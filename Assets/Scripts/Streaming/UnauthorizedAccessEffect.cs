@@ -526,7 +526,11 @@ namespace FixedCamVr.Streaming
                     Delay = i < 5 ? 0f : Range(random, 0f, .48f), BaseColor = PickGlyphColor(random, kind),
                 };
                 int vertex = i * 4;
-                SetQuadUvs(_glyphUvs, vertex, 0f, 0f, 1f, 1f);
+                // 帯の外は不透明度 0。四角を帯の範囲まで切り詰めると、手前の大きな断片の塗り面積が半分以下になる。
+                Vector2 rows = GlyphRowRange(_glyphs[i].Digit, _glyphs[i].Blur);
+                _glyphs[i].VMin = rows.x;
+                _glyphs[i].VMax = rows.y;
+                SetQuadUvs(_glyphUvs, vertex, 0f, rows.x, 1f, rows.y);
                 Vector2 data = new Vector2(_glyphs[i].Digit, _glyphs[i].Blur);
                 for (int j = 0; j < 4; j++) _glyphData[vertex + j] = data;
                 SetQuadTriangles(_glyphTriangles, i, vertex);
@@ -928,14 +932,31 @@ namespace FixedCamVr.Streaming
                 float edgeFade = GlyphEdgeFade(glyph, center.y);
                 float emphasis = 1f + secondTear * .5f + (seconds >= 3.65f ? .18f : 0f);
                 float alpha = Mathf.Clamp01(glyph.BaseColor.a * reveal * edgeFade * emphasis);
-                SetQuadVertices(_glyphVertices, i * 4, center.x, center.y, -depth,
-                    glyph.Size, glyph.Size * 1.34f);
+                // 切り詰めても v と位置の対応は y = center.y + 高さ * (v - .5) のまま。
+                float fullHeight = glyph.Size * 1.34f;
+                SetQuadVertices(_glyphVertices, i * 4, center.x,
+                    center.y + fullHeight * ((glyph.VMin + glyph.VMax) * .5f - .5f), -depth,
+                    glyph.Size, fullHeight * (glyph.VMax - glyph.VMin));
                 Color color = glyph.BaseColor;
                 color.a = alpha;
                 SetQuadColor(_glyphColors, i * 4, color);
             }
             _glyphMesh.SetVertices(_glyphVertices);
             _glyphMesh.SetColors(_glyphColors);
+        }
+
+        /// <summary>
+        /// 断片の四角のうち、横帯が不透明度を持つ v の範囲（x が下、y が上）。
+        /// 式は UnauthorizedAccessFx.shader の FragSnowFragment（rowH / soft / yA / .62）を写したもの。変えるときは両方直す。
+        /// </summary>
+        public static Vector2 GlyphRowRange(int digit, float blur)
+        {
+            blur = Mathf.Clamp01(blur);
+            float reach = Mathf.Lerp(.07f, .12f, blur) * .5f + .03f + blur * .08f + .002f;
+            bool twoRows = digit > 0;
+            float low = (twoRows ? .40f : .5f) - reach;
+            float high = (twoRows ? .62f : .5f) + reach;
+            return new Vector2(Mathf.Max(0f, low), Mathf.Min(1f, high));
         }
 
         private Vector2 GlyphCenter(GlyphSpec glyph, float seconds, float depth)
@@ -1388,6 +1409,8 @@ namespace FixedCamVr.Streaming
             public int Bundle;
             public int Digit;
             public float Blur;
+            public float VMin;
+            public float VMax;
             public float Size;
             public float Depth;
             public float X;

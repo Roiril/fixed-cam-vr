@@ -1,6 +1,9 @@
 // Shared legacy, diagnostic and canonical runtime composition.
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+#if defined(CRT_RUNTIME_PREGLASS)
+#include "CrtSignalAdjustment.hlsl"
+#endif
 
 TEXTURE2D(_LiveTex);    SAMPLER(sampler_LiveTex);
 TEXTURE2D(_RoomWarpTex); SAMPLER(sampler_RoomWarpTex);
@@ -138,6 +141,7 @@ CBUFFER_START(UnityPerMaterial)
     float _CrtCenterEv, _CrtCenterRadius, _CrtCenterFalloff, _CrtTintStrength, _CrtTintCoolness;
     float _CrtScreenOnly;
     float _CrtSignalBandwidth;
+    float _CrtPreGlassEncoded;
     float _CrtSignalReady;
     float _CrtRuntimePsfReady;
     float4 _CrtRuntimePsfUVShift;
@@ -956,36 +960,42 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
         live = lerp(live, echo, saturate(echoMix));
     }
 
-    float ovIn;
-    float2 uvO = ContainUv(uv, _OverlayScale.xy, ovIn);
-    // 差し替え素材（録画・プレート）にも**同じだけ**掛ける。片方だけ鮮明だと、
-    // 3 周目に録画へ切り替わった瞬間に画の素性が変わって切替がばれる。
-    // 位置で選ぶ録画は、進み具合を挟む 2 コマを混ぜる（_OverlayBlend・0278）。分岐は uniform なので
-    // 混ぜていない画素では 2 コマ目を 1 回も読まない。3 つの読みすべてに同じ混ぜ具合を掛ける。
-    half3 overlay = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod).rgb;
-    if (_OverlayBlend > 0.001)
-        overlay = lerp(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod).rgb, _OverlayBlend);
-    if (chromaBias > 0.001)
+    // 差し替えていない間（_OverlayStrength が 0）は素材もマスクも読まない。
+    // lerp の t が 0 なので、読んでも結果は live のまま変わらない。
+    half3 col = live;
+    [branch] if (_OverlayStrength > 0.0)
     {
-        half3 oc = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod + chromaBias).rgb;
+        float ovIn;
+        float2 uvO = ContainUv(uv, _OverlayScale.xy, ovIn);
+        // 差し替え素材（録画・プレート）にも**同じだけ**掛ける。片方だけ鮮明だと、
+        // 3 周目に録画へ切り替わった瞬間に画の素性が変わって切替がばれる。
+        // 位置で選ぶ録画は、進み具合を挟む 2 コマを混ぜる（_OverlayBlend・0278）。分岐は uniform なので
+        // 混ぜていない画素では 2 コマ目を 1 回も読まない。3 つの読みすべてに同じ混ぜ具合を掛ける。
+        half3 overlay = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod).rgb;
         if (_OverlayBlend > 0.001)
-            oc = lerp(oc, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod + chromaBias).rgb, _OverlayBlend);
-        overlay = SplitChroma(overlay, oc);
-    }
-    if (_Glare > 0.001)
-    {
-        float glareLod = lod + lerp(4.5, 1.0, saturate(_CrtReference) * (1.0 - saturate(_Mono)));
-        half3 og = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, glareLod).rgb;
-        if (_OverlayBlend > 0.001)
-            og = lerp(og, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, glareLod).rgb, _OverlayBlend);
-        overlay += Glare(overlay, og);
-    }
-    // 色統計マッチング（卓が焼いた per-channel の gain/offset）。恒等なら何も起きない。
-    overlay = saturate(overlay * _OverlayGain.rgb + _OverlayOffset.rgb) * ovIn;
+            overlay = lerp(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod).rgb, _OverlayBlend);
+        if (chromaBias > 0.001)
+        {
+            half3 oc = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod + chromaBias).rgb;
+            if (_OverlayBlend > 0.001)
+                oc = lerp(oc, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod + chromaBias).rgb, _OverlayBlend);
+            overlay = SplitChroma(overlay, oc);
+        }
+        if (_Glare > 0.001)
+        {
+            float glareLod = lod + lerp(4.5, 1.0, saturate(_CrtReference) * (1.0 - saturate(_Mono)));
+            half3 og = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, glareLod).rgb;
+            if (_OverlayBlend > 0.001)
+                og = lerp(og, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, glareLod).rgb, _OverlayBlend);
+            overlay += Glare(overlay, og);
+        }
+        // 色統計マッチング（卓が焼いた per-channel の gain/offset）。恒等なら何も起きない。
+        overlay = saturate(overlay * _OverlayGain.rgb + _OverlayOffset.rgb) * ovIn;
 
-    // マスクも同じだけ鈍らせる。継ぎ目だけが鮮明に残ると、粗い画の中でそこだけ浮く。
-    half mask = SAMPLE_TEXTURE2D_LOD(_MaskTex, sampler_MaskTex, uv, lod).r;
-    half3 col = lerp(live, overlay, saturate(mask * _OverlayStrength));
+        // マスクも同じだけ鈍らせる。継ぎ目だけが鮮明に残ると、粗い画の中でそこだけ浮く。
+        half mask = SAMPLE_TEXTURE2D_LOD(_MaskTex, sampler_MaskTex, uv, lod).r;
+        col = lerp(live, overlay, saturate(mask * _OverlayStrength));
+    }
 
     // 第 2 の差し替え層。**左と右へ別の素材を同時に置く**ときだけ効く
     // （3 周目 A: 左＝録画 / 右＝環境＋人形、4 周目 A: 左＝大量の人形 / 右＝体験者人形）。
@@ -1897,6 +1907,9 @@ half4 frag(Varyings input) : SV_Target
     else col = LOAD_TEXTURE2D(_CrtSignalTex, int2(input.positionHCS.xy)).rgb;
     #endif
     #if defined(CRT_RUNTIME_PREGLASS)
+    // 帯域フィルタは sRGB の値を 9 タップ読む。タップごとに符号化し直さないよう、ここで 1 度だけ符号化して渡す。
+    // 立てるのは CrtSignalProcessor だけで、Editor のプレビューは linear のまま受け取る。
+    if (_CrtPreGlassEncoded > 0.5) return float4(CrtSignalLinearToSRGB(max((float3)col, 0.0)), 1);
     return float4(col, 1);
     #endif
     #endif

@@ -31,7 +31,10 @@ namespace FixedCamVr.Streaming
         /// <summary>1 辺の分割数。曲面の滑らかさ。14 で 225 頂点（描画の負担にならない）。</summary>
         [SerializeField] private int segments = 14;
 
+        private static readonly int CrtViewId = Shader.PropertyToID("_CrtView");
         private Mesh? _mesh;
+        private MjpegScreen? _screen;
+        private Renderer? _meshRenderer;
 
         // ⚠ **組むのは実行時だけ。** 生成した Mesh はアセットではないので、Editor で差し替えたまま
         //   シーンを保存すると壊れた参照が焼かれる。シーンに残すのはこのコンポーネントが
@@ -46,13 +49,13 @@ namespace FixedCamVr.Streaming
 
         private void LateUpdate()
         {
-            var screen = GetComponent<MjpegScreen>();
-            if (screen == null || !screen.ReferenceSurfaceActive) return;
+            if (_screen == null) _screen = GetComponent<MjpegScreen>();
+            if (_screen == null || !_screen.ReferenceSurfaceActive) return;
             var eye = Camera.main;
-            var renderer = GetComponent<Renderer>();
-            if (eye == null || renderer == null) return;
+            if (_meshRenderer == null) _meshRenderer = GetComponent<Renderer>();
+            if (eye == null || _meshRenderer == null) return;
             Vector3 view = transform.InverseTransformPoint(eye.transform.position);
-            renderer.sharedMaterial.SetVector("_CrtView", new Vector4(view.x, view.y, view.z, 0));
+            _meshRenderer.sharedMaterial.SetVector(CrtViewId, new Vector4(view.x, view.y, view.z, 0));
         }
 
         private void OnDestroy()

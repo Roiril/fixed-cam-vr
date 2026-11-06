@@ -154,6 +154,65 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        // FragSnowFragment の row を写した式。範囲の外で 0 なら、四角を切り詰めても画素は変わらない。
+        [TestCase(0, 0f)]
+        [TestCase(0, .22f)]
+        [TestCase(0, .5f)]
+        [TestCase(0, .85f)]
+        [TestCase(1, 0f)]
+        [TestCase(1, .22f)]
+        [TestCase(1, .5f)]
+        [TestCase(1, .85f)]
+        public void GlyphRowRange_ContainsEveryRowTheShaderDraws(int digit, float blur)
+        {
+            Vector2 range = UnauthorizedAccessEffect.GlyphRowRange(digit, blur);
+            float rowH = Mathf.Lerp(.07f, .12f, blur), soft = .03f + blur * .08f;
+            float Row(float v, float y)
+            {
+                float t = Mathf.Clamp01((Mathf.Abs(v - y) - rowH * .5f) / soft);
+                return 1f - t * t * (3f - 2f * t);
+            }
+            bool twoRows = digit > .5f;
+            int drawn = 0;
+            for (int i = 0; i <= 2000; i++)
+            {
+                float v = i / 2000f;
+                float row = Mathf.Max(Row(v, twoRows ? .40f : .5f), twoRows ? Row(v, .62f) : 0f);
+                if (v < range.x || v > range.y) Assert.That(row, Is.Zero, $"v={v}");
+                else if (row > 0f) drawn++;
+            }
+            Assert.That(drawn, Is.GreaterThan(0));
+            Assert.That(range.y - range.x, Is.LessThan(.75f), "切り詰めた意味がある");
+        }
+
+        [Test]
+        public void GlyphQuads_KeepTheSameUvToPositionMapping_AfterTrimming()
+        {
+            GameObject anchor = NewAnchor("GlyphAnchor");
+            GameObject host = new GameObject("GlyphEffect");
+            try
+            {
+                var effect = host.AddComponent<UnauthorizedAccessEffect>();
+                effect.Play(anchor.transform, ReferenceSize);
+                effect.Sample(2.11f);
+                Mesh glyphs = FindMesh(effect, "Unauthorized Access Glyphs");
+                Vector3[] vertices = glyphs.vertices;
+                Vector2[] uvs = glyphs.uv;
+                for (int quad = 0; quad < vertices.Length / 4; quad++)
+                {
+                    int i = quad * 4;
+                    float width = vertices[i + 1].x - vertices[i].x;
+                    float perV = (vertices[i + 2].y - vertices[i].y) / (uvs[i + 2].y - uvs[i].y);
+                    Assert.That(perV, Is.EqualTo(width * 1.34f).Within(1e-4f), $"quad {quad}");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+            }
+        }
+
         [Test]
         public void SampleIsDeterministicAndOutsideDurationIsPixelEmptyWithoutChangingPlayback()
         {

@@ -47,6 +47,7 @@ paths:
 - 発火待ち〜消去まで報告を拒否（数えない・後送りしない・離すまで再開しない） — `CommsPanel.TakeoverInputBlocked`・`CommsPossessionLogicTests.BlockedReport_DoesNotCountOrResolveAnything` 〔出典: memory/comms_takeover.md〕
 - 乗っ取り後の返事は Cursed: 人形の顔と赤い `CommsPanel.TakeoverLieText`（CommsHorror SDF）だけ。走り書きなし — `CommsPanelPossessionTests.CursedReplyStartsAsTheRedLieWithoutSweepOrKeystrokes` 〔出典: show-design:1223〕
 - 警告は明朝＋かすれ（v5）・朱と象牙。順・秒は不変 — `UnauthorizedAccessEffect.SampleTakeover`・`UnauthorizedAccessFx.shader` 〔出典: memory/comms_takeover.md 2026-10-21 節〕
+- 断片の四角は帯の範囲だけ描く。式はシェーダの row と対で直す — `UnauthorizedAccessEffect.GlyphRowRange`・`UnauthorizedAccessEffectTests.GlyphRowRange_ContainsEveryRowTheShaderDraws` 〔memory/comms_performance_20261018.md〕
 - ③a は締めのカット中に凍結線通過か 3 秒。面が空くまで待ち必ず出す。Fade・打鍵 0 — `CommsCueLogic.HaltAfterClosingSec`・`CommsCueLogicTests.TheStopCall_WaitsForThePanel_AndIsNeverLost` 〔出典: show-design:46-49, 1387〕
 - ③b は③a を読ませ終わった縁で必ず続く。③b までは締めの報告を受けない（別に入って 4 秒の猶予） — `CommsCueLogic.Tick`（closingLocked）・`TakeRunnerLogic.MarkGraceSec`・`CommsPossessionLogicTests.ClosingReportIsRejectedUntilThePromptIsFullyShown` 〔出典: show-design:41, 1375, 1382〕
 - ③a/③b の復帰: ③a からの 1 本の時計。起動 0.92s は砂嵐ブロックから復号、③b の打鍵に結ぶ余震 2 回、静止した粗い斑で人形と赤が約半々、報告で 1.2s かけて 0 — `CommsRecoveryLogic.Sample/BootSec/ReleaseSec`・`CommsPanelLogic.BeginRecovery`・`CommsRecovery.hlsl` の `COMMS_RECOVERY_NOISE_PHASE` 〔出典: show-design:1309-1320; memory/comms_curse.md; memory/comms_takeover.md 2026-10-18 節〕

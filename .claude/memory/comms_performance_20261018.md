@@ -67,3 +67,15 @@
 - 録画・xprec の記録・リプレイの間は全コマ展開する（`CameraStream.HasFrameObservers`・`XpReplay.Active`）
 - `rx=` が到着の数字になると展開の全滅が隠れるので、`dfps=` `dfail=` を同時に足し、`analyze-xp-log.py` の `decode_verdicts` で判定する。`DiscoveryClient` は `DecodedFps` を見る
 - `drop=` は受信側の間引きを数えなくなった。旧ログの `drop=` と比べない
+
+## 2026-11-06 CRT 加工と乗っ取り警告（絵を変えない軽量化）
+
+- CRT。帯域フィルタのタップごとの pow を pre-glass の出口の 1 回へ（`_CrtPreGlassEncoded`。Editor のプレビューは 0 のまま linear を受ける）。Gaussian の exp を頂点へ。`_OverlayStrength` が 0 の間は素材とマスクを読まない。粗さ 0 の間は GenerateMips しない。粗さの切替で PSF だけ作り直す。RT は DiscardContents で load を省く
+- 警告。断片の四角を帯の範囲へ切り詰める（手前の断片の塗り面積は約 59% 減の見込み）。字の無い画素でむらを計算しない。ink が .85 以下なら周り 4 点を読まない。ReadMask の行列計算を頂点へ
+- 比較。`menu crt-lens` `room-warp` `crt-selected` `crt-doll-selected` の 42 枚は、変更前を 2 回撮って差 0 を確かめたうえで、変更後も差 0。出力は `G:/マイドライブ/shubie/renders/2026-11-06_perf/`
+- 警告の比較は `_Time` が動くので、そのままでは 2 回撮っても一致しない（最大 252/255）。比較のときだけ `#define _Time` で固定すると差 0 になる。その条件で 267 枚を比べた結果は次の 2 つ
+  - シェーダの編集は ±1 が 0.15% の画素、±2 が全体で 35 画素。ReadMask を varying に移した丸めの差
+  - 四角の切り詰めは uv の丸めを変える。`floor(uv * float2(40, 12))` の粒の境目が 1 画素ずれ、高さ 1 画素の横線として出る（1 枚平均 6 画素が差 8 超、最大 95/255）。粒は毎秒 18 回変わる
+- 未測定。実機の fps は 11-01 の CRT 導入後に 1 度も取っていない。次の実機で 3-A・3-C の fps と `rx=` `dfps=` `dfail=` `drop=` を見る
+- 残した手段。絵が変わるので判定が要る。`quest3MaxDynamicResolutionScale` 1.6→1.3（画素 34% 減）・FFR・MSAA 4→2・手前の断片の数・pre-glass の精度
+- やらなかったこと。入力が同じ間の CRT の Blit 省略（`_Time`・AGC・OSD が毎フレーム変わる）。ARGBFloat→Half と ±4 タップの削減（完全一致しない）
