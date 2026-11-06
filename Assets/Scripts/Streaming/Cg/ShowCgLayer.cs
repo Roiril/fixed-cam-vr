@@ -485,13 +485,14 @@ namespace FixedCamVr.Streaming.Cg
                 ShowBodyInput body = CurrentBody();
                 if (!body.HasHead) return "head";
                 if (!FarewellFloorContains(visitor, 0.25f)) return "floor";
-                return EndingFarewellLogic.PhotoBlock(_farewellAnchor, visitor, body.HeadYawDeg, _farewellRenderedYawDeg, _virtualCam);
+                return EndingFarewellLogic.PhotoBlock(_farewellAnchor, visitor, body.HeadYawDeg, _farewellRenderedYawDeg,
+                                                      _virtualCam, _farewellSample.photoLevel);
             }
         }
 
         /// <summary>
-        /// 立つ所から半径 <paramref name="radiusM"/> の円周 16 点のうち、人形の方を向いて立てば写真が成立する割合。
-        /// 位置の許容は <see cref="EndingFarewellLogic.PhotoPositionToleranceM"/> だが、全身が枠に入る条件の方が先に効く。
+        /// 立つ所から半径 <paramref name="radiusM"/> の円周 16 点のうち、人形の方を向いて立てば、
+        /// 全身が入る厳しい条件で写真が成立する割合。
         /// </summary>
         public float FarewellStandShare(float radiusM)
         {
@@ -534,7 +535,7 @@ namespace FixedCamVr.Streaming.Cg
                 ShowBodyInput body = CurrentBody();
                 return body.HasHead && FarewellFloorContains(visitor, 0.25f)
                     && EndingFarewellLogic.IsPhotoReady(_farewellAnchor, visitor,
-                        body.HeadYawDeg, _farewellRenderedYawDeg, _virtualCam);
+                        body.HeadYawDeg, _farewellRenderedYawDeg, _virtualCam, _farewellSample.photoLevel);
             }
         }
 
@@ -601,7 +602,9 @@ namespace FixedCamVr.Streaming.Cg
                                     visitorHeightM: visitorHeight, dollHeightM: EffectiveHeightM,
                                     wallHalfThicknessM: Mathf.Max(first.thick, second.thick) * 0.5f,
                                     canStand: FarewellFloorContains,
-                                    dollBodyRadiusM: EndingFarewellLogic.DefaultDollBodyRadiusM * EffectiveHeightM / 0.4f);
+                                    dollBodyRadiusM: EndingFarewellLogic.DefaultDollBodyRadiusM * EffectiveHeightM / 0.4f,
+                                    visitorFoot: visitor,
+                                    visitorYawDeg: body.HasHead ? body.HeadYawDeg : (float?)null);
                 }
             if (!solved)
                 return false;
@@ -610,7 +613,8 @@ namespace FixedCamVr.Streaming.Cg
             _farewellTurnFromYawDeg = _farewellFaceYawDeg;
             _farewellAnchored = true;
             Debug.Log($"[ShowCgLayer] 別れの人形の立ち位置 doll uv=({a.dollUv.x:0.00},{a.dollUv.y:0.00}) " +
-                      $"visitor uv=({a.visitorUv.x:0.00},{a.visitorUv.y:0.00}) screen={(a.fromScreen ? 1 : 0)}");
+                      $"visitor uv=({a.visitorUv.x:0.00},{a.visitorUv.y:0.00}) fromVisitor={(a.fromVisitor ? 1 : 0)} " +
+                      $"shrink={a.retreatShrink:0.00}");
             return true;
         }
 

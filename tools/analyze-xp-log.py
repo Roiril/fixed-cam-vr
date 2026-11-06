@@ -1472,6 +1472,8 @@ def analyze(events, others, exp, warns=None):
     #   体験者の左に右向きで立ち、後ろを向いてゆっくり下がって消える。帰還End の写真は見つめている段で撮る。
     #   phase: anchoring → appear → face → turn → retreat → done（出せなければ unavailable）
     #   cg = CG 層が実際に描いているか / dollU・visU = 人形と体験者の足元の枠 UV（人形が左なら dollU < visU）
+    #   fromV = 体験者の立っている所から解けたか / shrink = 下がり終わりの像の高さの比 / gap = 立ち位置の間隔 m
+    #   shot = 写真が撮れたか / level = 写真の条件の緩め具合 0..2 / held = 見つめ始めからの秒
     #   sum の farewell = <見つめる段まで届いた回数>/<消え切った回数>
     fw_ev = [e for e in events if e.get("ev") == "farewell"]
     has_fw = any("farewell" in e for e in events if e.get("ev") == "sum")
@@ -1481,8 +1483,15 @@ def analyze(events, others, exp, warns=None):
         for e in fw_ev:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('phase')} cg={e.get('cg')} anchored={e.get('anchored')} "
               f"doll=({e.get('dollU')},{e.get('dollV')}) visitor=({e.get('visU')},{e.get('visV')}) "
-              f"screen={e.get('screen')}")
+              f"fromV={e.get('fromV')} shrink={e.get('shrink')} gap={e.get('gap')} "
+              f"shot={e.get('shot')} level={e.get('level')} held={e.get('held')}")
         faces = [e for e in fw_ev if e.get("phase") == "face"]
+        turns = [e for e in fw_ev if e.get("phase") == "turn" and "shot" in e]
+        for e in turns:
+            if str(e.get("shot")) == "1":
+                verdict("OK", f"別れの写真を撮ってから後ろを向いた（見つめ始めから {e.get('held')} 秒・条件 {e.get('level')}）")
+            else:
+                verdict("WARN", f"別れの写真を撮れないまま後ろを向いた（{e.get('held')} 秒で諦めた）— 帰還End に写真が出ない")
         if released and has_fw and not faces:
             if any(e.get("phase") == "unavailable" for e in fw_ev):
                 verdict("WARN", "帰還の別れの人形を出せなかった（較正・位置合わせ・頭の追跡のどれか）"

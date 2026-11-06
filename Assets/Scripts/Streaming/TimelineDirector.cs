@@ -49,6 +49,12 @@ namespace FixedCamVr.Streaming
             ResolveTakeRunner();
         }
 
+        /// <summary>スイの面が開いているかを別れの人形へ伝える。</summary>
+        public void SetEndingNoticeOpen(bool open)
+        {
+            if (takeRunner != null) takeRunner.EndingNoticeOpen = open;
+        }
+
         private void ResolveTakeRunner()
         {
             if (takeRunner == null) takeRunner = GetComponent<TakeRunner>();

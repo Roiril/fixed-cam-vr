@@ -1033,7 +1033,9 @@ namespace FixedCamVr.Diagnostics
                          $"cg={(fcg != null && fcg.IsVisible ? 1 : 0)} anchored={(anchored ? 1 : 0)} " +
                          $"dollU={(anchored ? a.dollUv.x : -1f):F2} dollV={(anchored ? a.dollUv.y : -1f):F2} " +
                          $"visU={(anchored ? a.visitorUv.x : -1f):F2} visV={(anchored ? a.visitorUv.y : -1f):F2} " +
-                         $"screen={(anchored && a.fromScreen ? 1 : 0)}");
+                         $"fromV={(anchored && a.fromVisitor ? 1 : 0)} shrink={(anchored ? a.retreatShrink : -1f):F2} " +
+                         $"gap={(anchored ? Vector3.Distance(a.foot, a.visitorTargetFoot) : -1f):F2} " +
+                         $"shot={(farewell.ShotCaptured ? 1 : 0)} level={farewell.PhotoLevel} held={farewell.FaceHeldSec:F1}");
                 }
             }
 

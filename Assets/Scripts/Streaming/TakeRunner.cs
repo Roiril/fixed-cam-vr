@@ -258,6 +258,9 @@ namespace FixedCamVr.Streaming
         /// <summary>別れの人形の実行体（テレメトリが読む）。</summary>
         public EndingFarewellDoll? Farewell => _farewell;
 
+        /// <summary>スイの面が開いている（<c>CommsPanel</c> が毎フレーム書く）。別れの人形は閉じてから出る。</summary>
+        public bool EndingNoticeOpen { get; set; }
+
         public void NotifyEndingFarewellCaptured() => _farewell?.NotifyShotCaptured();
 
         /// <summary>

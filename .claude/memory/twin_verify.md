@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1128468e-bd6b-4231-9f7d-17f5f7eac49b
-  modified: 2026-11-05T11:51:11.299Z
+  modified: 2026-11-05T23:09:56.343Z
 ---
 
 2026-11-05 ユーザー依頼「デジタルツインを新しく作り替えたので、それを使って、私がhmdを被らないでできる動作検証の仕組みも更新してほしい。」
@@ -16,7 +16,7 @@ metadata:
 **形**: `XpTwinDriver`（Editor のみ）が生の入力を `XpReplay` へ置き、`ShowWalkDebugDriver` の `IHost` として歩く。映像は `tools/twin/make_pack.py` の束（MJR）を頭の位置で引いて配る。
 走った結果は `ExperienceRecorder` の記録に残り、撮影は既存の `unity.ps1 replay` がする。走る間は描画と入力の閉ループ、撮る間は開ループ。
 
-**calib は 2 通り**: 既定の `--calib show` は APK と同じ本番の show.json。結末まで通るが、人形はツインの画に合わない（A は同じ 9/5 の写真から解いた値だが画角が違う。B と C は別の日の値）。`--calib twin` は人形の姿勢をツインの配置へ読み込み時に差し替える（`ShowControlClient.ApplyTwinCalib`。`ev=config calib=`）。人形は画に合うが、下の理由で別れの立ち位置が解けず、結末は中断になる。
+**calib は 2 通り**: 既定の `--calib show` は APK と同じ本番の show.json。結末まで通るが、人形はツインの画に合わない（A は同じ 9/5 の写真から解いた値だが画角が違う。B と C は別の日の値）。`--calib twin` は人形の姿勢をツインの配置へ読み込み時に差し替える（`ShowControlClient.ApplyTwinCalib`。`ev=config calib=`）。人形は画に合う。2026-11-06 に別れの立ち位置を解き直し、どちらの calib でも Released まで通る。
 
 **判定**: `analyze-xp-log.py --pc`（実機にしか無い受信 fps・パススルー・タブレットの口などは NA）＋ `twin-verify.py` の周の印と結末。
 実機ログで偽 FAIL になる 2 つをこのとき直した。`released=1` の報告に MarkLogged を求めていた。別れの人形（笑わない契約）の標本で「笑っていない」を出していた。
@@ -41,12 +41,11 @@ metadata:
 - calib の位置 (1.04,0.94,-0.99) が遠いのは画角が 77.4 度だから。同じ写真に合わせても、狭いレンズなら遠くに解ける。**位置の数字を直接比べても「動いた」とは言えない**
 - ⚠ 製品の `menu plate-validation` は StreamingAssets の 9/24 の A に 9/5 の calib を重ねている（`PlateValidationLatestPlate`）。A の枠の線は写真から約 25px ずれる
 
-**見つけたこと（2026-11-05）**: [[ending_farewell_doll]] の立ち位置。
-- 実際のレンズの値（水平 96 度か、A だけ解いた 91.5 度）だと、どの写真の位置でも別れの立ち位置が解けない。C# のログは 9/5 の位置で `visitors=548 dolls=99 separated=7993 ordered=3874 framed=0`、9/24 の位置で 325/6/32/16/0
-- 止めているのは体験者の条件 `VisitorFits`。足の四隅が枠の外か、壁に近い（Python で写して数えた。9/5 f288 は 4,463 組が足で 2,287・壁で 2,176 落ちて 0 組。9/24 は 16 組すべて足）。退場の道で落ちる組は無い
-- 本番 calib で通るのは画角が狭い値だから。同じ数え方で成立は 1 組だけ（格子 0.025m）。実際のレンズで calib を解き直すと別れが出なくなるはず（未確認。Python の数え方は C# の visitors を 1 割ほど多く数える）
-- 本番 calib でも立つ所の許容は公称の 0.20m より狭い。人形を向いて立つ円周のうち写真が成立する割合は半径 5cm で 19%、10cm で 19%、20cm で 13%（`ev=twinfarewell`）
-- 写真が成立しないと、報告の約 50 秒後に `ending=Interrupted`（`run.endHoldMaxSec`=60 の時間切れと読むのが自然。未確認）
-- 立ち位置が解けない間は解き直しが止まらず、`placement unavailable` が 50 秒で 700〜1,400 行出る
+**見つけて直したこと（2026-11-05 → 11-06）**: [[ending_farewell_doll]] の立ち位置。
+- 実レンズ（水平 96 度か、A だけ解いた 91.5 度）だと、旧版の立ち位置はどの写真の位置でも解けなかった。C# のログは `visitors=548 dolls=99 separated=7993 ordered=3874 framed=0`。止めていたのは体験者の条件で、足の四隅が枠の外か壁に近い
+- 本番 calib で通っていたのは画角が狭い値だから。それでも人形を向いて立つ円周のうち写真が成立する割合は半径 5cm で 19%。写真が成立しないと報告の約 50 秒後に `ending=Interrupted` になった
+- 11-06 に体験者の立つ点から解く形へ変えた。結果と数字は [[ending_farewell_doll]]。⚠ 「足の判定に全身の回転半径を使う」形が足を画の下端から追い出していた。Python で写す検算は C# の visitors を 1 割ほど多く数える
+
+- ⚠ `Logs/twin-run/pack` は検証の入力。11-06 に Drive へ退避され、`make_pack.py` が `frame_count.txt` を読めず `映像の束: exit=1` で落ちた。grep で絞ると何も出ず、失敗に見えない。`archive_to_drive.py` の対象から `pack` を外した。消えたら `G:/マイドライブ/shubie/archive/Unity/fixed-cam-vr/Logs/twin-run/pack` から戻す
 
 関連: [[twin_cycles]] / [[experience_replay]] / [[virtual_walk]]

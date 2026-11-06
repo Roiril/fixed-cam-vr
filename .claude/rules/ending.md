@@ -25,7 +25,7 @@ paths:
 - ③a は打鍵なしで出る。③b は③a を読ませ終わった縁で必ず続く。報告の有無で止まらない — `CommsCueLogic.DeliveryOf` / `TheClosingCut_SaysStopFirst_ThenExplainsWhy` 〔出典: show-design:1382-1392〕
 - ③a と③b は視線から 3° 下に、弱った起動で出る（顔と字に赤が残る）。電力を落とさない — `CommsPanel.ClosingPitchOffsetDeg` / `CommsRecoveryLogic` 〔出典: show-design:1309-1320, 1393〕
 - 最終 A に入ってから③b を全文表示するまで、報告は件数も解除も受け付けない。締めの頭 4 秒は入力も止める — `ShowControlClient.IsVisitorMarkBlocked` / `TakeRunnerLogic.MarkGraceSec` / `ClosingReportIsRejectedUntilThePromptIsFullyShown` 〔出典: show-design:1375-1380, memory/ending_result.md〕
-- Released は `MarkResult.Released` だけで成立する。締めのライブは所定位置での写真成功と人形の退場完了を待ってから自然終了する。写真待ち・退場中はカットの時限と watchdog を進めない。その他の watchdog や打ち切りは Interrupted — `TakeRunnerLogic.Tick(holdCurrentStep)` / `ShowRunDirector.TickEndingDecision` 〔出典: LEDGER 0293〕
+- Released は `MarkResult.Released` だけで成立する。締めのライブは写真（上限つき）と人形の退場完了を待ってから自然終了する。写真待ち・退場中はカットの時限と watchdog を進めない。その他の watchdog や打ち切りは Interrupted — `TakeRunnerLogic.Tick(holdCurrentStep)` / `ShowRunDirector.TickEndingDecision` 〔出典: LEDGER 0293〕
 - Trapped になるのは、③b を全文表示した後で、報告せずに 15 秒経つ（`ShowClock`。休止中は数えない）か、A の実領域を出るか、確定区間が 4-A 以外になったとき — `EndingDecisionLogic.PromptLimitSec` / `ClosingPrompt_DoesNotTrap_OnTheFirstFrameAfterSleep` 〔出典: show-design:46-53〕
 - 退出は `PlayerZoneTracker` の実位置で判定する。追跡が不明な位置と、0.25 秒以上古い位置は使わない — `ShowRunDirector.NotifyClosingAreaPresence` 〔出典: memory/ending_result.md〕
 - 報告前の CG 人形の足が左半分（u<0.5）に入ると Trapped。③b を待たない — `EndingDecisionLogic.IsFootOnLeftHalf` / `TakeRunner.CanUseEndingDollFoot` 〔出典: memory/ending_roll.md〕
@@ -34,10 +34,11 @@ paths:
 - 解除の時刻: 劣化は `ScreenDecayLogic.ReleaseSec`（0.5 秒）で戻り、入れ替わりは 2.6 秒で戻る。続いて④「異変を取り除きました。お疲れ様です。」が出る — `ScreenDecayLogic.ReleaseSec` / `CommsNotice.MarkCleared` 〔出典: show-design:946-958〕
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
 - 台車（Romi）は使わない。Quest は台車へ何も送らない（`RomiCartLink` は 2026-10-30 に削除）〔出典: LEDGER 0291〕
-- 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空いた縁に、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる最短 1.15（写真を待つ）→ 後ろを向く 0.75 → 下がって消える 6.0 秒（最後 4.5 秒で消える）。写真に成功するまで回らない。消え切ってから電源断 — `EndingFarewellLogic` / `EndingFarewellDoll` 〔出典: LEDGER 0291・0293。尺は実装判断〕
-- L 字壁の内側を 2.5cm 刻みで探し、人物の頭・足・胴と人形がカメラの画角内（縁から 0.5% 以上）に入り、身体の表面から壁へ 4cm 空く 2 点を選ぶ。人体は対面の yaw で回した頭半幅 0.10m・胴半幅 0.25m/厚み 0.13m・足半幅 0.11m/前後 0.20m（身長比例）の一般人体近似で扱う。人形との表面間も 4cm。カメラの intrinsics は変えない。左が人形・右が体験者。床は `room.floorY`。体験者が右の点から 0.20m 以内かつ両者が互いの方向から 35° 以内のときだけ撮る。解けなければ出さない。`pairAccepted` を渡す検証では実CPU頂点の不合格候補を飛ばして再探索する。退場は壁の頂点から人形へ向かう床上の方向 — `TrySolveAtWall` / `IsPhotoReady` 〔出典: LEDGER 0293。余白・許容値は実装判断〕
+- 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空き、スイの面が閉じた縁に（面は最大 5 秒待つ）、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる最短 1.15（写真を待つ）→ 後ろを向く 0.75 → 下がって消える 6.0 秒（最後 4.5 秒で消える）。消え切ってから電源断 — `EndingFarewellLogic.NoticeWaitMaxSec` / `EndingFarewellDoll` 〔出典: LEDGER 0291・0293。尺は実装判断〕
+- 立ち位置は体験者がいま立っている所から人形の点だけ解く（`visitorFoot`）。頭と胸が枠の外なら L 字の内側の仮の点で人形だけ先に立てる。画の左が人形、右が体験者。カメラの intrinsics は変えない。解けなければ出さない。探索の条件は memory/ending_farewell_doll.md — `TrySolveAtWall` 〔出典: LEDGER 0293。余白・許容値は実装判断〕
+- 写真は左右の並びと枠と向きで決まる（`PhotoBlock`）。見つめ始めて 4 秒までは全身が枠に入って互いに 35° 以内。4 秒から足が切れてもよい（頭と胸は枠の中）。8 秒から胸が枠に入れば撮り、人の向きを問わない。人形の向きは最後まで見る。15 秒で撮れなければ写真なしで退場し、結末は Released のまま。人形を出せないまま 15 秒経っても Done にして締めを終える。体験者の実際の位置は壁で判定しない — `PhotoStrictSec` / `PhotoAnyYawSec` / `PhotoGiveUpSec` / `Photo_LoosensWithTime_ThenTheDollLeavesWithoutIt` 〔出典: 実装判断。0293 は向き合う構図までを決めている〕
 - 別れの人形は体験者の分身ではない。腕は体験者に合わせず、笑わない（`dollPresent` から外す）。立ち位置が解けるまで強さ 0 — `ShowCgLayer.BeginFarewell` / `ShowSoundDirector`（`FarewellActive`）〔出典: コード〕
-- 退場は壁端を回転全身の半径・壁厚・4cm以上の余白で回る折れ線。本番人形の半径既定は CPU bounds 由来の 0.174m（背丈 0.4m 時）。人との距離は単調に増え、終点はカメラからも遠く、投影した背丈は小さくなる経路だけ採る。実道のりの最大速度は 0.35m/s 以下。向きは人とカメラへの平均方向の逆。位置と向きは `PoseAt` を本番・保存プレートで共有し、Doneでも終点を保つ。`trajectoryAccepted` で回転・退場の実CPU壁余白を事前検査し、不合格候補は再探索する 〔出典: LEDGER 0293〕
+- 退場は L 字の奥へ下がる直線。全身を画に残し、カメラから遠ざかり、像の高さが 0.92 倍以下に縮み、体験者の足元へ入らない道だけ採る。図 0293 の左の壁端の外へは回らない。位置と向きは `PoseAt` を本番・保存プレートで共有し、Done でも終点を保つ — `SolveRetreats` / `PickRetreat` 〔出典: LEDGER 0291。向きと道は実装判断〕
 - 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 9.5 秒 ＋ 閉じる 4.0 秒）— `OutroTiming.Default` / `Timing_MatchesTheDoctorTabletSignalCut` 〔出典: show-design:806-826〕
 - Trapped では砂嵐も潰れも出さない。同じフレームに電力を落とし、Dark から始める — `OutroDirector.Begin` / `Trapped_StartsDarkWithoutShowingLive_ThenResetsForTheNextVisitor` 〔出典: show-design:830〕
 - 面と曲は `CloseLevel` 1 本の時計で閉じる。閉じた後は黒のままで、パススルーへは戻さない。閉じている途中も段は Done — `OutroLogic.CloseLevel` / `VisitorPortal.OutroCode` 〔出典: show-design:813-822〕
@@ -48,7 +49,7 @@ paths:
 - 報告数は押した回数。表示を始めた時点で固定する — `OutroReport.Capture`（`VisitorMarkCount`）〔出典: LEDGER 0247〕
 - 画面に組んだ分子を `ev=outro repN=` に出し、解析器がそのランの最後の `ev=mark n=` と照合する。`anomalies=`（同じ演出は 1・0234）は画面に出さない内部の集計 — `OutroReport.Presented` / `analyze-xp-log.py` 〔コード〕
 - 写真はラン内だけ GPU に保持する。撮れなければ代わりの画を入れない — `EndingFrameCapture` / `RunRestartAndDisableDiscardBothVisitorsShots` 〔出典: memory/ending_roll.md〕
-- 帰還の写真は別れの人形が見つめる段で、位置と向きが成立した 1 コマを撮る。GPU 合成成功を `NotifyEndingFarewellCaptured` で返した後は上書きしない。条件未成立・人形を出せないときは撮らず再試行を待つ。batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭で撮る — `EndingFrameCapture` / `EndingFarewellDoll.Facing` 〔出典: LEDGER 0293〕
+- 帰還の写真は別れの人形が見つめる段で、写真の条件が成立した 1 コマを撮る。GPU 合成成功を `NotifyEndingFarewellCaptured` で返した後は上書きしない。条件未成立・人形を出せないときは撮らず再試行を待つ。batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭で撮る — `EndingFrameCapture` / `EndingFarewellDoll.Facing` 〔出典: LEDGER 0293〕
 
 ## 罠（破ると壊れる）
 - 武装と結末を落とすのは `ShowRunDirector.BeginRun` の 1 か所だけ 〔show-design:940〕
@@ -57,7 +58,7 @@ paths:
 - 終幕を畳むときは必ず `OutroDirector.ResetScreen` を通す。既定値の向きが逆なので、1 つずつ戻さない 〔show-design:863〕
 - `CurseReleasedCount` はラン開始でも 0 に戻らない。増えた縁で見る 〔`OvrControllerBridge`〕
 - 未修正: 4-A で左コントローラの接続が切れると帰還不能になる 〔scenario_audit_20261022〕
-- 写真待ちを時刻表の `SampleAt` だけで再現しない。`Tick` と撮影成功通知を通す。写真を撮れない場合は Face を保持する 〔コード〕
+- 写真待ちを時刻表の `SampleAt` だけで再現しない。`Tick` と撮影成功通知を通す。写真待ちの緩みは `Sample.photoLevel` で渡す（`Tick` だけが立てる）〔コード〕
 - 別れの人形は `ShowCgLayer` の 1 体の器を使う。入れ替わりの人形が消える前（`SwapActive`）に出そうとしない 〔コード〕
 - 観測 `ev=farewell` / `ev=sum farewell=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す 〔コード〕
 

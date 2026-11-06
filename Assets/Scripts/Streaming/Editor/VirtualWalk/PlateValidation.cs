@@ -204,8 +204,13 @@ namespace FixedCamVr.Streaming.EditorTools
                                         point.x - StageOriginX >= visitorNav.Bounds.xMin + radius
                                         && point.x - StageOriginX <= visitorNav.Bounds.xMax - radius
                                         && point.z >= visitorNav.Bounds.yMin + radius && point.z <= visitorNav.Bounds.yMax - radius,
-                                    pairAccepted: acceptPair, dollBodyRadiusM: planningRadius, trajectoryAccepted: acceptTrajectory))
-                                    throw new InvalidOperationException("[PlateValidation] Production ending placement cannot be solved for A.");
+                                    pairAccepted: acceptPair, dollBodyRadiusM: planningRadius, trajectoryAccepted: acceptTrajectory,
+                                    visitorFoot: PlateValidationWorld(EndingVisitorXz, layout.room.floorY)))
+                                {
+                                    var rejects = new StringBuilder();
+                                    foreach (KeyValuePair<string, int> entry in PathRejects) rejects.Append(entry.Key).Append('=').Append(entry.Value).Append(' ');
+                                    throw new InvalidOperationException("[PlateValidation] Production ending placement cannot be solved for A. path " + rejects + "last " + _pathRejectLast);
+                                }
                                 endingFromA = ending;
                             }
                             else ending = endingFromA ?? throw new InvalidOperationException("[PlateValidation] A ending anchor was not validated.");
@@ -292,12 +297,19 @@ namespace FixedCamVr.Streaming.EditorTools
                         }
                         stage.Composite(plate, true, post, caption + "\n" + frame.blend);
                         frame.png = Path.GetFileName(stage.Save(key + ".png"));
-                        frame.constraintsPassed = frame.visitor.minWallClearanceM >= 0.0399f && frame.doll.minWallClearanceM >= 0.0399f
+                        // 別れの写真では人の足が切れてよい（EndingFarewellLogic.PhotoLevelFeetOut）。人は頭と胸が枠に入ることを見る。
+                        bool visitorSeen = pose.Ending
+                            ? EndingFarewellLogic.IsPhotoReady(ending, person.transform.position, personYaw, dollYaw, stage.CgCamera, EndingFarewellLogic.PhotoLevelFeetOut)
+                              && frame.visitor.pixelsVisible >= 128
+                            : frame.visitor.inFrameVertexFraction >= 0.999f && frame.visitor.feetInFrame && frame.visitor.pixelsVisible >= 128
+                              && frame.visitor.visibleFraction >= 0.95f
+                              && PlateValidationProjectionFits(stage.CgCamera, PlateValidationVertices(person), 0.025f);
+                        // 別れの体験者は測った立ち位置で、解いた点ではない。本番と同じく壁で判定しない。
+                        frame.constraintsPassed = (pose.Ending || frame.visitor.minWallClearanceM >= 0.0399f) && frame.doll.minWallClearanceM >= 0.0399f
                             && frame.actorsClearanceM >= 0.0399f
-                            && (!frame.visibilityRequired || (frame.visitor.inFrameVertexFraction >= 0.999f && frame.doll.inFrameVertexFraction >= 0.999f
-                                && frame.visitor.feetInFrame && frame.doll.feetInFrame && frame.visitor.pixelsVisible >= 128
-                                && frame.doll.pixelsVisible >= 16 && frame.visitor.visibleFraction >= 0.95f && frame.doll.visibleFraction >= 0.95f
-                                && PlateValidationProjectionFits(stage.CgCamera, PlateValidationVertices(person), pose.Ending ? 0.005f : 0.025f)
+                            && (!frame.visibilityRequired || (visitorSeen && frame.doll.inFrameVertexFraction >= 0.999f
+                                && frame.doll.feetInFrame
+                                && frame.doll.pixelsVisible >= 16 && frame.doll.visibleFraction >= 0.95f
                                 && PlateValidationProjectionFits(stage.CgCamera, PlateValidationVertices(dollObject), pose.Ending ? 0.005f : 0.025f)));
                         frames.Add(frame);
                         Debug.Log("[PlateValidation] " + key + " " + PlateValidationCaption("visitor", frame.visitor) + " | " + PlateValidationCaption("doll", frame.doll)
@@ -351,7 +363,7 @@ namespace FixedCamVr.Streaming.EditorTools
             Directory.CreateDirectory(animationDir);
             var animationTrace = new StringBuilder("frame\tsourceFrame\ttimeSec\tphase\n");
             int animationFrame = 0;
-            float initialCameraDistance = 0, previousVisitorDistance = 0, lastCameraDistance = 0;
+            float initialCameraDistance = 0, lastCameraDistance = 0;
             Vector3 previousFoot = default;
             float cumulativeTravel = 0, peakSpeed = 0;
             var wallProbe = new WalkNavigation(layout, 0.01f, 0.04f, 0.5f, doll.heightM);
@@ -383,7 +395,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     Vector3 visitorFoot = anchor.visitorTargetFoot + (aligned ? Vector3.zero : Vector3.forward * 0.4f);
                     float yaw = aligned ? personYaw : personYaw + 90f;
                     person.transform.SetPositionAndRotation(visitorFoot, Quaternion.Euler(0, yaw, 0));
-                    bool ready = EndingFarewellLogic.IsPhotoReady(anchor, visitorFoot, yaw, dollYaw);
+                    bool ready = EndingFarewellLogic.IsPhotoReady(anchor, visitorFoot, yaw, dollYaw, stage.CgCamera, EndingFarewellLogic.PhotoLevelFeetOut);
                     EndingFarewellLogic.Step step = logic.Tick(1f / 30f, true, released, true, true, true, true);
                     EndingFarewellLogic.Sample sample = step.sample;
                     EndingFarewellLogic.PoseAt(anchor, sample, dollYaw, out Vector3 actorFoot, out float actorYaw);
@@ -425,11 +437,10 @@ namespace FixedCamVr.Streaming.EditorTools
                         logic.NotifyShotCaptured();
                         captured = true;
                         initialCameraDistance = cameraDistance;
-                        previousVisitorDistance = visitorDistance;
                     }
                     bool retreating = logic.Current == EndingFarewellLogic.Phase.Retreat || logic.Current == EndingFarewellLogic.Phase.Done;
                     bool geometryPassed = !captured || (wallClearance >= 0.0399f
-                        && speed <= 0.3505f && (!retreating || (visitorDistance >= previousVisitorDistance - 0.0001f && dotVisitor < -0.05f && dotCamera < -0.05f)));
+                        && speed <= 0.3505f && (!retreating || dotCamera < -0.3f));
                     trace.AppendLine(string.Format(CultureInfo.InvariantCulture,
                         "{0:F3}\t{1}\t{2}\t{3:F4}\t{4:F3}\t{5:F4}\t{6}\t{7}\t{8:F8}\t{9:F8}\t{10:F5}\t{11:F5}\t{12:F5}\t{13:F5}\t{14:F5}\t{15:F5}\t{16:F5}\t{17:F5}\t{18:F5}\t{19:F3}\t{20}\t{21}\t{22:F6}\t{23:F5}\t{24:F5}\t{25:F5}",
                         time, decision.Outcome, logic.Current, sample.alpha, actorYaw, sample.retreatM, ready, captured, rawSole, -rawSole,
@@ -442,7 +453,6 @@ namespace FixedCamVr.Streaming.EditorTools
                         File.WriteAllBytes(Path.Combine(animationDir, "f" + animationFrame.ToString("D5") + ".jpg"), image.Texture.EncodeToJPG(95));
                         animationTrace.AppendLine(string.Format(CultureInfo.InvariantCulture, "{0}\t{1}\t{2:F3}\t{3}", animationFrame, frame, time, logic.Current));
                         animationFrame++;
-                        previousVisitorDistance = visitorDistance;
                         lastCameraDistance = cameraDistance;
                     }
                     if (previous != logic.Current || frame % 15 == 0)
@@ -811,6 +821,21 @@ namespace FixedCamVr.Streaming.EditorTools
             return distance;
         }
 
+        // 本番は体験者がいま立っている所から解く。ツインの走行で 4-A の報告時に測った立ち位置。足は画の下へ切れる。
+        private static readonly Vector2 EndingVisitorXz = new Vector2(0.51f, 0.26f);
+
+        // 退場の道が落ちた理由。解けなかったときの例外の前に出す。
+        private static string _pathRejectLast = "";
+        private static readonly Dictionary<string, int> PathRejects = new Dictionary<string, int>();
+        private static bool PathReject(string reason, EndingFarewellLogic.Anchor trial, float value)
+        {
+            PathRejects.TryGetValue(reason, out int n);
+            PathRejects[reason] = n + 1;
+            _pathRejectLast = string.Format(CultureInfo.InvariantCulture, "{0}={1:F3} visitor=({2:F2},{3:F2}) doll=({4:F2},{5:F2}) end=({6:F2},{7:F2})",
+                reason, value, trial.visitorTargetFoot.x - StageOriginX, trial.visitorTargetFoot.z, trial.foot.x - StageOriginX, trial.foot.z, trial.retreatEnd.x - StageOriginX, trial.retreatEnd.z);
+            return false;
+        }
+
         private static Func<Vector3, Vector3, bool> PlateValidationPairAcceptance(Stage stage, Geometry geometry, ShowLayoutDef layout,
             GameObject person, VisitorAvatar avatar, ShowActorDef doll, WalkNavigation visitorNav, WalkNavigation dollNav,
             out float measuredDollRadius, out Func<EndingFarewellLogic.Anchor, bool> trajectoryAccepted)
@@ -857,7 +882,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 int samples = Mathf.CeilToInt(duration * 30f);
                 Vector2[]? previousHull = null;
                 Vector3 previousPosition = trial.foot;
-                float previousTime = 0, previousVisitor = Vector3.Distance(trial.foot, trial.visitorTargetFoot);
+                float previousTime = 0;
                 for (int frame = 0; frame <= samples; frame++)
                 {
                     float time = Mathf.Min(duration, frame / 30f);
@@ -869,20 +894,23 @@ namespace FixedCamVr.Streaming.EditorTools
                         Vector3 point = foot + rotation * new Vector3(dollHull[i].x, 0, dollHull[i].y);
                         movedDoll[i] = new Vector2(point.x - StageOriginX, point.z);
                     }
-                    if (dollNav.SweptFootprintClearance(previousHull ?? movedDoll, movedDoll) < 0.04f
-                        || PlateValidationActorsClearance(movedPerson, movedDoll) < 0.04f) return false;
-                    float distance = Vector3.Distance(foot, trial.visitorTargetFoot);
-                    if (distance < previousVisitor - 0.0001f) return false;
-                    if (frame > 0 && Vector3.Distance(foot, previousPosition) / (time - previousTime) > 0.35f) return false;
+                    float wallGap = dollNav.SweptFootprintClearance(previousHull ?? movedDoll, movedDoll);
+                    if (wallGap < 0.04f) return PathReject("wall", trial, wallGap);
+                    float actorGap = PlateValidationActorsClearance(movedPerson, movedDoll);
+                    if (actorGap < 0.04f) return PathReject("actor", trial, actorGap);
+                    if (frame > 0 && Vector3.Distance(foot, previousPosition) / (time - previousTime) > 0.35f)
+                        return PathReject("speed", trial, Vector3.Distance(foot, previousPosition) / (time - previousTime));
                     if (sample.phase == EndingFarewellLogic.Phase.Retreat || sample.phase == EndingFarewellLogic.Phase.Done)
                     {
+                        // 背中はカメラへ見せる。体験者との距離は少し縮んでよい（面の間隔は上の clearance で見る）。
                         Vector3 forward = rotation * Vector3.forward;
-                        if (Vector3.Dot(forward, (trial.visitorTargetFoot - foot).normalized) >= -0.05f
-                            || Vector3.Dot(forward, (trial.cameraPosition - foot).normalized) >= -0.05f) return false;
+                        float back = Vector3.Dot(forward, (trial.cameraPosition - foot).normalized);
+                        if (back >= -0.3f) return PathReject("back", trial, back);
                     }
-                    previousHull = (Vector2[])movedDoll.Clone(); previousPosition = foot; previousTime = time; previousVisitor = distance;
+                    previousHull = (Vector2[])movedDoll.Clone(); previousPosition = foot; previousTime = time;
                 }
-                return Vector3.Distance(previousPosition, trial.cameraPosition) > Vector3.Distance(trial.foot, trial.cameraPosition) + 0.01f;
+                return Vector3.Distance(previousPosition, trial.cameraPosition) > Vector3.Distance(trial.foot, trial.cameraPosition) + 0.01f
+                    || PathReject("nearer", trial, Vector3.Distance(previousPosition, trial.cameraPosition));
             };
             return (visitorFoot, dollFoot) =>
             {
@@ -890,8 +918,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 Quaternion dollYaw = Quaternion.Euler(0, EndingFarewellLogic.FaceYawDeg(dollFoot, visitorFoot), 0);
                 for (int i = 0; i < personLocal.Count; i++) personWorld[i] = visitorFoot + visitorYaw * personLocal[i];
                 for (int i = 0; i < dollLocal.Count; i++) dollWorld[i] = dollFoot + dollYaw * dollLocal[i];
-                if (!PlateValidationProjectionFits(stage.CgCamera, personWorld, 0.005f)
-                    || !PlateValidationProjectionFits(stage.CgCamera, dollWorld, 0.005f)) return false;
+                if (!PlateValidationProjectionFits(stage.CgCamera, dollWorld, 0.005f)) return false;
                 for (int i = 0; i < personHull.Length; i++)
                 {
                     Vector3 point = visitorFoot + visitorYaw * new Vector3(personHull[i].x, 0, personHull[i].y);
@@ -902,10 +929,8 @@ namespace FixedCamVr.Streaming.EditorTools
                     Vector3 point = dollFoot + dollYaw * new Vector3(dollHull[i].x, 0, dollHull[i].y);
                     movedDoll[i] = new Vector2(point.x - StageOriginX, point.z);
                 }
-                return visitorNav.SweptFootprintClearance(movedPerson, movedPerson) >= 0.04f
-                    && dollNav.SweptFootprintClearance(movedDoll, movedDoll) >= 0.04f
+                return dollNav.SweptFootprintClearance(movedDoll, movedDoll) >= 0.04f
                     && PlateValidationActorsClearance(movedPerson, movedDoll) >= 0.04f
-                    && PlateValidationExpectedVisible(stage.CgCamera, personWorld, Vector3.zero, room) >= 0.985f
                     && PlateValidationExpectedVisible(stage.CgCamera, dollWorld, Vector3.zero, room) >= 0.985f;
             };
         }

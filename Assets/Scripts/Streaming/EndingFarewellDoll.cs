@@ -32,6 +32,12 @@ namespace FixedCamVr.Streaming
         public float MusicBoxGain => EndingFarewellLogic.MusicBoxGain(_logic.Current, _logic.ElapsedSec);
         public bool ShotCaptured { get; private set; }
 
+        /// <summary>見つめる段に入ってからの秒（観測用）。</summary>
+        public float FaceHeldSec => _logic.FaceHeldSec;
+
+        /// <summary>写真の条件の緩め具合（観測用）。</summary>
+        public int PhotoLevel => _logic.PhotoLevel;
+
         public void NotifyShotCaptured()
         {
             if (!Facing) return;
@@ -79,7 +85,7 @@ namespace FixedCamVr.Streaming
             bool showing = _cg != null && _cg.FarewellActive;
 
             EndingFarewellLogic.Step step = _logic.Tick(Time.deltaTime, endingActive, ready, cgFree,
-                                                        _beginAccepted, anchored, showing);
+                                                        _beginAccepted, anchored, showing, _runner.EndingNoticeOpen);
             if (step.begin)
             {
                 string actor = _runner.EndingDollActorId;

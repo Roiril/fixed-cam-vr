@@ -14,7 +14,7 @@
 
 ⚠ 実機の代わりではない。圧縮・遅延・両眼・ディスプレイ・パススルーは入らない。音はここでは聴けても実機の聞こえではない。
 ⚠ PASS は人形が実写に合っていることを意味しない。既定は APK と同じ本番の値で、ツインの画には合わない（report の頭に差を出す）。
-   人形を画に合わせて見るなら --calib twin。実際のレンズの値では別れの人形の立ち位置が解けず、結末は中断になる。
+   人形を画に合わせて見るなら --calib twin。
 """
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ def twinlap_check(events: list[dict]) -> tuple[str, str]:
 
 
 def ending_checks(log: Path, calib: str, nomark: bool) -> list[tuple[str, str]]:
-    """走行そのものの照合。頼んだ calib で走ったか・報告したのに帰還で終わったか・別れの立ち位置が解けたか。"""
+    """走行そのものの照合。頼んだ calib で走ったか・報告したのに帰還で終わったか・別れの立ち位置が解けて写真が撮れたか。"""
     text = log.read_text(encoding="utf-8", errors="replace")
     out = []
     used = re.findall(r"ev=config .*?calib=(\w+)", text)
@@ -124,7 +124,15 @@ def ending_checks(log: Path, calib: str, nomark: bool) -> list[tuple[str, str]]:
         out.append(("FAIL", f"結末が {ending}（想定は {want}）"))
     if unsolved and not nomark:
         out.append(("FAIL", f"カメラ A のこの配置では別れの人形の立ち位置が解けない（{unsolved[-1].strip()}）。"
-                            "人形が出ないまま待ち続け、報告していても帰還で終わらない"))
+                            "人形が出ないまま写真なしで終わる"))
+    if not nomark:
+        shots = re.findall(r"ev=farewell phase=turn .*?shot=(\d)", text)
+        if not shots:
+            out.append(("FAIL", "別れの人形が後ろを向く段まで届いていない"))
+        elif shots[-1] != "1":
+            out.append(("FAIL", "別れの写真を撮れないまま人形が退場した"))
+        else:
+            out.append(("OK", "別れの写真を撮ってから人形が退場した"))
     return out
 
 

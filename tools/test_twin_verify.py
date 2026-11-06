@@ -51,8 +51,17 @@ class EndingChecks(unittest.TestCase):
             return tv.ending_checks(log, calib, nomark)
 
     def test_released_with_the_requested_calib_passes(self):
-        got = self.check("[XP] t=1 ev=config a=1 calib=twin\n[XP] t=2 ev=outro stage=Report x=1 ending=Released\n")
-        self.assertEqual([x[0] for x in got], ["OK"])
+        got = self.check("[XP] t=1 ev=config a=1 calib=twin\n"
+                         "[XP] t=1.5 ev=farewell phase=turn cg=1 shot=1 level=1 held=4.2\n"
+                         "[XP] t=2 ev=outro stage=Report x=1 ending=Released\n")
+        self.assertEqual([x[0] for x in got], ["OK", "OK"])
+
+    def test_released_without_the_photo_is_named(self):
+        got = self.check("[XP] t=1 ev=config calib=twin\n"
+                         "[XP] t=1.5 ev=farewell phase=turn cg=1 shot=0 level=2 held=15.0\n"
+                         "[XP] t=2 ev=outro stage=Report ending=Released\n")
+        self.assertEqual(got[-1][0], "FAIL")
+        self.assertIn("写真", got[-1][1])
 
     def test_other_calib_is_reported(self):
         got = self.check("[XP] t=1 ev=config calib=show\n[XP] t=2 ev=outro stage=Report ending=Released\n")

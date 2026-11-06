@@ -1208,6 +1208,8 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             if (!IsBuilt) return;
+            // 別れの人形は面が閉じてから出る。読んでいる字の裏に現れないようにする。
+            timeline?.SetEndingNoticeOpen(_logic.Active && !_logic.DoneReading);
             bool registrationActive = showControl != null
                 && (showControl.CourseRegistrationActive || showControl.StaffSetupActive);
             if (registrationActive != RegistrationHidden)
