@@ -35,8 +35,8 @@ paths:
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
 - 台車（Romi）は使わない。Quest は台車へ何も送らない（`RomiCartLink` は 2026-10-30 に削除）〔出典: LEDGER 0291〕
 - 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空き、スイの面が閉じた縁に（面は最大 5 秒待つ）、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる最短 1.15（写真を待つ）→ 後ろを向く 0.75 → 下がって消える 6.0 秒（最後 4.5 秒で消える）。消え切ってから電源断 — `EndingFarewellLogic.NoticeWaitMaxSec` / `EndingFarewellDoll` 〔出典: LEDGER 0291・0293。尺は実装判断〕
-- 立ち位置は体験者がいま立っている所から人形の点だけ解く（`visitorFoot`）。頭と胸が枠の外なら L 字の内側の仮の点で人形だけ先に立てる。画の左が人形、右が体験者。カメラの intrinsics は変えない。解けなければ出さない。探索の条件は memory/ending_farewell_doll.md — `TrySolveAtWall` 〔出典: LEDGER 0293。余白・許容値は実装判断〕
-- 写真は左右の並びと枠と向きで決まる（`PhotoBlock`）。見つめ始めて 4 秒までは全身が枠に入って互いに 35° 以内。4 秒から足が切れてもよい（頭と胸は枠の中）。8 秒から胸が枠に入れば撮り、人の向きを問わない。人形の向きは最後まで見る。15 秒で撮れなければ写真なしで退場し、結末は Released のまま。人形を出せないまま 15 秒経っても Done にして締めを終える。体験者の実際の位置は壁で判定しない — `PhotoStrictSec` / `PhotoAnyYawSec` / `PhotoGiveUpSec` / `Photo_LoosensWithTime_ThenTheDollLeavesWithoutIt` 〔出典: 実装判断。0293 は向き合う構図までを決めている〕
+- 立ち位置は体験者がいま立っている所から人形の点だけ解く（`visitorFoot`）。頭と胸が枠の外なら L 字の内側の仮の点で人形だけ先に立てる。画の左が人形、右が体験者。カメラの intrinsics は変えない。解けなければ出さない。条件は memory/ending_farewell_doll.md — `TrySolveAtWall` 〔出典: LEDGER 0293。余白・許容値は実装判断〕
+- 写真は左右の並びと枠と向きで決まる（`PhotoBlock`）。見つめ始めて 4 秒までは全身が枠に入って互いに 35° 以内。4 秒から足が切れてもよい（頭と胸は枠の中）。8 秒から胸が枠に入れば撮り、人の向きを問わない。人形の向きは最後まで見る。15 秒で撮れなければ写真なしで退場し、結末は Released のまま。人形を出せなくても 15 秒で Done。実際の位置は壁で判定しない — `PhotoStrictSec` / `PhotoAnyYawSec` / `PhotoGiveUpSec` / `Photo_LoosensWithTime_ThenTheDollLeavesWithoutIt` 〔実装判断〕
 - 別れの人形は体験者の分身ではない。腕は体験者に合わせず、笑わない（`dollPresent` から外す）。立ち位置が解けるまで強さ 0 — `ShowCgLayer.BeginFarewell` / `ShowSoundDirector`（`FarewellActive`）〔出典: コード〕
 - 退場は L 字の奥へ下がる直線。全身を画に残し、カメラから遠ざかり、像の高さが 0.92 倍以下に縮み、体験者の足元へ入らない道だけ採る。図 0293 の左の壁端の外へは回らない。位置と向きは `PoseAt` を本番・保存プレートで共有し、Done でも終点を保つ — `SolveRetreats` / `PickRetreat` 〔出典: LEDGER 0291。向きと道は実装判断〕
 - 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 9.5 秒 ＋ 閉じる 4.0 秒）— `OutroTiming.Default` / `Timing_MatchesTheDoctorTabletSignalCut` 〔出典: show-design:806-826〕
