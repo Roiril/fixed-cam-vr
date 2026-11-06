@@ -78,6 +78,12 @@ def generate(seed):
     first["rank"] = 0.0
     for i, s in enumerate(ordered):
         s["rank"] = round(((i + 1) / len(ordered)) ** RIPPLE_POWER, 3)
+
+    # 暖色はメインの左右に 1 枚ずつ必ず入れる（参考は青の中に橙が少し）。
+    # 範囲は目線の絵で測った。メインは方位 ±20 度・高さ -17〜12 度を隠し、正面を見た画は高さ -20〜28 度まで写る。
+    for side in (-1, 1):
+        beside = [s for s in seats[1:] if 24 <= side * s["az"] <= 40 and -17 <= s["el"] <= 26]
+        rng.choice(beside)["tint"] = 2
     return seats
 
 

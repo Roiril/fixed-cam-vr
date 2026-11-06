@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6cd725ef-8e93-4852-88d7-17922bbaff01
-  modified: 2026-11-05T22:14:56.454Z
+  modified: 2026-11-06T02:57:00.950Z
 ---
 
 2026-11-06 ユーザー依頼（0317・逐語は LEDGER）を受けた試作。闇の目の代わりに、メインスクリーンと同じ画を映す面が頭の周りへ増える。参考は `mul.jpg`。
@@ -19,6 +19,8 @@ metadata:
 **画**: `ScreenMultiply` が手動カメラでメインスクリーンを正射影で撮る（10Hz・640x516 → 320x258）。リング 16 枚の `Tex2DArray` に積み、席ごとに 0〜1.5 秒前の画を映す。人形も乱れも外形も付いて来るのはこのため。外形は取り込みの alpha で切る。
 
 **描画**: メッシュは面と箱で 1 draw、暈で 1 draw。`Queue=Geometry+50` なのでメインに隠れた所は深度で捨てる。暈は `Geometry+60` の加算で alpha を変えない。シェーダは `Assets/Resources` に置いて `Resources.Load`（`ProjectSettings` を触らないため）。
+
+**色**: `ScreenMultiplyLayout.Tints` の 3 色（寒色・淡い寒色・橙）で決まる。暖色は `make-screen-wall.py` がメインの左右へ 1 枚ずつ必ず置く。残りは席の 7% が乱数で橙になるが、ほとんど正面の画に入らない。正面の範囲は目線の絵で測った（メインが隠すのは方位 ±20 度・高さ -17〜12 度）。Tints を全部 1 にするとモノクロ版になる。暈も同じ色で白く見える。
 
 **音**: 最初の 1 枚が `ScreenOn`、以降が新しい `SoundCue.ScreenAdd`（`sfx_switch_1..6` の流用）。間引きは目と同じ 0.09 秒で、`sndEye=` に出る。耳では確かめていない。
 
