@@ -16,10 +16,12 @@ namespace FixedCamVr.Streaming.EditorTools
     /// （<see cref="AnomalyEyesLogic"/>・<see cref="ScreenMultiply"/> の点いた時刻の表）を通す。
     /// 版は 2 つ撮る — <c>fog</c>（本番の見え）と <c>flat</c>（霧なし・その場で点く・奥の段なし ＝ 前の版に近い形）。
     ///
-    /// ⚠ 実機の見え方そのものではない。両眼視差・レンズは入っていない。メインスクリーンは無人写真を貼った板で、
-    /// 面に映る画もその写真（本番はメインスクリーンの取り込み）。奥行きの効き方と霧の濃さを見るための絵。
-    /// 写真は引き延ばさず、面の縦横比へ中央で切る。面へ渡す画には本番の取り込みと同じく管の丸い外形を alpha で付ける
-    /// （全面 alpha 1 で渡すと枠が出ず、角の丸みも消える）。
+    /// メインスクリーンは本番と同じ面で組む（シーンの材質の複製・参照の筐体・曲面・前段・本人の採用値。
+    /// <see cref="IntroPreview"/> のテレビ方式と同じ手順）。増える面の画は、本番と同じくその面の取り込み。
+    /// ⚠ 置き換えの板を使わない。最初の版は 16:9 の平らな板に写真を貼り、面にもその写真を直接渡していたので、
+    /// メインの形・縦横比・角の丸みと、面の外形が全部本番と違う絵になった（LEDGER 0319 / 0320）。
+    ///
+    /// ⚠ 実機の見え方そのものではない。両眼視差・レンズは入っていない。映像は無人写真 1 枚（動かない）。
     ///
     /// 使い方: <c>.\tools\unity.ps1 menu screen-wall</c>
     /// </summary>
@@ -32,15 +34,17 @@ namespace FixedCamVr.Streaming.EditorTools
         private const float FovDeg = 70f;
         private static readonly Vector3 Stage = new(0f, 2000f, 0f);
 
-        // 置き換えのメインスクリーン（本編の実測: 水平 ±30.6° / 垂直 ±18.4° / 8° 下 / 2m）。
+        // メインスクリーンの置き方（ScreenAnchor の distance / heightOffset、シーンの高さ）。
         private const float ScreenDistM = 2.0f;
-        private const float ScreenHalfYawDeg = 30.6f;
-        private const float ScreenHalfPitchDeg = 18.4f;
-        private const float ScreenDropDeg = 8f;
+        private const float ScreenHeightOffsetM = -0.28f;
+        private const float ScreenHeightM = 1.3333f;
+        /// <summary>シーンの物を写さないための撮影用レイヤ（<see cref="IntroPreview"/> と同じ番号）。</summary>
+        private const int PreviewLayer = 1;
 
         [MenuItem("Tools/FixedCamVr/Diagnostics/Preview Screen Wall And Fog", priority = 234)]
         public static void Run()
         {
+            if (!EditorCliArgs.EnsureScene("Assets/Scenes/Main.unity")) return;
             string dir = Path.Combine(Application.dataPath, OutDirRel);
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
@@ -57,7 +61,9 @@ namespace FixedCamVr.Streaming.EditorTools
             var wallGo = new GameObject("[ScreenWallPreview] Wall");
             var screenGo = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Material? screenMat = null;
-            Texture2DArray? feed = null;
+            Mesh? curved = null;
+            CrtSignalProcessor? signal = null;
+            long generation = 0;
             try
             {
                 var cam = camGo.AddComponent<Camera>();
@@ -67,35 +73,53 @@ namespace FixedCamVr.Streaming.EditorTools
                 cam.clearFlags = CameraClearFlags.SolidColor;
                 cam.backgroundColor = Color.black;
                 cam.allowHDR = false;
+                cam.cullingMask = 1 << PreviewLayer;
+                cam.enabled = false;
                 cam.transform.SetPositionAndRotation(Stage, Quaternion.identity);
 
-                Shader? plain = Shader.Find("Universal Render Pipeline/Unlit");
-                if (plain == null)
+                // --- メインスクリーン。本番と同じ面（IntroPreview のテレビ方式と同じ手順）---
+                var sceneScreen = UnityEngine.Object.FindObjectOfType<MjpegScreen>(true);
+                Material? sceneMat = sceneScreen != null ? sceneScreen.GetComponent<Renderer>().sharedMaterial : null;
+                if (sceneMat == null)
                 {
-                    Debug.LogError("[ScreenWallPreview] URP の Unlit が見つかりません");
+                    Debug.LogError("[ScreenWallPreview] シーンに MjpegScreen の材質がありません（`menu scene` を先に）");
                     return;
                 }
-                screenMat = new Material(plain) { name = "Main screen (preview)" };
-                screenMat.SetTexture("_BaseMap", plate);
-                // 写真を板の縦横比へ中央で切る（引き延ばさない）。
+                screenMat = new Material(sceneMat) { name = "ScreenComposite (screen-wall)" };
+                IntroPreview.ConfigureScreenMaterial(screenMat, plate, plate, CrtReferenceScreen.LogicalAspect);
+                if (!CrtReferenceScreen.Apply(screenMat))
                 {
-                    float quadAspect = Mathf.Tan(ScreenHalfYawDeg * Mathf.Deg2Rad) / Mathf.Tan(ScreenHalfPitchDeg * Mathf.Deg2Rad);
-                    float plateAspect = (float)plate.width / plate.height;
-                    Vector2 scale = plateAspect > quadAspect
-                        ? new Vector2(quadAspect / plateAspect, 1f)
-                        : new Vector2(1f, plateAspect / quadAspect);
-                    screenMat.SetTextureScale("_BaseMap", scale);
-                    screenMat.SetTextureOffset("_BaseMap", (Vector2.one - scale) * 0.5f);
+                    Debug.LogError("[ScreenWallPreview] 参照の筐体を組めません");
+                    return;
                 }
-                screenMat.SetColor("_BaseColor", new Color(0.62f, 0.74f, 0.86f, 1f));
-                screenGo.name = "[ScreenWallPreview] Main screen (plate)";
-                screenGo.GetComponent<Renderer>().sharedMaterial = screenMat;
-                float hw = ScreenDistM * Mathf.Tan(ScreenHalfYawDeg * Mathf.Deg2Rad);
-                float hh = ScreenDistM * Mathf.Tan(ScreenHalfPitchDeg * Mathf.Deg2Rad);
-                float drop = ScreenDistM * Mathf.Tan(ScreenDropDeg * Mathf.Deg2Rad);
-                screenGo.transform.position = Stage + new Vector3(0f, -drop, ScreenDistM);
-                screenGo.transform.localScale = new Vector3(hw * 2f, hh * 2f, 1f);
+                CrtSignalProfile.ApplySelected(screenMat);
+                CameraFeelFx.WriteUniforms(screenMat, CrtSignalProfile.NoiseDark, CrtSignalProfile.NoiseFixed,
+                    0, 0, ScreenDecayLogic.BlocksFor(CrtSignalProfile.Mono), 0, CrtSignalProfile.Mono);
+                CrtSignalProfile.ApplySelected(screenMat);
+                screenMat.SetFloat("_CrtIgnite", 1f);
+                screenMat.SetFloat("_IntroLive", 1f);
+                screenMat.SetFloat("_CrtTvCase", 0f);
+                screenMat.SetFloat("_CrtTvDark", 0f);
+                screenMat.SetFloat("_Glitch", 0f);
 
+                screenGo.name = "[ScreenWallPreview] Main screen";
+                UnityEngine.Object.DestroyImmediate(screenGo.GetComponent<Collider>());
+                var screenRenderer = screenGo.GetComponent<MeshRenderer>();
+                screenRenderer.sharedMaterial = screenMat;
+                curved = CrtScreenMesh.BuildMesh(48, 0.055f);
+                screenGo.GetComponent<MeshFilter>().sharedMesh = curved;
+                screenGo.transform.position = Stage + new Vector3(0f, ScreenHeightOffsetM, ScreenDistM);
+                screenGo.transform.localScale = new Vector3(ScreenHeightM * CrtReferenceScreen.CaseAspect, ScreenHeightM, 1f);
+                signal = new CrtSignalProcessor();
+                Vector3 view = screenGo.transform.InverseTransformPoint(cam.transform.position);
+                screenMat.SetVector("_CrtView", new Vector4(view.x, view.y, view.z, 0f));
+                if (!signal.PrepareDisplay(screenMat, ++generation, forceSource: true))
+                {
+                    Debug.LogError("[ScreenWallPreview] スクリーンの前段を構成できません");
+                    return;
+                }
+
+                // --- 増える面。本番と同じく、メインスクリーンを取り込んで映す ---
                 wallGo.transform.SetPositionAndRotation(Stage, Quaternion.identity);
                 var wall = wallGo.AddComponent<ScreenMultiply>();
                 wall.Build();
@@ -104,8 +128,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     Debug.LogError("[ScreenWallPreview] 増えるスクリーンを組めません（シェーダか取り込みの器）");
                     return;
                 }
-                feed = BuildFeed(plate);
-                wall.SetFeedOverride(feed);
+                wall.SetCaptureSource(screenRenderer);
+                SetLayer(screenGo.transform);
+                SetLayer(wallGo.transform);
 
                 float open0 = AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec;
                 float full = open0 + AnomalyEyesLogic.SwarmSec;
@@ -134,6 +159,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     foreach (var shot in shots)
                     {
                         DriveTo(wall, shot.sec);
+                        SetLayer(wallGo.transform);
                         float pitch = shot.name == "9_settled_up" ? -32f : 0f;
                         cam.transform.rotation = Quaternion.Euler(pitch, shot.yaw, 0f);
                         Texture2D img = Shoot(cam, StillW, StillH);
@@ -157,6 +183,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     for (float t = 0f; t < full + 3.0f; t += dt)
                     {
                         Step(wall, logic, dt, ref clock, ref begun);
+                        SetLayer(wallGo.transform);
                         if (t < AnomalyEyesLogic.HintSec * 0.6f) continue;
                         Texture2D img = Shoot(cam, SeqW, SeqH);
                         File.WriteAllBytes(Path.Combine(sdir, $"f{n:0000}.jpg"), img.EncodeToJPG(92));
@@ -170,7 +197,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 Debug.Log($"[ScreenWallPreview] fog / flat の静止画 各 9 枚{(sequence ? " + 連番" : "")} + report.tsv → Assets/{OutDirRel}/\n"
                         + $"  席 {ScreenMultiplyLayout.Seats.Length}（霧の奥の段 {farSeats}）/ 写真 {plateName}\n"
                         + $"  霧 {ScreenFogLogic.Density}/m・{ScreenFogLogic.ClearM}m まで無し / 奥から {ScreenMultiply.EmergeM}m・{ScreenMultiply.ArriveSec}s\n"
-                        + "  ⚠ 両眼視差・レンズは入っていない。メインスクリーンは写真を貼った板");
+                        + $"  取り込み {wall.CaptureCount} 回（本番と同じ経路でメインスクリーンを写した）\n"
+                        + "  ⚠ 両眼視差・レンズは入っていない。映像は無人写真 1 枚");
+                if (wall.CaptureCount == 0)
+                    Debug.LogError("[ScreenWallPreview] メインスクリーンを 1 度も取り込めていません。面は何も映していません");
             }
             finally
             {
@@ -178,7 +208,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 UnityEngine.Object.DestroyImmediate(wallGo);
                 UnityEngine.Object.DestroyImmediate(screenGo);
                 if (screenMat != null) UnityEngine.Object.DestroyImmediate(screenMat);
-                if (feed != null) UnityEngine.Object.DestroyImmediate(feed);
+                if (curved != null) UnityEngine.Object.DestroyImmediate(curved);
+                signal?.Dispose();
                 UnityEngine.Object.DestroyImmediate(plate);
             }
         }
@@ -217,8 +248,10 @@ namespace FixedCamVr.Streaming.EditorTools
                 Vector3 local = cam.transform.InverseTransformPoint(world);
                 float az = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
                 float el = Mathf.Atan2(local.y, new Vector2(local.x, local.z).magnitude) * Mathf.Rad2Deg;
-                bool behindMain = Mathf.Abs(az) < ScreenHalfYawDeg + 1f
-                                  && el > -ScreenDropDeg - ScreenHalfPitchDeg - 1f && el < -ScreenDropDeg + ScreenHalfPitchDeg + 1f;
+                float halfYaw = Mathf.Atan(ScreenHeightM * CrtReferenceScreen.CaseAspect * 0.5f / ScreenDistM) * Mathf.Rad2Deg;
+                float top = Mathf.Atan((ScreenHeightOffsetM + ScreenHeightM * 0.5f) / ScreenDistM) * Mathf.Rad2Deg;
+                float bottom = Mathf.Atan((ScreenHeightOffsetM - ScreenHeightM * 0.5f) / ScreenDistM) * Mathf.Rad2Deg;
+                bool behindMain = Mathf.Abs(az) < halfYaw + 1f && el > bottom - 1f && el < top + 1f;
                 if (behindMain) continue;
                 int cx = Mathf.RoundToInt(vp.x * img.width), cy = Mathf.RoundToInt(vp.y * img.height);
                 double sum = 0;
@@ -254,43 +287,10 @@ namespace FixedCamVr.Streaming.EditorTools
             return tex;
         }
 
-        /// <summary>取り込みのリングの代わり。全段に同じ写真を入れ、mip を作る。</summary>
-        private static Texture2DArray BuildFeed(Texture2D plate)
+        private static void SetLayer(Transform root)
         {
-            int w = ScreenMultiply.TileW, h = ScreenMultiply.TileH;
-            var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
-            var small = new Texture2D(w, h, TextureFormat.RGBA32, mipChain: true);
-            var arr = new Texture2DArray(w, h, ScreenMultiplyLayout.DelaySlots, TextureFormat.RGBA32, mipChain: true)
-            { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear };
-            try
-            {
-                // 面の縦横比へ中央で切ってから縮める（引き延ばさない）。
-                float tileAspect = (float)w / h, plateAspect = (float)plate.width / plate.height;
-                Vector2 scale = plateAspect > tileAspect
-                    ? new Vector2(tileAspect / plateAspect, 1f)
-                    : new Vector2(1f, plateAspect / tileAspect);
-                Graphics.Blit(plate, rt, scale, (Vector2.one - scale) * 0.5f);
-                RenderTexture.active = rt;
-                small.ReadPixels(new Rect(0, 0, w, h), 0, 0);
-                Color32[] px = small.GetPixels32();
-                // 管の丸い外形（本番は取り込みの alpha に出る）。
-                for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    float nx = Mathf.Abs((x + 0.5f) / w * 2f - 1f), ny = Mathf.Abs((y + 0.5f) / h * 2f - 1f);
-                    float r = Mathf.Pow(nx, 7f) + Mathf.Pow(ny, 7f);
-                    px[y * w + x].a = (byte)Mathf.RoundToInt(255f * Mathf.Clamp01((1f - r) * 12f));
-                }
-                for (int s = 0; s < ScreenMultiplyLayout.DelaySlots; s++) arr.SetPixels32(px, s, 0);
-                arr.Apply(updateMipmaps: true);
-            }
-            finally
-            {
-                RenderTexture.active = null;
-                RenderTexture.ReleaseTemporary(rt);
-                UnityEngine.Object.DestroyImmediate(small);
-            }
-            return arr;
+            root.gameObject.layer = PreviewLayer;
+            for (int i = 0; i < root.childCount; i++) SetLayer(root.GetChild(i));
         }
 
         private static Texture2D Shoot(Camera cam, int w, int h)

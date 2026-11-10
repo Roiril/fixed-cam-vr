@@ -86,7 +86,6 @@ namespace FixedCamVr.Streaming
         private float _sinceCapture;
         private readonly float[] _openAt = new float[ScreenMultiplyLayout.MaxSeats];
         private float _now;
-        private bool _feedOverridden;
 
         /// <summary>面を描く材質と取り込みの器を組めたか。</summary>
         public bool IsBuilt { get; private set; }
@@ -228,17 +227,10 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
-        /// 取り込みの代わりに映す画（Tex2DArray・<see cref="ScreenMultiplyLayout.DelaySlots"/> 枚・mip つき）。
-        /// Editor のプレビュー用。渡すと <see cref="Drive"/> はメインスクリーンを取り込まない。
+        /// 取り込む相手のメインスクリーンを渡す。渡さなければシーンの <see cref="MjpegScreen"/> を探す。
+        /// Editor のプレビュー（<c>menu screen-wall</c>）が、自分で組んだ本番の面を取り込ませるために使う。
         /// </summary>
-        public void SetFeedOverride(Texture feed)
-        {
-            if (_surfaceMat == null) return;
-            _surfaceMat.SetTexture(FeedTexId, feed);
-            _feedOverridden = true;
-            _ringHead = 0;
-            _ringFilled = ScreenMultiplyLayout.DelaySlots;
-        }
+        public void SetCaptureSource(Renderer screen) => _screenRenderer = screen;
 
         private void ResetOpenTimes()
         {
@@ -251,11 +243,8 @@ namespace FixedCamVr.Streaming
         /// <summary>出番の頭。リングを空に戻し、次のフレームで最初の画を取り込む。</summary>
         public void BeginRun()
         {
-            if (!_feedOverridden)
-            {
-                _ringHead = 0;
-                _ringFilled = 0;
-            }
+            _ringHead = 0;
+            _ringFilled = 0;
             _sinceCapture = CaptureIntervalSec;
             ResetOpenTimes();
         }
@@ -266,7 +255,7 @@ namespace FixedCamVr.Streaming
             if (!IsBuilt || _surfaceMat == null || _glowMat == null) return;
 
             _sinceCapture += dt;
-            if (!_feedOverridden && _sinceCapture >= CaptureIntervalSec)
+            if (_sinceCapture >= CaptureIntervalSec)
             {
                 _sinceCapture = 0f;
                 CaptureMainScreen();

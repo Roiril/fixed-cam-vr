@@ -2056,7 +2056,7 @@ namespace FixedCamVr.Streaming.EditorTools
         /// （2026-08-07 に合成プレビューで踏んだのと同じ穴）。書き方は
         /// <see cref="CameraFeelFx.WriteUniforms"/> の口を通す — 写すと片方だけ直したときに黙って食い違う。
         /// </summary>
-        private static void ConfigureScreenMaterial(Material mat, Texture2D? plate, Texture2D fallback,
+        internal static void ConfigureScreenMaterial(Material mat, Texture2D? plate, Texture2D fallback,
                                                     float frameAspect)
         {
             Texture2D live = plate != null ? plate : fallback;
