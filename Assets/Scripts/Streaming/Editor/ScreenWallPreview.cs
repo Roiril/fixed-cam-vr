@@ -18,6 +18,8 @@ namespace FixedCamVr.Streaming.EditorTools
     ///
     /// ⚠ 実機の見え方そのものではない。両眼視差・レンズは入っていない。メインスクリーンは無人写真を貼った板で、
     /// 面に映る画もその写真（本番はメインスクリーンの取り込み）。奥行きの効き方と霧の濃さを見るための絵。
+    /// 写真は引き延ばさず、面の縦横比へ中央で切る。面へ渡す画には本番の取り込みと同じく管の丸い外形を alpha で付ける
+    /// （全面 alpha 1 で渡すと枠が出ず、角の丸みも消える）。
     ///
     /// 使い方: <c>.\tools\unity.ps1 menu screen-wall</c>
     /// </summary>
@@ -75,6 +77,16 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 screenMat = new Material(plain) { name = "Main screen (preview)" };
                 screenMat.SetTexture("_BaseMap", plate);
+                // 写真を板の縦横比へ中央で切る（引き延ばさない）。
+                {
+                    float quadAspect = Mathf.Tan(ScreenHalfYawDeg * Mathf.Deg2Rad) / Mathf.Tan(ScreenHalfPitchDeg * Mathf.Deg2Rad);
+                    float plateAspect = (float)plate.width / plate.height;
+                    Vector2 scale = plateAspect > quadAspect
+                        ? new Vector2(quadAspect / plateAspect, 1f)
+                        : new Vector2(1f, plateAspect / quadAspect);
+                    screenMat.SetTextureScale("_BaseMap", scale);
+                    screenMat.SetTextureOffset("_BaseMap", (Vector2.one - scale) * 0.5f);
+                }
                 screenMat.SetColor("_BaseColor", new Color(0.62f, 0.74f, 0.86f, 1f));
                 screenGo.name = "[ScreenWallPreview] Main screen (plate)";
                 screenGo.GetComponent<Renderer>().sharedMaterial = screenMat;
@@ -252,11 +264,23 @@ namespace FixedCamVr.Streaming.EditorTools
             { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear };
             try
             {
-                Graphics.Blit(plate, rt);
+                // 面の縦横比へ中央で切ってから縮める（引き延ばさない）。
+                float tileAspect = (float)w / h, plateAspect = (float)plate.width / plate.height;
+                Vector2 scale = plateAspect > tileAspect
+                    ? new Vector2(tileAspect / plateAspect, 1f)
+                    : new Vector2(1f, plateAspect / tileAspect);
+                Graphics.Blit(plate, rt, scale, (Vector2.one - scale) * 0.5f);
                 RenderTexture.active = rt;
                 small.ReadPixels(new Rect(0, 0, w, h), 0, 0);
                 Color32[] px = small.GetPixels32();
-                for (int i = 0; i < px.Length; i++) px[i].a = 255;
+                // 管の丸い外形（本番は取り込みの alpha に出る）。
+                for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float nx = Mathf.Abs((x + 0.5f) / w * 2f - 1f), ny = Mathf.Abs((y + 0.5f) / h * 2f - 1f);
+                    float r = Mathf.Pow(nx, 7f) + Mathf.Pow(ny, 7f);
+                    px[y * w + x].a = (byte)Mathf.RoundToInt(255f * Mathf.Clamp01((1f - r) * 12f));
+                }
                 for (int s = 0; s < ScreenMultiplyLayout.DelaySlots; s++) arr.SetPixels32(px, s, 0);
                 arr.Apply(updateMipmaps: true);
             }

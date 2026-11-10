@@ -81,6 +81,9 @@ Shader "FixedCamVr/ScreenMultiply"
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
+            // 面のうち画が占める割合。残りが筐体の枠。
+            #define WALL_PICTURE 0.88
+
             float Hash11(float x)
             {
                 x = frac(x * 0.1031);
@@ -161,11 +164,14 @@ Shader "FixedCamVr/ScreenMultiply"
                 float rowId = floor(uv.y * 26.0);
                 uv.x += torn * (Hash21(float2(rowId, tick)) - 0.5) * 0.07;
 
-                float2 inset = saturate(uv) * 0.994 + 0.003;
+                // 画は面の内側 WALL_PICTURE に収め、周りを筐体の枠にする（枠が無いと板に見える）。
+                float2 pic = (uv - 0.5) / WALL_PICTURE + 0.5;
+                float inPic = step(abs(pic.x - 0.5), 0.5) * step(abs(pic.y - 0.5), 0.5);
+                float2 inset = saturate(pic) * 0.994 + 0.003;
                 // 霧を抜けきれない分だけぼかす。
                 float blur = (1.0 - i.fog) * _WallFogBlur;
                 half4 feed = SAMPLE_TEXTURE2D_ARRAY_LOD(_FeedTex, sampler_FeedTex, inset, i.seat.w, blur);
-                float tube = smoothstep(0.35, 0.65, feed.a);
+                float tube = smoothstep(0.35, 0.65, feed.a) * inPic;
 
                 // 面ごとの明るさの差（参考の、弱った管と明るい管の混ざり方）。
                 float lamp = lerp(0.5, 1.05, seed);
@@ -185,9 +191,12 @@ Shader "FixedCamVr/ScreenMultiply"
                 float inside = step(abs(c.y), halfH) * step(abs(c.x), halfW) * tube;
 
                 // 暗い筐体。四隅は管の外なのでここが見える。縁だけ自分の光を少し拾う。
+                // 枠は管の光を内側の縁で拾い、外へ向かって暗くなる。外の縁に細い照り返し。
                 float edge = min(min(i.uv.x, 1.0 - i.uv.x), min(i.uv.y, 1.0 - i.uv.y));
                 float rim = 1.0 - smoothstep(0.0, 0.012, edge);
-                float3 housing = i.tint * (0.0025 + 0.010 * rim) * saturate(open * 2.0);
+                float spill = smoothstep(0.0, (1.0 - WALL_PICTURE) * 0.5, edge);
+                float3 housing = i.tint * (0.004 + 0.020 * spill * spill * lamp + 0.012 * rim)
+                               * saturate(open * 2.0) * flutter;
                 float3 col = lerp(housing, picture, inside);
 
                 // 開く途中の光と線。
