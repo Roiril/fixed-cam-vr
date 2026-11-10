@@ -28,6 +28,40 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void FarTier_ContinuesIntoTheFog_AndStaysDimmerThanTheNearOnes()
+        {
+            ScreenSeat[] far = Seats.Where(s => ScreenMultiplyLayout.IsFar(s)).ToArray();
+            ScreenSeat[] near = Seats.Where(s => !ScreenMultiplyLayout.IsFar(s)).ToArray();
+            Assert.That(far.Length, Is.GreaterThan(20), "霧の奥の段が無い");
+            Assert.That(near.Length, Is.GreaterThan(60));
+            // 奥の段は手前の段より小さく見える。
+            Assert.That(far.Max(s => s.widthDeg), Is.LessThan(near.Min(s => s.widthDeg)));
+            // 霧を抜けて届く光は、奥の段の平均が手前の段の平均の 1/4 以下。
+            float farLight = far.Average(s => ScreenFogLogic.Transmit(s.distM));
+            float nearLight = near.Average(s => ScreenFogLogic.Transmit(s.distM));
+            Assert.That(farLight, Is.LessThan(nearLight * 0.25f));
+            // 席の数は、シェーダへ配る表に収まる。
+            Assert.That(Seats.Length, Is.LessThanOrEqualTo(ScreenMultiplyLayout.MaxSeats));
+        }
+
+        [Test]
+        public void Fog_LeavesTheMainScreenClear_AndEatsTheDistance()
+        {
+            Assert.That(ScreenFogLogic.Transmit(2f), Is.EqualTo(1f), "メインスクリーンの距離で霧が掛かっている");
+            Assert.That(ScreenFogLogic.Transmit(4f), Is.LessThan(ScreenFogLogic.Transmit(3f)));
+            Assert.That(ScreenFogLogic.Transmit(10f), Is.InRange(0.01f, 0.12f), "いちばん奥が見えないか、明るすぎる");
+        }
+
+        [Test]
+        public void SeatOpen_MatchesTheEyeClock()
+        {
+            Assert.That(ScreenMultiplyLayout.SeatOpen(0, 0.7f, 0f, AnomalyEyesLogic.SwarmSpan), Is.EqualTo(0.7f));
+            for (int i = 1; i < Seats.Length; i += 7)
+                Assert.That(ScreenMultiplyLayout.SeatOpen(i, 1f, 0.5f, AnomalyEyesLogic.SwarmSpan),
+                            Is.EqualTo(AnomalyEyesLogic.EyeOpen(0.5f, Seats[i].rank)).Within(1e-5f));
+        }
+
+        [Test]
         public void Rank_Delay_Tint_StayInTheirRanges()
         {
             foreach (ScreenSeat s in Seats)

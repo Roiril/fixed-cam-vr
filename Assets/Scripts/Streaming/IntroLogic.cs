@@ -202,6 +202,12 @@ namespace FixedCamVr.Streaming
         public float tvDark;
 
         /// <summary>
+        /// テレビを定位置より何 m 奥へ下げるか。<see cref="ScreenAnchor.SetIntroDepth"/> へ渡る。
+        /// 段 3 で霧の奥（<see cref="IntroLogic.TvFarM"/>）から 0 へ寄る。ほかの段は 0（定位置）。
+        /// </summary>
+        public float tvDepthM;
+
+        /// <summary>
         /// <c>_IntroLive</c> へ書く値。テレビ方式は映像の出方そのもの。
         /// 割れる遷移は「出してよいか」の 0/1 で、混合量は覆いの <c>_ScreenFade</c> が持つ
         /// （両方に掛けると二重に暗くなる）。
@@ -658,7 +664,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// テレビ方式の重み（<c>canon/LEDGER.md</c> 0309）。
         ///
-        /// 段 3 の前半は黒だけ。そこからテレビが闇から出る。段 4 の頭で電源が入り
+        /// 段 3 の前半は黒だけ。そこからテレビが霧の奥から寄ってきて、定位置で止まる。段 4 の頭で電源が入り
         /// （<c>_CrtIgnite</c> の縁 → 走査が開く → 満ちる）、後半で映像が上がる。段 5 で筐体が沈み、
         /// 終わったときの見えは本編と同じになる。
         ///
@@ -691,12 +697,17 @@ namespace FixedCamVr.Streaming
 
                     case IntroStage.Structure:
                     {
-                        float appear = PerceptualFade.Reveal(
-                            (Progress(StructureOwnSec) - TvBlackHoldShare) / (1f - TvBlackHoldShare));
+                        // 黒の保持の後、テレビは霧の奥から寄ってくる。速く始まり、ゆっくり止まる。
+                        // 明るさは霧の式そのもの（遠いほど暗い）。出はじめだけ 0 から立ち上げる。
+                        float q = Clamp01((Progress(StructureOwnSec) - TvBlackHoldShare) / (1f - TvBlackHoldShare));
+                        float depth = TvFarM * (1f - q) * (1f - q);
+                        float appear = q <= 0f
+                            ? 0f
+                            : ScreenFogLogic.Transmit(TvRestM + depth) * PerceptualFade.Reveal(q / TvEmergeFadeShare);
                         return new IntroWeights
                         {
                             tv = true, passthrough = 0f, frame = 1f, live = 0f, ignite = 0f,
-                            tvCase = appear, tvDark = 1f - appear,
+                            tvCase = appear, tvDark = 1f - appear, tvDepthM = depth,
                         };
                     }
 
@@ -727,6 +738,15 @@ namespace FixedCamVr.Streaming
 
         /// <summary>段 3 のうち、黒だけを見せる割合（既定の尺で 0.8 秒）。</summary>
         public const float TvBlackHoldShare = 0.25f;
+
+        /// <summary>テレビが出はじめる奥行き（定位置より何 m 奥か）。</summary>
+        public const float TvFarM = 7f;
+
+        /// <summary>テレビの定位置までの距離（m）。<see cref="ScreenAnchor"/> の distance と同じ。霧の計算にだけ使う。</summary>
+        public const float TvRestM = 2f;
+
+        /// <summary>寄ってくる間のうち、明るさを 0 から立ち上げる割合。ここを過ぎたら霧の式だけで決まる。</summary>
+        public const float TvEmergeFadeShare = 0.22f;
 
         /// <summary>段 4 のうち、管が点き切るまでの割合（既定の尺で 2.1 秒）。</summary>
         public const float TvIgniteShare = 0.70f;

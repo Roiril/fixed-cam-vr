@@ -3703,6 +3703,18 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", f"走行の終わりで管が消えたまま（ignite={ignites[-1]:.2f}）— 畳む経路で 1 へ戻していない")
             else:
                 verdict("OK", "テレビの電源が入り、管は点いたまま本編へ入った")
+            # テレビが霧の奥から寄ったか。旧ログには tvZ が無いので判定しない。
+            depths = _tv_numbers("tvZ")
+            if depths:
+                w(f"  テレビの奥行き: 最大 {max(depths):.2f}m / 最後 {depths[-1]:.2f}m")
+                if max(depths) < 1.0:
+                    verdict("WARN", "テレビが奥から出ていない（tvZ がずっと 0 に近い）— "
+                                    "その場で灯るだけになっている。ScreenAnchor.SetIntroDepth を見る")
+                elif depths[-1] > 0.01:
+                    verdict("FAIL", f"導入の後もテレビが奥に残っている（tvZ={depths[-1]:.2f}）— "
+                                    "本編のスクリーンが定位置に居ない。ReleaseIntroHold を通っていない")
+                else:
+                    verdict("OK", f"テレビが奥（{max(depths):.1f}m）から寄って定位置で止まった")
         # 暗転と黒の保持でスクリーンを描いていないか。旧ログには scrHid が無いので判定しない。
         hid_in_dark = [e.get("scrHid") for e in events
                        if e.get("ev") == "intro" and e.get("stage") in ("Degrade", "Structure")
@@ -4322,6 +4334,18 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", f"スクリーンが {wall_lit} 枚点いたのに画を 1 度も取り込んでいない — 面は何も映していない")
             elif want_eyes and wall_lit > 0:
                 verdict("OK", f"スクリーンが増えた（最大 {wall_lit} 枚・取り込み {wall_cap} 回）")
+            # 霧の奥から寄ったか。<寄っている途中の枚数>/<席より奥に居た最大の距離 m>。旧ログには無い。
+            emerge = [str(v).split("/") for v in effect_samples(events, "scrEmg") if str(v).count("/") == 1]
+            if emerge and want_eyes and wall_lit > 0:
+                try:
+                    far = max(float(p[1]) for p in emerge)
+                except ValueError:
+                    far = -1.0
+                if far < 0.5:
+                    verdict("WARN", f"スクリーンは点いたが奥から寄っていない（最大 {far:.1f}m）— "
+                                    "点いた時刻（_WallOpenAt）が配られていない")
+                else:
+                    verdict("OK", f"スクリーンが霧の奥（最大 {far:.1f}m）から寄った")
 
         # 固着。目はカットの中でしか指されないので、演出が終わった後に残っていたら
         # 次の体験者の視界に最初から目が居ることになる。

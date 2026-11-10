@@ -113,6 +113,10 @@ $Menus = [ordered]@{
                             Desc = 'スクリーンの外の闇に目が開く異変を 1 コマずつ焼く（-Set density=0..1 / → make-preview-video.py で mp4）'
                             Set = 'density=<0..1 開く目の割合> / trim=<止まる 3 つを詰める秒> / hold=<開けっ放しの秒> / scale=<出力の倍率。2 で Quest の片眼の密度>'
                             Out = 'Assets/Screenshots/eyes-preview/stage_4_hold.png' }
+    'screen-wall'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.ScreenWallPreview.Run'
+                            Desc = '増えるスクリーンと黒い霧を、霧あり（fog）と霧なし（flat）で焼く。静止画 各 9 枚・連番・段ごとの明るさ report.tsv'
+                            Set = 'frames=0（連番を撮らない）'
+                            Out = 'Assets/Screenshots/screen-wall/report.tsv' }
     'eyejack'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.EyeJackPreview.Run'
                             Desc = '目の視界ジャック（当日写真ぱぱぱ）を stationary / walker の 2 通りで焼く（→ make-preview-video.py で mp4）'
                             Set = 'photos=<正規化済み写真のフォルダ（既定 tools/web-compositor/eyejack/norm）>'

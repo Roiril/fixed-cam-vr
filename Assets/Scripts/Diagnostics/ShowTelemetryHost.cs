@@ -470,6 +470,14 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : (_intro.TvCaseWritten < 0f ? "nc" : _intro.TvCaseWritten.ToString("F2"));
 
+        /// <summary>
+        /// 導入のテレビがいま定位置より何 m 奥に居るか。段 3 で大きい値から 0 へ下がる。
+        /// ⚠ 段 3 の間ずっと 0.00 なら、テレビは奥から出ていない（その場で灯るだけ）。
+        /// </summary>
+        private string TvDepthState => _intro == null
+            ? "-"
+            : (_intro.TvDepthApplied < 0f ? "nc" : _intro.TvDepthApplied.ToString("F2"));
+
         private string LiveGateState => _intro == null
             ? "-"
             : (_intro.LiveGateWritten < 0f ? "nc" : _intro.LiveGateWritten.ToString("F2"));
@@ -702,6 +710,14 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : $"{(_eyes.Wall.IsBuilt ? 1 : 0)}/{_eyes.Wall.OpenCount}/{_eyes.Wall.CaptureCount}";
 
+        /// <summary>
+        /// 増えるスクリーンが霧の奥から寄ったか。席へ寄っている途中の枚数 / 出番の中で席より奥に居た最大の距離（m）。
+        /// ⚠ 点いたのに 2 つ目が 0.0 のままなら、面はその場で点いただけ（点いた時刻が配られていない）。
+        /// </summary>
+        private string ScreenEmergeState => _eyes == null || _eyes.Wall == null
+            ? "-"
+            : $"{_eyes.Wall.ArrivingCount}/{_eyes.Wall.MaxEmergeSeenM:F1}";
+
         private string EyeSfxState => _eyes == null
             ? "-"
             : $"{_eyes.EyeSfxCount}/{(_eyes.EyeBigSfxFired ? 1 : 0)}";
@@ -811,7 +827,7 @@ namespace FixedCamVr.Diagnostics
                      $"spark={SparkState} sparkN={SparkCountState} " +
                      // 管。テレビ方式は段 4 で 0 → 1、割れる遷移は全段 1。tvCase はテレビの筐体の明るさ。
                      // scrHid はスクリーンを描かずにいるか。テレビが闇から出るまでは 1（段 3 の黒に縁が浮く形を捕まえる）。
-                     $"ignite={IgniteState} tvCase={TvCaseState} scrHid={(_veil == null ? "-" : _veil.ScreenSuppressed ? "1" : "0")} " +
+                     $"ignite={IgniteState} tvCase={TvCaseState} tvZ={TvDepthState} scrHid={(_veil == null ? "-" : _veil.ScreenSuppressed ? "1" : "0")} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
                      // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
                      $"auth={(_show != null && _show.StartAuthorized ? 1 : 0)}");
@@ -1349,6 +1365,7 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" aperQ=").Append(ApertureQuadState);
                 _sb.Append(" shatStyle=").Append(_intro.Transition == IntroTransition.Tv ? "tv" : "frozen");
                 _sb.Append(" tvCase=").Append(TvCaseState);
+                _sb.Append(" tvZ=").Append(TvDepthState);
                 _sb.Append(" shat=").Append(ShatterState);
                 _sb.Append(" shatC=").Append(ShatterPieceState);
                 _sb.Append(" shatDraw=").Append(ShatterDrawState);
@@ -1443,6 +1460,7 @@ namespace FixedCamVr.Diagnostics
             //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。
             _sb.Append(" eyes=").Append(EyesState);
             _sb.Append(" scrMul=").Append(ScreenMultiplyState);
+            _sb.Append(" scrEmg=").Append(ScreenEmergeState);
             //   osd = 装置が打っている時計（`canon/LEDGER.md` 0108）。組めたか/刻んだ回数/不透明度。
             //   ⚠ **本編で 1/0/… なら時計が止まっている**（秒が変わっても敷き直していない）。
             //     画には「時計が無い」としか出ないので、ここが唯一の手掛かり。

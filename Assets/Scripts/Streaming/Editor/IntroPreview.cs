@@ -897,6 +897,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 _screenMat.SetFloat(IntroLiveId, w.LiveGate);
                 _screenMat.SetFloat(TvCaseId, Mathf.Clamp01(w.tvCase));
                 _screenMat.SetFloat(TvDarkId, Mathf.Clamp01(w.tvDark));
+                // 実機（ScreenAnchor.SetIntroDepth）と同じ。テレビは段 3 で霧の奥から寄ってくる。
+                _screen.localPosition = new Vector3(0f, ScreenHeightOffsetM, ScreenDistanceM + (w.tv ? w.tvDepthM : 0f));
                 _screenMat.SetFloat(GlitchId, 0f);
                 // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
                 _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
@@ -1943,7 +1945,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     $"base quads={_veil.ApertureQuads} | " +
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +
-                    $"crtIgnite={_igniteWritten:0.00} tvCase={w.tvCase:0.00} tvDark={w.tvDark:0.00}" +
+                    $"crtIgnite={_igniteWritten:0.00} tvCase={w.tvCase:0.00} tvDark={w.tvDark:0.00} tvZ={w.tvDepthM:0.00}" +
                     (shot.noSignal ? "  signalLost=1.00 (no camera connected)" : "") + "\n" +
                     $"reality {_plateLabel} | screen mat {_screenMatLabel} | {_showLabel}";
             }

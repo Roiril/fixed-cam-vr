@@ -120,6 +120,9 @@ namespace FixedCamVr.Streaming
         public float LiveGateWritten => _screenMat != null ? _liveWritten : -1f;
         /// <summary>スクリーンの材質へ実際に書いた <c>_CrtTvCase</c>（テレビの筐体の明るさ）。掴めていなければ -1。</summary>
         public float TvCaseWritten => _screenMat != null ? _tvCaseWritten : -1f;
+
+        /// <summary>据えたテレビがいま定位置より何 m 奥に居るか（画に出た側の観測）。口が無ければ -1。</summary>
+        public float TvDepthApplied => screenAnchor != null ? screenAnchor.IntroDepthM : -1f;
         /// <summary>導入の方式。重みの <c>tv</c> は演出の外で false になるので、走行の方式はこちらで読む。</summary>
         public IntroTransition Transition => _logic.Transition;
 
@@ -393,6 +396,9 @@ namespace FixedCamVr.Streaming
             if (w.tv && _logic.Stage is IntroStage.Structure or IntroStage.Frame or IntroStage.Swap
                 && screenAnchor != null && !screenAnchor.IntroHeld)
                 screenAnchor.HoldInFrontOfHead();
+            // 据えたテレビは段 3 で霧の奥から寄ってくる。段 4 以降は 0（定位置）。
+            if (w.tv && screenAnchor != null && screenAnchor.IntroHeld)
+                screenAnchor.SetIntroDepth(w.tvDepthM);
 
             if (ev == IntroEvent.Finished) FinishIntro(restartClock: true);
             else if (ev == IntroEvent.Aborted) AbortIntro();

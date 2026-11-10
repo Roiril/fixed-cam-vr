@@ -125,6 +125,40 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void Structure_TheTvComesFromTheDepth_AndStopsAtItsPlace()
+        {
+            IntroTiming t = IntroTiming.Default;
+            float own = StructureOwnSec(t);
+            IntroLogic l = AtStage(IntroStage.Structure);
+            Assert.AreEqual(IntroLogic.TvFarM, l.Weights.tvDepthM, 0.001f, "黒の保持の間に奥へ下がっていない");
+
+            // 寄ってくる間、奥行きは単調に減り、明るさは単調に増える（霧の奥ほど暗い）。
+            l.Tick(own * IntroLogic.TvBlackHoldShare, Ready());
+            float prevDepth = l.Weights.tvDepthM, prevCase = l.Weights.tvCase;
+            float firstSeenDepth = -1f;
+            for (int i = 0; i < 40; i++)
+            {
+                l.Tick(own * (1f - IntroLogic.TvBlackHoldShare) / 42f, Ready());
+                IntroWeights w = l.Weights;
+                Assert.AreEqual(IntroStage.Structure, l.Stage);
+                Assert.LessOrEqual(w.tvDepthM, prevDepth + 1e-4f, "奥へ戻っている");
+                Assert.GreaterOrEqual(w.tvCase, prevCase - 1e-4f, "寄ってくるのに暗くなっている");
+                if (firstSeenDepth < 0f && w.tvCase > 0.02f) firstSeenDepth = w.tvDepthM;
+                prevDepth = w.tvDepthM;
+                prevCase = w.tvCase;
+            }
+            // 見えはじめの距離は定位置の 3 倍より遠い（見かけの幅が 3 倍以上になる）。
+            Assert.Greater(IntroLogic.TvRestM + firstSeenDepth, IntroLogic.TvRestM * 3f);
+            Assert.Less(prevDepth, 0.05f, "段 3 の終わりで定位置に着いていない");
+            Assert.Greater(prevCase, 0.95f);
+
+            // 電源が入るときは定位置。
+            Assert.AreEqual(0f, AtStage(IntroStage.Frame).Weights.tvDepthM);
+            Assert.AreEqual(0f, AtStage(IntroStage.Swap).Weights.tvDepthM);
+            Assert.AreEqual(0f, IntroWeights.Inactive.tvDepthM);
+        }
+
+        [Test]
         public void TheScreenIsNotDrawn_UntilTheTvComesOut()
         {
             Assert.IsTrue(IntroVeil.TvScreenHidden(AtStage(IntroStage.Real).Weights), "素通しの間");

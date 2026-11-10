@@ -4,6 +4,9 @@
 // 色味・電源の入り切り・面ごとの揺れ・暗い筐体だけ。管の外形は取り込みの alpha（取り込むカメラは alpha 0 で消す）。
 // ⚠ 値は linear。0.05 でも sRGB では 0.25 の灰色に見える。筐体と箱は 0.01 より下で考える。
 //
+// 闇には黒い霧がある（ScreenFog.hlsl）。面は距離で暗くなり、取り込みの mip でぼける。
+// 点いた面は席より奥から寄ってくるので、霧の中から出てくるように見える。
+//
 // ⚠ Geometry+50: メインスクリーンの後に描いて、隠れた所を深度で捨てる。
 // ⚠ Resources に置いてある（Always Included に入れずにビルドへ入れる）。ScreenMultiply が Resources.Load で引く。
 Shader "FixedCamVr/ScreenMultiply"
@@ -30,6 +33,7 @@ Shader "FixedCamVr/ScreenMultiply"
             #pragma multi_compile_instancing
             #pragma target 3.5
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "ScreenFog.hlsl"
 
             TEXTURE2D_ARRAY(_FeedTex);
             SAMPLER(sampler_FeedTex);
@@ -46,13 +50,23 @@ Shader "FixedCamVr/ScreenMultiply"
                 float _WallDesat;
                 float _WallGain;
                 float _WallBodyGain;
+                float _WallNow;
+                float _WallArriveSec;
+                float _WallEmergeM;
+                float _WallFogDensity;
+                float _WallFogClearM;
+                float _WallFogBlur;
+                float _WallFarShow;
             CBUFFER_END
+            // 席ごとの点いた時刻。大きさは ScreenMultiplyLayout.MaxSeats と対。
+            float _WallOpenAt[160];
 
             struct Attributes
             {
                 float4 positionOS : POSITION;
                 float4 uv0 : TEXCOORD0;
                 float4 uv1 : TEXCOORD1;
+                float4 uv2 : TEXCOORD2;     // xyz 席の中心 / w 席の番号
                 float4 color : COLOR;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -63,6 +77,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 float4 uv : TEXCOORD0;      // xy 面の uv / z 部位 / w 箱の奥行き
                 float4 seat : TEXCOORD1;    // x 開き / y 点いた直後の明るさ / z 席の乱数 / w リングの段
                 float3 tint : TEXCOORD2;
+                float fog : TEXCOORD3;      // 霧を抜けて届く光（1 = そのまま）
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -100,10 +115,24 @@ Shader "FixedCamVr/ScreenMultiply"
                 float d = min(v.uv1.y, filled - 1.0);
                 float slot = fmod(_WallRingHead - d + _WallRingCount, _WallRingCount);
 
-                o.positionCS = open > 0.001 ? TransformObjectToHClip(v.positionOS.xyz) : float4(0, 0, -1, 1);
+
+                // 点いた面は霧の奥から席まで寄る。時計は席ごとの「点いた時刻」（ScreenMultiply が配る）。
+                int seatIndex = (int)(v.uv2.w + 0.5);
+                float arrive = saturate((_WallNow - _WallOpenAt[seatIndex]) / max(0.05, _WallArriveSec));
+                float left = (1.0 - arrive) * (1.0 - arrive) * (1.0 - arrive);
+                float3 pos = v.positionOS.xyz
+                           + normalize(v.uv2.xyz) * (left * _WallEmergeM * (0.75 + 0.5 * v.uv1.z));
+                float dist = max(0.001, length(pos));
+                float fog = ScreenFogTransmit(dist, _WallFogDensity, _WallFogClearM,
+                                              ScreenFogWisp(pos / dist, _WallNow));
+                // 霧の奥の段は color.a = 0。プレビューの比較で消せる。
+                float shown = step(0.001, open) * step(0.5, max(v.color.a, _WallFarShow));
+
+                o.positionCS = shown > 0.5 ? TransformObjectToHClip(pos) : float4(0, 0, -1, 1);
                 o.uv = v.uv0;
                 o.seat = float4(open, settle, v.uv1.z, slot);
                 o.tint = v.color.rgb;
+                o.fog = fog;
                 return o;
             }
 
@@ -121,7 +150,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 {
                     float fall = 1.0 - i.uv.w;
                     float3 body = i.tint * (0.0015 + _WallBodyGain * fall * fall) * saturate(open * 2.0) * flutter;
-                    return half4(body, 1.0);
+                    return half4(body * i.fog, 1.0);
                 }
 
                 float2 uv = i.uv.xy;
@@ -133,7 +162,9 @@ Shader "FixedCamVr/ScreenMultiply"
                 uv.x += torn * (Hash21(float2(rowId, tick)) - 0.5) * 0.07;
 
                 float2 inset = saturate(uv) * 0.994 + 0.003;
-                half4 feed = SAMPLE_TEXTURE2D_ARRAY(_FeedTex, sampler_FeedTex, inset, i.seat.w);
+                // 霧を抜けきれない分だけぼかす。
+                float blur = (1.0 - i.fog) * _WallFogBlur;
+                half4 feed = SAMPLE_TEXTURE2D_ARRAY_LOD(_FeedTex, sampler_FeedTex, inset, i.seat.w, blur);
                 float tube = smoothstep(0.35, 0.65, feed.a);
 
                 // 面ごとの明るさの差（参考の、弱った管と明るい管の混ざり方）。
@@ -166,7 +197,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 // 点いた直後。
                 col *= 1.0 + i.seat.y * 0.55;
 
-                return half4(col, 1.0);
+                return half4(col * i.fog, 1.0);
             }
             ENDHLSL
         }

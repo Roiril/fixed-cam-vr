@@ -77,6 +77,9 @@ namespace FixedCamVr.Streaming
         private bool _introHeld;
         private bool _wasFrozen;
         private bool _setupFrozen;
+        private Vector3 _introHoldPos;
+        private Vector3 _introHoldFwd = Vector3.forward;
+        private float _introDepthM;
         public void SetSetupFrozen(bool frozen) => _setupFrozen = frozen;
         /// <summary>停止中のスタッフ画面だけを正面へ戻す。コース座標は変更しない。</summary>
         public bool RepositionForSetup()
@@ -114,11 +117,35 @@ namespace FixedCamVr.Streaming
         public void HoldInFrontOfHead()
         {
             if (head != null) ApplyPose(head.eulerAngles.y);
+            _introHoldPos = transform.position;
+            _introHoldFwd = transform.rotation * Vector3.forward;
+            _introDepthM = 0f;
             _introHeld = true;
         }
 
-        /// <summary><see cref="HoldInFrontOfHead"/> を解く。</summary>
-        public void ReleaseIntroHold() => _introHeld = false;
+        /// <summary>
+        /// 据えたテレビを、定位置から <paramref name="meters"/> だけ奥へ下げる（0 = 定位置）。
+        /// 導入でテレビが霧の奥から寄ってくる動きに使う。据えていない間は何もしない。
+        /// </summary>
+        public void SetIntroDepth(float meters)
+        {
+            if (!_introHeld) return;
+            float m = Mathf.Max(0f, meters);
+            if (Mathf.Approximately(m, _introDepthM)) return;
+            _introDepthM = m;
+            transform.position = _introHoldPos + _introHoldFwd * m;
+        }
+
+        /// <summary>据えたテレビがいま定位置より何 m 奥に居るか。据えていなければ 0。</summary>
+        public float IntroDepthM => _introHeld ? _introDepthM : 0f;
+
+        /// <summary><see cref="HoldInFrontOfHead"/> を解く。奥へ下げたままなら定位置へ戻す。</summary>
+        public void ReleaseIntroHold()
+        {
+            if (_introHeld && _introDepthM > 0f) transform.position = _introHoldPos;
+            _introDepthM = 0f;
+            _introHeld = false;
+        }
 
         /// <summary>導入のテレビを据えているか。</summary>
         public bool IntroHeld => _introHeld;

@@ -48,6 +48,22 @@ namespace FixedCamVr.Streaming
         public const float BodyInset = 0.94f;
         /// <summary>光の暈の大きさ（面に対する比）。</summary>
         public const float GlowScale = 1.9f;
+        /// <summary>これより遠い席は霧の奥の段（<c>make-screen-wall.py</c> の FAR と対）。</summary>
+        public const float FarTierM = 6.6f;
+        /// <summary>シェーダへ配る「点いた時刻」の表の大きさ。席の数はこれ以下。</summary>
+        public const int MaxSeats = 160;
+
+        public static bool IsFar(in ScreenSeat seat) => seat.distM >= FarTierM;
+
+        /// <summary>
+        /// 席 <paramref name="index"/> がどれだけ開いているか。シェーダの式と対（0 番は大きい目の開き、ほかは順位）。
+        /// </summary>
+        public static float SeatOpen(int index, float big01, float field01, float span)
+        {
+            if (index == 0) return big01;
+            float s = Mathf.Max(0.005f, span);
+            return Mathf.Clamp01((field01 * (1f + s) - Seats[index].rank) / s);
+        }
 
         public static readonly Color[] Tints =
         {
@@ -85,13 +101,14 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 面と箱のメッシュ。uv0 = (面の u, 面の v, 部位 0 面 / 1 箱, 箱の奥行き 0..1)、
-        /// uv1 = (順位, 遅れ, 席の乱数, 0 番か)、color = 色。
+        /// uv1 = (順位, 遅れ, 席の乱数, 0 番か)、uv2 = (席の中心 xyz, 席の番号)、color = 色（a は霧の奥の段で 0）。
         /// </summary>
         public static Mesh BuildSurfaces()
         {
             var v = new List<Vector3>();
             var uv0 = new List<Vector4>();
             var uv1 = new List<Vector4>();
+            var uv2 = new List<Vector4>();
             var c = new List<Color>();
             var tri = new List<int>();
 
@@ -104,6 +121,9 @@ namespace FixedCamVr.Streaming
                 float hh = hw / CrtReferenceScreen.CaseAspect;
                 Color tint = Tints[Mathf.Clamp(seat.tint, 0, Tints.Length - 1)];
                 var info = new Vector4(seat.rank, seat.delay, AnomalyEyesMesh.Hash(s + 311), s == 0 ? 1f : 0f);
+                var home = new Vector4(p.x, p.y, p.z, s);
+                float near = IsFar(seat) ? 0f : 1f;
+                tint.a = near;
 
                 // 箱を先に積む。奥へ細る 4 枚（前面の裏から見えないのでふさがない）。
                 float front = BodyInset, back = BodyTaper * BodyInset;
@@ -128,7 +148,7 @@ namespace FixedCamVr.Streaming
                     AddVertex(p + q * f[n], new Vector4(0, 0, 1f, 0f));
                     AddVertex(p + q * b[n], new Vector4(0, 0, 1f, 1f));
                     AddVertex(p + q * b[e], new Vector4(0, 0, 1f, 1f));
-                    for (int k = i0; k < i0 + 4; k++) c[k] = new Color(tint.r * shade, tint.g * shade, tint.b * shade, 1f);
+                    for (int k = i0; k < i0 + 4; k++) c[k] = new Color(tint.r * shade, tint.g * shade, tint.b * shade, near);
                     tri.AddRange(new[] { i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3 });
                 }
 
@@ -144,22 +164,24 @@ namespace FixedCamVr.Streaming
                     v.Add(pos);
                     uv0.Add(uv);
                     uv1.Add(info);
+                    uv2.Add(home);
                     c.Add(tint);
                 }
             }
 
-            return Assemble("ScreenMultiplySurfaces", v, uv0, uv1, c, tri);
+            return Assemble("ScreenMultiplySurfaces", v, uv0, uv1, uv2, c, tri);
         }
 
         /// <summary>
         /// 暈のメッシュ。面の少し奥へ置くので、面に隠れた所は深度で落ち、周りの環だけが塗られる。
-        /// uv0 = (-1..1 の xy, 面の半分の大きさに対する暈の倍率, 未使用)、uv1 / color は面と同じ。
+        /// uv0 = (-1..1 の xy, 面の半分の大きさに対する暈の倍率, 未使用)、uv1 / uv2 / color は面と同じ。
         /// </summary>
         public static Mesh BuildGlow()
         {
             var v = new List<Vector3>();
             var uv0 = new List<Vector4>();
             var uv1 = new List<Vector4>();
+            var uv2 = new List<Vector4>();
             var c = new List<Color>();
             var tri = new List<int>();
 
@@ -172,6 +194,9 @@ namespace FixedCamVr.Streaming
                 float hh = seat.WidthM * 0.5f / CrtReferenceScreen.CaseAspect * GlowScale;
                 Color tint = Tints[Mathf.Clamp(seat.tint, 0, Tints.Length - 1)];
                 var info = new Vector4(seat.rank, seat.delay, AnomalyEyesMesh.Hash(s + 311), s == 0 ? 1f : 0f);
+                Vector3 center = seat.Center;
+                var home = new Vector4(center.x, center.y, center.z, s);
+                tint.a = IsFar(seat) ? 0f : 1f;
                 int i = v.Count;
                 Vector2[] corners = { new(-1, -1), new(1, -1), new(1, 1), new(-1, 1) };
                 foreach (Vector2 k in corners)
@@ -179,25 +204,27 @@ namespace FixedCamVr.Streaming
                     v.Add(p + q * new Vector3(k.x * hw, k.y * hh, 0f));
                     uv0.Add(new Vector4(k.x, k.y, GlowScale, 0f));
                     uv1.Add(info);
+                    uv2.Add(home);
                     c.Add(tint);
                 }
                 tri.AddRange(new[] { i, i + 1, i + 2, i, i + 2, i + 3 });
             }
 
-            return Assemble("ScreenMultiplyGlow", v, uv0, uv1, c, tri);
+            return Assemble("ScreenMultiplyGlow", v, uv0, uv1, uv2, c, tri);
         }
 
         private static Mesh Assemble(string name, List<Vector3> v, List<Vector4> uv0, List<Vector4> uv1,
-                                     List<Color> c, List<int> tri)
+                                     List<Vector4> uv2, List<Color> c, List<int> tri)
         {
             var mesh = new Mesh { name = name };
             mesh.SetVertices(v);
             mesh.SetUVs(0, uv0);
             mesh.SetUVs(1, uv1);
+            mesh.SetUVs(2, uv2);
             mesh.SetColors(c);
             mesh.SetTriangles(tri, 0);
-            // 群れは常に頭の位置にあり、全周に広がる。
-            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 16f);
+            // 群れは常に頭の位置にあり、全周に広がる。奥から寄る分も入れる。
+            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 40f);
             return mesh;
         }
     }
