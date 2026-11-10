@@ -57,7 +57,7 @@ paths:
 - 周回の時計は dwell 0.5s で確定し、画面の凍結・dip・卓の固定に左右されない — `ZoneProgressionLogic.DefaultDwellSec` / `CameraSwitchDirector.ZoneCommitted` 〔出典: streaming:436-441〕
 - 到達可能な区間は `lap <= totalLaps || (lap == totalLaps+1 && cam == order[0])` — `ShowRunReach.IsSegmentReachable` / `ShowRunReachTests` 〔出典: streaming:758-767〕
 - 周を走り切ったら 3s は必ず待ち、走行中の演出は 60s まで見せ切る。締めの武装中も待つ。時間切れ 300s は待たない。判定は次フレームの Tick — `ShowRunLogic.Tick(deferNaturalEnd)` / `ShowRunDefaults.EndGraceSec` / `EndHoldMaxSec` 〔出典: streaming:769-800〕
-- 出口は 5 つ。終幕の合図（`afterTakeId` の演出が走り終えた）／締めの判定（Trapped）／周回／時間切れ／卓。合図を落とすのは `BeginRun` だけ — `EndingCueLogic` / `ShowRunDirector.TickEndingDecision` 〔出典: show-design:930-962〕
+- 出口は 5 つ。終幕の合図（`afterTakeId` の演出が走り終えた）／締めの判定（Trapped）／周回／時間切れ／卓。発火済みを落とすのは `BeginRun` だけ（人の介入は武装だけ外す）— `EndingCueLogic` / `ShowRunDirector.TickEndingDecision` 〔出典: show-design:930-962〕
 - 体験の時計は休止を数えない — `ShowClock.MaxStepSec` 〔出典: memory/unexpected_event_recovery.md〕
 - 区間に take が 0..N 本。実行体は 1 つ。v2 は読込時に変換する — `TimelineMigration.EnsureTakes` / `TimelineDirector.SetTimeline` 〔出典: streaming:598-605〕
 - 開始規則は enter+t・exit・line の 3 つ。line は担当カメラが一致したときだけ due になる。横断の猶予は 0.6s。使えない線は `lineIndex=-1` — `TakeRunnerLogic.IsDue` / `LineCrossLogic.CrossLatchSec` / `TakeWiringTests.LineTake_WithoutLineId_*` 〔出典: streaming:1583-1607〕

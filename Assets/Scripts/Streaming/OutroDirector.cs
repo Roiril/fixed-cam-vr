@@ -48,7 +48,7 @@ namespace FixedCamVr.Streaming
         private ShowOutroDef _def = new ShowOutroDef();
         private bool _subscribed;
 
-        // --- スクリーンへ書く 2 本（_ScreenPower / _ScreenCollapse）-----------------
+        // --- スクリーンへ書く 3 本（_ScreenPower / _ScreenCollapse / _ScreenNoise）-----------------
         // ⚠ 既定が逆向き（power=1 が正常 / collapse=0 が正常）。戻すのは ResetScreen 1 本。
         private static readonly int ScreenPowerId = Shader.PropertyToID("_ScreenPower");
         private static readonly int ScreenCollapseId = Shader.PropertyToID("_ScreenCollapse");

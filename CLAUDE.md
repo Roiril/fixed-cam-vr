@@ -68,15 +68,15 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 .\tools\unity.ps1 menu scene      # 例: Build Main Scene（ビルド前に必須）
 ```
 
-- **Editor のメニューは `menu` から全部呼べる**（2026-08-09〜）。Setup 6 種・プレビュー / 検証 18 種。
-  値を渡すものは `-Set key=value`（例 `menu actor -Set actor=Ichimatsu`）。
-  一覧に無いものは `menu raw:<完全修飾名>`
-- **GUI でしか動かないのは 5 つだけ**（シーンを開く / テストを開く / フォルダを開く / Scene ビューを動かす /
-  ウィンドウ配置）。どれも batchmode に画面が無いためで、代わりの経路は `menu` の一覧に出る
+- **Editor のメニューは `menu` から呼ぶ**（2026-08-09〜）。短い名前が付いているものは引数なしの `menu` が一覧する
+  （数はここに写さない）。値を渡すものは `-Set key=value`（例 `menu actor -Set actor=Ichimatsu`）。
+  一覧に無い MenuItem は `menu raw:<完全修飾名>`
+- **GUI でしか動かないもの**（シーンを開く / テストを開く / フォルダを開く / ウィンドウ配置）は
+  batchmode に画面が無いためで、代わりの経路は `menu` の一覧に出る（`unity.ps1` の `$GuiOnly`）
 - Editor を GUI で開いて手で触る前提の手順を既定にしない
 - **MCP for Unity は退避路**。CLI が届かないのは「起動中の Editor をライブ操作する」場合だけ
   （Pipeline は Unity 6.0 以上で、2022.3 のこのプロジェクトには入らない）。
-  現状この PC に MCP は未登録。要るときはグローバルの `unity-editor-status` スキルから入り、
+  この PC には登録済みだが、Editor を開いていないと接続失敗になる（それで正常）。要るときはグローバルの `unity-editor-status` スキルから入り、
   このプロジェクト固有の罠は [.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md)
 - 一般則は `~/.claude/reference/unity-cli-ops.md`
 
@@ -122,7 +122,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 
 Unity 2022.3.62f2 LTS / URP / Quest 3（Android・IL2CPP・ARM64）/ Meta XR All-in-One SDK + XRI + OpenXR。
 映像は**スマホ → MJPEG over Wi-Fi → Unity 内デコード**（配信側は姉妹リポ
-[Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)。仕様は `rules/streaming.md`）。
+[Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)。仕様は `rules/stream-link.md`）。
 
 オペレータ卓とブラウザ合成検証は `tools/web-compositor/`（`serve.ps1` → `http://localhost:8099/`）。
 詳細は [memory/web_compositor.md](.claude/memory/web_compositor.md)。

@@ -41,4 +41,4 @@ description: ユーザーの言葉・文書の言葉・コード名の対応。�
 
 - `CurrentLap` という名前は使わない。進行は `ProgressLap`、区間は `SegmentLap`
 - `ShowControlClient.LapCountReset` は周の数え直しで、導入から本編へ移るときにも発火する。体験者が替わった合図に使わない
-- 結果画面の報告数は押した回数（`VisitorMarkCount`・0247）。`ReportedAnomalyCount` は画面に出さない集計
+- 結果画面の報告数は押した回数（`VisitorMarkCount`・0247）。`ReportedAnomalyCount` は体験者の結果画面には出さない集計（スタッフの `StatusHud` には出る）

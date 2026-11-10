@@ -7,7 +7,8 @@ using UnityEngine;
 namespace FixedCamVr.Streaming.Recording
 {
     /// <summary>
-    /// **1 周目の映像を端末内に録っておき、3 周目の演出で流す**ための録画係。
+    /// **前の周の映像を端末内に録っておき、3 周目の演出で流す**ための録画係。
+    /// 録る周は <c>record.laps</c>（既定は {1}・show.json で上書き。通常は 1・2 周目）。
     ///
     /// 録画の単位は**区間**（<c>(lap, camera)</c>）で、駆動は<b>ショーの時計</b>
     /// （<see cref="CueScheduler.CameraEntered"/> = 体験者のゾーン進行）。
@@ -337,7 +338,7 @@ namespace FixedCamVr.Streaming.Recording
         // ---- 録画 ----
 
         // ⚠ 読むのは **区間の周**（lap・逆走で戻る）。引き返して 1 周目 C に戻ったぶんは
-        //   `L1C2.mjr` へ上書きする ＝ 3 周目に流れるのは「その場所で最後に自分がした動き」になる。
+        //   録り直さない（`SegmentAlreadyRecorded`）＝ 先に録れた `L1C2.mjr` を守る。
         //   進行の周で書くと、体験者が一度も達していない周の録画ができ、
         //   3 周目のカットが指す `recLap` と食い違って**黙って飛ぶ**。
         private void OnCameraEntered(SegmentEntry entry)

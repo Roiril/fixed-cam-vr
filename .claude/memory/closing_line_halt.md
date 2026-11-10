@@ -1,16 +1,22 @@
 ---
 name: closing-line-halt
-description: 4-A の③a「止まってください！」は時計ではなく「締めの線（3-A の凍結点）を踏んだ瞬間」に出る（0233）。線は台本から導く・入り際 0.6 秒の猶予・自動走行は線を踏みに行く・時計 5 秒は線が無いときの退避路
+description: 4-A の③a「止まってください！」は「締めの線を踏む OR 最後の A に入って 3 秒」（0233・0247）。⚠ いまの台本には締めの線が無く、3 秒の時計だけで出ている。線の導き方・入り際 0.6 秒の猶予・自動走行の作法
 metadata: 
   node_type: memory
   type: project
   originSessionId: c1e3e152-4a70-44a5-b034-7cd0e5030226
-  modified: 2026-09-18T15:46:26.426Z
+  modified: 2026-11-10T07:35:19.249Z
 ---
 
 # 4-A の「止まってください！」は場所で出る（2026-09-19・`canon/LEDGER.md` 0233）
 
 ユーザー逐語「時間指定で 4s ではなく、場所指定にし、その場所を、左右反転の演出のときのフリーズされる位置に」。
+
+⚠⚠ **いまの状態（2026-11-10 にコードと show.json で確認）: 締めの線は空で、③a は 3 秒の時計だけで出ている。**
+3-A を位置合わせ版（0274）にしたとき `splitFreeze` のカットと `untilLine` の段が台本から消えた
+（`show.json` の `splitFreeze` は 16 個すべて false）。`TakeSchema.ResolveClosingLineId` は空を返す。
+時計は 0247 で「線 OR 3 秒」になり、`CommsCueLogic.HaltAfterClosingSec` は 3（下の「5 秒」は 0233 当時の値）。
+下の仕組みはコードに残っていて、台本に線が戻れば働く。未修正の扱いは [[scenario_audit_20261022]] と `canon/NOW.md` の食い違い 1。
 
 **Why:** 0182 の観察で、時計 5 秒の③a は歩く速さで角の前後にずれていた（速い人は曲がった後・遅い人は手前）。
 「止まれ」の場所を 3 周目 A で鏡像が凍った場所と同じにすると、戻ってきた瞬間にそこで声が掛かる。
@@ -27,7 +33,7 @@ metadata:
   「同じ区間に線が 2 本ある」（3-A の左右）ためで、締めにその問題は無い。
   ⚠ 記録は **take が始まった同じ Tick でも拾う**（`StartTake` の直後に `LatchClosingLine`）。
   始まる前に拾って `StartTake` でリセットされる順だと、テストでは 1 Tick で立たない
-- **`CommsCueLogic` は線があれば線だけ、無ければ時計（`HaltAfterClosingSec` 5 秒）**。
+- **`CommsCueLogic` は「線を踏んだ OR 時計（`HaltAfterClosingSec` 3 秒）」**（0247。線があっても踏まない人には時計で出る）。
   `closingLineDefined` は「layout に実体がある」で、実体の無い id は `TakeRunner.ApplyLinesFromLayout` が -1 に倒す
   （実体の無い線は決して横切られず、③a が黙って消える方が危ない）
 - **自動走行は経路がたまたま線をまたぐことに頼らない** — `ShowWalkDebugDriver.CrossClosingLine` が締めのカットの

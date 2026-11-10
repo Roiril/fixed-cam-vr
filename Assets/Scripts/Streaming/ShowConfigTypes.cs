@@ -629,7 +629,10 @@ namespace FixedCamVr.Streaming
         /// <summary>導入（固定視点に慣らす自由歩行）を挟むか。</summary>
         public bool introEnabled = true;
 
-        /// <summary>導入の最低尺 (秒)。これを過ぎ、かつスタート区間に居れば本編へ移る。</summary>
+        /// <summary>
+        /// 導入の最低尺 (秒)。自動で本編へ移る条件の 1 つ。導入演出が終わり、スタート区間に居て、
+        /// 中止されておらず、この秒数が経っているとき移る（<c>ShowRunLogic.Tick</c>）。
+        /// </summary>
         public float introMinSec = ShowRunDefaults.IntroMinSec;
 
         /// <summary>導入を自動で終わらせるか。false ならスタッフの明示操作（卓 / 現地）だけで進む。</summary>
@@ -653,7 +656,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public ShowIntroDef? intro;
 
-        /// <summary>終幕演出（本編 → パススルーへ戻して終わる）。無ければコード既定で走る。</summary>
+        /// <summary>終幕演出（本編 → 黒のまま装置が力尽きて終わる。パススルーへは戻さない）。無ければコード既定で走る。</summary>
         public ShowOutroDef? outro;
 
         /// <summary>

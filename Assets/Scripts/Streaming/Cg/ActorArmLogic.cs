@@ -131,7 +131,11 @@ namespace FixedCamVr.Streaming.Cg
         // だから可動域を絞るのは「妥協」ではなく**人形として正しい**。体験者が大きく動かしても、
         // 人形は控えめにしか動かない — 遠くから見て「人形が動いた」と伝わればよい。
 
-        /// <summary>腕を下ろした向きから振れてよい角度の上限（度）。</summary>
+        //
+        // ⚠ 上の実測と 45° は**旧 Ichimatsu（写真から押し出した版）の値**。いまの人形の本番値は
+        // `ShowActorRig.MaxSwingDeg`（90°）で、この既定値を読むのはテストだけ。
+
+        /// <summary>腕を下ろした向きから振れてよい角度の上限（度）。旧 Ichimatsu の値で、本番は ShowActorRig が上書きする。</summary>
         public const float DefaultMaxSwingDeg = 45f;
 
         /// <summary>この割合までは体験者の動きをそのまま写し、そこから先で飽和させる。</summary>

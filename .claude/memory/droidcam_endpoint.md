@@ -5,11 +5,12 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: 93b1d0df-ed63-4c85-99db-74093d710291
+  modified: 2026-11-10T07:38:52.394Z
 ---
 
 # DroidCam テスト端末【フォールバック専用】
 
-**標準は fixed-cam-streamer に移行済み**（[[project_overview]]）。DroidCam は緊急時フォールバックのみ。以下はその時用の接続情報。
+**標準は fixed-cam-streamer に移行済み**（スタックの概要は [CLAUDE.md](../../CLAUDE.md)「スタック」、クラスの地図は [Assets/Scripts/README.md](../../Assets/Scripts/README.md)）。DroidCam は緊急時フォールバックのみ。以下はその時用の接続情報。
 
 - **WiFi (LAN) IP**: `192.168.11.34`
 - **MJPEG endpoint**: `http://192.168.11.34:4747/video`

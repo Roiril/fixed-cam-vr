@@ -18,10 +18,13 @@
 
 ## 数の意味
 
+結果画面に出る数は押した回数だけ（`OutroReportText.CountLine`・分母は出さない。`ending_roll.md`・`rules/ending.md`）。
 分子は VisitorMarkCount。受理された報告操作の回数。同じ異常への再報告も含む。
-押下途中の中止と入力禁止中の操作は数えない。分母を超えても切り詰めない。
+押下途中の中止と入力禁止中の操作は数えない。
 
-分母は ShowAnomalyCatalog が定義する異常 ID の重複除外件数。
+分母は画面に出ない。`ShowControlClient.TotalAnomalyCount` が `OutroReport.CapturedTotal` に保持し、
+テレメトリ `ev=outro anomalyTotal=` に残る集計（`OutroReport.cs` は描画に渡さない）。
+`ShowAnomalyCatalog` が定義する異常 ID の重複除外件数。
 台本に設定された総数であり、その体験者が実際に見た数や報告で消した数ではない。
 現行は 8 件。2-C の予備動作と接近を同じ 1 件とする。
 1-B / 2-A / 2-B / 2-C / 3-A / 3-B / 3-C / 最後の A をそれぞれ 1 件とする。
@@ -35,6 +38,7 @@
 OutroReport は結末と件数を表示開始時に固定する。
 「帰還確認」「帰還不能」「調査中断」を別の見出しと文章にする。
 どの結末でも「体験は終了です。装置を外してください。」を示す。
+⚠ この行は旧実装の記録。現行は報告数だけを出し、分母は出さない（`OutroReportText.CountLine`・`ending_roll.md`）。
 報告回数 / 異常総数は下段に控えめに置く。ラベルを左、比を右に分ける。成功率や評価語は付けない。
 日本語・英語・フランス語を保持する。印字と打鍵の同期も保持する。
 

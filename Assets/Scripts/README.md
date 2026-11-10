@@ -61,11 +61,11 @@
 
 | フォルダ | 実行時のファイル / 行 | 実際の中身 |
 |---|---|---|
-| `Streaming/` | 151 / 約 5.1 万 | 体験のほぼ全部。映像の受信は約 7% で、残りは進行・演出・導入と題字・画面加工・連絡の面の論理・音・CG・終幕 |
+| `Streaming/` | 154 / 約 5.3 万 | 体験のほぼ全部。映像の受信は約 7% で、残りは進行・演出・導入と題字・画面加工・連絡の面の論理・音・CG・終幕 |
 | `Streaming/Editor/` | — | **全フォルダの** Editor の道具（シーンを組む `MainSceneBuilder`・プレビュー・検証）。CLI は `tools/unity.ps1 menu` |
 | `Diagnostics/` | 23 / 約 9,400 | 本来の診断（ログ・計器）は一部。体験者が見る面（`CommsPanel`・`OutroReport`）とスタッフの面（`StaffSetupPanel`・`StatusHud`）が入っている |
-| `Tracking/` | 20 / 約 5,200 | 位置と区画・周の数え方・位置合わせ。PC での自動歩行の道具もここ |
-| `OvrBridge/` | 12 / 約 3,100 | Meta XR SDK に触れる唯一の場所（asmdef なし = Assembly-CSharp）。コントローラ・パススルー・体験の記録と再生 |
+| `Tracking/` | 21 / 約 5,400 | 位置と区画・周の数え方・位置合わせ。PC での自動歩行の道具もここ |
+| `OvrBridge/` | 13 / 約 3,800 | Meta XR SDK に触れる唯一の場所（asmdef なし = Assembly-CSharp）。コントローラ・パススルー・体験の記録と再生 |
 | `Input/` | 9 / 約 1,400 | 長押し・モード・導入・準備の判定（SDK に依存しない純ロジック） |
 | `Fx/` | 7 / 約 600 | 映像加工の試作。本番のシーンでは使っていない |
 | `Streaming/Attic/` | — | 体験から外した封印の箱。シーンの配線は残っているが描かれも鳴りもしない（`.claude/reference/attic-sealed-box.md`） |
@@ -76,7 +76,7 @@
 
 `RuntimeInitializeOnLoadMethod` で生成されるので、シーンを開いても見当たらない。
 
-- `Diagnostics/ShowTelemetryHost` — 実機のログ `[XP]` を書く。通常のログ（`Debug.Log`）のスタックトレースをアプリ全体で切る
+- `Diagnostics/ShowTelemetryHost` — 実機のログ `[XP]` を書く。Development ビルドだけで、`Debug.Log`（`LogType.Log`）のスタックトレースをアプリ全体で切る（Warning / Error のスタックは残す）
 - `Diagnostics/VeilAlignmentProbe` / `OvrBridge/CommsPerformanceProbe` — 検証用の計器
 - `OvrBridge/XpReplayDriver` — PC で体験の記録を流し直す（Editor だけ）
 - `OvrBridge/XpTwinDriver` — HMD も Quest も無しでツインの映像を流し、入力だけで体験を通す（Editor だけ）

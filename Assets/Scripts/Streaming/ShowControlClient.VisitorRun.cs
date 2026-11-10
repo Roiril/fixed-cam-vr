@@ -183,7 +183,7 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// <b>報告した異変の数</b>（2026-09-19・<c>canon/LEDGER.md</c> 0234）。同じ演出のあいだに何度押しても 1。
         /// 演出の無い所で押しても増えない（<see cref="VisitorMarkCount"/> には残る）。ラン開始で 0 に戻る。
-        /// <b>画面には出さない内部の集計。</b>結果画面の分子は <see cref="VisitorMarkCount"/>（<c>canon/LEDGER.md</c> 0247）。
+        /// <b>体験者の結果画面には出さない内部の集計</b>（スタッフの <c>StatusHud</c> には出る）。結果画面の分子は <see cref="VisitorMarkCount"/>（<c>canon/LEDGER.md</c> 0247）。
         /// 数え方は <see cref="VisitorReportTally"/>。
         /// ⭐ 後々の分岐（報告数によるエンディング・0234「まだしないが」）の材料はこれ。押した回数は使わない。
         /// </summary>

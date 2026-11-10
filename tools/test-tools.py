@@ -6,6 +6,9 @@ Unity のテスト（`.\\tools\\unity.ps1 test`）とは別に、解析器・現
     py -3.11 tools/test-tools.py
 
 テストを足すときは tools/ に test-*.py か test_*.py の名前で置けば、ここが拾う。
+
+⚠ 拾うのは tools/ 直下の Python だけ。tools/web-compositor/ のテスト（test_*.py・*.test.mjs・test_*.mjs）は
+ここでは走らない。そちらのコマンドは tools/web-compositor/README.md の「確認コマンド」。
 """
 
 import subprocess

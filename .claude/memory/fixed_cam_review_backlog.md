@@ -5,6 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 93b1d0df-ed63-4c85-99db-74093d710291
+  modified: 2026-11-10T07:38:43.728Z
 ---
 
 # fixed-cam 本体レビュー（2026-06-10）
@@ -70,15 +71,14 @@ metadata:
 **Why:** ユーザー質問「切替が止まらないか・ABC 順が変にならないか」。opus×2（凍結解除経路/切替順序）で監査、親が実コード照合済み。**純ゾーン歩行のみなら両方とも安全**（単一 pending + dip 直列化で古い要求の遅延 commit は構造的に無い。中間ゾーン取りこぼし A→C は仕様）。危険は insert / Web 卓操作の絡む未修正バグ：
 
 ## 修正済み（2026-07-23・L0.5 統合テスト新設と同一変更セット）
-1〜4 を修正し、XR 無し統合テスト [`Assets/Tests/Tracking/SwitchWiringTests.cs`](../../Assets/Tests/Tracking/SwitchWiringTests.cs)（EditMode + 手動 Tick・T1/T2/T4/T5）+ [`Assets/Tests/Streaming/GripStopLocalTests.cs`](../../Assets/Tests/Streaming/GripStopLocalTests.cs)（T3）で固定。EditMode 245/245 パス。各修正は red-check 済み（fix を外すと該当テストが赤）。
+2・4 を修正し、XR 無し統合テスト [`Assets/Tests/Tracking/SwitchWiringTests.cs`](../../Assets/Tests/Tracking/SwitchWiringTests.cs)（EditMode + 手動 Tick・T5）+ [`Assets/Tests/Streaming/GripStopLocalTests.cs`](../../Assets/Tests/Streaming/GripStopLocalTests.cs)（T3）で固定。EditMode 245/245 パス（当時）。各修正は red-check 済み（fix を外すと該当テストが赤）。
+旧 insert 経路（項目 1・3）は演出の実行体が TakeRunner に一本化されて対象コードが無くなったので削除した。
 
-1. **HIGH `_insertActive` ストランド** → 修正: `InsertController.ResetRun` / `SetInserts` が進行中インサートを `CleanupActiveInsert`（insert cue 停止・insert post 解除・`director.InsertReturn`）で畳んでから `InsertLogic` をリセット。`SwitchDirectorLogic.Reset` でも `_insertActive`/`_cueActive` を false 初期化。テスト T1（ResetRun）/ T2（SetInserts）
 2. **HIGH グリップ緊急停止がローカル発火 cue に無効（server 到達時）** → 修正: `ToggleActiveCameraCue` の server 到達停止分岐で `stopCue` 送信 + ローカル `StopOverlay` を併用。テスト `GripStopLocalTests`（T3）
-3. **MED-HIGH insert 復帰が SwitchSource.Insert** → 修正: `EndInsert` の復帰先が開始時ゾーン（`InsertLogic.BaseZoneCamera`）と異なれば `InsertReturn(returnCamera, asZone:true)` で復帰 commit を `SwitchSource.Zone` として発火 → LapCounter/TimelineDirector に実ゾーン移動を反映。進行ポインタの順方向一致性で二重カウントなし。テスト T4
 4. **MED override 解除後に現在ゾーンへ戻らない** → 修正: `PlayerZoneTracker.InvalidateCurrent()`（public）追加 + `OnEnable` で自己呼び出し。override 解除＝tracker 再有効化が OnEnable を発火 → `_current` 無効化 → 次 Update で再 Pick。当初案（ShowControlClient から SendMessage）は EditMode で `ShouldRunBehaviour` アサートを踏むため OnEnable 自己回復へ変更（Streaming→Tracking 循環も回避）。テスト T5
 
 ## 未修正バグ（残り）
 5. **MED ResolveTiming に上限クランプ無し**: minDwellSec=99999 等の正の巨大値が素通り→切替不能。3経路（ライブ/キャッシュ/焼き込み）の present 判定自体は一貫・正常
-6. LOW: in-flight insert と override/手動の綱引き（abort 経路が無い）/ exit と enter insert の同一 commit 排他 / グリップ2秒長押しリセットは LapCounter のみで Web runEpoch と非対称 / director 未配線時 LapCounter が全 source を数える
+6. LOW: in-flight insert と override/手動の綱引き（abort 経路が無い）/ exit と enter insert の同一 commit 排他 / director 未配線時 LapCounter が全 source を数える
 
 **How to apply:** 5 は show.json control の入力側 or ResolveTiming に上限クランプを足す。6 は必要になったら個別に。

@@ -238,7 +238,8 @@ namespace FixedCamVr.Tracking
             _subscribed = false;
         }
 
-        // runEpoch 変化（Web の「ラン開始」）を ShowControlClient から受けて周回・cue をリセットする。
+        // ShowControlClient.LapCountReset（周の数え直し）を受けて周回・cue をリセットする。
+        // 発火は卓の新しい体験者・現地の新しい体験者・導入から本編へ移るときの 3 か所で、体験者が替わった合図ではない。
         private void OnLapCountReset() => ResetRun();
 
         private void Start() => ApplyOrder();
@@ -261,8 +262,8 @@ namespace FixedCamVr.Tracking
             int[] order = showControl != null ? showControl.CourseOrder : Array.Empty<int>();
             // ⚠⚠ **順路が変わっていなければ触らない**（2026-09-04）。`SetOrder` は中で `Reset()` を
             //    呼ぶので（lap=1 / pos=0 / 足跡クリア）、会期中に卓でフロアマップを保存して
-            //    `CourseChanged` が飛ぶだけで、**体験中の人の周回が 1 に戻る**。終了の出口は
-            //    `lap > totalLaps` の 1 本しかないので、その人は時間切れまで終われない。
+            //    `CourseChanged` が飛ぶだけで、**体験中の人の周回が 1 に戻る**。周回由来の出口は
+            //    `lap > totalLaps` の 1 本なので、その人は時間切れ（か RequestFinish）まで終われない。
             if (_appliedOrder == null || !OrderEquals(_appliedOrder, order))
             {
                 _appliedOrder = (int[])order.Clone();

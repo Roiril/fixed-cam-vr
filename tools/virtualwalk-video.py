@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """Unity の VirtualWalkRun が書いた NPC 視点の連番を、mp4 と指標レポートにする。
 
-    py -3.11 tools/virtualwalk-video.py                 # Logs/virtualwalk/ の一番新しい実行
-    py -3.11 tools/virtualwalk-video.py Logs/virtualwalk/20261014_180000_tag
+    py -3.11 tools/virtualwalk-video.py                 # G:/マイドライブ/shubie/renders/virtualwalk/ の一番新しい実行
+    py -3.11 tools/virtualwalk-video.py G:/マイドライブ/shubie/renders/virtualwalk/20261014_180000_tag
     py -3.11 tools/virtualwalk-video.py --compare <before のフォルダ> <after のフォルダ> [--out <mp4>]
 
 入力フォルダ（`Assets/Scripts/Streaming/Editor/VirtualWalk/VirtualWalkRun.cs` が書く）:
@@ -13,7 +13,7 @@
   events.tsv   t kind detail（commit / sfx_switch / sfx_glitch / glitch_visual_end / outro）
 
 出力（単独）: `<フォルダ>/walk.mp4`・`report.md`・`sheet_cuts.png`・`sheet_outro.png`。
-出力（--compare）: 左 before・右 after の mp4（既定は `Logs/virtualwalk/compare_<日時>.mp4`）と、
+出力（--compare）: 左 before・右 after の mp4（既定は `G:/マイドライブ/shubie/renders/virtualwalk/compare_<日時>.mp4`）と、
 その隣の `<mp4 の名前>_cuts.png`（before / after の sheet_cuts を縦に積んだもの）。
 
 ⚠ **実機の代わりではない**（VirtualWalkRun と同じ）。見るのは時刻・順序・曲線・重なり。
@@ -166,10 +166,10 @@ def kv(detail: str) -> dict:
 
 def newest_run() -> Path:
     if not RUNS.is_dir():
-        raise Fail(f"{RUNS.relative_to(ROOT)} が無い（先に VirtualWalkRun を回す）")
+        raise Fail(f"{rel(RUNS)} が無い（先に VirtualWalkRun を回す）")
     runs = sorted(p for p in RUNS.iterdir() if p.is_dir() and RUN_RE.match(p.name))
     if not runs:
-        raise Fail(f"{RUNS.relative_to(ROOT)} に実行フォルダが無い")
+        raise Fail(f"{rel(RUNS)} に実行フォルダが無い")
     return runs[-1]
 
 
@@ -749,7 +749,7 @@ def do_compare(before: Path, after: Path, out: Path | None) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="VirtualWalkRun の出力を mp4 と指標にする")
-    ap.add_argument("dir", nargs="?", help="Logs/virtualwalk/<日時>[_tag] のフォルダ（省略で一番新しいもの）")
+    ap.add_argument("dir", nargs="?", help="G:/マイドライブ/shubie/renders/virtualwalk/<日時>[_tag] のフォルダ（省略で一番新しいもの）")
     ap.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), help="2 つの実行を左右に並べる")
     ap.add_argument("--out", help="--compare の mp4 の出力先")
     args = ap.parse_args()

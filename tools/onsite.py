@@ -9,6 +9,9 @@
     py -3.11 tools/onsite.py watch          # 会期中の監視。落ちた端末を自分で起こし直す
     py -3.11 tools/onsite.py adb-open       # USB の端末に無線 adb を開ける（設営時に 1 回）
     py -3.11 tools/onsite.py fix <name>     # 個別の復旧（cameras / panel / cache）
+    py -3.11 tools/onsite.py serve          # 卓を起動する（onsite-autostart.cmd が使う）
+    py -3.11 tools/onsite.py setup          # 登録した Quest と博士用タブレットを起動する
+    py -3.11 tools/onsite.py wifi-guard     # 上流の無い展示網が切られるのを防ぐ（戻すのは wifi-restore）
 
 **なぜ卓の「✅ 本番前チェック」と別に要るか。** 卓のはブラウザの中にあり、ブラウザが見ている
 ものしか見えない（show.json ＋ heartbeat ＋ /diag）。ここが見るのは**その外側** — 端末に
@@ -1008,7 +1011,7 @@ def cmd_eyejack(args):
         print("写真が 1 枚も見つかりません。探した場所:")
         for d in ([args.src] if args.src else EYEJACK_SOURCES) + [EYEJACK_DIR]:
             print(f"  {d}  {'（あります）' if d and os.path.isdir(d) else '（ありません）'}")
-        print("\nスマホから送るなら http://192.168.10.10:8099/onsite.html を開く")
+        print("\nスマホから送るなら http://192.168.10.10:8099/ を開く")
         return 1
 
     os.makedirs(EYEJACK_DIR, exist_ok=True)
@@ -1462,7 +1465,7 @@ def cmd_fix(args):
         print(out.strip())
         return 0
     print("fix の名前: cameras（配信端末を起こし直す）/ panel（Quest の設定パネルを閉じる）"
-          " / cache（端末の設定キャッシュを消す）")
+          " / cache（古い APK が残した設定キャッシュの掃除。現行の実機は読まないので挙動は変わらない）")
     return 1
 
 
@@ -1659,7 +1662,7 @@ def cmd_serve(args):
         time.sleep(0.5)
         capabilities = get_json(DESK + "/ops/capabilities")
         if isinstance(capabilities, dict) and capabilities.get("ok") is True and "mode" in capabilities:
-            print("起動しました → http://192.168.10.10:8099/onsite.html")
+            print("起動しました → http://192.168.10.10:8099/")
             return 0
     print(f"起動を確認できませんでした（{logp} を見る）")
     return 1

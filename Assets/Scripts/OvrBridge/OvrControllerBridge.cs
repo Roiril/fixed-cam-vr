@@ -71,8 +71,9 @@ namespace FixedCamVr.OvrBridge
         [SerializeField] private ControllerHaptics? haptics;
 
         [Header("Run reset")]
-        [Tooltip("A 2 秒長押し＝体験者リセット（周回リセット + cue 発火済みクリア）の対象 LapCounter。" +
-                 "runEpoch とは独立の現地手段（PC 卓不在でも体験者交代でリセットできる）。null なら cueScheduler へフォールバック。")]
+        [Tooltip("ShowControlClient が居ないシーン（診断用の最小構成など）向けのフォールバック。" +
+                 "A 2 秒長押しの体験者リセットは本番では ShowControlClient.BeginNewVisitorRunLocal を通り、この参照は使わない。" +
+                 "ShowControlClient が居ないときだけ、この LapCounter の周回と cue をリセットする。null なら cueScheduler へフォールバック。")]
         [SerializeField] private LapCounter? lapCounter;
 
         [Tooltip("LapCounter 未配線時にランリセットを行う CueScheduler（発火済みフラグのみクリア）。")]

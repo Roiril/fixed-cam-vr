@@ -63,7 +63,7 @@ paths:
 - 解像度と夜間モードは同じ 1 本で書く — `CameraFeelFx.SetScreenDecay(blocks, progress)` 〔出典: S:1444-1461〕
 - 伝送の痩せは mip で作る。ブロック数は C# が出す（800 → 267）。色差は +1 段 — `ScreenDecayLogic.BlocksFor` / `CoarseLod` / `ChromaLodBias` 〔出典: S:1473-1499、memory/screen_decay.md〕
 - 著作の `_Pixelate` は硬い格子のまま、`_CoarseBlocks` と粗い方だけ掛ける — `PixelateUv` 〔出典: S:1504-1505〕
-- 夜間モードは `_Mono` 1 本から +0.95EV・粒 ×2.6・周辺 +0.16・コントラスト +0.10・輝度重み (0.52,0.34,0.14) を派生させる — `ScreenComposite.frag` 〔出典: S:1442-1464〕
+- 夜間モードは `_Mono` 1 本から +0.95EV・粒 ×(1+2.6·`_Mono`)・周辺 +0.16・コントラスト +0.10・輝度重み (0.52,0.34,0.14) を派生させる — `ScreenComposite.frag` 〔出典: S:1442-1464〕
 - 明暗曲線は表示 sRGB で `t=saturate((y-0.10)/0.60)`、`target=0.90·smoothstep(t)+0.10·y` を `_Mono` で補間 — `ScreenComposite.frag` 〔出典: memory/screen_decay.md〕
 - 管の曲面はメッシュ（膨らみ0.055）。参照画面の外形は生成Frameのalpha、枠RGBは元参照CaseColor、透過むらは生成Glass、視点による反射差は生成Reflectanceで描く。生成画像の枠RGBは使わない。参照が無い画面だけ従来の数式による角と縁（0.07 / 0.34 / 0.17）を使う。
 - 参照素材はResources/CrtReference。NPOT None・非圧縮・mip・Trilinear。CaseColorはsRGB、GlassとReflectanceはlinear。枠を重ねるのはOSDより後、SwitchDim/ScreenPowerより前。最終alphaは1。夜間モードへ進むと参照の通常映像補正だけが弱まり、筐体は残る。

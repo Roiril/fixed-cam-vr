@@ -170,8 +170,8 @@ namespace FixedCamVr.Streaming
     /// <summary>
     /// カメラ切替を一本化して時間軸ガード（<see cref="SwitchDirectorLogic"/>）と dip-to-black 演出を掛ける実行体。
     /// PlayerZoneTracker / OvrControllerBridge / CameraSwitchInput はここを経由して切替を要求する。
-    /// Web cameraOverride（ShowControlClient）は従来どおり registry.SetActive を直接叩くが、
-    /// registry.ActiveChanged 購読で本 Director も同期する（既存挙動は不変）。
+    /// Web cameraOverride（ShowControlClient）は Director があれば <c>SetActiveExternal(index, SwitchSource.Override)</c> を通り、
+    /// 無いときだけ registry.SetActive を直接叩く。どちらでも registry.ActiveChanged 購読で本 Director も同期する。
     ///
     /// dip-to-black: 黒へ <see cref="dipDownSec"/> → registry.SetActive → <see cref="dipUpSec"/> で立ち上げ。
     /// 減光は ScreenComposite の post 数式（Web FS_POST 一致規約）とは別系統の <c>_SwitchDim</c> uniform で行う。
@@ -238,7 +238,8 @@ namespace FixedCamVr.Streaming
         private readonly SwitchDirectorLogic _logic = new();
 
         // 人の層の時計（dwell のみ）。画面が凍結していても進み続ける。
-        // ⚠ 所在は暫定 — 段 C で ShotDirector を新設する際に人の層へ移す（ZoneProgressionLogic の注記参照）。
+        // 所在はここ（画面層に同居）で確定。人の層へ移すための ShotDirector は作られていない
+        // （理由は ZoneProgressionLogic の注記）。
         private readonly ZoneProgressionLogic _progress = new();
 
         private Material? _material;

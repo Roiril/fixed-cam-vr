@@ -31,6 +31,8 @@ EditModeテスト1,896件通過。失敗・除外0。動画と数値は `Logs/sh
 
 導入の描画と通信画面の表示を再実装する。開始条件と通知の時系列は変更しない。共有設定には触れない。
 
+⚠ 以下の導入は 2026-09 時点の記録。いまの既定はテレビ方式（`ShowConfigTypes.cs` の `transition` が空 → `IntroTransition.Tv`・[intro_tv_reveal.md](intro_tv_reveal.md)）。割れる遷移は `run.intro.transition="shatter"` のときだけ（[intro_fracture_cinematic.md](intro_fracture_cinematic.md)）。
+
 導入は 0208 で割れる演出へ戻した。0209 では中央を無傷で残していた窓を廃止した。
 0211 では実景を透かす穴から、静止画像を運ぶ立体メッシュへ変更する。
 `IntroPassthroughCapture` が既存 MRUK の左右 `PassthroughCameraAccess` を準備する。

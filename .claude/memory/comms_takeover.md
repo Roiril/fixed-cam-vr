@@ -72,6 +72,11 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 
 ## 以下は旧実装の履歴（2026-09-18）
 
+⚠ この節の「形」「嘘の一文」「乱れ」は 0230〜0232 の初版の記録（音・観測・検証の各節は現行のコードと照合していない）。現行は上の節（真実の全文 → 遮断バーと同期して**左端から右へ**人形へ侵食 → 赤い嘘）。
+前線は上から降りず、本文は**真実メッシュ `CommsPanel.ApplySplitTruthMesh` と嘘メッシュ `ApplyLieMesh`（別の TMP・CommsHorror SDF・朱 `LieRed`）**に分かれ、前線の x で切り分ける。
+塗り替わりの長さは `CommsPossessionLogic.SweepSec`（1.5 秒）、前線の判定は `CommsCurseLogic.IsSwept`（x だけ）。
+下の表の 0.45 秒・帯に吸着する前線・`SwapToLie` / `SetTextStencilComp` / `DenialRed` / `LastLineSwept` は現行のコードに無い。
+
 2026-09-18。`canon/LEDGER.md` **0230**（ユーザー逐語「これだと乗っ取られている感じが、一部のユーザにわかりにくいのではないか」
 「初見の人視点で考えてみて」「侵食度0.75以降ではスイの文章を、一文字ずつではなくぱっと一気に出してしまい、
 スイの文章を全部見せた後に上からデジタルが侵食されるようなアニメーションで急に塗り替わる」）。
@@ -113,6 +118,9 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 
 ## 嘘の一文（0232）— 正常の面は異常を検知し、塗り替えられた行が否定に書き換わる
 
+⚠ この節は旧実装の記録。現行は同じ TMP の差し替えではなく、真実の `_text`（`ApplySplitTruthMesh`）と赤い嘘の `_lieText`（`ApplyLieMesh`）の 2 メッシュを前線で切り分ける。
+文面は `CommsPanel.TakeoverLieText`（現行で存在）、色は朱 `CommsPanel.LieRed`。`SwapToLie` / `SetTextStencilComp` / `DenialRed` / `LastLineSwept` は無い。
+
 ユーザー逐語「異常なしと判定するのは、人形に乗っ取られた結果であるという設定なので、正常な表示の(上書きされるまえ)ときは、
 ちゃんと異常を検知する。そのうえで、塗り替えられたときに、異常なしであるみたいな感じの表現」。文面と形はシュビーの案
 （`canon/OPEN.md`「嘘の一文 — 正常の面は異常を検知し…」・design-critic の部分採用を経た形）。
@@ -150,7 +158,7 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
 
 - **帯ごとの値は `CommsCurseLogic.ComputeTear` が 1 か所で作る**（種は面が開いてからの秒・実行時の乱数なし）。
   `CommsPanel.PushTear` が `_Tear`（強さ・明滅）と `_TearShiftA/B` `_TearDropA/B`（float4 × 2 ＝ 帯 8 本）を
-  地・ステンシル・顔の 3 材質へ同じ値で書き、本文は `ApplyGlyphMesh` が**行ごと**（行の中心の帯）に同じ値で動かす。
+  地・ステンシル・顔の 3 材質へ同じ値で書き、本文は `ApplySplitTruthMesh` / `ApplyLieMesh` が `TearShiftAt` / `TearAlphaAt` で同じ値を引いて動かす（現行は字の中心の帯で引く。当時は**行ごと**＝行の中心の帯）。
   ⚠ 頂点ごとに帯を引くと、帯の境目が行を横切った字は上と下が別の量だけ動いて**斜体**になる（初回の焼きで踏んだ）。
   本編は画素の帯を切って飛ばすので傾かない。行ごとなら行がまるごと横へ切れて飛ぶ。切断は従来どおり字の中心と両端で読み、
   帯の境目の上側はステンシルが画素で切る（＝ 字の上半分だけが走り書きに変わる、本編と同じ「切れ」の見え方）。
@@ -195,7 +203,8 @@ LEDGER 0244〜0246に加え、2026-09-21の依頼で入力競合・揺れ・警�
   `Cursed` が無ければ FAIL／`sfx=nc` は FAIL／憑依の連絡の `chars` が 0 でなければ FAIL／
   Cursed の縁の `tearMax < 0.5` は FAIL・`tornMax 0` は FAIL（乱れが画へ届いていない）／嘘の一文の Cursed の縁で `lie` が 0 なら FAIL
   （行が書き換わっていない・0232）。**C# と対で直す**
-- ⚠ `ev=commsTakeover` / `commsErase` / `commsReveal` / `commsCollapse` はもう出ない（旧の走行ログにだけ残る）
+- ⚠ `ev=commsTakeover` / `commsErase` / `commsReveal` / `commsCollapse` はもう出ない（旧の走行ログにだけ残る。C# に出す所が無いことを Grep で確認済み）。
+  ただし `tools/comms_takeover_evidence.py`（`analyze-xp-log.py` が import）と `tools/test_comms_takeover_evidence.py` は今も `ev=commsTakeover` を読む ＝ 実ログでは何も判定しない（空を返す）
 
 ## 検証
 

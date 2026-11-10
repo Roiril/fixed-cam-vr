@@ -27,7 +27,7 @@ fixed-cam-vr は **配信側 Android アプリ + ネットワーク + Unity Edit
 
 1. **配信側を疑う** — ブラウザで `http://<phone>:8080/` を開く。HTML が出るか？ → 出ないなら streamer アプリ未起動 or ポート違い
 2. **ネットワークを疑う** — PC から `curl -m 3 http://<phone>:8080/health`。タイムアウトなら同一 LAN にいない / FW ブロック
-3. **Unity スクリプトを疑う** — `streaming-offline-test` で fake server に向け Editor 単体検証。ここで出るなら実機構成側の問題
+3. **Unity スクリプトを疑う** — `py -3.11 tools/twin-verify.py` で本番シーンを PC だけで通す。ここで出るなら実機構成側の問題（受信とデコードだけを切り分けたいときは退避路の `streaming-offline-test`）
 4. **コンパイル** — `.\tools\unity.ps1 test` でエラー有無（走る前に必ずコンパイルする）
 5. **Meta XR** — Editor で出るが Quest で出ない → ビルド層 (`adb-logcat` スキル (unity))
 
@@ -69,8 +69,9 @@ bash tools/run-quest-xp-test.sh walk 300
 **⚠ 「演出が出なかった」を信じる前に 2 つ確かめる**（どちらも実測で踏んだ）:
 
 1. **実機が使った設定**。レポート冒頭の「実機が使った設定」が FAIL なら、原因はコードではなく
-   設定のずれ。端末キャッシュは焼き込みより優先されるので、APK を焼き直しても変わらない
-   → `py -3.11 tools/quest-fleet.py reset-config <serial>`
+   設定のずれ。実機は APK に同梱した show.json だけで動き、端末キャッシュも卓の /state も読まない
+   （`ShowControlClient.BakedOnly`）。ずれていたら、その機に入っている APK が古い
+   → 卓の export を通して焼き直し、両機に入れる（`skills/quest-build`）
 2. **Wi-Fi の帯域**。2.4GHz だと受信 fps が配信の 2/3 まで落ち、導入の最後の段（Swap）は
    映像が届いていることを要求するので**帯域が細いだけで演出が出ない**
    → `py -3.11 tools/quest-fleet.py list` の wifi 列（run スクリプトが走行前に警告も出す）

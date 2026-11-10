@@ -76,7 +76,7 @@ namespace FixedCamVr.Tracking
 
         /// <summary>
         /// Pick 確定でゾーンが変わった時に発火する（旧ゾーン, 新ゾーン）。
-        /// 初回取得時は旧ゾーンが null。周回カウント（LapCounter）等の外部消費者向け。
+        /// 初回取得時は旧ゾーンが null。購読者は <c>ZoneLayoutApplier</c>（入った瞬間の生の判定で区間の見た目を当てる）。
         /// 発火は registry.SetActive と同じ箇所（cameraIndex 未変化のゾーン間移動でも発火する点に注意）。
         /// </summary>
         public event Action<PlayerZone?, PlayerZone>? ZoneChanged;
@@ -165,7 +165,8 @@ namespace FixedCamVr.Tracking
         /// 現ゾーンを優先（shrink 判定）し、はみ出していれば優先度最大の包含ゾーンを採用。
         /// 何にも入っていなければ keepLastWhenOutside の方針で current を返すか null を返す。
         /// 同優先度のときは zones 配列の先頭側が選ばれる（厳密な比較は <c>&gt;</c> なので先勝ち）。
-        /// 純粋関数として書かれており、テストから reflection で直接呼ばれる。
+        /// 現ゾーン（<c>_current</c>）を読み、判定用の箱の配列（<c>_pickBoxes</c>）を使い回すので純粋関数ではない。
+        /// テストから reflection で直接呼ばれる。
         /// </summary>
         private PlayerZone? Pick(Vector3 head)
         {

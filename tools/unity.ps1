@@ -103,7 +103,7 @@ $Menus = [ordered]@{
                             Desc = '追いつき直後の乗っ取りと途中解除を3言語で実描画する'
                             Out = 'Logs/comms-readable-20260921/ja/finished.png' }
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
-                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set lang=ja|en|fr,invasion=0|0.25|0.75|1,frames=0／→ make-preview-video.py で mp4）'
+                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set lang=ja|en|fr,invasion=0|0.25|0.75|1／全通知の連番も撮るなら frames=1（既定は撮らない）／→ make-preview-video.py で mp4）'
                             Out = 'Assets/Screenshots/comms-preview/place.png'
                             OutLang = $true }
     'glitch'           = @{ Method = 'FixedCamVr.Streaming.EditorTools.GlitchPreview.Run'

@@ -2,11 +2,17 @@
 
 namespace FixedCamVr.Input
 {
-    /// <summary>HMDを装着してから本編へ渡すまでの導入段。</summary>
+    /// <summary>
+    /// HMDを装着してから本編へ渡すまでの導入段。
+    /// 実際の順は Tutorial → TutorialAccepted → Greeting → Reminder → TitleTransition → Title →
+    /// (TitleDismissing →) Complete。宣言順とは違う。
+    /// </summary>
     public enum HmdOnboardingStage
     {
         Greeting,
+        /// <summary>現在は到達しない（初期段は Tutorial で、ここへ入る遷移元は ControllerConfirmed だけ）。</summary>
         WaitingForController,
+        /// <summary>現在は到達しない（入る遷移元は WaitingForController だけ）。</summary>
         ControllerConfirmed,
         Tutorial,
         TutorialAccepted,
@@ -59,7 +65,8 @@ namespace FixedCamVr.Input
     }
 
     /// <summary>
-    /// 左コントローラーの確認、報告練習、タイトル開始を一続きに扱う純ロジック。
+    /// 報告練習（Tutorial）、名乗りと念押し（Greeting / Reminder）、タイトル開始を一続きに扱う純ロジック。
+    /// 左コントローラーが使えない間は、各段が先へ進まずその場で待つ。
     /// 練習の成功は外へ報告せず、<see cref="HmdOnboardingAction.TutorialAccepted"/>だけを返す。
     /// </summary>
     public sealed class HmdOnboardingLogic

@@ -10,7 +10,11 @@ namespace FixedCamVr.Streaming
         Interrupted,
     }
 
-    /// <summary>締めの警告を読み切ってからの離脱と時間切れを判定する。</summary>
+    /// <summary>
+    /// 締めの警告を読み切ってからの離脱と時間切れを判定する。
+    /// 報告（Released）が最優先。人形が画面の左半分に入る Trapped（<c>endingDollOnLeftHalf</c>）は
+    /// 警告を読み切ったか（<c>_promptReadable</c>）の確認より前に立つ。離脱と時間切れは読み切ってからだけ。
+    /// </summary>
     public sealed class EndingDecisionLogic
     {
         public const float PromptLimitSec = 15f;

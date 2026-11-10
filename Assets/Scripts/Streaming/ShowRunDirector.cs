@@ -36,7 +36,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 終幕の合図（<c>canon/LEDGER.md</c> 0048）。「この演出が終わったら終わる」の 1 ビットで、
-        /// <b>落ちるのは <see cref="BeginRun"/>（周回リセット）だけ</b>。
+        /// 発火済みを落とすのは <see cref="BeginRun"/>（周回リセット）と演出 id の変更、
+        /// 武装はそれに加えて人が演出を止めたとき（<c>NotifyInterrupted</c>）。
         /// 相と走行中の演出 id を両方持っているのはここだけなので、判定もここで回す。
         /// </summary>
         private readonly EndingCueLogic _ending = new EndingCueLogic();
@@ -100,7 +101,7 @@ namespace FixedCamVr.Streaming
         public bool EndHolding => _logic.EndHolding;
 
         /// <summary>
-        /// 終幕の合図の演出が走っているのを見たか（＝ 周回リセットで落ちるフラグ・テレメトリ用）。
+        /// 終幕の合図の演出が走っているのを見たか（＝ 武装。周回リセット・演出 id の変更・人が演出を止めたときに落ちる・テレメトリ用）。
         /// <b>著作していなければ一生 false</b>（<see cref="ShowOutroDef.afterTakeId"/> が空）。
         /// </summary>
         public bool EndingArmed => _ending.Armed;
@@ -380,8 +381,8 @@ namespace FixedCamVr.Streaming
         //
         // ⚠⚠ 読むのは **進行の周**（progressLap・単調増加）。区間の周（lap）は逆走で戻るので、
         //   ここへ渡すと「帰りの A に着いた体験者が 1 区間引き返した瞬間に周回が 3 へ落ちて、
-        //   体験が終わらなくなる」。終了判定は `lap > totalLaps` の 1 本しか無いので、
-        //   ここを間違えると出口が丸ごと消える。
+        //   体験が終わらなくなる」。周回由来の出口は `lap > totalLaps` の 1 本なので（他は時間切れと RequestFinish）、
+        //   ここを間違えると周回での終わり方が消える。
         private void OnCameraEntered(SegmentEntry entry) => _logic.NotifyLap(entry.ProgressLap);
 
         private void Update()

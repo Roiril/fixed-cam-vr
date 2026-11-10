@@ -12,7 +12,7 @@
 - [take_continuity.md](take_continuity.md) — 持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が持つ
 - [backtrack_and_replay.md](backtrack_and_replay.md) — 引き返し。周は 2 つ／前進は直前のカメラも見る／once は決着した回数／録画は上書きしない
 - [approach_and_veil_hold.md](approach_and_veil_hold.md) — 接近の再設計。startCovered で画面差し替えが消える／保持中の Hide で人形が消える
-- [closing_line_halt.md](closing_line_halt.md) — 4-A の③a は締めの線を踏んだ瞬間（0233）。入場 3 秒は ending_result
+- [closing_line_halt.md](closing_line_halt.md) — 4-A の③a は線 OR 3 秒。いまの台本は線が空で時計だけ
 - [ending_result.md](ending_result.md) — 最後の A の警告・帰還不能・解除・人形 End の条件と報告数の集計
 - [ending_roll.md](ending_roll.md) — 帰還 End / 人形 End のエンドロール冒頭。ランごとの合成済み写真
 - [ending_farewell_doll.md](ending_farewell_doll.md) — 帰還の別れの人形（0291）。体験者のいる所から解く・写真は時間で緩む
@@ -114,7 +114,7 @@
 ## Unity・SDK
 - [unity_pitfalls.md](unity_pitfalls.md) — Unity / Meta XR の地雷集（Quad 向き・Texture 初期化・SkinnedMesh のカメラ別切替は無効 ほか）
 - [sdk_decision.md](sdk_decision.md) — Meta XR All-in-One + XRI 採用の経緯
-- [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路。この PC は未登録）
+- [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路。登録済み・要 Editor 起動）
 
 ## 対外資料・その他
 - [paper_dcexpo_env.md](paper_dcexpo_env.md) — DCEXPO 向け資料 `paper/dcexpo`。HTML→Edge→PDF・図は実物へ差し替え

@@ -259,7 +259,7 @@ BGM ライブラリ … audio/ の音源をトラック登録（ループ範囲�
 
 ```powershell
 # Unity ⇄ Web の一致テスト（既存の卓テストごと全部）
-node --test "tools/web-compositor/*.test.mjs"
+node --test "tools/web-compositor/*.test.mjs" "tools/web-compositor/test_*.mjs"
 ```
 
 一致の仕組みと trace の形は [.claude/plans/2026-07-25_show-simulator.md](../../.claude/plans/2026-07-25_show-simulator.md)。

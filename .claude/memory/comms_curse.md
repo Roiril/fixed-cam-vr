@@ -15,7 +15,7 @@
 | 顔の斑（スイ → 市松人形） | `CommsAvatar.shader`（同じ場を `_Origin` / `_Size` で読む） |
 | 斑の面積と閾値 | `CommsCurseLogic.MaskFor`（0.25 → 22% / 0.75 → 55% / 1 → 全面） |
 | 1 秒の立ち上がり | `CommsPanelLogic.SetCurseTarget` / `Weights.curse`（面が開いた縁で 0 から） |
-| **0.75 以降の憑依の出し方**（0230） | `CommsPossessionLogic`（時計）/ `CommsCurseLogic.SweepFrontY`（前線・HLSL と対）/ `CommsPanelLogic.PossessionSample` / `Weights.sweep`。罠は [comms_takeover.md](comms_takeover.md) |
+| **0.75 以降の憑依の出し方**（0230） | `CommsPossessionLogic`（時計）/ `CommsCurseLogic.IsSwept`（左端から進む前線の左側か。HLSL の `CurseSweepK` と対）/ `CommsCurseLogic.SweepBandCount` / `SweepBandOf`（乱れの帯。HLSL の `CommsBandOf` と対）/ `CommsPanelLogic.PossessionSample` / `Weights.sweep`。罠は [comms_takeover.md](comms_takeover.md) |
 | 配線 | `CommsPanel.PushCurseTarget` / `SetPlate` / `ApplyTextStencil` |
 | 見る | `.\tools\unity.ps1 menu comms-preview -Set motion=1` → `py -3.11 tools/render-comms-curse-preview.py` |
 | 観測 | `ev=sum` の `commsCurse=<シェーダ>/<斑>/<目標>`・`ev=commsCurse sec=`・`ev=comms curse=` |
@@ -33,7 +33,7 @@ TextMeshPro の面には斑を描けないので、**別の quad**（`CommsCurse
 - **`fontMaterials` 全部へ書く**（フォールバックでサブメッシュの材質が増える）。`SetNotice` で組み直すたびに入れ直す
 - **bit を限る**（隔離の殻は 1・導入の破砕は 32）。全ビットの Replace にすると他の層の印を潰す
 - ⚠ **ステンシル面の無い深度形式だと黙って切れない**（面は正常に見える）。だから字の中心と両端が
-  斑の中にある字は CPU でも alpha 0 にしてある（`ApplyGlyphMesh`）— 切れなくても斑の中の字は消える。
+  斑の中にある字は CPU でも alpha 0 にしてある（本文＝真実側の `CommsPanel.ApplySplitTruthMesh`。`CommsCurseLogic.IsCut`）— 切れなくても斑の中の字は消える。
   端だけ千切れる字はステンシルにしか出ない
 - ⚠ **新シェーダは実行時 `Shader.Find`** → `ProjectSettings/GraphicsSettings.asset` の Always Included に
   入れてある。剥がれると地は URP Unlit へ落ちて出るが、毛羽立ち・走り書き・切断が 1 画素も出ない。
@@ -59,6 +59,9 @@ TextMeshPro の面には斑を描けないので、**別の quad**（`CommsCurse
 
 ## ⚠⚠ 侵食度 0.75 以降は斑ではなく前線（2026-09-18・0230）
 
+⚠ この節の「上から降りる前線」は初版の記録。現行は**左端から右へ進む前線**（`CommsPossessionLogic`：塗り替わり 1.5 秒・`CommsCurseLogic.IsSwept`）。
+真実は `ApplySplitTruthMesh`、嘘の赤い文は別メッシュの `ApplyLieMesh` が前線の左右で切り分ける。現行の乗っ取りの時刻表は [comms_takeover.md](comms_takeover.md) の冒頭側。
+
 ここまでの「1 秒で斑が重なる」は **0.25 だけ**になった。0.75 と 1 は憑依の出し方
 （一気に出る → 読ませる → 上から前線が降りて全面が双子）。ユーザーの判定「これだと乗っ取られている感じが、
 一部のユーザにわかりにくい」「初見の人視点で」。
@@ -66,7 +69,7 @@ TextMeshPro の面には斑を描けないので、**別の quad**（`CommsCurse
 - 斑（`_Curse`）と前線（`_Sweep`）は同じ k に `max` で合流する。顔・地・ステンシルの 3 シェーダが**同じ 2 つの値**を読む
 - 憑依の出し方では `Weights.curse` は塗り替わる前 0・後 1（1 秒の立ち上がりは効かない）。`SetCurseTarget` の目標
   （`MaskFor(0.75)` = 0.477）は使われない — 塗り替わった後は 0.75 でも全面（0229 の「0.75 → 55%」は打つ出し方の話に縮んだ）
-- `CorruptedChars` は前線の上側の字も数える（`CommsCurseLogic.IsSwept`）。塗り替わった後は全字
+- `CorruptedChars` は、嘘が出ている間（`_lieActive`）は前線の x より左の字も数える（`ApplySplitTruthMesh` の `boundaryPanel`）。斑のときは `CommsCurseLogic.IsCut` で切られた字。塗り替わった後は全字
 - 嘘の一文も同じ形。旧「文字を切らない・引き延ばし → 抵抗 → 崩壊」は捨てた（[comms_takeover.md](comms_takeover.md)）
 
 ## 走り書きの作り方（シェーダ）

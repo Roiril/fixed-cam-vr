@@ -9,8 +9,12 @@ namespace FixedCamVr.Streaming
     /// 段 4「現実が割れてスクリーンへ入る」の<b>数値の正本</b>。
     ///
     /// シェーダ側の式は <c>Assets/Art/Shaders/Intro/IntroShatter.hlsl</c> が 1 本だけ持ち、
-    /// **数値はここから uniform で降りる**（覆いも封印の箱も同じ値を使う）。だから
-    /// 「片方だけ直して沈黙して食い違う」が構造的に起きない。
+    /// **数値はここから uniform で降りる**。
+    ///
+    /// ⚠ <b>いま配っている先は封印の箱だけ</b>（<see cref="PushBox"/>。呼び元は <c>Attic/SealedBox</c> と
+    /// そのプレビュー）。<see cref="PushVeil"/> と <c>Veil*</c> の定数はどこからも呼ばれておらず、
+    /// 本番の <c>IntroVeil.shader</c> は <c>IntroShatter.hlsl</c> を include しない（<c>_Stretch</c> を
+    /// 宣言するシェーダも無い）。覆いの割れ方を変えたいときにここを直しても画は変わらない。
     ///
     /// ⚠ <b>式の形（smoothstep の区間・二乗の場所）は HLSL と C# の 2 箇所にある。</b>
     /// ここの <see cref="ClosedAt"/> は「shatter = 1 で必ず全部閉じる」「スクリーンの上のセルは
