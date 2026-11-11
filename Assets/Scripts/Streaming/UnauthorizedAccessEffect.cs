@@ -320,7 +320,7 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             if (!Application.isPlaying || !IsPlaying) return;
-            Elapsed = Mathf.Min(Duration, Elapsed + Time.unscaledDeltaTime);
+            Elapsed = Mathf.Min(Duration, Elapsed + SimTime.Dt);
             Render(Elapsed);
             if (Elapsed >= Duration) IsPlaying = false;
         }

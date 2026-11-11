@@ -1,14 +1,17 @@
 """HMD を被らず、Quest も配信スマホも使わずに、本番の体験を最初から最後まで通して確かめる入口。
 
-    py -3.11 tools/twin-verify.py                 # 走行 → 判定 → 目線の動画（10 分ほど）
-    py -3.11 tools/twin-verify.py --follow        # 後ろ上からの動画も撮る（5 分増える。部屋が黒いので画面しか映らない）
-    py -3.11 tools/twin-verify.py --no-video      # 判定だけ（速い）
+    py -3.11 tools/twin-verify.py                 # 走行の Play の中で目線の動画も撮る → 判定（Unity の起動 1 回）
+    py -3.11 tools/twin-verify.py --two-pass      # 従来の 2 段: 走行 → 判定 → 同じ記録を replay で再生して目線の動画
+    py -3.11 tools/twin-verify.py --follow        # 後ろ上からの動画も撮る（replay で再生する段が 1 つ増える。部屋が黒いので画面しか映らない）
+    py -3.11 tools/twin-verify.py --no-video      # 判定だけ（動画を撮らない）
     py -3.11 tools/twin-verify.py --nomark        # 報告しない走行（人形 End）
     py -3.11 tools/twin-verify.py --relief        # ホラー軽減を選んだ走行
     py -3.11 tools/twin-verify.py --marks 1A,1B,2A,3B  # 周の中でも報告する（報告で起きる演出を撮る）
 
 本番の Main シーンを Editor の Play で流す。入力は生の左 X だけ、カメラはデジタルツインの動画（tools/twin/make_pack.py）。
-走った結果は体験の記録に残し、同じ記録を unity.ps1 replay で撮る。
+既定は走行の Play に撮影を付ける（twin-run の capture=eye）。動画と同じ時計の replay_xp.log（tau=）も同じ Play から出る。
+走った結果は体験の記録にも残り、--two-pass と --follow は同じ記録を unity.ps1 replay で流し直して撮る。
+verdict.json の video.mode が撮り方（single-pass / two-pass / none）。
 
 出力は Drive の renders/twin-verify/<時刻>/（report.md・verdict.json・events.json・replay_xp.log・eye.mp4・follow.mp4）。
 場面ごとのコマと前の走行との左右比較は tools/twin-look.py（見るときだけ切る）。
@@ -191,6 +194,37 @@ def parse_marks(text: str) -> list[str]:
     return out
 
 
+def video_plan(no_video: bool, two_pass: bool, no_eye: bool, follow: bool) -> dict:
+    """どの動画をどう撮るか。capture は走行に付ける撮影（"eye" か ""）、replay は走行のあと再生で撮る視点。
+
+    既定は目線を走行の Play の中で撮る（single-pass）。後ろ上（follow）は撮影カメラが 1 台なので、目線と同時には撮れず
+    必ず再生で撮る。mode は目線の動画の撮り方で、目線を撮らなければ再生の有無で two-pass / none。
+    """
+    if no_video:
+        return {"mode": "none", "capture": "", "replay": []}
+    eye = not no_eye
+    if two_pass or not eye:
+        views = (["eye"] if eye else []) + (["follow"] if follow else [])
+        return {"mode": "two-pass" if views else "none", "capture": "", "replay": views}
+    return {"mode": "single-pass", "capture": "eye", "replay": ["follow"] if follow else []}
+
+
+VIDEO_MODE_NOTE = {
+    "single-pass": "目線は走行と同じ Play で撮った（動画と判定は同じ体験）",
+    "two-pass": "目線は走行の記録を replay で再生して撮った（動画は流し直した体験）",
+    "none": "撮っていない",
+}
+
+
+def single_pass_video(work: Path, run_info: dict) -> tuple[Path | None, str | None]:
+    """走行の Play が撮った目線の動画。(動画, 撮れなかった理由)。理由は XpTwinDriver が twin_run.json の eyeVideo に書く。"""
+    target = work / "eye.mp4"
+    said = run_info.get("eyeVideo", "")
+    if target.exists() and not said.startswith("error"):
+        return target, None
+    return None, (said or ("eye.mp4 が無い" if "eyeVideo" in run_info else "走行が撮影の結果を返していない"))
+
+
 def set_arg(pairs: dict[str, str]) -> str:
     return ",".join(f"{k}={v}" for k, v in pairs.items())
 
@@ -295,10 +329,28 @@ def asset_check(log_text: str, swapped: dict[str, str]) -> tuple[str, str]:
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
+    a = build_parser().parse_args()
+
+    stamp = time.strftime("%Y%m%d_%H%M%S") + (f"_{a.tag}" if a.tag else "")
+    busy = acquire_lock(LOCK, stamp)
+    if busy:
+        print(busy)
+        return 3
+    try:
+        return verify(a, stamp)
+    finally:
+        release_lock(LOCK)
+
+
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-video", action="store_true")
+    ap.add_argument("--two-pass", action="store_true",
+                    help="目線の動画を走行と別の Play で撮る（走行のあと同じ記録を replay で再生する。従来の撮り方）")
     ap.add_argument("--no-eye", action="store_true")
     ap.add_argument("--follow", action="store_true", help="後ろ上からの動画も撮る")
+    ap.add_argument("--fast", action="store_true",
+                    help="固定刻みで回す（1 フレーム = 1/90 秒。描ける速さで進み実時間より速い）。音と性能は判定できない")
     ap.add_argument("--nomark", action="store_true", help="報告しない（人形 End）")
     ap.add_argument("--relief", action="store_true", help="ホラー軽減")
     ap.add_argument("--marks", default="",
@@ -312,17 +364,31 @@ def main() -> int:
     ap.add_argument("--real-assets", action="store_true",
                     help="合成素材を本番のまま流す（既定はツインの部屋で作り直した素材 tools/twin/assets.json へ差し替える）")
     ap.add_argument("--tag", default="")
-    a = ap.parse_args()
+    return ap
 
-    stamp = time.strftime("%Y%m%d_%H%M%S") + (f"_{a.tag}" if a.tag else "")
-    busy = acquire_lock(LOCK, stamp)
-    if busy:
-        print(busy)
-        return 3
-    try:
-        return verify(a, stamp)
-    finally:
-        release_lock(LOCK)
+
+def plan_of(a: argparse.Namespace) -> dict:
+    return video_plan(a.no_video, a.two_pass, a.no_eye, a.follow)
+
+
+def run_set_args(a: argparse.Namespace, plan: dict, work: Path) -> dict[str, str]:
+    """twin-run へ渡す -Set。撮影の値（capture・fov）は single-pass のときだけ載る。"""
+    args = {"pack": str(PACK), "out": str(work), "speed": str(a.speed), "dwell": str(a.dwell)}
+    if a.nomark:
+        args["nomark"] = "1"
+    if a.relief:
+        args["relief"] = "1"
+    if a.fast:
+        args["fast"] = "1"
+    marks = parse_marks(a.marks)
+    if marks:
+        args["marks"] = ".".join(marks)
+    if a.calib == "show":
+        args["calib"] = "show"
+    if plan["capture"]:
+        args["capture"] = plan["capture"]
+        args["fov"] = str(a.fov)
+    return args
 
 
 def verify(a: argparse.Namespace, stamp: str) -> int:
@@ -342,17 +408,10 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
 
     code_run = code_fingerprint()
     code_shoot: dict | None = None
-    args = {"pack": str(PACK), "out": str(work), "speed": str(a.speed), "dwell": str(a.dwell)}
-    if a.nomark:
-        args["nomark"] = "1"
-    if a.relief:
-        args["relief"] = "1"
     marks = parse_marks(a.marks)
-    if marks:
-        args["marks"] = ".".join(marks)
-    if a.calib == "show":
-        args["calib"] = "show"
-    rc_run = run(PS + ["twin-run", "-Set", set_arg(args)], "走行")
+    plan = plan_of(a)
+    args = run_set_args(a, plan, work)
+    rc_run = run(PS + ["twin-run", "-Set", set_arg(args)], "走行と目線の撮影" if plan["capture"] else "走行")
     run_json = work / "twin_run.json"
     run_info = json.loads(run_json.read_text(encoding="utf-8")) if run_json.exists() else {"result": "走行の結果が無い"}
 
@@ -376,23 +435,30 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
 
     pack = json.loads((PACK / "pack.json").read_text(encoding="utf-8"))
     gaps = pack.get("calibGapPx", {})
-    # 再生で撮る。
     rec = run_info.get("recDir", "")
     videos = {}
     replay_compare = ""
     replay_log: Path | None = None
+    # 走行の Play の中で撮った目線（single-pass）。走行と撮影は同じ Play なので、コードの指紋も同じ。
+    if plan["capture"]:
+        code_shoot = code_run
+        eye, why = single_pass_video(work, run_info)
+        if eye:
+            videos["eye"] = eye
+            if (work / "replay_xp.log").exists():
+                replay_log = work / "replay_xp.log"
+        elif run_info.get("result") == "ok":
+            verdicts.insert(0, {"level": "FAIL", "text": f"eye の動画を撮れなかった（{why}）"})
     # 走行が終わったあとの Editor の終了処理で落ちることがある（記録と判定は揃っている）。撮影は走行の結果で決める。
     if rc_run != 0 and run_info.get("result") == "ok":
         verdicts.insert(0, {"level": "WARN", "text": f"走行のあと Editor の終了処理で落ちた（exit={rc_run}）。走行の記録は揃っている"})
-    if not a.no_video and run_info.get("result") == "ok" and rec:
+    # 再生で撮る（two-pass の目線と、どちらの撮り方でも後ろ上）。
+    if plan["replay"] and run_info.get("result") == "ok" and rec:
         code_shoot = code_fingerprint()
         changed = code_check(code_run, code_shoot)
         if changed:
             verdicts.insert(0, {"level": changed[0], "text": changed[1]})
-        for view, off in (("eye", a.no_eye), ("follow", not a.follow)):
-            if off:
-                continue
-            target = work / f"{view}.mp4"
+        for view in plan["replay"]:
             sub = work / f"replay_{view}"
             sub.mkdir(exist_ok=True)
             target = sub / f"{view}.mp4"
@@ -400,9 +466,12 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
                 videos[view] = target
             elif not target.exists():
                 verdicts.insert(0, {"level": "FAIL", "text": f"{view} の動画を撮れなかった"})
-        replay_log = next((work / f"replay_{v}" / "replay_xp.log" for v in ("eye", "follow") if (work / f"replay_{v}" / "replay_xp.log").exists()), None)
-        if replay_log:
-            p = subprocess.run(["py", "-3.11", "-X", "utf8", str(ROOT / "tools" / "quest-xprec.py"), "compare", rec, str(replay_log)],
+        # 端末（ここでは走行）と再生の出来事の突き合わせ。single-pass の replay_xp.log は走行そのものなので比べない。
+        played = next((work / f"replay_{v}" / "replay_xp.log" for v in ("eye", "follow") if (work / f"replay_{v}" / "replay_xp.log").exists()), None)
+        if replay_log is None:
+            replay_log = played
+        if played:
+            p = subprocess.run(["py", "-3.11", "-X", "utf8", str(ROOT / "tools" / "quest-xprec.py"), "compare", rec, str(played)],
                                cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
             replay_compare = p.stdout
             (work / "compare.txt").write_text(p.stdout + p.stderr, encoding="utf-8")
@@ -422,6 +491,8 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
     summary = {
         "stamp": stamp, "pass": ok, "counts": n, "new": fresh, "staleKnown": stale, "run": run_info, "calibGapPx": gaps,
         "videos": {k: f"{k}.mp4" for k in videos},
+        # 目線の撮り方。single-pass は走行と同じ Play（replay_xp.log も同じ Play）、two-pass は記録を replay で再生して撮った。
+        "video": {"mode": plan["mode"], "replay": plan["replay"], "fov": a.fov if plan["mode"] != "none" else None},
         "compare": replay_compare.splitlines()[:2],
         "verdicts": verdicts, "assets": swapped,
         "code": {"run": code_run, "shoot": code_shoot},
@@ -434,6 +505,7 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
         "",
         f"走行: **{run_info.get('result')}**（{run_info.get('sec')} 秒・周 {run_info.get('lap')}・報告 {run_info.get('marks')}・例外 {run_info.get('exceptions')}）",
         f"判定: FAIL {n['FAIL']} / WARN {n['WARN']} / OK {n['OK']}（うち新規 FAIL {fresh['FAIL']} / WARN {fresh['WARN']}。残りは tools/twin/known.json の既知）",
+        f"動画: {VIDEO_MODE_NOTE[plan['mode']]}" + (f"（再生で撮った視点: {', '.join(plan['replay'])}）" if plan["replay"] else ""),
         "",
         f"⚠ {calib_note}。本番の calib とツインの配置の差（頭と足の投影・中央値 px）: {gaps}。**PASS は本番の calib で合っていることを意味しない。**",
         f"⚠ 映像は頭の位置から引いている。道とのずれ最大 {run_info.get('feedMaxErrM')}m。道から外れた刻み {run_info.get('feedOffRouteTicks')}（人の居ない写真を配った）。立ち止まると人は歩きの 1 コマで止まる。",

@@ -177,7 +177,7 @@ namespace FixedCamVr.Streaming.Recording
         private void Update()
         {
             if (_segments.Count == 0) return;
-            float now = Time.realtimeSinceStartup;
+            float now = SimTime.Realtime;
             TickStartLine(now);
             bool changed = false;
             for (int i = _segments.Count - 1; i >= 0; i--)
@@ -344,7 +344,7 @@ namespace FixedCamVr.Streaming.Recording
         private void OnCameraEntered(SegmentEntry entry)
         {
             int camera = entry.Camera, lap = entry.SegmentLap;   // 録画の区間キーは区間の周
-            float now = Time.realtimeSinceStartup;
+            float now = SimTime.Realtime;
             ShowRecordDef? cfg = showControl != null ? showControl.RecordConfig : null;
             float postSec = cfg != null ? cfg.PostSec : SegmentRecordWriter.DefaultPostSec;
 
@@ -593,7 +593,7 @@ namespace FixedCamVr.Streaming.Recording
         // 受信スレッドではなくメインスレッドから同期的に呼ばれる（CameraStream.FrameTap の契約）。
         private void Append(CameraStream stream, byte[] jpeg, int length)
         {
-            float now = Time.realtimeSinceStartup;
+            float now = SimTime.Realtime;
             for (int i = 0; i < _segments.Count; i++)
             {
                 Segment s = _segments[i];

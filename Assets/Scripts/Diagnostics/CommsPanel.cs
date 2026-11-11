@@ -1248,7 +1248,7 @@ namespace FixedCamVr.Diagnostics
 
             if (_onboardingActive)
             {
-                _logic.Tick(Time.unscaledDeltaTime);
+                _logic.Tick(SimTime.Dt);
                 Apply(_logic.Weights);
                 return;
             }
@@ -1307,7 +1307,7 @@ namespace FixedCamVr.Diagnostics
                                  && (timeline.FarewellPhase == EndingFarewellLogic.Phase.Turn
                                      || timeline.FarewellPhase == EndingFarewellLogic.Phase.Retreat),
                 curseReleased = runDirector != null && runDirector.ScreenDecayReleased,
-                dt = Time.unscaledDeltaTime,
+                dt = SimTime.Dt,
             });
             if (next == CommsNotice.FarewellFinding)
             {
@@ -1340,10 +1340,10 @@ namespace FixedCamVr.Diagnostics
 
             // 侵食度は面が出ていなくても読む。**斑の立ち上がりは面が開いた縁から**（0229
             //   「出た初めはこれ ← 1s ほどで重なる」）で、それは `CommsPanelLogic` が持つ。
-            TickGlitch(Time.unscaledTime);
+            TickGlitch(SimTime.Now);
             PushCurseTarget();
             bool wasActive = _logic.Active;
-            _logic.Tick(Time.unscaledDeltaTime);
+            _logic.Tick(SimTime.Dt);
             if (wasActive && !_logic.Active && _lieActive)
                 _feelFx?.NotifyHeartbeatWarningCompleted();
             if (!_promptReadableNotified && runDirector != null
@@ -1355,7 +1355,7 @@ namespace FixedCamVr.Diagnostics
             }
             if (_logic.Active && !wasActive)
             {
-                _curseOpenAt = Time.unscaledTime;
+                _curseOpenAt = SimTime.Now;
                 _curseRampReported = false;
             }
             Apply(_logic.Weights);
@@ -1365,7 +1365,7 @@ namespace FixedCamVr.Diagnostics
             {
                 _curseRampReported = true;
                 CurseRampCount++;
-                LastCurseRampSec = Time.unscaledTime - _curseOpenAt;
+                LastCurseRampSec = SimTime.Now - _curseOpenAt;
             }
         }
 
@@ -1464,7 +1464,7 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
 
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             float headYaw = head.eulerAngles.y;
             if (!_yawSeeded || dt > ResumeGapSec)
             {
@@ -2416,7 +2416,7 @@ namespace FixedCamVr.Diagnostics
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
                         double shaderMs = (System.Diagnostics.Stopwatch.GetTimestamp() - shaderStart)
                             * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
-                        Debug.Log($"[CommsPerfShader] frame={Time.frameCount} now={Time.realtimeSinceStartup:F3} "
+                        Debug.Log($"[CommsPerfShader] frame={Time.frameCount} now={WallClock.Now:F3} "
                             + $"recoverySec={RecoverySec:F3} shader={shader.name} setMs={shaderMs:F3}");
 #endif
                     }

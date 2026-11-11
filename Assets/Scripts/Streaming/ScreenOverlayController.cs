@@ -179,6 +179,8 @@ namespace FixedCamVr.Streaming
             _player.renderMode = VideoRenderMode.RenderTexture;
             _player.audioOutputMode = VideoAudioOutputMode.None;
             _player.skipOnDrop = true;
+            // 固定刻み（検証の高速走行）では動画も体験の時計で進める。既定のままだと実時間で流れ、演出の尺だけ伸びる。
+            if (SimTime.Fixed) _player.timeUpdateMode = VideoTimeUpdateMode.GameTime;
             _player.prepareCompleted += OnPrepared;
             _player.loopPointReached += OnVideoEnd; // 自然終端 → 自動フェードアウト（ループしない cue のみ）
             _player.errorReceived += OnVideoError;
@@ -302,7 +304,7 @@ namespace FixedCamVr.Streaming
             if (_material == null || _player == null) return -1;
             _finishedFramesToken = -1;
             // 発火時刻はここで取る（マスクや素材のロードもカットの尺を食うので、動画分岐の中では遅い）。
-            _clipFireAt = Time.realtimeSinceStartup;
+            _clipFireAt = WallClock.Now;
             _clipDlSec = 0f;
             _clipCached = false;
             _clipCueId = string.IsNullOrEmpty(data.id) ? (data.displayName ?? "?") : data.id;
@@ -449,16 +451,16 @@ namespace FixedCamVr.Streaming
                     // Android ネイティブ VideoPlayer は Python http.server(HTTP/1.0) からの
                     // HTTP ストリーミングを扱えず NuCachedSource2 error -1 で落ちる。
                     // UnityWebRequest（=画像で実証済みのスタック）でローカルに DL してから再生する。
-                    float dlStart = Time.realtimeSinceStartup;
+                    float dlStart = WallClock.Now;
                     _clipCached = _videoFileCache.ContainsKey(data.sourceUrl);
                     string localUrl = await GetLocalVideoUrlAsync(data.sourceUrl, ct);
-                    _clipDlSec = Time.realtimeSinceStartup - dlStart;
+                    _clipDlSec = WallClock.Now - dlStart;
                     if (gen != _logic.Generation || ct.IsCancellationRequested) return;
                     _player.source = VideoSource.Url;
                     _player.url = localUrl;
                 }
                 _player.isLooping = data.loop;
-                _logic.BeginPrepare(gen, Time.realtimeSinceStartup);
+                _logic.BeginPrepare(gen, WallClock.Now);
                 _player.Prepare(); // 完了後 OnPrepared で RT 接続 + 再生 + フェードイン
             }
             else
@@ -820,7 +822,7 @@ namespace FixedCamVr.Streaming
             // 発火 → 画に出るまでの内訳を 1 回だけ出す（連続カットの停滞を測る唯一の手段）。
             if (!string.IsNullOrEmpty(_clipCueId))
             {
-                float total = Time.realtimeSinceStartup - _clipFireAt;
+                float total = WallClock.Now - _clipFireAt;
                 ClipLatency?.Invoke(_clipCueId, _clipDlSec, Mathf.Max(0f, total - _clipDlSec), _clipCached);
                 _clipCueId = "";
             }
@@ -966,7 +968,7 @@ namespace FixedCamVr.Streaming
         // Update から毎フレーム呼ぶ。unscaled realtime で timeScale=0 でも進む。
         private void CheckPrepareTimeout()
         {
-            if (_logic.TimedOut(Time.realtimeSinceStartup, prepareTimeoutSec)
+            if (_logic.TimedOut(WallClock.Now, prepareTimeoutSec)
                 && _current != null && _current.SourceIsVideo)
                 AbortCurrentCue("prepare timeout");
         }

@@ -52,7 +52,7 @@ namespace FixedCamVr.Diagnostics
 
         private void Update()
         {
-            _accum += Time.unscaledDeltaTime;
+            _accum += SimTime.Dt;
             if (_accum < sampleInterval) return;
             _accum = 0f;
             EmitSample();
@@ -83,7 +83,7 @@ namespace FixedCamVr.Diagnostics
             _seq++;
             _sb.Clear();
             _sb.Append("[HmdTrace #").Append(_seq);
-            _sb.Append(" t=").Append(Time.unscaledTime.ToString("F1", CultureInfo.InvariantCulture));
+            _sb.Append(" t=").Append(SimTime.Now.ToString("F1", CultureInfo.InvariantCulture));
             _sb.Append("] pos=(");
             _sb.Append(p.x.ToString("F2", CultureInfo.InvariantCulture)).Append(',');
             _sb.Append(p.y.ToString("F2", CultureInfo.InvariantCulture)).Append(',');

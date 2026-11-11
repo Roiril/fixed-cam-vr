@@ -641,10 +641,10 @@ namespace FixedCamVr.Tracking
         private string CaptureGuidance()
         {
             if (_pointIndex == _liveGuidanceForIndex
-                && Time.unscaledTime < _liveGuidanceNext
+                && SimTime.Now < _liveGuidanceNext
                 && !string.IsNullOrEmpty(_liveGuidanceText))
                 return _liveGuidanceText;
-            _liveGuidanceNext = Time.unscaledTime + LiveErrorInterval;
+            _liveGuidanceNext = SimTime.Now + LiveErrorInterval;
             _liveGuidanceForIndex = _pointIndex;
 
             int k = _pointIndex + 1, n = _authoredPoints.Length;

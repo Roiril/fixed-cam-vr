@@ -230,13 +230,13 @@ namespace FixedCamVr.Diagnostics
         private void LateUpdate()
         {
             if (!IsBuilt) return;
-            _resolveWait += Time.unscaledDeltaTime;
+            _resolveWait += SimTime.Dt;
             if (_resolveWait >= 1) { _resolveWait = 0; ResolveRefs(); }
             float alpha = outro != null ? Mathf.Clamp01(outro.ReportAlpha) : 0;
             if (_endingFrames != null)
                 SetEndingImages(_endingFrames.ReleasedShot, _endingFrames.TrappedShot);
             bool wanted = alpha > 0;
-            _music?.SetPresented(wanted, Time.unscaledDeltaTime, outro != null ? outro.CloseLevel : 1);
+            _music?.SetPresented(wanted, SimTime.Dt, outro != null ? outro.CloseLevel : 1);
             if (!wanted)
             {
                 _presented = false;

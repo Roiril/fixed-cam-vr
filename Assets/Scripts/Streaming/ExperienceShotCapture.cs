@@ -122,7 +122,7 @@ namespace FixedCamVr.Streaming
         {
             ExperienceShotLogic.Verdict verdict = _busy
                 ? ExperienceShotLogic.Verdict.Cooldown
-                : ExperienceShotLogic.Decide(Enabled, Time.unscaledTime, _lastAcceptedAt, _accepted);
+                : ExperienceShotLogic.Decide(Enabled, SimTime.Now, _lastAcceptedAt, _accepted);
             if (verdict != ExperienceShotLogic.Verdict.Accepted)
             {
                 if (verdict != ExperienceShotLogic.Verdict.Cooldown)
@@ -131,7 +131,7 @@ namespace FixedCamVr.Streaming
             }
 
             _accepted++;
-            _lastAcceptedAt = Time.unscaledTime;
+            _lastAcceptedAt = SimTime.Now;
             _busy = true;
             StartCoroutine(CaptureSet(_accepted));
             return true;
@@ -170,7 +170,7 @@ namespace FixedCamVr.Streaming
             {
                 info.setName = setName;
                 info.capturedAtIso = DateTime.Now.ToString("o");
-                info.appTimeSec = Time.realtimeSinceStartup;
+                info.appTimeSec = WallClock.Now;
                 var screen = FindObjectOfType<MjpegScreen>();
                 Material? material = ResolveMaterial(screen);
                 FillState(info, screen, material);

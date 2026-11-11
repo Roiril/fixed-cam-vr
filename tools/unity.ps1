@@ -8,10 +8,12 @@
 #   .\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
 #   .\tools\unity.ps1 build fixedcam -NoExport  # 前回焼き込んだ著作のまま焼く
 #   .\tools\unity.ps1 test
+#   .\tools\unity.ps1 bake-check                # 焼き直し待ちだけを見る（Unity を起動しない。待ちがあれば exit 1）
 #   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
 #   .\tools\unity.ps1 menu scene                # Build Main Scene
 #   .\tools\unity.ps1 menu actor -Set actor=Ichimatsu
 #   .\tools\unity.ps1 replay -Set rec=latest,view=eye   # Quest の体験の記録を PC で流し直して広角の mp4 に
+#   .\tools\unity.ps1 twin-run -Set out=<フォルダ>,capture=eye   # HMD なしの通し。capture=eye で目線の動画も同じ Play で撮る（入口は tools/twin-verify.py）
 #   .\tools\unity.ps1 raw editors -i
 #
 # なぜ CLI なのか（旧経路との違い）:
@@ -24,7 +26,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay', 'twin-run', 'crt-tune')]
+    [ValidateSet('build', 'test', 'bake-check', 'open', 'doctor', 'menu', 'raw', 'replay', 'twin-run', 'crt-tune')]
     [string]$Action,
 
     [Parameter(Position = 1)]
@@ -670,6 +672,17 @@ switch ($Action) {
         exit $code
     }
 
+    'bake-check' {
+        # 焼き直し待ちだけを見る。Unity を起動しないので、Editor や走行が動いていても打てる（tools/verify.py の bake の門）。
+        # 判定は build fixedcam と同じ Get-StaleBakes（$Menus / $PyBakes の Src と Out の mtime 比較）。ここで二重に書かない。
+        $stale = @(Get-StaleBakes)
+        if ($stale.Count -eq 0) { Write-Host '焼き直し待ちは無い' -ForegroundColor Green; exit 0 }
+        Write-Host "焼き直し待ち $($stale.Count) 件。このまま焼いても APK には入らない" -ForegroundColor Red
+        foreach ($k in $stale) { Write-Host "  - $($k.Fix)（$($k.Desc)）" -ForegroundColor Yellow }
+        Write-Host '  git checkout 直後は mtime が揃うので誤検知しうる' -ForegroundColor DarkGray
+        exit 1
+    }
+
     'menu' {
         Assert-Cli
         if (-not $App -or $App -in @('--list', '-l', 'list')) { Show-Menus; exit 0 }
@@ -797,6 +810,7 @@ switch ($Action) {
     { $_ -in 'replay', 'twin-run' } {
         # replay: 体験の記録（Quest の ExperienceRecorder）を本番の Main シーンへ流し直し、広い画角で mp4 にする。
         # twin-run: HMD も Quest も無しに本番の Main シーンを通し、体験の記録を作る（入口は tools/twin-verify.py）。
+        #           -Set capture=eye なら同じ Play で目線の動画（out\eye.mp4）と replay_xp.log も書く。
         # ⚠ `unity run` は -quit を必ず張る。Play は executeMethod が返った後も走り続けるので、
         #    ここだけは Unity.exe を直接 batchmode で起こし、終わったら Editor 側が自分で閉じる（XpReplayRun）。
         Assert-NotLocked

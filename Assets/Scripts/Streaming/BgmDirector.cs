@@ -497,7 +497,7 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            float dt = Time.unscaledDeltaTime;   // 演出で timeScale を触っても BGM は実時間で進む
+            float dt = SimTime.Dt;   // 演出で timeScale を触っても BGM は実時間で進む
             AdvanceVoice(ref _cur, dt, isCurrent: true);
             AdvanceVoice(ref _prev, dt, isCurrent: false);
         }

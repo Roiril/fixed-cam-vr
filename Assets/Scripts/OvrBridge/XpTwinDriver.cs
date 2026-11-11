@@ -21,8 +21,10 @@ using UnityEngine;
 /// 本番の Main シーンを最初から終幕まで流す。歩くのは <see cref="ShowWalkDebugDriver"/> の閉ループ（本番の状態を見て進む）、
 /// 入力は生の左 X だけ（人と同じ順で練習と題字と報告を通す）、配信の JPEG はデジタルツインの動画から作った束。
 ///
-/// <b>走った結果は体験の記録（xprec）に残す。</b>動画は同じ記録を <c>unity.ps1 replay</c> で撮る。
-/// 走りは状態に合わせて進み、撮影は記録どおりに進むので、1 回の走行から目線と後ろ上の 2 つの動画が出る。
+/// <b>走った結果は体験の記録（xprec）に残す。</b>目線の動画は 2 通りで撮れる。
+/// <c>capture=eye</c> なら走行の Play の中で <see cref="XpReplayCapture"/> が同時に撮る（1 回方式・twin-verify の既定）。
+/// 撮る時計の頭は記録の頭（<c>ev=xprec state=start</c>）で、再生の tau と同じ所。<c>replay_xp.log</c> も同じ形で出力先へ書く。
+/// 付けなければ、同じ記録を <c>unity.ps1 replay</c> で撮る（2 段。後ろ上の動画はこちらでしか撮れない）。
 ///
 /// 配信のコマは時刻ではなく<b>頭の位置</b>で引く。forward 1 周ぶんの動画を全周に使い回せ、立ち止まっている間もコマを配り続ける
 /// （同じコマで止めると砂嵐の判定が走る）。周の番号を右下の 3 マスに焼いてあるので、録画の取り違えは画に出る。
@@ -31,7 +33,7 @@ using UnityEngine;
 /// 出るのは体験の順序・時刻・演出が画に出たか・例外。
 /// </summary>
 [DefaultExecutionOrder(-32000)]
-public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
+public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost, IXpCaptureSource
 {
     public const string KeyPack = "fcv.twin.pack";
     public const string KeyOut = "fcv.twin.out";
@@ -44,6 +46,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     public const string KeyMarks = "fcv.twin.marks";
     public const string KeyRelief = "fcv.twin.relief";
     public const string KeyShowCalib = "fcv.twin.showcalib";
+    /// <summary>走行の Play の中で撮る動画（"eye" か空）。撮り方の値は <see cref="XpReplayCapture"/> の <c>fcv.replay.*</c>。</summary>
+    public const string KeyCapture = "fcv.twin.capture";
 
     private const float HeadHeightM = 1.54f;     // 立位 1.65m の目の高さ（VirtualWalkRun と同じ）
     private const float VideoLatencySec = 0.15f; // ShowCgLayer.VideoLatencySec と同じ。映っているのはこの秒数だけ前の姿
@@ -106,6 +110,12 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     private Texture2D? _badgeRead;
     private float _runT0 = -1f;
     private readonly List<string> _notes = new();
+    private XpReplayCapture? _capture;
+    private float _recT0 = -1f;         // 撮る時計の頭（体験の記録の頭と同じ unscaledTime）
+    private StreamWriter? _tauLog;      // replay_xp.log（同時撮影のときだけ）
+    private string _tauLogError = "";
+    private bool _recHeadLogged;
+    private string _captureResult = "";
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Bootstrap()
@@ -122,7 +132,10 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
             bool useTwinCalib = SessionState.GetInt(KeyShowCalib, 0) == 0;
             XpReplay.Begin(d.Input_, d._feed, true, useTwinCalib ? d._meta.calibOverride : "");
             ShowWalkDebugDriver.Host = d;
-            Debug.Log($"[Twin] 走行を準備した: 束 {pack} 速さ {d._speed:F2}m/s 滞在 {d._dwell:F1}s 報告 {(d._noMark ? "しない" : "する")}");
+            // 同時撮影。撮影は同じ GameObject の IXpCaptureSource（このドライバ）を読む。
+            if (SessionState.GetString(KeyCapture, "") == "eye") d._capture = go.AddComponent<XpReplayCapture>();
+            Debug.Log($"[Twin] 走行を準備した: 束 {pack} 速さ {d._speed:F2}m/s 滞在 {d._dwell:F1}s 報告 {(d._noMark ? "しない" : "する")}" +
+                      $" 撮影 {(d._capture != null ? "目線を同時に撮る → " + SessionState.GetString(XpReplayCapture.KeyOut, "") : "しない")}");
         }
         catch (Exception e)
         {
@@ -140,6 +153,13 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         // 歩く本体は Quest の自動走行と同じ。起動フラグの代わりにここで立てる。
         d.gameObject.AddComponent<ShowWalkDebugDriver>();
     }
+
+    private const string KeyFast = "fcv.twin.fast";
+    /// <summary>固定刻みの 1 フレーム。本番の 90Hz と同じにする（「次のフレームで判定する」型の処理の意味を変えない）。</summary>
+    private const float FastStepSec = 1f / 90f;
+    private bool _fast;
+    private bool _osdHooked;
+    private float _wall0;
 
     private void Load(string pack)
     {
@@ -167,7 +187,18 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
 
         Directory.CreateDirectory(_outDir);
         _log = new StreamWriter(Path.Combine(_outDir, "run_xp.log"), false, new System.Text.UTF8Encoding(false));
-        Application.targetFrameRate = 90;   // batchmode は上限が無い。本番の刻みで走らせる
+        _wall0 = WallClock.Now;
+        _fast = SessionState.GetInt(KeyFast, 0) != 0;
+        if (_fast)
+        {
+            // 固定刻み: 1 フレーム = 1/90 秒で体験の時計を進め、描ける速さで回す（実時間より速い）。
+            // シーンの Awake より前に立てる（VideoPlayer の時計の選び方などが Awake でこれを見る）。
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = -1;
+            SimTime.EnableFixedStep(FastStepSec);
+        }
+        else Application.targetFrameRate = 90;   // batchmode は上限が無い。本番の刻みで走らせる
+        _log.WriteLine($"[XP] t={SimTime.Realtime:F2} ev=clock mode={(_fast ? "fast" : "real")} step={SimTime.StepSec:F5}");
     }
 
     // ------------------------------------------------------------------ IHost
@@ -191,8 +222,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         _show.StartAuthorizedProvider = () => _bridge.OnboardingStage == HmdOnboardingStage.Complete;
 
         // 練習は案内を読み終えるまで受け付けない。人と同じく、受け付けられるまで押し直す。
-        float begin = Time.unscaledTime;
-        float T() => Time.unscaledTime - begin;
+        float begin = SimTime.Now;
+        float T() => SimTime.Now - begin;
         float nextPress = 2f, titleSince = -1f;
         while (_bridge.OnboardingStage != HmdOnboardingStage.Complete && T() < OnboardingLimitSec)
         {
@@ -226,15 +257,15 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         }
         // 題字が閉じ切るまで待つ（閉じる演出の途中で歩き出さない）。
         float t = 0f;
-        while (title != null && title.IsBlocking && t < 15f) { t += Time.unscaledDeltaTime; yield return null; }
-        _runT0 = Time.unscaledTime;
+        while (title != null && title.IsBlocking && t < 15f) { t += SimTime.Dt; yield return null; }
+        _runT0 = SimTime.Now;
     }
 
     private IEnumerator HoldX(float sec)
     {
         _xHeld = true;
-        float end = Time.unscaledTime + sec;
-        while (Time.unscaledTime < end) yield return null;
+        float end = SimTime.Now + sec;
+        while (SimTime.Now < end) yield return null;
         _xHeld = false;
         yield return null;
     }
@@ -277,8 +308,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         return true;
     }
 
-    public void PressReport() => _reportUntil = Time.unscaledTime + ReportHoldSec;
-    public bool ReportPressing => Time.unscaledTime < _reportUntil;
+    public void PressReport() => _reportUntil = SimTime.Now + ReportHoldSec;
+    public bool ReportPressing => SimTime.Now < _reportUntil;
 
     private static List<Vector2> Ring(ShowLayoutDef layout)
     {
@@ -309,12 +340,18 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         return new RawInput { bits = bits };
     }
 
-    private void OnEnable() => Application.logMessageReceivedThreaded += OnLog;
+    private void OnEnable()
+    {
+        Application.logMessageReceivedThreaded += OnLog;
+        Application.logMessageReceived += OnMainLog;
+    }
 
     private void OnDisable()
     {
         Application.logMessageReceivedThreaded -= OnLog;
+        Application.logMessageReceived -= OnMainLog;
         lock (_logLock) { _log?.Dispose(); _log = null; }
+        CloseTauLog();
         _feed?.Dispose();
         ShowWalkDebugDriver.Host = null;
         XpReplay.End();
@@ -338,7 +375,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
 
     private void Update()
     {
-        if (_bootAt <= 0f) _bootAt = Time.unscaledTime;
+        if (_bootAt <= 0f) _bootAt = SimTime.Now;
+        ReportCaptureClock();
         ResolveRig();
         if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
         if (_show == null) _show = FindObjectOfType<ShowControlClient>();
@@ -347,7 +385,16 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         if (_head == null) return;
 
         // 映っているのは少し前の姿（本番の遅延と揃える）。立ち止まっても配り続けるのは PackFeed の側。
-        float now = Time.unscaledTime;
+        float now = SimTime.Now;
+        if (_fast && !_osdHooked)
+        {
+            // 画の中の時計も体験の時計で進める（素のままだと実時間で刻み、速く進む画の中で遅れて見える）。
+            DateTime started = DateTime.Now;
+            float t0 = now;
+            ScreenOsd[] osds = FindObjectsOfType<ScreenOsd>();
+            foreach (ScreenOsd osd in osds) osd.TimeProvider = () => started.AddSeconds(SimTime.Now - t0);
+            _osdHooked = osds.Length > 0;
+        }
         Vector3 hp = _head.position;
         _posHistory.Enqueue((now, new Vector2(hp.x, hp.z)));
         while (_posHistory.Count > 1 && now - _posHistory.Peek().t > VideoLatencySec) _posHistory.Dequeue();
@@ -359,7 +406,7 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         TickExtraMarks(now, new Vector2(hp.x, hp.z));
 
         if (_ending) return;
-        if (_run != null && _run.Phase == ShowPhase.Finished) _finishedFor += Time.unscaledDeltaTime;
+        if (_run != null && _run.Phase == ShowPhase.Finished) _finishedFor += SimTime.Dt;
         if (_finishedFor > TailSec) End("finished");
         else if (now - _bootAt > HardLimitSec) End("timeout");
     }
@@ -418,7 +465,7 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         _shownRec = isRec;
         _shownSegLap = segLap;
         _shownSegCam = segCam;
-        Debug.Log($"[XP] t={Time.realtimeSinceStartup:F2} ev=twinlap shown={value} src={(isRec ? "rec" : "live")} plap={(_run != null ? _run.Lap : -1)} seg={segLap}/{segCam}");
+        Debug.Log($"[XP] t={SimTime.Realtime:F2} ev=twinlap shown={value} src={(isRec ? "rec" : "live")} plap={(_run != null ? _run.Lap : -1)} seg={segLap}/{segCam}");
     }
 
     /// <summary>別れの写真を待っている間、何が揃っていないかを出す（写真が撮れないと走行は上限まで待つ）。</summary>
@@ -430,7 +477,7 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         if (!_farewellShareLogged)
         {
             _farewellShareLogged = true;
-            Debug.Log($"[XP] t={Time.realtimeSinceStartup:F2} ev=twinfarewell share0={_cg.FarewellStandShare(0f):F2} " +
+            Debug.Log($"[XP] t={SimTime.Realtime:F2} ev=twinfarewell share0={_cg.FarewellStandShare(0f):F2} " +
                       $"share05={_cg.FarewellStandShare(0.05f):F2} share10={_cg.FarewellStandShare(0.10f):F2} " +
                       $"share20={_cg.FarewellStandShare(0.20f):F2}");
         }
@@ -486,11 +533,81 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         Debug.LogWarning("[Twin] " + text);
     }
 
+    // ------------------------------------------------------------------ 同時撮影（IXpCaptureSource）
+
+    /// <summary>体験の記録が始まったか（撮る時計の頭）。記録が始まる前は撮らない — 2 段の再生も記録の頭から撮る。</summary>
+    public bool Started => _recT0 >= 0f;
+
+    /// <summary>走行が終わった（<see cref="End"/>）。撮影は End の中で閉じるので、ここは閉じ損ねたときの保険。</summary>
+    public bool Finished => _ending;
+
+    /// <summary>記録の頭からの秒。再生の <c>XpReplayDriver.Tau</c>（記録の t）と同じ所が 0。</summary>
+    public float Tau => _recT0 < 0f ? -1f : SimTime.Now - _recT0;
+
+    /// <summary>頭のワールド姿勢。記録（<c>ExperienceRecorder</c>）が残すのと同じ Camera.main の姿勢。</summary>
+    public void HeadPose(out Vector3 pos, out Quaternion rot)
+    {
+        ResolveRig();
+        pos = _head != null ? _head.position : Vector3.zero;
+        rot = _head != null ? _head.rotation : Quaternion.identity;
+    }
+
+    /// <summary>撮影が閉じた。走行は止めない（撮れなくても判定は出す）。結果は twin_run.json の eyeVideo に書く。</summary>
+    public void OnCaptureDone(string result)
+    {
+        _captureResult = result;
+        // 警告にしない（run_xp.log の W/ 行は判定が数える。撮影の失敗は twin-verify が eyeVideo で FAIL にする）。
+        if (result.StartsWith("error", StringComparison.Ordinal)) _notes.Add("目線の動画: " + result);
+        Debug.Log("[Twin] 目線の動画: " + result);
+    }
+
+    /// <summary>
+    /// メインスレッドの [XP]。記録の頭の行で撮る時計を立て、以後の行を tau つきで replay_xp.log へ書く（再生と同じ形）。
+    /// 頭は行が出た瞬間の unscaledTime ＝ <c>ExperienceRecorder</c> の session の t0（同じフレームの同じ時計）。
+    /// ⚠ ログの受け口の中では Debug.Log しない（受け口へ入り直す）。知らせることは <see cref="ReportCaptureClock"/> が出す。
+    /// </summary>
+    private void OnMainLog(string msg, string stack, LogType type)
+    {
+        if (_capture == null || msg == null || !msg.StartsWith("[XP]", StringComparison.Ordinal)) return;
+        if (_recT0 < 0f)
+        {
+            if (msg.IndexOf(" ev=xprec state=start", StringComparison.Ordinal) < 0) return;
+            _recT0 = SimTime.Now;
+            try { _tauLog = new StreamWriter(Path.Combine(_outDir, "replay_xp.log"), false, new System.Text.UTF8Encoding(false)); }
+            catch (Exception e) { _tauLogError = e.Message; }
+        }
+        if (_tauLog != null) XpCaptureLogic.WriteTauLine(_tauLog, Tau, msg);
+    }
+
+    /// <summary>撮る時計が立ったことを 1 度だけ出す（Update から。ログの受け口の外）。</summary>
+    private void ReportCaptureClock()
+    {
+        if (_recT0 < 0f || _recHeadLogged) return;
+        _recHeadLogged = true;
+        Debug.Log($"[Twin] 撮る時計の頭 = 記録の頭（unscaledTime {_recT0:F2}）");
+        if (_tauLogError.Length == 0) return;
+        _notes.Add("replay_xp.log を開けない: " + _tauLogError);
+        Debug.Log("[Twin] replay_xp.log を開けない: " + _tauLogError);
+    }
+
+    private void CloseTauLog()
+    {
+        try { _tauLog?.Dispose(); } catch { }
+        _tauLog = null;
+    }
+
     // ------------------------------------------------------------------ 終わり
 
     private void End(string why)
     {
         _ending = true;
+        // 同時撮影は Play を出る前に書き切る（ExitPlaymode の後は mp4 にできない）。動画の終わり = 走行の終わり。
+        if (_capture != null)
+        {
+            _capture.Finish();
+            if (_captureResult.Length == 0) _captureResult = "error: 撮影が結果を返さなかった";
+        }
+        CloseTauLog();
         ExperienceRecorder? rec = FindObjectOfType<ExperienceRecorder>();
         string? recDir = rec != null ? rec.FinishAndWait(why, 20000) : null;
         string result = why == "finished" && recDir != null ? "ok" : "error: " + (recDir == null ? "記録が取れていない" : why);
@@ -499,8 +616,10 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         string json = "{\n"
             + $"  \"result\": \"{Esc(result)}\",\n"
             + $"  \"recDir\": \"{Esc(recDir ?? "")}\",\n"
-            + $"  \"sec\": {(Time.unscaledTime - _bootAt).ToString("F1", inv)},\n"
-            + $"  \"walkSec\": {(_runT0 > 0f ? Time.unscaledTime - _runT0 : 0f).ToString("F1", inv)},\n"
+            + $"  \"sec\": {(SimTime.Now - _bootAt).ToString("F1", inv)},\n"
+            + $"  \"clock\": \"{(_fast ? "fast" : "real")}\",\n"
+            + $"  \"wallSec\": {(WallClock.Now - _wall0).ToString("F1", inv)},\n"
+            + $"  \"walkSec\": {(_runT0 > 0f ? SimTime.Now - _runT0 : 0f).ToString("F1", inv)},\n"
             + $"  \"phase\": \"{(_run != null ? _run.Phase.ToString() : "-")}\",\n"
             + $"  \"lap\": {(_run != null ? _run.Lap : -1)},\n"
             + $"  \"marks\": {(_show != null ? _show.VisitorMarkCount : -1)},\n"
@@ -509,6 +628,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
             + $"  \"feedOffRouteTicks\": {_feed.OffRouteTicks},\n"
             + $"  \"feedOnRouteTicks\": {_feed.OnRouteTicks},\n"
             + $"  \"exceptions\": {RuntimeHealth.ExceptionCount},\n"
+            // 同時撮影の結果（mp4 のフルパスか "error: ..."）。撮っていなければ空。
+            + $"  \"eyeVideo\": \"{Esc(_captureResult)}\",\n"
             + $"  \"notes\": [{string.Join(",", _notes.Select(n => "\"" + Esc(n) + "\""))}]\n"
             + "}\n";
         File.WriteAllText(Path.Combine(_outDir, "twin_run.json"), json, new System.Text.UTF8Encoding(false));
@@ -527,6 +648,9 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
             if (_log == null) return;
             // 解析器は [XP] と logcat 形式の警告を読む。Editor のログもこの形で渡す。
             if (msg.StartsWith("[XP]", StringComparison.Ordinal)) _log.WriteLine(msg);
+            // 同時撮影の行（XpReplayCapture・ffmpeg・音）は判定に入れない。2 段の走行には無い警告で、
+            // 「ほかの警告が N 行」の数え方が変わる。撮れたかは twin-verify が eyeVideo と mp4 の有無で見る。
+            else if (msg.StartsWith("[Replay]", StringComparison.Ordinal)) { }
             else if (type == LogType.Warning) _log.WriteLine("W/Unity (    1): " + msg.Replace("\n", " "));
             else if (type != LogType.Log) _log.WriteLine("E/Unity (    1): " + msg.Replace("\n", " "));
             // [ShowAssetResolver] override は twin-verify.py が「ツインの素材を読んだか」を数える。

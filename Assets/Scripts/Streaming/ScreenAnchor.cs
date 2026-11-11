@@ -211,7 +211,7 @@ namespace FixedCamVr.Streaming
 
             // 凍結明け / resume 明け / 未シード: 現在ヨーを種に合流し、この 1 フレームは advance しない
             // （現在ポーズを保ったまま位置だけ head 追従を再開 → 次フレームから滑らかに寄せる）。
-            bool resumeGap = Time.unscaledDeltaTime > resumeGapSec;
+            bool resumeGap = SimTime.Dt > resumeGapSec;
             if (_wasFrozen || resumeGap || !_yawSeeded)
             {
                 ReseatYawFromTransform();

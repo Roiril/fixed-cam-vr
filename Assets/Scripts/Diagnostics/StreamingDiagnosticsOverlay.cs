@@ -49,7 +49,7 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             // 描画 FPS（1s 平均）
-            _renderFpsAccum += Time.unscaledDeltaTime;
+            _renderFpsAccum += SimTime.Dt;
             _renderFpsFrames++;
             if (_renderFpsAccum >= 1f)
             {
@@ -70,7 +70,7 @@ namespace FixedCamVr.Diagnostics
                     if (active != null)
                     {
                         active.ForceReconnect();
-                        _lastForcedReconnectTime = Time.unscaledTime;
+                        _lastForcedReconnectTime = SimTime.Now;
                         Debug.Log("[Overlay] 'R' hotkey: forced reconnect requested.");
                     }
                 }
@@ -140,7 +140,7 @@ namespace FixedCamVr.Diagnostics
             }
 
             // 直近の reconnect マーカ
-            if (Time.unscaledTime - _lastForcedReconnectTime < 3f)
+            if (SimTime.Now - _lastForcedReconnectTime < 3f)
             {
                 GUILayout.Label("<color=#ffd060>(R) forced reconnect requested</color>", _labelStyle);
             }

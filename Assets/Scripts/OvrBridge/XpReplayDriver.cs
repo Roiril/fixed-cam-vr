@@ -28,7 +28,7 @@ using UnityEngine;
 /// ⚠ 頭の姿勢は記録のワールド座標をそのまま入れる。registration.json も記録の版を使うので、区間の判定は端末と同じになる。
 /// </summary>
 [DefaultExecutionOrder(-32000)]
-public sealed class XpReplayDriver : MonoBehaviour
+public sealed class XpReplayDriver : MonoBehaviour, IXpCaptureSource
 {
     public const string KeyDir = "fcv.replay.dir";
     public const string KeyFps = "fcv.replay.fps";
@@ -65,7 +65,7 @@ public sealed class XpReplayDriver : MonoBehaviour
     private const float CatchUpSec = 1.0f;
 
     /// <summary>再生の頭からの秒（頭の前は負）。</summary>
-    public float Tau => _t0 < 0f ? -1f : Time.unscaledTime - _t0;
+    public float Tau => _t0 < 0f ? -1f : SimTime.Now - _t0;
     public bool Started => _t0 >= 0f;
     public bool Finished => _finished;
     public float Duration => _track.Length > 0 ? _track[_track.Length - 1].t : 0f;
@@ -152,10 +152,10 @@ public sealed class XpReplayDriver : MonoBehaviour
 
     private void Update()
     {
-        if (_bootAt < 0f) _bootAt = Time.unscaledTime;
+        if (_bootAt < 0f) _bootAt = SimTime.Now;
         if (_show == null) _show = FindObjectOfType<ShowControlClient>();
 
-        if (!Started && Time.unscaledTime - _bootAt >= BootSec && _show != null) BeginPlayback();
+        if (!Started && SimTime.Now - _bootAt >= BootSec && _show != null) BeginPlayback();
 
         float tau = Started ? Tau : 0f;
         _cursor = XpRecFormat.IndexAt(_track, tau, _cursor);
@@ -210,7 +210,7 @@ public sealed class XpReplayDriver : MonoBehaviour
             foreach (ScreenOsd osd in FindObjectsOfType<ScreenOsd>())
                 osd.TimeProvider = () => started.AddSeconds(Mathf.Max(0f, Tau));
 
-        _t0 = Time.unscaledTime;
+        _t0 = SimTime.Now;
         Debug.Log($"[Replay] 再生の頭 t0={_t0:F2} reg={(string.IsNullOrEmpty(_meta.registrationJson) ? "なし" : "あり")}");
     }
 
@@ -295,13 +295,19 @@ public sealed class XpReplayDriver : MonoBehaviour
     /// <summary>頭のワールド姿勢（撮影カメラが追う）。</summary>
     public void HeadPose(out Vector3 pos, out Quaternion rot) => Pose(_now.head, out pos, out rot);
 
+    /// <summary>撮影が閉じた。再生は撮るためにあるので、結果を Editor の入口（<c>XpReplayRun</c>）へ渡して Play を出る。</summary>
+    public void OnCaptureDone(string result)
+    {
+        SessionState.SetString(KeyResult, result);
+        SessionState.SetBool(KeyDone, true);
+        Debug.Log("[Replay] 結果: " + result);
+        EditorApplication.ExitPlaymode();
+    }
+
     private void OnLog(string msg, string stack, LogType type)
     {
         if (_xpLog == null || !Started || msg == null || !msg.StartsWith("[XP]", StringComparison.Ordinal)) return;
-        _xpLog.Write("tau=");
-        _xpLog.Write(Tau.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-        _xpLog.Write(' ');
-        _xpLog.WriteLine(msg);
+        XpCaptureLogic.WriteTauLine(_xpLog, Tau, msg);
     }
 
     // ------------------------------------------------------------------ カメラの映像

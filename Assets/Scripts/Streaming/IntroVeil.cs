@@ -562,7 +562,7 @@ namespace FixedCamVr.Streaming
             if (!Application.isPlaying || !UnityEngine.XR.XRSettings.enabled) return;
             if (!_viewportOwned && _viewportTarget >= 0.999f) return;
             _viewportCurrent = Mathf.MoveTowards(_viewportCurrent, _viewportTarget,
-                ViewportScaleRatePerSec * Time.unscaledDeltaTime);
+                ViewportScaleRatePerSec * SimTime.Dt);
             // OVRManager の動的解像度は Update で毎フレーム書くので、その後（LateUpdate）で上書きする。
             UnityEngine.XR.XRSettings.renderViewportScale = _viewportCurrent;
             ScalableBufferManager.ResizeBuffers(_viewportCurrent, _viewportCurrent);

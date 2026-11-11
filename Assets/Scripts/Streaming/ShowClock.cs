@@ -46,7 +46,7 @@ namespace FixedCamVr.Streaming
             int f = Time.frameCount;
             if (f == _frame) return;
             _frame = f;
-            _dt = Clamp(Time.unscaledDeltaTime, out bool gap);
+            _dt = Clamp(SimTime.Dt, out bool gap);
             if (gap) _gaps++;
             _now += _dt;
         }

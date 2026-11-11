@@ -336,10 +336,10 @@ namespace FixedCamVr.Tracking
             yield return StartCoroutine(WalkTo(startCourse));
 
             // --- 本編: 経路を辿る ---
-            float t0 = Time.realtimeSinceStartup;
+            float t0 = SimTime.Realtime;
             foreach (WalkRouteLogic.Waypoint wp in route)
             {
-                if (Time.realtimeSinceStartup - t0 > HardLimitSec)
+                if (SimTime.Realtime - t0 > HardLimitSec)
                 {
                     Debug.LogWarning("[XPWalk] 上限時間に達したので打ち切る");
                     break;
@@ -354,9 +354,9 @@ namespace FixedCamVr.Tracking
                 if (wp.HoldSec > 0f)
                 {
                     Debug.Log($"[XPWalk] 到着 cam={wp.Camera} ({wp.Course.x:F2},{wp.Course.y:F2}) — {wp.HoldSec:F0}s 滞在");
-                    float probeBeganAt = Time.realtimeSinceStartup;
+                    float probeBeganAt = SimTime.Realtime;
                     yield return StartCoroutine(CrossWaitingClosingLine(layout, wp.HoldSec));
-                    float holdRemaining = Mathf.Max(0f, wp.HoldSec - (Time.realtimeSinceStartup - probeBeganAt));
+                    float holdRemaining = Mathf.Max(0f, wp.HoldSec - (SimTime.Realtime - probeBeganAt));
                     yield return StartCoroutine(HoldAndMaybeReport(holdRemaining));
                 }
             }
@@ -389,7 +389,7 @@ namespace FixedCamVr.Tracking
                 yield return null;
             }
             Debug.Log($"[XPWalk] 走行終了 phase={(_run != null ? _run.Phase.ToString() : "?")} " +
-                      $"lap={(_run != null ? _run.Lap : -1)} 経過={Time.realtimeSinceStartup - t0:F0}s");
+                      $"lap={(_run != null ? _run.Lap : -1)} 経過={SimTime.Realtime - t0:F0}s");
         }
 
         // ---------------------------------------------------------------- 参照

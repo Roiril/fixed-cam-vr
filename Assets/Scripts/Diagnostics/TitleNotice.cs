@@ -807,7 +807,7 @@ namespace FixedCamVr.Diagnostics
             if (titleScreen == null)
             {
                 // 供給元がまだ居ない（プレビュー・生成順）。毎フレーム探さず、間を置いて拾い直す。
-                _resolveWait += Time.unscaledDeltaTime;
+                _resolveWait += SimTime.Dt;
                 if (_resolveWait >= ResolveRetrySec)
                 {
                     _resolveWait = 0f;
@@ -878,7 +878,7 @@ namespace FixedCamVr.Diagnostics
             _wasShown = show;
             float target = show ? 1f : 0f;
             float sec = show ? fadeInSec : fadeOutSec;
-            _alpha = Mathf.MoveTowards(_alpha, target, Time.unscaledDeltaTime / Mathf.Max(0.01f, sec));
+            _alpha = Mathf.MoveTowards(_alpha, target, SimTime.Dt / Mathf.Max(0.01f, sec));
             SetAlpha(_alpha);
         }
 

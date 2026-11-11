@@ -140,7 +140,7 @@ namespace FixedCamVr.Diagnostics
         private void DriveYawSweep()
         {
             if (_rig == null || _head == null) return;
-            _sweepT += Time.unscaledDeltaTime;
+            _sweepT += SimTime.Dt;
 
             float t = _sweepT, from = 0f;
             float target = Sweep[Sweep.Length - 1].yaw;
@@ -152,7 +152,7 @@ namespace FixedCamVr.Diagnostics
             Vector3 e = _rig.eulerAngles;
             _rig.rotation = Quaternion.Euler(e.x, target, e.z);
 
-            _sinceSweepLog += Time.unscaledDeltaTime;
+            _sinceSweepLog += SimTime.Dt;
             if (_sinceSweepLog < 0.25f || _screen == null) return;
             _sinceSweepLog = 0f;
             float residual = Mathf.DeltaAngle(_screen.eulerAngles.y, _head.eulerAngles.y);
@@ -176,7 +176,7 @@ namespace FixedCamVr.Diagnostics
             _outline.enabled = true;
 
             // 数値でも残す。画の測定と突き合わせれば、ずれが「枠の側」か「線の側」かが分かる。
-            _sinceLog += Time.unscaledDeltaTime;
+            _sinceLog += SimTime.Dt;
             if (_sinceLog < 1f || _veil == null) return;
             _sinceLog = 0f;
             float worst = 0f;

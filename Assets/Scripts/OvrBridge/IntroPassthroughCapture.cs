@@ -103,8 +103,8 @@ namespace FixedCamVr.OvrBridge
             // 複製の Blit が GPU で済むまで数フレーム待ってから止める（借用中のテクスチャを先に手放さない）。
             if (shouldPrepare && veil != null && veil.FrozenFrameAttempted)
             {
-                if (_attemptSeenAt < 0f) _attemptSeenAt = Time.unscaledTime;
-                if (Time.unscaledTime - _attemptSeenAt >= StopAfterCaptureSec) shouldPrepare = false;
+                if (_attemptSeenAt < 0f) _attemptSeenAt = SimTime.Now;
+                if (SimTime.Now - _attemptSeenAt >= StopAfterCaptureSec) shouldPrepare = false;
             }
             else
             {
@@ -169,8 +169,8 @@ namespace FixedCamVr.OvrBridge
         {
             if (!_supportConfirmed)
             {
-                if (Time.unscaledTime < _supportRetryAt) return;
-                _supportRetryAt = Time.unscaledTime + 1f;
+                if (SimTime.Now < _supportRetryAt) return;
+                _supportRetryAt = SimTime.Now + 1f;
                 _supportConfirmed = PassthroughCameraAccess.IsSupported;
                 if (!_supportConfirmed) return;
             }
@@ -254,7 +254,7 @@ namespace FixedCamVr.OvrBridge
                 trackingSpace.rotation * trackingPose.rotation);
             RecordSample(ref sample, texture,
                 BuildWorldToUv(worldPose, camera.Intrinsics, camera.CurrentResolution),
-                worldPose, camera.Timestamp, Time.unscaledTime);
+                worldPose, camera.Timestamp, SimTime.Now);
         }
 
         private IntroFrozenFrameSource? ProvideFrozenFrame()
@@ -278,7 +278,7 @@ namespace FixedCamVr.OvrBridge
             if (left.texture == null || right.texture == null)
                 return Fail("noimage", "左右パススルーカメラの画像がまだ届いていません");
 
-            float now = Time.unscaledTime;
+            float now = SimTime.Now;
             if (now - left.observedAt > MaxFrameAgeSec
                 || now - right.observedAt > MaxFrameAgeSec
                 || _leftCamera.Timestamp != _leftSample.timestamp

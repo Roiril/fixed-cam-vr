@@ -136,7 +136,7 @@ namespace FixedCamVr.Streaming
         /// 体験者が実際に A の領域に居るかは別物で、<c>ShowRunDirector.NotifyClosingAreaPresence</c> が持つ。
         /// </summary>
         public float ClosingSegmentSec => _closingSegmentEnteredAt < 0f
-            ? -1f : Time.unscaledTime - _closingSegmentEnteredAt;
+            ? -1f : SimTime.Now - _closingSegmentEnteredAt;
 
         /// <summary>締めの線（3 周目 A の凍結点）の id。台本に無ければ空（0233）。</summary>
         public string ClosingLineId => takeRunner != null ? takeRunner.ClosingLineId : "";
@@ -292,7 +292,7 @@ namespace FixedCamVr.Streaming
         {
             int camera = entry.Camera, lap = entry.SegmentLap;   // 演出の区間キーは区間の周
             if (ShowRunDefaults.IsClosingSegment(lap, camera) && _closingSegmentEnteredAt < 0f)
-                _closingSegmentEnteredAt = Time.unscaledTime;
+                _closingSegmentEnteredAt = SimTime.Now;
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;
 

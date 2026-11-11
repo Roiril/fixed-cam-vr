@@ -208,6 +208,107 @@ class RunFailed(unittest.TestCase):
         self.assertIsNone(tv.run_failed_verdict({"result": "ok"}, 3221225620))
 
 
+class VideoPlan(unittest.TestCase):
+    def test_default_shoots_the_eye_inside_the_run(self):
+        self.assertEqual(tv.video_plan(False, False, False, False), {"mode": "single-pass", "capture": "eye", "replay": []})
+
+    def test_two_pass_shoots_the_eye_by_replay(self):
+        self.assertEqual(tv.video_plan(False, True, False, False), {"mode": "two-pass", "capture": "", "replay": ["eye"]})
+
+    def test_no_video_shoots_nothing_even_with_other_flags(self):
+        for two_pass in (False, True):
+            for follow in (False, True):
+                self.assertEqual(tv.video_plan(True, two_pass, False, follow), {"mode": "none", "capture": "", "replay": []})
+
+    def test_follow_is_always_a_replay(self):
+        # 撮影カメラは 1 台。後ろ上は目線と同時に撮れないので、どちらの撮り方でも再生で撮る。
+        self.assertEqual(tv.video_plan(False, False, False, True), {"mode": "single-pass", "capture": "eye", "replay": ["follow"]})
+        self.assertEqual(tv.video_plan(False, True, False, True), {"mode": "two-pass", "capture": "", "replay": ["eye", "follow"]})
+
+    def test_no_eye_does_not_attach_the_capture(self):
+        self.assertEqual(tv.video_plan(False, False, True, False), {"mode": "none", "capture": "", "replay": []})
+        self.assertEqual(tv.video_plan(False, False, True, True), {"mode": "two-pass", "capture": "", "replay": ["follow"]})
+
+
+class CommandLine(unittest.TestCase):
+    """コマンドラインから twin-run の -Set まで。Unity を立てずに分岐だけ見る。"""
+
+    def plan(self, *argv: str) -> tuple[dict, dict]:
+        a = tv.build_parser().parse_args(list(argv))
+        plan = tv.plan_of(a)
+        return plan, tv.run_set_args(a, plan, Path("work"))
+
+    def test_default_is_single_pass_and_asks_the_run_to_capture_at_52_degrees(self):
+        plan, args = self.plan()
+        self.assertEqual(plan["mode"], "single-pass")
+        self.assertEqual(args["capture"], "eye")
+        self.assertEqual(float(args["fov"]), 52.0)
+
+    def test_fast_asks_the_run_for_the_fixed_step_clock_and_real_is_the_default(self):
+        self.assertNotIn("fast", self.plan()[1])
+        self.assertEqual(self.plan("--fast")[1]["fast"], "1")
+        self.assertEqual(self.plan("--fast", "--no-video")[1]["fast"], "1")
+
+    def test_fov_reaches_the_run(self):
+        self.assertEqual(float(self.plan("--fov", "72")[1]["fov"]), 72.0)
+
+    def test_two_pass_runs_without_capture(self):
+        plan, args = self.plan("--two-pass")
+        self.assertEqual(plan, {"mode": "two-pass", "capture": "", "replay": ["eye"]})
+        self.assertNotIn("capture", args)
+        self.assertNotIn("fov", args)
+
+    def test_no_video_runs_without_capture(self):
+        for argv in (("--no-video",), ("--no-video", "--two-pass"), ("--no-video", "--follow")):
+            plan, args = self.plan(*argv)
+            self.assertEqual(plan["mode"], "none", argv)
+            self.assertNotIn("capture", args, argv)
+
+    def test_run_args_other_than_capture_are_unchanged(self):
+        # 撮り方で twin-run の他の値が変わらない（判定は同じ走り方で比べる）。
+        _, single = self.plan("--nomark", "--marks", "1A,2b", "--calib", "show")
+        _, two = self.plan("--nomark", "--marks", "1A,2b", "--calib", "show", "--two-pass")
+        for k in ("capture", "fov"):
+            single.pop(k)
+        self.assertEqual(single, two)
+        self.assertEqual(two["marks"], "1A.2B")
+
+
+class SinglePassVideo(unittest.TestCase):
+    def test_the_written_video_is_taken(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d)
+            (work / "eye.mp4").write_bytes(b"x")
+            got, why = tv.single_pass_video(work, {"result": "ok", "eyeVideo": str(work / "eye.mp4")})
+            self.assertEqual(got, work / "eye.mp4")
+            self.assertIsNone(why)
+
+    def test_the_capture_error_is_named(self):
+        with tempfile.TemporaryDirectory() as d:
+            got, why = tv.single_pass_video(Path(d), {"result": "ok", "eyeVideo": "error: ffmpeg が失敗した"})
+            self.assertIsNone(got)
+            self.assertIn("ffmpeg", why)
+
+    def test_an_error_beats_a_leftover_file(self):
+        # 音の多重化に失敗した回などは eye.mp4 の名前で何かが残りうる。撮影が error と言ったら採らない。
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d)
+            (work / "eye.mp4").write_bytes(b"x")
+            got, why = tv.single_pass_video(work, {"result": "ok", "eyeVideo": "error: 音の多重化に失敗した"})
+            self.assertIsNone(got)
+            self.assertIn("多重化", why)
+
+    def test_a_run_without_the_field_says_so(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIn("返していない", tv.single_pass_video(Path(d), {"result": "ok"})[1])
+            self.assertIn("eye.mp4", tv.single_pass_video(Path(d), {"result": "ok", "eyeVideo": ""})[1])
+
+    def test_single_pass_fingerprints_match_so_no_warning(self):
+        # 1 回方式は走行と撮影が同じ Play。twin-verify は code.shoot に走行時の指紋を入れるので、食い違いの WARN は出ない。
+        run = {"head": "aaa", "dirty": "", "show": "s"}
+        self.assertIsNone(tv.code_check(run, run))
+
+
 class History(unittest.TestCase):
     def test_only_earlier_finished_runs_with_the_same_args(self):
         with tempfile.TemporaryDirectory() as d:

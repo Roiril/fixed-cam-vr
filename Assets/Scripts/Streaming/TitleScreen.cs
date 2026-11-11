@@ -456,7 +456,7 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            _logic.Tick(Time.unscaledDeltaTime, new TitleInput
+            _logic.Tick(SimTime.Dt, new TitleInput
             {
                 dismissRequested = _dismissRequested,
                 concealReady = ConcealReady(),
@@ -833,7 +833,7 @@ namespace FixedCamVr.Streaming
         private void FollowHead()
         {
             if (head == null || _lagRoot == null) return;
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             float headYaw = head.eulerAngles.y;
 
             // 着脱・pause 明けの巨大 dt は SmoothDamp をスナップさせる。種を置き直して進めない。

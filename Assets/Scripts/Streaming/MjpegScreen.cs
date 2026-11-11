@@ -201,7 +201,7 @@ namespace FixedCamVr.Streaming
         // Texture2D は markNonReadable:false で載せているので CPU から読める（ライブも録画も同じ経路）。
         private void SampleLuma()
         {
-            float now = Time.unscaledTime;
+            float now = SimTime.Now;
             if (now - _lumaStamp < LumaIntervalSec) return;
             _lumaStamp = now;
             var t = _lastAssigned as Texture2D;

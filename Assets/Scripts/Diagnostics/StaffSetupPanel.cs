@@ -140,7 +140,7 @@ namespace FixedCamVr.Diagnostics
         public void SetResetProgress(float progress)
         {
             if (_resetProgress > 0f && _resetProgress < 1f && progress == 0f)
-                _resetNoticeUntil = Time.realtimeSinceStartup + 2f;
+                _resetNoticeUntil = SimTime.Realtime + 2f;
             _resetProgress = progress;
         }
 
@@ -158,10 +158,10 @@ namespace FixedCamVr.Diagnostics
 
         private void ResolveRun()
         {
-            if (_run != null || Time.realtimeSinceStartup < _runRetryAt) return;
+            if (_run != null || SimTime.Realtime < _runRetryAt) return;
             // ShowRunDirector は ShowControlClient が後から作ることがある。無い構成で毎フレーム全走査しない。
             _run = FindObjectOfType<ShowRunDirector>();
-            if (_run == null) _runRetryAt = Time.realtimeSinceStartup + 2f;
+            if (_run == null) _runRetryAt = SimTime.Realtime + 2f;
         }
 
         private VisitorPortal.StaffStatus GetStaffStatus()
@@ -200,7 +200,7 @@ namespace FixedCamVr.Diagnostics
 #if UNITY_EDITOR
             if (_previewSnapshot.HasValue) return _previewSnapshot.Value;
 #endif
-            float now = Time.realtimeSinceStartup;
+            float now = SimTime.Realtime;
             for (int i = 0; i < 3; i++)
             {
                 var s = _registry?.Get(i);
@@ -442,7 +442,7 @@ namespace FixedCamVr.Diagnostics
                      && _resetProgress > 0f && _resetProgress < 1f)
                 body = "リセット " + Mathf.RoundToInt(_resetProgress * 100f) + "%（右 A を離すと中止）";
             else if (Logic.VisitorStage != VisitorPreparationStage.ResetRequired && _resetProgress >= 1f) body = ResetDone;
-            else if (Time.realtimeSinceStartup < _resetNoticeUntil && Logic.VisitorStage == VisitorPreparationStage.ResetRequired)
+            else if (SimTime.Realtime < _resetNoticeUntil && Logic.VisitorStage == VisitorPreparationStage.ResetRequired)
                 body = ResetCancelled;
             else if (!current.contentReady) { body = ContentMissing; alert = true; }
             else if (Logic.Stage == StaffSetupStage.Welcome) body = WelcomeText;

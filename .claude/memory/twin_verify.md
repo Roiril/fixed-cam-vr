@@ -1,22 +1,33 @@
 ---
 name: twin_verify
-description: HMD も Quest も無しで本番の Main シーンを導入から終幕まで通す twin-verify.py。走りは閉ループ、撮影は記録の再生。罠と実測
+description: HMD も Quest も無しで本番の Main シーンを導入から終幕まで通す twin-verify.py。走りは閉ループ、目線の撮影は既定で同じ Play（--two-pass は記録の再生）。罠と実測
 metadata:
   node_type: memory
   type: project
   originSessionId: 1128468e-bd6b-4231-9f7d-17f5f7eac49b
-  modified: 2026-11-11T07:41:37.718Z
+  modified: 2026-11-11T09:43:56.429Z
 ---
 
 2026-11-05 ユーザー依頼「デジタルツインを新しく作り替えたので、それを使って、私がhmdを被らないでできる動作検証の仕組みも更新してほしい。」
 
-**回し方**: `py -3.11 tools/twin-verify.py`（走行 5 分＋目線の動画 5 分）。`--no-video` は判定だけ。見る面は `preview_start twin-game` の `/verify.html`。
+**回し方**: `py -3.11 tools/twin-verify.py`。既定は 1 回方式（`video.mode=single-pass`）で、走行の Play に `XpReplayCapture` を付けて目線の動画も撮る（Unity の起動 1 回・体験の再生 1 回。実時間で通し 377 秒・11-11 実測）。
+**`--fast` は固定刻み**（1 フレーム = 1/90 秒で体験の時計を進め、描ける速さで回す）。動画つきの通しが 150 秒（走行 293 秒ぶんを実時間 121 秒）。全部の門をまとめて回す入口は `py -3.11 tools/verify.py`（既定で `--fast`・C# テストは検証用の木で同時。11-11 実測 153 秒）。
+- 時計は `SimTime`（体験）/ `WallClock`（壁時計）の 2 つから読む。`Time.unscaled*` と `realtimeSinceStartup` の直読みは `TimeSourceLintTests` が落とす。置き換えの道具は `tools/simtime-migrate.py`。`Time.time` 側は `Time.captureDeltaTime` が揃える
+- 校正は `py -3.11 tools/twin-clock-compare.py <実時間の走行> <fast の走行>`。11-11: 実時間と fast で出来事の並び 98.1% 一致・全体のずれ 0.52 秒・ずれを引いた時刻差の 95% 点 0.04 秒。fast どうしは 253 件が 100% 一致・最大 0.01 秒（再現する）。`SimTime`・`WallClock`・`ScreenOverlayController`・`XpTwinDriver` を触ったら回す
+- fast で判定できないもの: 音（実時間でしか鳴らない。動画に音は入らない）と性能（fps は常に 90 と出る）。確定は実時間（`verify.py --real`）と実機
+- fast の動画は tau とコマが 1 対 1（繰り返し 0）。実時間の動画は撮影の開始処理のぶん tau より約 1.3 秒先の画が映る（11-11、コマの差で測った。下の「0.8〜0.9 秒早く画に出た」と同じ現象と読んでいる）
+- ⚠ 上限を外すだけ（実時間の時計のまま 1274fps）だと結末が Trapped に変わった。描く速さで体験が変わるので、速めるなら必ず固定刻み
+- ⚠ 起動時の `OnApplicationFocus(false)` で配信が止まり、解除は「巨大な dt」頼みだった。固定刻みは dt が一定なので 1 枚も展開されず、録画 0 枚の FAIL が 14 行出た。再生中は止めない（`CameraStreamRegistry.Suspend`）
+- ⚠ 画の中の時計（`ScreenOsd`）は実時間で刻む。fast では `TimeProvider` を体験の時計へ差し替える
+- ⚠ 固定刻みは `XpTwinDriver.Load`（シーンの Awake より前）で立てる。`ScreenOverlayController` が Awake で `VideoPlayer.timeUpdateMode = GameTime` を選ぶ
+- 記録の再生（`unity.ps1 replay`・`--two-pass`・`--follow`）は実時間のまま。端末の記録に音があり、紹介動画に使うため
+`--two-pass` は従来の 2 段（走行 約 294 秒 → 同じ記録を `unity.ps1 replay` で再生して撮影 約 320 秒・通し約 650 秒）。`--follow`（後ろ上）はどちらでも再生で撮る段が 1 つ増える。`--no-video` は判定だけ。見る面は `preview_start twin-game` の `/verify.html`。
 出力は Drive `renders/twin-verify/<時刻>/`。⚠ 同じ Unity プロジェクトを使うので、他の batchmode と同時に走らない。
 自分で見つけて直す回し方は `skills/twin-loop`。
 
 **2026-11-11 に足した 4 つ**（ユーザー依頼「デジタルツインを用いたclaudecodeによる自己改善(演出、システム、他いろいろと)を、いい感じにするためにハーネスを整備してほしい。」）:
 - **錠** `Logs/twin-run/.lock`。twin-verify どうしは同時に走らない（走行と撮影の隙間・共有の `pack` と `assets` を守る）。持ち主が死んだ錠は次の走行が引き継ぐ。他の batchmode との衝突は従来どおり `unity.ps1` の `Assert-NotLocked`
-- **コードの指紋** `verdict.json` の `code.run` / `code.shoot`（HEAD・`Assets/Scripts` などの未コミット差分・show.json のハッシュ）。走行と撮影のあいだに変わると WARN。11-11 の relief は走行が古いコード・動画が新しいコードだった
+- **コードの指紋** `verdict.json` の `code.run` / `code.shoot`（HEAD・`Assets/Scripts` などの未コミット差分・show.json のハッシュ）。走行と撮影のあいだに変わると WARN。11-11 の relief は走行が古いコード・動画が新しいコードだった。1 回方式の目線は同じ Play なので `code.shoot` は `code.run` と同じ（再生で撮る `--follow` があればその時点の指紋）
 - **新規と既知** `tools/twin/known.json`。11-06 以降の 15 走行すべてに同じ WARN が 4 行出ていて、新しい FAIL が埋もれていた。FAIL は既知にできない（読み込みで落ちる）
 - **見る道具** `tools/twin-look.py`（`scenes` / `cut` / `pair`）。それまでは 1fps の JPEG を手で切り、場面の時刻表を毎回手で書いていた
 
@@ -35,9 +46,12 @@ metadata:
 
 **動画と揃う時計は `replay_xp.log` の `tau=`。** 11-11 から Drive に残す。それより前の走行には無く、`twin-look.py` は走行の時計（`events.json`）で切って帯に「※走行の時計」と書く。
 そのときは場面の終わりのコマに次の場面が映ることがある（`compare.txt` の差は中央 0.2〜0.9 秒・最大 8 秒）。⚠ `replay_xp.log` を読む経路は合成した行のテストだけで、実走行のログではまだ通していない。
+1 回方式では `XpTwinDriver` が同じ形（`XpCaptureLogic.WriteTauLine`）で走行の出力フォルダへ書く。tau の 0 は記録の頭（`ev=xprec state=start` の行が出た unscaledTime）で、2 段の再生の tau と同じ所。
+走行そのものなので `twinlap` などツイン走行だけの行も入り、`compare.txt` は作らない（比べる相手が同じ Play）。動画の 0 秒と tau 0 のずれは未計測。
 
 **形**: `XpTwinDriver`（Editor のみ）が生の入力を `XpReplay` へ置き、`ShowWalkDebugDriver` の `IHost` として歩く。映像は `tools/twin/make_pack.py` の束（MJR）を頭の位置で引いて配る。
-走った結果は `ExperienceRecorder` の記録に残り、撮影は既存の `unity.ps1 replay` がする。走る間は描画と入力の閉ループ、撮る間は開ループ。
+走った結果は `ExperienceRecorder` の記録に残る。目線の撮影は既定で同じ Play の `XpReplayCapture`（`twin-run -Set capture=eye`。相手は `IXpCaptureSource`）、`--two-pass` と `--follow` は記録を `unity.ps1 replay` で開ループに流し直して撮る。
+同時撮影の `[Replay]` 行（ffmpeg・音・追いつかない警告）は `run_xp.log` へ写さない。写すと「ほかの警告が N 行」の数が 2 段と変わり、既知の判定が新規に戻る。撮れたかは `twin_run.json` の `eyeVideo`。
 
 **calib は 2 通り**: 既定の `--calib show` は APK と同じ本番の show.json。結末まで通るが、人形はツインの画に合わない（A は同じ 9/5 の写真から解いた値だが画角が違う。B と C は別の日の値）。`--calib twin` は人形の姿勢をツインの配置へ読み込み時に差し替える（`ShowControlClient.ApplyTwinCalib`。`ev=config calib=`）。人形は画に合う。2026-11-06 に別れの立ち位置を解き直し、どちらの calib でも Released まで通る。
 
@@ -60,8 +74,8 @@ metadata:
 - 周の印（束の右下 16px×3 マス）: 録画カットの後ろには次の周の印が映ってよい。録画は区間を出たあとも回る（`ev=rec v=stop` は次の区間の途中）。判定はカットの頭で見る
 - 立ち止まりの間、人は歩きの 1 コマで止まって見える。焼いてあるのは順走だけで、逆走と引き返しの画は無い
 - 撮影では目のカメラが描かれず、`MjpegScreen` の信号の前段が回らない。回さないと HMD と別のシェーダ経路になり、本編にも筐体が映る。`XpReplayCapture` が撮る直前に `PrepareSignalNow` を呼ぶ
-- 動画の時刻は再生ログの `tau=`。走行側の `run_xp.log` の `t=` は別の時計で、同じ場面が約 4 秒ずれる。⚠ 11-05 の走行では段 3 の筐体と段 4 の映像が `tau` より 0.8〜0.9 秒早く画に出た（原因は未確認）。段の頭は `tau` だけで決めず、画の変化を見る
-- 目線の動画ではタイトルと Walk の面が重なって映る。走行の記録は Done の 0.6 秒後に Walk で、再生はタイトルだけ遅れて出る（比較の最大差 7.84 秒。11-05）。順の判定は走行の記録で見る。名乗りは自動走行で省略され、動画に出ない
+- 動画の時刻は `replay_xp.log` の `tau=`。2 段では走行側の `run_xp.log` の `t=` は別の時計で、同じ場面が約 4 秒ずれる（1 回方式は同じ Play なので差は記録の頭の秒だけになるはず。未計測）。⚠ 11-05 の走行では段 3 の筐体と段 4 の映像が `tau` より 0.8〜0.9 秒早く画に出た（原因は未確認）。段の頭は `tau` だけで決めず、画の変化を見る
+- 2 段の目線の動画ではタイトルと Walk の面が重なって映る。走行の記録は Done の 0.6 秒後に Walk で、再生はタイトルだけ遅れて出る（比較の最大差 7.84 秒。11-05）。1 回方式で出るかは未確認。順の判定は走行の記録で見る。名乗りは自動走行で省略され、動画に出ない
 - 目線の動画は縦 52 度で撮る（紹介動画の既定 72 度だと画面が幅の 3 分の 1 しかない）。視野の縁で起きることは `--fov 72`
 - 部屋は黒い（パススルーが無い）。導入の殻の破砕や周縁は確かめられない。後ろ上の動画に画面しか映らないので既定で撮らない（`--follow`）
 - `show.json` は束の校正元でもある。`pack.json` の `calibGapPx` が本番 calib とツインの差（A 30.5 / B 31.5 / C 98.8px）

@@ -203,7 +203,7 @@ namespace FixedCamVr.Streaming
         // 較正は「実測した姿勢」そのものなので、人がドラッグした pose より常に上。
         private void PollMarks()
         {
-            _sinceMarkPoll += Time.unscaledDeltaTime;
+            _sinceMarkPoll += SimTime.Dt;
             if (_builtMarks.Count > 0 && _sinceMarkPoll < markPollSec) return;
             _sinceMarkPoll = 0f;
 

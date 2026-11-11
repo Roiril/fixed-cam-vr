@@ -196,7 +196,7 @@ namespace FixedCamVr.Diagnostics
         private float _liveSec;       // 観測している総時間
         private readonly StringBuilder _sb = new StringBuilder(512);
 
-        private static float Now => Time.realtimeSinceStartup;
+        private static float Now => SimTime.Realtime;
 
         private void Start()
         {
@@ -216,7 +216,7 @@ namespace FixedCamVr.Diagnostics
 
         private void Update()
         {
-            float udt = Time.unscaledDeltaTime;
+            float udt = SimTime.Dt;
             _frames++;
             _dtSum += udt;
             if (udt > _dtMax) _dtMax = udt;
@@ -1108,12 +1108,12 @@ namespace FixedCamVr.Diagnostics
                     string src = StatusHud.SourceTag(_statusHud.LastShowSource);
                     if (hudNow)
                     {
-                        _hudShownAt = Time.unscaledTime;
+                        _hudShownAt = SimTime.Now;
                         Emit($"ev=status st=on src={src} sec=0.0");
                     }
                     else
                     {
-                        float sec = Mathf.Max(0f, Time.unscaledTime - _hudShownAt);
+                        float sec = Mathf.Max(0f, SimTime.Now - _hudShownAt);
                         Emit($"ev=status st=off src={src} sec={sec:F1}");
                     }
                     _lastHudVisible = hudNow;

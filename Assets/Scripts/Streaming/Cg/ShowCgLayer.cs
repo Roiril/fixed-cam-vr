@@ -237,7 +237,7 @@ namespace FixedCamVr.Streaming.Cg
         public void SetBodyInput(in ShowBodyInput body)
         {
             _body = body;
-            _bodyStamp = Time.unscaledTime;
+            _bodyStamp = SimTime.Now;
             _bodyHistory.Push(_bodyStamp, body);
         }
 
@@ -426,7 +426,7 @@ namespace FixedCamVr.Streaming.Cg
             Vector3 lightDir = ApplyLight();
             // 足跡は毎フレーム積む（PlaceActor が過去の時点を読むため）。
             if (showControl?.HeadCourseXZProvider != null)
-                _courseTrack.Push(Time.unscaledTime, showControl.HeadCourseXZProvider());
+                _courseTrack.Push(SimTime.Now, showControl.HeadCourseXZProvider());
             UpdateBodyYaw(Time.deltaTime);
             if (_farewell && !_farewellAnchored && !TryAnchorFarewell())
             {
@@ -569,7 +569,7 @@ namespace FixedCamVr.Streaming.Cg
         {
             foot = Vector3.zero;
             if (showControl?.HeadCourseXZProvider == null) return false;
-            if (!_courseTrack.TrySample(Time.unscaledTime - VideoLatencySec, out Vector2 xz))
+            if (!_courseTrack.TrySample(SimTime.Now - VideoLatencySec, out Vector2 xz))
                 xz = showControl.HeadCourseXZProvider();
             foot = CourseToWorld(xz, showControl.Room?.floorY ?? 0f);
             return true;
@@ -970,7 +970,7 @@ namespace FixedCamVr.Streaming.Cg
         private void RenderIfDue()
         {
             if (_virtualCam == null || !_rendering || _rt == null) return;
-            float now = Time.unscaledTime;
+            float now = SimTime.Now;
             long seq = CurrentSourceSeq();
             bool advanced = seq > 0 && seq != _lastRenderedSeq;
             if (!advanced && now - _lastRenderTime < CgFallbackIntervalSec) return;
@@ -1044,7 +1044,7 @@ namespace FixedCamVr.Streaming.Cg
         // 生きているときは **映像の遅延ぶん過去**を読む — 「いま」の体験者を描くと歩行中ずっと先行する。
         private ShowBodyInput CurrentBody()
         {
-            float now = Time.unscaledTime;
+            float now = SimTime.Now;
             if (now - _bodyStamp > BodyInputTimeoutSec) return ShowBodyInput.None;
             return _bodyHistory.Sample(now - VideoLatencySec);
         }
@@ -1684,7 +1684,7 @@ namespace FixedCamVr.Streaming.Cg
             {
                 // ⚠ 「いま」ではなく**腕・向きと同じ時刻**（映像の遅延ぶん過去）を読む。
                 //    ここだけ現在時刻にすると、歩きながら振り向いたときに体の位置と向きが食い違う。
-                if (!_courseTrack.TrySample(Time.unscaledTime - VideoLatencySec, out xz))
+                if (!_courseTrack.TrySample(SimTime.Now - VideoLatencySec, out xz))
                     xz = showControl.HeadCourseXZProvider();
             }
 

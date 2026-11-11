@@ -418,7 +418,7 @@ namespace FixedCamVr.Streaming
         {
             if (screen != null) _logic.ObserveLuma(screen.SourceLuma);
             // 切替 dip・乱れと同じく unscaledDeltaTime（timeScale=0 で凍りつかせない）。
-            _logic.Tick(Time.unscaledDeltaTime);
+            _logic.Tick(SimTime.Dt);
             if (_logic.ConsumeSnapshotRequest()) CaptureEcho();
             ApplyFrozen(_logic.Frozen);
             Write();
@@ -430,7 +430,7 @@ namespace FixedCamVr.Streaming
                            || _heartbeatTimeline == null || _heartbeatShow == null;
             if (missing)
             {
-                _heartbeatResolveWait += Time.unscaledDeltaTime;
+                _heartbeatResolveWait += SimTime.Dt;
                 if (_heartbeatResolveWait >= 1f)
                 {
                     _heartbeatResolveWait = 0f;

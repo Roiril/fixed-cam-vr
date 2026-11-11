@@ -82,6 +82,12 @@
 - `OvrBridge/XpTwinDriver` — HMD も Quest も無しでツインの映像を流し、入力だけで体験を通す（Editor だけ）
 - `Tracking/RegVizDebugDriver` / `Tracking/ShowWalkDebugDriver` — 位置合わせの可視化と自動歩行（検証用）
 
+## 時計
+
+体験の進行に効く実時間は `Streaming/SimTime`（`Now` / `Dt` / `Realtime`）、ネットワーク・ファイル I/O の待ちと性能計測は `Streaming/WallClock` から読む。普段は Unity の値をそのまま返し、検証のときだけ `SimTime.EnableFixedStep` で固定刻みに進める。
+休止を切る体験の判定の時計は `Streaming/ShowClock`（`SimTime.Dt` を読む）。`AudioSettings.dspTime` と `VideoPlayer` は仮想化しない。
+`Time.unscaled*` / `realtimeSinceStartup` を直接読むと `TimeSourceLintTests` が落ちる。置き換えは `py -3.11 tools/simtime-migrate.py --apply`。
+
 ## 確かめ方
 
 | 何 | コマンド |

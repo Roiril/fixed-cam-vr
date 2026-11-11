@@ -10,7 +10,7 @@ function New-UnityInvocationLog([string]$Kind) {
     return Join-Path $directory ($Kind + '-' + [guid]::NewGuid().ToString('N') + '.log')
 }
 
-function Protect-UnityLogFile([string]$Path, [int]$Retries = 40) {
+function Protect-UnityLogFile([string]$Path, [int]$Retries = 900) {
     $allowed = [System.IO.Path]::GetFullPath((Join-Path $Root 'Logs')).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
     $fullPath = [System.IO.Path]::GetFullPath($Path)
     if (-not $fullPath.StartsWith($allowed, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -18,8 +18,12 @@ function Protect-UnityLogFile([string]$Path, [int]$Retries = 40) {
     }
     for ($attempt = 0; ; $attempt++) {
         try { $original = [System.IO.File]::ReadAllText($fullPath); break }
-        catch [System.IO.IOException] {
-            if ($attempt -ge $Retries - 1) { throw }
+        catch {
+            # .NET のメソッドの例外は MethodInvocationException に包まれて届く。
+            # catch [System.IO.IOException] と書くと当たらず、再試行が 1 度も働かない（Unity がログを閉じる前に読むと即失敗）。
+            $inner = $_.Exception
+            while ($inner.InnerException) { $inner = $inner.InnerException }
+            if (-not ($inner -is [System.IO.IOException]) -or $attempt -ge $Retries - 1) { throw }
             Start-Sleep -Milliseconds 200
         }
     }
@@ -52,7 +56,7 @@ public static class FixedCamUnityLogMove {
     }
 }
 
-function Invoke-SafeUnityCli([string[]]$Arguments, [string]$LogPath, [int]$MaskRetries = 40) {
+function Invoke-SafeUnityCli([string[]]$Arguments, [string]$LogPath, [int]$MaskRetries = 900) {
     $script:HideUnityTokenLine = $false
     $script:UnityLogMaskFailed = $false
     $safeArguments = @($Arguments | Where-Object { -not [string]::IsNullOrEmpty($_) })
@@ -78,7 +82,7 @@ function Invoke-SafeUnityCli([string[]]$Arguments, [string]$LogPath, [int]$MaskR
         try { Protect-UnityLogFile -Path $LogPath -Retries $MaskRetries }
         catch {
             $script:UnityLogMaskFailed = $true
-            Write-Warning ('実行ログの伏字を確認できません: ' + $LogPath)
+            Write-Warning ('実行ログの伏字を確認できません: ' + $LogPath + ' / ' + $_.Exception.GetType().Name + ': ' + $_.Exception.Message)
             if ($script:UnityCliExitCode -eq 0) { $script:UnityCliExitCode = 1 }
         }
     }

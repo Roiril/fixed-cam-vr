@@ -74,7 +74,7 @@ namespace FixedCamVr.Streaming
                         continue;
                     }
                     // /state を成功受信した = 卓が通じている。DiscoveryClient の「不通 N 秒」判定の基準。
-                    _lastServerContactTime = Time.realtimeSinceStartup;
+                    _lastServerContactTime = WallClock.Now;
                     var state = JsonUtility.FromJson<ShowState>(req.downloadHandler.text);
                     if (state == null)
                     {
@@ -644,7 +644,7 @@ namespace FixedCamVr.Streaming
                         await Task.Yield();
                     }
                     if (req.result != UnityWebRequest.Result.Success) _dwell.PutBack(taken);
-                    else _lastServerContactTime = Time.realtimeSinceStartup;
+                    else _lastServerContactTime = WallClock.Now;
                 }
                 catch (OperationCanceledException) { _dwell.PutBack(taken); return; }
                 catch { _dwell.PutBack(taken); /* heartbeat はベストエフォート */ }

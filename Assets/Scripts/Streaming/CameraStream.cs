@@ -24,7 +24,7 @@ namespace FixedCamVr.Streaming
         public long SkippedOpportunityCount { get; private set; }
         private float _lastDecodedRealtime = -1f;
         public float DecodedImageAgeMs => _lastDecodedRealtime < 0f
-            ? -1f : Mathf.Max(0f, Time.realtimeSinceStartup - _lastDecodedRealtime) * 1000f;
+            ? -1f : Mathf.Max(0f, SimTime.Realtime - _lastDecodedRealtime) * 1000f;
 #endif
 
         private readonly CameraSource _source;
@@ -41,7 +41,7 @@ namespace FixedCamVr.Streaming
         public int EndpointGeneration => _endpointGen;
         public long ConnectionSerial => _receiver.ConnectionSerial;
         public bool MetadataFromCurrentConnection => _metadataConnection == ConnectionSerial;
-        public bool HasFreshDecodedFrame => _decodedEvidence.IsFresh(Time.realtimeSinceStartup,
+        public bool HasFreshDecodedFrame => _decodedEvidence.IsFresh(SimTime.Realtime,
             ConnectionSerial, IsConnected, IsSuspended);
 
         private StreamMetadata? _metadata;
@@ -152,7 +152,7 @@ namespace FixedCamVr.Streaming
         public void SetSuspended(bool suspended)
         {
             if (_disposed) return;
-            bool changed = _watchdog.SetSuspended(suspended, Time.realtimeSinceStartup);
+            bool changed = _watchdog.SetSuspended(suspended, SimTime.Realtime);
             if (!changed) return;
             _decodedEvidence.Invalidate(MjpegStreamReceiver.NowMs());
             Debug.Log($"[HmdLife] {_source.DisplayName} SetSuspended({suspended})");
@@ -235,7 +235,7 @@ namespace FixedCamVr.Streaming
             EstimatedLatencyMs = 0f;
             // 遅延の窓も捨てる（別端末の時計を基準にした最小値を持ち越すと揺らぎが嘘になる）。
             _latency.Reset();
-            _watchdog.NotifyEndpointChanged(Time.realtimeSinceStartup);
+            _watchdog.NotifyEndpointChanged(SimTime.Realtime);
             if (_started && !XpReplay.Active)
             {
                 // suspend 中でも必ず起動する。受信スレッドは suspend 中も温存する設計
@@ -279,7 +279,7 @@ namespace FixedCamVr.Streaming
                     || prev.isPortrait != meta.isPortrait;
                 _metadata = meta;
                 _metadataConnection = connection;
-                MetadataUpdatedRealtime = Time.realtimeSinceStartup;
+                MetadataUpdatedRealtime = SimTime.Realtime;
                 if (!changed) return;
 
                 try { MetadataUpdated?.Invoke(meta); }
@@ -330,8 +330,8 @@ namespace FixedCamVr.Streaming
         {
 #endif
             if (_disposed) return;
-            float now = Time.realtimeSinceStartup;
-            float udt = Time.unscaledDeltaTime;
+            float now = SimTime.Realtime;
+            float udt = SimTime.Dt;
 
             // フリーズ明け自己回復（コールバック非依存）:
             // HMD 着脱や OS pause で Update が数秒凍結すると復帰初回フレームの
@@ -401,11 +401,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool DecodeLatestFrame()
         {
-            if (_disposed || IsSuspended || Time.unscaledDeltaTime > StreamWatchdogLogic.ResumeGapSec) return false;
+            if (_disposed || IsSuspended || SimTime.Dt > StreamWatchdogLogic.ResumeGapSec) return false;
             if (!TryTakeFrame(out int len, out var meta) || len <= 0 || _scratch == null)
                 return false;
 
-            float now = Time.realtimeSinceStartup;
+            float now = SimTime.Realtime;
             bool decoded;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             long loadStarted = Stopwatch.GetTimestamp();

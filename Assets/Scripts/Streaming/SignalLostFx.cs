@@ -110,11 +110,11 @@ namespace FixedCamVr.Streaming
             float dt = Time.deltaTime;
 
             // resume-gap（pause / HMD 着脱明け）検知。既存 CameraStream.Tick と同じ閾値パターン。
-            if (Time.unscaledDeltaTime > resumeGapSec)
+            if (SimTime.Dt > resumeGapSec)
             {
                 _trackingHoldRemaining = trackingHoldSec;
                 // 未受信カメラのタイマーも再シード（凍結中に進んだ実時間で即・強砂嵐化するのを防ぐ）。
-                _activeSinceRealtime = Time.realtimeSinceStartup;
+                _activeSinceRealtime = SimTime.Realtime;
             }
             else if (_trackingHoldRemaining > 0f) _trackingHoldRemaining -= dt;
 
@@ -128,7 +128,7 @@ namespace FixedCamVr.Streaming
             if (active != _lastActiveStream)
             {
                 _lastActiveStream = active;
-                _activeSinceRealtime = Time.realtimeSinceStartup;
+                _activeSinceRealtime = SimTime.Realtime;
             }
 
             // 配信断判定（suspend 中は表示を止めているだけなので数えない = トラッキング系で扱う）。
@@ -141,11 +141,11 @@ namespace FixedCamVr.Streaming
                 float last = active.LastFrameRealtime;
                 if (last > 0f)
                 {
-                    if (Time.realtimeSinceStartup - last > lostThresholdSec) signalStale = true;
+                    if (SimTime.Realtime - last > lostThresholdSec) signalStale = true;
                 }
                 // 一度もフレームを受信していないカメラ（黒プレースホルダ表示中）は last==0 で上の判定が
                 // 発火せず素の黒が露出する。アクティブ化から lostThresholdSec 超過で砂嵐に覆う。
-                else if (Time.realtimeSinceStartup - _activeSinceRealtime > lostThresholdSec)
+                else if (SimTime.Realtime - _activeSinceRealtime > lostThresholdSec)
                 {
                     signalStale = true;
                     noPicture = true;

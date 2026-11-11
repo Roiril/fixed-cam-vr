@@ -19,7 +19,7 @@ description: デジタルツインの通し走行を使って、シュビーが�
 ## 1. 走る
 
 ```bash
-py -3.11 tools/twin-verify.py --calib twin --tag <何を見る走行か>     # 見る走行（動画あり・10 分）
+py -3.11 tools/twin-verify.py --calib twin --tag <何を見る走行か>     # 見る走行（動画あり・走行と同じ Play で撮る。2 段は --two-pass）
 py -3.11 tools/twin-verify.py --no-video --nomark                     # 報告しない（人形 End）
 py -3.11 tools/twin-verify.py --no-video --relief                     # ホラー軽減
 py -3.11 tools/twin-verify.py --no-video --speed 0.45 --dwell 2       # 速く歩く人

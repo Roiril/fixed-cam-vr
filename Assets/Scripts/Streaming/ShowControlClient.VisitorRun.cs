@@ -54,7 +54,7 @@ namespace FixedCamVr.Streaming
         // 30 秒は「1 周目 C の滞在」であって「2 周目 C の滞在」ではない（卓の実測滞在は
         // 「その区間に置いた演出が出るだけ居たか」を見る道具なので、居た場所で数える）。
         private void OnSegmentEnteredForDwell(SegmentEntry entry)
-            => _dwell.Enter(entry.SegmentLap, entry.Camera, Time.realtimeSinceStartup);
+            => _dwell.Enter(entry.SegmentLap, entry.Camera, SimTime.Realtime);
 
         // 卓の新しい体験者（runEpoch 変化）。中身は ResetForNewVisitor と同じで、録画の世代だけ卓の runEpoch に合わせる。
         private void TriggerRunReset()

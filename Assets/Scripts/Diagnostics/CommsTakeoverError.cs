@@ -58,7 +58,7 @@ namespace FixedCamVr.Diagnostics
         }
 
         private void LateUpdate() =>
-            Tick(_panel != null && _panel.TakeoverVisible, Time.unscaledDeltaTime);
+            Tick(_panel != null && _panel.TakeoverVisible, SimTime.Dt);
 
         /// <summary>乗っ取り表示の実時間を進める。プレビューと EditMode テストもこの入口を使う。</summary>
         public void Tick(bool visible, float dt)

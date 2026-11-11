@@ -4,6 +4,8 @@
     py -3.11 tools/twin-tree.py sync                  # いまの作業ツリー（未コミットの変更ごと）へ揃える
     py -3.11 tools/twin-tree.py sync --ref HEAD       # コミット済みの状態へ揃える（直す前の側）
     py -3.11 tools/twin-tree.py run -- --no-video --nomark --tag tree-nomark   # 向こうの木で twin-verify.py
+    py -3.11 tools/twin-tree.py test                  # 向こうの木で unity.ps1 test（EditMode。sync はしない）
+    py -3.11 tools/twin-tree.py test -- PlayMode      # -- の後ろは unity.ps1 test へ渡す
     py -3.11 tools/twin-tree.py status
 
 同じ Unity プロジェクトは同時に 1 本しか開けない。木を分ければ、こちらの木と向こうの木で 1 本ずつ走る。
@@ -68,17 +70,17 @@ def lock_holder_alive(lock: Path) -> bool:
         return False
 
 
-def tree_must_be_idle() -> None:
-    """向こうの木で Unity か走行が動いているあいだは、中身を入れ替えない。"""
+def tree_must_be_idle(then: str = "sync する") -> None:
+    """向こうの木で Unity か走行が動いているあいだは、中身を入れ替えない（test なら、同じプロジェクトを開かない）。"""
     if (TREE / "Temp" / "UnityLockfile").exists():
         try:
             with open(TREE / "Temp" / "UnityLockfile", "r+b"):
                 pass
         except OSError:
-            raise SystemExit(f"{TREE} を Unity が開いている。走行が終わってから sync する")
+            raise SystemExit(f"{TREE} を Unity が開いている。走行が終わってから {then}")
     lock = TREE / "Logs" / "twin-run" / ".lock"
     if lock.exists() and lock_holder_alive(lock):
-        raise SystemExit(f"{TREE} でツイン走行が動いている（Logs/twin-run/.lock）。終わってから sync する")
+        raise SystemExit(f"{TREE} でツイン走行が動いている（Logs/twin-run/.lock）。終わってから {then}")
 
 
 def wanted(rel: str) -> bool:
@@ -159,6 +161,21 @@ def cmd_run(a) -> int:
     return subprocess.run(["py", "-3.11", str(TREE / "tools" / "twin-verify.py"), *rest], cwd=TREE).returncode
 
 
+def unity_test_cmd(rest: list[str]) -> list[str]:
+    """向こうの木の unity.ps1 test。unity.ps1 は自分の置き場所を Root にするので、木の版を呼べば木で走る。"""
+    return ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+            str(TREE / "tools" / "unity.ps1"), "test", *rest]
+
+
+def cmd_test(a) -> int:
+    # sync はしない。中身を揃えるのは呼ぶ側（tools/verify.py は最初に 1 回だけ sync して、全部の門を同じ版で回す）。
+    tree_must_exist()
+    tree_must_be_idle("test する")
+    rest = [x for x in a.rest if x != "--"]
+    print(f"== {TREE} で unity.ps1 test {' '.join(rest)}", flush=True)
+    return subprocess.run(unity_test_cmd(rest), cwd=TREE).returncode
+
+
 def cmd_status(a) -> int:
     if not (TREE / ".git").exists():
         print(f"{TREE} は無い（setup がまだ）")
@@ -183,9 +200,11 @@ def main() -> int:
     p.add_argument("--ref", help="このコミットへ揃える（省くと、いまの作業ツリー）")
     p = sub.add_parser("run")
     p.add_argument("rest", nargs=argparse.REMAINDER, help="-- の後ろを twin-verify.py へ渡す")
+    p = sub.add_parser("test")
+    p.add_argument("rest", nargs=argparse.REMAINDER, help="-- の後ろを unity.ps1 test へ渡す（省くと EditMode）")
     sub.add_parser("status")
     a = ap.parse_args()
-    return {"setup": cmd_setup, "sync": cmd_sync, "run": cmd_run, "status": cmd_status}[a.cmd](a)
+    return {"setup": cmd_setup, "sync": cmd_sync, "run": cmd_run, "test": cmd_test, "status": cmd_status}[a.cmd](a)
 
 
 if __name__ == "__main__":

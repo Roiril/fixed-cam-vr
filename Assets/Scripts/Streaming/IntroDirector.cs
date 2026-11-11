@@ -345,7 +345,7 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            _sinceStart += Time.unscaledDeltaTime;
+            _sinceStart += SimTime.Dt;
             ObserveHead();
 
             // ⚠ **位置合わせ中は演出を止め、覆いを完全にどける。**
@@ -394,7 +394,7 @@ namespace FixedCamVr.Streaming
 
             IntroInput input = BuildInput();
             WarnIfStuckAtBlack(input);
-            var ev = _logic.Tick(Time.unscaledDeltaTime, input);
+            var ev = _logic.Tick(SimTime.Dt, input);
             var w = _logic.Weights;
             veil?.Apply(w);
             // 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す）。覆いの**後**に描かれる面なので、
@@ -436,7 +436,7 @@ namespace FixedCamVr.Streaming
         private void ObserveHead()
         {
             if (head == null) { _headTurn = 0f; return; }
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             if (dt <= 0f) return;
             float deg = Quaternion.Angle(_lastHeadRot, head.rotation);
             _lastHeadRot = head.rotation;
@@ -525,7 +525,7 @@ namespace FixedCamVr.Streaming
                 _unknownPosSec = 0f;
                 return;
             }
-            _unknownPosSec += Time.unscaledDeltaTime;
+            _unknownPosSec += SimTime.Dt;
             if (_unknownPosSec < 8f || _warnedUnknownPos) return;
             _warnedUnknownPos = true;
             Debug.LogWarning(
@@ -589,12 +589,12 @@ namespace FixedCamVr.Streaming
                 _startsByApproach = true;
                 float outsideM = ContainmentShellLogic.DistanceOutsideM(p, halfXZ);
                 bool fired = _approach.Tick(outsideM, IntroLogic.ApproachNearM, IntroLogic.ApproachHoldSec,
-                                            Time.unscaledDeltaTime, valid: true);
+                                            SimTime.Dt, valid: true);
                 // ⚠ **黙って始まらない状態を作らない。** 武装は「離れている」か「近づいてきた」で立つので、
                 //    近くに立ったまま動かないと待ち続ける。理由を 1 回だけ、状況で書き分けて名指しする。
                 if (!fired && !_approach.Armed)
                 {
-                    _approachWaitSec += Time.unscaledDeltaTime;
+                    _approachWaitSec += SimTime.Dt;
                     if (_approachWaitSec > 8f && !_warnedApproachNotArmed)
                     {
                         _warnedApproachNotArmed = true;
@@ -622,7 +622,7 @@ namespace FixedCamVr.Streaming
             if (!string.IsNullOrEmpty(lineId))
             {
                 SyncStartLine(lineId);
-                _startLine.Tick(Time.unscaledTime, p.x, p.y, Time.unscaledDeltaTime);
+                _startLine.Tick(SimTime.Now, p.x, p.y, SimTime.Dt);
                 LineCrossLogic.State[] st = _startLine.StateView;
                 // 横切ったら以後ずっと true（段 0 を抜けるまで保持する）。横断は事象なので、
                 // その 1 フレームを取り逃すと永久に始まらない。
@@ -634,7 +634,7 @@ namespace FixedCamVr.Streaming
             if (spot == null) { _startSpot.NotifyUnavailable(); return false; }
             // ⚠ **円は「入ってきた」で判定する**（状態ではなく事象）。判断は StartSpotLogic 側。
             return _startSpot.Tick(p.x, p.y, spot.x, spot.z, spot.ResolveRadiusM(),
-                                   startSpotHoldSec, Time.unscaledDeltaTime);
+                                   startSpotHoldSec, SimTime.Dt);
         }
 
         /// <summary>
@@ -815,7 +815,7 @@ namespace FixedCamVr.Streaming
             if (s == null || !s.IsConnected) return false;
             float last = s.LastFrameRealtime;
             if (last <= 0f) return false;
-            return Time.realtimeSinceStartup - last <= freshFrameSec;
+            return SimTime.Realtime - last <= freshFrameSec;
         }
 
         /// <summary>演出が完走したか。<see cref="Completed"/> の実体。</summary>

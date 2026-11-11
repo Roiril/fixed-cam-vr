@@ -167,7 +167,7 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public bool SetHeld(bool held)
         {
-            _view.Tick(held, Time.unscaledDeltaTime);
+            _view.Tick(held, SimTime.Dt);
             return _view.JustShown;
         }
 
@@ -342,7 +342,7 @@ namespace FixedCamVr.Diagnostics
 
         private void Update()
         {
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             if (_probeLeft > 0f)
             {
                 _probeLeft -= dt;
@@ -403,7 +403,7 @@ namespace FixedCamVr.Diagnostics
             if (head == null) return;
 
             float headYaw = head.eulerAngles.y;
-            bool resumeGap = Time.unscaledDeltaTime > resumeGapSec;
+            bool resumeGap = SimTime.Dt > resumeGapSec;
             if (!_yawSeeded || resumeGap)
             {
                 _yawFollow.Reseat(headYaw);
@@ -473,7 +473,7 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
 
-            _accum += Time.unscaledDeltaTime;
+            _accum += SimTime.Dt;
             if (_accum >= updateInterval || !text.enabled)   // 間引きの間は直前の文字列を維持
             {
                 _accum = 0f;

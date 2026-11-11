@@ -91,7 +91,7 @@ namespace FixedCamVr.OvrBridge
             _recoverySec = _panel.RecoverySec;
             if (!_active) BeginWindow();
 
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             if (dt <= 0f || float.IsNaN(dt) || float.IsInfinity(dt)) return;
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             if (dt > 0.040f && _slowLogCount < 4)
@@ -99,7 +99,7 @@ namespace FixedCamVr.OvrBridge
                 _slowLogCount++;
                 Debug.Log($"[CommsPerfSlow] seq={_sequence} frame={Time.frameCount} dtms={dt * 1000f:F3} " +
                           $"previousLoadMs={previousLoadMs:F3} previousLoadCount={previousLoadCount} " +
-                          $"now={Time.realtimeSinceStartup:F3} RecoverySec={_recoverySec:F3}");
+                          $"now={WallClock.Now:F3} RecoverySec={_recoverySec:F3}");
             }
             if (dt > 0.020f)
             {

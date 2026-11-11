@@ -107,7 +107,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>server が実効的に通じているか（cue 試射のローカルフォールバック分岐に使う）。</summary>
         private bool ServerReachable
-            => !BakedOnly && server != null && (Time.realtimeSinceStartup - _lastServerContactTime) < ServerStaleSeconds;
+            => !BakedOnly && server != null && (WallClock.Now - _lastServerContactTime) < ServerStaleSeconds;
 
         /// <summary>コントローラ操作モードのラベル（NORMAL/REG）を設定する。heartbeat で卓へ報告する。</summary>
         public void SetControllerMode(string mode) => _controllerMode = string.IsNullOrEmpty(mode) ? "NORMAL" : mode;

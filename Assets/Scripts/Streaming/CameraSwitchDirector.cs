@@ -913,7 +913,7 @@ namespace FixedCamVr.Streaming
         /// <summary>dip 進行の dt を差し替える（EditMode テスト用。null で <c>Time.unscaledDeltaTime</c> に戻る）。</summary>
         public void SetDeltaSource(Func<float>? source) => _deltaSource = source;
 
-        private float DipDeltaTime => _deltaSource != null ? _deltaSource() : Time.unscaledDeltaTime;
+        private float DipDeltaTime => _deltaSource != null ? _deltaSource() : SimTime.Dt;
 
         // dwell / cooldown を測る時計。既定は Time.time。
         // **PC の仮想体験（VirtualWalk）用の seam** — Play せずに固定 dt で回すので、Time.time は進まない。

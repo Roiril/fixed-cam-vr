@@ -59,6 +59,7 @@ paths:
 - 周を走り切ったら 3s は必ず待ち、走行中の演出は 60s まで見せ切る。締めの武装中も待つ。時間切れ 300s は待たない。判定は次フレームの Tick — `ShowRunLogic.Tick(deferNaturalEnd)` / `ShowRunDefaults.EndGraceSec` / `EndHoldMaxSec` 〔出典: streaming:769-800〕
 - 出口は 5 つ。終幕の合図（`afterTakeId` の演出が走り終えた）／締めの判定（Trapped）／周回／時間切れ／卓。発火済みを落とすのは `BeginRun` だけ（人の介入は武装だけ外す）— `EndingCueLogic` / `ShowRunDirector.TickEndingDecision` 〔出典: show-design:930-962〕
 - 体験の時計は休止を数えない — `ShowClock.MaxStepSec` 〔出典: memory/unexpected_event_recovery.md〕
+- 実時間の時計は `SimTime`（体験）と `WallClock`（壁時計）から読み、`Time.unscaled*` / `realtimeSinceStartup` を直接読まない — `SimTime` / `TimeSourceLintTests` 〔コード〕
 - 区間に take が 0..N 本。実行体は 1 つ。v2 は読込時に変換する — `TimelineMigration.EnsureTakes` / `TimelineDirector.SetTimeline` 〔出典: streaming:598-605〕
 - 開始規則は enter+t・exit・line の 3 つ。line は担当カメラが一致したときだけ due になる。横断の猶予は 0.6s。使えない線は `lineIndex=-1` — `TakeRunnerLogic.IsDue` / `LineCrossLogic.CrossLatchSec` / `TakeWiringTests.LineTake_WithoutLineId_*` 〔出典: streaming:1583-1607〕
 - 画面が塞がっているだけなら区間内で Ready のまま待つ。捨てたら報告する — `TakeRunnerLogic.TakeDropped` 〔出典: streaming:611-620〕
@@ -94,13 +95,4 @@ paths:
 - 観測（`ev=seg plap` / `ev=take why=` / `reN` / `disN`）は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す 〔streaming:2575, 2613〕
 
 ## 深く読むとき
-- 骨格・終了・出口 → streaming:736-818 / show-design:395-408, 930-981 / memory/show_run_skeleton.md
-- 周・引き返し・再演 → streaming:443-471, 2577-2621 / show-design:1810-1850 / memory/backtrack_and_replay.md
-- take の待ち・連続・継ぎ目 → streaming:598-735 / memory/take_continuity.md
-- line と尺 → streaming:1581-1621, 1759-1800, 2226-2249, 2495-2514
-- 報告で消える → streaming:2515-2576
-- 録画の背景・3-A の位置録画 → streaming:1622-1758 / show-design:1728-1809
-- 2-C 接近と 3-A → show-design:1614-1727
-- BGM → streaming:3218-3274
-- 終幕 → show-design:789-962
-- 現行の穴 → memory/scenario_audit_20261022.md
+- 話題ごとの凍結版の行番号と memory の入口 → `reference/show-run-deep-reading.md`
