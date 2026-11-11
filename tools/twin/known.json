@@ -1,0 +1,45 @@
+{
+ "about": "ツイン走行（tools/twin-verify.py）で毎回出る FAIL・WARN のうち、原因が分かっていて新しい壊れではないもの。twin-verify.py が判定を新規と既知に分けるのに使う。match は判定文への正規表現（re.search）。数字が変わったら新規に戻るよう、数字は書けるだけ固定する。dep は skills/twin-loop の依存の語（時刻表 / 歩き方 / ツインの見た目 / 大きさと立体 / 音 / 計器）。confirmed=false は「毎回出る」ことだけ確かめてあり、原因は読みの段。足すのは 3 走行続けて出てから。FAIL は足さない（直すか memory の「いま開いている指摘」へ）。",
+ "entries": [
+  {
+   "id": "intro-name-skipped",
+   "level": "WARN",
+   "match": "^⓪a 自己紹介は自動走行で省略される",
+   "dep": "歩き方",
+   "why": "自動走行は名乗りと練習の案内を読まずに進む。導入の説明が動画に出ないのは走り方のせいで、本編の欠けではない",
+   "ref": ".claude/memory/twin_verify.md",
+   "since": "2026-11-06",
+   "confirmed": true
+  },
+  {
+   "id": "tmp-underline-glyph",
+   "level": "WARN",
+   "match": "^実機ログにほかの警告が 4 行（4 種）— 最多: The character used for Underline is not available in font asset \\[CommsHorror SDF\\]",
+   "dep": "計器",
+   "why": "CommsHorror SDF に下線用の字が無いという TMP の警告。行数と種類が 4 から変わったら別の警告が混ざっているので新規に戻る",
+   "ref": ".claude/memory/hud_font_and_preview.md",
+   "since": "2026-11-06",
+   "confirmed": false
+  },
+  {
+   "id": "mark-erased-nothing",
+   "level": "WARN",
+   "match": "^報告 1 回に対して 1 本も消えていない",
+   "dep": "歩き方",
+   "why": "自動走行は最後の A で 1 回だけ報告する。消せる演出が走っている区間では押していない（シュビーの読み。押した区間をログで突き合わせてはいない）",
+   "ref": ".claude/memory/twin_verify.md",
+   "since": "2026-11-06",
+   "confirmed": false
+  },
+  {
+   "id": "type-count-deferred",
+   "level": "WARN",
+   "match": "^打鍵数と通知時の字数の照合は保留（typeN=\\d+ / 字数の合計 \\d+）",
+   "dep": "計器",
+   "why": "analyze-xp-log.py が自分で保留と言っている照合。文字の確定が非同期で、通知の時点の字数が打鍵数と合わない",
+   "ref": "tools/analyze-xp-log.py",
+   "since": "2026-11-06",
+   "confirmed": true
+  }
+ ]
+}

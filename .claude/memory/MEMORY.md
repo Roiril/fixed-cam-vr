@@ -87,7 +87,7 @@
 ## 検証・計器
 - [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証 4 点（[XP]・自動走行・判定・機の選択）と解析が嘘をつく経路
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
-- [twin_verify.md](twin_verify.md) — HMD なしの通し検証
+- [twin_verify.md](twin_verify.md) — HMD なしの通し検証。時計は tau・既知
 - [twin_room.md](twin_room.md) — ツインの部屋。光は撮影時だけ・`menu twin`・霞で GPU 落ち
 - [twin_cycles.md](twin_cycles.md) — 写実のツイン。配置は写真から解く・盲検の点
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点

@@ -1,6 +1,7 @@
 """tools/twin-verify.py の判定（周の印・結末）。Unity を起動しない。"""
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -114,6 +115,103 @@ class AssetCheck(unittest.TestCase):
         self.assertEqual(level, "WARN")
         self.assertIn("1/2", text)
         self.assertIn("gen_hands.png", text)
+
+
+class Lock(unittest.TestCase):
+    def test_free_lock_is_taken_and_released(self):
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d) / "x" / ".lock"
+            self.assertIsNone(tv.acquire_lock(lock, "s1"))
+            self.assertTrue(lock.exists())
+            tv.release_lock(lock)
+            self.assertFalse(lock.exists())
+
+    def test_live_holder_blocks_and_is_named(self):
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d) / ".lock"
+            lock.write_text('{"pid": 4242, "stamp": "other", "started": "10:00:00"}', encoding="utf-8")
+            msg = tv.acquire_lock(lock, "s1", alive=lambda pid: True)
+            self.assertIn("other", msg)
+            tv.release_lock(lock)                       # 他人の錠は外さない
+            self.assertTrue(lock.exists())
+
+    def test_dead_holder_is_taken_over(self):
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d) / ".lock"
+            lock.write_text('{"pid": 4242, "stamp": "dead"}', encoding="utf-8")
+            self.assertIsNone(tv.acquire_lock(lock, "s1", alive=lambda pid: False))
+
+    def test_broken_lock_file_is_taken_over(self):
+        with tempfile.TemporaryDirectory() as d:
+            lock = Path(d) / ".lock"
+            lock.write_text("", encoding="utf-8")
+            self.assertIsNone(tv.acquire_lock(lock, "s1"))
+
+
+class CodeCheck(unittest.TestCase):
+    A = {"head": "aaa", "dirty": "111", "show": "s"}
+
+    def test_same_code_says_nothing(self):
+        self.assertIsNone(tv.code_check(self.A, dict(self.A)))
+
+    def test_no_shoot_says_nothing(self):
+        self.assertIsNone(tv.code_check(self.A, None))
+
+    def test_edit_between_run_and_shoot_warns_and_names_what(self):
+        level, text = tv.code_check(self.A, dict(self.A, dirty="222"))
+        self.assertEqual(level, "WARN")
+        self.assertIn("dirty", text)
+        self.assertNotIn("head", text)
+
+
+class Known(unittest.TestCase):
+    K = [{"id": "name", "level": "WARN", "match": "^自己紹介は省略"},
+         {"id": "count", "level": "WARN", "match": "^警告が 4 行"}]
+
+    def test_known_is_tagged_and_new_is_not(self):
+        v = [{"level": "WARN", "text": "自己紹介は省略される"}, {"level": "WARN", "text": "警告が 5 行"},
+             {"level": "OK", "text": "自己紹介は省略される"}]
+        tv.tag_known(v, self.K)
+        self.assertEqual([x.get("known") for x in v], ["name", None, None])
+
+    def test_level_must_match(self):
+        v = [{"level": "FAIL", "text": "自己紹介は省略される"}]
+        tv.tag_known(v, self.K)
+        self.assertNotIn("known", v[0])
+
+    def test_fail_entry_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "known.json"
+            f.write_text('{"entries": [{"id": "x", "level": "FAIL", "match": "a"}]}', encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                tv.load_known(f)
+
+    def test_shipped_table_loads(self):
+        self.assertTrue(all({"id", "level", "match", "dep", "why", "ref", "since", "confirmed"} <= set(e) for e in tv.load_known()))
+
+    def test_stale_needs_three_silent_runs(self):
+        hit = [{"level": "WARN", "text": "自己紹介は省略される"}]
+        self.assertEqual(tv.stale_known(self.K, [], [{"verdicts": []}]), [])                       # 履歴が足りない
+        self.assertEqual(tv.stale_known(self.K, [], [{"verdicts": hit}, {"verdicts": []}]), ["count"])
+        self.assertEqual(tv.stale_known(self.K, hit, [{"verdicts": []}, {"verdicts": []}]), ["count"])
+
+
+class History(unittest.TestCase):
+    def test_only_earlier_finished_runs_with_the_same_args(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            def put(name, args, result="ok", raw=None):
+                (root / name).mkdir()
+                (root / name / "verdict.json").write_text(
+                    raw if raw is not None else json.dumps({"args": args, "run": {"result": result}, "stamp": name}), encoding="utf-8")
+            put("20260101_a", {"speed": 1})
+            put("20260102_b", {"speed": 2})
+            put("20260103_c", {"speed": 1}, result="timeout")
+            put("20260104_d", {"speed": 1}, raw="")
+            put("20260105_e", {"speed": 1})
+            put("20260107_g", {"speed": 1})
+            got = tv.same_args_history(root, {"speed": 1}, "20260106_f", 5)
+            self.assertEqual([v["stamp"] for v in got], ["20260105_e", "20260101_a"])
 
 
 if __name__ == "__main__":

@@ -9,7 +9,10 @@
 本番の Main シーンを Editor の Play で流す。入力は生の左 X だけ、カメラはデジタルツインの動画（tools/twin/make_pack.py）。
 走った結果は体験の記録に残し、同じ記録を unity.ps1 replay で撮る。
 
-出力は Drive の renders/twin-verify/<時刻>/（report.md・verdict.json・events.json・eye.mp4・follow.mp4）。
+出力は Drive の renders/twin-verify/<時刻>/（report.md・verdict.json・events.json・replay_xp.log・eye.mp4・follow.mp4）。
+場面ごとのコマと前の走行との左右比較は tools/twin-look.py（見るときだけ切る）。
+判定は「新規」と「既知」に分けて出す。既知は tools/twin/known.json（毎回出て、原因が分かっているもの）。
+同時に 2 本は走らない（Logs/twin-run/.lock。同じ Unity プロジェクトを使うため）。
 見る面は tools/twin-game/verify.html（preview_start twin-game の /verify.html）。
 
 ⚠ 実機の代わりではない。圧縮・遅延・両眼・ディスプレイ・パススルーは入らない。音はここでは聴けても実機の聞こえではない。
@@ -19,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -36,6 +40,122 @@ SHOW = ROOT / "Assets" / "StreamingAssets" / "show" / "show.json"
 PS = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "tools" / "unity.ps1")]
 XP_LINE = re.compile(r"\[XP\]\s+t=([\d.]+)\s+ev=(\S+)\s*(.*)$")
 VERDICT_LINE = re.compile(r"^- (❌|⚠|✅) (.*)$")
+
+
+LOCK = ROOT / "Logs" / "twin-run" / ".lock"
+# 走行と撮影のあいだに変わると、古いコードで走って新しいコードで撮った動画になる所。
+CODE_PATHS = ("Assets/Scripts", "Assets/Art/Shaders", "Assets/Scenes/Main.unity")
+
+
+def pid_alive(pid: int) -> bool:
+    """os.kill(pid, 0) は Windows では相手を終了させるので使わない。"""
+    import ctypes
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x1000, False, int(pid))      # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return False
+    code = ctypes.c_ulong()
+    ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+    k.CloseHandle(h)
+    return bool(ok) and code.value == 259           # STILL_ACTIVE
+
+
+def acquire_lock(path: Path, stamp: str, alive=pid_alive) -> str | None:
+    """取れたら None。取れなければ、走っている相手を言う文。持ち主が死んだ錠は引き継ぐ。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(2):
+        try:
+            with open(path, "x", encoding="utf-8") as f:
+                json.dump({"pid": os.getpid(), "stamp": stamp, "started": time.strftime("%H:%M:%S")}, f)
+            return None
+        except FileExistsError:
+            try:
+                held = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                held = {}
+            if held.get("pid") and alive(held["pid"]):
+                return f"別のツイン走行が動いている（{held.get('stamp')}・{held.get('started')} 開始・pid {held['pid']}）。終わってから走る"
+            path.unlink(missing_ok=True)
+    return "錠を取れなかった（Logs/twin-run/.lock）"
+
+
+def release_lock(path: Path) -> None:
+    try:
+        if json.loads(path.read_text(encoding="utf-8")).get("pid") == os.getpid():
+            path.unlink()
+    except (OSError, ValueError):
+        pass
+
+
+def code_fingerprint() -> dict:
+    """いまの作業ツリーのコードの指紋。HEAD と、未コミットの差分・show.json の中身の短いハッシュ。"""
+    def git(*args: str) -> bytes:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True).stdout
+    diff = git("diff", "HEAD", "--", *CODE_PATHS)
+    return {
+        "head": git("rev-parse", "--short", "HEAD").decode("ascii", "replace").strip(),
+        "dirty": hashlib.sha1(diff).hexdigest()[:10] if diff else "",
+        "show": hashlib.sha1(SHOW.read_bytes()).hexdigest()[:10] if SHOW.exists() else "",
+    }
+
+
+def code_check(at_run: dict, at_shoot: dict | None) -> tuple[str, str] | None:
+    """走行のあと撮影までにコードが変わったか。変わっていたら、動画は走行と別のコードの画。"""
+    if at_shoot is None or at_run == at_shoot:
+        return None
+    what = [k for k in ("head", "dirty", "show") if at_run.get(k) != at_shoot.get(k)]
+    return "WARN", ("走行と撮影のあいだにコードが変わった（" + "・".join(what) + "）。判定は走行時のコード、動画は撮影時のコードの画")
+
+
+KNOWN = ROOT / "tools" / "twin" / "known.json"
+
+
+def load_known(path: Path = KNOWN) -> list[dict]:
+    if not path.exists():
+        return []
+    entries = json.loads(path.read_text(encoding="utf-8"))["entries"]
+    for e in entries:
+        if e["level"] == "FAIL":
+            raise SystemExit(f"known.json の {e['id']} が FAIL。FAIL は既知にしない（直すか memory の開いている指摘へ）")
+        re.compile(e["match"])
+    return entries
+
+
+def known_id(verdict: dict, known: list[dict]) -> str | None:
+    return next((e["id"] for e in known if e["level"] == verdict["level"] and re.search(e["match"], verdict["text"])), None)
+
+
+def tag_known(verdicts: list[dict], known: list[dict]) -> None:
+    for v in verdicts:
+        if v["level"] != "OK":
+            kid = known_id(v, known)
+            if kid:
+                v["known"] = kid
+
+
+def same_args_history(drive: Path, args: dict, before: str, limit: int) -> list[dict]:
+    """同じ走り方の、これより前の走行の verdict（新しい順）。壊れた verdict.json は飛ばす。"""
+    out = []
+    if not drive.is_dir():
+        return out
+    for d in sorted((x for x in drive.iterdir() if x.is_dir() and x.name < before and not x.name.startswith("_")), reverse=True):
+        try:
+            v = json.loads((d / "verdict.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if v.get("args") == args and v.get("run", {}).get("result") == "ok":
+            out.append(v)
+            if len(out) >= limit:
+                break
+    return out
+
+
+def stale_known(known: list[dict], verdicts: list[dict], history: list[dict], need: int = 2) -> list[str]:
+    """今回も、同じ走り方の直前 need 走行でも出なかった既知。表から外してよい候補。履歴が足りなければ言わない。"""
+    if len(history) < need:
+        return []
+    runs = [verdicts] + [h.get("verdicts", []) for h in history[:need]]
+    return [e["id"] for e in known if not any(known_id(v, [e]) for r in runs for v in r if v["level"] != "OK")]
 
 
 ENV: dict[str, str] | None = None  # Unity へ渡す環境（素材の差し替え先）。None は親のまま
@@ -171,6 +291,17 @@ def main() -> int:
     a = ap.parse_args()
 
     stamp = time.strftime("%Y%m%d_%H%M%S") + (f"_{a.tag}" if a.tag else "")
+    busy = acquire_lock(LOCK, stamp)
+    if busy:
+        print(busy)
+        return 3
+    try:
+        return verify(a, stamp)
+    finally:
+        release_lock(LOCK)
+
+
+def verify(a: argparse.Namespace, stamp: str) -> int:
     work = ROOT / "Logs" / "twin-run" / stamp
     work.mkdir(parents=True, exist_ok=True)
     dest = DRIVE / stamp
@@ -185,6 +316,8 @@ def main() -> int:
         swapped = json.loads((ASSETS / "assets_map.json").read_text(encoding="utf-8"))
         ENV = dict(os.environ, FIXEDCAM_ASSET_OVERRIDE_DIR=str(ASSETS))
 
+    code_run = code_fingerprint()
+    code_shoot: dict | None = None
     args = {"pack": str(PACK), "out": str(work), "speed": str(a.speed), "dwell": str(a.dwell)}
     if a.nomark:
         args["nomark"] = "1"
@@ -220,10 +353,15 @@ def main() -> int:
     rec = run_info.get("recDir", "")
     videos = {}
     replay_compare = ""
+    replay_log: Path | None = None
     # 走行が終わったあとの Editor の終了処理で落ちることがある（記録と判定は揃っている）。撮影は走行の結果で決める。
     if rc_run != 0 and run_info.get("result") == "ok":
         verdicts.insert(0, {"level": "WARN", "text": f"走行のあと Editor の終了処理で落ちた（exit={rc_run}）。走行の記録は揃っている"})
     if not a.no_video and run_info.get("result") == "ok" and rec:
+        code_shoot = code_fingerprint()
+        changed = code_check(code_run, code_shoot)
+        if changed:
+            verdicts.insert(0, {"level": changed[0], "text": changed[1]})
         for view, off in (("eye", a.no_eye), ("follow", not a.follow)):
             if off:
                 continue
@@ -244,12 +382,18 @@ def main() -> int:
 
     n = {lv: sum(1 for v in verdicts if v["level"] == lv) for lv in ("FAIL", "WARN", "OK")}
     ok = run_info.get("result") == "ok" and n["FAIL"] == 0
+    run_args = {"speed": a.speed, "dwell": a.dwell, "nomark": a.nomark, "relief": a.relief, "calib": a.calib, "realAssets": a.real_assets}
+    known = load_known()
+    tag_known(verdicts, known)
+    fresh = {lv: sum(1 for v in verdicts if v["level"] == lv and "known" not in v) for lv in ("FAIL", "WARN")}
+    stale = stale_known(known, verdicts, same_args_history(DRIVE, run_args, stamp, 2))
     summary = {
-        "stamp": stamp, "pass": ok, "counts": n, "run": run_info, "calibGapPx": gaps,
+        "stamp": stamp, "pass": ok, "counts": n, "new": fresh, "staleKnown": stale, "run": run_info, "calibGapPx": gaps,
         "videos": {k: f"{k}.mp4" for k in videos},
         "compare": replay_compare.splitlines()[:2],
         "verdicts": verdicts, "assets": swapped,
-        "args": {"speed": a.speed, "dwell": a.dwell, "nomark": a.nomark, "relief": a.relief, "calib": a.calib, "realAssets": a.real_assets},
+        "code": {"run": code_run, "shoot": code_shoot},
+        "args": run_args,
     }
 
     calib_note = ("人形の姿勢はツインの配置へ差し替えて走った" if a.calib == "twin" else "人形の姿勢は本番の show.json のまま走った（ツインの映像とは合わない）")
@@ -257,7 +401,7 @@ def main() -> int:
         f"# ツイン走行 {stamp}",
         "",
         f"走行: **{run_info.get('result')}**（{run_info.get('sec')} 秒・周 {run_info.get('lap')}・報告 {run_info.get('marks')}・例外 {run_info.get('exceptions')}）",
-        f"判定: FAIL {n['FAIL']} / WARN {n['WARN']} / OK {n['OK']}",
+        f"判定: FAIL {n['FAIL']} / WARN {n['WARN']} / OK {n['OK']}（うち新規 FAIL {fresh['FAIL']} / WARN {fresh['WARN']}。残りは tools/twin/known.json の既知）",
         "",
         f"⚠ {calib_note}。本番の calib とツインの配置の差（頭と足の投影・中央値 px）: {gaps}。**PASS は本番の calib で合っていることを意味しない。**",
         f"⚠ 映像は頭の位置から引いている。道とのずれ最大 {run_info.get('feedMaxErrM')}m。道から外れた刻み {run_info.get('feedOffRouteTicks')}（人の居ない写真を配った）。立ち止まると人は歩きの 1 コマで止まる。",
@@ -279,6 +423,9 @@ def main() -> int:
             shutil.copy2(work / f, dest / f)
     for view, path in videos.items():
         shutil.copy2(path, dest / f"{view}.mp4")
+    # 動画と同じ時計のログ（tau=）。twin-look.py が場面を切るのに使う。
+    if replay_log and replay_log.exists():
+        shutil.copy2(replay_log, dest / "replay_xp.log")
     (DRIVE / "latest.json").write_text(json.dumps({"stamp": stamp}), encoding="utf-8")
 
     # C: を食うものは残さない。
@@ -289,9 +436,17 @@ def main() -> int:
         shutil.rmtree(rec, ignore_errors=True)
 
     print(f"{'PASS' if ok else 'NOT PASS'} FAIL={n['FAIL']} WARN={n['WARN']} OK={n['OK']}")
+    print(f"新規: FAIL {fresh['FAIL']} / WARN {fresh['WARN']}")
     for v in verdicts:
-        if v["level"] != "OK":
+        if v["level"] != "OK" and "known" not in v:
             print(f"  {v['level']}: {v['text']}")
+    olds = [v["known"] for v in verdicts if "known" in v]
+    if olds:
+        print(f"既知 {len(olds)} 件: {' / '.join(olds)}")
+    if stale:
+        print(f"3 走行続けて出ていない既知（known.json から外してよい）: {' / '.join(stale)}")
+    if "eye" in videos:
+        print(f"見る: py -3.11 tools/twin-look.py cut {stamp}   前の走行と並べる: py -3.11 tools/twin-look.py pair {stamp}")
     print(f"→ {dest}")
     return 0 if ok else 1
 

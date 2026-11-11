@@ -12,6 +12,16 @@ metadata:
 
 **回し方**: `py -3.11 tools/twin-verify.py`（走行 5 分＋目線の動画 5 分）。`--no-video` は判定だけ。見る面は `preview_start twin-game` の `/verify.html`。
 出力は Drive `renders/twin-verify/<時刻>/`。⚠ 同じ Unity プロジェクトを使うので、他の batchmode と同時に走らない。
+自分で見つけて直す回し方は `skills/twin-loop`。
+
+**2026-11-11 に足した 4 つ**（ユーザー依頼「デジタルツインを用いたclaudecodeによる自己改善(演出、システム、他いろいろと)を、いい感じにするためにハーネスを整備してほしい。」）:
+- **錠** `Logs/twin-run/.lock`。twin-verify どうしは同時に走らない（走行と撮影の隙間・共有の `pack` と `assets` を守る）。持ち主が死んだ錠は次の走行が引き継ぐ。他の batchmode との衝突は従来どおり `unity.ps1` の `Assert-NotLocked`
+- **コードの指紋** `verdict.json` の `code.run` / `code.shoot`（HEAD・`Assets/Scripts` などの未コミット差分・show.json のハッシュ）。走行と撮影のあいだに変わると WARN。11-11 の relief は走行が古いコード・動画が新しいコードだった
+- **新規と既知** `tools/twin/known.json`。11-06 以降の 15 走行すべてに同じ WARN が 4 行出ていて、新しい FAIL が埋もれていた。FAIL は既知にできない（読み込みで落ちる）
+- **見る道具** `tools/twin-look.py`（`scenes` / `cut` / `pair`）。それまでは 1fps の JPEG を手で切り、場面の時刻表を毎回手で書いていた
+
+**動画と揃う時計は `replay_xp.log` の `tau=`。** 11-11 から Drive に残す。それより前の走行には無く、`twin-look.py` は走行の時計（`events.json`）で切って帯に「※走行の時計」と書く。
+そのときは場面の終わりのコマに次の場面が映ることがある（`compare.txt` の差は中央 0.2〜0.9 秒・最大 8 秒）。⚠ `replay_xp.log` を読む経路は合成した行のテストだけで、実走行のログではまだ通していない。
 
 **形**: `XpTwinDriver`（Editor のみ）が生の入力を `XpReplay` へ置き、`ShowWalkDebugDriver` の `IHost` として歩く。映像は `tools/twin/make_pack.py` の束（MJR）を頭の位置で引いて配る。
 走った結果は `ExperienceRecorder` の記録に残り、撮影は既存の `unity.ps1 replay` がする。走る間は描画と入力の閉ループ、撮る間は開ループ。
@@ -26,7 +36,7 @@ metadata:
 **A の下端の白い段々はツインの床。** カーテンの裾の下に見える床が通常の加工で白く飛び、裾の折り目で段々に見える。2 周目以降の A と別れで出る。合成素材とも覆いとも関係ない（11-11 に一度「差し替えないと覆いが段々の塊になる」と書いたのは誤り。差し替えても同じ形で出た）。本番の写真の床は暗く、出ない。
 ツインの代役は黒い服なので、通常の加工で体が闇に沈み、明るい腕だけが白い三角に残る。別れの写真の読みやすさを測るときはこれを差し引く。
 
-**`events.json` の `t` と `run_xp.log` の `t=` は別の時計。** `events.json` は録画の開始（`ev=xprec state=start`）を 0 にしていて、目線の動画の秒とほぼ揃う。`run_xp.log` はそれより約 15.5 秒大きい（11-11 の走行）。テレメトリを動画の場面に当てるときは引いてから読む。
+**`events.json` の `t` と `run_xp.log` の `t=` は別の時計。** `events.json` は録画の開始（`ev=xprec state=start`）を 0 にしていて、目線の動画の秒とほぼ揃う（揃い切らない。正は上の `tau`）。`run_xp.log` はそれより約 15.5 秒大きい（11-11 の走行）。テレメトリを動画の場面に当てるときは引いてから読む。
 
 **判定**: `analyze-xp-log.py --pc`（実機にしか無い受信 fps・パススルー・タブレットの口などは NA）＋ `twin-verify.py` の周の印と結末。
 実機ログで偽 FAIL になる 2 つをこのとき直した。`released=1` の報告に MarkLogged を求めていた。別れの人形（笑わない契約）の標本で「笑っていない」を出していた。

@@ -28,6 +28,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | 1 周回す（読む → 参照を置く → 予測 → 安い門 → 焼く → 見る → 台帳） | `skills/work-round` |
 | ユーザーに見せて赤入れをもらう（前後・試した版・隣の場面を並べ 1 点訊く） | `skills/direction-round` |
 | 体験を頭から終わりまで通して見直す | `skills/show-review` |
+| ツインの走行でシュビーが自分で見つけて直す（走る → 新規の判定を仕分ける → 場面ごとに見る → 1 つ直す → 並べる） | `skills/twin-loop` |
 | 「動かない」を層で切り分ける | `skills/troubleshoot` |
 | コードを初めて読む（体験 1 回の流れとクラスの持ち主） | [Assets/Scripts/README.md](Assets/Scripts/README.md) |
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |
@@ -92,7 +93,8 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 
 - **`py -3.11 tools/quest-record.py --sec 45 --walk` の 1 回で A・B・C が揃う**（HMD 不要）。
 - **HMD も Quest も配信スマホも無しで体験を通す**: `py -3.11 tools/twin-verify.py`。本番の Main シーンへツインの映像を流し、
-  左 X だけで導入から終幕まで走り、解析器と周の印で判定して目線の動画を残す。実機の代わりではない（圧縮・遅延・両眼・ディスプレイ・パススルーは入らない）
+  左 X だけで導入から終幕まで走り、解析器と周の印で判定して目線の動画を残す。実機の代わりではない（圧縮・遅延・両眼・ディスプレイ・パススルーは入らない）。
+  判定は新規と既知（`tools/twin/known.json`）に分かれて出る。場面ごとのコマと前の走行との左右比較は `py -3.11 tools/twin-look.py cut|pair`
 - 実機を使わない門は 2 つ: `.\tools\unity.ps1 test`（C#）と `py -3.11 tools/test-tools.py`（解析器・現場の道具・ログの書き手と読み手の照合）
   依存は `tools/requirements.txt`
 - ⚠⚠ **機を指定するなら `--serial`。`ANDROID_SERIAL` は効かない**（走行は自分で機を選び直す）。
