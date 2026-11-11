@@ -2,9 +2,9 @@
 name: meta-xr
 description: Meta XR SDK 利用規約。OVR* / Passthrough / CameraRig 関連
 paths:
-  - "Assets/**/Passthrough/**"
-  - "Assets/**/CameraRig/**"
   - "Assets/**/*OVR*.cs"
+  - "Assets/**/*Ovr*.cs"
+  - "Assets/Scripts/OvrBridge/**"
 ---
 
 # Meta XR SDK 利用規約

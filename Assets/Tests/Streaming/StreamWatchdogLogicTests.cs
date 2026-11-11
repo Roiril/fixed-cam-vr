@@ -19,7 +19,8 @@ namespace FixedCamVr.Streaming.Tests
             windowStart = 10f;
             // 窓を 10.0 で開始（recvFps=0）。
             w.EndTick(now: 10f, unscaledDt: 0.016f, phoneFps: 0f);
-            // 3 フレーム decode を蓄積。
+            // 3 フレームの到着と decode を蓄積。
+            w.OnFramesArrived(3);
             w.OnFrameDecoded(10.2f);
             w.OnFrameDecoded(10.4f);
             w.OnFrameDecoded(10.6f);
@@ -151,9 +152,62 @@ namespace FixedCamVr.Streaming.Tests
         {
             var w = new StreamWatchdogLogic();
             w.EndTick(now: 10f, unscaledDt: 0.016f, phoneFps: 0f);
+            w.OnFramesArrived(frames);
             for (int i = 0; i < frames; i++) w.OnFrameDecoded(10f + 0.9f * i / frames);
             w.EndTick(now: 11.0f, unscaledDt: 0.016f, phoneFps: 0f);
             return w;
+        }
+
+        // 背景カメラの形。30fps で届き、展開は 3 回だけ。
+        private static StreamWatchdogLogic PrimeBackgroundCamera()
+        {
+            var w = new StreamWatchdogLogic();
+            w.EndTick(now: 10f, unscaledDt: 0.016f, phoneFps: 0f);
+            w.OnFramesArrived(30);
+            for (int i = 0; i < 3; i++) w.OnFrameDecoded(10.1f + 0.3f * i);
+            w.EndTick(now: 11.0f, unscaledDt: 0.016f, phoneFps: 0f);
+            return w;
+        }
+
+        [Test]
+        public void Lag_CountsArrivals_SoThrottledBackgroundDoesNotFire()
+        {
+            var w = PrimeBackgroundCamera();
+            Assert.That(w.ReceivedFps, Is.EqualTo(30f).Within(0.5f));
+            Assert.That(w.DecodedFps, Is.EqualTo(3f).Within(0.1f));
+            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 30f), Is.EqualTo(Reason.None),
+                "展開を間引いているだけで、経路は詰まっていない");
+        }
+
+        [Test]
+        public void Lag_StillFires_WhenArrivalsAreLow_EvenIfEveryFrameDecodes()
+        {
+            var w = PrimeRecvFpsN(15);
+            Assert.That(w.DecodedFps, Is.EqualTo(15f).Within(0.5f));
+            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 30f), Is.EqualTo(Reason.Lag));
+        }
+
+        [Test]
+        public void DecodedFps_StaysZero_WhenFramesArriveButNoneDecodes()
+        {
+            var w = new StreamWatchdogLogic();
+            w.EndTick(now: 10f, unscaledDt: 0.016f, phoneFps: 0f);
+            w.OnFramesArrived(30);
+            w.EndTick(now: 11.0f, unscaledDt: 0.016f, phoneFps: 0f);
+            Assert.That(w.ReceivedFps, Is.EqualTo(30f).Within(0.5f));
+            Assert.That(w.DecodedFps, Is.EqualTo(0f), "届いていても読めていなければ DiscoveryClient は断とみなす");
+        }
+
+        // 背景でも約 3 回/秒は展開するので、生きている限り stall の 10 秒には届かない。
+        [Test]
+        public void StallBaseline_IsTheLastDecode()
+        {
+            var w = PrimeBackgroundCamera();
+            float lastDecode = w.LastFrameRealtime;
+            Assert.That(w.EndTick(now: lastDecode + StreamWatchdogLogic.StallReconnectSec - 0.1f, unscaledDt: 0.016f, phoneFps: 0f),
+                Is.EqualTo(Reason.None));
+            Assert.That(w.EndTick(now: lastDecode + StreamWatchdogLogic.StallReconnectSec + 0.1f, unscaledDt: 0.016f, phoneFps: 0f),
+                Is.EqualTo(Reason.Stall));
         }
 
         [Test]

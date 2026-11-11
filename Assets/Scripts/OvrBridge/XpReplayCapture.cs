@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using FixedCamVr.Streaming;
 using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
@@ -12,7 +13,8 @@ using UnityEngine.Rendering.Universal;
 using Debug = UnityEngine.Debug;
 
 /// <summary>
-/// 再生（<see cref="XpReplayDriver"/>）を、広い画角のカメラで撮って mp4 にする。
+/// 再生（<see cref="XpReplayDriver"/>）やツイン走行（<see cref="XpTwinDriver"/>）を、広い画角のカメラで撮って mp4 にする。
+/// 撮る相手は同じ GameObject の <see cref="IXpCaptureSource"/>（時計・終わり・頭の姿勢・結果の受け取り）。
 ///
 /// 絵: 体験者の目と同じものを映すカメラ（cullingMask・背景・URP の設定を目から写す）を別に立て、
 /// 画角だけ広げる。<c>view=eye</c> は頭の位置から少し遅れて追う（首の細かい揺れを均す）。
@@ -47,7 +49,7 @@ public sealed class XpReplayCapture : MonoBehaviour
         }
     }
 
-    private XpReplayDriver _driver = null!;
+    private IXpCaptureSource? _source;
     private Camera? _cam;
     private FixedCamVr.Streaming.MjpegScreen[]? _screens;
     private RenderTexture? _rt;
@@ -81,30 +83,36 @@ public sealed class XpReplayCapture : MonoBehaviour
 
     private void Start()
     {
-        _driver = GetComponent<XpReplayDriver>();
+        _source = GetComponent<IXpCaptureSource>();
+        if (_source == null)
+        {
+            Debug.LogError("[Replay] 撮る相手（IXpCaptureSource）が同じ GameObject に居ない。撮らない");
+            _closed = true;
+            return;
+        }
         _out = SessionState.GetString(KeyOut, "");
         _view = SessionState.GetString(KeyView, "eye");
-        _fov = SessionState.GetFloat(KeyFov, _view == "follow" ? 62f : 72f);
-        _w = Mathf.Clamp(SessionState.GetInt(KeyW, 1920), 320, 7680) & ~1;
-        _h = Mathf.Clamp(SessionState.GetInt(KeyH, 1080), 240, 4320) & ~1;
-        _fps = Mathf.Clamp(SessionState.GetInt(KeyFps, 30), 10, 120);
+        _fov = SessionState.GetFloat(KeyFov, FixedCamVr.Streaming.Replay.XpCaptureLogic.DefaultFovDeg(_view));
+        _w = SessionState.GetInt(KeyW, 1920);
+        _h = SessionState.GetInt(KeyH, 1080);
+        _fps = SessionState.GetInt(KeyFps, 30);
+        _msaa = SessionState.GetInt("fcv.replay.msaa", 1);
+        FixedCamVr.Streaming.Replay.XpCaptureLogic.Normalize(ref _w, ref _h, ref _fps, ref _msaa);
         _maxSec = SessionState.GetFloat(KeyMaxSec, 0f);
-        int m = SessionState.GetInt("fcv.replay.msaa", 1);
-        _msaa = m >= 8 ? 8 : m >= 4 ? 4 : m >= 2 ? 2 : 1;
         _hideEye = Application.isBatchMode && SessionState.GetInt("fcv.replay.eyecam", 0) == 0;
     }
 
     private void LateUpdate()
     {
-        if (_closed || !_driver.Started) return;
+        if (_closed || _source == null || !_source.Started) return;
 
-        bool over = _driver.Finished || (_maxSec > 0f && _driver.Tau > _maxSec);
+        bool over = _source.Finished || (_maxSec > 0f && _source.Tau > _maxSec);
         if (over) { Close(); return; }
 
         if (!_capturing && !Open()) { _closed = true; Done("error: 撮影を始められない"); return; }
 
         // 出すべきコマ数（実時間から）。追いついていれば描かない。遅れていれば 1 回描いて残りは繰り返す。
-        int due = Mathf.FloorToInt((Time.realtimeSinceStartup - _captureT0) * _fps) + 1;
+        int due = Mathf.FloorToInt((SimTime.Realtime - _captureT0) * _fps) + 1;
         if (_videoFrames >= due) return;
         _swRender.Start();
         byte[] frame = Render();
@@ -170,18 +178,20 @@ public sealed class XpReplayCapture : MonoBehaviour
         _cam = go.AddComponent<Camera>();
         _cam.enabled = false;
 
-        AudioListener? listener = FindObjectOfType<AudioListener>();
+        // 固定刻みでは音を撮らない。音は実時間でしか鳴らず、速く進む絵と長さが合わない。
+        AudioListener? listener = SimTime.Fixed ? null : FindObjectOfType<AudioListener>();
         if (listener != null)
         {
             _tap = listener.gameObject.AddComponent<XpReplayAudioTap>();
             _tap.Begin(_audioTmp);
         }
+        else if (SimTime.Fixed) Debug.Log("[Replay] 固定刻みなので音は撮らない");
         else Debug.LogWarning("[Replay] AudioListener が居ない。音は撮れない");
 
-        _captureT0 = Time.realtimeSinceStartup;
+        _captureT0 = SimTime.Realtime;
         _capturing = true;
         Debug.Log($"[Replay] 撮影を始めた {_w}x{_h} {_fps}fps msaa={_msaa} view={_view} fov={_fov:F0} " +
-                  $"音={AudioSettings.outputSampleRate}Hz → {_out}");
+                  $"音={AudioSettings.outputSampleRate}Hz gpu={SystemInfo.graphicsDeviceName} → {_out}");
         return true;
     }
 
@@ -190,6 +200,12 @@ public sealed class XpReplayCapture : MonoBehaviour
         _frames.Add(frame);   // 8 コマ溜まったら書き出しを待つ
         _videoFrames++;
     }
+
+    /// <summary>
+    /// いま閉じる（書き切って mp4 にする。終わるまで返らない）。撮る相手が自分の都合で Play を出る直前に呼ぶ
+    /// （ツイン走行の終わり）。閉じた結果は <see cref="IXpCaptureSource.OnCaptureDone"/> へ渡る。閉じ済みなら何もしない。
+    /// </summary>
+    public void Finish() => Close();
 
     private void Close()
     {
@@ -203,7 +219,7 @@ public sealed class XpReplayCapture : MonoBehaviour
         int vCode = _ffmpeg?.ExitCode ?? -1;
         double vSec = _videoFrames / (double)_fps;
         Debug.Log($"[Replay] 撮り終えた: 映像 {_videoFrames} コマ = {vSec:F2}s（描いた {_rendered}・繰り返し {_repeated}）" +
-                  $" / 音 {aSec:F2}s / 進行 {_driver.Tau:F1}s（ffmpeg exit={vCode}）");
+                  $" / 音 {aSec:F2}s / 進行 {_source!.Tau:F1}s（ffmpeg exit={vCode}）");
         if (_rendered > 0)
             Debug.Log($"[Replay] 1 コマあたり: 描画と読み出し {_swRender.Elapsed.TotalMilliseconds / _rendered:F1}ms / " +
                       $"書き出し待ち {_swPush.Elapsed.TotalMilliseconds / _rendered:F1}ms / 圧縮 {_encoder}");
@@ -231,13 +247,8 @@ public sealed class XpReplayCapture : MonoBehaviour
         Done(_out);
     }
 
-    private void Done(string result)
-    {
-        SessionState.SetString(XpReplayDriver.KeyResult, result);
-        SessionState.SetBool(XpReplayDriver.KeyDone, true);
-        Debug.Log("[Replay] 結果: " + result);
-        EditorApplication.ExitPlaymode();
-    }
+    // 結果をどう扱うか（Play を出るか・走行を続けるか）は撮る相手が決める。
+    private void Done(string result) => _source?.OnCaptureDone(result);
 
     private void OnDestroy()
     {
@@ -294,7 +305,7 @@ public sealed class XpReplayCapture : MonoBehaviour
 
     private void PlaceCamera()
     {
-        _driver.HeadPose(out Vector3 hp, out Quaternion hq);
+        _source!.HeadPose(out Vector3 hp, out Quaternion hq);
         Vector3 fwd = hq * Vector3.forward;
         Vector3 flat = new Vector3(fwd.x, 0f, fwd.z);
         Quaternion yaw = flat.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(flat.normalized, Vector3.up) : Quaternion.identity;
@@ -317,7 +328,7 @@ public sealed class XpReplayCapture : MonoBehaviour
         }
 
         // 実時間で均す（描くコマの間隔が揃わなくても、動きの速さは変わらない）。
-        float now = Time.realtimeSinceStartup;
+        float now = SimTime.Realtime;
         float dt = _smoothInit ? Mathf.Clamp(now - _smoothAt, 0f, 0.5f) : 0f;
         _smoothAt = now;
         if (!_smoothInit) { _sp = tp; _sq = tq; _smoothInit = true; }

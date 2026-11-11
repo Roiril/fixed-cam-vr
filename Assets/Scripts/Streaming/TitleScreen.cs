@@ -30,13 +30,12 @@ namespace FixedCamVr.Streaming
     /// <see cref="IntroStage"/> も増やしていないので、ゲート・終了判定・heartbeat・卓・
     /// シミュレータの分岐はどれも変わらない。
     ///
-    /// ⚠ <b>壁を一瞬も見せない担保</b>（依頼の要求）。段 0 では <see cref="IntroDirector"/> が毎フレーム
-    /// <see cref="SealedBox.Apply"/> / <see cref="ContainmentShell.Apply"/> を呼んでいるので、
-    /// タイトルが立っている間ずっと<b>封印の箱は既に描かれている</b>。タイトルの黒は
-    /// 封印の箱（queue 4920）より<b>後</b>（4950）に alpha を 1 へ戻しているだけなので、
-    /// alpha を 0 へ戻せばその箱がそのまま現れる ＝ 開ける途中に壁が覗くフレームが構造的に無い。
-    /// 念のため <see cref="ConcealReady"/> が立つのを待ってから開くが、
-    /// <b>待ちは <see cref="TitleLogic.ConcealWaitMaxSec"/> で必ず切れる</b>（ラッチにしない）。
+    /// ⚠ <b>黒を開くときの「隠すもの待ち」</b>。封印の箱は Attic へ退避済みで
+    /// （<see cref="IntroDirector"/> は <see cref="SealedBox.SetHidden"/> を呼ぶだけ）、
+    /// <see cref="ContainmentShell"/> も導入では描かない（<c>Intro_NeverPaintsTheShellAtAll</c>）。
+    /// 段 0 には隠すものが立たないので <see cref="ConcealReady"/> は実際には立たず、
+    /// 黒は字が消え切ってから <see cref="TitleLogic.ConcealWaitMaxSec"/> だけ待って開く。
+    /// <b>この待ちは必ず切れる</b>（ラッチにしない）。箱か殻が立つ構成に戻したときは、立つのを待ってから開く。
     ///
     /// ⚠ <b>失敗したら素通しに倒す</b>。シェーダやテクスチャが解決できず
     /// <see cref="IsBuilt"/> が false のときは <see cref="IsBlocking"/> も false になり、
@@ -457,7 +456,7 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            _logic.Tick(Time.unscaledDeltaTime, new TitleInput
+            _logic.Tick(SimTime.Dt, new TitleInput
             {
                 dismissRequested = _dismissRequested,
                 concealReady = ConcealReady(),
@@ -834,7 +833,7 @@ namespace FixedCamVr.Streaming
         private void FollowHead()
         {
             if (head == null || _lagRoot == null) return;
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             float headYaw = head.eulerAngles.y;
 
             // 着脱・pause 明けの巨大 dt は SmoothDamp をスナップさせる。種を置き直して進めない。

@@ -112,6 +112,18 @@ namespace FixedCamVr.Streaming
         private static readonly int JackOnId = Shader.PropertyToID("_JackOn");
         private static readonly int JackUvId = Shader.PropertyToID("_JackUv");
 
+        /// <summary>
+        /// 目の代わりにメインスクリーンを増やす（<c>canon/LEDGER.md</c> 0317・試作）。
+        /// 時計・出番・音の間引き・計器はこのクラスのまま。描くものだけが <see cref="ScreenMultiply"/> に替わる。
+        /// </summary>
+        public const bool ScreensReplaceEyes = true;
+
+        private ScreenMultiply? _wall;
+        private bool WallActive => _wall != null && _wall.IsBuilt;
+
+        /// <summary>増えるスクリーンの実体（テレメトリ <c>scrMul=</c>）。試作を切っていれば null。</summary>
+        public ScreenMultiply? Wall => _wall;
+
         private readonly AnomalyEyesLogic _logic = new();
         private readonly EyeAnchorLogic _anchor = new();
         // 開き始め・閉じ始めを体験者の居場所で決める層（canon/LEDGER.md 0093）。
@@ -164,7 +176,7 @@ namespace FixedCamVr.Streaming
         public int OpenCount { get; private set; }
 
         /// <summary>座席の総数（大きい目を含む）。0 なら座席表を組めていない。</summary>
-        public int SeatCount => _seats.Length;
+        public int SeatCount => WallActive ? ScreenMultiplyLayout.Seats.Length : _seats.Length;
 
         /// <summary>
         /// 体験者が区間のどこまで来たか 0..1。<b>-1 = 位置では測っていない</b>
@@ -294,6 +306,13 @@ namespace FixedCamVr.Streaming
             _renderer.allowOcclusionWhenDynamic = false;
 
             BuildJack();
+
+            if (ScreensReplaceEyes)
+            {
+                var wallGo = new GameObject("[ScreenWall]");
+                wallGo.transform.SetParent(transform, worldPositionStays: false);
+                _wall = wallGo.AddComponent<ScreenMultiply>();
+            }
         }
 
         /// <summary>
@@ -406,14 +425,14 @@ namespace FixedCamVr.Streaming
         {
             if (head == null || _sound == null) Resolve();
 
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             _clock += dt;
 
             // 当日写真の同期は常に回す（位置合わせ中・演出の外でも。落とすだけで画には触らない）。
             _photos ??= new EyeJackPhotoStore();
             // ⚠ 乗っ取りの最中は差し替えを仕掛けない。`_jackShots` は Snapshot の**参照**なので、
             //    同期の完了が走ると掴んでいるテクスチャごと破棄される（機序は Tick の doc）。
-            _photos.Tick(showControl, Time.unscaledTime, inUse: _jack.Active);
+            _photos.Tick(showControl, SimTime.Now, inUse: _jack.Active);
 
             // 位置合わせ中は引っ込める（現実に線を重ねて合わせる作業を邪魔しない — rules/show-design.md）。
             // ⚠ ここは「流しきる」の側ではない。合わせている人の視界から**すぐ**消す。
@@ -460,9 +479,22 @@ namespace FixedCamVr.Streaming
             {
                 // 大きい目が視界の外に居続けるなら、群れごと向き直す。
                 // **開いているのは大きい目 1 つ（＝視界の外）だけ**の間しか回さないので、回転は見えない。
-                Vector3 bigWorld = transform.rotation * AnomalyEyesMesh.BigDir;
+                Vector3 bigWorld = transform.rotation * LeadDir;
                 float off = Vector3.Angle(head.forward, bigWorld);
                 if (_anchor.Tick(dt, off, _logic.AnchorLocked)) FaceHead();
+            }
+
+            if (WallActive)
+            {
+                if (_logic.JustStarted) _wall!.BeginRun();
+                _wall!.Drive(dt, _logic.Big, _logic.Field, _logic.Span, _logic.Closing, _clock);
+                _renderer.enabled = false;
+                AppliedBig = _logic.Big;
+                AppliedField = _logic.Field;
+                AppliedFade = _logic.Fade;
+                OpenCount = _wall.OpenCount;
+                DriveEyeSfx(dt);
+                return;
             }
 
             _mat.SetFloat(BigId, _logic.Big);
@@ -539,13 +571,16 @@ namespace FixedCamVr.Streaming
             if (_logic.JustStarted)
             {
                 _lastOpenCount = 0;
+                // スクリーンの版は、最初の 1 枚が点いた瞬間に鳴らす（下）。
+                if (WallActive) EyeBigSfxFired = false;
+                else
                 // ⚠⚠ **6.2 秒あるので付いていかせる**（2026-09-04・`canon/LEDGER.md` 0139）。
                 //    目の群れは頭の**位置**に付いて動くので、置きっぱなしだと体験者が 1.5m 歩いた
                 //    時点で 9.5°（半径 9m）ずれる ＝ 見えている目と鳴っている所が離れる。
                 EyeBigSfxFired = _sound != null
                                  && _sound.PlaySpot(SoundCue.EyeBig, BigEyeWorld(),
                                                     follow: transform);
-                if (_sound != null && !EyeBigSfxFired)
+                if (!WallActive && _sound != null && !EyeBigSfxFired)
                     Debug.LogWarning("[Eyes] 大きい目の音源がありません"
                                      + "（Resources/Sound/sfx_eye_big）。目は無音で開きます。"
                                      + "`py -3.11 tools/ingest-sounds.py --only sfx_eye_big` の後に "
@@ -553,13 +588,20 @@ namespace FixedCamVr.Streaming
             }
 
             int now = OpenCount;
+            if (WallActive && _lastOpenCount == 0 && now > 0 && !EyeBigSfxFired && _sound != null)
+            {
+                EyeBigSfxFired = _sound.PlaySpot(SoundCue.ScreenOn, BigEyeWorld(), follow: transform);
+                _eyeSfxCooldown = EyeSfxMinIntervalSec;
+                _lastOpenCount = now;
+                return;
+            }
             if (now > _lastOpenCount)
             {
                 // ⚠ **閉じるときは鳴らさない**（`Fading` は数が減るので、そもそもここへ来ない）。
                 // ⚠ 1 発 0.15〜0.86 秒と短いが、**群れと同じ相手へ付いていかせる**（0139）。
                 //    開眼の 3 秒は体験者がいちばん動く所で、置きっぱなしだと最後の 1 発ほどずれる。
                 if (_eyeSfxCooldown <= 0f && _sound != null
-                    && _sound.PlaySpot(SoundCue.EyeOpen, NewestOpenEyeWorld(),
+                    && _sound.PlaySpot(WallActive ? SoundCue.ScreenAdd : SoundCue.EyeOpen, NewestOpenEyeWorld(),
                                        EyeSfxPitchSpread, EyeSfxGainSpreadDb,
                                        follow: transform))
                 {
@@ -576,7 +618,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>大きい目のワールド位置。</summary>
         private Vector3 BigEyeWorld()
-            => transform.TransformPoint(AnomalyEyesMesh.BigDir * AnomalyEyesMesh.RadiusM);
+            => transform.TransformPoint(WallActive
+                ? ScreenMultiplyLayout.Seats[0].Center
+                : AnomalyEyesMesh.BigDir * AnomalyEyesMesh.RadiusM);
+
+        /// <summary>最初に出るものの方角（群れの座標）。視界に入れ続けるために向き直す基準。</summary>
+        private Vector3 LeadDir => WallActive ? ScreenMultiplyLayout.Seats[0].Direction : AnomalyEyesMesh.BigDir;
 
         /// <summary>
         /// <b>いちばん最後に開いた目</b>のワールド位置（開く順位がいまの進みにいちばん近いもの）。
@@ -584,6 +631,10 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private Vector3 NewestOpenEyeWorld()
         {
+            if (WallActive)
+                return transform.TransformPoint(
+                    ScreenMultiplyLayout.Seats[ScreenMultiplyLayout.NewestOpen(_logic.Field)].Center);
+
             float best = -1f;
             Vector3 dir = AnomalyEyesMesh.BigDir;
             for (int i = 0; i < _seats.Length; i++)
@@ -690,6 +741,7 @@ namespace FixedCamVr.Streaming
             AppliedFade = 0f;
             OpenCount = 0;
             if (_renderer != null) _renderer.enabled = false;
+            if (_wall != null) _wall.Hide();
         }
 
         private static void DestroySafe(Object o)

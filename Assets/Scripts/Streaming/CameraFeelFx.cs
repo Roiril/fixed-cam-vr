@@ -59,6 +59,7 @@ namespace FixedCamVr.Streaming
         private static readonly int HeartVignetteId = Shader.PropertyToID("_HeartVignette");
         public const float HeartVignetteBase = 0.66f;
         public const float HeartVignettePulse = 0.16f;
+        private float _heartVignette;
 
         [Tooltip("ライブ映像の供給元（平均輝度と、凍らせる 1 枚の複製元）。null なら同 GameObject → シーンから探す。")]
         [SerializeField] private MjpegScreen? screen;
@@ -147,6 +148,25 @@ namespace FixedCamVr.Streaming
         public float AppliedHeartVignette { get; private set; }
 
         /// <summary>
+        /// 時間切れの手前の沈み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
+        /// ここが受け持つのは周辺の落ち込みだけで、心音のビネットと大きい方を <c>_HeartVignette</c> へ書く
+        /// （<see cref="EndingDecisionLogic.SinkVignette"/>）。映像の明るさは <see cref="IntroDirector"/> が受け持つ。
+        /// </summary>
+        public float EndingSink { get; private set; }
+
+        /// <summary>画へ書いた沈み 0..1。書く先を掴めていなければ -1。テレメトリ <c>sink=</c>。</summary>
+        public float AppliedEndingSink => _material != null ? EndingSink : -1f;
+
+        /// <summary>沈みを受け取って周辺の落ち込みを書き直す。</summary>
+        public void SetEndingSink(float sink)
+        {
+            float s = float.IsNaN(sink) ? 0f : Mathf.Clamp01(sink);
+            if (s == EndingSink) return;
+            EndingSink = s;
+            WriteVignette();
+        }
+
+        /// <summary>
         /// 周回で進む解像度の劣化を書く（<see cref="ShowRunDirector"/> が毎フレーム押す）。
         /// 0 = 量子化しない。**ここが唯一の入口**で、値の意味も対応表も
         /// <see cref="ScreenDecayLogic"/> が持つ。
@@ -190,6 +210,9 @@ namespace FixedCamVr.Streaming
             _logic.Reset();
             CancelTakeoverStatic();
             ApplyFrozen(false);
+            // 時間切れの手前の沈みも畳む。押し続けている間（人形 End の黒の下）は次の LateUpdate で押し直される。
+            EndingSink = 0f;
+            WriteVignette();
             Write();
         }
 
@@ -372,6 +395,7 @@ namespace FixedCamVr.Streaming
             ClearSplit();
             UnhookHeartbeatRun();
             _heartbeatScreen.Reset();
+            EndingSink = 0f;
             ClearHeartbeat();
             Write();
         }
@@ -394,7 +418,7 @@ namespace FixedCamVr.Streaming
         {
             if (screen != null) _logic.ObserveLuma(screen.SourceLuma);
             // 切替 dip・乱れと同じく unscaledDeltaTime（timeScale=0 で凍りつかせない）。
-            _logic.Tick(Time.unscaledDeltaTime);
+            _logic.Tick(SimTime.Dt);
             if (_logic.ConsumeSnapshotRequest()) CaptureEcho();
             ApplyFrozen(_logic.Frozen);
             Write();
@@ -406,7 +430,7 @@ namespace FixedCamVr.Streaming
                            || _heartbeatTimeline == null || _heartbeatShow == null;
             if (missing)
             {
-                _heartbeatResolveWait += Time.unscaledDeltaTime;
+                _heartbeatResolveWait += SimTime.Dt;
                 if (_heartbeatResolveWait >= 1f)
                 {
                     _heartbeatResolveWait = 0f;
@@ -532,6 +556,7 @@ namespace FixedCamVr.Streaming
 
         private void WriteHeartbeat(float seconds, float ripple, float vignette)
         {
+            _heartVignette = vignette;
             if (_material == null)
             {
                 AppliedHeartRipple = 0f;
@@ -542,7 +567,16 @@ namespace FixedCamVr.Streaming
             AppliedHeartVignette = vignette;
             _material.SetFloat(HeartRippleId, ripple);
             _material.SetFloat(HeartTimeId, seconds);
-            _material.SetFloat(HeartVignetteId, vignette);
+            WriteVignette();
+        }
+
+        // `_HeartVignette` を書くのはここだけ。心音のビネットと時間切れの手前の沈みのうち、大きい方を出す
+        // （心音は 3-A の凍結で止まるので、4-A の沈みと実際に重なることはない）。
+        private void WriteVignette()
+        {
+            if (_material == null) return;
+            _material.SetFloat(HeartVignetteId,
+                Mathf.Max(_heartVignette, EndingDecisionLogic.SinkVignette(EndingSink)));
         }
 
         // 「いまの画」を 1 枚だけ RT へ複製する。Blit なのでフォーマット違い（RGB24 → ARGB32）も通る。

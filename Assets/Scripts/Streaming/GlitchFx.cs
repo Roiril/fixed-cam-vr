@@ -113,7 +113,7 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             // 切替 dip と同じく unscaledDeltaTime。timeScale=0 で乱れが凍りつかないようにする。
-            Write(_logic.Tick(Time.unscaledDeltaTime));
+            Write(_logic.Tick(SimTime.Dt));
         }
 
         /// <summary>
@@ -133,7 +133,7 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(GlitchId, level);
             // シードは実時間。_Time.y を使わないのは Editor プレビュー（Play しない静止画検証）で
             // 同じ絵を再現できるようにするため。
-            _material.SetFloat(GlitchSeedId, Time.unscaledTime);
+            _material.SetFloat(GlitchSeedId, SimTime.Now);
         }
     }
 }

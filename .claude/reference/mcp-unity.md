@@ -1,13 +1,6 @@
 ---
 name: mcp-unity
-description: Unity MCP for Unity の使い方規約。シーン / コンポーネント / アセット操作前に読む
-paths:
-  - "Assets/**/*.unity"
-  - "Assets/**/*.prefab"
-  - "Assets/**/*.cs"
-  - "Assets/**/*.asset"
-  - "Assets/**/*.mat"
-  - "ProjectSettings/**"
+description: Unity MCP for Unity の使い方規約（退避路）。MCP で Editor を触る前に明示的に読む。reference/ なので自動では載らない
 ---
 
 # Unity MCP 使用規約
@@ -100,4 +93,4 @@ paths:
 
 - `Library/`, `Temp/`, `Logs/`, `UserSettings/` を MCP 経由でも直接編集しない（生成物）
 - ProjectSettings/ を理由なく書き換えない（特に GraphicsSettings/QualitySettings）
-- `Packages/manifest.json` の dependency 追加削除はユーザー事前報告
+- `Packages/manifest.json` の dependency 追加削除は fable アドバイザー手続きで決めて事後報告（`~/.claude/rules/fable-advisor.md`）

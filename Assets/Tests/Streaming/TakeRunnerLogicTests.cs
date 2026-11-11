@@ -518,6 +518,30 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(d.takeIndex, Is.EqualTo(1), "打ち切り後、入った区間の演出は通常どおり武装される");
         }
 
+        [Test]
+        public void Yield_CarriesWhetherTheVisitorMovedForward()
+        {
+            var a = Enter(2, 2, 0f, 30f);
+            a.yieldOnZoneChange = true;
+            var l = Make(a);
+            Enter(l, 2, 2, 0f);
+            l.Tick(0f, 2);
+            TakeRunnerLogic.Decision forward = l.OnZoneCommitted(3, 0, true, 2, 2, 1f, forward: true);
+            Assert.That(forward.reason, Is.EqualTo(TakeRunnerLogic.EndReason.Yielded));
+            Assert.That(forward.yieldedForward, Is.True, "順路の次の区間へ抜けた yield");
+            Assert.That(l.OutcomeOf(0), Is.EqualTo(TakeRunnerLogic.Outcome.Unresolved),
+                "前へ抜けても once の決着の規則は変えない");
+
+            var b = Enter(2, 2, 0f, 30f);
+            b.yieldOnZoneChange = true;
+            var back = Make(b);
+            Enter(back, 2, 2, 0f);
+            back.Tick(0f, 2);
+            TakeRunnerLogic.Decision backtrack = back.OnZoneCommitted(2, 1, true, 2, 2, 1f, forward: false);
+            Assert.That(backtrack.reason, Is.EqualTo(TakeRunnerLogic.EndReason.Yielded));
+            Assert.That(backtrack.yieldedForward, Is.False, "引き返しの yield");
+        }
+
         // ---- 復帰先の再計算 ----
 
         [Test]
@@ -725,6 +749,164 @@ namespace FixedCamVr.Streaming.Tests
                 "別の周・別のカメラの区間では武装していないので踏んでも出ない");
             Enter(l, 3, 2, 5f, hadPrev: true, prevLap: 1, prevCam: 0);
             Assert.That(l.Tick(5f, 2, Crossed(5f, 2)).action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+        }
+
+        // ---- 3 周目の録画カット: 2 周目の歩き方で切り上げる（canon/OPEN.md 状態 3 の案） ----
+
+        [Test]
+        public void RecordedCut_SlowWalker_KeepsTheAuthoredLength()
+        {
+            // 滞在 ≥ 著作の尺 + DollShowSec なら、録画は著作どおり最後まで流れる。
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, 8f + TakeRunnerLogic.DollShowSec), Is.EqualTo(8f));
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, 20f), Is.EqualTo(8f));
+        }
+
+        [Test]
+        public void RecordedCut_FastWalker_LeavesTimeForTheDoll()
+        {
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, 7.7f), Is.EqualTo(5.2f).Within(1e-4f),
+                "滞在から人形を見せる分を引いた尺で切り上げる");
+        }
+
+        [Test]
+        public void RecordedCut_VeryFastWalker_KeepsTheMinimum()
+        {
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, 4f), Is.EqualTo(TakeRunnerLogic.MinRecordedSec));
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, 0.5f), Is.EqualTo(TakeRunnerLogic.MinRecordedSec));
+        }
+
+        [Test]
+        public void RecordedCut_NeverLongerThanTheAuthoredLength()
+        {
+            // 著作の尺が最短より短い録画は、最短まで延ばさない。
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(2f, 1f), Is.EqualTo(2f));
+        }
+
+        [Test]
+        public void RecordedCut_UnknownDwell_KeepsTheAuthoredLength()
+        {
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, -1f), Is.EqualTo(8f));
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, 0f), Is.EqualTo(8f));
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, float.NaN), Is.EqualTo(8f));
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(8f, float.PositiveInfinity), Is.EqualTo(8f));
+        }
+
+        [Test]
+        public void RecordedCut_NonPositiveAuthoredLength_PassesThrough()
+        {
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(-1f, 4f), Is.EqualTo(-1f));
+            Assert.That(TakeRunnerLogic.ResolveRecordedCutSec(0f, 4f), Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void Dwell_IsRecordedWhenTheVisitorLeavesTheSegment()
+        {
+            var l = Make();
+            Enter(l, 2, 0, 0f);
+            Enter(l, 2, 1, 10f, hadPrev: true, prevLap: 2, prevCam: 0);
+            Assert.That(l.DwellSecOf(2, 0), Is.EqualTo(10f));
+            Assert.That(l.DwellSecOf(2, 1), Is.EqualTo(-1f), "まだ出ていない区間は分からない");
+            Enter(l, 2, 2, 17.5f, hadPrev: true, prevLap: 2, prevCam: 1);
+            Assert.That(l.DwellSecOf(2, 1), Is.EqualTo(7.5f));
+            Assert.That(l.DwellSecOf(1, 1), Is.EqualTo(-1f), "入ったことの無い区間は分からない");
+        }
+
+        [Test]
+        public void Dwell_SameSegmentTwice_KeepsTheLongest()
+        {
+            var l = Make();
+            Enter(l, 2, 1, 0f);
+            Enter(l, 2, 0, 6f, hadPrev: true, prevLap: 2, prevCam: 1);   // 6 秒で戻って
+            Enter(l, 2, 1, 7f, hadPrev: true, prevLap: 2, prevCam: 0);
+            Enter(l, 2, 2, 9f, hadPrev: true, prevLap: 2, prevCam: 1);   // 2 回目は 2 秒
+            Assert.That(l.DwellSecOf(2, 1), Is.EqualTo(6f));
+        }
+
+        [Test]
+        public void Dwell_SameSegmentRecommit_DoesNotCloseIt()
+        {
+            var l = Make();
+            Enter(l, 2, 1, 0f);
+            Enter(l, 2, 1, 3f, hadPrev: true, prevLap: 2, prevCam: 1);   // 区間が変わっていない
+            Assert.That(l.DwellSecOf(2, 1), Is.EqualTo(-1f));
+            Enter(l, 2, 2, 8f, hadPrev: true, prevLap: 2, prevCam: 1);
+            Assert.That(l.DwellSecOf(2, 1), Is.EqualTo(8f), "入った時刻は最初の確定のまま");
+        }
+
+        [Test]
+        public void Dwell_IsClearedByResetRun()
+        {
+            var l = Make();
+            Enter(l, 2, 1, 0f);
+            Enter(l, 2, 2, 5f, hadPrev: true, prevLap: 2, prevCam: 1);
+            l.ResetRun();
+            Assert.That(l.DwellSecOf(2, 1), Is.EqualTo(-1f), "前の体験者の歩き方を持ち越さない");
+        }
+
+        private static ShowStepDef Step(string source, string durKind, float durSec = 0f)
+            => new() { source = source, durKind = durKind, durSec = durSec, recLap = 1 };
+
+        private static ShowStepDef[] RecThenPlate()
+            => new[]
+            {
+                Step(TakeSchema.SourceRec, TakeSchema.DurUntilClipEnd),
+                Step(TakeSchema.SourcePlate, TakeSchema.DurUntilZoneChange),
+            };
+
+        [Test]
+        public void RecordedCutTarget_Lap3RecFollowedByPlate()
+        {
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(RecThenPlate(), 0, 3), Is.True);
+        }
+
+        [Test]
+        public void RecordedCutTarget_Laps1And2_AreNotTargets()
+        {
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(RecThenPlate(), 0, 2), Is.False);
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(RecThenPlate(), 0, 1), Is.False);
+        }
+
+        [Test]
+        public void RecordedCutTarget_3ALineDrivenTake_IsNotATarget()
+        {
+            // 3-A の形: 位置で選ぶ録画（線待ち）→ 続きから流す録画 → 無人の画。
+            ShowStepDef follow = Step(TakeSchema.SourceRec, TakeSchema.DurUntilLine);
+            follow.recFollow = true;
+            ShowStepDef cont = Step(TakeSchema.SourceRec, TakeSchema.DurUntilClipEnd);
+            cont.recContinue = true;
+            var steps = new[] { follow, cont, Step(TakeSchema.SourcePlate, TakeSchema.DurUntilZoneChange) };
+            for (int i = 0; i < steps.Length; i++)
+                Assert.That(TakeRunner.IsRecordedCutBeforeDoll(steps, i, 3), Is.False, $"cut {i}");
+        }
+
+        [Test]
+        public void RecordedCutTarget_OtherShapes_AreNotTargets()
+        {
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(RecThenPlate(), 1, 3), Is.False, "plate のカット自身");
+            var recThenLive = new[]
+            {
+                Step(TakeSchema.SourceRec, TakeSchema.DurUntilClipEnd),
+                Step(TakeSchema.SourceLive, TakeSchema.DurSec, 3f),
+            };
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(recThenLive, 0, 3), Is.False, "後ろが人形でない");
+            ShowStepDef[] cont = RecThenPlate();
+            cont[0].recContinue = true;
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(cont, 0, 3), Is.False, "続きから流す録画");
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(null, 0, 3), Is.False);
+            Assert.That(TakeRunner.IsRecordedCutBeforeDoll(RecThenPlate(), 5, 3), Is.False);
+        }
+
+        [Test]
+        public void AuthoredRecordedCutSec_ReadsOnlyTimedLengths()
+        {
+            Assert.That(TakeRunner.AuthoredRecordedCutSec(Step(TakeSchema.SourceRec, TakeSchema.DurSec, 6f), null),
+                Is.EqualTo(6f));
+            Assert.That(TakeRunner.AuthoredRecordedCutSec(Step(TakeSchema.SourceRec, TakeSchema.DurSec, 0f), null),
+                Is.EqualTo(-1f));
+            Assert.That(TakeRunner.AuthoredRecordedCutSec(Step(TakeSchema.SourceRec, TakeSchema.DurUntilZoneChange), null),
+                Is.EqualTo(-1f), "区間待ちは切り上げない");
+            Assert.That(TakeRunner.AuthoredRecordedCutSec(Step(TakeSchema.SourceRec, TakeSchema.DurUntilClipEnd), null),
+                Is.EqualTo(-1f), "録画の長さが分からなければ切り上げない");
         }
 
     }

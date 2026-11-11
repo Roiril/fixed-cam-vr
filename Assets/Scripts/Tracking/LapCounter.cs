@@ -67,6 +67,14 @@ namespace FixedCamVr.Tracking
         /// </summary>
         public int SegmentLap => _segLap;
 
+        /// <summary>
+        /// <b>直近の <see cref="Feed"/> が順路の前進だったか</b>（<see cref="IsForward"/> の判定そのもの）。
+        /// 逆走・同一・スキップ・順路が空・<see cref="Seed"/>・<see cref="Reset"/> では false。
+        /// <c>policy:"yield"</c> の打ち切りが「前へ抜けた」か「引き返した」かを演出側へ運ぶ
+        /// （<see cref="SegmentEntry.Forward"/>）。
+        /// </summary>
+        public bool LastFeedForward { get; private set; }
+
         /// <summary>order 内の現在確定位置（テスト・診断用）。</summary>
         public int Position => _pos;
 
@@ -87,6 +95,7 @@ namespace FixedCamVr.Tracking
             _lap = 1;
             _segLap = 1;
             _hasPrev = false;
+            LastFeedForward = false;
             // ⚠ 前の体験者の足跡を残さない。残すと、次の体験者の 1 周目が
             //   「前の人が最後に居たときの周」として読まれる。
             _lastLapByCamera.Clear();
@@ -99,6 +108,7 @@ namespace FixedCamVr.Tracking
         public bool Feed(int camera)
         {
             int n = _order.Length;
+            LastFeedForward = false;
             if (n == 0)
             {
                 _segLap = _lap;
@@ -112,6 +122,7 @@ namespace FixedCamVr.Tracking
                 Remember(camera, _segLap);
                 return false;
             }
+            LastFeedForward = true;
             _pos = (_pos + 1) % n;
             bool advanced = _pos == 0;
             if (advanced) _lap++;
@@ -126,6 +137,7 @@ namespace FixedCamVr.Tracking
         /// </summary>
         public int Seed(int camera)
         {
+            LastFeedForward = false;
             _segLap = LastLapOf(camera);
             Remember(camera, _segLap);
             return _segLap;
@@ -238,7 +250,8 @@ namespace FixedCamVr.Tracking
             _subscribed = false;
         }
 
-        // runEpoch 変化（Web の「ラン開始」）を ShowControlClient から受けて周回・cue をリセットする。
+        // ShowControlClient.LapCountReset（周の数え直し）を受けて周回・cue をリセットする。
+        // 発火は卓の新しい体験者・現地の新しい体験者・導入から本編へ移るときの 3 か所で、体験者が替わった合図ではない。
         private void OnLapCountReset() => ResetRun();
 
         private void Start() => ApplyOrder();
@@ -261,8 +274,8 @@ namespace FixedCamVr.Tracking
             int[] order = showControl != null ? showControl.CourseOrder : Array.Empty<int>();
             // ⚠⚠ **順路が変わっていなければ触らない**（2026-09-04）。`SetOrder` は中で `Reset()` を
             //    呼ぶので（lap=1 / pos=0 / 足跡クリア）、会期中に卓でフロアマップを保存して
-            //    `CourseChanged` が飛ぶだけで、**体験中の人の周回が 1 に戻る**。終了の出口は
-            //    `lap > totalLaps` の 1 本しかないので、その人は時間切れまで終われない。
+            //    `CourseChanged` が飛ぶだけで、**体験中の人の周回が 1 に戻る**。周回由来の出口は
+            //    `lap > totalLaps` の 1 本なので、その人は時間切れ（か RequestFinish）まで終われない。
             if (_appliedOrder == null || !OrderEquals(_appliedOrder, order))
             {
                 _appliedOrder = (int[])order.Clone();
@@ -310,7 +323,8 @@ namespace FixedCamVr.Tracking
                 Debug.Log($"[LapCounter] 引き返し: camera={camera} は {_logic.SegmentLap} 周目の区間として扱う" +
                           $"（進行は {_logic.ProgressLap} 周目）");
             // lap を更新した後に進入を橋渡しする（scheduler は最新 lap で評価される）。
-            cueScheduler?.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: _logic.SegmentLap, progressLap: _logic.ProgressLap));
+            cueScheduler?.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: _logic.SegmentLap,
+                progressLap: _logic.ProgressLap, forward: _logic.LastFeedForward));
         }
 
         private static string FormatOrder(int[] order)

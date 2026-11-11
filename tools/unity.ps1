@@ -8,10 +8,12 @@
 #   .\tools\unity.ps1 build fixedcam -Release   # 提出用（Development なし）
 #   .\tools\unity.ps1 build fixedcam -NoExport  # 前回焼き込んだ著作のまま焼く
 #   .\tools\unity.ps1 test
+#   .\tools\unity.ps1 bake-check                # 焼き直し待ちだけを見る（Unity を起動しない。待ちがあれば exit 1）
 #   .\tools\unity.ps1 menu                      # Editor の機能を CLI から呼ぶ（引数なしで一覧）
 #   .\tools\unity.ps1 menu scene                # Build Main Scene
 #   .\tools\unity.ps1 menu actor -Set actor=Ichimatsu
 #   .\tools\unity.ps1 replay -Set rec=latest,view=eye   # Quest の体験の記録を PC で流し直して広角の mp4 に
+#   .\tools\unity.ps1 twin-run -Set out=<フォルダ>,capture=eye   # HMD なしの通し。capture=eye で目線の動画も同じ Play で撮る（入口は tools/twin-verify.py）
 #   .\tools\unity.ps1 raw editors -i
 #
 # なぜ CLI なのか（旧経路との違い）:
@@ -24,7 +26,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('build', 'test', 'open', 'doctor', 'menu', 'raw', 'replay', 'twin-run', 'crt-tune')]
+    [ValidateSet('build', 'test', 'bake-check', 'open', 'doctor', 'menu', 'raw', 'replay', 'twin-run', 'crt-tune')]
     [string]$Action,
 
     [Parameter(Position = 1)]
@@ -103,7 +105,7 @@ $Menus = [ordered]@{
                             Desc = '追いつき直後の乗っ取りと途中解除を3言語で実描画する'
                             Out = 'Logs/comms-readable-20260921/ja/finished.png' }
     'comms-preview'    = @{ Method = 'FixedCamVr.Streaming.EditorTools.CommsPreview.Run'
-                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set lang=ja|en|fr,invasion=0|0.25|0.75|1,frames=0／→ make-preview-video.py で mp4）'
+                            Desc = 'AIエージェントからの連絡の出方を 1 コマずつ焼く（-Set lang=ja|en|fr,invasion=0|0.25|0.75|1／全通知の連番も撮るなら frames=1（既定は撮らない）／→ make-preview-video.py で mp4）'
                             Out = 'Assets/Screenshots/comms-preview/place.png'
                             OutLang = $true }
     'glitch'           = @{ Method = 'FixedCamVr.Streaming.EditorTools.GlitchPreview.Run'
@@ -113,6 +115,10 @@ $Menus = [ordered]@{
                             Desc = 'スクリーンの外の闇に目が開く異変を 1 コマずつ焼く（-Set density=0..1 / → make-preview-video.py で mp4）'
                             Set = 'density=<0..1 開く目の割合> / trim=<止まる 3 つを詰める秒> / hold=<開けっ放しの秒> / scale=<出力の倍率。2 で Quest の片眼の密度>'
                             Out = 'Assets/Screenshots/eyes-preview/stage_4_hold.png' }
+    'screen-wall'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.ScreenWallPreview.Run'
+                            Desc = '増えるスクリーンと黒い霧を、霧あり（fog）と霧なし（flat）で焼く。静止画 各 9 枚・連番・段ごとの明るさ report.tsv'
+                            Set = 'frames=0（連番を撮らない）'
+                            Out = 'Assets/Screenshots/screen-wall/report.tsv' }
     'eyejack'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.EyeJackPreview.Run'
                             Desc = '目の視界ジャック（当日写真ぱぱぱ）を stationary / walker の 2 通りで焼く（→ make-preview-video.py で mp4）'
                             Set = 'photos=<正規化済み写真のフォルダ（既定 tools/web-compositor/eyejack/norm）>'
@@ -243,6 +249,21 @@ function Assert-Cli {
     if (-not (Test-Path $Cli)) {
         throw "unity CLI が無い: $Cli （導入は ~/.claude/reference/unity-cli-ops.md §1）"
     }
+}
+
+# ⚠ 内蔵 GPU と独立 GPU を両方持つノート PC では、batchmode の Unity は内蔵 GPU（Intel UHD）で描く。
+#    再生の撮影の 1 コマが 200ms かかり、毎秒 3 コマのカクカクな動画になった（2026-11-11）。独立 GPU を番号で指す。
+#    Windows の Editor で効くのは -force-device-index（-gpu は効かない。どちらも実測。確かめるのはログの Renderer: 行）。
+#    DXGI の並びは内蔵が 0・独立が 1。違う PC は環境変数 FCV_UNITY_GPU で番号を渡す（-1 で指さない）
+function Get-UnityGpuArgs {
+    $index = -1
+    if ($env:FCV_UNITY_GPU) { $index = [int]$env:FCV_UNITY_GPU }
+    else {
+        $gpus = @(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name })
+        if (($gpus -match 'Intel').Count -gt 0 -and ($gpus -match 'NVIDIA|Radeon|AMD').Count -gt 0) { $index = 1 }
+    }
+    if ($index -ge 0) { return @('-force-device-index', "$index") }
+    return @()
 }
 
 # Editor を開いたまま batchmode を回すと衝突する（unity-cli-ops.md §6）
@@ -651,6 +672,17 @@ switch ($Action) {
         exit $code
     }
 
+    'bake-check' {
+        # 焼き直し待ちだけを見る。Unity を起動しないので、Editor や走行が動いていても打てる（tools/verify.py の bake の門）。
+        # 判定は build fixedcam と同じ Get-StaleBakes（$Menus / $PyBakes の Src と Out の mtime 比較）。ここで二重に書かない。
+        $stale = @(Get-StaleBakes)
+        if ($stale.Count -eq 0) { Write-Host '焼き直し待ちは無い' -ForegroundColor Green; exit 0 }
+        Write-Host "焼き直し待ち $($stale.Count) 件。このまま焼いても APK には入らない" -ForegroundColor Red
+        foreach ($k in $stale) { Write-Host "  - $($k.Fix)（$($k.Desc)）" -ForegroundColor Yellow }
+        Write-Host '  git checkout 直後は mtime が揃うので誤検知しうる' -ForegroundColor DarkGray
+        exit 1
+    }
+
     'menu' {
         Assert-Cli
         if (-not $App -or $App -in @('--list', '-l', 'list')) { Show-Menus; exit 0 }
@@ -704,7 +736,7 @@ switch ($Action) {
         Write-Host $desc -ForegroundColor Cyan
         Write-Host "  $method" -ForegroundColor DarkGray
         $EditorLog = New-UnityInvocationLog 'run-menu'
-        Invoke-SafeUnityCli -LogPath $EditorLog -Arguments (@('run', $Root, '--non-interactive', '--', '-executeMethod', $method) + $fcv + $Rest + @('-logFile', $EditorLog))
+        Invoke-SafeUnityCli -LogPath $EditorLog -Arguments (@('run', $Root, '--non-interactive', '--', '-executeMethod', $method) + $fcv + (Get-UnityGpuArgs) + $Rest + @('-logFile', $EditorLog))
         $code = $script:UnityCliExitCode
 
         Show-UnityLog
@@ -752,7 +784,7 @@ switch ($Action) {
         New-Item -ItemType Directory -Path $crtLogDir -Force | Out-Null
         $crtLog = Join-Path $crtLogDir ((Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
         $crtArguments = @('-batchmode', '-projectPath', $Root,
-            '-executeMethod', 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.Run', '-logFile', $crtLog)
+            '-executeMethod', 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.Run', '-logFile', $crtLog) + (Get-UnityGpuArgs)
         $crtQuoted = $crtArguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
         $crtProcess = Start-Process -FilePath $crtEditor -ArgumentList $crtQuoted -PassThru -WindowStyle Hidden
         Write-Host 'CRTの調整を起動しています。'
@@ -778,6 +810,7 @@ switch ($Action) {
     { $_ -in 'replay', 'twin-run' } {
         # replay: 体験の記録（Quest の ExperienceRecorder）を本番の Main シーンへ流し直し、広い画角で mp4 にする。
         # twin-run: HMD も Quest も無しに本番の Main シーンを通し、体験の記録を作る（入口は tools/twin-verify.py）。
+        #           -Set capture=eye なら同じ Play で目線の動画（out\eye.mp4）と replay_xp.log も書く。
         # ⚠ `unity run` は -quit を必ず張る。Play は executeMethod が返った後も走り続けるので、
         #    ここだけは Unity.exe を直接 batchmode で起こし、終わったら Editor 側が自分で閉じる（XpReplayRun）。
         Assert-NotLocked
@@ -800,6 +833,7 @@ switch ($Action) {
         $argList = @('-batchmode', '-projectPath', $Root,
                      '-executeMethod', "FixedCamVr.Streaming.EditorTools.Replay.$playMethod.Run",
                      '-logFile', $log) + $fcv
+        $argList += Get-UnityGpuArgs   # 撮影は描画が律速。内蔵 GPU だとカクつく
         # 引数に空白があれば引用する（Start-Process は配列をそのまま連結する）
         $quoted = $argList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
         Write-Host "$(if ($Action -eq 'twin-run') { 'ツイン走行（体験の尺 + 起動に 1 分前後）' } else { '体験の再生と撮影（記録の尺 + 起動に 1 分前後）' })" -ForegroundColor Cyan

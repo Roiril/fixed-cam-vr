@@ -29,23 +29,29 @@ namespace FixedCamVr.Streaming
         // 401 はフェイルオープン（null 返し）だが、原因が分からず黙って /info /health が
         // 効かない状態になりやすい。ホスト毎に最初の 1 回だけ認証ヒント付きで警告する
         //（プロセス全体で 1 回だと、カメラ 3 台構成で別カメラのパスワード設定漏れが黙殺される）。
+        // 背景スレッドから触るので lock で守る。
         private static readonly System.Collections.Generic.HashSet<string> _logged401Hosts = new();
 
-        public static async Task<StreamMetadata?> FetchInfoAsync(string url, int timeoutSec = 3, string? basicAuthToken = null)
-        {
-            string? json = await GetTextAsync(url, timeoutSec, basicAuthToken);
-            if (string.IsNullOrEmpty(json)) return null;
-            try { return JsonUtility.FromJson<StreamMetadata>(json); }
-            catch (Exception ex) { Debug.LogWarning($"[StreamMetadataFetcher] /info parse failed: {ex.Message}"); return null; }
-        }
+        // 3 台ぶんの /info（1.5 秒ごと）と /health（2 秒ごと）がメインスレッドを止めないよう、
+        // 要求の組み立てから JSON の展開まで全部背景で行う。JsonUtility は背景スレッドから呼んでよい。
+        // 呼び手の await はそれぞれの文脈（メインスレッド）へ戻るので、結果の書き込みは今までどおり。
+        public static Task<StreamMetadata?> FetchInfoAsync(string url, int timeoutSec = 3, string? basicAuthToken = null)
+            => Task.Run<StreamMetadata?>(async () =>
+            {
+                string? json = await GetTextAsync(url, timeoutSec, basicAuthToken).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(json)) return null;
+                try { return JsonUtility.FromJson<StreamMetadata>(json); }
+                catch (Exception ex) { Debug.LogWarning($"[StreamMetadataFetcher] /info parse failed: {ex.Message}"); return null; }
+            });
 
-        public static async Task<StreamHealth?> FetchHealthAsync(string url, int timeoutSec = 2, string? basicAuthToken = null)
-        {
-            string? json = await GetTextAsync(url, timeoutSec, basicAuthToken);
-            if (string.IsNullOrEmpty(json)) return null;
-            try { return JsonUtility.FromJson<StreamHealth>(json); }
-            catch (Exception ex) { Debug.LogWarning($"[StreamMetadataFetcher] /health parse failed: {ex.Message}"); return null; }
-        }
+        public static Task<StreamHealth?> FetchHealthAsync(string url, int timeoutSec = 2, string? basicAuthToken = null)
+            => Task.Run<StreamHealth?>(async () =>
+            {
+                string? json = await GetTextAsync(url, timeoutSec, basicAuthToken).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(json)) return null;
+                try { return JsonUtility.FromJson<StreamHealth>(json); }
+                catch (Exception ex) { Debug.LogWarning($"[StreamMetadataFetcher] /health parse failed: {ex.Message}"); return null; }
+            });
 
         private static async Task<string?> GetTextAsync(string url, int timeoutSec, string? basicAuthToken = null)
         {
@@ -55,18 +61,22 @@ namespace FixedCamVr.Streaming
                 using var req = new HttpRequestMessage(HttpMethod.Get, url);
                 if (basicAuthToken != null)
                     req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basicAuthToken);
-                using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token);
+                using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token).ConfigureAwait(false);
                 if (!resp.IsSuccessStatusCode)
                 {
-                    if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                        && _logged401Hosts.Add(new Uri(url).Host))
+                    if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                     {
-                        Debug.LogWarning($"[StreamMetadataFetcher] GET {url} -> 401 Unauthorized。" +
-                                         "CameraSource の username/password を確認（IP Camera Lite 既定 admin/admin）。/info /health は無効化して続行。");
+                        bool first;
+                        lock (_logged401Hosts) first = _logged401Hosts.Add(new Uri(url).Host);
+                        if (first)
+                        {
+                            Debug.LogWarning($"[StreamMetadataFetcher] GET {url} -> 401 Unauthorized。" +
+                                             "CameraSource の username/password を確認（IP Camera Lite 既定 admin/admin）。/info /health は無効化して続行。");
+                        }
                     }
                     return null;
                 }
-                return await resp.Content.ReadAsStringAsync();
+                return await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
             }
             catch (TaskCanceledException) { return null; }
             catch (HttpRequestException) { return null; }

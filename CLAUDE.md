@@ -28,11 +28,13 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | 1 周回す（読む → 参照を置く → 予測 → 安い門 → 焼く → 見る → 台帳） | `skills/work-round` |
 | ユーザーに見せて赤入れをもらう（前後・試した版・隣の場面を並べ 1 点訊く） | `skills/direction-round` |
 | 体験を頭から終わりまで通して見直す | `skills/show-review` |
+| ツインの走行でシュビーが自分で見つけて直す（走る → 新規の判定を仕分ける → 場面ごとに見る → 1 つ直す → 並べる） | `skills/twin-loop` |
 | 「動かない」を層で切り分ける | `skills/troubleshoot` |
 | コードを初めて読む（体験 1 回の流れとクラスの持ち主） | [Assets/Scripts/README.md](Assets/Scripts/README.md) |
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |
 | 説明資料用に体験中の画を撮る（左グリップ → 4 種類。**展示本番の機は OFF**） | [memory/experience_shots.md](.claude/memory/experience_shots.md)（取り出しは `py -3.11 tools/quest-shots.py pull`） |
 | HMD を被らずに本番シーンを最初から最後まで通す（ツインの映像・判定・目線の動画・見る面） | `py -3.11 tools/twin-verify.py`（[memory/twin_verify.md](.claude/memory/twin_verify.md)。見る面は `tools/twin-game/verify.html`） |
+| 演出の今の姿を一覧で見る・直す前後を並べる（体験者の目の山場 1 枚と動画を起きる順に。年表つき） | [tools/fx-library/](tools/fx-library/README.md)（`py -3.11 tools/fx-library/build.py`。出力は Drive `reports/fx-library/`） |
 | 紹介動画を広い画角で撮る（Quest で記録 → PC で本番を流し直して mp4） | [memory/experience_replay.md](.claude/memory/experience_replay.md)（`tools/quest-xprec.py on` → `pull` → `.\tools\unity.ps1 replay`） |
 | 写実のデジタルツイン（広報の静止画・固定カメラの動画・ゲームのように見るビューア） | [tools/twin/](tools/twin/README.md) と [tools/twin-game/](tools/twin-game/README.md)。監査の点と罠は [memory/twin_cycles.md](.claude/memory/twin_cycles.md) |
 | 音を触る（BGM・効果音・環境音・遷移） | `rules/sound-design.md`（**先に読む**） |
@@ -68,19 +70,23 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 .\tools\unity.ps1 menu scene      # 例: Build Main Scene（ビルド前に必須）
 ```
 
-- **Editor のメニューは `menu` から全部呼べる**（2026-08-09〜）。Setup 6 種・プレビュー / 検証 18 種。
-  値を渡すものは `-Set key=value`（例 `menu actor -Set actor=Ichimatsu`）。
-  一覧に無いものは `menu raw:<完全修飾名>`
-- **GUI でしか動かないのは 5 つだけ**（シーンを開く / テストを開く / フォルダを開く / Scene ビューを動かす /
-  ウィンドウ配置）。どれも batchmode に画面が無いためで、代わりの経路は `menu` の一覧に出る
+- **Editor のメニューは `menu` から呼ぶ**（2026-08-09〜）。短い名前が付いているものは引数なしの `menu` が一覧する
+  （数はここに写さない）。値を渡すものは `-Set key=value`（例 `menu actor -Set actor=Ichimatsu`）。
+  一覧に無い MenuItem は `menu raw:<完全修飾名>`
+- **GUI でしか動かないもの**（シーンを開く / テストを開く / フォルダを開く / ウィンドウ配置）は
+  batchmode に画面が無いためで、代わりの経路は `menu` の一覧に出る（`unity.ps1` の `$GuiOnly`）
 - Editor を GUI で開いて手で触る前提の手順を既定にしない
 - **MCP for Unity は退避路**。CLI が届かないのは「起動中の Editor をライブ操作する」場合だけ
   （Pipeline は Unity 6.0 以上で、2022.3 のこのプロジェクトには入らない）。
-  現状この PC に MCP は未登録。要るときはグローバルの `unity-editor-status` スキルから入り、
+  この PC には登録済みだが、Editor を開いていないと接続失敗になる（それで正常）。要るときはグローバルの `unity-editor-status` スキルから入り、
   このプロジェクト固有の罠は [.claude/reference/mcp-unity.md](.claude/reference/mcp-unity.md)
 - 一般則は `~/.claude/reference/unity-cli-ops.md`
 
 ## 検証
+
+**入口は `py -3.11 tools/verify.py`。** PC の門（道具のテスト・ハーネス・canon・焼き直し待ち・C# テスト・ツインの通し）を同時に回し、1 つの表にする。
+C# テストは検証用の木、ツインはメインの木で並ぶ。軽い門だけなら `--quick`、ツインを実時間で回すなら `--real`。
+実機の門（下の `quest-record.py --walk`）の代わりにはならない（出力は `Logs/verify/<時刻>/summary.json`）。
 
 **3 経路を突き合わせる。どれか 1 つでは切り分けられない。**
 
@@ -92,7 +98,9 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 
 - **`py -3.11 tools/quest-record.py --sec 45 --walk` の 1 回で A・B・C が揃う**（HMD 不要）。
 - **HMD も Quest も配信スマホも無しで体験を通す**: `py -3.11 tools/twin-verify.py`。本番の Main シーンへツインの映像を流し、
-  左 X だけで導入から終幕まで走り、解析器と周の印で判定して目線の動画を残す。実機の代わりではない（圧縮・遅延・両眼・ディスプレイ・パススルーは入らない）
+  左 X だけで導入から終幕まで走り、解析器と周の印で判定して目線の動画を残す。実機の代わりではない（圧縮・遅延・両眼・ディスプレイ・パススルーは入らない）。
+  判定は新規と既知（`tools/twin/known.json`）に分かれて出る。場面ごとのコマと前の走行との左右比較は `py -3.11 tools/twin-look.py cut|pair`。
+  2 本同時に回すなら検証用の木（`py -3.11 tools/twin-tree.py sync` → `run -- <twin-verify の引数>`）
 - 実機を使わない門は 2 つ: `.\tools\unity.ps1 test`（C#）と `py -3.11 tools/test-tools.py`（解析器・現場の道具・ログの書き手と読み手の照合）
   依存は `tools/requirements.txt`
 - ⚠⚠ **機を指定するなら `--serial`。`ANDROID_SERIAL` は効かない**（走行は自分で機を選び直す）。
@@ -122,7 +130,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 
 Unity 2022.3.62f2 LTS / URP / Quest 3（Android・IL2CPP・ARM64）/ Meta XR All-in-One SDK + XRI + OpenXR。
 映像は**スマホ → MJPEG over Wi-Fi → Unity 内デコード**（配信側は姉妹リポ
-[Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)。仕様は `rules/streaming.md`）。
+[Roiril/fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer)。仕様は `rules/stream-link.md`）。
 
 オペレータ卓とブラウザ合成検証は `tools/web-compositor/`（`serve.ps1` → `http://localhost:8099/`）。
 詳細は [memory/web_compositor.md](.claude/memory/web_compositor.md)。

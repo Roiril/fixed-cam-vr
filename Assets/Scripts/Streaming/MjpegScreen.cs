@@ -201,7 +201,7 @@ namespace FixedCamVr.Streaming
         // Texture2D は markNonReadable:false で載せているので CPU から読める（ライブも録画も同じ経路）。
         private void SampleLuma()
         {
-            float now = Time.unscaledTime;
+            float now = SimTime.Now;
             if (now - _lumaStamp < LumaIntervalSec) return;
             _lumaStamp = now;
             var t = _lastAssigned as Texture2D;
@@ -398,7 +398,8 @@ namespace FixedCamVr.Streaming
             try
             {
                 _signalProcessor ??= new CrtSignalProcessor();
-                CrtSignalProfile.ApplySelected(_material);
+                // OnDisable が落とした実行フラグだけ戻す。固定値は PrepareDisplay が書く。
+                CrtSignalProfile.EnableRuntime(_material);
                 _signalProcessor.PrepareDisplay(_material, SourceFrameId);
             }
             catch (System.Exception e)

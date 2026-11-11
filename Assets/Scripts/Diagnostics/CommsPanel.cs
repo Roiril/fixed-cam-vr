@@ -389,6 +389,10 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Prompt => "異変があなたを\n取り込もうとしています。\n排除してください。",
             // ④ 締めの報告で呪いが解けた（0284）。「検出しました」では急なので、終わったことを労う。
             CommsNotice.MarkCleared => "異変を取り除きました。\nお疲れ様です。",
+            // ⑤ 別れの人形が後ろを向いた縁に出す解析の結果。伏線を 1 つだけ回収する（0322）。
+            //    回収するのは「人形は来た人とただ一緒に遊びたかった」（0036）。スイは自分を当事者に
+            //    入れないので主語は「異変」（0146）。⚠ この文はシュビーの案で、ユーザーの判定はまだ無い。
+            CommsNotice.FarewellFinding => "解析が完了しました。\n異変は、一緒に遊ぶ人を\n探していました。",
             _ => "",
         };
 
@@ -426,6 +430,8 @@ namespace FixedCamVr.Diagnostics
             // ③ ここだけが体験者自身を名指しする（0096）。
             CommsNotice.Prompt => "An anomaly is trying to\nabsorb you.\nRemove it.",
             CommsNotice.MarkCleared => "The anomaly is removed.\nThank you for your work.",
+            // ⑤ 日本語と同じく主語は「異変」（0146）。シュビーの案・未判定（0322 / 0036）。
+            CommsNotice.FarewellFinding => "Analysis complete.\nThe anomaly was looking\nfor someone to play with.",
             _ => "",
         };
 
@@ -453,6 +459,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Halt => "Arrêtez-vous !",
             CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber.\nSupprimez-la.",
             CommsNotice.MarkCleared => "Anomalie éliminée.\nMerci pour votre travail.",
+            CommsNotice.FarewellFinding => "Analyse terminée.\nL'anomalie cherchait\nquelqu'un avec qui jouer.",
             _ => "",
         };
 
@@ -669,6 +676,14 @@ namespace FixedCamVr.Diagnostics
         private bool _presentationAbortedThisFrame;
         private bool _runRestartHooked;
         private CameraFeelFx? _feelFx;
+        // ⑤ 別れの解析結果（FarewellFinding）が面に出たままか。持続表示なので自分では引かない —
+        //    終幕の電源断（`CommsCueLogic.FarewellFindingStays` が偽になった縁）でこの面が畳む。
+        //    出ているあいだは長押しの Guide へ移さず、別れの人形の待ち（EndingNoticeOpen）にも数えない。
+        private bool _farewellFindingShown;
+        // ③b（締めの促し）が持続表示で面に出たままか。本編を出た縁でこの面が畳む（ObserveClosingPromptEnd）。
+        private bool _closingPromptShown;
+        // 電源断の時刻を読むために見る終幕。null なら実行時に探す（無ければ本編を出た縁で畳む）。
+        private OutroDirector? _outro;
         // 直前のフレームで何文字出ていたか。**打鍵音はこの増分から鳴らす**（下の Apply）。
         private int _lastShown;
         // ⚠⚠ いまの連絡は**すっと浮かぶ出方**か（`canon/LEDGER.md` 0168）。
@@ -986,6 +1001,8 @@ namespace FixedCamVr.Diagnostics
             if (_feelFx != null) _feelFx.CancelTakeoverStatic();
             _logic.Disable();
             _cue.ResetRun();
+            _farewellFindingShown = false;
+            _closingPromptShown = false;
             _promptReadableNotified = false;
             _invasion.Reset();
             _glitchLevel = 0f;
@@ -1016,6 +1033,7 @@ namespace FixedCamVr.Diagnostics
             if (intro == null) intro = FindObjectOfType<IntroDirector>();
             if (walkGuide == null) walkGuide = FindObjectOfType<WalkGuide>();
             if (_feelFx == null) _feelFx = FindObjectOfType<CameraFeelFx>();
+            if (_outro == null) _outro = FindObjectOfType<OutroDirector>();
             // ⚠ 打鍵音は**この面が持つ**（`ShowSoundDirector` は毎フレーム外から状態を見る層で、
             //    1 秒に 12 回・字の刻みちょうどには鳴らせない）。切替音と同じ構え。
             if (typeSfx == null) typeSfx = GetComponent<TypeAudioCue>();
@@ -1054,6 +1072,8 @@ namespace FixedCamVr.Diagnostics
             _onboardingActive = false;
             _onboardingNotice = CommsNotice.None;
             _cue.ResetRun();
+            _farewellFindingShown = false;
+            _closingPromptShown = false;
             _promptReadableNotified = false;
             _invasion.Reset();
             _glitchLevel = 0f;
@@ -1208,6 +1228,9 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             if (!IsBuilt) return;
+            // 別れの人形は面が閉じてから出る。読んでいる字の裏に現れないようにする。
+            // ⑤（別れの解析結果）は人形が出た後に開くので数えない（数えると人形が待ちに戻る）。
+            timeline?.SetEndingNoticeOpen(_logic.Active && !_logic.DoneReading && !_farewellFindingShown);
             bool registrationActive = showControl != null
                 && (showControl.CourseRegistrationActive || showControl.StaffSetupActive);
             if (registrationActive != RegistrationHidden)
@@ -1225,7 +1248,7 @@ namespace FixedCamVr.Diagnostics
 
             if (_onboardingActive)
             {
-                _logic.Tick(Time.unscaledDeltaTime);
+                _logic.Tick(SimTime.Dt);
                 Apply(_logic.Weights);
                 return;
             }
@@ -1255,6 +1278,8 @@ namespace FixedCamVr.Diagnostics
                 _logic.Disable();
             }
             ObserveInvasion();
+            ObserveFarewellFindingEnd(inRun);
+            ObserveClosingPromptEnd(inRun);
             bool introWaiting = inIntroPhase && intro != null && intro.Stage == IntroStage.Black;
             CommsNotice next = _cue.Tick(new CommsCueInput
             {
@@ -1276,9 +1301,29 @@ namespace FixedCamVr.Diagnostics
                 takeoverAllowed = inRun,
                 takeoverSuppressed = (timeline != null && timeline.Suppressed)
                                      || _presentationAbortedThisFrame,
-                dt = Time.unscaledDeltaTime,
+                // ⑤ 別れの人形が後ろを向き始めた（向き終えて下がっている途中も含む — 段 0.75 秒を
+                //   フレームの詰まりで飛ばしても拾う）。解除済みでなければ出さない（人形 End に出さない）。
+                farewellTurned = timeline != null
+                                 && (timeline.FarewellPhase == EndingFarewellLogic.Phase.Turn
+                                     || timeline.FarewellPhase == EndingFarewellLogic.Phase.Retreat),
+                curseReleased = runDirector != null && runDirector.ScreenDecayReleased,
+                dt = SimTime.Dt,
             });
-            if (next != CommsNotice.None) Deliver(next);
+            if (next == CommsNotice.FarewellFinding)
+            {
+                // 終幕の電源断まで出したまま（持続表示）。畳むのは ObserveFarewellFindingEnd。
+                Deliver(next, persistent: true, pulse: true);
+                _farewellFindingShown = LastNotice == CommsNotice.FarewellFinding && _logic.Active;
+            }
+            else if (next == CommsNotice.Prompt)
+            {
+                // ③b は報告で解ける（MarkCleared が上書きする）か、本編を出るまで出したまま（持続表示）。
+                // 自分では引かない。長押しを離せばこの文面へ戻る（CommsPanelLogic.SetGuideWanted）。
+                // 畳むのは ObserveClosingPromptEnd。
+                Deliver(next, persistent: true, pulse: true);
+                _closingPromptShown = LastNotice == CommsNotice.Prompt && _logic.Active;
+            }
+            else if (next != CommsNotice.None) Deliver(next);
 
             // ⚠⚠ **段 0 を抜けた瞬間は「引く」のではなく「上書きする」**（2026-08-17 の赤入れ 3）。
             //    それまではここで `_logic.Retract()` を打っていたが、いまは同じ縁で⓪c
@@ -1289,15 +1334,16 @@ namespace FixedCamVr.Diagnostics
             // ⚠ **押している最中は面を開いたままにする**（`canon/LEDGER.md` 0058）。
             //   本編の外では開かない — 導入・終幕に手元の案内が浮くと世界が壊れる
             //   （元の面が queue 3000 で覆いに潰されていたのと同じ意図）。
-            _logic.SetGuideWanted(inRun && !TakeoverInputBlocked && _leftConnected
+            //   ⑤（別れの解析結果）が出ているあいだは開かない — Guide へ移ると文面が消える。
+            _logic.SetGuideWanted(inRun && !TakeoverInputBlocked && _leftConnected && !_farewellFindingShown
                                   && (_markProgress > 0f || _markConfirming));
 
             // 侵食度は面が出ていなくても読む。**斑の立ち上がりは面が開いた縁から**（0229
             //   「出た初めはこれ ← 1s ほどで重なる」）で、それは `CommsPanelLogic` が持つ。
-            TickGlitch(Time.unscaledTime);
+            TickGlitch(SimTime.Now);
             PushCurseTarget();
             bool wasActive = _logic.Active;
-            _logic.Tick(Time.unscaledDeltaTime);
+            _logic.Tick(SimTime.Dt);
             if (wasActive && !_logic.Active && _lieActive)
                 _feelFx?.NotifyHeartbeatWarningCompleted();
             if (!_promptReadableNotified && runDirector != null
@@ -1309,7 +1355,7 @@ namespace FixedCamVr.Diagnostics
             }
             if (_logic.Active && !wasActive)
             {
-                _curseOpenAt = Time.unscaledTime;
+                _curseOpenAt = SimTime.Now;
                 _curseRampReported = false;
             }
             Apply(_logic.Weights);
@@ -1319,8 +1365,51 @@ namespace FixedCamVr.Diagnostics
             {
                 _curseRampReported = true;
                 CurseRampCount++;
-                LastCurseRampSec = Time.unscaledTime - _curseOpenAt;
+                LastCurseRampSec = SimTime.Now - _curseOpenAt;
             }
+        }
+
+        /// <summary>
+        /// ⑤（別れの解析結果）を畳む縁を取る。本編のあいだと終幕の砂嵐のあいだは出したままにし、
+        /// 電源断（<see cref="OutroDirector.PowerCutAtSec"/>）の縁で面ごと即座に消す — 電力が落ちた装置の
+        /// 字は引いていかない。結果画面（Report）は電源断より後なので、そこには残らない。
+        /// 終幕を出さない設定・ラン開始・導入では、本編を出た縁で畳む。
+        /// </summary>
+        private void ObserveFarewellFindingEnd(bool inRun)
+        {
+            if (!_farewellFindingShown) return;
+            bool finished = runDirector != null && runDirector.Phase == ShowPhase.Finished;
+            if (finished && _outro == null) _outro = FindObjectOfType<OutroDirector>();
+            bool stays = _logic.Active
+                && CommsCueLogic.FarewellFindingStays(inRun, finished,
+                                                      _outro != null && _outro.Presenting,
+                                                      _outro != null ? _outro.TotalElapsedSec : 0f,
+                                                      _outro != null ? _outro.PowerCutAtSec : 0f);
+            if (stays) return;
+            _farewellFindingShown = false;
+            _logic.Disable();
+            Apply(CommsWeights.Hidden);
+            if (typeSfx != null) typeSfx.StopAll();
+        }
+
+        /// <summary>
+        /// ③b（締めの促し）を畳む縁を取る。本編のあいだだけ出し、人形 End・中断で本編を出た縁
+        /// （終幕の相へ移ったフレーム）で面ごと即座に消す — 黒の上に促しを残さない。
+        /// 報告で返事（MarkCleared）が上書きしたら、それはもう③b ではないので見張りをやめる。
+        /// </summary>
+        private void ObserveClosingPromptEnd(bool inRun)
+        {
+            if (!_closingPromptShown) return;
+            if (LastNotice != CommsNotice.Prompt || !_logic.Active)
+            {
+                _closingPromptShown = false;
+                return;
+            }
+            if (inRun) return;
+            _closingPromptShown = false;
+            _logic.Disable();
+            Apply(CommsWeights.Hidden);
+            if (typeSfx != null) typeSfx.StopAll();
         }
 
         private bool ObservePresentationAbort()
@@ -1375,7 +1464,7 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
 
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             float headYaw = head.eulerAngles.y;
             if (!_yawSeeded || dt > ResumeGapSec)
             {
@@ -2220,7 +2309,8 @@ namespace FixedCamVr.Diagnostics
                           : Mathf.Clamp(Mathf.CeilToInt(Mathf.Clamp01(reveal) * _charCount), 0, _charCount);
                 bool on = !_cursedFromStart && AppliedGlyph > 0.002f && shown > 0;
                 if (_textRenderer != null) _textRenderer.enabled = on;
-                if (shown > _lastShown && _root != null && !_silent)
+                // 手元表示から持続表示の文面へ戻した縁（③b）は全文が一度に戻るだけで、打ち直していない。
+                if (shown > _lastShown && _root != null && !_silent && !_logic.Restoring)
                 {
                     // 低い描画頻度でも、同じコマに増えた字を間引かない。絵を持つ1字につき1打。
                     for (int i = _lastShown; i < shown; i++)
@@ -2326,7 +2416,7 @@ namespace FixedCamVr.Diagnostics
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
                         double shaderMs = (System.Diagnostics.Stopwatch.GetTimestamp() - shaderStart)
                             * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
-                        Debug.Log($"[CommsPerfShader] frame={Time.frameCount} now={Time.realtimeSinceStartup:F3} "
+                        Debug.Log($"[CommsPerfShader] frame={Time.frameCount} now={WallClock.Now:F3} "
                             + $"recoverySec={RecoverySec:F3} shader={shader.name} setMs={shaderMs:F3}");
 #endif
                     }

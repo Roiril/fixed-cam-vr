@@ -116,10 +116,31 @@ namespace FixedCamVr.Streaming
         /// 「状態が進んだではなく効果が出た」）。<c>ShowTelemetryHost</c> が読む。
         /// </summary>
         public float IgniteWritten => _screenMat != null ? _igniteWritten : -1f;
-        /// <summary>スクリーンの材質へ実際に書いた <c>_IntroLive</c>。掴めていなければ -1。</summary>
+        /// <summary>
+        /// スクリーンの材質へ実際に書いた <c>_IntroLive</c>（時間切れの手前の沈みを掛けた後）。掴めていなければ -1。
+        /// </summary>
         public float LiveGateWritten => _screenMat != null ? _liveWritten : -1f;
+
+        /// <summary>
+        /// 時間切れの手前の沈み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
+        /// 映像の出方に <see cref="EndingDecisionLogic.SinkBrightness"/> を掛けて <c>_IntroLive</c> へ書く。
+        /// 掛け合わせるのは <see cref="WriteIgnite"/> の 1 か所で、導入の重みと沈みのどちらが先に変わっても同じ値になる。
+        /// <c>_IntroLive</c> は明暗曲線の後・OSD と筐体とガラスの前に掛かるので、沈むのは映像だけ。
+        /// </summary>
+        public void SetEndingSink(float sink)
+        {
+            float s = float.IsNaN(sink) ? 0f : Mathf.Clamp01(sink);
+            if (s == _endingSink) return;
+            _endingSink = s;
+            // まだ 1 度も書いていなければ、次に WriteIgnite が書くときに掛かる（未初期化の点灯量 -1 を 0 として書かない）。
+            if (_screenMat == null || _igniteWritten < 0f) return;
+            WriteIgnite(_igniteWritten, _liveRequested, _tvCaseWritten, _tvDarkWritten);
+        }
         /// <summary>スクリーンの材質へ実際に書いた <c>_CrtTvCase</c>（テレビの筐体の明るさ）。掴めていなければ -1。</summary>
         public float TvCaseWritten => _screenMat != null ? _tvCaseWritten : -1f;
+
+        /// <summary>据えたテレビがいま定位置より何 m 奥に居るか（画に出た側の観測）。口が無ければ -1。</summary>
+        public float TvDepthApplied => screenAnchor != null ? screenAnchor.IntroDepthM : -1f;
         /// <summary>導入の方式。重みの <c>tv</c> は演出の外で false になるので、走行の方式はこちらで読む。</summary>
         public IntroTransition Transition => _logic.Transition;
 
@@ -149,6 +170,9 @@ namespace FixedCamVr.Streaming
         private float _liveWritten = -1f;
         private float _tvCaseWritten = -1f;
         private float _tvDarkWritten = -1f;
+        // 導入の重みが求めた映像の出方（沈みを掛ける前）と、時間切れの手前の沈み。
+        private float _liveRequested = 1f;
+        private float _endingSink;
 
         private void Awake()
         {
@@ -168,7 +192,13 @@ namespace FixedCamVr.Streaming
                 OnIntroDefChanged(runDirector.IntroDef);
                 // 起動直後は Intro 相なので、そのまま演出を始める。
                 if (runDirector.Phase == ShowPhase.Intro) BeginIntro();
-                else _logic.Disable();
+                else
+                {
+                    _logic.Disable();
+                    // 導入を通らずに本編の相で有効になった。材質の既定（_CrtTvCase = 0）のままだと
+                    // テレビ方式でも枠が出ないので、本編の見えを書く。
+                    ResetIgnite();
+                }
             }
         }
 
@@ -248,6 +278,8 @@ namespace FixedCamVr.Streaming
             _logic.Configure(_def.ToTiming());
             // 走行中に「導入を出さない」へ変わったら畳む（卓から切れるようにしておく）。
             if (!_def.enabled && _logic.Active) FinishIntro(restartClock: false);
+            // 演出の外で方式が変わったら、本編の筐体（テレビ方式は枠つき・割れる遷移は枠なし）を書き直す。
+            else if (!_logic.Active) ResetIgnite();
         }
 
         private void OnPhaseChanged(ShowPhase phase)
@@ -313,7 +345,7 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            _sinceStart += Time.unscaledDeltaTime;
+            _sinceStart += SimTime.Dt;
             ObserveHead();
 
             // ⚠ **位置合わせ中は演出を止め、覆いを完全にどける。**
@@ -362,7 +394,7 @@ namespace FixedCamVr.Streaming
 
             IntroInput input = BuildInput();
             WarnIfStuckAtBlack(input);
-            var ev = _logic.Tick(Time.unscaledDeltaTime, input);
+            var ev = _logic.Tick(SimTime.Dt, input);
             var w = _logic.Weights;
             veil?.Apply(w);
             // 隔離殻（会場を黒で落とし、実物の壁と足元の床だけを残す）。覆いの**後**に描かれる面なので、
@@ -393,6 +425,9 @@ namespace FixedCamVr.Streaming
             if (w.tv && _logic.Stage is IntroStage.Structure or IntroStage.Frame or IntroStage.Swap
                 && screenAnchor != null && !screenAnchor.IntroHeld)
                 screenAnchor.HoldInFrontOfHead();
+            // 据えたテレビは段 3 で霧の奥から寄ってくる。段 4 以降は 0（定位置）。
+            if (w.tv && screenAnchor != null && screenAnchor.IntroHeld)
+                screenAnchor.SetIntroDepth(w.tvDepthM);
 
             if (ev == IntroEvent.Finished) FinishIntro(restartClock: true);
             else if (ev == IntroEvent.Aborted) AbortIntro();
@@ -401,7 +436,7 @@ namespace FixedCamVr.Streaming
         private void ObserveHead()
         {
             if (head == null) { _headTurn = 0f; return; }
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             if (dt <= 0f) return;
             float deg = Quaternion.Angle(_lastHeadRot, head.rotation);
             _lastHeadRot = head.rotation;
@@ -490,7 +525,7 @@ namespace FixedCamVr.Streaming
                 _unknownPosSec = 0f;
                 return;
             }
-            _unknownPosSec += Time.unscaledDeltaTime;
+            _unknownPosSec += SimTime.Dt;
             if (_unknownPosSec < 8f || _warnedUnknownPos) return;
             _warnedUnknownPos = true;
             Debug.LogWarning(
@@ -554,12 +589,12 @@ namespace FixedCamVr.Streaming
                 _startsByApproach = true;
                 float outsideM = ContainmentShellLogic.DistanceOutsideM(p, halfXZ);
                 bool fired = _approach.Tick(outsideM, IntroLogic.ApproachNearM, IntroLogic.ApproachHoldSec,
-                                            Time.unscaledDeltaTime, valid: true);
+                                            SimTime.Dt, valid: true);
                 // ⚠ **黙って始まらない状態を作らない。** 武装は「離れている」か「近づいてきた」で立つので、
                 //    近くに立ったまま動かないと待ち続ける。理由を 1 回だけ、状況で書き分けて名指しする。
                 if (!fired && !_approach.Armed)
                 {
-                    _approachWaitSec += Time.unscaledDeltaTime;
+                    _approachWaitSec += SimTime.Dt;
                     if (_approachWaitSec > 8f && !_warnedApproachNotArmed)
                     {
                         _warnedApproachNotArmed = true;
@@ -587,7 +622,7 @@ namespace FixedCamVr.Streaming
             if (!string.IsNullOrEmpty(lineId))
             {
                 SyncStartLine(lineId);
-                _startLine.Tick(Time.unscaledTime, p.x, p.y, Time.unscaledDeltaTime);
+                _startLine.Tick(SimTime.Now, p.x, p.y, SimTime.Dt);
                 LineCrossLogic.State[] st = _startLine.StateView;
                 // 横切ったら以後ずっと true（段 0 を抜けるまで保持する）。横断は事象なので、
                 // その 1 フレームを取り逃すと永久に始まらない。
@@ -599,7 +634,7 @@ namespace FixedCamVr.Streaming
             if (spot == null) { _startSpot.NotifyUnavailable(); return false; }
             // ⚠ **円は「入ってきた」で判定する**（状態ではなく事象）。判断は StartSpotLogic 側。
             return _startSpot.Tick(p.x, p.y, spot.x, spot.z, spot.ResolveRadiusM(),
-                                   startSpotHoldSec, Time.unscaledDeltaTime);
+                                   startSpotHoldSec, SimTime.Dt);
         }
 
         /// <summary>
@@ -708,14 +743,16 @@ namespace FixedCamVr.Streaming
         /// 「管が点き切った瞬間に映像も出る」ことになり、重み <c>live</c> が 0 のままなのに
         /// 画には映像が出る（2026-08-13 に Editor プレビューの絵で見つけた食い違い）。
         /// 実物のブラウン管も、電源を入れてから絵が出るまで暖機の時間がある。
-        /// <paramref name="tvCase"/> と <paramref name="tvDark"/> はテレビの筐体とガラス（0 で本編と同じ）。
+        /// <paramref name="tvCase"/> と <paramref name="tvDark"/> はテレビの筐体とガラス
+        /// （本編はテレビ方式で筐体 <see cref="IntroLogic.MainShowTvCase"/>・割れる遷移で 0、ガラスはどちらも 0）。
         /// </summary>
         private void WriteIgnite(float v, float live, float tvCase, float tvDark)
         {
+            _liveRequested = Mathf.Clamp01(live);
             var m = ResolveScreenMaterial();
             if (m == null) return;
             float c = Mathf.Clamp01(v);
-            float l = Mathf.Clamp01(live);
+            float l = _liveRequested * EndingDecisionLogic.SinkBrightness(_endingSink);
             float tc = Mathf.Clamp01(tvCase);
             float td = Mathf.Clamp01(tvDark);
             if (Mathf.Approximately(c, _igniteWritten) && Mathf.Approximately(l, _liveWritten)
@@ -733,12 +770,20 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// スクリーンを本編の見えへ戻し、テレビの据え置きも解く。<b>演出を畳むすべての経路がここを通る</b> —
         /// 通し忘れると最後に書いた 0 が残って画がまるごと消える。
+        ///
+        /// ⚠ 筐体（<c>_CrtTvCase</c>）は方式で変わる。テレビ方式は本編も枠つきなので
+        /// <see cref="IntroLogic.MainShowTvCase"/>（0321）、割れる遷移は 0（輪郭で切り抜く）。
+        /// ここで一律に 0 を書くと、本編でテレビの枠が消える。
         /// </summary>
         private void ResetIgnite()
         {
-            WriteIgnite(1f, 1f, 0f, 0f);
+            WriteIgnite(1f, 1f, MainShowTvCase, 0f);
             if (screenAnchor != null) screenAnchor.ReleaseIntroHold();
         }
+
+        /// <summary>本編でスクリーンの材質へ書く筐体の明るさ。方式は <see cref="IntroLogic.Transition"/> で読む。</summary>
+        private float MainShowTvCase
+            => _logic.Transition == IntroTransition.Tv ? IntroLogic.MainShowTvCase : 0f;
 
         /// <summary>
         /// 枠の中に本編のスクリーンが来ているか。<b>枠は head-lock なので常に正面</b>で、
@@ -770,7 +815,7 @@ namespace FixedCamVr.Streaming
             if (s == null || !s.IsConnected) return false;
             float last = s.LastFrameRealtime;
             if (last <= 0f) return false;
-            return Time.realtimeSinceStartup - last <= freshFrameSec;
+            return SimTime.Realtime - last <= freshFrameSec;
         }
 
         /// <summary>演出が完走したか。<see cref="Completed"/> の実体。</summary>

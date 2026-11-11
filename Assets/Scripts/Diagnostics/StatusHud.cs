@@ -167,7 +167,7 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         public bool SetHeld(bool held)
         {
-            _view.Tick(held, Time.unscaledDeltaTime);
+            _view.Tick(held, SimTime.Dt);
             return _view.JustShown;
         }
 
@@ -342,7 +342,7 @@ namespace FixedCamVr.Diagnostics
 
         private void Update()
         {
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             if (_probeLeft > 0f)
             {
                 _probeLeft -= dt;
@@ -403,7 +403,7 @@ namespace FixedCamVr.Diagnostics
             if (head == null) return;
 
             float headYaw = head.eulerAngles.y;
-            bool resumeGap = Time.unscaledDeltaTime > resumeGapSec;
+            bool resumeGap = SimTime.Dt > resumeGapSec;
             if (!_yawSeeded || resumeGap)
             {
                 _yawFollow.Reseat(headYaw);
@@ -473,7 +473,7 @@ namespace FixedCamVr.Diagnostics
                 return;
             }
 
-            _accum += Time.unscaledDeltaTime;
+            _accum += SimTime.Dt;
             if (_accum >= updateInterval || !text.enabled)   // 間引きの間は直前の文字列を維持
             {
                 _accum = 0f;
@@ -629,7 +629,7 @@ namespace FixedCamVr.Diagnostics
 
             // 行5: 報告：N 件（M 回押した）。**押されているかはスタッフに 1 ビットも届いていなかった**
             // （気づくのは終幕の報告が「０」になったとき ＝ もう手遅れ）。
-            // N = 報告した異変の数（終幕に出る数・同じ演出は 1・`canon/LEDGER.md` 0234）/ M = 押した回数。
+            // N = 報告した異変の数（内部の集計・同じ演出は 1・`canon/LEDGER.md` 0234）/ M = 押した回数（終幕の結果画面に出るのはこちら・0247）。
             // 両方出すのは、押しているのに N が増えない（演出の無い所で押している）を現場で見分けるため。
             // ⚠ 半角数字。全角にしてよいのは体験者が読む面（終幕の報告・紙と揃える）だけで、
             //   ここは業務表示なので他の数値（周回・カメラ番号・ずれ cm）と揃える。

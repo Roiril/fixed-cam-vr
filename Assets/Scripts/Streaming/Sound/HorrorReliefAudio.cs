@@ -134,7 +134,7 @@ namespace FixedCamVr.Streaming
             }
             float sec = on ? RiseSec : FallSec;
             _src.volume = Mathf.MoveTowards(_src.volume, on ? 1f : 0f,
-                                            Time.unscaledDeltaTime / Mathf.Max(0.01f, sec));
+                                            SimTime.Dt / Mathf.Max(0.01f, sec));
             if (!on && _src.isPlaying && _src.volume <= SilenceGain) _src.Stop();
         }
     }

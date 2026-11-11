@@ -36,7 +36,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 終幕の合図（<c>canon/LEDGER.md</c> 0048）。「この演出が終わったら終わる」の 1 ビットで、
-        /// <b>落ちるのは <see cref="BeginRun"/>（周回リセット）だけ</b>。
+        /// 発火済みを落とすのは <see cref="BeginRun"/>（周回リセット）と演出 id の変更、
+        /// 武装はそれに加えて人が演出を止めたとき（<c>NotifyInterrupted</c>）。
         /// 相と走行中の演出 id を両方持っているのはここだけなので、判定もここで回す。
         /// </summary>
         private readonly EndingCueLogic _ending = new EndingCueLogic();
@@ -56,6 +57,17 @@ namespace FixedCamVr.Streaming
 
         /// <summary>③b が全文表示され、締めの報告を受け付けられる状態か。</summary>
         public bool ClosingPromptReadable => _endingDecision.PromptReadable;
+
+        /// <summary>
+        /// 時間切れの手前の沈み 0..1（いま画へ押している値）。進みは <see cref="EndingDecisionLogic.SinkAt"/>、
+        /// 報告後の戻りは <see cref="EndingDecisionLogic.SinkAfterRelease"/>。
+        /// 押す先は 2 つ — 映像の明るさは <see cref="IntroDirector"/>（<c>_IntroLive</c> の唯一の writer）、
+        /// 周辺の落ち込みは <see cref="CameraFeelFx"/>（<c>_HeartVignette</c> の唯一の writer）。
+        /// </summary>
+        public float EndingSink => _endingSink;
+
+        private float _endingSink;
+        private float _sinkAtRelease;
 
         private BgmDirector? _bgm;
         private GlitchFx? _glitch;
@@ -100,7 +112,7 @@ namespace FixedCamVr.Streaming
         public bool EndHolding => _logic.EndHolding;
 
         /// <summary>
-        /// 終幕の合図の演出が走っているのを見たか（＝ 周回リセットで落ちるフラグ・テレメトリ用）。
+        /// 終幕の合図の演出が走っているのを見たか（＝ 武装。周回リセット・演出 id の変更・人が演出を止めたときに落ちる・テレメトリ用）。
         /// <b>著作していなければ一生 false</b>（<see cref="ShowOutroDef.afterTakeId"/> が空）。
         /// </summary>
         public bool EndingArmed => _ending.Armed;
@@ -113,6 +125,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>報告前の人形が画面左半分へ入ったことで Trapped が確定したか。</summary>
         public bool EndingTrappedByLeftHalf => _endingDecision.TrappedByLeftHalf;
+
+        /// <summary>Trapped が③b からの時間切れで確定したか（テレメトリ用）。</summary>
+        public bool EndingTrappedByTimeout => _endingDecision.TrappedByTimeout;
 
         /// <summary>③b の全文が見えた縁。連絡面から一度だけ届く。</summary>
         public void NotifyClosingPromptReadable()
@@ -164,8 +179,14 @@ namespace FixedCamVr.Streaming
         ///
         /// ⚠ 1〜2 周目で異変を消したとき（<c>MarkResult.Dismissed</c>）には呼ばない。
         /// あれは怪異を 1 つ消しただけで、呪いそのものは解けていない。
+        ///
+        /// 時間切れの手前の沈みも、ここで押していた値から同じ <see cref="ScreenDecayLogic.ReleaseK"/> で戻る。
         /// </summary>
-        public void ReleaseScreenDecay() => _decay.Release();
+        public void ReleaseScreenDecay()
+        {
+            if (!_decay.Released) _sinkAtRelease = _endingSink;
+            _decay.Release();
+        }
 
         /// <summary>
         /// 視界を黒で閉じるべきか。<b>終了</b>と<b>導入の中止</b>の 2 つで立つ。
@@ -286,6 +307,9 @@ namespace FixedCamVr.Streaming
             _endingDecision.ResetRun();
             _insideClosingArea = null;
             _closingAreaObservedAt = -1f;
+            // 時間切れの手前の沈みも落とす。次の LateUpdate を待たずに 1.0 の明るさを書く。
+            _sinkAtRelease = 0f;
+            PushEndingSink(0f);
             ApplyGate();
             // ⚠⚠ **ゲートを閉じた「後」にもう一度武装を落とす**（2026-08-30）。
             //    ラン開始の号令元（`ShowControlClient.TriggerRunReset` / `BeginNewVisitorRunLocal`）は
@@ -357,6 +381,8 @@ namespace FixedCamVr.Streaming
             _subscribed = false;
             // 自分が閉じたゲートを開けたまま去る（このコンポーネントを外したら従来どおり常に流れる）。
             if (cueScheduler != null) cueScheduler.SetShowGate(true);
+            // 押していた沈みも残して去らない（押す者が居なくなると暗いまま固まる）。
+            PushEndingSink(0f);
         }
 
         private void ResolveRefs()
@@ -380,8 +406,8 @@ namespace FixedCamVr.Streaming
         //
         // ⚠⚠ 読むのは **進行の周**（progressLap・単調増加）。区間の周（lap）は逆走で戻るので、
         //   ここへ渡すと「帰りの A に着いた体験者が 1 区間引き返した瞬間に周回が 3 へ落ちて、
-        //   体験が終わらなくなる」。終了判定は `lap > totalLaps` の 1 本しか無いので、
-        //   ここを間違えると出口が丸ごと消える。
+        //   体験が終わらなくなる」。周回由来の出口は `lap > totalLaps` の 1 本なので（他は時間切れと RequestFinish）、
+        //   ここを間違えると周回での終わり方が消える。
         private void OnCameraEntered(SegmentEntry entry) => _logic.NotifyLap(entry.ProgressLap);
 
         private void Update()
@@ -514,6 +540,8 @@ namespace FixedCamVr.Streaming
                         timelineDirector != null && timelineDirector.DollReplacementTransitioning,
                         timelineDirector != null ? timelineDirector.DollReplacementTransition01 : 1f,
                         ScreenDecayLogic.NormalMax, noiseTarget);
+            // 時間切れの手前の沈み。解除の戻りは上の Tick で進んだ ReleaseK を読むので、ここ（Tick の後）で引く。
+            TickEndingSink();
             // ⚠⚠ 画へ書くのは **Shown**。生の Progress は音が読む単調値で、画の人形状態には使わない。
             // 色が抜けるのも**同じ進み**。通常は0.5固定。人形視点とCG人形化で1になる。
             // （`canon/LEDGER.md` 0019）。別の時計で動かすと、装置として説明の付かない絵になる。
@@ -525,6 +553,32 @@ namespace FixedCamVr.Streaming
                 && (timelineDirector.DollReplacementCovered
                     || (timelineDirector.ClosingSegmentSec >= 0f && switchDirector != null && switchDirector.DipPastCover)))
                 _feel?.NotifyRoomWarpCovered();
+        }
+
+        /// <summary>
+        /// 時間切れで人形 End へ落ちる手前 <see cref="EndingDecisionLogic.SinkSec"/> 秒、映像を沈める。
+        /// 進みは結末の判定と同じ時計（③b の全文表示からの <see cref="ShowClock"/>）から引く。
+        /// 報告が成立したら、その縁の値から劣化の戻りと同じ <see cref="ScreenDecayLogic.ReleaseK"/> で 0 へ戻る。
+        /// 位置合わせ中と、卓が画面を取っている間は出さない（心音の画と同じ扱い・ラッチは変えない）。
+        /// </summary>
+        private void TickEndingSink()
+        {
+            bool paused = (showControl != null && showControl.CourseRegistrationActive)
+                          || (timelineDirector != null && timelineDirector.Suppressed);
+            float sink;
+            if (paused) sink = 0f;
+            else if (_endingDecision.ReleaseReported || _endingDecision.Outcome == ShowEndingOutcome.Released)
+                sink = _decay.Released ? EndingDecisionLogic.SinkAfterRelease(_sinkAtRelease, _decay.ReleaseK) : 0f;
+            else sink = _endingDecision.SinkAt(ShowClock.Now);
+            PushEndingSink(sink);
+        }
+
+        private void PushEndingSink(float sink)
+        {
+            _endingSink = sink;
+            // ⚠ 破棄済みの UnityEngine.Object は `?.` を素通りするので明示的に比べる。
+            if (_feel != null) _feel.SetEndingSink(sink);
+            if (_intro != null) _intro.SetEndingSink(sink);
         }
 
         private bool AtStartZone()

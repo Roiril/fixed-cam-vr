@@ -58,6 +58,9 @@
 | 08-05 | `device-tilt-align` | 端末の傾きで位置合わせを 4 自由度に |
 | 08-12 | `title-screen` | タイトル画面「廻リ視」（導入の段 0 に被さる層・右 A で閉じる） |
 | 09-19 | `eye-decode-motion` | 闇の目の出現と消失を「行が届く・ブロックが落ちる」へ（0240・R058・Editor 検証済み・実機未走行） |
-| 10-10 | `staff-flow-redesign` | スタッフ運用フローの作り直し（タブレットを主画面に・Quest は位置合わせだけ）。実装は途中で中断、パッチ退避済み |
+| 10-10 | `staff-flow-redesign` | スタッフ運用フローの作り直し（タブレットを主画面に・Quest は位置合わせだけ） |
+| 08-15 | `comms-panel` | エージェント画面（通信面） |
+| 09-14 | `official-website` | 公式サイト |
+| 09-22 | `operations-console` | 運用卓 |
 
 TableDuo の計画は 2026-09-28 に table-duo-vr へ移した。

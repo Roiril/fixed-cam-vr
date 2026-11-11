@@ -123,14 +123,14 @@ namespace FixedCamVr.Diagnostics
             }
 
             float fadeSec = _run != null ? _run.BlackoutFadeSec : ShowRunDefaults.EndFadeSec;
-            float step = fadeSec > 0f ? Time.unscaledDeltaTime / fadeSec : 1f;
+            float step = fadeSec > 0f ? SimTime.Dt / fadeSec : 1f;
             SetAlpha(Mathf.Min(1f, _alpha + step));
 
             // 文字は黒が乗り切ってから浮かべる（黒の途中で出すと本編の画に重なって読めない）。
             // ⚠ 体験者には出さない（黒だけ）。スタッフが見ているときだけ 1 行が浮かぶ。
             string msg = _run != null && StaffViewing() ? _run.BlackoutMessage : "";
             float target = string.IsNullOrEmpty(msg) || _alpha < 0.95f ? 0f : 1f;
-            float mStep = Time.unscaledDeltaTime / MessageFadeSec;
+            float mStep = SimTime.Dt / MessageFadeSec;
             SetMessage(msg, target > _messageAlpha
                 ? Mathf.Min(target, _messageAlpha + mStep)
                 : Mathf.Max(target, _messageAlpha - mStep));

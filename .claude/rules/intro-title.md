@@ -53,11 +53,12 @@ paths:
 - 従来判定は接近（境界から 1.0m・0.4 秒）・安全網（外を見てから中へ）・救済（中に立って 1.0 秒）。位置が解けない間は中／外を更新しない。武装し直しは 1 か所 — `ConcealStartSec` / `IntroDirector.TryOutsideBoxM` / `RearmStartSignal` 〔出典: show-design:459-535〕
 - 位置合わせ中は凍結して覆い・殻・誘導を畳み ignite を戻す。recenter は中止、復帰は位置合わせの確定 1 段。本編へ入るのは完走 — `IntroDirector.Aborted` / `TryRecoverFromAbort` / `Completed` 〔出典: show-design:409-444, 963〕
 - 段 2 は暗転だけ。色は抜かず、輪郭・粒・乱れ・線も使わない。全画素を同じ係数で落とすので覆いの `_ScreenFade` は `1 - passthrough`。構造線は既定 OFF — `IntroTvTests.Darken_FallsFromRealityToBlack_WithoutBreaking`
-- 段 3 は黒の保持（`TvBlackHoldShare`）の後、筐体 `tvCase` とガラスの灯り（`1 - tvDark`）を同じ量で上げる。スクリーンは段 3 に入る黒のうちに頭の正面へ据え（`ScreenAnchor.HoldInFrontOfHead`）、畳む経路で解除する
+- 段 3 は黒の保持（`TvBlackHoldShare`）の後、テレビが奥 `TvFarM` から定位置へ寄る（`tvDepthM` → `ScreenAnchor.SetIntroDepth`）。明るさは霧の式（`ScreenFogLogic.Transmit`）で、筐体 `tvCase` とガラスの灯り（`1 - tvDark`）は同じ量。段 4 以降は奥行き 0。スクリーンは段 3 に入る黒のうちに頭の正面へ据え（`HoldInFrontOfHead`）、畳む経路で解除する。観測 `tvZ=` — `IntroTvTests.Structure_TheTvComesFromTheDepth_AndStopsAtItsPlace`
 - テレビが出るまでスクリーンは描かない（`IntroVeil.TvScreenHidden`）。描くと暗転と黒の保持に矩形や縁が浮く。覆いが要らなくなる段 3 の経路でも止めを掛け直す — `IntroVeil.Apply`、観測 `scrHid=`
 - 段 4 は頭の角速度 45°/s 以下を待つ（最大 3 秒）。電源 `ignite` = p/`TvIgniteShare`、映像 `live` は `TvLiveFrom` から `PerceptualFade.Reveal`。頭で `SoundCue.ScreenOn` — `IntroLogic.MaxHeadTurnForFrame` / `IntroTvTests.Frame_PowersOnFirst_ThenTheImageComes`
-- `_IntroLive` の式は `IntroWeights.LiveGate` 1 か所。テレビは live そのもの、割れる遷移は 0/1。`ignite` はテレビの段 1〜4 で 0 から上がり、演出の外は 1。畳むすべての経路で 1 へ戻す — `IntroDirector.WriteIgnite` / `ResetIgnite`
-- 段 5 は live 1 の静止 1.6 秒で、乱れなし。筐体を闇へ沈めて本編の枠なしの形（0302）で終わる。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec` / `IntroTvTests.Swap_SinksTheCase_AndDoneIsTheMainShowLook`
+- `_IntroLive` の式は `IntroWeights.LiveGate` 1 か所。テレビは live そのもの、割れる遷移は 0/1。書くときに 4-A の時間切れ手前の沈み（`EndingDecisionLogic.SinkBrightness`・memory/ending_result.md）を掛ける。`ignite` はテレビの段 1〜4 で 0 から上がり、演出の外は 1。畳むすべての経路で 1 へ戻す — `IntroDirector.WriteIgnite` / `ResetIgnite`
+- 段 5 は live 1 の静止 1.6 秒で、乱れなし。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec`
+- 筐体 `tvCase` は段 4 から体験の終わりまで `IntroLogic.MainShowTvCase`（1・0321）。演出の外（Off / Done）の重みも同じ。`ResetIgnite` は方式で書き分ける（テレビ 1・割れる遷移 0）。0 を書くと本編で枠が消える — `IntroTvTests.Swap_KeepsTheCase_AndTheMainShowKeepsTheTvFrame` / `Shatter_NeverShowsTheTvCase_InAnyStageOrInTheMainShow`
 - 殻は導入で描かない（終幕だけ）。封印の箱は全段 0 で毎フレーム `SetHidden` — `ContainmentShellLogicTests.Intro_NeverPaintsTheShellAtAll` / `SealedBox_NeverAppears_InAnyStage` 〔出典: streaming:858, 898〕
 - 開口は「眼とスクリーンの 4 辺を通る平面」。全開は厳密に全開、`AnchorK` .15 まで頭の正面から寄せる。C# と shader が同じ式。ブラウン管の曲面は角を動かさない — `IntroVeil.SignedDistance` / `Open_CoversWholeFov_AtEveryHeadPitch` / `CrtScreenMesh` 〔出典: streaming:948-971〕
 

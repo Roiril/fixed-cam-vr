@@ -375,7 +375,7 @@ namespace FixedCamVr.Streaming
             //   歩いている体験者の上で砂だけが遅れて付いてくる。実行順は Script Execution Order ではなく
             //   「同じ LateUpdate の中で cgLayer が先に居る」ことに依存させない —
             //   矩形は毎フレーム引き直すので、遅れても 1 フレームで、位置は次で追いつく。
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             // 包まれたままの間は、映像の中の当人の見かけ（＝背丈）を追う。追わないと、
             // 体験者が近づいて大きく写っているのに覆いの枠が入場時の大きさで固まる。
             if (_logic.Held && cgLayer != null) _logic.UpdateHoldHeight(cgLayer.VisitorHeightM());
@@ -494,7 +494,7 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(SwapThreadId, Mathf.Clamp01(s.thread));
             _material.SetFloat(SwapRealId, Mathf.Clamp01(s.real));
             _material.SetFloat(SwapFromTopId, toDoll ? 1f : 0f);
-            _material.SetFloat(SwapSeedId, Time.unscaledTime);
+            _material.SetFloat(SwapSeedId, SimTime.Now);
             // 覆いを効かせる左端と、差分を読み続けるか（0102）。**どちらもカットが宣言した値**。
             _material.SetFloat(SwapMinXId, _minX);
             _material.SetFloat(SwapDiffHoldId, _diffHold ? 1f : 0f);

@@ -447,6 +447,41 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(0f, _panel.AppliedCurse, "エージェントが復帰して助ける段は斑 0");
         }
 
+        /// <summary>
+        /// ③b は報告か本編の終わりまで出たまま（2026-11-11 のツイン通しの所見）。長押しを離すと
+        /// 打ち直さずに全文へ戻り、本編を出た縁（人形 End・中断）で面ごと消える。
+        /// </summary>
+        [Test]
+        public void ClosingPrompt_StaysUntilTheRunEnds_AndComesBackWithoutKeystrokes()
+        {
+            typeof(CommsPanel).GetMethod("Deliver", Private, null,
+                                         new[] { typeof(CommsNotice), typeof(bool), typeof(bool) }, null)!
+                .Invoke(_panel, new object[] { CommsNotice.Prompt, true, true });
+            typeof(CommsPanel).GetField("_closingPromptShown", Private)!.SetValue(_panel, true);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec + CommsPanelLogic.HoldSec
+                    + CommsPanelLogic.OutSec + 3f);
+            Assert.AreEqual(CommsStage.Hold, _panel.Stage, "③b が自分で引いた");
+            int full = _panel.VisibleChars;
+            Assert.Greater(full, 0);
+
+            int hits = _panel.TypedCount;
+            _logic.SetGuideWanted(true);
+            Advance(.6f);
+            Assert.AreEqual(CommsStage.Guide, _panel.Stage);
+            Assert.AreEqual(0, _panel.VisibleChars, "押している間は文面を消す（従来どおり）");
+            _logic.SetGuideWanted(false);
+            Advance(CommsPanelLogic.RestoreSec + .1f);
+            Assert.AreEqual(CommsStage.Hold, _panel.Stage);
+            Assert.AreEqual(full, _panel.VisibleChars, "③b の全文へ戻る");
+            Assert.AreEqual(hits, _panel.TypedCount, "戻すときに打鍵を鳴らさない");
+
+            MethodInfo observe = typeof(CommsPanel).GetMethod("ObserveClosingPromptEnd", Private)!;
+            observe.Invoke(_panel, new object[] { true });
+            Assert.IsTrue(_panel.Stage != CommsStage.Off, "本編のあいだは残す");
+            observe.Invoke(_panel, new object[] { false });
+            Assert.AreEqual(CommsStage.Off, _panel.Stage, "本編を出たら黒の上に残さない");
+        }
+
         [Test]
         public void HoldingAfterPossessionKeepsTheGaugeButNotThePreviousReply()
         {

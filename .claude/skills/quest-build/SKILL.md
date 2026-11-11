@@ -5,7 +5,7 @@ description: 廻リ視の APK を Unity CLI で焼いて Quest に入れる。�
 
 # Quest へのビルド & インストール
 
-廻リ視の現行 Player は事前同梱のみ（2026-09-22）。この文書中の古いライブ反映・設定キャッシュの記録は現行 Player に適用しない。
+廻リ視の現行 Player は事前同梱のみ（2026-09-22）。卓のライブ反映も端末の設定キャッシュも実機には効かない。
 export は使用中の素材を検証し manifest を作る。Unity のビルド前検査は本文と素材のハッシュ不一致で停止する。
 成功したビルドの `Builds/mawarimi.apk.content.json` も残す。運用卓は APK 自体のハッシュと buildGuid を使って導入版を照合する。
 記録は `BuildVariants` の `BuildPlayer` 成功確定後に作る。`IPostprocessBuildWithReport` 内では `result` が未確定のため作らない。
@@ -82,16 +82,11 @@ ProjectSettings に差分を残さない）。
 
 `unity.ps1` は Editor がプロジェクトを開いていたら止まる（`Temp/UnityLockfile`）。
 
-## 事前確認（オペレータ卓に繋ぐ場合のみ）
+## 卓は実機に届かない
 
-Quest 単体起動で卓（cue 発火・カメラ固定・ポスト FX）を効かせるなら、ビルド前に
-`Assets/Settings/ShowServer.asset` の `host` を **PC の LAN IP** にする
-（Editor+Link なら `127.0.0.1` で可だが、Quest 単体は PC を見つけられない）。
-
-```powershell
-(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -like "192.168.*" }).IPAddress
-```
-
+実機は同梱の show.json だけで動く。卓の ⏭ ■ ▶・カメラ固定・post の変更は Quest に届かない
+（`rules/stream-link.md`）。卓で変えた内容を実機へ出すには、export して焼き直す。
+`Assets/Settings/ShowServer.asset` の `host` が効くのは Editor で卓に繋ぐときだけ。
 `host` はローカル値なので**コミットしない**（`rules/git-workflow.md`）。
 
 ## インストール（adb）

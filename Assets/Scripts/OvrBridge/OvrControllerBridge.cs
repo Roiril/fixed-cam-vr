@@ -71,8 +71,9 @@ namespace FixedCamVr.OvrBridge
         [SerializeField] private ControllerHaptics? haptics;
 
         [Header("Run reset")]
-        [Tooltip("A 2 秒長押し＝体験者リセット（周回リセット + cue 発火済みクリア）の対象 LapCounter。" +
-                 "runEpoch とは独立の現地手段（PC 卓不在でも体験者交代でリセットできる）。null なら cueScheduler へフォールバック。")]
+        [Tooltip("ShowControlClient が居ないシーン（診断用の最小構成など）向けのフォールバック。" +
+                 "A 2 秒長押しの体験者リセットは本番では ShowControlClient.BeginNewVisitorRunLocal を通り、この参照は使わない。" +
+                 "ShowControlClient が居ないときだけ、この LapCounter の周回と cue をリセットする。null なら cueScheduler へフォールバック。")]
         [SerializeField] private LapCounter? lapCounter;
 
         [Tooltip("LapCounter 未配線時にランリセットを行う CueScheduler（発火済みフラグのみクリア）。")]
@@ -337,7 +338,7 @@ namespace FixedCamVr.OvrBridge
             _rConnected = rConnected;
             _rTracked = rTracked;
             _staffSetup?.SetRightController(rConnected, rTracked);
-            _staffSetup?.Refresh(Time.unscaledDeltaTime);
+            _staffSetup?.Refresh(SimTime.Dt);
             guidePanel?.SetControllerState(rConnected, rTracked);
             statusHud?.SetRightControllerState(rConnected, rTracked);
 
@@ -389,7 +390,7 @@ namespace FixedCamVr.OvrBridge
 
             // 表示レートの要求（起動直後だけ。成功か時間切れで以後は何もしない）。
             // ここに置くのは、既存シーン / prefab へコンポーネントを 1 個増やさずに済ませるため。
-            DisplayRateRequester.Tick(Time.unscaledDeltaTime);
+            DisplayRateRequester.Tick(SimTime.Dt);
 
             // ---- 体験者の手（左）。X / Y を物理ボタン名で読む -----------------------
             // Button.Three / Four と LTouch の組み合わせは SDK の仮想マップ上で None になる。
@@ -435,10 +436,10 @@ namespace FixedCamVr.OvrBridge
             // ⚠ 未配線のときは**間隔を置いて**探す（2026-08-30）。素の `if (comms == null)` は
             //    `[Comms]` を持たない構成で **90Hz で全 GameObject を走査し続ける**。
             //    `ShowTelemetryHost` は同じ解決を最初から間隔つきでやっていて、ここだけ非対称だった。
-            if (comms == null && Time.unscaledTime >= _commsRetryAt)
+            if (comms == null && SimTime.Now >= _commsRetryAt)
             {
                 comms = FindObjectOfType<CommsPanel>();
-                if (comms == null) _commsRetryAt = Time.unscaledTime + CommsResolveRetrySec;
+                if (comms == null) _commsRetryAt = SimTime.Now + CommsResolveRetrySec;
             }
             if (comms != null && comms.PulseCount != _lastCommsPulse)
             {
@@ -517,7 +518,7 @@ namespace FixedCamVr.OvrBridge
             CommsNotice expectedOnboardingNotice = NoticeFor(_onboarding.Prompt);
             HmdOnboardingAction onboardingAction = _onboarding.Tick(new HmdOnboardingInput
             {
-                dt = regActive || setupBlocked ? 0f : Time.unscaledDeltaTime,
+                dt = regActive || setupBlocked ? 0f : SimTime.Dt,
                 hmdPresent = OVRManager.instance == null || UserPresent,
                 leftConnected = _lConnected,
                 leftPositionValid = _lTracked,
@@ -627,7 +628,7 @@ namespace FixedCamVr.OvrBridge
                 case ControllerModeLogic.Mode.Normal:
                 default:
                     // B 短押しは体験者を迎える段の引き渡しだけ。初回の段では画面の呼び戻し（B 1 秒）だけが効く。
-                    var setupAction = _setupButton.Tick(bHeld, Time.unscaledDeltaTime,
+                    var setupAction = _setupButton.Tick(bHeld, SimTime.Dt,
                         _staffSetup != null && _staffSetup.Visible && (OVRManager.instance == null || UserPresent) && rTracked && !aHeld && !rTrigger,
                         _staffSetup != null && _staffSetup.Logic.Stage == StaffSetupStage.Welcome
                             && _staffSetup.Logic.ReadyToHandOff);

@@ -42,7 +42,7 @@ namespace FixedCamVr.Streaming
         public int PressCount { get; private set; }
 
         /// <summary>
-        /// 報告した異変の数（同じ演出は 1 回だけ）。画面には出さない内部の集計（<c>canon/LEDGER.md</c> 0234）。
+        /// 報告した異変の数（同じ演出は 1 回だけ）。体験者の結果画面には出さない内部の集計（スタッフの StatusHud には出る・<c>canon/LEDGER.md</c> 0234）。
         /// </summary>
         public int AnomalyCount => _reported.Count;
 

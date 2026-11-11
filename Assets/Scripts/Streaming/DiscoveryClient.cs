@@ -433,7 +433,7 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             if (_udp == null || registry == null) return;
-            float now = Time.realtimeSinceStartup;
+            float now = WallClock.Now;
 
             DrainQueue(now);
             _logic.Prune(now);
@@ -517,8 +517,9 @@ namespace FixedCamVr.Streaming
                 _breakAccum[i] = 0f;
                 return;
             }
-            bool broken = !stream.IsConnected || stream.ReceivedFps <= 0f;
-            if (broken) _breakAccum[i] += Time.unscaledDeltaTime;
+            // 届いていても読めていなければ断。背景カメラも約 3 回/秒は展開するので 0 にはならない。
+            bool broken = !stream.IsConnected || stream.DecodedFps <= 0f;
+            if (broken) _breakAccum[i] += SimTime.Dt;
             else _breakAccum[i] = 0f;
         }
 
@@ -530,7 +531,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void UpdateIdentityAccum(int i, CameraStream stream, string camId)
         {
-            float now = Time.realtimeSinceStartup;
+            float now = SimTime.Realtime;   // 相手の MetadataUpdatedRealtime が体験の時計。差を取る両辺を揃える
             var meta = stream.Metadata;
             bool fresh = meta != null
                       && stream.MetadataUpdatedRealtime > 0f
@@ -544,7 +545,7 @@ namespace FixedCamVr.Streaming
                 _mismatchLogged[i] = false;
                 return;
             }
-            _idMismatchAccum[i] += Time.unscaledDeltaTime;
+            _idMismatchAccum[i] += SimTime.Dt;
             if (!_mismatchLogged[i] && _idMismatchAccum[i] >= frameBreakSwitchSec)
             {
                 _mismatchLogged[i] = true;
@@ -556,7 +557,7 @@ namespace FixedCamVr.Streaming
         private void SendProbesIfDue(float now)
         {
             float interval = AnyUnhealthy() ? probeIntervalUnhealthySec : probeIntervalHealthySec;
-            _probeAccum += Time.unscaledDeltaTime;
+            _probeAccum += SimTime.Dt;
             if (_probeAccum < interval) return;
             _probeAccum = 0f;
             SendProbe();
@@ -573,7 +574,7 @@ namespace FixedCamVr.Streaming
                 var stream = registry.Get(i);
                 if (stream == null) continue;
                 if (stream.IsSuspended) continue;
-                if (!stream.IsConnected || stream.ReceivedFps <= 0f) return true;
+                if (!stream.IsConnected || stream.DecodedFps <= 0f) return true;
             }
             return false;
         }
@@ -714,7 +715,7 @@ namespace FixedCamVr.Streaming
             if (srv == null) return; // 焼き込み ShowServer.asset が無いと override できない
 
             // 1s throttle（不通中に毎フレーム文字列連結しないため）。
-            _serverEvalAccum += Time.unscaledDeltaTime;
+            _serverEvalAccum += SimTime.Dt;
             if (_serverEvalAccum < 1f) return;
             _serverEvalAccum = 0f;
 
@@ -803,7 +804,7 @@ namespace FixedCamVr.Streaming
             status.conflict = index < _conflict.Length && _conflict[index];
             status.missing = index < _missing.Length && _missing[index];
             float age = -1f;
-            float now = Time.realtimeSinceStartup;
+            float now = WallClock.Now;
             if (!string.IsNullOrEmpty(src.CameraId)
                 && _logic.TryGetLatestCamera(src.CameraId, now, out var e))
                 age = now - e.lastSeen;

@@ -44,6 +44,7 @@ namespace FixedCamVr.Tracking
         [SerializeField] private bool logChanges = true;
 
         private PlayerZone? _current;
+        private ZonePickLogic.Box[]? _pickBoxes;
         private float _accum;
         private ShowRunDirector? _runDirector;
 
@@ -75,7 +76,7 @@ namespace FixedCamVr.Tracking
 
         /// <summary>
         /// Pick 確定でゾーンが変わった時に発火する（旧ゾーン, 新ゾーン）。
-        /// 初回取得時は旧ゾーンが null。周回カウント（LapCounter）等の外部消費者向け。
+        /// 初回取得時は旧ゾーンが null。購読者は <c>ZoneLayoutApplier</c>（入った瞬間の生の判定で区間の見た目を当てる）。
         /// 発火は registry.SetActive と同じ箇所（cameraIndex 未変化のゾーン間移動でも発火する点に注意）。
         /// </summary>
         public event Action<PlayerZone?, PlayerZone>? ZoneChanged;
@@ -164,14 +165,17 @@ namespace FixedCamVr.Tracking
         /// 現ゾーンを優先（shrink 判定）し、はみ出していれば優先度最大の包含ゾーンを採用。
         /// 何にも入っていなければ keepLastWhenOutside の方針で current を返すか null を返す。
         /// 同優先度のときは zones 配列の先頭側が選ばれる（厳密な比較は <c>&gt;</c> なので先勝ち）。
-        /// 純粋関数として書かれており、テストから reflection で直接呼ばれる。
+        /// 現ゾーン（<c>_current</c>）を読み、判定用の箱の配列（<c>_pickBoxes</c>）を使い回すので純粋関数ではない。
+        /// テストから reflection で直接呼ばれる。
         /// </summary>
         private PlayerZone? Pick(Vector3 head)
         {
             // 判定の中身は純ロジック（ZonePickLogic）へ委譲する。Web シミュレータの JS ミラーと
             // 同じセマンティクスを共有し、drift を golden トレース比較で機械検出できるようにするため
             // （計画 2026-07-25_show-simulator.md 段 S1）。ここは PlayerZone ↔ Box の詰め替えだけ。
-            var boxes = new ZonePickLogic.Box[zones.Length];
+            if (_pickBoxes == null || _pickBoxes.Length != zones.Length)
+                _pickBoxes = new ZonePickLogic.Box[zones.Length];
+            ZonePickLogic.Box[] boxes = _pickBoxes;
             int current = -1;
             for (int i = 0; i < zones.Length; i++)
             {

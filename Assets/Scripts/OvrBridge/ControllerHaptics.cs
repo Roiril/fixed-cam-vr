@@ -1,5 +1,6 @@
 #nullable enable
 using FixedCamVr.Input;
+using FixedCamVr.Streaming;
 using UnityEngine;
 
 namespace FixedCamVr.OvrBridge
@@ -113,7 +114,7 @@ namespace FixedCamVr.OvrBridge
 
         private void Update()
         {
-            float now = Time.realtimeSinceStartup;
+            float now = SimTime.Realtime;
             if (_lastRealtime >= 0f)
             {
                 float gap = now - _lastRealtime;

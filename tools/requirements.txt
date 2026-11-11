@@ -1,19 +1,19 @@
-# 検証まわりの Python 依存（py -3.11 に入れる）
+# Python dependencies for the verification tools (install into py -3.11).
 #
-#   py -3.11 -m pip install opencv-python numpy imageio-ffmpeg
+#   py -3.11 -m pip install -r tools/requirements.txt
 #
-# ⚠ `-r tools/requirements.txt` は日本語端末（cp932）で落ちる。pip はこのファイルを
-#    ロケールの符号化で読むので、下の日本語コメントが UnicodeDecodeError になる。
-#    パッケージ名を直に打つ方が確実（2026-08-10 実測）。
+# Keep this file ASCII only. pip reads it with the locale encoding (cp932 on
+# this PC), so a single non-ASCII character makes `-r` fail with
+# UnicodeDecodeError and nothing gets installed (measured 2026-08-10).
 #
-# ⚠ この 3 つが無いと tools/quest-record.py が動かない。
-#    quest-record.py は「HMD を被らずに実機の見た目を確かめる」唯一の経路で、
-#    作りこみ 1 周（.claude/skills/work-round）がこれに乗っている。
-#    PC を替えたとき・Python を入れ直したときに黙って死ぬので、ここに控えておく。
+# Without these, tools/quest-record.py, tools/virtualwalk-video.py and the
+# preview/sound tools stop at import. Reinstall after changing PC or Python.
 #
-# ⚠ `python` は Microsoft Store のスタブで、呼んでもエラーにならず版すら返さない。
-#    必ず `py -3.11` で呼ぶ（~/.claude/rules/windows-env.md §7）。
+# Always call `py -3.11`. The bare `python` on PATH is the Microsoft Store
+# stub: it does not fail and does not print a version
+# (~/.claude/rules/windows-env.md section 8).
 
-opencv-python      # 録画の片眼化・フレーム取り出し（PIL は mp4 を読めない）
-numpy              # 同上
-imageio-ffmpeg     # H.264 への再エンコード
+opencv-python      # per-eye crop and frame extraction from recordings
+numpy
+imageio-ffmpeg     # H.264 re-encode
+pillow             # contact sheets, previews, image metrics (20+ tools import PIL)

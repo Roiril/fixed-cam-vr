@@ -66,7 +66,7 @@ namespace FixedCamVr.Diagnostics
         private void Update()
         {
             // FPS 集計
-            _fpsAccum += Time.unscaledDeltaTime;
+            _fpsAccum += SimTime.Dt;
             _fpsFrames++;
             if (_fpsAccum >= fpsWindowSec && _fpsFrames > 0)
             {
@@ -86,7 +86,7 @@ namespace FixedCamVr.Diagnostics
             }
 
             // 定期 ping
-            _sincePeriodic += Time.unscaledDeltaTime;
+            _sincePeriodic += SimTime.Dt;
             if (_sincePeriodic >= periodicIntervalSec)
             {
                 Dump("periodic");
@@ -131,7 +131,7 @@ namespace FixedCamVr.Diagnostics
             _sb.Append("[HudDump #");
             _sb.Append(_seq);
             _sb.Append(" t=");
-            _sb.Append(Time.unscaledTime.ToString("F1"));
+            _sb.Append(SimTime.Now.ToString("F1"));
             _sb.Append(" why=");
             _sb.Append(reason);
             _sb.Append("] FPS=");

@@ -14,15 +14,37 @@ namespace FixedCamVr.Streaming
     public sealed class EndingFrameCapture : MonoBehaviour
     {
         public const int Width = 1280;
+        /// <summary>参照の筐体を持たない 16:9 の画面の高さ。写真の高さは <see cref="HeightFor"/> で画面の縦横比から決める。</summary>
         public const int Height = 720;
 
+        /// <summary>
+        /// 幅 <see cref="Width"/> の写真の高さを、画面の物理の縦横比（幅/高さ）から決める。
+        /// 合成は画面の uv 0〜1 をそのまま描くので、縦横比が違う器へ写すと引き伸ばされる
+        /// （参照の筐体つきの画面は 1280:1030。16:9 へ写すと終幕の写真が横長になった）。
+        /// 縦横比が読めなければ 16:9。
+        /// </summary>
+        public static int HeightFor(float physicalAspect)
+            => physicalAspect > 0.01f && !float.IsInfinity(physicalAspect)
+                ? Mathf.Max(1, Mathf.RoundToInt(Width / physicalAspect)) : Height;
+
+        /// <summary>画面の Transform の縦横比から写真の高さを決める。</summary>
+        public static int HeightFor(Transform? screen)
+        {
+            if (screen == null) return Height;
+            Vector3 s = screen.lossyScale;
+            return Mathf.Abs(s.y) < 1e-5f ? Height : HeightFor(Mathf.Abs(s.x / s.y));
+        }
+
         private static readonly int CrtSignalRuntimeId = Shader.PropertyToID("_CrtSignalRuntime");
+        private static readonly int IntroLiveId = Shader.PropertyToID("_IntroLive");
+        private static readonly int HeartVignetteId = Shader.PropertyToID("_HeartVignette");
 
         [Tooltip("合成結果を描く ScreenComposite の Renderer。null なら同じ GameObject から取得。")]
         [SerializeField] private Renderer? screenRenderer;
 
         private TakeRunner? _runner;
         private ShowRunDirector? _runDirector;
+        private CameraFeelFx? _feel;
         private Material? _material;
         private RenderTexture? _trappedShot;
         private RenderTexture? _releasedShot;
@@ -113,7 +135,37 @@ namespace FixedCamVr.Streaming
         public bool CaptureComposite(RenderTexture destination)
         {
             ResolveMaterial();
-            return CaptureComposite(_material, destination);
+            float sink = _runDirector != null ? _runDirector.EndingSink : 0f;
+            if (_material == null || !(sink > 0f)) return CaptureComposite(_material, destination);
+
+            // 時間切れの手前の沈み（ShowRunDirector.TickEndingSink）は体験者の目の前で起きることで、
+            // 人形 End のエンドロールの写真には持ち込まない。画面の材質は書き換えず、複製へ沈む前の値を戻して描く。
+            var clone = new Material(_material);
+            try
+            {
+                if (_feel == null) _feel = GetComponent<CameraFeelFx>();
+                if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
+                RemoveEndingSink(clone, sink, _feel != null ? _feel.AppliedHeartVignette : 0f);
+                return CaptureComposite(clone, destination);
+            }
+            finally
+            {
+                if (Application.isPlaying) Destroy(clone);
+                else DestroyImmediate(clone);
+            }
+        }
+
+        /// <summary>
+        /// 沈みを掛ける前の値を材質へ戻す。映像の出方（<c>_IntroLive</c>）は掛けた係数で割り戻し、
+        /// 周辺の落ち込み（<c>_HeartVignette</c>）は心音のぶんだけにする。
+        /// </summary>
+        public static void RemoveEndingSink(Material material, float sink, float heartVignette)
+        {
+            float brightness = EndingDecisionLogic.SinkBrightness(sink);
+            if (material.HasProperty(IntroLiveId) && brightness > 0f)
+                material.SetFloat(IntroLiveId, Mathf.Clamp01(material.GetFloat(IntroLiveId) / brightness));
+            if (material.HasProperty(HeartVignetteId))
+                material.SetFloat(HeartVignetteId, Mathf.Max(0f, heartVignette));
         }
 
         /// <summary>指定 material の合成結果を同じ経路で描く Editor プレビュー用入口。</summary>
@@ -186,6 +238,7 @@ namespace FixedCamVr.Streaming
         {
             RenderTexture? existing = window == EndingShotWindow.Trapped ? _trappedShot : _releasedShot;
             if (existing != null) return CaptureComposite(existing);
+            ResolveMaterial();
 
             RenderTexture created = CreateTarget(window == EndingShotWindow.Trapped
                 ? "Ending Trapped Shot"
@@ -213,9 +266,10 @@ namespace FixedCamVr.Streaming
             return true;
         }
 
-        private static RenderTexture CreateTarget(string name)
+        private RenderTexture CreateTarget(string name)
         {
-            var rt = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGB32)
+            int height = HeightFor(screenRenderer != null ? screenRenderer.transform : transform);
+            var rt = new RenderTexture(Width, height, 0, RenderTextureFormat.ARGB32)
             {
                 name = name,
                 filterMode = FilterMode.Bilinear,

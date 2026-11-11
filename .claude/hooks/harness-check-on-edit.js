@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PostToolUse(Edit|Write): .claude/ のハーネス資産を書き換えたら tools/harness-check.py を流し、
-// ERROR / WARN を文脈へ返す。遮断はしない（書いた直後に直せるように知らせるだけ）。
+// ERROR だけを文脈へ返す（WARN は返さない。reference/ と canon/LEDGER.md の編集では流れない）。遮断はしない（書いた直後に直せるように知らせるだけ）。
 // 2026-10-22 のハーネス見直しで追加。rule の積み増しは「書き方の規律」だけでは止まらなかった。
 'use strict';
 const { execFileSync } = require('child_process');

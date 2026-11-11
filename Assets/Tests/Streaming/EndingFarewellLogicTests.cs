@@ -168,11 +168,54 @@ namespace FixedCamVr.Streaming.Tests
             var l = new EndingFarewellLogic();
             Run(l);
             Run(l);
-            for (int i = 0; i < 900; i++) Run(l);
+            float waited = 0f;
+            while (waited < EndingFarewellLogic.PhotoGiveUpSec - 1f) { Run(l); waited += Dt; }
             Assert.That(l.Current, Is.EqualTo(Phase.Face));
             Assert.That(l.ElapsedSec, Is.LessThan(EndingFarewellLogic.AppearSec + EndingFarewellLogic.FaceSec));
             l.NotifyShotCaptured();
             Assert.That(Run(l).sample.phase, Is.EqualTo(Phase.Turn));
+        }
+
+        [Test]
+        public void Photo_LoosensWithTime_ThenTheDollLeavesWithoutIt()
+        {
+            var l = new EndingFarewellLogic();
+            Run(l);
+            int level = -1;
+            var seen = new System.Collections.Generic.List<int>();
+            for (float t = 0f; t < EndingFarewellLogic.PhotoGiveUpSec + 3f && l.Current != Phase.Turn; t += Dt)
+            {
+                var step = Run(l);
+                if (step.sample.photoLevel != level) { level = step.sample.photoLevel; seen.Add(level); }
+            }
+            Assert.That(seen, Is.EqualTo(new[] { 0, 1, 2 }), "全身 → 足が切れてもよい → 向きを問わない の順に緩む");
+            Assert.That(l.Current, Is.EqualTo(Phase.Turn), "報告した人を待たせ続けない");
+            Assert.That(l.PhotoGivenUp, Is.True);
+            for (float t = 0f; t < EndingFarewellLogic.TotalSec + 1f && l.Current != Phase.Done; t += Dt) Run(l);
+            Assert.That(l.Current, Is.EqualTo(Phase.Done), "写真なしでも消え切って締めが終わる");
+        }
+
+        [Test]
+        public void NeverAnchoring_EndsTheTakeWithoutTheDoll()
+        {
+            var l = new EndingFarewellLogic();
+            for (float t = 0f; t < EndingFarewellLogic.PhotoGiveUpSec + 4f && l.Current != Phase.Done; t += Dt)
+                Run(l, anchored: false);
+            Assert.That(l.Current, Is.EqualTo(Phase.Done), "出せないまま上限まで待って中断へ落とさない");
+        }
+
+        [Test]
+        public void WaitsForTheNoticeToClose_WithALimit()
+        {
+            var l = new EndingFarewellLogic();
+            Assert.That(l.Tick(Dt, true, true, true, false, false, false, noticeOpen: true).begin, Is.False, "読んでいる字の裏に現れない");
+            Assert.That(l.Tick(Dt, true, true, true, false, false, false, noticeOpen: false).begin, Is.True, "閉じたら出る");
+
+            var stuck = new EndingFarewellLogic();
+            bool began = false;
+            for (float t = 0f; t < EndingFarewellLogic.NoticeWaitMaxSec + 1f && !began; t += Dt)
+                began = stuck.Tick(Dt, true, true, true, false, false, false, noticeOpen: true).begin;
+            Assert.That(began, Is.True, "面が閉じなくても上限で出る");
         }
 
         [Test]
@@ -202,31 +245,90 @@ namespace FixedCamVr.Streaming.Tests
                 float visitorYaw = EndingFarewellLogic.FaceYawDeg(a.visitorTargetFoot, a.foot);
                 float dollYaw = EndingFarewellLogic.FaceYawDeg(a.foot, a.visitorTargetFoot);
                 Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot, visitorYaw, dollYaw), Is.True);
-                Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot + Vector3.right,
-                    visitorYaw, dollYaw), Is.False);
+                Assert.That(EndingFarewellLogic.PhotoBlock(a, a.foot + Vector3.left, visitorYaw, dollYaw, cam),
+                    Is.EqualTo("order"), "人形より左に居るときは撮らない");
                 Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot,
                     visitorYaw + 90f, dollYaw), Is.False);
                 Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot,
                     visitorYaw, dollYaw + 90f), Is.False);
-                Vector3 end = a.foot + a.retreatDir * EndingFarewellLogic.RetreatM;
-                Assert.That(end.x, Is.GreaterThan(corner.x));
-                Assert.That(end.z, Is.LessThan(corner.z));
+                Assert.That(a.retreatEnd.x, Is.GreaterThan(corner.x));
+                Assert.That(a.retreatEnd.z, Is.LessThan(corner.z));
             }
             finally { Object.DestroyImmediate(go); }
         }
 
         [Test]
-        public void Photo_RefusesAPositionWhoseBodyCrossesTheWall()
+        public void VisitorAnchor_SolvesFromWhereTheVisitorStands_WithBothLenses()
         {
-            var a = new EndingFarewellLogic.Anchor
+            // 手すりの道の A の側。本番の較正と実レンズ（デジタルツイン）の両方で解ける。
+            var cameras = new[] { MakeEndingCamera(out GameObject showGo), MakeTwinCamera(out GameObject twinGo) };
+            try
             {
-                foot = new Vector3(0.5f, 0f, 3.5f), visitorTargetFoot = new Vector3(0.1f, 0f, 3.5f),
-                wallCorner = new Vector3(0f, 0f, 4f), wallEndA = new Vector3(0.955f, 0f, 4f),
-                wallEndB = new Vector3(0f, 0f, 3.045f), visitorHeightM = 1.65f, visitorRadiusM = 0.354f,
-                wallHalfThicknessM = 0.02f,
-            };
-            Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot, 90f, -90f), Is.False,
-                "足元は壁の内側でも、体の厚みが壁を横切る位置では撮らない");
+                Vector3 corner = new Vector3(-0.5f, 0f, 0.5f);
+                Vector3 endA = corner + Vector3.right * 0.955f, endB = corner + Vector3.back * 0.955f;
+                foreach (Camera cam in cameras)
+                    foreach (float x in new[] { 0.4f, 0.3f, 0.2f, 0.1f, 0f, -0.1f, -0.2f })
+                    {
+                        var visitor = new Vector3(x, 0f, 0.26f);
+                        string at = $"{cam.name} x={x}";
+                        Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner, endA, endB, out var a,
+                            visitorFoot: visitor, visitorYawDeg: -120f), Is.True, at);
+                        // 右寄りは今の立ち位置から解ける。人形に近い左寄りは L 字の内側の点へ落ちても撮れる。
+                        if (x >= 0f)
+                        {
+                            Assert.That(a.fromVisitor, Is.True, at);
+                            Assert.That(a.visitorTargetFoot, Is.EqualTo(visitor), at + " 隠れた目標へ歩かせない");
+                        }
+                        Vector3 doll = cam.WorldToViewportPoint(a.foot);
+                        Assert.That(doll.x, Is.LessThan(cam.WorldToViewportPoint(visitor).x - EndingFarewellLogic.PhotoMinOrderU), at);
+                        Assert.That(cam.WorldToViewportPoint(a.foot + Vector3.up * 0.4f).y, Is.LessThan(1f), at + " 人形の頭");
+                        Assert.That(doll.y, Is.GreaterThan(0f), at + " 人形の足");
+                        Assert.That(a.retreatShrink, Is.LessThanOrEqualTo(EndingFarewellLogic.RetreatMaxShrink), at);
+                        float yaw = EndingFarewellLogic.FaceYawDeg(visitor, a.foot);
+                        float dollYaw = EndingFarewellLogic.FaceYawDeg(a.foot, visitor);
+                        Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw, dollYaw, cam, EndingFarewellLogic.PhotoLevelFeetOut),
+                            Is.Empty, at + " 足が切れてよくなった段では必ず撮れる");
+                    }
+            }
+            finally { Object.DestroyImmediate(showGo); Object.DestroyImmediate(twinGo); }
+        }
+
+        [Test]
+        public void VisitorAnchor_FallsBackToTheInnerPoint_WhenTheVisitorIsOutOfFrame()
+        {
+            Camera cam = MakeEndingCamera(out GameObject go);
+            try
+            {
+                Vector3 corner = new Vector3(-0.5f, 0f, 0.5f);
+                Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner,
+                    corner + Vector3.right * 0.955f, corner + Vector3.back * 0.955f, out var a,
+                    visitorFoot: new Vector3(3f, 0f, -3f)), Is.True);
+                Assert.That(a.fromVisitor, Is.False);
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void Photo_LevelsLoosenFeetFirst_ThenTheVisitorYaw()
+        {
+            Camera cam = MakeTwinCamera(out GameObject go);
+            try
+            {
+                Vector3 corner = new Vector3(-0.5f, 0f, 0.5f);
+                var visitor = new Vector3(0.4f, 0f, 0.26f);   // 足が画の下へ切れる所
+                Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner,
+                    corner + Vector3.right * 0.955f, corner + Vector3.back * 0.955f, out var a, visitorFoot: visitor), Is.True);
+                float yaw = EndingFarewellLogic.FaceYawDeg(visitor, a.foot);
+                float dollYaw = EndingFarewellLogic.FaceYawDeg(a.foot, visitor);
+                Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw, dollYaw, cam), Is.EqualTo("framing"));
+                Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw, dollYaw, cam, EndingFarewellLogic.PhotoLevelFeetOut), Is.Empty);
+                Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw + 90f, dollYaw, cam, EndingFarewellLogic.PhotoLevelFeetOut),
+                    Is.EqualTo("visitorYaw"));
+                Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw + 90f, dollYaw, cam, EndingFarewellLogic.PhotoLevelAnyYaw), Is.Empty);
+                Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw, dollYaw + 90f, cam, EndingFarewellLogic.PhotoLevelAnyYaw),
+                    Is.EqualTo("dollYaw"), "人形は最後まで人を見ている");
+            }
+            finally { Object.DestroyImmediate(go); }
         }
 
         [Test]
@@ -287,8 +389,19 @@ namespace FixedCamVr.Streaming.Tests
             return cam;
         }
 
+        private static Camera MakeTwinCamera(out GameObject go)
+        {
+            Camera cam = MakeCamera(out go);
+            go.name = "FarewellTestCamTwin";
+            cam.transform.position = new Vector3(0.575f, 0.928f, -0.813f);
+            cam.transform.rotation = Quaternion.Euler(3.931f, -39.66f, -1.83f);
+            cam.projectionMatrix = Cg.ShowCgLayer.BuildProjectionMatrix(288.33f, 288.33f,
+                320f, 240f, 640, 480, cam.nearClipPlane, cam.farClipPlane);
+            return cam;
+        }
+
         [Test]
-        public void Retreat_ShowsItsBackAndClearsTheWall_ThenEndsFartherFromBothObservers()
+        public void Retreat_ShowsItsBackAndClearsTheWall_ThenShrinksInTheFrame()
         {
             Camera cam = MakeEndingCamera(out GameObject go);
             try
@@ -298,7 +411,6 @@ namespace FixedCamVr.Streaming.Tests
                 Vector3 endB = corner + Vector3.back * 0.955f;
                 Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner, endA, endB, out var a), Is.True);
                 float face = EndingFarewellLogic.FaceYawDeg(a.foot, a.visitorTargetFoot);
-                float previous = Vector3.Distance(a.foot, a.visitorTargetFoot);
                 Vector3 previousFoot = a.foot;
                 float maximumSpeed = 0f;
                 float retreatAt = EndingFarewellLogic.AppearSec + EndingFarewellLogic.FaceSec + EndingFarewellLogic.TurnSec;
@@ -307,11 +419,12 @@ namespace FixedCamVr.Streaming.Tests
                     var s = EndingFarewellLogic.SampleAt(retreatAt + EndingFarewellLogic.RetreatSec * i / 100f);
                     EndingFarewellLogic.PoseAt(a, s, face, out Vector3 foot, out float yaw);
                     Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-                    Assert.That(Vector3.Dot(forward, a.visitorTargetFoot - foot), Is.LessThan(0f), "人へ背を向ける");
-                    Assert.That(Vector3.Dot(forward, cam.transform.position - foot), Is.LessThan(0f), "カメラへ背を向ける");
-                    float distance = Vector3.Distance(foot, a.visitorTargetFoot);
-                    Assert.That(distance, Is.GreaterThanOrEqualTo(previous - 1e-5f));
-                    previous = distance;
+                    Assert.That(Vector3.Dot(forward, (cam.transform.position - foot).normalized), Is.LessThan(-0.3f), "カメラへ背を向ける");
+                    Vector3 feet = cam.WorldToViewportPoint(foot), head = cam.WorldToViewportPoint(foot + Vector3.up * 0.4f);
+                    Assert.That(feet.y, Is.GreaterThan(0f), "下がる間も足が画に入る");
+                    Assert.That(Vector3.Distance(foot, a.visitorTargetFoot), Is.GreaterThanOrEqualTo(0.13f + a.dollBodyRadiusM),
+                        "下がる途中で体験者の足元へ入らない");
+                    Assert.That(head.y, Is.LessThan(1f), "下がる間も頭が画に入る");
                     if (i > 0) maximumSpeed = Mathf.Max(maximumSpeed,
                         Vector3.Distance(previousFoot, foot) / (EndingFarewellLogic.RetreatSec / 100f));
                     previousFoot = foot;
@@ -325,7 +438,7 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(Vector3.Distance(last, cam.transform.position), Is.GreaterThan(Vector3.Distance(a.foot, cam.transform.position)));
                 float before = Mathf.Abs(cam.WorldToViewportPoint(a.foot + Vector3.up * 0.4f).y - cam.WorldToViewportPoint(a.foot).y);
                 float after = Mathf.Abs(cam.WorldToViewportPoint(last + Vector3.up * 0.4f).y - cam.WorldToViewportPoint(last).y);
-                Assert.That(after, Is.LessThan(before));
+                Assert.That(after, Is.LessThan(before * EndingFarewellLogic.RetreatMaxShrink + 1e-4f));
             }
             finally { Object.DestroyImmediate(go); }
         }

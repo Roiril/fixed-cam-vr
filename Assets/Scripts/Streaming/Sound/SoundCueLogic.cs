@@ -114,6 +114,12 @@ namespace FixedCamVr.Streaming
         /// （<c>tools/ingest-sounds.py</c> の <c>ALIGN</c>）。実行時に足し引きしない。
         /// </summary>
         EyeBig,
+
+        /// <summary>
+        /// <b>スクリーンが 1 枚増える</b>（<c>canon/LEDGER.md</c> 0317・試作）。音はカメラの切り替えと同じ素材で、
+        /// 増えた面の方角から鳴らす。間引きは <see cref="AnomalyEyes"/> の側。
+        /// </summary>
+        ScreenAdd,
     }
 
     /// <summary>
@@ -393,6 +399,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.DollEndFall: return "sfx_doll_end_fall";
                 case SoundCue.EyeOpen: return "sfx_eye";        // 6 種
                 case SoundCue.EyeBig: return "sfx_eye_big";
+                case SoundCue.ScreenAdd: return "sfx_switch";   // 6 種
                 default: return "";
             }
         }
@@ -405,6 +412,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Glitch: return 3;
                 case SoundCue.Creak: return 2;
                 case SoundCue.EyeOpen: return 6;
+                case SoundCue.ScreenAdd: return 6;
                 default: return 1;
             }
         }

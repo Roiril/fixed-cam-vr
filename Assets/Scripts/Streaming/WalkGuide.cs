@@ -217,7 +217,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Tick(bool wanted)
         {
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             if (_dirty) SolvePath();
 
             bool posValid = false;

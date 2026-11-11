@@ -1,7 +1,6 @@
 # Project Memory Index
 
 技術の罠・実装の経緯の索引。**1 行 1 フック**。世界観・演出の判定は `.claude/canon/`（混ぜない — `rules/canon-boundary.md`）。
-足すときは該当の節へ 1 行。
 
 ## いま開いている指摘
 - [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうること
@@ -13,11 +12,11 @@
 - [take_continuity.md](take_continuity.md) — 持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が持つ
 - [backtrack_and_replay.md](backtrack_and_replay.md) — 引き返し。周は 2 つ／前進は直前のカメラも見る／once は決着した回数／録画は上書きしない
 - [approach_and_veil_hold.md](approach_and_veil_hold.md) — 接近の再設計。startCovered で画面差し替えが消える／保持中の Hide で人形が消える
-- [closing_line_halt.md](closing_line_halt.md) — 4-A の③a は締めの線を踏んだ瞬間（0233）。入場 3 秒は ending_result
+- [closing_line_halt.md](closing_line_halt.md) — 4-A の③a は線 OR 3 秒。いまの台本は線が空で時計だけ
 - [ending_result.md](ending_result.md) — 最後の A の警告・帰還不能・解除・人形 End の条件と報告数の集計
 - [ending_roll.md](ending_roll.md) — 帰還 End / 人形 End のエンドロール冒頭。ランごとの合成済み写真
-- [ending_farewell_doll.md](ending_farewell_doll.md) — 帰還の別れの人形（0291）。CG 層の器を別れのモードで使う・写真は見つめる段
-- [romi_cart_esp32.md](romi_cart_esp32.md) — ⚠ 10-30 から不使用。人形の台車（ESP32・Joy-Con 2）の記録
+- [ending_farewell_doll.md](ending_farewell_doll.md) — 帰還の別れの人形（0291）。体験者のいる所から解く・写真は時間で緩む
+- [romi_cart_esp32.md](romi_cart_esp32.md) — ⚠ 10-30 から不使用の人形の台車
 - [visitor_sound_reset.md](visitor_sound_reset.md) — 2 人目以降だけ壊れる型。ResetRun が本番から呼ばれていなかった
 - [unexpected_event_recovery.md](unexpected_event_recovery.md) — 休止・固まり・通信の揺れからの復帰。ShowClock／強制リセット
 - [experience_fixes_2026_09_24.md](experience_fixes_2026_09_24.md) — 3-A/4-A の素材の同梱漏れ・導入の順序・最後のお願いまで報告をロック
@@ -35,7 +34,7 @@
 - [comms_curse.md](comms_curse.md) — 呪いの斑と前線。文字はステンシル bit 8 で切る／③a・③b は弱って戻る姿（0270）
 - [comms_face.md](comms_face.md) — スイの顔を焼く罠。明暗が逆なので肌を塗らないと顔が消える
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) — 時刻境界の float 比較。境界ぴったりと低 FPS を別に試す
-- [comms_performance_20261018.md](comms_performance_20261018.md) — 10-18 警告表示中の fps 低下を 90fps へ戻した測定
+- [comms_performance_20261018.md](comms_performance_20261018.md) — fps の実測（10-18）と軽量化（11-06）
 - [unauthorized_access_effect.md](unauthorized_access_effect.md) — 独立エラー演出の部品。描画順と映像面からの距離。現行は comms_takeover
 - [show_language.md](show_language.md) — 日本語 / English / Français。訳す面の線・訳文の置き場はフォントのベイクが決める
 
@@ -57,6 +56,7 @@
 - [cam_c_lens_study.md](cam_c_lens_study.md) — B と C の魚眼（版 3）。見るのは `menu crt-lens`・A は別れが解けない
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
+- [screen_multiply.md](screen_multiply.md) — 3-C の増えるスクリーン（0317・試作）
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る
 - [dark_eyes_slices.md](dark_eyes_slices.md) — 闇の目は Codex に描かせた壊れた画像の版。手続きの帯は「整然・チープ」で不採用
 - [eye_jack.md](eye_jack.md) — 目の視界ジャック（当日写真）。全開で発火は多数派に届かない／正規化を端末でしない
@@ -87,7 +87,7 @@
 ## 検証・計器
 - [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証 4 点（[XP]・自動走行・判定・機の選択）と解析が嘘をつく経路
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
-- [twin_verify.md](twin_verify.md) — HMD なしの通し検証
+- [twin_verify.md](twin_verify.md) — HMD なしの通し検証。時計は tau・既知。[演出ライブラリー](fx_library.md)
 - [twin_room.md](twin_room.md) — ツインの部屋。光は撮影時だけ・`menu twin`・霞で GPU 落ち
 - [twin_cycles.md](twin_cycles.md) — 写実のツイン。配置は写真から解く・盲検の点
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
@@ -105,16 +105,15 @@
 - [camera_fleet.md](camera_fleet.md) — 配信スマホ Pixel 7a ×3。IP は揮発／傾きで「カメラが動いたか」が分かる
 - [streamer_operator_ui.md](streamer_operator_ui.md) — 配信スマホ側の面（補助線・鏡合わせ・撮影パネル・卓の自動発見）
 - [approach_shoot_console.md](approach_shoot_console.md) — 当日の素材撮り。停滞は `ev=clip` にしか出ない
-- [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）
-- [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) — 却下済み（go2rtc 中継）
+- [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）。go2rtc 中継は[却下](camera_c120_go2rtc_plan.md)
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) — iPhone はデモなら IP Cam Lite。自作は PWA＋WS
-- [droidcam_endpoint.md](droidcam_endpoint.md) — フォールバック専用の DroidCam
+- [droidcam_endpoint.md](droidcam_endpoint.md) — 予備の DroidCam
 - [web_compositor.md](web_compositor.md) — `tools/web-compositor`（卓・合成検証・プロンプト管理・サーバ API）
 
 ## Unity・SDK
 - [unity_pitfalls.md](unity_pitfalls.md) — Unity / Meta XR の地雷集（Quad 向き・Texture 初期化・SkinnedMesh のカメラ別切替は無効 ほか）
 - [sdk_decision.md](sdk_decision.md) — Meta XR All-in-One + XRI 採用の経緯
-- [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路。この PC は未登録）
+- [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路。登録済み・要 Editor 起動）
 
 ## 対外資料・その他
 - [paper_dcexpo_env.md](paper_dcexpo_env.md) — DCEXPO 向け資料 `paper/dcexpo`。HTML→Edge→PDF・図は実物へ差し替え

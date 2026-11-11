@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """VirtualWalkRun が書いた comms.tsv から、VR 内の「通信パネル」の振る舞いを測り、コンタクトシートにする。
 
-    py -3.11 tools/virtualwalk-comms.py Logs/virtualwalk/20261014_111327_comms_before2
+    py -3.11 tools/virtualwalk-comms.py G:/マイドライブ/shubie/renders/virtualwalk/20261014_111327_comms_before2
     py -3.11 tools/virtualwalk-comms.py --compare <before のフォルダ> <after のフォルダ>
 
 相対パスはリポジトリのルートから解く（virtualwalk-video.py と同じ）。絶対パスもそのまま通る。

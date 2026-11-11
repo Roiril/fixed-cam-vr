@@ -91,9 +91,9 @@ namespace FixedCamVr.Streaming.Replay
             _prevStaffActive = staffActive;
             if (_session == null) return;
 
-            if (_run != null && _run.Phase == ShowPhase.Finished) _finishedFor += Time.unscaledDeltaTime;
+            if (_run != null && _run.Phase == ShowPhase.Finished) _finishedFor += SimTime.Dt;
             else _finishedFor = 0f;
-            float t = Time.unscaledTime - _session.t0;
+            float t = SimTime.Now - _session.t0;
             if (_finishedFor > TailAfterFinishSec) { Stop("finished"); return; }
             if (t > MaxDurationSec) { Stop("maxDuration"); return; }
 
@@ -145,10 +145,10 @@ namespace FixedCamVr.Streaming.Replay
                     for (int i = 0; i < _registry.Count; i++)
                         cams.Add(_registry.Get(i)?.SourceKey ?? "");
                 meta.cameras = cams.ToArray();
-                _session = new Session(dir, meta, Time.unscaledTime);
+                _session = new Session(dir, meta, SimTime.Now);
                 _finishedFor = 0f;
                 // t= は ShowTelemetryHost と同じ時計（realtimeSinceStartup）。突き合わせはこの行で頭を揃える。
-                Debug.Log($"[XP] t={Time.realtimeSinceStartup:F2} ev=xprec state=start why={reason} dir={stamp} cams={cams.Count} show={meta.showSha}");
+                Debug.Log($"[XP] t={SimTime.Realtime:F2} ev=xprec state=start why={reason} dir={stamp} cams={cams.Count} show={meta.showSha}");
             }
             catch (Exception e)
             {
@@ -171,9 +171,9 @@ namespace FixedCamVr.Streaming.Replay
             Session? s = _session;
             if (s == null) return;
             _session = null;
-            float dur = Time.unscaledTime - s.t0;
+            float dur = SimTime.Now - s.t0;
             s.Finish(reason, dur, waitMs);
-            Debug.Log($"[XP] t={Time.realtimeSinceStartup:F2} ev=xprec state=stop why={reason} sec={dur:F1} frames={s.Frames} " +
+            Debug.Log($"[XP] t={SimTime.Realtime:F2} ev=xprec state=stop why={reason} sec={dur:F1} frames={s.Frames} " +
                       $"jpeg={s.JpegCount} mb={s.Bytes / (1024f * 1024f):F0} capped={(s.Capped ? 1 : 0)}");
         }
 
@@ -181,7 +181,7 @@ namespace FixedCamVr.Streaming.Replay
         {
             Session? s = _session;
             if (s == null) return;
-            s.EnqueueJpeg(stream.SourceKey, jpeg, len, Time.unscaledTime);
+            s.EnqueueJpeg(stream.SourceKey, jpeg, len, SimTime.Now);
         }
 
         private void OnLog(string msg, string stack, LogType type)

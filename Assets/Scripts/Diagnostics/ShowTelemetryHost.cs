@@ -196,7 +196,7 @@ namespace FixedCamVr.Diagnostics
         private float _liveSec;       // 観測している総時間
         private readonly StringBuilder _sb = new StringBuilder(512);
 
-        private static float Now => Time.realtimeSinceStartup;
+        private static float Now => SimTime.Realtime;
 
         private void Start()
         {
@@ -216,7 +216,7 @@ namespace FixedCamVr.Diagnostics
 
         private void Update()
         {
-            float udt = Time.unscaledDeltaTime;
+            float udt = SimTime.Dt;
             _frames++;
             _dtSum += udt;
             if (udt > _dtMax) _dtMax = udt;
@@ -392,11 +392,19 @@ namespace FixedCamVr.Diagnostics
         /// §6.4 の規約で全カットが飛んだ演出は画面を掴まずに終わるが、<c>ActiveTakeId</c> は立つので
         /// <c>ev=take st=begin</c> → <c>st=end</c> が正常に出て、解析は「演出 OK」と判定する。
         /// 実際には何も起きていない。2026-07-31 の事故と完全に同型なので、カットの粒度で出す。
+        ///
+        /// 3 周目の録画カット（録画の次が無人の画と人形）だけ、尺を足す:
+        /// <c>auth=</c> 著作の尺 / <c>cut=</c> 実際の尺（歩く速さで切り上げた後）/ <c>d2=</c> 2 周目の同じ区間の滞在（不明は -1）。
+        /// 「速く歩く人に人形が出たか」は、この行と次のカット（plate）の <c>played=1</c> を並べて見る。
         /// </summary>
         private void OnStepResolved(string takeId, int stepIndex, string source, int camera,
-                                    bool played, string why)
+                                    bool played, string why, float recAuthoredSec, float recCutSec,
+                                    float recPriorDwellSec)
             => Emit($"ev=step take={(string.IsNullOrEmpty(takeId) ? "?" : takeId)} i={stepIndex} " +
-                    $"src={source} cam={camera} played={(played ? 1 : 0)} why={why}");
+                    $"src={source} cam={camera} played={(played ? 1 : 0)} why={why}" +
+                    (recAuthoredSec > 0f
+                        ? $" auth={recAuthoredSec:F2} cut={recCutSec:F2} d2={recPriorDwellSec:F2}"
+                        : ""));
 
         /// <summary>
         /// 動画カットが発火してから画に出るまでの内訳。<b>短いカットを連続で差し替える演出の要</b>。
@@ -469,6 +477,14 @@ namespace FixedCamVr.Diagnostics
         private string TvCaseState => _intro == null
             ? "-"
             : (_intro.TvCaseWritten < 0f ? "nc" : _intro.TvCaseWritten.ToString("F2"));
+
+        /// <summary>
+        /// 導入のテレビがいま定位置より何 m 奥に居るか。段 3 で大きい値から 0 へ下がる。
+        /// ⚠ 段 3 の間ずっと 0.00 なら、テレビは奥から出ていない（その場で灯るだけ）。
+        /// </summary>
+        private string TvDepthState => _intro == null
+            ? "-"
+            : (_intro.TvDepthApplied < 0f ? "nc" : _intro.TvDepthApplied.ToString("F2"));
 
         private string LiveGateState => _intro == null
             ? "-"
@@ -694,6 +710,22 @@ namespace FixedCamVr.Diagnostics
         /// ⚠⚠ <b>音は録画に映らない。</b> 目が開いているのに一撃が 0 なら、
         /// 音源を掴めていないか（大きい目の側は 0 で出る）、間引きが壊れている。
         /// </summary>
+        /// <summary>
+        /// 増えるスクリーン（0317）。組めたか / 点いた枚数 / 取り込みの累計。
+        /// ⚠ 取り込みが 0 のままなら面に画が 1 度も入っていない（シェーダと枚数が生きていても何も映らない）。
+        /// </summary>
+        private string ScreenMultiplyState => _eyes == null || _eyes.Wall == null
+            ? "-"
+            : $"{(_eyes.Wall.IsBuilt ? 1 : 0)}/{_eyes.Wall.OpenCount}/{_eyes.Wall.CaptureCount}";
+
+        /// <summary>
+        /// 増えるスクリーンが霧の奥から寄ったか。席へ寄っている途中の枚数 / 出番の中で席より奥に居た最大の距離（m）。
+        /// ⚠ 点いたのに 2 つ目が 0.0 のままなら、面はその場で点いただけ（点いた時刻が配られていない）。
+        /// </summary>
+        private string ScreenEmergeState => _eyes == null || _eyes.Wall == null
+            ? "-"
+            : $"{_eyes.Wall.ArrivingCount}/{_eyes.Wall.MaxEmergeSeenM:F1}";
+
         private string EyeSfxState => _eyes == null
             ? "-"
             : $"{_eyes.EyeSfxCount}/{(_eyes.EyeBigSfxFired ? 1 : 0)}";
@@ -754,6 +786,10 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private string CoarseMaterialState => _feel == null ? "-" : (_feel.HasMaterial ? "1" : "0");
 
+        /// <summary>時間切れの手前の沈みとして画へ書いた値。<c>-</c>=CameraFeelFx が居ない / <c>nc</c>=材質を掴めていない。</summary>
+        private string SinkState => _feel == null ? "-"
+            : (_feel.AppliedEndingSink < 0f ? "nc" : _feel.AppliedEndingSink.ToString("F2"));
+
         // ---------------------------------------------------------------- 設定の出所
 
         /// <summary>実機がどの設定で走っているかを出す。**これが無いと解析が嘘をつく。**
@@ -803,7 +839,7 @@ namespace FixedCamVr.Diagnostics
                      $"spark={SparkState} sparkN={SparkCountState} " +
                      // 管。テレビ方式は段 4 で 0 → 1、割れる遷移は全段 1。tvCase はテレビの筐体の明るさ。
                      // scrHid はスクリーンを描かずにいるか。テレビが闇から出るまでは 1（段 3 の黒に縁が浮く形を捕まえる）。
-                     $"ignite={IgniteState} tvCase={TvCaseState} scrHid={(_veil == null ? "-" : _veil.ScreenSuppressed ? "1" : "0")} " +
+                     $"ignite={IgniteState} tvCase={TvCaseState} tvZ={TvDepthState} scrHid={(_veil == null ? "-" : _veil.ScreenSuppressed ? "1" : "0")} " +
                      // 開始の門。**auth=0 のまま段 0 に居るのは正常**（人がまだ A を押していない）。
                      // 段 1 以降の行に auth=0 が出たら、卓の ⏭ で始まったということ。
                      $"auth={(_show != null && _show.StartAuthorized ? 1 : 0)}");
@@ -852,6 +888,11 @@ namespace FixedCamVr.Diagnostics
                      $"repN={(_report != null && _report.Presented ? _report.CapturedReports : -1)} " +
                      $"ending={(_run != null ? _run.EndingOutcome.ToString() : "-")} " +
                      $"endingLeft={(_run != null && _run.EndingTrappedByLeftHalf ? 1 : 0)} " +
+                     // endingTime = Trapped が③b からの時間切れで決まった（離脱・左半分ではない）。
+                     // sink = 時間切れの手前の沈みとして画へ書いた値（CameraFeelFx・nc なら材質を掴めていない）。
+                     // 時間切れの人形 End は終幕の頭で 1、帰還は報告から 0.5 秒で 0 に戻っているはず。
+                     $"endingTime={(_run != null && _run.EndingTrappedByTimeout ? 1 : 0)} " +
+                     $"sink={SinkState} " +
                      $"anomalyTotal={(_show != null ? _show.TotalAnomalyCount : -1)} " +
                      $"promptAge={(_run != null ? _run.ClosingPromptElapsedSec : -1f):F2} " +
                      // anomalies = 報告した異変の数（同じ演出は 1・`canon/LEDGER.md` 0234）。
@@ -1025,7 +1066,9 @@ namespace FixedCamVr.Diagnostics
                          $"cg={(fcg != null && fcg.IsVisible ? 1 : 0)} anchored={(anchored ? 1 : 0)} " +
                          $"dollU={(anchored ? a.dollUv.x : -1f):F2} dollV={(anchored ? a.dollUv.y : -1f):F2} " +
                          $"visU={(anchored ? a.visitorUv.x : -1f):F2} visV={(anchored ? a.visitorUv.y : -1f):F2} " +
-                         $"screen={(anchored && a.fromScreen ? 1 : 0)}");
+                         $"fromV={(anchored && a.fromVisitor ? 1 : 0)} shrink={(anchored ? a.retreatShrink : -1f):F2} " +
+                         $"gap={(anchored ? Vector3.Distance(a.foot, a.visitorTargetFoot) : -1f):F2} " +
+                         $"shot={(farewell.ShotCaptured ? 1 : 0)} level={farewell.PhotoLevel} held={farewell.FaceHeldSec:F1}");
                 }
             }
 
@@ -1065,12 +1108,12 @@ namespace FixedCamVr.Diagnostics
                     string src = StatusHud.SourceTag(_statusHud.LastShowSource);
                     if (hudNow)
                     {
-                        _hudShownAt = Time.unscaledTime;
+                        _hudShownAt = SimTime.Now;
                         Emit($"ev=status st=on src={src} sec=0.0");
                     }
                     else
                     {
-                        float sec = Mathf.Max(0f, Time.unscaledTime - _hudShownAt);
+                        float sec = Mathf.Max(0f, SimTime.Now - _hudShownAt);
                         Emit($"ev=status st=off src={src} sec={sec:F1}");
                     }
                     _lastHudVisible = hudNow;
@@ -1339,6 +1382,7 @@ namespace FixedCamVr.Diagnostics
                 _sb.Append(" aperQ=").Append(ApertureQuadState);
                 _sb.Append(" shatStyle=").Append(_intro.Transition == IntroTransition.Tv ? "tv" : "frozen");
                 _sb.Append(" tvCase=").Append(TvCaseState);
+                _sb.Append(" tvZ=").Append(TvDepthState);
                 _sb.Append(" shat=").Append(ShatterState);
                 _sb.Append(" shatC=").Append(ShatterPieceState);
                 _sb.Append(" shatDraw=").Append(ShatterDrawState);
@@ -1432,6 +1476,8 @@ namespace FixedCamVr.Diagnostics
             //     指したのに 1 画素も出ていない（1/0/1.00 ＝ 座席表を組めていない）は**別の壊れ方**。
             //   ⚠ 数は「重みを配った」ではなく**何個ぶんの目が実際に開いているか**（画に出た側）。
             _sb.Append(" eyes=").Append(EyesState);
+            _sb.Append(" scrMul=").Append(ScreenMultiplyState);
+            _sb.Append(" scrEmg=").Append(ScreenEmergeState);
             //   osd = 装置が打っている時計（`canon/LEDGER.md` 0108）。組めたか/刻んだ回数/不透明度。
             //   ⚠ **本編で 1/0/… なら時計が止まっている**（秒が変わっても敷き直していない）。
             //     画には「時計が無い」としか出ないので、ここが唯一の手掛かり。
@@ -1795,6 +1841,8 @@ namespace FixedCamVr.Diagnostics
                     _sb.Append(" |c").Append(i);
                     _sb.Append(" con=").Append(s.IsConnected ? 1 : 0);
                     _sb.Append(" rx=").Append(s.ReceivedFps.ToString("F1"));
+                    _sb.Append(" dfps=").Append(s.DecodedFps.ToString("F1"));
+                    _sb.Append(" dfail=").Append(s.DecodeFailures);
                     StreamHealth? h = s.Health;
                     _sb.Append(" tx=").Append(h != null ? h.fps.ToString("F1") : "-");
                     _sb.Append(" drop=").Append(s.DroppedFrames);

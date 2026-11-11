@@ -68,6 +68,12 @@ namespace FixedCamVr.Streaming
 
         // 実行に必要な定義本体（_logic の Def と同じ並び）。
         private ShowTakeDef[] _takes = Array.Empty<ShowTakeDef>();
+        // 各演出が置かれた区間（周, カメラ）。_takes と同じ並び。
+        private int[] _takeSegLaps = Array.Empty<int>();
+        private int[] _takeSegCams = Array.Empty<int>();
+
+        // このカットの録画を切り上げる尺（秒）。-1 = 切り上げない。録画を画に出した瞬間（PlayStepOverlay）に効かせる。
+        private float _stepRecCutSec = -1f;
 
         // cueId → 素材定義 / URL 解決（ShowControlClient から注入）。
         private Func<string, OverlayCueData?>? _cueResolver;
@@ -160,8 +166,8 @@ namespace FixedCamVr.Streaming
                 bool liveSource = step != null
                                   && TakeSchema.NormalizeSource(step.source, out _) == TakeSchema.SourceLive;
                 bool primaryActive = overlay != null && overlay.Strength > 0.001f;
-                bool primaryMatches = step != null && !string.IsNullOrEmpty(step.cueId)
-                                      && primaryActive && overlay!.AppliedCueId == step.cueId;
+                bool primaryMatches = step != null && primaryActive
+                                      && IsStepCueKey(overlay!.AppliedCueId, TakeId(_logic.ActiveTakeIndex), _logic.ActiveStepIndex);
                 bool secondaryActive = _feelFx != null && _feelFx.Overlay2Strength > 0.001f;
                 bool secondaryMatches = step != null && !string.IsNullOrEmpty(step.overlay2CueId)
                                         && secondaryActive;
@@ -258,6 +264,9 @@ namespace FixedCamVr.Streaming
         /// <summary>別れの人形の実行体（テレメトリが読む）。</summary>
         public EndingFarewellDoll? Farewell => _farewell;
 
+        /// <summary>スイの面が開いている（<c>CommsPanel</c> が毎フレーム書く）。別れの人形は閉じてから出る。</summary>
+        public bool EndingNoticeOpen { get; set; }
+
         public void NotifyEndingFarewellCaptured() => _farewell?.NotifyShotCaptured();
 
         /// <summary>
@@ -290,11 +299,30 @@ namespace FixedCamVr.Streaming
         private bool _activeStepDollReplacement;
 
         /// <summary>
-        /// <b>人形の追いつき（<c>steps[].dollCall</c>）を最後まで表示した回数</b>。
-        /// 次カットへの自然遷移か、演出の自然完了だけを数える。離脱・watchdog・中止・未表示カットは数えない。
+        /// <b>人形の追いつき（<c>steps[].dollCall</c>）が成立した回数</b>。
+        /// 呼びかけのカットから次カットへの自然遷移・演出の自然完了に加え、呼びかけを持つ演出の
+        /// カットが 1 つでも画面に出た後に前へ抜けて yield で畳まれた場合を数える
+        /// （呼びかけのカットがまだ始まっていなくてもよい・<c>canon/LEDGER.md</c> 0323 の委任）。
+        /// 前へ抜けた側は、同じ演出で既に数えていれば数え直さない。
+        /// 引き返し・watchdog・報告・中止・演出が始まる前の前進は数えない。
         /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
         /// </summary>
         public int DollCatchUpCompletedCount { get; private set; }
+
+        /// <summary>
+        /// <b>人形の呼びかけの声を撃った回数</b>（観測・テスト用）。呼びかけのカットの頭と、
+        /// そのカットより前で前へ抜けて追いつきが成立した縁（声がまだなら 1 回）で数える。
+        /// 音源が無くて鳴らなかった回も数える（撃ったかどうかの記録。鳴ったかは音の観測が持つ）。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int DollCallVoiceCount { get; private set; }
+
+        // 走行中の演出 1 本ぶんの追いつきの状態。演出の頭・終わり・中止で落とす。
+        // ⚠ 区間をまたいで持ち越さない（新しい持ち越し状態を作らない）。
+        private int _takeStepReached = -1;     // 受け取った最後のカット（飛ばしたカットも含む）
+        private bool _takeAnyStepShown;        // 1 カットでも画面に出たか
+        private bool _takeDollCallVoiced;      // この演出で呼びかけの声を撃ったか
+        private bool _takeCatchUpCounted;      // この演出で追いつきを数えたか
 
         /// <summary>
         /// <b>走行中の演出を外部要因で中止した回数</b>。
@@ -401,8 +429,12 @@ namespace FixedCamVr.Streaming
         ///
         /// 理由トークンは <see cref="StepOkReason"/> / <see cref="StepSkipCameraRange"/> /
         /// <see cref="StepSkipNoAsset"/> / <see cref="StepSkipNoRecording"/>。
+        ///
+        /// 続く 3 つは 3 周目の録画カット（<see cref="IsRecordedCutBeforeDoll"/>）だけが持つ
+        /// (著作の尺, 実際の尺, 2 周目の同じ区間の滞在)。対象でないカットは全部 -1。
+        /// 滞在が分からないときは滞在だけ -1 で、実際の尺は著作の尺と同じ。
         /// </summary>
-        public event Action<string, int, string, int, bool, string>? StepResolved;
+        public event Action<string, int, string, int, bool, string, float, float, float>? StepResolved;
 
         /// <summary>カットが画面を取れた（<see cref="StepResolved"/> の理由トークン）。</summary>
         public const string StepOkReason = "ok";
@@ -573,12 +605,16 @@ namespace FixedCamVr.Streaming
             if (segments == null)
             {
                 _takes = Array.Empty<ShowTakeDef>();
+                _takeSegLaps = Array.Empty<int>();
+                _takeSegCams = Array.Empty<int>();
                 _logic.SetDefs(Array.Empty<TakeRunnerLogic.Def>());
                 return;
             }
 
             var takes = new List<ShowTakeDef>();
             var defs = new List<TakeRunnerLogic.Def>();
+            var segLaps = new List<int>();
+            var segCams = new List<int>();
             bool anyLine = false;
 
             // ⚠⚠ **終幕の合図が指す演出は、旗が立っていても報告では畳めない。**
@@ -594,6 +630,8 @@ namespace FixedCamVr.Streaming
                 {
                     if (t == null) continue;
                     takes.Add(t);
+                    segLaps.Add(seg.lap);
+                    segCams.Add(seg.camera);
                     // ライントリガーは lineId → スロット（未知 id も枠を取る = 線が後から来ても index が動かない）。
                     // **ラインが未指定でも onLine は下ろさない**。下ろすと時刻トリガー扱いになり
                     // offsetSec(=0) で区間進入と同時に発火する ＝ 契約「空 lineId は発火しない」の真逆になる
@@ -633,6 +671,8 @@ namespace FixedCamVr.Streaming
                 }
             }
             _takes = takes.ToArray();
+            _takeSegLaps = segLaps.ToArray();
+            _takeSegCams = segCams.ToArray();
             // 締めの線は台本から導く（3 周目 A の凍結点）。**枠は必ず取る** — 演出の線と同じ理由で、
             // layout が後から来ても index が動かないようにする。線があれば横断検出も回す。
             _closingLineId = TakeSchema.ResolveClosingLineId(_takes);
@@ -826,14 +866,21 @@ namespace FixedCamVr.Streaming
             // 前の体験者の位置・横断状態を持ち越さない（ラン開始直後に幽霊の横断を作らない）。
             _lineCross.Reset();
             _hasLastNow = false;
+            ClearTakeCatchUpState();
             DollCatchUpCompletedCount = 0;
+            DollCallVoiceCount = 0;
             PresentationAbortCount = 0;
             _endingReleased = false;
             _farewell?.ResetRun();
         }
 
-        /// <summary>ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。</summary>
-        public void NotifyZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam)
+        /// <summary>
+        /// ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。
+        /// <paramref name="forward"/> は順路の前進か（<see cref="SegmentEntry.Forward"/>）。
+        /// yield で畳んだ人形の追いつきを成立とみなすかだけに使う。
+        /// </summary>
+        public void NotifyZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam,
+                                        bool forward = false)
         {
             // 「次にカメラが切り替わるまで」のカットはここで終わる。**新しい区間の判定より先に**
             // 畳まないと、同じフレームで武装された次の演出とどちらが画面を取るかが順序依存になる。
@@ -842,7 +889,7 @@ namespace FixedCamVr.Streaming
             else _logic.NotifyZoneChanged(Now);
 
             TakeRunnerLogic.Decision d =
-                _logic.OnZoneCommitted(newLap, newCam, hadPrev, prevLap, prevCam, Now);
+                _logic.OnZoneCommitted(newLap, newCam, hadPrev, prevLap, prevCam, Now, forward);
             Apply(d, exitAnchored: true);
         }
 
@@ -1009,6 +1056,10 @@ namespace FixedCamVr.Streaming
             // playable 判定を通って画面を取った dollCall だけが _activeStepDollCall を立てるため、
             // 素材不足などで飛ばされたカットはここへ混ざらない。
             if (!d.takeStarted) CompleteDollCatchUpIfActive();
+            // 演出の頭で、この演出 1 本ぶんの追いつきの状態を作り直す（前の演出の値を引き継がない）。
+            if (d.takeStarted) ClearTakeCatchUpState();
+            _takeStepReached = d.stepIndex;
+            _stepRecCutSec = -1f;
 
             if (director == null)
             {
@@ -1045,8 +1096,26 @@ namespace FixedCamVr.Streaming
                                      $"（take={TakeId(d.takeIndex)}）");
             }
             else playable = IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex, out why);
+
+            // 3 周目の録画カットを、2 周目の同じ区間での歩き方に合わせて切り上げる（canon/OPEN.md 状態 3 の案）。
+            // 速く歩く人は録画が終わる前に区間を出て、後ろの人形（plate のカット）を 1 度も見ずに畳まれていた。
+            float recAuthoredSec = -1f, recCutSec = -1f, recPriorDwellSec = -1f;
+            if (playable && d.takeIndex >= 0 && d.takeIndex < _takes.Length
+                && IsRecordedCutBeforeDoll(_takes[d.takeIndex].steps, d.stepIndex, SegLapOf(d.takeIndex)))
+            {
+                recAuthoredSec = AuthoredRecordedCutSec(step, cue);
+                if (recAuthoredSec > 0f)
+                {
+                    recPriorDwellSec = _logic.DwellSecOf(SegLapOf(d.takeIndex) - 1, SegCamOf(d.takeIndex));
+                    recCutSec = TakeRunnerLogic.ResolveRecordedCutSec(recAuthoredSec, recPriorDwellSec);
+                    if (recCutSec < recAuthoredSec) _stepRecCutSec = recCutSec;
+                    Debug.Log($"[TakeRunner] 3 周目の録画カット take={TakeId(d.takeIndex)} cut={d.stepIndex + 1} " +
+                              $"著作 {recAuthoredSec:F2}s → 実際 {recCutSec:F2}s（2 周目の滞在 {recPriorDwellSec:F2}s）");
+                }
+            }
             // 飛ばしたことも取れたことも外へ出す（観測専用。全カットが飛んだ演出を解析が名指しできる）。
-            StepResolved?.Invoke(TakeId(d.takeIndex), d.stepIndex, source, step.camera, playable, why);
+            StepResolved?.Invoke(TakeId(d.takeIndex), d.stepIndex, source, step.camera, playable, why,
+                                 recAuthoredSec, recCutSec, recPriorDwellSec);
             if (!playable)
             {
                 cue?.frames?.Dispose();   // 開いた録画をリークさせない
@@ -1092,6 +1161,8 @@ namespace FixedCamVr.Streaming
             // 呼びかけのカットが画面を取っているか（心音の始まりを決める・0175）。
             _activeStepDollCall = step.dollCall;
             _activeStepDollReplacement = false;
+            // この演出のカットが 1 つでも画面に出たか（前へ抜けた追いつきの条件・0323）。
+            _takeAnyStepShown = true;
 
             // このカットから劇伴を差し替える（`canon/LEDGER.md` 0119）。
             // ⚠ **演出の bgm（占有）とは別の口。** こちらはレーンそのものを書き換えるので、
@@ -1281,11 +1352,7 @@ namespace FixedCamVr.Streaming
             //   次のカットへ被る（ユーザー指示・0109「映像はこの音を無視してそのまま先に進んで ok」）。
             // ⚠ 引き返して同じ演出が頭から再演されたら**もう 1 度鳴る**。画も再演されるので、
             //   ここだけ黙ると「追いついたのに声がしない」になる（`memory/backtrack_and_replay.md`）。
-            if (step.dollCall && _sound != null && !_sound.PlaySpot(SoundCue.DollCall))
-                Debug.LogWarning("[TakeRunner] 人形の呼びかけの音源がありません"
-                                 + "（Resources/Sound/sfx_doll_call）。カットは無言で進みます。"
-                                 + "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
-                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+            if (step.dollCall) PlayDollCallVoice();
 
             // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
             if (step.glitch > 0.001f)
@@ -1499,6 +1566,12 @@ namespace FixedCamVr.Streaming
                     float sec = step.durSec > 0f ? step.durSec : TakeSchema.FallbackStepDurSec;
                     _logic.SetCurrentStepEnd(Now + sec);
                 }
+                // 3 周目の録画カットの切り上げ。録画が画に出たこの瞬間から数える（著作の尺も
+                // 「出てから終端まで」なので、覆いの遷移の分だけずれない）。畳むのは尺だけで、
+                // 次のカット（plate）への遷移は著作どおりの経路を通る（録画の終端で畳んだときと同じ）。
+                if (_stepRecCutSec > 0f && cue.SourceIsFrames)
+                    _logic.SetCurrentStepEnd(Now + _stepRecCutSec);
+                _stepRecCutSec = -1f;
                 return;
             }
 
@@ -1583,8 +1656,15 @@ namespace FixedCamVr.Streaming
         private void EndTake(TakeRunnerLogic.Decision d)
         {
             _lastEndReason = d.reason;
+            // 人形の追いつきの成立（乗っ取りは次の区間に入ったこの縁で始まる）。
+            //   自然完了 … 呼びかけのカットが画面を取ったまま終わった場合だけ数える（従来どおり）
+            //   前へ抜けた yield … 呼びかけを持つ演出のカットが 1 つでも画面に出ていれば、
+            //     呼びかけのカットがまだ始まっていなくても数える（`canon/LEDGER.md` 0323 の委任）
+            // 引き返し・watchdog・報告で畳んだ場合は数えない（中止とリセットは CleanupActive が落とす）。
             if (d.reason == TakeRunnerLogic.EndReason.Completed) CompleteDollCatchUpIfActive();
+            else if (d.yieldedForward) CompleteDollCatchUpOnForwardYield(d.takeIndex);
             else _activeStepDollCall = false;
+            ClearTakeCatchUpState();
             // 音は director の有無に関係なく必ず返す（画面が無くても占有だけ残さない）。
             EndTakeBgm();
             // ⚠ カット単位の資源（オーバーレイ・第 2 層・左右分割・録画・CG）は **画面の有無と無関係**。
@@ -1651,6 +1731,7 @@ namespace FixedCamVr.Streaming
             _activeStepCueId = "";   // 音が「まだ異世界が映っている」と読まない（0131）
             _activeStepDollCall = false;   // 同・呼びかけのカットが降りた縁を作る（0175）
             _activeStepDollReplacement = false;
+            ClearTakeCatchUpState();       // 中止は追いつきに数えない
             EndTakeBgm();
             ReleaseStepState();
             if (director != null && director.InsertActive)
@@ -1671,17 +1752,137 @@ namespace FixedCamVr.Streaming
             _logic.AbortActive();
         }
 
+        // 呼びかけのカットが画面を取ったまま終わった（次カットへの自然遷移・演出の自然完了）。
+        // 呼びかけのカットごとに数える（従来どおり）。前へ抜けた yield 側は、ここで数えた演出を数え直さない。
         private void CompleteDollCatchUpIfActive()
         {
             if (!_activeStepDollCall) return;
             _activeStepDollCall = false;
+            CountDollCatchUp();
+        }
+
+        /// <summary>
+        /// 呼びかけを持つ演出が、体験者の前進で yield に畳まれた縁（<c>canon/LEDGER.md</c> 0323 の委任）。
+        ///
+        /// 演出のカットが 1 つでも画面に出ていれば、呼びかけのカットがまだ始まっていなくても
+        /// （2-C の pov_1〜3 の途中でも）追いつきの成立として数える。
+        ///   - 声がまだならここで 1 回だけ撃つ（呼びかけのカットの頭と同じ音・同じ経路）
+        ///   - 呼びかけのカットの次のカットに著作された bgm があれば、同じ経路（<see cref="BeginStepBgm"/>）で掛ける。
+        ///     無ければ何もしない（曲名をここに書かない）
+        /// 演出がまだ始まっていない（線を越えていない・待たされていた）前進はここへ来ない —
+        /// 走っていない演出は yield で畳まれないため。
+        /// </summary>
+        private void CompleteDollCatchUpOnForwardYield(int takeIndex)
+        {
+            _activeStepDollCall = false;
+            ShowStepDef[]? steps = takeIndex >= 0 && takeIndex < _takes.Length ? _takes[takeIndex].steps : null;
+            int dollIdx = FindDollCallStepFrom(steps, _takeStepReached);
+            if (!ShouldCountForwardYieldCatchUp(FindDollCallStepFrom(steps, 0) >= 0,
+                                                _takeAnyStepShown, _takeCatchUpCounted))
+                return;
+            if (!_takeDollCallVoiced) PlayDollCallVoice();
+            // 呼びかけのカットを抜けた先の曲（自然に進んだときに掛かるはずだった step の bgm）。
+            // ⚠ 演出の bgm の占有を返す（EndTakeBgm）より前に掛ける ＝ 自然に進んだときと同じ順。
+            //   占有中ならレーンの戻り先だけが変わる（`BgmDirector.ApplySegment` の契約）。
+            if (steps != null && dollIdx >= 0 && dollIdx + 1 < steps.Length && steps[dollIdx + 1] != null)
+                BeginStepBgm(steps[dollIdx + 1]);
+            Debug.Log($"[TakeRunner] 人形視点の途中で前へ抜けた → 追いつきの成立とみなす" +
+                      $"（take={TakeId(takeIndex)} cut={_takeStepReached + 1} dollCallCut={dollIdx + 1}）");
+            CountDollCatchUp();
+        }
+
+        /// <summary>
+        /// 前へ抜けた yield を追いつきの成立に数えるか（純関数・テスト用）。
+        /// 呼びかけを持つ演出で、カットが 1 つでも画面に出ていて、この演出でまだ数えていないこと。
+        /// </summary>
+        public static bool ShouldCountForwardYieldCatchUp(bool takeHasDollCall, bool anyStepShown,
+                                                            bool alreadyCounted)
+            => takeHasDollCall && anyStepShown && !alreadyCounted;
+
+        /// <summary>
+        /// <b>歩く速さに合わせて切り上げる 3 周目の録画カットか</b>（純関数・テスト用）。
+        /// 3 周目以降の演出で、録画（続きから流す・位置で選ぶを除く）のすぐ次が無人の画（plate）のカット。
+        /// 演出のどこかに位置で選ぶ録画か線待ちのカットがあれば対象外 — 3-A は体験者の位置で進むので、
+        /// 時間で切り上げると位置と画が食い違う。1・2 周目は対象外。take id の文字列では判じない。
+        /// </summary>
+        public static bool IsRecordedCutBeforeDoll(ShowStepDef[]? steps, int stepIndex, int takeLap)
+        {
+            if (takeLap < 3 || steps == null || stepIndex < 0 || stepIndex + 1 >= steps.Length) return false;
+            ShowStepDef? cur = steps[stepIndex];
+            ShowStepDef? next = steps[stepIndex + 1];
+            if (cur == null || next == null) return false;
+            if (!TakeSchema.IsRecSource(TakeSchema.NormalizeSource(cur.source, out _))) return false;
+            if (cur.recContinue || cur.recFollow) return false;
+            if (TakeSchema.NormalizeSource(next.source, out _) != TakeSchema.SourcePlate) return false;
+            foreach (ShowStepDef? s in steps)
+                if (s != null && (s.recFollow || s.IsUntilLine)) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// 録画カットの著作の尺 (秒)。<c>untilClipEnd</c> は録画の長さ ÷ 再生速度、秒指定は <c>durSec</c>。
+        /// それ以外（待ち相手が区間・線・報告）と長さが分からないときは -1（切り上げない）。
+        /// </summary>
+        public static float AuthoredRecordedCutSec(ShowStepDef step, OverlayCueData? cue)
+        {
+            if (step.IsUntilClipEnd)
+            {
+                float dur = cue?.frames?.DurationSec ?? -1f;
+                return dur > 0f ? dur / TakeSchema.ResolveRecRate(step.recRate) : -1f;
+            }
+            if (step.IsUntilZoneChange || step.IsUntilLine || step.IsUntilMark) return -1f;
+            return step.durSec > 0f ? step.durSec : -1f;
+        }
+
+        private int SegLapOf(int takeIndex)
+            => takeIndex >= 0 && takeIndex < _takeSegLaps.Length ? _takeSegLaps[takeIndex] : -1;
+
+        private int SegCamOf(int takeIndex)
+            => takeIndex >= 0 && takeIndex < _takeSegCams.Length ? _takeSegCams[takeIndex] : -1;
+
+        // from 以降で最初に呼びかけを持つカットの index。無ければ -1。
+        private static int FindDollCallStepFrom(ShowStepDef[]? steps, int from)
+        {
+            if (steps == null) return -1;
+            for (int i = Math.Max(0, from); i < steps.Length; i++)
+                if (steps[i] != null && steps[i].dollCall) return i;
+            return -1;
+        }
+
+        private void CountDollCatchUp()
+        {
+            _takeCatchUpCounted = true;
             DollCatchUpCompletedCount++;
-            _feelFx?.BeginTakeoverStatic();
+            // ⚠ 主画面の砂嵐はランで最初の成立（0→1）でだけ始める。乗っ取りが実際に届いたか
+            //   （`CommsCueLogic.TakeoverDelivered`）はこのクラスから見えず、引き返して再演した
+            //   2 回目の成立で砂嵐だけが再び始まると、解く側（面の消去）が二度と来ない。
+            if (DollCatchUpCompletedCount == 1) _feelFx?.BeginTakeoverStatic();
+        }
+
+        // 人形の呼びかけの声（`canon/LEDGER.md` 0109）。カットの頭と、前へ抜けた追いつきの縁から撃つ。
+        private void PlayDollCallVoice()
+        {
+            _takeDollCallVoiced = true;
+            DollCallVoiceCount++;
+            if (_sound != null && !_sound.PlaySpot(SoundCue.DollCall))
+                Debug.LogWarning("[TakeRunner] 人形の呼びかけの音源がありません"
+                                 + "（Resources/Sound/sfx_doll_call）。カットは無言で進みます。"
+                                 + "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
+                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+        }
+
+        private void ClearTakeCatchUpState()
+        {
+            _takeStepReached = -1;
+            _takeAnyStepShown = false;
+            _takeDollCallVoiced = false;
+            _takeCatchUpCounted = false;
         }
 
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。
         private void ReleaseStepState()
         {
+            _stepRecCutSec = -1f;
             EndFollowSummary();
             _followActive = false;
             _followMax = float.NegativeInfinity;
@@ -1728,6 +1929,35 @@ namespace FixedCamVr.Streaming
             return steps[stepIndex];
         }
 
+        /// <summary>
+        /// カットのオーバーレイが画面へ届いたかを照合するキー（<see cref="OverlayCueData.id"/>）。
+        /// 素材名（<c>step.cueId</c>）ではなく take と段の番号で作る。終幕写真の窓
+        /// （<see cref="EndingShotWindow"/>）はこのキーで比べる。素材名と比べると人形 End の写真が 1 枚も撮れない。
+        /// </summary>
+        public static string StepCueKey(string takeId, int stepIndex) => $"{takeId}#{stepIndex}";
+
+        /// <summary>
+        /// <paramref name="applied"/> が <see cref="StepCueKey"/>(<paramref name="takeId"/>, <paramref name="stepIndex"/>) と等しいか。
+        /// 毎フレーム呼ばれるので文字列を組まずに比べる。
+        /// </summary>
+        public static bool IsStepCueKey(string? applied, string takeId, int stepIndex)
+        {
+            if (applied == null || stepIndex < 0 || string.IsNullOrEmpty(takeId)) return false;
+            int n = takeId.Length;
+            if (applied.Length < n + 2 || applied[n] != '#'
+                || string.CompareOrdinal(applied, 0, takeId, 0, n) != 0) return false;
+            int value = 0;
+            for (int i = n + 1; i < applied.Length; i++)
+            {
+                char c = applied[i];
+                if (c < '0' || c > '9') return false;
+                if (i > n + 1 && value == 0) return false; // 先頭の 0 は StepCueKey が作らない
+                value = value * 10 + (c - '0');
+                if (value > stepIndex) return false;
+            }
+            return value == stepIndex;
+        }
+
         private string TakeId(int takeIndex)
             => takeIndex >= 0 && takeIndex < _takes.Length && !string.IsNullOrEmpty(_takes[takeIndex].id)
                 ? _takes[takeIndex].id
@@ -1755,7 +1985,7 @@ namespace FixedCamVr.Streaming
                 if (rec == null) return null;
                 return new OverlayCueData
                 {
-                    id = $"{TakeId(takeIndex)}#{stepIndex}",
+                    id = StepCueKey(TakeId(takeIndex), stepIndex),
                     displayName = _takes[takeIndex].name ?? "",
                     frames = rec,
                     framesRate = TakeSchema.ResolveRecRate(step.recRate),
@@ -1781,7 +2011,7 @@ namespace FixedCamVr.Streaming
 
             return new OverlayCueData
             {
-                id = $"{TakeId(takeIndex)}#{stepIndex}",
+                id = StepCueKey(TakeId(takeIndex), stepIndex),
                 displayName = _takes[takeIndex].name ?? "",
                 clip = hasAsset ? null : cue?.clip,
                 stillImage = hasAsset ? null : cue?.stillImage,

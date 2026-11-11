@@ -172,7 +172,10 @@ namespace FixedCamVr.Diagnostics
             return tmp;
         }
 
-        /// <summary>通常の 2 結末に使う完成済みの 16:9 画像を受け取る。</summary>
+        /// <summary>
+        /// 通常の 2 結末に使う完成済みの画像を受け取る。縦横比は画面と同じ（参照の筐体つきは 1280:1030）で、
+        /// 写真の面（16:9 の器）の中へ高さを合わせて収める（<c>OutroReportMedia</c> の contain）。引き伸ばさない。
+        /// </summary>
         public void SetEndingImages(Texture? released, Texture? trapped)
         {
             if (ReferenceEquals(_releasedImage, released) && ReferenceEquals(_trappedImage, trapped)) return;
@@ -227,13 +230,13 @@ namespace FixedCamVr.Diagnostics
         private void LateUpdate()
         {
             if (!IsBuilt) return;
-            _resolveWait += Time.unscaledDeltaTime;
+            _resolveWait += SimTime.Dt;
             if (_resolveWait >= 1) { _resolveWait = 0; ResolveRefs(); }
             float alpha = outro != null ? Mathf.Clamp01(outro.ReportAlpha) : 0;
             if (_endingFrames != null)
                 SetEndingImages(_endingFrames.ReleasedShot, _endingFrames.TrappedShot);
             bool wanted = alpha > 0;
-            _music?.SetPresented(wanted, Time.unscaledDeltaTime, outro != null ? outro.CloseLevel : 1);
+            _music?.SetPresented(wanted, SimTime.Dt, outro != null ? outro.CloseLevel : 1);
             if (!wanted)
             {
                 _presented = false;

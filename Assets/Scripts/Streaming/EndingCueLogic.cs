@@ -18,8 +18,9 @@ namespace FixedCamVr.Streaming
     /// 従来の <c>run.endHoldMaxSec</c> の安全網がそのまま体験を終わらせる。
     /// <b>合図を足しただけで、出口は減らしていない。</b>
     ///
-    /// ⚠ <b>撃つのは 1 回だけ。</b> 落ちるのは <see cref="ResetRun"/>（＝ 周回リセット）のみ。
-    /// 終幕が終わって次の体験者が来るまで再武装しない。
+    /// ⚠ <b>撃つのは 1 回だけ。</b> 発火済み（<c>_fired</c>）を落とすのは <see cref="ResetRun"/>（周回リセット）と
+    /// <see cref="Configure"/> での演出 id の変更。武装（<c>_seen</c>）はこの 2 つに加え <see cref="NotifyInterrupted"/> でも落ちる。
+    /// 終幕が終わって次の体験者が来るまで、同じ id のまま再び撃つことはない。
     /// </summary>
     public sealed class EndingCueLogic
     {
@@ -50,7 +51,7 @@ namespace FixedCamVr.Streaming
             _fired = false;
         }
 
-        /// <summary>周回リセット（新しい体験者）。<b>武装と発火の両方が落ちる唯一の場所。</b></summary>
+        /// <summary>周回リセット（新しい体験者）。武装と発火の両方を落とす（<see cref="Configure"/> の id 変更も両方を落とす）。</summary>
         public void ResetRun()
         {
             _seen = false;

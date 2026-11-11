@@ -465,7 +465,7 @@ namespace FixedCamVr.Streaming
 
         private void Update()
         {
-            float dt = Time.unscaledDeltaTime;   // 演出で timeScale を触っても音は実時間で進む
+            float dt = SimTime.Dt;   // 演出で timeScale を触っても音は実時間で進む
             Resolve(dt);
 
             var st = ReadState();
@@ -782,7 +782,7 @@ namespace FixedCamVr.Streaming
             // 立ち上がりと下がりは時刻表が持つ。途中で畳まれた（0 へ跳ぶ）ときだけここで閉じる。
             float next = target >= FarewellBoxGain - 0.25f
                 ? target
-                : Mathf.MoveTowards(FarewellBoxGain, target, Time.unscaledDeltaTime / FarewellBoxReleaseSec);
+                : Mathf.MoveTowards(FarewellBoxGain, target, SimTime.Dt / FarewellBoxReleaseSec);
             bool audible = next > 0.0005f;
             if (audible && !_farewellBoxAudible && _farewellBox.src != null && _farewellBox.ok)
                 _farewellBox.src.time = 0f;

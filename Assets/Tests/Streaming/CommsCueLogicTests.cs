@@ -450,6 +450,115 @@ namespace FixedCamVr.Streaming.Tests
             CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, seen);
         }
 
+        // ------------------------------------------------------------------ ⑤ 別れの解析結果
+
+        /// <summary>締めの後、別れの人形が出ている 1 フレーム（③b は読ませ終わっている）。</summary>
+        private static CommsCueInput Farewell(bool turned, bool released, bool mark = false, bool detected = false)
+        {
+            CommsCueInput inp = Run(closing: 20f, mark: mark, detected: detected, read: true);
+            inp.farewellTurned = turned;
+            inp.curseReleased = released;
+            return inp;
+        }
+
+        /// <summary>①と③a・③b まで済ませた論理（帰還の別れの直前）。</summary>
+        private static CommsCueLogic AfterClosingPrompt()
+        {
+            var l = new CommsCueLogic();
+            Advance(l, CommsCueLogic.BeginDelaySec + 0.2f);
+            Advance(l, 0.5f, read: true);
+            CollectionAssert.Contains(AdvanceClosing(l, new Closing(), CommsCueLogic.HaltAfterClosingSec + 0.4f,
+                                                     read: true),
+                                      CommsNotice.Prompt);
+            return l;
+        }
+
+        private static System.Collections.Generic.List<CommsNotice> AdvanceFarewell(
+            CommsCueLogic l, float sec, bool turned, bool released, bool mark = false)
+        {
+            var seen = new System.Collections.Generic.List<CommsNotice>();
+            int n = (int)(sec / Dt);
+            for (int i = 0; i < n; i++)
+            {
+                CommsNotice v = l.Tick(Farewell(turned, released, mark, detected: mark));
+                if (v != CommsNotice.None) seen.Add(v);
+            }
+            return seen;
+        }
+
+        [Test]
+        public void FarewellFinding_FiresOnceAtTheTurnEdge()
+        {
+            var l = AfterClosingPrompt();
+            // 見つめている間（写真待ちで長引いても）は出さない。
+            CollectionAssert.IsEmpty(AdvanceFarewell(l, 15f, turned: false, released: true));
+            Assert.IsFalse(l.FarewellFindingFired);
+
+            Assert.AreEqual(CommsNotice.FarewellFinding, l.Tick(Farewell(turned: true, released: true)));
+            Assert.IsTrue(l.FarewellFindingFired);
+            // 後ろを向いている間・下がっている間に繰り返さない。
+            CollectionAssert.IsEmpty(AdvanceFarewell(l, 7f, turned: true, released: true));
+        }
+
+        [Test]
+        public void FarewellFinding_IsNotReplacedByAReport()
+        {
+            var l = AfterClosingPrompt();
+            Assert.AreEqual(CommsNotice.FarewellFinding, l.Tick(Farewell(turned: true, released: true)));
+            // 出した後の報告に返事（②）を出さない — 面は⑤を出したまま。
+            Assert.AreEqual(CommsNotice.None, l.Tick(Farewell(turned: true, released: true, mark: true, detected: true)));
+            Assert.AreEqual(CommsNotice.None, l.Tick(Farewell(turned: false, released: true, mark: true)));
+        }
+
+        [Test]
+        public void FarewellFinding_NeverFiresInTheDollEnding()
+        {
+            // 呪いが解けていない（人形 End・中断）なら、何かが後ろを向いたと読めても出さない。
+            var l = AfterClosingPrompt();
+            CollectionAssert.DoesNotContain(AdvanceFarewell(l, 10f, turned: true, released: false),
+                                            CommsNotice.FarewellFinding);
+            Assert.IsFalse(l.FarewellFindingFired);
+        }
+
+        [Test]
+        public void FarewellFinding_NeedsTheDollToTurn()
+        {
+            // 人形を出せなかった帰還（立ち位置が解けない・軽減）では向きが変わらないので出ない。
+            var l = AfterClosingPrompt();
+            CollectionAssert.DoesNotContain(AdvanceFarewell(l, 30f, turned: false, released: true),
+                                            CommsNotice.FarewellFinding);
+        }
+
+        [Test]
+        public void FarewellFinding_ComesBackForTheNextVisitor()
+        {
+            var l = AfterClosingPrompt();
+            Assert.AreEqual(CommsNotice.FarewellFinding, l.Tick(Farewell(turned: true, released: true)));
+
+            l.Tick(new CommsCueInput { inRun = false, dt = Dt });
+
+            Assert.IsFalse(l.FarewellFindingFired);
+        }
+
+        [Test]
+        public void FarewellFinding_FadesInWithoutKeystrokes_AtAnyInvasion()
+        {
+            Assert.AreEqual(CommsDelivery.Fade, CommsCueLogic.DeliveryOf(CommsNotice.FarewellFinding, 0f));
+            Assert.AreEqual(CommsDelivery.Fade, CommsCueLogic.DeliveryOf(CommsNotice.FarewellFinding, 1f));
+        }
+
+        [TestCase(true, false, false, 0f, 0.95f, true)]    // 別れが続いている
+        [TestCase(false, true, true, 0.5f, 0.95f, true)]   // 終幕の砂嵐
+        [TestCase(false, true, true, 0.95f, 0.95f, false)] // 電源断の縁で消える
+        [TestCase(false, true, true, 3f, 0.95f, false)]    // 結果画面には残さない
+        [TestCase(false, true, false, 0f, 0.95f, false)]   // 終幕を出さない設定
+        [TestCase(false, false, false, 0f, 0.95f, false)]  // ラン開始・導入
+        public void FarewellFinding_StaysUntilThePowerCut(bool inRun, bool finished, bool presenting,
+                                                          float elapsed, float powerCut, bool stays)
+        {
+            Assert.AreEqual(stays, CommsCueLogic.FarewellFindingStays(inRun, finished, presenting, elapsed, powerCut));
+        }
+
         // ------------------------------------------------------------------ 体験 1 回ぶんの状態
 
         [Test]

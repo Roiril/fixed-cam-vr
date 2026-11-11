@@ -90,7 +90,7 @@ namespace FixedCamVr.Diagnostics
 
         private void Update()
         {
-            _elapsed += Time.unscaledDeltaTime;
+            _elapsed += SimTime.Dt;
 
             if (_phase == Phase.Holding)
             {
@@ -104,7 +104,7 @@ namespace FixedCamVr.Diagnostics
 
             if (_phase == Phase.FadingOut)
             {
-                _fadeOutAccum += Time.unscaledDeltaTime;
+                _fadeOutAccum += SimTime.Dt;
                 float t = fadeDuration <= 0f ? 1f : Mathf.Clamp01(_fadeOutAccum / fadeDuration);
                 if (_image != null)
                 {

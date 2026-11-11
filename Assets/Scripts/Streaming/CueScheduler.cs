@@ -19,15 +19,22 @@ namespace FixedCamVr.Streaming
         public readonly int SegmentLap;
         /// <summary>進行の周（1 始まり・単調増加）。</summary>
         public readonly int ProgressLap;
+        /// <summary>
+        /// この進入が順路の前進か（<c>LapCounterLogic.LastFeedForward</c>）。引き返し・同一・スキップ・
+        /// 初回のシードは false。<c>policy:"yield"</c> で畳んだ演出が「前へ抜けた」かを決めるのに使う。
+        /// </summary>
+        public readonly bool Forward;
 
-        public SegmentEntry(int camera, int segmentLap, int progressLap)
+        public SegmentEntry(int camera, int segmentLap, int progressLap, bool forward = false)
         {
             Camera = camera;
             SegmentLap = segmentLap;
             ProgressLap = progressLap;
+            Forward = forward;
         }
 
-        public override string ToString() => $"cam={Camera} segmentLap={SegmentLap} progressLap={ProgressLap}";
+        public override string ToString()
+            => $"cam={Camera} segmentLap={SegmentLap} progressLap={ProgressLap} forward={Forward}";
     }
 
     /// <summary>

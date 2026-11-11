@@ -43,8 +43,31 @@ namespace FixedCamVr.Streaming.EditorTools.Replay
                 SessionState.SetBool(Key + ".nameSet", true);
                 SessionState.SetString(Key + ".name", PlayerSettings.productName);
             }
-            PlayerSettings.productName = "mawarimi-replay";
+            PlayerSettings.productName = ProductNameFor(System.IO.Path.GetDirectoryName(Application.dataPath) ?? "");
             return prev ? "off (was 1)" : "already off";
+        }
+
+        /// <summary>主の木のフォルダ名。ここで開いたときだけ、保存先は従来の <c>mawarimi-replay</c>。</summary>
+        public const string MainFolder = "fixed-cam-vr";
+        public const string BaseName = "mawarimi-replay";
+
+        /// <summary>
+        /// 再生・ツイン走行の間の productName（＝ persistentDataPath の末尾）。**木ごとに分ける。**
+        ///
+        /// ⚠ 同じ名前だと、別の worktree で同時に走る 2 本が同じ <c>xprec/</c> を使う。<c>XpTwinDriver.Load</c> は
+        /// 走り始めに <c>xprec/</c> を丸ごと消すので、後から始めた方が先の走行の記録を消しにいく
+        /// （2026-11-11、相手が掴んでいた <c>cam_Phone01.mjr</c> で IOException になり、後の走行が 49 秒で落ちた。
+        /// 掴まれていなければ黙って消えていた）。
+        /// 非 ASCII は使わない（上の MRUK の罠）。
+        /// </summary>
+        public static string ProductNameFor(string projectDir)
+        {
+            string folder = System.IO.Path.GetFileName(projectDir.TrimEnd('/', '\\'));
+            if (string.Equals(folder, MainFolder, StringComparison.OrdinalIgnoreCase)) return BaseName;
+            var sb = new System.Text.StringBuilder(BaseName).Append('-');
+            foreach (char c in folder)
+                sb.Append(c < 128 && (char.IsLetterOrDigit(c) || c == '-' || c == '_') ? char.ToLowerInvariant(c) : '_');
+            return sb.ToString();
         }
 
         public static void Restore()

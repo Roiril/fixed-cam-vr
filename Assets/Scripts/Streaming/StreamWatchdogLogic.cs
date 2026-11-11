@@ -44,10 +44,13 @@ namespace FixedCamVr.Streaming
         // HMD を外す / システムメニュー等で app が pause された間は true。
         private bool _suspended;
 
-        // 受信側 (Unity) の実 fps 計測。1 秒ウィンドウで decode 成功回数を数える。
+        // 受信側 (Unity) の実 fps 計測。1 秒ウィンドウで到着数と展開成功数を別々に数える。
+        // 表示していないカメラは展開を間引くので、経路の詰まり（lag）は到着数で見る。
         private float _recvWindowStart;
         private int _recvFramesInWindow;
+        private int _decodedFramesInWindow;
         private float _recvFps;
+        private float _decodedFps;
 
         private float _lagWindowAccum;
         private float _lastReconnectTime;
@@ -59,8 +62,14 @@ namespace FixedCamVr.Streaming
         /// <summary>HMD 着脱 / OS pause で凍結中か。DiscoveryClient は suspend 中を「フレーム断」に数えない。</summary>
         public bool IsSuspended => _suspended;
 
-        /// <summary>Unity 受信側の実 fps（直近 1 秒の decode 成功回数）。</summary>
+        /// <summary>Unity 受信側の到着 fps（直近 1 秒に受信スレッドが確定した枚数）。</summary>
         public float ReceivedFps => _recvFps;
+
+        /// <summary>
+        /// 展開成功の fps（直近 1 秒）。「映像として読めている」の証拠はこちら。
+        /// 表示中は到着と同じ、背景は <see cref="StreamDecodeScheduler.BackgroundIntervalSec"/> の間隔まで下がる。
+        /// </summary>
+        public float DecodedFps => _decodedFps;
 
         /// <summary>最後に decode したフレームの realtimeSinceStartup。未受信 / リセット直後は 0。</summary>
         public float LastFrameRealtime => _lastFrameTime;
@@ -94,11 +103,17 @@ namespace FixedCamVr.Streaming
             return false;
         }
 
-        /// <summary>LoadImage 成功時。decode-fail streak をクリアし受信統計を進める。</summary>
+        /// <summary>受信スレッドが確定した枚数を渡す（展開の前）。lag の分子になる。</summary>
+        public void OnFramesArrived(int count)
+        {
+            if (count > 0) _recvFramesInWindow += count;
+        }
+
+        /// <summary>LoadImage 成功時。decode-fail streak をクリアし展開の統計を進める。</summary>
         public void OnFrameDecoded(float now)
         {
             _decodeFailStreak = 0;
-            _recvFramesInWindow++;
+            _decodedFramesInWindow++;
             _lastFrameTime = now;
             _everReceived = true;
         }
@@ -165,8 +180,10 @@ namespace FixedCamVr.Streaming
             if (now - _recvWindowStart >= 1f)
             {
                 _recvFps = _recvFramesInWindow / (now - _recvWindowStart);
+                _decodedFps = _decodedFramesInWindow / (now - _recvWindowStart);
                 _recvWindowStart = now;
                 _recvFramesInWindow = 0;
+                _decodedFramesInWindow = 0;
             }
 
             // 2. Lag 検出。PHONE_FPS と RECV_FPS が両方読めるときのみ評価。
@@ -246,7 +263,9 @@ namespace FixedCamVr.Streaming
         {
             _recvWindowStart = 0f;
             _recvFramesInWindow = 0;
+            _decodedFramesInWindow = 0;
             _recvFps = 0f;
+            _decodedFps = 0f;
             _lagWindowAccum = 0f;
             _lastReconnectTime = now;
         }

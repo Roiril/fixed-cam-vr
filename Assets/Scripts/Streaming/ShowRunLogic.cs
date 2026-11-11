@@ -292,7 +292,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const int ClosingLap = TotalLaps + 1;
 
-        /// <summary>最後の A の区間のカメラ番号（A = 0）。</summary>
+        /// <summary>
+        /// 最後の A の区間のカメラ番号（A = 0）。
+        /// ⚠ <c>ShowRunReach.IsReturnSegment</c> / <c>IsSegmentReachable</c> は順路の <c>order[0]</c> で判定するので、
+        /// order[0] == 0 を前提にしている（この定数は読まない）。
+        /// </summary>
         public const int ClosingCamera = 0;
 
         /// <summary>区間（区間の周, カメラ）が最後の A か。<c>TimelineDirector</c> と <c>EndingDecisionLogic</c> が共有する。</summary>

@@ -42,6 +42,9 @@ paths:
 - 縦は機械（行の高さを揺らさない）、黒だけで組む、乱数を使わない 〔出典: S:2330-2336, S:2364〕
 - 持続の覆い（`swapHold`）は機構だけ残り、著作は 0 本 — `SwapMorphFx.BeginHold` 〔出典: S:2075-2083、LEDGER 0119〕
 - 左右分割の反転はライブと凍結だけ。軸は枠 UV の 0.5。第 2 層は静止画専用・フェードしない・色合わせは 1 層目だけ — `_SplitFlipLeft` / `CameraFeelFx.SetSplit` / `_Overlay2Tex` 〔出典: S:2045-2073、LEDGER 0050〕
+- 3-C は目の代わりにメインスクリーンの面を増やす（0317・試作）。切替は `AnomalyEyes.ScreensReplaceEyes`。時計と出番は目と共有し、席は `tools/make-screen-wall.py` が焼く `ScreenMultiplySeats.cs`。画は `ScreenMultiply` の取り込み。詳しくは memory/screen_multiply.md
+- `ScreenMultiply` の席はメイン（2m）より奥に置く。シェーダの開きの式は `AnomalyEyesLogic.EyeOpen` と同じ。シェーダは Resources 配置で `Resources.Load`。`scrMul=` / `scrEmg=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す
+- 闇の霧の式は `ScreenFogLogic` と `Resources/ScreenFog.hlsl` で対。面は点いた時刻（`_WallOpenAt`・`ScreenMultiplyLayout.MaxSeats` 個）から `ArriveSec` かけて奥から寄る。霧のぼけは取り込みの mip。見るのは `menu screen-wall`
 - 闇の目はスクリーンの外だけ（Background+100・前乗算）。段は兆し 1.42 / 凝視 0.5 / 開眼 3.0 / 閉じ 1.6 秒で著作させない — `AnomalyEyesLogic.HintSec` `StareSec` `SwarmSec` `CloseSec` 〔出典: S:1801-1815, S:1902-1911、LEDGER 0076 / 0094 / 0138〕
 - 兆しの開きは焼いた `sfx_eye_big` の形に合わせる — `AnomalyEyesLogic.HintOpenKnots` 〔出典: S:1915-1919、LEDGER 0138〕
 - 目は壊れた画像データの版を引く。版を瞼で切らない・滑らせない・縦に伸縮させない — `Resources/Eyes/EyeGlitch.png` / `tools/make-eye-glitch.py` 〔出典: S:1817-1835、LEDGER 0237-0240〕

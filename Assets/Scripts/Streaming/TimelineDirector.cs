@@ -49,6 +49,21 @@ namespace FixedCamVr.Streaming
             ResolveTakeRunner();
         }
 
+        /// <summary>スイの面が開いているかを別れの人形へ伝える。</summary>
+        public void SetEndingNoticeOpen(bool open)
+        {
+            if (takeRunner != null) takeRunner.EndingNoticeOpen = open;
+        }
+
+        /// <summary>
+        /// 別れの人形の段（スイの⑤ を出す縁の判定に使う）。人形が組まれていなければ
+        /// <see cref="EndingFarewellLogic.Phase.Idle"/>。
+        /// </summary>
+        public EndingFarewellLogic.Phase FarewellPhase
+            => takeRunner != null && takeRunner.Farewell != null
+                ? takeRunner.Farewell.Phase
+                : EndingFarewellLogic.Phase.Idle;
+
         private void ResolveTakeRunner()
         {
             if (takeRunner == null) takeRunner = GetComponent<TakeRunner>();
@@ -121,7 +136,7 @@ namespace FixedCamVr.Streaming
         /// 体験者が実際に A の領域に居るかは別物で、<c>ShowRunDirector.NotifyClosingAreaPresence</c> が持つ。
         /// </summary>
         public float ClosingSegmentSec => _closingSegmentEnteredAt < 0f
-            ? -1f : Time.unscaledTime - _closingSegmentEnteredAt;
+            ? -1f : SimTime.Now - _closingSegmentEnteredAt;
 
         /// <summary>締めの線（3 周目 A の凍結点）の id。台本に無ければ空（0233）。</summary>
         public string ClosingLineId => takeRunner != null ? takeRunner.ClosingLineId : "";
@@ -162,7 +177,9 @@ namespace FixedCamVr.Streaming
         /// <summary>追いつきの最後のカットが現在表示中か（心音など既存表示観測用）。</summary>
         public bool DollCallShowing => takeRunner != null && takeRunner.DollCallShowing;
 
-        /// <summary>追いつきの最後のカットを自然完了した回数。ラン開始で 0 に戻る。</summary>
+        /// <summary>
+        /// 追いつきが成立した回数（最後のカットの自然完了か、人形視点が出た後に前へ抜けた yield）。ラン開始で 0 に戻る。
+        /// </summary>
         public int DollCatchUpCompletedCount => takeRunner != null ? takeRunner.DollCatchUpCompletedCount : 0;
 
         /// <summary>演出が外部要因で中止された回数。ラン開始で 0 に戻る。</summary>
@@ -275,11 +292,11 @@ namespace FixedCamVr.Streaming
         {
             int camera = entry.Camera, lap = entry.SegmentLap;   // 演出の区間キーは区間の周
             if (ShowRunDefaults.IsClosingSegment(lap, camera) && _closingSegmentEnteredAt < 0f)
-                _closingSegmentEnteredAt = Time.unscaledTime;
+                _closingSegmentEnteredAt = SimTime.Now;
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;
 
-            takeRunner?.NotifyZoneCommitted(lap, camera, hadPrev, prevLap, prevCam);
+            takeRunner?.NotifyZoneCommitted(lap, camera, hadPrev, prevLap, prevCam, entry.Forward);
 
             // 区間 post 上書き（segment > camera > global）。区間が変わったら貼り替え。無い区間は解除。
             ShowTimelineSegmentDef? seg = FindSegment(lap, camera);

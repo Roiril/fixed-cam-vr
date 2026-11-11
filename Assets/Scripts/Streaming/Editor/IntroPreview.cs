@@ -356,7 +356,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 yield return new Shot(IntroStage.Frame, 4, "power", p, Mathf.RoundToInt(p * 100f));
             foreach (float p in new[] { 0f, 0.5f, 0.999f })
                 yield return new Shot(IntroStage.Swap, 5, "settle", p, Mathf.RoundToInt(p * 100f));
-            // p=1 で状態機械は Done へ送るので、重みは本編と同じ（Inactive）になる。
+            // p=1 で状態機械は Done へ送るので、重みは本編と同じになる（テレビの筐体は MainShowTvCase のまま残る・0321）。
             yield return new Shot(IntroStage.Swap, 6, "done", 1f, 100);
 
             // カメラが 1 台も繋がっていない現場（0025）。点く途中に砂が先に出ないこと、映像の所で砂が出ること。
@@ -897,6 +897,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 _screenMat.SetFloat(IntroLiveId, w.LiveGate);
                 _screenMat.SetFloat(TvCaseId, Mathf.Clamp01(w.tvCase));
                 _screenMat.SetFloat(TvDarkId, Mathf.Clamp01(w.tvDark));
+                // 実機（ScreenAnchor.SetIntroDepth）と同じ。テレビは段 3 で霧の奥から寄ってくる。
+                _screen.localPosition = new Vector3(0f, ScreenHeightOffsetM, ScreenDistanceM + (w.tv ? w.tvDepthM : 0f));
                 _screenMat.SetFloat(GlitchId, 0f);
                 // 配信断（＝ カメラが繋がっていない）。実機では SignalLostFx が書く。
                 _screenMat.SetFloat(SignalLostId, shot.noSignal ? 1f : 0f);
@@ -1943,7 +1945,7 @@ namespace FixedCamVr.Streaming.EditorTools
                     $"base quads={_veil.ApertureQuads} | " +
                     $"shell built={B(_shell.IsBuilt)} s={_shell.AppliedStrength:0.00} " +
                     $"reveal={B(_shell.Revealing)} | " +
-                    $"crtIgnite={_igniteWritten:0.00} tvCase={w.tvCase:0.00} tvDark={w.tvDark:0.00}" +
+                    $"crtIgnite={_igniteWritten:0.00} tvCase={w.tvCase:0.00} tvDark={w.tvDark:0.00} tvZ={w.tvDepthM:0.00}" +
                     (shot.noSignal ? "  signalLost=1.00 (no camera connected)" : "") + "\n" +
                     $"reality {_plateLabel} | screen mat {_screenMatLabel} | {_showLabel}";
             }
@@ -2054,7 +2056,7 @@ namespace FixedCamVr.Streaming.EditorTools
         /// （2026-08-07 に合成プレビューで踏んだのと同じ穴）。書き方は
         /// <see cref="CameraFeelFx.WriteUniforms"/> の口を通す — 写すと片方だけ直したときに黙って食い違う。
         /// </summary>
-        private static void ConfigureScreenMaterial(Material mat, Texture2D? plate, Texture2D fallback,
+        internal static void ConfigureScreenMaterial(Material mat, Texture2D? plate, Texture2D fallback,
                                                     float frameAspect)
         {
             Texture2D live = plate != null ? plate : fallback;

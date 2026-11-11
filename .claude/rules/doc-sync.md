@@ -40,4 +40,4 @@ paths:
 
 1. コード変更とドキュメント更新を 1 コミットにまとめる
 2. 数行でよい。「何が決まっているか」と「踏みそうな罠」を書く
-3. `.claude/` を触ったら `py -3.11 tools/harness-check.py` を通す（Edit / Write の後に hook も警告する）
+3. `.claude/` を触ったら `py -3.11 tools/harness-check.py` を通す（Edit / Write の後に hook が ERROR だけ返す。WARN と `reference/` は手で流したときにしか出ない）

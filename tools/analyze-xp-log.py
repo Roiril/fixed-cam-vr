@@ -479,6 +479,116 @@ PC_NOT_APPLICABLE = re.compile(
 )
 
 
+def decode_verdicts(idx, rx_dfps, dfail):
+    """届いているのに展開できていない状態を拾う。dfps の無い古いログは rx_dfps が空で、判定しない。
+
+    背景のカメラは毎秒 3 回しか展開しないので、dfps の下限は 1 で見る。
+    `rx=` は到着の fps なので、これが無いと展開の全滅が受信の数字に隠れる。
+    """
+    verdicts = []
+    starved = sum(1 for rx, dfps in rx_dfps if rx >= 5 and dfps < 1)
+    if starved > 2:
+        verdicts.append(("FAIL", f"カメラ {idx} は届いているのに展開できていない（要約 {starved} 回）"))
+    if dfail > 0:
+        verdicts.append(("WARN", f"カメラ {idx} の JPEG 展開の失敗が累計 {dfail:.0f} 枚"))
+    return verdicts
+
+
+def is_recorded_cut_before_doll(steps, i, lap) -> bool:
+    """歩く速さに合わせて切り上げる 3 周目の録画カットか（C# の TakeRunner.IsRecordedCutBeforeDoll と対）。
+
+    3 周目以降で、録画（続きから流す・位置で選ぶを除く）のすぐ次が無人の画（plate）のカット。
+    演出のどこかに位置で選ぶ録画か線待ちのカットがあれば対象外（3-A）。take id の文字列では判じない。
+    """
+    steps = steps or []
+    if (fstr(lap) or 0) < 3 or i < 0 or i + 1 >= len(steps):
+        return False
+    # ⚠ 台本の段の変数に `e` / `nxt` 等の名前を使わない（test_telemetry_contract がログの行として数える）。
+    rec_step, plate_step = steps[i] or {}, steps[i + 1] or {}
+    if rec_step.get("source") != "rec" or rec_step.get("recContinue") or rec_step.get("recFollow"):
+        return False
+    if plate_step.get("source") != "plate":
+        return False
+    return not any((s or {}).get("recFollow") or (s or {}).get("durKind") == "untilLine" for s in steps)
+
+
+def _judge_recorded_cut_before_doll(exp, steps_ev, w, verdict):
+    """3 周目の録画カットの尺（著作 → 実際）と、その後の人形（plate のカット）が出たかを見る。
+
+    速く歩く人は録画が終わる前に区間を出て、後ろの人形を 1 度も見ずに畳まれていた。
+    実機は 2 周目の同じ区間の滞在から録画を切り上げる（ev=step の auth / cut / d2）。
+    それでも人形が出なかったら WARN（体験者の歩きに依るので FAIL にはしない）。
+    """
+    targets = {(t.get("id"), i) for t in exp.get("takes", [])
+               for i in range(len(t.get("steps") or []))
+               if is_recorded_cut_before_doll(t.get("steps"), i, t.get("lap"))}
+    trims = [e for e in steps_ev if e.get("auth") is not None]
+    # auth= を出すのは対象のカットだけなので、台本が無くてもログから対象が分かる。
+    for e in trims:
+        try:
+            targets.add((e.get("take"), int(e.get("i"))))
+        except (TypeError, ValueError):
+            pass
+    if not targets:
+        return
+    w()
+    w("### 3 周目の録画カット（歩く速さで切り上げ・後ろの人形）")
+    for e in trims:
+        auth, cut, d2 = fnum(e, "auth", -1.0), fnum(e, "cut", -1.0), fnum(e, "d2", -1.0)
+        how = "切り上げた" if 0 < cut < auth else "著作どおり"
+        dwell = f"{d2:.2f}s" if d2 > 0 else "不明"
+        w(f"  {e.get('take', '?')} i={e.get('i', '?')}: 著作 {auth:.2f}s → 実際 {cut:.2f}s"
+          f"（{how}・2 周目の滞在 {dwell}）")
+    for tid, i in sorted(targets, key=lambda x: (str(x[0]), x[1])):
+        evs = [e for e in steps_ev if e.get("take") == tid]
+        if not evs:
+            continue   # その演出は走っていない（3 周目へ届いていない等）。到達は別の節が見る
+        doll_shown = any(e.get("i") == str(i + 1) and e.get("played") == "1" for e in evs)
+        if doll_shown:
+            verdict("OK", f"{tid}: 録画の後の人形（ev=step i={i + 1}）が出た")
+        else:
+            verdict("WARN", f"{tid}: 録画の後の人形（ev=step i={i + 1}）が 1 度も出なかった — "
+                            "録画が終わる前に区間を出ている。ev=step の auth / cut / d2 で切り上げが効いたかを見る")
+
+
+# 最後の A の時間切れ（C# の EndingDecisionLogic.PromptLimitSec）。endingTime= の無い古いログは promptAge で絞る。
+PROMPT_LIMIT_SEC = 15.0
+
+
+def check_ending_sink(outro, verdict):
+    """時間切れで人形 End へ落ちる手前の沈みが画に出たか、帰還で残っていないか（2026-11-11）。
+
+    書き手は ShowTelemetryHost の `ev=outro sink= endingTime=`。見るのは終幕の頭の 1 行（stage=Off を除く最初）で、
+    人形 End は黒へ落ちるフレーム、帰還は電源断の砂嵐が始まるフレームにあたる。
+    左半分（endingLeft=1）と離脱の人形 End は沈みを出さないので判定しない。
+    """
+    heads = [e for e in outro if str(e.get("stage", "")) not in ("", "Off")]
+    if not heads:
+        return
+    e = heads[0]
+    ending = e.get("ending")
+    if ending == "Trapped" and str(e.get("endingLeft")) != "1":
+        if e.get("endingTime") is not None:
+            timed_out = str(e.get("endingTime")) == "1"
+        else:
+            timed_out = fnum(e, "promptAge", -1.0) >= PROMPT_LIMIT_SEC - 0.1
+        if not timed_out:
+            return
+        sink = e.get("sink")
+        if sink is None:
+            verdict("WARN", "時間切れの人形 End の沈み（sink）が出ていない — 2026-11-11 より前のビルド")
+        elif fnum(e, "sink") is None:
+            verdict("FAIL", f"時間切れの手前の沈みを画へ書けていない（sink={sink}）— スクリーンの材質を掴めていない")
+        elif fnum(e, "sink") < 0.9:
+            verdict("FAIL", f"人形 End の前に画が沈んでいない（落ちる直前の sink={sink} < 0.9）")
+        else:
+            verdict("OK", f"時間切れの手前で画が沈んでから人形 End へ落ちた（sink={sink}）")
+    elif ending == "Released":
+        sink_v = fnum(e, "sink")
+        if sink_v is not None and sink_v > 0.05:
+            verdict("FAIL", f"解除したのに沈みが残っている（終幕の頭の sink={e.get('sink')} > 0.05）")
+
+
 def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
     verdicts = []     # (level, text) level: OK / WARN / FAIL / NA
@@ -1044,13 +1154,17 @@ def analyze(events, others, exp, warns=None):
 
     # ---------------- 映像の安定性 ----------------
     w("## 映像の安定性")
-    per_cam = defaultdict(lambda: {"rx": [], "tx": [], "jit": [], "dec": [], "age": [], "drop": 0, "off": 0, "n": 0})
+    per_cam = defaultdict(lambda: {"rx": [], "dfps": [], "rx_dfps": [], "dfail": 0, "tx": [], "jit": [], "dec": [], "age": [], "drop": 0, "off": 0, "n": 0})
     for s in sums:
         for c in s["_cams"]:
             idx = c.get("_idx", "?")
             d = per_cam[idx]
             d["n"] += 1
-            for k in ("rx", "tx", "jit", "dec", "age"):
+            rx_now, dfps_now = fnum(c, "rx"), fnum(c, "dfps")
+            if rx_now is not None and dfps_now is not None:
+                d["rx_dfps"].append((rx_now, dfps_now))
+            d["dfail"] = max(d["dfail"], fnum(c, "dfail", 0) or 0)
+            for k in ("rx", "dfps", "tx", "jit", "dec", "age"):
                 v = fnum(c, k)
                 if v is None:
                     continue
@@ -1082,12 +1196,15 @@ def analyze(events, others, exp, warns=None):
             w(f"  カメラ {idx}: show.json で host 未設定（接続しないのが正しい）")
             continue
         w(f"  カメラ {idx}:")
-        w(f"    受信 fps  {stats(d['rx'])}")
+        w(f"    到着 fps  {stats(d['rx'])}")
+        w(f"    展開 fps  {stats(d['dfps'])}（背景のカメラは毎秒 3 回が正しい）")
         w(f"    配信 fps  {stats(d['tx'])}")
         w(f"    到着の揺らぎ ms {stats(d['jit'])}")
         w(f"    展開 ms   {stats(d['dec'])}")
         w(f"    配信側の鮮度 ms {stats(d['age'])}")
-        w(f"    取りこぼし累計 {d['drop']:.0f} / 未接続だったサマリ {d['off']}/{d['n']}")
+        w(f"    送り手と経路の欠落 累計 {d['drop']:.0f} / 展開の失敗 累計 {d['dfail']:.0f} / 未接続だったサマリ {d['off']}/{d['n']}")
+        for level, message in decode_verdicts(idx, d["rx_dfps"], d["dfail"]):
+            verdict(level, message)
         if d["rx"]:
             lowest = min(d["rx"])
             avg = sum(d["rx"]) / len(d["rx"])
@@ -1450,6 +1567,8 @@ def analyze(events, others, exp, warns=None):
     #   体験者の左に右向きで立ち、後ろを向いてゆっくり下がって消える。帰還End の写真は見つめている段で撮る。
     #   phase: anchoring → appear → face → turn → retreat → done（出せなければ unavailable）
     #   cg = CG 層が実際に描いているか / dollU・visU = 人形と体験者の足元の枠 UV（人形が左なら dollU < visU）
+    #   fromV = 体験者の立っている所から解けたか / shrink = 下がり終わりの像の高さの比 / gap = 立ち位置の間隔 m
+    #   shot = 写真が撮れたか / level = 写真の条件の緩め具合 0..2 / held = 見つめ始めからの秒
     #   sum の farewell = <見つめる段まで届いた回数>/<消え切った回数>
     fw_ev = [e for e in events if e.get("ev") == "farewell"]
     has_fw = any("farewell" in e for e in events if e.get("ev") == "sum")
@@ -1459,8 +1578,15 @@ def analyze(events, others, exp, warns=None):
         for e in fw_ev:
             w(f"  t={fnum(e,'t',0):7.1f}  {e.get('phase')} cg={e.get('cg')} anchored={e.get('anchored')} "
               f"doll=({e.get('dollU')},{e.get('dollV')}) visitor=({e.get('visU')},{e.get('visV')}) "
-              f"screen={e.get('screen')}")
+              f"fromV={e.get('fromV')} shrink={e.get('shrink')} gap={e.get('gap')} "
+              f"shot={e.get('shot')} level={e.get('level')} held={e.get('held')}")
         faces = [e for e in fw_ev if e.get("phase") == "face"]
+        turns = [e for e in fw_ev if e.get("phase") == "turn" and "shot" in e]
+        for e in turns:
+            if str(e.get("shot")) == "1":
+                verdict("OK", f"別れの写真を撮ってから後ろを向いた（見つめ始めから {e.get('held')} 秒・条件 {e.get('level')}）")
+            else:
+                verdict("WARN", f"別れの写真を撮れないまま後ろを向いた（{e.get('held')} 秒で諦めた）— 帰還End に写真が出ない")
         if released and has_fw and not faces:
             if any(e.get("phase") == "unavailable" for e in fw_ev):
                 verdict("WARN", "帰還の別れの人形を出せなかった（較正・位置合わせ・頭の追跡のどれか）"
@@ -1476,6 +1602,21 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"別れの人形が体験者の左で見つめた（doll u={e.get('dollU')} / visitor u={e.get('visU')}）")
         if faces and not any(e.get("phase") == "done" for e in fw_ev):
             verdict("WARN", "別れの人形が消え切る前に締めが終わった（電源断に掛かった）")
+        # ⑤ 別れの解析結果（CommsNotice.FarewellFinding）。帰還で人形が後ろを向いた縁に 1 度だけ出る。
+        turned = [e for e in fw_ev if e.get("phase") == "turn"]
+        findings = [e for e in events if e.get("ev") == "comms" and e.get("id") == "FarewellFinding"]
+        if released and turned and not findings:
+            verdict("FAIL", "別れの解析結果が出ていない（人形が後ろを向いたのに comms id=FarewellFinding が無い）"
+                            "— CommsCueLogic の farewellTurned / curseReleased の配線を確かめる")
+        elif findings:
+            if len(findings) > max(1, len(turned)):
+                verdict("FAIL", f"別れの解析結果が {len(findings)} 回出た（振り向き {len(turned)} 回に 1 回だけの約束）")
+            t_turn = fnum(turned[0], "t", 0.0) if turned else None
+            t_find = fnum(findings[0], "t", 0.0)
+            if t_turn is not None and abs(t_find - t_turn) > 1.0:
+                verdict("WARN", f"別れの解析結果が人形の振り向きから {t_find - t_turn:+.1f}s ずれて出た")
+            else:
+                verdict("OK", f"別れの解析結果が人形の振り向きで出た（delivery={findings[0].get('delivery')}）")
 
     outro = [e for e in events if e.get("ev") == "outro"]
     if outro:
@@ -1564,6 +1705,8 @@ def analyze(events, others, exp, warns=None):
             elif any(str(e.get("armed")) == "1" for e in outro):
                 verdict("WARN", "合図の演出は走ったが、そこから終幕へは入っていない"
                                 "（endHoldMaxSec の安全網で終わった — 演出が自分から終わっていない）")
+
+            check_ending_sink(outro, verdict)
 
             # -- 新しいエンドロールは全文をフェード表示し、打鍵音を使わない。
             #    repStyle が無い旧ログだけは従来どおり、1 字ごとの打鍵と表示を突き合わせる。
@@ -1745,10 +1888,14 @@ def analyze(events, others, exp, warns=None):
             # ②の分岐が「異常演出が表示されていたか」と一致しているか。
             # 侵食度1では通常返答を維持できず Takeover が一度だけ走る。ただし最後の解除が
             # 成立した報告だけはスイの通常返信へ戻るため、released=1 も照合対象に含める。
+            # ⑤ 別れの解析結果（FarewellFinding）を出した後の報告には返事を出さない（面は⑤を出したまま・
+            #    CommsCueLogic.Tick）。その後の報告は②の照合から外す。
+            t_finding = _first("FarewellFinding")
             marks = [e for e in events if e.get("ev") == "mark"]
+            reply_marks = [m for m in marks if t_finding is None or fnum(m, "t", 0.0) < t_finding]
             # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
             answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")]
-            ordinary_marks = [m for m in marks
+            ordinary_marks = [m for m in reply_marks
                               if fnum(m, "invasion", 0.0) < 0.999 or str(m.get("released")) == "1"]
             mark_ok = True
             if len(answers) < len(ordinary_marks):
@@ -1777,7 +1924,7 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"通常返信を期待する報告 {len(ordinary_marks)} 回で、"
                               "②の返事が異常演出の表示状態と一致した")
 
-            released_marks = [m for m in marks if str(m.get("released")) == "1"]
+            released_marks = [m for m in reply_marks if str(m.get("released")) == "1"]
             for m in released_marks:
                 near = [a for a in answers
                         if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
@@ -1802,6 +1949,13 @@ def analyze(events, others, exp, warns=None):
                           if fnum(m, "invasion", 0.0) >= 0.999
                           and str(m.get("released")) != "1"]
             takeover_events = [e for e in comms if e.get("id") == "Takeover"]
+            # 2-C の乗っ取りが無いまま 3 周目に入った走行。顔の人形化と字化けもまとめて起きないので、
+            # その 2 つの FAIL（下の commsFace / commsCx）は出さずにこの 1 行だけにする（原因の誤表示を避ける）。
+            # 「3 周目に入った」は進行の周（plap・旧ログは lap）で見る。
+            takeover_missing = not takeover_events and any(
+                e.get("ev") == "seg" and fnum(e, "plap", fnum(e, "lap", 0.0)) >= 3 for e in events)
+            if takeover_missing:
+                verdict("FAIL", "2-C の乗っ取りが出なかった（追いつきの前に区間を出たか、鎖が切れた）")
             if full_marks and not takeover_events:
                 verdict("WARN", "侵食度1で報告されたが嘘の一文（Takeover）が記録されていない — "
                                 "先に自動再生済みか、CommsCueLogic の侵食入力を確認する")
@@ -2109,7 +2263,7 @@ def analyze(events, others, exp, warns=None):
                     if lit:
                         verdict("OK", f"AIエージェントの顔が出ている（最大の濃さ {max(lit):.2f}）")
                     # 顔と文字は同じ通信侵食度を読む。届いていなければ顔だけ無事に見える。
-                    if mix and max(mix) <= 0.01 and gl and max(gl) > 0.01:
+                    if mix and max(mix) <= 0.01 and gl and max(gl) > 0.01 and not takeover_missing:
                         verdict("FAIL", f"文字は壊れた（最大 {max(gl):.2f}）のに顔が侵食されていない"
                                         "（commsFace の 4 つ目が全標本 0）— "
                                         "CommsPanel.ApplyAvatar が _FaceMix を書けていない疑い")
@@ -2119,6 +2273,8 @@ def analyze(events, others, exp, warns=None):
             if gl and max(gl) <= 0.0:
                 verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
                                 "2-Cの人形視点まで進んでいないか、CommsInvasionLogic の配線を確認する")
+            elif gl and cx and max(cx) <= 0 and takeover_missing:
+                pass   # 字が化けないのは乗っ取りが無かったから。上の 1 行（2-C の乗っ取り）で言う
             elif gl and cx and max(cx) <= 0 and not any(
                     e.get("commsPossess") in ("Shown", "Sweep", "Cursed")
                     for e in events if e.get("ev") == "sum"):
@@ -2144,6 +2300,37 @@ def analyze(events, others, exp, warns=None):
                 if d < 0.9:
                     verdict("WARN", f"③の催促が通信侵食度 {d:.2f} で届いた — "
                                     "3-Aの人形表示で1へ進んでいない")
+
+            # ③b は報告で解ける（MarkCleared が上書きする）か、人形 End・中断で終幕へ落ちるまで出たまま
+            # （CommsPanel が持続表示で出す）。人形 End の走行で、③b が出てから終幕の頭までの
+            # `ev=sum comms=`（面の段）に off があれば、促しが途中で引っ込んでいる。
+            # ⚠ 終幕の頭と同じフレームで面を畳むので、終幕の 0.1 秒前までの標本だけを見る。
+            # ⚠ 終幕の縁は `stage=Off` を除いて取る（起動直後に 1 本出る。劇伴の判定と同じ罠）。
+            prompt_ts = [fnum(e, "t", 0.0) for e in comms if e.get("id") == "Prompt"]
+            outro_ts = sorted((fnum(e, "t", 0.0), e.get("ending")) for e in events
+                              if e.get("ev") == "outro"
+                              and str(e.get("stage", "")) not in ("", "Off"))
+            checked = set()
+            for t_end, ending in outro_ts:
+                if ending != "Trapped":
+                    continue
+                before = [t for t in prompt_ts if t < t_end]
+                if not before:
+                    continue
+                t_prompt = before[-1]
+                # 同じランの 2 本目以降の終幕段、または前のランの③b なら飛ばす
+                if t_prompt in checked or any(t_prompt < t < t_end for t, _ in outro_ts):
+                    continue
+                checked.add(t_prompt)
+                samples = [e for e in events if e.get("ev") == "sum" and "comms" in e
+                           and t_prompt < fnum(e, "t", 0.0) < t_end - 0.1]
+                closed = [e for e in samples if e.get("comms") == "off"]
+                if closed:
+                    verdict("FAIL", f"人形 End の前に③b の面が閉じていた（③b t={t_prompt:.1f} → "
+                                    f"t={fnum(closed[0], 't', 0.0):.1f} で comms=off → 終幕 t={t_end:.1f}）— "
+                                    "促しは報告か終幕まで出したまま（CommsPanel の持続表示）")
+                elif samples:
+                    verdict("OK", f"③b が人形 End の終幕まで出たままだった（{len(samples)} 標本）")
         w()
 
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------
@@ -3643,7 +3830,7 @@ def analyze(events, others, exp, warns=None):
     ig_all = [v for v in effect_samples(events, "ignite") if v not in ("", "-")]
     tv_intro = "tv" in fracture_styles
     if tv_intro:
-        # テレビ方式（0309）。筐体が画に出たか・電源が 0 から上がったか・本編までに本編の見えへ戻ったか。
+        # テレビ方式（0309）。筐体が画に出たか・電源が 0 から上がったか・本編でも筐体が残っているか（0321）。
         any_effect_key = True
         def _tv_numbers(key):
             out = []
@@ -3662,16 +3849,29 @@ def analyze(events, others, exp, warns=None):
             if not cases or max(cases) < 0.9:
                 verdict("FAIL", "テレビの筐体が画に出ていない（tvCase が上がっていない）— "
                                 "IntroDirector.WriteIgnite と材質の _CrtTvCase を見る")
-            elif cases[-1] > 0.001:
-                verdict("FAIL", f"導入の後も筐体が残っている（tvCase={cases[-1]:.2f}）— ResetIgnite を通っていない")
+            elif cases[-1] < 0.999:
+                verdict("FAIL", f"本編で筐体が消えている（tvCase={cases[-1]:.2f}）— テレビの枠は体験の終わりまで残す（0321）。"
+                                "IntroDirector.ResetIgnite が方式に合わせて MainShowTvCase を書いているかを見る")
             else:
-                verdict("OK", "テレビの筐体が出て、本編までに沈んだ")
+                verdict("OK", "テレビの筐体が出て、本編でも残っている")
             if not ignites or min(ignites) > 0.5:
                 verdict("FAIL", "テレビの電源が入る様子が画に無い（ignite が低い値を通っていない）")
             elif ignites[-1] < 0.999:
                 verdict("FAIL", f"走行の終わりで管が消えたまま（ignite={ignites[-1]:.2f}）— 畳む経路で 1 へ戻していない")
             else:
                 verdict("OK", "テレビの電源が入り、管は点いたまま本編へ入った")
+            # テレビが霧の奥から寄ったか。旧ログには tvZ が無いので判定しない。
+            depths = _tv_numbers("tvZ")
+            if depths:
+                w(f"  テレビの奥行き: 最大 {max(depths):.2f}m / 最後 {depths[-1]:.2f}m")
+                if max(depths) < 1.0:
+                    verdict("WARN", "テレビが奥から出ていない（tvZ がずっと 0 に近い）— "
+                                    "その場で灯るだけになっている。ScreenAnchor.SetIntroDepth を見る")
+                elif depths[-1] > 0.01:
+                    verdict("FAIL", f"導入の後もテレビが奥に残っている（tvZ={depths[-1]:.2f}）— "
+                                    "本編のスクリーンが定位置に居ない。ReleaseIntroHold を通っていない")
+                else:
+                    verdict("OK", f"テレビが奥（{max(depths):.1f}m）から寄って定位置で止まった")
         # 暗転と黒の保持でスクリーンを描いていないか。旧ログには scrHid が無いので判定しない。
         hid_in_dark = [e.get("scrHid") for e in events
                        if e.get("ev") == "intro" and e.get("stage") in ("Degrade", "Structure")
@@ -3959,6 +4159,9 @@ def analyze(events, others, exp, warns=None):
             verdict("WARN", f"飛ばされたカットが {n} 件: {STEP_SKIP_REASONS.get(why, why)}")
         if not skipped_why:
             verdict("OK", f"演出のカットは全て画面を取った（{len(steps_ev)} カット）")
+
+    # -- 3 周目の録画カットの切り上げと、その後の人形（plate のカット）
+    _judge_recorded_cut_before_doll(exp, steps_ev, w, verdict)
 
     # -- 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）
     # ⚠ 「カットが指した」は画に出たことを意味しない。分割は書く先（CameraFeelFx の material）を
@@ -4277,6 +4480,32 @@ def analyze(events, others, exp, warns=None):
                             "速さ（eyes の 5 つ目）が 1.00 のままなら、終了要求が届いていない")
         elif want_eyes and opened:
             verdict("OK", f"目が開いた（同時に最大 {max(opened)} 個）")
+
+        # 増えるスクリーン（0317・試作）。<組めたか>/<点いた枚数>/<取り込みの累計>。
+        wall = [str(v).split("/") for v in effect_samples(events, "scrMul") if str(v).count("/") == 2]
+        if wall:
+            wall_lit = max(int(p[1]) for p in wall)
+            wall_cap = max(int(p[2]) for p in wall)
+            w(f"  増えるスクリーン: 同時に最大 {wall_lit} 枚 / 取り込み {wall_cap} 回")
+            if all(p[0] == "0" for p in wall):
+                verdict("FAIL", "増えるスクリーンを組めていない（scrMul の 1 つ目が 0）— "
+                                "Resources/ScreenMultiply のシェーダか取り込みの器を見る")
+            elif want_eyes and wall_lit > 0 and wall_cap == 0:
+                verdict("FAIL", f"スクリーンが {wall_lit} 枚点いたのに画を 1 度も取り込んでいない — 面は何も映していない")
+            elif want_eyes and wall_lit > 0:
+                verdict("OK", f"スクリーンが増えた（最大 {wall_lit} 枚・取り込み {wall_cap} 回）")
+            # 霧の奥から寄ったか。<寄っている途中の枚数>/<席より奥に居た最大の距離 m>。旧ログには無い。
+            emerge = [str(v).split("/") for v in effect_samples(events, "scrEmg") if str(v).count("/") == 1]
+            if emerge and want_eyes and wall_lit > 0:
+                try:
+                    far = max(float(p[1]) for p in emerge)
+                except ValueError:
+                    far = -1.0
+                if far < 0.5:
+                    verdict("WARN", f"スクリーンは点いたが奥から寄っていない（最大 {far:.1f}m）— "
+                                    "点いた時刻（_WallOpenAt）が配られていない")
+                else:
+                    verdict("OK", f"スクリーンが霧の奥（最大 {far:.1f}m）から寄った")
 
         # 固着。目はカットの中でしか指されないので、演出が終わった後に残っていたら
         # 次の体験者の視界に最初から目が居ることになる。

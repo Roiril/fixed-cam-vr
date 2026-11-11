@@ -1,0 +1,7 @@
+# archive_to_drive.py が移さないパス。生成物の名前の下にある素材
+# show.json が参照し、APK の焼き込みが読む
+tools/web-compositor/captures
+tools/web-compositor/recordings
+# 素材の生成元と入力
+Logs/gen-plate
+Logs/sound

@@ -5,6 +5,15 @@ description: スマホ実機が手元に無い状態で fixed-cam-vr の MJPEG �
 
 # Streaming Offline Test Workflow
 
+⚠ **これは退避路。** 既定の「スマホ無しの検証」は `py -3.11 tools/twin-verify.py`（本番シーンを CLI で通す）。
+この手順は Unity MCP で Editor を Play するので、次の 2 つが揃ったときだけ使う。
+
+- Editor が開いていて MCP が繋がっている（開いていなければ `mcp__UnityMCP__*` は接続失敗になる）
+- Link か Meta XR Simulator が繋がっている。`manage_editor action=play` は `hooks/guard-unity-play.js` が止める。
+  接続を確かめてから `.claude/allow-unity-play` を作ると 1 回だけ通る（`reference/mcp-unity.md`）
+
+使いどころは、受信とデコード（`MjpegStreamReceiver` / アスペクト処理）だけを本番シーン抜きで切り分けたいとき。
+
 スマホ無しで Unity 側のストリーミング実装（MjpegStreamReceiver / CameraStream / MjpegScreen / アスペクト処理）を検証するための完全自動フロー。
 
 ## 全体の流れ

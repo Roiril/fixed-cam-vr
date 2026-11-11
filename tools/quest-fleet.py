@@ -657,13 +657,10 @@ def cmd_pull(args):
 def cmd_reset_config(args):
     """端末キャッシュ show_config.json を消す。
 
-    **キャッシュは APK の焼き込みより優先される**（焼き込み < キャッシュ < ライブ）。だから古い
-    キャッシュが残っていると、ビルドし直しても実機は前の設定で走る。実測 (2026-07-31) では 2 台の
-    キャッシュで run.intro.startLineId が食い違い、導入の始まり方が機ごとに違っていた
-    （timeline.rev は両方 21 で一致していたので、rev を見ても気づけない）。
-
-    消すと次の起動は焼き込み → ライブ の順で拾い直す。**卓が立っていないなら焼き込みが正**になるので、
-    卓の「ビルド用エクスポート」を通した APK であることを確かめてから消すこと。
+    ⚠ **現行の Player（2026-09-22〜）はこのキャッシュを読まない。** 実機は APK に同梱した show.json
+    だけで動く（`ShowControlClient.BakedOnly`。キャッシュの読み書きは Editor にだけ残る）。
+    だからこのコマンドは古い APK が残したファイルの掃除で、**実機の挙動は変わらない。**
+    機ごとに設定が食い違うときは、入っている APK が違う（`sync` で配り直す）。
     """
     devices = [d for d in list_devices() if d["state"] == "device" and d.get("isQuest")]
     if args.serial:

@@ -105,7 +105,7 @@ namespace FixedCamVr.Streaming
         {
             if (head == null)
             {
-                _resolveWait += Time.unscaledDeltaTime;
+                _resolveWait += SimTime.Dt;
                 if (_resolveWait >= ResolveRetrySec)
                 {
                     _resolveWait = 0f;
@@ -114,7 +114,7 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            float dt = Time.unscaledDeltaTime;
+            float dt = SimTime.Dt;
             float headYaw = head.eulerAngles.y;
 
             // 着脱・pause 明けの巨大 dt は SmoothDamp をスナップさせる。種を置き直して進めない。

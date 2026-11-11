@@ -186,6 +186,13 @@ namespace FixedCamVr.Streaming
             public bool dismissed => reason == EndReason.VisitorDismissed;
 
             /// <summary>
+            /// EndTake: <c>policy:"yield"</c> の打ち切りが<b>順路の前進</b>（次の区間へ抜けた）によるものか。
+            /// 引き返し・同一区間の確定し直し・その他の終わり方では false。
+            /// <see cref="TakeRunner"/> は呼びかけのカットが画面に出た後ならこれで追いつきの成立を数える。
+            /// </summary>
+            public bool yieldedForward;
+
+            /// <summary>
             /// EndTake: この直後に次の演出が始まる（＝画面を返さずそのまま渡す）。
             /// これが true のとき <see cref="TakeRunner"/> は復帰の暗転を打たない —
             /// 打つと「演出の終わりの黒」と「次の演出の入りの遷移」が二重に出て、
@@ -252,6 +259,9 @@ namespace FixedCamVr.Streaming
 
         private bool _hasCurrent;
         private int _curLap, _curCam;
+        private float _curEnteredAt;
+        // 区間ごとの滞在（秒）。3 周目の録画カットの尺を 2 周目の歩き方から決めるため（DwellSecOf）。
+        private readonly Dictionary<(int lap, int cam), float> _dwellSec = new();
         private bool _suppressed;
 
         // 走行中の演出。
@@ -357,6 +367,8 @@ namespace FixedCamVr.Streaming
             _activeTake = -1;
             _activeStep = -1;
             _hasCurrent = false;
+            // 前の体験者の歩き方を次の体験者の録画の尺へ持ち越さない。
+            _dwellSec.Clear();
             _closingLineCrossedAt = float.NegativeInfinity;
         }
 
@@ -368,12 +380,17 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// ゾーン確定（ショーの時計）を受ける。離脱区間の決着（exit 演出 / 取り逃した enter 演出）を行い、
         /// 進入区間の enter 演出を武装する。返すのは最大 1 つの即時 Decision（離脱時発火）。
+        /// <paramref name="forward"/> は順路の前進か（<c>LapCounterLogic.LastFeedForward</c>）。
+        /// yield の打ち切りに <see cref="Decision.yieldedForward"/> として載せるだけで、武装と決着には使わない。
         /// </summary>
-        public Decision OnZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam, float now)
+        public Decision OnZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam, float now,
+                                        bool forward = false)
         {
             Decision result = default;
             bool segChanged = !hadPrev || prevLap != newLap || prevCam != newCam;
             if (!segChanged) return result;
+            // 出た区間の滞在を閉じる（3 周目の録画カットの尺に使う・DwellSecOf）。
+            CloseCurrentDwell(now);
 
             // policy=yield: 体験者が区間を移ったら演出を打ち切って画面を返す（歩行を邪魔しない演出用）。
             // このとき離脱区間の exit 演出は発火しない — 同時 1 本の原則を保ち、打ち切りの直後に
@@ -381,12 +398,14 @@ namespace FixedCamVr.Streaming
             if (_running && _defs[_activeTake].yieldOnZoneChange)
             {
                 Decision yielded = EndTakeDecision(newCam, EndReason.Yielded);
+                yielded.yieldedForward = forward;
                 // 打ち切りで消える武装も**黙って消さない**（旧実装はここだけ報告が漏れていた）。
                 if (hadPrev) ReportRemainingDrops(prevLap, prevCam, -1, screenBusy: true);
                 ClearArmed();
                 _hasCurrent = true;
                 _curLap = newLap;
                 _curCam = newCam;
+                _curEnteredAt = now;
                 ArmEnterTakes(newLap, newCam, now);
                 return yielded;
             }
@@ -417,6 +436,7 @@ namespace FixedCamVr.Streaming
             _hasCurrent = true;
             _curLap = newLap;
             _curCam = newCam;
+            _curEnteredAt = now;
             ArmEnterTakes(newLap, newCam, now);
             return result;
         }
@@ -533,6 +553,55 @@ namespace FixedCamVr.Streaming
         /// 入力ごと止める）。数えてから捨てると、終幕の報告数に幽霊が 1 件乗る。
         /// </summary>
         public const float MarkGraceSec = 4f;
+
+        /// <summary>
+        /// <b>3 周目の録画カットを切り上げても残す最短 (秒)</b>（2026-11-11・<c>canon/OPEN.md</c> 状態 3 の案）。
+        /// 1 周目の自分が立っていた所に人形が立つ、と読めるまでの最短。これより短く切ると、
+        /// 録画の自分を見る前に人形へ替わる。
+        /// </summary>
+        public const float MinRecordedSec = 3f;
+
+        /// <summary>
+        /// <b>録画カットの後の、無人の画と人形（plate のカット）を見せたい時間 (秒)</b>。
+        /// 2 周目の同じ区間の滞在からこれを引いた分だけ録画を流す。
+        /// </summary>
+        public const float DollShowSec = 2.5f;
+
+        /// <summary>
+        /// 3 周目の録画カットの実際の尺 (秒) を、2 周目の同じ区間の滞在 <paramref name="priorDwellSec"/> から決める（純関数）。
+        /// <c>min(著作の尺, max(MinRecordedSec, 滞在 - DollShowSec))</c>。
+        ///
+        /// ⚠ 速く歩く人は録画が終わる前に区間を出て、録画の後の人形（plate のカット）を 1 度も見ずに
+        ///   yield で畳まれていた。2 周目の歩き方から 3 周目の滞在を見積もり、人形を見せる時間を残して録画を切り上げる。
+        /// ⚠ ゆっくり歩く人（滞在 ≥ 著作の尺 + <see cref="DollShowSec"/>）は著作の尺のまま変わらない。
+        /// ⚠ 滞在が分からない（0 以下・非数・無限）なら著作の尺を返す。著作の尺が 0 以下ならそのまま返す。
+        /// </summary>
+        public static float ResolveRecordedCutSec(float authoredSec, float priorDwellSec)
+        {
+            if (!(authoredSec > 0f)) return authoredSec;
+            if (!(priorDwellSec > 0f) || float.IsInfinity(priorDwellSec)) return authoredSec;
+            return Math.Min(authoredSec, Math.Max(MinRecordedSec, priorDwellSec - DollShowSec));
+        }
+
+        /// <summary>
+        /// 体験者がその区間（区間の周, カメラ）に居た時間 (秒)。同じ区間に何度も入ったら最長。
+        /// まだ出ていない・入ったことが無ければ -1。<see cref="ResetRun"/> で消える。
+        ///
+        /// 時計は <see cref="OnZoneCommitted"/> に渡される <c>now</c>（<see cref="TakeRunner"/> の演出の時計）。
+        /// 入りも出も同じ確定（dwell 0.5s）を経るので、確定の遅れは差で消える。
+        /// </summary>
+        public float DwellSecOf(int lap, int camera)
+            => _dwellSec.TryGetValue((lap, camera), out float s) ? s : -1f;
+
+        // 出た区間の滞在を記録する（同じ区間は最長を残す）。
+        private void CloseCurrentDwell(float now)
+        {
+            if (!_hasCurrent) return;
+            float d = now - _curEnteredAt;
+            if (!(d > 0f) || float.IsInfinity(d)) return;
+            var key = (_curLap, _curCam);
+            if (!_dwellSec.TryGetValue(key, out float prev) || d > prev) _dwellSec[key] = d;
+        }
 
         /// <summary>
         /// <b>体験者が異変を報告した</b>（左 X / Y の 1 秒長押し）。することは 3 つ。

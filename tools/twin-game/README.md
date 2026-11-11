@@ -18,6 +18,9 @@ py -3.11 tools/twin-game/serve.py 8133   # → http://localhost:8133/
 `http://localhost:8133/verify.html`。`tools/twin-verify.py` の走行を選び、目線の動画と判定と出来事を並べて見る。
 出来事を押すとその時刻へ飛ぶ。時間軸の赤は報告。走行は Drive の `renders/twin-verify/` をサーバが `/runs/` で配る。
 
+場面ごとの静止画で見るなら `py -3.11 tools/twin-look.py cut <走行>`（走行フォルダの `look/` に時刻表 `scenes.md` と場面ごとの PNG）。
+2 つの走行を同じ場面・同じ出来事で左右に並べるなら `py -3.11 tools/twin-look.py pair <A> <B>`（`renders/twin-verify/_pair/`）。
+
 `index.html` の「HMD の画」は仮想体験の記録（時間軸が `routes/` と同じ）で、verify.html の走行とは別物。
 
 ## シュビーが検証するとき

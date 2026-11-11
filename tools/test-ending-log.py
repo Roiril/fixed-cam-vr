@@ -126,6 +126,93 @@ class EndingLogTests(unittest.TestCase):
         verdicts = self.verdicts(self.farewell_events(["appear", "face", "turn"]))
         self.assertTrue(any(level == "WARN" and "消え切る前" in text for level, text in verdicts))
 
+    FULL_FAREWELL = ["anchoring", "appear", "face", "turn", "retreat", "done"]   # turn は t=13
+
+    def test_farewell_turn_without_finding_fails(self):
+        verdicts = self.verdicts(self.farewell_events(self.FULL_FAREWELL))
+        self.assertTrue(any(level == "FAIL" and "別れの解析結果が出ていない" in text for level, text in verdicts))
+
+    def test_farewell_finding_at_the_turn_passes(self):
+        events = self.farewell_events(self.FULL_FAREWELL)
+        events.append({"ev": "comms", "id": "FarewellFinding", "t": "13.1", "delivery": "Fade", "chars": "0"})
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "OK" and "別れの解析結果が人形の振り向きで出た" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "別れの解析結果" in text for level, text in verdicts))
+
+    def test_farewell_finding_twice_fails(self):
+        events = self.farewell_events(self.FULL_FAREWELL)
+        events += [{"ev": "comms", "id": "FarewellFinding", "t": t, "delivery": "Fade", "chars": "0"}
+                   for t in ("13.1", "14.0")]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "別れの解析結果が 2 回出た" in text for level, text in verdicts))
+
+    def test_farewell_without_turn_needs_no_finding(self):
+        # 人形を出せなかった帰還・人形 End では振り向きが無いので、解析結果を求めない。
+        for events in (self.farewell_events(["anchoring", "unavailable"]), self.report_events(ending="Trapped")):
+            verdicts = self.verdicts(events)
+            self.assertFalse(any("別れの解析結果" in text for level, text in verdicts))
+
+    def finding_mark_events(self, mark_t):
+        return [
+            {"ev": "comms", "id": "Begin", "t": "1", "chars": "0"},
+            {"ev": "comms", "id": "FarewellFinding", "t": "15", "delivery": "Fade", "chars": "0"},
+            {"ev": "mark", "t": mark_t, "n": "2", "det": "1", "res": "1", "released": "1", "invasion": "1"},
+        ]
+
+    def test_reports_after_the_finding_need_no_reply(self):
+        # ⑤を出した後は報告に返事をしない（面は⑤を出したまま）。②の照合から外す。
+        verdicts = self.verdicts(self.finding_mark_events("16"))
+        self.assertFalse(any(level == "FAIL" and ("MarkCleared/Typed" in text or "②の返事が" in text)
+                             for level, text in verdicts))
+        # 校正: ⑤より前の解除の報告に返事が無ければ、従来どおり落ちる。
+        verdicts = self.verdicts(self.finding_mark_events("14"))
+        self.assertTrue(any(level == "FAIL" and "MarkCleared/Typed" in text for level, text in verdicts))
+
+    # -- 時間切れの手前の沈み（ev=outro sink= endingTime=）------------------------------
+    SINK_TEXTS = ("沈んでいない", "沈みを画へ書けていない", "沈みが残っている", "沈み（sink）")
+
+    def sink_events(self, ending, head):
+        events = self.report_events(ending=ending)
+        events[0].update(head)          # 終幕の頭（stage=Dark）の 1 行
+        return events
+
+    def sink_verdicts(self, ending, head):
+        return [(level, text) for level, text in self.verdicts(self.sink_events(ending, head))
+                if any(s in text for s in self.SINK_TEXTS) or "画が沈んでから" in text]
+
+    def test_timed_out_trap_after_the_screen_sank_passes(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "endingTime": "1", "sink": "1.00"})
+        self.assertTrue(any(level == "OK" for level, _ in got))
+        self.assertFalse(any(level == "FAIL" for level, _ in got))
+
+    def test_timed_out_trap_without_sinking_fails(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "endingTime": "1", "sink": "0.20"})
+        self.assertTrue(any(level == "FAIL" and "人形 End の前に画が沈んでいない" in text for level, text in got))
+
+    def test_timed_out_trap_without_material_fails(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "endingTime": "1", "sink": "nc"})
+        self.assertTrue(any(level == "FAIL" and "書けていない" in text for level, text in got))
+
+    def test_leaving_or_left_half_trap_is_not_judged_for_sinking(self):
+        for head in ({"endingLeft": "0", "endingTime": "0", "sink": "0.00", "promptAge": "11.00"},
+                     {"endingLeft": "1", "endingTime": "0", "sink": "0.00", "promptAge": "-1.00"}):
+            self.assertEqual([], self.sink_verdicts("Trapped", head))
+
+    def test_old_log_falls_back_to_prompt_age(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "promptAge": "15.02", "sink": "0.10"})
+        self.assertTrue(any(level == "FAIL" and "沈んでいない" in text for level, text in got))
+        self.assertEqual([], self.sink_verdicts("Trapped", {"endingLeft": "0", "promptAge": "12.00", "sink": "0.10"}))
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "promptAge": "15.02"})
+        self.assertTrue(any(level == "WARN" for level, _ in got))
+        self.assertFalse(any(level == "FAIL" for level, _ in got))
+
+    def test_released_with_the_sink_gone_passes(self):
+        self.assertEqual([], self.sink_verdicts("Released", {"sink": "0.00"}))
+
+    def test_released_with_the_sink_left_fails(self):
+        got = self.sink_verdicts("Released", {"sink": "0.30"})
+        self.assertTrue(any(level == "FAIL" and "解除したのに沈みが残っている" in text for level, text in got))
+
     def test_trapped_does_not_ask_for_farewell(self):
         events = self.report_events(ending="Trapped")
         for e in events:
@@ -220,6 +307,45 @@ class EndingLogTests(unittest.TestCase):
                 ]
                 self.assertTrue(any(level == "FAIL" and "③a は届いたのに③b" in text
                                     for level, text in self.verdicts(events)))
+
+    def trapped_prompt_events(self, comms_states, ending="Trapped"):
+        # 起動直後の stage=Off（ending は既定値）→ ③a → ③b → 面の標本 → 人形 End の終幕
+        events = [
+            {"ev": "outro", "stage": "Off", "t": "0.5", "ending": "Trapped"},
+            {"ev": "comms", "id": "Halt", "t": "3", "cline": "0", "closing": "3"},
+            {"ev": "comms", "id": "Prompt", "t": "5"},
+        ]
+        events.extend({"ev": "sum", "t": str(6 + i), "_cams": [], "comms": c}
+                      for i, c in enumerate(comms_states))
+        t_end = 6 + len(comms_states)
+        events.append({"ev": "outro", "stage": "Dark", "t": str(t_end), "ending": ending})
+        # 終幕の頭と同じフレームで畳んだ標本は数えない
+        events.append({"ev": "sum", "t": str(t_end), "_cams": [], "comms": "off"})
+        return events
+
+    def test_prompt_closed_before_trapped_outro_fails(self):
+        events = self.trapped_prompt_events(["Hold/1.00/1.00", "off", "off"])
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "③b の面が閉じていた" in text
+                            for level, text in verdicts))
+
+    def test_prompt_held_until_trapped_outro_passes(self):
+        events = self.trapped_prompt_events(["Hold/1.00/1.00", "Guide/0.00/1.00", "Hold/1.00/1.00"])
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "OK" and "終幕まで出たまま" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "③b の面が閉じていた" in text
+                             for level, text in verdicts))
+
+    def test_prompt_closing_check_ignores_other_endings_and_old_logs(self):
+        for ending, states in (("Released", ["Hold/1.00/1.00", "off"]),
+                               ("Trapped", [])):
+            with self.subTest(ending=ending, n=len(states)):
+                events = self.trapped_prompt_events(states, ending=ending)
+                if not states:
+                    # comms= を持たない古いログ: 判定しない
+                    events = [e for e in events if e.get("ev") != "sum"]
+                self.assertFalse(any("③b の面が閉じていた" in text or "終幕まで出たまま" in text
+                                     for _level, text in self.verdicts(events)))
 
     def test_released_mark_uses_typed_cleared_reply_without_curse_requirement(self):
         events = [
@@ -461,7 +587,7 @@ class CurrentXpLogTests(unittest.TestCase):
                    "shat": "0.00", "shatC": "0", "shatCam": "none", "shatAnchor": "0",
                    "tvCase": "1.00", "ignite": "0.00"},
                   {"ev": "intro", "stage": "Off", "t": "2", "shatStyle": "frozen", "aper": "0.00",
-                   "shat": "0.00", "tvCase": "0.00", "ignite": "1.00"}]
+                   "shat": "0.00", "tvCase": "1.00", "ignite": "1.00"}]
         _, verdicts = self.analyze(events)
         for word in ("開口", "破片", "割れていない", "shatCam", "実景"):
             self.assertFalse(self.has(verdicts, "FAIL", word), word)
@@ -489,18 +615,21 @@ class CurrentXpLogTests(unittest.TestCase):
                       for i, (c, g) in enumerate(zip(case_values, ignite_values))]
             return self.analyze(events)[1]
 
-        good = run(("0.00", "1.00", "0.00"), ("0.00", "1.00", "1.00"))
-        self.assertTrue(self.has(good, "OK", "テレビの筐体が出て"))
+        # テレビの枠は本編でも残る（0321）。導入の後の tvCase は 1 のまま。
+        good = run(("0.00", "1.00", "1.00"), ("0.00", "1.00", "1.00"))
+        self.assertTrue(self.has(good, "OK", "テレビの筐体が出て、本編でも残っている"))
         self.assertTrue(self.has(good, "OK", "テレビの電源が入り"))
+        self.assertFalse(self.has(good, "FAIL", "筐体"))
 
         # 段は進んだのに画に何も出ていない形を落とす
         no_case = run(("0.00", "0.00", "0.00"), ("0.00", "1.00", "1.00"))
         self.assertTrue(self.has(no_case, "FAIL", "テレビの筐体が画に出ていない"))
-        stuck_case = run(("0.00", "1.00", "1.00"), ("0.00", "1.00", "1.00"))
-        self.assertTrue(self.has(stuck_case, "FAIL", "筐体が残っている"))
-        no_power = run(("0.00", "1.00", "0.00"), ("1.00", "1.00", "1.00"))
+        # 導入では出たのに、本編で沈んだ（畳む経路が 0 を書いた）形を落とす
+        vanished = run(("0.00", "1.00", "0.00"), ("0.00", "1.00", "1.00"))
+        self.assertTrue(self.has(vanished, "FAIL", "本編で筐体が消えている"))
+        no_power = run(("0.00", "1.00", "1.00"), ("1.00", "1.00", "1.00"))
         self.assertTrue(self.has(no_power, "FAIL", "電源が入る様子が画に無い"))
-        dark_end = run(("0.00", "1.00", "0.00"), ("0.00", "1.00", "0.40"))
+        dark_end = run(("0.00", "1.00", "1.00"), ("0.00", "1.00", "0.40"))
         self.assertTrue(self.has(dark_end, "FAIL", "管が消えたまま"))
 
 

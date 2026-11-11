@@ -530,6 +530,7 @@ namespace FixedCamVr.Streaming.Tests
         [TestCase(CommsNotice.Halt, 1f, CommsDelivery.Fade)]
         [TestCase(CommsNotice.Prompt, 1f, CommsDelivery.Typed)]
         [TestCase(CommsNotice.MarkCleared, 1f, CommsDelivery.Typed)]
+        [TestCase(CommsNotice.FarewellFinding, 1f, CommsDelivery.Fade)]
         [TestCase(CommsNotice.Begin, 0f, CommsDelivery.Typed)]
         [TestCase(CommsNotice.Greeting, 0f, CommsDelivery.Typed)]
         [TestCase(CommsNotice.TutorialAccepted, 1f, CommsDelivery.Fade)]
