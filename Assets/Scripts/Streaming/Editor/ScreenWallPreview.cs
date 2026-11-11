@@ -98,7 +98,8 @@ namespace FixedCamVr.Streaming.EditorTools
                 CrtSignalProfile.ApplySelected(screenMat);
                 screenMat.SetFloat("_CrtIgnite", 1f);
                 screenMat.SetFloat("_IntroLive", 1f);
-                screenMat.SetFloat("_CrtTvCase", 0f);
+                // 本編のメインスクリーンはテレビの枠つき（既定のテレビ方式・0321）。IntroDirector.ResetIgnite と同じ値。
+                screenMat.SetFloat("_CrtTvCase", IntroLogic.MainShowTvCase);
                 screenMat.SetFloat("_CrtTvDark", 0f);
                 screenMat.SetFloat("_Glitch", 0f);
 

@@ -13,6 +13,10 @@ namespace FixedCamVr.Streaming
     /// 画は本番のメインスクリーンを専用カメラで正面から写したもの。人形・乱れ・外形がそのまま付いて来る。
     /// 取り込みはリングへ順に積み、席ごとに少し前の画を映す。
     ///
+    /// ⚠ メインスクリーンの<b>輪郭の外の筐体（<c>_CrtTvCase</c>）は写さない。</b> 本編のメインは枠つき（0321）だが、
+    /// 取り込みの alpha が管の外形になる（<c>ScreenMultiply.shader</c> の <c>tube</c>）ので、筐体を写すと
+    /// 面の中にメインの枠ごと入る。撮る間だけ 0 にして輪郭で切り抜かせ、直後に戻す（<see cref="HideTvCase"/>）。
+    ///
     /// ⚠ 親（[Eyes]）は頭の<b>位置</b>にだけ付いて動く。向きはワールド固定なので、首を振るとメインスクリーンだけが
     /// 面の前を滑り、後ろにあった面が出てくる。
     ///
@@ -73,6 +77,7 @@ namespace FixedCamVr.Streaming
         private static readonly int FogClearId = Shader.PropertyToID("_WallFogClearM");
         private static readonly int FogBlurId = Shader.PropertyToID("_WallFogBlur");
         private static readonly int FarShowId = Shader.PropertyToID("_WallFarShow");
+        private static readonly int TvCaseId = Shader.PropertyToID("_CrtTvCase");
 
         private Mesh? _surfaceMesh, _glowMesh;
         private Material? _surfaceMat, _glowMat;
@@ -328,7 +333,10 @@ namespace FixedCamVr.Streaming
             _captureCam.aspect = Mathf.Abs(scale.x / Mathf.Max(0.0001f, scale.y));
             _captureCam.cullingMask = 1 << _screenRenderer.gameObject.layer;
             _captureCam.targetTexture = _captureRt;
-            _captureCam.Render();
+            // 筐体を切り抜いた管の形だけを撮る。戻しは using（finally）なので、描画が投げても本編の枠は残る。
+            // ここは AnomalyEyes.LateUpdate の中で、Camera.Render は同期で描き切る。目のカメラが描くのは
+            // 全 LateUpdate の後なので、目のカメラが 0 の状態を描くことはない。
+            using (HideTvCase(_screenRenderer.sharedMaterial)) _captureCam.Render();
 
             RenderTexture? prev = RenderTexture.active;
             Graphics.Blit(_captureRt, _tileRt);
@@ -340,6 +348,39 @@ namespace FixedCamVr.Streaming
             _ringHead = next;
             _ringFilled = Mathf.Min(_ringFilled + 1, ScreenMultiplyLayout.DelaySlots);
             CaptureCount++;
+        }
+
+        /// <summary>
+        /// メインスクリーンの材質の <c>_CrtTvCase</c> を、返した値を破棄するまで 0 にする（取り込みの間だけ使う）。
+        /// 破棄で元の値へ戻す。材質が無い・プロパティが無い・もともと 0 のときは何もしない。
+        ///
+        /// ⚠ 必ず <c>using</c> で受ける。戻し忘れると本編でテレビの枠が消える。
+        /// struct なので <c>using</c> で受けても割り当ては起きない（取り込みは 0.1 秒ごと）。
+        /// </summary>
+        public static TvCaseHidden HideTvCase(Material? screenMaterial) => new TvCaseHidden(screenMaterial);
+
+        /// <summary><see cref="HideTvCase"/> の戻し役。</summary>
+        public readonly struct TvCaseHidden : System.IDisposable
+        {
+            private readonly Material? _mat;
+            private readonly float _kept;
+
+            public TvCaseHidden(Material? mat)
+            {
+                _kept = 0f;
+                _mat = null;
+                if (mat == null || !mat.HasProperty(TvCaseId)) return;
+                float kept = mat.GetFloat(TvCaseId);
+                if (kept == 0f) return;
+                _kept = kept;
+                _mat = mat;
+                mat.SetFloat(TvCaseId, 0f);
+            }
+
+            public void Dispose()
+            {
+                if (_mat != null) _mat.SetFloat(TvCaseId, _kept);
+            }
         }
 
         private void EnsureCamera()

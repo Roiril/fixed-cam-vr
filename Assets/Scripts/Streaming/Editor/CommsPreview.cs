@@ -50,6 +50,7 @@ namespace FixedCamVr.Streaming.EditorTools
             CommsNotice.Begin, CommsNotice.BeginHow,
             CommsNotice.MarkLogged, CommsNotice.MarkNothing,
             CommsNotice.Halt, CommsNotice.Prompt,
+            CommsNotice.FarewellFinding,
         };
 
         private const string MainScenePath = "Assets/Scenes/Main.unity";

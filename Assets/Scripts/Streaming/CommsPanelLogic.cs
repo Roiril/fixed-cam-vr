@@ -294,6 +294,9 @@ namespace FixedCamVr.Streaming
         private CommsDelivery _delivery = CommsDelivery.Typed;
         private bool _persistent;
         private bool _guideWanted;
+        // 持続表示の連絡（③b など）を、長押しの手元表示（Guide）から読ませる段へ戻している最中。
+        // 枠の丈を戻してから字を浮かべる（打ち直さない）。段を移れば落ちる（`EnterStage`）。
+        private bool _restoring;
         // 段へ入った瞬間の姿。**そこから動かす**ので、どの段へ移っても飛ばない。
         // ⚠⚠ **4 つ全部を覚える。** 2026-08-16 まで開きと丈しか継承しておらず、
         //    連絡が届くたびに**地の濃さと下段が 0 から張り直されていた** ＝ 走行中の面へ
@@ -617,7 +620,20 @@ namespace FixedCamVr.Streaming
             _revealFrom = w.reveal;
             _stage = next;
             _elapsed = 0f;
+            _restoring = false;
         }
+
+        /// <summary>
+        /// 持続表示の連絡を、手元表示（Guide）から読ませる段へ戻した（戻した Hold に居るあいだ立ったまま。
+        /// 見えが戻り切るのは <see cref="RestoreSec"/> 後）。<b>字は打ち直さない</b>ので、実行体はこのあいだ打鍵を鳴らさない。
+        /// </summary>
+        public bool Restoring => _restoring && _stage == CommsStage.Hold;
+
+        /// <summary>
+        /// 手元表示から持続表示の文面へ戻る尺 (秒)。枠の丈が戻り切ってから（<see cref="InSec"/>）、
+        /// 字がすっと浮かぶ（<see cref="FadeInSec"/>）。開くときと同じ順（枠が先・字が後）。
+        /// </summary>
+        public const float RestoreSec = InSec + FadeInSec;
 
         /// <summary>
         /// 報告の手元表示を出したいか（押している最中・余韻の最中）。
@@ -649,7 +665,18 @@ namespace FixedCamVr.Streaming
             else if (rising && (_stage == CommsStage.Type || _stage == CommsStage.Hold))
                 EnterStage(CommsStage.Guide);
             else if (!wanted && _stage == CommsStage.Guide)
-                EnterStage(CommsStage.Out);
+            {
+                // ⚠ 持続表示の連絡（③b「異変があなたを取り込もうとしています。排除してください。」）は、
+                //   長押しを途中で離した（報告が成立しなかった）ら、その文面へ戻す。引くと、報告するか
+                //   終わるまでの十数秒、画面に何の文も無くなる（2026-11-11 のツイン通しの所見）。
+                //   報告が成立したときは返事（MarkCleared）が `Begin` で先に上書きしているので、ここへは来ない。
+                if (_persistent)
+                {
+                    EnterStage(CommsStage.Hold);
+                    _restoring = true;
+                }
+                else EnterStage(CommsStage.Out);
+            }
         }
 
         /// <summary>導入の固定表示を終え、現在の面を静かに畳む。</summary>
@@ -674,6 +701,7 @@ namespace FixedCamVr.Streaming
             _elapsed = 0f;
             _delivery = CommsDelivery.Typed;
             _persistent = false;
+            _restoring = false;
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;
@@ -855,6 +883,21 @@ namespace FixedCamVr.Streaming
                         { panel = 1f, glyph = 1f, open = 1f, body = 1f, reveal = p, hint = 1f };
                     }
                     case CommsStage.Hold:
+                        if (_restoring)
+                        {
+                            // 手元表示から持続表示の文面へ戻る（`SetGuideWanted`）。枠と丈はいまの姿から戻し、
+                            // 戻り切ってから字を全文のまま浮かべる（打ち直さない・`Restoring`）。
+                            float k = Smooth(Clamp01(_elapsed / InSec));
+                            return new CommsWeights
+                            {
+                                panel = Lerp(_panelFrom, 1f, k),
+                                glyph = Smooth(Clamp01((_elapsed - InSec) / FadeInSec)),
+                                open = Lerp(_openFrom, 1f, k),
+                                body = Lerp(_bodyFrom, 1f, k),
+                                reveal = 1f,
+                                hint = Lerp(_hintFrom, 1f, k),
+                            };
+                        }
                         return new CommsWeights
                         { panel = 1f, glyph = 1f, open = 1f, body = 1f, reveal = 1f, hint = 1f };
                     case CommsStage.Swap:
@@ -955,6 +998,7 @@ namespace FixedCamVr.Streaming
             _elapsed = 0f;
             _delivery = CommsDelivery.Typed;
             _persistent = false;
+            _restoring = false;
             _guideWanted = false;
             _openFrom = _bodyFrom = _panelFrom = _hintFrom = _glyphFrom = _revealFrom = 0f;
             _openSec = 0f;

@@ -356,7 +356,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 yield return new Shot(IntroStage.Frame, 4, "power", p, Mathf.RoundToInt(p * 100f));
             foreach (float p in new[] { 0f, 0.5f, 0.999f })
                 yield return new Shot(IntroStage.Swap, 5, "settle", p, Mathf.RoundToInt(p * 100f));
-            // p=1 で状態機械は Done へ送るので、重みは本編と同じ（Inactive）になる。
+            // p=1 で状態機械は Done へ送るので、重みは本編と同じになる（テレビの筐体は MainShowTvCase のまま残る・0321）。
             yield return new Shot(IntroStage.Swap, 6, "done", 1f, 100);
 
             // カメラが 1 台も繋がっていない現場（0025）。点く途中に砂が先に出ないこと、映像の所で砂が出ること。

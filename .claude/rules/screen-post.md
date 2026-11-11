@@ -96,7 +96,7 @@ paths:
 - 時計の版・書式 → S:1270-1403
 - 管の形・点灯 → S:1241-1268
 - 暖色の置き場 → memory/warm_palette.md
-- 導入のテレビ `_CrtTvCase` / `_CrtTvDark` → memory/intro_tv_reveal.md
+- テレビの筐体 `_CrtTvCase`（本編も 1・0321。`_ScreenPower` だけ掛ける）/ `_CrtTvDark` → memory/intro_tv_reveal.md
 - 信号断・追従 → S:231-330
 
 ---

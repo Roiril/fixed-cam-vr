@@ -239,7 +239,7 @@ def build_intro() -> np.ndarray:
     t_degrade = t_real + REAL                # 段 2 — 暗転
     t_structure = t_degrade + DEGRADE        # 段 3 — 黒の後、テレビが出る
     t_frame = t_structure + STRUCTURE        # 段 4 — 電源が入り、映像が映る
-    t_swap = t_frame + FRAME                 # 段 5 — 静止して筐体が沈む
+    t_swap = t_frame + FRAME                 # 段 5 — 静止する（テレビの枠は本編まで残る）
     t_run = t_swap + SWAP                    # 本編
     total = t_run + 10.0
     n = int(total * sk.SR)

@@ -31,7 +31,7 @@ namespace FixedCamVr.Streaming.EditorTools
             public string mode = "normal", defaultSource = "live";
             public Source[] sources = Array.Empty<Source>();
             public string[] cameras = { "A", "B", "C" };
-            public string baseLabel = "本編採用版・枠なし（通常加工0.5）";
+            public string baseLabel = "本編採用版・管の内側（通常加工0.5）";
             public string unknownParameters = "ignore";
             public Group[] groups = Array.Empty<Group>();
             public ParameterValues defaults = new ParameterValues(), baseline = new ParameterValues();
@@ -319,7 +319,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 }
                 if (mode == "transformed") sources.Add(new Source { id = "cg_doll", label = "無人写真＋CG人形" });
                 return JsonUtility.ToJson(new Metadata { mode = mode, defaultSource = mode == "doll" ? "pov_0" : mode == "transformed" ? "cg_doll" : "live", sources = sources.ToArray(),
-                    groups = groups, defaults = defaults, baseline = baseline, baseLabel = mode == "doll" ? "人形視点（2-C）" : mode == "transformed" ? "人形化後（3-A〜4-A）" : "本編採用版・枠なし（通常加工0.5）" });
+                    groups = groups, defaults = defaults, baseline = baseline, baseLabel = mode == "doll" ? "人形視点（2-C）" : mode == "transformed" ? "人形化後（3-A〜4-A）" : "本編採用版・管の内側（通常加工0.5）" });
             }
             private static void ValidateMode(string mode)
             {

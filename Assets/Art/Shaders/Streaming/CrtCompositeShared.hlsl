@@ -1958,14 +1958,17 @@ half4 frag(Varyings input) : SV_Target
         half screenMask = SAMPLE_TEXTURE2D_LOD(_CrtScreenMaskTex, sampler_CrtFrameTex, surfaceUv, 0).a;
         if (_CrtTvCase > 0.0)
         {
-            // 導入のテレビ（0309）。輪郭の外の筐体を、上からの灯りで闇から出す。
+            // テレビの筐体（0309 / 0321）。輪郭の外の筐体を、上からの灯りで闇から出す。
+            // テレビ方式では導入の段 3 で上がり、段 4 から体験の終わりまで 1 のまま残る（本編も枠つき）。
+            // 0 のときだけ下の clip で輪郭の外を切り抜く（割れる遷移の本編）。輪郭の判定はどちらも .5。
             // 参照の筐体は暗い樹脂なので、写真の明るさのままだと闇に沈む。外周は闇へ溶かして、四角い板の輪郭を見せない。
-            // 輪郭の判定は本編の clip と同じ .5。沈み切った時に本編と 1 画素も変わらない。
+            // 終幕で装置の電力が落ちるときは筐体も一緒に落とす（_ScreenPower）。筐体だけ光って残らないように。
+            // カメラ切替の暗転（_SwitchDim）は掛けない — 暗転は映像の出来事で、筐体はその間も見え続ける。
             float2 tvP = (surfaceUv - float2(0.5, 0.60)) * float2(1.25, 1.45);
             float tvSpot = saturate(1.0 - dot(tvP, tvP));
             float2 tvEdge = min(surfaceUv, 1.0 - surfaceUv);
             tvSpot *= smoothstep(0.0, 0.06, min(tvEdge.x, tvEdge.y));
-            if (screenMask < 0.5) col = tvOutside * 2.2 * tvSpot * _CrtTvCase;
+            if (screenMask < 0.5) col = tvOutside * 2.2 * tvSpot * _CrtTvCase * saturate(_ScreenPower);
         }
         else clip(screenMask - .5);
     }

@@ -1,6 +1,6 @@
 # 参照CRT材質の技術詳細
 
-現行実装の契約。枠なしの開口形状は0302、通常画面の加工は0303、人形化後の加工は0306で本編へ採用された。独立評価の96%条件は未達で、ユーザーの採用判定とは分けて記録する。
+現行実装の契約。開口形状は0302、通常画面の加工は0303、人形化後の加工は0306で本編へ採用された。本編の筐体は0321でテレビ方式（既定）では常時出す（開口の外を`_CrtTvCase`で描く。`memory/intro_tv_reveal.md`）。独立評価の96%条件は未達で、ユーザーの採用判定とは分けて記録する。
 
 - 参照筐体のRGBは元参照のCaseColor、開口alphaはFrameから読む。Reflectance/Glass/Normal/Gradeはlinear、Frame/CaseColorはsRGB。NormalはDefault importerのRGBを自前で[-1,1]へ展開する。参照素材は同じClamp/Trilinear samplerを共有する。
 - 参照画面の通常時は画像由来のISP補正と単調1D曲線を合成済み映像へ掛ける。夜間では通常時の補正を弱め、既存の夜間曲線を保持する。ISPの共通実装は`GradeSensorColor`。
@@ -33,7 +33,7 @@
 
 Profileの再適用は固定加工だけを所有し、Directorが書いた動的Mono/ノイズ/粗さを上書きしない。CameraFeelFxが実際に描くfeel値を書く。実ノイズと位置目標をテレメトリで対にし、material未解決や後段上書きを検出する。
 
-選択profileは元Frameの開口の50%輪郭に沿って外側をdiscardする。曲面mesh・logical crop・合成UVは変更しない。外側へ色/depthを書かず、映像内部はalpha1を保つ。Transparent blendで内側を現実へ透かさない。開口内の筐体RGBとの境界混合は採用PNGと同じに保つ。
+選択profileは元Frameの開口の50%輪郭で内外を分ける。`_CrtTvCase`が0のとき（割れる遷移の本編・調整器・増えるスクリーンの取り込み中）は外側をdiscardし、色/depthを書かない。テレビ方式の本編は`_CrtTvCase`=1で外側に筐体を描く（`_ScreenPower`だけ掛ける）。曲面mesh・logical crop・合成UVは変更しない。映像内部はalpha1を保つ。Transparent blendで内側を現実へ透かさない。開口内の筐体RGBとの境界混合は採用PNGと同じに保つ。
 
 `MjpegScreen`の`CrtSignalProcessor`はraw LiveTextureを保持したまま、専用linear mipと2種類のfullRGB PSFを用意する。source世代・寸法・CoarseLOD等の変化でsource cacheを更新する。2倍格子の位相を合わせたH/V分離で、fractional LODのdense参照との最大差.003・二次moment差2%以内を固定した。sigma0の差分検出はraw入力を読み続ける。
 

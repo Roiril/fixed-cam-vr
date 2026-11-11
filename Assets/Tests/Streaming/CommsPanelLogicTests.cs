@@ -181,6 +181,76 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsStage.Off, l.Stage);
         }
 
+        // ------------------------------------------------------------------ ③b は報告か本編の終わりまで出たまま
+
+        /// <summary>③b（締めの促し）と同じ出し方: 打つ・持続表示。全文が出たところまで進める。</summary>
+        private static CommsPanelLogic ClosingPromptShown()
+        {
+            var l = new CommsPanelLogic();
+            l.Begin(Chars, CommsDelivery.Typed, persistent: true);
+            AdvanceUntil(l, CommsStage.Hold);
+            return l;
+        }
+
+        [Test]
+        public void ClosingPrompt_DoesNotRetractAfterTheHoldTime()
+        {
+            // 2026-11-11 のツイン通し: 押さない回は全文から約 2 秒で面ごと引き、人形 End まで 12 秒文が無かった。
+            var l = ClosingPromptShown();
+            Advance(l, CommsPanelLogic.HoldSec + CommsPanelLogic.OutSec + 15f);
+            Assert.AreEqual(CommsStage.Hold, l.Stage, "③b が自分で引いた");
+            Assert.AreEqual(1f, l.Weights.reveal, 1e-6f);
+            Assert.AreEqual(1f, l.Weights.glyph, 1e-6f);
+            Assert.IsFalse(l.DoneReading);
+        }
+
+        [Test]
+        public void ClosingPrompt_IsReplacedByTheReply_WhichClosesByItself()
+        {
+            var l = ClosingPromptShown();
+            l.SetGuideWanted(true);                         // 報告の長押し
+            Assert.AreEqual(CommsStage.Guide, l.Stage, "③b の上でも手元表示へ移る");
+            Advance(l, 0.6f);
+            l.Begin(Chars);                                 // 報告が通った → MarkCleared（持続表示ではない）
+            Assert.AreNotEqual(CommsStage.Guide, l.Stage);
+            l.SetGuideWanted(false);                        // 返事が出てから離した
+            AdvanceUntil(l, CommsStage.Hold);
+            AdvanceUntil(l, CommsStage.Off);                // 返事は読ませ終われば引く
+        }
+
+        [Test]
+        public void ReleasingTheGuide_ReturnsToTheClosingPrompt()
+        {
+            var l = ClosingPromptShown();
+            l.SetGuideWanted(true);
+            Advance(l, CommsPanelLogic.GuideTextOutSec + CommsPanelLogic.InSec + Dt);
+            Assert.AreEqual(0f, l.Weights.reveal, 1e-6f, "押している間は文面を消す（従来どおり）");
+
+            l.SetGuideWanted(false);                        // 報告が成立しないまま離した
+            Assert.AreEqual(CommsStage.Hold, l.Stage, "③b へ戻らず引いた");
+            Assert.IsTrue(l.Restoring, "打ち直さずに戻す");
+            Assert.AreEqual(1f, l.Weights.reveal, 1e-6f, "字は全文のまま（打ち直さない）");
+            Assert.Less(l.Weights.glyph, 0.01f, "丈が戻る前に字を出さない");
+            Advance(l, CommsPanelLogic.RestoreSec + Dt);
+            Assert.AreEqual(1f, l.Weights.body, 1e-4f);
+            Assert.AreEqual(1f, l.Weights.glyph, 1e-4f);
+            Advance(l, CommsPanelLogic.HoldSec + CommsPanelLogic.OutSec + 5f);
+            Assert.AreEqual(CommsStage.Hold, l.Stage, "戻った後も自分では引かない");
+        }
+
+        [Test]
+        public void ClosingPrompt_FoldsOnlyWhenTheRunEnds()
+        {
+            // 本編を出た縁（人形 End・中断）で実行体が Disable する。次の体験者へ持ち越さない。
+            var l = ClosingPromptShown();
+            l.Disable();
+            Assert.AreEqual(CommsStage.Off, l.Stage);
+            Assert.AreEqual(0f, l.Weights.panel, 1e-6f);
+            l.Begin(Chars);                                 // 次の体験者の通常の連絡は自分で引く
+            AdvanceUntil(l, CommsStage.Hold);
+            AdvanceUntil(l, CommsStage.Off);
+        }
+
         [Test]
         public void ReleasingTheGuide_ClosesWithoutRestoringThePreviousMessage()
         {

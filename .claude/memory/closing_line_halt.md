@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: c1e3e152-4a70-44a5-b034-7cd0e5030226
-  modified: 2026-11-10T07:35:19.249Z
+  modified: 2026-11-11T01:51:35.959Z
 ---
 
 # 4-A の「止まってください！」は場所で出る（2026-09-19・`canon/LEDGER.md` 0233）
@@ -43,6 +43,26 @@ metadata:
   cline=0 なら退避路）・`ev=config closingLine=`。解析器は 5 通り（線→Halt / 退避路 / 踏んだのに無し /
   踏まず（人=WARN・走行=FAIL）/ 線の無い台本）で校正済み
 - 言われていないことは `OPEN.md` Q15〜Q17（踏まない人には出さない・報告後でも出す・猶予前の③b はそのまま）
+
+## ③b は出したまま（2026-11-11・シュビーの実装判断・未判定）
+
+ツインの無報告走行で、③b「異変があなたを取り込もうとしています。排除してください。」が全文表示から
+約 2 秒（Typed の `HoldSecFor`）で自分で引っ込み、人形 End まで約 12 秒、文字の無い時間があった。
+原因は③b が普通の文面と同じ非持続で出ていたこと（Halt の Out → Swap → `CommsPanelLogic.Tick` の Hold 満了で Out）。
+
+- **出し方**: `CommsPanel.Update` が Prompt だけ `Deliver(..., persistent: true, ...)`。Swap で差し替わっても
+  `_pendingPersistent` が引き継ぐ。Hold は時間で抜けない
+- **消え方は 2 つだけ**: 報告で `ScreenDecayReleased` → MarkCleared（非持続・Typed）が上書きして普通に引く。
+  人形 End・中断で本編を出た縁 → `CommsPanel.ObserveClosingPromptEnd(inRun=false)` が `Disable` して即座に隠す
+  （終幕の暗転と同じフレーム。`Finished` では `CommsCueLogic.Tick` が何も返さないので、これが無いと黒の上に残る）
+- **長押し**: Hold から Guide へ（従来どおり）。持続の文面で離すと Out ではなく Hold へ戻し、
+  `RestoreSec`（In + FadeIn）で面・丈・字を全文へ戻す。`CommsPanelLogic.Restoring` の間は打鍵音を鳴らさない
+- **影響しないもの**: `promptReady`（0178）は Hold へ入った最初の 1 回で立つ（持続でも同じ）。
+  `_cue.NotifyDelivered` は Takeover 以外で何もしない。復帰の時計（`commsRecover`）は面が Off へ畳まれるまで回るので、
+  ③b の間は `SettleEndSec` 後の静止した斑のまま。`st=end` は MarkCleared が引いた後か本編を出た後に出る
+- **解析器**: 人形 End の走行で、③b の後・終幕の 0.1 秒前までの `ev=sum comms=` に `off` があれば FAIL
+  （`tools/test-ending-log.py` の `test_prompt_*`）
+- 2 人目: `OnRunRestarted` / `OnDisable` が `_closingPromptShown` を落とす。`Disable` が `_persistent` と `_restoring` を戻す
 
 関連: [[comms_takeover]]（出方の決め所は `DeliveryOf` 1 か所）・[[l_wall_geometry]]（角までの距離と時計のずれ）・
 [[onsite_experience_test]]（走行と解析器の対）

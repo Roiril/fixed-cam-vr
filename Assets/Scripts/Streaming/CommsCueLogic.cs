@@ -108,6 +108,17 @@ namespace FixedCamVr.Streaming
         /// ⚠ 侵食度 1 のままでも出方はスイの通常の印字（<see cref="CommsDelivery.Typed"/>）。
         /// </summary>
         MarkCleared,
+        /// <summary>
+        /// ⑤ 帰還の別れで、<b>人形が後ろを向き始めた縁</b>に 1 度だけ出す解析の結果
+        /// 「解析が完了しました。異変は、一緒に遊ぶ人を探していました。」。
+        /// 伏線を 1 つだけ回収する（<c>canon/LEDGER.md</c> 0322）。
+        /// 中身は 0036（人形は「来た人とただ一緒に遊びたかった」）、主語を「異変」にするのは
+        /// 0146（スイは自分を当事者に入れない）。⚠ <b>この文はシュビーの案で、ユーザーの判定はまだ無い</b>
+        /// （<c>canon/OPEN.md</c>）。外すときは <see cref="CommsCueLogic.Tick"/> の 1 か所を止める。
+        /// 出方は <see cref="CommsDelivery.Fade"/>（オルゴールが鳴っている場面なので打鍵を鳴らさない）。
+        /// 面は終幕の電源断まで出したまま（<see cref="CommsCueLogic.FarewellFindingStays"/>）。
+        /// </summary>
+        FarewellFinding,
     }
 
     /// <summary>
@@ -230,6 +241,16 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool takeoverSuppressed;
 
+        /// <summary>
+        /// 帰還の別れの人形が<b>後ろを向き始めた</b>（<c>EndingFarewellLogic.Phase.Turn</c> か <c>Retreat</c>）。
+        /// 供給は <c>TimelineDirector.FarewellPhase</c>。⚠ Retreat も含めるのは、1 フレームが長いと
+        /// Turn（0.75 秒）を飛ばして Retreat へ入ることがあるため。Done・Unavailable は含めない（人形が画に居ない）。
+        /// </summary>
+        public bool farewellTurned;
+
+        /// <summary>呪いが解けたか（<c>ShowRunDirector.ScreenDecayReleased</c>）。⑤は帰還の別れでしか出さない。</summary>
+        public bool curseReleased;
+
         /// <summary>経過（秒）。</summary>
         public float dt;
     }
@@ -314,8 +335,12 @@ namespace FixedCamVr.Streaming
         private int _dollCatchUpCompletedObserved;
         private bool _catchUpFinished;
         private bool _takeoverDelivered;
+        private bool _farewellFindingFired;
 
         public bool TakeoverDelivered => _takeoverDelivered;
+
+        /// <summary>⑤（別れの解析結果）を出したか（診断・テスト用）。</summary>
+        public bool FarewellFindingFired => _farewellFindingFired;
 
         /// <summary>Update 順序によらず、追いつき完了から強制表示までの入力も止める。</summary>
         public bool HasPendingTakeover(int completedCount)
@@ -348,6 +373,7 @@ namespace FixedCamVr.Streaming
             _dollCatchUpCompletedObserved = 0;
             _catchUpFinished = false;
             _takeoverDelivered = false;
+            _farewellFindingFired = false;
         }
 
         /// <summary>①b（開始の合図「調査を開始してください。」）まで出したか（診断・テスト用）。</summary>
@@ -373,6 +399,7 @@ namespace FixedCamVr.Streaming
              : notice == CommsNotice.Halt ? CommsDelivery.Fade
              : notice == CommsNotice.Prompt ? CommsDelivery.Typed
              : notice == CommsNotice.MarkCleared ? CommsDelivery.Typed
+             : notice == CommsNotice.FarewellFinding ? CommsDelivery.Fade
              : notice == CommsNotice.Takeover ? CommsDelivery.Possessed
              : invasionProgress >= CommsCurseLogic.PossessedLevel ? CommsDelivery.Cursed
              : CommsDelivery.Typed;
@@ -383,6 +410,20 @@ namespace FixedCamVr.Streaming
         public static bool IsOnboarding(CommsNotice notice)
             => notice >= CommsNotice.ControllerDisconnected
                && notice <= CommsNotice.TutorialReminder;
+
+        /// <summary>
+        /// ⑤（別れの解析結果）を出したままにしてよいか。本編のあいだ（別れが続いている）と、
+        /// 終幕の砂嵐のあいだ（電源断の前）は残す。電源断・終幕を出さない設定・ラン開始・導入では畳む。
+        /// 結果画面（Report）は電源断より後なので、そこには残らない。
+        /// </summary>
+        /// <param name="inRun">本編に居る。</param>
+        /// <param name="finished">終幕の相に居る。</param>
+        /// <param name="outroPresenting">終幕が画に何かを出している（<c>OutroDirector.Presenting</c>）。</param>
+        /// <param name="outroElapsedSec">終幕の頭からの秒（<c>OutroDirector.TotalElapsedSec</c>）。</param>
+        /// <param name="powerCutAtSec">管が潰れ始めるまでの秒（<c>OutroDirector.PowerCutAtSec</c>）。</param>
+        public static bool FarewellFindingStays(bool inRun, bool finished, bool outroPresenting,
+                                                float outroElapsedSec, float powerCutAtSec)
+            => inRun || (finished && outroPresenting && outroElapsedSec < powerCutAtSec);
 
         /// <summary>候補ではなく面へ実際に渡せた時だけ自動提示の一回を消費する。</summary>
         public void NotifyDelivered(CommsNotice notice)
@@ -437,6 +478,16 @@ namespace FixedCamVr.Streaming
             if (inp.takeoverAllowed && !inp.takeoverSuppressed && !_takeoverDelivered && _catchUpFinished)
                 return CommsNotice.Takeover;
             if (inp.takeoverPlaying) return CommsNotice.None;
+
+            // ⑤ 別れの解析結果は面を待たずに、人形が後ろを向き始めた縁で 1 度だけ出す。
+            // ⚠ 出した後はこのランで何も出さない。報告が届いても返事（②）で上書きしない —
+            //    面は終幕の電源断まで⑤を出したまま（CommsPanel が畳む）。
+            if (_farewellFindingFired) return CommsNotice.None;
+            if (inp.farewellTurned && inp.curseReleased)
+            {
+                _farewellFindingFired = true;
+                return CommsNotice.FarewellFinding;
+            }
 
             // ③a は締めの線を踏むか、最終 A に入ってから `HaltAfterClosingSec` 秒で出す。
             //    線が著作されていても、体験者が踏まない場合は時計が有効。

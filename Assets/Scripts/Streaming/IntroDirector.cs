@@ -171,7 +171,13 @@ namespace FixedCamVr.Streaming
                 OnIntroDefChanged(runDirector.IntroDef);
                 // 起動直後は Intro 相なので、そのまま演出を始める。
                 if (runDirector.Phase == ShowPhase.Intro) BeginIntro();
-                else _logic.Disable();
+                else
+                {
+                    _logic.Disable();
+                    // 導入を通らずに本編の相で有効になった。材質の既定（_CrtTvCase = 0）のままだと
+                    // テレビ方式でも枠が出ないので、本編の見えを書く。
+                    ResetIgnite();
+                }
             }
         }
 
@@ -251,6 +257,8 @@ namespace FixedCamVr.Streaming
             _logic.Configure(_def.ToTiming());
             // 走行中に「導入を出さない」へ変わったら畳む（卓から切れるようにしておく）。
             if (!_def.enabled && _logic.Active) FinishIntro(restartClock: false);
+            // 演出の外で方式が変わったら、本編の筐体（テレビ方式は枠つき・割れる遷移は枠なし）を書き直す。
+            else if (!_logic.Active) ResetIgnite();
         }
 
         private void OnPhaseChanged(ShowPhase phase)
@@ -714,7 +722,8 @@ namespace FixedCamVr.Streaming
         /// 「管が点き切った瞬間に映像も出る」ことになり、重み <c>live</c> が 0 のままなのに
         /// 画には映像が出る（2026-08-13 に Editor プレビューの絵で見つけた食い違い）。
         /// 実物のブラウン管も、電源を入れてから絵が出るまで暖機の時間がある。
-        /// <paramref name="tvCase"/> と <paramref name="tvDark"/> はテレビの筐体とガラス（0 で本編と同じ）。
+        /// <paramref name="tvCase"/> と <paramref name="tvDark"/> はテレビの筐体とガラス
+        /// （本編はテレビ方式で筐体 <see cref="IntroLogic.MainShowTvCase"/>・割れる遷移で 0、ガラスはどちらも 0）。
         /// </summary>
         private void WriteIgnite(float v, float live, float tvCase, float tvDark)
         {
@@ -739,12 +748,20 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// スクリーンを本編の見えへ戻し、テレビの据え置きも解く。<b>演出を畳むすべての経路がここを通る</b> —
         /// 通し忘れると最後に書いた 0 が残って画がまるごと消える。
+        ///
+        /// ⚠ 筐体（<c>_CrtTvCase</c>）は方式で変わる。テレビ方式は本編も枠つきなので
+        /// <see cref="IntroLogic.MainShowTvCase"/>（0321）、割れる遷移は 0（輪郭で切り抜く）。
+        /// ここで一律に 0 を書くと、本編でテレビの枠が消える。
         /// </summary>
         private void ResetIgnite()
         {
-            WriteIgnite(1f, 1f, 0f, 0f);
+            WriteIgnite(1f, 1f, MainShowTvCase, 0f);
             if (screenAnchor != null) screenAnchor.ReleaseIntroHold();
         }
+
+        /// <summary>本編でスクリーンの材質へ書く筐体の明るさ。方式は <see cref="IntroLogic.Transition"/> で読む。</summary>
+        private float MainShowTvCase
+            => _logic.Transition == IntroTransition.Tv ? IntroLogic.MainShowTvCase : 0f;
 
         /// <summary>
         /// 枠の中に本編のスクリーンが来ているか。<b>枠は head-lock なので常に正面</b>で、

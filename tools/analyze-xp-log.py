@@ -1507,6 +1507,21 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"別れの人形が体験者の左で見つめた（doll u={e.get('dollU')} / visitor u={e.get('visU')}）")
         if faces and not any(e.get("phase") == "done" for e in fw_ev):
             verdict("WARN", "別れの人形が消え切る前に締めが終わった（電源断に掛かった）")
+        # ⑤ 別れの解析結果（CommsNotice.FarewellFinding）。帰還で人形が後ろを向いた縁に 1 度だけ出る。
+        turned = [e for e in fw_ev if e.get("phase") == "turn"]
+        findings = [e for e in events if e.get("ev") == "comms" and e.get("id") == "FarewellFinding"]
+        if released and turned and not findings:
+            verdict("FAIL", "別れの解析結果が出ていない（人形が後ろを向いたのに comms id=FarewellFinding が無い）"
+                            "— CommsCueLogic の farewellTurned / curseReleased の配線を確かめる")
+        elif findings:
+            if len(findings) > max(1, len(turned)):
+                verdict("FAIL", f"別れの解析結果が {len(findings)} 回出た（振り向き {len(turned)} 回に 1 回だけの約束）")
+            t_turn = fnum(turned[0], "t", 0.0) if turned else None
+            t_find = fnum(findings[0], "t", 0.0)
+            if t_turn is not None and abs(t_find - t_turn) > 1.0:
+                verdict("WARN", f"別れの解析結果が人形の振り向きから {t_find - t_turn:+.1f}s ずれて出た")
+            else:
+                verdict("OK", f"別れの解析結果が人形の振り向きで出た（delivery={findings[0].get('delivery')}）")
 
     outro = [e for e in events if e.get("ev") == "outro"]
     if outro:
@@ -1776,10 +1791,14 @@ def analyze(events, others, exp, warns=None):
             # ②の分岐が「異常演出が表示されていたか」と一致しているか。
             # 侵食度1では通常返答を維持できず Takeover が一度だけ走る。ただし最後の解除が
             # 成立した報告だけはスイの通常返信へ戻るため、released=1 も照合対象に含める。
+            # ⑤ 別れの解析結果（FarewellFinding）を出した後の報告には返事を出さない（面は⑤を出したまま・
+            #    CommsCueLogic.Tick）。その後の報告は②の照合から外す。
+            t_finding = _first("FarewellFinding")
             marks = [e for e in events if e.get("ev") == "mark"]
+            reply_marks = [m for m in marks if t_finding is None or fnum(m, "t", 0.0) < t_finding]
             # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
             answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")]
-            ordinary_marks = [m for m in marks
+            ordinary_marks = [m for m in reply_marks
                               if fnum(m, "invasion", 0.0) < 0.999 or str(m.get("released")) == "1"]
             mark_ok = True
             if len(answers) < len(ordinary_marks):
@@ -1808,7 +1827,7 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"通常返信を期待する報告 {len(ordinary_marks)} 回で、"
                               "②の返事が異常演出の表示状態と一致した")
 
-            released_marks = [m for m in marks if str(m.get("released")) == "1"]
+            released_marks = [m for m in reply_marks if str(m.get("released")) == "1"]
             for m in released_marks:
                 near = [a for a in answers
                         if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
@@ -2175,6 +2194,37 @@ def analyze(events, others, exp, warns=None):
                 if d < 0.9:
                     verdict("WARN", f"③の催促が通信侵食度 {d:.2f} で届いた — "
                                     "3-Aの人形表示で1へ進んでいない")
+
+            # ③b は報告で解ける（MarkCleared が上書きする）か、人形 End・中断で終幕へ落ちるまで出たまま
+            # （CommsPanel が持続表示で出す）。人形 End の走行で、③b が出てから終幕の頭までの
+            # `ev=sum comms=`（面の段）に off があれば、促しが途中で引っ込んでいる。
+            # ⚠ 終幕の頭と同じフレームで面を畳むので、終幕の 0.1 秒前までの標本だけを見る。
+            # ⚠ 終幕の縁は `stage=Off` を除いて取る（起動直後に 1 本出る。劇伴の判定と同じ罠）。
+            prompt_ts = [fnum(e, "t", 0.0) for e in comms if e.get("id") == "Prompt"]
+            outro_ts = sorted((fnum(e, "t", 0.0), e.get("ending")) for e in events
+                              if e.get("ev") == "outro"
+                              and str(e.get("stage", "")) not in ("", "Off"))
+            checked = set()
+            for t_end, ending in outro_ts:
+                if ending != "Trapped":
+                    continue
+                before = [t for t in prompt_ts if t < t_end]
+                if not before:
+                    continue
+                t_prompt = before[-1]
+                # 同じランの 2 本目以降の終幕段、または前のランの③b なら飛ばす
+                if t_prompt in checked or any(t_prompt < t < t_end for t, _ in outro_ts):
+                    continue
+                checked.add(t_prompt)
+                samples = [e for e in events if e.get("ev") == "sum" and "comms" in e
+                           and t_prompt < fnum(e, "t", 0.0) < t_end - 0.1]
+                closed = [e for e in samples if e.get("comms") == "off"]
+                if closed:
+                    verdict("FAIL", f"人形 End の前に③b の面が閉じていた（③b t={t_prompt:.1f} → "
+                                    f"t={fnum(closed[0], 't', 0.0):.1f} で comms=off → 終幕 t={t_end:.1f}）— "
+                                    "促しは報告か終幕まで出したまま（CommsPanel の持続表示）")
+                elif samples:
+                    verdict("OK", f"③b が人形 End の終幕まで出たままだった（{len(samples)} 標本）")
         w()
 
     # ---------------- 位置合わせ（コントローラの操作モード） ----------------
@@ -3674,7 +3724,7 @@ def analyze(events, others, exp, warns=None):
     ig_all = [v for v in effect_samples(events, "ignite") if v not in ("", "-")]
     tv_intro = "tv" in fracture_styles
     if tv_intro:
-        # テレビ方式（0309）。筐体が画に出たか・電源が 0 から上がったか・本編までに本編の見えへ戻ったか。
+        # テレビ方式（0309）。筐体が画に出たか・電源が 0 から上がったか・本編でも筐体が残っているか（0321）。
         any_effect_key = True
         def _tv_numbers(key):
             out = []
@@ -3693,10 +3743,11 @@ def analyze(events, others, exp, warns=None):
             if not cases or max(cases) < 0.9:
                 verdict("FAIL", "テレビの筐体が画に出ていない（tvCase が上がっていない）— "
                                 "IntroDirector.WriteIgnite と材質の _CrtTvCase を見る")
-            elif cases[-1] > 0.001:
-                verdict("FAIL", f"導入の後も筐体が残っている（tvCase={cases[-1]:.2f}）— ResetIgnite を通っていない")
+            elif cases[-1] < 0.999:
+                verdict("FAIL", f"本編で筐体が消えている（tvCase={cases[-1]:.2f}）— テレビの枠は体験の終わりまで残す（0321）。"
+                                "IntroDirector.ResetIgnite が方式に合わせて MainShowTvCase を書いているかを見る")
             else:
-                verdict("OK", "テレビの筐体が出て、本編までに沈んだ")
+                verdict("OK", "テレビの筐体が出て、本編でも残っている")
             if not ignites or min(ignites) > 0.5:
                 verdict("FAIL", "テレビの電源が入る様子が画に無い（ignite が低い値を通っていない）")
             elif ignites[-1] < 0.999:

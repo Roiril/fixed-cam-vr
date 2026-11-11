@@ -147,6 +147,17 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkLogged, lang));
         }
 
+        // ⑤ 別れの解析結果（0322 の回収・0036）。主語は「異変」で、スイ自身を当事者に入れない（0146）。
+        // ⚠ シュビーの案で未判定（canon/OPEN.md）。文面を変えたら menu hud-font で焼き直す。
+        [TestCase(ShowLang.Ja, "解析が完了しました。\n異変は、一緒に遊ぶ人を\n探していました。")]
+        [TestCase(ShowLang.En, "Analysis complete.\nThe anomaly was looking\nfor someone to play with.")]
+        [TestCase(ShowLang.Fr, "Analyse terminée.\nL'anomalie cherchait\nquelqu'un avec qui jouer.")]
+        public void FarewellFinding_NamesTheAnomalyAsTheOneWhoWantedToPlay(ShowLang lang, string text)
+        {
+            Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.FarewellFinding, lang));
+            Assert.AreEqual(3, text.Split('\n').Length, "3 行（MarkCleared と同じ帯に収まる）");
+        }
+
         /// <summary>
         /// 1 行に入る全角の数（面の幅 0.76m × 0.92 ÷ 1 文字 1.8°）。
         /// ⚠ <c>menu text-audit</c> が実測で測る値の、机上の目安。

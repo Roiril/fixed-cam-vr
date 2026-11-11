@@ -39,6 +39,7 @@ paths:
 - 長押しの縁で面は Guide へ（文面 0.1s で消して丈だけ縮む） — `CommsPanelLogic.SetGuideWanted/GuideTextOutSec` 〔出典: show-design:1425〕
 - 返事: 演出中の報告 MarkLogged / 空振り MarkNothing / 侵食度≥0.75 の空振り MarkAnalyzing。判定は中継前に凍らせた値 — `CommsCueLogic.Tick`・`ShowControlClient.LastMarkDetected` 〔出典: memory/comms_takeover.md〕
 - 締めの報告で `ShowRunDirector.ScreenDecayReleased` が立った同フレームは MarkCleared（侵食度 1 でも Typed） — `CommsPanel.Deliver`・`CommsPanelPossessionTests.ReleasedClosingReplyIsTypedBySuiAtFullInvasion` 〔出典: show-design:1353〕
+- ⑤ FarewellFinding は解除済みで別れの人形が Turn（か Retreat）に入った縁に 1 回、Fade・持続表示。出した後のランは返事も Guide も出さず、終幕の電源断で即座に消す。別れの人形の面待ちには数えない — `CommsCueLogic.Tick/FarewellFindingStays`・`CommsPanel.ObserveFarewellFindingEnd`・`CommsCueLogicTests.FarewellFinding_*` 〔シュビーの案・未判定（canon/OPEN.md）〕
 - 侵食度は観測でだけ進む: 2-C `pov_0` 0.25 / `pov_1..4` 0.75 / 3-A 人形表示 1。単調、ラン再開でだけ 0 — `CommsInvasionLogic.Observe/Reset`・`CommsInvasionLogicTests` 〔出典: streaming-2026-10-22.md:1432-1440〕
 - 乗っ取り前は侵食度に関わらず通常のスイ（斑 0・Typed）。斑と Cursed は `TakeoverDelivered` 後だけ — `CommsPanel.PushCurseTarget/Deliver` 〔出典: show-design:1224〕
 - 乗っ取りは 2-C 最後の人形視点の自然完了で 1 回。中止・素材欠落・卓の介入中・侵食度だけでは発火しない — `CommsCueLogic.HasPendingTakeover/NotifyDelivered`・`CommsCatchUpCompletionTests`・`CommsPossessionLogicTests.InvasionLevelAloneNeverFiresTakeover` 〔出典: show-design:1218〕
@@ -50,6 +51,7 @@ paths:
 - 断片の四角は帯の範囲だけ描く。式はシェーダの row と対で直す — `UnauthorizedAccessEffect.GlyphRowRange`・`UnauthorizedAccessEffectTests.GlyphRowRange_ContainsEveryRowTheShaderDraws` 〔memory/comms_performance_20261018.md〕
 - ③a は締めのカット中に凍結線通過か 3 秒。面が空くまで待ち必ず出す。Fade・打鍵 0 — `CommsCueLogic.HaltAfterClosingSec`・`CommsCueLogicTests.TheStopCall_WaitsForThePanel_AndIsNeverLost` 〔出典: show-design:46-49, 1387〕
 - ③b は③a を読ませ終わった縁で必ず続く。③b までは締めの報告を受けない（別に入って 4 秒の猶予） — `CommsCueLogic.Tick`（closingLocked）・`TakeRunnerLogic.MarkGraceSec`・`CommsPossessionLogicTests.ClosingReportIsRejectedUntilThePromptIsFullyShown` 〔出典: show-design:41, 1375, 1382〕
+- ③b は持続表示。自分では引かず、MarkCleared が上書きするか本編を出た縁で消す。長押しを離すと打鍵なしで全文へ戻る — `CommsPanel.ObserveClosingPromptEnd`・`CommsPanelLogic.Restoring`・`CommsPanelLogicTests.ClosingPrompt_*` 〔シュビーの判断・未判定。memory/closing_line_halt.md〕
 - ③a/③b の復帰: ③a からの 1 本の時計。起動 0.92s は砂嵐ブロックから復号、③b の打鍵に結ぶ余震 2 回、静止した粗い斑で人形と赤が約半々、報告で 1.2s かけて 0 — `CommsRecoveryLogic.Sample/BootSec/ReleaseSec`・`CommsPanelLogic.BeginRecovery`・`CommsRecovery.hlsl` の `COMMS_RECOVERY_NOISE_PHASE` 〔出典: show-design:1309-1320; memory/comms_curse.md; memory/comms_takeover.md 2026-10-18 節〕
 - 言語 `ShowLanguage.Current` と軽減 `HorrorRelief`（音だけ 0.5 倍）はタブレットの値を `VisitorPrefs` が入れ、体験者交代で `TitleScreen.BeginTitle` だけが戻す。HMD 内で選ばない 〔出典: show-design:1052-1060; memory/show_language.md〕
 

@@ -55,6 +55,15 @@ namespace FixedCamVr.Streaming
             if (takeRunner != null) takeRunner.EndingNoticeOpen = open;
         }
 
+        /// <summary>
+        /// 別れの人形の段（スイの⑤ を出す縁の判定に使う）。人形が組まれていなければ
+        /// <see cref="EndingFarewellLogic.Phase.Idle"/>。
+        /// </summary>
+        public EndingFarewellLogic.Phase FarewellPhase
+            => takeRunner != null && takeRunner.Farewell != null
+                ? takeRunner.Farewell.Phase
+                : EndingFarewellLogic.Phase.Idle;
+
         private void ResolveTakeRunner()
         {
             if (takeRunner == null) takeRunner = GetComponent<TakeRunner>();

@@ -189,24 +189,48 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Swap_SinksTheCase_AndDoneIsTheMainShowLook()
+        public void Swap_KeepsTheCase_AndTheMainShowKeepsTheTvFrame()
         {
             IntroTiming t = IntroTiming.Default;
             IntroLogic l = AtStage(IntroStage.Swap);
-            Assert.AreEqual(1f, l.Weights.tvCase, 0.05f);
+            Assert.AreEqual(IntroLogic.MainShowTvCase, l.Weights.tvCase);
             Assert.AreEqual(1f, l.Weights.live);
             l.Tick(t.swapSec * 0.5f, Ready());
-            Assert.Less(l.Weights.tvCase, 1f);
-            Assert.Greater(l.Weights.tvCase, 0f);
+            Assert.AreEqual(IntroStage.Swap, l.Stage);
+            Assert.AreEqual(IntroLogic.MainShowTvCase, l.Weights.tvCase, "段 5 の途中で筐体が沈んでいる（0321）");
 
             IntroEvent ev = l.Tick(t.swapSec * 0.6f, Ready());
             Assert.AreEqual(IntroEvent.Finished, ev);
             IntroWeights done = l.Weights;
             Assert.IsFalse(done.tv);
-            Assert.AreEqual(0f, done.tvCase, "本編に筐体が残る（0302 の枠なしの形が崩れる）");
+            Assert.AreEqual(IntroLogic.MainShowTvCase, done.tvCase, "本編でテレビの枠が消えている（0321）");
             Assert.AreEqual(0f, done.tvDark);
             Assert.AreEqual(1f, done.ignite);
             Assert.AreEqual(1f, done.LiveGate);
+            Assert.IsFalse(IntroVeil.TvScreenHidden(done), "本編でスクリーンが消える");
+
+            // 導入を通らずに本編にいる（Off）ときも同じ。
+            l.Disable();
+            Assert.AreEqual(IntroLogic.MainShowTvCase, l.Weights.tvCase, "導入を通らない本編でテレビの枠が出ない");
+            Assert.AreEqual(1f, IntroLogic.MainShowTvCase);
+        }
+
+        [Test]
+        public void Shatter_NeverShowsTheTvCase_InAnyStageOrInTheMainShow()
+        {
+            var l = new IntroLogic();
+            l.Configure(IntroTiming.Shatter);
+            Assert.AreEqual(0f, l.Weights.tvCase, "割れる遷移の本編（Off）に筐体が出ている");
+
+            l.Begin();
+            bool finished = false;
+            for (int i = 0; i < 2000 && !finished; i++)
+            {
+                finished = l.Tick(0.02f, Ready()) == IntroEvent.Finished;
+                Assert.AreEqual(0f, l.Weights.tvCase, $"割れる遷移の段 {l.Stage} に筐体が出ている");
+            }
+            Assert.IsTrue(finished, "割れる遷移が終わらない");
+            Assert.AreEqual(0f, l.Weights.tvCase, "割れる遷移の本編に筐体が出ている");
         }
 
         [Test]
