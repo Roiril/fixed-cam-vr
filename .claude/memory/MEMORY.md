@@ -30,7 +30,7 @@
 - [key_visual.md](key_visual.md) — キービジュアル。照明だけ描き直させ、Sobel の相関で物が動いていないか見る
 
 ## エージェント画面（スイ）
-- [comms_takeover.md](comms_takeover.md) — 乗っ取りの時刻表（WARNING→遮断→侵食→失敗→消去）と入力の破棄
+- [comms_takeover.md](comms_takeover.md) — 乗っ取りの時刻表と入力の破棄／文面の[筋](comms_reply_spine.md)
 - [comms_curse.md](comms_curse.md) — 呪いの斑と前線。文字はステンシル bit 8 で切る／③a・③b は弱って戻る姿（0270）
 - [comms_face.md](comms_face.md) — スイの顔を焼く罠。明暗が逆なので肌を塗らないと顔が消える
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) — 時刻境界の float 比較。境界ぴったりと低 FPS を別に試す

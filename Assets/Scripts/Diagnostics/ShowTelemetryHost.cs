@@ -916,6 +916,8 @@ namespace FixedCamVr.Diagnostics
                      // res = 解除処理が通ったか。主映像の解除と進行の診断に残す。
                    + $" det={(_show.LastMarkDetected ? 1 : 0)}"
                    + $" res={(_show.LastMarkResolved ? 1 : 0)}"
+                     // stuck = 出ていた演出が報告では消せないものだった。返事が MarkStuck（取り除けません）になる。
+                   + $" stuck={(_show.LastMarkStuck ? 1 : 0)}"
                    + $" released={(_run != null && _run.ScreenDecayReleased ? 1 : 0)}"
                    + $" promptReady={(_run != null && _run.ClosingPromptReadable ? 1 : 0)}"
                    + $" invasion={(_comms != null ? _comms.InvasionProgress : 0f):F2}"

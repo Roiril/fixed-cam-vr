@@ -688,6 +688,87 @@ namespace FixedCamVr.Streaming.Tests
                                       AdvanceIntro(l, 1f, waiting: false));
         }
 
+        // ---- 報告の返事「取り除きます／取り除けません」と、2 周目の連絡 ----
+
+        [Test]
+        public void AReportOnARemovableAnomaly_IsLogged_AndOnAStuckOne_SaysStuck()
+        {
+            var l = new CommsCueLogic();
+            Assert.AreEqual(CommsNotice.MarkLogged, l.Tick(Run(mark: true, detected: true)));
+            CommsCueInput stuck = Run(mark: true, detected: true);
+            stuck.markStuck = true;
+            Assert.AreEqual(CommsNotice.MarkStuck, l.Tick(stuck));
+        }
+
+        [Test]
+        public void StuckIsIgnored_WhenNothingWasDetected()
+        {
+            var l = new CommsCueLogic();
+            CommsCueInput miss = Run(mark: true, detected: false);
+            miss.markStuck = true;
+            Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(miss));
+        }
+
+        private static CommsCueInput Lap2(bool read = true, float invasion = 0f, bool mark = false)
+        {
+            CommsCueInput i = Run(read: read, mark: mark);
+            i.secondLap = true;
+            i.invasionProgress = invasion;
+            return i;
+        }
+
+        [Test]
+        public void SecondLap_IsAnnouncedOnce_AfterTheBeginNotice()
+        {
+            var l = new CommsCueLogic();
+            Assert.AreEqual(CommsNotice.Begin, l.Tick(Lap2()), "開始の合図が先");
+            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
+            Assert.IsTrue(l.SecondLapFired);
+            for (int i = 0; i < 200; i++) Assert.AreEqual(CommsNotice.None, l.Tick(Lap2()));
+        }
+
+        [Test]
+        public void SecondLap_IsNotAnnouncedInTheFirstLap()
+        {
+            var l = new CommsCueLogic();
+            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 5f, read: true));
+            Assert.IsFalse(l.SecondLapFired);
+        }
+
+        [Test]
+        public void SecondLap_WaitsForThePanel_AndIsNotLostToAReport()
+        {
+            var l = new CommsCueLogic();
+            l.Tick(Run(read: true));   // Begin
+            Assert.AreEqual(CommsNotice.None, l.Tick(Lap2(read: false)), "面が塞がっている間は待つ");
+            Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(Lap2(read: true, mark: true)), "報告の返事が先");
+            Assert.IsFalse(l.SecondLapFired, "押しのけられても消費しない");
+            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
+        }
+
+        [Test]
+        public void SecondLap_IsNotAnnounced_OnceTheDollViewHasStarted()
+        {
+            // 人形視点（侵食度 0.25〜）が始まったら、乗っ取りの因果（0245）へ割り込まない。
+            var l = new CommsCueLogic();
+            l.Tick(Run(read: true));   // Begin
+            for (int i = 0; i < 100; i++)
+                Assert.AreEqual(CommsNotice.None, l.Tick(Lap2(invasion: 0.25f)));
+            Assert.IsFalse(l.SecondLapFired);
+        }
+
+        [Test]
+        public void SecondLap_ComesBackForTheNextVisitor()
+        {
+            var l = new CommsCueLogic();
+            l.Tick(Run(read: true));
+            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
+            l.ResetRun();
+            Assert.IsFalse(l.SecondLapFired);
+            l.Tick(Run(read: true));
+            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
+        }
+
         [Test]
         public void TheArrival_IsNotAnnouncedWhileTheTitleHoldsTheScreen()
         {

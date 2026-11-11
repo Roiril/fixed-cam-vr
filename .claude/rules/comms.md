@@ -37,7 +37,7 @@ paths:
 - 読ませる尺 Typed 2.0 / Fade 1.1 / Possessed 1.35、引く 0.9 — `CommsPanelLogic.HoldSecFor/OutSec` 〔出典: show-design:1338-1350〕
 - 続く文面は同じ面で差し替え（旧文 0.15s → 枠 0.2s → 1 字目）。乗っ取りは差し替えない — `CommsPanelLogic.SwapTextOutSec/SwapBandSec/TakeSwapCommit` 〔出典: show-design:1121-1135〕
 - 長押しの縁で面は Guide へ（文面 0.1s で消して丈だけ縮む） — `CommsPanelLogic.SetGuideWanted/GuideTextOutSec` 〔出典: show-design:1425〕
-- 返事: 演出中の報告 MarkLogged / 空振り MarkNothing / 侵食度≥0.75 の空振り MarkAnalyzing。判定は中継前に凍らせた値 — `CommsCueLogic.Tick`・`ShowControlClient.LastMarkDetected` 〔出典: memory/comms_takeover.md〕
+- 返事: 演出中 MarkLogged（消せなければ MarkStuck）/ 空振り MarkNothing / 侵食度≥0.75 では MarkAnalyzing。判定は中継前に凍らせる — `CommsCueLogic.Tick`・`ShowControlClient.LastMarkDetected` 〔memory/comms_reply_spine.md〕
 - 締めの報告で `ShowRunDirector.ScreenDecayReleased` が立った同フレームは MarkCleared（侵食度 1 でも Typed） — `CommsPanel.Deliver`・`CommsPanelPossessionTests.ReleasedClosingReplyIsTypedBySuiAtFullInvasion` 〔出典: show-design:1353〕
 - ⑤ FarewellFinding は解除済みで別れの人形が Turn（か Retreat）に入った縁に 1 回、Fade・持続表示。出した後のランは返事も Guide も出さず、終幕の電源断で即座に消す。別れの人形の面待ちには数えない — `CommsCueLogic.Tick/FarewellFindingStays`・`CommsPanel.ObserveFarewellFindingEnd`・`CommsCueLogicTests.FarewellFinding_*` 〔シュビーの案・未判定（canon/OPEN.md）〕
 - 侵食度は観測でだけ進む: 2-C `pov_0` 0.25 / `pov_1..4` 0.75 / 3-A 人形表示 1。単調、ラン再開でだけ 0 — `CommsInvasionLogic.Observe/Reset`・`CommsInvasionLogicTests` 〔出典: streaming-2026-10-22.md:1432-1440〕

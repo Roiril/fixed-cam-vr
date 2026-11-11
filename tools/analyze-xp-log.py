@@ -1908,7 +1908,9 @@ def analyze(events, others, exp, warns=None):
             marks = [e for e in events if e.get("ev") == "mark"]
             reply_marks = [m for m in marks if t_finding is None or fnum(m, "t", 0.0) < t_finding]
             # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
-            answers = [e for e in comms if e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")]
+            # 出ていた演出が報告では消せないもの（ev=mark stuck=1）なら MarkStuck（取り除けません）が返る。
+            answers = [e for e in comms
+                       if e.get("id") in ("MarkLogged", "MarkStuck", "MarkNothing", "MarkAnalyzing", "MarkCleared")]
             ordinary_marks = [m for m in reply_marks
                               if fnum(m, "invasion", 0.0) < 0.999 or str(m.get("released")) == "1"]
             mark_ok = True
@@ -1925,7 +1927,9 @@ def analyze(events, others, exp, warns=None):
                 detected = m.get("det") if m.get("det") is not None else m.get("res")
                 possessed_mark = (fnum(m, "invasion", 0.0) >= 0.75 - 1e-6
                                   and str(m.get("released")) != "1")
-                want = ("MarkLogged" if str(detected) == "1"
+                # 古いログには stuck が無い（その頃は消せない演出にも MarkLogged を返していた）。
+                want = (("MarkStuck" if str(m.get("stuck")) == "1" else "MarkLogged")
+                        if str(detected) == "1"
                         else ("MarkAnalyzing" if possessed_mark else "MarkNothing"))
                 if near[0].get("id") != want:
                     mark_ok = False
@@ -1970,6 +1974,23 @@ def analyze(events, others, exp, warns=None):
                 e.get("ev") == "seg" and fnum(e, "plap", fnum(e, "lap", 0.0)) >= 3 for e in events)
             if takeover_missing:
                 verdict("FAIL", "2-C の乗っ取りが出なかった（追いつきの前に区間を出たか、鎖が切れた）")
+            # 2 周目の連絡（SecondLap「二周目です。反応が、近づいています。」）。区間の周が 2 に入り、
+            # 面が空いた縁に 1 度だけ出る。人形視点が始まった後には出さない（CommsCueLogic.Tick）。
+            second_lap = [e for e in comms if e.get("id") == "SecondLap"]
+            reached_lap2 = any(e.get("ev") == "seg" and int(fnum(e, "lap", 0.0)) == 2 for e in events)
+            if len(second_lap) > 1:
+                verdict("FAIL", f"2 周目の連絡（SecondLap）が {len(second_lap)} 回出た — ラン 1 回に 1 度のはず")
+            elif second_lap:
+                t_second = fnum(second_lap[0], "t", 0.0)
+                before = [e for e in events if e.get("ev") == "seg" and fnum(e, "t", 0.0) <= t_second]
+                where = (f"{int(fnum(before[-1], 'lap', 0))}-{'ABC'[int(fnum(before[-1], 'cam', 0)) % 3]}"
+                         if before else "?")
+                level = "OK" if where.startswith("2-") else "FAIL"
+                verdict(level, f"2 周目の連絡（SecondLap）が {where} で 1 度出た（t={t_second:.1f}s）"
+                               + ("" if level == "OK" else " — 2 周目の区間の外で出ている"))
+            elif reached_lap2:
+                verdict("WARN", "2 周目に入ったのに 2 周目の連絡（SecondLap）が出ていない — "
+                                "面が 2 周目のあいだ塞がり続けたか、人形視点が先に始まった")
             if full_marks and not takeover_events:
                 verdict("WARN", "侵食度1で報告されたが嘘の一文（Takeover）が記録されていない — "
                                 "先に自動再生済みか、CommsCueLogic の侵食入力を確認する")
@@ -2221,8 +2242,12 @@ def analyze(events, others, exp, warns=None):
             # 「出た初めは通常 → 1s ほどで重なる」。侵食度 > 0 の面（警告を除く）が開いたら、
             # 斑が目標へ届いた縁 `ev=commsCurse sec=` が 1 度は出るはず。
             # ⚠ sec は面が開いてから届くまで。0.4 秒未満なら立ち上がらずに跳んでいる。
+            # ⚠ 乗っ取りの前は、侵食度に関わらず通常のスイで出す（斑 0・rules/comms.md）。
+            #    2-C の人形視点の最中の報告（侵食度 0.75・MarkStuck）は斑を待たない。数えるのは乗っ取りの後だけ。
+            t_takeover = min((fnum(e, "t", 0.0) for e in comms if e.get("id") == "Takeover"), default=None)
             cursed = [e for e in comms
                       if fnum(e, "invasion", 0.0) > 0.001
+                      and t_takeover is not None and fnum(e, "t", 0.0) > t_takeover
                       and e.get("id") not in ("Halt", "Prompt", "Takeover")
                       and str(e.get("released")) != "1"
                       and e.get("delivery", "Typed") == "Typed"]
@@ -3044,7 +3069,7 @@ def analyze(events, others, exp, warns=None):
             else:
                 verdict("OK", f"人形がたくさん出てくる所で笑った（sndDolls 最大 {max(dolls):.2f}）")
             # 押したあとも鳴っていたら、止める経路が壊れている（次の体験者へ持ち越す）。
-            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkNothing", "MarkAnalyzing", "MarkCleared")
+            if dolls and dolls[-1] > 0.01 and any(e.get("id") in ("MarkLogged", "MarkStuck", "MarkNothing", "MarkAnalyzing", "MarkCleared")
                                                   for e in comms):
                 verdict("WARN", "報告のあとも人形が笑ったまま走行が終わっている"
                                 f"（最後の sndDolls={dolls[-1]:.2f}）")

@@ -296,6 +296,14 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中の演出 index（非走行時は -1）。</summary>
         public int ActiveTakeIndex => _activeTake;
 
+        /// <summary>
+        /// 走行中の演出が<b>報告で畳めるものか</b>（<c>dismissible</c> か、現カットが報告待ち）。
+        /// スイの返事「取り除きます／取り除けません」の材料。畳んでいる最中（応答映像の終端待ち）も立つ。
+        /// </summary>
+        public bool ActiveRemovable
+            => _running && _activeTake >= 0 && _activeTake < _defs.Length
+               && (_defs[_activeTake].dismissible || CurrentStepWait() == WaitMark);
+
         /// <summary>走行中のカット index（非走行時は -1）。</summary>
         public int ActiveStepIndex => _activeStep;
 

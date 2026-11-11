@@ -3,45 +3,45 @@
 Nice to meet you. Welcome to the Japan Institute of Anomalies. I am the doctor, your supervisor.
 
 2
-00:00:06,500 --> 00:00:11,300
-I would like you to serve as an investigator and examine a cursed object.
+00:00:06,500 --> 00:00:12,100
+I have a survey for you. You are our thirty-seventh investigator.
 
 3
-00:00:11,300 --> 00:00:14,000
-This is the curtain you will investigate.
+00:00:12,100 --> 00:00:17,700
+This is the curtain. We recovered it from a child’s room in a certain house.
 
 4
-00:00:14,000 --> 00:00:19,000
-Put on the observation device and walk around this curtain three times.
+00:00:17,700 --> 00:00:25,900
+Put on the observation device and walk around this curtain three times. The more you circle it, the closer it comes.
 
 5
-00:00:19,000 --> 00:00:24,000
+00:00:25,900 --> 00:00:30,900
 Hold the handrail with your right hand and keep hold of it as you walk.
 
 6
-00:00:24,000 --> 00:00:29,000
+00:00:30,900 --> 00:00:35,900
 Your footing will be hard to see, so walk very slowly and carefully.
 
 7
-00:00:29,000 --> 00:00:33,500
-You will use an observation device that records and analyses anomalies.
+00:00:35,900 --> 00:00:40,700
+This is the observation device. It records and analyses anomalies.
 
 8
-00:00:33,500 --> 00:00:37,700
-While you are observing, an agent will support your investigation.
+00:00:40,700 --> 00:00:47,500
+If you look at an anomaly directly, it looks back. So the device will look in your place.
 
 9
-00:00:37,700 --> 00:00:43,300
+00:00:47,500 --> 00:00:53,100
 If you spot an anomaly, hold X or Y on the left controller for one second.
 
 10
-00:00:43,300 --> 00:00:46,500
-The report will be sent to the agent for analysis.
+00:00:53,100 --> 00:00:57,100
+The agent in the device will analyse it and remove it.
 
 11
-00:00:46,500 --> 00:00:50,700
+00:00:57,100 --> 00:01:01,300
 Now hold the controller in your left hand and put on the device.
 
 12
-00:00:50,700 --> 00:00:53,700
+00:01:01,300 --> 00:01:04,300
 Good luck with your survey.

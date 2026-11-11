@@ -215,6 +215,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool LastMarkDetected { get; private set; }
 
+        /// <summary>
+        /// 直近の報告で、異常演出は画面に出ていたが<b>報告では消せない演出だった</b>か。
+        /// スイの返事が「取り除きます」（<c>MarkLogged</c>）と「取り除けません」（<c>MarkStuck</c>）に分かれる。
+        /// 消している最中の演出への押し直しは立てない（消せる演出なので）。<c>ev=mark stuck=</c>。
+        /// </summary>
+        public bool LastMarkStuck { get; private set; }
+
         /// <summary>直近の報告を受けた瞬間の表示状態。次フレームの進行では書き換えない。</summary>
         public bool LastMarkDollReplacementShowing { get; private set; }
 
@@ -290,12 +297,15 @@ namespace FixedCamVr.Streaming
             // 報告で段が進む前に凍らせる。untilMark はこの直後に終了するため、後から見ると
             // 「何も映っていなかった」に変わってしまう。
             bool anomalyShowing = timelineDirector != null && timelineDirector.AnomalyShowing;
+            // 同じく段が進む前に凍らせる。締めの報告は直後にカットが進み、消せる演出ではなくなる。
+            bool removable = timelineDirector != null && timelineDirector.ActiveTakeRemovable;
             // 「報告するまで」のカット（4 周目 A の締め）と、dismissible な演出だけが反応する。
             // ⚠ 戻り値が「何に効いたか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
             TakeRunnerLogic.MarkResult result =
                 timelineDirector?.NotifyVisitorMark() ?? TakeRunnerLogic.MarkResult.None;
             LastMarkResolved = result != TakeRunnerLogic.MarkResult.None;
             LastMarkDetected = anomalyShowing || LastMarkResolved;
+            LastMarkStuck = LastMarkDetected && !LastMarkResolved && !removable;
             // 押した回数と、報告した異変の数（0234「1つの異変に対して報告したら内部では1だけカウント」）。
             // 異変に数えるのは**画で「検出した」と言ったもの**だけ ＝ スイの返事（②）と同じ判定を使う。
             // 同じ演出への押し直し（侵食度 1 の嘘の一文を読んで押し直した形）は押した回数にしか乗らない。

@@ -344,11 +344,12 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.ControllerUntracked => "左コントローラーを\n少し前に出してください",
             CommsNotice.ControllerStaff => "接続を確認できません\nスタッフを呼んでください",
             CommsNotice.ControllerConfirmed => "左コントローラーを\n確認しました",
-            CommsNotice.Tutorial => "装置が正常に動くか\nチェックします。XかYを\n1秒間押し続けてください",
+            CommsNotice.Tutorial => "装置の動作を確認します。\nXかYを1秒間\n押し続けてください",
             CommsNotice.TutorialShort => "もう少し長く\n押し続けてください",
             CommsNotice.TutorialAccepted => "報告できました。\n装置は正常です。",
             CommsNotice.TutorialReconnect => "左コントローラーを\n確認してください",
-            CommsNotice.TutorialReminder => "異変に気づいたら\n今の操作で報告してください\n解析して対処を試みます",
+            // 約束の 1 行目。③b が言い直し、④「異変を取り除きました」が果たす（同じ動詞で通す）。
+            CommsNotice.TutorialReminder => "異変に気づいたら\n今の操作で報告してください\n私が解析し、取り除きます",
             // ⓪a 名乗り。⚠ **「AI」とは書かない。「エージェント」と書く**（`canon/LEDGER.md` 0080）。
             //    報告練習の成功後に、支援エージェントのスイ本人として名乗る。
             //    1 行 14 文字以内、3 行で読める形に固定する。
@@ -371,11 +372,17 @@ namespace FixedCamVr.Diagnostics
             //      その間を切り詰める」）。①を読ませ終わった縁で、**間を置かず同じ面のまま**①b へ替わる。
             CommsNotice.Begin => "調査を開始してください。",
             // ①b 押し方と、押すと何が起きるか。
-            CommsNotice.BeginHow => "異変を見つけたら\nXかYを長押ししてください\n装置が解析して対処を試みます",
-            // ②a 報告時に異常演出が画面を取っていた。
-            CommsNotice.MarkLogged => "異常を検出しました",
-            // ②b 報告時に異常演出が画面を取っていなかった。
-            CommsNotice.MarkNothing => "異状は検出されませんでした",
+            CommsNotice.BeginHow => "異変を見つけたら\nXかYを長押ししてください\n私が解析し、取り除きます",
+            // ②a 報告時に異常演出が画面を取っていて、報告で消せる演出だった。1 行目は 0054 の逐語。
+            //    2 行目は「報告すると、スイが取り除く」を毎回の返事で見せる（シュビーの案・未判定）。
+            CommsNotice.MarkLogged => "異常を検出しました\n取り除きます",
+            // ②a′ 出ていたが、報告では消せない演出だった（乗っ取り前の人形視点など）。
+            CommsNotice.MarkStuck => "異常を検出しました\n取り除けません",
+            // ②b 報告時に異常演出が画面を取っていなかった。0054 の逐語（「異常」）。
+            //    ⚠ 嘘の一文（TakeoverLieText）と 1 字も違えない — 同じ文が、正直 → 嘘 → ⑤の型で 3 度出る。
+            CommsNotice.MarkNothing => "異常は検出されませんでした",
+            // 2 周目に入って面が空いた縁（シュビーの案・未判定）。博士の「廻るほど、近づいてきます」を言い直す。
+            CommsNotice.SecondLap => "二周目です。\n反応が、近づいています。",
             // ② 侵食度 0.75 以上で何も無い所へ報告した。判定を持たない一文（0232 — 乗っ取られた装置は
             //    正直に「異常なし」を言わない。「異常なし」は人形が塗り替えた行にしか出ない）。
             CommsNotice.MarkAnalyzing => "装置が解析しています",
@@ -386,13 +393,20 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Halt => "止まってください！",
             // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
             //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
-            CommsNotice.Prompt => "異変があなたを\n取り込もうとしています。\n排除してください。",
+            //    ⚠ 3 行目は 0168 の「排除してください。」から替えた（シュビーの案・未判定）。体験者が知っている
+            //      操作の名前（報告）で頼み、導入の約束（私が取り除きます）を言い直す。
+            CommsNotice.Prompt => "異変があなたを\n取り込もうとしています。\n報告を。私が取り除きます。",
             // ④ 締めの報告で呪いが解けた（0284）。「検出しました」では急なので、終わったことを労う。
             CommsNotice.MarkCleared => "異変を取り除きました。\nお疲れ様です。",
             // ⑤ 別れの人形が後ろを向いた縁に出す解析の結果。伏線を 1 つだけ回収する（0322）。
-            //    回収するのは「人形は来た人とただ一緒に遊びたかった」（0036）。スイは自分を当事者に
-            //    入れないので主語は「異変」（0146）。⚠ この文はシュビーの案で、ユーザーの判定はまだ無い。
-            CommsNotice.FarewellFinding => "解析が完了しました。\n異変は、一緒に遊ぶ人を\n探していました。",
+            //    回収するのは「人形は来た人とただ一緒に遊びたかった」（0036）。スイは判定を言わない —
+            //    記録に残った相手の言葉を、そのまま読み上げるだけ。2 周目 C で背後から聞こえた声
+            //    （`SoundCue.DollCall`・0109）が、ここで文字になる。残りは体験者に埋めさせる。
+            //    ⚠ この文はシュビーの案で、ユーザーの判定はまだ無い。
+            //    ⚠ 「敵意は検出されませんでした」のような判定の文にしない。2026-11-12 の体験者役 6 体のうち 4 体が
+            //      「乗っ取られた装置の言うことなので信じきれない」「解析した側が決めたことになる」と書いた。
+            //      体験者が自分の耳で聞いた言葉は、スイを信じなくても確かめられる。
+            CommsNotice.FarewellFinding => "解析が完了しました。\n記録された言葉は、一つです。\n「あーそぼー」",
             _ => "",
         };
 
@@ -411,27 +425,29 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.ControllerUntracked => "Move the left controller\nslightly forward.",
             CommsNotice.ControllerStaff => "Controller not found.\nPlease call a staff member.",
             CommsNotice.ControllerConfirmed => "Left controller confirmed.",
-            CommsNotice.Tutorial => "Let's check the device.\nHold X or Y\nfor one second.",
+            CommsNotice.Tutorial => "Checking the device.\nHold X or Y\nfor one second.",
             CommsNotice.TutorialShort => "Keep holding the button\na little longer.",
             CommsNotice.TutorialAccepted => "Report sent.\nDevice operating normally.",
             CommsNotice.TutorialReconnect => "Check the left controller.",
-            CommsNotice.TutorialReminder => "If you notice an anomaly,\nreport it the same way.\nI will analyse and respond.",
+            CommsNotice.TutorialReminder => "If you notice an anomaly,\nreport it the same way.\nI will remove it.",
             CommsNotice.Greeting => "My apologies.\nI am Sui,\nyour support agent.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
             CommsNotice.Arrived => "You have arrived.\nObservation will now begin.",
             CommsNotice.Begin => "Begin the survey.",
             // ①b 3 行目は「押すと何が起きるか」（日本語と同じ役割・0096）。
-            CommsNotice.BeginHow => "If you see an anomaly,\nhold X or Y and the device\nwill analyse it.",
-            CommsNotice.MarkLogged => "An anomaly was detected.",
+            CommsNotice.BeginHow => "If you see an anomaly,\nhold X or Y.\nI will remove it.",
+            CommsNotice.MarkLogged => "An anomaly was detected.\nRemoving it.",
+            CommsNotice.MarkStuck => "An anomaly was detected.\nI cannot remove it.",
             CommsNotice.MarkNothing => "No anomaly was detected.",
+            CommsNotice.SecondLap => "Second lap.\nThe signal is moving closer.",
             CommsNotice.MarkAnalyzing => "Analyzing.",
             CommsNotice.Takeover => "An anomaly was detected.",
             CommsNotice.Halt => "Please stop!",
             // ③ ここだけが体験者自身を名指しする（0096）。
-            CommsNotice.Prompt => "An anomaly is trying to\nabsorb you.\nRemove it.",
+            CommsNotice.Prompt => "An anomaly is trying to\nabsorb you. Report it.\nI will remove it.",
             CommsNotice.MarkCleared => "The anomaly is removed.\nThank you for your work.",
-            // ⑤ 日本語と同じく主語は「異変」（0146）。シュビーの案・未判定（0322 / 0036）。
-            CommsNotice.FarewellFinding => "Analysis complete.\nThe anomaly was looking\nfor someone to play with.",
+            // ⑤ 声は日本語のまま鳴るので、ここで初めて意味が分かる。シュビーの案・未判定（0322 / 0036）。
+            CommsNotice.FarewellFinding => "Analysis complete.\nOne phrase was recorded:\n“Come and play.”",
             _ => "",
         };
 
@@ -442,24 +458,26 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.ControllerUntracked => "Avancez légèrement\nla manette gauche.",
             CommsNotice.ControllerStaff => "Manette introuvable.\nAppelez un membre\ndu personnel.",
             CommsNotice.ControllerConfirmed => "Manette gauche confirmée.",
-            CommsNotice.Tutorial => "Vérifions le dispositif.\nMaintenez X ou Y\npendant une seconde.",
+            CommsNotice.Tutorial => "Vérification du dispositif.\nMaintenez X ou Y\npendant une seconde.",
             CommsNotice.TutorialShort => "Maintenez le bouton\nun peu plus longtemps.",
             CommsNotice.TutorialAccepted => "Signalement envoyé.\nLe dispositif fonctionne.",
             CommsNotice.TutorialReconnect => "Vérifiez la manette gauche.",
-            CommsNotice.TutorialReminder => "Si vous voyez une anomalie,\nsignalez-la ainsi.\nJe tenterai de la traiter.",
+            CommsNotice.TutorialReminder => "Si vous voyez une anomalie,\nsignalez-la ainsi.\nJe l'éliminerai.",
             CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui,\nvotre agente de soutien.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
             CommsNotice.Arrived => "Vous êtes arrivé.\nL'observation commence.",
             CommsNotice.Begin => "Commencez l'enquête.",
-            CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez X ou Y.\nL'appareil l'analysera.",
-            CommsNotice.MarkLogged => "Anomalie détectée.",
+            CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez X ou Y.\nJe l'éliminerai.",
+            CommsNotice.MarkLogged => "Anomalie détectée.\nJe l'élimine.",
+            CommsNotice.MarkStuck => "Anomalie détectée.\nÉlimination impossible.",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
+            CommsNotice.SecondLap => "Deuxième tour.\nLe signal se rapproche.",
             CommsNotice.MarkAnalyzing => "Analyse en cours.",
             CommsNotice.Takeover => "Anomalie détectée.",
             CommsNotice.Halt => "Arrêtez-vous !",
-            CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber.\nSupprimez-la.",
+            CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber. Signalez-la.\nJe l'éliminerai.",
             CommsNotice.MarkCleared => "Anomalie éliminée.\nMerci pour votre travail.",
-            CommsNotice.FarewellFinding => "Analyse terminée.\nL'anomalie cherchait\nquelqu'un avec qui jouer.",
+            CommsNotice.FarewellFinding => "Analyse terminée.\nUne phrase a été captée :\n« Viens jouer. »",
             _ => "",
         };
 
@@ -1296,6 +1314,8 @@ namespace FixedCamVr.Diagnostics
                 dollCatchUpCompletedCount = timeline != null ? timeline.DollCatchUpCompletedCount : 0,
                 markPressed = markPressed,
                 markDetected = markPressed && showControl != null && showControl.LastMarkDetected,
+                markStuck = markPressed && showControl != null && showControl.LastMarkStuck,
+                secondLap = timeline != null && timeline.SegmentLap == 2,
                 invasionProgress = InvasionProgress,
                 takeoverPlaying = _lieActive,
                 takeoverAllowed = inRun,

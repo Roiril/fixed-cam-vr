@@ -239,6 +239,9 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool AnomalyShowing => takeRunner != null && takeRunner.AnomalyShowing;
 
+        /// <summary>走行中の演出が報告で畳めるものか。スイの返事「取り除きます／取り除けません」が読む。</summary>
+        public bool ActiveTakeRemovable => takeRunner != null && takeRunner.ActiveTakeRemovable;
+
         /// <summary>再生中の端末内録画（テレメトリ用）。null なら録画カットではない。</summary>
         public Recording.RecordedFramePlayer? ActiveRecording => takeRunner?.ActiveRecording;
 

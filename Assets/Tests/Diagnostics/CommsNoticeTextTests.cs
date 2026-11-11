@@ -26,11 +26,51 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.Greeting, lang));
         }
 
-        [Test]
-        public void ClosingPromptUsesTheApprovedJapaneseWording()
+        // ③b。1・2 行目は 0168 の逐語。3 行目は体験者が知っている操作の名前（報告）で頼み、
+        // 導入の約束を言い直す（シュビーの案・未判定。canon/OPEN.md）。
+        [TestCase(ShowLang.Ja, "異変があなたを\n取り込もうとしています。\n報告を。私が取り除きます。")]
+        [TestCase(ShowLang.En, "An anomaly is trying to\nabsorb you. Report it.\nI will remove it.")]
+        [TestCase(ShowLang.Fr, "Une anomalie tente de vous\nabsorber. Signalez-la.\nJe l'éliminerai.")]
+        public void ClosingPromptAsksForAReportAndRenewsThePromise(ShowLang lang, string text)
         {
-            Assert.AreEqual("異変があなたを\n取り込もうとしています。\n排除してください。",
-                            CommsPanel.NoticeText(CommsNotice.Prompt, ShowLang.Ja));
+            Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.Prompt, lang));
+        }
+
+        /// <summary>
+        /// 約束（導入）→ 実行（報告の返事）→ 言い直し（③b）→ 果たす（④）が、言語ごとに同じ動詞で通っている。
+        /// 1 か所だけ別の語にすると、同じことを言っていると読めなくなる。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "取り除")]
+        [TestCase(ShowLang.En, "emov")]
+        [TestCase(ShowLang.Fr, "limin")]
+        public void ThePromiseToRemove_UsesOneVerbFromTheTutorialToTheEnd(ShowLang lang, string stem)
+        {
+            foreach (CommsNotice n in new[]
+                     {
+                         CommsNotice.TutorialReminder, CommsNotice.MarkLogged, CommsNotice.MarkStuck,
+                         CommsNotice.Prompt, CommsNotice.MarkCleared,
+                     })
+                StringAssert.Contains(stem, CommsPanel.NoticeText(n, lang), $"{n} / {ShowLanguage.Code(lang)}");
+        }
+
+        /// <summary>
+        /// 正直な空振りの返事と、乗っ取り後の赤い嘘は<b>同じ文</b>（0054 と 0244 の逐語は同じ字）。
+        /// 字が 1 つでも違うと、「同じ文が嘘になった」と読めない。
+        /// </summary>
+        [Test]
+        public void TheHonestMissAndTheLie_AreTheSameSentence()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+                Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkNothing, lang),
+                                CommsPanel.TakeoverLieText(lang), ShowLanguage.Code(lang));
+        }
+
+        [TestCase(ShowLang.Ja, "二周目です。\n反応が、近づいています。")]
+        [TestCase(ShowLang.En, "Second lap.\nThe signal is moving closer.")]
+        [TestCase(ShowLang.Fr, "Deuxième tour.\nLe signal se rapproche.")]
+        public void SecondLap_SaysItIsComingCloser(ShowLang lang, string text)
+        {
+            Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.SecondLap, lang));
         }
 
         [Test]
@@ -47,9 +87,9 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.TutorialAccepted, lang));
         }
 
-        [TestCase(ShowLang.Ja, "装置が正常に動くか\nチェックします。XかYを\n1秒間押し続けてください")]
-        [TestCase(ShowLang.En, "Let's check the device.\nHold X or Y\nfor one second.")]
-        [TestCase(ShowLang.Fr, "Vérifions le dispositif.\nMaintenez X ou Y\npendant une seconde.")]
+        [TestCase(ShowLang.Ja, "装置の動作を確認します。\nXかYを1秒間\n押し続けてください")]
+        [TestCase(ShowLang.En, "Checking the device.\nHold X or Y\nfor one second.")]
+        [TestCase(ShowLang.Fr, "Vérification du dispositif.\nMaintenez X ou Y\npendant une seconde.")]
         public void Tutorial_ExplainsThatItChecksTheDevice(ShowLang lang, string text)
         {
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.Tutorial, lang));
@@ -139,23 +179,43 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkAnalyzing, lang));
         }
 
-        [TestCase(ShowLang.Ja, "異常を検出しました")]
-        [TestCase(ShowLang.En, "An anomaly was detected.")]
-        [TestCase(ShowLang.Fr, "Anomalie détectée.")]
-        public void SuccessfulReportSaysTheAnomalyWasDetected(ShowLang lang, string sentence)
+        // 1 行目は 0054 の逐語。2 行目は「報告すると、スイが取り除く」を返事のたびに見せる。
+        [TestCase(ShowLang.Ja, "異常を検出しました\n取り除きます")]
+        [TestCase(ShowLang.En, "An anomaly was detected.\nRemoving it.")]
+        [TestCase(ShowLang.Fr, "Anomalie détectée.\nJe l'élimine.")]
+        public void SuccessfulReportSaysTheAnomalyWasDetected_AndIsBeingRemoved(ShowLang lang, string sentence)
         {
             Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkLogged, lang));
         }
 
-        // ⑤ 別れの解析結果（0322 の回収・0036）。主語は「異変」で、スイ自身を当事者に入れない（0146）。
+        // 報告では消せない演出への返事。1 行目は当たりの返事と同じで、2 行目だけが違う。
+        [TestCase(ShowLang.Ja, "異常を検出しました\n取り除けません")]
+        [TestCase(ShowLang.En, "An anomaly was detected.\nI cannot remove it.")]
+        [TestCase(ShowLang.Fr, "Anomalie détectée.\nÉlimination impossible.")]
+        public void ReportOnAnAnomalyThatCannotBeRemoved_SaysSo(ShowLang lang, string sentence)
+        {
+            Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkStuck, lang));
+            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, lang).Split('\n')[0],
+                            sentence.Split('\n')[0], "1 行目は当たりの返事と同じ");
+        }
+
+        // ⑤ 別れの解析結果（0322 の回収・0036）。判定を言わず、記録に残った相手の言葉を読み上げる。
         // ⚠ シュビーの案で未判定（canon/OPEN.md）。文面を変えたら menu hud-font で焼き直す。
-        [TestCase(ShowLang.Ja, "解析が完了しました。\n異変は、一緒に遊ぶ人を\n探していました。")]
-        [TestCase(ShowLang.En, "Analysis complete.\nThe anomaly was looking\nfor someone to play with.")]
-        [TestCase(ShowLang.Fr, "Analyse terminée.\nL'anomalie cherchait\nquelqu'un avec qui jouer.")]
-        public void FarewellFinding_NamesTheAnomalyAsTheOneWhoWantedToPlay(ShowLang lang, string text)
+        [TestCase(ShowLang.Ja, "解析が完了しました。\n記録された言葉は、一つです。\n「あーそぼー」")]
+        [TestCase(ShowLang.En, "Analysis complete.\nOne phrase was recorded:\n“Come and play.”")]
+        [TestCase(ShowLang.Fr, "Analyse terminée.\nUne phrase a été captée :\n« Viens jouer. »")]
+        public void FarewellFinding_ReadsBackTheOnlyWordsTheAnomalyLeft(ShowLang lang, string text)
         {
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.FarewellFinding, lang));
-            Assert.AreEqual(3, text.Split('\n').Length, "3 行（MarkCleared と同じ帯に収まる）");
+            string[] lines = text.Split('\n');
+            Assert.AreEqual(3, lines.Length, "3 行（面の帯の上限）");
+            // 3 行目は引用だけ。スイの判定（検出・敵意・detected・détecté）を足さない —
+            // 乗っ取られた装置の判定は、体験者に信じてもらえない。
+            foreach (string verdict in new[] { "検出", "敵意", "detect", "hostil", "détect" })
+                StringAssert.DoesNotContain(verdict, text, $"⑤に判定の語「{verdict}」が入っている");
+            char open = lines[2][0], close = lines[2][lines[2].Length - 1];
+            Assert.IsTrue((open == '「' && close == '」') || (open == '“' && close == '”') || (open == '«' && close == '»'),
+                          $"3 行目「{lines[2]}」が引用の形になっていない");
         }
 
         /// <summary>

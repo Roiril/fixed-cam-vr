@@ -68,7 +68,10 @@ namespace FixedCamVr.Streaming
         /// 画としては「文面が入れ替わる」1 続きに見える。
         /// </summary>
         BeginHow,
-        /// <summary>② 報告時に異常演出が表示されていた。「異常を検出しました」。</summary>
+        /// <summary>
+        /// ② 報告時に異常演出が表示されていて、<b>報告で消せる演出だった</b>。「異常を検出しました／取り除きます」。
+        /// 消せない演出への報告は <see cref="MarkStuck"/>。
+        /// </summary>
         MarkLogged,
         /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異状は検出されませんでした」。侵食度 0.75 未満だけ。</summary>
         MarkNothing,
@@ -98,7 +101,8 @@ namespace FixedCamVr.Streaming
         Halt,
         /// <summary>
         /// ③b <see cref="Halt"/> を読ませ終わった縁。
-        /// 「異常があなたを取り込もうとしています。排除してください。」
+        /// 「異変があなたを取り込もうとしています。報告を。私が取り除きます。」
+        /// 導入の約束（<see cref="TutorialReminder"/>「私が解析し、取り除きます」）をここで言い直す。
         /// </summary>
         Prompt,
         /// <summary>
@@ -110,15 +114,29 @@ namespace FixedCamVr.Streaming
         MarkCleared,
         /// <summary>
         /// ⑤ 帰還の別れで、<b>人形が後ろを向き始めた縁</b>に 1 度だけ出す解析の結果
-        /// 「解析が完了しました。異変は、一緒に遊ぶ人を探していました。」。
+        /// 「解析が完了しました。記録された言葉は、一つです。「あーそぼー」」。
         /// 伏線を 1 つだけ回収する（<c>canon/LEDGER.md</c> 0322）。
-        /// 中身は 0036（人形は「来た人とただ一緒に遊びたかった」）、主語を「異変」にするのは
-        /// 0146（スイは自分を当事者に入れない）。⚠ <b>この文はシュビーの案で、ユーザーの判定はまだ無い</b>
+        /// 中身は 0036（人形は「来た人とただ一緒に遊びたかった」）。判定も内面の推測も言わず、
+        /// 2 周目 C で聞こえた相手の言葉（0109）を読み上げるだけにする。
+        /// ⚠ <b>この文はシュビーの案で、ユーザーの判定はまだ無い</b>
         /// （<c>canon/OPEN.md</c>）。外すときは <see cref="CommsCueLogic.Tick"/> の 1 か所を止める。
         /// 出方は <see cref="CommsDelivery.Fade"/>（オルゴールが鳴っている場面なので打鍵を鳴らさない）。
         /// 面は終幕の電源断まで出したまま（<see cref="CommsCueLogic.FarewellFindingStays"/>）。
         /// </summary>
         FarewellFinding,
+        /// <summary>
+        /// ② 報告時に異常演出が表示されていたが、<b>報告では消せない演出だった</b>
+        /// （乗っ取りの前の 2 周目 C の人形視点など）。「異常を検出しました／取り除けません」。
+        /// 消せなかったのに「取り除きます」と返すと、乗っ取りの前にスイが嘘をつくことになる。
+        /// ⚠ 末尾に足してある（<see cref="CommsCueLogic.IsOnboarding"/> は並びの範囲で判定する）。
+        /// </summary>
+        MarkStuck,
+        /// <summary>
+        /// 区間の周が 2 に入った後、面が空いた縁に 1 度だけ出す。「二周目です。反応が、近づいています。」
+        /// 博士の「廻るほど、近づいてきます」を体験の中で言い直す。乗っ取りが始まった後には出さない。
+        /// ⚠ シュビーの案で、ユーザーの判定はまだ無い（<c>canon/OPEN.md</c>）。
+        /// </summary>
+        SecondLap,
     }
 
     /// <summary>
@@ -214,6 +232,16 @@ namespace FixedCamVr.Streaming
         /// 供給は <c>ShowControlClient.LastMarkDetected</c>。
         /// </summary>
         public bool markDetected;
+
+        /// <summary>
+        /// その報告時に画面を取っていた演出が、<b>報告では消せないものだった</b>か。
+        /// 供給は <c>ShowControlClient.LastMarkStuck</c>。<see cref="markDetected"/> が立っているときだけ読む。
+        /// ⚠ 否定形で持つ — 既定（false）は従来どおり <see cref="CommsNotice.MarkLogged"/>。
+        /// </summary>
+        public bool markStuck;
+
+        /// <summary>区間の周が 2 に居るか（<c>TimelineDirector.SegmentLap == 2</c>）。<see cref="CommsNotice.SecondLap"/> の材料。</summary>
+        public bool secondLap;
 
         /// <summary>
         /// 通信画面の侵食度。0 / 0.25 / 0.75 / 1 の段階値で、1 のあいだは
@@ -336,11 +364,15 @@ namespace FixedCamVr.Streaming
         private bool _catchUpFinished;
         private bool _takeoverDelivered;
         private bool _farewellFindingFired;
+        private bool _secondLapFired;
 
         public bool TakeoverDelivered => _takeoverDelivered;
 
         /// <summary>⑤（別れの解析結果）を出したか（診断・テスト用）。</summary>
         public bool FarewellFindingFired => _farewellFindingFired;
+
+        /// <summary>2 周目の連絡を出したか（診断・テスト用）。</summary>
+        public bool SecondLapFired => _secondLapFired;
 
         /// <summary>Update 順序によらず、追いつき完了から強制表示までの入力も止める。</summary>
         public bool HasPendingTakeover(int completedCount)
@@ -374,6 +406,7 @@ namespace FixedCamVr.Streaming
             _catchUpFinished = false;
             _takeoverDelivered = false;
             _farewellFindingFired = false;
+            _secondLapFired = false;
         }
 
         /// <summary>①b（開始の合図「調査を開始してください。」）まで出したか（診断・テスト用）。</summary>
@@ -514,7 +547,8 @@ namespace FixedCamVr.Streaming
             if (inp.markPressed && !closingLocked)
             {
                 // 嘘の一文が出ている最中の再報告は頭へ戻さない（1 回だけ・最後まで見せる）。
-                if (inp.markDetected) return CommsNotice.MarkLogged;
+                // 消せる演出なら「取り除きます」、消せない演出なら「取り除けません」。
+                if (inp.markDetected) return inp.markStuck ? CommsNotice.MarkStuck : CommsNotice.MarkLogged;
                 // 0232: 乗っ取られた装置（侵食度 0.75 以上）は正直に「異常なし」を言わない — 判定を持たない一文へ。
                 return inp.invasionProgress >= CommsCurseLogic.PossessedLevel
                     ? CommsNotice.MarkAnalyzing : CommsNotice.MarkNothing;
@@ -522,6 +556,15 @@ namespace FixedCamVr.Streaming
             // 開始の合図は押しのけられても消費しない。報告を読ませ終わってから改めて出す。
             //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
             if (beginDue) { _beginFired = true; return CommsNotice.Begin; }
+            // 2 周目の連絡。開始の合図より後、面が空いた縁に 1 度だけ。
+            // ⚠ 消費しない — 報告の返事に押しのけられたら、読ませ終わってから出す（2 周目のあいだだけ）。
+            // ⚠ 人形視点が始まった後（侵食度 > 0）と締めには出さない。乗っ取りの因果（0245）へ割り込まない。
+            if (!_secondLapFired && _beginFired && inp.secondLap && inp.panelDoneReading
+                && inp.invasionProgress <= 0f && !_takeoverDelivered && inp.closingSec < 0f)
+            {
+                _secondLapFired = true;
+                return CommsNotice.SecondLap;
+            }
             return CommsNotice.None;
         }
 

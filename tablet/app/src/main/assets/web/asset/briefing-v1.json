@@ -27,9 +27,6 @@
         "en": "Doctor · Anomalous investigations",
         "fr": "Docteur · Supervision des enquêtes"
       },
-      "video": {
-        "ja": "introduction-ja-v2.mp4"
-      },
       "cues": {
         "ja": [
           {
@@ -37,8 +34,8 @@
             "durationMs": 9820
           },
           {
-            "text": "あなたに、ある「呪われたオブジェクト」の調査を依頼します。",
-            "durationMs": 5818
+            "text": "あなたに、ある調査を依頼します。調査員は、あなたで三十七人目です。",
+            "durationMs": 8000
           }
         ],
         "en": [
@@ -47,8 +44,8 @@
             "durationMs": 6500
           },
           {
-            "text": "I would like you to serve as an investigator and examine a cursed object.",
-            "durationMs": 4800
+            "text": "I have a survey for you. You are our thirty-seventh investigator.",
+            "durationMs": 5600
           }
         ],
         "fr": [
@@ -57,8 +54,8 @@
             "durationMs": 7500
           },
           {
-            "text": "Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.",
-            "durationMs": 5200
+            "text": "J’ai une enquête à vous confier. Vous êtes notre trente-septième enquêteur.",
+            "durationMs": 6000
           }
         ]
       }
@@ -93,18 +90,15 @@
         "file": "kabe-one-lap-doll-v1.mp4",
         "startCue": 1
       },
-      "video": {
-        "ja": "subject-ja-v2.mp4"
-      },
       "cues": {
         "ja": [
           {
-            "text": "こちらのカーテンです。",
-            "durationMs": 3291
+            "text": "こちらのカーテンです。ある家の子ども部屋から、回収しました。",
+            "durationMs": 7200
           },
           {
-            "text": "観測装置をつけ、このカーテンを3周してください。",
-            "durationMs": 4968
+            "text": "観測装置をつけ、このカーテンの周りを三周してください。廻るほど、近づいてきます。",
+            "durationMs": 9200
           },
           {
             "text": "その間は右手で手すりを持ち、決して離さないでください。",
@@ -117,12 +111,12 @@
         ],
         "en": [
           {
-            "text": "This is the curtain you will investigate.",
-            "durationMs": 2700
+            "text": "This is the curtain. We recovered it from a child’s room in a certain house.",
+            "durationMs": 5600
           },
           {
-            "text": "Put on the observation device and walk around this curtain three times.",
-            "durationMs": 5000
+            "text": "Put on the observation device and walk around this curtain three times. The more you circle it, the closer it comes.",
+            "durationMs": 8200
           },
           {
             "text": "Hold the handrail with your right hand and keep hold of it as you walk.",
@@ -135,12 +129,12 @@
         ],
         "fr": [
           {
-            "text": "Voici le rideau que vous allez examiner.",
-            "durationMs": 2700
+            "text": "Voici le rideau. Nous l’avons récupéré dans la chambre d’un enfant.",
+            "durationMs": 5600
           },
           {
-            "text": "Mettez le dispositif d'observation et faites trois fois le tour de ce rideau.",
-            "durationMs": 5500
+            "text": "Mettez le dispositif d'observation et faites trois fois le tour de ce rideau. Plus vous tournez, plus cela se rapproche.",
+            "durationMs": 8800
           },
           {
             "text": "Tenez la main courante de la main droite et ne la lâchez pas en marchant.",
@@ -179,62 +173,59 @@
         "en": "Left controller · Either button · 1 second",
         "fr": "Manette gauche · Un seul bouton · 1 seconde"
       },
-      "video": {
-        "ja": "report-ja-v2.mp4"
-      },
       "cues": {
         "ja": [
           {
-            "text": "これが、怪異を記録・解析する観測装置です。",
-            "durationMs": 4944
+            "text": "これが、怪異を記録し、解析する観測装置です。",
+            "durationMs": 5200
           },
           {
-            "text": "あなたの調査を支援するエージェントが搭載されています。",
-            "durationMs": 4371
+            "text": "怪異を直接見ると、見返されます。だから、装置があなたの代わりに見ます。",
+            "durationMs": 7800
           },
           {
             "text": "異変に気づいたら、左コントローラーのXかYを1秒間、長押ししてください。",
             "durationMs": 7138
           },
           {
-            "text": "エージェントが解析してくれます。",
-            "durationMs": 3257
+            "text": "装置のエージェントが解析し、取り除きます。",
+            "durationMs": 4800
           }
         ],
         "en": [
           {
-            "text": "You will use an observation device that records and analyses anomalies.",
-            "durationMs": 4500
+            "text": "This is the observation device. It records and analyses anomalies.",
+            "durationMs": 4800
           },
           {
-            "text": "While you are observing, an agent will support your investigation.",
-            "durationMs": 4200
+            "text": "If you look at an anomaly directly, it looks back. So the device will look in your place.",
+            "durationMs": 6800
           },
           {
             "text": "If you spot an anomaly, hold X or Y on the left controller for one second.",
             "durationMs": 5600
           },
           {
-            "text": "The report will be sent to the agent for analysis.",
-            "durationMs": 3200
+            "text": "The agent in the device will analyse it and remove it.",
+            "durationMs": 4000
           }
         ],
         "fr": [
           {
-            "text": "Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.",
-            "durationMs": 4700
+            "text": "Voici le dispositif d’observation. Il enregistre et analyse les phénomènes anormaux.",
+            "durationMs": 5400
           },
           {
-            "text": "Pendant l’observation, un agent vous assistera dans votre enquête.",
-            "durationMs": 4300
+            "text": "Si vous regardez une anomalie en face, elle vous regarde aussi. Le dispositif regardera donc à votre place.",
+            "durationMs": 7400
           },
           {
             "text": "Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.",
             "durationMs": 6000
           },
           {
-            "text": "Le signalement sera envoyé à l’agent pour analyse.",
-            "durationMs": 3400
+            "text": "L’agent du dispositif l’analysera et l’éliminera.",
+            "durationMs": 4200
           }
         ]
       }
@@ -264,9 +255,6 @@
         "ja": "装着後はエージェントが案内します",
         "en": "The agent will guide you once you are equipped",
         "fr": "L’agent vous guidera une fois équipé"
-      },
-      "video": {
-        "ja": "wear-ja-v2.mp4"
       },
       "cues": {
         "ja": [

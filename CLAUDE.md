@@ -29,6 +29,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | ユーザーに見せて赤入れをもらう（前後・試した版・隣の場面を並べ 1 点訊く） | `skills/direction-round` |
 | 体験を頭から終わりまで通して見直す | `skills/show-review` |
 | ツインの走行でシュビーが自分で見つけて直す（走る → 新規の判定を仕分ける → 場面ごとに見る → 1 つ直す → 並べる） | `skills/twin-loop` |
+| 物語が伝わったかを、何も知らない体験者役に言い直させて確かめる（直す前の版と並べる） | `py -3.11 tools/twin-playtest.py`（`skills/twin-loop`「物語が伝わったかを見るとき」） |
 | 「動かない」を層で切り分ける | `skills/troubleshoot` |
 | コードを初めて読む（体験 1 回の流れとクラスの持ち主） | [Assets/Scripts/README.md](Assets/Scripts/README.md) |
 | 生成 AI で差し替え素材を作る（人形・染み・手形） | [tools/gen-plate/](tools/gen-plate/README.md)（**先に [memory/codex_image_pipeline.md](.claude/memory/codex_image_pipeline.md)**） |

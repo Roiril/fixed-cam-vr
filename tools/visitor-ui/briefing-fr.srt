@@ -3,45 +3,45 @@
 Enchanté. Bienvenue à l'Institut japonais de recherche sur les phénomènes étranges. Je suis le docteur, votre supérieur.
 
 2
-00:00:07,500 --> 00:00:12,700
-Je vous demande d’examiner, en tant qu’agent de terrain, un objet maudit.
+00:00:07,500 --> 00:00:13,500
+J’ai une enquête à vous confier. Vous êtes notre trente-septième enquêteur.
 
 3
-00:00:12,700 --> 00:00:15,400
-Voici le rideau que vous allez examiner.
+00:00:13,500 --> 00:00:19,100
+Voici le rideau. Nous l’avons récupéré dans la chambre d’un enfant.
 
 4
-00:00:15,400 --> 00:00:20,900
-Mettez le dispositif d'observation et faites trois fois le tour de ce rideau.
+00:00:19,100 --> 00:00:27,900
+Mettez le dispositif d'observation et faites trois fois le tour de ce rideau. Plus vous tournez, plus cela se rapproche.
 
 5
-00:00:20,900 --> 00:00:26,400
+00:00:27,900 --> 00:00:33,400
 Tenez la main courante de la main droite et ne la lâchez pas en marchant.
 
 6
-00:00:26,400 --> 00:00:31,900
+00:00:33,400 --> 00:00:38,900
 Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.
 
 7
-00:00:31,900 --> 00:00:36,600
-Vous utiliserez un dispositif d’observation qui enregistre et analyse les phénomènes anormaux.
+00:00:38,900 --> 00:00:44,300
+Voici le dispositif d’observation. Il enregistre et analyse les phénomènes anormaux.
 
 8
-00:00:36,600 --> 00:00:40,900
-Pendant l’observation, un agent vous assistera dans votre enquête.
+00:00:44,300 --> 00:00:51,700
+Si vous regardez une anomalie en face, elle vous regarde aussi. Le dispositif regardera donc à votre place.
 
 9
-00:00:40,900 --> 00:00:46,900
+00:00:51,700 --> 00:00:57,700
 Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.
 
 10
-00:00:46,900 --> 00:00:50,300
-Le signalement sera envoyé à l’agent pour analyse.
+00:00:57,700 --> 00:01:01,900
+L’agent du dispositif l’analysera et l’éliminera.
 
 11
-00:00:50,300 --> 00:00:54,500
+00:01:01,900 --> 00:01:06,100
 À présent, prenez la manette dans la main gauche et mettez le dispositif.
 
 12
-00:00:54,500 --> 00:00:57,500
+00:01:06,100 --> 00:01:09,100
 Bonne chance pour votre enquête.
