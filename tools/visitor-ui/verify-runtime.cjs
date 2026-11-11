@@ -478,10 +478,12 @@ async function flushPromises() {
 
 // 日本語の声と口の動画（v2）は、2026-11-12 に博士の台詞を書き換えたときに briefing から外した
 // （古い台詞の音声なので）。媒体の挙動を確かめる試験は、v2 の動画を付けた写しで回す。
-// 新しい声が届いて briefing に video.ja が戻ったら、この関数は何も変えなくなる。
+// いまの briefing は新しい台詞の声（v3・音声だけ）を audio.ja に持つ。口の動画はまだ無い。
+// 動画の挙動を確かめる試験のために、写しの側だけ音声を外して v2 の動画を付ける。
 function withJaMedia(data) {
   for (const scene of data.scenes) {
-    if (scene.video?.ja || scene.audio?.ja) continue;
+    if (scene.video?.ja) continue;
+    if (scene.audio) delete scene.audio.ja;
     scene.video = { ...(scene.video || {}), ja: `${scene.id}-ja-v2.mp4` };
   }
   return data;
@@ -1111,7 +1113,7 @@ test('ユーザー指定のEleven v4入力は一つのコードブロックで�
   }
 });
 
-test('日本語の台詞は新しい版で、古い台詞の声と動画（v2）は場面に付けない', () => {
+test('日本語の台詞は新しい版で、声は v3 の音声。古い台詞の声と動画（v2）は場面に付けない', () => {
   // v2 の音声と動画は残してある（スタッフの音の確認と、媒体の試験が使う）。場面からは外す —
   // 古い台詞を喋る博士の上に新しい字幕が出るのを防ぐ。新しい声は elevenlabs-input-ja-v3.md から作る。
   for (const scene of briefing.scenes) {
@@ -1123,8 +1125,14 @@ test('日本語の台詞は新しい版で、古い台詞の声と動画（v2）
     const videoBytes = fs.readFileSync(path.join(assetRoot, `${scene.id}-ja-v2.mp4`));
     assert.ok(videoBytes.length > 1_000_000);
     assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
-    assert.equal(scene.audio?.ja, undefined);
     assert.equal(scene.video?.ja, undefined, `${scene.id}: 台詞と声が食い違う版を付けない`);
+    // 新しい台詞の声。generate-doctor-audio.py が 1 本の合成から場面ごとに切る。
+    assert.equal(scene.audio?.ja, `${scene.id}-ja-v3.mp3`);
+    const voice = fs.readFileSync(path.join(assetRoot, scene.audio.ja));
+    assert.ok(voice.length > 50_000, scene.audio.ja);
+    // 文の尺の合計は、切り出した音の長さ（128kbps）と 1 秒以内で合う。
+    const cueMs = scene.cues.ja.reduce((sum, cue) => sum + cue.durationMs, 0);
+    assert.ok(Math.abs(cueMs - voice.length / 16) < 1000, `${scene.id}: 文の尺 ${cueMs}ms と音 ${Math.round(voice.length / 16)}ms`);
   }
   // 種は 4 つ。どれも博士が 1 文で言う（3 言語とも同じ文の位置）。
   const seeds = {
@@ -1595,6 +1603,8 @@ test('通常説明のタップは次の文へ進み、右上の一時停止だ�
   runtime.beginBriefingCue();
   const media = runtime.getBriefingMedia();
   media.onplaying();
+  // 2 文目の途中の時刻（文の尺は声の版で変わるので、台本から決める）
+  const inSecondCue = data.scenes[0].cues.ja[0].durationMs / 1000 + 0.1;
   media.currentTime = 1.4;
   const cueIndex = state.briefing.cueIndex;
   // 文が出てすぐ（0.7 秒未満）のタップでは送らない（二度押しで 2 文進む・読む前に飛ばす）
@@ -1610,25 +1620,25 @@ test('通常説明のタップは次の文へ進み、右上の一時停止だ�
   assert.equal(media.paused, false);
   // 右上の一時停止＝止まる（音声と動画を同じ位置で）
   assert.equal(elements.get('briefingPauseBtn').hidden, false);
-  media.currentTime = 9.9;
+  media.currentTime = inSecondCue;
   elements.get('briefingPauseBtn').dispatch('click');
   assert.equal(state.briefing.auto, false);
   assert.equal(media.paused, true);
-  assert.equal(media.currentTime, 9.9);
+  assert.equal(media.currentTime, inSecondCue);
   assert.equal(elements.get('briefingControls').hidden, false);
   assert.equal(elements.get('briefingControls').inert, false);
   assert.equal(elements.get('briefingPauseBtn').hidden, true);
   assert.equal(elements.get('briefingPauseSurface').hidden, true);
   // すぐ再開：止めた位置のまま。位置を探し直さない（探すと WebView が読み直して止まる）
   const seeks = [];
-  const timeDescriptor = { get: () => media.__t ?? 9.9, set: (v) => { seeks.push(v); media.__t = v; } };
-  media.__t = 9.9;
+  const timeDescriptor = { get: () => media.__t ?? inSecondCue, set: (v) => { seeks.push(v); media.__t = v; } };
+  media.__t = inSecondCue;
   Object.defineProperty(media, 'currentTime', { ...timeDescriptor, configurable: true });
   elements.get('briefingResume').dispatch('click');
   assert.equal(media.paused, false);
   assert.deepEqual(seeks, [], '再開で currentTime を書き換えている');
-  assert.equal(media.__t, 9.9);
-  Object.defineProperty(media, 'currentTime', { value: 9.9, writable: true, configurable: true });
+  assert.equal(media.__t, inSecondCue);
+  Object.defineProperty(media, 'currentTime', { value: inSecondCue, writable: true, configurable: true });
 });
 
 test('章の遷移中でも次の入力を予約せず現在位置からすぐ進める', () => {

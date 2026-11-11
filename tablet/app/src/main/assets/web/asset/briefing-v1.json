@@ -31,11 +31,11 @@
         "ja": [
           {
             "text": "はじめまして。日本怪異研究所へようこそ。私はあなたの上司にあたる、博士です。",
-            "durationMs": 9820
+            "durationMs": 10037
           },
           {
             "text": "あなたに、ある調査を依頼します。調査員は、あなたで三十七人目です。",
-            "durationMs": 8000
+            "durationMs": 8649
           }
         ],
         "en": [
@@ -58,6 +58,9 @@
             "durationMs": 6000
           }
         ]
+      },
+      "audio": {
+        "ja": "introduction-ja-v3.mp3"
       }
     },
     {
@@ -94,19 +97,19 @@
         "ja": [
           {
             "text": "こちらのカーテンです。ある家の子ども部屋から、回収しました。",
-            "durationMs": 7200
+            "durationMs": 7170
           },
           {
             "text": "観測装置をつけ、このカーテンの周りを三周してください。廻るほど、近づいてきます。",
-            "durationMs": 9200
+            "durationMs": 8964
           },
           {
             "text": "その間は右手で手すりを持ち、決して離さないでください。",
-            "durationMs": 6141
+            "durationMs": 6799
           },
           {
             "text": "異変を見逃さないよう、ゆっくり慎重に歩いてください。",
-            "durationMs": 6335
+            "durationMs": 6673
           }
         ],
         "en": [
@@ -145,6 +148,9 @@
             "durationMs": 5500
           }
         ]
+      },
+      "audio": {
+        "ja": "subject-ja-v3.mp3"
       }
     },
     {
@@ -177,19 +183,19 @@
         "ja": [
           {
             "text": "これが、怪異を記録し、解析する観測装置です。",
-            "durationMs": 5200
+            "durationMs": 5933
           },
           {
             "text": "怪異を直接見ると、見返されます。だから、装置があなたの代わりに見ます。",
-            "durationMs": 7800
+            "durationMs": 9034
           },
           {
             "text": "異変に気づいたら、左コントローラーのXかYを1秒間、長押ししてください。",
-            "durationMs": 7138
+            "durationMs": 7689
           },
           {
             "text": "装置のエージェントが解析し、取り除きます。",
-            "durationMs": 4800
+            "durationMs": 4938
           }
         ],
         "en": [
@@ -228,6 +234,9 @@
             "durationMs": 4200
           }
         ]
+      },
+      "audio": {
+        "ja": "report-ja-v3.mp3"
       }
     },
     {
@@ -260,11 +269,11 @@
         "ja": [
           {
             "text": "では。左手にコントローラーを持って観測装置をつけてください。",
-            "durationMs": 6813
+            "durationMs": 6965
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 2671
+            "durationMs": 1491
           }
         ],
         "en": [
@@ -287,6 +296,9 @@
             "durationMs": 3000
           }
         ]
+      },
+      "audio": {
+        "ja": "wear-ja-v3.mp3"
       }
     }
   ]
