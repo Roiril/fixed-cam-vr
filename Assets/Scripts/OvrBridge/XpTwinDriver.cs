@@ -91,6 +91,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     private bool _shownRec;
     private int _shownSegLap = -1;
     private int _shownSegCam = -1;
+    private int _pendingLap = -2, _pendingSegLap = -2, _pendingSegCam = -2;
+    private bool _pendingRec;
     private float _farewellLogAt;
     private bool _farewellShareLogged;
     private RenderTexture? _badgeRt;
@@ -401,6 +403,13 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         // 区間が替わったときも 1 行出す。印と rec/live が前の区間と同じまま次の区間へ入ると
         // その区間の頭が記録されず、判定が後ろ側の印を読む（速い走行の 3-C で偽 FAIL になった）。
         if (value == _shownLap && isRec == _shownRec && segLap == _shownSegLap && segCam == _shownSegCam) return;
+        // 同じ読みが 2 回（0.25 秒おき）続いてから出す。録画の頭の 1〜2 コマは切替の前に撮った画で、
+        // 前の周の印が一瞬だけ映る。区間の替わり目で採ると、それを頭として読んで偽 FAIL になった（2026-11-11）。
+        if (value != _pendingLap || isRec != _pendingRec || segLap != _pendingSegLap || segCam != _pendingSegCam)
+        {
+            _pendingLap = value; _pendingRec = isRec; _pendingSegLap = segLap; _pendingSegCam = segCam;
+            return;
+        }
         _shownLap = value;
         _shownRec = isRec;
         _shownSegLap = segLap;
