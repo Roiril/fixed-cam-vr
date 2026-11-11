@@ -196,6 +196,18 @@ class Known(unittest.TestCase):
         self.assertEqual(tv.stale_known(self.K, hit, [{"verdicts": []}, {"verdicts": []}]), ["count"])
 
 
+class RunFailed(unittest.TestCase):
+    def test_a_run_that_never_ran_is_a_fail_line(self):
+        v = tv.run_failed_verdict({"result": "走行の結果が無い"}, 1)
+        self.assertEqual(v["level"], "FAIL")
+        self.assertIn("走行の結果が無い", v["text"])
+
+    def test_a_finished_run_adds_nothing(self):
+        self.assertIsNone(tv.run_failed_verdict({"result": "ok"}, 0))
+        # Editor の終了処理で落ちても、走行が ok なら別の WARN が言う。ここでは FAIL にしない。
+        self.assertIsNone(tv.run_failed_verdict({"result": "ok"}, 3221225620))
+
+
 class History(unittest.TestCase):
     def test_only_earlier_finished_runs_with_the_same_args(self):
         with tempfile.TemporaryDirectory() as d:

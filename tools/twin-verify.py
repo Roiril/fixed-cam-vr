@@ -107,6 +107,14 @@ def code_check(at_run: dict, at_shoot: dict | None) -> tuple[str, str] | None:
     return "WARN", ("走行と撮影のあいだにコードが変わった（" + "・".join(what) + "）。判定は走行時のコード、動画は撮影時のコードの画")
 
 
+def run_failed_verdict(run_info: dict, rc: int) -> dict | None:
+    """走行が成立しなかったら FAIL を 1 行。コンパイルエラーや起動の失敗では判定が 1 行も作られず、
+    そのままだと「FAIL 0」と出る（2026-11-11、コンパイルエラーの走行がそう出た）。"""
+    if run_info.get("result") == "ok":
+        return None
+    return {"level": "FAIL", "text": f"走行が成立していない（{run_info.get('result')}・exit={rc}）。Unity のログを読む"}
+
+
 KNOWN = ROOT / "tools" / "twin" / "known.json"
 
 
@@ -380,6 +388,9 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
             replay_compare = p.stdout
             (work / "compare.txt").write_text(p.stdout + p.stderr, encoding="utf-8")
 
+    failed = run_failed_verdict(run_info, rc_run)
+    if failed:
+        verdicts.insert(0, failed)
     n = {lv: sum(1 for v in verdicts if v["level"] == lv) for lv in ("FAIL", "WARN", "OK")}
     ok = run_info.get("result") == "ok" and n["FAIL"] == 0
     run_args = {"speed": a.speed, "dwell": a.dwell, "nomark": a.nomark, "relief": a.relief, "calib": a.calib, "realAssets": a.real_assets}

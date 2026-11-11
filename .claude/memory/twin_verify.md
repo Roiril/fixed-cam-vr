@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1128468e-bd6b-4231-9f7d-17f5f7eac49b
-  modified: 2026-11-11T02:48:05.223Z
+  modified: 2026-11-11T03:31:18.461Z
 ---
 
 2026-11-05 ユーザー依頼「デジタルツインを新しく作り替えたので、それを使って、私がhmdを被らないでできる動作検証の仕組みも更新してほしい。」
@@ -23,7 +23,9 @@ metadata:
 **検証用の木 `tools/twin-tree.py`（11-11）**: ユーザーの問い「ワークツリーにしたら 2 本同時に走って検証できる？」（並行して動いていた別セッションで受け取ったもの）。
 `Projects/Unity/fcv-twin-tree` に常設の worktree を置き、Library（6.2GB）を複製した。`sync` は `git stash create` で未コミットの変更ごと写す。
 - 向こうの木で判定だけの走行が PASS した（`20261111_113553_tree-check`。走行 294 秒・初回は取り込みで全体 676 秒）
-- ⚠ **2 本が同じ時間に Play に居た実測はまだ無い。** メモリは Unity 1 本 3.0GB・そのときの空き 8.6GB
+- **2 本同時は通る**（`20261111_122438_tree-concurrent2`。メインの木で 12:22 開始の通しが動いている間に、向こうの木で判定だけの走行が PASS。走行 293.8 秒で単独と同じ）。メモリは Unity 1 本 3.0GB
+- ⚠ **保存先（`persistentDataPath`）は木ごとに分ける**（`ReplayXrGuard.ProductNameFor`。メインは `mawarimi-replay`、他は `mawarimi-replay-<フォルダ名>`）。同じだと `XpTwinDriver.Load` が走り始めに `xprec/` を丸ごと消すので、後の走行が先の走行の記録を消しにいく。12:02 の同時走行は、相手が掴んでいた `cam_Phone01.mjr` で IOException になり 49 秒で落ちた。掴まれていなければ黙って消えていた
+- ⚠ 走行中の木の `Assets/` に未検証の C# を置かない。次に Unity が立つ段（撮影）がコンパイルエラーで落ちる。C# は向こうの木で `unity.ps1 test` を通してから置く
 - ⚠ 木の名前にこちらのパスを含めない。`unity.ps1` の `Assert-NotLocked` はコマンドラインに自分のパスを含む Unity を自分の Editor と数える
 - ⚠ Library の複製（robocopy 16 スレッド・5 分）と重なった 11:30 のこちらの走行が `error: onboarding`（導入が終わらない）で止まった。複製は初回だけ
 - git 管理外の入力は `sync` が運ぶ（`Assets/` の下の無視ファイル・`tools/web-compositor/show.json`・`Logs/twin-run/pack`）。持ち込まないと test-ending-log と test_onsite_operations が落ちる
