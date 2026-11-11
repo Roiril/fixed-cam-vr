@@ -494,6 +494,63 @@ def decode_verdicts(idx, rx_dfps, dfail):
     return verdicts
 
 
+def is_recorded_cut_before_doll(steps, i, lap) -> bool:
+    """歩く速さに合わせて切り上げる 3 周目の録画カットか（C# の TakeRunner.IsRecordedCutBeforeDoll と対）。
+
+    3 周目以降で、録画（続きから流す・位置で選ぶを除く）のすぐ次が無人の画（plate）のカット。
+    演出のどこかに位置で選ぶ録画か線待ちのカットがあれば対象外（3-A）。take id の文字列では判じない。
+    """
+    steps = steps or []
+    if (fstr(lap) or 0) < 3 or i < 0 or i + 1 >= len(steps):
+        return False
+    # ⚠ 台本の段の変数に `e` / `nxt` 等の名前を使わない（test_telemetry_contract がログの行として数える）。
+    rec_step, plate_step = steps[i] or {}, steps[i + 1] or {}
+    if rec_step.get("source") != "rec" or rec_step.get("recContinue") or rec_step.get("recFollow"):
+        return False
+    if plate_step.get("source") != "plate":
+        return False
+    return not any((s or {}).get("recFollow") or (s or {}).get("durKind") == "untilLine" for s in steps)
+
+
+def _judge_recorded_cut_before_doll(exp, steps_ev, w, verdict):
+    """3 周目の録画カットの尺（著作 → 実際）と、その後の人形（plate のカット）が出たかを見る。
+
+    速く歩く人は録画が終わる前に区間を出て、後ろの人形を 1 度も見ずに畳まれていた。
+    実機は 2 周目の同じ区間の滞在から録画を切り上げる（ev=step の auth / cut / d2）。
+    それでも人形が出なかったら WARN（体験者の歩きに依るので FAIL にはしない）。
+    """
+    targets = {(t.get("id"), i) for t in exp.get("takes", [])
+               for i in range(len(t.get("steps") or []))
+               if is_recorded_cut_before_doll(t.get("steps"), i, t.get("lap"))}
+    trims = [e for e in steps_ev if e.get("auth") is not None]
+    # auth= を出すのは対象のカットだけなので、台本が無くてもログから対象が分かる。
+    for e in trims:
+        try:
+            targets.add((e.get("take"), int(e.get("i"))))
+        except (TypeError, ValueError):
+            pass
+    if not targets:
+        return
+    w()
+    w("### 3 周目の録画カット（歩く速さで切り上げ・後ろの人形）")
+    for e in trims:
+        auth, cut, d2 = fnum(e, "auth", -1.0), fnum(e, "cut", -1.0), fnum(e, "d2", -1.0)
+        how = "切り上げた" if 0 < cut < auth else "著作どおり"
+        dwell = f"{d2:.2f}s" if d2 > 0 else "不明"
+        w(f"  {e.get('take', '?')} i={e.get('i', '?')}: 著作 {auth:.2f}s → 実際 {cut:.2f}s"
+          f"（{how}・2 周目の滞在 {dwell}）")
+    for tid, i in sorted(targets, key=lambda x: (str(x[0]), x[1])):
+        evs = [e for e in steps_ev if e.get("take") == tid]
+        if not evs:
+            continue   # その演出は走っていない（3 周目へ届いていない等）。到達は別の節が見る
+        doll_shown = any(e.get("i") == str(i + 1) and e.get("played") == "1" for e in evs)
+        if doll_shown:
+            verdict("OK", f"{tid}: 録画の後の人形（ev=step i={i + 1}）が出た")
+        else:
+            verdict("WARN", f"{tid}: 録画の後の人形（ev=step i={i + 1}）が 1 度も出なかった — "
+                            "録画が終わる前に区間を出ている。ev=step の auth / cut / d2 で切り上げが効いたかを見る")
+
+
 def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
     verdicts = []     # (level, text) level: OK / WARN / FAIL / NA
@@ -4062,6 +4119,9 @@ def analyze(events, others, exp, warns=None):
             verdict("WARN", f"飛ばされたカットが {n} 件: {STEP_SKIP_REASONS.get(why, why)}")
         if not skipped_why:
             verdict("OK", f"演出のカットは全て画面を取った（{len(steps_ev)} カット）")
+
+    # -- 3 周目の録画カットの切り上げと、その後の人形（plate のカット）
+    _judge_recorded_cut_before_doll(exp, steps_ev, w, verdict)
 
     # -- 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）
     # ⚠ 「カットが指した」は画に出たことを意味しない。分割は書く先（CameraFeelFx の material）を

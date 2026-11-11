@@ -68,6 +68,12 @@ namespace FixedCamVr.Streaming
 
         // 実行に必要な定義本体（_logic の Def と同じ並び）。
         private ShowTakeDef[] _takes = Array.Empty<ShowTakeDef>();
+        // 各演出が置かれた区間（周, カメラ）。_takes と同じ並び。
+        private int[] _takeSegLaps = Array.Empty<int>();
+        private int[] _takeSegCams = Array.Empty<int>();
+
+        // このカットの録画を切り上げる尺（秒）。-1 = 切り上げない。録画を画に出した瞬間（PlayStepOverlay）に効かせる。
+        private float _stepRecCutSec = -1f;
 
         // cueId → 素材定義 / URL 解決（ShowControlClient から注入）。
         private Func<string, OverlayCueData?>? _cueResolver;
@@ -423,8 +429,12 @@ namespace FixedCamVr.Streaming
         ///
         /// 理由トークンは <see cref="StepOkReason"/> / <see cref="StepSkipCameraRange"/> /
         /// <see cref="StepSkipNoAsset"/> / <see cref="StepSkipNoRecording"/>。
+        ///
+        /// 続く 3 つは 3 周目の録画カット（<see cref="IsRecordedCutBeforeDoll"/>）だけが持つ
+        /// (著作の尺, 実際の尺, 2 周目の同じ区間の滞在)。対象でないカットは全部 -1。
+        /// 滞在が分からないときは滞在だけ -1 で、実際の尺は著作の尺と同じ。
         /// </summary>
-        public event Action<string, int, string, int, bool, string>? StepResolved;
+        public event Action<string, int, string, int, bool, string, float, float, float>? StepResolved;
 
         /// <summary>カットが画面を取れた（<see cref="StepResolved"/> の理由トークン）。</summary>
         public const string StepOkReason = "ok";
@@ -595,12 +605,16 @@ namespace FixedCamVr.Streaming
             if (segments == null)
             {
                 _takes = Array.Empty<ShowTakeDef>();
+                _takeSegLaps = Array.Empty<int>();
+                _takeSegCams = Array.Empty<int>();
                 _logic.SetDefs(Array.Empty<TakeRunnerLogic.Def>());
                 return;
             }
 
             var takes = new List<ShowTakeDef>();
             var defs = new List<TakeRunnerLogic.Def>();
+            var segLaps = new List<int>();
+            var segCams = new List<int>();
             bool anyLine = false;
 
             // ⚠⚠ **終幕の合図が指す演出は、旗が立っていても報告では畳めない。**
@@ -616,6 +630,8 @@ namespace FixedCamVr.Streaming
                 {
                     if (t == null) continue;
                     takes.Add(t);
+                    segLaps.Add(seg.lap);
+                    segCams.Add(seg.camera);
                     // ライントリガーは lineId → スロット（未知 id も枠を取る = 線が後から来ても index が動かない）。
                     // **ラインが未指定でも onLine は下ろさない**。下ろすと時刻トリガー扱いになり
                     // offsetSec(=0) で区間進入と同時に発火する ＝ 契約「空 lineId は発火しない」の真逆になる
@@ -655,6 +671,8 @@ namespace FixedCamVr.Streaming
                 }
             }
             _takes = takes.ToArray();
+            _takeSegLaps = segLaps.ToArray();
+            _takeSegCams = segCams.ToArray();
             // 締めの線は台本から導く（3 周目 A の凍結点）。**枠は必ず取る** — 演出の線と同じ理由で、
             // layout が後から来ても index が動かないようにする。線があれば横断検出も回す。
             _closingLineId = TakeSchema.ResolveClosingLineId(_takes);
@@ -1041,6 +1059,7 @@ namespace FixedCamVr.Streaming
             // 演出の頭で、この演出 1 本ぶんの追いつきの状態を作り直す（前の演出の値を引き継がない）。
             if (d.takeStarted) ClearTakeCatchUpState();
             _takeStepReached = d.stepIndex;
+            _stepRecCutSec = -1f;
 
             if (director == null)
             {
@@ -1077,8 +1096,26 @@ namespace FixedCamVr.Streaming
                                      $"（take={TakeId(d.takeIndex)}）");
             }
             else playable = IsStepPlayable(step, source, cue, d.takeIndex, d.stepIndex, out why);
+
+            // 3 周目の録画カットを、2 周目の同じ区間での歩き方に合わせて切り上げる（canon/OPEN.md 状態 3 の案）。
+            // 速く歩く人は録画が終わる前に区間を出て、後ろの人形（plate のカット）を 1 度も見ずに畳まれていた。
+            float recAuthoredSec = -1f, recCutSec = -1f, recPriorDwellSec = -1f;
+            if (playable && d.takeIndex >= 0 && d.takeIndex < _takes.Length
+                && IsRecordedCutBeforeDoll(_takes[d.takeIndex].steps, d.stepIndex, SegLapOf(d.takeIndex)))
+            {
+                recAuthoredSec = AuthoredRecordedCutSec(step, cue);
+                if (recAuthoredSec > 0f)
+                {
+                    recPriorDwellSec = _logic.DwellSecOf(SegLapOf(d.takeIndex) - 1, SegCamOf(d.takeIndex));
+                    recCutSec = TakeRunnerLogic.ResolveRecordedCutSec(recAuthoredSec, recPriorDwellSec);
+                    if (recCutSec < recAuthoredSec) _stepRecCutSec = recCutSec;
+                    Debug.Log($"[TakeRunner] 3 周目の録画カット take={TakeId(d.takeIndex)} cut={d.stepIndex + 1} " +
+                              $"著作 {recAuthoredSec:F2}s → 実際 {recCutSec:F2}s（2 周目の滞在 {recPriorDwellSec:F2}s）");
+                }
+            }
             // 飛ばしたことも取れたことも外へ出す（観測専用。全カットが飛んだ演出を解析が名指しできる）。
-            StepResolved?.Invoke(TakeId(d.takeIndex), d.stepIndex, source, step.camera, playable, why);
+            StepResolved?.Invoke(TakeId(d.takeIndex), d.stepIndex, source, step.camera, playable, why,
+                                 recAuthoredSec, recCutSec, recPriorDwellSec);
             if (!playable)
             {
                 cue?.frames?.Dispose();   // 開いた録画をリークさせない
@@ -1529,6 +1566,12 @@ namespace FixedCamVr.Streaming
                     float sec = step.durSec > 0f ? step.durSec : TakeSchema.FallbackStepDurSec;
                     _logic.SetCurrentStepEnd(Now + sec);
                 }
+                // 3 周目の録画カットの切り上げ。録画が画に出たこの瞬間から数える（著作の尺も
+                // 「出てから終端まで」なので、覆いの遷移の分だけずれない）。畳むのは尺だけで、
+                // 次のカット（plate）への遷移は著作どおりの経路を通る（録画の終端で畳んだときと同じ）。
+                if (_stepRecCutSec > 0f && cue.SourceIsFrames)
+                    _logic.SetCurrentStepEnd(Now + _stepRecCutSec);
+                _stepRecCutSec = -1f;
                 return;
             }
 
@@ -1756,6 +1799,47 @@ namespace FixedCamVr.Streaming
                                                             bool alreadyCounted)
             => takeHasDollCall && anyStepShown && !alreadyCounted;
 
+        /// <summary>
+        /// <b>歩く速さに合わせて切り上げる 3 周目の録画カットか</b>（純関数・テスト用）。
+        /// 3 周目以降の演出で、録画（続きから流す・位置で選ぶを除く）のすぐ次が無人の画（plate）のカット。
+        /// 演出のどこかに位置で選ぶ録画か線待ちのカットがあれば対象外 — 3-A は体験者の位置で進むので、
+        /// 時間で切り上げると位置と画が食い違う。1・2 周目は対象外。take id の文字列では判じない。
+        /// </summary>
+        public static bool IsRecordedCutBeforeDoll(ShowStepDef[]? steps, int stepIndex, int takeLap)
+        {
+            if (takeLap < 3 || steps == null || stepIndex < 0 || stepIndex + 1 >= steps.Length) return false;
+            ShowStepDef? cur = steps[stepIndex];
+            ShowStepDef? next = steps[stepIndex + 1];
+            if (cur == null || next == null) return false;
+            if (!TakeSchema.IsRecSource(TakeSchema.NormalizeSource(cur.source, out _))) return false;
+            if (cur.recContinue || cur.recFollow) return false;
+            if (TakeSchema.NormalizeSource(next.source, out _) != TakeSchema.SourcePlate) return false;
+            foreach (ShowStepDef? s in steps)
+                if (s != null && (s.recFollow || s.IsUntilLine)) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// 録画カットの著作の尺 (秒)。<c>untilClipEnd</c> は録画の長さ ÷ 再生速度、秒指定は <c>durSec</c>。
+        /// それ以外（待ち相手が区間・線・報告）と長さが分からないときは -1（切り上げない）。
+        /// </summary>
+        public static float AuthoredRecordedCutSec(ShowStepDef step, OverlayCueData? cue)
+        {
+            if (step.IsUntilClipEnd)
+            {
+                float dur = cue?.frames?.DurationSec ?? -1f;
+                return dur > 0f ? dur / TakeSchema.ResolveRecRate(step.recRate) : -1f;
+            }
+            if (step.IsUntilZoneChange || step.IsUntilLine || step.IsUntilMark) return -1f;
+            return step.durSec > 0f ? step.durSec : -1f;
+        }
+
+        private int SegLapOf(int takeIndex)
+            => takeIndex >= 0 && takeIndex < _takeSegLaps.Length ? _takeSegLaps[takeIndex] : -1;
+
+        private int SegCamOf(int takeIndex)
+            => takeIndex >= 0 && takeIndex < _takeSegCams.Length ? _takeSegCams[takeIndex] : -1;
+
         // from 以降で最初に呼びかけを持つカットの index。無ければ -1。
         private static int FindDollCallStepFrom(ShowStepDef[]? steps, int from)
         {
@@ -1798,6 +1882,7 @@ namespace FixedCamVr.Streaming
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。
         private void ReleaseStepState()
         {
+            _stepRecCutSec = -1f;
             EndFollowSummary();
             _followActive = false;
             _followMax = float.NegativeInfinity;

@@ -392,11 +392,19 @@ namespace FixedCamVr.Diagnostics
         /// §6.4 の規約で全カットが飛んだ演出は画面を掴まずに終わるが、<c>ActiveTakeId</c> は立つので
         /// <c>ev=take st=begin</c> → <c>st=end</c> が正常に出て、解析は「演出 OK」と判定する。
         /// 実際には何も起きていない。2026-07-31 の事故と完全に同型なので、カットの粒度で出す。
+        ///
+        /// 3 周目の録画カット（録画の次が無人の画と人形）だけ、尺を足す:
+        /// <c>auth=</c> 著作の尺 / <c>cut=</c> 実際の尺（歩く速さで切り上げた後）/ <c>d2=</c> 2 周目の同じ区間の滞在（不明は -1）。
+        /// 「速く歩く人に人形が出たか」は、この行と次のカット（plate）の <c>played=1</c> を並べて見る。
         /// </summary>
         private void OnStepResolved(string takeId, int stepIndex, string source, int camera,
-                                    bool played, string why)
+                                    bool played, string why, float recAuthoredSec, float recCutSec,
+                                    float recPriorDwellSec)
             => Emit($"ev=step take={(string.IsNullOrEmpty(takeId) ? "?" : takeId)} i={stepIndex} " +
-                    $"src={source} cam={camera} played={(played ? 1 : 0)} why={why}");
+                    $"src={source} cam={camera} played={(played ? 1 : 0)} why={why}" +
+                    (recAuthoredSec > 0f
+                        ? $" auth={recAuthoredSec:F2} cut={recCutSec:F2} d2={recPriorDwellSec:F2}"
+                        : ""));
 
         /// <summary>
         /// 動画カットが発火してから画に出るまでの内訳。<b>短いカットを連続で差し替える演出の要</b>。

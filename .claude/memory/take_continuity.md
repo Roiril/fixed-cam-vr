@@ -51,4 +51,22 @@ Up 相でも 0 から張り直さず折り返す（旧実装は「黒 → 明る
 
 契約と実測は `reference/archive/streaming-2026-10-22.md`「素材は先に落としておく」。
 
+## 3 周目の録画は 2 周目の歩き方で切り上げる（2026-11-11）
+
+3-B・3-C は「録画（約 8 秒）→ 0.9 秒の暗転 → 無人の画と人形」の 2 カットで、どちらも `yield`。
+**速く歩く人は録画が終わる前に区間を出るので、人形のカットを 1 度も見ずに畳まれていた。**
+
+- 対象は形で決める（`TakeRunner.IsRecordedCutBeforeDoll`）。3 周目以降・録画（`recContinue` / `recFollow` でない）の
+  すぐ次が `plate`・演出のどこにも位置で選ぶ録画と線待ちが無い。3-A は位置で進むので外れる。take id では判じない
+- 尺は `TakeRunnerLogic.ResolveRecordedCutSec`: `min(著作, max(MinRecordedSec=3, d2 - DollShowSec=2.5))`。
+  d2 は 2 周目の同じ区間（同じカメラ）の滞在。分からなければ著作のまま。**ゆっくり歩く人は変わらない**
+- d2 は `TakeRunnerLogic.OnZoneCommitted` が区間を出た瞬間に閉じる（`CloseCurrentDwell` / `DwellSecOf`）。
+  時計は演出の時計（`TakeRunner.Now`）。入りも出も dwell 0.5s の確定を経るので遅れは差で消える。同じ区間は最長を残す。
+  `ResetRun` で消え、`SetDefs` では消えない
+- 切り上げは**録画が画に出た瞬間**から数える（`PlayStepOverlay` の `SetCurrentStepEnd(Now + cut)`）。
+  著作の尺も「出てから終端まで」なので、乱れの遷移の分だけずれない。次のカットへの遷移は録画の終端で畳んだときと同じ経路（plate の dip）
+- 観測は `ev=step` の `auth=` / `cut=` / `d2=`（対象のカットだけ）。`analyze-xp-log.py` は対象の演出が走ったのに
+  次のカット（plate）の `ev=step played=1` が無ければ WARN（FAIL にしない）。校正は `tools/test_recorded_cut_log.py`
+- ⚠ 3 周目の滞在そのものは見積もりでしかない。2 周目より速く歩けば、切り上げても人形は出ない（WARN で見える）
+
 関連: [[show_run_skeleton]] [[glitch_and_latency]]

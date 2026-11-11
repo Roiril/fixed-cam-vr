@@ -75,7 +75,7 @@ paths:
 - カットの分割・凍結は、正常終了・中止・ラン開始のどれでも畳む — `TakeRunner.ReleaseStepState` / `TakeSplitLayerTests` 〔出典: streaming:2206-2211〕
 - `switchSfx` は素材カットだけで、画を差し替える行から鳴らす — `CameraSwitchDirector.PlaySwitchSfx` / `SwitchAudioCueTests` 〔出典: streaming:2196-2225〕
 - BGM は指示の無い区間で継続する。take の bgm は占有で、終われば今のレーンへ戻る。step の bgm はレーンを書き換え、戻らない — `BgmPlanLogic.Decide` / `DecideRestore` / `TakeRunner.BeginStepBgm` 〔出典: streaming:3222-3262〕
-- 録った区間は録り直さない。3 周目は区間を出たら録画の途中でも畳む — `SegmentRecorder.SegmentAlreadyRecorded` / `TakeRunnerLogicTests.Yield_CutsStillPlayingRecording_AndNextSegmentStartsFromItsHead` 〔出典: streaming:467, 1742-1747〕
+- 録った区間は録り直さない。3 周目は区間を出たら録画の途中でも畳み、次が plate なら 2 周目の滞在で切り上げる — `SegmentRecorder.SegmentAlreadyRecorded` / `TakeRunnerLogic.ResolveRecordedCutSec` 〔streaming:467, 1742-1747 / memory/take_continuity.md〕
 - present-flag は「宣言 ∧ 実体あり」 — `TimelinePresentFlags.Reconcile` 〔出典: streaming:575-589〕
 
 ## 罠（破ると壊れる）
