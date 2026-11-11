@@ -14,7 +14,26 @@ namespace FixedCamVr.Streaming
     public sealed class EndingFrameCapture : MonoBehaviour
     {
         public const int Width = 1280;
+        /// <summary>参照の筐体を持たない 16:9 の画面の高さ。写真の高さは <see cref="HeightFor"/> で画面の縦横比から決める。</summary>
         public const int Height = 720;
+
+        /// <summary>
+        /// 幅 <see cref="Width"/> の写真の高さを、画面の物理の縦横比（幅/高さ）から決める。
+        /// 合成は画面の uv 0〜1 をそのまま描くので、縦横比が違う器へ写すと引き伸ばされる
+        /// （参照の筐体つきの画面は 1280:1030。16:9 へ写すと終幕の写真が横長になった）。
+        /// 縦横比が読めなければ 16:9。
+        /// </summary>
+        public static int HeightFor(float physicalAspect)
+            => physicalAspect > 0.01f && !float.IsInfinity(physicalAspect)
+                ? Mathf.Max(1, Mathf.RoundToInt(Width / physicalAspect)) : Height;
+
+        /// <summary>画面の Transform の縦横比から写真の高さを決める。</summary>
+        public static int HeightFor(Transform? screen)
+        {
+            if (screen == null) return Height;
+            Vector3 s = screen.lossyScale;
+            return Mathf.Abs(s.y) < 1e-5f ? Height : HeightFor(Mathf.Abs(s.x / s.y));
+        }
 
         private static readonly int CrtSignalRuntimeId = Shader.PropertyToID("_CrtSignalRuntime");
         private static readonly int IntroLiveId = Shader.PropertyToID("_IntroLive");
@@ -219,6 +238,7 @@ namespace FixedCamVr.Streaming
         {
             RenderTexture? existing = window == EndingShotWindow.Trapped ? _trappedShot : _releasedShot;
             if (existing != null) return CaptureComposite(existing);
+            ResolveMaterial();
 
             RenderTexture created = CreateTarget(window == EndingShotWindow.Trapped
                 ? "Ending Trapped Shot"
@@ -246,9 +266,10 @@ namespace FixedCamVr.Streaming
             return true;
         }
 
-        private static RenderTexture CreateTarget(string name)
+        private RenderTexture CreateTarget(string name)
         {
-            var rt = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGB32)
+            int height = HeightFor(screenRenderer != null ? screenRenderer.transform : transform);
+            var rt = new RenderTexture(Width, height, 0, RenderTextureFormat.ARGB32)
             {
                 name = name,
                 filterMode = FilterMode.Bilinear,

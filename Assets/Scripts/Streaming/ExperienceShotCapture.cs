@@ -33,7 +33,6 @@ namespace FixedCamVr.Streaming
     {
         // 出力寸法。① と ③ は EndingFrameCapture と同じ 1280x720（スクリーン枠は 16:9）。
         private const int ScreenWidth = EndingFrameCapture.Width;
-        private const int ScreenHeight = EndingFrameCapture.Height;
 
         // ④ の幅。高さは左眼の投影行列の縦横比から決める（Quest 3 の片眼は 1.0 前後）。
         private const int HmdWidth = 1600;
@@ -176,9 +175,11 @@ namespace FixedCamVr.Streaming
                 Material? material = ResolveMaterial(screen);
                 FillState(info, screen, material);
 
-                CaptureScreen(material, jobs, skipped, info);
+                // 写真の縦横比は画面の物理の縦横比（参照の筐体つきは 1280:1030）。16:9 へ写すと横に伸びる。
+                int screenHeight = EndingFrameCapture.HeightFor(screen != null ? screen.transform : null);
+                CaptureScreen(material, screenHeight, jobs, skipped, info);
                 CaptureRaw(screen, jobs, skipped, info);
-                CaptureLayers(material, jobs, skipped, info);
+                CaptureLayers(material, screenHeight, jobs, skipped, info);
                 CaptureCgAlpha(material, jobs, skipped);
                 CaptureHmd(jobs, skipped, info);
             }
@@ -284,7 +285,7 @@ namespace FixedCamVr.Streaming
             return renderer != null ? renderer.sharedMaterial : null;
         }
 
-        private static void CaptureScreen(Material? material, List<Job> jobs, List<string> skipped,
+        private static void CaptureScreen(Material? material, int screenHeight, List<Job> jobs, List<string> skipped,
                                           ExperienceShotInfo info)
         {
             if (material == null)
@@ -292,7 +293,7 @@ namespace FixedCamVr.Streaming
                 skipped.Add(ExperienceShotLogic.ScreenFile + ": スクリーンの材質が見つからない");
                 return;
             }
-            RenderTexture rt = NewTarget(ScreenWidth, ScreenHeight, "Shot Screen");
+            RenderTexture rt = NewTarget(ScreenWidth, screenHeight, "Shot Screen");
             if (!EndingFrameCapture.CaptureComposite(material, rt))
             {
                 Destroy(rt);
@@ -300,8 +301,8 @@ namespace FixedCamVr.Streaming
                 return;
             }
             info.screenWidth = ScreenWidth;
-            info.screenHeight = ScreenHeight;
-            jobs.Add(new Job { file = ExperienceShotLogic.ScreenFile, source = rt, width = ScreenWidth, height = ScreenHeight });
+            info.screenHeight = screenHeight;
+            jobs.Add(new Job { file = ExperienceShotLogic.ScreenFile, source = rt, width = ScreenWidth, height = screenHeight });
         }
 
         // ---- ② 生映像 --------------------------------------------------------------------
@@ -332,7 +333,7 @@ namespace FixedCamVr.Streaming
 
         // ---- ③ 合成しているものだけ ------------------------------------------------------
 
-        private static void CaptureLayers(Material? material, List<Job> jobs, List<string> skipped,
+        private static void CaptureLayers(Material? material, int screenHeight, List<Job> jobs, List<string> skipped,
                                           ExperienceShotInfo info)
         {
             if (material == null) return;
@@ -344,14 +345,14 @@ namespace FixedCamVr.Streaming
                 return;
             }
 
-            RenderTexture rt = NewTarget(ScreenWidth, ScreenHeight, "Shot Layers");
+            RenderTexture rt = NewTarget(ScreenWidth, screenHeight, "Shot Layers");
             if (!CaptureCompositeWithoutLive(material, rt))
             {
                 Destroy(rt);
                 skipped.Add(ExperienceShotLogic.LayersFile + ": 合成の写しに失敗");
                 return;
             }
-            jobs.Add(new Job { file = ExperienceShotLogic.LayersFile, source = rt, width = ScreenWidth, height = ScreenHeight });
+            jobs.Add(new Job { file = ExperienceShotLogic.LayersFile, source = rt, width = ScreenWidth, height = screenHeight });
         }
 
         /// <summary>

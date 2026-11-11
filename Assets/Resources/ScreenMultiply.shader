@@ -1,7 +1,8 @@
 // 増えるスクリーンの面と箱（参考 mul.jpg）。進み方は AnomalyEyesLogic の時計、画は ScreenMultiply が取り込む。
 //
-// 取り込みはメインスクリーンの最終の画なので、外形・ガラス・乱れ・人形がそのまま付いて来る。ここが足すのは
-// 色味・電源の入り切り・面ごとの揺れ・暗い筐体だけ。管の外形は取り込みの alpha（取り込むカメラは alpha 0 で消す）。
+// 取り込みはメインスクリーンの最終の画を筐体ごと写したもの。外形・ガラス・乱れ・人形・テレビの枠がそのまま付いて来る。
+// 面は自前の枠を描かない（0324: 枠はメインと同じにする）。ここが足すのは管の中の色味・電源の入り切り・面ごとの揺れだけ。
+// 管と筐体の境はメインと同じ輪郭のマスク（_WallTubeMask）。マスクが無い画面は取り込みの alpha が管の外形。
 // ⚠ 値は linear。0.05 でも sRGB では 0.25 の灰色に見える。筐体と箱は 0.01 より下で考える。
 //
 // 闇には黒い霧がある（ScreenFog.hlsl）。面は距離で暗くなり、取り込みの mip でぼける。
@@ -14,6 +15,7 @@ Shader "FixedCamVr/ScreenMultiply"
     Properties
     {
         [HideInInspector] _FeedTex("Feed Ring", 2DArray) = "black" {}
+        [HideInInspector] _WallTubeMask("Tube Mask", 2D) = "white" {}
     }
     SubShader
     {
@@ -37,6 +39,8 @@ Shader "FixedCamVr/ScreenMultiply"
 
             TEXTURE2D_ARRAY(_FeedTex);
             SAMPLER(sampler_FeedTex);
+            TEXTURE2D(_WallTubeMask);
+            SAMPLER(sampler_WallTubeMask);
 
             CBUFFER_START(UnityPerMaterial)
                 float _WallBig;
@@ -57,6 +61,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 float _WallFogClearM;
                 float _WallFogBlur;
                 float _WallFarShow;
+                float _WallHasTubeMask;
             CBUFFER_END
             // 席ごとの点いた時刻。大きさは ScreenMultiplyLayout.MaxSeats と対。
             float _WallOpenAt[160];
@@ -80,9 +85,6 @@ Shader "FixedCamVr/ScreenMultiply"
                 float fog : TEXCOORD3;      // 霧を抜けて届く光（1 = そのまま）
                 UNITY_VERTEX_OUTPUT_STEREO
             };
-
-            // 面のうち画が占める割合。残りが筐体の枠。
-            #define WALL_PICTURE 0.88
 
             float Hash11(float x)
             {
@@ -156,22 +158,28 @@ Shader "FixedCamVr/ScreenMultiply"
                     return half4(body * i.fog, 1.0);
                 }
 
-                float2 uv = i.uv.xy;
-
-                // ときどき同期を失う面。
-                float tick = floor(_WallTime * 5.0 + seed * 17.0);
-                float torn = step(0.955, Hash11(tick + seed * 91.0));
-                float rowId = floor(uv.y * 26.0);
-                uv.x += torn * (Hash21(float2(rowId, tick)) - 0.5) * 0.07;
-
-                // 画は面の内側 WALL_PICTURE に収め、周りを筐体の枠にする（枠が無いと板に見える）。
-                float2 pic = (uv - 0.5) / WALL_PICTURE + 0.5;
-                float inPic = step(abs(pic.x - 0.5), 0.5) * step(abs(pic.y - 0.5), 0.5);
-                float2 inset = saturate(pic) * 0.994 + 0.003;
+                float2 face = saturate(i.uv.xy) * 0.994 + 0.003;
                 // 霧を抜けきれない分だけぼかす。
                 float blur = (1.0 - i.fog) * _WallFogBlur;
-                half4 feed = SAMPLE_TEXTURE2D_ARRAY_LOD(_FeedTex, sampler_FeedTex, inset, i.seat.w, blur);
-                float tube = smoothstep(0.35, 0.65, feed.a) * inPic;
+
+                // 管の輪郭（メインと同じマスク）。筐体の無い画面は 1 で、取り込みの alpha が外形を決める。
+                float tubeMask = _WallHasTubeMask > 0.5
+                    ? smoothstep(0.4, 0.6, SAMPLE_TEXTURE2D_LOD(_WallTubeMask, sampler_WallTubeMask, face, 0).a)
+                    : 1.0;
+
+                // 筐体: 取り込んだメインの枠をそのままの色で出す（メインと揃える。管の色味は掛けない）。
+                half4 shell = SAMPLE_TEXTURE2D_ARRAY_LOD(_FeedTex, sampler_FeedTex, face, i.seat.w, blur);
+                float body = smoothstep(0.35, 0.65, shell.a);
+                float power = saturate(open * 2.0);
+
+                // ときどき同期を失う面。ずれるのは管の中の映像だけ（筐体は動かない）。
+                float tick = floor(_WallTime * 5.0 + seed * 17.0);
+                float torn = step(0.955, Hash11(tick + seed * 91.0));
+                float rowId = floor(i.uv.y * 26.0);
+                float2 tornUv = face;
+                tornUv.x = saturate(tornUv.x + torn * (Hash21(float2(rowId, tick)) - 0.5) * 0.07);
+                half4 feed = SAMPLE_TEXTURE2D_ARRAY_LOD(_FeedTex, sampler_FeedTex, tornUv, i.seat.w, blur);
+                float tube = smoothstep(0.35, 0.65, feed.a) * tubeMask;
 
                 // 面ごとの明るさの差（参考の、弱った管と明るい管の混ざり方）。
                 float lamp = lerp(0.5, 1.05, seed);
@@ -190,21 +198,16 @@ Shader "FixedCamVr/ScreenMultiply"
                 float halfW = smoothstep(0.0, 0.16, open) * 0.5;
                 float inside = step(abs(c.y), halfH) * step(abs(c.x), halfW) * tube;
 
-                // 暗い筐体。四隅は管の外なのでここが見える。縁だけ自分の光を少し拾う。
-                // 枠は管の光を内側の縁で拾い、外へ向かって暗くなる。外の縁に細い照り返し。
-                float edge = min(min(i.uv.x, 1.0 - i.uv.x), min(i.uv.y, 1.0 - i.uv.y));
-                float rim = 1.0 - smoothstep(0.0, 0.012, edge);
-                float spill = smoothstep(0.0, (1.0 - WALL_PICTURE) * 0.5, edge);
-                float3 housing = i.tint * (0.004 + 0.020 * spill * spill * lamp + 0.012 * rim)
-                               * saturate(open * 2.0) * flutter;
-                float3 col = lerp(housing, picture, inside);
+                // 消えている管のガラスは暗い。筐体は管の外（tubeMask の外）だけ。
+                float3 glass = i.tint * 0.004 * power * flutter;
+                float3 col = lerp(glass, shell.rgb * power, body * (1.0 - tubeMask));
 
-                // 開く途中の光と線。
+                // 開く途中の光と線。点いた直後の明るさも管の中だけ。
                 float beam = 1.0 - smoothstep(0.0, 0.75, open);
-                col += i.tint * beam * 2.0 * inside;
-                col += i.tint * beam * exp(-abs(c.y) * 90.0) * step(abs(c.x), halfW) * 3.0;
-                // 点いた直後。
-                col *= 1.0 + i.seat.y * 0.55;
+                picture += i.tint * beam * 2.0;
+                picture *= 1.0 + i.seat.y * 0.55;
+                col = lerp(col, picture, inside);
+                col += i.tint * beam * exp(-abs(c.y) * 90.0) * step(abs(c.x), halfW) * 3.0 * tube;
 
                 return half4(col * i.fog, 1.0);
             }

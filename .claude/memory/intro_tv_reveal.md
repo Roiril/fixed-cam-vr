@@ -33,7 +33,7 @@ metadata:
 - 導入を通らずに本編へ入る経路も塞いだ: `OnEnable` で相が Intro でないとき、`OnIntroDefChanged` で演出の外にいるとき（方式が変わったら書き直す）にも `ResetIgnite`。⏭・`!enabled`・中止・位置合わせ中・相の変化は元から `ResetIgnite` を通る。2 人目以降は `BeginIntro` → 段 0 の重み（`tvCase` 0）で、導入の中でまた上がる
 - シェーダ: 筐体の色は `_SwitchDim` / `_ScreenPower` を掛けた後に上書きされるので、`_ScreenPower` だけ掛け直した（終幕の電源断で筐体だけ光って残らないように）。`_SwitchDim` は掛けない — カメラ切替の暗転は映像の出来事で、筐体はその間も見え続ける
 - 観測: `analyze-xp-log.py` はテレビ方式で導入後の最後の `tvCase` が 1 未満なら FAIL「本編で筐体が消えている」
-- ⚠ **3-C の増えるスクリーン（`ScreenMultiply`）はメインスクリーンを alpha 0 の背景で取り込み、alpha を管の外形に使う**（`ScreenMultiply.shader` の `tube`）。筐体を出したまま撮ると面の中にメインの枠ごと写るので、取り込みの間だけ `_CrtTvCase` を 0 にして戻す（`ScreenMultiply.HideTvCase`・[[screen_multiply]]）。面は 0319 のとおり管の形の映像 ＋ 面の自前の枠。参考までに、参照素材から見積もったメインの灯った筐体は linear 平均 .026・中央値 .009、増える面の自前の枠は .004〜.037
+- 3-C の増えるスクリーン（`ScreenMultiply`）はメインスクリーンを筐体ごと取り込み、面の枠はメインの筐体そのもの（0324）。管と筐体の境はメインの輪郭マスクで切る（[[screen_multiply]]）
 - HMD と実機は未確認。`menu intro` / `menu screen-wall` の絵も撮り直していない
 
 ## 奥から寄る（0318・2026-11-10）

@@ -172,7 +172,10 @@ namespace FixedCamVr.Diagnostics
             return tmp;
         }
 
-        /// <summary>通常の 2 結末に使う完成済みの 16:9 画像を受け取る。</summary>
+        /// <summary>
+        /// 通常の 2 結末に使う完成済みの画像を受け取る。縦横比は画面と同じ（参照の筐体つきは 1280:1030）で、
+        /// 写真の面（16:9 の器）の中へ高さを合わせて収める（<c>OutroReportMedia</c> の contain）。引き伸ばさない。
+        /// </summary>
         public void SetEndingImages(Texture? released, Texture? trapped)
         {
             if (ReferenceEquals(_releasedImage, released) && ReferenceEquals(_trappedImage, trapped)) return;
