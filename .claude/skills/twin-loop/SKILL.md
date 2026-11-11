@@ -30,6 +30,17 @@ py -3.11 tools/twin-verify.py --no-video --speed 0.45 --dwell 2       # 速く�
 - 背景で走らせて通知を待つ。同時に 2 本は走らない（錠が断る）。別のセッションが Unity を使っていたら `SendMessage` で順を決める
 - 走行と撮影のあいだに C# を書き換えない（判定は古いコード・動画は新しいコードになる。変わっていたら WARN が出る）
 
+**2 本同時に回す**（検証用の木 `Projects/Unity/fcv-twin-tree`。作り方と罠は `tools/twin-tree.py` の頭）:
+
+```bash
+py -3.11 tools/twin-tree.py sync                                   # いまの作業ツリー（未コミットごと）を向こうへ写す
+py -3.11 tools/twin-tree.py run -- --no-video --nomark --tag tree-nomark
+py -3.11 tools/twin-tree.py sync --ref HEAD                        # 直す前の側を向こうに置く（前後を同時に走らせる）
+```
+
+- 走行の組は、動画ありの 1 本をこちら、判定だけの 3 本を向こうへ振る
+- 向こうの木で編集しない（`sync` のたびに捨てる）。`sync` は向こうの走行が終わってから
+
 ## 2. 新規の判定を仕分ける
 
 `twin-verify.py` は判定を**新規**と**既知**に分けて出す。新規の FAIL・WARN は 1 行ずつ、次のどれかへ送る。残さない。

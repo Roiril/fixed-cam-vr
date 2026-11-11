@@ -94,7 +94,8 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 - **`py -3.11 tools/quest-record.py --sec 45 --walk` の 1 回で A・B・C が揃う**（HMD 不要）。
 - **HMD も Quest も配信スマホも無しで体験を通す**: `py -3.11 tools/twin-verify.py`。本番の Main シーンへツインの映像を流し、
   左 X だけで導入から終幕まで走り、解析器と周の印で判定して目線の動画を残す。実機の代わりではない（圧縮・遅延・両眼・ディスプレイ・パススルーは入らない）。
-  判定は新規と既知（`tools/twin/known.json`）に分かれて出る。場面ごとのコマと前の走行との左右比較は `py -3.11 tools/twin-look.py cut|pair`
+  判定は新規と既知（`tools/twin/known.json`）に分かれて出る。場面ごとのコマと前の走行との左右比較は `py -3.11 tools/twin-look.py cut|pair`。
+  2 本同時に回すなら検証用の木（`py -3.11 tools/twin-tree.py sync` → `run -- <twin-verify の引数>`）
 - 実機を使わない門は 2 つ: `.\tools\unity.ps1 test`（C#）と `py -3.11 tools/test-tools.py`（解析器・現場の道具・ログの書き手と読み手の照合）
   依存は `tools/requirements.txt`
 - ⚠⚠ **機を指定するなら `--serial`。`ANDROID_SERIAL` は効かない**（走行は自分で機を選び直す）。

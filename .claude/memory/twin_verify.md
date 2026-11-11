@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1128468e-bd6b-4231-9f7d-17f5f7eac49b
-  modified: 2026-11-11T01:00:09.560Z
+  modified: 2026-11-11T02:48:05.223Z
 ---
 
 2026-11-05 ユーザー依頼「デジタルツインを新しく作り替えたので、それを使って、私がhmdを被らないでできる動作検証の仕組みも更新してほしい。」
@@ -19,6 +19,14 @@ metadata:
 - **コードの指紋** `verdict.json` の `code.run` / `code.shoot`（HEAD・`Assets/Scripts` などの未コミット差分・show.json のハッシュ）。走行と撮影のあいだに変わると WARN。11-11 の relief は走行が古いコード・動画が新しいコードだった
 - **新規と既知** `tools/twin/known.json`。11-06 以降の 15 走行すべてに同じ WARN が 4 行出ていて、新しい FAIL が埋もれていた。FAIL は既知にできない（読み込みで落ちる）
 - **見る道具** `tools/twin-look.py`（`scenes` / `cut` / `pair`）。それまでは 1fps の JPEG を手で切り、場面の時刻表を毎回手で書いていた
+
+**検証用の木 `tools/twin-tree.py`（11-11）**: ユーザーの問い「ワークツリーにしたら 2 本同時に走って検証できる？」（並行して動いていた別セッションで受け取ったもの）。
+`Projects/Unity/fcv-twin-tree` に常設の worktree を置き、Library（6.2GB）を複製した。`sync` は `git stash create` で未コミットの変更ごと写す。
+- 向こうの木で判定だけの走行が PASS した（`20261111_113553_tree-check`。走行 294 秒・初回は取り込みで全体 676 秒）
+- ⚠ **2 本が同じ時間に Play に居た実測はまだ無い。** メモリは Unity 1 本 3.0GB・そのときの空き 8.6GB
+- ⚠ 木の名前にこちらのパスを含めない。`unity.ps1` の `Assert-NotLocked` はコマンドラインに自分のパスを含む Unity を自分の Editor と数える
+- ⚠ Library の複製（robocopy 16 スレッド・5 分）と重なった 11:30 のこちらの走行が `error: onboarding`（導入が終わらない）で止まった。複製は初回だけ
+- git 管理外の入力は `sync` が運ぶ（`Assets/` の下の無視ファイル・`tools/web-compositor/show.json`・`Logs/twin-run/pack`）。持ち込まないと test-ending-log と test_onsite_operations が落ちる
 
 **動画と揃う時計は `replay_xp.log` の `tau=`。** 11-11 から Drive に残す。それより前の走行には無く、`twin-look.py` は走行の時計（`events.json`）で切って帯に「※走行の時計」と書く。
 そのときは場面の終わりのコマに次の場面が映ることがある（`compare.txt` の差は中央 0.2〜0.9 秒・最大 8 秒）。⚠ `replay_xp.log` を読む経路は合成した行のテストだけで、実走行のログではまだ通していない。
