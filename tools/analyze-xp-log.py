@@ -479,6 +479,16 @@ PC_NOT_APPLICABLE = re.compile(
 )
 
 
+# 固定刻みの走行（twin-verify.py --fast。ログの頭の ev=clock mode=fast）で意味を持たない判定。
+# 体験の時計だけが実時間の数倍で進むので、実時間でかかる処理（動画の読み込み）の待ちと fps は測れない。
+# 確定は実時間の走行（verify.py --real）で出す。
+FAST_NOT_APPLICABLE = re.compile(r"動画カットの停滞|受信 fps|表示 fps|最悪フレーム時間")
+
+
+def is_fast_clock(events) -> bool:
+    return any(e.get("ev") == "clock" and e.get("mode") == "fast" for e in events)
+
+
 def decode_verdicts(idx, rx_dfps, dfail):
     """届いているのに展開できていない状態を拾う。dfps の無い古いログは rx_dfps が空で、判定しない。
 
@@ -593,11 +603,15 @@ def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
     verdicts = []     # (level, text) level: OK / WARN / FAIL / NA
 
+    fast = is_fast_clock(events)
+
     def w(line=""):
         rep.append(line)
 
     def verdict(level, text):
         if exp.get("pc") and PC_NOT_APPLICABLE.search(text):
+            level = "NA"
+        if fast and FAST_NOT_APPLICABLE.search(text):
             level = "NA"
         verdicts.append((level, text))
 

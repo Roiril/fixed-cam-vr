@@ -1,20 +1,29 @@
----
-name: git-workflow
-description: fixed-cam-vr 固有の Git 作業フロー補完（並行セッション前提の pathspec コミット・ユーザー所有ファイル）。基本ルールはグローバル `~/.claude/CLAUDE.md`
----
-
 # Git 作業フロー（fixed-cam-vr 固有）
 
-基本（branch / merge / push の判断・コミットメッセージ）はグローバル `~/.claude/CLAUDE.md`。
+コミットメッセージと push の判断はグローバル `~/.claude/CLAUDE.md`。
 ここはこのリポジトリでしか成り立たないことだけ。旧版の全文と実害の経緯は
 `reference/archive/git-workflow-2026-10-22.md`。
+
+## 幹は master の 1 本だけ
+
+- **メインの木は常に master。** 全セッションが master へ直接コミットして push する。PR は作らない
+- **メインの木で枝を切らない・枝へ移らない。** `hooks/guard-owned-files.js` が、master 以外へのコミットと
+  `git switch -c` / `git checkout -b` / 枝への `git switch` を止める。意図して通すときだけ末尾に `# allow-branch`
+- 枝を使うのは `git worktree add` で切った別の木の中だけ（エージェントの `isolation: "worktree"` を含む）。
+  **取り込んだら同じ作業の中で木と枝を消す。** 取り込みは master の上で `git cherry-pick` か `git merge --no-ff`
+- 残り物は `py -3.11 tools/git-tidy.py` が数える（`--apply` で取り込み済みの枝・リモートの枝・済んだ worktree を消す）。
+  `tools/verify.py` の `git` の門とセッション開始時の表示が同じものを見る
+- 取り込まないまま 3 日を超えた枝は、取り込むか、`git tag archive/<名前> <枝>` を付けて push してから消す
+- 常設の検証用の木 `fcv-twin-tree` は detached HEAD。枝を持たせない・向こうでコミットしない
+- push の前に `git fetch`。`origin/master` が先に進んでいたら `git merge --no-edit origin/master` で取り込んでから push する。
+  rebase と reset はしない（並行セッションの未コミット変更が作業ツリーにある）
 
 ## 並行セッションが同じ working copy にいる
 
 index は 1 つで共有される。**コミットは必ず明示 pathspec で、ファイル名まで列挙する。**
 
 ```bash
-git commit -F <scratchpad のメッセージファイル> -- <ファイル> <ファイル> ...
+git commit -F - -- <ファイル> <ファイル> ... < <scratchpad のメッセージファイル>
 ```
 
 - **ディレクトリを渡さない。** 中にある他セッションの未コミット変更が丸ごと入る
@@ -48,4 +57,6 @@ git commit -F <scratchpad のメッセージファイル> -- <ファイル> <フ
 - 領域が独立しているときだけ `isolation: "worktree"` で並列にする。同じファイル・Unity のシーン編集・
   計画書 1 本の執筆は逐次
 - worktree は**起動時点の HEAD** を base にする。起動前に最新化し、「直近で足したファイルがある」と
-  プロンプトに書く。完了したら SHA を時系列で `git cherry-pick` する
+  プロンプトに書く。完了したら SHA を時系列で `git cherry-pick` し、木と枝を消す（`git-tidy.py --apply`）
+- C# のコンパイルとテストを別の木で確かめるなら、常設の検証用の木を使う
+  （`py -3.11 tools/twin-tree.py sync` → `test`。Library を持っているので取り込み待ちが無い）

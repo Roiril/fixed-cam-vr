@@ -24,7 +24,7 @@ def selected(argv: list[str]) -> list[str]:
 
 def twin_cmd(argv: list[str]) -> list[str]:
     a, _ = vf.select(argv)
-    return vf.GATES["twin"]["cmd"](vf.Options(real=a.real, no_video=a.no_video, tag=a.tag))
+    return vf.GATES["twin"]["cmd"](vf.Options(real=a.real, no_video=not a.video, tag=a.tag))
 
 
 def exit_code(argv: list[str]) -> int | None:
@@ -39,10 +39,10 @@ def exit_code(argv: list[str]) -> int | None:
 
 class Selection(unittest.TestCase):
     def test_default_runs_every_gate_in_table_order(self):
-        self.assertEqual(selected([]), ["tools", "harness", "canon", "bake", "unity", "twin"])
+        self.assertEqual(selected([]), ["tools", "harness", "canon", "bake", "git", "unity", "twin"])
 
     def test_quick_drops_the_heavy_two(self):
-        self.assertEqual(selected(["--quick"]), ["tools", "harness", "canon", "bake"])
+        self.assertEqual(selected(["--quick"]), ["tools", "harness", "canon", "bake", "git"])
         _, why = vf.select(["--quick"])
         self.assertEqual(why["unity"], "--quick")
         self.assertEqual(why["twin"], "--quick")
@@ -50,7 +50,7 @@ class Selection(unittest.TestCase):
     def test_only_and_skip(self):
         self.assertEqual(selected(["--only", "tools,bake"]), ["tools", "bake"])
         self.assertEqual(selected(["--only", " twin , canon "]), ["canon", "twin"])
-        self.assertEqual(selected(["--skip", "twin,unity"]), ["tools", "harness", "canon", "bake"])
+        self.assertEqual(selected(["--skip", "twin,unity"]), ["tools", "harness", "canon", "bake", "git"])
         self.assertEqual(selected(["--only", "tools,twin", "--skip", "twin"]), ["tools"])
 
     def test_unknown_gate_name_exits_2(self):
@@ -66,15 +66,18 @@ class Commands(unittest.TestCase):
         cmd = twin_cmd([])
         self.assertEqual(cmd[2], str(vf.ROOT / "tools" / "twin-verify.py"))
         self.assertIn("--fast", cmd)
-        self.assertNotIn("--no-video", cmd)
+        self.assertIn("--no-video", cmd)   # 判定に動画は要らない。撮るのは --video のときだけ
         self.assertEqual(cmd[cmd.index("--tag") + 1], "verify")
 
     def test_real_drops_fast(self):
         self.assertNotIn("--fast", twin_cmd(["--real"]))
 
-    def test_no_video_and_tag_are_passed(self):
-        cmd = twin_cmd(["--no-video", "--tag", "fix-veil"])
-        self.assertIn("--no-video", cmd)
+    def test_video_is_shot_only_when_asked(self):
+        self.assertNotIn("--no-video", twin_cmd(["--video"]))
+        self.assertIn("--no-video", twin_cmd(["--no-video"]))
+
+    def test_tag_is_passed(self):
+        cmd = twin_cmd(["--tag", "fix-veil"])
         self.assertEqual(cmd[cmd.index("--tag") + 1], "fix-veil")
 
     def test_unity_runs_in_the_tree_when_synced(self):
@@ -98,6 +101,7 @@ class Commands(unittest.TestCase):
         self.assertTrue(vf.GATES["harness"]["cmd"](o)[-1].endswith("harness-check.py"))
         self.assertEqual(vf.GATES["canon"]["cmd"](o)[-1], "--check")
         self.assertEqual(vf.GATES["bake"]["cmd"](o)[-1], "bake-check")
+        self.assertTrue(vf.GATES["git"]["cmd"](o)[-1].endswith("git-tidy.py"))   # 見るだけ（--apply を付けない）
         self.assertEqual([n for n, g in vf.GATES.items() if g["heavy"]], ["unity", "twin"])
 
 
@@ -166,6 +170,21 @@ class Points(unittest.TestCase):
         self.assertEqual(vf.judge("bake", 1, text)[1],
                          "焼き直し待ち 2 件: .\\tools\\unity.ps1 menu scene / py -3.11 tools/make-osd-font.py")
         self.assertEqual(vf.judge("bake", 0, "焼き直し待ちは無い\n"), ("PASS", "焼き直し待ちは無い"))
+
+    def test_git_counts_and_first_problem(self):
+        text = ("git-tidy: C:/r\n問題 2 件\n"
+                "  問題 [main-not-master] feature/x: メインの木（C:/r）が master に居ない\n"
+                "       直し方: `git -C C:/r switch master`\n"
+                "  問題 [merged-branch] done: master へ取り込み済み\n"
+                "       直し方: `git branch -d done`（--apply で打つ）\n"
+                "git-tidy: 問題 2 件\n")
+        result, point = vf.judge("git", 1, text)
+        self.assertEqual(result, "FAIL")
+        self.assertEqual(point, "問題 2 件・[main-not-master] feature/x: メインの木（C:/r）が master に居ない")
+        self.assertEqual(vf.judge("git", 0, "git-tidy: C:/r\n問題 0 件\ngit-tidy: 問題 0 件\n"), ("PASS", "問題なし"))
+
+    def test_git_without_the_summary_fails(self):
+        self.assertEqual(vf.judge("git", 0, "Traceback (most recent call last):\n")[0], "FAIL")
 
     def write_verdict(self, d: Path, **over) -> Path:
         verdict = {"stamp": "20261111_120000_verify", "pass": True, "new": {"FAIL": 0, "WARN": 2},

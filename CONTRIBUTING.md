@@ -8,11 +8,12 @@ Issue / PR / コミットメッセージ / コードコメントはすべて **�
 
 ## ブランチ運用
 
-- メインブランチ: `master`
-- 作業ブランチ: `feature/<slug>`（例: `feature/passthrough-dim`, `feature/cctv-shader`）
-- バグ修正: `fix/<slug>`
-- ドキュメント整備: `docs/<slug>`
-- master への直接コミットは避け、Pull Request 経由でマージする
+**幹は `master` の 1 本だけ。** 作業はメインの木で master へ直接コミットして push する。Pull Request は使わない。
+
+- メインの木（このフォルダ）で枝を切らない・枝へ移らない（hook が止める）
+- 枝を使うのは `git worktree add` で切った別の木の中だけ。取り込んだら同じ作業の中で木と枝を消す
+- 残り物の点検と片づけは `py -3.11 tools/git-tidy.py`（`--apply` で消す）
+- 詳細は [.claude/rules/git-workflow.md](.claude/rules/git-workflow.md)
 
 ## コミットメッセージ規約
 
@@ -49,22 +50,12 @@ refactor：Tracking 名前空間を Streaming から分離
 - README のモジュール表を更新
 ```
 
-## Pull Request の流れ
+## 変更の流れ
 
-1. `feature/<slug>` ブランチで作業
-2. **コンパイルと EditMode テストを 1 本で確認**（Editor も MCP も要らない）
-
-   ```powershell
-   .\tools\unity.ps1 test
-   ```
-
-   テストは走る前に必ずコンパイルするので、`error CS` はここで全文が出る。
-   結果は `Logs/test-EditMode.xml`（テスト本体は [Assets/Tests/](Assets/Tests/)）
-3. 見た目が変わる修正なら、実機に持っていく前に安い門を通す（`.\tools\unity.ps1 menu` で一覧）
-4. 実機 Quest 3 動作確認は **PR 上でユーザーに依頼**（Claude Code 側からは自動化不可）
-5. PR テンプレ：
-   - 目的 / 変更点 / コンパイル結果 / 実機検証ステータス（未検証なら明示）
-6. レビュー後 master にマージ
+1. 直す。途中の確認は `py -3.11 tools/verify.py --quick`（数秒。道具のテスト・ハーネス・焼き直し待ち・枝の残り物）
+2. 区切りで `py -3.11 tools/verify.py`（1〜2 分。上に加えて C# の全テストと、HMD なしの通し走行）
+3. 通ったら、明示したファイルだけを master へコミットして push する
+4. 見た目・音・実機でしか出ないもの（シェーダの剥がれ・パススルー・IL2CPP）は `py -3.11 tools/quest-record.py --sec 45 --walk`
 
 ## コードスタイル
 

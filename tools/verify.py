@@ -3,7 +3,7 @@
     py -3.11 tools/verify.py                  # 全部の門（重い 2 つは検証用の木とメインの木で同時に走る）
     py -3.11 tools/verify.py --quick          # 軽い門だけ（unity と twin を飛ばす。数秒）
     py -3.11 tools/verify.py --real           # ツインを実時間で回す（--fast を外す。音と性能も判定に入る）
-    py -3.11 tools/verify.py --no-video       # ツインで動画を撮らない
+    py -3.11 tools/verify.py --video          # ツインで目線の動画も撮る（既定は撮らない。判定に動画は要らない）
     py -3.11 tools/verify.py --only tools,bake
     py -3.11 tools/verify.py --skip twin
     py -3.11 tools/verify.py --tag fix-veil   # ツインの走行のタグ（既定は verify）
@@ -13,6 +13,7 @@
   harness  ハーネスの機械の門（harness-check.py。ERROR があれば FAIL）
   canon    canon/NOW.md のずれ（canon-now.py --check）
   bake     焼き直し待ち（unity.ps1 bake-check。Unity を起動しない）
+  git      幹 1 本の運用（git-tidy.py。メインの木が master か・取り込み済みの枝や worktree が残っていないか）
   unity    C# の EditMode テスト。検証用の木で走る（twin-tree.py test）
   twin     HMD なしの通し（twin-verify.py。既定は --fast）
 
@@ -90,7 +91,9 @@ GATES: dict[str, dict] = {
                 "cmd": lambda o: PY + [str(TOOLS / "canon-now.py"), "--check"]},
     "bake":    {"heavy": False, "desc": "焼き直し待ち（Unity を起動しない）",
                 "cmd": lambda o: ps_file(ROOT) + ["bake-check"]},
-    "unity":   {"heavy": True, "desc": "C# の EditMode テスト（検証用の木）",
+    "git":     {"heavy": False, "desc": "幹 1 本の運用（枝・worktree・stash）",
+                "cmd": lambda o: PY + [str(TOOLS / "git-tidy.py")]},
+    "unity":  {"heavy": True, "desc": "C# の EditMode テスト（検証用の木）",
                 "cmd": unity_cmd},
     "twin":    {"heavy": True, "desc": "HMD なしの通し（twin-verify.py）",
                 "cmd": lambda o: PY + [str(TOOLS / "twin-verify.py"), *twin_args(o)]},
@@ -103,7 +106,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quick", action="store_true", help="軽い門だけ（unity と twin を飛ばす）")
     ap.add_argument("--real", action="store_true", help="ツインを実時間で回す（twin-verify.py の --fast を外す）")
-    ap.add_argument("--no-video", action="store_true", help="ツインで動画を撮らない")
+    ap.add_argument("--video", action="store_true", help="ツインで目線の動画も撮る（見るとき。約 80 秒延びる）")
+    ap.add_argument("--no-video", action="store_true", help="既定なので何もしない（前の書き方を通すため）")
     ap.add_argument("--only", default="", help="回す門（カンマ区切り）")
     ap.add_argument("--skip", default="", help="飛ばす門（カンマ区切り）")
     ap.add_argument("--tag", default=DEFAULT_TAG, help=f"ツインの走行のタグ（既定は {DEFAULT_TAG}）")
@@ -277,6 +281,17 @@ def point_bake(text: str, rc: int) -> tuple[str, bool]:
     return f"焼き直し待ち {len(fixes)} 件: " + " / ".join(fixes), False
 
 
+def point_git(text: str, rc: int) -> tuple[str, bool]:
+    m = list(re.finditer(r"^git-tidy: 問題 (\d+) 件", text, re.M))
+    if not m:
+        return (text.strip().splitlines() or ["出力が無い"])[-1][:100], True
+    count = int(m[-1].group(1))
+    if count == 0:
+        return "問題なし", False
+    first = next((l.strip()[3:] for l in text.splitlines() if l.strip().startswith("問題 [")), "")
+    return f"問題 {count} 件・{first[:100]}", True
+
+
 def point_unity(text: str, rc: int) -> tuple[str, bool]:
     m = list(re.finditer(r"全 (\d+) / 通過 (\d+) / 失敗 (\d+)", text))
     if m:
@@ -325,7 +340,7 @@ def point_twin(text: str, rc: int) -> tuple[str, bool]:
 
 
 POINTS = {"tools": point_tools, "harness": point_counts("harness-check"), "canon": point_counts("canon-now"),
-          "bake": point_bake, "unity": point_unity, "twin": point_twin}
+          "bake": point_bake, "git": point_git, "unity": point_unity, "twin": point_twin}
 
 
 def judge(name: str, rc: int, text: str) -> tuple[str, str]:
@@ -390,7 +405,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {snapshot['line']}", flush=True)
     else:
         snapshot = main_snapshot()
-    opts = Options(real=a.real, no_video=a.no_video, tag=a.tag, tree=snapshot["synced"])
+    opts = Options(real=a.real, no_video=not a.video, tag=a.tag, tree=snapshot["synced"])
 
     results = {n: Result(n, point=f"回していない（{w}）") for n, w in why.items()}
     for n in selected:
@@ -433,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
     code = overall(ordered)
     summary = {
         "stamp": stamp, "pass": code == 0, "wallSec": round(wall, 1),
-        "args": {"quick": a.quick, "real": a.real, "noVideo": a.no_video, "only": a.only, "skip": a.skip, "tag": a.tag},
+        "args": {"quick": a.quick, "real": a.real, "noVideo": not a.video, "only": a.only, "skip": a.skip, "tag": a.tag},
         "snapshot": snapshot,
         "gates": [{"name": r.name, "result": r.result, "rc": r.rc, "sec": None if r.sec is None else round(r.sec, 1),
                    "point": r.point, "cmd": r.cmd, "log": r.log} for r in ordered],

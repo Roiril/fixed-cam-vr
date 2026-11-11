@@ -25,6 +25,7 @@ EMITTERS = [
     "Assets/Scripts/Diagnostics/CommsTakeoverAudio.cs",
     "Assets/Scripts/Diagnostics/CommsTakeoverError.cs",
     "Assets/Scripts/Streaming/Replay/ExperienceRecorder.cs",
+    "Assets/Scripts/OvrBridge/XpTwinDriver.cs",   # ev=clock（固定刻みかどうか。解析器が対象外を決める）
 ]
 ANALYZER = ROOT / "tools" / "analyze-xp-log.py"
 
