@@ -573,8 +573,7 @@
    "from": -0.8,
    "to": 4.5,
    "hero": 1.9,
-   "crop": "full",
-   "caveat": "この走行では人形の写真が出ていない。撮影のログが [EndingFrameCapture] 固定 shots=0 trappedFrames=0 で、時間切れの人形 End で写真が 1 枚も撮れていない。原因は未確認。"
+   "crop": "full"
   }
  ]
 }

@@ -166,8 +166,8 @@ namespace FixedCamVr.Streaming
                 bool liveSource = step != null
                                   && TakeSchema.NormalizeSource(step.source, out _) == TakeSchema.SourceLive;
                 bool primaryActive = overlay != null && overlay.Strength > 0.001f;
-                bool primaryMatches = step != null && !string.IsNullOrEmpty(step.cueId)
-                                      && primaryActive && overlay!.AppliedCueId == step.cueId;
+                bool primaryMatches = step != null && primaryActive
+                                      && IsStepCueKey(overlay!.AppliedCueId, TakeId(_logic.ActiveTakeIndex), _logic.ActiveStepIndex);
                 bool secondaryActive = _feelFx != null && _feelFx.Overlay2Strength > 0.001f;
                 bool secondaryMatches = step != null && !string.IsNullOrEmpty(step.overlay2CueId)
                                         && secondaryActive;
@@ -1929,6 +1929,35 @@ namespace FixedCamVr.Streaming
             return steps[stepIndex];
         }
 
+        /// <summary>
+        /// カットのオーバーレイが画面へ届いたかを照合するキー（<see cref="OverlayCueData.id"/>）。
+        /// 素材名（<c>step.cueId</c>）ではなく take と段の番号で作る。終幕写真の窓
+        /// （<see cref="EndingShotWindow"/>）はこのキーで比べる。素材名と比べると人形 End の写真が 1 枚も撮れない。
+        /// </summary>
+        public static string StepCueKey(string takeId, int stepIndex) => $"{takeId}#{stepIndex}";
+
+        /// <summary>
+        /// <paramref name="applied"/> が <see cref="StepCueKey"/>(<paramref name="takeId"/>, <paramref name="stepIndex"/>) と等しいか。
+        /// 毎フレーム呼ばれるので文字列を組まずに比べる。
+        /// </summary>
+        public static bool IsStepCueKey(string? applied, string takeId, int stepIndex)
+        {
+            if (applied == null || stepIndex < 0 || string.IsNullOrEmpty(takeId)) return false;
+            int n = takeId.Length;
+            if (applied.Length < n + 2 || applied[n] != '#'
+                || string.CompareOrdinal(applied, 0, takeId, 0, n) != 0) return false;
+            int value = 0;
+            for (int i = n + 1; i < applied.Length; i++)
+            {
+                char c = applied[i];
+                if (c < '0' || c > '9') return false;
+                if (i > n + 1 && value == 0) return false; // 先頭の 0 は StepCueKey が作らない
+                value = value * 10 + (c - '0');
+                if (value > stepIndex) return false;
+            }
+            return value == stepIndex;
+        }
+
         private string TakeId(int takeIndex)
             => takeIndex >= 0 && takeIndex < _takes.Length && !string.IsNullOrEmpty(_takes[takeIndex].id)
                 ? _takes[takeIndex].id
@@ -1956,7 +1985,7 @@ namespace FixedCamVr.Streaming
                 if (rec == null) return null;
                 return new OverlayCueData
                 {
-                    id = $"{TakeId(takeIndex)}#{stepIndex}",
+                    id = StepCueKey(TakeId(takeIndex), stepIndex),
                     displayName = _takes[takeIndex].name ?? "",
                     frames = rec,
                     framesRate = TakeSchema.ResolveRecRate(step.recRate),
@@ -1982,7 +2011,7 @@ namespace FixedCamVr.Streaming
 
             return new OverlayCueData
             {
-                id = $"{TakeId(takeIndex)}#{stepIndex}",
+                id = StepCueKey(TakeId(takeIndex), stepIndex),
                 displayName = _takes[takeIndex].name ?? "",
                 clip = hasAsset ? null : cue?.clip,
                 stillImage = hasAsset ? null : cue?.stillImage,

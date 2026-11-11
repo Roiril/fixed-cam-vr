@@ -29,6 +29,25 @@ namespace FixedCamVr.Streaming.Tests
                 Is.EqualTo(EndingShotWindow.None), "体験者位置の CG が描けていなければ撮らない");
         }
 
+        [Test]
+        public void TheAppliedOverlay_IsMatchedByTheStepKey_NotByTheAssetName()
+        {
+            // 2026-11-11: 素材名（gen_dolls_A_left）と比べていたため primary が常に偽で、
+            // 人形 End の写真が 1 枚も撮れなかった。画面に届いた id は take と段の番号で作られる。
+            string applied = TakeRunner.StepCueKey("L4C0#0", 1);
+            Assert.That(applied, Is.EqualTo("L4C0#0#1"));
+            Assert.That(TakeRunner.IsStepCueKey(applied, "L4C0#0", 1), Is.True);
+            Assert.That(TakeRunner.IsStepCueKey("gen_dolls_A_left", "L4C0#0", 1), Is.False);
+            Assert.That(TakeRunner.IsStepCueKey(applied, "L4C0#0", 0), Is.False, "前の段の素材が残っている間は撮らない");
+            Assert.That(TakeRunner.IsStepCueKey(TakeRunner.StepCueKey("L4C0#0", 12), "L4C0#0", 1), Is.False);
+            Assert.That(TakeRunner.IsStepCueKey(TakeRunner.StepCueKey("L4C0#0", 12), "L4C0#0", 12), Is.True);
+            Assert.That(TakeRunner.IsStepCueKey(TakeRunner.StepCueKey("L3C0#0", 1), "L4C0#0", 1), Is.False);
+            Assert.That(TakeRunner.IsStepCueKey(TakeRunner.StepCueKey("#3", 0), "#3", 0), Is.True, "id の無い take");
+            Assert.That(TakeRunner.IsStepCueKey("L4C0#0#01", "L4C0#0", 1), Is.False);
+            Assert.That(TakeRunner.IsStepCueKey("L4C0#0#", "L4C0#0", 0), Is.False);
+            Assert.That(TakeRunner.IsStepCueKey(null, "L4C0#0", 1), Is.False);
+        }
+
         [TestCase(true, false)]
         [TestCase(false, true)]
         public void Trapped_DoesNotOpenDuringATransition(bool swap, bool transition)

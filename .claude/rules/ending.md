@@ -33,7 +33,6 @@ paths:
 - 終幕の合図は、演出が走っているのを見た後、止まった縁で 1 回だけ出る。介入があれば武装を外す。落ちるのは `BeginRun` だけ — `EndingCueLogic` / `ResetRun_IsTheOnlyWayBack` 〔出典: show-design:930-940〕
 - 解除の時刻: 劣化は `ScreenDecayLogic.ReleaseSec`（0.5 秒）で戻り、入れ替わりは 2.6 秒で戻る。続いて④「異変を取り除きました。お疲れ様です。」が出る — `ScreenDecayLogic.ReleaseSec` / `CommsNotice.MarkCleared` 〔出典: show-design:946-958〕
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
-- 台車（Romi）は使わない。Quest は台車へ何も送らない（`RomiCartLink` は 2026-10-30 に削除）〔出典: LEDGER 0291〕
 - 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空き、スイの面が閉じた縁に（面は最大 5 秒待つ）、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる最短 1.15（写真を待つ）→ 後ろを向く 0.75 → 下がって消える 6.0 秒（最後 4.5 秒で消える）。消え切ってから電源断 — `EndingFarewellLogic.NoticeWaitMaxSec` / `EndingFarewellDoll` 〔出典: LEDGER 0291・0293。尺は実装判断〕
 - 立ち位置は体験者がいま立っている所から人形の点だけ解く（`visitorFoot`）。頭と胸が枠の外なら L 字の内側の仮の点で人形だけ先に立てる。画の左が人形、右が体験者。カメラの intrinsics は変えない。解けなければ出さない。条件は memory/ending_farewell_doll.md — `TrySolveAtWall` 〔出典: LEDGER 0293。余白・許容値は実装判断〕
 - 写真は左右の並びと枠と向きで決まる（`PhotoBlock`）。見つめ始めて 4 秒までは全身が枠に入って互いに 35° 以内。4 秒から足が切れてもよい（頭と胸は枠の中）。8 秒から胸が枠に入れば撮り、人の向きを問わない。人形の向きは最後まで見る。15 秒で撮れなければ写真なしで退場し、結末は Released のまま。人形を出せなくても 15 秒で Done。実際の位置は壁で判定しない — `PhotoStrictSec` / `PhotoAnyYawSec` / `PhotoGiveUpSec` / `Photo_LoosensWithTime_ThenTheDollLeavesWithoutIt` 〔実装判断〕
@@ -59,6 +58,7 @@ paths:
 - `CurseReleasedCount` はラン開始でも 0 に戻らない。増えた縁で見る 〔`OvrControllerBridge`〕
 - 未修正: 4-A で左コントローラの接続が切れると帰還不能になる 〔scenario_audit_20261022〕
 - 写真待ちを時刻表の `SampleAt` だけで再現しない。`Tick` と撮影成功通知を通す。写真待ちの緩みは `Sample.photoLevel` で渡す（`Tick` だけが立てる）〔コード〕
+- 写真の窓は素材を段のキーで照合する（`IsStepCueKey`）。素材名では人形 End が撮れない 〔memory/ending_roll.md〕
 - 別れの人形は `ShowCgLayer` の 1 体の器を使う。入れ替わりの人形が消える前（`SwapActive`）に出そうとしない 〔コード〕
 - 観測 `ev=farewell` / `ev=sum farewell=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す 〔コード〕
 
