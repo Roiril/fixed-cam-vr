@@ -231,7 +231,7 @@ namespace FixedCamVr.Streaming
         public bool dollCatchUpShowing;
 
         /// <summary>
-        /// 追いつきの最後の人形視点が成立した累計（自然完了か、声の後に前へ抜けた yield）。供給は
+        /// 追いつきの最後の人形視点が成立した累計（自然完了か、人形視点が出た後に前へ抜けた yield）。供給は
         /// <c>TimelineDirector.DollCatchUpCompletedCount</c>。増加したフレームで乗っ取りを開始する。
         /// </summary>
         public int dollCatchUpCompletedCount;

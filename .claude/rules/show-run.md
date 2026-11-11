@@ -63,7 +63,7 @@ paths:
 - 開始規則は enter+t・exit・line の 3 つ。line は担当カメラが一致したときだけ due になる。横断の猶予は 0.6s。使えない線は `lineIndex=-1` — `TakeRunnerLogic.IsDue` / `LineCrossLogic.CrossLatchSec` / `TakeWiringTests.LineTake_WithoutLineId_*` 〔出典: streaming:1583-1607〕
 - 画面が塞がっているだけなら区間内で Ready のまま待つ。捨てたら報告する — `TakeRunnerLogic.TakeDropped` 〔出典: streaming:611-620〕
 - `wait:"chain"` は塞がれていた演出だけ持ち越す。上限は 2 本と 60s — `TakeRunnerLogic.MaxCarrySlots` / `CarryMaxWaitSec` 〔出典: streaming:674-690〕
-- `yield` は区間を移ると畳み、離脱時の演出も出さない。前進で畳んだかは `yieldedForward`。`hold` は区間をまたぐ — `TakeRunnerLogic.OnZoneCommitted` 〔出典: streaming:1784-1788〕
+- `yield` は区間を移ると畳み、離脱の演出も出さない。前進は `yieldedForward` で追いつきに数える。`hold` は区間を跨ぐ — `TakeRunnerLogic.OnZoneCommitted` 〔streaming:1784-1788〕
 - watchdog は演出の頭から数え、既定は 45s。戻り先は時計の確定ゾーン — `TakeSchema.DefaultMaxDurationSec` / `CameraSwitchDirector.TryGetCurrentZoneCamera` 〔出典: streaming:622-624〕
 - 尺の待ち相手は負値で表す。clip 終端・次の区間・線・報告の 4 つ。線はカット開始後の横断だけを数え、線が無ければ既定尺。報告は締め専用で、開始 4s は受けない — `TakeRunnerLogic.WaitClipEnd`〜`WaitMark` / `EndStepIfLineCrossed` / `MarkGraceSec` 〔出典: streaming:1775-1777, 2226-2249, 2495-2514〕
 - `once` は決着回数で数える。未決着は「yield で切れた ∧ 未報告」だけで、その区間へ戻れば頭から再演する（2 回まで）。走行中の自分は武装しない — `TakeRunnerLogic.Outcome` / `ArmEnterTakes` / `TakeReplayOnBacktrackTests` 〔出典: streaming:2586-2610〕

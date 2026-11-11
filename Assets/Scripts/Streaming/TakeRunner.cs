@@ -294,11 +294,29 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// <b>人形の追いつき（<c>steps[].dollCall</c>）が成立した回数</b>。
-        /// 次カットへの自然遷移・演出の自然完了・呼びかけのカットが画面に出た後に前へ抜けて
-        /// yield で畳まれた場合を数える。引き返し・watchdog・報告・中止・未表示カットは数えない。
+        /// 呼びかけのカットから次カットへの自然遷移・演出の自然完了に加え、呼びかけを持つ演出の
+        /// カットが 1 つでも画面に出た後に前へ抜けて yield で畳まれた場合を数える
+        /// （呼びかけのカットがまだ始まっていなくてもよい・<c>canon/LEDGER.md</c> 0323 の委任）。
+        /// 前へ抜けた側は、同じ演出で既に数えていれば数え直さない。
+        /// 引き返し・watchdog・報告・中止・演出が始まる前の前進は数えない。
         /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
         /// </summary>
         public int DollCatchUpCompletedCount { get; private set; }
+
+        /// <summary>
+        /// <b>人形の呼びかけの声を撃った回数</b>（観測・テスト用）。呼びかけのカットの頭と、
+        /// そのカットより前で前へ抜けて追いつきが成立した縁（声がまだなら 1 回）で数える。
+        /// 音源が無くて鳴らなかった回も数える（撃ったかどうかの記録。鳴ったかは音の観測が持つ）。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int DollCallVoiceCount { get; private set; }
+
+        // 走行中の演出 1 本ぶんの追いつきの状態。演出の頭・終わり・中止で落とす。
+        // ⚠ 区間をまたいで持ち越さない（新しい持ち越し状態を作らない）。
+        private int _takeStepReached = -1;     // 受け取った最後のカット（飛ばしたカットも含む）
+        private bool _takeAnyStepShown;        // 1 カットでも画面に出たか
+        private bool _takeDollCallVoiced;      // この演出で呼びかけの声を撃ったか
+        private bool _takeCatchUpCounted;      // この演出で追いつきを数えたか
 
         /// <summary>
         /// <b>走行中の演出を外部要因で中止した回数</b>。
@@ -830,7 +848,9 @@ namespace FixedCamVr.Streaming
             // 前の体験者の位置・横断状態を持ち越さない（ラン開始直後に幽霊の横断を作らない）。
             _lineCross.Reset();
             _hasLastNow = false;
+            ClearTakeCatchUpState();
             DollCatchUpCompletedCount = 0;
+            DollCallVoiceCount = 0;
             PresentationAbortCount = 0;
             _endingReleased = false;
             _farewell?.ResetRun();
@@ -1018,6 +1038,9 @@ namespace FixedCamVr.Streaming
             // playable 判定を通って画面を取った dollCall だけが _activeStepDollCall を立てるため、
             // 素材不足などで飛ばされたカットはここへ混ざらない。
             if (!d.takeStarted) CompleteDollCatchUpIfActive();
+            // 演出の頭で、この演出 1 本ぶんの追いつきの状態を作り直す（前の演出の値を引き継がない）。
+            if (d.takeStarted) ClearTakeCatchUpState();
+            _takeStepReached = d.stepIndex;
 
             if (director == null)
             {
@@ -1101,6 +1124,8 @@ namespace FixedCamVr.Streaming
             // 呼びかけのカットが画面を取っているか（心音の始まりを決める・0175）。
             _activeStepDollCall = step.dollCall;
             _activeStepDollReplacement = false;
+            // この演出のカットが 1 つでも画面に出たか（前へ抜けた追いつきの条件・0323）。
+            _takeAnyStepShown = true;
 
             // このカットから劇伴を差し替える（`canon/LEDGER.md` 0119）。
             // ⚠ **演出の bgm（占有）とは別の口。** こちらはレーンそのものを書き換えるので、
@@ -1290,11 +1315,7 @@ namespace FixedCamVr.Streaming
             //   次のカットへ被る（ユーザー指示・0109「映像はこの音を無視してそのまま先に進んで ok」）。
             // ⚠ 引き返して同じ演出が頭から再演されたら**もう 1 度鳴る**。画も再演されるので、
             //   ここだけ黙ると「追いついたのに声がしない」になる（`memory/backtrack_and_replay.md`）。
-            if (step.dollCall && _sound != null && !_sound.PlaySpot(SoundCue.DollCall))
-                Debug.LogWarning("[TakeRunner] 人形の呼びかけの音源がありません"
-                                 + "（Resources/Sound/sfx_doll_call）。カットは無言で進みます。"
-                                 + "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
-                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+            if (step.dollCall) PlayDollCallVoice();
 
             // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
             if (step.glitch > 0.001f)
@@ -1592,11 +1613,15 @@ namespace FixedCamVr.Streaming
         private void EndTake(TakeRunnerLogic.Decision d)
         {
             _lastEndReason = d.reason;
-            // 呼びかけのカットが画面に出た後（＝声が鳴った後）に体験者が前へ抜けて yield で畳まれたら、
-            // 人形は追いついたとみなす。乗っ取りは次の区間に入ったこの縁で始まる。
+            // 人形の追いつきの成立（乗っ取りは次の区間に入ったこの縁で始まる）。
+            //   自然完了 … 呼びかけのカットが画面を取ったまま終わった場合だけ数える（従来どおり）
+            //   前へ抜けた yield … 呼びかけを持つ演出のカットが 1 つでも画面に出ていれば、
+            //     呼びかけのカットがまだ始まっていなくても数える（`canon/LEDGER.md` 0323 の委任）
             // 引き返し・watchdog・報告で畳んだ場合は数えない（中止とリセットは CleanupActive が落とす）。
-            if (d.reason == TakeRunnerLogic.EndReason.Completed || d.yieldedForward) CompleteDollCatchUpIfActive();
+            if (d.reason == TakeRunnerLogic.EndReason.Completed) CompleteDollCatchUpIfActive();
+            else if (d.yieldedForward) CompleteDollCatchUpOnForwardYield(d.takeIndex);
             else _activeStepDollCall = false;
+            ClearTakeCatchUpState();
             // 音は director の有無に関係なく必ず返す（画面が無くても占有だけ残さない）。
             EndTakeBgm();
             // ⚠ カット単位の資源（オーバーレイ・第 2 層・左右分割・録画・CG）は **画面の有無と無関係**。
@@ -1663,6 +1688,7 @@ namespace FixedCamVr.Streaming
             _activeStepCueId = "";   // 音が「まだ異世界が映っている」と読まない（0131）
             _activeStepDollCall = false;   // 同・呼びかけのカットが降りた縁を作る（0175）
             _activeStepDollReplacement = false;
+            ClearTakeCatchUpState();       // 中止は追いつきに数えない
             EndTakeBgm();
             ReleaseStepState();
             if (director != null && director.InsertActive)
@@ -1683,12 +1709,90 @@ namespace FixedCamVr.Streaming
             _logic.AbortActive();
         }
 
+        // 呼びかけのカットが画面を取ったまま終わった（次カットへの自然遷移・演出の自然完了）。
+        // 呼びかけのカットごとに数える（従来どおり）。前へ抜けた yield 側は、ここで数えた演出を数え直さない。
         private void CompleteDollCatchUpIfActive()
         {
             if (!_activeStepDollCall) return;
             _activeStepDollCall = false;
+            CountDollCatchUp();
+        }
+
+        /// <summary>
+        /// 呼びかけを持つ演出が、体験者の前進で yield に畳まれた縁（<c>canon/LEDGER.md</c> 0323 の委任）。
+        ///
+        /// 演出のカットが 1 つでも画面に出ていれば、呼びかけのカットがまだ始まっていなくても
+        /// （2-C の pov_1〜3 の途中でも）追いつきの成立として数える。
+        ///   - 声がまだならここで 1 回だけ撃つ（呼びかけのカットの頭と同じ音・同じ経路）
+        ///   - 呼びかけのカットの次のカットに著作された bgm があれば、同じ経路（<see cref="BeginStepBgm"/>）で掛ける。
+        ///     無ければ何もしない（曲名をここに書かない）
+        /// 演出がまだ始まっていない（線を越えていない・待たされていた）前進はここへ来ない —
+        /// 走っていない演出は yield で畳まれないため。
+        /// </summary>
+        private void CompleteDollCatchUpOnForwardYield(int takeIndex)
+        {
+            _activeStepDollCall = false;
+            ShowStepDef[]? steps = takeIndex >= 0 && takeIndex < _takes.Length ? _takes[takeIndex].steps : null;
+            int dollIdx = FindDollCallStepFrom(steps, _takeStepReached);
+            if (!ShouldCountForwardYieldCatchUp(FindDollCallStepFrom(steps, 0) >= 0,
+                                                _takeAnyStepShown, _takeCatchUpCounted))
+                return;
+            if (!_takeDollCallVoiced) PlayDollCallVoice();
+            // 呼びかけのカットを抜けた先の曲（自然に進んだときに掛かるはずだった step の bgm）。
+            // ⚠ 演出の bgm の占有を返す（EndTakeBgm）より前に掛ける ＝ 自然に進んだときと同じ順。
+            //   占有中ならレーンの戻り先だけが変わる（`BgmDirector.ApplySegment` の契約）。
+            if (steps != null && dollIdx >= 0 && dollIdx + 1 < steps.Length && steps[dollIdx + 1] != null)
+                BeginStepBgm(steps[dollIdx + 1]);
+            Debug.Log($"[TakeRunner] 人形視点の途中で前へ抜けた → 追いつきの成立とみなす" +
+                      $"（take={TakeId(takeIndex)} cut={_takeStepReached + 1} dollCallCut={dollIdx + 1}）");
+            CountDollCatchUp();
+        }
+
+        /// <summary>
+        /// 前へ抜けた yield を追いつきの成立に数えるか（純関数・テスト用）。
+        /// 呼びかけを持つ演出で、カットが 1 つでも画面に出ていて、この演出でまだ数えていないこと。
+        /// </summary>
+        public static bool ShouldCountForwardYieldCatchUp(bool takeHasDollCall, bool anyStepShown,
+                                                            bool alreadyCounted)
+            => takeHasDollCall && anyStepShown && !alreadyCounted;
+
+        // from 以降で最初に呼びかけを持つカットの index。無ければ -1。
+        private static int FindDollCallStepFrom(ShowStepDef[]? steps, int from)
+        {
+            if (steps == null) return -1;
+            for (int i = Math.Max(0, from); i < steps.Length; i++)
+                if (steps[i] != null && steps[i].dollCall) return i;
+            return -1;
+        }
+
+        private void CountDollCatchUp()
+        {
+            _takeCatchUpCounted = true;
             DollCatchUpCompletedCount++;
-            _feelFx?.BeginTakeoverStatic();
+            // ⚠ 主画面の砂嵐はランで最初の成立（0→1）でだけ始める。乗っ取りが実際に届いたか
+            //   （`CommsCueLogic.TakeoverDelivered`）はこのクラスから見えず、引き返して再演した
+            //   2 回目の成立で砂嵐だけが再び始まると、解く側（面の消去）が二度と来ない。
+            if (DollCatchUpCompletedCount == 1) _feelFx?.BeginTakeoverStatic();
+        }
+
+        // 人形の呼びかけの声（`canon/LEDGER.md` 0109）。カットの頭と、前へ抜けた追いつきの縁から撃つ。
+        private void PlayDollCallVoice()
+        {
+            _takeDollCallVoiced = true;
+            DollCallVoiceCount++;
+            if (_sound != null && !_sound.PlaySpot(SoundCue.DollCall))
+                Debug.LogWarning("[TakeRunner] 人形の呼びかけの音源がありません"
+                                 + "（Resources/Sound/sfx_doll_call）。カットは無言で進みます。"
+                                 + "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
+                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+        }
+
+        private void ClearTakeCatchUpState()
+        {
+            _takeStepReached = -1;
+            _takeAnyStepShown = false;
+            _takeDollCallVoiced = false;
+            _takeCatchUpCounted = false;
         }
 
         // カット単位の状態（オーバーレイ・クリップ待ち・開いている録画）を落とす。

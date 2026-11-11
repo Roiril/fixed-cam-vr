@@ -178,7 +178,7 @@ namespace FixedCamVr.Streaming
         public bool DollCallShowing => takeRunner != null && takeRunner.DollCallShowing;
 
         /// <summary>
-        /// 追いつきが成立した回数（最後のカットの自然完了か、声の後に前へ抜けた yield）。ラン開始で 0 に戻る。
+        /// 追いつきが成立した回数（最後のカットの自然完了か、人形視点が出た後に前へ抜けた yield）。ラン開始で 0 に戻る。
         /// </summary>
         public int DollCatchUpCompletedCount => takeRunner != null ? takeRunner.DollCatchUpCompletedCount : 0;
 
