@@ -293,8 +293,9 @@ namespace FixedCamVr.Streaming
         private bool _activeStepDollReplacement;
 
         /// <summary>
-        /// <b>人形の追いつき（<c>steps[].dollCall</c>）を最後まで表示した回数</b>。
-        /// 次カットへの自然遷移か、演出の自然完了だけを数える。離脱・watchdog・中止・未表示カットは数えない。
+        /// <b>人形の追いつき（<c>steps[].dollCall</c>）が成立した回数</b>。
+        /// 次カットへの自然遷移・演出の自然完了・呼びかけのカットが画面に出た後に前へ抜けて
+        /// yield で畳まれた場合を数える。引き返し・watchdog・報告・中止・未表示カットは数えない。
         /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
         /// </summary>
         public int DollCatchUpCompletedCount { get; private set; }
@@ -835,8 +836,13 @@ namespace FixedCamVr.Streaming
             _farewell?.ResetRun();
         }
 
-        /// <summary>ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。</summary>
-        public void NotifyZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam)
+        /// <summary>
+        /// ゾーン確定（TimelineDirector 経由の deterministic (lap,camera)）を受ける。
+        /// <paramref name="forward"/> は順路の前進か（<see cref="SegmentEntry.Forward"/>）。
+        /// yield で畳んだ人形の追いつきを成立とみなすかだけに使う。
+        /// </summary>
+        public void NotifyZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam,
+                                        bool forward = false)
         {
             // 「次にカメラが切り替わるまで」のカットはここで終わる。**新しい区間の判定より先に**
             // 畳まないと、同じフレームで武装された次の演出とどちらが画面を取るかが順序依存になる。
@@ -845,7 +851,7 @@ namespace FixedCamVr.Streaming
             else _logic.NotifyZoneChanged(Now);
 
             TakeRunnerLogic.Decision d =
-                _logic.OnZoneCommitted(newLap, newCam, hadPrev, prevLap, prevCam, Now);
+                _logic.OnZoneCommitted(newLap, newCam, hadPrev, prevLap, prevCam, Now, forward);
             Apply(d, exitAnchored: true);
         }
 
@@ -1586,7 +1592,10 @@ namespace FixedCamVr.Streaming
         private void EndTake(TakeRunnerLogic.Decision d)
         {
             _lastEndReason = d.reason;
-            if (d.reason == TakeRunnerLogic.EndReason.Completed) CompleteDollCatchUpIfActive();
+            // 呼びかけのカットが画面に出た後（＝声が鳴った後）に体験者が前へ抜けて yield で畳まれたら、
+            // 人形は追いついたとみなす。乗っ取りは次の区間に入ったこの縁で始まる。
+            // 引き返し・watchdog・報告で畳んだ場合は数えない（中止とリセットは CleanupActive が落とす）。
+            if (d.reason == TakeRunnerLogic.EndReason.Completed || d.yieldedForward) CompleteDollCatchUpIfActive();
             else _activeStepDollCall = false;
             // 音は director の有無に関係なく必ず返す（画面が無くても占有だけ残さない）。
             EndTakeBgm();

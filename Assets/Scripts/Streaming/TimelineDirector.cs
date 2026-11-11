@@ -177,7 +177,9 @@ namespace FixedCamVr.Streaming
         /// <summary>追いつきの最後のカットが現在表示中か（心音など既存表示観測用）。</summary>
         public bool DollCallShowing => takeRunner != null && takeRunner.DollCallShowing;
 
-        /// <summary>追いつきの最後のカットを自然完了した回数。ラン開始で 0 に戻る。</summary>
+        /// <summary>
+        /// 追いつきが成立した回数（最後のカットの自然完了か、声の後に前へ抜けた yield）。ラン開始で 0 に戻る。
+        /// </summary>
         public int DollCatchUpCompletedCount => takeRunner != null ? takeRunner.DollCatchUpCompletedCount : 0;
 
         /// <summary>演出が外部要因で中止された回数。ラン開始で 0 に戻る。</summary>
@@ -294,7 +296,7 @@ namespace FixedCamVr.Streaming
             bool hadPrev = _hasCurrent;
             int prevLap = _curLap, prevCam = _curCam;
 
-            takeRunner?.NotifyZoneCommitted(lap, camera, hadPrev, prevLap, prevCam);
+            takeRunner?.NotifyZoneCommitted(lap, camera, hadPrev, prevLap, prevCam, entry.Forward);
 
             // 区間 post 上書き（segment > camera > global）。区間が変わったら貼り替え。無い区間は解除。
             ShowTimelineSegmentDef? seg = FindSegment(lap, camera);

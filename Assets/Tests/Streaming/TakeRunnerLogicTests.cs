@@ -518,6 +518,30 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(d.takeIndex, Is.EqualTo(1), "打ち切り後、入った区間の演出は通常どおり武装される");
         }
 
+        [Test]
+        public void Yield_CarriesWhetherTheVisitorMovedForward()
+        {
+            var a = Enter(2, 2, 0f, 30f);
+            a.yieldOnZoneChange = true;
+            var l = Make(a);
+            Enter(l, 2, 2, 0f);
+            l.Tick(0f, 2);
+            TakeRunnerLogic.Decision forward = l.OnZoneCommitted(3, 0, true, 2, 2, 1f, forward: true);
+            Assert.That(forward.reason, Is.EqualTo(TakeRunnerLogic.EndReason.Yielded));
+            Assert.That(forward.yieldedForward, Is.True, "順路の次の区間へ抜けた yield");
+            Assert.That(l.OutcomeOf(0), Is.EqualTo(TakeRunnerLogic.Outcome.Unresolved),
+                "前へ抜けても once の決着の規則は変えない");
+
+            var b = Enter(2, 2, 0f, 30f);
+            b.yieldOnZoneChange = true;
+            var back = Make(b);
+            Enter(back, 2, 2, 0f);
+            back.Tick(0f, 2);
+            TakeRunnerLogic.Decision backtrack = back.OnZoneCommitted(2, 1, true, 2, 2, 1f, forward: false);
+            Assert.That(backtrack.reason, Is.EqualTo(TakeRunnerLogic.EndReason.Yielded));
+            Assert.That(backtrack.yieldedForward, Is.False, "引き返しの yield");
+        }
+
         // ---- 復帰先の再計算 ----
 
         [Test]

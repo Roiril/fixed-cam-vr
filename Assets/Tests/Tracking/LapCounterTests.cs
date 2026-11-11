@@ -105,6 +105,29 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
+        public void LastFeedForward_IsTrueOnlyForTheNextSegmentOnTheCourse()
+        {
+            var l = Make(0, 1, 2);
+            l.Seed(0);
+            Assert.That(l.LastFeedForward, Is.False, "シードは前進ではない");
+            l.Feed(1);
+            Assert.That(l.LastFeedForward, Is.True, "A → B");
+            l.Feed(2);
+            Assert.That(l.LastFeedForward, Is.True, "B → C");
+            l.Feed(1);
+            Assert.That(l.LastFeedForward, Is.False, "C → B は引き返し");
+            l.Feed(2);
+            Assert.That(l.LastFeedForward, Is.False, "引き返した後に C へ戻るのは進行ではない（ポインタは C のまま）");
+            l.Feed(0);
+            Assert.That(l.LastFeedForward, Is.True, "C → A（2 周目へ）");
+            Assert.That(l.ProgressLap, Is.EqualTo(2));
+            l.Feed(0);
+            Assert.That(l.LastFeedForward, Is.False, "同じ区間の確定し直し");
+            l.Reset();
+            Assert.That(l.LastFeedForward, Is.False);
+        }
+
+        [Test]
         public void Seed_UsesPreviousVisit_AndDoesNotAdvanceProgress()
         {
             var l = Make(0, 1, 2);

@@ -1852,6 +1852,13 @@ def analyze(events, others, exp, warns=None):
                           if fnum(m, "invasion", 0.0) >= 0.999
                           and str(m.get("released")) != "1"]
             takeover_events = [e for e in comms if e.get("id") == "Takeover"]
+            # 2-C の乗っ取りが無いまま 3 周目に入った走行。顔の人形化と字化けもまとめて起きないので、
+            # その 2 つの FAIL（下の commsFace / commsCx）は出さずにこの 1 行だけにする（原因の誤表示を避ける）。
+            # 「3 周目に入った」は進行の周（plap・旧ログは lap）で見る。
+            takeover_missing = not takeover_events and any(
+                e.get("ev") == "seg" and fnum(e, "plap", fnum(e, "lap", 0.0)) >= 3 for e in events)
+            if takeover_missing:
+                verdict("FAIL", "2-C の乗っ取りが出なかった（追いつきの前に区間を出たか、鎖が切れた）")
             if full_marks and not takeover_events:
                 verdict("WARN", "侵食度1で報告されたが嘘の一文（Takeover）が記録されていない — "
                                 "先に自動再生済みか、CommsCueLogic の侵食入力を確認する")
@@ -2159,7 +2166,7 @@ def analyze(events, others, exp, warns=None):
                     if lit:
                         verdict("OK", f"AIエージェントの顔が出ている（最大の濃さ {max(lit):.2f}）")
                     # 顔と文字は同じ通信侵食度を読む。届いていなければ顔だけ無事に見える。
-                    if mix and max(mix) <= 0.01 and gl and max(gl) > 0.01:
+                    if mix and max(mix) <= 0.01 and gl and max(gl) > 0.01 and not takeover_missing:
                         verdict("FAIL", f"文字は壊れた（最大 {max(gl):.2f}）のに顔が侵食されていない"
                                         "（commsFace の 4 つ目が全標本 0）— "
                                         "CommsPanel.ApplyAvatar が _FaceMix を書けていない疑い")
@@ -2169,6 +2176,8 @@ def analyze(events, others, exp, warns=None):
             if gl and max(gl) <= 0.0:
                 verdict("WARN", "連絡の面が最後まで壊れなかった（commsGl が全標本 0）— "
                                 "2-Cの人形視点まで進んでいないか、CommsInvasionLogic の配線を確認する")
+            elif gl and cx and max(cx) <= 0 and takeover_missing:
+                pass   # 字が化けないのは乗っ取りが無かったから。上の 1 行（2-C の乗っ取り）で言う
             elif gl and cx and max(cx) <= 0 and not any(
                     e.get("commsPossess") in ("Shown", "Sweep", "Cursed")
                     for e in events if e.get("ev") == "sum"):

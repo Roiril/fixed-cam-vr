@@ -83,17 +83,113 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void YieldWatchdogAndExternalAbort_DoNotCompleteCatchUp()
+        public void ForwardYieldAfterDollCallShown_CompletesCatchUpOnTheSameEdge()
         {
-            Rig yielded = MakeRig();
-            ShowTakeDef yieldTake = EnterTake("yield", LiveStep(30f, dollCall: true));
-            yieldTake.policy = TakeSchema.PolicyYield;
-            yielded.Timeline.SetTimeline(new[] { Segment(yieldTake) });
-            EnterZone(yielded, 0);
-            Frame(yielded);
-            EnterZone(yielded, 1);
-            Assert.That(yielded.Timeline.DollCatchUpCompletedCount, Is.Zero, "区間離脱は自然完了ではない");
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[]
+            {
+                Segment(YieldTake("forward",
+                    LiveStep(1f),
+                    LiveStep(1.4f, dollCall: true),
+                    LiveStep(30f))),
+            });
+            EnterZone(rig, 0);
+            Frame(rig);
+            _now = 1f;
+            Frame(rig);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.Zero, "呼びかけのカットが出ただけでは数えない");
 
+            _now = 1.86f;
+            EnterZone(rig, 1, forward: true);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.EqualTo(1),
+                "声の後に前へ抜けて yield で畳まれたら、その縁で追いつきが成立する");
+            Assert.That(rig.Timeline.LastEndReason, Is.EqualTo(TakeRunnerLogic.EndReason.Yielded));
+
+            _now = 3f;
+            Frame(rig);
+            Frame(rig);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.EqualTo(1), "畳んだ後に重ねて数えない");
+        }
+
+        [Test]
+        public void ForwardYieldBeforeDollCallStarts_DoesNotCompleteCatchUp()
+        {
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[]
+            {
+                Segment(YieldTake("early",
+                    LiveStep(3f),
+                    LiveStep(1.4f, dollCall: true))),
+            });
+            EnterZone(rig, 0);
+            Frame(rig);
+            _now = 1f;
+            EnterZone(rig, 1, forward: true);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.Zero,
+                "呼びかけのカットが始まる前に前へ抜けても数えない");
+        }
+
+        [Test]
+        public void ForwardYieldWhileDollCallWasSkipped_DoesNotCompleteCatchUp()
+        {
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[]
+            {
+                Segment(YieldTake("skip-yield",
+                    LiveStep(1f),
+                    LiveStep(1.4f, dollCall: true, camera: 99),
+                    LiveStep(30f))),
+            });
+            LogAssert.Expect(LogType.Warning,
+                "[TakeRunner] live のカメラ 99 が範囲 [0,4) 外 → このカットを飛ばす（take=skip-yield step=1）");
+            EnterZone(rig, 0);
+            Frame(rig);
+            _now = 1f;
+            Frame(rig);
+            EnterZone(rig, 1, forward: true);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.Zero,
+                "画面へ出なかった呼びかけのカットは、前へ抜けても数えない");
+        }
+
+        [Test]
+        public void BacktrackYieldAfterDollCallShown_DoesNotCompleteCatchUp()
+        {
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[]
+            {
+                Segment(YieldTake("backtrack", LiveStep(30f, dollCall: true))),
+            });
+            EnterZone(rig, 0);
+            Frame(rig);
+            EnterZone(rig, 1, forward: false);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.Zero, "引き返しの yield は追いつきではない");
+            Assert.That(rig.Timeline.LastEndReason, Is.EqualTo(TakeRunnerLogic.EndReason.Yielded));
+        }
+
+        [Test]
+        public void NaturalCompletionThenForwardYield_DoesNotCountTwice()
+        {
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[]
+            {
+                Segment(YieldTake("natural-then-exit",
+                    LiveStep(1f, dollCall: true),
+                    LiveStep(30f))),
+            });
+            EnterZone(rig, 0);
+            Frame(rig);
+            _now = 1f;
+            Frame(rig);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.EqualTo(1));
+
+            EnterZone(rig, 1, forward: true);
+            Assert.That(rig.Timeline.DollCatchUpCompletedCount, Is.EqualTo(1),
+                "自然完了で数えた後に前へ抜けても 2 回目を数えない");
+        }
+
+        [Test]
+        public void WatchdogAndExternalAbort_DoNotCompleteCatchUp()
+        {
             Rig watchdog = MakeRig();
             ShowTakeDef watched = EnterTake("watchdog", LiveStep(30f, dollCall: true));
             watched.maxDurationSec = 1f;
@@ -157,6 +253,23 @@ namespace FixedCamVr.Streaming.Tests
             CommsNotice notice = logic.Tick(Input(completed: 1, mark: true));
             Assert.That(notice, Is.EqualTo(CommsNotice.Takeover),
                 "自然完了は同じフレームの報告より先に配送する");
+        }
+
+        [Test]
+        public void CompletionObservedAfterEnteringTheNextSegment_ReturnsTakeoverOnTheNextTick()
+        {
+            var logic = new CommsCueLogic();
+            CommsCueInput inPov = Input(completed: 0);
+            inPov.invasionProgress = 0.75f;
+            inPov.dollCatchUpShowing = true;
+            Assert.That(logic.Tick(inPov), Is.EqualTo(CommsNotice.None), "声の最中はまだ乗っ取らない");
+
+            // 前へ抜けた縁で完了が増え、次の Tick は 3-A の頭（人形の表示で侵食度 1・締めの時計は未到達）。
+            CommsCueInput inThreeA = Input(completed: 1);
+            inThreeA.invasionProgress = 1f;
+            inThreeA.closingSec = -1f;
+            Assert.That(logic.Tick(inThreeA), Is.EqualTo(CommsNotice.Takeover),
+                "区間が替わった後でも、完了が増えた次の Tick で乗っ取りを返す");
         }
 
         [Test]
@@ -275,6 +388,13 @@ namespace FixedCamVr.Streaming.Tests
             steps = steps,
         };
 
+        private static ShowTakeDef YieldTake(string id, params ShowStepDef[] steps)
+        {
+            ShowTakeDef take = EnterTake(id, steps);
+            take.policy = TakeSchema.PolicyYield;
+            return take;
+        }
+
         private static ShowTimelineSegmentDef Segment(ShowTakeDef take) => new()
         {
             lap = 1,
@@ -283,8 +403,8 @@ namespace FixedCamVr.Streaming.Tests
             cues = Array.Empty<ShowSegmentCueDef>(),
         };
 
-        private static void EnterZone(Rig rig, int camera)
-            => rig.Scheduler.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: 1, progressLap: 1));
+        private static void EnterZone(Rig rig, int camera, bool forward = false)
+            => rig.Scheduler.NotifyCameraEntered(new SegmentEntry(camera, segmentLap: 1, progressLap: 1, forward: forward));
 
         private static void Frame(Rig rig)
         {

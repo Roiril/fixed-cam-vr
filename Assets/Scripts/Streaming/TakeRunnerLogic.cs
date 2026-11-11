@@ -186,6 +186,13 @@ namespace FixedCamVr.Streaming
             public bool dismissed => reason == EndReason.VisitorDismissed;
 
             /// <summary>
+            /// EndTake: <c>policy:"yield"</c> の打ち切りが<b>順路の前進</b>（次の区間へ抜けた）によるものか。
+            /// 引き返し・同一区間の確定し直し・その他の終わり方では false。
+            /// <see cref="TakeRunner"/> は呼びかけのカットが画面に出た後ならこれで追いつきの成立を数える。
+            /// </summary>
+            public bool yieldedForward;
+
+            /// <summary>
             /// EndTake: この直後に次の演出が始まる（＝画面を返さずそのまま渡す）。
             /// これが true のとき <see cref="TakeRunner"/> は復帰の暗転を打たない —
             /// 打つと「演出の終わりの黒」と「次の演出の入りの遷移」が二重に出て、
@@ -368,8 +375,11 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// ゾーン確定（ショーの時計）を受ける。離脱区間の決着（exit 演出 / 取り逃した enter 演出）を行い、
         /// 進入区間の enter 演出を武装する。返すのは最大 1 つの即時 Decision（離脱時発火）。
+        /// <paramref name="forward"/> は順路の前進か（<c>LapCounterLogic.LastFeedForward</c>）。
+        /// yield の打ち切りに <see cref="Decision.yieldedForward"/> として載せるだけで、武装と決着には使わない。
         /// </summary>
-        public Decision OnZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam, float now)
+        public Decision OnZoneCommitted(int newLap, int newCam, bool hadPrev, int prevLap, int prevCam, float now,
+                                        bool forward = false)
         {
             Decision result = default;
             bool segChanged = !hadPrev || prevLap != newLap || prevCam != newCam;
@@ -381,6 +391,7 @@ namespace FixedCamVr.Streaming
             if (_running && _defs[_activeTake].yieldOnZoneChange)
             {
                 Decision yielded = EndTakeDecision(newCam, EndReason.Yielded);
+                yielded.yieldedForward = forward;
                 // 打ち切りで消える武装も**黙って消さない**（旧実装はここだけ報告が漏れていた）。
                 if (hadPrev) ReportRemainingDrops(prevLap, prevCam, -1, screenBusy: true);
                 ClearArmed();

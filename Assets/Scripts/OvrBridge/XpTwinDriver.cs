@@ -89,6 +89,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     private float _badgeAt;
     private int _shownLap = -1;
     private bool _shownRec;
+    private int _shownSegLap = -1;
+    private int _shownSegCam = -1;
     private float _farewellLogAt;
     private bool _farewellShareLogged;
     private RenderTexture? _badgeRt;
@@ -394,11 +396,15 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         int value = 0;
         for (int i = 0; i < 3; i++)
             if (_badgeRead.GetPixel(i, 0).grayscale > 0.5f) value |= 1 << i;
-        if (value == _shownLap && isRec == _shownRec) return;
-        _shownLap = value;
-        _shownRec = isRec;
         int segLap = -1, segCam = -1;
         _timeline?.TryGetCurrentSegment(out segLap, out segCam);
+        // 区間が替わったときも 1 行出す。印と rec/live が前の区間と同じまま次の区間へ入ると
+        // その区間の頭が記録されず、判定が後ろ側の印を読む（速い走行の 3-C で偽 FAIL になった）。
+        if (value == _shownLap && isRec == _shownRec && segLap == _shownSegLap && segCam == _shownSegCam) return;
+        _shownLap = value;
+        _shownRec = isRec;
+        _shownSegLap = segLap;
+        _shownSegCam = segCam;
         Debug.Log($"[XP] t={Time.realtimeSinceStartup:F2} ev=twinlap shown={value} src={(isRec ? "rec" : "live")} plap={(_run != null ? _run.Lap : -1)} seg={segLap}/{segCam}");
     }
 
