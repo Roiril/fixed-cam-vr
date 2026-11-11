@@ -249,6 +249,21 @@ function Assert-Cli {
     }
 }
 
+# ⚠ 内蔵 GPU と独立 GPU を両方持つノート PC では、batchmode の Unity は内蔵 GPU（Intel UHD）で描く。
+#    再生の撮影の 1 コマが 200ms かかり、毎秒 3 コマのカクカクな動画になった（2026-11-11）。独立 GPU を番号で指す。
+#    Windows の Editor で効くのは -force-device-index（-gpu は効かない。どちらも実測。確かめるのはログの Renderer: 行）。
+#    DXGI の並びは内蔵が 0・独立が 1。違う PC は環境変数 FCV_UNITY_GPU で番号を渡す（-1 で指さない）
+function Get-UnityGpuArgs {
+    $index = -1
+    if ($env:FCV_UNITY_GPU) { $index = [int]$env:FCV_UNITY_GPU }
+    else {
+        $gpus = @(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name })
+        if (($gpus -match 'Intel').Count -gt 0 -and ($gpus -match 'NVIDIA|Radeon|AMD').Count -gt 0) { $index = 1 }
+    }
+    if ($index -ge 0) { return @('-force-device-index', "$index") }
+    return @()
+}
+
 # Editor を開いたまま batchmode を回すと衝突する（unity-cli-ops.md §6）
 function Assert-NotLocked {
     $lock = Join-Path $Root 'Temp\UnityLockfile'
@@ -708,7 +723,7 @@ switch ($Action) {
         Write-Host $desc -ForegroundColor Cyan
         Write-Host "  $method" -ForegroundColor DarkGray
         $EditorLog = New-UnityInvocationLog 'run-menu'
-        Invoke-SafeUnityCli -LogPath $EditorLog -Arguments (@('run', $Root, '--non-interactive', '--', '-executeMethod', $method) + $fcv + $Rest + @('-logFile', $EditorLog))
+        Invoke-SafeUnityCli -LogPath $EditorLog -Arguments (@('run', $Root, '--non-interactive', '--', '-executeMethod', $method) + $fcv + (Get-UnityGpuArgs) + $Rest + @('-logFile', $EditorLog))
         $code = $script:UnityCliExitCode
 
         Show-UnityLog
@@ -756,7 +771,7 @@ switch ($Action) {
         New-Item -ItemType Directory -Path $crtLogDir -Force | Out-Null
         $crtLog = Join-Path $crtLogDir ((Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
         $crtArguments = @('-batchmode', '-projectPath', $Root,
-            '-executeMethod', 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.Run', '-logFile', $crtLog)
+            '-executeMethod', 'FixedCamVr.Streaming.EditorTools.CrtTuningServer.Run', '-logFile', $crtLog) + (Get-UnityGpuArgs)
         $crtQuoted = $crtArguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
         $crtProcess = Start-Process -FilePath $crtEditor -ArgumentList $crtQuoted -PassThru -WindowStyle Hidden
         Write-Host 'CRTの調整を起動しています。'
@@ -804,6 +819,7 @@ switch ($Action) {
         $argList = @('-batchmode', '-projectPath', $Root,
                      '-executeMethod', "FixedCamVr.Streaming.EditorTools.Replay.$playMethod.Run",
                      '-logFile', $log) + $fcv
+        $argList += Get-UnityGpuArgs   # 撮影は描画が律速。内蔵 GPU だとカクつく
         # 引数に空白があれば引用する（Start-Process は配列をそのまま連結する）
         $quoted = $argList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
         Write-Host "$(if ($Action -eq 'twin-run') { 'ツイン走行（体験の尺 + 起動に 1 分前後）' } else { '体験の再生と撮影（記録の尺 + 起動に 1 分前後）' })" -ForegroundColor Cyan

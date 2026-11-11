@@ -5,6 +5,7 @@
     py -3.11 tools/twin-verify.py --no-video      # 判定だけ（速い）
     py -3.11 tools/twin-verify.py --nomark        # 報告しない走行（人形 End）
     py -3.11 tools/twin-verify.py --relief        # ホラー軽減を選んだ走行
+    py -3.11 tools/twin-verify.py --marks 1A,1B,2A,3B  # 周の中でも報告する（報告で起きる演出を撮る）
 
 本番の Main シーンを Editor の Play で流す。入力は生の左 X だけ、カメラはデジタルツインの動画（tools/twin/make_pack.py）。
 走った結果は体験の記録に残し、同じ記録を unity.ps1 replay で撮る。
@@ -177,6 +178,19 @@ def run(cmd: list[str], what: str) -> int:
     return rc
 
 
+def parse_marks(text: str) -> list[str]:
+    """"1A, 1b,2A" → ["1A","1B","2A"]。周は 1〜3、区間は A〜C。それ以外は落とす（黙って押さない走行にしない）。"""
+    out = []
+    for raw in text.replace(".", ",").split(","):
+        s = raw.strip().upper().replace("-", "")
+        if not s:
+            continue
+        if len(s) != 2 or s[0] not in "123" or s[1] not in "ABC":
+            raise SystemExit(f"--marks の区間が読めない: {raw!r}（1A〜3C）")
+        out.append(s)
+    return out
+
+
 def set_arg(pairs: dict[str, str]) -> str:
     return ",".join(f"{k}={v}" for k, v in pairs.items())
 
@@ -287,6 +301,8 @@ def main() -> int:
     ap.add_argument("--follow", action="store_true", help="後ろ上からの動画も撮る")
     ap.add_argument("--nomark", action="store_true", help="報告しない（人形 End）")
     ap.add_argument("--relief", action="store_true", help="ホラー軽減")
+    ap.add_argument("--marks", default="",
+                    help="周の中でも報告する区間（1A,1B,2A のように周と区間）。各区間に入って 2.5 秒後に 1 回押す。既定は 4-A の締めだけ")
     ap.add_argument("--speed", type=float, default=0.25)
     ap.add_argument("--dwell", type=float, default=6.0)
     ap.add_argument("--keep-rec", action="store_true", help="体験の記録（JPEG 込みで数百 MB）を消さない")
@@ -331,6 +347,9 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
         args["nomark"] = "1"
     if a.relief:
         args["relief"] = "1"
+    marks = parse_marks(a.marks)
+    if marks:
+        args["marks"] = ".".join(marks)
     if a.calib == "show":
         args["calib"] = "show"
     rc_run = run(PS + ["twin-run", "-Set", set_arg(args)], "走行")
@@ -394,6 +413,8 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
     n = {lv: sum(1 for v in verdicts if v["level"] == lv) for lv in ("FAIL", "WARN", "OK")}
     ok = run_info.get("result") == "ok" and n["FAIL"] == 0
     run_args = {"speed": a.speed, "dwell": a.dwell, "nomark": a.nomark, "relief": a.relief, "calib": a.calib, "realAssets": a.real_assets}
+    if marks:
+        run_args["marks"] = marks   # 既定の走行の args は変えない（過去の走行との照合が切れる）
     known = load_known()
     tag_known(verdicts, known)
     fresh = {lv: sum(1 for v in verdicts if v["level"] == lv and "known" not in v) for lv in ("FAIL", "WARN")}

@@ -40,6 +40,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     public const string KeySpeed = "fcv.twin.speed";
     public const string KeyDwell = "fcv.twin.dwell";
     public const string KeyNoMark = "fcv.twin.nomark";
+    /// <summary>周の中でも報告する区間（"1B.2A.3B" のように周と区間の文字を . で区切る）。空なら 4-A の締めだけ押す。</summary>
+    public const string KeyMarks = "fcv.twin.marks";
     public const string KeyRelief = "fcv.twin.relief";
     public const string KeyShowCalib = "fcv.twin.showcalib";
 
@@ -48,6 +50,7 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     private const float TailSec = 70f;           // 終了してから終幕を撮り切るまで（ExperienceRecorder.TailAfterFinishSec より短く）
     private const float HardLimitSec = 540f;
     private const float ReportHoldSec = 1.2f;    // VisitorMarkHoldLogic.DefaultHoldSec（1 秒）より少し長く
+    private const float ExtraMarkDelaySec = 2.5f; // 区間に入ってから押すまで。入った瞬間の異変が見えてから押す人の間
     private const float TitleReadSec = 3f;
     private const float TitleTapSec = 0.2f;
     private const float OnboardingLimitSec = 90f;
@@ -70,6 +73,10 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     private PackFeed _feed = null!;
     private float _speed, _dwell;
     private bool _noMark;
+    private readonly HashSet<string> _markAt = new();
+    private readonly HashSet<string> _markDone = new();
+    private string _markSeg = "";
+    private float _markSegSince;
     private float _bootAt;
     private Transform? _head, _rig, _left, _right;
     private ShowControlClient? _show;
@@ -141,6 +148,9 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
         _speed = SessionState.GetFloat(KeySpeed, 0.25f);
         _dwell = SessionState.GetFloat(KeyDwell, 6f);
         _noMark = SessionState.GetInt(KeyNoMark, 0) != 0;
+        _markAt.Clear();
+        foreach (string s in SessionState.GetString(KeyMarks, "").Split('.', StringSplitOptions.RemoveEmptyEntries))
+            _markAt.Add(s.Trim().ToUpperInvariant());
         _meta = JsonUtility.FromJson<PackMeta>(File.ReadAllText(Path.Combine(pack, "pack.json")))
                 ?? throw new InvalidDataException("pack.json を読めない");
         if (_meta.xs.Length < 2 || _meta.moveEnd < 2) throw new InvalidDataException("pack.json の道が空");
@@ -280,14 +290,7 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
     /// <summary>輪の点のうち、カメラの区画ごとの真ん中。そこで立ち止まる（演出の尺を見る）。</summary>
     private static int[] SectionMiddles(List<Vector2> ring, ShowLayoutDef layout)
     {
-        ShowGridDef g = layout.grid!;
-        int[,] map = WalkRouteLogic.BuildCells(g, out int rows, out int cols);
-        int Cam(Vector2 p)
-        {
-            int c = Mathf.FloorToInt((p.x + g.tileM * cols * .5f) / g.tileM);
-            int r = Mathf.FloorToInt((g.tileM * rows * .5f - p.y) / g.tileM);
-            return r >= 0 && r < rows && c >= 0 && c < cols ? map[r, c] : -1;
-        }
+        int Cam(Vector2 p) => CamAt(layout, p);
         var result = new List<int>();
         foreach (int cam in ring.Select(Cam).Where(c => c >= 0).Distinct())
         {
@@ -353,6 +356,7 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
 
         ReadBadge(now);
         LogFarewellState(now);
+        TickExtraMarks(now, new Vector2(hp.x, hp.z));
 
         if (_ending) return;
         if (_run != null && _run.Phase == ShowPhase.Finished) _finishedFor += Time.unscaledDeltaTime;
@@ -439,6 +443,41 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
                   $"captured={(doll != null && doll.ShotCaptured)} window={(runner != null ? runner.EndingShotWindow.ToString() : "-")} " +
                   $"releasedReady={(runner != null && runner.EndingReleasedLiveReady)} 立つ所まで={dist:F2}m " +
                   $"向きの差={Mathf.DeltaAngle(_head.eulerAngles.y, want):F0}度 cg={_cg.IsVisible}");
+    }
+
+    /// <summary>
+    /// <c>marks=</c> で挙げた区間に入ったら、<see cref="ExtraMarkDelaySec"/> 後に左 X を 1 回長押しする。
+    /// 既定の走行は 4-A の締めでしか押さないので、1〜3 周目の報告で起きる演出（手形が消える・幕がたなびく・
+    /// 返事の文）が 1 度も画に出ない。それを撮るための走り方で、判定の既定は変えない。
+    /// 区間は頭の位置のグリッドで決める（周は <see cref="ShowRunDirector.Lap"/>）。各区間 1 回だけ。
+    /// </summary>
+    private void TickExtraMarks(float now, Vector2 pos)
+    {
+        if (_markAt.Count == 0 || _noMark || _run == null || _show == null || _run.Phase != ShowPhase.Run) return;
+        int cam = CamAt(_show.Layout, pos);
+        if (cam < 0) return;
+        string seg = $"{_run.Lap}{(char)('A' + cam)}";
+        if (seg != _markSeg)
+        {
+            _markSeg = seg;
+            _markSegSince = now;
+            return;
+        }
+        if (!_markAt.Contains(seg) || _markDone.Contains(seg) || ReportPressing) return;
+        if (now - _markSegSince < ExtraMarkDelaySec || _show.IsVisitorMarkBlocked || _show.IsMarkTooEarly) return;
+        _markDone.Add(seg);
+        PressReport();
+        Debug.Log($"[Twin] {seg} で左 X を長押しして報告する（区間に入って {now - _markSegSince:F1}s）");
+    }
+
+    private static int CamAt(ShowLayoutDef? layout, Vector2 p)
+    {
+        ShowGridDef? g = layout?.grid;
+        if (g == null || !g.HasData()) return -1;
+        int[,] map = WalkRouteLogic.BuildCells(g, out int rows, out int cols);
+        int c = Mathf.FloorToInt((p.x + g.tileM * cols * .5f) / g.tileM);
+        int r = Mathf.FloorToInt((g.tileM * rows * .5f - p.y) / g.tileM);
+        return r >= 0 && r < rows && c >= 0 && c < cols ? map[r, c] : -1;
     }
 
     private void Note(string text)

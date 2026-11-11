@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1128468e-bd6b-4231-9f7d-17f5f7eac49b
-  modified: 2026-11-11T03:31:18.461Z
+  modified: 2026-11-11T07:41:37.718Z
 ---
 
 2026-11-05 ユーザー依頼「デジタルツインを新しく作り替えたので、それを使って、私がhmdを被らないでできる動作検証の仕組みも更新してほしい。」
@@ -29,6 +29,9 @@ metadata:
 - ⚠ 木の名前にこちらのパスを含めない。`unity.ps1` の `Assert-NotLocked` はコマンドラインに自分のパスを含む Unity を自分の Editor と数える
 - ⚠ Library の複製（robocopy 16 スレッド・5 分）と重なった 11:30 のこちらの走行が `error: onboarding`（導入が終わらない）で止まった。複製は初回だけ
 - git 管理外の入力は `sync` が運ぶ（`Assets/` の下の無視ファイル・`tools/web-compositor/show.json`・`Logs/twin-run/pack`）。持ち込まないと test-ending-log と test_onsite_operations が落ちる
+
+**周の中でも報告する `--marks 1A,1B,2A,3B`（11-11・演出ライブラリーのため）**: 既定の走行は導入の練習と最後の A でしか押さないので、手形が消える・幕がたなびく・返事の文が 1 度も画に出ない。
+挙げた区間に入って 2.5 秒後に左 X を 1 回長押しする（`XpTwinDriver.TickExtraMarks`。押下はゲートが開いているときだけ）。11-11 の走行で 1A・1B・2A・3B・4A の 5 回が `ev=mark` に出た。既定の走行の `run_args` には載せない（前の走行との突き合わせを変えない）。
 
 **動画と揃う時計は `replay_xp.log` の `tau=`。** 11-11 から Drive に残す。それより前の走行には無く、`twin-look.py` は走行の時計（`events.json`）で切って帯に「※走行の時計」と書く。
 そのときは場面の終わりのコマに次の場面が映ることがある（`compare.txt` の差は中央 0.2〜0.9 秒・最大 8 秒）。⚠ `replay_xp.log` を読む経路は合成した行のテストだけで、実走行のログではまだ通していない。

@@ -181,7 +181,7 @@ public sealed class XpReplayCapture : MonoBehaviour
         _captureT0 = Time.realtimeSinceStartup;
         _capturing = true;
         Debug.Log($"[Replay] 撮影を始めた {_w}x{_h} {_fps}fps msaa={_msaa} view={_view} fov={_fov:F0} " +
-                  $"音={AudioSettings.outputSampleRate}Hz → {_out}");
+                  $"音={AudioSettings.outputSampleRate}Hz gpu={SystemInfo.graphicsDeviceName} → {_out}");
         return true;
     }
 

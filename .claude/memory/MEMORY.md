@@ -87,7 +87,7 @@
 ## 検証・計器
 - [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証 4 点（[XP]・自動走行・判定・機の選択）と解析が嘘をつく経路
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
-- [twin_verify.md](twin_verify.md) — HMD なしの通し検証。時計は tau・既知
+- [twin_verify.md](twin_verify.md) — HMD なしの通し検証。時計は tau・既知。[演出ライブラリー](fx_library.md)
 - [twin_room.md](twin_room.md) — ツインの部屋。光は撮影時だけ・`menu twin`・霞で GPU 落ち
 - [twin_cycles.md](twin_cycles.md) — 写実のツイン。配置は写真から解く・盲検の点
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
@@ -105,8 +105,7 @@
 - [camera_fleet.md](camera_fleet.md) — 配信スマホ Pixel 7a ×3。IP は揮発／傾きで「カメラが動いたか」が分かる
 - [streamer_operator_ui.md](streamer_operator_ui.md) — 配信スマホ側の面（補助線・鏡合わせ・撮影パネル・卓の自動発見）
 - [approach_shoot_console.md](approach_shoot_console.md) — 当日の素材撮り。停滞は `ev=clip` にしか出ない
-- [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）
-- [camera_c120_go2rtc_plan.md](camera_c120_go2rtc_plan.md) — 却下済み（go2rtc 中継）
+- [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）。go2rtc 中継は[却下](camera_c120_go2rtc_plan.md)
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) — iPhone はデモなら IP Cam Lite。自作は PWA＋WS
 - [droidcam_endpoint.md](droidcam_endpoint.md) — 予備の DroidCam
 - [web_compositor.md](web_compositor.md) — `tools/web-compositor`（卓・合成検証・プロンプト管理・サーバ API）
