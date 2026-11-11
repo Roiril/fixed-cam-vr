@@ -116,8 +116,26 @@ namespace FixedCamVr.Streaming
         /// 「状態が進んだではなく効果が出た」）。<c>ShowTelemetryHost</c> が読む。
         /// </summary>
         public float IgniteWritten => _screenMat != null ? _igniteWritten : -1f;
-        /// <summary>スクリーンの材質へ実際に書いた <c>_IntroLive</c>。掴めていなければ -1。</summary>
+        /// <summary>
+        /// スクリーンの材質へ実際に書いた <c>_IntroLive</c>（時間切れの手前の沈みを掛けた後）。掴めていなければ -1。
+        /// </summary>
         public float LiveGateWritten => _screenMat != null ? _liveWritten : -1f;
+
+        /// <summary>
+        /// 時間切れの手前の沈み 0..1（<see cref="ShowRunDirector"/> が毎フレーム押す）。
+        /// 映像の出方に <see cref="EndingDecisionLogic.SinkBrightness"/> を掛けて <c>_IntroLive</c> へ書く。
+        /// 掛け合わせるのは <see cref="WriteIgnite"/> の 1 か所で、導入の重みと沈みのどちらが先に変わっても同じ値になる。
+        /// <c>_IntroLive</c> は明暗曲線の後・OSD と筐体とガラスの前に掛かるので、沈むのは映像だけ。
+        /// </summary>
+        public void SetEndingSink(float sink)
+        {
+            float s = float.IsNaN(sink) ? 0f : Mathf.Clamp01(sink);
+            if (s == _endingSink) return;
+            _endingSink = s;
+            // まだ 1 度も書いていなければ、次に WriteIgnite が書くときに掛かる（未初期化の点灯量 -1 を 0 として書かない）。
+            if (_screenMat == null || _igniteWritten < 0f) return;
+            WriteIgnite(_igniteWritten, _liveRequested, _tvCaseWritten, _tvDarkWritten);
+        }
         /// <summary>スクリーンの材質へ実際に書いた <c>_CrtTvCase</c>（テレビの筐体の明るさ）。掴めていなければ -1。</summary>
         public float TvCaseWritten => _screenMat != null ? _tvCaseWritten : -1f;
 
@@ -152,6 +170,9 @@ namespace FixedCamVr.Streaming
         private float _liveWritten = -1f;
         private float _tvCaseWritten = -1f;
         private float _tvDarkWritten = -1f;
+        // 導入の重みが求めた映像の出方（沈みを掛ける前）と、時間切れの手前の沈み。
+        private float _liveRequested = 1f;
+        private float _endingSink;
 
         private void Awake()
         {
@@ -727,10 +748,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void WriteIgnite(float v, float live, float tvCase, float tvDark)
         {
+            _liveRequested = Mathf.Clamp01(live);
             var m = ResolveScreenMaterial();
             if (m == null) return;
             float c = Mathf.Clamp01(v);
-            float l = Mathf.Clamp01(live);
+            float l = _liveRequested * EndingDecisionLogic.SinkBrightness(_endingSink);
             float tc = Mathf.Clamp01(tvCase);
             float td = Mathf.Clamp01(tvDark);
             if (Mathf.Approximately(c, _igniteWritten) && Mathf.Approximately(l, _liveWritten)

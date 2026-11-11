@@ -786,6 +786,10 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private string CoarseMaterialState => _feel == null ? "-" : (_feel.HasMaterial ? "1" : "0");
 
+        /// <summary>時間切れの手前の沈みとして画へ書いた値。<c>-</c>=CameraFeelFx が居ない / <c>nc</c>=材質を掴めていない。</summary>
+        private string SinkState => _feel == null ? "-"
+            : (_feel.AppliedEndingSink < 0f ? "nc" : _feel.AppliedEndingSink.ToString("F2"));
+
         // ---------------------------------------------------------------- 設定の出所
 
         /// <summary>実機がどの設定で走っているかを出す。**これが無いと解析が嘘をつく。**
@@ -884,6 +888,11 @@ namespace FixedCamVr.Diagnostics
                      $"repN={(_report != null && _report.Presented ? _report.CapturedReports : -1)} " +
                      $"ending={(_run != null ? _run.EndingOutcome.ToString() : "-")} " +
                      $"endingLeft={(_run != null && _run.EndingTrappedByLeftHalf ? 1 : 0)} " +
+                     // endingTime = Trapped が③b からの時間切れで決まった（離脱・左半分ではない）。
+                     // sink = 時間切れの手前の沈みとして画へ書いた値（CameraFeelFx・nc なら材質を掴めていない）。
+                     // 時間切れの人形 End は終幕の頭で 1、帰還は報告から 0.5 秒で 0 に戻っているはず。
+                     $"endingTime={(_run != null && _run.EndingTrappedByTimeout ? 1 : 0)} " +
+                     $"sink={SinkState} " +
                      $"anomalyTotal={(_show != null ? _show.TotalAnomalyCount : -1)} " +
                      $"promptAge={(_run != null ? _run.ClosingPromptElapsedSec : -1f):F2} " +
                      // anomalies = 報告した異変の数（同じ演出は 1・`canon/LEDGER.md` 0234）。

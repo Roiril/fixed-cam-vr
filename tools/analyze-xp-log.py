@@ -551,6 +551,44 @@ def _judge_recorded_cut_before_doll(exp, steps_ev, w, verdict):
                             "録画が終わる前に区間を出ている。ev=step の auth / cut / d2 で切り上げが効いたかを見る")
 
 
+# 最後の A の時間切れ（C# の EndingDecisionLogic.PromptLimitSec）。endingTime= の無い古いログは promptAge で絞る。
+PROMPT_LIMIT_SEC = 15.0
+
+
+def check_ending_sink(outro, verdict):
+    """時間切れで人形 End へ落ちる手前の沈みが画に出たか、帰還で残っていないか（2026-11-11）。
+
+    書き手は ShowTelemetryHost の `ev=outro sink= endingTime=`。見るのは終幕の頭の 1 行（stage=Off を除く最初）で、
+    人形 End は黒へ落ちるフレーム、帰還は電源断の砂嵐が始まるフレームにあたる。
+    左半分（endingLeft=1）と離脱の人形 End は沈みを出さないので判定しない。
+    """
+    heads = [e for e in outro if str(e.get("stage", "")) not in ("", "Off")]
+    if not heads:
+        return
+    e = heads[0]
+    ending = e.get("ending")
+    if ending == "Trapped" and str(e.get("endingLeft")) != "1":
+        if e.get("endingTime") is not None:
+            timed_out = str(e.get("endingTime")) == "1"
+        else:
+            timed_out = fnum(e, "promptAge", -1.0) >= PROMPT_LIMIT_SEC - 0.1
+        if not timed_out:
+            return
+        sink = e.get("sink")
+        if sink is None:
+            verdict("WARN", "時間切れの人形 End の沈み（sink）が出ていない — 2026-11-11 より前のビルド")
+        elif fnum(e, "sink") is None:
+            verdict("FAIL", f"時間切れの手前の沈みを画へ書けていない（sink={sink}）— スクリーンの材質を掴めていない")
+        elif fnum(e, "sink") < 0.9:
+            verdict("FAIL", f"人形 End の前に画が沈んでいない（落ちる直前の sink={sink} < 0.9）")
+        else:
+            verdict("OK", f"時間切れの手前で画が沈んでから人形 End へ落ちた（sink={sink}）")
+    elif ending == "Released":
+        sink_v = fnum(e, "sink")
+        if sink_v is not None and sink_v > 0.05:
+            verdict("FAIL", f"解除したのに沈みが残っている（終幕の頭の sink={e.get('sink')} > 0.05）")
+
+
 def analyze(events, others, exp, warns=None):
     rep = []          # レポート行
     verdicts = []     # (level, text) level: OK / WARN / FAIL / NA
@@ -1667,6 +1705,8 @@ def analyze(events, others, exp, warns=None):
             elif any(str(e.get("armed")) == "1" for e in outro):
                 verdict("WARN", "合図の演出は走ったが、そこから終幕へは入っていない"
                                 "（endHoldMaxSec の安全網で終わった — 演出が自分から終わっていない）")
+
+            check_ending_sink(outro, verdict)
 
             # -- 新しいエンドロールは全文をフェード表示し、打鍵音を使わない。
             #    repStyle が無い旧ログだけは従来どおり、1 字ごとの打鍵と表示を突き合わせる。

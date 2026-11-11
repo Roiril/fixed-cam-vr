@@ -168,6 +168,51 @@ class EndingLogTests(unittest.TestCase):
         verdicts = self.verdicts(self.finding_mark_events("14"))
         self.assertTrue(any(level == "FAIL" and "MarkCleared/Typed" in text for level, text in verdicts))
 
+    # -- 時間切れの手前の沈み（ev=outro sink= endingTime=）------------------------------
+    SINK_TEXTS = ("沈んでいない", "沈みを画へ書けていない", "沈みが残っている", "沈み（sink）")
+
+    def sink_events(self, ending, head):
+        events = self.report_events(ending=ending)
+        events[0].update(head)          # 終幕の頭（stage=Dark）の 1 行
+        return events
+
+    def sink_verdicts(self, ending, head):
+        return [(level, text) for level, text in self.verdicts(self.sink_events(ending, head))
+                if any(s in text for s in self.SINK_TEXTS) or "画が沈んでから" in text]
+
+    def test_timed_out_trap_after_the_screen_sank_passes(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "endingTime": "1", "sink": "1.00"})
+        self.assertTrue(any(level == "OK" for level, _ in got))
+        self.assertFalse(any(level == "FAIL" for level, _ in got))
+
+    def test_timed_out_trap_without_sinking_fails(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "endingTime": "1", "sink": "0.20"})
+        self.assertTrue(any(level == "FAIL" and "人形 End の前に画が沈んでいない" in text for level, text in got))
+
+    def test_timed_out_trap_without_material_fails(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "endingTime": "1", "sink": "nc"})
+        self.assertTrue(any(level == "FAIL" and "書けていない" in text for level, text in got))
+
+    def test_leaving_or_left_half_trap_is_not_judged_for_sinking(self):
+        for head in ({"endingLeft": "0", "endingTime": "0", "sink": "0.00", "promptAge": "11.00"},
+                     {"endingLeft": "1", "endingTime": "0", "sink": "0.00", "promptAge": "-1.00"}):
+            self.assertEqual([], self.sink_verdicts("Trapped", head))
+
+    def test_old_log_falls_back_to_prompt_age(self):
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "promptAge": "15.02", "sink": "0.10"})
+        self.assertTrue(any(level == "FAIL" and "沈んでいない" in text for level, text in got))
+        self.assertEqual([], self.sink_verdicts("Trapped", {"endingLeft": "0", "promptAge": "12.00", "sink": "0.10"}))
+        got = self.sink_verdicts("Trapped", {"endingLeft": "0", "promptAge": "15.02"})
+        self.assertTrue(any(level == "WARN" for level, _ in got))
+        self.assertFalse(any(level == "FAIL" for level, _ in got))
+
+    def test_released_with_the_sink_gone_passes(self):
+        self.assertEqual([], self.sink_verdicts("Released", {"sink": "0.00"}))
+
+    def test_released_with_the_sink_left_fails(self):
+        got = self.sink_verdicts("Released", {"sink": "0.30"})
+        self.assertTrue(any(level == "FAIL" and "解除したのに沈みが残っている" in text for level, text in got))
+
     def test_trapped_does_not_ask_for_farewell(self):
         events = self.report_events(ending="Trapped")
         for e in events:
