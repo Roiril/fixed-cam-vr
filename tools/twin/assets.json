@@ -1,0 +1,33 @@
+{
+  "_note": "ツインの部屋で作り直した合成素材。cue の id ごとに、本番の sourceUrl / maskUrl の代わりに読ませるファイル（tools/twin/assets/ からの名前）。make_assets.py が show.json の今のファイル名へ当てはめて Logs/twin-run/assets/ に並べ、twin-verify.py が FIXEDCAM_ASSET_OVERRIDE_DIR で Editor に読ませる。本番の APK と show.json には入らない。作り方は README の「合成素材」",
+  "cues": {
+    "cue_hands_B": {
+      "source": "twin_handsB.png",
+      "mask": "twin_handsB_mask.png"
+    },
+    "plate_A": {
+      "source": "../plates/twin_A_plate.jpg"
+    },
+    "plate_B": {
+      "source": "../plates/twin_B_plate.jpg"
+    },
+    "plate_C": {
+      "source": "../plates/twin_C_plate.jpg"
+    },
+    "plate_A_right": {
+      "source": "../plates/twin_A_plate.jpg"
+    },
+    "gen_dolls_A_left": {
+      "source": "twin_dollsA_left_freeze.png"
+    },
+    "dolls_A_in": {
+      "source": "twin_dollsA_in.mp4"
+    },
+    "cue_stain_A": {
+      "source": "twin_stainA_idle.png"
+    },
+    "stain_A_press_flutter": {
+      "source": "twin_stainA_pingpong.mp4"
+    }
+  }
+}

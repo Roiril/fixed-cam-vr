@@ -93,5 +93,28 @@ class ReadEvents(unittest.TestCase):
             self.assertEqual(tv.read_events(log), [{"t": 2.5, "ev": "mark", "text": "n=1"}])
 
 
+class AssetCheck(unittest.TestCase):
+    SWAPPED = {"plate_A.jpg": "tools/twin/plates/twin_A_plate.jpg", "gen_hands.png": "tools/twin/assets/twin_handsB.png"}
+
+    def line(self, name: str) -> str:
+        return f"[ShowAssetResolver] override {name} -> file://C:/x/{name}\n"
+
+    def test_all_read_passes(self):
+        log = self.line("plate_A.jpg") + self.line("gen_hands.png") + self.line("plate_A.jpg")
+        self.assertEqual(tv.asset_check(log, self.SWAPPED), ("OK", "ツインの合成素材を 2/2 本読んだ"))
+
+    def test_none_read_fails(self):
+        # 2026-11-11: 行が run_xp.log に写っていなかったとき 0 本と出た。0 本は本番の素材で走ったのと区別できない。
+        level, text = tv.asset_check("[XP] t=1.00 ev=sum fps=90\n", self.SWAPPED)
+        self.assertEqual(level, "FAIL")
+        self.assertIn("0/2", text)
+
+    def test_partial_names_the_missing_one(self):
+        level, text = tv.asset_check(self.line("plate_A.jpg") + self.line("other.png"), self.SWAPPED)
+        self.assertEqual(level, "WARN")
+        self.assertIn("1/2", text)
+        self.assertIn("gen_hands.png", text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,27 @@ py -3.11 tools/twin/check_rig.py
 
 `Logs/twin-cycles/seq/<route>/` に古いコマと `plate.npy` が残っていると、`seq` はそれを再利用して焼き直さない。配置を変えたら先に消す。
 
+## 合成素材（HMD なしの通し検証用）
+
+本番の合成素材（1-B の手形・2-A のシミ・4-A の人形群・3 周目の無人写真）は実際の部屋で作ってあり、
+ツインの映像に重ねると別の部屋の画が貼られる。`tools/twin-verify.py` は既定で、ツインの部屋で作り直した素材へ差し替えて走る
+（`--real-assets` で本番のまま）。本番の show.json と APK には入らない。
+
+- 対応表は `assets.json`（cue の id → `assets/` の素材）。`make_assets.py` が show.json の今のファイル名へ当てはめて
+  `Logs/twin-run/assets/` に並べ、Editor は環境変数 `FIXEDCAM_ASSET_OVERRIDE_DIR` が指すフォルダの同名ファイルを読む
+  （`ShowAssetResolver.TryOverride`。Player は読まない）。読まれた本数は判定の頭に出る
+- 静止画は `tools/gen-plate` の通常の手順で作る。場所は `sites/twin_A.json` / `twin_B.json`（無人写真は `plates/twin_*_plate.jpg`）
+- 動画は Codex の画像生成で同じ構図のキーフレームを数枚作り（前のコマを入力にして少しずつ動かす）、`animate_keys.py` が
+  オプティカルフローで中割りして 640x480・24fps の mp4 にする。キーの生成は暗くした種の上で行い、`gen-tone.py undim` で戻してから繋ぐ
+
+```powershell
+py -3.11 tools/twin/animate_keys.py --keys k0.png k1.png k2.png --move 1.2 1.2 --hold 1.0 0.4 0.2 --keep 0,0,330,480 --out assets/x.mp4 --sheet sheet.png
+py -3.11 tools/twin/make_assets.py
+```
+
+⚠ 作り直した素材は本番の素材の代わりではない。強さや顔の描き方は本番と揃っていない（2-A のシミは本番より顔がはっきりしている）。
+見るのは「ツインの部屋で、その場面が体験者にどう届くか」まで。
+
 ## ファイル
 
 | ファイル | 役割 |
@@ -50,6 +71,8 @@ py -3.11 tools/twin/check_rig.py
 | `twin_render.py` | Cycles の設定と撮影。`still` と `seq` |
 | `prep_textures.py` | 生成した素材写真から色（`<名前>.jpg`）と面の情報（`<名前>_s.jpg`。R 高さ・G 層・B 細かい明暗）を作る。缶のラベルと箱の印刷はコードで組む。生成元は Drive `renders/twin-cycles/textures-src`（`v2/` が追加分） |
 | `make_pack.py` | HMD なしの通し検証（`tools/twin-verify.py`）へ渡す束。焼いた動画を周の印つきの MJR と無人写真へ変える |
+| `assets.json` / `assets/` / `make_assets.py` | ツインの部屋で作り直した合成素材と、本番の cue への当てはめ（上の「合成素材」） |
+| `animate_keys.py` | 生成したキーフレーム数枚をオプティカルフローで中割りして動画にする |
 | `audit_prompt.md` | 監査の文面（基準を動かさないため固定） |
 
 ## 配置の決め方

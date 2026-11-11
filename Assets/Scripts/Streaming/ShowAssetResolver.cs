@@ -24,6 +24,26 @@ namespace FixedCamVr.Streaming
         private const string SaPrefix = "sa://";
 
         /// <summary>
+        /// Editor の検証だけが使う素材の差し替え先（HMD なしの通し検証 <c>tools/twin-verify.py</c> とその再生）。
+        /// このフォルダに <c>sa://assets/</c> と同じ名前のファイルがあれば、焼き込みの代わりにそれを読む。
+        /// ツインの部屋で作り直した合成素材を、本番の show.json を書き換えずに流すため。
+        /// Player では読まない（<see cref="Resolve"/> の Player 分岐より後で見る）。
+        /// </summary>
+        public const string OverrideDirEnv = "FIXEDCAM_ASSET_OVERRIDE_DIR";
+
+        /// <summary><paramref name="dir"/> に <paramref name="file"/> が実在すれば file:// の URI を返す。名前に区切りを含むものは読まない。</summary>
+        public static bool TryOverride(string? dir, string file, out string uri)
+        {
+            uri = "";
+            if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(file)) return false;
+            if (file.Contains("/") || file.Contains("\\") || file.Contains("..")) return false;
+            string path = System.IO.Path.Combine(dir!, file);
+            if (!System.IO.File.Exists(path)) return false;
+            uri = "file://" + path.Replace('\\', '/');
+            return true;
+        }
+
+        /// <summary>
         /// show.json のアセット URL を UnityWebRequest / VideoPlayer が開ける URL に解決する。
         /// Player では同梱以外を空文字にする。
         /// </summary>
@@ -32,7 +52,15 @@ namespace FixedCamVr.Streaming
             if (string.IsNullOrEmpty(url)) return "";
             if (!Application.isEditor) return ResolveBakedOnly(url);
             if (url.StartsWith(SaAssetsPrefix))
-                return StreamingAssetsUri("show/assets/" + url.Substring(SaAssetsPrefix.Length));
+            {
+                string file = url.Substring(SaAssetsPrefix.Length);
+                if (TryOverride(Environment.GetEnvironmentVariable(OverrideDirEnv), file, out string over))
+                {
+                    Debug.Log($"[ShowAssetResolver] override {file} -> {over}");
+                    return over;
+                }
+                return StreamingAssetsUri("show/assets/" + file);
+            }
             if (url.StartsWith(SaPrefix))
                 return StreamingAssetsUri("show/" + url.Substring(SaPrefix.Length));
             if (IsAbsolute(url)) return url;

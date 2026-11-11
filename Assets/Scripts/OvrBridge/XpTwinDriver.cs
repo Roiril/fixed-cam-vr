@@ -475,7 +475,9 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost
             if (msg.StartsWith("[XP]", StringComparison.Ordinal)) _log.WriteLine(msg);
             else if (type == LogType.Warning) _log.WriteLine("W/Unity (    1): " + msg.Replace("\n", " "));
             else if (type != LogType.Log) _log.WriteLine("E/Unity (    1): " + msg.Replace("\n", " "));
-            else if (msg.StartsWith("[Twin]", StringComparison.Ordinal) || msg.StartsWith("[XPWalk]", StringComparison.Ordinal))
+            // [ShowAssetResolver] override は twin-verify.py が「ツインの素材を読んだか」を数える。
+            else if (msg.StartsWith("[Twin]", StringComparison.Ordinal) || msg.StartsWith("[XPWalk]", StringComparison.Ordinal)
+                     || msg.StartsWith("[ShowAssetResolver] override", StringComparison.Ordinal))
                 _log.WriteLine(msg);
         }
     }

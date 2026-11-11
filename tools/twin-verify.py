@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -29,6 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACK = ROOT / "Logs" / "twin-run" / "pack"
+ASSETS = ROOT / "Logs" / "twin-run" / "assets"
 DRIVE = Path(r"G:\マイドライブ\shubie\renders\twin-verify")
 SHOW = ROOT / "Assets" / "StreamingAssets" / "show" / "show.json"
 PS = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "tools" / "unity.ps1")]
@@ -36,10 +38,13 @@ XP_LINE = re.compile(r"\[XP\]\s+t=([\d.]+)\s+ev=(\S+)\s*(.*)$")
 VERDICT_LINE = re.compile(r"^- (❌|⚠|✅) (.*)$")
 
 
+ENV: dict[str, str] | None = None  # Unity へ渡す環境（素材の差し替え先）。None は親のまま
+
+
 def run(cmd: list[str], what: str) -> int:
     print(f"== {what}", flush=True)
     t0 = time.time()
-    rc = subprocess.run(cmd, cwd=ROOT).returncode
+    rc = subprocess.run(cmd, cwd=ROOT, env=ENV).returncode
     print(f"   {what}: exit={rc} {time.time() - t0:.0f}s", flush=True)
     return rc
 
@@ -136,6 +141,16 @@ def ending_checks(log: Path, calib: str, nomark: bool) -> list[tuple[str, str]]:
     return out
 
 
+def asset_check(log_text: str, swapped: dict[str, str]) -> tuple[str, str]:
+    """ツインで作り直した合成素材が Editor に読まれたか。行は XpTwinDriver が run_xp.log へ写す。
+    1 本も無ければ差し替えが効いていない（本番の素材で走った）ので FAIL。一部だけなら、その cue が走らなかった可能性がある。"""
+    used = set(re.findall(r"\[ShowAssetResolver\] override (\S+)", log_text)) & set(swapped)
+    missing = sorted(set(swapped) - used)
+    level = "OK" if not missing else ("FAIL" if not used else "WARN")
+    return level, (f"ツインの合成素材を {len(used)}/{len(swapped)} 本読んだ"
+                   + (f"（読まれなかった: {', '.join(missing)}）" if missing else ""))
+
+
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
@@ -150,6 +165,8 @@ def main() -> int:
     ap.add_argument("--calib", choices=("twin", "show"), default="show",
                     help="人形の姿勢。show は APK と同じ本番の show.json（結末まで通る。人形は画と合わない）、twin はツインの配置（人形は画に合う）")
     ap.add_argument("--fov", type=float, default=52.0, help="目線の動画の縦の画角（度）。実機より狭く切って画面を大きく映す")
+    ap.add_argument("--real-assets", action="store_true",
+                    help="合成素材を本番のまま流す（既定はツインの部屋で作り直した素材 tools/twin/assets.json へ差し替える）")
     ap.add_argument("--tag", default="")
     a = ap.parse_args()
 
@@ -160,6 +177,13 @@ def main() -> int:
 
     if run(["py", "-3.11", str(ROOT / "tools" / "twin" / "make_pack.py"), "--out", str(PACK)], "映像の束") != 0:
         return 2
+    global ENV
+    swapped: dict[str, str] = {}
+    if not a.real_assets:
+        if run(["py", "-3.11", str(ROOT / "tools" / "twin" / "make_assets.py"), "--out", str(ASSETS)], "合成素材") != 0:
+            return 2
+        swapped = json.loads((ASSETS / "assets_map.json").read_text(encoding="utf-8"))
+        ENV = dict(os.environ, FIXEDCAM_ASSET_OVERRIDE_DIR=str(ASSETS))
 
     args = {"pack": str(PACK), "out": str(work), "speed": str(a.speed), "dwell": str(a.dwell)}
     if a.nomark:
@@ -185,6 +209,9 @@ def main() -> int:
         level, text = twinlap_check(events)
         verdicts.insert(0, {"level": level, "text": text})
         for level, text in reversed(ending_checks(log, a.calib, a.nomark)):
+            verdicts.insert(0, {"level": level, "text": text})
+        if swapped:
+            level, text = asset_check(log.read_text(encoding="utf-8", errors="replace"), swapped)
             verdicts.insert(0, {"level": level, "text": text})
 
     pack = json.loads((PACK / "pack.json").read_text(encoding="utf-8"))
@@ -221,7 +248,8 @@ def main() -> int:
         "stamp": stamp, "pass": ok, "counts": n, "run": run_info, "calibGapPx": gaps,
         "videos": {k: f"{k}.mp4" for k in videos},
         "compare": replay_compare.splitlines()[:2],
-        "verdicts": verdicts, "args": {"speed": a.speed, "dwell": a.dwell, "nomark": a.nomark, "relief": a.relief, "calib": a.calib},
+        "verdicts": verdicts, "assets": swapped,
+        "args": {"speed": a.speed, "dwell": a.dwell, "nomark": a.nomark, "relief": a.relief, "calib": a.calib, "realAssets": a.real_assets},
     }
 
     calib_note = ("人形の姿勢はツインの配置へ差し替えて走った" if a.calib == "twin" else "人形の姿勢は本番の show.json のまま走った（ツインの映像とは合わない）")
@@ -233,6 +261,8 @@ def main() -> int:
         "",
         f"⚠ {calib_note}。本番の calib とツインの配置の差（頭と足の投影・中央値 px）: {gaps}。**PASS は本番の calib で合っていることを意味しない。**",
         f"⚠ 映像は頭の位置から引いている。道とのずれ最大 {run_info.get('feedMaxErrM')}m。道から外れた刻み {run_info.get('feedOffRouteTicks')}（人の居ない写真を配った）。立ち止まると人は歩きの 1 コマで止まる。",
+        ("合成素材: ツインの部屋で作り直したもの " + " / ".join(f"{k}←{v}" for k, v in swapped.items()))
+        if swapped else "合成素材: 本番のまま（実際の部屋で作った画が、ツインの映像に重なる）",
         "",
     ]
     final_report = work / "summary.md"
