@@ -18,7 +18,8 @@ metadata:
 
 `briefing-v1.json` の場面に `figures`（`fromCue` の昇順）を書くと、その文から先はテレビの絵がその絵になる。最初の絵は `image`。`tag`（3 言語）は画面の左上の札（「管理番号 0514」）。`kind: "buttons"` は左コントローラーの図で、X と Y の赤い輪と 1 秒で満ちる輪を DOM で重ねる（`#figureButtons`）。
 
-- 絵はツインから作る（0328）。4:3・960×720 の JPEG。元は Drive `renders/twin-cycles/`: 部屋は `20261112_112644_doctor0514/hero.png`（`shoot.py --person 0`）、装置・カメラ・カメラの画は `20261104_214433_tex2/` の `close` `rigA` `A`、歩く動画は `game/forward/cut_auto.mp4`。人形の絵だけツインではない（ツインに人形が居ない）
+- 絵はツインから作る（0328）。4:3・960×720 の JPEG。元は Drive `renders/twin-cycles/`: 部屋は `20261112_112644_doctor0514/hero.png`（`shoot.py --person 0`）、カメラ・カメラの画は `20261104_214433_tex2/` の `rigA` `A`、歩く動画は `game/forward/cut_auto.mp4`。人形の絵はツインではない（ツインに人形が居ない）
+- 観測装置の絵（`device-quest3-v1.jpg`）は `tools/visitor-ui/render-device-still.py` が Quest 3 のモデルから撮る。モデルはユーザーが渡した `Downloads/meta-quest-3.zip`（`source/meta quest 3.glb`。本体・左右のコントローラー・実寸）で、リポジトリには入れていない。出どころと利用条件は未確認。1280×960 で撮り、(150,140)-(1170,905) を切って 960×720 にした
 - ⚠ 輪の位置（`.fb-x` / `.fb-y`）は `equipment-controller-v1.png` の中のボタンの位置と、CSS の拡大（`scale(1.5)`・`transform-origin`）と、`.tv-screen` の縦横比から手で出した値。どれかを替えたら、輪を止めて（`animation: none; opacity: 1`）撮って重なりを見る
 - ⚠ 資料の提示の札（`presentReference` の `scene`）は `場面ID:絵の番号`。場面 ID だけにすると、同じ場面の 2 枚目が「変わっていない」と判定されて出ない
 - ⚠ テレビが出た直後に撮ると、乱れの途中の暗い画が撮れる。1 秒置いて撮り直す

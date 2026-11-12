@@ -80,7 +80,7 @@
 
 開始 59.5 秒 / 尺 36.3 秒
 
-画像: `twin-headset-v1.jpg`
+画像: `device-quest3-v1.jpg`
 
 文 02 からの画像: `twin-camera-v1.jpg`
 
@@ -194,7 +194,7 @@ You will not see your feet. Hold the handrail with your right hand, never let go
 
 開始 51.8 秒 / 尺 30.4 秒
 
-画像: `twin-headset-v1.jpg`
+画像: `device-quest3-v1.jpg`
 
 文 02 からの画像: `twin-camera-v1.jpg`
 
@@ -304,7 +304,7 @@ Vous ne verrez pas vos pieds. Tenez la main courante de la main droite, ne la l�
 
 開始 56.8 秒 / 尺 32.4 秒
 
-画像: `twin-headset-v1.jpg`
+画像: `device-quest3-v1.jpg`
 
 文 02 からの画像: `twin-camera-v1.jpg`
 

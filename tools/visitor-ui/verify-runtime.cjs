@@ -1153,7 +1153,7 @@ test('額の絵は文に合わせて替わり、報告の文では X と Y の�
     state.lang = lang;
     state.briefing.cueIndex = 0;
     runtime.beginBriefingCue();
-    assert.match(image.src, /twin-headset-v1\.jpg$/);
+    assert.match(image.src, /device-quest3-v1\.jpg$/);
     assert.equal(elements.get('figureButtons').hidden, true);
     assert.equal(visual.classList.contains('is-figure-buttons'), false);
     const press = data.scenes[reportIndex].cues[lang].findIndex((cue) => /XとY|X or Y|X ou Y/.test(cue.text));

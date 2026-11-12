@@ -222,13 +222,13 @@
     {
       "id": "report",
       "layout": "doctor-evidence",
-      "image": "twin-headset-v1.jpg",
+      "image": "device-quest3-v1.jpg",
       "doctorImage": "report-doctor-v2.jpg",
       "doctorAnchor": 50,
       "alt": {
-        "ja": "観測装置を頭につけた調査員",
-        "en": "An investigator wearing the observation device",
-        "fr": "Un enquêteur portant le dispositif d’observation"
+        "ja": "黒い布の上に置かれた観測装置と左コントローラー",
+        "en": "The observation device and the left controller, placed on black cloth",
+        "fr": "Le dispositif d’observation et la manette gauche, posés sur un tissu noir"
       },
       "figures": [
         {
