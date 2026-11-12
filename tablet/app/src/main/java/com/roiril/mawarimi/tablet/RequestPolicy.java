@@ -12,7 +12,7 @@ public final class RequestPolicy {
     // NativePolicyTest が index.html の <script src> を全部ここと突き合わせる。
     private static final String[] WEB_SCRIPTS = {
         "/tablet-transport.js", "/briefing-presentation.js", "/signal-cut.js", "/title-write.js", "/tablet-sound.js",
-        "/romi-panel.js",
+        "/romi-panel.js", "/tv-live.js",
     };
 
     private RequestPolicy() {}

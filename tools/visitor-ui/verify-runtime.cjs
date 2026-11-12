@@ -1274,6 +1274,22 @@ test('日本語の台詞は 0327 の版で、声は v4 の音声。古い台詞�
   assert.match(html, /\.stage\.has-reference:not\(\.is-equipment\) \.portrait \{ visibility: hidden; \}/);
   assert.doesNotMatch(html, /translateX\(17\.5%\)/);
   assert.ok(fs.existsSync(path.join(assetRoot, 'tv-frame-v1.png')));
+  // テレビを点いている画にする部品（tv-live.js）。canvas は .tv-screen の中、声の波形はテレビの下
+  assert.match(html, /<canvas class="tv-live" id="tvLive"/);
+  assert.match(html, /<footer class="footer">\s*<canvas class="voice-meter" id="voiceMeter"[^>]*hidden/);
+  assert.match(html, /<script src="\.\/tv-live\.js"><\/script>/);
+  const policy = fs.readFileSync(path.join(root, 'tablet', 'app', 'src', 'main', 'java', 'com', 'roiril', 'mawarimi', 'tablet', 'RequestPolicy.java'), 'utf8');
+  assert.match(policy, /"\/tv-live\.js"/, 'アプリが配る js の表に無いと実機では 404 で黙って落ちる');
+  // 声の波形の列は場面ごと・20Hz。長さは切り出した音の長さと 0.2 秒以内で合う
+  const voiceEnv = JSON.parse(fs.readFileSync(path.join(assetRoot, 'doctor-voice-ja-v4.json'), 'utf8'));
+  assert.equal(voiceEnv.hz, 20);
+  for (const scene of briefing.scenes) {
+    const values = voiceEnv.scenes[scene.id];
+    assert.match(values, /^[0-9]+$/, scene.id);
+    const cueMs = scene.cues.ja.reduce((sum, cue) => sum + cue.durationMs, 0);
+    assert.ok(Math.abs(values.length / voiceEnv.hz * 1000 - cueMs) < 200, `${scene.id}: 波形 ${values.length / voiceEnv.hz}s と文の尺 ${cueMs}ms`);
+    assert.ok(/[5-9]/.test(values), `${scene.id}: 声のある所が無い`);
+  }
 });
 
 test('壁の動画は次の文から始まり、文送りでは再生位置を変えずにループし、止めると止まる', () => {

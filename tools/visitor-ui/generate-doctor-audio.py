@@ -6,11 +6,12 @@
 入力は `elevenlabs-input-ja-v4.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
 鍵は環境変数 `ELEVENLABS_API_KEY`（値は表示しない。`~/.claude/rules/secrets.md`）。
 
-することは 4 つ。
+することは 5 つ。
 1. `/with-timestamps` で合成する。音と一緒に、1 字ごとの時刻が返る
 2. 各文の頭の語を時刻の列から探し、文と文の間の無音の真ん中で区切る
 3. 場面ごとに `tablet/.../asset/<場面>-ja-v4.mp3` へ切り出す
 4. `briefing-v1.json` の日本語の `durationMs` を実測へ直し、`audio.ja` を付ける
+5. 声の大きさの列を `asset/doctor-voice-ja-v4.json` に書く（テレビの下の波形が使う）
 
 切り出すときに `--tempo`（既定 1.2）で速める。残してある元の音は等速のまま。
 ⚠ 口の動画（リップシンク）は作らない。動画が届くまで、日本語は博士の静止画と声で進む。
@@ -87,6 +88,19 @@ def duration_ms(path):
     return round(float(json.loads(out)["format"]["duration"]) * 1000)
 
 
+def voice_envelope(path, hz=20):
+    """切り出した音から、声の大きさの列（0–9 の数字の文字列・1 秒あたり hz 個）を作る。
+    タブレットのテレビの下の波形が、再生位置からこの列を引いて動く（tv-live.js）。"""
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", "8000",
+                          "-f", "s16le", "-"], check=True, capture_output=True).stdout
+    x = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    step = 8000 // hz
+    n = len(x) // step
+    rms = np.sqrt((x[:n * step].reshape(n, step) ** 2).mean(axis=1))
+    return rms
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--voice", required=True)
@@ -142,6 +156,14 @@ def main():
         report[scene["id"]] = {"file": target.name, "ms": duration_ms(target),
                                "cues": [c["durationMs"] for c in scene["cues"]["ja"]]}
         k += n
+    # 声の波形の列。全場面を同じ基準（全体の 97 パーセンタイル）で 0–9 にする
+    import numpy as np
+    hz = 20
+    env = {scene["id"]: voice_envelope(ASSETS / scene["audio"]["ja"], hz) for scene in data["scenes"]}
+    top = float(np.percentile(np.concatenate(list(env.values())), 97)) or 1.0
+    voice = {"hz": hz, "scenes": {k: "".join(str(int(min(9, round(9 * (v / top) ** 0.7)))) for v in vals) for k, vals in env.items()}}
+    voice_path = ASSETS / f"doctor-voice-ja-{VERSION}.json"
+    io.open(voice_path, "w", encoding="utf-8", newline="\n").write(json.dumps(voice, ensure_ascii=False) + "\n")
     out = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").replace("\n", nl)
     tmp = BRIEFING.with_name(BRIEFING.name + ".tmp")
     io.open(tmp, "w", encoding="utf-8", newline="").write(out)

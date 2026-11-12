@@ -42,6 +42,13 @@ def _load_route(route: str):
         if i:
             dist += math.hypot(r["x"] - rows[i - 1]["x"], r["z"] - rows[i - 1]["z"])
         r["dist"] = dist
+    # 速さは記録の列を使わず、進んだ道のりから前後 0.27 秒の幅で取り直す。
+    # 記録の speed には 0.2 秒ごとに 1 サンプルだけ 1/10 へ落ちる所があり（forward の頭 3 秒・2026-11-12）、
+    # そのまま歩幅に使うと、そのコマだけ手足が棒立ちへ寄ってぴくつく
+    w = 8
+    for i, r in enumerate(rows):
+        a, b = rows[max(0, i - w)], rows[min(len(rows) - 1, i + w)]
+        r["speed"] = (b["dist"] - a["dist"]) / (b["t"] - a["t"]) if b["t"] > a["t"] else 0.0
     return rows
 
 
@@ -933,6 +940,15 @@ class Person:
             right = fwd.cross(Vector((0, 0, 1)))
             if side.normalized().dot(right) < -0.2:
                 reach = 0.0  # 左側の手すりには右手を伸ばさない
+        # 角では、いちばん近い手すりの点が隣の辺へ 1 コマで飛ぶ。前後 0.2 秒の位置で取った点をならして、手を滑らせる
+        if rail_q is not None:
+            near = [rail_q]
+            for dt in (-0.2, -0.1, 0.1, 0.2):
+                rr = self.row_at(t + dt)
+                q2, _ = self._nearest_rail(Vector((rr["x"], rr["z"], 0)))
+                if q2 is not None:
+                    near.append(q2)
+            rail_q = sum(near, Vector()) / len(near)
         hand_goal = rail_q + Vector((0, 0, 0.018)) if rail_q is not None else pos
         self.ik_target.location = hand_goal
         self.ik.influence = reach

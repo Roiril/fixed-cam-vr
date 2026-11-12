@@ -59,4 +59,6 @@ URP の `VirtualRoom`（[[twin_room]]）は本物の Director を通す検証用
 
 **代役の頭の装置**（2026-11-12・LEDGER 0328）: ユーザーが渡した Quest 3 のモデル（`meta-quest-3.zip` の glb・実寸・-Y が前）を頭へ載せる。置き場は `Logs/twin-cycles/models/meta-quest-3.glb` と Drive `fixed-cam-vr-assets/models/`（git に入れない。出どころと利用条件は未確認）。載せる位置は `twin_person.HMD_MODEL_CENTER`（モデルの前面から 33mm 奥・前面の窓の高さ）を、箱の装置の中心だった点へ合わせる。モデルが無い PC は箱の装置で撮り、開始行に「箱の装置で撮る」と出る。同じ動画に 2 種類の装置が混ざらないよう、焼く前に開始行を見る
 
+**歩きがぴくつくとき**（2026-11-12・LEDGER 0329）: 記録の `speed` の列に、0.2 秒ごとに 1 サンプルだけ 1/10 へ落ちる所がある（forward の頭 3 秒）。歩幅をこの列から取ると、そのコマだけ手足が棒立ちへ寄る。`_load_route` で、進んだ道のりから前後 0.27 秒の幅で速さを取り直している。角では手すりのいちばん近い点が隣の辺へ 1 コマで飛ぶので、前後 0.2 秒の点をならす。描く前に `tools/twin/probe_gait.py` で関節の 2 階差分を見る（直す前は足で 360mm/コマ²、直した後は 35）。Unity 側の記録の書き方は直していない
+
 関連: [[twin_room]] / [[virtual_walk]] / [[codex_image_pipeline]]

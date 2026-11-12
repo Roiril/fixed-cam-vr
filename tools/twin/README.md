@@ -67,6 +67,7 @@ py -3.11 tools/twin/make_assets.py
 | `twin_scene.py` | 部屋・カーテン・棚・三脚・床置き台・アーム・電球 |
 | `twin_person.py` | 代役。黒い長袖とカーゴ・毛の髪・Quest 3。歩きと右手の手すり。Quest 3 は `Logs/twin-cycles/models/meta-quest-3.glb`（無ければ Drive `fixed-cam-vr-assets/models/`）のモデルを頭へ載せる。どちらにも無い PC では箱で組んだ装置になる（開始行に出る）。モデルは git に入れない |
 | `twin_materials.py` | 材質。素材写真を土台に、汚れは形から決める（AO の隅・出っ張った縁の欠け・上向きの面の埃・高さ・金具の下の筋） |
+| `probe_gait.py` | 代役の歩きを描かずに数で見る。関節の位置の 2 階差分が大きいコマ（ぴくつき）を出す |
 | `twin_post.py` | 写真の仕上げ（自動露出・レンズのかぶり・色ずれ・ノイズ・シャープ・JPEG） |
 | `twin_render.py` | Cycles の設定と撮影。`still` と `seq` |
 | `prep_textures.py` | 生成した素材写真から色（`<名前>.jpg`）と面の情報（`<名前>_s.jpg`。R 高さ・G 層・B 細かい明暗）を作る。缶のラベルと箱の印刷はコードで組む。生成元は Drive `renders/twin-cycles/textures-src`（`v2/` が追加分） |

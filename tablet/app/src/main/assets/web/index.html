@@ -241,9 +241,31 @@
   /* ---- 資料はテレビの中に映す（LEDGER 0327 の続き「博士がスライドして横にプレーンのスクリーンが出てくるのもおかしい」）。
      資料のある文では博士の画を切り、本編と同じテレビ（tv-frame-v1.png = Assets/Resources/CrtReference/Frame.png）を画面の中央に置く。
      絵・映像・札・図は .tv-screen（枠の開口より少し広い箱）の中。枠が上から被さって角を丸める ---- */
-  .briefing-visual { position: absolute; z-index: 2; left: 50%; top: 43%; height: min(72vh,62vw); aspect-ratio: 1118 / 900; margin: 0; pointer-events: none; opacity: 0; transform: translate(-50%,-50%); transition: opacity .12s linear, filter .45s var(--ease); }
+  .briefing-visual { position: absolute; z-index: 2; left: 50%; top: 41%; height: min(68vh,60vw); aspect-ratio: 1118 / 900; margin: 0; pointer-events: none; opacity: 0; transform: translate(-50%,-50%); transition: opacity .12s linear, filter .45s var(--ease); }
   .briefing-visual::before { content: ""; position: absolute; z-index: -1; inset: -14% -22% -20%; background: radial-gradient(50% 50% at 50% 52%,rgba(150,170,160,.13),transparent 70%); }
-  .tv-frame { position: absolute; z-index: 3; inset: 0; display: block; width: 100%; height: 100%; filter: drop-shadow(0 26px 40px rgba(0,0,0,.8)); }
+  /* 枠だけを机へ映り込ませる（画面ごと映すと動画の層を二重に描くことになる）。映り込むのは下の縁の 16% */
+  .tv-frame { position: absolute; z-index: 3; inset: 0; display: block; width: 100%; height: 100%; filter: drop-shadow(0 26px 40px rgba(0,0,0,.8)); -webkit-box-reflect: below 0 linear-gradient(transparent 84%,rgba(0,0,0,.2)); }
+  /* 机の縁の線と、画面の光が机へ落ちる分 */
+  .briefing-visual::after { content: ""; position: absolute; z-index: 0; left: -34%; right: -34%; top: 100%; height: 22%; pointer-events: none; background:
+      linear-gradient(90deg,transparent,rgba(232,220,196,.13) 30%,rgba(232,220,196,.13) 70%,transparent) top / 100% 1px no-repeat,
+      radial-gradient(46% 100% at 50% 0,rgba(160,180,170,.12),transparent 72%); }
+  /* 走査の揺れ・電源の入り・チャンネル替え（tv-live.js が描く）。走査線と周辺落ちの下 */
+  .tv-live { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  /* 博士の声の波形（日本語だけ）。字幕のすぐ上。博士の場面でもテレビの場面でも同じ所に出る（口が動かない分、声が出ていることを画で示す） */
+  .voice-meter { display: block; justify-self: center; width: clamp(150px,17vw,220px); height: clamp(18px,2.4vw,30px); margin-bottom: -4px; pointer-events: none; opacity: .9; }
+  .stage.is-briefing-controls .voice-meter { opacity: .25; }
+  .stage.is-equipment .voice-meter { display: none; }
+  /* 説明の進み具合。画面のいちばん下の細い線（字は出さない） */
+  .briefing-hairline { position: fixed; z-index: 9; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(232,220,196,.07); pointer-events: none; }
+  .briefing-hairline span { display: block; height: 100%; width: 0; background: linear-gradient(90deg,rgba(168,50,57,.55),var(--red)); transition: width .5s var(--ease-out); }
+  /* 静止画は止めない。16 秒かけてわずかに寄る（押すボタンの図は動かさない） */
+  @keyframes tv-push { from { transform: scale(1); } to { transform: scale(1.07); } }
+  .briefing-visual:not(.is-figure-buttons) .briefing-image.is-visible { animation: tv-push 16s linear both; }
+  @keyframes tv-glow { 0%, 100% { opacity: 1; } 47% { opacity: .86; } 52% { opacity: .97; } 71% { opacity: .9; } }
+  .briefing-visual.is-presented::before { animation: tv-glow 5.3s steps(12) infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .briefing-visual:not(.is-figure-buttons) .briefing-image.is-visible, .briefing-visual.is-presented::before { animation: none; }
+  }
   .tv-screen { position: absolute; z-index: 1; left: 6.5%; right: 4.6%; top: 6%; bottom: 7.1%; overflow: hidden; background: #050403; }
   /* 走査線と、管の周辺の落ち込み */
   .tv-screen::after { content: ""; position: absolute; z-index: 4; inset: 0; pointer-events: none; background:
@@ -594,6 +616,7 @@
     <img class="briefing-image" id="briefingImage" alt="" draggable="false" width="1600" height="900" hidden>
     <video class="briefing-loop-video" id="briefingLoopVideo" playsinline muted loop preload="none" disablepictureinpicture aria-hidden="true" hidden></video>
     <canvas class="reference-ghost" id="referenceGhost" aria-hidden="true" hidden></canvas>
+    <canvas class="tv-live" id="tvLive" aria-hidden="true"></canvas>
     <p class="figure-tag" id="figureTag" aria-hidden="true" hidden></p>
     <div class="figure-buttons" id="figureButtons" aria-hidden="true" hidden>
       <span class="fb-press fb-x"></span>
@@ -610,6 +633,7 @@
     </div>
     </div>
   </figure>
+  <div class="briefing-hairline" id="briefingHairline" aria-hidden="true" hidden><span id="briefingHairlineFill"></span></div>
   <button class="briefing-pause-surface" id="briefingPauseSurface" type="button" aria-label="次の文へ進む" hidden></button>
   <button class="briefing-pause-btn" id="briefingPauseBtn" type="button" aria-label="一時停止" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
   <p class="bypass-badge" id="bypassBadge" role="status" hidden>通し確認（接続を無視）</p>
@@ -745,6 +769,7 @@
   </main>
 
   <footer class="footer">
+    <canvas class="voice-meter" id="voiceMeter" aria-hidden="true" hidden></canvas>
     <div class="subtitle" id="subtitle" aria-hidden="true">
       <span class="subtitle-reserve" id="subtitleReserve"></span>
       <span class="subtitle-typed"><span id="subtitleTyped"></span></span>
@@ -921,6 +946,7 @@
 <script src="./tablet-transport.js"></script>
 <script src="./briefing-presentation.js"></script>
 <script src="./signal-cut.js"></script>
+<script src="./tv-live.js"></script>
 <script src="./tablet-sound.js"></script>
 <script src="./romi-panel.js"></script>
 <script>
@@ -1070,6 +1096,15 @@
   const transport = globalThis.TabletTransport;
   const presentationController = window.BriefingPresentation;
   const signalCut = window.SignalCut;
+  const tvLive = window.TvLive;
+  tvLive?.init({
+    screen: document.getElementById('tvLive'),
+    meter: document.getElementById('voiceMeter'),
+    isLive: () => state.view === 'briefing' && !state.briefing.ended && state.briefing.pauseReasons.size === 0
+      && !document.hidden && document.querySelector('.stage').classList.contains('has-reference'),
+    isVoiceLive: () => state.view === 'briefing' && !state.briefing.ended && !document.hidden,
+    voiceTime: () => (briefingMedia && !briefingMedia.paused ? briefingMedia.currentTime : null),
+  });
   const tabletSound = window.TabletSound;
   // 効果音（LEDGER 0266）。何をどの大きさで鳴らすかは asset/tablet-sounds.json（tools/make-tablet-sounds.py）。
   // ホラー軽減ありは半分の大きさ。説明の消音にも従う。曲は鳴らさない（0256）
@@ -1513,7 +1548,7 @@
     stage.classList.toggle('is-briefing', view === 'briefing');
     if (view !== 'result') stage.classList.remove('is-result-ready');
     if (view !== 'briefing') stage.classList.remove('is-doctor-only');
-    if (view !== 'briefing') stage.classList.remove('has-reference');
+    if (view !== 'briefing') { stage.classList.remove('has-reference'); $('briefingHairline').hidden = true; tvLive?.setVoice(null); }
     if (view !== 'briefing') stage.classList.remove('is-equipment');
     $('subtitle').hidden = view === 'briefing' && state.briefing.ended;
     document.querySelector('.footer').classList.toggle('is-briefing', view === 'briefing');
@@ -1850,6 +1885,7 @@
       if (briefingController !== controller) return;
       state.briefing.data = data;
       state.briefing.loadState = 'ready';
+      loadVoiceEnvelope();
       // A missing reference must not prevent the other chapters from opening.
       for (const filename of new Set(data.scenes.flatMap(scene => [scene.image, scene.doctorImage, ...(scene.figures || []).map(figure => figure.image)]))) {
         preloadBriefingImage(filename).catch(() => {});
@@ -2460,6 +2496,8 @@
       $('briefingSettings').textContent = state.staffPreview ? 'スタッフ画面に戻る' : T[state.lang].briefing.settings;
       $('briefingMode').hidden = !state.staffPreview;
       $('briefingAdvanceHint').textContent = '';
+      $('briefingHairline').hidden = true;
+      tvLive?.setVoice(null);
       document.title = `廻リ視 — ${copy.title}`;
       renderJourney();
       renderBriefingControls();
@@ -2506,6 +2544,10 @@
     if (intro) setText('briefingEyebrow', scene.title[state.lang]);
     $('briefingView').dataset.portrait = String(intro);
     setReferenceVisual(!intro);
+    // テレビが出た瞬間は電源が入る。同じテレビの中で絵が替わるときは短い砂嵐（tv-live.js）
+    if (!intro && !hadReference) tvLive?.powerOn();
+    syncVoiceMeter(scene);
+    syncBriefingHairline(position, positions.length);
     // 資料があるとき、博士の画を切ってテレビを出す。乱れの下で一瞬に替える（0275）。章の切り替えから来たときは同じ乱れを延ばすだけ
     if (hadReference !== !intro && !reducedMotion.matches) signalCut?.glitch?.();
     stage.classList.toggle('has-reference', !intro);
@@ -2523,7 +2565,7 @@
       image.alt = figure.alt[state.lang];
       const source = assetPath(figure.image);
       if (image.getAttribute('src') !== source || image.dataset.scene !== scene.id) {
-        if (hadReference) captureReferenceGhost();
+        if (hadReference) { captureReferenceGhost(); tvLive?.channel(); }
         else discardReferenceGhost();
         image.dataset.scene = scene.id;
         image.dataset.presentationSource = '';
@@ -2567,6 +2609,29 @@
     $('sceneProgress').value = state.briefing.ended ? positions.length : position + 1;
     $('sceneProgress').setAttribute('aria-label', t.progress);
     renderBriefingControls();
+  }
+
+  // 博士の声の波形。声の大きさの列は generate-doctor-audio.py が音から作る（asset/doctor-voice-ja-v4.json）。
+  // 声の無い言語・列を読めなかったときは波形を出さない
+  let voiceEnvelope = null;
+  function loadVoiceEnvelope() {
+    if (voiceEnvelope !== null) return;
+    voiceEnvelope = false;
+    fetch('./asset/doctor-voice-ja-v4.json', { cache: 'force-cache' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => { if (data && Number.isFinite(data.hz) && data.scenes) voiceEnvelope = data; })
+      .catch(() => {});
+  }
+
+  function syncVoiceMeter(scene) {
+    const hasVoice = state.lang === 'ja' && Boolean(scene.audio?.ja) && !state.briefing.subtitlesOnly;
+    const values = hasVoice && voiceEnvelope ? voiceEnvelope.scenes[scene.id] : null;
+    tvLive?.setVoice(values || null, voiceEnvelope ? voiceEnvelope.hz : 20);
+  }
+
+  function syncBriefingHairline(position, total) {
+    $('briefingHairline').hidden = state.view !== 'briefing' || total <= 0;
+    $('briefingHairlineFill').style.width = `${Math.max(0, Math.min(1, (position + 1) / Math.max(1, total))) * 100}%`;
   }
 
   function beginBriefingCue() {

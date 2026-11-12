@@ -23,6 +23,9 @@ metadata:
 - ⚠ 輪の位置（`.fb-x` / `.fb-y`）は `equipment-controller-v1.png` の中のボタンの位置と、CSS の拡大（`scale(1.5)`・`transform-origin`）と、`.tv-screen` の縦横比から手で出した値。どれかを替えたら、輪を止めて（`animation: none; opacity: 1`）撮って重なりを見る
 - ⚠ 資料の提示の札（`presentReference` の `scene`）は `場面ID:絵の番号`。場面 ID だけにすると、同じ場面の 2 枚目が「変わっていない」と判定されて出ない
 - ⚠ テレビが出た直後に撮ると、乱れの途中の暗い画が撮れる。1 秒置いて撮り直す
+- テレビを「点いている」画にするのは `tv-live.js`（0329）。`.tv-screen` の中の canvas に粒・流れる帯・横ずれ・電源の入り（`powerOn`）・チャンネル替え（`channel`）を描く。層は動かさない（動画を含む層を transform / filter で動かすと WebView が黒に飛ぶため、電源の入りも canvas の中の絵）。枠の映り込みは枠の img だけに `-webkit-box-reflect`。静止画の寄りは img の `transform`（動画には掛けない）
+- 字幕の上の声の波形（`#voiceMeter`）は、音を解析せず、先に作った列を再生位置で引く。列は `generate-doctor-audio.py` が切り出した音から作る `asset/doctor-voice-ja-v4.json`（場面ごと・20Hz・0–9 の数字）。音声を AudioContext へ繋ぐ方式にしなかったのは、コンテキストが止まると声ごと消えるため。声を作り直したら列も一緒に作り直される
+- ⚠ 内蔵ブラウザの枠は、見えていないと描画が毎秒 1 コマ前後まで落ち、撮影も左上だけ切れることがある。演出が動いているかは `TvLive.snapshot()` のコマ数と canvas の画素で見る。大きさは `getBoundingClientRect` で測る
 - 3 言語で文の数を揃える（絵と歩く動画は文の番号で決まる。`verify-runtime.cjs` が数える）
 - 日本語の声は `generate-doctor-audio.py`（`VERSION` と `ANCHORS`）。声は voice bEg9geTboP3ghzJ9Rt3L（0328 の指定）。切り出すときに `--tempo 1.2`（既定）で高さを変えずに速める。残してある元の音は等速。原稿の文の頭を変えたら `ANCHORS` も同じ字にする。合成が通った後に目印で落ちたら `--reuse` で切り直す
 - 字幕は `text-wrap: balance` と `word-break: auto-phrase`（語の途中で折らない）。実機の WebView では未確認
