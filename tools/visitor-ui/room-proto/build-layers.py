@@ -13,6 +13,8 @@
     light.jpg    テレビの光が部屋へ足す明るさ（点いた版 − 消えた版。小さく、ぼかしてある。博士の所は抜く）
     light-doc.jpg  同じ光の、博士に当たる分（博士の形の中だけ）
     glass.png    テレビのガラスの形（白い所が画面）
+    tv-hi.jpg    テレビのまわりだけの精細な絵（gen/tv-hi-a1.png を部屋の絵の位置へ合わせたもの）
+    doll-tilt.jpg  頭を傾けた人形の写真（gen/doll-tilt-a1.png の頭のまわりだけを元の写真へ戻したもの）
     room.json    寸法と位置
 """
 from __future__ import annotations
@@ -33,6 +35,10 @@ FACE_RECT = (96, 126, 926, 521)
 # 切り抜きの初期の箱（博士を囲む）
 BODY_RECT = (200, 110, 700, 831)
 LIGHT_SCALE = 4          # 光の層は 1/4 の大きさで持つ
+# テレビの精細な絵が部屋の絵の中で占める矩形（Codex へ渡した切り出し。16:9）
+TV_HI_RECT = (920, 275, 752, 423)
+# 人形の頭の楕円（doll-file-v1.jpg の座標。中心 x, y・半径 x, y）
+DOLL_HEAD = (643, 322, 78, 92)
 
 
 def read(path: Path) -> np.ndarray:
@@ -154,6 +160,39 @@ def main() -> None:
         # 点いた版の画面の平均の色（光の層は、この色で照らされた部屋）
         mean = [float(v) for v in cv2.mean(lit, mask=glass)[:3]][::-1]
         room["lightSource"] = {"rgb": [round(v, 1) for v in mean]}
+
+    # テレビのまわりの精細な絵（Codex が切り出しを描き直したもの）。ずれを測って部屋の絵の位置へ合わせる
+    hi_path = GEN / "tv-hi-a1.png"
+    if hi_path.exists():
+        tx, ty, tw, th = TV_HI_RECT
+        hi = read(hi_path)
+        ref = cv2.resize(plate[ty:ty + th, tx:tx + tw], (hi.shape[1], hi.shape[0]), interpolation=cv2.INTER_CUBIC)
+        g_ref = cv2.GaussianBlur(cv2.cvtColor(ref, cv2.COLOR_BGR2GRAY), (0, 0), 3).astype(np.float32)
+        g_hi = cv2.GaussianBlur(cv2.cvtColor(hi, cv2.COLOR_BGR2GRAY), (0, 0), 3).astype(np.float32)
+        warp = np.eye(2, 3, dtype=np.float32)
+        cc, warp = cv2.findTransformECC(g_ref, g_hi, warp, cv2.MOTION_AFFINE,
+                                        (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 200, 1e-6), None, 5)
+        fitted = cv2.warpAffine(hi, warp, (hi.shape[1], hi.shape[0]), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REPLICATE)
+        # 明るさを部屋の絵へ合わせる（色ごとの平均の比）
+        gain = (ref.reshape(-1, 3).mean(axis=0) + 1) / (fitted.reshape(-1, 3).mean(axis=0) + 1)
+        fitted = np.clip(fitted.astype(np.float32) * gain, 0, 255).astype(np.uint8)
+        write(OUT / "tv-hi.jpg", fitted, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        room["tvHi"] = {"x": tx, "y": ty, "w": tw, "h": th}
+        room["tvHiFit"] = {"corr": round(float(cc), 4), "shift": [round(float(warp[0, 2]), 2), round(float(warp[1, 2]), 2)],
+                           "scale": [round(float(warp[0, 0]), 4), round(float(warp[1, 1]), 4)], "gain": [round(float(v), 3) for v in gain]}
+
+    # 頭を傾けた人形（Codex）。頭のまわりだけを元の写真へ戻す（ほかの所が 1 画素も動かないように）
+    tilt_path = GEN / "doll-tilt-a1.png"
+    if tilt_path.exists():
+        base = read(GEN / "doll-in.jpg")
+        tilt = cv2.resize(read(tilt_path), (base.shape[1], base.shape[0]), interpolation=cv2.INTER_AREA)
+        m = np.zeros(base.shape[:2], np.uint8)
+        cv2.ellipse(m, DOLL_HEAD[:2], DOLL_HEAD[2:], 0, 0, 360, 255, -1)
+        mf = cv2.GaussianBlur(m, (0, 0), 7).astype(np.float32)[..., None] / 255.0
+        out = (base * (1 - mf) + tilt * mf).astype(np.uint8)
+        write(OUT / "doll-tilt.jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 93])
+        outside = np.abs(base.astype(np.int16) - tilt.astype(np.int16)).mean(axis=2)[m == 0].mean()
+        room["dollTilt"] = {"file": "doll-tilt.jpg", "outsideDiff": round(float(outside), 2)}
 
     (OUT / "room.json").write_text(json.dumps(room, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(room, ensure_ascii=False))

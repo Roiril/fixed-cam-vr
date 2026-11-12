@@ -28,6 +28,7 @@ def main() -> None:
     ap.add_argument("out")
     ap.add_argument("--frames", default="full")
     ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--no-sfx", action="store_true", help="効果音を入れない（声だけ）")
     args = ap.parse_args()
 
     frames = HERE / "frames" / args.frames
@@ -59,7 +60,13 @@ def main() -> None:
         cmd += ["-i", str(ASSET / f"{scene}-ja-v4.mp3")]
         mix.append(f"[{k}:a]adelay={ms}:all=1[a{k}]")
     labels = "".join(f"[a{k}]" for k in range(1, len(starts) + 1))
-    graph = ";".join(mix) + f";{labels}amix=inputs={len(starts)}:normalize=0[a];[0:v]subtitles=sub.ass[v]"
+    count = len(starts)
+    stem = HERE / "layers" / "stem.mp3"          # 効果音（make-room-sound.py mix）
+    if stem.exists() and not args.no_sfx:
+        cmd += ["-i", str(stem)]
+        labels += f"[{count + 1}:a]"
+        count += 1
+    graph = ";".join(mix) + f";{labels}amix=inputs={count}:normalize=0[a];[0:v]subtitles=sub.ass[v]"
     out = Path(args.out).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     cmd += ["-filter_complex", graph, "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "19", "-preset", "medium",

@@ -9,13 +9,15 @@
 //       cam     { cx, cy, w }  部屋の絵の座標で、見えている範囲の中心と幅
 //       focus   0 = 博士にピント … 1 = テレビにピント
 //       screen  { power, powerAt, kind, src, tag, hold, shownAt, channelAt }  テレビの中身
+//               src2 / swapAt  その時刻から先は src2 を映す（同じ写真の別版）
 //       cut     0–1  終わりの砂嵐（画面全体）
-//       fadeIn  0–1  始まりの暗がりからの立ち上がり
+//       exposure 0–1  部屋の灯り（始まりに点く）
 (() => {
   'use strict';
 
-  const SW = 762;            // テレビの中身を描く解像度（.tv-screen と同じ 1.27:1）
-  const SH = 600;
+  const SW = 1016;           // テレビの中身を描く解像度（.tv-screen と同じ 1.27:1）。寄ったときに甘くならない大きさ
+  const SH = 800;
+  const K = SW / 762;        // 762x600 で決めた寸法を掛け直す係数
   const POWER_MS = 620;
   const CHANNEL_MS = 260;
   const DOC_SCALE = 1.6;     // 博士の層は部屋の絵の 1.6 倍で持つ（寄ったときに甘くならないように）
@@ -90,6 +92,31 @@
       loadImage(`${base}bg.jpg`), loadImage(`${base}body.png`), loadImage(`${base}light.jpg`), loadImage(`${base}glass.png`), loadImage(`${base}light-doc.jpg`),
     ]);
 
+    // テレビのまわりだけの精細な絵（寄ったときに使う。無ければ部屋の絵のまま）
+    let tvHi = null;
+    if (room.tvHi) {
+      const img = await loadImage(`${base}tv-hi.jpg`);
+      const T = room.tvHi;
+      tvHi = makeCanvas(img.naturalWidth, img.naturalHeight);
+      const g = tvHi.getContext('2d');
+      g.drawImage(img, 0, 0);
+      // 縁を落として部屋の絵へ溶かす（右と下は絵の端なので落とさない側もある）
+      g.globalCompositeOperation = 'destination-out';
+      const m = tvHi.width * 0.06;
+      const edge = (x0, y0, x1, y1, rx, ry, rw, rh) => {
+        const gr = g.createLinearGradient(x0, y0, x1, y1);
+        gr.addColorStop(0, 'rgba(0,0,0,1)');
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr;
+        g.fillRect(rx, ry, rw, rh);
+      };
+      edge(0, 0, m, 0, 0, 0, m, tvHi.height);
+      edge(0, 0, 0, m, 0, 0, tvHi.width, m);
+      if (T.x + T.w < PW - 1) edge(tvHi.width, 0, tvHi.width - m, 0, tvHi.width - m, 0, m, tvHi.height);
+      if (T.y + T.h < PH - 1) edge(0, tvHi.height, 0, tvHi.height - m, 0, tvHi.height - m, tvHi.width, m);
+      g.globalCompositeOperation = 'source-over';
+    }
+
     // 奥（幕とテレビ）のぼけた板
     const bgMild = makeCanvas(PW / 2, PH / 2);
     const bgStrong = makeCanvas(PW / 4, PH / 4);
@@ -128,6 +155,8 @@
     let faceIsVideo = false;
     let docDirty = true;
     let eyeShade = true;
+    let shadeTick = -1;
+    const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
     function drawEyeShade(g, k) {
       // 目元を闇に沈める（いまの博士の画と同じ見え方。0263）。元の写真の座標 × k
@@ -144,10 +173,13 @@
       g.restore();
       // 闇の下の縁。行の途中で止まった走査線
       const lines = [[655, 1000, 392, 0.5], [690, 985, 389, 0.3], [720, 930, 386, 0.22], [640, 800, 394, 0.28]];
-      for (const [x0, x1, y, a] of lines) {
-        g.fillStyle = `rgba(178,140,84,${a})`;
-        g.fillRect(x0 * k, y * k, (x1 - x0) * k, Math.max(1, 1.2 * k));
-      }
+      lines.forEach(([x0, x1, y, a], i) => {
+        // 線は 0.1 秒ごとに長さと濃さが揺れる（止まった絵に見せない）
+        const r1 = hash(shadeTick * 4 + i);
+        const r2 = hash(shadeTick * 4 + i + 0.5);
+        g.fillStyle = `rgba(178,140,84,${(a * (0.55 + 0.45 * r1)).toFixed(3)})`;
+        g.fillRect((x0 + (r2 - 0.5) * 26) * k, y * k, (x1 - x0 - r1 * 40) * k, Math.max(1, 1.2 * k));
+      });
     }
 
     function composeDoctor() {
@@ -175,9 +207,42 @@
     const G = room.glass;
     const screenCv = makeCanvas(SW, SH);
     const sg = screenCv.getContext('2d');
-    const tvCv = makeCanvas(G.w * 2, G.h * 2);
-    const tvG = tvCv.getContext('2d');
     const tvSoft = makeCanvas(G.w / 3, G.h / 3);
+    // 消えているガラス（映り込み）。点いた画の上から足す
+    const reflect = makeCanvas(G.w * 2, G.h * 2);
+    {
+      const g = reflect.getContext('2d');
+      if (tvHi) {
+        const T = room.tvHi;
+        const kx = tvHi.width / T.w;
+        g.drawImage(tvHi, (G.x - T.x) * kx, (G.y - T.y) * kx, G.w * kx, G.h * kx, 0, 0, reflect.width, reflect.height);
+      } else g.drawImage(bg, G.x, G.y, G.w, G.h, 0, 0, reflect.width, reflect.height);
+    }
+    // 蛍光体の縞（寄ったときだけ見える）
+    const triad = makeCanvas(3, 1);
+    {
+      const g = triad.getContext('2d');
+      ['#ffb4b4', '#b4ffb4', '#b4b4ff'].forEach((c, i) => { g.fillStyle = c; g.fillRect(i, 0, 1, 1); });
+    }
+    const triadPattern = sg.createPattern(triad, 'repeat');
+    // 明るい画面から横へ伸びる光の筋（上下も左右もなだらかに消える板）
+    const streakCv = makeCanvas(256, 32);
+    {
+      const g = streakCv.getContext('2d');
+      const gh = g.createLinearGradient(0, 0, 256, 0);
+      gh.addColorStop(0, 'rgba(255,255,255,0)');
+      gh.addColorStop(0.5, 'rgba(255,255,255,1)');
+      gh.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gh;
+      g.fillRect(0, 0, 256, 32);
+      g.globalCompositeOperation = 'destination-in';
+      const gv = g.createLinearGradient(0, 0, 0, 32);
+      gv.addColorStop(0, 'rgba(0,0,0,0)');
+      gv.addColorStop(0.5, 'rgba(0,0,0,1)');
+      gv.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gv;
+      g.fillRect(0, 0, 256, 32);
+    }
     const tvBloom = makeCanvas(G.w / 6, G.h / 6);
     const lightDocTmp = makeCanvas(lightDocImg.width, lightDocImg.height);
     const lightDocG = lightDocTmp.getContext('2d');
@@ -237,7 +302,7 @@
         g.globalAlpha = a;
         g.fillStyle = 'rgba(168,50,57,0.42)';
         g.strokeStyle = '#c23a42';
-        g.lineWidth = 3;
+        g.lineWidth = 3 * K;
         g.beginPath();
         g.arc(cx, cy, r, 0, Math.PI * 2);
         g.fill();
@@ -263,15 +328,16 @@
       g.beginPath(); g.arc(cx, cy, r * 0.18 * (0.7 + 0.3 * fill), 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
       if (hold) {
-        g.font = '500 26px "Noto Sans JP","Yu Gothic UI",sans-serif';
+        g.font = `500 ${Math.round(26 * K)}px "Noto Sans JP","Yu Gothic UI",sans-serif`;
         g.textAlign = 'center';
         g.fillStyle = 'rgba(242,236,223,0.86)';
-        g.fillText(hold, cx, cy + r + 46);
+        g.fillText(hold, cx, cy + r + 46 * K);
         g.textAlign = 'start';
       }
     }
 
-    function drawScreen(t, s) {
+    // zoom: テレビのガラスが画面に写っている大きさ ÷ SW。寄るほど走査線と蛍光体の縞が見える
+    function drawScreen(t, s, zoom) {
       sg.globalAlpha = 1;
       sg.globalCompositeOperation = 'source-over';
       sg.fillStyle = '#050403';
@@ -279,8 +345,24 @@
       const shown = Math.max(0, t - (s.shownAt || 0));
       const tile = staticTiles[frames % staticTiles.length];
       if (s.kind === 'image') {
-        const img = image(s.src);
+        const swapped = s.src2 && s.swapAt != null && t >= s.swapAt;
+        const img = image(swapped ? s.src2 : s.src) || image(s.src);
+        if (s.src2) image(s.src2);          // 先に読んでおく
         if (img) cover(sg, img, img.naturalWidth, img.naturalHeight, 1 + 0.07 * Math.min(1, shown / 16000));
+        // 入れ替わりの瞬間: 画が横に裂ける（0.16 秒）
+        if (s.swapAt != null && t >= s.swapAt - 60 && t < s.swapAt + 100 && img) {
+          for (let k = 0; k < 7; k++) {
+            const y = (hash(frames * 13 + k) * SH) | 0;
+            const h = (12 + hash(frames * 7 + k) * 46) * K;
+            const dx = (hash(frames * 3 + k) - 0.5) * 150 * K;
+            sg.drawImage(screenCv, 0, y, SW, h, dx, y, SW, h);
+          }
+          sg.imageSmoothingEnabled = false;
+          sg.globalAlpha = 0.5;
+          sg.drawImage(tile, 0, 0, 254, 40, 0, (hash(frames) * SH) | 0, SW, 26 * K);
+          sg.globalAlpha = 1;
+          sg.imageSmoothingEnabled = true;
+        }
       } else if (s.kind === 'video') {
         const v = s.video;
         if (v && v.readyState >= 2 && v.videoWidth) cover(sg, v, v.videoWidth, v.videoHeight, 1);
@@ -295,18 +377,18 @@
         sg.fillRect(0, 0, SW, SH);
       }
       if (s.tag && s.kind === 'image') {
-        sg.font = '500 21px "Noto Sans JP","Yu Gothic UI",sans-serif';
-        if ('letterSpacing' in sg) sg.letterSpacing = '4.6px';
+        sg.font = `500 ${Math.round(21 * K)}px "Noto Sans JP","Yu Gothic UI",sans-serif`;
+        if ('letterSpacing' in sg) sg.letterSpacing = `${(4.6 * K).toFixed(1)}px`;
         const tw = sg.measureText(s.tag).width;
         const x = SW * 0.07;
         const y = SH * 0.09;
         sg.fillStyle = 'rgba(9,8,7,0.66)';
-        sg.fillRect(x, y, tw + 38, 40);
+        sg.fillRect(x, y, tw + 38 * K, 40 * K);
         sg.fillStyle = '#a83239';
-        sg.fillRect(x, y, 3, 40);
+        sg.fillRect(x, y, 3 * K, 40 * K);
         sg.fillStyle = 'rgba(242,236,223,0.9)';
         sg.textBaseline = 'middle';
-        sg.fillText(s.tag, x + 18, y + 21);
+        sg.fillText(s.tag, x + 18 * K, y + 21 * K);
         sg.textBaseline = 'alphabetic';
         if ('letterSpacing' in sg) sg.letterSpacing = '0px';
       }
@@ -315,22 +397,23 @@
       sg.globalAlpha = 0.055;
       sg.drawImage(tile, 0, 0, SW, SH);
       const period = 6800;
-      const by = ((t % period) / period) * (SH + 210) - 210;
-      const band = sg.createLinearGradient(0, by, 0, by + 210);
+      const bh = 210 * K;
+      const by = ((t % period) / period) * (SH + bh) - bh;
+      const band = sg.createLinearGradient(0, by, 0, by + bh);
       band.addColorStop(0, 'rgba(255,255,255,0)');
       band.addColorStop(0.5, 'rgba(255,255,255,0.05)');
       band.addColorStop(1, 'rgba(255,255,255,0)');
       sg.globalAlpha = 1;
       sg.fillStyle = band;
-      sg.fillRect(0, by, SW, 210);
-      if (t > tearAt) {
-        tearUntil = t + 70 + Math.random() * 60;
-        tearAt = t + 3800 + Math.random() * 5200;
-        tearY = (Math.random() * (SH - 24)) | 0;
+      sg.fillRect(0, by, SW, bh);
+      if (t > tearAt || t < tearAt - 12000) {
+        tearUntil = t + 70 + hash(frames) * 60;
+        tearAt = t + 3800 + hash(frames + 0.3) * 5200;
+        tearY = (hash(frames + 0.7) * (SH - 24)) | 0;
       }
       if (t < tearUntil) {
         sg.globalAlpha = 0.34;
-        sg.drawImage(tile, 0, 0, 254, 3, (Math.random() * 30 - 15) | 0, tearY, SW, 9);
+        sg.drawImage(tile, 0, 0, 254, 3, ((hash(frames) * 30 - 15) * K) | 0, tearY, SW, 9 * K);
       }
       if (s.channelAt != null && t >= s.channelAt && t < s.channelAt + CHANNEL_MS) {
         const u = (t - s.channelAt) / CHANNEL_MS;
@@ -338,13 +421,30 @@
         sg.drawImage(staticTiles[(frames * 2 + 1) % staticTiles.length], 0, 0, SW, SH);
         sg.globalAlpha = 0.5 * (1 - u);
         sg.fillStyle = '#000';
-        for (let k = 0; k < 4; k++) sg.fillRect(0, ((k * 159 + frames * 51) % SH), SW, 18);
+        for (let k = 0; k < 4; k++) sg.fillRect(0, ((k * 211 + frames * 67) % SH), SW, 24 * K);
       }
       sg.imageSmoothingEnabled = true;
-      // 走査線と、管の周辺の落ち込み
+      // 走査線（引いた画では細かすぎて縞が暴れるので、寄ったときだけ濃くする）
       sg.globalAlpha = 1;
-      sg.fillStyle = 'rgba(0,0,0,0.14)';
-      for (let y = 0; y < SH; y += 3) sg.fillRect(0, y, SW, 1);
+      const lineA = 0.2 * Math.max(0, Math.min(1, (zoom - 0.3) / 0.45));
+      if (lineA > 0.01) {
+        sg.fillStyle = `rgba(0,0,0,${lineA.toFixed(3)})`;
+        for (let y = 0; y < SH; y += 4) sg.fillRect(0, y, SW, 2);
+      }
+      // 蛍光体の縞（赤・緑・青の縦の並び）。かなり寄ったときだけ
+      const triA = 0.55 * Math.max(0, Math.min(1, (zoom - 0.62) / 0.3));
+      if (triA > 0.01 && triadPattern) {
+        sg.globalCompositeOperation = 'multiply';
+        sg.globalAlpha = triA;
+        sg.fillStyle = triadPattern;
+        sg.fillRect(0, 0, SW, SH);
+        sg.globalCompositeOperation = 'lighter';       // 縞で落ちた明るさを少し戻す
+        sg.globalAlpha = triA * 0.16;
+        sg.drawImage(screenCv, 0, 0);
+        sg.globalCompositeOperation = 'source-over';
+        sg.globalAlpha = 1;
+      }
+      // 管の周辺の落ち込み
       const vg = sg.createRadialGradient(SW / 2, SH / 2, SH * 0.36, SW / 2, SH / 2, SW * 0.72);
       vg.addColorStop(0, 'rgba(0,0,0,0)');
       vg.addColorStop(1, 'rgba(0,0,0,0.6)');
@@ -359,7 +459,7 @@
           sg.fillRect(0, 0, SW, SH);
           const lw = SW * Math.min(1, u / 0.18);
           sg.fillStyle = 'rgba(235,240,255,0.95)';
-          sg.fillRect((SW - lw) / 2, mid - 3, lw, 6);
+          sg.fillRect((SW - lw) / 2, mid - 3 * K, lw, 6 * K);
         } else {
           const open = Math.pow((u - 0.22) / 0.5, 0.6);
           const half = Math.min(mid, mid * open);
@@ -371,12 +471,16 @@
           sg.globalAlpha = 1;
         }
       }
+      // ガラスの形で抜く
+      sg.globalCompositeOperation = 'destination-in';
+      sg.drawImage(glassImg, 0, 0, SW, SH);
+      sg.globalCompositeOperation = 'source-over';
     }
 
     // テレビの中身の平均の色を読み、部屋へ足す光の色と強さにする
     function probeLight(t, on) {
       if (!on) { light.level += (0 - light.level) * 0.3; return; }
-      if (t - lastProbe < 60) return;
+      if (Math.abs(t - lastProbe) < 30) return;
       lastProbe = t;
       probeG.drawImage(screenCv, 0, 0, 8, 6);
       const d = probeG.getImageData(0, 0, 8, 6).data;
@@ -419,7 +523,7 @@
 
     function render(st) {
       const t = st.now;
-      frames += 1;
+      frames = st.frame != null ? st.frame : frames + 1;
       const v = view(st.cam);
       const f = Math.max(0, Math.min(1, st.focus));
       const bgBlur = (1 - f) * 0.72;
@@ -427,8 +531,11 @@
       const scr = st.screen || {};
       const on = Boolean(scr.power);
 
+      // 目元の闇の線は 0.11 秒ごとに描き直す
+      const tick = Math.floor(t / 110);
+      if (eyeShade && tick !== shadeTick) { shadeTick = tick; docDirty = true; }
       if (faceIsVideo || docDirty) composeDoctor();
-      if (on) drawScreen(t, scr);
+      if (on) drawScreen(t, scr, (G.w * v.s) / SW);
       probeLight(t, on);
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -438,18 +545,21 @@
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(v.s, 0, 0, v.s, -v.x * v.s, -v.y * v.s);
 
-      // 1. 奥: 幕とテレビ
+      // 1. 奥: 幕とテレビ。ピントが合っているときは、テレビのまわりを精細な絵で描く
       drawFocus(ctx, bg, bgMild, bgStrong, bgBlur, 0, 0, PW, PH);
+      if (tvHi && bgBlur < 0.5) {
+        const T = room.tvHi;
+        ctx.globalAlpha = 1 - bgBlur * 2;
+        ctx.drawImage(tvHi, T.x, T.y, T.w, T.h);
+        ctx.globalAlpha = 1;
+      }
 
       // 2. テレビの中身
+      const gcx = G.x + G.w / 2;
+      const gcy = G.y + G.h / 2;
       if (on) {
-        tvG.globalCompositeOperation = 'source-over';
-        tvG.clearRect(0, 0, tvCv.width, tvCv.height);
-        tvG.drawImage(screenCv, 0, 0, tvCv.width, tvCv.height);
-        tvG.globalCompositeOperation = 'destination-in';
-        tvG.drawImage(glassImg, 0, 0, tvCv.width, tvCv.height);
-        blurInto(tvSoft, tvCv, 2);
-        ctx.drawImage(tvCv, G.x, G.y, G.w, G.h);
+        blurInto(tvSoft, screenCv, 2);
+        ctx.drawImage(screenCv, G.x, G.y, G.w, G.h);
         if (bgBlur > 0.03) {
           ctx.globalAlpha = Math.min(1, bgBlur * 1.7);
           ctx.drawImage(tvSoft, G.x, G.y, G.w, G.h);
@@ -457,8 +567,8 @@
         }
         // ガラスの映り込み（消えているときの暗いガラスを上から足す）と、にじみ
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.75;
-        ctx.drawImage(bg, G.x, G.y, G.w, G.h, G.x, G.y, G.w, G.h);
+        ctx.globalAlpha = 0.8;
+        ctx.drawImage(reflect, G.x, G.y, G.w, G.h);
         blurInto(tvBloom, tvSoft, 5);
         ctx.globalAlpha = 0.34;
         ctx.drawImage(tvBloom, G.x - G.w * 0.05, G.y - G.h * 0.05, G.w * 1.1, G.h * 1.1);
@@ -469,7 +579,10 @@
       // 3. テレビの光を部屋へ足す
       const lit = light.level > 0.01;
       const flick = 0.93 + 0.07 * Math.sin(t * 0.021) * Math.sin(t * 0.0073 + 1.3);
-      const tint = `rgb(${Math.round(light.r * 255)},${Math.round(light.g * 255)},${Math.round(light.b * 255)})`;
+      const lr = Math.round(light.r * 255);
+      const lg = Math.round(light.g * 255);
+      const lb = Math.round(light.b * 255);
+      const tint = `rgb(${lr},${lg},${lb})`;
       const addLight = (tmp, tg, img, x, y, w, h, gain = 1) => {
         tg.globalCompositeOperation = 'source-over';
         tg.drawImage(img, 0, 0);
@@ -486,7 +599,25 @@
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = 'source-over';
       };
-      if (lit) addLight(lightTmp, lightG, lightImg, 0, 0, PW, PH);
+      if (lit) {
+        addLight(lightTmp, lightG, lightImg, 0, 0, PW, PH);
+        // 空気に乗った光（テレビのまわりのもや）と、明るい画面から横へ伸びる筋
+        ctx.globalCompositeOperation = 'lighter';
+        const lv = light.level * flick;
+        const haze = ctx.createRadialGradient(gcx, gcy, G.w * 0.25, gcx, gcy, G.w * 1.55);
+        haze.addColorStop(0, `rgba(${lr},${lg},${lb},${(0.13 * lv).toFixed(3)})`);
+        haze.addColorStop(0.45, `rgba(${lr},${lg},${lb},${(0.05 * lv).toFixed(3)})`);
+        haze.addColorStop(1, `rgba(${lr},${lg},${lb},0)`);
+        ctx.fillStyle = haze;
+        ctx.fillRect(gcx - G.w * 1.6, gcy - G.w * 1.6, G.w * 3.2, G.w * 3.2);
+        const sa = Math.max(0, lv - 0.5) * 0.2;
+        if (sa > 0.005) {
+          ctx.globalAlpha = Math.min(1, sa);
+          ctx.drawImage(streakCv, gcx - G.w * 1.7, gcy - G.h * 0.09, G.w * 3.4, G.h * 0.18);
+          ctx.globalAlpha = 1;
+        }
+        ctx.globalCompositeOperation = 'source-over';
+      }
 
       // 4. 手前: 博士（カメラの動きに対して、奥より少し多くずれる）
       const px = -(v.cx - (F.x + F.w / 2)) * PARALLAX;
@@ -496,14 +627,13 @@
       if (lit) {
         // 博士に当たる分（博士の形の中だけ。博士と一緒にずれる）
         addLight(lightDocTmp, lightDocG, lightDocImg, B.x + px, B.y + py, B.w, B.h, 1.6);
-        ctx.globalCompositeOperation = 'lighter';
         // 5. 埃
-        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'lighter';
         for (const m of motes) {
-          const mx = m.x + m.vx * (t / 1000) % 40 + Math.sin(t / 2300 + m.ph) * 9;
+          const mx = m.x + ((m.vx * (t / 1000)) % 40) + Math.sin(t / 2300 + m.ph) * 9;
           const my = m.y + ((m.vy * (t / 1000)) % 120) + Math.cos(t / 3100 + m.ph) * 6;
-          const dx = (mx - (G.x + G.w / 2)) / (G.w * 0.9);
-          const dy = (my - (G.y + G.h / 2)) / (G.h * 0.9);
+          const dx = (mx - gcx) / (G.w * 0.9);
+          const dy = (my - gcy) / (G.h * 0.9);
           const near = Math.max(0, 1 - (dx * dx + dy * dy));
           const a2 = near * light.level * (0.25 + 0.2 * Math.sin(t / 700 + m.ph * 3));
           if (a2 <= 0.01) continue;
@@ -515,11 +645,16 @@
         ctx.globalCompositeOperation = 'source-over';
       }
 
-      // 6. 画面全体: 周辺の落ち込み・粒
+      // 6. 画面全体: 灯り・周辺の落ち込み・粒
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.globalAlpha = 1;
       const W = canvas.width;
       const H = canvas.height;
+      const ex = st.exposure == null ? 1 : Math.max(0, Math.min(1, st.exposure));
+      if (ex < 1) {
+        ctx.fillStyle = `rgba(4,3,2,${(1 - ex).toFixed(3)})`;
+        ctx.fillRect(0, 0, W, H);
+      }
       const vg = ctx.createRadialGradient(W / 2, H * 0.46, H * 0.42, W / 2, H * 0.5, W * 0.74);
       vg.addColorStop(0, 'rgba(0,0,0,0)');
       vg.addColorStop(1, 'rgba(0,0,0,0.62)');
@@ -531,34 +666,48 @@
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1;
 
-      if (st.fadeIn != null && st.fadeIn < 1) {
-        ctx.fillStyle = `rgba(5,4,3,${(1 - st.fadeIn).toFixed(3)})`;
-        ctx.fillRect(0, 0, W, H);
-      }
-      // 7. 終わり: 砂嵐が画面全体を覆い、横一線に潰れて消える
+      // 7. 終わり: 砂嵐が画面全体を覆い、横一線に潰れ、点になって消える
       if (st.cut > 0) {
         const c = st.cut;
-        if (c < 0.62) {
-          const a = Math.min(1, c / 0.4);
-          ctx.imageSmoothingEnabled = false;
+        const tile = staticTiles[frames % staticTiles.length];
+        ctx.imageSmoothingEnabled = false;
+        if (c < 0.55) {
+          const a = Math.min(1, c / 0.36);
           ctx.globalAlpha = a * a;
-          ctx.drawImage(staticTiles[frames % staticTiles.length], 0, 0, W, H);
+          ctx.drawImage(tile, 0, 0, W, H);
           ctx.globalAlpha = a * 0.5;
           ctx.fillStyle = '#000';
-          for (let k = 0; k < 5; k++) ctx.fillRect(0, ((k * 211 + frames * 67) % H), W, 22);
-          ctx.imageSmoothingEnabled = true;
-          ctx.globalAlpha = 1;
+          for (let k = 0; k < 5; k++) ctx.fillRect(0, ((k * 211 + frames * 67) % H), W, H * 0.028);
         } else {
-          const u = Math.min(1, (c - 0.62) / 0.2);
+          ctx.globalAlpha = 1;
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, W, H);
-          if (u < 1) {
-            const hh = Math.max(2, H * 0.5 * Math.pow(1 - u, 3));
-            const ww = W * (u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3);
-            ctx.fillStyle = `rgba(235,240,255,${(0.95 * (1 - u * 0.4)).toFixed(3)})`;
-            ctx.fillRect((W - ww) / 2, H / 2 - hh / 2 * (u < 0.2 ? 1 : 0.04 + 0.96 * Math.pow(1 - u, 3)), ww, Math.max(2, hh * (u < 0.2 ? 1 : 0.04)));
+          if (c < 0.74) {                       // 縦に潰れる
+            const u = (c - 0.55) / 0.19;
+            const hh = Math.max(3, H * Math.pow(1 - u, 3));
+            ctx.drawImage(tile, 0, (H - hh) / 2, W, hh);
+            ctx.globalAlpha = 0.35 + 0.6 * u;
+            ctx.fillStyle = '#eef2ff';
+            ctx.fillRect(0, (H - hh) / 2, W, hh);
+          } else if (c < 0.9) {                 // 横一線が縮んで点になる
+            const u = (c - 0.74) / 0.16;
+            const ww = Math.max(4, W * Math.pow(1 - u, 2.2));
+            ctx.globalAlpha = 1 - u * 0.5;
+            ctx.fillStyle = '#eef2ff';
+            ctx.fillRect((W - ww) / 2, H / 2 - 1.5, ww, 3);
+            const gl = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, ww * 0.5 + 30);
+            gl.addColorStop(0, `rgba(220,230,255,${(0.35 * (1 - u)).toFixed(3)})`);
+            gl.addColorStop(1, 'rgba(220,230,255,0)');
+            ctx.fillStyle = gl;
+            ctx.fillRect(0, H / 2 - 60, W, 120);
+          } else if (c < 1) {                   // 残った点が消える
+            ctx.globalAlpha = 1 - (c - 0.9) / 0.1;
+            ctx.fillStyle = '#eef2ff';
+            ctx.fillRect(W / 2 - 2, H / 2 - 2, 4, 4);
           }
         }
+        ctx.globalAlpha = 1;
+        ctx.imageSmoothingEnabled = true;
       }
       return { view: v, light: { ...light }, frames };
     }
