@@ -12,6 +12,7 @@
 3. 場面ごとに `tablet/.../asset/<場面>-ja-v4.mp3` へ切り出す
 4. `briefing-v1.json` の日本語の `durationMs` を実測へ直し、`audio.ja` を付ける
 
+切り出すときに `--tempo`（既定 1.2）で速める。残してある元の音は等速のまま。
 ⚠ 口の動画（リップシンク）は作らない。動画が届くまで、日本語は博士の静止画と声で進む。
 ⚠ 合成した元の音と時刻は `tools/visitor-ui/doctor-ja-v4-original.{mp3,json}` に残す。声を替えたら作り直す。
 """
@@ -40,8 +41,8 @@ TAKE_JSON = HERE / f"doctor-ja-{VERSION}-original.json"
 # 各文の頭（入力原稿の表記）。場面と文の順は briefing-v1.json と同じ。
 ANCHORS = {
     "introduction": ["私は……", "あなたは、今日から", "これより、"],
-    "subject": ["調査対象は、", "ある空き家の", "外見上は、", "調査員は……", "観測装置をつけ", "足元は、見えません"],
-    "report": ["これが、怪異を記録し", "あなたの代わりに", "異変に気づいたら", "装置のエージェントが"],
+    "subject": ["調査対象は、", "ある空き家の", "外見上は、", "その条件も", "観測装置をつけ", "足元は、見えません"],
+    "report": ["これが、怪異を記録し", "装置には、", "どのような異変が", "報告するときは", "報告の内容は"],
     "wear": ["調査が終わったら", "続けられなくなったら", "では。", "健闘を、祈ります"],
 }
 
@@ -91,6 +92,8 @@ def main():
     ap.add_argument("--voice", required=True)
     ap.add_argument("--model", default="eleven_v3")
     ap.add_argument("--reuse", action="store_true", help="合成せず、残してある音から切り直す")
+    ap.add_argument("--tempo", type=float, default=1.2,
+                    help="読み上げの速さ。合成した音を高さを変えずに速める（0327 の続き「今の1.2倍くらい」）")
     args = ap.parse_args()
 
     if not args.reuse:
@@ -128,12 +131,12 @@ def main():
         target = ASSETS / f"{scene['id']}-ja-{VERSION}.mp3"
         tmp = target.with_name(target.name + ".tmp")
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(TAKE_MP3),
-                        "-af", f"atrim=start={start / 1000:.3f}:end={end / 1000:.3f},asetpts=PTS-STARTPTS",
+                        "-af", f"atrim=start={start / 1000:.3f}:end={end / 1000:.3f},asetpts=PTS-STARTPTS,atempo={args.tempo:.3f}",
                         "-ac", "1", "-ar", "48000", "-codec:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", str(tmp)],
                        check=True)
         tmp.replace(target)
         for c in range(n):
-            scene["cues"]["ja"][c]["durationMs"] = cut_ms[k + c + 1] - cut_ms[k + c]
+            scene["cues"]["ja"][c]["durationMs"] = round((cut_ms[k + c + 1] - cut_ms[k + c]) / args.tempo)
         scene.pop("video", None)
         scene["audio"] = {**{a: b for a, b in (scene.get("audio") or {}).items() if a != "ja"}, "ja": target.name}
         report[scene["id"]] = {"file": target.name, "ms": duration_ms(target),
@@ -144,7 +147,7 @@ def main():
     io.open(tmp, "w", encoding="utf-8", newline="").write(out)
     json.loads(tmp.read_text(encoding="utf-8"))
     os.replace(tmp, BRIEFING)
-    print(json.dumps({"voice": take["voice"], "model": take["model"], "totalMs": total_ms, "scenes": report},
+    print(json.dumps({"voice": take["voice"], "model": take["model"], "tempo": args.tempo, "totalMs": round(total_ms / args.tempo), "scenes": report},
                      ensure_ascii=False, indent=2))
 
 

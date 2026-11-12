@@ -5,8 +5,8 @@
 正本は `tablet/app/src/main/assets/web/asset/briefing-v1.json`。この文書と SRT はそこから生成する。
 博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。
 
-2026-11-12 に台詞を書き直した（`canon/LEDGER.md` 0327。名を伏せた上司・管理番号 0514・押すボタンは絵で見せる。文の案は `canon/OPEN.md`「博士の説明の書き直し」）。
-日本語の声（v4）は `generate-doctor-audio.py` が `elevenlabs-input-ja-v4.md` を 1 本で合成し、1 字ごとの時刻から場面と文へ切る。日本語の時間はその実測。声は 0258 までの声（voice bEg9geTboP3ghzJ9Rt3L）。口の動画は未制作で、博士は静止画のまま声が流れる。
+2026-11-12 に台詞を書き直した（`canon/LEDGER.md` 0327。0328 で「異常はまだ何も判明していない」前提に直した。名を伏せた上司・管理番号 0514・資料はテレビの中・絵はデジタルツイン。文の案は `canon/OPEN.md`「博士の説明の書き直し」）。
+日本語の声（v4）は `generate-doctor-audio.py` が `elevenlabs-input-ja-v4.md` を 1 本で合成し、1 字ごとの時刻から場面と文へ切る。切り出すときに 1.2 倍へ速める（0328）。日本語の時間はその実測。声は voice bEg9geTboP3ghzJ9Rt3L。口の動画は未制作で、博士は静止画のまま声が流れる。
 声の無い言語の時間は字数からの見積もり（オートの送りに使う）。英仏音声と英仏動画は未制作。
 通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。
 博士動画は既存博士画像と同じ人物を中央配置で使用する。映像の切替や字幕を動画に焼き込まない。
@@ -20,109 +20,117 @@
 
 ### 01 introduction — 着任
 
-開始 0.0 秒 / 尺 15.9 秒
+開始 0.0 秒 / 尺 13.7 秒
 
 画像: `introduction-doctor-v2.jpg`
 
 音声: `introduction-ja-v4.mp3`
 
-文 01 / 場面内 0.0–5.3 秒
+文 01 / 場面内 0.0–4.8 秒
 
 私は……あなたの上司、とでも言っておきましょうか。
 
-文 02 / 場面内 5.3–10.6 秒
+文 02 / 場面内 4.8–9.2 秒
 
 あなたは今日から、この研究所の調査員です。
 
-文 03 / 場面内 10.6–15.9 秒
+文 03 / 場面内 9.2–13.7 秒
 
 これより、調査対象について説明します。
 
 ### 02 subject — 調査対象と手順
 
-開始 15.9 秒 / 尺 48.2 秒
+開始 13.7 秒 / 尺 45.7 秒
 
-画像: `entrance-doll-v1.png`
+画像: `twin-room-v1.jpg`
 
-文 05 からの画像: `camera-01-doll.webp`
+文 03 からの画像: `doll-file-v1.jpg`
+
+文 05 からの画像: `twin-walk-v1.jpg`
 
 音声: `subject-ja-v4.mp3`
 
-ループ動画: `kabe-one-lap-doll-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
+ループ動画: `twin-walk-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
 
-文 01 / 場面内 0.0–8.1 秒
+文 01 / 場面内 0.0–6.6 秒
 
 調査対象は、管理番号0514に指定された異常存在です。
 
-文 02 / 場面内 8.1–14.6 秒
+文 02 / 場面内 6.6–12.9 秒
 
 ある空き家の子供部屋から見つかった、カーテンと人形です。
 
-文 03 / 場面内 14.6–25.6 秒
+文 03 / 場面内 12.9–23.1 秒
 
-外見上は、一般的な人形と変わりません。しかし、直接見つめた者は、見返されたと証言しています。
+外見上は、一般的な人形と変わりません。しかし、特定の条件下でのみ、異常性が発現します。
 
-文 04 / 場面内 25.6–30.9 秒
+文 04 / 場面内 23.1–32.7 秒
 
-調査員は、あなたで三十七人目です。
+その条件も、異常性の正体も、まだ判明していません。それを調査するのが、あなたの任務です。
 
-文 05 / 場面内 30.9–40.0 秒
+文 05 / 場面内 32.7–37.5 秒
 
-観測装置をつけ、このカーテンの周りを三周してください。廻るほど、近づいてきます。
+観測装置をつけ、このカーテンの周りを三周してください。
 
-文 06 / 場面内 40.0–48.2 秒
+文 06 / 場面内 37.5–45.7 秒
 
 足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり歩いてください。
 
 ### 03 report — XかYを長押し
 
-開始 64.0 秒 / 尺 37.3 秒
+開始 59.5 秒 / 尺 36.3 秒
 
-画像: `briefing-device-v3.jpg`
+画像: `twin-headset-v1.jpg`
 
-文 02 からの画像: `camera-01-doll.webp`
+文 02 からの画像: `twin-camera-v1.jpg`
 
-文 03 からの画像: `equipment-controller-v1.png`（押すボタンの図）
+文 03 からの画像: `twin-camera-view-v1.jpg`
+
+文 04 からの画像: `equipment-controller-v1.png`（押すボタンの図）
 
 音声: `report-ja-v4.mp3`
 
-文 01 / 場面内 0.0–5.8 秒
+文 01 / 場面内 0.0–5.5 秒
 
 これが、怪異を記録し、解析するための観測装置です。
 
-文 02 / 場面内 5.8–18.0 秒
+文 02 / 場面内 5.5–10.2 秒
 
-あなたの代わりに、室内のカメラが対象を見ます。その映像に、あるはずのないものが映ったら、それが異変です。
+装置には、室内のカメラが捉えた映像が映ります。
 
-文 03 / 場面内 18.0–29.1 秒
+文 03 / 場面内 10.2–18.8 秒
 
-異変に気づいたら、左コントローラーのボタンを1秒間、長押ししてください。XとY、どちらでも構いません。
+どのような異変が起きるかは、分かっていません。映像に少しでも違和感を覚えたら、報告してください。
 
-文 04 / 場面内 29.1–37.3 秒
+文 04 / 場面内 18.8–28.9 秒
 
-装置のエージェントが解析し、取り除きます。見間違いでも構いません。
+報告するときは、左コントローラーのボタンを1秒間、長押ししてください。XとY、どちらでも構いません。
+
+文 05 / 場面内 28.9–36.3 秒
+
+報告の内容は、装置のエージェントが解析します。見間違いでも構いません。
 
 ### 04 wear — 終了と装着
 
-開始 101.3 秒 / 尺 22.3 秒
+開始 95.7 秒 / 尺 19.9 秒
 
 画像: `wear-doctor-v2.jpg`
 
 音声: `wear-ja-v4.mp3`
 
-文 01 / 場面内 0.0–7.3 秒
+文 01 / 場面内 0.0–6.1 秒
 
 調査が終わったら、係の者が装置を外すまで、動かずにお待ちください。
 
-文 02 / 場面内 7.3–14.1 秒
+文 02 / 場面内 6.1–11.9 秒
 
 続けられなくなったら、その場で立ち止まり、装置を外してください。
 
-文 03 / 場面内 14.1–20.8 秒
+文 03 / 場面内 11.9–18.2 秒
 
 では。左手にコントローラーを持って、観測装置をつけてください。
 
-文 04 / 場面内 20.8–22.3 秒
+文 04 / 場面内 18.2–19.9 秒
 
 健闘を祈ります。
 
@@ -148,13 +156,15 @@ I will now brief you on the subject of your survey.
 
 ### 02 subject — Subject and procedure
 
-開始 13.4 秒 / 尺 37.8 秒
+開始 13.4 秒 / 尺 38.4 秒
 
-画像: `entrance-doll-v1.png`
+画像: `twin-room-v1.jpg`
 
-文 05 からの画像: `camera-01-doll.webp`
+文 03 からの画像: `doll-file-v1.jpg`
 
-ループ動画: `kabe-one-lap-doll-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
+文 05 からの画像: `twin-walk-v1.jpg`
+
+ループ動画: `twin-walk-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
 
 文 01 / 場面内 0.0–5.2 秒
 
@@ -166,49 +176,55 @@ A curtain and a doll, found in a child’s room in an abandoned house.
 
 文 03 / 場面内 10.4–19.0 秒
 
-In appearance, it is no different from an ordinary doll. But those who stared at it directly testify that it stared back.
+In appearance, it is no different from an ordinary doll. But only under certain conditions, its anomalous properties manifest.
 
-文 04 / 場面内 19.0–22.6 秒
+文 04 / 場面内 19.0–26.2 秒
 
-You are our thirty-seventh investigator.
+Neither those conditions nor the nature of the anomaly are known yet. Finding out is your assignment.
 
-文 05 / 場面内 22.6–30.8 秒
+文 05 / 場面内 26.2–31.4 秒
 
-Put on the observation device and walk around this curtain three times. The more you circle it, the closer it comes.
+Put on the observation device and walk around this curtain three times.
 
-文 06 / 場面内 30.8–37.8 秒
+文 06 / 場面内 31.4–38.4 秒
 
 You will not see your feet. Hold the handrail with your right hand, never let go, and walk slowly.
 
 ### 03 report — Hold X or Y
 
-開始 51.2 秒 / 尺 28.4 秒
+開始 51.8 秒 / 尺 30.4 秒
 
-画像: `briefing-device-v3.jpg`
+画像: `twin-headset-v1.jpg`
 
-文 02 からの画像: `camera-01-doll.webp`
+文 02 からの画像: `twin-camera-v1.jpg`
 
-文 03 からの画像: `equipment-controller-v1.png`（押すボタンの図）
+文 03 からの画像: `twin-camera-view-v1.jpg`
+
+文 04 からの画像: `equipment-controller-v1.png`（押すボタンの図）
 
 文 01 / 場面内 0.0–4.8 秒
 
 This is the observation device. It records and analyses anomalies.
 
-文 02 / 場面内 4.8–14.4 秒
+文 02 / 場面内 4.8–9.4 秒
 
-Cameras in the room will look at the subject in your place. If their footage shows something that should not be there, that is an anomaly.
+The device shows you footage captured by cameras in the room.
 
-文 03 / 場面内 14.4–21.8 秒
+文 03 / 場面内 9.4–17.4 秒
 
-If you notice an anomaly, hold a button on the left controller for one second. X or Y, either will do.
+We do not know what kind of anomaly will occur. If anything in the footage feels wrong, even slightly, report it.
 
-文 04 / 場面内 21.8–28.4 秒
+文 04 / 場面内 17.4–24.0 秒
 
-The agent in the device will analyse it and remove it. It does not matter if you are mistaken.
+To report, hold a button on the left controller for one second. X or Y, either will do.
+
+文 05 / 場面内 24.0–30.4 秒
+
+The agent in the device will analyse your report. It does not matter if you are mistaken.
 
 ### 04 wear — Ending and equipment
 
-開始 79.6 秒 / 尺 18.8 秒
+開始 82.2 秒 / 尺 18.8 秒
 
 画像: `wear-doctor-v2.jpg`
 
@@ -250,13 +266,15 @@ Je vais maintenant vous présenter l’objet de votre enquête.
 
 ### 02 subject — Objet et procédure
 
-開始 14.2 秒 / 尺 42.4 秒
+開始 14.2 秒 / 尺 42.6 秒
 
-画像: `entrance-doll-v1.png`
+画像: `twin-room-v1.jpg`
 
-文 05 からの画像: `camera-01-doll.webp`
+文 03 からの画像: `doll-file-v1.jpg`
 
-ループ動画: `kabe-one-lap-doll-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
+文 05 からの画像: `twin-walk-v1.jpg`
+
+ループ動画: `twin-walk-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
 
 文 01 / 場面内 0.0–5.6 秒
 
@@ -266,51 +284,57 @@ L’objet est une entité anormale, désignée sous le numéro de contrôle 0514
 
 Un rideau et une poupée, trouvés dans la chambre d’un enfant, dans une maison abandonnée.
 
-文 03 / 場面内 12.0–21.8 秒
+文 03 / 場面内 12.0–21.4 秒
 
-En apparence, rien ne la distingue d’une poupée ordinaire. Mais ceux qui l’ont regardée fixement témoignent qu’elle leur a rendu leur regard.
+En apparence, rien ne la distingue d’une poupée ordinaire. Mais ses propriétés anormales ne se manifestent que dans certaines conditions.
 
-文 04 / 場面内 21.8–25.6 秒
+文 04 / 場面内 21.4–29.0 秒
 
-Vous êtes notre trente-septième enquêteur.
+Ni ces conditions ni la nature de l’anomalie ne sont encore connues. Les découvrir, voilà votre mission.
 
-文 05 / 場面内 25.6–34.4 秒
+文 05 / 場面内 29.0–34.6 秒
 
-Mettez le dispositif d’observation et faites trois fois le tour de ce rideau. Plus vous tournez, plus cela se rapproche.
+Mettez le dispositif d’observation et faites trois fois le tour de ce rideau.
 
-文 06 / 場面内 34.4–42.4 秒
+文 06 / 場面内 34.6–42.6 秒
 
 Vous ne verrez pas vos pieds. Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.
 
 ### 03 report — Maintenez X ou Y
 
-開始 56.6 秒 / 尺 29.4 秒
+開始 56.8 秒 / 尺 32.4 秒
 
-画像: `briefing-device-v3.jpg`
+画像: `twin-headset-v1.jpg`
 
-文 02 からの画像: `camera-01-doll.webp`
+文 02 からの画像: `twin-camera-v1.jpg`
 
-文 03 からの画像: `equipment-controller-v1.png`（押すボタンの図）
+文 03 からの画像: `twin-camera-view-v1.jpg`
+
+文 04 からの画像: `equipment-controller-v1.png`（押すボタンの図）
 
 文 01 / 場面内 0.0–5.2 秒
 
 Voici le dispositif d’observation. Il enregistre et analyse les anomalies.
 
-文 02 / 場面内 5.2–15.4 秒
+文 02 / 場面内 5.2–10.2 秒
 
-Les caméras de la pièce regarderont l’objet à votre place. Si leurs images montrent quelque chose qui ne devrait pas être là, c’est une anomalie.
+Le dispositif affiche les images filmées par les caméras de la pièce.
 
-文 03 / 場面内 15.4–23.4 秒
+文 03 / 場面内 10.2–19.4 秒
 
-Si vous remarquez une anomalie, maintenez un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.
+Nous ignorons quel type d’anomalie se produira. Si quelque chose vous semble anormal dans ces images, même légèrement, signalez-le.
 
-文 04 / 場面内 23.4–29.4 秒
+文 04 / 場面内 19.4–26.4 秒
 
-L’agent du dispositif l’analysera et l’éliminera. Peu importe si vous vous trompez.
+Pour signaler, maintenez un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.
+
+文 05 / 場面内 26.4–32.4 秒
+
+L’agent du dispositif analysera votre signalement. Peu importe si vous vous trompez.
 
 ### 04 wear — Fin et équipement
 
-開始 86.0 秒 / 尺 21.6 秒
+開始 89.2 秒 / 尺 21.6 秒
 
 画像: `wear-doctor-v2.jpg`
 

@@ -10,16 +10,22 @@ metadata:
 
 # タブレットの博士UIを触る前に
 
-## 額の絵は文ごとに替えられる（2026-11-12・LEDGER 0327）
+## 資料はテレビの中に映す・絵は文ごとに替える（2026-11-12・LEDGER 0327・0328）
 
-`briefing-v1.json` の場面に `figures`（`fromCue` の昇順）を書くと、その文から先は額の絵がその絵になる。最初の絵は従来どおり `image`。`tag`（3 言語）を書くと額の左上に札が出る（いまは「管理番号 0514」）。`kind: "buttons"` の絵は左コントローラーの図で、X と Y の赤い輪と 1 秒で満ちる輪を DOM で重ねる（`#figureButtons`）。
+資料のある場面（`layout: doctor-evidence`）では博士の画を切り（`.portrait { visibility: hidden }`）、画面の中央にテレビを出す。
+`.briefing-visual` がテレビで、枠は `asset/tv-frame-v1.png`（本編の `Assets/Resources/CrtReference/Frame.png` を縮めたもの）。
+絵・動画・札・図は `.tv-screen`（枠の開口より少し広い 1.27:1 の箱）の中で、枠が上から被さる。博士を横へ寄せる形（0275・0328 で 2 回「おかしい」）には戻さない。
 
-- ⚠ 輪の位置（`.fb-x` / `.fb-y`）は `equipment-controller-v1.png` の中のボタンの位置と、CSS の拡大（`scale(1.8)`・`transform-origin`）から手で出した値。図か拡大を替えたら、輪を止めて（`animation: none; opacity: 1`）撮って重なりを見る
+`briefing-v1.json` の場面に `figures`（`fromCue` の昇順）を書くと、その文から先はテレビの絵がその絵になる。最初の絵は `image`。`tag`（3 言語）は画面の左上の札（「管理番号 0514」）。`kind: "buttons"` は左コントローラーの図で、X と Y の赤い輪と 1 秒で満ちる輪を DOM で重ねる（`#figureButtons`）。
+
+- 絵はツインから作る（0328）。4:3・960×720 の JPEG。元は Drive `renders/twin-cycles/`: 部屋は `20261112_112644_doctor0514/hero.png`（`shoot.py --person 0`）、装置・カメラ・カメラの画は `20261104_214433_tex2/` の `close` `rigA` `A`、歩く動画は `game/forward/cut_auto.mp4`。人形の絵だけツインではない（ツインに人形が居ない）
+- ⚠ 輪の位置（`.fb-x` / `.fb-y`）は `equipment-controller-v1.png` の中のボタンの位置と、CSS の拡大（`scale(1.5)`・`transform-origin`）と、`.tv-screen` の縦横比から手で出した値。どれかを替えたら、輪を止めて（`animation: none; opacity: 1`）撮って重なりを見る
 - ⚠ 資料の提示の札（`presentReference` の `scene`）は `場面ID:絵の番号`。場面 ID だけにすると、同じ場面の 2 枚目が「変わっていない」と判定されて出ない
-- 3 言語で文の数を揃える（絵と壁の映像は文の番号で決まる。`verify-runtime.cjs` が数える）
-- 日本語の声は `generate-doctor-audio.py`（`VERSION` と `ANCHORS`）。原稿の文の頭を変えたら `ANCHORS` も同じ字にする。合成が通った後に目印で落ちたら `--reuse` で切り直す（合成し直さない）
-- 0258 までの声（voice bEg9geTboP3ghzJ9Rt3L）は 11-12 の夕方には API から使えた。全体 約 124 秒
+- ⚠ テレビが出た直後に撮ると、乱れの途中の暗い画が撮れる。1 秒置いて撮り直す
+- 3 言語で文の数を揃える（絵と歩く動画は文の番号で決まる。`verify-runtime.cjs` が数える）
+- 日本語の声は `generate-doctor-audio.py`（`VERSION` と `ANCHORS`）。声は voice bEg9geTboP3ghzJ9Rt3L（0328 の指定）。切り出すときに `--tempo 1.2`（既定）で高さを変えずに速める。残してある元の音は等速。原稿の文の頭を変えたら `ANCHORS` も同じ字にする。合成が通った後に目印で落ちたら `--reuse` で切り直す
 - 字幕は `text-wrap: balance` と `word-break: auto-phrase`（語の途中で折らない）。実機の WebView では未確認
+- ⚠ 実機の試験（`TabletInstrumentation` の visitorFocus・presentation）は博士が出続ける前提のものがある。Redmi を繋いだら、資料の文で博士が消えることに合わせて直す
 
 ## 誤タップの守り（2026-10-21・LEDGER 0282 の続き）
 

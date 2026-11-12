@@ -19,49 +19,53 @@ L’objet est une entité anormale, désignée sous le numéro de contrôle 0514
 Un rideau et une poupée, trouvés dans la chambre d’un enfant, dans une maison abandonnée.
 
 6
-00:00:26,200 --> 00:00:36,000
-En apparence, rien ne la distingue d’une poupée ordinaire. Mais ceux qui l’ont regardée fixement témoignent qu’elle leur a rendu leur regard.
+00:00:26,200 --> 00:00:35,600
+En apparence, rien ne la distingue d’une poupée ordinaire. Mais ses propriétés anormales ne se manifestent que dans certaines conditions.
 
 7
-00:00:36,000 --> 00:00:39,800
-Vous êtes notre trente-septième enquêteur.
+00:00:35,600 --> 00:00:43,200
+Ni ces conditions ni la nature de l’anomalie ne sont encore connues. Les découvrir, voilà votre mission.
 
 8
-00:00:39,800 --> 00:00:48,600
-Mettez le dispositif d’observation et faites trois fois le tour de ce rideau. Plus vous tournez, plus cela se rapproche.
+00:00:43,200 --> 00:00:48,800
+Mettez le dispositif d’observation et faites trois fois le tour de ce rideau.
 
 9
-00:00:48,600 --> 00:00:56,600
+00:00:48,800 --> 00:00:56,800
 Vous ne verrez pas vos pieds. Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.
 
 10
-00:00:56,600 --> 00:01:01,800
+00:00:56,800 --> 00:01:02,000
 Voici le dispositif d’observation. Il enregistre et analyse les anomalies.
 
 11
-00:01:01,800 --> 00:01:12,000
-Les caméras de la pièce regarderont l’objet à votre place. Si leurs images montrent quelque chose qui ne devrait pas être là, c’est une anomalie.
+00:01:02,000 --> 00:01:07,000
+Le dispositif affiche les images filmées par les caméras de la pièce.
 
 12
-00:01:12,000 --> 00:01:20,000
-Si vous remarquez une anomalie, maintenez un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.
+00:01:07,000 --> 00:01:16,200
+Nous ignorons quel type d’anomalie se produira. Si quelque chose vous semble anormal dans ces images, même légèrement, signalez-le.
 
 13
-00:01:20,000 --> 00:01:26,000
-L’agent du dispositif l’analysera et l’éliminera. Peu importe si vous vous trompez.
+00:01:16,200 --> 00:01:23,200
+Pour signaler, maintenez un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.
 
 14
-00:01:26,000 --> 00:01:33,000
-À la fin de l’enquête, restez immobile jusqu’à ce qu’un membre du personnel vous retire le dispositif.
+00:01:23,200 --> 00:01:29,200
+L’agent du dispositif analysera votre signalement. Peu importe si vous vous trompez.
 
 15
-00:01:33,000 --> 00:01:38,800
-Si vous ne pouvez plus continuer, arrêtez-vous sur place et retirez le dispositif.
+00:01:29,200 --> 00:01:36,200
+À la fin de l’enquête, restez immobile jusqu’à ce qu’un membre du personnel vous retire le dispositif.
 
 16
-00:01:38,800 --> 00:01:44,600
-Bien. Prenez la manette dans la main gauche et mettez le dispositif d’observation.
+00:01:36,200 --> 00:01:42,000
+Si vous ne pouvez plus continuer, arrêtez-vous sur place et retirez le dispositif.
 
 17
-00:01:44,600 --> 00:01:47,600
+00:01:42,000 --> 00:01:47,800
+Bien. Prenez la manette dans la main gauche et mettez le dispositif d’observation.
+
+18
+00:01:47,800 --> 00:01:50,800
 Bonne chance pour votre enquête.

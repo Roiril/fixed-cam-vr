@@ -20,48 +20,52 @@ A curtain and a doll, found in a child’s room in an abandoned house.
 
 6
 00:00:23,800 --> 00:00:32,400
-In appearance, it is no different from an ordinary doll. But those who stared at it directly testify that it stared back.
+In appearance, it is no different from an ordinary doll. But only under certain conditions, its anomalous properties manifest.
 
 7
-00:00:32,400 --> 00:00:36,000
-You are our thirty-seventh investigator.
+00:00:32,400 --> 00:00:39,600
+Neither those conditions nor the nature of the anomaly are known yet. Finding out is your assignment.
 
 8
-00:00:36,000 --> 00:00:44,200
-Put on the observation device and walk around this curtain three times. The more you circle it, the closer it comes.
+00:00:39,600 --> 00:00:44,800
+Put on the observation device and walk around this curtain three times.
 
 9
-00:00:44,200 --> 00:00:51,200
+00:00:44,800 --> 00:00:51,800
 You will not see your feet. Hold the handrail with your right hand, never let go, and walk slowly.
 
 10
-00:00:51,200 --> 00:00:56,000
+00:00:51,800 --> 00:00:56,600
 This is the observation device. It records and analyses anomalies.
 
 11
-00:00:56,000 --> 00:01:05,600
-Cameras in the room will look at the subject in your place. If their footage shows something that should not be there, that is an anomaly.
+00:00:56,600 --> 00:01:01,200
+The device shows you footage captured by cameras in the room.
 
 12
-00:01:05,600 --> 00:01:13,000
-If you notice an anomaly, hold a button on the left controller for one second. X or Y, either will do.
+00:01:01,200 --> 00:01:09,200
+We do not know what kind of anomaly will occur. If anything in the footage feels wrong, even slightly, report it.
 
 13
-00:01:13,000 --> 00:01:19,600
-The agent in the device will analyse it and remove it. It does not matter if you are mistaken.
+00:01:09,200 --> 00:01:15,800
+To report, hold a button on the left controller for one second. X or Y, either will do.
 
 14
-00:01:19,600 --> 00:01:25,000
-When the survey ends, stay still until a member of staff removes the device.
+00:01:15,800 --> 00:01:22,200
+The agent in the device will analyse your report. It does not matter if you are mistaken.
 
 15
-00:01:25,000 --> 00:01:30,000
-If you cannot continue, stop where you are and take off the device.
+00:01:22,200 --> 00:01:27,600
+When the survey ends, stay still until a member of staff removes the device.
 
 16
-00:01:30,000 --> 00:01:35,400
-Now. Hold the controller in your left hand and put on the observation device.
+00:01:27,600 --> 00:01:32,600
+If you cannot continue, stop where you are and take off the device.
 
 17
-00:01:35,400 --> 00:01:38,400
+00:01:32,600 --> 00:01:38,000
+Now. Hold the controller in your left hand and put on the observation device.
+
+18
+00:01:38,000 --> 00:01:41,000
 Good luck with your survey.

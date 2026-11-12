@@ -238,41 +238,49 @@
   .briefing-copy, .briefing-progress, .briefing-intro { display: none; }
   .briefing { position: relative; }
 
-  /* ---- 参考図（写真・壁の一周映像・装置の図）：左に額が上がり、博士は右へ寄る（2026-10-14 復活） ---- */
-  .briefing-visual { position: absolute; z-index: 2; left: max(4.5vw,env(safe-area-inset-left)); top: 47%; width: min(38vw,980px); aspect-ratio: 16 / 9; margin: 0; overflow: hidden; pointer-events: none; background: #050403; border: 1px solid rgba(232,220,196,.22); box-shadow: 0 24px 70px rgba(0,0,0,.75), 0 0 0 7px rgba(9,8,7,.55); opacity: 0; transform: translateY(-50%); transition: opacity .36s var(--ease-out), filter .45s var(--ease); }
+  /* ---- 資料はテレビの中に映す（LEDGER 0327 の続き「博士がスライドして横にプレーンのスクリーンが出てくるのもおかしい」）。
+     資料のある文では博士の画を切り、本編と同じテレビ（tv-frame-v1.png = Assets/Resources/CrtReference/Frame.png）を画面の中央に置く。
+     絵・映像・札・図は .tv-screen（枠の開口より少し広い箱）の中。枠が上から被さって角を丸める ---- */
+  .briefing-visual { position: absolute; z-index: 2; left: 50%; top: 43%; height: min(72vh,62vw); aspect-ratio: 1118 / 900; margin: 0; pointer-events: none; opacity: 0; transform: translate(-50%,-50%); transition: opacity .12s linear, filter .45s var(--ease); }
+  .briefing-visual::before { content: ""; position: absolute; z-index: -1; inset: -14% -22% -20%; background: radial-gradient(50% 50% at 50% 52%,rgba(150,170,160,.13),transparent 70%); }
+  .tv-frame { position: absolute; z-index: 3; inset: 0; display: block; width: 100%; height: 100%; filter: drop-shadow(0 26px 40px rgba(0,0,0,.8)); }
+  .tv-screen { position: absolute; z-index: 1; left: 6.5%; right: 4.6%; top: 6%; bottom: 7.1%; overflow: hidden; background: #050403; }
+  /* 走査線と、管の周辺の落ち込み */
+  .tv-screen::after { content: ""; position: absolute; z-index: 4; inset: 0; pointer-events: none; background:
+      repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0,rgba(0,0,0,.14) 1px,transparent 1px,transparent 3px),
+      radial-gradient(115% 105% at 50% 50%,transparent 58%,rgba(0,0,0,.6)); }
   .briefing-visual.is-presented { opacity: 1; }
   .stage.is-equipment .briefing-visual { display: none; }
   .briefing-visual.is-leaving { opacity: 0; filter: none; }
   .reference-ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: 1; }
   .reference-ghost.is-fading { opacity: 0; transition: opacity .22s var(--ease); }
-  .briefing-visual::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 100% at 50% 50%,transparent 55%,rgba(9,8,7,.55)); box-shadow: inset 0 0 0 1px rgba(232,220,196,.06); }
   .briefing-image, .briefing-loop-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .22s var(--ease); }
   .briefing-image.is-visible, .briefing-loop-video.is-visible { opacity: 1; }
   .briefing-visual.is-loop-playing .briefing-image { opacity: 0; }
   /* 資料の札（管理番号）と、押すボタンの図。文ごとに替わる絵は briefing-v1.json の figures が決める */
-  .figure-tag { position: absolute; z-index: 2; left: 4%; top: 6%; margin: 0; padding: .25em .9em .25em .8em; border-left: 2px solid var(--red); background: rgba(9,8,7,.66); color: rgba(242,236,223,.9); font: 500 clamp(10px,1.1vw,14px)/1.6 var(--sans); letter-spacing: .22em; font-variant-numeric: tabular-nums; }
+  .figure-tag { position: absolute; z-index: 2; left: 7%; top: 9%; margin: 0; padding: .25em .9em .25em .8em; border-left: 2px solid var(--red); background: rgba(9,8,7,.66); color: rgba(242,236,223,.9); font: 500 clamp(11px,1.5vw,18px)/1.6 var(--sans); letter-spacing: .22em; font-variant-numeric: tabular-nums; }
   .briefing-visual.is-loop-playing .figure-tag { display: none; }
-  /* 図は上面（スティックとボタン）へ 1.8 倍に寄せる。握りは額の下へ切れる。地は図と同じ黒 */
-  .briefing-visual.is-figure-buttons { background: #000; }
-  .briefing-visual.is-figure-buttons .briefing-image, .briefing-visual.is-figure-buttons .reference-ghost { object-fit: contain; object-position: 22% 50%; transform: scale(1.8); transform-origin: 43.7% 7.75%; }
+  /* 図は上面（スティックとボタン）へ 1.5 倍に寄せる。握りは画面の下へ切れる。地は図と同じ黒 */
+  .briefing-visual.is-figure-buttons .tv-screen { background: #000; }
+  .briefing-visual.is-figure-buttons .briefing-image { object-fit: contain; object-position: 0% 50%; transform: scale(1.5); transform-origin: 46.05% -1%; }
   .figure-buttons { position: absolute; inset: 0; z-index: 2; }
-  /* 図の中の X と Y の位置（equipment-controller-v1.png は正方形・左寄せ 22%・上の拡大の後）。図か拡大を替えたらここも直す */
-  .fb-press { position: absolute; width: 9.4%; aspect-ratio: 1; border-radius: 50%; border: 2px solid var(--red); background: rgba(168,50,57,.42); transform: translate(-50%,-50%) scale(1); opacity: 0; animation: fb-press 6s linear infinite; }
-  .fb-x { left: 32.36%; top: 54.28%; }
-  .fb-y { left: 41.09%; top: 37.36%; animation-delay: -3s; }
+  /* 図の中の X と Y の位置（equipment-controller-v1.png は正方形・左寄せ・上の拡大の後・.tv-screen は 1.27:1）。図か拡大か箱を替えたらここも直す */
+  .fb-press { position: absolute; width: 10.4%; aspect-ratio: 1; border-radius: 50%; border: 2px solid var(--red); background: rgba(168,50,57,.42); transform: translate(-50%,-50%) scale(1); opacity: 0; animation: fb-press 6s linear infinite; }
+  .fb-x { left: 35.3%; top: 50.9%; }
+  .fb-y { left: 45.45%; top: 36.8%; animation-delay: -3s; }
   @keyframes fb-press {
     0%, 4% { opacity: 0; transform: translate(-50%,-50%) scale(1.5); }
     8%, 26% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
     34% { opacity: 0; transform: translate(-50%,-50%) scale(2.1); }
     100% { opacity: 0; transform: translate(-50%,-50%) scale(2.1); }
   }
-  .fb-gauge { position: absolute; left: 80%; top: 44%; width: 21%; transform: translate(-50%,-50%); overflow: visible; }
+  .fb-gauge { position: absolute; left: 81%; top: 42%; width: 19%; transform: translate(-50%,-50%); overflow: visible; }
   .fb-track { fill: none; stroke: rgba(232,220,196,.2); stroke-width: 5; }
   .fb-fill { fill: none; stroke: var(--red); stroke-width: 5; stroke-dasharray: 100; stroke-dashoffset: 100; animation: fb-fill 3s linear infinite; }
   .fb-dot { fill: rgba(242,236,223,.9); transform-origin: 60px 60px; animation: fb-dot 3s linear infinite; }
   @keyframes fb-fill { 0%, 16% { stroke-dashoffset: 100; } 50%, 86% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 100; } }
   @keyframes fb-dot { 0%, 8% { transform: scale(.55); opacity: .35; } 16%, 50% { transform: scale(1); opacity: 1; } 56% { transform: scale(1.9); opacity: .9; } 68%, 100% { transform: scale(.55); opacity: .35; } }
-  .fb-label { position: absolute; left: 80%; top: 73%; margin: 0; transform: translateX(-50%); white-space: nowrap; color: rgba(242,236,223,.92); font: 500 clamp(12px,1.5vw,20px)/1.4 var(--serif); letter-spacing: .14em; }
+  .fb-label { position: absolute; left: 81%; top: 66%; margin: 0; transform: translateX(-50%); white-space: nowrap; color: rgba(242,236,223,.92); font: 500 clamp(12px,1.7vw,22px)/1.4 var(--serif); letter-spacing: .1em; }
   @media (prefers-reduced-motion: reduce) {
     .fb-press, .fb-fill, .fb-dot { animation: none; }
     .fb-press { opacity: 1; }
@@ -280,13 +288,14 @@
   }
   .reference-fallback { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; padding: 20px; text-align: center; color: var(--muted); font: 13px/1.7 var(--sans); }
   .reference-fallback p { margin: 0; }
-  /* 博士の位置替えは滑らせない。signal-cut.js の glitch の下で一瞬に替える（LEDGER 0275「博士がスライドして画面が出てくるのがシュール」） */
-  .stage.is-briefing .portrait { transform: translateX(0); transition: filter .12s var(--ease); }
-  .stage.has-reference:not(.is-equipment) .portrait { transform: translateX(17.5%); -webkit-mask-image: linear-gradient(90deg,transparent 0,#000 24%); mask-image: linear-gradient(90deg,transparent 0,#000 24%); }
+  /* 資料のある文では博士の画を切る（滑らせない・寄せない）。切り替えは signal-cut.js の glitch の下で一瞬（0275）。
+     ⚠ 動画を含む層を transform / filter で潰すと WebView は黒に飛ぶので、visibility で切る */
+  .stage.is-briefing .portrait { transition: filter .12s var(--ease); }
+  .stage.has-reference:not(.is-equipment) .portrait { visibility: hidden; }
+  .stage.has-reference:not(.is-equipment) { background: radial-gradient(90% 80% at 50% 42%,#12100e,var(--bg)); }
   .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { transition: filter .45s var(--ease); }
-  /* 止めたら額も沈め、盤は博士側（右）へ寄せる（額に被せない） */
+  /* 止めたらテレビも沈める。盤はテレビの上の中央に浮く */
   .stage.is-briefing-controls .briefing-visual { filter: brightness(.45) saturate(.7); }
-  .stage.has-reference:not(.is-equipment) .briefing-controls { left: 67%; }
   /* 右上の一時停止（画面のタップは次の文へ進む） */
   .briefing-pause-btn { position: fixed; z-index: 10; top: max(16px,env(safe-area-inset-top)); right: max(22px,env(safe-area-inset-right)); display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 1px solid rgba(232,220,196,.28); border-radius: 50%; background: rgba(9,8,7,.5); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); opacity: .62; transition: opacity .25s, border-color .25s, transform .2s var(--ease-out); }
   .briefing-pause-btn:hover, .briefing-pause-btn:active { opacity: 1; border-color: rgba(232,220,196,.6); }
@@ -325,8 +334,6 @@
   .stage.is-briefing:not(.is-equipment) #briefingToTitle { grid-column: 1; justify-self: stretch; }
   .stage.is-briefing:not(.is-equipment) #briefingSettings { grid-column: 3; justify-self: stretch; }
   .stage.is-briefing:not(.is-equipment) #briefingToTitle::before, .stage.is-briefing:not(.is-equipment) #briefingSettings::before { width: 34px; height: 34px; background-size: 15px 15px; }
-  /* 資料（額）がある間は盤を博士の側へ寄せ、額に被せない（is-briefing の中央寄せより強く指定する） */
-  .stage.is-briefing.has-reference:not(.is-equipment) .briefing-controls { left: 67%; }
   #briefingStaff { position: absolute; right: 10px; top: 6px; display: block; min-width: 0; min-height: 44px; padding: 4px 12px; border-radius: 22px; color: rgba(194,184,168,.45); font-size: 10px; --hold: 0; background: linear-gradient(90deg,rgba(215,194,155,.18) calc(var(--hold) * 100%),transparent 0); }
   #briefingStaff::before { display: none; }
   .briefing-staff-hint { grid-column: 1 / -1; grid-row: 4; min-height: 1.2em; margin: 0; color: var(--muted); font: 11px/1.5 var(--sans); text-align: center; }
@@ -416,8 +423,7 @@
     .settings-actions { justify-content: flex-start; }
     .title-brand { left: 8%; right: 8%; top: 12%; width: auto; }
     .equipment-steps { grid-template-columns: 1fr; gap: 18px; }
-    .briefing-visual { left: 6vw; right: 6vw; top: 6%; width: auto; transform: none; }
-    .stage.has-reference:not(.is-equipment) .portrait { top: 34%; transform: none; -webkit-mask-image: linear-gradient(180deg,transparent 0,#000 22%); mask-image: linear-gradient(180deg,transparent 0,#000 22%); }
+    .briefing-visual { top: 38%; height: auto; width: min(92vw,58vh); }
     .equip-ico { width: 84px; }
     .briefing-controls { grid-template-columns: repeat(3,auto); }
     #briefingToTitle { grid-column: 1; grid-row: 3; } #briefingSettings { grid-column: 3; grid-row: 3; }
@@ -583,6 +589,8 @@
     <canvas class="doctor-ghost" id="doctorGhost" aria-hidden="true" hidden></canvas>
   </figure>
   <figure class="briefing-visual" hidden>
+    <img class="tv-frame" src="./asset/tv-frame-v1.png" alt="" aria-hidden="true" draggable="false" width="1118" height="900">
+    <div class="tv-screen">
     <img class="briefing-image" id="briefingImage" alt="" draggable="false" width="1600" height="900" hidden>
     <video class="briefing-loop-video" id="briefingLoopVideo" playsinline muted loop preload="none" disablepictureinpicture aria-hidden="true" hidden></video>
     <canvas class="reference-ghost" id="referenceGhost" aria-hidden="true" hidden></canvas>
@@ -599,6 +607,7 @@
     <div class="briefing-intro" id="briefingIntro" hidden>
       <p class="briefing-role" id="briefingRole"></p>
       <p class="briefing-intro-text" id="briefingIntroText"></p>
+    </div>
     </div>
   </figure>
   <button class="briefing-pause-surface" id="briefingPauseSurface" type="button" aria-label="次の文へ進む" hidden></button>
@@ -2497,8 +2506,7 @@
     if (intro) setText('briefingEyebrow', scene.title[state.lang]);
     $('briefingView').dataset.portrait = String(intro);
     setReferenceVisual(!intro);
-    // 参考図があるとき、博士は右へ寄る。装置は額なしで左へ重ねる。
-    // 寄るときは滑らせず、乱れの下で一瞬に替える（0275）。章の切り替えから来たときは同じ乱れを延ばすだけ
+    // 資料があるとき、博士の画を切ってテレビを出す。乱れの下で一瞬に替える（0275）。章の切り替えから来たときは同じ乱れを延ばすだけ
     if (hadReference !== !intro && !reducedMotion.matches) signalCut?.glitch?.();
     stage.classList.toggle('has-reference', !intro);
     $('briefingIntro').hidden = !intro;
