@@ -27,7 +27,8 @@ metadata:
 - 字幕の上の声の波形（`#voiceMeter`）は、音を解析せず、先に作った列を再生位置で引く。列は `generate-doctor-audio.py` が切り出した音から作る `asset/doctor-voice-ja-v4.json`（場面ごと・20Hz・0–9 の数字）。音声を AudioContext へ繋ぐ方式にしなかったのは、コンテキストが止まると声ごと消えるため。声を作り直したら列も一緒に作り直される
 - ⚠ 内蔵ブラウザの枠は、見えていないと描画が毎秒 1 コマ前後まで落ち、撮影も左上だけ切れることがある。演出が動いているかは `TvLive.snapshot()` のコマ数と canvas の画素で見る。大きさは `getBoundingClientRect` で測る
 - 3 言語で文の数を揃える（絵と歩く動画は文の番号で決まる。`verify-runtime.cjs` が数える）
-- 日本語の声は `generate-doctor-audio.py`（`VERSION` と `ANCHORS`）。⚠ 「装置」は「ちょうち」と読まれた（0331）。声の原稿では読み違えやすい語をかなで書く（字幕は漢字）。読みは ElevenLabs の speech-to-text（`scribe_v1`）で書き起こして確かめた。最初の場面の頭には `--lead-in` の無音（既定 1.0 秒）を置く。無いと声の頭が見切れた（0331）。声は voice bEg9geTboP3ghzJ9Rt3L（0328 の指定）。切り出すときに `--tempo 1.2`（既定）で高さを変えずに速める。残してある元の音は等速。原稿の文の頭を変えたら `ANCHORS` も同じ字にする。合成が通った後に目印で落ちたら `--reuse` で切り直す
+- 日本語の声は `generate-doctor-audio.py`（`VERSION` と `ANCHORS`）。⚠ 「装置」は「ちょうち」と読まれた（0331）。声の原稿では読み違えやすい語をかなで書く（字幕は漢字）。読みは ElevenLabs の speech-to-text（`scribe_v1`）で書き起こして確かめた。最初の場面の頭には `--lead-in` の無音（既定 1.0 秒）を置く。無いと声の頭が見切れた（0331）。研究所の名は「にほん・かいい・けんきゅうじょ」と区切る（続けると「にほんかい」で切れて読みが揺れた。0332）。合成は回ごとに速さが 1 割ほど揺れる（同じ原稿で 117.7 秒と 133.4 秒）。全体の尺を見て遅い回は引き直す
+- 乱れ（章の切り替え・テレビの電源・チャンネル）の間は声を出さない（0332）。乱れを始める所で `holdVoiceForDisturbance(ms)` を呼び、`startBriefingMediaWindow` が残りを待ってから再生する。章の切り替えの乱れは声の開始より後に始まるので、`moveBriefing` の `update` で先に積む。長さの定数は `signal-cut.js` の `GLITCH_MS`・`tv-live.js` の `POWER_MS` / `CHANNEL_MS` と対声は voice bEg9geTboP3ghzJ9Rt3L（0328 の指定）。切り出すときに `--tempo 1.2`（既定）で高さを変えずに速める。残してある元の音は等速。原稿の文の頭を変えたら `ANCHORS` も同じ字にする。合成が通った後に目印で落ちたら `--reuse` で切り直す
 - 字幕は `text-wrap: balance` と `word-break: auto-phrase`（語の途中で折らない）。実機の WebView では未確認
 - ⚠ 実機の試験（`TabletInstrumentation` の visitorFocus・presentation）は博士が出続ける前提のものがある。Redmi を繋いだら、資料の文で博士が消えることに合わせて直す
 

@@ -6,13 +6,13 @@
 1 字ごとの時刻から場面と文へ切る。このファイルは `export-briefing.py` では上書きしない。
 
 演技の指定と間の取り方は、ユーザーが調整した v2（`elevenlabs-input-ja.md`）の書き方を使っている。
-2026-11-12（LEDGER 0331）: 「装置」が「ちょうち」と読まれたので、原稿だけ「そうち」とかなで書く（字幕は漢字のまま）。研究所の名もかなで書く。
+2026-11-12（LEDGER 0331）: 「装置」が「ちょうち」と読まれたので、原稿だけ「そうち」とかなで書く（字幕は漢字のまま）。研究所の名もかなで書き、「にほんかい」（日本海）と続けて読まれないよう「・」で区切る（0332）。
 文の頭を変えたら `generate-doctor-audio.py` の `ANCHORS` も同じ字に直す。
 
 ```text
 [deep, resonant male voice, calm and authoritative, restrained emotion, measured delivery, cinematic Japanese drama performance]
 
-ようこそ。……にほんかいいけんきゅうじょへ。
+ようこそ。……にほん・かいい・けんきゅうじょへ。
 
 [pause]
 

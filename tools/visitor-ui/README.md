@@ -103,7 +103,7 @@ py -3.11 tools/visitor-ui/make-briefing-sfx.py --check
 - 字幕: `tools/visitor-ui/briefing-ja.srt` / `briefing-en.srt` / `briefing-fr.srt`
 - 画像生成時のプロンプト: `tools/visitor-ui/briefing-image-prompts.md`
 
-JSON の `scenes` が場面の順番。各場面の `cues` は一文とその尺。4場面で各言語19文。資料のある場面では博士の画を切ってテレビ（`tv-frame-v1.png`）を出し、その中に絵と動画を映す。絵はデジタルツインから作る（元の場所は `.claude/memory/visitor_tablet.md`）。場面の `figures` でテレビの絵を文ごとに替える（`fromCue` の文から先がその絵。`kind: "buttons"` は左コントローラーの図に X・Y の輪と 1 秒の輪を重ねる）。`tag` はテレビの画面の左上の札。テレビの電源の入り・砂嵐・粒と、字幕の上の声の波形は `tv-live.js`（js を足したので `RequestPolicy.WEB_SCRIPTS` にも入れてある）。
+JSON の `scenes` が場面の順番。各場面の `cues` は一文とその尺。4場面で各言語19文。資料のある場面では博士の画を切ってテレビ（`tv-frame-v1.png`）を出し、その中に絵と動画を映す。絵はデジタルツインから作る（元の場所は `.claude/memory/visitor_tablet.md`）。場面の `figures` でテレビの絵を文ごとに替える（`fromCue` の文から先がその絵。`kind: "buttons"` は左コントローラーの図に X・Y の輪と 1 秒の輪を重ねる）。`tag` はテレビの画面の左上の札。乱れ・電源の入り・砂嵐の間は博士の声を止め、終わって 0.15 秒後に出す（`holdVoiceForDisturbance`・0332）。テレビの電源の入り・砂嵐・粒と、字幕の上の声の波形は `tv-live.js`（js を足したので `RequestPolicy.WEB_SCRIPTS` にも入れてある）。
 2026-09-13 に日本語の挨拶と台詞を調整。説明同士をつなぐ話し方に整えた。表示は12回のまま。手順と数値は維持する。
 調査対象は「呪われたオブジェクト」と呼ぶ。歩き方は動画への言及を省き、観測装置をつけてカーテンを3周するよう案内する。
 2026-10-03 に冒頭を「はじめまして。」へ変更し、章名を「探索方法」にした。「壁」を指す台詞は「カーテン」に統一した。同日のユーザー提供音声で全4場面の日本語音声を更新した。「決して」と「1秒間」を字幕へ追加した。以前の日本語 MP3 は参考として残し、再生指定は v2 に変更した。

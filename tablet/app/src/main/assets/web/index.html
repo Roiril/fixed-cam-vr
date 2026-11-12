@@ -2197,11 +2197,33 @@
         } else handleBriefingMediaFailure();
       });
     };
-    if (media.readyState >= 1) playSegment();
+    // 乱れ（章の切り替え・テレビの電源・チャンネル）が終わってから声を出す（0332）。
+    // 乱れの残りは、この関数より前に holdVoiceForDisturbance で積んである（章の切り替えは moveBriefing の update）。
+    const playAfterDisturbance = () => {
+      if (briefingMedia !== media || briefingMediaToken !== token || !state.briefing.mediaWindowActive) return;
+      const waitMs = (state.briefing.voiceHoldUntil || 0) - performance.now();
+      if (waitMs > 0) {
+        clearBriefingMediaTimer();
+        briefingMediaTimer = setTimeout(playSegment, waitMs);
+      } else playSegment();
+    };
+    if (media.readyState >= 1) playAfterDisturbance();
     else {
-      media.onloadedmetadata = playSegment;
+      media.onloadedmetadata = playAfterDisturbance;
       briefingMediaTimer = setTimeout(handleBriefingMediaFailure, 6000);
     }
+  }
+
+  // 乱れの間は博士の声を出さない（0332「乱れと博士のセリフはかぶせないように」）。
+  // 乱れが終わってから VOICE_AFTER_DISTURBANCE_MS 置いて声を出す。長さは signal-cut.js の GLITCH_MS、
+  // tv-live.js の POWER_MS / CHANNEL_MS と対。
+  const SIGNAL_GLITCH_MS = 360;
+  const TV_POWER_MS = 620;
+  const TV_CHANNEL_MS = 260;
+  const VOICE_AFTER_DISTURBANCE_MS = 150;
+  function holdVoiceForDisturbance(ms) {
+    const until = performance.now() + ms + VOICE_AFTER_DISTURBANCE_MS;
+    state.briefing.voiceHoldUntil = Math.max(state.briefing.voiceHoldUntil || 0, until);
   }
 
   function cancelBriefingPresentation(reason) {
@@ -2545,11 +2567,14 @@
     $('briefingView').dataset.portrait = String(intro);
     setReferenceVisual(!intro);
     // テレビが出た瞬間は電源が入る。同じテレビの中で絵が替わるときは短い砂嵐（tv-live.js）
-    if (!intro && !hadReference) tvLive?.powerOn();
+    if (!intro && !hadReference && tvLive?.powerOn()) holdVoiceForDisturbance(TV_POWER_MS);
     syncVoiceMeter(scene);
     syncBriefingHairline(position, positions.length);
     // 資料があるとき、博士の画を切ってテレビを出す。乱れの下で一瞬に替える（0275）。章の切り替えから来たときは同じ乱れを延ばすだけ
-    if (hadReference !== !intro && !reducedMotion.matches) signalCut?.glitch?.();
+    if (hadReference !== !intro && !reducedMotion.matches && signalCut?.glitch) {
+      signalCut.glitch();
+      holdVoiceForDisturbance(SIGNAL_GLITCH_MS);
+    }
     stage.classList.toggle('has-reference', !intro);
     $('briefingIntro').hidden = !intro;
     const image = $('briefingImage');
@@ -2565,7 +2590,10 @@
       image.alt = figure.alt[state.lang];
       const source = assetPath(figure.image);
       if (image.getAttribute('src') !== source || image.dataset.scene !== scene.id) {
-        if (hadReference) { captureReferenceGhost(); tvLive?.channel(); }
+        if (hadReference) {
+          captureReferenceGhost();
+          if (tvLive?.channel()) holdVoiceForDisturbance(TV_CHANNEL_MS);
+        }
         else discardReferenceGhost();
         image.dataset.scene = scene.id;
         image.dataset.presentationSource = '';
@@ -2845,6 +2873,8 @@
       state.briefing.pauseReasons.delete('controls');
       state.briefing.resumeAuto = true;
       if (changedChapter) configureBriefingMedia(currentBriefingScene());
+      // 章の切り替えの乱れ（playChapterTransition）は声より後に始まるので、先に声を待たせておく（0332）
+      if (changedChapter && !reducedMotion.matches) holdVoiceForDisturbance(Math.max(SIGNAL_GLITCH_MS, doctorSettleMs));
       beginBriefingCue();
       if (changedChapter) playChapterTransition(direction, doctorSettleMs);
     };

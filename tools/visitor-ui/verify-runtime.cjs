@@ -1257,7 +1257,7 @@ test('日本語の台詞は 0327 の版で、声は v4 の音声。古い台詞�
   const input = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja-v4.md'), 'utf8');
   const blocks = [...input.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)];
   assert.equal(blocks.length, 1);
-  for (const phrase of ['ようこそ。', 'にほんかいいけんきゅうじょ', 'あなたの上司、とでも', 'ゼロ・ゴー・イチ・ヨン', '子供部屋', '特定の条件下でのみ', '判明していません',
+  for (const phrase of ['ようこそ。', 'にほん・かいい・けんきゅうじょ', 'あなたの上司、とでも', 'ゼロ・ゴー・イチ・ヨン', '子供部屋', '特定の条件下でのみ', '判明していません',
     '分かっていません', '解析します', '決して離さず', 'エックスとワイ', '一秒間、長押し', '健闘を、祈ります。']) {
     assert.ok(blocks[0][1].includes(phrase), phrase);
   }
@@ -1492,6 +1492,30 @@ test('媒体時計の文末判定で手動は止まり、オートは次の文�
   timers.runOne(100);
   assert.equal(state.briefing.cueIndex, 1);
   assert.equal(elements.get('subtitleTyped').textContent, data.scenes[0].cues.ja[1].text);
+});
+
+test('章の切り替えの乱れの間は博士の声を出さず、乱れが終わってから出す（0332）', () => {
+  const data = clone(briefing);
+  for (const scene of data.scenes) { delete scene.video; scene.audio = { ja: `${scene.id}-ja-v4.mp3` }; }
+  prepareBriefing(data);
+  motionPreference.matches = false;   // 乱れは動きを減らす設定では出ない
+  try {
+    state.briefing.cueIndex = data.scenes[0].cues.ja.length - 1;
+    runtime.configureBriefingMedia(data.scenes[0]);
+    runtime.beginBriefingCue();
+    runtime.moveBriefing(1, 'auto');
+    assert.equal(state.briefing.sceneIndex, 1);
+    const media = runtime.getBriefingMedia();
+    assert.equal(media.playCount, 0, '乱れの最中に声が始まっている');
+    // 博士だけの場面から資料の場面へ：博士の画が溶けきる 400ms と乱れ 360ms の長い方に、150ms の間を足す
+    timers.runOne(Math.max(360, 400) + 150);
+    assert.equal(media.playCount, 1);
+    assert.equal(media.paused, false);
+  } finally {
+    motionPreference.matches = true;
+    state.briefing.voiceHoldUntil = 0;
+    runtime.stopBriefingPlayback();
+  }
 });
 
 test('最後の音声が終わると装着案内を表示し、再説明はその下から始める', () => {
