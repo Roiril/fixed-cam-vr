@@ -120,8 +120,27 @@
   // 文の境は無音の真ん中にある（前後 0.35 秒ほど無音）。絵の切り替えの砂嵐（0.26 秒）は、境の手前に収める
   const LEAD = 310;
   const TV_ON = sceneAt.introduction.end + 250;
-  // 人形の頭が傾く瞬間: 「…変わりません。」と「しかし、」の間の無音（場面の声の 15.06–15.81 秒）
-  const DOLL_SWAP = sceneAt.subject.start + 15400;
+  // 人形の頭が傾く瞬間: 「…変わりません。」と「しかし、」の間の無音。
+  // 声の大きさの列（generate-doctor-audio.py が作る。20Hz・0–9）から、その文の中でいちばん長い無音の真ん中を取る
+  const voiceFile = (briefing.scenes[0].audio?.ja || '').replace(/^introduction-ja-(v\d+)\.mp3$/, 'doctor-voice-ja-$1.json');
+  const voiceEnv = await fetch(`./asset/${voiceFile}`).then((r) => r.json()).catch(() => null);
+  function longestQuiet(sceneId, cueIndex) {
+    const env = voiceEnv?.scenes?.[sceneId];
+    const c = cues.find((k) => k.scene === sceneId && k.i === cueIndex);
+    if (!env || !c) return null;
+    const hz = voiceEnv.hz;
+    const lo = Math.round(((c.start - sceneAt[sceneId].start) / 1000 + (c.end - c.start) / 1000 * 0.2) * hz);
+    const hi = Math.round(((c.start - sceneAt[sceneId].start) / 1000 + (c.end - c.start) / 1000 * 0.8) * hz);
+    let best = null;
+    let run = -1;
+    for (let k = lo; k <= hi; k++) {
+      const quiet = k < hi && Number(env[k]) <= 1;
+      if (quiet && run < 0) run = k;
+      if (!quiet && run >= 0) { if (!best || k - run > best[1] - best[0]) best = [run, k]; run = -1; }
+    }
+    return best ? sceneAt[sceneId].start + ((best[0] + best[1]) / 2 / hz) * 1000 : null;
+  }
+  const DOLL_SWAP = longestQuiet('subject', 2) ?? at('subject', 2, 0.42);
   const withDoll = q.get('doll') !== '0' && Boolean(room.dollTilt);
   const walk = document.createElement('video');
   walk.muted = true; walk.loop = true; walk.playsInline = true; walk.preload = 'auto';
@@ -170,6 +189,7 @@
     ots: { cx: 1190, cy: 486, w: 920 },
     ots2: { cx: 1215, cy: 486, w: 820 },
     tvx: { cx: 1305, cy: 487, w: 700 },
+    tvx2: { cx: 1305, cy: 487, w: 640 },
     in0: { cx: gx, cy: gy + 4, w: 560 },      // テレビの中へ。ガラスが画面の 7 割を占める
     in1: { cx: gx, cy: gy + 4, w: 525 },
     doc2: { cx: 720, cy: 424, w: 1240 },
@@ -182,13 +202,16 @@
     { t: at('subject', 1), dur: len('subject', 1), to: SHOT.two2 },
     { t: at('subject', 2), dur: 2600, to: SHOT.ots },
     { t: DOLL_SWAP + 300, dur: at('subject', 3) - DOLL_SWAP - 300, to: SHOT.ots2, ease: 'linear' },
-    { t: at('subject', 3), dur: 2300, to: SHOT.doc2 },
-    { t: at('subject', 4) - 200, dur: 3400, to: SHOT.in0 },
-    { t: at('subject', 4) + 3200, dur: sceneAt.subject.end - at('subject', 4) - 3200, to: SHOT.in1, ease: 'linear' },
-    { t: at('report', 0), dur: 2800, to: SHOT.tvx },
-    { t: at('report', 2, 0.55), dur: 2300, to: SHOT.doc2 },
-    { t: at('report', 3) - 200, dur: 3000, to: SHOT.in0 },
-    { t: at('report', 4, 0.4), dur: 3400, to: SHOT.two },
+    { t: at('subject', 3), dur: 2300, to: SHOT.doc2 },                 // 「…あなたの任務です。」博士へ
+    // 手順の場面: 装置 → 室内のカメラ → そのカメラが捉えた姿（少しずつ寄る）
+    { t: at('report', 0) - 200, dur: 2800, to: SHOT.tvx },
+    { t: at('report', 1), dur: at('report', 3) - at('report', 1) - 300, to: SHOT.tvx2, ease: 'linear' },
+    // 「その映像を見ながら…三周」テレビの中へ入り、手すりの文の終わりまで居る
+    { t: at('report', 3) - 200, dur: 3200, to: SHOT.in0 },
+    { t: at('report', 3) + 3000, dur: at('report', 5) - at('report', 3) - 3000, to: SHOT.in1, ease: 'linear' },
+    { t: at('report', 5), dur: 2300, to: SHOT.doc2 },                   // 「…報告してください。」博士へ
+    { t: at('report', 6) - 200, dur: 3000, to: SHOT.in0 },              // ボタンの図
+    { t: at('report', 7, 0.45), dur: 3400, to: SHOT.two },
     { t: at('wear', 0), dur: 2800, to: SHOT.doc2 },
     { t: at('wear', 2), dur: 3200, to: SHOT.end0 },
     { t: at('wear', 3), dur: len('wear', 3) + 900, to: SHOT.end1, ease: 'linear' },
@@ -196,9 +219,9 @@
   const focusKeys = [
     { t: TV_ON + 1700, dur: 1400, to: 1 },
     { t: at('subject', 3), dur: 950, to: 0 },
-    { t: at('subject', 4) - 200, dur: 950, to: 1 },
-    { t: at('report', 2, 0.55), dur: 950, to: 0 },
-    { t: at('report', 3) - 200, dur: 950, to: 1 },
+    { t: at('report', 0) - 200, dur: 950, to: 1 },
+    { t: at('report', 5), dur: 950, to: 0 },
+    { t: at('report', 6) - 200, dur: 950, to: 1 },
     { t: at('wear', 0), dur: 1100, to: 0 },
   ];
   const ease = (u, kind) => (kind === 'linear' ? u : u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
@@ -263,7 +286,7 @@
   if (withDoll) {
     sound.push({ name: 'static', t: DOLL_SWAP - 50, dur: 170, db: -34, fin: 0.004, fout: 0.05 });
     // 人形が動いてから、博士が「任務です」と言い終わるまで、低い圧だけが居る
-    sound.push({ name: 'rumble', t: DOLL_SWAP + 100, dur: at('subject', 4) - DOLL_SWAP - 300, db: -32, fin: 1.4, fout: 2.6 });
+    sound.push({ name: 'rumble', t: DOLL_SWAP + 100, dur: sceneAt.subject.end - DOLL_SWAP - 300, db: -32, fin: 1.4, fout: 2.6 });
   }
   // 終わりの場面: 部屋のテレビが砂嵐になっている（遠くで小さく）→ 膨らんで画面全体を覆う → 切れる
   sound.push({ name: 'static', t: at('wear', 0) - LEAD, dur: CUT_AT - at('wear', 0) + LEAD, db: -47, fin: 0.25, fout: 0.02, lo: 300, hi: 3200 });

@@ -31,19 +31,19 @@
         "ja": [
           {
             "text": "ようこそ。日本怪異研究所へ。",
-            "durationMs": 4392
+            "durationMs": 4192
           },
           {
             "text": "私は……あなたの上司、とでも言っておきましょうか。",
-            "durationMs": 4817
+            "durationMs": 4458
           },
           {
             "text": "あなたは今日から、この研究所の調査員です。",
-            "durationMs": 4133
+            "durationMs": 4033
           },
           {
             "text": "これより、調査対象について説明します。",
-            "durationMs": 3842
+            "durationMs": 3775
           }
         ],
         "en": [
@@ -84,7 +84,7 @@
         ]
       },
       "audio": {
-        "ja": "introduction-ja-v4.mp3"
+        "ja": "introduction-ja-v5.mp3"
       }
     },
     {
@@ -117,15 +117,6 @@
             "en": "A file photograph of a Japanese doll standing in front of a black curtain",
             "fr": "Photographie d’archive d’une poupée japonaise debout devant un rideau noir"
           }
-        },
-        {
-          "fromCue": 4,
-          "image": "twin-walk-v1.jpg",
-          "alt": {
-            "ja": "観測装置をつけた調査員が、右手で手すりを持ってカーテンの周りを歩く映像",
-            "en": "Footage of an investigator wearing the device, walking around the curtain with the right hand on the handrail",
-            "fr": "Images d’un enquêteur portant le dispositif, qui fait le tour du rideau, la main droite sur la main courante"
-          }
         }
       ],
       "eyebrow": {
@@ -134,101 +125,73 @@
         "fr": "OBJET"
       },
       "title": {
-        "ja": "調査対象と手順",
-        "en": "Subject and procedure",
-        "fr": "Objet et procédure"
+        "ja": "調査対象",
+        "en": "Subject",
+        "fr": "Objet"
       },
       "caption": {
-        "ja": "管理番号 0514 · カーテンの周りを三周",
-        "en": "Control No. 0514 · Three laps around the curtain",
-        "fr": "Nº de contrôle 0514 · Trois tours du rideau"
-      },
-      "loopVideo": {
-        "file": "twin-walk-v1.mp4",
-        "startCue": 4
+        "ja": "管理番号 0514",
+        "en": "Control No. 0514",
+        "fr": "Nº de contrôle 0514"
       },
       "cues": {
         "ja": [
           {
             "text": "調査対象は、管理番号0514に指定された異常存在です。",
-            "durationMs": 6450
+            "durationMs": 6100
           },
           {
             "text": "ある空き家の子供部屋から見つかった、カーテンと人形です。",
-            "durationMs": 5267
+            "durationMs": 5017
           },
           {
-            "text": "外見上は、一般的な人形と変わりません。しかし、特定の条件下でのみ、異常性が発現します。",
-            "durationMs": 9183
+            "text": "どちらも、外見上は一般的な物と変わりません。しかし、特定の条件下でのみ、異常性が発現します。",
+            "durationMs": 9475
           },
           {
             "text": "その条件も、異常性の正体も、まだ判明していません。それを調査するのが、あなたの任務です。",
-            "durationMs": 8817
-          },
-          {
-            "text": "観測装置をつけ、このカーテンの周りを三周してください。",
-            "durationMs": 4883
-          },
-          {
-            "text": "右手で手すりを持ち、決して離さず、ゆっくり歩いてください。",
-            "durationMs": 5383
+            "durationMs": 8267
           }
         ],
         "en": [
           {
             "text": "The subject is an anomalous entity, designated Control Number 0514.",
-            "durationMs": 5200
+            "durationMs": 4400
           },
           {
             "text": "A curtain and a doll, found in a child’s room in an abandoned house.",
-            "durationMs": 5200
+            "durationMs": 4500
           },
           {
-            "text": "In appearance, it is no different from an ordinary doll. But only under certain conditions, its anomalous properties manifest.",
-            "durationMs": 8600
+            "text": "In appearance, neither differs from an ordinary object. But only under certain conditions, their anomalous properties manifest.",
+            "durationMs": 8400
           },
           {
             "text": "Neither those conditions nor the nature of the anomaly are known yet. Finding out is your assignment.",
-            "durationMs": 7200
-          },
-          {
-            "text": "Put on the observation device and walk around this curtain three times.",
-            "durationMs": 5200
-          },
-          {
-            "text": "Hold the handrail with your right hand, never let go, and walk slowly.",
-            "durationMs": 7000
+            "durationMs": 6700
           }
         ],
         "fr": [
           {
             "text": "L’objet est une entité anormale, désignée sous le numéro de contrôle 0514.",
-            "durationMs": 5600
+            "durationMs": 4600
           },
           {
             "text": "Un rideau et une poupée, trouvés dans la chambre d’un enfant, dans une maison abandonnée.",
-            "durationMs": 6400
+            "durationMs": 5500
           },
           {
-            "text": "En apparence, rien ne la distingue d’une poupée ordinaire. Mais ses propriétés anormales ne se manifestent que dans certaines conditions.",
-            "durationMs": 9400
+            "text": "En apparence, rien ne les distingue d’objets ordinaires. Mais leurs propriétés anormales ne se manifestent que dans certaines conditions.",
+            "durationMs": 8500
           },
           {
             "text": "Ni ces conditions ni la nature de l’anomalie ne sont encore connues. Les découvrir, voilà votre mission.",
-            "durationMs": 7600
-          },
-          {
-            "text": "Mettez le dispositif d’observation et faites trois fois le tour de ce rideau.",
-            "durationMs": 5600
-          },
-          {
-            "text": "Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.",
-            "durationMs": 8000
+            "durationMs": 6400
           }
         ]
       },
       "audio": {
-        "ja": "subject-ja-v4.mp3"
+        "ja": "subject-ja-v5.mp3"
       }
     },
     {
@@ -244,7 +207,7 @@
       },
       "figures": [
         {
-          "fromCue": 1,
+          "fromCue": 2,
           "image": "twin-camera-v1.jpg",
           "alt": {
             "ja": "手すりの前の三脚に据えられた室内のカメラ",
@@ -253,16 +216,16 @@
           }
         },
         {
-          "fromCue": 2,
-          "image": "twin-camera-view-v1.jpg",
+          "fromCue": 3,
+          "image": "twin-walk-v1.jpg",
           "alt": {
-            "ja": "室内のカメラが捉えた、カーテンの前を歩く調査員の映像",
-            "en": "Footage from a camera in the room: an investigator walking in front of the curtain",
-            "fr": "Image d’une caméra de la pièce : un enquêteur marche devant le rideau"
+            "ja": "観測装置をつけた調査員が、右手で手すりを持ってカーテンの周りを歩く映像",
+            "en": "Footage of an investigator wearing the device, walking around the curtain with the right hand on the handrail",
+            "fr": "Images d’un enquêteur portant le dispositif, qui fait le tour du rideau, la main droite sur la main courante"
           }
         },
         {
-          "fromCue": 3,
+          "fromCue": 6,
           "image": "equipment-controller-v1.png",
           "kind": "buttons",
           "alt": {
@@ -278,14 +241,14 @@
         }
       ],
       "eyebrow": {
-        "ja": "異変の報告",
-        "en": "REPORTING ANOMALIES",
-        "fr": "SIGNALER UNE ANOMALIE"
+        "ja": "調査の手順",
+        "en": "PROCEDURE",
+        "fr": "PROCÉDURE"
       },
       "title": {
-        "ja": "XかYを長押し",
-        "en": "Hold X or Y",
-        "fr": "Maintenez X ou Y"
+        "ja": "三周して、XかYで報告",
+        "en": "Three laps. Report with X or Y",
+        "fr": "Trois tours. Signalez avec X ou Y"
       },
       "caption": {
         "ja": "左コントローラー · 1秒間",
@@ -296,72 +259,112 @@
         "ja": [
           {
             "text": "これが、怪異を記録し、解析するための観測装置です。",
-            "durationMs": 5125
+            "durationMs": 5283
           },
           {
-            "text": "装置には、室内のカメラが捉えた映像が映ります。",
-            "durationMs": 4433
+            "text": "装置をつけると、目の前に画面が現れます。",
+            "durationMs": 4200
           },
           {
-            "text": "どのような異変が起きるかは、分かっていません。映像に少しでも違和感を覚えたら、報告してください。",
-            "durationMs": 8200
+            "text": "そこに、室内のカメラが捉えた、あなた自身の姿が映ります。",
+            "durationMs": 5383
           },
           {
-            "text": "報告するときは、左コントローラーのボタンを1秒間、長押ししてください。XとY、どちらでも構いません。",
-            "durationMs": 9500
+            "text": "その映像を見ながら、このカーテンの周りを三周してください。",
+            "durationMs": 4883
           },
           {
-            "text": "報告の内容は、装置のエージェントが解析します。見間違いでも構いません。",
-            "durationMs": 6600
+            "text": "右手で手すりを持ち、決して離さず、ゆっくり歩いてください。",
+            "durationMs": 5100
+          },
+          {
+            "text": "映像に少しでも違和感を覚えたら、報告してください。",
+            "durationMs": 4550
+          },
+          {
+            "text": "報告するときは、左コントローラーのボタンを、親指で1秒間、長押ししてください。XとY、どちらでも構いません。",
+            "durationMs": 9783
+          },
+          {
+            "text": "何を見たかは、装置に搭載されたエージェントが解析します。見間違いでも、何度報告しても構いません。",
+            "durationMs": 8767
           }
         ],
         "en": [
           {
             "text": "This is the observation device. It records and analyses anomalies.",
-            "durationMs": 4800
+            "durationMs": 4400
           },
           {
-            "text": "The device shows you footage captured by cameras in the room.",
+            "text": "When you put on the device, a screen appears in front of you.",
+            "durationMs": 4000
+          },
+          {
+            "text": "It shows you yourself, as seen by the cameras in the room.",
+            "durationMs": 3800
+          },
+          {
+            "text": "Watching that footage, walk around this curtain three times.",
+            "durationMs": 4000
+          },
+          {
+            "text": "Hold the handrail with your right hand, never let go, and walk slowly.",
             "durationMs": 4600
           },
           {
-            "text": "We do not know what kind of anomaly will occur. If anything in the footage feels wrong, even slightly, report it.",
-            "durationMs": 8000
+            "text": "If anything in the footage feels wrong, even slightly, report it.",
+            "durationMs": 4300
           },
           {
-            "text": "To report, hold a button on the left controller for one second. X or Y, either will do.",
-            "durationMs": 6600
+            "text": "To report, hold a button on the left controller with your thumb for one second. X or Y, either will do.",
+            "durationMs": 6800
           },
           {
-            "text": "The agent in the device will analyse your report. It does not matter if you are mistaken.",
-            "durationMs": 6400
+            "text": "The agent built into the device will analyse what you saw. It does not matter if you are mistaken, or how often you report.",
+            "durationMs": 8100
           }
         ],
         "fr": [
           {
             "text": "Voici le dispositif d’observation. Il enregistre et analyse les anomalies.",
-            "durationMs": 5200
+            "durationMs": 4600
           },
           {
-            "text": "Le dispositif affiche les images filmées par les caméras de la pièce.",
-            "durationMs": 5000
+            "text": "Quand vous mettez le dispositif, un écran apparaît devant vous.",
+            "durationMs": 3900
           },
           {
-            "text": "Nous ignorons quel type d’anomalie se produira. Si quelque chose vous semble anormal dans ces images, même légèrement, signalez-le.",
-            "durationMs": 9200
+            "text": "Il vous montre vous-même, vu par les caméras de la pièce.",
+            "durationMs": 3500
           },
           {
-            "text": "Pour signaler, maintenez un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.",
-            "durationMs": 7000
+            "text": "En regardant ces images, faites trois fois le tour de ce rideau.",
+            "durationMs": 4000
           },
           {
-            "text": "L’agent du dispositif analysera votre signalement. Peu importe si vous vous trompez.",
-            "durationMs": 6000
+            "text": "Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.",
+            "durationMs": 5100
+          },
+          {
+            "text": "Si quelque chose vous semble anormal dans ces images, même légèrement, signalez-le.",
+            "durationMs": 5100
+          },
+          {
+            "text": "Pour signaler, maintenez avec le pouce un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.",
+            "durationMs": 6900
+          },
+          {
+            "text": "L’agent intégré au dispositif analysera ce que vous avez vu. Peu importe si vous vous trompez, ou combien de fois vous signalez.",
+            "durationMs": 7900
           }
         ]
       },
       "audio": {
-        "ja": "report-ja-v4.mp3"
+        "ja": "report-ja-v5.mp3"
+      },
+      "loopVideo": {
+        "file": "twin-walk-v1.mp4",
+        "startCue": 3
       }
     },
     {
@@ -393,34 +396,34 @@
       "cues": {
         "ja": [
           {
-            "text": "調査が終わったら、係の者が装置を外すまで、動かずにお待ちください。",
-            "durationMs": 6083
+            "text": "装置の合図で歩き始めてください。終わりの合図の後は、係の者が装置を外すまで、動かずにお待ちください。",
+            "durationMs": 8883
           },
           {
-            "text": "続けられなくなったら、その場で立ち止まり、装置を外してください。",
-            "durationMs": 5083
+            "text": "続けられないときだけは、その場で立ち止まり、手すりを離して、装置を外してください。",
+            "durationMs": 6150
           },
           {
-            "text": "では。左手にコントローラーを持って、観測装置をつけてください。",
-            "durationMs": 5900
+            "text": "では。係の者の案内に従って、観測装置をつけてください。",
+            "durationMs": 5767
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 2125
+            "durationMs": 1825
           }
         ],
         "en": [
           {
-            "text": "When the survey ends, stay still until a member of staff removes the device.",
-            "durationMs": 5400
+            "text": "Start walking when the device gives the signal. After it signals the end, stay still until a member of staff removes the device.",
+            "durationMs": 8400
           },
           {
-            "text": "If you cannot continue, stop where you are and take off the device.",
-            "durationMs": 5000
+            "text": "Only if you cannot continue: stop where you are, let go of the handrail, and take off the device.",
+            "durationMs": 6400
           },
           {
-            "text": "Now. Hold the controller in your left hand and put on the observation device.",
-            "durationMs": 5400
+            "text": "Now. Follow the staff’s guidance and put on the observation device.",
+            "durationMs": 4400
           },
           {
             "text": "Good luck with your survey.",
@@ -429,16 +432,16 @@
         ],
         "fr": [
           {
-            "text": "À la fin de l’enquête, restez immobile jusqu’à ce qu’un membre du personnel vous retire le dispositif.",
-            "durationMs": 7000
+            "text": "Commencez à marcher au signal du dispositif. Après le signal de fin, restez immobile jusqu’à ce qu’un membre du personnel vous le retire.",
+            "durationMs": 8500
           },
           {
-            "text": "Si vous ne pouvez plus continuer, arrêtez-vous sur place et retirez le dispositif.",
-            "durationMs": 5800
+            "text": "Seulement si vous ne pouvez plus continuer : arrêtez-vous sur place, lâchez la main courante et retirez le dispositif.",
+            "durationMs": 7300
           },
           {
-            "text": "Bien. Prenez la manette dans la main gauche et mettez le dispositif d’observation.",
-            "durationMs": 5800
+            "text": "Bien. Suivez les indications du personnel et mettez le dispositif d’observation.",
+            "durationMs": 5000
           },
           {
             "text": "Bonne chance pour votre enquête.",
@@ -447,7 +450,7 @@
         ]
       },
       "audio": {
-        "ja": "wear-ja-v4.mp3"
+        "ja": "wear-ja-v5.mp3"
       }
     }
   ]

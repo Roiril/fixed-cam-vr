@@ -2639,13 +2639,13 @@
     renderBriefingControls();
   }
 
-  // 博士の声の波形。声の大きさの列は generate-doctor-audio.py が音から作る（asset/doctor-voice-ja-v4.json）。
+  // 博士の声の波形。声の大きさの列は generate-doctor-audio.py が音から作る（asset/doctor-voice-ja-v5.json）。
   // 声の無い言語・列を読めなかったときは波形を出さない
   let voiceEnvelope = null;
   function loadVoiceEnvelope() {
     if (voiceEnvelope !== null) return;
     voiceEnvelope = false;
-    fetch('./asset/doctor-voice-ja-v4.json', { cache: 'force-cache' })
+    fetch('./asset/doctor-voice-ja-v5.json', { cache: 'force-cache' })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => { if (data && Number.isFinite(data.hz) && data.scenes) voiceEnvelope = data; })
       .catch(() => {});

@@ -1,8 +1,8 @@
-"""博士の口の動画（DomoAI）へ入れる画像と声をまとめる。いまの声（v4）用。
+"""博士の口の動画（DomoAI）へ入れる画像と声をまとめる。いまの声（briefing-v1.json の audio.ja）用。
 
-    py -3.11 tools/visitor-ui/prepare-lipsync-kit.py [--output output/visitor-lipsync-kit-v4]
+    py -3.11 tools/visitor-ui/prepare-lipsync-kit.py [--output output/visitor-lipsync-kit-v5]
 
-声は場面ごとの `*-ja-v4.mp3`（アプリが流すものと同じ）。動画生成の長さは 10 秒か 20 秒なので、
+声は場面ごとの `*-ja-v5.mp3`（アプリが流すものと同じ）。動画生成の長さは 10 秒か 20 秒なので、
 長い場面は文の境で分ける。切る位置は `briefing-v1.json` の文の長さから出した境を、
 いちばん近い無音の真ん中へ寄せる（言葉を切らない）。既にある出力は上書きしない。
 """
@@ -22,15 +22,15 @@ sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
-DEFAULT_OUTPUT = ROOT / "output/visitor-lipsync-kit-v4"
+DEFAULT_OUTPUT = ROOT / "output/visitor-lipsync-kit-v5"
 IMAGE = HERE / "doctor-centered-v1.png"
 IMAGE_SHA256 = "E3688256D851F9B94DD140ADC50E378447EB6AA1452AF4A42FEDE09D8D92CA1B"
 # 場面ごとの分け方（文の番号。0 始まり）。1 本は 20 秒に収める
 GROUPS = {
     "introduction": [[0, 1, 2, 3]],
-    "subject": [[0, 1], [2, 3], [4, 5]],
-    "report": [[0, 1, 2], [3, 4]],
-    "wear": [[0, 1, 2, 3]],
+    "subject": [[0, 1], [2, 3]],
+    "report": [[0, 1, 2], [3, 4, 5], [6, 7]],
+    "wear": [[0, 1], [2, 3]],
 }
 LIMIT_MS = 19600         # 20 秒の枠に入れる上限
 SHORT_MS = 9600          # これ以下なら 10 秒の枠
@@ -123,7 +123,15 @@ def main() -> None:
             })
 
     (out / "clips.json").write_text(json.dumps({"image": IMAGE.name, "imageSha256": IMAGE_SHA256, "clips": rows}, ensure_ascii=False, indent=2), encoding="utf-8")
-    shutil.copyfile(HERE / "lipsync-kit.md", out / "README.md")
+    # 手順書の「<!-- CLIPS -->」の行を、いま切った 1 本ずつの表に置き換えて同梱する（表を手で写すと声を作り直したときに食い違う）
+    table = ["| 順番 | 音声ファイル | 台詞 | 音声の長さ | 比率 | 動画の長さ |", "|---|---|---|---:|---|---|"]
+    for r in rows:
+        head, tail = r["text"][:14], r["text"][-12:]
+        table.append(f"| {r['no']} | `{r['file']}` | 「{head}…」から「…{tail}」まで | {r['durationMs'] / 1000:.2f} 秒 | 16:9 | {r['videoLength']} |")
+    guide = (HERE / "lipsync-kit.md").read_text(encoding="utf-8")
+    if "<!-- CLIPS -->" not in guide:
+        raise SystemExit("lipsync-kit.md に <!-- CLIPS --> の行が無い")
+    (out / "README.md").write_text(guide.replace("<!-- CLIPS -->", "\n".join(table)), encoding="utf-8")
     files = sorted(p for p in out.iterdir() if p.is_file())
     with ZipFile(out / "doctor-lipsync-input.zip", "w", compression=ZIP_DEFLATED) as z:
         for p in files:

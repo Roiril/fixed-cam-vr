@@ -15,61 +15,65 @@ As of today, you are an investigator of this institute.
 I will now brief you on the subject of your survey.
 
 5
-00:00:17,000 --> 00:00:22,200
+00:00:17,000 --> 00:00:21,400
 The subject is an anomalous entity, designated Control Number 0514.
 
 6
-00:00:22,200 --> 00:00:27,400
+00:00:21,400 --> 00:00:25,900
 A curtain and a doll, found in a child’s room in an abandoned house.
 
 7
-00:00:27,400 --> 00:00:36,000
-In appearance, it is no different from an ordinary doll. But only under certain conditions, its anomalous properties manifest.
+00:00:25,900 --> 00:00:34,300
+In appearance, neither differs from an ordinary object. But only under certain conditions, their anomalous properties manifest.
 
 8
-00:00:36,000 --> 00:00:43,200
+00:00:34,300 --> 00:00:41,000
 Neither those conditions nor the nature of the anomaly are known yet. Finding out is your assignment.
 
 9
-00:00:43,200 --> 00:00:48,400
-Put on the observation device and walk around this curtain three times.
-
-10
-00:00:48,400 --> 00:00:55,400
-Hold the handrail with your right hand, never let go, and walk slowly.
-
-11
-00:00:55,400 --> 00:01:00,200
+00:00:41,000 --> 00:00:45,400
 This is the observation device. It records and analyses anomalies.
 
+10
+00:00:45,400 --> 00:00:49,400
+When you put on the device, a screen appears in front of you.
+
+11
+00:00:49,400 --> 00:00:53,200
+It shows you yourself, as seen by the cameras in the room.
+
 12
-00:01:00,200 --> 00:01:04,800
-The device shows you footage captured by cameras in the room.
+00:00:53,200 --> 00:00:57,200
+Watching that footage, walk around this curtain three times.
 
 13
-00:01:04,800 --> 00:01:12,800
-We do not know what kind of anomaly will occur. If anything in the footage feels wrong, even slightly, report it.
+00:00:57,200 --> 00:01:01,800
+Hold the handrail with your right hand, never let go, and walk slowly.
 
 14
-00:01:12,800 --> 00:01:19,400
-To report, hold a button on the left controller for one second. X or Y, either will do.
+00:01:01,800 --> 00:01:06,100
+If anything in the footage feels wrong, even slightly, report it.
 
 15
-00:01:19,400 --> 00:01:25,800
-The agent in the device will analyse your report. It does not matter if you are mistaken.
+00:01:06,100 --> 00:01:12,900
+To report, hold a button on the left controller with your thumb for one second. X or Y, either will do.
 
 16
-00:01:25,800 --> 00:01:31,200
-When the survey ends, stay still until a member of staff removes the device.
+00:01:12,900 --> 00:01:21,000
+The agent built into the device will analyse what you saw. It does not matter if you are mistaken, or how often you report.
 
 17
-00:01:31,200 --> 00:01:36,200
-If you cannot continue, stop where you are and take off the device.
+00:01:21,000 --> 00:01:29,400
+Start walking when the device gives the signal. After it signals the end, stay still until a member of staff removes the device.
 
 18
-00:01:36,200 --> 00:01:41,600
-Now. Hold the controller in your left hand and put on the observation device.
+00:01:29,400 --> 00:01:35,800
+Only if you cannot continue: stop where you are, let go of the handrail, and take off the device.
 
 19
-00:01:41,600 --> 00:01:44,600
+00:01:35,800 --> 00:01:40,200
+Now. Follow the staff’s guidance and put on the observation device.
+
+20
+00:01:40,200 --> 00:01:43,200
 Good luck with your survey.

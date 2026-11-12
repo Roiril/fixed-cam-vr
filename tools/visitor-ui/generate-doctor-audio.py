@@ -3,21 +3,21 @@
     py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id>            # 合成して組み込む
     py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id> --reuse    # 前に合成した音から切り直すだけ
 
-入力は `elevenlabs-input-ja-v4.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
+入力は `elevenlabs-input-ja-v5.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
 鍵は環境変数 `ELEVENLABS_API_KEY`（値は表示しない。`~/.claude/rules/secrets.md`）。
 
 することは 6 つ。
 1. `/with-timestamps` で合成する。音と一緒に、1 字ごとの時刻が返る
 2. 各文の頭の語を時刻の列から探し、文と文の間の無音の真ん中で区切る
-3. 場面ごとに `tablet/.../asset/<場面>-ja-v4.mp3` へ切り出す
+3. 場面ごとに `tablet/.../asset/<場面>-ja-v5.mp3` へ切り出す
 4. `briefing-v1.json` の日本語の `durationMs` を実測へ直し、`audio.ja` を付ける
 5. 長い間を詰める（`PHRASE_PAUSE_MAX` / `SENTENCE_PAUSE_MAX`。頭だけ遅く聞こえるのを防ぐ）
-6. 声の大きさの列を `asset/doctor-voice-ja-v4.json` に書く（テレビの下の波形が使う）
+6. 声の大きさの列を `asset/doctor-voice-ja-v5.json` に書く（テレビの下の波形が使う）
 
 切り出すときに `--tempo`（既定 1.2）で速める。最初の場面の頭には `--lead-in`（既定 1.0 秒）の無音を置く。
 原稿は読み違えやすい語をかなで書く（「装置」→「そうち」。ANCHORS も原稿の字に合わせる）。残してある元の音は等速のまま。
 ⚠ 口の動画（リップシンク）は作らない。動画が届くまで、日本語は博士の静止画と声で進む。
-⚠ 合成した元の音と時刻は `tools/visitor-ui/doctor-ja-v4-original.{mp3,json}` に残す。声を替えたら作り直す。
+⚠ 合成した元の音と時刻は `tools/visitor-ui/doctor-ja-v5-original.{mp3,json}` に残す。声を替えたら作り直す。
 """
 import argparse
 import base64
@@ -36,7 +36,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
 BRIEFING = ASSETS / "briefing-v1.json"
-VERSION = "v4"
+VERSION = "v5"
 INPUT = HERE / f"elevenlabs-input-ja-{VERSION}.md"
 TAKE_MP3 = HERE / f"doctor-ja-{VERSION}-original.mp3"
 TAKE_JSON = HERE / f"doctor-ja-{VERSION}-original.json"
@@ -44,9 +44,10 @@ TAKE_JSON = HERE / f"doctor-ja-{VERSION}-original.json"
 # 各文の頭（入力原稿の表記）。場面と文の順は briefing-v1.json と同じ。
 ANCHORS = {
     "introduction": ["ようこそ", "私は……", "あなたは、今日から", "これより、"],
-    "subject": ["調査対象は、", "ある空き家の", "外見上は、", "その条件も", "かんそくそうちをつけ", "右手で手すりを持ち"],
-    "report": ["これが、怪異を記録し", "そうちには、", "どのような異変が", "報告するときは", "報告の内容は"],
-    "wear": ["調査が終わったら", "続けられなくなったら", "では。", "健闘を、祈ります"],
+    "subject": ["調査対象は、", "ある空き家の", "どちらも、", "その条件も"],
+    "report": ["これが、怪異を記録し", "そうちをつけると", "そこに、室内の", "その映像を見ながら", "右手で手すりを持ち",
+               "映像に、少しでも", "報告するときは", "何を見たかは"],
+    "wear": ["そうちの合図で", "続けられないときだけは", "では。", "健闘を、祈ります"],
 }
 
 
@@ -175,9 +176,9 @@ def long_pauses(chars, starts, ends, samples, rate):
 
 
 # 原稿から外したが、残してある合成の音にはまだ入っている文（--reuse で切り直すときに音から切り取る）。
-# 0334「足元は見えません。は不要」。聴いて判定をもらった声を保つため、合成し直さずに切り取った。
-# 次に合成し直したら、この文は音に無いので何もしない。
-DROP_PHRASES = ["足元は、見えません。"]
+# 聴いて判定をもらった声を保ったまま 1 文だけ外すときに、原稿の字のまま書く（0334 の「足元は、見えません。」で使った）。
+# v5 は合成し直したので空。
+DROP_PHRASES = []
 
 
 def dropped_spans(chars, starts, ends, samples, rate):

@@ -6,7 +6,8 @@
 博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。
 
 2026-11-12 に台詞を書き直した（`canon/LEDGER.md` 0327。0328 で「異常はまだ何も判明していない」前提に直した。名を伏せた上司・管理番号 0514・資料はテレビの中・絵はデジタルツイン。文の案は `canon/OPEN.md`「博士の説明の書き直し」）。
-日本語の声（v4）は `generate-doctor-audio.py` が `elevenlabs-input-ja-v4.md` を 1 本で合成し、1 字ごとの時刻から場面と文へ切る。切り出すときに 1.2 倍へ速める（0328）。日本語の時間はその実測。声は voice bEg9geTboP3ghzJ9Rt3L。口の動画は未制作で、博士は静止画のまま声が流れる。
+同じ日に、何も知らない読み手 3 人に読ませて直した（0338。装置に映る物を歩き方より先に言う・終わりを誰が知らせるか・手すりを持ったままどう外すか。`canon/OPEN.md`「博士の台詞を初見の読み手に読ませて直す」）。
+日本語の声（v5）は `generate-doctor-audio.py` が `elevenlabs-input-ja-v5.md` を 1 本で合成し、1 字ごとの時刻から場面と文へ切る。切り出すときに 1.2 倍へ速める（0328）。日本語の時間はその実測。声は voice bEg9geTboP3ghzJ9Rt3L。口の動画は未制作で、博士は静止画のまま声が流れる。
 声の無い言語の時間は字数からの見積もり（オートの送りに使う）。英仏音声と英仏動画は未制作。
 通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。
 博士動画は既存博士画像と同じ人物を中央配置で使用する。映像の切替や字幕を動画に焼き込まない。
@@ -20,121 +21,123 @@
 
 ### 01 introduction — 着任
 
-開始 0.0 秒 / 尺 17.2 秒
+開始 0.0 秒 / 尺 16.5 秒
 
 画像: `introduction-doctor-v2.jpg`
 
-音声: `introduction-ja-v4.mp3`
+音声: `introduction-ja-v5.mp3`
 
-文 01 / 場面内 0.0–4.4 秒
+文 01 / 場面内 0.0–4.2 秒
 
 ようこそ。日本怪異研究所へ。
 
-文 02 / 場面内 4.4–9.2 秒
+文 02 / 場面内 4.2–8.7 秒
 
 私は……あなたの上司、とでも言っておきましょうか。
 
-文 03 / 場面内 9.2–13.3 秒
+文 03 / 場面内 8.7–12.7 秒
 
 あなたは今日から、この研究所の調査員です。
 
-文 04 / 場面内 13.3–17.2 秒
+文 04 / 場面内 12.7–16.5 秒
 
 これより、調査対象について説明します。
 
-### 02 subject — 調査対象と手順
+### 02 subject — 調査対象
 
-開始 17.2 秒 / 尺 40.0 秒
+開始 16.5 秒 / 尺 28.9 秒
 
 画像: `twin-room-v1.jpg`
 
 文 03 からの画像: `doll-file-v1.jpg`
 
-文 05 からの画像: `twin-walk-v1.jpg`
-
-音声: `subject-ja-v4.mp3`
-
-ループ動画: `twin-walk-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
-
-文 01 / 場面内 0.0–6.5 秒
-
-調査対象は、管理番号0514に指定された異常存在です。
-
-文 02 / 場面内 6.5–11.7 秒
-
-ある空き家の子供部屋から見つかった、カーテンと人形です。
-
-文 03 / 場面内 11.7–20.9 秒
-
-外見上は、一般的な人形と変わりません。しかし、特定の条件下でのみ、異常性が発現します。
-
-文 04 / 場面内 20.9–29.7 秒
-
-その条件も、異常性の正体も、まだ判明していません。それを調査するのが、あなたの任務です。
-
-文 05 / 場面内 29.7–34.6 秒
-
-観測装置をつけ、このカーテンの周りを三周してください。
-
-文 06 / 場面内 34.6–40.0 秒
-
-右手で手すりを持ち、決して離さず、ゆっくり歩いてください。
-
-### 03 report — XかYを長押し
-
-開始 57.2 秒 / 尺 33.9 秒
-
-画像: `device-quest3-v1.jpg`
-
-文 02 からの画像: `twin-camera-v1.jpg`
-
-文 03 からの画像: `twin-camera-view-v1.jpg`
-
-文 04 からの画像: `equipment-controller-v1.png`（押すボタンの図）
-
-音声: `report-ja-v4.mp3`
-
-文 01 / 場面内 0.0–5.1 秒
-
-これが、怪異を記録し、解析するための観測装置です。
-
-文 02 / 場面内 5.1–9.6 秒
-
-装置には、室内のカメラが捉えた映像が映ります。
-
-文 03 / 場面内 9.6–17.8 秒
-
-どのような異変が起きるかは、分かっていません。映像に少しでも違和感を覚えたら、報告してください。
-
-文 04 / 場面内 17.8–27.3 秒
-
-報告するときは、左コントローラーのボタンを1秒間、長押ししてください。XとY、どちらでも構いません。
-
-文 05 / 場面内 27.3–33.9 秒
-
-報告の内容は、装置のエージェントが解析します。見間違いでも構いません。
-
-### 04 wear — 終了と装着
-
-開始 91.0 秒 / 尺 19.2 秒
-
-画像: `wear-doctor-v2.jpg`
-
-音声: `wear-ja-v4.mp3`
+音声: `subject-ja-v5.mp3`
 
 文 01 / 場面内 0.0–6.1 秒
 
-調査が終わったら、係の者が装置を外すまで、動かずにお待ちください。
+調査対象は、管理番号0514に指定された異常存在です。
 
-文 02 / 場面内 6.1–11.2 秒
+文 02 / 場面内 6.1–11.1 秒
 
-続けられなくなったら、その場で立ち止まり、装置を外してください。
+ある空き家の子供部屋から見つかった、カーテンと人形です。
 
-文 03 / 場面内 11.2–17.1 秒
+文 03 / 場面内 11.1–20.6 秒
 
-では。左手にコントローラーを持って、観測装置をつけてください。
+どちらも、外見上は一般的な物と変わりません。しかし、特定の条件下でのみ、異常性が発現します。
 
-文 04 / 場面内 17.1–19.2 秒
+文 04 / 場面内 20.6–28.9 秒
+
+その条件も、異常性の正体も、まだ判明していません。それを調査するのが、あなたの任務です。
+
+### 03 report — 三周して、XかYで報告
+
+開始 45.3 秒 / 尺 47.9 秒
+
+画像: `device-quest3-v1.jpg`
+
+文 03 からの画像: `twin-camera-v1.jpg`
+
+文 04 からの画像: `twin-walk-v1.jpg`
+
+文 07 からの画像: `equipment-controller-v1.png`（押すボタンの図）
+
+音声: `report-ja-v5.mp3`
+
+ループ動画: `twin-walk-v1.mp4`（文 04 から章末まで。文送りとは別に再生）
+
+文 01 / 場面内 0.0–5.3 秒
+
+これが、怪異を記録し、解析するための観測装置です。
+
+文 02 / 場面内 5.3–9.5 秒
+
+装置をつけると、目の前に画面が現れます。
+
+文 03 / 場面内 9.5–14.9 秒
+
+そこに、室内のカメラが捉えた、あなた自身の姿が映ります。
+
+文 04 / 場面内 14.9–19.7 秒
+
+その映像を見ながら、このカーテンの周りを三周してください。
+
+文 05 / 場面内 19.7–24.8 秒
+
+右手で手すりを持ち、決して離さず、ゆっくり歩いてください。
+
+文 06 / 場面内 24.8–29.4 秒
+
+映像に少しでも違和感を覚えたら、報告してください。
+
+文 07 / 場面内 29.4–39.2 秒
+
+報告するときは、左コントローラーのボタンを、親指で1秒間、長押ししてください。XとY、どちらでも構いません。
+
+文 08 / 場面内 39.2–47.9 秒
+
+何を見たかは、装置に搭載されたエージェントが解析します。見間違いでも、何度報告しても構いません。
+
+### 04 wear — 終了と装着
+
+開始 93.3 秒 / 尺 22.6 秒
+
+画像: `wear-doctor-v2.jpg`
+
+音声: `wear-ja-v5.mp3`
+
+文 01 / 場面内 0.0–8.9 秒
+
+装置の合図で歩き始めてください。終わりの合図の後は、係の者が装置を外すまで、動かずにお待ちください。
+
+文 02 / 場面内 8.9–15.0 秒
+
+続けられないときだけは、その場で立ち止まり、手すりを離して、装置を外してください。
+
+文 03 / 場面内 15.0–20.8 秒
+
+では。係の者の案内に従って、観測装置をつけてください。
+
+文 04 / 場面内 20.8–22.6 秒
 
 健闘を祈ります。
 
@@ -162,93 +165,95 @@ As of today, you are an investigator of this institute.
 
 I will now brief you on the subject of your survey.
 
-### 02 subject — Subject and procedure
+### 02 subject — Subject
 
-開始 17.0 秒 / 尺 38.4 秒
+開始 17.0 秒 / 尺 24.0 秒
 
 画像: `twin-room-v1.jpg`
 
 文 03 からの画像: `doll-file-v1.jpg`
 
-文 05 からの画像: `twin-walk-v1.jpg`
-
-ループ動画: `twin-walk-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
-
-文 01 / 場面内 0.0–5.2 秒
+文 01 / 場面内 0.0–4.4 秒
 
 The subject is an anomalous entity, designated Control Number 0514.
 
-文 02 / 場面内 5.2–10.4 秒
+文 02 / 場面内 4.4–8.9 秒
 
 A curtain and a doll, found in a child’s room in an abandoned house.
 
-文 03 / 場面内 10.4–19.0 秒
+文 03 / 場面内 8.9–17.3 秒
 
-In appearance, it is no different from an ordinary doll. But only under certain conditions, its anomalous properties manifest.
+In appearance, neither differs from an ordinary object. But only under certain conditions, their anomalous properties manifest.
 
-文 04 / 場面内 19.0–26.2 秒
+文 04 / 場面内 17.3–24.0 秒
 
 Neither those conditions nor the nature of the anomaly are known yet. Finding out is your assignment.
 
-文 05 / 場面内 26.2–31.4 秒
+### 03 report — Three laps. Report with X or Y
 
-Put on the observation device and walk around this curtain three times.
-
-文 06 / 場面内 31.4–38.4 秒
-
-Hold the handrail with your right hand, never let go, and walk slowly.
-
-### 03 report — Hold X or Y
-
-開始 55.4 秒 / 尺 30.4 秒
+開始 41.0 秒 / 尺 40.0 秒
 
 画像: `device-quest3-v1.jpg`
 
-文 02 からの画像: `twin-camera-v1.jpg`
+文 03 からの画像: `twin-camera-v1.jpg`
 
-文 03 からの画像: `twin-camera-view-v1.jpg`
+文 04 からの画像: `twin-walk-v1.jpg`
 
-文 04 からの画像: `equipment-controller-v1.png`（押すボタンの図）
+文 07 からの画像: `equipment-controller-v1.png`（押すボタンの図）
 
-文 01 / 場面内 0.0–4.8 秒
+ループ動画: `twin-walk-v1.mp4`（文 04 から章末まで。文送りとは別に再生）
+
+文 01 / 場面内 0.0–4.4 秒
 
 This is the observation device. It records and analyses anomalies.
 
-文 02 / 場面内 4.8–9.4 秒
+文 02 / 場面内 4.4–8.4 秒
 
-The device shows you footage captured by cameras in the room.
+When you put on the device, a screen appears in front of you.
 
-文 03 / 場面内 9.4–17.4 秒
+文 03 / 場面内 8.4–12.2 秒
 
-We do not know what kind of anomaly will occur. If anything in the footage feels wrong, even slightly, report it.
+It shows you yourself, as seen by the cameras in the room.
 
-文 04 / 場面内 17.4–24.0 秒
+文 04 / 場面内 12.2–16.2 秒
 
-To report, hold a button on the left controller for one second. X or Y, either will do.
+Watching that footage, walk around this curtain three times.
 
-文 05 / 場面内 24.0–30.4 秒
+文 05 / 場面内 16.2–20.8 秒
 
-The agent in the device will analyse your report. It does not matter if you are mistaken.
+Hold the handrail with your right hand, never let go, and walk slowly.
+
+文 06 / 場面内 20.8–25.1 秒
+
+If anything in the footage feels wrong, even slightly, report it.
+
+文 07 / 場面内 25.1–31.9 秒
+
+To report, hold a button on the left controller with your thumb for one second. X or Y, either will do.
+
+文 08 / 場面内 31.9–40.0 秒
+
+The agent built into the device will analyse what you saw. It does not matter if you are mistaken, or how often you report.
 
 ### 04 wear — Ending and equipment
 
-開始 85.8 秒 / 尺 18.8 秒
+開始 81.0 秒 / 尺 22.2 秒
 
 画像: `wear-doctor-v2.jpg`
 
-文 01 / 場面内 0.0–5.4 秒
+文 01 / 場面内 0.0–8.4 秒
 
-When the survey ends, stay still until a member of staff removes the device.
+Start walking when the device gives the signal. After it signals the end, stay still until a member of staff removes the device.
 
-文 02 / 場面内 5.4–10.4 秒
+文 02 / 場面内 8.4–14.8 秒
 
-If you cannot continue, stop where you are and take off the device.
+Only if you cannot continue: stop where you are, let go of the handrail, and take off the device.
 
-文 03 / 場面内 10.4–15.8 秒
+文 03 / 場面内 14.8–19.2 秒
 
-Now. Hold the controller in your left hand and put on the observation device.
+Now. Follow the staff’s guidance and put on the observation device.
 
-文 04 / 場面内 15.8–18.8 秒
+文 04 / 場面内 19.2–22.2 秒
 
 Good luck with your survey.
 
@@ -276,92 +281,94 @@ Je suis… votre supérieur. Disons-le ainsi.
 
 Je vais maintenant vous présenter l’objet de votre enquête.
 
-### 02 subject — Objet et procédure
+### 02 subject — Objet
 
-開始 18.4 秒 / 尺 42.6 秒
+開始 18.4 秒 / 尺 25.0 秒
 
 画像: `twin-room-v1.jpg`
 
 文 03 からの画像: `doll-file-v1.jpg`
 
-文 05 からの画像: `twin-walk-v1.jpg`
-
-ループ動画: `twin-walk-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
-
-文 01 / 場面内 0.0–5.6 秒
+文 01 / 場面内 0.0–4.6 秒
 
 L’objet est une entité anormale, désignée sous le numéro de contrôle 0514.
 
-文 02 / 場面内 5.6–12.0 秒
+文 02 / 場面内 4.6–10.1 秒
 
 Un rideau et une poupée, trouvés dans la chambre d’un enfant, dans une maison abandonnée.
 
-文 03 / 場面内 12.0–21.4 秒
+文 03 / 場面内 10.1–18.6 秒
 
-En apparence, rien ne la distingue d’une poupée ordinaire. Mais ses propriétés anormales ne se manifestent que dans certaines conditions.
+En apparence, rien ne les distingue d’objets ordinaires. Mais leurs propriétés anormales ne se manifestent que dans certaines conditions.
 
-文 04 / 場面内 21.4–29.0 秒
+文 04 / 場面内 18.6–25.0 秒
 
 Ni ces conditions ni la nature de l’anomalie ne sont encore connues. Les découvrir, voilà votre mission.
 
-文 05 / 場面内 29.0–34.6 秒
+### 03 report — Trois tours. Signalez avec X ou Y
 
-Mettez le dispositif d’observation et faites trois fois le tour de ce rideau.
-
-文 06 / 場面内 34.6–42.6 秒
-
-Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.
-
-### 03 report — Maintenez X ou Y
-
-開始 61.0 秒 / 尺 32.4 秒
+開始 43.4 秒 / 尺 41.0 秒
 
 画像: `device-quest3-v1.jpg`
 
-文 02 からの画像: `twin-camera-v1.jpg`
+文 03 からの画像: `twin-camera-v1.jpg`
 
-文 03 からの画像: `twin-camera-view-v1.jpg`
+文 04 からの画像: `twin-walk-v1.jpg`
 
-文 04 からの画像: `equipment-controller-v1.png`（押すボタンの図）
+文 07 からの画像: `equipment-controller-v1.png`（押すボタンの図）
 
-文 01 / 場面内 0.0–5.2 秒
+ループ動画: `twin-walk-v1.mp4`（文 04 から章末まで。文送りとは別に再生）
+
+文 01 / 場面内 0.0–4.6 秒
 
 Voici le dispositif d’observation. Il enregistre et analyse les anomalies.
 
-文 02 / 場面内 5.2–10.2 秒
+文 02 / 場面内 4.6–8.5 秒
 
-Le dispositif affiche les images filmées par les caméras de la pièce.
+Quand vous mettez le dispositif, un écran apparaît devant vous.
 
-文 03 / 場面内 10.2–19.4 秒
+文 03 / 場面内 8.5–12.0 秒
 
-Nous ignorons quel type d’anomalie se produira. Si quelque chose vous semble anormal dans ces images, même légèrement, signalez-le.
+Il vous montre vous-même, vu par les caméras de la pièce.
 
-文 04 / 場面内 19.4–26.4 秒
+文 04 / 場面内 12.0–16.0 秒
 
-Pour signaler, maintenez un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.
+En regardant ces images, faites trois fois le tour de ce rideau.
 
-文 05 / 場面内 26.4–32.4 秒
+文 05 / 場面内 16.0–21.1 秒
 
-L’agent du dispositif analysera votre signalement. Peu importe si vous vous trompez.
+Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.
+
+文 06 / 場面内 21.1–26.2 秒
+
+Si quelque chose vous semble anormal dans ces images, même légèrement, signalez-le.
+
+文 07 / 場面内 26.2–33.1 秒
+
+Pour signaler, maintenez avec le pouce un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.
+
+文 08 / 場面内 33.1–41.0 秒
+
+L’agent intégré au dispositif analysera ce que vous avez vu. Peu importe si vous vous trompez, ou combien de fois vous signalez.
 
 ### 04 wear — Fin et équipement
 
-開始 93.4 秒 / 尺 21.6 秒
+開始 84.4 秒 / 尺 23.8 秒
 
 画像: `wear-doctor-v2.jpg`
 
-文 01 / 場面内 0.0–7.0 秒
+文 01 / 場面内 0.0–8.5 秒
 
-À la fin de l’enquête, restez immobile jusqu’à ce qu’un membre du personnel vous retire le dispositif.
+Commencez à marcher au signal du dispositif. Après le signal de fin, restez immobile jusqu’à ce qu’un membre du personnel vous le retire.
 
-文 02 / 場面内 7.0–12.8 秒
+文 02 / 場面内 8.5–15.8 秒
 
-Si vous ne pouvez plus continuer, arrêtez-vous sur place et retirez le dispositif.
+Seulement si vous ne pouvez plus continuer : arrêtez-vous sur place, lâchez la main courante et retirez le dispositif.
 
-文 03 / 場面内 12.8–18.6 秒
+文 03 / 場面内 15.8–20.8 秒
 
-Bien. Prenez la manette dans la main gauche et mettez le dispositif d’observation.
+Bien. Suivez les indications du personnel et mettez le dispositif d’observation.
 
-文 04 / 場面内 18.6–21.6 秒
+文 04 / 場面内 20.8–23.8 秒
 
 Bonne chance pour votre enquête.

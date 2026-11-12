@@ -51,13 +51,15 @@ def main() -> None:
         lines.append(f"Dialogue: 0,{ass_time(c['s'])},{ass_time(min(c['e'] + 250, meta['end'] + 500))},s,{c['t']}")
     (frames / "sub.ass").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    briefing = json.loads((ASSET / "briefing-v1.json").read_text(encoding="utf-8"))
+    voice = {s["id"]: s["audio"]["ja"] for s in briefing["scenes"]}     # 場面の声のファイル名（作り直すと版の番号が変わる）
     starts: dict[str, int] = {}
     for c in meta["cues"]:
         starts.setdefault(c["scene"], c["s"])
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-framerate", str(args.fps), "-i", "f%05d.jpg"]
     mix = []
     for k, (scene, ms) in enumerate(starts.items(), start=1):
-        cmd += ["-i", str(ASSET / f"{scene}-ja-v4.mp3")]
+        cmd += ["-i", str(ASSET / voice[scene])]
         mix.append(f"[{k}:a]adelay={ms}:all=1[a{k}]")
     labels = "".join(f"[a{k}]" for k in range(1, len(starts) + 1))
     count = len(starts)

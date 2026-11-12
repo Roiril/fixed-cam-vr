@@ -98,7 +98,7 @@ py -3.11 tools/visitor-ui/make-briefing-sfx.py --check
 - 壁の一周動画: 同じディレクトリの `kabe-one-lap-doll-v1.mp4`
 - 音声生成用台本: `tools/visitor-ui/briefing-narration.md`
 - ユーザー指定の Eleven v4 日本語入力: `tools/visitor-ui/elevenlabs-input-ja.md`
-- リップシンク動画用の画像・音声・プロンプト: `tools/visitor-ui/lipsync-kit.md` と `prepare-lipsync-kit.py`。いまの声（v4）用で、`output/visitor-lipsync-kit-v4/` に 7 本と画像をまとめる。`ingest-doctor-video.py` は前の声（v2・5 本）の取り込み用で、v4 の動画にはまだ対応していない。
+- リップシンク動画用の画像・音声・プロンプト: `tools/visitor-ui/lipsync-kit.md` と `prepare-lipsync-kit.py`。いまの声（v5）用で、`output/visitor-lipsync-kit-v5/` に 8 本と画像をまとめる。`ingest-doctor-video.py` は前の声（v2・5 本）の取り込み用で、v5 の動画にはまだ対応していない。
 - 日本語音声の原本: `tools/visitor-ui/doctor-ja-v2-original.mp3`
 - 字幕: `tools/visitor-ui/briefing-ja.srt` / `briefing-en.srt` / `briefing-fr.srt`
 - 画像生成時のプロンプト: `tools/visitor-ui/briefing-image-prompts.md`
