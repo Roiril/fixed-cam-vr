@@ -61,15 +61,25 @@ def silences(path: Path, d: float = 0.12) -> list[tuple[float, float]]:
     return list(zip(s, e))
 
 
-def cmd_plan(work: Path) -> None:
-    """場面ごとに、無音の真ん中で切って値段が最小になる分け方を出す（同じ値段なら本数の少ない方）。"""
-    if PLAN.exists():
+def cmd_plan(work: Path, only: str | None = None) -> None:
+    """場面ごとに、無音の真ん中で切って値段が最小になる分け方を出す（同じ値段なら本数の少ない方）。
+    only を渡すと、今の計画のその場面だけを、作り直した声で切り直す（ほかの場面の口の動画はそのまま使う）。
+    そのときの本の名前は声のファイル名を頭に付ける（前の版の本と取り違えない）。"""
+    if only:
+        if not PLAN.exists():
+            sys.exit(f"{PLAN} が無い。場面だけの切り直しは、今ある計画の上でしかできない")
+        plan = json.loads(PLAN.read_text(encoding="utf-8"))
+        if plan["voice"][only] == voice_file(only).name:
+            sys.exit(f"{only}: 声は計画と同じ（{voice_file(only).name}）。切り直す理由が無い")
+    elif PLAN.exists():
         sys.exit(f"{PLAN} は既にある。今ある口の動画はこの切り方で作ってある。声を作り直したときだけ消してから回す")
-    plan = {"voice": {}, "segments": {}}
+    else:
+        plan = {"voice": {}, "segments": {}}
     total = 0
     (work / "audio").mkdir(parents=True, exist_ok=True)
-    for scene in SCENES:
+    for scene in ([only] if only else SCENES):
         src = voice_file(scene)
+        prefix = src.stem if only else scene
         dur = duration(src)
         sil = silences(src)
         first = sil[0][1] if sil and sil[0][0] < 0.05 else 0.0
@@ -91,7 +101,7 @@ def cmd_plan(work: Path) -> None:
             j = prev[j]
         segs.reverse()
         plan["voice"][scene] = src.name
-        plan["segments"][scene] = [{"name": f"{scene}_{k:02d}", "from": a, "to": b,
+        plan["segments"][scene] = [{"name": f"{prefix}_{k:02d}", "from": a, "to": b,
                                     "frame": next(t[1] for t in TIERS if b - a <= t[0])} for k, (a, b) in enumerate(segs)]
         for seg in plan["segments"][scene]:
             out = work / "audio" / f"{seg['name']}.mp3"
@@ -264,8 +274,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("step", choices=["plan", "send", "track"])
     ap.add_argument("work", type=Path, help="切った声と取り出した動画を置くフォルダ（リポジトリの外でよい）")
+    ap.add_argument("--scene", choices=SCENES, help="plan だけ。声を作り直したこの場面だけを、今の計画の上で切り直す")
     args = ap.parse_args()
-    {"plan": cmd_plan, "send": cmd_send, "track": cmd_track}[args.step](args.work)
+    if args.scene and args.step != "plan":
+        sys.exit("--scene は plan にだけ付ける")
+    if args.step == "plan":
+        cmd_plan(args.work, args.scene)
+    else:
+        {"send": cmd_send, "track": cmd_track}[args.step](args.work)
 
 
 if __name__ == "__main__":

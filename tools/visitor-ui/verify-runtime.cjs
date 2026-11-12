@@ -1234,9 +1234,14 @@ test('ユーザー指定のEleven v4入力は一つのコードブロックで�
   }
 });
 
-test('日本語の台詞は 0338 で直した版で、声は v5 の音声。古い台詞の声と動画（v2）は場面に付けない', () => {
+// 場面ごとの日本語の声のファイル。最後の場面だけ 0348 で入れ直した（generate-doctor-audio.py の SCENE_TAKE）
+function jaVoiceName(sceneId) {
+  return `${sceneId}-ja-${sceneId === 'wear' ? 'v6' : 'v5'}.mp3`;
+}
+
+test('日本語の台詞は 0338 で直した版（最後の場面は 0348）で、声は v5（最後の場面は v6）。古い台詞の声と動画（v2）は場面に付けない', () => {
   // v2 の音声と動画は残してある（スタッフの音の確認と、媒体の試験が使う）。場面からは外す —
-  // 古い台詞を喋る博士の上に新しい字幕が出るのを防ぐ。新しい声は elevenlabs-input-ja-v5.md から作る。
+  // 古い台詞を喋る博士の上に新しい字幕が出るのを防ぐ。新しい声は elevenlabs-input-ja-v5.md と -v6-wear.md から作る。
   for (const scene of briefing.scenes) {
     const filename = `${scene.id}-ja-v2.mp3`;
     const asset = path.join(assetRoot, filename);
@@ -1248,7 +1253,7 @@ test('日本語の台詞は 0338 で直した版で、声は v5 の音声。古�
     assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
     assert.equal(scene.video?.ja, undefined, `${scene.id}: 台詞と声が食い違う版を付けない`);
     // 新しい台詞の声。generate-doctor-audio.py が 1 本の合成から場面ごとに切る。
-    assert.equal(scene.audio?.ja, `${scene.id}-ja-v5.mp3`);
+    assert.equal(scene.audio?.ja, jaVoiceName(scene.id));
     const voice = fs.readFileSync(path.join(assetRoot, scene.audio.ja));
     assert.ok(voice.length > 50_000, scene.audio.ja);
     // 文の尺の合計は、切り出した音の長さ（128kbps）と 1 秒以内で合う。
@@ -1295,12 +1300,25 @@ test('日本語の台詞は 0338 で直した版で、声は v5 の音声。古�
   assert.match(report.cues.ja[4].text, /^右手で手すりを持ち、決して離さず、ゆっくり/);
   assert.match(report.cues.ja[6].text, /左コントローラーのボタンを、親指で1秒間、長押し.*XとY、どちらでも/);
   assert.match(report.cues.ja[7].text, /見間違いでも、何度報告しても構いません。$/);
-  // 終わりを誰が知らせるか・手すりを持ったままどう外すか・誰がつけるか（0338 の読み手 3 人の疑問）
-  assert.match(wear.cues.ja[0].text, /^装置の合図で歩き始めてください。終わりの合図の後は、係の者が装置を外すまで、動かずにお待ちください。$/);
+  // 歩き始めも終わった後も、装置内のエージェントの指示に従う（0348。係の者には触れない）
+  assert.match(wear.cues.ja[0].text, /^装置をつけたら、装置内のエージェントの指示に従って歩き始めてください。調査が終わった後も、そのままエージェントの指示に従ってください。$/);
   // 「決して離さず」とぶつからないよう「だけは」と言う（読み直した 2 人とも、ここで迷うと書いた）
   assert.match(wear.cues.ja[1].text, /^続けられないときだけは、その場で立ち止まり、手すりを離して、装置を外してください。$/);
-  assert.match(wear.cues.ja[2].text, /係の者の案内に従って、観測装置をつけてください/);
+  assert.equal(wear.cues.ja[2].text, 'では。観測装置をつけてください。');
   assert.equal(wear.cues.ja[wear.cues.ja.length - 1].text, '健闘を祈ります。');
+  assert.match(wear.cues.en[0].text, /its agent tells you to\. After the survey ends, keep following the agent’s instructions\.$/);
+  assert.match(wear.cues.fr[0].text, /sur les instructions de son agent\. Après la fin de l’enquête, continuez à suivre ses instructions\.$/);
+  for (const language of ['ja', 'en', 'fr']) {
+    assert.doesNotMatch(wear.cues[language].map((cue) => cue.text).join(''), /係の者|staff|personnel/, language);
+  }
+  // 最後の場面の声の入力原稿（0348）。装置はかなで書く（0331）。「装置内」の内も「うち」と読まれないようかな
+  const wearInput = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja-v6-wear.md'), 'utf8');
+  const wearBlocks = [...wearInput.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)];
+  assert.equal(wearBlocks.length, 1);
+  for (const phrase of ['そうちをつけたら、そうちないのエージェントの指示に従って', '調査が終わった後も', 'かんそくそうちを、つけてください。', '健闘を、祈ります。']) {
+    assert.ok(wearBlocks[0][1].includes(phrase), phrase);
+  }
+  assert.doesNotMatch(wearBlocks[0][1], /装置|係の者/);
   // 新しい声の入力原稿は、台詞の全文を 1 つのコードブロックに持つ（0257）。
   const input = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja-v5.md'), 'utf8');
   const blocks = [...input.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)];
@@ -1333,7 +1351,8 @@ test('日本語の台詞は 0338 で直した版で、声は v5 の音声。古�
   const policy = fs.readFileSync(path.join(root, 'tablet', 'app', 'src', 'main', 'java', 'com', 'roiril', 'mawarimi', 'tablet', 'RequestPolicy.java'), 'utf8');
   assert.match(policy, /"\/tv-live\.js"/, 'アプリが配る js の表に無いと実機では 404 で黙って落ちる');
   // 声の波形の列は場面ごと・20Hz。長さは切り出した音の長さと 0.2 秒以内で合う
-  const voiceEnv = JSON.parse(fs.readFileSync(path.join(assetRoot, 'doctor-voice-ja-v5.json'), 'utf8'));
+  const voiceEnv = JSON.parse(fs.readFileSync(path.join(assetRoot, 'doctor-voice-ja-v6.json'), 'utf8'));
+  assert.match(html, /fetch\('\.\/asset\/doctor-voice-ja-v6\.json'/, 'アプリが読む声の波形の列は、作った版と同じ');
   assert.equal(voiceEnv.hz, 20);
   for (const scene of briefing.scenes) {
     const values = voiceEnv.scenes[scene.id];
@@ -1635,7 +1654,7 @@ test('媒体時計の文末判定で手動は止まり、オートは次の文�
 
 test('章の切り替えの乱れの間は博士の声を出さず、乱れが終わってから出す（0332）', () => {
   const data = withoutFilm(clone(briefing));
-  for (const scene of data.scenes) { delete scene.video; scene.audio = { ja: `${scene.id}-ja-v5.mp3` }; }
+  for (const scene of data.scenes) { delete scene.video; scene.audio = { ja: jaVoiceName(scene.id) }; }
   prepareBriefing(data);
   motionPreference.matches = false;   // 乱れは動きを減らす設定では出ない
   try {

@@ -88,8 +88,8 @@
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v2.mp4",
-          "poster": "doctor-room-introduction-v2.jpg",
+          "file": "doctor-room-ja-v3.mp4",
+          "poster": "doctor-room-introduction-v3.jpg",
           "fromMs": 0,
           "voiceMs": 1500
         }
@@ -203,8 +203,8 @@
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v2.mp4",
-          "poster": "doctor-room-subject-v2.jpg",
+          "file": "doctor-room-ja-v3.mp4",
+          "poster": "doctor-room-subject-v3.jpg",
           "fromMs": 17053,
           "voiceMs": 18753
         }
@@ -384,8 +384,8 @@
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v2.mp4",
-          "poster": "doctor-room-report-v2.jpg",
+          "file": "doctor-room-ja-v3.mp4",
+          "poster": "doctor-room-report-v3.jpg",
           "fromMs": 47208,
           "voiceMs": 47709
         }
@@ -420,25 +420,25 @@
       "cues": {
         "ja": [
           {
-            "text": "装置の合図で歩き始めてください。終わりの合図の後は、係の者が装置を外すまで、動かずにお待ちください。",
-            "durationMs": 9168
+            "text": "装置をつけたら、装置内のエージェントの指示に従って歩き始めてください。調査が終わった後も、そのままエージェントの指示に従ってください。",
+            "durationMs": 9708
           },
           {
             "text": "続けられないときだけは、その場で立ち止まり、手すりを離して、装置を外してください。",
-            "durationMs": 6268
+            "durationMs": 5680
           },
           {
-            "text": "では。係の者の案内に従って、観測装置をつけてください。",
-            "durationMs": 6070
+            "text": "では。観測装置をつけてください。",
+            "durationMs": 3081
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 1698
+            "durationMs": 3264
           }
         ],
         "en": [
           {
-            "text": "Start walking when the device gives the signal. After it signals the end, stay still until a member of staff removes the device.",
+            "text": "Once the device is on, start walking when its agent tells you to. After the survey ends, keep following the agent’s instructions.",
             "durationMs": 8400
           },
           {
@@ -446,8 +446,8 @@
             "durationMs": 6400
           },
           {
-            "text": "Now. Follow the staff’s guidance and put on the observation device.",
-            "durationMs": 4400
+            "text": "Now. Put on the observation device.",
+            "durationMs": 3000
           },
           {
             "text": "Good luck with your survey.",
@@ -456,16 +456,16 @@
         ],
         "fr": [
           {
-            "text": "Commencez à marcher au signal du dispositif. Après le signal de fin, restez immobile jusqu’à ce qu’un membre du personnel vous le retire.",
-            "durationMs": 8500
+            "text": "Une fois le dispositif en place, commencez à marcher sur les instructions de son agent. Après la fin de l’enquête, continuez à suivre ses instructions.",
+            "durationMs": 9000
           },
           {
             "text": "Seulement si vous ne pouvez plus continuer : arrêtez-vous sur place, lâchez la main courante et retirez le dispositif.",
             "durationMs": 7300
           },
           {
-            "text": "Bien. Suivez les indications du personnel et mettez le dispositif d’observation.",
-            "durationMs": 5000
+            "text": "Bien. Mettez le dispositif d’observation.",
+            "durationMs": 3200
           },
           {
             "text": "Bonne chance pour votre enquête.",
@@ -474,12 +474,12 @@
         ]
       },
       "audio": {
-        "ja": "wear-ja-v5.mp3"
+        "ja": "wear-ja-v6.mp3"
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v2.mp4",
-          "poster": "doctor-room-wear-v2.jpg",
+          "file": "doctor-room-ja-v3.mp4",
+          "poster": "doctor-room-wear-v3.jpg",
           "fromMs": 95846,
           "voiceMs": 96346
         }

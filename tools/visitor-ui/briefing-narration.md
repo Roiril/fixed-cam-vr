@@ -7,7 +7,7 @@
 
 2026-11-12 に台詞を書き直した（`canon/LEDGER.md` 0327。0328 で「異常はまだ何も判明していない」前提に直した。名を伏せた上司・管理番号 0514・資料はテレビの中・絵はデジタルツイン。文の案は `canon/OPEN.md`「博士の説明の書き直し」）。
 同じ日に、何も知らない読み手 3 人に読ませて直した（0338。装置に映る物を歩き方より先に言う・終わりを誰が知らせるか・手すりを持ったままどう外すか。`canon/OPEN.md`「博士の台詞を初見の読み手に読ませて直す」）。
-日本語の声（v5）は `generate-doctor-audio.py` が `elevenlabs-input-ja-v5.md` を 1 本で合成し、1 字ごとの時刻から場面と文へ切る。切り出すときに 1.2 倍へ速める（0328）。日本語の時間はその実測。声は voice bEg9geTboP3ghzJ9Rt3L。日本語は、DomoAI の口の動画（30 本）を博士の部屋の試作に入れ、カメラの動きと声ごと焼いた 1 本（`doctor-room-ja-v1.mp4`）を各場面の `film.ja` から流す（0345）。英語と仏語は静止画のまま。
+日本語の声は `generate-doctor-audio.py` が合成し、1 字ごとの時刻から場面と文へ切る。最初の 3 場面は `elevenlabs-input-ja-v5.md` を 1 本で合成した v5、最後の場面は係の者の所を直した 0348 で入れ直した v6（`elevenlabs-input-ja-v6-wear.md`）。切り出すときに 1.2 倍へ速める（0328）。日本語の時間はその実測。声は voice bEg9geTboP3ghzJ9Rt3L。日本語は、DomoAI の口の動画（28 本。最後の場面の 4 本は 0348 で作り直した）を博士の部屋の試作に入れ、カメラの動きと声ごと焼いた 1 本（`doctor-room-ja-v3.mp4`）を各場面の `film.ja` から流す（0345）。テレビに映すツインは構図から撮り直した（0346・`room-proto/tv-programme.json`）。英語と仏語は静止画のまま。
 声の無い言語の時間は字数からの見積もり（オートの送りに使う）。英仏音声と英仏動画は未制作。
 通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。
 博士動画は既存博士画像と同じ人物を中央配置で使用する。映像の切替や字幕を動画に焼き込まない。
@@ -119,25 +119,25 @@
 
 ### 04 wear — 終了と装着
 
-開始 92.1 秒 / 尺 23.2 秒
+開始 92.1 秒 / 尺 21.7 秒
 
 画像: `wear-doctor-v2.jpg`
 
-音声: `wear-ja-v5.mp3`
+音声: `wear-ja-v6.mp3`
 
-文 01 / 場面内 0.0–9.2 秒
+文 01 / 場面内 0.0–9.7 秒
 
-装置の合図で歩き始めてください。終わりの合図の後は、係の者が装置を外すまで、動かずにお待ちください。
+装置をつけたら、装置内のエージェントの指示に従って歩き始めてください。調査が終わった後も、そのままエージェントの指示に従ってください。
 
-文 02 / 場面内 9.2–15.4 秒
+文 02 / 場面内 9.7–15.4 秒
 
 続けられないときだけは、その場で立ち止まり、手すりを離して、装置を外してください。
 
-文 03 / 場面内 15.4–21.5 秒
+文 03 / 場面内 15.4–18.5 秒
 
-では。係の者の案内に従って、観測装置をつけてください。
+では。観測装置をつけてください。
 
-文 04 / 場面内 21.5–23.2 秒
+文 04 / 場面内 18.5–21.7 秒
 
 健闘を祈ります。
 
@@ -237,23 +237,23 @@ The agent built into the device will analyse what you saw. It does not matter if
 
 ### 04 wear — Ending and equipment
 
-開始 81.0 秒 / 尺 22.2 秒
+開始 81.0 秒 / 尺 20.8 秒
 
 画像: `wear-doctor-v2.jpg`
 
 文 01 / 場面内 0.0–8.4 秒
 
-Start walking when the device gives the signal. After it signals the end, stay still until a member of staff removes the device.
+Once the device is on, start walking when its agent tells you to. After the survey ends, keep following the agent’s instructions.
 
 文 02 / 場面内 8.4–14.8 秒
 
 Only if you cannot continue: stop where you are, let go of the handrail, and take off the device.
 
-文 03 / 場面内 14.8–19.2 秒
+文 03 / 場面内 14.8–17.8 秒
 
-Now. Follow the staff’s guidance and put on the observation device.
+Now. Put on the observation device.
 
-文 04 / 場面内 19.2–22.2 秒
+文 04 / 場面内 17.8–20.8 秒
 
 Good luck with your survey.
 
@@ -353,22 +353,22 @@ L’agent intégré au dispositif analysera ce que vous avez vu. Peu importe si 
 
 ### 04 wear — Fin et équipement
 
-開始 84.4 秒 / 尺 23.8 秒
+開始 84.4 秒 / 尺 22.5 秒
 
 画像: `wear-doctor-v2.jpg`
 
-文 01 / 場面内 0.0–8.5 秒
+文 01 / 場面内 0.0–9.0 秒
 
-Commencez à marcher au signal du dispositif. Après le signal de fin, restez immobile jusqu’à ce qu’un membre du personnel vous le retire.
+Une fois le dispositif en place, commencez à marcher sur les instructions de son agent. Après la fin de l’enquête, continuez à suivre ses instructions.
 
-文 02 / 場面内 8.5–15.8 秒
+文 02 / 場面内 9.0–16.3 秒
 
 Seulement si vous ne pouvez plus continuer : arrêtez-vous sur place, lâchez la main courante et retirez le dispositif.
 
-文 03 / 場面内 15.8–20.8 秒
+文 03 / 場面内 16.3–19.5 秒
 
-Bien. Suivez les indications du personnel et mettez le dispositif d’observation.
+Bien. Mettez le dispositif d’observation.
 
-文 04 / 場面内 20.8–23.8 秒
+文 04 / 場面内 19.5–22.5 秒
 
 Bonne chance pour votre enquête.

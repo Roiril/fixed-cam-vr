@@ -42,12 +42,14 @@
 
 ## 口の動画を作り直す（声を変えたとき）
 
-口の動画は声と 1 対 1。声を作り直したら全部作り直しになる。
+口の動画は声と 1 対 1。声を作り直したら、作り直した場面の分は全部作り直しになる。
 
 1. `py -3.11 tools/visitor-ui/room-proto/lipsync.py plan <作業フォルダ>`（先に `layers/lipsync-plan.json` を消す。作業フォルダはリポジトリの外）
 2. `py -3.11 tools/visitor-ui/room-proto/lipsync.py send <作業フォルダ>`（30 本前後・450 クレジット前後・15 分前後。止めても続きから回る）
 3. 試作の頁で `await RoomProto.postMeta()` の後、`py -3.11 tools/visitor-ui/room-proto/lipsync.py track <作業フォルダ>`
 4. 取り出した動画は Drive `renders/doctor-room/lipsync-v<声の版>/` へ移す
+
+1 つの場面の声だけを作り直したとき（0348 の最後の場面）は、計画を消さずに `plan <作業フォルダ> --scene <場面>` で、その場面だけを切り直す。本の名前は声のファイル名が頭に付く（`wear-ja-v6_00`）。作業フォルダの `out/` には、ほかの場面の本を Drive から写しておく（`track` が全部の本を読む）。最後の場面は後ろに何も無いので、ほかの場面の時刻は動かない。
 
 - DomoAI の CLI は `npm install -g @domoai/cli` → `domoai login --start`（出た URL をログイン済みのブラウザで開いて承認）→ `domoai login --finish`
 - 枠の値段は 5 秒 15・10 秒 45・20 秒 90 クレジット。5 秒の枠が秒あたり最安なので、声を 4.7 秒以下に切る。出来る動画は声と同じ長さ・1280×720・25fps

@@ -3,7 +3,7 @@
   "introduction": "introduction-ja-v5.mp3",
   "subject": "subject-ja-v5.mp3",
   "report": "report-ja-v5.mp3",
-  "wear": "wear-ja-v5.mp3"
+  "wear": "wear-ja-v6.mp3"
  },
  "segments": {
   "introduction": [
@@ -158,39 +158,27 @@
   ],
   "wear": [
    {
-    "name": "wear_00",
-    "from": 0.371,
-    "to": 5.003,
+    "name": "wear-ja-v6_00",
+    "from": 0.126,
+    "to": 3.67,
     "frame": 5
    },
    {
-    "name": "wear_01",
-    "from": 5.003,
-    "to": 9.077,
+    "name": "wear-ja-v6_01",
+    "from": 3.67,
+    "to": 6.714,
     "frame": 5
    },
    {
-    "name": "wear_02",
-    "from": 9.077,
-    "to": 13.499,
-    "frame": 5
+    "name": "wear-ja-v6_02",
+    "from": 6.714,
+    "to": 15.398,
+    "frame": 10
    },
    {
-    "name": "wear_03",
-    "from": 13.499,
-    "to": 16.468,
-    "frame": 5
-   },
-   {
-    "name": "wear_04",
-    "from": 16.468,
-    "to": 20.185,
-    "frame": 5
-   },
-   {
-    "name": "wear_05",
-    "from": 20.185,
-    "to": 23.225,
+    "name": "wear-ja-v6_03",
+    "from": 15.398,
+    "to": 20.094,
     "frame": 5
    }
   ]

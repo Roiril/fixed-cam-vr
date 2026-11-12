@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 94dc6571-7165-4a32-9334-39ae2473a8c9
-  modified: 2026-10-22T02:43:07.410Z
+  modified: 2026-11-12T17:37:58.755Z
 ---
 
 # タブレットの博士UIを触る前に
@@ -19,6 +19,10 @@ metadata:
 - 章をまたぐときは読み直さず、乱れ（`playChapterTransition`）も声の待ちも挟まずに続ける（`moveBriefing` の `continuousFilm`）。テレビの乱れや資料の絵は動画の中に焼いてあるので、DOM のテレビ（`has-reference`）は出さない
 - 動画が読めないと `filmFailed` を立て、その説明の間だけ従来の声とテレビの形へ戻す（同じ文から）
 - 作り方は `room-proto/README.md`「口の動画を作り直す」「アプリの動画を焼く」。声・台詞・時刻表を変えたら、口の動画（`lipsync.py`・DomoAI のクレジットを使う）→ 書き出し → `bake-film.py --version <次>` の順。版を上げるのは同じ名前で中身を替えると WebView の古い控えが残るため
+- 声は場面ごとに別の合成から切れる（`generate-doctor-audio.py` の `TAKES` と `SCENE_TAKE`）。0348 で最後の場面だけ入れ直した（`wear-ja-v6.mp3`。ほかは v5）。話す速さの基準は v5 の 20 文の中央値に固定してあるので、1 場面を入れ直してもほかの場面の音は 1 バイトも変わらない（`--reuse` で確かめた）。口の動画も `lipsync.py plan --scene <場面>` でその場面だけ作る。最後の場面なら前の時刻は動かない
+- ⚠ 声の大きさの列（`doctor-voice-ja-v<ENVELOPE_VERSION>.json`）はアプリが force-cache で読む。中身が変わったら版を上げ、tablet の `index.html` と `room-proto/index.html` の 2 か所の名前も直す
+- 人に見せる通しの動画は `node tools/visitor-ui/record-briefing.cjs`（代役サーバ＋headless Chrome。タイトル → 設定 → 説明 → 装着の案内を音つき mp4 で Drive `renders/doctor-room/` へ）。⚠ `Emulation.setDeviceMetricsOverride` で画面の大きさを上書きすると、screencast もタブ録画も窓の実寸（枠の分だけ小さい）で切り取り、下にある字幕の帯が映らない（captureScreenshot には映るので気づきにくい）。窓の大きさを `Browser.setWindowBounds` で合わせて実寸で描かせる。絵は screencast（約 36 fps）、音だけタブ録画から取る。`--mute-audio` を付けるとタブ録画の音も無音になる
+- ⚠ 内蔵ブラウザの枠が隠れていると、`RoomProto.export` は毎秒 1 コマ前後まで落ちる。headless の Chrome で頁を開いて `export` を呼ぶと毎秒 3 コマ前後（2026-11-13）
 - ⚠ 書き出し中に動画の seek が返らないことがある（`seeked` が来ない）。`index.html` の `seekTo` は 1.5 秒で諦めて数え、終わりの `document.title` に回数を出す。0 でなければその辺りのコマを見る
 - Redmi の実機では未確認（APK も焼いていない。2026-11-12 時点で Redmi が繋がっていなかった）
 

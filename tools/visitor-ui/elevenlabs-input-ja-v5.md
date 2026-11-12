@@ -9,7 +9,10 @@
 演技の指定と間の取り方は、ユーザーが調整した v2（`elevenlabs-input-ja.md`）の書き方を使っている。
 読み違えやすい語は、原稿だけかなで書く（字幕は漢字のまま）。「装置」は「ちょうち」と読まれた（0331）ので「そうち」。
 研究所の名は「にほんかい」（日本海）と続けて読まれないよう「・」で区切る（0332）。「物」もかなにした（読みを確かめる前の用心）。
-文の頭を変えたら `generate-doctor-audio.py` の `ANCHORS` も同じ字に直す。
+文の頭を変えたら `generate-doctor-audio.py` の `TAKES["v5"]` も同じ字に直す。
+
+⚠ 最後の場面（「そうちの合図で…」から後ろ）は、0348 で `elevenlabs-input-ja-v6-wear.md` の合成に替わった。
+このファイルの最後の場面は、v5 の合成に入っている文の記録として残す（速さの基準がこの 20 文の中央値なので消さない）。
 
 ```text
 [deep, resonant male voice, calm and authoritative, restrained emotion, measured delivery, cinematic Japanese drama performance]

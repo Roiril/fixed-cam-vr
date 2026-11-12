@@ -1,24 +1,26 @@
-"""博士の日本語の声を ElevenLabs で 1 本に合成し、場面ごとに切ってタブレットへ組み込む。
+"""博士の日本語の声を ElevenLabs で合成し、場面ごとに切ってタブレットへ組み込む。
 
-    py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id>            # 合成して組み込む
-    py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id> --reuse    # 前に合成した音から切り直すだけ
+    py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id> --take v6-wear   # その合成だけ作り直して組み込む
+    py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id> --reuse          # 前に合成した音から切り直すだけ
 
-入力は `elevenlabs-input-ja-v5.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
+合成（take）は複数ある。`TAKES` が合成ごとの入力原稿と文の頭を、`SCENE_TAKE` が場面ごとにどの合成から切るかを持つ。
+v5 は全部の台詞を一度に入れた 1 本（0257）。v6-wear は最後の場面だけを入れ直した 1 本（0348）。
+最後の場面は後ろに何も無いので、そこだけ入れ替えても前の場面の音・時刻・口の動画は変わらない。
 鍵は環境変数 `ELEVENLABS_API_KEY`（値は表示しない。`~/.claude/rules/secrets.md`）。
 
 することは 6 つ（5 は 2 段）。
 1. `/with-timestamps` で合成する。音と一緒に、1 字ごとの時刻が返る
 2. 各文の頭の語を時刻の列から探し、文と文の間の無音の真ん中で区切る
-3. 場面ごとに `tablet/.../asset/<場面>-ja-v5.mp3` へ切り出す
+3. 場面ごとに `tablet/.../asset/<場面>-ja-<合成の版>.mp3` へ切り出す
 4. `briefing-v1.json` の日本語の `durationMs` を実測へ直し、`audio.ja` を付ける
 5. 長い間を詰める（`PHRASE_PAUSE_MAX` / `SENTENCE_PAUSE_MAX`。頭だけ遅く聞こえるのを防ぐ）
-   文ごとの話す速さ（拍/秒）を測り、中央値へ揃える（`READINGS`。合成は頭の文ほどゆっくり読む）
-6. 声の大きさの列を `asset/doctor-voice-ja-v5.json` に書く（テレビの下の波形が使う）
+   文ごとの話す速さ（拍/秒）を測り、v5 の 20 文の中央値へ揃える（`readings`。合成は頭の文ほどゆっくり読む）
+6. 声の大きさの列を `asset/doctor-voice-ja-<ENVELOPE_VERSION>.json` に書く（テレビの下の波形が使う）
 
 切り出すときに `--tempo`（既定 1.2）で速める。最初の場面の頭には `--lead-in`（既定 1.0 秒）の無音を置く。
-原稿は読み違えやすい語をかなで書く（「装置」→「そうち」。ANCHORS も原稿の字に合わせる）。残してある元の音は等速のまま。
-⚠ 口の動画（リップシンク）は作らない。動画が届くまで、日本語は博士の静止画と声で進む。
-⚠ 合成した元の音と時刻は `tools/visitor-ui/doctor-ja-v5-original.{mp3,json}` に残す。声を替えたら作り直す。
+原稿は読み違えやすい語をかなで書く（「装置」→「そうち」。anchors も原稿の字に合わせる）。残してある元の音は等速のまま。
+口の動画は `room-proto/lipsync.py`（声を変えたら、変わった場面だけ `plan --scene` から作り直す）。
+⚠ 合成した元の音と時刻は `tools/visitor-ui/doctor-ja-<合成>-original.{mp3,json}` に残す。声を替えたら作り直す。
 """
 import argparse
 import base64
@@ -37,39 +39,65 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
 BRIEFING = ASSETS / "briefing-v1.json"
-VERSION = "v5"
-INPUT = HERE / f"elevenlabs-input-ja-{VERSION}.md"
-TAKE_MP3 = HERE / f"doctor-ja-{VERSION}-original.mp3"
-TAKE_JSON = HERE / f"doctor-ja-{VERSION}-original.json"
-
-# 各文の頭（入力原稿の表記）。場面と文の順は briefing-v1.json と同じ。
-ANCHORS = {
-    "introduction": ["ようこそ", "私は……", "あなたは、今日から", "これより、"],
-    "subject": ["調査対象は、", "ある空き家の", "どちらも、", "その条件も"],
-    "report": ["これが、怪異を記録し", "そうちをつけると", "そこに、室内の", "その映像を見ながら", "右手で手すりを持ち",
-               "映像に、少しでも", "報告するときは", "何を見たかは"],
-    "wear": ["そうちの合図で", "続けられないときだけは", "では。", "健闘を、祈ります"],
+# 合成ごとの入力原稿・文の頭（anchors。入力原稿の表記）・文の読み（readings。かな）。
+# anchors と readings は、その合成に入っている全部の場面を、合成の中の順に持つ（場面を使わなくても、
+# 区切りと速さの基準のために要る）。読みは話す速さ（拍/秒）を文ごとに測って揃えるのに使う（0344）。
+# 台詞を変えたら両方直す（数が合わなければ止まる）。
+TAKES = {
+    # 全部の台詞を一度に入れた 1 本（0338 の台詞）。wear の 4 文は 0348 で使わなくなったが、
+    # 速さの基準（RATE_REF_TAKE）がこの 20 文の中央値なので消さない
+    "v5": {
+        "version": "v5",
+        "input": "elevenlabs-input-ja-v5.md",
+        "anchors": {
+            "introduction": ["ようこそ", "私は……", "あなたは、今日から", "これより、"],
+            "subject": ["調査対象は、", "ある空き家の", "どちらも、", "その条件も"],
+            "report": ["これが、怪異を記録し", "そうちをつけると", "そこに、室内の", "その映像を見ながら", "右手で手すりを持ち",
+                       "映像に、少しでも", "報告するときは", "何を見たかは"],
+            "wear": ["そうちの合図で", "続けられないときだけは", "では。", "健闘を、祈ります"],
+        },
+        "readings": {
+            "introduction": ["ようこそ。にほんかいいけんきゅうじょへ。", "わたしは、あなたのじょうし、とでもいっておきましょうか。",
+                             "あなたはきょうから、このけんきゅうじょの、ちょうさいんです。", "これより、ちょうさたいしょうについて、せつめいします。"],
+            "subject": ["ちょうさたいしょうは、かんりばんごうぜろごーいちよんにしていされた、いじょうそんざいです。",
+                        "あるあきやの、こどもべやからみつかった、かーてんと、にんぎょうです。",
+                        "どちらも、がいけんじょうは、いっぱんてきなものと、かわりません。しかし、とくていのじょうけんかでのみ、いじょうせいが、はつげんします。",
+                        "そのじょうけんも、いじょうせいのしょうたいも、まだ、はんめいしていません。それをちょうさするのが、あなたのにんむです。"],
+            "report": ["これが、かいいをきろくし、かいせきするための、かんそくそうちです。", "そうちをつけると、めのまえにがめんが、あらわれます。",
+                       "そこに、しつないのかめらがとらえた、あなたじしんのすがたが、うつります。", "そのえいぞうをみながら、このかーてんのまわりを、さんしゅうしてください。",
+                       "みぎてでてすりをもち、けっしてはなさず、ゆっくり、あるいてください。", "えいぞうに、すこしでもいわかんをおぼえたら、ほうこくしてください。",
+                       "ほうこくするときは、ひだりこんとろーらーのぼたんを、おやゆびで、いちびょうかん、ながおししてください。えっくすとわい、どちらでも、かまいません。",
+                       "なにをみたかは、そうちにとうさいされたえーじぇんとが、かいせきします。みまちがいでも、なんどほうこくしても、かまいません。"],
+            "wear": ["そうちのあいずで、あるきはじめてください。おわりのあいずのあとは、かかりのものがそうちをはずすまで、うごかずに、おまちください。",
+                     "つづけられないときだけは、そのばでたちどまり、てすりをはなして、そうちをはずしてください。",
+                     "では。かかりのもののあんないにしたがって、かんそくそうちを、つけてください。", "けんとうを、いのります。"],
+        },
+    },
+    # 最後の場面だけを入れ直した 1 本（0348。係の者の 2 か所を、装置内のエージェントの指示に従う形へ）
+    "v6-wear": {
+        "version": "v6",
+        "input": "elevenlabs-input-ja-v6-wear.md",
+        "anchors": {
+            "wear": ["そうちをつけたら", "続けられないときだけは", "では。", "健闘を、祈ります"],
+        },
+        "readings": {
+            "wear": ["そうちをつけたら、そうちないのえーじぇんとのしじにしたがって、あるきはじめてください。ちょうさがおわったあとも、そのまま、えーじぇんとのしじにしたがってください。",
+                     "つづけられないときだけは、そのばでたちどまり、てすりをはなして、そうちをはずしてください。",
+                     "では。かんそくそうちを、つけてください。", "けんとうを、いのります。"],
+        },
+    },
 }
+# 場面ごとに、どの合成から切るか
+SCENE_TAKE = {"introduction": "v5", "subject": "v5", "report": "v5", "wear": "v6-wear"}
+# 話す速さを揃える先は、この合成の全部の文の中央値（7.68 拍/秒）。場面だけ入れ直しても、ほかの場面の倍率が変わらない
+RATE_REF_TAKE = "v5"
+# 声の大きさの列のファイルの版。中身が変わったら上げる（アプリは force-cache で読む）。
+# 上げたら tablet の index.html の loadVoiceEnvelope と room-proto/index.html の voiceFile も直す
+ENVELOPE_VERSION = "v6"
 
 
-# 各文の読み（かな）。話す速さ（拍/秒）を文ごとに測って揃えるのに使う（0344）。順と数は ANCHORS と同じ。
-# 台詞を変えたらここも直す（数が合わなければ止まる）。
-READINGS = {
-    "introduction": ["ようこそ。にほんかいいけんきゅうじょへ。", "わたしは、あなたのじょうし、とでもいっておきましょうか。",
-                     "あなたはきょうから、このけんきゅうじょの、ちょうさいんです。", "これより、ちょうさたいしょうについて、せつめいします。"],
-    "subject": ["ちょうさたいしょうは、かんりばんごうぜろごーいちよんにしていされた、いじょうそんざいです。",
-                "あるあきやの、こどもべやからみつかった、かーてんと、にんぎょうです。",
-                "どちらも、がいけんじょうは、いっぱんてきなものと、かわりません。しかし、とくていのじょうけんかでのみ、いじょうせいが、はつげんします。",
-                "そのじょうけんも、いじょうせいのしょうたいも、まだ、はんめいしていません。それをちょうさするのが、あなたのにんむです。"],
-    "report": ["これが、かいいをきろくし、かいせきするための、かんそくそうちです。", "そうちをつけると、めのまえにがめんが、あらわれます。",
-               "そこに、しつないのかめらがとらえた、あなたじしんのすがたが、うつります。", "そのえいぞうをみながら、このかーてんのまわりを、さんしゅうしてください。",
-               "みぎてでてすりをもち、けっしてはなさず、ゆっくり、あるいてください。", "えいぞうに、すこしでもいわかんをおぼえたら、ほうこくしてください。",
-               "ほうこくするときは、ひだりこんとろーらーのぼたんを、おやゆびで、いちびょうかん、ながおししてください。えっくすとわい、どちらでも、かまいません。",
-               "なにをみたかは、そうちにとうさいされたえーじぇんとが、かいせきします。みまちがいでも、なんどほうこくしても、かまいません。"],
-    "wear": ["そうちのあいずで、あるきはじめてください。おわりのあいずのあとは、かかりのものがそうちをはずすまで、うごかずに、おまちください。",
-             "つづけられないときだけは、そのばでたちどまり、てすりをはなして、そうちをはずしてください。",
-             "では。かかりのもののあんないにしたがって、かんそくそうちを、つけてください。", "けんとうを、いのります。"],
-}
+def take_paths(name):
+    return HERE / f"doctor-ja-{name}-original.mp3", HERE / f"doctor-ja-{name}-original.json"
 # 文ごとの速さの直し幅。遅い文は最大 1.25 倍まで速め、速い文は 0.95 倍までしか遅くしない
 RATE_FIX_MIN = 0.95
 RATE_FIX_MAX = 1.25
@@ -103,15 +131,17 @@ def api_key():
     return key
 
 
-def prompt_text():
-    blocks = re.findall(r"```text\r?\n(.*?)\r?\n```", INPUT.read_text(encoding="utf-8"), re.S)
+def prompt_text(take):
+    path = HERE / TAKES[take]["input"]
+    blocks = re.findall(r"```text\r?\n(.*?)\r?\n```", path.read_text(encoding="utf-8"), re.S)
     if len(blocks) != 1:
-        raise SystemExit(f"{INPUT.name} のコードブロックが 1 つではない")
+        raise SystemExit(f"{path.name} のコードブロックが 1 つではない")
     return blocks[0]
 
 
-def synthesize(voice, model):
-    body = json.dumps({"text": prompt_text(), "model_id": model}).encode("utf-8")
+def synthesize(take, voice, model):
+    take_mp3, take_json = take_paths(take)
+    body = json.dumps({"text": prompt_text(take), "model_id": model}).encode("utf-8")
     req = urllib.request.Request(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/with-timestamps?output_format=mp3_44100_128",
         data=body, headers={"xi-api-key": api_key(), "Content-Type": "application/json"})
@@ -120,9 +150,9 @@ def synthesize(voice, model):
             data = json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         raise SystemExit(f"合成に失敗: HTTP {e.code} {e.read().decode('utf-8', 'replace')[:400]}")
-    TAKE_MP3.write_bytes(base64.b64decode(data["audio_base64"]))
+    take_mp3.write_bytes(base64.b64decode(data["audio_base64"]))
     align = data.get("alignment") or data.get("normalized_alignment")
-    TAKE_JSON.write_text(json.dumps({"voice": voice, "model": model, "alignment": align}, ensure_ascii=False),
+    take_json.write_text(json.dumps({"voice": voice, "model": model, "alignment": align}, ensure_ascii=False),
                          encoding="utf-8", newline="\n")
 
 
@@ -273,41 +303,33 @@ def kept(start, end, cuts):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--voice", required=True)
-    ap.add_argument("--model", default="eleven_v3")
-    ap.add_argument("--reuse", action="store_true", help="合成せず、残してある音から切り直す")
-    ap.add_argument("--tempo", type=float, default=1.2,
-                    help="読み上げの速さ。合成した音を高さを変えずに速める（0327 の続き「今の1.2倍くらい」）")
-    ap.add_argument("--lead-in", type=float, default=1.0,
-                    help="最初の場面の頭に置く無音の秒数（0331「最初、少し間をおいてから」。間が無いと声の頭が見切れる）")
-    args = ap.parse_args()
-
-    if not args.reuse:
-        synthesize(args.voice, args.model)
-    take = json.loads(TAKE_JSON.read_text(encoding="utf-8"))
+def analyse(name, voice_hint=None):
+    """1 本の合成を、文の境・詰める間・文ごとの話す速さへ分ける。"""
+    spec = TAKES[name]
+    take_mp3, take_json = take_paths(name)
+    take = json.loads(take_json.read_text(encoding="utf-8"))
     al = take["alignment"]
     chars = "".join(al["characters"])
     starts, ends = al["character_start_times_seconds"], al["character_end_times_seconds"]
-    total_ms = duration_ms(TAKE_MP3)
+    total_ms = duration_ms(take_mp3)
 
-    samples, rate = decode_mono(TAKE_MP3)
+    samples, rate = decode_mono(take_mp3)
     voiced = voiced_indices(al["characters"], starts, ends)
     # 各文の頭と、その直前の声になる字の終わり。区切りはその間で波形がいちばん長く静かな所の真ん中。
-    cue_bounds, cursor = [], 0
-    for scene_id, anchors in ANCHORS.items():
+    cue_bounds, first, cursor = [], {}, 0
+    for scene_id, anchors in spec["anchors"].items():
+        first[scene_id] = len(cue_bounds)
         for anchor in anchors:
             i = chars.find(anchor, cursor)
             if i < 0:
-                raise SystemExit(f"時刻の列に「{anchor}」が無い（入力原稿と ANCHORS を揃える）")
+                raise SystemExit(f"{name}: 時刻の列に「{anchor}」が無い（入力原稿と anchors を揃える）")
             prev = [v for v in voiced if v < i]
             if not cue_bounds or not prev:
                 cue_bounds.append((scene_id, 0.0))   # 最初の文は合成の頭から取る（声の頭を削らない。0331）
             else:
                 q = quiet_run(samples, rate, ends[prev[-1]], starts[i])
                 if not q:
-                    raise SystemExit(f"「{anchor}」の手前に無音が見つからない（区切ると声が切れる）")
+                    raise SystemExit(f"{name}: 「{anchor}」の手前に無音が見つからない（区切ると声が切れる）")
                 cue_bounds.append((scene_id, (q[0] + q[1]) / 2))
             cursor = i + len(anchor)
     cut_s = [t for _, t in cue_bounds] + [total_ms / 1000]
@@ -315,28 +337,55 @@ def main():
                          + dropped_spans(al["characters"], starts, ends, samples, rate))
     cut_ms = [round(remap(t, pauses) * 1000) for t in cut_s]   # 間を詰めた後の文の境
 
-    # 文ごとの話す速さを測り、中央値へ揃える倍率を出す（0344「〜調査員です。までが、読み上げ速度自体が他よりゆっくり」。
+    # 文ごとの話す速さ（0344「〜調査員です。までが、読み上げ速度自体が他よりゆっくり」。
     # 測ると頭の 3 文が 7.0〜8.4 拍/秒、後半が 9.0〜9.5 拍/秒だった）
-    flat = [r for sid in ANCHORS for r in READINGS[sid]]
+    flat = [r for sid in spec["anchors"] for r in spec["readings"][sid]]
     if len(flat) != len(cue_bounds):
-        raise SystemExit(f"READINGS の文の数が ANCHORS と違う（{len(flat)} / {len(cue_bounds)}）")
+        raise SystemExit(f"{name}: readings の文の数が anchors と違う（{len(flat)} / {len(cue_bounds)}）")
     rates = []
     for i in range(len(flat)):
         v = voiced_seconds(samples, rate, kept(cut_s[i], cut_s[i + 1], pauses))
         rates.append(mora(flat[i]) / max(0.2, v))
-    median = sorted(rates)[len(rates) // 2]
-    fix = [min(RATE_FIX_MAX, max(RATE_FIX_MIN, median / r)) for r in rates]
+    return {"name": name, "mp3": take_mp3, "voice": take["voice"], "model": take["model"], "first": first,
+            "cut_s": cut_s, "cut_ms": cut_ms, "pauses": pauses, "rates": rates}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--voice", required=True)
+    ap.add_argument("--model", default="eleven_v3")
+    ap.add_argument("--take", choices=sorted(TAKES), help="合成し直す 1 本。ほかの合成は残してある音を使う")
+    ap.add_argument("--reuse", action="store_true", help="合成せず、残してある音から切り直す")
+    ap.add_argument("--tempo", type=float, default=1.2,
+                    help="読み上げの速さ。合成した音を高さを変えずに速める（0327 の続き「今の1.2倍くらい」）")
+    ap.add_argument("--lead-in", type=float, default=1.0,
+                    help="最初の場面の頭に置く無音の秒数（0331「最初、少し間をおいてから」。間が無いと声の頭が見切れる）")
+    args = ap.parse_args()
+
+    if args.reuse == bool(args.take):
+        raise SystemExit("--take <合成> か --reuse のどちらか 1 つを付ける")
+    if args.take:
+        synthesize(args.take, args.voice, args.model)
+    takes = {name: analyse(name) for name in sorted(set(SCENE_TAKE.values()) | {RATE_REF_TAKE})}
+    ref = takes[RATE_REF_TAKE]["rates"]
+    median = sorted(ref)[len(ref) // 2]
+    for t in takes.values():
+        t["fix"] = [min(RATE_FIX_MAX, max(RATE_FIX_MIN, median / r)) for r in t["rates"]]
 
     raw = io.open(BRIEFING, encoding="utf-8", newline="").read()
     nl = "\r\n" if "\r\n" in raw else "\n"
     data = json.loads(raw)
-    report, k = {}, 0
-    for scene in data["scenes"]:
-        n = len(ANCHORS[scene["id"]])
+    report = {}
+    for si, scene in enumerate(data["scenes"]):
+        t = takes[SCENE_TAKE[scene["id"]]]
+        spec = TAKES[t["name"]]
+        n = len(spec["anchors"][scene["id"]])
+        k = t["first"][scene["id"]]
+        cut_s, cut_ms, pauses, fix = t["cut_s"], t["cut_ms"], t["pauses"], t["fix"]
         if len(scene["cues"]["ja"]) != n:
-            raise SystemExit(f"{scene['id']}: 文の数が違う（JSON {len(scene['cues']['ja'])} / ANCHORS {n}）")
-        lead_ms = round(args.lead_in * 1000) if k == 0 else 0
-        target = ASSETS / f"{scene['id']}-ja-{VERSION}.mp3"
+            raise SystemExit(f"{scene['id']}: 文の数が違う（JSON {len(scene['cues']['ja'])} / anchors {n}）")
+        lead_ms = round(args.lead_in * 1000) if si == 0 else 0
+        target = ASSETS / f"{scene['id']}-ja-{spec['version']}.mp3"
         tmp = target.with_name(target.name + ".tmp")
         # 文ごとに切り出して、その文の倍率で速さを直してから繋ぐ
         chains, labels, idx = [], [], 0
@@ -351,7 +400,7 @@ def main():
             labels.append(f"[c{c}]")
         graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={n}:v=0:a=1"
         graph += (f",adelay={lead_ms}:all=1,asetpts=N/SR/TB" if lead_ms else "") + "[out]"
-        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(TAKE_MP3),
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(t["mp3"]),
                         "-filter_complex", graph, "-map", "[out]",
                         "-ac", "1", "-ar", "48000", "-codec:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", str(tmp)],
                        check=True)
@@ -360,26 +409,27 @@ def main():
             scene["cues"]["ja"][c]["durationMs"] = round((cut_ms[k + c + 1] - cut_ms[k + c]) / (args.tempo * fix[k + c])) + (lead_ms if c == 0 else 0)
         scene.pop("video", None)
         scene["audio"] = {**{a: b for a, b in (scene.get("audio") or {}).items() if a != "ja"}, "ja": target.name}
-        report[scene["id"]] = {"file": target.name, "ms": duration_ms(target),
-                               "cues": [c["durationMs"] for c in scene["cues"]["ja"]]}
-        k += n
+        report[scene["id"]] = {"take": t["name"], "file": target.name, "ms": duration_ms(target),
+                               "cues": [c["durationMs"] for c in scene["cues"]["ja"]],
+                               "rates": [round(r, 2) for r in t["rates"][k:k + n]],
+                               "rateFix": [round(f, 3) for f in fix[k:k + n]]}
     # 声の波形の列。全場面を同じ基準（全体の 97 パーセンタイル）で 0–9 にする
     import numpy as np
     hz = 20
     env = {scene["id"]: voice_envelope(ASSETS / scene["audio"]["ja"], hz) for scene in data["scenes"]}
     top = float(np.percentile(np.concatenate(list(env.values())), 97)) or 1.0
     voice = {"hz": hz, "scenes": {k: "".join(str(int(min(9, round(9 * (v / top) ** 0.7)))) for v in vals) for k, vals in env.items()}}
-    voice_path = ASSETS / f"doctor-voice-ja-{VERSION}.json"
+    voice_path = ASSETS / f"doctor-voice-ja-{ENVELOPE_VERSION}.json"
     io.open(voice_path, "w", encoding="utf-8", newline="\n").write(json.dumps(voice, ensure_ascii=False) + "\n")
     out = (json.dumps(data, ensure_ascii=False, indent=2) + "\n").replace("\n", nl)
     tmp = BRIEFING.with_name(BRIEFING.name + ".tmp")
     io.open(tmp, "w", encoding="utf-8", newline="").write(out)
     json.loads(tmp.read_text(encoding="utf-8"))
     os.replace(tmp, BRIEFING)
-    print(json.dumps({"voice": take["voice"], "model": take["model"], "tempo": args.tempo,
-                      "pausesTrimmed": len(pauses), "trimmedSec": round(sum(b - a for a, b in pauses), 2),
+    print(json.dumps({"tempo": args.tempo, "rateMedian": round(median, 4),
+                      "takes": {n: {"voice": t["voice"], "model": t["model"], "pausesTrimmed": len(t["pauses"]),
+                                    "trimmedSec": round(sum(b - a for a, b in t["pauses"]), 2)} for n, t in takes.items()},
                       "totalMs": sum(v["ms"] for v in report.values()),
-                      "rateMedian": round(median, 2), "rates": [round(r, 2) for r in rates], "rateFix": [round(f, 3) for f in fix],
                       "scenes": report},
                      ensure_ascii=False, indent=2))
 

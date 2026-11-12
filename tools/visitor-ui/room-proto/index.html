@@ -146,7 +146,8 @@
   const TV_ON = sceneAt.introduction.end + 250;
   // 人形の頭が傾く瞬間: 「…変わりません。」と「しかし、」の間の無音。
   // 声の大きさの列（generate-doctor-audio.py が作る。20Hz・0–9）から、その文の中でいちばん長い無音の真ん中を取る
-  const voiceFile = (briefing.scenes[0].audio?.ja || '').replace(/^introduction-ja-(v\d+)\.mp3$/, 'doctor-voice-ja-$1.json');
+  // 版は generate-doctor-audio.py の ENVELOPE_VERSION（場面ごとに声の版が違うので、声のファイル名からは決まらない）
+  const voiceFile = 'doctor-voice-ja-v6.json';
   const voiceEnv = await fetch(`./asset/${voiceFile}`).then((r) => r.json()).catch(() => null);
   function longestQuiet(sceneId, cueIndex) {
     const env = voiceEnv?.scenes?.[sceneId];
