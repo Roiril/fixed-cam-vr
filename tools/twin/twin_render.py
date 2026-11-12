@@ -153,6 +153,49 @@ def shots(ctx, person_at=None):
     return out
 
 
+SHOT_KEYS = {"pos", "target", "lens", "hfov", "fstop", "focus", "roll", "t", "aspect", "look", "hide", "t0", "t1"}
+
+
+def load_shotfile(path, ctx):
+    """外から渡す構図（JSON: 名前 → pos・target・lens か hfov・fstop・focus・roll・t・aspect・look・hide・view）。
+
+    view に A/B/C を書くと、その固定カメラの位置・向き・画角になる（スマホの仕上げ・4:3）。
+    hide はその 1 枚だけ描かない集まりの名前（Rig・Person・Bulb など）。名前が表と同じなら表を上書きする。
+    """
+    if not path:
+        return {}
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    out = {}
+    for name, spec in raw.items():
+        if name.startswith("_"):
+            continue
+        spec = dict(spec)
+        spec.pop("_note", None)
+        view = spec.pop("view", None)
+        unknown = set(spec) - SHOT_KEYS
+        if unknown:
+            raise SystemExit(f"[twin] 構図 {name} に知らない鍵: {sorted(unknown)}")
+        if view:
+            cam = next(c for c in ctx["rig"]["cameras"] if c["id"] == view)
+            spec = dict(matrix=ctx["views"][view], hfov=cam["hfovDeg"], sensor=36.0, look="phone", aspect=4 / 3) | spec
+        out[name] = spec
+    return out
+
+
+def hide_collections(names, person):
+    """名前の集まりを 1 枚だけ描かない。戻すために隠した物を返す。"""
+    hidden = []
+    for n in names:
+        objs = list(tc.collection(n).objects)
+        if n == "Person" and person is not None:
+            objs += list(person.visible_meshes())
+        for o in objs:
+            if not o.hide_render:
+                o.hide_render = True
+                hidden.append(o)
+    return hidden
+
+
 def save_npy(exr: Path):
     """OpenCV の EXR 読みは環境で塞がれているので、Blender で読んで numpy にする（線形 RGB・上が 0 行目）。"""
     import numpy as np
@@ -187,6 +230,7 @@ def run_still(a):
     setup_cycles(a.w, a.w * 9 // 16, a.spp)
     cam = make_camera()
     table = shots(ctx, at)
+    table.update(load_shotfile(a.shotfile, ctx))
     out_dir = tc.WORK / "exr" / a.stamp
     out_dir.mkdir(parents=True, exist_ok=True)
     names = [s for s in a.shots.split(",") if s]
@@ -196,6 +240,7 @@ def run_still(a):
         sh = dict(table[name])
         look = sh.pop("look", "photo")
         shot_t = sh.pop("t", a.time)
+        hidden = hide_collections(sh.pop("hide", []), person)
         if person is not None:
             person.pose_at(shot_t)
         aspect = sh.pop("aspect", 16 / 9)
@@ -206,6 +251,8 @@ def run_still(a):
         bpy.context.scene.render.filepath = str(p)
         t1 = time.time()
         bpy.ops.render.render(write_still=True)
+        for o in hidden:
+            o.hide_render = False
         print(f"[twin] {name} {time.time() - t1:.1f}s")
         save_npy(p)
         manifest[name] = look
@@ -295,8 +342,19 @@ def run_seq(a):
         bpy.data.images.remove(img)
         return arr
 
+    # --shotfile の構図（静止したカメラ）も同じ手順で撮れる。t0〜t1 の間だけ。出力は seq/<route>/<構図の名前>/
+    composed = load_shotfile(a.shotfile, ctx)
     for cid in [c for c in a.cams.split(",") if c]:
-        aim(cam, (0, 0, 0), (0, 0, 0), hfov=rig[cid]["hfovDeg"], sensor=36.0, matrix=ctx["views"][cid])
+        if cid in composed:
+            spec = dict(composed[cid])
+            for k in ("look", "aspect", "t", "hide"):
+                spec.pop(k, None)
+            t0, t1 = spec.pop("t0", 0.0), spec.pop("t1", last_t)
+            cam_frames = range(int(round(t0 * a.fps)), int(round(t1 * a.fps)) + 1)
+            aim(cam, spec.pop("pos", (0, 0, 0)), spec.pop("target", (0, 0, 0)), **spec)
+        else:
+            cam_frames = frames
+            aim(cam, (0, 0, 0), (0, 0, 0), hfov=rig[cid]["hfovDeg"], sensor=36.0, matrix=ctx["views"][cid])
         out = root / cid
         out.mkdir(parents=True, exist_ok=True)
         plate_path = out / "plate.npy"
@@ -321,7 +379,7 @@ def run_seq(a):
             m.hide_render = False
         s.cycles.samples = a.spp
         t_all = time.time()
-        for f in frames:
+        for f in cam_frames:
             path = out / f"f{f:05d}.npy"
             if path.exists():
                 continue
@@ -451,6 +509,7 @@ def main():
     ap.add_argument("--time", type=float, default=5.0)
     ap.add_argument("--route", default="forward")
     ap.add_argument("--feeds", default="")
+    ap.add_argument("--shotfile", default="")
     a = ap.parse_args(argv)
     a.stamp = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + a.tag
     if a.cmd == "seq":

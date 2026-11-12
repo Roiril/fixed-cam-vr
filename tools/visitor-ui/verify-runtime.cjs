@@ -1172,7 +1172,7 @@ test('額の絵は文に合わせて替わり、報告の文では X と Y の�
   state.briefing.sceneIndex = subjectIndex;
   state.briefing.cueIndex = 0;
   runtime.beginBriefingCue();
-  assert.match(image.src, /twin-room-v1\.jpg$/);
+  assert.match(image.src, /twin-room-v2\.jpg$/);
   assert.equal(elements.get('figureTag').hidden, false);
   assert.match(elements.get('figureTag').textContent, /0514/);
   assert.equal(elements.get('figureButtons').hidden, true);
@@ -1186,7 +1186,7 @@ test('額の絵は文に合わせて替わり、報告の文では X と Y の�
   const walk = data.scenes[reportIndex].figures.find((figure) => figure.image === 'twin-walk-v1.jpg');
   state.briefing.cueIndex = walk.fromCue - 1;
   runtime.beginBriefingCue();
-  assert.match(image.src, /twin-camera-v1\.jpg$/);
+  assert.match(image.src, /twin-camera-v2\.jpg$/);
   state.briefing.cueIndex = walk.fromCue;
   runtime.beginBriefingCue();
   assert.match(image.src, /twin-walk-v1\.jpg$/);

@@ -47,7 +47,7 @@
 
 開始 15.5 秒 / 尺 28.4 秒
 
-画像: `twin-room-v1.jpg`
+画像: `twin-room-v2.jpg`
 
 文 03 からの画像: `doll-file-v1.jpg`
 
@@ -75,7 +75,7 @@
 
 画像: `device-quest3-v1.jpg`
 
-文 03 からの画像: `twin-camera-v1.jpg`
+文 03 からの画像: `twin-camera-v2.jpg`
 
 文 04 からの画像: `twin-walk-v1.jpg`
 
@@ -169,7 +169,7 @@ I will now brief you on the subject of your survey.
 
 開始 17.0 秒 / 尺 24.0 秒
 
-画像: `twin-room-v1.jpg`
+画像: `twin-room-v2.jpg`
 
 文 03 からの画像: `doll-file-v1.jpg`
 
@@ -195,7 +195,7 @@ Neither those conditions nor the nature of the anomaly are known yet. Finding ou
 
 画像: `device-quest3-v1.jpg`
 
-文 03 からの画像: `twin-camera-v1.jpg`
+文 03 からの画像: `twin-camera-v2.jpg`
 
 文 04 からの画像: `twin-walk-v1.jpg`
 
@@ -285,7 +285,7 @@ Je vais maintenant vous présenter l’objet de votre enquête.
 
 開始 18.4 秒 / 尺 25.0 秒
 
-画像: `twin-room-v1.jpg`
+画像: `twin-room-v2.jpg`
 
 文 03 からの画像: `doll-file-v1.jpg`
 
@@ -311,7 +311,7 @@ Ni ces conditions ni la nature de l’anomalie ne sont encore connues. Les déco
 
 画像: `device-quest3-v1.jpg`
 
-文 03 からの画像: `twin-camera-v1.jpg`
+文 03 からの画像: `twin-camera-v2.jpg`
 
 文 04 からの画像: `twin-walk-v1.jpg`
 

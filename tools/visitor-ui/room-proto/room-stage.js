@@ -248,6 +248,25 @@
       g.drawImage(src, (SW - sw * s) / 2, (SH - sh * s) / 2, sw * s, sh * s);
     }
 
+    // 絵の中の点 (x, y)（0〜1）をテレビの真ん中に置き、隙間なく埋める大きさの z 倍で描く。端に隙間が出る所は寄せて止める
+    function place(g, src, sw, sh, f) {
+      const s = Math.max(SW / sw, SH / sh) * Math.max(1, f[2]);
+      const dw = sw * s;
+      const dh = sh * s;
+      const dx = Math.min(0, Math.max(SW - dw, SW / 2 - f[0] * dw));
+      const dy = Math.min(0, Math.max(SH - dh, SH / 2 - f[1] * dh));
+      g.drawImage(src, dx, dy, dw, dh);
+    }
+
+    // 番組表の frame（from → to）の、いまの位置。絵が出ている間（span）をかけて、出だしと終わりをなめらかに動かす
+    function frameAt(s, shown) {
+      const fr = s.frame;
+      if (!fr) return [0.5, 0.5, 1 + 0.07 * Math.min(1, shown / 16000)];
+      const u0 = Math.max(0, Math.min(1, shown / Math.max(1, s.span || 16000)));
+      const u = u0 * u0 * (3 - 2 * u0) * 0.35 + u0 * 0.65;   // ほぼ一定の速さで、端だけ少し緩める
+      return [0, 1, 2].map((k) => fr.from[k] + (fr.to[k] - fr.from[k]) * u);
+    }
+
     function drawButtons(g, img, t, hold) {
       g.fillStyle = '#000';
       g.fillRect(0, 0, SW, SH);
@@ -321,7 +340,7 @@
         const swapped = s.src2 && s.swapAt != null && t >= s.swapAt;
         const img = image(swapped ? s.src2 : s.src) || image(s.src);
         if (s.src2) image(s.src2);          // 先に読んでおく
-        if (img) cover(sg, img, img.naturalWidth, img.naturalHeight, 1 + 0.07 * Math.min(1, shown / 16000));
+        if (img) place(sg, img, img.naturalWidth, img.naturalHeight, frameAt(s, shown));
         // 入れ替わりの瞬間: 画が横に裂ける（0.16 秒）
         if (s.swapAt != null && t >= s.swapAt - 60 && t < s.swapAt + 100 && img) {
           for (let k = 0; k < 7; k++) {
@@ -338,8 +357,7 @@
         }
       } else if (s.kind === 'video') {
         const v = s.video;
-        if (v && v.readyState >= 2 && v.videoWidth) cover(sg, v, v.videoWidth, v.videoHeight, 1);
-        else { const img = image(s.src); if (img) cover(sg, img, img.naturalWidth, img.naturalHeight, 1); }
+        if (v && v.readyState >= 2 && v.videoWidth) place(sg, v, v.videoWidth, v.videoHeight, frameAt(s, shown));
       } else if (s.kind === 'buttons') {
         drawButtons(sg, image(s.src), shown, s.hold);
       } else if (s.kind === 'snow') {
@@ -690,6 +708,18 @@
         docDirty = true;
       },
       snapshot: () => ({ frames, light: { ...light }, canFilter }),
+      // テレビに映す絵を先に読む。読み終わる前の絵は描かれず、切り替えの最初のコマが黒くなる
+      preload(srcs) {
+        return Promise.all(srcs.map((src) => {
+          image(src);
+          const img = cache.get(src);
+          if (img.complete && img.naturalWidth) return null;
+          return new Promise((res, rej) => {
+            img.addEventListener('load', res, { once: true });
+            img.addEventListener('error', () => rej(new Error(`絵が読めない: ${src}`)), { once: true });
+          });
+        }));
+      },
     };
   }
 

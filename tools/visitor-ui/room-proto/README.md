@@ -65,6 +65,43 @@
 
 アプリは場面ごとに `film.ja.fromMs`（その場面の分の頭）から流し、文の窓は `voiceMs` に文の頭を足した位置で切る。場面をまたぐときは同じ動画を読み直さずに続けて流す（乱れを挟まない）。最初の文の字幕は声の頭まで待つ。動画が読めないときは、その説明の間だけ声とテレビの形へ戻る。
 
+## テレビの中身
+
+何をどの文から映し、テレビの中でどう寄るかは `tv-programme.json`。ツインの構図は `tv-shots.json`（`twin_render.py --shotfile` が読む）。英語と仏語のアプリはこれを読まず、`briefing-v1.json` の `figures` のまま。
+
+| 文 | テレビの中 |
+|---|---|
+| 調査対象 1〜2 文目 | 床すれすれから見上げた L 字のカーテン。電球が真上。機材と人は消してある。2 文かけてカーテンの角へ寄る（`tv-room-v1.jpg`） |
+| 3〜4 文目 | 人形の記録写真。人形を真ん中へ寄せながら 1.4 倍まで寄る |
+| 装置 2 文 | 観測装置。わずかに寄る |
+| 「室内のカメラが捉えた…」 | 三脚のスマホの後ろの低い所から。下にピントの合った画面（本人が映っている）、その上にぼけた本人。画面へ寄り、最後は本人の頭が上へ外れる（`tv-ots-v1.jpg`） |
+| 「…周りを三周」 | 天井近くから見下ろした 1 周を 2.5 倍速で（`tv-top-v1.mp4`） |
+| 「右手で手すりを…」 | カメラ A の配信を実時間で。人が画に居る 5.4 秒までを使い、文の終わりにちょうど 5.4 秒へ着く（`landOnOut`） |
+| 「…違和感を覚えたら」 | 同じ配信の 5.4 秒のコマで止め、人へ寄る。乱れも音も挟まない（`seamless`） |
+| ボタンの図 | 従来どおり |
+
+`frame` は `[x, y, 倍率]`。x, y はその絵の中でテレビの真ん中に置く点、倍率 1 はテレビを隙間なく埋める大きさ。端に隙間が出る所は寄せて止まる（`room-stage.js` の `place`）。
+
+### テレビの中身を撮り直す
+
+```powershell
+$S = "tools/visitor-ui/room-proto/tv-shots.json"
+py -3.11 tools/twin/shoot.py --tag tvfeedA --shots A --w 960 --spp 128 --person 1 --shotfile $S          # スマホの画面に映す画（先に）
+py -3.11 tools/twin/shoot.py --tag tvstills --shots tv_room,tv_ots --w 1440 --spp 384 --person 1 --shotfile $S
+& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python tools/twin/twin_render.py -- seq --route forward --cams tv_top --w 960 --spp 64 --plate-spp 512 --shotfile $S
+py -3.11 tools/twin/seq_post.py forward --cams tv_top
+py -3.11 tools/visitor-ui/room-proto/make-tv.py still <tv_room.png> tv-room-v1
+py -3.11 tools/visitor-ui/room-proto/make-tv.py still <tv_ots.png> tv-ots-v1 --lift 0.268,0.668,0.628,0.9,2.6
+py -3.11 tools/visitor-ui/room-proto/make-tv.py clip <game/forward/tv_top.mp4> tv-top-v1
+py -3.11 tools/visitor-ui/room-proto/make-tv.py clip tablet/app/src/main/assets/web/asset/twin-walk-v1.mp4 tv-feed-a-v1 --trim 10.3
+```
+
+- 静止画は 1 枚 10〜40 秒、見下ろしの 1 周（339 コマ）は他の描画と並べて 50 分前後（RTX 4090 Laptop）
+- `make-tv.py` は明るさの中央値を 44 へ沈める（ツインの仕上げは中央値 90 前後で、人形の記録写真の 21 と並べるとテレビの中で白く浮いた）。`--lift` はスマホの画面の箱だけを持ち上げる（沈めると光る画面が周りより暗くなった）
+- ⚠ スマホの真後ろから撮ると、本人がスマホの陰に隠れる。画面を画の下に置き、本人を上に出す
+- ⚠ 手すりを持つ手の寄りは撮ったが使っていない。代役の手が手すりに掛かって見えない（前・横・後ろの 3 方向で試した）
+- ⚠ B と C の担当の配信は、人が小さいか画の端で切れる。テレビに使うのは A の頭 5.4 秒だけ
+
 ## 演出（上から起きる順）
 
 博士の目は画面に入れない（0342）。博士が写る構図は上の端を目のすぐ下に置く。台本を変えたら、コンソールで `RoomProto.eyeCheck()` が空の配列を返すことを確かめる。

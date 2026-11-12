@@ -1,0 +1,42 @@
+{
+  "_note": "博士の部屋のテレビに、どの文から何をどう映すか（日本語の焼いた動画だけが読む。英仏のアプリは briefing-v1.json の figures のまま）。src は ./asset/ か ./layers/ からの道。frame は [x, y, 倍率] を from から to へ、次の絵が来るまでの間にゆっくり動かす。x, y はその絵の中でテレビの真ん中に置く点（0〜1）、倍率 1 はテレビを隙間なく埋める大きさ。動画の rate は再生の速さ、in・out は使う区間（秒）",
+  "items": [
+    {
+      "_note": "管理番号の部屋。床すれすれから見上げた L 字のカーテンへ、2 文かけて寄る。電球は最後まで画の上に残す",
+      "scene": "subject", "cue": 0, "src": "./layers/tv-room-v1.jpg", "tag": true,
+      "frame": { "from": [0.5, 0.52, 1.0], "to": [0.5, 0.47, 1.14] }
+    },
+    {
+      "_note": "人形。寄りながら人形を真ん中へ。頭が傾く瞬間は 1.2 倍前後",
+      "scene": "subject", "cue": 2, "src": "./asset/doll-file-v1.jpg", "tag": true, "doll": true,
+      "frame": { "from": [0.56, 0.55, 1.0], "to": [0.63, 0.5, 1.42] }
+    },
+    {
+      "_note": "観測装置。左上へわずかに寄る",
+      "scene": "report", "cue": 0, "src": "./asset/device-quest3-v1.jpg",
+      "frame": { "from": [0.47, 0.47, 1.0], "to": [0.43, 0.43, 1.12] }
+    },
+    {
+      "_note": "室内のカメラ。ぼけた本人と、画面の中の本人。画面へ寄り、最後は本人の頭が上へ外れる",
+      "scene": "report", "cue": 2, "src": "./layers/tv-ots-v1.jpg",
+      "frame": { "from": [0.47, 0.55, 1.0], "to": [0.46, 0.68, 1.22] }
+    },
+    {
+      "_note": "カーテンの周りを回る。天井から見下ろした 1 周を 2.5 倍速で",
+      "scene": "report", "cue": 3, "src": "./layers/tv-top-v1.mp4", "rate": 2.5, "in": 0, "out": 22.5,
+      "frame": { "from": [0.5, 0.5, 1.0], "to": [0.47, 0.5, 1.06] }
+    },
+    {
+      "_note": "手すりを持って、ゆっくり。カメラ A の配信を実時間で。人が画の中に居る 5.4 秒までを使い、次の文へ移る瞬間に 5.4 秒のコマへ着くよう頭を逆算する（それより後は左の端で切れ、B と C の担当は人が小さいか切れる）",
+      "scene": "report", "cue": 4, "src": "./layers/tv-feed-a-v1.mp4", "rate": 1, "in": 0.2, "out": 5.4, "landOnOut": true
+    },
+    {
+      "_note": "「映像に少しでも違和感を覚えたら」。配信の最後のコマ（5.4 秒）で止め、人へゆっくり寄る。前の絵と同じ画なので切り替えの乱れも音も入れない",
+      "scene": "report", "cue": 5, "src": "./layers/tv-feed-a-hold-v1.jpg", "seamless": true,
+      "frame": { "from": [0.5, 0.5, 1.0], "to": [0.42, 0.36, 1.35] }
+    },
+    {
+      "scene": "report", "cue": 6, "src": "./asset/equipment-controller-v1.png", "kind": "buttons", "hold": true
+    }
+  ]
+}

@@ -166,40 +166,62 @@
   }
   const DOLL_SWAP = longestQuiet('subject', 2) ?? at('subject', 2, 0.42);
   const withDoll = q.get('doll') !== '0' && Boolean(room.dollTilt);
-  const walk = document.createElement('video');
-  walk.muted = true; walk.loop = true; walk.playsInline = true; walk.preload = 'auto';
-  const programme = [];     // { t, kind, src, tag, hold, video, src2, swapAt }
-  for (const scene of briefing.scenes) {
-    if (scene.layout !== 'doctor-evidence') continue;
-    const figs = [{ fromCue: 0, image: scene.image, tag: scene.tag }, ...(scene.figures || [])];
-    for (const fg of figs) {
-      const first = scene.id === 'subject' && fg.fromCue === 0;
-      const t = first ? TV_ON : at(scene.id, fg.fromCue) - LEAD;
-      const isLoop = scene.loopVideo && fg.fromCue === scene.loopVideo.startCue;
-      if (isLoop) walk.src = `./asset/${scene.loopVideo.file}`;
-      const isDoll = withDoll && fg.image === 'doll-file-v1.jpg';
-      programme.push({
-        t,
-        kind: fg.kind === 'buttons' ? 'buttons' : isLoop ? 'video' : 'image',
-        src: `./asset/${fg.image}`,
-        tag: fg.tag ? (fg.tag[lang] || fg.tag.ja) : '',
-        hold: fg.hold ? (fg.hold[lang] || fg.hold.ja) : '',
-        video: isLoop ? walk : null,
-        src2: isDoll ? `./layers/${room.dollTilt.file}` : null,
-        swapAt: isDoll ? DOLL_SWAP : null,
-        first,
-      });
+  // テレビの番組表は tv-programme.json（どの文から・何を・テレビの中でどう寄るか）。構図の撮り方は tv-shots.json
+  const tvPlan = await fetch('./tv-programme.json').then((r) => r.json());
+  const videos = new Map();   // src → <video>（同じ動画は 1 つを使い回す）
+  const videoFor = (src) => {
+    if (!videos.has(src)) {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = src;
+      videos.set(src, v);
     }
+    return videos.get(src);
+  };
+  const local = (o) => (o ? (o[lang] || o.ja) : '');
+  const programme = [];     // { t, until, kind, src, tag, hold, video, rate, in, out, frame, src2, swapAt, first }
+  for (const it of tvPlan.items) {
+    const scene = briefing.scenes.find((s) => s.id === it.scene);
+    if (!scene) throw new Error(`tv-programme: 場面が無い ${it.scene}`);
+    const first = programme.length === 0;
+    const isVideo = /\.mp4$/.test(it.src);
+    const isDoll = withDoll && Boolean(it.doll);
+    const buttonsFig = (scene.figures || []).find((f) => f.kind === 'buttons');
+    programme.push({
+      t: first ? TV_ON : at(it.scene, it.cue) - LEAD,
+      kind: it.kind === 'buttons' ? 'buttons' : isVideo ? 'video' : 'image',
+      src: it.src,
+      tag: it.tag ? local(scene.tag) : '',
+      hold: it.hold && buttonsFig ? local(buttonsFig.hold) : '',
+      video: isVideo ? videoFor(it.src) : null,
+      rate: it.rate || 1,
+      in: it.in || 0,
+      out: it.out ?? null,
+      frame: it.frame || null,
+      land: Boolean(it.landOnOut),
+      seamless: Boolean(it.seamless),
+      src2: isDoll ? `./layers/${room.dollTilt.file}` : null,
+      swapAt: isDoll ? DOLL_SWAP : null,
+      first,
+    });
   }
   programme.push({ t: at('wear', 0) - LEAD, kind: 'snow' });
   programme.sort((a, b) => a.t - b.t);
-  for (const p of programme) for (const src of [p.src, p.src2]) if (src) { const im = new Image(); im.src = src; }
+  programme.forEach((p, k) => { p.until = k + 1 < programme.length ? programme[k + 1].t : TOTAL; });
+  // landOnOut: 次の絵へ移る瞬間に out のコマへ着くよう、頭を逆算して 1 回だけ流す（次が同じ画の止めのとき）
+  for (const p of programme) if (p.land) p.in = Math.max(0, p.out - ((p.until - p.t) / 1000) * p.rate);
+  await stage.preload([...new Set(programme.flatMap((p) => (p.video ? [] : [p.src, p.src2])).filter(Boolean))]);
+  // 動画の、時刻 t での再生位置（秒）。in〜out を rate の速さで繰り返す
+  function videoTime(p, t) {
+    const len = (p.out ?? (p.video.duration || 1)) - p.in;
+    const run = (Math.max(0, t - p.t) / 1000) * p.rate;
+    return p.land ? p.in + Math.min(run, len - 0.001) : p.in + run % Math.max(0.05, len);
+  }
 
   function screenAt(t) {
     if (t < TV_ON) return { power: false };
     let cur = programme[0];
     for (const p of programme) if (p.t <= t) cur = p;
-    return { power: true, powerAt: TV_ON, kind: cur.kind, src: cur.src, tag: cur.tag, hold: cur.hold, video: cur.video, src2: cur.src2, swapAt: cur.swapAt, shownAt: cur.t, channelAt: cur.first ? null : cur.t };
+    return { power: true, powerAt: TV_ON, kind: cur.kind, src: cur.src, tag: cur.tag, hold: cur.hold, video: cur.video, src2: cur.src2, swapAt: cur.swapAt, shownAt: cur.t, span: cur.until - cur.t, frame: cur.frame, channelAt: cur.first || cur.seamless ? null : cur.t, item: cur };
   }
 
   // ---- カメラ（部屋の絵の座標）と、ピント ----
@@ -236,10 +258,10 @@
     // 手順: 装置 → 画面 → 室内のカメラ（少しずつ寄る）
     { t: at('report', 0) - 200, dur: 3400, to: SHOT.tvx, arc: 'out' },
     { t: at('report', 1), dur: at('report', 3) - at('report', 1) - 300, to: SHOT.tvx2, ease: 'linear' },
-    // 「その映像を見ながら…三周」テレビの中へ入り、手すりの文の終わりまで居る
+    // 「その映像を見ながら…三周」テレビの中へ入り、「…違和感を覚えたら、」まで居る（テレビの中で配信が止まり、人へ寄るのを見せる）
     { t: at('report', 3) - 200, dur: 3200, to: SHOT.in0 },
-    { t: at('report', 3) + 3000, dur: at('report', 5) - at('report', 3) - 3000, to: SHOT.in1, ease: 'linear' },
-    { t: at('report', 5) - 150, dur: 3000, to: SHOT.cu, arc: 'back' },     // 「…報告してください。」口元へ
+    { t: at('report', 3) + 3000, dur: at('report', 5, 0.55) - at('report', 3) - 3000, to: SHOT.in1, ease: 'linear' },
+    { t: at('report', 5, 0.55) - 150, dur: 2600, to: SHOT.cu, arc: 'back' },     // 「報告してください。」口元へ
     { t: at('report', 6) - 200, dur: 3400, to: SHOT.in0, arc: 'out' },     // ボタンの図
     { t: at('report', 7, 0.45), dur: 3400, to: SHOT.ots },
     // 終わり: 腰までの引きから、文ごとに寄っていき、「健闘を祈ります。」は口元
@@ -251,7 +273,7 @@
     { t: TV_ON + 1700, dur: 1400, to: 1 },
     { t: at('subject', 3), dur: 950, to: 0 },
     { t: at('report', 0) - 200, dur: 950, to: 1 },
-    { t: at('report', 5), dur: 950, to: 0 },
+    { t: at('report', 5, 0.55), dur: 950, to: 0 },
     { t: at('report', 6) - 200, dur: 950, to: 1 },
     { t: at('wear', 0), dur: 1100, to: 0 },
   ];
@@ -314,12 +336,12 @@
     { name: 'tvhiss', t: TV_ON + 300, dur: CUT_AT - TV_ON - 300, db: -46, fin: 0.8, fout: 0.05 },
   ];
   let ch = 0;
-  for (const p of programme) {
-    if (p.first) continue;
-    // デッキは入る音だけ使う（回り出す音は音程が出るので切る）
-    if (p.kind === 'video') sound.push({ name: 'vhs', t: p.t - 260, dur: 650, db: -29, fout: 0.3 });
+  programme.forEach((p, k) => {
+    if (p.first || p.seamless) return;
+    // デッキは入る音だけ使う（回り出す音は音程が出るので切る）。動画から動画へは切り替えの音
+    if (p.kind === 'video' && programme[k - 1]?.kind !== 'video') sound.push({ name: 'vhs', t: p.t - 260, dur: 650, db: -29, fout: 0.3 });
     else sound.push({ name: `channel${(ch++ % 3) + 1}`, t: p.t - 30, dur: 480, db: -30, fout: 0.14 });
-  }
+  });
   if (withDoll) {
     sound.push({ name: 'static', t: DOLL_SWAP - 50, dur: 170, db: -34, fin: 0.004, fout: 0.05 });
     // 人形が動いてから、博士が「任務です」と言い終わるまで、低い圧だけが居る
@@ -360,8 +382,19 @@
       } else if (!a.audio.paused) a.audio.pause();
     }
     const scr = screenAt(tM);
-    if (scr.kind === 'video' && playing) { if (walk.paused) walk.play().catch(() => {}); }
-    else if (!walk.paused) walk.pause();
+    for (const v of videos.values()) if (v !== scr.video && !v.paused) v.pause();
+    if (scr.kind === 'video' && scr.video && !document.body.classList.contains('is-export')) {
+      const v = scr.video;
+      const want = videoTime(scr.item, tM);
+      if (v.playbackRate !== scr.item.rate) v.playbackRate = scr.item.rate;
+      if (playing) {
+        if (v.paused) { v.currentTime = want; v.play().catch(() => {}); }
+        else if (Math.abs(v.currentTime - want) > 0.15) v.currentTime = want;
+      } else {
+        if (!v.paused) v.pause();
+        if (!v.seeking && Math.abs(v.currentTime - want) > 0.03) v.currentTime = want;
+      }
+    }
     if (faceVideo && !document.body.classList.contains('is-export')) {   // 書き出し中は export が位置を決める
       const want = Math.min(faceVideo.duration || 0, tM / 1000);
       if (playing) {
@@ -438,10 +471,10 @@
       for (let n = n0; n < n1; n++) {
         const t = n * 1000 / fps;
         const scr = screenAt(t);
-        if (scr.kind === 'video' && walk.duration) {
-          const want = ((t - scr.shownAt) / 1000) % walk.duration;
-          if (Math.abs(walk.currentTime - want) > 0.001) {
-            await seekTo(walk, want);
+        if (scr.kind === 'video' && scr.video?.duration) {
+          const want = videoTime(scr.item, t);
+          if (Math.abs(scr.video.currentTime - want) > 0.001) {
+            await seekTo(scr.video, want);
           }
         }
         await seekFace(t / 1000);

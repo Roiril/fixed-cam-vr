@@ -88,8 +88,8 @@
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v1.mp4",
-          "poster": "doctor-room-introduction-v1.jpg",
+          "file": "doctor-room-ja-v2.mp4",
+          "poster": "doctor-room-introduction-v2.jpg",
           "fromMs": 0,
           "voiceMs": 1500
         }
@@ -98,7 +98,7 @@
     {
       "id": "subject",
       "layout": "doctor-evidence",
-      "image": "twin-room-v1.jpg",
+      "image": "twin-room-v2.jpg",
       "doctorImage": "subject-doctor-v2.jpg",
       "doctorAnchor": 50,
       "alt": {
@@ -203,8 +203,8 @@
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v1.mp4",
-          "poster": "doctor-room-subject-v1.jpg",
+          "file": "doctor-room-ja-v2.mp4",
+          "poster": "doctor-room-subject-v2.jpg",
           "fromMs": 17053,
           "voiceMs": 18753
         }
@@ -224,11 +224,11 @@
       "figures": [
         {
           "fromCue": 2,
-          "image": "twin-camera-v1.jpg",
+          "image": "twin-camera-v2.jpg",
           "alt": {
-            "ja": "手すりの前の三脚に据えられた室内のカメラ",
-            "en": "A camera in the room, mounted on a tripod in front of the handrail",
-            "fr": "Une caméra de la pièce, fixée sur un trépied devant la main courante"
+            "ja": "三脚のスマホの画面に、手すりの横を歩く調査員が映る。その奥に、ぼけた本人が立つ",
+            "en": "The phone on the tripod shows an investigator walking beside the handrail; behind it, the same person stands out of focus",
+            "fr": "Le téléphone sur le trépied montre un enquêteur qui marche le long de la main courante ; derrière, la même personne, floue"
           }
         },
         {
@@ -384,8 +384,8 @@
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v1.mp4",
-          "poster": "doctor-room-report-v1.jpg",
+          "file": "doctor-room-ja-v2.mp4",
+          "poster": "doctor-room-report-v2.jpg",
           "fromMs": 47208,
           "voiceMs": 47709
         }
@@ -478,8 +478,8 @@
       },
       "film": {
         "ja": {
-          "file": "doctor-room-ja-v1.mp4",
-          "poster": "doctor-room-wear-v1.jpg",
+          "file": "doctor-room-ja-v2.mp4",
+          "poster": "doctor-room-wear-v2.jpg",
           "fromMs": 95846,
           "voiceMs": 96346
         }
