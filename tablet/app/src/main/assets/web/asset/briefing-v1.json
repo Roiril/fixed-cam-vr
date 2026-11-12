@@ -13,144 +13,196 @@
         "fr": "Le docteur en blouse devant un fond sombre"
       },
       "eyebrow": {
-        "ja": "観測調査",
-        "en": "OBSERVATION SURVEY",
-        "fr": "MISSION D’OBSERVATION"
+        "ja": "着任",
+        "en": "ASSIGNMENT",
+        "fr": "AFFECTATION"
       },
       "title": {
-        "ja": "調査依頼",
-        "en": "Survey briefing",
-        "fr": "Présentation de la mission"
+        "ja": "着任",
+        "en": "Assignment",
+        "fr": "Affectation"
       },
       "caption": {
-        "ja": "博士 · 怪異調査統括",
-        "en": "Doctor · Anomalous investigations",
-        "fr": "Docteur · Supervision des enquêtes"
+        "ja": "名乗らない上司",
+        "en": "A supervisor who gives no name",
+        "fr": "Un supérieur qui ne se nomme pas"
       },
       "cues": {
         "ja": [
           {
-            "text": "はじめまして。日本怪異研究所へようこそ。私はあなたの上司にあたる、博士です。",
-            "durationMs": 10037
+            "text": "私は……あなたの上司、とでも言っておきましょうか。",
+            "durationMs": 5286
           },
           {
-            "text": "あなたに、ある調査を依頼します。調査員は、あなたで三十七人目です。",
-            "durationMs": 8649
+            "text": "あなたは今日から、この研究所の調査員です。",
+            "durationMs": 5283
+          },
+          {
+            "text": "これより、調査対象について説明します。",
+            "durationMs": 5293
           }
         ],
         "en": [
           {
-            "text": "Nice to meet you. Welcome to the Japan Institute of Anomalies. I am the doctor, your supervisor.",
-            "durationMs": 6500
+            "text": "I am... your supervisor. Let us leave it at that.",
+            "durationMs": 4800
           },
           {
-            "text": "I have a survey for you. You are our thirty-seventh investigator.",
-            "durationMs": 5600
+            "text": "As of today, you are an investigator of this institute.",
+            "durationMs": 4400
+          },
+          {
+            "text": "I will now brief you on the subject of your survey.",
+            "durationMs": 4200
           }
         ],
         "fr": [
           {
-            "text": "Enchanté. Bienvenue à l'Institut japonais de recherche sur les phénomènes étranges. Je suis le docteur, votre supérieur.",
-            "durationMs": 7500
+            "text": "Je suis… votre supérieur. Disons-le ainsi.",
+            "durationMs": 4800
           },
           {
-            "text": "J’ai une enquête à vous confier. Vous êtes notre trente-septième enquêteur.",
-            "durationMs": 6000
+            "text": "À partir d’aujourd’hui, vous êtes enquêteur de cet institut.",
+            "durationMs": 4800
+          },
+          {
+            "text": "Je vais maintenant vous présenter l’objet de votre enquête.",
+            "durationMs": 4600
           }
         ]
       },
       "audio": {
-        "ja": "introduction-ja-v3.mp3"
+        "ja": "introduction-ja-v4.mp3"
       }
     },
     {
       "id": "subject",
       "layout": "doctor-evidence",
-      "image": "camera-01-doll.webp",
+      "image": "entrance-doll-v1.png",
       "doctorImage": "subject-doctor-v2.jpg",
       "doctorAnchor": 50,
       "alt": {
-        "ja": "実際の撮影場所にある幕と手すりを人形視点で加工した写真",
-        "en": "The actual filming location, with curtains and a handrail, processed as the doll's camera view",
-        "fr": "Le lieu de tournage réel, avec rideaux et main courante, traité comme la vue de la caméra de la poupée"
+        "ja": "黒いカーテンの前に立つ日本人形の記録写真",
+        "en": "A file photograph of a Japanese doll standing in front of a black curtain",
+        "fr": "Photographie d’archive d’une poupée japonaise debout devant un rideau noir"
       },
+      "tag": {
+        "ja": "管理番号 0514",
+        "en": "CONTROL No. 0514",
+        "fr": "Nº DE CONTRÔLE 0514"
+      },
+      "figures": [
+        {
+          "fromCue": 4,
+          "image": "camera-01-doll.webp",
+          "alt": {
+            "ja": "室内のカメラが捉えたカーテンと手すり",
+            "en": "The curtain and handrail as seen by a camera in the room",
+            "fr": "Le rideau et la main courante vus par une caméra de la pièce"
+          }
+        }
+      ],
       "eyebrow": {
-        "ja": "調査方法",
-        "en": "SURVEY PROCEDURE",
-        "fr": "DÉROULEMENT"
+        "ja": "調査対象",
+        "en": "SUBJECT",
+        "fr": "OBJET"
       },
       "title": {
-        "ja": "探索方法",
-        "en": "How to explore",
-        "fr": "Méthode d'exploration"
+        "ja": "調査対象と手順",
+        "en": "Subject and procedure",
+        "fr": "Objet et procédure"
       },
       "caption": {
-        "ja": "SH-KB-02 · 映像を見ながら歩いて調査",
-        "en": "SH-KB-02 · Observe as you walk",
-        "fr": "SH-KB-02 · Observez en marchant"
+        "ja": "管理番号 0514 · カーテンの周りを三周",
+        "en": "Control No. 0514 · Three laps around the curtain",
+        "fr": "Nº de contrôle 0514 · Trois tours du rideau"
       },
       "loopVideo": {
         "file": "kabe-one-lap-doll-v1.mp4",
-        "startCue": 1
+        "startCue": 4
       },
       "cues": {
         "ja": [
           {
-            "text": "こちらのカーテンです。ある家の子ども部屋から、回収しました。",
-            "durationMs": 7170
+            "text": "調査対象は、管理番号0514に指定された異常存在です。",
+            "durationMs": 8077
+          },
+          {
+            "text": "ある空き家の子供部屋から見つかった、カーテンと人形です。",
+            "durationMs": 6555
+          },
+          {
+            "text": "外見上は、一般的な人形と変わりません。しかし、直接見つめた者は、見返されたと証言しています。",
+            "durationMs": 10931
+          },
+          {
+            "text": "調査員は、あなたで三十七人目です。",
+            "durationMs": 5381
           },
           {
             "text": "観測装置をつけ、このカーテンの周りを三周してください。廻るほど、近づいてきます。",
-            "durationMs": 8964
+            "durationMs": 9099
           },
           {
-            "text": "その間は右手で手すりを持ち、決して離さないでください。",
-            "durationMs": 6799
-          },
-          {
-            "text": "異変を見逃さないよう、ゆっくり慎重に歩いてください。",
-            "durationMs": 6673
+            "text": "足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり歩いてください。",
+            "durationMs": 8125
           }
         ],
         "en": [
           {
-            "text": "This is the curtain. We recovered it from a child’s room in a certain house.",
-            "durationMs": 5600
+            "text": "The subject is an anomalous entity, designated Control Number 0514.",
+            "durationMs": 5200
+          },
+          {
+            "text": "A curtain and a doll, found in a child’s room in an abandoned house.",
+            "durationMs": 5200
+          },
+          {
+            "text": "In appearance, it is no different from an ordinary doll. But those who stared at it directly testify that it stared back.",
+            "durationMs": 8600
+          },
+          {
+            "text": "You are our thirty-seventh investigator.",
+            "durationMs": 3600
           },
           {
             "text": "Put on the observation device and walk around this curtain three times. The more you circle it, the closer it comes.",
             "durationMs": 8200
           },
           {
-            "text": "Hold the handrail with your right hand and keep hold of it as you walk.",
-            "durationMs": 5000
-          },
-          {
-            "text": "Your footing will be hard to see, so walk very slowly and carefully.",
-            "durationMs": 5000
+            "text": "You will not see your feet. Hold the handrail with your right hand, never let go, and walk slowly.",
+            "durationMs": 7000
           }
         ],
         "fr": [
           {
-            "text": "Voici le rideau. Nous l’avons récupéré dans la chambre d’un enfant.",
+            "text": "L’objet est une entité anormale, désignée sous le numéro de contrôle 0514.",
             "durationMs": 5600
           },
           {
-            "text": "Mettez le dispositif d'observation et faites trois fois le tour de ce rideau. Plus vous tournez, plus cela se rapproche.",
+            "text": "Un rideau et une poupée, trouvés dans la chambre d’un enfant, dans une maison abandonnée.",
+            "durationMs": 6400
+          },
+          {
+            "text": "En apparence, rien ne la distingue d’une poupée ordinaire. Mais ceux qui l’ont regardée fixement témoignent qu’elle leur a rendu leur regard.",
+            "durationMs": 9800
+          },
+          {
+            "text": "Vous êtes notre trente-septième enquêteur.",
+            "durationMs": 3800
+          },
+          {
+            "text": "Mettez le dispositif d’observation et faites trois fois le tour de ce rideau. Plus vous tournez, plus cela se rapproche.",
             "durationMs": 8800
           },
           {
-            "text": "Tenez la main courante de la main droite et ne la lâchez pas en marchant.",
-            "durationMs": 5500
-          },
-          {
-            "text": "Vous distinguerez mal le sol à vos pieds : avancez très lentement et avec prudence.",
-            "durationMs": 5500
+            "text": "Vous ne verrez pas vos pieds. Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.",
+            "durationMs": 8000
           }
         ]
       },
       "audio": {
-        "ja": "subject-ja-v3.mp3"
+        "ja": "subject-ja-v4.mp3"
       }
     },
     {
@@ -164,6 +216,32 @@
         "en": "The observation headset and left controller on black cloth, with a paper tag reading “Observation device” tied to the headset",
         "fr": "Le casque d’observation et la manette gauche posés sur un tissu noir, avec une étiquette « dispositif d’observation » attachée au casque"
       },
+      "figures": [
+        {
+          "fromCue": 1,
+          "image": "camera-01-doll.webp",
+          "alt": {
+            "ja": "室内のカメラが捉えたカーテンの映像",
+            "en": "Footage of the curtain from a camera in the room",
+            "fr": "Image du rideau filmée par une caméra de la pièce"
+          }
+        },
+        {
+          "fromCue": 2,
+          "image": "equipment-controller-v1.png",
+          "kind": "buttons",
+          "alt": {
+            "ja": "左コントローラーの図。上面のXとYのボタンが赤い。どちらかを1秒間押し続ける",
+            "en": "A diagram of the left controller. The X and Y buttons on top are red. Hold either one for one second",
+            "fr": "Schéma de la manette gauche. Les boutons X et Y, sur le dessus, sont en rouge. Maintenez l’un des deux pendant une seconde"
+          },
+          "hold": {
+            "ja": "1秒 長押し",
+            "en": "Hold 1 s",
+            "fr": "Maintenir 1 s"
+          }
+        }
+      ],
       "eyebrow": {
         "ja": "異変の報告",
         "en": "REPORTING ANOMALIES",
@@ -182,20 +260,20 @@
       "cues": {
         "ja": [
           {
-            "text": "これが、怪異を記録し、解析する観測装置です。",
-            "durationMs": 5933
+            "text": "これが、怪異を記録し、解析するための観測装置です。",
+            "durationMs": 5840
           },
           {
-            "text": "怪異を直接見ると、見返されます。だから、装置があなたの代わりに見ます。",
-            "durationMs": 9034
+            "text": "あなたの代わりに、室内のカメラが対象を見ます。その映像に、あるはずのないものが映ったら、それが異変です。",
+            "durationMs": 12150
           },
           {
-            "text": "異変に気づいたら、左コントローラーのXかYを1秒間、長押ししてください。",
-            "durationMs": 7689
+            "text": "異変に気づいたら、左コントローラーのボタンを1秒間、長押ししてください。XとY、どちらでも構いません。",
+            "durationMs": 11071
           },
           {
-            "text": "装置のエージェントが解析し、取り除きます。",
-            "durationMs": 4938
+            "text": "装置のエージェントが解析し、取り除きます。見間違いでも構いません。",
+            "durationMs": 8251
           }
         ],
         "en": [
@@ -204,39 +282,39 @@
             "durationMs": 4800
           },
           {
-            "text": "If you look at an anomaly directly, it looks back. So the device will look in your place.",
-            "durationMs": 6800
+            "text": "Cameras in the room will look at the subject in your place. If their footage shows something that should not be there, that is an anomaly.",
+            "durationMs": 9600
           },
           {
-            "text": "If you spot an anomaly, hold X or Y on the left controller for one second.",
-            "durationMs": 5600
+            "text": "If you notice an anomaly, hold a button on the left controller for one second. X or Y, either will do.",
+            "durationMs": 7400
           },
           {
-            "text": "The agent in the device will analyse it and remove it.",
-            "durationMs": 4000
+            "text": "The agent in the device will analyse it and remove it. It does not matter if you are mistaken.",
+            "durationMs": 6600
           }
         ],
         "fr": [
           {
-            "text": "Voici le dispositif d’observation. Il enregistre et analyse les phénomènes anormaux.",
-            "durationMs": 5400
+            "text": "Voici le dispositif d’observation. Il enregistre et analyse les anomalies.",
+            "durationMs": 5200
           },
           {
-            "text": "Si vous regardez une anomalie en face, elle vous regarde aussi. Le dispositif regardera donc à votre place.",
-            "durationMs": 7400
+            "text": "Les caméras de la pièce regarderont l’objet à votre place. Si leurs images montrent quelque chose qui ne devrait pas être là, c’est une anomalie.",
+            "durationMs": 10200
           },
           {
-            "text": "Si vous repérez une anomalie, maintenez X ou Y sur la manette gauche pendant une seconde.",
+            "text": "Si vous remarquez une anomalie, maintenez un bouton de la manette gauche pendant une seconde. X ou Y, peu importe.",
+            "durationMs": 8000
+          },
+          {
+            "text": "L’agent du dispositif l’analysera et l’éliminera. Peu importe si vous vous trompez.",
             "durationMs": 6000
-          },
-          {
-            "text": "L’agent du dispositif l’analysera et l’éliminera.",
-            "durationMs": 4200
           }
         ]
       },
       "audio": {
-        "ja": "report-ja-v3.mp3"
+        "ja": "report-ja-v4.mp3"
       }
     },
     {
@@ -256,9 +334,9 @@
         "fr": "FIN DES CONSIGNES"
       },
       "title": {
-        "ja": "装着案内",
-        "en": "Putting on the device",
-        "fr": "Mise en place du dispositif"
+        "ja": "終了と装着",
+        "en": "Ending and equipment",
+        "fr": "Fin et équipement"
       },
       "caption": {
         "ja": "装着後はエージェントが案内します",
@@ -268,18 +346,34 @@
       "cues": {
         "ja": [
           {
-            "text": "では。左手にコントローラーを持って観測装置をつけてください。",
-            "durationMs": 6965
+            "text": "調査が終わったら、係の者が装置を外すまで、動かずにお待ちください。",
+            "durationMs": 7260
+          },
+          {
+            "text": "続けられなくなったら、その場で立ち止まり、装置を外してください。",
+            "durationMs": 6826
+          },
+          {
+            "text": "では。左手にコントローラーを持って、観測装置をつけてください。",
+            "durationMs": 6736
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 1491
+            "durationMs": 1462
           }
         ],
         "en": [
           {
-            "text": "Now hold the controller in your left hand and put on the device.",
-            "durationMs": 4200
+            "text": "When the survey ends, stay still until a member of staff removes the device.",
+            "durationMs": 5400
+          },
+          {
+            "text": "If you cannot continue, stop where you are and take off the device.",
+            "durationMs": 5000
+          },
+          {
+            "text": "Now. Hold the controller in your left hand and put on the observation device.",
+            "durationMs": 5400
           },
           {
             "text": "Good luck with your survey.",
@@ -288,8 +382,16 @@
         ],
         "fr": [
           {
-            "text": "À présent, prenez la manette dans la main gauche et mettez le dispositif.",
-            "durationMs": 4200
+            "text": "À la fin de l’enquête, restez immobile jusqu’à ce qu’un membre du personnel vous retire le dispositif.",
+            "durationMs": 7000
+          },
+          {
+            "text": "Si vous ne pouvez plus continuer, arrêtez-vous sur place et retirez le dispositif.",
+            "durationMs": 5800
+          },
+          {
+            "text": "Bien. Prenez la manette dans la main gauche et mettez le dispositif d’observation.",
+            "durationMs": 5800
           },
           {
             "text": "Bonne chance pour votre enquête.",
@@ -298,7 +400,7 @@
         ]
       },
       "audio": {
-        "ja": "wear-ja-v3.mp3"
+        "ja": "wear-ja-v4.mp3"
       }
     }
   ]

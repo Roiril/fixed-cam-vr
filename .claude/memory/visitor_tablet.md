@@ -10,6 +10,17 @@ metadata:
 
 # タブレットの博士UIを触る前に
 
+## 額の絵は文ごとに替えられる（2026-11-12・LEDGER 0327）
+
+`briefing-v1.json` の場面に `figures`（`fromCue` の昇順）を書くと、その文から先は額の絵がその絵になる。最初の絵は従来どおり `image`。`tag`（3 言語）を書くと額の左上に札が出る（いまは「管理番号 0514」）。`kind: "buttons"` の絵は左コントローラーの図で、X と Y の赤い輪と 1 秒で満ちる輪を DOM で重ねる（`#figureButtons`）。
+
+- ⚠ 輪の位置（`.fb-x` / `.fb-y`）は `equipment-controller-v1.png` の中のボタンの位置と、CSS の拡大（`scale(1.8)`・`transform-origin`）から手で出した値。図か拡大を替えたら、輪を止めて（`animation: none; opacity: 1`）撮って重なりを見る
+- ⚠ 資料の提示の札（`presentReference` の `scene`）は `場面ID:絵の番号`。場面 ID だけにすると、同じ場面の 2 枚目が「変わっていない」と判定されて出ない
+- 3 言語で文の数を揃える（絵と壁の映像は文の番号で決まる。`verify-runtime.cjs` が数える）
+- 日本語の声は `generate-doctor-audio.py`（`VERSION` と `ANCHORS`）。原稿の文の頭を変えたら `ANCHORS` も同じ字にする。合成が通った後に目印で落ちたら `--reuse` で切り直す（合成し直さない）
+- 0258 までの声（voice bEg9geTboP3ghzJ9Rt3L）は 11-12 の夕方には API から使えた。全体 約 124 秒
+- 字幕は `text-wrap: balance` と `word-break: auto-phrase`（語の途中で折らない）。実機の WebView では未確認
+
 ## 誤タップの守り（2026-10-21・LEDGER 0282 の続き）
 
 画面が切り替わった直後 0.5 秒は click を捨てる（`switchClickGuardUntil`。長押しの後の 0.4 秒とは別の札で、同じ capture の click 捨てが両方を見る）。言語の「次へ」と軽減の「この設定で始める」を同じ位置に置いたので、これが無いと二度押しで軽減を飛ばして送る。説明の文は出てから 0.7 秒はタップで送らない（`cueShownAt`）。一時停止の盤は「前・再開・次」だけを上の段に置き、「タイトルに戻る」「言語・軽減を変更」は下の段の両端。⚠ `.stage.has-reference … { left: 67% }` は後ろの `.stage.is-briefing:not(.is-equipment) .briefing-controls` に負けて効いていなかった（盤が額に被っていた）。`is-briefing` を足して強くした。

@@ -1075,6 +1075,7 @@ test('本番JSONと表示指定の境界値を検証する', () => {
   presentation.scenes[0].layout = 'doctor-evidence';
   presentation.scenes[0].doctorAnchor = 0;
   delete presentation.scenes[1].loopVideo;
+  delete presentation.scenes[1].figures;
   presentation.scenes[1].layout = 'doctor-center';
   presentation.scenes[1].doctorAnchor = 100;
   assert.doesNotThrow(() => runtime.validateBriefingData(presentation));
@@ -1093,13 +1094,84 @@ test('本番JSONと表示指定の境界値を検証する', () => {
   }
   for (const mutate of [
     (data) => { data.scenes[1].loopVideo.file = '../other.mp4'; },
-    (data) => { data.scenes[1].loopVideo.startCue = 4; },
+    (data) => { data.scenes[1].loopVideo.startCue = data.scenes[1].cues.ja.length; },
     (data) => { data.scenes[1].loopVideo.startCue = -1; },
   ]) {
     const invalid = clone(briefing);
     mutate(invalid);
     assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing loop video/);
   }
+  // 文ごとに替わる絵（figures）。順・範囲・ファイル名・図の種類を外すと読み込まない
+  const report = (data) => data.scenes.find((scene) => scene.id === 'report');
+  for (const mutate of [
+    (data) => { report(data).figures[0].fromCue = 0; },
+    (data) => { report(data).figures[1].fromCue = report(data).figures[0].fromCue; },
+    (data) => { report(data).figures[1].fromCue = report(data).cues.ja.length; },
+    (data) => { report(data).figures[0].image = '../x.png'; },
+    (data) => { delete report(data).figures[0].alt.fr; },
+    (data) => { report(data).figures[1].kind = 'other'; },
+    (data) => { delete report(data).figures[1].hold; },
+    (data) => { report(data).figures[0].hold = { ja: 'a', en: 'a', fr: 'a' }; },
+    (data) => { data.scenes[0].figures = report(data).figures; },
+  ]) {
+    const invalid = clone(briefing);
+    mutate(invalid);
+    assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing figures/);
+  }
+  const tagged = clone(briefing);
+  tagged.scenes[1].tag = { ja: '管理番号', en: 'No.' };
+  assert.throws(() => runtime.validateBriefingData(tagged), /invalid briefing tag/);
+});
+
+test('額の絵は文に合わせて替わり、報告の文では X と Y の図と「1秒 長押し」を出す', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  elements.get('staff').open = false;
+  const subjectIndex = data.scenes.findIndex((scene) => scene.id === 'subject');
+  const reportIndex = data.scenes.findIndex((scene) => scene.id === 'report');
+  const image = elements.get('briefingImage');
+  const visual = selectorElements.get('.briefing-visual');
+  state.briefing.sceneIndex = subjectIndex;
+  state.briefing.cueIndex = 0;
+  runtime.beginBriefingCue();
+  assert.match(image.src, /entrance-doll-v1\.png$/);
+  assert.equal(elements.get('figureTag').hidden, false);
+  assert.match(elements.get('figureTag').textContent, /0514/);
+  assert.equal(elements.get('figureButtons').hidden, true);
+  state.briefing.cueIndex = data.scenes[subjectIndex].figures[0].fromCue;
+  runtime.beginBriefingCue();
+  assert.match(image.src, /camera-01-doll\.webp$/);
+  assert.equal(elements.get('figureTag').hidden, true);
+
+  state.briefing.sceneIndex = reportIndex;
+  for (const lang of ['ja', 'en', 'fr']) {
+    state.lang = lang;
+    state.briefing.cueIndex = 0;
+    runtime.beginBriefingCue();
+    assert.match(image.src, /briefing-device-v3\.jpg$/);
+    assert.equal(elements.get('figureButtons').hidden, true);
+    assert.equal(visual.classList.contains('is-figure-buttons'), false);
+    const press = data.scenes[reportIndex].cues[lang].findIndex((cue) => /XとY|X or Y|X ou Y/.test(cue.text));
+    assert.ok(press > 0, lang);
+    state.briefing.cueIndex = press;
+    runtime.beginBriefingCue();
+    assert.match(image.src, /equipment-controller-v1\.png$/);
+    assert.equal(elements.get('figureButtons').hidden, false);
+    assert.equal(visual.classList.contains('is-figure-buttons'), true);
+    assert.match(elements.get('figureHoldLabel').textContent, /1秒|1 s/);
+    assert.match(image.alt, /X/);
+    // 押し方の図は場面の終わりまで残す
+    state.briefing.cueIndex = data.scenes[reportIndex].cues[lang].length - 1;
+    runtime.beginBriefingCue();
+    assert.equal(elements.get('figureButtons').hidden, false);
+  }
+  state.lang = 'ja';
+  // 博士だけの場面では図を畳む
+  state.briefing.sceneIndex = 0;
+  state.briefing.cueIndex = 0;
+  runtime.beginBriefingCue();
+  assert.equal(elements.get('figureButtons').hidden, true);
+  assert.equal(elements.get('figureTag').hidden, true);
 });
 
 test('ユーザー指定のEleven v4入力は一つのコードブロックで保存する', () => {
@@ -1113,9 +1185,9 @@ test('ユーザー指定のEleven v4入力は一つのコードブロックで�
   }
 });
 
-test('日本語の台詞は新しい版で、声は v3 の音声。古い台詞の声と動画（v2）は場面に付けない', () => {
+test('日本語の台詞は 0327 の版で、声は v4 の音声。古い台詞の声と動画（v2）は場面に付けない', () => {
   // v2 の音声と動画は残してある（スタッフの音の確認と、媒体の試験が使う）。場面からは外す —
-  // 古い台詞を喋る博士の上に新しい字幕が出るのを防ぐ。新しい声は elevenlabs-input-ja-v3.md から作る。
+  // 古い台詞を喋る博士の上に新しい字幕が出るのを防ぐ。新しい声は elevenlabs-input-ja-v4.md から作る。
   for (const scene of briefing.scenes) {
     const filename = `${scene.id}-ja-v2.mp3`;
     const asset = path.join(assetRoot, filename);
@@ -1127,53 +1199,67 @@ test('日本語の台詞は新しい版で、声は v3 の音声。古い台詞�
     assert.equal(videoBytes.subarray(4, 8).toString('ascii'), 'ftyp');
     assert.equal(scene.video?.ja, undefined, `${scene.id}: 台詞と声が食い違う版を付けない`);
     // 新しい台詞の声。generate-doctor-audio.py が 1 本の合成から場面ごとに切る。
-    assert.equal(scene.audio?.ja, `${scene.id}-ja-v3.mp3`);
+    assert.equal(scene.audio?.ja, `${scene.id}-ja-v4.mp3`);
     const voice = fs.readFileSync(path.join(assetRoot, scene.audio.ja));
     assert.ok(voice.length > 50_000, scene.audio.ja);
     // 文の尺の合計は、切り出した音の長さ（128kbps）と 1 秒以内で合う。
     const cueMs = scene.cues.ja.reduce((sum, cue) => sum + cue.durationMs, 0);
     assert.ok(Math.abs(cueMs - voice.length / 16) < 1000, `${scene.id}: 文の尺 ${cueMs}ms と音 ${Math.round(voice.length / 16)}ms`);
+    // 3 言語で文の数が同じ（絵の切り替えと壁の映像は文の番号で決まる）
+    assert.equal(scene.cues.en.length, scene.cues.ja.length, scene.id);
+    assert.equal(scene.cues.fr.length, scene.cues.ja.length, scene.id);
   }
-  // 種は 4 つ。どれも博士が 1 文で言う（3 言語とも同じ文の位置）。
-  const seeds = {
-    introduction: [1, /三十七人目/, /thirty-seventh/, /trente-septième/],
-    subject: [0, /子ども部屋/, /child’s room/, /chambre d’un enfant/],
-    report: [1, /見返されます。だから、装置があなたの代わりに見ます/, /it looks back\. So the device will look in your place/, /elle vous regarde aussi\. Le dispositif regardera donc à votre place/],
-  };
-  for (const [id, [index, ja, en, fr]] of Object.entries(seeds)) {
-    const scene = briefing.scenes.find((candidate) => candidate.id === id);
+  const find = (id) => briefing.scenes.find((candidate) => candidate.id === id);
+  const introduction = find('introduction');
+  const subject = find('subject');
+  const report = find('report');
+  const wear = find('wear');
+  // ユーザーが口にした骨子（0327）。名を伏せた上司・今日から調査員・管理番号 0514・空き家の子供部屋のカーテンと人形
+  assert.match(introduction.cues.ja[0].text, /あなたの上司、とでも言っておきましょうか/);
+  assert.doesNotMatch(introduction.cues.ja.map((cue) => cue.text).join(''), /博士です|日本怪異研究所/);
+  assert.match(introduction.cues.ja[1].text, /今日から、この研究所の調査員です/);
+  assert.match(subject.cues.ja[0].text, /管理番号0514に指定された異常存在/);
+  assert.match(subject.cues.ja[1].text, /空き家の子供部屋から見つかった、カーテンと人形/);
+  assert.match(subject.cues.ja[2].text, /^外見上は、一般的な人形と変わりません。/);
+  // スイの筋とつながる種（3 言語とも同じ文の位置）
+  const seeds = [
+    [subject, 2, /見返されたと証言/, /stared back/, /rendu leur regard/],
+    [subject, 3, /三十七人目/, /thirty-seventh/, /trente-septième/],
+    [subject, 4, /三周してください。廻るほど、近づいてきます。/, /the closer it comes/, /plus cela se rapproche/],
+    [report, 1, /あなたの代わりに、室内のカメラが対象を見ます/, /in your place/, /à votre place/],
+    [report, 3, /解析し、取り除きます/, /remove it/, /l’éliminera/],
+  ];
+  for (const [scene, index, ja, en, fr] of seeds) {
     assert.match(scene.cues.ja[index].text, ja);
     assert.match(scene.cues.en[index].text, en);
     assert.match(scene.cues.fr[index].text, fr);
   }
-  const lap = briefing.scenes.find((scene) => scene.id === 'subject').cues;
-  assert.match(lap.ja[1].text, /三周してください。廻るほど、近づいてきます。/);
-  assert.match(lap.en[1].text, /the closer it comes/);
-  assert.match(lap.fr[1].text, /plus cela se rapproche/);
+  // 手順で残さない疑問: 手すり・押すボタンと長さ・見間違い・終わり方・やめたいとき・装着
+  assert.match(subject.cues.ja[5].text, /足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり/);
+  assert.match(report.cues.ja[2].text, /左コントローラーのボタンを1秒間、長押し.*XとY、どちらでも/);
+  assert.match(report.cues.ja[3].text, /見間違いでも構いません/);
+  assert.match(wear.cues.ja[0].text, /係の者が装置を外すまで、動かずにお待ちください/);
+  assert.match(wear.cues.ja[1].text, /その場で立ち止まり、装置を外してください/);
+  assert.match(wear.cues.ja[2].text, /左手にコントローラーを持って、観測装置をつけてください/);
+  assert.equal(wear.cues.ja[wear.cues.ja.length - 1].text, '健闘を祈ります。');
   // 新しい声の入力原稿は、台詞の全文を 1 つのコードブロックに持つ（0257）。
-  const input = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja-v3.md'), 'utf8');
+  const input = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja-v4.md'), 'utf8');
   const blocks = [...input.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)];
   assert.equal(blocks.length, 1);
-  for (const phrase of ['三十七人目', '子ども部屋', '廻るほど', '見返されます', 'あなたの代わりに', '取り除きます',
-    '決して、離さないでください。', 'エックスかワイを、一秒間', '健闘を、祈ります。']) {
+  for (const phrase of ['あなたの上司、とでも', 'ゼロ・ゴー・イチ・ヨン', '子供部屋', '三十七人目', '廻るほど', '見返された',
+    'あなたの代わりに', '取り除きます', '決して離さず', 'エックスとワイ', '一秒間、長押し', '健闘を、祈ります。']) {
     assert.ok(blocks[0][1].includes(phrase), phrase);
   }
-  const introduction = briefing.scenes.find((scene) => scene.id === 'introduction');
   assert.equal(introduction.image, 'introduction-doctor-v2.jpg');
   assert.equal(introduction.doctorImage, 'introduction-doctor-v2.jpg');
-  assert.equal(introduction.doctorAnchor, 50);
-  const subject = briefing.scenes.find((scene) => scene.id === 'subject');
-  const report = briefing.scenes.find((scene) => scene.id === 'report');
-  const wear = briefing.scenes.find((scene) => scene.id === 'wear');
   for (const scene of [introduction, subject, report, wear]) {
     const imageBytes = fs.readFileSync(path.join(assetRoot, scene.doctorImage));
     assert.ok(imageBytes.length > 40_000);
     assert.deepEqual([...imageBytes.subarray(0, 2)], [0xff, 0xd8]);
     assert.equal(scene.doctorAnchor, 50);
+    for (const figure of scene.figures || []) assert.ok(fs.existsSync(path.join(assetRoot, figure.image)), figure.image);
   }
   assert.equal(wear.image, wear.doctorImage);
-  assert.match(subject.cues.ja[2].text, /決して離さない/);
-  assert.match(report.cues.ja[2].text, /1秒間/);
 });
 
 test('壁の動画は次の文から始まり、文送りでは再生位置を変えずにループし、止めると止まる', () => {
@@ -1194,8 +1280,12 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   const before = video.playCount;
   assert.equal(video.hidden, true);
 
+  const startCue = scene.loopVideo.startCue;
+  assert.ok(startCue >= 1 && startCue < scene.cues.ja.length - 1, '壁の映像の後に 1 文以上ある');
+  for (let index = 0; index < startCue - 1; index++) runtime.moveBriefing(1, 'auto');
+  assert.equal(video.playCount, before, '手順の文より前では壁の映像を出さない');
   runtime.moveBriefing(1, 'auto');
-  assert.equal(state.briefing.cueIndex, 1);
+  assert.equal(state.briefing.cueIndex, startCue);
   assert.equal(video.playCount, before + 1);
   video.onplaying();
   assert.equal(video.hidden, false);
@@ -1203,9 +1293,8 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   video.currentTime = 4.2;
   const loadCount = video.loadCount;
 
-  runtime.moveBriefing(1, 'auto');
-  runtime.moveBriefing(1, 'auto');
-  assert.equal(state.briefing.cueIndex, 3);
+  while (state.briefing.cueIndex < scene.cues.ja.length - 1) runtime.moveBriefing(1, 'auto');
+  assert.equal(state.briefing.sceneIndex, 1);
   assert.equal(video.currentTime, 4.2);
   assert.equal(video.playCount, before + 1);
   assert.equal(video.loadCount, loadCount);
@@ -1260,7 +1349,7 @@ test('章と文と全体の番号を区別し最後の博士章でも装着を�
   state.briefing.cueIndex = 0;
   runtime.beginBriefingCue();
   assert.equal(elements.get('briefingChapterNumber').textContent, '04 / 04');
-  assert.equal(elements.get('briefingCueNumber').textContent, '文 1 / 2');
+  assert.equal(elements.get('briefingCueNumber').textContent, `文 1 / ${data.scenes[data.scenes.length - 1].cues.ja.length}`);
   assert.match(elements.get('sceneCounter').textContent, /^説明 \d{2} \/ \d{2}$/);
   assert.equal(elements.get('journeyBriefing').getAttribute('aria-current'), 'step');
   assert.equal(elements.get('journeyWear').getAttribute('aria-current'), null);
@@ -1268,7 +1357,7 @@ test('章と文と全体の番号を区別し最後の博士章でも装着を�
   assert.equal(elements.get('journeyWear').getAttribute('aria-current'), 'step');
 });
 
-test('観測装置の説明と報告操作で見出しと補足を文ごとに切り替える', () => {
+test('報告の場面の見出しと補足は X・Y と 1 秒を言う', () => {
   const data = clone(briefing);
   prepareBriefing(data);
   state.briefing.sceneIndex = data.scenes.findIndex(scene => scene.id === 'report');
@@ -1276,7 +1365,7 @@ test('観測装置の説明と報告操作で見出しと補足を文ごとに�
     state.lang = lang;
     state.briefing.cueIndex = 0;
     runtime.beginBriefingCue();
-    assert.match(elements.get('briefingTitle').textContent, /観測装置|Observation device|Dispositif d’observation/);
+    assert.match(elements.get('briefingTitle').textContent, /X|Y/);
     assert.equal(context.document.title, `廻リ視 — ${elements.get('briefingTitle').textContent}`);
     state.briefing.cueIndex = 2;
     runtime.beginBriefingCue();
@@ -2006,15 +2095,14 @@ test('博士の音声確認は閉じる操作とタブ非表示で止まり、�
 });
 
 
-test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内し、Questの同一revision確認後だけ装着の準備を出す', async () => {
+test('新APIは全文を通して流し、最後の砂嵐の後に返却を案内し、Questの同一revision確認後だけ装着の準備を出す', async () => {
   prepareBriefing(clone(briefing));
   state.staffPreview = false; state.ui = 'sent';
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
   const lastIndex = briefing.scenes.length - 1;
   const totalCount = briefing.scenes.reduce((count, scene) => count + scene.cues.ja.length, 0);
-  assert.equal(wearIndex, lastIndex, '装着の2文が説明の最後にある');
-  assert.equal(briefing.scenes[wearIndex].cues.ja.length, 2);
-  assert.equal(totalCount, 12);
+  assert.equal(wearIndex, lastIndex, '装着の文が説明の最後にある');
+  assert.equal(totalCount, 17);
   const status = { ...clone(validStatus), questTick: 50, lang: 'ja', relief: false,
     appliedSeq: 7, received: 7, visitorGeneration: 1,
     pending: { lang: 'ja', relief: false, seq: 7 },
@@ -2057,7 +2145,7 @@ test('新APIは12文を通して流し、最後の砂嵐の後に返却を案内
       runtime.renderBriefingScene();
       assert.equal(elements.get('briefingNext').textContent, label, '最後の文の次は装着の案内（返すのは案内を読んだ後）');
       const total = String(state.briefing.data.scenes.reduce((sum, scene) => sum + scene.cues[lang].length, 0)).padStart(2, '0');
-      assert.ok(elements.get('sceneCounter').textContent.endsWith(`${total} / ${total}`), '進み具合は12文で1本');
+      assert.ok(elements.get('sceneCounter').textContent.endsWith(`${total} / ${total}`), '進み具合は全文で1本');
     }
     state.lang = 'ja';
     state.briefing.cueIndex = state.briefing.data.scenes[wearIndex].cues.ja.length - 1;
@@ -2278,10 +2366,10 @@ test('report最終文の自動音声終了は返却で割り込まずwearへ進�
   assert.equal(elements.get('equipmentHandback').hidden, false);
 });
 
-test('旧APIとスタッフ確認モードはwearを含む12文を連続してから終了する', () => {
+test('旧APIとスタッフ確認モードはwearを含む全文を連続してから終了する', () => {
   const total = briefing.scenes.reduce((count, scene) => count + scene.cues.ja.length, 0);
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
-  assert.equal(total, 12);
+  assert.equal(total, 17);
   for (const preview of [false, true]) {
     prepareBriefing(clone(briefing));
     state.staffPreview = preview;

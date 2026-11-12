@@ -3,17 +3,17 @@
     py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id>            # 合成して組み込む
     py -3.11 tools/visitor-ui/generate-doctor-audio.py --voice <voice_id> --reuse    # 前に合成した音から切り直すだけ
 
-入力は `elevenlabs-input-ja-v3.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
+入力は `elevenlabs-input-ja-v4.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
 鍵は環境変数 `ELEVENLABS_API_KEY`（値は表示しない。`~/.claude/rules/secrets.md`）。
 
 することは 4 つ。
 1. `/with-timestamps` で合成する。音と一緒に、1 字ごとの時刻が返る
 2. 各文の頭の語を時刻の列から探し、文と文の間の無音の真ん中で区切る
-3. 場面ごとに `tablet/.../asset/<場面>-ja-v3.mp3` へ切り出す
+3. 場面ごとに `tablet/.../asset/<場面>-ja-v4.mp3` へ切り出す
 4. `briefing-v1.json` の日本語の `durationMs` を実測へ直し、`audio.ja` を付ける
 
 ⚠ 口の動画（リップシンク）は作らない。動画が届くまで、日本語は博士の静止画と声で進む。
-⚠ 合成した元の音と時刻は `tools/visitor-ui/doctor-ja-v3-original.{mp3,json}` に残す。声を替えたら作り直す。
+⚠ 合成した元の音と時刻は `tools/visitor-ui/doctor-ja-v4-original.{mp3,json}` に残す。声を替えたら作り直す。
 """
 import argparse
 import base64
@@ -32,16 +32,17 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 ASSETS = ROOT / "tablet/app/src/main/assets/web/asset"
 BRIEFING = ASSETS / "briefing-v1.json"
-INPUT = HERE / "elevenlabs-input-ja-v3.md"
-TAKE_MP3 = HERE / "doctor-ja-v3-original.mp3"
-TAKE_JSON = HERE / "doctor-ja-v3-original.json"
+VERSION = "v4"
+INPUT = HERE / f"elevenlabs-input-ja-{VERSION}.md"
+TAKE_MP3 = HERE / f"doctor-ja-{VERSION}-original.mp3"
+TAKE_JSON = HERE / f"doctor-ja-{VERSION}-original.json"
 
 # 各文の頭（入力原稿の表記）。場面と文の順は briefing-v1.json と同じ。
 ANCHORS = {
-    "introduction": ["はじめまして。", "あなたに、ある調査を"],
-    "subject": ["こちらの、カーテン", "観測装置をつけ", "その間は、右手で", "異変を見逃さないよう"],
-    "report": ["これが、怪異を記録し", "怪異を、直接見ると", "異変に気づいたら", "装置のエージェントが"],
-    "wear": ["では。", "健闘を、祈ります"],
+    "introduction": ["私は……", "あなたは、今日から", "これより、"],
+    "subject": ["調査対象は、", "ある空き家の", "外見上は、", "調査員は……", "観測装置をつけ", "足元は、見えません"],
+    "report": ["これが、怪異を記録し", "あなたの代わりに", "異変に気づいたら", "装置のエージェントが"],
+    "wear": ["調査が終わったら", "続けられなくなったら", "では。", "健闘を、祈ります"],
 }
 
 
@@ -124,7 +125,7 @@ def main():
         if len(scene["cues"]["ja"]) != n:
             raise SystemExit(f"{scene['id']}: 文の数が違う（JSON {len(scene['cues']['ja'])} / ANCHORS {n}）")
         start, end = cut_ms[k], cut_ms[k + n]
-        target = ASSETS / f"{scene['id']}-ja-v3.mp3"
+        target = ASSETS / f"{scene['id']}-ja-{VERSION}.mp3"
         tmp = target.with_name(target.name + ".tmp")
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(TAKE_MP3),
                         "-af", f"atrim=start={start / 1000:.3f}:end={end / 1000:.3f},asetpts=PTS-STARTPTS",

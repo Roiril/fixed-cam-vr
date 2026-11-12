@@ -38,9 +38,8 @@ def main():
               "台詞の正本。ユーザーが指定した文言と、それ以外の未判定の実装案を含む。", "",
               "正本は `tablet/app/src/main/assets/web/asset/briefing-v1.json`。この文書と SRT はそこから生成する。",
               "博士の役割は事前説明。装着後の支援は既存のエージェントが担当する。", "",
-              "2026-11-12 に台詞を書き換えた（種を 4 つ置いた。`canon/OPEN.md`「シナリオの組み直し」）。日本語の声と口の動画（v2）は前の台詞のものなので、場面から外してある。",
-              "日本語の声（v3）は `generate-doctor-audio.py` が `elevenlabs-input-ja-v3.md` を 1 本で合成し、1 字ごとの時刻から場面と文へ切る。日本語の時間はその実測。口の動画は未制作で、博士は静止画のまま声が流れる。",
-              "⚠ いまの v3 は仮の声（ElevenLabs の既定の声 Brian）。0258 までの声（voice bEg9geTboP3ghzJ9Rt3L）はライブラリの声で、無料枠の API からは使えなかった（HTTP 402）。有料の鍵なら `--voice bEg9geTboP3ghzJ9Rt3L` で作り直せる。",
+              "2026-11-12 に台詞を書き直した（`canon/LEDGER.md` 0327。名を伏せた上司・管理番号 0514・押すボタンは絵で見せる。文の案は `canon/OPEN.md`「博士の説明の書き直し」）。",
+              "日本語の声（v4）は `generate-doctor-audio.py` が `elevenlabs-input-ja-v4.md` を 1 本で合成し、1 字ごとの時刻から場面と文へ切る。日本語の時間はその実測。声は 0258 までの声（voice bEg9geTboP3ghzJ9Rt3L）。口の動画は未制作で、博士は静止画のまま声が流れる。",
               "声の無い言語の時間は字数からの見積もり（オートの送りに使う）。英仏音声と英仏動画は未制作。",
               "通常は一文ずつ全文表示してタップを待つ。オートを選んだときだけ次の文へ進む。",
               "博士動画は既存博士画像と同じ人物を中央配置で使用する。映像の切替や字幕を動画に焼き込まない。", "",
@@ -59,6 +58,8 @@ def main():
             script.extend([f"### {index:02} {scene['id']} — {scene['title'][language]}", "",
                            f"開始 {offset / 1000:.1f} 秒 / 尺 {scene_duration / 1000:.1f} 秒", "",
                            f"画像: `{scene['image']}`", ""])
+            for figure in scene.get("figures", []):
+                script.extend([f"文 {figure['fromCue'] + 1:02} からの画像: `{figure['image']}`" + ("（押すボタンの図）" if figure.get("kind") == "buttons" else ""), ""])
             if scene.get("video", {}).get(language):
                 script.extend([f"動画: `{scene['video'][language]}`", ""])
             elif scene.get("audio", {}).get(language):

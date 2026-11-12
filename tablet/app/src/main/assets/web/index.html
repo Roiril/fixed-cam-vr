@@ -231,7 +231,8 @@
       linear-gradient(180deg,rgba(9,8,7,.6),transparent 14%); }
   .briefing-pause-surface { position: relative; z-index: 3; grid-area: 1 / 1 / 3 / 2; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; color: transparent; }
   .stage.is-briefing .footer { grid-template-columns: 1fr; justify-items: center; gap: 14px; padding-bottom: max(22px,env(safe-area-inset-bottom)); }
-  .stage.is-briefing .subtitle { justify-self: center; width: min(100%,1060px); min-height: 3.4em; text-align: center; font-size: clamp(19px,2.1vw,27px); }
+  /* 2 行になる文は文節で折り、行の長さを揃える（「その映／像に」のような語の途中の折り返しを避ける） */
+  .stage.is-briefing .subtitle { justify-self: center; width: min(100%,1060px); min-height: 3.4em; text-align: center; font-size: clamp(19px,2.1vw,27px); text-wrap: balance; word-break: auto-phrase; }
   .stage.is-briefing, .stage.is-briefing * { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
   .stage.is-briefing img, .stage.is-briefing video { -webkit-user-drag: none; }
   .briefing-copy, .briefing-progress, .briefing-intro { display: none; }
@@ -248,6 +249,35 @@
   .briefing-image, .briefing-loop-video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .22s var(--ease); }
   .briefing-image.is-visible, .briefing-loop-video.is-visible { opacity: 1; }
   .briefing-visual.is-loop-playing .briefing-image { opacity: 0; }
+  /* 資料の札（管理番号）と、押すボタンの図。文ごとに替わる絵は briefing-v1.json の figures が決める */
+  .figure-tag { position: absolute; z-index: 2; left: 4%; top: 6%; margin: 0; padding: .25em .9em .25em .8em; border-left: 2px solid var(--red); background: rgba(9,8,7,.66); color: rgba(242,236,223,.9); font: 500 clamp(10px,1.1vw,14px)/1.6 var(--sans); letter-spacing: .22em; font-variant-numeric: tabular-nums; }
+  .briefing-visual.is-loop-playing .figure-tag { display: none; }
+  /* 図は上面（スティックとボタン）へ 1.8 倍に寄せる。握りは額の下へ切れる。地は図と同じ黒 */
+  .briefing-visual.is-figure-buttons { background: #000; }
+  .briefing-visual.is-figure-buttons .briefing-image, .briefing-visual.is-figure-buttons .reference-ghost { object-fit: contain; object-position: 22% 50%; transform: scale(1.8); transform-origin: 43.7% 7.75%; }
+  .figure-buttons { position: absolute; inset: 0; z-index: 2; }
+  /* 図の中の X と Y の位置（equipment-controller-v1.png は正方形・左寄せ 22%・上の拡大の後）。図か拡大を替えたらここも直す */
+  .fb-press { position: absolute; width: 9.4%; aspect-ratio: 1; border-radius: 50%; border: 2px solid var(--red); background: rgba(168,50,57,.42); transform: translate(-50%,-50%) scale(1); opacity: 0; animation: fb-press 6s linear infinite; }
+  .fb-x { left: 32.36%; top: 54.28%; }
+  .fb-y { left: 41.09%; top: 37.36%; animation-delay: -3s; }
+  @keyframes fb-press {
+    0%, 4% { opacity: 0; transform: translate(-50%,-50%) scale(1.5); }
+    8%, 26% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+    34% { opacity: 0; transform: translate(-50%,-50%) scale(2.1); }
+    100% { opacity: 0; transform: translate(-50%,-50%) scale(2.1); }
+  }
+  .fb-gauge { position: absolute; left: 80%; top: 44%; width: 21%; transform: translate(-50%,-50%); overflow: visible; }
+  .fb-track { fill: none; stroke: rgba(232,220,196,.2); stroke-width: 5; }
+  .fb-fill { fill: none; stroke: var(--red); stroke-width: 5; stroke-dasharray: 100; stroke-dashoffset: 100; animation: fb-fill 3s linear infinite; }
+  .fb-dot { fill: rgba(242,236,223,.9); transform-origin: 60px 60px; animation: fb-dot 3s linear infinite; }
+  @keyframes fb-fill { 0%, 16% { stroke-dashoffset: 100; } 50%, 86% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 100; } }
+  @keyframes fb-dot { 0%, 8% { transform: scale(.55); opacity: .35; } 16%, 50% { transform: scale(1); opacity: 1; } 56% { transform: scale(1.9); opacity: .9; } 68%, 100% { transform: scale(.55); opacity: .35; } }
+  .fb-label { position: absolute; left: 80%; top: 73%; margin: 0; transform: translateX(-50%); white-space: nowrap; color: rgba(242,236,223,.92); font: 500 clamp(12px,1.5vw,20px)/1.4 var(--serif); letter-spacing: .14em; }
+  @media (prefers-reduced-motion: reduce) {
+    .fb-press, .fb-fill, .fb-dot { animation: none; }
+    .fb-press { opacity: 1; }
+    .fb-fill { stroke-dashoffset: 0; }
+  }
   .reference-fallback { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; padding: 20px; text-align: center; color: var(--muted); font: 13px/1.7 var(--sans); }
   .reference-fallback p { margin: 0; }
   /* 博士の位置替えは滑らせない。signal-cut.js の glitch の下で一瞬に替える（LEDGER 0275「博士がスライドして画面が出てくるのがシュール」） */
@@ -556,6 +586,13 @@
     <img class="briefing-image" id="briefingImage" alt="" draggable="false" width="1600" height="900" hidden>
     <video class="briefing-loop-video" id="briefingLoopVideo" playsinline muted loop preload="none" disablepictureinpicture aria-hidden="true" hidden></video>
     <canvas class="reference-ghost" id="referenceGhost" aria-hidden="true" hidden></canvas>
+    <p class="figure-tag" id="figureTag" aria-hidden="true" hidden></p>
+    <div class="figure-buttons" id="figureButtons" aria-hidden="true" hidden>
+      <span class="fb-press fb-x"></span>
+      <span class="fb-press fb-y"></span>
+      <svg class="fb-gauge" viewBox="0 0 120 120"><circle class="fb-track" cx="60" cy="60" r="50"/><circle class="fb-fill" cx="60" cy="60" r="50" pathLength="100" transform="rotate(-90 60 60)"/><circle class="fb-dot" cx="60" cy="60" r="9"/></svg>
+      <p class="fb-label" id="figureHoldLabel"></p>
+    </div>
         <div class="reference-fallback" id="referenceFallback" hidden>
       <p id="referenceDescription"></p><span id="referenceUnavailable"></span>
     </div>
@@ -1731,6 +1768,25 @@
       )) {
         throw new Error(`invalid briefing loop video: ${scene.id}`);
       }
+      // 文ごとに替わる絵。fromCue の昇順で、その文から先はその絵になる（最初の絵は scene.image）
+      if (scene.tag != null && !validLocalizedText(scene.tag)) throw new Error(`invalid briefing tag: ${scene.id}`);
+      if (scene.figures != null) {
+        let previous = 0;
+        if (!Array.isArray(scene.figures) || scene.layout !== 'doctor-evidence' || scene.figures.some((figure) => {
+          const ok = isRecord(figure)
+            && Number.isInteger(figure.fromCue) && figure.fromCue > previous
+            && BRIEFING_LANGS.every((lang) => figure.fromCue < scene.cues[lang].length)
+            && validAssetFilename(figure.image)
+            && validLocalizedText(figure.alt)
+            && (figure.tag == null || validLocalizedText(figure.tag))
+            && (figure.kind == null || figure.kind === 'buttons')
+            && (figure.kind === 'buttons' ? validLocalizedText(figure.hold) : figure.hold == null);
+          previous = figure.fromCue;
+          return !ok;
+        })) {
+          throw new Error(`invalid briefing figures: ${scene.id}`);
+        }
+      }
       for (const mediaType of ['audio', 'video']) {
         if (scene[mediaType] == null) continue;
         if (!isRecord(scene[mediaType])
@@ -1786,7 +1842,7 @@
       state.briefing.data = data;
       state.briefing.loadState = 'ready';
       // A missing reference must not prevent the other chapters from opening.
-      for (const filename of new Set(data.scenes.flatMap(scene => [scene.image, scene.doctorImage]))) {
+      for (const filename of new Set(data.scenes.flatMap(scene => [scene.image, scene.doctorImage, ...(scene.figures || []).map(figure => figure.image)]))) {
         preloadBriefingImage(filename).catch(() => {});
       }
     } catch (error) {
@@ -2266,14 +2322,18 @@
   }
 
   function briefingPresentation(scene) {
-    if (scene.id !== 'report') return { title: scene.title[state.lang], caption: scene.caption[state.lang] };
-    const device = {
-      ja: ['観測装置', '装着後はエージェントが支援します'],
-      en: ['Observation device', 'The agent will support you once equipped'],
-      fr: ['Dispositif d’observation', 'L’agent vous assistera une fois équipé'],
-    };
-    if (state.briefing.cueIndex < 2) return { title: device[state.lang][0], caption: device[state.lang][1] };
     return { title: scene.title[state.lang], caption: scene.caption[state.lang] };
+  }
+
+  // いまの文で額に出す絵。最初は scene.image、figures の fromCue に届いた文から先はその絵
+  function briefingFigure(scene, cueIndex = state.briefing.cueIndex) {
+    let current = { index: 0, image: scene.image, alt: scene.alt, tag: scene.tag || null, kind: '', hold: null };
+    (scene.figures || []).forEach((figure, index) => {
+      if (cueIndex >= figure.fromCue) {
+        current = { index: index + 1, image: figure.image, alt: figure.alt, tag: figure.tag || null, kind: figure.kind || '', hold: figure.hold || null };
+      }
+    });
+    return current;
   }
 
   function requiresStaffHandoff(status = state.status) {
@@ -2292,7 +2352,7 @@
       && !setup.reason;
   }
 
-  // 博士の説明は 12 文とも来場者の手元で流し、最後の砂嵐のあとで返してもらう（2026-10-16）。
+  // 博士の説明は全文を来場者の手元で流し、最後の砂嵐のあとで返してもらう（2026-10-16）。
   // 途中で返すと「健闘を祈ります」が台に置かれたタブレットで流れ、砂嵐も 2 回になっていた。
   // 装着の案内は砂嵐の直後に来場者が読み、読み終えてから返す（2026-10-21）。以前は返した後、
   // スタッフの確定の後に出していたので、案内を読むはずの来場者の手にタブレットが無かった。
@@ -2347,7 +2407,7 @@
     image.dataset.presentationSource = source;
     const initial = !figure.classList.contains('is-presented');
     presentationController.presentReference({
-      scene: scene.id,
+      scene: `${scene.id}:${briefingFigure(scene).index}`,
       initial,
       sound,
       onStart: () => {
@@ -2444,9 +2504,16 @@
     $('briefingIntro').hidden = !intro;
     const image = $('briefingImage');
     image.hidden = intro || state.briefing.imageFailed;
+    const figure = intro ? null : briefingFigure(scene);
+    const buttons = figure?.kind === 'buttons';
+    document.querySelector('.briefing-visual').classList.toggle('is-figure-buttons', buttons);
+    $('figureButtons').hidden = !buttons;
+    $('figureHoldLabel').textContent = buttons ? figure.hold[state.lang] : '';
+    $('figureTag').textContent = figure?.tag ? figure.tag[state.lang] : '';
+    $('figureTag').hidden = !figure?.tag;
     if (!intro) {
-      image.alt = scene.alt[state.lang];
-      const source = assetPath(scene.image);
+      image.alt = figure.alt[state.lang];
+      const source = assetPath(figure.image);
       if (image.getAttribute('src') !== source || image.dataset.scene !== scene.id) {
         if (hadReference) captureReferenceGhost();
         else discardReferenceGhost();
@@ -2471,7 +2538,7 @@
           image.hidden = true;
           discardReferenceGhost();
           $('referenceFallback').hidden = false;
-          setText('referenceDescription', scene.alt[state.lang]);
+          setText('referenceDescription', figure.alt[state.lang]);
           setText('referenceUnavailable', T[state.lang].media.unavailable);
           renderBriefingControls();
         };
