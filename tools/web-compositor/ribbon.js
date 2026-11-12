@@ -1481,7 +1481,8 @@ export function createRibbon(container, deps) {
     const bySec = s.durKind === TAKE.DUR_SEC;
     // カットが線を待つとき（untilLine）に選ぶ線。**この区間のカメラが担当するものだけ**
     // — 別担当の線は実機で数えられないので、選ばせると沈黙する演出ができる。
-    const byLine = s.durKind === TAKE.DUR_UNTIL_LINE;
+    const byBeyond = s.durKind === TAKE.DUR_UNTIL_BEYOND;
+    const byLine = s.durKind === TAKE.DUR_UNTIL_LINE || byBeyond;
     // 第 2 の差し替え層に載せる素材。**静止画だけ**（無人プレート・生成画像）なので動画は出さない。
     let ovl2Opts = '<option value="">（なし）</option>';
     for (const c of cues.filter((c) => !isVideoUrl(c.sourceUrl))) {
@@ -1526,7 +1527,8 @@ export function createRibbon(container, deps) {
           <option value="${TAKE.DUR_SEC}"${bySec ? ' selected' : ''}>秒で指定</option>
           <option value="${TAKE.DUR_UNTIL_CLIP_END}"${s.durKind === TAKE.DUR_UNTIL_CLIP_END ? ' selected' : ''}>素材の終わりまで</option>
           <option value="${TAKE.DUR_UNTIL_ZONE_CHANGE}"${s.durKind === TAKE.DUR_UNTIL_ZONE_CHANGE ? ' selected' : ''}>次にカメラが切り替わるまで</option>
-          <option value="${TAKE.DUR_UNTIL_LINE}"${byLine ? ' selected' : ''}>この床の線を横切るまで</option>
+          <option value="${TAKE.DUR_UNTIL_LINE}"${byLine && !byBeyond ? ' selected' : ''}>この床の線を横切るまで</option>
+          <option value="${TAKE.DUR_UNTIL_BEYOND}"${byBeyond ? ' selected' : ''}>この床の線の向こう側へ出るまで</option>
           <option value="${TAKE.DUR_UNTIL_MARK}"${s.durKind === TAKE.DUR_UNTIL_MARK ? ' selected' : ''}>体験者が報告するまで</option>
         </select></label>
         <label class="rb-s-stepline-l" style="display:${byLine ? '' : 'none'}" title="このカットは、体験者がこの線を横切った瞬間に次のカットへ移ります。線は 📏 通過ラインで引きます">ライン<select class="rb-s-stepline">${stepLineOpts}</select></label>
@@ -1593,7 +1595,9 @@ export function createRibbon(container, deps) {
       if (!usesStepCamera(s.source)) s.camera = -1;
       s.recLap = s.source === TAKE.SRC_REC ? Math.max(1, Math.round(numOr(r('.rb-s-reclap').value, 1))) : 0;
       s.cg = r('.rb-s-cg').value.trim();
-      s.cgMode = r('.rb-s-cgmode-fixed').checked ? TAKE.CG_FIXED : TAKE.CG_FOLLOW;
+      // 「ついてくる」（trail）は卓に選ぶ口が無い。決めた位置へ切り替えたときだけ書き換え、他は保つ。
+      s.cgMode = r('.rb-s-cgmode-fixed').checked ? TAKE.CG_FIXED
+        : (s.cgMode === TAKE.CG_TRAIL ? TAKE.CG_TRAIL : TAKE.CG_FOLLOW);
       // 立ち位置は「決めた位置」を選んでいる間だけ実体を持つ（present-flag は宣言 bool ∧ 実体の AND 規約）。
       // 体験者追従に戻した時に placement を書き残すと、Unity 側で幽霊の立ち位置が武装する。
       setPlacement(s, {
@@ -1606,10 +1610,11 @@ export function createRibbon(container, deps) {
       s.cueId = r('.rb-s-cue').value;
       const dk = r('.rb-s-durkind').value;
       const dkKnown = [TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE,
-                       TAKE.DUR_UNTIL_LINE, TAKE.DUR_UNTIL_MARK].includes(dk);
+                       TAKE.DUR_UNTIL_LINE, TAKE.DUR_UNTIL_BEYOND, TAKE.DUR_UNTIL_MARK].includes(dk);
       s.durKind = dkKnown ? dk : TAKE.DUR_SEC;
-      // 線は「この線を横切るまで」のときだけ実体を持つ（他の尺で書き残すと幽霊の線待ちになる）。
-      s.lineId = s.durKind === TAKE.DUR_UNTIL_LINE ? r('.rb-s-stepline').value : '';
+      // 線は「線を待つ」尺のときだけ実体を持つ（他の尺で書き残すと幽霊の線待ちになる）。
+      s.lineId = (s.durKind === TAKE.DUR_UNTIL_LINE || s.durKind === TAKE.DUR_UNTIL_BEYOND)
+        ? r('.rb-s-stepline').value : '';
       s.splitX = Math.max(0, Math.min(1, numOr(r('.rb-s-splitx').value, 0)));
       s.splitFlip = r('.rb-s-splitflip').checked;
       s.splitFreeze = r('.rb-s-splitfreeze').checked;

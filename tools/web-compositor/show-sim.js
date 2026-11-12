@@ -207,7 +207,8 @@ export function createShowSim(container, deps) {
     const d = resolveScreenInner();
     const st = d.shot && d.shot.step;
     if (st && st.cg) {
-      const where = st.cgMode === 'fixed' ? '決めた位置' : '体験者の位置';
+      const where = st.cgMode === 'fixed' ? '決めた位置'
+        : st.cgMode === 'trail' ? '体験者の歩いた跡の後ろ（卓の絵には出ない）' : '体験者の位置';
       // 輪郭は重ねるが、それは**見た目ではない**。文字の明示は残す（輪郭を「実際の絵」と
       // 読まれると、著作者が Unity での最終確認を飛ばす）。
       d.detail += `　👤 CG 人形「${st.cg}」が${where}に立ちます（輪郭だけ・実際の見た目は Unity で確認）`;

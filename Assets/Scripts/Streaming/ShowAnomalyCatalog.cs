@@ -45,7 +45,8 @@ namespace FixedCamVr.Streaming
             switch (takeId)
             {
                 case "L1C1#0": return "L1C1#0";
-                case "L2C0#0": return "L2C0#0";
+                case "L2C0#0":
+                case "L2C0#1": return "L2C0#0";   // シミと、そのあとをついてくる人形は 1 つの異変（0347）
                 case "L2C1#0": return "L2C1#0";
                 case "L2C2#0":
                 case "L2C2#1": return "L2C2";

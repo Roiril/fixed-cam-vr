@@ -118,10 +118,15 @@ export const TAKE = {
   // そのカメラで撮った無人プレート。still と絵は同じだが CG 人形を重ねられる（パースが一致するため）。
   SRC_PLATE: 'plate',
   CG_FOLLOW: 'follow', CG_FIXED: 'fixed',
+  // 体験者の歩いた跡の上を、道のり trailGapM 後ろについてくる（0347）。卓は絵に出さない（実機とツインだけ）。
+  CG_TRAIL: 'trail',
   SLOT_SCHEME: 'slot://',
   DUR_SEC: 'sec', DUR_UNTIL_CLIP_END: 'untilClipEnd', DUR_UNTIL_ZONE_CHANGE: 'untilZoneChange',
   // 「この床の線を横切るまで」。区間の中で位置を待てる唯一の尺（canon/LEDGER.md 0050）。
   DUR_UNTIL_LINE: 'untilLine',
+  // 「この床の線の向こう側へ出るまで」。横切った瞬間ではなく、向こう側に居るかで終える。
+  // 動画のカットの最中に越えた線も数えるので、カットを線で順に進めるときはこちらを使う。
+  DUR_UNTIL_BEYOND: 'untilBeyond',
   // 「体験者が異変を報告するまで」。4 周目 A の締めだけが使う（canon/LEDGER.md 0050）。
   DUR_UNTIL_MARK: 'untilMark',
   // TRANS_GLITCH = 黒ではなく「映像の乱れ」で覆って、その最中に差し替える（企画書 2.3）。
@@ -179,6 +184,8 @@ export function newStep(over = {}) {
     //   recFollow   = コマを時間ではなく体験者の進み具合（L 字の角を回る角度）で選ぶ（0274）
     recRate: 0, recContinue: false, recFollow: false,
     cg: '', cgMode: TAKE.CG_FOLLOW,
+    // cgMode:'trail' の立ち方（m）。0 は実機の既定（1.5 / 0.45 / 0.9）。卓に編集 UI は無い（show.json を手で書く）。
+    trailGapM: 0, trailStepM: 0, trailHideM: 0,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
     placement: { x: 0, z: 0, yawDeg: 0 }, hasPlacement: false,
@@ -240,7 +247,7 @@ function serializeStep(s) {
     trimStartSec: num(s.trimStartSec, -1), trimEndSec: num(s.trimEndSec, -1),
     durKind: oneOf(s.durKind,
       [TAKE.DUR_SEC, TAKE.DUR_UNTIL_CLIP_END, TAKE.DUR_UNTIL_ZONE_CHANGE, TAKE.DUR_UNTIL_LINE,
-       TAKE.DUR_UNTIL_MARK], TAKE.DUR_SEC),
+       TAKE.DUR_UNTIL_BEYOND, TAKE.DUR_UNTIL_MARK], TAKE.DUR_SEC),
     lineId: s.lineId || '',
     durSec: num(s.durSec, 0),
     transition: oneOf(s.transition,
@@ -271,7 +278,10 @@ function serializeStep(s) {
     recContinue: !!s.recContinue,
     recFollow: !!s.recFollow,
     cg: s.cg || '',
-    cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED], TAKE.CG_FOLLOW),
+    cgMode: oneOf(s.cgMode, [TAKE.CG_FOLLOW, TAKE.CG_FIXED, TAKE.CG_TRAIL], TAKE.CG_FOLLOW),
+    trailGapM: Math.max(0, num(s.trailGapM, 0)),
+    trailStepM: Math.max(0, num(s.trailStepM, 0)),
+    trailHideM: Math.max(0, num(s.trailHideM, 0)),
   };
   if (s.hasPost) out.post = { ...FX_DEFAULT, ...(s.post || {}) };
   out.hasPost = !!s.hasPost;

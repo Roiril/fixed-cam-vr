@@ -28,12 +28,20 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void CurrentShow_HasNineTakesAndEightAnomalies()
+        public void CurrentShow_HasTenTakesAndEightAnomalies()
         {
             ShowTimelineSegmentDef[] segments = LoadCurrentSegments();
-            Assert.That(segments.Sum(s => s.takes.Length), Is.EqualTo(9));
+            Assert.That(segments.Sum(s => s.takes.Length), Is.EqualTo(10));
             Assert.That(ShowAnomalyCatalog.Count(segments), Is.EqualTo(8));
             Assert.That(ShowAnomalyCatalog.CountUnknown(segments), Is.Zero);
+        }
+
+        [Test]
+        public void TwoAStainAndTrailingDoll_AreOneAnomaly()
+        {
+            var segment = Segment("L2C0#0", "L2C0#1");
+            Assert.That(ShowAnomalyCatalog.Count(new[] { segment }), Is.EqualTo(1));
+            Assert.That(ShowAnomalyCatalog.CountUnknown(new[] { segment }), Is.Zero);
         }
 
         [Test]
