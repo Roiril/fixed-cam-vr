@@ -566,6 +566,8 @@ namespace FixedCamVr.OvrBridge
                                             && mode == ControllerModeLogic.Mode.Normal,
                                             blocked: markBlocked);
             if (_markHold.StartedThisTick) showControl?.NotifyVisitorMarkStarted();
+            // 報告が成立した Tick では送らない（成立の処理が先。離した Tick に改めて届く）。
+            if (_markHold.EndedThisTick && !markFired) showControl?.NotifyVisitorMarkEnded();
             if (markFired)
             {
                 if (showControl != null && showControl.RecordVisitorMark()) haptics?.LeftMark();

@@ -6,6 +6,8 @@ tools/twin/assets.json の cue id ごとに、show.json の今の sourceUrl / ma
 tools/twin/assets/ の素材をコピーする。Editor は FIXEDCAM_ASSET_OVERRIDE_DIR にこのフォルダが
 指定されているときだけ、同じ名前のファイルを焼き込みの代わりに読む（ShowAssetResolver.TryOverride）。
 
+映像（source）には、その cue のカメラの階調（feed_tone.py。束の映像と同じ表）を掛ける。マスクには掛けない。
+
 ⚠ 同じファイルを 2 つの cue が別の中身で使っていると、どちらかが負ける。そのときは止まる。
 ⚠ 本番の素材は 1 つも書き換えない。出力先は git 管理外。
 """
@@ -14,16 +16,53 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+sys.path.insert(0, str(HERE))
+import feed_tone  # noqa: E402
 SHOW = ROOT / "Assets" / "StreamingAssets" / "show" / "show.json"
 
 
 def file_of(url: str) -> str:
     return url.rsplit("/", 1)[-1] if url else ""
+
+
+def tone(src: Path, dst: Path, cam: str) -> None:
+    """素材へ、その台の階調を掛けて置く。静止画は同じ形式で、動画はコマごとに掛けて焼き直す。"""
+    if src.suffix.lower() in (".png", ".jpg", ".jpeg"):
+        img = feed_tone.apply(Image.open(src), cam)
+        if dst.suffix.lower() == ".png":
+            img.save(dst)
+        else:
+            img.convert("RGB").save(dst, quality=95)
+        return
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=width,height,r_frame_rate", "-of", "csv=p=0", str(src)],
+                           capture_output=True, text=True, check=True).stdout.strip().split(",")
+    w, h, rate = int(probe[0]), int(probe[1]), probe[2]
+    dec = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(src), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                           stdout=subprocess.PIPE)
+    enc = subprocess.Popen(["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}",
+                            "-framerate", rate, "-i", "-", "-c:v", "libx264", "-crf", "16", "-preset", "medium",
+                            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(dst)], stdin=subprocess.PIPE)
+    assert dec.stdout is not None and enc.stdin is not None
+    n = w * h * 3
+    frames = 0
+    while True:
+        buf = dec.stdout.read(n)
+        if len(buf) < n:
+            break
+        enc.stdin.write(feed_tone.apply(Image.frombytes("RGB", (w, h), buf), cam).tobytes())
+        frames += 1
+    enc.stdin.close()
+    if dec.wait() != 0 or enc.wait() != 0 or frames == 0:
+        raise SystemExit(f"動画へ階調を掛けられない: {src}（{frames} コマ）")
 
 
 def build(out: Path) -> dict[str, str]:
@@ -49,7 +88,11 @@ def build(out: Path) -> dict[str, str]:
             if name in placed and placed[name] != src:
                 raise SystemExit(f"{name} を 2 つの素材が取り合っている: {placed[name]} / {src}")
             placed[name] = src
-            shutil.copy2(src, out / name)
+            cam = cue.get("camera", "")
+            if role == "mask" or cam not in ("A", "B", "C"):
+                shutil.copy2(src, out / name)
+            else:
+                tone(src, out / name, cam)
     return {k: str(v.relative_to(ROOT)) for k, v in placed.items()}
 
 

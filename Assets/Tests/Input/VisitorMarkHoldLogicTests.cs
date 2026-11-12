@@ -158,5 +158,25 @@ namespace FixedCamVr.Input.Tests
             logic.Tick(Dt, true);
             Assert.IsTrue(logic.StartedThisTick, "離して押し直したら再開する");
         }
+
+        [Test]
+        public void EndEvent_OnReleaseOrBlock_OfAnAcceptedPress()
+        {
+            var logic = new VisitorMarkHoldLogic();
+            logic.Tick(Dt, false);
+            Assert.IsFalse(logic.EndedThisTick, "押していなければ終わりも無い");
+            logic.Tick(Dt, true);
+            Assert.IsFalse(logic.EndedThisTick);
+            logic.Tick(Dt, false);
+            Assert.IsTrue(logic.EndedThisTick, "途中で離した");
+            logic.Tick(Dt, false);
+            Assert.IsFalse(logic.EndedThisTick, "1 回だけ");
+
+            logic.Tick(Dt, true);
+            logic.Tick(Dt, true, blocked: true);
+            Assert.IsTrue(logic.EndedThisTick, "禁止で打ち切られた");
+            logic.Tick(Dt, true);
+            Assert.IsFalse(logic.EndedThisTick, "受け付けていない押下に終わりは無い");
+        }
     }
 }

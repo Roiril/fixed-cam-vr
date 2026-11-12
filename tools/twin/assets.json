@@ -24,10 +24,31 @@
       "source": "twin_dollsA_in.mp4"
     },
     "cue_stain_A": {
-      "source": "twin_stainA_idle.png"
+      "source": "twin_stainA_idle.png",
+      "mask": "twin_stainA_mask.png"
     },
-    "stain_A_press_flutter": {
-      "source": "twin_stainA_pingpong.mp4"
+    "stain_A_press_bulge": {
+      "source": "twin_stainA_bulge.png",
+      "mask": "twin_stainA_mask.png"
+    },
+    "stain_A_done_doll": {
+      "source": "twin_stainA_doll.png",
+      "mask": "twin_stainA_mask.png"
+    },
+    "pov_0": {
+      "source": "twin_pov_0.mp4"
+    },
+    "pov_1": {
+      "source": "twin_pov_1.mp4"
+    },
+    "pov_2": {
+      "source": "twin_pov_2.mp4"
+    },
+    "pov_3": {
+      "source": "twin_pov_3.mp4"
+    },
+    "pov_4": {
+      "source": "twin_pov_4.mp4"
     }
   }
 }

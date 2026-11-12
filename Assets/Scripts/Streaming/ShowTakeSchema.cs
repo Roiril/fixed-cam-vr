@@ -70,8 +70,23 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool dismissible;
 
-        /// <summary>報告の長押しを始めた時に再生する任意の動画 cue。空なら反応しない。</summary>
+        /// <summary>
+        /// 報告の長押しを始めた時に出す任意の cue。空なら反応しない。
+        /// 動画なら 1 往復を流しきる（途中で離しても続く）。静止画なら押している間だけ出し、
+        /// 報告が成立する前に離すと元のカットの画へ戻る。
+        /// </summary>
         public string markStartCueId = "";
+
+        /// <summary>
+        /// 報告が成立した直後、現実へ戻る前に <see cref="markDoneSec"/> だけ出す任意の cue。空なら出さない。
+        /// <see cref="markStartCueId"/> がある演出でだけ働く。
+        /// ⚠ 上の「報告で現れてよいのは現実だけ」の例外で、使ってよいのはユーザーが名指しした演出だけ
+        ///   （2 周目 A のシミ・<c>canon/LEDGER.md</c> 0330）。
+        /// </summary>
+        public string markDoneCueId = "";
+
+        /// <summary><see cref="markDoneCueId"/> を出しておく秒数。0 以下は <see cref="TakeSchema.DefaultMarkDoneSec"/>。</summary>
+        public float markDoneSec;
 
         public ShowStepDef[] steps = Array.Empty<ShowStepDef>();
 
@@ -532,6 +547,9 @@ namespace FixedCamVr.Streaming
         ///   ＝ 0.85 まで上がるので、尺で強さを補う必要は無い）。
         /// </summary>
         public const float DismissGlitchMs = 420f;
+
+        /// <summary>報告が成立した直後の画（<see cref="ShowTakeDef.markDoneCueId"/>）を出しておく既定の秒数。</summary>
+        public const float DefaultMarkDoneSec = 0.4f;
 
         /// <summary>遷移全体の長さを「黒へ落とす / 黒から立ち上げる」へ配分する比（既存 70:100 に合わせる）。</summary>
         public const float DipDownRatio = 0.4f;

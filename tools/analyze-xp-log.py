@@ -410,8 +410,9 @@ def baked_cue_count(show: dict) -> int:
         ids.update(e["cueId"] for e in entries if e.get("cueId"))
     for seg in segments:
         for take in seg.get("takes") or []:
-            if take.get("markStartCueId"):
-                ids.add(take["markStartCueId"])
+            for key in ("markStartCueId", "markDoneCueId"):
+                if take.get(key):
+                    ids.add(take[key])
             for step in take.get("steps") or []:
                 ids.update(step[key] for key in ("cueId", "overlay2CueId") if step.get(key))
         ids.update(c["cueId"] for c in seg.get("cues") or [] if c.get("cueId"))

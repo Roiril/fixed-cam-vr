@@ -358,10 +358,85 @@ def run_seq(a):
     tmp.unlink(missing_ok=True)
 
 
+# 2 周目 C の人形視点（本番は実写の録画 pov_0〜4）。代役の後ろを、床の人形の目の高さで追う。
+# t0 は forward の道の時刻（C の担当は 16.6〜22.2 秒・z=0.74 を東へ歩く）。d は代役までの距離（頭 → 終わり）、
+# eye はカメラの高さ、aim は見る高さ。0 は遠くから見つける 1 枚、1〜4 は迫り、4 で背中へ追いつく。
+POV_CLIPS = [
+    dict(t0=16.95, sec=1.3, d=(0.74, 0.70), eye=(0.31, 0.31), aim=(0.95, 0.95)),
+    dict(t0=18.20, sec=1.4, d=(1.00, 0.88), eye=(0.31, 0.32), aim=(0.95, 1.00)),
+    dict(t0=19.00, sec=1.3, d=(0.80, 0.64), eye=(0.32, 0.34), aim=(1.00, 1.05)),
+    dict(t0=19.70, sec=1.2, d=(0.56, 0.42), eye=(0.34, 0.40), aim=(1.05, 1.12)),
+    dict(t0=20.30, sec=1.8, d=(0.40, 0.17), eye=(0.42, 0.95), aim=(1.12, 1.22)),
+]
+POV_FPS = 24.0
+POV_HFOV = 78.0
+
+
+def run_pov(a):
+    """人形視点のコマ。出力: Logs/twin-cycles/pov/<番号>/fNNNNN.npy（仕上げは make_pov.py）。"""
+    import numpy as np
+
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    ctx = ts.build_all(air_density=a.air, dust=a.dust, screens={})
+    person = tp.Person(ctx, "forward")
+    w, h = a.w, a.w * 3 // 4
+    setup_cycles(w, h, a.spp)
+    s = bpy.context.scene
+    s.render.use_persistent_data = True
+    cam = make_camera()
+    root = tc.WORK / "pov"
+    tmp = root / "_tmp.exr"
+    root.mkdir(parents=True, exist_ok=True)
+    only = [int(x) for x in a.frames.split(",")] if a.frames else None
+    for i, clip in enumerate(POV_CLIPS):
+        out = root / str(i)
+        out.mkdir(parents=True, exist_ok=True)
+        n = int(round(clip["sec"] * POV_FPS))
+        for f in range(n):
+            if only is not None and f not in only:
+                continue
+            path = out / f"f{f:05d}.npy"
+            if path.exists():
+                continue
+            u = f / max(1, n - 1)
+            ease = u * u * (3 - 2 * u)
+            t = clip["t0"] + f / POV_FPS
+            person.pose_at(t)
+            px, py = person.location_xy()
+            # 代役の後ろ（来た道の側）。少し前の位置から今の位置への向きを進行方向とする。
+            r0 = person.row_at(t - 0.6)
+            fwd = Vector((px - r0["x"], py - r0["z"], 0))
+            fwd = fwd.normalized() if fwd.length > 1e-4 else Vector((1, 0, 0))
+            side = Vector((-fwd.y, fwd.x, 0))
+            d = clip["d"][0] + (clip["d"][1] - clip["d"][0]) * ease
+            eye = clip["eye"][0] + (clip["eye"][1] - clip["eye"][0]) * ease
+            aim_z = clip["aim"][0] + (clip["aim"][1] - clip["aim"][0]) * ease
+            # 小さな人形が歩く揺れ（左右と上下）。歩幅は人より細かい。
+            sway = 0.018 * math.sin(t * 9.0 + i) * side + Vector((0, 0, 0.012 * abs(math.sin(t * 9.0 + i))))
+            pos = Vector((px, py, 0)) - fwd * d + Vector((0, 0, eye)) + sway
+            pos.x = max(tc.ROOM_X[0] + 0.06, min(tc.ROOM_X[1] - 0.06, pos.x))
+            pos.y = max(tc.ROOM_Y[0] + 0.06, min(tc.ROOM_Y[1] - 0.06, pos.y))
+            target = Vector((px, py, aim_z)) + 0.02 * math.sin(t * 4.3) * side
+            aim(cam, pos, target, hfov=POV_HFOV, sensor=36.0, roll=2.2 * math.sin(t * 4.5 + i))
+            s.cycles.seed = 3
+            s.render.use_border = False
+            s.render.filepath = str(tmp)
+            t1 = time.time()
+            bpy.ops.render.render(write_still=True)
+            img = bpy.data.images.load(str(tmp))
+            img.colorspace_settings.name = "Non-Color"
+            buf = np.empty(w * h * 4, dtype=np.float32)
+            img.pixels.foreach_get(buf)
+            np.save(path, buf.reshape(h, w, 4)[::-1, :, :3].astype(np.float16))
+            bpy.data.images.remove(img)
+            print(f"[twin] pov{i} f{f}/{n} t={t:.2f} d={d:.2f} {time.time() - t1:.1f}s", flush=True)
+    tmp.unlink(missing_ok=True)
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["still", "seq"])
+    ap.add_argument("cmd", choices=["still", "seq", "pov"])
     ap.add_argument("--cams", default="A,B,C")
     ap.add_argument("--fps", type=float, default=15.0)
     ap.add_argument("--frames", default="")
@@ -380,6 +455,8 @@ def main():
     a.stamp = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + a.tag
     if a.cmd == "seq":
         run_seq(a)
+    elif a.cmd == "pov":
+        run_pov(a)
     else:
         run_still(a)
 

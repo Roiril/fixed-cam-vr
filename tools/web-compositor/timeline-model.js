@@ -205,6 +205,8 @@ export function newTake(id, over = {}) {
     //   既存の show.json は挙動が 1 ビットも変わらない。
     dismissible: false,
     markStartCueId: '',
+    // 報告が成立した直後に短く出す cue（空 = 出さない）。卓に編集欄は無く、show.json の値を保つだけ。
+    markDoneCueId: '', markDoneSec: 0,
     steps: [],
     // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
     bgm: defaultBgm(), hasBgm: false,
@@ -305,6 +307,8 @@ function serializeTake(t) {
     maxDurationSec: num(t.maxDurationSec, 0),
     dismissible: !!t.dismissible,
     markStartCueId: t.markStartCueId || '',
+    markDoneCueId: t.markDoneCueId || '',
+    markDoneSec: num(t.markDoneSec, 0),
     steps: (t.steps || []).map(serializeStep),
   };
   // present-flag 規約: false のときは入れ子キー自体を出さない（幽霊指示を作らない）。
@@ -362,6 +366,8 @@ function normalizeTake(t) {
     maxDurationSec: num(t.maxDurationSec, 0),
     dismissible: !!t.dismissible,
     markStartCueId: typeof t.markStartCueId === 'string' ? t.markStartCueId : '',
+    markDoneCueId: typeof t.markDoneCueId === 'string' ? t.markDoneCueId : '',
+    markDoneSec: num(t.markDoneSec, 0),
     hasBgm: !!t.hasBgm,
     bgm: { ...defaultBgm(), ...(t.bgm || {}) },
   });

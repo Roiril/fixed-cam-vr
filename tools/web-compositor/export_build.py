@@ -55,8 +55,9 @@ def referenced_cue_ids(show):
                 ids.add(e['cueId'])
     for seg in segments:
         for take in (seg.get('takes') or []):
-            if take.get('markStartCueId'):
-                ids.add(take['markStartCueId'])
+            for key in ('markStartCueId', 'markDoneCueId'):
+                if take.get(key):
+                    ids.add(take[key])
             for step in (take.get('steps') or []):
                 for key in ('cueId', 'overlay2CueId'):
                     if step.get(key):

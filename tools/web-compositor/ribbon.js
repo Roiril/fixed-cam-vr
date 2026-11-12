@@ -1290,12 +1290,12 @@ export function createRibbon(container, deps) {
         : [])
       .join('');
     let markCueOpts = '<option value="">（動かさない）</option>';
-    const selectableMarkCues = cues.filter((cue) => cueFitsCam(cue, sel.camera)
-      && /\.(mp4|webm|mov)(\?|#|$)/i.test(cue.sourceUrl || ''));
+    // 動画（1 往復を流しきる）でも静止画（押している間だけ出す）でもよい。
+    const selectableMarkCues = cues.filter((cue) => cueFitsCam(cue, sel.camera) && cue.sourceUrl);
     for (const c of selectableMarkCues)
       markCueOpts += `<option value="${escapeHtml(c.id)}"${t.markStartCueId === c.id ? ' selected' : ''}>${escapeHtml(c.name || c.id)}</option>`;
     if (t.markStartCueId && !selectableMarkCues.some((c) => c.id === t.markStartCueId))
-      markCueOpts += `<option value="${escapeHtml(t.markStartCueId)}" selected>${escapeHtml(t.markStartCueId)}（映像を確認してください）</option>`;
+      markCueOpts += `<option value="${escapeHtml(t.markStartCueId)}" selected>${escapeHtml(t.markStartCueId)}（見つかりません）</option>`;
     inspectorEl.innerHTML = `
       <div class="rb-insp-head">演出 — ${escapeHtml(camLabel(sel.camera))} / ${sel.lap}周目
         <span class="rb-insp-sub">${escapeHtml(startLabel(t))} ／ ${total.approx ? '約' : ''}${fmtSec(total.sec)}s</span>

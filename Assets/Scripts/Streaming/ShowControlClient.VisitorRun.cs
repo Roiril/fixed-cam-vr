@@ -267,6 +267,9 @@ namespace FixedCamVr.Streaming
             timelineDirector?.NotifyVisitorMarkStarted();
         }
 
+        /// <summary>受け付けていた長押しが終わった（離した・禁止された）。押し始めで替えた画を戻す。</summary>
+        public void NotifyVisitorMarkEnded() => timelineDirector?.NotifyVisitorMarkEnded();
+
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public bool RecordVisitorMark()
         {

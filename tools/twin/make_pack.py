@@ -3,6 +3,8 @@
 入力: Drive の renders/twin-cycles/game/<route>/{A,B,C}.mp4 と <cam>_plate.jpg（seq_post.py の出力）、routes/<route>.tsv、rig.json。
 出力: <cam 名>_L<周>.mjr（RecordedSegmentFormat の MJR1。動画の全コマ + 最後に人の居ない写真）と pack.json。
 
+映像と写真には、スマホが配る明るさへ直す階調（feed_tone.py）を掛ける。合成素材（make_assets.py）にも同じ表が掛かる。
+
 周ごとに右下の 3 マスへ周の番号を焼く（16px 四方・値の下位ビットが左）。本番は 1・2 周目の録画を 3 周目に流すので、
 どの周の映像が映っているかが画でも数でも分かる（XpTwinDriver.ReadBadge が ev=twinlap に出す）。
 
@@ -28,6 +30,8 @@ from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+sys.path.insert(0, str(HERE))
+import feed_tone  # noqa: E402
 GAME = Path(os.environ.get("TWIN_GAME", r"G:\マイドライブ\shubie\renders\twin-cycles\game"))
 LAPS = 4
 SRC_W, SRC_H = 640, 480
@@ -171,6 +175,7 @@ def main() -> int:
     source["rig"] = hash_text(rig_text)
     rows = list(csv.DictReader((HERE / "routes" / f"{a.route}.tsv").open(encoding="utf-8"), delimiter="\t"))
     source["route"] = hash_text((HERE / "routes" / f"{a.route}.tsv").read_text(encoding="utf-8"))
+    source["tone"] = feed_tone.signature()
     rebuilt = not (stamp.exists() and json.loads(stamp.read_text(encoding="utf-8")) == source and (out / "pack.json").exists())
 
     # コマごとの位置（動画は fps、経路の表は 30Hz）。動いている最後のコマまでが道。
@@ -185,7 +190,7 @@ def main() -> int:
     if rebuilt:
         count = None
         for cam, name in CAMS:
-            plate = Image.open(src / f"{cam}_plate.jpg").convert("RGB")
+            plate = feed_tone.apply(Image.open(src / f"{cam}_plate.jpg").convert("RGB"), cam)
             if plate.size != (SRC_W, SRC_H):
                 raise SystemExit(f"{cam}_plate.jpg の寸法 {plate.size}")
             files = [open(out / f"{name}_L{lap}.mjr", "wb") for lap in range(1, LAPS + 1)]
@@ -200,7 +205,7 @@ def main() -> int:
                     f.write(data)
 
             for img in video_frames(src / f"{cam}.mp4"):
-                put(img, int(n / a.fps * 1000))
+                put(feed_tone.apply(img, cam), int(n / a.fps * 1000))
                 n += 1
             put(plate, int(n / a.fps * 1000))
             for f in files:

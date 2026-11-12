@@ -36,13 +36,24 @@ py -3.11 tools/twin/check_rig.py
 
 ## 合成素材（HMD なしの通し検証用）
 
-本番の合成素材（1-B の手形・2-A のシミ・4-A の人形群・3 周目の無人写真）は実際の部屋で作ってあり、
+本番の合成素材（1-B の手形・2-A のシミ・2-C の人形視点・4-A の人形群・3 周目の無人写真）は実際の部屋で作ってあり、
 ツインの映像に重ねると別の部屋の画が貼られる。`tools/twin-verify.py` は既定で、ツインの部屋で作り直した素材へ差し替えて走る
 （`--real-assets` で本番のまま）。本番の show.json と APK には入らない。
 
 - 対応表は `assets.json`（cue の id → `assets/` の素材）。`make_assets.py` が show.json の今のファイル名へ当てはめて
   `Logs/twin-run/assets/` に並べ、Editor は環境変数 `FIXEDCAM_ASSET_OVERRIDE_DIR` が指すフォルダの同名ファイルを読む
   （`ShowAssetResolver.TryOverride`。Player は読まない）。読まれた本数は判定の頭に出る
+- 束の映像にも合成素材にも、スマホが配る明るさへ直す階調（`feed_tone.py`）が掛かる。Cycles の仕上げは裸電球の部屋を暗いまま出すが、
+  本番のスマホは自動露出で暗部を持ち上げて配り、本番の画面加工はその明るさに合わせてある。掛けないと幕だけが白く残り、代役も人形も黒へ潰れる。
+  表は台ごとに 1 本で、本番の無人写真の分布へ寄せる。素材は暗いまま置き、掛けるのは `make_pack.py` と `make_assets.py`
+- 2-A のシミは静止画 3 枚（待機・盛り上がり・人形）。作り方は `tools/gen-plate/stain3/README.md`
+- 2-C の人形視点（pov_0〜4）は Cycles で撮る。代役の後ろを床の人形の目の高さで追い、4 本目で背中へ追いつく
+
+  ```powershell
+  & "C:\Program Files\Blender Foundation\Blender 5.1lender.exe" --background --factory-startup --python tools/twin/twin_render.py -- pov --w 640 --spp 48
+  py -3.11 tools/twin/make_pov.py     # → assets/twin_pov_<番号>.mp4。--sheet <画> で途中のコマを並べて見る
+  ```
+
 - 静止画は `tools/gen-plate` の通常の手順で作る。場所は `sites/twin_A.json` / `twin_B.json`（無人写真は `plates/twin_*_plate.jpg`）
 - 動画は Codex の画像生成で同じ構図のキーフレームを数枚作り（前のコマを入力にして少しずつ動かす）、`animate_keys.py` が
   オプティカルフローで中割りして 640x480・24fps の mp4 にする。キーの生成は暗くした種の上で行い、`gen-tone.py undim` で戻してから繋ぐ
@@ -72,6 +83,8 @@ py -3.11 tools/twin/make_assets.py
 | `twin_render.py` | Cycles の設定と撮影。`still` と `seq` |
 | `prep_textures.py` | 生成した素材写真から色（`<名前>.jpg`）と面の情報（`<名前>_s.jpg`。R 高さ・G 層・B 細かい明暗）を作る。缶のラベルと箱の印刷はコードで組む。生成元は Drive `renders/twin-cycles/textures-src`（`v2/` が追加分） |
 | `make_pack.py` | HMD なしの通し検証（`tools/twin-verify.py`）へ渡す束。焼いた動画を周の印つきの MJR と無人写真へ変える |
+| `feed_tone.py` | 束の映像と合成素材へ掛ける階調（スマホが配る明るさ）。`py -3.11 tools/twin/feed_tone.py --sheet <画>` で前後を並べる |
+| `make_pov.py` | 人形視点のコマ（`twin_render.py pov`）を仕上げて動画にする |
 | `assets.json` / `assets/` / `make_assets.py` | ツインの部屋で作り直した合成素材と、本番の cue への当てはめ（上の「合成素材」） |
 | `animate_keys.py` | 生成したキーフレーム数枚をオプティカルフローで中割りして動画にする |
 | `audit_prompt.md` | 監査の文面（基準を動かさないため固定） |

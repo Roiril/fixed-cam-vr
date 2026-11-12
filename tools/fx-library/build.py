@@ -226,7 +226,7 @@ def poster_html(cuts: list[Cut], catalog: dict, stamp: str) -> str:
     rows: list[tuple[str, list]] = [
         ("導入", [("all", ["onboard", "title-in", "title-out", "guide", "arrive", "tv-approach", "tv-power", "begin"])]),
         ("1", [("A", ["report-empty"]), ("B", ["handprint", "handprint-clear"]), ("C", [])]),
-        ("2", [("A", ["stain", "stain-flutter"]), ("B", ["backrooms"]), ("C", ["pov-peek", "pov-chase", "takeover"])]),
+        ("2", [("A", ["stain", "stain-bulge", "stain-doll"]), ("B", ["backrooms"]), ("C", ["pov-peek", "pov-chase", "takeover"])]),
         ("3", [("A", ["warp", "doll-a"]), ("B", ["doll-b", "report-possessed"]), ("C", ["screens"])]),
         ("4", [("A", ["final-enter", "halt", "prompt"]), ("B", ["return", "farewell"]), ("C", ["outro-return"])]),
         ("人形", [("B", ["sink"]), ("C", ["outro-doll"])]),

@@ -225,6 +225,7 @@ namespace FixedCamVr.Streaming
                     // 報告の押し始めに出す動画も先読みする。ここを漏らすと初回だけ
                     // DL とマスク読込が長押し中に走り、押し終わってから動き始める。
                     CollectCueAssets(take.markStartCueId, stills);
+                    CollectCueAssets(take.markDoneCueId, stills);
                     foreach (ShowStepDef step in take.steps)
                     {
                         if (step == null) continue;

@@ -119,6 +119,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>報告の長押し開始を、応答 cue を持つ演出へ渡す。</summary>
         public void NotifyVisitorMarkStarted() => takeRunner?.NotifyVisitorMarkStarted();
+        public void NotifyVisitorMarkEnded() => takeRunner?.NotifyVisitorMarkEnded();
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;

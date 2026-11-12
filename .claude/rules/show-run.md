@@ -69,6 +69,7 @@ paths:
 - 尺の待ち相手は負値で表す。clip 終端・次の区間・線・報告の 4 つ。線はカット開始後の横断だけを数え、線が無ければ既定尺。報告は締め専用で、開始 4s は受けない — `TakeRunnerLogic.WaitClipEnd`〜`WaitMark` / `EndStepIfLineCrossed` / `MarkGraceSec` 〔出典: streaming:1775-1777, 2226-2249, 2495-2514〕
 - `once` は決着回数で数える。未決着は「yield で切れた ∧ 未報告」だけで、その区間へ戻れば頭から再演する（2 回まで）。走行中の自分は武装しない — `TakeRunnerLogic.Outcome` / `ArmEnterTakes` / `TakeReplayOnBacktrackTests` 〔出典: streaming:2586-2610〕
 - `dismissible`（既定 false）は報告で畳まれ、乱れ 420ms で現実へ戻る。Ready と持ち越しは捨てる。締めのカットと `afterTakeId` は消せない — `TakeRunnerLogic.NotifyMarkPressed` / `TakeRunner.SetTakes` / `TakeSchema.DismissGlitchMs` 〔出典: streaming:2515-2558〕
+- `markStartCueId` は長押しの開始で出す。動画は 1 往復を流しきり、静止画は押している間だけで、成立前に離すと元の画へ戻る。成立後は `markDoneCueId` を `markDoneSec` 出して畳む。`markDoneCueId` はユーザーが名指しした演出だけ（LEDGER 0330） — `TakeRunner.NotifyVisitorMarkEnded` / `BeginMarkDone`
 - 報告に数えるのは走行中の押下だけ — `TakeRunnerLogic.NotifyMarkPressed` 〔出典: streaming:2599-2604〕
 - 次の演出が控えていれば復帰の暗転を打たない。安全網は次フレーム以降で判定する — `TakeRunner._chainPendingFrame` 〔出典: streaming:691-707〕
 - 継ぎ目の遷移は割り込む側が持つ — `CameraSwitchDirector.HandoffDip` 〔出典: streaming:709-725〕

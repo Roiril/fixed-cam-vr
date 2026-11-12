@@ -92,6 +92,11 @@ namespace FixedCamVr.Streaming
         private bool _markResponsePlaying;
         private bool _markResponseReported;
         private bool _markResponseZoneExit;
+        // 押し始めの cue が静止画（押している間だけ出す。動画は 1 往復を流しきる）。
+        private bool _markResponseStill;
+        // 報告が成立した直後の画（markDoneCueId）を出している間と、その終わりの時刻。
+        private bool _markDonePlaying;
+        private float _markDoneUntil;
 
         // 現カットが開いている端末内録画（source:"rec"）。所有はここ — カットが変わったら必ず閉じる。
         private RecordedFramePlayer? _stepFrames;
@@ -807,12 +812,13 @@ namespace FixedCamVr.Streaming
             string id = _takes[index].markStartCueId;
             if (string.IsNullOrEmpty(id)) return;
             OverlayCueData? cue = _cueResolver?.Invoke(id);
-            if (cue == null || !cue.SourceIsVideo)
+            if (cue == null)
             {
-                Debug.LogWarning($"[TakeRunner] 報告開始の動画 cue が解決できません: {id}");
+                Debug.LogWarning($"[TakeRunner] 報告開始の cue が解決できません: {id}");
                 return;
             }
-            // 一周の終端から先頭姿勢へ戻ったあと、待機画が読めるまで動画の先頭を保つ。
+            // 動画: 一周の終端から先頭姿勢へ戻ったあと、待機画が読めるまで動画の先頭を保つ。
+            // 静止画: 押している間だけ出す（離したら NotifyVisitorMarkEnded が元の画へ戻す）。
             cue.loop = true;
             cue.fadeInSeconds = 0f;
             cue.fadeOutSeconds = 0f;
@@ -820,7 +826,62 @@ namespace FixedCamVr.Streaming
             if (token < 0) return;
             _markResponseToken = token;
             _markResponsePlaying = true;
-            Debug.Log($"[TakeRunner] 報告開始の応答動画 take={TakeId(index)} cue={id} token={token}");
+            _markResponseStill = !cue.SourceIsVideo;
+            Debug.Log($"[TakeRunner] 報告開始の応答 take={TakeId(index)} cue={id} " +
+                      $"kind={(_markResponseStill ? "still" : "video")} token={token}");
+        }
+
+        /// <summary>
+        /// 受け付けていた長押しが終わった。押し始めの画が静止画で、報告がまだ成立していなければ
+        /// 元のカットの画へ戻す。動画は流しきるので何もしない。
+        /// </summary>
+        public void NotifyVisitorMarkEnded()
+        {
+            if (!_markResponsePlaying || !_markResponseStill || _markResponseReported) return;
+            EndMarkResponseUnreported();
+            Debug.Log("[TakeRunner] 報告開始の応答が復帰した reported=False why=released");
+        }
+
+        // 報告が成立しないまま応答が終わった。待機の画へ戻し、保留していた区間の切り替わりを流す。
+        private void EndMarkResponseUnreported()
+        {
+            _markResponsePlaying = false;
+            _markResponseStill = false;
+            _markResponseToken = -1;
+            OverlayCueData? idle = _cueResolver?.Invoke(_activeStepCueId);
+            if (idle != null && overlay != null) overlay.PlayCue(idle);
+            if (_markResponseZoneExit) _logic.NotifyZoneChanged(Now);
+            _markResponseZoneExit = false;
+        }
+
+        // 報告が成立した応答の終わり。markDoneCueId があればその画を短く出してから畳む。
+        private void BeginMarkDone()
+        {
+            _markResponsePlaying = false;
+            _markResponseStill = false;
+            _markResponseToken = -1;
+            int index = _logic.ActiveTakeIndex;
+            string id = index >= 0 && index < _takes.Length ? _takes[index].markDoneCueId : "";
+            OverlayCueData? done = string.IsNullOrEmpty(id) ? null : _cueResolver?.Invoke(id);
+            if (done == null || overlay == null)
+            {
+                if (!string.IsNullOrEmpty(id))
+                    Debug.LogWarning($"[TakeRunner] 報告完了の cue が解決できません: {id}");
+                _logic.CompleteDeferredDismiss();
+                return;
+            }
+            done.loop = true;
+            done.fadeInSeconds = 0f;
+            done.fadeOutSeconds = 0f;
+            if (overlay.PlayCue(done) < 0)
+            {
+                _logic.CompleteDeferredDismiss();
+                return;
+            }
+            float sec = _takes[index].markDoneSec > 0f ? _takes[index].markDoneSec : TakeSchema.DefaultMarkDoneSec;
+            _markDonePlaying = true;
+            _markDoneUntil = Now + sec;
+            Debug.Log($"[TakeRunner] 報告完了の画 take={TakeId(index)} cue={id} sec={sec:F2}");
         }
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
@@ -920,19 +981,21 @@ namespace FixedCamVr.Streaming
         private void Update()
         {
             TickRecFollow();
+            // 応答の終わり。動画は 1 往復の終端、静止画は報告が成立した時点（離したときは NotifyVisitorMarkEnded）。
             if (_markResponsePlaying && overlay != null &&
-                (overlay.HasLooped(_markResponseToken) || overlay.IsFinished(_markResponseToken)))
+                (_markResponseStill
+                    ? _markResponseReported
+                    : overlay.HasLooped(_markResponseToken) || overlay.IsFinished(_markResponseToken)))
             {
-                _markResponsePlaying = false;
-                _markResponseToken = -1;
-                if (_markResponseReported) _logic.CompleteDeferredDismiss();
-                else
-                {
-                    OverlayCueData? idle = _cueResolver?.Invoke(_activeStepCueId);
-                    if (idle != null) overlay.PlayCue(idle);
-                    if (_markResponseZoneExit) _logic.NotifyZoneChanged(Now);
-                }
-                Debug.Log($"[TakeRunner] 報告開始の応答動画が復帰した reported={_markResponseReported}");
+                bool reported = _markResponseReported;
+                if (reported) BeginMarkDone();
+                else EndMarkResponseUnreported();
+                Debug.Log($"[TakeRunner] 報告開始の応答が復帰した reported={reported}");
+            }
+            if (_markDonePlaying && Now >= _markDoneUntil)
+            {
+                _markDonePlaying = false;
+                _logic.CompleteDeferredDismiss();
             }
             // untilClipEnd のカットは、オーバーレイが自然終端 / 中止で決着した時点を「終わり」とする。
             // 判定は必ずトークン経由（Current==null はロード中と区別が付かない）。
@@ -1055,6 +1118,8 @@ namespace FixedCamVr.Streaming
             _markResponsePlaying = false;
             _markResponseReported = false;
             _markResponseZoneExit = false;
+            _markResponseStill = false;
+            _markDonePlaying = false;
             // 同じ演出の次カットへ進んだ事実は、直前のカットが著作どおり終わったことを意味する。
             // playable 判定を通って画面を取った dollCall だけが _activeStepDollCall を立てるため、
             // 素材不足などで飛ばされたカットはここへ混ざらない。
@@ -1893,6 +1958,8 @@ namespace FixedCamVr.Streaming
             _markResponsePlaying = false;
             _markResponseReported = false;
             _markResponseZoneExit = false;
+            _markResponseStill = false;
+            _markDonePlaying = false;
             if (_stepOverlayPlayed) overlay?.StopOverlay();
             _stepOverlayPlayed = false;
             _awaitingClipEnd = false;
