@@ -150,6 +150,10 @@ def main() -> None:
         keep_w = cv2.GaussianBlur((~hole2).astype(np.float32), (0, 0), 5.0)[..., None]
         fill = cv2.GaussianBlur(light.astype(np.float32), (0, 0), 5.0) / np.maximum(keep_w, 0.2)
         fill[cut > 0] = 0
+        # ガラスのまわり（枠の内側の縁）には光を足さない。点いた版では枠の内側が青白く光っており、
+        # それを割り戻しで持ち上げた分が、画面と枠の間の青い枠に見えた（0341）。ガラスから 30 画素ほどかけて戻す
+        near = cv2.dilate(glass, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (45, 45)))
+        fill *= 1.0 - cv2.GaussianBlur(near, (0, 0), 9.0).astype(np.float32)[..., None] / 255.0
         fill = np.clip(cv2.GaussianBlur(fill, (0, 0), 1.5), 0, 255).astype(np.uint8)
         small = cv2.resize(fill, (w // LIGHT_SCALE, h // LIGHT_SCALE), interpolation=cv2.INTER_AREA)
         write(OUT / "light.jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 90])
