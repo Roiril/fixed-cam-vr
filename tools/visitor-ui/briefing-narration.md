@@ -44,7 +44,7 @@
 
 ### 02 subject — 調査対象と手順
 
-開始 17.2 秒 / 尺 42.0 秒
+開始 17.2 秒 / 尺 40.0 秒
 
 画像: `twin-room-v1.jpg`
 
@@ -76,13 +76,13 @@
 
 観測装置をつけ、このカーテンの周りを三周してください。
 
-文 06 / 場面内 34.6–42.0 秒
+文 06 / 場面内 34.6–40.0 秒
 
-足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり歩いてください。
+右手で手すりを持ち、決して離さず、ゆっくり歩いてください。
 
 ### 03 report — XかYを長押し
 
-開始 59.2 秒 / 尺 33.9 秒
+開始 57.2 秒 / 尺 33.9 秒
 
 画像: `device-quest3-v1.jpg`
 
@@ -116,7 +116,7 @@
 
 ### 04 wear — 終了と装着
 
-開始 93.0 秒 / 尺 19.2 秒
+開始 91.0 秒 / 尺 19.2 秒
 
 画像: `wear-doctor-v2.jpg`
 
@@ -196,7 +196,7 @@ Put on the observation device and walk around this curtain three times.
 
 文 06 / 場面内 31.4–38.4 秒
 
-You will not see your feet. Hold the handrail with your right hand, never let go, and walk slowly.
+Hold the handrail with your right hand, never let go, and walk slowly.
 
 ### 03 report — Hold X or Y
 
@@ -310,7 +310,7 @@ Mettez le dispositif d’observation et faites trois fois le tour de ce rideau.
 
 文 06 / 場面内 34.6–42.6 秒
 
-Vous ne verrez pas vos pieds. Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.
+Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.
 
 ### 03 report — Maintenez X ou Y
 

@@ -44,7 +44,7 @@ TAKE_JSON = HERE / f"doctor-ja-{VERSION}-original.json"
 # 各文の頭（入力原稿の表記）。場面と文の順は briefing-v1.json と同じ。
 ANCHORS = {
     "introduction": ["ようこそ", "私は……", "あなたは、今日から", "これより、"],
-    "subject": ["調査対象は、", "ある空き家の", "外見上は、", "その条件も", "かんそくそうちをつけ", "足元は、見えません"],
+    "subject": ["調査対象は、", "ある空き家の", "外見上は、", "その条件も", "かんそくそうちをつけ", "右手で手すりを持ち"],
     "report": ["これが、怪異を記録し", "そうちには、", "どのような異変が", "報告するときは", "報告の内容は"],
     "wear": ["調査が終わったら", "続けられなくなったら", "では。", "健闘を、祈ります"],
 }
@@ -174,6 +174,44 @@ def long_pauses(chars, starts, ends, samples, rate):
     return cuts
 
 
+# 原稿から外したが、残してある合成の音にはまだ入っている文（--reuse で切り直すときに音から切り取る）。
+# 0334「足元は見えません。は不要」。聴いて判定をもらった声を保つため、合成し直さずに切り取った。
+# 次に合成し直したら、この文は音に無いので何もしない。
+DROP_PHRASES = ["足元は、見えません。"]
+
+
+def dropped_spans(chars, starts, ends, samples, rate):
+    """DROP_PHRASES の文を、手前の無音の真ん中から次の文の手前の無音の真ん中まで切り取る区間。"""
+    voiced = voiced_indices(chars, starts, ends)
+    text = "".join(chars)
+    spans = []
+    for phrase in DROP_PHRASES:
+        i = text.find(phrase)
+        if i < 0:
+            continue
+        inside = [v for v in voiced if i <= v < i + len(phrase)]
+        before = [v for v in voiced if v < i]
+        after = [v for v in voiced if v >= i + len(phrase)]
+        if not inside or not before or not after:
+            raise SystemExit(f"「{phrase}」の前後が取れない")
+        q0 = quiet_run(samples, rate, ends[before[-1]], starts[inside[0]])
+        q1 = quiet_run(samples, rate, ends[inside[-1]], starts[after[0]])
+        if not q0 or not q1:
+            raise SystemExit(f"「{phrase}」の前後に無音が見つからない（切ると声が切れる）")
+        spans.append(((q0[0] + q0[1]) / 2, (q1[0] + q1[1]) / 2))
+    return spans
+
+
+def merge_spans(spans):
+    out = []
+    for a, b in sorted(spans):
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
 def remap(t, cuts):
     """元の時刻 t を、間を詰めた後の時刻へ。"""
     return t - sum(max(0.0, min(t, b) - a) for a, b in cuts)
@@ -231,7 +269,8 @@ def main():
                 cue_bounds.append((scene_id, (q[0] + q[1]) / 2))
             cursor = i + len(anchor)
     cut_s = [t for _, t in cue_bounds] + [total_ms / 1000]
-    pauses = long_pauses(al["characters"], starts, ends, samples, rate)
+    pauses = merge_spans(long_pauses(al["characters"], starts, ends, samples, rate)
+                         + dropped_spans(al["characters"], starts, ends, samples, rate))
     cut_ms = [round(remap(t, pauses) * 1000) for t in cut_s]   # 間を詰めた後の文の境
 
     raw = io.open(BRIEFING, encoding="utf-8", newline="").read()

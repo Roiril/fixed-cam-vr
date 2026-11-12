@@ -170,8 +170,8 @@
             "durationMs": 4883
           },
           {
-            "text": "足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり歩いてください。",
-            "durationMs": 7400
+            "text": "右手で手すりを持ち、決して離さず、ゆっくり歩いてください。",
+            "durationMs": 5383
           }
         ],
         "en": [
@@ -196,7 +196,7 @@
             "durationMs": 5200
           },
           {
-            "text": "You will not see your feet. Hold the handrail with your right hand, never let go, and walk slowly.",
+            "text": "Hold the handrail with your right hand, never let go, and walk slowly.",
             "durationMs": 7000
           }
         ],
@@ -222,7 +222,7 @@
             "durationMs": 5600
           },
           {
-            "text": "Vous ne verrez pas vos pieds. Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.",
+            "text": "Tenez la main courante de la main droite, ne la lâchez jamais et avancez lentement.",
             "durationMs": 8000
           }
         ]

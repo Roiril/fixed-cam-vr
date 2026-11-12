@@ -1245,7 +1245,7 @@ test('日本語の台詞は 0327 の版で、声は v4 の音声。古い台詞�
     assert.match(scene.cues.fr[index].text, fr);
   }
   // 手順で残さない疑問: 手すり・押すボタンと長さ・見間違い・終わり方・やめたいとき・装着
-  assert.match(subject.cues.ja[5].text, /足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり/);
+  assert.match(subject.cues.ja[5].text, /^右手で手すりを持ち、決して離さず、ゆっくり/);
   assert.match(report.cues.ja[1].text, /室内のカメラが捉えた映像が映ります/);
   assert.match(report.cues.ja[3].text, /左コントローラーのボタンを1秒間、長押し.*XとY、どちらでも/);
   assert.match(report.cues.ja[4].text, /見間違いでも構いません/);
