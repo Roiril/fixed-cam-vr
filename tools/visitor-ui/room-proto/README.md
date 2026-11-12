@@ -1,7 +1,8 @@
 # 博士の部屋（試作）
 
 博士とテレビを 1 つの部屋の絵に置き、カメラがその中を動く形の試作（LEDGER 0335・`canon/OPEN.md`「博士とテレビを 1 つの部屋に置き、1 台のカメラで繋ぐ」）。
-**タブレットのアプリにはまだ入っていない。** ブラウザで見るだけの頁と、通しの動画を書き出す道具。
+博士の口は DomoAI の Talking Avatar で動かしてある（`layers/face-ja.mp4`）。
+タブレットのアプリは、この頁を焼いた 1 本の動画（`asset/doctor-room-ja-v*.mp4`）を流す（日本語だけ。英語と仏語は従来の静止画とテレビ）。
 
 ## 見る
 
@@ -11,6 +12,7 @@
 - `?doll=0` 人形の頭が傾く演出を外す
 - `?sfx=0` 効果音を鳴らさない（声だけ）
 - `?w=1280` 描く幅を固定する（書き出し用）
+- `?lips=0` 口の動画を使わず、元の写真のまま
 
 ## ファイル
 
@@ -27,6 +29,8 @@
 | `index.html` | 声の時刻からカメラ・ピント・テレビの中身・灯り・音を決める台本と、再生の操作 |
 | `serve.cjs` | 配る。書き出しのコマも受け取る（`POST /_frame`） |
 | `make-preview.py` | 書き出したコマに声と字幕を合わせて mp4 にする |
+| `lipsync.py` | 口の動画。`plan` が声を無音の位置で切り（`layers/lipsync-plan.json`）、`send` が DomoAI へ投げて取り出し、`track` が時刻表に並べて `layers/face-ja.mp4` にする |
+| `bake-film.py` | 書き出したコマに声と効果音を合わせて、アプリが流す 1 本と場面ごとの最初のコマにし、`briefing-v1.json` の `film` を書く |
 
 ## 通しの動画を作る
 
@@ -35,6 +39,31 @@
 3. コンソールで `await RoomProto.export('full', 30)`（3700 コマ前後・2〜3 分）
 4. `py -3.11 tools/visitor-ui/room-proto/make-preview.py <ローカルの出力.mp4>` → できたものを Drive `renders/doctor-room/` へ移す
 5. `frames/` は消す（git 管理外）
+
+## 口の動画を作り直す（声を変えたとき）
+
+口の動画は声と 1 対 1。声を作り直したら全部作り直しになる。
+
+1. `py -3.11 tools/visitor-ui/room-proto/lipsync.py plan <作業フォルダ>`（先に `layers/lipsync-plan.json` を消す。作業フォルダはリポジトリの外）
+2. `py -3.11 tools/visitor-ui/room-proto/lipsync.py send <作業フォルダ>`（30 本前後・450 クレジット前後・15 分前後。止めても続きから回る）
+3. 試作の頁で `await RoomProto.postMeta()` の後、`py -3.11 tools/visitor-ui/room-proto/lipsync.py track <作業フォルダ>`
+4. 取り出した動画は Drive `renders/doctor-room/lipsync-v<声の版>/` へ移す
+
+- DomoAI の CLI は `npm install -g @domoai/cli` → `domoai login --start`（出た URL をログイン済みのブラウザで開いて承認）→ `domoai login --finish`
+- 枠の値段は 5 秒 15・10 秒 45・20 秒 90 クレジット。5 秒の枠が秒あたり最安なので、声を 4.7 秒以下に切る。出来る動画は声と同じ長さ・1280×720・25fps
+- どの本も元の写真の姿勢で始まり、ほぼ同じ姿勢で終わる。つなぎ目は前後 0.1 秒を重ねて溶かす。頭は話しながら上下に最大 12 画素（1280 幅）動く
+- ⚠ 同時に積める本数に上限がある（`queue_full`）。`send` は積んだ分が終わるのを待って投げ直す
+- ⚠ 出来た動画の URL は Python の urllib の既定の User-Agent だと 403 になる。curl で取る
+- ⚠ 投げている最中に止めると、作られたのに記録に残らない本が出る。`domoai list` と `posts.json` を突き合わせる
+
+## アプリの動画を焼く
+
+1. `http://localhost:8142/?w=1280` を開き、コンソールで `await RoomProto.postMeta()`
+2. `await RoomProto.export('film', 30, 0, RoomProto.END_AT + 400)`（声の終わりまで。終わりの砂嵐はアプリが出す）
+3. `py -3.11 tools/visitor-ui/room-proto/bake-film.py --version <版>`。動画の中身を変えたら版を上げる（WebView が古い動画を持つ）
+4. `frames/film/` を消す
+
+アプリは場面ごとに `film.ja.fromMs`（その場面の分の頭）から流し、文の窓は `voiceMs` に文の頭を足した位置で切る。場面をまたぐときは同じ動画を読み直さずに続けて流す（乱れを挟まない）。最初の文の字幕は声の頭まで待つ。動画が読めないときは、その説明の間だけ声とテレビの形へ戻る。
 
 ## 演出（上から起きる順）
 

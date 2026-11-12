@@ -85,6 +85,14 @@
       },
       "audio": {
         "ja": "introduction-ja-v5.mp3"
+      },
+      "film": {
+        "ja": {
+          "file": "doctor-room-ja-v1.mp4",
+          "poster": "doctor-room-introduction-v1.jpg",
+          "fromMs": 0,
+          "voiceMs": 1500
+        }
       }
     },
     {
@@ -192,6 +200,14 @@
       },
       "audio": {
         "ja": "subject-ja-v5.mp3"
+      },
+      "film": {
+        "ja": {
+          "file": "doctor-room-ja-v1.mp4",
+          "poster": "doctor-room-subject-v1.jpg",
+          "fromMs": 17053,
+          "voiceMs": 18753
+        }
       }
     },
     {
@@ -365,6 +381,14 @@
       "loopVideo": {
         "file": "twin-walk-v1.mp4",
         "startCue": 3
+      },
+      "film": {
+        "ja": {
+          "file": "doctor-room-ja-v1.mp4",
+          "poster": "doctor-room-report-v1.jpg",
+          "fromMs": 47208,
+          "voiceMs": 47709
+        }
       }
     },
     {
@@ -451,6 +475,14 @@
       },
       "audio": {
         "ja": "wear-ja-v5.mp3"
+      },
+      "film": {
+        "ja": {
+          "file": "doctor-room-ja-v1.mp4",
+          "poster": "doctor-room-wear-v1.jpg",
+          "fromMs": 95846,
+          "voiceMs": 96346
+        }
       }
     }
   ]

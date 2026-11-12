@@ -295,8 +295,9 @@ let fetchHandler = async (resource) => ({
 
 const context = {
   AbortController,
-  Audio: function Audio() {
+  Audio: function Audio(src) {
     const media = new MockMedia('', 'audio');
+    if (src) media.src = src;
     createdAudio.push(media);
     return media;
   },
@@ -480,8 +481,14 @@ async function flushPromises() {
 // （古い台詞の音声なので）。媒体の挙動を確かめる試験は、v2 の動画を付けた写しで回す。
 // いまの briefing は新しい台詞の声（v3・音声だけ）を audio.ja に持つ。口の動画はまだ無い。
 // 動画の挙動を確かめる試験のために、写しの側だけ音声を外して v2 の動画を付ける。
+function withoutFilm(data) {
+  for (const scene of data.scenes) delete scene.film;
+  return data;
+}
+
 function withJaMedia(data) {
   for (const scene of data.scenes) {
+    delete scene.film;
     if (scene.video?.ja) continue;
     if (scene.audio) delete scene.audio.ja;
     scene.video = { ...(scene.video || {}), ja: `${scene.id}-ja-v2.mp4` };
@@ -505,6 +512,7 @@ function prepareBriefing(data) {
   state.briefing.pauseReasons.clear();
   state.briefing.auto = false;
   state.briefing.mediaFailed = false;
+  state.briefing.filmFailed = false;
   state.briefing.doctorFailed = false;
   elements.get('doctorImage').hidden = false;
   elements.get('doctorVideo').hidden = true;
@@ -1121,13 +1129,40 @@ test('本番JSONと表示指定の境界値を検証する', () => {
     mutate(invalid);
     assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing figures/);
   }
+  // 博士の部屋の動画（film）。全場面が同じ 1 本を指し、場面の頭は前の場面の声の終わり
+  const films = briefing.scenes.map((scene) => scene.film?.ja);
+  assert.ok(films.every(Boolean), '日本語の全場面に部屋の動画がある');
+  assert.equal(new Set(films.map((film) => film.file)).size, 1);
+  assert.equal(films[0].fromMs, 0);
+  for (const film of films) {
+    assert.ok(fs.statSync(path.join(assetRoot, film.file)).size > 1_000_000, film.file);
+    assert.ok(fs.existsSync(path.join(assetRoot, film.poster)), film.poster);
+  }
+  for (let i = 1; i < films.length; i++) {
+    const prev = briefing.scenes[i - 1];
+    const prevEnd = films[i - 1].voiceMs + prev.cues.ja.reduce((sum, cue) => sum + cue.durationMs, 0);
+    assert.ok(Math.abs(films[i].fromMs - prevEnd) <= 40, `${briefing.scenes[i].id}: 前の場面の声の終わりから始まる`);
+    assert.ok(films[i].voiceMs > films[i].fromMs);
+  }
+  for (const mutate of [
+    (data) => { data.scenes[0].film.ja.file = '../x.mp4'; },
+    (data) => { data.scenes[0].film.ja.file = 'x.webm'; },
+    (data) => { data.scenes[0].film.ja.poster = ''; },
+    (data) => { data.scenes[0].film.ja.voiceMs = -1; },
+    (data) => { data.scenes[1].film.ja.voiceMs = data.scenes[1].film.ja.fromMs - 1; },
+    (data) => { data.scenes[0].film.de = data.scenes[0].film.ja; },
+  ]) {
+    const invalid = clone(briefing);
+    mutate(invalid);
+    assert.throws(() => runtime.validateBriefingData(invalid), /invalid briefing film/);
+  }
   const tagged = clone(briefing);
   tagged.scenes[1].tag = { ja: '管理番号', en: 'No.' };
   assert.throws(() => runtime.validateBriefingData(tagged), /invalid briefing tag/);
 });
 
 test('額の絵は文に合わせて替わり、報告の文では X と Y の図と「1秒 長押し」を出す', () => {
-  const data = clone(briefing);
+  const data = withoutFilm(clone(briefing));
   prepareBriefing(data);
   elements.get('staff').open = false;
   const subjectIndex = data.scenes.findIndex((scene) => scene.id === 'subject');
@@ -1361,8 +1396,98 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), false);
 });
 
-test('媒体未指定の場面ではaudioもvideoも作らない', () => {
+test('部屋の動画は場面の頭の間から流し、字幕は声の頭まで待ち、次の文は声の位置で切る', () => {
   const data = clone(briefing);
+  prepareBriefing(data);
+  const scene = data.scenes[0];
+  const film = scene.film.ja;
+  runtime.configureBriefingMedia(scene);
+  runtime.beginBriefingCue();
+  const video = elements.get('doctorVideo');
+  assert.equal(runtime.getBriefingMedia(), video);
+  assert.match(video.src, new RegExp(`${film.file.replace('.', '\\.')}$`));
+  assert.match(video.poster, new RegExp(`${film.poster.replace('.', '\\.')}$`));
+  assert.equal(video.currentTime, film.fromMs / 1000);
+  assert.equal(selectorElements.get('.stage').classList.contains('is-film'), true);
+  assert.equal(selectorElements.get('.stage').classList.contains('has-reference'), false);
+  assert.equal(elements.get('subtitleTyped').textContent, '', '灯りが点く間は字幕を出さない');
+  video.onplaying();
+  video.currentTime = film.voiceMs / 1000;
+  timers.runOne(100);
+  assert.equal(elements.get('subtitleTyped').textContent, scene.cues.ja[0].text);
+  runtime.moveBriefing(1, 'control');
+  const second = (film.voiceMs + scene.cues.ja[0].durationMs) / 1000;
+  assert.ok(Math.abs(video.currentTime - second) < 1e-6, '2 文目は声の位置から');
+  assert.equal(elements.get('subtitleTyped').textContent, scene.cues.ja[1].text);
+  runtime.stopBriefingPlayback();
+});
+
+test('部屋の動画は章をまたいでも読み直さず、乱れを挟まずに続けて流す', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  motionPreference.matches = false;
+  try {
+    const first = data.scenes[0];
+    state.briefing.cueIndex = first.cues.ja.length - 1;
+    runtime.configureBriefingMedia(first);
+    runtime.beginBriefingCue();
+    const video = runtime.getBriefingMedia();
+    video.onplaying();
+    const loads = video.loadCount;
+    const boundary = data.scenes[1].film.ja.fromMs / 1000;
+    video.currentTime = boundary - 0.01;
+    state.briefing.auto = true;
+    video.ontimeupdate();
+    assert.equal(state.briefing.sceneIndex, 1);
+    assert.equal(runtime.getBriefingMedia(), video, '同じ動画のまま');
+    assert.equal(video.loadCount, loads, '読み直さない');
+    assert.equal(video.hidden, false, '黒を挟まない');
+    assert.equal(state.briefing.chapterChanging, false, '章の乱れを出さない');
+    assert.ok(!(state.briefing.voiceHoldUntil > 0), '声を待たせない');
+    assert.ok(Math.abs(video.currentTime - (boundary - 0.01)) < 1e-6, '探さずに続ける');
+    assert.equal(video.paused, false);
+  } finally {
+    motionPreference.matches = true;
+    state.briefing.voiceHoldUntil = 0;
+    runtime.stopBriefingPlayback();
+  }
+});
+
+test('部屋の動画が読めないときは、その説明の間だけ声とテレビの形で同じ文から続ける', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  state.briefing.sceneIndex = 1;
+  state.briefing.cueIndex = 1;
+  runtime.configureBriefingMedia(data.scenes[1]);
+  runtime.beginBriefingCue();
+  const video = runtime.getBriefingMedia();
+  assert.equal(video, elements.get('doctorVideo'));
+  video.onerror();
+  const audio = runtime.getBriefingMedia();
+  assert.notEqual(audio, video);
+  assert.match(audio.src, new RegExp(`${data.scenes[1].audio.ja.replace('.', '\\.')}$`));
+  assert.equal(state.briefing.filmFailed, true);
+  assert.equal(state.briefing.mediaFailed, false, '声で続けられるので止めない');
+  assert.equal(state.briefing.cueIndex, 1);
+  assert.equal(selectorElements.get('.stage').classList.contains('is-film'), false);
+  assert.equal(selectorElements.get('.stage').classList.contains('has-reference'), true, 'テレビの資料へ戻る');
+  runtime.stopBriefingPlayback();
+});
+
+test('英語と仏語は部屋の動画を使わない（日本語の声で焼いてある）', () => {
+  const data = clone(briefing);
+  prepareBriefing(data);
+  state.lang = 'en';
+  runtime.configureBriefingMedia(data.scenes[0]);
+  runtime.beginBriefingCue();
+  assert.equal(runtime.getBriefingMedia(), null);
+  assert.equal(selectorElements.get('.stage').classList.contains('is-film'), false);
+  runtime.stopBriefingPlayback();
+  state.lang = 'ja';
+});
+
+test('媒体未指定の場面ではaudioもvideoも作らない', () => {
+  const data = withoutFilm(clone(briefing));
   delete data.scenes[0].video;
   delete data.scenes[0].audio;
   prepareBriefing(data);
@@ -1487,7 +1612,7 @@ test('読み上げ途中の操作表示は音声と動画を同じ位置で止�
 });
 
 test('媒体時計の文末判定で手動は止まり、オートは次の文へ進む', () => {
-  const data = clone(briefing);
+  const data = withoutFilm(clone(briefing));
   delete data.scenes[0].video;
   data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
   prepareBriefing(data);
@@ -1509,7 +1634,7 @@ test('媒体時計の文末判定で手動は止まり、オートは次の文�
 });
 
 test('章の切り替えの乱れの間は博士の声を出さず、乱れが終わってから出す（0332）', () => {
-  const data = clone(briefing);
+  const data = withoutFilm(clone(briefing));
   for (const scene of data.scenes) { delete scene.video; scene.audio = { ja: `${scene.id}-ja-v5.mp3` }; }
   prepareBriefing(data);
   motionPreference.matches = false;   // 乱れは動きを減らす設定では出ない
@@ -1533,7 +1658,7 @@ test('章の切り替えの乱れの間は博士の声を出さず、乱れが�
 });
 
 test('最後の音声が終わると装着案内を表示し、再説明はその下から始める', () => {
-  const data = clone(briefing);
+  const data = withoutFilm(clone(briefing));
   const lastSceneIndex = data.scenes.length - 1;
   const lastScene = data.scenes[lastSceneIndex];
   delete lastScene.video;
@@ -1669,7 +1794,7 @@ test('Native背景移行は博士媒体を止め、復帰後も同じ文で再�
 });
 
 test('素早い文送り後の古いmetadata通知を無視する', () => {
-  const data = clone(briefing);
+  const data = withoutFilm(clone(briefing));
   delete data.scenes[0].video;
   data.scenes[0].audio = { ja: 'introduction-ja-v1.mp3' };
   prepareBriefing(data);
@@ -1725,7 +1850,7 @@ test('自動再生拒否後は同じ媒体をユーザー操作で再生する',
 });
 
 test('媒体失敗時は静止画と字幕を保ち、オート解除後に再試行できる', async () => {
-  const data = clone(briefing);
+  const data = withoutFilm(clone(briefing));
   data.scenes[0].video = { ja: 'introduction-ja-v1.mp4' };
   prepareBriefing(data);
   const video = elements.get('doctorVideo');

@@ -314,6 +314,9 @@
      ⚠ 動画を含む層を transform / filter で潰すと WebView は黒に飛ぶので、visibility で切る */
   .stage.is-briefing .portrait { transition: filter .12s var(--ease); }
   .stage.has-reference:not(.is-equipment) .portrait { visibility: hidden; }
+  /* 博士の部屋の動画（16:10 で焼いてある）。画の中にカメラの寄り引きがあるので、縁の暗がりは字幕の下だけに薄く掛ける */
+  .stage.is-briefing.is-film .portrait img, .stage.is-briefing.is-film .portrait video { object-position: 50% 50%; }
+  .stage.is-briefing.is-film .portrait::after { background: linear-gradient(0deg,rgba(9,8,7,.78),rgba(9,8,7,.32) 15%,transparent 30%); }
   .stage.has-reference:not(.is-equipment) { background: radial-gradient(90% 80% at 50% 42%,#12100e,var(--bg)); }
   .stage.is-briefing:has(#briefingControls:not([hidden])) .portrait { transition: filter .45s var(--ease); }
   /* 止めたらテレビも沈める。盤はテレビの上の中央に浮く */
@@ -1103,7 +1106,11 @@
     isLive: () => state.view === 'briefing' && !state.briefing.ended && state.briefing.pauseReasons.size === 0
       && !document.hidden && document.querySelector('.stage').classList.contains('has-reference'),
     isVoiceLive: () => state.view === 'briefing' && !state.briefing.ended && !document.hidden,
-    voiceTime: () => (briefingMedia && !briefingMedia.paused ? briefingMedia.currentTime : null),
+    voiceTime: () => {
+      if (!briefingMedia || briefingMedia.paused) return null;
+      const film = briefingMedia === document.getElementById('doctorVideo') ? briefingFilm() : null;
+      return film ? briefingMedia.currentTime - film.voiceMs / 1000 : briefingMedia.currentTime;
+    },
   });
   const tabletSound = window.TabletSound;
   // 効果音（LEDGER 0266）。何をどの大きさで鳴らすかは asset/tablet-sounds.json（tools/make-tablet-sounds.py）。
@@ -1190,6 +1197,7 @@
       subtitlesOnly: false,
       pauseReasons: new Set(),
       mediaFailed: false,
+      filmFailed: false,
       mediaWindowActive: false,
       chapterChanging: false,
       pendingMove: 0,
@@ -1214,6 +1222,7 @@
   let briefingBoundaryTimer = null;
   let briefingMediaToken = 0;
   let briefingMediaSceneId = '';
+  let briefingMediaFile = '';
   let briefingLoopVideoFailed = false;
   let briefingLoopVideoToken = 0;
   let chapterTimer = null;
@@ -1547,7 +1556,7 @@
     stage.classList.toggle('is-title', view === 'title');
     stage.classList.toggle('is-briefing', view === 'briefing');
     if (view !== 'result') stage.classList.remove('is-result-ready');
-    if (view !== 'briefing') stage.classList.remove('is-doctor-only');
+    if (view !== 'briefing') stage.classList.remove('is-doctor-only', 'is-film');
     if (view !== 'briefing') { stage.classList.remove('has-reference'); $('briefingHairline').hidden = true; tvLive?.setVoice(null); }
     if (view !== 'briefing') stage.classList.remove('is-equipment');
     $('subtitle').hidden = view === 'briefing' && state.briefing.ended;
@@ -1831,6 +1840,18 @@
           throw new Error(`invalid briefing figures: ${scene.id}`);
         }
       }
+      // 博士の部屋の動画（tools/visitor-ui/room-proto で焼いた 1 本）。全部の場面が同じファイルの別の位置を使う。
+      // fromMs はこの場面の分の頭（灯り・テレビが点く・カメラが動き出す間を含む）、voiceMs は声の頭
+      if (scene.film != null && (!isRecord(scene.film) || Object.entries(scene.film).some(([lang, film]) => (
+        !BRIEFING_LANGS.includes(lang)
+        || !isRecord(film)
+        || !validAssetFilename(film.file) || !film.file.endsWith('.mp4')
+        || !validAssetFilename(film.poster)
+        || !Number.isFinite(film.fromMs) || !Number.isFinite(film.voiceMs)
+        || film.fromMs < 0 || film.voiceMs < film.fromMs
+      )))) {
+        throw new Error(`invalid briefing film: ${scene.id}`);
+      }
       for (const mediaType of ['audio', 'video']) {
         if (scene[mediaType] == null) continue;
         if (!isRecord(scene[mediaType])
@@ -1949,10 +1970,17 @@
       .reduce((total, cue) => total + cue.durationMs, 0);
   }
 
+  // 博士の部屋の動画を使うか。読めなかったら、その説明の間は声とテレビの形へ戻す（filmFailed）
+  function briefingFilm(scene = currentBriefingScene()) {
+    const film = scene?.film?.[state.lang];
+    return film && !state.briefing.filmFailed ? film : null;
+  }
+
   function isBriefingLoopCue() {
     const scene = currentBriefingScene();
     return state.view === 'briefing'
       && !state.briefing.ended
+      && !briefingFilm(scene)
       && Boolean(scene?.loopVideo)
       && state.briefing.cueIndex >= scene.loopVideo.startCue;
   }
@@ -2015,7 +2043,16 @@
     });
   }
 
+  // 部屋の動画の最初の文は、窓が声より前の間（灯り・テレビの電源）から始まる。字幕は声の頭まで待たせる
+  let pendingSubtitle = null;   // { text, key, atSec }
+  function revealPendingSubtitle() {
+    if (!pendingSubtitle) return;
+    setSubtitle(pendingSubtitle.text, pendingSubtitle.key);
+    pendingSubtitle = null;
+  }
+
   function stopBriefingMediaWindow(preservePosition = false) {
+    revealPendingSubtitle();
     if (preservePosition && briefingMedia && state.briefing.mediaWindowActive) {
       state.briefing.mediaResumeTime = briefingMedia.currentTime;
     }
@@ -2050,6 +2087,7 @@
     }
     briefingMedia = null;
     briefingMediaSceneId = '';
+    briefingMediaFile = '';
   }
 
   function setBriefingAuto(enabled, startMediaIfIdle = false) {
@@ -2073,6 +2111,15 @@
 
   function handleBriefingMediaFailure() {
     if (state.view !== 'briefing' || state.briefing.mediaFailed) return;
+    if (briefingMediaFile && briefingFilm()?.file === briefingMediaFile) {
+      // 部屋の動画が読めない・止まった。声とテレビの形で同じ文から続ける
+      state.briefing.filmFailed = true;
+      stopBriefingMedia();
+      configureBriefingMedia(currentBriefingScene());
+      renderBriefingScene();
+      startBriefingMediaWindow(false);
+      return;
+    }
     state.briefing.mediaFailed = true;
     state.briefing.resumeAuto = state.briefing.auto || state.briefing.resumeAuto;
     state.briefing.controlsOpen = true;
@@ -2084,16 +2131,23 @@
 
   function configureBriefingMedia(scene) {
     if (briefingMediaSceneId === scene.id && briefingMedia) return;
+    const film = briefingFilm(scene);
+    // 部屋の動画は場面をまたいで同じファイル。読み直さず、場面の札だけ替える（黒を挟まない）
+    if (film && briefingMedia === $('doctorVideo') && briefingMediaFile === film.file) {
+      briefingMediaSceneId = scene.id;
+      return;
+    }
     stopBriefingMedia();
     state.briefing.mediaFailed = false;
     state.briefing.mediaPaused = false;
     state.briefing.mediaResumeTime = null;
-    const videoFilename = scene.video?.[state.lang];
+    const videoFilename = film ? film.file : scene.video?.[state.lang];
     const audioFilename = scene.audio?.[state.lang];
     if (videoFilename) {
       const video = $('doctorVideo');
+      video.preload = film ? 'auto' : 'metadata';
       video.src = assetPath(videoFilename);
-      video.poster = assetPath(scene.doctorImage);
+      video.poster = assetPath(film ? film.poster : scene.doctorImage);
       // Keep the still until the video has decoded a frame.
       video.hidden = true;
       video.onerror = handleBriefingMediaFailure;
@@ -2107,6 +2161,7 @@
     }
     if (briefingMedia) briefingMedia.muted = state.briefing.muted;
     briefingMediaSceneId = briefingMedia ? scene.id : '';
+    briefingMediaFile = briefingMedia ? (videoFilename || audioFilename) : '';
   }
 
   function startBriefingMediaWindow(resume = false) {
@@ -2119,9 +2174,19 @@
     const scene = currentBriefingScene();
     const cue = currentBriefingCue();
     if (!scene || !cue) return;
-    const startSec = cueStartMs(scene, state.briefing.cueIndex) / 1000;
-    const endSec = startSec + cue.durationMs / 1000;
+    const film = briefingMedia === $('doctorVideo') ? briefingFilm(scene) : null;
+    const cueStart = cueStartMs(scene, state.briefing.cueIndex);
+    // 部屋の動画では、場面の最初の文の窓に、その前の間（灯り・テレビの電源・カメラの動き出し）を含める
+    const startSec = film
+      ? (state.briefing.cueIndex === 0 ? film.fromMs : film.voiceMs + cueStart) / 1000
+      : cueStart / 1000;
+    const endSec = film ? (film.voiceMs + cueStart + cue.durationMs) / 1000 : startSec + cue.durationMs / 1000;
     const media = briefingMedia;
+    if (film && state.briefing.cueIndex === 0 && film.voiceMs - film.fromMs > 400) {
+      const key = `briefing:${scene.id}:${state.lang}:0`;
+      pendingSubtitle = { text: cue.text, key, atSec: film.voiceMs / 1000 - 0.15 };
+      setSubtitle('', `${key}:lead`);
+    }
     const token = ++briefingMediaToken;
     state.briefing.mediaWindowActive = true;
     state.briefing.mediaPaused = false;
@@ -2136,6 +2201,7 @@
     const checkBoundary = () => {
       if (briefingBoundaryTimer) clearTimeout(briefingBoundaryTimer);
       if (briefingMedia !== media || briefingMediaToken !== token || !state.briefing.mediaWindowActive) return;
+      if (pendingSubtitle && media.currentTime >= pendingSubtitle.atSec) revealPendingSubtitle();
       const remainingMs = (endSec - media.currentTime) * 1000;
       if (remainingMs <= 15) { reachBoundary(); return; }
       briefingBoundaryTimer = setTimeout(checkBoundary, Math.max(16, Math.min(100, remainingMs / (media.playbackRate || 1))));
@@ -2542,12 +2608,15 @@
     document.title = `廻リ視 — ${presentation.title}`;
     $('briefingRole').textContent = t.role;
     $('briefingIntroText').textContent = scene.caption[state.lang];
-    const intro = scene.layout === 'doctor-center';
+    const film = briefingFilm(scene);
+    // 部屋の動画は、博士もテレビも資料も 1 枚の画の中にある。テレビの層は出さない
+    const intro = scene.layout === 'doctor-center' || Boolean(film);
     const stage = document.querySelector('.stage');
+    stage.classList.toggle('is-film', Boolean(film));
     const hadReference = stage.classList.contains('has-reference');
     renderJourney();
     document.querySelector('.stage').style.setProperty('--doctor-anchor', `${scene.doctorAnchor}%`);
-    const doctorSource = assetPath(scene.doctorImage);
+    const doctorSource = assetPath(film ? film.poster : scene.doctorImage);
     if ($('doctorImage').getAttribute('src') !== doctorSource) {
       state.briefing.doctorFailed = false;
       $('doctorImage').onload = () => {
@@ -2563,7 +2632,7 @@
       $('doctorImage').src = doctorSource;
     }
     stage.classList.toggle('is-doctor-only', intro);
-    if (intro) setText('briefingEyebrow', scene.title[state.lang]);
+    if (scene.layout === 'doctor-center') setText('briefingEyebrow', scene.title[state.lang]);
     $('briefingView').dataset.portrait = String(intro);
     setReferenceVisual(!intro);
     // テレビが出た瞬間は電源が入る。同じテレビの中で絵が替わるときは短い砂嵐（tv-live.js）
@@ -2576,7 +2645,7 @@
       holdVoiceForDisturbance(SIGNAL_GLITCH_MS);
     }
     stage.classList.toggle('has-reference', !intro);
-    $('briefingIntro').hidden = !intro;
+    $('briefingIntro').hidden = scene.layout !== 'doctor-center';
     const image = $('briefingImage');
     image.hidden = intro || state.briefing.imageFailed;
     const figure = intro ? null : briefingFigure(scene);
@@ -2863,6 +2932,8 @@
     const previousScene = currentBriefingScene();
     const nextScene = state.briefing.data.scenes[next.sceneIndex];
     const changedChapter = next.sceneIndex !== state.briefing.sceneIndex;
+    const continuousFilm = changedChapter && Boolean(briefingFilm(previousScene) && briefingFilm(nextScene)
+      && briefingFilm(previousScene).file === briefingFilm(nextScene).file);
     const doctorSettleMs = changedChapter
       && previousScene?.layout === 'doctor-center' && nextScene?.layout !== 'doctor-center' ? 400 : 0;
     const update = () => {
@@ -2874,11 +2945,15 @@
       state.briefing.resumeAuto = true;
       if (changedChapter) configureBriefingMedia(currentBriefingScene());
       // 章の切り替えの乱れ（playChapterTransition）は声より後に始まるので、先に声を待たせておく（0332）
-      if (changedChapter && !reducedMotion.matches) holdVoiceForDisturbance(Math.max(SIGNAL_GLITCH_MS, doctorSettleMs));
+      if (changedChapter && !continuousFilm && !reducedMotion.matches) holdVoiceForDisturbance(Math.max(SIGNAL_GLITCH_MS, doctorSettleMs));
       beginBriefingCue();
-      if (changedChapter) playChapterTransition(direction, doctorSettleMs);
+      if (changedChapter && !continuousFilm) playChapterTransition(direction, doctorSettleMs);
     };
-    if (changedChapter) {
+    if (continuousFilm) {
+      stopBriefingMediaWindow();
+      clearBriefingTimer();
+      update();
+    } else if (changedChapter) {
       captureDoctorGhost();   // 切り替える前の絵を残す（stopBriefingMedia が動画を隠す前に）
       stopBriefingMediaWindow();
       clearBriefingTimer();
@@ -2939,6 +3014,7 @@
     state.briefing.mediaResumeTime = null;
     state.briefing.subtitlesOnly = false;
     state.briefing.mediaFailed = false;
+    state.briefing.filmFailed = false;
     state.briefing.mediaWindowActive = false;
     state.briefing.chapterChanging = false;
     state.briefing.pendingMove = 0;

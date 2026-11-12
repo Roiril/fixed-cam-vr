@@ -72,6 +72,31 @@
   // decode() は、画面が見えていないと戻らないことがあった。読み込みの完了で待つ
   await new Promise((res, rej) => { face.onload = res; face.onerror = () => rej(new Error('face.jpg が読めない')); face.src = './layers/face.jpg'; });
   stage.setFace(face);
+  // 口の動画（lipsync.py track が試作の時刻表に並べた 1 本）。あれば写真の代わりに使い、時計に合わせて送る。?lips=0 で写真のまま
+  let faceVideo = null;
+  if (lang === 'ja' && q.get('lips') !== '0') {
+    window.__step = 'lips';
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    const ok = await new Promise((res) => {
+      v.addEventListener('loadeddata', () => res(true), { once: true });
+      v.addEventListener('error', () => res(false), { once: true });
+      v.src = './layers/face-ja.mp4';
+    });
+    if (ok) { faceVideo = v; stage.setFace(v); }
+  }
+  // 動画の位置を探して待つ。seeked が返らないことがある（書き出しが 700 コマで止まった）ので 1.5 秒で諦めて進む
+  let seekStalls = 0;
+  const seekTo = (video, sec) => new Promise((res) => {
+    const done = () => { clearTimeout(timer); video.removeEventListener('seeked', done); res(); };
+    const timer = setTimeout(() => { seekStalls++; done(); }, 1500);
+    video.addEventListener('seeked', done);
+    video.currentTime = sec;
+  });
+  const seekFace = async (sec) => {
+    if (!faceVideo || Math.abs(faceVideo.currentTime - sec) < 0.004) return;
+    await seekTo(faceVideo, sec);
+  };
 
   // ---- 時刻表: 場面の声を順に並べ、文の頭の時刻を出す ----
   window.__step = 'audio';
@@ -337,6 +362,16 @@
     const scr = screenAt(tM);
     if (scr.kind === 'video' && playing) { if (walk.paused) walk.play().catch(() => {}); }
     else if (!walk.paused) walk.pause();
+    if (faceVideo && !document.body.classList.contains('is-export')) {   // 書き出し中は export が位置を決める
+      const want = Math.min(faceVideo.duration || 0, tM / 1000);
+      if (playing) {
+        if (faceVideo.paused) faceVideo.play().catch(() => {});
+        if (Math.abs(faceVideo.currentTime - want) > 0.08) faceVideo.currentTime = want;
+      } else {
+        if (!faceVideo.paused) faceVideo.pause();
+        if (!faceVideo.seeking && Math.abs(faceVideo.currentTime - want) > 0.03) faceVideo.currentTime = want;
+      }
+    }
   }
   function tick(now) {
     if (playing) {
@@ -406,9 +441,10 @@
         if (scr.kind === 'video' && walk.duration) {
           const want = ((t - scr.shownAt) / 1000) % walk.duration;
           if (Math.abs(walk.currentTime - want) > 0.001) {
-            await new Promise((res) => { walk.addEventListener('seeked', res, { once: true }); walk.currentTime = want; });
+            await seekTo(walk, want);
           }
         }
+        await seekFace(t / 1000);
         tM = t;
         stage.render(stateAt(t, n));
         // toBlob は画面が見えていないと 1 コマに 1 秒近くかかった。同期の toDataURL で取る
@@ -418,7 +454,7 @@
         await fetch(`/_frame?dir=${dir}&n=${n - n0}`, { method: 'POST', body: bytes });
         if (n % 30 === 0) document.title = `export ${n - n0}/${n1 - n0}`;
       }
-      document.title = 'export done';
+      document.title = `export done（seek の止まり ${seekStalls} 回）`;
       return n1 - n0;
     },
   };
