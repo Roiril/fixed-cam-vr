@@ -132,7 +132,15 @@ def main() -> None:
             sys.exit("テレビのガラスが見つからない（点いた版の画面が光っていない）")
         keep = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
         glass = np.where(labels == keep, 255, 0).astype(np.uint8)
-        gx, gy, gw, gh = (int(stats[keep, k]) for k in (cv2.CC_STAT_LEFT, cv2.CC_STAT_TOP, cv2.CC_STAT_WIDTH, cv2.CC_STAT_HEIGHT))
+        # 差から取った形は縁が欠ける（上と左に矩形の切れ込みが出て、画面の内側の黒い枠に見えた。0343）。
+        # ガラスは凸な形なので、凸包で埋めてから 2 画素広げ、切れ込みと縁の暗い隙間を無くす
+        contours, _ = cv2.findContours(glass, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        hull = cv2.convexHull(max(contours, key=cv2.contourArea))
+        glass = np.zeros_like(glass)
+        cv2.fillConvexPoly(glass, hull, 255)
+        glass = cv2.dilate(glass, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+        keep_stats = cv2.boundingRect(glass)
+        gx, gy, gw, gh = (int(v) for v in keep_stats)
         glass_soft = cv2.GaussianBlur(glass, (0, 0), 1.2)
         crop = glass_soft[gy:gy + gh, gx:gx + gw]
         write(OUT / "glass.png", np.dstack([np.full_like(crop, 255)] * 3 + [crop]))   # 形は透過で持つ（舞台が型抜きに使う）

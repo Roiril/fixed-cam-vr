@@ -20,7 +20,7 @@
   const K = SW / 762;        // 762x600 で決めた寸法を掛け直す係数
   const POWER_MS = 620;
   const CHANNEL_MS = 260;
-  const DOC_SCALE = 1.6;     // 博士の層は部屋の絵の 1.6 倍で持つ（寄ったときに甘くならないように）
+  const DOC_SCALE = 1.8;     // 博士の層は部屋の絵の 1.6 倍で持つ（寄ったときに甘くならないように）
   const PARALLAX = 0.05;     // カメラが動いたとき、手前の博士が奥の幕に対してずれる割合
 
   const canFilter = (() => {

@@ -180,12 +180,15 @@
   // ---- カメラ（部屋の絵の座標）と、ピント ----
   const gx = room.glass.x + room.glass.w / 2;
   const gy = room.glass.y + room.glass.h / 2;
-  // 博士の目は画面に入れない（0342）。博士が写る構図は、上の端を目のすぐ下（部屋の絵の y=352）に置く。
-  // テレビへ寄る構図は左の端を博士の頭より右に置く。行き来するときは、横と縦を順に動かして、途中でも目が入らないようにする
+  // 博士の目は画面に入れない（0342）。博士は口元で語る人として撮る（0343）。
+  // 博士が写る構図は、上の端を目のすぐ下（部屋の絵の y=352）に置き、寄りの大きさを 3 段に変える。
+  // テレビへ寄る構図は左の端を博士の頭より右に置く。行き来は弧を描く（横へ動き出してから縦が追う。帰りは縦が先）
   const SHOT = {
-    low0: { cx: 559, cy: 596, w: 780 },       // 鼻から胸まで
-    low1: { cx: 559, cy: 570, w: 690 },
-    lowR: { cx: 765, cy: 643, w: 930 },       // 博士の口元と、右奥のテレビの下半分
+    ecu: { cx: 560, cy: 521, w: 540 },        // 口元。鼻の下から襟まで
+    cu: { cx: 560, cy: 571, w: 700 },         // 鼻から胸
+    cu2: { cx: 560, cy: 552, w: 640 },
+    ms: { cx: 600, cy: 633, w: 900 },         // 鼻から腰。静かな引き
+    edge: { cx: 955, cy: 646, w: 940 },       // 左の端に口元、右にテレビ
     ots: { cx: 1190, cy: 486, w: 920 },       // 博士の肩越しのテレビ
     ots2: { cx: 1215, cy: 486, w: 820 },
     tvx: { cx: 1305, cy: 487, w: 700 },
@@ -193,24 +196,31 @@
     in0: { cx: gx, cy: gy + 4, w: 560 },      // テレビの中へ。ガラスが画面の 7 割を占める
     in1: { cx: gx, cy: gy + 4, w: 525 },
   };
-  // order: 'x' は横を先に（博士からテレビへ）、'y' は縦を先に（テレビから博士へ）
+  const FIRST_SHOT = SHOT.ecu;
+  // arc: 'out' は博士からテレビへ（横が先）、'back' はテレビから博士へ（縦が先）
   const camKeys = [
-    { t: LAMP_AT, dur: sceneAt.introduction.end - LAMP_AT, to: SHOT.low1, ease: 'linear' },
-    { t: TV_ON + 1000, dur: 3400, to: SHOT.ots, order: 'x' },
+    // 着任: 口元から始まり、名乗りの間にゆっくり引く。「あなたは今日から…」で少し寄り直す
+    { t: LAMP_AT, dur: at('introduction', 2) - LAMP_AT, to: SHOT.cu, ease: 'linear' },
+    { t: at('introduction', 2), dur: sceneAt.introduction.end - at('introduction', 2), to: SHOT.cu2, ease: 'linear' },
+    // テレビが点き、光が頬に当たってから、弧を描いて肩越しへ
+    { t: TV_ON + 1000, dur: 3800, to: SHOT.ots, arc: 'out' },
     { t: at('subject', 1), dur: at('subject', 3) - at('subject', 1), to: SHOT.ots2, ease: 'linear' },
-    { t: at('subject', 3), dur: 2600, to: SHOT.lowR, order: 'y' },      // 「…あなたの任務です。」博士へ
-    // 手順の場面: 装置 → 画面 → 室内のカメラ（少しずつ寄る）
-    { t: at('report', 0) - 200, dur: 3000, to: SHOT.tvx, order: 'x' },
+    // 「その条件も…」左の端に口元が入る。「それを調査するのが、あなたの任務です。」で口元へ寄る
+    { t: at('subject', 3) - 150, dur: 3000, to: SHOT.edge, arc: 'back' },
+    { t: at('subject', 3, 0.5), dur: 3000, to: SHOT.cu },
+    // 手順: 装置 → 画面 → 室内のカメラ（少しずつ寄る）
+    { t: at('report', 0) - 200, dur: 3400, to: SHOT.tvx, arc: 'out' },
     { t: at('report', 1), dur: at('report', 3) - at('report', 1) - 300, to: SHOT.tvx2, ease: 'linear' },
     // 「その映像を見ながら…三周」テレビの中へ入り、手すりの文の終わりまで居る
     { t: at('report', 3) - 200, dur: 3200, to: SHOT.in0 },
     { t: at('report', 3) + 3000, dur: at('report', 5) - at('report', 3) - 3000, to: SHOT.in1, ease: 'linear' },
-    { t: at('report', 5), dur: 2600, to: SHOT.lowR, order: 'y' },       // 「…報告してください。」博士へ
-    { t: at('report', 6) - 200, dur: 3200, to: SHOT.in0, order: 'x' },  // ボタンの図
+    { t: at('report', 5) - 150, dur: 3000, to: SHOT.cu, arc: 'back' },     // 「…報告してください。」口元へ
+    { t: at('report', 6) - 200, dur: 3400, to: SHOT.in0, arc: 'out' },     // ボタンの図
     { t: at('report', 7, 0.45), dur: 3400, to: SHOT.ots },
-    { t: at('wear', 0), dur: 3000, to: SHOT.lowR, order: 'y' },
-    { t: at('wear', 2), dur: 3200, to: SHOT.low0 },
-    { t: at('wear', 3), dur: len('wear', 3) + 900, to: SHOT.low1, ease: 'linear' },
+    // 終わり: 腰までの引きから、文ごとに寄っていき、「健闘を祈ります。」は口元
+    { t: at('wear', 0) - 150, dur: 3200, to: SHOT.ms, arc: 'back' },
+    { t: at('wear', 1), dur: at('wear', 2) - at('wear', 1), to: SHOT.cu, ease: 'linear' },
+    { t: at('wear', 2), dur: sceneAt.wear.end - at('wear', 2) + 900, to: SHOT.ecu, ease: 'linear' },
   ];
   const focusKeys = [
     { t: TV_ON + 1700, dur: 1400, to: 1 },
@@ -234,12 +244,9 @@
   }
   const smooth = (v) => { const c = Math.max(0, Math.min(1, v)); return c * c * (3 - 2 * c); };
   const mixCam = (a, b, u, key) => {
-    const first = smooth(u / 0.55);                // 先に動く軸
-    const second = smooth((u - 0.4) / 0.6);        // 後から動く軸
-    const ux = key?.order === 'x' ? first : key?.order === 'y' ? second : u;
-    const uy = key?.order === 'x' ? second : key?.order === 'y' ? first : u;
-    // 縦を先に下げるときは、寄り引きも縦と一緒に動かす（引いたまま下げると上の端が上がる）
-    const uw = key?.order === 'y' ? first : key?.order === 'x' ? second : u;
+    let ux = u; let uy = u; let uw = u;
+    if (key?.arc === 'out') { uy = smooth((u - 0.6) / 0.4); uw = uy; }            // 横へ動き出してから、縦と寄り引きが追う
+    if (key?.arc === 'back') { uy = smooth(u / 0.5); uw = uy; ux = smooth((u - 0.42) / 0.58); }   // 先に下がり、それから横へ
     return { cx: a.cx + (b.cx - a.cx) * ux, cy: a.cy + (b.cy - a.cy) * uy, w: a.w * Math.pow(b.w / a.w, uw) };
   };
   const mixNum = (a, b, u) => a + (b - a) * u;
@@ -258,7 +265,7 @@
 
   function stateAt(t, frameNo) {
     // ⚠ 最初の鍵より前は SHOT.doc0 そのものが返る。写しを取らないと、下の息の揺れが毎コマ足されて構図が流れる
-    const cam = { ...track(camKeys, SHOT.low0, t, mixCam) };
+    const cam = { ...track(camKeys, FIRST_SHOT, t, mixCam) };
     // 三脚のごく小さな息（寄っているときは小さく）
     const breath = Math.min(1, cam.w / 900);
     cam.cx += Math.sin(t / 2600) * 1.6 * breath;
