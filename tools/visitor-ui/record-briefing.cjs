@@ -27,6 +27,7 @@ const HEIGHT = Number(arg('height', 686));
 const SCALE = Number(arg('scale', 2));
 const OUT_W = Number(arg('out-width', 1920));
 const OUT_H = Math.round(OUT_W * HEIGHT / WIDTH / 2) * 2;
+const FPS = 30;
 const LIMIT_SEC = Number(arg('seconds', 0));   // 試すとき: 説明をこの秒数で打ち切る（0 は終わりまで）
 const LANG = arg('lang', 'ja');
 const now = new Date();
@@ -86,9 +87,11 @@ class Cdp {
 }
 
 // 音は、ページの中で自分のタブを getDisplayMedia で録る（音のトラックだけ使う）。録れた塊は window.__rec に溜め、最後に base64 で取り出す。
-// ⚠ 画面の大きさを Emulation.setDeviceMetricsOverride で上書きしない。screencast もタブの録画も、窓の実寸（枠の分だけ小さい）で
-//   切り取るので、下の約 2 割にある字幕の帯が映らなかった（DOM では見えている。2026-11-13 実測）。窓の大きさを合わせて実寸で描かせる。
-//   captureScreenshot の連写は字幕も映るが 5 fps しか出ない。screencast は 36 fps 前後
+// ⚠ 窓の大きさを画面に合わせる。headless の窓は --window-size から枠の分だけ小さく、端末の寸法の上書きだけだと
+//   screencast もタブの録画も窓の実寸で切り取り、下にある字幕の帯が映らなかった（DOM では見えている。2026-11-13 実測）。
+// ⚠ --force-device-scale-factor は付けない。付けると部屋の動画が 3.4 秒で読み込みを止め（suspend → waiting）、6 秒後に
+//   声とテレビの形へ落ちた。倍率は端末の寸法の上書き（deviceScaleFactor）で与える。
+//   captureScreenshot の連写は字幕も映るが 5 fps しか出ない。screencast は 25〜36 fps
 const START_AUDIO = `(async () => {
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { frameRate: 5 }, audio: { suppressLocalAudioPlayback: true },
@@ -114,12 +117,14 @@ async function main() {
   // 音は録るが、この PC のスピーカーからは鳴らさない。--mute-audio だと録った音も無音になる（-70 LUFS）ので付けず、
   // 録る側の suppressLocalAudioPlayback で手元の再生だけ止める
   const browser = spawn(browserPath(), [
-    '--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, `--window-size=${WIDTH},${HEIGHT}`, `--force-device-scale-factor=${SCALE}`,
+    '--headless=new', `--remote-debugging-port=${cdpPort}`, `--user-data-dir=${profile}`, `--window-size=${WIDTH},${HEIGHT}`,
     '--autoplay-policy=no-user-gesture-required', '--auto-accept-this-tab-capture',
     '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', 'about:blank',
   ], { stdio: 'ignore' });
   const base = `http://127.0.0.1:${mockPort}`;
   let cdp;
+  let enc = null;
+  let ticker = null;
   try {
     await waitHttp(`${base}/_state`);
     await waitHttp(`http://127.0.0.1:${cdpPort}/json/version`);
@@ -171,6 +176,17 @@ async function main() {
     await mockPost('_reset');
     await mockPost('_scenario', { scenario: 'devices' });
     await mockPost('_state', { staffSetup: { cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'ok' }, { id: 'C', state: 'ok' }] } });
+    await cdp.send('Network.enable');
+    await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+    if (process.env.NET_DEBUG) cdp.on((m) => {
+      const u = m.params?.request?.url || m.params?.response?.url || '';
+      if (/requestWillBeSent|responseReceived|loadingFailed|loadingFinished/.test(m.method) && (u.endsWith('.mp4') || m.method !== 'Network.requestWillBeSent'))
+        if (u.endsWith('.mp4') || /loadingFailed/.test(m.method)) console.log('NET', Date.now() % 100000, m.method, m.params.requestId, u.split('/').pop(), m.params.request?.headers?.Range || '', m.params.response?.status || '', m.params.errorText || '', m.params.encodedDataLength || '');
+    });
+    // 動画と声の出来事を時刻つきで溜める（部屋の動画が止まったとき、どこで止まったかを出す）
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__mev = [];
+      for (const n of ['loadstart','loadedmetadata','canplay','playing','waiting','stalled','suspend','error','emptied','abort','pause','seeking','seeked'])
+        document.addEventListener(n, (e) => { const t = e.target; if (t instanceof HTMLMediaElement) window.__mev.push([Math.round(performance.now()), n, t.id || (t.currentSrc || '').split('/').pop(), t.readyState, t.networkState, Number(t.currentTime.toFixed(2)), t.error?.code ?? null]); }, true);` });
     await cdp.send('Page.navigate', { url: `${base}/?lang=${LANG}` });
     await waitFor('document.readyState === "complete"', 10000, 'ページの読み込み');
     await mockPost('_scenario', { scenario: 'prepare' });
@@ -184,22 +200,38 @@ async function main() {
     }
     console.log(`画面 ${vp.join(' × ')}`);
     if (vp[0] !== WIDTH || vp[1] !== HEIGHT) throw new Error(`画面の大きさが ${WIDTH}×${HEIGHT} になっていない`);
+    // 窓を合わせたうえで、倍率と端末の種類は上書きで与える（冒頭の注記）
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: HEIGHT, deviceScaleFactor: SCALE, mobile: true });
     await tap('staffResetBtn');
     await tap('staffVisitorBtn');
     await sleep(1500);
 
-    // 絵: captureScreenshot を続けて撮り、撮り始めた時刻（秒）を残す。コマの尺は次のコマとの時刻の差で決める
-    const framesDir = path.join(WORK, 'frames');
-    fs.mkdirSync(framesDir);
-    const frames = [];
+    // 絵: screencast のコマを一時ファイルに溜めず、30 fps の時刻表どおりに最新のコマを ffmpeg の標準入力へ流す。
+    // 画が変わらない間はコマが来ないので、時刻表の枠ごとに直近のコマを繰り返して書く（CFR）。
+    // コマをファイルに書くと 1 回で約 2GB になり、C: が尽きて止まった（2026-11-13）。
+    const video = path.join(WORK, 'video.mp4');
+    enc = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(FPS), '-i', '-',
+      // screencast のコマは寸法が途中で変わることがある（端末の寸法を上書きした直後など）。x264 は寸法の変化で落ちるので、ここで揃える
+      '-vf', `scale=${OUT_W}:${OUT_H}:flags=lanczos`, '-c:v', 'libx264', '-crf', '20', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', video],
+      { stdio: ['pipe', 'inherit', 'inherit'] });
+    const encDone = new Promise((resolve) => enc.on('close', resolve));
+    enc.stdin.on('error', () => { /* 打ち切りで ffmpeg が先に閉じた */ });
+    let latest = null;
+    let received = 0;
     cdp.on((m) => {
       if (m.method !== 'Page.screencastFrame') return;
-      const file = path.join(framesDir, `${String(frames.length).padStart(6, '0')}.jpg`);
-      fs.writeFileSync(file, Buffer.from(m.params.data, 'base64'));
-      frames.push({ file, t: m.params.metadata.timestamp, h: m.params.metadata.deviceHeight });
+      latest = Buffer.from(m.params.data, 'base64');
+      received += 1;
       cdp.send('Page.screencastFrameAck', { sessionId: m.params.sessionId }).catch(() => {});
     });
     await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 88, maxWidth: WIDTH * SCALE, maxHeight: HEIGHT * SCALE, everyNthFrame: 1 });
+    while (!latest) await sleep(20);
+    const videoStartedAt = Date.now() / 1000;
+    let written = 0;
+    ticker = setInterval(() => {
+      const due = Math.floor((Date.now() / 1000 - videoStartedAt) * FPS) + 1;
+      for (; written < due; written += 1) enc.stdin.write(latest);
+    }, 1000 / FPS / 2);
     const started = await evaluate(START_AUDIO, true);
     console.log(`録画を始めた（${started.type}・音のトラック ${started.audioTracks}）`);
     if (started.audioTracks !== 1) throw new Error('タブの音が取れない');
@@ -222,8 +254,14 @@ async function main() {
       if (Date.now() > t0 + 300000) throw new Error('待ち切れません: 説明の終わり（装着の案内）');
       if (Date.now() >= next) {
         const s = await evaluate(`(() => { const e = document.getElementById('subtitle'); const v = document.getElementById('doctorVideo');
-          const r = e?.getBoundingClientRect(); return { sub: (e?.innerText || '').trim().slice(0, 24), at: r ? [Math.round(r.top), Math.round(r.height)] : null, t: v ? Number(v.currentTime.toFixed(1)) : null, paused: v?.paused }; })()`);
-        console.log(`  ${((Date.now() - t0) / 1000).toFixed(0)}s コマ ${frames.length} ${JSON.stringify(s)}`);
+          const r = e?.getBoundingClientRect(); return { sub: (e?.innerText || '').trim().slice(0, 24), at: r ? [Math.round(r.top), Math.round(r.height)] : null, t: v ? Number(v.currentTime.toFixed(1)) : null, paused: v?.paused, rs: v?.readyState, err: v?.error?.code ?? null, src: (v?.currentSrc || '').split('/').pop() }; })()`);
+        console.log(`  ${((Date.now() - t0) / 1000).toFixed(0)}s 受けたコマ ${received} ${JSON.stringify(s)}`);
+        // 部屋の動画が動いていなければ、声とテレビの形（読めないときの代わり）を録っている。人に渡す動画にならないので止める。
+        // 2026-11-13、C: の空きが 1GB を切ったとき動画が t=0 のまま止まり、代わりの形を最後まで録った
+        if (Date.now() - t0 > 15000 && s.paused && !(s.t > 0)) {
+          console.log(JSON.stringify(await evaluate('window.__mev.filter((e) => e[2] === "doctorVideo").slice(0, 40)')));
+          throw new Error(`部屋の動画が動いていない（${JSON.stringify(s)}）。冒頭の注記を見る`);
+        }
         next += 10000;
       }
       await sleep(300);
@@ -231,7 +269,10 @@ async function main() {
     console.log(`説明 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
     await sleep(5000);
     const stopAt = Date.now() / 1000;
+    clearInterval(ticker);
     await cdp.send('Page.stopScreencast');
+    enc.stdin.end();
+    if (await encDone !== 0) throw new Error('絵の書き出しに失敗');
     await evaluate('window.__rec.rec.stop()');
     await waitFor('window.__rec.done', 20000, '録音の締め');
     const audioStartedAt = (await evaluate('window.__rec.startedAt')) / 1000;
@@ -245,32 +286,25 @@ async function main() {
     }
     fs.closeSync(fd);
 
-    // コマの列を、届いた時刻の差を尺にして並べる（concat の demuxer）。音は録り始めの時刻の差だけずらして重ねる
-    if (frames.length < 100) throw new Error(`コマが少ない（${frames.length}）`);
-    const list = [];
-    frames.forEach((f, i) => {
-      const end = i + 1 < frames.length ? frames[i + 1].t : stopAt;
-      list.push(`file '${f.file.replace(/\\/g, '/')}'`, `duration ${Math.max(0.001, end - f.t).toFixed(4)}`);
-    });
-    list.push(`file '${frames.at(-1).file.replace(/\\/g, '/')}'`);
-    const listFile = path.join(WORK, 'frames.txt');
-    fs.writeFileSync(listFile, list.join('\n') + '\n');
-    const offset = audioStartedAt - frames[0].t;   // 正なら音が絵より遅れて始まった
+    // 音は録り始めの時刻の差だけずらして重ねる
+    if (received < 100) throw new Error(`コマが少ない（${received}）`);
+    const offset = audioStartedAt - videoStartedAt;   // 正なら音が絵より遅れて始まった
     const audioIn = offset >= 0 ? ['-itsoffset', offset.toFixed(3), '-i', webm] : ['-ss', (-offset).toFixed(3), '-i', webm];
-    console.log(`コマ ${frames.length}・平均 ${(frames.length / (stopAt - frames[0].t)).toFixed(1)} fps・音のずれ ${(offset * 1000).toFixed(0)}ms`);
+    console.log(`受けたコマ ${received}（平均 ${(received / (stopAt - videoStartedAt)).toFixed(1)} fps）・書いたコマ ${written}・音のずれ ${(offset * 1000).toFixed(0)}ms`);
     const mp4 = path.join(WORK, 'tab.mp4');
-    const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', listFile, ...audioIn,
-      '-map', '0:v', '-map', '1:a', '-vf', `fps=30,scale=${OUT_W}:${OUT_H}:flags=lanczos`, '-c:v', 'libx264', '-crf', '20', '-preset', 'medium',
-      '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-shortest', '-movflags', '+faststart', mp4], { stdio: 'inherit' });
+    const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', video, ...audioIn,
+      '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', '-movflags', '+faststart', mp4], { stdio: 'inherit' });
     if (r.status !== 0) throw new Error('mp4 への書き出しに失敗');
     fs.mkdirSync(path.dirname(OUT), { recursive: true });
     fs.copyFileSync(mp4, OUT);
     console.log(OUT);
   } finally {
     cdp?.close();
+    clearInterval(ticker);
+    if (enc && enc.exitCode === null) enc.kill();
     browser.kill();
     mock.kill();
-    // コマ（1 回で 9000 枚・約 700MB）と Chrome の作業フォルダを消す。C: は常に空きが少ない（2026-11-13 に 190MB まで落ちて Drive へ写せなかった）
+    // 途中の動画と Chrome の作業フォルダを消す。C: は常に空きが少ない（2026-11-13 に 190MB まで落ちて Drive へ写せなかった）
     await sleep(1000);
     for (const dir of [WORK, profile]) fs.rmSync(dir, { recursive: true, force: true });
   }
