@@ -41,6 +41,7 @@ paths:
 - 腕は肩→手を腕長比で写し、上下にだけ振る（90°まで）。左だけコントローラで代える — `ActorArmLogic.LimitToVerticalSwing` / `ShowActorRig.MaxSwingDeg` / `OvrHandTrackingBridge` 〔出典: S:2682-2709、LEDGER 0051〕
 - 人形の向きは頭ヨーを半減期 0.35s で追い、首のねじれ 50° で引く — `ActorArmLogic.SmoothYawDeg` 〔出典: S:2689-2692〕〔未照合: 定数値〕
 - 立ち位置も腕・向きと同じ時刻を読む — `CourseTrack` 〔出典: S:2693-2694〕
+- `cgMode:"trail"` は体験者の歩いた跡の上を `trailGapM` 後ろに立つ。位置は `trailStepM` ごとに飛び、`trailHideM` より近いと描かない。跡は人形を出していない間も積み、体験者の交代で捨てる — `FootprintTrail` / `ShowCgLayer.UpdateTrailStand` / `ShowCgLayer.ResetRun` 〔コード〕
 - 人形の寸法はテストが固定する — `ShowActorPrefabSizeTests` 〔出典: S:2732-2735〕
 
 ## 罠（破ると壊れる）

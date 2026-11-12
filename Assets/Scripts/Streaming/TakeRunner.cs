@@ -46,6 +46,11 @@ namespace FixedCamVr.Streaming
         // 通過ライン（床の線分）の横断検出。show.json layout.lines から作る。
         private readonly LineCrossLogic _lineCross = new();
 
+        // 通過ラインの「どちら側に居るか」（durKind:"untilBeyond"）。_lineCross と同じスロット・同じ線。
+        private readonly LineSideLogic _lineSide = new();
+        // 線ごとに直前の「向こう側に居る」（縁を 1 行ログへ出すため）。スロット数が変わったら作り直す。
+        private bool[] _lastBeyond = Array.Empty<bool>();
+
         // lineId → スロット index の割当。**session 内で不変**（layout が更新されても並べ替えない）。
         // Def.lineIndex は SetTakes 時に確定するので、ここが動くと走行中の once 状態と食い違う。
         private readonly List<string> _lineSlots = new();
@@ -644,7 +649,7 @@ namespace FixedCamVr.Streaming
                     bool onLine = t.IsLine;
                     bool hasLine = onLine && !string.IsNullOrEmpty(t.lineId);
                     anyLine |= hasLine;
-                    // カット側の線待ち（durKind:"untilLine"）も横断検出を要求する。**ここを落とすと
+                    // カット側の線待ち（durKind:"untilLine" / "untilBeyond"）も位置の追跡を要求する。**ここを落とすと
                     // TickLines が回らず、線待ちのカットは watchdog まで永久に終わらない。**
                     int[] stepLines = BuildStepLineIndices(t);
                     foreach (int sl in stepLines) if (sl >= 0) { anyLine = true; break; }
@@ -740,6 +745,9 @@ namespace FixedCamVr.Streaming
                 lines[slot] = LineCrossLogic.Line.Between(l.x1, l.z1, l.x2, l.z2, dir, l.camera);
             }
             _lineCross.SetLines(lines);
+            // 側の判定は形が変わらない線の状態を保つ（走行中に layout が届いても入ってきた側を落とさない）。
+            _lineSide.SetLines(lines);
+            if (_lastBeyond.Length != lines.Length) _lastBeyond = new bool[lines.Length];
             // 締めの線は実体があるときだけ効かせる。実体の無い枠を渡すと決して横切られず、
             // ③a が黙って出なくなる（時計の退避路へ倒す方が安全）。欠けの警告は WarnMissingLines が
             // 同じ id（3 周目 A の untilLine）で出す。
@@ -764,10 +772,10 @@ namespace FixedCamVr.Streaming
             foreach (ShowTakeDef t in _takes)
             {
                 if (t.IsLine) Check(t.lineId);
-                // カット側の線待ち（durKind:"untilLine"）も同じ警告に乗せる。実体の無い線を待つと
+                // カット側の線待ち（durKind:"untilLine" / "untilBeyond"）も同じ警告に乗せる。実体の無い線を待つと
                 // **watchdog まで画が固まる**ので、演出側より沈黙が痛い。
                 foreach (ShowStepDef? st in t.steps ?? Array.Empty<ShowStepDef>())
-                    if (st != null && st.IsUntilLine) Check(st.lineId);
+                    if (st != null && st.IsLineWait) Check(st.lineId);
             }
             string key = string.Join(",", missing);
             if (key == _warnedMissingLines) return;
@@ -929,6 +937,9 @@ namespace FixedCamVr.Streaming
             _logic.ResetRun();
             // 前の体験者の位置・横断状態を持ち越さない（ラン開始直後に幽霊の横断を作らない）。
             _lineCross.Reset();
+            // 足跡・線の側・入ってきた側も同じ（前の体験者の「向こう側」で次の体験者のカットを飛ばさない）。
+            _lineSide.Reset();
+            Array.Clear(_lastBeyond, 0, _lastBeyond.Length);
             _hasLastNow = false;
             ClearTakeCatchUpState();
             DollCatchUpCompletedCount = 0;
@@ -936,6 +947,8 @@ namespace FixedCamVr.Streaming
             PresentationAbortCount = 0;
             _endingReleased = false;
             _farewell?.ResetRun();
+            // 人形が後ろをついて来る跡（cgMode="trail"）を次の体験者へ持ち越さない。
+            _cgLayer?.ResetRun();
         }
 
         /// <summary>
@@ -951,6 +964,10 @@ namespace FixedCamVr.Streaming
             // 畳むのは尺だけで、演出を終わらせるのは次の Tick（そこで chainNext が繋ぎ目の黒を省く）。
             if (_markResponsePlaying) _markResponseZoneExit = true;
             else _logic.NotifyZoneChanged(Now);
+
+            // 新しい区間へ入った。全部の線の「入ってきた側」を約 0.5m 手前の位置から決め直す
+            // （untilBeyond のカットがこれを基準に「向こう側」を判定する）。同じ区間の確定し直しでは触らない。
+            if (!hadPrev || prevLap != newLap || prevCam != newCam) _lineSide.CommitEntry();
 
             TakeRunnerLogic.Decision d =
                 _logic.OnZoneCommitted(newLap, newCam, hadPrev, prevLap, prevCam, Now, forward);
@@ -1006,11 +1023,11 @@ namespace FixedCamVr.Streaming
                 _logic.NotifyCurrentStepFinished(Now);
             }
 
-            LineCrossLogic.State[]? lines = TickLines();
+            LineCrossLogic.State[]? lines = TickLines(out LineSideLogic.State[]? sides);
             int latest = ResolveLatestZoneCamera();
             bool holdFarewell = EndingReleasedLiveReady
                                 && (_farewell == null || !_farewell.Completed);
-            TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, lines, holdFarewell);
+            TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, lines, holdFarewell, sides);
             Apply(d, exitAnchored: false);
 
             // 締めの線を踏んだ縁を 1 行出す（③a の引き金・0233）。「線は踏まれたのに③a が出ない」と
@@ -1052,10 +1069,13 @@ namespace FixedCamVr.Streaming
         /// 通過ラインの横断検出を体験者の course 空間 XZ で進める。位置が取れない
         /// （<see cref="ShowControlClient.HeadCourseXZProvider"/> 未注入 = 未登録 / HMD 参照なし）間は
         /// null を返し、at=line の演出は発火しない（従来の時刻トリガーは無影響）。
+        /// <paramref name="sides"/> は線の側（untilBeyond 用）。位置が取れない間は**更新せず前の値のまま**返す。
         /// </summary>
-        private LineCrossLogic.State[]? TickLines()
+        private LineCrossLogic.State[]? TickLines(out LineSideLogic.State[]? sides)
         {
+            sides = null;
             if (!_hasLineTakes || _lineCross.Count == 0) return null;
+            sides = _lineSide.StateView;
 
             Func<Vector2>? head = showControl != null ? showControl.HeadCourseXZProvider : null;
             if (head == null)
@@ -1078,6 +1098,17 @@ namespace FixedCamVr.Streaming
 
             Vector2 xz = head();
             _lineCross.Tick(now, xz.x, xz.y, dt);
+            _lineSide.Tick(xz.x, xz.y);
+            // 「向こう側に居る」に変わった縁を 1 行出す（untilBeyond のカットが進まないとき、
+            // 側が変わっていないのか、変わったのに効かなかったのかを実機で切り分けるため）。
+            LineSideLogic.State[] side = _lineSide.StateView;
+            for (int i = 0; i < side.Length && i < _lastBeyond.Length; i++)
+            {
+                if (side[i].beyond && !_lastBeyond[i])
+                    Debug.Log($"[TakeRunner] 線の向こう側に出た id={(i < _lineSlots.Count ? _lineSlots[i] : "?")} " +
+                              $"cam={side[i].camera} entry={side[i].entrySide} pos=({xz.x:F2},{xz.y:F2})");
+                _lastBeyond[i] = side[i].beyond;
+            }
             // 横断は事象なので、起きた瞬間に 1 行出す。**これが無いと「線が踏まれたのか、
             // 踏まれたのに効かなかったのか」を実機で切り分けられない**（2026-08-15 に実際に詰まった）。
             LineCrossLogic.State[] st = _lineCross.StateView;
@@ -1305,7 +1336,8 @@ namespace FixedCamVr.Streaming
                 if (toDoll)
                     _cgLayer.Apply(step.cg, step.cgMode,
                                    step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
-                                   step.hasPlacement ? step.placement : null);
+                                   step.hasPlacement ? step.placement : null,
+                                   step.trailGapM, step.trailStepM, step.trailHideM);
                 // ⚠ 持続の覆いが立てた代役は畳まない（畳むと覆いの形が消える）。
                 //   この代役を消す責任は SwapMorphFx.Cancel が持つ。
                 else if (!holdVeil) _cgLayer.Hide();
@@ -1883,7 +1915,7 @@ namespace FixedCamVr.Streaming
             if (cur.recContinue || cur.recFollow) return false;
             if (TakeSchema.NormalizeSource(next.source, out _) != TakeSchema.SourcePlate) return false;
             foreach (ShowStepDef? s in steps)
-                if (s != null && (s.recFollow || s.IsUntilLine)) return false;
+                if (s != null && (s.recFollow || s.IsLineWait)) return false;
             return true;
         }
 
@@ -1898,7 +1930,7 @@ namespace FixedCamVr.Streaming
                 float dur = cue?.frames?.DurationSec ?? -1f;
                 return dur > 0f ? dur / TakeSchema.ResolveRecRate(step.recRate) : -1f;
             }
-            if (step.IsUntilZoneChange || step.IsUntilLine || step.IsUntilMark) return -1f;
+            if (step.IsUntilZoneChange || step.IsLineWait || step.IsUntilMark) return -1f;
             return step.durSec > 0f ? step.durSec : -1f;
         }
 
@@ -2148,8 +2180,10 @@ namespace FixedCamVr.Streaming
                 //（演出側の「空 lineId は発火しない」と同じ流儀で、無効な指定は無害な側へ倒す）。
                 if (s.IsUntilLine && !string.IsNullOrEmpty(s.lineId))
                 { durs[i] = TakeRunnerLogic.WaitLine; continue; }
-                if (s.IsUntilLine)
-                    Debug.LogWarning("[TakeRunner] untilLine のカットにラインが未指定 → 既定尺で畳む");
+                if (s.IsUntilBeyond && !string.IsNullOrEmpty(s.lineId))
+                { durs[i] = TakeRunnerLogic.WaitBeyond; continue; }
+                if (s.IsLineWait)
+                    Debug.LogWarning($"[TakeRunner] {s.durKind} のカットにラインが未指定 → 既定尺で畳む");
                 if (s.IsUntilMark) { durs[i] = TakeRunnerLogic.WaitMark; continue; }
                 durs[i] = s.durSec > 0f ? s.durSec : TakeSchema.FallbackStepDurSec;
             }
@@ -2165,7 +2199,7 @@ namespace FixedCamVr.Streaming
             for (int i = 0; i < steps.Length; i++)
             {
                 ShowStepDef s = steps[i];
-                idx[i] = (s != null && s.IsUntilLine && !string.IsNullOrEmpty(s.lineId))
+                idx[i] = (s != null && s.IsLineWait && !string.IsNullOrEmpty(s.lineId))
                     ? LineSlot(s.lineId)
                     : -1;
             }

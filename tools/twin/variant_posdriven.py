@@ -1,17 +1,20 @@
 """位置で動く演出の版を、検証用の木へ当てる（本番の台本と APK には入らない）。
 
-設計は reports/2026-11-12_position-driven-redesign.html。ここで当てるのは、いまのスキーマだけで組める所:
+設計は reports/2026-11-12_position-driven-redesign.html。相手は 1 体で、体験者の位置で振る舞いを変える:
 
-  2 周目 A  シミを左の幕の締まった形で出し、角の線で幕へ沈め、背の線で右の幕へ出す
-  2 周目 C  人形視点を秒ではなく床の線で 1 カットずつ進め、カットの間のライブに人形を立たせる（--chase）
+  2 周目 A  遠いときは左の幕の顔のシミ（締まったマスク）。角の線まで来ると幕へ沈む。
+            背の線を越えて離れると、背丈のある人形が、体験者の歩いた跡をついてくる（cgMode=trail）
+  2 周目 B  小さい人形が跡の上を寄り続ける。届いた線で、画面ごと別の場所へ飛ぶ（いまの演出を線で起こす）
+  2 周目 C  人形の目で見たカットを、秒ではなく床の線で 1 本ずつ進める。途中は音なし。通路の 6 割で追いつく
 
 使い方（検証用の木を sync した後）:
   py -3.11 tools/twin-tree.py sync
-  py -3.11 tools/twin/variant_posdriven.py --root ../fcv-twin-tree [--chase]
+  py -3.11 tools/twin/variant_posdriven.py --root ../fcv-twin-tree
   py -3.11 tools/twin-tree.py run -- --fast --calib twin --tag posdrv-after
 
-やること: 木の tools/twin/assets/ へ締まったマスクと右の幕の顔を作る → 木の assets.json と焼いた show.json へ
-cue・線・take を足す → manifest.json の configSha256 を合わせる。こちらの木（メイン）には書かない。
+やること: 木の tools/twin/assets/ へ締まったマスクを作る → 木の assets.json と焼いた show.json へ
+cue・線・人形・take を足す → manifest.json の configSha256 を合わせる。こちらの木（メイン）には書かない。
+--only で場面を絞れる（a,b,c）。
 """
 from __future__ import annotations
 
@@ -31,15 +34,9 @@ FW, FH = 640, 360        # マスクの枠（16:9）
 
 # 画の中の所（映像の 0〜1）。ツインの無人写真 A で、幕のひだとポールと手すりに合わせて決めた
 LEFT_FACE = (0.215, 0.0, 0.435, 0.445)    # 左の幕の、ポールと角のあいだ。下の辺は手すりの上の縁
-RIGHT_FACE = (0.575, 0.0, 0.795, 0.445)   # 右の幕の同じ高さ（左を x=0.505 で折り返した所）
 LEFT_PEEK = (0.125, 0.14, 0.315, 0.96)    # 左の幕の外の縁（人形が半身で覗く）
 
-
-def imread(p: Path, flags=cv2.IMREAD_COLOR):
-    img = cv2.imdecode(np.fromfile(str(p), dtype=np.uint8), flags)
-    if img is None:
-        sys.exit(f"読めない: {p}")
-    return img
+TALL_DOLL = "doll_tall"                   # 背丈のある市松人形（0330 の「人の背丈の市松人形」と同じ見立て）
 
 
 def imwrite(p: Path, img) -> None:
@@ -64,27 +61,21 @@ def frame_mask(box, feather_px: int = 9) -> np.ndarray:
     return (np.clip(m, 0, 1) * 255).astype(np.uint8)
 
 
-def make_right_face(assets: Path, plate: np.ndarray) -> np.ndarray:
-    """左の幕のシミを、右の幕へ折り返して写す。シミは布を暗くする比として取り出すので、右の幕のひだと光がそのまま残る。"""
-    idle = imread(assets / "twin_stainA_idle.png").astype(np.float32)
-    base = plate.astype(np.float32)
-    lx0, ly0, lx1, ly1 = (int(LEFT_FACE[0] * W), int(LEFT_FACE[1] * H), int(LEFT_FACE[2] * W), int(LEFT_FACE[3] * H))
-    ratio = (idle[ly0:ly1, lx0:lx1] + 4.0) / (base[ly0:ly1, lx0:lx1] + 4.0)
-    ratio = cv2.GaussianBlur(np.clip(ratio, 0.15, 1.25), (3, 3), 0)[:, ::-1]
-    rx0 = int(RIGHT_FACE[0] * W)
-    out = base.copy()
-    h, w = ratio.shape[:2]
-    out[ly0:ly0 + h, rx0:rx0 + w] = np.clip(base[ly0:ly0 + h, rx0:rx0 + w] * ratio, 0, 255)
-    return out.astype(np.uint8)
-
-
 def step(source: str, **kw) -> dict:
-    d = {"source": source, "camera": 0, "cueId": "", "durKind": "sec", "durSec": 0, "transition": "cut", "cgMode": "follow"}
+    """焼いた台本と同じ既定（-1 は「素材の値を継ぐ」）で 1 カットを作る。"""
+    d = {"source": source, "camera": -1, "cueId": "", "strength": -1, "fadeInSec": -1, "fadeOutSec": -1,
+         "trimStartSec": -1, "trimEndSec": -1, "durKind": "sec", "lineId": "", "durSec": 0,
+         "transition": "cut", "cg": "", "cgMode": "follow", "switchSfx": False}
     d.update(kw)
     return d
 
 
-def patch_show(show: dict, chase: bool) -> None:
+def trail(actor: str, gap: float, hop: float, hide: float = 0.9, **kw) -> dict:
+    """体験者の歩いた跡を、道のり gap 後ろについてくる人形（hop ごとに飛び飛びに立つ。hide より近いと居ない）。"""
+    return step("inherit", cg=actor, cgMode="trail", trailGapM=gap, trailStepM=hop, trailHideM=hide, **kw)
+
+
+def patch_show(show: dict, only: set) -> None:
     def sa(name: str) -> str:
         return "sa://assets/" + name
 
@@ -94,6 +85,9 @@ def patch_show(show: dict, chase: bool) -> None:
         c.update(kw)
         return c
 
+    def line(lid, cam, x1, z1, x2, z2, label):
+        return {"id": lid, "camera": cam, "x1": x1, "z1": z1, "x2": x2, "z2": z2, "dir": "both", "label": label, "mirrorOf": ""}
+
     old = {c["id"]: c for c in show["cues"]}
     idle = old["cue_stain_A"]["sourceUrl"].rsplit("/", 1)[-1]
     bulge = old["stain_A_press_bulge"]["sourceUrl"].rsplit("/", 1)[-1]
@@ -102,58 +96,80 @@ def patch_show(show: dict, chase: bool) -> None:
         cue("posdrv_stain_left", "顔のシミ（左の幕・締まった形）", "A", idle, "posdrv_stainA_left_mask.png", fadeOut=0.4),
         cue("posdrv_stain_left_bulge", "盛り上がり（左の幕・締まった形）", "A", bulge, "posdrv_stainA_left_mask.png"),
         cue("posdrv_stain_left_peek", "人形が覗く（左の幕の外の縁）", "A", doll, "posdrv_stainA_peek_mask.png"),
-        cue("posdrv_stain_right", "顔のシミ（右の幕・背へ回った）", "A", "posdrv_stainA_right.png", "posdrv_stainA_right_mask.png",
-            fadeIn=0.6, fadeOut=0.3),
     ]
 
-    lines = [ln for ln in show["layout"]["lines"] if not ln["id"].startswith("posdrv_")]
-    def line(lid, cam, x1, z1, x2, z2, label):
-        return {"id": lid, "camera": cam, "x1": x1, "z1": z1, "x2": x2, "z2": z2, "dir": "both", "label": label, "mirrorOf": ""}
-    lines += [
+    base = next(a for a in show["actors"] if a["id"] == "doll")
+    show["actors"] = [a for a in show["actors"] if a["id"] != TALL_DOLL] + [
+        dict(base, id=TALL_DOLL, name="背丈のある人形（跡をついてくる）", heightM=1.1)]
+
+    show["layout"]["lines"] = [ln for ln in show["layout"]["lines"] if not ln["id"].startswith("posdrv_")] + [
         line("posdrv_A_behind", 0, -0.5, -0.20, 0.0, -0.20, "A 背の線（左の幕の前へ出た所）"),
-        line("posdrv_C_1", 2, -0.15, 0.42, -0.15, 0.95, "C 1 本目"),
-        line("posdrv_C_3", 2, 0.40, 0.42, 0.40, 0.95, "C 3 本目"),
-        line("posdrv_C_out", 2, 0.58, 0.42, 0.58, 0.95, "C 体が画から出る所"),
+        line("posdrv_B_reach", 1, -0.9, 0.25, -0.5, 0.25, "B 届く線（通路の 6 割）"),
+        line("posdrv_C_1", 2, -0.27, 0.42, -0.27, 0.95, "C 15%"),
+        line("posdrv_C_2", 2, -0.03, 0.42, -0.03, 0.95, "C 30%"),
+        line("posdrv_C_3", 2, 0.17, 0.42, 0.17, 0.95, "C 45%"),
+        line("posdrv_C_catch", 2, 0.38, 0.42, 0.38, 0.95, "C 60%（追いつき）"),
     ]
-    show["layout"]["lines"] = lines
 
     for seg in show["timeline"]["segments"]:
         lap, cam = int(seg.get("lap", 0)), int(seg.get("camera", 0))
-        if lap == 2 and cam == 0:
+        if lap != 2:
+            continue
+        if cam == 0 and "a" in only:
             seg["takes"] = [
                 {"id": "L2C0#0", "name": "2周目A 顔のシミ（左の幕。角の線で幕へ沈む）", "at": "enter", "ifMissed": "skip",
-                 "policy": "hold", "wait": "segment", "once": True, "dismissible": True,
+                 "policy": "yield", "wait": "segment", "once": True, "dismissible": True,
                  "markStartCueId": "posdrv_stain_left_bulge", "markDoneCueId": "posdrv_stain_left_peek", "markDoneSec": 0.4,
-                 "steps": [step("inherit", cueId="posdrv_stain_left", durKind="untilLine", lineId="line_center_A",
-                                durSec=20, fadeOutSec=0.4)]},
-                {"id": "L2C0#1", "name": "2周目A 顔のシミ（右の幕。背へ回る）", "at": "line", "lineId": "posdrv_A_behind",
-                 "ifMissed": "skip", "policy": "hold", "wait": "segment", "once": True, "dismissible": True,
-                 "steps": [step("inherit", cueId="posdrv_stain_right", durKind="untilZoneChange", fadeInSec=0.6)]},
+                 "steps": [step("inherit", camera=0, cueId="posdrv_stain_left", durKind="untilBeyond",
+                                lineId="line_center_A", durSec=20, fadeOutSec=0.4)]},
+                {"id": "L2C0#1", "name": "2周目A 離れると、歩いた跡を人形がついてくる", "at": "line", "lineId": "posdrv_A_behind",
+                 "ifMissed": "skip", "policy": "yield", "wait": "segment", "once": True, "dismissible": True,
+                 "steps": [trail(TALL_DOLL, 1.5, 0.45, camera=0, durKind="untilZoneChange")]},
             ]
-        if chase and lap == 2 and cam == 2:
+        if cam == 1 and "b" in only:
+            takes = seg["takes"]
+            if len(takes) != 1 or takes[0]["id"] != "L2C1#0":
+                sys.exit("2 周目 B の台本が想定と違う（L2C1#0 が 1 本のはず）")
+            t = takes[0]
+            t["name"] = "2周目B 跡を寄ってくる → 届いた線で別の場所へ飛ぶ"
+            t["policy"] = "yield"
+            t["ifMissed"] = "skip"
+            # 床置きのカメラのすぐ前に立つので、背丈のある人形だと着物の裾しか映らない（20261112_232756_posdrv-trail）。
+            # B では小さい人形（0.4m）を使う。床の高さから見上げる画角に全身が入る
+            t["steps"] = [trail("doll", 0.8, 0.25, 0.4, camera=1, durKind="untilBeyond", lineId="posdrv_B_reach", durSec=20)] + t["steps"]
+        if cam == 2 and "c" in only:
+            pre = next((t for t in seg["takes"] if t["id"] == "L2C2#0"), None)
+            if pre is None:
+                sys.exit("2 周目 C の台本に L2C2#0 が無い")
+            for st in pre["steps"]:
+                if st.get("source") == "live":
+                    st["camera"] = 2       # C の区間に 0.6 秒だけ B が映るのを直す（NOW.md の食い違い 11）
+
             def pov(n, sec, **kw):
-                return step("clip", camera=2, cueId=f"pov_{n}", durSec=sec, transition="glitch", switchSfx=True, **kw)
-            def behind(x, until):
-                return step("live", camera=2, durKind="untilLine", lineId=until, durSec=10, transition="glitch",
-                            cg="doll", cgMode="fixed", hasPlacement=True, placement={"x": x, "z": 0.74, "yawDeg": 90})
-            seg["takes"] = [
-                {"id": "L2C2#1", "name": "2周目C 追いつき（歩くたびに近づく）", "at": "line", "lineId": "posdrv_C_1",
-                 "ifMissed": "skip", "policy": "yield", "wait": "segment", "once": True,
-                 "steps": [pov(1, 0.7), behind(-0.42, "line_approach"),
-                           pov(2, 0.6), behind(-0.20, "posdrv_C_3"),
-                           pov(3, 0.6), behind(0.08, "posdrv_C_out"),
-                           pov(4, 1.4, dollCall=True),
-                           step("live", camera=2, durKind="untilZoneChange", transition="glitch", hasBgm=True,
-                                bgm={"action": "play", "trackId": "bgm_LostPlace2", "loop": True, "fadeInSec": 3.0, "fadeOutSec": 3.0})]},
-            ]
+                return step("clip", camera=2, cueId=f"pov_{n}", durSec=sec, transition="glitch", **kw)
+
+            def walk(until):
+                # 「越えた瞬間」ではなく「向こう側に居るか」で終える。動画のカットの最中に越えた線も数える
+                return step("live", camera=2, durKind="untilBeyond", lineId=until, durSec=10, transition="glitch")
+
+            seg["takes"] = [pre, {
+                "id": "L2C2#1", "name": "2周目C 追いつき（歩くたびに近づく。途中は音なし）", "at": "line", "lineId": "posdrv_C_1",
+                "ifMissed": "skip", "policy": "yield", "wait": "segment", "once": True,
+                "steps": [pov(1, 0.6), walk("posdrv_C_2"), pov(2, 0.6), walk("posdrv_C_3"), pov(3, 0.6), walk("posdrv_C_catch"),
+                          pov(4, 1.4, dollCall=True, switchSfx=True),
+                          step("live", camera=2, durKind="untilZoneChange", transition="glitch", hasBgm=True,
+                               bgm={"action": "play", "trackId": "bgm_LostPlace2", "loop": True, "fadeInSec": 3.0, "fadeOutSec": 3.0})]}]
 
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True, help="当てる木（検証用の木）")
-    ap.add_argument("--chase", action="store_true", help="2 周目 C の追いつきも位置で動く形にする")
+    ap.add_argument("--only", default="a,b,c", help="当てる場面（2 周目の a,b,c）")
     a = ap.parse_args()
+    only = {s.strip().lower() for s in a.only.split(",") if s.strip()}
+    if not only <= {"a", "b", "c"}:
+        sys.exit("--only は a,b,c から選ぶ")
     root = Path(a.root).resolve()
     if root == MAIN.resolve():
         sys.exit("メインの木には当てない（本番の台本を書き換えない）。検証用の木を指す")
@@ -165,28 +181,21 @@ def main() -> int:
         if not p.exists():
             sys.exit(f"無い: {p}（先に py -3.11 tools/twin-tree.py sync）")
 
-    plate = imread(root / "tools/twin/plates/twin_A_plate.jpg")
     imwrite(assets / "posdrv_stainA_left_mask.png", frame_mask(LEFT_FACE))
-    imwrite(assets / "posdrv_stainA_right_mask.png", frame_mask(RIGHT_FACE))
     imwrite(assets / "posdrv_stainA_peek_mask.png", frame_mask(LEFT_PEEK))
-    imwrite(assets / "posdrv_stainA_right.png", make_right_face(assets, plate))
 
     spec = json.loads(spec_p.read_text(encoding="utf-8"))
     spec["cues"].update({
         "posdrv_stain_left": {"source": "twin_stainA_idle.png", "mask": "posdrv_stainA_left_mask.png"},
         "posdrv_stain_left_bulge": {"source": "twin_stainA_bulge.png", "mask": "posdrv_stainA_left_mask.png"},
         "posdrv_stain_left_peek": {"source": "twin_stainA_doll.png", "mask": "posdrv_stainA_peek_mask.png"},
-        "posdrv_stain_right": {"source": "posdrv_stainA_right.png", "mask": "posdrv_stainA_right_mask.png"},
     })
-    # 旧い cue は同じ素材の名前を取り合うので、台本に残っていても当てはめから外す
-    for cid in ("cue_stain_A", "stain_A_press_bulge", "stain_A_done_doll"):
-        spec["cues"].pop(cid, None)
     spec_p.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
 
     raw = show_p.read_bytes()
     bom = raw.startswith(b"\xef\xbb\xbf")
     show = json.loads(raw.decode("utf-8-sig"))
-    patch_show(show, a.chase)
+    patch_show(show, only)
     data = json.dumps(show, ensure_ascii=False).encode("utf-8")
     if bom:
         data = b"\xef\xbb\xbf" + data
@@ -194,7 +203,7 @@ def main() -> int:
     man = json.loads(man_p.read_text(encoding="utf-8-sig"))
     man["configSha256"] = hashlib.sha256(data).hexdigest()
     man_p.write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
-    print(f"[variant] 当てた: {root}（2 周目 A{' と 2 周目 C' if a.chase else ''}）")
+    print(f"[variant] 当てた: {root}（2 周目 {'・'.join(sorted(only)).upper()}）")
     return 0
 
 

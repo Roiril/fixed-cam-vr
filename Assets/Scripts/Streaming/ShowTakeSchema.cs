@@ -126,7 +126,7 @@ namespace FixedCamVr.Streaming
         public float trimStartSec = -1f;
         public float trimEndSec = -1f;
 
-        public string durKind = TakeSchema.DurSec;      // "sec" | "untilClipEnd" | "untilZoneChange"
+        public string durKind = TakeSchema.DurSec;      // "sec" | "untilClipEnd" | "untilZoneChange" | "untilLine" | "untilBeyond" | "untilMark"
         public float durSec;
 
         public string transition = TakeSchema.TransDip; // "cut" | "dip" | "fade" | "glitch"
@@ -310,7 +310,7 @@ namespace FixedCamVr.Streaming
 
         // CG レイヤ（映像の上に立つ人形）。空 = 出さない。actors[] の id を指す。
         public string cg = "";
-        public string cgMode = TakeSchema.CgFollow;     // "follow"(体験者 XZ に追従) | "fixed"(下の placement)
+        public string cgMode = TakeSchema.CgFollow;     // "follow"(体験者 XZ に追従) | "fixed"(下の placement) | "trail"(歩いた跡の上)
 
         // cgMode="fixed" のときの立ち位置。**人形ではなくカットが持つ**のが要点 —
         // actor 側に位置を持たせていた旧設計では「同じ人形を別のカットで別の場所に立たせる」ができず、
@@ -318,6 +318,14 @@ namespace FixedCamVr.Streaming
         // 未指定なら actor の fixedX/fixedZ/fixedYawDeg へフォールバックする（後方互換）。
         public ShowPlacementDef? placement;
         public bool hasPlacement;
+
+        // cgMode="trail" のときの立ち方。人形は体験者の歩いた跡の上を、道のり trailGapM だけ後ろに立つ。
+        // 位置は trailStepM ごとに飛び（滑らせない）、体験者が trailHideM より近づいたら描かない。
+        // JsonUtility は欠けたキーを 0 で埋めるので、**0 以下は既定**として読む
+        // （<see cref="TakeSchema.ResolveTrailGapM"/> / <see cref="TakeSchema.ResolveTrailStepM"/> / <see cref="TakeSchema.ResolveTrailHideM"/>）。
+        public float trailGapM;
+        public float trailStepM;
+        public float trailHideM;
 
         public PostParams? post;
         public bool hasPost;
@@ -346,7 +354,7 @@ namespace FixedCamVr.Streaming
         public bool hasBgm;                 // present-flag（宣言 bool が正。TimelinePresentFlags 参照）
 
         /// <summary>
-        /// <c>durKind:"untilLine"</c> のときに待つ床の線（<c>layout.lines[].id</c>）。
+        /// <c>durKind:"untilLine"</c> / <c>"untilBeyond"</c> のときに待つ床の線（<c>layout.lines[].id</c>）。
         /// **カットの中で位置に反応する唯一の口**で、3 周目 A の凍結点がこれを使う。
         ///
         /// ⚠ 演出の <c>lineId</c>（開始規則）とは別物。演出は「いつ始めるか」、カットは「いつ終えるか」。
@@ -358,6 +366,9 @@ namespace FixedCamVr.Streaming
         public bool IsUntilClipEnd => TakeSchema.IsUntilClipEnd(durKind);
         public bool IsUntilZoneChange => TakeSchema.IsUntilZoneChange(durKind);
         public bool IsUntilLine => TakeSchema.IsUntilLine(durKind);
+        public bool IsUntilBeyond => TakeSchema.IsUntilBeyond(durKind);
+        /// <summary>尺が床の線を待つ（<c>untilLine</c> か <c>untilBeyond</c>）。</summary>
+        public bool IsLineWait => TakeSchema.IsLineWait(durKind);
         public bool IsUntilMark => TakeSchema.IsUntilMark(durKind);
         public bool HasCg => !string.IsNullOrEmpty(cg);
     }
@@ -423,6 +434,22 @@ namespace FixedCamVr.Streaming
 
         public const string CgFollow = "follow";
         public const string CgFixed = "fixed";
+        public const string CgTrail = "trail";
+
+        /// <summary>cgMode="trail" の道のりの間隔 (m)。0 以下 = 既定。</summary>
+        public const float DefaultTrailGapM = 1.5f;
+        public const float MinTrailGapM = 0.5f;
+        public const float MaxTrailGapM = 4f;
+
+        /// <summary>cgMode="trail" の飛び石の刻み (m)。0 以下 = 既定。</summary>
+        public const float DefaultTrailStepM = 0.45f;
+        public const float MinTrailStepM = 0.1f;
+        public const float MaxTrailStepM = 1.5f;
+
+        /// <summary>cgMode="trail" で描かなくなる近さ (m)。0 以下 = 既定。</summary>
+        public const float DefaultTrailHideM = 0.9f;
+        public const float MinTrailHideM = 0f;
+        public const float MaxTrailHideM = 3f;
 
         /// <summary>ラン中に卓が実体を差し替える素材の URL スキーム（<c>slot://&lt;name&gt;</c>）。</summary>
         public const string SlotScheme = "slot://";
@@ -451,6 +478,18 @@ namespace FixedCamVr.Streaming
         /// ⚠ 線は担当カメラを持つ。カットのカメラと食い違う線では横断を数えない（演出の <c>at:"line"</c> と同じ規約）。
         /// </summary>
         public const string DurUntilLine = "untilLine";
+
+        /// <summary>
+        /// 「体験者が、いまの区間に入ってきた側から見て、この床の線の向こう側に居るまで」（<c>steps[].lineId</c> と対）。
+        ///
+        /// ⚠ <see cref="DurUntilLine"/> との違いは<b>事象ではなく状態で待つ</b>こと（<see cref="LineSideLogic"/>）。
+        ///   カットが始まる前に越えていても、位置が跳んで横断が検出されなくても、カットの最初の Tick で終わる。
+        ///   秒で終わる動画のカットと線待ちを交互に並べるときはこちらを使う — <c>untilLine</c> だと、
+        ///   動画の最中に次の線を越えた人は区間を出るまで止まる（2026-11-12 のツイン走行で実際に止まった）。
+        /// ⚠ 「入ってきた側」は区間の確定で決め直す。基準は約 0.5m 手前に居た位置（確定は dwell 0.5 秒の後なので）。
+        /// ⚠ lineId が要る・担当カメラの照合・線が無いときの既定尺・watchdog は <see cref="DurUntilLine"/> と同じ。
+        /// </summary>
+        public const string DurUntilBeyond = "untilBeyond";
 
         /// <summary>
         /// 「体験者が異変を報告するまで」（左 X / Y の 2 秒長押し）。4 周目 A の締めがこれを使う
@@ -576,6 +615,11 @@ namespace FixedCamVr.Streaming
 
         public static bool IsUntilLine(string? durKind) => durKind == DurUntilLine;
 
+        public static bool IsUntilBeyond(string? durKind) => durKind == DurUntilBeyond;
+
+        /// <summary>尺が床の線を待つか（<see cref="DurUntilLine"/> か <see cref="DurUntilBeyond"/>）。どちらも lineId が要る。</summary>
+        public static bool IsLineWait(string? durKind) => IsUntilLine(durKind) || IsUntilBeyond(durKind);
+
         public static bool IsUntilMark(string? durKind) => durKind == DurUntilMark;
 
         /// <summary>
@@ -622,8 +666,29 @@ namespace FixedCamVr.Streaming
         /// <summary>cgMode 判別子を正規化する。未知は <see cref="CgFollow"/> へ倒し known=false。</summary>
         public static string NormalizeCgMode(string? mode, out bool known)
         {
-            known = mode == CgFollow || mode == CgFixed;
+            known = mode == CgFollow || mode == CgFixed || mode == CgTrail;
             return known ? mode! : CgFollow;
+        }
+
+        /// <summary>trail の道のりの間隔を解決する（0 以下・非数 = 既定。それ以外は [0.5, 4] へ丸める）。</summary>
+        public static float ResolveTrailGapM(float v)
+            => ResolvePositive(v, DefaultTrailGapM, MinTrailGapM, MaxTrailGapM);
+
+        /// <summary>trail の飛び石の刻みを解決する（0 以下・非数 = 既定。それ以外は [0.1, 1.5] へ丸める）。</summary>
+        public static float ResolveTrailStepM(float v)
+            => ResolvePositive(v, DefaultTrailStepM, MinTrailStepM, MaxTrailStepM);
+
+        /// <summary>
+        /// trail で描かなくなる近さを解決する（0 以下・非数 = 既定。それ以外は [0, 3] へ丸める）。
+        /// ⚠ JsonUtility は欠けたキーを 0 で埋めるので、0 を「隠さない」とは読めない。
+        /// </summary>
+        public static float ResolveTrailHideM(float v)
+            => ResolvePositive(v, DefaultTrailHideM, MinTrailHideM, MaxTrailHideM);
+
+        private static float ResolvePositive(float v, float def, float min, float max)
+        {
+            if (float.IsNaN(v) || v <= 0f) return def;
+            return Math.Max(min, Math.Min(max, v));
         }
 
         /// <summary>「このカットは映像素材（動画 / 静止画 / プレート）を全面に出すか」＝ cue が要るか。</summary>

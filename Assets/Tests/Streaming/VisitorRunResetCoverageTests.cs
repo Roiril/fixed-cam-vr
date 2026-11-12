@@ -49,6 +49,7 @@ namespace FixedCamVr.Streaming.Tests
             ("Streaming/TakeRunner.cs:ResetRun", "Streaming/TimelineDirector.cs", "takeRunner?.ResetRun()", "TimelineDirector.ResetRun"),
             ("Streaming/TakeRunnerLogic.cs:ResetRun", "Streaming/TakeRunner.cs", "_logic.ResetRun()", "TakeRunner.ResetRun"),
             ("Streaming/EndingFarewellDoll.cs:ResetRun", "Streaming/TakeRunner.cs", "_farewell?.ResetRun()", "TakeRunner.ResetRun"),
+            ("Streaming/Cg/ShowCgLayer.cs:ResetRun", "Streaming/TakeRunner.cs", "_cgLayer?.ResetRun()", "TakeRunner.ResetRun"),
             ("Streaming/CommsCueLogic.cs:ResetRun", "Diagnostics/CommsPanel.cs", "_cue.ResetRun()", "RunRestarted → CommsPanel"),
             ("Streaming/WalkGuide.cs:ResetRun", "Streaming/IntroDirector.cs", "walkGuide?.ResetRun()", "RunRestarted → IntroDirector"),
             ("Tracking/LapCounter.cs:ResetRun", "Tracking/LapCounter.cs", "OnLapCountReset() => ResetRun()", "LapCountReset → LapCounter"),

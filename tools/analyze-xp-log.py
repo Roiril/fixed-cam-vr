@@ -2394,6 +2394,20 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"位置合わせに {len(reg)} 回入り、いずれもパススルーが有効だった")
         w()
 
+    # ---------------- 歩いた跡の上に立つ人形（cgMode="trail"）----------------
+    # 書き手は C# の `ShowTelemetryHost`（`ev=trail`）。飛び石が変わった縁と、描く/描かないの縁で 1 行出る。
+    # 合否には使わない（数と最後の行を並べるだけ）。vis=0 は跡が足りないか、体験者が近すぎる間。
+    trail_rows = [e for e in events if e.get("ev") == "trail"]
+    if trail_rows:
+        w("## 歩いた跡の上に立つ人形（cgMode=trail）")
+        shown = sum(1 for e in trail_rows if e.get("vis") == "1")
+        stations = {e.get("station") for e in trail_rows if e.get("station") not in (None, "-1")}
+        w(f"  ev=trail {len(trail_rows)} 行（描いていた縁 {shown} 行 / 立った飛び石 {len(stations)} 個）")
+        for e in trail_rows[-5:]:
+            w(f"  t={fnum(e,'t',0):7.1f}  station={e.get('station')} x={e.get('x')} z={e.get('z')} "
+              f"vis={e.get('vis')} gap={e.get('gap')}")
+        w()
+
     # ---------------- ステータス表示（右 B）----------------
     # ⚠⚠ **画にも音にも出ない。** ステータスは HMD の中にしか出ないので、体験者が被っている
     #    あいだに業務表示が出ていたかは、録画を見ても卓を見ても後から分からない

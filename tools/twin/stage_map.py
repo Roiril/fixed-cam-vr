@@ -199,7 +199,7 @@ def audit_cues(cam: str, rows: list, occ_frames: list, show: dict, assets_dir: P
                 kind = st.get("durKind", "sec")
                 if kind == "sec":
                     k1 = min(n - 1, k + int(round(float(st.get("durSec", 0)) * fps)))
-                elif kind == "untilLine":
+                elif kind in ("untilLine", "untilBeyond"):
                     c = first_cross(st.get("lineId", ""), k)
                     k1 = n - 1 if c is None else c
                 else:

@@ -160,6 +160,10 @@ namespace FixedCamVr.Diagnostics
         // 締めの線を締めのカットの中で踏んだ縁（③a の引き金・`canon/LEDGER.md` 0233）。
         private bool _lastClosingLine;
         private EndingFarewellLogic.Phase _lastFarewellPhase = EndingFarewellLogic.Phase.Idle;
+        // 歩いた跡の上に立つ人形（cgMode="trail"）の飛び石と、描く/描かないの縁。
+        private bool _lastTrailActive;
+        private int _lastTrailStation = -1;
+        private bool _lastTrailShown;
         private string _lastTakeId = "";
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
@@ -1073,6 +1077,24 @@ namespace FixedCamVr.Diagnostics
                          $"shot={(farewell.ShotCaptured ? 1 : 0)} level={farewell.PhotoLevel} held={farewell.FaceHeldSec:F1}");
                 }
             }
+
+            // 歩いた跡の上に立つ人形（cgMode="trail"）。飛び石が変わった縁と、描く/描かないが切り替わった縁で 1 行。
+            // ⚠ vis は「CG 層が実際に描いているか」（跡が足りない・体験者が近すぎる間は 0）。
+            //    指示が立っているだけでは画に出たことにならない。x / z は飛び石の course 位置。
+            ShowCgLayer? tcg = _cg;
+            bool trailActive = tcg != null && tcg.TrailActive;
+            int trailStation = trailActive ? tcg!.TrailStation : -1;
+            bool trailShown = trailActive && tcg!.TrailShown;
+            if ((trailActive || _lastTrailActive)
+                && (trailStation != _lastTrailStation || trailShown != _lastTrailShown))
+            {
+                Vector2 st = tcg != null && trailStation >= 0 ? tcg.TrailStandXz : Vector2.zero;
+                Emit($"ev=trail station={trailStation} x={st.x:F2} z={st.y:F2} vis={(trailShown ? 1 : 0)} " +
+                     $"gap={(tcg != null ? tcg.TrailGapM : -1f):F2}");
+            }
+            _lastTrailActive = trailActive;
+            _lastTrailStation = trailStation;
+            _lastTrailShown = trailShown;
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
             // built は「実体を組めたか」、veil / glyph は**実際に書いた不透明度** ＝ 画に出た側。

@@ -25,6 +25,7 @@ namespace FixedCamVr.Streaming.Cg
     /// **出さない条件**（当てずっぽうで出すより出さない方が体験を壊さない）:
     ///   - カメラ姿勢が未著作
     ///   - **HMD 位置合わせ（登録）が未完了** — course→world が identity へ落ちて全く違う場所に立つ
+    ///   - <c>cgMode:"trail"</c> で、歩いた跡がまだ足りないか、体験者が <c>trailHideM</c> より近い（<see cref="FootprintTrail"/>）
     /// 腕の駆動は <see cref="ShowActorRig"/>（体験者のハンドトラッキング）。
     ///
     /// **接地（2026-07-27 追加）**: 人形だけを描くと必ず「浮いて」見えるので、同じ RT へ
@@ -193,6 +194,22 @@ namespace FixedCamVr.Streaming.Cg
         // 立ち位置も腕・向きと同じ時刻（映像の遅延ぶん過去）を読むための足跡。
         private readonly CourseTrack _courseTrack = new CourseTrack();
 
+        // ---- cgMode="trail"（体験者の歩いた跡の上に立つ）----
+        // 跡は人形を出しているかに関わらず毎フレーム積む（trail のカットが始まる前に歩いた道が要る）。
+        // ⚠ 遅延ぶん過去を読む足跡は _courseTrack と別に持つ。_courseTrack は人形を出している間しか
+        //   積まないので、共有すると follow の立ち位置の読み方まで変わってしまう。
+        private readonly CourseTrack _trailTrack = new CourseTrack();
+        private readonly FootprintTrail _trail = new FootprintTrail();
+        private float _trailGapM = TakeSchema.DefaultTrailGapM;
+        private float _trailStepM = TakeSchema.DefaultTrailStepM;
+        private float _trailHideM = TakeSchema.DefaultTrailHideM;
+        // 飛び石に着いた瞬間の体験者の位置（course）。次の飛び石へ移るまで人形はここを向き続ける。
+        private int _trailStation = -1;
+        private int _trailEpoch = -1;
+        private Vector2 _trailStandXz;
+        private Vector2 _trailFaceXz;
+        private bool _keepTrailStand;
+
         /// <summary>いま CG を出しているか（HUD / 診断用）。</summary>
         public bool IsVisible => _visible && _rendering;
 
@@ -278,8 +295,11 @@ namespace FixedCamVr.Streaming.Cg
         /// <paramref name="cameraIndex"/> は「いま映している映像を撮った実カメラ」の index
         /// （ライブでも録画でも、その構図に合わせて人形を立てるため）。
         /// <paramref name="placement"/> は cgMode="fixed" のときの立ち位置（カットが持つ。null なら actor の既定）。
+        /// <paramref name="trailGapM"/> / <paramref name="trailStepM"/> / <paramref name="trailHideM"/> は
+        /// cgMode="trail" の立ち方（0 以下 = 既定。<see cref="TakeSchema.ResolveTrailGapM"/> ほかで解く）。
         /// </summary>
-        public void Apply(string actorId, string cgMode, int cameraIndex, ShowPlacementDef? placement = null)
+        public void Apply(string actorId, string cgMode, int cameraIndex, ShowPlacementDef? placement = null,
+                          float trailGapM = 0f, float trailStepM = 0f, float trailHideM = 0f)
         {
             // 別れのモードは BeginFarewell を通ったときだけ立つ。カットの Apply は必ず通常の人形に戻す。
             _farewell = _farewellPending;
@@ -324,6 +344,16 @@ namespace FixedCamVr.Streaming.Cg
             _actorDef = def;
             _pose = pose;
             _placement = placement;
+            _trailGapM = TakeSchema.ResolveTrailGapM(trailGapM);
+            _trailStepM = TakeSchema.ResolveTrailStepM(trailStepM);
+            _trailHideM = TakeSchema.ResolveTrailHideM(trailHideM);
+            // 向きは「飛び石に着いた瞬間」に決める。カットが変わったら今の飛び石でも決め直す
+            // （姿だけの差し替え TrySwapToActor は除く）。
+            if (!_keepTrailStand)
+            {
+                _trailStation = -1;
+                _trailEpoch = -1;
+            }
             _cameraIndex = cameraIndex;
             // 較正の解があればそれが姿勢の正（pose は人がドラッグした概算にすぎない）。
             // ただしレンズ・解像度の照合は毎フレーム行う（起動直後は実寸が未確定なので Apply では決まらない）。
@@ -393,6 +423,7 @@ namespace FixedCamVr.Streaming.Cg
 
         private void LateUpdate()
         {
+            FeedTrail();
             if (!_visible) return;
             Tick();
         }
@@ -415,6 +446,15 @@ namespace FixedCamVr.Streaming.Cg
                 return;
             }
             _warnedUnregistered = false;
+            // trail は「跡がまだ足りない」「体験者が近すぎる」間は描かない。未登録と同じ経路で止める
+            // （Hide を呼ぶと入れ替わりの保持と食い合う。rules/screen-swap-eyes.md）。
+            if (_mode == TakeSchema.CgTrail && !_farewell && !UpdateTrailStand())
+            {
+                SetRendering(false);
+                // 人形が居ない所に荒れだけ残さない（WriteActorFocus はこの先なので通らない）。
+                ClearActorFocus();
+                return;
+            }
             SetRendering(true);
 
             EnsureRenderTexture();
@@ -450,6 +490,77 @@ namespace FixedCamVr.Streaming.Cg
             // （荒れだけが人形から遅れて付いてくると、それ自体が別の不自然さになる）。
             WriteActorFocus();
             WriteActorLight();
+        }
+
+        // ---- cgMode="trail"（体験者の歩いた跡の上に立つ）----
+
+        /// <summary>いま trail の人形を出す指示が立っているか（描いているかは <see cref="TrailShown"/>）。</summary>
+        public bool TrailActive => _visible && _mode == TakeSchema.CgTrail && !_farewell;
+
+        /// <summary>trail の人形を実際に描いているか。跡が足りない・体験者が近すぎる間は false。</summary>
+        public bool TrailShown => TrailActive && _rendering;
+
+        /// <summary>いま立っている飛び石の番号。まだ立てていなければ -1。</summary>
+        public int TrailStation => TrailActive ? _trailStation : -1;
+
+        /// <summary>いま立っている飛び石の位置（course XZ）。<see cref="TrailStation"/> が 0 以上のときだけ意味がある。</summary>
+        public Vector2 TrailStandXz => _trailStandXz;
+
+        /// <summary>いまのカットの道のりの間隔 (m・解決済み)。</summary>
+        public float TrailGapM => _trailGapM;
+
+        /// <summary>
+        /// 体験 1 回ぶんの状態を落とす（体験者の交代）。歩いた跡を次の体験者へ持ち越さない。
+        /// 人形を出しているかには触らない（畳むのは呼び出し元の演出の後始末）。
+        /// </summary>
+        public void ResetRun()
+        {
+            _trail.Reset();
+            _trailTrack.Clear();
+            _trailStation = -1;
+            _trailEpoch = -1;
+        }
+
+        // 体験者の course XZ（映像の遅延ぶん過去 ＝ follow の人形が立つのと同じ時刻）を、
+        // 人形を出しているかに関わらず毎フレーム跡へ積む。位置が取れないフレームは積まない。
+        private void FeedTrail()
+        {
+            var head = showControl?.HeadCourseXZProvider;
+            if (head == null || !IsCourseRegistered()) return;
+            Vector2 now = head();
+            if (float.IsNaN(now.x) || float.IsNaN(now.y)) return;
+            _trailTrack.Push(SimTime.Now, now);
+            if (_trailTrack.TrySample(SimTime.Now - VideoLatencySec, out Vector2 past))
+                _trail.Add(past);
+        }
+
+        // 体験者の位置（映像の遅延ぶん過去）。跡と同じ時刻を読む。
+        private bool TryTrailVisitorXz(out Vector2 xz)
+        {
+            if (_trailTrack.TrySample(SimTime.Now - VideoLatencySec, out xz)) return true;
+            var head = showControl?.HeadCourseXZProvider;
+            if (head == null) return false;
+            xz = head();
+            return true;
+        }
+
+        /// <summary>
+        /// trail の立ち位置を決める。描いてよければ true（<see cref="_trailStandXz"/> に立つ）。
+        /// 跡が足りない（まだ gap ぶん歩いていない）か、体験者が <see cref="_trailHideM"/> より近ければ false。
+        /// 向きは飛び石に着いた瞬間の体験者の位置へ向け、次の飛び石まで保つ。
+        /// </summary>
+        private bool UpdateTrailStand()
+        {
+            if (!_trail.TryPointBehind(_trailGapM, _trailStepM, out Vector2 xz, out int station)) return false;
+            if (!TryTrailVisitorXz(out Vector2 visitor)) return false;
+            if (station != _trailStation || _trail.Epoch != _trailEpoch)
+            {
+                _trailStation = station;
+                _trailEpoch = _trail.Epoch;
+                _trailStandXz = xz;
+                _trailFaceXz = visitor;
+            }
+            return Vector2.Distance(_trailStandXz, visitor) >= _trailHideM;
         }
 
         // ---- 帰還の別れの人形（canon/LEDGER.md 0291）----
@@ -687,7 +798,10 @@ namespace FixedCamVr.Streaming.Cg
             if (string.IsNullOrEmpty(actorId) || showControl == null || _pose == null) return false;
             if (_actorDef != null && _actorDef.id == actorId) return true;
             if (showControl.FindActor(actorId) == null) return false;
-            Apply(actorId, _mode, _cameraIndex, _placement);
+            // 姿だけの差し替えなので、trail の飛び石と向きも持ち越す（Apply は既定で決め直す）。
+            _keepTrailStand = true;
+            try { Apply(actorId, _mode, _cameraIndex, _placement, _trailGapM, _trailStepM, _trailHideM); }
+            finally { _keepTrailStand = false; }
             return _actorDef != null && _actorDef.id == actorId;
         }
 
@@ -1668,12 +1782,19 @@ namespace FixedCamVr.Streaming.Cg
             _actorInstance.transform.localScale = Vector3.one * Mathf.Clamp(h / measured, 0.05f, 20f);
         }
 
-        // follow = 体験者の HMD の course XZ に立つ / fixed = 著作した位置に立つ。
+        // follow = 体験者の HMD の course XZ に立つ / fixed = 著作した位置に立つ /
+        // trail = 体験者の歩いた跡の上、道のり trailGapM 後ろの飛び石に立つ（UpdateTrailStand が決める）。
         // 立ち位置は **カットの placement が優先**（同じ人形を別のカットで別の場所に立たせるため）。
         // placement が無ければ actor の既定（後方互換）。
         private void PlaceActor(ShowActorDef def)
         {
             if (_actorInstance == null) return;
+
+            if (_mode == TakeSchema.CgTrail && !_farewell)
+            {
+                PlaceTrail(_actorInstance.transform);
+                return;
+            }
 
             bool follow = _mode == TakeSchema.CgFollow;
             Vector2 xz = _placement != null
@@ -1721,6 +1842,23 @@ namespace FixedCamVr.Streaming.Cg
                 yaw = CourseYawDeg() + authoredYaw;
             }
             t.rotation = Quaternion.Euler(0f, yaw, 0f);
+        }
+
+        // trail の人形を飛び石に立たせ、着いた瞬間の体験者の方を向かせる。
+        // 向きはワールドで解く（course の向きの符号を写さない）。
+        private void PlaceTrail(Transform t)
+        {
+            Vector3 pos = CourseToWorld(_trailStandXz, 0f);
+            Vector3 face = CourseToWorld(_trailFaceXz, 0f);
+            if (_actorRig == null || !_actorRig.HasRig)
+                pos.y += Mathf.Max(0.2f, EffectiveHeightM) * 0.5f;   // 代用カプセルは中心が原点
+            t.position = pos;
+
+            Vector3 d = face - pos;
+            if (new Vector2(d.x, d.z).sqrMagnitude < 1e-4f && _virtualCam != null)
+                d = _virtualCam.transform.position - pos;   // 体験者の真上に立った（hide が 0）ならカメラを向く
+            if (new Vector2(d.x, d.z).sqrMagnitude < 1e-4f) return;   // 向きが決まらなければ前の向きを保つ
+            t.rotation = Quaternion.Euler(0f, Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, 0f);
         }
 
         private static void SetLayerRecursive(Transform t, int layer)

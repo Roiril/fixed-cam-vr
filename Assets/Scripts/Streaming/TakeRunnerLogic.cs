@@ -49,11 +49,12 @@ namespace FixedCamVr.Streaming
             //   WaitClipEnd (-1) = 素材の終端  /  WaitZoneChange (-2) = 次の区間確定
             //   WaitLine (-3)      = この床の線を横切るまで（待つ線は stepLineIndex が持つ）
             //   WaitMark (-4)      = 体験者が異変を報告するまで（4 周目 A の締め）
+            //   WaitBeyond (-5)    = 入ってきた側から見てこの床の線の向こうに居るまで（待つ線は stepLineIndex が持つ）
             public float[] stepDurSec;
 
             /// <summary>
             /// カットごとに待つ線の slot index（<c>-1</c> = 線を待たない）。<see cref="stepDurSec"/> が
-            /// <see cref="WaitLine"/> のカットだけが読む。**null なら全カットが線を待たない**（後方互換）。
+            /// <see cref="WaitLine"/> / <see cref="WaitBeyond"/> のカットだけが読む。**null なら全カットが線を待たない**（後方互換）。
             /// </summary>
             public int[]? stepLineIndex;
 
@@ -274,6 +275,7 @@ namespace FixedCamVr.Streaming
         private int _activeStep = -1;
         private float _stepEnd;
         // 現カットが始まった時刻。線待ち（WaitLine）で「始まる前に横切った」を数えないために要る
+        // （側待ち WaitBeyond は状態で見るので使わない）
         // — 横断には CrossLatchSec(0.6s) の猶予があるので、これが無いと区間へ入る途中で踏んだ線が
         //   カットの開始直後に効いて、1 カット目が一瞬で飛ぶ。
         private float _stepBeganAt = float.NegativeInfinity;
@@ -454,9 +456,11 @@ namespace FixedCamVr.Streaming
         /// <paramref name="latestZoneCam"/> は「いま体験者が居るゾーンのカメラ」（終了時の復帰先）。
         /// <paramref name="lines"/> は通過ラインの今フレームの結果（<see cref="LineCrossLogic.StateView"/>）。
         /// null なら at=line の演出は発火しない（位置が取れない環境＝従来どおりの動き）。
+        /// <paramref name="sides"/> は線の側（<see cref="LineSideLogic.StateView"/>）。<c>untilBeyond</c> のカットだけが読む。
+        /// 位置が取れないフレームも前の値のまま渡してよい。null なら <c>untilBeyond</c> のカットは進まない。
         /// </summary>
         public Decision Tick(float now, int latestZoneCam, LineCrossLogic.State[]? lines = null,
-                             bool holdCurrentStep = false)
+                             bool holdCurrentStep = false, LineSideLogic.State[]? sides = null)
         {
             // ① 開始条件を満たした瞬間を **必ず記録する**（画面が塞がっていても取りこぼさない）。
             //    ライントリガーは「横切った」という事象で、猶予 CrossLatchSec（0.6s）で消えるため、
@@ -466,6 +470,8 @@ namespace FixedCamVr.Streaming
             // ①' 線待ちのカット（durKind:"untilLine"）は、待っている線を横切った時点で畳む。
             //     武装と同じ猶予・同じ担当カメラ照合を使う（別の区間の線では進まない）。
             EndStepIfLineCrossed(now, lines);
+            // ①'+ 側待ちのカット（durKind:"untilBeyond"）は、線の向こうに居れば畳む（状態なので始まる前の越えも効く）。
+            EndStepIfBeyond(now, sides);
 
             // ①'' 締めのカットの中で締めの線（3 周目 A の凍結点）を踏んだ瞬間を記録する（③a の引き金・0233）。
             //      カットは進めない — 進行は報告（untilMark）だけが持つ。ここは連絡の面が読む事実。
@@ -501,6 +507,8 @@ namespace FixedCamVr.Streaming
                         _activeStep = next;
                         _stepBeganAt = now;
                         _stepEnd = StepEndTime(now, durs[next]);
+                        // 始まった Tick でも側を見る（既に向こうに居れば次の Tick で畳む）。
+                        EndStepIfBeyond(now, sides);
                         return BeginStepDecision(takeStarted: false);
                     }
                     // 次に出るものが既に控えているなら、画面を返さずそのまま渡す（連続の繋ぎ目に黒を挟まない）。
@@ -528,6 +536,7 @@ namespace FixedCamVr.Streaming
                 //（同一区間に居るあいだだけ。区間を出れば決着するか、chain なら持ち越す）。
                 // 締めのカットが始まった同じ Tick で、入り際（猶予の内）の横断を拾う。
                 LatchClosingLine(now, lines);
+                EndStepIfBeyond(now, sides);
                 return BeginStepDecision(takeStarted: true);
             }
 
@@ -538,6 +547,7 @@ namespace FixedCamVr.Streaming
                 RemoveCarryAt(0);
                 StartTake(carried, now, _hasCurrent ? _curCam : 0);
                 LatchClosingLine(now, lines);
+                EndStepIfBeyond(now, sides);
                 return BeginStepDecision(takeStarted: true);
             }
             return default;
@@ -548,6 +558,7 @@ namespace FixedCamVr.Streaming
         public const float WaitZoneChange = -2f;
         public const float WaitLine = -3f;
         public const float WaitMark = -4f;
+        public const float WaitBeyond = -5f;
 
         /// <summary>
         /// <b>締めのカットに入ってから、報告を受け付け始めるまで (秒)</b>
@@ -734,6 +745,20 @@ namespace FixedCamVr.Streaming
             SetCurrentStepEnd(now);
         }
 
+        // 側待ちのカット（untilBeyond）を、入ってきた側から見て線の向こうに居れば畳む。
+        // **事象ではなく状態**なので、カットが始まる前に越えていても効く（untilLine が始まる前の横断を捨てるのと逆）。
+        // 担当カメラの照合と、線が使えないとき（slot が範囲外）に待ち続けて watchdog に任せるのは untilLine と同じ。
+        private void EndStepIfBeyond(float now, LineSideLogic.State[]? sides)
+        {
+            if (sides == null || CurrentStepWait() != WaitBeyond) return;
+            int slot = CurrentStepLine();
+            if (slot < 0 || slot >= sides.Length) return;
+            LineSideLogic.State s = sides[slot];
+            if (!s.beyond) return;
+            if (!(s.camera < 0 || s.camera == _defs[_activeTake].camera)) return;
+            SetCurrentStepEnd(now);
+        }
+
         /// <summary>
         /// 走行中のカットが「体験者の報告」を待っているか。
         /// <b>自動走行が押す真似をするために公開する</b> — 押されないと締めのカットは実機で
@@ -741,9 +766,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool IsWaitingForMark => _running && CurrentStepWait() == WaitMark;
 
-        /// <summary>走行中のカットが、指定した線の横断を待っているか（自動走行の検証用）。</summary>
+        /// <summary>
+        /// 走行中のカットが、指定した線を待っているか（自動走行の検証用）。
+        /// 横断（untilLine）と側（untilBeyond）のどちらも、線を越えれば進むので待機中と答える。
+        /// </summary>
         public bool IsWaitingForLine(int slot)
-            => _running && slot >= 0 && CurrentStepWait() == WaitLine && CurrentStepLine() == slot;
+            => _running && slot >= 0 && (CurrentStepWait() == WaitLine || CurrentStepWait() == WaitBeyond)
+               && CurrentStepLine() == slot;
 
         /// <summary>
         /// いま走っているのが<b>締めのカット</b>か（<c>durKind:"untilMark"</c> の段を持つ）。
@@ -902,7 +931,7 @@ namespace FixedCamVr.Streaming
             _closingLineCrossedAt = float.NegativeInfinity;
         }
 
-        // 尺が負（untilClipEnd / untilZoneChange）なら外部通知待ち = 無限大。watchdog が上限を保証する。
+        // 尺が負（untilClipEnd / untilZoneChange / untilLine / untilMark / untilBeyond）なら外部通知待ち = 無限大。watchdog が上限を保証する。
         private static float StepEndTime(float now, float durSec)
             => durSec < 0f ? float.PositiveInfinity : now + durSec;
 
