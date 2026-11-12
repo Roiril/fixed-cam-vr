@@ -72,7 +72,6 @@
   // decode() は、画面が見えていないと戻らないことがあった。読み込みの完了で待つ
   await new Promise((res, rej) => { face.onload = res; face.onerror = () => rej(new Error('face.jpg が読めない')); face.src = './layers/face.jpg'; });
   stage.setFace(face);
-  if (q.get('eyes') === '0') stage.setEyeShade(false);
 
   // ---- 時刻表: 場面の声を順に並べ、文の頭の時刻を出す ----
   window.__step = 'audio';
@@ -181,40 +180,37 @@
   // ---- カメラ（部屋の絵の座標）と、ピント ----
   const gx = room.glass.x + room.glass.w / 2;
   const gy = room.glass.y + room.glass.h / 2;
+  // 博士の目は画面に入れない（0342）。博士が写る構図は、上の端を目のすぐ下（部屋の絵の y=352）に置く。
+  // テレビへ寄る構図は左の端を博士の頭より右に置く。行き来するときは、横と縦を順に動かして、途中でも目が入らないようにする
   const SHOT = {
-    doc0: { cx: 559, cy: 392, w: 960 },
-    doc1: { cx: 559, cy: 388, w: 860 },
-    two: { cx: 885, cy: 470, w: 1470 },
-    two2: { cx: 960, cy: 476, w: 1330 },
-    ots: { cx: 1190, cy: 486, w: 920 },
+    low0: { cx: 559, cy: 596, w: 780 },       // 鼻から胸まで
+    low1: { cx: 559, cy: 570, w: 690 },
+    lowR: { cx: 765, cy: 643, w: 930 },       // 博士の口元と、右奥のテレビの下半分
+    ots: { cx: 1190, cy: 486, w: 920 },       // 博士の肩越しのテレビ
     ots2: { cx: 1215, cy: 486, w: 820 },
     tvx: { cx: 1305, cy: 487, w: 700 },
     tvx2: { cx: 1305, cy: 487, w: 640 },
     in0: { cx: gx, cy: gy + 4, w: 560 },      // テレビの中へ。ガラスが画面の 7 割を占める
     in1: { cx: gx, cy: gy + 4, w: 525 },
-    doc2: { cx: 720, cy: 424, w: 1240 },
-    end0: { cx: 559, cy: 388, w: 880 },
-    end1: { cx: 559, cy: 386, w: 815 },
   };
+  // order: 'x' は横を先に（博士からテレビへ）、'y' は縦を先に（テレビから博士へ）
   const camKeys = [
-    { t: LAMP_AT, dur: sceneAt.introduction.end - LAMP_AT, to: SHOT.doc1, ease: 'linear' },
-    { t: TV_ON + 1000, dur: 3000, to: SHOT.two },
-    { t: at('subject', 1), dur: len('subject', 1), to: SHOT.two2 },
-    { t: at('subject', 2), dur: 2600, to: SHOT.ots },
-    { t: DOLL_SWAP + 300, dur: at('subject', 3) - DOLL_SWAP - 300, to: SHOT.ots2, ease: 'linear' },
-    { t: at('subject', 3), dur: 2300, to: SHOT.doc2 },                 // 「…あなたの任務です。」博士へ
-    // 手順の場面: 装置 → 室内のカメラ → そのカメラが捉えた姿（少しずつ寄る）
-    { t: at('report', 0) - 200, dur: 2800, to: SHOT.tvx },
+    { t: LAMP_AT, dur: sceneAt.introduction.end - LAMP_AT, to: SHOT.low1, ease: 'linear' },
+    { t: TV_ON + 1000, dur: 3400, to: SHOT.ots, order: 'x' },
+    { t: at('subject', 1), dur: at('subject', 3) - at('subject', 1), to: SHOT.ots2, ease: 'linear' },
+    { t: at('subject', 3), dur: 2600, to: SHOT.lowR, order: 'y' },      // 「…あなたの任務です。」博士へ
+    // 手順の場面: 装置 → 画面 → 室内のカメラ（少しずつ寄る）
+    { t: at('report', 0) - 200, dur: 3000, to: SHOT.tvx, order: 'x' },
     { t: at('report', 1), dur: at('report', 3) - at('report', 1) - 300, to: SHOT.tvx2, ease: 'linear' },
     // 「その映像を見ながら…三周」テレビの中へ入り、手すりの文の終わりまで居る
     { t: at('report', 3) - 200, dur: 3200, to: SHOT.in0 },
     { t: at('report', 3) + 3000, dur: at('report', 5) - at('report', 3) - 3000, to: SHOT.in1, ease: 'linear' },
-    { t: at('report', 5), dur: 2300, to: SHOT.doc2 },                   // 「…報告してください。」博士へ
-    { t: at('report', 6) - 200, dur: 3000, to: SHOT.in0 },              // ボタンの図
-    { t: at('report', 7, 0.45), dur: 3400, to: SHOT.two },
-    { t: at('wear', 0), dur: 2800, to: SHOT.doc2 },
-    { t: at('wear', 2), dur: 3200, to: SHOT.end0 },
-    { t: at('wear', 3), dur: len('wear', 3) + 900, to: SHOT.end1, ease: 'linear' },
+    { t: at('report', 5), dur: 2600, to: SHOT.lowR, order: 'y' },       // 「…報告してください。」博士へ
+    { t: at('report', 6) - 200, dur: 3200, to: SHOT.in0, order: 'x' },  // ボタンの図
+    { t: at('report', 7, 0.45), dur: 3400, to: SHOT.ots },
+    { t: at('wear', 0), dur: 3000, to: SHOT.lowR, order: 'y' },
+    { t: at('wear', 2), dur: 3200, to: SHOT.low0 },
+    { t: at('wear', 3), dur: len('wear', 3) + 900, to: SHOT.low1, ease: 'linear' },
   ];
   const focusKeys = [
     { t: TV_ON + 1700, dur: 1400, to: 1 },
@@ -232,11 +228,20 @@
       if (t < key.t) break;
       const until = k + 1 < keys.length ? Math.min(t, keys[k + 1].t) : t;
       const u = Math.min(1, (until - key.t) / key.dur);
-      cur = mix(cur, key.to, ease(u, key.ease));
+      cur = mix(cur, key.to, ease(u, key.ease), key);
     }
     return cur;
   }
-  const mixCam = (a, b, u) => ({ cx: a.cx + (b.cx - a.cx) * u, cy: a.cy + (b.cy - a.cy) * u, w: a.w * Math.pow(b.w / a.w, u) });
+  const smooth = (v) => { const c = Math.max(0, Math.min(1, v)); return c * c * (3 - 2 * c); };
+  const mixCam = (a, b, u, key) => {
+    const first = smooth(u / 0.55);                // 先に動く軸
+    const second = smooth((u - 0.4) / 0.6);        // 後から動く軸
+    const ux = key?.order === 'x' ? first : key?.order === 'y' ? second : u;
+    const uy = key?.order === 'x' ? second : key?.order === 'y' ? first : u;
+    // 縦を先に下げるときは、寄り引きも縦と一緒に動かす（引いたまま下げると上の端が上がる）
+    const uw = key?.order === 'y' ? first : key?.order === 'x' ? second : u;
+    return { cx: a.cx + (b.cx - a.cx) * ux, cy: a.cy + (b.cy - a.cy) * uy, w: a.w * Math.pow(b.w / a.w, uw) };
+  };
   const mixNum = (a, b, u) => a + (b - a) * u;
 
   // 灯り: カチ、と入って 2 度またたき、ゆっくり満ちる
@@ -253,7 +258,7 @@
 
   function stateAt(t, frameNo) {
     // ⚠ 最初の鍵より前は SHOT.doc0 そのものが返る。写しを取らないと、下の息の揺れが毎コマ足されて構図が流れる
-    const cam = { ...track(camKeys, SHOT.doc0, t, mixCam) };
+    const cam = { ...track(camKeys, SHOT.low0, t, mixCam) };
     // 三脚のごく小さな息（寄っているときは小さく）
     const breath = Math.min(1, cam.w / 900);
     cam.cx += Math.sin(t / 2600) * 1.6 * breath;
@@ -367,6 +372,19 @@
   window.RoomProto = {
     cues, TOTAL, END_AT, TV_ON, CUT_AT, DOLL_SWAP, stage, meta,
     seek, setPlaying,
+    // 博士の目が画面に入る時刻が無いかを全部の時刻で調べる（0342）。目の箱は部屋の絵の x 495–630・y 300–345（博士のずれ込み）
+    eyeCheck(step = 33) {
+      const bad = [];
+      for (let t = 0; t <= TOTAL; t += step) {
+        const c = stateAt(t).cam;
+        const h = c.w * 10 / 16;
+        const left = c.cx - c.w / 2;
+        const top = Math.min(room.plate.h - h, Math.max(0, c.cy - h / 2));
+        const px = -(c.cx - 559) * 0.05;
+        if (left < 630 + px && left + c.w > 495 + px && top < 345 && top + h > 300) bad.push(Math.round(t));
+      }
+      return bad;
+    },
     postMeta: () => fetch('/_frame?dir=meta&n=0', { method: 'POST', body: JSON.stringify(meta()) }).then((r) => r.ok),
     draw(t, frameNo) { tM = t; const r = stage.render(stateAt(t, frameNo)); showText(t); return r; },
     // コマを順に描いてサーバーへ送る（声と効果音は ffmpeg で後から合わせる）
