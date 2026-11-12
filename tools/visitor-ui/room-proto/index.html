@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>博士の部屋（試作）</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #050403; overflow: hidden; }
+  body { font-family: "Noto Sans JP", "Yu Gothic UI", "Hiragino Sans", sans-serif; color: #f2ecdf; -webkit-user-select: none; user-select: none; }
+  .stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  .frame { position: relative; width: min(100vw, 160vh); aspect-ratio: 16 / 10; overflow: hidden; }
+  canvas#room { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; pointer-events: none; background: linear-gradient(transparent, rgba(5,4,3,.82) 78%); }
+  .subtitle { position: absolute; left: 8%; right: 8%; bottom: 7.5%; margin: 0; text-align: center; font-weight: 500; font-size: clamp(16px, 2.35vw, 30px); line-height: 1.6; letter-spacing: .06em; text-wrap: balance; word-break: auto-phrase; text-shadow: 0 2px 14px rgba(0,0,0,.9); min-height: 1.6em; }
+  .hairline { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(232,220,196,.07); }
+  .hairline span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, rgba(168,50,57,.55), #a83239); }
+  .panel { position: fixed; left: 10px; top: 10px; display: flex; gap: 6px; align-items: center; font-size: 12px; opacity: .55; }
+  .panel:hover { opacity: 1; }
+  .panel button { font: inherit; color: #f2ecdf; background: rgba(40,36,30,.8); border: 1px solid rgba(232,220,196,.25); border-radius: 4px; padding: 4px 9px; cursor: pointer; }
+  .panel output { font-variant-numeric: tabular-nums; min-width: 15em; }
+  body.is-export .panel { display: none; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="frame" id="frame">
+    <canvas id="room"></canvas>
+    <div class="shade"></div>
+    <p class="subtitle" id="subtitle"></p>
+    <div class="hairline"><span id="hairline"></span></div>
+  </div>
+</div>
+<div class="panel" id="panel">
+  <button id="play" type="button">再生</button>
+  <button id="prev" type="button">前の文</button>
+  <button id="next" type="button">次の文</button>
+  <button id="restart" type="button">最初から</button>
+  <output id="clock"></output>
+</div>
+<script src="./room-stage.js"></script>
+<script>
+(async () => {
+  'use strict';
+  addEventListener('unhandledrejection', (e) => { window.__error = String(e.reason && e.reason.stack || e.reason); });
+  const q = new URLSearchParams(location.search);
+  const lang = q.get('lang') || 'ja';
+  const canvas = document.getElementById('room');
+  const frame = document.getElementById('frame');
+  const subtitle = document.getElementById('subtitle');
+  const hairline = document.getElementById('hairline');
+  const clock = document.getElementById('clock');
+
+  const [room, briefing] = await Promise.all([
+    fetch('./layers/room.json').then((r) => r.json()),
+    fetch('./asset/briefing-v1.json').then((r) => r.json()),
+  ]);
+
+  function sizeCanvas() {
+    const fixed = Number(q.get('w')) || 0;
+    const r = frame.getBoundingClientRect();
+    const w = fixed || Math.min(1600, Math.round(r.width * Math.min(1.5, devicePixelRatio || 1)));
+    canvas.width = w;
+    canvas.height = Math.round(w * 10 / 16);
+  }
+  sizeCanvas();
+  addEventListener('resize', sizeCanvas);
+
+  window.__step='stage';
+  const stage = await RoomStage.create(canvas, { room, base: './layers/' });
+  const face = new Image();
+  window.__step='face';
+  // decode() は、画面が見えていないと戻らないことがあった。読み込みの完了で待つ
+  await new Promise((res, rej) => { face.onload = res; face.onerror = () => rej(new Error('face.jpg が読めない')); face.src = './layers/face.jpg'; });
+  stage.setFace(face);
+  if (q.get('eyes') === '0') stage.setEyeShade(false);
+
+  // ---- 時刻表: 場面の声を順に並べ、文の頭の時刻を出す ----
+  window.__step='audio';
+  const GAP = { introduction: 0, subject: 1600, report: 500, wear: 500 };
+  const audios = [];
+  const cues = [];          // { scene, i, start, end, text }
+  const sceneAt = {};
+  let cursor = 0;
+  for (const scene of briefing.scenes) {
+    const list = scene.cues[lang] || scene.cues.ja;
+    const sum = list.reduce((a, c) => a + c.durationMs, 0);
+    let dur = sum;
+    let audio = null;
+    if (lang === 'ja' && scene.audio?.ja) {
+      audio = new Audio(`./asset/${scene.audio.ja}`);
+      audio.preload = 'auto';
+      await new Promise((res) => { audio.addEventListener('loadedmetadata', res, { once: true }); audio.addEventListener('error', res, { once: true }); });
+      if (Number.isFinite(audio.duration)) dur = audio.duration * 1000;
+    }
+    cursor += GAP[scene.id] || 0;
+    sceneAt[scene.id] = { start: cursor, end: cursor + dur, scene };
+    audios.push({ id: scene.id, audio, start: cursor, end: cursor + dur });
+    let t = cursor;
+    list.forEach((c, i) => {
+      const d = c.durationMs * (dur / sum);
+      cues.push({ scene: scene.id, i, start: t, end: t + d, text: c.text });
+      t += d;
+    });
+    cursor += dur;
+  }
+  window.__step='timeline';
+  const END_AT = cursor;
+  const CUT_AT = END_AT + 500;
+  const CUT_MS = 1500;
+  const TOTAL = CUT_AT + CUT_MS + 700;
+  const at = (scene, i, frac = 0) => {
+    const c = cues.find((k) => k.scene === scene && k.i === i);
+    return c.start + (c.end - c.start) * frac;
+  };
+  const len = (scene, i) => { const c = cues.find((k) => k.scene === scene && k.i === i); return c.end - c.start; };
+
+  // ---- テレビの中身 ----
+  const TV_ON = sceneAt.introduction.end + 300;
+  const walk = document.createElement('video');
+  walk.muted = true; walk.loop = true; walk.playsInline = true; walk.preload = 'auto';
+  const programme = [];     // { t, kind, src, tag, hold, video }
+  for (const scene of briefing.scenes) {
+    if (scene.layout !== 'doctor-evidence') continue;
+    const figs = [{ fromCue: 0, image: scene.image, tag: scene.tag }, ...(scene.figures || [])];
+    for (const fg of figs) {
+      const t = scene.id === 'subject' && fg.fromCue === 0 ? TV_ON : at(scene.id, fg.fromCue) - 120;
+      const isLoop = scene.loopVideo && fg.fromCue === scene.loopVideo.startCue;
+      if (isLoop) walk.src = `./asset/${scene.loopVideo.file}`;
+      programme.push({
+        t,
+        kind: fg.kind === 'buttons' ? 'buttons' : isLoop ? 'video' : 'image',
+        src: `./asset/${fg.image}`,
+        tag: fg.tag ? (fg.tag[lang] || fg.tag.ja) : '',
+        hold: fg.hold ? (fg.hold[lang] || fg.hold.ja) : '',
+        video: isLoop ? walk : null,
+      });
+    }
+  }
+  programme.push({ t: at('wear', 0) - 120, kind: 'snow' });
+  programme.sort((a, b) => a.t - b.t);
+  for (const p of programme) if (p.kind !== 'snow' && p.src) { const im = new Image(); im.src = p.src; }
+
+  function screenAt(t) {
+    if (t < TV_ON) return { power: false };
+    let cur = programme[0];
+    for (const p of programme) if (p.t <= t) cur = p;
+    return { power: true, powerAt: TV_ON, kind: cur.kind, src: cur.src, tag: cur.tag, hold: cur.hold, video: cur.video, shownAt: cur.t, channelAt: cur.t === TV_ON ? null : cur.t };
+  }
+
+  // ---- カメラ（部屋の絵の座標）と、ピント ----
+  const SHOT = {
+    doc0: { cx: 559, cy: 392, w: 960 },
+    doc1: { cx: 559, cy: 388, w: 860 },
+    two: { cx: 885, cy: 470, w: 1470 },
+    two2: { cx: 960, cy: 476, w: 1330 },
+    ots: { cx: 1190, cy: 486, w: 920 },
+    ots2: { cx: 1205, cy: 486, w: 870 },
+    tvx: { cx: 1305, cy: 487, w: 700 },
+    doc2: { cx: 720, cy: 424, w: 1240 },
+    end0: { cx: 559, cy: 388, w: 880 },
+    end1: { cx: 559, cy: 386, w: 820 },
+  };
+  const camKeys = [
+    { t: 0, dur: sceneAt.introduction.end, to: SHOT.doc1, ease: 'linear' },
+    { t: TV_ON + 900, dur: 2800, to: SHOT.two },
+    { t: at('subject', 1), dur: len('subject', 1), to: SHOT.two2 },
+    { t: at('subject', 2), dur: 2400, to: SHOT.ots },
+    { t: at('subject', 3), dur: 2200, to: SHOT.doc2 },
+    { t: at('subject', 4), dur: 2400, to: SHOT.ots },
+    { t: at('subject', 5), dur: len('subject', 5), to: SHOT.ots2, ease: 'linear' },
+    { t: at('report', 0), dur: 2600, to: SHOT.tvx },
+    { t: at('report', 2, 0.55), dur: 2200, to: SHOT.doc2 },
+    { t: at('report', 3), dur: 2200, to: SHOT.tvx },
+    { t: at('report', 4, 0.45), dur: 3000, to: SHOT.two },
+    { t: at('wear', 0), dur: 2600, to: SHOT.doc2 },
+    { t: at('wear', 2), dur: 3000, to: SHOT.end0 },
+    { t: at('wear', 3), dur: len('wear', 3) + 900, to: SHOT.end1, ease: 'linear' },
+  ];
+  const focusKeys = [
+    { t: TV_ON + 1500, dur: 1300, to: 1 },
+    { t: at('subject', 3), dur: 900, to: 0 },
+    { t: at('subject', 4), dur: 900, to: 1 },
+    { t: at('report', 2, 0.55), dur: 900, to: 0 },
+    { t: at('report', 3), dur: 900, to: 1 },
+    { t: at('wear', 0), dur: 1000, to: 0 },
+  ];
+  const ease = (u, kind) => (kind === 'linear' ? u : u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+  function track(keys, first, t, mix) {
+    let cur = first;
+    for (let k = 0; k < keys.length; k++) {
+      const key = keys[k];
+      if (t < key.t) break;
+      const until = k + 1 < keys.length ? Math.min(t, keys[k + 1].t) : t;
+      const u = Math.min(1, (until - key.t) / key.dur);
+      cur = mix(cur, key.to, ease(u, key.ease));
+    }
+    return cur;
+  }
+  const mixCam = (a, b, u) => ({ cx: a.cx + (b.cx - a.cx) * u, cy: a.cy + (b.cy - a.cy) * u, w: a.w * Math.pow(b.w / a.w, u) });
+  const mixNum = (a, b, u) => a + (b - a) * u;
+
+  function stateAt(t) {
+    const cam = track(camKeys, SHOT.doc0, t, mixCam);
+    // 手持ちではない。三脚のごく小さな息
+    cam.cx += Math.sin(t / 2600) * 1.6;
+    cam.cy += Math.sin(t / 3400 + 1) * 1.1;
+    const focus = track(focusKeys, 0, t, mixNum);
+    return {
+      now: t,
+      cam,
+      focus,
+      screen: screenAt(t),
+      fadeIn: Math.min(1, t / 900),
+      cut: t < CUT_AT ? 0 : Math.min(1, (t - CUT_AT) / CUT_MS),
+    };
+  }
+
+  function showText(t) {
+    const cue = cues.find((c) => t >= c.start && t < c.end + 250) || null;
+    const text = cue && t < CUT_AT ? cue.text : '';
+    if (subtitle.textContent !== text) subtitle.textContent = text;
+    hairline.style.width = `${Math.min(100, (t / END_AT) * 100).toFixed(2)}%`;
+    const name = cue ? `${cue.scene} ${cue.i + 1}` : '—';
+    clock.textContent = `${(t / 1000).toFixed(1)} / ${(TOTAL / 1000).toFixed(1)} 秒  ${name}`;
+  }
+
+  // ---- 再生 ----
+  let tM = Number(q.get('t')) || 0;
+  let playing = false;
+  let last = 0;
+  function syncAudio() {
+    for (const a of audios) {
+      if (!a.audio) continue;
+      const inside = playing && tM >= a.start && tM < a.end;
+      if (inside) {
+        const want = (tM - a.start) / 1000;
+        if (a.audio.paused) { a.audio.currentTime = want; a.audio.play().catch(() => {}); }
+        else if (Math.abs(a.audio.currentTime - want) > 0.12) tM = a.start + a.audio.currentTime * 1000;
+      } else if (!a.audio.paused) a.audio.pause();
+    }
+    const scr = screenAt(tM);
+    if (scr.kind === 'video' && playing) { if (walk.paused) walk.play().catch(() => {}); }
+    else if (!walk.paused) walk.pause();
+  }
+  function tick(now) {
+    if (playing) {
+      tM += Math.min(100, now - last);
+      if (tM >= TOTAL) { tM = TOTAL; playing = false; document.getElementById('play').textContent = '再生'; }
+    }
+    last = now;
+    syncAudio();
+    stage.render(stateAt(tM));
+    showText(tM);
+    requestAnimationFrame(tick);
+  }
+  function setPlaying(v) {
+    playing = v;
+    last = performance.now();
+    document.getElementById('play').textContent = v ? '停止' : '再生';
+    if (!v) for (const a of audios) a.audio?.pause();
+  }
+  function seek(t) {
+    tM = Math.max(0, Math.min(TOTAL, t));
+    for (const a of audios) a.audio?.pause();
+  }
+  document.getElementById('play').onclick = () => { if (tM >= TOTAL) seek(0); setPlaying(!playing); };
+  document.getElementById('restart').onclick = () => { seek(0); setPlaying(true); };
+  document.getElementById('prev').onclick = () => { const c = [...cues].reverse().find((k) => k.start < tM - 600); seek(c ? c.start : 0); };
+  document.getElementById('next').onclick = () => { const c = cues.find((k) => k.start > tM + 1); seek(c ? c.start : TOTAL); };
+  addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); document.getElementById('play').click(); }
+    if (e.code === 'ArrowLeft') document.getElementById('prev').click();
+    if (e.code === 'ArrowRight') document.getElementById('next').click();
+  });
+
+  // 試験と書き出しの口
+  window.__step='ready';
+  window.RoomProto = {
+    cues, TOTAL, END_AT, TV_ON, stage,
+    seek, setPlaying,
+    draw(t) { tM = t; const r = stage.render(stateAt(t)); showText(t); return r; },
+    // コマを順に描いてサーバーへ送る（声は ffmpeg で後から合わせる）
+    async export(dir, fps = 30, from = 0, to = TOTAL) {
+      document.body.classList.add('is-export');
+      setPlaying(false);
+      const n0 = Math.round(from / 1000 * fps);
+      const n1 = Math.round(to / 1000 * fps);
+      for (let n = n0; n < n1; n++) {
+        const t = n * 1000 / fps;
+        const scr = screenAt(t);
+        if (scr.kind === 'video' && walk.duration) {
+          const want = ((t - scr.shownAt) / 1000) % walk.duration;
+          if (Math.abs(walk.currentTime - want) > 0.001) {
+            await new Promise((res) => { walk.addEventListener('seeked', res, { once: true }); walk.currentTime = want; });
+          }
+        }
+        tM = t;
+        stage.render(stateAt(t));
+        // toBlob は画面が見えていないと 1 コマに 1 秒近くかかった。同期の toDataURL で取る
+        const b64 = atob(canvas.toDataURL('image/jpeg', 0.92).split(',')[1]);
+        const bytes = new Uint8Array(b64.length);
+        for (let k = 0; k < b64.length; k++) bytes[k] = b64.charCodeAt(k);
+        await fetch(`/_frame?dir=${dir}&n=${n - n0}`, { method: 'POST', body: bytes });
+        if (n % 30 === 0) document.title = `export ${n - n0}/${n1 - n0}`;
+      }
+      document.title = 'export done';
+      return n1 - n0;
+    },
+  };
+
+  if (q.get('auto') === '1') setPlaying(true);
+  requestAnimationFrame((now) => { last = now; tick(now); });
+})();
+</script>
+</body>
+</html>
