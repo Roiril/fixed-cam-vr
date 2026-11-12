@@ -1220,9 +1220,11 @@ test('日本語の台詞は 0327 の版で、声は v4 の音声。古い台詞�
   const report = find('report');
   const wear = find('wear');
   // ユーザーが口にした骨子（0327）。名を伏せた上司・今日から調査員・管理番号 0514・空き家の子供部屋のカーテンと人形
-  assert.match(introduction.cues.ja[0].text, /あなたの上司、とでも言っておきましょうか/);
-  assert.doesNotMatch(introduction.cues.ja.map((cue) => cue.text).join(''), /博士です|日本怪異研究所/);
-  assert.match(introduction.cues.ja[1].text, /今日から、この研究所の調査員です/);
+  // 最初は間を置いて「ようこそ。日本怪異研究所へ。」から入り、名を伏せた上司へ続ける（0331）
+  assert.equal(introduction.cues.ja[0].text, 'ようこそ。日本怪異研究所へ。');
+  assert.match(introduction.cues.ja[1].text, /あなたの上司、とでも言っておきましょうか/);
+  assert.doesNotMatch(introduction.cues.ja.map((cue) => cue.text).join(''), /博士です/);
+  assert.match(introduction.cues.ja[2].text, /今日から、この研究所の調査員です/);
   assert.match(subject.cues.ja[0].text, /管理番号0514に指定された異常存在/);
   assert.match(subject.cues.ja[1].text, /空き家の子供部屋から見つかった、カーテンと人形/);
   assert.match(subject.cues.ja[2].text, /^外見上は、一般的な人形と変わりません。/);
@@ -1255,10 +1257,12 @@ test('日本語の台詞は 0327 の版で、声は v4 の音声。古い台詞�
   const input = fs.readFileSync(path.join(root, 'tools', 'visitor-ui', 'elevenlabs-input-ja-v4.md'), 'utf8');
   const blocks = [...input.matchAll(/```text\r?\n([\s\S]*?)\r?\n```/g)];
   assert.equal(blocks.length, 1);
-  for (const phrase of ['あなたの上司、とでも', 'ゼロ・ゴー・イチ・ヨン', '子供部屋', '特定の条件下でのみ', '判明していません',
+  for (const phrase of ['ようこそ。', 'にほんかいいけんきゅうじょ', 'あなたの上司、とでも', 'ゼロ・ゴー・イチ・ヨン', '子供部屋', '特定の条件下でのみ', '判明していません',
     '分かっていません', '解析します', '決して離さず', 'エックスとワイ', '一秒間、長押し', '健闘を、祈ります。']) {
     assert.ok(blocks[0][1].includes(phrase), phrase);
   }
+  // 「装置」は「ちょうち」と読まれた（0331）。声の原稿ではかなで書く
+  assert.doesNotMatch(blocks[0][1], /装置/);
   assert.equal(introduction.image, 'introduction-doctor-v2.jpg');
   assert.equal(introduction.doctorImage, 'introduction-doctor-v2.jpg');
   for (const scene of [introduction, subject, report, wear]) {
@@ -2132,7 +2136,7 @@ test('新APIは全文を通して流し、最後の砂嵐の後に返却を案�
   const lastIndex = briefing.scenes.length - 1;
   const totalCount = briefing.scenes.reduce((count, scene) => count + scene.cues.ja.length, 0);
   assert.equal(wearIndex, lastIndex, '装着の文が説明の最後にある');
-  assert.equal(totalCount, 18);
+  assert.equal(totalCount, 19);
   const status = { ...clone(validStatus), questTick: 50, lang: 'ja', relief: false,
     appliedSeq: 7, received: 7, visitorGeneration: 1,
     pending: { lang: 'ja', relief: false, seq: 7 },
@@ -2399,7 +2403,7 @@ test('report最終文の自動音声終了は返却で割り込まずwearへ進�
 test('旧APIとスタッフ確認モードはwearを含む全文を連続してから終了する', () => {
   const total = briefing.scenes.reduce((count, scene) => count + scene.cues.ja.length, 0);
   const wearIndex = briefing.scenes.findIndex(scene => scene.id === 'wear');
-  assert.equal(total, 18);
+  assert.equal(total, 19);
   for (const preview of [false, true]) {
     prepareBriefing(clone(briefing));
     state.staffPreview = preview;

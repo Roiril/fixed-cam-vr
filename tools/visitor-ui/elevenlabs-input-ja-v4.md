@@ -6,10 +6,15 @@
 1 字ごとの時刻から場面と文へ切る。このファイルは `export-briefing.py` では上書きしない。
 
 演技の指定と間の取り方は、ユーザーが調整した v2（`elevenlabs-input-ja.md`）の書き方を使っている。
+2026-11-12（LEDGER 0331）: 「装置」が「ちょうち」と読まれたので、原稿だけ「そうち」とかなで書く（字幕は漢字のまま）。研究所の名もかなで書く。
 文の頭を変えたら `generate-doctor-audio.py` の `ANCHORS` も同じ字に直す。
 
 ```text
 [deep, resonant male voice, calm and authoritative, restrained emotion, measured delivery, cinematic Japanese drama performance]
+
+ようこそ。……にほんかいいけんきゅうじょへ。
+
+[pause]
 
 私は……あなたの上司、とでも……言っておきましょうか。
 
@@ -49,7 +54,7 @@
 [long pause]
 
 [calm, precise, instructional]
-観測装置をつけ、このカーテンの周りを、三周してください。
+かんそくそうちをつけ、このカーテンの周りを、三周してください。
 
 [pause]
 
@@ -59,11 +64,11 @@
 [long pause]
 
 [calm, authoritative]
-これが、怪異を記録し、解析するための、観測装置です。
+これが、怪異を記録し、解析するための、かんそくそうちです。
 
 [short pause]
 
-装置には、室内のカメラが捉えた映像が、映ります。
+そうちには、室内のカメラが捉えた映像が、映ります。
 
 [pause]
 
@@ -79,23 +84,23 @@
 
 [short pause]
 
-報告の内容は、装置のエージェントが、解析します。
+報告の内容は、そうちのエージェントが、解析します。
 見間違いでも、構いません。
 
 [long pause]
 
 [calm, precise, instructional]
-調査が終わったら、係の者が装置を外すまで、動かずに、お待ちください。
+調査が終わったら、係の者がそうちを外すまで、動かずに、お待ちください。
 
 [short pause]
 
-続けられなくなったら、その場で立ち止まり、装置を外してください。
+続けられなくなったら、その場で立ち止まり、そうちを外してください。
 
 [pause]
 
 [quietly commanding, final instructions]
 では。
-左手にコントローラーを持って、観測装置を、つけてください。
+左手にコントローラーを持って、かんそくそうちを、つけてください。
 
 [pause]
 

@@ -20,27 +20,31 @@
 
 ### 01 introduction — 着任
 
-開始 0.0 秒 / 尺 13.7 秒
+開始 0.0 秒 / 尺 19.8 秒
 
 画像: `introduction-doctor-v2.jpg`
 
 音声: `introduction-ja-v4.mp3`
 
-文 01 / 場面内 0.0–4.8 秒
+文 01 / 場面内 0.0–5.1 秒
+
+ようこそ。日本怪異研究所へ。
+
+文 02 / 場面内 5.1–10.3 秒
 
 私は……あなたの上司、とでも言っておきましょうか。
 
-文 02 / 場面内 4.8–9.2 秒
+文 03 / 場面内 10.3–15.2 秒
 
 あなたは今日から、この研究所の調査員です。
 
-文 03 / 場面内 9.2–13.7 秒
+文 04 / 場面内 15.2–19.8 秒
 
 これより、調査対象について説明します。
 
 ### 02 subject — 調査対象と手順
 
-開始 13.7 秒 / 尺 45.7 秒
+開始 19.8 秒 / 尺 44.7 秒
 
 画像: `twin-room-v1.jpg`
 
@@ -52,33 +56,33 @@
 
 ループ動画: `twin-walk-v1.mp4`（文 05 から章末まで。文送りとは別に再生）
 
-文 01 / 場面内 0.0–6.6 秒
+文 01 / 場面内 0.0–7.2 秒
 
 調査対象は、管理番号0514に指定された異常存在です。
 
-文 02 / 場面内 6.6–12.9 秒
+文 02 / 場面内 7.2–13.0 秒
 
 ある空き家の子供部屋から見つかった、カーテンと人形です。
 
-文 03 / 場面内 12.9–23.1 秒
+文 03 / 場面内 13.0–22.6 秒
 
 外見上は、一般的な人形と変わりません。しかし、特定の条件下でのみ、異常性が発現します。
 
-文 04 / 場面内 23.1–32.7 秒
+文 04 / 場面内 22.6–32.3 秒
 
 その条件も、異常性の正体も、まだ判明していません。それを調査するのが、あなたの任務です。
 
-文 05 / 場面内 32.7–37.5 秒
+文 05 / 場面内 32.3–37.4 秒
 
 観測装置をつけ、このカーテンの周りを三周してください。
 
-文 06 / 場面内 37.5–45.7 秒
+文 06 / 場面内 37.4–44.7 秒
 
 足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり歩いてください。
 
 ### 03 report — XかYを長押し
 
-開始 59.5 秒 / 尺 36.3 秒
+開始 64.4 秒 / 尺 34.9 秒
 
 画像: `device-quest3-v1.jpg`
 
@@ -94,43 +98,43 @@
 
 これが、怪異を記録し、解析するための観測装置です。
 
-文 02 / 場面内 5.5–10.2 秒
+文 02 / 場面内 5.5–10.1 秒
 
 装置には、室内のカメラが捉えた映像が映ります。
 
-文 03 / 場面内 10.2–18.8 秒
+文 03 / 場面内 10.1–18.5 秒
 
 どのような異変が起きるかは、分かっていません。映像に少しでも違和感を覚えたら、報告してください。
 
-文 04 / 場面内 18.8–28.9 秒
+文 04 / 場面内 18.5–27.9 秒
 
 報告するときは、左コントローラーのボタンを1秒間、長押ししてください。XとY、どちらでも構いません。
 
-文 05 / 場面内 28.9–36.3 秒
+文 05 / 場面内 27.9–34.9 秒
 
 報告の内容は、装置のエージェントが解析します。見間違いでも構いません。
 
 ### 04 wear — 終了と装着
 
-開始 95.7 秒 / 尺 19.9 秒
+開始 99.3 秒 / 尺 19.3 秒
 
 画像: `wear-doctor-v2.jpg`
 
 音声: `wear-ja-v4.mp3`
 
-文 01 / 場面内 0.0–6.1 秒
+文 01 / 場面内 0.0–6.0 秒
 
 調査が終わったら、係の者が装置を外すまで、動かずにお待ちください。
 
-文 02 / 場面内 6.1–11.9 秒
+文 02 / 場面内 6.0–11.3 秒
 
 続けられなくなったら、その場で立ち止まり、装置を外してください。
 
-文 03 / 場面内 11.9–18.2 秒
+文 03 / 場面内 11.3–18.0 秒
 
 では。左手にコントローラーを持って、観測装置をつけてください。
 
-文 04 / 場面内 18.2–19.9 秒
+文 04 / 場面内 18.0–19.3 秒
 
 健闘を祈ります。
 
@@ -138,25 +142,29 @@
 
 ### 01 introduction — Assignment
 
-開始 0.0 秒 / 尺 13.4 秒
+開始 0.0 秒 / 尺 17.0 秒
 
 画像: `introduction-doctor-v2.jpg`
 
-文 01 / 場面内 0.0–4.8 秒
+文 01 / 場面内 0.0–3.6 秒
+
+Welcome... to the Japan Institute of Anomalies.
+
+文 02 / 場面内 3.6–8.4 秒
 
 I am... your supervisor. Let us leave it at that.
 
-文 02 / 場面内 4.8–9.2 秒
+文 03 / 場面内 8.4–12.8 秒
 
 As of today, you are an investigator of this institute.
 
-文 03 / 場面内 9.2–13.4 秒
+文 04 / 場面内 12.8–17.0 秒
 
 I will now brief you on the subject of your survey.
 
 ### 02 subject — Subject and procedure
 
-開始 13.4 秒 / 尺 38.4 秒
+開始 17.0 秒 / 尺 38.4 秒
 
 画像: `twin-room-v1.jpg`
 
@@ -192,7 +200,7 @@ You will not see your feet. Hold the handrail with your right hand, never let go
 
 ### 03 report — Hold X or Y
 
-開始 51.8 秒 / 尺 30.4 秒
+開始 55.4 秒 / 尺 30.4 秒
 
 画像: `device-quest3-v1.jpg`
 
@@ -224,7 +232,7 @@ The agent in the device will analyse your report. It does not matter if you are 
 
 ### 04 wear — Ending and equipment
 
-開始 82.2 秒 / 尺 18.8 秒
+開始 85.8 秒 / 尺 18.8 秒
 
 画像: `wear-doctor-v2.jpg`
 
@@ -248,25 +256,29 @@ Good luck with your survey.
 
 ### 01 introduction — Affectation
 
-開始 0.0 秒 / 尺 14.2 秒
+開始 0.0 秒 / 尺 18.4 秒
 
 画像: `introduction-doctor-v2.jpg`
 
-文 01 / 場面内 0.0–4.8 秒
+文 01 / 場面内 0.0–4.2 秒
+
+Bienvenue… à l’Institut japonais de recherche sur les phénomènes étranges.
+
+文 02 / 場面内 4.2–9.0 秒
 
 Je suis… votre supérieur. Disons-le ainsi.
 
-文 02 / 場面内 4.8–9.6 秒
+文 03 / 場面内 9.0–13.8 秒
 
 À partir d’aujourd’hui, vous êtes enquêteur de cet institut.
 
-文 03 / 場面内 9.6–14.2 秒
+文 04 / 場面内 13.8–18.4 秒
 
 Je vais maintenant vous présenter l’objet de votre enquête.
 
 ### 02 subject — Objet et procédure
 
-開始 14.2 秒 / 尺 42.6 秒
+開始 18.4 秒 / 尺 42.6 秒
 
 画像: `twin-room-v1.jpg`
 
@@ -302,7 +314,7 @@ Vous ne verrez pas vos pieds. Tenez la main courante de la main droite, ne la l�
 
 ### 03 report — Maintenez X ou Y
 
-開始 56.8 秒 / 尺 32.4 秒
+開始 61.0 秒 / 尺 32.4 秒
 
 画像: `device-quest3-v1.jpg`
 
@@ -334,7 +346,7 @@ L’agent du dispositif analysera votre signalement. Peu importe si vous vous tr
 
 ### 04 wear — Fin et équipement
 
-開始 89.2 秒 / 尺 21.6 秒
+開始 93.4 秒 / 尺 21.6 秒
 
 画像: `wear-doctor-v2.jpg`
 

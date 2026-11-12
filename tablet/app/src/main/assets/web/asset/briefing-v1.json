@@ -30,19 +30,27 @@
       "cues": {
         "ja": [
           {
+            "text": "ようこそ。日本怪異研究所へ。",
+            "durationMs": 5144
+          },
+          {
             "text": "私は……あなたの上司、とでも言っておきましょうか。",
-            "durationMs": 4781
+            "durationMs": 5133
           },
           {
             "text": "あなたは今日から、この研究所の調査員です。",
-            "durationMs": 4448
+            "durationMs": 4910
           },
           {
             "text": "これより、調査対象について説明します。",
-            "durationMs": 4496
+            "durationMs": 4567
           }
         ],
         "en": [
+          {
+            "text": "Welcome... to the Japan Institute of Anomalies.",
+            "durationMs": 3600
+          },
           {
             "text": "I am... your supervisor. Let us leave it at that.",
             "durationMs": 4800
@@ -57,6 +65,10 @@
           }
         ],
         "fr": [
+          {
+            "text": "Bienvenue… à l’Institut japonais de recherche sur les phénomènes étranges.",
+            "durationMs": 4200
+          },
           {
             "text": "Je suis… votre supérieur. Disons-le ainsi.",
             "durationMs": 4800
@@ -139,27 +151,27 @@
         "ja": [
           {
             "text": "調査対象は、管理番号0514に指定された異常存在です。",
-            "durationMs": 6602
+            "durationMs": 7213
           },
           {
             "text": "ある空き家の子供部屋から見つかった、カーテンと人形です。",
-            "durationMs": 6329
+            "durationMs": 5798
           },
           {
             "text": "外見上は、一般的な人形と変わりません。しかし、特定の条件下でのみ、異常性が発現します。",
-            "durationMs": 10126
+            "durationMs": 9545
           },
           {
             "text": "その条件も、異常性の正体も、まだ判明していません。それを調査するのが、あなたの任務です。",
-            "durationMs": 9638
+            "durationMs": 9754
           },
           {
             "text": "観測装置をつけ、このカーテンの周りを三周してください。",
-            "durationMs": 4832
+            "durationMs": 5046
           },
           {
             "text": "足元は見えません。右手で手すりを持ち、決して離さず、ゆっくり歩いてください。",
-            "durationMs": 8208
+            "durationMs": 7310
           }
         ],
         "en": [
@@ -284,23 +296,23 @@
         "ja": [
           {
             "text": "これが、怪異を記録し、解析するための観測装置です。",
-            "durationMs": 5477
+            "durationMs": 5496
           },
           {
             "text": "装置には、室内のカメラが捉えた映像が映ります。",
-            "durationMs": 4758
+            "durationMs": 4642
           },
           {
             "text": "どのような異変が起きるかは、分かっていません。映像に少しでも違和感を覚えたら、報告してください。",
-            "durationMs": 8611
+            "durationMs": 8324
           },
           {
             "text": "報告するときは、左コントローラーのボタンを1秒間、長押ししてください。XとY、どちらでも構いません。",
-            "durationMs": 10045
+            "durationMs": 9390
           },
           {
             "text": "報告の内容は、装置のエージェントが解析します。見間違いでも構いません。",
-            "durationMs": 7376
+            "durationMs": 7061
           }
         ],
         "en": [
@@ -382,19 +394,19 @@
         "ja": [
           {
             "text": "調査が終わったら、係の者が装置を外すまで、動かずにお待ちください。",
-            "durationMs": 6098
+            "durationMs": 6022
           },
           {
             "text": "続けられなくなったら、その場で立ち止まり、装置を外してください。",
-            "durationMs": 5812
+            "durationMs": 5303
           },
           {
             "text": "では。左手にコントローラーを持って、観測装置をつけてください。",
-            "durationMs": 6281
+            "durationMs": 6700
           },
           {
             "text": "健闘を祈ります。",
-            "durationMs": 1663
+            "durationMs": 1308
           }
         ],
         "en": [
