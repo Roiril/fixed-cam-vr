@@ -84,6 +84,15 @@ namespace FixedCamVr.Streaming
                 hasMatch = def.hasMatch,
                 matchGain = ToVec3(def.matchGain, 1f),
                 matchOffset = ToVec3(def.matchOffset, 0f),
+                multiply = OverlayRevealLogic.IsMultiplyBlend(def.blend),
+                revealUrl = ShowAssetResolver.Resolve(def.revealUrl, server),
+                revealSec = def.revealSec,
+                revealOutSec = def.revealOutSec,
+                revealDelaySec = def.revealDelaySec,
+                pressMaskUrl = ShowAssetResolver.Resolve(def.pressMaskUrl, server),
+                pressCenter = def.pressCenter is { Length: >= 2 }
+                    ? new Vector2(def.pressCenter[0], def.pressCenter[1])
+                    : new Vector2(0.5f, 0.5f),
             };
         }
 
@@ -259,6 +268,12 @@ namespace FixedCamVr.Streaming
             }
             if (!string.IsNullOrEmpty(cue.maskUrl) && !stills.Contains(cue.maskUrl))
                 stills.Add(cue.maskUrl);
+            // 滲みの順の画と press マスク（0349）も同じ待ちを持つ。発火してから読むと、
+            // 読み終わるまで順の画が無く、従来の strength の出方で一瞬出てしまう。
+            if (!string.IsNullOrEmpty(cue.revealUrl) && !stills.Contains(cue.revealUrl))
+                stills.Add(cue.revealUrl);
+            if (!string.IsNullOrEmpty(cue.pressMaskUrl) && !stills.Contains(cue.pressMaskUrl))
+                stills.Add(cue.pressMaskUrl);
         }
 
         // 静止画の先読みの世代（cue の定義が変わったら古いループを捨てる）。

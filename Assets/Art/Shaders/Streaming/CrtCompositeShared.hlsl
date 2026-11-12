@@ -31,6 +31,12 @@ TEXTURE2D(_SwapMaskTex); SAMPLER(sampler_SwapMaskTex);
 TEXTURE2D(_OverlayTex); SAMPLER(sampler_OverlayTex);
 TEXTURE2D(_OverlayTexB); SAMPLER(sampler_OverlayTexB);
 TEXTURE2D(_MaskTex);    SAMPLER(sampler_MaskTex);
+// 1 層目の滲み（0349）。順の画・press マスク（どちらも枠空間）は _MaskTex の、膨らみの素材は
+// _OverlayTex のサンプラを借りる — 新しいサンプラを増やさない（GLES3 のサンプラ上限）。
+// 書くのは ScreenOverlayController だけ。
+TEXTURE2D(_RevealTex);
+TEXTURE2D(_PressMaskTex);
+TEXTURE2D(_PressTex);
 // CG レイヤ（実カメラの双子の仮想カメラが描く人形）。スクリーン空間・アルファ = 被覆率。
 TEXTURE2D(_CgTex);      SAMPLER(sampler_CgTex);
 // 焼き付き / ホールド用に凍らせた 1 枚（CameraFeelFx が Graphics.CopyTexture で作る）。
@@ -80,6 +86,16 @@ CBUFFER_START(UnityPerMaterial)
     float _UvRotSteps;
     float _OverlayStrength;
     float _OverlayBlend;
+    // 滲んで現れる（0349）。_OverlayRevealOn=0 のあいだ順の画は読まず、従来と 1 段も変わらない。
+    float _OverlayRevealOn;
+    float _OverlayReveal;
+    float _OverlayRevealSoft;
+    // 1 = 素材は「比の画」で、ライブに掛ける（live * lerp(1, ratio, a)）。0 = 従来の差し替え。
+    float _OverlayMul;
+    // 長押しで布が膨らむ（0349）。_OverlayPress が 0 のあいだ press の画は読まない。
+    float _OverlayPress;
+    float4 _PressCenter;
+    float4 _PressScale;
     float _CgStrength;
     float _Exposure;
     float _Contrast;
@@ -928,6 +944,16 @@ half3 SampleLivePsf(float2 uv, float lod, float sigma, float linearLod)
 
 half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, float linearLod)
 {
+    // 長押しで布が膨らむ（0349）。press マスク m の中だけ、uv を顔の中心へ寄せる。
+    // ライブもシミも膨らみの素材も、寄せた uv で読む（布ごと引き込まれて見える）。
+    // m は寄せる前の uv で読み、後段の混ぜにも同じ値を使う。
+    half pressM = 0.0;
+    [branch] if (abs(_OverlayPress) > 1e-3)
+    {
+        pressM = SAMPLE_TEXTURE2D_LOD(_PressMaskTex, sampler_MaskTex, uv, 0).r;
+        uv += (_PressCenter.xy - uv) * (0.12 * _OverlayPress * pressM);
+    }
+
     // 左右分割（canon/LEDGER.md 0050）。分割位置より左は**左右反転して**ライブを読む。
     // ⚠ 反転が効くのは live と凍結だけ。差し替え素材（録画・生成画像）は反転しない —
     //   反転したまま録画を流すと映像の中の自分が逆走し、画面中央の境目へ入って消える。
@@ -967,34 +993,75 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
     {
         float ovIn;
         float2 uvO = ContainUv(uv, _OverlayScale.xy, ovIn);
-        // 差し替え素材（録画・プレート）にも**同じだけ**掛ける。片方だけ鮮明だと、
-        // 3 周目に録画へ切り替わった瞬間に画の素性が変わって切替がばれる。
-        // 位置で選ぶ録画は、進み具合を挟む 2 コマを混ぜる（_OverlayBlend・0278）。分岐は uniform なので
-        // 混ぜていない画素では 2 コマ目を 1 回も読まない。3 つの読みすべてに同じ混ぜ具合を掛ける。
-        half3 overlay = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod).rgb;
-        if (_OverlayBlend > 0.001)
-            overlay = lerp(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod).rgb, _OverlayBlend);
-        if (chromaBias > 0.001)
+        // 滲んで現れる（0349）。順の画 v（0 が最初・1 が最後）より前線が先へ進んだ画素だけ出る。
+        // 前線の帯（a が 0..1 の間）は少し暗くする — 濡れた染みの縁。
+        half revealA = 1.0;
+        half revealEdge = 0.0;
+        [branch] if (_OverlayRevealOn > 0.5)
         {
-            half3 oc = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod + chromaBias).rgb;
-            if (_OverlayBlend > 0.001)
-                oc = lerp(oc, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod + chromaBias).rgb, _OverlayBlend);
-            overlay = SplitChroma(overlay, oc);
+            half v = SAMPLE_TEXTURE2D_LOD(_RevealTex, sampler_MaskTex, uv, lod).r;
+            half soft = max(_OverlayRevealSoft, 1e-3);
+            revealA = saturate((_OverlayReveal * (1.0 + soft) - v) / soft);
+            revealEdge = revealA * (1.0 - revealA) * 4.0;
         }
-        if (_Glare > 0.001)
-        {
-            float glareLod = lod + lerp(4.5, 1.0, saturate(_CrtReference) * (1.0 - saturate(_Mono)));
-            half3 og = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, glareLod).rgb;
-            if (_OverlayBlend > 0.001)
-                og = lerp(og, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, glareLod).rgb, _OverlayBlend);
-            overlay += Glare(overlay, og);
-        }
-        // 色統計マッチング（卓が焼いた per-channel の gain/offset）。恒等なら何も起きない。
-        overlay = saturate(overlay * _OverlayGain.rgb + _OverlayOffset.rgb) * ovIn;
-
-        // マスクも同じだけ鈍らせる。継ぎ目だけが鮮明に残ると、粗い画の中でそこだけ浮く。
         half mask = SAMPLE_TEXTURE2D_LOD(_MaskTex, sampler_MaskTex, uv, lod).r;
-        col = lerp(live, overlay, saturate(mask * _OverlayStrength));
+        half alpha = saturate(mask * revealA * _OverlayStrength);
+        [branch] if (_OverlayMul > 0.5)
+        {
+            // 掛け算（cue の blend:"multiply"）。素材は「シミの写真 / シミの無い写真」の線形の比。
+            // ライブは既に色ずれ・光の滲みを持っているので、比には掛けない（掛けると縁が二重になる）。
+            // 色統計マッチングも比には意味が無いので掛けない。枠の外は比 1（何もしない）。
+            half3 ratio = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod).rgb;
+            ratio = lerp(half3(1.0, 1.0, 1.0), ratio * (1.0 - 0.22 * revealEdge), ovIn);
+            col = live * lerp(half3(1.0, 1.0, 1.0), ratio, alpha);
+        }
+        else
+        {
+            // 差し替え素材（録画・プレート）にも**同じだけ**掛ける。片方だけ鮮明だと、
+            // 3 周目に録画へ切り替わった瞬間に画の素性が変わって切替がばれる。
+            // 位置で選ぶ録画は、進み具合を挟む 2 コマを混ぜる（_OverlayBlend・0278）。分岐は uniform なので
+            // 混ぜていない画素では 2 コマ目を 1 回も読まない。3 つの読みすべてに同じ混ぜ具合を掛ける。
+            half3 overlay = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod).rgb;
+            if (_OverlayBlend > 0.001)
+                overlay = lerp(overlay, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod).rgb, _OverlayBlend);
+            if (chromaBias > 0.001)
+            {
+                half3 oc = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, lod + chromaBias).rgb;
+                if (_OverlayBlend > 0.001)
+                    oc = lerp(oc, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, lod + chromaBias).rgb, _OverlayBlend);
+                overlay = SplitChroma(overlay, oc);
+            }
+            if (_Glare > 0.001)
+            {
+                float glareLod = lod + lerp(4.5, 1.0, saturate(_CrtReference) * (1.0 - saturate(_Mono)));
+                half3 og = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, glareLod).rgb;
+                if (_OverlayBlend > 0.001)
+                    og = lerp(og, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, glareLod).rgb, _OverlayBlend);
+                overlay += Glare(overlay, og);
+            }
+            // 色統計マッチング（卓が焼いた per-channel の gain/offset）。恒等なら何も起きない。
+            overlay = saturate(overlay * _OverlayGain.rgb + _OverlayOffset.rgb) * ovIn;
+
+            // マスクも同じだけ鈍らせる（上で mask を lod で読んでいる）。継ぎ目だけが鮮明に残ると、粗い画の中でそこだけ浮く。
+            // revealOn=0 なら revealEdge=0・revealA=1 で、従来の lerp(live, overlay, mask*strength) と同じ。
+            overlay *= (1.0 - 0.30 * revealEdge);
+            col = lerp(live, overlay, alpha);
+        }
+    }
+
+    // 膨らみ（0349）。シミの乗ったライブの上へ、press マスクの中だけ膨らみの素材を混ぜる。
+    // p が 0.30 を超えるまでは寄せるだけで混ぜない。0.30..0.62 で一気に入れ替える（二重露光の時間を短くする）。
+    [branch] if (abs(_OverlayPress) > 1e-3)
+    {
+        float pIn;
+        float2 uvP = ContainUv(uv, _PressScale.xy, pIn);
+        half3 bulge = SAMPLE_TEXTURE2D_LOD(_PressTex, sampler_OverlayTex, uvP, lod).rgb;
+        if (chromaBias > 0.001)
+            bulge = SplitChroma(bulge, SAMPLE_TEXTURE2D_LOD(_PressTex, sampler_OverlayTex, uvP, lod + chromaBias).rgb);
+        // 膨らみの素材はシミの待機の画と同じ生成の系統なので、1 層目の色統計マッチングをそのまま掛ける。
+        bulge = saturate(bulge * _OverlayGain.rgb + _OverlayOffset.rgb) * pIn;
+        half w = smoothstep(0.30, 0.62, saturate(_OverlayPress)) * pressM;
+        col = lerp(col, bulge, w);
     }
 
     // 第 2 の差し替え層。**左と右へ別の素材を同時に置く**ときだけ効く

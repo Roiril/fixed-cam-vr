@@ -102,6 +102,12 @@ namespace FixedCamVr.Streaming
         // 報告が成立した直後の画（markDoneCueId）を出している間と、その終わりの時刻。
         private bool _markDonePlaying;
         private float _markDoneUntil;
+        // 長押しで布が膨らむ演出（0349）。markStartCueId の cue が pressMaskUrl を持つ演出だけ。
+        // 待機の画（1 層目）は差し替えず、膨らみを 1 層目の上に重ねる。素材はカットが画面を取った縁で貼る
+        // （押した瞬間に読み込みを待たせない）。-1 = 膨らむ演出ではない。
+        private int _pressTakeIndex = -1;
+        // 今回の長押しが膨らみで応答している（押し始めの cue を出していない）。
+        private bool _markResponsePress;
 
         // 現カットが開いている端末内録画（source:"rec"）。所有はここ — カットが変わったら必ず閉じる。
         private RecordedFramePlayer? _stepFrames;
@@ -819,6 +825,17 @@ namespace FixedCamVr.Streaming
             if (index < 0 || index >= _takes.Length) return;
             string id = _takes[index].markStartCueId;
             if (string.IsNullOrEmpty(id)) return;
+            // 膨らむ演出: 画を差し替えない。膨らみの量は毎フレームの進み具合（SetVisitorMarkProgress）が動かし、
+            // 成立は Update の静止画の分岐が拾う（BeginMarkDone）。離したら膨らみはバネで戻り、シミは残る。
+            if (_pressTakeIndex == index)
+            {
+                _markResponseToken = -1;
+                _markResponsePlaying = true;
+                _markResponseStill = true;
+                _markResponsePress = true;
+                Debug.Log($"[TakeRunner] 報告開始の応答 take={TakeId(index)} cue={id} kind=press");
+                return;
+            }
             OverlayCueData? cue = _cueResolver?.Invoke(id);
             if (cue == null)
             {
@@ -851,12 +868,15 @@ namespace FixedCamVr.Streaming
         }
 
         // 報告が成立しないまま応答が終わった。待機の画へ戻し、保留していた区間の切り替わりを流す。
+        // 膨らむ演出は待機の画を差し替えていないので出し直さない（出し直すとシミが滲み直す）。
         private void EndMarkResponseUnreported()
         {
+            bool press = _markResponsePress;
             _markResponsePlaying = false;
             _markResponseStill = false;
+            _markResponsePress = false;
             _markResponseToken = -1;
-            OverlayCueData? idle = _cueResolver?.Invoke(_activeStepCueId);
+            OverlayCueData? idle = press ? null : _cueResolver?.Invoke(_activeStepCueId);
             if (idle != null && overlay != null) overlay.PlayCue(idle);
             if (_markResponseZoneExit) _logic.NotifyZoneChanged(Now);
             _markResponseZoneExit = false;
@@ -865,12 +885,19 @@ namespace FixedCamVr.Streaming
         // 報告が成立した応答の終わり。markDoneCueId があればその画を短く出してから畳む。
         private void BeginMarkDone()
         {
+            bool press = _markResponsePress;
             _markResponsePlaying = false;
             _markResponseStill = false;
+            _markResponsePress = false;
             _markResponseToken = -1;
             int index = _logic.ActiveTakeIndex;
             string id = index >= 0 && index < _takes.Length ? _takes[index].markDoneCueId : "";
             OverlayCueData? done = string.IsNullOrEmpty(id) ? null : _cueResolver?.Invoke(id);
+            if (press)
+            {
+                BeginPressMarkDone(index, id, done);
+                return;
+            }
             if (done == null || overlay == null)
             {
                 if (!string.IsNullOrEmpty(id))
@@ -890,6 +917,69 @@ namespace FixedCamVr.Streaming
             _markDonePlaying = true;
             _markDoneUntil = Now + sec;
             Debug.Log($"[TakeRunner] 報告完了の画 take={TakeId(index)} cue={id} sec={sec:F2}");
+        }
+
+        // 膨らむ演出の成立（0349）。膨らみを畳み、シミ（1 層目）を最後に出た所から引き、
+        // markDoneCueId の画（人形だけのマスク）を第 2 層で同時に出す。1 層目を差し替えないのは、
+        // シミの引っ込みと人形の覗きを同じ 0.4 秒に重ねるため。乱れは従来どおり畳む縁（DismissReturn）が出す。
+        private void BeginPressMarkDone(int index, string id, OverlayCueData? done)
+        {
+            if (overlay == null)
+            {
+                _logic.CompleteDeferredDismiss();
+                return;
+            }
+            overlay.CollapsePress();
+            overlay.StopOverlay(OverlayRevealLogic.MarkDoneOutSec);
+            if (done == null)
+            {
+                if (!string.IsNullOrEmpty(id))
+                    Debug.LogWarning($"[TakeRunner] 報告完了の cue が解決できません: {id}");
+                _logic.CompleteDeferredDismiss();
+                return;
+            }
+            overlay.ShowSecondLayer(done);
+            float sec = _takes[index].markDoneSec > 0f ? _takes[index].markDoneSec : TakeSchema.DefaultMarkDoneSec;
+            _markDonePlaying = true;
+            _markDoneUntil = Now + sec;
+            Debug.Log($"[TakeRunner] 報告完了の画 take={TakeId(index)} cue={id} sec={sec:F2} kind=press");
+        }
+
+        /// <summary>
+        /// 報告の長押しの進み具合（0..1・毎フレーム）。膨らむ演出（<c>pressMaskUrl</c> を持つ markStartCueId）が
+        /// 走っている間だけ膨らみの目標として渡し、それ以外は 0 を渡す。
+        /// </summary>
+        public void SetVisitorMarkProgress(float progress01)
+        {
+            if (overlay == null) return;
+            bool pressing = _pressTakeIndex >= 0 && _logic.IsActive && _logic.ActiveTakeIndex == _pressTakeIndex
+                            && !_markResponseReported;
+            overlay.SetPress(pressing ? progress01 : 0f);
+        }
+
+        // カットが画面を取った縁で、この演出が膨らむ演出なら素材を貼る（演出 1 本で 1 回）。
+        private void EnsureTakePress(int takeIndex)
+        {
+            if (_pressTakeIndex == takeIndex || overlay == null) return;
+            if (_pressTakeIndex >= 0) overlay.EndPress();
+            _pressTakeIndex = -1;
+            if (takeIndex < 0 || takeIndex >= _takes.Length) return;
+            string id = _takes[takeIndex].markStartCueId;
+            if (string.IsNullOrEmpty(id)) return;
+            OverlayCueData? cue = _cueResolver?.Invoke(id);
+            if (cue == null || !cue.HasPress) return;
+            if (!overlay.BeginPress(cue)) return;
+            _pressTakeIndex = takeIndex;
+            Debug.Log($"[TakeRunner] 膨らみを貼る take={TakeId(takeIndex)} cue={id}");
+        }
+
+        // 膨らみを外す（演出の終わり・中止・ラン開始）。
+        private void EndTakePress()
+        {
+            _markResponsePress = false;
+            if (_pressTakeIndex < 0) return;
+            _pressTakeIndex = -1;
+            overlay?.EndPress();
         }
 
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行が押す真似をするのに読む）。</summary>
@@ -1150,6 +1240,7 @@ namespace FixedCamVr.Streaming
             _markResponseReported = false;
             _markResponseZoneExit = false;
             _markResponseStill = false;
+            _markResponsePress = false;
             _markDonePlaying = false;
             // 同じ演出の次カットへ進んだ事実は、直前のカットが著作どおり終わったことを意味する。
             // playable 判定を通って画面を取った dollCall だけが _activeStepDollCall を立てるため、
@@ -1257,6 +1348,8 @@ namespace FixedCamVr.Streaming
             // いま画面を取っているカットの素材 id（音が読む・`canon/LEDGER.md` 0131）。
             // ⚠ **飛ばす判定の後**（画面を取れなかったカットの id を立てない）。
             _activeStepCueId = step.cueId ?? "";
+            // 長押しで膨らむ演出なら、ここで膨らみの素材を貼っておく（0349）。
+            EnsureTakePress(d.takeIndex);
             // 呼びかけのカットが画面を取っているか（心音の始まりを決める・0175）。
             _activeStepDollCall = step.dollCall;
             _activeStepDollReplacement = false;
@@ -1992,6 +2085,8 @@ namespace FixedCamVr.Streaming
             _markResponseZoneExit = false;
             _markResponseStill = false;
             _markDonePlaying = false;
+            // 膨らみも演出単位の状態。畳む経路（正常終了・中止・ラン開始・watchdog・報告）はすべてここを通る。
+            EndTakePress();
             if (_stepOverlayPlayed) overlay?.StopOverlay();
             _stepOverlayPlayed = false;
             _awaitingClipEnd = false;

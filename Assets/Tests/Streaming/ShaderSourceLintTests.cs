@@ -87,5 +87,96 @@ namespace FixedCamVr.Streaming.Tests
             Assert.IsEmpty(offenders, "URP は LightMode の無いパスを最初の 1 つしか描かない。別のシェーダ・別の quad に分ける:\n"
                                       + string.Join("\n", offenders));
         }
+
+        // ---- 滲んで現れる・長押しで膨らむ（0349）--------------------------------------------
+
+        private static string SharedHlsl()
+            => File.ReadAllText(Path.Combine(Application.dataPath, "Art/Shaders/Streaming/CrtCompositeShared.hlsl"));
+
+        private static string CompositeShader()
+            => File.ReadAllText(Path.Combine(Application.dataPath, "Art/Shaders/Streaming/ScreenComposite.shader"));
+
+        private static readonly string[] BleedTextures = { "_RevealTex", "_PressMaskTex", "_PressTex" };
+        private static readonly string[] BleedScalars =
+            { "_OverlayRevealOn", "_OverlayReveal", "_OverlayRevealSoft", "_OverlayMul", "_OverlayPress", "_PressCenter", "_PressScale" };
+
+        /// <summary>
+        /// Properties に無い uniform は、マテリアルを作り直したときに既定値が入らない
+        /// （<c>_OverlayRevealOn</c> が 0 でないと全 cue の画が順の画で欠ける）。CBUFFER に無ければ SRP Batcher が外れる。
+        /// </summary>
+        [Test]
+        public void BleedUniforms_AreDeclaredInPropertiesAndCbuffer()
+        {
+            string shader = CompositeShader();
+            string hlsl = SharedHlsl();
+            foreach (string name in BleedTextures)
+            {
+                StringAssert.IsMatch($@"(?m)^\s*{name}\(""[^""]*"",\s*2D\)", shader, $"Properties に {name} が無い");
+                StringAssert.IsMatch($@"TEXTURE2D\({name}\);", hlsl, $"HLSL に {name} が無い");
+            }
+            foreach (string name in BleedScalars)
+            {
+                StringAssert.IsMatch($@"(?m)^\s*{name}\(""", shader, $"Properties に {name} が無い");
+                StringAssert.IsMatch($@"(?m)^\s*(float|float4|half)\s+{name};", hlsl, $"CBUFFER に {name} が無い");
+            }
+            StringAssert.IsMatch(@"(?m)^\s*_OverlayRevealOn\(""[^""]*"",\s*Float\)\s*=\s*0\s*$", shader,
+                                 "_OverlayRevealOn の既定は 0（滲まない cue は従来の画のまま）");
+            StringAssert.IsMatch(@"(?m)^\s*_OverlayPress\(""[^""]*"",\s*Range\([^)]*\)\)\s*=\s*0\s*$", shader,
+                                 "_OverlayPress の既定は 0（膨らみの画は読まない）");
+        }
+
+        /// <summary>
+        /// 新しい sampler を足さない。Quest（GLES3 / Vulkan）の sampler の数には上限があり、ScreenComposite は既に多い。
+        /// 順の画と press マスクはマスクの sampler、膨らみは差し替えの sampler を借りる。
+        /// </summary>
+        [Test]
+        public void BleedTextures_BorrowExistingSamplers()
+        {
+            string hlsl = SharedHlsl();
+            foreach (string name in BleedTextures)
+                StringAssert.DoesNotContain($"sampler{name}", hlsl, $"{name} 専用の sampler を宣言している");
+            StringAssert.Contains("SAMPLE_TEXTURE2D_LOD(_RevealTex, sampler_MaskTex", hlsl);
+            StringAssert.Contains("SAMPLE_TEXTURE2D_LOD(_PressMaskTex, sampler_MaskTex", hlsl);
+            StringAssert.Contains("SAMPLE_TEXTURE2D_LOD(_PressTex, sampler_OverlayTex", hlsl);
+        }
+
+        /// <summary>
+        /// 順の画・膨らみの画は、uniform の分岐の中でだけ読む。分岐の外で読むと、使わない cue でも毎画素 2〜3 枚を
+        /// 余計に引く（90Hz の両眼で効く）。読む行の直前の <c>[branch]</c> が、その uniform を見ていること。
+        /// </summary>
+        [Test]
+        public void BleedTextures_AreReadOnlyInsideTheirBranch()
+        {
+            string[] lines = SharedHlsl().Split('\n');
+            var offenders = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string gate = lines[i].Contains("SAMPLE_TEXTURE2D_LOD(_RevealTex") ? "_OverlayRevealOn"
+                            : lines[i].Contains("SAMPLE_TEXTURE2D_LOD(_PressMaskTex")
+                              || lines[i].Contains("SAMPLE_TEXTURE2D_LOD(_PressTex") ? "_OverlayPress"
+                            : "";
+                if (gate.Length == 0) continue;
+                int j = i;
+                while (j >= 0 && !lines[j].Contains("[branch]")) j--;
+                if (j < 0 || !lines[j].Contains(gate) || i - j > 12)
+                    offenders.Add($"{i + 1}: {lines[i].Trim()}（直前の [branch] が {gate} を見ていない）");
+            }
+            Assert.IsEmpty(offenders, string.Join("\n", offenders));
+        }
+
+        /// <summary>
+        /// シェーダの数値は試し描き（<c>tools/gen-plate/bleed_preview.py</c>）と同じ。Python 側の突き合わせは
+        /// <c>tools/test_bleed_log.py</c>。ここは HLSL の式が消えていないことだけを見る。
+        /// </summary>
+        [Test]
+        public void BleedFormulas_MatchThePreview()
+        {
+            string hlsl = SharedHlsl();
+            StringAssert.Contains("revealEdge = revealA * (1.0 - revealA) * 4.0;", hlsl);
+            StringAssert.Contains("ratio * (1.0 - 0.22 * revealEdge)", hlsl);
+            StringAssert.Contains("overlay *= (1.0 - 0.30 * revealEdge);", hlsl);
+            StringAssert.Contains("(0.12 * _OverlayPress * pressM)", hlsl);
+            StringAssert.Contains("smoothstep(0.30, 0.62, saturate(_OverlayPress))", hlsl);
+        }
     }
 }

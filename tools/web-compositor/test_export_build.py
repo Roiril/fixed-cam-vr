@@ -67,6 +67,28 @@ class ExportBuildTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.out, 'assets', 'm.png')))
         self.assertEqual(res['count'], 2)
 
+    def test_reveal_and_press_images_are_bundled(self):
+        # 滲む順の画と膨らむ範囲（0349）も cue の素材。同梱しないと実機は滲まず膨らまない（黙って従来の画に戻る）。
+        self._put('static-inputs/ratio.png')
+        self._put('static-inputs/reveal.png')
+        self._put('static-inputs/press.png')
+        self._run({'cues': [{'id': 'stain', 'blend': 'multiply', 'sourceUrl': '/static-inputs/ratio.png',
+                             'revealUrl': '/static-inputs/reveal.png', 'revealSec': 4.2,
+                             'pressMaskUrl': '/static-inputs/press.png', 'pressCenter': [0.35, 0.74]}]})
+        cue = self._baked()['cues'][0]
+        self.assertEqual(cue['revealUrl'], 'sa://assets/reveal.png')
+        self.assertEqual(cue['pressMaskUrl'], 'sa://assets/press.png')
+        self.assertEqual(cue['blend'], 'multiply', '素材でない値はそのまま運ぶ')
+        self.assertEqual(cue['pressCenter'], [0.35, 0.74])
+        for name in ('ratio.png', 'reveal.png', 'press.png'):
+            self.assertTrue(os.path.isfile(os.path.join(self.out, 'assets', name)), name)
+
+    def test_missing_reveal_image_is_an_error(self):
+        self._put('static-inputs/ratio.png')
+        with self.assertRaises(ValueError):
+            self._run({'cues': [{'id': 'stain', 'sourceUrl': '/static-inputs/ratio.png',
+                                 'revealUrl': '/static-inputs/missing.png'}]})
+
     def test_external_urls_are_rejected(self):
         show = {'cues': [{'id': 'a', 'sourceUrl': 'http://example.com/x.mp4'},
                          {'id': 'b', 'sourceUrl': 'sa://assets/already.png'}]}

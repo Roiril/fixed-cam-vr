@@ -12,6 +12,10 @@ import operations
 
 POLICY = 'baked-only-v1'
 
+# cue が指す素材の URL。焼き込みで同梱し sa:// へ書き換える（実機は同梱の素材しか読まない）。
+# revealUrl（滲む順の画）と pressMaskUrl（膨らむ範囲）は 0349。⚠ C# の ShowControlClient.CollectCueAssets と対。
+CUE_URL_KEYS = ('maskUrl', 'sourceUrl', 'revealUrl', 'pressMaskUrl')
+
 
 def local_url_dirs(root):
     return {prefix: os.path.join(root, *parts) for prefix, parts in {
@@ -137,7 +141,7 @@ def prepare(show, dirs):
             refs[original] = fp
 
     for cue in baked.get('cues') or []:
-        for key in ('maskUrl', 'sourceUrl'):
+        for key in CUE_URL_KEYS:
             if cue.get(key):
                 resolve(cue[key])
     for track in baked.get('bgmTracks') or []:
@@ -210,7 +214,7 @@ def export_build(show, repo_root, dirs, out_dir=None):
         def remap(url):
             return url_map.get(url, url)
         for cue in baked.get('cues') or []:
-            for key in ('maskUrl', 'sourceUrl'):
+            for key in CUE_URL_KEYS:
                 if cue.get(key):
                     cue[key] = remap(cue[key])
         for track in baked.get('bgmTracks') or []:

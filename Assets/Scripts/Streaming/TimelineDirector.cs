@@ -121,6 +121,9 @@ namespace FixedCamVr.Streaming
         public void NotifyVisitorMarkStarted() => takeRunner?.NotifyVisitorMarkStarted();
         public void NotifyVisitorMarkEnded() => takeRunner?.NotifyVisitorMarkEnded();
 
+        /// <summary>報告の長押しの進み具合（0..1・毎フレーム）を、布が膨らむ演出へ渡す（0349）。</summary>
+        public void SetVisitorMarkProgress(float progress01) => takeRunner?.SetVisitorMarkProgress(progress01);
+
         /// <summary>走行中のカットが体験者の報告を待っているか（自動走行の検証用）。</summary>
         public bool IsWaitingForVisitorMark => takeRunner != null && takeRunner.IsWaitingForVisitorMark;
 

@@ -30,6 +30,18 @@ Shader "FixedCamVr/ScreenComposite"
         // 位置で選ぶ録画の 2 コマ目と混ぜ具合（canon/LEDGER.md 0278）。0 なら 2 コマ目は読まない。
         _OverlayTexB("Overlay B (next recorded frame)", 2D) = "black" {}
         _OverlayBlend("Overlay B Blend", Range(0, 1)) = 0
+        // 滲んで現れる・長押しで布が膨らむ（0349）。書くのは ScreenOverlayController だけ。
+        // 既定は全部 0（順の画も press も読まない＝従来と同じ画）。
+        _RevealTex("Overlay Reveal Order (R, screen space, sRGB-encoded)", 2D) = "white" {}
+        _OverlayRevealOn("Overlay Reveal On", Float) = 0
+        _OverlayReveal("Overlay Reveal", Range(0, 1)) = 1
+        _OverlayRevealSoft("Overlay Reveal Soft", Range(0.001, 0.5)) = 0.06
+        _OverlayMul("Overlay Multiply (ratio image)", Float) = 0
+        _PressTex("Press Bulge (Pre-generated)", 2D) = "black" {}
+        _PressMaskTex("Press Mask (R, screen space, sRGB-encoded)", 2D) = "black" {}
+        _PressScale("Press Contain Scale (xy)", Vector) = (1, 1, 0, 0)
+        _PressCenter("Press Center (screen uv)", Vector) = (0.5, 0.5, 0, 0)
+        _OverlayPress("Overlay Press", Range(-0.15, 1.1)) = 0
         _CgStrength("CG Layer Strength", Range(0, 1)) = 0
         // 差し替え素材を実写へ寄せる色統計マッチング（Reinhard per-channel を gain/offset へ落としたもの）。
         // 卓が cue 保存時に算出して焼く。既定は恒等（gain=1 / offset=0）。

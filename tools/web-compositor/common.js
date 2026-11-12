@@ -115,6 +115,25 @@ export async function postCommand(cmd) {
 
 // cue オブジェクトを state.cues へ upsert（id 一致で置換、無ければ追加）→ postState。
 //   最新 cues 配列を返す。呼び元は自分のメモリ state.cues に反映する。
+/**
+ * 卓では編集しない cue の値（0349 の掛け算・滲み・膨らみ）。書くのは `tools/show-apply-bleed.py`。
+ * cue エディタは cue を作り直して保存するので、前の cue から持ち越さないと**保存で黙って消える**
+ * （実機の画が掛け算から差し替えへ戻り、滲まず、長押しで膨らまなくなる）。
+ * ⚠ C# の `ShowControlClient.CueDef` と対。キーを足したらここにも足す。
+ */
+export const CUE_CARRY_KEYS = [
+  'blend', 'revealUrl', 'revealSec', 'revealOutSec', 'revealDelaySec', 'pressMaskUrl', 'pressCenter',
+];
+
+/** 作り直した cue へ、前の cue の {@link CUE_CARRY_KEYS} を持ち越す（作り直した側が持っている値は残す）。 */
+export function carryCueFields(cue, existing) {
+  if (!existing) return cue;
+  for (const k of CUE_CARRY_KEYS) {
+    if (existing[k] !== undefined && cue[k] === undefined) cue[k] = existing[k];
+  }
+  return cue;
+}
+
 export async function saveCueObject(cue) {
   const s = await getState();
   const cues = Array.isArray(s.cues) ? s.cues : [];

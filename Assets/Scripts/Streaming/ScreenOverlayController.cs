@@ -31,6 +31,17 @@ namespace FixedCamVr.Streaming
         private static readonly int OverlayStrengthId = Shader.PropertyToID("_OverlayStrength");
         private static readonly int OverlayGainId = Shader.PropertyToID("_OverlayGain");
         private static readonly int OverlayOffsetId = Shader.PropertyToID("_OverlayOffset");
+        // 滲んで現れる・長押しで布が膨らむ（0349）。**この 10 個を書くのはこのクラスだけ。**
+        private static readonly int RevealTexId = Shader.PropertyToID("_RevealTex");
+        private static readonly int OverlayRevealOnId = Shader.PropertyToID("_OverlayRevealOn");
+        private static readonly int OverlayRevealId = Shader.PropertyToID("_OverlayReveal");
+        private static readonly int OverlayRevealSoftId = Shader.PropertyToID("_OverlayRevealSoft");
+        private static readonly int OverlayMulId = Shader.PropertyToID("_OverlayMul");
+        private static readonly int PressTexId = Shader.PropertyToID("_PressTex");
+        private static readonly int PressMaskTexId = Shader.PropertyToID("_PressMaskTex");
+        private static readonly int PressScaleId = Shader.PropertyToID("_PressScale");
+        private static readonly int PressCenterId = Shader.PropertyToID("_PressCenter");
+        private static readonly int OverlayPressId = Shader.PropertyToID("_OverlayPress");
 
         [Serializable]
         public struct CueBinding
@@ -152,6 +163,43 @@ namespace FixedCamVr.Streaming
         private float _fadeSpeed = 4f;
         private bool _stopWhenFadedOut;
 
+        // ---- 滲んで現れる（0349）----
+        // 順の画を持つ cue は strength を即 1（cue の strength）にし、出入りは reveal だけで動かす。
+        // _revealBound = いまの 1 層目に順の画が貼られている。false の cue は従来の strength フェード。
+        private readonly OverlayRevealTrack _reveal = new();
+        private bool _revealBound;
+        // 読み終わった順の画。素材が画に載る瞬間（BeginFadeIn）に貼る — 動画の Prepare 中に貼ると、
+        // まだ出ている前の cue が順の画 0 で消える。どの cue のための 1 枚かを参照で持つ。
+        private Texture? _pendingReveal;
+        private OverlayCueData? _pendingRevealCue;
+
+        /// <summary>いまの 1 層目が滲んで出入りする cue か（順の画が貼られている）。観測用。</summary>
+        public bool RevealActive => _revealBound;
+
+        /// <summary>いま書いている <c>_OverlayReveal</c>（順の画が無い cue では -1）。観測用。</summary>
+        public float RevealShown => _revealBound ? _reveal.Value : -1f;
+
+        /// <summary>この cue で出た <c>_OverlayReveal</c> の最大（順の画が無い cue では -1）。観測用。</summary>
+        public float RevealMax => _revealBound ? _reveal.Max : -1f;
+
+        // ---- 長押しで布が膨らむ（0349）----
+        // BeginPress で膨らみの素材と press マスクを貼り、SetPress で毎フレーム長押しの進み具合を受ける。
+        // 書く _OverlayPress は OverlayPressLogic のバネの値。貼れていなければ 0 のまま（シェーダは読まない）。
+        private readonly OverlayPressLogic _press = new();
+        private bool _pressBound;
+        private int _pressGen;
+        private string _pressCueId = "";
+        private float _pressProgress;
+
+        /// <summary>膨らみの素材が貼られているか。観測用。</summary>
+        public bool PressBound => _pressBound;
+
+        /// <summary>いま書いている <c>_OverlayPress</c>（貼れていなければ 0）。観測用。</summary>
+        public float PressShown => _pressBound ? _press.P : 0f;
+
+        /// <summary><see cref="BeginPress"/> からの <c>_OverlayPress</c> の最大。観測用。</summary>
+        public float PressMax => _pressBound ? _press.Peak : 0f;
+
         private void Awake()
         {
             // MjpegScreen が Awake で .material をインスタンス化するので同じものを共有する。
@@ -186,6 +234,8 @@ namespace FixedCamVr.Streaming
             _player.errorReceived += OnVideoError;
 
             ApplyStrength(0f);
+            UnbindReveal();
+            UnbindPress();
         }
 
         /// <summary>
@@ -250,6 +300,8 @@ namespace FixedCamVr.Streaming
         {
             CheckPrepareTimeout();
             TickFrames();
+            TickReveal(Time.deltaTime);
+            TickPress(Time.deltaTime);
 
             for (int i = 0; i < bindings.Length; i++)
             {
@@ -280,7 +332,29 @@ namespace FixedCamVr.Streaming
                 _current = null;
                 _appliedCueId = "";
                 ReleaseHeldFrame();
+                UnbindReveal();
             }
+        }
+
+        // 滲みの進み具合を 1 フレーム進めてシェーダへ書く。引っ込みが 0 へ着いたら、strength も 0 にして
+        // 従来の「フェードアウト完了」の分岐（上の Update）で cue を畳ませる。
+        // 画のホールド中は止める（素材の時計と同じ扱い・SetFrozen）。
+        private void TickReveal(float dt)
+        {
+            if (!_revealBound || _frozen || _material == null) return;
+            _material.SetFloat(OverlayRevealId, _reveal.Tick(dt));
+            if (_stopWhenFadedOut && _reveal.OutFinished && _strength > 0f)
+            {
+                _strength = 0f;
+                _target = 0f;
+                ApplyStrength(0f);
+            }
+        }
+
+        private void TickPress(float dt)
+        {
+            if (!_pressBound || _frozen || _material == null) return;
+            _material.SetFloat(OverlayPressId, _press.Tick(dt, _pressProgress));
         }
 
         /// <summary>bindings の index で cue を発火。</summary>
@@ -405,6 +479,19 @@ namespace FixedCamVr.Streaming
                 }
             }
 
+            // 1b) 滲みの順の画（0349）。読めなければ従来の出方（strength のフェード）で出す —
+            //     シミが一度に出るだけで、画を壊すわけではないので cue は止めない。
+            Texture? reveal = null;
+            if (data.HasReveal)
+            {
+                reveal = await LoadTextureAsync(data.revealUrl, ct);
+                if (gen != _logic.Generation || ct.IsCancellationRequested) return;
+                if (reveal == null)
+                    Debug.LogWarning($"[ScreenOverlay] 順の画の読込に失敗: {data.revealUrl} — cue '{data.displayName}' は滲まずに出す");
+            }
+            _pendingReveal = reveal;
+            _pendingRevealCue = data;
+
             // 2) ソース
             if (data.SourceIsFrames)
             {
@@ -528,10 +615,30 @@ namespace FixedCamVr.Streaming
             // _current==null でも世代を進める。ロード await 中の cue（PlayCueAsync が _current 代入前）は
             // _current が null のままなので、この return より前に世代を上げないと in-flight のロード完了が
             // 生き残って stop 後に live を差し替える穴が残る。
+            StopOverlay(-1f);
+        }
+
+        /// <summary>
+        /// 現在のオーバーレイを畳む。滲んで出た cue は <paramref name="revealOutSec"/> 秒で引っ込める
+        /// （負なら cue の revealOutSec）。報告の成立でシミを速く引くとき（<see cref="OverlayRevealLogic.MarkDoneOutSec"/>）に使う。
+        /// 滲まない cue は従来どおり cue の fadeOut で薄める。
+        /// </summary>
+        public void StopOverlay(float revealOutSec)
+        {
             _logic.Stop(); // ロード途中の発火も破棄・進行中 Prepare 保留も無効化
             _framesCueToken = -1;
             _finishedFramesToken = -1;
+            _pendingReveal = null;
+            _pendingRevealCue = null;
             if (_current == null) return;
+            if (_revealBound)
+            {
+                // 滲んだ cue は strength を下げずに reveal だけを 0 へ戻す（最後に出た所から消える）。
+                // 0 に着いたら TickReveal が strength を 0 にし、Update の完了分岐が畳む。
+                _reveal.BeginOut(revealOutSec >= 0f ? revealOutSec : _current.revealOutSec);
+                _stopWhenFadedOut = true;
+                return;
+            }
             float fade = Mathf.Max(_current.fadeOutSeconds, 1e-3f);
             _target = 0f;
             _fadeSpeed = Mathf.Max(_strength, 0.01f) / fade;
@@ -984,14 +1091,133 @@ namespace FixedCamVr.Streaming
             _appliedCueId = "";
             ApplyStrength(0f);
             ReleaseHeldFrame();
+            UnbindReveal();
             Debug.LogWarning($"[ScreenOverlay] cue aborted ({reason}) — live 維持");
         }
 
         private void BeginFadeIn(OverlayCueData cue)
         {
+            _material?.SetFloat(OverlayMulId, cue.multiply ? 1f : 0f);
+            Texture? reveal = ReferenceEquals(_pendingRevealCue, cue) ? _pendingReveal : null;
+            _pendingReveal = null;
+            _pendingRevealCue = null;
+            if (reveal != null && _material != null)
+            {
+                // 滲む cue: strength は即 cue の値。出方は reveal が全部持つ（strength のフェードと重ねない）。
+                _material.SetTexture(RevealTexId, reveal);
+                _material.SetFloat(OverlayRevealSoftId, OverlayRevealLogic.DefaultSoft);
+                _material.SetFloat(OverlayRevealOnId, 1f);
+                _reveal.BeginIn(cue.revealDelaySec, cue.revealSec);
+                _material.SetFloat(OverlayRevealId, _reveal.Value);
+                _revealBound = true;
+                _target = cue.strength;
+                _strength = cue.strength;
+                ApplyStrength(_strength);
+                return;
+            }
+            UnbindReveal();
             float fade = Mathf.Max(cue.fadeInSeconds, 1e-3f);
             _target = cue.strength;
             _fadeSpeed = Mathf.Max(_target - _strength, 0.01f) / fade;
+        }
+
+        // 順の画を外す（従来の出方へ戻す）。シェーダは _OverlayRevealOn=0 なら順の画を読まない。
+        private void UnbindReveal()
+        {
+            _revealBound = false;
+            _reveal.Reset();
+            if (_material == null) return;
+            _material.SetFloat(OverlayRevealOnId, 0f);
+            _material.SetFloat(OverlayRevealId, 1f);
+            _material.SetTexture(RevealTexId, Texture2D.whiteTexture);
+        }
+
+        // ---- 長押しで布が膨らむ（0349）------------------------------------------------------
+
+        /// <summary>
+        /// 膨らみの素材（cue の sourceUrl・静止画）と press マスク（pressMaskUrl）を貼り、長押しを受ける準備をする。
+        /// 1 層目（待機のシミ）は触らない。take の頭で呼ぶ（長押しの瞬間に読み込みを待たせない）。
+        /// 同じ cue なら読み直さない。press マスクの無い cue・動画の cue は貼らずに false。
+        /// </summary>
+        public bool BeginPress(OverlayCueData? cue)
+        {
+            if (cue == null || !cue.HasPress || cue.SourceIsVideo || cue.SourceIsFrames)
+            {
+                if (cue != null && cue.HasPress)
+                    Debug.LogWarning($"[ScreenOverlay] 膨らみは静止画専用 — cue '{cue.displayName}' は貼らない");
+                return false;
+            }
+            if (_pressCueId == cue.id && !string.IsNullOrEmpty(cue.id)) return true;
+            int gen = ++_pressGen;
+            _pressCueId = cue.id;
+            _ = RunBindPressAsync(cue, gen, destroyCancellationToken);
+            return true;
+        }
+
+        /// <summary>
+        /// 長押しの進み具合（0..1）を渡す。毎フレーム。押していない・受け付けていないときは 0。
+        /// 膨らみの量はこの値を目標にしたバネ（<see cref="OverlayPressLogic"/>）で動く。
+        /// </summary>
+        public void SetPress(float target01) => _pressProgress = target01;
+
+        /// <summary>報告の成立。膨らみをバネを使わず 0.12 秒で畳む（貼った素材は残す）。</summary>
+        public void CollapsePress() => _press.Collapse();
+
+        /// <summary>膨らみを外す（take の終わり・中止）。p は即 0。</summary>
+        public void EndPress()
+        {
+            _pressGen++;               // 読み込み中の貼り付けを無効化
+            _pressCueId = "";
+            UnbindPress();
+        }
+
+        private void UnbindPress()
+        {
+            _pressBound = false;
+            _pressProgress = 0f;
+            _press.Reset();
+            if (_material == null) return;
+            _material.SetFloat(OverlayPressId, 0f);
+            _material.SetTexture(PressTexId, Texture2D.blackTexture);
+            _material.SetTexture(PressMaskTexId, Texture2D.blackTexture);
+        }
+
+        private async Task RunBindPressAsync(OverlayCueData cue, int gen, CancellationToken ct)
+        {
+            try { await BindPressAsync(cue, gen, ct); }
+            catch (OperationCanceledException) { }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ScreenOverlay] 膨らみ '{cue.displayName}' の読み込みに失敗: {e}");
+                if (gen == _pressGen) _pressCueId = "";
+            }
+        }
+
+        private async Task BindPressAsync(OverlayCueData cue, int gen, CancellationToken ct)
+        {
+            Texture? mask = await LoadTextureAsync(cue.pressMaskUrl, ct);
+            if (gen != _pressGen || ct.IsCancellationRequested) return;
+            Texture? bulge = cue.stillImage;
+            if (bulge == null && !string.IsNullOrEmpty(cue.sourceUrl))
+            {
+                bulge = await LoadTextureAsync(cue.sourceUrl, ct);
+                if (gen != _pressGen || ct.IsCancellationRequested) return;
+            }
+            if (mask == null || bulge == null || _material == null)
+            {
+                Debug.LogError($"[ScreenOverlay] 膨らみを貼れない（press マスク {(mask != null ? "OK" : "失敗")} / " +
+                               $"素材 {(bulge != null ? "OK" : "失敗")}）: cue '{cue.displayName}' — 長押しは膨らまない");
+                _pressCueId = "";
+                return;
+            }
+            _press.Reset();
+            _material.SetTexture(PressTexId, bulge);
+            _material.SetTexture(PressMaskTexId, mask);
+            Vector2 scale = ContainScale((float)bulge.width / Mathf.Max(1, bulge.height));
+            _material.SetVector(PressScaleId, new Vector4(scale.x, scale.y, 0f, 0f));
+            _material.SetVector(PressCenterId, new Vector4(cue.pressCenter.x, cue.pressCenter.y, 0f, 0f));
+            _material.SetFloat(OverlayPressId, 0f);
+            _pressBound = true;
         }
 
         /// <summary>

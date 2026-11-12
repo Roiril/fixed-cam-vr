@@ -138,5 +138,100 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.PreparePending, Is.False);
             Assert.That(l.TimedOut(1e6f, Timeout), Is.False, "Prepare 未発行なら永遠にタイムアウトしない");
         }
+
+        // ---- 滲んで現れる（OverlayRevealTrack・0349）--------------------------------------
+
+        private static float Run(OverlayRevealTrack t, float sec, float dt = 1f / 72f)
+        {
+            float v = t.Value;
+            for (float e = 0f; e < sec - 1e-5f; e += dt) v = t.Tick(dt);
+            return v;
+        }
+
+        [Test]
+        public void Reveal_StaysZeroDuringDelay_ThenReachesOne()
+        {
+            var t = new OverlayRevealTrack();
+            t.BeginIn(0.6f, 4.2f);
+            Assert.That(Run(t, 0.5f), Is.EqualTo(0f), "遅れの間は 0（シミはまだ出ない）");
+            Assert.That(Run(t, 2.0f), Is.InRange(0.3f, 0.99f), "途中は 0 と 1 の間");
+            Run(t, 2.4f);
+            Assert.That(t.Current, Is.EqualTo(OverlayRevealTrack.Phase.Shown));
+            Assert.That(t.Max, Is.EqualTo(1f).Within(1e-4f), "出切った瞬間は 1");
+        }
+
+        [Test]
+        public void Reveal_CurveIsFastFirst()
+        {
+            // 1-(1-t)^2.2: 半分の時間で 0.78 を越える（出始めが速く、終わりへ向けて落ち着く）
+            Assert.That(OverlayRevealLogic.In(0.5f, 0f, 1f), Is.EqualTo(1f - System.MathF.Pow(0.5f, 2.2f)).Within(1e-5f));
+            Assert.That(OverlayRevealLogic.In(0.5f, 0f, 1f), Is.GreaterThan(0.75f));
+        }
+
+        [Test]
+        public void Reveal_BreathesBetweenBreathMinAndOne()
+        {
+            var t = new OverlayRevealTrack();
+            t.BeginIn(0f, 0.1f);
+            Run(t, 0.2f);
+            float lo = 1f, hi = 0f;
+            for (int i = 0; i < 72 * 12; i++)
+            {
+                float v = t.Tick(1f / 72f);
+                lo = System.Math.Min(lo, v);
+                hi = System.Math.Max(hi, v);
+            }
+            Assert.That(lo, Is.EqualTo(OverlayRevealLogic.BreathMin).Within(1e-3f));
+            Assert.That(hi, Is.LessThanOrEqualTo(1f));
+        }
+
+        [Test]
+        public void Reveal_OutGoesToZeroWithinOutSec_AndKeepsMax()
+        {
+            var t = new OverlayRevealTrack();
+            t.BeginIn(0f, 1f);
+            Run(t, 0.5f);
+            float from = t.Value;
+            t.BeginOut(0.25f);
+            Assert.That(t.Current, Is.EqualTo(OverlayRevealTrack.Phase.Out));
+            Run(t, 0.3f);
+            Assert.That(t.OutFinished, Is.True);
+            Assert.That(t.Value, Is.EqualTo(0f));
+            Assert.That(t.Max, Is.EqualTo(from).Within(1e-4f), "観測用の最大は引っ込みで消えない");
+        }
+
+        [Test]
+        public void Reveal_SecondBeginOutDoesNotChangeTheSpeed()
+        {
+            var t = new OverlayRevealTrack();
+            t.BeginIn(0f, 0.1f);
+            Run(t, 0.2f);
+            t.BeginOut(1f);
+            Run(t, 0.5f);
+            float mid = t.Value;
+            t.BeginOut(0.01f);
+            Assert.That(t.Value, Is.EqualTo(mid), "引っ込み中に重ねて呼んでも跳ばない");
+            Assert.That(t.Current, Is.EqualTo(OverlayRevealTrack.Phase.Out));
+        }
+
+        [Test]
+        public void Reveal_BeginOutBeforeBeginIn_IsDoneImmediately()
+        {
+            var t = new OverlayRevealTrack();
+            t.BeginOut(0.45f);
+            Assert.That(t.OutFinished, Is.True);
+            Assert.That(t.Value, Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void Blend_OnlyMultiplyIsMultiply()
+        {
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend("multiply"), Is.True);
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend("Multiply"), Is.True);
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend("replace"), Is.False);
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend(""), Is.False);
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend(null), Is.False);
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend("screen"), Is.False, "未知の値は差し替え");
+        }
     }
 }

@@ -18,9 +18,9 @@
           "once": true,
           "maxDurationSec": 0,
           "dismissible": true,
-          "markStartCueId": "",
-          "markDoneCueId": "",
-          "markDoneSec": 0,
+          "markStartCueId": "hand_press_A",
+          "markDoneCueId": "hand_done_A",
+          "markDoneSec": 0.4,
           "steps": [
             {
               "source": "inherit",

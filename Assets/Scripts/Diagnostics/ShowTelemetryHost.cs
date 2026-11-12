@@ -165,6 +165,10 @@ namespace FixedCamVr.Diagnostics
         private int _lastTrailStation = -1;
         private bool _lastTrailShown;
         private string _lastTakeId = "";
+        // 長押しで布が膨らんだ最大（0349）。膨らみを貼った演出だけ 0 以上。演出の終わりに pressMax= で出す。
+        private float _takePressMax = -1f;
+        // 滲んで現れる cue で出た _OverlayReveal の最大（0349）。滲む cue だけ 0 以上。cue の off に revMax= で出す。
+        private float _cueRevealMax = -1f;
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
         private bool _lastJackActive;
         private int _jackShownAtBegin;
@@ -1151,11 +1155,17 @@ namespace FixedCamVr.Diagnostics
             string takeId = _timeline != null ? _timeline.ActiveTakeId : "";
             if (takeId != _lastTakeId)
             {
+                // pressMax= は膨らみを貼った演出だけに付く（0349）。報告で消えた（why=mark）のに
+                // 小さければ、長押しの進み具合が膨らみまで届いていない（解析器が FAIL にする）。
                 if (!string.IsNullOrEmpty(_lastTakeId))
-                    Emit($"ev=take id={_lastTakeId} st=end why={TakeEndReason}");
+                    Emit($"ev=take id={_lastTakeId} st=end why={TakeEndReason}" +
+                         (_takePressMax >= 0f ? $" pressMax={_takePressMax:F2}" : ""));
                 if (!string.IsNullOrEmpty(takeId)) Emit($"ev=take id={takeId} st=begin");
                 _lastTakeId = takeId;
+                _takePressMax = -1f;
             }
+            if (!string.IsNullOrEmpty(takeId) && _overlay != null && _overlay.PressBound)
+                _takePressMax = Mathf.Max(_takePressMax, _overlay.PressMax);
 
             // 目の視界ジャックの出入り（canon/LEDGER.md 0099）。
             // ⚠ **終わり方の理由（why）を必ず添える** — done（写真が尽きた・止まっている体験者）と
@@ -1184,12 +1194,21 @@ namespace FixedCamVr.Diagnostics
             string cueId = _overlay != null && _overlay.Current != null ? (_overlay.Current.id ?? "?") : "";
             if (cueId != _lastCueId)
             {
+                // 滲む cue（0349）は on に著作の秒（rev=遅れ+秒）、off に実際に出た最大（revMax=）を添える。
+                // 秒より長く出ていたのに最大が小さければ、滲みが進んでいない（解析器が FAIL にする）。
                 if (!string.IsNullOrEmpty(_lastCueId))
-                    Emit($"ev=cue id={_lastCueId} st=off ovl={OverlayStrength:F2} ovlMat={OverlayMaterial}");
+                    Emit($"ev=cue id={_lastCueId} st=off ovl={OverlayStrength:F2} ovlMat={OverlayMaterial}" +
+                         (_cueRevealMax >= 0f ? $" revMax={_cueRevealMax:F2}" : ""));
+                OverlayCueData? onCue = _overlay != null ? _overlay.Current : null;
                 if (!string.IsNullOrEmpty(cueId))
-                    Emit($"ev=cue id={cueId} st=on ovl={OverlayStrength:F2} ovlMat={OverlayMaterial}");
+                    Emit($"ev=cue id={cueId} st=on ovl={OverlayStrength:F2} ovlMat={OverlayMaterial}" +
+                         (onCue != null && onCue.HasReveal
+                             ? $" rev={onCue.revealDelaySec:F2}+{onCue.revealSec:F2}" : ""));
                 _lastCueId = cueId;
+                _cueRevealMax = onCue != null && onCue.HasReveal ? 0f : -1f;
             }
+            if (_cueRevealMax >= 0f && _overlay != null && _overlay.RevealActive)
+                _cueRevealMax = Mathf.Max(_cueRevealMax, _overlay.RevealMax);
 
             // BGM が実際に鳴っているか。クリップ取得に失敗すると BgmDirector は**無音のまま黙って戻る**ので、
             // 指示（区間 / 演出）の側をいくら見ても音の不在は分からない。
@@ -1798,8 +1817,22 @@ namespace FixedCamVr.Diagnostics
                 if (_run.ScreenDecayReleased) _sb.Append(" coarseRel=1");
             }
             if (_overlay != null)
+            {
                 _sb.Append(" ovl=").Append(OverlayStrength.ToString("F2"))
                    .Append(" ovlMat=").Append(OverlayMaterial);
+                // 滲み（_OverlayReveal）と膨らみ（_OverlayPress）を、いまの値 / この cue・演出での最大で（0349）。
+                // 順の画・膨らみを貼っていなければ "-"。
+                _sb.Append(" ovlRev=");
+                if (_overlay.RevealActive)
+                    _sb.Append(_overlay.RevealShown.ToString("F2", System.Globalization.CultureInfo.InvariantCulture))
+                       .Append('/').Append(_overlay.RevealMax.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+                else _sb.Append('-');
+                _sb.Append(" ovlPress=");
+                if (_overlay.PressBound)
+                    _sb.Append(_overlay.PressShown.ToString("F2", System.Globalization.CultureInfo.InvariantCulture))
+                       .Append('/').Append(_overlay.PressMax.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+                else _sb.Append('-');
+            }
             // 左右分割と第 2 の差し替え層（canon/LEDGER.md 0050）。**カットの中でしか書かれない**ので、
             // 「出たか」と「残っていないか」の両方をここで見る。演出が終わった後に spl が 0 でなければ
             // 画が割れたまま次の体験者へ持ち越されている（この codebase が 4 回踏んだ固着の型）。

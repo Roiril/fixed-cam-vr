@@ -572,6 +572,10 @@ namespace FixedCamVr.OvrBridge
             {
                 if (showControl != null && showControl.RecordVisitorMark()) haptics?.LeftMark();
             }
+            // 長押しの進み具合を毎フレーム渡す（布が膨らむ演出・0349）。受け付けていない間は 0。
+            // ⚠ ツイン（XpTwinDriver）と再生（XpReplayDriver）も生の入力をここへ通すので、同じ値が届く。
+            showControl?.SetVisitorMarkProgress(_onboarding.StartAuthorized && !markBlocked
+                                                ? _markHold.Progress01 : 0f);
             if (comms != null)
             {
                 comms.SetControllerState(_lConnected, _lTracked);

@@ -53,6 +53,30 @@ namespace FixedCamVr.Streaming
         public Vector3 matchGain = Vector3.one;
         public Vector3 matchOffset = Vector3.zero;
 
+        // 掛け算（cue の blend:"multiply"・0349）。素材は「シミの写真 / シミの無い写真」の線形の比で、
+        // ライブに live * lerp(1, ratio, a) で掛ける。体験者がシミの前に立つと、体にも薄く乗る。
+        public bool multiply;
+
+        // 滲んで現れる（0349）。revealUrl は枠空間 640x360 の灰色の順の画（0 が最初・1 が最後・外は 1）。
+        // 空なら従来どおり strength のフェードで出入りする。入っている cue は strength を即 1 にし、
+        // 出入りは reveal だけで動かす（ScreenOverlayController.TickReveal）。
+        public string revealUrl = "";
+        public float revealSec;
+        public float revealOutSec = OverlayRevealLogic.DefaultOutSec;
+        public float revealDelaySec;
+
+        // 長押しで布が膨らむ（0349）。この cue が take の markStartCueId に名指しされたとき、
+        // 切り替えではなく、待機の cue を残したまま膨らみの素材（sourceUrl）を press マスクの中へ混ぜる。
+        // pressCenter は枠 uv（v は下から）。道具（tools/gen-plate/bleed_maps.py）が重心から出す。
+        public string pressMaskUrl = "";
+        public Vector2 pressCenter = new(0.5f, 0.5f);
+
+        /// <summary>滲んで現れる cue か（順の画を持つ）。</summary>
+        public bool HasReveal => revealUrl.Length > 0;
+
+        /// <summary>長押しで膨らむ cue か（press マスクを持つ）。</summary>
+        public bool HasPress => pressMaskUrl.Length > 0;
+
         /// <summary>フレーム列ソース（端末内録画）か。動画・静止画より優先する。</summary>
         public bool SourceIsFrames => frames != null;
 

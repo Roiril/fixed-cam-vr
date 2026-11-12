@@ -361,6 +361,26 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(3), "insert のカメラが映る");
         }
 
+        /// <summary>
+        /// 長押しの進み具合は毎フレーム届く（0349）。画面の差し替え口が無い構成・演出が走っていない時でも
+        /// 落ちず、演出の進行に触らない（膨らみの配線そのものは TakeSplitLayerTests が固定する）。
+        /// </summary>
+        [Test]
+        public void MarkProgress_IsHarmless_WithoutOverlayOrTake()
+        {
+            Rig rig = MakeRig();
+            rig.Timeline.SetTimeline(new[] { SegWithTake(1, 0, EnterTake("t", LiveStep(3, 5f))) });
+            Assert.DoesNotThrow(() => rig.Timeline.SetVisitorMarkProgress(0.5f), "演出の前");
+
+            EnterZone(rig, 0, 1);
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.True);
+            Assert.DoesNotThrow(() => rig.Timeline.SetVisitorMarkProgress(1f), "演出中（overlay 未配線）");
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.True, "進み具合だけでは演出は畳まれない");
+            Assert.That(rig.Registry.ActiveIndex, Is.EqualTo(3));
+        }
+
         // ---- clip カット（カメラを変えず画面を占有） ----
 
         [Test]

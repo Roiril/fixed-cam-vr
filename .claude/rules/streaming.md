@@ -22,6 +22,7 @@ paths:
 | [ending.md](ending.md) | Ending* / Outro* / VisitorReportTally |
 | [screen-post.md](screen-post.md) | ScreenComposite・MjpegScreen / CameraFeel* / ScreenDecay / Osd* / SignalLost / Heartbeat* / Fx/** |
 | [screen-swap-eyes.md](screen-swap-eyes.md) | Glitch* / Swap* / AnomalyEyes* / Eye* |
+| [screen-overlay.md](screen-overlay.md) | ScreenOverlayController の掛け算・滲み・膨らみ（cue の `blend` / `revealUrl` / `pressMaskUrl`） |
 | [screen-cg.md](screen-cg.md) | Streaming/Cg/** と CG 人形の合成 |
 | [staff-input.md](staff-input.md) | Input/** / Tracking/** / OvrBridge/** / StaffSetup・StatusHud・ControllerGuide / WalkGuide* |
 | [sound-design.md](sound-design.md) | Streaming/Sound/** と音の道具（まだ分けていない） |

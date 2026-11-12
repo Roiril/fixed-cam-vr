@@ -11,7 +11,7 @@
 //     saveCue(cue),        // cue を state.cues へ upsert（Promise<{ok}>）
 //     onSaved(cue),        // 保存成功後に呼ぶ（タイムライン側で割当・再描画）
 //   }
-import { blendCfg, encPath, isVideoUrl, onCaptures } from './common.js';
+import { blendCfg, carryCueFields, encPath, isVideoUrl, onCaptures } from './common.js';
 import { createCompositeView } from './composite-view.js';
 import { bakeColorMatch } from './color-match.js';
 
@@ -229,6 +229,8 @@ export function createCueEditor(deps) {
         fadeIn: fadeSec, fadeOut: fadeSec,
         trimStart: trimStart || 0, trimEnd: trimEnd || 0,
       };
+      // 卓で触らない値（掛け算・滲み・膨らみ・0349）は前の cue から持ち越す。作り直しで消さない。
+      carryCueFields(cue, existing);
       // 色統計マッチングを 6 つの数へ落として焼く（実機はこれを掛けるだけ）。
       // プレビューの「境界ブレンド」の色統計トグルと同じ意思決定を使う。
       // マスクがあるなら**差し替えない所**だけで解く（差し替える所は素材にしか無いものが居る）。

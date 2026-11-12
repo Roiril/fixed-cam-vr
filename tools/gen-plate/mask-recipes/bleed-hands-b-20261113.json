@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "kind": "hands",
+  "note": "1 周目 B の壁の血の手形（cue_hands_B）。生成の種にした無人の写真と画素が揃うので掛け算にする（0349）",
+  "source": "tools/web-compositor/captures/gen_handsB_20260904_1554.png",
+  "clean": [
+    "tools/web-compositor/captures/plate_B_20260904_154326.jpg"
+  ],
+  "domainMask": "tools/web-compositor/masks/cue_hands_B_solid_20260919.png",
+  "seed": 904,
+  "ratio": {
+    "noiseRadius": 1,
+    "normalizeBox": [0, 0, 300, 300],
+    "envelopeRadius": 24,
+    "chroma": 0.6,
+    "knee": [0.72, 0.88],
+    "domainFeather": 3
+  },
+  "reveal": {
+    "inThreshold": 0.2,
+    "separateThreshold": 0.35,
+    "handRadiusPx": 8,
+    "seedSpacingPx": 8,
+    "flowBox": [80, 0, 320, 360],
+    "nearWeightX": 0.8,
+    "handRange": [0.0, 0.86],
+    "jitter": 0.08,
+    "spread": 0.10,
+    "growPx": 60,
+    "darkWeight": 0.6,
+    "noiseAmp": 0.05,
+    "orderSmooth": 3
+  },
+  "cue": {
+    "revealSec": 3.4,
+    "revealDelaySec": 0.8,
+    "revealOutSec": 0.45
+  },
+  "preview": {
+    "live": "tools/web-compositor/captures/plate_B_20260924_172210_4abb5bae.jpg",
+    "cueMask": "tools/web-compositor/masks/cue_hands_B_solid_20260919.png",
+    "silhouette": [190, 50, 300]
+  },
+  "outputs": {
+    "ratio": "hands_B_ratio_20261113.png",
+    "reveal": "hands_B_reveal_20261113.png",
+    "maps": "hands_B_maps_20261113.json"
+  }
+}

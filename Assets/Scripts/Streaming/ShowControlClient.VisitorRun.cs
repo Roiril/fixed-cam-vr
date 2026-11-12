@@ -270,6 +270,17 @@ namespace FixedCamVr.Streaming
         /// <summary>受け付けていた長押しが終わった（離した・禁止された）。押し始めで替えた画を戻す。</summary>
         public void NotifyVisitorMarkEnded() => timelineDirector?.NotifyVisitorMarkEnded();
 
+        /// <summary>
+        /// 報告の長押しの進み具合（0..1）。毎フレーム届く。布が膨らむ演出（<c>pressMaskUrl</c> を持つ cue・0349）の目標。
+        /// 受け付けない間（終了後・乗っ取り・締めの冒頭）は 0 を渡す。押し始めの合図と同じ門で落とす。
+        /// </summary>
+        public void SetVisitorMarkProgress(float progress01)
+        {
+            bool accepted = ResolveRunDirector()?.Phase != ShowPhase.Finished
+                            && !IsVisitorMarkBlocked && !IsMarkTooEarly;
+            timelineDirector?.SetVisitorMarkProgress(accepted ? progress01 : 0f);
+        }
+
         /// <summary>記録ボタンが押された（実行体は <c>OvrControllerBridge</c>）。</summary>
         public bool RecordVisitorMark()
         {

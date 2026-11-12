@@ -58,6 +58,59 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(Take(tl, 2, 1).dismissible, Is.False, "既定は消えない");
         }
 
+        /// <summary>
+        /// 報告の応答（押し始めの cue・成立の画・その秒）が wire を往復する。膨らむ演出（0349）は
+        /// markStartCueId が指す cue の <c>pressMaskUrl</c> で決まるので、take の側の口はこの 3 つだけ。
+        /// </summary>
+        [Test]
+        public void MarkResponse_RoundTripsThroughTheWire()
+        {
+            ShowTakeDef t = Take(Load(), 1, 0);
+            Assert.That(t.markStartCueId, Is.EqualTo("hand_press_A"));
+            Assert.That(t.markDoneCueId, Is.EqualTo("hand_done_A"));
+            Assert.That(t.markDoneSec, Is.EqualTo(0.4f).Within(1e-5f));
+            ShowTakeDef back = Take(JsonUtility.FromJson<ShowTimelineDef>(JsonUtility.ToJson(Load())), 1, 0);
+            Assert.That(back.markStartCueId, Is.EqualTo("hand_press_A"));
+            Assert.That(back.markDoneSec, Is.EqualTo(0.4f).Within(1e-5f));
+        }
+
+        /// <summary>
+        /// cue の掛け算・滲み・膨らみ（0349）の値が show.json の形のまま読める。省略した cue は従来どおり
+        /// （差し替え・滲まない・膨らまない）。卓の <c>common.js CUE_CARRY_KEYS</c> と同じ名前。
+        /// </summary>
+        [Test]
+        public void CueDef_ParsesBleedFields_AndDefaultsToTheOldLook()
+        {
+            // CueDef は ShowControlClient の中の private 型（show.json の形そのもの）なので、型を引いて読む。
+            System.Type? cueDef = typeof(ShowControlClient).GetNestedType("CueDef",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            Assert.IsNotNull(cueDef, "ShowControlClient.CueDef が無い");
+            object Parse(string json) => JsonUtility.FromJson(json, cueDef!);
+            T Field<T>(object o, string name)
+            {
+                System.Reflection.FieldInfo? f = cueDef!.GetField(name);
+                Assert.IsNotNull(f, $"CueDef.{name} が無い（卓の common.js CUE_CARRY_KEYS と同じ名前）");
+                return (T)f!.GetValue(o)!;
+            }
+
+            object stain = Parse("{\"id\":\"stain\",\"blend\":\"multiply\",\"sourceUrl\":\"sa://assets/r.png\"," +
+                "\"revealUrl\":\"sa://assets/v.png\",\"revealSec\":4.2,\"revealOutSec\":0.3,\"revealDelaySec\":0.6," +
+                "\"pressMaskUrl\":\"sa://assets/p.png\",\"pressCenter\":[0.35,0.74]}");
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend(Field<string>(stain, "blend")), Is.True);
+            Assert.That(Field<string>(stain, "revealUrl"), Is.EqualTo("sa://assets/v.png"));
+            Assert.That(Field<float>(stain, "revealSec"), Is.EqualTo(4.2f).Within(1e-5f));
+            Assert.That(Field<float>(stain, "revealOutSec"), Is.EqualTo(0.3f).Within(1e-5f));
+            Assert.That(Field<float>(stain, "revealDelaySec"), Is.EqualTo(0.6f).Within(1e-5f));
+            Assert.That(Field<string>(stain, "pressMaskUrl"), Is.EqualTo("sa://assets/p.png"));
+            Assert.That(Field<float[]>(stain, "pressCenter"), Is.EqualTo(new[] { 0.35f, 0.74f }));
+
+            object plain = Parse("{\"id\":\"plain\",\"sourceUrl\":\"sa://assets/x.png\"}");
+            Assert.That(OverlayRevealLogic.IsMultiplyBlend(Field<string>(plain, "blend")), Is.False, "省略は差し替え");
+            Assert.That(Field<string>(plain, "revealUrl"), Is.Empty, "省略は滲まない");
+            Assert.That(Field<float>(plain, "revealOutSec"), Is.EqualTo(OverlayRevealLogic.DefaultOutSec));
+            Assert.That(Field<string>(plain, "pressMaskUrl"), Is.Empty, "省略は膨らまない");
+        }
+
         [Test]
         public void EnterTake_ParsesStartRuleAndInheritance()
         {

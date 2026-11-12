@@ -14,7 +14,7 @@ import {
   serializeTimelineV3, normalizeTimelineV3, migrateV2Segment, newSeg,
   resolveTakeBgm, defaultBgm,
 } from './timeline-model.js';
-import { FX_DEFAULT } from './common.js';
+import { FX_DEFAULT, CUE_CARRY_KEYS, carryCueFields } from './common.js';
 
 const FIXTURE_URL = new URL('../../Assets/Tests/Fixtures/show_timeline_v3_canonical.json', import.meta.url);
 const fixture = JSON.parse(readFileSync(FIXTURE_URL, 'utf8'));
@@ -32,6 +32,36 @@ if (process.env.UPDATE_FIXTURE) {
       'normalize→serialize が往復しない（wire 形式が変わったら UPDATE_FIXTURE=1 で再生成し Unity 側テストも確認）');
   });
 }
+
+test('fixture の手形は報告の応答（膨らみと完了の画）を持ち、往復で消えない', () => {
+  // 0349: 膨らむ演出は take の markStartCueId が指す cue の pressMaskUrl で決まる。take 側の口は従来どおり。
+  const t = fixture.segments.find((s) => s.lap === 1 && s.camera === 0).takes[0];
+  assert.equal(t.markStartCueId, 'hand_press_A');
+  assert.equal(t.markDoneCueId, 'hand_done_A');
+  assert.equal(t.markDoneSec, 0.4);
+  const back = serializeTimelineV3(normalizeTimelineV3(fixture)).segments[0].takes[0];
+  assert.equal(back.markStartCueId, 'hand_press_A');
+  assert.equal(back.markDoneSec, 0.4);
+});
+
+test('cue エディタの作り直しは、卓で触らない合成の値（0349）を持ち越す', () => {
+  const existing = {
+    id: 'cue_stain_A', sourceUrl: '/static-inputs/old.png', blend: 'multiply',
+    revealUrl: '/static-inputs/reveal.png', revealSec: 4.2, revealOutSec: 0.45, revealDelaySec: 0.6,
+    pressMaskUrl: '/static-inputs/press.png', pressCenter: [0.35, 0.74],
+  };
+  const rebuilt = carryCueFields({ id: 'cue_stain_A', sourceUrl: '/static-inputs/new.png' }, existing);
+  for (const k of CUE_CARRY_KEYS) assert.deepEqual(rebuilt[k], existing[k], k);
+  assert.equal(rebuilt.sourceUrl, '/static-inputs/new.png', '作り直した側の値は残す');
+  assert.deepEqual(carryCueFields({ id: 'n' }, null), { id: 'n' }, '新しい cue には何も足さない');
+  const own = carryCueFields({ id: 'x', blend: 'replace' }, { blend: 'multiply' });
+  assert.equal(own.blend, 'replace', '作り直した側が持っている値は上書きしない');
+});
+
+test('cue の持ち越しキーは実機の CueDef と同じ名前', () => {
+  const cs = readFileSync(new URL('../../Assets/Scripts/Streaming/ShowControlClient.cs', import.meta.url), 'utf8');
+  for (const k of CUE_CARRY_KEYS) assert.match(cs, new RegExp(`public [\\w\\[\\]]+ ${k}\\b`), k);
+});
 
 test('fixture は v3 と判定される', () => {
   assert.equal(isV3(fixture), true);

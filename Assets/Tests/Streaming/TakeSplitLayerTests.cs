@@ -334,5 +334,158 @@ namespace FixedCamVr.Streaming.Tests
             rig.Overlay.ShowSecondLayer(new OverlayCueData { id = "empty", maskTexture = MakeTex() });
             Assert.That(rig.Feel.Overlay2Strength, Is.EqualTo(0f));
         }
+
+        // ---- 長押しで布が膨らむ（0349）-------------------------------------------------
+        //
+        // markStartCueId の cue が pressMaskUrl を持つ演出では、押し始めで画を差し替えず、
+        // 長押しの進み具合を膨らみ（_OverlayPress）へ渡す。成立したら膨らみを畳み、
+        // markDoneCueId の画を第 2 層に出し、markDoneSec 後に演出を畳む。離したら膨らみだけ戻る。
+
+        private const string PressMaskUrl = "test://press_mask";
+
+        // 膨らみの素材を読み込みなしで貼れるようにする。press マスクは URL の在庫へ先に入れ、
+        // 書き先のマテリアルは Awake を呼ばずに直接渡す（renderer.material を EditMode で掴まない）。
+        private void PreparePressOverlay(Rig rig)
+        {
+            var mat = new Material(Shader.Find("Hidden/InternalErrorShader"));
+            _spawned.Add(mat);
+            SetField(rig.Overlay, "_material", mat);
+            FieldInfo cacheF = typeof(ScreenOverlayController).GetField("_urlTextureCache", BF)!;
+            var cache = (Dictionary<string, Texture2D>)cacheF.GetValue(rig.Overlay)!;
+            cache[PressMaskUrl] = MakeTex();
+        }
+
+        private static void TickPress(Rig rig, float sec, float dt = 1f / 72f)
+        {
+            MethodInfo tick = typeof(ScreenOverlayController).GetMethod("TickPress", BF)!;
+            for (float t = 0f; t < sec - 1e-5f; t += dt) tick.Invoke(rig.Overlay, new object[] { dt });
+        }
+
+        private ShowTakeDef PressTake(float markDoneSec = 0.4f)
+        {
+            ShowTakeDef take = EnterTake("L2C0#0", LiveStep(0, 30f));
+            take.dismissible = true;
+            take.markStartCueId = "press_A";
+            take.markDoneCueId = "done_A";
+            take.markDoneSec = markDoneSec;
+            return take;
+        }
+
+        private OverlayCueData? PressCues(string id) => id switch
+        {
+            "press_A" => new OverlayCueData
+            {
+                id = "press_A", displayName = "膨らみ", stillImage = MakeTex(), pressMaskUrl = PressMaskUrl,
+                pressCenter = new Vector2(0.35f, 0.74f), strength = 1f,
+            },
+            "done_A" => new OverlayCueData
+            {
+                id = "done_A", displayName = "人形", stillImage = MakeTex(), maskTexture = MakeTex(), strength = 1f,
+            },
+            _ => null,
+        };
+
+        [Test]
+        public void PressTake_BindsTheBulge_AndDoesNotSwapTheScreen()
+        {
+            Rig rig = MakeRig();
+            PreparePressOverlay(rig);
+            rig.Runner.SetCueResolver(PressCues);
+            rig.Timeline.SetTimeline(new[] { SegWithTake(2, 0, PressTake()) });
+
+            rig.Scheduler.NotifyCameraEntered(new SegmentEntry(0, segmentLap: 2, progressLap: 2));
+            Frame(rig);
+            Assert.That(rig.Overlay.PressBound, Is.True, "演出のカットが画面を取った縁で膨らみを貼る");
+
+            rig.Timeline.NotifyVisitorMarkStarted();
+            Assert.That(rig.Overlay.Current?.id, Is.Not.EqualTo("press_A"), "押し始めで画を差し替えない");
+
+            for (int i = 1; i <= 72; i++)
+            {
+                rig.Timeline.SetVisitorMarkProgress(i / 72f);
+                TickPress(rig, 1f / 72f);
+            }
+            Assert.That(rig.Overlay.PressMax, Is.GreaterThanOrEqualTo(0.6f), "1 秒の長押しで膨らむ");
+        }
+
+        [Test]
+        public void PressTake_ReleaseBeforeTheMark_SpringsBack_AndTheTakeStays()
+        {
+            Rig rig = MakeRig();
+            PreparePressOverlay(rig);
+            rig.Runner.SetCueResolver(PressCues);
+            rig.Timeline.SetTimeline(new[] { SegWithTake(2, 0, PressTake()) });
+            rig.Scheduler.NotifyCameraEntered(new SegmentEntry(0, segmentLap: 2, progressLap: 2));
+            Frame(rig);
+
+            rig.Timeline.NotifyVisitorMarkStarted();
+            rig.Timeline.SetVisitorMarkProgress(0.8f);
+            TickPress(rig, 0.8f);
+            rig.Timeline.NotifyVisitorMarkEnded();
+            Frame(rig);
+            float low = 1f;
+            for (int i = 0; i < 72; i++)
+            {
+                rig.Timeline.SetVisitorMarkProgress(0f);
+                TickPress(rig, 1f / 72f);
+                low = Mathf.Min(low, rig.Overlay.PressShown);
+            }
+            Assert.That(low, Is.LessThan(0f), "離すと膨らみはバネで戻り、少し引っ込む");
+            Assert.That(rig.Runner.IsActive, Is.True, "報告が成立していないので演出（シミ）は残る");
+            Assert.That(rig.Overlay.PressBound, Is.True, "次の長押しにまた膨らむ");
+        }
+
+        [Test]
+        public void PressTake_Mark_CollapsesTheBulge_ShowsTheDollOnLayer2_ThenFolds()
+        {
+            Rig rig = MakeRig();
+            PreparePressOverlay(rig);
+            rig.Runner.SetCueResolver(PressCues);
+            rig.Timeline.SetTimeline(new[] { SegWithTake(2, 0, PressTake(markDoneSec: 0.4f)) });
+            rig.Scheduler.NotifyCameraEntered(new SegmentEntry(0, segmentLap: 2, progressLap: 2));
+            Frame(rig);
+
+            rig.Timeline.NotifyVisitorMarkStarted();
+            rig.Timeline.SetVisitorMarkProgress(1f);
+            TickPress(rig, 1f);
+            float before = rig.Overlay.PressShown;
+            Assert.That(before, Is.GreaterThan(0.6f));
+
+            Assert.That(rig.Timeline.NotifyVisitorMark(), Is.EqualTo(TakeRunnerLogic.MarkResult.Dismissed));
+            Frame(rig);
+            Assert.That(rig.Feel.Overlay2Strength, Is.EqualTo(1f).Within(1e-4f), "成立の画は第 2 層に出る");
+            Assert.That(rig.Runner.IsActive, Is.True, "成立の画を markDoneSec 見せてから畳む");
+
+            rig.Timeline.SetVisitorMarkProgress(1f);   // 押し続けていても
+            TickPress(rig, OverlayPressLogic.CollapseSec + 0.02f);
+            Assert.That(rig.Overlay.PressShown, Is.EqualTo(0f), "膨らみは 0.12 秒で畳む");
+
+            _now = 0.4f;
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.False, "markDoneSec で演出を畳む");
+            Assert.That(rig.Overlay.PressBound, Is.False, "演出が終わったら膨らみを外す");
+            Assert.That(rig.Feel.Overlay2Strength, Is.EqualTo(0f), "成立の画も畳む");
+        }
+
+        [Test]
+        public void TakeWithoutPressMask_KeepsTheOldMarkResponse()
+        {
+            Rig rig = MakeRig();
+            PreparePressOverlay(rig);
+            var still = new OverlayCueData { id = "flutter", stillImage = MakeTex(), strength = 1f };
+            rig.Runner.SetCueResolver(id => id == "flutter" ? still : null);
+            ShowTakeDef take = EnterTake("L2C0#0", LiveStep(0, 30f));
+            take.markStartCueId = "flutter";
+            rig.Timeline.SetTimeline(new[] { SegWithTake(2, 0, take) });
+            rig.Scheduler.NotifyCameraEntered(new SegmentEntry(0, segmentLap: 2, progressLap: 2));
+            Frame(rig);
+
+            Assert.That(rig.Overlay.PressBound, Is.False, "pressMaskUrl の無い cue では膨らまない");
+            rig.Timeline.NotifyVisitorMarkStarted();
+            rig.Timeline.SetVisitorMarkProgress(1f);
+            TickPress(rig, 1f);
+            Assert.That(rig.Overlay.PressShown, Is.EqualTo(0f), "長押しの進み具合は膨らみへ届かない");
+            Assert.That(rig.Overlay.PressMax, Is.EqualTo(0f));
+        }
     }
 }

@@ -552,6 +552,18 @@ namespace FixedCamVr.Streaming
             public bool hasMatch;
             public float[] matchGain = { 1f, 1f, 1f };
             public float[] matchOffset = { 0f, 0f, 0f };
+
+            // 滲んで現れる・長押しで布が膨らむ（0349）。どれも省略時は従来どおり。
+            //   blend        "replace"（既定）/ "multiply"（素材は比の画。ライブに掛ける）
+            //   revealUrl    枠空間の順の画。空なら strength のフェードで出入りする
+            //   pressMaskUrl 枠空間の press マスク。markStartCueId に名指しされたとき切り替えずに膨らませる
+            public string blend = "";
+            public string revealUrl = "";
+            public float revealSec;
+            public float revealOutSec = OverlayRevealLogic.DefaultOutSec;
+            public float revealDelaySec;
+            public string pressMaskUrl = "";
+            public float[] pressCenter = { 0.5f, 0.5f };
         }
         // PostParams は public トップレベルへ昇格済み（ファイル冒頭）。CameraDef.post / _globalPost /
         // タイムライン各定義 / SetPostOverride が共有する。

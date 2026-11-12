@@ -40,7 +40,7 @@ def _planned(show, dirs):
     def remap(url):
         return url_map.get(url, url)
     for cue in baked.get('cues') or []:
-        for key in ('maskUrl', 'sourceUrl'):
+        for key in export_build.CUE_URL_KEYS:
             if cue.get(key):
                 cue[key] = remap(cue[key])
     for track in baked.get('bgmTracks') or []:
@@ -202,10 +202,10 @@ def _effects(show, refs, prepared_id, bundle_id, apk_id, dirs):
                 if step.get('assetUrl'):
                     urls.add(step['assetUrl'])
                 cue = cues.get(step.get('cueId')) or {}
-                urls.update(cue[k] for k in ('maskUrl', 'sourceUrl') if cue.get(k))
+                urls.update(cue[k] for k in export_build.CUE_URL_KEYS if cue.get(k))
             for key in ('markStartCueId', 'markDoneCueId'):
                 response = cues.get(take.get(key)) or {}
-                urls.update(response[k] for k in ('maskUrl', 'sourceUrl') if response.get(k))
+                urls.update(response[k] for k in export_build.CUE_URL_KEYS if response.get(k))
             urls = {u for u in urls if u}
             source_ready = all(source_ok(u) for u in urls)
             bundled = source_ready and bundle_id == prepared_id
@@ -231,6 +231,11 @@ def _slot_url(url, show):
         seen.add(name)
         url = slots[name]
     return url
+
+
+# 画には直接出ない、合成のためのデータ画像（0349）。滲む順と膨らむ範囲。マスクと同じく「素材」に数えない。
+DATA_IMAGE_KEYS = (('revealUrl', '滲む順'), ('pressMaskUrl', '膨らむ範囲'))
+DATA_IMAGE_SUFFIXES = (':maskUrl',) + tuple(':' + key for key, _ in DATA_IMAGE_KEYS)
 
 
 def _asset_kind(name):
@@ -261,6 +266,10 @@ def _take_asset_refs(show, take):
         if cue.get('maskUrl'):
             refs[f'step:{index}:maskUrl'] = {
                 'label': cue_name + '・マスク', 'cueId': cue_id, 'url': cue['maskUrl']}
+        for key, what in DATA_IMAGE_KEYS:
+            if cue.get(key):
+                refs[f'step:{index}:{key}'] = {
+                    'label': cue_name + '・' + what, 'cueId': cue_id, 'url': cue[key]}
     for slot, key, what in (('markStart', 'markStartCueId', '報告開始の映像'),
                             ('markDone', 'markDoneCueId', '報告完了の画')):
         response_id = take.get(key) or ''
@@ -274,6 +283,11 @@ def _take_asset_refs(show, take):
             refs[f'{slot}:maskUrl'] = {
                 'label': response_name + '・マスク', 'cueId': response_id,
                 'url': response['maskUrl']}
+        for data_key, data_what in DATA_IMAGE_KEYS:
+            if response.get(data_key):
+                refs[f'{slot}:{data_key}'] = {
+                    'label': response_name + '・' + data_what, 'cueId': response_id,
+                    'url': response[data_key]}
     return refs
 
 
@@ -380,7 +394,7 @@ def _effect_rows(show, built_show, verified, dirs):
                         'segmentName': segment.get('name') or derived_segment or segment_id,
                         'assets': assets,
                         'procedural': not any(a['kind'] in ('image', 'video')
-                                              and not a['key'].endswith(':maskUrl')
+                                              and not a['key'].endswith(DATA_IMAGE_SUFFIXES)
                                               for a in assets)})
     return effects
 

@@ -140,6 +140,51 @@ def fnum(d: dict, key: str, default=None):
         return default
 
 
+# 滲んで現れる cue と、長押しで膨らむ演出（0349）の合格線。
+# 滲みは著作の秒（遅れ + 秒）より REVEAL_SLACK_SEC 以上長く出ていたら、最大が REVEAL_MIN_MAX に届いているはず
+# （出切った後の呼吸は 0.985 までしか沈まない）。膨らみは報告で消えた演出なら PRESS_MIN_MAX まで膨らんだはず
+# （1 秒の長押しで目標は 1。バネは 2.4Hz なので成立の瞬間に 0.6 を割るなら進み具合が届いていない）。
+REVEAL_MIN_MAX = 0.9
+REVEAL_SLACK_SEC = 0.2
+PRESS_MIN_MAX = 0.6
+
+
+def bleed_findings(events):
+    """滲み（ev=cue の rev= / revMax=）と膨らみ（ev=take の pressMax=）を突き合わせる。(行, 判定) を返す。"""
+    lines, verdicts = [], []
+    open_reveal = {}
+    for e in events:
+        if e.get("ev") == "cue" and e.get("st") == "on":
+            rev = e.get("rev")
+            if not rev:
+                continue
+            delay, _, sec = str(rev).partition("+")
+            try:
+                need = float(delay) + float(sec)
+            except ValueError:
+                continue
+            open_reveal[e.get("id")] = (fnum(e, "t", 0.0), need)
+        elif e.get("ev") == "cue" and e.get("st") == "off" and e.get("revMax") is not None:
+            on = open_reveal.pop(e.get("id"), None)
+            if on is None:
+                continue
+            shown = fnum(e, "t", 0.0) - on[0]
+            rmax = fnum(e, "revMax", 0.0)
+            lines.append(f"  滲み {e.get('id')}: 出ていた {shown:.1f}s（著作 {on[1]:.1f}s）/ 最大 {rmax:.2f}")
+            if shown >= on[1] + REVEAL_SLACK_SEC and rmax < REVEAL_MIN_MAX:
+                verdicts.append(("FAIL", f"滲む cue {e.get('id')} が {shown:.1f}s 出ていたのに滲みが {rmax:.2f} 止まり"
+                                         f"（著作 {on[1]:.1f}s で 1 に届くはず）— _OverlayReveal が進んでいない"))
+        elif e.get("ev") == "take" and e.get("st") == "end" and e.get("pressMax") is not None:
+            pmax = fnum(e, "pressMax", 0.0)
+            lines.append(f"  膨らみ {e.get('id')}: 終わり方 {e.get('why')} / 最大 {pmax:.2f}")
+            if e.get("why") == "mark" and pmax < PRESS_MIN_MAX:
+                verdicts.append(("FAIL", f"報告で消えた演出 {e.get('id')} の膨らみが {pmax:.2f} 止まり"
+                                         f"（{PRESS_MIN_MAX} に届くはず）— 長押しの進み具合が膨らみへ届いていない"))
+    if lines and not verdicts:
+        verdicts.append(("OK", f"滲みと膨らみ {len(lines)} 件が著作どおり出た"))
+    return lines, verdicts
+
+
 # ev=step の理由トークン → 日本語（C# の TakeRunner.StepSkip* と対）。
 STEP_SKIP_REASONS = {
     "camrange": "live のカメラが registry の範囲外",
@@ -3497,6 +3542,20 @@ def analyze(events, others, exp, warns=None):
                             "（`ev=take st=end why=` が全部 done なら後者）")
         else:
             verdict("OK", f"報告 {len(marks)} 回で演出が {len(dismissed)} 本消えた")
+        w()
+
+    # ------------------------------------------------------------------
+    # 異変が滲んで現れたか・長押しで布が膨らんだか（0349）
+    # 書き手は C# の ShowTelemetryHost（ev=cue st=on rev= / st=off revMax= / ev=take st=end pressMax=）。
+    # **片方だけ直すと沈黙して食い違う。** 2026-11-13 より前のログには無いので、無ければ何も言わない。
+    # ------------------------------------------------------------------
+    bleed_lines, bleed_verdicts = bleed_findings(events)
+    if bleed_lines:
+        w("## 滲みと膨らみ")
+        for line in bleed_lines:
+            w(line)
+        for level, text in bleed_verdicts:
+            verdict(level, text)
         w()
 
     # ------------------------------------------------------------------

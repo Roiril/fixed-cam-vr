@@ -133,6 +133,25 @@ urllib.request.urlopen(Request(".../state", data=json.dumps({"cues": cues}).enco
 他のセッションが卓を触っていても被害が小さい（`cameras` や `timeline` には触らない）。
 書けたら **`curl -o NUL -w "%{http_code}"` で全 URL が 200 で配信されるか**を見る。
 
+## 6. 滲みと膨らみ（0349）
+
+契約は `rules/screen-overlay.md`。ここは作り方と所見だけ。
+
+- 素材 3 種（比の画・順の画・press マスク）と人形の周りのマスクは `py -3.11 tools/gen-plate/bleed_maps.py --recipe <レシピ>`
+  が `Logs/gen-plate/bleed/out/` へ出す。レシピは `tools/gen-plate/mask-recipes/bleed-*.json`。
+  試し描きは `bleed_preview.py`（`Logs/gen-plate/bleed/preview/`。実機の式の写し）
+- 台本へは `tools/show-apply-bleed.py`。先に out の PNG を `tools/web-compositor/static-inputs/` へ写す
+- 掛け算は実写に比を掛けるので、実写の明るさと粒が素材の下に残る。
+  手形は生成の種にした無人の写真（`plate_B_20260904_154326.jpg`）と画素が揃うので、手形も掛け算にした
+- 手形の順の画は連結成分ではなく種の点（間隔 8px）で並べる。maps の記録は `hands: 118`。
+  レシピの値はシミと違い、`inThreshold` 0.2・比の膝 `[0.72, 0.88]`
+- シミの順は芯（暗い上位 12%）を 0〜0.15、本体を 0.12〜0.8、垂れを 0.55〜1 に置く
+- 膨らみの寄せは 0.12、混ぜの重みは `smoothstep(0.30, 0.62, p)`。0.07 と `(0.12, 0.9)` では
+  膨らみかけの素材と実写が二重に透けて見えた
+- 膨らんでいる間は、素材が体を隠す
+- 離したときの揺り戻しは −0.15 の下限に当たる（下限が効いている）
+- 差し替え（replace）の cue で息をさせると、v=1 の所まで少し暗くなる。今の 2 本はどちらも掛け算なので出ない
+
 ## 卓サーバを再起動すると起きること
 
 `capture-server.py` を変えたら再起動が要る。起動時に **旧 prompts の取り込み**と
