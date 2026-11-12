@@ -772,15 +772,22 @@ class Person:
         ts = top.modifiers.new("t", "SOLIDIFY")
         ts.thickness = 0.004
         parts = [ob, fc, *pills, *side, band, top]
+        offs = {ob: Matrix.Identity(4), fc: Matrix.Translation(Vector((0, 0.03, 0)))}
+        # Quest 3 のモデルがあれば、箱で組んだ装置の代わりに載せる（無ければ箱のまま）
+        model = self._hmd_from_model()
+        if model:
+            for p in parts:
+                bpy.data.objects.remove(p, do_unlink=True)
+            parts = list(model)
+            offs = model
         # 頭の子にする（局所: -Y が前、+Z が上、X が右）
         rest = Matrix((right, -fwd, up)).transposed().to_4x4()
         rest.translation = c
         self.hmd_rest = rest
         self.head_bone_name = head.name
-        offs = {ob: Vector((0, 0, 0)), fc: Vector((0, 0.03, 0))}
         self.hmd_parts = []
         for p in parts:
-            local = Matrix.Translation(offs.get(p, Vector((0, 0, 0))))
+            local = offs.get(p, Matrix.Identity(4))
             p.matrix_world = rest @ local
             self.hmd_parts.append((p, rest @ local))
         # 頭の骨の子へ
@@ -791,6 +798,46 @@ class Person:
             self.hmd_offsets.append((p, hrest.inverted() @ mat))
         # 髪は世界座標で作ったので、rest の頭に対する差で動かす
         self.hmd_offsets.append((self.hair_ob, hrest.inverted()))
+
+    # Quest 3 のモデル（本体とストラップ）。ユーザーが渡した meta-quest-3.zip の `source/meta quest 3.glb`。
+    # リポジトリには入れない。置き場は Logs/twin-cycles/models か Drive（どちらにも無ければ箱の装置で撮る）
+    HMD_MODEL_PATHS = (
+        tc.WORK / "models" / "meta-quest-3.glb",
+        Path(r"G:\マイドライブ\shubie\fixed-cam-vr-assets\models\meta-quest-3.glb"),
+    )
+    HMD_MODEL_PARTS = ("LOD1_backClips_GEO001", "LOD1_frontLens_01_GEO001")
+    # モデルの中の「箱の装置の中心」に当たる点（前面から 33mm 奥・前面の窓の高さ）。-Y が前、+Z が上
+    HMD_MODEL_CENTER = Vector((0.0, -0.095, -0.058))
+
+    def _hmd_from_model(self):
+        path = next((p for p in self.HMD_MODEL_PATHS if p.exists()), None)
+        if path is None:
+            print("[twin] Quest 3 のモデルが無い。箱の装置で撮る", flush=True)
+            return None
+        before = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=str(path))
+        new = [o for o in bpy.data.objects if o not in before]
+        coll = tc.collection("Person")
+        out = {}
+        for o in new:
+            if o.name not in self.HMD_MODEL_PARTS:
+                continue
+            world = o.matrix_world.copy()
+            o.parent = None
+            for c in list(o.users_collection):
+                c.objects.unlink(o)
+            coll.objects.link(o)
+            out[o] = Matrix.Translation(-self.HMD_MODEL_CENTER) @ world
+        for o in new:
+            if o not in out:
+                bpy.data.objects.remove(o, do_unlink=True)
+        if len(out) != len(self.HMD_MODEL_PARTS):
+            print(f"[twin] Quest 3 のモデルに部品が足りない（{[o.name for o in out]}）。箱の装置で撮る", flush=True)
+            for o in out:
+                bpy.data.objects.remove(o, do_unlink=True)
+            return None
+        print(f"[twin] 装置は Quest 3 のモデル: {path}", flush=True)
+        return out
 
     # ---------- 右手 ----------
     def _prepare_ik(self):

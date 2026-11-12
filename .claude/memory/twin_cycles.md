@@ -57,4 +57,6 @@ URP の `VirtualRoom`（[[twin_room]]）は本物の Director を通す検証用
 
 **罠**: B のレンズは壁から 2.5cm なので `clip_start=0.02` だと壁が切れて画の左が黒くなる（0.003 にした）。`seq` は `Logs/twin-cycles/seq` の古いコマを黙って再利用する。
 
+**代役の頭の装置**（2026-11-12・LEDGER 0328）: ユーザーが渡した Quest 3 のモデル（`meta-quest-3.zip` の glb・実寸・-Y が前）を頭へ載せる。置き場は `Logs/twin-cycles/models/meta-quest-3.glb` と Drive `fixed-cam-vr-assets/models/`（git に入れない。出どころと利用条件は未確認）。載せる位置は `twin_person.HMD_MODEL_CENTER`（モデルの前面から 33mm 奥・前面の窓の高さ）を、箱の装置の中心だった点へ合わせる。モデルが無い PC は箱の装置で撮り、開始行に「箱の装置で撮る」と出る。同じ動画に 2 種類の装置が混ざらないよう、焼く前に開始行を見る
+
 関連: [[twin_room]] / [[virtual_walk]] / [[codex_image_pipeline]]

@@ -65,7 +65,7 @@ py -3.11 tools/twin/make_assets.py
 | `import_routes.py` | Unity の仮想体験の記録を `routes/` へ取り込む |
 | `routes/*.tsv` | Unity の仮想体験（`path=rail`）の記録。手すりから 0.16m の道を歩く。30Hz に間引き |
 | `twin_scene.py` | 部屋・カーテン・棚・三脚・床置き台・アーム・電球 |
-| `twin_person.py` | 代役。黒い長袖とカーゴ・毛の髪・Quest 3。歩きと右手の手すり |
+| `twin_person.py` | 代役。黒い長袖とカーゴ・毛の髪・Quest 3。歩きと右手の手すり。Quest 3 は `Logs/twin-cycles/models/meta-quest-3.glb`（無ければ Drive `fixed-cam-vr-assets/models/`）のモデルを頭へ載せる。どちらにも無い PC では箱で組んだ装置になる（開始行に出る）。モデルは git に入れない |
 | `twin_materials.py` | 材質。素材写真を土台に、汚れは形から決める（AO の隅・出っ張った縁の欠け・上向きの面の埃・高さ・金具の下の筋） |
 | `twin_post.py` | 写真の仕上げ（自動露出・レンズのかぶり・色ずれ・ノイズ・シャープ・JPEG） |
 | `twin_render.py` | Cycles の設定と撮影。`still` と `seq` |
