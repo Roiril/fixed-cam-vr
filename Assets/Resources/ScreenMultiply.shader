@@ -1,4 +1,4 @@
-// 増えるスクリーンの面と箱（参考 mul.jpg）。進み方は AnomalyEyesLogic の時計、画は ScreenMultiply が取り込む。
+// 増えるスクリーンの面と箱（参考 mul.jpg・走馬灯）。進み方は AnomalyEyesLogic の時計、画は ScreenMultiply が取り込む。
 //
 // 取り込みはメインスクリーンの最終の画を筐体ごと写したもの。外形・ガラス・乱れ・人形・テレビの枠がそのまま付いて来る。
 // 面は自前の枠を描かない（0324: 枠はメインと同じにする）。ここが足すのは管の中の色味・電源の入り切り・面ごとの揺れだけ。
@@ -7,6 +7,9 @@
 //
 // 闇には黒い霧がある（ScreenFog.hlsl）。面は距離で暗くなり、取り込みの mip でぼける。
 // 点いた面は席より奥から寄ってくるので、霧の中から出てくるように見える。
+// 点いた直後の管は橙で、席の寒色へ落ち着く。面は帯ごとに頭のまわりをゆっくり回る（ScreenMultiplyCommon.hlsl）。
+// 消える面はブラウン管の電源断: 上下に潰れて横一線 → 点 → 残光。
+// _WallMirror = 1 の材質は床に映した灯（暗く・ぼけて・水平に揺らぐ）。
 //
 // ⚠ Geometry+50: メインスクリーンの後に描いて、隠れた所を深度で捨てる。
 // ⚠ Resources に置いてある（Always Included に入れずにビルドへ入れる）。ScreenMultiply が Resources.Load で引く。
@@ -36,6 +39,7 @@ Shader "FixedCamVr/ScreenMultiply"
             #pragma target 3.5
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "ScreenFog.hlsl"
+            #include "ScreenMultiplyCommon.hlsl"
 
             TEXTURE2D_ARRAY(_FeedTex);
             SAMPLER(sampler_FeedTex);
@@ -62,9 +66,14 @@ Shader "FixedCamVr/ScreenMultiply"
                 float _WallFogBlur;
                 float _WallFarShow;
                 float _WallHasTubeMask;
+                float _WallAfterglowSec;
+                float _WallMirror;
+                float _WallFloorY;
+                float _WallMirrorFadeM;
+                float4 _WallWarm;        // rgb 点いた直後の色 / w 落ち着くまでの秒
+                float4 _WallDrift;       // 帯 0..3 の回った角（rad）
+                float4 _WallMirrorLook;  // 明るさ / 足すぼけ / 揺らぎの振幅 rad / 揺らぎの周期 秒
             CBUFFER_END
-            // 席ごとの点いた時刻。大きさは ScreenMultiplyLayout.MaxSeats と対。
-            float _WallOpenAt[160];
 
             struct Attributes
             {
@@ -72,6 +81,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 float4 uv0 : TEXCOORD0;
                 float4 uv1 : TEXCOORD1;
                 float4 uv2 : TEXCOORD2;     // xyz 席の中心 / w 席の番号
+                float4 uv3 : TEXCOORD3;     // x 帯の番号 / y 陰り
                 float4 color : COLOR;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
@@ -82,7 +92,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 float4 uv : TEXCOORD0;      // xy 面の uv / z 部位 / w 箱の奥行き
                 float4 seat : TEXCOORD1;    // x 開き / y 点いた直後の明るさ / z 席の乱数 / w リングの段
                 float3 tint : TEXCOORD2;
-                float fog : TEXCOORD3;      // 霧を抜けて届く光（1 = そのまま）
+                float3 extra : TEXCOORD3;   // x 霧を抜けて届く光 / y 残光 1..0 / z 床の映り込みの濃さ
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -120,24 +130,36 @@ Shader "FixedCamVr/ScreenMultiply"
                 float d = min(v.uv1.y, filled - 1.0);
                 float slot = fmod(_WallRingHead - d + _WallRingCount, _WallRingCount);
 
+                // 点いた時刻・消えた時刻（ScreenMultiply が配る）。
+                float seatIndex = floor(v.uv2.w + 0.5);
+                float openAt = WallSeatOpenAt(seatIndex);
+                float after = WallAfterglow(open, WallSeatClosedAt(seatIndex), _WallNow, _WallAfterglowSec);
 
-                // 点いた面は霧の奥から席まで寄る。時計は席ごとの「点いた時刻」（ScreenMultiply が配る）。
-                int seatIndex = (int)(v.uv2.w + 0.5);
-                float arrive = saturate((_WallNow - _WallOpenAt[seatIndex]) / max(0.05, _WallArriveSec));
+                // 点いた面は霧の奥から席まで寄る。
+                float arrive = saturate((_WallNow - openAt) / max(0.05, _WallArriveSec));
                 float left = (1.0 - arrive) * (1.0 - arrive) * (1.0 - arrive);
                 float3 pos = v.positionOS.xyz
                            + normalize(v.uv2.xyz) * (left * _WallEmergeM * (0.75 + 0.5 * v.uv1.z));
+                // 帯ごとにゆっくり回る（ScreenMultiplyLayout.DriftDeg）。
+                pos = WallRotateY(pos, dot(_WallDrift, WallLane(v.uv3.x)));
+                float mirrorFade = 1.0;
+                if (_WallMirror > 0.5)
+                {
+                    pos = WallMirror(pos, _WallFloorY, _WallMirrorLook, _WallNow);
+                    mirrorFade = WallMirrorFade(pos, _WallMirrorFadeM);
+                }
                 float dist = max(0.001, length(pos));
                 float fog = ScreenFogTransmit(dist, _WallFogDensity, _WallFogClearM,
                                               ScreenFogWisp(pos / dist, _WallNow));
                 // 霧の奥の段は color.a = 0。プレビューの比較で消せる。
-                float shown = step(0.001, open) * step(0.5, max(v.color.a, _WallFarShow));
+                float shown = step(0.001, max(open, after)) * step(0.5, max(v.color.a, _WallFarShow))
+                            * step(0.001, mirrorFade);
 
                 o.positionCS = shown > 0.5 ? TransformObjectToHClip(pos) : float4(0, 0, -1, 1);
                 o.uv = v.uv0;
                 o.seat = float4(open, settle, v.uv1.z, slot);
-                o.tint = v.color.rgb;
-                o.fog = fog;
+                o.tint = WallTint(v.color.rgb, _WallNow - openAt, _WallWarm) * v.uv3.y;
+                o.extra = float3(fog, after, mirrorFade);
                 return o;
             }
 
@@ -146,21 +168,38 @@ Shader "FixedCamVr/ScreenMultiply"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 float open = i.seat.x;
                 float seed = i.seat.z;
+                float fogLight = i.extra.x;
+                // 床に映った灯は暗く、頭から離れるほど薄い。
+                float mirror = lerp(1.0, _WallMirrorLook.x * i.extra.z, _WallMirror);
 
                 float flutter = 1.0 + 0.045 * sin(_WallTime * (3.0 + seed * 9.0) + seed * 40.0)
                                     + 0.02 * sin(_WallTime * (17.0 + seed * 23.0));
+
+                // 電源の落ちた面は残光の点だけを描く。黒い筐体と箱で深度を書くと、
+                // 後ろの面の暈が四角く切れる（閉じの途中に 0 番の暈が欠けた）。
+                if (open <= 0.001)   // WallAfterglow と同じ境
+                {
+                    float2 pa = (i.uv.xy - 0.5) * float2(1.2427, 1.0);   // 面の高さを 1 とした座標（CrtReferenceScreen.CaseAspect）
+                    float ra = dot(pa, pa);
+                    float glow = (exp(-ra / 0.0005) * 3.0 + exp(-ra / 0.006) * 0.3) * i.extra.y * i.extra.y
+                               * (1.0 - step(0.5, i.uv.z));
+                    float3 dot3 = i.tint * glow * fogLight * mirror;
+                    // 表示の 1 階調より暗い所は描かない（縁が円盤に見えない）。
+                    clip(max(dot3.r, max(dot3.g, dot3.b)) - 0.0002);
+                    return half4(dot3, 1.0);
+                }
 
                 // 箱: 自分の画の光が前の縁にだけ回り、奥へ消える。
                 if (i.uv.z > 0.5)
                 {
                     float fall = 1.0 - i.uv.w;
                     float3 body = i.tint * (0.0015 + _WallBodyGain * fall * fall) * saturate(open * 2.0) * flutter;
-                    return half4(body * i.fog, 1.0);
+                    return half4(body * fogLight * mirror, 1.0);
                 }
 
                 float2 face = saturate(i.uv.xy) * 0.994 + 0.003;
-                // 霧を抜けきれない分だけぼかす。
-                float blur = (1.0 - i.fog) * _WallFogBlur;
+                // 霧を抜けきれない分だけぼかす。床の映り込みはさらにぼかす。
+                float blur = (1.0 - fogLight) * _WallFogBlur + _WallMirror * _WallMirrorLook.y;
 
                 // 管の輪郭（メインと同じマスク）。筐体の無い画面は 1 で、取り込みの alpha が外形を決める。
                 float tubeMask = _WallHasTubeMask > 0.5
@@ -192,7 +231,7 @@ Shader "FixedCamVr/ScreenMultiply"
                     picture = lerp(picture, i.tint * sand * 0.8, 0.35);
                 }
 
-                // 管の電源: 中央の線が縦に開く。閉じるときは同じ形で潰れる。
+                // 管の電源: 中央の線が縦に開く。閉じるときは同じ形で潰れる（上下が潰れて横一線 → 点）。
                 float2 c = i.uv.xy - 0.5;
                 float halfH = smoothstep(0.06, 0.62, open) * 0.5 + 0.004;
                 float halfW = smoothstep(0.0, 0.16, open) * 0.5;
@@ -209,7 +248,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 col = lerp(col, picture, inside);
                 col += i.tint * beam * exp(-abs(c.y) * 90.0) * step(abs(c.x), halfW) * 3.0 * tube;
 
-                return half4(col * i.fog, 1.0);
+                return half4(col * fogLight * mirror, 1.0);
             }
             ENDHLSL
         }

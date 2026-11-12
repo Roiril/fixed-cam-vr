@@ -38,6 +38,8 @@ namespace FixedCamVr.Streaming.EditorTools
         private const float ScreenDistM = 2.0f;
         private const float ScreenHeightOffsetM = -0.28f;
         private const float ScreenHeightM = 1.3333f;
+        /// <summary>目の高さ（床から）。床の映り込みはこの下に映る。</summary>
+        private const float EyeHeightM = 1.55f;
         /// <summary>シーンの物を写さないための撮影用レイヤ（<see cref="IntroPreview"/> と同じ番号）。</summary>
         private const int PreviewLayer = 1;
 
@@ -130,13 +132,16 @@ namespace FixedCamVr.Streaming.EditorTools
                     return;
                 }
                 wall.SetCaptureSource(screenRenderer);
+                wall.SetFloorWorldY(Stage.y - EyeHeightM);
                 SetLayer(screenGo.transform);
                 SetLayer(wallGo.transform);
 
                 float open0 = AnomalyEyesLogic.HintSec + AnomalyEyesLogic.StareSec;
                 float full = open0 + AnomalyEyesLogic.SwarmSec;
+                // 閉じの段の頭（区間の半ば・録画が尽きる所）。ここから目の時計の閉じ方で消える。
+                float close = full + 3.0f;
                 var report = new StringBuilder();
-                report.AppendLine("variant\tshot\tsec\topen\tarriving\tnearLuma\tfarLuma\tfarOverNear");
+                report.AppendLine("variant\tshot\tsec\topen\tafterglow\tarriving\tnearLuma\tfarLuma\tfarOverNear");
 
                 foreach (string variant in new[] { "fog", "flat" })
                 {
@@ -145,30 +150,46 @@ namespace FixedCamVr.Streaming.EditorTools
                     bool fog = variant == "fog";
                     wall.SetLook(fog ? ScreenFogLogic.Density : 0f, fog ? ScreenMultiply.EmergeM : 0f, showFar: fog);
 
-                    (string name, float sec, float yaw)[] shots =
+                    // 時刻は目の時計の頭から。pitch は正で下を向く。
+                    // closeAt はその撮影で閉じの段に入る時刻（帯の回転を見る 12 番だけ閉じない）。
+                    (string name, float sec, float yaw, float pitch, float closeAt)[] shots =
                     {
-                        ("1_first", open0 - 0.15f, 0f),
-                        ("2_ripple", open0 + AnomalyEyesLogic.SwarmSec * 0.14f, 0f),
-                        ("3_pause", open0 + AnomalyEyesLogic.SwarmSec * 0.55f, 0f),
-                        ("4_rush", open0 + AnomalyEyesLogic.SwarmSec * 0.88f, 0f),
-                        ("5_just_full", full + 0.25f, 0f),
-                        ("6_settled", full + 3.0f, 0f),
-                        ("7_settled_left", full + 3.0f, -55f),
-                        ("8_settled_right", full + 3.0f, 55f),
-                        ("9_settled_up", full + 3.0f, 0f),
+                        ("1_first", open0 - 0.15f, 0f, 0f, close),
+                        ("2_ripple", open0 + AnomalyEyesLogic.SwarmSec * 0.14f, 0f, 0f, close),
+                        ("3_pause", open0 + AnomalyEyesLogic.SwarmSec * 0.55f, 0f, 0f, close),
+                        ("4_rush", open0 + AnomalyEyesLogic.SwarmSec * 0.88f, 0f, 0f, close),
+                        ("5_just_full", full + 0.25f, 0f, 0f, close),
+                        ("6_settled", full + 3.0f, 0f, 0f, close),
+                        ("7_settled_left", full + 3.0f, -55f, 0f, close),
+                        ("8_settled_right", full + 3.0f, 55f, 0f, close),
+                        ("9_settled_up", full + 3.0f, 0f, -32f, close),
+                        // 波の先頭（橙）が横を渡っていく所。
+                        ("10_rush_left", open0 + AnomalyEyesLogic.SwarmSec * 0.40f, -70f, 0f, close),
+                        ("11_rush_back", open0 + AnomalyEyesLogic.SwarmSec * 0.80f, 180f, 0f, close),
+                        // 帯の回転。6_settled と同じ向きで 12 秒後（目の高さの帯 +10.8°・上の帯 −14.4°）。
+                        ("12_settled_late", full + 15.0f, 0f, 0f, float.MaxValue),
+                        // 床の映り込み。
+                        ("13_settled_down", full + 3.0f, 0f, 28f, close),
+                        ("14_settled_down_left", full + 3.0f, -60f, 22f, close),
+                        // 閉じ。波が逆向きに戻り（後ろから）、1 枚ずつ電源が落ちる。0 番が最後。
+                        ("15_closing_back", close + 0.18f, 180f, 0f, close),
+                        ("16_closing_left", close + 0.30f, -70f, 0f, close),
+                        ("17_closing_front", close + 0.45f, 0f, 0f, close),
+                        ("18_afterglow_front", close + 0.75f, 0f, 0f, close),
+                        ("19_last_one", close + AnomalyEyesLogic.CloseSec * 0.93f, 0f, 0f, close),
                     };
                     foreach (var shot in shots)
                     {
-                        DriveTo(wall, shot.sec);
+                        DriveTo(wall, shot.sec, shot.closeAt);
                         SetLayer(wallGo.transform);
-                        float pitch = shot.name == "9_settled_up" ? -32f : 0f;
-                        cam.transform.rotation = Quaternion.Euler(pitch, shot.yaw, 0f);
+                        cam.transform.rotation = Quaternion.Euler(shot.pitch, shot.yaw, 0f);
                         Texture2D img = Shoot(cam, StillW, StillH);
                         File.WriteAllBytes(Path.Combine(vdir, shot.name + ".png"), img.EncodeToPNG());
-                        (float near, float far) = MeasureTiers(cam, img);
+                        (float near, float far) = MeasureTiers(cam, img, wall.RunSec);
                         UnityEngine.Object.DestroyImmediate(img);
                         report.Append(variant).Append('\t').Append(shot.name).Append('\t').Append(F(shot.sec)).Append('\t')
-                              .Append(wall.OpenCount).Append('\t').Append(wall.ArrivingCount).Append('\t')
+                              .Append(wall.OpenCount).Append('\t').Append(wall.AfterglowCount).Append('\t')
+                              .Append(wall.ArrivingCount).Append('\t')
                               .Append(F(near)).Append('\t').Append(F(far)).Append('\t')
                               .Append(near > 1e-5f ? F(far / near) : "-").Append('\n');
                     }
@@ -181,9 +202,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     float dt = 1f / Fps, clock = 0f;
                     bool begun = false;
                     int n = 0;
-                    for (float t = 0f; t < full + 3.0f; t += dt)
+                    for (float t = 0f; t < close + AnomalyEyesLogic.CloseSec + 0.3f; t += dt)
                     {
-                        Step(wall, logic, dt, ref clock, ref begun);
+                        Step(wall, logic, dt, ref clock, ref begun, wanted: t < close);
                         SetLayer(wallGo.transform);
                         if (t < AnomalyEyesLogic.HintSec * 0.6f) continue;
                         Texture2D img = Shoot(cam, SeqW, SeqH);
@@ -195,7 +216,7 @@ namespace FixedCamVr.Streaming.EditorTools
 
                 File.WriteAllText(Path.Combine(dir, "report.tsv"), report.ToString());
                 int farSeats = ScreenMultiplyLayout.Seats.Count(s => ScreenMultiplyLayout.IsFar(s));
-                Debug.Log($"[ScreenWallPreview] fog / flat の静止画 各 9 枚{(sequence ? " + 連番" : "")} + report.tsv → Assets/{OutDirRel}/\n"
+                Debug.Log($"[ScreenWallPreview] fog / flat の静止画 各 19 枚{(sequence ? " + 連番" : "")} + report.tsv → Assets/{OutDirRel}/\n"
                         + $"  席 {ScreenMultiplyLayout.Seats.Length}（霧の奥の段 {farSeats}）/ 写真 {plateName}\n"
                         + $"  霧 {ScreenFogLogic.Density}/m・{ScreenFogLogic.ClearM}m まで無し / 奥から {ScreenMultiply.EmergeM}m・{ScreenMultiply.ArriveSec}s\n"
                         + $"  取り込み {wall.CaptureCount} 回（本番と同じ経路でメインスクリーンを写した）\n"
@@ -215,18 +236,22 @@ namespace FixedCamVr.Streaming.EditorTools
             }
         }
 
-        /// <summary>頭から <paramref name="sec"/> 秒まで、本番と同じ刻みで回す（点いた時刻の表も進む）。</summary>
-        private static void DriveTo(ScreenMultiply wall, float sec)
+        /// <summary>
+        /// 頭から <paramref name="sec"/> 秒まで、本番と同じ刻みで回す（点いた時刻の表も進む）。
+        /// <paramref name="closeAt"/> 秒からはカットが「出せ」と言わなくなる（閉じの段）。
+        /// </summary>
+        private static void DriveTo(ScreenMultiply wall, float sec, float closeAt)
         {
             var logic = new AnomalyEyesLogic();
             float dt = 1f / Fps, clock = 0f;
             bool begun = false;
-            for (float t = 0f; t < sec; t += dt) Step(wall, logic, dt, ref clock, ref begun);
+            for (float t = 0f; t < sec; t += dt) Step(wall, logic, dt, ref clock, ref begun, wanted: t < closeAt);
         }
 
-        private static void Step(ScreenMultiply wall, AnomalyEyesLogic logic, float dt, ref float clock, ref bool begun)
+        private static void Step(ScreenMultiply wall, AnomalyEyesLogic logic, float dt, ref float clock, ref bool begun,
+                                 bool wanted)
         {
-            logic.Tick(dt, wanted: true, density: 1f);
+            logic.Tick(dt, wanted, density: 1f);
             clock += dt;
             if (!begun) { wall.BeginRun(); begun = true; }
             wall.Drive(dt, logic.Big, logic.Field, logic.Span, logic.Closing, clock);
@@ -234,16 +259,16 @@ namespace FixedCamVr.Streaming.EditorTools
 
         /// <summary>
         /// 画の上で、手前の段と霧の奥の段の明るさ（linear の輝度の平均）を測る。席の中心の周り 7×7 画素。
-        /// メインスクリーンの後ろと画の外の席は数えない。
+        /// 席の中心は帯の回転を当てた位置。メインスクリーンの後ろと画の外の席は数えない。
         /// </summary>
-        private static (float near, float far) MeasureTiers(Camera cam, Texture2D img)
+        private static (float near, float far) MeasureTiers(Camera cam, Texture2D img, float runSec)
         {
             double nearSum = 0, farSum = 0;
             int nearN = 0, farN = 0;
             for (int i = 0; i < ScreenMultiplyLayout.Seats.Length; i++)
             {
                 ScreenSeat seat = ScreenMultiplyLayout.Seats[i];
-                Vector3 world = Stage + seat.Center;
+                Vector3 world = Stage + ScreenMultiplyLayout.DriftedCenter(seat, runSec);
                 Vector3 vp = cam.WorldToViewportPoint(world);
                 if (vp.z <= 0f || vp.x < 0.03f || vp.x > 0.97f || vp.y < 0.03f || vp.y > 0.97f) continue;
                 Vector3 local = cam.transform.InverseTransformPoint(world);

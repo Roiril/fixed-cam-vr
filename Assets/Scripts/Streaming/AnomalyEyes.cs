@@ -487,7 +487,8 @@ namespace FixedCamVr.Streaming
             if (WallActive)
             {
                 if (_logic.JustStarted) _wall!.BeginRun();
-                _wall!.Drive(dt, _logic.Big, _logic.Field, _logic.Span, _logic.Closing, _clock);
+                _wall!.SetFloorWorldY(FloorWorldY());
+                _wall.Drive(dt, _logic.Big, _logic.Field, _logic.Span, _logic.Closing, _clock);
                 _renderer.enabled = false;
                 AppliedBig = _logic.Big;
                 AppliedField = _logic.Field;
@@ -616,14 +617,25 @@ namespace FixedCamVr.Streaming
             }
         }
 
-        /// <summary>大きい目のワールド位置。</summary>
+        /// <summary>大きい目のワールド位置（スクリーンの版は 0 番の、帯の回転を当てた位置）。</summary>
         private Vector3 BigEyeWorld()
             => transform.TransformPoint(WallActive
-                ? ScreenMultiplyLayout.Seats[0].Center
+                ? _wall!.SeatCenter(0)
                 : AnomalyEyesMesh.BigDir * AnomalyEyesMesh.RadiusM);
 
         /// <summary>最初に出るものの方角（群れの座標）。視界に入れ続けるために向き直す基準。</summary>
-        private Vector3 LeadDir => WallActive ? ScreenMultiplyLayout.Seats[0].Direction : AnomalyEyesMesh.BigDir;
+        private Vector3 LeadDir => WallActive ? _wall!.SeatCenter(0).normalized : AnomalyEyesMesh.BigDir;
+
+        /// <summary>
+        /// 部屋の床のワールドの高さ（増えるスクリーンの灯が映る面）。床の取り方は <c>ShowCgLayer</c> と同じ
+        /// （course の床 <c>Room.floorY</c> をワールドへ写す）。位置合わせが無ければ追跡の原点の床（y = 0）。
+        /// </summary>
+        private float FloorWorldY()
+        {
+            var toWorld = showControl?.CourseToWorldProvider;
+            if (toWorld == null) return 0f;
+            return toWorld(Vector2.zero, showControl!.Room?.floorY ?? 0f).y;
+        }
 
         /// <summary>
         /// <b>いちばん最後に開いた目</b>のワールド位置（開く順位がいまの進みにいちばん近いもの）。
@@ -632,8 +644,7 @@ namespace FixedCamVr.Streaming
         private Vector3 NewestOpenEyeWorld()
         {
             if (WallActive)
-                return transform.TransformPoint(
-                    ScreenMultiplyLayout.Seats[ScreenMultiplyLayout.NewestOpen(_logic.Field)].Center);
+                return transform.TransformPoint(_wall!.SeatCenter(ScreenMultiplyLayout.NewestOpen(_logic.Field)));
 
             float best = -1f;
             Vector3 dir = AnomalyEyesMesh.BigDir;

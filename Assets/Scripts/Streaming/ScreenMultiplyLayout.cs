@@ -9,19 +9,21 @@ namespace FixedCamVr.Streaming
     public readonly struct ScreenSeat
     {
         public readonly float azDeg, elDeg, widthDeg, distM, tiltYawDeg, tiltPitchDeg, rollDeg;
-        /// <summary>0 = 寒色 / 1 = 白に近い寒色 / 2 = 暖色。</summary>
+        /// <summary>席の色。0 = 寒色 / 1 = 白に近い寒色（<see cref="ScreenMultiplyLayout.Tints"/>）。</summary>
         public readonly int tint;
         /// <summary>映す画の遅れ（取り込みの枚数）。</summary>
         public readonly int delay;
         /// <summary>点く順 0..1。</summary>
         public readonly float rank;
+        /// <summary>帯の番号（<see cref="ScreenMultiplyLayout.BandEye"/> ほか）。帯ごとにゆっくり回る。</summary>
+        public readonly int band;
 
         public ScreenSeat(float az, float el, float width, float dist, float tiltYaw, float tiltPitch, float roll,
-                          int tint, int delay, float rank)
+                          int tint, int delay, float rank, int band)
         {
             azDeg = az; elDeg = el; widthDeg = width; distM = dist;
             tiltYawDeg = tiltYaw; tiltPitchDeg = tiltPitch; rollDeg = roll;
-            this.tint = tint; this.delay = delay; this.rank = rank;
+            this.tint = tint; this.delay = delay; this.rank = rank; this.band = band;
         }
 
         public Vector3 Direction => Quaternion.Euler(-elDeg, azDeg, 0f) * Vector3.forward;
@@ -32,11 +34,58 @@ namespace FixedCamVr.Streaming
     }
 
     /// <summary>
-    /// <b>目の前にメインスクリーンが増える</b>演出の座席とメッシュ（参考 <c>mul.jpg</c>）。
-    /// 表は <c>tools/make-screen-wall.py</c> が焼く。
+    /// <b>目の前にメインスクリーンが増える</b>演出の座席とメッシュ（参考 <c>mul.jpg</c>・走馬灯）。
+    /// 表は <c>tools/make-screen-wall.py</c> が焼く。面は頭を巻く帯に並び、帯ごとにゆっくり回る。
     /// </summary>
     public static partial class ScreenMultiplyLayout
     {
+        /// <summary>帯の番号。<c>make-screen-wall.py</c> の EYE / UPPER / TOP / FAR と対。</summary>
+        public const int BandEye = 0, BandUpper = 1, BandTop = 2, BandFar = 3;
+        public const int BandCount = 4;
+
+        /// <summary>
+        /// 帯ごとの回る速さ（度/秒。正は右回り ＝ 方位が増える向き）。
+        /// ⚠ 隣の帯は必ず逆向き。視野全体が同じ向きに流れると VR で酔う。これより速くしない。
+        /// </summary>
+        public static float DriftRateDegPerSec(int band) => band switch
+        {
+            BandEye => 0.9f,
+            BandUpper => -1.2f,
+            BandTop => 0.7f,
+            _ => 0f,
+        };
+
+        /// <summary>
+        /// 帯 <paramref name="band"/> が出番の頭から <paramref name="sec"/> 秒で回った角度（度）。
+        /// 面の頂点（シェーダの <c>_WallDrift</c>）・0 番の方向・音の方角はすべてここを通す。
+        /// ホラー軽減（<see cref="HorrorRelief.Enabled"/>）では回さない。
+        /// </summary>
+        public static float DriftDeg(int band, float sec)
+            => HorrorRelief.Enabled ? 0f : DriftRateDegPerSec(band) * sec;
+
+        /// <summary>帯の回転を当てた席の中心（群れの座標）。</summary>
+        public static Vector3 DriftedCenter(in ScreenSeat seat, float sec)
+            => Quaternion.Euler(0f, DriftDeg(seat.band, sec), 0f) * seat.Center;
+
+        /// <summary>点いた直後の色。<see cref="WarmSettleSec"/> かけて席の色へ落ち着く（波の先頭だけが暖かい）。</summary>
+        public static readonly Color WarmTint = new(1.00f, 0.60f, 0.32f, 1f);
+
+        /// <summary>点いた直後の橙から席の色へ落ち着くまでの秒。両シェーダが同じ式で読む。</summary>
+        public const float WarmSettleSec = 1.3f;
+
+        /// <summary>電源の切れた管に残る光の点が消えるまでの秒。</summary>
+        public const float AfterglowSec = 0.5f;
+
+        /// <summary>
+        /// 点いてから <paramref name="secSinceOpen"/> 秒の管の色（シェーダの式と対）。
+        /// <c>t = saturate(秒 / WarmSettleSec)</c>、<c>lerp(WarmTint, 席の色, smoothstep)</c>。
+        /// </summary>
+        public static Color TintAt(int tint, float secSinceOpen)
+        {
+            float t = Mathf.Clamp01(secSinceOpen / WarmSettleSec);
+            return Color.Lerp(WarmTint, Tints[Mathf.Clamp(tint, 0, Tints.Length - 1)], t * t * (3f - 2f * t));
+        }
+
         /// <summary>取り込みのリングの枚数。<c>make-screen-wall.py</c> の DELAY_SLOTS と対。</summary>
         public const int DelaySlots = 16;
 
@@ -65,11 +114,11 @@ namespace FixedCamVr.Streaming
             return Mathf.Clamp01((field01 * (1f + s) - Seats[index].rank) / s);
         }
 
+        /// <summary>落ち着いた後の席の色。寒色と淡い寒色だけ（暖色は点いた直後の <see cref="WarmTint"/> だけが持つ）。</summary>
         public static readonly Color[] Tints =
         {
             new(0.58f, 0.82f, 1.00f, 1f),
             new(0.86f, 0.95f, 1.00f, 1f),
-            new(1.00f, 0.60f, 0.32f, 1f),
         };
 
         /// <summary>
@@ -101,7 +150,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 面と箱のメッシュ。uv0 = (面の u, 面の v, 部位 0 面 / 1 箱, 箱の奥行き 0..1)、
-        /// uv1 = (順位, 遅れ, 席の乱数, 0 番か)、uv2 = (席の中心 xyz, 席の番号)、color = 色（a は霧の奥の段で 0）。
+        /// uv1 = (順位, 遅れ, 席の乱数, 0 番か)、uv2 = (席の中心 xyz, 席の番号)、uv3 = (帯の番号, 陰り, 0, 0)、
+        /// color = 席の色（a は霧の奥の段で 0）。色は点いた時刻からシェーダが橙 → 席の色へ動かす。
         /// </summary>
         public static Mesh BuildSurfaces()
         {
@@ -109,6 +159,7 @@ namespace FixedCamVr.Streaming
             var uv0 = new List<Vector4>();
             var uv1 = new List<Vector4>();
             var uv2 = new List<Vector4>();
+            var uv3 = new List<Vector4>();
             var c = new List<Color>();
             var tri = new List<int>();
 
@@ -124,6 +175,7 @@ namespace FixedCamVr.Streaming
                 var home = new Vector4(p.x, p.y, p.z, s);
                 float near = IsFar(seat) ? 0f : 1f;
                 tint.a = near;
+                float shade = 1f;
 
                 // 箱を先に積む。奥へ細る 4 枚（前面の裏から見えないのでふさがない）。
                 float front = BodyInset, back = BodyTaper * BodyInset;
@@ -142,16 +194,16 @@ namespace FixedCamVr.Streaming
                 {
                     int n = (e + 1) % 4;
                     int i0 = v.Count;
-                    // 上の面は照らされ、下の面は陰る。
-                    float shade = e == 2 ? 1f : e == 0 ? 0.35f : 0.7f;
+                    // 上の面は照らされ、下の面は陰る。陰りは uv3.y（色は点いた時刻で動くので焼き込まない）。
+                    shade = e == 2 ? 1f : e == 0 ? 0.35f : 0.7f;
                     AddVertex(p + q * f[e], new Vector4(0, 0, 1f, 0f));
                     AddVertex(p + q * f[n], new Vector4(0, 0, 1f, 0f));
                     AddVertex(p + q * b[n], new Vector4(0, 0, 1f, 1f));
                     AddVertex(p + q * b[e], new Vector4(0, 0, 1f, 1f));
-                    for (int k = i0; k < i0 + 4; k++) c[k] = new Color(tint.r * shade, tint.g * shade, tint.b * shade, near);
                     tri.AddRange(new[] { i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3 });
                 }
 
+                shade = 1f;
                 int i = v.Count;
                 AddVertex(p + q * new Vector3(-hw, -hh, 0f), new Vector4(0, 0, 0, 0));
                 AddVertex(p + q * new Vector3(hw, -hh, 0f), new Vector4(1, 0, 0, 0));
@@ -165,16 +217,17 @@ namespace FixedCamVr.Streaming
                     uv0.Add(uv);
                     uv1.Add(info);
                     uv2.Add(home);
+                    uv3.Add(new Vector4(seat.band, shade, 0f, 0f));
                     c.Add(tint);
                 }
             }
 
-            return Assemble("ScreenMultiplySurfaces", v, uv0, uv1, uv2, c, tri);
+            return Assemble("ScreenMultiplySurfaces", v, uv0, uv1, uv2, uv3, c, tri);
         }
 
         /// <summary>
         /// 暈のメッシュ。面の少し奥へ置くので、面に隠れた所は深度で落ち、周りの環だけが塗られる。
-        /// uv0 = (-1..1 の xy, 面の半分の大きさに対する暈の倍率, 未使用)、uv1 / uv2 / color は面と同じ。
+        /// uv0 = (-1..1 の xy, 面の半分の大きさに対する暈の倍率, 未使用)、uv1 / uv2 / uv3 / color は面と同じ。
         /// </summary>
         public static Mesh BuildGlow()
         {
@@ -182,6 +235,7 @@ namespace FixedCamVr.Streaming
             var uv0 = new List<Vector4>();
             var uv1 = new List<Vector4>();
             var uv2 = new List<Vector4>();
+            var uv3 = new List<Vector4>();
             var c = new List<Color>();
             var tri = new List<int>();
 
@@ -205,25 +259,27 @@ namespace FixedCamVr.Streaming
                     uv0.Add(new Vector4(k.x, k.y, GlowScale, 0f));
                     uv1.Add(info);
                     uv2.Add(home);
+                    uv3.Add(new Vector4(seat.band, 1f, 0f, 0f));
                     c.Add(tint);
                 }
                 tri.AddRange(new[] { i, i + 1, i + 2, i, i + 2, i + 3 });
             }
 
-            return Assemble("ScreenMultiplyGlow", v, uv0, uv1, uv2, c, tri);
+            return Assemble("ScreenMultiplyGlow", v, uv0, uv1, uv2, uv3, c, tri);
         }
 
         private static Mesh Assemble(string name, List<Vector3> v, List<Vector4> uv0, List<Vector4> uv1,
-                                     List<Vector4> uv2, List<Color> c, List<int> tri)
+                                     List<Vector4> uv2, List<Vector4> uv3, List<Color> c, List<int> tri)
         {
             var mesh = new Mesh { name = name };
             mesh.SetVertices(v);
             mesh.SetUVs(0, uv0);
             mesh.SetUVs(1, uv1);
             mesh.SetUVs(2, uv2);
+            mesh.SetUVs(3, uv3);
             mesh.SetColors(c);
             mesh.SetTriangles(tri, 0);
-            // 群れは常に頭の位置にあり、全周に広がる。奥から寄る分も入れる。
+            // 群れは常に頭の位置にあり、全周に広がる。奥から寄る分と、床に映した分も入れる。
             mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 40f);
             return mesh;
         }

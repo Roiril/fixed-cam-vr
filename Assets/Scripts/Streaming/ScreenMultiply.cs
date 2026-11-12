@@ -6,22 +6,26 @@ using UnityEngine.Experimental.Rendering;
 namespace FixedCamVr.Streaming
 {
     /// <summary>
-    /// <b>目の前にメインスクリーンが増える</b>演出の実体（参考 <c>mul.jpg</c>）。
+    /// <b>目の前にメインスクリーンが増える</b>演出の実体（参考 <c>mul.jpg</c>・走馬灯）。
     /// 時計と出番は <see cref="AnomalyEyes"/> が持つ（<see cref="AnomalyEyesLogic"/> ＋ <see cref="EyesCueLogic"/>）。
     /// ここがやるのは 3 つ — メインスクリーンの画を取り込む / 面を組む / 数を材質へ書く。
     ///
     /// 画は本番のメインスクリーンを専用カメラで正面から写したもの。人形・乱れ・外形がそのまま付いて来る。
-    /// 取り込みはリングへ順に積み、席ごとに少し前の画を映す。
+    /// 取り込みはリングへ順に積み、席ごとに少し前の画を映す（0 番から方位が離れるほど前の画）。
     ///
     /// メインスクリーンは<b>テレビの筐体（<c>_CrtTvCase</c>）ごと</b>写す。面の枠はメインと同じ筐体になる（0321 / 0324）。
     /// 面は自前の枠を描かない。筐体と管の境は、メインと同じ輪郭のマスク（<c>_CrtScreenMaskTex</c>）を面へ渡して決める。
     /// 色味・電源の入り切り・乱れは管の中だけに掛け、筐体は取り込んだままの色で出す。
     ///
     /// ⚠ 親（[Eyes]）は頭の<b>位置</b>にだけ付いて動く。向きはワールド固定なので、首を振るとメインスクリーンだけが
-    /// 面の前を滑り、後ろにあった面が出てくる。
+    /// 面の前を滑り、後ろにあった面が出てくる。面は帯ごとに頭を通る鉛直軸のまわりをゆっくり回る
+    /// （<see cref="ScreenMultiplyLayout.DriftDeg"/>）。
     ///
     /// 闇には黒い霧がある（<see cref="ScreenFogLogic"/>）。遠い面ほど暗く、ぼけ、光がにじむ。
     /// 点いた面は霧の奥から席まで寄ってくる（<see cref="EmergeM"/> / <see cref="ArriveSec"/>）。
+    /// 点いた直後の管は橙で、<see cref="ScreenMultiplyLayout.WarmSettleSec"/> かけて席の寒色へ落ち着く。
+    /// 閉じる面はブラウン管の電源断で消える（上下に潰れて横一線 → 点 → 残光が <see cref="ScreenMultiplyLayout.AfterglowSec"/>）。
+    /// 床（<see cref="SetFloorWorldY"/>）には面と暈を鏡映した灯が映る（<see cref="FloorReflection"/>）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class ScreenMultiply : MonoBehaviour
@@ -52,9 +56,23 @@ namespace FixedCamVr.Streaming
         public const float EmergeM = 3.4f;
         /// <summary>席に着くまでの秒。時計は自前（目の時計の「間」で止まらない）。</summary>
         public const float ArriveSec = 1.5f;
-        /// <summary>取り込みの mip の段数。霧のぼけに使う。</summary>
+        /// <summary>取り込みの mip の段数。霧のぼけと床の映り込みのぼけに使う。</summary>
         private const int FeedMips = 5;
         private const float NeverOpened = 1e9f;
+
+        /// <summary>
+        /// 床に灯を映すか。⚠ 粗が出る・闇が灰色に寄るなら false にする（最初の霧の版で、にじみを強めて闇が灰色に寄った）。
+        /// </summary>
+        public const bool FloorReflection = true;
+        /// <summary>床に映った灯の明るさ（面に対する比）。</summary>
+        public const float MirrorGain = 0.18f;
+        /// <summary>床に映った灯のぼけ（取り込みの mip の段を足す数）。</summary>
+        public const float MirrorBlurLod = 2f;
+        /// <summary>床の水平の揺らぎ（度・秒）。水面に映った灯に見せる。</summary>
+        public const float MirrorSwayDeg = 0.4f;
+        public const float MirrorSwaySec = 5f;
+        /// <summary>頭からの水平距離がここまでで映り込みが消える（m）。</summary>
+        public const float MirrorFadeM = 6f;
 
         private static readonly int FeedTexId = Shader.PropertyToID("_FeedTex");
         private static readonly int BigId = Shader.PropertyToID("_WallBig");
@@ -71,20 +89,31 @@ namespace FixedCamVr.Streaming
         private static readonly int GlowGainId = Shader.PropertyToID("_WallGlowGain");
         private static readonly int NowId = Shader.PropertyToID("_WallNow");
         private static readonly int OpenAtId = Shader.PropertyToID("_WallOpenAt");
+        private static readonly int ClosedAtId = Shader.PropertyToID("_WallClosedAt");
+        private static readonly int AfterglowSecId = Shader.PropertyToID("_WallAfterglowSec");
         private static readonly int ArriveSecId = Shader.PropertyToID("_WallArriveSec");
         private static readonly int EmergeId = Shader.PropertyToID("_WallEmergeM");
         private static readonly int FogDensityId = Shader.PropertyToID("_WallFogDensity");
         private static readonly int FogClearId = Shader.PropertyToID("_WallFogClearM");
         private static readonly int FogBlurId = Shader.PropertyToID("_WallFogBlur");
         private static readonly int FarShowId = Shader.PropertyToID("_WallFarShow");
+        private static readonly int WarmId = Shader.PropertyToID("_WallWarm");
+        private static readonly int DriftId = Shader.PropertyToID("_WallDrift");
+        private static readonly int MirrorId = Shader.PropertyToID("_WallMirror");
+        private static readonly int FloorYId = Shader.PropertyToID("_WallFloorY");
+        private static readonly int MirrorLookId = Shader.PropertyToID("_WallMirrorLook");
+        private static readonly int MirrorFadeId = Shader.PropertyToID("_WallMirrorFadeM");
         private static readonly int ScreenMaskId = Shader.PropertyToID("_CrtScreenMaskTex");
         private static readonly int CrtReferenceId = Shader.PropertyToID("_CrtReference");
         private static readonly int TubeMaskId = Shader.PropertyToID("_WallTubeMask");
         private static readonly int HasTubeMaskId = Shader.PropertyToID("_WallHasTubeMask");
 
+        // 面と暈。[0] がそのもの、[1] が床に映した分。
         private Mesh? _surfaceMesh, _glowMesh;
-        private Material? _surfaceMat, _glowMat;
-        private MeshRenderer? _surfaceRenderer, _glowRenderer;
+        private readonly Material?[] _surfaceMats = new Material?[2];
+        private readonly Material?[] _glowMats = new Material?[2];
+        private readonly MeshRenderer?[] _surfaceRenderers = new MeshRenderer?[2];
+        private readonly MeshRenderer?[] _glowRenderers = new MeshRenderer?[2];
         private Camera? _captureCam;
         private RenderTexture? _captureRt, _tileRt, _ring;
         private MjpegScreen? _screen;
@@ -93,7 +122,12 @@ namespace FixedCamVr.Streaming
         private int _ringFilled;
         private float _sinceCapture;
         private readonly float[] _openAt = new float[ScreenMultiplyLayout.MaxSeats];
+        private readonly float[] _closedAt = new float[ScreenMultiplyLayout.MaxSeats];
+        // シェーダへは 4 席ずつ詰めて渡す（float の配列は 1 要素ごとに float4 の場所を取る）。
+        private readonly Vector4[] _openAtPacked = new Vector4[ScreenMultiplyLayout.MaxSeats / 4];
+        private readonly Vector4[] _closedAtPacked = new Vector4[ScreenMultiplyLayout.MaxSeats / 4];
         private float _now;
+        private float _floorWorldY;
 
         /// <summary>面を描く材質と取り込みの器を組めたか。</summary>
         public bool IsBuilt { get; private set; }
@@ -104,11 +138,17 @@ namespace FixedCamVr.Streaming
         /// <summary>いま点いている枚数。</summary>
         public int OpenCount { get; private set; }
 
+        /// <summary>電源が切れた後の残光が残っている枚数。</summary>
+        public int AfterglowCount { get; private set; }
+
         /// <summary>席へ寄っている途中の枚数（画に出た側の観測）。点いた直後は 1 以上、落ち着けば 0。</summary>
         public int ArrivingCount { get; private set; }
 
         /// <summary>出番の中で、席より奥に面があった最大の距離（m）。0 のままなら奥から寄る動きは出ていない。</summary>
         public float MaxEmergeSeenM { get; private set; }
+
+        /// <summary>出番の頭からの秒（帯の回転と点いた時刻の時計）。</summary>
+        public float RunSec => _now;
 
         private void Awake() => Build();
 
@@ -116,8 +156,8 @@ namespace FixedCamVr.Streaming
         {
             Kill(_surfaceMesh);
             Kill(_glowMesh);
-            Kill(_surfaceMat);
-            Kill(_glowMat);
+            foreach (Material? m in _surfaceMats) Kill(m);
+            foreach (Material? m in _glowMats) Kill(m);
             if (_captureCam != null) Kill(_captureCam.gameObject);
             ReleaseRt(ref _captureRt);
             ReleaseRt(ref _tileRt);
@@ -181,19 +221,38 @@ namespace FixedCamVr.Streaming
 
             _surfaceMesh = ScreenMultiplyLayout.BuildSurfaces();
             _glowMesh = ScreenMultiplyLayout.BuildGlow();
-            _surfaceMat = new Material(surface) { name = "ScreenMultiply (runtime)" };
-            _glowMat = new Material(glow) { name = "ScreenMultiplyGlow (runtime)" };
-            _surfaceMat.SetTexture(FeedTexId, _ring);
-            _surfaceMat.SetFloat(RingCountId, ScreenMultiplyLayout.DelaySlots);
-            _surfaceMat.SetFloat(DesatId, Desaturate);
-            _surfaceMat.SetFloat(GainId, SurfaceGain);
-            _surfaceMat.SetFloat(BodyGainId, BodyGain);
-            _glowMat.SetFloat(GlowGainId, GlowGain);
+            for (int k = 0; k < 2; k++)
+            {
+                string suffix = k == 0 ? "" : " floor";
+                var sm = new Material(surface) { name = $"ScreenMultiply{suffix} (runtime)" };
+                var gm = new Material(glow) { name = $"ScreenMultiplyGlow{suffix} (runtime)" };
+                sm.SetTexture(FeedTexId, _ring);
+                sm.SetFloat(RingCountId, ScreenMultiplyLayout.DelaySlots);
+                sm.SetFloat(DesatId, Desaturate);
+                sm.SetFloat(GainId, SurfaceGain);
+                sm.SetFloat(BodyGainId, BodyGain);
+                gm.SetFloat(GlowGainId, GlowGain);
+                foreach (Material m in new[] { sm, gm })
+                {
+                    Color w = ScreenMultiplyLayout.WarmTint;
+                    m.SetVector(WarmId, new Vector4(w.r, w.g, w.b, ScreenMultiplyLayout.WarmSettleSec));
+                    m.SetFloat(AfterglowSecId, ScreenMultiplyLayout.AfterglowSec);
+                    m.SetFloat(MirrorId, k);
+                    m.SetVector(MirrorLookId, new Vector4(MirrorGain, MirrorBlurLod, MirrorSwayDeg * Mathf.Deg2Rad,
+                                                          MirrorSwaySec));
+                    m.SetFloat(MirrorFadeId, MirrorFadeM);
+                    m.SetFloat(FloorYId, -1.6f);
+                }
+                _surfaceMats[k] = sm;
+                _glowMats[k] = gm;
+            }
             SetLook(ScreenFogLogic.Density, EmergeM, showFar: true);
             ResetOpenTimes();
 
-            _surfaceRenderer = AddPart("ScreenMultiplySurfaces", _surfaceMesh, _surfaceMat);
-            _glowRenderer = AddPart("ScreenMultiplyGlow", _glowMesh, _glowMat);
+            _surfaceRenderers[0] = AddPart("ScreenMultiplySurfaces", _surfaceMesh, _surfaceMats[0]!);
+            _glowRenderers[0] = AddPart("ScreenMultiplyGlow", _glowMesh, _glowMats[0]!);
+            _surfaceRenderers[1] = AddPart("ScreenMultiplySurfacesFloor", _surfaceMesh, _surfaceMats[1]!);
+            _glowRenderers[1] = AddPart("ScreenMultiplyGlowFloor", _glowMesh, _glowMats[1]!);
             IsBuilt = true;
             Hide();
         }
@@ -219,8 +278,11 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void SetLook(float fogDensity, float emergeM, bool showFar)
         {
-            WriteLook(_surfaceMat, fogDensity, emergeM, showFar);
-            WriteLook(_glowMat, fogDensity, emergeM, showFar);
+            for (int k = 0; k < 2; k++)
+            {
+                WriteLook(_surfaceMats[k], fogDensity, emergeM, showFar);
+                WriteLook(_glowMats[k], fogDensity, emergeM, showFar);
+            }
         }
 
         private static void WriteLook(Material? m, float fogDensity, float emergeM, bool showFar)
@@ -240,11 +302,28 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void SetCaptureSource(Renderer screen) => _screenRenderer = screen;
 
+        /// <summary>
+        /// 床のワールドの高さ。灯はこの面に映る。本番は <see cref="AnomalyEyes"/> が部屋の床（course の床）から毎フレーム書く。
+        /// </summary>
+        public void SetFloorWorldY(float worldY) => _floorWorldY = worldY;
+
+        /// <summary>
+        /// 席 <paramref name="index"/> のいまの中心（群れの座標）。帯の回転を当てたもの。
+        /// 0 番の方向（群れの向き直し）と、最後に点いた席の方角（音）に使う。
+        /// </summary>
+        public Vector3 SeatCenter(int index)
+            => ScreenMultiplyLayout.DriftedCenter(ScreenMultiplyLayout.Seats[index], _now);
+
         private void ResetOpenTimes()
         {
-            for (int i = 0; i < _openAt.Length; i++) _openAt[i] = NeverOpened;
+            for (int i = 0; i < _openAt.Length; i++)
+            {
+                _openAt[i] = NeverOpened;
+                _closedAt[i] = NeverOpened;
+            }
             _now = 0f;
             ArrivingCount = 0;
+            AfterglowCount = 0;
             MaxEmergeSeenM = 0f;
         }
 
@@ -260,23 +339,38 @@ namespace FixedCamVr.Streaming
         /// <summary>1 フレーム分。出番の間（兆しの闇も含む）だけ呼ぶ。</summary>
         public void Drive(float dt, float big, float field, float span, float closing, float clock)
         {
-            if (!IsBuilt || _surfaceMat == null || _glowMat == null) return;
+            if (!IsBuilt || _surfaceMats[0] == null) return;
 
+            // 閉じ始めたら取り込みを止める。閉じの段は区間の終わり（録画が尽きる暗転）と重なり、
+            // 止めないとメインの暗転がそのまま面へ写って、電源が切れて見える前に全部が黒くなる。
             _sinceCapture += dt;
-            if (_sinceCapture >= CaptureIntervalSec)
+            if (_sinceCapture >= CaptureIntervalSec && closing < 0.5f)
             {
                 _sinceCapture = 0f;
                 CaptureMainScreen();
             }
 
-            // 席ごとの「点いた時刻」。奥から寄る動きはここから数える（目の時計は途中で止まるので使わない）。
+            // 席ごとの「点いた時刻」と「消えた時刻」。奥から寄る動き・橙からの落ち着き・残光はここから数える
+            // （目の時計は途中で止まるので使わない）。
             _now += dt;
             int seats = Mathf.Min(ScreenMultiplyLayout.Seats.Length, _openAt.Length);
-            int arriving = 0;
+            int arriving = 0, afterglow = 0;
             for (int i = 0; i < seats; i++)
             {
                 bool lit = ScreenMultiplyLayout.SeatOpen(i, big, field, span) > 0.001f;
-                if (!lit) { _openAt[i] = NeverOpened; continue; }
+                if (!lit)
+                {
+                    if (_openAt[i] < NeverOpened && _closedAt[i] >= NeverOpened) _closedAt[i] = _now;
+                    if (_closedAt[i] < NeverOpened && _now - _closedAt[i] < ScreenMultiplyLayout.AfterglowSec)
+                    {
+                        afterglow++;
+                        continue;
+                    }
+                    _openAt[i] = NeverOpened;
+                    _closedAt[i] = NeverOpened;
+                    continue;
+                }
+                if (_closedAt[i] < NeverOpened) { _openAt[i] = NeverOpened; _closedAt[i] = NeverOpened; }
                 if (_openAt[i] >= NeverOpened) _openAt[i] = _now;
                 float a = (_now - _openAt[i]) / ArriveSec;
                 if (a >= 1f) continue;
@@ -285,35 +379,67 @@ namespace FixedCamVr.Streaming
                 if (left > MaxEmergeSeenM) MaxEmergeSeenM = left;
             }
             ArrivingCount = arriving;
-            _surfaceMat.SetFloatArray(OpenAtId, _openAt);
-            _glowMat.SetFloatArray(OpenAtId, _openAt);
-            _surfaceMat.SetFloat(NowId, _now);
-            _glowMat.SetFloat(NowId, _now);
+            AfterglowCount = afterglow;
+            Pack(_openAt, _openAtPacked);
+            Pack(_closedAt, _closedAtPacked);
 
-            _surfaceMat.SetFloat(BigId, big);
-            _surfaceMat.SetFloat(FieldId, field);
-            _surfaceMat.SetFloat(SpanId, span);
-            _surfaceMat.SetFloat(ClosingId, closing);
-            _surfaceMat.SetFloat(TimeId, clock);
-            _surfaceMat.SetFloat(RingHeadId, _ringHead);
-            _surfaceMat.SetFloat(RingFilledId, _ringFilled);
-            _glowMat.SetFloat(BigId, big);
-            _glowMat.SetFloat(FieldId, field);
-            _glowMat.SetFloat(SpanId, span);
-            _glowMat.SetFloat(TimeId, clock);
+            var drift = new Vector4(
+                ScreenMultiplyLayout.DriftDeg(ScreenMultiplyLayout.BandEye, _now) * Mathf.Deg2Rad,
+                ScreenMultiplyLayout.DriftDeg(ScreenMultiplyLayout.BandUpper, _now) * Mathf.Deg2Rad,
+                ScreenMultiplyLayout.DriftDeg(ScreenMultiplyLayout.BandTop, _now) * Mathf.Deg2Rad,
+                ScreenMultiplyLayout.DriftDeg(ScreenMultiplyLayout.BandFar, _now) * Mathf.Deg2Rad);
+            // 床は群れの座標で渡す（親は頭の位置にあり、向きは鉛直軸まわりだけ）。
+            float floorLocalY = transform.InverseTransformPoint(new Vector3(transform.position.x, _floorWorldY,
+                                                                            transform.position.z)).y;
+
+            for (int k = 0; k < 2; k++)
+            {
+                WriteFrame(_surfaceMats[k], drift, floorLocalY, big, field, span, clock);
+                WriteFrame(_glowMats[k], drift, floorLocalY, big, field, span, clock);
+                Material sm = _surfaceMats[k]!;
+                sm.SetFloat(ClosingId, closing);
+                sm.SetFloat(RingHeadId, _ringHead);
+                sm.SetFloat(RingFilledId, _ringFilled);
+            }
 
             OpenCount = ScreenMultiplyLayout.CountOpen(big, field);
             // 最初の画が入るまでは出さない（リングの中身は前の体験者の画）。
-            bool show = _ringFilled > 0 && OpenCount > 0;
-            if (_surfaceRenderer != null) _surfaceRenderer.enabled = show;
-            if (_glowRenderer != null) _glowRenderer.enabled = show;
+            bool show = _ringFilled > 0 && (OpenCount > 0 || afterglow > 0);
+            for (int k = 0; k < 2; k++)
+            {
+                bool on = show && (k == 0 || FloorReflection);
+                if (_surfaceRenderers[k] != null) _surfaceRenderers[k]!.enabled = on;
+                if (_glowRenderers[k] != null) _glowRenderers[k]!.enabled = on;
+            }
+        }
+
+        private void WriteFrame(Material? m, Vector4 drift, float floorLocalY, float big, float field, float span,
+                                float clock)
+        {
+            if (m == null) return;
+            m.SetVectorArray(OpenAtId, _openAtPacked);
+            m.SetVectorArray(ClosedAtId, _closedAtPacked);
+            m.SetFloat(NowId, _now);
+            m.SetVector(DriftId, drift);
+            m.SetFloat(FloorYId, floorLocalY);
+            m.SetFloat(BigId, big);
+            m.SetFloat(FieldId, field);
+            m.SetFloat(SpanId, span);
+            m.SetFloat(TimeId, clock);
+        }
+
+        private static void Pack(float[] src, Vector4[] dst)
+        {
+            for (int i = 0; i < dst.Length; i++)
+                dst[i] = new Vector4(src[i * 4], src[i * 4 + 1], src[i * 4 + 2], src[i * 4 + 3]);
         }
 
         public void Hide()
         {
             OpenCount = 0;
-            if (_surfaceRenderer != null) _surfaceRenderer.enabled = false;
-            if (_glowRenderer != null) _glowRenderer.enabled = false;
+            AfterglowCount = 0;
+            foreach (MeshRenderer? r in _surfaceRenderers) if (r != null) r.enabled = false;
+            foreach (MeshRenderer? r in _glowRenderers) if (r != null) r.enabled = false;
         }
 
         private void CaptureMainScreen()
@@ -358,10 +484,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void BindTubeMask(Material? screenMaterial)
         {
-            if (_surfaceMat == null) return;
             Texture? mask = TubeMaskOf(screenMaterial);
-            _surfaceMat.SetTexture(TubeMaskId, mask != null ? mask : Texture2D.whiteTexture);
-            _surfaceMat.SetFloat(HasTubeMaskId, mask != null ? 1f : 0f);
+            foreach (Material? m in _surfaceMats)
+            {
+                if (m == null) continue;
+                m.SetTexture(TubeMaskId, mask != null ? mask : Texture2D.whiteTexture);
+                m.SetFloat(HasTubeMaskId, mask != null ? 1f : 0f);
+            }
         }
 
         /// <summary>面へ渡す管の輪郭。参照の筐体つきでなければ null（取り込みの alpha を使う）。</summary>
