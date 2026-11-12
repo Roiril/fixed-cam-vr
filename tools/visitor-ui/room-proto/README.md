@@ -8,7 +8,7 @@
 `.claude/launch.json` の `room-proto`（`node tools/visitor-ui/room-proto/serve.cjs --port 8142`）→ `http://localhost:8142/`。
 空白で再生と停止。左右の矢印で前後の文。声・字幕・絵はタブレットの正本（`tablet/app/src/main/assets/web/asset/`）をそのまま読む。
 
-- `?eyes=0` 目元の闇を外す
+- `?eyes=0` 目元の乱れを外す（目の帯の画素を額と頬の画素へ差し替え続ける。時刻から作るので毎コマ描き直す）
 - `?doll=0` 人形の頭が傾く演出を外す
 - `?sfx=0` 効果音を鳴らさない（声だけ）
 - `?w=1280` 描く幅を固定する（書き出し用）
