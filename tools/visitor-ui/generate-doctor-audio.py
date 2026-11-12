@@ -6,12 +6,13 @@
 入力は `elevenlabs-input-ja-v4.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
 鍵は環境変数 `ELEVENLABS_API_KEY`（値は表示しない。`~/.claude/rules/secrets.md`）。
 
-することは 5 つ。
+することは 6 つ。
 1. `/with-timestamps` で合成する。音と一緒に、1 字ごとの時刻が返る
 2. 各文の頭の語を時刻の列から探し、文と文の間の無音の真ん中で区切る
 3. 場面ごとに `tablet/.../asset/<場面>-ja-v4.mp3` へ切り出す
 4. `briefing-v1.json` の日本語の `durationMs` を実測へ直し、`audio.ja` を付ける
-5. 声の大きさの列を `asset/doctor-voice-ja-v4.json` に書く（テレビの下の波形が使う）
+5. 長い間を詰める（`PHRASE_PAUSE_MAX` / `SENTENCE_PAUSE_MAX`。頭だけ遅く聞こえるのを防ぐ）
+6. 声の大きさの列を `asset/doctor-voice-ja-v4.json` に書く（テレビの下の波形が使う）
 
 切り出すときに `--tempo`（既定 1.2）で速める。最初の場面の頭には `--lead-in`（既定 1.0 秒）の無音を置く。
 原稿は読み違えやすい語をかなで書く（「装置」→「そうち」。ANCHORS も原稿の字に合わせる）。残してある元の音は等速のまま。
@@ -102,6 +103,96 @@ def voice_envelope(path, hz=20):
     return rms
 
 
+# 間の上限（合成した音の秒。速める前）。合成は「……」と [pause] の多い頭の文ほど間を長く取り、
+# 話す速さは一定なのに、頭が遅く後ろへ行くほど速く聞こえた（2026-11-12 実測: 間を除いた速さは
+# 文ごとに 7〜9 拍/秒でほぼ一定、間を含めると頭の 4 文が 2.6〜4.6 拍/秒・後半が 5.5〜7 拍/秒）。
+# 文の中の間と文と文の間を、それぞれこの長さまで詰める。詰めるのは波形が静かな所だけ。
+PHRASE_PAUSE_MAX = 0.35
+SENTENCE_PAUSE_MAX = 0.90
+QUIET_RMS = 0.01      # 20ms の窓の RMS がこれ未満を無音とみなす（約 -40 dBFS）
+
+
+def is_voiced(c):
+    return c.isalnum() or c == "ー"
+
+
+def decode_mono(path, rate=44100):
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path), "-ac", "1", "-ar", str(rate),
+                          "-f", "s16le", "-"], check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0, rate
+
+
+def quiet_run(samples, rate, lo, hi):
+    """[lo, hi) の中で、波形がいちばん長く続けて静かな区間（秒）。無ければ None。"""
+    import numpy as np
+    win = int(rate * 0.02)
+    i0, i1 = int(lo * rate) // win, int(hi * rate) // win
+    quiet = [float(np.sqrt(np.mean(samples[w * win:(w + 1) * win] ** 2))) < QUIET_RMS for w in range(i0, i1)]
+    best, run = (0, 0), None
+    for w, q in enumerate(quiet + [False]):
+        if q and run is None:
+            run = w
+        elif not q and run is not None:
+            if w - run > best[1] - best[0]:
+                best = (run, w)
+            run = None
+    if best[1] == best[0]:
+        return None
+    return (i0 + best[0]) * win / rate, (i0 + best[1]) * win / rate
+
+
+def voiced_indices(chars, starts, ends):
+    """声になる字の位置。演技の指定（[...] の中）は除く。指定の字にも時刻が付いており、
+    それを前の字と取り違えると、文の境が次の文の声の中に入った（2026-11-12 実測。場面の終わりに次の頭の語が混ざった）。"""
+    voiced, depth = [], 0
+    for k, c in enumerate(chars):
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth = max(0, depth - 1)
+        elif depth == 0 and is_voiced(c) and ends[k] > starts[k]:
+            voiced.append(k)
+    return voiced
+
+
+def long_pauses(chars, starts, ends, samples, rate):
+    """詰める区間（秒）の列。字の時刻から長い間を探し、その中の波形が静かな部分だけを返す。"""
+    voiced = voiced_indices(chars, starts, ends)
+    cuts = []
+    for a, b in zip(voiced, voiced[1:]):
+        between = chars[a + 1:b]
+        cap = SENTENCE_PAUSE_MAX if ("。" in between or "？" in between) else PHRASE_PAUSE_MAX
+        # 間の長さは波形の無音で測る。字の時刻は声より 0.4 秒ほど遅れることがあり（2026-11-12 実測）、
+        # 字の時刻から詰めると、次の文の側に残すはずの無音が消えて声の出だしに接した
+        q = quiet_run(samples, rate, ends[a], starts[b])
+        if not q:
+            continue
+        lo, hi = q[0] + cap / 2, q[1] - cap / 2
+        if hi - lo >= 0.05:
+            cuts.append((lo, hi))
+    return cuts
+
+
+def remap(t, cuts):
+    """元の時刻 t を、間を詰めた後の時刻へ。"""
+    return t - sum(max(0.0, min(t, b) - a) for a, b in cuts)
+
+
+def kept(start, end, cuts):
+    """[start, end) から詰める区間を除いた残りの区間の列。"""
+    out, at = [], start
+    for a, b in cuts:
+        if b <= at or a >= end:
+            continue
+        if a > at:
+            out.append((at, a))
+        at = max(at, b)
+    if at < end:
+        out.append((at, end))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--voice", required=True)
@@ -121,21 +212,27 @@ def main():
     starts, ends = al["character_start_times_seconds"], al["character_end_times_seconds"]
     total_ms = duration_ms(TAKE_MP3)
 
-    # 各文の頭の時刻と、その直前の字の終わり。区切りは無音の真ん中。
+    samples, rate = decode_mono(TAKE_MP3)
+    voiced = voiced_indices(al["characters"], starts, ends)
+    # 各文の頭と、その直前の声になる字の終わり。区切りはその間で波形がいちばん長く静かな所の真ん中。
     cue_bounds, cursor = [], 0
     for scene_id, anchors in ANCHORS.items():
         for anchor in anchors:
             i = chars.find(anchor, cursor)
             if i < 0:
                 raise SystemExit(f"時刻の列に「{anchor}」が無い（入力原稿と ANCHORS を揃える）")
-            j = i - 1
-            while j >= 0 and (chars[j].isspace() or ends[j] <= starts[j]):
-                j -= 1
-            prev_end = ends[j] if j >= 0 else 0.0
-            first = not cue_bounds  # 最初の文は合成の頭から取る（声の頭を削らない。0331）
-            cue_bounds.append((scene_id, 0.0 if first or j < 0 else max(0.0, (prev_end + starts[i]) / 2.0)))
+            prev = [v for v in voiced if v < i]
+            if not cue_bounds or not prev:
+                cue_bounds.append((scene_id, 0.0))   # 最初の文は合成の頭から取る（声の頭を削らない。0331）
+            else:
+                q = quiet_run(samples, rate, ends[prev[-1]], starts[i])
+                if not q:
+                    raise SystemExit(f"「{anchor}」の手前に無音が見つからない（区切ると声が切れる）")
+                cue_bounds.append((scene_id, (q[0] + q[1]) / 2))
             cursor = i + len(anchor)
-    cut_ms = [round(t * 1000) for _, t in cue_bounds] + [total_ms]
+    cut_s = [t for _, t in cue_bounds] + [total_ms / 1000]
+    pauses = long_pauses(al["characters"], starts, ends, samples, rate)
+    cut_ms = [round(remap(t, pauses) * 1000) for t in cut_s]   # 間を詰めた後の文の境
 
     raw = io.open(BRIEFING, encoding="utf-8", newline="").read()
     nl = "\r\n" if "\r\n" in raw else "\n"
@@ -145,12 +242,15 @@ def main():
         n = len(ANCHORS[scene["id"]])
         if len(scene["cues"]["ja"]) != n:
             raise SystemExit(f"{scene['id']}: 文の数が違う（JSON {len(scene['cues']['ja'])} / ANCHORS {n}）")
-        start, end = cut_ms[k], cut_ms[k + n]
         lead_ms = round(args.lead_in * 1000) if k == 0 else 0
         target = ASSETS / f"{scene['id']}-ja-{VERSION}.mp3"
         tmp = target.with_name(target.name + ".tmp")
+        parts = kept(cut_s[k], cut_s[k + n], pauses)
+        graph = ";".join(f"[0:a]atrim=start={a:.4f}:end={b:.4f},asetpts=PTS-STARTPTS[p{i}]" for i, (a, b) in enumerate(parts))
+        graph += ";" + "".join(f"[p{i}]" for i in range(len(parts))) + f"concat=n={len(parts)}:v=0:a=1,atempo={args.tempo:.3f}"
+        graph += (f",adelay={lead_ms}:all=1,asetpts=N/SR/TB" if lead_ms else "") + "[out]"
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(TAKE_MP3),
-                        "-af", f"atrim=start={start / 1000:.3f}:end={end / 1000:.3f},asetpts=PTS-STARTPTS,atempo={args.tempo:.3f}" + (f",adelay={lead_ms}:all=1,asetpts=N/SR/TB" if lead_ms else ""),
+                        "-filter_complex", graph, "-map", "[out]",
                         "-ac", "1", "-ar", "48000", "-codec:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", str(tmp)],
                        check=True)
         tmp.replace(target)
@@ -174,7 +274,9 @@ def main():
     io.open(tmp, "w", encoding="utf-8", newline="").write(out)
     json.loads(tmp.read_text(encoding="utf-8"))
     os.replace(tmp, BRIEFING)
-    print(json.dumps({"voice": take["voice"], "model": take["model"], "tempo": args.tempo, "totalMs": round(total_ms / args.tempo), "scenes": report},
+    print(json.dumps({"voice": take["voice"], "model": take["model"], "tempo": args.tempo,
+                      "pausesTrimmed": len(pauses), "trimmedSec": round(sum(b - a for a, b in pauses), 2),
+                      "totalMs": round(remap(total_ms / 1000, pauses) * 1000 / args.tempo), "scenes": report},
                      ensure_ascii=False, indent=2))
 
 
