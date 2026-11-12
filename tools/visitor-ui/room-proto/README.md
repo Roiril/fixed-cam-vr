@@ -8,7 +8,7 @@
 `.claude/launch.json` の `room-proto`（`node tools/visitor-ui/room-proto/serve.cjs --port 8142`）→ `http://localhost:8142/`。
 空白で再生と停止。左右の矢印で前後の文。声・字幕・絵はタブレットの正本（`tablet/app/src/main/assets/web/asset/`）をそのまま読む。
 
-- `?eyes=0` 目元の乱れを外す（目の帯の画素を額と頬の画素へ差し替え続ける。時刻から作るので毎コマ描き直す）
+- `?eyes=0` 目より上の乱れを外す（目・眉・額・髪を、壊れた画像データの絵 `layers/eyeglitch-*.jpg` で不透明に覆う。顔の画素は材料にしない。時刻から作るので毎コマ描き直す）
 - `?doll=0` 人形の頭が傾く演出を外す
 - `?sfx=0` 効果音を鳴らさない（声だけ）
 - `?w=1280` 描く幅を固定する（書き出し用）
@@ -22,6 +22,7 @@
 | `gen/plate-a1-lit.png` | 同じ部屋で、テレビだけを点けさせた版。使うのは光の差だけ |
 | `gen/tv-crop-in.png` → `gen/tv-hi-a1.png` | テレビのまわり (920,275)-(1672,698) を切って拡大した物と、それを Codex に精細に描き直させた物 |
 | `gen/doll-in.jpg` → `gen/doll-tilt-a1.png` | 人形の記録写真（`asset/doll-file-v1.jpg`）と、頭だけ傾けさせた版 |
+| `gen/eyeglitch-{a,b,c}1.png` → `layers/eyeglitch-{a,b,c}.jpg` | 目より上の乱れの材料。Codex に描かせた「壊れた画像データ」の絵（被写体なし）と、`make-eye-glitch.py` で灰へ寄せて明暗の幅を広げた物。色と明るさはこの道具の頭の値で決まる |
 | `build-layers.py` | 上の絵を層へ分ける → `layers/`（博士を抜いた部屋・博士・光 2 枚・ガラスの形・精細なテレビ・頭の傾いた人形・`room.json`） |
 | `make-room-sound.py` | 音。`gen` は物が動く 1 発の音を ElevenLabs で作る（`sound/src/`）。`mix` は時刻表どおりに並べて `layers/stem.mp3` にする |
 | `room-stage.js` | 舞台。1 枚の canvas に 部屋 → 精細なテレビ → テレビの中身 → 部屋への光ともや → 博士 → 博士への光 → 埃 → 灯り → 粒 の順で描く |

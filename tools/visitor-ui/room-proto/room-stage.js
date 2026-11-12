@@ -92,6 +92,9 @@
       loadImage(`${base}bg.jpg`), loadImage(`${base}body.png`), loadImage(`${base}light.jpg`), loadImage(`${base}glass.png`), loadImage(`${base}light-doc.jpg`),
     ]);
 
+    // 目より上の乱れの材料（壊れた画像データの絵。無い版は飛ばす。1 枚も無ければ乱れは掛からない）
+    const glitchPlates = (await Promise.all(['a', 'b', 'c'].map((n) => loadImage(`${base}eyeglitch-${n}.jpg`).catch(() => null)))).filter(Boolean);
+
     // テレビのまわりだけの精細な絵（寄ったときに使う。無ければ部屋の絵のまま）
     let tvHi = null;
     if (room.tvHi) {
@@ -158,39 +161,19 @@
     let shadeNow = -1;
     const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
-    // ── 目元の乱れ ──────────────────────────────────────────────
-    // 何かがこの映像へ手を入れていて、目の帯の画素だけが別の所の画素へ差し替えられ続けている、という乱れ。
-    // 黒で塗らない。顔そのものの画素（額・頬・髪・同じ行の離れた所）を、帯の中で潰して繰り返す・引き伸ばす・ずらす。
-    // 座標はすべて元の写真（1672×941）。鼻から下（y > EYE.y1）へは描かない（口の動画を入れる所）
-    const EYE = { x0: 640, x1: 1044, y0: 304, y1: 396, cy: 353, lx: 767, rx: 917 };   // lx・rx は左右の目の中心
-    const SNAP = { x: 560, y: 190, w: 564, h: 272 };   // 差し替えの元を読む範囲
-    const CHAN = { x: 698, y: 290, w: 288, h: 106, pad: 18 };   // 赤だけをずらす範囲。左右の端は肌の上に置く（髪や耳に掛けると端が赤い矩形に見える）
-    const SWEEP_MS = 2900;    // 帯の差し替えが端から端へ入れ替わる周期（うち前の 45% で入れ替わり、残りは居座る）
+    // ── 目より上の乱れ ──────────────────────────────────────────────
+    // 何かがこの映像へ手を入れていて、博士の目より上（目・眉・額・髪・頭のてっぺん）が、壊れた画像データに置き換わっている。
+    // 材料は顔から取らない。壊れた画像データの絵（layers/eyeglitch-*.jpg。Codex に描かせた版）を不透明に貼るので、下の色は 1 画素も出ない。
+    // 時間の変化は、版のどこを・どの倍率で・どの行をずらして見せるかを時刻で変える。止まる時間と跳ぶ瞬間がある。
+    // 座標は元の写真（1672×941）。鼻から下へは描かない（口の動画を入れる所）
+    const FX = { x: 560, y: 0, w: 560, h: 436, yb: 386 };   // 乱れを描く板の範囲と、下の境の基準（目の下）
+    const FX_TICK = 40;       // 跳ぶかどうかを決める刻み（ms）
+    const FX_CUT = 0.085;     // 刻みごとに跳ぶ確率。止まる長さは短いものが多く、長いものがまれ（平均 0.47 秒）
+    const FX_MAJOR = 0.38;    // 跳んだうち、版の見せる場所ごと替わる割合。残りは行のずれと下の境だけが替わる
     const BURST_MS = 4300;    // 強い乱れの周期（始まりは周期ごとに最大 2.6 秒ずれる）
-    let eyeSnap = null;
-    let eyeSnapG = null;
-    let eyeChan = null;
-    let eyeChanG = null;
-    const stripCache = new Map();
-
-    function eyeStrips(gen) {
-      // 帯の高さは、細いものが多く太いものがまれ（対数正規）。等しい高さにしない
-      if (stripCache.has(gen)) return stripCache.get(gen);
-      const out = [];
-      let y = EYE.y0;
-      let i = 0;
-      while (y < EYE.y1 - 0.5) {
-        const z = (hash(gen * 91.7 + i * 3.13) + hash(gen * 17.3 + i * 7.9 + 1) + hash(gen * 5.1 + i * 1.7 + 2) - 1.5) * 2;
-        let h = Math.min(17, Math.max(1.8, 3.4 * Math.exp(0.95 * z)));
-        h = Math.min(h, EYE.y1 - y);
-        out.push({ y, h, i });
-        y += h;
-        i += 1;
-      }
-      if (stripCache.size > 8) stripCache.clear();
-      stripCache.set(gen, out);
-      return out;
-    }
+    let eyeFx = null;
+    let eyeFxG = null;
+    let fxSpill = [];         // 頭の輪郭の外へはみ出す細い行（博士の層へ直に描く）
 
     function burstAt(t) {
       // 強い乱れ。頭で強く、すぐ弱まり、あとは止まる
@@ -202,146 +185,126 @@
       return p < 0.4 ? 1 : 0.45 * (1 - (p - 0.4) / 0.6);
     }
 
-    function drawEyeStrips(g, k, gen, t, burst) {
-      const tick = Math.floor(t / 70);
-      const frame = Math.floor(t / 33);
-      const sx0 = SNAP.x + 2;
-      const sx1 = SNAP.x + SNAP.w - 2;
-      const sy0 = SNAP.y + 1;
-      const sy1 = SNAP.y + SNAP.h - 1;
-      const put = (sx, sy, sw, sh, dx, dy, dw, dh) => {
-        // 元の範囲をはみ出さないように寄せてから貼る
-        sw = Math.min(sw, sx1 - sx0);
-        sx = Math.min(sx1 - sw, Math.max(sx0, sx));
-        sy = Math.min(sy1 - sh, Math.max(sy0, sy));
-        g.drawImage(eyeSnap, (sx - SNAP.x) * k, (sy - SNAP.y) * k, sw * k, sh * k, dx * k, dy * k, dw * k + 0.6, dh * k + 0.6);
-      };
-      for (const st of eyeStrips(gen)) {
-        // 行ごとの差し替えは、不規則な間で一部の行だけ入れ替わる（全部を毎コマ変えない）
-        let roll = Math.floor(tick / 12);
-        for (let b = 0; b < 12; b++) {
-          if (hash((tick - b) * 13.7 + st.i * 2.9 + gen) < 0.3) { roll = tick - b; break; }
-        }
-        if (burst > 0) roll = frame;
-        const s = gen * 101.3 + st.i * 17.1 + (roll % 4096) * 5.77;
-        const r = (c) => hash(s + c * 0.37);
-        // 覆うのは左右の目のまわりだけ。目の高さでは 2 つが繋がり、眉と目の下では別れて細る（帯にしない）
-        const dy = Math.abs(st.y + st.h / 2 - EYE.cy) / (44 + 5 * Math.sin(t / 1300 + gen));
-        if (dy >= 1) continue;
-        const hw = 80 * Math.sqrt(1 - dy * dy);
-        let la = EYE.lx - hw * (0.74 + 0.5 * r(1));
-        let lb = EYE.lx + hw * (0.74 + 0.5 * r(2));
-        let ra = EYE.rx - hw * (0.74 + 0.5 * r(3));
-        let rb = EYE.rx + hw * (0.74 + 0.5 * r(4));
-        // まれに 1 本だけ遠くまで伸びる（長いものはまれ）
-        if (r(5) < 0.09) { if (r(6) < 0.5) la -= 40 + 110 * r(7); else rb += 40 + 110 * r(7); }
-        const cuts = lb >= ra - 6 ? [la, rb] : [la, lb, ra, rb];
-        const gap = cuts.length === 4;
-        if (!gap && r(8) < 0.6) cuts.push(la + (rb - la) * (0.2 + 0.6 * r(9)));
-        cuts.sort((p, q) => p - q);
-        for (let c = 0; c < cuts.length - 1; c++) {
-          const x = cuts[c];
-          const w = cuts[c + 1] - x;
-          if (w < 3 || (gap && c === 1)) continue;
-          const q = (n) => r(10 + c * 9 + n);
-          // 元の行は額か頬。目の行そのものは使わない（目の欠片も暗い塊も帯へ入れない）
-          const where = q(1);
-          const sy = where < 0.78 ? 256 + q(2) * 42 : 398 + q(2) * 18;
-          const crawl = 16 * Math.sin(t / 430 + s);     // 入れ替わりの合間も、元の位置がゆっくり這う
-          const mode = q(3);
-          if (mode < 0.42) {
-            // 横に潰して繰り返す。周期は行ごとに違う
-            const sw = 22 + 60 * q(4) * q(4);
-            const pd = Math.max(16, sw * (0.3 + 0.5 * q(5)));
-            const sx = 720 + q(6) * (960 - 720 - sw) + crawl;
-            for (let px = x; px < x + w; px += pd) {
-              const dw = Math.min(pd, x + w - px);
-              put(sx, sy, sw * (dw / pd), st.h, px, st.y, dw, st.h);
-            }
-          } else if (mode < 0.64) {
-            // 細い 1 列を横へ引き伸ばす
-            const sw = 2 + 5 * q(4);
-            put(725 + q(6) * 230 + crawl, sy, sw, st.h, x, st.y, w, st.h);
-          } else {
-            // 離れた所の画を、そのまま横へずらして置く
-            const dir = q(4) < 0.5 ? -1 : 1;
-            const dx = dir * (44 + 90 * q(5)) * (1 + 1.2 * burst) + crawl * 0.5;
-            // 元は顔の明るい幅の中へ寄せる（髪や影の暗い塊を帯へ持ち込まない）
-            put(Math.max(695, Math.min(985 - w, x + dx)), sy, w, st.h, x, st.y, w, st.h);
-          }
+    function fxCuts(t) {
+      // いまの絵が始まった刻み（minor）と、版の場所が最後に替わった刻み（major）
+      const n = Math.floor(t / FX_TICK);
+      let minor = -1;
+      let major = -1;
+      for (let b = 0; b < 400; b++) {
+        const m = n - b;
+        if (hash(m * 9.173 + 0.11) < FX_CUT) {
+          if (minor < 0) minor = m;
+          if (hash(m * 4.61 + 0.57) < FX_MAJOR) { major = m; break; }
         }
       }
+      if (minor < 0) minor = Math.floor(n / 400) * 400;
+      if (major < 0) major = Math.floor(n / 400) * 400;
+      return { minor, major };
     }
 
-    function drawEyeShade(g, k, t) {
-      // 目元の乱れ。顔の元を描いた直後に呼ぶ。t は ms
-      if (!eyeSnap) {
-        eyeSnap = makeCanvas(Math.ceil(SNAP.w * k), Math.ceil(SNAP.h * k));
-        eyeSnapG = eyeSnap.getContext('2d');
-        eyeChan = makeCanvas(Math.ceil((CHAN.w + CHAN.pad * 2) * k), Math.ceil(CHAN.h * k));
-        eyeChanG = eyeChan.getContext('2d');
+    function drawEyeFx(k, t) {
+      // 乱れの板を描く。板の左上は元の写真の (FX.x, FX.y)
+      if (!eyeFx) {
+        eyeFx = makeCanvas(Math.ceil(FX.w * k), Math.ceil(FX.h * k));
+        eyeFxG = eyeFx.getContext('2d');
       }
-      // 乱す前の顔を写しておく（差し替えの元。動画になっても毎コマここで読む）
-      eyeSnapG.globalCompositeOperation = 'copy';
-      eyeSnapG.drawImage(faceCv, SNAP.x * k, SNAP.y * k, SNAP.w * k, SNAP.h * k, 0, 0, eyeSnap.width, eyeSnap.height);
-
+      const g = eyeFxG;
       const burst = burstAt(t);
-      const gen = Math.floor(t / SWEEP_MS);
-      const p = Math.min(1, (t / SWEEP_MS - gen) / 0.45);
-      const ease = p * p * (3 - 2 * p);
-      const fromLeft = hash(gen * 2.71 + 0.5) < 0.5;
-      const span = EYE.x1 - EYE.x0 + 40;
-      const front = fromLeft ? EYE.x0 - 20 + span * ease : EYE.x1 + 20 - span * ease;
-      const top = (EYE.y0 - 2) * k;
-      const hgt = (EYE.y1 - EYE.y0 + 2) * k;
+      let { minor, major } = fxCuts(t);
+      if (burst > 0) {
+        // 強い乱れの間は毎コマ跳ぶ。頭の 4 割は版の場所ごと、残りは行だけ
+        minor = Math.floor(t / 33) + 7777;
+        if (burst >= 1) major = minor;
+      }
+      const M = (major % 8192) * 3.317;
+      const m = (minor % 8192) * 5.123 + M;
+      const rM = (c) => hash(M + c * 0.731);
+      const rm = (c) => hash(m + c * 0.419);
 
-      g.save();
-      g.globalCompositeOperation = 'source-over';
+      const plate = glitchPlates[Math.floor(rM(1) * glitchPlates.length) % glitchPlates.length];
+      const pw = plate.naturalWidth;
+      const ph = plate.naturalHeight;
+      const z = 0.78 + 0.5 * rM(2);                 // 版の画素 / 元の写真の画素
+      const ww = FX.w * z;
+      const wh = FX.h * z;
+      const ox = rM(3) * (pw - ww);
+      const oy = rM(4) * (ph - wh);
+
+      g.setTransform(k, 0, 0, k, 0, 0);
+      g.globalCompositeOperation = 'copy';
       g.globalAlpha = 1;
       g.imageSmoothingEnabled = true;
-      // 新しい差し替えが、前線の通った側から入ってくる
-      const sides = fromLeft
-        ? [[gen, 0, front], [gen - 1, front, 4000]]
-        : [[gen, front, 4000], [gen - 1, 0, front]];
-      for (const [gn, xa, xb] of sides) {
-        if (xb - xa < 1) continue;
-        g.save();
-        g.beginPath();
-        g.rect(xa * k, top, (xb - xa) * k, hgt);
-        g.clip();
-        drawEyeStrips(g, k, gn, t, burst);
-        g.restore();
+      // 地。版の 1 か所をそのまま（行の大半はずれない）
+      g.drawImage(plate, ox, oy, ww, wh, 0, 0, FX.w, FX.h);
+      g.globalCompositeOperation = 'source-over';
+
+      // ずれた行。高さは細いものが多く太いものがまれ。幅の一部だけ動くものが半分
+      const nb = 6 + Math.floor(rm(1) * 7);
+      for (let i = 0; i < nb; i++) {
+        const q = (c) => rm(10 + i * 7 + c);
+        const zz = (q(1) + q(2) + q(3) - 1.5) * 2;
+        const h = Math.min(70, Math.max(2, 7 * Math.exp(1.1 * zz)));
+        const y = q(4) * (FX.yb + 14 - h);
+        const part = q(5) < 0.5;
+        const x = part ? q(6) * FX.w * 0.6 : 0;
+        const w = part ? FX.w * (0.18 + 0.5 * q(7)) : FX.w;
+        // 3 本までは止まらずに横へ流れ続ける（止まっている間も、手が入り続けている）
+        const live = i < 3 ? (t / 1000) * (40 + 110 * q(8)) * (q(9) < 0.5 ? -1 : 1) : 0;
+        const other = q(10) < 0.14 ? glitchPlates[Math.floor(q(11) * glitchPlates.length) % glitchPlates.length] : plate;
+        const span = other.naturalWidth - w * z;
+        let sx = ox + x * z + (q(12) < 0.5 ? -1 : 1) * (24 + 240 * q(13)) + live;
+        sx = ((sx % span) + span) % span;
+        const sy = Math.min(other.naturalHeight - h * z, oy + y * z + (q(14) < 0.3 ? (q(15) - 0.5) * 300 : 0));
+        g.drawImage(other, sx, Math.max(0, sy), w * z, h * z, x, y, w, h + 0.5);
       }
 
-      // 帯の外（髪と額）にも、まれに細い行のずれが出る。行の一部だけを動かす。鼻から下には出さない
-      const tick = Math.floor(t / 90);
-      const nOut = burst > 0 ? 5 : (hash(tick * 5.3 + 0.1) < 0.22 ? 1 : 0);
-      for (let j = 0; j < nOut; j++) {
-        const s = (burst > 0 ? Math.floor(t / 33) : tick) * 3.7 + j * 19.3;
-        const y = 205 + hash(s) * 88;
-        const h = 1.6 + hash(s + 1) * 3.6;
-        const x = 660 + hash(s + 2) * 220;
-        const w = 70 + hash(s + 3) * 190;
-        const dx = (hash(s + 4) < 0.5 ? -1 : 1) * (7 + hash(s + 5) * 26) * (0.6 + burst);
-        g.drawImage(eyeSnap, (x + dx - SNAP.x) * k, (y - SNAP.y) * k, w * k, h * k, x * k, y * k, w * k, h * k);
+      // 頭の輪郭の外へはみ出す細い行（2〜4 本。強い乱れの間は増える）。切り貼りの板ではなく、行がずれたデータに見せる
+      fxSpill = [];
+      const ns = burst > 0 ? 7 : 2 + Math.floor(rm(5) * 2.6);
+      for (let i = 0; i < ns; i++) {
+        const q = (c) => rm(600 + i * 9 + c);
+        const h = 1.6 + 4.4 * q(1) * q(1);
+        const w = 110 + 200 * q(2);
+        const x = 600 + q(3) * (500 - w);
+        const y = 40 + q(4) * 330;
+        fxSpill.push([plate, ox + q(5) * (ww - w * z), oy + q(6) * (wh - h * z), w * z, h * z, x, y, w, h]);
       }
 
-      // 色のずれは 1 組だけ（赤 対 緑+青）。量は範囲の中で一様。強い乱れの間だけ広がる
-      const dx = 3.2 + 1.4 * Math.sin(t / 1700) + 7 * burst;
-      eyeChanG.globalCompositeOperation = 'copy';
-      eyeChanG.drawImage(faceCv, (CHAN.x - CHAN.pad) * k, CHAN.y * k, (CHAN.w + CHAN.pad * 2) * k, CHAN.h * k, 0, 0, eyeChan.width, eyeChan.height);
-      eyeChanG.globalCompositeOperation = 'multiply';
-      eyeChanG.fillStyle = '#ff0000';
-      eyeChanG.fillRect(0, 0, eyeChan.width, eyeChan.height);
-      g.beginPath();
-      g.rect(CHAN.x * k, CHAN.y * k, CHAN.w * k, CHAN.h * k);
-      g.clip();
+      // 部屋の灯りに沈める。頭の縁と上を暗く（下の顔から取った明暗ではない。決まった形の陰）
+      const sh = g.createRadialGradient(890 - FX.x, 300, 70, 860 - FX.x, 250, 330);
+      sh.addColorStop(0, 'rgb(255,250,240)');
+      sh.addColorStop(0.55, 'rgb(190,178,160)');
+      sh.addColorStop(1, 'rgb(96,86,74)');
       g.globalCompositeOperation = 'multiply';
-      g.fillStyle = '#00ffff';
-      g.fillRect(CHAN.x * k, CHAN.y * k, CHAN.w * k, CHAN.h * k);
-      g.globalCompositeOperation = 'lighter';
-      g.drawImage(eyeChan, (CHAN.x - CHAN.pad + dx) * k, CHAN.y * k);
-      g.restore();
+      g.fillStyle = sh;
+      g.fillRect(0, 0, FX.w, FX.h);
+
+      // 下の境。定規の線にしない: 列ごとに垂れる深さが違う（浅いものが多く、深いものがまれ）
+      g.globalCompositeOperation = 'destination-out';
+      let cx = 0;
+      let ci = 0;
+      while (cx < FX.w) {
+        const q = (c) => rm(200 + ci * 5 + c);
+        const cw = Math.min(46, Math.max(5, 13 * Math.exp(0.9 * (q(1) + q(2) - 1) * 2)));
+        const zz = (q(3) + q(4) + q(5) - 1.5) * 2;
+        const depth = Math.min(34, Math.max(0, 6 * Math.exp(1.0 * zz) - 1.5));
+        g.fillRect(cx, FX.yb + depth, cw + 0.5, FX.h);
+        cx += cw;
+        ci += 1;
+      }
+      g.globalCompositeOperation = 'source-over';
+      // 境の下へ落ちた欠片。頬の側にだけ、0〜2 個（鼻筋と口には置かない）
+      const nd = Math.floor(rm(3) * 2.6);
+      for (let i = 0; i < nd; i++) {
+        const q = (c) => rm(400 + i * 9 + c);
+        const left = q(1) < 0.5;
+        const w = 6 + 22 * q(2);
+        const h = 4 + 10 * q(3);
+        const x = (left ? 690 + q(4) * 70 : 930 + q(4) * 70) - FX.x;
+        const y = FX.yb + 10 + q(5) * 34;
+        g.drawImage(plate, ox + q(6) * (ww - w * z), oy + q(7) * (wh - h * z), w * z, h * z, x, y, w, h);
+      }
+      g.setTransform(1, 0, 0, 1, 0, 0);
     }
 
     function composeDoctor() {
@@ -352,13 +315,23 @@
         faceG.globalCompositeOperation = 'source-over';
         faceG.clearRect(0, 0, faceCv.width, faceCv.height);
         faceG.drawImage(faceSrc, 0, 0, faceCv.width, faceCv.height);
-        if (eyeShade) drawEyeShade(faceG, k, shadeNow);
         // 博士の形で抜く（胴の層の透過をそのまま型にする）→ 縁を落とす
         faceG.globalCompositeOperation = 'destination-in';
         faceG.drawImage(bodyImg, (B.x - F.x) * DOC_SCALE, (B.y - F.y) * DOC_SCALE, B.w * DOC_SCALE, B.h * DOC_SCALE);
         faceG.drawImage(feather, 0, 0);
         faceG.globalCompositeOperation = 'source-over';
         docG.drawImage(faceCv, (F.x - B.x) * DOC_SCALE, (F.y - B.y) * DOC_SCALE);
+      }
+      if (eyeShade && glitchPlates.length) {
+        // 乱れは博士の層へ直に重ねる（顔の板だけでなく、輪郭の髪の毛先まで同じ絵で覆う。形は博士の透過のまま）
+        const k = faceCv.width / room.faceSource.w;
+        drawEyeFx(k, shadeNow);
+        docG.globalCompositeOperation = 'source-atop';
+        docG.drawImage(eyeFx, (F.x - B.x) * DOC_SCALE + FX.x * k, (F.y - B.y) * DOC_SCALE + FX.y * k);
+        docG.globalCompositeOperation = 'source-over';
+        const fx0 = (F.x - B.x) * DOC_SCALE;
+        const fy0 = (F.y - B.y) * DOC_SCALE;
+        for (const [img, sx, sy, sw, sh, x, y, w, h] of fxSpill) docG.drawImage(img, sx, sy, sw, sh, fx0 + x * k, fy0 + y * k, w * k, Math.max(1, h * k));
       }
       blurInto(docMild, doc, 2.2);
       blurInto(docStrong, doc, 2.6);
@@ -693,7 +666,7 @@
       const scr = st.screen || {};
       const on = Boolean(scr.power);
 
-      // 目元の乱れは時刻から作るので、掛けているあいだは毎コマ描き直す
+      // 目より上の乱れは時刻から作るので、掛けているあいだは毎コマ描き直す
       if (eyeShade && t !== shadeNow) { shadeNow = t; docDirty = true; }
       if (faceIsVideo || docDirty) composeDoctor();
       if (on) drawScreen(t, scr, (G.w * v.s) / SW);
