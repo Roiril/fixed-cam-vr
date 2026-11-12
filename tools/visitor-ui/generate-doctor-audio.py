@@ -6,12 +6,13 @@
 入力は `elevenlabs-input-ja-v5.md` のコードブロック（0257: 全部の台詞を一度に入れる）。
 鍵は環境変数 `ELEVENLABS_API_KEY`（値は表示しない。`~/.claude/rules/secrets.md`）。
 
-することは 6 つ。
+することは 6 つ（5 は 2 段）。
 1. `/with-timestamps` で合成する。音と一緒に、1 字ごとの時刻が返る
 2. 各文の頭の語を時刻の列から探し、文と文の間の無音の真ん中で区切る
 3. 場面ごとに `tablet/.../asset/<場面>-ja-v5.mp3` へ切り出す
 4. `briefing-v1.json` の日本語の `durationMs` を実測へ直し、`audio.ja` を付ける
 5. 長い間を詰める（`PHRASE_PAUSE_MAX` / `SENTENCE_PAUSE_MAX`。頭だけ遅く聞こえるのを防ぐ）
+   文ごとの話す速さ（拍/秒）を測り、中央値へ揃える（`READINGS`。合成は頭の文ほどゆっくり読む）
 6. 声の大きさの列を `asset/doctor-voice-ja-v5.json` に書く（テレビの下の波形が使う）
 
 切り出すときに `--tempo`（既定 1.2）で速める。最初の場面の頭には `--lead-in`（既定 1.0 秒）の無音を置く。
@@ -49,6 +50,46 @@ ANCHORS = {
                "映像に、少しでも", "報告するときは", "何を見たかは"],
     "wear": ["そうちの合図で", "続けられないときだけは", "では。", "健闘を、祈ります"],
 }
+
+
+# 各文の読み（かな）。話す速さ（拍/秒）を文ごとに測って揃えるのに使う（0344）。順と数は ANCHORS と同じ。
+# 台詞を変えたらここも直す（数が合わなければ止まる）。
+READINGS = {
+    "introduction": ["ようこそ。にほんかいいけんきゅうじょへ。", "わたしは、あなたのじょうし、とでもいっておきましょうか。",
+                     "あなたはきょうから、このけんきゅうじょの、ちょうさいんです。", "これより、ちょうさたいしょうについて、せつめいします。"],
+    "subject": ["ちょうさたいしょうは、かんりばんごうぜろごーいちよんにしていされた、いじょうそんざいです。",
+                "あるあきやの、こどもべやからみつかった、かーてんと、にんぎょうです。",
+                "どちらも、がいけんじょうは、いっぱんてきなものと、かわりません。しかし、とくていのじょうけんかでのみ、いじょうせいが、はつげんします。",
+                "そのじょうけんも、いじょうせいのしょうたいも、まだ、はんめいしていません。それをちょうさするのが、あなたのにんむです。"],
+    "report": ["これが、かいいをきろくし、かいせきするための、かんそくそうちです。", "そうちをつけると、めのまえにがめんが、あらわれます。",
+               "そこに、しつないのかめらがとらえた、あなたじしんのすがたが、うつります。", "そのえいぞうをみながら、このかーてんのまわりを、さんしゅうしてください。",
+               "みぎてでてすりをもち、けっしてはなさず、ゆっくり、あるいてください。", "えいぞうに、すこしでもいわかんをおぼえたら、ほうこくしてください。",
+               "ほうこくするときは、ひだりこんとろーらーのぼたんを、おやゆびで、いちびょうかん、ながおししてください。えっくすとわい、どちらでも、かまいません。",
+               "なにをみたかは、そうちにとうさいされたえーじぇんとが、かいせきします。みまちがいでも、なんどほうこくしても、かまいません。"],
+    "wear": ["そうちのあいずで、あるきはじめてください。おわりのあいずのあとは、かかりのものがそうちをはずすまで、うごかずに、おまちください。",
+             "つづけられないときだけは、そのばでたちどまり、てすりをはなして、そうちをはずしてください。",
+             "では。かかりのもののあんないにしたがって、かんそくそうちを、つけてください。", "けんとうを、いのります。"],
+}
+# 文ごとの速さの直し幅。遅い文は最大 1.25 倍まで速め、速い文は 0.95 倍までしか遅くしない
+RATE_FIX_MIN = 0.95
+RATE_FIX_MAX = 1.25
+
+
+def mora(text):
+    """拍の数（かなの数から、句読点と小さい ゃゅょぇ を除く）"""
+    return len(re.sub(r"[、。ゃゅょぇ]", "", text))
+
+
+def voiced_seconds(samples, rate, spans):
+    """区間の列のうち、声が鳴っている長さ（20ms の窓の RMS が QUIET_RMS 以上の窓を数える）"""
+    import numpy as np
+    win = int(rate * 0.02)
+    total = 0
+    for a, b in spans:
+        for w in range(int(a * rate) // win, int(b * rate) // win):
+            if float(np.sqrt(np.mean(samples[w * win:(w + 1) * win] ** 2))) >= QUIET_RMS:
+                total += 1
+    return total * 0.02
 
 
 def api_key():
@@ -274,6 +315,18 @@ def main():
                          + dropped_spans(al["characters"], starts, ends, samples, rate))
     cut_ms = [round(remap(t, pauses) * 1000) for t in cut_s]   # 間を詰めた後の文の境
 
+    # 文ごとの話す速さを測り、中央値へ揃える倍率を出す（0344「〜調査員です。までが、読み上げ速度自体が他よりゆっくり」。
+    # 測ると頭の 3 文が 7.0〜8.4 拍/秒、後半が 9.0〜9.5 拍/秒だった）
+    flat = [r for sid in ANCHORS for r in READINGS[sid]]
+    if len(flat) != len(cue_bounds):
+        raise SystemExit(f"READINGS の文の数が ANCHORS と違う（{len(flat)} / {len(cue_bounds)}）")
+    rates = []
+    for i in range(len(flat)):
+        v = voiced_seconds(samples, rate, kept(cut_s[i], cut_s[i + 1], pauses))
+        rates.append(mora(flat[i]) / max(0.2, v))
+    median = sorted(rates)[len(rates) // 2]
+    fix = [min(RATE_FIX_MAX, max(RATE_FIX_MIN, median / r)) for r in rates]
+
     raw = io.open(BRIEFING, encoding="utf-8", newline="").read()
     nl = "\r\n" if "\r\n" in raw else "\n"
     data = json.loads(raw)
@@ -285,9 +338,18 @@ def main():
         lead_ms = round(args.lead_in * 1000) if k == 0 else 0
         target = ASSETS / f"{scene['id']}-ja-{VERSION}.mp3"
         tmp = target.with_name(target.name + ".tmp")
-        parts = kept(cut_s[k], cut_s[k + n], pauses)
-        graph = ";".join(f"[0:a]atrim=start={a:.4f}:end={b:.4f},asetpts=PTS-STARTPTS[p{i}]" for i, (a, b) in enumerate(parts))
-        graph += ";" + "".join(f"[p{i}]" for i in range(len(parts))) + f"concat=n={len(parts)}:v=0:a=1,atempo={args.tempo:.3f}"
+        # 文ごとに切り出して、その文の倍率で速さを直してから繋ぐ
+        chains, labels, idx = [], [], 0
+        for c in range(n):
+            parts = kept(cut_s[k + c], cut_s[k + c + 1], pauses)
+            names = []
+            for a, b in parts:
+                chains.append(f"[0:a]atrim=start={a:.4f}:end={b:.4f},asetpts=PTS-STARTPTS[p{idx}]")
+                names.append(f"[p{idx}]")
+                idx += 1
+            chains.append("".join(names) + f"concat=n={len(names)}:v=0:a=1,atempo={args.tempo * fix[k + c]:.4f}[c{c}]")
+            labels.append(f"[c{c}]")
+        graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={n}:v=0:a=1"
         graph += (f",adelay={lead_ms}:all=1,asetpts=N/SR/TB" if lead_ms else "") + "[out]"
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(TAKE_MP3),
                         "-filter_complex", graph, "-map", "[out]",
@@ -295,7 +357,7 @@ def main():
                        check=True)
         tmp.replace(target)
         for c in range(n):
-            scene["cues"]["ja"][c]["durationMs"] = round((cut_ms[k + c + 1] - cut_ms[k + c]) / args.tempo) + (lead_ms if c == 0 else 0)
+            scene["cues"]["ja"][c]["durationMs"] = round((cut_ms[k + c + 1] - cut_ms[k + c]) / (args.tempo * fix[k + c])) + (lead_ms if c == 0 else 0)
         scene.pop("video", None)
         scene["audio"] = {**{a: b for a, b in (scene.get("audio") or {}).items() if a != "ja"}, "ja": target.name}
         report[scene["id"]] = {"file": target.name, "ms": duration_ms(target),
@@ -316,7 +378,9 @@ def main():
     os.replace(tmp, BRIEFING)
     print(json.dumps({"voice": take["voice"], "model": take["model"], "tempo": args.tempo,
                       "pausesTrimmed": len(pauses), "trimmedSec": round(sum(b - a for a, b in pauses), 2),
-                      "totalMs": round(remap(total_ms / 1000, pauses) * 1000 / args.tempo), "scenes": report},
+                      "totalMs": sum(v["ms"] for v in report.values()),
+                      "rateMedian": round(median, 2), "rates": [round(r, 2) for r in rates], "rateFix": [round(f, 3) for f in fix],
+                      "scenes": report},
                      ensure_ascii=False, indent=2))
 
 
