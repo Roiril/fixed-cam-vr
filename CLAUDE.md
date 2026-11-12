@@ -36,6 +36,7 @@ Meta Quest 3 の作品。固定視点カメラ（バイオハザード風）の�
 | 説明資料用に体験中の画を撮る（左グリップ → 4 種類。**展示本番の機は OFF**） | [memory/experience_shots.md](.claude/memory/experience_shots.md)（取り出しは `py -3.11 tools/quest-shots.py pull`） |
 | HMD を被らずに本番シーンを最初から最後まで通す（ツインの映像・判定・目線の動画・見る面） | `py -3.11 tools/twin-verify.py`（[memory/twin_verify.md](.claude/memory/twin_verify.md)。見る面は `tools/twin-game/verify.html`） |
 | 演出の今の姿を一覧で見る・直す前後を並べる（体験者の目の山場 1 枚と動画を起きる順に。年表つき） | [tools/fx-library/](tools/fx-library/README.md)（`py -3.11 tools/fx-library/build.py`。出力は Drive `reports/fx-library/`） |
+| 素材を画のどこへ置くか決める・素材が体を隠さないか数える（体が画のどこを通るかの測定） | `py -3.11 tools/twin/stage_map.py --out <フォルダ>`（[memory/stage_map.md](.claude/memory/stage_map.md)） |
 | 紹介動画を広い画角で撮る（Quest で記録 → PC で本番を流し直して mp4） | [memory/experience_replay.md](.claude/memory/experience_replay.md)（`tools/quest-xprec.py on` → `pull` → `.\tools\unity.ps1 replay`） |
 | 写実のデジタルツイン（広報の静止画・固定カメラの動画・ゲームのように見るビューア） | [tools/twin/](tools/twin/README.md) と [tools/twin-game/](tools/twin-game/README.md)。監査の点と罠は [memory/twin_cycles.md](.claude/memory/twin_cycles.md) |
 | 音を触る（BGM・効果音・環境音・遷移） | `rules/sound-design.md`（**先に読む**） |

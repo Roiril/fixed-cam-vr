@@ -88,6 +88,9 @@ py -3.11 tools/twin/make_assets.py
 | `assets.json` / `assets/` / `make_assets.py` | ツインの部屋で作り直した合成素材と、本番の cue への当てはめ（上の「合成素材」） |
 | `animate_keys.py` | 生成したキーフレーム数枚をオプティカルフローで中割りして動画にする |
 | `audit_prompt.md` | 監査の文面（基準を動かさないため固定） |
+| `stage_map.py` | 体験者が画のどこに映るかを動画から測り、台本の素材（マスク）が出ている間に体と重なるかを数える。`--check` で重なりがあれば落ちる。罠は [memory/stage_map.md](../../.claude/memory/stage_map.md) |
+| `stage_cards.py` | 上の測定から、床の図（区画・道・カメラ・床の線）と、異変を置く所を重ねた画を作る |
+| `variant_posdriven.py` | 位置で動く演出の版（2 周目 A・2 周目 C）を検証用の木へ当てる。メインの木と本番の台本には書かない |
 
 ## 配置の決め方
 
