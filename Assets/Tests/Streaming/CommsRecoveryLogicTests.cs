@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using NUnit.Framework;
 
 namespace FixedCamVr.Streaming.Tests
@@ -110,20 +111,36 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Residue_PushesBack_ButHalfStaysToTheEnd()
+        public void Hair_HoldsThroughTheBoot_ThenSuiPushesItBack_AndItNeverLeaves()
         {
-            float start = CommsRecoveryLogic.Sample(0f).residue;
-            float haltEnd = CommsRecoveryLogic.Sample(CommsRecoveryLogic.HaltEndSec).residue;
-            float late = CommsRecoveryLogic.Sample(30f).residue;
-            Assert.Greater(start, haltEnd, "スイが押し返す");
-            Assert.Greater(haltEnd, late);
-            Assert.GreaterOrEqual(late, 0.4f, "半分近くは最後まで人形のまま（0270「半分はまだ侵食されていて」）");
-            for (float t = CommsRecoveryLogic.HaltEndSec; t < 30f; t += 0.1f)
-                Assert.That(CommsRecoveryLogic.Sample(t).residue, Is.InRange(0.48f, 0.55f),
-                    "復帰後の正常表示と赤い人形は約1:1を保つ（2026-10-18）");
-            CommsRecoverySample s = CommsRecoveryLogic.Sample(30f);
-            Assert.AreEqual(s.residue * CommsRecoveryLogic.RedPerResidue, s.red, 1e-6f,
-                "顔と文字は同じ 1 本の量を読む");
+            // 起動の間は呑まれたまま（現れ方を 2 つ競合させない）。晴れてからスイが押し返す。
+            Assert.AreEqual(CommsRecoveryLogic.ResidueStart, CommsRecoveryLogic.Sample(0f).residue, 1e-6f);
+            Assert.AreEqual(CommsRecoveryLogic.ResidueStart,
+                            CommsRecoveryLogic.Sample(CommsRecoveryLogic.BootSec - 0.01f).residue, 1e-6f);
+            float pushed = CommsRecoveryLogic.Sample(CommsRecoveryLogic.PushEndSec).residue;
+            Assert.Less(pushed, CommsRecoveryLogic.ResidueStart - 0.3f, "スイが押し返す");
+            // 途中で 1 回、押し戻される（一息に勝たせない）。
+            bool slipped = false;
+            float prev = CommsRecoveryLogic.ResidueStart;
+            for (float t = CommsRecoveryLogic.BootSec; t < CommsRecoveryLogic.PushEndSec; t += 0.02f)
+            {
+                float r = CommsRecoveryLogic.Sample(t).residue;
+                if (r > prev + 1e-4f) slipped = true;
+                prev = r;
+            }
+            Assert.IsTrue(slipped, "押し返す途中で髪に押し戻される");
+            // 落ち着いた後も半分近くは髪の下（0270「半分はまだ侵食されていて」）。報告が無ければ段で寄ってくる。
+            float settled = CommsRecoveryLogic.Sample(CommsRecoveryLogic.SettleEndSec + 1f).residue;
+            float late = CommsRecoveryLogic.Sample(CommsRecoveryLogic.SettleEndSec + 14f).residue;
+            Assert.That(settled, Is.InRange(0.42f, 0.50f));
+            Assert.Greater(late, settled + 0.04f, "報告が無いまま時間が経つと髪が寄ってくる");
+            Assert.Less(late, 0.58f, "寄ってきても命令の行は読める量で止まる");
+            for (float t = CommsRecoveryLogic.PushEndSec; t < 30f; t += 0.1f)
+                Assert.That(CommsRecoveryLogic.Sample(t).residue, Is.InRange(0.42f, 0.58f));
+            // 息づきと寄りは 1 コマ（1/72 秒）で 0.01 を超えて動かない（明滅にしない）。
+            for (float t = CommsRecoveryLogic.PushEndSec + 0.1f; t < 20f; t += 1f / 72f)
+                Assert.Less(Math.Abs(CommsRecoveryLogic.Sample(t + 1f / 72f).residue
+                                     - CommsRecoveryLogic.Sample(t).residue), 0.01f);
         }
 
         [Test]

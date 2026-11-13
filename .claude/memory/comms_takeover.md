@@ -1,5 +1,16 @@
 # 追いつき直後の乗っ取り（2026-09-21）
 
+## 現行の契約（2026-11-13 に `rules/comms.md` から移した。あちらは上限 12KB）
+
+**ここが正本。** 変わったらこの行を書き換える（日付の節を足さない）。発火の条件だけは rule に残してある。
+
+- 乗っ取りの共通時計: 0 WARNING / 1 不正アクセス / 2 接続元不明・面が開く / 2.57 スイ「異常を検知しました」一気表示 / 3 遮断ラベル＋空バー / 4.17〜5.67 バー充填と左→右の人形侵食が同期 / 5.92 赤い失敗 / 7.02 面と警告と空間エラーを同時消去。長文は充填開始を両方同じだけ遅らせる — `CommsPanelLogic.TakeoverFillStartSec/FailureAtSec`・`CommsPossessionLogic.SweepSec`・`CommsTakeoverErrorTests.RealBarProgressMatchesPanelSweepAndBothCloseInSameFrame` 〔出典: show-design:1219-1221; memory/comms_takeover.md〕
+- 乗っ取り中は主画面を砂嵐、同時消去で解除。始めるのはランで最初の成立だけ — `CameraFeelFx.BeginTakeoverStatic/CancelTakeoverStatic`〔memory/comms_takeover.md〕
+- 発火待ち〜消去まで報告を拒否（数えない・後送りしない・離すまで再開しない） — `CommsPanel.TakeoverInputBlocked`・`CommsPossessionLogicTests.BlockedReport_DoesNotCountOrResolveAnything` 〔出典: memory/comms_takeover.md〕
+- 乗っ取り後の返事は Cursed: 人形の顔と赤い `CommsPanel.TakeoverLieText`（CommsHorror SDF）だけ。走り書きなし — `CommsPanelPossessionTests.CursedReplyStartsAsTheRedLieWithoutSweepOrKeystrokes` 〔出典: show-design:1223〕
+- 警告は明朝＋かすれ（v5）・朱と象牙。順・秒は不変 — `UnauthorizedAccessEffect.SampleTakeover`・`UnauthorizedAccessFx.shader` 〔出典: memory/comms_takeover.md 2026-10-21 節〕
+- 断片の四角は帯の範囲だけ描く。式はシェーダの row と対で直す — `UnauthorizedAccessEffect.GlyphRowRange`・`UnauthorizedAccessEffectTests.GlyphRowRange_ContainsEveryRowTheShaderDraws` 〔memory/comms_performance_20261018.md〕
+
 ## 2026-09-25 主画面の砂嵐からライブへの切り替え
 
 2-C 最後の人形視点カットが自然完了した瞬間に、主画面へ既存の砂嵐を表示する。エラー表示、スイから人形への変化、人形の保持中も続ける。エージェント画面とエラーの同時消灯で砂嵐を解除し、従来のライブ映像と `show.json` の画像加工、心音に同期する波紋・ビネットへ戻す。3-A の凍結地点で波紋・ビネットは従来どおり終了する。人形視点が中止・素材欠落で自然完了していない場合は砂嵐を開始しない。乗っ取りの中止、ラン再開、画面コンポーネント停止では砂嵐を解除する。砂嵐は映像だけの指定で、`SignalLostFx.Level` が示す通信障害や音の状態は変えない。

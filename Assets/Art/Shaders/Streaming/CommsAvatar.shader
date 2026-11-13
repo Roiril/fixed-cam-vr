@@ -169,15 +169,11 @@ Shader "FixedCamVr/CommsAvatar"
                 // 中心反転したノイズとの差を使い、量0.5で左右に偏らず面積も半々にする。
                 // 帯の飛びは既存の乱れと共有。残りが消えるとゆがみも同時に消える。
                 float kRes = 0.0;
-                float2 residueWarp = 0.0;
-                if (_Residue.x > 0.001)
-                {
-                    float2 warp = CommsRecoveryWarp(fieldPos, _Residue, _RecoveryRect);
-                    residueWarp = warp / max(_Size.xy, 1e-4);
-                    kRes = CommsRecoveryBaseMask(fieldPos - warp, _Residue, _RecoveryRect);
-                }
+                // ⚠ 微分を取るので分岐の外で引く。_Residue.x = 0 なら k も線も 0。
+                CommsCreepSurface cs = CommsCreepEval(fieldPos, _Residue, _RecoveryRect);
+                kRes = cs.k;
                 k = max(k, kRes);
-                float2 faceUv = i.uv + residueWarp;
+                float2 faceUv = i.uv;
                 faceUv.x -= shift / max(_Size.x, 1e-4);
                 float inRange = step(0.0, faceUv.x) * step(faceUv.x, 1.0)
                               * step(0.0, faceUv.y) * step(faceUv.y, 1.0);
@@ -187,13 +183,9 @@ Shader "FixedCamVr/CommsAvatar"
                 float drop = CommsTearDropAt(panelPos.y, _Tear, _TearDropA, _TearDropB);
 
                 float a = saturate(max(ring, face * (1.0 - drop))) * _Tear.y;
-                float3 rgb = lerp(_Color.rgb, _ResidueColor.rgb, kRes * saturate(_Residue.z));
-                if (_Residue.x > 0.001)
-                {
-                    float lines = CommsRecoveryLines(panelPos, _Residue, _RecoveryRect) * kRes;
-                    rgb = lerp(rgb, float3(1.0, 0.08, 0.04), lines * 0.7);
-                    a *= 1.0 - lines * 0.35;
-                }
+                // 髪の下の顔（人形）は熾の朱の線。前線の上では線が白熱する。
+                float3 rgb = lerp(_Color.rgb, COMMS_EMBER_INK * float3(0.46, 0.40, 0.40), kRes);
+                rgb = lerp(rgb, COMMS_EMBER_CORE, cs.seam * 0.8);
                 if (_Residue.w > 0.001)
                 {
                     // ③a の起動（0280）: 地と同じブロックで現れる。砂嵐のあいだは顔を出さず、下の地の砂嵐が見える。

@@ -114,11 +114,26 @@ namespace FixedCamVr.Streaming
         public const float AftershockRecoverSec = 0.45f;
 
         /// <summary>余震で人形が押し返してくる量（残りへ足す）。</summary>
-        public const float AftershockResiduePush = 0.10f;
+        public const float AftershockResiduePush = 0.08f;
 
         // ---- 残り ------------------------------------------------------------------
-        /// <summary>顔に残る人形の割合（起動の頭 → ③a の終わり → 落ち着いた先）。</summary>
-        public const float ResidueStart = 0.60f, ResidueHalt = 0.52f, ResidueFloor = 0.50f;
+        /// <summary>
+        /// 髪の寄り（現れた瞬間 → スイが押し返した先 → 落ち着いた先）。面の縁から這い込む髪がどこまで来ているか
+        /// （<c>CommsRecovery.hlsl</c> の <c>CommsCreepEval</c>・<c>canon/LEDGER.md</c> 0350）。0.92 は面がほぼ呑まれた姿、
+        /// 0.46 は顔の左半分と 1 行目の数字に髪が掛かる姿。名前は旧版（顔に残る人形の割合）のまま。
+        /// </summary>
+        public const float ResidueStart = 0.92f, ResidueHalt = 0.50f, ResidueFloor = 0.46f;
+
+        /// <summary>スイが押し返し終える秒。起動（<see cref="BootSec"/>）の間は押し返さない — 現れ方を 2 つ競合させない。</summary>
+        public const float PushEndSec = 2.30f;
+
+        /// <summary>押し返す途中で 1 回、髪に押し戻される量。</summary>
+        public const float PushSlip = 0.07f;
+
+        /// <summary>落ち着いた後、報告が無いまま髪が寄ってくる縁（<see cref="SettleEndSec"/> からの秒）と 1 回の量。</summary>
+        public static readonly float[] PressureAtSec = { 4.0f, 8.0f, 11.5f };
+        public const float PressureStep = 0.025f;
+        public const float PressureRiseSec = 0.5f;
 
         /// <summary>
         /// 文字の赤 = 顔の残り × これ。<b>顔と文字は同じ 1 本の量を読む</b>（0229 の原則 — 別の曲線にすると
@@ -198,12 +213,27 @@ namespace FixedCamVr.Streaming
                 }
             }
 
-            // ---- 残り（起動の頭 → ③a の終わり → 落ち着いた先）----
+            // ---- 髪の寄り（起動の間は呑まれたまま → スイが押し返す → 落ち着く → 報告が無ければ寄ってくる）----
             float residue;
-            if (sec < HaltEndSec)
-                residue = Lerp(ResidueStart, ResidueHalt, EaseOut(sec / HaltEndSec));
+            if (sec < BootSec)
+                residue = ResidueStart;
+            else if (sec < PushEndSec)
+            {
+                float u = (sec - BootSec) / (PushEndSec - BootSec);
+                residue = Lerp(ResidueStart, ResidueHalt, EaseOut(u));
+                // 途中で 1 回、押し戻される（一息に勝たせない）。
+                if (u > 0.45f && u < 0.75f) residue += PushSlip * MathF.Sin(MathF.PI * (u - 0.45f) / 0.30f);
+            }
             else
-                residue = Lerp(ResidueHalt, ResidueFloor, Smooth((sec - HaltEndSec) / (SettleEndSec - HaltEndSec)));
+            {
+                residue = Lerp(ResidueHalt, ResidueFloor, Smooth((sec - PushEndSec) / (SettleEndSec - PushEndSec)));
+                // 息づき。周期の合わない遅い揺れの和（等間隔の往復にしない）。1Hz より十分遅い。
+                float breathe = Smooth((sec - PushEndSec) / 1.5f);
+                residue += breathe * (0.012f * MathF.Sin(0.90f * sec) + 0.008f * MathF.Sin(0.37f * sec + 1.3f));
+                // 報告が無いまま時間が経つと、髪が段で寄ってくる（寄っては止まる）。
+                for (int i = 0; i < PressureAtSec.Length; i++)
+                    residue += PressureStep * EaseOut((sec - SettleEndSec - PressureAtSec[i]) / PressureRiseSec);
+            }
 
             // ---- 余震（③b の打鍵に結ぶ）----
             float push = 0f;

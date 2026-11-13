@@ -31,7 +31,7 @@
 
 ## エージェント画面（スイ）
 - [comms_takeover.md](comms_takeover.md) — 乗っ取りの時刻表と入力の破棄／文面の[筋](comms_reply_spine.md)
-- [comms_curse.md](comms_curse.md) — 呪いの斑と前線。文字はステンシル bit 8 で切る／③a・③b は弱って戻る姿（0270）
+- [comms_curse.md](comms_curse.md) — 斑と前線。字はステンシル bit 8／③a・③b は這い込む髪と熾（0350）
 - [comms_face.md](comms_face.md) — スイの顔を焼く罠。明暗が逆なので肌を塗らないと顔が消える
 - [comms_clock_boundaries.md](comms_clock_boundaries.md) — 時刻境界の float 比較。境界ぴったりと低 FPS を別に試す
 - [comms_performance_20261018.md](comms_performance_20261018.md) — fps の実測（10-18）と軽量化（11-06）

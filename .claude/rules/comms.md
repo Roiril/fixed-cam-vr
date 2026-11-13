@@ -25,6 +25,7 @@ paths:
 
 ## 契約
 - 判断 `CommsCueLogic`／文面 `CommsPanel.TextFor`（ja/en/fr）／出方 `CommsCueLogic.DeliveryOf` は各 1 か所 〔出典: show-design-2026-10-22.md:1341〕
+- 文面どうしの約束（同じ動詞／空振りと赤い嘘は同じ文／⑤は判定を言わず「声」／⓪a が職掌／③b は「あなたと私を」／侵食中も一人称／⓪c は起動・①は開始／キー名は練習だけ）は `CommsNoticeTextTests` 〔memory/comms_reply_spine.md〕
 - 面は 1.5m・外 8°・下 17°、頭のヨーだけ追従。③a/③b だけ下 3°。倍率 2/3 は根 1 か所 — `CommsPanel.DistanceM/YawOffsetDeg/PitchOffsetDeg/ClosingPitchOffsetDeg/Scale` 〔出典: show-design:1139, 1393〕
 - 畳まれている間は追従の種を捨て、頭の正面に開く — `CommsPanelFollowTests.WhileFolded_TheFollowSeedIsDropped` 〔出典: show-design:1086〕
 - 地は黒い半透明 0.72、乗っ取り中だけ 0.96 — `CommsPanel.PanelAlpha/TakeoverPanelAlpha/MakeTranslucent` 〔出典: show-design:1114; memory/comms_takeover.md〕
@@ -43,16 +44,13 @@ paths:
 - 侵食度は観測でだけ進む: 2-C `pov_0` 0.25 / `pov_1..4` 0.75 / 3-A 人形表示 1。単調、ラン再開でだけ 0 — `CommsInvasionLogic.Observe/Reset`・`CommsInvasionLogicTests` 〔出典: streaming-2026-10-22.md:1432-1440〕
 - 乗っ取り前は侵食度に関わらず通常のスイ（斑 0・Typed）。斑と Cursed は `TakeoverDelivered` 後だけ — `CommsPanel.PushCurseTarget/Deliver` 〔出典: show-design:1224〕
 - 乗っ取りは 2-C の追いつきの成立で 1 回。成立は人形視点の自然完了か、人形視点が 1 カットでも出た後に前へ抜けた yield（次の区間の頭）。引き返し・watchdog・中止・開始前の前進・卓の介入中・侵食度では発火しない — `CommsCueLogic.HasPendingTakeover`・`TakeRunner.ShouldCountForwardYieldCatchUp`・`CommsCatchUpCompletionTests`・`CommsPossessionLogicTests.InvasionLevelAloneNeverFiresTakeover` 〔memory/comms_takeover.md〕
-- 乗っ取りの共通時計: 0 WARNING / 1 不正アクセス / 2 接続元不明・面が開く / 2.57 スイ「異常を検知しました」一気表示 / 3 遮断ラベル＋空バー / 4.17〜5.67 バー充填と左→右の人形侵食が同期 / 5.92 赤い失敗 / 7.02 面と警告と空間エラーを同時消去。長文は充填開始を両方同じだけ遅らせる — `CommsPanelLogic.TakeoverFillStartSec/FailureAtSec`・`CommsPossessionLogic.SweepSec`・`CommsTakeoverErrorTests.RealBarProgressMatchesPanelSweepAndBothCloseInSameFrame` 〔出典: show-design:1219-1221; memory/comms_takeover.md〕
-- 乗っ取り中は主画面を砂嵐、同時消去で解除。始めるのはランで最初の成立だけ — `CameraFeelFx.BeginTakeoverStatic/CancelTakeoverStatic`〔memory/comms_takeover.md〕
-- 発火待ち〜消去まで報告を拒否（数えない・後送りしない・離すまで再開しない） — `CommsPanel.TakeoverInputBlocked`・`CommsPossessionLogicTests.BlockedReport_DoesNotCountOrResolveAnything` 〔出典: memory/comms_takeover.md〕
-- 乗っ取り後の返事は Cursed: 人形の顔と赤い `CommsPanel.TakeoverLieText`（CommsHorror SDF）だけ。走り書きなし — `CommsPanelPossessionTests.CursedReplyStartsAsTheRedLieWithoutSweepOrKeystrokes` 〔出典: show-design:1223〕
-- 警告は明朝＋かすれ（v5）・朱と象牙。順・秒は不変 — `UnauthorizedAccessEffect.SampleTakeover`・`UnauthorizedAccessFx.shader` 〔出典: memory/comms_takeover.md 2026-10-21 節〕
-- 断片の四角は帯の範囲だけ描く。式はシェーダの row と対で直す — `UnauthorizedAccessEffect.GlyphRowRange`・`UnauthorizedAccessEffectTests.GlyphRowRange_ContainsEveryRowTheShaderDraws` 〔memory/comms_performance_20261018.md〕
+- 乗っ取りが届いた後の契約（共通時計・主画面の砂嵐・報告の拒否・赤い嘘の返事・警告の字と断片）は [memory/comms_takeover.md](../memory/comms_takeover.md) の「現行の契約」。**あそこが正本**
 - ③a は締めのカット中に凍結線通過か 3 秒。面が空くまで待ち必ず出す。Fade・打鍵 0 — `CommsCueLogic.HaltAfterClosingSec`・`CommsCueLogicTests.TheStopCall_WaitsForThePanel_AndIsNeverLost` 〔出典: show-design:46-49, 1387〕
 - ③b は③a を読ませ終わった縁で必ず続く。③b までは締めの報告を受けない（別に入って 4 秒の猶予） — `CommsCueLogic.Tick`（closingLocked）・`TakeRunnerLogic.MarkGraceSec`・`CommsPossessionLogicTests.ClosingReportIsRejectedUntilThePromptIsFullyShown` 〔出典: show-design:41, 1375, 1382〕
 - ③b は持続表示。自分では引かず、MarkCleared が上書きするか本編を出た縁で消す。長押しを離すと打鍵なしで全文へ戻る — `CommsPanel.ObserveClosingPromptEnd`・`CommsPanelLogic.Restoring`・`CommsPanelLogicTests.ClosingPrompt_*` 〔シュビーの判断・未判定。memory/closing_line_halt.md〕
-- ③a/③b の復帰: ③a からの 1 本の時計。起動 0.92s は砂嵐ブロックから復号、③b の打鍵に結ぶ余震 2 回、静止した粗い斑で人形と赤が約半々、報告で 1.2s かけて 0 — `CommsRecoveryLogic.Sample/BootSec/ReleaseSec`・`CommsPanelLogic.BeginRecovery`・`CommsRecovery.hlsl` の `COMMS_RECOVERY_NOISE_PHASE` 〔出典: show-design:1309-1320; memory/comms_curse.md; memory/comms_takeover.md 2026-10-18 節〕
+- ③a/③b の復帰: ③a からの 1 本の時計。起動 0.92s は砂嵐ブロックから復号 → スイが押し返す（1 回滑る）→ ③b の打鍵に結ぶ余震 2 回 → 落ち着く → 報告で 1.2s かけて 0 — `CommsRecoveryLogic.Sample/BootSec/PushEndSec/ReleaseSec`・`CommsPanelLogic.BeginRecovery`
+- 呪いは縁から這い込む髪（左・上・右）。焼いた到達順の版 `Resources/CommsFx/CurseCreep*` を量 1 本（`residue`）で切る。地・顔・字・罫線が同じ場。寸法と式は `CommsRecovery.hlsl` の `CommsCreepEval`・`CommsCreepLogic`・`tools/comms-creep/bake.py` の 3 つが同じ値 — 直すときは 3 つとも
+- 髪の下の字は画素ごとに朱（`CommsRecoveryText.shader`）。命令の句は象牙のまま（帯 `_RecoveryGuard` を `ApplySplitTruthMesh` が毎フレーム組む）。朱の字数は `CommsCreepLogic.Depth` で数える 〔memory/comms_curse.md; LEDGER 0350〕
 - 言語 `ShowLanguage.Current` と軽減 `HorrorRelief`（音だけ 0.5 倍）はタブレットの値を `VisitorPrefs` が入れ、体験者交代で `TitleScreen.BeginTitle` だけが戻す。HMD 内で選ばない 〔出典: show-design:1052-1060; memory/show_language.md〕
 
 ## 罠（破ると壊れる）
@@ -69,11 +67,5 @@ paths:
 - 観測は `ShowTelemetryHost` と `tools/analyze-xp-log.py` を対で直す 〔show-design:1443〕
 
 ## 深く読むとき
-- 文面・導入・①〜④の経緯 → archive show-design-2026-10-22.md:627-660, 982-1072, 1338-1450 / memory/hmd_onboarding.md
-- 面の寸法・半透明・差し替え・顔 → show-design:1073-1214 / memory/comms_face.md
-- 斑・前線・ステンシル → show-design:1240-1320 / memory/comms_curse.md
-- 乗っ取りと不正アクセス表示・音 → show-design:1215-1236 / memory/comms_takeover.md / memory/unauthorized_access_effect.md
-- 段境界のテスト → memory/comms_clock_boundaries.md
-- 警告中の fps → memory/comms_performance_20261018.md
-- 言語 → show-design:1009-1072 / memory/show_language.md
-- 警告音の育ち（`AlertEscalationLogic`）・軽減モードの音 → `rules/sound-design.md`（この rule の対象外）
+
+経緯の地図（文面・面・斑・乗っ取り・言語・音がどこにあるか） → [reference/comms-deep-reading.md](../reference/comms-deep-reading.md)

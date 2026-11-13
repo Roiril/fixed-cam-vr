@@ -234,18 +234,24 @@ Shader "FixedCamVr/CommsPanelPlate"
                 // 象牙を地の上に置く（over）。明滅は出力の alpha に掛ける（暗い側へだけ）。
                 float outA = (ink + plateA * (1.0 - ink)) * _Tear.y;
                 float3 outRgb = (ink * _Ink.rgb + plateA * (1.0 - ink) * _Color.rgb) / max(ink + plateA * (1.0 - ink), 1e-4);
+                // 面の縁から這い込む髪（0350）。乱れの帯で飛んだ座標で引くので、余震では髪も帯ごとに飛ぶ。
+                // ⚠ 微分を取るので分岐の外で引く。
+                CommsCreepSurface cs = CommsCreepEval(p, _Recovery, _RecoveryRect);
                 if (_Recovery.x > 0.001)
                 {
-                    float mask = CommsRecoveryMask(pRaw, _Recovery, _RecoveryRect);
-                    float grain = CommsRecoveryGrain(pRaw, _Recovery.y);
-                    // 暗い赤い面と正常な黒い面も、顔・文字と同じ斑で重なる。
-                    outRgb = lerp(_Color.rgb, float3(0.105, 0.012, 0.009), mask);
-                    outRgb *= 0.72 + grain * 0.56;
-                    float lines = CommsRecoveryLines(pRaw, _Recovery, _RecoveryRect) * mask;
-                    outRgb = lerp(outRgb, float3(0.24, 0.018, 0.012), lines * 0.75);
-                    float cuts = step(0.84, CurseHash21(float2(floor(pRaw.y / 0.006), floor(COMMS_RECOVERY_NOISE_PHASE * 10.0))));
-                    outRgb *= 1.0 - cuts * mask * 0.55;
-                    outA *= 0.9 + grain * 0.1;
+                    float lit = saturate(_Color.a / 0.72) * sharp * _Tear.y * (1.0 - drop);
+                    float ember = CommsCreepEmber(p, _Recovery.y);
+                    // スイの側: 前線の手前に象牙の照り返し（黒い髪が黒い地に溶けない）。
+                    float bounce = cs.glow * (1.0 - cs.k);
+                    outRgb = lerp(_Color.rgb, float3(0.22, 0.12, 0.07), bounce * 0.45);
+                    outA = lerp(outA, lit * 0.90, bounce * 0.5);
+                    // 髪の側: 房は不透明に近い黒、房のあいだは暗い朱のにじみ。
+                    outRgb = lerp(outRgb, CommsCreepInk(cs), cs.k);
+                    outA = lerp(outA, lit * lerp(0.90, 0.985, cs.strand), cs.k);
+                    // 熾の線。
+                    outRgb += COMMS_EMBER_GLOW * cs.glow * cs.k * ember * 0.40;
+                    outRgb = lerp(outRgb, COMMS_EMBER_CORE, cs.seam * ember);
+                    outA = max(outA, cs.seam * ember * lit);
                 }
                 if (_Recovery.z > 0.001)
                 {

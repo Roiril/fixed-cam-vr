@@ -349,17 +349,26 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialAccepted => "報告できました。\n装置は正常です。",
             CommsNotice.TutorialReconnect => "左コントローラーを\n確認してください",
             // 約束の 1 行目。③b が言い直し、④「異変を取り除きました」が果たす（同じ動詞で通す）。
-            CommsNotice.TutorialReminder => "異変に気づいたら\n今の操作で報告してください\n私が解析し、取り除きます",
+            // ⚠ 「見つけたら」は 0096 / 0174 の逐語。2026-11-13 に「気づいたら」から戻した。
+            CommsNotice.TutorialReminder => "異変を見つけたら\n今の操作で報告してください\n私が解析し、取り除きます",
             // ⓪a 名乗り。⚠ **「AI」とは書かない。「エージェント」と書く**（`canon/LEDGER.md` 0080）。
             //    報告練習の成功後に、支援エージェントのスイ本人として名乗る。
             //    1 行 14 文字以内、3 行で読める形に固定する。
-            CommsNotice.Greeting => "申し遅れました。\n私は支援エージェントの\nスイです。",
+            //    ⚠⚠ **「調査を支援する」を落とさない**（0124 の逐語「私は調査を支援するエージェントです」）。
+            //      博士は「装置に搭載されたエージェントが解析します」までしか言わない。**「取り除く」を渡すのは
+            //      この名乗りだけ**で、ここで職掌を言っておかないと、次の Reminder の「取り除きます」が
+            //      どこから来た権限か分からなくなる（2026-11-13・初見の読み手と design-critic が独立に指摘）。
+            CommsNotice.Greeting => "申し遅れました。\n私は調査を支援する\nエージェントのスイです。",
             // ⓪b 歩行の指示。**この連絡が床の矢印を出す**（`WalkGuide.NotifyExplaining`）。
             //    ⚠ 1 文目が 15 文字なので**2 行へ割ってある**（ユーザーの改行は文のあいだの 1 つだけ）。
             CommsNotice.Walk => "開始ポイントを\nマークしました。\n矢印から向かってください。",
             // ⓪c 演出の始まりの告知。**段 0 を抜けた縁**（＝ 導入演出が始まるのと同じフレーム）。
             //    ⓪b が出ていれば引かずに上書きする（`Deliver` は頭から出し直す）。
-            CommsNotice.Arrived => "到着しました。\n観測を開始します。",
+            //    ⚠⚠ **「起動します」（0096 の逐語）。「観測を開始します」にしない。** 直後に①「調査を開始
+            //      してください。」が来るので、「開始」が 2 回続くと体験者には違いが読めない。しかもこの連絡の
+            //      直後に起きるのは**テレビが現れて電源が入る**（0309）＝ 起動そのもの。
+            //      2026-11-13 に 9 月の「観測を開始します」から戻した。
+            CommsNotice.Arrived => "到着しました。\n観測装置を起動します。",
             // ① 調査の開始。⚠⚠ **押し方はここにしか出ない**（2026-08-16・`canon/LEDGER.md` 0065）。
             //    下段は状態だけを持ち、指示を持たない（押している最中に「押せ」と言い続けない）。
             //    ⚠ キー名（X／Y）を出さない — 装置の面に入力機器の名前が出ると、
@@ -372,30 +381,50 @@ namespace FixedCamVr.Diagnostics
             //      その間を切り詰める」）。①を読ませ終わった縁で、**間を置かず同じ面のまま**①b へ替わる。
             CommsNotice.Begin => "調査を開始してください。",
             // ①b 押し方と、押すと何が起きるか。
-            CommsNotice.BeginHow => "異変を見つけたら\nXかYを長押ししてください\n私が解析し、取り除きます",
+            // ⚠ **キー名を出さない**（この doc の上の但し書きどおり。0096 の逐語も「ボタンを長押ししてください」）。
+            //   2026-11-13 に「XかYを」から戻した — 自分で書いた規律に、この 1 通だけが反していた。
+            //   練習（`Tutorial`）だけはキー名を出す。あちらは実際に押させるので、どれを押すかが要る。
+            CommsNotice.BeginHow => "異変を見つけたら\nボタンを長押ししてください\n私が解析し、取り除きます",
             // ②a 報告時に異常演出が画面を取っていて、報告で消せる演出だった。1 行目は 0054 の逐語。
             //    2 行目は「報告すると、スイが取り除く」を毎回の返事で見せる（シュビーの案・未判定）。
             CommsNotice.MarkLogged => "異常を検出しました\n取り除きます",
             // ②a′ 出ていたが、報告では消せない演出だった（乗っ取り前の人形視点など）。
-            CommsNotice.MarkStuck => "異常を検出しました\n取り除けません",
+            // ⚠ **「いまは」**（2026-11-13）。初見の読み手 3 人が 3 回とも「取り除けない理由が分からない。
+            //   自分の報告の仕方が悪かったのかと思った」と書いた。1 語あれば体験者の落ち度ではないと分かり、
+            //   ④「異変を取り除きました。」でその「いまは」が解ける（4-A で果たす約束の前振りになる）。
+            CommsNotice.MarkStuck => "異常を検出しました\nいまは取り除けません",
             // ②b 報告時に異常演出が画面を取っていなかった。0054 の逐語（「異常」）。
             //    ⚠ 嘘の一文（TakeoverLieText）と 1 字も違えない — 同じ文が、正直 → 嘘 → ⑤の型で 3 度出る。
             CommsNotice.MarkNothing => "異常は検出されませんでした",
-            // 2 周目に入って面が空いた縁（シュビーの案・未判定）。博士の「廻るほど、近づいてきます」を言い直す。
-            CommsNotice.SecondLap => "二周目です。\n反応が、近づいています。",
+            // 2 周目に入って面が空いた縁（シュビーの案・未判定）。
+            // ⚠⚠ **「反応」と書かない。「対象」と書く**（2026-11-13）。「廻るほど、近づいてきます」という
+            //   博士の種は 0328 の書き直しで消えたので、この連絡は**体験者にとって初耳**になる。
+            //   「反応」はスイの語彙の中でここ 1 箇所だけの語で、何の反応かを体験者が決められない。
+            //   「対象」なら博士の「調査対象は、管理番号0514に指定された異常存在です」と同じ語で受けられる。
+            // ⚠ **「一周目より」を落とさない。** 種が無いので、近づいていることは
+            //   **スイが 1 周目と比べて観測した結果**として出すしかない（それが装置の仕事でもある）。
+            CommsNotice.SecondLap => "二周目です。\n一周目より、\n対象が近づいています。",
             // ② 侵食度 0.75 以上で何も無い所へ報告した。判定を持たない一文（0232 — 乗っ取られた装置は
             //    正直に「異常なし」を言わない。「異常なし」は人形が塗り替えた行にしか出ない）。
-            CommsNotice.MarkAnalyzing => "装置が解析しています",
+            // ⚠⚠ **一人称のまま壊す**（2026-11-13）。「装置が解析しています」は、スイが自分を入れ物の名で
+            //   呼ぶ唯一の文で、体験者には判定の保留とも故障とも付かない。侵食を示したいなら、
+            //   **私のままで、終わらないと言う**方が伝わる（judgement は持たないので 0232 の要件は満たす）。
+            CommsNotice.MarkAnalyzing => "解析が、\n終わりません。",
             // 嘘の一文（0232）: 読ませる段は**当たりの報告の返事そのもの**。前線が行を渡り切ったコマに
             //    <see cref="TakeoverLieText"/>（その最小編集「…しませんでした」）へ書き換わる。
             CommsNotice.Takeover => "異常を検知しました",
             // ③a すっと浮かぶ一言（打鍵は鳴らない・`canon/LEDGER.md` 0168）。
             CommsNotice.Halt => "止まってください！",
-            // ③ 締めの催促。⚠ **これだけが体験者自身を名指しする**（0096）。
-            //    読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
+            // ③ 締めの催促。読まれないと締めのカットが進まないので、いちばん強い言い方をしている。
+            //    ⚠⚠ **1 行目は「異常があなたと私を」**（0124 の逐語。ユーザー指定「異常があなたを →
+            //      異常があなたと私を にしてください」）。2026-11-13 に「異変があなたを」から戻した。
+            //      **ここがスイの侵食を言葉で言う唯一の場所**で、落とすと、画（乗っ取り・顔に残る人形・
+            //      赤の残り）が言っていることを文面側が一度も言わないまま終わる。
+            //      「取り込まれかけている私が、取り除きます」は矛盾ではなく、0270 の「呪われていた状況から
+            //      何とか戻ってきた感」そのもの。半分侵食されたままの顔と赤い字で、この文が出る。
             //    ⚠ 3 行目は 0168 の「排除してください。」から替えた（シュビーの案・未判定）。体験者が知っている
             //      操作の名前（報告）で頼み、導入の約束（私が取り除きます）を言い直す。
-            CommsNotice.Prompt => "異変があなたを\n取り込もうとしています。\n報告を。私が取り除きます。",
+            CommsNotice.Prompt => "異常があなたと私を\n取り込もうとしています。\n報告を。私が取り除きます。",
             // ④ 締めの報告で呪いが解けた（0284）。「検出しました」では急なので、終わったことを労う。
             CommsNotice.MarkCleared => "異変を取り除きました。\nお疲れ様です。",
             // ⑤ 別れの人形が後ろを向いた縁に出す解析の結果。伏線を 1 つだけ回収する（0322）。
@@ -406,7 +435,15 @@ namespace FixedCamVr.Diagnostics
             //    ⚠ 「敵意は検出されませんでした」のような判定の文にしない。2026-11-12 の体験者役 6 体のうち 4 体が
             //      「乗っ取られた装置の言うことなので信じきれない」「解析した側が決めたことになる」と書いた。
             //      体験者が自分の耳で聞いた言葉は、スイを信じなくても確かめられる。
-            CommsNotice.FarewellFinding => "解析が完了しました。\n記録された言葉は、一つです。\n「あーそぼー」",
+            //    ⚠ **「記録に残った声」**（2026-11-13 に「記録された言葉」から替えた）。初見の読み手が
+            //      「何をいつ記録していたのか分からない。音を録っているとは聞いていない」と書いた。
+            //      「声」なら 2 周目 C で**背後から自分の耳で聞いたあの音**と結びつき、博士の
+            //      「怪異を記録し、解析するための観測装置」も同じ 1 語で回収できる。
+            //    ⚠⚠ **数を数えない**（2026-11-13）。「一つです」と書いていた間、読み手 3 人が 3 回とも
+            //      肩透かしだと書いた（「何分の一なのかを考えてしまい、そこで気持ちが切れました」）。
+            //      ここは隣に人形が立って写真が撮られている最中で、**画のほうがずっと強い**。
+            //      その上に数を乗せると、読み手の目が数の方へ行く。
+            CommsNotice.FarewellFinding => "解析が完了しました。\n記録に残っていた声です。\n「あーそぼー」",
             _ => "",
         };
 
@@ -429,25 +466,26 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialShort => "Keep holding the button\na little longer.",
             CommsNotice.TutorialAccepted => "Report sent.\nDevice operating normally.",
             CommsNotice.TutorialReconnect => "Check the left controller.",
-            CommsNotice.TutorialReminder => "If you notice an anomaly,\nreport it the same way.\nI will remove it.",
-            CommsNotice.Greeting => "My apologies.\nI am Sui,\nyour support agent.",
+            CommsNotice.TutorialReminder => "If you find an anomaly,\nreport it the same way.\nI will remove it.",
+            CommsNotice.Greeting => "My apologies.\nI am Sui, the agent\nsupporting your survey.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
-            CommsNotice.Arrived => "You have arrived.\nObservation will now begin.",
+            CommsNotice.Arrived => "You have arrived.\nStarting up the\nobservation device.",
             CommsNotice.Begin => "Begin the survey.",
-            // ①b 3 行目は「押すと何が起きるか」（日本語と同じ役割・0096）。
-            CommsNotice.BeginHow => "If you see an anomaly,\nhold X or Y.\nI will remove it.",
+            // ①b 3 行目は「押すと何が起きるか」（日本語と同じ役割・0096）。キー名は出さない。
+            CommsNotice.BeginHow => "If you find an anomaly,\nhold the button.\nI will remove it.",
             CommsNotice.MarkLogged => "An anomaly was detected.\nRemoving it.",
-            CommsNotice.MarkStuck => "An anomaly was detected.\nI cannot remove it.",
+            CommsNotice.MarkStuck => "An anomaly was detected.\nI cannot remove it yet.",
             CommsNotice.MarkNothing => "No anomaly was detected.",
-            CommsNotice.SecondLap => "Second lap.\nThe signal is moving closer.",
-            CommsNotice.MarkAnalyzing => "Analyzing.",
+            // 「対象」は博士の "The subject is an anomalous entity" と同じ語で受ける。
+            CommsNotice.SecondLap => "Second lap.\nThe subject is closer\nthan on the first.",
+            CommsNotice.MarkAnalyzing => "The analysis\nwill not finish.",
             CommsNotice.Takeover => "An anomaly was detected.",
             CommsNotice.Halt => "Please stop!",
-            // ③ ここだけが体験者自身を名指しする（0096）。
-            CommsNotice.Prompt => "An anomaly is trying to\nabsorb you. Report it.\nI will remove it.",
+            // ③ 「あなたと私」（0124）。スイの侵食を言葉で言う唯一の場所。
+            CommsNotice.Prompt => "An anomaly is trying to\nabsorb you and me.\nReport it. I will remove it.",
             CommsNotice.MarkCleared => "The anomaly is removed.\nThank you for your work.",
             // ⑤ 声は日本語のまま鳴るので、ここで初めて意味が分かる。シュビーの案・未判定（0322 / 0036）。
-            CommsNotice.FarewellFinding => "Analysis complete.\nOne phrase was recorded:\n“Come and play.”",
+            CommsNotice.FarewellFinding => "Analysis complete.\nThe voice that remained:\n“Come and play.”",
             _ => "",
         };
 
@@ -463,21 +501,22 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialAccepted => "Signalement envoyé.\nLe dispositif fonctionne.",
             CommsNotice.TutorialReconnect => "Vérifiez la manette gauche.",
             CommsNotice.TutorialReminder => "Si vous voyez une anomalie,\nsignalez-la ainsi.\nJe l'éliminerai.",
-            CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui,\nvotre agente de soutien.",
+            CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui, l'agente\nqui assiste votre enquête.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
-            CommsNotice.Arrived => "Vous êtes arrivé.\nL'observation commence.",
+            CommsNotice.Arrived => "Vous êtes arrivé.\nMise en marche du\ndispositif d'observation.",
             CommsNotice.Begin => "Commencez l'enquête.",
-            CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez X ou Y.\nJe l'éliminerai.",
+            CommsNotice.BeginHow => "Si vous voyez une anomalie,\nmaintenez le bouton.\nJe l'éliminerai.",
             CommsNotice.MarkLogged => "Anomalie détectée.\nJe l'élimine.",
-            CommsNotice.MarkStuck => "Anomalie détectée.\nÉlimination impossible.",
+            CommsNotice.MarkStuck => "Anomalie détectée.\nJe ne peux pas l'éliminer\npour l'instant.",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
-            CommsNotice.SecondLap => "Deuxième tour.\nLe signal se rapproche.",
-            CommsNotice.MarkAnalyzing => "Analyse en cours.",
+            // 「対象」は博士の « L'objet est une entité anormale » と同じ語で受ける。
+            CommsNotice.SecondLap => "Deuxième tour.\nL'objet est plus proche\nqu'au premier tour.",
+            CommsNotice.MarkAnalyzing => "L'analyse\nne se termine pas.",
             CommsNotice.Takeover => "Anomalie détectée.",
             CommsNotice.Halt => "Arrêtez-vous !",
-            CommsNotice.Prompt => "Une anomalie tente de vous\nabsorber. Signalez-la.\nJe l'éliminerai.",
+            CommsNotice.Prompt => "Une anomalie nous absorbe,\nvous et moi. Signalez-la.\nJe l'éliminerai.",
             CommsNotice.MarkCleared => "Anomalie éliminée.\nMerci pour votre travail.",
-            CommsNotice.FarewellFinding => "Analyse terminée.\nUne phrase a été captée :\n« Viens jouer. »",
+            CommsNotice.FarewellFinding => "Analyse terminée.\nLa voix qui est restée :\n« Viens jouer. »",
             _ => "",
         };
 
@@ -527,7 +566,7 @@ namespace FixedCamVr.Diagnostics
         }
 
         /// <summary>
-        /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（①b の 3 行目・14 文字）。
+        /// 面を組むときに使う文面 ＝ <b>いちばん長い行を持つもの</b>（3 言語の中から機械が選ぶ）。
         ///
         /// ⚠ ここを短い文面にすると <c>menu text-audit</c> が<b>最悪の行を測らない</b>ので
         /// 「枠に収まっている」と嘘をつく。実行時はどの文面でも <see cref="SetNotice"/> が組み直す。
@@ -662,6 +701,15 @@ namespace FixedCamVr.Diagnostics
         private bool _recoverySurfaceActive;
         private static readonly int RecoveryId = Shader.PropertyToID("_Recovery");
         private static readonly int RecoveryRectId = Shader.PropertyToID("_RecoveryRect");
+        private static readonly int RecoveryGuardId = Shader.PropertyToID("_RecoveryGuard");
+        private static readonly int CreepTexId = Shader.PropertyToID("_CommsCreepTex");
+        // 面の縁から這い込む髪の版（0350）。画は `_CommsCreepTex`、字が髪の下かを数えるのは `_creepField`。
+        private byte[]? _creepField;
+        /// <summary>髪の版（画と、字を数える側）を両方掴めたか。掴めなければ髪は 1 画素も出ない。</summary>
+        public bool CreepBuilt { get; private set; }
+        private Vector4 _recoveryRect;
+        // 髪の下でも象牙のまま残す帯（命令の行）の下端と上端（面のローカル y）。下端 > 上端なら帯なし。
+        private Vector2 _recoveryGuard = new Vector2(1f, 0f);
         private static readonly int RecoveryWorldToPanelId = Shader.PropertyToID("_RecoveryWorldToPanel");
         private static readonly int RecoveryPanelToWorldId = Shader.PropertyToID("_RecoveryPanelToWorld");
         private Mesh? _panelMesh;
@@ -1941,6 +1989,23 @@ namespace FixedCamVr.Diagnostics
             bool isPrompt = LastNotice == CommsNotice.Prompt;
             bool closingNotice = isPrompt || LastNotice == CommsNotice.Halt;
             int lastLine = Mathf.Max(0, info.lineCount - 1);
+            // 命令の行の帯。③a は全行、③b は最後の行（`CommsRecoveryLogic.RedAllowed`）。
+            System.Span<bool> guarded = stackalloc bool[8];
+            _recoveryGuard = new Vector2(1f, 0f);
+            if (closingNotice && info.lineCount > 0)
+            {
+                float lo = float.MaxValue, hi = float.MinValue;
+                for (int l = 0; l <= lastLine && l < 8; l++)
+                {
+                    if (CommsRecoveryLogic.RedAllowed(isPrompt, l, lastLine) && isPrompt) continue;
+                    guarded[l] = true;
+                    lo = Mathf.Min(lo, info.lineInfo[l].descender);
+                    hi = Mathf.Max(hi, info.lineInfo[l].ascender);
+                }
+                if (lo < hi)
+                    _recoveryGuard = new Vector2(_text.transform.localPosition.y + lo * TextScale - 0.002f,
+                                                 _text.transform.localPosition.y + hi * TextScale + 0.002f);
+            }
             for (int i = 0; i < info.characterCount; i++)
             {
                 TMP_CharacterInfo ch = info.characterInfo[i];
@@ -1971,18 +2036,13 @@ namespace FixedCamVr.Diagnostics
                 }
                 alpha *= TearAlphaAt(panelY);
                 ShiftGlyphX(info, ch, TearShiftAt(panelY) / TextScale);
-                // 復帰（0270）: 呪いの赤が字の片側に残り、反対側へ向かって引いていく。字は切らない（読める）。
-                // 句読点には残さない（点だけが赤いと汚れに見える）。
-                bool punct = ch.character == '。' || ch.character == '、' || ch.character == '！'
-                             || ch.character == '.' || ch.character == ',' || ch.character == '!';
-                float redK = closingNotice && !punct
-                             && CommsRecoveryLogic.RedAllowed(isPrompt, ch.lineNumber, lastLine)
-                    ? CommsRecoveryLogic.RedOf(i, _recoveryRed) : 0f;
-                if (!isPrompt) redK = Mathf.Min(redK, CommsRecoveryLogic.HaltRedCap(Mathf.Max(0f, RecoverySec)));
-                if (redK > 0.001f)
+                // 復帰（0270 / 0350）: 髪の下の字は朱（画素ごとに `CommsRecoveryText.shader` が塗る）。字は切らない（読める）。
+                // ここでは同じ場を解いて数えるだけ。命令の行は髪の下でも象牙のまま（赤は人形の嘘の色）。
+                if (closingNotice && AppliedResidue > 0.001f && alpha > 0.05f && !guarded[ch.lineNumber < 8 ? ch.lineNumber : 7])
                 {
-                    SetGlyphRed(info, ch, CommsRecoveryLogic.RedSideOf(i), redK);
-                    if (alpha > 0.05f) red++;
+                    float gx = _text.transform.localPosition.x + centerX * TextScale;
+                    if (CommsCreepLogic.Depth(_creepField, gx, panelY, _recoveryRect.x, _recoveryRect.y,
+                                              _recoveryRect.z, _recoveryRect.w, AppliedResidue) > 0f) red++;
                 }
                 SetGlyphAlpha(info, ch, alpha);
             }
@@ -2275,7 +2335,6 @@ namespace FixedCamVr.Diagnostics
             AppliedSquash = rec.squash;
             AppliedBoot = rec.boot;
             AppliedResidue = rec.residue;
-            _recoveryRed = rec.red;
             AppliedGlyph = Mathf.Clamp01(w.glyph) * rec.power;
             // ⚠ 弱った起動のあいだは、開く段のフェード（open・panel・body の立ち上がり）を電力と縦の開きが置き換える。
             //   重ねると起動の頭の 0.2 秒が既存のフェードに覆われて 1 画素も見えない（プレビューの絵で見つけた）。
@@ -2389,6 +2448,14 @@ namespace FixedCamVr.Diagnostics
             {
                 _recoveryTextShader = Resources.Load<Shader>("Shaders/CommsRecoveryText");
                 _recoveryShaderLoaded = true;
+                Texture2D? creep = Resources.Load<Texture2D>("CommsFx/CurseCreep");
+                TextAsset? creepField = Resources.Load<TextAsset>("CommsFx/CurseCreepField");
+                if (creep != null) Shader.SetGlobalTexture(CreepTexId, creep);
+                _creepField = creepField != null ? creepField.bytes : null;
+                CreepBuilt = creep != null && _creepField != null
+                             && _creepField.Length == CommsCreepLogic.FieldW * CommsCreepLogic.FieldH;
+                if (!CreepBuilt)
+                    Debug.LogWarning("[CommsPanel] 髪の版 Resources/CommsFx/CurseCreep が見つかりません（③a / ③b の髪が出ない）");
             }
             bool active = AppliedResidue > 0.001f;
             if (!active && !_recoverySurfaceActive) return;
@@ -2398,6 +2465,8 @@ namespace FixedCamVr.Diagnostics
             var recovery = new Vector4(AppliedResidue, Mathf.Max(0f, RecoverySec), AppliedBoot, 0f);
             var rect = new Vector4(_panelLeftX + _panelW * 0.5f, centerY, _panelW,
                                    Mathf.Max(CommsFaceLayout.MinBoxH, height));
+            _recoveryRect = rect;
+            var guard = new Vector4(_recoveryGuard.x, _recoveryGuard.y, 0f, 0f);
             Transform space = _visualRoot != null ? _visualRoot : transform;
             Matrix4x4 toPanel = space.worldToLocalMatrix;
             Matrix4x4 toWorld = space.localToWorldMatrix;
@@ -2406,6 +2475,7 @@ namespace FixedCamVr.Diagnostics
                 if (material == null) return;
                 material.SetVector(RecoveryId, recovery);
                 material.SetVector(RecoveryRectId, rect);
+                material.SetVector(RecoveryGuardId, guard);
                 material.SetMatrix(RecoveryWorldToPanelId, toPanel);
                 material.SetMatrix(RecoveryPanelToWorldId, toWorld);
             }

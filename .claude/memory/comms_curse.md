@@ -121,10 +121,34 @@ EditMode 1965/1965。実機は未走行（並行セッションが Editor を握
 | 起動・余震・残り・解ける | `CommsRecoveryLogic.Sample(sec, promptReveal, promptTypeSec, releasedSec)` |
 | 電力と縦の開き | `CommsPanel.Apply`（地・顔・文字・下段の濃さに電力を掛ける）・`ApplyRecoveryMotion`（`_visualRoot` の縦の縮み。**枠の中心を軸**にずらす） |
 | 帯の乱れ | 乗っ取りと同じ `ComputeTear`。種は復帰の時計 |
-| 顔の右側の人形 | `CommsAvatar.shader` の `_Residue` / `_ResidueColor`（`_Residue.x = 0` なら 1 画素も変わらない） |
-| 字の赤 | `CommsPanel.ApplySplitTruthMesh` → `SetGlyphRed`（頂点色・片側だけ）。どの字に許すかは `CommsRecoveryLogic.RedAllowed` |
+| 髪の場 | `CommsRecovery.hlsl` の `CommsCreepEval`（地・顔・字・罫線が同じ物を読む）。`_Residue.x = 0` なら 1 画素も変わらない |
+| 字の朱 | 画素ごとに `CommsRecoveryText.shader`。命令の句を守る帯は `_RecoveryGuard`（`CommsPanel.ApplySplitTruthMesh` が毎フレーム組む）。数えるのは `CommsCreepLogic.Depth` |
 | 見る | `.\tools\unity.ps1 menu comms-preview -Set recovery=1` → `Assets/Screenshots/comms-preview/recovery/`（`recovery.tsv` が電力・開き・乱れ・人形・赤い字の数） |
 | 観測 | `ev=commsRecover st=begin/end`（end に powMin / squashMin / tearMax / resMax / resEnd / redMax）・`ev=sum` の `commsRec` |
+
+### 呪いは「縁から這い込む髪」（2026-11-13・0350。それまでの静止した赤い斑は不採用）
+
+ユーザー「すごくチープ。根本的にリデザインしてほしい」。2026-10-18 に入れた形（値ノイズ 2 オクターブの
+静止した斑で面を約半々に塗り、等間隔の横線と帯ずれを掛ける）を捨てた。**捨てた理由は画で言える** —
+斑に出どころも向きも因果も無く、迷彩柄に見える。平たい 1 色。赤い字が赤い地に沈む。
+
+いまの形: **呪い = 面の左・上・右の縁から這い込む濡れた黒髪。スイ = 中央で持ちこたえる側。境目 = 熾の細い線。**
+
+- 髪の形は**式で作らない**（`canon/TASTE.md` 1）。生成 AI に描かせたシルエット（`tools/comms-creep/src/`）から
+  「根元からの到達順」を解いて焼く（`tools/comms-creep/bake.py`）。R = 到達順 / G = 房の芯までの深さ / B = 房そのもの
+- ⚠⚠ **到達順は 1 つの伝播で解く。** 房の中だけで測地距離を取って外へ貼り足すと、いちばん近い房が
+  切り替わる所に**段差の線**が出る（最初の版で縦線として見えた）。房の中を速く・外を 9 倍遅く進む 1 つの場にする
+- ⚠⚠ **前線の縁の幅を `fwidth` から取らない。** 画素の勾配は 2x2 画素ごとにしか出ず、辺の切り替わりで跳ねるので
+  前線が点々と階段になる（2 回焼いて 2 回出た）。到達順の増え方は房の内と外で決まっているので、
+  **房かどうかで幅を選ぶ**（`lerp(0.050, 0.0075, strand)`）と面の上でほぼ同じ太さ（約 1.5mm）になる
+- ⚠ **髪の縁を光らせると炎に見える**（最初の焼き）。見えるのは「暗い朱のにじみの上の、黒い髪の影」。
+  光るのは前線の熾だけ。スイの側には前線の手前に弱い照り返しを置く（**黒い髪は黒い地の上で輪郭しか読めない**）
+- ⚠ **上の辺の髪を全幅に並べない。** 等間隔の房が並ぶと「毛の生えた額縁」に見える（設計批評の予測どおりだった）。
+  `CommsCreepTopEbb` が顔の側と右の角へ寄せる
+- **寸法は 3 か所が同じ値を持つ**（`CommsRecovery.hlsl` / `CommsCreepLogic` / `bake.py` の確認用の描画）。直すときは 3 つとも
+- 寸法は**掃いて決めた**（`tools/comms-creep/bake.py` と同じ式を numpy で回し、顔の覆いと字の中心の数で絞る）。
+  落ち着いた姿で 顔 53% / 1 行目の 9 字のうち 5 字が朱 / 2・3 行目は 0。報告が無いまま寄ると 1・2 行目が全部朱になる
+- 量（`residue`）の曲線は `CommsRecoveryLogic`。**起動の 0.92 秒は押し返さない** — 現れ方を 2 つ競合させない
 
 ### 起動は砂嵐からブロックごとに復号する（2026-10-20・0280）
 

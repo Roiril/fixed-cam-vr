@@ -2,62 +2,116 @@
 #define FIXEDCAMVR_COMMS_RECOVERY_INCLUDED
 #include "CommsCurse.hlsl"
 
-// 2026-10-18 採用: ノイズは静止。確認画像の位相を固定し、復帰の時計では動かさない。
-static const float COMMS_RECOVERY_NOISE_PHASE = 5.5;
+// ---- ③a / ③b の復帰: 面の縁から這い込む黒髪と、それを焼いて押し返す熾の線 ----
+// 出どころは `canon/LEDGER.md` 0270 と 0350（「すごくチープ。根本的にリデザインしてほしい」）。
+// 値ノイズの斑をやめ、描かせた髪のシルエットから焼いた「到達順」の版を閾値で切る。
+// 版は `tools/comms-creep/bake.py` が焼く（R = 到達順 / G = 房の芯までの深さ / B = 房そのもの）。
+// ⚠ 定数と式は C# の `CommsCreepLogic` と bake.py の確認用の描画が同じ値で持つ。直すときは 3 か所。
+// ⚠ 地・顔・字が同じ場を読む。_Recovery = (髪の寄り 0..1, 復帰の時計 秒, 起動の残り, 0)。
+sampler2D _CommsCreepTex;
 
-// 全層が同じ面座標を使う。顔だけの模様や、文字ごとの独立した赤にはしない。
-float CommsRecoveryNoise(float2 p)
+static const float COMMS_CREEP_TILE_M = 0.40;    // 版の半分が辺に沿って占める長さ
+static const float COMMS_CREEP_REACH_M = 0.24;   // 版の高さが辺から内へ占める長さ
+static const float COMMS_CREEP_ROOT_V = 0.12;    // 版の中で根元の塊が終わる高さ
+static const float COMMS_CREEP_THETA_MAX = 0.98;
+// 辺ごとの (寄り 0 のときの根元の位置 m, 寄り 1 あたりの進み m, 版の横の送り)。負は面の外。
+static const float3 COMMS_CREEP_LEFT = float3(-0.20, 0.44, 0.07);
+static const float3 COMMS_CREEP_TOP = float3(-0.20, 0.40, 0.31);
+static const float3 COMMS_CREEP_RIGHT = float3(-0.24, 0.42, 0.57);
+
+struct CommsCreepSurface
 {
-    return 0.74 * CurseValueNoise(p * 4.0 + float2(3.7, 1.9))
-         + 0.26 * CurseValueNoise(p * 13.0 + float2(11.3, 7.1));
+    float f;      // 前線からの深さ（版の到達順の単位）。正が髪の側。
+    float k;      // 髪の側か 0..1（縁は 1 画素でなめらか）
+    float seam;   // 熾の線の芯 0..1
+    float glow;   // 熾のにじみ 0..1（両側）
+    float core;   // 房の芯までの深さ 0..1
+    float strand; // 房そのもの 0..1（0 は房のあいだの墨のにじみ）
+};
+
+float CommsCreepTheta(float reach)
+{
+    return COMMS_CREEP_THETA_MAX * smoothstep(0.0, 0.85, reach);
 }
 
-float CommsRecoveryBaseMask(float2 p, float4 recovery, float4 rect)
+// 上の辺の髪は全幅に並べない（等間隔の房が並ぶと「毛の生えた額縁」に見える）。
+// 顔の側と右の角に寄せ、あいだは引かせる。xn = 辺に沿った位置 0..1。戻り値は根元を外へ引く量 (m)。
+float CommsCreepTopEbb(float xn)
 {
-    if (recovery.x <= 0.001) return 0.0;
-    float2 uv = (p - rect.xy) / max(rect.w, 0.001);
-    float2 drift = float2(COMMS_RECOVERY_NOISE_PHASE * 0.025, -COMMS_RECOVERY_NOISE_PHASE * 0.035);
-    float field = 0.5 + (CommsRecoveryNoise(uv + drift)
-                       - CommsRecoveryNoise(-uv + drift)) * 0.65;
-    return smoothstep(field - 0.035, field + 0.035, recovery.x);
+    return 0.07 * smoothstep(0.26, 0.52, xn) * (1.0 - smoothstep(0.84, 1.0, xn));
 }
 
-float2 CommsRecoveryWarp(float2 p, float4 recovery, float4 rect)
+void CommsCreepSide(float d, float along, float span, float3 side, float ebb, float reach, float swallow,
+                    float theta, float sec, inout float bestF, inout float2 bestCs)
 {
-    if (recovery.x <= 0.001) return 0.0;
-    float strength = saturate(recovery.x * 2.0);
-    float2 uv = (p - rect.xy) / max(rect.zw, 0.001);
-    float band = floor((p.y - rect.y) / 0.006);
-    float tick = floor(COMMS_RECOVERY_NOISE_PHASE * 10.0);
-    float h = CurseHash21(float2(band, tick));
-    float jump = step(0.58, h) * (CurseHash21(float2(band + 71.0, tick)) - 0.5) * 0.045;
-    float red = CommsRecoveryBaseMask(p, recovery, rect);
-    return float2(sin(uv.y * 19.0 + COMMS_RECOVERY_NOISE_PHASE * 0.7) * 0.0025 + jump,
-                  sin(uv.x * 15.0 - COMMS_RECOVERY_NOISE_PHASE * 0.5) * 0.0010) * strength * red;
+    float adv = side.x + side.y * reach + swallow * span - ebb * (1.0 - swallow);
+    float v = (d - adv) / COMMS_CREEP_REACH_M + COMMS_CREEP_ROOT_V;
+    float u = along / (2.0 * COMMS_CREEP_TILE_M) + side.z;
+    // 房の先ほど大きく、ゆっくり揺れる。周期の合わない 2 つの和（等間隔の往復にしない）。
+    float sway = sin(sec * 0.61 + u * 40.0) * 0.6 + sin(sec * 0.23 + u * 17.0 + 1.7) * 0.4;
+    u += 0.006 * saturate(v) * sway;
+    float3 t = tex2D(_CommsCreepTex, float2(u, saturate(v))).rgb;
+    float f = theta - t.r;
+    float strand = v < 0.0 ? 1.0 : t.b;
+    if (f > bestF)
+    {
+        bestF = f;
+        bestCs = float2(t.g, strand);
+    }
 }
 
-float CommsRecoveryMask(float2 p, float4 recovery, float4 rect)
+// p = 面のローカル座標 (m)。rect = (中心 x, 中心 y, 幅, 高さ)。
+CommsCreepSurface CommsCreepEval(float2 p, float4 recovery, float4 rect)
 {
-    if (recovery.x <= 0.001) return 0.0;
-    // 赤の輪郭も帯ごとに横へ裂く。正常領域には変位を掛けない。
-    return CommsRecoveryBaseMask(p - CommsRecoveryWarp(p, recovery, rect), recovery, rect);
+    CommsCreepSurface s;
+    s.f = -1.0; s.k = 0.0; s.seam = 0.0; s.glow = 0.0; s.core = 0.0; s.strand = 0.0;
+    float reach = saturate(recovery.x);
+    float2 lo = rect.xy - rect.zw * 0.5;
+    float2 hi = rect.xy + rect.zw * 0.5;
+    float swallow = smoothstep(0.72, 1.0, reach);
+    float theta = CommsCreepTheta(reach);
+    float bestF = -9.0;
+    float2 bestCs = 0.0;
+    CommsCreepSide(p.x - lo.x, p.y - lo.y, rect.z, COMMS_CREEP_LEFT, 0.0, reach, swallow, theta, recovery.y, bestF, bestCs);
+    CommsCreepSide(hi.y - p.y, p.x - lo.x, rect.w, COMMS_CREEP_TOP, CommsCreepTopEbb((p.x - lo.x) / max(rect.z, 1e-4)), reach, swallow, theta, recovery.y, bestF, bestCs);
+    CommsCreepSide(hi.x - p.x, p.y - lo.y, rect.z, COMMS_CREEP_RIGHT, 0.0, reach, swallow, theta, recovery.y, bestF, bestCs);
+    // 縁の幅は微分から取らない。画素の勾配は 2x2 画素ごとにしか出ず、辺の切り替わりで跳ねるので、
+    // 前線が点々と階段になる（最初の 2 回の焼きで見えた）。到達順は房の中でゆっくり、房の外で 9 倍速く
+    // 増えるので、房かどうかで幅を選べば面の上でほぼ同じ太さ（約 1.5mm）になる。
+    float fw = lerp(0.050, 0.0075, smoothstep(0.2, 0.8, bestCs.y));
+    float px = bestF / fw;
+    float on = step(0.001, recovery.x);
+    s.f = bestF;
+    s.k = smoothstep(-1.0, 1.0, px) * on;
+    s.seam = exp(-px * px / 1.6) * on;
+    s.glow = exp(-abs(px) / 2.6) * on;
+    s.core = bestCs.x;
+    s.strand = bestCs.y;
+    return s;
 }
 
-// 赤い領域の細い明線と暗線。横へ走った一瞬の形を固定する。
-float CommsRecoveryLines(float2 p, float4 recovery, float4 rect)
+// 熾の線は途切れ、強弱がある（一様な輪郭線にしない）。版の芯の模様を大きく引いて濃淡に使う。
+float CommsCreepEmber(float2 p, float sec)
 {
-    float row = floor((p.y - rect.y) / 0.005);
-    float seed = CurseHash21(float2(row, 17.3));
-    float thin = 1.0 - smoothstep(0.10, 0.27, frac((p.y - rect.y) / 0.005));
-    float travel = frac((p.x - rect.x) / 0.28 - COMMS_RECOVERY_NOISE_PHASE * 2.1 + seed);
-    float streak = smoothstep(0.02, 0.12, travel) * (1.0 - smoothstep(0.52, 0.9, travel));
-    return thin * streak * step(0.35, seed);
+    float2 q = p * float2(0.9, 2.3) + float2(sec * 0.011, 0.37);
+    float m = tex2D(_CommsCreepTex, q).g;
+    return smoothstep(0.02, 0.55, m) * 0.85 + 0.15;
 }
 
-float CommsRecoveryGrain(float2 p, float time)
+// 髪の側の地の色（リニア）。房は黒、房のあいだは暗い朱のにじみ。前線に近いほど熾が透ける。
+float3 CommsCreepInk(CommsCreepSurface s)
 {
-    return CurseValueNoise(p * 420.0 + floor(COMMS_RECOVERY_NOISE_PHASE * 8.0) * float2(0.31, 0.17));
+    // 主従: 見えるのは「暗い朱のにじみの上の、黒い髪の影」。髪の縁を光らせると炎に見える（最初の焼き）。
+    float near = exp(-max(s.f, 0.0) / 0.12);
+    float3 stain = float3(0.050, 0.0058, 0.0036) * (0.45 + 0.55 * near);
+    float3 hair = float3(0.0026, 0.0020, 0.0018) + float3(0.012, 0.0014, 0.0010) * s.core;
+    return lerp(stain, hair, smoothstep(0.25, 0.75, s.strand));
 }
+
+static const float3 COMMS_EMBER_CORE = float3(1.0, 0.76, 0.48);
+static const float3 COMMS_EMBER_GLOW = float3(0.90, 0.085, 0.022);
+// 髪の下の字と顔の線の色（人形の嘘の朱より明るい側。黒い髪の上で読める）。
+static const float3 COMMS_EMBER_INK = float3(0.93, 0.105, 0.040);
 
 // ---- ③a の起動（`canon/LEDGER.md` 0280・`CommsRecoveryLogic`）----
 // 面は一度に点かない。横に細長いブロックごとに砂嵐として現れ、砂嵐から中身（地・顔・字）へ復号される。

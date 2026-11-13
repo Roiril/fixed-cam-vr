@@ -49,6 +49,9 @@ namespace FixedCamVr.Streaming.EditorTools
             CommsNotice.Greeting, CommsNotice.Walk, CommsNotice.Arrived,
             CommsNotice.Begin, CommsNotice.BeginHow,
             CommsNotice.MarkLogged, CommsNotice.MarkStuck, CommsNotice.MarkNothing,
+            // ⚠ 侵食中の空振りの返事。2026-11-13 まで一覧から漏れていて、**この文面だけ縦の座りを
+            //    誰も見ていなかった**（同じ日に 1 行 → 2 行へ変えたので足した）。
+            CommsNotice.MarkAnalyzing,
             CommsNotice.SecondLap,
             CommsNotice.Halt, CommsNotice.Prompt, CommsNotice.MarkCleared,
             CommsNotice.FarewellFinding,
@@ -157,6 +160,25 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 実機の暗い現場に近い無地。⚠ 現場のパススルーはここより明るいことがあり、
                 //    そのとき地（暗い漆の面）は相対的に沈んで見える。
                 cam.backgroundColor = new Color(0.055f, 0.052f, 0.050f, 1f);
+                // `-Set bg=<PNG>`: 面の後ろに実機の主画面の画を置く。半透明の地と黒い髪の差は、無地の黒の前では見えない。
+                string? bgPath = EditorCliArgs.Get("bg");
+                if (!string.IsNullOrEmpty(bgPath) && File.Exists(bgPath))
+                {
+                    var bgTex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                    bgTex.LoadImage(File.ReadAllBytes(bgPath));
+                    var bgGo = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                    bgGo.name = "[CommsPreview] Backdrop";
+                    Object.DestroyImmediate(bgGo.GetComponent<Collider>());
+                    bgGo.transform.SetParent(camGo.transform, false);
+                    const float z = 3.2f;
+                    float hh = 2f * z * Mathf.Tan(WideFovDeg * 0.5f * Mathf.Deg2Rad) * 0.62f;
+                    bgGo.transform.localPosition = new Vector3(0f, 0f, z);
+                    bgGo.transform.localScale = new Vector3(hh * bgTex.width / bgTex.height, hh, 1f);
+                    var bgMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                    bgMat.SetTexture("_BaseMap", bgTex);
+                    bgMat.renderQueue = 2000;
+                    bgGo.GetComponent<Renderer>().sharedMaterial = bgMat;
+                }
 
                 float dist = ConstF(typeof(CommsPanel), "DistanceM", 1.5f);
                 float yawOff = ConstF(typeof(CommsPanel), "YawOffsetDeg", -20f);

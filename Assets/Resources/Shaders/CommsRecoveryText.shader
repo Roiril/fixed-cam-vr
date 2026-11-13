@@ -7,6 +7,7 @@ Shader "FixedCamVr/CommsRecoveryText" {
 Properties {
 	[HideInInspector] _Recovery ("Recovery", Vector) = (0,0,0,0)
 	[HideInInspector] _RecoveryRect ("Recovery Rect", Vector) = (0,0,1,1)
+	[HideInInspector] _RecoveryGuard ("Recovery Guard", Vector) = (1,0,0,0)
 	_FaceTex			("Face Texture", 2D) = "white" {}
 	_FaceUVSpeedX		("Face UV Speed X", Range(-5, 5)) = 0.0
 	_FaceUVSpeedY		("Face UV Speed Y", Range(-5, 5)) = 0.0
@@ -136,6 +137,7 @@ SubShader {
 
 		float4 _Recovery;
 		float4 _RecoveryRect;
+		float4 _RecoveryGuard;
 		float4x4 _RecoveryWorldToPanel;
 		float4x4 _RecoveryPanelToWorld;
 
@@ -187,12 +189,6 @@ SubShader {
 			vert.y += _VertexOffsetY;
 
 			float2 panelPos = mul(_RecoveryWorldToPanel, mul(unity_ObjectToWorld, vert)).xy;
-			if (_Recovery.x > 0.001)
-			{
-				float2 recoveryOffset = CommsRecoveryWarp(panelPos, _Recovery, _RecoveryRect);
-				float3 recoveryWorldOffset = mul(_RecoveryPanelToWorld, float4(recoveryOffset, 0, 0)).xyz;
-				vert.xyz += mul(unity_WorldToObject, float4(recoveryWorldOffset, 0)).xyz;
-			}
 
 			float4 vPosition = UnityObjectToClipPos(vert);
 
@@ -327,15 +323,16 @@ SubShader {
 			clip(faceColor.a - 0.001);
 		#endif
 
+			// 髪の下の字は熾の朱、前線の上では白熱する（0350）。命令の行（_RecoveryGuard の帯）は髪の下でも象牙のまま。
+			// ⚠ 微分を取るので分岐の外で引く。_Recovery.x = 0 なら k も線も 0。
+			CommsCreepSurface cs = CommsCreepEval(input.panelPos, _Recovery, _RecoveryRect);
 			if (_Recovery.x > 0.0)
 			{
-				float recoveryMask = CommsRecoveryMask(input.panelPos, _Recovery, _RecoveryRect);
-				float grain = saturate(CommsRecoveryGrain(input.panelPos, _Recovery.y));
-				faceColor.rgb = lerp(float3(0.82, 0.78, 0.72), float3(0.92, 0.035, 0.025), recoveryMask) * faceColor.a;
-				faceColor *= 0.85 + 0.15 * grain;
-				float lines = CommsRecoveryLines(input.panelPos, _Recovery, _RecoveryRect) * recoveryMask;
-				faceColor.rgb = lerp(faceColor.rgb, float3(1.0, 0.08, 0.04) * faceColor.a, lines * 0.65);
-				faceColor *= 1.0 - lines * 0.3;
+				float guard = step(_RecoveryGuard.x, input.panelPos.y) * step(input.panelPos.y, _RecoveryGuard.y);
+				float k = cs.k * (1.0 - guard);
+				float3 ink = lerp(float3(0.82, 0.78, 0.72), COMMS_EMBER_INK, k);
+				ink = lerp(ink, COMMS_EMBER_CORE, cs.seam * (1.0 - guard) * 0.85);
+				faceColor.rgb = ink * faceColor.a;
 			}
 			if (_Recovery.z > 0.001)
 			{
