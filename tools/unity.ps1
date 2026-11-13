@@ -116,7 +116,7 @@ $Menus = [ordered]@{
                             Set = 'density=<0..1 開く目の割合> / trim=<止まる 3 つを詰める秒> / hold=<開けっ放しの秒> / scale=<出力の倍率。2 で Quest の片眼の密度>'
                             Out = 'Assets/Screenshots/eyes-preview/stage_4_hold.png' }
     'screen-wall'      = @{ Method = 'FixedCamVr.Streaming.EditorTools.ScreenWallPreview.Run'
-                            Desc = '増えるスクリーンと黒い霧を、霧あり（fog）と霧なし（flat）で焼く。静止画 各 9 枚・連番・段ごとの明るさ report.tsv'
+                            Desc = '増えるスクリーンと黒い霧を、霧あり（fog）と霧なし（flat）で焼く。静止画 各 19 枚（点く波・帯の回転・床・閉じ・残光）・連番・段ごとの明るさ report.tsv'
                             Set = 'frames=0（連番を撮らない）'
                             Out = 'Assets/Screenshots/screen-wall/report.tsv' }
     'eyejack'          = @{ Method = 'FixedCamVr.Streaming.EditorTools.EyeJackPreview.Run'

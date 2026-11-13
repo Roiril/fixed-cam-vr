@@ -73,6 +73,7 @@ namespace FixedCamVr.Streaming.Tests
             var p = new OverlayPressLogic();
             for (int i = 0; i < 72 * 3; i++) p.Tick(Dt, 1f);
             float from = p.P;
+            float peak = p.Peak;
             p.Collapse();
             Assert.That(p.Collapsing, Is.True);
             float half = p.Tick(OverlayPressLogic.CollapseSec * 0.5f, 1f);
@@ -81,7 +82,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(p.Collapsed, Is.True);
             Assert.That(p.P, Is.EqualTo(0f));
             Assert.That(p.Tick(Dt, 1f), Is.EqualTo(0f), "畳んだ後は押し続けても膨らまない");
-            Assert.That(p.Peak, Is.EqualTo(from).Within(1e-4f), "観測用の最大は残る");
+            Assert.That(p.Peak, Is.EqualTo(peak).Within(1e-4f), "観測用の最大は残る（押し切ると行き過ぎるので、畳む直前の p より大きい）");
         }
 
         [Test]

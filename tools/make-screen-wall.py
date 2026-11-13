@@ -2,7 +2,7 @@
 
 頭を巻く帯に、頭の方を向いた面を並べる。散らばった残骸ではなく、秩序のある灯の列にする。
 - 帯 1（上）: 仰角 +27°・半径 3.3m。0 番（メインの右上）はこの帯の 1 枚
-- 帯 0（目の高さ）: 仰角 +2°・半径 3.9m。メインの後ろ（方位 ±26° 以内）は空ける
+- 帯 0（目の高さ）: 仰角 +2°・半径 3.9m。メインの後ろも空けない（帯が回るので、空けた所がメインの横へ流れて穴に見える）
 - 帯 2（最上）: 仰角 +46° 前後・半径 4.6m。小さい面がまばらに、方位 ±110° 以内だけ
 - 帯 3（霧の奥）: 6.8〜10.5m。帯の隙間の奥に見える高さを優先して置く
 帯 0 と 1 は 360° を巻き、後方（|方位| > 130°）は 3 枚に 1 枚抜く。
@@ -39,7 +39,6 @@ BACK_DROP_EVERY = 3
 
 # (仰角の中心, 半径 m)
 RING = {UPPER: (27.0, 3.3), EYE: (2.0, 3.9)}
-MAIN_CLEAR_DEG = 26.0     # 目の高さの帯はメインの後ろを空ける
 
 TOP_EL, TOP_EL_JITTER, TOP_DIST = 46.0, 1.5, 4.6
 TOP_W = (8.0, 10.0)
@@ -168,13 +167,14 @@ def three_in_a_row(seats, circular):
     return any(w[i] == w[i + 1] == w[i + 2] for i in range(len(w) - 2))
 
 
-def band_ring(rng, band, start, length, n_hint, head=None, extra=()):
+def band_ring(rng, band, start, length, n_hint, head=None, extra=(), closed=False):
     """帯を 1 本詰めて後方を抜く。抜いた後に同じ幅が 3 枚並んだら詰め直す。"""
     el, _ = RING[band]
     for _ in range(500):
-        arc = fill_arc(rng, start, length, el, n_hint, head=head, circular=head is not None)
+        ring = closed or head is not None
+        arc = fill_arc(rng, start, length, el, n_hint, head=head, circular=ring)
         seats = thin_back([make_seat(rng, az, w, band) for az, w in arc])
-        if not three_in_a_row(list(extra) + seats, circular=head is not None):
+        if not three_in_a_row(list(extra) + seats, circular=ring):
             return seats
     raise RuntimeError(f"band {band}: three in a row")
 
@@ -188,8 +188,8 @@ def generate(seed):
     span0 = az_span(first["w"], el_up)
     upper = band_ring(rng, UPPER, first["az"] + span0 / 2, 360.0 - span0, 18, head=first["w"], extra=[first])
 
-    # 目の高さの帯。メインの後ろ（±26°）を空けて、右から後ろを回って左まで。
-    eye = band_ring(rng, EYE, MAIN_CLEAR_DEG, 360.0 - 2 * MAIN_CLEAR_DEG, 17)
+    # 目の高さの帯。真後ろを継ぎ目にして 1 周巻く。メインの後ろを通る面はメインに隠れる。
+    eye = band_ring(rng, EYE, 180.0, 360.0, 21, closed=True)
 
     seats = [first] + upper + eye
 

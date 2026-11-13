@@ -68,7 +68,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Bands_WrapTheHead_AndLeaveTheMainScreenClear()
+        public void Bands_WrapTheHead_WithoutAHoleBesideTheMainScreen()
         {
             ScreenSeat[] eye = Seats.Where(s => s.band == ScreenMultiplyLayout.BandEye).ToArray();
             ScreenSeat[] upper = Seats.Where(s => s.band == ScreenMultiplyLayout.BandUpper).ToArray();
@@ -76,11 +76,14 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(eye.Length, Is.GreaterThan(10));
             Assert.That(upper.Length, Is.GreaterThan(10));
             Assert.That(top.Length, Is.InRange(10, 14));
-            // 目の高さの帯はメインの後ろ（方位 ±26°）を空ける。
-            foreach (ScreenSeat s in eye)
+            // 目の高さの帯はメインの後ろも空けない。帯が回るので、空けた所がメインの横へ流れて穴に見える。
+            // 前半分（|方位| <= 130°）で、隣り合う面の縁どうしの隙間が 4° を超えない。
+            ScreenSeat[] front = eye.Where(s => Mathf.Abs(s.azDeg) <= 130f).OrderBy(s => s.azDeg).ToArray();
+            for (int i = 1; i < front.Length; i++)
             {
-                float halfAz = s.widthDeg * 0.5f / Mathf.Cos(s.elDeg * Mathf.Deg2Rad);
-                Assert.That(Mathf.Abs(s.azDeg) - halfAz, Is.GreaterThanOrEqualTo(26f - 0.05f));
+                float half = (front[i].widthDeg + front[i - 1].widthDeg) * 0.5f / Mathf.Cos(2f * Mathf.Deg2Rad);
+                Assert.That(front[i].azDeg - front[i - 1].azDeg - half, Is.LessThan(4f),
+                    $"目の高さの帯の方位 {front[i - 1].azDeg}〜{front[i].azDeg} に穴がある");
             }
             // 帯 0 と 1 は 360° を巻く（前後左右に面がある）。最上の帯は方位 ±110° 以内。
             foreach (ScreenSeat[] band in new[] { eye, upper })
