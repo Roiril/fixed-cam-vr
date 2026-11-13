@@ -35,7 +35,7 @@ Shader "FixedCamVr/ScreenComposite"
         _RevealTex("Overlay Reveal Order (R, screen space, sRGB-encoded)", 2D) = "white" {}
         _OverlayRevealOn("Overlay Reveal On", Float) = 0
         _OverlayReveal("Overlay Reveal", Range(0, 1)) = 1
-        _OverlayRevealSoft("Overlay Reveal Soft", Range(0.001, 0.5)) = 0.06
+        _OverlayRevealSoft("Overlay Reveal Soft", Range(0.001, 0.5)) = 0.12
         _OverlayMul("Overlay Multiply (ratio image)", Float) = 0
         _PressTex("Press Bulge (Pre-generated)", 2D) = "black" {}
         _PressMaskTex("Press Mask (R, screen space, sRGB-encoded)", 2D) = "black" {}

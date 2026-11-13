@@ -49,5 +49,7 @@ paths:
 
 - 比の画・順の画・press マスクは sRGB で読まれ mip を持つ。線形の値として書いた PNG は暗く読まれる。道具は sRGB で書く
 - 順の画の無い cue では `StopOverlay(float)` の秒は使われず、cue の `fadeOut` で薄まる
+- 演出のカットは cue を写して出す（`TakeRunner.BuildStepOverlay`）。掛け算と滲みを継がないと比の画が差し替えの画として出る — `TakeSplitLayerTests.StepOverlay_InheritsMultiplyAndReveal_FromTheCue`
+- ツインの通しは比の画・順の画・press マスクもツインの部屋のものへ差し替える（`tools/twin/assets.json` の `reveal` / `pressMask`。作るのは `mask-recipes/bleed-twin-*.json`）。本番の素材を替えたらツイン側も作り直す
 - 卓のプレビュー（`shaders.js` / `pipeline.js`）は掛け算・滲み・膨らみを描かない。見た目は `bleed_preview.py` で見る
 - 台本へ当てるのは `tools/show-apply-bleed.py`。素材を `static-inputs/` へ写してから `--apply`。卓を止めてから流す

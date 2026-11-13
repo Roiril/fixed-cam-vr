@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "kind": "hands",
+  "note": "ツインの部屋の 1 周目 B の手形（tools/twin/assets.json の cue_hands_B）。入力だけツインの素材（0349）。ツインの壁は手形の画と無人の写真で明るさが違うので、膝を下げて手形の濃い所だけを掛ける",
+  "source": "tools/twin/assets/twin_handsB.png",
+  "clean": [
+    "tools/twin/plates/twin_B_plate.jpg"
+  ],
+  "domainMask": "tools/twin/assets/twin_handsB_mask.png",
+  "seed": 904,
+  "ratio": {
+    "noiseRadius": 1,
+    "normalizeBox": [
+      0,
+      0,
+      300,
+      300
+    ],
+    "envelopeRadius": 24,
+    "chroma": 0.6,
+    "knee": [
+      0.42,
+      0.6
+    ],
+    "domainFeather": 3
+  },
+  "reveal": {
+    "inThreshold": 0.2,
+    "separateThreshold": 0.35,
+    "handRadiusPx": 8,
+    "seedSpacingPx": 8,
+    "flowBox": [
+      80,
+      0,
+      320,
+      360
+    ],
+    "nearWeightX": 0.8,
+    "handRange": [
+      0.0,
+      0.86
+    ],
+    "jitter": 0.08,
+    "spread": 0.1,
+    "growPx": 60,
+    "darkWeight": 0.6,
+    "noiseAmp": 0.05,
+    "orderSmooth": 3
+  },
+  "cue": {
+    "revealSec": 3.4,
+    "revealDelaySec": 0.8,
+    "revealOutSec": 0.45
+  },
+  "preview": {
+    "live": "tools/twin/plates/twin_B_plate.jpg",
+    "cueMask": "tools/twin/assets/twin_handsB_mask.png",
+    "silhouette": [
+      190,
+      50,
+      300
+    ]
+  },
+  "outputs": {
+    "ratio": "twin_handsB_ratio.png",
+    "reveal": "twin_handsB_reveal.png",
+    "maps": "twin_handsB_maps.json"
+  }
+}

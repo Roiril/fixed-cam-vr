@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "kind": "stain",
+  "note": "ツインの部屋の 2 周目 A のシミ（tools/twin/assets.json の cue_stain_A）。本番のレシピと同じ作り方で、入力だけツインの素材（0349）",
+  "source": "tools/twin/assets/twin_stainA_idle.png",
+  "clean": [
+    "tools/twin/assets/twin_stainA_doll.png",
+    "tools/twin/plates/twin_A_plate.jpg"
+  ],
+  "domainMask": "tools/twin/assets/twin_stainA_mask.png",
+  "domainBox": [
+    108,
+    0,
+    300,
+    232
+  ],
+  "seed": 1113,
+  "ratio": {
+    "noiseRadius": 2,
+    "normalizeBox": [
+      108,
+      10,
+      300,
+      228
+    ],
+    "chroma": 0.35,
+    "knee": [
+      0.93,
+      0.965
+    ],
+    "domainFeather": 6
+  },
+  "reveal": {
+    "inThreshold": 0.035,
+    "minIslandPx": 30,
+    "coreTopPct": 12,
+    "coreRange": [
+      0.0,
+      0.15
+    ],
+    "bodyRange": [
+      0.12,
+      0.8
+    ],
+    "dripRange": [
+      0.55,
+      1.0
+    ],
+    "dripWidthPx": 5,
+    "dripWidthFrac": 0.6,
+    "dripBelowCorePct": 85,
+    "dripMinPx": 12,
+    "darkWeight": 0.25,
+    "bodyGamma": 0.85,
+    "noiseAmp": 0.06,
+    "orderSmooth": 1
+  },
+  "press": {
+    "source": "tools/twin/assets/twin_stainA_bulge.png",
+    "diffRange": [
+      0.03,
+      0.12
+    ],
+    "closeRadius": 6,
+    "keep": 0.35,
+    "closeHolesPx": 14,
+    "blurPasses": 3,
+    "blurRadius": 10,
+    "plateau": 0.55
+  },
+  "doll": {
+    "source": "tools/twin/assets/twin_stainA_doll.png",
+    "clean": [
+      "tools/twin/assets/twin_stainA_idle.png",
+      "tools/twin/plates/twin_A_plate.jpg"
+    ],
+    "diffThreshold": 0.1,
+    "searchBox": [
+      0,
+      0,
+      140,
+      480
+    ],
+    "dilatePx": 5,
+    "fillPx": 6,
+    "featherPx": 4
+  },
+  "cue": {
+    "revealSec": 4.2,
+    "revealDelaySec": 0.6,
+    "revealOutSec": 0.45,
+    "markDoneRevealOutSec": 0.25
+  },
+  "preview": {
+    "live": "tools/twin/plates/twin_A_plate.jpg",
+    "cueMask": "tools/twin/assets/twin_stainA_mask.png",
+    "silhouette": [
+      232,
+      30,
+      330
+    ]
+  },
+  "outputs": {
+    "ratio": "twin_stainA_ratio.png",
+    "reveal": "twin_stainA_reveal.png",
+    "pressMask": "twin_stainA_pressmask.png",
+    "dollMask": "twin_stainA_dollmask.png",
+    "maps": "twin_stainA_maps.json"
+  }
+}

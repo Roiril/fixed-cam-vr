@@ -42,7 +42,7 @@ ROOT = bm.ROOT
 
 # ---------------------------------------------------------------- シェーダと同じ数
 # SampleBase（CrtCompositeShared.hlsl）・ScreenOverlayController・OverlayPressLogic と対。
-REVEAL_SOFT = 0.06            # _OverlayRevealSoft の既定
+REVEAL_SOFT = 0.12            # _OverlayRevealSoft の既定
 EDGE_DARK_MUL = 0.22          # 掛け算の前線の暗い縁: ratio * (1 - 0.22 * edge)
 EDGE_DARK_REPLACE = 0.30      # 差し替えの前線の暗い縁: rgb * (1 - 0.30 * edge)
 REVEAL_CURVE_POW = 2.2        # 進み具合 1 - (1 - t)^2.2

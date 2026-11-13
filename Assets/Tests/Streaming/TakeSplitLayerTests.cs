@@ -487,5 +487,32 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(rig.Overlay.PressShown, Is.EqualTo(0f), "長押しの進み具合は膨らみへ届かない");
             Assert.That(rig.Overlay.PressMax, Is.EqualTo(0f));
         }
+
+        // 掛け算と滲みは素材の読み方。演出のカットが cue を写すときに落とすと、比の画が差し替えの画として出る
+        // （2026-11-13、ツインの通しで滲みが 1 度も動かず、幕が白く抜けた）。
+        [Test]
+        public void StepOverlay_InheritsMultiplyAndReveal_FromTheCue()
+        {
+            Rig rig = MakeRig();
+            var stain = new OverlayCueData
+            {
+                id = "stain", stillImage = MakeTex(), strength = 1f, multiply = true,
+                revealUrl = "test://reveal", revealSec = 4.2f, revealDelaySec = 0.6f, revealOutSec = 0.45f,
+            };
+            rig.Runner.SetCueResolver(id => id == "stain" ? stain : null);
+            ShowStepDef step = LiveStep(0, 30f);
+            step.cueId = "stain";
+            MethodInfo build = typeof(TakeRunner).GetMethod("BuildStepOverlay", BF)!;
+            rig.Timeline.SetTimeline(new[] { SegWithTake(2, 0, EnterTake("L2C0#0", step)) });
+
+            var built = (OverlayCueData?)build.Invoke(rig.Runner, new object[] { step, step.source, 0, 0 });
+
+            Assert.That(built, Is.Not.Null);
+            Assert.That(built!.multiply, Is.True, "掛け算を継ぐ");
+            Assert.That(built.revealUrl, Is.EqualTo("test://reveal"), "順の画を継ぐ");
+            Assert.That(built.revealSec, Is.EqualTo(4.2f));
+            Assert.That(built.revealDelaySec, Is.EqualTo(0.6f));
+            Assert.That(built.revealOutSec, Is.EqualTo(0.45f));
+        }
     }
 }

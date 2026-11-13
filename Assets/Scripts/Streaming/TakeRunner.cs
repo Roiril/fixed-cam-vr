@@ -2222,6 +2222,13 @@ namespace FixedCamVr.Streaming
                 fadeOutSeconds = TakeSchema.Inherit(step.fadeOutSec, cue?.fadeOutSeconds ?? 0.5f),
                 trimStart = TakeSchema.Inherit(step.trimStartSec, cue?.trimStart ?? 0f),
                 trimEnd = TakeSchema.Inherit(step.trimEndSec, cue?.trimEnd ?? 0f),
+                // 掛け算と滲み（0349）は素材の読み方なので、cue の素材をそのまま出すときだけ継ぐ。
+                // ⚠ 継がないと、比の画が差し替えの画として出る（幕が白く抜ける）。
+                multiply = !hasAsset && cue != null && cue.multiply,
+                revealUrl = hasAsset ? "" : (cue?.revealUrl ?? ""),
+                revealSec = cue?.revealSec ?? 0f,
+                revealOutSec = cue?.revealOutSec ?? OverlayRevealLogic.DefaultOutSec,
+                revealDelaySec = cue?.revealDelaySec ?? 0f,
             };
         }
 

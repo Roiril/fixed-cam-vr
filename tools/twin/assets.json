@@ -2,8 +2,9 @@
   "_note": "ツインの部屋で作り直した合成素材。cue の id ごとに、本番の sourceUrl / maskUrl の代わりに読ませるファイル（tools/twin/assets/ からの名前）。make_assets.py が show.json の今のファイル名へ当てはめて Logs/twin-run/assets/ に並べ、twin-verify.py が FIXEDCAM_ASSET_OVERRIDE_DIR で Editor に読ませる。本番の APK と show.json には入らない。作り方は README の「合成素材」",
   "cues": {
     "cue_hands_B": {
-      "source": "twin_handsB.png",
-      "mask": "twin_handsB_mask.png"
+      "source": "twin_handsB_ratio.png",
+      "mask": "twin_handsB_mask.png",
+      "reveal": "twin_handsB_reveal.png"
     },
     "plate_A": {
       "source": "../plates/twin_A_plate.jpg"
@@ -24,16 +25,18 @@
       "source": "twin_dollsA_in.mp4"
     },
     "cue_stain_A": {
-      "source": "twin_stainA_idle.png",
-      "mask": "twin_stainA_mask.png"
+      "source": "twin_stainA_ratio.png",
+      "mask": "twin_stainA_mask.png",
+      "reveal": "twin_stainA_reveal.png"
     },
     "stain_A_press_bulge": {
       "source": "twin_stainA_bulge.png",
-      "mask": "twin_stainA_mask.png"
+      "mask": "twin_stainA_mask.png",
+      "pressMask": "twin_stainA_pressmask.png"
     },
     "stain_A_done_doll": {
       "source": "twin_stainA_doll.png",
-      "mask": "twin_stainA_mask.png"
+      "mask": "twin_stainA_dollmask.png"
     },
     "pov_0": {
       "source": "twin_pov_0.mp4"

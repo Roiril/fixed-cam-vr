@@ -107,7 +107,7 @@ namespace FixedCamVr.Streaming
         public const float MarkDoneOutSec = 0.25f;
 
         /// <summary>前線のぼかし幅（<c>_OverlayRevealSoft</c> の既定）。</summary>
-        public const float DefaultSoft = 0.06f;
+        public const float DefaultSoft = 0.12f;
 
         /// <summary>進み具合の曲線 1-(1-t)^2.2。出始めが速く、終わりへ向かって落ち着く。</summary>
         public const float CurvePow = 2.2f;

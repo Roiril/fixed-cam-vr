@@ -2,11 +2,13 @@
 
     py -3.11 tools/twin/make_assets.py [--out Logs/twin-run/assets]
 
-tools/twin/assets.json の cue id ごとに、show.json の今の sourceUrl / maskUrl のファイル名で
+tools/twin/assets.json の cue id ごとに、show.json の今の sourceUrl / maskUrl / revealUrl / pressMaskUrl のファイル名で
 tools/twin/assets/ の素材をコピーする。Editor は FIXEDCAM_ASSET_OVERRIDE_DIR にこのフォルダが
 指定されているときだけ、同じ名前のファイルを焼き込みの代わりに読む（ShowAssetResolver.TryOverride）。
 
 映像（source）には、その cue のカメラの階調（feed_tone.py。束の映像と同じ表）を掛ける。マスクには掛けない。
+掛け算の cue（blend=multiply）の source は比の画なので、階調を掛けずに置く。順の画と press マスクも同じ。
+比の画・順の画・press マスクは tools/gen-plate/mask-recipes/bleed-twin-*.json から bleed_maps.py で作る。
 
 ⚠ 同じファイルを 2 つの cue が別の中身で使っていると、どちらかが負ける。そのときは止まる。
 ⚠ 本番の素材は 1 つも書き換えない。出力先は git 管理外。
@@ -76,7 +78,7 @@ def build(out: Path) -> dict[str, str]:
         cue = cues.get(cid)
         if cue is None:
             raise SystemExit(f"show.json に cue {cid} が無い（assets.json を直す）")
-        for role, key in (("source", "sourceUrl"), ("mask", "maskUrl")):
+        for role, key in (("source", "sourceUrl"), ("mask", "maskUrl"), ("reveal", "revealUrl"), ("pressMask", "pressMaskUrl")):
             if role not in roles:
                 continue
             name = file_of(cue.get(key, ""))
@@ -89,7 +91,8 @@ def build(out: Path) -> dict[str, str]:
                 raise SystemExit(f"{name} を 2 つの素材が取り合っている: {placed[name]} / {src}")
             placed[name] = src
             cam = cue.get("camera", "")
-            if role == "mask" or cam not in ("A", "B", "C"):
+            data = role != "source" or cue.get("blend") == "multiply"
+            if data or cam not in ("A", "B", "C"):
                 shutil.copy2(src, out / name)
             else:
                 tone(src, out / name, cam)

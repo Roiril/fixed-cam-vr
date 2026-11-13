@@ -56,12 +56,12 @@
 - [cam_c_lens_study.md](cam_c_lens_study.md) — B と C の魚眼（版 3）。見るのは `menu crt-lens`・A は別れが解けない
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
-- [screen_multiply.md](screen_multiply.md) — 3-C の増えるスクリーン（0317・試作）
+- [screen_multiply.md](screen_multiply.md) — 3-C の増えるスクリーン
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る
 - [dark_eyes_slices.md](dark_eyes_slices.md) — 闇の目は Codex に描かせた壊れた画像の版。手続きの帯は「整然・チープ」で不採用
 - [eye_jack.md](eye_jack.md) — 目の視界ジャック（当日写真）。全開で発火は多数派に届かない／正規化を端末でしない
 - [composite_mask_quality.md](composite_mask_quality.md) — シミの矩形切れと二重マスクを原動画から直す。`composite-mask` スキル
-- [material_flow.md](material_flow.md) — 素材フロー。マスクは枠空間 16:9／採用は show.json から導出／滲みと膨らみの素材の作り方（0349）
+- [material_flow.md](material_flow.md) — 素材フロー。マスクは枠空間 16:9／採用は show.json から導出／滲み・膨らみ
 - [codex_image_pipeline.md](codex_image_pipeline.md) — **生成素材を作る前に読む**。判断は実機の経路を通した画で・歩留まりは枚数で解く
 - [doll_reference_kit.md](doll_reference_kit.md) — 市松人形の資料（tools/doll-ref/）。写真は暗く緑に転ぶ
 
