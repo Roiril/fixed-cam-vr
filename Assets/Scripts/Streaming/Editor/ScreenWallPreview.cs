@@ -29,7 +29,7 @@ namespace FixedCamVr.Streaming.EditorTools
     {
         private const string OutDirRel = "Screenshots/screen-wall";
         private const int StillW = 1600, StillH = 900;
-        private const int SeqW = 960, SeqH = 540;
+        private const int SeqW = 1600, SeqH = 900;
         private const int Fps = 30;
         private const float FovDeg = 70f;
         private static readonly Vector3 Stage = new(0f, 2000f, 0f);
