@@ -2020,7 +2020,7 @@ def analyze(events, others, exp, warns=None):
                 e.get("ev") == "seg" and fnum(e, "plap", fnum(e, "lap", 0.0)) >= 3 for e in events)
             if takeover_missing:
                 verdict("FAIL", "2-C の乗っ取りが出なかった（追いつきの前に区間を出たか、鎖が切れた）")
-            # 2 周目の連絡（SecondLap「二周目です。反応が、近づいています。」）。区間の周が 2 に入り、
+            # 2 周目の連絡（SecondLap「二周目です。一周目より、対象が近づいています。」）。区間の周が 2 に入り、
             # 面が空いた縁に 1 度だけ出る。人形視点が始まった後には出さない（CommsCueLogic.Tick）。
             second_lap = [e for e in comms if e.get("id") == "SecondLap"]
             reached_lap2 = any(e.get("ev") == "seg" and int(fnum(e, "lap", 0.0)) == 2 for e in events)
