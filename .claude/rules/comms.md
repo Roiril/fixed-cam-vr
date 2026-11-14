@@ -50,8 +50,9 @@ paths:
 - ③b は③a を読ませ終わった縁で必ず続く。③b までは締めの報告を受けない（別に入って 4 秒の猶予） — `CommsCueLogic.Tick`（closingLocked）・`TakeRunnerLogic.MarkGraceSec`・`CommsPossessionLogicTests.ClosingReportIsRejectedUntilThePromptIsFullyShown` 〔出典: show-design:41, 1375, 1382〕
 - ③b は持続表示。自分では引かず、MarkCleared が上書きするか本編を出た縁で消す。長押しを離すと打鍵なしで全文へ戻る — `CommsPanel.ObserveClosingPromptEnd`・`CommsPanelLogic.Restoring`・`CommsPanelLogicTests.ClosingPrompt_*` 〔シュビーの判断・未判定。memory/closing_line_halt.md〕
 - ③a/③b の復帰: ③a からの 1 本の時計。起動 0.92s は砂嵐ブロックから復号 → スイが押し返す（1 回滑る）→ ③b の打鍵に結ぶ余震 2 回 → 落ち着く → 報告で 1.2s かけて 0 — `CommsRecoveryLogic.Sample/BootSec/PushEndSec/ReleaseSec`・`CommsPanelLogic.BeginRecovery`
-- 呪いは縁から這い込む髪（左・上・右）。焼いた到達順の版 `Resources/CommsFx/CurseCreep*` を量 1 本（`residue`）で切る。地・顔・字・罫線が同じ場。寸法と式は `CommsRecovery.hlsl` の `CommsCreepEval`・`CommsCreepLogic`・`tools/comms-creep/bake.py` の 3 つが同じ値 — 直すときは 3 つとも
-- 髪の下の字は画素ごとに朱（`CommsRecoveryText.shader`）。命令の句は象牙のまま（帯 `_RecoveryGuard` を `ApplySplitTruthMesh` が毎フレーム組む）。朱の字数は `CommsCreepLogic.Depth` で数える 〔memory/comms_curse.md; LEDGER 0350〕
+- 呪いは上の辺から降りる人形の面と縦の筋。面を幅の違う列に割り、列ごとに降りる深さと筋の長さを量 1 本（`residue`）から決める。列の 3 割はスイの側の光（シアン・象牙）で面の上へ昇る。止まっている層と時計で組み替わる層の 2 つ。地・顔・字・罫線が同じ場。式は `CommsRecovery.hlsl` の `CommsStreakEval` と `CommsStreakLogic` の 2 つが同じ値 — 直すときは 2 つとも 〔LEDGER 0356, 0358〕
+- 人形の面に入った字は画素ごとに薄く朱へ寄る。芯は象牙（`CommsRecoveryText.shader`）。命令の句は象牙のまま（帯 `_RecoveryGuard` を `ApplySplitTruthMesh` が毎フレーム組む）。朱の字数は `CommsStreakLogic.Covered` で数える 〔memory/comms_curse.md〕
+- 顔と字は赤が面の右へずれる（`CommsStreakSplitM`）。顔は `CommsAvatar.shader` の中で、字は本文のメッシュを共有する子 `CommsTextRedGhost`（`_Ghost = 1`・alpha 0 の加算）で描く。字のシェーダの中でずらすと字の四角で切れる。字の行の細い横の擦れは地の `CommsStreakRowSmear` 〔memory/comms_curse.md〕
 - 言語 `ShowLanguage.Current` と軽減 `HorrorRelief`（音だけ 0.5 倍）はタブレットの値を `VisitorPrefs` が入れ、体験者交代で `TitleScreen.BeginTitle` だけが戻す。HMD 内で選ばない 〔出典: show-design:1052-1060; memory/show_language.md〕
 
 ## 罠（破ると壊れる）

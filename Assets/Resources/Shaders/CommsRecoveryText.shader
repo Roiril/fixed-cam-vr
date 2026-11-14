@@ -8,6 +8,7 @@ Properties {
 	[HideInInspector] _Recovery ("Recovery", Vector) = (0,0,0,0)
 	[HideInInspector] _RecoveryRect ("Recovery Rect", Vector) = (0,0,1,1)
 	[HideInInspector] _RecoveryGuard ("Recovery Guard", Vector) = (1,0,0,0)
+	[HideInInspector] _Ghost ("Red ghost copy", Float) = 0
 	_FaceTex			("Face Texture", 2D) = "white" {}
 	_FaceUVSpeedX		("Face UV Speed X", Range(-5, 5)) = 0.0
 	_FaceUVSpeedY		("Face UV Speed Y", Range(-5, 5)) = 0.0
@@ -138,6 +139,7 @@ SubShader {
 		float4 _Recovery;
 		float4 _RecoveryRect;
 		float4 _RecoveryGuard;
+		float _Ghost;
 		float4x4 _RecoveryWorldToPanel;
 		float4x4 _RecoveryPanelToWorld;
 
@@ -191,6 +193,13 @@ SubShader {
 			float2 panelPos = mul(_RecoveryWorldToPanel, mul(unity_ObjectToWorld, vert)).xy;
 
 			float4 vPosition = UnityObjectToClipPos(vert);
+			if (_Ghost > 0.5)
+			{
+				// 赤の写し（0358）: 面の右へ、侵食の量に応じてずらす。
+				float3 world = mul(unity_ObjectToWorld, vert).xyz
+				             + mul((float3x3)_RecoveryPanelToWorld, float3(CommsStreakSplitM(_Recovery.x), 0, 0));
+				vPosition = UnityWorldToClipPos(world);
+			}
 
 			float2 pixelSize = vPosition.w;
 			pixelSize /= float2(_ScaleX, _ScaleY) * abs(mul((float2x2)UNITY_MATRIX_P, _ScreenParams.xy));
@@ -323,15 +332,14 @@ SubShader {
 			clip(faceColor.a - 0.001);
 		#endif
 
-			// 髪の下の字は熾の朱、前線の上では白熱する（0350）。命令の行（_RecoveryGuard の帯）は髪の下でも象牙のまま。
-			// ⚠ 微分を取るので分岐の外で引く。_Recovery.x = 0 なら k も線も 0。
-			CommsCreepSurface cs = CommsCreepEval(input.panelPos, _Recovery, _RecoveryRect);
-			if (_Recovery.x > 0.0)
+			// 人形の面に入った字は朱へ寄る（0356 / 0358）。芯は象牙を残す（試作 B と同じ。赤は右へずれた写しが出す）。
+			// 命令の行（_RecoveryGuard の帯）は人形の面の中でも象牙のまま。
+			if (_Recovery.x > 0.0 && _Ghost < 0.5)
 			{
+				CommsStreakSurface ss = CommsStreakEval(input.panelPos, _Recovery, _RecoveryRect);
 				float guard = step(_RecoveryGuard.x, input.panelPos.y) * step(input.panelPos.y, _RecoveryGuard.y);
-				float k = cs.k * (1.0 - guard);
-				float3 ink = lerp(float3(0.82, 0.78, 0.72), COMMS_EMBER_INK, k);
-				ink = lerp(ink, COMMS_EMBER_CORE, cs.seam * (1.0 - guard) * 0.85);
+				float k = ss.k * (1.0 - guard);
+				float3 ink = lerp(float3(0.82, 0.78, 0.72), COMMS_DOLL_INK, k * 0.45);
 				faceColor.rgb = ink * faceColor.a;
 			}
 			if (_Recovery.z > 0.001)
@@ -339,6 +347,12 @@ SubShader {
 				// ③a の起動（0280）: 地と同じブロックで現れる。砂嵐のブロックの中では字を出さない。
 				float2 boot = CommsBootReveal(input.panelPos, _Recovery.z, _RecoveryRect);
 				faceColor *= boot.x * (1.0 - boot.y * 0.5);
+			}
+			if (_Ghost > 0.5)
+			{
+				// 赤の写しは足すだけ（alpha 0）。描く順に左右されず、本文の上では本文が少し赤らむだけ。
+				float g = faceColor.a * input.color.a * step(0.001, _Recovery.x);
+				return float4(COMMS_GHOST_RED * g, 0);
 			}
 
 			return faceColor * input.color.a;

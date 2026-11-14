@@ -234,24 +234,21 @@ Shader "FixedCamVr/CommsPanelPlate"
                 // 象牙を地の上に置く（over）。明滅は出力の alpha に掛ける（暗い側へだけ）。
                 float outA = (ink + plateA * (1.0 - ink)) * _Tear.y;
                 float3 outRgb = (ink * _Ink.rgb + plateA * (1.0 - ink) * _Color.rgb) / max(ink + plateA * (1.0 - ink), 1e-4);
-                // 面の縁から這い込む髪（0350）。乱れの帯で飛んだ座標で引くので、余震では髪も帯ごとに飛ぶ。
-                // ⚠ 微分を取るので分岐の外で引く。
-                CommsCreepSurface cs = CommsCreepEval(p, _Recovery, _RecoveryRect);
+                // 上の辺から降りる人形の面と縦の筋（0356 / 0358）。乱れの帯で飛んだ座標で引くので、余震では筋も帯ごとに飛ぶ。
                 if (_Recovery.x > 0.001)
                 {
-                    float lit = saturate(_Color.a / 0.72) * sharp * _Tear.y * (1.0 - drop);
-                    float ember = CommsCreepEmber(p, _Recovery.y);
-                    // スイの側: 前線の手前に象牙の照り返し（黒い髪が黒い地に溶けない）。
-                    float bounce = cs.glow * (1.0 - cs.k);
-                    outRgb = lerp(_Color.rgb, float3(0.22, 0.12, 0.07), bounce * 0.45);
-                    outA = lerp(outA, lit * 0.90, bounce * 0.5);
-                    // 髪の側: 房は不透明に近い黒、房のあいだは暗い朱のにじみ。
-                    outRgb = lerp(outRgb, CommsCreepInk(cs), cs.k);
-                    outA = lerp(outA, lit * lerp(0.90, 0.985, cs.strand), cs.k);
-                    // 熾の線。
-                    outRgb += COMMS_EMBER_GLOW * cs.glow * cs.k * ember * 0.40;
-                    outRgb = lerp(outRgb, COMMS_EMBER_CORE, cs.seam * ember);
-                    outA = max(outA, cs.seam * ember * lit);
+                    CommsStreakSurface ss = CommsStreakEval(p, _Recovery, _RecoveryRect);
+                    float gate = saturate(_Color.a / 0.72) * _Tear.y * (1.0 - drop);
+                    // 人形の面: 暗い朱の地。
+                    outRgb = lerp(outRgb, COMMS_DOLL_PLATE, ss.k);
+                    outA = lerp(outA, gate * sharp * 0.90, ss.k);
+                    // 筋: 面の中では地の上に載り、面の外では筋だけが見える。
+                    outRgb = lerp(outRgb, ss.tail, ss.tailA);
+                    outA = max(outA, ss.tailA * gate * 0.85);
+                    // 字の行の細い横の擦れ。
+                    float4 smear = CommsStreakRowSmear(p, _Recovery, _RecoveryRect);
+                    outRgb = lerp(outRgb, smear.rgb, smear.a);
+                    outA = max(outA, smear.a * gate);
                 }
                 if (_Recovery.z > 0.001)
                 {

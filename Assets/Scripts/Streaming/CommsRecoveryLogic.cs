@@ -118,19 +118,19 @@ namespace FixedCamVr.Streaming
 
         // ---- 残り ------------------------------------------------------------------
         /// <summary>
-        /// 髪の寄り（現れた瞬間 → スイが押し返した先 → 落ち着いた先）。面の縁から這い込む髪がどこまで来ているか
-        /// （<c>CommsRecovery.hlsl</c> の <c>CommsCreepEval</c>・<c>canon/LEDGER.md</c> 0350）。0.92 は面がほぼ呑まれた姿、
-        /// 0.46 は顔の左半分と 1 行目の数字に髪が掛かる姿。名前は旧版（顔に残る人形の割合）のまま。
+        /// 侵食の量（現れた瞬間 → スイが押し返した先 → 落ち着いた先）。上の辺から降りる人形の面と縦の筋がどこまで来ているか
+        /// （<c>CommsRecovery.hlsl</c> の <c>CommsStreakEval</c>・<c>canon/LEDGER.md</c> 0356 / 0358）。0.92 は面がほぼ呑まれた姿、
+        /// 0.46 は顔の側と右の端に筋が残る姿。名前は旧版（顔に残る人形の割合）のまま。
         /// </summary>
         public const float ResidueStart = 0.92f, ResidueHalt = 0.50f, ResidueFloor = 0.46f;
 
         /// <summary>スイが押し返し終える秒。起動（<see cref="BootSec"/>）の間は押し返さない — 現れ方を 2 つ競合させない。</summary>
         public const float PushEndSec = 2.30f;
 
-        /// <summary>押し返す途中で 1 回、髪に押し戻される量。</summary>
+        /// <summary>押し返す途中で 1 回、人形の面に押し戻される量。</summary>
         public const float PushSlip = 0.07f;
 
-        /// <summary>落ち着いた後、報告が無いまま髪が寄ってくる縁（<see cref="SettleEndSec"/> からの秒）と 1 回の量。</summary>
+        /// <summary>落ち着いた後、報告が無いまま人形の面が寄ってくる縁（<see cref="SettleEndSec"/> からの秒）と 1 回の量。</summary>
         public static readonly float[] PressureAtSec = { 4.0f, 8.0f, 11.5f };
         public const float PressureStep = 0.025f;
         public const float PressureRiseSec = 0.5f;
@@ -213,7 +213,7 @@ namespace FixedCamVr.Streaming
                 }
             }
 
-            // ---- 髪の寄り（起動の間は呑まれたまま → スイが押し返す → 落ち着く → 報告が無ければ寄ってくる）----
+            // ---- 侵食の量（起動の間は呑まれたまま → スイが押し返す → 落ち着く → 報告が無ければ寄ってくる）----
             float residue;
             if (sec < BootSec)
                 residue = ResidueStart;
@@ -230,7 +230,7 @@ namespace FixedCamVr.Streaming
                 // 息づき。周期の合わない遅い揺れの和（等間隔の往復にしない）。1Hz より十分遅い。
                 float breathe = Smooth((sec - PushEndSec) / 1.5f);
                 residue += breathe * (0.012f * MathF.Sin(0.90f * sec) + 0.008f * MathF.Sin(0.37f * sec + 1.3f));
-                // 報告が無いまま時間が経つと、髪が段で寄ってくる（寄っては止まる）。
+                // 報告が無いまま時間が経つと、人形の面が段で寄ってくる（寄っては止まる）。
                 for (int i = 0; i < PressureAtSec.Length; i++)
                     residue += PressureStep * EaseOut((sec - SettleEndSec - PressureAtSec[i]) / PressureRiseSec);
             }

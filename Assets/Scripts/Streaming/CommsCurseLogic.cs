@@ -222,7 +222,7 @@ namespace FixedCamVr.Streaming
 
         private static float Frac(float v) => v - MathF.Floor(v);
 
-        private static float Hash21(float px, float py)
+        internal static float Hash21(float px, float py)
         {
             px = Frac(px * 123.34f);
             py = Frac(py * 456.21f);
@@ -232,7 +232,7 @@ namespace FixedCamVr.Streaming
             return Frac(px * py);
         }
 
-        private static float ValueNoise(float ux, float uy)
+        internal static float ValueNoise(float ux, float uy)
         {
             float ix = MathF.Floor(ux), iy = MathF.Floor(uy);
             float fx = ux - ix, fy = uy - iy;

@@ -168,10 +168,9 @@ Shader "FixedCamVr/CommsAvatar"
                 // 復帰: 面全体を粗い斑で混在させる（2026-10-18 ユーザー指定）。
                 // 中心反転したノイズとの差を使い、量0.5で左右に偏らず面積も半々にする。
                 // 帯の飛びは既存の乱れと共有。残りが消えるとゆがみも同時に消える。
-                float kRes = 0.0;
-                // ⚠ 微分を取るので分岐の外で引く。_Residue.x = 0 なら k も線も 0。
-                CommsCreepSurface cs = CommsCreepEval(fieldPos, _Residue, _RecoveryRect);
-                kRes = cs.k;
+                // _Residue.x = 0 なら k もずれも 0。
+                CommsStreakSurface ss = CommsStreakEval(fieldPos, _Residue, _RecoveryRect);
+                float kRes = ss.k;
                 k = max(k, kRes);
                 float2 faceUv = i.uv;
                 faceUv.x -= shift / max(_Size.x, 1e-4);
@@ -180,12 +179,19 @@ Shader "FixedCamVr/CommsAvatar"
                 float a1 = SAMPLE_TEXTURE2D(_Face, sampler_Face, faceUv).a;
                 float a2 = SAMPLE_TEXTURE2D(_Face2, sampler_Face2, faceUv).a;
                 float face = lerp(a1, a2, k) * _FaceOn * inner * inRange;
+                // 赤だけを横へずらして引く（赤とシアンの色ずれ・0356）。ずれ 0 なら face と同じ値。
+                float2 uvR = faceUv;
+                uvR.x -= CommsStreakSplitM(_Residue.x) / max(_Size.x, 1e-4);
+                float inRangeR = step(0.0, uvR.x) * step(uvR.x, 1.0) * step(0.0, uvR.y) * step(uvR.y, 1.0);
+                float faceR = lerp(SAMPLE_TEXTURE2D(_Face, sampler_Face, uvR).a,
+                                   SAMPLE_TEXTURE2D(_Face2, sampler_Face2, uvR).a, k) * _FaceOn * inner * inRangeR;
                 float drop = CommsTearDropAt(panelPos.y, _Tear, _TearDropA, _TearDropB);
 
-                float a = saturate(max(ring, face * (1.0 - drop))) * _Tear.y;
-                // 髪の下の顔（人形）は熾の朱の線。前線の上では線が白熱する。
-                float3 rgb = lerp(_Color.rgb, COMMS_EMBER_INK * float3(0.46, 0.40, 0.40), kRes);
-                rgb = lerp(rgb, COMMS_EMBER_CORE, cs.seam * 0.8);
+                float faceMax = max(face, faceR);
+                float a = saturate(max(ring, faceMax * (1.0 - drop))) * _Tear.y;
+                // 人形の面に入った所の顔は朱。
+                float3 rgb = lerp(_Color.rgb, COMMS_DOLL_INK * 0.9, kRes);
+                rgb *= lerp(float3(1.0, 1.0, 1.0), float3(faceR, face, face) / max(faceMax, 1e-4), step(1e-4, faceMax) * (1.0 - ring));
                 if (_Residue.w > 0.001)
                 {
                     // ③a の起動（0280）: 地と同じブロックで現れる。砂嵐のあいだは顔を出さず、下の地の砂嵐が見える。

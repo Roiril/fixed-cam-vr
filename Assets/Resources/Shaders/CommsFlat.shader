@@ -49,10 +49,9 @@ Shader "FixedCamVr/CommsFlat"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 color = _Color;
-                // 髪の下の罫線は熾の朱（地・顔・字と同じ場）。微分を取るので分岐の外で引く。
-                CommsCreepSurface cs = CommsCreepEval(input.panelPos, _Recovery, _RecoveryRect);
+                // 人形の面に入った罫線は朱（地・顔・字と同じ場）。
                 if (_Recovery.x > 0.001)
-                    color.rgb = lerp(color.rgb, COMMS_EMBER_INK, cs.k);
+                    color.rgb = lerp(color.rgb, COMMS_DOLL_INK, CommsStreakEval(input.panelPos, _Recovery, _RecoveryRect).k);
                 return color;
             }
             ENDHLSL

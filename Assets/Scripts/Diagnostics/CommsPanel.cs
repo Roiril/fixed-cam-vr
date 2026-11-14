@@ -824,17 +824,17 @@ namespace FixedCamVr.Diagnostics
         private Shader? _recoveryTextShader;
         private Shader? _normalTextShader;
         private bool _recoveryShaderLoaded;
+        // 復帰の字の赤の写し（0358）。本文と同じメッシュを、右へずらして赤だけ足す。
+        private MeshRenderer? _ghostRenderer;
+        private MeshFilter? _ghostFilter;
+        private Material? _ghostMat;
+        private static readonly int GhostId = Shader.PropertyToID("_Ghost");
         private bool _recoverySurfaceActive;
         private static readonly int RecoveryId = Shader.PropertyToID("_Recovery");
         private static readonly int RecoveryRectId = Shader.PropertyToID("_RecoveryRect");
         private static readonly int RecoveryGuardId = Shader.PropertyToID("_RecoveryGuard");
-        private static readonly int CreepTexId = Shader.PropertyToID("_CommsCreepTex");
-        // 面の縁から這い込む髪の版（0350）。画は `_CommsCreepTex`、字が髪の下かを数えるのは `_creepField`。
-        private byte[]? _creepField;
-        /// <summary>髪の版（画と、字を数える側）を両方掴めたか。掴めなければ髪は 1 画素も出ない。</summary>
-        public bool CreepBuilt { get; private set; }
         private Vector4 _recoveryRect;
-        // 髪の下でも象牙のまま残す帯（命令の行）の下端と上端（面のローカル y）。下端 > 上端なら帯なし。
+        // 人形の面の中でも象牙のまま残す帯（命令の行）の下端と上端（面のローカル y）。下端 > 上端なら帯なし。
         private Vector2 _recoveryGuard = new Vector2(1f, 0f);
         private static readonly int RecoveryWorldToPanelId = Shader.PropertyToID("_RecoveryWorldToPanel");
         private static readonly int RecoveryPanelToWorldId = Shader.PropertyToID("_RecoveryPanelToWorld");
@@ -1219,6 +1219,7 @@ namespace FixedCamVr.Diagnostics
             if (_dividerMat != null) Destroy(_dividerMat);
             if (_stencilMat != null) Destroy(_stencilMat);
             if (_avatarMat != null) Destroy(_avatarMat);
+            if (_ghostMat != null) Destroy(_ghostMat);
             if (_panelMesh != null) Destroy(_panelMesh);
         }
 
@@ -2181,13 +2182,13 @@ namespace FixedCamVr.Diagnostics
                 }
                 alpha *= TearAlphaAt(panelY);
                 ShiftGlyphX(info, ch, TearShiftAt(panelY) / TextScale);
-                // 復帰（0270 / 0350）: 髪の下の字は朱（画素ごとに `CommsRecoveryText.shader` が塗る）。字は切らない（読める）。
-                // ここでは同じ場を解いて数えるだけ。命令の行は髪の下でも象牙のまま（赤は人形の嘘の色）。
+                // 復帰（0270 / 0356）: 人形の面に入った字は朱（画素ごとに `CommsRecoveryText.shader` が塗る）。字は切らない（読める）。
+                // ここでは同じ場を解いて数えるだけ。命令の行は人形の面の中でも象牙のまま（赤は人形の嘘の色）。
                 if (closingNotice && AppliedResidue > 0.001f && alpha > 0.05f && !guarded[ch.lineNumber < 8 ? ch.lineNumber : 7])
                 {
                     float gx = _text.transform.localPosition.x + centerX * TextScale;
-                    if (CommsCreepLogic.Depth(_creepField, gx, panelY, _recoveryRect.x, _recoveryRect.y,
-                                              _recoveryRect.z, _recoveryRect.w, AppliedResidue) > 0f) red++;
+                    if (CommsStreakLogic.Covered(gx, panelY, _recoveryRect.x, _recoveryRect.y, _recoveryRect.z,
+                                                 _recoveryRect.w, AppliedResidue, Mathf.Max(0f, RecoverySec))) red++;
                 }
                 SetGlyphAlpha(info, ch, alpha);
             }
@@ -2593,14 +2594,6 @@ namespace FixedCamVr.Diagnostics
             {
                 _recoveryTextShader = Resources.Load<Shader>("Shaders/CommsRecoveryText");
                 _recoveryShaderLoaded = true;
-                Texture2D? creep = Resources.Load<Texture2D>("CommsFx/CurseCreep");
-                TextAsset? creepField = Resources.Load<TextAsset>("CommsFx/CurseCreepField");
-                if (creep != null) Shader.SetGlobalTexture(CreepTexId, creep);
-                _creepField = creepField != null ? creepField.bytes : null;
-                CreepBuilt = creep != null && _creepField != null
-                             && _creepField.Length == CommsCreepLogic.FieldW * CommsCreepLogic.FieldH;
-                if (!CreepBuilt)
-                    Debug.LogWarning("[CommsPanel] 髪の版 Resources/CommsFx/CurseCreep が見つかりません（③a / ③b の髪が出ない）");
             }
             bool active = AppliedResidue > 0.001f;
             if (!active && !_recoverySurfaceActive) return;
@@ -2660,6 +2653,45 @@ namespace FixedCamVr.Diagnostics
             }
             PushText(_text);
             PushText(_hint);
+            Push(ApplyRecoveryGhost(active));
+        }
+
+        /// <summary>
+        /// 字の赤の写し（試作 B の赤の横ずれ・0358）。字のシェーダの中でずらすと字の四角で切れるので、
+        /// 本文のメッシュをもう 1 枚の renderer で描き、頂点を面の右へずらして赤だけを足す（alpha 0）。
+        /// </summary>
+        /// <returns>値を流し込む写しのマテリアル（出さないときは null）。</returns>
+        private Material? ApplyRecoveryGhost(bool active)
+        {
+            if (_text == null) return null;
+            if (!active)
+            {
+                if (_ghostRenderer != null) _ghostRenderer.enabled = false;
+                return null;
+            }
+            TMP_TextInfo info = _text.textInfo;
+            Material? source = info.materialCount > 0 ? info.meshInfo[0].material : null;
+            if (source == null || _recoveryTextShader == null || source.shader != _recoveryTextShader) return null;
+            if (_ghostRenderer == null)
+            {
+                var go = new GameObject("CommsTextRedGhost");
+                go.layer = _text.gameObject.layer;
+                go.transform.SetParent(_text.transform, false);
+                _ghostFilter = go.AddComponent<MeshFilter>();
+                _ghostRenderer = go.AddComponent<MeshRenderer>();
+                _ghostRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                _ghostRenderer.receiveShadows = false;
+            }
+            if (_ghostMat == null || _ghostMat.shader != source.shader)
+            {
+                _ghostMat = new Material(source) { name = "CommsTextRedGhost" };
+                _ghostMat.SetFloat(GhostId, 1f);
+                _ghostRenderer.sharedMaterial = _ghostMat;
+            }
+            _ghostMat.renderQueue = source.renderQueue;
+            _ghostFilter!.sharedMesh = _text.mesh;
+            _ghostRenderer.enabled = true;
+            return _ghostMat;
         }
 
         private static float TearStrengthAt(CommsPossessionPhase phase, float sweep)

@@ -128,12 +128,12 @@ namespace FixedCamVr.Streaming.Tests
                 if (r > prev + 1e-4f) slipped = true;
                 prev = r;
             }
-            Assert.IsTrue(slipped, "押し返す途中で髪に押し戻される");
-            // 落ち着いた後も半分近くは髪の下（0270「半分はまだ侵食されていて」）。報告が無ければ段で寄ってくる。
+            Assert.IsTrue(slipped, "押し返す途中で人形の面に押し戻される");
+            // 落ち着いた後も人形の面は残る（0270「半分はまだ侵食されていて」）。報告が無ければ段で寄ってくる。
             float settled = CommsRecoveryLogic.Sample(CommsRecoveryLogic.SettleEndSec + 1f).residue;
             float late = CommsRecoveryLogic.Sample(CommsRecoveryLogic.SettleEndSec + 14f).residue;
             Assert.That(settled, Is.InRange(0.42f, 0.50f));
-            Assert.Greater(late, settled + 0.04f, "報告が無いまま時間が経つと髪が寄ってくる");
+            Assert.Greater(late, settled + 0.04f, "報告が無いまま時間が経つと人形の面が寄ってくる");
             Assert.Less(late, 0.58f, "寄ってきても命令の行は読める量で止まる");
             for (float t = CommsRecoveryLogic.PushEndSec; t < 30f; t += 0.1f)
                 Assert.That(CommsRecoveryLogic.Sample(t).residue, Is.InRange(0.42f, 0.58f));

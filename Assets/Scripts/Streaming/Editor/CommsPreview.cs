@@ -160,7 +160,7 @@ namespace FixedCamVr.Streaming.EditorTools
                 // 実機の暗い現場に近い無地。⚠ 現場のパススルーはここより明るいことがあり、
                 //    そのとき地（暗い漆の面）は相対的に沈んで見える。
                 cam.backgroundColor = new Color(0.055f, 0.052f, 0.050f, 1f);
-                // `-Set bg=<PNG>`: 面の後ろに実機の主画面の画を置く。半透明の地と黒い髪の差は、無地の黒の前では見えない。
+                // `-Set bg=<PNG>`: 面の後ろに実機の主画面の画を置く。半透明の地と面の外へはみ出す筋は、無地の黒の前では見えにくい。
                 string? bgPath = EditorCliArgs.Get("bg");
                 if (!string.IsNullOrEmpty(bgPath) && File.Exists(bgPath))
                 {
