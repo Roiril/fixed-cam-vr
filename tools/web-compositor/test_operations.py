@@ -94,6 +94,13 @@ class OperationsTests(unittest.TestCase):
         resolver = patch.object(ops, 'resolve_adb', return_value='fixture-adb')
         resolver.start()
         self.addCleanup(resolver.stop)
+        # 起こし直しの記録は本物の Logs/onsite へ書かない（書くと 90 秒以内の 2 回目が 409 で落ち、
+        # 当日の watch も試験の記録を読んで止まる）。
+        ledger_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(ledger_dir.cleanup)
+        ledger = patch.object(ops, 'RESTART_LEDGER', os.path.join(ledger_dir.name, 'restart-ledger.json'))
+        ledger.start()
+        self.addCleanup(ledger.stop)
 
     def test_disconnected_registered_camera_keeps_restart_available(self):
         fixed = {'id': 'A', 'host': '127.0.0.1', 'port': 1, 'serial': 'KNOWN', 'uuid': 'known'}

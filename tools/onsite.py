@@ -1074,6 +1074,15 @@ def wake_and_restart(host: str) -> str:
     return "起こし直しました"
 
 
+WATCH_STALLS_BEFORE_RESTART = 2
+
+
+def count_stall(stalls: dict[str, int], key: str, alive: bool) -> int:
+    """巡回ごとに、続けて止まって見えた回数を数える。alive が 1 回でも挟まれば 0 に戻す。"""
+    stalls[key] = 0 if alive else stalls.get(key, 0) + 1
+    return stalls[key]
+
+
 def cmd_watch(args):
     show = load_show()
     quest_selection = getattr(args, "quests", "all")
@@ -1081,6 +1090,7 @@ def cmd_watch(args):
     os.makedirs(LOG_DIR, exist_ok=True)
     logp = os.path.join(LOG_DIR, f"watch-{datetime.now():%Y%m%d_%H%M%S}.log")
     last_fix: dict[str, float] = {}
+    stalls: dict[str, int] = {}
     print(f"監視を始めます（{args.sec} 秒ごと / 自動復旧 {'あり' if not args.no_fix else 'なし'}）")
     print(f"記録: {logp}")
 
@@ -1102,20 +1112,28 @@ def cmd_watch(args):
             f.write(line + "\n")
 
     try:
+        import operations
+    except ImportError as e:
+        # 測れないなら止まったとも言えない。カメラは見ずに、卓と Quest の監視だけ続ける。
+        operations = None
+        say(f"⚠ 映像の判定を読み込めません。カメラの監視と自動復旧を止めます（{e}）")
+
+    try:
         while True:
             snap = {"at": datetime.now().isoformat(timespec="seconds"), "cameras": [], "quests": []}
-            for c in cams:
+            for c in (cams if operations else []):
                 host, cid = c["host"], c.get("id")
                 try:
-                    import operations
                     probe = operations.probe_stream(host, int(c.get("port") or 8080))
-                except (ImportError, AttributeError, OSError, ValueError) as e:
+                except (AttributeError, OSError, ValueError) as e:
                     probe = {"ok": False, "detail": str(e)}
                 alive = bool(probe.get("ok") and probe.get("frames", 0) >= 2 and
                              probe.get("firstSeq") is not None and
                              probe.get("lastSeq") is not None and
                              probe.get("lastSeq") != probe.get("firstSeq"))
-                snap["cameras"].append({"id": cid, "host": host, **probe, "alive": alive})
+                stalled = count_stall(stalls, host, alive)
+                snap["cameras"].append({"id": cid, "host": host, **probe, "alive": alive,
+                                        "stalledRounds": stalled})
                 if alive:
                     # 戻ったことは必ず 1 行残す（変わり目が無いと、復旧が効いたのか
                     # たまたま直ったのかが後から分からない）。
@@ -1127,15 +1145,21 @@ def cmd_watch(args):
                     key=f"dead:{cid}")
                 if args.no_fix:
                     continue
-                # ⚠ 直し過ぎない。落ちている時にだけ・1 台につき 90 秒に 1 回まで。
-                if time.time() - last_fix.get(host, 0) < 90:
+                # ⚠ 1 回の判定では撃たない。体験の最中なら、起こし直しは体験者が見ている
+                #    カメラを 5〜10 秒の砂嵐にする。続けて 2 巡回止まって見えたときだけ。
+                if stalled < WATCH_STALLS_BEFORE_RESTART:
+                    say(f"  次の巡回でも止まっていたら起こし直します（カメラ{cid}）")
+                    continue
+                # ⚠ 直し過ぎない。1 台につき 90 秒に 1 回まで。卓の「起こし直す」と同じ記録を見る。
+                if (time.time() - last_fix.get(host, 0) < operations.RESTART_COOLDOWN_SEC or
+                        not operations.claim_restart(host, "watch")):
                     say(f"  直近に手を打ったばかりなので待ちます（カメラ{cid}）")
                     continue
                 last_fix[host] = time.time()
                 say("  " + wake_and_restart(host))
                 try:
                     verify = operations.probe_stream(host, int(c.get("port") or 8080))
-                except (NameError, AttributeError, OSError, ValueError) as e:
+                except (AttributeError, OSError, ValueError) as e:
                     verify = {"ok": False, "detail": str(e)}
                 recovered = bool(verify.get("ok") and verify.get("frames", 0) >= 2 and
                                  verify.get("firstSeq") != verify.get("lastSeq"))

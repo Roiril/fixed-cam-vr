@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: aa629b9d-978a-41e5-b9f1-d22062359145
-  modified: 2026-09-04T13:55:01.706Z
+  modified: 2026-11-14T14:35:50.868Z
 ---
 
 # 当日の運用を触る前に
@@ -40,7 +40,10 @@ PC の `autoFollow=false`、Quest の `discoveryEnabled=false`、A/B/C の `pinn
 
 `GET /ops/status` は端末 ID・UUID と MJPEG の実フレーム 2 枚以上の連番進行、温度・電池、
 Quest ごとの 6 秒以内の heartbeat を見る。単一の `/unity/status` では両機を判定できない。
-`POST /ops/restart` は登録 UUID が一致するカメラ 1 台だけを起こし直す。90 秒間は再試行せず、
+連番の判定（`operations.probe_stream`）は 3 秒の窓。接続だけ 0.6 秒で諦め、以後は締切までの残りを待つ
+（urllib の応答は 1 度タイムアウトすると読めなくなり、フレームの間が 0.6 秒空いただけで停止と出ていた）。
+`POST /ops/restart` は登録 UUID が一致するカメラ 1 台だけを起こし直す。`watch` と共有の記録
+`Logs/onsite/restart-ledger.json`（host ごとの最終時刻）で 90 秒間は再試行せず、
 復旧後にフレームを再観測する。歩く場所と構図、Quest 2 台の映像・音・入力は人が確認する。
 確認は 1 時間で失効し、切断または設定変更でも解除される。
 `onsite.py check` と詳細点検は従来の機器情報・素材も見る補助。既存の音と素材は変更しない。
@@ -145,7 +148,12 @@ heartbeat に端末 ID が無く（`ShowControlClient.cs` の `Hb` に無い）�
 ⚠⚠ **Wi-Fi の入れ直しは 1 度もやらない。** 保存済みの別 AP が選ばれて全台が移る
 （2026-08-30 に実演済み）。しかも画面には何も出ない。`onsite.py` はこの操作を持っていない。
 
-⚠ 1 台につき **90 秒に 1 回まで**。落ちている時にだけ動く（再起動ループを作らない）。
+⚠ **続けて 2 巡回（`--sec` ごと）止まって見えたときだけ**撃つ。1 回目は記録だけで、間に 1 回でも
+映像が進めば数え直す。体験の最中なら、起こし直しは体験者が見ているカメラを 5〜10 秒の砂嵐にする。
+⚠ 1 台につき **90 秒に 1 回まで**。卓の `/ops/restart` と同じ `Logs/onsite/restart-ledger.json` を見るので、
+同じスマホを両方から数秒差で起こさない（再起動ループを作らない）。
+⚠ 未修正（2026-11-14 の運用監査）: 記録の読み書きはプロセスをまたいで原子的でない。watch と卓がミリ秒差で
+同じ台を判定すると、両方が起こし直しうる。起きるのは 1 回きりで、その次の判定から 90 秒の間隔に戻る。
 
 関連: [[quest_fleet_two_devices]] / [[camera_fleet]] / [[show_json_is_live_config]] /
 [[eye_jack]] / [[onsite_experience_test]] / [[visitor_sound_reset]]

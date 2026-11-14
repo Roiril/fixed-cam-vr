@@ -4,6 +4,7 @@ import concurrent.futures
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -27,6 +28,81 @@ _checking = False
 _restart_lock = threading.Lock()
 _last_restart = {}
 _pool = concurrent.futures.ThreadPoolExecutor(max_workers=5, thread_name_prefix='ops-probe')
+
+# 配信スマホを最後に起こし直した時刻。`onsite.py watch` と卓の `/ops/restart` が同じ 1 つを読み書きし、
+# 同じ端末を数秒差で 2 回起こさない（host がキー。壁時計の秒）。
+RESTART_LEDGER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                              'Logs', 'onsite', 'restart-ledger.json')
+RESTART_COOLDOWN_SEC = 90.0
+_ledger_lock = threading.RLock()
+_RECENT_ELSEWHERE = '自動監視か別の画面が直前に起こし直しました。90 秒経ってから再試行してください'
+
+
+def _read_restart_ledger():
+    """読めない・壊れているときは記録なし（空）として返す。"""
+    try:
+        with open(RESTART_LEDGER, encoding='utf-8') as source:
+            ledger = json.load(source)
+    except (OSError, ValueError):
+        return {}
+    hosts = ledger.get('hosts') if isinstance(ledger, dict) else None
+    return hosts if isinstance(hosts, dict) else {}
+
+
+def last_restart_at(host):
+    entry = _read_restart_ledger().get(host)
+    at = entry.get('at') if isinstance(entry, dict) else None
+    if isinstance(at, bool) or not isinstance(at, (int, float)):
+        return None
+    return float(at)
+
+
+def recently_restarted(host, now=None):
+    """`RESTART_COOLDOWN_SEC` 以内に誰かがこの端末を起こし直したか。
+
+    時計が戻って記録が未来になったときも、ずれが待ちの幅を超えれば撃てる（永久に止めない）。
+    """
+    at = last_restart_at(host)
+    if at is None:
+        return False
+    return abs((time.time() if now is None else now) - at) < RESTART_COOLDOWN_SEC
+
+
+def record_restart(host, by, now=None):
+    """起こし直した時刻を書く。一時ファイル → `os.replace` で置き換える。書けたら True。"""
+    path = RESTART_LEDGER
+    with _ledger_lock:
+        hosts = dict(_read_restart_ledger())
+        hosts[host] = {'at': time.time() if now is None else now, 'by': by}
+        tmp = f'{path}.{os.getpid()}.{threading.get_ident()}.tmp'
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(tmp, 'w', encoding='utf-8', newline='\n') as sink:
+                json.dump({'schema': 1, 'hosts': hosts}, sink, ensure_ascii=False)
+            # Windows では相手が読んでいる瞬間の置き換えが拒まれることがあるので、数回だけ待つ。
+            for attempt in range(5):
+                try:
+                    os.replace(tmp, path)
+                    return True
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.05)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            return False
+
+
+def claim_restart(host, by, now=None):
+    """直近に誰も起こし直していなければ記録して True。待つべきなら False。"""
+    with _ledger_lock:
+        if recently_restarted(host, now):
+            return False
+        record_restart(host, by, now)
+        return True
 
 
 def normalize_show(show):
@@ -88,24 +164,112 @@ def _json_get(host, port, path, timeout=1.2):
         return json.loads(response.read(65536))
 
 
+class _ChunkDecoder:
+    """Transfer-Encoding: chunked を少しずつ解く。配信アプリ（NanoHTTPD）の /video はこの形。"""
+
+    def __init__(self):
+        self.raw = bytearray()
+        self.left = 0
+        self.crlf = False
+        self.done = False
+
+    def feed(self, chunk):
+        self.raw.extend(chunk)
+        out = bytearray()
+        while not self.done:
+            if self.left:
+                take = min(self.left, len(self.raw))
+                if not take:
+                    break
+                out += self.raw[:take]
+                del self.raw[:take]
+                self.left -= take
+                self.crlf = not self.left
+                continue
+            if self.crlf:
+                if len(self.raw) < 2:
+                    break
+                if self.raw[:2] != b'\r\n':
+                    raise ValueError('broken chunk terminator')
+                del self.raw[:2]
+                self.crlf = False
+                continue
+            end = self.raw.find(b'\r\n')
+            if end < 0:
+                if len(self.raw) > 1024:
+                    raise ValueError('broken chunk size line')
+                break
+            size = int(bytes(self.raw[:end]).split(b';')[0].strip(), 16)
+            del self.raw[:end + 2]
+            if size == 0:
+                self.done = True
+            else:
+                self.left = size
+        return bytes(out)
+
+
 def probe_stream(host, port):
-    """最大 3 秒 / 4 MiB。Content-Length が成立した JPEG と連番の進行を要求。"""
+    """最大 3 秒 / 4 MiB。Content-Length が成立した JPEG と連番の進行を要求。
+
+    接続は 0.6 秒で諦める（居ない機に長く待たない）。接続後は読むたびにソケットの待ちを
+    3 秒の締切までの残りに設定し直し、待ちが切れたら締切に達したとして抜ける。
+    ⚠ urllib の応答は 1 度タイムアウトすると以後の読み取りが
+    `OSError("cannot read from timed out object")` になる。フレームの間が 0.6 秒空いただけで
+    止まったと判定していたので、ソケットを自分で持つ。
+    """
     started = time.monotonic()
     result = {'ok': False, 'frames': 0, 'firstSeq': None, 'lastSeq': None,
               'elapsedSec': None, 'bytes': 0}
     deadline = started + 3.0
     data = bytearray()
     seqs = []
+
+    def receive(sock):
+        """締切までの残りだけ待って読む。締切に達したら None。"""
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        sock.settimeout(max(0.05, remaining))
+        try:
+            return sock.recv(16384)
+        except socket.timeout:
+            return None
+
     try:
-        with urllib.request.urlopen(f'http://{host}:{port}/video', timeout=0.6) as response:
-            if 'multipart/' not in response.headers.get('Content-Type', '').lower():
+        with socket.create_connection((host, port), timeout=0.6) as sock:
+            sock.sendall(f'GET /video HTTP/1.1\r\nHost: {host}:{port}\r\n'
+                         'Accept: multipart/x-mixed-replace\r\nConnection: close\r\n\r\n'.encode('ascii'))
+            head = bytearray()
+            while b'\r\n\r\n' not in head:
+                if len(head) > 65536:
+                    return result
+                piece = receive(sock)
+                if not piece:
+                    return result
+                head.extend(piece)
+            split = head.index(b'\r\n\r\n')
+            lines = bytes(head[:split]).decode('iso-8859-1').split('\r\n')
+            status = re.fullmatch(r'HTTP/1\.[01] (\d{3})(?: .*)?', lines[0])
+            if status is None or not 200 <= int(status.group(1)) < 300:
                 return result
-            while time.monotonic() < deadline and result['bytes'] < 4 * 1024 * 1024:
-                try:
-                    chunk = response.read1(16384)
-                except TimeoutError:
-                    continue
-                if not chunk:
+            headers = {}
+            for line in lines[1:]:
+                name, sep, value = line.partition(':')
+                if sep:
+                    headers[name.strip().lower()] = value.strip()
+            if 'multipart/' not in headers.get('content-type', '').lower():
+                return result
+            decoder = _ChunkDecoder() if 'chunked' in headers.get('transfer-encoding', '').lower() else None
+            pending = bytes(head[split + 4:])
+            while result['bytes'] < 4 * 1024 * 1024:
+                if pending:
+                    raw, pending = pending, b''
+                else:
+                    raw = receive(sock)
+                    if not raw:
+                        break
+                chunk = decoder.feed(raw) if decoder else raw
+                if decoder and decoder.done and not chunk:
                     break
                 result['bytes'] += len(chunk)
                 data.extend(chunk)
@@ -569,8 +733,10 @@ def restart(camera_id, devices, beacons, revision, runner=subprocess.run):
     if not _restart_lock.acquire(blocking=False):
         return 409, {'ok': False, 'cameraId': camera_id, 'message': '別の起こし直しが進行中です'}
     try:
-        if time.monotonic() - _last_restart.get(camera_id, float('-inf')) < 90:
+        if time.monotonic() - _last_restart.get(camera_id, float('-inf')) < RESTART_COOLDOWN_SEC:
             return 409, {'ok': False, 'cameraId': camera_id, 'message': '90 秒経ってから再試行してください'}
+        if recently_restarted(fixed['host']):
+            return 409, {'ok': False, 'cameraId': camera_id, 'message': _RECENT_ELSEWHERE}
         adb_identity = None
         try:
             info = _json_get(fixed['host'], fixed['port'], '/info')
@@ -592,6 +758,9 @@ def restart(camera_id, devices, beacons, revision, runner=subprocess.run):
                              'message': '無線 ADB の端末 ID を確認できません。端末で配信アプリを開いてください'}
         if any(b.get('uuid') != fixed['uuid'] for b in beacons if b.get('id') == camera_id):
             return 409, {'ok': False, 'cameraId': camera_id, 'message': '同じ ID の端末が複数あります'}
+        # 端末の確認に数秒かかるあいだに watch が起こし直していることがあるので、撃つ直前に取り直す。
+        if not claim_restart(fixed['host'], 'desk'):
+            return 409, {'ok': False, 'cameraId': camera_id, 'message': _RECENT_ELSEWHERE}
         _last_restart[camera_id] = time.monotonic()
         serial = fixed['host'] + ':5555'
         try:
