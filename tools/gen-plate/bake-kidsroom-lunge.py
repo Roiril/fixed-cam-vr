@@ -1,9 +1,10 @@
 """焼けた「隙間から眼が覗く画」を参照①にして、動画の最後のフレームだけを焼き直す（anomaly/kidsroom-cat.md）。
 
-    py -3.11 tools/gen-plate/bake-kidsroom-lunge.py [--variant last|last_close|last_fallen|last_doll|last_floor] [--nook] [--lock-room] <眼が覗く画.png> ...
+    py -3.11 tools/gen-plate/bake-kidsroom-lunge.py [--variant last|last_close|last_fallen|last_doll|last_floor|last_body] [--nook] [--lock-room] [--doll] <眼が覗く画.png> ...
 
 --variant は最後のフレームの版（節の名前）。last は飛びかかる黒い塊と大きな眼 2 つ（0361）。
-last_close は近すぎて見えない・傾いた画に眼が 1 つ、last_fallen は横倒しのカメラを覗き込む眼が 1 つ（どちらも 0368）。last_doll は上から逆さまに落ちてきた人形の顔（0370）。last_floor は床に落ちて割れた人形の顔（0371）。
+last_close は近すぎて見えない・傾いた画に眼が 1 つ、last_fallen は横倒しのカメラを覗き込む眼が 1 つ（どちらも 0368）。last_doll は上から逆さまに落ちてきた人形の顔（0370）。last_floor は床に落ちて割れた人形の顔（0371）。last_body は身体ごと落ちて顔だけこちらを向く人形（0372。--doll と組む）。
+--doll はこのプロジェクトの人形の写真（tools/doll-ref/out/plate_front.jpg）を参照②に足す。
 --lock-room は部屋を参照①とピクセル単位で同じにし、生成で変わった所だけ残す（動画の途中で部屋がゆがむのを防ぐ。0371）。
 --nook は人形と木馬の部屋の説明を足す（0364）。出力は同じフォルダの <variant>.png と <variant>_169.png。1 本ずつ直列。
 """
@@ -17,6 +18,9 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("cat", HERE / "bake-kidsroom-cat.py")
 cat = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cat)
+
+
+DOLL_REF = cat.REPO / "tools" / "doll-ref" / "out" / "plate_front.jpg"   # 研究室の市松人形（doll_reference_kit）
 
 
 def lock_room(src, out):
@@ -48,6 +52,7 @@ def main():
     ap.add_argument("--variant", default="last")
     ap.add_argument("--nook", action="store_true")
     ap.add_argument("--lock-room", action="store_true", help="部屋を参照①と同じにし、変わった所だけ残す")
+    ap.add_argument("--doll", action="store_true", help="このプロジェクトの人形の写真を参照②に足す（0372）")
     a = ap.parse_args()
     blocks = cat.REPO / "Logs" / "gen-plate" / "kr_block"
     common, _, _ = cat.sections(a.nook, a.nook)
@@ -58,9 +63,11 @@ def main():
         if not src.exists():
             sys.exit(f"無い: {src}")
         d = src.parent
-        out = cat.bake(d, name, body + "\n\n## 参考（部屋の説明。参照画像①に既に写っている）\n\n" + common, [
-            ("①", src, "編集する元の画。同じ動画の最初のフレーム"),
-            ("③", blocks / "curtain_ref.jpg", "右の幕の布")])
+        refs = [("①", src, "編集する元の画。同じ動画の最初のフレーム")]
+        if a.doll:
+            refs.append(("②", DOLL_REF, "このプロジェクトの人形（実物の写真）。意匠だけを使い、色と明るさは①の部屋に合わせる"))
+        refs.append(("③", blocks / "curtain_ref.jpg", "右の幕の布"))
+        out = cat.bake(d, name, body + "\n\n## 参考（部屋の説明。参照画像①に既に写っている）\n\n" + common, refs)
         if out.exists():
             if a.lock_room:
                 lock_room(src, out)
