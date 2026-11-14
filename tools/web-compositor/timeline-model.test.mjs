@@ -299,6 +299,41 @@ test('持続の覆い・切替音・人形の呼びかけは往復する — 卓
   assert.equal(st[1].dollCall, true, '呼びかけは 💾 保存で消えない');
 });
 
+test('笑い声 1 回・報告で進む・決めた位置から寄る trail は往復する — 卓が保存しても消えない', () => {
+  // 2 周目 A の作り直し。⚠ 白名簿から漏れると 💾 保存の一押しで消え、実機は黙って従来の挙動に戻る。
+  const tl = normalizeTimelineV3({
+    rev: 1,
+    segments: [{
+      lap: 2, camera: 0,
+      takes: [{
+        id: 'L2C0#0',
+        steps: [
+          { source: 'plate', camera: 0, cg: 'doll', cgMode: 'trail',
+            trailFromX: 0.4, trailFromZ: -1.25, trailHopSec: 0.7, markAdvance: true },
+          { source: 'plate', camera: 0, dollLaugh: true, trailFromX: 0.4 },
+          { source: 'live', camera: 0 },
+        ],
+      }],
+    }],
+  });
+  const st = serializeTimelineV3(tl).segments[0].takes[0].steps;
+  assert.equal(st[0].markAdvance, true);
+  assert.equal(st[0].dollLaugh, false, '指定していないものは既定へ倒す');
+  assert.equal(st[1].dollLaugh, true, '笑い声は 💾 保存で消えない');
+  assert.equal(st[1].markAdvance, false);
+  assert.equal(st[0].trailFromX, 0.4);
+  assert.equal(st[0].trailFromZ, -1.25);
+  assert.equal(st[0].trailHopSec, 0.7);
+  // x・z の片方しか無いなら「無し」。キーごと出さない（Unity はキーが無ければ NaN ＝ 無効として読む）。
+  assert.equal('trailFromX' in st[1], false, '片方だけの from 点は書き出さない');
+  assert.equal('trailFromZ' in st[1], false);
+  assert.equal('trailFromX' in st[2], false, '指定していないカットに from 点を作らない');
+  assert.equal(st[2].trailHopSec, 0, '1 歩の間隔は 0 = 既定');
+  // もう 1 往復しても同じ（読み込み → 保存 → 読み込み）。
+  const again = serializeTimelineV3(normalizeTimelineV3(serializeTimelineV3(tl))).segments[0].takes[0].steps;
+  assert.deepEqual(again, st);
+});
+
 test('録画の早送りと続きからの再生は往復する — 卓が保存しても消えない', () => {
   // 3 周目 A（canon/LEDGER.md 0272）: 等速の録画 → 凍結点で同じ録画を続きから早送り。
   //   白名簿から漏れると 💾 の一押しで「頭から等速で流し直す」カットに化ける。

@@ -392,6 +392,14 @@ namespace FixedCamVr.Streaming
         public static bool IsDollReplacementShowing(bool active, bool stepWantsDoll, bool dollVisible)
             => active && stepWantsDoll && dollVisible;
 
+        /// <summary>
+        /// そのカットの CG 人形が「体験者が人形になった」姿か。歩いた跡をついてくる人形（<c>cgMode:"trail"</c>・2 周目）は
+        /// 体験者とは別の人形なので数えない。数えると人形化の画面加工（<see cref="ScreenDecayLogic"/> の DollHold）が
+        /// 2 周目で立ち、体験の最後まで残る（2026-11-15 のツインで 2-A から白黒の粗い画になった）。
+        /// </summary>
+        public static bool IsDollReplacementStep(bool toDoll, string? cgMode)
+            => toDoll && cgMode != TakeSchema.CgTrail;
+
         public static bool IsDollPovCue(string cueId)
             => cueId == "pov_0" || cueId == "pov_1" || cueId == "pov_2"
                || cueId == "pov_3" || cueId == "pov_4";
@@ -558,6 +566,23 @@ namespace FixedCamVr.Streaming
 
         /// <summary>最後に畳まずに保った報告の演出 id。</summary>
         public string LastKidsRoomHeldTakeId { get; private set; } = "";
+
+        /// <summary>
+        /// <b>報告でカットを 1 つ進めた回数</b>（step の <c>markAdvance</c>・観測・テスト用・<c>ev=markadv</c>）。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int MarkAdvanceCount { get; private set; }
+
+        /// <summary>最後に報告で進めた演出の id と、進める前のカットの index。</summary>
+        public string LastMarkAdvanceTakeId { get; private set; } = "";
+        public int LastMarkAdvanceStep { get; private set; } = -1;
+
+        /// <summary>
+        /// <b>人形の笑い声（<see cref="SoundCue.DollLaughOnce"/>）を撃った回数</b>（step の <c>dollLaugh</c>・観測・テスト用）。
+        /// 音源が無くて鳴らなかった回も数える（鳴ったかは走行ログの <c>ev=sfx id=DollLaughOnce</c> が持つ）。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int DollLaughCount { get; private set; }
 
         // この演出で落ちる所へ飛んだか（1 回の演出で 1 度だけ）。
         private bool _takeKidsRoomJumped;
@@ -800,6 +825,8 @@ namespace FixedCamVr.Streaming
                     {
                         dismissible = t.dismissible && !isOutroAnchor,
                         stepLineIndex = stepLines,
+                        stepMarkAdvance = BuildStepMarkAdvance(t),
+                        stepBeyondMinSec = BuildStepBeyondMinSec(t),
                         lap = seg.lap,
                         camera = seg.camera,
                         onExit = t.IsExit,
@@ -964,9 +991,30 @@ namespace FixedCamVr.Streaming
                 Debug.Log($"[TakeRunner] 子供部屋で報告が成立 → 最後のコマまで畳まない take={LastKidsRoomHeldTakeId} " +
                           $"step={activeStep} until={LastKidsRoomHeldUntilStep}");
             }
+            if (result == TakeRunnerLogic.MarkResult.Advanced)
+            {
+                MarkAdvanceCount++;
+                LastMarkAdvanceTakeId = TakeId(activeTake);
+                LastMarkAdvanceStep = activeStep;
+                // 押し始めの応答（markStartCueId）が出ていたら、ここで応答を終える。カットは次の Tick で替わり、
+                // 次のカットが画を出し直すので待機の画は戻さない。保留していた区間の切り替わりだけ流す。
+                if (_markResponsePlaying) DropMarkResponseForAdvance();
+                Debug.Log($"[TakeRunner] 報告でカットを進めた take={LastMarkAdvanceTakeId} step={activeStep}");
+            }
             if (result == TakeRunnerLogic.MarkResult.Released && ActiveTakeId == _endingTakeId)
                 _endingReleased = true;
             return result;
+        }
+
+        // markAdvance で報告が成立したとき、押し始めの応答の状態を落とす（演出は続くので畳まない）。
+        private void DropMarkResponseForAdvance()
+        {
+            _markResponsePlaying = false;
+            _markResponseStill = false;
+            _markResponsePress = false;
+            _markResponseToken = -1;
+            if (_markResponseZoneExit) _logic.NotifyZoneChanged(Now);
+            _markResponseZoneExit = false;
         }
 
         /// <summary>受付可能な長押しの開始。応答動画を待機姿勢から一度だけ往復再生する。</summary>
@@ -1221,6 +1269,10 @@ namespace FixedCamVr.Streaming
             LastKidsRoomHeldStep = -1;
             LastKidsRoomHeldUntilStep = -1;
             LastKidsRoomHeldTakeId = "";
+            MarkAdvanceCount = 0;
+            LastMarkAdvanceTakeId = "";
+            LastMarkAdvanceStep = -1;
+            DollLaughCount = 0;
             PresentationAbortCount = 0;
             _endingReleased = false;
             _farewell?.ResetRun();
@@ -1622,7 +1674,8 @@ namespace FixedCamVr.Streaming
                     _cgLayer.Apply(step.cg, step.cgMode,
                                    step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
                                    step.hasPlacement ? step.placement : null,
-                                   step.trailGapM, step.trailStepM, step.trailHideM);
+                                   step.trailGapM, step.trailStepM, step.trailHideM,
+                                   step.trailFromX, step.trailFromZ, step.trailHopSec);
                 // ⚠ 持続の覆いが立てた代役は畳まない（畳むと覆いの形が消える）。
                 //   この代役を消す責任は SwapMorphFx.Cancel が持つ。
                 else if (!holdVeil) _cgLayer.Hide();
@@ -1631,7 +1684,8 @@ namespace FixedCamVr.Streaming
                 _cgLayer.SetAura(toDoll ? step.aura : 0f);
                 // 表示意図を保持する。DollVisible は非同期の準備後に次フレームで立つ場合があるので、
                 // ここで一度だけ標本を取ると、実際に出た後も false のままになる。
-                _activeStepDollReplacement = toDoll;
+                // 歩いた跡をついてくる人形（trail）は体験者の代わりではないので、人形化の画面加工・侵食に数えない。
+                _activeStepDollReplacement = IsDollReplacementStep(toDoll, step.cgMode);
             }
 
             // カット遷移（cut / dip / fade / glitch）。**source によって効かせ方が違う**:
@@ -1745,6 +1799,11 @@ namespace FixedCamVr.Streaming
             // ⚠ 自然に次のカット（静止画）へ進んでも止めない。6 秒の音はそのまま鳴り切る。
             //   止めるのは別の場所が途中で畳まれたときだけ（EndTake の Completed 以外・CleanupActive）。
             if (IsKidsRoomCue(step.cueId)) PlayKidsRoomSound();
+
+            // 人形の笑い声（カットの `dollLaugh`・2 周目 A の作り直し）。呼びかけと同じ行から 1 回だけ撃つ。
+            // ⚠ 飛ばしたカットでは鳴らさない（上の !playable で return 済み）。2D・劇伴は退かせない（DuckFor 0）。
+            // ⚠ 引き返して同じ演出が頭から再演されたらもう 1 度鳴る（画も再演されるので、呼びかけと同じ扱い）。
+            if (step.dollLaugh) PlayDollLaugh();
 
             // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
             if (step.glitch > 0.001f)
@@ -2279,6 +2338,17 @@ namespace FixedCamVr.Streaming
                                  + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
         }
 
+        // 人形の笑い声（カットの `dollLaugh`）。呼びかけと同じ口で 1 回撃つ。止める縁は持たない（4.8 秒で鳴り切る）。
+        private void PlayDollLaugh()
+        {
+            DollLaughCount++;
+            if (_sound != null && !_sound.PlaySpot(SoundCue.DollLaughOnce))
+                Debug.LogWarning("[TakeRunner] 人形の笑い声の音源がありません"
+                                 + "（Resources/Sound/sfx_doll_laugh_once）。カットは無言で進みます。"
+                                 + "`py -3.11 tools/ingest-doll-laugh.py` の後に "
+                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+        }
+
         // 押し始めの瞬間、子供部屋の動画が落ちる所より前なら落ちる所へ飛ばす（`canon/LEDGER.md` 0375）。
         // ⚠ カットの尺は飛んだ分だけ縮める（落ちる所から動画の終わりまで＋最後のコマ）。落ちる所の画が出るまで
         //   待った分は TickKidsRoomLand が延ばす（seek は準備ができるまで前のコマを出し続ける）。
@@ -2589,6 +2659,37 @@ namespace FixedCamVr.Streaming
                     : -1;
             }
             return idx;
+        }
+
+        // カットごとの markAdvance（報告でそのカットを終えて次へ進む）。1 つも立っていなければ null（判定が全カット false になる）。
+        // ⚠ 締めのカット（untilMark）に立っていても TakeRunnerLogic 側で締めが先に勝つ。
+        /// <summary>カットごとの側待ちの最短秒（step の <c>beyondMinSec</c>）。1 本も正でなければ null。</summary>
+        public static float[]? BuildStepBeyondMinSec(ShowTakeDef take)
+        {
+            ShowStepDef[]? steps = take.steps;
+            if (steps == null || steps.Length == 0) return null;
+            float[]? secs = null;
+            for (int i = 0; i < steps.Length; i++)
+            {
+                if (steps[i] == null || !(steps[i].beyondMinSec > 0f)) continue;
+                secs ??= new float[steps.Length];
+                secs[i] = steps[i].beyondMinSec;
+            }
+            return secs;
+        }
+
+        public static bool[]? BuildStepMarkAdvance(ShowTakeDef take)
+        {
+            ShowStepDef[]? steps = take.steps;
+            if (steps == null || steps.Length == 0) return null;
+            bool[]? flags = null;
+            for (int i = 0; i < steps.Length; i++)
+            {
+                if (steps[i] == null || !steps[i].markAdvance) continue;
+                flags ??= new bool[steps.Length];
+                flags[i] = true;
+            }
+            return flags;
         }
     }
 }

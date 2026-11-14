@@ -133,6 +133,17 @@ namespace FixedCamVr.Streaming
         /// ここに居るのは<b>音源の登録簿としての意味</b>（<c>Awake</c> の先読みと <c>ev=sfx</c> の名前）。
         /// </summary>
         KidsRoom,
+
+        /// <summary>
+        /// <b>人形の笑い声を 1 回</b>（カットの <c>dollLaugh</c>・2 周目 A の作り直し）。
+        /// 3 周目の一人の笑い（<c>bed_doll_one</c>）の頭 4.8 秒を切り出し、尻 0.6 秒を聴感直線で退かせたもの
+        /// （<c>tools/ingest-doll-laugh.py</c>・音量は変えない）。
+        ///
+        /// ⚠ <see cref="SoundCueLogic"/> は縁を検出しない。カットが画面を取ったのと同じ行（<see cref="TakeRunner"/>）から
+        /// <see cref="ShowSoundDirector.PlaySpot"/> で撃つ（呼びかけ・子供部屋の音と同じ構え）。
+        /// 2D（<c>SpatialAudio.MonoRequired</c> に入れない）・劇伴は退かせない（<see cref="SoundCueLogic.DuckFor"/> 0）。
+        /// </summary>
+        DollLaughOnce,
     }
 
     /// <summary>
@@ -414,6 +425,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.EyeBig: return "sfx_eye_big";
                 case SoundCue.ScreenAdd: return "sfx_switch";   // 6 種
                 case SoundCue.KidsRoom: return "sfx_kidsroom";
+                case SoundCue.DollLaughOnce: return "sfx_doll_laugh_once";
                 default: return "";
             }
         }

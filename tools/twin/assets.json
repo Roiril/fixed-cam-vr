@@ -34,10 +34,6 @@
       "mask": "twin_stainA_mask.png",
       "pressMask": "twin_stainA_pressmask.png"
     },
-    "stain_A_done_doll": {
-      "source": "twin_stainA_doll.png",
-      "mask": "twin_stainA_dollmask.png"
-    },
     "pov_0": {
       "source": "twin_pov_0.mp4"
     },
@@ -52,6 +48,22 @@
     },
     "pov_4": {
       "source": "twin_pov_4.mp4"
+    },
+    "cue_stain_A_left_hold": {
+      "source": "twin_stainA_ratio.png",
+      "mask": "twin_stainA_mask.png"
+    },
+    "stain_A_right_burst": {
+      "source": "twin_stainA_right_burst.mp4",
+      "mask": "twin_stainA_right_mask.png"
+    },
+    "stain_A_right_watch": {
+      "source": "twin_stainA_right_watch.png",
+      "mask": "twin_stainA_right_mask.png"
+    },
+    "cue_stain_A_both": {
+      "source": "twin_stainA_both_ratio.png",
+      "mask": "twin_stainA_both_mask.png"
     }
   }
 }

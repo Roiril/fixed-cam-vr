@@ -51,6 +51,7 @@ CUES = {
     "Glitch": ("sfx_glitch", 3), "Bell": ("amb_bell", 1),
     "DollCall": ("sfx_doll_call", 1), "PowerOff": ("sfx_power_off", 1),
     "DollEndFall": ("sfx_doll_end_fall", 1), "KidsRoom": ("sfx_kidsroom", 1),
+    "DollLaughOnce": ("sfx_doll_laugh_once", 1),
     "EyeOpen": ("sfx_eye", 6), "EyeBig": ("sfx_eye_big", 1),
 }
 

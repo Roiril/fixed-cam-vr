@@ -46,7 +46,7 @@ namespace FixedCamVr.Streaming
             {
                 case "L1C1#0": return "L1C1#0";
                 case "L2C0#0":
-                case "L2C0#1": return "L2C0#0";   // シミと、そのあとをついてくる人形は 1 つの異変（0347）
+                case "L2C0#1": return "L2C0#0";   // 1 つの異変。0376 から 2-A は L2C0#0 の 1 本（#1 は 0347 の台本の名残を読むため）
                 case "L2C1#0": return "L2C1#0";
                 case "L2C2#0":
                 case "L2C2#1": return "L2C2";

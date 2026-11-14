@@ -317,6 +317,7 @@ namespace FixedCamVr.Streaming
             // ⚠ 戻り値が「何に効いたか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
             TakeRunnerLogic.MarkResult result =
                 timelineDirector?.NotifyVisitorMark() ?? TakeRunnerLogic.MarkResult.None;
+            // markAdvance のカットで進んだ（Advanced）も解除が通った扱い。数え方とスイの返事は Dismissed と同じ。
             LastMarkResolved = result != TakeRunnerLogic.MarkResult.None;
             LastMarkDetected = anomalyShowing || LastMarkResolved;
             LastMarkStuck = LastMarkDetected && !LastMarkResolved && !removable;

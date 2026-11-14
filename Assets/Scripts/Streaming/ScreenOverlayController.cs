@@ -960,7 +960,9 @@ namespace FixedCamVr.Streaming
                 return;
             }
             float strength = cue.strength > 0f ? Mathf.Clamp01(cue.strength) : 1f;
-            _feelFx.SetOverlay2(still, mask, ContainScale((float)still.width / still.height), strength);
+            // 掛け算の cue（blend:"multiply"）は 1 層目と同じく比の画としてライブに掛ける。
+            // 順の画（revealUrl）は 2 層目では使わない — 静止画をそのまま出す。
+            _feelFx.SetOverlay2(still, mask, ContainScale((float)still.width / still.height), strength, cue.multiply);
         }
 
         // 世代を進めずに畳む（既に自分の世代であることを確認済みの失敗経路から呼ぶ）。

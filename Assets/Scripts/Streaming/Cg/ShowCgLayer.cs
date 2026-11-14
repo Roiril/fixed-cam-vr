@@ -209,6 +209,10 @@ namespace FixedCamVr.Streaming.Cg
         private Vector2 _trailStandXz;
         private Vector2 _trailFaceXz;
         private bool _keepTrailStand;
+        // カットが歩き出しの点（trailFromX/Z）を持つときの歩き出し。終わったら上の gap の飛び石へ渡す。
+        // _trailFromStand が立っている間、_trailStation は歩き出しの hop（0 = 指定点）を指す。
+        private readonly TrailApproach _trailApproach = new TrailApproach();
+        private bool _trailFromStand;
 
         /// <summary>いま CG を出しているか（HUD / 診断用）。</summary>
         public bool IsVisible => _visible && _rendering;
@@ -297,9 +301,13 @@ namespace FixedCamVr.Streaming.Cg
         /// <paramref name="placement"/> は cgMode="fixed" のときの立ち位置（カットが持つ。null なら actor の既定）。
         /// <paramref name="trailGapM"/> / <paramref name="trailStepM"/> / <paramref name="trailHideM"/> は
         /// cgMode="trail" の立ち方（0 以下 = 既定。<see cref="TakeSchema.ResolveTrailGapM"/> ほかで解く）。
+        /// <paramref name="trailFromX"/> / <paramref name="trailFromZ"/> は trail の歩き出しの点（course m）。
+        /// 両方が有限のときだけ効き、人形はそこに立ってから <paramref name="trailHopSec"/> ごとに 1 歩ずつ跡を進む
+        /// （<see cref="TrailApproach"/>。0 以下 = <see cref="TakeSchema.DefaultTrailHopSec"/>）。
         /// </summary>
         public void Apply(string actorId, string cgMode, int cameraIndex, ShowPlacementDef? placement = null,
-                          float trailGapM = 0f, float trailStepM = 0f, float trailHideM = 0f)
+                          float trailGapM = 0f, float trailStepM = 0f, float trailHideM = 0f,
+                          float trailFromX = float.NaN, float trailFromZ = float.NaN, float trailHopSec = 0f)
         {
             // 別れのモードは BeginFarewell を通ったときだけ立つ。カットの Apply は必ず通常の人形に戻す。
             _farewell = _farewellPending;
@@ -353,6 +361,10 @@ namespace FixedCamVr.Streaming.Cg
             {
                 _trailStation = -1;
                 _trailEpoch = -1;
+                _trailFromStand = false;
+                _trailApproach.Cancel();
+                if (_mode == TakeSchema.CgTrail && TakeSchema.HasTrailFrom(trailFromX, trailFromZ))
+                    BeginTrailApproach(new Vector2(trailFromX, trailFromZ), TakeSchema.ResolveTrailHopSec(trailHopSec));
             }
             _cameraIndex = cameraIndex;
             // 較正の解があればそれが姿勢の正（pose は人がドラッグした概算にすぎない）。
@@ -404,6 +416,8 @@ namespace FixedCamVr.Streaming.Cg
             _farewell = false;
             _farewellPending = false;
             _farewellAnchored = false;
+            _trailApproach.Cancel();
+            _trailFromStand = false;
             _visible = false;
             _rendering = false;
             _actorDef = null;
@@ -500,8 +514,14 @@ namespace FixedCamVr.Streaming.Cg
         /// <summary>trail の人形を実際に描いているか。跡が足りない・体験者が近すぎる間は false。</summary>
         public bool TrailShown => TrailActive && _rendering;
 
-        /// <summary>いま立っている飛び石の番号。まだ立てていなければ -1。</summary>
+        /// <summary>
+        /// いま立っている飛び石の番号。まだ立てていなければ -1。
+        /// 歩き出しの最中（<see cref="TrailFromActive"/>）は hop の回数（0 = 指定点）、その後は gap の飛び石の番号。
+        /// </summary>
         public int TrailStation => TrailActive ? _trailStation : -1;
+
+        /// <summary>カットの指定点（trailFromX/Z）からの歩き出しの最中か。gap の飛び石へ渡したら false。</summary>
+        public bool TrailFromActive => TrailActive && _trailFromStand && _trailApproach.Active;
 
         /// <summary>いま立っている飛び石の位置（course XZ）。<see cref="TrailStation"/> が 0 以上のときだけ意味がある。</summary>
         public Vector2 TrailStandXz => _trailStandXz;
@@ -519,6 +539,8 @@ namespace FixedCamVr.Streaming.Cg
             _trailTrack.Clear();
             _trailStation = -1;
             _trailEpoch = -1;
+            _trailApproach.Cancel();
+            _trailFromStand = false;
         }
 
         // 体験者の course XZ（映像の遅延ぶん過去 ＝ follow の人形が立つのと同じ時刻）を、
@@ -551,6 +573,28 @@ namespace FixedCamVr.Streaming.Cg
         /// </summary>
         private bool UpdateTrailStand()
         {
+            if (_trailApproach.Active)
+            {
+                if (!TryTrailVisitorXz(out Vector2 v)) return false;
+                if (_trailApproach.Tick(_trail, SimTime.Now, out Vector2 axz, out int hop))
+                {
+                    if (!_trailFromStand || hop != _trailStation)
+                    {
+                        _trailFromStand = true;
+                        _trailStation = hop;
+                        _trailEpoch = _trail.Epoch;
+                        _trailStandXz = axz;
+                        _trailFaceXz = v;
+                    }
+                    return Vector2.Distance(_trailStandXz, v) >= _trailHideM;
+                }
+                // 引き渡し（gap に届いた）か打ち切り（跡の数え直し）。gap の飛び石で立ち直し、向きも決め直す。
+                if (_trailApproach.LastEnd == TrailApproach.End.Lost)
+                    Debug.LogWarning("[ShowCgLayer] trail の歩き出しの途中で跡が数え直された → gap の立ち方へ移る");
+                _trailFromStand = false;
+                _trailStation = -1;
+                _trailEpoch = -1;
+            }
             if (!_trail.TryPointBehind(_trailGapM, _trailStepM, out Vector2 xz, out int station)) return false;
             if (!TryTrailVisitorXz(out Vector2 visitor)) return false;
             if (station != _trailStation || _trail.Epoch != _trailEpoch)
@@ -561,6 +605,16 @@ namespace FixedCamVr.Streaming.Cg
                 _trailFaceXz = visitor;
             }
             return Vector2.Distance(_trailStandXz, visitor) >= _trailHideM;
+        }
+
+        // 歩き出しを始める。指定点のそばに跡が無ければ（MaxSnapM より遠い・跡がまだ無い）、
+        // 1 行だけ警告して従来の gap の立ち方のまま進める。
+        private void BeginTrailApproach(Vector2 from, float hopSec)
+        {
+            if (_trailApproach.Begin(_trail, from, SimTime.Now, _trailStepM, _trailGapM, hopSec, out float nearM)) return;
+            string near = float.IsInfinity(nearM) ? "跡がまだ無い" : $"いちばん近い跡まで {nearM:F2}m";
+            Debug.LogWarning($"[ShowCgLayer] trail の歩き出しの点 ({from.x:F2}, {from.y:F2}) のそばに跡が無い" +
+                             $"（{near} > {TrailApproach.MaxSnapM:F1}m）→ gap の立ち方へ落とす");
         }
 
         // ---- 帰還の別れの人形（canon/LEDGER.md 0291）----

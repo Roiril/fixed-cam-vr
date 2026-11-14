@@ -28,10 +28,10 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void CurrentShow_HasTenTakesAndEightAnomalies()
+        public void CurrentShow_HasNineTakesAndEightAnomalies()
         {
             ShowTimelineSegmentDef[] segments = LoadCurrentSegments();
-            Assert.That(segments.Sum(s => s.takes.Length), Is.EqualTo(10));
+            Assert.That(segments.Sum(s => s.takes.Length), Is.EqualTo(9));   // 2-A は 1 本（0376 でシミと人形を 1 本の段に）
             Assert.That(ShowAnomalyCatalog.Count(segments), Is.EqualTo(8));
             Assert.That(ShowAnomalyCatalog.CountUnknown(segments), Is.Zero);
         }

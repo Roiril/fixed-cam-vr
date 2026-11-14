@@ -164,6 +164,7 @@ namespace FixedCamVr.Diagnostics
         private bool _lastTrailActive;
         private int _lastTrailStation = -1;
         private bool _lastTrailShown;
+        private bool _lastTrailFrom;
         private string _lastTakeId = "";
         // 長押しで布が膨らんだ最大（0349）。膨らみを貼った演出だけ 0 以上。演出の終わりに pressMax= で出す。
         private float _takePressMax = -1f;
@@ -174,6 +175,7 @@ namespace FixedCamVr.Diagnostics
         private int _lastKidsJumpCount;
         private int _lastKidsLandCount;
         private int _lastKidsHeldCount;
+        private int _lastMarkAdvanceCount;
         // 滲んで現れる cue で出た _OverlayReveal の最大（0349）。滲む cue だけ 0 以上。cue の off に revMax= で出す。
         private float _cueRevealMax = -1f;
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
@@ -1096,16 +1098,19 @@ namespace FixedCamVr.Diagnostics
             bool trailActive = tcg != null && tcg.TrailActive;
             int trailStation = trailActive ? tcg!.TrailStation : -1;
             bool trailShown = trailActive && tcg!.TrailShown;
+            // from=1 はカットの指定点（trailFromX/Z）からの歩き出しの最中。station はそのとき hop の回数（0 = 指定点）。
+            bool trailFrom = trailActive && tcg!.TrailFromActive;
             if ((trailActive || _lastTrailActive)
-                && (trailStation != _lastTrailStation || trailShown != _lastTrailShown))
+                && (trailStation != _lastTrailStation || trailShown != _lastTrailShown || trailFrom != _lastTrailFrom))
             {
                 Vector2 st = tcg != null && trailStation >= 0 ? tcg.TrailStandXz : Vector2.zero;
                 Emit($"ev=trail station={trailStation} x={st.x:F2} z={st.y:F2} vis={(trailShown ? 1 : 0)} " +
-                     $"gap={(tcg != null ? tcg.TrailGapM : -1f):F2}");
+                     $"gap={(tcg != null ? tcg.TrailGapM : -1f):F2} from={(trailFrom ? 1 : 0)}");
             }
             _lastTrailActive = trailActive;
             _lastTrailStation = trailStation;
             _lastTrailShown = trailShown;
+            _lastTrailFrom = trailFrom;
 
             // タイトルの段。**体験の入口なのに 2026-08-14 まで 1 行も出していなかった。**
             // built は「実体を組めたか」、veil / glyph は**実際に書いた不透明度** ＝ 画に出た側。
@@ -1212,6 +1217,15 @@ namespace FixedCamVr.Diagnostics
                              $"step={_takes.LastKidsRoomHeldStep} until={_takes.LastKidsRoomHeldUntilStep} " +
                              $"n={_takes.KidsRoomHeldReportCount}");
                     _lastKidsHeldCount = _takes.KidsRoomHeldReportCount;
+                }
+                // 報告でカットを 1 つ進めた（step の markAdvance）。step= は進める前のカット。
+                // 次のカット（ev=step take=<id> i=<step+1>）が 3 秒以内に続かなければ解析器が FAIL にする。
+                if (_takes.MarkAdvanceCount != _lastMarkAdvanceCount)
+                {
+                    if (_takes.MarkAdvanceCount > _lastMarkAdvanceCount)
+                        Emit($"ev=markadv take={(string.IsNullOrEmpty(_takes.LastMarkAdvanceTakeId) ? "-" : _takes.LastMarkAdvanceTakeId)} " +
+                             $"step={_takes.LastMarkAdvanceStep} n={_takes.MarkAdvanceCount}");
+                    _lastMarkAdvanceCount = _takes.MarkAdvanceCount;
                 }
             }
 

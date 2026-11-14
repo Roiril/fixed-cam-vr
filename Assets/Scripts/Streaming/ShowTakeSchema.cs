@@ -249,6 +249,36 @@ namespace FixedCamVr.Streaming
         public bool dollCall;
 
         /// <summary>
+        /// このカットの<b>画の差し替えと同時に、人形の笑い声を 1 回鳴らす</b>
+        /// （<c>Resources/Sound/sfx_doll_laugh_once</c>・<see cref="SoundCue.DollLaughOnce"/>）。
+        /// 2 周目 A の作り直しで、幕の裏から人形が覗いた瞬間に 1 声だけ笑わせるために足した。
+        ///
+        /// ⚠ 鳴らすのは <see cref="dollCall"/> と同じ行（<see cref="TakeRunner"/>）。飛ばしたカットでは鳴らさない。
+        /// ⚠ 2D で鳴らし、劇伴は退かせない。既定 false — JsonUtility は欠落キーを false で埋めるので、
+        ///   既存の show.json は挙動が 1 ビットも変わらない。
+        /// </summary>
+        public bool dollLaugh;
+
+        /// <summary>
+        /// <b>報告でこのカットを終えて次のカットへ進める</b>（演出は畳まない）。
+        ///
+        /// 走行中のカットがこれを持つとき、体験者の報告（<see cref="TakeRunnerLogic.NotifyMarkPressed"/>）は
+        /// <see cref="TakeRunnerLogic.MarkResult.Advanced"/> を返し、そのカットの尺をその瞬間で切る。
+        /// 演出の <see cref="ShowTakeDef.dismissible"/> より先に効く（Ready と持ち越しは捨てない）。
+        /// ⚠ 締めのカット（<c>durKind:"untilMark"</c>）の <see cref="TakeRunnerLogic.MarkResult.Released"/> は呪いが解ける
+        ///   1 点の意味を持つので、ここでは使わない。両方が立っていれば締めが勝つ。
+        /// ⚠ 既定 false — JsonUtility は欠落キーを false で埋める。
+        /// </summary>
+        public bool markAdvance;
+
+        /// <summary>
+        /// 側待ちのカット（<c>durKind:"untilBeyond"</c>）を、始まってから<b>最短この秒は畳まない</b>（0 以下 = 制限しない）。
+        /// 線の向こうに既に居ても、この秒を過ぎるまで画を見せる（2 周目 A の幕の裏の人形・LEDGER 0376）。
+        /// 報告（<see cref="markAdvance"/>）と watchdog はこの秒を待たない。側待ち以外のカットでは読まない。
+        /// </summary>
+        public float beyondMinSec;
+
+        /// <summary>
         /// 端末内録画（<c>source:"rec"</c>）の<b>再生の速さ</b>。0 以下 = 等速
         /// （<see cref="TakeSchema.ResolveRecRate"/> が 0.25..8 へ丸める）。
         /// 出どころは <c>canon/LEDGER.md</c> 0272（3 周目 A で凍結点を踏んだら早送りで先へ行ってしまう）。
@@ -337,6 +367,16 @@ namespace FixedCamVr.Streaming
         public float trailGapM;
         public float trailStepM;
         public float trailHideM;
+
+        // cgMode="trail" の人形を、跡の後ろではなく<b>決めた位置（course 座標 m）から</b>出す。
+        // 始まった瞬間に人形はちょうどこの点に立ち、trailHopSec ごとに跡の上を trailStepM ずつ飛んで寄り、
+        // 跡の後ろ trailGapM に追いついたら従来の立ち方へ移る（ShowCgLayer / TrailApproachLogic）。
+        // **両方が有限のときだけ有効**（<see cref="TakeSchema.HasTrailFrom"/>）。JSON に無いときは初期値の NaN のまま ＝ 無効。
+        // ⚠ 0 は course の原点という有効な値なので、「無し」を 0 では表さない。
+        public float trailFromX = float.NaN;
+        public float trailFromZ = float.NaN;
+        // from 点から寄るときの 1 歩の間隔（秒）。0 以下・非数 = 既定（<see cref="TakeSchema.ResolveTrailHopSec"/>）。
+        public float trailHopSec;
 
         public PostParams? post;
         public bool hasPost;
@@ -461,6 +501,11 @@ namespace FixedCamVr.Streaming
         public const float DefaultTrailHideM = 0.9f;
         public const float MinTrailHideM = 0f;
         public const float MaxTrailHideM = 3f;
+
+        /// <summary>cgMode="trail" で決めた位置から寄るときの 1 歩の間隔 (秒)。0 以下 = 既定。</summary>
+        public const float DefaultTrailHopSec = 0.55f;
+        public const float MinTrailHopSec = 0.1f;
+        public const float MaxTrailHopSec = 5f;
 
         /// <summary>ラン中に卓が実体を差し替える素材の URL スキーム（<c>slot://&lt;name&gt;</c>）。</summary>
         public const string SlotScheme = "slot://";
@@ -695,6 +740,14 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public static float ResolveTrailHideM(float v)
             => ResolvePositive(v, DefaultTrailHideM, MinTrailHideM, MaxTrailHideM);
+
+        /// <summary>trail の決めた位置から寄る 1 歩の間隔を解決する（0 以下・非数 = 既定。それ以外は [0.1, 5] へ丸める）。</summary>
+        public static float ResolveTrailHopSec(float v)
+            => ResolvePositive(v, DefaultTrailHopSec, MinTrailHopSec, MaxTrailHopSec);
+
+        /// <summary>trail の人形を決めた位置から出すか（x・z の両方が有限のときだけ）。</summary>
+        public static bool HasTrailFrom(float x, float z)
+            => !float.IsNaN(x) && !float.IsInfinity(x) && !float.IsNaN(z) && !float.IsInfinity(z);
 
         private static float ResolvePositive(float v, float def, float min, float max)
         {

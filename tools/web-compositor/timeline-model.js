@@ -175,7 +175,11 @@ export function newStep(over = {}) {
     //   switchSfx = 画の差し替えと同時にカメラ切替の音を 1 発鳴らす（2 周目 C の接近）
     //   dollCall  = 画の差し替えと同時に人形の呼びかけ「あーそぼー」を 1 回鳴らす
     //               （canon/LEDGER.md 0109。立てているのは 2 周目 C の追いつき pov_4 だけ）
-    swapHold: false, swapMinX: 0, switchSfx: false, dollCall: false,
+    //   dollLaugh   = 画の差し替えと同時に人形の笑い声を 1 回鳴らす（sfx_doll_laugh_once・2.4 秒）
+    //   markAdvance = 体験者の報告で、演出を畳まずにこのカットを終えて次のカットへ進める
+    //   beyondMinSec = 側待ち（untilBeyond）のカットを、線の向こうに居ても最短この秒は畳まない（0 = 制限しない）
+    swapHold: false, swapMinX: 0, switchSfx: false, dollCall: false, dollLaugh: false, markAdvance: false,
+    beyondMinSec: 0,
     // 端末内録画の再生（canon/LEDGER.md 0272。3 周目 A の早送りだけが使う）。
     //   recRate     = 再生の速さ（0 以下 = 等速。0.25..8 へ丸める）
     //   recContinue = 画面に出ている同じ録画（recLap / camera が同じ）を**頭へ戻さず続きから**流す。
@@ -186,6 +190,10 @@ export function newStep(over = {}) {
     cg: '', cgMode: TAKE.CG_FOLLOW,
     // cgMode:'trail' の立ち方（m）。0 は実機の既定（1.5 / 0.45 / 0.9）。卓に編集 UI は無い（show.json を手で書く）。
     trailGapM: 0, trailStepM: 0, trailHideM: 0,
+    // cgMode:'trail' の人形を決めた位置（course 空間 m）から出し、trailHopSec ごとに跡の上を 1 歩ずつ寄せる。
+    // null = 使わない（跡の後ろから出る従来の立ち方）。**x と z の両方が数のときだけ**書き出す
+    // （JSON に NaN は書けないので、Unity 側はキーが無ければ「無し」として読む）。trailHopSec は 0 = 既定 0.55 秒。
+    trailFromX: null, trailFromZ: null, trailHopSec: 0,
     // CG 人形の立ち位置（course 空間）。**人形ではなくカットが持つ** — 同じ人形を別のカットで
     // 別の場所に立たせるため。hasPlacement が present-flag（宣言 bool ∧ 実体の AND 規約）。
     placement: { x: 0, z: 0, yawDeg: 0 }, hasPlacement: false,
@@ -275,6 +283,9 @@ function serializeStep(s) {
     swapMinX: Math.max(0, Math.min(1, num(s.swapMinX, 0))),
     switchSfx: !!s.switchSfx,
     dollCall: !!s.dollCall,
+    dollLaugh: !!s.dollLaugh,
+    markAdvance: !!s.markAdvance,
+    beyondMinSec: Math.max(0, num(s.beyondMinSec, 0)),
     // 録画の再生（canon/LEDGER.md 0272）。0 = 等速。Unity 側 TakeSchema.ResolveRecRate と同じ丸め。
     recRate: recRateOf(s.recRate),
     recContinue: !!s.recContinue,
@@ -284,7 +295,13 @@ function serializeStep(s) {
     trailGapM: Math.max(0, num(s.trailGapM, 0)),
     trailStepM: Math.max(0, num(s.trailStepM, 0)),
     trailHideM: Math.max(0, num(s.trailHideM, 0)),
+    trailHopSec: Math.max(0, num(s.trailHopSec, 0)),
   };
+  // 決めた位置から寄る trail は x・z の両方が数のときだけ。片方でも欠けたらキーごと出さない（Unity は NaN ＝ 無し）。
+  if (Number.isFinite(s.trailFromX) && Number.isFinite(s.trailFromZ)) {
+    out.trailFromX = s.trailFromX;
+    out.trailFromZ = s.trailFromZ;
+  }
   if (s.hasPost) out.post = { ...FX_DEFAULT, ...(s.post || {}) };
   out.hasPost = !!s.hasPost;
   // 立ち位置は宣言 bool を正にする（flag=false のとき入れ子キーを出さない = 幽霊 placement を作らない）。

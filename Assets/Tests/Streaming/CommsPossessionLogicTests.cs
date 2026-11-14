@@ -653,6 +653,16 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void TrailDoll_IsNotTheVisitorTurnedIntoADoll()
+        {
+            Assert.IsFalse(TakeRunner.IsDollReplacementStep(true, TakeSchema.CgTrail),
+                "歩いた跡をついてくる人形は人形化に数えない（2 周目で人形化の画面加工が立つ）");
+            Assert.IsTrue(TakeRunner.IsDollReplacementStep(true, TakeSchema.CgFollow));
+            Assert.IsTrue(TakeRunner.IsDollReplacementStep(true, "fixed"));
+            Assert.IsFalse(TakeRunner.IsDollReplacementStep(false, TakeSchema.CgFollow));
+        }
+
+        [Test]
         public void DetectionRequiresAnActiveUnsuppressedTake()
         {
             Assert.IsTrue(TakeRunner.IsAnomalyShowing(true, false));

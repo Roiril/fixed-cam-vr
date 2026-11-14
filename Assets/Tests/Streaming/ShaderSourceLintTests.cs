@@ -241,9 +241,50 @@ namespace FixedCamVr.Streaming.Tests
                                   "体の重みは rgb の差の最大成分を Lo..Hi で写す");
 
             int uniform = Regex.Matches(hlsl, @"\(1\.0 - _LiveBleed\)").Count;
-            Assert.That(uniform, Is.EqualTo(1), "一様に薄めるのは掛け算の 1 層目だけ");
+            Assert.That(uniform, Is.EqualTo(2), "一様に薄めるのは掛け算の 1 層目と掛け算の 2 層目だけ");
             int bodyW = Regex.Matches(hlsl, @"_LiveBleed \* LiveBleedBodyW\(").Count;
             Assert.That(bodyW, Is.EqualTo(2), "体の重みを掛けるのは通常の 1 層目と 2 層目の 2 つだけ");
+        }
+
+        // ---- 第 2 層の掛け算（cue の blend:"multiply"）-------------------------------------
+
+        /// <summary>
+        /// 第 2 層（<c>overlay2CueId</c>）も cue の <c>multiply</c> を持てば、1 層目と同じ解釈で比の画をライブに掛ける。
+        /// <c>_Overlay2Mul</c> は Properties と CBUFFER の両方にあり既定 0（従来の差し替え）。書くのは <c>CameraFeelFx</c> だけ。
+        /// 掛け算の分岐では色ずれ（SplitChroma）も体の重みの読み直しもしない — 比には意味が無い（1 層目と同じ）。
+        /// </summary>
+        [Test]
+        public void Overlay2Multiply_IsDeclared_DefaultsToZero_AndMultipliesLikeTheFirstLayer()
+        {
+            string shader = CompositeShader();
+            string hlsl = SharedHlsl();
+            StringAssert.IsMatch(@"(?m)^\s*_Overlay2Mul\(""[^""]*"",\s*Float\)\s*=\s*0\s*$", shader,
+                                 "_Overlay2Mul の既定は 0（掛け算でない第 2 層の画は変わらない）");
+            StringAssert.IsMatch(@"(?m)^\s*float\s+_Overlay2Mul;", hlsl, "CBUFFER に _Overlay2Mul が無い");
+            StringAssert.Contains("[branch] if (_Overlay2Mul > 0.5)", hlsl);
+            StringAssert.Contains("ratio2 = lerp(half3(1.0, 1.0, 1.0), ratio2, ov2In);", hlsl, "枠の外は比 1（1 層目と同じ）");
+            StringAssert.Contains(
+                "col *= lerp(half3(1.0, 1.0, 1.0), ratio2, saturate(mask2 * _Overlay2Strength) * (1.0 - _LiveBleed));", hlsl);
+
+            string[] lines = hlsl.Split('\n');
+            int start = System.Array.FindIndex(lines, l => l.Contains("[branch] if (_Overlay2Mul > 0.5)"));
+            int end = System.Array.FindIndex(lines, start, l => l.Trim() == "else");
+            Assert.That(start, Is.GreaterThanOrEqualTo(0));
+            Assert.That(end, Is.GreaterThan(start));
+            for (int i = start; i < end; i++)
+            {
+                StringAssert.DoesNotContain("SplitChroma", lines[i], "比の画に色ずれを掛けない");
+                StringAssert.DoesNotContain("bleedLod", lines[i], "比の画は差が取れないので体の重みを読まない");
+            }
+
+            string feel = File.ReadAllText(Path.Combine(Application.dataPath, "Scripts/Streaming/CameraFeelFx.cs"));
+            StringAssert.Contains("Shader.PropertyToID(\"_Overlay2Mul\")", feel, "書き手は CameraFeelFx");
+            foreach (string path in Directory.GetFiles(Path.Combine(Application.dataPath, "Scripts"), "*.cs", SearchOption.AllDirectories))
+            {
+                if (path.Replace('\\', '/').EndsWith("/CameraFeelFx.cs")) continue;
+                StringAssert.DoesNotContain("\"_Overlay2Mul\"", File.ReadAllText(path),
+                                            $"_Overlay2Mul を書くのは CameraFeelFx だけ（{Path.GetFileName(path)}）");
+            }
         }
 
         /// <summary>

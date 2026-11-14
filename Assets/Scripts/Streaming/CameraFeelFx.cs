@@ -621,6 +621,7 @@ namespace FixedCamVr.Streaming
         private static readonly int Mask2TexId = Shader.PropertyToID("_Mask2Tex");
         private static readonly int Overlay2ScaleId = Shader.PropertyToID("_Overlay2Scale");
         private static readonly int Overlay2StrengthId = Shader.PropertyToID("_Overlay2Strength");
+        private static readonly int Overlay2MulId = Shader.PropertyToID("_Overlay2Mul");
 
         /// <summary>
         /// いま書いている分割位置 0..1（0 = 割っていない）。診断用。
@@ -630,6 +631,12 @@ namespace FixedCamVr.Streaming
 
         /// <summary>いま書いている第 2 層の合成の重み 0..1（0 = 出ていない）。診断用。</summary>
         public float Overlay2Strength { get; private set; }
+
+        /// <summary>
+        /// いまの第 2 層が掛け算（cue の <c>blend:"multiply"</c>・比の画をライブに掛ける）か。診断用。
+        /// 層が出ていない間は false。
+        /// </summary>
+        public bool Overlay2Multiply { get; private set; }
 
         /// <summary>左右分割を設定する。<paramref name="splitX"/> が 0 なら分割なし。</summary>
         /// <param name="splitX">分割位置（0..1・枠の座標）。境目は環境の縦線へ置く</param>
@@ -645,14 +652,20 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>第 2 の差し替え層（左右へ別の素材を同時に置く）。<paramref name="tex"/> が null なら消える。</summary>
-        public void SetOverlay2(Texture? tex, Texture? mask, Vector2 containScale, float strength)
+        /// <param name="multiply">
+        /// true = 素材は比の画（cue の <c>blend:"multiply"</c>）で、ライブに掛ける（1 層目の掛け算と同じ解釈）。
+        /// 層を畳むときは必ず false へ戻る（<paramref name="tex"/> が null なら無条件に 0 を書く）。
+        /// </param>
+        public void SetOverlay2(Texture? tex, Texture? mask, Vector2 containScale, float strength, bool multiply = false)
         {
             Overlay2Strength = tex == null ? 0f : Mathf.Clamp01(strength);
+            Overlay2Multiply = tex != null && multiply;
             if (_material == null) return;
             _material.SetTexture(Overlay2TexId, tex);
             _material.SetTexture(Mask2TexId, mask);
             _material.SetVector(Overlay2ScaleId, new Vector4(containScale.x, containScale.y, 0f, 0f));
             _material.SetFloat(Overlay2StrengthId, Overlay2Strength);
+            _material.SetFloat(Overlay2MulId, Overlay2Multiply ? 1f : 0f);
         }
 
         /// <summary>分割と第 2 層を演出の外の状態へ戻す。**畳むすべての経路から呼ぶ**。</summary>

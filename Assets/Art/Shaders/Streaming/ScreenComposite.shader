@@ -249,6 +249,8 @@ Shader "FixedCamVr/ScreenComposite"
         _Mask2Tex("Overlay 2 Mask (R, screen space)", 2D) = "black" {}
         _Overlay2Scale("Overlay 2 Contain Scale (xy)", Vector) = (1, 1, 0, 0)
         _Overlay2Strength("Overlay 2 Strength", Range(0, 1)) = 0
+        // 1 = 第 2 層の素材は比の画（cue の blend:"multiply"）。書くのは CameraFeelFx だけ。既定 0 = 従来の差し替え。
+        _Overlay2Mul("Overlay 2 Multiply (ratio image)", Float) = 0
 
         [Header(Swap morph (visitor unravels into scanlines))]
         // 入れ替わりのほどけ（canon/LEDGER.md 0089 / 0090）。全画面ではなく

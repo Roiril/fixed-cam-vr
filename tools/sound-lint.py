@@ -117,6 +117,9 @@ RECORDED |= {f"sfx_eye_{i}" for i in range(1, 9)}
 #    （`tools/ingest-kidsroom-audio.py`）。⚠ 尖頭の判定（-3dBTP）は外していない — 素のままで -0.45dBTP 出て NG。
 #    音量を変えない指示なので直さない。
 RECORDED |= {"sfx_kidsroom"}
+#    人形の笑い声 1 回（カットの `dollLaugh`）。一人の笑い `bed_doll_one` の頭 4.8 秒を切り出して尻を退かせただけ
+#    （`tools/ingest-doll-laugh.py`・音量は変えない）。人の声なので `bed_doll_one` と同じ理由で載せる。
+RECORDED |= {"sfx_doll_laugh_once"}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 
 # 発振器が居るか（掃引する純音も捕まる）。実測: 純音 0.93〜1.00 / 帯ノイズの掃引 0.31〜0.43 /

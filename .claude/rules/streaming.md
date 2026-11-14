@@ -27,6 +27,8 @@ paths:
 | [staff-input.md](staff-input.md) | Input/** / Tracking/** / OvrBridge/** / StaffSetup・StatusHud・ControllerGuide / WalkGuide* |
 | [sound-design.md](sound-design.md) | Streaming/Sound/** と音の道具（まだ分けていない） |
 | [kids-room.md](kids-room.md) | 2 周目 B の子供部屋の動画（音・押し始めで落ちる所へ飛ぶ・報告しても最後のコマまで見せ切る） |
+| [doll-laugh.md](doll-laugh.md) | カットの `dollLaugh`（人形の笑い声 1 回・音源の切り出し・鳴らす縁・観測） |
+| [mark-advance.md](mark-advance.md) | 報告でカットを 1 つ進める（step の `markAdvance`・演出は畳まない） |
 
 Editor のプレビュー（`Streaming/Editor/`）は、プレビューする対象と同じ接頭辞の rule に従う。
 

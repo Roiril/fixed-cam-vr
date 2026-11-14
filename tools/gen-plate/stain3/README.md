@@ -1,15 +1,32 @@
-# 2 周目 A：しみの 3 段（静止画だけ）
+# 2 周目 A：左の幕のしみと、右の幕の裏の人形（静止画から）
 
-2026-11-12・`.claude/canon/LEDGER.md` 0330。動画生成は使わない。3 枚とも Codex の画像生成で作る。
+`.claude/canon/LEDGER.md` 0330（左のしみ）と 0376（右の幕）。動画生成は使わない。素材は全部 Codex の画像生成の静止画から作る。
 
 | 段 | いつ | 画 | cue |
 |---|---|---|---|
-| 1 待機 | 2-A に入った瞬間 | 幕に顔のように見えるしみ | `cue_stain_A` |
-| 2 押し始め | 長押しを始めた瞬間（切り替え）。押している間だけ | しみの所の布が、裏から顔を押し当てられて盛り上がる | `stain_A_press_bulge`（take の `markStartCueId`） |
-| 3 報告の直後 | 報告が成立した瞬間から 0.4 秒 | しみは消え、幕の外側の縁から人の背丈の市松人形が半身で覗く | `stain_A_done_doll`（take の `markDoneCueId`・`markDoneSec`） |
+| 0 待機 | 2-A に入った瞬間 | 左の幕に顔のように見えるしみ。長押しの間は顔の所が盛り上がる | `cue_stain_A`（盛り上がりは take の `markStartCueId` = `stain_A_press_bulge`） |
+| 1 右で笑う | 体が左の幕の端（線 `s2a_leftend`）に届いた瞬間 | 右の幕にも顔のしみが出て、顔が布ごと左へ画面の半分まで伸び出す。右の幕の縁の裏で人形が笑う。笑い声 1 回 | `stain_A_right_burst`（動画）＋ 2 枚目の層 `cue_stain_A_left_hold` |
+| 2 隠れて見る | 1 の動画が終わってから、少し歩く（線 `s2a_walk`）か報告するまで | 人形は布の縁の裏へ身を引き、黙ってこちらを見ている | `stain_A_right_watch` ＋ 2 枚目の層 `cue_stain_A_left_hold` |
+| 3 ついてくる | 2 の後、区間を出るまで | 乱れで CG の人形（0.8m）に替わり、幕の裏の同じ所から歩いた跡をついてくる。左右のしみは残る | `cue_stain_A_both` ＋ CG `doll_mid`（trail） |
 
-報告が成立する前に離すと 1 へ戻る。3 のあとは乱れでライブへ戻り、その区間では二度と出ない。
-エンジンの契約は `.claude/rules/show-run.md`（`markStartCueId` / `markDoneCueId`）。
+段 0 で報告が成立すると、従来どおり乱れでライブへ戻り、人形は出ない。段 1・2 の報告は段 3 へ進める（step の `markAdvance`）。
+台本へ当てるのは `tools/show-apply-stain-right.py`。エンジンの契約は `.claude/rules/show-run.md`。
+
+## 右の幕（0376）
+
+| 生成 | 入力 | プロンプト |
+|---|---|---|
+| `stain.png` | 待機の 2 倍 | `prompt-right-stain.md` |
+| `bulge.png` | `stain.png` | `prompt-right-bulge.md` |
+| `doll_laugh.png` | `stain.png` と資料 `tools/doll-ref/out/gen_standing.png` | `prompt-right-doll-laugh.md` |
+| `doll_watch.png` | `doll_laugh.png` | `prompt-right-doll-watch.md` |
+
+- 順に流すのは `tools/gen-plate/stain3/run_chain_right.ps1 -Name real|twin`（入力の `base2x.png` と出力は `Logs/gen-plate/stain2A_right_20261115/<Name>/`）
+- 組むのは `py -3.11 tools/gen-plate/stain3/build_right_burst.py real|twin`。差の塊だけを待機の上へ戻し、
+  伸び出しは `bulge.png` を付け根（右）から左へ引き伸ばして動かす。出るときは右のシミの右寄りから、戻るときは右のシミの左端まで縮めながら薄めてシミへ溶かす（付け根まで縮めると幕の端に押し潰れた顔と平らなシミの 2 つが並ぶ）。人形は笑っている画から始まり、1.9 秒で 1 コマで見ている画へ替わる（重ねると 2 体に見える）。全体 2.375 秒
+- 人形の大きさは床の点からの投影で決めてプロンプトに書いた（笑う: (0.5, 0.65)・見る: (0.44, 0.62)・背丈 0.8m）。
+  CG の人形は見ている点から出る（台本の `trailFromX` / `trailFromZ`）。組んだ後 `*_right_burst_*.json` の `dollWatchBox` で位置を確かめる
+- 確かめる画は同じフォルダの `sheet_frames.png`（8 コマ）と `sheet_masks.png`（赤 = 右のしみ・緑 = 伸び出し・青 = 人形）
 
 ## 素材
 

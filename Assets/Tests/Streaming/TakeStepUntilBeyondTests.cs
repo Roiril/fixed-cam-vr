@@ -85,6 +85,48 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(u.ActiveStepIndex, Is.EqualTo(1));
         }
 
+        /// <summary>
+        /// 側待ちの最短秒（<c>beyondMinSec</c>・2 周目 A の幕の裏の人形・LEDGER 0376）。既に向こう側に居ても
+        /// 最短秒までは畳まず、過ぎた最初の Tick で畳む。報告（markAdvance）は最短秒を待たない。
+        /// </summary>
+        [Test]
+        public void BeyondMinSec_HoldsTheCutEvenWhenAlreadyBeyond_ButAReportStillAdvances()
+        {
+            TakeRunnerLogic.Def def = VideoThenWait(TakeRunnerLogic.WaitBeyond);
+            def.stepBeyondMinSec = new[] { 0f, 1.5f, 0f };
+            def.stepMarkAdvance = new[] { false, true, false };
+            LineSideLogic.State[] beyond = Side(true);
+
+            TakeRunnerLogic l = Make(def);
+            l.OnZoneCommitted(2, 0, false, 0, 0, 0f);
+            l.Tick(0f, 0, null, false, beyond);
+            Assert.That(l.Tick(2f, 0, null, false, beyond).stepIndex, Is.EqualTo(1));
+            for (float t = 2.02f; t < 3.49f; t += 0.1f)
+                Assert.That(l.Tick(t, 0, null, false, beyond).action, Is.EqualTo(TakeRunnerLogic.Action.None),
+                    $"最短秒の前に畳んだ (t={t})");
+            TakeRunnerLogic.Decision d = l.Tick(3.52f, 0, null, false, beyond);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep), "最短秒を過ぎても畳まない");
+            Assert.That(d.stepIndex, Is.EqualTo(2));
+
+            // 報告は最短秒を待たない。
+            TakeRunnerLogic m = Make(def);
+            m.OnZoneCommitted(2, 0, false, 0, 0, 0f);
+            m.Tick(0f, 0, null, false, beyond);
+            m.Tick(2f, 0, null, false, beyond);
+            Assert.That(m.NotifyMarkPressed(2.3f), Is.EqualTo(TakeRunnerLogic.MarkResult.Advanced));
+            TakeRunnerLogic.Decision dm = m.Tick(2.32f, 0, null, false, beyond);
+            Assert.That(dm.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep));
+            Assert.That(dm.stepIndex, Is.EqualTo(2), "報告で最短秒を待たずに次のカットへ進む");
+        }
+
+        [Test]
+        public void BuildStepBeyondMinSec_IsNullWhenNoStepHasIt()
+        {
+            var take = new ShowTakeDef { steps = new[] { new ShowStepDef(), new ShowStepDef { beyondMinSec = 1.5f } } };
+            Assert.That(TakeRunner.BuildStepBeyondMinSec(take), Is.EqualTo(new[] { 0f, 1.5f }));
+            Assert.That(TakeRunner.BuildStepBeyondMinSec(new ShowTakeDef { steps = new[] { new ShowStepDef() } }), Is.Null);
+        }
+
         /// <summary>演出の 1 カット目が側待ちでも、区間へ入る前に越えていれば最初の Tick で終わる。</summary>
         [Test]
         public void FirstStepOfTheTake_EndsOnTheNextTick_WhenAlreadyBeyond()

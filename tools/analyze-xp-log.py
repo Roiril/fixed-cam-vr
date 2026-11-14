@@ -285,6 +285,160 @@ def kids_room_findings(events, takes):
     return lines, verdicts
 
 
+# 人形の笑い声 1 回（カットの dollLaugh）。C# の SoundCue.DollLaughOnce と対（ev=sfx id= の名前）。
+DOLL_LAUGH_SFX = "DollLaughOnce"
+
+
+def doll_laugh_findings(events, takes):
+    """dollLaugh のカットが画面を取ったのに笑い声が鳴っていないかを見る。(行, 判定) を返す。
+
+    画面を取ったカットは ev=step played=1（飛ばしたカットは played=0 で、音も鳴らないのが正しい）。
+    鳴った証拠は ev=sfx id=DollLaughOnce（書き手は C# の ShowTelemetryHost、鳴らすのは TakeRunner.PlayDollLaugh）。
+    ⚠ 同じフレームで別の一撃が鳴ると ev=sfx は 1 行にまとまる（LastCue が 1 つしか出ない）ので、回数の不足は WARN。
+    takes が None なら台本が読めていないので、回数だけ出して判定しない。
+    """
+    sounds = [e for e in events if e.get("ev") == "sfx" and str(e.get("id")) == DOLL_LAUGH_SFX]
+    if takes is None:
+        if not sounds:
+            return [], []
+        return [f"  人形の笑い声（1 回）: {len(sounds)} 回（台本が無いので画面に出た回数とは突き合わせていない）"], []
+    keys = {(t["id"], i) for t in takes for i, s in enumerate(t.get("steps") or [])
+            if bool((s or {}).get("dollLaugh"))}
+    shown = [e for e in events if e.get("ev") == "step"
+             and fnum(e, "played", 0.0) == 1.0
+             and (str(e.get("take", "")), int(fnum(e, "i", -1.0))) in keys]
+    if not keys:
+        if not sounds:
+            return [], []
+        return ([f"  人形の笑い声（1 回）: {len(sounds)} 回（著作に dollLaugh のカットが無い）"],
+                [("FAIL", f"著作に無い人形の笑い声が {len(sounds)} 回鳴った — "
+                          "show.json の dollLaugh と実機の台本が食い違っている")])
+    lines = [f"  人形の笑い声（1 回）: {len(sounds)} 回 / dollLaugh のカットが画面に出た回数 {len(shown)}"]
+    verdicts = []
+    if shown and not sounds:
+        verdicts.append(("FAIL", f"dollLaugh のカットが {len(shown)} 回画面に出たのに笑い声が 1 度も鳴っていない — "
+                                 "音源（`py -3.11 tools/ingest-doll-laugh.py` → `tools/unity.ps1 menu sound-import`）"
+                                 "と TakeRunner.PlayDollLaugh を見る"))
+    elif sounds and not shown:
+        verdicts.append(("FAIL", f"dollLaugh のカットが画面に出ていないのに笑い声が {len(sounds)} 回鳴った — "
+                                 "飛ばしたカットで鳴らしている"))
+    elif shown:
+        if len(sounds) < len(shown):
+            verdicts.append(("WARN", f"dollLaugh のカット {len(shown)} 回に対し笑い声の記録が {len(sounds)} 回 — "
+                                     "同じフレームで別の一撃が鳴ると ev=sfx は 1 行にまとまる"))
+        else:
+            verdicts.append(("OK", f"dollLaugh のカットの頭で笑い声が鳴った（{len(sounds)} 回）"))
+    else:
+        verdicts.append(("WARN", "dollLaugh のカットに到達していない走行（笑い声は鳴らなくて正常）"))
+    return lines, verdicts
+
+
+# 報告でカットを進めたあと、次のカットが出るまでの上限（秒）。進めるのは次の Tick なので、普通は 1 フレームで続く。
+MARK_ADVANCE_NEXT_SEC = 3.0
+
+
+def mark_advance_findings(events, takes=None):
+    """報告でカットを 1 つ進めた（step の markAdvance）あと、次のカットが続いたかを見る。(行, 判定) を返す。
+
+    書き手は C# の ShowTelemetryHost:
+      ev=markadv take=<id> step=<進める前のカット> n=<累計>
+    次のカットは ev=step take=<id> i=<step+1>（played は問わない — 飛ばしたカットでも進んだことにはなる）。
+    MARK_ADVANCE_NEXT_SEC 以内に続かなければ FAIL。進めたカットが最後のカットなら、
+    同じ時間内に ev=take st=end id=<id> が出れば OK（takes が読めていれば最後かどうかを確かめる）。
+    区間を出た等で演出がその前に畳まれたら WARN。どれも出ていなければ何も言わない。
+    """
+    advs = [e for e in events if e.get("ev") == "markadv"]
+    if not advs:
+        return [], []
+    lines = [f"  報告でカットを進めた: {len(advs)} 回"]
+    verdicts = []
+    step_counts = {}
+    if takes is not None:
+        step_counts = {t["id"]: len(t.get("steps") or []) for t in takes}
+    for e in advs:
+        tid = str(e.get("take", ""))
+        step = int(fnum(e, "step", -1.0))
+        t0 = fnum(e, "t", 0.0)
+        t1 = t0 + MARK_ADVANCE_NEXT_SEC
+        nxt = [s for s in events if s.get("ev") == "step" and str(s.get("take", "")) == tid
+               and int(fnum(s, "i", -1.0)) == step + 1 and t0 <= fnum(s, "t", 0.0) <= t1]
+        if nxt:
+            dt = fnum(nxt[0], "t", t0) - t0
+            verdicts.append(("OK", f"{tid}: 報告でカット {step} を終え、{dt:.2f} 秒後にカット {step + 1} が出た"))
+            continue
+        ends = [s for s in events if s.get("ev") == "take" and s.get("st") == "end"
+                and str(s.get("id", "")) == tid and t0 <= fnum(s, "t", 0.0) <= t1]
+        is_last = tid in step_counts and step + 1 >= step_counts[tid]
+        if ends and is_last:
+            verdicts.append(("OK", f"{tid}: 報告で最後のカット {step} を終え、演出が終わった"
+                                   f"（why={ends[0].get('why', '-')}）"))
+        elif ends and str(ends[0].get("why", "")) != "done":
+            verdicts.append(("WARN", f"{tid}: 報告でカット {step} を終えたが、次のカットが出る前に演出が畳まれた"
+                                     f"（why={ends[0].get('why', '-')}）"))
+        else:
+            verdicts.append(("FAIL", f"{tid}: 報告でカット {step} を終えたのに、{MARK_ADVANCE_NEXT_SEC:.0f} 秒以内に"
+                                     f"カット {step + 1}（ev=step i={step + 1}）が出ていない — "
+                                     "TakeRunnerLogic.NotifyMarkPressed の markAdvance と SetCurrentStepEnd を見る"))
+    return lines, verdicts
+
+
+def _finite(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return False
+    return f == f and f not in (float("inf"), float("-inf"))
+
+
+def trail_findings(events, takes=None):
+    """歩いた跡の上に立つ人形（cgMode=trail）の行を数え、歩き出し（trailFromX/Z）を確かめる。(行, 判定) を返す。
+
+    書き手は C# の ShowTelemetryHost:
+      ev=trail station=<n> x=<m> z=<m> vis=0|1 gap=<m> from=0|1
+    from=1 はカットの指定点からの歩き出しの最中で、station はそのとき hop の回数（0 = 指定点）。
+    from=0（と from= の無い旧ログ）は gap の飛び石の番号。両者は数え分ける（番号の意味が違う）。
+    判定を出すのは、台本に歩き出しの点（trailFromX/Z の両方が有限）を持つ trail のカットが画面を取ったときだけ:
+    from=1 の行が無ければ WARN（指定点のそばに跡が無いと gap の立ち方へ落ちる。Unity の警告を見る）。
+    """
+    rows = [e for e in events if e.get("ev") == "trail"]
+    from_keys = set()
+    if takes is not None:
+        for t in takes:
+            for i, s in enumerate(t.get("steps") or []):
+                if (s.get("cgMode") == "trail" and s.get("cg")
+                        and _finite(s.get("trailFromX")) and _finite(s.get("trailFromZ"))):
+                    from_keys.add((t["id"], i))
+    if not rows and not from_keys:
+        return [], []
+    lines = []
+    if rows:
+        shown = sum(1 for e in rows if e.get("vis") == "1")
+        from_rows = [e for e in rows if e.get("from") == "1"]
+        gap_st = {e.get("station") for e in rows
+                  if e.get("from") != "1" and e.get("station") not in (None, "-1")}
+        hops = {e.get("station") for e in from_rows if e.get("station") not in (None, "-1")}
+        lines.append(f"  ev=trail {len(rows)} 行（描いていた縁 {shown} 行 / 立った飛び石 {len(gap_st)} 個"
+                     f" / 歩き出しの hop {len(hops)} 個）")
+        for e in rows[-5:]:
+            lines.append(f"  t={fnum(e, 't', 0):7.1f}  station={e.get('station')} x={e.get('x')} z={e.get('z')} "
+                         f"vis={e.get('vis')} gap={e.get('gap')} from={e.get('from', '-')}")
+    verdicts = []
+    if from_keys:
+        reached = [(str(e.get("take", "")), int(fnum(e, "i", -1.0))) for e in events
+                   if e.get("ev") == "step" and e.get("played") == "1"]
+        reached = [k for k in reached if k in from_keys]
+        if not reached:
+            verdicts.append(("WARN", "歩き出しの点を持つ trail のカットに到達していない走行"))
+        elif any(e.get("from") == "1" for e in rows):
+            hop_max = max(int(fnum(e, "station", 0.0)) for e in rows if e.get("from") == "1")
+            verdicts.append(("OK", f"trail の人形が指定点から歩き出した（hop {hop_max} まで・"
+                                   f"カット {len(reached)} 回）"))
+        else:
+            verdicts.append(("WARN", f"歩き出しの点を持つ trail のカットが {len(reached)} 回出たが ev=trail from=1 が無い — "
+                                     "指定点から 0.6m 以内に跡が無いと gap の立ち方へ落ちる（Unity の [ShowCgLayer] 警告を見る）"))
+    return lines, verdicts
+
+
 # 子供部屋の動画の「落ちる所」（秒）。押し始めでここへ飛ぶ（canon/LEDGER.md 0375）。
 # C# の TakeRunner.KidsRoomFallSec と対（ev=kidsjump の to= と突き合わせる）。
 KIDS_ROOM_FALL_SEC = 4.2
@@ -2672,16 +2826,15 @@ def analyze(events, others, exp, warns=None):
 
     # ---------------- 歩いた跡の上に立つ人形（cgMode="trail"）----------------
     # 書き手は C# の `ShowTelemetryHost`（`ev=trail`）。飛び石が変わった縁と、描く/描かないの縁で 1 行出る。
-    # 合否には使わない（数と最後の行を並べるだけ）。vis=0 は跡が足りないか、体験者が近すぎる間。
-    trail_rows = [e for e in events if e.get("ev") == "trail"]
-    if trail_rows:
+    # 飛び石は合否に使わない（数と最後の行を並べるだけ）。vis=0 は跡が足りないか、体験者が近すぎる間。
+    # 歩き出しの点（trailFromX/Z）を持つカットだけ、from=1 が出たかを見る（trail_findings）。
+    tr_lines, tr_verdicts = trail_findings(events, exp.get("takes"))
+    if tr_lines or tr_verdicts:
         w("## 歩いた跡の上に立つ人形（cgMode=trail）")
-        shown = sum(1 for e in trail_rows if e.get("vis") == "1")
-        stations = {e.get("station") for e in trail_rows if e.get("station") not in (None, "-1")}
-        w(f"  ev=trail {len(trail_rows)} 行（描いていた縁 {shown} 行 / 立った飛び石 {len(stations)} 個）")
-        for e in trail_rows[-5:]:
-            w(f"  t={fnum(e,'t',0):7.1f}  station={e.get('station')} x={e.get('x')} z={e.get('z')} "
-              f"vis={e.get('vis')} gap={e.get('gap')}")
+        for line in tr_lines:
+            w(line)
+        for level, text in tr_verdicts:
+            verdict(level, text)
         w()
 
     # ---------------- ステータス表示（右 B）----------------
@@ -3644,6 +3797,20 @@ def analyze(events, others, exp, warns=None):
         for line in kj_lines:
             w(line)
         for level, text in kj_verdicts:
+            verdict(level, text)
+
+        # -- 人形の笑い声 1 回（カットの dollLaugh・2 周目 A）。画にも録画にも出ないので ev=sfx が唯一の証拠
+        dl_lines, dl_verdicts = doll_laugh_findings(events, exp.get("takes"))
+        for line in dl_lines:
+            w(line)
+        for level, text in dl_verdicts:
+            verdict(level, text)
+
+        # -- 報告でカットを進める（step の markAdvance）。進めた後に次のカットが続いたか
+        ma_lines, ma_verdicts = mark_advance_findings(events, exp.get("takes"))
+        for line in ma_lines:
+            w(line)
+        for level, text in ma_verdicts:
             verdict(level, text)
 
         # -- カットが差し替える劇伴（呼びかけの次のカット・canon/LEDGER.md 0119）

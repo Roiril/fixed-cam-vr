@@ -76,6 +76,19 @@ namespace FixedCamVr.Streaming
             /// <b>この旗が立っていれば畳んでよい</b>。
             /// </summary>
             public bool dismissible;
+
+            /// <summary>
+            /// カットごとに「<b>報告でこのカットを終えて次のカットへ進める</b>」か（<c>show.json</c> の step の <c>markAdvance</c>）。
+            /// <b>null なら全カットが false</b>（後方互換）。<see cref="NotifyMarkPressed"/> が読み、
+            /// 立っていれば演出を畳まずに <see cref="MarkResult.Advanced"/> を返す。
+            /// </summary>
+            public bool[]? stepMarkAdvance;
+
+            /// <summary>
+            /// カットごとの「側待ちを最短この秒は畳まない」（step の <c>beyondMinSec</c>）。
+            /// <b>null なら全カットが 0</b>（後方互換）。<see cref="EndStepIfBeyond"/> だけが読む。
+            /// </summary>
+            public float[]? stepBeyondMinSec;
         }
 
         public enum Action { None, BeginStep, EndTake }
@@ -100,6 +113,12 @@ namespace FixedCamVr.Streaming
             /// （<c>canon/LEDGER.md</c> 0050 / 0082）。
             /// </summary>
             Released = 2,
+            /// <summary>
+            /// <b>報告でカットが 1 つ進んだ</b>（step の <c>markAdvance</c>）。演出は畳まない。
+            /// 報告としては成立している（解除が通った扱い・スイの返事は <see cref="Dismissed"/> と同じ）が、
+            /// 呪いは解けない（<see cref="Released"/> ではない）。2 周目 A の作り直しで足した。
+            /// </summary>
+            Advanced = 3,
         }
 
         /// <summary>
@@ -301,12 +320,15 @@ namespace FixedCamVr.Streaming
         public int ActiveTakeIndex => _activeTake;
 
         /// <summary>
-        /// 走行中の演出が<b>報告で畳めるものか</b>（<c>dismissible</c> か、現カットが報告待ち）。
+        /// 走行中の演出が<b>報告で畳めるものか</b>（<c>dismissible</c> か、現カットが報告待ちか、現カットが <c>markAdvance</c>）。
         /// スイの返事「遮断します／遮断できません」の材料。畳んでいる最中（応答映像の終端待ち）も立つ。
         /// </summary>
         public bool ActiveRemovable
             => _running && _activeTake >= 0 && _activeTake < _defs.Length
-               && (_defs[_activeTake].dismissible || CurrentStepWait() == WaitMark);
+               && (_defs[_activeTake].dismissible || CurrentStepWait() == WaitMark || CurrentStepMarkAdvance());
+
+        /// <summary>走行中のカットが <c>markAdvance</c>（報告で次のカットへ進む）か。</summary>
+        public bool ActiveStepAdvancesOnMark => CurrentStepMarkAdvance();
 
         /// <summary>走行中のカット index（非走行時は -1）。</summary>
         public int ActiveStepIndex => _activeStep;
@@ -682,6 +704,10 @@ namespace FixedCamVr.Streaming
 
             if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return MarkResult.Released; }
 
+            // ①' markAdvance のカットは演出を畳まず、そのカットだけを今で終える（次の Tick で次のカットへ）。
+            //    dismissible より先に見る — 同じ演出が dismissible でも、このカットでの報告は「進める」意味になる。
+            if (CurrentStepMarkAdvance()) { SetCurrentStepEnd(now); return MarkResult.Advanced; }
+
             if (_activeTake >= 0 && _activeTake < _defs.Length && _defs[_activeTake].dismissible)
             {
                 if (deferDismiss) _dismissDeferred = true;
@@ -772,6 +798,7 @@ namespace FixedCamVr.Streaming
             LineSideLogic.State s = sides[slot];
             if (!s.beyond) return;
             if (!(s.camera < 0 || s.camera == _defs[_activeTake].camera)) return;
+            if (now - _stepBeganAt < CurrentStepBeyondMinSec()) return;
             SetCurrentStepEnd(now);
         }
 
@@ -853,6 +880,22 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool IsMarkTooEarly(float now)
             => ActiveTakeWaitsForMark && now - _takeBeganAt < MarkGraceSec;
+
+        // 走行中のカットが markAdvance か（配列が無い・範囲外は false）。
+        private bool CurrentStepMarkAdvance()
+        {
+            if (!_running || _activeTake < 0 || _activeTake >= _defs.Length) return false;
+            bool[]? a = _defs[_activeTake].stepMarkAdvance;
+            return a != null && _activeStep >= 0 && _activeStep < a.Length && a[_activeStep];
+        }
+
+        // 走行中の側待ちカットを最短何秒は畳まないか（配列が無い・範囲外は 0）。
+        private float CurrentStepBeyondMinSec()
+        {
+            if (!_running || _activeTake < 0 || _activeTake >= _defs.Length) return 0f;
+            float[]? a = _defs[_activeTake].stepBeyondMinSec;
+            return a != null && _activeStep >= 0 && _activeStep < a.Length ? Math.Max(0f, a[_activeStep]) : 0f;
+        }
 
         /// <summary>走行中のカットが待っている線の slot index（待っていなければ -1）。</summary>
         private int CurrentStepLine()

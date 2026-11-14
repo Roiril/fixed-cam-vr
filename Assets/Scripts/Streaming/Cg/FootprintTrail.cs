@@ -121,6 +121,67 @@ namespace FixedCamVr.Streaming.Cg
             return true;
         }
 
+        /// <summary>
+        /// 道のり <paramref name="s"/> の位置を引く（折れ線上を線形補間）。<see cref="Length"/> を超えたら最新の点。
+        /// 跡が空か、<paramref name="s"/> が既に捨てた区間（最古の点より前）にあれば false。
+        /// </summary>
+        public bool TryPointAt(float s, out Vector2 xz)
+        {
+            xz = default;
+            if (_count == 0 || float.IsNaN(s) || float.IsInfinity(s)) return false;
+            if (s < _dist[Index(0)] - 1e-5f) return false;
+            if (_count == 1 || s >= _length)
+            {
+                xz = _xz[Index(_count - 1)];
+                return true;
+            }
+            for (int i = _count - 1; i > 0; i--)
+            {
+                float da = _dist[Index(i - 1)];
+                if (s < da) continue;
+                float db = _dist[Index(i)];
+                float span = db - da;
+                float k = span > 1e-6f ? Mathf.Clamp01((s - da) / span) : 0f;
+                xz = Vector2.Lerp(_xz[Index(i - 1)], _xz[Index(i)], k);
+                return true;
+            }
+            xz = _xz[Index(0)];
+            return true;
+        }
+
+        /// <summary>
+        /// 貯まっている折れ線のうち <paramref name="p"/> にいちばん近い点を探し、その点の道のり（通算）と距離を返す。
+        /// 線分の途中も候補に入れる（点の間を射影する）。跡が空か <paramref name="p"/> が有限でなければ false。
+        /// 距離が同じなら新しい（道のりの長い）方を採る。
+        /// </summary>
+        public bool TryNearest(Vector2 p, out float distAlong, out float distM)
+        {
+            distAlong = 0f;
+            distM = float.PositiveInfinity;
+            if (_count == 0 || float.IsNaN(p.x) || float.IsNaN(p.y)
+                || float.IsInfinity(p.x) || float.IsInfinity(p.y)) return false;
+            if (_count == 1)
+            {
+                distAlong = _dist[Index(0)];
+                distM = Vector2.Distance(_xz[Index(0)], p);
+                return true;
+            }
+            for (int i = 1; i < _count; i++)
+            {
+                Vector2 a = _xz[Index(i - 1)];
+                Vector2 b = _xz[Index(i)];
+                Vector2 ab = b - a;
+                float len2 = ab.sqrMagnitude;
+                float k = len2 > 1e-12f ? Mathf.Clamp01(Vector2.Dot(p - a, ab) / len2) : 0f;
+                float d = Vector2.Distance(a + ab * k, p);
+                if (d > distM) continue;
+                float da = _dist[Index(i - 1)];
+                distAlong = da + (_dist[Index(i)] - da) * k;
+                distM = d;
+            }
+            return true;
+        }
+
         private void Push(Vector2 xz, float dist)
         {
             _xz[_head] = xz;

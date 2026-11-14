@@ -59,6 +59,8 @@ CBUFFER_START(UnityPerMaterial)
     float4 _OverlayOffset;
     float4 _Overlay2Scale;
     float _Overlay2Strength;
+    // 1 = 第 2 層の素材は「比の画」で、ライブに掛ける（1 層目の _OverlayMul と同じ解釈）。0 = 従来の差し替え。
+    float _Overlay2Mul;
     float4 _SwapRect;
     float4 _SwapRect0;
     float4 _SwapMask;
@@ -1109,23 +1111,35 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
     {
         float ov2In;
         float2 uvO2 = ContainUv(uv, _Overlay2Scale.xy, ov2In);
-        half3 ov2 = SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex, uvO2, lod).rgb;
-        if (chromaBias > 0.001)
-            ov2 = SplitChroma(ov2, SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex,
-                                                        uvO2, lod + chromaBias).rgb);
-        ov2 *= ov2In;
         half mask2 = SAMPLE_TEXTURE2D_LOD(_Mask2Tex, sampler_Mask2Tex, uv, lod).r;
-        // 1 層目と同じく、体の所だけ下のライブが透ける（markBleed）。重みはライブと ov2 の差。
-        // _LiveBleed=0 なら bleed2=0 で × 1、従来どおり。
-        half bleed2 = 0.0;
-        [branch] if (_LiveBleed > 0.001)
+        [branch] if (_Overlay2Mul > 0.5)
         {
-            float bleedLod = lod + LIVE_BLEED_LOD_STEP;
-            half3 liveC = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, bleedLod).rgb * liveIn;
-            half3 coverC = SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex, uvO2, bleedLod).rgb * ov2In;
-            bleed2 = _LiveBleed * LiveBleedBodyW(liveC, coverC);
+            // 掛け算（cue の blend:"multiply"）。1 層目の掛け算と同じ解釈 — 素材は「シミの写真 / シミの無い写真」の
+            // 線形の比で、sRGB の画として読まれて線形へ戻る。色ずれ・色統計マッチングは比に掛けない。枠の外は比 1。
+            // 長押しでライブが透ける（markBleed）のも 1 層目の掛け算と同じく一様に薄める。滲み（順の画）は使わない。
+            half3 ratio2 = SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex, uvO2, lod).rgb;
+            ratio2 = lerp(half3(1.0, 1.0, 1.0), ratio2, ov2In);
+            col *= lerp(half3(1.0, 1.0, 1.0), ratio2, saturate(mask2 * _Overlay2Strength) * (1.0 - _LiveBleed));
         }
-        col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - bleed2));
+        else
+        {
+            half3 ov2 = SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex, uvO2, lod).rgb;
+            if (chromaBias > 0.001)
+                ov2 = SplitChroma(ov2, SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex,
+                                                            uvO2, lod + chromaBias).rgb);
+            ov2 *= ov2In;
+            // 1 層目と同じく、体の所だけ下のライブが透ける（markBleed）。重みはライブと ov2 の差。
+            // _LiveBleed=0 なら bleed2=0 で × 1、従来どおり。
+            half bleed2 = 0.0;
+            [branch] if (_LiveBleed > 0.001)
+            {
+                float bleedLod = lod + LIVE_BLEED_LOD_STEP;
+                half3 liveC = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, bleedLod).rgb * liveIn;
+                half3 coverC = SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex, uvO2, bleedLod).rgb * ov2In;
+                bleed2 = _LiveBleed * LiveBleedBodyW(liveC, coverC);
+            }
+            col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - bleed2));
+        }
     }
     return col;
 }

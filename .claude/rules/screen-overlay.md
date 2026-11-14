@@ -26,6 +26,10 @@ paths:
   `_PressScale` / `_PressCenter` / `_OverlayPress` を書くのは `ScreenOverlayController` だけ。既定は全部 0 で、従来と同じ画になる
 - `blend:"multiply"` の cue は `sourceUrl` を**比の画**として読む。比の画は線形の比「素材 ÷ 無人の写真」を
   sRGB で符号化した PNG で、1 は実写のまま。画は `live * lerp(1, ratio, a)` — `OverlayRevealLogic.IsMultiplyBlend` / `CrtCompositeShared.hlsl`
+- 2 枚目の層（`overlay2CueId`）も、名指しした cue が `blend:"multiply"` なら同じ比の画として掛ける:
+  `col *= lerp(1, ratio, saturate(mask2 * _Overlay2Strength))`。枠の外は比 1。滲み（順の画）は 2 枚目の層では使わない。
+  `_Overlay2Mul`（既定 0 = 従来の差し替え）を書くのは `CameraFeelFx.SetOverlay2(..., multiply)` だけで、
+  `ScreenOverlayController` が cue の `multiply` を渡す — `ShaderSourceLintTests.Overlay2Multiply_*`
 - `revealUrl` を持つ cue は、枠空間 640x360 の灰色の順の画（0 が最初・1 が最後・外は 1）で滲んで出入りする。
   `revealDelaySec` 待って `revealSec` で 0→1（曲線 `1-(1-t)^2.2`）、出たあとは息をする。
   引くときは `strength` ではなく順の画を逆に戻す（`revealOutSec`）— `OverlayRevealLogic` / `ScreenOverlayController.StopOverlay(float)`
@@ -57,6 +61,6 @@ paths:
 - ツインの通しは比の画・順の画・press マスクもツインの部屋のものへ差し替える（`tools/twin/assets.json` の `reveal` / `pressMask`。作るのは `mask-recipes/bleed-twin-*.json`）。本番の素材を替えたらツイン側も作り直す
 - 卓のプレビュー（`shaders.js` / `pipeline.js`）は掛け算・滲み・膨らみを描かない。見た目は `bleed_preview.py` で見る
 - 台本へ当てるのは `tools/show-apply-bleed.py`。素材を `static-inputs/` へ写してから `--apply`。卓を止めてから流す
-- 長押しでライブが透ける `_LiveBleed`（take の旗 `markBleed`・0..1・既定 0）を書くのは `ScreenOverlayController` だけ。掛けるのは隠す層 2 つ（1 層目の alpha・2 層目）で、CG 人形には掛けない。透けるのは体の所だけ: 画素ごとに `_LiveBleed × bodyW`、bodyW はライブと素材（1 層目は色統計マッチング後・2 層目は ov2）を 2 段粗い mip で読み直した差の最大成分を `smoothstep(_LiveBleedLo 0.05, _LiveBleedHi 0.16)`。読み直しは `_LiveBleed > 0.001` の分岐の中だけ。掛け算の 1 層目は一様に `(1 - _LiveBleed)`（`LiveBleedBodyW`・`ShaderSourceLintTests.LiveBleed_*`）
+- 長押しでライブが透ける `_LiveBleed`（take の旗 `markBleed`・0..1・既定 0）を書くのは `ScreenOverlayController` だけ。掛けるのは隠す層 2 つ（1 層目の alpha・2 層目）で、CG 人形には掛けない。透けるのは体の所だけ: 画素ごとに `_LiveBleed × bodyW`、bodyW はライブと素材（1 層目は色統計マッチング後・2 層目は ov2）を 2 段粗い mip で読み直した差の最大成分を `smoothstep(_LiveBleedLo 0.05, _LiveBleedHi 0.16)`。読み直しは `_LiveBleed > 0.001` の分岐の中だけ。掛け算の層（1 層目・掛け算の 2 層目）は一様に `(1 - _LiveBleed)`（`LiveBleedBodyW`・`ShaderSourceLintTests.LiveBleed_*`）
 - `markBleed` が働くのは、旗の立った take の `source:"plate"` かつ人形のカットだけ。量は最大 0.85 × smoothstep(進み具合 / 0.6)・時定数 0.12 秒。報告が成立したらその値を 0.5 秒保ってから 0（押していても離しても）、以後は離すまで 0。働かなくなったら（カット・演出が替わったら）保っていても即 0（`LiveBleedLogic`・`TakeRunner.IsBleedArmed`）
 - 観測は `ev=bleed take= max=`。`ShowTelemetryHost` と `analyze-xp-log.py` の `live_bleed_findings` を対で直す。旗の名前は C# と `timeline-model.js` の白名簿で揃える
