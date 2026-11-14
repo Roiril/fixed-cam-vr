@@ -23,7 +23,7 @@ REPO = HERE.parent.parent
 RUNNER = Path(os.environ["USERPROFILE"]) / ".claude" / "scripts" / "codex-run.ps1"
 
 
-def sections(dolls: bool):
+def sections(dolls: bool, nook: bool = False):
     # 区切りは「行まるごと」のコメントだけ。本文中に同じ文字列があっても切らない
     # （2026-11-14、冒頭の説明に区切りを書いていて、最初のフレームの指示が丸ごと抜けた）。
     t = (HERE / "anomaly" / "kidsroom-cat.md").read_text(encoding="utf-8")
@@ -33,7 +33,7 @@ def sections(dolls: bool):
         m = re.fullmatch(r"<!-- (/?\w+) -->", line.strip())
         if m:
             tag = m.group(1)
-            cur = "common" if tag == "/dolls" else tag
+            cur = "common" if tag.startswith("/") else tag
             parts.setdefault(cur, [])
             continue
         if cur:
@@ -46,7 +46,12 @@ def sections(dolls: bool):
         mark = "## やらないこと"
         if mark not in common:
             sys.exit("common に「やらないこと」の節が無い")
-        common = common.replace(mark, "\n".join(parts["dolls"]).strip() + "\n\n" + mark, 1)
+        add = "\n".join(parts["dolls"]).strip()
+        if nook:
+            if not "".join(parts.get("nook", [])).strip():
+                sys.exit("節 nook が空: anomaly/kidsroom-cat.md")
+            add += "\n\n" + "\n".join(parts["nook"]).strip()
+        common = common.replace(mark, add + "\n\n" + mark, 1)
     return common, "\n".join(parts["first"]).strip(), "\n".join(parts["last"]).strip()
 
 
@@ -88,21 +93,31 @@ def main():
     ap.add_argument("--blocks", default="Logs/gen-plate/kr_block")
     ap.add_argument("--mood", default="Logs/gen-plate/kr_block/mood_corridor.png")
     ap.add_argument("--dolls", action="store_true", help="部屋に人形がいっぱいある版（0362）。参照④に mood_dolls.png を渡す")
+    ap.add_argument("--nook", action="store_true", help="隅からの下絵（block_nook）と木馬（0364）。--dolls を含む。参照⑤に mood_rocking.png")
+    ap.add_argument("--block", default=None, help="下絵の名前（既定は dark、--nook なら nook）")
     a = ap.parse_args()
+    if a.nook:
+        a.dolls = True
+    bname = a.block or ("nook" if a.nook else "dark")
     blocks = (REPO / a.blocks).resolve()
-    block, curtain, mood = blocks / "block_dark.png", blocks / "curtain_ref.jpg", (REPO / a.mood).resolve()
+    block, curtain, mood = blocks / f"block_{bname}.png",blocks / "curtain_ref.jpg", (REPO / a.mood).resolve()
     for p in (block, curtain, mood):
         if not p.exists():
             sys.exit(f"無い: {p}")
-    common, first, last = sections(a.dolls)
+    common, first, last = sections(a.dolls, a.nook)
     dmood = blocks / "mood_dolls.png"
     if a.dolls and not dmood.exists():
         sys.exit(f"無い: {dmood}")
     extra = [("④", dmood, "部屋の人形の雰囲気だけ。壁の質感と構図は取らない")] if a.dolls else []
+    if a.nook:
+        rmood = blocks / "mood_rocking.png"
+        if not rmood.exists():
+            sys.exit(f"無い: {rmood}")
+        extra.append(("⑤", rmood, "古い木馬の雰囲気だけ。窓・壁紙の柄・構図は取らない"))
     stamp = time.strftime("%Y%m%d_%H%M%S")
     bad = 0
     for n in range(1, a.pairs + 1):
-        d = REPO / "Logs" / "gen-plate" / f"krcat_{stamp}_{'dolls_' if a.dolls else ''}{n}"
+        d = REPO / "Logs" / "gen-plate" / f"krcat_{stamp}_{bname + '_' if bname != 'dark' else ''}{'dolls_' if a.dolls else ''}{n}"
         d.mkdir(parents=True, exist_ok=True)
         f = bake(d, "first", first + "\n\n" + common, [
             ("①", block, "下絵。構図はこれに従う"),

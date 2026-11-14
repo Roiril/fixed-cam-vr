@@ -7,6 +7,7 @@
 寸法は m。+y が襖のある奥、+x が灰色のカーテンのある右。
 """
 import math
+import os
 import random
 import sys
 
@@ -64,7 +65,103 @@ def curtain(x, y0, y1, z0, z1, m, seed=3):
     return o
 
 
-def build(lap, sparse=False):
+def part(name, center, size, m, rot=(0, 0, 0), parent=None):
+    """中心と寸法で置く箱（回転つき）。parent があればその局所座標。"""
+    bpy.ops.mesh.primitive_cube_add(size=1, location=center)
+    o = bpy.context.object
+    o.name, o.scale, o.rotation_euler = name, size, rot
+    o.data.materials.append(m)
+    if parent:
+        o.parent = parent
+    return o
+
+
+def ball(name, center, r, m, scale=(1, 1, 1), parent=None):
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=r, location=center)
+    o = bpy.context.object
+    o.name, o.scale = name, scale
+    o.data.materials.append(m)
+    if parent:
+        o.parent = parent
+    return o
+
+
+def group(name, loc, rot_z=0.0, tilt=(0.0, 0.0)):
+    e = bpy.data.objects.new(name, None)
+    bpy.context.collection.objects.link(e)
+    e.location, e.rotation_euler = (0, 0, 0), (0, 0, 0)
+    return e, (loc, (tilt[0], tilt[1], rot_z))
+
+
+def place(g):
+    e, (loc, rot) = g
+    e.location, e.rotation_euler = loc, rot
+
+
+def doll(loc, s, rot_z, ms, seated=True, tilt=(0.0, 0.0), seed=0):
+    """ローポリの人形。着物の胴（円錐）・胡粉の顔・黒髪・座りなら前へ出た脚。原点は尻の下。"""
+    kimono, skin, hair = ms[0][seed % len(ms[0])], ms[1], ms[2]
+    g = group("doll", loc, rot_z, tilt)
+    e = g[0]
+    bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=0.075 * s, radius2=0.04 * s, depth=0.2 * s, location=(0, 0, 0.1 * s))
+    body = bpy.context.object
+    body.data.materials.append(kimono)
+    body.parent = e
+    ball("head", (0, 0, 0.245 * s), 0.048 * s, skin, parent=e)
+    ball("hair", (-0.012 * s, 0, 0.26 * s), 0.053 * s, hair, scale=(0.9, 1.05, 1.0), parent=e)
+    part("sleeveL", (0.02 * s, 0.075 * s, 0.13 * s), (0.05 * s, 0.035 * s, 0.1 * s), kimono, parent=e)
+    part("sleeveR", (0.02 * s, -0.075 * s, 0.13 * s), (0.05 * s, 0.035 * s, 0.1 * s), kimono, parent=e)
+    if seated:
+        part("legs", (0.07 * s, 0, 0.02 * s), (0.12 * s, 0.1 * s, 0.04 * s), kimono, parent=e)
+    place(g)
+    return e
+
+
+def rocking_horse(loc, rot_z, m, mane):
+    """古い木馬。弧の脚（揺り板）2 本・斜めの脚 4 本・胴・首・頭・たてがみ・尾。前は +x。"""
+    g = group("horse", loc, rot_z)
+    e = g[0]
+    R, n = 0.95, 9
+    for side in (-0.14, 0.14):
+        for i in range(n):
+            t = -0.42 + 0.84 * (i + 0.5) / n
+            part("rocker", (R * math.sin(t), side, 0.02 + R * (1 - math.cos(t))), (0.105, 0.025, 0.03), m, rot=(0, -t, 0), parent=e)
+    for lx, ly in ((0.2, 0.12), (0.2, -0.12), (-0.2, 0.12), (-0.2, -0.12)):
+        part("leg", (lx * 1.2, ly, 0.2), (0.035, 0.035, 0.32), m, rot=(-ly * 1.2, lx * 0.9, 0), parent=e)
+    part("body", (0, 0, 0.38), (0.5, 0.15, 0.1), m, parent=e)
+    part("neck", (0.27, 0, 0.5), (0.08, 0.07, 0.26), m, rot=(0, 0.45, 0), parent=e)
+    part("head", (0.36, 0, 0.62), (0.2, 0.07, 0.09), m, rot=(0, 0.25, 0), parent=e)
+    part("mane", (0.23, 0, 0.6), (0.06, 0.03, 0.2), mane, rot=(0, 0.45, 0), parent=e)
+    part("tail", (-0.28, 0, 0.36), (0.05, 0.03, 0.18), mane, rot=(0, -0.6, 0), parent=e)
+    part("handle", (0.33, 0, 0.6), (0.02, 0.24, 0.02), m, parent=e)
+    place(g)
+    return e
+
+
+def populate(horse=(1.55, 1.75, 2.4), rnd_seed=5):
+    """0362 / 0364: 人形の多い部屋と、空いた床の古い木馬。人形は左の壁に掛け、奥の欄間の棚に並べ、机と床に座らせる。"""
+    rnd = random.Random(rnd_seed)
+    kimonos = [mat(f"kimono{i}", c) for i, c in enumerate(((0.3, 0.08, 0.07), (0.2, 0.18, 0.15), (0.12, 0.13, 0.18), (0.32, 0.26, 0.2)))]
+    ms = (kimonos, mat("gofun", (0.62, 0.6, 0.55)), mat("hair", (0.02, 0.02, 0.02)))
+    k = 0
+    # 左の壁に掛かった人形（壁から 6cm。少し傾ける）
+    for y, z in ((0.9, 1.55), (1.35, 1.8), (1.7, 1.35), (2.1, 1.75), (2.55, 1.45), (3.0, 1.85), (3.3, 1.3), (1.1, 1.1)):
+        doll((0.07, y, z), rnd.uniform(0.85, 1.25), rnd.uniform(-0.3, 0.3), ms, seated=False,
+             tilt=(rnd.uniform(-0.2, 0.2), rnd.uniform(-0.15, 0.1)), seed=k); k += 1
+    # 奥の壁、襖の上の棚（欄間の前）に並ぶ人形
+    box("shelf", (0.35, 3.44, 1.86), (2.15, 3.64, 1.89), mat("shelfwood", (0.1, 0.065, 0.035), 0.7))
+    for x in (0.55, 0.85, 1.2, 1.6, 1.95):
+        doll((x, 3.55, 1.89), rnd.uniform(0.8, 1.0), -math.pi / 2 + rnd.uniform(-0.4, 0.4), ms, seed=k); k += 1
+    # 机の上と椅子と床に座る人形
+    for loc, rz in (((0.25, 2.25, 0.45), -0.2), ((0.3, 2.65, 0.45), 0.4), ((0.8, 2.48, 0.285), -2.6),
+                    ((0.25, 1.75, 0.0), 0.3), ((0.55, 3.25, 0.0), -0.8), ((0.2, 3.0, 0.0), 0.1)):
+        doll(loc, rnd.uniform(1.0, 1.3), rz, ms, seed=k); k += 1
+    # 倒れた人形 1 体（床の中ほど）
+    doll((1.0, 2.75, 0.04), 1.1, 1.2, ms, seated=False, tilt=(math.pi / 2 - 0.05, 0), seed=k)
+    rocking_horse((horse[0], horse[1], 0.0), horse[2], mat("horsepaint", (0.5, 0.48, 0.43), 0.8), mat("mane", (0.35, 0.32, 0.27)))
+
+
+def build(lap, sparse=False, dolls=False, horse=(1.55, 1.75, 2.4)):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
     tatami = mat("tatami", (0.36, 0.31, 0.17))
@@ -153,6 +250,9 @@ def build(lap, sparse=False):
             r = rnd.uniform(0.008, 0.025)
             box("chip", (x, y, 0), (x + r * 1.6, y + r, r), wall)
 
+    if dolls:
+        populate(horse)
+
     if lap:   # 画の下の縁に、座った人形の膝と手
         kimono = mat("kimono", (0.3, 0.03, 0.03))
         skin = mat("gofun", (0.75, 0.72, 0.66))
@@ -190,16 +290,22 @@ SHOTS = {
     "lap": dict(pos=(W / 2, 0.5, EYE_Z + 0.03), target=(W / 2 + 0.2, D, 0.2), lap=True),
     # 0361: 正面と同じ構図。人形は映さない・おもちゃは少なく・床に壁紙の切れ端と破片
     "dark": dict(pos=(W / 2 - 0.1, 0.5, EYE_Z), target=(W / 2 + 0.25, D, 0.62), lap=False, sparse=True),
+    # 0364: 手前左の隅の床から、対角に襖と幕を見る。人形と木馬を置く（人形は必ず入れる）
+    "nook": dict(pos=(0.22, 0.22, EYE_Z), target=(1.75, D, 0.55), lap=False, sparse=True, dolls=True),
+    # 0364: 手前右の隅（幕の端）から。左の壁の人形が正面寄りに並ぶ
+    "nookR": dict(pos=(W - 0.3, 0.22, EYE_Z), target=(0.95, D, 0.55), lap=False, sparse=True, dolls=True,
+                  horse=(1.0, 1.05, 3.56)),
 }
 
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    out = argv[argv.index("--out") + 1]
+    # 相対パスは Blender が // 扱いで別の所へ書くので、起動したフォルダからの絶対パスに直す
+    out = os.path.abspath(argv[argv.index("--out") + 1]).replace("\\", "/")
     shots = (argv[argv.index("--shots") + 1] if "--shots" in argv else "front,corner,lap").split(",")
     for name in shots:
         s = SHOTS[name]
-        sc = build(s["lap"], s.get("sparse", False))
+        sc = build(s["lap"], s.get("sparse", False), s.get("dolls", False), s.get("horse", (1.55, 1.75, 2.4)))
         cd = bpy.data.cameras.new("cam")
         cd.sensor_width = 36.0
         cd.lens = 36.0 * FOCAL_PX / RES[0]
