@@ -1219,7 +1219,10 @@ namespace FixedCamVr.Streaming
             _bleedArmed = armed;
         }
 
-        /// <summary>報告の成立。透ける量を即 0 にし、この長押しを離すまで透けさせない。</summary>
+        /// <summary>
+        /// 報告の成立。透ける量をその時点の値で <see cref="LiveBleedLogic.HoldAfterSec"/> のあいだ保ってから 0 にし、
+        /// この長押しを離すまで透けさせない。保つ間に人形のカットを出たら（働かなくなったら）即 0。
+        /// </summary>
         public void CollapseBleed()
         {
             _bleed.Collapse();

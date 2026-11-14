@@ -182,22 +182,66 @@ namespace FixedCamVr.Streaming.Tests
         // ---- 長押しでライブが透ける（markBleed）---------------------------------------------
 
         /// <summary>
-        /// <c>_LiveBleed</c> は Properties（既定 0）と CBUFFER の両方にあり、隠す層 2 つ（差し替えの 1 層目・2 層目）の
-        /// 不透明度にだけ掛かる。CG 人形の合成（<c>s</c>）には掛けない — 人形は消さず、下のライブだけが透ける。
+        /// <c>_LiveBleed</c>（既定 0・0..1）と体の重みの閾値 <c>_LiveBleedLo</c> / <c>_LiveBleedHi</c>（既定 0.05 / 0.16）は
+        /// Properties と CBUFFER の両方にある。掛かるのは隠す層 2 つ（差し替えの 1 層目・2 層目）の不透明度だけで、
+        /// 通常の 1 層目と 2 層目は体の所だけ（ライブと素材の差の重み）、掛け算の 1 層目は一様に薄める。
+        /// CG 人形の合成（<c>s</c>）には掛けない — 人形は消さず、下のライブだけが透ける。
         /// </summary>
         [Test]
         public void LiveBleed_IsDeclared_DefaultsToZero_AndOnlyThinsTheHidingLayers()
         {
             string shader = CompositeShader();
             string hlsl = SharedHlsl();
-            StringAssert.IsMatch(@"(?m)^\s*_LiveBleed\(""[^""]*"",\s*Range\(0,\s*0\.5\)\)\s*=\s*0\s*$", shader,
+            StringAssert.IsMatch(@"(?m)^\s*_LiveBleed\(""[^""]*"",\s*Range\(0,\s*1\)\)\s*=\s*0\s*$", shader,
                                  "_LiveBleed の既定は 0（旗の無い台本の画は変わらない）");
-            StringAssert.IsMatch(@"(?m)^\s*float\s+_LiveBleed;", hlsl, "CBUFFER に _LiveBleed が無い");
-            StringAssert.Contains("half alpha = saturate(mask * revealA * _OverlayStrength) * (1.0 - _LiveBleed);", hlsl);
-            StringAssert.Contains("col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - _LiveBleed));", hlsl);
+            StringAssert.IsMatch(@"(?m)^\s*_LiveBleedLo\(""[^""]*"",\s*Range\([^)]*\)\)\s*=\s*0\.05\s*$", shader,
+                                 "体の重みの下の閾値は既定 0.05");
+            StringAssert.IsMatch(@"(?m)^\s*_LiveBleedHi\(""[^""]*"",\s*Range\([^)]*\)\)\s*=\s*0\.16\s*$", shader,
+                                 "体の重みの上の閾値は既定 0.16");
+            foreach (string name in new[] { "_LiveBleed", "_LiveBleedLo", "_LiveBleedHi" })
+                StringAssert.IsMatch($@"(?m)^\s*float\s+{name};", hlsl, $"CBUFFER に {name} が無い");
+
+            StringAssert.Contains("half alpha = saturate(mask * revealA * _OverlayStrength);", hlsl);
+            StringAssert.Contains("alpha *= (1.0 - _LiveBleed);", hlsl, "掛け算の 1 層目は一様に薄める");
+            StringAssert.Contains("alpha *= (1.0 - _LiveBleed * LiveBleedBodyW(liveC, coverC));", hlsl,
+                                  "通常の 1 層目は体の所だけ透ける");
+            StringAssert.Contains("bleed2 = _LiveBleed * LiveBleedBodyW(liveC, coverC);", hlsl, "2 層目も体の所だけ透ける");
+            StringAssert.Contains("col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - bleed2));", hlsl);
             StringAssert.Contains("float s = saturate(_CgStrength) * cgIn;", hlsl);
-            int uses = System.Text.RegularExpressions.Regex.Matches(hlsl, @"\(1\.0 - _LiveBleed\)").Count;
-            Assert.That(uses, Is.EqualTo(2), "_LiveBleed を掛けるのは隠す層 2 つだけ");
+            StringAssert.Contains("smoothstep(_LiveBleedLo, max(_LiveBleedHi, _LiveBleedLo + 1e-3), max(d.r, max(d.g, d.b)))", hlsl,
+                                  "体の重みは rgb の差の最大成分を Lo..Hi で写す");
+
+            int uniform = Regex.Matches(hlsl, @"\(1\.0 - _LiveBleed\)").Count;
+            Assert.That(uniform, Is.EqualTo(1), "一様に薄めるのは掛け算の 1 層目だけ");
+            int bodyW = Regex.Matches(hlsl, @"_LiveBleed \* LiveBleedBodyW\(").Count;
+            Assert.That(bodyW, Is.EqualTo(2), "体の重みを掛けるのは通常の 1 層目と 2 層目の 2 つだけ");
+        }
+
+        /// <summary>
+        /// 体の重みのための読み直し（<c>lod + LIVE_BLEED_LOD_STEP</c>）は <c>_LiveBleed</c> の分岐の中だけ。
+        /// 外で読むと、旗の無い走行でも毎画素 2〜3 枚を余計に引く（90Hz の両眼で効く）。
+        /// 段は今の lod より 2 段粗い（粒と符号化のゆらぎを差として拾わない）。
+        /// </summary>
+        [Test]
+        public void LiveBleed_CoarseRereads_AreOnlyInsideTheBleedBranch()
+        {
+            string hlsl = SharedHlsl();
+            StringAssert.IsMatch(@"(?m)^#define\s+LIVE_BLEED_LOD_STEP\s+2\.0\b", hlsl);
+            string[] lines = hlsl.Split('\n');
+            var offenders = new System.Collections.Generic.List<string>();
+            int reads = 0;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (!lines[i].Contains("SAMPLE_TEXTURE2D_LOD(") || !lines[i].Contains("bleedLod")) continue;
+                reads++;
+                int j = i;
+                while (j >= 0 && !lines[j].Contains("[branch]")) j--;
+                if (j < 0 || !lines[j].Contains("_LiveBleed > 0.001") || i - j > 12)
+                    offenders.Add($"{i + 1}: {lines[i].Trim()}（直前の [branch] が _LiveBleed を見ていない）");
+            }
+            Assert.That(reads, Is.GreaterThanOrEqualTo(4), "ライブと素材を 1 層目・2 層目でそれぞれ読み直している");
+            Assert.IsEmpty(offenders, string.Join("\n", offenders));
+            Assert.That(Regex.Matches(hlsl, @"float bleedLod = lod \+ LIVE_BLEED_LOD_STEP;").Count, Is.EqualTo(2));
         }
     }
 }

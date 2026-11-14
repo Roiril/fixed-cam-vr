@@ -1,8 +1,9 @@
 """長押しの間だけ人形の下からライブの自分が透ける版を、検証用の木へ当てる（本番の台本と APK には入らない）。
 
 3 周目の 3 本（3-A・3-B・3-C）に take の旗 markBleed を立てる。働くのは人形が出ているカット
-（無人の写真＋CG 人形）の間だけで、透ける量は 0.5 × 長押しの進み具合。報告が成立したら即 0 へ戻る
-（C# の LiveBleedLogic・TakeRunner.IsBleedArmed）。素材は足さない。
+（無人の写真＋CG 人形）の間だけで、透けるのは体の所だけ（ライブと素材の差）。透ける量は長押しの進み 6 割で
+最大 0.85 に届き、報告が成立したら 0.5 秒その濃さで保ってから 0 へ戻る
+（C# の LiveBleedLogic・TakeRunner.IsBleedArmed、シェーダの LiveBleedBodyW）。素材は足さない。
 
 使い方（検証用の木を sync した後）:
   py -3.11 tools/twin-tree.py sync

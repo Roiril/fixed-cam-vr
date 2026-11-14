@@ -807,7 +807,9 @@ namespace FixedCamVr.Streaming
         /// </returns>
         public TakeRunnerLogic.MarkResult NotifyVisitorMark()
         {
-            // 透けていたライブは、報告が成立した瞬間に畳む（嘘の返事で弾かれて人形へ戻る）。働いていなければ何も変わらない。
+            // 透けていたライブは、報告が成立したら 0.5 秒その濃さで保ってから畳む（嘘の返事で弾かれて人形へ戻る）。
+            // 働いていなければ何も変わらない。保つ間も同じ演出・同じカットなら IsBleedArmed は真のまま
+            // （報告では変わらない条件だけで決まる）。演出やカットが実際に替われば ReleaseStepState の EndBleed で即 0。
             overlay?.CollapseBleed();
             if (_markResponseReported) return TakeRunnerLogic.MarkResult.None;
             TakeRunnerLogic.MarkResult result = _logic.NotifyMarkPressed(Now,

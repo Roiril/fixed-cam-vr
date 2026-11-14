@@ -96,9 +96,13 @@ CBUFFER_START(UnityPerMaterial)
     float _OverlayPress;
     float4 _PressCenter;
     float4 _PressScale;
-    // 長押しでライブが透ける（markBleed）。0..0.5。ライブを隠す層（差し替えの 1 層目・2 層目）の不透明度に
-    // (1 - _LiveBleed) を掛ける。0 のあいだは掛けても値が変わらず、従来と 1 段も変わらない。CG 人形には掛けない。
+    // 長押しでライブが透ける（markBleed）。0..1。ライブを隠す層（差し替えの 1 層目・2 層目）の不透明度に
+    // (1 - _LiveBleed × 体の重み) を掛ける。体の重みはライブと隠している素材の差（LiveBleedBodyW）で、
+    // 人の居ない所は透けない。0 のあいだは重みを作らず（素材を読み直さない）、従来と 1 段も変わらない。
+    // 掛け算の素材（_OverlayMul）は比なので差が取れず、一様に (1 - _LiveBleed)。CG 人形には掛けない。
     float _LiveBleed;
+    float _LiveBleedLo;
+    float _LiveBleedHi;
     float _CgStrength;
     float _Exposure;
     float _Contrast;
@@ -945,6 +949,19 @@ half3 SampleLivePsf(float2 uv, float lod, float sigma, float linearLod)
     return SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uv, lod).rgb;
 }
 
+// 長押しでライブが透ける（markBleed）の体の重みを取る mip の段。今の lod より 2 段粗く読み直し、
+// 粒と符号化のゆらぎを差として拾わない（拾うと透け方が斑になる）。
+#define LIVE_BLEED_LOD_STEP 2.0
+
+/// 透ける量に掛ける体の重み（0..1）。<paramref name="liveCoarse"/> と <paramref name="coverCoarse"/>
+/// （隠している素材）はどちらも <c>lod + LIVE_BLEED_LOD_STEP</c> で読んだ値。差の最大成分を
+/// <c>_LiveBleedLo..Hi</c> で 0..1 へ写す。素材と同じ景色（人の居ない所）は 0 で、透けない。
+half LiveBleedBodyW(half3 liveCoarse, half3 coverCoarse)
+{
+    half3 d = abs(liveCoarse - coverCoarse);
+    return smoothstep(_LiveBleedLo, max(_LiveBleedHi, _LiveBleedLo + 1e-3), max(d.r, max(d.g, d.b)));
+}
+
 half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, float linearLod)
 {
     // 長押しで布が膨らむ（0349）。press マスク m の中だけ、uv を顔の中心へ寄せる。
@@ -1008,10 +1025,12 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
             revealEdge = revealA * (1.0 - revealA) * 4.0;
         }
         half mask = SAMPLE_TEXTURE2D_LOD(_MaskTex, sampler_MaskTex, uv, lod).r;
-        // 長押しの間だけ下のライブが透ける（markBleed）。_LiveBleed=0 なら × 1 で従来どおり。
-        half alpha = saturate(mask * revealA * _OverlayStrength) * (1.0 - _LiveBleed);
+        half alpha = saturate(mask * revealA * _OverlayStrength);
         [branch] if (_OverlayMul > 0.5)
         {
+            // 長押しの間だけ下のライブが透ける（markBleed）。比の素材とライブの差は体を表さないので、一様に薄める。
+            // _LiveBleed=0 なら × 1 で従来どおり。
+            alpha *= (1.0 - _LiveBleed);
             // 掛け算（cue の blend:"multiply"）。素材は「シミの写真 / シミの無い写真」の線形の比。
             // ライブは既に色ずれ・光の滲みを持っているので、比には掛けない（掛けると縁が二重になる）。
             // 色統計マッチングも比には意味が無いので掛けない。枠の外は比 1（何もしない）。
@@ -1049,6 +1068,20 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
             // マスクも同じだけ鈍らせる（上で mask を lod で読んでいる）。継ぎ目だけが鮮明に残ると、粗い画の中でそこだけ浮く。
             // revealOn=0 なら revealEdge=0・revealA=1 で、従来の lerp(live, overlay, mask*strength) と同じ。
             overlay *= (1.0 - 0.30 * revealEdge);
+
+            // 長押しの間だけ、体の所だけ下のライブが透ける（markBleed）。体の重みはライブと素材（色統計マッチング後）の
+            // 差を粗い mip で読み直して取る。読み直すのはこの分岐の中だけ ＝ 旗の無い走行では 1 サンプルも増えない。
+            // ライブは素のライブ（エコー・PSF・光の滲みを通さない）を同じ uv で読む。
+            [branch] if (_LiveBleed > 0.001)
+            {
+                float bleedLod = lod + LIVE_BLEED_LOD_STEP;
+                half3 liveC = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, bleedLod).rgb * liveIn;
+                half3 coverC = SAMPLE_TEXTURE2D_LOD(_OverlayTex, sampler_OverlayTex, uvO, bleedLod).rgb;
+                if (_OverlayBlend > 0.001)
+                    coverC = lerp(coverC, SAMPLE_TEXTURE2D_LOD(_OverlayTexB, sampler_OverlayTexB, uvO, bleedLod).rgb, _OverlayBlend);
+                coverC = saturate(coverC * _OverlayGain.rgb + _OverlayOffset.rgb) * ovIn;
+                alpha *= (1.0 - _LiveBleed * LiveBleedBodyW(liveC, coverC));
+            }
             col = lerp(live, overlay, alpha);
         }
     }
@@ -1082,8 +1115,17 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
                                                         uvO2, lod + chromaBias).rgb);
         ov2 *= ov2In;
         half mask2 = SAMPLE_TEXTURE2D_LOD(_Mask2Tex, sampler_Mask2Tex, uv, lod).r;
-        // 1 層目と同じだけ下のライブが透ける（markBleed）。
-        col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - _LiveBleed));
+        // 1 層目と同じく、体の所だけ下のライブが透ける（markBleed）。重みはライブと ov2 の差。
+        // _LiveBleed=0 なら bleed2=0 で × 1、従来どおり。
+        half bleed2 = 0.0;
+        [branch] if (_LiveBleed > 0.001)
+        {
+            float bleedLod = lod + LIVE_BLEED_LOD_STEP;
+            half3 liveC = SAMPLE_TEXTURE2D_LOD(_LiveTex, sampler_LiveTex, uvL, bleedLod).rgb * liveIn;
+            half3 coverC = SAMPLE_TEXTURE2D_LOD(_Overlay2Tex, sampler_Overlay2Tex, uvO2, bleedLod).rgb * ov2In;
+            bleed2 = _LiveBleed * LiveBleedBodyW(liveC, coverC);
+        }
+        col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - bleed2));
     }
     return col;
 }

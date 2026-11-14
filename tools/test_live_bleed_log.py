@@ -43,11 +43,11 @@ class LiveBleedAnalyzerTests(unittest.TestCase):
                 ev("bleed", 16.5, take="L3C1#0", max=bleed_max)]
 
     def test_bleed_seen_during_doll_cut_passes(self):
-        self.assertEqual(self.levels(self.plate_mark("0.42")), ["OK"])
+        self.assertEqual(self.levels(self.plate_mark("0.84")), ["OK"])
 
     def test_mark_on_doll_cut_without_bleed_fails(self):
         self.assertEqual(self.levels(self.plate_mark("0.01")), ["FAIL"])
-        events = self.plate_mark("0.42")[:-1]   # ev=bleed が 1 行も無い
+        events = self.plate_mark("0.84")[:-1]   # ev=bleed が 1 行も無い
         self.assertEqual(self.levels(events), ["FAIL"])
 
     def test_mark_only_on_rec_cut_is_not_a_failure(self):
@@ -86,6 +86,7 @@ class LiveBleedWriterReaderTests(unittest.TestCase):
         logic = read("Assets/Scripts/Streaming/LiveBleedLogic.cs")
         m = re.search(r"const float MaxBleed = ([0-9.]+)f;", logic)
         self.assertIsNotNone(m)
+        self.assertEqual(float(m.group(1)), 0.85, "解析器の説明（0.84 前後まで出る）は MaxBleed 0.85 が前提")
         self.assertLess(xp.LIVE_BLEED_MIN_MAX, float(m.group(1)) * 0.5)
 
 

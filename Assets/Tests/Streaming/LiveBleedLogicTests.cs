@@ -6,14 +6,37 @@ namespace FixedCamVr.Streaming.Tests
 {
     /// <summary>
     /// 3 周目の長押しの間だけ人形の下からライブが透ける量（<see cref="LiveBleedLogic"/>）。
-    /// 目標 0.5×進み具合へ寄り、離すと 0 へ戻り、報告の成立で即 0。旗が無い（働かない）間は常に 0。
+    /// 目標 0.85×smoothstep(進み具合/0.6) へ寄り、離すと 0 へ戻り、報告の成立ではその値を 0.5 秒保ってから 0。
+    /// 旗が無い（働かない）間は常に 0。
     /// </summary>
     public sealed class LiveBleedLogicTests
     {
         private const float Dt = 1f / 72f;
 
+        // 成立の後に保つフレーム数（0.5 秒 = 72Hz で 36）。保持の時計は 36 フレーム目で 0 を割る。
+        private static readonly int HoldFrames = (int)System.Math.Round(LiveBleedLogic.HoldAfterSec / Dt);
+
         [Test]
-        public void Holding_ApproachesHalfOfProgress_AndNeverExceedsMax()
+        public void Target_ReachesMaxAtSixTenthsOfTheHold_AlongASmoothstep()
+        {
+            Assert.That(LiveBleedLogic.TargetFor(0f), Is.EqualTo(0f));
+            Assert.That(LiveBleedLogic.TargetFor(-1f), Is.EqualTo(0f));
+            Assert.That(LiveBleedLogic.TargetFor(float.NaN), Is.EqualTo(0f));
+            Assert.That(LiveBleedLogic.TargetFor(0.3f), Is.EqualTo(0.425f).Within(1e-5f), "進み 3 割で最大の半分");
+            Assert.That(LiveBleedLogic.TargetFor(LiveBleedLogic.FullAtProgress), Is.EqualTo(LiveBleedLogic.MaxBleed));
+            Assert.That(LiveBleedLogic.TargetFor(1f), Is.EqualTo(LiveBleedLogic.MaxBleed));
+            float prev = 0f;
+            for (int i = 1; i <= 100; i++)
+            {
+                float v = LiveBleedLogic.TargetFor(i / 100f);
+                Assert.That(v, Is.GreaterThanOrEqualTo(prev), "進むほど濃くなる（戻らない）");
+                Assert.That(v, Is.InRange(0f, LiveBleedLogic.MaxBleed));
+                prev = v;
+            }
+        }
+
+        [Test]
+        public void Holding_ApproachesTheTarget_AndNeverExceedsMax()
         {
             var b = new LiveBleedLogic();
             for (int i = 1; i <= 72; i++)
@@ -22,21 +45,23 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(v, Is.InRange(0f, LiveBleedLogic.MaxBleed));
             }
             for (int i = 0; i < 72; i++) b.Tick(Dt, 1f, armed: true);
-            Assert.That(b.Value, Is.EqualTo(0.5f).Within(0.005f));
+            Assert.That(b.Value, Is.EqualTo(LiveBleedLogic.MaxBleed).Within(0.005f));
 
             var half = new LiveBleedLogic();
-            for (int i = 0; i < 72 * 2; i++) half.Tick(Dt, 0.4f, armed: true);
-            Assert.That(half.Value, Is.EqualTo(0.2f).Within(0.005f), "目標は 0.5 × 進み具合");
+            for (int i = 0; i < 72 * 2; i++) half.Tick(Dt, 0.3f, armed: true);
+            Assert.That(half.Value, Is.EqualTo(LiveBleedLogic.TargetFor(0.3f)).Within(0.005f), "目標は 0.85 × smoothstep(x/0.6)");
         }
 
         [Test]
-        public void OneSecondHold_IsAlreadyBleedingWhenTheMarkFires()
+        public void OneSecondHold_IsNearlyFullWellBeforeTheMarkFires()
         {
-            // 1 秒の長押し（VisitorMarkHoldLogic.DefaultHoldSec）で進み具合が 0→1。成立の瞬間に見えている
-            // （解析器の合格線 0.05 を大きく越える）。
+            // 1 秒の長押し（VisitorMarkHoldLogic.DefaultHoldSec）で進み具合が 0→1。進み 6 割（0.6 秒）で
+            // もう 0.7 を越え、成立の瞬間には最大の手前まで来ている。
             var b = new LiveBleedLogic();
-            for (int i = 1; i <= 72; i++) b.Tick(Dt, i / 72f, armed: true);
-            Assert.That(b.Value, Is.GreaterThan(0.3f));
+            for (int i = 1; i <= 43; i++) b.Tick(Dt, i / 72f, armed: true);
+            Assert.That(b.Value, Is.GreaterThan(0.7f), "進み 6 割で濃く見えている");
+            for (int i = 44; i <= 72; i++) b.Tick(Dt, i / 72f, armed: true);
+            Assert.That(b.Value, Is.GreaterThan(0.8f));
         }
 
         [Test]
@@ -56,18 +81,75 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Collapse_IsImmediateZero_UntilReleased_ThenBleedsAgain()
+        public void Collapse_HoldsTheValueForHalfASecond_ThenZeroUntilReleased_ThenBleedsAgain()
+        {
+            var b = new LiveBleedLogic();
+            for (int i = 0; i < 72; i++) b.Tick(Dt, 1f, armed: true);
+            float before = b.Value;
+            b.Collapse();
+            Assert.That(b.Value, Is.EqualTo(before), "成立の瞬間は値を変えない");
+            Assert.That(b.HoldingAfterCollapse, Is.True);
+
+            // 0.5 秒（36 フレーム）のうち、最後の 1 フレーム手前までは同じ値
+            int holdFrames = HoldFrames;
+            for (int i = 0; i < holdFrames - 1; i++)
+                Assert.That(b.Tick(Dt, 1f, armed: true), Is.EqualTo(before), "押していても 0.5 秒は保つ");
+            for (int i = 0; i < 2; i++) b.Tick(Dt, 1f, armed: true);
+            Assert.That(b.Value, Is.EqualTo(0f), "0.5 秒を過ぎたら即 0");
+            Assert.That(b.HoldingAfterCollapse, Is.False);
+            for (int i = 0; i < 72; i++)
+                Assert.That(b.Tick(Dt, 1f, armed: true), Is.EqualTo(0f), "押し続けていても、離すまで透けない");
+
+            b.Tick(Dt, 0f, armed: true);   // 離した
+            Assert.That(b.Collapsed, Is.False);
+            for (int i = 0; i < 36; i++) b.Tick(Dt, 1f, armed: true);
+            Assert.That(b.Value, Is.GreaterThan(0.7f), "押し直せばまた透ける");
+        }
+
+        [Test]
+        public void ReleasingDuringTheHold_StillHoldsForHalfASecond_AndCountsOneHold()
+        {
+            var b = new LiveBleedLogic();
+            for (int i = 1; i <= 72; i++) b.Tick(Dt, i / 72f, armed: true);
+            float before = b.Value;
+            b.Collapse();
+            for (int i = 0; i < 6; i++) b.Tick(Dt, 1f, armed: true);         // 押したまま少し
+            Assert.That(b.HoldCount, Is.EqualTo(0), "離すまでは数えない");
+
+            Assert.That(b.Tick(Dt, 0f, armed: true), Is.EqualTo(before), "保っている間に離しても値は動かない");
+            Assert.That(b.HoldCount, Is.EqualTo(1), "1 回の長押しは 1 回");
+            Assert.That(b.LastHoldMax, Is.EqualTo(before).Within(1e-6f), "成立の前に出た最大が残る");
+
+            int left = HoldFrames - 7;
+            for (int i = 0; i < left - 1; i++)
+                Assert.That(b.Tick(Dt, 0f, armed: true), Is.EqualTo(before), "離していても 0.5 秒までは保つ");
+            for (int i = 0; i < 2; i++) b.Tick(Dt, 0f, armed: true);
+            Assert.That(b.Value, Is.EqualTo(0f), "0.5 秒で即 0（離したあとの追従では戻さない）");
+            for (int i = 0; i < 72; i++) b.Tick(Dt, 0f, armed: true);
+            Assert.That(b.HoldCount, Is.EqualTo(1), "保ち終わっても数え直さない");
+        }
+
+        [Test]
+        public void CollapseWithNothingShowing_IsJustZero()
+        {
+            var b = new LiveBleedLogic();
+            b.Collapse();
+            Assert.That(b.HoldingAfterCollapse, Is.False, "透けていなければ保つものが無い");
+            Assert.That(b.Tick(Dt, 1f, armed: true), Is.EqualTo(0f), "押していても離すまで透けない");
+        }
+
+        [Test]
+        public void LosingArm_DuringTheHold_SnapsToZero_AndDropsTheHold()
         {
             var b = new LiveBleedLogic();
             for (int i = 0; i < 72; i++) b.Tick(Dt, 1f, armed: true);
             b.Collapse();
-            Assert.That(b.Value, Is.EqualTo(0f), "成立で即 0");
-            for (int i = 0; i < 72; i++)
-                Assert.That(b.Tick(Dt, 1f, armed: true), Is.EqualTo(0f), "押し続けていても透けない");
-            b.Tick(Dt, 0f, armed: true);   // 離した
-            Assert.That(b.Collapsed, Is.False);
-            for (int i = 0; i < 36; i++) b.Tick(Dt, 1f, armed: true);
-            Assert.That(b.Value, Is.GreaterThan(0.3f), "押し直せばまた透ける");
+            b.Tick(Dt, 1f, armed: true);
+            Assert.That(b.Value, Is.GreaterThan(0f));
+            Assert.That(b.Tick(Dt, 1f, armed: false), Is.EqualTo(0f), "カットや演出が替わったら保っていても即 0");
+            Assert.That(b.HoldingAfterCollapse, Is.False);
+            Assert.That(b.HoldCount, Is.EqualTo(1));
+            Assert.That(b.Tick(Dt, 1f, armed: true), Is.LessThan(0.2f), "戻ってきても保った値には戻らない（0 から追い直す）");
         }
 
         [Test]
@@ -100,17 +182,31 @@ namespace FixedCamVr.Streaming.Tests
             b.Tick(Dt, 0f, armed: true);
             Assert.That(b.HoldCount, Is.EqualTo(1));
             float shortMax = b.LastHoldMax;
-            Assert.That(shortMax, Is.GreaterThan(0f).And.LessThan(0.15f));
+            Assert.That(shortMax, Is.GreaterThan(0f).And.LessThan(0.2f));
 
             for (int i = 0; i < 72 * 2; i++) b.Tick(Dt, 0f, armed: true);
             for (int i = 1; i <= 72; i++) b.Tick(Dt, i / 72f, armed: true);
             float before = b.Value;
             b.Collapse();                                                    // 成立
-            for (int i = 0; i < 20; i++) b.Tick(Dt, 1f, armed: true);         // 押したまま
+            for (int i = 0; i < 72; i++) b.Tick(Dt, 1f, armed: true);         // 押したまま（保つ 0.5 秒を越える）
             Assert.That(b.HoldCount, Is.EqualTo(1), "離すまでは数えない");
             b.Tick(Dt, 0f, armed: true);
             Assert.That(b.HoldCount, Is.EqualTo(2));
             Assert.That(b.LastHoldMax, Is.EqualTo(before).Within(1e-6f), "畳む前に出た最大が残る");
+        }
+
+        [Test]
+        public void PressingAgainDuringTheHold_DoesNotCountTheHeldValueAsItsMax()
+        {
+            var b = new LiveBleedLogic();
+            for (int i = 0; i < 72; i++) b.Tick(Dt, 1f, armed: true);
+            b.Collapse();
+            b.Tick(Dt, 0f, armed: true);                                     // 離した（1 回目を数える）
+            for (int i = 0; i < 3; i++) b.Tick(Dt, 0.05f, armed: true);       // 保っている間に押し直す
+            for (int i = 0; i < 72; i++) b.Tick(Dt, 0.05f, armed: true);      // 保ち終わって、浅く押したまま
+            b.Tick(Dt, 0f, armed: true);
+            Assert.That(b.HoldCount, Is.EqualTo(2));
+            Assert.That(b.LastHoldMax, Is.LessThan(0.1f), "前の長押しの保った値は、押し直した長押しの最大に入れない");
         }
 
         [Test]
@@ -129,16 +225,20 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Reset_ClearsValue_ButKeepsTheObservationCount()
+        public void Reset_ClearsValueAndTheHold_ButKeepsTheObservationCount()
         {
             var b = new LiveBleedLogic();
             for (int i = 0; i < 72; i++) b.Tick(Dt, 1f, armed: true);
             b.Tick(Dt, 0f, armed: true);
+            for (int i = 0; i < 4; i++) b.Tick(Dt, 1f, armed: true);
             b.Collapse();
+            Assert.That(b.HoldingAfterCollapse, Is.True);
             b.Reset();
             Assert.That(b.Value, Is.EqualTo(0f));
             Assert.That(b.Collapsed, Is.False);
+            Assert.That(b.HoldingAfterCollapse, Is.False, "保っている値も捨てる");
             Assert.That(b.HoldCount, Is.EqualTo(1), "増分で読むので戻さない");
+            Assert.That(b.Tick(Dt, 0f, armed: true), Is.EqualTo(0f));
         }
 
         [Test]

@@ -185,8 +185,10 @@ def bleed_findings(events):
     return lines, verdicts
 
 
-# 長押しでライブが透ける演出（take の markBleed）の合格線。透ける量の目標は 0.5 × 進み具合なので、
-# 報告が成立する長押し（進み具合が 1 に届く）なら 0.4 前後まで出る。0.05 を割るなら進み具合が _LiveBleed へ届いていない。
+# 長押しでライブが透ける演出（take の markBleed）の合格線。透ける量の目標は進み 6 割で最大 0.85 に届く
+# （C# の LiveBleedLogic.MaxBleed / FullAtProgress）ので、報告が成立する長押し（1 秒・進み具合が 1 に届く）なら
+# 0.84 前後まで出る。成立の後は 0.5 秒その値で保つので、max は成立の前に出た値。
+# 0.05 を割るなら進み具合が _LiveBleed へ届いていない。
 LIVE_BLEED_MIN_MAX = 0.05
 
 

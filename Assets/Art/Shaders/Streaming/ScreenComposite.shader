@@ -43,7 +43,10 @@ Shader "FixedCamVr/ScreenComposite"
         _PressCenter("Press Center (screen uv)", Vector) = (0.5, 0.5, 0, 0)
         _OverlayPress("Overlay Press", Range(-0.15, 1.1)) = 0
         // 長押しでライブが透ける（markBleed）。既定 0 = 透けない（旗の無い台本の画は変わらない）。
-        _LiveBleed("Live Bleed", Range(0, 0.5)) = 0
+        // 透けるのは体の所だけ: ライブと隠している素材の差（rgb の最大成分）を Lo..Hi で 0..1 の重みにする。
+        _LiveBleed("Live Bleed", Range(0, 1)) = 0
+        _LiveBleedLo("Live Bleed Body Diff Lo", Range(0, 1)) = 0.05
+        _LiveBleedHi("Live Bleed Body Diff Hi", Range(0, 1)) = 0.16
         _CgStrength("CG Layer Strength", Range(0, 1)) = 0
         // 差し替え素材を実写へ寄せる色統計マッチング（Reinhard per-channel を gain/offset へ落としたもの）。
         // 卓が cue 保存時に算出して焼く。既定は恒等（gain=1 / offset=0）。
