@@ -1,6 +1,6 @@
 ---
 name: comms-reply-spine
-description: スイの文面を通している 4 つの語（違和感→異常・遮断・廻る・室内カメラ）と、それを守るテスト。解析の 1 行・頼まれずに出す警告・3 周目の赤い嘘の出す条件と罠
+description: スイの文面を通している 4 つの語（違和感→異常・遮断・廻る・観測カメラ）と、それを守るテスト。解析の 1 行・頼まれずに出す警告・3 周目の赤い嘘の出す条件と罠
 metadata:
   node_type: memory
   type: project
@@ -23,8 +23,11 @@ metadata:
 - **廻る。** 開始 `Begin` → `SecondLap` → 赤い嘘 `ThirdLapLieText` → ③a `Halt` → ③b `Prompt`。en は circle、fr は tourner。
   `Circling_IsOneVerb_FromTheStartToTheWarning` / `TheWalkingOrders_StartContinueStop`
   ⚠ 途中で「歩く」「周を重ねる」に替えない。替えた版では、締めの「止まって」が何を止めるのか読まれなかった
-- **室内カメラ。** 到着 `Arrived`「室内カメラに接続します。」→ `ForeignFeed`「室内カメラ以外の映像が、」→ `MarkStuck`。
-  `TheCameraIsNamedOnArrival_AndDeniedInTheDollView` / `TheUnaskedWarning_SaysWhatTheStuckReplySays`
+- **観測カメラ。** 到着 `Arrived`「観測カメラに接続します。／目に見えない異常も映ります。」→ `ForeignFeed`「観測カメラ以外の映像が、」→ `MarkStuck`。
+  `TheCameraIsNamedOnArrival_AndDeniedInTheDollView` / `TheUnaskedWarning_SaysWhatTheStuckReplySays` / `TheObservationCamera_ShowsWhatTheEyeCannot`
+  ⚠ 「室内カメラ」と呼ばない（0360）。ただの室内カメラでは、なぜ自分の目でなくテレビの中の自分を見て歩くのかに答えが無い。
+  3 行目で、異常は部屋に実在して目に見えないだけ、と決まる（終幕の写真の人形・遮断の意味がこれに乗る）。
+  博士の「室内のカメラ」は名前ではなく説明なので録り直していない。en は observation cameras、fr は caméras d'observation
 
 ## ほかの約束
 
@@ -51,7 +54,7 @@ metadata:
 - ⚠ 文を足したら `CommsPanel.FindingTakeIds` にも足す。テストとはみ出しの検査はこの一覧を回す
 - ⚠ 画を見れば分かることを繰り返さない・主語を言う・行の中に句点を置かない
 
-## ForeignFeed（室内カメラ以外の映像が、混ざっています。遮断できません。）
+## ForeignFeed（観測カメラ以外の映像が、混ざっています。遮断できません。）
 
 - 出る条件: 開始の合図の後、人形の視点が 1 度でも出て（`CommsCueInput.dollViewStarted` ＝ 侵食度 > 0）、面が空き、
   乗っ取りがまだで、侵食度 < 1、締めの前。ラン 1 回に 1 度。面が塞がっていれば消費せずに待つ

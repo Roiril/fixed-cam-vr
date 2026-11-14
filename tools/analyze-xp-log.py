@@ -2094,7 +2094,7 @@ def analyze(events, others, exp, warns=None):
             elif reached_lap2:
                 verdict("WARN", "2 周目に入ったのに 2 周目の連絡（SecondLap）が出ていない — "
                                 "面が 2 周目のあいだ塞がり続けたか、人形視点が先に始まった")
-            # 人形の視点の映像への警告（ForeignFeed「室内カメラ以外の映像が、混ざっています。遮断できません。」）。
+            # 人形の視点の映像への警告（ForeignFeed「観測カメラ以外の映像が、混ざっています。遮断できません。」）。
             # 2 周目 C で人形の視点が出た後、面が空いた縁に、報告を待たずに 1 度だけ出る。乗っ取りの後には出ない。
             # 先に遮断できない返事（MarkStuck）を返していれば出さない（同じことを 2 度言わない）。
             foreign = [e for e in comms if e.get("id") == "ForeignFeed"]

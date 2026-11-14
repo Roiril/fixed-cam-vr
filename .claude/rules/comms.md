@@ -25,7 +25,7 @@ paths:
 
 ## 契約
 - 判断 `CommsCueLogic`／文面 `CommsPanel.TextFor`（ja/en/fr）／出方 `CommsCueLogic.DeliveryOf` は各 1 か所 〔出典: show-design-2026-10-22.md:1341〕
-- 文面は 4 つの語で通す（違和感 → 異常／遮断／廻る／室内カメラ）。ほかの約束（空振りと赤い嘘は同じ文／周の節目は同じ型／③a は短く何を止めるかを言う／⑤は引用の 1 行だけ／返事は句点なし）も `CommsNoticeTextTests` 〔memory/comms_reply_spine.md〕
+- 文面は 4 つの語で通す（違和感 → 異常／遮断／廻る／観測カメラ＝目に見えない異常を映す。「室内カメラ」と呼ばない）。ほかの約束（空振りと赤い嘘は同じ文／周の節目は同じ型／③a は短く何を止めるかを言う／⑤は引用の 1 行だけ／返事は句点なし）も `CommsNoticeTextTests` 〔memory/comms_reply_spine.md〕
 - 面は 1.5m・外 8°・下 17°、頭のヨーだけ追従。③a/③b だけ下 3°。倍率 2/3 は根 1 か所 — `CommsPanel.DistanceM/YawOffsetDeg/PitchOffsetDeg/ClosingPitchOffsetDeg/Scale` 〔出典: show-design:1139, 1393〕
 - 畳まれている間は追従の種を捨て、頭の正面に開く — `CommsPanelFollowTests.WhileFolded_TheFollowSeedIsDropped` 〔出典: show-design:1086〕
 - 地は黒い半透明 0.72、乗っ取り中だけ 0.96 — `CommsPanel.PanelAlpha/TakeoverPanelAlpha/MakeTranslucent` 〔出典: show-design:1114; memory/comms_takeover.md〕

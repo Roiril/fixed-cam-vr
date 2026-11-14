@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!21 &-4975735849436169013
+--- !u!21 &-5947286430333190042
 Material:
   serializedVersion: 8
   m_ObjectHideFlags: 0
@@ -24,7 +24,7 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _MainTex:
-        m_Texture: {fileID: 3411622510979452778}
+        m_Texture: {fileID: 7391669245481799501}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
@@ -79,7 +79,7 @@ MonoBehaviour:
   m_Name: CommsHorror SDF
   m_EditorClassIdentifier: 
   hashCode: 0
-  material: {fileID: -4975735849436169013}
+  material: {fileID: -5947286430333190042}
   materialHashCode: -2006316128
   m_Version: 1.1.0
   m_SourceFontFileGUID: a5d2f2335f8316040b698a75b5e0b975
@@ -1214,7 +1214,7 @@ MonoBehaviour:
     m_GlyphIndex: 6173
     m_Scale: 1
   m_AtlasTextures:
-  - {fileID: 3411622510979452778}
+  - {fileID: 7391669245481799501}
   m_AtlasTextureIndex: 0
   m_IsMultiAtlasTexturesEnabled: 1
   m_ClearDynamicDataOnBuild: 0
@@ -1727,7 +1727,7 @@ MonoBehaviour:
   boldSpacing: 7
   italicStyle: 35
   tabSize: 10
---- !u!28 &3411622510979452778
+--- !u!28 &7391669245481799501
 Texture2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}

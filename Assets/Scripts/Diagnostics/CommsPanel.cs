@@ -337,7 +337,8 @@ namespace FixedCamVr.Diagnostics
         ///   体験者が報告するのは「違和感」、スイが判定するのは「異常」（博士の台詞と同じ分け方。「異変」は使わない）。
         ///   スイがすることは「遮断」（乗っ取りの警告「遮断を執行／遮断失敗」と同じ語）。
         ///   廻ることは「廻る」1 つで通す（題字の字。開始 → 2 周目 → 嘘 → 締め）。
-        ///   映像の出どころは「室内カメラ」（博士の語。到着の連絡と、人形の視点への警告が同じ語を使う）。
+        ///   映像の出どころは「観測カメラ」。目に見えない異常を映すカメラ（到着の連絡が言う）で、
+        ///   体験者がなぜテレビの中の自分を見て歩くのかの理由になる。人形の視点への警告が同じ語で否定する。
         /// ⚠ <b>句点の決まり</b>: スイが体験者へ<b>話しかける連絡は句点あり</b>、報告への<b>返事は句点なし</b>
         ///   （装置の記録の行）。返事なのに句点があるのは 2 つだけで、どちらもスイが記録の型を外れて自分の言葉で話す所
         ///   （侵食中の「解析が、終わりません。」と、締めの「おかえりなさい。」）。
@@ -370,10 +371,14 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Walk => "開始地点を表示しました。\n矢印に沿って進んでください。",
             // ⓪c 演出の始まり（段 0 を抜けた縁）。⓪b が出ていれば引かずに上書きする。
             // ⚠ 「装置を起動します」とは言わない。装置は練習で「装置は正常です。」と言われたばかりで、もう動いている。
-            //   この直後に起きるのは、テレビが点いて室内カメラの映像が来ること。
-            // ⚠ ここで「室内カメラ」「接続」と言っておく。2 周目 C の「室内カメラ以外の映像が、混ざっています。」が
+            //   この直後に起きるのは、テレビが点いて観測カメラの映像が来ること。
+            // ⚠ 「室内カメラ」とは呼ばない。ただの室内カメラなら、なぜ自分の目でなくテレビを見て歩くのかに答えが無い。
+            //   3 行目で、このカメラが何を映すのかを言う。異常が映像にしか出ないこと（現実の部屋には何も無い）、
+            //   終幕の写真に人形が写ること、人形の視点が「観測カメラ以外の映像」として混ざることが、この 1 行に乗る。
+            //   博士の「観測装置」・結果画面の「観測記録」と同じ語の家族。博士は「室内のカメラ」と言うが、同じ物として読まれた。
+            // ⚠ 「接続」と言っておく。2 周目 C の「観測カメラ以外の映像が、混ざっています。」が
             //   この 1 通の裏返しとして読める（乗っ取りの警告「接続元不明」は、読まれることを当てにしない）。
-            CommsNotice.Arrived => "到着しました。\n室内カメラに接続します。",
+            CommsNotice.Arrived => "到着しました。\n観測カメラに接続します。\n目に見えない異常も映ります。",
             // ① 開始の合図。周の節目を 3 回、同じ型で告げる（ここ → `SecondLap` → `ThirdLap`）。
             //   3 通目は乗っ取りの後に来て、同じ型のまま嘘になる。型を 2 回聞かせておかないと、嘘だと分からない。
             // ⚠ 「廻り始めてください。」博士は「エージェントの指示に従って歩き始めてください」と言い、体験者は
@@ -392,7 +397,7 @@ namespace FixedCamVr.Diagnostics
             //   2 つの文に分けた版は「遮断できませんが唐突」と読まれた。
             // ⚠ 同じ理由を既に言った後（頼まれずに出す警告の後・2 度目の報告）は、2 行目から先を
             //   <see cref="StuckFollowUpLine"/> に替える。
-            CommsNotice.MarkStuck => "異常を検出しました\n室内カメラの映像ではなく、\n遮断できません",
+            CommsNotice.MarkStuck => "異常を検出しました\n観測カメラの映像ではなく、\n遮断できません",
             // ②b 空振りの返事。⚠ 乗っ取りの後の赤い嘘（<see cref="TakeoverLieText"/>）と 1 字も違えない。
             CommsNotice.MarkNothing => "異常は検出されませんでした",
             // 2 周目の頭。廻ることと異常を結ぶ（開始の合図と同じ動詞）。
@@ -439,9 +444,9 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.ThirdLap => "三周目です。\n廻るたびに、異常は\n強まっています。",
             // 2 周目 C。人形の視点の映像が混ざり始めた後、報告を待たずにスイが言う（`CommsCueLogic`）。
             // スイが頼まれずに警告するのは体験の中でここだけ。直後の乗っ取り「遮断を執行／遮断失敗」の前触れになる。
-            // ⚠ 「室内カメラ以外の映像」と言う。「カメラの映像ではありません」だけでは一瞬意味が取れなかった（読み手 2 人）。
+            // ⚠ 「観測カメラ以外の映像」と言う。「カメラの映像ではありません」だけでは一瞬意味が取れなかった（読み手 2 人）。
             //   何の映像なのかは言わない。体験者が画で知る。
-            CommsNotice.ForeignFeed => "室内カメラ以外の映像が、\n混ざっています。\n遮断できません。",
+            CommsNotice.ForeignFeed => "観測カメラ以外の映像が、\n混ざっています。\n遮断できません。",
             _ => "",
         };
 
@@ -468,7 +473,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialReminder => "If anything feels wrong,\nreport it the same way.\nI will analyse and block it.",
             CommsNotice.Greeting => "My apologies.\nI am Sui, the agent\nsupporting your survey.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
-            CommsNotice.Arrived => "You have arrived.\nConnecting to the\nroom cameras.",
+            CommsNotice.Arrived => "Arrived. Connecting to\nthe observation cameras.\nThey show what eyes cannot.",
             CommsNotice.Begin => "First lap.\nHold the handrail\nand start circling.",
             CommsNotice.BeginHow => "If anything feels wrong,\nhold the button.\nI will analyse and block it.",
             CommsNotice.MarkLogged => "An anomaly was detected.\nBlocking it.",
@@ -500,7 +505,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialReminder => "Au moindre doute,\nsignalez-le ainsi.\nJ'analyse et je bloque.",
             CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui, l'agente\nqui assiste votre enquête.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
-            CommsNotice.Arrived => "Vous êtes arrivé.\nConnexion aux caméras\nde la pièce.",
+            CommsNotice.Arrived => "Arrivé. Connexion aux\ncaméras d'observation.\nElles montrent l'invisible.",
             CommsNotice.Begin => "Premier tour.\nTenez la main courante\net commencez à tourner.",
             CommsNotice.BeginHow => "Au moindre doute,\nmaintenez le bouton.\nJ'analyse et je bloque.",
             CommsNotice.MarkLogged => "Anomalie détectée.\nJe la bloque.",
@@ -588,7 +593,7 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ <b>画を見れば分かることだけを繰り返さない。</b> 1 行で、見ただけでは分からないことを 1 つ足す。
         /// ⚠ <b>4 つで 1 本の筋にする。</b> 子供の手 → 顔がカーテンの裏にいる → それは人形で、足跡を踏んでくる →
         ///   近づいてくる。続きは報告で消せない 2 周目 C（<see cref="CommsNotice.ForeignFeed"/> と
-        ///   <see cref="CommsNotice.MarkStuck"/>「室内カメラの映像ではない」）と乗っ取り。
+        ///   <see cref="CommsNotice.MarkStuck"/>「観測カメラの映像ではない」）と乗っ取り。
         ///   相手が 1 つずつ寄ってくることを、周の頭の予告ではなく、画に出ている物についての解析で言う。
         ///   最後の⑤が読む声「あーそぼー」は、1 通目の「子供の手形」と対になる。
         /// ⚠ 2 通目は<b>画に出ている物（顔）を先に言い、長押しの間に見えた膨らみを言う</b>（布が裏から押されて盛り上がる）。
@@ -641,7 +646,7 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 遮断できない返事の 2 通目から先で、理由の代わりに言う 1 行。
-        /// 「室内カメラの映像ではない・遮断できない」は既に言っているので、報告した人には新しいことを 1 つ返す。
+        /// 「観測カメラの映像ではない・遮断できない」は既に言っているので、報告した人には新しいことを 1 つ返す。
         /// 直後の乗っ取りの警告「接続元不明」と同じことを、スイの言葉で先に言う。
         /// </summary>
         public static string StuckFollowUpLine(ShowLang lang) => lang switch

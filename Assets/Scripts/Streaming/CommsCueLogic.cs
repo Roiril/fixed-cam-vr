@@ -37,7 +37,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         Walk,
         /// <summary>
-        /// ⓪c <b>円へ着いて導入演出が始まった瞬間</b>。到着を告げ、室内カメラへ接続すると言う
+        /// ⓪c <b>円へ着いて導入演出が始まった瞬間</b>。到着を告げ、観測カメラへ接続すると言う
         /// （直後にテレビが点いてカメラの映像が来る）。文面は <c>CommsPanel</c>。
         /// ⚠ <b>段 0 を抜けた縁で出す</b>ので、⓪b（歩行の指示）が出ていればそれを押しのけて上書きする。
         /// </summary>
@@ -113,7 +113,7 @@ namespace FixedCamVr.Streaming
         FarewellFinding,
         /// <summary>
         /// ② 報告時に異常演出が表示されていたが、<b>報告では消せない演出だった</b>
-        /// （乗っ取りの前の 2 周目 C の人形視点など）。検出したこと・室内カメラの映像ではないこと・遮断できないことを返す。
+        /// （乗っ取りの前の 2 周目 C の人形視点など）。検出したこと・観測カメラの映像ではないこと・遮断できないことを返す。
         /// 消せなかったのに「遮断します」と返すと、乗っ取りの前にスイが嘘をつくことになる。
         /// 同じ理由を既に言っていれば（<see cref="CommsCueLogic.StuckReasonAlreadySaid"/>）、面は別の 1 行を返す。
         /// ⚠ 末尾に足してある（<see cref="CommsCueLogic.IsOnboarding"/> は並びの範囲で判定する）。
@@ -137,7 +137,7 @@ namespace FixedCamVr.Streaming
         ThirdLap,
         /// <summary>
         /// 2 周目 C で人形の視点の映像が混ざり始めた後、面が空いた縁に 1 度だけ、<b>スイが報告を待たずに</b>出す警告。
-        /// 「室内カメラ以外の映像が、混ざっています。遮断できません。」
+        /// 「観測カメラ以外の映像が、混ざっています。遮断できません。」
         /// 同じことは報告の返事（<see cref="MarkStuck"/>）も言うが、あちらは報告した人しか読まない。
         /// これが無いと、報告しなかった人には乗っ取りの「遮断失敗」が前触れなしに来る。
         /// 先に <see cref="MarkStuck"/> を返していれば出さない（同じことを 2 度言わない）。
@@ -396,7 +396,7 @@ namespace FixedCamVr.Streaming
         public bool ForeignFeedFired => _foreignFeedFired;
 
         /// <summary>
-        /// 直近の <see cref="CommsNotice.MarkStuck"/> を返した時点で、理由（室内カメラの映像ではない）を
+        /// 直近の <see cref="CommsNotice.MarkStuck"/> を返した時点で、理由（観測カメラの映像ではない）を
         /// 既に 1 度言っていたか。立っていれば面は理由の代わりに別の 1 行を返す（警告の直後に同じ文を繰り返すと、くどい）。
         /// </summary>
         public bool StuckReasonAlreadySaid { get; private set; }
@@ -584,7 +584,7 @@ namespace FixedCamVr.Streaming
                 if (inp.markDetected)
                 {
                     if (!inp.markStuck) return CommsNotice.MarkLogged;
-                    // 理由（室内カメラの映像ではない）を既に言っていれば、返事は結果だけにする（面が `StuckReasonAlreadySaid` を読む）。
+                    // 理由（観測カメラの映像ではない）を既に言っていれば、返事は結果だけにする（面が `StuckReasonAlreadySaid` を読む）。
                     // ここで理由を言うなら、頼まれずに出す警告はもう要らない。
                     StuckReasonAlreadySaid = _foreignFeedFired;
                     _foreignFeedFired = true;

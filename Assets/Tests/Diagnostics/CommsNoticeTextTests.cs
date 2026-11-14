@@ -126,7 +126,7 @@ namespace FixedCamVr.Diagnostics.Tests
 
         /// <summary>
         /// ⓪c は<b>カメラへの接続</b>を告げ、①は<b>開始</b>を告げる。同じ語を 2 回聞かせない。
-        /// ⓪c の直後に起きるのはテレビが点いて室内カメラの映像が来ること（0309）で、体験者が調査を始めるのはその後。
+        /// ⓪c の直後に起きるのはテレビが点いて観測カメラの映像が来ること（0309）で、体験者が調査を始めるのはその後。
         /// ⚠ 「装置を起動します」とは言わない。装置は導入の練習で「装置は正常です。」と言われたばかりで、もう動いている。
         /// </summary>
         [TestCase(ShowLang.Ja, "接続", "廻り始め")]
@@ -281,7 +281,7 @@ namespace FixedCamVr.Diagnostics.Tests
 
         // 報告では消せない演出への返事。1 行目は当たりの返事と同じ。2 行目が理由（カメラの映像ではない）、
         // 3 行目が結果。理由があるので、直後の乗っ取り（不正アクセス）がその続きとして読める。
-        [TestCase(ShowLang.Ja, "異常を検出しました\n室内カメラの映像ではなく、\n遮断できません", "カメラ")]
+        [TestCase(ShowLang.Ja, "異常を検出しました\n観測カメラの映像ではなく、\n遮断できません", "カメラ")]
         [TestCase(ShowLang.En, "An anomaly was detected.\nIt is not from our cameras.\nI cannot block it.", "camera")]
         [TestCase(ShowLang.Fr, "Anomalie détectée.\nAucune caméra ne la filme.\nJe ne peux pas la bloquer.", "caméra")]
         public void ReportOnAnAnomalyThatCannotBeRemoved_SaysWhy(ShowLang lang, string sentence, string camera)
@@ -438,9 +438,9 @@ namespace FixedCamVr.Diagnostics.Tests
 
         /// <summary>
         /// 頼まれずに出す警告（2 周目 C）と、報告で消せない返事は、同じことを言う
-        /// （室内カメラの映像ではない・遮断できない）。警告は話しかける文、返事は記録の行。
+        /// （観測カメラの映像ではない・遮断できない）。警告は話しかける文、返事は記録の行。
         /// </summary>
-        [TestCase(ShowLang.Ja, "室内カメラ", "遮断できません")]
+        [TestCase(ShowLang.Ja, "観測カメラ", "遮断できません")]
         [TestCase(ShowLang.En, "cameras", "cannot block")]
         [TestCase(ShowLang.Fr, "caméra", "ne peux pas")]
         public void TheUnaskedWarning_SaysWhatTheStuckReplySays(ShowLang lang, string camera, string cannot)
@@ -453,7 +453,7 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         /// <summary>
-        /// 理由（室内カメラの映像ではない）を既に言った後の返事は、同じ文を繰り返さず、新しいことを 1 つ言う
+        /// 理由（観測カメラの映像ではない）を既に言った後の返事は、同じ文を繰り返さず、新しいことを 1 つ言う
         /// （映像の出どころが分からない。直後の乗っ取りの警告「接続元不明」の先触れ）。
         /// </summary>
         [Test]
@@ -520,16 +520,33 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         /// <summary>
-        /// ⓪c が「カメラ」と言い、報告で消せない返事が「カメラの映像ではありません」と言う。
-        /// 同じ語なので、2 通目は 1 通目の裏返しとして読める（装置が繋いだ先ではない所から、映像が来ている）。
+        /// ⓪c が「観測カメラ」と名指し、報告で消せない返事と頼まれない警告が同じ名で否定する。
+        /// 同じ語なので、後の 2 通は 1 通目の裏返しとして読める（装置が繋いだ先ではない所から、映像が来ている）。
         /// </summary>
-        [TestCase(ShowLang.Ja, "カメラ")]
+        [TestCase(ShowLang.Ja, "観測カメラ")]
         [TestCase(ShowLang.En, "camera")]
         [TestCase(ShowLang.Fr, "caméra")]
         public void TheCameraIsNamedOnArrival_AndDeniedInTheDollView(ShowLang lang, string camera)
         {
             StringAssert.Contains(camera, CommsPanel.NoticeText(CommsNotice.Arrived, lang));
             StringAssert.Contains(camera, CommsPanel.NoticeText(CommsNotice.MarkStuck, lang));
+            StringAssert.Contains(camera, CommsPanel.NoticeText(CommsNotice.ForeignFeed, lang));
+        }
+
+        /// <summary>
+        /// ⓪c は、そのカメラが<b>目に見えない異常を映す</b>と言う。ただの室内カメラでは、体験者がなぜ
+        /// 自分の目でなくテレビの中の自分を見て歩くのかに答えが無い（2026-11-14 作者の指摘）。
+        /// 「室内カメラ」とは呼ばない。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "目に見えない", "室内")]
+        [TestCase(ShowLang.En, "eyes cannot", "room camera")]
+        [TestCase(ShowLang.Fr, "invisible", "de la pièce")]
+        public void TheObservationCamera_ShowsWhatTheEyeCannot(ShowLang lang, string unseen, string plain)
+        {
+            string arrived = CommsPanel.NoticeText(CommsNotice.Arrived, lang);
+            StringAssert.Contains(unseen, arrived);
+            foreach (string body in CommsPanel.AllBodies(lang))
+                StringAssert.DoesNotContain(plain, body, "ただの室内のカメラとして呼んでいる");
         }
 
         /// <summary>
