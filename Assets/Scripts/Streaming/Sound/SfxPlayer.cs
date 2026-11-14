@@ -54,6 +54,14 @@ namespace FixedCamVr.Streaming
         private Transform?[] _followOf = System.Array.Empty<Transform?>();
         private Vector3[] _followLocal = System.Array.Empty<Vector3>();
 
+        /// <summary>
+        /// 声ごとの<b>退かせ</b>（<see cref="FadeOut"/>）。尺が 0 なら退かせていない。
+        /// 始めた DSP 時刻と、始めた時点の音量を持つ（<see cref="LateUpdate"/> が聴感直線で 0 へ寄せる）。
+        /// </summary>
+        private double[] _fadeStart = System.Array.Empty<double>();
+        private float[] _fadeSec = System.Array.Empty<float>();
+        private float[] _fadeFrom = System.Array.Empty<float>();
+
         /// <summary>これまでに鳴らした本数（テレメトリ用。**「鳴らした」であって「聞こえた」ではない**）。</summary>
         public int PlayedCount { get; private set; }
 
@@ -81,6 +89,9 @@ namespace FixedCamVr.Streaming
             _busyUntil = new double[n];
             _followOf = new Transform?[n];
             _followLocal = new Vector3[n];
+            _fadeStart = new double[n];
+            _fadeSec = new float[n];
+            _fadeFrom = new float[n];
         }
 
         /// <summary>
@@ -98,6 +109,7 @@ namespace FixedCamVr.Streaming
             double now = AudioSettings.dspTime;
             for (int i = 0; i < _pool.Length; i++)
             {
+                if (_fadeSec[i] > 0f) StepFade(i, now);
                 var f = _followOf[i];
                 if (f == null) continue;
                 if (_busyUntil[i] <= now) { _followOf[i] = null; continue; }
@@ -137,6 +149,7 @@ namespace FixedCamVr.Streaming
             src.pitch = 1f + Random.Range(-pitchSpread, pitchSpread);
             src.volume = g;
             _followOf[slot] = null;
+            _fadeSec[slot] = 0f;   // 退かせている途中の声を奪ったら、新しい音は退かせない
             if (at.HasValue)
             {
                 src.transform.position = at.Value;
@@ -200,6 +213,73 @@ namespace FixedCamVr.Streaming
             }
         }
 
+        /// <summary>
+        /// <b>この音源を鳴らしている声だけを、<paramref name="sec"/> 秒で退かせて止める</b>
+        /// （2 周目 B の別の場所が途中で畳まれた・<c>canon/LEDGER.md</c> 0374）。
+        /// 退かせた（または既に退かせている）声の本数を返す。鳴っていなければ 0。
+        ///
+        /// ⚠ <c>Stop()</c> をそのまま呼ばない — フェードしない打ち切りは鳴っている途中でクリックになる
+        /// （<see cref="PickVoice"/> の但し書きと同じ）。形は聴感直線（<see cref="SoundFade.Curve.Perceptual"/>）。
+        /// ⚠ 他の音源の声には触らない（同じ瞬間に鳴っている乱れや切替音まで消さない）。
+        /// ⚠ 退かせている声は <see cref="BusyVoices"/> では退かせ終わりまでふさがっている扱い。
+        /// </summary>
+        public int FadeOut(AudioClip? clip, float sec)
+        {
+            if (clip == null) return 0;
+            double now = AudioSettings.dspTime;
+            int n = 0;
+            for (int i = 0; i < _pool.Length; i++)
+            {
+                var s = _pool[i];
+                if (s == null || s.clip != clip || _busyUntil[i] <= now) continue;
+                n++;
+                if (_fadeSec[i] > 0f) continue;   // 既に退かせている（尺を延ばさない）
+                if (sec <= 0f)
+                {
+                    s.Stop();
+                    _busyUntil[i] = 0.0;
+                    _followOf[i] = null;
+                    continue;
+                }
+                _fadeStart[i] = now;
+                _fadeSec[i] = sec;
+                _fadeFrom[i] = s.volume;
+                _busyUntil[i] = System.Math.Min(_busyUntil[i], now + sec);
+            }
+            return n;
+        }
+
+        /// <summary>いま退かせている途中の声の本数。テストと切り分け用。</summary>
+        public int FadingVoices
+        {
+            get
+            {
+                int n = 0;
+                foreach (float f in _fadeSec) if (f > 0f) n++;
+                return n;
+            }
+        }
+
+        // 退かせを 1 フレームぶん進める。尺を過ぎたら止めて声を空ける。
+        private void StepFade(int i, double now)
+        {
+            var s = _pool[i];
+            float t = (float)((now - _fadeStart[i]) / _fadeSec[i]);
+            if (s == null || t >= 1f)
+            {
+                if (s != null)
+                {
+                    s.Stop();
+                    s.volume = 0f;
+                }
+                _fadeSec[i] = 0f;
+                _busyUntil[i] = 0.0;
+                _followOf[i] = null;
+                return;
+            }
+            s.volume = _fadeFrom[i] * SoundFade.Gain(1f - t, SoundFade.Curve.Perceptual);
+        }
+
         /// <summary>ラン開始・中止で鳴っているものを黙らせる（前の体験者の音を持ち越さない）。</summary>
         public void StopAll()
         {
@@ -209,6 +289,7 @@ namespace FixedCamVr.Streaming
             }
             for (int i = 0; i < _busyUntil.Length; i++) _busyUntil[i] = 0.0;
             for (int i = 0; i < _followOf.Length; i++) _followOf[i] = null;
+            for (int i = 0; i < _fadeSec.Length; i++) _fadeSec[i] = 0f;
         }
     }
 }

@@ -120,6 +120,19 @@ namespace FixedCamVr.Streaming
         /// 増えた面の方角から鳴らす。間引きは <see cref="AnomalyEyes"/> の側。
         /// </summary>
         ScreenAdd,
+
+        /// <summary>
+        /// <b>2 周目 B の別の場所（子供部屋の動画）の物音</b>（<c>canon/LEDGER.md</c> 0374）。
+        /// 電灯と木馬が揺れ、人形が畳に落ちる 6 秒。採用された動画の音を無加工で抜いたもの
+        /// （<c>tools/ingest-kidsroom-audio.py</c>）。動画そのものは音を出さずに再生されている。
+        ///
+        /// ⚠⚠ <b>この列挙も <see cref="SoundCueLogic"/> は縁を検出しない。</b> 動画のカット
+        /// （<see cref="TakeRunner.KidsRoomCueId"/>）が画面を取ったのと同じ行（<see cref="TakeRunner"/>）から
+        /// <see cref="ShowSoundDirector.PlaySpot"/> で撃ち、別の場所が途中で畳まれたら
+        /// <see cref="ShowSoundDirector.StopSpot"/> で退かせる（呼びかけと同じ構え）。
+        /// ここに居るのは<b>音源の登録簿としての意味</b>（<c>Awake</c> の先読みと <c>ev=sfx</c> の名前）。
+        /// </summary>
+        KidsRoom,
     }
 
     /// <summary>
@@ -400,6 +413,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.EyeOpen: return "sfx_eye";        // 6 種
                 case SoundCue.EyeBig: return "sfx_eye_big";
                 case SoundCue.ScreenAdd: return "sfx_switch";   // 6 種
+                case SoundCue.KidsRoom: return "sfx_kidsroom";
                 default: return "";
             }
         }

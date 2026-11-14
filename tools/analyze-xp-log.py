@@ -236,6 +236,55 @@ def live_bleed_findings(events, takes):
     return lines, verdicts
 
 
+# 2 周目 B の別の場所（子供部屋の動画）のカット。C# の TakeRunner.KidsRoomCueId と対。
+# 動画は音を出さずに再生し、このカットが画面を取った頭で TakeRunner が SoundCue.KidsRoom を 1 回鳴らす（LEDGER 0374）。
+KIDS_ROOM_CUE = "backrooms_B_in"
+
+
+def kids_room_findings(events, takes):
+    """子供部屋の動画のカットが画面を取ったのに音が鳴っていないかを見る。(行, 判定) を返す。
+
+    画面を取ったカットは ev=step played=1（飛ばしたカットは played=0 で、音も鳴らないのが正しい）。
+    鳴った証拠は ev=sfx id=KidsRoom（書き手は C# の ShowTelemetryHost）。
+    takes が None なら台本が読めていないので、回数だけ出して判定しない。
+    """
+    sounds = [e for e in events if e.get("ev") == "sfx" and str(e.get("id")) == "KidsRoom"]
+    if takes is None:
+        if not sounds:
+            return [], []
+        return [f"  子供部屋の音: {len(sounds)} 回（台本が無いので画面に出た回数とは突き合わせていない）"], []
+    keys = {(t["id"], i) for t in takes for i, s in enumerate(t.get("steps") or [])
+            if str(s.get("cueId") or "") == KIDS_ROOM_CUE}
+    shown = [e for e in events if e.get("ev") == "step"
+             and fnum(e, "played", 0.0) == 1.0
+             and (str(e.get("take", "")), int(fnum(e, "i", -1.0))) in keys]
+    if not keys:
+        if not sounds:
+            return [], []
+        return ([f"  子供部屋の音: {len(sounds)} 回（著作に {KIDS_ROOM_CUE} のカットが無い）"],
+                [("FAIL", f"著作に無い子供部屋の音が {len(sounds)} 回鳴った — "
+                          f"show.json の cue id（{KIDS_ROOM_CUE}）と実機の TakeRunner.KidsRoomCueId が食い違っている")])
+    lines = [f"  子供部屋の音: {len(sounds)} 回 / 子供部屋の動画のカットが画面に出た回数 {len(shown)}"]
+    verdicts = []
+    if shown and not sounds:
+        verdicts.append(("FAIL", f"子供部屋の動画のカットが {len(shown)} 回画面に出たのに音が 1 度も鳴っていない — "
+                                 "動画は無音で再生しているので、ここが鳴らないと別の場所は黙って進む。"
+                                 "音源（`py -3.11 tools/ingest-kidsroom-audio.py` → `tools/unity.ps1 menu sound-import`）"
+                                 "と TakeRunner.KidsRoomCueId を見る"))
+    elif sounds and not shown:
+        verdicts.append(("FAIL", f"子供部屋の動画のカットが画面に出ていないのに音が {len(sounds)} 回鳴った — "
+                                 "飛ばしたカットで鳴らしている"))
+    elif shown:
+        if len(sounds) < len(shown):
+            verdicts.append(("WARN", f"子供部屋の動画のカット {len(shown)} 回に対し音の記録が {len(sounds)} 回 — "
+                                     "同じフレームで別の一撃が鳴ると ev=sfx は 1 行にまとまる"))
+        else:
+            verdicts.append(("OK", f"子供部屋の動画のカットの頭で音が鳴った（{len(sounds)} 回）"))
+    else:
+        verdicts.append(("WARN", "子供部屋の動画のカットに到達していない走行（音は鳴らなくて正常）"))
+    return lines, verdicts
+
+
 # ev=step の理由トークン → 日本語（C# の TakeRunner.StepSkip* と対）。
 STEP_SKIP_REASONS = {
     "camrange": "live のカメラが registry の範囲外",
@@ -3494,6 +3543,14 @@ def analyze(events, others, exp, warns=None):
         elif calls:
             verdict("FAIL", f"著作に無い人形の呼びかけが {len(calls)} 回鳴った — "
                             "show.json の dollCall と実機が食い違っている")
+
+        # -- 子供部屋の動画の音（2 周目 B の別の場所・canon/LEDGER.md 0374）
+        #    ⚠ 動画は無音で再生しているので、鳴らなくても画には何も出ない。`ev=sfx id=KidsRoom` が唯一の証拠。
+        kr_lines, kr_verdicts = kids_room_findings(events, exp.get("takes"))
+        for line in kr_lines:
+            w(line)
+        for level, text in kr_verdicts:
+            verdict(level, text)
 
         # -- カットが差し替える劇伴（呼びかけの次のカット・canon/LEDGER.md 0119）
         #    ⚠ **これも画に出ない。** 追いついた文脈を運ぶのは黒い覆いではなく曲になったので、

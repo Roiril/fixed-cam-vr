@@ -662,6 +662,30 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// <b><see cref="PlaySpot"/> で鳴らした一撃を、<paramref name="fadeSec"/> 秒で退かせて止める</b>
+        /// （2 周目 B の別の場所が途中で畳まれた・<c>canon/LEDGER.md</c> 0374）。
+        /// 退かせた声の本数を返す（鳴っていなければ 0）。変種を持つ節目は全部の変種を見る。
+        ///
+        /// ⚠ 他の節目の声には触らない（<see cref="SfxPlayer.FadeOut"/> は音源で絞る）。
+        /// ⚠ 劇伴の退き（<c>PushSpotDuck</c>）は戻さない。退きは自分で 0.55 秒で戻る。
+        /// </summary>
+        public int StopSpot(SoundCue c, float fadeSec)
+        {
+            if (_sfx == null) return 0;
+            string baseName = SoundCueLogic.ResourceName(c);
+            if (baseName.Length == 0) return 0;
+            int n = SoundCueLogic.VariantCount(c);
+            int stopped = 0;
+            for (int i = 0; i < n; i++)
+            {
+                string res = n == 1 ? baseName : $"{baseName}_{i + 1}";
+                if (_spot.TryGetValue(res, out var clip) && clip != null)
+                    stopped += _sfx.FadeOut(clip, fadeSec);
+            }
+            return stopped;
+        }
+
+        /// <summary>
         /// その節目をどこから鳴らすか（<c>null</c> ＝ 2D・2026-09-03・<c>canon/LEDGER.md</c> 0130）。
         ///
         /// **スクリーンから鳴るのは装置が出す音だけ。** 割れる音（<see cref="SoundCue.Shatter"/>）は

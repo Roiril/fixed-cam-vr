@@ -113,6 +113,10 @@ RECORDED |= {"bed_heart"}
 RECORDED |= {"bed_farewell_music_box", "sfx_doll_end_fall"}
 RECORDED |= {"sfx_comms_alert", "sfx_comms_block", "sfx_comms_sweep"}
 RECORDED |= {f"sfx_eye_{i}" for i in range(1, 9)}
+#    子供部屋の動画の音（`canon/LEDGER.md` 0374）。ユーザーが動画ごと聴いて採った音を無加工で抜いたもの
+#    （`tools/ingest-kidsroom-audio.py`）。⚠ 尖頭の判定（-3dBTP）は外していない — 素のままで -0.45dBTP 出て NG。
+#    音量を変えない指示なので直さない。
+RECORDED |= {"sfx_kidsroom"}
 TONAL_MAX = 25.0      # 合成音の突出の上限。実測の目安は「実物の機械 = 15dB 前後」
 
 # 発振器が居るか（掃引する純音も捕まる）。実測: 純音 0.93〜1.00 / 帯ノイズの掃引 0.31〜0.43 /

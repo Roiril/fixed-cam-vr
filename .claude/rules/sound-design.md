@@ -959,6 +959,32 @@ skip 0.50 → ふふ（2）         0.66 → ふ（1）
   警告つき切替音（`swAlert`）も同時に 0 になるので、2 つが揃って 0 なら素材の側を見る
 - ⚠ **実機未検証**（2026-08-22）。切替音と混ざったときに声が読めるかは被って聴くまで分からない
 
+### 子供部屋の動画の音（2 周目 B の別の場所・`canon/LEDGER.md` 0374）
+
+2 周目 B で飛ぶ別の場所は子供部屋の動画（cue `backrooms_B_in`・5.9 秒）→ 静止画（`backrooms_B`）。
+動画は `audioOutputMode = None` で再生し、その動画の音を一撃として別に鳴らす。
+
+| 何 | 値 |
+|---|---|
+| 音源 | `sfx_kidsroom`（`SoundCue.KidsRoom`・変種 1）。電灯と木馬が揺れ、人形が畳に落ちる鈍い音 |
+| 作り | `py -3.11 tools/ingest-kidsroom-audio.py`。`tools/web-compositor/captures/kidsroomB_noeyes_20261114.mp4` の音を**無加工**で 48kHz・ステレオの PCM へ抜く。原本の SHA-256 は定数で照合する |
+| 高さ | **-24.6 LUFS / 尖頭 -0.45 dBTP**（素のまま）。尖頭は -3dBTP の線を超えて `sound-lint.py` が NG を出すが、音量を変えない（ユーザーは動画ごと聴いて採った） |
+| 尺 | **6.04 秒**。動画のカット（5.9 秒）より長く、静止画のカットの頭まで鳴る |
+| 鳴らす所 | `TakeRunner.BeginStep` の `dollCall` と同じ行。cueId が `TakeRunner.KidsRoomCueId` のカットが画面を取った頭で `_sound.PlaySpot(SoundCue.KidsRoom)` を 1 回。飛ばしたカットでは鳴らさない |
+| 定位 | **2D**（`MonoRequired` に入れない）。動画の音そのままなので出どころを作らない |
+| 退き | 劇伴の退き無し（`DuckFor` 0）。別の場所のあいだ劇伴は風へ入れ替わっている |
+
+- **止める縁**: 別の場所が途中で畳まれたとき（報告で畳まれた `VisitorDismissed`・区間を移った `Yielded`・watchdog・卓の中止・ラン開始）だけ、
+  `ShowSoundDirector.StopSpot(SoundCue.KidsRoom, TakeRunner.KidsRoomStopFadeSec)` で **0.2 秒**の聴感直線で退かせる
+  （`SfxPlayer.FadeOut`。その音の声だけを退かせ、他の一撃は残す）。判定は `TakeRunner.EndTake`（`Completed` 以外）と `CleanupActive`
+- ⚠ **静止画のカットへ自然に進んだとき・演出が自然に終わったときは止めない。** 6 秒の音を鳴り切らせる
+- ⚠ **風（`bed_wind`）は鳴り続ける。** 別の場所のあいだ劇伴を切って風を鳴らす（0131）契約は変わらない。この音は風の上に重なる
+- ⚠ **cue id の頭は `backrooms` のまま**（`TakeRunner.OtherworldCuePrefix`）。変えると風と時計の `?` も黙って止まる
+- 観測: 走行ログの **`ev=sfx id=KidsRoom`**。`analyze-xp-log.py` の `kids_room_findings` が、
+  動画のカットが画面を取った（`ev=step played=1`）のに鳴っていなければ FAIL にする（`KIDS_ROOM_CUE` と `KidsRoomCueId` は対・`tools/test_kids_room_log.py`）。
+  ⚠ 同じフレームで別の一撃が鳴ると `ev=sfx` は 1 行にまとまる（`LastCue` が 1 つしか出ない）
+- 機械の門: `KidsRoomAudioTests`（取り込み忘れ・尺が縮んでいないか・頭で 1 回・自然な進行では止めない・畳まれたら退かせる・飛ばしたカットでは鳴らさない）
+
 ### 心音（追いつき → 3 周目 A の入れ替わり・2026-09-06・`canon/LEDGER.md` 0175）
 
 2026-09-25: 連続人形視点に続く警告が自然に表示を終えると、心音に同期する波状のゆがみとビネットをスクリーン映像へ追加する。

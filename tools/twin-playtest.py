@@ -34,6 +34,7 @@ SFX = {
     "TitleIn": "低くうねる音", "TitleOut": "題字が焼けて消える音", "ScreenOn": "テレビの電源が入る音",
     "Bell": "鈴が 1 回鳴る", "Glitch": "映像が乱れる音（ザッ）", "DollCall": "すぐ後ろで、子どもの声「あーそぼー」",
     "ScreenAdd": "テレビが 1 台点く音", "PowerOff": "電源が落ちる音", "DollEndFall": "低く落ちていく音",
+    "KidsRoom": "子供部屋の物音（電灯と木馬が揺れ、人形が畳に落ちる鈍い音）",
 }
 # 画の出来事に必ず伴う音（rules/sound-design.md・rules/ending.md の契約）。走行が鳴らしたかは実機で聴く。
 ALWAYS = [

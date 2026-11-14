@@ -435,6 +435,41 @@ namespace FixedCamVr.Streaming
                && cueId.StartsWith(OtherworldCuePrefix, System.StringComparison.Ordinal);
 
         /// <summary>
+        /// <b>2 周目 B の別の場所の動画（子供部屋）のカットの素材 id</b>（<c>canon/LEDGER.md</c> 0374）。
+        /// このカットが画面を取った頭で、動画の音（<see cref="SoundCue.KidsRoom"/>）を 1 回鳴らす。
+        ///
+        /// ⚠ 動画は音を出さずに再生している（<c>ScreenOverlayController</c> の <c>audioOutputMode = None</c>）。
+        ///   音はここから別に鳴らすので、卓で cue の名前を変えると<b>画は出るのに音だけ黙る</b>。
+        ///   <c>analyze-xp-log.py</c> の <c>KIDS_ROOM_CUE</c> が同じ名前で「画面を取ったのに鳴っていない」を FAIL にする。
+        /// ⚠ 頭は <see cref="OtherworldCuePrefix"/>（風と時計の <c>?</c> もこのカットで立つ）。
+        /// </summary>
+        public const string KidsRoomCueId = "backrooms_B_in";
+
+        /// <summary>別の場所が途中で畳まれたとき、子供部屋の音を退かせる尺（秒）。</summary>
+        public const float KidsRoomStopFadeSec = 0.2f;
+
+        /// <summary>素材 id が子供部屋の動画のカットか（純判定）。</summary>
+        public static bool IsKidsRoomCue(string? cueId)
+            => string.Equals(cueId, KidsRoomCueId, System.StringComparison.Ordinal);
+
+        /// <summary>
+        /// <b>子供部屋の音を撃った回数</b>（観測・テスト用）。音源が無くて鳴らなかった回も数える
+        /// （撃ったかどうかの記録。鳴ったかは走行ログの <c>ev=sfx id=KidsRoom</c> が持つ）。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int KidsRoomSoundCount { get; private set; }
+
+        /// <summary>
+        /// <b>別の場所が途中で畳まれて、子供部屋の音を退かせた回数</b>（観測・テスト用）。
+        /// 自然に次のカットへ進んだ・演出が自然に終わったときは数えない（音は鳴り切る）。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int KidsRoomStopCount { get; private set; }
+
+        // この演出で子供部屋の音を撃ったか。演出が途中で畳まれたら退かせる相手がいる。
+        private bool _takeKidsRoomSounding;
+
+        /// <summary>
         /// カット 1 つを解決した瞬間に上がる<b>観測専用</b>イベント。
         /// 引数は (演出 id, カット index, source, camera, 画面を取ったか, 理由トークン)。
         ///
@@ -1058,6 +1093,8 @@ namespace FixedCamVr.Streaming
             ClearTakeCatchUpState();
             DollCatchUpCompletedCount = 0;
             DollCallVoiceCount = 0;
+            KidsRoomSoundCount = 0;
+            KidsRoomStopCount = 0;
             PresentationAbortCount = 0;
             _endingReleased = false;
             _farewell?.ResetRun();
@@ -1571,6 +1608,13 @@ namespace FixedCamVr.Streaming
             //   ここだけ黙ると「追いついたのに声がしない」になる（`memory/backtrack_and_replay.md`）。
             if (step.dollCall) PlayDollCallVoice();
 
+            // 2 周目 B の別の場所の動画（子供部屋）の音（`canon/LEDGER.md` 0374）。
+            // ⚠ **呼びかけと同じ行から撃つ。** 動画は音を出さずに再生しているので、画を差し替えるのと
+            //   同じ行で鳴らさないと画と音の頭がずれる。飛ばしたカットでは鳴らさない（上の !playable で return 済み）。
+            // ⚠ 自然に次のカット（静止画）へ進んでも止めない。6 秒の音はそのまま鳴り切る。
+            //   止めるのは別の場所が途中で畳まれたときだけ（EndTake の Completed 以外・CleanupActive）。
+            if (IsKidsRoomCue(step.cueId)) PlayKidsRoomSound();
+
             // カット頭の単発の乱れ（遷移とは別物。企画書 2.3 の「注意・移動の誘導」に使う）。
             if (step.glitch > 0.001f)
                 director.PulseGlitch(step.glitch, step.glitchSec > 0f ? step.glitchSec : 0.25f);
@@ -1881,6 +1925,9 @@ namespace FixedCamVr.Streaming
             if (d.reason == TakeRunnerLogic.EndReason.Completed) CompleteDollCatchUpIfActive();
             else if (d.yieldedForward) CompleteDollCatchUpOnForwardYield(d.takeIndex);
             else _activeStepDollCall = false;
+            // 子供部屋の音（0374）。自然に流し切ったなら鳴り切らせ、途中で畳まれた（報告・区間を移った・
+            // watchdog）なら退かせる。
+            EndKidsRoomSound(stop: d.reason != TakeRunnerLogic.EndReason.Completed);
             ClearTakeCatchUpState();
             // 音は director の有無に関係なく必ず返す（画面が無くても占有だけ残さない）。
             EndTakeBgm();
@@ -1948,6 +1995,7 @@ namespace FixedCamVr.Streaming
             _activeStepCueId = "";   // 音が「まだ異世界が映っている」と読まない（0131）
             _activeStepDollCall = false;   // 同・呼びかけのカットが降りた縁を作る（0175）
             _activeStepDollReplacement = false;
+            EndKidsRoomSound(stop: true);  // 中止で畳まれた別の場所の音を残さない（0374）
             ClearTakeCatchUpState();       // 中止は追いつきに数えない
             EndTakeBgm();
             ReleaseStepState();
@@ -2086,6 +2134,29 @@ namespace FixedCamVr.Streaming
                                  + "（Resources/Sound/sfx_doll_call）。カットは無言で進みます。"
                                  + "`py -3.11 tools/ingest-sounds.py --only sfx_doll_call` の後に "
                                  + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+        }
+
+        // 2 周目 B の別の場所の動画（子供部屋）の音（`canon/LEDGER.md` 0374）。呼びかけと同じ口で撃つ。
+        private void PlayKidsRoomSound()
+        {
+            _takeKidsRoomSounding = true;
+            KidsRoomSoundCount++;
+            if (_sound != null && !_sound.PlaySpot(SoundCue.KidsRoom))
+                Debug.LogWarning("[TakeRunner] 子供部屋の音源がありません"
+                                 + "（Resources/Sound/sfx_kidsroom）。別の場所の動画は無音で進みます。"
+                                 + "`py -3.11 tools/ingest-kidsroom-audio.py` の後に "
+                                 + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
+        }
+
+        // 演出が終わった / 畳まれた縁。stop なら鳴っている子供部屋の音を短く退かせる。
+        private void EndKidsRoomSound(bool stop)
+        {
+            if (!_takeKidsRoomSounding) return;
+            _takeKidsRoomSounding = false;
+            if (!stop) return;
+            KidsRoomStopCount++;
+            int n = _sound != null ? _sound.StopSpot(SoundCue.KidsRoom, KidsRoomStopFadeSec) : 0;
+            Debug.Log($"[TakeRunner] 別の場所が途中で畳まれた → 子供部屋の音を {KidsRoomStopFadeSec:F1} 秒で退かせる（{n} 声）");
         }
 
         private void ClearTakeCatchUpState()
