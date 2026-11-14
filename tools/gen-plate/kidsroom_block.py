@@ -64,7 +64,7 @@ def curtain(x, y0, y1, z0, z1, m, seed=3):
     return o
 
 
-def build(lap):
+def build(lap, sparse=False):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
     tatami = mat("tatami", (0.36, 0.31, 0.17))
@@ -129,16 +129,29 @@ def build(lap):
     bpy.ops.mesh.primitive_cone_add(radius1=0.2, radius2=0.05, depth=0.1, location=(W / 2, 1.9, 1.72))
     bpy.context.object.data.materials.append(mat("shade", (0.45, 0.43, 0.38)))
 
-    # 子供のもの（数えられるだけ）
+    # 子供のもの（数えられるだけ）。sparse（0361）はお手玉 1 つと積み木 1 つだけにし、剥がれた壁紙と破片を床に散らす
     red = mat("red", (0.35, 0.05, 0.04))
-    for i, (x, y) in enumerate(((1.05, 1.35), (1.17, 1.42), (1.75, 1.75))):
+    toys = ((1.75, 1.75),) if sparse else ((1.05, 1.35), (1.17, 1.42), (1.75, 1.75))
+    for i, (x, y) in enumerate(toys):
         bpy.ops.mesh.primitive_uv_sphere_add(radius=0.045, location=(x, y, 0.028))
         bpy.context.object.scale.z = 0.62
         bpy.context.object.data.materials.append(red if i != 1 else paper)
     box("zori", (1.42, 3.2, 0), (1.5, 3.36, 0.02), red)
     blk = mat("block", (0.42, 0.33, 0.2))
-    for x, y in ((2.3, 2.2), (2.42, 2.34), (2.22, 2.5), (2.4, 2.66)):
+    for x, y in (((2.3, 2.2),) if sparse else ((2.3, 2.2), (2.42, 2.34), (2.22, 2.5), (2.4, 2.66))):
         box("block", (x, y, 0), (x + 0.06, y + 0.06, 0.06), blk)
+    if sparse:
+        rnd = random.Random(11)
+        scrap = mat("scrap", (0.4, 0.37, 0.3))
+        for _ in range(14):   # 剥がれた壁紙の切れ端（平たい板を少し傾ける）
+            x, y = rnd.uniform(0.15, 2.3), rnd.uniform(0.8, 3.3)
+            w, l = rnd.uniform(0.05, 0.2), rnd.uniform(0.04, 0.14)
+            box("scrap", (x, y, 0), (x + w, y + l, 0.004), scrap)
+            bpy.context.object.rotation_euler = (rnd.uniform(-0.15, 0.15), rnd.uniform(-0.15, 0.15), rnd.uniform(0, 3.14))
+        for _ in range(10):   # 砂壁の破片（小さな塊。左の壁際に寄せる）
+            x, y = rnd.uniform(0.05, 0.6), rnd.uniform(0.8, 3.2)
+            r = rnd.uniform(0.008, 0.025)
+            box("chip", (x, y, 0), (x + r * 1.6, y + r, r), wall)
 
     if lap:   # 画の下の縁に、座った人形の膝と手
         kimono = mat("kimono", (0.3, 0.03, 0.03))
@@ -175,6 +188,8 @@ SHOTS = {
     "corner": dict(pos=(0.55, 0.45, EYE_Z), target=(W / 2 + 0.45, D, 0.6), lap=False),
     # 正面と同じ。下の縁に自分の膝と手が入る
     "lap": dict(pos=(W / 2, 0.5, EYE_Z + 0.03), target=(W / 2 + 0.2, D, 0.2), lap=True),
+    # 0361: 正面と同じ構図。人形は映さない・おもちゃは少なく・床に壁紙の切れ端と破片
+    "dark": dict(pos=(W / 2 - 0.1, 0.5, EYE_Z), target=(W / 2 + 0.25, D, 0.62), lap=False, sparse=True),
 }
 
 
@@ -184,7 +199,7 @@ def main():
     shots = (argv[argv.index("--shots") + 1] if "--shots" in argv else "front,corner,lap").split(",")
     for name in shots:
         s = SHOTS[name]
-        sc = build(s["lap"])
+        sc = build(s["lap"], s.get("sparse", False))
         cd = bpy.data.cameras.new("cam")
         cd.sensor_width = 36.0
         cd.lens = 36.0 * FOCAL_PX / RES[0]
