@@ -27,7 +27,7 @@ description: ユーザーの言葉・文書の言葉・コード名の対応。�
 |---|---|---|
 | 作品 | 廻り視（り はひらがな）・固定カメラプロジェクト・まわりみ | 廻リ視 / `FixedCamVr` / `mawarimi` / build 対象 `fixedcam` |
 | 報告の対象 | 異変・異常・怪異 | `Anomaly*` |
-| 異変を消す | 解除（地の文）。台詞は取り除きました（0284） | `Released` / `ScreenDecay` / ログ `coarseRel` |
+| 異変を消す | 解除（地の文）。ユーザーの台詞は取り除きました（0284）。スイの文面は「異常を遮断しました。」（0352 の後の案・未判定） | `Released` / `ScreenDecay` / ログ `coarseRel` |
 | 人を隠す覆い | 黒いの・黒いマスク・黒いノイズ | 覆い / `IntroVeil`（導入）・`SwapDiffAt`（すり替わり） |
 | 終わり方 | 帰還エンディング・人形から戻れなくなってしまったEND | 帰還End・人形End・中断 / `Released`・`Trapped`・`Interrupted` |
 | ずっと流す曲 | HorrorBGM（0088）。周ごとの曲は背景BGM | `HorrBGM` |

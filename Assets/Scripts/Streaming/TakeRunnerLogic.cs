@@ -300,7 +300,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 走行中の演出が<b>報告で畳めるものか</b>（<c>dismissible</c> か、現カットが報告待ち）。
-        /// スイの返事「取り除きます／取り除けません」の材料。畳んでいる最中（応答映像の終端待ち）も立つ。
+        /// スイの返事「遮断します／遮断できません」の材料。畳んでいる最中（応答映像の終端待ち）も立つ。
         /// </summary>
         public bool ActiveRemovable
             => _running && _activeTake >= 0 && _activeTake < _defs.Length

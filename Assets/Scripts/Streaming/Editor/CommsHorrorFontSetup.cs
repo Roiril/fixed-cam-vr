@@ -18,7 +18,11 @@ namespace FixedCamVr.Streaming.EditorTools
             if (font == null) throw new InvalidOperationException("Comms horror source font missing");
             var chars = new SortedSet<char>();
             foreach (ShowLang lang in ShowLanguage.All)
+            {
                 foreach (char c in CommsPanel.TakeoverLieText(lang)) chars.Add(c);
+                // 3 周目の頭の嘘も同じ赤い字で出る。改行は字ではないので入れない。
+                foreach (char c in CommsPanel.ThirdLapLieText(lang)) if (c != '\n') chars.Add(c);
+            }
             chars.Add(' ');
             var asset = TMP_FontAsset.CreateFontAsset(font, 96, 8, GlyphRenderMode.SDFAA,
                 1024, 1024, AtlasPopulationMode.Dynamic);

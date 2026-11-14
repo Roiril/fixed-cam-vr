@@ -65,9 +65,9 @@ batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭�
 ⚠ **`plate-validation` は別れだけ体験者を測った立ち位置に置く**（`EndingVisitorXz`）。旧版は全身が枠に入る点を前提にしていて、A の画角では全身の入る組が人形の近くにしか無く、奥へ下がる道が体に当たって解けなかった。別れの体験者は壁で判定せず、頭と胸が枠に入ることを見る（`PhotoLevelFeetOut`）。解けないときは `noVisitorFit= noRetreat= pairRejected= pathRejected=` と道の不合格の理由がログに出る。
 ⚠ 画で見ると、人形は画の下端に近く小さい。体験者は右に立ち、足は切れ、頭の上も枠で切れることがある。実機は未確認。
 
-**スイの⑤ 別れの解析結果**（2026-11-11・シュビーの案・未判定。`canon/OPEN.md`）:
+**スイの⑤ 別れの一言**（シュビーの案・未判定。`canon/OPEN.md`。文面の経緯は [[comms-reply-spine]]）:
 人形が後ろを向き始めた縁（`TimelineDirector.FarewellPhase` が Turn か Retreat）で、解除済み（`ScreenDecayReleased`）なら
-`CommsNotice.FarewellFinding`「解析が完了しました。／異変は、一緒に遊ぶ人を／探していました。」を 1 回出す。
+`CommsNotice.FarewellFinding`（いまの文面は引用の 1 行「また、あーそぼー」だけ。スイの地の文は付けない）を 1 回出す。
 Fade（打鍵 0・新しい効果音なし）、MarkCleared と同じ位置・同じスイの顔（斑 0）。持続表示で、終幕の砂嵐のあいだも残り、
 `OutroDirector.PowerCutAtSec` の縁で面ごと即座に消える（結果画面に残らない）。終幕を出さない設定では本編を出た縁で消える。
 - 面が閉じるのを待つ `EndingNoticeOpen` には数えない（人形は⑤より先に出ている。数えると人形が待ちへ戻る）

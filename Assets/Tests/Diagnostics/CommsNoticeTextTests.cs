@@ -18,7 +18,7 @@ namespace FixedCamVr.Diagnostics.Tests
     /// </summary>
     public class CommsNoticeTextTests
     {
-        // ⓪a。「調査を支援する」は 0124 の逐語で、**「取り除く」の権限をここでしか渡していない**
+        // ⓪a。「調査を支援する」と職掌を言う。**異常を遮断する権限は、ここでしか渡していない**
         // （博士は「装置に搭載されたエージェントが解析します」までしか言わない）。
         [TestCase(ShowLang.Ja, "申し遅れました。\n私は調査を支援する\nエージェントのスイです。")]
         [TestCase(ShowLang.En, "My apologies.\nI am Sui, the agent\nsupporting your survey.")]
@@ -30,7 +30,7 @@ namespace FixedCamVr.Diagnostics.Tests
 
         /// <summary>
         /// ⓪a が<b>職掌（調査を支援する）を言う</b>。0124 の逐語で、そこを落とすと
-        /// 「取り除きます」がどこから来た権限か、体験の最後まで誰も言わないことになる。
+        /// 「遮断します」がどこから来た権限か、体験の最後まで誰も言わないことになる。
         /// </summary>
         [TestCase(ShowLang.Ja, "調査を支援する")]
         [TestCase(ShowLang.En, "supporting your survey")]
@@ -42,9 +42,9 @@ namespace FixedCamVr.Diagnostics.Tests
 
         // ③b。1・2 行目は 0124 / 0168 の逐語。3 行目は体験者が知っている操作の名前（報告）で頼み、
         // 導入の約束を言い直す（シュビーの案・未判定。canon/OPEN.md）。
-        [TestCase(ShowLang.Ja, "異常があなたと私を\n取り込もうとしています。\n報告を。私が取り除きます。")]
-        [TestCase(ShowLang.En, "An anomaly is trying to\nabsorb you and me.\nReport it. I will remove it.")]
-        [TestCase(ShowLang.Fr, "Une anomalie nous absorbe,\nvous et moi. Signalez-la.\nJe l'éliminerai.")]
+        [TestCase(ShowLang.Ja, "廻り続ければ、あなたも私も\n人形になります。\n報告を。私が遮断します。")]
+        [TestCase(ShowLang.En, "If you keep circling, you\nand I will become dolls.\nReport it. I will block it.")]
+        [TestCase(ShowLang.Fr, "Si vous tournez encore,\nvous et moi serons poupées.\nSignalez. Je la bloquerai.")]
         public void ClosingPromptAsksForAReportAndRenewsThePromise(ShowLang lang, string text)
         {
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.Prompt, lang));
@@ -57,22 +57,26 @@ namespace FixedCamVr.Diagnostics.Tests
         /// 言っていることを、文面側はこの 1 語でしか言わない。2026-09 に「あなたを」へ縮められて
         /// 2 か月のあいだ空白になっていたので、機械で守る。
         /// </summary>
-        [TestCase(ShowLang.Ja, "あなたと私を")]
-        [TestCase(ShowLang.En, "you and me")]
-        [TestCase(ShowLang.Fr, "vous et moi")]
-        public void ClosingPrompt_PutsSuiInsideTheDanger(ShowLang lang, string both)
+        [TestCase(ShowLang.Ja, "あなたも私も", "人形")]
+        [TestCase(ShowLang.En, "you and I", "dolls")]
+        [TestCase(ShowLang.Fr, "vous et moi", "poupées")]
+        public void ClosingPrompt_PutsSuiInsideTheDanger(ShowLang lang, string both, string doll)
         {
-            StringAssert.Contains(both, CommsPanel.NoticeText(CommsNotice.Prompt, lang));
+            // 行をまたいでいてもよい（English は 1 行目の末尾と 2 行目の頭に分かれる）。
+            string flat = CommsPanel.NoticeText(CommsNotice.Prompt, lang).Replace('\n', ' ');
+            StringAssert.Contains(both, flat);
+            // 何になるのかを言う。「取り込む」だけでは、何に取り込まれるのかが読み手に伝わらなかった。
+            StringAssert.Contains(doll, flat);
         }
 
         /// <summary>
         /// 約束（導入）→ 実行（報告の返事）→ 言い直し（③b）→ 果たす（④）が、言語ごとに同じ動詞で通っている。
         /// 1 か所だけ別の語にすると、同じことを言っていると読めなくなる。
         /// </summary>
-        [TestCase(ShowLang.Ja, "取り除")]
-        [TestCase(ShowLang.En, "emov")]
-        [TestCase(ShowLang.Fr, "limin")]
-        public void ThePromiseToRemove_UsesOneVerbFromTheTutorialToTheEnd(ShowLang lang, string stem)
+        [TestCase(ShowLang.Ja, "遮断")]
+        [TestCase(ShowLang.En, "lock")]
+        [TestCase(ShowLang.Fr, "loqu")]
+        public void ThePromiseToBlock_UsesOneVerbFromTheTutorialToTheEnd(ShowLang lang, string stem)
         {
             foreach (CommsNotice n in new[]
                      {
@@ -94,15 +98,16 @@ namespace FixedCamVr.Diagnostics.Tests
                                 CommsPanel.TakeoverLieText(lang), ShowLanguage.Code(lang));
         }
 
-        // 2 周目の頭。「廻るほど、近づいてきます」という博士の種は 0328 の書き直しで消えたので、
-        // 近づいていることは**スイが 1 周目と比べて観測した結果**として出す。
-        // 呼び名は博士と同じ「対象 / the subject / l'objet」（「反応」はここ 1 箇所だけの語だった）。
-        [TestCase(ShowLang.Ja, "二周目です。\n一周目より、\n対象が近づいています。")]
-        [TestCase(ShowLang.En, "Second lap.\nThe subject is closer\nthan on the first.")]
-        [TestCase(ShowLang.Fr, "Deuxième tour.\nL'objet est plus proche\nqu'au premier tour.")]
-        public void SecondLap_SaysItIsComingCloser(ShowLang lang, string text)
+        // 2 周目の頭。廻ることと異常を結ぶ（開始の合図と同じ動詞で言う）。
+        // 体験者は同じ所を廻っているので「近づく」とは言わない。変わるのは廻った回数。
+        // ⚠ 推し量る形（ようです / seems / semble）。乗っ取りの前のスイは、根拠の足りないことを断定しない。
+        [TestCase(ShowLang.Ja, "二周目です。\n廻るたびに、異常は\n強まっているようです。", "ようです")]
+        [TestCase(ShowLang.En, "Second lap.\nThe anomaly seems to grow\neach time you circle.", "seems")]
+        [TestCase(ShowLang.Fr, "Deuxième tour.\nPlus vous tournez, plus\nl'anomalie semble croître.", "semble")]
+        public void SecondLap_TiesTheAnomalyToCircling(ShowLang lang, string text, string hedge)
         {
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.SecondLap, lang));
+            StringAssert.Contains(hedge, text);
         }
 
         [Test]
@@ -120,14 +125,14 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         /// <summary>
-        /// ⓪c は<b>起動</b>を告げ、①は<b>開始</b>を告げる。同じ語を 2 回聞かせない（0096a の逐語は
-        /// 「観測装置を起動します」）。⓪c の直後に起きるのはテレビが現れて電源が入ること（0309）で、
-        /// 体験者が調査を始めるのはその後。語が重なると、2 通の違いが読めなくなる。
+        /// ⓪c は<b>カメラへの接続</b>を告げ、①は<b>開始</b>を告げる。同じ語を 2 回聞かせない。
+        /// ⓪c の直後に起きるのはテレビが点いて室内カメラの映像が来ること（0309）で、体験者が調査を始めるのはその後。
+        /// ⚠ 「装置を起動します」とは言わない。装置は導入の練習で「装置は正常です。」と言われたばかりで、もう動いている。
         /// </summary>
-        [TestCase(ShowLang.Ja, "起動", "開始")]
-        [TestCase(ShowLang.En, "Starting up", "Begin")]
-        [TestCase(ShowLang.Fr, "Mise en marche", "Commencez")]
-        public void ArrivalBootsTheDevice_AndTheSurveyStartsSeparately(ShowLang lang, string boot, string start)
+        [TestCase(ShowLang.Ja, "接続", "廻り始め")]
+        [TestCase(ShowLang.En, "Connecting", "start circling")]
+        [TestCase(ShowLang.Fr, "Connexion", "tourner")]
+        public void ArrivalConnectsTheCameras_AndTheSurveyStartsSeparately(ShowLang lang, string boot, string start)
         {
             string arrived = CommsPanel.NoticeText(CommsNotice.Arrived, lang);
             string begin = CommsPanel.NoticeText(CommsNotice.Begin, lang);
@@ -153,7 +158,7 @@ namespace FixedCamVr.Diagnostics.Tests
             }
         }
 
-        [TestCase(ShowLang.Ja, "装置の動作を確認します。\nXかYを1秒間\n押し続けてください")]
+        [TestCase(ShowLang.Ja, "装置の動作を確認します。\nXかYを1秒間、\n押し続けてください。")]
         [TestCase(ShowLang.En, "Checking the device.\nHold X or Y\nfor one second.")]
         [TestCase(ShowLang.Fr, "Vérification du dispositif.\nMaintenez X ou Y\npendant une seconde.")]
         public void Tutorial_ExplainsThatItChecksTheDevice(ShowLang lang, string text)
@@ -216,12 +221,14 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.NotNull(horror, "怖い本文用フォントを Resources から読めない");
         }
 
-        [TestCase(ShowLang.Ja, "異常を検知しました")]
+        [TestCase(ShowLang.Ja, "異常を検出しました")]
         [TestCase(ShowLang.En, "An anomaly was detected.")]
         [TestCase(ShowLang.Fr, "Anomalie détectée.")]
         public void TakeoverShowsTheTruthfulDetectionFirst(ShowLang lang, string truth)
         {
             Assert.AreEqual(truth, CommsPanel.NoticeText(CommsNotice.Takeover, lang));
+            // 書き換わる前の 1 行は、当たりの返事の 1 行目と 1 字も違わない（「いつもの返事」に見えてから嘘になる）。
+            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, lang).Split('\n')[0], truth);
         }
 
         [TestCase(ShowLang.Ja, "異常は検出されませんでした")]
@@ -263,49 +270,306 @@ namespace FixedCamVr.Diagnostics.Tests
                                             ShowLanguage.Code(lang));
         }
 
-        // 1 行目は 0054 の逐語。2 行目は「報告すると、スイが取り除く」を返事のたびに見せる。
-        [TestCase(ShowLang.Ja, "異常を検出しました\n取り除きます")]
-        [TestCase(ShowLang.En, "An anomaly was detected.\nRemoving it.")]
-        [TestCase(ShowLang.Fr, "Anomalie détectée.\nJe l'élimine.")]
+        // 2 行目は「報告すると、スイが遮断する」を返事のたびに見せる。
+        [TestCase(ShowLang.Ja, "異常を検出しました\n遮断します")]
+        [TestCase(ShowLang.En, "An anomaly was detected.\nBlocking it.")]
+        [TestCase(ShowLang.Fr, "Anomalie détectée.\nJe la bloque.")]
         public void SuccessfulReportSaysTheAnomalyWasDetected_AndIsBeingRemoved(ShowLang lang, string sentence)
         {
             Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkLogged, lang));
         }
 
-        // 報告では消せない演出への返事。1 行目は当たりの返事と同じで、2 行目だけが違う。
-        [TestCase(ShowLang.Ja, "異常を検出しました\nいまは取り除けません")]
-        [TestCase(ShowLang.En, "An anomaly was detected.\nI cannot remove it yet.")]
-        [TestCase(ShowLang.Fr, "Anomalie détectée.\nJe ne peux pas l'éliminer\npour l'instant.")]
-        public void ReportOnAnAnomalyThatCannotBeRemoved_SaysSo(ShowLang lang, string sentence)
+        // 報告では消せない演出への返事。1 行目は当たりの返事と同じ。2 行目が理由（カメラの映像ではない）、
+        // 3 行目が結果。理由があるので、直後の乗っ取り（不正アクセス）がその続きとして読める。
+        [TestCase(ShowLang.Ja, "異常を検出しました\n室内カメラの映像ではなく、\n遮断できません", "カメラ")]
+        [TestCase(ShowLang.En, "An anomaly was detected.\nIt is not from our cameras.\nI cannot block it.", "camera")]
+        [TestCase(ShowLang.Fr, "Anomalie détectée.\nAucune caméra ne la filme.\nJe ne peux pas la bloquer.", "caméra")]
+        public void ReportOnAnAnomalyThatCannotBeRemoved_SaysWhy(ShowLang lang, string sentence, string camera)
         {
             Assert.AreEqual(sentence, CommsPanel.NoticeText(CommsNotice.MarkStuck, lang));
             Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, lang).Split('\n')[0],
                             sentence.Split('\n')[0], "1 行目は当たりの返事と同じ");
+            StringAssert.Contains(camera, sentence.Split('\n')[1], "2 行目が理由を言っていない");
         }
 
-        // ⑤ 別れの解析結果（0322 の回収・0036）。判定を言わず、記録に残った相手の言葉を読み上げる。
+        /// <summary>
+        /// 周の節目は 3 回、同じ型で告げる（一周目 ＝ 開始の合図・二周目・三周目）。
+        /// 3 通目は乗っ取りの後に来る。型を 2 回聞かせておかないと、3 通目が嘘だと分からない。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "一周目です。", "二周目です。", "三周目です。")]
+        [TestCase(ShowLang.En, "First lap.", "Second lap.", "Third lap.")]
+        [TestCase(ShowLang.Fr, "Premier tour.", "Deuxième tour.", "Troisième tour.")]
+        public void EveryLap_IsAnnouncedInTheSameForm(ShowLang lang, string first, string second, string third)
+        {
+            Assert.AreEqual(first, CommsPanel.NoticeText(CommsNotice.Begin, lang).Split('\n')[0]);
+            Assert.AreEqual(second, CommsPanel.NoticeText(CommsNotice.SecondLap, lang).Split('\n')[0]);
+            Assert.AreEqual(third, CommsPanel.NoticeText(CommsNotice.ThirdLap, lang).Split('\n')[0]);
+            // 嘘も同じ 1 行目で始まる。違うのは中身だけ。
+            Assert.AreEqual(third, CommsPanel.ThirdLapLieText(lang).Split('\n')[0]);
+            Assert.AreNotEqual(CommsPanel.NoticeText(CommsNotice.ThirdLap, lang), CommsPanel.ThirdLapLieText(lang));
+        }
+
+        /// <summary>
+        /// 乗っ取りの後の 3 周目の頭は、連絡の文ではなく専用の嘘が赤い字で出る。ほかの連絡は嘘の一文のまま。
+        /// 嘘は「異常は無い」と言い切り、歩き続けさせる。締めの「止まってください！」が打ち消す相手。
+        /// </summary>
+        [Test]
+        public void ThirdLapAfterTheTakeover_LiesAndKeepsTheVisitorWalking()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string lie = CommsPanel.ThirdLapLieText(lang);
+                Assert.AreEqual(lie, CommsPanel.CursedBodyFor(CommsNotice.ThirdLap, lang));
+                Assert.AreEqual(CommsPanel.TakeoverLieText(lang),
+                                CommsPanel.CursedBodyFor(CommsNotice.MarkLogged, lang));
+                Assert.AreEqual(CommsPanel.TakeoverLieText(lang),
+                                CommsPanel.CursedBodyFor(CommsNotice.MarkNothing, lang));
+                Assert.AreEqual(3, lie.Split('\n').Length, ShowLanguage.Code(lang));
+            }
+        }
+
+        [Test]
+        public void ThirdLapLie_ExistsInTheHorrorFont()
+        {
+            TMP_FontAsset horror = Resources.Load<TMP_FontAsset>("Fonts/CommsHorror SDF");
+            Assert.NotNull(horror, "怖い本文用フォントを Resources から読めない");
+            foreach (ShowLang lang in ShowLanguage.All)
+            foreach (char c in CommsPanel.ThirdLapLieText(lang))
+            {
+                if (char.IsWhiteSpace(c)) continue;
+                Assert.IsTrue(horror.HasCharacter(c),
+                              $"{ShowLanguage.Code(lang)}: U+{(int)c:X4} '{c}' が赤い字のフォントに無い（menu comms-horror-font）");
+            }
+        }
+
+        /// <summary>
+        /// 当たりの返事は、報告が乗った演出が分かるとき<b>解析の中身を 1 行挟む</b>
+        /// （博士「何を見たかは、装置に搭載されたエージェントが解析します」）。
+        /// 1 行目と最後の行は元の返事のまま。知らない演出では元の 2 行へ戻る。
+        /// </summary>
+        [Test]
+        public void SuccessfulReport_SaysWhatTheAnalysisFound()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string[] plain = CommsPanel.NoticeText(CommsNotice.MarkLogged, lang).Split('\n');
+                foreach (string takeId in CommsPanel.FindingTakeIds)
+                {
+                    string? finding = CommsPanel.FindingLine(takeId, lang);
+                    Assert.That(finding, Is.Not.Null.And.Not.Empty, $"{takeId} / {ShowLanguage.Code(lang)}");
+                    string[] lines = CommsPanel.BodyWithFinding(CommsNotice.MarkLogged, lang, takeId).Split('\n');
+                    Assert.AreEqual(3, lines.Length, takeId);
+                    Assert.AreEqual(plain[0], lines[0], takeId);
+                    Assert.AreEqual(finding, lines[1], takeId);
+                    Assert.AreEqual(plain[1], lines[2], takeId);
+                }
+                Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, lang),
+                                CommsPanel.BodyWithFinding(CommsNotice.MarkLogged, lang, "L9C9#9"));
+                Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkLogged, lang),
+                                CommsPanel.BodyWithFinding(CommsNotice.MarkLogged, lang, ""));
+                // ほかの連絡には挟まない（空振りに解析の中身が付いたら嘘になる）。
+                Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkNothing, lang),
+                                CommsPanel.BodyWithFinding(CommsNotice.MarkNothing, lang, "L1C1#0"));
+            }
+        }
+
+        /// <summary>
+        /// <b>体験者が報告するのは「違和感」、スイが判定するのは「異常」。</b> 博士の台詞と同じ分け方。
+        /// 「異変」はどちらでもない 3 つ目の語で、混ざると同じ物を指しているのか読めなくなる。
+        /// </summary>
+        [Test]
+        public void TheVisitorReportsUnease_AndSuiNamesAnomalies()
+        {
+            StringAssert.Contains("違和感", CommsPanel.NoticeText(CommsNotice.TutorialReminder, ShowLang.Ja));
+            foreach (string body in CommsPanel.AllBodies(ShowLang.Ja))
+                StringAssert.DoesNotContain("異変", body);
+        }
+
+        /// <summary>
+        /// <b>廻ることを言う動詞は、体験を通して 1 つ</b>（日本語は題字と同じ「廻」）。
+        /// 開始「廻り始めてください。」→ 2 周目「廻るたびに」→ 乗っ取りの後の嘘「そのまま、廻ってください。」→
+        /// 締め「廻り続ければ、異常が…取り込みます。」。嘘はスイの指示の真似になり、締めがそれを取り消す。
+        /// 途中で別の語（歩く・周を重ねる）に替えると、締めの「止まってください！」が何を止めるのか分からなくなる。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "廻")]
+        [TestCase(ShowLang.En, "circl")]
+        [TestCase(ShowLang.Fr, "tourne")]
+        public void Circling_IsOneVerb_FromTheStartToTheWarning(ShowLang lang, string stem)
+        {
+            foreach (CommsNotice n in new[] { CommsNotice.Begin, CommsNotice.SecondLap,
+                                              CommsNotice.ThirdLap, CommsNotice.Halt, CommsNotice.Prompt })
+                StringAssert.Contains(stem, CommsPanel.NoticeText(n, lang).ToLowerInvariant(),
+                                      $"{n} / {ShowLanguage.Code(lang)}");
+            StringAssert.Contains(stem, CommsPanel.ThirdLapLieText(lang).ToLowerInvariant());
+        }
+
+        /// <summary>
+        /// 歩くことへの指示は、始める（スイ）→ 続けろ（嘘）→ 止まれ（スイ）の順で 1 本になる。
+        /// 正直な 3 周目の連絡は、続けろとは言わない（歩かせ続けるのは嘘の側だけ）。
+        /// </summary>
+        /// <summary>
+        /// 締めの「止まって」は、<b>何を止めるのかを同じ 1 通の中で言う</b>（廻ること）。1 行だけでは、博士の教えた
+        /// 中断の手順（立ち止まる → 手すりを離す → 装置を外す）の 1 歩目に読めた。
+        /// 画に居るのは 1.8 秒ほどなので短い。装置を外すなとは言わない（続けられない人の出口を塞がない）。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "廻", "装置", 14)]
+        [TestCase(ShowLang.En, "circle", "device", 28)]
+        [TestCase(ShowLang.Fr, "tourne", "dispositif", 28)]
+        public void TheStopCall_SaysWhatToStop_AndIsShort(ShowLang lang, string circling, string device, int maxChars)
+        {
+            string body = CommsPanel.NoticeText(CommsNotice.Halt, lang);
+            string[] lines = body.Split('\n');
+            Assert.AreEqual(2, lines.Length);
+            StringAssert.Contains(circling, lines[1]);
+            StringAssert.DoesNotContain(device, body);
+            Assert.LessOrEqual(body.Replace("\n", "").Length, maxChars, "1.8 秒で読み切れる長さを超えている");
+        }
+
+        [TestCase(ShowLang.Ja, "廻り始めてください", "廻ってください", "止まって")]
+        [TestCase(ShowLang.En, "start circling", "Keep circling", "Stop")]
+        [TestCase(ShowLang.Fr, "commencez à tourner", "Continuez à tourner", "Arrêtez")]
+        public void TheWalkingOrders_StartContinueStop(ShowLang lang, string start, string keep, string stop)
+        {
+            StringAssert.Contains(start, CommsPanel.NoticeText(CommsNotice.Begin, lang));
+            StringAssert.Contains(keep, CommsPanel.ThirdLapLieText(lang));
+            StringAssert.Contains(stop, CommsPanel.NoticeText(CommsNotice.Halt, lang));
+            StringAssert.DoesNotContain(keep, CommsPanel.NoticeText(CommsNotice.ThirdLap, lang));
+        }
+
+        /// <summary>
+        /// 頼まれずに出す警告（2 周目 C）と、報告で消せない返事は、同じことを言う
+        /// （室内カメラの映像ではない・遮断できない）。警告は話しかける文、返事は記録の行。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "室内カメラ", "遮断できません")]
+        [TestCase(ShowLang.En, "cameras", "cannot block")]
+        [TestCase(ShowLang.Fr, "caméra", "ne peux pas")]
+        public void TheUnaskedWarning_SaysWhatTheStuckReplySays(ShowLang lang, string camera, string cannot)
+        {
+            foreach (CommsNotice n in new[] { CommsNotice.ForeignFeed, CommsNotice.MarkStuck })
+            {
+                StringAssert.Contains(camera, CommsPanel.NoticeText(n, lang), n.ToString());
+                StringAssert.Contains(cannot, CommsPanel.NoticeText(n, lang), n.ToString());
+            }
+        }
+
+        /// <summary>
+        /// 理由（室内カメラの映像ではない）を既に言った後の返事は、同じ文を繰り返さず、新しいことを 1 つ言う
+        /// （映像の出どころが分からない。直後の乗っ取りの警告「接続元不明」の先触れ）。
+        /// </summary>
+        [Test]
+        public void TheStuckReply_DropsTheReason_OnceItWasSaid()
+        {
+            foreach (ShowLang lang in ShowLanguage.All)
+            {
+                string[] full = CommsPanel.NoticeText(CommsNotice.MarkStuck, lang).Split('\n');
+                Assert.AreEqual(3, full.Length);
+                string brief = CommsPanel.BodyWithFinding(CommsNotice.MarkStuck, lang, "", stuckReasonAlreadySaid: true);
+                // 1 行目は同じ。2 行目は、まだ言っていないこと（出どころが分からない）を 1 つ言う。
+                Assert.AreEqual(full[0] + "\n" + CommsPanel.StuckFollowUpLine(lang), brief, ShowLanguage.Code(lang));
+                StringAssert.DoesNotContain(full[1], brief, "同じ理由を繰り返している");
+                Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkStuck, lang),
+                                CommsPanel.BodyWithFinding(CommsNotice.MarkStuck, lang, "", stuckReasonAlreadySaid: false));
+                // ほかの返事は変わらない。
+                Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkNothing, lang),
+                                CommsPanel.BodyWithFinding(CommsNotice.MarkNothing, lang, "", stuckReasonAlreadySaid: true));
+            }
+        }
+
+        /// <summary>
+        /// 句点の決まり（日本語）。話しかける連絡は句点で終わり、報告への返事（記録の行）は句点を持たない。
+        /// 返事で句点を持つのは、スイが記録の型を外れて話す 2 通だけ。
+        /// </summary>
+        [Test]
+        public void Notices_EndWithAFullStop_AndLogRepliesDoNot()
+        {
+            var logReplies = new System.Collections.Generic.HashSet<CommsNotice>
+            {
+                CommsNotice.MarkLogged, CommsNotice.MarkStuck, CommsNotice.MarkNothing, CommsNotice.Takeover,
+            };
+            foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
+            {
+                string body = CommsPanel.NoticeText(n, ShowLang.Ja);
+                if (string.IsNullOrEmpty(body)) continue;
+                char last = body[body.Length - 1];
+                if (logReplies.Contains(n))
+                    Assert.AreNotEqual('。', last, $"{n}: 返事（記録の行）に句点がある");
+                else
+                    Assert.IsTrue(last == '。' || last == '！' || last == '」', $"{n}:「{body}」が句点で終わっていない");
+            }
+            foreach (string takeId in CommsPanel.FindingTakeIds)
+            {
+                string? f = CommsPanel.FindingLine(takeId, ShowLang.Ja);
+                StringAssert.DoesNotContain("。", f!, $"{takeId}: 解析の行に句点がある（返事は記録の行）");
+            }
+            Assert.AreNotEqual('。', CommsPanel.TakeoverLieText(ShowLang.Ja)[CommsPanel.TakeoverLieText(ShowLang.Ja).Length - 1]);
+        }
+
+        /// <summary>
+        /// スイの動詞は、乗っ取りの警告が画面に出す語と同じ（「遮断を執行」「遮断失敗」）。
+        /// 毎回の返事で通っていたことが、乗っ取りで初めて通らず、締めの報告でもう一度通る。
+        /// ⚠ 警告の文言は <c>UnauthorizedAccessEffect</c> が持つ。あちらを変えたらここも見る。
+        /// </summary>
+        [Test]
+        public void SuiBlocks_WithTheSameWordAsTheTakeoverWarning()
+        {
+            foreach (CommsNotice n in new[] { CommsNotice.TutorialReminder, CommsNotice.MarkLogged,
+                                              CommsNotice.MarkStuck, CommsNotice.Prompt, CommsNotice.MarkCleared })
+                StringAssert.Contains("遮断", CommsPanel.NoticeText(n, ShowLang.Ja), n.ToString());
+            foreach (string body in CommsPanel.AllBodies(ShowLang.Ja))
+                StringAssert.DoesNotContain("取り除", body, "古い動詞が残っている");
+        }
+
+        /// <summary>
+        /// ⓪c が「カメラ」と言い、報告で消せない返事が「カメラの映像ではありません」と言う。
+        /// 同じ語なので、2 通目は 1 通目の裏返しとして読める（装置が繋いだ先ではない所から、映像が来ている）。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "カメラ")]
+        [TestCase(ShowLang.En, "camera")]
+        [TestCase(ShowLang.Fr, "caméra")]
+        public void TheCameraIsNamedOnArrival_AndDeniedInTheDollView(ShowLang lang, string camera)
+        {
+            StringAssert.Contains(camera, CommsPanel.NoticeText(CommsNotice.Arrived, lang));
+            StringAssert.Contains(camera, CommsPanel.NoticeText(CommsNotice.MarkStuck, lang));
+        }
+
+        /// <summary>
+        /// 締めの報告が通った返事は、約束と同じ語（異常・遮断）で果たし、戻ってきたことを言う。
+        /// 結果画面の題は「帰還End」。
+        /// </summary>
+        [TestCase(ShowLang.Ja, "異常を遮断しました。\nおかえりなさい。")]
+        [TestCase(ShowLang.En, "The anomaly is blocked.\nWelcome back.")]
+        [TestCase(ShowLang.Fr, "Anomalie bloquée.\nBon retour parmi nous.")]
+        public void TheClosingReply_WelcomesTheVisitorBack(ShowLang lang, string text)
+        {
+            Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.MarkCleared, lang));
+        }
+
+        // ⑤ 別れの一言。<b>引用だけ</b>。スイの地の文（誰の声か・解析が済んだ・あの子が言っている）を付けない。
+        // 説明の文を 5 通り試して、5 通りとも初見の読み手に「白けた・唐突・説明的」と書かれた。
+        // 引用は 2 周目 C で聞いた声の言い直しではなく、去っていく人形がいま言っている言葉（「また、」）。
         // ⚠ シュビーの案で未判定（canon/OPEN.md）。文面を変えたら menu hud-font で焼き直す。
-        [TestCase(ShowLang.Ja, "解析が完了しました。\n記録に残っていた声です。\n「あーそぼー」")]
-        [TestCase(ShowLang.En, "Analysis complete.\nThe voice that remained:\n“Come and play.”")]
-        [TestCase(ShowLang.Fr, "Analyse terminée.\nLa voix qui est restée :\n« Viens jouer. »")]
-        public void FarewellFinding_ReadsBackTheOnlyWordsTheAnomalyLeft(ShowLang lang, string text)
+        [TestCase(ShowLang.Ja, "「また、あーそぼー」", "また")]
+        [TestCase(ShowLang.En, "“Come and play again.”", "again")]
+        [TestCase(ShowLang.Fr, "« Reviens jouer. »", "Reviens")]
+        public void FarewellFinding_QuotesWhatTheDollSaysAsItLeaves(ShowLang lang, string text, string again)
         {
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.FarewellFinding, lang));
             string[] lines = text.Split('\n');
-            Assert.AreEqual(3, lines.Length, "3 行（面の帯の上限）");
+            Assert.AreEqual(1, lines.Length, "引用の 1 行だけ（スイの地の文を付けない）");
+            string quote = lines[0];
+            // 聞いた声の言い直しにしない。「また」が無いと、締めに新しいことが 1 つも無い。
+            StringAssert.Contains(again, quote);
             // 3 行目は引用だけ。スイの判定（検出・敵意・detected・détecté）を足さない —
             // 乗っ取られた装置の判定は、体験者に信じてもらえない。
             foreach (string verdict in new[] { "検出", "敵意", "detect", "hostil", "détect" })
                 StringAssert.DoesNotContain(verdict, text, $"⑤に判定の語「{verdict}」が入っている");
-            // 「声」と言う（「言葉」ではない）。何をいつ記録していたのかが、ここでしか分からない —
-            // 2 周目 C で背後から聞こえた音と結びつけるための 1 語（2026-11-13）。
-            bool saysVoice = false;
-            foreach (string voice in new[] { "声", "voice", "voix" })
-                saysVoice |= text.Contains(voice);
-            Assert.IsTrue(saysVoice, "⑤が「声」と言っていない（体験者が自分の耳で聞いたものに繋がらない）");
-            char open = lines[2][0], close = lines[2][lines[2].Length - 1];
+            // 記録の口調へ戻らない・誰の声かを説明しない。去っていく人形とオルゴールの場面で、どちらも読み手が冷めた。
+            foreach (string log in new[] { "解析", "調査対象", "0514", "声", "あの子", "言って",
+                                           "nalys", "subject", "objet", "voice", "voix", "child", "enfant" })
+                StringAssert.DoesNotContain(log, text, $"⑤にスイの地の文（{log}）が入っている");
+            char open = quote[0], close = quote[quote.Length - 1];
             Assert.IsTrue((open == '「' && close == '」') || (open == '“' && close == '”') || (open == '«' && close == '»'),
-                          $"3 行目「{lines[2]}」が引用の形になっていない");
+                          $"最後の行「{quote}」が引用の形になっていない");
         }
 
         /// <summary>
@@ -360,9 +624,14 @@ namespace FixedCamVr.Diagnostics.Tests
         {
             foreach ((ShowLang lang, CommsNotice notice, string t) in AllNotices())
                 yield return (lang, t);
-            // 嘘の書き換え先（0232）も画へ出る文面。
+            // 嘘の書き換え先（0232）・3 周目の嘘・解析の中身つきの返事も画へ出る文面。
             foreach (ShowLang lang in ShowLanguage.All)
+            {
                 yield return (lang, CommsPanel.TakeoverLieText(lang));
+                yield return (lang, CommsPanel.ThirdLapLieText(lang));
+                foreach (string takeId in CommsPanel.FindingTakeIds)
+                    yield return (lang, CommsPanel.BodyWithFinding(CommsNotice.MarkLogged, lang, takeId));
+            }
         }
 
         [Test]

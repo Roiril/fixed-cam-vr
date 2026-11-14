@@ -37,43 +37,34 @@ namespace FixedCamVr.Streaming
         /// </summary>
         Walk,
         /// <summary>
-        /// ⓪c <b>円へ着いて導入演出が始まった瞬間</b>（2026-08-17・ユーザー指定
-        /// 「演出が始まったら『ポイントに到着しました。観測装置を起動します』とエージェントに言わせよう。
-        /// 演出は長いから、エージェントスクリーンが出るのと演出開始は同時でいい」）。
+        /// ⓪c <b>円へ着いて導入演出が始まった瞬間</b>。到着を告げ、室内カメラへ接続すると言う
+        /// （直後にテレビが点いてカメラの映像が来る）。文面は <c>CommsPanel</c>。
         /// ⚠ <b>段 0 を抜けた縁で出す</b>ので、⓪b（歩行の指示）が出ていればそれを押しのけて上書きする。
         /// </summary>
         Arrived,
         /// <summary>
-        /// ①b <b>①「異変を見つけたら…」を読ませ終わった縁</b>。「調査を開始してください。」
-        ///
-        /// ⚠⚠ <b>2026-09-06 に①b へ回った</b>（<c>canon/LEDGER.md</c> 0174・ユーザー指定
-        /// 「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆にしよう」）。
-        /// それまでは本編に入った直後の 1 通目だった（0097）。
-        /// ⚠ 名前は <c>Begin</c> のまま — <b>順番ではなく文面の名前</b>で、
-        /// 走行ログ（<c>ev=comms id=</c>）と解析器がこの綴りで繋がっている。
+        /// ① <b>導入が明けて、映像だけになった直後</b>の開始の合図。一周目だと告げ、手すりを持って廻り始めるよう言う。
+        /// 周の節目を告げる 3 通（これ・<see cref="SecondLap"/>・<see cref="ThirdLap"/>）の 1 通目。文面は <c>CommsPanel</c>。
+        /// ⚠ 名前は <c>Begin</c> のまま — 走行ログ（<c>ev=comms id=</c>）と解析器がこの綴りで繋がっている。
         /// </summary>
         Begin,
         /// <summary>
-        /// ① <b>導入が明けて、映像だけになった直後</b>。「異変を見つけたら／ボタンを長押ししてください／
-        /// 装置が解析して対処を試みます」（2026-08-19・<c>canon/LEDGER.md</c> 0097・ユーザー指定
-        /// 「調査を開始してください→異変をみつけたら〜と、表示は時間的に分けて。その間を切り詰める」）。
-        ///
-        /// ⚠⚠ <b>2026-09-06 に 1 通目へ回った</b>（<c>canon/LEDGER.md</c> 0174・ユーザー指定
-        /// 「調査を開始してくださいと、異変を見つけたらボタンを長押ししてくださいの順番を逆にしよう」）。
-        /// ⚠ 名前は <c>BeginHow</c> のまま — <b>順番ではなく文面の名前</b>で、
-        /// 走行ログ（<c>ev=comms id=</c>）と解析器がこの綴りで繋がっている。
-        ///
-        /// ⚠ <b>1 通に戻さない。</b> 4 行を一度に出すと、読み手は「押し方の説明」と「開始の合図」を
-        /// 同時に読むことになる。分けたぶんは<b>間を 0 にして同じ面のまま繋ぐ</b>ので、
-        /// 画としては「文面が入れ替わる」1 続きに見える。
+        /// 押し方と、押すと何が起きるか。<b>本編では出さない</b>（導入の練習で実際に押させ、
+        /// <see cref="TutorialReminder"/> が同じことを言う。<see cref="ResetRun"/> が出し済みにする）。
+        /// 導入を持たない設定のために文面だけ残してある。
+        /// ⚠ 名前は <c>BeginHow</c> のまま — 走行ログ（<c>ev=comms id=</c>）と解析器がこの綴りで繋がっている。
         /// </summary>
         BeginHow,
         /// <summary>
-        /// ② 報告時に異常演出が表示されていて、<b>報告で消せる演出だった</b>。「異常を検出しました／取り除きます」。
+        /// ② 報告時に異常演出が表示されていて、<b>報告で消せる演出だった</b>。検出したことと、遮断することを返す。
+        /// どの演出への報告かが分かれば、あいだに解析の中身を 1 行挟む（<c>CommsPanel.FindingLine</c>）。
         /// 消せない演出への報告は <see cref="MarkStuck"/>。
         /// </summary>
         MarkLogged,
-        /// <summary>② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。「異状は検出されませんでした」。侵食度 0.75 未満だけ。</summary>
+        /// <summary>
+        /// ② 報告した瞬間、<b>演出が 1 本も走っていなかった</b>。侵食度 0.75 未満だけ。
+        /// 文面は乗っ取り後の赤い嘘（<c>CommsPanel.TakeoverLieText</c>）と 1 字も違わない。
+        /// </summary>
         MarkNothing,
         /// <summary>
         /// ② 侵食度 0.75 以上で、報告した瞬間に演出が走っていなかった。判定を持たない一文「解析が、終わりません。」
@@ -82,42 +73,38 @@ namespace FixedCamVr.Streaming
         /// </summary>
         MarkAnalyzing,
         /// <summary>
-        /// 侵食度 1 の嘘の一文。**ラン 1 回に 1 度だけ**。読ませる段は<b>当たりの報告の返事そのもの</b>
-        /// 「異常を検出しました」で、前線が行を渡り切ったコマに<b>その最小編集</b>「異常を検出しませんでした」
-        /// （<c>CommsPanel.TakeoverLieText</c>）へ書き換わる（<c>canon/LEDGER.md</c> 0232）。
-        /// 出し方は <see cref="CommsDelivery.Possessed"/>（0230 / 0231）— 一気に出て、読ませて、上から乱れとともに塗り替わる。
+        /// 乗っ取りの一文。**ラン 1 回に 1 度だけ**。読ませる段は<b>当たりの報告の返事の 1 行目そのもの</b>で、
+        /// 前線が行を渡り切ったコマに、空振りの返事と同じ文（<c>CommsPanel.TakeoverLieText</c>）へ書き換わる
+        /// （<c>canon/LEDGER.md</c> 0232）。
+        /// 出し方は <see cref="CommsDelivery.Possessed"/>（0230 / 0231）— 一気に出て、読ませて、乱れとともに塗り替わる。
         /// </summary>
         Takeover,
         /// <summary>
-        /// ③a <b>4 周目 A の締めで、押さないまま時間が過ぎた最初の一言</b>「止まってください！」
-        /// （2026-09-06・<c>canon/LEDGER.md</c> 0168・ユーザー指定
-        /// 「"止まってください！"を短くその前に差し込む」「カタカタ音無しにすっと出てくる感じで」）。
+        /// ③a <b>最後の A の締めで、線を踏むか 3 秒が過ぎた最初の一言</b>。止まれと言い、何を止めるのか（廻ること）を言う。
+        /// 文面は <c>CommsPanel</c>。
         ///
         /// ⚠⚠ <b>これだけは打たない</b>（<see cref="CommsDelivery.Fade"/>）。
         /// 1 字ずつ印字している間も惜しい、という一言なので、<b>文面ごとすっと浮かんで
         /// 打鍵は 1 発も鳴らない</b>。<c>rules/sound-design.md</c> の「1 文字 1 発」の唯一の例外。
+        /// ⚠ 画に居るのは 1.8 秒ほど。文面を長くしない（<c>CommsNoticeTextTests.TheStopCall_SaysWhatToStop_AndIsShort</c>）。
         /// ⚠ 読ませ終わったら<b>同じ面のまま</b> <see cref="Prompt"/> へ替わる（枠は開いたまま・0096）。
         /// </summary>
         Halt,
         /// <summary>
-        /// ③b <see cref="Halt"/> を読ませ終わった縁。
-        /// 「異常があなたと私を取り込もうとしています。報告を。私が取り除きます。」
-        /// 導入の約束（<see cref="TutorialReminder"/>「私が解析し、取り除きます」）をここで言い直す。
+        /// ③b <see cref="Halt"/> を読ませ終わった縁。止まる理由（廻り続ければ、体験者もスイも人形になる）と、
+        /// 報告すればスイが遮断することを言う。導入の約束（<see cref="TutorialReminder"/>）の言い直し。文面は <c>CommsPanel</c>。
         /// </summary>
         Prompt,
         /// <summary>
-        /// ④ 4 周目 A の締めの報告が通って<b>呪いが解けた</b>ときの返事「異変を取り除きました。お疲れ様です。」
-        /// （2026-10-21・<c>canon/LEDGER.md</c> 0284。それまでは②の「異常を検出しました」をそのまま返していて急だった）。
+        /// ④ 最後の A の締めの報告が通って<b>呪いが解けた</b>ときの返事（遮断したこと・おかえりなさい）。
+        /// （2026-10-21・<c>canon/LEDGER.md</c> 0284。それまでは②の返事をそのまま返していて急だった）。
         /// 選ぶのは <c>CommsPanel.Deliver</c>（②a が届いた同じフレームに呪いが解けていれば差し替える）。
         /// ⚠ 侵食度 1 のままでも出方はスイの通常の印字（<see cref="CommsDelivery.Typed"/>）。
         /// </summary>
         MarkCleared,
         /// <summary>
-        /// ⑤ 帰還の別れで、<b>人形が後ろを向き始めた縁</b>に 1 度だけ出す解析の結果
-        /// 「解析が完了しました。記録に残った声は、一つです。「あーそぼー」」。
-        /// 伏線を 1 つだけ回収する（<c>canon/LEDGER.md</c> 0322）。
-        /// 中身は 0036（人形は「来た人とただ一緒に遊びたかった」）。判定も内面の推測も言わず、
-        /// 2 周目 C で聞こえた相手の言葉（0109）を読み上げるだけにする。
+        /// ⑤ 帰還の別れで、<b>人形が後ろを向き始めた縁</b>に 1 度だけ出す別れの一言。
+        /// 去っていく人形がいま言っていることを、スイが引用で伝える（判定も内面の推測も言わない）。文面は <c>CommsPanel</c>。
         /// ⚠ <b>この文はシュビーの案で、ユーザーの判定はまだ無い</b>
         /// （<c>canon/OPEN.md</c>）。外すときは <see cref="CommsCueLogic.Tick"/> の 1 か所を止める。
         /// 出方は <see cref="CommsDelivery.Fade"/>（オルゴールが鳴っている場面なので打鍵を鳴らさない）。
@@ -126,17 +113,37 @@ namespace FixedCamVr.Streaming
         FarewellFinding,
         /// <summary>
         /// ② 報告時に異常演出が表示されていたが、<b>報告では消せない演出だった</b>
-        /// （乗っ取りの前の 2 周目 C の人形視点など）。「異常を検出しました／取り除けません」。
-        /// 消せなかったのに「取り除きます」と返すと、乗っ取りの前にスイが嘘をつくことになる。
+        /// （乗っ取りの前の 2 周目 C の人形視点など）。検出したこと・室内カメラの映像ではないこと・遮断できないことを返す。
+        /// 消せなかったのに「遮断します」と返すと、乗っ取りの前にスイが嘘をつくことになる。
+        /// 同じ理由を既に言っていれば（<see cref="CommsCueLogic.StuckReasonAlreadySaid"/>）、面は別の 1 行を返す。
         /// ⚠ 末尾に足してある（<see cref="CommsCueLogic.IsOnboarding"/> は並びの範囲で判定する）。
         /// </summary>
         MarkStuck,
         /// <summary>
-        /// 区間の周が 2 に入った後、面が空いた縁に 1 度だけ出す。「二周目です。一周目より、対象が近づいています。」
-        /// 博士の「廻るほど、近づいてきます」を体験の中で言い直す。乗っ取りが始まった後には出さない。
+        /// 区間の周が 2 に入った後、面が空いた縁に 1 度だけ出す。二周目だと告げ、廻るたびに異常が強まっているようだと言う。
+        /// 人形の視点が始まった後には出さない。文面は <c>CommsPanel</c>。
         /// ⚠ シュビーの案で、ユーザーの判定はまだ無い（<c>canon/OPEN.md</c>）。
         /// </summary>
         SecondLap,
+        /// <summary>
+        /// 区間の周が 3 に入った後、面が空いた縁に 1 度だけ出す。周の節目を告げる 3 通目
+        /// （一周目 ＝ <see cref="Begin"/>・二周目 ＝ <see cref="SecondLap"/>）。
+        /// <b>乗っ取りの後は人形の顔と赤い字で、同じ型の嘘が出る</b>（<c>CommsPanel.CursedBodyFor</c>）—
+        /// 「異常はありません。そのまま、廻ってください。」。スイ自身の「廻り始めてください」の真似で、
+        /// 締めの「止まってください！」と「廻り続ければ…取り込みます」が打ち消す。
+        /// 乗っ取りが起きなかった走行では、スイのまま正直な文が出る。
+        /// ⚠ シュビーの案で、ユーザーの判定はまだ無い（<c>canon/OPEN.md</c>）。
+        /// </summary>
+        ThirdLap,
+        /// <summary>
+        /// 2 周目 C で人形の視点の映像が混ざり始めた後、面が空いた縁に 1 度だけ、<b>スイが報告を待たずに</b>出す警告。
+        /// 「室内カメラ以外の映像が、混ざっています。遮断できません。」
+        /// 同じことは報告の返事（<see cref="MarkStuck"/>）も言うが、あちらは報告した人しか読まない。
+        /// これが無いと、報告しなかった人には乗っ取りの「遮断失敗」が前触れなしに来る。
+        /// 先に <see cref="MarkStuck"/> を返していれば出さない（同じことを 2 度言わない）。
+        /// ⚠ シュビーの案で、ユーザーの判定はまだ無い（<c>canon/OPEN.md</c>）。
+        /// </summary>
+        ForeignFeed,
     }
 
     /// <summary>
@@ -242,6 +249,15 @@ namespace FixedCamVr.Streaming
 
         /// <summary>区間の周が 2 に居るか（<c>TimelineDirector.SegmentLap == 2</c>）。<see cref="CommsNotice.SecondLap"/> の材料。</summary>
         public bool secondLap;
+
+        /// <summary>区間の周が 3 に居るか（<c>TimelineDirector.SegmentLap == 3</c>）。<see cref="CommsNotice.ThirdLap"/> の材料。</summary>
+        public bool thirdLap;
+
+        /// <summary>
+        /// 人形の視点の映像が 1 度でも画に出たか（通信画面の侵食度が 0 を超えた）。<see cref="CommsNotice.ForeignFeed"/> の材料。
+        /// ⚠ <see cref="invasionProgress"/> とは別に持つ。侵食度だけを入れて回す既存の検証が、警告を拾わないようにする。
+        /// </summary>
+        public bool dollViewStarted;
 
         /// <summary>
         /// 通信画面の侵食度。0 / 0.25 / 0.75 / 1 の段階値で、1 のあいだは
@@ -365,6 +381,8 @@ namespace FixedCamVr.Streaming
         private bool _takeoverDelivered;
         private bool _farewellFindingFired;
         private bool _secondLapFired;
+        private bool _thirdLapFired;
+        private bool _foreignFeedFired;
 
         public bool TakeoverDelivered => _takeoverDelivered;
 
@@ -373,6 +391,18 @@ namespace FixedCamVr.Streaming
 
         /// <summary>2 周目の連絡を出したか（診断・テスト用）。</summary>
         public bool SecondLapFired => _secondLapFired;
+
+        /// <summary>人形の視点の映像への警告を出した（か、同じ中身の返事を返した）か（診断・テスト用）。</summary>
+        public bool ForeignFeedFired => _foreignFeedFired;
+
+        /// <summary>
+        /// 直近の <see cref="CommsNotice.MarkStuck"/> を返した時点で、理由（室内カメラの映像ではない）を
+        /// 既に 1 度言っていたか。立っていれば面は理由の代わりに別の 1 行を返す（警告の直後に同じ文を繰り返すと、くどい）。
+        /// </summary>
+        public bool StuckReasonAlreadySaid { get; private set; }
+
+        /// <summary>3 周目の連絡を出したか（診断・テスト用）。</summary>
+        public bool ThirdLapFired => _thirdLapFired;
 
         /// <summary>Update 順序によらず、追いつき完了から強制表示までの入力も止める。</summary>
         public bool HasPendingTakeover(int completedCount)
@@ -407,12 +437,15 @@ namespace FixedCamVr.Streaming
             _takeoverDelivered = false;
             _farewellFindingFired = false;
             _secondLapFired = false;
+            _thirdLapFired = false;
+            _foreignFeedFired = false;
+            StuckReasonAlreadySaid = false;
         }
 
-        /// <summary>①b（開始の合図「調査を開始してください。」）まで出したか（診断・テスト用）。</summary>
+        /// <summary>開始の合図（<see cref="CommsNotice.Begin"/>）まで出したか（診断・テスト用）。</summary>
         public bool BeginFired => _beginFired;
 
-        /// <summary>①（押し方「異変を見つけたら…」）を出したか（診断・テスト用）。</summary>
+        /// <summary>押し方（<see cref="CommsNotice.BeginHow"/>）を出したか（診断・テスト用）。</summary>
         public bool BeginHowFired => _beginHowFired;
 
         /// <summary>③a（止まってください！）を出したか（診断・テスト用）。</summary>
@@ -547,8 +580,16 @@ namespace FixedCamVr.Streaming
             if (inp.markPressed && !closingLocked)
             {
                 // 嘘の一文が出ている最中の再報告は頭へ戻さない（1 回だけ・最後まで見せる）。
-                // 消せる演出なら「取り除きます」、消せない演出なら「取り除けません」。
-                if (inp.markDetected) return inp.markStuck ? CommsNotice.MarkStuck : CommsNotice.MarkLogged;
+                // 消せる演出なら「遮断します」、消せない演出なら「遮断できません」。
+                if (inp.markDetected)
+                {
+                    if (!inp.markStuck) return CommsNotice.MarkLogged;
+                    // 理由（室内カメラの映像ではない）を既に言っていれば、返事は結果だけにする（面が `StuckReasonAlreadySaid` を読む）。
+                    // ここで理由を言うなら、頼まれずに出す警告はもう要らない。
+                    StuckReasonAlreadySaid = _foreignFeedFired;
+                    _foreignFeedFired = true;
+                    return CommsNotice.MarkStuck;
+                }
                 // 0232: 乗っ取られた装置（侵食度 0.75 以上）は正直に「異常なし」を言わない — 判定を持たない一文へ。
                 return inp.invasionProgress >= CommsCurseLogic.PossessedLevel
                     ? CommsNotice.MarkAnalyzing : CommsNotice.MarkNothing;
@@ -564,6 +605,23 @@ namespace FixedCamVr.Streaming
             {
                 _secondLapFired = true;
                 return CommsNotice.SecondLap;
+            }
+            // 人形の視点の映像が混ざり始めたら、報告を待たずに 1 度だけ警告する。
+            // ⚠ 消費しない — 面が空くまで待つ。乗っ取りが先に来たら出さない（乗っ取りの後は嘘しか出ない）。
+            // ⚠ 侵食度 1（3 周目の録画と人形）では出さない。そこで混ざっているのは人形の視点ではない。
+            if (!_foreignFeedFired && _beginFired && inp.dollViewStarted && inp.panelDoneReading
+                && !_takeoverDelivered && inp.invasionProgress < 1f && inp.closingSec < 0f)
+            {
+                _foreignFeedFired = true;
+                return CommsNotice.ForeignFeed;
+            }
+            // 3 周目の連絡。乗っ取りの後なら赤い嘘として出る（出方は DeliveryOf と CommsPanel が決める）。
+            // ⚠ 消費しない — 乗っ取りや報告の返事に押しのけられたら、読ませ終わってから出す（3 周目のあいだだけ）。
+            // ⚠ 締めには出さない。③a「止まってください！」がこの嘘を打ち消す側なので、順序を逆にしない。
+            if (!_thirdLapFired && _beginFired && inp.thirdLap && inp.panelDoneReading && inp.closingSec < 0f)
+            {
+                _thirdLapFired = true;
+                return CommsNotice.ThirdLap;
             }
             return CommsNotice.None;
         }

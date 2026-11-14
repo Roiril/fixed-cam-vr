@@ -52,7 +52,7 @@ namespace FixedCamVr.Streaming.EditorTools
             // ⚠ 侵食中の空振りの返事。2026-11-13 まで一覧から漏れていて、**この文面だけ縦の座りを
             //    誰も見ていなかった**（同じ日に 1 行 → 2 行へ変えたので足した）。
             CommsNotice.MarkAnalyzing,
-            CommsNotice.SecondLap,
+            CommsNotice.SecondLap, CommsNotice.ForeignFeed, CommsNotice.ThirdLap,
             CommsNotice.Halt, CommsNotice.Prompt, CommsNotice.MarkCleared,
             CommsNotice.FarewellFinding,
         };
@@ -235,6 +235,30 @@ namespace FixedCamVr.Streaming.EditorTools
                         Shoot(cam, Path.Combine(dir, $"notice_{notice}{suffix}.png"));
                     }
 
+                }
+                // ---- 乗っ取りの後の 3 周目の頭（人形の顔 ＋ 赤い字の 3 行の嘘）----
+                // ⚠ 上の一覧では撮れない。乗っ取りが届く前の連絡は、侵食度に関わらず通常のスイで出るため
+                //    （`CommsPanel.Deliver`）。赤い字で 3 行を出すのはこの 1 通だけなので、縦の座りはここでしか見られない。
+                {
+                    object? takenCue = typeof(CommsPanel).GetField("_cue",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(panel);
+                    if (takenCue is CommsCueLogic cueLogic)
+                    {
+                        Disable(logic);
+                        ApplyNow(apply, panel, logic);
+                        cueLogic.NotifyDelivered(CommsNotice.Takeover);
+                        SetLevelForPreview(panel, 1f, previewTime);
+                        panel.Deliver(CommsNotice.ThirdLap);
+                        PlaceStraightAhead(root, tmp, dist);
+                        // ⚠ 段ごとに刻む。1 回の大きな刻みでは、開く段を抜けた所で止まって字が出ていない絵になる。
+                        Step(logic, apply, panel, inSec);
+                        Step(logic, apply, panel, TypeSec(logic));
+                        Step(logic, apply, panel, 0.2f);
+                        Shoot(cam, Path.Combine(dir, "notice_ThirdLap_cursed.png"));
+                        cueLogic.ResetRun();
+                        Disable(logic);
+                        ApplyNow(apply, panel, logic);
+                    }
                 }
                 ShootReviewFrames(panel, logic, apply, root, tmp, cam, dir, dist, previewTime);
                 // コマ送りの動画は 1 周目の姿で撮る（壊れは静止画で見る）。

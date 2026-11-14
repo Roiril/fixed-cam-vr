@@ -31,7 +31,7 @@ paths:
 - 報告前の CG 人形の足が左半分（u<0.5）に入ると Trapped。③b を待たない — `EndingDecisionLogic.IsFootOnLeftHalf` / `TakeRunner.CanUseEndingDollFoot` 〔出典: memory/ending_roll.md〕
 - 報告と Trapped の条件が同じフレームに重なったら報告を優先する — `ReleasedReportWinsOverLeavingAndTimeoutInTheSameTick` 〔出典: memory/ending_result.md〕
 - 終幕の合図は、演出が走っているのを見た後、止まった縁で 1 回だけ出る。介入があれば武装を外す。落ちるのは `BeginRun` だけ — `EndingCueLogic` / `ResetRun_IsTheOnlyWayBack` 〔出典: show-design:930-940〕
-- 解除の時刻: 劣化は `ScreenDecayLogic.ReleaseSec`（0.5 秒）で戻り、入れ替わりは 2.6 秒で戻る。続いて④「異変を取り除きました。お疲れ様です。」が出る — `ScreenDecayLogic.ReleaseSec` / `CommsNotice.MarkCleared` 〔出典: show-design:946-958〕
+- 解除の時刻: 劣化は `ScreenDecayLogic.ReleaseSec`（0.5 秒）で戻り、入れ替わりは 2.6 秒で戻る。続いて④「異常を遮断しました。おかえりなさい。」が出る — `ScreenDecayLogic.ReleaseSec` / `CommsNotice.MarkCleared` 〔出典: show-design:946-958〕
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
 - 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空き、スイの面が閉じた縁に（面は最大 5 秒待つ）、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる最短 1.15（写真を待つ）→ 後ろを向く 0.75 → 下がって消える 6.0 秒（最後 4.5 秒で消える）。消え切ってから電源断 — `EndingFarewellLogic.NoticeWaitMaxSec` / `EndingFarewellDoll` 〔出典: LEDGER 0291・0293。尺は実装判断〕
 - 立ち位置は体験者がいま立っている所から人形の点だけ解く（`visitorFoot`）。頭と胸が枠の外なら L 字の内側の仮の点で人形だけ先に立てる。画の左が人形、右が体験者。カメラの intrinsics は変えない。解けなければ出さない。条件は memory/ending_farewell_doll.md — `TrySolveAtWall` 〔出典: LEDGER 0293。余白・許容値は実装判断〕

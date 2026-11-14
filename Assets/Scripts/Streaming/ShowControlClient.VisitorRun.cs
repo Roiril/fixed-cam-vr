@@ -217,7 +217,7 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// 直近の報告で、異常演出は画面に出ていたが<b>報告では消せない演出だった</b>か。
-        /// スイの返事が「取り除きます」（<c>MarkLogged</c>）と「取り除けません」（<c>MarkStuck</c>）に分かれる。
+        /// スイの返事が「遮断します」（<c>MarkLogged</c>）と「遮断できません」（<c>MarkStuck</c>）に分かれる。
         /// 消している最中の演出への押し直しは立てない（消せる演出なので）。<c>ev=mark stuck=</c>。
         /// </summary>
         public bool LastMarkStuck { get; private set; }

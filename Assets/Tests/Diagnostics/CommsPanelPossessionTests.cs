@@ -275,6 +275,30 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
+        public void ThirdLapAfterTheTakeover_ShowsItsOwnThreeLineRedLie()
+        {
+            // 乗っ取りの後の 3 周目の頭だけは、嘘の一文ではなく専用の 3 行の嘘が赤い字で出る。
+            _panel.SetDecayForPreview(1f, 0f);
+            int hits = _panel.TypedCount;
+            _panel.Deliver(CommsNotice.ThirdLap);
+            Assert.AreEqual(CommsDelivery.Cursed, _logic.Delivery);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
+            string lie = CommsPanel.ThirdLapLieText(ShowLanguage.Current);
+            Assert.AreEqual(lie, LieText().text);
+            Assert.AreEqual(3, LieText().textInfo.lineCount, "3 行とも組まれている");
+            Assert.Greater(_panel.LieChars, 0);
+            Assert.AreEqual(VisibleCount(LieText()), _panel.LieChars, "3 行とも全字が出ている");
+            Assert.AreEqual(hits, _panel.TypedCount, "打鍵は鳴らない");
+            Assert.AreEqual(1f, _panel.AppliedFaceMix, "人形の顔");
+
+            // 続く報告の返事は、いつもの嘘の一文へ戻る（専用の嘘を引きずらない）。
+            Advance(5f);
+            _panel.Deliver(CommsNotice.MarkNothing);
+            Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
+            Assert.AreEqual(CommsPanel.TakeoverLieText(ShowLanguage.Current), LieText().text);
+        }
+
+        [Test]
         public void CursedReplyStartsAsTheRedLieWithoutSweepOrKeystrokes()
         {
             _panel.SetDecayForPreview(CommsCurseLogic.PossessedLevel, 0f);
@@ -320,10 +344,10 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.Greater(_panel.NoticeChars, 0);
             Assert.AreEqual(0f, _panel.AppliedCurse, 1e-5f);
             Assert.AreEqual(0f, _panel.AppliedFaceMix, 1e-5f);
-            // 0284: 呪いが解けた報告の返事は「検出しました」ではなく「取り除きました。お疲れ様です。」
+            // 0284: 呪いが解けた報告の返事は「検出しました」ではなく「遮断しました。おかえりなさい。」
             Assert.AreEqual(CommsNotice.MarkCleared, _panel.LastNotice);
             Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkCleared, ShowLang.Ja), Text().text);
-            Assert.AreEqual("異変を取り除きました。\nお疲れ様です。", Text().text);
+            Assert.AreEqual("異常を遮断しました。\nおかえりなさい。", Text().text);
         }
 
         [Test]
