@@ -55,6 +55,7 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost, IXp
     private const float HardLimitSec = 540f;
     private const float ReportHoldSec = 1.2f;    // VisitorMarkHoldLogic.DefaultHoldSec（1 秒）より少し長く
     private const float ExtraMarkDelaySec = 2.5f; // 区間に入ってから押すまで。入った瞬間の異変が見えてから押す人の間
+    private const float LateMarkDelaySec = 9.2f;  // 区間名の後ろに L（例 3BL）。録画のカットが終わって人形のカットへ替わった後に押す
     private const float TitleReadSec = 3f;
     private const float TitleTapSec = 0.2f;
     private const float OnboardingLimitSec = 90f;
@@ -510,9 +511,23 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost, IXp
             _markSegSince = now;
             return;
         }
-        if (!_markAt.Contains(seg) || _markDone.Contains(seg) || ReportPressing) return;
-        if (now - _markSegSince < ExtraMarkDelaySec || _show.IsVisitorMarkBlocked || _show.IsMarkTooEarly) return;
-        _markDone.Add(seg);
+        if (ReportPressing || _show.IsVisitorMarkBlocked || _show.IsMarkTooEarly) return;
+        // 区間名だけ = 入って 2.5 秒後。後ろに L = 録画のカットの後。@N = 入って N 秒後（例 3A@11）。
+        float since = now - _markSegSince;
+        string hit = "";
+        foreach (string tok in _markAt)
+        {
+            if (!tok.StartsWith(seg, StringComparison.Ordinal) || _markDone.Contains(tok)) continue;
+            float delay = tok.Length == 2 ? ExtraMarkDelaySec
+                : tok[2] == 'L' ? LateMarkDelaySec
+                : tok[2] == '@' && float.TryParse(tok.Substring(3), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out float sec) ? sec : -1f;
+            if (delay < 0f || since < delay) continue;
+            hit = tok;
+            break;
+        }
+        if (hit.Length == 0) return;
+        _markDone.Add(hit);
         PressReport();
         Debug.Log($"[Twin] {seg} で左 X を長押しして報告する（区間に入って {now - _markSegSince:F1}s）");
     }

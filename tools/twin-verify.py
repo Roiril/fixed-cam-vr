@@ -188,7 +188,8 @@ def parse_marks(text: str) -> list[str]:
         s = raw.strip().upper().replace("-", "")
         if not s:
             continue
-        if len(s) != 2 or s[0] not in "123" or s[1] not in "ABC":
+        # 後ろの L は「遅く押す」（録画のカットの後・人形のカットで押す）。@N は区間に入って N 秒後（XpTwinDriver.TickExtraMarks）
+        if not re.fullmatch(r"[123][ABC](L|@\d+)?", s):
             raise SystemExit(f"--marks の区間が読めない: {raw!r}（1A〜3C）")
         out.append(s)
     return out
