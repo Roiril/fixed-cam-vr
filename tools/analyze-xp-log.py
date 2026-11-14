@@ -351,6 +351,10 @@ def expected_from_show(show: dict):
                 "steps": t.get("steps") or [],
             })
     exp["takes"] = takes
+    # 別の場所（C# の TakeRunner.OtherworldCuePrefix）を映すカット。(take の id, カットの番号)。
+    # 風の検査が「src=plate の step」を全部数えると、3 周目と最後の A の無人プレートまで入る。
+    exp["otherworldSteps"] = {(t["id"], i) for t in takes for i, s in enumerate(t["steps"])
+                              if str(s.get("cueId") or "").startswith("backrooms")}
     # 終幕の合図が指す演出は、旗が立っていても実機が落とす（畳むと終幕が早撃ちされる）。
     exp["outroAnchorId"] = ((run.get("outro") or {}).get("afterTakeId") or "").strip()
     # 締めの線（3 周目 A の凍結点）。線の有無にかかわらず最終 A 進入後の時計も動く。
@@ -2883,9 +2887,13 @@ def analyze(events, others, exp, warns=None):
             return hits
 
         # 異世界（バックルームズ）が映った回数は演出のカットから数える。
+        # 台本から「別の場所のカット」が分かるときは、そのカットだけを数える（無いときは従来どおり plate 全部）。
+        ow_keys = exp.get("otherworldSteps")
         otherworld_steps = [e for e in events if e.get("ev") == "step"
                             and str(e.get("src", "")) == "plate"
-                            and fnum(e, "played", 0.0) == 1.0]
+                            and fnum(e, "played", 0.0) == 1.0
+                            and (ow_keys is None
+                                 or (str(e.get("take", "")), int(fnum(e, "i", -1.0))) in ow_keys)]
         if wind:
             pk = _peak(wind)
             w(f"  別の場所の風: 最大 {pk:.2f}")
