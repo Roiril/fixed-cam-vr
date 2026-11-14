@@ -51,7 +51,7 @@ function setup(stage, reason = '', extra = {}) {
 // 新しい Quest が /status に載せる体の状態（VisitorPortalLogic の health）。
 function health(extra = {}) {
   return { paused: false, focusLost: false, worn: true, ctrlL: 'ok', battery: 80, exceptions: 0,
-    lastException: '', clockGaps: 0, cartKind: '', cartResult: '', ...extra };
+    lastException: '', clockGaps: 0, ...extra };
 }
 
 function resetState() {
@@ -209,9 +209,6 @@ const scenarios = {
   },
   exceptions() {
     status.health = health({ ...status.health, exceptions: (status.health?.exceptions || 0) + 2 });
-  },
-  'cart-fail'() {
-    status.health = health({ ...status.health, cartKind: 'go', cartResult: 'net' });
   },
   'camera-trouble'() {
     status.staffSetup = { ...status.staffSetup, cameras: cameras({ B: { state: 'trouble', problem: 'stale' } }) };

@@ -3659,7 +3659,7 @@ test('一時停止ボタンは予定された資料提示を取り消し読込�
 
 function runHealth(overrides = {}) {
   return { paused: false, focusLost: false, worn: true, ctrlL: 'ok', battery: 80, exceptions: 2,
-    lastException: '', clockGaps: 0, cartKind: '', cartResult: '', ...overrides };
+    lastException: '', clockGaps: 0, ...overrides };
 }
 
 function runSetup(overrides = {}) {
@@ -3830,33 +3830,30 @@ test('本編中の異常を名指しし、休止・固まり・不通の間は�
   const status = { ...clone(validStatus), questTick: 9,
     staffSetup: runSetup({ position: 'recenter',
       cameras: [{ id: 'A', state: 'ok' }, { id: 'B', state: 'trouble', problem: 'stale' }, { id: 'C', state: 'checking' }] }),
-    health: runHealth({ ctrlL: 'off', battery: 12, exceptions: 5, cartKind: 'go', cartResult: 'net' }) };
+    health: runHealth({ ctrlL: 'off', battery: 12, exceptions: 5 }) };
   const R = (overrides = {}) => runtime.staffRunProblems({ connection: 'online', status, stall: '', exceptionsBaseline: 3, ...overrides });
   const all = R();
   assert.equal(all.partial, false);
   assert.deepEqual(Array.from(all.list).map((problem) => [problem.key, problem.sound]), [
-    ['recenter', true], ['ctrlL', true], ['cameraB', true], ['battery', false], ['exceptions', false], ['cart', false]]);
+    ['recenter', true], ['ctrlL', true], ['cameraB', true], ['battery', false], ['exceptions', false]]);
   assert.deepEqual(Array.from(all.list).map((problem) => problem.text), [
     '位置の基準が変わりました（Quest を外した・ボタン長押し）。映像の人形や線がずれます。体験を中断してやり直し、位置を合わせ直す',
     '左コントローラーが切れています。電池と電源を確かめる（報告ができません）',
     'カメラ B の映像が来ていません。スマホ B の FixedCam Streamer を開き直す',
     'Quest の電池が少なくなっています（12%）。体験の後で充電する',
     'Quest で内部エラーが起きました（2 件）。画や進行がおかしければ体験を中断してやり直す',
-    '台車へ合図が届きませんでした（終幕で台車が動かない）',
   ]);
   const keys = (health, overrides) => {
     const saved = status.health;
     status.health = { ...saved, ...health };
     try { return Array.from(R(overrides).list).map((problem) => problem.key); } finally { status.health = saved; }
   };
-  assert.deepEqual(keys({ ctrlL: 'untracked', battery: -1, exceptions: 3, cartResult: 'pending' }), ['recenter', 'cameraB'],
-    'untracked・電池の不明・増えていない例外・待ちの台車は出さない');
-  assert.deepEqual(keys({ ctrlL: 'ok', battery: 16, exceptions: 3, cartResult: 'ok' }), ['recenter', 'cameraB']);
+  assert.deepEqual(keys({ ctrlL: 'untracked', battery: -1, exceptions: 3 }), ['recenter', 'cameraB'],
+    'untracked・電池の不明・増えていない例外は出さない');
+  assert.deepEqual(keys({ ctrlL: 'ok', battery: 16, exceptions: 3 }), ['recenter', 'cameraB']);
   assert.ok(keys({ battery: 15 }).includes('battery'));
   assert.ok(keys({ battery: 0 }).includes('battery'));
-  assert.ok(keys({ cartResult: 'timeout' }).includes('cart'), 'ok / pending / 空 以外の結果は届かなかったとする');
-  assert.ok(!keys({ cartResult: '' }).includes('cart'));
-  assert.ok(!keys({ cartKind: 'cut', cartResult: 'net' }).includes('cart'), '止める合図（cut）は対象外');
+  assert.ok(!keys({ cartKind: 'go', cartResult: 'net' }).includes('cart'), '台車は使わない（0291）。古い Quest が送っても出さない');
   assert.ok(!keys({}, { exceptionsBaseline: null }).includes('exceptions'), '本編開始の基準が無ければ数えない');
 
   const offline = R({ connection: 'offline' });

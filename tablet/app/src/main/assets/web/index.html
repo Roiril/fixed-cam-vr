@@ -476,6 +476,7 @@
   .staff-title { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: .02em; }
   .staff-target { display: flex; align-items: center; gap: 8px; margin: 0 0 0 auto; color: var(--staff-muted); font-size: 16px; }
   .staff-target-name { color: var(--staff-ink); font-weight: 600; }
+  .staff-pause { min-width: 0; min-height: 56px; padding: 10px 24px; font-size: 18px; }
   .staff-return { min-height: 48px; padding: 8px 18px; border: 1px solid var(--staff-line-strong); border-radius: 6px; background: transparent; color: var(--staff-ink); font-size: 16px; }
   .staff-cycle { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
   .staff-cycle li { display: flex; flex: 1 1 0; align-items: center; gap: 8px; min-width: 0; min-height: 40px; padding: 4px 12px; border-top: 3px solid var(--staff-line-strong); color: var(--staff-muted); font-size: 15px; white-space: nowrap; }
@@ -816,6 +817,7 @@
         <span id="staffTargetState">確認しています</span>
       </p>
       <button class="staff-return" id="staffDoneBtn" type="button" hidden>来場者の画面へ戻る</button>
+      <button class="staff-primary staff-pause" id="staffPauseBtn" type="button">展示を一時中止する</button>
     </header>
     <ol class="staff-cycle" id="staffCycle" aria-label="体験の一巡">
       <li id="staffCycle1"><b>1</b><span>準備</span></li>
@@ -932,11 +934,6 @@
           <p class="staff-help">別の受付と設定が混ざったときに使います。取り消すと装着前の確認も無効になります。来場者が言語とホラー軽減を選び直します。</p>
           <button class="staff-clear" id="clearBtn" type="button">未開始の設定を取り消す</button>
         </section>
-        <!-- 終幕の台車（Romi）の自動走行。中身は romi-panel.js が組む（台車の NVS を読み書きする） -->
-        <section class="staff-trouble-section romi-section" id="staffCart" aria-labelledby="staffCartTitle">
-          <h4 id="staffCartTitle">台車（Romi）の自動走行</h4>
-          <div id="romiPanel"></div>
-        </section>
       </div>
       <p class="staff-message staff-trouble-message" id="staffMessage" role="status" aria-live="polite"></p>
     </details>
@@ -951,7 +948,7 @@
 <script src="./signal-cut.js"></script>
 <script src="./tv-live.js"></script>
 <script src="./tablet-sound.js"></script>
-<script src="./romi-panel.js"></script>
+<script src="./pause-screen.js"></script>
 <script>
 (() => {
   'use strict';
@@ -3592,10 +3589,6 @@
       list.push({ key: 'exceptions', tone: 'trouble', sound: false,
         text: `Quest で内部エラーが起きました（${health.exceptions - input.exceptionsBaseline} 件）。画や進行がおかしければ体験を中断してやり直す` });
     }
-    if (health?.cartKind === 'go' && typeof health.cartResult === 'string'
-      && !['ok', 'pending', ''].includes(health.cartResult)) {
-      list.push({ key: 'cart', tone: 'trouble', sound: false, text: '台車へ合図が届きませんでした（終幕で台車が動かない）' });
-    }
     return { partial: false, list };
   }
 
@@ -4291,6 +4284,8 @@
       dialog.scrollTop = 0;
     }
     renderStaff();
+    // 展示の一時中止の画面は、後から開いたスタッフ画面より前に出し直す
+    globalThis.PauseScreen?.raise();
   }
 
   function closeStaffScreen() {
@@ -4846,6 +4841,7 @@
       && (state.briefing.controlsOpen || document.querySelector('.stage').classList.contains('is-equipment')),
     onShort: () => showStaffHoldHint(true),
   });
+  $('staffPauseBtn').addEventListener('click', () => globalThis.PauseScreen?.open());
   $('staffRetryBtn').addEventListener('click', () => {
     staffAction = retryQuestConnection();
     return staffAction;
