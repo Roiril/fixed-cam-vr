@@ -46,7 +46,13 @@ namespace FixedCamVr.Streaming
         private volatile int _received;   // POST /set を受けた累計（入力の累計。work-style §2-2）
         private int _rejected;   // 読めない本文を返した累計
         private string _model = "";
-        private string _ip = "";
+        // 背景の取り直し（10 秒ごと）が書き、メインが読む。DHCP の更新や網の付け直しで IP が替わっても、
+        //   起動時の 1 回だけでは古い IP を名乗り続け、タブレットの照合が通らなくなる。
+        private volatile string _ip = "";
+        private long _nextIpRefresh;
+        private int _ipRefreshing;
+        // タブレットの要求でリセットを走らせている間。新しいセッションは結果の ID と一緒に 1 度だけ出す。
+        private bool _resetInFlight;
         private TitleScreen? _title;
         private ShowRunDirector? _run;
         private StatusSnapshot _lastStatus;
@@ -222,7 +228,9 @@ namespace FixedCamVr.Streaming
                 _staffConfirmed = _staffConfirmedIssued = false;
                 _lastStaffResetId = _staffResetRejectedId = "";
                 VisitorPrefs.BeginVisitor();
-                RefreshStatus(force: true);
+                // タブレットの要求で走っているリセットは、要求の ID を書いてから出す（下の OnStaffResetFromThread）。
+                //   ここで出すと「新しいセッション・ID は空」が一瞬読まれ、タブレットが済んだリセットを失敗と読む。
+                if (!_resetInFlight) RefreshStatus(force: true);
             }
         }
         /// <summary>listen成功とは別の、実際のタブレット通信の年齢。</summary>
@@ -443,6 +451,25 @@ namespace FixedCamVr.Streaming
         /// </summary>
         private void AppendHealthJson(StringBuilder sb, long now)
         {
+            if (now >= _nextIpRefresh && Interlocked.Exchange(ref _ipRefreshing, 1) == 0)
+            {
+                _nextIpRefresh = now + Stopwatch.Frequency * 10;
+                // 網の列挙は機によって数 ms かかるので、90Hz の描画から外して取り直す。
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        string ip = FindLocalIPv4();
+                        string before = _ip;
+                        if (ip.Length > 0 && ip != before)
+                        {
+                            _ip = ip;
+                            if (before.Length > 0) UnityEngine.Debug.Log($"[VisitorPortal] この機の IP が替わった: {before} → {ip}");
+                        }
+                    }
+                    finally { Volatile.Write(ref _ipRefreshing, 0); }
+                });
+            }
             if (now >= _nextBattery)
             {
                 float level = SystemInfo.batteryLevel;   // 取れない機は -1
@@ -704,9 +731,15 @@ namespace FixedCamVr.Streaming
                 {
                     if (session != _portalSessionId) return;
                     _staffResetProcessed = Math.Max(_staffResetProcessed, reset);
-                    if (settingsSeq != Volatile.Read(ref _seqIssued) || StaffResetProvider == null || !StaffResetProvider())
-                        _staffResetRejectedId = requestId;
-                    else _lastStaffResetId = requestId;
+                    bool done = false;
+                    _resetInFlight = true;
+                    try
+                    {
+                        done = settingsSeq == Volatile.Read(ref _seqIssued) && StaffResetProvider != null && StaffResetProvider();
+                    }
+                    catch (Exception e) { UnityEngine.Debug.LogException(e); }
+                    finally { _resetInFlight = false; }
+                    PublishStaffResetResult(requestId, done);
                 });
             }
         }
@@ -722,12 +755,24 @@ namespace FixedCamVr.Streaming
                     if (session != _portalSessionId) return;
                     _staffResetProcessed = Math.Max(_staffResetProcessed, reset);
                     bool done = false;
+                    _resetInFlight = true;
                     try { done = ForceResetProvider != null && ForceResetProvider(); }
                     catch (Exception e) { UnityEngine.Debug.LogException(e); }
-                    if (done) _lastStaffResetId = requestId; else _staffResetRejectedId = requestId;
+                    finally { _resetInFlight = false; }
+                    PublishStaffResetResult(requestId, done);
                     UnityEngine.Debug.Log($"[VisitorPortal] 強制リセット {(done ? "実行" : "拒否")} id={requestId}");
                 });
             }
+        }
+
+        /// <summary>
+        /// リセットの結果をセッションと同時に出す。済めば <c>staffResetId</c>、断れば <c>staffResetRejectedId</c>。
+        /// リセットの途中でセッションが替わっていても、どちらか片方だけを持った状態で 1 度だけ出す。
+        /// </summary>
+        private void PublishStaffResetResult(string requestId, bool done)
+        {
+            if (done) _lastStaffResetId = requestId; else _staffResetRejectedId = requestId;
+            RefreshStatus(force: true);
         }
 
         private void OnClearFromThread() => QueueClearFromThread(-1);

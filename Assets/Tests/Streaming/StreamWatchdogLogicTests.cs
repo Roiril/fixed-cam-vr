@@ -405,5 +405,170 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(w.EndTick(t, 0.016f, 0f), Is.EqualTo(Reason.None), $"t={t}");
             }
         }
+
+        // ---- 表示中の早い stall（DisplayedStallReconnectSec）-------------------------------
+        //
+        // 表示中のカメラが止まると、体験者は止まった画を 10 秒見続けていた。
+        // 表示中で、いまの接続が 1 枚でも届けた後に黙ったときだけ 2.5 秒で張り直す。
+        // 背景・まだ 1 枚も届けていない接続・熱降格中は 10 秒のまま。
+
+        private const float LastDecode = 10f;
+
+        // 接続を確立し、その接続で 1 枚展開した stream（最終展開 = LastDecode）。
+        private static StreamWatchdogLogic ConnectedAndFlowing(bool displayed)
+        {
+            var w = new StreamWatchdogLogic();
+            w.EndTick(1f, 0.016f, 0f, false, connected: true, displayed: displayed);
+            w.OnFrameDecoded(LastDecode);
+            return w;
+        }
+
+        private static Reason Tick(StreamWatchdogLogic w, float now, bool displayed,
+                                   bool connected = true, bool hot = false)
+            => w.EndTick(now, 0.016f, 0f, hot, connected: connected, displayed: displayed);
+
+        [Test]
+        public void DisplayedStallThresholds_Are2_5sAnd10s()
+        {
+            Assert.That(StreamWatchdogLogic.DisplayedStallReconnectSec, Is.EqualTo(2.5f));
+            Assert.That(StreamWatchdogLogic.StallReconnectSec, Is.EqualTo(10f));
+        }
+
+        [Test]
+        public void Displayed_SilentAfterFrames_ReconnectsAt2_5s()
+        {
+            var w = ConnectedAndFlowing(displayed: true);
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.DisplayedStallReconnectSec, displayed: true),
+                Is.EqualTo(Reason.Stall), "表示中は 2.5 秒で張り直す");
+            Assert.That(w.LastFrameRealtime, Is.EqualTo(LastDecode), "A2: 最終展開の時刻は汚さない");
+        }
+
+        [Test]
+        public void Displayed_SilentFor2_4s_DoesNotReconnect()
+        {
+            var w = ConnectedAndFlowing(displayed: true);
+            Assert.That(Tick(w, LastDecode + 2.4f, displayed: true), Is.EqualTo(Reason.None),
+                "2.4 秒ではまだ待つ");
+        }
+
+        [Test]
+        public void Background_SilentFor2_5s_WaitsUntil10s()
+        {
+            var w = ConnectedAndFlowing(displayed: false);
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.DisplayedStallReconnectSec, displayed: false),
+                Is.EqualTo(Reason.None), "背景は 2.5 秒では張り直さない");
+            Assert.That(Tick(w, LastDecode + 9.9f, displayed: false), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.StallReconnectSec, displayed: false),
+                Is.EqualTo(Reason.Stall), "背景は従来どおり 10 秒");
+        }
+
+        [Test]
+        public void Displayed_NeverReceivedConnection_IsNotOnThe2_5sPath()
+        {
+            // まだ 1 枚も届けていない接続は、接続 3 秒・見出し待ち・バックオフと 3b の 10 秒に任せる。
+            var w = new StreamWatchdogLogic();
+            Assert.That(Tick(w, 1f, displayed: true), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, 3.5f, displayed: true), Is.EqualTo(Reason.None), "確立から 2.5 秒では張り直さない");
+            Assert.That(Tick(w, 10.9f, displayed: true), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, 11f, displayed: true), Is.EqualTo(Reason.Stall), "3b の 10 秒は従来どおり");
+        }
+
+        [Test]
+        public void Displayed_AfterOwnReconnect_NewConnectionGets10sUntilItDeliversAFrame()
+        {
+            // 起動の遅い配信を 2.5 秒ごとに切り続けない。張り直し直後の接続は 10 秒の扱い。
+            var w = ConnectedAndFlowing(displayed: true);
+            float first = LastDecode + StreamWatchdogLogic.DisplayedStallReconnectSec;   // 12.5
+            Assert.That(Tick(w, first, displayed: true), Is.EqualTo(Reason.Stall));
+
+            Assert.That(Tick(w, first + 2.5f, displayed: true), Is.EqualTo(Reason.None),
+                "新しい接続はまだ 1 枚も届けていないので 2.5 秒で切らない");
+            Assert.That(Tick(w, first + 9.9f, displayed: true), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, first + StreamWatchdogLogic.StallReconnectSec, displayed: true),
+                Is.EqualTo(Reason.Stall), "再発火は 10 秒周期");
+
+            // 新しい接続が 1 枚届けたら、また 2.5 秒の対象に戻る。
+            float again = first + StreamWatchdogLogic.StallReconnectSec;                 // 22.5
+            w.OnFrameDecoded(again + 0.5f);                                              // 23
+            Assert.That(Tick(w, again + 0.5f + 2.4f, displayed: true), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, again + 0.5f + StreamWatchdogLogic.DisplayedStallReconnectSec, displayed: true),
+                Is.EqualTo(Reason.Stall));
+        }
+
+        [Test]
+        public void Displayed_ConnectionDroppedAndReopened_NewConnectionIsNotOnThe2_5sPath()
+        {
+            // 配信側が閉じて receiver が自分で張り直した場合も、新しい接続は届けるまで 10 秒。
+            var w = ConnectedAndFlowing(displayed: true);
+            Assert.That(Tick(w, 11f, displayed: true, connected: false), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, 11.5f, displayed: true, connected: true), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, 13f, displayed: true), Is.EqualTo(Reason.None),
+                "最終展開から 3 秒だが、いまの接続はまだ届けていない");
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.StallReconnectSec, displayed: true),
+                Is.EqualTo(Reason.Stall), "最終展開から 10 秒で従来の stall");
+        }
+
+        [Test]
+        public void LeavingDisplay_ReturnsTo10s()
+        {
+            var w = ConnectedAndFlowing(displayed: true);
+            Assert.That(Tick(w, LastDecode + 2f, displayed: true), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.DisplayedStallReconnectSec, displayed: false),
+                Is.EqualTo(Reason.None), "表示から外れたら 2.5 秒では張り直さない");
+            Assert.That(Tick(w, LastDecode + 9.9f, displayed: false), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.StallReconnectSec, displayed: false),
+                Is.EqualTo(Reason.Stall));
+        }
+
+        [Test]
+        public void SwitchingToAnAlreadySilentCamera_ReconnectsOnTheFirstDisplayedTick()
+        {
+            // 背景で 5 秒黙っていたカメラへ切り替えたら、その場で張り直す。
+            var w = ConnectedAndFlowing(displayed: false);
+            Assert.That(Tick(w, LastDecode + 5f, displayed: false), Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, LastDecode + 5.1f, displayed: true), Is.EqualTo(Reason.Stall));
+        }
+
+        [Test]
+        public void Displayed_WhileSourceIsHot_Waits10s()
+        {
+            // 熱降格中は張り直しの負荷でさらに熱が上がる。lag と同じく早い経路を止め、10 秒に戻す。
+            var w = ConnectedAndFlowing(displayed: true);
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.DisplayedStallReconnectSec, displayed: true, hot: true),
+                Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.StallReconnectSec, displayed: true, hot: true),
+                Is.EqualTo(Reason.Stall), "熱でも本当に来ていないなら 10 秒で張り直す（従来どおり）");
+        }
+
+        [Test]
+        public void Displayed_Suspended_DoesNotFire()
+        {
+            var w = ConnectedAndFlowing(displayed: true);
+            w.SetSuspended(true, LastDecode + 1f);
+            Assert.That(Tick(w, LastDecode + 5f, displayed: true), Is.EqualTo(Reason.None));
+        }
+
+        [Test]
+        public void Displayed_WithoutLiveConnection_Waits10s()
+        {
+            // 記録の再生（receiver は繋がず XpReplay.Feed から展開する）では早い経路に入らない。
+            var w = new StreamWatchdogLogic();
+            Tick(w, 1f, displayed: true, connected: false);
+            w.OnFrameDecoded(LastDecode);
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.DisplayedStallReconnectSec, displayed: true, connected: false),
+                Is.EqualTo(Reason.None));
+            Assert.That(Tick(w, LastDecode + StreamWatchdogLogic.StallReconnectSec, displayed: true, connected: false),
+                Is.EqualTo(Reason.Stall));
+        }
+
+        [Test]
+        public void Displayed_AfterEndpointChange_IsNotOnThe2_5sPath()
+        {
+            // 接続先が変わったら、新しい接続先が 1 枚届けるまで 10 秒の扱い。
+            var w = ConnectedAndFlowing(displayed: true);
+            w.NotifyEndpointChanged(LastDecode + 1f);
+            Assert.That(Tick(w, LastDecode + 1f + StreamWatchdogLogic.DisplayedStallReconnectSec, displayed: true),
+                Is.EqualTo(Reason.None));
+        }
     }
 }

@@ -42,6 +42,29 @@ namespace FixedCamVr.OvrBridge
 
         private void OnRunResetRequested() => ResetVisitor("右 A 2 秒長押し");
 
+        // 体験の途中かを毎フレーム訊くための参照（シーン全走査を毎フレームしない）。
+        private ShowRunDirector? _gateRun;
+        private OutroDirector? _gateOutro;
+        private float _gateResolveAt;
+
+        /// <summary>
+        /// 体験の途中か終幕の再生中か（タブレットの次の体験者を断る範囲と同じ。
+        /// <see cref="StaffSetupLogic.CanResetFromTablet"/>）。右トリガーの位置合わせへの入場を止めるのに使う。
+        /// </summary>
+        private bool RunInProgressForStaffInput()
+        {
+            if (_staffSetup == null || !_staffSetup.Logic.Started) return false;
+            if ((_gateRun == null || _gateOutro == null) && SimTime.Now >= _gateResolveAt)
+            {
+                if (_gateRun == null) _gateRun = FindObjectOfType<ShowRunDirector>();
+                if (_gateOutro == null) _gateOutro = FindObjectOfType<OutroDirector>();
+                _gateResolveAt = SimTime.Now + CommsResolveRetrySec;
+            }
+            bool runFinished = _gateRun != null && _gateRun.Phase == ShowPhase.Finished;
+            bool outroPlaying = _gateOutro != null && _gateOutro.Stage != OutroStage.Off && _gateOutro.Stage != OutroStage.Done;
+            return !StaffSetupLogic.CanResetFromTablet(started: true, runFinished, outroPlaying);
+        }
+
         /// <summary>
         /// 現地の「新しい体験者」の号令。入口は 3 つ（右 A 2 秒長押し・タブレットの次の体験者・タブレットの強制リセット）で、
         /// <paramref name="origin"/> はどれから来たかをログに出すためのもの。体験 1 回ぶんの状態を落とす並びそのものは
@@ -77,9 +100,14 @@ namespace FixedCamVr.OvrBridge
             }
             // 体験者が代わるので、進行中の報告の長押しと余韻も落とす。
             // 実リセット完了を確認。通常のTitle.Sequence通知と二重に新訪問を作らない。
-            if (titleScreen != null && titleScreen.Sequence != previousTitleSequence && titleScreen.Stage == TitleStage.Wait)
+            if (StaffSetupLogic.ResetCompleted(
+                    hasTitle: titleScreen != null,
+                    previousSequence: previousTitleSequence,
+                    sequence: titleScreen != null ? titleScreen.Sequence : -1,
+                    titleWaiting: titleScreen != null && titleScreen.Stage == TitleStage.Wait,
+                    titlePresents: titleScreen != null && titleScreen.Presents))
             {
-                _titleSequence = titleScreen.Sequence;
+                if (titleScreen != null) _titleSequence = titleScreen.Sequence;
                 _onboarding.Reset();
                 _setupButton.Tick(false, 0f, false);
                 _staffSetup?.VisitorResetCompleted();
@@ -87,6 +115,10 @@ namespace FixedCamVr.OvrBridge
             else _staffSetup?.NewVisitor();
             _markNeedsRelease = true;
             _markHold.Reset();
+            // 前の体験者に宛てた振動の予約を捨てる。残すと、切れていた左が次の人の手に繋がった瞬間に
+            // 前の人の連絡の振動が鳴り、右は次の人の体験中に「締めが始まった」を誤って知らせる。
+            _pendingLeftNotify = false;
+            _pendingClosing = false;
             haptics?.Fire(); // 長押し発火（ランリセット）
             Debug.Log($"[OvrBridge] 体験者リセット（{origin}）");
         }

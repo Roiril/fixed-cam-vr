@@ -88,6 +88,35 @@ namespace FixedCamVr.Streaming.Tests
                                       + string.Join("\n", offenders));
         }
 
+        /// <summary>
+        /// <c>_Time.y</c>（起動からの秒）を刻んでハッシュへ入れるなら、必ず <c>fmod</c> で巻き戻す。
+        /// <c>Hash21</c> は入力を 456 倍してから frac を取るので、展示で開けっ放しにすると数分〜数十分で
+        /// 小数が消え、砂・粒・帯の組み替えが止まる（2026-11-14 の監査。起動し直す検証では出ない）。
+        /// </summary>
+        [Test]
+        public void TimeCounters_AreFoldedBeforeHashing()
+        {
+            var offenders = new System.Collections.Generic.List<string>();
+            foreach (string path in ShaderFiles())
+            {
+                if (!path.EndsWith(".shader") && !path.EndsWith(".hlsl")) continue;
+                if (path.Replace('\\', '/').Contains("/Attic/")) continue; // 封印の箱（体験から外してある）
+                string[] lines = File.ReadAllLines(path);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string code = StripComments(lines[i]);
+                    foreach (Match m in Regex.Matches(code, @"floor\(\s*_Time\.[xyzw]"))
+                    {
+                        string before = code.Substring(0, m.Index).TrimEnd();
+                        if (!before.EndsWith("fmod(", System.StringComparison.Ordinal))
+                            offenders.Add($"{Path.GetFileName(path)}:{i + 1} — {lines[i].Trim()}");
+                    }
+                }
+            }
+            Assert.IsEmpty(offenders, "_Time を刻んだ値を巻き戻さずに使っている（長時間で砂や粒が止まる）。fmod(floor(_Time.y * N), 1024.0) にする:\n"
+                                      + string.Join("\n", offenders));
+        }
+
         // ---- 滲んで現れる・長押しで膨らむ（0349）--------------------------------------------
 
         private static string SharedHlsl()

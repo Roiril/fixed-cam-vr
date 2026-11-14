@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 9c9e9742-4d99-47bc-8b46-e7eb4d64ed2b
-  modified: 2026-11-04T21:43:43.017Z
+  modified: 2026-11-14T14:24:29.246Z
 ---
 
 2026-07-29 に企画書（学会論文版）の要求へ合わせて足したもの。契約は `.claude/reference/archive/streaming-2026-10-22.md`。
@@ -13,6 +13,8 @@ metadata:
 **映像の乱れ（グリッチ）**
 
 - uniform は `_Glitch` / `_GlitchSeed`。障害表示の `_SignalLost` とは**別系統**で、書き手は `GlitchFx` だけ。
+  `_GlitchSeed` は起動からの秒を 8 秒で巻き戻して渡す（`GlitchFx.FoldSeed`）。`Hash21` は入力を 456 倍してから frac を取るので、
+  巻き戻さないと砂が 1 分で粗く 7 分でほぼ 1 色になる（float32 の写しは `GlitchSeedFoldTests`。2026-11-14）。
   シェーダの順序は 乱れ → 障害表示 なので、実際に信号が切れたら障害表示が勝つ。
 - 位置ずれは**全層のサンプル前の uv** に掛ける（ライブ・素材・マスク・CG が一緒にずれる ＝ 差し替えの継ぎ目も隠れる）。
   ここを層ごとに掛けると継ぎ目だけ無傷で残り、企画書の狙いが消える。

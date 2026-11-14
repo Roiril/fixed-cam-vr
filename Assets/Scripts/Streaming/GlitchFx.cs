@@ -27,6 +27,18 @@ namespace FixedCamVr.Streaming
         private static readonly int GlitchId = Shader.PropertyToID("_Glitch");
         private static readonly int GlitchSeedId = Shader.PropertyToID("_GlitchSeed");
 
+        /// <summary>
+        /// シードを巻き戻す周期（秒）。<c>Hash21</c> は入力を 456 倍してから frac を取るので、
+        /// 起動からの秒をそのまま渡すと、砂は 1 分で粗くなり 7 分でほぼ 1 色、17 分で帯の組み替えが止まる
+        /// （展示は朝から開けっ放しなので、2 人目以降の全員がそれを見る。起動し直す検証では出ない）。
+        /// 砂の散り方は刻み（seed × 42）が小さいほど良く、8 秒で巻けば起動直後と同じ質に収まる
+        /// （刻み 336 まで。float32 での写しは <c>GlitchSeedFoldTests</c>）。
+        /// </summary>
+        public const float SeedPeriodSec = 8f;
+
+        /// <summary>シェーダへ渡すシード。周期で巻き戻した秒。</summary>
+        public static float FoldSeed(float sec) => Mathf.Repeat(sec, SeedPeriodSec);
+
         private readonly GlitchEnvelopeLogic _logic = new GlitchEnvelopeLogic();
         private readonly GlitchEscalationLogic _esc = new GlitchEscalationLogic();
         private Material? _material;
@@ -124,7 +136,7 @@ namespace FixedCamVr.Streaming
         {
             if (_material == null) return;
             _material.SetFloat(GlitchId, _logic.Tick(dt));
-            _material.SetFloat(GlitchSeedId, seedSec);
+            _material.SetFloat(GlitchSeedId, FoldSeed(seedSec));
         }
 
         private void Write(float level)
@@ -133,7 +145,7 @@ namespace FixedCamVr.Streaming
             _material.SetFloat(GlitchId, level);
             // シードは実時間。_Time.y を使わないのは Editor プレビュー（Play しない静止画検証）で
             // 同じ絵を再現できるようにするため。
-            _material.SetFloat(GlitchSeedId, SimTime.Now);
+            _material.SetFloat(GlitchSeedId, FoldSeed(SimTime.Now));
         }
     }
 }

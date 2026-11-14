@@ -27,6 +27,13 @@ namespace FixedCamVr.Streaming.Replay
     ///
     /// <b>体験を止めない</b>: 書き出しは背景スレッド。容量の上限 <see cref="MaxBytes"/> に当たったら
     /// 映像だけ捨てて姿勢と入力は録り続ける。例外は呼び出し側へ投げない。
+    ///
+    /// <b>録っている間だけ映像を受ける</b>: <see cref="CameraStream.AnyFrameDecoded"/> を購読している間は
+    /// <see cref="CameraStream.HasFrameObservers"/> が真になり、背景のカメラも全コマ展開する。
+    /// だから購読は録り始めで足し、録り終わり・無効化・破棄で外す（<c>xprec/ON</c> の無い機は一度も購読しない）。
+    ///
+    /// <b>溜めすぎない</b>: 録り始めの縁で、<c>xprec/</c> の古い記録を古い順に消して合計を
+    /// <see cref="PruneLimitBytes"/> 以内に収める（<see cref="XpRecPrune"/>・背景スレッド・いま書く記録は消さない）。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class ExperienceRecorder : MonoBehaviour
@@ -34,6 +41,8 @@ namespace FixedCamVr.Streaming.Replay
         public const float TailAfterFinishSec = 75f;
         public const float MaxDurationSec = 15f * 60f;
         public const long MaxBytes = 3L * 1024 * 1024 * 1024;
+        /// <summary><c>xprec/</c> の日時名の記録の合計の上限。録り始めに古い順に刈ってここへ収める。</summary>
+        public const long PruneLimitBytes = 4L * 1024 * 1024 * 1024;
 
         public static string Root => Path.Combine(Application.persistentDataPath, "xprec");
 
@@ -46,6 +55,11 @@ namespace FixedCamVr.Streaming.Replay
         private bool _prevStaffActive = true;
         private Session? _session;
         private float _finishedFor;
+        private bool _frameTapped;
+        /// <summary>記録の置き場の差し替え（EditMode テストが一時フォルダを渡す）。null なら <see cref="Root"/>。</summary>
+        private string? _rootOverride;
+
+        private string RecordRoot => _rootOverride ?? Root;
 
         /// <summary>記録の実行体を作る（無ければ）。シーンへは焼かず、実行時に生やす。</summary>
         public static ExperienceRecorder Ensure()
@@ -62,15 +76,20 @@ namespace FixedCamVr.Streaming.Replay
 
         private void OnEnable()
         {
-            CameraStream.AnyFrameDecoded += OnFrame;
             Application.logMessageReceivedThreaded += OnLog;
         }
 
         private void OnDisable()
         {
-            CameraStream.AnyFrameDecoded -= OnFrame;
             Application.logMessageReceivedThreaded -= OnLog;
             Stop("disabled");
+            SetFrameTap(false);
+        }
+
+        private void OnDestroy()
+        {
+            Stop("destroyed");
+            SetFrameTap(false);
         }
 
         private void OnApplicationPause(bool paused) { if (paused) Stop("pause"); }
@@ -117,16 +136,29 @@ namespace FixedCamVr.Streaming.Replay
             _session.Enqueue(f);
         }
 
-        private static bool MarkerOn()
+        private bool MarkerOn()
         {
-            try { return File.Exists(Path.Combine(Root, "ON")); }
+            try { return File.Exists(Path.Combine(RecordRoot, "ON")); }
             catch { return false; }
+        }
+
+        /// <summary>
+        /// 展開できた JPEG を受けるか。受けている間は <see cref="CameraStream.HasFrameObservers"/> が真になり、
+        /// 背景のカメラも全コマ展開する。録っている間だけ真にする。
+        /// </summary>
+        private void SetFrameTap(bool on)
+        {
+            if (on == _frameTapped) return;
+            if (on) CameraStream.AnyFrameDecoded += OnFrame;
+            else CameraStream.AnyFrameDecoded -= OnFrame;
+            _frameTapped = on;
         }
 
         private void Start_(string reason)
         {
-            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            string dir = Path.Combine(Root, stamp);
+            string root = RecordRoot;
+            string stamp = DateTime.Now.ToString(XpRecPrune.StampFormat, CultureInfo.InvariantCulture);
+            string dir = Path.Combine(root, stamp);
             try
             {
                 Directory.CreateDirectory(dir);
@@ -147,6 +179,7 @@ namespace FixedCamVr.Streaming.Replay
                 meta.cameras = cams.ToArray();
                 _session = new Session(dir, meta, SimTime.Now);
                 _finishedFor = 0f;
+                SetFrameTap(true);
                 // t= は ShowTelemetryHost と同じ時計（realtimeSinceStartup）。突き合わせはこの行で頭を揃える。
                 Debug.Log($"[XP] t={SimTime.Realtime:F2} ev=xprec state=start why={reason} dir={stamp} cams={cams.Count} show={meta.showSha}");
             }
@@ -154,6 +187,32 @@ namespace FixedCamVr.Streaming.Replay
             {
                 Debug.LogWarning($"[XpRec] 録り始められない: {e.Message}");
                 _session = null;
+                SetFrameTap(false);
+                return;
+            }
+            StartPrune(root, stamp);
+        }
+
+        /// <summary>
+        /// 古い記録を刈る（録り始めの縁で 1 回）。列挙と削除は背景スレッドで行い、メインスレッドを止めない。
+        /// いま書いている <paramref name="current"/> は消さない。
+        /// </summary>
+        private static void StartPrune(string root, string current)
+        {
+            try
+            {
+                var thread = new Thread(() =>
+                {
+                    XpRecPrune.Result r = XpRecPrune.Execute(root, current, PruneLimitBytes);
+                    const float Mb = 1024f * 1024f;
+                    Debug.Log($"[XpRec] 古い記録を刈った: {r.Deleted} 本・{r.FreedBytes / Mb:F0} MB 解放" +
+                              $"（失敗 {r.Failed} 本・残り {r.RemainingBytes / Mb:F0} MB・上限 {PruneLimitBytes / Mb:F0} MB）");
+                }) { IsBackground = true, Name = "XpRecPrune" };
+                thread.Start();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[XpRec] 古い記録を刈れない: {e.Message}");
             }
         }
 
@@ -171,6 +230,7 @@ namespace FixedCamVr.Streaming.Replay
             Session? s = _session;
             if (s == null) return;
             _session = null;
+            SetFrameTap(false);
             float dur = SimTime.Now - s.t0;
             s.Finish(reason, dur, waitMs);
             Debug.Log($"[XP] t={SimTime.Realtime:F2} ev=xprec state=stop why={reason} sec={dur:F1} frames={s.Frames} " +

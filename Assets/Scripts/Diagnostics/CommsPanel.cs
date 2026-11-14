@@ -1334,7 +1334,7 @@ namespace FixedCamVr.Diagnostics
 
             if (_onboardingActive)
             {
-                _logic.Tick(SimTime.Dt);
+                _logic.Tick(ShowClock.Dt);
                 Apply(_logic.Weights);
                 return;
             }
@@ -1395,7 +1395,7 @@ namespace FixedCamVr.Diagnostics
                                  && (timeline.FarewellPhase == EndingFarewellLogic.Phase.Turn
                                      || timeline.FarewellPhase == EndingFarewellLogic.Phase.Retreat),
                 curseReleased = runDirector != null && runDirector.ScreenDecayReleased,
-                dt = SimTime.Dt,
+                dt = ShowClock.Dt,
             });
             if (next == CommsNotice.FarewellFinding)
             {
@@ -1431,7 +1431,9 @@ namespace FixedCamVr.Diagnostics
             TickGlitch(SimTime.Now);
             PushCurseTarget();
             bool wasActive = _logic.Active;
-            _logic.Tick(SimTime.Dt);
+            // 体験の時計（休止を切る）で進める。素の dt だと HMD を外していた秒が復帰の 1 フレームに入り、
+            //   乗っ取り・③a・③b の時刻表が被り直した瞬間に最後まで飛ぶ。
+            _logic.Tick(ShowClock.Dt);
             if (wasActive && !_logic.Active && _lieActive)
                 _feelFx?.NotifyHeartbeatWarningCompleted();
             if (!_promptReadableNotified && runDirector != null

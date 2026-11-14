@@ -35,6 +35,11 @@ namespace FixedCamVr.Streaming
         public const float ResumeGapSec = 0.5f;
         // 「接続は張れている風なのに受信 0」(half-open socket 等) を強制再接続で自己修復する閾値。
         public const float StallReconnectSec = 10f;
+        // 表示中のカメラで、いまの接続が 1 枚でも届けた後に黙ったときの閾値。体験者は止まった画を
+        // 見続けるので背景（StallReconnectSec）より早く張り直す。張り直した直後の接続はまだ 1 枚も
+        // 届けていないのでこの対象から外れ、接続 3 秒・見出し待ち・バックオフの経路と 10 秒に任せる
+        // （起動の遅い配信を 2.5 秒ごとに切り続けて永久に映らない形を作らない）。熱降格中も 10 秒。
+        public const float DisplayedStallReconnectSec = 2.5f;
         // 壊れ JPEG が連続すると LoadImage が false を返し texture 未更新になる。閾値超で強制再接続。
         public const int DecodeFailReconnectCount = 30;  // 連続 30 枚（~1s @30fps）
         public const float DecodeFailReconnectSec = 2f;   // または 2 秒相当（低 fps 用）
@@ -116,6 +121,7 @@ namespace FixedCamVr.Streaming
             _decodedFramesInWindow++;
             _lastFrameTime = now;
             _everReceived = true;
+            _decodedSinceReconnect = true;
         }
 
         /// <summary>
@@ -124,6 +130,13 @@ namespace FixedCamVr.Streaming
         /// 一度でも映ったなら以後の無フレームは本物の stall として扱ってよい。
         /// </summary>
         private bool _everReceived;
+
+        /// <summary>
+        /// いまの接続で 1 枚でも展開できたか。表示中の早い stall（<see cref="DisplayedStallReconnectSec"/>）の前提。
+        /// こちらは <see cref="_everReceived"/> と違い、張り直しを返したとき・接続が落ちたとき・
+        /// エンドポイントが変わったときに下ろす。resume では下ろさない（同じ接続が続いている）。
+        /// </summary>
+        private bool _decodedSinceReconnect;
 
         // 「接続は張れているのに 1 枚も来ない」を測るための、接続確立の立ち上がり時刻。
         // _lastFrameTime は触らない（SignalLostFx が「未受信カメラ」の判定に 0 を読むため・A2）。
@@ -144,7 +157,7 @@ namespace FixedCamVr.Streaming
             bool over = _decodeFailStreak >= DecodeFailReconnectCount || sinceSec >= DecodeFailReconnectSec;
             if (over && now - _lastReconnectTime >= LagReconnectCooldownSec)
             {
-                _lastReconnectTime = now;
+                MarkReconnect(now);
                 _decodeFailStreak = 0;
                 return true;
             }
@@ -168,13 +181,30 @@ namespace FixedCamVr.Streaming
         /// <paramref name="connected"/> は「MJPEG の接続が確立しているか」（<c>MjpegStreamReceiver.IsConnected</c>）。
         /// **1 枚も受けていないのに接続だけ生きている**（半開 TCP・配信が黙った）を拾うためにだけ使う。
         /// 既定 false ＝ 渡さない呼び出し側の挙動は 1 ビットも変わらない。
+        ///
+        /// <paramref name="displayed"/> は「いま体験者に表示しているカメラか」（<c>CameraStreamRegistry.ActiveIndex</c>）。
+        /// true かつ接続が生きていて、その接続で 1 枚でも展開した後に黙ったら
+        /// <see cref="DisplayedStallReconnectSec"/> で張り直す。熱降格中は背景と同じ <see cref="StallReconnectSec"/>。
+        /// 既定 false ＝ 背景と同じ扱い。
         /// </summary>
         public ReconnectReason EndTick(float now, float unscaledDt, float phoneFps, bool sourceThrottling,
-                                       bool connected = false)
+                                       bool connected = false, bool displayed = false)
         {
             // lag 判定の前提（phoneFps>1）を外し、溜まった窓も捨てる
             // （捨てないと熱が引いた瞬間に古い蓄積で即再接続する）。
             if (sourceThrottling) { phoneFps = 0f; _lagWindowAccum = 0f; }
+
+            // 0. 接続の立ち上がりと立ち下がり（どの判定が return しても毎 tick 追う）。
+            // 立ち下がりでは「いまの接続で届いた」を下ろす（次の接続はまだ 1 枚も届けていないので、
+            // 表示中の早い stall の対象にしない）。立ち上がり時刻は 3b が使う。
+            if (connected && !_prevConnected) _connectedSince = now; // 確立の立ち上がりを基準にする
+            if (!connected)
+            {
+                if (_prevConnected) _decodedSinceReconnect = false;
+                _connectedSince = 0f;
+            }
+            _prevConnected = connected;
+
             // 1. 受信 fps 計測（1 秒ウィンドウ）
             if (_recvWindowStart == 0f) _recvWindowStart = now;
             if (now - _recvWindowStart >= 1f)
@@ -197,7 +227,7 @@ namespace FixedCamVr.Streaming
                     if (_lagWindowAccum >= LagDetectWindowSec
                         && now - _lastReconnectTime >= LagReconnectCooldownSec)
                     {
-                        _lastReconnectTime = now;
+                        MarkReconnect(now);
                         _lagWindowAccum = 0f;
                         return ReconnectReason.Lag;
                     }
@@ -208,10 +238,16 @@ namespace FixedCamVr.Streaming
                 }
             }
 
-            // 3. Stall watchdog（A2 修正版）: 無フレームが StallReconnectSec 続いたら強制再接続。
+            // 3. Stall watchdog（A2 修正版）: 無フレームが閾値続いたら強制再接続。
+            // 閾値は背景 StallReconnectSec、表示中で「いまの接続が届けた後に黙った」なら DisplayedStallReconnectSec。
             // suspend 中は表示を止めているだけなので発火させない。初回はここで基準時刻をシード。
-            // 再発火ゲートは StallReconnectSec（元の 10s 周期を保つ。cooldown に落とすと 5s 周期になる）。
+            // 再発火ゲートも同じ閾値（背景は元の 10s 周期を保つ。cooldown に落とすと 5s 周期になる）。
+            // 表示中の早い経路は張り直しで _decodedSinceReconnect を下ろすので、新しい接続が
+            // 1 枚届けるまでは 10s に戻る（2.5s ごとの張り直しが続く形にはならない）。
             if (_lastFrameTime == 0f) _lastFrameTime = now;
+            float stallSec = displayed && connected && _decodedSinceReconnect && !sourceThrottling
+                ? DisplayedStallReconnectSec
+                : StallReconnectSec;
             // ⚠ **一度もフレームを受けたことがない stream では発火しない。** host が現場に居ない
             // カメラ（show.json で未設定 → 焼き込み .asset の古い IP へ繋ぎに行く）に対して、
             // 10 秒ごとに永久に張り直しを続けていた（走行 240 秒で 24 回 ＝ 再接続ログの約半分）。
@@ -219,10 +255,10 @@ namespace FixedCamVr.Streaming
             // 指数バックオフが回しているので、後から現れたカメラもそちらが拾う。
             if (_everReceived
                 && !_suspended
-                && now - _lastFrameTime >= StallReconnectSec
-                && now - _lastReconnectTime >= StallReconnectSec)
+                && now - _lastFrameTime >= stallSec
+                && now - _lastReconnectTime >= stallSec)
             {
-                _lastReconnectTime = now;
+                MarkReconnect(now);
                 return ReconnectReason.Stall; // _lastFrameTime は書き換えない（A2）。
             }
 
@@ -236,17 +272,14 @@ namespace FixedCamVr.Streaming
             //    前提にしている。⇒ そのカメラは公演の最後まで砂嵐のまま復帰しない。
             //    現場に居ないカメラでは connected が false のままなので、
             //    「居ないものへ張り直しを撒かない」という上の意図はそのまま保たれる。
-            if (connected && !_prevConnected) _connectedSince = now; // 確立の立ち上がりを基準にする
-            if (!connected) _connectedSince = 0f;
-            _prevConnected = connected;
-
+            //    接続の立ち上がり（_connectedSince）は 0 で更新している。
             if (!_everReceived
                 && _connectedSince > 0f
                 && !_suspended
                 && now - _connectedSince >= StallReconnectSec
                 && now - _lastReconnectTime >= StallReconnectSec)
             {
-                _lastReconnectTime = now;
+                MarkReconnect(now);
                 return ReconnectReason.Stall;
             }
 
@@ -257,7 +290,18 @@ namespace FixedCamVr.Streaming
         /// エンドポイント差し替え時に計測ウィンドウをリセットする（ReapplyConnection から使う）。
         /// _lastFrameTime は変更しない（stall 判定の基準を接続張り替えで無効化しないため）。
         /// </summary>
-        public void NotifyEndpointChanged(float now) => ResetWindows(now);
+        public void NotifyEndpointChanged(float now)
+        {
+            ResetWindows(now);
+            _decodedSinceReconnect = false; // 新しい接続先はまだ 1 枚も届けていない
+        }
+
+        // 張り直しを返すときの共通処理。新しい接続が 1 枚届けるまで表示中の早い stall を止める。
+        private void MarkReconnect(float now)
+        {
+            _lastReconnectTime = now;
+            _decodedSinceReconnect = false;
+        }
 
         private void ResetWindows(float now)
         {

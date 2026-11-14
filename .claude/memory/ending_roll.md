@@ -9,6 +9,8 @@
 - `EndingFrameCapture` は合成済みスクリーンを体験中にGPU上へ保存する。帰還用は報告後に別れの人形が体験者の方を向いて立っている間（右に体験者・左に人形・LEDGER 0291・[[ending-farewell-doll]]）。人形用は最後の報告待ちで左の大量人形と右の体験者位置CGが表示された画面。左右を別に作り直さない。
 - ⚠ 2026-11-11。人形 End の写真は 93b4b7c6 から 1 枚も撮れていなかった。写真の窓が画面の `AppliedCueId`（段のキー `L4C0#0#1`）を素材名 `gen_dolls_A_left` と比べていて、primary が常に偽だった。ログは `[EndingFrameCapture] 固定 shots=0 trappedFrames=0`。比べるキーを `TakeRunner.StepCueKey` に揃えた。見つけたのは演出ライブラリー（[[fx_library]]）の人形 End の画に写真が無かったこと。実機も同じ経路を通る。
 - 画像はラン内だけ保持する。`RunRestarted` で両方を無効化する。撮れなかった場合に前の体験者の写真や終了後の映像を代用しない。
+- 撮る頻度: 窓が開いたら最初の 1 枚は待たず、撮り直しと失敗のやり直しは `EndingFrameCapture.RefreshIntervalSec`（0.5 秒）ごと（`CaptureDue`）。終了時の `Freeze` は窓が開いていればその場で撮り直す。以前は窓が開いている間毎フレーム撮っていた。
+- 撮る器: CRT の信号処理（`CrtSignalProcessor`。Float の RT 最大 7 枚と材質 3 つ）と沈みを戻す材質の写しは使い回し、`CaptureSnapshot` で写しへ現在値を写して描く。RT は入力の解像度が変わったときだけ作り直す。`Freeze`・ラン開始・無効化・破棄で捨てる。以前は撮るたびに器を作って捨てていた（静的な `CrtSignalProcessor.Capture` は 1 回きりの撮影用に残る）。
 - 旧結果報告の説明文と分母とタイプ打ちを廃止。既存の終了音楽は継続。
 - 2026-10-22。面と曲は報告の出始めから 15 秒で閉じる（出る 1.5 ＋ 保持 9.5 ＋ 閉じる 4.0 秒・`run.outro.holdSec` / `closeFadeSec`）。閉じた後は黒のまま。`repStyle=roll` のログでは打鍵音を要求しない。
 - `tools/unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.OutroReportPreview.Run` で3言語と3結末を描画する。`Assets/Screenshots/ending/` に画面と文字の画素検査を出す。

@@ -115,8 +115,9 @@ namespace FixedCamVr.Streaming
         /// <summary>
         /// 目の代わりにメインスクリーンを増やす（<c>canon/LEDGER.md</c> 0317・試作）。
         /// 時計・出番・音の間引き・計器はこのクラスのまま。描くものだけが <see cref="ScreenMultiply"/> に替わる。
+        /// ⚠ const にしない。const だと目を描く枝が到達しないコードになり、コンパイルのたびに警告が出る。
         /// </summary>
-        public const bool ScreensReplaceEyes = true;
+        public static readonly bool ScreensReplaceEyes = true;
 
         private ScreenMultiply? _wall;
         private bool WallActive => _wall != null && _wall.IsBuilt;
@@ -495,6 +496,18 @@ namespace FixedCamVr.Streaming
                 AppliedFade = _logic.Fade;
                 OpenCount = _wall.OpenCount;
                 DriveEyeSfx(dt);
+                return;
+            }
+
+            if (ScreensReplaceEyes)
+            {
+                // 目は 0317 でやめた。増えるスクリーンが組めなかったときに目へ戻すと、やめた演出が本番に出る。
+                // 何も描かず、組めなかったことは計器に出す（scrMul= の 1 桁目が 0・eyes= の開いた数が 0）。
+                _renderer.enabled = false;
+                AppliedBig = 0f;
+                AppliedField = 0f;
+                AppliedFade = 0f;
+                OpenCount = 0;
                 return;
             }
 

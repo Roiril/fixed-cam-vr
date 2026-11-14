@@ -28,7 +28,7 @@ paths:
 - 左は体験者、右はスタッフ。左で読むのは `RawButton.X|Y` だけ（左トリガー・握り・スティック押し込みは読まない） — `OvrControllerBridge.Update` / `TutorialDoesNotAcceptTriggerOrGripBecauseTheyAreNotInputs` 〔出典: show-design:203-211 / LEDGER 0042・0196〕
 - 生の入力（接続・追跡・ボタン・被り）は `OvrControllerBridge.ReadRawInput` の 1 か所で読み、`XpReplay.Live` に置く。再生中は記録の値を返す。OVRInput を他所で直接読まない — `RawInput` 〔memory/experience_replay.md〕
 - 左 X/Y 1 秒長押しが報告。1 押し 1 回。dt は 0.25 秒で切る — `VisitorMarkHoldLogic.DefaultHoldSec` 〔show-design:281 / LEDGER 0059〕
-- Normal: 右 A 2 秒で体験者リセット。右 B は押している間だけステータス（離して 0.3 秒で消える）。右トリガー 2 秒で位置合わせ。2 秒は const — `ControllerModeLogic.Tick` / `OvrControllerBridge.LongPressSec` / `StatusViewLogic.ReleaseGraceSec` 〔show-design:190-192,278 / staff_status_view〕
+- Normal: 右 A 2 秒で体験者リセット。右 B は押している間だけステータス（離して 0.3 秒で消える）。右トリガー 2 秒で位置合わせ（体験の途中と終幕の再生中は数えない）。2 秒は const — `ControllerModeLogic.Tick` / `OvrControllerBridge.LongPressSec` / `RunInProgressForStaffInput` / `StatusViewLogic.ReleaseGraceSec` 〔show-design:190-192,278 / staff_status_view〕
 - Registration: 右 A で点を採る（0.5 秒ホールド平均）。Verify と Review では A がやり直し。右 B は Verify で確定保存、Review で保存せず出る。右トリガー 2 秒でキャンセル — `CourseRegistrationController.Feed` 〔show-design:193-195〕
 - 右グリップは読まない。左グリップは開発用の撮影だけ（本番機は `quest-shots.py off`） — `ExperienceShotCapture.Enabled` 〔show-design:196-197〕
 - 右 A を押している間と離して 0.3 秒はトリガー長押しを数えない。B は対象外 — `ControllerModeLogic.FaceButtonQuietSec` 〔show-design:387 / staff_status_view〕
@@ -55,7 +55,7 @@ paths:
 - 右 B 短押しは予備の引き渡し。1 秒押しは準備画面を正面へ戻すだけ — `StaffSetupButtonLogic.RecallSec` 〔show-design:19-21〕
 - タブレットのリセットは位置確定・Normal・登録外のときだけ。本編中と終幕中は断る — `StaffSetupLogic.CanResetFromTablet` 〔staff_setup〕
 - 強制リセット（pulse の force:true）を断るのは登録中だけ。起動 ID は照合する — `OvrControllerBridge.TryForceResetFromTablet` / `ForceReset_FromAnotherQuestBoot_IsRejected` 〔unexpected_event_recovery〕
-- リセットの号令は `ShowControlClient.BeginNewVisitorRunLocal` の 1 か所。工程は `RuntimeHealth.Step` で隔離 〔unexpected_event_recovery〕
+- リセットの号令は `ShowControlClient.BeginNewVisitorRunLocal` の 1 か所。工程は `RuntimeHealth.Step` で隔離。完了は題字の通し番号と段で見る（題字を出さない機は通し番号だけ）。前の体験者に宛てた振動の予約は捨てる — `StaffSetupLogic.ResetCompleted` / `OvrControllerBridge.ResetVisitor` 〔unexpected_event_recovery〕
 - 休止の秒数を体験の時計に入れない — `ShowClock.MaxStepSec` / `Clock_DropsTheSleptSeconds` 〔unexpected_event_recovery〕
 
 ### HMD 内の導入

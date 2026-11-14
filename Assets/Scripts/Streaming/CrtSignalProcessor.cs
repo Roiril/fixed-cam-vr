@@ -29,6 +29,8 @@ namespace FixedCamVr.Streaming
         private readonly int _preGlassPass;
         private RenderTexture? _linear, _horizontal, _psf, _psfRed, _psfBlue, _preGlass, _processed;
         private Material? _bound;
+        /// <summary><see cref="CaptureSnapshot"/> が写しを持ち続ける材質。撮るたびに作らない。</summary>
+        private Material? _snapshot;
         private Texture? _cachedSource;
         private long _cachedGeneration = long.MinValue;
         private uint _cachedUpdate;
@@ -144,13 +146,35 @@ namespace FixedCamVr.Streaming
             finally { RenderTexture.active = previous; }
         }
 
-        /// <summary>cloneのLive差し替えを含め、引数の現在値だけから同期撮影する。引数の所有権は取らない。</summary>
+        /// <summary>cloneのLive差し替えを含め、引数の現在値だけから同期撮影する。引数の所有権は取らない。1回ごとに器を作って捨てる。</summary>
         public static bool Capture(Material state, RenderTexture destination)
         {
-            var snapshot = new Material(state) { hideFlags = HideFlags.HideAndDontSave };
-            try { using (var processor = new CrtSignalProcessor()) return processor.Render(snapshot, destination); }
+            try { using (var processor = new CrtSignalProcessor()) return processor.CaptureSnapshot(state, destination); }
             catch (Exception e) { Debug.LogError("[CrtSignal] 同期撮影に失敗: " + e); return false; }
-            finally { DestroyOwned(snapshot); }
+        }
+
+        /// <summary>
+        /// <see cref="Capture"/> と同じ撮影を、この器（RT・材質・写し）を使い回して行う。繰り返し撮る側（終幕の写真）用。
+        /// <paramref name="state"/> は書き換えず、持ち続ける写しへ現在値を写してから描く。RT は入力の解像度が変わったときだけ作り直す。
+        /// </summary>
+        public bool CaptureSnapshot(Material state, RenderTexture destination)
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(CrtSignalProcessor));
+            if (_snapshot == null || _snapshot.shader != state.shader)
+            {
+                if (_snapshot != null)
+                {
+                    if (_bound == _snapshot) UnbindOwned();
+                    DestroyOwned(_snapshot);
+                }
+                _snapshot = new Material(state) { hideFlags = HideFlags.HideAndDontSave };
+            }
+            else
+            {
+                _snapshot.CopyPropertiesFromMaterial(state);
+                _snapshot.shaderKeywords = state.shaderKeywords;
+            }
+            return Render(_snapshot, destination);
         }
 
         public static float CoarseLod(Material state, int sourceWidth)
@@ -260,6 +284,7 @@ namespace FixedCamVr.Streaming
             UnbindOwned();
             Release(ref _linear); Release(ref _horizontal); Release(ref _psf); Release(ref _psfRed); Release(ref _psfBlue); Release(ref _preGlass); Release(ref _processed);
             DestroyOwned(_composition); DestroyOwned(_source); DestroyOwned(_filter);
+            if (_snapshot != null) { DestroyOwned(_snapshot); _snapshot = null; }
         }
     }
 }

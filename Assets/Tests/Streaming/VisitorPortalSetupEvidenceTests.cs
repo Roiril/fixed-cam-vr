@@ -139,6 +139,37 @@ namespace FixedCamVr.Streaming.Tests
             }
             finally { UnityEngine.Object.DestroyImmediate(go); VisitorPrefs.Reset(); ShowLanguage.Reset(); HorrorRelief.Reset(); }
         }
+        // タブレットは「新しいセッション ∧ 自分の要求 ID」で済みと読み、「新しいセッション ∧ ID なし」は失敗と読む。
+        // リセットの途中（BeginVisitorSession の直後）で状態を出すと後者が一瞬読まれ、済んだリセットが失敗と出る。
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TheNewSession_IsPublishedOnlyTogetherWithTheResetId(bool force)
+        {
+            var go = new GameObject("reset-publish-atomic"); VisitorPrefs.Reset();
+            try
+            {
+                var p = go.AddComponent<VisitorPortal>(); p.BeginVisitorSession();
+                string Json() => (string)typeof(VisitorPortal).GetField("_statusJson", Private).GetValue(p);
+                string before = p.CreateHeartbeatSnapshot().portalSessionId;
+                string seenInside = "";
+                Func<bool> reset = () => { p.BeginVisitorSession(); seenInside = Json(); return true; };
+                if (force) { p.ForceResetProvider = reset; Call(p, "OnForceResetFromThread", "reset-atomic"); }
+                else { p.StaffResetProvider = reset; Call(p, "OnStaffResetFromThread", "reset-atomic", 0); }
+                Call(p, "Update");
+                StringAssert.Contains(before, seenInside, "リセットの途中で新しいセッションを出した");
+                string after = p.CreateHeartbeatSnapshot().portalSessionId;
+                Assert.AreNotEqual(before, after);
+                StringAssert.Contains(after, Json());
+                StringAssert.Contains("\"staffResetId\":\"reset-atomic\"", Json());
+
+                // 校正: タブレットの要求ではないリセット（右 A）は、その場で新しいセッションを出す。
+                string rightA = p.CreateHeartbeatSnapshot().portalSessionId;
+                p.BeginVisitorSession();
+                Assert.AreNotEqual(rightA, p.CreateHeartbeatSnapshot().portalSessionId);
+                StringAssert.Contains(p.CreateHeartbeatSnapshot().portalSessionId, Json());
+            }
+            finally { UnityEngine.Object.DestroyImmediate(go); VisitorPrefs.Reset(); ShowLanguage.Reset(); HorrorRelief.Reset(); }
+        }
         [Test] public void AnotherTabletPulseCannotRefreshCurrentVisitorsTabletEvidence()
         {
             var go = new GameObject("tablet-owner-proof"); VisitorPrefs.Reset();

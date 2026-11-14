@@ -41,6 +41,8 @@ py -3.11 tools/quest-xprec.py off --serial <機>     # 展示本番の機は OFF
 
 録り始めは**スタッフの準備画面が閉じた瞬間**（`ShowControlClient.StaffSetupActive` の true→false）。
 録り終わりは準備画面が再び開く・終幕から 75 秒・15 分・休止。上限 3GB を超えたら映像だけ捨てる。
+録り始めの縁で `xprec/` の日時名の記録を古い順に消し、合計を 4GB（`ExperienceRecorder.PruneLimitBytes`）以内に収める（背景スレッド・書いている記録と `ON` は残す・ログ `[XpRec] 古い記録を刈った: N 本・X MB 解放`）。
+カメラの JPEG（`CameraStream.AnyFrameDecoded`）を購読するのは録っている間だけ。購読があると背景のカメラも全コマ展開するので、常時購読だと録らない機でも間引きが効かなかった。
 
 ## 再生の作り
 

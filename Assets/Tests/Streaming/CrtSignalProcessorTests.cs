@@ -404,5 +404,41 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(material.GetFloat("_CrtRuntimePsfReady"), Is.EqualTo(1));
             Assert.That(display.ProcessedFrames, Is.EqualTo(1));
         }
+
+        [Test]
+        public void ReusedSnapshotCapture_FollowsTheLatestState_WithoutRecreatingTargets()
+        {
+            // 終幕の写真は窓が開いているあいだ撮り直す。器を撮るたびに作らず、それでも最新の材質の値で描く。
+            Texture2D live = Solid(new Color(.3f, .02f, .02f, 1));
+            Material material = State(live);
+            material.SetTexture("_OverlayTex", Solid(new Color(.02f, .3f, .02f, 1)));
+            material.SetTexture("_MaskTex", Texture2D.whiteTexture);
+            using var display = new CrtSignalProcessor();
+            Assert.IsTrue(display.PrepareDisplay(material, 12));
+            Texture processed = material.GetTexture("_CrtProcessedSignalTex");
+            var target = Track(new RenderTexture(64, 36, 0, RenderTextureFormat.ARGB32));
+            Assert.IsTrue(target.Create());
+
+            using var capture = new CrtSignalProcessor();
+            Assert.IsTrue(capture.CaptureSnapshot(material, target));
+            RenderTexture? firstLinear = capture.LinearSource;
+            RenderTexture? firstProcessed = capture.Processed;
+            Color before = Center(target);
+            material.SetFloat("_OverlayStrength", 1);
+            Assert.IsTrue(capture.CaptureSnapshot(material, target));
+            Color after = Center(target);
+
+            Assert.That(before.r, Is.GreaterThan(before.g + .05f));
+            Assert.That(after.g, Is.GreaterThan(after.r + .05f), "使い回した写しも最新の素材を描く");
+            Assert.That(capture.ExplicitCaptures, Is.EqualTo(2));
+            Assert.That(firstLinear, Is.Not.Null);
+            Assert.That(capture.LinearSource, Is.SameAs(firstLinear), "同じ解像度なら RT を作り直さない");
+            Assert.That(capture.Processed, Is.SameAs(firstProcessed));
+            Assert.That(material.GetTexture("_CrtProcessedSignalTex"), Is.SameAs(processed), "画面の材質の束縛を書き換えない");
+            Assert.That(material.GetTexture("_LiveTex"), Is.SameAs(live));
+
+            capture.Dispose();
+            Assert.That(firstLinear == null, Is.True, "Dispose で器の RT を捨てる");
+        }
     }
 }

@@ -168,6 +168,16 @@ namespace FixedCamVr.Input
         public static bool CanResetFromTablet(bool started, bool runFinished, bool outroPlaying)
             => !started || (runFinished && !outroPlaying);
 
+        /// <summary>
+        /// 体験者リセットが実際に済んだか。題字の通し番号が進み、題字が呼び出し待ち（Wait）に来ていれば済み。
+        /// 題字を出さない機（組めない・出さない設定）は段が Wait に来ないので、通し番号が進んだだけで済みとする。
+        /// 題字の無い構成はリセットの並びそのものが済んだ時点で済み。
+        /// ⚠ 段だけで見ると、題字の組めない機ではリセットが永久に終わらず、タブレットが次の体験者へ進めない。
+        /// </summary>
+        public static bool ResetCompleted(bool hasTitle, int previousSequence, int sequence,
+                                          bool titleWaiting, bool titlePresents)
+            => !hasTitle || (sequence != previousSequence && (titleWaiting || !titlePresents));
+
         public bool ConfirmPosition(in StaffSetupSnapshot current)
         {
             if (!Observe(current, 0f) || !current.hasPosition || current.positionInvalid || current.registrationActive)

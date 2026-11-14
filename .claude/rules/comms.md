@@ -62,6 +62,7 @@ paths:
 - 文面と `CommsPanel.cs` のコメントを変えたら `menu hud-font`、赤い文は `menu comms-horror-font` 〔memory/comms_curse.md; memory/comms_takeover.md〕
 - 赤は `.linear` で渡す。忘れると橙になる — `CommsPanel.LieRed` 〔memory/comms_takeover.md〕
 - 乗っ取りの段境界は `CommsPossessionLogic.Sample` で共有し、呼び手で秒を組み直さない 〔memory/comms_clock_boundaries.md〕
+- 面の時刻表は `ShowClock.Dt` で進める（素の dt は休止の秒で乗っ取りと③が飛ぶ） 〔memory/unexpected_event_recovery.md〕
 - 打鍵しない出方は `NoticeChars=0`。字数のままだと解析器が落とす 〔show-design:1387〕
 - `Begin` / `BeginHow` の名前は走行ログの綴り。入れ替えない 〔show-design:652〕
 - `TakeoverInputBlocked` は面が組めていないとき拒否しない 〔CommsPanel.cs の doc〕

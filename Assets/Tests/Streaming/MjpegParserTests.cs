@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -604,6 +606,123 @@ namespace FixedCamVr.Streaming.Tests
             Exception ex = RunReadHeadersCatch(resp);
             Assert.That(ex, Is.TypeOf<InvalidOperationException>());
             Assert.That(ex.Message, Does.Contain("http error"));
+        }
+
+        // ---- 見出し待ちの期限（ResponseHeaderTimeoutSec）----
+        //
+        // 配信アプリが固まって TCP だけ受ける状態では、見出しが永久に来ず接続のまま止まっていた
+        // （接続 3 秒の期限は過ぎており、stall の判定は見出しを読み終えた後にしか立たない）。
+        // 再接続のループは通さず、localhost の TcpListener を相手に ReceiveOnceAsync を 1 回だけ回す。
+        // 期限は 5 秒だと遅いので、コンストラクタで短くした receiver を使う。
+
+        private const int SocketWaitMs = 5000;
+
+        [Test]
+        public void ResponseHeaderTimeout_Is5Seconds()
+            => Assert.That(MjpegStreamReceiver.ResponseHeaderTimeoutSec, Is.EqualTo(5f));
+
+        [Test]
+        public void ReceiveOnce_ServerAcceptsButNeverAnswers_GivesUpAtTheHeaderDeadlineAndClosesTheSocket()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            try
+            {
+                var r = NewReceiver(listener, TimeSpan.FromSeconds(0.3));
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                Task run = RunReceiveOnce(r, CancellationToken.None);
+                using TcpClient server = Accept(listener);
+
+                Assert.That(WaitQuietly(run, SocketWaitMs), Is.True, "見出しの期限を過ぎても諦めない");
+                Assert.That(sw.Elapsed.TotalSeconds, Is.GreaterThanOrEqualTo(0.25), "期限より前に抜けた");
+                Exception? ex = run.Exception?.GetBaseException();
+                Assert.That(ex, Is.TypeOf<TimeoutException>(), $"期限切れとして抜けていない: {ex}");
+                Assert.That(ex!.Message, Does.Contain("0.3s"), "何秒待ったかがログに出ない");
+                Assert.That(r.IsConnected, Is.False);
+                Assert.That(ReadsUntilClosed(server, SocketWaitMs), Is.True, "受信側がソケットを閉じていない");
+            }
+            finally { listener.Stop(); }
+        }
+
+        [Test]
+        public void ReceiveOnce_HeadersInTime_BodySilenceIsNotCutByTheHeaderDeadline()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            using var cts = new CancellationTokenSource();
+            try
+            {
+                var r = NewReceiver(listener, TimeSpan.FromSeconds(0.3));
+                Task run = RunReceiveOnce(r, cts.Token);
+                using TcpClient server = Accept(listener);
+                byte[] head = Ascii("HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n");
+                server.GetStream().Write(head, 0, head.Length);
+
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (!r.IsConnected && !run.IsCompleted && sw.ElapsedMilliseconds < SocketWaitMs) Thread.Sleep(10);
+                Assert.That(r.IsConnected, Is.True,
+                    $"見出しを読み終えていない: {run.Exception?.GetBaseException().Message}");
+
+                Thread.Sleep(1000); // 期限（0.3 秒）の 3 倍以上、本文を黙る
+                Assert.That(run.IsCompleted, Is.False,
+                    $"本文の沈黙に見出しの期限が掛かった: {run.Exception?.GetBaseException().Message}");
+
+                cts.Cancel();
+                Assert.That(WaitQuietly(run, SocketWaitMs), Is.True, "ct の cancel で本文の read を破れない");
+            }
+            finally
+            {
+                cts.Cancel();
+                listener.Stop();
+            }
+        }
+
+        private MjpegStreamReceiver NewReceiver(TcpListener listener, TimeSpan headerTimeout)
+        {
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var r = new MjpegStreamReceiver($"http://127.0.0.1:{port}/video", headerTimeout: headerTimeout);
+            _disposables.Add(r);
+            return r;
+        }
+
+        // スレッドプールで回す（テストのスレッドで待つので、継続を Unity の同期コンテキストへ戻さない）。
+        private static Task RunReceiveOnce(MjpegStreamReceiver r, CancellationToken ct)
+        {
+            MethodInfo m = typeof(MjpegStreamReceiver).GetMethod("ReceiveOnceAsync", InstBF)!;
+            return Task.Run(() => (Task)m.Invoke(r, new object[] { ct })!);
+        }
+
+        private static TcpClient Accept(TcpListener listener)
+        {
+            Task<TcpClient> accept = listener.AcceptTcpClientAsync();
+            Assert.That(accept.Wait(SocketWaitMs), Is.True, "receiver が接続して来ない");
+            return accept.Result;
+        }
+
+        // 終わったか（失敗で終わっても true）。例外は呼び手が Task.Exception で見る。
+        private static bool WaitQuietly(Task task, int timeoutMs)
+        {
+            try { task.Wait(timeoutMs); }
+            catch (AggregateException) { }
+            return task.IsCompleted;
+        }
+
+        // 相手が閉じるまで読み捨てる（GET の要求行は読み捨てる）。期限内に閉じなければ false。
+        private static bool ReadsUntilClosed(TcpClient server, int timeoutMs)
+        {
+            NetworkStream ns = server.GetStream();
+            ns.ReadTimeout = timeoutMs;
+            byte[] buf = new byte[256];
+            try
+            {
+                while (ns.Read(buf, 0, buf.Length) > 0) { }
+                return true;
+            }
+            catch (IOException e) when (e.InnerException is SocketException se)
+            {
+                // 読みの期限切れは TimedOut（Mono の実装によっては WouldBlock）。RST で閉じた場合は閉じたと数える。
+                return se.SocketErrorCode != SocketError.TimedOut && se.SocketErrorCode != SocketError.WouldBlock;
+            }
         }
     }
 }

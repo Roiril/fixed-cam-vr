@@ -188,6 +188,18 @@ namespace FixedCamVr.Input.Tests
         [TestCase(true, true, false, true)]
         public void TabletResetWaitsForFinishedOutro(bool started, bool runFinished, bool outroPlaying, bool expected)
             => Assert.AreEqual(expected, StaffSetupLogic.CanResetFromTablet(started, runFinished, outroPlaying));
+        // 題字を出す機: 通し番号が進み、呼び出し待ちに来たら済み。進んでいない・まだ別の段なら済んでいない。
+        [TestCase(true, 3, 4, true, true, true)]
+        [TestCase(true, 3, 3, true, true, false)]
+        [TestCase(true, 3, 4, false, true, false)]
+        // 題字の組めない機・出さない設定の機: 段は Wait に来ないので、通し番号が進んだだけで済み（来なければ永久に終わらない）。
+        [TestCase(true, 3, 4, false, false, true)]
+        [TestCase(true, 3, 3, false, false, false)]
+        // 題字の無い構成はリセットの並びが済んだ時点で済み。
+        [TestCase(false, -1, -1, false, false, true)]
+        public void ResetCompletes_EvenOnAMachineThatShowsNoTitle(bool hasTitle, int before, int after,
+                                                                  bool waiting, bool presents, bool expected)
+            => Assert.AreEqual(expected, StaffSetupLogic.ResetCompleted(hasTitle, before, after, waiting, presents));
         [Test] public void StartCanFireOnlyOnceForTheVisitor()
         {
             var l = new StaffSetupLogic(); var s = HandedOff(l);

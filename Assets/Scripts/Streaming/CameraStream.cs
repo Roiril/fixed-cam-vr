@@ -317,16 +317,18 @@ namespace FixedCamVr.Streaming
 
         /// <summary>
         /// メインスレッドから毎フレーム1回呼ぶ。監視は常に進め、許可されたときだけ最新フレームを展開する。
+        /// <paramref name="displayed"/> は体験者に表示中のカメラか（<c>CameraStreamRegistry.ActiveIndex</c>）。
+        /// 表示中は止まった配信を早く張り直す（<see cref="StreamWatchdogLogic.DisplayedStallReconnectSec"/>）。
         /// </summary>
-        public void Tick(bool allowDecode = true)
+        public void Tick(bool allowDecode = true, bool displayed = false)
         {
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
             long started = Stopwatch.GetTimestamp();
-            try { TickCore(allowDecode); }
+            try { TickCore(allowDecode, displayed); }
             finally { TickTiming.Record(Stopwatch.GetTimestamp() - started); }
         }
 
-        private void TickCore(bool allowDecode)
+        private void TickCore(bool allowDecode, bool displayed)
         {
 #endif
             if (_disposed) return;
@@ -381,8 +383,10 @@ namespace FixedCamVr.Streaming
             // ⚠ `/health` を 1 度も取れていないときも **0 ではなく -1（不明）**。
             //   0 を渡すと「たったいま来た」に化ける（`SetSourceAgeMs` の注記）。
             _latency.SetSourceAgeMs(_health?.latestFrameAgeMs ?? -1f);
-            // connected を渡すのは「接続は張れたのに 1 枚も来ない」を拾うため（StreamWatchdogLogic 3b）。
-            var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsHot ?? false, _receiver.IsConnected);
+            // connected を渡すのは「接続は張れたのに 1 枚も来ない」を拾うため（StreamWatchdogLogic 3b）と、
+            // 表示中の早い stall を「いまの接続が届けた後に黙った」に限るため。
+            var reason = _watchdog.EndTick(now, udt, phoneFps, _health?.IsHot ?? false, _receiver.IsConnected,
+                                           displayed);
             if (reason == StreamWatchdogLogic.ReconnectReason.Lag)
             {
                 Debug.Log($"[CameraStream] lag detected (recv={_watchdog.ReceivedFps:F1}/phone={phoneFps:F1}). reconnecting.");

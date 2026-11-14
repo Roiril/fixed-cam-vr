@@ -6,8 +6,12 @@ namespace FixedCamVr.Streaming
 {
     /// <summary>
     /// 終幕で使う 2 枚のスクリーン写真を GPU 上に保持する。
-    /// <see cref="TakeRunner.EndingShotWindow"/> が開いているあいだ合成済みの画を更新し続け、
-    /// 終了時には最後に成立したフレームをそのまま残す。
+    /// <see cref="TakeRunner.EndingShotWindow"/> が開いたら最初の 1 枚をすぐ撮り、開いているあいだは
+    /// <see cref="RefreshIntervalSec"/> ごとに撮り直す。終了時（<see cref="Freeze(EndingShotWindow)"/>）は
+    /// 窓が開いていればその場で撮り直してから、最後に成立したフレームをそのまま残す。
+    ///
+    /// 信号処理の器（<see cref="CrtSignalProcessor"/>・Float の RT と材質）は撮るたびに作らず 1 つを使い回し、
+    /// 固定・体験者の切り替え・無効化・破棄で捨てる。
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(Renderer))]
@@ -16,6 +20,20 @@ namespace FixedCamVr.Streaming
         public const int Width = 1280;
         /// <summary>参照の筐体を持たない 16:9 の画面の高さ。写真の高さは <see cref="HeightFor"/> で画面の縦横比から決める。</summary>
         public const int Height = 720;
+
+        /// <summary>
+        /// 窓が開いているあいだ写真を撮り直す間隔（秒）。最初の 1 枚は待たない。
+        /// 帰還の写真は最初の 1 枚で窓が閉じ、人形 End の写真は終了時の <see cref="Freeze(EndingShotWindow)"/> が
+        /// 撮り直すので、撮り直しが効くのは終了の前に窓が閉じたときの代わりの 1 枚だけ。毎フレームは要らない。
+        /// 失敗した撮影のやり直しもこの間隔で待つ。
+        /// </summary>
+        public const float RefreshIntervalSec = 0.5f;
+
+        /// <summary>
+        /// LateUpdate で撮るか。まだ 1 枚も無く直前に失敗していなければすぐ撮る。それ以外は <paramref name="nextAt"/> を待つ。
+        /// </summary>
+        public static bool CaptureDue(bool hasShot, bool lastAttemptFailed, float now, float nextAt)
+            => (!hasShot && !lastAttemptFailed) || now >= nextAt;
 
         /// <summary>
         /// 幅 <see cref="Width"/> の写真の高さを、画面の物理の縦横比（幅/高さ）から決める。
@@ -49,6 +67,12 @@ namespace FixedCamVr.Streaming
         private RenderTexture? _trappedShot;
         private RenderTexture? _releasedShot;
         private Coroutine? _pending;
+        /// <summary>写真を撮る信号処理の器。撮るたびに作らない。固定・リセット・無効化・破棄で捨てる。</summary>
+        private CrtSignalProcessor? _signal;
+        /// <summary>沈みを戻して描くための材質の写し。撮るたびに作らない。</summary>
+        private Material? _sinkClone;
+        private float _nextCaptureAt;
+        private bool _lastAttemptFailed;
         private int _generation;
         private int _trappedCount;
         private int _releasedCount;
@@ -81,7 +105,9 @@ namespace FixedCamVr.Streaming
             _frozen = false;
             _trappedCount = 0;
             _releasedCount = 0;
+            ResetCaptureClock();
             ReleaseShots();
+            ReleaseCaptureResources();
             UnhookRunDirector();
         }
 
@@ -89,6 +115,7 @@ namespace FixedCamVr.Streaming
         {
             UnhookRunDirector();
             ReleaseShots();
+            ReleaseCaptureResources();
         }
 
         /// <summary>自動配置した <see cref="TakeRunner"/> と撮影条件を接続する。</summary>
@@ -104,6 +131,8 @@ namespace FixedCamVr.Streaming
             if (_frozen || _pending != null || _runner == null) return;
             EndingShotWindow window = _runner.EndingShotWindow;
             if (window == EndingShotWindow.None) return;
+            bool hasShot = (window == EndingShotWindow.Trapped ? _trappedShot : _releasedShot) != null;
+            if (!CaptureDue(hasShot, _lastAttemptFailed, SimTime.Now, _nextCaptureAt)) return;
             _pending = StartCoroutine(CaptureAtEndOfFrame(window, _generation));
         }
 
@@ -118,7 +147,10 @@ namespace FixedCamVr.Streaming
             if (_frozen || generation != _generation || _runner == null
                 || _runner.EndingShotWindow != window) yield break;
 
-            if (!CaptureWindow(window)) yield break;
+            bool captured = CaptureWindow(window);
+            _lastAttemptFailed = !captured;
+            _nextCaptureAt = SimTime.Now + RefreshIntervalSec;
+            if (!captured) yield break;
             if (window == EndingShotWindow.Trapped) _trappedCount++;
             else if (window == EndingShotWindow.Released)
             {
@@ -136,22 +168,53 @@ namespace FixedCamVr.Streaming
         {
             ResolveMaterial();
             float sink = _runDirector != null ? _runDirector.EndingSink : 0f;
-            if (_material == null || !(sink > 0f)) return CaptureComposite(_material, destination);
+            if (_material == null || !(sink > 0f)) return CaptureWithOwnedSignal(_material, destination);
 
             // 時間切れの手前の沈み（ShowRunDirector.TickEndingSink）は体験者の目の前で起きることで、
-            // 人形 End のエンドロールの写真には持ち込まない。画面の材質は書き換えず、複製へ沈む前の値を戻して描く。
-            var clone = new Material(_material);
+            // 人形 End のエンドロールの写真には持ち込まない。画面の材質は書き換えず、写しへ沈む前の値を戻して描く。
+            // 写しは撮るたびに作らず使い回す（捨てるのは ReleaseCaptureResources）。
+            if (_sinkClone == null || _sinkClone.shader != _material.shader)
+            {
+                DestroyOwned(ref _sinkClone);
+                _sinkClone = new Material(_material) { name = "Ending Sink Snapshot", hideFlags = HideFlags.HideAndDontSave };
+            }
+            else
+            {
+                _sinkClone.CopyPropertiesFromMaterial(_material);
+                _sinkClone.shaderKeywords = _material.shaderKeywords;
+            }
+            if (_feel == null) _feel = GetComponent<CameraFeelFx>();
+            if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
+            RemoveEndingSink(_sinkClone, sink, _feel != null ? _feel.AppliedHeartVignette : 0f);
+            return CaptureWithOwnedSignal(_sinkClone, destination);
+        }
+
+        /// <summary>
+        /// <see cref="CaptureComposite(Material, RenderTexture)"/> と同じ経路で描くが、CRT の信号処理は
+        /// この部品が持ち続ける器（<c>_signal</c>）を使い回す。撮るたびに Float の RT と材質を作らない。
+        /// </summary>
+        private bool CaptureWithOwnedSignal(Material? material, RenderTexture destination)
+        {
+            if (material == null || destination == null) return false;
+            if (!material.HasProperty(CrtSignalRuntimeId) || material.GetFloat(CrtSignalRuntimeId) <= 0.5f)
+                return CaptureComposite(material, destination);
+            RenderTexture? previous = RenderTexture.active;
             try
             {
-                if (_feel == null) _feel = GetComponent<CameraFeelFx>();
-                if (_feel == null) _feel = FindObjectOfType<CameraFeelFx>();
-                RemoveEndingSink(clone, sink, _feel != null ? _feel.AppliedHeartVignette : 0f);
-                return CaptureComposite(clone, destination);
+                if (_signal == null || _signal.IsDisposed) _signal = new CrtSignalProcessor();
+                return _signal.CaptureSnapshot(material, destination);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError("[CrtSignal] 同期撮影に失敗: " + e);
+                // 半端な状態の器を次の撮影へ持ち越さない。
+                _signal?.Dispose();
+                _signal = null;
+                return false;
             }
             finally
             {
-                if (Application.isPlaying) Destroy(clone);
-                else DestroyImmediate(clone);
+                RenderTexture.active = previous;
             }
         }
 
@@ -211,6 +274,8 @@ namespace FixedCamVr.Streaming
                 }
             }
             _frozen = true;
+            // 固定した後は撮らない。信号処理の器（Float の RT）を次の体験者まで持ち越さない。
+            ReleaseCaptureResources();
             Debug.Log($"[EndingFrameCapture] 固定 generation={_generation} shots={ShotCount} " +
                       $"trappedFrames={_trappedCount} releasedFrames={_releasedCount}");
         }
@@ -230,8 +295,16 @@ namespace FixedCamVr.Streaming
             _frozen = false;
             _trappedCount = 0;
             _releasedCount = 0;
+            ResetCaptureClock();
             ReleaseShots();
+            ReleaseCaptureResources();
             Debug.Log($"[EndingFrameCapture] リセット generation={_generation} discarded={oldCount}");
+        }
+
+        private void ResetCaptureClock()
+        {
+            _nextCaptureAt = 0f;
+            _lastAttemptFailed = false;
         }
 
         private bool CaptureWindow(EndingShotWindow window)
@@ -323,6 +396,22 @@ namespace FixedCamVr.Streaming
         {
             if (Application.isPlaying) Destroy(target);
             else DestroyImmediate(target);
+        }
+
+        /// <summary>撮るための器（信号処理と沈みの写し）を捨てる。写真そのもの（<see cref="ReleaseShots"/>）は別。</summary>
+        private void ReleaseCaptureResources()
+        {
+            _signal?.Dispose();
+            _signal = null;
+            DestroyOwned(ref _sinkClone);
+        }
+
+        private static void DestroyOwned(ref Material? material)
+        {
+            if (material == null) return;
+            if (Application.isPlaying) Destroy(material);
+            else DestroyImmediate(material);
+            material = null;
         }
     }
 }

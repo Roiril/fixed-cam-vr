@@ -1842,7 +1842,7 @@ half4 frag(Varyings input) : SV_Target
         // ③ 燐光の焼けムラ（低い周波数のなだらかな雑音）と、高電圧が落ち着くまでの明滅。
         float uneven = 0.58 + 0.80 * ValueNoise21(screenUv * float2(4.3, 3.1));
         float flick = 1.0 - 0.30 * (1.0 - t)
-                    * Hash21(float2(floor(_Time.y * 31.0), 7.3));
+                    * Hash21(float2(fmod(floor(_Time.y * 31.0), 1024.0), 7.3)); // 巻き戻す理由は下の砂と同じ
         e *= uneven * flick * 0.34;
 
         // ⚠ **映像はここで制御しない**（`_IntroLive` の担当）。ここが作るのは光だけ。

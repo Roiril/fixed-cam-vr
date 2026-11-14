@@ -480,6 +480,10 @@ namespace FixedCamVr.OvrBridge
             {
                 deltaTime = Time.deltaTime,
                 triggerHeld = rTrigger,
+                // 体験の途中と終幕の再生中は、右トリガーの長押しで位置合わせへ入らない。入ると連絡の面が隠れ、
+                // パススルーが開き、体験者の画が奪われる（右を握った体験者・机の上で押された右でも起きる）。
+                // 出口はタブレットの強制リセットと右 A。Registration の中のキャンセルは止めない。
+                triggerBlocked = _modeLogic.Current == ControllerModeLogic.Mode.Normal && RunInProgressForStaffInput(),
                 resetHeld = aHeld,
                 registrationActive = regActive,
                 faceButtonHeld = aHeld,

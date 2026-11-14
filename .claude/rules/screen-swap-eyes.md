@@ -22,7 +22,7 @@ paths:
 体験者に見えることは `canon/NOW.md`、経緯は `reference/archive/streaming-2026-10-22.md`（S:）・`reference/archive/show-design-2026-10-22.md`（D:）。出典の行番号はその凍結版のもの。
 
 ## 契約
-- 乱れは `_Glitch` / `_GlitchSeed`。書くのは `GlitchFx` だけ。信号断の砂が後に掛かるので信号断が勝つ — `GlitchFx` 〔出典: S:1030-1032〕
+- 乱れは `_Glitch` / `_GlitchSeed`。書くのは `GlitchFx` だけ。信号断の砂が後に掛かるので信号断が勝つ。シードは起動からの秒を 8 秒で巻き戻して渡す（巻き戻さないと砂が数分で固まる） — `GlitchFx` / `GlitchFx.FoldSeed` / `GlitchSeedFoldTests` 〔出典: S:1030-1032〕
 - 乱れは 2 段。全層のサンプル前 uv をずらし、post の後に砂を掛ける — `GlitchUv` / `ScreenComposite.frag` 〔出典: S:1033-1034〕
 - 帯は不揃い（LEDGER 0310）。粗い 12 区画を 1〜32 本へ割り、横ずれと砂で別々に引く。動かすのは行全体 — `GlitchBandId`
 - 乱れの砂は信号断と同じ乗算・同じ定数。混ぜ具合は `g×1.5`。黒帯の中だけ地を 0.027 へ上げる — `SAND_*` / `ContainUv` 〔出典: S:1035-1040〕
@@ -42,7 +42,7 @@ paths:
 - 縦は機械（行の高さを揺らさない）、黒だけで組む、乱数を使わない 〔出典: S:2330-2336, S:2364〕
 - 持続の覆い（`swapHold`）は機構だけ残り、著作は 0 本 — `SwapMorphFx.BeginHold` 〔出典: S:2075-2083、LEDGER 0119〕
 - 左右分割の反転はライブと凍結だけ。軸は枠 UV の 0.5。第 2 層は静止画専用・フェードしない・色合わせは 1 層目だけ — `_SplitFlipLeft` / `CameraFeelFx.SetSplit` / `_Overlay2Tex` 〔出典: S:2045-2073、LEDGER 0050〕
-- 3-C は目の代わりにメインスクリーンの面を増やす（0317・試作）。切替は `AnomalyEyes.ScreensReplaceEyes`。時計と出番は目と共有し、席は `tools/make-screen-wall.py` が焼く `ScreenMultiplySeats.cs`。画は `ScreenMultiply` の取り込み。詳しくは memory/screen_multiply.md
+- 3-C は目の代わりにメインスクリーンの面を増やす（0317・試作）。切替は `AnomalyEyes.ScreensReplaceEyes`（増える面が組めなかったときも目へ戻さず何も描かない）。時計と出番は目と共有し、席は `tools/make-screen-wall.py` が焼く `ScreenMultiplySeats.cs`。画は `ScreenMultiply` の取り込み。詳しくは memory/screen_multiply.md
 - `ScreenMultiply` の席はメイン（2m）より奥に置く。シェーダの開きの式は `AnomalyEyesLogic.EyeOpen` と同じ。シェーダは Resources 配置で `Resources.Load`。`scrMul=` / `scrEmg=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す
 - 闇の霧の式は `ScreenFogLogic` と `Resources/ScreenFog.hlsl` で対。面は点いた時刻（`ScreenMultiply` が float4[40] に詰めて渡す。読み出しは `ScreenMultiplyCommon.hlsl`）から `ArriveSec` かけて奥から寄る。霧のぼけは取り込みの mip。見るのは `menu screen-wall`
 - 闇の目はスクリーンの外だけ（Background+100・前乗算）。段は兆し 1.42 / 凝視 0.5 / 開眼 3.0 / 閉じ 1.6 秒で著作させない — `AnomalyEyesLogic.HintSec` `StareSec` `SwarmSec` `CloseSec` 〔出典: S:1801-1815, S:1902-1911、LEDGER 0076 / 0094 / 0138〕

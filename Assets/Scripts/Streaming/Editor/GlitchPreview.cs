@@ -117,7 +117,7 @@ namespace FixedCamVr.Streaming.EditorTools
                         float level = env.Tick(dt);
                         seed += dt;
                         mat.SetFloat("_Glitch", level);
-                        mat.SetFloat("_GlitchSeed", seed);
+                        mat.SetFloat("_GlitchSeed", GlitchFx.FoldSeed(seed)); // 本番と同じ巻き戻し
                         Shoot(cam, Path.Combine(dir, $"f{frames:0000}.png"));
                         ledger.Append(frames).Append('\t').Append(n).Append('\t')
                               .Append(esc.Progress01.ToString("F3", CultureInfo.InvariantCulture)).Append('\t')

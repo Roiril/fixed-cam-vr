@@ -21,14 +21,16 @@ namespace FixedCamVr.Streaming
 
         private static int _frame = -1;
         private static float _dt;
-        private static float _now;
+        // ⚠ double で積む。float だと朝から開けっ放しの展示で、起動 8 時間で刻みが 0.002 秒になり、
+        //   90Hz の 1 フレーム（0.011 秒）を足すたびに数 % ずつ同じ向きへ丸まる（体験の尺の判定が伸び縮みする）。
+        private static double _now;
         private static int _gaps;
 
         /// <summary>このフレームの経過秒（休止を切ったもの）。</summary>
         public static float Dt { get { Advance(); return _dt; } }
 
         /// <summary>起動からの体験の時計（休止を含まない）。</summary>
-        public static float Now { get { Advance(); return _now; } }
+        public static float Now { get { Advance(); return (float)_now; } }
 
         /// <summary>休止とみなして時間を捨てた回数（観測用）。</summary>
         public static int Gaps { get { Advance(); return _gaps; } }

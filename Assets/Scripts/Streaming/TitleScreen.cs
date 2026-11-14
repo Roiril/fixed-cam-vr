@@ -190,6 +190,13 @@ namespace FixedCamVr.Streaming
         /// <summary>いま画面を持っているか。<b>組めていないときは必ず false</b>（素通しに倒す）。</summary>
         public bool IsBlocking => IsBuilt && titleEnabled && _logic.Active;
 
+        /// <summary>
+        /// この機で題字を出すか（組めていて、出さない設定でもない）。出さない機ではリセット後も段が
+        /// <see cref="TitleStage.Wait"/> に来ないので、リセットの完了を段で確かめる側はこれで分ける
+        /// （<see cref="FixedCamVr.Input.StaffSetupLogic.ResetCompleted"/>）。
+        /// </summary>
+        public bool Presents => IsBuilt && titleEnabled;
+
         /// <summary>報告練習後の題字呼び出しを待っているか。</summary>
         public bool AwaitingInput => IsBlocking && _logic.AwaitingInput;
 

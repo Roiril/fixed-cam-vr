@@ -67,7 +67,7 @@ paths:
 - NoDelay・受信 64KB・接続 3 秒。バックオフ 1→30 秒、確立後の切断は 1 秒から — `MjpegStreamReceiver._connectionEstablished` / `DelayWithReconnect` 〔S:214, S:3371-3380〕
 - 表示中と録画中は届いた分を毎フレーム展開する。背景は 1 台あたり毎秒 3 回までで、1 フレームに 1 台ずつ。録画・xprec の記録・リプレイの間は背景も全コマ展開する。切替先は公開前に最新を展開する — `StreamDecodeScheduler.BackgroundDue` / `NextBackground` / `CameraStream.HasFrameObservers` 〔memory/comms_performance_20261018.md〕
 - 計器の意味。`rx=` は到着、`dfps=` は展開、`dfail=` は展開失敗の累計、`drop=` は `X-Frame-Seq` の飛び（送り手と経路の欠落）。受信側の間引きは drop に入らない — `StreamWatchdogLogic.OnFramesArrived` / `DecodedFps` / `MjpegStreamReceiver.SeqGapFrames` 〔出典: コード〕
-- 判定は `StreamWatchdogLogic`。lag は到着 fps の比 0.7 未満が 1.5 秒（熱降格中は抑止）、stall 10 秒、展開失敗 30 枚か 2 秒、resume-gap 0.5 秒で suspend も解く — `LagThresholdRatio` / `StallReconnectSec` / `StreamHealth.IsHot` / `StreamWatchdogLogicTests` 〔S:228, S:1568, S:3374-3378〕
+- 判定は `StreamWatchdogLogic`。lag は到着 fps の比 0.7 未満が 1.5 秒（熱降格中は抑止）、stall は表示中のカメラでいまの接続が 1 枚届けた後なら 2.5 秒・それ以外（背景・張り直し直後でまだ届いていない接続・熱降格中）は 10 秒、展開失敗 30 枚か 2 秒、resume-gap 0.5 秒で suspend も解く。接続後に応答の見出しが 5 秒来なければ receiver がソケットを閉じてバックオフへ戻す（本文には掛けない） — `LagThresholdRatio` / `DisplayedStallReconnectSec` / `StallReconnectSec` / `StreamHealth.IsHot` / `MjpegStreamReceiver.ResponseHeaderTimeoutSec` / `StreamWatchdogLogicTests` / `MjpegParserTests` 〔S:228, S:1568, S:3374-3378〕
 - 張り直しは世代で旧 /info /health を捨て、suspend 中も新 receiver を起動する — `CameraStream.EndpointGeneration` 〔S:3375〕
 - 映っている証拠は同じ接続で 1.5 秒以内の実展開 — `DecodedFrameEvidence.FreshSec` / `CameraStream.HasFreshDecodedFrame` 〔出典: コード〕
 - 遅延は絶対値を出さず分けて出す — `LatencyEstimatorLogic.ArrivalJitterMs` / `DecodeMs` / `PresentMs` / `SourceAgeMs` 〔S:1553-1566〕
@@ -82,7 +82,7 @@ paths:
 - 例外の計数と工程の隔離 — `RuntimeHealth.ExceptionCount` / `Step` 〔memory/unexpected_event_recovery.md〕
 - 録画は `temporaryCachePath/rec/<runEpoch>/L<lap>C<cam>.mjr`。既定は切替の 3 秒前〜2 秒後、`maxTotalMB` はラン全体 — `SegmentRecordWriter.DefaultTailSec` / `DefaultPostSec` / `RecordedSegmentFormat` 〔S:1628-1731〕
 - 左グリップ撮影は Dev で ON・Release で OFF、`shots/OFF` が勝つ — `ExperienceShotLogic.IsEnabled` 〔memory/experience_shots.md〕
-- 体験の記録は `files/xprec/<日時>/`。`xprec/ON` があるときだけ、スタッフの準備画面が閉じた瞬間から録る。映像は展開できた JPEG をそのまま残す — `ExperienceRecorder` / `XpRecFormat` / `CameraStream.AnyFrameDecoded` 〔memory/experience_replay.md〕
+- 体験の記録は `files/xprec/<日時>/`。`xprec/ON` があるときだけ、スタッフの準備画面が閉じた瞬間から録る。映像は展開できた JPEG をそのまま残す。`AnyFrameDecoded` を購読するのは録っている間だけ（録っていない機で背景の全コマ展開を起こさない）。録り始めに日時名の記録を古い順に消して合計 4GB 以内に収める（書いている記録・`ON`・日時名でない物は消さない。背景スレッド） — `ExperienceRecorder` / `PruneLimitBytes` / `XpRecPrune.Plan` / `XpRecFormat` / `CameraStream.AnyFrameDecoded` 〔memory/experience_replay.md〕
 - 再生中（`XpReplay.Active`）は焼き込みだけで動き、卓・heartbeat・:8090・発見・配信スマホへ繋がない。カメラの JPEG は `XpReplay.Feed` から来る — `ShowControlClient.BakedOnly` / `CameraStream.TryTakeFrame` 〔memory/experience_replay.md〕
 ## 罠（破ると壊れる）
 - 止まった配信も `/health.fps` は 30 前後を返す。`encodeIdle` で見る。`latestFrameAgeMs=-1` は未生成 〔S:74-86〕。`totalFrames=0` は需要駆動で故障ではない 〔memory/camera_fleet.md〕

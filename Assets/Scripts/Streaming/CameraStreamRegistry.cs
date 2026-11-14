@@ -82,8 +82,9 @@ namespace FixedCamVr.Streaming
             int background = _decodeScheduler.NextBackground(_backgroundExcluded);
             if (background >= 0) _backgroundDueAt[background] = now + StreamDecodeScheduler.BackgroundIntervalSec;
             // 表示中と録画中を先に処理する。全台の監視は各フレームちょうど1回だけ。
+            // 表示中だけは止まった配信を早く張り直す（録画だけの背景は 10 秒のまま）。
             for (int i = 0; i < _streams.Length; i++)
-                if (_decodePriority[i]) _streams[i]?.Tick(allowDecode: true);
+                if (_decodePriority[i]) _streams[i]?.Tick(allowDecode: true, displayed: i == _activeIndex);
             for (int i = 0; i < _streams.Length; i++)
                 if (!_decodePriority[i]) _streams[i]?.Tick(allowDecode: i == background);
         }

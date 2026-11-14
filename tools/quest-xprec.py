@@ -18,6 +18,7 @@ PC での撮り直しは `.\\tools\\unity.ps1 replay -Set rec=latest,view=eye`�
 
 ⚠ **`adb pull` は使えない**（scoped storage で 0 バイトになる）。`exec-out cat` をファイルへ直に流す。
 ⚠ 1 回で 300MB〜1GB ある（カメラ 3 台の JPEG）。取り出したら `--delete` で端末から消す。
+   端末は録り始めに古い記録から消して合計 4GB 以内に収める（`ExperienceRecorder.PruneLimitBytes`）。要る記録は早めに pull する。
 ⚠ 印 `xprec/ON` は録り始めのたびに読まれる（アプリの再起動は要らない）。
 """
 

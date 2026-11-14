@@ -5,12 +5,13 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6cd725ef-8e93-4852-88d7-17922bbaff01
-  modified: 2026-11-12T23:09:10.326Z
+  modified: 2026-11-14T14:16:51.619Z
 ---
 
 2026-11-06 ユーザー依頼（0317・逐語は LEDGER）を受けた試作。闇の目の代わりに、メインスクリーンと同じ画を映す面が頭の周りへ増える。参考は `mul.jpg`（列に並んだ光の走馬灯）。
 
 **切替**: `AnomalyEyes.ScreensReplaceEyes`。false にすれば目へ戻る。目のコードと版は消していない。
+true の間に増えるスクリーンが組めなかったときは、目へ戻さず何も描かない（2026-11-14。やめた演出を本番に出さないため。組めなかったことは `scrMul=` の 1 桁目に出る）。
 
 **時計と出番は目のまま**: `AnomalyEyesLogic`（兆し → 凝視 → 開眼 → 閉じ）と `EyesCueLogic`（0093）を流用し、どちらの時計も触らない。`eyes=` の開いた数は面の枚数になる。
 

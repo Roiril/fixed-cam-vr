@@ -47,9 +47,18 @@ namespace FixedCamVr.Streaming
         // 超過したら例外 → backoff 再接続で復旧する（実フレームは ~100KB なので 16MB は十分余裕）。
         private const int MaxFrameBytes = 16 * 1024 * 1024;
 
+        /// <summary>
+        /// 接続後、要求を送ってから応答の見出し（ステータス行とヘッダ）を読み終えるまでの期限。
+        /// 配信アプリが固まって TCP だけ受ける状態では見出しが永久に来ず、接続 3 秒の期限も
+        /// 見出しを読み終えて立つ stall の判定も届かない。超えたらソケットを閉じて通常のバックオフへ戻す。
+        /// 本文の受信には掛けない（本文の停止は <see cref="StreamWatchdogLogic"/> の stall が見る）。
+        /// </summary>
+        public const float ResponseHeaderTimeoutSec = 5f;
+
         private readonly string _url;
         private readonly string? _basicAuthToken;
         private readonly TimeSpan _connectTimeout;
+        private readonly TimeSpan _headerTimeout;
         private readonly CancellationTokenSource _cts = new();
         private Task? _loop;
         // host 未設定のカメラでは URL が組めないので null になりうる。詳細はコンストラクタの注記。
@@ -113,7 +122,9 @@ namespace FixedCamVr.Streaming
             catch (Exception ex) { Debug.LogWarning($"[MJPEG] reconnect cancel failed: {ex.Message}"); }
         }
 
-        public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null, string? basicAuthToken = null)
+        /// <param name="headerTimeout">見出し待ちの期限。既定 <see cref="ResponseHeaderTimeoutSec"/>。テストが短くするためだけにある。</param>
+        public MjpegStreamReceiver(string url, TimeSpan? connectTimeout = null, string? basicAuthToken = null,
+                                   TimeSpan? headerTimeout = null)
         {
             _url = url;
             // ⚠ **URL が組めなくても例外を投げない。**
@@ -126,6 +137,7 @@ namespace FixedCamVr.Streaming
             // CameraStream.ReapplyConnection が作り直す。
             Uri.TryCreate(url, UriKind.Absolute, out _uri);
             _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
+            _headerTimeout = headerTimeout ?? TimeSpan.FromSeconds(ResponseHeaderTimeoutSec);
             _basicAuthToken = basicAuthToken;
         }
 
@@ -318,17 +330,42 @@ namespace FixedCamVr.Streaming
                 "Connection: close\r\n" +
                 "\r\n";
             byte[] reqBytes = Encoding.ASCII.GetBytes(reqLine);
-            await socket.SendAsync(new ArraySegment<byte>(reqBytes), SocketFlags.None);
 
             using var stream = new NetworkStream(socket, ownsSocket: false);
 
-            // レスポンスヘッダを CRLF CRLF まで読み、Content-Type の boundary と
-            // Transfer-Encoding を抜く。NanoHTTPD の newChunkedResponse は
-            // Transfer-Encoding: chunked で返してくるため、生 Socket では明示的に
-            // デチャンクが必要（HttpClient なら自動）。デチャンクを忘れると hex の
-            // チャンク長プレフィックスが multipart 中に混入して JPEG を破壊する
-            // → スクリーン映像が R/G/B/黒 にちらつく症状になる。
-            var (contentType, transferEncoding) = await ReadResponseHeadersAsync(stream, ct);
+            // 要求の送信から見出しを読み終えるまでに期限を付ける（ResponseHeaderTimeoutSec）。
+            // connect timeout と同じく別 CTS で socket.Close を重ね、進行中の read を破る。
+            // 見出しを読み終えたら登録を外す（本文の受信には掛けない）。
+            string contentType, transferEncoding;
+            using (var headerCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                headerCts.CancelAfter(_headerTimeout);
+                var closeOnHeaderTimeout = headerCts.Token.Register(() => { try { socket.Close(); } catch { } });
+                try
+                {
+                    await socket.SendAsync(new ArraySegment<byte>(reqBytes), SocketFlags.None);
+
+                    // レスポンスヘッダを CRLF CRLF まで読み、Content-Type の boundary と
+                    // Transfer-Encoding を抜く。NanoHTTPD の newChunkedResponse は
+                    // Transfer-Encoding: chunked で返してくるため、生 Socket では明示的に
+                    // デチャンクが必要（HttpClient なら自動）。デチャンクを忘れると hex の
+                    // チャンク長プレフィックスが multipart 中に混入して JPEG を破壊する
+                    // → スクリーン映像が R/G/B/黒 にちらつく症状になる。
+                    (contentType, transferEncoding) = await ReadResponseHeadersAsync(stream, headerCts.Token);
+                }
+                catch (Exception) when (headerCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    // 期限切れで閉じた socket の read は ODE / IOException / OCE のどれでも来る。
+                    // RequestReconnect・Dispose（ct 側）由来の cancel はここで拾わず、従来の扱いへ流す。
+                    throw HeaderTimeout();
+                }
+                finally
+                {
+                    // Dispose は走行中の Close を待つ。外した後に期限切れが立っていれば socket は閉じている。
+                    closeOnHeaderTimeout.Dispose();
+                }
+                if (headerCts.IsCancellationRequested && !ct.IsCancellationRequested) throw HeaderTimeout();
+            }
             string boundary = ParseBoundary(contentType);
             if (string.IsNullOrEmpty(boundary))
             {
@@ -345,6 +382,11 @@ namespace FixedCamVr.Streaming
             Debug.Log($"[MJPEG] connected to {_url} ContentType=\"{contentType}\" TransferEncoding=\"{transferEncoding}\" useChunked={useChunked}");
             await ParseMultipartAsync(readStream, boundary, ct);
         }
+
+        // 見出し待ちの期限切れ。RunLoopAsync の汎用 catch が `[MJPEG] disconnected: …` の 1 行と
+        // _lastError に出し、未確立の切断として通常のバックオフへ入る。
+        private TimeoutException HeaderTimeout()
+            => new($"response headers not received within {_headerTimeout.TotalSeconds:0.#}s; socket closed ({_url})");
 
         // ステータス行 + ヘッダを CRLFCRLF まで読み、Content-Type と Transfer-Encoding を返す。
         // CRLFCRLF が見つかるまで 1 バイトずつ読む（ヘッダ全体は通常 <1KB なので問題なし）。

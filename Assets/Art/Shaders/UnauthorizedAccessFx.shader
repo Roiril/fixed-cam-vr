@@ -136,7 +136,9 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 // まれな細い帯の横ずれ（主画面の乱れと同じ語彙）。帯は 1.1cm、1 秒に 9 回だけ引き直す。
                 // 量は字幅の 2% まで・帯の 2.5% だけ ＝ 読む邪魔をしない頻度に留める。
                 float band = floor(os.y / .011);
-                float tick = floor(_Time.y * 9.0);
+                // ⚠ 刻みは必ず巻き戻す。Hash21 は入力を 456 倍してから frac を取るので、
+                //   _Time.y（起動からの秒）をそのまま刻むと 30 分ほどで小数が消え、帯が同じ形で固まる。
+                float tick = fmod(floor(_Time.y * 9.0), 1024.0);
                 float slip = Hash21(float2(band, tick)) > .975 ? (Hash21(float2(tick, band * 1.7)) - .5) * .04 : 0;
                 float2 uv = input.uv + float2(slip, 0);
                 float2 t = _MainTex_TexelSize.xy;
@@ -185,7 +187,8 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 }
 
                 // 時間で動く細かい粒（1.4mm・24Hz）。
-                float frame = floor(_Time.y * 24.0);
+                // 128 コマ（5.3 秒）で巻き戻す。入力が 1,300 を超えると粒の刻みが粗くなる。
+                float frame = fmod(floor(_Time.y * 24.0), 128.0);
                 float g = Hash21(floor(os * 700) + frame * 7.13);
                 float grainK = .86 + .28 * g;
 
@@ -217,7 +220,7 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 float2 uv = input.uv;
                 float blur = saturate(input.glyph.y);
                 bool twoRows = input.glyph.x > .5;
-                float frame = floor(_Time.y * 18.0);
+                float frame = fmod(floor(_Time.y * 18.0), 256.0); // 14 秒で巻き戻す（上の粒と同じ理由）
                 float rowH = lerp(.07, .12, blur);
                 float soft = .03 + blur * .08;
                 float yA = twoRows ? .40 : .5;
@@ -225,7 +228,7 @@ Shader "FixedCamVr/UnauthorizedAccessFx"
                 float rowB = twoRows ? 1 - smoothstep(rowH * .5, rowH * .5 + soft, abs(uv.y - .62)) : 0;
                 float row = max(rowA, rowB);
                 // 帯の長さは場所と時間でゆっくり変わる（同じ形が並ばないように）。
-                float lenSeed = ValueNoise(input.positionWS.xz * 3 + input.positionWS.y * 2 + _Time.y * .7);
+                float lenSeed = ValueNoise(input.positionWS.xz * 3 + input.positionWS.y * 2 + fmod(_Time.y, 1024.0) * .7);
                 float len = .45 + .5 * lenSeed;
                 float xFade = 1 - smoothstep(len * .5 - .08, len * .5, abs(uv.x - .5));
                 // 粒は断片の大きさに合わせて uv で刻む（手前の大きい断片が縦縞の板にならない）。
