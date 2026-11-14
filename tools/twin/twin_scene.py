@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import os
 import random
 
 import bmesh
@@ -198,8 +199,12 @@ def build_booth(show, mats):
         b = u2b(w["x2"], 0, w["z2"])
         t = (b - a).normalized()
         cloth_h = H - 0.015
+        # 演出の試作用: 角の合わせ目を開く（TWIN_SEAM_GAP = 片側の引き幅 m。既定 0 で従来どおり）
+        gap = float(os.environ.get("TWIN_SEAM_GAP", "0") or 0)
+        ga = gap if corner and abs(w["x1"] - corner[0]) + abs(w["z1"] - corner[1]) < 0.01 else 0.0
+        gb = gap if corner and abs(w["x2"] - corner[0]) + abs(w["z2"] - corner[1]) < 0.01 else 0.0
         # 枠の竿よりカーテンは内寄り。外側の手すりを避けるため少し中へ
-        ob, pleats = _curtain(f"Curtain {w['id']}", a + t * 0.012, b - t * 0.004, cloth_h, 17 + i * 31, mats["curtain"])
+        ob, pleats = _curtain(f"Curtain {w['id']}", a + t * (0.012 + ga), b - t * (0.004 + gb), cloth_h, 17 + i * 31, mats["curtain"])
         # 竿: プレート A/C のとおり
         add_cyl(f"Rod {w['id']}", a + Vector((0, 0, H + 0.015)) - t * 0.02, b + Vector((0, 0, H + 0.015)) + t * 0.02, 0.0135, pipe)
         # クリップ（プレートのカーテンクリップ）
