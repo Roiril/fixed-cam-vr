@@ -13,7 +13,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "tools/web-compositor/captures/kidsroomB_noeyes_20261114.mp4"
+# 音声付きの原本。本番の束へ入る kidsroomB_noeyes_20261114.mp4 は映像だけ（音は sfx_kidsroom.wav で鳴らす）。
+# 写しは Drive renders/kidsroom/20261114_nook/152511_nook_dolls_2_kidsroomB_noeyes_20261114_audio.mp4
+SOURCE = ROOT / "tools/web-compositor/captures/kidsroomB_noeyes_20261114_audio.mp4"
 SOURCE_SHA256 = "408AF41BC73CBBAED8950C7C3788A77EE88D928058EE9F22BCEB33656D998FBD"
 TARGET = ROOT / "Assets/Resources/Sound/sfx_kidsroom.wav"
 

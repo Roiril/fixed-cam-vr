@@ -54,7 +54,7 @@ paths:
 | 何 | 値 |
 |---|---|
 | 音源 | `sfx_kidsroom`（`SoundCue.KidsRoom`・変種 1）。電灯と木馬が揺れ、人形が畳に落ちる鈍い音 |
-| 作り | `py -3.11 tools/ingest-kidsroom-audio.py`。`tools/web-compositor/captures/kidsroomB_noeyes_20261114.mp4` の音を**無加工**で 48kHz・ステレオの PCM へ抜く。原本の SHA-256 は定数で照合する |
+| 作り | `py -3.11 tools/ingest-kidsroom-audio.py`。音声付きの原本 `tools/web-compositor/captures/kidsroomB_noeyes_20261114_audio.mp4` の音を**無加工**で 48kHz・ステレオの PCM へ抜く。原本の SHA-256 は定数で照合する |
 | 高さ | **-24.6 LUFS / 尖頭 -0.45 dBTP**（素のまま）。尖頭は -3dBTP の線を超えて `sound-lint.py` が NG を出すが、音量を変えない（ユーザーは動画ごと聴いて採った） |
 | 尺 | **6.04 秒**。動画のカット（5.9 秒）より長く、静止画のカットの頭まで鳴る |
 | 鳴らす所 | `TakeRunner.BeginStep` の `dollCall` と同じ行。cueId が `TakeRunner.KidsRoomCueId` のカットが画面を取った頭で `_sound.PlaySpot(SoundCue.KidsRoom)` を 1 回。飛ばしたカットでは鳴らさない |
