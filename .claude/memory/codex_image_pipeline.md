@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 8d23bbdd-1feb-4028-ad72-a0b65e8e20f1
-  modified: 2026-11-14T06:58:36.261Z
+  modified: 2026-11-14T14:42:02.807Z
 ---
 
 **道具と手順は [tools/gen-plate/README.md](../../tools/gen-plate/README.md)、
@@ -38,6 +38,11 @@ metadata:
 - 生成で確かめる前に、最初と最後のフレームの画を詰める（同日「最終フレームの画像がそもそも怖くないかも」）
 - 画像はファイル選択を開かずに入れる。`HTMLInputElement.prototype.click` を差し替えて file input を捕まえ、拡張の `file_upload` で渡す
 - 中身は動画の画面でタイムラインの目盛りを押して時刻を移し、プレイヤーの範囲を拡大して撮る（ページに `video` 要素が見えない）
+
+⚠ **暗い素材は本編の画面で真っ黒に潰れる**（2026-11-14・2-B の子供部屋）。CRT の信号処理（`CrtSignalProfile`：露出 -1.75EV・linear 0.5 中心のコントラスト 1.12）は明るい配信に合わせてあり、カットの post を素通しにしても掛かる。平均 24/255 の動画は linear 0.054 を下回って全面 0 になった（ツインの画を 10 倍に持ち上げても何も無い）。旧素材は平均 113 で映っていた。
+- 差し替える前に素材の明るさを測る。**平均 80〜110・p99 150 前後**を目安にする（子供部屋は白点 140・ガンマ 0.6 で平均 85 にした）
+- 黒い画は、音声トラック・色の付記（sRGB の transfer）・符号化の水準では起きない。3 つとも順に外して確かめた。同じ名前で旧素材を置くと映ることで、素材の側だと切り分けた
+- 判定はツインの目線の画（`twin-tree.py run`）。卓や生成元の画面ではこの潰れは見えない
 
 既存の変換手順と、4:3入力で上下を切られた実測は [dolls-gather.md](../../tools/gen-plate/video/dolls-gather.md) の「入力の作り方」。Codex と Claude Code はどちらもルート `CLAUDE.md` からこの節へ誘導される（2026-10-28 に AGENTS.md を廃止）。
 
