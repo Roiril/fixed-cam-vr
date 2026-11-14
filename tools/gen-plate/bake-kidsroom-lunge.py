@@ -1,9 +1,12 @@
-"""焼けた「隙間から眼が覗く画」を参照①にして、飛びかかる最後のフレームだけを焼き直す（anomaly/kidsroom-cat.md の <!-- last -->）。
+"""焼けた「隙間から眼が覗く画」を参照①にして、動画の最後のフレームだけを焼き直す（anomaly/kidsroom-cat.md）。
 
-    py -3.11 tools/gen-plate/bake-kidsroom-lunge.py <眼が覗く画.png> [<眼が覗く画.png> ...]
+    py -3.11 tools/gen-plate/bake-kidsroom-lunge.py [--variant last|last_close|last_fallen] [--nook] <眼が覗く画.png> ...
 
-出力は同じフォルダの lunge.png と lunge_169.png。1 本ずつ直列。
+--variant は最後のフレームの版（節の名前）。last は飛びかかる黒い塊と大きな眼 2 つ（0361）。
+last_close は近すぎて見えない・傾いた画に眼が 1 つ、last_fallen は横倒しのカメラを覗き込む眼が 1 つ（どちらも 0368）。
+--nook は人形と木馬の部屋の説明を足す（0364）。出力は同じフォルダの <variant>.png と <variant>_169.png。1 本ずつ直列。
 """
+import argparse
 import importlib.util
 import sys
 from pathlib import Path
@@ -15,19 +18,25 @@ spec.loader.exec_module(cat)
 
 
 def main():
-    srcs = [Path(p).resolve() for p in sys.argv[1:]]
-    if not srcs:
-        sys.exit(__doc__)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("srcs", nargs="+")
+    ap.add_argument("--variant", default="last")
+    ap.add_argument("--nook", action="store_true")
+    a = ap.parse_args()
     blocks = cat.REPO / "Logs" / "gen-plate" / "kr_block"
-    common, _, last = cat.sections(False)
+    common, _, _ = cat.sections(a.nook, a.nook)
+    body = cat.section(a.variant)
+    name = "lunge" if a.variant == "last" else a.variant
     bad = 0
-    for src in srcs:
+    for src in (Path(p).resolve() for p in a.srcs):
+        if not src.exists():
+            sys.exit(f"無い: {src}")
         d = src.parent
-        out = cat.bake(d, "lunge", last + "\n\n## 参考（部屋の説明。参照画像①に既に写っている）\n\n" + common, [
+        out = cat.bake(d, name, body + "\n\n## 参考（部屋の説明。参照画像①に既に写っている）\n\n" + common, [
             ("①", src, "編集する元の画。同じ動画の最初のフレーム"),
             ("③", blocks / "curtain_ref.jpg", "右の幕の布")])
         if out.exists():
-            cat.pad169(out, d / "lunge_169.png")
+            cat.pad169(out, d / f"{name}_169.png")
         else:
             bad += 1
     sys.exit(1 if bad else 0)

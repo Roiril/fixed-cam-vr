@@ -23,7 +23,7 @@ REPO = HERE.parent.parent
 RUNNER = Path(os.environ["USERPROFILE"]) / ".claude" / "scripts" / "codex-run.ps1"
 
 
-def sections(dolls: bool, nook: bool = False):
+def parse() -> dict[str, list[str]]:
     # 区切りは「行まるごと」のコメントだけ。本文中に同じ文字列があっても切らない
     # （2026-11-14、冒頭の説明に区切りを書いていて、最初のフレームの指示が丸ごと抜けた）。
     t = (HERE / "anomaly" / "kidsroom-cat.md").read_text(encoding="utf-8")
@@ -38,6 +38,19 @@ def sections(dolls: bool, nook: bool = False):
             continue
         if cur:
             parts[cur].append(line)
+    return parts
+
+
+def section(name: str) -> str:
+    """名前の節の本文。空なら止める（last_close・last_fallen など、最後のフレームの別の版）。"""
+    body = "\n".join(parse().get(name, [])).strip()
+    if not body:
+        sys.exit(f"節 {name} が空: anomaly/kidsroom-cat.md")
+    return body
+
+
+def sections(dolls: bool, nook: bool = False):
+    parts = parse()
     for k in ("common", "dolls", "first", "last"):
         if not "".join(parts.get(k, [])).strip():
             sys.exit(f"節 {k} が空: anomaly/kidsroom-cat.md")

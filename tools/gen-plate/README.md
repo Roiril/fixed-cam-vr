@@ -400,7 +400,7 @@ py -3.11 tools/gen-plate/yield.py        # 場所ごとの合格率と、9 割�
 | `kidsroom_block.py` | 2 周目 B の飛び先（過去の人形からの視点の子供部屋。0355 / 0359）の**構図の下絵**を Blender で焼く。部屋と家具を箱で組み、人形の目の高さから 3 視点 |
 | `bake-kidsroom.py` | 上の下絵を入力に、実写風の候補を「視点:襖の奥の版」の組ごとに 1 本ずつ焼く。本文は `anomaly/kidsroom-fusuma.md`。幕は無人の写真から切った灰色の布を参照に渡す |
 | `bake-kidsroom-cat.py` | 0361 / 0362 の版。暗い下絵（`kidsroom_block.py --shots dark`。おもちゃを減らし壁紙の切れ端と破片を散らす）から、動画の最初（襖の隙間で眼が光る）と最後のフレームを組で焼く。本文は `anomaly/kidsroom-cat.md`。`--dolls` で人形がいっぱいある部屋。`--nook`（0364）は手前の隅から見る下絵（`kidsroom_block.py --shots nook,nookR`。人形と木馬をローポリで置く）を使い、木馬の参照を足す。16:9 版（左右に黒帯）も書く |
-| `bake-kidsroom-lunge.py` | 焼けた「眼が覗く画」を編集して、黒いものがレンズへ飛びかかる最後のフレームだけを焼き直す |
+| `bake-kidsroom-lunge.py` | 焼けた「眼が覗く画」を編集して、最後のフレームだけを焼き直す。`--variant` で版を選ぶ（`last` 黒い塊と眼 2 つ／`last_close` 近すぎて見えない・傾いた画に眼 1 つ／`last_fallen` 横倒しのカメラ。0368）。`--nook` で人形と木馬の部屋の説明を足す |
 | `fisheye_preview.py` | 4:3 の素材へ本編の B と C と同じ魚眼を掛けた画を書く（候補を見る用。信号処理は通らない） |
 | `limit.py` | **どこまで沈めても読めるか**（薄めながら検出限界を探す） |
 | `posted.py` | **実機の post を通した後**で測り直す（追う価値のある欠点を選ぶ） |
