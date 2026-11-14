@@ -10,7 +10,7 @@
   doll_watch.png  人形が身を引いて黙って見ている画（doll_laugh から）
 
 出すもの:
-  *_right_burst_*.mp4   640x480・24fps。シミが出る → 顔が左へ伸び出しながら人形が笑う → 顔が戻り人形が身を引く
+  *_right_burst_*.mp4   640x480・24fps。シミ → 1 コマで伸び切った顔と笑う人形 → 1 コマでシミへ戻り人形が身を引く
   *_right_watch_*.png   動画の最後のコマと同じ画（隠れて見ている人形）
   *_right_mask_*.png    枠空間 640x360 の合成範囲（右の幕と人形の所だけ）
   *_both_ratio_*.png    左右のシミの比の画（線形の比を sRGB で符号化）
@@ -67,9 +67,9 @@ SETS = {
 BOX_STAIN = (350, 50, 515, 238)    # 右の幕の顔のシミ
 BOX_DOLL = (478, 236, 630, 476)    # 右の幕の縁の裏の人形と、その影
 # 尺（秒）。笑い声 1 回（sfx_doll_laugh_once）に合わせる
-T_STAIN = 0.30       # 右のシミが滲み出る
-T_OUT = (0.05, 0.55)  # 顔が左へ伸び出す（ばねで少し行き過ぎる）
-T_BACK = (1.50, 2.00)  # 顔が戻る
+# 伸び出しは動かさない（2026-11-15 ユーザー「最初フレームと最後フレームだけ」）。
+# シミだけの画 → 伸び切った画 → シミだけの画を、どれも 1 コマで切り替える
+T_BULGE = (2 / FPS, 1.75)  # 伸び切った画を出している間。前は 2 コマ（0.083 秒）のシミだけの画
 T_SWAP = 1.90  # 人形が笑う → 身を引いて見る（1 コマで切り替える。重ねると 2 体に見える）
 T_END = 2.25
 
@@ -165,61 +165,6 @@ def to_frame(m: np.ndarray) -> np.ndarray:
     return out
 
 
-def ease_out(t):
-    t = np.clip(t, 0, 1)
-    return 1 - (1 - t) ** 3
-
-
-def spring(t):
-    """0→1。少し行き過ぎて戻る（頭を突き出す勢い）。"""
-    t = np.clip(t, 0, 1)
-    return 1 - math.exp(-6.0 * t) * math.cos(7.5 * t) if t < 1 else 1.0
-
-
-def smooth(e0: float, e1: float, x: float) -> float:
-    t = min(1.0, max(0.0, (x - e0) / (e1 - e0)))
-    return t * t * (3 - 2 * t)
-
-
-def warp_bulge(b: np.ndarray, s: np.ndarray, mb: np.ndarray, root: float, tip: float, p: float, wob: float,
-               alpha: float = 1.0):
-    """伸び出しの途中。root（右の付け根）から左へ p の割合まで伸ばした画を作る。
-
-    表示の x ∈ [root - p·L, root] を、伸び切った画の x ∈ [tip, root] へ線形に写す。L = root - tip。
-    """
-    if p <= 0.001:
-        return s.copy(), np.zeros(mb.shape, np.float32)
-    L = root - tip
-    xs = np.arange(W, dtype=np.float32)
-    src = root - (root - xs) / p
-    src = np.clip(src, 0, W - 1)
-    ys = np.arange(H, dtype=np.float32)
-    # 笑いに合わせて顔が細かく揺れる（縦 wob 画素）
-    dy = wob * np.sin((root - xs) / max(L, 1) * math.pi)
-    yy = np.clip(ys[:, None] - dy[None, :], 0, H - 1)
-    xx = np.broadcast_to(src[None, :], (H, W))
-    x0 = np.floor(xx).astype(int)
-    y0 = np.floor(yy).astype(int)
-    x1 = np.minimum(x0 + 1, W - 1)
-    y1 = np.minimum(y0 + 1, H - 1)
-    fx = (xx - x0)[..., None]
-    fy = (yy - y0)[..., None]
-
-    def samp(img):
-        if img.ndim == 2:
-            img = img[..., None]
-        v = (img[y0, x0] * (1 - fx) * (1 - fy) + img[y0, x1] * fx * (1 - fy)
-             + img[y1, x0] * (1 - fx) * fy + img[y1, x1] * fx * fy)
-        return v
-
-    bw = samp(b)
-    mw = samp(mb)[..., 0]
-    valid = (xs >= root - p * L - 2).astype(np.float32)[None, :]
-    mw = mw * valid
-    a = np.clip(mw * alpha, 0, 1)
-    return bw, a
-
-
 def rail_mask(rail, half: float = 5.0) -> np.ndarray:
     """手すりの帯。引き伸ばすと生成の手すりがずれて段が付くので、元の手すりで上書きする。"""
     (x0, y0), (x1, y1) = rail
@@ -254,10 +199,6 @@ def build(name: str, laugh_sec: float | None) -> dict:
     rm = rail_mask(cfg["rail"])[..., None]
     ys, xs = np.nonzero(mb > 0.35)
     tip, root = float(xs.min()), float(xs.max())
-    # 伸び出しは右のシミの所から出て、シミの所へ戻る。付け根（幕の右端）まで縮めると、顔が幕の端へ
-    # 押し潰されて平らなシミと 2 つ並んで見えた（2026-11-15）。p0 = シミの左端まで伸ばした割合。
-    sys_, sxs = np.nonzero(ms > 0.35)
-    p0 = float(np.clip((root - float(sxs.min())) / max(root - tip, 1.0), 0.0, 0.9))
     dys, dxs = np.nonzero(md > 0.5)
     wys, wxs = np.nonzero(mw > 0.5)
 
@@ -266,25 +207,10 @@ def build(name: str, laugh_sec: float | None) -> dict:
     frames = []
     for i in range(n):
         t = i / FPS
-        a_s = float(ease_out(t / T_STAIN))
-        img = base * (1 - a_s * ms[..., None]) + S * (a_s * ms[..., None])
-        # 伸び出し: 出る → 笑いに合わせて脈打つ → 戻る
-        if t < T_BACK[0]:
-            g = spring((t - T_OUT[0]) / (T_OUT[1] - T_OUT[0])) if t >= T_OUT[0] else 0.0
-            # 出るときはシミの右寄り（p0 の半分）から伸び出す。p0 から出すと伸びる距離が 50 画素しかなく、動きに見えない
-            p = 0.5 * p0 + (1.0 - 0.5 * p0) * g
-            alpha = min(1.0, g / 0.25)
-            if t > T_OUT[1]:
-                p = 1.0 + 0.035 * math.sin((t - T_OUT[1]) * 2 * math.pi * 4.2)
-        else:
-            u = min(1.0, (t - T_BACK[0]) / (T_BACK[1] - T_BACK[0]))
-            p = 1.0 - (1.0 - p0) * float(ease_out(u))
-            alpha = 1.0 - smooth(0.45, 1.0, u)
-        if t < T_OUT[0] or alpha <= 0.001:
-            p, alpha = 0.0, 0.0
-        wob = 1.2 * math.sin(t * 2 * math.pi * 4.2) if T_OUT[1] < t < T_BACK[0] else 0.0
-        bw, ab = warp_bulge(B, S, mb, root, tip, p, wob, alpha)
-        img = img * (1 - ab[..., None]) + bw * ab[..., None]
+        img = base * (1 - ms[..., None]) + S * ms[..., None]
+        # 伸び出し: 伸び切った画をそのまま置く。途中の形・揺れ・薄めは作らない
+        if T_BULGE[0] <= t < T_BULGE[1]:
+            img = img * (1 - mb[..., None]) + B * mb[..., None]
         img = img * (1 - rm) + S * rm
         # 人形: 最初のコマから笑っている → 身を引いて見る
         if t < T_SWAP:
