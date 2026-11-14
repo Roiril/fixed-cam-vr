@@ -4,10 +4,10 @@
 
 | 段 | いつ | 画 | cue |
 |---|---|---|---|
-| 0 待機 | 2-A に入った瞬間から、線 `s2a_rightstain`（z=0.12）を越えるまで | 左の幕に顔のように見えるしみ。長押しの間は顔の所が盛り上がる。報告すると左のしみだけが消え、演出は続く（step の `markClear`） | `cue_stain_A`（盛り上がりは take の `markStartCueId` = `stain_A_press_bulge`） |
-| 1 右のしみ | 0 の後、左の幕の端（線 `s2a_leftend`）に届くか、報告の長押しを始めるまで（step の `markStartAdvance`） | 右の幕に顔のしみが 1 秒で滲む（step の `fadeInSec`）。左のしみが残っていれば残る | `cue_stain_A_right_hold`（掛け算）＋ 2 枚目の層 `cue_stain_A_left_hold` |
+| 0 待機 | 2-A に入った瞬間から、体が伸び出しの顔に重ならない所（線 `s2a_rightstain`）を越えるまで | 左の幕に顔のように見えるしみ。長押しの間は顔の所が盛り上がる。報告すると左のしみだけが消え、演出は続く（step の `markClear`） | `cue_stain_A`（盛り上がりは take の `markStartCueId` = `stain_A_press_bulge`） |
+| 1 右のしみ | 0 の後、その 0.12m 先（線 `s2a_leftend`）に届くか、報告の長押しを始めるまで（step の `markStartAdvance`） | 右の幕に顔のしみが 1 秒で滲む（step の `fadeInSec`）。左のしみが残っていれば残る | `cue_stain_A_right_hold`（掛け算）＋ 2 枚目の層 `cue_stain_A_left_hold` |
 | 2 右で笑う | 1 の後 | 次のコマで顔が布ごと左へ画面の半分まで伸び切った画に替わる（途中は無い）。右の幕の縁の裏で人形が笑う。笑い声 1 回 | `stain_A_right_burst`（動画）＋ 2 枚目の層 |
-| 3 隠れて見る | 2 の動画が終わってから、少し歩く（線 `s2a_walk`）まで | 人形は布の縁の裏へ身を引き、黙ってこちらを見ている | `stain_A_right_watch` ＋ 2 枚目の層 |
+| 3 隠れて見る | 2 の動画が終わってから、壁の端を回る（線 `s2a_walk`）まで | 人形は布の縁の裏へ身を引き、黙ってこちらを見ている | `stain_A_right_watch` ＋ 2 枚目の層 |
 | 4 ついてくる | 3 の後、区間を出るまで | 乱れで CG の人形（0.8m）に替わり、幕の裏の同じ所から歩いた跡をついてくる。右のしみは残る | `cue_stain_A_right_hold` ＋ 2 枚目の層 ＋ CG `doll_mid`（trail） |
 
 段 0 で左のしみを消していれば、以後の段の 2 枚目の層は出ない。段 1 の報告は押し始めで段 2 へ進み、押し切ると段 2 で畳まれる。
