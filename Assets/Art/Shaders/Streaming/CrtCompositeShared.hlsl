@@ -96,6 +96,9 @@ CBUFFER_START(UnityPerMaterial)
     float _OverlayPress;
     float4 _PressCenter;
     float4 _PressScale;
+    // 長押しでライブが透ける（markBleed）。0..0.5。ライブを隠す層（差し替えの 1 層目・2 層目）の不透明度に
+    // (1 - _LiveBleed) を掛ける。0 のあいだは掛けても値が変わらず、従来と 1 段も変わらない。CG 人形には掛けない。
+    float _LiveBleed;
     float _CgStrength;
     float _Exposure;
     float _Contrast;
@@ -1005,7 +1008,8 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
             revealEdge = revealA * (1.0 - revealA) * 4.0;
         }
         half mask = SAMPLE_TEXTURE2D_LOD(_MaskTex, sampler_MaskTex, uv, lod).r;
-        half alpha = saturate(mask * revealA * _OverlayStrength);
+        // 長押しの間だけ下のライブが透ける（markBleed）。_LiveBleed=0 なら × 1 で従来どおり。
+        half alpha = saturate(mask * revealA * _OverlayStrength) * (1.0 - _LiveBleed);
         [branch] if (_OverlayMul > 0.5)
         {
             // 掛け算（cue の blend:"multiply"）。素材は「シミの写真 / シミの無い写真」の線形の比。
@@ -1078,7 +1082,8 @@ half3 SampleBase(float2 uv, float lod, float chromaBias, float gaussianSigma, fl
                                                         uvO2, lod + chromaBias).rgb);
         ov2 *= ov2In;
         half mask2 = SAMPLE_TEXTURE2D_LOD(_Mask2Tex, sampler_Mask2Tex, uv, lod).r;
-        col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength));
+        // 1 層目と同じだけ下のライブが透ける（markBleed）。
+        col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - _LiveBleed));
     }
     return col;
 }

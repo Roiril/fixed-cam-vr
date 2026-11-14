@@ -31,7 +31,8 @@ namespace FixedCamVr.Streaming
         private static readonly int OverlayStrengthId = Shader.PropertyToID("_OverlayStrength");
         private static readonly int OverlayGainId = Shader.PropertyToID("_OverlayGain");
         private static readonly int OverlayOffsetId = Shader.PropertyToID("_OverlayOffset");
-        // 滲んで現れる・長押しで布が膨らむ（0349）。**この 10 個を書くのはこのクラスだけ。**
+        // 滲んで現れる・長押しで布が膨らむ（0349）・長押しでライブが透ける（markBleed）。
+        // **この 11 個を書くのはこのクラスだけ。**
         private static readonly int RevealTexId = Shader.PropertyToID("_RevealTex");
         private static readonly int OverlayRevealOnId = Shader.PropertyToID("_OverlayRevealOn");
         private static readonly int OverlayRevealId = Shader.PropertyToID("_OverlayReveal");
@@ -42,6 +43,7 @@ namespace FixedCamVr.Streaming
         private static readonly int PressScaleId = Shader.PropertyToID("_PressScale");
         private static readonly int PressCenterId = Shader.PropertyToID("_PressCenter");
         private static readonly int OverlayPressId = Shader.PropertyToID("_OverlayPress");
+        private static readonly int LiveBleedId = Shader.PropertyToID("_LiveBleed");
 
         [Serializable]
         public struct CueBinding
@@ -200,6 +202,23 @@ namespace FixedCamVr.Streaming
         /// <summary><see cref="BeginPress"/> からの <c>_OverlayPress</c> の最大。観測用。</summary>
         public float PressMax => _pressBound ? _press.Peak : 0f;
 
+        // ---- 長押しでライブが透ける（markBleed）----
+        // 膨らみの隣の 2 つ目。SetBleed で毎フレーム進み具合と「働くか」を受け、_LiveBleed を書く。
+        // Awake で 0 を書き、以後は値が変わったフレームでだけ書く（旗の無い走行では 0 のまま書き直さない）。
+        private readonly LiveBleedLogic _bleed = new();
+        private float _bleedProgress;
+        private bool _bleedArmed;
+        private float _bleedWritten;
+
+        /// <summary>いま書いている <c>_LiveBleed</c>。観測用。</summary>
+        public float BleedShown => _bleed.Value;
+
+        /// <summary>透ける長押しが終わった回数（単調増加）。観測は増分で読む。</summary>
+        public int BleedHoldCount => _bleed.HoldCount;
+
+        /// <summary>最後に終わった透ける長押しで出た <c>_LiveBleed</c> の最大。観測用。</summary>
+        public float BleedLastHoldMax => _bleed.LastHoldMax;
+
         private void Awake()
         {
             // MjpegScreen が Awake で .material をインスタンス化するので同じものを共有する。
@@ -236,6 +255,8 @@ namespace FixedCamVr.Streaming
             ApplyStrength(0f);
             UnbindReveal();
             UnbindPress();
+            _material.SetFloat(LiveBleedId, 0f);
+            _bleedWritten = 0f;
         }
 
         /// <summary>
@@ -302,6 +323,7 @@ namespace FixedCamVr.Streaming
             TickFrames();
             TickReveal(Time.deltaTime);
             TickPress(Time.deltaTime);
+            TickBleed(Time.deltaTime);
 
             for (int i = 0; i < bindings.Length; i++)
             {
@@ -355,6 +377,20 @@ namespace FixedCamVr.Streaming
         {
             if (!_pressBound || _frozen || _material == null) return;
             _material.SetFloat(OverlayPressId, _press.Tick(dt, _pressProgress));
+        }
+
+        // 透ける量を 1 フレーム進め、変わったときだけシェーダへ書く。画のホールド中は止める（膨らみと同じ扱い）。
+        private void TickBleed(float dt)
+        {
+            if (_frozen || _material == null) return;
+            WriteBleed(_bleed.Tick(dt, _bleedProgress, _bleedArmed));
+        }
+
+        private void WriteBleed(float value)
+        {
+            if (_material == null || value == _bleedWritten) return;
+            _material.SetFloat(LiveBleedId, value);
+            _bleedWritten = value;
         }
 
         /// <summary>bindings の index で cue を発火。</summary>
@@ -1169,6 +1205,33 @@ namespace FixedCamVr.Streaming
             _pressGen++;               // 読み込み中の貼り付けを無効化
             _pressCueId = "";
             UnbindPress();
+        }
+
+        // ---- 長押しでライブが透ける（markBleed）--------------------------------------------
+
+        /// <summary>
+        /// 長押しの進み具合（0..1）と、透ける演出として働くか（旗が立った演出の、人形が出ているカット）を渡す。毎フレーム。
+        /// 透ける量はこの値を目標にした追従（<see cref="LiveBleedLogic"/>）で動く。働かない間は即 0。
+        /// </summary>
+        public void SetBleed(float progress01, bool armed)
+        {
+            _bleedProgress = progress01;
+            _bleedArmed = armed;
+        }
+
+        /// <summary>報告の成立。透ける量を即 0 にし、この長押しを離すまで透けさせない。</summary>
+        public void CollapseBleed()
+        {
+            _bleed.Collapse();
+            WriteBleed(_bleed.Value);
+        }
+
+        /// <summary>透けるのを止める（演出の終わり・中止・ラン開始）。途中の長押しはここで終わったものとして数える。</summary>
+        public void EndBleed()
+        {
+            _bleedProgress = 0f;
+            _bleedArmed = false;
+            WriteBleed(_bleed.Tick(0f, 0f, false));
         }
 
         private void UnbindPress()

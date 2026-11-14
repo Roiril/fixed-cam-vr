@@ -53,3 +53,6 @@ paths:
 - ツインの通しは比の画・順の画・press マスクもツインの部屋のものへ差し替える（`tools/twin/assets.json` の `reveal` / `pressMask`。作るのは `mask-recipes/bleed-twin-*.json`）。本番の素材を替えたらツイン側も作り直す
 - 卓のプレビュー（`shaders.js` / `pipeline.js`）は掛け算・滲み・膨らみを描かない。見た目は `bleed_preview.py` で見る
 - 台本へ当てるのは `tools/show-apply-bleed.py`。素材を `static-inputs/` へ写してから `--apply`。卓を止めてから流す
+- 長押しでライブが透ける `_LiveBleed`（take の旗 `markBleed`）を書くのは `ScreenOverlayController` だけ。掛けるのは隠す層 2 つ（1 層目の alpha・2 層目）で、CG 人形には掛けない。既定 0
+- `markBleed` が働くのは、旗の立った take の `source:"plate"` かつ人形のカットだけ。報告が成立したら即 0 で、離すまで 0 のまま（`LiveBleedLogic`・`TakeRunner.IsBleedArmed`）
+- 観測は `ev=bleed take= max=`。`ShowTelemetryHost` と `analyze-xp-log.py` の `live_bleed_findings` を対で直す。旗の名前は C# と `timeline-model.js` の白名簿で揃える

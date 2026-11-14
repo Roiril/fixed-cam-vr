@@ -807,6 +807,8 @@ namespace FixedCamVr.Streaming
         /// </returns>
         public TakeRunnerLogic.MarkResult NotifyVisitorMark()
         {
+            // 透けていたライブは、報告が成立した瞬間に畳む（嘘の返事で弾かれて人形へ戻る）。働いていなければ何も変わらない。
+            overlay?.CollapseBleed();
             if (_markResponseReported) return TakeRunnerLogic.MarkResult.None;
             TakeRunnerLogic.MarkResult result = _logic.NotifyMarkPressed(Now,
                 deferDismiss: _markResponsePlaying);
@@ -955,7 +957,27 @@ namespace FixedCamVr.Streaming
             bool pressing = _pressTakeIndex >= 0 && _logic.IsActive && _logic.ActiveTakeIndex == _pressTakeIndex
                             && !_markResponseReported;
             overlay.SetPress(pressing ? progress01 : 0f);
+
+            // 長押しでライブが透ける（markBleed）。膨らみの隣の 2 つ目で、旗が立った演出の、人形が出ているカットだけ。
+            int ti = _logic.ActiveTakeIndex;
+            ShowStepDef? step = GetStep(ti, _logic.ActiveStepIndex);
+            bool bleed = IsBleedArmed(_logic.IsActive,
+                                      ti >= 0 && ti < _takes.Length && _takes[ti].markBleed,
+                                      step?.source, _activeStepDollReplacement);
+            if (bleed) BleedTakeId = TakeId(ti);
+            overlay.SetBleed(bleed ? progress01 : 0f, bleed);
         }
+
+        /// <summary>
+        /// 長押しでライブが透けるか（<see cref="ShowTakeDef.markBleed"/>）。旗が立った演出が走っていて、
+        /// いまのカットが無人の写真（<c>source:"plate"</c>）に CG 人形を出しているときだけ。
+        /// </summary>
+        public static bool IsBleedArmed(bool takeActive, bool markBleed, string? stepSource, bool stepShowsDoll)
+            => takeActive && markBleed && stepShowsDoll
+               && TakeSchema.NormalizeSource(stepSource, out _) == TakeSchema.SourcePlate;
+
+        /// <summary>最後にライブが透けた演出の id（テレメトリの <c>ev=bleed take=</c>）。まだ無ければ空。</summary>
+        public string BleedTakeId { get; private set; } = "";
 
         // カットが画面を取った縁で、この演出が膨らむ演出なら素材を貼る（演出 1 本で 1 回）。
         private void EnsureTakePress(int takeIndex)
@@ -2087,6 +2109,8 @@ namespace FixedCamVr.Streaming
             _markDonePlaying = false;
             // 膨らみも演出単位の状態。畳む経路（正常終了・中止・ラン開始・watchdog・報告）はすべてここを通る。
             EndTakePress();
+            // 透けるライブも同じ経路で止める（次の SetVisitorMarkProgress まで待たず、畳んだ縁で 0 へ）。
+            overlay?.EndBleed();
             if (_stepOverlayPlayed) overlay?.StopOverlay();
             _stepOverlayPlayed = false;
             _awaitingClipEnd = false;

@@ -178,5 +178,26 @@ namespace FixedCamVr.Streaming.Tests
             StringAssert.Contains("(0.12 * _OverlayPress * pressM)", hlsl);
             StringAssert.Contains("smoothstep(0.30, 0.62, saturate(_OverlayPress))", hlsl);
         }
+
+        // ---- 長押しでライブが透ける（markBleed）---------------------------------------------
+
+        /// <summary>
+        /// <c>_LiveBleed</c> は Properties（既定 0）と CBUFFER の両方にあり、隠す層 2 つ（差し替えの 1 層目・2 層目）の
+        /// 不透明度にだけ掛かる。CG 人形の合成（<c>s</c>）には掛けない — 人形は消さず、下のライブだけが透ける。
+        /// </summary>
+        [Test]
+        public void LiveBleed_IsDeclared_DefaultsToZero_AndOnlyThinsTheHidingLayers()
+        {
+            string shader = CompositeShader();
+            string hlsl = SharedHlsl();
+            StringAssert.IsMatch(@"(?m)^\s*_LiveBleed\(""[^""]*"",\s*Range\(0,\s*0\.5\)\)\s*=\s*0\s*$", shader,
+                                 "_LiveBleed の既定は 0（旗の無い台本の画は変わらない）");
+            StringAssert.IsMatch(@"(?m)^\s*float\s+_LiveBleed;", hlsl, "CBUFFER に _LiveBleed が無い");
+            StringAssert.Contains("half alpha = saturate(mask * revealA * _OverlayStrength) * (1.0 - _LiveBleed);", hlsl);
+            StringAssert.Contains("col = lerp(col, ov2, saturate(mask2 * _Overlay2Strength) * (1.0 - _LiveBleed));", hlsl);
+            StringAssert.Contains("float s = saturate(_CgStrength) * cgIn;", hlsl);
+            int uses = System.Text.RegularExpressions.Regex.Matches(hlsl, @"\(1\.0 - _LiveBleed\)").Count;
+            Assert.That(uses, Is.EqualTo(2), "_LiveBleed を掛けるのは隠す層 2 つだけ");
+        }
     }
 }

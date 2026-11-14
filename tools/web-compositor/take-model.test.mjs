@@ -44,6 +44,16 @@ test('fixture の手形は報告の応答（膨らみと完了の画）を持ち
   assert.equal(back.markDoneSec, 0.4);
 });
 
+test('長押しでライブが透ける旗（markBleed）は往復する — 卓が保存しても消えない', () => {
+  // ⚠ 保存はキーの白名簿。漏れると 💾 の一押しで旗が黙って消える（画は旗の無い版に戻るだけで、誰も気づけない）。
+  const t = fixture.segments.find((s) => s.lap === 3 && s.camera === 1).takes[0];
+  assert.equal(t.markBleed, true);
+  const back = serializeTimelineV3(normalizeTimelineV3(fixture));
+  assert.equal(back.segments.find((s) => s.lap === 3 && s.camera === 1).takes[0].markBleed, true);
+  assert.equal(back.segments[0].takes[0].markBleed, false, '既定は透けない');
+  assert.equal(newTake('L9C0#0').markBleed, false);
+});
+
 test('cue エディタの作り直しは、卓で触らない合成の値（0349）を持ち越す', () => {
   const existing = {
     id: 'cue_stain_A', sourceUrl: '/static-inputs/old.png', blend: 'multiply',

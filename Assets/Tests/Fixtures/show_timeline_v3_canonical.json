@@ -21,6 +21,7 @@
           "markStartCueId": "hand_press_A",
           "markDoneCueId": "hand_done_A",
           "markDoneSec": 0.4,
+          "markBleed": false,
           "steps": [
             {
               "source": "inherit",
@@ -92,6 +93,7 @@
           "markStartCueId": "",
           "markDoneCueId": "",
           "markDoneSec": 0,
+          "markBleed": false,
           "steps": [
             {
               "source": "live",
@@ -189,6 +191,7 @@
           "markStartCueId": "",
           "markDoneCueId": "",
           "markDoneSec": 0,
+          "markBleed": true,
           "steps": [
             {
               "source": "live",
@@ -406,6 +409,7 @@
           "markStartCueId": "",
           "markDoneCueId": "",
           "markDoneSec": 0,
+          "markBleed": false,
           "steps": [
             {
               "source": "live",

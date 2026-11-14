@@ -167,6 +167,8 @@ namespace FixedCamVr.Diagnostics
         private string _lastTakeId = "";
         // 長押しで布が膨らんだ最大（0349）。膨らみを貼った演出だけ 0 以上。演出の終わりに pressMax= で出す。
         private float _takePressMax = -1f;
+        // 長押しでライブが透けた回数（markBleed）。ScreenOverlayController.BleedHoldCount の増分で ev=bleed を出す。
+        private int _lastBleedHoldCount;
         // 滲んで現れる cue で出た _OverlayReveal の最大（0349）。滲む cue だけ 0 以上。cue の off に revMax= で出す。
         private float _cueRevealMax = -1f;
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
@@ -1166,6 +1168,17 @@ namespace FixedCamVr.Diagnostics
             }
             if (!string.IsNullOrEmpty(takeId) && _overlay != null && _overlay.PressBound)
                 _takePressMax = Mathf.Max(_takePressMax, _overlay.PressMax);
+
+            // 長押しでライブが透けた（markBleed）。透ける演出で長押しが終わるたびに 1 行、その長押しで出た最大を添える。
+            // 旗の無い台本では 1 行も出ない。報告したのに max が小さければ、進み具合が _LiveBleed まで届いていない
+            // （解析器が FAIL にする）。
+            if (_overlay != null && _overlay.BleedHoldCount != _lastBleedHoldCount)
+            {
+                _lastBleedHoldCount = _overlay.BleedHoldCount;
+                string bleedTake = _takes != null ? _takes.BleedTakeId : "";
+                Emit($"ev=bleed take={(string.IsNullOrEmpty(bleedTake) ? "-" : bleedTake)} " +
+                     $"max={_overlay.BleedLastHoldMax:F2}");
+            }
 
             // 目の視界ジャックの出入り（canon/LEDGER.md 0099）。
             // ⚠ **終わり方の理由（why）を必ず添える** — done（写真が尽きた・止まっている体験者）と

@@ -75,6 +75,21 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         /// <summary>
+        /// 長押しでライブが透ける旗（markBleed）が wire を往復する。卓（<c>timeline-model.js</c>）の白名簿から漏れると
+        /// 💾 保存の一押しで旗が黙って消える。既定は false（欠落キーを JsonUtility が false で埋める側）。
+        /// </summary>
+        [Test]
+        public void MarkBleed_RoundTripsThroughTheWire()
+        {
+            ShowTimelineDef tl = Load();
+            Assert.That(Take(tl, 3, 1).markBleed, Is.True, "3 周目 B は透ける演出として著作してある");
+            Assert.That(Take(tl, 1, 0).markBleed, Is.False, "既定は透けない");
+            ShowTimelineDef back = JsonUtility.FromJson<ShowTimelineDef>(JsonUtility.ToJson(tl));
+            Assert.That(Take(back, 3, 1).markBleed, Is.True);
+            Assert.That(JsonUtility.FromJson<ShowTakeDef>("{\"id\":\"x\"}").markBleed, Is.False, "欠落キーは false");
+        }
+
+        /// <summary>
         /// cue の掛け算・滲み・膨らみ（0349）の値が show.json の形のまま読める。省略した cue は従来どおり
         /// （差し替え・滲まない・膨らまない）。卓の <c>common.js CUE_CARRY_KEYS</c> と同じ名前。
         /// </summary>

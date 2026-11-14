@@ -185,6 +185,55 @@ def bleed_findings(events):
     return lines, verdicts
 
 
+# 長押しでライブが透ける演出（take の markBleed）の合格線。透ける量の目標は 0.5 × 進み具合なので、
+# 報告が成立する長押し（進み具合が 1 に届く）なら 0.4 前後まで出る。0.05 を割るなら進み具合が _LiveBleed へ届いていない。
+LIVE_BLEED_MIN_MAX = 0.05
+
+
+def live_bleed_findings(events, takes):
+    """台本の markBleed と、ev=bleed（書き手は C# の ShowTelemetryHost）を突き合わせる。(行, 判定) を返す。
+
+    透けるのは旗が立った演出の、人形が出ているカット（src=plate）の間だけ。だから報告は、その演出の
+    直前の ev=step が src=plate played=1 だったものだけを数える（録画のカットで押した報告は透けなくて正しい）。
+    旗の無い台本では何も言わない。
+    """
+    armed = [t["id"] for t in takes if t.get("markBleed")]
+    if not armed:
+        return [], []
+    lines, verdicts = [], []
+    last_step = {}   # take id -> 直前の ev=step
+    marked = {tid: 0 for tid in armed}
+    outside = {tid: 0 for tid in armed}
+    maxes = {tid: [] for tid in armed}
+    for e in events:
+        ev = e.get("ev")
+        if ev == "step":
+            last_step[e.get("take")] = e
+        elif ev == "mark" and e.get("take") in marked and fnum(e, "n", 0) > 0:
+            st = last_step.get(e.get("take")) or {}
+            if st.get("src") == "plate" and st.get("played") == "1":
+                marked[e.get("take")] += 1
+            else:
+                outside[e.get("take")] += 1
+        elif ev == "bleed" and e.get("take") in maxes:
+            maxes[e.get("take")].append(fnum(e, "max", 0.0))
+    for tid in armed:
+        top = max(maxes[tid]) if maxes[tid] else 0.0
+        lines.append(f"  透ける {tid}: 人形のカットで報告 {marked[tid]} 回（ほかのカット {outside[tid]} 回）"
+                     f" / 長押し {len(maxes[tid])} 回 / 最大 {top:.2f}")
+        if not marked[tid]:
+            continue
+        if top < LIVE_BLEED_MIN_MAX:
+            verdicts.append(("FAIL", f"透ける演出 {tid} の人形のカットで {marked[tid]} 回報告したのに、透けた量が"
+                                     f" {top:.2f} 止まり（{LIVE_BLEED_MIN_MAX} に届くはず）— 長押しの進み具合が"
+                                     " _LiveBleed へ届いていない（旗の読み込み・TakeRunner.IsBleedArmed・ev=bleed の書き手）"))
+        else:
+            verdicts.append(("OK", f"透ける演出 {tid} で長押しの間ライブが透けた（最大 {top:.2f}）"))
+    if not verdicts:
+        verdicts.append(("WARN", "透ける演出の人形のカットで 1 度も報告していないので、透ける機構は検証できていない"))
+    return lines, verdicts
+
+
 # ev=step の理由トークン → 日本語（C# の TakeRunner.StepSkip* と対）。
 STEP_SKIP_REASONS = {
     "camrange": "live のカメラが registry の範囲外",
@@ -348,6 +397,8 @@ def expected_from_show(show: dict):
                 # 体験者が異変を報告したら畳まれる演出か（canon/LEDGER.md 0050）。
                 # 既定 false ＝ 消えない（JsonUtility の 0 埋めと同じ側へ倒してある）。
                 "dismissible": bool(t.get("dismissible")),
+                # 長押しの間だけ人形の下からライブが透ける演出か（C# の ShowTakeDef.markBleed）。既定 false。
+                "markBleed": bool(t.get("markBleed")),
                 "steps": t.get("steps") or [],
             })
     exp["takes"] = takes
@@ -3607,6 +3658,19 @@ def analyze(events, others, exp, warns=None):
         for line in bleed_lines:
             w(line)
         for level, text in bleed_verdicts:
+            verdict(level, text)
+        w()
+
+    # ------------------------------------------------------------------
+    # 長押しの間だけ人形の下からライブが透けたか（take の markBleed）
+    # 書き手は C# の ShowTelemetryHost（ev=bleed take= max=）。旗の無い台本では何も言わない。
+    # ------------------------------------------------------------------
+    live_lines, live_verdicts = live_bleed_findings(events, exp.get("takes", []))
+    if live_lines:
+        w("## 長押しで透けるライブ")
+        for line in live_lines:
+            w(line)
+        for level, text in live_verdicts:
             verdict(level, text)
         w()
 
