@@ -39,7 +39,9 @@ def lock_room(src, out):
     added = added.filter(ImageFilter.MinFilter(9)).filter(ImageFilter.MaxFilter(9))
     # 消した物: 隙間の眼のように小さく明るい物は開きで落ちるので、元の方が明るい所として別に拾う
     gone = ImageChops.subtract(a.convert("L"), b.convert("L")).point(lambda v: 255 if v > 40 else 0)
-    mask = ImageChops.lighter(added, gone).filter(ImageFilter.MaxFilter(25)).filter(ImageFilter.GaussianBlur(8))
+    # 足した物は広く膨らませる。暗い床に広がった髪の先は差が小さく、狭いと切れる（0372 の人形で切れた）
+    mask = ImageChops.lighter(added.filter(ImageFilter.MaxFilter(55)), gone.filter(ImageFilter.MaxFilter(25)))
+    mask = mask.filter(ImageFilter.GaussianBlur(10))
     mask.save(out.with_name(out.stem + "_mask.png"))
     Image.composite(b, a, mask).save(out)
     kept = sum(mask.point(lambda v: 1 if v > 127 else 0).histogram()[1:]) / (a.size[0] * a.size[1])
