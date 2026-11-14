@@ -1,9 +1,9 @@
 """焼けた「隙間から眼が覗く画」を参照①にして、動画の最後のフレームだけを焼き直す（anomaly/kidsroom-cat.md）。
 
-    py -3.11 tools/gen-plate/bake-kidsroom-lunge.py [--variant last|last_close|last_fallen] [--nook] <眼が覗く画.png> ...
+    py -3.11 tools/gen-plate/bake-kidsroom-lunge.py [--variant last|last_close|last_fallen|last_doll] [--nook] <眼が覗く画.png> ...
 
 --variant は最後のフレームの版（節の名前）。last は飛びかかる黒い塊と大きな眼 2 つ（0361）。
-last_close は近すぎて見えない・傾いた画に眼が 1 つ、last_fallen は横倒しのカメラを覗き込む眼が 1 つ（どちらも 0368）。
+last_close は近すぎて見えない・傾いた画に眼が 1 つ、last_fallen は横倒しのカメラを覗き込む眼が 1 つ（どちらも 0368）。last_doll は上から逆さまに落ちてきた人形の顔（0370）。
 --nook は人形と木馬の部屋の説明を足す（0364）。出力は同じフォルダの <variant>.png と <variant>_169.png。1 本ずつ直列。
 """
 import argparse
