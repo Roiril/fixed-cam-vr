@@ -226,7 +226,86 @@ def build_booth(show, mats):
         add_cyl("Post mid", e + Vector((0, 0, tc.RAIL_Y - 0.03)), e + Vector((0, 0, tc.RAIL_Y + 0.03)), 0.0195, pipe)
         add_lathe("Post base", [(0.0, 0.021), (0.1, 0.021), (0.104, 0.018), (0.106, 0.004), (0.104, 0.0), (0, 0)], mats["base"], "Booth", center=(e.x, e.y, 0))
         add_lathe("Post boss", [(0, 0.075), (0.016, 0.075), (0.024, 0.062), (0.03, 0.03), (0.04, 0.021)], pipe, "Booth", center=(e.x, e.y, 0))
+    # 演出の試作用: 開いた合わせ目の奥に暖かい灯り（TWIN_SEAM_GLOW=1 のときだけ。既定は何も足さない）
+    if os.environ.get("TWIN_SEAM_GLOW", "") == "1" and corner is not None:
+        _build_seam_glow(walls, corner, H)
     return posts
+
+
+SEAM_GLOW_SRGB = (255, 196, 90)   # 2 周目 B で飛ぶ「別の場所」と同じ色味（束の映像で見える値）
+# 上の色を、束の仕上げ（twin_post の phone・露出 7）とスマホの階調（feed_tone の A）を通して出すための発光（線形）。
+# 仕上げのトーンは明るい所の色を白へ寄せるので、発光そのものはかなり赤く置く（2026-11-14 に逆算。出口は 252,196,89）
+SEAM_GLOW_EMIT = (0.69, 0.029, 0.0016)
+SEAM_GLOW_BACK = 0.15             # 角から外へ、灯りの面までの距離（m）。外の手すり（角から 0.08）より奥
+SEAM_GLOW_HALF = 0.32             # 面の半幅。角の左右の幕の裏に収まり、画の上では幕の外へ出ない
+SEAM_GLOW_SPILL_W = 8.0           # 縁と床へ漏れる灯りの強さ（W）
+SEAM_GLOW_SPILL_Z = 0.45          # 漏れる灯りの高さ（m）。低いほど隙間の足元の床に溜まる
+SEAM_GLOW_SPILL_TILT = 0.4        # 漏れる灯りの下向き（水平 1 に対する下がり）
+SEAM_GLOW_SPILL_DEG = 100.0       # 漏れる灯りの円錐の開き。L の外の床（角から横へ 66 度より外）には当てない
+
+
+def _build_seam_glow(walls, corner, top):
+    """合わせ目の奥に、現実の部屋の代わりに見える暖色の発光面と、縁と床へ漏れる弱い灯りを置く。
+
+    面は角の外側（L の外）に、角の二等分線へ垂直に立てる。高さは幕より低く、幅は幕の裏に収まる大きさ。
+    面はカメラにだけ見え、何も照らさず、影も落とさない（照らすと L の外の床と、幕の上から見える奥の壁が
+    暖色に染まり、合わせ目から離れた所の画が変わる）。照らすのは隙間の真後ろのスポット 1 つで、
+    光のリンクで幕・床・支柱だけを受け手にする。幕は光を通さないので、届くのは隙間を抜けた分だけ。
+    """
+    c = u2b(corner[0], 0, corner[1])
+    dirs = []
+    for w in walls:
+        a = u2b(w["x1"], 0, w["z1"])
+        b = u2b(w["x2"], 0, w["z2"])
+        dirs.append((b - a).normalized() if (a - c).length < 0.01 else (a - b).normalized())
+    out = -(dirs[0] + dirs[1]).normalized()
+    side = Vector((-out.y, out.x, 0.0))
+    center = c + out * SEAM_GLOW_BACK
+    h = top - 0.06
+    p = [center - side * SEAM_GLOW_HALF, center + side * SEAM_GLOW_HALF]
+    verts = [p[0], p[1], p[1] + Vector((0, 0, h)), p[0] + Vector((0, 0, h))]
+
+    m = bpy.data.materials.new("seam_glow")
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    em = nt.nodes.new("ShaderNodeEmission")
+    em.inputs["Color"].default_value = SEAM_GLOW_EMIT + (1.0,)
+    # 下ほど少し明るい（奥の部屋の床に灯りが溜まっている見え方）。面の上下は生成座標の z
+    tco = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tco.outputs["Generated"], sep.inputs[0])
+    rmp = nt.nodes.new("ShaderNodeMapRange")
+    rmp.inputs["To Min"].default_value = 1.15
+    rmp.inputs["To Max"].default_value = 0.85
+    nt.links.new(sep.outputs["Z"], rmp.inputs["Value"])
+    nt.links.new(rmp.outputs["Result"], em.inputs["Strength"])
+    o = nt.nodes.new("ShaderNodeOutputMaterial")
+    nt.links.new(em.outputs[0], o.inputs["Surface"])
+    plane = add_mesh("Seam glow", verts, [(0, 1, 2, 3)], m, "Booth")
+    for attr in ("visible_diffuse", "visible_glossy", "visible_transmission", "visible_volume_scatter", "visible_shadow"):
+        setattr(plane, attr, False)
+
+    # 縁の襞と、隙間の手前の床へ漏れる灯り（隙間の真後ろの低い所から、L の内へ少し下向きに）
+    li = bpy.data.lights.new("Seam glow spill", "SPOT")
+    li.energy = SEAM_GLOW_SPILL_W
+    k = max(SEAM_GLOW_EMIT)
+    li.color = tuple(v / k for v in SEAM_GLOW_EMIT)
+    li.shadow_soft_size = 0.03
+    li.spot_size = math.radians(SEAM_GLOW_SPILL_DEG)
+    li.spot_blend = 0.5
+    lo = bpy.data.objects.new("Seam glow spill", li)
+    lo.location = c + out * 0.10 + Vector((0, 0, SEAM_GLOW_SPILL_Z))
+    # スポットは局所の -Z を向く。L の内（-out）へ、少し下へ
+    aim = (-out + Vector((0, 0, -SEAM_GLOW_SPILL_TILT))).normalized()
+    lo.rotation_euler = aim.to_track_quat("-Z", "Z").to_euler()
+    tc.collection("Booth").objects.link(lo)
+
+    recv = bpy.data.collections.new("Seam glow receivers")
+    for ob in bpy.data.objects:
+        if ob.type == "MESH" and ob.name.startswith(("Curtain ", "Post", "Floor")):
+            recv.objects.link(ob)
+    lo.light_linking.receiver_collection = recv
 
 
 def _build_rail(show, pipe):

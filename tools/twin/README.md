@@ -91,6 +91,7 @@ py -3.11 tools/twin/make_assets.py
 | `stage_map.py` | 体験者が画のどこに映るかを動画から測り、台本の素材（マスク）が出ている間に体と重なるかを数える。`--check` で重なりがあれば落ちる。罠は [memory/stage_map.md](../../.claude/memory/stage_map.md) |
 | `stage_cards.py` | 上の測定から、床の図（区画・道・カメラ・床の線）と、異変を置く所を重ねた画を作る |
 | `variant_posdriven.py` | 位置で動く演出の版（2 周目 A・2 周目 C）を検証用の木へ当てる。メインの木と本番の台本には書かない |
+| `variant_seam.py` | 1 周目 A で幕の合わせ目が開く版。`make` で素材（`assets/twin_seamA_*`）を焼き、`check` で束へ重ねて体との重なりを数え、`apply --root` で検証用の木へ当てる。合わせ目を開くと `_curtain` が幕の襞を全部並べ直すので、マスクは灯りの差だけで作る（`TWIN_SEAM_GAP` / `TWIN_SEAM_GLOW`） |
 
 ## 配置の決め方
 
