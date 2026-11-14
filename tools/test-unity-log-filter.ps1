@@ -25,4 +25,18 @@ try {
     Invoke-SafeUnityCli -LogPath $log -MaskRetries 1 -Arguments @('-NoProfile','-Command','exit 0')
     if ($script:UnityCliExitCode -eq 0 -or -not $script:UnityLogMaskFailed) { throw 'failed masking reported success' }
 } finally { $locked.Dispose() }
-Write-Output 'mask checks passed; native exit=7 retained; no plaintext backup; other log unchanged; mask failures rejected'
+# 書き込み共有を許す相手（Editor からハンドルを引き継いだ Unity.Licensing.Client の代役）が掴んだままでも、その場で伏せる
+[System.IO.File]::WriteAllText($log, $dummy)
+$held = [System.IO.File]::Open($log, 'Open', 'ReadWrite', 'ReadWrite')
+try {
+    $before = $held.Length
+    Invoke-SafeUnityCli -LogPath $log -MaskRetries 1 -Arguments @('-NoProfile','-Command','exit 0')
+    if ($script:UnityCliExitCode -ne 0 -or $script:UnityLogMaskFailed) { throw 'held log was not masked in place' }
+    $held.Position = 0
+    $reader = New-Object System.IO.StreamReader($held, [System.Text.Encoding]::UTF8, $false, 4096, $true)
+    $text = $reader.ReadToEnd()
+    if ($text.Contains('dummy-token') -or -not $text.Contains('error CS1234')) { throw 'in-place mask retained token or lost diagnostics' }
+    if ($held.Length -ne $before) { throw 'in-place mask changed the length' }
+} finally { $held.Dispose() }
+Remove-Item -LiteralPath $Root -Recurse -Force
+Write-Output 'mask checks passed; native exit=7 retained; no plaintext backup; other log unchanged; mask failures rejected; held log masked in place'
