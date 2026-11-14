@@ -138,6 +138,16 @@ const scenarios = {
   wear() {
     status.staffSetup = setup('handedOff');
   },
+  // 装着の段で選んだ Quest が被られていない（休止には入っていない）。45 秒続くとタブレットが名指しする。
+  'wear-not-worn'() {
+    status.staffSetup = setup('handedOff');
+    status.health = health({ ...status.health, paused: false, worn: false });
+  },
+  // 装着の段で左コントローラーが切れている。6 秒で名指しする（untracked は装着前の普通なので出さない）。
+  'wear-ctrl-off'() {
+    status.staffSetup = setup('handedOff');
+    status.health = health({ ...status.health, ctrlL: 'off' });
+  },
   'alert-normal'() {
     status.staffSetup = setup('handedOff');
   },
@@ -228,6 +238,7 @@ const scenarios = {
   'no-health'() {
     delete status.health;
   },
+  // 応答しない Quest。設定や要求が残ったまま 20 秒続くと「この Quest をやめて切り替える（長押し）」が出る。
   offline() {
     failStatus = true;
   },

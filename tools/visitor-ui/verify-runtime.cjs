@@ -419,6 +419,8 @@ const exportsSource = `
     questStallKind,
     staffRunActive,
     staffRunProblems,
+    staffWearProblems,
+    staffAbandonOffered,
     createRunAlertState,
     updateRunAlertState,
     shownRunAlerts,
@@ -446,6 +448,7 @@ const exportsSource = `
       runAlert.entries.clear();
       runAlertBaseline = { portal: '', exceptions: null };
       runAlertShownKey = '';
+      targetOffline = { quest: '', since: 0 };
     },
     setQuestTroubleSince: (value) => { questTroubleSince = value; },
     setLegacyEndSince: (value) => { legacyEndSince = value; },
@@ -3162,7 +3165,7 @@ test('起動時はスタッフ画面から始まり、来場者の画面の入�
   assert.doesNotMatch(html, /'スタッフ：/, '「スタッフ：」の前置きを付けない');
   for (const line of [
     'タブレットが反応しないとき：右コントローラーの A を 2 秒押し続けると次の体験者の準備になります',
-    '体験を途中でやめるとき：ヘッドセットを外すのを手伝います。右コントローラーの A を 2 秒押し続けます',
+    '体験を途中でやめるとき：上の「体験を中断してやり直す」を長押しします。被ったままなら右コントローラーの A を 2 秒押しても止まります',
     'ヘッドセットの画面が見えないとき：右コントローラーの B を 1 秒押すと画面が正面に戻ります',
   ]) assert.ok(html.includes(line), line);
   assert.equal((html.match(/<details\b/g) || []).length, 1, '折りたたみは「困ったとき」の1つだけ');
@@ -3517,7 +3520,7 @@ test('体験中は段と経過を出し、終わりの演出と終了を分け�
   assert.equal(elements.get('staffNowTitle').textContent, '体験中');
   assert.equal(elements.get('staffNowMeta').textContent, '2 周目 · 1:24');
   assert.equal(elements.get('staffNowBody').textContent,
-    '中止するとき：ヘッドセットを外すのを手伝います。右コントローラーの A を 2 秒押し続けます。');
+    '中止するとき：ヘッドセットを外すのを手伝い、「困ったとき」の「体験を中断してやり直す」を長押しします。被ったままなら右コントローラーの A を 2 秒押しても止まります。');
   assert.equal(elements.get('staffCycle4').getAttribute('aria-current'), 'step');
   assert.equal(elements.get('staffCycle3').dataset.done, 'true');
   for (const id of ['staffResetBtn', 'staffVisitorBtn', 'staffPrepareBtn', 'staffCollectBtn', 'staffRestartBtn', 'staffRetryBtn', 'staffDoneBtn']) {
@@ -3868,7 +3871,7 @@ test('本編中の異常を名指しし、休止・固まり・不通の間は�
   const saved = status.health;
   status.health = runHealth({ paused: true, worn: false });
   assert.deepEqual(Array.from(R().list).map((problem) => [problem.key, problem.sound, problem.text]),
-    [['removed', false, '体験者が Quest を外しています。被り直すと続きから再開します']]);
+    [['removed', false, '体験者が Quest を外しています。被り直すと続きから再開します。やめるときは「困ったとき」の「体験を中断してやり直す」を長押しします']]);
   status.health = runHealth({ paused: true, worn: null });
   assert.deepEqual([R().partial, Array.from(R().list)], [true, []], '外したと分からない休止は名指ししない');
   delete status.health;
@@ -3940,7 +3943,7 @@ test('本編中に6秒続いた異常は機器の欄に名指しし、音のあ�
     await runtime.poll();
     shiftClock(30000);
     await runtime.poll();
-    assert.deepEqual(visibleRunAlerts(), ['体験者が Quest を外しています。被り直すと続きから再開します']);
+    assert.deepEqual(visibleRunAlerts(), ['体験者が Quest を外しています。被り直すと続きから再開します。やめるときは「困ったとき」の「体験を中断してやり直す」を長押しします']);
     assert.equal(audio.starts, 6, '外したことは音を鳴らさずに出す');
     assert.equal(elements.get('staff').dataset.state, 'asleep');
 
@@ -4057,6 +4060,237 @@ test('「体験を中断してやり直す」は本編中も1.5秒の長押し�
   assert.equal(runtime.staffForceResetAllowed(), false, 'スタッフの説明確認中は送らない');
   state.staffPreview = false;
   runtime.resetStaffTimers();
+});
+
+function questDisplayName() {
+  return { alpha: 'クエスト α', beta: 'クエスト β' }[runtime.activeQuest()] || 'この受付';
+}
+
+// 装着の段（引き渡しを Quest が受理した後）の応答と、それに結び付いたこのタブレットの進行。
+function wearFixture(seq, health) {
+  const status = { ...clone(validStatus), questTick: 2000 + seq, lang: 'ja', relief: false,
+    appliedSeq: seq, received: seq, visitorGeneration: 1,
+    pending: { lang: 'ja', relief: false, seq },
+    lastRequest: { tabletSessionId: runtime.tabletSessionId, seq, lang: 'ja', relief: false },
+    briefing: { tabletSessionId: runtime.tabletSessionId, seq, revision: seq, completed: true, staffConfirmed: true },
+    health: runHealth(health),
+    staffSetup: runSetup({ stage: 'handedOff', run: undefined }) };
+  state.ui = 'sent';
+  state.sent = { lang: 'ja', relief: false, seq, portalSessionId: status.portalSessionId, targetId: runtime.activeQuest() };
+  assert.equal(runtime.restorePreparationState(status), true);
+  return status;
+}
+
+test('装着の段で選んだ Quest が被られていないことは45秒続いたら一度だけ知らせ、被れば消える', async () => {
+  const W = (health) => runtime.staffWearProblems({ status: { health: runHealth(health) }, name: 'クエスト α' });
+  assert.deepEqual(Array.from(W({ worn: false }).list).map((problem) => [problem.key, problem.tone, problem.sound, problem.delayMs, problem.text]),
+    [['notWorn', 'trouble', true, 45000, 'クエスト αがまだ被られていません。被っているヘッドセットのラベルを確かめる']]);
+  assert.deepEqual(Array.from(W({ worn: true }).list), [], '被っていれば出さない');
+  assert.deepEqual(Array.from(W({ worn: null }).list), [], '分からない（null）は判定しない');
+  assert.deepEqual(Array.from(runtime.staffWearProblems({ status: {}, name: 'クエスト α' }).list), [], 'health の無い旧 Quest');
+
+  prepareStaff(); runtime.resetStaffTimers();
+  const audio = installRunAudio();
+  let status = wearFixture(81, { worn: false });
+  recordPosts(() => status);
+  const notWorn = `${questDisplayName()}がまだ被られていません。被っているヘッドセットのラベルを確かめる`;
+  const poll = async (offset, next = {}) => {
+    shiftClock(offset);
+    status = { ...status, questTick: status.questTick + 1, ...next };
+    await runtime.poll();
+  };
+  try {
+    await poll(0);
+    assert.equal(elements.get('staff').dataset.state, 'wear');
+    assert.equal(elements.get('staffRunAlerts').hidden, true);
+    await poll(44000);
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '45 秒までは出さない');
+    await poll(45000);
+    assert.deepEqual(visibleRunAlerts(), [notWorn]);
+    assert.equal(elements.get('staffRunAlert0').dataset.tone, 'trouble');
+    assert.equal(audio.starts, 2, '短い音を一度');
+    await poll(50000);
+    assert.equal(audio.starts, 2, '同じ異常が続く間は鳴らし直さない');
+    await poll(51000, { health: runHealth({ worn: true }) });
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '被ったら消す');
+
+    await poll(52000, { health: runHealth({ worn: false }) });
+    await poll(96000);
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '外れ直した時から数え直す');
+    await poll(97000);
+    assert.deepEqual(visibleRunAlerts(), [notWorn]);
+    assert.equal(audio.starts, 4, '回復後の新しい異常は知らせる');
+
+    await poll(98000, { health: runHealth({ worn: null }) });
+    await poll(200000);
+    assert.equal(elements.get('staffRunAlerts').hidden, true, 'null は判定しない');
+
+    // 装着の段を出たら（ここでは Quest の更新が止まった）時計を捨てる。戻ってから 45 秒を数え直す。
+    await poll(201000, { health: runHealth({ worn: false }) });
+    await poll(241000);
+    shiftClock(246000);
+    await runtime.poll();
+    assert.notEqual(elements.get('staff').dataset.state, 'wear');
+    await poll(247000);
+    assert.equal(elements.get('staff').dataset.state, 'wear');
+    await poll(291000);
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '段を出る前の分を数えない');
+    await poll(292000);
+    assert.deepEqual(visibleRunAlerts(), [notWorn]);
+
+    // 体験が始まったら被られていない知らせは消す（本編中の外した・休止は別の行が受け持つ）。
+    await poll(293000, { phase: 'RUN', staffSetup: runSetup() });
+    assert.equal(elements.get('staff').dataset.state, 'playing');
+    assert.equal(elements.get('staffRunAlerts').hidden, true);
+  } finally {
+    restoreClock();
+    removeRunAudio();
+    runtime.resetStaffTimers();
+    state.sent = null; state.ui = 'idle';
+  }
+});
+
+test('装着の段でも左コントローラーの断を6秒で知らせ、追跡外れは出さない', async () => {
+  const W = (health) => Array.from(runtime.staffWearProblems({ status: { health: runHealth(health) }, name: 'クエスト α' }).list);
+  assert.deepEqual(W({ ctrlL: 'off' }).map((problem) => [problem.key, problem.sound, problem.delayMs, problem.text]),
+    [['ctrlL', true, undefined, '左コントローラーが切れています。電池と電源を確かめる（報告ができません）']]);
+  assert.deepEqual(W({ ctrlL: 'untracked' }), [], '装着前は追跡が外れていて普通');
+  assert.deepEqual(W({ ctrlL: '' }), []);
+
+  prepareStaff(); runtime.resetStaffTimers();
+  const audio = installRunAudio();
+  let status = wearFixture(82, { ctrlL: 'untracked' });
+  recordPosts(() => status);
+  const poll = async (offset, next = {}) => {
+    shiftClock(offset);
+    status = { ...status, questTick: status.questTick + 1, ...next };
+    await runtime.poll();
+  };
+  try {
+    await poll(0);
+    assert.equal(elements.get('staff').dataset.state, 'wear');
+    await poll(30000);
+    assert.equal(elements.get('staffRunAlerts').hidden, true, 'untracked は出さない');
+    await poll(31000, { health: runHealth({ ctrlL: 'off' }) });
+    await poll(36000);
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '6 秒までは出さない');
+    await poll(37000);
+    assert.deepEqual(visibleRunAlerts(), ['左コントローラーが切れています。電池と電源を確かめる（報告ができません）']);
+    assert.equal(audio.starts, 2);
+    await poll(38000, { phase: 'RUN', staffSetup: runSetup() });
+    assert.equal(elements.get('staff').dataset.state, 'playing');
+    assert.deepEqual(visibleRunAlerts(), ['左コントローラーが切れています。電池と電源を確かめる（報告ができません）'],
+      '本編へ移っても同じ異常として残す');
+    assert.equal(audio.starts, 2, '装着の段から続く断は鳴らし直さない');
+    await poll(39000, { phase: 'INTRO', staffSetup: runSetup({ stage: 'handedOff', run: undefined }), health: runHealth({ ctrlL: 'ok' }) });
+    assert.equal(elements.get('staffRunAlerts').hidden, true, '戻ったら消す');
+  } finally {
+    restoreClock();
+    removeRunAudio();
+    runtime.resetStaffTimers();
+    state.sent = null; state.ui = 'idle';
+  }
+});
+
+test('中止の案内は実際に止まる順（タブレットの長押し → 被ったままなら右 A）で、画面のラベルと一致する', () => {
+  assert.match(html, /<summary>困ったとき<\/summary>/);
+  assert.match(html, /id="staffForceResetBtn"[^>]*>体験を中断してやり直す（長押し）<\/button>/);
+  const playing = runtime.staffRunProblems({ connection: 'online', stall: '',
+    status: { ...clone(validStatus), health: runHealth({ paused: true, worn: false }), staffSetup: runSetup() } });
+  assert.match(playing.list[0].text, /「困ったとき」の「体験を中断してやり直す」を長押しします$/);
+});
+
+test('応答しない Quest に進行が残ったら20秒で「この Quest をやめて切り替える」を出し、長押しで進行を捨てて選べるようにする', async () => {
+  prepareStaff(); runtime.resetStaffTimers();
+  let status = wearFixture(83, {});
+  recordPosts(() => status);
+  const offlineFetch = async () => { throw new TypeError('offline'); };
+  const onlineFetch = fetchHandler;
+  const button = elements.get('staffAbandonBtn');
+  const help = `${questDisplayName()}が応答しません。設定を送り直すことになります`;
+  try {
+    await runtime.poll();
+    assert.equal(runtime.targetChangeLocked(), true);
+    assert.equal(elements.get('questAlpha').disabled, true);
+    assert.equal(elements.get('staffAbandon').hidden, true, '応答しているうちは出さない');
+
+    fetchHandler = offlineFetch;
+    await runtime.poll(); await runtime.poll();
+    assert.equal(state.connection, 'offline');
+    shiftClock(19000);
+    await runtime.poll();
+    assert.equal(elements.get('staffAbandon').hidden, true, '20 秒までは出さない');
+    shiftClock(20000);
+    await runtime.poll();
+    assert.equal(elements.get('staffAbandon').hidden, false);
+    assert.equal(elements.get('staffAbandonHelp').textContent, help);
+    assert.match(html, /id="staffAbandonBtn"[^>]*>この Quest をやめて切り替える（長押し）<\/button>/);
+    assert.ok(html.indexOf('id="staffAbandon"') > html.indexOf('id="staffTargetHelp"')
+      && html.indexOf('id="staffAbandon"') < html.indexOf('id="staffCheckBtn"'), '接続先の選択の中に置く');
+
+    fetchHandler = onlineFetch;
+    status = { ...status, questTick: status.questTick + 1 };
+    await runtime.poll();
+    assert.equal(elements.get('staffAbandon').hidden, true, 'online に戻ったら消す');
+    restoreClock();
+    fetchHandler = offlineFetch;
+    await runtime.poll(); await runtime.poll();
+    shiftClock(19000);
+    await runtime.poll();
+    assert.equal(elements.get('staffAbandon').hidden, true, '戻った後の不通は数え直す');
+    shiftClock(21000);
+    await runtime.poll();
+    assert.equal(elements.get('staffAbandon').hidden, false);
+
+    assert.equal(button.dispatch('click'), undefined);
+    button.dispatch('pointerdown', { isPrimary: true, pointerId: 60, button: 0 });
+    button.dispatch('pointerup', { pointerId: 60 });
+    assert.equal(state.sent?.seq, 83, 'クリックと短押しでは捨てない');
+    storedSession.set('mawarimi.visitor.progress.v1', '{}');
+    button.dispatch('pointerdown', { isPrimary: true, pointerId: 61, button: 0 });
+    timers.runOne(1500); await runtime.staffAction();
+    assert.equal(state.sent, null, '送った設定を捨てる');
+    assert.equal(storedSession.has('mawarimi.visitor.progress.v1'), false, '保存済みの進行を捨てる');
+    assert.equal(state.status, null, '止まる前の応答（pending を含む）を捨てる');
+    assert.equal(runtime.staffConfirmationRequested(), false);
+    assert.equal(runtime.targetChangeLocked(), false);
+    assert.equal(state.view, 'title', '来場者は最初からやり直す');
+    assert.equal(elements.get('questAlpha').disabled, false, 'α / β を選べる');
+    assert.equal(elements.get('questBeta').disabled, false);
+    assert.equal(elements.get('staffAbandon').hidden, true);
+    assert.equal(elements.get('staffCheckMessage').textContent,
+      `${questDisplayName()}の進行を取り消しました。使うクエストを選んで接続を確認してください。`);
+
+    // 進行が無ければ、不通が続いても出さない（ふだんどおり α / β を選べる）。
+    shiftClock(60000);
+    await runtime.poll();
+    assert.equal(state.connection, 'offline');
+    assert.equal(elements.get('staffAbandon').hidden, true, '切り替えを妨げる進行が無ければ出さない');
+
+    // リセットの要求が応答しない Quest に残った場合も同じく捨てられる。
+    restoreClock();
+    fetchHandler = onlineFetch;
+    status = wearFixture(84, {});
+    await runtime.poll();
+    elements.get('staffForceResetBtn').dispatch('pointerdown', { isPrimary: true, pointerId: 62, button: 0 });
+    fetchHandler = offlineFetch;
+    timers.runOne(1500); await runtime.staffAction();
+    await runtime.poll();
+    shiftClock(25000);
+    await runtime.poll();
+    assert.match(elements.get('staffForceMessage').textContent, /中断を送りました/);
+    assert.equal(elements.get('staffAbandon').hidden, false);
+    button.dispatch('pointerdown', { isPrimary: true, pointerId: 63, button: 0 });
+    timers.runOne(1500); await runtime.staffAction();
+    assert.equal(runtime.targetChangeLocked(), false);
+    assert.equal(elements.get('staffForceMessage').textContent, '', 'リセットの要求も捨てる');
+  } finally {
+    restoreClock();
+    fetchHandler = onlineFetch;
+    runtime.resetStaffTimers();
+    state.sent = null; state.ui = 'idle';
+    state.status = clone(validStatus); state.connection = 'online';
+  }
 });
 
 (async () => {

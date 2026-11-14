@@ -894,6 +894,12 @@
               </div>
             </fieldset>
             <p class="staff-help" id="staffTargetHelp">本体のラベル（α または β）を見て選んでください。</p>
+            <!-- 使っていた Quest が応答しないまま進行が残ると、もう 1 台へ切り替えられない。その進行をこのタブレットから捨てる -->
+            <div id="staffAbandon" hidden>
+              <p class="staff-help" id="staffAbandonHelp"></p>
+              <button class="staff-secondary staff-hold" id="staffAbandonBtn" type="button" aria-describedby="staffAbandonHint">この Quest をやめて切り替える（長押し）</button>
+              <span class="sr-only" id="staffAbandonHint">1.5 秒押し続けると、この Quest へ送った設定と進行を捨てて、接続先を選べるようにします。</span>
+            </div>
             <button class="staff-action" id="staffCheckBtn" type="button">接続を確認する</button>
             <p class="staff-message" id="staffCheckMessage" role="status" aria-live="polite"></p>
           </div>
@@ -910,7 +916,7 @@
           <h4 id="staffTroubleBackupTitle">予備の操作</h4>
           <ul class="staff-backup">
             <li>タブレットが反応しないとき：右コントローラーの A を 2 秒押し続けると次の体験者の準備になります</li>
-            <li>体験を途中でやめるとき：ヘッドセットを外すのを手伝います。右コントローラーの A を 2 秒押し続けます</li>
+            <li>体験を途中でやめるとき：上の「体験を中断してやり直す」を長押しします。被ったままなら右コントローラーの A を 2 秒押しても止まります</li>
             <li>ヘッドセットの画面が見えないとき：右コントローラーの B を 1 秒押すと画面が正面に戻ります</li>
           </ul>
         </section>
@@ -3519,7 +3525,7 @@
     return true;
   }
 
-  // 本編中（体験が始まってから終わりの演出が済むまで）の異常。引き渡し前の知らせ（staffAlert）とは別に持つ。
+  // 本編中（体験が始まってから終わりの演出が済むまで）と装着の段の異常。引き渡し前の知らせ（staffAlert）とは別に持つ。
   // 6 秒続いたものだけを機器の一覧の下に出し、音のあるものは一度だけ鳴らす。同じ異常が続く間は鳴らし直さない。
   // 背景に移っていた間に溜まったものは鳴らさずに出す（引き渡し後の知らせと同じ）。
   const RUN_ALERT_DELAY_MS = 6000;
@@ -3557,7 +3563,7 @@
     const health = isRecord(status.health) ? status.health : null;
     if (health?.paused === true) {
       return { partial: true, list: health.worn === false ? [{ key: 'removed', tone: 'wait', sound: false,
-        text: '体験者が Quest を外しています。被り直すと続きから再開します' }] : [] };
+        text: '体験者が Quest を外しています。被り直すと続きから再開します。やめるときは「困ったとき」の「体験を中断してやり直す」を長押しします' }] : [] };
     }
     if (input.stall === 'hung') {
       return { partial: true, list: [{ key: 'hung', tone: 'trouble', sound: true,
@@ -3592,6 +3598,23 @@
     return { partial: false, list };
   }
 
+  // 装着の段（スタッフ画面の「装着を手伝う」）の異常。本編中と同じ機械で 6 秒・一度だけ知らせる。
+  // 被られていないことは装着に時間がかかるので 45 秒待つ。null（分からない）と追跡外れ（装着前は普通）は出さない。
+  const WEAR_NOT_WORN_DELAY_MS = 45000;
+  function staffWearProblems(input) {
+    const health = isRecord(input.status?.health) ? input.status.health : null;
+    const list = [];
+    if (health?.worn === false) {
+      list.push({ key: 'notWorn', tone: 'trouble', sound: true, delayMs: WEAR_NOT_WORN_DELAY_MS,
+        text: `${input.name}がまだ被られていません。被っているヘッドセットのラベルを確かめる` });
+    }
+    if (health?.ctrlL === 'off') {
+      list.push({ key: 'ctrlL', tone: 'trouble', sound: true,
+        text: '左コントローラーが切れています。電池と電源を確かめる（報告ができません）' });
+    }
+    return { partial: false, list };
+  }
+
   function updateRunAlertState(machine, input) {
     if (!input.active) {
       machine.entries.clear();
@@ -3613,7 +3636,7 @@
       entry.problem = problem;
       entry.visible = true;
       if (input.hidden) entry.silent = true;
-      if (entry.shown || input.now - entry.since < RUN_ALERT_DELAY_MS) continue;
+      if (entry.shown || input.now - entry.since < (problem.delayMs ?? RUN_ALERT_DELAY_MS)) continue;
       entry.shown = true;
       if (problem.sound && action !== 'sound') action = !entry.silent && input.audioReady ? 'sound' : 'consume';
     }
@@ -3639,6 +3662,9 @@
   function observeRunAlerts(now = Date.now()) {
     const status = state.status;
     const active = !state.staffPreview && !state.bypass && staffRunActive(status);
+    const wearing = !state.staffPreview && !state.bypass && !active && staffScreenState(staffSnapshot()) === 'wear';
+    // 被られていない時計は装着の段だけのもの。段を出たら捨てる（休止の間も残さない）。
+    if (!wearing) runAlert.entries.delete('notWorn');
     const health = isRecord(status?.health) ? status.health : null;
     // 内部エラーの数は本編を最初に観測した時点を基準にする。次の体験者（受付が変わる）で取り直す。
     if (!active) runAlertBaseline = { portal: '', exceptions: null };
@@ -3648,13 +3674,14 @@
     }
     const fresh = questStatusFresh();
     const action = updateRunAlertState(runAlert, {
-      active,
+      active: active || wearing,
       now,
       hidden: document.hidden || nativePaused,
       audioReady: staffAlertAudioReady(),
       problems: active ? staffRunProblems({ connection: state.connection, status,
         stall: questStallKind({ connection: state.connection, status, fresh, pollFailures }),
-        exceptionsBaseline: runAlertBaseline.portal === status?.portalSessionId ? runAlertBaseline.exceptions : null }) : null,
+        exceptionsBaseline: runAlertBaseline.portal === status?.portalSessionId ? runAlertBaseline.exceptions : null })
+        : wearing ? staffWearProblems({ status, name: activeQuestName() }) : null,
     });
     if (action === 'sound') playRunAlertSound();
     const shownKey = shownRunAlerts().map((problem) => `${problem.key}:${problem.text}`).join('|');
@@ -3966,7 +3993,7 @@
         ] };
       case 'playing':
         return { title: '体験中', meta: staffRunMeta(setup, state.status?.phase),
-          body: '中止するとき：ヘッドセットを外すのを手伝います。右コントローラーの A を 2 秒押し続けます。' };
+          body: '中止するとき：ヘッドセットを外すのを手伝い、「困ったとき」の「体験を中断してやり直す」を長押しします。被ったままなら右コントローラーの A を 2 秒押しても止まります。' };
       case 'outro':
         return { title: '終わりの演出中です', body: '演出が終わるまで待ってください。まだヘッドセットは外しません。' };
       case 'finished':
@@ -4263,6 +4290,7 @@
     renderStaffRunAlerts();
     renderStaffReceipt();
     renderStaffTrouble(key);
+    renderStaffAbandon();
     renderStaffForceReset();
     renderCallStaff();
   }
@@ -4302,6 +4330,52 @@
     renderStaff();
     await pulse();
     await poll();
+  }
+
+  // 使っていた Quest が応答しないまま、このタブレットの進行（送った設定・リセットや装着の要求）が残ると
+  // targetChangeLocked() が解けず、もう 1 台へ切り替えられない（取消もリセットも相手に届かない）。
+  // 応答の無いまま 20 秒続いたら、スタッフの長押しでその Quest 向けの進行を捨てる。来場者は設定の段からやり直す。
+  const TARGET_ABANDON_OFFLINE_MS = 20000;
+  let targetOffline = { quest: '', since: 0 };
+  let abandonHold = null;
+
+  function observeTargetOffline(now = Date.now()) {
+    const quest = activeQuest || '';
+    if (state.connection !== 'offline') targetOffline = { quest: '', since: 0 };
+    else if (!targetOffline.since || targetOffline.quest !== quest) targetOffline = { quest, since: now };
+  }
+
+  function staffAbandonOffered(now = Date.now()) {
+    return !state.bypass && !(transport.native && !activeQuest) && state.connection === 'offline'
+      && targetOffline.since > 0 && targetOffline.quest === (activeQuest || '')
+      && now - targetOffline.since >= TARGET_ABANDON_OFFLINE_MS && targetChangeLocked();
+  }
+
+  function abandonUnresponsiveQuest() {
+    if (!$('staff').open || !staffAbandonOffered()) return;
+    const name = activeQuestName();
+    staffResetRequest = null;
+    staffForceNotice = '';
+    staffConfirmationRequested = false;
+    state.clearReceipt = null;
+    state.clearing = false;
+    if (staffClearTimer) clearTimeout(staffClearTimer);
+    staffClearTimer = null;
+    // 止まる前の応答（未開始の設定 pending を含む）も捨てる。戻ったら新しい応答から読み直す。
+    state.status = null;
+    state.lastReceived = null;
+    // 送った設定・説明の進み・保存済みの進行は、毎回の体験者リセットと同じ後始末で捨てる。
+    resetVisitorSession();
+    state.staffQuest = activeQuest;
+    $('staffCheckMessage').textContent = `${name}の進行を取り消しました。使うクエストを選んで接続を確認してください。`;
+    renderStaff();
+  }
+
+  function renderStaffAbandon() {
+    const offered = staffAbandonOffered();
+    $('staffAbandon').hidden = !offered;
+    setText('staffAbandonHelp', offered ? `${activeQuestName()}が応答しません。設定を送り直すことになります` : '');
+    if (!offered) abandonHold?.cancel();
   }
 
   async function confirmStaffPreparation() {
@@ -4713,6 +4787,7 @@
         }
       }
       observeQuestTrouble();
+      observeTargetOffline();
       observeStaffAlert(Date.now(), freshStatus);
       observeRunAlerts();
       renderConnection();
@@ -4822,6 +4897,7 @@
   // 長押しは pointerdown から計る。画面切替直後の click を捨てる窓（switchClickGuardUntil）にも、
   // 説明文の送り（cueShownAt）にも掛からない。
   forceHold = bindHold($('staffForceResetBtn'), RESTART_HOLD_MS, () => { staffAction = requestStaffReset(true); });
+  abandonHold = bindHold($('staffAbandonBtn'), RESTART_HOLD_MS, () => { staffAction = Promise.resolve(abandonUnresponsiveQuest()); });
   const showStaffHoldHint = (briefing = false) => {
     if (staffHoldHintTimer) clearTimeout(staffHoldHintTimer);
     if (briefing) setText('briefingStaffHint', T[state.lang].briefing.hold);
@@ -4964,6 +5040,7 @@
     collectHold?.cancel();
     restartHold?.cancel();
     forceHold?.cancel();
+    abandonHold?.cancel();
     staffEntryHold?.cancel();
     briefingStaffHold?.cancel();
     staffCheckGeneration++;
@@ -5062,6 +5139,7 @@
       collectHold?.cancel();
       restartHold?.cancel();
       forceHold?.cancel();
+      abandonHold?.cancel();
       staffEntryHold?.cancel();
       briefingStaffHold?.cancel();
     }
@@ -5079,6 +5157,7 @@
       collectHold?.cancel();
       restartHold?.cancel();
       forceHold?.cancel();
+      abandonHold?.cancel();
       staffEntryHold?.cancel();
       briefingStaffHold?.cancel();
     }

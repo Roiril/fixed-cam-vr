@@ -187,19 +187,12 @@ public final class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    // 展示の一時中止の画面（pause-screen.js）を出している間は、戻るでアプリを閉じない。
-    // 来場者が触れてホーム画面へ出てしまうため（2026-11-14 に実機で確認）。
+    // 戻るは常に捨てる。来場者が説明の途中で触れるとホーム画面へ出てしまう（2026-11-14 に実機で確認）。
+    // このアプリに戻る操作の意味を持つ画面は無い。抜けるのはスタッフがホームボタンで行う。
     @SuppressWarnings("deprecation")
     @Override
     public void onBackPressed() {
-        if (webView == null) { super.onBackPressed(); return; }
-        webView.evaluateJavascript("Boolean(globalThis.PauseScreen && globalThis.PauseScreen.isOpen())", (value) -> {
-            if ("true".equals(value)) {
-                Log.i(TAG, "back ignored while the exhibit is paused");
-                return;
-            }
-            if (!isFinishing()) MainActivity.super.onBackPressed();
-        });
+        Log.i(TAG, "back ignored");
     }
 
     private final class LocalClient extends WebViewClient {
