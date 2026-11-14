@@ -55,8 +55,11 @@ namespace FixedCamVr.Streaming
         public const float RetreatM = 0.45f;
         /// <summary>立ち位置が解けるのを待つ上限。超えたら出さない。</summary>
         public const float AnchorTimeoutSec = 0.5f;
-        /// <summary>スイの面が閉じるのを待つ上限。面が閉じなくても人形はここで出す。</summary>
-        public const float NoticeWaitMaxSec = 5f;
+        /// <summary>
+        /// スイの面が閉じるのを待つ上限。面が閉じなくても人形はここで出す。
+        /// ⚠ 解除の返事は 2 枚を入れ替えで出す（0366）。2 枚で 6 秒ほど掛かるので、5 秒だと 2 枚目の裏に人形が出る。
+        /// </summary>
+        public const float NoticeWaitMaxSec = 8f;
         /// <summary>全身と向きを求める尺（見つめる段の頭から）。過ぎたら足が切れても撮る。</summary>
         public const float PhotoStrictSec = 4f;
         /// <summary>人の向きを求める尺（同）。過ぎたら向きを問わず撮る。</summary>

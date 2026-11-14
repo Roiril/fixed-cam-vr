@@ -275,27 +275,38 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         [Test]
-        public void ThirdLapAfterTheTakeover_ShowsItsOwnThreeLineRedLie()
+        public void AReplyAfterTheTakeover_ShowsTheTwoLineRedLie()
         {
-            // 乗っ取りの後の 3 周目の頭だけは、嘘の一文ではなく専用の 3 行の嘘が赤い字で出る。
+            // 乗っ取りの後の報告への返事は、人形の顔と赤い字の 2 行（空振りの文 ＋「そのまま、廻ってください」）。
             _panel.SetDecayForPreview(1f, 0f);
             int hits = _panel.TypedCount;
-            _panel.Deliver(CommsNotice.ThirdLap);
+            _panel.Deliver(CommsNotice.MarkNothing);
             Assert.AreEqual(CommsDelivery.Cursed, _logic.Delivery);
             Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
-            string lie = CommsPanel.ThirdLapLieText(ShowLanguage.Current);
-            Assert.AreEqual(lie, LieText().text);
-            Assert.AreEqual(3, LieText().textInfo.lineCount, "3 行とも組まれている");
+            Assert.AreEqual(CommsPanel.CursedReplyText(ShowLanguage.Current), LieText().text);
+            Assert.AreEqual(2, LieText().textInfo.lineCount, "2 行とも組まれている");
             Assert.Greater(_panel.LieChars, 0);
-            Assert.AreEqual(VisibleCount(LieText()), _panel.LieChars, "3 行とも全字が出ている");
+            Assert.AreEqual(VisibleCount(LieText()), _panel.LieChars, "2 行とも全字が出ている");
             Assert.AreEqual(hits, _panel.TypedCount, "打鍵は鳴らない");
             Assert.AreEqual(1f, _panel.AppliedFaceMix, "人形の顔");
+        }
 
-            // 続く報告の返事は、いつもの嘘の一文へ戻る（専用の嘘を引きずらない）。
-            Advance(5f);
-            _panel.Deliver(CommsNotice.MarkNothing);
+        [Test]
+        public void TheFarewell_IsSaidByTheDollFace_ThenThePanelLeavesByItself()
+        {
+            // 0363「一瞬スイが人形になっていうならわかる」。呪いが解けた後（侵食度 0）でも人形の顔と赤い字。
+            _panel.SetDecayForPreview(0f, 0f);
+            int hits = _panel.TypedCount;
+            _panel.Deliver(CommsNotice.FarewellFinding);
+            Assert.AreEqual(CommsDelivery.Cursed, _logic.Delivery);
             Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
-            Assert.AreEqual(CommsPanel.TakeoverLieText(ShowLanguage.Current), LieText().text);
+            Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.FarewellFinding, ShowLanguage.Current), LieText().text);
+            Assert.AreEqual(VisibleCount(LieText()), _panel.LieChars, "全字が出ている");
+            Assert.AreEqual(hits, _panel.TypedCount, "打鍵は鳴らない");
+            Assert.AreEqual(1f, _panel.AppliedFaceMix, "人形の顔");
+            // 一瞬だけ。持続表示にしない（読ませ終わったら自分で引く）。
+            Advance(CommsPanelLogic.HoldSec + CommsPanelLogic.OutSec + 0.5f);
+            Assert.IsFalse(_logic.Active, "別れの一言が出たまま残っている");
         }
 
         [Test]
@@ -311,7 +322,7 @@ namespace FixedCamVr.Diagnostics.Tests
             Advance(CommsPanelLogic.InSec + _logic.TypeSec + 0.1f);
             Assert.AreEqual(Text().textInfo.characterCount, _panel.VisibleChars);
             Assert.AreEqual(hits, _panel.TypedCount);
-            Assert.AreEqual(CommsPanel.TakeoverLieText(ShowLanguage.Current), LieText().text);
+            Assert.AreEqual(CommsPanel.CursedReplyText(ShowLanguage.Current), LieText().text);
             Assert.AreEqual(VisibleCount(LieText()), _panel.LieChars);
             Assert.AreEqual(1f, _panel.AppliedFaceMix, "最初から人形");
             Assert.AreEqual(1f, _panel.AppliedCurse);
@@ -344,10 +355,10 @@ namespace FixedCamVr.Diagnostics.Tests
             Assert.Greater(_panel.NoticeChars, 0);
             Assert.AreEqual(0f, _panel.AppliedCurse, 1e-5f);
             Assert.AreEqual(0f, _panel.AppliedFaceMix, 1e-5f);
-            // 0284: 呪いが解けた報告の返事は「検出しました」ではなく「遮断しました。おかえりなさい。」
+            // 0284: 呪いが解けた報告の返事は「検出しました」ではなく解除の返事（0365「遮断できました」）。
             Assert.AreEqual(CommsNotice.MarkCleared, _panel.LastNotice);
             Assert.AreEqual(CommsPanel.NoticeText(CommsNotice.MarkCleared, ShowLang.Ja), Text().text);
-            Assert.AreEqual("異常を遮断しました。\nおかえりなさい。", Text().text);
+            Assert.AreEqual("遮断できました", Text().text);
         }
 
         [Test]

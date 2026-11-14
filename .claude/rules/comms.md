@@ -25,7 +25,7 @@ paths:
 
 ## 契約
 - 判断 `CommsCueLogic`／文面 `CommsPanel.TextFor`（ja/en/fr）／出方 `CommsCueLogic.DeliveryOf` は各 1 か所 〔出典: show-design-2026-10-22.md:1341〕
-- 文面は 4 つの語で通す（違和感 → 異常／遮断／廻る／観測カメラ＝目に見えない異常を映す。「室内カメラ」と呼ばない）。ほかの約束（空振りと赤い嘘は同じ文／周の節目は同じ型／③a は短く何を止めるかを言う／⑤は引用の 1 行だけ／返事は句点なし）も `CommsNoticeTextTests` 〔memory/comms_reply_spine.md〕
+- 文面は 4 つの語で通す（違和感 → 異常／遮断／廻る／観測カメラ＝目に見えない異常を映す。「室内カメラ」と呼ばない）。ほかの約束（画を説明しない／周を名指さない／止められないものはログの行で返す／③b は体験者に遮断を任せる ほか）も `CommsNoticeTextTests` 〔LEDGER 0363・0365。memory/comms_reply_spine.md〕
 - 面は 1.5m・外 8°・下 17°、頭のヨーだけ追従。③a/③b だけ下 3°。倍率 2/3 は根 1 か所 — `CommsPanel.DistanceM/YawOffsetDeg/PitchOffsetDeg/ClosingPitchOffsetDeg/Scale` 〔出典: show-design:1139, 1393〕
 - 畳まれている間は追従の種を捨て、頭の正面に開く — `CommsPanelFollowTests.WhileFolded_TheFollowSeedIsDropped` 〔出典: show-design:1086〕
 - 地は黒い半透明 0.72、乗っ取り中だけ 0.96 — `CommsPanel.PanelAlpha/TakeoverPanelAlpha/MakeTranslucent` 〔出典: show-design:1114; memory/comms_takeover.md〕
@@ -34,14 +34,14 @@ paths:
 - 導入は接続確認 → 練習 → 成功「報告できました。装置は正常です。」→ 名乗り → Reminder。練習系は Fade（打鍵 0） — `HmdOnboardingLogic.Prompt`・`CommsPanel.SetOnboardingNotice`・`CommsNoticeTextTests.GreetingIntroducesSuiAfterTheTutorial` 〔出典: show-design:39; memory/hmd_onboarding.md〕
 - 題字後は Walk（床の矢印と同じ行で出す・18 秒おきに最大 2 回再送）→ 段 0 を抜けた縁で Arrived を上書き — `CommsCueLogic.TickIntro/WalkRepeatSec/WalkRepeatMax`・`CommsPanel.Deliver`→`WalkGuide.NotifyExplaining` 〔出典: show-design:627-660〕
 - 本編の頭は Begin のみ。BeginHow は出さない（`ResetRun` が `_beginHowFired=true`）。Begin は押しのけられても消費しない — `CommsCueLogicTests.EnteringTheMainRun_DoesNotRepeatTheHowTo` 〔出典: show-design:1338-1353 の表は旧。コードが正〕
-- 周の節目は Begin → SecondLap（2 周目・人形の視点の前だけ）→ ThirdLap（3 周目・乗っ取りの後は専用の赤い嘘 `CursedBodyFor`）。2 周目 C で人形の視点が出たら ForeignFeed を報告を待たずに 1 回 — `CommsCueLogic.Tick`・`CommsCueLogicTests.ThirdLap_*/ForeignFeed_*` 〔memory/comms_reply_spine.md〕
+- 周の連絡は出さない。本編の頭の Begin の後は、2 周目 C で人形の視点が出たら ForeignFeed「何かが……」を報告を待たずに 1 回だけ（乗っ取りの前のみ） — `CommsCueLogic.Tick`・`CommsCueLogicTests.NoLapIsAnnounced_AfterTheBeginNotice/ForeignFeed_*` 〔LEDGER 0363〕
 - 打つ速さ ja 12 / Latin 18 字/秒、1 字 1 発、上限 7 秒 — `CommsPanelLogic.CharsPerSecFor/MaxTypeSec`・`CommsNoticeTextTests.EveryNotice_TypesAtTheDeviceSpeed` 〔出典: show-design:1037, 1445〕
 - 読ませる尺 Typed 2.0 / Fade 1.1 / Possessed 1.35、引く 0.9 — `CommsPanelLogic.HoldSecFor/OutSec` 〔出典: show-design:1338-1350〕
 - 続く文面は同じ面で差し替え（旧文 0.15s → 枠 0.2s → 1 字目）。乗っ取りは差し替えない — `CommsPanelLogic.SwapTextOutSec/SwapBandSec/TakeSwapCommit` 〔出典: show-design:1121-1135〕
 - 長押しの縁で面は Guide へ（文面 0.1s で消して丈だけ縮む） — `CommsPanelLogic.SetGuideWanted/GuideTextOutSec` 〔出典: show-design:1425〕
-- 返事: 演出中 MarkLogged（消せなければ MarkStuck）/ 空振り MarkNothing / 侵食度≥0.75 では MarkAnalyzing。判定は中継前に凍らせる。MarkLogged は演出の id で解析の 1 行を挟む — `CommsCueLogic.Tick`・`ShowControlClient.LastMarkDetected/LastMarkTakeId`・`CommsPanel.FindingLine` 〔memory/comms_reply_spine.md〕
-- 締めの報告で `ShowRunDirector.ScreenDecayReleased` が立った同フレームは MarkCleared（侵食度 1 でも Typed） — `CommsPanel.Deliver`・`CommsPanelPossessionTests.ReleasedClosingReplyIsTypedBySuiAtFullInvasion` 〔出典: show-design:1353〕
-- ⑤ FarewellFinding は解除済みで別れの人形が Turn（か Retreat）に入った縁に 1 回、Fade・持続表示。出した後のランは返事も Guide も出さず、終幕の電源断で即座に消す。別れの人形の面待ちには数えない — `CommsCueLogic.Tick/FarewellFindingStays`・`CommsPanel.ObserveFarewellFindingEnd`・`CommsCueLogicTests.FarewellFinding_*` 〔シュビーの案・未判定（canon/OPEN.md）〕
+- 返事: 演出中 MarkLogged（消せなければ MarkStuck「解析不能／原因不明／遮断不能」）/ 空振り MarkNothing / 侵食度≥0.75 では MarkAnalyzing。判定は中継前に凍らせる。乗っ取りの後の返事は赤い嘘 `CommsPanel.CursedReplyText` — `CommsCueLogic.Tick`・`ShowControlClient.LastMarkDetected` 〔LEDGER 0365〕
+- 締めの報告で `ShowRunDirector.ScreenDecayReleased` が立った同フレームは MarkCleared（侵食度 1 でも Typed）。読ませ終わった縁に差し替えで MarkClearedClose が 1 度続く。以後の報告に返事なし — `CommsPanel.Deliver`・`CommsCueLogic.ClearedClosePending` 〔LEDGER 0366。memory/comms_reply_spine.md〕
+- ⑤ FarewellFinding は解除済み・④の 2 枚を読ませ終わり・別れの人形が Turn（か Retreat）の縁に 1 回。Cursed（人形の顔・赤い字）で自分で引く。以後は返事も Guide も出さない。人形は④の 2 枚を待つ（`EndingNoticeOpen`） — `CommsPanel.ObserveFarewellFindingEnd`・`CommsPanelPossessionTests.TheFarewell_*` 〔LEDGER 0365。memory/comms_reply_spine.md〕
 - 侵食度は観測でだけ進む: 2-C `pov_0` 0.25 / `pov_1..4` 0.75 / 3-A 人形表示 1。単調、ラン再開でだけ 0 — `CommsInvasionLogic.Observe/Reset`・`CommsInvasionLogicTests` 〔出典: streaming-2026-10-22.md:1432-1440〕
 - 乗っ取り前は侵食度に関わらず通常のスイ（斑 0・Typed）。斑と Cursed は `TakeoverDelivered` 後だけ — `CommsPanel.PushCurseTarget/Deliver` 〔出典: show-design:1224〕
 - 乗っ取りは 2-C の追いつきの成立で 1 回。成立は人形視点の自然完了か、人形視点が 1 カットでも出た後に前へ抜けた yield（次の区間の頭）。引き返し・watchdog・中止・開始前の前進・卓の介入中・侵食度では発火しない — `CommsCueLogic.HasPendingTakeover`・`TakeRunner.ShouldCountForwardYieldCatchUp`・`CommsCatchUpCompletionTests`・`CommsPossessionLogicTests.InvasionLevelAloneNeverFiresTakeover` 〔memory/comms_takeover.md〕

@@ -69,8 +69,7 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void ChainedNotice_FadesTheOldText_ThenMovesTheBox_ThenTypes()
         {
-            // 空振りの返事（1 行）→ 2 周目の連絡（3 行）。枠の高さが変わる組（本番でも続けて届く）。
-            // ⚠ 開始の合図は 3 行になったので、この前提（高さが違う）に使えない。
+            // 空振りの返事（1 行）→ 消せない演出への返事（3 行）。枠の高さが変わる組（本番でも続けて届く）。
             _panel.Deliver(CommsNotice.MarkNothing);
             StepUntil(CommsStage.Hold);
             for (int i = 0; i < 18; i++) Step();
@@ -78,7 +77,7 @@ namespace FixedCamVr.Diagnostics.Tests
             float oldBand = _panel.AppliedBodyBandH;
             int hits = _panel.TypedCount;
 
-            _panel.Deliver(CommsNotice.SecondLap);
+            _panel.Deliver(CommsNotice.MarkStuck);
             Assert.AreEqual(CommsStage.Swap, _logic.Stage);
             Assert.AreEqual(oldText, Text(), "旧文面が消える前に新しい文面を組んでいる");
 

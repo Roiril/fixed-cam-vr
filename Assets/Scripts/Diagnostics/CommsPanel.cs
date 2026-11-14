@@ -336,12 +336,17 @@ namespace FixedCamVr.Diagnostics
         /// ⚠ <b>語の決まり</b>（どれも <c>CommsNoticeTextTests</c> が守る）:
         ///   体験者が報告するのは「違和感」、スイが判定するのは「異常」（博士の台詞と同じ分け方。「異変」は使わない）。
         ///   スイがすることは「遮断」（乗っ取りの警告「遮断を執行／遮断失敗」と同じ語）。
-        ///   廻ることは「廻る」1 つで通す（題字の字。開始 → 2 周目 → 嘘 → 締め）。
+        ///   廻ることは「廻る」1 つで通す（題字の字。開始 → 人形の嘘 → 締め）。
         ///   映像の出どころは「観測カメラ」。目に見えない異常を映すカメラ（到着の連絡が言う）で、
-        ///   体験者がなぜテレビの中の自分を見て歩くのかの理由になる。人形の視点への警告が同じ語で否定する。
+        ///   体験者がなぜテレビの中の自分を見て歩くのかの理由になる。
+        /// ⚠ <b>スイは画を説明しない</b>（<c>canon/LEDGER.md</c> 0363「説明しすぎなんだよ」）。何が映っているかは画が見せる。
+        ///   周の番号も言わない（各周の頭の演出に被る）。追い込まれると断片とログの行になる。ため口にはならない。
+        /// ⚠ <b>「遮断」の筋</b>: 約束「私が解析し、遮断します。」→ 当たりの返事「遮断します」→ 2 周目 C「遮断不能」
+        ///   → 乗っ取りの警告「遮断を執行｜失敗」→ ③b「ボタンを押して遮断を…」（もうスイには遮断できない）→ ④「遮断できました」。
         /// ⚠ <b>句点の決まり</b>: スイが体験者へ<b>話しかける連絡は句点あり</b>、報告への<b>返事は句点なし</b>
-        ///   （装置の記録の行）。返事なのに句点があるのは 2 つだけで、どちらもスイが記録の型を外れて自分の言葉で話す所
-        ///   （侵食中の「解析が、終わりません。」と、締めの「おかえりなさい。」）。
+        ///   （装置の記録の行）。返事なのに句点があるのは侵食中の「解析が、終わりません。」だけ
+        ///   （スイが記録の型を外れて自分の言葉で話す）。締めの③a・③b はユーザーの文（0365）で、「！」と「…」で終わる。
+        ///   「何かが……」も言いかけて途切れるので句点を持たない。
         /// ⚠ 語は手元の面（<see cref="VisitorMarkGuidance"/>）と揃える（あちらが「解析中」）。
         /// </summary>
         private static string TextJa(CommsNotice n) => n switch
@@ -356,8 +361,8 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialShort => "もう少し長く、\n押し続けてください。",
             CommsNotice.TutorialAccepted => "報告できました。\n装置は正常です。",
             CommsNotice.TutorialReconnect => "左コントローラーを\n確認してください。",
-            // 約束。締めの③b が言い直し、④「異常を遮断しました。」が果たす。
-            // ⚠ 「私が」と主語を言う（③b「私が遮断します。」がこの繰り返しになる）。
+            // 約束。乗っ取りで「遮断を執行｜失敗」して破れ、③b で体験者の手に渡る。
+            // ⚠ 「私が」と主語を言う。③b でスイにはもう遮断できないことが、この主語の裏返しになる。
             // ⚠ 「異常なら」は入れない。入れた版では、読み手が「異常かどうかを判断するのは自分なのか」と迷った。
             //   見間違いでも報告してよいことは博士が言っている。
             // ⚠ 動詞が「遮断」なのは: 調査の対象を取り除く調査は成り立たない／乗っ取りの警告と同じ語になる／
@@ -373,38 +378,30 @@ namespace FixedCamVr.Diagnostics
             // ⚠ 「装置を起動します」とは言わない。装置は練習で「装置は正常です。」と言われたばかりで、もう動いている。
             //   この直後に起きるのは、テレビが点いて観測カメラの映像が来ること。
             // ⚠ 「室内カメラ」とは呼ばない。ただの室内カメラなら、なぜ自分の目でなくテレビを見て歩くのかに答えが無い。
-            //   3 行目で、このカメラが何を映すのかを言う。異常が映像にしか出ないこと（現実の部屋には何も無い）、
-            //   終幕の写真に人形が写ること、人形の視点が「観測カメラ以外の映像」として混ざることが、この 1 行に乗る。
+            //   3 行目で、このカメラが何を映すのかを言う。異常が映像にしか出ないこと（現実の部屋には何も無い）と、
+            //   終幕の写真に人形が写ることが、この 1 行に乗る。
             //   博士の「観測装置」・結果画面の「観測記録」と同じ語の家族。博士は「室内のカメラ」と言うが、同じ物として読まれた。
-            // ⚠ 「接続」と言っておく。2 周目 C の「観測カメラ以外の映像が、混ざっています。」が
-            //   この 1 通の裏返しとして読める（乗っ取りの警告「接続元不明」は、読まれることを当てにしない）。
             CommsNotice.Arrived => "到着しました。\n観測カメラに接続します。\n目に見えない異常も映ります。",
-            // ① 開始の合図。周の節目を 3 回、同じ型で告げる（ここ → `SecondLap` → `ThirdLap`）。
-            //   3 通目は乗っ取りの後に来て、同じ型のまま嘘になる。型を 2 回聞かせておかないと、嘘だと分からない。
+            // ① 開始の合図。⚠ 周の番号は言わない（0363。2・3 周目の頭にも何も出さない）。
             // ⚠ 「廻り始めてください。」博士は「エージェントの指示に従って歩き始めてください」と言い、体験者は
             //   テレビの前でその指示を待っている。「調査を開始してください。」では、歩いてよいのかが分からなかった。
-            // ⚠ スイ自身が「廻る」と言う。乗っ取りの後の嘘「そのまま、廻ってください。」はスイの真似になり、
-            //   締めの「もう廻らないで。」「廻り続ければ…」はスイが自分の指示を取り消す形になる。
+            // ⚠ スイ自身が「廻る」と言う。乗っ取りの後の人形の嘘「そのまま、廻ってください」はスイの真似になり、
+            //   締めの「もう廻らないで」はスイが自分の指示を取り消す形になる。
             // ⚠ 「手すりを持って、」は博士の「右手で手すりを持ち、決して離さず」を、装置をつけた後にもう一度言う。
-            CommsNotice.Begin => "一周目です。\n手すりを持って、\n廻り始めてください。",
+            CommsNotice.Begin => "手すりを持って、\n廻り始めてください。",
             // 押し方。本編では出さない（`CommsCueLogic.ResetRun`）。キー名は出さない（装置の面に入力機器の名前が出ると、
             // 調査の記録ではなく操作説明に見える）。
             CommsNotice.BeginHow => "違和感を覚えたら、\nボタンを長押ししてください。\n私が解析し、遮断します。",
-            // ②a 当たりの返事。どの演出への報告かが分かれば、あいだに解析の中身を 1 行挟む（`FindingLine`）。
+            // ②a 当たりの返事。⚠ 何が映っていたかは足さない（画が見せている。0363）。
             CommsNotice.MarkLogged => "異常を検出しました\n遮断します",
             // ②a′ 出ていたが、報告では消せない演出だった（2 周目 C の人形の視点）。
-            // ⚠ 理由と結果を 1 本の文にする。理由が無い版は「自分の報告の仕方が悪かったのか」と読まれ、
-            //   2 つの文に分けた版は「遮断できませんが唐突」と読まれた。
-            // ⚠ 同じ理由を既に言った後（頼まれずに出す警告の後・2 度目の報告）は、2 行目から先を
-            //   <see cref="StuckFollowUpLine"/> に替える。
-            CommsNotice.MarkStuck => "異常を検出しました\n観測カメラの映像ではなく、\n遮断できません",
+            // ⚠ ログの行で返す（0363「解析不能、原因不明、外部へ送信」の形）。何の映像なのかは言わない。
+            // ⚠ 3 行目は「遮断不能」。「外部へ送信」だと何かが行われたように読め、直後の乗っ取りの
+            //   「不正アクセス｜接続元不明」と並ぶと、送ったせいで入られたとも読める。
+            //   「遮断不能」は乗っ取りの「遮断を執行｜失敗」と③b へ続く（ユーザーが「この一式で実装」と選んだ版）。
+            CommsNotice.MarkStuck => "解析不能\n原因不明\n遮断不能",
             // ②b 空振りの返事。⚠ 乗っ取りの後の赤い嘘（<see cref="TakeoverLieText"/>）と 1 字も違えない。
             CommsNotice.MarkNothing => "異常は検出されませんでした",
-            // 2 周目の頭。廻ることと異常を結ぶ（開始の合図と同じ動詞）。
-            // ⚠ 「近づいています」とは言わない。体験者は同じ所を廻っていて、距離が縮む相手が画に無い。
-            //   近づいてくることは、2 周目の返事（`FindingLine`）が画に出ている物について 1 つずつ言う。
-            // ⚠ 「ようです」と推し量る。この時点の根拠は 1 周目だけで、スイは乗っ取りの前に断定の嘘をつかない。
-            CommsNotice.SecondLap => "二周目です。\n廻るたびに、異常は\n強まっているようです。",
             // ② 侵食度 0.75 以上で何も無い所へ報告した。判定を持たない一文（0232）。
             // ⚠ 一人称のまま壊す。自分を入れ物の名（装置）で呼ぶと、判定の保留とも故障とも付かない。
             CommsNotice.MarkAnalyzing => "解析が、\n終わりません。",
@@ -412,41 +409,29 @@ namespace FixedCamVr.Diagnostics
             // <see cref="TakeoverLieText"/> へ書き換わる。⚠ `MarkLogged` の 1 行目と 1 字も違えない。
             CommsNotice.Takeover => "異常を検出しました",
             // ③a すっと浮かぶ一言（打鍵は鳴らない）。画に居るのは 1.8 秒ほど（`CommsPanelLogic.FadeHoldSec`）。
-            // ⚠ 何を止めるのかをこの 1 通の中で言う。「止まってください！」の 1 行だけの間、読み手は 4 回続けて
-            //   「何を止めるのか分からない」と書き、博士の教えた中断の手順（立ち止まる → 手すりを離す → 装置を外す）の
-            //   1 歩目だと読んで迷った人も居た。止める対象を「廻る」と言えば、中断とは別のことだと分かる。
-            // ⚠ 2 行目は、乗っ取りの後の嘘「そのまま、廻ってください。」をそのまま打ち消す。
-            // ⚠ 短く（5 字 ＋ 8 字）。「手すりは離さないで。」を 2 行目に置いた版は長くて読み切れなかった。
-            // ⚠ スイが敬語を崩すのは体験の中でここだけ。「装置を外さないで」とは書かない（続けられない人の出口を塞がない）。
-            CommsNotice.Halt => "止まって！\nもう廻らないで。",
-            // ③b 締めの催促。報告するまで出たまま。
-            // ⚠ 止まる理由を言う。「廻り続ければ」は嘘への返しで、実装の事実でもある
-            //   （報告しないまま最後の A を出て歩き続けると人形 End）。
-            // ⚠ 「人形になります」と言い切る。「取り込みます」では「何に取り込まれるのか分からない」と読まれた。
-            //   この瞬間、主画面では体験者の位置に人形が立ち、面のスイの顔は半分が人形になっている。
-            // ⚠ 「あなたも私も」。スイの侵食を言葉で言う唯一の場所。
-            CommsNotice.Prompt => "廻り続ければ、あなたも私も\n人形になります。\n報告を。私が遮断します。",
-            // ④ 締めの報告で呪いが解けた（0284）。約束と同じ語で果たす。乗っ取りで 1 度失敗した遮断が、ここで通る。
-            // ⚠ 「おかえりなさい。」この報告で画に起きるのは、人形に替わっていた体験者が本人へ戻ること。
-            //   結果画面の題も「帰還End」。戻ってきたのは、乗っ取られていたスイ自身でもある。
-            CommsNotice.MarkCleared => "異常を遮断しました。\nおかえりなさい。",
-            // ⑤ 別れの人形が後ろを向いた縁に出す一言。⚠ シュビーの案で、ユーザーの判定はまだ無い（`canon/OPEN.md`）。
-            // ⚠⚠ **引用だけにする。スイの地の文を付けない。** 誰の声か・解析が済んだ・あの子が言っている、と
-            //   説明する文を 5 通り試して、5 通りとも読み手に「白けた・唐突・説明的」と書かれた。
-            //   ここは去っていく人形とオルゴールの場面で、画が言っていることに文を重ねない。
-            // ⚠ 判定の文にもしない（「敵意は検出されませんでした」など。乗っ取られた装置の判定は信じてもらえない）。
-            // ⚠ 引用は「また、」で始める。「あーそぼー」は 2 周目 C で体験者が自分の耳で聞いている。言い直すだけでは
-            //   締めに新しいことが無い。「また」で、去っていく人形がいま言っていることになる。
-            //   ⚠ この言葉の音声は無い（`SoundCue.DollCall` は「あーそぼー」だけ）。文字でだけ出る。
-            CommsNotice.FarewellFinding => "「また、あーそぼー」",
-            // 3 周目の頭。**乗っ取りが起きなかった走行でだけ**この文が出る（スイのまま・打鍵あり）。
-            // 乗っ取りの後は <see cref="ThirdLapLieText"/> が人形の顔と赤い字で出る。
-            CommsNotice.ThirdLap => "三周目です。\n廻るたびに、異常は\n強まっています。",
-            // 2 周目 C。人形の視点の映像が混ざり始めた後、報告を待たずにスイが言う（`CommsCueLogic`）。
-            // スイが頼まれずに警告するのは体験の中でここだけ。直後の乗っ取り「遮断を執行／遮断失敗」の前触れになる。
-            // ⚠ 「観測カメラ以外の映像」と言う。「カメラの映像ではありません」だけでは一瞬意味が取れなかった（読み手 2 人）。
-            //   何の映像なのかは言わない。体験者が画で知る。
-            CommsNotice.ForeignFeed => "観測カメラ以外の映像が、\n混ざっています。\n遮断できません。",
+            // ⚠ ユーザーの文（0365）。乗っ取りを押し返したスイの最初の言葉で、敬語が 2 行目で崩れかける。
+            // ⚠ 2 行目で何を止めるのか（廻ること）を言う。1 行目だけだと、博士の教えた中断の手順
+            //   （立ち止まる → 手すりを離す → 装置を外す）の 1 歩目と読まれる。
+            // ⚠ 2 行目は、乗っ取りの後の人形の嘘「そのまま、廻ってください」を打ち消す。
+            CommsNotice.Halt => "止まってください！\nもう廻らないで",
+            // ③b 締めの催促。報告するまで出たまま。ユーザーの文（0365）。
+            // ⚠ スイにはもう遮断できない（乗っ取りで「遮断を執行｜失敗」）。だから体験者に押してもらう（0363
+            //   「私が遮断できないから、あなたにボタンを押して遮断してほしい」）。最後の行は言い切らずに途切れる。
+            // ⚠ 「取り込もうとしています」— この瞬間、主画面では体験者の位置に人形が立っている。
+            // ⚠ 3 行目は命令の句なので赤に染めない（`CommsRecoveryLogic` の帯が最後の行を守る）。
+            CommsNotice.Prompt => "異常があなたを\n取り込もうとしています\nボタンを押して遮断を…",
+            // ④ 締めの報告で呪いが解けた（0284）。1 枚目。体験者が遮断した。ユーザーの文（0365）。
+            // ⚠ 読ませ終わったら同じ面で 2 枚目（`MarkClearedClose`）へ入れ替える（0366）。
+            CommsNotice.MarkCleared => "遮断できました",
+            // ④ 2 枚目。調査の装置としての締め。ユーザーの文（0365・0366）。
+            CommsNotice.MarkClearedClose => "データは十分です\nお疲れ様でした",
+            // ⑤ 別れの人形が後ろを向いた後、スイの顔が一瞬だけ人形に替わって言う（0363「一瞬スイが人形になっていうならわかる」）。
+            // ⚠ 人形の声なので引用符を付けない。乗っ取り中の嘘はスイの丁寧な口調の真似で、ここで初めて子どもの言葉になる。
+            // ⚠ 文はユーザーの文（0365）。赤い字（`CursedBodyFor`）で出るので、変えたら `menu comms-horror-font` も。
+            CommsNotice.FarewellFinding => "また、あそぼ",
+            // 2 周目 C。人形の視点の映像が混ざり始めた後、報告を待たずにスイが言いかけて途切れる（0363「"何かが…"みたいなのだけでいい」）。
+            // ⚠ 何が混ざっているかは言わない。乗っ取りの前の、スイ自身の最後の言葉になる。
+            CommsNotice.ForeignFeed => "何かが……",
             _ => "",
         };
 
@@ -474,20 +459,19 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Greeting => "My apologies.\nI am Sui, the agent\nsupporting your survey.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
             CommsNotice.Arrived => "Arrived. Connecting to\nthe observation cameras.\nThey show what eyes cannot.",
-            CommsNotice.Begin => "First lap.\nHold the handrail\nand start circling.",
+            CommsNotice.Begin => "Hold the handrail\nand start circling.",
             CommsNotice.BeginHow => "If anything feels wrong,\nhold the button.\nI will analyse and block it.",
             CommsNotice.MarkLogged => "An anomaly was detected.\nBlocking it.",
-            CommsNotice.MarkStuck => "An anomaly was detected.\nIt is not from our cameras.\nI cannot block it.",
+            CommsNotice.MarkStuck => "Analysis failed\nCause unknown\nCannot block",
             CommsNotice.MarkNothing => "No anomaly was detected.",
-            CommsNotice.SecondLap => "Second lap.\nThe anomaly seems to grow\neach time you circle.",
             CommsNotice.MarkAnalyzing => "The analysis\nwill not finish.",
             CommsNotice.Takeover => "An anomaly was detected.",
-            CommsNotice.Halt => "Stop!\nDo not circle again.",
-            CommsNotice.Prompt => "If you keep circling, you\nand I will become dolls.\nReport it. I will block it.",
-            CommsNotice.MarkCleared => "The anomaly is blocked.\nWelcome back.",
-            CommsNotice.FarewellFinding => "“Come and play again.”",
-            CommsNotice.ThirdLap => "Third lap.\nThe anomaly grows\neach time you circle.",
-            CommsNotice.ForeignFeed => "Footage not from our\ncameras is mixed in.\nI cannot block it.",
+            CommsNotice.Halt => "Please stop!\nNo more circling",
+            CommsNotice.Prompt => "The anomaly is trying\nto take you in.\nPress the button to block…",
+            CommsNotice.MarkCleared => "Block succeeded",
+            CommsNotice.MarkClearedClose => "We have enough data\nThank you for your work",
+            CommsNotice.FarewellFinding => "Let's play again",
+            CommsNotice.ForeignFeed => "Something…",
             _ => "",
         };
 
@@ -506,20 +490,19 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui, l'agente\nqui assiste votre enquête.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
             CommsNotice.Arrived => "Arrivé. Connexion aux\ncaméras d'observation.\nElles montrent l'invisible.",
-            CommsNotice.Begin => "Premier tour.\nTenez la main courante\net commencez à tourner.",
+            CommsNotice.Begin => "Tenez la main courante\net commencez à tourner.",
             CommsNotice.BeginHow => "Au moindre doute,\nmaintenez le bouton.\nJ'analyse et je bloque.",
             CommsNotice.MarkLogged => "Anomalie détectée.\nJe la bloque.",
-            CommsNotice.MarkStuck => "Anomalie détectée.\nAucune caméra ne la filme.\nJe ne peux pas la bloquer.",
+            CommsNotice.MarkStuck => "Analyse impossible\nCause inconnue\nImpossible de bloquer",
             CommsNotice.MarkNothing => "Aucune anomalie détectée.",
-            CommsNotice.SecondLap => "Deuxième tour.\nPlus vous tournez, plus\nl'anomalie semble croître.",
             CommsNotice.MarkAnalyzing => "L'analyse\nne se termine pas.",
             CommsNotice.Takeover => "Anomalie détectée.",
-            CommsNotice.Halt => "Arrêtez !\nNe tournez plus.",
-            CommsNotice.Prompt => "Si vous tournez encore,\nvous et moi serons poupées.\nSignalez. Je la bloquerai.",
-            CommsNotice.MarkCleared => "Anomalie bloquée.\nBon retour parmi nous.",
-            CommsNotice.FarewellFinding => "« Reviens jouer. »",
-            CommsNotice.ThirdLap => "Troisième tour.\nPlus vous tournez, plus\nl'anomalie croît.",
-            CommsNotice.ForeignFeed => "Des images hors caméras\nse mêlent au flux.\nJe ne peux pas les bloquer.",
+            CommsNotice.Halt => "Arrêtez !\nNe tournez plus",
+            CommsNotice.Prompt => "L'anomalie essaie\nde vous prendre.\nAppuyez pour la bloquer…",
+            CommsNotice.MarkCleared => "C'est bloqué",
+            CommsNotice.MarkClearedClose => "Les données suffisent\nMerci pour votre travail",
+            CommsNotice.FarewellFinding => "On rejoue ?",
+            CommsNotice.ForeignFeed => "Quelque chose…",
             _ => "",
         };
 
@@ -551,7 +534,7 @@ namespace FixedCamVr.Diagnostics
 
         /// <summary>
         /// 乗っ取られた本文。Takeover では真実と同位置に重ね、左から右の前線で赤いこの文へ置換する。
-        /// Takeover 後の通常報告は最初からこの文だけを出す。
+        /// ⚠ 当たりの返事の 1 行目と同じ 1 行に保つ（重ねる位置が崩れる）。乗っ取りの後の返事は <see cref="CursedReplyText"/>。
         /// </summary>
         public static string TakeoverLieText(ShowLang lang) => lang switch
         {
@@ -561,139 +544,33 @@ namespace FixedCamVr.Diagnostics
         };
 
         /// <summary>
-        /// 乗っ取られた後の 3 周目の頭に、人形の顔と赤い字で出る文（<see cref="CommsNotice.ThirdLap"/> の嘘の双子）。
-        ///
-        /// 周の節目の型（一周目です。／二周目です。）をそのまま使い、中身だけが嘘になる。
-        /// 2 行目は、空振りの返事「異常は検出されませんでした」を現在形で言い切ったもの。
-        /// 3 行目は体験者を歩かせ続ける命令で、締めの「止まってください！」が打ち消す相手。
-        /// ⚠ <b>3 行目はスイの指示の真似</b>（開始の合図「廻り始めてください。」と同じ動詞）。
-        ///   だから締めの「廻り続ければ、異常が…取り込みます。」が、この行を名指しで取り消せる。
+        /// 乗っ取られた後の報告に、人形の顔と赤い字で返す文。1 行目は空振りの返事と同じ（人形がスイの口調を真似る）。
+        /// 2 行目は体験者を廻らせ続ける命令で、開始の合図「廻り始めてください。」の真似。締めの「もう廻らないで」が打ち消す。
+        /// ⚠ 3 周目の頭に出していた嘘（「三周目です。…」）をここへ移した（0363 — 周の頭の演出に被る）。
+        ///   返事は体験者が押したときに出るので、画の出来事に重ならない。
         /// ⚠ 字を変えたら <c>menu comms-horror-font</c>（赤い字は別のアトラス）。
-        /// ⚠ シュビーの案で、ユーザーの判定はまだ無い（<c>canon/OPEN.md</c>）。
+        /// ⚠ シュビーの案（0363 の後の案の表）。ユーザーは「この一式で実装」と言った。
         /// </summary>
-        public static string ThirdLapLieText(ShowLang lang) => lang switch
+        public static string CursedReplyText(ShowLang lang) => lang switch
         {
-            ShowLang.En => "Third lap.\nThere is no anomaly.\nKeep circling.",
-            ShowLang.Fr => "Troisième tour.\nAucune anomalie.\nContinuez à tourner.",
-            _ => "三周目です。\n異常はありません。\nそのまま、廻ってください。",
+            ShowLang.En => "No anomaly was detected.\nKeep circling.",
+            ShowLang.Fr => "Aucune anomalie détectée.\nContinuez à tourner.",
+            _ => "異常は検出されませんでした\nそのまま、廻ってください",
         };
 
-        /// <summary>乗っ取りの後に、その連絡の代わりに赤い字で出す文。3 周目の頭だけが専用の文を持つ。</summary>
+        /// <summary>
+        /// 赤い字で出す連絡の本文。別れの一言はその文のまま（人形がいま言っている）、ほかは乗っ取りの後の嘘の返事。
+        /// </summary>
         public static string CursedBodyFor(CommsNotice n, ShowLang lang)
-            => n == CommsNotice.ThirdLap ? ThirdLapLieText(lang) : TakeoverLieText(lang);
+            => n == CommsNotice.FarewellFinding ? TextFor(n, lang) : CursedReplyText(lang);
 
-        /// <summary>解析の中身を持つ演出の id（<see cref="FindingLine"/> が文を返すもの）。テストとプレビューが回す。</summary>
-        public static readonly string[] FindingTakeIds = { "L1C1#0", "L2C0#0", "L2C0#1", "L2C1#0" };
-
-        /// <summary>
-        /// 報告が乗った演出について、スイが<b>解析して分かったこと</b>を 1 行で返す。対応が無ければ null。
-        ///
-        /// 博士は「何を見たかは、装置に搭載されたエージェントが解析します」と約束する。
-        /// それまでの返事は「異常を検出しました」だけで、解析の中身は最後の⑤まで 1 度も出なかった。
-        /// ⚠ <b>画を見れば分かることだけを繰り返さない。</b> 1 行で、見ただけでは分からないことを 1 つ足す。
-        /// ⚠ <b>4 つで 1 本の筋にする。</b> 子供の手 → 顔がカーテンの裏にいる → それは人形で、足跡を踏んでくる →
-        ///   近づいてくる。続きは報告で消せない 2 周目 C（<see cref="CommsNotice.ForeignFeed"/> と
-        ///   <see cref="CommsNotice.MarkStuck"/>「観測カメラの映像ではない」）と乗っ取り。
-        ///   相手が 1 つずつ寄ってくることを、周の頭の予告ではなく、画に出ている物についての解析で言う。
-        ///   最後の⑤が読む声「あーそぼー」は、1 通目の「子供の手形」と対になる。
-        /// ⚠ 2 通目は<b>画に出ている物（顔）を先に言い、長押しの間に見えた膨らみを言う</b>（布が裏から押されて盛り上がる）。
-        ///   「カーテンの裏に、何かいます」では「見ていたシミ（顔）と合わない」、「カーテンの裏にいます」では
-        ///   「シミは表に出ているのに、なぜ裏なのか」と読み手が書いた。
-        /// ⚠ 4 通目は主語（人形）を言う。省いたら「何が来るのか曖昧」と書かれた。
-        /// ⚠ 3 通目は「後をつけています」。「足跡を踏んでいます」と書いていた版は、画に足跡が無いので
-        ///   初耳の語になり、誰の足跡かも分からなかった（批評役）。つける → 近づく → 追いつく（2 周目 C）と段が付く。
-        /// ⚠ <b>行の中に句点を置かない</b>（「顔です。裏から…」と書かない）。返事は記録の行で、句点を持たない。
-        /// ⚠ 2 通目は「何かが顔を押しつけています」。主語を言う。「顔が、裏から押しています」では何が何を押すのかが、
-        ///   「裏から、顔を押しつけています」では誰の話なのかが、一瞬取れなかった（読み手）。
-        /// ⚠ 4 通目で「すぐ後ろ」と言わない。その後に、低い視点が背中へ寄り、真後ろから声がする。先に言うと山が逆になる。
-        ///   同じ演出の途中で画面が別の場所へ飛ぶが、そこは説明しない（どちらの画でも食い違わない文にする）。
-        /// ⚠ 1 行・全角 14 字（半角 28 字）まで。<see cref="BodyWithFinding"/> が 3 行に収める。
-        /// ⚠ id は台本（show.json）の take。台本が変わって id が無くなれば、従来の 2 行の返事へ戻る。
-        /// ⚠ シュビーの案で、ユーザーの判定はまだ無い（<c>canon/OPEN.md</c>）。
-        /// </summary>
-        public static string? FindingLine(string? takeId, ShowLang lang) => takeId switch
-        {
-            // 1 周目 B。壁を埋める手形。
-            "L1C1#0" => lang switch
-            {
-                ShowLang.En => "A child's handprints.",
-                ShowLang.Fr => "Des mains d'enfant.",
-                _ => "子供の手形です",
-            },
-            // 2 周目 A。幕に浮く顔のシミ。
-            "L2C0#0" => lang switch
-            {
-                ShowLang.En => "A face, pressed from behind.",
-                ShowLang.Fr => "Un visage pressé derrière.",
-                _ => "何かが顔を押しつけています",
-            },
-            // 2 周目 A。歩いた跡をついてくる人形。
-            "L2C0#1" => lang switch
-            {
-                ShowLang.En => "A doll is following you.",
-                ShowLang.Fr => "Une poupée vous suit.",
-                _ => "人形が、後をつけています",
-            },
-            // 2 周目 B。後ろから寄ってくる小さい人形。
-            "L2C1#0" => lang switch
-            {
-                ShowLang.En => "The doll is coming closer.",
-                ShowLang.Fr => "La poupée se rapproche.",
-                _ => "人形が近づいてきています",
-            },
-            _ => null,
-        };
-
-        /// <summary>
-        /// 遮断できない返事の 2 通目から先で、理由の代わりに言う 1 行。
-        /// 「観測カメラの映像ではない・遮断できない」は既に言っているので、報告した人には新しいことを 1 つ返す。
-        /// 直後の乗っ取りの警告「接続元不明」と同じことを、スイの言葉で先に言う。
-        /// </summary>
-        public static string StuckFollowUpLine(ShowLang lang) => lang switch
-        {
-            ShowLang.En => "Its source is unknown.",
-            ShowLang.Fr => "Sa source est inconnue.",
-            _ => "映像の出どころが分かりません",
-        };
-
-        /// <summary>
-        /// 当たりの返事（<see cref="CommsNotice.MarkLogged"/>）の 1 行目と 2 行目のあいだへ、解析の中身を挟む。
-        /// 対応する文が無ければ元の 2 行のまま。ほかの連絡には触らない。
-        /// </summary>
-        public static string BodyWithFinding(CommsNotice n, ShowLang lang, string? takeId)
-            => BodyWithFinding(n, lang, takeId, stuckReasonAlreadySaid: false);
-
-        /// <summary>
-        /// 返事の文面を組む。<paramref name="stuckReasonAlreadySaid"/> が立っていれば、遮断できない返事
-        /// （<see cref="CommsNotice.MarkStuck"/>）の 2 行目から先を <see cref="StuckFollowUpLine"/> に替える —
-        /// 頼まれずに出す警告（<see cref="CommsNotice.ForeignFeed"/>）か前の返事で、同じ理由をもう言っている。
-        /// </summary>
-        public static string BodyWithFinding(CommsNotice n, ShowLang lang, string? takeId, bool stuckReasonAlreadySaid)
-        {
-            string body = TextFor(n, lang);
-            if (n == CommsNotice.MarkStuck && stuckReasonAlreadySaid)
-            {
-                int first = body.IndexOf('\n');
-                return (first < 0 ? body : body.Substring(0, first)) + "\n" + StuckFollowUpLine(lang);
-            }
-            if (n != CommsNotice.MarkLogged) return body;
-            string? finding = FindingLine(takeId, lang);
-            if (finding == null) return body;
-            int cut = body.IndexOf('\n');
-            return cut < 0 ? body + "\n" + finding
-                           : body.Substring(0, cut) + "\n" + finding + body.Substring(cut);
-        }
-
-        /// <summary>その言語で画へ出る文面ぜんぶ（連絡の文面 ＋ 嘘の書き換え先 ＋ 解析の中身つきの返事）。幅の物差しとテストが読む。</summary>
+        /// <summary>その言語で画へ出る文面ぜんぶ（連絡の文面 ＋ 嘘の書き換え先 ＋ 乗っ取りの後の返事）。幅の物差しとテストが読む。</summary>
         public static System.Collections.Generic.IEnumerable<string> AllBodies(ShowLang lang)
         {
             foreach (CommsNotice n in System.Enum.GetValues(typeof(CommsNotice)))
                 yield return TextFor(n, lang);
             yield return TakeoverLieText(lang);
-            yield return ThirdLapLieText(lang);
-            foreach (string takeId in FindingTakeIds)
-                yield return BodyWithFinding(CommsNotice.MarkLogged, lang, takeId);
-            yield return BodyWithFinding(CommsNotice.MarkStuck, lang, null, stuckReasonAlreadySaid: true);
+            yield return CursedReplyText(lang);
         }
 
         /// <summary>
@@ -873,9 +750,9 @@ namespace FixedCamVr.Diagnostics
         private bool _presentationAbortedThisFrame;
         private bool _runRestartHooked;
         private CameraFeelFx? _feelFx;
-        // ⑤ 別れの解析結果（FarewellFinding）が面に出たままか。持続表示なので自分では引かない —
-        //    終幕の電源断（`CommsCueLogic.FarewellFindingStays` が偽になった縁）でこの面が畳む。
-        //    出ているあいだは長押しの Guide へ移さず、別れの人形の待ち（EndingNoticeOpen）にも数えない。
+        // ⑤ 別れの一言（FarewellFinding）をこのランで出したか。面は人形の顔のまま一瞬出て、自分で引く（0363）。
+        //    出した後は長押しの Guide へ移さず、別れの人形の待ち（EndingNoticeOpen）にも数えない。
+        //    引き切る前に終幕の電源断（`CommsCueLogic.FarewellFindingStays` が偽になった縁）が来たら、そこで畳む。
         private bool _farewellFindingShown;
         // ③b（締めの促し）が持続表示で面に出たままか。本編を出た縁でこの面が畳む（ObserveClosingPromptEnd）。
         private bool _closingPromptShown;
@@ -895,10 +772,6 @@ namespace FixedCamVr.Diagnostics
         private bool _cursedFromStart;
         /// <summary>いま赤い字で出している文（<see cref="CursedBodyFor"/> か嘘の一文）。</summary>
         private string? _lieBody;
-        /// <summary>当たりの返事に添える演出の id（<see cref="Deliver(CommsNotice, bool, bool)"/> が凍らせる）。</summary>
-        private string? _markTakeId;
-        /// <summary>遮断できない返事から理由の行を省くか（同じ理由を既に言っている）。</summary>
-        private bool _stuckReasonSaid;
         // 憑依の出し方（0230）の縁: この連絡で乱れの音を鳴らしたか／塗り替わり切ったか。Deliver で落とす。
         private bool _sweepSfxFired, _sweepDone;
         // 乱れ（0231）の帯ごとの値。`CommsCurseLogic.ComputeTear` が毎フレーム作り、地・顔・ステンシルと本文の頂点が読む。
@@ -1333,21 +1206,17 @@ namespace FixedCamVr.Diagnostics
             //    ここは「説明を始めた」という事実だけを渡す。
             if (notice == CommsNotice.Walk) walkGuide?.NotifyExplaining();
             // 締めの報告は、解除が通った同じフレームで ScreenDecayReleased が立つ。
-            // そのときの返事は「検出しました」ではなく「遮断しました。おかえりなさい。」（0284）。
+            // そのときの返事は「検出しました」ではなく「遮断できました」（0284・0365）。2 枚目は CommsCueLogic が続ける（0366）。
             // 出方は DeliveryOf が侵食度 1 のままでもスイの通常表示（Typed）にする。
             if (notice == CommsNotice.MarkLogged
                 && runDirector != null && runDirector.ScreenDecayReleased)
                 notice = CommsNotice.MarkCleared;
-            // 当たりの返事には、報告が乗った演出の id を添える（解析の中身を 1 行挟むため）。
-            // ⚠ ここで凍らせる。差し替えは旧文面が消え切ってから組むので、その間に演出が替わっても文は変わらない。
-            _markTakeId = notice == CommsNotice.MarkLogged && showControl != null
-                ? showControl.LastMarkTakeId : null;
-            _stuckReasonSaid = notice == CommsNotice.MarkStuck && _cue.StuckReasonAlreadySaid;
             CommsDelivery delivery = CommsCueLogic.DeliveryOf(notice, InvasionProgress);
             // 本番では Takeover が唯一の乗っ取りの縁。それより前の通常報告を赤い嘘へ飛ばさない。
             // プレビューは runDirector を持たないので、侵食度だけで Cursed を直接確認できる。
-            if (runDirector != null && !_cue.TakeoverDelivered
-                && notice != CommsNotice.Takeover && delivery == CommsDelivery.Cursed)
+            // ⚠ 別れの一言は侵食度と関係なく人形の顔で出る（呪いが解けた後なので侵食度は 0 に戻っている）。
+            if (runDirector != null && !_cue.TakeoverDelivered && notice != CommsNotice.Takeover
+                && notice != CommsNotice.FarewellFinding && delivery == CommsDelivery.Cursed)
                 delivery = CommsDelivery.Typed;
             LastNotice = notice;
             if (delivery == CommsDelivery.Possessed) PossessedCount++;
@@ -1429,7 +1298,7 @@ namespace FixedCamVr.Diagnostics
 
         private void LogDelivered(CommsNotice notice, CommsDelivery delivery)
         {
-            // ⚠ 画に出した文そのものを出す（乗っ取りの後の赤い嘘・解析の 1 行つきの返事は、連絡の既定の文と違う）。
+            // ⚠ 画に出した文そのものを出す（乗っ取りの後の赤い嘘は、連絡の既定の文と違う）。
             string shown = _text != null && !string.IsNullOrEmpty(_text.text) ? _text.text : TextFor(notice);
             Debug.Log($"[Comms] AIエージェントからの連絡 {notice}「{shown.Replace("\n", "／")}」"
                     + $"（{_charCount} 文字 / "
@@ -1443,8 +1312,11 @@ namespace FixedCamVr.Diagnostics
         {
             if (!IsBuilt) return;
             // 別れの人形は面が閉じてから出る。読んでいる字の裏に現れないようにする。
-            // ⑤（別れの解析結果）は人形が出た後に開くので数えない（数えると人形が待ちに戻る）。
-            timeline?.SetEndingNoticeOpen(_logic.Active && !_logic.DoneReading && !_farewellFindingShown);
+            // ⚠ 解除の返事は 2 枚を入れ替えで出す（0366）。1 枚目を読み終えた縁は一瞬「読み終わり」になるので、
+            //   2 枚目がまだなら開いていると数える（数えないと、その 1 コマで人形が出始める）。
+            // ⑤（人形の一言）は人形が出た後に開くので数えない（数えると人形が待ちに戻る）。
+            timeline?.SetEndingNoticeOpen(_logic.Active && (!_logic.DoneReading || _cue.ClearedClosePending)
+                                          && !_farewellFindingShown);
             bool registrationActive = showControl != null
                 && (showControl.CourseRegistrationActive || showControl.StaffSetupActive);
             if (registrationActive != RegistrationHidden)
@@ -1511,8 +1383,6 @@ namespace FixedCamVr.Diagnostics
                 markPressed = markPressed,
                 markDetected = markPressed && showControl != null && showControl.LastMarkDetected,
                 markStuck = markPressed && showControl != null && showControl.LastMarkStuck,
-                secondLap = timeline != null && timeline.SegmentLap == 2,
-                thirdLap = timeline != null && timeline.SegmentLap == 3,
                 dollViewStarted = InvasionProgress > 0f,
                 invasionProgress = InvasionProgress,
                 takeoverPlaying = _lieActive,
@@ -1529,9 +1399,9 @@ namespace FixedCamVr.Diagnostics
             });
             if (next == CommsNotice.FarewellFinding)
             {
-                // 終幕の電源断まで出したまま（持続表示）。畳むのは ObserveFarewellFindingEnd。
-                Deliver(next, persistent: true, pulse: true);
-                _farewellFindingShown = LastNotice == CommsNotice.FarewellFinding && _logic.Active;
+                // 人形の顔で一瞬出て、読ませ終わったら自分で引く（持続にしない・0363）。
+                Deliver(next, persistent: false, pulse: true);
+                _farewellFindingShown = LastNotice == CommsNotice.FarewellFinding;
             }
             else if (next == CommsNotice.Prompt)
             {
@@ -1595,7 +1465,8 @@ namespace FixedCamVr.Diagnostics
         /// </summary>
         private void ObserveFarewellFindingEnd(bool inRun)
         {
-            if (!_farewellFindingShown) return;
+            // 自分で引き切った後は何もしない（出したことは覚えておく — 長押しの Guide を出さないため）。
+            if (!_farewellFindingShown || !_logic.Active) return;
             bool finished = runDirector != null && runDirector.Phase == ShowPhase.Finished;
             if (finished && _outro == null) _outro = FindObjectOfType<OutroDirector>();
             bool stays = _logic.Active
@@ -1987,8 +1858,7 @@ namespace FixedCamVr.Diagnostics
         {
             TMP_Text? tmp = _text;
             if (tmp == null) return;
-            string body = bodyOverride ?? (notice == CommsNotice.None ? LongestNoticeText
-                : BodyWithFinding(notice, ShowLanguage.Current, _markTakeId, _stuckReasonSaid));
+            string body = bodyOverride ?? (notice == CommsNotice.None ? LongestNoticeText : TextFor(notice));
             // 文面はこの原文のまま保つ。乱れは頂点と画素の切断だけに掛ける。
 
             tmp.maxVisibleCharacters = int.MaxValue;

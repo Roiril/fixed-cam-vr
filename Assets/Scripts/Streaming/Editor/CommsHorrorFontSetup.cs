@@ -21,7 +21,8 @@ namespace FixedCamVr.Streaming.EditorTools
             {
                 foreach (char c in CommsPanel.TakeoverLieText(lang)) chars.Add(c);
                 // 3 周目の頭の嘘も同じ赤い字で出る。改行は字ではないので入れない。
-                foreach (char c in CommsPanel.ThirdLapLieText(lang)) if (c != '\n') chars.Add(c);
+                foreach (char c in CommsPanel.CursedReplyText(lang)) if (c != '\n') chars.Add(c);
+                foreach (char c in CommsPanel.CursedBodyFor(CommsNotice.FarewellFinding, lang)) if (c != '\n') chars.Add(c);
             }
             chars.Add(' ');
             var asset = TMP_FontAsset.CreateFontAsset(font, 96, 8, GlyphRenderMode.SDFAA,

@@ -541,10 +541,53 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void FarewellFinding_FadesInWithoutKeystrokes_AtAnyInvasion()
+        public void FarewellFinding_IsSaidByTheDoll_AtAnyInvasion()
         {
-            Assert.AreEqual(CommsDelivery.Fade, CommsCueLogic.DeliveryOf(CommsNotice.FarewellFinding, 0f));
-            Assert.AreEqual(CommsDelivery.Fade, CommsCueLogic.DeliveryOf(CommsNotice.FarewellFinding, 1f));
+            // 0363「一瞬スイが人形になっていうならわかる」— 呪いが解けた後（侵食度 0）でも人形の顔と赤い字。
+            Assert.AreEqual(CommsDelivery.Cursed, CommsCueLogic.DeliveryOf(CommsNotice.FarewellFinding, 0f));
+            Assert.AreEqual(CommsDelivery.Cursed, CommsCueLogic.DeliveryOf(CommsNotice.FarewellFinding, 1f));
+        }
+
+        [Test]
+        public void TheClearedReply_IsFollowedByTheSecondPanel_OnceRead()
+        {
+            // 0366「2回順番でスクリーンをだして。入れ替えで。」
+            var l = AfterClosingPrompt();
+            l.NotifyDelivered(CommsNotice.MarkCleared);
+            Assert.IsTrue(l.ClearedClosePending);
+            CommsCueInput reading = Farewell(turned: false, released: true);
+            reading.panelDoneReading = false;
+            for (int i = 0; i < 100; i++) Assert.AreEqual(CommsNotice.None, l.Tick(reading), "1 枚目を読ませ終わるまで待つ");
+            Assert.AreEqual(CommsNotice.MarkClearedClose, l.Tick(Farewell(turned: false, released: true)));
+            Assert.IsFalse(l.ClearedClosePending);
+            CollectionAssert.IsEmpty(AdvanceFarewell(l, 10f, turned: false, released: true), "2 枚目は 1 回だけ");
+            Assert.AreEqual(CommsDelivery.Typed, CommsCueLogic.DeliveryOf(CommsNotice.MarkClearedClose, 1f));
+        }
+
+        [Test]
+        public void TheFarewell_WaitsUntilBothClearedPanelsAreRead()
+        {
+            var l = AfterClosingPrompt();
+            l.NotifyDelivered(CommsNotice.MarkCleared);
+            // 人形が先に後ろを向いても、2 枚目が先。
+            Assert.AreEqual(CommsNotice.MarkClearedClose, l.Tick(Farewell(turned: true, released: true)));
+            CommsCueInput reading = Farewell(turned: true, released: true);
+            reading.panelDoneReading = false;
+            for (int i = 0; i < 100; i++) Assert.AreEqual(CommsNotice.None, l.Tick(reading), "2 枚目を読ませ終わるまで待つ");
+            Assert.IsFalse(l.FarewellFindingFired, "待っている間は消費しない");
+            Assert.AreEqual(CommsNotice.FarewellFinding, l.Tick(Farewell(turned: true, released: true)));
+        }
+
+        [Test]
+        public void AfterTheClearedReply_AReportGetsNoReply()
+        {
+            // 解除の後は終わりの 3 枚が面を持つ。報告の返事で割り込まない。
+            var l = AfterClosingPrompt();
+            l.NotifyDelivered(CommsNotice.MarkCleared);
+            l.Tick(Farewell(turned: false, released: true));   // 2 枚目
+            CollectionAssert.IsEmpty(AdvanceFarewell(l, 5f, turned: false, released: true, mark: true));
+            l.ResetRun();
+            Assert.IsFalse(l.ClearedDelivered);
         }
 
         [TestCase(true, false, false, 0f, 0.95f, true)]    // 別れが続いている
@@ -709,72 +752,30 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(miss));
         }
 
-        private static CommsCueInput Lap2(bool read = true, float invasion = 0f, bool mark = false)
-        {
-            CommsCueInput i = Run(read: read, mark: mark);
-            i.secondLap = true;
-            i.invasionProgress = invasion;
-            return i;
-        }
-
         [Test]
-        public void SecondLap_IsAnnouncedOnce_AfterTheBeginNotice()
+        public void NoLapIsAnnounced_AfterTheBeginNotice()
         {
+            // 0363「○○周目です。と言ってしまったら、開幕の演出があるのに、それに被って演出に集中できない」
             var l = new CommsCueLogic();
-            Assert.AreEqual(CommsNotice.Begin, l.Tick(Lap2()), "開始の合図が先");
-            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
-            Assert.IsTrue(l.SecondLapFired);
-            for (int i = 0; i < 200; i++) Assert.AreEqual(CommsNotice.None, l.Tick(Lap2()));
-        }
-
-        [Test]
-        public void SecondLap_IsNotAnnouncedInTheFirstLap()
-        {
-            var l = new CommsCueLogic();
-            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 5f, read: true));
-            Assert.IsFalse(l.SecondLapFired);
-        }
-
-        [Test]
-        public void SecondLap_WaitsForThePanel_AndIsNotLostToAReport()
-        {
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));   // Begin
-            Assert.AreEqual(CommsNotice.None, l.Tick(Lap2(read: false)), "面が塞がっている間は待つ");
-            Assert.AreEqual(CommsNotice.MarkNothing, l.Tick(Lap2(read: true, mark: true)), "報告の返事が先");
-            Assert.IsFalse(l.SecondLapFired, "押しのけられても消費しない");
-            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
-        }
-
-        [Test]
-        public void SecondLap_IsNotAnnounced_OnceTheDollViewHasStarted()
-        {
-            // 人形視点（侵食度 0.25〜）が始まったら、乗っ取りの因果（0245）へ割り込まない。
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));   // Begin
-            for (int i = 0; i < 100; i++)
-                Assert.AreEqual(CommsNotice.None, l.Tick(Lap2(invasion: 0.25f)));
-            Assert.IsFalse(l.SecondLapFired);
+            CollectionAssert.AreEqual(new[] { CommsNotice.Begin }, Advance(l, 60f, read: true));
         }
 
         private static CommsCueInput DollView(bool read = true, float invasion = 0.25f, bool mark = false)
         {
             CommsCueInput i = Run(read: read, mark: mark);
-            i.secondLap = true;
             i.dollViewStarted = true;
             i.invasionProgress = invasion;
             return i;
         }
 
         [Test]
-        public void ForeignFeed_IsWarnedOnce_WithoutAReport()
+        public void ForeignFeed_IsSaidOnce_WithoutAReport()
         {
             var l = new CommsCueLogic();
             l.Tick(Run(read: true));   // Begin
             Assert.AreEqual(CommsNotice.ForeignFeed, l.Tick(DollView()));
             Assert.IsTrue(l.ForeignFeedFired);
             for (int i = 0; i < 200; i++) Assert.AreEqual(CommsNotice.None, l.Tick(DollView(invasion: 0.75f)));
-            Assert.IsFalse(l.SecondLapFired, "人形の視点が始まった後に 2 周目の連絡は出さない");
         }
 
         [Test]
@@ -788,38 +789,21 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ForeignFeed_IsNotRepeated_AfterTheStuckReplySaidTheSameThing()
+        public void TheStuckReply_DoesNotUseUpTheUnaskedLine()
         {
+            // 「解析不能／原因不明／遮断不能」の後でも、スイは言いかけて途切れる（言っていることが違う）。
             var l = new CommsCueLogic();
             l.Tick(Run(read: true));   // Begin
             CommsCueInput stuck = DollView(mark: true);
             stuck.markDetected = true;
             stuck.markStuck = true;
             Assert.AreEqual(CommsNotice.MarkStuck, l.Tick(stuck));
-            Assert.IsFalse(l.StuckReasonAlreadySaid, "初めての返事は理由を言う");
-            Assert.IsTrue(l.ForeignFeedFired);
-            for (int i = 0; i < 50; i++) Assert.AreEqual(CommsNotice.None, l.Tick(DollView()));
-            Assert.AreEqual(CommsNotice.MarkStuck, l.Tick(stuck));
-            Assert.IsTrue(l.StuckReasonAlreadySaid, "2 度目の返事は理由を繰り返さない");
-        }
-
-        [Test]
-        public void TheStuckReply_SkipsTheReason_AfterTheUnaskedWarning()
-        {
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));   // Begin
             Assert.AreEqual(CommsNotice.ForeignFeed, l.Tick(DollView()));
-            CommsCueInput stuck = DollView(mark: true);
-            stuck.markDetected = true;
-            stuck.markStuck = true;
-            Assert.AreEqual(CommsNotice.MarkStuck, l.Tick(stuck));
-            Assert.IsTrue(l.StuckReasonAlreadySaid);
-            l.ResetRun();
-            Assert.IsFalse(l.StuckReasonAlreadySaid);
+            Assert.AreEqual(CommsNotice.MarkStuck, l.Tick(stuck), "2 度目の報告にも同じ返事");
         }
 
         [Test]
-        public void ForeignFeed_IsNotWarned_ByTheInvasionLevelAlone_NorAtFullInvasion()
+        public void ForeignFeed_IsNotSaid_ByTheInvasionLevelAlone_NorAtFullInvasion()
         {
             var l = new CommsCueLogic();
             l.Tick(Run(read: true));   // Begin
@@ -842,77 +826,11 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(CommsNotice.ForeignFeed, l.Tick(DollView()));
         }
 
-        private static CommsCueInput Lap3(bool read = true, float invasion = 1f, bool mark = false)
-        {
-            CommsCueInput i = Run(read: read, mark: mark);
-            i.thirdLap = true;
-            i.invasionProgress = invasion;
-            return i;
-        }
-
         [Test]
-        public void ThirdLap_IsAnnouncedOnce_EvenAfterTheDollViewHasStarted()
+        public void AReportAfterTheTakeover_UsesTheCursedDelivery()
         {
-            // 2 周目の連絡と違い、侵食度が上がっていても出す。乗っ取りの後に赤い嘘として出るのが本来の形。
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));   // Begin
-            Assert.AreEqual(CommsNotice.ThirdLap, l.Tick(Lap3()));
-            Assert.IsTrue(l.ThirdLapFired);
-            for (int i = 0; i < 200; i++) Assert.AreEqual(CommsNotice.None, l.Tick(Lap3()));
-        }
-
-        [Test]
-        public void ThirdLap_WaitsForThePanel_AndIsNotLostToAReport()
-        {
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));   // Begin
-            Assert.AreEqual(CommsNotice.None, l.Tick(Lap3(read: false)), "面が塞がっている間は待つ");
-            Assert.AreNotEqual(CommsNotice.ThirdLap, l.Tick(Lap3(read: true, mark: true)), "報告の返事が先");
-            Assert.IsFalse(l.ThirdLapFired, "押しのけられても消費しない");
-            Assert.AreEqual(CommsNotice.ThirdLap, l.Tick(Lap3()));
-        }
-
-        [Test]
-        public void ThirdLap_IsNotAnnouncedInTheClosingSegment()
-        {
-            // 締めでは出さない。「止まってください！」がこの連絡の嘘を打ち消す側なので、順序を逆にしない。
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));   // Begin
-            CommsCueInput closing = Lap3();
-            closing.closingSec = 0.5f;
-            Assert.AreNotEqual(CommsNotice.ThirdLap, l.Tick(closing));
-            Assert.IsFalse(l.ThirdLapFired);
-        }
-
-        [Test]
-        public void ThirdLap_ComesBackForTheNextVisitor()
-        {
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));
-            Assert.AreEqual(CommsNotice.ThirdLap, l.Tick(Lap3()));
-            l.ResetRun();
-            Assert.IsFalse(l.ThirdLapFired);
-            l.Tick(Run(read: true));
-            Assert.AreEqual(CommsNotice.ThirdLap, l.Tick(Lap3()));
-        }
-
-        [Test]
-        public void ThirdLap_UsesTheCursedDeliveryOnceTheDeviceIsTaken()
-        {
-            Assert.AreEqual(CommsDelivery.Cursed, CommsCueLogic.DeliveryOf(CommsNotice.ThirdLap, 1f));
-            Assert.AreEqual(CommsDelivery.Typed, CommsCueLogic.DeliveryOf(CommsNotice.ThirdLap, 0f));
-        }
-
-        [Test]
-        public void SecondLap_ComesBackForTheNextVisitor()
-        {
-            var l = new CommsCueLogic();
-            l.Tick(Run(read: true));
-            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
-            l.ResetRun();
-            Assert.IsFalse(l.SecondLapFired);
-            l.Tick(Run(read: true));
-            Assert.AreEqual(CommsNotice.SecondLap, l.Tick(Lap2()));
+            Assert.AreEqual(CommsDelivery.Cursed, CommsCueLogic.DeliveryOf(CommsNotice.MarkNothing, 1f));
+            Assert.AreEqual(CommsDelivery.Typed, CommsCueLogic.DeliveryOf(CommsNotice.MarkNothing, 0f));
         }
 
         [Test]

@@ -65,18 +65,22 @@ batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭�
 ⚠ **`plate-validation` は別れだけ体験者を測った立ち位置に置く**（`EndingVisitorXz`）。旧版は全身が枠に入る点を前提にしていて、A の画角では全身の入る組が人形の近くにしか無く、奥へ下がる道が体に当たって解けなかった。別れの体験者は壁で判定せず、頭と胸が枠に入ることを見る（`PhotoLevelFeetOut`）。解けないときは `noVisitorFit= noRetreat= pairRejected= pathRejected=` と道の不合格の理由がログに出る。
 ⚠ 画で見ると、人形は画の下端に近く小さい。体験者は右に立ち、足は切れ、頭の上も枠で切れることがある。実機は未確認。
 
-**スイの⑤ 別れの一言**（シュビーの案・未判定。`canon/OPEN.md`。文面の経緯は [[comms-reply-spine]]）:
-人形が後ろを向き始めた縁（`TimelineDirector.FarewellPhase` が Turn か Retreat）で、解除済み（`ScreenDecayReleased`）なら
-`CommsNotice.FarewellFinding`（いまの文面は引用の 1 行「また、あーそぼー」だけ。スイの地の文は付けない）を 1 回出す。
-Fade（打鍵 0・新しい効果音なし）、MarkCleared と同じ位置・同じスイの顔（斑 0）。持続表示で、終幕の砂嵐のあいだも残り、
-`OutroDirector.PowerCutAtSec` の縁で面ごと即座に消える（結果画面に残らない）。終幕を出さない設定では本編を出た縁で消える。
-- 面が閉じるのを待つ `EndingNoticeOpen` には数えない（人形は⑤より先に出ている。数えると人形が待ちへ戻る）
+**スイの⑤ 別れの一言**（`canon/LEDGER.md` 0363「一瞬人形化したスイが言う」・0365「また、あそぼ」。文面の約束は [[comms-reply-spine]]）:
+人形が後ろを向き始めた縁（`TimelineDirector.FarewellPhase` が Turn か Retreat）で、解除済み（`ScreenDecayReleased`）で、
+④の 2 枚（「遮断できました」→「データは十分です／お疲れ様でした」）を読ませ終わっていれば、`CommsNotice.FarewellFinding` を 1 回出す。
+出方は Cursed（顔は最初から人形・赤い字・打鍵 0）。持続表示ではなく、`HoldSec` + `OutSec` で自分で引く。
+引き切る前に電源断が来たら `OutroDirector.PowerCutAtSec` の縁で面ごと消える（結果画面に残らない）。
+- 人形は④の 2 枚が読み終わるまで面を待つ。2 枚のあいだに 1 フレーム面が空くので、`CommsPanel` は
+  `CommsCueLogic.ClearedClosePending` の間も `EndingNoticeOpen` を立てる。待ちの上限 `EndingFarewellLogic.NoticeWaitMaxSec` は 8 秒
+- ⑤そのものは `EndingNoticeOpen` に数えない（人形は⑤より先に出ている。数えると人形が待ちへ戻る）
 - 出した後は `CommsCueLogic.Tick` が None を返し続ける ＝ 報告の返事（②）で上書きしない。長押しの Guide にも移さない。
+  ④の 1 枚目を出した時点で、以後の報告には返事をしない。
   ⚠ 報告そのもの（押した回数・`ev=mark`・コントローラの振動）は止めていない。押した回数は結果画面の「報告数」に入る
 - 解析器: `ending=Released` で `ev=farewell phase=turn` があるのに `ev=comms id=FarewellFinding` が無ければ FAIL「別れの解析結果が出ていない」。
-  ⑤より後の報告は②の照合から外す（`tools/test-ending-log.py`）
+  delivery が Cursed でなければ FAIL。④の 2 枚目（`MarkClearedClose`）より先に出ても FAIL。
+  ④の 1 枚目より後と⑤より後の報告は②の照合から外す（`tools/test-ending-log.py`）
 - 外すときは `CommsCueLogic.Tick` の⑤の分岐 1 か所を止める
-- 文面は静的ベイク。変えたら `.\tools\unity.ps1 menu hud-font`（`CommsPanel.cs` を入力にする `comms-horror-font` も焼き直し待ちに数えられる）
+- 文面は静的ベイク。変えたら `.\tools\unity.ps1 menu hud-font` と `menu comms-horror-font`（赤い字は別のアトラス）
 
 **台車を外した範囲**: Quest側の `RomiCartLink` / `RomiCartLinkLogic` / テストとテレメトリ。
 タブレットの台車パネルと `tools/romi/` とファームは残っている（使わない）。

@@ -134,14 +134,24 @@ class EndingLogTests(unittest.TestCase):
 
     def test_farewell_finding_at_the_turn_passes(self):
         events = self.farewell_events(self.FULL_FAREWELL)
-        events.append({"ev": "comms", "id": "FarewellFinding", "t": "13.1", "delivery": "Fade", "chars": "0"})
+        events.append({"ev": "comms", "id": "FarewellFinding", "t": "13.1", "delivery": "Cursed", "chars": "0"})
         verdicts = self.verdicts(events)
         self.assertTrue(any(level == "OK" and "別れの解析結果が人形の振り向きで出た" in text for level, text in verdicts))
         self.assertFalse(any(level == "FAIL" and "別れの解析結果" in text for level, text in verdicts))
 
+    def test_farewell_finding_not_in_the_dolls_voice_fails(self):
+        # 0365: 別れの言葉は一瞬人形になったスイが言う（Cursed）。スイのまま（Fade / Typed）なら落ちる。
+        for delivery in ("Fade", "Typed"):
+            with self.subTest(delivery=delivery):
+                events = self.farewell_events(self.FULL_FAREWELL)
+                events.append({"ev": "comms", "id": "FarewellFinding", "t": "13.1",
+                               "delivery": delivery, "chars": "0"})
+                verdicts = self.verdicts(events)
+                self.assertTrue(any(level == "FAIL" and "人形の声" in text for level, text in verdicts))
+
     def test_farewell_finding_twice_fails(self):
         events = self.farewell_events(self.FULL_FAREWELL)
-        events += [{"ev": "comms", "id": "FarewellFinding", "t": t, "delivery": "Fade", "chars": "0"}
+        events += [{"ev": "comms", "id": "FarewellFinding", "t": t, "delivery": "Cursed", "chars": "0"}
                    for t in ("13.1", "14.0")]
         verdicts = self.verdicts(events)
         self.assertTrue(any(level == "FAIL" and "別れの解析結果が 2 回出た" in text for level, text in verdicts))
@@ -155,7 +165,7 @@ class EndingLogTests(unittest.TestCase):
     def finding_mark_events(self, mark_t):
         return [
             {"ev": "comms", "id": "Begin", "t": "1", "chars": "0"},
-            {"ev": "comms", "id": "FarewellFinding", "t": "15", "delivery": "Fade", "chars": "0"},
+            {"ev": "comms", "id": "FarewellFinding", "t": "15", "delivery": "Cursed", "chars": "0"},
             {"ev": "mark", "t": mark_t, "n": "2", "det": "1", "res": "1", "released": "1", "invasion": "1"},
         ]
 
@@ -167,6 +177,54 @@ class EndingLogTests(unittest.TestCase):
         # 校正: ⑤より前の解除の報告に返事が無ければ、従来どおり落ちる。
         verdicts = self.verdicts(self.finding_mark_events("14"))
         self.assertTrue(any(level == "FAIL" and "MarkCleared/Typed" in text for level, text in verdicts))
+
+    def cleared_events(self, close_t=None, finding_t=None, later_mark_t=None):
+        events = [
+            {"ev": "comms", "id": "Begin", "t": "1", "chars": "0"},
+            {"ev": "mark", "t": "10", "lap": "4", "det": "1", "res": "1",
+             "invasion": "1", "released": "1", "promptReady": "1"},
+            {"ev": "comms", "id": "MarkCleared", "t": "10.1", "invasion": "1",
+             "released": "1", "promptReady": "1", "delivery": "Typed", "chars": "6"},
+        ]
+        if close_t is not None:
+            events.append({"ev": "comms", "id": "MarkClearedClose", "t": close_t,
+                           "delivery": "Typed", "chars": "15"})
+        if finding_t is not None:
+            events.append({"ev": "comms", "id": "FarewellFinding", "t": finding_t,
+                           "delivery": "Cursed", "chars": "0"})
+        if later_mark_t is not None:
+            events.append({"ev": "mark", "t": later_mark_t, "lap": "4", "det": "0", "res": "0",
+                           "invasion": "1", "released": "1", "promptReady": "1"})
+        return events
+
+    def test_the_cleared_reply_is_followed_by_the_second_panel(self):
+        # 0366: 「遮断できました」→ 差し替えで「データは十分です／お疲れ様でした」→ 別れの言葉。
+        verdicts = self.verdicts(self.cleared_events(close_t="13.0", finding_t="17.0"))
+        self.assertTrue(any(level == "OK" and "2 枚目が" in text for level, text in verdicts))
+        self.assertFalse(any(level == "FAIL" and "2 枚目" in text for level, text in verdicts))
+        # 校正: 2 枚目が無い・別れの言葉が先に出たら落ちる。
+        verdicts = self.verdicts(self.cleared_events())
+        self.assertTrue(any(level == "FAIL" and "2 枚目" in text and "出ていない" in text
+                            for level, text in verdicts))
+        verdicts = self.verdicts(self.cleared_events(close_t="13.0", finding_t="12.0"))
+        self.assertTrue(any(level == "FAIL" and "より先に出た" in text for level, text in verdicts))
+
+    def test_reports_after_the_cleared_reply_need_no_reply(self):
+        # 遮断できた後の報告には返事をしない。②の照合から外す（返事が無くても落とさない）。
+        verdicts = self.verdicts(self.cleared_events(close_t="13.0", later_mark_t="12.0"))
+        self.assertFalse(any(level == "FAIL" and ("MarkCleared/Typed" in text or "②の返事が" in text)
+                             for level, text in verdicts))
+        self.assertTrue(any(level == "OK" and "MarkCleared がスイの通常印字" in text
+                            for level, text in verdicts))
+
+    def test_a_lap_notice_fails(self):
+        # 0363: 周の連絡は廃止。古い id が出たら配線が残っている。
+        events = [{"ev": "comms", "id": "Begin", "t": "1", "chars": "0"},
+                  {"ev": "comms", "id": "SecondLap", "t": "40", "delivery": "Typed", "chars": "20"}]
+        verdicts = self.verdicts(events)
+        self.assertTrue(any(level == "FAIL" and "周の連絡" in text for level, text in verdicts))
+        verdicts = self.verdicts(events[:1])
+        self.assertFalse(any("周の連絡" in text for level, text in verdicts))
 
     # -- 時間切れの手前の沈み（ev=outro sink= endingTime=）------------------------------
     SINK_TEXTS = ("沈んでいない", "沈みを画へ書けていない", "沈みが残っている", "沈み（sink）")

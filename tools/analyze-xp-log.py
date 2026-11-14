@@ -1719,7 +1719,8 @@ def analyze(events, others, exp, warns=None):
                 verdict("OK", f"別れの人形が体験者の左で見つめた（doll u={e.get('dollU')} / visitor u={e.get('visU')}）")
         if faces and not any(e.get("phase") == "done" for e in fw_ev):
             verdict("WARN", "別れの人形が消え切る前に締めが終わった（電源断に掛かった）")
-        # ⑤ 別れの解析結果（CommsNotice.FarewellFinding）。帰還で人形が後ろを向いた縁に 1 度だけ出る。
+        # ⑤ 別れの言葉（CommsNotice.FarewellFinding「また、あそぼ」・0365）。帰還で人形が後ろを向いた縁に 1 度だけ、
+        #    一瞬人形になったスイが言う（delivery=Cursed）。
         turned = [e for e in fw_ev if e.get("phase") == "turn"]
         findings = [e for e in events if e.get("ev") == "comms" and e.get("id") == "FarewellFinding"]
         if released and turned and not findings:
@@ -1730,10 +1731,14 @@ def analyze(events, others, exp, warns=None):
                 verdict("FAIL", f"別れの解析結果が {len(findings)} 回出た（振り向き {len(turned)} 回に 1 回だけの約束）")
             t_turn = fnum(turned[0], "t", 0.0) if turned else None
             t_find = fnum(findings[0], "t", 0.0)
-            if t_turn is not None and abs(t_find - t_turn) > 1.0:
+            delivery = findings[0].get("delivery")
+            if delivery != "Cursed":
+                verdict("FAIL", f"別れの言葉が人形の声（delivery=Cursed）で出ていない（delivery={delivery}）"
+                                "— CommsCueLogic.DeliveryOf(FarewellFinding)")
+            elif t_turn is not None and abs(t_find - t_turn) > 1.0:
                 verdict("WARN", f"別れの解析結果が人形の振り向きから {t_find - t_turn:+.1f}s ずれて出た")
             else:
-                verdict("OK", f"別れの解析結果が人形の振り向きで出た（delivery={findings[0].get('delivery')}）")
+                verdict("OK", f"別れの解析結果が人形の振り向きで出た（delivery={delivery}）")
 
     outro = [e for e in events if e.get("ev") == "outro"]
     if outro:
@@ -2005,11 +2010,15 @@ def analyze(events, others, exp, warns=None):
             # ②の分岐が「異常演出が表示されていたか」と一致しているか。
             # 侵食度1では通常返答を維持できず Takeover が一度だけ走る。ただし最後の解除が
             # 成立した報告だけはスイの通常返信へ戻るため、released=1 も照合対象に含める。
-            # ⑤ 別れの解析結果（FarewellFinding）を出した後の報告には返事を出さない（面は⑤を出したまま・
-            #    CommsCueLogic.Tick）。その後の報告は②の照合から外す。
+            # 遮断できた返事（MarkCleared）を出した後と、⑤ 別れの言葉（FarewellFinding）を出した後の報告には
+            # 返事を出さない（CommsCueLogic.Tick）。その後の報告は②の照合から外す。MarkCleared を返した
+            # 報告そのものは同じフレームか直後なので、0.3 秒の幅を残す。
             t_finding = _first("FarewellFinding")
+            t_cleared = _first("MarkCleared")
+            t_cut = min((t for t in (t_finding, None if t_cleared is None else t_cleared + 0.3)
+                         if t is not None), default=None)
             marks = [e for e in events if e.get("ev") == "mark"]
-            reply_marks = [m for m in marks if t_finding is None or fnum(m, "t", 0.0) < t_finding]
+            reply_marks = [m for m in marks if t_cut is None or fnum(m, "t", 0.0) < t_cut]
             # 0232: 侵食度 0.75 以上で何も無い所へ報告すると、判定を持たない一文（MarkAnalyzing）が返る。
             # 出ていた演出が報告では消せないもの（ev=mark stuck=1）なら MarkStuck（遮断できません）が返る。
             answers = [e for e in comms
@@ -2049,13 +2058,37 @@ def analyze(events, others, exp, warns=None):
             for m in released_marks:
                 near = [a for a in answers
                         if abs(fnum(a, "t", 0.0) - fnum(m, "t", 0.0)) < 1.0]
-                # 0284: 呪いが解けた報告の返事は MarkCleared（「異常を遮断しました。おかえりなさい。」）。
+                # 0284: 呪いが解けた報告の返事は MarkCleared（「遮断できました」・0365）。
                 if near and near[0].get("id") == "MarkCleared" and near[0].get("delivery") == "Typed":
                     verdict("OK", "最後の解除後に MarkCleared がスイの通常印字（Typed）で返った")
                 else:
                     got = f"{near[0].get('id')}/{near[0].get('delivery')}" if near else "返信なし"
                     verdict("FAIL", "最後の解除後の返事が MarkCleared/Typed ではない"
                                     f"（実際は {got}）— 侵食1の表示を解除後の返事へ持ち越している")
+
+            # 0366: 「遮断できました」の後、同じ面の差し替えで「データは十分です／お疲れ様でした」が 1 度だけ続く。
+            #       別れの言葉（⑤）はその 2 枚目を読ませ終わってから。
+            cleared = [e for e in comms if e.get("id") == "MarkCleared"]
+            cleared_close = [e for e in comms if e.get("id") == "MarkClearedClose"]
+            if cleared:
+                t_cl = fnum(cleared[0], "t", 0.0)
+                if not cleared_close:
+                    verdict("FAIL", "「遮断できました」の後に 2 枚目（MarkClearedClose「データは十分です」）が出ていない")
+                elif len(cleared_close) > 1:
+                    verdict("FAIL", f"2 枚目（MarkClearedClose）が {len(cleared_close)} 回出た — ラン 1 回に 1 度のはず")
+                else:
+                    t_cc = fnum(cleared_close[0], "t", 0.0)
+                    if t_cc < t_cl:
+                        verdict("FAIL", "2 枚目（MarkClearedClose）が「遮断できました」より先に出た")
+                    elif cleared_close[0].get("delivery", "Typed") != "Typed":
+                        verdict("FAIL", "2 枚目（MarkClearedClose）がスイの通常印字（Typed）で出ていない"
+                                        f"（delivery={cleared_close[0].get('delivery')}）")
+                    elif t_finding is not None and t_finding < t_cc:
+                        verdict("FAIL", "別れの言葉（FarewellFinding）が 2 枚目（MarkClearedClose）より先に出た")
+                    else:
+                        verdict("OK", f"「遮断できました」に続いて 2 枚目が {t_cc - t_cl:.1f}s 後に出た")
+            elif cleared_close:
+                verdict("FAIL", "「遮断できました」が無いのに 2 枚目（MarkClearedClose）が出た")
 
             closing_lap = int(exp.get("laps", 3)) + 1
             premature_closing_marks = [m for m in marks
@@ -2077,67 +2110,28 @@ def analyze(events, others, exp, warns=None):
                 e.get("ev") == "seg" and fnum(e, "plap", fnum(e, "lap", 0.0)) >= 3 for e in events)
             if takeover_missing:
                 verdict("FAIL", "2-C の乗っ取りが出なかった（追いつきの前に区間を出たか、鎖が切れた）")
-            # 2 周目の連絡（SecondLap「二周目です。廻るたびに、異常は強まっているようです。」）。区間の周が 2 に入り、
-            # 面が空いた縁に 1 度だけ出る。人形視点が始まった後には出さない（CommsCueLogic.Tick）。
-            second_lap = [e for e in comms if e.get("id") == "SecondLap"]
-            reached_lap2 = any(e.get("ev") == "seg" and int(fnum(e, "lap", 0.0)) == 2 for e in events)
-            if len(second_lap) > 1:
-                verdict("FAIL", f"2 周目の連絡（SecondLap）が {len(second_lap)} 回出た — ラン 1 回に 1 度のはず")
-            elif second_lap:
-                t_second = fnum(second_lap[0], "t", 0.0)
-                before = [e for e in events if e.get("ev") == "seg" and fnum(e, "t", 0.0) <= t_second]
-                where = (f"{int(fnum(before[-1], 'lap', 0))}-{'ABC'[int(fnum(before[-1], 'cam', 0)) % 3]}"
-                         if before else "?")
-                level = "OK" if where.startswith("2-") else "FAIL"
-                verdict(level, f"2 周目の連絡（SecondLap）が {where} で 1 度出た（t={t_second:.1f}s）"
-                               + ("" if level == "OK" else " — 2 周目の区間の外で出ている"))
-            elif reached_lap2:
-                verdict("WARN", "2 周目に入ったのに 2 周目の連絡（SecondLap）が出ていない — "
-                                "面が 2 周目のあいだ塞がり続けたか、人形視点が先に始まった")
-            # 人形の視点の映像への警告（ForeignFeed「観測カメラ以外の映像が、混ざっています。遮断できません。」）。
-            # 2 周目 C で人形の視点が出た後、面が空いた縁に、報告を待たずに 1 度だけ出る。乗っ取りの後には出ない。
-            # 先に遮断できない返事（MarkStuck）を返していれば出さない（同じことを 2 度言わない）。
+            # 周の連絡は出さない（0363「周回の表示は無くていい」）。古い id が出たら配線が残っている。
+            lap_notices = [e for e in comms if e.get("id") in ("SecondLap", "ThirdLap")]
+            if lap_notices:
+                verdict("FAIL", f"周の連絡（{lap_notices[0].get('id')}）が出た — 0363 で廃止した")
+            # 人形の視点の映像への反応（ForeignFeed「何かが……」・0363）。2 周目 C で人形の視点が出た後、
+            # 面が空いた縁に、報告を待たずに 1 度だけ出る。乗っ取りの後には出ない。
+            # 遮断できない返事（MarkStuck）とは中身が違うので、並んでもよい。
             foreign = [e for e in comms if e.get("id") == "ForeignFeed"]
             t_take = min((fnum(e, "t", 0.0) for e in takeover_events), default=None)
             if len(foreign) > 1:
-                verdict("FAIL", f"人形の視点への警告（ForeignFeed）が {len(foreign)} 回出た — ラン 1 回に 1 度のはず")
+                verdict("FAIL", f"人形の視点への反応（ForeignFeed）が {len(foreign)} 回出た — ラン 1 回に 1 度のはず")
             elif foreign:
                 t_ff = fnum(foreign[0], "t", 0.0)
-                late = t_take is not None and t_ff > t_take
-                stuck_before = [e for e in comms if e.get("id") == "MarkStuck" and fnum(e, "t", 0.0) < t_ff]
-                if late:
-                    verdict("FAIL", f"人形の視点への警告（ForeignFeed）が乗っ取りの後（t={t_ff:.1f}s）に出た")
-                elif stuck_before:
-                    verdict("FAIL", "遮断できない返事（MarkStuck）の後に、同じ中身の警告（ForeignFeed）が出た")
+                if t_take is not None and t_ff > t_take:
+                    verdict("FAIL", f"人形の視点への反応（ForeignFeed）が乗っ取りの後（t={t_ff:.1f}s）に出た")
                 else:
-                    verdict("OK", f"人形の視点への警告（ForeignFeed）が乗っ取りの前に 1 度出た（t={t_ff:.1f}s）")
+                    verdict("OK", f"人形の視点への反応（ForeignFeed）が乗っ取りの前に 1 度出た（t={t_ff:.1f}s）")
             elif takeover_events and not any(e.get("id") == "MarkStuck"
                                              and fnum(e, "t", 0.0) < (t_take or 0.0) for e in comms):
-                verdict("WARN", "乗っ取りの前に、人形の視点への警告（ForeignFeed）も遮断できない返事（MarkStuck）も"
+                verdict("WARN", "乗っ取りの前に、人形の視点への反応（ForeignFeed）も遮断できない返事（MarkStuck）も"
                                 "出ていない — 体験者には「遮断失敗」が前触れなしに来た（面が塞がり続けたか、"
                                 "人形の視点から乗っ取りまでが短すぎた）")
-            # 3 周目の連絡（ThirdLap）。区間の周が 3 に入り、面が空いた縁に 1 度だけ出る。
-            # 乗っ取りの後なら赤い嘘（delivery=Cursed・「異常はありません。そのまま、廻ってください。」）、
-            # 乗っ取りが無ければスイのまま（Typed）。乗っ取りの後に Typed で出たら、嘘のはずの文が正直に出ている。
-            third_lap = [e for e in comms if e.get("id") == "ThirdLap"]
-            reached_lap3 = any(e.get("ev") == "seg" and int(fnum(e, "lap", 0.0)) == 3 for e in events)
-            if len(third_lap) > 1:
-                verdict("FAIL", f"3 周目の連絡（ThirdLap）が {len(third_lap)} 回出た — ラン 1 回に 1 度のはず")
-            elif third_lap:
-                t_third = fnum(third_lap[0], "t", 0.0)
-                before = [e for e in events if e.get("ev") == "seg" and fnum(e, "t", 0.0) <= t_third]
-                where = (f"{int(fnum(before[-1], 'lap', 0))}-{'ABC'[int(fnum(before[-1], 'cam', 0)) % 3]}"
-                         if before else "?")
-                delivery = third_lap[0].get("delivery", "Typed")
-                taken = any(fnum(e, "t", 0.0) < t_third for e in takeover_events)
-                want_delivery = "Cursed" if taken else "Typed"
-                level = "OK" if where.startswith("3-") and delivery == want_delivery else "FAIL"
-                verdict(level, f"3 周目の連絡（ThirdLap）が {where} で 1 度出た（t={t_third:.1f}s・delivery={delivery}）"
-                               + ("" if level == "OK" else
-                                  f" — 3 周目の区間の外か、出方が違う（乗っ取り{'後' if taken else '無し'}なら {want_delivery}）"))
-            elif reached_lap3:
-                verdict("WARN", "3 周目に入ったのに 3 周目の連絡（ThirdLap）が出ていない — "
-                                "面が 3 周目のあいだ塞がり続けた")
             if full_marks and not takeover_events:
                 verdict("WARN", "侵食度1で報告されたが嘘の一文（Takeover）が記録されていない — "
                                 "先に自動再生済みか、CommsCueLogic の侵食入力を確認する")

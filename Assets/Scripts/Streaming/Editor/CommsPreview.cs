@@ -52,8 +52,9 @@ namespace FixedCamVr.Streaming.EditorTools
             // ⚠ 侵食中の空振りの返事。2026-11-13 まで一覧から漏れていて、**この文面だけ縦の座りを
             //    誰も見ていなかった**（同じ日に 1 行 → 2 行へ変えたので足した）。
             CommsNotice.MarkAnalyzing,
-            CommsNotice.SecondLap, CommsNotice.ForeignFeed, CommsNotice.ThirdLap,
-            CommsNotice.Halt, CommsNotice.Prompt, CommsNotice.MarkCleared,
+            CommsNotice.ForeignFeed,
+            CommsNotice.Halt, CommsNotice.Prompt, CommsNotice.MarkCleared, CommsNotice.MarkClearedClose,
+            // 人形の顔と赤い字で出る（`CommsCueLogic.DeliveryOf` が侵食度に関わらず Cursed にする）。
             CommsNotice.FarewellFinding,
         };
 
@@ -236,9 +237,9 @@ namespace FixedCamVr.Streaming.EditorTools
                     }
 
                 }
-                // ---- 乗っ取りの後の 3 周目の頭（人形の顔 ＋ 赤い字の 3 行の嘘）----
+                // ---- 乗っ取りの後の報告への返事（人形の顔 ＋ 赤い字の 2 行の嘘）----
                 // ⚠ 上の一覧では撮れない。乗っ取りが届く前の連絡は、侵食度に関わらず通常のスイで出るため
-                //    （`CommsPanel.Deliver`）。赤い字で 3 行を出すのはこの 1 通だけなので、縦の座りはここでしか見られない。
+                //    （`CommsPanel.Deliver`）。赤い字で 2 行の嘘を出すのはここだけなので、縦の座りはここでしか見られない。
                 {
                     object? takenCue = typeof(CommsPanel).GetField("_cue",
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(panel);
@@ -248,13 +249,13 @@ namespace FixedCamVr.Streaming.EditorTools
                         ApplyNow(apply, panel, logic);
                         cueLogic.NotifyDelivered(CommsNotice.Takeover);
                         SetLevelForPreview(panel, 1f, previewTime);
-                        panel.Deliver(CommsNotice.ThirdLap);
+                        panel.Deliver(CommsNotice.MarkNothing);
                         PlaceStraightAhead(root, tmp, dist);
                         // ⚠ 段ごとに刻む。1 回の大きな刻みでは、開く段を抜けた所で止まって字が出ていない絵になる。
                         Step(logic, apply, panel, inSec);
                         Step(logic, apply, panel, TypeSec(logic));
                         Step(logic, apply, panel, 0.2f);
-                        Shoot(cam, Path.Combine(dir, "notice_ThirdLap_cursed.png"));
+                        Shoot(cam, Path.Combine(dir, "notice_MarkNothing_cursed.png"));
                         cueLogic.ResetRun();
                         Disable(logic);
                         ApplyNow(apply, panel, logic);
