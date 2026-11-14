@@ -470,6 +470,103 @@ namespace FixedCamVr.Streaming
         private bool _takeKidsRoomSounding;
 
         /// <summary>
+        /// <b>子供部屋の動画の「落ちる所」（秒）</b>（<c>canon/LEDGER.md</c> 0375）。押し始めで動画をここへ飛ばす。
+        ///
+        /// 測り方（2026-11-14・<c>tools/web-compositor/captures/kidsroomB_noeyes_20261114.mp4</c>・24fps・144 コマ・6.0 秒）:
+        /// 1 コマ前との差（輝度の絶対差 &gt; 40）が画の上 45% に出た画素を数えた。96〜111 コマ目（4.00〜4.63 秒）は 0〜5 画素で、
+        /// <b>112 コマ目（4.667 秒）で 187 画素</b> ＝ 人形が画の上から入る最初のコマ。
+        /// ここから <see cref="KidsRoomJumpFadeSec"/>（0.4 秒）より長く手前に置く ＝ <b>4.2 秒</b>
+        /// （重ね終わる 4.6 秒より後に人形が入る。重ねている途中に落ち始めると、前の画と半透明で二重に見える）。
+        /// ⚠ 動画を差し替えたら測り直す。<c>analyze-xp-log.py</c> の <c>KIDS_ROOM_FALL_SEC</c> と対。
+        /// </summary>
+        public const float KidsRoomFallSec = 4.2f;
+
+        /// <summary>押し始めで落ちる所へ飛ぶとき、押した瞬間の画から落ちる所の画へ重ねる尺（秒）。音も同じ尺で重ねる。</summary>
+        public const float KidsRoomJumpFadeSec = 0.4f;
+
+        /// <summary>
+        /// 押し始めで子供部屋の動画を落ちる所へ飛ばすか（純判定・<c>canon/LEDGER.md</c> 0375）。
+        /// 子供部屋のカットが画面に出ていて、この演出でまだ飛んでおらず、再生位置が落ちる所より前のときだけ。
+        /// 再生位置が NaN（動画が出ていない）なら飛ばない。
+        /// </summary>
+        public static bool ShouldJumpKidsRoom(bool kidsCutShowing, bool alreadyJumped, float videoSec, float fallSec)
+            => kidsCutShowing && !alreadyJumped && !float.IsNaN(videoSec) && videoSec >= 0f && videoSec < fallSec;
+
+        /// <summary>落ちる所へ飛んで縮むカットの尺（秒）。落ちる所以後なら 0。</summary>
+        public static float KidsRoomJumpSkipSec(float videoSec, float fallSec)
+            => float.IsNaN(videoSec) ? 0f : Mathf.Max(0f, fallSec - videoSec);
+
+        /// <summary>演出のカットのうち、子供部屋の動画のカットの index（無ければ -1）。</summary>
+        public static int FindKidsRoomStep(ShowStepDef[]? steps)
+        {
+            if (steps == null) return -1;
+            for (int i = 0; i < steps.Length; i++)
+                if (steps[i] != null && IsKidsRoomCue(steps[i].cueId)) return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// 子供部屋の演出で報告が成立したとき、どのカットが終わるまで畳まずに見せ切るか（純判定・<c>canon/LEDGER.md</c> 0375）。
+        /// いまのカットが子供部屋の動画か、その次の最後のコマ（ライブではないカット）なら、その最後のコマの index。
+        /// 最後のコマが無ければ動画のカットの index。子供部屋の演出でない・まだ動画の前のカットなら -1（従来どおり即畳む）。
+        /// </summary>
+        public static int ResolveKidsRoomDismissAfterStep(ShowStepDef[]? steps, int activeStep)
+        {
+            int kids = FindKidsRoomStep(steps);
+            if (kids < 0 || activeStep < kids) return -1;
+            int last = kids;
+            int next = kids + 1;
+            if (next < steps!.Length && steps[next] != null
+                && TakeSchema.NormalizeSource(steps[next].source, out _) != TakeSchema.SourceLive)
+                last = next;
+            return activeStep <= last ? last : -1;
+        }
+
+        /// <summary>
+        /// <b>押し始めで子供部屋の動画を落ちる所へ飛ばした回数</b>（観測・テスト用・<c>ev=kidsjump</c>）。
+        /// ラン開始（<see cref="ResetRun"/>）で 0 に戻る。
+        /// </summary>
+        public int KidsRoomJumpCount { get; private set; }
+
+        /// <summary>最後に飛んだとき、押した瞬間の動画の再生位置（秒）。</summary>
+        public float LastKidsRoomJumpFromSec { get; private set; } = float.NaN;
+
+        /// <summary>最後に飛んだときの重ね方。<c>xfade</c> = 流れていた画から重ねた / <c>prep</c> = 動画の準備中で、出た時から落ちる所。</summary>
+        public string LastKidsRoomJumpMode { get; private set; } = "";
+
+        /// <summary>最後に飛んだ演出の id。</summary>
+        public string LastKidsRoomJumpTakeId { get; private set; } = "";
+
+        /// <summary>
+        /// <b>飛んだ先（落ちる所）の画が出た回数</b>（観測・テスト用・<c>ev=kidsland</c>）。
+        /// 飛んだのにここが増えなければ、飛び先の画が出ないまま演出が畳まれた。
+        /// </summary>
+        public int KidsRoomLandCount { get; private set; }
+
+        /// <summary>最後に落ちる所の画が出るまで、押してから待った秒（壁時計）。</summary>
+        public float LastKidsRoomLandWaitSec { get; private set; } = float.NaN;
+
+        /// <summary>
+        /// <b>子供部屋の演出で報告が成立したが、最後のコマまで畳まなかった回数</b>（観測・テスト用・<c>ev=kidshold</c>）。
+        /// ラン開始で 0 に戻る。
+        /// </summary>
+        public int KidsRoomHeldReportCount { get; private set; }
+
+        /// <summary>最後に畳まずに保った報告の、押したカットと、畳むのを待つカットの index。</summary>
+        public int LastKidsRoomHeldStep { get; private set; } = -1;
+        public int LastKidsRoomHeldUntilStep { get; private set; } = -1;
+
+        /// <summary>最後に畳まずに保った報告の演出 id。</summary>
+        public string LastKidsRoomHeldTakeId { get; private set; } = "";
+
+        // この演出で落ちる所へ飛んだか（1 回の演出で 1 度だけ）。
+        private bool _takeKidsRoomJumped;
+        // 飛んだが、落ちる所の画がまだ出ていない。出たら尺を待った分だけ延ばし、音を落ちる所から鳴らし直す。
+        private bool _kidsJumpAwaitLand;
+        private int _kidsJumpLandBase;
+        private int _kidsJumpToken = -1;
+
+        /// <summary>
         /// カット 1 つを解決した瞬間に上がる<b>観測専用</b>イベント。
         /// 引数は (演出 id, カット index, source, camera, 画面を取ったか, 理由トークン)。
         ///
@@ -847,10 +944,26 @@ namespace FixedCamVr.Streaming
             // （報告では変わらない条件だけで決まる）。演出やカットが実際に替われば ReleaseStepState の EndBleed で即 0。
             overlay?.CollapseBleed();
             if (_markResponseReported) return TakeRunnerLogic.MarkResult.None;
+            // 2-B の子供部屋（0375）: 動画のカットか最後のコマで報告が成立しても、人形が落ちてこちらを向く所と
+            // 最後のコマを見せ切ってから畳む。報告はここで成立する（数える）。区間を出た・watchdog・中止は従来どおり即畳む。
+            int activeTake = _logic.ActiveTakeIndex;
+            int activeStep = _logic.ActiveStepIndex;
+            int holdUntil = _logic.IsActive && !_markResponsePlaying && activeTake >= 0 && activeTake < _takes.Length
+                ? ResolveKidsRoomDismissAfterStep(_takes[activeTake].steps, activeStep)
+                : -1;
             TakeRunnerLogic.MarkResult result = _logic.NotifyMarkPressed(Now,
-                deferDismiss: _markResponsePlaying);
+                deferDismiss: _markResponsePlaying, dismissAfterStep: holdUntil);
             if (result == TakeRunnerLogic.MarkResult.Dismissed && _markResponsePlaying)
                 _markResponseReported = true;
+            if (result == TakeRunnerLogic.MarkResult.Dismissed && holdUntil >= 0)
+            {
+                KidsRoomHeldReportCount++;
+                LastKidsRoomHeldStep = activeStep;
+                LastKidsRoomHeldUntilStep = _logic.DismissAfterStep;
+                LastKidsRoomHeldTakeId = TakeId(activeTake);
+                Debug.Log($"[TakeRunner] 子供部屋で報告が成立 → 最後のコマまで畳まない take={LastKidsRoomHeldTakeId} " +
+                          $"step={activeStep} until={LastKidsRoomHeldUntilStep}");
+            }
             if (result == TakeRunnerLogic.MarkResult.Released && ActiveTakeId == _endingTakeId)
                 _endingReleased = true;
             return result;
@@ -859,6 +972,9 @@ namespace FixedCamVr.Streaming
         /// <summary>受付可能な長押しの開始。応答動画を待機姿勢から一度だけ往復再生する。</summary>
         public void NotifyVisitorMarkStarted()
         {
+            // 子供部屋の動画が落ちる所より前なら、押し始めの瞬間に落ちる所へ重ねて飛ぶ（0375）。
+            // この演出は markStartCueId を持たないので、下の応答より先に見る。
+            TryJumpKidsRoom();
             if (!_logic.IsActive || _markResponsePlaying || _markResponseReported || overlay == null) return;
             int index = _logic.ActiveTakeIndex;
             if (index < 0 || index >= _takes.Length) return;
@@ -1095,6 +1211,16 @@ namespace FixedCamVr.Streaming
             DollCallVoiceCount = 0;
             KidsRoomSoundCount = 0;
             KidsRoomStopCount = 0;
+            KidsRoomJumpCount = 0;
+            KidsRoomLandCount = 0;
+            KidsRoomHeldReportCount = 0;
+            LastKidsRoomJumpFromSec = float.NaN;
+            LastKidsRoomJumpMode = "";
+            LastKidsRoomJumpTakeId = "";
+            LastKidsRoomLandWaitSec = float.NaN;
+            LastKidsRoomHeldStep = -1;
+            LastKidsRoomHeldUntilStep = -1;
+            LastKidsRoomHeldTakeId = "";
             PresentationAbortCount = 0;
             _endingReleased = false;
             _farewell?.ResetRun();
@@ -1165,6 +1291,8 @@ namespace FixedCamVr.Streaming
                 _markDonePlaying = false;
                 _logic.CompleteDeferredDismiss();
             }
+            // 押し始めで飛んだ子供部屋の動画の、落ちる所の画が出たか（0375）。下の Tick が尺を読む前に延ばす。
+            TickKidsRoomLand();
             // untilClipEnd のカットは、オーバーレイが自然終端 / 中止で決着した時点を「終わり」とする。
             // 判定は必ずトークン経由（Current==null はロード中と区別が付かない）。
             if (_awaitingClipEnd && overlay != null && overlay.IsFinished(_clipToken))
@@ -1309,6 +1437,9 @@ namespace FixedCamVr.Streaming
             if (!d.takeStarted) CompleteDollCatchUpIfActive();
             // 演出の頭で、この演出 1 本ぶんの追いつきの状態を作り直す（前の演出の値を引き継がない）。
             if (d.takeStarted) ClearTakeCatchUpState();
+            // 子供部屋の落ちる所へ飛ぶのは演出 1 本で 1 度（引き返して頭から再演したら、もう 1 度飛べる・0375）。
+            if (d.takeStarted) _takeKidsRoomJumped = false;
+            _kidsJumpAwaitLand = false;
             _takeStepReached = d.stepIndex;
             _stepRecCutSec = -1f;
 
@@ -2148,6 +2279,59 @@ namespace FixedCamVr.Streaming
                                  + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
         }
 
+        // 押し始めの瞬間、子供部屋の動画が落ちる所より前なら落ちる所へ飛ばす（`canon/LEDGER.md` 0375）。
+        // ⚠ カットの尺は飛んだ分だけ縮める（落ちる所から動画の終わりまで＋最後のコマ）。落ちる所の画が出るまで
+        //   待った分は TickKidsRoomLand が延ばす（seek は準備ができるまで前のコマを出し続ける）。
+        // ⚠ 1 回の演出で 1 度だけ。落ちる所以後に押したら何もしない。
+        private void TryJumpKidsRoom()
+        {
+            if (!_logic.IsActive || overlay == null || !IsKidsRoomCue(_activeStepCueId)) return;
+            float videoSec = overlay.VideoTimeSec(_clipToken);
+            if (!ShouldJumpKidsRoom(true, _takeKidsRoomJumped, videoSec, KidsRoomFallSec)) return;
+            ScreenOverlayController.SeekJump jump = overlay.BeginSeekJump(_clipToken, KidsRoomFallSec, KidsRoomJumpFadeSec);
+            if (jump == ScreenOverlayController.SeekJump.Failed) return;
+            _takeKidsRoomJumped = true;
+            float skip = KidsRoomJumpSkipSec(videoSec, KidsRoomFallSec);
+            _logic.ShortenCurrentStep(Now, skip);
+            _kidsJumpAwaitLand = true;
+            _kidsJumpLandBase = overlay.SeekShownCount;
+            _kidsJumpToken = _clipToken;
+            KidsRoomJumpCount++;
+            LastKidsRoomJumpFromSec = videoSec;
+            LastKidsRoomJumpMode = jump == ScreenOverlayController.SeekJump.Crossfade ? "xfade" : "prep";
+            LastKidsRoomJumpTakeId = TakeId(_logic.ActiveTakeIndex);
+            Debug.Log($"[TakeRunner] 押し始めで子供部屋の動画を落ちる所へ飛ばす take={LastKidsRoomJumpTakeId} " +
+                      $"from={videoSec:F2}s to={KidsRoomFallSec:F2}s mode={LastKidsRoomJumpMode} skip={skip:F2}s");
+        }
+
+        // 飛んだ先（落ちる所）の画が出た瞬間に、待った分だけカットを延ばし、音を落ちる所から 0.4 秒で重ねて鳴らし直す。
+        // 飛びが取り消された（別の cue・停止）なら待つのをやめる。
+        private void TickKidsRoomLand()
+        {
+            if (!_kidsJumpAwaitLand) return;
+            if (overlay == null || _clipToken != _kidsJumpToken)
+            {
+                _kidsJumpAwaitLand = false;
+                return;
+            }
+            if (overlay.SeekShownCount == _kidsJumpLandBase)
+            {
+                if (overlay.IsSeekPending(_kidsJumpToken)) return;
+                _kidsJumpAwaitLand = false;
+                Debug.LogWarning("[TakeRunner] 子供部屋の落ちる所へ飛ぶのが取り消された（落ちる所の画が出ないまま）");
+                return;
+            }
+            _kidsJumpAwaitLand = false;
+            float wait = overlay.LastSeekWaitSec;
+            _logic.ShortenCurrentStep(Now, -wait);
+            KidsRoomLandCount++;
+            LastKidsRoomLandWaitSec = wait;
+            bool restarted = _takeKidsRoomSounding && _sound != null
+                             && _sound.RestartSpotAt(SoundCue.KidsRoom, KidsRoomFallSec, KidsRoomJumpFadeSec);
+            Debug.Log($"[TakeRunner] 子供部屋の落ちる所の画が出た wait={wait:F2}s timedOut={overlay.LastSeekTimedOut} " +
+                      $"sound={(restarted ? "restart" : "none")}");
+        }
+
         // 演出が終わった / 畳まれた縁。stop なら鳴っている子供部屋の音を短く退かせる。
         private void EndKidsRoomSound(bool stop)
         {
@@ -2171,6 +2355,8 @@ namespace FixedCamVr.Streaming
         private void ReleaseStepState()
         {
             _stepRecCutSec = -1f;
+            _kidsJumpAwaitLand = false;
+            _kidsJumpToken = -1;
             EndFollowSummary();
             _followActive = false;
             _followMax = float.NegativeInfinity;

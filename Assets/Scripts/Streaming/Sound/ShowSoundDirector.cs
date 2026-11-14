@@ -686,6 +686,25 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// <b><see cref="PlaySpot"/> で鳴らした一撃を、音源の <paramref name="atSec"/> 秒から鳴らし直す</b>
+        /// （2-B の子供部屋で、押し始めで動画を落ちる所へ飛ばした・<c>canon/LEDGER.md</c> 0375）。
+        /// いま鳴っている声を <paramref name="crossSec"/> 秒で退かせ、同じ秒数で新しい声を立ち上げて重ねる。
+        /// 鳴らし直せたかを返す。
+        ///
+        /// ⚠ 変種を持たない節目だけ（どの変種を鳴らしていたかを覚えていない）。変種を持つ節目は false。
+        /// ⚠ <see cref="LastCue"/> は書かない — 書くと走行ログに <c>ev=sfx</c> がもう 1 行出て、2 回鳴ったように読まれる。
+        ///   劇伴の退き（<c>PushSpotDuck</c>）も足さない（頭で掛けた退きがそのまま効いている）。
+        /// </summary>
+        public bool RestartSpotAt(SoundCue c, float atSec, float crossSec)
+        {
+            if (_sfx == null || SoundCueLogic.VariantCount(c) != 1) return false;
+            string res = SoundCueLogic.ResourceName(c);
+            if (res.Length == 0 || !_spot.TryGetValue(res, out var clip) || clip == null) return false;
+            _sfx.FadeOut(clip, crossSec);
+            return _sfx.PlayFrom(clip, atSec, crossSec);
+        }
+
+        /// <summary>
         /// その節目をどこから鳴らすか（<c>null</c> ＝ 2D・2026-09-03・<c>canon/LEDGER.md</c> 0130）。
         ///
         /// **スクリーンから鳴るのは装置が出す音だけ。** 割れる音（<see cref="SoundCue.Shatter"/>）は

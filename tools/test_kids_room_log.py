@@ -3,6 +3,8 @@
 - 書き手は C# の ShowTelemetryHost（ev=sfx id=<SoundCue>）、鳴らすのは TakeRunner（KidsRoomCueId のカットの頭）
 - 読み手は tools/analyze-xp-log.py の kids_room_findings。cue id（KIDS_ROOM_CUE）は C# の
   TakeRunner.KidsRoomCueId と対。片方だけ直すと判定が黙って空振りする
+- 押し始めで人形の落ちる所へ飛ぶ・報告を最後のコマまで保つ（0375）は ev=kidsjump / kidsland / kidshold。
+  読み手は kids_jump_findings、落ちる所の秒（KIDS_ROOM_FALL_SEC）は C# の TakeRunner.KidsRoomFallSec と対
 
     py -3.11 tools/test_kids_room_log.py
 """
@@ -104,6 +106,106 @@ class KidsRoomWriterReaderTests(unittest.TestCase):
         self.assertIn("if (IsKidsRoomCue(step.cueId)) PlayKidsRoomSound();", runner)
         self.assertIn("_sound.PlaySpot(SoundCue.KidsRoom)", runner)
         self.assertIn("_sound.StopSpot(SoundCue.KidsRoom, KidsRoomStopFadeSec)", runner)
+
+
+class KidsJumpAnalyzerTests(unittest.TestCase):
+    """押し始めで人形の落ちる所へ飛ぶ・報告を最後のコマまで保つ（canon/LEDGER.md 0375）。"""
+
+    def levels(self, events):
+        _, verdicts = xp.kids_jump_findings(events)
+        return [level for level, _ in verdicts]
+
+    def take(self, t0, t1, why, *inner):
+        return [ev("take", t0, id="L2C1#0", st="begin"),
+                ev("step", t0, take="L2C1#0", i=0, src="inherit", played=1),
+                *inner,
+                ev("take", t1, id="L2C1#0", st="end", why=why)]
+
+    def jump(self, t, frm=1.3, to=4.2, mode="xfade", n=1):
+        return ev("kidsjump", t, take="L2C1#0", **{"from": frm}, to=to, mode=mode, n=n)
+
+    def land(self, t, wait=0.05, timed_out=0, n=1):
+        return ev("kidsland", t, wait=wait, timedOut=timed_out, n=n)
+
+    def hold(self, t, step=1, until=2, n=1):
+        return ev("kidshold", t, take="L2C1#0", step=step, until=until, n=n)
+
+    def test_nothing_happened_says_nothing(self):
+        self.assertEqual(xp.kids_jump_findings(self.take(40, 50, "done")), ([], []))
+
+    def test_jump_then_land_passes(self):
+        events = self.take(40, 46, "done", self.jump(41.3), self.land(41.35))
+        self.assertEqual(self.levels(events), ["OK"])
+
+    def test_jump_without_land_fails(self):
+        events = self.take(40, 46, "done", self.jump(41.3))
+        self.assertEqual(self.levels(events), ["FAIL"])
+
+    def test_jump_without_land_before_walking_out_is_a_warning(self):
+        events = self.take(40, 41.4, "yield", self.jump(41.3))
+        self.assertEqual(self.levels(events), ["WARN"])
+
+    def test_jump_after_the_fall_point_fails(self):
+        events = self.take(40, 46, "done", self.jump(41.3, frm=4.5), self.land(41.35))
+        self.assertIn("FAIL", self.levels(events))
+
+    def test_fall_point_mismatch_fails(self):
+        events = self.take(40, 46, "done", self.jump(41.3, to=4.3), self.land(41.35))
+        self.assertIn("FAIL", self.levels(events))
+
+    def test_two_jumps_in_one_take_fail(self):
+        events = self.take(40, 46, "done", self.jump(41.3), self.land(41.35), self.jump(42, n=2), self.land(42.1, n=2))
+        self.assertIn("FAIL", self.levels(events))
+
+    def test_timed_out_land_is_a_warning(self):
+        events = self.take(40, 46, "done", self.jump(41.3), self.land(42.3, wait=1.0, timed_out=1))
+        self.assertEqual(self.levels(events), ["WARN"])
+
+    def test_held_report_folded_after_the_last_frame_passes(self):
+        events = self.take(40, 48.6, "mark",
+                           ev("step", 41, take="L2C1#0", i=1, src="plate", played=1),
+                           self.hold(42),
+                           ev("step", 46.9, take="L2C1#0", i=2, src="plate", played=1))
+        self.assertEqual(self.levels(events), ["OK"])
+
+    def test_held_report_folded_before_the_last_frame_fails(self):
+        events = self.take(40, 42.1, "mark",
+                           ev("step", 41, take="L2C1#0", i=1, src="plate", played=1),
+                           self.hold(42))
+        self.assertEqual(self.levels(events), ["FAIL"])
+
+    def test_held_report_that_ran_to_the_end_fails(self):
+        events = self.take(40, 48.6, "done",
+                           ev("step", 41, take="L2C1#0", i=1, src="plate", played=1),
+                           self.hold(42),
+                           ev("step", 46.9, take="L2C1#0", i=2, src="plate", played=1))
+        self.assertEqual(self.levels(events), ["FAIL"])
+
+    def test_held_report_cut_by_walking_out_says_nothing_bad(self):
+        events = self.take(40, 43, "yield",
+                           ev("step", 41, take="L2C1#0", i=1, src="plate", played=1),
+                           self.hold(42))
+        self.assertNotIn("FAIL", self.levels(events))
+
+
+class KidsJumpWriterReaderTests(unittest.TestCase):
+    def test_fall_point_matches_the_runner(self):
+        runner = read("Assets/Scripts/Streaming/TakeRunner.cs")
+        m = re.search(r"public const float KidsRoomFallSec = ([0-9.]+)f;", runner)
+        self.assertIsNotNone(m)
+        self.assertAlmostEqual(float(m.group(1)), xp.KIDS_ROOM_FALL_SEC)
+
+    def test_csharp_writes_the_events(self):
+        host = read("Assets/Scripts/Diagnostics/ShowTelemetryHost.cs")
+        for key in ('Emit($"ev=kidsjump take=', '$"from={_takes.LastKidsRoomJumpFromSec:F2} to={TakeRunner.KidsRoomFallSec:F2} "',
+                    '$"mode={_takes.LastKidsRoomJumpMode} n={_takes.KidsRoomJumpCount}"',
+                    'Emit($"ev=kidsland wait={_takes.LastKidsRoomLandWaitSec:F2} "',
+                    'Emit($"ev=kidshold take=', '$"step={_takes.LastKidsRoomHeldStep} until={_takes.LastKidsRoomHeldUntilStep} "'):
+            self.assertIn(key, host)
+
+    def test_mode_tokens_match(self):
+        runner = read("Assets/Scripts/Streaming/TakeRunner.cs")
+        self.assertIn('LastKidsRoomJumpMode = jump == ScreenOverlayController.SeekJump.Crossfade ? "xfade" : "prep";', runner)
 
 
 if __name__ == "__main__":

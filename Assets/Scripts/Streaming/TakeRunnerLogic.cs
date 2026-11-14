@@ -271,6 +271,8 @@ namespace FixedCamVr.Streaming
         private bool _dismissPending;
         // 報告は成立したが、応答映像が元の姿勢へ戻るまで画面だけ保つ。
         private bool _dismissDeferred;
+        // 報告は成立したが、このカット（index）が尺どおり終わるまで畳まない（2-B の子供部屋・0375）。-1 = 保たない。
+        private int _dismissAfterStep = -1;
         private int _activeTake = -1;
         private int _activeStep = -1;
         private float _stepEnd;
@@ -337,6 +339,7 @@ namespace FixedCamVr.Streaming
             _running = false;
             _dismissPending = false;
             _dismissDeferred = false;
+            _dismissAfterStep = -1;
             _activeReported = false;
             _activeTake = -1;
             _activeStep = -1;
@@ -371,6 +374,7 @@ namespace FixedCamVr.Streaming
             // 前の体験者が押した 1 回を次のランへ持ち越さない。
             _dismissPending = false;
             _dismissDeferred = false;
+            _dismissAfterStep = -1;
             _activeReported = false;
             DismissCount = 0;
             ReplayCount = 0;
@@ -500,6 +504,10 @@ namespace FixedCamVr.Streaming
 
                 if (!holdCurrentStep && now >= _stepEnd)
                 {
+                    // 報告は成立済みで、見せ切るカットまで保っていた（2-B の子供部屋・0375）。
+                    // そのカットが尺どおり終わったこの縁で、報告として畳む（乱れで現実へ戻る）。
+                    if (_dismissAfterStep >= 0 && _activeStep >= _dismissAfterStep)
+                        return DismissDecision(latestZoneCam);
                     int next = _activeStep + 1;
                     float[] durs = _defs[_activeTake].stepDurSec;
                     if (next < durs.Length)
@@ -655,7 +663,13 @@ namespace FixedCamVr.Streaming
         /// ⚠ ②は実際に畳むのが次の <see cref="Tick"/> だが、<b>通ることはこの時点で確定している</b>ので
         /// true を返す（体験者の押下と画の変化のあいだに 1 フレームの猶予があるだけ）。
         /// </returns>
-        public MarkResult NotifyMarkPressed(float now, bool deferDismiss = false)
+        /// <param name="dismissAfterStep">
+        /// 0 以上なら、②で畳むのを<b>そのカット（index）が尺どおり終わるまで</b>待つ
+        /// （2-B の子供部屋で、人形が落ちてこちらを向く所と最後のコマを見せ切る・<c>canon/LEDGER.md</c> 0375）。
+        /// 報告はこの時点で成立している（返り値は Dismissed）。区間を出た（yield）・watchdog・中止は従来どおり即畳む。
+        /// 既に越えたカットを渡すと、いまのカットの終わりで畳む。
+        /// </param>
+        public MarkResult NotifyMarkPressed(float now, bool deferDismiss = false, int dismissAfterStep = -1)
         {
             if (!_running) return MarkResult.None;
             if (now < _stepBeganAt) return MarkResult.None;
@@ -671,6 +685,8 @@ namespace FixedCamVr.Streaming
             if (_activeTake >= 0 && _activeTake < _defs.Length && _defs[_activeTake].dismissible)
             {
                 if (deferDismiss) _dismissDeferred = true;
+                else if (dismissAfterStep >= 0)
+                    _dismissAfterStep = _dismissAfterStep >= 0 ? Math.Min(_dismissAfterStep, dismissAfterStep) : dismissAfterStep;
                 else _dismissPending = true;
                 return MarkResult.Dismissed;
             }
@@ -885,6 +901,23 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// 現カットの残り尺を <paramref name="sec"/> 秒だけ縮める（負なら延ばす）。終わりは <paramref name="now"/> より前へは行かない。
+        /// 尺が外部通知待ち（無限大）のカットは触らない。2-B の子供部屋で、押し始めで動画を落ちる所へ飛ばした分を
+        /// 縮め、動画の seek を待った分を延ばす（<c>canon/LEDGER.md</c> 0375）。
+        /// </summary>
+        public void ShortenCurrentStep(float now, float sec)
+        {
+            if (!_running || float.IsInfinity(_stepEnd) || float.IsNaN(sec)) return;
+            _stepEnd = Math.Max(now, _stepEnd - sec);
+        }
+
+        /// <summary>現カットの終わる時刻（外部通知待ちは無限大・非走行は NaN）。観測・テスト用。</summary>
+        public float CurrentStepEnd => _running ? _stepEnd : float.NaN;
+
+        /// <summary>報告は成立済みで、畳むのを待っているカットの index（-1 = 待っていない）。観測・テスト用。</summary>
+        public int DismissAfterStep => _running ? _dismissAfterStep : -1;
+
+        /// <summary>
         /// 走行中の演出を外部都合で畳む（卓の「■ 画面を取り返す」・ラン開始・定義差し替えの後片付け）。
         ///
         /// ⚠ **決着させる**（<see cref="Outcome.Settled"/>）。人が画面を取り返した演出を、
@@ -898,6 +931,7 @@ namespace FixedCamVr.Streaming
             _running = false;
             _dismissPending = false;
             _dismissDeferred = false;
+            _dismissAfterStep = -1;
             _activeReported = false;
             _activeTake = -1;
             _activeStep = -1;
@@ -921,6 +955,7 @@ namespace FixedCamVr.Streaming
             _activeStep = 0;
             _outcome[index] = Outcome.Unresolved;   // 決着は終わり方（EndTakeDecision）が決める
             _activeReported = false;
+            _dismissAfterStep = -1;
             _baseZoneCam = baseZoneCam;
             float[] durs = _defs[index].stepDurSec;
             _stepBeganAt = now;
@@ -969,6 +1004,7 @@ namespace FixedCamVr.Streaming
             //（線待ち・untilMark が「カットが始まる前の事象を数えない」のと同じ理由）。
             _dismissPending = false;
             _dismissDeferred = false;
+            _dismissAfterStep = -1;
             return new Decision
             {
                 action = Action.EndTake,

@@ -26,6 +26,7 @@ paths:
 | [screen-cg.md](screen-cg.md) | Streaming/Cg/** と CG 人形の合成 |
 | [staff-input.md](staff-input.md) | Input/** / Tracking/** / OvrBridge/** / StaffSetup・StatusHud・ControllerGuide / WalkGuide* |
 | [sound-design.md](sound-design.md) | Streaming/Sound/** と音の道具（まだ分けていない） |
+| [kids-room.md](kids-room.md) | 2 周目 B の子供部屋の動画（音・押し始めで落ちる所へ飛ぶ・報告しても最後のコマまで見せ切る） |
 
 Editor のプレビュー（`Streaming/Editor/`）は、プレビューする対象と同じ接頭辞の rule に従う。
 

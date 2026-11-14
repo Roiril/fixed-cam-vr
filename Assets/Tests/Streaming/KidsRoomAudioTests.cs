@@ -210,7 +210,10 @@ namespace FixedCamVr.Streaming.Tests
             AssertKidsRoomVoices(rig, busy: 1, fading: 0);
         }
 
-        /// <summary>体験者が報告して別の場所が畳まれたら、子供部屋の音を退かせる。</summary>
+        /// <summary>
+        /// 体験者が報告して別の場所が畳まれたら、子供部屋の音を退かせる。
+        /// 動画のカットで報告しても見せ切ってから畳む（0375・<see cref="KidsRoomJumpTests"/>）ので、退かせるのはその畳む縁。
+        /// </summary>
         [Test]
         public void ReportDismissal_FadesTheKidsRoomSound()
         {
@@ -226,6 +229,11 @@ namespace FixedCamVr.Streaming.Tests
 
             _now = 2f;
             Assert.That(rig.Runner.NotifyVisitorMark(), Is.EqualTo(TakeRunnerLogic.MarkResult.Dismissed));
+            Frame(rig);
+            Assert.That(rig.Runner.IsActive, Is.True, "動画のカットは見せ切る（0375）");
+            Assert.That(rig.Runner.KidsRoomStopCount, Is.Zero, "見せ切るあいだ音は退かせない");
+
+            _now = 5.9f;
             Frame(rig);
             Assert.That(rig.Timeline.LastEndReason, Is.EqualTo(TakeRunnerLogic.EndReason.VisitorDismissed));
             Assert.That(rig.Runner.KidsRoomStopCount, Is.EqualTo(1), "報告で畳まれたら退かせる");

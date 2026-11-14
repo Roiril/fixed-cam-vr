@@ -44,6 +44,10 @@ paths:
 - 観測は `ev=cue rev=` / `revMax=`・`ev=take pressMax=`・`ev=sum ovlRev= ovlPress=`。読み手は
   `analyze-xp-log.py` の `bleed_findings`（`REVEAL_MIN_MAX` / `PRESS_MIN_MAX`）。対で直す
 - 試し描き（`tools/gen-plate/bleed_preview.py`）の定数は C# とシェーダの写し。`tools/test_bleed_log.py` が突き合わせる
+- 動画の途中へ飛ぶクロスフェード（2-B の子供部屋・LEDGER 0375）は `ScreenOverlayController.BeginSeekJump`。飛ぶ瞬間の画を RT へ写して
+  `_OverlayTexB` に置き `_OverlayBlend` = 1 にしてから seek する。`seekCompleted` から 2 フレーム後（届かなければ `SeekWaitTimeoutSec` 1 秒で諦めて）
+  1→0 へ下げる。準備中に頼まれたら重ねず、`OnPrepared` で飛び先から流す。別の発火・停止・中止で取り消し、画のホールド中は止まる。
+  `_OverlayTexB` / `_OverlayBlend` の書き手は録画の 2 コマ混ぜ（フレーム列の cue）とこれ（動画の cue）だけ。飛び先の画が出た回数は `SeekShownCount`
 
 ## 罠
 

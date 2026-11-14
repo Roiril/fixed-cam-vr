@@ -285,6 +285,93 @@ def kids_room_findings(events, takes):
     return lines, verdicts
 
 
+# 子供部屋の動画の「落ちる所」（秒）。押し始めでここへ飛ぶ（canon/LEDGER.md 0375）。
+# C# の TakeRunner.KidsRoomFallSec と対（ev=kidsjump の to= と突き合わせる）。
+KIDS_ROOM_FALL_SEC = 4.2
+
+
+def kids_jump_findings(events):
+    """2-B の子供部屋で、押し始めで落ちる所へ飛んだか・報告を最後のコマまで保ったかを見る。(行, 判定) を返す。
+
+    書き手は C# の ShowTelemetryHost:
+      ev=kidsjump take= from= to= mode=xfade|prep n=   押し始めで飛んだ（from= は押した瞬間の再生秒）
+      ev=kidsland wait= timedOut= n=                    飛んだ先（落ちる所）の画が出た
+      ev=kidshold take= step= until= n=                 報告は成立したが、until のカットが終わるまで畳まない
+    演出 1 本（ev=take st=begin → st=end）ごとに突き合わせる。どれも出ていなければ何も言わない。
+    """
+    jumps = [e for e in events if e.get("ev") == "kidsjump"]
+    lands = [e for e in events if e.get("ev") == "kidsland"]
+    holds = [e for e in events if e.get("ev") == "kidshold"]
+    if not (jumps or lands or holds):
+        return [], []
+    froms = ", ".join(f"{fnum(e, 'from', float('nan')):.2f}" for e in jumps)
+    lines = [f"  子供部屋の押し始め: 落ちる所へ飛んだ {len(jumps)} 回"
+             + (f"（押した時の再生秒 {froms}）" if jumps else "")
+             + f" / 落ちる所の画が出た {len(lands)} 回 / 報告を最後のコマまで保った {len(holds)} 回"]
+    verdicts = []
+
+    for e in jumps:
+        f, to = fnum(e, "from"), fnum(e, "to")
+        if to is None or abs(to - KIDS_ROOM_FALL_SEC) > 0.005:
+            verdicts.append(("FAIL", f"落ちる所の秒が食い違う（実機 to={e.get('to')} / 解析器 {KIDS_ROOM_FALL_SEC}）— "
+                                     "C# の TakeRunner.KidsRoomFallSec と KIDS_ROOM_FALL_SEC を対で直す"))
+        elif f is None or f >= to:
+            verdicts.append(("FAIL", f"落ちる所（{to:.2f} 秒）以後に押したのに飛んだ（from={e.get('from')}）— "
+                                     "TakeRunner.ShouldJumpKidsRoom を見る"))
+
+    # 演出 1 本ごとに区切る。
+    spans = []   # (take id, 始まり t, 終わり t, why)
+    open_take = {}
+    for e in events:
+        if e.get("ev") != "take":
+            continue
+        tid, t = str(e.get("id", "")), fnum(e, "t", 0.0)
+        if e.get("st") == "begin":
+            open_take[tid] = t
+        elif e.get("st") == "end" and tid in open_take:
+            spans.append((tid, open_take.pop(tid), t, str(e.get("why", ""))))
+    for tid, t0 in open_take.items():
+        spans.append((tid, t0, float("inf"), ""))
+
+    def inside(e, span):
+        return span[1] <= fnum(e, "t", 0.0) <= span[2]
+
+    for span in spans:
+        tid, t0, t1, why = span
+        js = [e for e in jumps if inside(e, span)]
+        ls = [e for e in lands if inside(e, span)]
+        hs = [e for e in holds if inside(e, span)]
+        if not (js or hs):
+            continue
+        if len(js) > 1:
+            verdicts.append(("FAIL", f"{tid}: 1 回の演出で落ちる所へ {len(js)} 回飛んだ — 1 度だけのはず"))
+        if js and not ls:
+            level = "FAIL" if why in ("done", "mark") else "WARN"
+            verdicts.append((level, f"{tid}: 押し始めで飛んだのに落ちる所の画が出ないまま演出が終わった（why={why or '-'}）— "
+                                    "動画の seek が終わらない / 飛びが取り消された。[ScreenOverlay] と [TakeRunner] の行を見る"))
+        elif js:
+            wait = max(fnum(e, "wait", 0.0) for e in ls)
+            timed_out = any(fnum(e, "timedOut", 0.0) == 1.0 for e in ls)
+            if timed_out:
+                verdicts.append(("WARN", f"{tid}: 落ちる所の画が出るのを待ちきれずに重ね始めた（wait={wait:.2f}s）— "
+                                         "seekCompleted が届いていない"))
+            else:
+                verdicts.append(("OK", f"{tid}: 押し始めで落ちる所へ飛び、{wait:.2f} 秒後に重ね始めた"))
+        if hs:
+            until = int(fnum(hs[0], "until", -1.0))
+            if why == "done":
+                verdicts.append(("FAIL", f"{tid}: 報告は成立したのに演出が最後まで流れて終わった（why=done）— "
+                                         "最後のコマの後で報告として畳まれていない"))
+            elif why == "mark":
+                reached = any(e.get("ev") == "step" and str(e.get("take", "")) == tid
+                              and int(fnum(e, "i", -1.0)) == until and inside(e, span) for e in events)
+                if reached:
+                    verdicts.append(("OK", f"{tid}: 報告を最後のコマ（カット {until}）まで保ってから畳んだ"))
+                else:
+                    verdicts.append(("FAIL", f"{tid}: 報告を保つはずが、最後のコマ（カット {until}）が出る前に畳んだ"))
+    return lines, verdicts
+
+
 # ev=step の理由トークン → 日本語（C# の TakeRunner.StepSkip* と対）。
 STEP_SKIP_REASONS = {
     "camrange": "live のカメラが registry の範囲外",
@@ -3550,6 +3637,13 @@ def analyze(events, others, exp, warns=None):
         for line in kr_lines:
             w(line)
         for level, text in kr_verdicts:
+            verdict(level, text)
+
+        # -- 子供部屋で押し始めたら人形の落ちる所へ飛ぶ・報告しても最後のコマまで見せ切る（canon/LEDGER.md 0375）
+        kj_lines, kj_verdicts = kids_jump_findings(events)
+        for line in kj_lines:
+            w(line)
+        for level, text in kj_verdicts:
             verdict(level, text)
 
         # -- カットが差し替える劇伴（呼びかけの次のカット・canon/LEDGER.md 0119）

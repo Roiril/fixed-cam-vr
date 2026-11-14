@@ -219,6 +219,174 @@ namespace FixedCamVr.Streaming
         /// <summary>最後に終わった透ける長押しで出た <c>_LiveBleed</c> の最大。観測用。</summary>
         public float BleedLastHoldMax => _bleed.LastHoldMax;
 
+        // ---- 動画の途中へ飛ぶクロスフェード（2-B の子供部屋・canon/LEDGER.md 0375）----
+        // 飛ぶ瞬間の画を _seekHoldRt へ写して _OverlayTexB に置き（_OverlayBlend=1 ＝ 写した画）、動画を seek する。
+        // 飛んだ先の画が出たら（seekCompleted から 2 フレーム後・待ちすぎなら SeekWaitTimeoutSec で諦めて）
+        // _OverlayBlend を 1→0 へ下げて飛んだ先へ重ねる。_OverlayTexB / _OverlayBlend の書き手は録画の 2 コマ混ぜと
+        // このクロスフェードだけで、前者はフレーム列の cue、後者は動画の cue でしか動かないので重ならない。
+        private enum SeekPhase { None, Waiting, Fading }
+        private SeekPhase _seekPhase;
+        private int _seekToken = -1;
+        private float _seekFadeSec;
+        private float _seekFadeT;
+        private float _seekRequestedAt;
+        private bool _seekCompleted;
+        private int _seekCompletedFrame;
+        private RenderTexture? _seekHoldRt;
+        // 動画の準備中に頼まれた飛び先。準備ができた瞬間（OnPrepared）にそこから流す（まだ何も出ていないので重ねない）。
+        private int _pendingSeekToken = -1;
+        private float _pendingSeekTo;
+        // いま発火している cue が動画か（ロード中で _current が未確定の間にも答えるため、PlayCue で控える）。
+        private bool _requestedVideo;
+
+        /// <summary>
+        /// 飛び先の画が出るまで待つ上限（秒・壁時計）。<c>seekCompleted</c> が届かない端末でも、ここで諦めて重ね始める
+        /// （その場合は前の画のまま 0.4 秒かけて薄まり、飛び先の画が出た所で入れ替わる）。
+        /// </summary>
+        public const float SeekWaitTimeoutSec = 1f;
+
+        // seekCompleted から重ね始めるまでに待つフレーム数。seek の完了と RT へ新しいコマが描かれるのは同じフレームとは限らない。
+        private const int SeekSettleFrames = 2;
+
+        /// <summary><see cref="BeginSeekJump"/> の結果。</summary>
+        public enum SeekJump
+        {
+            /// <summary>飛べない（その発火が置き換わった・動画ではない・畳んでいる途中）。</summary>
+            Failed,
+            /// <summary>流れている動画を飛ばし、いまの画から飛び先へ重ねる。</summary>
+            Crossfade,
+            /// <summary>動画がまだ準備中。準備ができた瞬間に飛び先から流す（重ねない）。</summary>
+            AtPrepare,
+        }
+
+        /// <summary>
+        /// 飛び先の画が出た回数（単調増加）。クロスフェードは重ね始めた瞬間、準備中の飛びは再生を始めた瞬間に数える。
+        /// 観測は増分で読む。
+        /// </summary>
+        public int SeekShownCount { get; private set; }
+
+        /// <summary>最後に飛び先の画が出るまで待った秒（頼まれてから・壁時計）。観測用。</summary>
+        public float LastSeekWaitSec { get; private set; }
+
+        /// <summary>最後の飛びで、飛び先の画が出るのを待ちきれずに重ね始めたか。観測用。</summary>
+        public bool LastSeekTimedOut { get; private set; }
+
+        /// <summary>
+        /// <paramref name="token"/> の発火が動画なら、いまの再生位置（秒）。準備中は 0（まだ頭から流れていない）。
+        /// その発火が置き換わった・動画ではない・畳んでいる途中なら NaN。
+        /// </summary>
+        public float VideoTimeSec(int token)
+        {
+            if (token < 0 || token != _logic.Generation || _player == null || !_requestedVideo) return float.NaN;
+            if (_logic.IsLoading(token) || _logic.PreparePending) return 0f;
+            if (_current == null || !_current.SourceIsVideo || _stopWhenFadedOut) return float.NaN;
+            return (float)_player.time;
+        }
+
+        /// <summary><paramref name="token"/> の発火で、頼んだ飛びの画がまだ出ていないか。</summary>
+        public bool IsSeekPending(int token)
+            => token >= 0 && ((_seekPhase == SeekPhase.Waiting && _seekToken == token) || _pendingSeekToken == token);
+
+        /// <summary>
+        /// <paramref name="token"/> の発火が流している動画を <paramref name="toSec"/> 秒へ飛ばし、
+        /// 飛ぶ瞬間の画から飛び先の画へ <paramref name="fadeSec"/> 秒で重ねる（2-B の子供部屋・<c>canon/LEDGER.md</c> 0375）。
+        /// 重ね始めるのは飛び先の画が出てから（seek は準備ができるまで前のコマを出し続けるので、
+        /// 頼んだ瞬間から薄めると前のコマどうしを重ねるだけになる）。
+        /// 別の cue の発火・停止・中止で取り消す。画のホールド中は重ねる進みも止める。
+        /// </summary>
+        public SeekJump BeginSeekJump(int token, float toSec, float fadeSec)
+        {
+            if (token < 0 || token != _logic.Generation || _player == null || _material == null || !_requestedVideo)
+                return SeekJump.Failed;
+            if (_logic.IsLoading(token) || _logic.PreparePending)
+            {
+                _pendingSeekToken = token;
+                _pendingSeekTo = toSec;
+                _seekRequestedAt = WallClock.Now;
+                return SeekJump.AtPrepare;
+            }
+            if (_current == null || !_current.SourceIsVideo || _stopWhenFadedOut || _videoRt == null)
+                return SeekJump.Failed;
+            CancelSeekCrossfade();
+            _seekHoldRt = new RenderTexture(_videoRt.width, _videoRt.height, 0, RenderTextureFormat.ARGB32)
+            {
+                name = "SeekHoldFrame",
+                useMipMap = false,
+            };
+            _seekHoldRt.Create();
+            Graphics.Blit(_videoRt, _seekHoldRt);
+            SetOverlayBlend(_videoRt, _seekHoldRt, 1f);
+            _seekPhase = SeekPhase.Waiting;
+            _seekToken = token;
+            _seekFadeSec = Mathf.Max(fadeSec, 1e-3f);
+            _seekFadeT = 0f;
+            _seekRequestedAt = WallClock.Now;
+            _seekCompleted = false;
+            _player.time = toSec;
+            return SeekJump.Crossfade;
+        }
+
+        private void OnSeekCompleted(VideoPlayer vp)
+        {
+            if (_seekPhase != SeekPhase.Waiting || _seekCompleted) return;
+            _seekCompleted = true;
+            _seekCompletedFrame = Time.frameCount;
+        }
+
+        // 重ねる進みを 1 フレーム進める。発火が置き換わっていたら取り消す。
+        private void TickSeekCrossfade()
+        {
+            if (_seekPhase == SeekPhase.None) return;
+            if (_seekToken != _logic.Generation || _current == null || _stopWhenFadedOut || _material == null)
+            {
+                CancelSeekCrossfade();
+                return;
+            }
+            if (_frozen) return;
+            if (_seekPhase == SeekPhase.Waiting)
+            {
+                bool settled = _seekCompleted && Time.frameCount - _seekCompletedFrame >= SeekSettleFrames;
+                bool timedOut = WallClock.Now - _seekRequestedAt > SeekWaitTimeoutSec;
+                if (!settled && !timedOut) return;
+                if (!settled)
+                    Debug.LogWarning($"[ScreenOverlay] 動画の飛び先が {SeekWaitTimeoutSec:F1} 秒で出ない — 待たずに重ね始める");
+                _seekPhase = SeekPhase.Fading;
+                _seekFadeT = 0f;
+                LastSeekWaitSec = WallClock.Now - _seekRequestedAt;
+                LastSeekTimedOut = !settled;
+                SeekShownCount++;
+                return;
+            }
+            _seekFadeT += Time.deltaTime / _seekFadeSec;
+            if (_seekFadeT >= 1f)
+            {
+                CancelSeekCrossfade();
+                return;
+            }
+            _material.SetFloat(OverlayBlendId, 1f - _seekFadeT);
+        }
+
+        // 重ねるのを終える / 取り消す。写した画を外して捨てる（準備中の飛びも忘れる）。
+        private void CancelSeekCrossfade()
+        {
+            _pendingSeekToken = -1;
+            if (_seekPhase == SeekPhase.None && _seekHoldRt == null) return;
+            _seekPhase = SeekPhase.None;
+            _seekToken = -1;
+            if (_material != null)
+            {
+                _material.SetTexture(OverlayTexBId, Texture2D.blackTexture);
+                _material.SetFloat(OverlayBlendId, 0f);
+            }
+            if (_seekHoldRt != null)
+            {
+                _seekHoldRt.Release();
+                if (Application.isPlaying) Destroy(_seekHoldRt);
+                else DestroyImmediate(_seekHoldRt);
+                _seekHoldRt = null;
+            }
+        }
+
         private void Awake()
         {
             // MjpegScreen が Awake で .material をインスタンス化するので同じものを共有する。
@@ -251,6 +419,7 @@ namespace FixedCamVr.Streaming
             _player.prepareCompleted += OnPrepared;
             _player.loopPointReached += OnVideoEnd; // 自然終端 → 自動フェードアウト（ループしない cue のみ）
             _player.errorReceived += OnVideoError;
+            _player.seekCompleted += OnSeekCompleted;   // 途中へ飛ぶクロスフェードの重ね始め（0375）
 
             ApplyStrength(0f);
             UnbindReveal();
@@ -290,6 +459,7 @@ namespace FixedCamVr.Streaming
         private void OnDestroy()
         {
             ReleaseHeldFrame();
+            CancelSeekCrossfade();
             if (_videoRt != null)
             {
                 _videoRt.Release();
@@ -324,6 +494,7 @@ namespace FixedCamVr.Streaming
             TickReveal(Time.deltaTime);
             TickPress(Time.deltaTime);
             TickBleed(Time.deltaTime);
+            TickSeekCrossfade();
 
             for (int i = 0; i < bindings.Length; i++)
             {
@@ -355,6 +526,7 @@ namespace FixedCamVr.Streaming
                 _appliedCueId = "";
                 ReleaseHeldFrame();
                 UnbindReveal();
+                CancelSeekCrossfade();
             }
         }
 
@@ -419,6 +591,9 @@ namespace FixedCamVr.Streaming
             _clipCached = false;
             _clipCueId = string.IsNullOrEmpty(data.id) ? (data.displayName ?? "?") : data.id;
             _framesFollowProgress = float.NaN;
+            // 前の動画の途中へ飛ぶクロスフェードを持ち越さない（写した画を次の素材に重ねない）。
+            CancelSeekCrossfade();
+            _requestedVideo = data.SourceIsVideo;
             int gen = _logic.BeginPlay();
             _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
             return gen;
@@ -662,6 +837,7 @@ namespace FixedCamVr.Streaming
         public void StopOverlay(float revealOutSec)
         {
             _logic.Stop(); // ロード途中の発火も破棄・進行中 Prepare 保留も無効化
+            CancelSeekCrossfade();
             _framesCueToken = -1;
             _finishedFramesToken = -1;
             _pendingReveal = null;
@@ -996,6 +1172,15 @@ namespace FixedCamVr.Streaming
             vp.targetTexture = _videoRt;
             SetOverlayTexture(_videoRt, aspect, cue.id);
             if (cue.trimStart > 0f) vp.time = cue.trimStart; // 再生区間の頭へシーク
+            // 準備中に途中へ飛ぶよう頼まれていた（0375）。まだ何も出ていないので重ねず、飛び先から流す。
+            if (_pendingSeekToken == _logic.Generation)
+            {
+                vp.time = _pendingSeekTo;
+                LastSeekWaitSec = WallClock.Now - _seekRequestedAt;
+                LastSeekTimedOut = false;
+                SeekShownCount++;
+            }
+            _pendingSeekToken = -1;
             vp.Play();
             BeginFadeIn(cue);
         }
@@ -1128,6 +1313,7 @@ namespace FixedCamVr.Streaming
             ApplyStrength(0f);
             ReleaseHeldFrame();
             UnbindReveal();
+            CancelSeekCrossfade();
             Debug.LogWarning($"[ScreenOverlay] cue aborted ({reason}) — live 維持");
         }
 

@@ -169,6 +169,11 @@ namespace FixedCamVr.Diagnostics
         private float _takePressMax = -1f;
         // 長押しでライブが透けた回数（markBleed）。ScreenOverlayController.BleedHoldCount の増分で ev=bleed を出す。
         private int _lastBleedHoldCount;
+        // 2-B の子供部屋（0375）。押し始めで落ちる所へ飛んだ・落ちる所の画が出た・報告を最後のコマまで保った回数。
+        // ラン開始で 0 へ戻るので、増えたときだけ出す（減ったら控えだけ合わせる）。
+        private int _lastKidsJumpCount;
+        private int _lastKidsLandCount;
+        private int _lastKidsHeldCount;
         // 滲んで現れる cue で出た _OverlayReveal の最大（0349）。滲む cue だけ 0 以上。cue の off に revMax= で出す。
         private float _cueRevealMax = -1f;
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
@@ -1178,6 +1183,36 @@ namespace FixedCamVr.Diagnostics
                 string bleedTake = _takes != null ? _takes.BleedTakeId : "";
                 Emit($"ev=bleed take={(string.IsNullOrEmpty(bleedTake) ? "-" : bleedTake)} " +
                      $"max={_overlay.BleedLastHoldMax:F2}");
+            }
+
+            // 2-B の子供部屋で、押し始めで人形の落ちる所へ飛んだ（canon/LEDGER.md 0375）。from= は押した瞬間の再生位置。
+            // 飛んだ（kidsjump）のに落ちる所の画が出ない（kidsland が続かない）、報告を保った（kidshold）のに
+            // 演出が報告以外で終わる、を解析器が FAIL にする。
+            if (_takes != null)
+            {
+                if (_takes.KidsRoomJumpCount != _lastKidsJumpCount)
+                {
+                    if (_takes.KidsRoomJumpCount > _lastKidsJumpCount)
+                        Emit($"ev=kidsjump take={(string.IsNullOrEmpty(_takes.LastKidsRoomJumpTakeId) ? "-" : _takes.LastKidsRoomJumpTakeId)} " +
+                             $"from={_takes.LastKidsRoomJumpFromSec:F2} to={TakeRunner.KidsRoomFallSec:F2} " +
+                             $"mode={_takes.LastKidsRoomJumpMode} n={_takes.KidsRoomJumpCount}");
+                    _lastKidsJumpCount = _takes.KidsRoomJumpCount;
+                }
+                if (_takes.KidsRoomLandCount != _lastKidsLandCount)
+                {
+                    if (_takes.KidsRoomLandCount > _lastKidsLandCount)
+                        Emit($"ev=kidsland wait={_takes.LastKidsRoomLandWaitSec:F2} " +
+                             $"timedOut={(_overlay != null && _overlay.LastSeekTimedOut ? 1 : 0)} n={_takes.KidsRoomLandCount}");
+                    _lastKidsLandCount = _takes.KidsRoomLandCount;
+                }
+                if (_takes.KidsRoomHeldReportCount != _lastKidsHeldCount)
+                {
+                    if (_takes.KidsRoomHeldReportCount > _lastKidsHeldCount)
+                        Emit($"ev=kidshold take={(string.IsNullOrEmpty(_takes.LastKidsRoomHeldTakeId) ? "-" : _takes.LastKidsRoomHeldTakeId)} " +
+                             $"step={_takes.LastKidsRoomHeldStep} until={_takes.LastKidsRoomHeldUntilStep} " +
+                             $"n={_takes.KidsRoomHeldReportCount}");
+                    _lastKidsHeldCount = _takes.KidsRoomHeldReportCount;
+                }
             }
 
             // 目の視界ジャックの出入り（canon/LEDGER.md 0099）。
