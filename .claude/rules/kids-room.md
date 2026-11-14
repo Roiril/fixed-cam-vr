@@ -18,6 +18,7 @@ paths:
 
 2 周目 B の演出（`L2C1#0`）は、人形が後ろを付いて来るカット → 子供部屋の動画（cue `TakeRunner.KidsRoomCueId` = `backrooms_B_in`・5.9 秒）
 → 人形がこちらを向く最後のコマ（`backrooms_B`・1.625 秒）→ ライブ。`dismissible`。
+`skipIfDismissed = "L2C0#0"`: 2-A の演出が報告で畳まれていたら、この演出は丸ごと出ない（0378・`rules/mark-advance.md`）。
 
 ## 押し始めで落ちる所へ飛ぶ（0375）
 

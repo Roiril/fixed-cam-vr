@@ -1,12 +1,16 @@
-"""本番の台本（tools/web-compositor/show.json）の 2 周目 A を、右の幕から人形が笑う形へ書き換える（LEDGER 0376）。
+"""本番の台本（tools/web-compositor/show.json）の 2 周目 A を、右の幕から人形が笑う形へ書き換える（LEDGER 0376・0378）。
 
-  段 0  入ってくると左の幕に顔のシミ（cue_stain_A・滲んで出る）。体が左の幕の端（s2a_leftend）に届くまで
-  段 1  右の幕に顔のシミが出て、左へ画面の半分まで伸び出す。右の幕の裏から人形が覗いて笑う。笑い声が 1 回
-  段 2  人形は幕の裏へ身を引き、黙ってこちらを見ている。少し歩く（s2a_walk）か報告で次へ
-  段 3  乱れで CG の人形に替わる。幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出るまで
+  段 0  入ってくると左の幕に顔のシミ（cue_stain_A・滲んで出る）。報告するとシミだけが消える（markClear・演出は続く）。
+        体が右のシミの線（s2a_rightstain）を越えるまで
+  段 1  右の幕に顔のシミが 1 秒で滲む（左のシミが残っていれば 2 枚目の層で保つ）。体が左の幕の端（s2a_leftend）に届くか、
+        報告の長押しを始めたら次へ（markStartAdvance）
+  段 2  右の幕の顔が左へ画面の半分まで伸び出し、右の幕の裏から人形が覗いて笑う。笑い声が 1 回
+  段 3  人形は幕の裏へ身を引き、黙ってこちらを見ている。少し歩く（s2a_walk）と次へ
+  段 4  乱れで CG の人形に替わる。幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出るまで
 
-左のシミは段 1・2 では 2 枚目の層の掛け算で保つ（1 枚目の層は右の動画・静止画が使う）。段 3 は左右のシミを 1 枚の比の画で出す。
-人形は画像の人形と同じ背丈（0.8m）の CG（doll_mid）。段 3 の立ち始めは画像の人形が立っていた床の点。
+段 2〜4 の報告は演出ごと畳む（左右のシミも人形も消える）。2 周目 B の人形の演出は、この演出が報告で畳まれたら出ない
+（skipIfDismissed）。左のシミは段 1〜4 では 2 枚目の層の掛け算で保ち、段 0 で消していれば出さない。
+人形は画像の人形と同じ背丈（0.8m）の CG（doll_mid）。段 4 の立ち始めは画像の人形が立っていた床の点。
 
 何度流しても同じ結果になる。書く前に Logs/show-backup/ へ元の show.json を写す。
 卓が動いているときは、卓がメモリの版でディスクを上書きするので、卓を止めてから流す。
@@ -31,14 +35,18 @@ ROOT = Path(__file__).resolve().parents[1]
 SHOW = ROOT / "tools/web-compositor/show.json"
 STATIC = ROOT / "tools/web-compositor/static-inputs"
 TAKE = "L2C0#0"
+TAKE_2B = "L2C1#0"   # 2 周目 B の人形の演出。2-A の人形が報告で消されたら出さない（0378）
 DOLL = "doll_mid"
 DOLL_HEIGHT_M = 0.8
 # 画像の人形が幕の裏で見ている床の点（tools/gen-plate/stain3/README.md の「右の幕の人形」）。CG はここから出る
 DOLL_FROM = (0.44, 0.62)
 TAG = "20261115"
 
+# 側待ち（untilBeyond）は線分を無限の直線へ延ばして側を見るので、x の範囲は卓の表示のためだけ。
+# 区間 A の歩きは C 側の (0.75, 0.45) あたりから入り (-0.26, -0.21) を通って B へ回る（2026-11-15 のツインの跡）。
 LINES = [
-    ("s2a_leftend", 0, -0.5, -0.22, 0.3, -0.22, "2周目A 左の幕の端（体が届くと右の幕から人形が笑う）"),
+    ("s2a_rightstain", 0, -0.5, 0.12, 0.95, 0.12, "2周目A 右のシミが滲み始める線"),
+    ("s2a_leftend", 0, -0.5, -0.22, 0.95, -0.22, "2周目A 左の幕の端（体が届くと右の幕から人形が笑う）"),
     ("s2a_walk", 0, -0.5, -0.45, 0.3, -0.45, "2周目A 少し歩いた線（CG の人形に替わってついてくる）"),
 ]
 OLD_LINES = {"trail_A_behind"}
@@ -56,14 +64,16 @@ CUES = [
      "maskUrl": f"/static-inputs/stain_A_right_mask_{TAG}.png",
      "sourceUrl": f"/static-inputs/stain_A_right_watch_{TAG}.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
-    {"id": "cue_stain_A_both", "name": "左右の幕の顔のシミ（CG の人形がついてくる間）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_both_mask_{TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_both_ratio_{TAG}.png", "strength": 1, "loop": False,
+    {"id": "cue_stain_A_right_hold", "name": "右の幕の顔のシミだけ（2周目A・掛け算）", "camera": "A",
+     "maskUrl": f"/static-inputs/stain_A_right_ratio_mask_{TAG}.png",
+     "sourceUrl": f"/static-inputs/stain_A_right_ratio_{TAG}.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0, "blend": "multiply"},
 ]
+OLD_CUES = {"cue_stain_A_both"}
 
 
 WATCH_MIN_SEC = 0.6
+RIGHT_STAIN_FADE_SEC = 1.0   # 0378「右にシミが1sかけてじんわりでき始め」
 
 
 def step(source: str, **kw) -> dict:
@@ -93,14 +103,14 @@ def patch(show: dict) -> None:
                       "dir": "both", "label": label, "mirrorOf": ""})
     show["layout"]["lines"] = lines
 
-    cue_ids = {c["id"] for c in CUES}
+    cue_ids = {c["id"] for c in CUES} | OLD_CUES
     show["cues"] = [c for c in show["cues"] if c["id"] not in cue_ids] + copy.deepcopy(CUES)
 
     for seg in show["timeline"]["segments"]:
         if int(seg.get("lap", 0)) != 2 or int(seg.get("camera", 0)) != 0:
             continue
         take = next(t for t in seg["takes"] if t["id"] == TAKE)
-        take["name"] = "2周目A 左の幕のシミ → 右の幕の裏で人形が笑う → 隠れて見る → CG がついてくる"
+        take["name"] = "2周目A 左の幕のシミ → 右のシミが滲む → 右の幕の裏で人形が笑う → 隠れて見る → CG がついてくる"
         take["policy"] = "yield"
         take["ifMissed"] = "skip"
         take["dismissible"] = True
@@ -108,18 +118,28 @@ def patch(show: dict) -> None:
         take.pop("markDoneCueId", None)
         take.pop("markDoneSec", None)
         take["steps"] = [
-            step("inherit", cueId="cue_stain_A", durKind="untilBeyond", lineId="s2a_leftend", durSec=40),
+            # 報告で左のシミだけを消す。演出は続き、右のシミの線を待つ
+            step("inherit", cueId="cue_stain_A", durKind="untilBeyond", lineId="s2a_rightstain", durSec=40,
+                 markClear=True),
+            # 右のシミが 1 秒で滲む。線を既に越えていても滲み切るまでは待つ。長押しを始めたらすぐ次へ
+            step("inherit", cueId="cue_stain_A_right_hold", overlay2CueId="cue_stain_A_left_hold",
+                 fadeInSec=RIGHT_STAIN_FADE_SEC, durKind="untilBeyond", lineId="s2a_leftend", durSec=20,
+                 beyondMinSec=RIGHT_STAIN_FADE_SEC, markStartAdvance=True),
             step("inherit", cueId="stain_A_right_burst", overlay2CueId="cue_stain_A_left_hold",
-                 durSec=burst_sec(), dollLaugh=True, markAdvance=True),
-            # 見ている人形は線を既に越えていても最短 WATCH_MIN_SEC は見せる。報告ならすぐ CG へ進む
+                 durSec=burst_sec(), dollLaugh=True),
+            # 見ている人形は線を既に越えていても最短 WATCH_MIN_SEC は見せる
             step("inherit", cueId="stain_A_right_watch", overlay2CueId="cue_stain_A_left_hold",
-                 durKind="untilBeyond", lineId="s2a_walk", durSec=8, beyondMinSec=WATCH_MIN_SEC,
-                 markAdvance=True),
-            step("inherit", cueId="cue_stain_A_both", camera=0, cg=DOLL, cgMode="trail", transition="glitch",
+                 durKind="untilBeyond", lineId="s2a_walk", durSec=8, beyondMinSec=WATCH_MIN_SEC),
+            step("inherit", cueId="cue_stain_A_right_hold", overlay2CueId="cue_stain_A_left_hold", camera=0,
+                 cg=DOLL, cgMode="trail", transition="glitch",
                  durKind="untilZoneChange", trailGapM=0.9, trailStepM=0.45, trailHideM=0.6,
                  trailFromX=DOLL_FROM[0], trailFromZ=DOLL_FROM[1], trailHopSec=0.55),
         ]
         seg["takes"] = [t for t in seg["takes"] if t["id"] in (TAKE,) or not t["id"].startswith("L2C0#")]
+    for seg in show["timeline"]["segments"]:
+        for t in seg["takes"]:
+            if t["id"] == TAKE_2B:
+                t["skipIfDismissed"] = TAKE
     show["timeline"]["rev"] = int(show["timeline"].get("rev", 0)) + 1
     show["layout"]["rev"] = int(show["layout"].get("rev", 0)) + 1
     show["rev"] = int(show.get("rev", 0)) + 1
@@ -137,7 +157,13 @@ def summary(show: dict) -> list:
                 out.append(f"    {s['source']}[{s.get('cueId') or '-'}{' +' + s['overlay2CueId'] if s.get('overlay2CueId') else ''}"
                            f"{' cg=' + s['cg'] + '/' + s['cgMode'] if s.get('cg') else ''}] {s['durKind']}"
                            f"{':' + s['lineId'] if s.get('lineId') else ''} {s.get('durSec')}s"
-                           f"{' laugh' if s.get('dollLaugh') else ''}{' advance' if s.get('markAdvance') else ''}")
+                           f"{' laugh' if s.get('dollLaugh') else ''}{' advance' if s.get('markAdvance') else ''}"
+                           f"{' clear' if s.get('markClear') else ''}{' startAdvance' if s.get('markStartAdvance') else ''}"
+                           f"{' fadeIn=' + str(s['fadeInSec']) if s.get('fadeInSec', -1) >= 0 else ''}")
+    for seg in show["timeline"]["segments"]:
+        for t in seg["takes"]:
+            if t["id"] == TAKE_2B:
+                out.append(f"  2-B {t['id']} skipIfDismissed={t.get('skipIfDismissed', '') or '-'}")
     return out
 
 

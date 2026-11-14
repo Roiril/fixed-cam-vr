@@ -827,6 +827,8 @@ namespace FixedCamVr.Streaming
                         stepLineIndex = stepLines,
                         stepMarkAdvance = BuildStepMarkAdvance(t),
                         stepBeyondMinSec = BuildStepBeyondMinSec(t),
+                        stepMarkClear = BuildStepMarkClear(t),
+                        stepMarkStartAdvance = BuildStepMarkStartAdvance(t),
                         lap = seg.lap,
                         camera = seg.camera,
                         onExit = t.IsExit,
@@ -848,6 +850,17 @@ namespace FixedCamVr.Streaming
             _takes = takes.ToArray();
             _takeSegLaps = segLaps.ToArray();
             _takeSegCams = segCams.ToArray();
+            // skipIfDismissed は全区間の演出が揃ってから引く（相手は前の区間にも後の区間にも居うる）。
+            for (int i = 0; i < defs.Count; i++)
+            {
+                int skip = ResolveSkipIfDismissed(_takes, i);
+                if (skip == 0 && !string.IsNullOrEmpty(_takes[i].skipIfDismissed))
+                    Debug.LogWarning($"[TakeRunner] skipIfDismissed の相手が見つからない → 何もしない" +
+                                     $"（take={TakeId(i)} 相手={_takes[i].skipIfDismissed}）");
+                TakeRunnerLogic.Def d = defs[i];
+                d.skipIfDismissedTake1 = skip;
+                defs[i] = d;
+            }
             // 締めの線は台本から導く（3 周目 A の凍結点）。**枠は必ず取る** — 演出の線と同じ理由で、
             // layout が後から来ても index が動かないようにする。線があれば横断検出も回す。
             _closingLineId = TakeSchema.ResolveClosingLineId(_takes);
@@ -1001,9 +1014,48 @@ namespace FixedCamVr.Streaming
                 if (_markResponsePlaying) DropMarkResponseForAdvance();
                 Debug.Log($"[TakeRunner] 報告でカットを進めた take={LastMarkAdvanceTakeId} step={activeStep}");
             }
+            if (result == TakeRunnerLogic.MarkResult.Cleared)
+                ClearStepMaterial(activeTake, activeStep);
             if (result == TakeRunnerLogic.MarkResult.Released && ActiveTakeId == _endingTakeId)
                 _endingReleased = true;
             return result;
+        }
+
+        /// <summary>markClear で素材を消した回数（テレメトリ）。</summary>
+        public int MarkClearCount => _logic.ClearCount;
+        /// <summary>最後に markClear が効いた演出の id とカット。</summary>
+        public string LastMarkClearTakeId { get; private set; } = "";
+        public int LastMarkClearStep { get; private set; } = -1;
+        /// <summary>markStartAdvance で長押しの開始がカットを進めた回数（テレメトリ）。</summary>
+        public int MarkStartAdvanceCount => _logic.MarkStartAdvanceCount;
+        public string LastMarkStartAdvanceTakeId { get; private set; } = "";
+        public int LastMarkStartAdvanceStep { get; private set; } = -1;
+        /// <summary>skipIfDismissed で出さなかった回数と、最後に出さなかった演出の id（テレメトリ）。</summary>
+        public int SkippedByDismissCount => _logic.SkippedByDismissCount;
+        public string LastSkippedByDismissTakeId => _logic.LastSkippedByDismissTake >= 0 ? TakeId(_logic.LastSkippedByDismissTake) : "";
+        public string LastSkippedByDismissBecauseId
+            => _logic.LastSkippedByDismissTake >= 0 && _logic.LastSkippedByDismissTake < _takes.Length
+                ? _takes[_logic.LastSkippedByDismissTake].skipIfDismissed ?? ""
+                : "";
+
+        // markClear で報告が成立した（0378 の左のシミ）。1 層目の素材を引き、乱れを 1 回出し、演出とカットは続ける。
+        // 以後この演出では 2 枚目の層と長押しの膨らみを出さない（ApplyStepOverlay2 / EnsureTakePress が ActiveCleared を読む）。
+        // ⚠ 畳む縁（DismissReturn）は通らない — 演出はまだ画面を持っていて、次のカット（右の幕）が来る。
+        private void ClearStepMaterial(int takeIndex, int stepIndex)
+        {
+            LastMarkClearTakeId = TakeId(takeIndex);
+            LastMarkClearStep = stepIndex;
+            if (_markResponsePlaying)
+            {
+                overlay?.CollapsePress();
+                DropMarkResponseForAdvance();
+            }
+            EndTakePress();
+            overlay?.StopOverlay(OverlayRevealLogic.MarkDoneOutSec);
+            overlay?.ClearSecondLayer();
+            _activeStepCueId = "";
+            director?.PulseGlitch(TakeSchema.GlitchTransitionLevel, TakeSchema.DismissGlitchMs / 1000f);
+            Debug.Log($"[TakeRunner] 報告でカットの素材を消した take={LastMarkClearTakeId} step={stepIndex}（演出は続く）");
         }
 
         // markAdvance で報告が成立したとき、押し始めの応答の状態を落とす（演出は続くので畳まない）。
@@ -1023,7 +1075,18 @@ namespace FixedCamVr.Streaming
             // 子供部屋の動画が落ちる所より前なら、押し始めの瞬間に落ちる所へ重ねて飛ぶ（0375）。
             // この演出は markStartCueId を持たないので、下の応答より先に見る。
             TryJumpKidsRoom();
+            // 長押しの開始でカットを進める（markStartAdvance・0378 の右の幕）。報告の成立は待たない。
+            int startTake = _logic.ActiveTakeIndex;
+            int startStep = _logic.ActiveStepIndex;
+            if (_logic.NotifyMarkStarted(Now))
+            {
+                LastMarkStartAdvanceTakeId = TakeId(startTake);
+                LastMarkStartAdvanceStep = startStep;
+                Debug.Log($"[TakeRunner] 長押しの開始でカットを進めた take={LastMarkStartAdvanceTakeId} step={startStep}");
+            }
             if (!_logic.IsActive || _markResponsePlaying || _markResponseReported || overlay == null) return;
+            // 素材を消した演出（markClear）は、押し始めの応答を出さない（消えたシミが膨らみや差し替えで戻る）。
+            if (_logic.ActiveCleared) return;
             int index = _logic.ActiveTakeIndex;
             if (index < 0 || index >= _takes.Length) return;
             string id = _takes[index].markStartCueId;
@@ -1156,7 +1219,7 @@ namespace FixedCamVr.Streaming
         {
             if (overlay == null) return;
             bool pressing = _pressTakeIndex >= 0 && _logic.IsActive && _logic.ActiveTakeIndex == _pressTakeIndex
-                            && !_markResponseReported;
+                            && !_markResponseReported && !_logic.ActiveCleared;
             overlay.SetPress(pressing ? progress01 : 0f);
 
             // 長押しでライブが透ける（markBleed）。膨らみの隣の 2 つ目で、旗が立った演出の、人形が出ているカットだけ。
@@ -1187,6 +1250,8 @@ namespace FixedCamVr.Streaming
             if (_pressTakeIndex >= 0) overlay.EndPress();
             _pressTakeIndex = -1;
             if (takeIndex < 0 || takeIndex >= _takes.Length) return;
+            // 素材を消した演出（markClear）は膨らみを貼り直さない（消えたシミが膨らみの画で戻る）。
+            if (_logic.ActiveCleared && takeIndex == _logic.ActiveTakeIndex) return;
             string id = _takes[takeIndex].markStartCueId;
             if (string.IsNullOrEmpty(id)) return;
             OverlayCueData? cue = _cueResolver?.Invoke(id);
@@ -1847,6 +1912,8 @@ namespace FixedCamVr.Streaming
         {
             if (overlay == null) return;
             if (string.IsNullOrEmpty(step.overlay2CueId)) { overlay.ClearSecondLayer(); return; }
+            // 報告で素材を消した演出（markClear）は 2 枚目の層を出さない（消した左のシミを後のカットが戻さない・0378）。
+            if (_logic.ActiveCleared && takeIndex == _logic.ActiveTakeIndex) { overlay.ClearSecondLayer(); return; }
 
             OverlayCueData? cue = _cueResolver?.Invoke(step.overlay2CueId);
             if (cue == null)
@@ -2661,8 +2728,6 @@ namespace FixedCamVr.Streaming
             return idx;
         }
 
-        // カットごとの markAdvance（報告でそのカットを終えて次へ進む）。1 つも立っていなければ null（判定が全カット false になる）。
-        // ⚠ 締めのカット（untilMark）に立っていても TakeRunnerLogic 側で締めが先に勝つ。
         /// <summary>カットごとの側待ちの最短秒（step の <c>beyondMinSec</c>）。1 本も正でなければ null。</summary>
         public static float[]? BuildStepBeyondMinSec(ShowTakeDef take)
         {
@@ -2678,18 +2743,42 @@ namespace FixedCamVr.Streaming
             return secs;
         }
 
-        public static bool[]? BuildStepMarkAdvance(ShowTakeDef take)
+        // カットごとの markAdvance（報告でそのカットを終えて次へ進む）。1 つも立っていなければ null（判定が全カット false になる）。
+        // ⚠ 締めのカット（untilMark）に立っていても TakeRunnerLogic 側で締めが先に勝つ。
+        public static bool[]? BuildStepMarkAdvance(ShowTakeDef take) => BuildStepFlags(take, s => s.markAdvance);
+
+        /// <summary>カットごとの markClear（報告でそのカットの素材だけを消す・0378）。1 つも立っていなければ null。</summary>
+        public static bool[]? BuildStepMarkClear(ShowTakeDef take) => BuildStepFlags(take, s => s.markClear);
+
+        /// <summary>カットごとの markStartAdvance（長押しの開始でそのカットを終える・0378）。1 つも立っていなければ null。</summary>
+        public static bool[]? BuildStepMarkStartAdvance(ShowTakeDef take) => BuildStepFlags(take, s => s.markStartAdvance);
+
+        private static bool[]? BuildStepFlags(ShowTakeDef take, Func<ShowStepDef, bool> pick)
         {
             ShowStepDef[]? steps = take.steps;
             if (steps == null || steps.Length == 0) return null;
             bool[]? flags = null;
             for (int i = 0; i < steps.Length; i++)
             {
-                if (steps[i] == null || !steps[i].markAdvance) continue;
+                if (steps[i] == null || !pick(steps[i])) continue;
                 flags ??= new bool[steps.Length];
                 flags[i] = true;
             }
             return flags;
+        }
+
+        /// <summary>
+        /// take の <c>skipIfDismissed</c>（演出の id）を、相手の index + 1 へ引く（0 = 相手なし）。
+        /// 空・未知の id・自分自身は 0。
+        /// </summary>
+        public static int ResolveSkipIfDismissed(IReadOnlyList<ShowTakeDef> takes, int self)
+        {
+            if (self < 0 || self >= takes.Count) return 0;
+            string id = takes[self]?.skipIfDismissed ?? "";
+            if (string.IsNullOrEmpty(id)) return 0;
+            for (int i = 0; i < takes.Count; i++)
+                if (i != self && takes[i] != null && takes[i].id == id) return i + 1;
+            return 0;
         }
     }
 }

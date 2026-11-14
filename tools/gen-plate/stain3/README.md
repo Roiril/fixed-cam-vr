@@ -1,16 +1,18 @@
 # 2 周目 A：左の幕のしみと、右の幕の裏の人形（静止画から）
 
-`.claude/canon/LEDGER.md` 0330（左のしみ）と 0376（右の幕）。動画生成は使わない。素材は全部 Codex の画像生成の静止画から作る。
+`.claude/canon/LEDGER.md` 0330（左のしみ）と 0376・0378（右の幕）。動画生成は使わない。素材は全部 Codex の画像生成の静止画から作る。
 
 | 段 | いつ | 画 | cue |
 |---|---|---|---|
-| 0 待機 | 2-A に入った瞬間 | 左の幕に顔のように見えるしみ。長押しの間は顔の所が盛り上がる | `cue_stain_A`（盛り上がりは take の `markStartCueId` = `stain_A_press_bulge`） |
-| 1 右で笑う | 体が左の幕の端（線 `s2a_leftend`）に届いた瞬間 | 右の幕にも顔のしみが出て、次のコマで顔が布ごと左へ画面の半分まで伸び切った画に替わる（途中は無い）。右の幕の縁の裏で人形が笑う。笑い声 1 回 | `stain_A_right_burst`（動画）＋ 2 枚目の層 `cue_stain_A_left_hold` |
-| 2 隠れて見る | 1 の動画が終わってから、少し歩く（線 `s2a_walk`）か報告するまで | 人形は布の縁の裏へ身を引き、黙ってこちらを見ている | `stain_A_right_watch` ＋ 2 枚目の層 `cue_stain_A_left_hold` |
-| 3 ついてくる | 2 の後、区間を出るまで | 乱れで CG の人形（0.8m）に替わり、幕の裏の同じ所から歩いた跡をついてくる。左右のしみは残る | `cue_stain_A_both` ＋ CG `doll_mid`（trail） |
+| 0 待機 | 2-A に入った瞬間から、線 `s2a_rightstain`（z=0.12）を越えるまで | 左の幕に顔のように見えるしみ。長押しの間は顔の所が盛り上がる。報告すると左のしみだけが消え、演出は続く（step の `markClear`） | `cue_stain_A`（盛り上がりは take の `markStartCueId` = `stain_A_press_bulge`） |
+| 1 右のしみ | 0 の後、左の幕の端（線 `s2a_leftend`）に届くか、報告の長押しを始めるまで（step の `markStartAdvance`） | 右の幕に顔のしみが 1 秒で滲む（step の `fadeInSec`）。左のしみが残っていれば残る | `cue_stain_A_right_hold`（掛け算）＋ 2 枚目の層 `cue_stain_A_left_hold` |
+| 2 右で笑う | 1 の後 | 次のコマで顔が布ごと左へ画面の半分まで伸び切った画に替わる（途中は無い）。右の幕の縁の裏で人形が笑う。笑い声 1 回 | `stain_A_right_burst`（動画）＋ 2 枚目の層 |
+| 3 隠れて見る | 2 の動画が終わってから、少し歩く（線 `s2a_walk`）まで | 人形は布の縁の裏へ身を引き、黙ってこちらを見ている | `stain_A_right_watch` ＋ 2 枚目の層 |
+| 4 ついてくる | 3 の後、区間を出るまで | 乱れで CG の人形（0.8m）に替わり、幕の裏の同じ所から歩いた跡をついてくる。右のしみは残る | `cue_stain_A_right_hold` ＋ 2 枚目の層 ＋ CG `doll_mid`（trail） |
 
-段 0 で報告が成立すると、従来どおり乱れでライブへ戻り、人形は出ない。段 1・2 の報告は段 3 へ進める（step の `markAdvance`）。
-台本へ当てるのは `tools/show-apply-stain-right.py`。エンジンの契約は `.claude/rules/show-run.md`。
+段 0 で左のしみを消していれば、以後の段の 2 枚目の層は出ない。段 1 の報告は押し始めで段 2 へ進み、押し切ると段 2 で畳まれる。
+段 2〜4 の報告は演出ごと畳む（左右のしみも人形も消える）。そのとき 2 周目 B の演出 `L2C1#0` は出ない（take の `skipIfDismissed`）。
+台本へ当てるのは `tools/show-apply-stain-right.py`。エンジンの契約は `.claude/rules/mark-advance.md`。
 
 ## 右の幕（0376）
 
@@ -27,6 +29,7 @@
 - 人形の大きさは床の点からの投影で決めてプロンプトに書いた（笑う: (0.5, 0.65)・見る: (0.44, 0.62)・背丈 0.8m）。
   CG の人形は見ている点から出る（台本の `trailFromX` / `trailFromZ`）。組んだ後 `*_right_burst_*.json` の `dollWatchBox` で位置を確かめる
 - 確かめる画は同じフォルダの `sheet_frames.png`（8 コマ）と `sheet_masks.png`（赤 = 右のしみ・緑 = 伸び出し・青 = 人形）
+- 右のしみだけの掛け算の比の画 `stain_A_right_ratio_<TAG>.png`（ツインは `twin_stainA_right_ratio.png`）とその枠のマスクも同じ組み立てが書く（右のしみの塊を 4 画素膨らませて 3 画素ぼかした範囲）
 
 ## 素材
 

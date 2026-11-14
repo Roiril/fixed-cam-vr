@@ -61,9 +61,9 @@
       "source": "twin_stainA_right_watch.png",
       "mask": "twin_stainA_right_mask.png"
     },
-    "cue_stain_A_both": {
-      "source": "twin_stainA_both_ratio.png",
-      "mask": "twin_stainA_both_mask.png"
+    "cue_stain_A_right_hold": {
+      "source": "twin_stainA_right_ratio.png",
+      "mask": "twin_stainA_right_ratio_mask.png"
     }
   }
 }

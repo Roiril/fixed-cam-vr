@@ -89,6 +89,25 @@ namespace FixedCamVr.Streaming
             /// <b>null なら全カットが 0</b>（後方互換）。<see cref="EndStepIfBeyond"/> だけが読む。
             /// </summary>
             public float[]? stepBeyondMinSec;
+
+            /// <summary>
+            /// カットごとに「<b>報告でこのカットの素材だけを消す</b>」か（step の <c>markClear</c>）。
+            /// <b>null なら全カットが false</b>（後方互換）。立っていれば演出もカットも続け、
+            /// <see cref="MarkResult.Cleared"/> を返す。消すのは演出 1 本で 1 度（<see cref="ActiveCleared"/>）。
+            /// </summary>
+            public bool[]? stepMarkClear;
+
+            /// <summary>
+            /// カットごとに「<b>報告の長押しを始めたらこのカットを今で終える</b>」か（step の <c>markStartAdvance</c>）。
+            /// <b>null なら全カットが false</b>（後方互換）。<see cref="NotifyMarkStarted"/> が読む。
+            /// </summary>
+            public bool[]? stepMarkStartAdvance;
+
+            /// <summary>
+            /// 「この演出が報告で畳まれていたら、自分は出ない」の相手（take の <c>skipIfDismissed</c>）。
+            /// <b>take index + 1</b> で持つ（0 = 相手なし）。struct の既定 0 を「なし」にするため。
+            /// </summary>
+            public int skipIfDismissedTake1;
         }
 
         public enum Action { None, BeginStep, EndTake }
@@ -119,6 +138,11 @@ namespace FixedCamVr.Streaming
             /// 呪いは解けない（<see cref="Released"/> ではない）。2 周目 A の作り直しで足した。
             /// </summary>
             Advanced = 3,
+            /// <summary>
+            /// <b>報告でカットの素材だけが消えた</b>（step の <c>markClear</c>）。演出もカットも続く。
+            /// 報告としては成立している（スイの返事は <see cref="Dismissed"/> と同じ）。2 周目 A の左のシミ（0378）。
+            /// </summary>
+            Cleared = 4,
         }
 
         /// <summary>
@@ -263,6 +287,12 @@ namespace FixedCamVr.Streaming
         // 「消える」と「報告された」は別の話で、消えない演出でも報告されたなら再演しない。
         private bool _activeReported;
 
+        // 走行中の演出で markClear が効いたか（演出 1 本で 1 度）。
+        private bool _activeCleared;
+
+        // 演出ごとに、体験者の報告で畳まれたか（skipIfDismissed が読む）。ラン開始で全部落とす。
+        private bool[] _takeDismissed = Array.Empty<bool>();
+
         // 演出ごとの再演回数（MaxReplays の上限に使う）。
         private int[] _replays = Array.Empty<int>();
 
@@ -325,7 +355,10 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool ActiveRemovable
             => _running && _activeTake >= 0 && _activeTake < _defs.Length
-               && (_defs[_activeTake].dismissible || CurrentStepWait() == WaitMark || CurrentStepMarkAdvance());
+               && (_defs[_activeTake].dismissible || CurrentStepWait() == WaitMark || CurrentStepMarkAdvance()
+                   || CurrentStepMarkClear())
+               // markClear のカットで既に消した後は、報告が何にも効かない（演出は畳まない）
+               && !(CurrentStepMarkClear() && _activeCleared && CurrentStepWait() != WaitMark);
 
         /// <summary>走行中のカットが <c>markAdvance</c>（報告で次のカットへ進む）か。</summary>
         public bool ActiveStepAdvancesOnMark => CurrentStepMarkAdvance();
@@ -356,6 +389,8 @@ namespace FixedCamVr.Streaming
             _defs = defs ?? Array.Empty<Def>();
             _outcome = new Outcome[_defs.Length];
             _replays = new int[_defs.Length];
+            _takeDismissed = new bool[_defs.Length];
+            _activeCleared = false;
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // 定義が変わった＝ index の意味が変わる
             _running = false;
@@ -390,6 +425,12 @@ namespace FixedCamVr.Streaming
         {
             for (int i = 0; i < _outcome.Length; i++) _outcome[i] = Outcome.None;
             for (int i = 0; i < _replays.Length; i++) _replays[i] = 0;
+            for (int i = 0; i < _takeDismissed.Length; i++) _takeDismissed[i] = false;
+            _activeCleared = false;
+            ClearCount = 0;
+            MarkStartAdvanceCount = 0;
+            SkippedByDismissCount = 0;
+            LastSkippedByDismissTake = -1;
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // ラン境界なので報告不要
             _running = false;
@@ -704,6 +745,17 @@ namespace FixedCamVr.Streaming
 
             if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return MarkResult.Released; }
 
+            // ①'' markClear のカットは素材だけを消し、演出もカットも続ける（0378 の左のシミ）。
+            //     消すのは演出 1 本で 1 度。消した後の同じカットでの報告は何にも効かない（演出は畳まない —
+            //     畳むと、まだ見せていない右の幕の人形が出なくなる）。
+            if (CurrentStepMarkClear())
+            {
+                if (_activeCleared) return MarkResult.None;
+                _activeCleared = true;
+                ClearCount++;
+                return MarkResult.Cleared;
+            }
+
             // ①' markAdvance のカットは演出を畳まず、そのカットだけを今で終える（次の Tick で次のカットへ）。
             //    dismissible より先に見る — 同じ演出が dismissible でも、このカットでの報告は「進める」意味になる。
             if (CurrentStepMarkAdvance()) { SetCurrentStepEnd(now); return MarkResult.Advanced; }
@@ -752,6 +804,7 @@ namespace FixedCamVr.Streaming
             }
             DropAllCarry(DropReason.VisitorDismissed);
             DismissCount++;
+            if (_activeTake >= 0 && _activeTake < _takeDismissed.Length) _takeDismissed[_activeTake] = true;
             // **連続の渡し（chainNext）は立てない。** 渡すと画面が異常のまま次の演出へ移り、
             // 現実が 1 フレームも出ない ＝ 報告の因果が画から消える。
             return EndTakeDecision(latestZoneCam, EndReason.VisitorDismissed);
@@ -889,6 +942,62 @@ namespace FixedCamVr.Streaming
             return a != null && _activeStep >= 0 && _activeStep < a.Length && a[_activeStep];
         }
 
+        // 走行中のカットが markClear か（配列が無い・範囲外は false）。
+        private bool CurrentStepMarkClear()
+        {
+            if (!_running || _activeTake < 0 || _activeTake >= _defs.Length) return false;
+            bool[]? a = _defs[_activeTake].stepMarkClear;
+            return a != null && _activeStep >= 0 && _activeStep < a.Length && a[_activeStep];
+        }
+
+        // 走行中のカットが markStartAdvance か（配列が無い・範囲外は false）。
+        private bool CurrentStepMarkStartAdvance()
+        {
+            if (!_running || _activeTake < 0 || _activeTake >= _defs.Length) return false;
+            bool[]? a = _defs[_activeTake].stepMarkStartAdvance;
+            return a != null && _activeStep >= 0 && _activeStep < a.Length && a[_activeStep];
+        }
+
+        /// <summary>走行中の演出で markClear が効いたか（効いた後は 2 枚目の層と長押しの膨らみを出さない）。</summary>
+        public bool ActiveCleared => _running && _activeCleared;
+
+        /// <summary>markClear で素材を消した回数（テレメトリ・テスト用）。</summary>
+        public int ClearCount { get; private set; }
+
+        /// <summary>markStartAdvance で長押しの開始がカットを進めた回数（テレメトリ・テスト用）。</summary>
+        public int MarkStartAdvanceCount { get; private set; }
+
+        /// <summary>skipIfDismissed で出さなかった回数（テレメトリ・テスト用）。武装を見送るたびに数える。</summary>
+        public int SkippedByDismissCount { get; private set; }
+
+        /// <summary>最後に skipIfDismissed で出さなかった演出の index（無ければ -1）。</summary>
+        public int LastSkippedByDismissTake { get; private set; } = -1;
+
+        /// <summary>演出が体験者の報告で畳まれたか（このランで）。</summary>
+        public bool WasDismissed(int takeIndex)
+            => takeIndex >= 0 && takeIndex < _takeDismissed.Length && _takeDismissed[takeIndex];
+
+        // 相手（skipIfDismissed）が報告で畳まれていたら、この演出は出さない。
+        private bool SuppressedByDismiss(int takeIndex)
+        {
+            if (takeIndex < 0 || takeIndex >= _defs.Length) return false;
+            return WasDismissed(_defs[takeIndex].skipIfDismissedTake1 - 1);
+        }
+
+        /// <summary>
+        /// <b>体験者が報告の長押しを始めた。</b>走行中のカットが <c>markStartAdvance</c> なら、そのカットを今で終える
+        /// （次の Tick で次のカットへ。0378「ボタンを押し始めると、もっこりして人形が出て笑う」）。
+        /// カットが始まる前の押下は数えない。進めたら true。
+        /// </summary>
+        public bool NotifyMarkStarted(float now)
+        {
+            if (!_running || now < _stepBeganAt) return false;
+            if (!CurrentStepMarkStartAdvance()) return false;
+            SetCurrentStepEnd(now);
+            MarkStartAdvanceCount++;
+            return true;
+        }
+
         // 走行中の側待ちカットを最短何秒は畳まないか（配列が無い・範囲外は 0）。
         private float CurrentStepBeyondMinSec()
         {
@@ -998,6 +1107,7 @@ namespace FixedCamVr.Streaming
             _activeStep = 0;
             _outcome[index] = Outcome.Unresolved;   // 決着は終わり方（EndTakeDecision）が決める
             _activeReported = false;
+            _activeCleared = false;
             _dismissAfterStep = -1;
             _baseZoneCam = baseZoneCam;
             float[] durs = _defs[index].stepDurSec;
@@ -1080,6 +1190,13 @@ namespace FixedCamVr.Streaming
                 if (_running && i == _activeTake) continue;
                 if (d.once && _outcome[i] == Outcome.Settled) continue;
                 if (d.stepDurSec.Length == 0) continue; // カット空の演出は無視
+                // 相手の演出が報告で畳まれていたら出さない（2 周目 A で人形を報告したら 2 周目 B の人形も出ない・0378）。
+                if (SuppressedByDismiss(i))
+                {
+                    SkippedByDismissCount++;
+                    LastSkippedByDismissTake = i;
+                    continue;
+                }
                 order.Add(i);
             }
             order.Sort((a, b) =>
@@ -1159,6 +1276,7 @@ namespace FixedCamVr.Streaming
                 // 走行中のものは「出ないまま終わった」ではない（いま画に出ている）。
                 if (_running && i == _activeTake) continue;
                 if (d.once && _outcome[i] == Outcome.Settled) continue;
+                if (SuppressedByDismiss(i)) continue;
                 if (!d.onExit && (d.skipWhenMissed || !IsArmed(i))) continue;
                 // 持ち越したものはまだ生きている（捨てていない）ので報告しない。
                 if (_carryIndex.Contains(i)) continue;
@@ -1179,6 +1297,7 @@ namespace FixedCamVr.Streaming
                 if (d.stepDurSec.Length == 0) continue;
                 if (_running && i == _activeTake) continue;
                 if (d.once && _outcome[i] == Outcome.Settled) continue;
+                if (SuppressedByDismiss(i)) continue;
                 if (d.onExit || (!d.skipWhenMissed && IsArmed(i))) return i; // 配列順で先頭が勝つ
             }
             return -1;

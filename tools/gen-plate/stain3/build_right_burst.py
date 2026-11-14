@@ -15,6 +15,7 @@
   *_right_mask_*.png    枠空間 640x360 の合成範囲（右の幕と人形の所だけ）
   *_both_ratio_*.png    左右のシミの比の画（線形の比を sRGB で符号化）
   *_both_mask_*.png     左右のシミの合成範囲（枠空間）
+  *_right_ratio_*.png   右のシミだけの比の画（線形の比を sRGB で符号化）。*_right_ratio_mask_*.png がその合成範囲
   *_right_burst_*.json  尺と、人形の頭の位置（台本と検査が読む）
   Logs/gen-plate/stain2A_right_20261115/<名>/sheet_*.png  確かめる画
 
@@ -48,7 +49,8 @@ SETS = {
         rail=((250, 229), (515, 237)),   # 手すりの芯（元の画素）。伸び出しの手前に元の手すりを貼り直す
         names=dict(burst="stain_A_right_burst_20261115.mp4", watch="stain_A_right_watch_20261115.png",
                    mask="stain_A_right_mask_20261115.png", ratio="stain_A_both_ratio_20261115.png",
-                   both_mask="stain_A_both_mask_20261115.png", meta="stain_A_right_burst_20261115.json"),
+                   both_mask="stain_A_both_mask_20261115.png", right_ratio="stain_A_right_ratio_20261115.png",
+                   right_ratio_mask="stain_A_right_ratio_mask_20261115.png", meta="stain_A_right_burst_20261115.json"),
     ),
     "twin": dict(
         base="tools/twin/assets/twin_stainA_idle.png",
@@ -59,7 +61,8 @@ SETS = {
         rail=((240, 215), (515, 209)),
         names=dict(burst="twin_stainA_right_burst.mp4", watch="twin_stainA_right_watch.png",
                    mask="twin_stainA_right_mask.png", ratio="twin_stainA_both_ratio.png",
-                   both_mask="twin_stainA_both_mask.png", meta="twin_stainA_right_burst.json"),
+                   both_mask="twin_stainA_both_mask.png", right_ratio="twin_stainA_right_ratio.png",
+                   right_ratio_mask="twin_stainA_right_ratio_mask.png", meta="twin_stainA_right_burst.json"),
     ),
 }
 
@@ -260,6 +263,10 @@ def build(name: str, laugh_sec: float | None) -> dict:
     lm = np.asarray(Image.open(ROOT / cfg["left_mask"]).convert("L"), dtype=np.float32) / 255.0
     bm = np.maximum(lm, to_frame(blur(grow(ms, 4), 3)))
     Image.fromarray(np.clip(bm * 255, 0, 255).astype(np.uint8)).convert("RGB").save(out / names["both_mask"])
+    # 右のシミだけの比の画と合成範囲（0378: 左のシミと別に、右のシミが 1 秒で滲む・左を消した後も右だけ残る）
+    Image.fromarray(srgb(np.ones_like(left_lin) * (1 - msr) + right_lin * msr).astype(np.uint8)).save(out / names["right_ratio"])
+    rm_ = to_frame(blur(grow(ms, 4), 3))
+    Image.fromarray(np.clip(rm_ * 255, 0, 255).astype(np.uint8)).convert("RGB").save(out / names["right_ratio_mask"])
 
     meta = {
         "durationSec": round(len(frames) / FPS, 3), "fps": FPS,

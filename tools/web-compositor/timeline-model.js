@@ -178,8 +178,10 @@ export function newStep(over = {}) {
     //   dollLaugh   = 画の差し替えと同時に人形の笑い声を 1 回鳴らす（sfx_doll_laugh_once・2.4 秒）
     //   markAdvance = 体験者の報告で、演出を畳まずにこのカットを終えて次のカットへ進める
     //   beyondMinSec = 側待ち（untilBeyond）のカットを、線の向こうに居ても最短この秒は畳まない（0 = 制限しない）
+    //   markClear   = 体験者の報告で、このカットの素材だけを消す（演出もカットも続く。以後 2 枚目の層と長押しの膨らみは出さない）
+    //   markStartAdvance = 体験者が報告の長押しを始めたら、このカットを終えて次のカットへ進める
     swapHold: false, swapMinX: 0, switchSfx: false, dollCall: false, dollLaugh: false, markAdvance: false,
-    beyondMinSec: 0,
+    beyondMinSec: 0, markClear: false, markStartAdvance: false,
     // 端末内録画の再生（canon/LEDGER.md 0272。3 周目 A の早送りだけが使う）。
     //   recRate     = 再生の速さ（0 以下 = 等速。0.25..8 へ丸める）
     //   recContinue = 画面に出ている同じ録画（recLap / camera が同じ）を**頭へ戻さず続きから**流す。
@@ -224,6 +226,8 @@ export function newTake(id, over = {}) {
     markDoneCueId: '', markDoneSec: 0,
     // 長押しの間だけ、人形の下からライブが透ける（3 周目の試作）。卓に編集欄は無く、show.json の値を保つだけ。
     markBleed: false,
+    // この id の演出が報告で畳まれていたら、この演出は出ない（空 = 何もしない）。卓に編集欄は無く、値を保つだけ。
+    skipIfDismissed: '',
     steps: [],
     // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
     bgm: defaultBgm(), hasBgm: false,
@@ -286,6 +290,8 @@ function serializeStep(s) {
     dollLaugh: !!s.dollLaugh,
     markAdvance: !!s.markAdvance,
     beyondMinSec: Math.max(0, num(s.beyondMinSec, 0)),
+    markClear: !!s.markClear,
+    markStartAdvance: !!s.markStartAdvance,
     // 録画の再生（canon/LEDGER.md 0272）。0 = 等速。Unity 側 TakeSchema.ResolveRecRate と同じ丸め。
     recRate: recRateOf(s.recRate),
     recContinue: !!s.recContinue,
@@ -339,6 +345,7 @@ function serializeTake(t) {
     markDoneCueId: t.markDoneCueId || '',
     markDoneSec: num(t.markDoneSec, 0),
     markBleed: !!t.markBleed,
+    skipIfDismissed: t.skipIfDismissed || '',
     steps: (t.steps || []).map(serializeStep),
   };
   // present-flag 規約: false のときは入れ子キー自体を出さない（幽霊指示を作らない）。
@@ -399,6 +406,7 @@ function normalizeTake(t) {
     markDoneCueId: typeof t.markDoneCueId === 'string' ? t.markDoneCueId : '',
     markDoneSec: num(t.markDoneSec, 0),
     markBleed: !!t.markBleed,
+    skipIfDismissed: typeof t.skipIfDismissed === 'string' ? t.skipIfDismissed : '',
     hasBgm: !!t.hasBgm,
     bgm: { ...defaultBgm(), ...(t.bgm || {}) },
   });

@@ -11,7 +11,7 @@ paths:
   - "Assets/Tests/Streaming/TakeStepUntilBeyondTests.cs"
 ---
 
-# 報告でカットを進める（markAdvance）
+# 報告でカットを進める（markAdvance）・素材だけを消す（markClear）・長押しで進める・相手が畳まれたら出さない
 
 **現行の契約だけを書く。** 変わったら行を書き換える（`rules/doc-sync.md`）。報告と演出の骨格は [show-run.md](show-run.md)。
 
@@ -31,9 +31,36 @@ paths:
 - 旗の配列は台本から作り、1 本も立っていなければ null — `TakeRunner.BuildStepMarkAdvance`。
   卓の白名簿（`timeline-model.js` の `markAdvance: !!s.markAdvance`）と名前を揃える
 
+## 報告で素材だけを消す（markClear）
+
+- step の `markClear`（既定 false）は、そのカットで報告が成立したとき、そのカットの素材（1 枚目の層）だけを消し、演出もカットも続ける
+  — `TakeRunnerLogic.NotifyMarkPressed` が `MarkResult.Cleared` を返す。見る順は ⓪ → ① → **markClear** → ①' markAdvance → ②
+- 消すのは `TakeRunner.ClearStepMaterial`: 押し始めの応答と長押しの膨らみを畳み、`StopOverlay(MarkDoneOutSec)`・2 枚目の層を外し、
+  乱れ（`GlitchTransitionLevel`・`DismissGlitchMs`）を 1 回打つ
+- 消した印（`ActiveCleared`）は演出の終わりまで残る。以後のカットは 2 枚目の層（`overlay2CueId`）と長押しの膨らみを出さない
+  — `ApplyStepOverlay2` / `EnsureTakePress` / `SetVisitorMarkProgress` / `NotifyVisitorMarkStarted`
+- 消した後の同じカットでの報告は None（何にも効かない）。`ActiveRemovable` も false。次のカットでは従来どおり `dismissible` で畳まれる
+- 消しただけは「報告で畳まれた」に数えない（skipIfDismissed の相手にならない）。`ShowControlClient` は None 以外を報告成立として数える
+
+## 長押しの開始でカットを進める（markStartAdvance）
+
+- step の `markStartAdvance`（既定 false）は、そのカットの間に報告の長押しが始まったら、そのカットを今で終える（演出は畳まない）
+  — `TakeRunnerLogic.NotifyMarkStarted(now)`。入口は `TakeRunner.NotifyVisitorMarkStarted` の頭
+- 押し切ったときの報告は、進んだ先のカットで普通に判定する（2-A では伸び出しのカットで `dismissible` が畳む）
+
+## 相手が報告で畳まれたら出さない（skipIfDismissed）
+
+- take の `skipIfDismissed`（既定 ""）は相手の take id。相手が同じランで `VisitorDismissed` で終わっていたら、この演出は武装しない
+  — `TakeRunnerLogic.ArmEnterTakes`・`FindExitCandidate`・`ReportRemainingDrops` が `_takeDismissed[]` を見る。`ResetRun` / `SetDefs` で忘れる
+- 台本の id は `TakeRunner.ResolveSkipIfDismissed` が index+1 へ解く（0 = 相手なし。知らない id は警告して相手なし）
+- 卓の白名簿は `timeline-model.js` の `markClear` / `markStartAdvance` / `skipIfDismissed`。2-A の台本は `tools/show-apply-stain-right.py`
+
 ## 観測（`ShowTelemetryHost` と `analyze-xp-log.py` を対で直す）
 
 - `ev=markadv take=<id> step=<進める前のカット> n=<累計>`（`TakeRunner.MarkAdvanceCount`）
 - `mark_advance_findings` は、3 秒（`MARK_ADVANCE_NEXT_SEC`）以内に `ev=step take=<id> i=<step+1>` が続かなければ FAIL。
   最後のカットなら `ev=take st=end` で OK、`why=done` 以外で畳まれたら WARN
-- 機械の門: `TakeMarkAdvanceTests`（C#）・`DollLaughAudioTests.MarkAdvance_ThroughTheRunner_*`・`tools/test_mark_advance_log.py`
+- `ev=markclear take= step= n=` — `mark_clear_findings`。1 秒以内に同じ演出が `why=mark` で畳まれたら FAIL、2 秒以内にそのカットの cue の `ev=cue st=off` が無ければ FAIL
+- `ev=markstartadv take= step= n=` — `mark_start_advance_findings`（判定は markadv と同じ）
+- `ev=takeskip take= by= n=` — `take_skip_findings`。相手の `why=mark` が先に無い・出さなかった演出が後で始まった・相手が畳まれたのに `takeskip` 無しで始まった、なら FAIL
+- 機械の門: `TakeMarkAdvanceTests`・`TakeMarkClearTests`（C#）・`DollLaughAudioTests.MarkAdvance_ThroughTheRunner_*`・`tools/test_mark_advance_log.py`・`tools/test_mark_clear_log.py`

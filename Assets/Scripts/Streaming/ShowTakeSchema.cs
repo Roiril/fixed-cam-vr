@@ -99,6 +99,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool markBleed;
 
+        /// <summary>
+        /// <b>この id の演出が体験者の報告で畳まれていたら、この演出は出ない</b>（同じランの中で。LEDGER 0378
+        /// 「人形は、出た時点で報告したら、追跡はしなくなり、2-Bにおいても現れないように」）。
+        /// 空・未知の id は何もしない。演出の id は区間をまたいで引く（<c>L2C0#0</c> など）。
+        /// </summary>
+        public string skipIfDismissed = "";
+
         public ShowStepDef[] steps = Array.Empty<ShowStepDef>();
 
         /// <summary>
@@ -277,6 +284,22 @@ namespace FixedCamVr.Streaming
         /// 報告（<see cref="markAdvance"/>）と watchdog はこの秒を待たない。側待ち以外のカットでは読まない。
         /// </summary>
         public float beyondMinSec;
+
+        /// <summary>
+        /// <b>報告でこのカットの素材だけを消す</b>（演出もカットも続く・LEDGER 0378 の 2 周目 A の左のシミ）。
+        /// 報告は <see cref="TakeRunnerLogic.MarkResult.Cleared"/> を返し、1 層目の素材を引いて乱れを 1 回出す。
+        /// 以後この演出では 2 枚目の層（<see cref="overlay2CueId"/>）と長押しの膨らみ（<see cref="ShowTakeDef.markStartCueId"/>）を出さない。
+        /// 消すのは演出 1 本で 1 度で、消した後の同じカットでの報告は何にも効かない。
+        /// <see cref="markAdvance"/> と <see cref="ShowTakeDef.dismissible"/> より先に効く（締めのカットの報告が最優先）。
+        /// ⚠ 既定 false — JsonUtility は欠落キーを false で埋める。
+        /// </summary>
+        public bool markClear;
+
+        /// <summary>
+        /// <b>報告の長押しを始めたら、このカットを今で終える</b>（次のカットへ・LEDGER 0378「ボタンを押し始めると」）。
+        /// 報告の成立は待たない。カットが始まる前の押下は数えない。⚠ 既定 false。
+        /// </summary>
+        public bool markStartAdvance;
 
         /// <summary>
         /// 端末内録画（<c>source:"rec"</c>）の<b>再生の速さ</b>。0 以下 = 等速

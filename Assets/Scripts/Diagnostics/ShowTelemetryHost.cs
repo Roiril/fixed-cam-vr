@@ -176,6 +176,9 @@ namespace FixedCamVr.Diagnostics
         private int _lastKidsLandCount;
         private int _lastKidsHeldCount;
         private int _lastMarkAdvanceCount;
+        private int _lastMarkClearCount;
+        private int _lastMarkStartAdvanceCount;
+        private int _lastSkippedByDismissCount;
         // 滲んで現れる cue で出た _OverlayReveal の最大（0349）。滲む cue だけ 0 以上。cue の off に revMax= で出す。
         private float _cueRevealMax = -1f;
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
@@ -1226,6 +1229,32 @@ namespace FixedCamVr.Diagnostics
                         Emit($"ev=markadv take={(string.IsNullOrEmpty(_takes.LastMarkAdvanceTakeId) ? "-" : _takes.LastMarkAdvanceTakeId)} " +
                              $"step={_takes.LastMarkAdvanceStep} n={_takes.MarkAdvanceCount}");
                     _lastMarkAdvanceCount = _takes.MarkAdvanceCount;
+                }
+                // 報告でカットの素材だけを消した（step の markClear・0378 の左のシミ）。演出は続く。
+                // 解析器は、同じ演出が 1 秒以内に why=mark で畳まれていないか・素材が引いたか（ev=cue st=off）を見る。
+                if (_takes.MarkClearCount != _lastMarkClearCount)
+                {
+                    if (_takes.MarkClearCount > _lastMarkClearCount)
+                        Emit($"ev=markclear take={(string.IsNullOrEmpty(_takes.LastMarkClearTakeId) ? "-" : _takes.LastMarkClearTakeId)} " +
+                             $"step={_takes.LastMarkClearStep} n={_takes.MarkClearCount}");
+                    _lastMarkClearCount = _takes.MarkClearCount;
+                }
+                // 長押しの開始でカットを進めた（step の markStartAdvance・0378 の右の幕）。step= は進める前のカット。
+                if (_takes.MarkStartAdvanceCount != _lastMarkStartAdvanceCount)
+                {
+                    if (_takes.MarkStartAdvanceCount > _lastMarkStartAdvanceCount)
+                        Emit($"ev=markstartadv take={(string.IsNullOrEmpty(_takes.LastMarkStartAdvanceTakeId) ? "-" : _takes.LastMarkStartAdvanceTakeId)} " +
+                             $"step={_takes.LastMarkStartAdvanceStep} n={_takes.MarkStartAdvanceCount}");
+                    _lastMarkStartAdvanceCount = _takes.MarkStartAdvanceCount;
+                }
+                // 相手の演出が報告で畳まれていたので出さなかった（take の skipIfDismissed・0378 の 2 周目 B の人形）。
+                if (_takes.SkippedByDismissCount != _lastSkippedByDismissCount)
+                {
+                    if (_takes.SkippedByDismissCount > _lastSkippedByDismissCount)
+                        Emit($"ev=takeskip take={(string.IsNullOrEmpty(_takes.LastSkippedByDismissTakeId) ? "-" : _takes.LastSkippedByDismissTakeId)} " +
+                             $"by={(string.IsNullOrEmpty(_takes.LastSkippedByDismissBecauseId) ? "-" : _takes.LastSkippedByDismissBecauseId)} " +
+                             $"n={_takes.SkippedByDismissCount}");
+                    _lastSkippedByDismissCount = _takes.SkippedByDismissCount;
                 }
             }
 

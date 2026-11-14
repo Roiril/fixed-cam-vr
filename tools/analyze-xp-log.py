@@ -382,6 +382,122 @@ def mark_advance_findings(events, takes=None):
     return lines, verdicts
 
 
+# 報告で素材だけを消したあと、その演出が畳まれていないことを見る窓（秒）と、素材が引くまでの上限（秒）。
+MARK_CLEAR_FOLD_SEC = 1.0
+MARK_CLEAR_OFF_SEC = 2.0
+
+
+def mark_clear_findings(events, takes=None):
+    """報告でカットの素材だけを消した（step の markClear）あと、演出が続き素材が引いたかを見る。(行, 判定) を返す。
+
+    書き手は C# の ShowTelemetryHost:
+      ev=markclear take=<id> step=<消したカット> n=<累計>
+    同じ演出が MARK_CLEAR_FOLD_SEC 以内に why=mark で畳まれたら FAIL（消すだけのはずが演出ごと畳んだ）。
+    takes が読めていればそのカットの cueId を引き、MARK_CLEAR_OFF_SEC 以内に ev=cue st=off が出ていなければ FAIL（素材が画面に残った）。
+    ⚠ 実行時の cue の id は台本の cueId ではなく TakeRunner.StepCueKey（<take>#<step>）なので、両方で照合する。
+    どれも出ていなければ何も言わない。
+    """
+    clears = [e for e in events if e.get("ev") == "markclear"]
+    if not clears:
+        return [], []
+    lines = [f"  報告で素材だけを消した: {len(clears)} 回"]
+    verdicts = []
+    cue_of = {}
+    if takes is not None:
+        for t in takes:
+            for i, st in enumerate(t.get("steps") or []):
+                cue_of[(t["id"], i)] = str(st.get("cueId", "") or "")
+    for e in clears:
+        tid = str(e.get("take", ""))
+        step = int(fnum(e, "step", -1.0))
+        t0 = fnum(e, "t", 0.0)
+        folded = [s for s in events if s.get("ev") == "take" and s.get("st") == "end"
+                  and str(s.get("id", "")) == tid and str(s.get("why", "")) == "mark"
+                  and t0 <= fnum(s, "t", 0.0) <= t0 + MARK_CLEAR_FOLD_SEC]
+        if folded:
+            verdicts.append(("FAIL", f"{tid}: 報告でカット {step} の素材だけを消すはずが、演出ごと畳まれた（why=mark）— "
+                                     "TakeRunnerLogic.NotifyMarkPressed の markClear の順番を見る"))
+            continue
+        cue = cue_of.get((tid, step), "")
+        if cue and cue != "inherit":
+            ids = {cue, f"{tid}#{step}"}
+            off = [s for s in events if s.get("ev") == "cue" and s.get("st") == "off"
+                   and str(s.get("id", "")) in ids and t0 - 0.05 <= fnum(s, "t", 0.0) <= t0 + MARK_CLEAR_OFF_SEC]
+            if not off:
+                verdicts.append(("FAIL", f"{tid}: 報告でカット {step} の素材（{cue}）を消したのに、"
+                                         f"{MARK_CLEAR_OFF_SEC:.0f} 秒以内に ev=cue st=off が出ていない — "
+                                         "TakeRunner.ClearStepMaterial の StopOverlay を見る"))
+                continue
+            dt = fnum(off[0], "t", t0) - t0
+            verdicts.append(("OK", f"{tid}: 報告でカット {step} の素材（{cue}）が {dt:.2f} 秒で引き、演出は続いた"))
+        else:
+            verdicts.append(("OK", f"{tid}: 報告でカット {step} の素材を消し、演出は続いた"))
+    return lines, verdicts
+
+
+def mark_start_advance_findings(events, takes=None):
+    """報告の長押しを始めてカットを進めた（step の markStartAdvance）あと、次のカットが続いたかを見る。(行, 判定) を返す。
+
+    書き手は C# の ShowTelemetryHost:
+      ev=markstartadv take=<id> step=<進める前のカット> n=<累計>
+    判定は markAdvance と同じ（MARK_ADVANCE_NEXT_SEC 以内に ev=step i=<step+1>）。
+    """
+    advs = [dict(e, ev="markadv") for e in events if e.get("ev") == "markstartadv"]
+    if not advs:
+        return [], []
+    others = [e for e in events if e.get("ev") != "markadv"]
+    _, verdicts = mark_advance_findings(others + advs, takes)
+    lines = [f"  長押しの開始でカットを進めた: {len(advs)} 回"]
+    return lines, [(lv, txt.replace("報告で", "長押しの開始で")) for lv, txt in verdicts]
+
+
+def take_skip_findings(events, takes=None):
+    """相手の演出が報告で畳まれていたので出さなかった（take の skipIfDismissed）ことを確かめる。(行, 判定) を返す。
+
+    書き手は C# の ShowTelemetryHost:
+      ev=takeskip take=<出さなかった演出> by=<相手の演出> n=<累計>
+    相手が出した ev=take st=end why=mark が先に無ければ FAIL（畳まれていないのに出さなかった）。
+    出さなかった演出が、その後の同じ走行で ev=take st=begin していたら FAIL（出さないはずが出た）。
+    台本で skipIfDismissed を持つ演出の相手が why=mark で畳まれたのに、ev=takeskip が無く本人が始まっていたら FAIL。
+    """
+    skips = [e for e in events if e.get("ev") == "takeskip"]
+    lines, verdicts = [], []
+    if skips:
+        lines.append(f"  相手が報告で畳まれたので出さなかった演出: {len(skips)} 回")
+    for e in skips:
+        tid = str(e.get("take", ""))
+        by = str(e.get("by", ""))
+        t0 = fnum(e, "t", 0.0)
+        dismissed = [s for s in events if s.get("ev") == "take" and s.get("st") == "end"
+                     and str(s.get("id", "")) == by and str(s.get("why", "")) == "mark" and fnum(s, "t", 0.0) <= t0]
+        began = [s for s in events if s.get("ev") == "take" and s.get("st") == "begin"
+                 and str(s.get("id", "")) == tid and fnum(s, "t", 0.0) > t0]
+        if not dismissed:
+            verdicts.append(("FAIL", f"{tid}: 出さなかったが、相手 {by} が報告で畳まれた記録（why=mark）が先に無い"))
+        elif began:
+            verdicts.append(("FAIL", f"{tid}: 相手 {by} が報告で畳まれたので出さないはずが、"
+                                     f"{fnum(began[0], 't', 0.0) - t0:.1f} 秒後に始まった"))
+        else:
+            verdicts.append(("OK", f"{tid}: 相手 {by} が報告で畳まれたので出さなかった"))
+    if takes is not None:
+        skipped = {str(e.get("take", "")) for e in skips}
+        for t in takes:
+            partner = str(t.get("skipIfDismissed", "") or "")
+            if not partner or t["id"] in skipped:
+                continue
+            ends = [s for s in events if s.get("ev") == "take" and s.get("st") == "end"
+                    and str(s.get("id", "")) == partner and str(s.get("why", "")) == "mark"]
+            if not ends:
+                continue
+            t0 = fnum(ends[0], "t", 0.0)
+            began = [s for s in events if s.get("ev") == "take" and s.get("st") == "begin"
+                     and str(s.get("id", "")) == t["id"] and fnum(s, "t", 0.0) > t0]
+            if began:
+                verdicts.append(("FAIL", f"{t['id']}: 相手 {partner} が報告で畳まれたのに始まった（ev=takeskip が無い）— "
+                                         "TakeRunnerLogic.ArmEnterTakes の skipIfDismissed を見る"))
+    return lines, verdicts
+
+
 def _finite(v):
     try:
         f = float(v)
@@ -691,6 +807,8 @@ def expected_from_show(show: dict):
                 "dismissible": bool(t.get("dismissible")),
                 # 長押しの間だけ人形の下からライブが透ける演出か（C# の ShowTakeDef.markBleed）。既定 false。
                 "markBleed": bool(t.get("markBleed")),
+                # 相手の演出が報告で畳まれていたら出ない（C# の ShowTakeDef.skipIfDismissed・0378）。空 = 相手なし
+                "skipIfDismissed": str(t.get("skipIfDismissed") or ""),
                 "steps": t.get("steps") or [],
             })
     exp["takes"] = takes
@@ -1249,6 +1367,9 @@ def analyze(events, others, exp, warns=None):
     for e in takes_ev:
         if e.get("st") == "end":
             ended[e.get("id")].append(fnum(e, "t", 0))
+    # 相手が報告で畳まれたので出さなかった演出（take の skipIfDismissed・0378）。正しさは take_skip_findings が見る
+    skipped_by_dismiss = {str(e.get("take", "")): str(e.get("by", ""))
+                          for e in events if e.get("ev") == "takeskip"}
 
     for t in exp["takes"]:
         tid = t["id"]
@@ -1278,6 +1399,9 @@ def analyze(events, others, exp, warns=None):
             again = (f" / {len(starts)} 回出た（引き返しての再演: "
                      + " ".join(f"t={s:.0f}s" for s in starts[1:]) + "）") if len(starts) > 1 else ""
             w(f"  ✅ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出た t={starts[0]:.0f}s{dur}{how}{again} [{kinds}]")
+        elif tid in skipped_by_dismiss:
+            w(f"  ⏭ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出さなかった — "
+              f"相手 {skipped_by_dismiss[tid]} が報告で畳まれた（skipIfDismissed） [{kinds}]")
         else:
             reason = ""
             if stayed is None:
@@ -1288,8 +1412,10 @@ def analyze(events, others, exp, warns=None):
                 reason = f" — 区間には {stayed:.0f}s 居たのに出ていない"
             w(f"  ❌ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出ていない{reason} [{kinds}]")
             verdict("FAIL", f"演出 {tid} が出なかった{reason}")
-    if exp["takes"] and all(began.get(t["id"]) for t in exp["takes"]):
-        verdict("OK", f"著作された演出 {len(exp['takes'])} 本すべてが出た")
+    if exp["takes"] and all(began.get(t["id"]) or t["id"] in skipped_by_dismiss for t in exp["takes"]):
+        n_skip = sum(1 for t in exp["takes"] if t["id"] in skipped_by_dismiss)
+        verdict("OK", f"著作された演出 {len(exp['takes'])} 本すべてが出た"
+                      + (f"（うち {n_skip} 本は相手が報告で畳まれたので出さなかった）" if n_skip else ""))
 
     # 演出が区間の滞在に収まったか。はみ出す＝体験者が次の場所へ移った後も画面を握り続ける。
     # 設計上は許される（復帰先は「いま居るゾーン」を再計算する）が、著作の意図とはずれるので出す。
@@ -3812,6 +3938,15 @@ def analyze(events, others, exp, warns=None):
             w(line)
         for level, text in ma_verdicts:
             verdict(level, text)
+
+        # -- 報告で素材だけを消す（markClear）・長押しの開始で進める（markStartAdvance）・相手が畳まれたら出さない（skipIfDismissed）
+        #    canon/LEDGER.md 0378。2 周目 A の左のシミ・右の幕・2 周目 B の人形
+        for fn in (mark_clear_findings, mark_start_advance_findings, take_skip_findings):
+            fl, fv = fn(events, exp.get("takes"))
+            for line in fl:
+                w(line)
+            for level, text in fv:
+                verdict(level, text)
 
         # -- カットが差し替える劇伴（呼びかけの次のカット・canon/LEDGER.md 0119）
         #    ⚠ **これも画に出ない。** 追いついた文脈を運ぶのは黒い覆いではなく曲になったので、
