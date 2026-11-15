@@ -354,7 +354,7 @@ Webは同じWAVを無加工コピーして使う。以下の旧2音構成と`ing
 |---|---|---|
 | 目が 1 つ開く | `sfx_eye_1..6`（もらった太鼓 1 本から 6 変種） | 開くたび（**間引く**） |
 | 最初の大きい目が見開く | `sfx_eye_big` | 兆しの段の頭で撃つ |
-| スクリーンが増える（0317・試作。`AnomalyEyes.ScreensReplaceEyes` の間は目の 2 本の代わり） | 1 枚点くたび `sfx_tv_degauss_1..6`（`ScreenAdd`・最初の 1 枚も）／1 枚消えるたび `sfx_tv_off_1..4`（`ScreenRemove`）／裏で `sfx_wall_rise`（`WallRise`・2D）。0383 | 面の方角から（**間引く**）。詳細は `memory/screen_multiply.md` |
+| スクリーンが増える（0317・試作。`AnomalyEyes.ScreensReplaceEyes` の間は目の 2 本の代わり） | 1 枚点くたび `sfx_tv_degauss_1..6`（`ScreenAdd`・最初の 1 枚も）／1 枚消えるたび `sfx_tv_off_1..4`（`ScreenRemove`）／裏で `sfx_wall_rise`（`WallRise`・2D）。0383。最後の面に笑う顔が出た縁で `sfx_screen_face_laugh`（`ScreenFaceLaugh`・2D・-22 LUFS・0386） | 面の方角から（**間引く**）。詳細は `memory/screen_multiply.md` |
 
 - ⚠⚠ **1 つの目に 1 発は鳴らせない。** 開くのは **189 個で 3 秒**（実測: 0.25 秒ごとに
   10 / 17 / 0 / 47 / 40 / 32 / 24 / 17 / 2 個 ＝ 最大 **188 個/秒**）。

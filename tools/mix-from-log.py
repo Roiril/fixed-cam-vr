@@ -52,6 +52,7 @@ CUES = {
     "DollCall": ("sfx_doll_call", 1), "PowerOff": ("sfx_power_off", 1),
     "DollEndFall": ("sfx_doll_end_fall", 1), "KidsRoom": ("sfx_kidsroom", 1),
     "DollLaughOnce": ("sfx_doll_laugh_once", 1),
+    "ScreenFaceLaugh": ("sfx_screen_face_laugh", 1),
     "EyeOpen": ("sfx_eye", 6), "EyeBig": ("sfx_eye_big", 1),
     # 0383
     "TvNoise": ("sfx_tv_noise", 1), "TvOn": ("sfx_tv_on", 1), "WallRise": ("sfx_wall_rise", 1),

@@ -517,10 +517,10 @@ namespace FixedCamVr.Streaming
                 if (_logic.JustStarted) _wall!.BeginRun();
                 _wall!.SetFloorWorldY(FloorWorldY());
                 _wall.Drive(dt, _logic.Big, _logic.Field, _logic.Span, _logic.Closing, _clock);
-                // 最後の面が顔へ移った瞬間に笑い声 1 回（0384 ④・rules/doll-laugh.md の音源）。面の方角から。
+                // 最後の面が顔へ移った瞬間に笑い声 1 回（0384 ④。音源は 2026-11-15 のユーザー指定）。2D。
                 if (_wall.FaceJustStarted && _sound != null)
                 {
-                    FaceLaughFired = _sound.PlaySpot(SoundCue.DollLaughOnce, transform.TransformPoint(_wall.SeatCenter(0)),
+                    FaceLaughFired = _sound.PlaySpot(SoundCue.ScreenFaceLaugh, transform.TransformPoint(_wall.SeatCenter(0)),
                                                      follow: transform);
                     if (FaceLaughFired) FaceLaughCount++;
                 }

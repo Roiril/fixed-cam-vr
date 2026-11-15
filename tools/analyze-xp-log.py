@@ -319,11 +319,9 @@ def doll_laugh_findings(events, takes):
     鳴った証拠は ev=sfx id=DollLaughOnce（書き手は C# の ShowTelemetryHost、鳴らすのは TakeRunner.PlayDollLaugh）。
     ⚠ 同じフレームで別の一撃が鳴ると ev=sfx は 1 行にまとまる（LastCue が 1 つしか出ない）ので、回数の不足は WARN。
     takes が None なら台本が読めていないので、回数だけ出して判定しない。
-    3 周目 C の増えるスクリーンの最後の面の笑い声（LEDGER 0384 ④・scrFace の 4 つ目）は同じ音源なので、その回数を引いてから突き合わせる。
+    3 周目 C の増えるスクリーンの最後の面の笑い声は別の id（ScreenFaceLaugh・2026-11-15 から別の音源）なので数えない。
     """
-    all_sounds = [e for e in events if e.get("ev") == "sfx" and str(e.get("id")) == DOLL_LAUGH_SFX]
-    face = screen_face_laugh_count(events)
-    sounds = all_sounds[:max(0, len(all_sounds) - face)]
+    sounds = [e for e in events if e.get("ev") == "sfx" and str(e.get("id")) == DOLL_LAUGH_SFX]
     if takes is None:
         if not sounds:
             return [], []
@@ -411,19 +409,6 @@ def mark_advance_findings(events, takes=None):
 # 報告で素材だけを消したあと、その演出が畳まれていないことを見る窓（秒）と、素材が引くまでの上限（秒）。
 MARK_CLEAR_FOLD_SEC = 1.0
 MARK_CLEAR_OFF_SEC = 2.0
-
-
-def screen_face_laugh_count(events: list[dict]) -> int:
-    """増えるスクリーンの最後の面で鳴らした笑い声の累計（scrFace の 4 つ目の最大・LEDGER 0384 ④）。旧ログは 0。"""
-    best = 0
-    for v in effect_samples(events, "scrFace"):
-        parts = str(v).split("/")
-        if len(parts) == 4:
-            try:
-                best = max(best, int(parts[3]))
-            except ValueError:
-                pass
-    return best
 
 
 def screen_wall_extra_findings(events: list[dict]) -> list[tuple[str, str]]:

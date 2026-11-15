@@ -163,6 +163,12 @@ namespace FixedCamVr.Streaming
         /// 消えた面の方角から鳴らす。間引きは <see cref="AnomalyEyes"/> の側。
         /// </summary>
         ScreenRemove,
+        /// <summary>
+        /// 増えるスクリーンの最後の面に笑う人形の顔が出た瞬間に 1 回（2026-11-15・ユーザー指定の音源・2D）。
+        /// 鳴らすのは <see cref="AnomalyEyes"/>（<see cref="ScreenMultiply.FaceJustStarted"/> の縁）。
+        /// 2-A のカットの笑い声（<see cref="DollLaughOnce"/>）とは別の音源。
+        /// </summary>
+        ScreenFaceLaugh,
     }
 
     /// <summary>
@@ -460,6 +466,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.WallRise: return "sfx_wall_rise";
                 case SoundCue.KidsRoom: return "sfx_kidsroom";
                 case SoundCue.DollLaughOnce: return "sfx_doll_laugh_once";
+                case SoundCue.ScreenFaceLaugh: return "sfx_screen_face_laugh";
                 default: return "";
             }
         }

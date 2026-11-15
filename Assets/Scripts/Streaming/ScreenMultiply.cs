@@ -136,10 +136,10 @@ namespace FixedCamVr.Streaming
         // 「一番最後まで閉じないで残っているスクリーン(メインスクリーンじゃないやつ)の中に、最後に、
         //  笑ってる日本人形の顔面をドアップにしたものを合成して、笑った音もつけてほしい。」
         // 最後まで残るのは 0 番（大きい目の席）。ほかが閉じ切ったら 0 番を開き直して顔を映し、
-        // 笑い声 1 回（SoundCue.DollLaughOnce・2.4 秒）のあいだ保ってから電源を落とす。
+        // 2.4 秒保ってから電源を落とす。笑い声は SoundCue.ScreenFaceLaugh（1.1 秒）を顔へ移った縁で 1 回。
 
         public const string FaceTextureResource = "ScreenMultiply/DollLaughFace";
-        /// <summary>顔を保つ秒。笑い声 1 回の尺（<c>rules/doll-laugh.md</c>）。</summary>
+        /// <summary>顔を保つ秒（0384 のとき笑い声 2.4 秒に合わせた尺。音源を替えても画は変えていない）。</summary>
         public const float FaceHoldSec = 2.4f;
         /// <summary>顔へ移る秒（面が開き直す秒も同じ）。</summary>
         public const float FaceInSec = 0.25f;

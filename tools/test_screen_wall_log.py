@@ -70,8 +70,8 @@ class Findings(unittest.TestCase):
         self.assertEqual(levels(found), ["FAIL"])
 
     def test_face_laugh_is_not_counted_as_a_cut_laugh(self):
-        # 増えるスクリーンの笑い声は dollLaugh のカットの笑い声と同じ音源。台本に無い笑いとして FAIL にしない。
-        events = [dict(ev="sfx", t="5", id=xp.DOLL_LAUGH_SFX, _cams=[]), sum_ev(6, scrFace="1/1/1.00/1")]
+        # 増えるスクリーンの笑い声は別の id（ScreenFaceLaugh）。dollLaugh の笑い声として数えない。
+        events = [dict(ev="sfx", t="5", id="ScreenFaceLaugh", _cams=[]), sum_ev(6, scrFace="1/1/1.00/1")]
         takes = [dict(id="L2C0#0", steps=[dict(dollLaugh=True)])]
         _, verdicts = xp.doll_laugh_findings(events, takes)
         self.assertNotIn("FAIL", levels(verdicts))

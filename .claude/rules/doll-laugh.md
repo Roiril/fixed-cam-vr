@@ -17,8 +17,8 @@ paths:
 |---|---|
 | 音源 | `sfx_doll_laugh_once`（`SoundCue.DollLaughOnce`・変種 1） |
 | 作り | `py -3.11 tools/ingest-doll-laugh.py`。`bed_doll_one.wav`（SHA-256 を定数で照合）の頭 **2.4 秒**（笑い 1 回。2.4 秒から 2 回目が始まる）を切り、最後の **0.5 秒**だけ聴感直線（`(1-t)^(1/0.6)`・`SoundFade.LoudnessExponent`）で 0 へ退かせる。音量は変えない |
-| 鳴らす所 | `TakeRunner.BeginStep` の `dollCall` と同じ行。旗の立ったカットが画面を取った頭で `_sound.PlaySpot(SoundCue.DollLaughOnce)` を 1 回。飛ばしたカットでは鳴らさない。もう 1 か所は 3 周目 C の増えるスクリーンの最後の面に笑う顔が出た瞬間（`AnomalyEyes`・`ScreenMultiply.FaceJustStarted`・0384 ④。観測は `scrFace` の 4 つ目） |
+| 鳴らす所 | `TakeRunner.BeginStep` の `dollCall` と同じ行。旗の立ったカットが画面を取った頭で `_sound.PlaySpot(SoundCue.DollLaughOnce)` を 1 回。飛ばしたカットでは鳴らさない。3 周目 C の増えるスクリーンの最後の顔の笑い声は別の音源（`SoundCue.ScreenFaceLaugh`・0386）で、ここでは鳴らさない |
 | 定位・退き | **2D**（`MonoRequired` に入れない）。劇伴の退き無し（`DuckFor` 0） |
 
-- 観測: 走行ログの `ev=sfx id=DollLaughOnce`。`analyze-xp-log.py` の `doll_laugh_findings` が、旗のカットが画面を取った（`ev=step played=1`）のに鳴っていなければ FAIL、旗のカットが画面を取っていないのに鳴れば FAIL（`tools/test_doll_laugh_log.py`）。増えるスクリーンの笑い声は同じ `ev=sfx` に出るので、`scrFace` の 4 つ目の回数（`screen_face_laugh_count`）を引いてから突き合わせる（`tools/test_screen_wall_log.py`）
+- 観測: 走行ログの `ev=sfx id=DollLaughOnce`。`analyze-xp-log.py` の `doll_laugh_findings` が、旗のカットが画面を取った（`ev=step played=1`）のに鳴っていなければ FAIL、旗のカットが画面を取っていないのに鳴れば FAIL（`tools/test_doll_laugh_log.py`）。増えるスクリーンの笑い声は `ev=sfx id=ScreenFaceLaugh` なので数えない
 - 機械の門: `DollLaughAudioTests`（取り込み忘れ・尺・頭で 1 回・飛ばしたカットでは鳴らさない）

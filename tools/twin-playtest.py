@@ -38,6 +38,7 @@ SFX = {
     "WallRise": "せり上がっていく低い音", "PowerOff": "電源が落ちる音", "DollEndFall": "低く落ちていく音",
     "KidsRoom": "子供部屋の物音（電灯と木馬が揺れ、人形が畳に落ちる鈍い音）",
     "DollLaughOnce": "女の子の人形が 1 度だけ「うふふ」と笑う",
+    "ScreenFaceLaugh": "笑う人形の顔のスクリーンから、甲高い不気味な笑い声が 1 度",
 }
 # 画の出来事に必ず伴う音（rules/sound-design.md・rules/ending.md の契約）。走行が鳴らしたかは実機で聴く。
 ALWAYS = [

@@ -142,6 +142,12 @@ PLAN = [
     ("Horror_Accent-Rise01-mp3/Horror_Accent-Rise01/Horror_Accent-Rise01-1(Short).mp3",
      "sfx_wall_rise", "lufs", -22.0,
      "増えるスクリーンの裏で 1 本（2D）。山（7.1 秒）が閉じ始めの頃に来る"),
+    # 増えるスクリーンの最後の面に笑う人形の顔が出た瞬間（2026-11-15・ユーザー指定）。
+    #    それまでは 2-A と同じ `sfx_doll_laugh_once`（-36.8 LUFS）を流用していた。
+    #    高さは同じ場面の裏の音（`sfx_wall_rise` -22.0）に揃えた（シュビーの判断・耳では未確認）。
+    ("dragon-studio-creepy-laugh-2-401714 (1).mp3",
+     "sfx_screen_face_laugh", "lufs", -22.0,
+     "3 周目 C の増えるスクリーンの最後の面に笑う人形の顔が出た瞬間に 1 回（2D・1.1 秒）"),
 ] + [
     (f"TV-Degauss01-mp3/TV-Degauss01/TV-Degauss01-{i}({kind}).mp3",
      f"sfx_tv_degauss_{i}", "lufs", -24.0,
