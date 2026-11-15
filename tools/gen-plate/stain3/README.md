@@ -31,6 +31,14 @@
 - 確かめる画は同じフォルダの `sheet_frames.png`（8 コマ）と `sheet_masks.png`（赤 = 右のしみ・緑 = 伸び出し・青 = 人形）
 - 右のしみだけの掛け算の比の画 `stain_A_right_ratio_<TAG>.png`（ツインは `twin_stainA_right_ratio.png`）とその枠のマスクも同じ組み立てが書く（右のしみの塊を 4 画素膨らませて 3 画素ぼかした範囲）
 
+## 動画生成で試す（2026-11-15）
+
+何もない所から人形ともっこりが出てくる所を動画生成で作る試し（未判定）。左のしみは別の層なので、入力には左に何も無い画を使う。
+
+- 首尾フレームは `py -3.11 tools/gen-plate/stain3/video_inputs.py` が組む（生成ではない）。無人写真 × 右のしみの比の画の上に、`bulge.png` / `doll_laugh.png` / `doll_watch.png` の変えた所だけを戻す。
+  出力は `Logs/gen-plate/stain2A_right_video_20261115/` の `A_stain`（右のしみだけ）・`B_burst`（伸び切った顔と笑う人形）・`C_watch`（隠れて見る人形）と、それぞれの黒帯つき 16:9（2560×1440）
+- 1 本目は Flow の Omni 1.2 Flash・360p・6 秒、A → B。返った動画は `flow_v1_A_to_B.mp4`、4:3 に戻した版は `flow_v1_A_to_B_4x3.mp4`（写真の幅は 490px・x=75 から）
+
 ## 素材
 
 本番は 2026-11-15 12:50 の無人写真 `captures/plate_A_20261115_125052.jpg` に合わせてある（`tools/web-compositor/plate-dependents.json` の `plate`）。
