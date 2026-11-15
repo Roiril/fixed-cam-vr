@@ -1,19 +1,19 @@
 {
   "durationSec": 2.375,
   "fps": 24,
-  "bulgeTipX": 248.0,
-  "bulgeRootX": 513.0,
+  "bulgeTipX": 236.3,
+  "bulgeRootX": 535.3,
   "dollLaughBox": [
-    478,
-    236,
-    629,
-    476
+    474,
+    261,
+    640,
+    480
   ],
   "dollWatchBox": [
-    478,
-    236,
-    629,
-    476
+    474,
+    261,
+    640,
+    480
   ],
   "meanLuma": {
     "watch": 80.51288302951389,

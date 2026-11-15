@@ -1,7 +1,7 @@
 {
   "version": 1,
   "kind": "stain",
-  "note": "ツインの部屋の 2 周目 A のシミ（tools/twin/assets.json の cue_stain_A）。本番のレシピと同じ作り方で、入力だけツインの素材（0349）",
+  "note": "ツインの部屋の 2 周目 A のシミ（tools/twin/assets.json の cue_stain_A）。本番のレシピと同じ作り方で、入力だけツインの素材（0349）。画素の箱は 2026-11-15 にカメラ A を 9/24 の写真の姿勢へ解き直したとき、素材と一緒に写し直した（tools/twin/repose_assets.py）",
   "source": "tools/twin/assets/twin_stainA_idle.png",
   "clean": [
     "tools/twin/assets/twin_stainA_doll.png",
@@ -9,19 +9,19 @@
   ],
   "domainMask": "tools/twin/assets/twin_stainA_mask.png",
   "domainBox": [
-    108,
+    100,
     0,
-    300,
-    232
+    299,
+    243
   ],
   "seed": 1113,
   "ratio": {
     "noiseRadius": 2,
     "normalizeBox": [
-      108,
-      10,
-      300,
-      228
+      100,
+      7,
+      299,
+      239
     ],
     "chroma": 0.35,
     "knee": [
@@ -78,7 +78,7 @@
     "searchBox": [
       0,
       0,
-      140,
+      109,
       480
     ],
     "dilatePx": 5,

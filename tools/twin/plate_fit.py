@@ -130,7 +130,7 @@ def solve_only(cid, f):
 
 
 def plate_path(cid):
-    """A だけ過去の写真を tools/twin/plates に置いている（plate_obs.json の _source）。"""
+    """tools/twin/plates に同名があればそれを、無ければ StreamingAssets の本番の無人写真を使う（いまは 3 台とも後者）。"""
     name = OBS["plates"][cid]
     local = HERE / "plates" / name
     return local if local.exists() else ROOT / "Assets" / "StreamingAssets" / "show" / "assets" / name

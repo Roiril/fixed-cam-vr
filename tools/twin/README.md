@@ -50,11 +50,12 @@ py -3.11 tools/twin/check_rig.py
 - 2-C の人形視点（pov_0〜4）は Cycles で撮る。代役の後ろを床の人形の目の高さで追い、4 本目で背中へ追いつく
 
   ```powershell
-  & "C:\Program Files\Blender Foundation\Blender 5.1lender.exe" --background --factory-startup --python tools/twin/twin_render.py -- pov --w 640 --spp 48
+  & "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --factory-startup --python tools/twin/twin_render.py -- pov --w 640 --spp 48
   py -3.11 tools/twin/make_pov.py     # → assets/twin_pov_<番号>.mp4。--sheet <画> で途中のコマを並べて見る
   ```
 
 - 静止画は `tools/gen-plate` の通常の手順で作る。場所は `sites/twin_A.json` / `twin_B.json`（無人写真は `plates/twin_*_plate.jpg`）
+- A の素材は 9/5 の姿勢で生成し、2026-11-15 に `repose_assets.py` で 9/24 の姿勢へ写し直した。幕の縁の外の人形（左右）は新しい画では端で切れる。4-A の人形の群れは射影 1 枚で動かしたので、背景の壁・床は面の写し方と中央 5px・最大 19px ずれる（人形の立ち位置は作り物なので合わせる先が無い）
 - 動画は Codex の画像生成で同じ構図のキーフレームを数枚作り（前のコマを入力にして少しずつ動かす）、`animate_keys.py` が
   オプティカルフローで中割りして 640x480・24fps の mp4 にする。キーの生成は暗くした種の上で行い、`gen-tone.py undim` で戻してから繋ぐ
 
@@ -88,7 +89,8 @@ py -3.11 tools/twin/make_assets.py
 | `assets.json` / `assets/` / `make_assets.py` | ツインの部屋で作り直した合成素材と、本番の cue への当てはめ（上の「合成素材」） |
 | `animate_keys.py` | 生成したキーフレーム数枚をオプティカルフローで中割りして動画にする |
 | `audit_prompt.md` | 監査の文面（基準を動かさないため固定） |
-| `curtain_guide.py` | 配信スマホの「カーテンの輪郭」の線を作る。rig.json の姿勢で L の幕の外周を投影し、配信アプリの `app/src/main/assets/curtain_guide.json` へ書く（`--out` で変更可）。`--check <フォルダ>` で無人写真へ重ねた画も出す。rig.json を解き直したら回して配信アプリを焼き直す。⚠ `plate_obs.json` の `guide` にある台（A）は rig.json ではなく、その写真（素材を合わせた 9/24 の写真）の点から姿勢を解き直して引く |
+| `curtain_guide.py` | 配信スマホの「カーテンの輪郭」の線を作る。rig.json の姿勢で L の幕の外周を投影し、配信アプリの `app/src/main/assets/curtain_guide.json` へ書く（`--out` で変更可）。`--check <フォルダ>` で無人写真へ重ねた画も出す。rig.json を解き直したら回して配信アプリを焼き直す |
+| `repose_assets.py` | 台の姿勢を解き直したあと、その台に合わせて作った合成素材（`assets/`）を新しい姿勢へ写し直す。幕・床・壁に貼り付いた物（顔のしみ・幕の縁の人形・マスク・比の画）は面で、床に立つ人形の群れは左半分の射影 1 枚で。生成し直さずに済む。⚠ 素材の元の生成（`tools/gen-plate/stain3/build_right_burst.py twin` など）は 9/5 の姿勢の画を入力にしているので、作り直したら出力に `--old-rev 27916975` で通す |
 | `stage_map.py` | 体験者が画のどこに映るかを動画から測り、台本の素材（マスク）が出ている間に体と重なるかを数える。`--check` で重なりがあれば落ちる。罠は [memory/stage_map.md](../../.claude/memory/stage_map.md) |
 | `stage_cards.py` | 上の測定から、床の図（区画・道・カメラ・床の線）と、異変を置く所を重ねた画を作る |
 | `variant_posdriven.py` | 位置で動く演出の版（2 周目 A・2 周目 C）を検証用の木へ当てる。メインの木と本番の台本には書かない |
@@ -96,13 +98,20 @@ py -3.11 tools/twin/make_assets.py
 
 ## 配置の決め方
 
-位置・向き・画角は保存した無人写真から解く。B と C は `plate_*_20260924_*.jpg`、A は `plates/plate_A_20260905_193511.jpg`。実物の枠の寸法（`tools/walk-guide`）を基準にし、写真の点と線に枠が重なるようにする。
+位置・向き・画角は保存した無人写真から解く。3 台とも `plate_*_20260924_*.jpg`（`Assets/StreamingAssets/show/assets/`）。本番の合成素材（2-A のシミ・4-A の人形）はこの写真に合わせてあり、展示でもこの置き方に据える。実物の枠の寸法（`tools/walk-guide`）を基準にし、写真の点と線に枠が重なるようにする。
 
-A だけ写真が古いのは、9/24 の写真では A が動いているため。本番の calib は 9/5 19:39 にこの写真で解いてある。1 台だけ解き直すときは `plate_fit.py --only A --write`（画角と他の台は変わらないので、その台の動画だけ焼き直せばよい）。
+1 台だけ解き直すときは `plate_fit.py --only A --write`（画角と他の台は変わらない）。そのあと次を順に回す。
+
+1. その台の `Logs/twin-cycles/seq/forward/<台>/plate.npy` を消して `seq --cams <台>` で焼き直し、`seq_post.py forward --cams <台>`
+2. 無人写真 `plates/twin_<台>_plate.jpg` を焼き直した背景で置き換える（`feed_tone.py` の表もこれから作る）
+3. その台に合わせた合成素材を `repose_assets.py --cam <台> --old-rev <解き直す前のコミット> --write` で写し直す（下の表）
+4. `curtain_guide.py`（配信アプリの補助線）・`export_game.py`・`make_pack.py`・`stage_map.py`、A なら `variant_seam.py make`
+
+2026-11-15 まで A は 9/5 の写真（`plates/plate_A_20260905_193511.jpg`。本番の A の calib はこの写真で解いてある）から解いていた。9/24 の据え方へ移したことで、A は L の角へ 0.2m 寄り、左へ 5.4 度振れ、傾きが無くなった。順走で A の担当区間に体が映る割合は 1.00 → 0.92（全身は 0.35 → 0.21）。
 
 | カメラ | 機材 | 解いた置き方 |
 |---|---|---|
-| A | 三脚 | L の角を正面に見る。高さ 0.93m |
+| A | 三脚 | L の角を正面に見る。高さ 0.98m |
 | B | 床 | 西の壁のすぐ脇。レンズは床から 3cm で、上へ 13 度あおる |
 | C | 棚のアーム | L の北面を上から見る。高さ 1.87m。横へ 30 度傾いている |
 

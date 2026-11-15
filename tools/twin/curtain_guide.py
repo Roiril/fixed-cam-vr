@@ -5,7 +5,8 @@
 
 カメラの姿勢は rig.json（保存した無人写真から plate_fit.py で解いた値）。カーテンの形は twin_scene.py の
 build_booth と同じ（L の 2 辺。角から 0.012m・端の 0.004m 手前まで、床から竿の 3cm 下まで）。
-rig.json が写真に合っている（check_rig.py の RMS）限り、輪郭は「本番の素材を作ったときの据え方」を指す。
+rig.json は 3 台とも素材を合わせた 9/24 の無人写真から解いてあるので（check_rig.py の RMS）、
+輪郭は「本番の素材を作ったときの据え方」を指す。
 
 出力は 640x480 の配信画像に対する 0..1 の座標の折れ線。配信アプリは映像の矩形（GuideSpec.fitCenter）へ引く。
 """
@@ -31,7 +32,6 @@ CLOTH_BOTTOM = 0.0
 INSET_CORNER = 0.012       # 角の側の引き（build_booth）
 INSET_END = 0.004          # 端の側の引き
 NEAR = 0.05                # これより手前（カメラの後ろ側）は引かない [m]
-MAX_GUIDE_RMS = 8.0        # guide の点に枠が合わないとき書かない [px]
 STEP_M = 0.03             # 辺を刻む間隔。直線でも分けておくと画の外への出入りで切れ目が正しく出る
 DEFAULT_OUT = ROOT.parent.parent / "Mobile" / "fixed-cam-streamer" / "app" / "src" / "main" / "assets" / "curtain_guide.json"
 
@@ -84,48 +84,18 @@ def visible(line) -> bool:
     return any(0.0 <= u <= 1.0 and 0.0 <= v <= 1.0 for u, v in line)
 
 
-def guide_camera(cam: dict, rig: dict, obs: dict) -> tuple[dict, str, float | None]:
-    """補助線に使うカメラ。plate_obs.json の guide にある台は、その写真の点から姿勢を解き直す。
-
-    ツイン（rig.json）は別の写真に合わせてあることがある（A は 9/5）。据える人が合わせたいのは
-    素材を合わせた写真なので、補助線だけはそちらを指す。画角は rig.json の共通値に止める。
-    """
-    spec = (obs.get("guide") or {}).get(cam["id"])
-    if not isinstance(spec, dict):
-        return cam, "rig.json", None
-    import plate_fit as pf  # noqa: PLC0415  （guide がある台だけ読む）
-
-    cid = cam["id"]
-    saved = (pf.OBS["points"].get(cid), pf.OBS["lines"].get(cid))
-    pf.OBS["points"][cid], pf.OBS["lines"][cid] = spec["points"], spec["lines"]
-    try:
-        v, rr = pf.solve_only(cid, float(rig["_fit"]["fPx"]))
-    finally:
-        pf.OBS["points"][cid], pf.OBS["lines"][cid] = saved
-    rms = math.sqrt(float(rr @ rr) / len(rr))
-    fwd = pf.rot(v[4], v[3], v[5])[:, 2]
-    pos = np.asarray(v[:3], float)
-    solved = dict(cam, pos=[float(x) for x in pos], lookAt=[float(x) for x in pos + fwd * 2.0],
-                  rollDeg=float(v[5]), hfovDeg=float(rig["_fit"]["hfovDeg"]))
-    return solved, spec["plate"], rms
-
-
-def build(show: dict, rig: dict, obs: dict | None = None) -> dict:
+def build(show: dict, rig: dict) -> dict:
     out = {
-        "_source": "fixed-cam-vr tools/twin/curtain_guide.py が rig.json（plate_obs.json の guide がある台はその写真）と show.json の壁から作る。手で直さない",
+        "_source": "fixed-cam-vr tools/twin/curtain_guide.py が rig.json と show.json の壁から作る。手で直さない",
         "srcW": int(W),
         "srcH": int(H),
         "cameras": {},
     }
     for cam in rig["cameras"]:
-        cam, source, rms = guide_camera(cam, rig, obs or {})
-        if rms is not None and rms > MAX_GUIDE_RMS:
-            raise SystemExit(f"✗ {cam['id']}: {source} の点に枠が合いません（rms {rms:.1f}px）。plate_obs.json の guide の画素を読み直す")
-        print(f"{cam['id']}: {source}" + (f"（rms {rms:.1f}px）" if rms is not None else ""))
         lines = []
         for _, a, b in curtain_edges(show):
             lines += [ln for ln in project_edge(cam, a, b) if visible(ln)]
-        out["cameras"][cam["id"]] = {"lines": lines, "plate": source if rms is not None else cr.OBS["plates"][cam["id"]]}
+        out["cameras"][cam["id"]] = {"lines": lines, "plate": cr.OBS["plates"][cam["id"]]}
     return out
 
 
@@ -164,7 +134,7 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--check", type=Path, help="無人写真へ重ねた画を書くフォルダ")
     a = ap.parse_args()
-    guide = build(cr.SHOW, cr.RIG, cr.OBS)
+    guide = build(cr.SHOW, cr.RIG)
     for cid, g in guide["cameras"].items():
         if not g["lines"]:
             print(f"✗ {cid}: 画に入る輪郭が 1 本も無い（rig.json の向きを疑う）")

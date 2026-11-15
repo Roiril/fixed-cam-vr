@@ -66,11 +66,20 @@ def zone_at(x: float, z: float, grid: dict) -> int:
 
 
 def read_frames(cam: str, tmp: Path) -> list:
+    """動画をコマに割って置く。置いたコマは元の動画の大きさと更新時刻で見分け、動画が焼き直されたら割り直す
+    （2026-11-15、A を焼き直したあとも古いコマを読み、新しい無人写真との差分で全コマが体に化けた）。"""
     d = tmp / cam
-    if not d.exists() or not any(d.iterdir()):
+    src = GAME / f"{cam}.mp4"
+    st = src.stat()
+    stamp = f"{st.st_size} {st.st_mtime_ns}"
+    tag = d / "source.txt"
+    if not (tag.exists() and tag.read_text(encoding="utf-8").strip() == stamp and any(d.glob("*.png"))):
         d.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(GAME / f"{cam}.mp4"),
+        for p in d.glob("*.png"):
+            p.unlink()
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src),
                         "-start_number", "0", str(d / "%04d.png")], check=True)
+        tag.write_text(stamp, encoding="utf-8")
     return sorted(d.glob("*.png"))
 
 
