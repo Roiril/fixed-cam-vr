@@ -244,7 +244,8 @@ main {
   background: var(--wall) url("assets/wall.webp") 50% var(--wall-y, 0) / max(100%, 1100px) auto repeat-y;
 }
 
-/* 1 灯で照らした壁。隅が沈み、上の幕の裾の下が陰る */
+/* 1 灯で照らした壁。隅が沈み、上の幕の裾の下が陰り、下の幕のレールへ向かって暗がりへ落ちる。
+   明るい壁と暗い幕を、色の段差でつながない */
 .on-wall::before {
   position: absolute;
   z-index: -2;
@@ -252,7 +253,8 @@ main {
   content: "";
   pointer-events: none;
   background:
-    linear-gradient(to bottom, rgb(24 14 6 / 46%), transparent 15rem),
+    linear-gradient(to bottom, rgb(24 14 6 / 50%), transparent 16rem),
+    linear-gradient(to top, rgb(20 12 5 / 72%), transparent 15rem),
     radial-gradient(ellipse 90% 80% at var(--lamp-x, 46%) 42%, transparent 38%, rgb(44 28 12 / 40%) 100%);
   mix-blend-mode: multiply;
 }
@@ -482,19 +484,13 @@ main {
 }
 
 /* ───────── キービジュアル ─────────
-   絵は画面に留まり、その上を壁がせり上がって覆う。覆われるにつれて絵は暗くなる */
+   絵の床はそのまま下へ続き、暗がりへ沈む。リード文はその床の上。色の段差を作らない */
 
 .hero {
   position: relative;
   z-index: 1;
   --kv-h: calc(100vw * 941 / 1672);
-}
-
-.hero-stage {
-  position: sticky;
-  z-index: 0;
-  top: min(0px, calc(100svh - var(--kv-h)));
-  background: #000;
+  --kv-melt: calc(var(--kv-h) * .032);
 }
 
 .hero-picture img {
@@ -502,45 +498,32 @@ main {
   height: auto;
 }
 
-.hero-shade {
-  position: absolute;
-  inset: 0;
-  background: #000;
-  opacity: var(--hero-dim, 0);
-  pointer-events: none;
-}
-
 .hero-band {
-  z-index: 1;
+  position: relative;
+  isolation: isolate;
   display: grid;
-  grid-template-columns: clamp(16rem, 33vw, 30rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   column-gap: var(--s-group);
   align-items: end;
-  padding: var(--s-chapter) var(--edge) calc(var(--s-chapter) + var(--rail-rise));
-  box-shadow: 0 -2.5rem 5rem rgb(0 0 0 / 55%);
+  margin-top: calc(-1 * var(--kv-melt));
+  padding: calc(var(--s-group) + var(--kv-melt)) var(--edge) calc(var(--s-chapter) + var(--rail-rise));
 }
 
+/* 床の続き。絵の下端（担当表記より下の 3%）に重ねて、絵の床の明るさから暗がりへ落とす */
 .hero-band::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
   background:
-    radial-gradient(ellipse 90% 110% at 34% 30%, transparent 30%, rgb(44 28 12 / 42%) 100%);
-}
-
-/* 監視カメラ。台座は壁と絵の境目に掛かり、ケーブルは絵の暗がりへ消える。影は絵に焼き込んである。
-   キービジュアルの右下には担当表記が焼き込んであるので、左に掛けて右の文へ向ける */
-.cctv {
-  grid-row: 1 / span 2;
-  grid-column: 1;
-  align-self: start;
-  width: 100%;
-  height: auto;
-  margin-top: calc(-1 * var(--s-chapter) - 12%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 9%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 9%);
-  pointer-events: none;
+    radial-gradient(ellipse 62% 105% at 46% 0, rgb(47 33 24) 0, transparent 74%),
+    linear-gradient(to bottom, #1d140f 0, #130e0b 55%, #0e0b09 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--kv-melt));
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--kv-melt));
 }
 
 .hero-lead {
-  grid-column: 2;
+  grid-column: 1;
   margin: 0;
   font-size: clamp(1.45rem, 2.75vw, 2.6rem);
   font-weight: 400;
@@ -551,10 +534,9 @@ main {
 
 .hero-facts {
   grid-column: 2;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-part) var(--s-group);
-  margin: var(--s-group) 0 0;
+  display: grid;
+  gap: var(--s-part);
+  margin: 0;
 }
 
 .hero-fact {
@@ -669,7 +651,23 @@ main {
 
 .perspective-lab {
   --wall-y: -340px;
-  --lamp-x: 52%;
+  --lamp-x: 46%;
+}
+
+.chapter.perspective-lab {
+  padding-top: calc(var(--hem-drop) + var(--s-chapter) + 4.5rem);
+}
+
+/* 監視カメラ。幕の裾のすぐ下の壁に付いていて、ゲーム機を見下ろす。
+   細いケーブルは幕の裏へ上がり、太いケーブルは壁を這って下のテレビへ向かう。影は絵に焼き込んである */
+.perspective-lab .cctv {
+  position: absolute;
+  z-index: -1;
+  top: calc(var(--hem-drop) * .84);
+  right: max(.5rem, calc(var(--edge) * .3));
+  width: clamp(10rem, 17vw, 16rem);
+  height: auto;
+  pointer-events: none;
 }
 
 /* 壁を這うケーブル。上の幕の裏から出て、下の幕の裏へ入る */
@@ -2188,15 +2186,15 @@ kbd,
 
   .hero-band {
     display: block;
-    padding-top: 46vw;
   }
 
-  .cctv {
-    position: absolute;
-    top: -9vw;
-    left: -5vw;
-    width: 60vw;
-    margin: 0;
+  .chapter.perspective-lab {
+    padding-top: calc(var(--hem-drop) + var(--s-chapter) + 5rem);
+  }
+
+  .perspective-lab .cctv {
+    right: 1.4rem;
+    width: 36vw;
   }
 
   .hero-lead {

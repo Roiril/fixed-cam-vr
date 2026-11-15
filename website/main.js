@@ -163,12 +163,10 @@ if (reducedMotion.matches || !("IntersectionObserver" in window)) {
   for (const target of revealTargets) revealObserver.observe(target);
 }
 
-// ───── スクロールに応えるもの：ヘッダー・キービジュアルの暗転・髪・カメラ ─────
+// ───── スクロールに応えるもの：ヘッダー・髪・カメラ ─────
 
 const siteHeader = document.querySelector("[data-site-header]");
-const hero = document.querySelector(".hero");
 const heroStage = document.querySelector(".hero-stage");
-const heroBand = document.querySelector(".hero-band");
 const hairs = [...document.querySelectorAll("[data-grow]")];
 const desktopHeader = window.matchMedia("(min-width: 721px)");
 let lastScrollY = window.scrollY;
@@ -192,10 +190,6 @@ function updateOnScroll() {
     siteHeader.classList.remove("is-away");
   }
   lastScrollY = y;
-
-  // 壁がせり上がって絵を覆うのに合わせて、0 から 0.72 まで線形で落とす
-  const covered = clamp01((viewport - heroBand.getBoundingClientRect().top) / Math.min(stageHeight, viewport));
-  hero.style.setProperty("--hero-dim", (reducedMotion.matches ? 0 : covered * 0.72).toFixed(3));
 
   // 髪は、裾が画面の下から 4 割の高さまで上がる間に、3 割から全部まで伸びる
   for (const hair of hairs) {
