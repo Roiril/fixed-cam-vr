@@ -42,6 +42,26 @@ class EndingLogTests(unittest.TestCase):
         )
         return events
 
+    def close_events(self, music_lvl):
+        # 0384 ⑥: 面は 6 秒で閉じ（repClose=0）、曲は別の時計（repMusicLvl）で鳴る。
+        events = self.report_events()
+        events.append({"ev": "sum", "t": "9", "_cams": [], "clMax": "0", "repShown": "4", "repChars": "4",
+                       "repMusicBuilt": "1", "repMusicPlay": "1", "repMusicVol": "0.2", "repMusicSec": "6.0",
+                       "repClose": "0.00", **({"repMusicLvl": music_lvl} if music_lvl is not None else {})})
+        return events
+
+    def test_music_may_keep_playing_after_the_panel_closes(self):
+        texts = [t for lv, t in self.verdicts(self.close_events("1.00")) if lv == "FAIL"]
+        self.assertFalse(any("曲" in t for t in texts), texts)
+
+    def test_music_playing_after_its_own_clock_closed_fails(self):
+        texts = [t for lv, t in self.verdicts(self.close_events("0.00")) if lv == "FAIL"]
+        self.assertTrue(any("repMusicLvl=0" in t for t in texts), texts)
+
+    def test_old_log_without_music_clock_does_not_fail(self):
+        texts = [t for lv, t in self.verdicts(self.close_events(None)) if lv == "FAIL"]
+        self.assertFalse(any("曲" in t for t in texts), texts)
+
     def laugh_events(self, farewell):
         events = [{"ev": "sum", "t": str(t), "_cams": [], "cg": "1/1/0.00", "sndBuilt": "1", "sndDolls": "0", "sndSwap": "0"} for t in (10, 12, 14)]
         events.append({"ev": "sum", "t": "1", "_cams": [], "cg": "0/0/0.00", "sndDolls": "0", "sndSwap": "1"})

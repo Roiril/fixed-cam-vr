@@ -411,6 +411,19 @@ MARK_CLEAR_FOLD_SEC = 1.0
 MARK_CLEAR_OFF_SEC = 2.0
 
 
+def wall_snapshots(events: list[dict]) -> int:
+    """増えるスクリーンへ配れる静止画の最大枚数（scrSnap の 1 つ目・0384 ⑤）。旧ログは 0。
+
+    静止画があるときは遅れた取り込みを回さないので、scrMul の取り込みの累計が 0 でも面は画を映している。
+    """
+    best = 0
+    for v in effect_samples(events, "scrSnap"):
+        p = str(v).split("/")
+        if len(p) == 5 and p[0].isdigit():
+            best = max(best, int(p[0]))
+    return best
+
+
 def screen_wall_extra_findings(events: list[dict]) -> list[tuple[str, str]]:
     """増えるスクリーンへ配る静止画（scrSnap）と最後の面の笑う人形（scrFace）の判定（LEDGER 0384 ④⑤）。
 
@@ -2438,13 +2451,18 @@ def analyze(events, others, exp, warns=None):
             if done and not close_all:
                 verdict("WARN", "エンディングを閉じる観測（repClose）が出ていない — 古い APK か走行が短い")
             elif close_all and min(close_all) <= 0.01:
-                music_after = [e for e in events if e.get("ev") == "sum"
-                               and e.get("repClose") not in (None, "-") and fnum(e, "repClose", 1) <= 0.01
-                               and fnum(e, "repMusicPlay", 0) == 1 and fnum(e, "repMusicVol", 0) > .01]
-                if music_after:
-                    verdict("FAIL", "エンディングの面は閉じたのに曲が鳴り続けている（repClose=0 で repMusicVol>0）")
+                # 0384 ⑥ から面は 6 秒で閉じ、曲は別の時計（repMusicLvl）で 30 秒鳴る。面が閉じた後も鳴るのが正。
+                # 鳴ってはいけないのは曲の側の時計が 0 になった後。repMusicLvl が無い旧ログは曲の閉じ方を判定しない。
+                music_dead = [e for e in events if e.get("ev") == "sum"
+                              and e.get("repMusicLvl") not in (None, "-") and fnum(e, "repMusicLvl", 1) <= 0.01
+                              and fnum(e, "repMusicPlay", 0) == 1 and fnum(e, "repMusicVol", 0) > .01]
+                has_lvl = any(e.get("ev") == "sum" and e.get("repMusicLvl") not in (None, "-") for e in events)
+                if music_dead:
+                    verdict("FAIL", "結果曲の時計が閉じたのに曲が鳴り続けている（repMusicLvl=0 で repMusicVol>0）")
+                elif has_lvl:
+                    verdict("OK", "エンディングの面が閉じた（repClose → 0）。曲は別の時計（repMusicLvl）")
                 else:
-                    verdict("OK", "エンディングの面と曲がフェードで閉じた（repClose → 0）")
+                    verdict("OK", "エンディングの面が閉じた（repClose → 0）。曲の閉じ方は旧ログなので見ていない")
             elif close_all:
                 verdict("WARN", f"エンディングが閉じ切る前に走行が切れた（repClose 最小 {min(close_all):.2f}）")
             shown_all = [v for v in effect_samples(events, "repShown") if str(v) != "-"]
@@ -5357,7 +5375,7 @@ def analyze(events, others, exp, warns=None):
             if all(p[0] == "0" for p in wall):
                 verdict("FAIL", "増えるスクリーンを組めていない（scrMul の 1 つ目が 0）— "
                                 "Resources/ScreenMultiply のシェーダか取り込みの器を見る")
-            elif want_eyes and wall_lit > 0 and wall_cap == 0:
+            elif want_eyes and wall_lit > 0 and wall_cap == 0 and wall_snapshots(events) == 0:
                 verdict("FAIL", f"スクリーンが {wall_lit} 枚点いたのに画を 1 度も取り込んでいない — 面は何も映していない")
             elif want_eyes and wall_lit > 0:
                 verdict("OK", f"スクリーンが増えた（最大 {wall_lit} 枚・取り込み {wall_cap} 回）")

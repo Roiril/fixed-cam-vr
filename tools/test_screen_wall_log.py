@@ -44,6 +44,13 @@ class WriterMatchesReader(unittest.TestCase):
 
 
 class Findings(unittest.TestCase):
+    def test_wall_with_snapshots_needs_no_delayed_capture(self):
+        # 0384 ⑤: 静止画があるときは遅れた取り込みを回さないので、取り込み 0 回でも面は画を映している。
+        self.assertEqual(xp.wall_snapshots([sum_ev(1, scrSnap="9/4/4/1/0")]), 9)
+        self.assertEqual(xp.wall_snapshots([sum_ev(1, scrMul="1/3/0")]), 0)
+        src = read("tools/analyze-xp-log.py")
+        self.assertIn("wall_cap == 0 and wall_snapshots(events) == 0", src)
+
     def test_snapshots_from_all_three_areas_are_ok(self):
         found = xp.screen_wall_extra_findings([sum_ev(1, scrSnap="10/3/3/4/1")])
         self.assertEqual(levels(found), ["OK"])
