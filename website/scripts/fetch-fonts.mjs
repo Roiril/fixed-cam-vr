@@ -1,7 +1,7 @@
 // 書体のサブセットを Google Fonts の配布版から取り直す（ビルド時にだけ使う。閲覧時は自前配信）。
 //
 //   node scripts/fetch-fonts.mjs            … 全書体
-//   node scripts/fetch-fonts.mjs plex chakra … 名前で絞る
+//   node scripts/fetch-fonts.mjs mincho yuji … 名前で絞る
 //
 // 各書体は「必要な文字」だけを含む WOFF2 として取得する（`text=` パラメータ）。
 // 日本語の 2 書体は index.html の可視テキストから文字を集めるので、文言を変えたら必ず走らせ直す。
@@ -24,8 +24,7 @@ const LATIN_EXTRA = "×·—–→";
 export const FONTS = [
   { key: "mincho", family: "Shippori Mincho", weights: [400], out: "shippori-mincho", ofl: "shipporimincho", text: "page" },
   { key: "yuji", family: "Yuji Boku", weights: [400], out: "yuji-boku", ofl: "yujiboku", text: "headings" },
-  { key: "plex", family: "IBM Plex Mono", weights: [400, 500], out: "ibm-plex-mono", ofl: "ibmplexmono", text: ASCII + LATIN_EXTRA },
-  { key: "chakra", family: "Chakra Petch", weights: [600], out: "chakra-petch", ofl: "chakrapetch", text: ASCII + LATIN_EXTRA }
+  { key: "plex", family: "IBM Plex Mono", weights: [400, 500], out: "ibm-plex-mono", ofl: "ibmplexmono", text: ASCII + LATIN_EXTRA }
 ];
 
 function parseUnicodeRange(range) {
@@ -75,6 +74,8 @@ export async function fetchFonts(keys = []) {
   const html = await readFile(join(websiteRoot, "index.html"), "utf8");
   const manifestPath = join(assetRoot, "fonts-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8").catch(() => "{}"));
+  // 使わなくなった書体の記録は残さない
+  for (const key of Object.keys(manifest)) if (!FONTS.some((entry) => entry.key === key)) delete manifest[key];
 
   for (const entry of FONTS) {
     if (only.size > 0 && !only.has(entry.key)) continue;

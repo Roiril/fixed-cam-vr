@@ -1,309 +1,336 @@
-/* The photographic entrance and the headset archive share a restrained recording frame. */
-:root {
-  --ground: #0c0e0e;
-  --ground-deep: #070909;
-  --ink: #e9e5dc;
-  --ink-muted: #a6aaa3;
-  --line: rgb(211 224 211 / 17%);
-  --line-strong: rgb(211 224 211 / 34%);
-  --signal: #bbc8b5;
-  --accent: #b53d3f;
-  --section-space: clamp(3rem, 5vw, 5rem);
-}
-[hidden] { display: none !important; }
-body { min-width: 0; }
-section[id] { scroll-margin-top: 1rem; }
-button, summary { font: inherit; }
-.site-header {
-  position: absolute;
-  inset: 0 0 auto;
-  background: transparent;
-  border-color: rgb(233 229 220 / 20%);
-  min-height: 5rem;
-}
-.site-mark { font-size: 1.3rem; }
-.site-nav a { color: var(--ink); }
-.hero {
-  position: relative;
-  width: min(100%, 112.5rem);
-  margin: 5rem auto 0;
-  overflow: clip;
-  background: var(--ground);
-}
-.hero-picture { position: relative; display: block; }
-.hero-picture img { width: 100%; height: auto; }
-.hero-picture::before { display: none; }
-.hero-picture::after {
-  inset: auto 0 0;
-  height: 4rem;
-  background: linear-gradient(0deg, var(--ground), transparent);
-}
-.text-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2.5rem;
-  min-height: 48px;
-  border: 0;
-  border-bottom: 1px solid var(--line-strong);
-  padding: .65rem 0;
-  color: var(--ink);
-  background: transparent;
-  font-size: .85rem;
-  text-decoration: none;
-  cursor: pointer;
-}
-.text-link span { transition: transform .25s ease; }
-.text-link:hover span { transform: translate(3px, 3px); }
-.text-link:hover { border-color: var(--signal); }
-.hero-bottom {
-  position: relative;
-  margin-inline: var(--gutter);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1.5rem;
-  border-top: 1px solid var(--line);
-  padding-block: 1rem;
-}
-.hero-bottom p { font-size: .8rem; line-height: 1.9; margin: 0; color: var(--ink-muted); }
-.hero-bottom > span, .viewer-topline, .section-number {
-  font: .65rem/1.6 "IBM Plex Mono", "Yu Gothic", sans-serif;
-  letter-spacing: .12em;
-  color: var(--ink-muted);
-}
-.fixed-view {
-  max-width: 92rem;
-  grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
-  padding-block: var(--section-space);
-  gap: clamp(2rem, 4vw, 4rem);
-}
-.section-number { margin-bottom: .75rem; }
-.fixed-view h2 { font-size: clamp(3.5rem, 5.6vw, 6rem); }
-.fixed-view-lead { color: var(--ink); margin-top: 1.5rem; line-height: 2; }
-.section-description { color: var(--ink-muted); font-size: .9rem; line-height: 2.15; max-width: 32em; }
-.fixed-view-copy .text-link { margin-top: 1rem; }
-.viewer-topline { display: flex; justify-content: space-between; gap: 1rem; padding: .85rem 0; }
-.crt {
-  width: 100%;
-  aspect-ratio: 4/3;
-  background: transparent;
-}
-.crt-screen {
-  top: 13%;
-  left: 18.8%;
-  width: 63.8%;
-  height: 58%;
-  border-radius: 8% / 6%;
-}
-.camera-feed { object-fit: cover; filter: none; }
-.screen-noise {
-  background-image:
-    repeating-linear-gradient(to bottom, rgb(235 225 210 / 14%) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(97deg, transparent 0 2px, rgb(235 225 210 / 8%) 2px 3px);
-  background-size: auto, 6px 5px;
-  mix-blend-mode: screen;
-  opacity: .12;
-}
-.camera-indicator { font: .7rem "IBM Plex Mono", monospace; top: 5%; right: 5%; }
-.camera-console { width: 82%; margin: -3% auto 0; position: relative; padding-top: 0; border-top: 0; gap: 0; }
-.camera-button {
-  border: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  min-height: 52px;
-}
-.camera-button + .camera-button { border-left: 0; }
-.camera-button.is-active { transform: none; border-color: var(--line-strong); background: #242a25; box-shadow: inset 0 -2px var(--signal); }
-.camera-button:hover, .camera-button:focus-visible { background: #1d2420; }
-.button-led { background: transparent; border-color: var(--ink-muted); border-radius: 0; }
-.camera-button.is-active .button-led { background: var(--signal); border-color: var(--signal); box-shadow: none; }
+/* ゲーム機の章と、実機録画の章。どちらも「映る側」の暗い部屋に置く。 */
+
+/* ───────── 固定視点とは：ゲーム機 ───────── */
+
 .perspective-lab {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1.5rem;
-  width: min(100%, 92rem);
-  padding: var(--section-space) var(--gutter);
-  max-width: 92rem;
-  margin: 0 auto;
-  border-bottom: 1px solid var(--line);
-}
-.lab-heading h2 { font-family: "Yuji Boku", serif; font-size: clamp(3.5rem, 5.6vw, 6rem); line-height: 1.2; font-weight: 400; margin: 0; }
-.lab-heading .section-description { margin: 1rem 0 0; }
-@media (min-width: 901px) {
-  .lab-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 2rem; align-items: center; }
-  .lab-heading .section-number { grid-column: 1; }
-  .lab-heading h2 { grid-column: 1; }
-  .lab-heading .section-description { grid-column: 2; grid-row: 1 / 3; margin: 0; }
-}
-.game-actions { display: flex; flex-wrap: wrap; gap: .7rem 2rem; margin-top: 1.75rem; align-items: center; }
-#game-unavailable { font-size: .8rem; color: var(--ink-muted); padding-left: 1.2rem; border-left: 2px solid var(--accent); }
-.game-state { font: .8rem/1.8 "Yu Gothic", sans-serif; color: var(--ink-muted); }
-.game-state:empty, .game-stage:empty { display: none; }
-.game-stage { margin-top: 1.5rem; }
-.game-stage iframe { display: block; width: 100%; height: 36rem; min-height: 420px; border: 1px solid var(--line-strong); background: #050707; }
-.scenario {
-  max-width: 92rem;
-  margin: 0 auto;
-  grid-template-columns: .8fr 1.2fr;
-  padding: 0 var(--gutter) var(--section-space);
-  border: 0;
-  background: var(--ground);
-  gap: 5vw;
-}
-.scenario::before { display: none; }
-.scenario h2 { font-size: clamp(3.4rem, 5vw, 5.6rem); }
-.scenario-copy > p:last-child { color: var(--ink); }
-.scenario-collage { aspect-ratio: 1.12; }
-.wall-photo { position: absolute; width: 72%; left: 0; top: 3%; margin: 0; }
-.wall-evidence {
-  position: static;
-  width: 100%;
-  height: auto;
-  transform: none;
-  border: 1px solid var(--line-strong);
-  box-shadow: none;
-  filter: none;
-}
-.wall-photo figcaption { font-size: .65rem; letter-spacing: .08em; color: var(--ink-muted); padding-top: .5rem; }
-.investigation-request { top: 20%; left: 45%; width: 50%; transform: rotate(5deg); }
-.investigation-request:hover, .investigation-request:focus-visible { transform: translateY(-.4rem) rotate(2deg); }
-.investigation-request img { box-shadow: 0 1rem 4rem #0009; }
-.archive { border-top: 1px solid var(--line); padding-block: var(--section-space); }
-.footage { padding: var(--section-space) var(--gutter); border-block: 1px solid var(--line); background: var(--ground-deep); }
-.footage .plate-heading { border-bottom: 0; margin-bottom: 1rem; }
-.footage .plate-heading h2 { font-size: clamp(2.5rem, 4vw, 4rem); }
-.footage-intro { display: flex; justify-content: space-between; gap: 2rem; margin-bottom: 1.5rem; }
-.footage-intro > p { font-size: .95rem; line-height: 2; }
-.footage-intro .section-description { font-size: .8rem; }
-.footage-gate { border: 1px solid var(--line-strong); }
-.footage-gate > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; min-height: 80px; background: rgb(211 224 211 / 3%); }
-.footage-gate > summary::-webkit-details-marker { display: none; }
-.footage-gate > summary:hover { background: rgb(211 224 211 / 7%); }
-.gate-index { font: 1.2rem "IBM Plex Mono", monospace; padding: .5rem .7rem; border: 1px solid var(--line-strong); color: var(--signal); }
-.footage-gate small { display: block; font-size: .7rem; color: var(--ink-muted); margin-top: .35rem; }
-.gate-symbol { font-size: 1.5rem; margin-left: auto; transition: transform .25s ease; }
-.footage-gate[open] .gate-symbol { transform: rotate(45deg); }
-.footage-room { padding: 0 2rem 1.5rem; border-top: 1px solid var(--line); }
-.footage-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
-.footage-controls button { padding: 1.2rem .75rem; min-height: 68px; border: 0; background: transparent; color: var(--ink-muted); font-size: .8rem; cursor: pointer; }
-.footage-controls button span { display: block; font: .65rem "IBM Plex Mono", monospace; margin-bottom: .5rem; }
-.footage-controls button[aria-pressed="true"] { color: var(--ink); box-shadow: inset 0 -2px var(--signal); }
-.footage-controls button:hover { color: var(--ink); background: rgb(211 224 211 / 5%); }
-.footage-viewer { width: min(100%, 46rem); margin: 0 auto; }
-.viewer-topline { padding-inline: .25rem; }
-#footage-player { display: block; width: 100%; height: auto; max-height: 76svh; aspect-ratio: 1/1; object-fit: contain; background: #000; border: 1px solid var(--line); }
-.footage-caption { max-width: 46rem; margin: 1.5rem auto 0; }
-.footage-caption h3 { font-size: 1.2rem; font-weight: 400; margin: 0; }
-.footage-caption p { font-size: .85rem; color: var(--ink-muted); margin: .6rem 0; }
-.footage-caption, .game-state { font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; }
-#footage-meta, .footage-note { font-size: .7rem; color: var(--ink-muted); }
-.footage-note { margin: 1.5rem 0 0; }
-#footage-error:empty { display: none; }
-.credits { padding-block: var(--section-space); }
-.plate-email {
-  display: block;
-  width: fit-content;
-  max-width: 100%;
-  margin-top: .35rem;
-  color: var(--ink);
-  font: inherit;
-  letter-spacing: .01em;
-  overflow-wrap: anywhere;
-  text-underline-offset: .2em;
-}
-.plate-email:hover, .plate-email:focus-visible { color: var(--signal); }
-.site-footer { background: var(--ground-deep); }
-.site-footer .text-link { font-size: .75rem; color: var(--ink-muted); border: 0; }
-@media (max-width: 900px) {
-  .fixed-view { grid-template-columns: 1fr; gap: 1.5rem; }
-  .fixed-view-copy { display: block; max-width: none; }
-  .fixed-view-lead { margin-top: 1.75rem; }
-  .camera-exhibit { max-width: 44rem; width: 100%; margin: auto; }
-  .perspective-lab, .scenario { grid-template-columns: 1fr; }
-  .scenario { gap: 1.5rem; }
-  .scenario-collage { width: min(100%, 42rem); }
-}
-@media (max-width: 600px) {
-  .site-header { min-height: 6.5rem; flex-wrap: wrap; align-content: center; gap: 0; padding-block: .4rem; }
-  .site-mark { font-size: 1.1rem; letter-spacing: .08em; }
-  .site-nav { width: 100%; justify-content: space-between; gap: .5rem; }
-  .site-nav a { font-size: .72rem; letter-spacing: .01em; }
-  .site-nav a[href="#scenario"] { display: none; }
-  .hero { margin-top: 6.5rem; }
-  .hero-bottom { gap: .75rem; align-items: center; padding-block: .75rem; }
-  .hero-bottom p { font-size: .7rem; }
-  .hero-enter { gap: .7rem; font-size: .73rem; flex-shrink: 0; }
-  .fixed-view { padding-block: var(--section-space); }
-  .fixed-view-copy { display: block; }
-  .fixed-view h2 { font-size: 3.7rem; }
-  .fixed-view-lead { margin-top: 1.75rem; }
-  .section-description { font-size: .84rem; }
-  .crt { width: 100%; margin-left: 0; }
-  .camera-button { font-size: .72rem; }
-  .lab-heading h2 { font-size: 3.1rem; }
-  .scenario { padding-top: 0; padding-bottom: var(--section-space); }
-  .scenario h2 { font-size: 3.3rem; }
-  .scenario-collage { aspect-ratio: .95; }
-  .investigation-request { top: 28%; left: 42%; width: 55%; }
-  .footage .plate-heading h2 { font-size: 2rem; letter-spacing: .08em; text-wrap: balance; }
-  .footage-intro { display: block; }
-  .footage-gate > summary { padding: 1.25rem .85rem; gap: .7rem; font-size: .86rem; }
-  .gate-index { font-size: .75rem; padding: .4rem; }
-  .footage-gate small { font-size: .62rem; }
-  .gate-symbol { font-size: 1.2rem; }
-  .footage-room { padding: 0 .75rem 1rem; }
-  .footage-controls button { font-size: .7rem; padding-inline: .4rem; }
-  .viewer-topline { font-size: .58rem; }
-  .site-footer { flex-wrap: wrap; gap: .5rem 1rem; }
-  .site-footer > span { width: 100%; }
-  .site-footer .text-link { font-size: .7rem; }
-}
-@media (max-width: 360px) {
-  .credits .plate-heading h2 { font-size: 1.65rem; letter-spacing: .06em; white-space: nowrap; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .js-reveal [data-reveal] { opacity: 1; transform: none; }
+  position: relative;
+  isolation: isolate;
+  padding: clamp(6.5rem, 10vw, 10rem) var(--gutter) clamp(3rem, 5vw, 4.5rem);
+  overflow: clip;
+  background:
+    radial-gradient(ellipse 46% 38% at 50% 50%, rgb(198 210 189 / 7%), transparent 72%),
+    linear-gradient(to bottom, var(--night), var(--screen-room) 22%, var(--screen-room) 78%, var(--night));
 }
 
-/* 見出しは章ごとに揃え、狭い列だけ縮める。 */
-.lab-heading,
-.fixed-view-copy,
-.scenario-copy,
-.plate-heading {
-  container-type: inline-size;
+/* ゲーム機は左右対称の物なので、章題も中心に置く */
+.lab-heading {
+  display: grid;
+  justify-items: center;
+  margin: 0 auto clamp(2.25rem, 4vw, 3.5rem);
+  text-align: center;
+}
+
+.lab-heading .section-number::after {
+  width: 28px;
+  height: 1px;
+  content: "";
+  background: var(--red);
+}
+
+.game-state {
+  color: var(--ink-2);
+  font-size: .82rem;
+  letter-spacing: .06em;
+  line-height: 1.8;
+}
+
+.game-state:empty,
+.game-stage:empty {
+  display: none;
+}
+
+/* ───────── 演出一覧：実機録画 ───────── */
+
+.footage {
+  position: relative;
+  isolation: isolate;
+  padding: clamp(5rem, 8vw, 8rem) var(--gutter) clamp(3.5rem, 5vw, 5rem);
+  background: linear-gradient(to bottom, var(--night), var(--screen-room) 16%, var(--screen-room) 84%, var(--night));
+}
+
+.footage-inner {
+  max-width: var(--content);
+  margin-inline: auto;
+}
+
+.footage-head {
+  margin-bottom: 1.75rem;
+}
+
+.footage-intro .spoiler-note {
+  margin-bottom: 1.25rem;
+}
+
+/* 閉じた状態は、電源の入っていないモニター 1 枚 */
+.footage-gate {
+  position: relative;
+  border: 1px solid var(--line-2);
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 2px, rgb(0 0 0 / 24%) 2px 3px),
+    radial-gradient(ellipse 80% 120% at 50% 0%, rgb(198 210 189 / 5%), transparent 70%),
+    #070908;
+}
+
+.footage-gate > summary {
+  --frame-color: var(--signal);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(1rem, 2.5vw, 2rem);
+  min-height: clamp(6.5rem, 10vw, 8.5rem);
+  padding: 1.5rem clamp(1.25rem, 3vw, 2.5rem);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 200ms;
+}
+
+.footage-gate > summary::-webkit-details-marker {
+  display: none;
+}
+
+.footage-gate > summary:hover {
+  background-color: rgb(198 210 189 / 4%);
+}
+
+.footage-gate[open] > summary::after {
+  display: none;
+}
+
+.gate-index {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .45rem .75rem;
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 500;
+  letter-spacing: .2em;
+  line-height: 1.2;
+}
+
+.gate-index::before {
+  width: .55rem;
+  height: .55rem;
+  border-radius: 50%;
+  content: "";
+  background: var(--red-text);
+}
+
+.gate-label {
+  font-size: clamp(1.15rem, 1.8vw, 1.55rem);
+  letter-spacing: .12em;
+  line-height: 1.4;
+}
+
+.gate-label small {
+  display: block;
+  margin-top: .35rem;
+  color: var(--ink-3);
+  font-size: .76rem;
+  letter-spacing: .08em;
+}
+
+/* 十字。開くと 45 度回って × になる */
+.gate-symbol {
+  width: 1.5rem;
+  height: 1.5rem;
+  background:
+    linear-gradient(var(--ink) 0 0) center / 100% 1.5px no-repeat,
+    linear-gradient(var(--ink) 0 0) center / 1.5px 100% no-repeat;
+  transition: rotate 220ms var(--ease);
+}
+
+.footage-gate[open] .gate-symbol {
+  rotate: 45deg;
+}
+
+.footage-room {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  align-items: start;
+  gap: clamp(1.5rem, 3.5vw, 3rem);
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  border-top: 1px solid var(--line);
+}
+
+.footage-viewer {
   min-width: 0;
 }
-.trailer .plate-heading h2,
-.perspective-lab .lab-heading h2,
-.fixed-view .fixed-view-copy h2,
-.scenario .scenario-copy h2,
-.archive .plate-heading h2,
-.footage .plate-heading h2,
-.credits .plate-heading h2 {
-  max-width: 100%;
-  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
-  line-height: 1.2;
-  white-space: nowrap;
+
+.viewer-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 .1rem .6rem;
+  color: var(--ink-3);
+  font-size: .74rem;
+  letter-spacing: .1em;
+  line-height: 1.6;
 }
-@supports (font-size: 1cqi) {
-  .trailer .plate-heading h2,
-  .perspective-lab .lab-heading h2,
-  .fixed-view .fixed-view-copy h2,
-  .scenario .scenario-copy h2,
-  .archive .plate-heading h2,
-  .footage .plate-heading h2,
-  .credits .plate-heading h2 {
-    font-size: clamp(1.4rem, min(9cqi, 4vw), 3rem);
+
+.viewer-topline span:first-child {
+  font-family: var(--mono);
+  font-size: .66rem;
+  font-weight: 500;
+  letter-spacing: .16em;
+}
+
+#footage-player {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 76svh;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  background: #000;
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+
+.footage-side {
+  min-width: 0;
+  padding-top: 1.6rem;
+}
+
+.footage-controls {
+  display: grid;
+  border-bottom: 1px solid var(--line);
+}
+
+.footage-controls button {
+  --frame-color: var(--signal);
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  align-items: center;
+  min-height: 60px;
+  padding: .85rem 1rem .85rem .9rem;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--ink-2);
+  font-size: .98rem;
+  letter-spacing: .08em;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: color 160ms, background-color 160ms, box-shadow 160ms;
+}
+
+.footage-controls button span {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: .7rem;
+  font-weight: 500;
+  letter-spacing: .12em;
+}
+
+.footage-controls button:hover {
+  color: var(--ink);
+}
+
+.footage-controls button[aria-pressed="true"] {
+  color: var(--ink);
+  background: rgb(198 210 189 / 6%);
+  box-shadow: inset 2px 0 var(--red-text);
+}
+
+.footage-controls button[aria-pressed="true"] span {
+  color: var(--red-text);
+}
+
+.footage-caption {
+  margin-top: 1.75rem;
+}
+
+.footage-caption h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 400;
+  letter-spacing: .1em;
+  line-height: 1.5;
+}
+
+.footage-caption p {
+  margin: .7rem 0 0;
+  color: var(--ink-2);
+  font-size: .9rem;
+  letter-spacing: .05em;
+  line-height: 1.9;
+}
+
+#footage-meta {
+  color: var(--ink-3);
+  font-size: .78rem;
+  letter-spacing: .06em;
+}
+
+#footage-error:empty {
+  display: none;
+}
+
+.footage-note {
+  margin: 1.5rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: .78rem;
+  letter-spacing: .05em;
+}
+
+@media (max-width: 900px) {
+  .footage-room {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .footage-viewer {
+    width: min(100%, 36rem);
+    justify-self: center;
+  }
+
+  .footage-side {
+    padding-top: 0;
   }
 }
-@media (max-width: 600px) {
-  .trailer .plate-heading h2,
-  .perspective-lab .lab-heading h2,
-  .fixed-view .fixed-view-copy h2,
-  .scenario .scenario-copy h2,
-  .archive .plate-heading h2,
-  .footage .plate-heading h2,
-  .credits .plate-heading h2 { font-size: clamp(1.4rem, 8.8cqi, 2rem); }
+
+@media (max-width: 720px) {
+  .footage-gate > summary {
+    gap: .8rem;
+    min-height: 6rem;
+    padding: 1.25rem 1rem;
+  }
+
+  .gate-index {
+    padding: .4rem .5rem;
+    font-size: .68rem;
+    letter-spacing: .12em;
+  }
+
+  .gate-label {
+    font-size: 1.05rem;
+    letter-spacing: .06em;
+  }
+
+  .gate-label small {
+    font-size: .62rem;
+    letter-spacing: .04em;
+  }
+
+  .gate-symbol {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .footage-room {
+    padding: .85rem .75rem 1.25rem;
+  }
+
+  .viewer-topline {
+    font-size: .58rem;
+    letter-spacing: .1em;
+  }
+
+  .footage-controls button {
+    font-size: .9rem;
+  }
 }

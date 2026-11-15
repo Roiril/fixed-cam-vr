@@ -22,16 +22,19 @@ export function pageText(html) {
   return stripTags(body);
 }
 
-// 欧文書体（IBM Plex Mono / Chakra Petch）で組む要素。styles.css の font-family 指定と対にして保つ。
+// 等幅の欧文書体（IBM Plex Mono）で組む要素。styles.css / experience.css の font-family: var(--mono) と対にして保つ。
 const LATIN_CLASSES = [
-  "plate-heading-latin",
+  "section-number",
+  "site-clock",
+  "camera-indicator",
+  "gate-index",
   "plate-heading-meta",
   "tag-strip",
   "tag-title",
   "tag-code",
   "tag-edge",
   "plate-spine-latin",
-  "plate-url"
+  "plate-email"
 ];
 
 // 欧文書体で描かれる文字。ここに全角の記号を 1 字でも入れると実機で代替書体に落ちるので、check が数える。

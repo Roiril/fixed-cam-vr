@@ -37,6 +37,8 @@ const requiredAssets = [
   "assets/camera-01-doll.webp",
   "assets/crt.webp",
   "assets/investigation-request.webp",
+  "assets/room-empty.webp",
+  "assets/grain.png",
   "assets/footage-fracture.mp4",
   "assets/footage-fracture.webp",
   "assets/footage-error.mp4",
@@ -47,11 +49,9 @@ const requiredAssets = [
   "assets/shippori-mincho.woff2",
   "assets/ibm-plex-mono-400.woff2",
   "assets/ibm-plex-mono-500.woff2",
-  "assets/chakra-petch.woff2",
   "assets/yuji-boku-OFL.txt",
   "assets/shippori-mincho-OFL.txt",
-  "assets/ibm-plex-mono-OFL.txt",
-  "assets/chakra-petch-OFL.txt"
+  "assets/ibm-plex-mono-OFL.txt"
 ];
 const builtFiles = [...sourceFiles, ...seoFiles, ...verificationFiles, ...requiredAssets];
 const errors = [];
@@ -274,8 +274,7 @@ const fontManifestPath = "assets/fonts-manifest.json";
 const fontCoverage = [
   { key: "mincho", file: "shippori-mincho", chars: uniqueChars(pageText(html)) },
   { key: "yuji", file: "yuji-boku", chars: uniqueChars(headingText(html)) },
-  { key: "plex", file: "ibm-plex-mono", chars: uniqueChars(latinText(html)) },
-  { key: "chakra", file: "chakra-petch", chars: uniqueChars(latinText(html)) }
+  { key: "plex", file: "ibm-plex-mono", chars: uniqueChars(latinText(html)) }
 ];
 let fontManifest = null;
 try {

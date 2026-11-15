@@ -3,6 +3,7 @@ const cameraButtons = [...document.querySelectorAll("[data-camera-button]")];
 const screen = document.querySelector(".crt-screen");
 const indicator = document.querySelector("#camera-indicator");
 const status = document.querySelector("#camera-status");
+const cameraConsole = document.querySelector(".camera-console");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const CAMERA_COUNT = 3;
@@ -67,6 +68,15 @@ function renderCamera(camera, { animate = true } = {}) {
 function stopAutoSwitch() {
   window.clearTimeout(autoSwitchTimer);
   autoSwitchTimer = null;
+  cameraConsole.classList.remove("is-running");
+}
+
+// 選ばれているカメラの下に、次の切り替えまでの残りを引く。タイマーを掛け直すたびに頭から
+function restartSwitchProgress() {
+  cameraConsole.style.setProperty("--switch-ms", `${AUTO_SWITCH_INTERVAL_MS}ms`);
+  cameraConsole.classList.remove("is-running");
+  void cameraConsole.offsetWidth;
+  cameraConsole.classList.add("is-running");
 }
 
 function scheduleAutoSwitch() {
@@ -74,6 +84,7 @@ function scheduleAutoSwitch() {
   if (document.hidden) return;
 
   autoSwitchTimer = window.setTimeout(advanceCamera, AUTO_SWITCH_INTERVAL_MS);
+  restartSwitchProgress();
 }
 
 function advanceCamera() {
@@ -154,4 +165,71 @@ if (revealTargets.length > 0) {
     }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
     for (const target of revealTargets) revealObserver.observe(target);
   }
+}
+
+// ───── ヘッダー・目次・経過時間・キービジュアルの暗転 ─────
+
+const siteHeader = document.querySelector("[data-site-header]");
+const hero = document.querySelector(".hero");
+const desktopHeader = window.matchMedia("(min-width: 721px)");
+let lastScrollY = window.scrollY;
+let scrollFrame = 0;
+
+// 地の上に出たら面を敷く。下へ読み進めている間は退き、上へ戻すと出る
+function updateOnScroll() {
+  scrollFrame = 0;
+  const y = window.scrollY;
+  const heroHeight = hero.offsetHeight;
+
+  if (desktopHeader.matches) {
+    siteHeader.classList.toggle("is-solid", y > 24);
+    const goingDown = y > lastScrollY + 2;
+    const goingUp = y < lastScrollY - 2;
+    if (goingDown && y > heroHeight * 0.6) siteHeader.classList.add("is-away");
+    else if (goingUp || y <= heroHeight * 0.6) siteHeader.classList.remove("is-away");
+  } else {
+    siteHeader.classList.remove("is-solid", "is-away");
+  }
+  lastScrollY = y;
+
+  // 0 から 0.7 まで、キービジュアルの高さを読み進める間に線形で落とす
+  const dim = reducedMotion.matches ? 0 : Math.min(Math.max(y / heroHeight, 0), 1) * 0.7;
+  hero.style.setProperty("--hero-dim", dim.toFixed(3));
+}
+
+window.addEventListener("scroll", () => {
+  if (!scrollFrame) scrollFrame = window.requestAnimationFrame(updateOnScroll);
+}, { passive: true });
+desktopHeader.addEventListener("change", updateOnScroll);
+reducedMotion.addEventListener("change", updateOnScroll);
+updateOnScroll();
+
+// いま読んでいる章を目次に示す
+const navLinks = [...document.querySelectorAll(".site-nav a[href^='#']")];
+// 目次に無い章（予告動画・ストーリー・クレジット）へ入ったら、どれも示さない
+const chapterSections = [...document.querySelectorAll("main section[id]")];
+if (navLinks.length > 0 && "IntersectionObserver" in window) {
+  const navObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      for (const link of navLinks) {
+        if (link.getAttribute("href") === `#${entry.target.id}`) link.setAttribute("aria-current", "true");
+        else link.removeAttribute("aria-current");
+      }
+    }
+  }, { rootMargin: "-45% 0px -50% 0px" });
+  for (const section of chapterSections) navObserver.observe(section);
+}
+
+// ページを開いてからの経過時間。監視カメラの時刻表示の形で、実際の経過だけを出す
+const clock = document.querySelector("[data-site-clock]");
+if (clock) {
+  const openedAt = performance.now();
+  const pad = (value) => String(value).padStart(2, "0");
+  const tick = () => {
+    const total = Math.floor((performance.now() - openedAt) / 1000);
+    clock.textContent = `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
+  };
+  tick();
+  window.setInterval(tick, 1000);
 }
