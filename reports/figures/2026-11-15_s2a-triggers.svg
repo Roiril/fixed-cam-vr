@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  2-A（区間 A）の床を真上から見た図と、段ごとのきっかけ。1 ユーザー単位 = 1mm。全段 170mm。
+  床の写像（course 座標 m → 図の mm）:  X = 56.2 + 58 x    Y = 62.2 - 58 z   （上が +z、右が +x）
+  値の出どころ: tools/web-compositor/show.json の layout（rev 1293）と tools/show-apply-stain-right.py、
+  歩く道はツインの順走（tools/twin/stage_map.py の跡）。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 134" width="170mm" height="134mm"
+     role="img" aria-labelledby="figTitle figDesc">
+<title id="figTitle">2-A の位置と時間のきっかけ</title>
+<desc id="figDesc">区間 A の床を真上から見た図。体験者は C から入り、壁沿いに進んで B へ出る。線 1 で右のシミ、線 2 か長押しの開始でもっこりと笑い、時間で隠れて見る人形、線 3 で CG の人形が始まる。右は段ごとの始まりと終わりのきっかけと、線 1 からの秒。</desc>
+<style>
+  text   { font-family: "Yu Gothic", "Meiryo", Helvetica, Arial, sans-serif; fill: #000; }
+  .thing { font-size: 2.9px; font-weight: bold; }
+  .desc  { font-size: 2.3px; fill: #333; }
+  .zone  { font-size: 4.4px; font-weight: bold; fill: #999; }
+  .line  { font-size: 2.6px; font-weight: bold; fill: #D55E00; }
+  .num   { font-size: 2.6px; font-weight: bold; fill: #fff; }
+  .cap   { font-family: "Yu Mincho", "Times New Roman", serif; font-size: 3.2px; font-weight: bold; }
+  .floor { fill: #fafafa; stroke: #bbb; stroke-width: 0.2; }
+  .wall  { stroke: #000; stroke-width: 1.0; stroke-linecap: square; }
+  .curt  { stroke: #9a9a9a; stroke-width: 1.0; }
+  .zb    { stroke: #888; stroke-width: 0.25; stroke-dasharray: 1.2 0.9; fill: none; }
+  .trig  { stroke: #D55E00; stroke-width: 0.5; }
+  .path  { stroke: #000; stroke-width: 0.45; stroke-dasharray: 1.6 1.0; fill: none; }
+  .rule  { stroke: #ccc; stroke-width: 0.2; }
+</style>
+<defs>
+  <marker id="ah" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto">
+    <path d="M0,0 L6,3 L0,6 z" fill="#000"/>
+  </marker>
+</defs>
+
+<!-- ===== 床 ===== -->
+<rect class="floor" x="4" y="10" width="104.4" height="104.4"/>
+<!-- 区間の境（A/C は z=0.45、A/B は x=-0.45 と z=-0.6） -->
+<path class="zb" d="M30.1,36.1 L108.4,36.1 M30.1,10 L30.1,97 L4,97"/>
+<text class="zone" x="98" y="20">C</text>
+<text class="zone" x="8" y="20">B</text>
+<text class="zone" x="70" y="62">A</text>
+<!-- 幕（壁の A 側）と壁 -->
+<line class="curt" x1="28.4" y1="34.4" x2="81.6" y2="34.4"/>
+<line class="curt" x1="28.4" y1="34.4" x2="28.4" y2="87.6"/>
+<line class="wall" x1="27.2" y1="33.2" x2="82.6" y2="33.2"/>
+<line class="wall" x1="27.2" y1="33.2" x2="27.2" y2="88.6"/>
+<text class="thing" x="50" y="39.6">右の幕</text>
+<text class="thing" x="31.2" y="64">左の幕</text>
+
+<!-- きっかけの線（右のシミ / もっこり / CG） -->
+<line class="trig" x1="30.1" y1="84.24" x2="67.8" y2="113.8"/>
+<line class="trig" x1="30.1" y1="91.2" x2="59.7" y2="114.4"/>
+<line class="trig" x1="31.84" y1="79.6" x2="31.84" y2="114.4"/>
+<text class="line" x="68.6" y="118.6" text-anchor="middle">線 1</text>
+<text class="line" x="57.6" y="118.6" text-anchor="middle">線 2</text>
+<text class="line" x="31.84" y="118.6" text-anchor="middle">線 3</text>
+
+<!-- 体験者の歩く道（ツインの順走） -->
+<path class="path" marker-end="url(#ah)"
+      d="M99.7,27.4 L98.5,37.3 L85.2,47.1 L41.1,47.1 L41.1,91.2 L38.8,99.3 L28.9,105.1 L15.0,97.6 L14.4,84"/>
+
+<!-- カメラ A -->
+<rect x="87.6" y="107.6" width="4" height="3.4" fill="#000" transform="rotate(-39.7 89.55 109.35)"/>
+<text class="thing" x="93.6" y="111.4">カメラ A</text>
+
+<!-- 段が始まる所（道と線の交点に点、番号は引き出し） -->
+<circle cx="41.1" cy="92.86" r="0.8" fill="#000"/><circle cx="39.1" cy="98.25" r="0.8" fill="#000"/><circle cx="31.84" cy="103.4" r="0.8" fill="#000"/>
+<g stroke="#000" stroke-width="0.25"><line x1="41.1" y1="92.86" x2="43.7" y2="90.7"/><line x1="39.1" y1="98.25" x2="44.4" y2="105.1"/><line x1="31.84" y1="103.4" x2="34.3" y2="106.7"/></g>
+<circle cx="98.5" cy="37.3" r="2.1" fill="#000"/><text class="num" x="98.5" y="38.25" text-anchor="middle">1</text>
+<circle cx="45.5" cy="89.6" r="2.1" fill="#000"/><text class="num" x="45.5" y="90.55" text-anchor="middle">2</text>
+<circle cx="46" cy="106.6" r="2.1" fill="#000"/><text class="num" x="46" y="107.55" text-anchor="middle">3</text>
+<circle cx="35.6" cy="108.4" r="2.1" fill="#000"/><text class="num" x="35.6" y="109.35" text-anchor="middle">5</text>
+<!-- 区間 B に入る所 -->
+<line x1="12.2" y1="89.2" x2="16.6" y2="89.2" stroke="#000" stroke-width="0.5"/>
+<text class="desc" x="6" y="80.4">B に入ると</text>
+<text class="desc" x="6" y="83.4">全部畳む</text>
+<!-- 引き出しの説明（床の空いた所） -->
+<line x1="47.4" y1="88.4" x2="50.4" y2="86.4" stroke="#666" stroke-width="0.2"/>
+<text class="desc" x="51" y="83.4">線 1 より先では、体が</text>
+<text class="desc" x="51" y="86.4">もっこりの顔に重ならない</text>
+<text class="desc" x="46" y="57">4 は時間で始まる。場所は</text>
+<text class="desc" x="46" y="60">歩く速さで変わる</text>
+
+<!-- ===== 段ごとのきっかけ ===== -->
+<text class="thing" x="112" y="13.4">段と、始まる・終わるきっかけ</text>
+<line class="rule" x1="112" y1="15.6" x2="168" y2="15.6"/>
+
+<circle cx="114.2" cy="19.6" r="2.1" fill="#000"/><text class="num" x="114.2" y="20.55" text-anchor="middle">1</text>
+<text class="thing" x="118" y="20.6">左のシミ</text>
+<text class="desc" x="118" y="24">始まり 位置：区間 A に入る</text>
+<text class="desc" x="118" y="27">終わり 位置：線 1（上限 40 秒）</text>
+<text class="desc" x="118" y="30">報告すると左のシミだけ消える</text>
+<line class="rule" x1="112" y1="32.2" x2="168" y2="32.2"/>
+
+<circle cx="114.2" cy="36.2" r="2.1" fill="#000"/><text class="num" x="114.2" y="37.15" text-anchor="middle">2</text>
+<text class="thing" x="118" y="37.2">右のシミが 1 秒で滲む</text>
+<text class="desc" x="118" y="40.6">始まり 位置：線 1</text>
+<text class="desc" x="118" y="43.6">終わり 位置：線 2、または</text>
+<text class="desc" x="118" y="46.6">報告の長押しを始めたとき</text>
+<text class="desc" x="118" y="49.6">（滲む 1 秒は待つ・上限 20 秒）</text>
+<line class="rule" x1="112" y1="51.8" x2="168" y2="51.8"/>
+
+<circle cx="114.2" cy="55.8" r="2.1" fill="#000"/><text class="num" x="114.2" y="56.75" text-anchor="middle">3</text>
+<text class="thing" x="118" y="56.8">もっこりと人形の笑い</text>
+<text class="desc" x="118" y="60.2">始まり 2 が終わったとき</text>
+<text class="desc" x="118" y="63.2">終わり 時間：動画の 2.4 秒</text>
+<line class="rule" x1="112" y1="65.4" x2="168" y2="65.4"/>
+
+<circle cx="114.2" cy="69.4" r="2.1" fill="#000"/><text class="num" x="114.2" y="70.35" text-anchor="middle">4</text>
+<text class="thing" x="118" y="70.4">隠れて見る人形</text>
+<text class="desc" x="118" y="73.8">始まり 3 が終わったとき</text>
+<text class="desc" x="118" y="76.8">終わり 位置：線 3（0.6〜8 秒）</text>
+<line class="rule" x1="112" y1="79" x2="168" y2="79"/>
+
+<circle cx="114.2" cy="83" r="2.1" fill="#000"/><text class="num" x="114.2" y="83.95" text-anchor="middle">5</text>
+<text class="thing" x="118" y="84">CG の人形がついてくる</text>
+<text class="desc" x="118" y="87.4">始まり 4 が終わったとき</text>
+<text class="desc" x="118" y="90.4">終わり 位置：区間 B に入る</text>
+<line class="rule" x1="112" y1="92.6" x2="168" y2="92.6"/>
+
+<!-- 線 1 からの秒（ツインの通し） -->
+<text class="desc" x="112" y="97">線 1 からの秒（ツインの通し 2 本）</text>
+<rect x="116" y="101" width="10" height="3.2" fill="#ccc"/>
+<rect x="126" y="101" width="17" height="3.2" fill="#777"/>
+<rect x="143" y="101" width="6.75" height="3.2" fill="none" stroke="#777" stroke-width="0.25" stroke-dasharray="0.8 0.5"/>
+<rect x="149.75" y="101" width="6" height="3.2" fill="none" stroke="#777" stroke-width="0.25" stroke-dasharray="0.8 0.5"/>
+<path d="M155.75,102.6 L165,102.6" stroke="#999" stroke-width="0.6" stroke-dasharray="1 0.8"/>
+<text class="desc" x="121" y="100" text-anchor="middle">2</text>
+<text class="desc" x="137.9" y="100" text-anchor="middle">3</text>
+<text class="desc" x="152.75" y="100" text-anchor="middle">4</text>
+<text class="desc" x="161" y="100" text-anchor="middle">5</text>
+<line x1="116" y1="106" x2="166" y2="106" stroke="#000" stroke-width="0.2"/>
+<g stroke="#000" stroke-width="0.2">
+  <line x1="116" y1="106" x2="116" y2="107"/><line x1="126" y1="106" x2="126" y2="107"/>
+  <line x1="136" y1="106" x2="136" y2="107"/><line x1="146" y1="106" x2="146" y2="107"/>
+  <line x1="156" y1="106" x2="156" y2="107"/><line x1="166" y1="106" x2="166" y2="107"/>
+</g>
+<text class="desc" x="116" y="109.6" text-anchor="middle">0</text>
+<text class="desc" x="126" y="109.6" text-anchor="middle">1</text>
+<text class="desc" x="136" y="109.6" text-anchor="middle">2</text>
+<text class="desc" x="146" y="109.6" text-anchor="middle">3</text>
+<text class="desc" x="156" y="109.6" text-anchor="middle">4</text>
+<text class="desc" x="166" y="109.6" text-anchor="middle">5 秒</text>
+<line x1="143" y1="98.4" x2="143" y2="112" stroke="#000" stroke-width="0.4" stroke-dasharray="0.8 0.6"/>
+<text class="desc" x="143" y="114.8" text-anchor="middle">区間を出た（2.7 秒）</text>
+<text class="desc" x="112" y="118.6">破線の枠は出なかった分。3 は途中で切れ、</text>
+<text class="desc" x="112" y="121.6">4 と 5 は見えないまま B へ出る</text>
+
+<text class="cap" x="85" y="130.5" text-anchor="middle">図 1. 2-A（区間 A）を真上から見た位置のきっかけと、段ごとの始まりと終わり</text>
+</svg>
