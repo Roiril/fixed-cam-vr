@@ -10,12 +10,13 @@ namespace FixedCamVr.Streaming.Tests
         private const float Dt = 1f / 72f;
 
         private static SoundShowState Intro(IntroStage stage, float shell = 0f,
-                                            float shatter = 0f, float live = 0f)
+                                            float shatter = 0f, float live = 0f, bool tv = false)
         {
             var s = SoundShowState.Idle;
             s.introActive = true;
             s.introStage = stage;
             s.introWeights = IntroWeights.Inactive;
+            s.introWeights.tv = tv;
             s.introWeights.shell = shell;
             s.introWeights.shatter = shatter;
             s.introWeights.live = live;
@@ -413,6 +414,164 @@ namespace FixedCamVr.Streaming.Tests
             s.introWeights.live = 1f;
             l.Tick(Dt, s, 0.9f, out _);
             Assert.AreEqual(0, l.Dropped);
+        }
+
+        // ---------------------------------------------------------------- 0388: 音と画の頭を揃える
+
+        /// <summary>段 4（テレビ方式）に入ってから鈴が鳴った秒を返す（鳴らなければ -1）。</summary>
+        private static float TvBellAt(SoundCueLogic l, float frameSec, bool registering = false)
+        {
+            var s = Intro(IntroStage.Frame, tv: true);
+            s.registrationActive = registering;
+            for (int i = 0; i * Dt <= frameSec; i++)
+                if (CountOf(l, SoundCue.Bell, Dt, s) > 0) return i * Dt;
+            return -1f;
+        }
+
+        [Test]
+        public void TvBell_PeaksWhenThePictureHasFullyComeIn()
+        {
+            // 鈴の山 ＝ 予約の遅れ ＋ 音源の山。それが映像が出切る秒（段 4 の頭から）に来る。
+            Assert.AreEqual(IntroLogic.TvPowerOnEndSec,
+                            SoundCueLogic.BellAfterTvOnSec + IntroLogic.TvOnLeadSec + SoundCueLogic.BellPeakSec,
+                            1e-4f);
+            var l = new SoundCueLogic();
+            float at = TvBellAt(l, 3f);
+            Assert.AreEqual(SoundCueLogic.BellAfterTvOnSec, at, Dt + 1e-4f,
+                            "テレビ方式の鈴が映像の出切りに合っていない");
+
+            // 段 5 ではもう鳴らない（1 回だけ）。
+            var swap = Intro(IntroStage.Swap, live: 1f, tv: true);
+            for (int i = 0; i < 60 * 10; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.Bell, Dt, swap), "鈴が 2 回鳴った");
+        }
+
+        [Test]
+        public void TvBell_FitsInsideTheShortestFrameStage()
+        {
+            // 段 4 は TvPowerOnEndSec を割らない（IntroLogic.FrameMinSec）ので、段 4 の中で必ず鳴る。
+            Assert.Less(SoundCueLogic.BellAfterTvOnSec, IntroLogic.TvPowerOnEndSec);
+            Assert.Greater(SoundCueLogic.BellAfterTvOnSec, IntroLogic.TvLiveFromSec,
+                           "映像が出始める前に鈴が鳴る");
+        }
+
+        [Test]
+        public void TvBell_RingsAtTheSwapEdge_WhenTheFrameStageWasCutShort()
+        {
+            var l = new SoundCueLogic();
+            Assert.AreEqual(-1f, TvBellAt(l, 0.3f));
+            var swap = Intro(IntroStage.Swap, live: 1f, tv: true);
+            Assert.AreEqual(1, CountOf(l, SoundCue.Bell, Dt, swap), "段 4 を送ったら鈴が鳴らない");
+        }
+
+        [Test]
+        public void TvBell_IsSilentDuringRegistration_AndRingsForTheNextVisitor()
+        {
+            var l = new SoundCueLogic();
+            Assert.AreEqual(-1f, TvBellAt(l, 3f, registering: true));
+            var black = Intro(IntroStage.Black, tv: true);
+            for (int i = 0; i < 4; i++) CountOf(l, SoundCue.Bell, Dt, black);
+            Assert.Greater(TvBellAt(l, 3f), 0f, "次の体験者に鈴が鳴らない");
+        }
+
+        [Test]
+        public void ShatterBell_StillWaitsForTheCrossfade()
+        {
+            // 割れる遷移（tv=false）は段 4 では鳴らさない。
+            var l = new SoundCueLogic();
+            var frame = Intro(IntroStage.Frame, shatter: 1f, live: 1f);
+            for (int i = 0; i < 60 * 6; i++)
+                Assert.AreEqual(0, CountOf(l, SoundCue.Bell, Dt, frame));
+            Assert.AreEqual(0, RingsWithin(l, SoundCueLogic.BellAfterSwapSec - 0.1f));
+            Assert.AreEqual(1, RingsWithin(l, 0.2f));
+        }
+
+        [Test]
+        public void BellPeakSec_MatchesTheBakedBell()
+        {
+            string path = System.IO.Path.Combine(UnityEngine.Application.dataPath,
+                                                 "Resources", "Sound", "amb_bell.wav");
+            Assert.IsTrue(System.IO.File.Exists(path), path);
+            float peak = WavPeakSec(System.IO.File.ReadAllBytes(path), 0.010f);
+            Assert.AreEqual(SoundCueLogic.BellPeakSec, peak, 0.03f,
+                            "amb_bell の山の秒が変わった。BellPeakSec を測り直す");
+        }
+
+        /// <summary>RIFF/WAVE（PCM 16/24・float 32）の 10ms 実効値が最大になる窓の頭の秒。</summary>
+        private static float WavPeakSec(byte[] b, float win)
+        {
+            int pos = 12, fmt = 0, ch = 0, rate = 0, bits = 0, dataAt = -1, dataLen = 0;
+            while (pos + 8 <= b.Length)
+            {
+                string id = System.Text.Encoding.ASCII.GetString(b, pos, 4);
+                int len = System.BitConverter.ToInt32(b, pos + 4);
+                if (id == "fmt ")
+                {
+                    fmt = System.BitConverter.ToUInt16(b, pos + 8);
+                    ch = System.BitConverter.ToInt16(b, pos + 10);
+                    rate = System.BitConverter.ToInt32(b, pos + 12);
+                    bits = System.BitConverter.ToInt16(b, pos + 22);
+                    if (fmt == 0xFFFE) fmt = System.BitConverter.ToUInt16(b, pos + 32);
+                }
+                else if (id == "data")
+                {
+                    dataAt = pos + 8;
+                    dataLen = System.Math.Min(len, b.Length - dataAt);
+                    break;
+                }
+                pos += 8 + len + (len & 1);
+            }
+            Assert.Greater(dataAt, 0, "data が無い");
+            int bps = bits / 8, frames = dataLen / (bps * ch), hop = (int)(rate * win);
+            double best = -1;
+            int bestI = 0;
+            for (int w = 0; (w + 1) * hop <= frames; w++)
+            {
+                double acc = 0;
+                for (int f = w * hop; f < (w + 1) * hop; f++)
+                {
+                    double m = 0;
+                    for (int c = 0; c < ch; c++)
+                    {
+                        int o = dataAt + (f * ch + c) * bps;
+                        double v = fmt == 3 ? System.BitConverter.ToSingle(b, o)
+                                 : bps == 2 ? System.BitConverter.ToInt16(b, o) / 32768.0
+                                 : ((b[o] | (b[o + 1] << 8) | (b[o + 2] << 16)) << 8 >> 8) / 8388608.0;
+                        m += v;
+                    }
+                    m /= ch;
+                    acc += m * m;
+                }
+                if (acc > best) { best = acc; bestI = w; }
+            }
+            return bestI * win;
+        }
+
+        [Test]
+        public void GlitchOnset_FiresOnTheLineThatPulses_AndTheThresholdPathDoesNotDoubleIt()
+        {
+            var l = new SoundCueLogic();
+            var s = SoundShowState.Idle;
+            Assert.IsTrue(l.TryFireGlitchOnset(0.5f, 0f), "画の乱れの頭で鳴らない");
+            // 同じ乱れが閾値を越えても 2 発目は鳴らない。
+            Assert.AreEqual(0, CountOf(l, SoundCue.Glitch, Dt, s, glitch: 0.5f));
+            // 最短間隔の内は鳴らない。
+            Assert.IsFalse(l.TryFireGlitchOnset(0.5f, 0f));
+            for (int i = 0; i < 40; i++) l.Tick(Dt, s, 0f, out _);
+            Assert.IsTrue(l.TryFireGlitchOnset(0.5f, 0f));
+        }
+
+        [Test]
+        public void GlitchOnset_KeepsTheThresholdRules()
+        {
+            var l = new SoundCueLogic();
+            // 閾値に届かない弱い乱れは鳴らさない（閾値の経路と同じ）。
+            Assert.IsFalse(l.TryFireGlitchOnset(SoundCueLogic.GlitchFireAt - 0.01f, 0f));
+            Assert.IsTrue(l.TryFireGlitchOnset(0.9f, 0f));
+            for (int i = 0; i < 40; i++) l.Tick(Dt, SoundShowState.Idle, 0.9f, out _);
+            // 強い乱れが続いている間は再武装しない。
+            Assert.IsFalse(l.TryFireGlitchOnset(0.9f, 0.9f), "強い乱れが続く間に連射している");
+            Assert.IsTrue(l.TryFireGlitchOnset(0.9f, 0f));
         }
     }
 }

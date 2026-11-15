@@ -209,6 +209,22 @@ namespace FixedCamVr.Streaming
         public const float BellAfterSwapSec = IntroLogic.SwapCrossfadeSec;
 
         /// <summary>
+        /// 鈴の音源 `amb_bell` の頭から最大の山までの秒（10ms 実効値で測った値。頭 0.15 秒は -15〜-25dB の前打ち）。
+        /// <b>音源を差し替えたら測り直す。</b>
+        /// </summary>
+        public const float BellPeakSec = 0.20f;
+
+        /// <summary>
+        /// テレビ方式（0309）で、段 4 の頭から鈴を鳴らすまでの秒（`canon/LEDGER.md` 0388）。
+        /// 鈴の山が<b>映像が出切る秒</b>（<see cref="IntroLogic.TvPowerOnEndSec"/>）に来るよう、
+        /// 予約の遅れ（35ms）と音源の山（<see cref="BellPeakSec"/>）を前へ引く。
+        /// テレビ方式の段 5 は映像が出切った後の静止なので、<see cref="BellAfterSwapSec"/> で待つと
+        /// 動かない画に鈴だけが鳴る。
+        /// </summary>
+        public const float BellAfterTvOnSec =
+            IntroLogic.TvPowerOnEndSec - IntroLogic.TvOnLeadSec - BellPeakSec;
+
+        /// <summary>
         /// 1 フレームに拾える上限。**種類の総数と同じにしてある ＝ 構造的に溢れない。**
         ///
         /// ⚠ 最初 3 にしていたら、テストが 4 本同時のフレームを作って 1 本落とした。
@@ -233,6 +249,9 @@ namespace FixedCamVr.Streaming
 
         /// <summary>段 5 に入ってからの秒数。<b>鈴はここで数える</b>（外から段の経過が来ないため）。</summary>
         private float _swapSec;
+
+        /// <summary>段 4 に入ってからの秒数（テレビ方式の鈴だけが読む）。入った縁で 0。負は段 4 の外。</summary>
+        private float _frameSec = -1f;
 
         /// <summary>前フレームの導入の段。段 0 へ入った縁で「1 度だけ」を落とすために持つ。</summary>
         private IntroStage _lastIntroStage = IntroStage.Off;
@@ -271,6 +290,25 @@ namespace FixedCamVr.Streaming
             _tvNoiseFired = false;
             _bellFired = false;
             _swapSec = 0f;
+            _frameSec = -1f;
+        }
+
+        /// <summary>
+        /// 単発の乱れが掛かった<b>その行</b>で呼ぶ（`canon/LEDGER.md` 0388）。鳴らすなら true。
+        ///
+        /// ⚠ 閾値を毎フレーム外から見ると、画の乱れより 1〜2 コマ遅れて鳴る（包絡の立ち上がり 20ms と
+        /// 実行順の 1 コマ）。画を書くのと同じ行から鳴らせば、遅れは予約の 35ms だけになる
+        /// （カメラ切替と同じ約束）。鳴らす条件（閾値・再武装・最短間隔）は閾値の経路と同じ。
+        /// </summary>
+        /// <param name="level">掛けた強さ（育ちを掛けた後）。</param>
+        /// <param name="levelBefore">掛ける直前の乱れの強さ。</param>
+        public bool TryFireGlitchOnset(float level, float levelBefore)
+        {
+            if (levelBefore < GlitchRearmAt) _glitchArmed = true;
+            if (!_glitchArmed || level < GlitchFireAt || _glitchCooldown > 0f) return false;
+            _glitchArmed = false;
+            _glitchCooldown = GlitchMinIntervalSec;
+            return true;
         }
 
         /// <summary>今フレームに鳴らすものを返す（<paramref name="count"/> 本）。</summary>
@@ -365,6 +403,8 @@ namespace FixedCamVr.Streaming
             //    （`SoundBedLogic.dolls` / `bed_dolls_laugh`）。ここへ戻すと 1 回で終わる。
 
             // --- 乱れ（何度でも鳴る）-------------------------------------------
+            // 単発の乱れは <see cref="TryFireGlitchOnset"/> が画の頭で鳴らす。ここで拾うのは
+            // 持続の乱れ（遷移の継ぎ目）が閾値を越えた所と、頭で鳴らせなかったもの。
             if (glitchLevel < GlitchRearmAt) _glitchArmed = true;
             if (_glitchArmed && glitchLevel >= GlitchFireAt && _glitchCooldown <= 0f)
             {
@@ -388,10 +428,27 @@ namespace FixedCamVr.Streaming
             //    「完全にスクリーンになった」のは<b>すり替えのクロスフェードが終わった所</b>
             //    （`IntroLogic.SwapCrossfadeSec`）。段 5 は 4.5 秒あるので、待っても必ず鳴る
             //    （段 3 が実尺 1.1 秒で待てなかったのとは事情が違う）。
+            // ⚠⚠ **テレビ方式は段 4 の中で鳴らす**（2026-11-15・`canon/LEDGER.md` 0388）。
+            //    テレビ方式で「完全にスクリーンになった」のは電源の音が鳴り終わって映像が出切った所
+            //    （段 4 の頭から `IntroLogic.TvPowerOnEndSec`）。段 5 はその後の静止なので、
+            //    段 5 ＋ 1.2 秒で鳴らすと動かない画に鈴だけが来る。割れる遷移は従来どおり段 5 で待つ。
+            bool tvIntro = s.introActive && s.introWeights.tv;
+            if (s.introActive && s.introStage == IntroStage.Frame)
+            {
+                _frameSec = _frameSec < 0f ? 0f : _frameSec + dt;
+                if (tvIntro && !_bellFired && _frameSec >= BellAfterTvOnSec && !s.registrationActive)
+                {
+                    _bellFired = true;
+                    Push(SoundCue.Bell, ref count);
+                }
+            }
+            else _frameSec = -1f;
             if (s.introActive && s.introStage == IntroStage.Swap)
             {
                 _swapSec += dt;
-                if (!_bellFired && _swapSec >= BellAfterSwapSec && !s.registrationActive)
+                // テレビ方式で段 4 を待ち切らずに抜けた（スタッフの送り）ときは、段 5 へ入った縁で鳴らす。
+                float wait = tvIntro ? 0f : BellAfterSwapSec;
+                if (!_bellFired && _swapSec >= wait && !s.registrationActive)
                 {
                     _bellFired = true;
                     Push(SoundCue.Bell, ref count);

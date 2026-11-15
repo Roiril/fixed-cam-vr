@@ -498,7 +498,11 @@ namespace FixedCamVr.Streaming
             if (_title == null) _title = FindObjectOfType<TitleScreen>();
             if (_run == null) _run = FindObjectOfType<ShowRunDirector>();
             if (_signal == null) _signal = FindObjectOfType<SignalLostFx>();
-            if (_glitch == null) _glitch = FindObjectOfType<GlitchFx>();
+            if (_glitch == null)
+            {
+                _glitch = FindObjectOfType<GlitchFx>();
+                if (_glitch != null) _glitch.PulseStarted += OnGlitchPulse;
+            }
             if (_show == null) _show = FindObjectOfType<ShowControlClient>();
             if (_box == null) _box = FindObjectOfType<SealedBox>();
             if (_bgm == null) _bgm = FindObjectOfType<BgmDirector>();
@@ -597,6 +601,21 @@ namespace FixedCamVr.Streaming
         /// ⚠ <b>回す状態は 1 か所</b>（<see cref="FireCue"/> と <see cref="PlaySpot"/> が共有する）。
         /// 2 か所に持つと、同じ音を別の経路から鳴らしたときに同じ波形が並ぶ。
         /// </summary>
+        /// <summary>
+        /// 単発の乱れが掛かった行から呼ばれる（`canon/LEDGER.md` 0388）。画の乱れと同じフレームで予約するので、
+        /// 音の遅れは予約の 35ms だけになる（閾値を毎フレーム見る経路は 1〜2 コマ遅れていた）。
+        /// </summary>
+        private void OnGlitchPulse(float level, float levelBefore)
+        {
+            if (!cuesEnabled || !isActiveAndEnabled) return;
+            if (_cues.TryFireGlitchOnset(level, levelBefore)) FireCue(SoundCue.Glitch);
+        }
+
+        private void OnDestroy()
+        {
+            if (_glitch != null) _glitch.PulseStarted -= OnGlitchPulse;
+        }
+
         private string NextResource(SoundCue c)
         {
             string baseName = SoundCueLogic.ResourceName(c);

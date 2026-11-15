@@ -69,7 +69,7 @@ paths:
 - `run.intro` 欠落は全部 0 になる → `ShowIntroDef.LooksUnset` で既定へ 〔出典: streaming:972〕
 - `IntroPreview` は `IntroDirector.WriteIgnite` が書く値と `TvScreenHidden` を写している。変えたら対で直す。`menu intro -Set style=shatter|tv` で方式を選ぶ（`tv` は show.json の尺を読まない）
 - 観測は「画に出た」側。`shatStyle=tv` / `tvCase=` / `ignite=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す（`ilive=` / `sig=` / `rvs=` は C# だけ）
-- 導入の音は段 3 の砂嵐 `TvNoise`・段 4 の頭の電源 `TvOn`（砂嵐を 0.6 秒で退かせる）・段 5 の鈴。`ScreenOn` と `sfx_shatter` は割れる遷移だけ — `IntroTvTests.TvNoise_ThenTvOn_EachFireOnce`
+- 導入の音は段 3 の砂嵐 `TvNoise`・段 4 の頭の電源 `TvOn`（砂嵐を 0.6 秒で退かせる）・段 4 の映像が出切る所の鈴（`SoundCueLogic.BellAfterTvOnSec`・0388）。`ScreenOn` と `sfx_shatter` は割れる遷移だけ — `IntroTvTests.TvNoise_ThenTvOn_EachFireOnce`
 - 題字の版を焼き直したら `ORDER_LO/HI` を測り直す 〔出典: memory/title_screen.md §4.5〕 〔未照合〕
 - `menu title` / `menu intro` は追従を映さない。`menu title` は `TitlePreview.Summoned` 経由で、hold の最大輝度 120 未満は LogError 〔出典: memory/title_screen.md §5〕
 

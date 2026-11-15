@@ -71,8 +71,17 @@ namespace FixedCamVr.Streaming
             if (level <= 0.001f) { _logic.Pulse(level, sec); return; }
             // ⚠ **数えてから掛ける。** 逆にすると 1 回目から持ち上がって、台本の値が実機で出ない。
             _esc.Notify();
-            _logic.Pulse(_esc.ApplyLevel(level), _esc.ApplyHold(sec));
+            float before = _logic.Level;
+            float applied = _esc.ApplyLevel(level);
+            _logic.Pulse(applied, _esc.ApplyHold(sec));
+            PulseStarted?.Invoke(applied, before);
         }
+
+        /// <summary>
+        /// 単発の乱れが掛かった瞬間（掛けた強さ, 掛ける直前の強さ）。乱れの音はここで鳴らす
+        /// （`canon/LEDGER.md` 0388）。強さの閾値を外から毎フレーム見ると、画より 1〜2 コマ遅れる。
+        /// </summary>
+        public event System.Action<float, float>? PulseStarted;
 
         /// <summary>
         /// 持続する乱れ（遷移のあいだ継ぎ目を覆う）。0 で解除。

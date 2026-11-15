@@ -66,7 +66,7 @@
 - [doll_reference_kit.md](doll_reference_kit.md) — 市松人形の資料（tools/doll-ref/）。写真は暗く緑に転ぶ
 
 ## 音
-- [sound_pipeline.md](sound_pipeline.md) — 音を作る道具と耳を使わない判定。計器が 4 回嘘をついた・3D 化で音量が下がる
+- [sound_pipeline.md](sound_pipeline.md) — 音の道具と耳を使わない判定。計器が 4 回嘘・3D 化で音量減。[音と画のずれ](av_sync_audit.md)
 - [wrong_room_sounds.md](wrong_room_sounds.md) — Wrong Room の 2 本は git に入れない。別の PC は焼く
 
 ## 準備・入力・来場者
