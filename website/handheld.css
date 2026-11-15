@@ -88,7 +88,9 @@
   gap: .6rem;
   min-width: 0;
   padding-inline: .4rem;
+  container: modes / inline-size;
 }
+
 
 .handheld-modes button {
   --frame-color: var(--signal);
@@ -134,6 +136,13 @@
   min-width: 1.3rem;
   height: 1.3rem;
   font-size: .6rem;
+}
+
+/* 3 択の列が狭いと、横に並べた「図・字・キー」が収まらず字とキーが重なる。
+   図の下に字を置き、キーは箱の右上の角に寄せる */
+@container modes (max-width: 36rem) {
+  .handheld-modes button { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: .3rem; padding: .5rem .25rem .55rem; text-align: center; }
+  .mode-key { position: absolute; top: .3rem; right: .3rem; }
 }
 
 .handheld-modes button:hover:not(:disabled),
@@ -185,6 +194,8 @@
 .is-expanded .game-actions { grid-area: actions; margin: 0; }
 .is-expanded .game-state { grid-area: state; margin: 0; }
 body.handheld-expanded { overflow: hidden; }
+/* 章は重なり順を閉じている（styles.css の .chapter）。拡大中は章ごと前へ出さないと、後ろの章が上に描かれる */
+body.handheld-expanded .chapter:has(.handheld-player.is-expanded) { z-index: 1100; }
 
 @media (max-width: 720px) {
   .handheld-player { width: calc(100% + 2 * var(--gutter)); margin-left: calc(-1 * var(--gutter)); }
