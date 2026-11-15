@@ -119,67 +119,71 @@
   color: var(--ink);
 }
 
+/* 開いた中身。上に映像と説明、下に起きる順の並び。
+   並びは周ごとの段で、段の頭に筆の札を縦に置く（章の柱と同じ組み方を、章の中でもう一度使う）。
+   周を重ねるほど段が長くなる */
 .footage-room {
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  align-items: start;
   gap: var(--s-group);
   padding-top: var(--s-part);
 }
 
+.footage-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 44rem) minmax(13rem, 1fr);
+  align-items: end;
+  gap: var(--s-group);
+}
+
 .footage-viewer {
+  position: relative;
   min-width: 0;
+  scroll-margin-block: calc(var(--header-h) + 1rem) 1rem;
+}
+
+/* 映像の光が幕に落ちる */
+.footage-viewer::before {
+  position: absolute;
+  z-index: -1;
+  inset: -12% -10%;
+  content: "";
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 55%, rgb(176 42 50 / 16%), transparent 68%);
 }
 
 #footage-player {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 76svh;
-  aspect-ratio: 1 / 1;
+  max-height: 80svh;
+  aspect-ratio: 4 / 3;
   object-fit: contain;
   background: #000;
-  box-shadow: 0 0 0 1px var(--line-2);
-}
-
-.footage-side {
-  min-width: 0;
-}
-
-.footage-controls {
-  display: grid;
-  border-bottom: 1px solid var(--line);
-}
-
-.footage-controls button {
-  --frame-color: var(--signal);
-  display: block;
-  min-height: 56px;
-  padding: .85rem 1rem .85rem 1.1rem;
-  border: 0;
-  border-top: 1px solid var(--line);
-  background: none;
-  color: var(--ink-2);
-  font-size: .98rem;
-  letter-spacing: .08em;
-  line-height: 1.5;
-  text-align: left;
-  cursor: pointer;
-  transition: color 160ms, background-color 160ms, box-shadow 160ms;
-}
-
-.footage-controls button:hover {
-  color: var(--ink);
-}
-
-.footage-controls button[aria-pressed="true"] {
-  color: var(--ink);
-  background: rgb(var(--tint) / 6%);
-  box-shadow: inset 2px 0 var(--red-text);
+  box-shadow: 0 0 0 1px var(--line-2), 0 2.5rem 5rem -1.5rem rgb(0 0 0 / 85%);
 }
 
 .footage-caption {
-  margin-top: var(--s-group);
+  min-width: 0;
+  padding-bottom: .4rem;
+}
+
+/* いま映している演出がどの周か。章題と同じ筆、同じ赤い短い線 */
+.footage-part {
+  margin: 0 0 var(--s-part);
+  color: var(--ink);
+  font-family: var(--brush);
+  font-size: clamp(1.9rem, 3vw, 3rem);
+  letter-spacing: .14em;
+  line-height: 1;
+}
+
+.footage-part::before {
+  display: block;
+  width: 1.6rem;
+  height: 2px;
+  margin-bottom: .9rem;
+  content: "";
+  background: var(--red);
 }
 
 .footage-caption h3 {
@@ -190,7 +194,7 @@
   line-height: 1.5;
 }
 
-.footage-caption p {
+.footage-caption p:not(.footage-part) {
   margin: var(--s-label) 0 0;
   color: var(--ink-2);
   font-size: .9rem;
@@ -198,9 +202,9 @@
   line-height: 1.9;
 }
 
-#footage-meta {
+.footage-caption #footage-meta {
   color: var(--ink-3);
-  font-size: .78rem;
+  font-size: .76rem;
   letter-spacing: .06em;
 }
 
@@ -209,12 +213,11 @@
 }
 
 /* 明滅の注意は、注意の札と同じ形にする */
-.footage-note {
+.footage-caption .footage-note {
   display: inline-flex;
   align-items: center;
   gap: .7em;
-  margin: var(--s-part) 0 0;
-  color: var(--ink-2);
+  margin-top: var(--s-part);
   font-size: .78rem;
   letter-spacing: .08em;
 }
@@ -226,19 +229,155 @@
   background: var(--red);
 }
 
+/* 起きる順の並び。左の細い線が時間で、段の頭の赤い短い線が周の始まり */
+.fx-reel {
+  display: grid;
+  border-top: 1px solid var(--line-2);
+}
+
+.fx-part {
+  display: grid;
+  grid-template-columns: var(--fx-spine, 3.4rem) minmax(0, 1fr);
+  column-gap: var(--s-part);
+  align-items: start;
+  padding-block: var(--s-part);
+  border-bottom: 1px solid var(--line);
+}
+
+.fx-part-name {
+  position: relative;
+  justify-self: center;
+  margin: 0;
+  padding-top: 1.15rem;
+  color: var(--ink);
+  font-family: var(--brush);
+  font-size: clamp(1.25rem, 1.7vw, 1.6rem);
+  font-weight: 400;
+  letter-spacing: .16em;
+  line-height: 1;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+}
+
+.fx-part-name::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: .75rem;
+  content: "";
+  background: var(--red);
+  translate: -50% 0;
+}
+
+.fx-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--s-part) clamp(.8rem, 1.4vw, 1.25rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fx-list button {
+  --frame-color: var(--signal);
+  display: grid;
+  gap: .55rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 選んでいない画面は暗い。触れるか選ぶと点く */
+.fx-thumb {
+  display: block;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  box-shadow: 0 0 0 1px var(--line);
+  filter: brightness(.78) saturate(.8);
+  transition: filter 200ms var(--ease), box-shadow 200ms var(--ease);
+}
+
+.fx-thumb {
+  position: relative;
+  overflow: hidden;
+}
+
+.fx-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.fx-thumb img:not([src]) {
+  visibility: hidden;
+}
+
+.fx-name {
+  font-size: .82rem;
+  letter-spacing: .08em;
+  line-height: 1.5;
+  transition: color 160ms;
+}
+
+.fx-list button[aria-pressed="true"] {
+  color: var(--ink);
+}
+
+.fx-list button[aria-pressed="true"] .fx-thumb {
+  filter: none;
+  box-shadow: 0 0 0 1px var(--red-text);
+}
+
+.fx-list button[aria-pressed="true"] .fx-name::before {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: .6em;
+  content: "";
+  background: var(--red);
+}
+
+@media (hover: hover) {
+  .fx-list button:hover {
+    color: var(--ink);
+  }
+
+  .fx-list button:hover .fx-thumb {
+    filter: none;
+  }
+}
+
+.fx-list button:focus-visible .fx-thumb {
+  filter: none;
+}
+
+@media (max-width: 1080px) {
+  .fx-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 900px) {
-  .footage-room {
+  .footage-stage {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s-part);
   }
 
   .footage-viewer {
-    width: min(100%, 36rem);
+    width: min(100%, 40rem);
     justify-self: center;
   }
 
-  .footage-caption {
-    margin-top: var(--s-part);
+  .footage-part {
+    font-size: 1.7rem;
   }
 }
 
@@ -258,7 +397,22 @@
     letter-spacing: .06em;
   }
 
-  .footage-controls button {
-    font-size: .9rem;
+  .fx-part {
+    --fx-spine: 2.2rem;
+    column-gap: .9rem;
+  }
+
+  .fx-part-name {
+    font-size: 1.15rem;
+  }
+
+  .fx-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem .8rem;
+  }
+
+  .fx-name {
+    font-size: .76rem;
+    letter-spacing: .04em;
   }
 }

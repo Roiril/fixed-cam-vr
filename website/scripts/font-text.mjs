@@ -33,7 +33,8 @@ const LATIN_CLASSES = [
   "tag-code",
   "tag-edge",
   "plate-spine-latin",
-  "plate-email"
+  "plate-email",
+  "briefing-time"
 ];
 
 // 欧文書体で描かれる文字。ここに全角の記号を 1 字でも入れると実機で代替書体に落ちるので、check が数える。
@@ -57,6 +58,8 @@ export function headingText(html) {
   }
   for (const match of html.matchAll(/<a\b[^>]*class="site-mark"[^>]*>([\s\S]*?)<\/a>/gi)) parts.push(stripTags(match[1]));
   for (const match of html.matchAll(/<span\b[^>]*class="plate-spine-title"[^>]*>([\s\S]*?)<\/span>/gi)) parts.push(stripTags(match[1]));
+  // 演出一覧の周の札（導入・一周目…）も筆で組む
+  for (const match of html.matchAll(/<(h3|p)\b[^>]*class="(?:fx-part-name|footage-part)"[^>]*>([\s\S]*?)<\/\1>/gi)) parts.push(stripTags(match[2]));
   return parts.join("");
 }
 

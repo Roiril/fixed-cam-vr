@@ -306,14 +306,17 @@ main {
   filter: drop-shadow(0 16px 14px rgb(22 12 4 / 55%));
 }
 
-/* 幕に当たる灯り。章ごとに位置と色を変える */
+/* 幕に当たる灯り。章ごとに位置と色を変える。
+   灯りの色は、その章の主役が出す光：予告動画は映写の暖かい光、テレビは管面の光（.crt-ambient）、演出一覧は赤 */
 .on-drape::before {
   position: absolute;
   z-index: -1;
   inset: 0;
   content: "";
   pointer-events: none;
-  background: radial-gradient(ellipse var(--lamp-w, 62%) var(--lamp-h, 70%) at var(--lamp-x, 50%) var(--lamp-y, 34%), transparent 0, rgb(9 7 6 / var(--shade, 56%)) 100%);
+  background:
+    radial-gradient(ellipse var(--glow-w, 46%) var(--glow-h, 42%) at var(--glow-x, var(--lamp-x, 50%)) var(--glow-y, var(--lamp-y, 34%)), rgb(var(--glow, 255 196 130) / var(--glow-a, 0%)), transparent 72%),
+    radial-gradient(ellipse var(--lamp-w, 62%) var(--lamp-h, 70%) at var(--lamp-x, 50%) var(--lamp-y, 34%), transparent 0, rgb(9 7 6 / var(--shade, 56%)) 100%);
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9rem, #000 calc(100% - 7rem), transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 9rem, #000 calc(100% - 7rem), transparent);
 }
@@ -658,6 +661,10 @@ main {
 .trailer {
   --lamp-y: 30%;
   --shade: 56%;
+  --glow-a: 10%;
+  --glow-y: 46%;
+  --glow-w: 58%;
+  --glow-h: 50%;
 }
 
 .trailer .chapter-body {
@@ -666,34 +673,32 @@ main {
   max-width: 62rem;
 }
 
+/* 幕の前に吊るしたスクリーン。生成りの布の縁、レールから下がる 2 本の紐 */
 .trailer-frame {
   position: relative;
   aspect-ratio: 16 / 9;
+  border: clamp(5px, .7vw, 9px) solid #d8cfbd;
   background: #000;
   box-shadow:
-    0 0 0 1px var(--line-2),
+    0 0 0 1px rgb(0 0 0 / 60%),
     0 2.5rem 5rem -1rem rgb(0 0 0 / 80%),
-    0 0 9rem rgb(255 196 130 / 7%);
+    0 0 9rem rgb(255 196 130 / 9%);
 }
 
-/* スクリーンの四隅の角（動かさない） */
+.trailer-frame::before,
 .trailer-frame::after {
   position: absolute;
-  inset: -10px;
+  bottom: 100%;
+  width: 1px;
+  height: calc(var(--s-chapter) + 2.5rem + var(--rail-rise) * .2);
+  margin-bottom: clamp(5px, .7vw, 9px);
   content: "";
   pointer-events: none;
-  opacity: .6;
-  background:
-    linear-gradient(var(--ink) 0 0) left top / 14px 1.5px,
-    linear-gradient(var(--ink) 0 0) left top / 1.5px 14px,
-    linear-gradient(var(--ink) 0 0) right top / 14px 1.5px,
-    linear-gradient(var(--ink) 0 0) right top / 1.5px 14px,
-    linear-gradient(var(--ink) 0 0) left bottom / 14px 1.5px,
-    linear-gradient(var(--ink) 0 0) left bottom / 1.5px 14px,
-    linear-gradient(var(--ink) 0 0) right bottom / 14px 1.5px,
-    linear-gradient(var(--ink) 0 0) right bottom / 1.5px 14px;
-  background-repeat: no-repeat;
+  background: linear-gradient(to bottom, rgb(216 207 189 / 25%), rgb(216 207 189 / 70%));
 }
+
+.trailer-frame::before { left: 7%; }
+.trailer-frame::after { right: 7%; }
 
 .trailer-frame iframe {
   display: block;
@@ -1245,6 +1250,85 @@ main {
   }
 }
 
+/* 博士の説明。体験の前に手渡されるタブレットを、壁の棚に立て掛けてある。
+   写真と依頼書の下に、2 つをまたいで置く */
+.briefing {
+  position: relative;
+  grid-column: 1 / -1;
+  width: min(100%, 44rem);
+  margin: 0;
+}
+
+.tablet {
+  position: relative;
+  padding: clamp(.6rem, 1.3vw, 1rem);
+  border-radius: clamp(.9rem, 1.8vw, 1.4rem);
+  background: linear-gradient(160deg, #1c1a18, #0b0a09 55%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 7%),
+    inset 0 0 0 2px #000,
+    0 1.6rem 2.4rem -.8rem rgb(40 24 8 / 70%),
+    0 2px 3px rgb(40 24 8 / 50%);
+}
+
+/* 前面カメラ */
+.tablet::before {
+  position: absolute;
+  top: 50%;
+  left: clamp(.22rem, .5vw, .38rem);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  content: "";
+  background: #2a2e33;
+  translate: 0 -50%;
+}
+
+.tablet video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 8 / 5;
+  border-radius: .2rem;
+  background: #050505;
+}
+
+/* 棚板。タブレットの下に 1 枚 */
+.briefing::after {
+  display: block;
+  height: .7rem;
+  margin: 0 -1.4rem;
+  content: "";
+  background: linear-gradient(to bottom, #6f5d48, #4d3f30 45%, #2c241b);
+  box-shadow: 0 1.1rem 1.2rem -.3rem rgb(40 24 8 / 65%), 0 1px 0 rgb(255 240 210 / 18%) inset;
+}
+
+.briefing figcaption {
+  position: absolute;
+  top: calc(100% + 1.1rem);
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .4rem 1.1rem;
+  color: var(--ink-2);
+  font-size: .82rem;
+  letter-spacing: .12em;
+  line-height: 1.6;
+}
+
+.briefing-name {
+  color: var(--ink);
+  font-size: 1rem;
+  letter-spacing: .16em;
+}
+
+.briefing-time {
+  font-family: var(--mono);
+  font-size: .78rem;
+  letter-spacing: .08em;
+}
+
 /* ───────── 演出一覧 ───────── */
 
 .footage .drape {
@@ -1255,6 +1339,16 @@ main {
   --lamp-x: 58%;
   --lamp-y: 40%;
   --shade: 58%;
+  --glow: 176 42 50;
+}
+
+.footage:has(.footage-gate[open]) {
+  --shade: 70%;
+  --lamp-x: 34%;
+  --lamp-y: 16%;
+  --glow-a: 9%;
+  --glow-w: 60%;
+  --glow-h: 26%;
 }
 
 /* 電源を入れると、ブラウン管が点く：横 1 本の光の線が上下に開いて絵になる。
@@ -1598,7 +1692,7 @@ main {
 /* 押せる箱の四隅。撮影枠が対象に合う動き：外に浮いた角が、触れると箱に寄って止まる */
 .handheld-modes button,
 .camera-button,
-.footage-controls button,
+.fx-list button,
 .footage-gate > summary,
 #game-expand {
   --frame-color: var(--ink);
@@ -1608,7 +1702,7 @@ main {
 
 .handheld-modes button::after,
 .camera-button::after,
-.footage-controls button::after,
+.fx-list button::after,
 .footage-gate > summary::after,
 #game-expand::after {
   position: absolute;
@@ -1631,7 +1725,7 @@ main {
 
 .handheld-modes button:focus-visible::after,
 .camera-button:focus-visible::after,
-.footage-controls button:focus-visible::after,
+.fx-list button:focus-visible::after,
 .footage-gate > summary:focus-visible::after,
 #game-expand:focus-visible::after {
   inset: -4px;
@@ -1642,7 +1736,7 @@ main {
 @media (hover: hover) {
   .handheld-modes button:hover:not(:disabled)::after,
   .camera-button:hover::after,
-  .footage-controls button:hover::after,
+  .fx-list button:hover::after,
   .footage-gate > summary:hover::after,
   #game-expand:hover::after {
     inset: -4px;

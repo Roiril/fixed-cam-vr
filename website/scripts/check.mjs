@@ -1,4 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -62,6 +63,8 @@ const requiredAssets = [
   "assets/footage-error.webp",
   "assets/footage-eye.mp4",
   "assets/footage-eye.webp",
+  "assets/doctor-briefing.mp4",
+  "assets/doctor-briefing.webp",
   "assets/yuji-boku.woff2",
   "assets/shippori-mincho.woff2",
   "assets/ibm-plex-mono-400.woff2",
@@ -70,6 +73,9 @@ const requiredAssets = [
   "assets/shippori-mincho-OFL.txt",
   "assets/ibm-plex-mono-OFL.txt"
 ];
+// 演出一覧の素材（scripts/prepare-fx.py が作る）。index.html の一覧が指すファイルを数える
+const fxAssets = [...readFileSync(join(websiteRoot, "index.html"), "utf8").matchAll(/data-(?:src|poster)="(assets\/[^"]+)"/g)].map(match => match[1]);
+requiredAssets.push(...new Set(fxAssets));
 const builtFiles = [...sourceFiles, ...seoFiles, ...verificationFiles, ...requiredAssets];
 const errors = [];
 

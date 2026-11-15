@@ -294,6 +294,12 @@
                 <img src="assets/investigation-request.webp" width="1273" height="1800" alt="調査依頼書。壁面周辺の観測調査について。" loading="lazy">
                 <span class="request-open" aria-hidden="true">原寸で開く</span>
               </a>
+              <figure class="briefing">
+                <div class="tablet">
+                  <video id="briefing-player" src="assets/doctor-briefing.mp4" controls playsinline preload="none" poster="assets/doctor-briefing.webp" width="960" height="600" aria-label="体験の前にタブレットで流れる、博士の説明"></video>
+                </div>
+                <figcaption><span class="briefing-name">体験前の説明</span><span class="briefing-time">2:18</span><span class="briefing-sound">音声あり</span></figcaption>
+              </figure>
             </div>
           </div>
         </div>
@@ -307,18 +313,80 @@
             <summary>
               <span class="spoiler-note">ネタバレを含みます</span>
               <span class="gate-label"><svg class="gate-power" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M6.1 4.7a7 7 0 1 0 7.8 0M10 1.9v7.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="gate-closed">演出を見る</span><span class="gate-opened">閉じる</span></span>
-              <span class="gate-meta">Meta Quest 3 実機録画</span>
+              <span class="gate-meta">起きる順に並べた映像</span>
             </summary>
             <div class="footage-room">
-              <div class="footage-viewer"><video id="footage-player" controls playsinline preload="none" width="960" height="960" aria-label="廻リ視の実機片目録画"></video></div>
-              <div class="footage-side">
-                <div class="footage-controls" role="group" aria-label="演出映像を選択">
-                  <button type="button" data-video-select="fracture" aria-pressed="true">現実がスクリーンになる</button>
-                  <button type="button" data-video-select="error" aria-pressed="false">エラーの演出</button>
-                  <button type="button" data-video-select="eye" aria-pressed="false">目の演出</button>
+              <div class="footage-stage">
+                <div class="footage-viewer"><video id="footage-player" controls playsinline preload="none" width="960" height="720" aria-label="廻リ視の演出の映像"></video></div>
+                <div class="footage-caption">
+                  <p id="footage-part" class="footage-part">導入</p>
+                  <h3 id="footage-title">テレビが寄ってくる</h3>
+                  <p id="footage-description">暗闇の奥に黒いテレビが現れて、目の前まで寄ってくる。</p>
+                  <p id="footage-meta">PC上の再現映像 / 音声なし</p>
+                  <p id="footage-error" role="status"></p>
+                  <p class="footage-note">明滅を含みます。</p>
                 </div>
-                <div class="footage-caption"><h3 id="footage-title">現実がスクリーンになる</h3><p id="footage-description">目の前の現実が割れて、映像を映すスクリーンへ変わる。</p><p id="footage-meta">Meta Quest 3 / 片目の録画 / 14秒 / 音声なし</p><p id="footage-error" role="status"></p></div>
-                <p class="footage-note">明滅を含みます。</p>
+              </div>
+              <div class="fx-reel" role="group" aria-label="演出を選択">
+                <!-- fx:begin -->
+                <div class="fx-part">
+                  <h3 class="fx-part-name">導入</h3>
+                  <ol class="fx-list">
+                    <li><button type="button" data-video-select="tv-approach" data-src="assets/fx/tv-approach.mp4" data-poster="assets/fx/tv-approach.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/tv-approach-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">テレビが寄ってくる</span></button><p class="fx-say" hidden>暗闇の奥に黒いテレビが現れて、目の前まで寄ってくる。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 2秒</p></li>
+                    <li><button type="button" data-video-select="tv-power" data-src="assets/fx/tv-power.mp4" data-poster="assets/fx/tv-power.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/tv-power-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">電源が入る</span></button><p class="fx-say" hidden>テレビが点いて、監視カメラの映像が映る。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 4秒</p></li>
+                  </ol>
+                </div>
+                <div class="fx-part">
+                  <h3 class="fx-part-name">一周目</h3>
+                  <ol class="fx-list">
+                    <li><button type="button" data-video-select="handprint" data-src="assets/fx/handprint.mp4" data-poster="assets/fx/handprint.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/handprint-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">血の手形</span></button><p class="fx-say" hidden>壁に、血の手形が滲む。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 5秒</p></li>
+                    <li><button type="button" data-video-select="handprint-clear" data-src="assets/fx/handprint-clear.mp4" data-poster="assets/fx/handprint-clear.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/handprint-clear-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">報告する</span></button><p class="fx-say" hidden>異変を報告すると、手形は消える。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 5秒</p></li>
+                  </ol>
+                </div>
+                <div class="fx-part">
+                  <h3 class="fx-part-name">二周目</h3>
+                  <ol class="fx-list">
+                    <li><button type="button" data-video-select="stain" data-src="assets/fx/stain.mp4" data-poster="assets/fx/stain.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/stain-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">幕のシミ</span></button><p class="fx-say" hidden>幕に、顔のようなシミが滲んで広がる。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 6秒</p></li>
+                    <li><button type="button" data-video-select="stain-face" data-src="assets/fx/stain-face.mp4" data-poster="assets/fx/stain-face.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/stain-face-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">笑う顔</span></button><p class="fx-say" hidden>幕が膨らんで、笑う顔がせり出す。幕の縁から人形が覗く。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 7秒</p></li>
+                    <li><button type="button" data-video-select="backrooms" data-src="assets/fx/backrooms.mp4" data-poster="assets/fx/backrooms.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/backrooms-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">子供部屋</span></button><p class="fx-say" hidden>画面ごと、古い子供部屋へ飛ばされる。人形が畳に落ちて、首だけがこちらを向く。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 4秒</p></li>
+                    <li><button type="button" data-video-select="pov-chase" data-src="assets/fx/pov-chase.mp4" data-poster="assets/fx/pov-chase.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/pov-chase-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">人形の目</span></button><p class="fx-say" hidden>人形の目線が割り込む。自分の背中が、近づいてくる。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 3秒</p></li>
+                    <li><button type="button" data-video-select="takeover" data-src="assets/fx/takeover.mp4" data-poster="assets/fx/takeover.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/takeover-s.webp" width="320" height="180" alt="" decoding="async"></span><span class="fx-name">乗っ取り</span></button><p class="fx-say" hidden>画面が砂嵐になって、警告が出る。案内役の顔が人形に変わる。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 11秒</p></li>
+                  </ol>
+                </div>
+                <div class="fx-part">
+                  <h3 class="fx-part-name">三周目</h3>
+                  <ol class="fx-list">
+                    <li><button type="button" data-video-select="warp" data-src="assets/fx/warp.mp4" data-poster="assets/fx/warp.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/warp-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">歪む部屋</span></button><p class="fx-say" hidden>部屋が伸び縮みして、傾く。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 6秒</p></li>
+                    <li><button type="button" data-video-select="doll-a" data-src="assets/fx/doll-a.mp4" data-poster="assets/fx/doll-a.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/doll-a-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">人形の自分</span></button><p class="fx-say" hidden>自分が立っているはずの場所に、人形が立っている。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 4秒</p></li>
+                    <li><button type="button" data-video-select="doll-b" data-src="assets/fx/doll-b.mp4" data-poster="assets/fx/doll-b.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/doll-b-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">録画の中の人形</span></button><p class="fx-say" hidden>一周目の録画が流れる。そこに居たのは、人形だった。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 6秒</p></li>
+                    <li><button type="button" data-video-select="screens" data-src="assets/fx/screens.mp4" data-poster="assets/fx/screens.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/screens-s.webp" width="320" height="180" alt="" decoding="async"></span><span class="fx-name">増えるスクリーン</span></button><p class="fx-say" hidden>暗闇の奥から、テレビが次々に寄ってきて周りを埋める。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 4秒</p></li>
+                  </ol>
+                </div>
+                <div class="fx-part">
+                  <h3 class="fx-part-name">最後</h3>
+                  <ol class="fx-list">
+                    <li><button type="button" data-video-select="final-enter" data-src="assets/fx/final-enter.mp4" data-poster="assets/fx/final-enter.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/final-enter-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">人形の群れ</span></button><p class="fx-say" hidden>画面の半分を、人形の群れが埋める。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 5秒</p></li>
+                    <li><button type="button" data-video-select="halt" data-src="assets/fx/halt.mp4" data-poster="assets/fx/halt.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/halt-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">止まってください！</span></button><p class="fx-say" hidden>案内役が、歩くのを止める。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 2秒</p></li>
+                    <li><button type="button" data-video-select="return" data-src="assets/fx/return.mp4" data-poster="assets/fx/return.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/return-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">取り除く</span></button><p class="fx-say" hidden>最後の報告で人形が消えて、現実に戻る。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 3秒</p></li>
+                    <li><button type="button" data-video-select="farewell" data-src="assets/fx/farewell.mp4" data-poster="assets/fx/farewell.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/farewell-s.webp" width="320" height="243" alt="" decoding="async"></span><span class="fx-name">人形との別れ</span></button><p class="fx-say" hidden>人形がこちらを向く。背を向けて、奥へ消える。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 14秒</p></li>
+                  </ol>
+                </div>
+                <div class="fx-part">
+                  <h3 class="fx-part-name">終幕</h3>
+                  <ol class="fx-list">
+                    <li><button type="button" data-video-select="outro-return" data-src="assets/fx/outro-return.mp4" data-poster="assets/fx/outro-return.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/outro-return-s.webp" width="320" height="180" alt="" decoding="async"></span><span class="fx-name">帰還End</span></button><p class="fx-say" hidden>テレビの電源が落ちて、結果が出る。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 7秒</p></li>
+                    <li><button type="button" data-video-select="outro-doll" data-src="assets/fx/outro-doll.mp4" data-poster="assets/fx/outro-doll.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/outro-doll-s.webp" width="320" height="180" alt="" decoding="async"></span><span class="fx-name">人形End</span></button><p class="fx-say" hidden>報告しないまま歩き続けると、画面は黒に落ちる。</p><p class="fx-meta" hidden>PC上の再現映像 / 音声なし / 5秒</p></li>
+                  </ol>
+                </div>
+                <div class="fx-part">
+                  <h3 class="fx-part-name">以前の版</h3>
+                  <ol class="fx-list">
+                    <li><button type="button" data-video-select="fracture" data-src="assets/footage-fracture.mp4" data-poster="assets/footage-fracture.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/old-fracture-s.webp" width="295" height="320" alt="" decoding="async"></span><span class="fx-name">現実がスクリーンになる</span></button><p class="fx-say" hidden>目の前の現実が割れて、映像を映すスクリーンへ変わる。</p><p class="fx-meta" hidden>Meta Quest 3 / 片目の録画 / 14秒 / 音声なし</p></li>
+                    <li><button type="button" data-video-select="error" data-src="assets/footage-error.mp4" data-poster="assets/footage-error.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/old-error-s.webp" width="300" height="320" alt="" decoding="async"></span><span class="fx-name">エラーの演出</span></button><p class="fx-say" hidden>視界に広がる警告。遮断しようとする表示も壊れていく。</p><p class="fx-meta" hidden>Meta Quest 3 / 右目の録画 / 11秒 / 音声なし</p></li>
+                    <li><button type="button" data-video-select="eye" data-src="assets/footage-eye.mp4" data-poster="assets/footage-eye.webp" aria-pressed="false"><span class="fx-thumb" aria-hidden="true"><img data-src="assets/fx/old-eye-s.webp" width="299" height="320" alt="" decoding="async"></span><span class="fx-name">目の演出</span></button><p class="fx-say" hidden>スクリーンの外に現れる目。暗闇から、こちらを見ている。</p><p class="fx-meta" hidden>Meta Quest 3 / 左目の録画 / 11秒 / 音声なし</p></li>
+                  </ol>
+                </div>
+                <!-- fx:end -->
               </div>
               <noscript><p>映像の再生には JavaScript を有効にしてください。</p></noscript>
             </div>
