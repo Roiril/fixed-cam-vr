@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 3f8a1b93-ad92-45db-8404-e8cb45e0f296
-  modified: 2026-08-23T11:25:41.150Z
+  modified: 2026-11-15T03:28:55.973Z
 ---
 
 配信アプリ（[fixed-cam-streamer](https://github.com/Roiril/fixed-cam-streamer) v0.13.0・2026-08-23）に
@@ -92,6 +92,8 @@ contain-fit は左右対称なので、これはソース画像の横中央と�
 `tools/twin/curtain_guide.py` が幕の外周を投影して配信アプリの assets へ書く。線は 640x480 に対する 0..1。
 保存写真へ重ねた画（Drive `screenshots/curtain-guide-20261114/`）で A の幕の縁・裾・角に 1〜2px で乗ることを見た。
 ⚠ 実機のスマホでの描画は未確認（11-14 はスマホが繋がっておらず、Redmi はインストール拒否、Quest β はパネルが撮れなかった）。
+⚠⚠ **A の rig.json は 9/5 の写真から解いてあり、採用中の写真とシミ・4-A の人形は 9/24 の写真に合わせてある。** v0.18.1 の A の線は 9/5 の据え方を指していて、線どおりに置くと素材がずれた（2026-11-15 に現場で発覚。重ねるとカーテンが二重）。
+v0.18.2 から、`plate_obs.json` の `guide` にある台は、その写真の点から姿勢を解き直して線を引く（A は 9/24・rms 4.1px）。rig.json と本番の CG の calib は 9/5 のまま。A を 9/24 に据えたら CG の較正を取り直す。
 ⚠ 縦持ちでは引かない（画角が違う）。⚠ 端末の `local.properties` が無いと gradle が SDK を見つけない —
 Unity 同梱の `AndroidPlayer/SDK` を `sdk.dir` に書く。
 

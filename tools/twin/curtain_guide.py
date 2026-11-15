@@ -31,7 +31,8 @@ CLOTH_BOTTOM = 0.0
 INSET_CORNER = 0.012       # 角の側の引き（build_booth）
 INSET_END = 0.004          # 端の側の引き
 NEAR = 0.05                # これより手前（カメラの後ろ側）は引かない [m]
-STEP_M = 0.03              # 辺を刻む間隔。直線でも分けておくと画の外への出入りで切れ目が正しく出る
+MAX_GUIDE_RMS = 8.0        # guide の点に枠が合わないとき書かない [px]
+STEP_M = 0.03             # 辺を刻む間隔。直線でも分けておくと画の外への出入りで切れ目が正しく出る
 DEFAULT_OUT = ROOT.parent.parent / "Mobile" / "fixed-cam-streamer" / "app" / "src" / "main" / "assets" / "curtain_guide.json"
 
 
@@ -83,18 +84,48 @@ def visible(line) -> bool:
     return any(0.0 <= u <= 1.0 and 0.0 <= v <= 1.0 for u, v in line)
 
 
-def build(show: dict, rig: dict) -> dict:
+def guide_camera(cam: dict, rig: dict, obs: dict) -> tuple[dict, str, float | None]:
+    """補助線に使うカメラ。plate_obs.json の guide にある台は、その写真の点から姿勢を解き直す。
+
+    ツイン（rig.json）は別の写真に合わせてあることがある（A は 9/5）。据える人が合わせたいのは
+    素材を合わせた写真なので、補助線だけはそちらを指す。画角は rig.json の共通値に止める。
+    """
+    spec = (obs.get("guide") or {}).get(cam["id"])
+    if not isinstance(spec, dict):
+        return cam, "rig.json", None
+    import plate_fit as pf  # noqa: PLC0415  （guide がある台だけ読む）
+
+    cid = cam["id"]
+    saved = (pf.OBS["points"].get(cid), pf.OBS["lines"].get(cid))
+    pf.OBS["points"][cid], pf.OBS["lines"][cid] = spec["points"], spec["lines"]
+    try:
+        v, rr = pf.solve_only(cid, float(rig["_fit"]["fPx"]))
+    finally:
+        pf.OBS["points"][cid], pf.OBS["lines"][cid] = saved
+    rms = math.sqrt(float(rr @ rr) / len(rr))
+    fwd = pf.rot(v[4], v[3], v[5])[:, 2]
+    pos = np.asarray(v[:3], float)
+    solved = dict(cam, pos=[float(x) for x in pos], lookAt=[float(x) for x in pos + fwd * 2.0],
+                  rollDeg=float(v[5]), hfovDeg=float(rig["_fit"]["hfovDeg"]))
+    return solved, spec["plate"], rms
+
+
+def build(show: dict, rig: dict, obs: dict | None = None) -> dict:
     out = {
-        "_source": "fixed-cam-vr tools/twin/curtain_guide.py が rig.json と show.json の壁から作る。手で直さない",
+        "_source": "fixed-cam-vr tools/twin/curtain_guide.py が rig.json（plate_obs.json の guide がある台はその写真）と show.json の壁から作る。手で直さない",
         "srcW": int(W),
         "srcH": int(H),
         "cameras": {},
     }
     for cam in rig["cameras"]:
+        cam, source, rms = guide_camera(cam, rig, obs or {})
+        if rms is not None and rms > MAX_GUIDE_RMS:
+            raise SystemExit(f"✗ {cam['id']}: {source} の点に枠が合いません（rms {rms:.1f}px）。plate_obs.json の guide の画素を読み直す")
+        print(f"{cam['id']}: {source}" + (f"（rms {rms:.1f}px）" if rms is not None else ""))
         lines = []
         for _, a, b in curtain_edges(show):
             lines += [ln for ln in project_edge(cam, a, b) if visible(ln)]
-        out["cameras"][cam["id"]] = {"lines": lines}
+        out["cameras"][cam["id"]] = {"lines": lines, "plate": source if rms is not None else cr.OBS["plates"][cam["id"]]}
     return out
 
 
@@ -105,7 +136,7 @@ def draw_check(guide: dict, out_dir: Path) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for cid, g in guide["cameras"].items():
-        im = Image.open(_plate_path(cid)).convert("RGB")
+        im = Image.open(_plate_path(cid, g.get("plate"))).convert("RGB")
         if im.size != (int(W), int(H)):
             raise SystemExit(f"{cid} の写真が {im.size}。640x480 でないと比べられない")
         d = ImageDraw.Draw(im)
@@ -119,10 +150,13 @@ def draw_check(guide: dict, out_dir: Path) -> list[Path]:
     return paths
 
 
-def _plate_path(cid: str) -> Path:
-    name = cr.OBS["plates"][cid]
-    local = HERE / "plates" / name
-    return local if local.exists() else ROOT / "Assets" / "StreamingAssets" / "show" / "assets" / name
+def _plate_path(cid: str, name: str | None = None) -> Path:
+    name = name or cr.OBS["plates"][cid]
+    for base in (HERE / "plates", ROOT / "Assets" / "StreamingAssets" / "show" / "assets",
+                 ROOT / "tools" / "web-compositor" / "captures"):
+        if (base / name).exists():
+            return base / name
+    raise SystemExit(f"{cid} の写真 {name} が見つからない")
 
 
 def main() -> int:
@@ -130,7 +164,7 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--check", type=Path, help="無人写真へ重ねた画を書くフォルダ")
     a = ap.parse_args()
-    guide = build(cr.SHOW, cr.RIG)
+    guide = build(cr.SHOW, cr.RIG, cr.OBS)
     for cid, g in guide["cameras"].items():
         if not g["lines"]:
             print(f"✗ {cid}: 画に入る輪郭が 1 本も無い（rig.json の向きを疑う）")
