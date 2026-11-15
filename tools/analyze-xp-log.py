@@ -360,6 +360,9 @@ def doll_laugh_findings(events, takes):
 # 報告でカットを進めたあと、次のカットが出るまでの上限（秒）。進めるのは次の Tick なので、普通は 1 フレームで続く。
 MARK_ADVANCE_NEXT_SEC = 3.0
 
+# 素材を消した後の同じ演出への報告を別の異変として数える鍵の接尾辞（C# VisitorReportTally.ClearedSuffix と揃える）
+TALLY_CLEARED_SUFFIX = "+cleared"
+
 
 def mark_advance_findings(events, takes=None):
     """報告でカットを 1 つ進めた（step の markAdvance）あと、次のカットが続いたかを見る。(行, 判定) を返す。
@@ -809,6 +812,69 @@ def kids_jump_findings(events, takes=None):
                     verdicts.append(("OK", f"{tid}: 報告を最後のコマ（カット {until}）まで保ってから畳んだ"))
                 else:
                     verdicts.append(("FAIL", f"{tid}: 報告を保つはずが、最後のコマ（カット {until}）が出る前に畳んだ"))
+    return lines, verdicts
+
+
+def show_through_findings(events, takes=None):
+    """報告で畳むとき、全員に見せたいカット（step の markShowThrough）を見せ切ったかを見る。(行, 判定) を返す。
+
+    2 周目 A の膨らむ顔と人形（「右のシミのもっこりは全員に見せたい演出」）。書き手は C# の ShowTelemetryHost:
+      ev=showthru take= step=<報告が成立したカット> until=<見せ切るカット> n=
+    演出 1 本（ev=take st=begin → st=end）ごとに:
+      - showthru があり why=mark で畳んだのに until のカットが出ていない・until より後のカットへ進んだ → FAIL
+      - showthru があり why=done で終わった → FAIL（報告として畳まれていない）
+      - showthru があり区間を出て（yield）畳んだ → WARN（見せ切る前に体験者が出た。従来どおり即畳む）
+      - takes（台本）があり、markShowThrough のカットより前で why=mark で畳んだ → FAIL（見せずに畳んだ）
+    """
+    holds = [e for e in events if e.get("ev") == "showthru"]
+    until_of = {}
+    for t in takes or []:
+        for i, s in enumerate(t.get("steps") or []):
+            if s.get("markShowThrough"):
+                until_of.setdefault(str(t.get("id", "")), i)
+                break
+    if not holds and not until_of:
+        return [], []
+    spans = []   # (take id, 始まり t, 終わり t, why)
+    open_take = {}
+    for e in events:
+        if e.get("ev") != "take":
+            continue
+        tid, t = str(e.get("id", "")), fnum(e, "t", 0.0)
+        if e.get("st") == "begin":
+            open_take[tid] = t
+        elif e.get("st") == "end" and tid in open_take:
+            spans.append((tid, open_take.pop(tid), t, str(e.get("why", ""))))
+    for tid, t0 in open_take.items():
+        spans.append((tid, t0, float("inf"), ""))
+
+    verdicts = []
+    for tid, t0, t1, why in spans:
+        def inside(e):
+            return t0 <= fnum(e, "t", 0.0) <= t1 and str(e.get("take", e.get("id", ""))) == tid
+        steps = [int(fnum(e, "i", -1.0)) for e in events if e.get("ev") == "step" and inside(e)]
+        hs = [e for e in holds if inside(e)]
+        if hs:
+            until = int(fnum(hs[0], "until", -1.0))
+            if why == "done":
+                verdicts.append(("FAIL", f"{tid}: 報告は成立したのに演出が最後まで流れて終わった（why=done）— "
+                                         f"見せ切るカット（カット {until}）の後で報告として畳まれていない"))
+            elif why == "mark":
+                if until not in steps:
+                    verdicts.append(("FAIL", f"{tid}: 見せ切るはずのカット（カット {until}）が出る前に報告で畳んだ"))
+                elif any(i > until for i in steps):
+                    verdicts.append(("FAIL", f"{tid}: 見せ切るカット（カット {until}）の後も畳まずに次のカットへ進んだ"))
+                else:
+                    verdicts.append(("OK", f"{tid}: カット {int(fnum(hs[0], 'step', -1.0))} で成立した報告を、"
+                                           f"カット {until} を見せ切ってから畳んだ"))
+            elif why == "yield":
+                verdicts.append(("WARN", f"{tid}: 見せ切るカット（カット {until}）の終わりを待つ間に区間を出て畳んだ"))
+        elif tid in until_of and why == "mark":
+            last = max(steps, default=-1)
+            if last < until_of[tid]:
+                verdicts.append(("FAIL", f"{tid}: 見せ切るカット（カット {until_of[tid]}）より前（カット {last}）で報告により畳んだ — "
+                                         "TakeRunner.ResolveShowThroughDismissAfterStep が効いていない"))
+    lines = [f"  見せ切るカットの前後で成立した報告: {len(holds)} 回"] if holds else []
     return lines, verdicts
 
 
@@ -4129,6 +4195,13 @@ def analyze(events, others, exp, warns=None):
         for level, text in kj_verdicts:
             verdict(level, text)
 
+        # -- 報告しても全員に見せたいカットは見せ切る（step の markShowThrough・2 周目 A の膨らむ顔と人形）
+        st_lines, st_verdicts = show_through_findings(events, exp.get("takes"))
+        for line in st_lines:
+            w(line)
+        for level, text in st_verdicts:
+            verdict(level, text)
+
         # -- 人形の笑い声 1 回（カットの dollLaugh・2 周目 A）。画にも録画にも出ないので ev=sfx が唯一の証拠
         dl_lines, dl_verdicts = doll_laugh_findings(events, exp.get("takes"))
         for line in dl_lines:
@@ -4354,6 +4427,19 @@ def analyze(events, others, exp, warns=None):
             if not runs or fnum(m, "n", 0.0) <= fnum(runs[-1][-1], "n", 0.0):
                 runs.append([])
             runs[-1].append(m)
+        # 素材を消した後（ev=markclear の後、同じ演出の次の st=begin まで）の報告は別の異変として数える
+        # — VisitorReportTally.Record(afterClear) の鍵は id + ClearedSuffix。
+        tally_key = {}
+        cleared_now = set()
+        for e in events:
+            ev = e.get("ev")
+            if ev == "take" and e.get("st") == "begin":
+                cleared_now.discard(str(e.get("id") or ""))
+            elif ev == "mark" and e.get("anom") is not None:
+                tid = str(e.get("take") or "")
+                tally_key[id(e)] = tid + TALLY_CLEARED_SUFFIX if tid in cleared_now else tid
+            elif ev == "markclear":
+                cleared_now.add(str(e.get("take") or ""))
         for ri, run in enumerate(runs):
             t0 = fnum(run[0], "t", 0.0)
             t1 = fnum(runs[ri + 1][0], "t", 0.0) if ri + 1 < len(runs) else float("inf")
@@ -4361,8 +4447,9 @@ def analyze(events, others, exp, warns=None):
             detected_takes = []
             for m in run:
                 tid = str(m.get("take") or "")
-                if str(m.get("det")) == "1" and tid and tid != "-" and tid not in detected_takes:
-                    detected_takes.append(tid)
+                key = tally_key.get(id(m), tid)
+                if str(m.get("det")) == "1" and tid and tid != "-" and key not in detected_takes:
+                    detected_takes.append(key)
             label = f"ラン {ri + 1}: " if len(runs) > 1 else ""
             w(f"  {label}押した {len(run)} 回 / 報告した異変 {anom_last} 件 / 出た演出 {len(played_takes)} 本")
             for m in run:

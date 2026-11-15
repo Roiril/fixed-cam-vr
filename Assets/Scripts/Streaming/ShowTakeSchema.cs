@@ -310,6 +310,16 @@ namespace FixedCamVr.Streaming
         public bool markStartAdvance;
 
         /// <summary>
+        /// <b>報告で演出を畳むとき、このカットの終わりまでは見せ切る</b>（LEDGER 0390 の後のユーザー指示
+        /// 「右のシミのもっこりは全員に見せたい演出」・2 周目 A の膨らむ顔と人形の動画）。
+        /// このカットより前のカットで報告が成立したら、いまのカットを今で終えてこのカットへ進み、
+        /// このカットが終わった縁で報告として畳む。このカットの中で成立したら、その終わりで畳む。
+        /// このカットより後のカットでは従来どおり即畳む。報告は成立した時点で数える。
+        /// 区間を出た（yield）・watchdog・中止は従来どおり即畳む。⚠ 既定 false。
+        /// </summary>
+        public bool markShowThrough;
+
+        /// <summary>
         /// 端末内録画（<c>source:"rec"</c>）の<b>再生の速さ</b>。0 以下 = 等速
         /// （<see cref="TakeSchema.ResolveRecRate"/> が 0.25..8 へ丸める）。
         /// 出どころは <c>canon/LEDGER.md</c> 0272（3 周目 A で凍結点を踏んだら早送りで先へ行ってしまう）。

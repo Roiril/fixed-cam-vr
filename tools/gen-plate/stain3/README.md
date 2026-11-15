@@ -46,7 +46,8 @@
   しみが滲む途中を切り、何も無い画から膨らむ直前のしみ（元の 2.0 秒）へディゾルブで移り、顔を加速する。半分の速さには落とさない
 - 本編の素材にするのは `py -3.11 tools/gen-plate/stain3/build_flow_right.py`（`--dry` で確認の画だけ）。最初のコマを無人写真へ 1 回だけ
   位置合わせし、全部のコマへ同じ写し方と色の合わせを掛けて、段 1 のしみ（比の画）・段 2 の動画・段 3 の止め・段 4 の顔だけの画を
-  `static-inputs/stain_A_right_flow_*_20261116_flow.*` に書く。確認の画は `Logs/gen-plate/stain2A_right_video_20261115/build/sheet.png`。
+  `static-inputs/stain_A_right_flow_*_<写真の日時>.*` に書く。いま台本が使う版の名前は `static-inputs/stain_A_right_flow.json`。
+  確認の画は `Logs/gen-plate/stain2A_right_video_20261115/build/sheet.png`。
   台本へは `tools/show-apply-stain-right.py`。ツインの部屋の版は作っていない（ツインは前の版の素材を出す）
 
 ## 素材
@@ -55,7 +56,7 @@
 
 | 場所 | 待機 | 左のしみ（掛け算） | 盛り上がり（0390 から台本で使っていない） | 右の幕 |
 |---|---|---|---|---|
-| 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | 動画生成の版 `stain_A_right_flow_*_20261116_flow.*`（0389。前の版の `stain_A_right_*_20261115_1250*` は台本から外れた） |
+| 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | 動画生成の版 `stain_A_right_flow_*_20261115_125052.*`（0389。いまの版は `stain_A_right_flow.json`。前の版の `stain_A_right_*_20261115_1250*` は台本から外れた） |
 | ツイン `tools/twin/assets/` | `twin_stainA_idle.png` | `twin_stainA_ratio.png` | `twin_stainA_bulge.png` | `twin_stainA_right_*` |
 
 - 左のしみの姿（0143 で判定済み）は比の画が持っている。待機は無人写真にその比の画を掛けた画（生成ではない）
@@ -93,10 +94,41 @@
    `--box` はマスクの中（左半分）。確認用の画は 元・生成・結果・残した範囲 の順に並ぶ。必ず開いて見る。
    レシピは比の画と順の画を作らず `reuse` に前の名前を書く（`show-apply-bleed.py` と `bleed_preview.py` がそこから読む）。
    膨らみの見え方は `py -3.11 tools/gen-plate/bleed_preview.py --only press`
-4. 右の幕は `build_right_burst.py real`（`SETS["real"]` の `work`・`base`・`rail`（手すりの芯）・`names` をその日の写真に合わせる）
+4. 右の幕は下の「当日に作り直す（右の幕）」
 5. cue の URL を新しい名前へ替える（卓サーバが動いていれば `GET /state` → `POST /state`。準備モードで弾かれたら卓を止めて
    `show.json` の `cues` だけ直し、起動し直す。`memory/show_json_is_live_config.md`）。`plate_A` / `plate_A_right` も同じ写真へ替え、
    `plate-dependents.json` の `plate` を書き換える
+
+## 当日に作り直す（右の幕）
+
+右の幕（しみ・膨らむ顔と人形の動画・止め・顔だけ）は Flow の動画 1 本から組む。写真を替えたら、まず位置合わせだけで組み直す。
+
+1. **合わせ直す**（1 分ほど・外の回線は要らない）。卓の「素材 → 無人の写真」で、カメラ A の「2 周目 A の右の幕」の
+   「この写真に合わせ直す」を押す。卓は採用中の写真で次を走らせ、台本の cue と `plate-dependents.json` の `plate` を新しい名前へ替える
+
+   ```powershell
+   py -3.11 tools/gen-plate/stain3/build_flow_right.py --plate tools/web-compositor/captures/<採用中の写真>
+   ```
+
+   卓を使わずに走らせたら、台本へは `py -3.11 tools/show-apply-stain-right.py --apply`（卓を止めてから・`memory/show_json_is_live_config.md`）、
+   `plate-dependents.json` の `stainARight` の行の `plate` は手で替える
+2. **断られたら生成し直す**（終了コード 3。動画の最初のコマか元の写真が、採用中の写真と突き合わない。点 150 以上・残差 1px 以下が要る）。
+   カメラの位置か幕の並びが変わっている。卓は断った時点で首尾フレームを
+   `Logs/gen-plate/stain2A_right_video_20261115/build/flow_inputs_<写真の日時>/` に書く（`--flow-inputs` と同じ）
+   - `start_16x9.png`（採用中の写真）と `end_16x9.png`（前の版の最後のフレームを新しい写真へ写したもの）を Flow に渡す。
+     Omni 1.2 Flash・360p・6 秒、最初と最後のフレームを指定。中身は 0389 の C と同じ（何も無い幕にしみが滲み、顔が膨らみ、縁から人形が覗く）
+   - `end_16x9.png` が無いときは、元の写真と突き合わないほど部屋が変わっている。最後のフレームを Codex で描き直す（上の「動画生成で試す」の顔の作り方。入力は `start.png`）
+   - 返った動画（16:9 のまま）で組む。最初は `--dry` で確認の画 `build/sheet.png` を見る。段 1 のしみが出きっていなければ `--stain-at <秒>` を替える
+     （元の動画では 2.0 秒。段 2 の区切りも同じだけずれる）
+
+     ```powershell
+     py -3.11 tools/gen-plate/stain3/build_flow_right.py --plate tools/web-compositor/captures/<採用中の写真> --from-flow <返った mp4> --dry
+     py -3.11 tools/gen-plate/stain3/build_flow_right.py --plate tools/web-compositor/captures/<採用中の写真> --from-flow <返った mp4>
+     ```
+
+     4:3 に切り出した動画は `flow/flow_<写真の日時>_4x3.mp4` に置かれ、`stain_A_right_flow.json` の `source` に残る。以後の合わせ直しはその動画から組む
+   - 台本へは、卓でもう一度「この写真に合わせ直す」を押す（新しい動画から組み直し、cue と台帳を替える）
+3. どちらでも、最後に焼き直す（`.\tools\unity.ps1 build fixedcam` → `py -3.11 tools\quest-fleet.py sync`）
 
 ## 罠
 

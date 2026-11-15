@@ -180,8 +180,9 @@ export function newStep(over = {}) {
     //   beyondMinSec = 側待ち（untilBeyond）のカットを、線の向こうに居ても最短この秒は畳まない（0 = 制限しない）
     //   markClear   = 体験者の報告で、このカットの素材だけを消す（演出もカットも続く。以後 2 枚目の層と長押しの膨らみは出さない）
     //   markStartAdvance = 体験者が報告の長押しを始めたら、このカットを終えて次のカットへ進める
+    //   markShowThrough  = 報告で畳むとき、このカットの終わりまでは見せ切る（前のカットで成立したら今でこのカットへ進む）
     swapHold: false, swapMinX: 0, switchSfx: false, dollCall: false, dollLaugh: false, markAdvance: false,
-    beyondMinSec: 0, markClear: false, markStartAdvance: false,
+    beyondMinSec: 0, markClear: false, markStartAdvance: false, markShowThrough: false,
     // 端末内録画の再生（canon/LEDGER.md 0272。3 周目 A の早送りだけが使う）。
     //   recRate     = 再生の速さ（0 以下 = 等速。0.25..8 へ丸める）
     //   recContinue = 画面に出ている同じ録画（recLap / camera が同じ）を**頭へ戻さず続きから**流す。
@@ -294,6 +295,7 @@ function serializeStep(s) {
     beyondMinSec: Math.max(0, num(s.beyondMinSec, 0)),
     markClear: !!s.markClear,
     markStartAdvance: !!s.markStartAdvance,
+    markShowThrough: !!s.markShowThrough,
     // 録画の再生（canon/LEDGER.md 0272）。0 = 等速。Unity 側 TakeSchema.ResolveRecRate と同じ丸め。
     recRate: recRateOf(s.recRate),
     recContinue: !!s.recContinue,

@@ -772,7 +772,12 @@ namespace FixedCamVr.Streaming
         /// 報告はこの時点で成立している（返り値は Dismissed）。区間を出た（yield）・watchdog・中止は従来どおり即畳む。
         /// 既に越えたカットを渡すと、いまのカットの終わりで畳む。
         /// </param>
-        public MarkResult NotifyMarkPressed(float now, bool deferDismiss = false, int dismissAfterStep = -1)
+        /// <param name="endStepNow">
+        /// true なら、②で <paramref name="dismissAfterStep"/> まで畳まずに保つとき、いまのカットを今で終えて次のカットへ進める
+        /// （step の <c>markShowThrough</c> より前のカットで報告が成立した・線待ちで止まらずに見せるカットへ進む）。
+        /// </param>
+        public MarkResult NotifyMarkPressed(float now, bool deferDismiss = false, int dismissAfterStep = -1,
+                                           bool endStepNow = false)
         {
             if (!_running) return MarkResult.None;
             if (now < _stepBeganAt) return MarkResult.None;
@@ -781,13 +786,13 @@ namespace FixedCamVr.Streaming
             //    （卓・自動走行・将来の別経路がここへ直接来る）。
             if (IsMarkTooEarly(now)) return MarkResult.None;
 
-            _activeReported = true;
-
-            if (CurrentStepWait() == WaitMark) { SetCurrentStepEnd(now); return MarkResult.Released; }
+            if (CurrentStepWait() == WaitMark) { _activeReported = true; SetCurrentStepEnd(now); return MarkResult.Released; }
 
             // ①'' markClear のカットは素材だけを消し、演出もカットも続ける（0378 の左のシミ）。
             //     消すのは演出 1 本で 1 度。消した後の同じカットでの報告は何にも効かない（演出は畳まない —
             //     畳むと、まだ見せていない右の幕の人形が出なくなる）。
+            //     ⚠ 演出の決着（_activeReported）には数えない。数えると、素材を消した後に引き返したとき演出が
+            //     決着済みになり、戻ってもまだ見せていない後半（右の幕の顔と人形）が二度と出ない。
             if (CurrentStepMarkClear())
             {
                 if (_activeCleared) return MarkResult.None;
@@ -795,6 +800,8 @@ namespace FixedCamVr.Streaming
                 ClearCount++;
                 return MarkResult.Cleared;
             }
+
+            _activeReported = true;
 
             // ①' markAdvance のカットは演出を畳まず、そのカットだけを今で終える（次の Tick で次のカットへ）。
             //    dismissible より先に見る — 同じ演出が dismissible でも、このカットでの報告は「進める」意味になる。
@@ -804,7 +811,10 @@ namespace FixedCamVr.Streaming
             {
                 if (deferDismiss) _dismissDeferred = true;
                 else if (dismissAfterStep >= 0)
+                {
                     _dismissAfterStep = _dismissAfterStep >= 0 ? Math.Min(_dismissAfterStep, dismissAfterStep) : dismissAfterStep;
+                    if (endStepNow && _activeStep < _dismissAfterStep) SetCurrentStepEnd(now);
+                }
                 else _dismissPending = true;
                 return MarkResult.Dismissed;
             }

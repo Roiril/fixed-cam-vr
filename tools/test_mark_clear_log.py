@@ -137,7 +137,73 @@ class TakeSkipAnalyzerTests(unittest.TestCase):
         self.assertEqual(xp.take_skip_findings(events, TAKES), ([], []))
 
 
+SHOW_TAKES = [
+    {"id": "L2C0#0", "steps": [{"cueId": "cue_stain_A", "markClear": True}, {"cueId": "right"},
+                               {"cueId": "burst", "markShowThrough": True}, {"cueId": "watch"}]},
+]
+
+
+def take_span(t0, t1, why, steps, hold=None):
+    out = [ev("take", t0, id="L2C0#0", st="begin")]
+    out += [ev("step", t, take="L2C0#0", i=i, played=1) for t, i in steps]
+    if hold:
+        out.append(ev("showthru", hold[0], take="L2C0#0", step=hold[1], until=2, n=1))
+    out.append(ev("take", t1, id="L2C0#0", st="end", why=why))
+    return out
+
+
+class ShowThroughAnalyzerTests(unittest.TestCase):
+    """全員に見せたいカット（markShowThrough）を、報告しても見せ切ったか。"""
+
+    def levels(self, events, takes=SHOW_TAKES):
+        return [v[0] for v in xp.show_through_findings(events, takes)[1]]
+
+    def test_held_and_shown_through_passes(self):
+        events = take_span(0, 16, "mark", [(0, 0), (13, 1), (13.4, 2)], hold=(13.2, 1))
+        self.assertEqual(self.levels(events), ["OK"])
+
+    def test_held_but_folded_before_the_cut_fails(self):
+        events = take_span(0, 13.5, "mark", [(0, 0), (13, 1)], hold=(13.2, 1))
+        self.assertEqual(self.levels(events), ["FAIL"])
+
+    def test_held_but_went_on_past_the_cut_fails(self):
+        events = take_span(0, 20, "mark", [(0, 0), (13, 1), (13.4, 2), (15.7, 3)], hold=(13.2, 1))
+        self.assertEqual(self.levels(events), ["FAIL"])
+
+    def test_held_but_finished_by_itself_fails(self):
+        events = take_span(0, 30, "done", [(0, 0), (13, 1), (13.4, 2), (15.7, 3)], hold=(13.2, 1))
+        self.assertEqual(self.levels(events), ["FAIL"])
+
+    def test_folded_by_a_report_before_the_cut_without_hold_fails(self):
+        events = take_span(0, 13.5, "mark", [(0, 0), (13, 1)])
+        self.assertEqual(self.levels(events), ["FAIL"])
+
+    def test_report_after_the_cut_folds_at_once_and_says_nothing(self):
+        events = take_span(0, 17, "mark", [(0, 0), (13, 1), (13.4, 2), (15.7, 3)])
+        self.assertEqual(self.levels(events), [])
+
+    def test_leaving_the_zone_while_holding_warns(self):
+        events = take_span(0, 14, "yield", [(0, 0), (13, 1), (13.4, 2)], hold=(13.2, 1))
+        self.assertEqual(self.levels(events), ["WARN"])
+
+    def test_without_the_flag_nothing_is_said(self):
+        events = take_span(0, 13.5, "mark", [(0, 0), (13, 1)])
+        self.assertEqual(self.levels(events, takes=[]), [])
+
+
 class WriterReaderTests(unittest.TestCase):
+    def test_show_through_writer_matches_reader(self):
+        host = read("Assets/Scripts/Diagnostics/ShowTelemetryHost.cs")
+        self.assertIn('Emit($"ev=showthru take=', host)
+        self.assertIn('$"step={_takes.LastShowThroughStep} until={_takes.LastShowThroughUntilStep} "', host)
+        self.assertIn('e.get("ev") == "showthru"', read("tools/analyze-xp-log.py"))
+        self.assertRegex(read("Assets/Scripts/Streaming/ShowTakeSchema.cs"), r"public bool markShowThrough;")
+        self.assertIn("markShowThrough: !!s.markShowThrough", read("tools/web-compositor/timeline-model.js"))
+
+    def test_tally_suffix_after_clear_matches_csharp(self):
+        tally = read("Assets/Scripts/Streaming/VisitorReportTally.cs")
+        self.assertIn(f'public const string ClearedSuffix = "{xp.TALLY_CLEARED_SUFFIX}";', tally)
+
     def test_csharp_writes_the_events(self):
         host = read("Assets/Scripts/Diagnostics/ShowTelemetryHost.cs")
         self.assertIn('Emit($"ev=markclear take=', host)

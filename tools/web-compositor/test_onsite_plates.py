@@ -306,6 +306,136 @@ class PlateDependentsTest(unittest.TestCase):
                                           referenced=export_build.referenced_cue_ids(show))
         self.assertEqual(result['unclassified'], [], '台本が使う cue を plate-dependents.json に書いていない')
 
+    def test_the_real_ledger_lets_the_right_curtain_be_realigned(self):
+        ledger = self.plates.load_dependents()
+        spec = ledger['groups']['stainARight']['realign']
+        root = self.plates.REPO_ROOT
+        self.assertTrue(os.path.isfile(os.path.join(root, spec['script'])), spec['script'])
+        self.assertTrue(os.path.isfile(os.path.join(root, spec['pointer'])), spec['pointer'])
+        with open(os.path.join(root, spec['pointer']), encoding='utf-8') as stream:
+            version = json.load(stream)
+        for name in version['names'].values():
+            self.assertTrue(os.path.isfile(os.path.join(HERE, 'static-inputs', name)), name)
+        right = {cue_id for cue_id, row in ledger['dependents'].items() if row['group'] == 'stainARight'}
+        self.assertEqual(right, {'cue_stain_A_right_hold', 'stain_A_right_burst', 'stain_A_right_watch',
+                                 'cue_stain_A_right_face'})
+        self.assertTrue(all(ledger['dependents'][c]['plate'] == version['plate'] for c in right),
+                        '台帳の plate といまの版の写真が食い違っている')
+
+
+class RealignTest(unittest.TestCase):
+    """右の幕を採用中の写真へ合わせ直す（道具は偽物。名前の付け替えと台帳の書き換えを見る）。"""
+
+    LEDGER = '''{
+  "groups": {
+    "right": {"camera": "A", "title": "右の幕", "how": "合わせ直す",
+              "realign": {"script": "build.py", "pointer": "pointer.json"}},
+    "left": {"camera": "A", "title": "左の幕", "how": "生成し直す"}
+  },
+  "dependents": {
+    "cue_right": {"group": "right", "plate": "plate_A_old.jpg"},
+    "cue_face": {"group": "right", "plate": "plate_A_old.jpg"},
+    "cue_left": {"group": "left", "plate": "plate_A_old.jpg"}
+  }
+}
+'''
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('onsite_plates_realign', os.path.join(HERE, 'onsite_plates.py'))
+        self.plates = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.plates)
+        self.root = tempfile.mkdtemp(prefix='plate_realign_')
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.captures = os.path.join(self.root, 'captures')
+        os.makedirs(self.captures)
+        with open(os.path.join(self.captures, 'plate_A_new.jpg'), 'wb') as stream:
+            stream.write(jpeg_bytes())
+        self.ledger = os.path.join(self.root, 'ledger.json')
+        with open(self.ledger, 'w', encoding='utf-8', newline='') as stream:
+            stream.write(self.LEDGER)
+        self.write_pointer('20261115_125052', 'plate_A_old.jpg')
+        self.show = {'cues': [
+            {'id': 'cue_right', 'sourceUrl': '/static-inputs/flow_pop_20261116_flow.mp4',
+             'maskUrl': '/static-inputs/flow_mask_20261116_flow.png', 'loop': False},
+            {'id': 'cue_face', 'sourceUrl': '/static-inputs/flow_face_20261115_125052.png',
+             'maskUrl': '/static-inputs/flow_face_mask_20261115_125052.png'},
+            {'id': 'cue_left', 'sourceUrl': '/static-inputs/flow_pop_20261116_flow.mp4'}]}
+        self.calls = []
+
+    def write_pointer(self, tag, plate):
+        names = {'pop': f'flow_pop_{tag}.mp4', 'mask': f'flow_mask_{tag}.png',
+                 'face': f'flow_face_{tag}.png', 'face_mask': f'flow_face_mask_{tag}.png'}
+        with open(os.path.join(self.root, 'pointer.json'), 'w', encoding='utf-8') as stream:
+            json.dump({'tag': tag, 'plate': plate, 'names': names}, stream)
+
+    def mutate(self, fn):
+        draft = copy.deepcopy(self.show)
+        fn(draft)
+        self.show = draft
+        return 7
+
+    def tool(self, code, writes=True):
+        def run(cmd, **kwargs):
+            self.calls.append(cmd)
+            if writes and '--flow-inputs' not in cmd:
+                self.write_pointer('20261120_093000', 'plate_A_new.jpg')
+            out = '首尾フレーム: Logs/x/flow_inputs_20261120_093000' if '--flow-inputs' in cmd else '位置合わせ: 300/400 点'
+            return subprocess_result(code if '--flow-inputs' not in cmd else 0, out)
+        return run
+
+    def realign(self, run):
+        return self.plates.realign_group('right', 'plate_A_new.jpg', self.captures, self.mutate,
+                                         dependents_path=self.ledger, root=self.root, run=run, python='py')
+
+    def test_points_the_cues_at_the_new_version_and_rewrites_only_that_groups_plate(self):
+        code, result = self.realign(self.tool(0))
+        self.assertEqual(code, 200, result)
+        cues = {c['id']: c for c in self.show['cues']}
+        self.assertEqual(cues['cue_right']['sourceUrl'], '/static-inputs/flow_pop_20261120_093000.mp4')
+        self.assertEqual(cues['cue_right']['maskUrl'], '/static-inputs/flow_mask_20261120_093000.png')
+        self.assertEqual(cues['cue_face']['maskUrl'], '/static-inputs/flow_face_mask_20261120_093000.png',
+                         'face_mask を face の名前と取り違えない')
+        self.assertEqual(cues['cue_face']['sourceUrl'], '/static-inputs/flow_face_20261120_093000.png')
+        self.assertEqual(cues['cue_left']['sourceUrl'], '/static-inputs/flow_pop_20261116_flow.mp4',
+                         '別の group の cue は触らない')
+        self.assertEqual(self.calls[0][-2:], ['--plate', os.path.join(self.captures, 'plate_A_new.jpg')])
+        with open(self.ledger, encoding='utf-8') as stream:
+            text = stream.read()
+        self.assertIn('"cue_right": {"group": "right", "plate": "plate_A_new.jpg"}', text, '1 行の書式を保つ')
+        self.assertIn('"cue_left": {"group": "left", "plate": "plate_A_old.jpg"}', text)
+
+    def test_a_refusal_changes_nothing_and_writes_the_frames_to_regenerate_from(self):
+        code, result = self.realign(self.tool(self.plates.REALIGN_REFUSED, writes=False))
+        self.assertEqual(code, 409)
+        self.assertTrue(result['refused'])
+        self.assertIn('--flow-inputs', self.calls[1])
+        self.assertIn('flow_inputs_', result['inputsLog'][-1])
+        self.assertEqual({c['id']: c for c in self.show['cues']}['cue_right']['sourceUrl'],
+                         '/static-inputs/flow_pop_20261116_flow.mp4')
+        with open(self.ledger, encoding='utf-8') as stream:
+            self.assertEqual(stream.read(), self.LEDGER)
+
+    def test_a_failing_tool_changes_nothing(self):
+        code, result = self.realign(self.tool(1, writes=False))
+        self.assertEqual(code, 500)
+        self.assertFalse(result['ok'])
+        with open(self.ledger, encoding='utf-8') as stream:
+            self.assertEqual(stream.read(), self.LEDGER)
+
+    def test_only_groups_with_a_realign_spec_and_an_adopted_plate(self):
+        with self.assertRaises(self.plates.PlateError):
+            self.plates.realign_group('left', 'plate_A_new.jpg', self.captures, self.mutate,
+                                      dependents_path=self.ledger, root=self.root, run=self.tool(0))
+        with self.assertRaises(self.plates.PlateError):
+            self.plates.realign_group('right', 'plate_A_gone.jpg', self.captures, self.mutate,
+                                      dependents_path=self.ledger, root=self.root, run=self.tool(0))
+        self.assertEqual(self.calls, [], '道具を走らせる前に断る')
+
+
+def subprocess_result(code, out):
+    import subprocess
+    return subprocess.CompletedProcess(['py'], code, stdout=out, stderr='')
+
 
 if __name__ == '__main__':
     unittest.main()

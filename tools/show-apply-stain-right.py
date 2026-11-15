@@ -46,7 +46,16 @@ DOLL = "doll_mid"
 DOLL_HEIGHT_M = 0.8
 # 画像の人形が幕の裏で見ている床の点（tools/gen-plate/stain3/README.md の「右の幕の人形」）。CG はここから出る
 DOLL_FROM = (0.44, 0.62)
-FLOW_TAG = "20261116_flow"   # 動画生成（Flow）の版（0389 の C）。build_flow_right.py が無人写真へ位置合わせして書く
+# 動画生成（Flow）の版（0389 の C）。build_flow_right.py が無人写真へ位置合わせして書き、いま使う版の名前を
+# static-inputs/stain_A_right_flow.json に置く（当日の写真へ合わせ直すと名前が替わる）
+FLOW_POINTER = STATIC / "stain_A_right_flow.json"
+
+
+def flow_names() -> dict:
+    return json.loads(FLOW_POINTER.read_text(encoding="utf-8"))["names"]
+
+
+FLOW = flow_names()
 
 # 側待ち（untilBeyond）は線分を無限の直線へ延ばして側を見るので、端点は向きと卓の表示を決めるだけ。
 # 区間 A の歩きは C 側の (0.75, 0.45) あたりから入り、壁沿いに (-0.26, 0.26) → (-0.26, -0.5) → 壁の端を回って
@@ -68,20 +77,20 @@ CUES = [
      "sourceUrl": "/static-inputs/stain_A_ratio_20261113.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0, "blend": "multiply"},
     {"id": "stain_A_right_burst", "name": "右の幕のしみが笑う顔に膨らみ、幕の縁から人形が覗く（2周目A・動画生成）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_flow_mask_{FLOW_TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_flow_pop_{FLOW_TAG}.mp4", "strength": 1, "loop": False,
+     "maskUrl": f"/static-inputs/{FLOW['mask']}",
+     "sourceUrl": f"/static-inputs/{FLOW['pop']}", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
     {"id": "stain_A_right_watch", "name": "右の幕の笑う顔と、幕の縁から覗く人形（2周目A・止め）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_flow_mask_{FLOW_TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_flow_watch_{FLOW_TAG}.png", "strength": 1, "loop": False,
+     "maskUrl": f"/static-inputs/{FLOW['mask']}",
+     "sourceUrl": f"/static-inputs/{FLOW['watch']}", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
     {"id": "cue_stain_A_right_hold", "name": "右の幕の顔のしみだけ（2周目A・掛け算）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_flow_ratio_mask_{FLOW_TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_flow_ratio_{FLOW_TAG}.png", "strength": 1, "loop": False,
+     "maskUrl": f"/static-inputs/{FLOW['ratio_mask']}",
+     "sourceUrl": f"/static-inputs/{FLOW['ratio']}", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0, "blend": "multiply"},
     {"id": "cue_stain_A_right_face", "name": "右の幕の笑う顔だけ（2周目A・CG の人形がついてくる間）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_flow_face_mask_{FLOW_TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_flow_face_{FLOW_TAG}.png", "strength": 1, "loop": False,
+     "maskUrl": f"/static-inputs/{FLOW['face_mask']}",
+     "sourceUrl": f"/static-inputs/{FLOW['face']}", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
 ]
 OLD_CUES = {"cue_stain_A_both"}
@@ -91,6 +100,9 @@ WATCH_MIN_SEC = 0.6
 # 区間を出た後に画面を持つ秒。線 1 から約 2.7 秒で出る歩きで、段 2 の残り（約 0.7 秒）と段 3 の 0.6 秒を流し、
 # CG の人形に約 2 秒を残す。これ以上長くすると 2 周目 B の演出の入りが遅れ、体験者が B の線を先に越えてしまう
 EXIT_HOLD_SEC = 3.5
+# 演出の打ち切り（watchdog・演出の頭から）。既定の 45 秒では、区間 A で立ち止まった人に右の幕の顔と人形が出ないまま
+# 決着する。右の幕は全員に見せたい演出（0390 の後のユーザー指示）なので、区間の滞在より十分長く取る
+MAX_DURATION_SEC = 150
 RIGHT_STAIN_FADE_SEC = 0.25   # 0389「しみがじわーっとなるところはカットで、ディゾルブ的に一瞬で膨らむ前までくる」
 
 
@@ -103,7 +115,7 @@ def step(source: str, **kw) -> dict:
 
 
 def burst_sec() -> float:
-    meta = STATIC / f"stain_A_right_flow_pop_{FLOW_TAG}.json"
+    meta = STATIC / FLOW["meta"]
     if meta.exists():
         return float(json.loads(meta.read_text(encoding="utf-8"))["durationSec"])
     return 2.6
@@ -133,6 +145,7 @@ def patch(show: dict) -> None:
         take["exitHoldSec"] = EXIT_HOLD_SEC
         take["ifMissed"] = "skip"
         take["dismissible"] = True
+        take["maxDurationSec"] = MAX_DURATION_SEC
         # 報告の後に左の幕の縁から人形が覗く一瞬（0330）は、右の幕の人形と重なるので外す。
         # 押している間に左のシミが膨らむ応答（0349）も外す（0390）
         take.pop("markDoneCueId", None)
@@ -146,8 +159,10 @@ def patch(show: dict) -> None:
             step("inherit", cueId="cue_stain_A_right_hold", overlay2CueId="cue_stain_A_left_hold",
                  fadeInSec=RIGHT_STAIN_FADE_SEC, durKind="untilBeyond", lineId="s2a_leftend", durSec=20,
                  beyondMinSec=RIGHT_STAIN_FADE_SEC, markStartAdvance=True),
+            # 全員に見せたい（0390 の後）: 動画の終わりまで流す（読み込みの間に時計を進めない）。段 1・2 で報告が
+            # 成立しても、段 1 なら今で段 2 へ進み、段 2 の終わりまで見せてから畳む（markShowThrough）
             step("inherit", cueId="stain_A_right_burst", overlay2CueId="cue_stain_A_left_hold",
-                 durSec=burst_sec(), dollLaugh=True),
+                 durKind="untilClipEnd", durSec=burst_sec(), dollLaugh=True, markShowThrough=True),
             # 見ている人形は線を既に越えていても最短 WATCH_MIN_SEC は見せる
             step("inherit", cueId="stain_A_right_watch", overlay2CueId="cue_stain_A_left_hold",
                  durKind="untilBeyond", lineId="s2a_walk", durSec=8, beyondMinSec=WATCH_MIN_SEC),
@@ -172,7 +187,7 @@ def summary(show: dict) -> list:
         if int(seg.get("lap", 0)) != 2 or int(seg.get("camera", 0)) != 0:
             continue
         for t in seg["takes"]:
-            out.append(f"  2-A {t['id']} at={t.get('at')} policy={t.get('policy')} exitHold={t.get('exitHoldSec', 0)} markStart={t.get('markStartCueId', '')}"
+            out.append(f"  2-A {t['id']} at={t.get('at')} policy={t.get('policy')} exitHold={t.get('exitHoldSec', 0)} max={t.get('maxDurationSec', 0)} markStart={t.get('markStartCueId', '')}"
                        f" markDone={t.get('markDoneCueId', '')}:")
             for s in t["steps"]:
                 out.append(f"    {s['source']}[{s.get('cueId') or '-'}{' +' + s['overlay2CueId'] if s.get('overlay2CueId') else ''}"
@@ -180,6 +195,7 @@ def summary(show: dict) -> list:
                            f"{':' + s['lineId'] if s.get('lineId') else ''} {s.get('durSec')}s"
                            f"{' laugh' if s.get('dollLaugh') else ''}{' advance' if s.get('markAdvance') else ''}"
                            f"{' clear' if s.get('markClear') else ''}{' startAdvance' if s.get('markStartAdvance') else ''}"
+                           f"{' showThrough' if s.get('markShowThrough') else ''}"
                            f"{' fadeIn=' + str(s['fadeInSec']) if s.get('fadeInSec', -1) >= 0 else ''}")
     for seg in show["timeline"]["segments"]:
         for t in seg["takes"]:

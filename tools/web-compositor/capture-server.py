@@ -1953,6 +1953,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/shoot/plate-adopt':
             return self._shoot_plate_adopt(body)
 
+        if path == '/shoot/plate-realign':
+            return self._shoot_plate_realign(body)
+
         host = str(body.get('host') or '').strip()
         port = int(body.get('port') or 8080)
 
@@ -2048,6 +2051,30 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(result)
         except _plates.PlateError as exc:
             return self._json({'ok': False, 'detail': str(exc)}, exc.status)
+
+    def _shoot_plate_realign(self, body):
+        """写真に合わせて作った素材を、採用中の写真へ合わせ直す（2 周目 A の右の幕）。1〜2 分かかる。"""
+        group_id = str(body.get('group') or '').strip()
+        ledger = _plates.load_dependents()
+        group = ((ledger or {}).get('groups') or {}).get(group_id)
+        if not isinstance(group, dict):
+            return self._json({'ok': False, 'detail': '台帳に無い素材です'}, 400)
+        camera_id = group.get('camera')
+        with _show_cond:
+            cues = {cue.get('id'): cue for cue in (_show.get('cues') or [])
+                    if isinstance(cue, dict) and cue.get('id')}
+            plate_cue = cues.get((_plates.PLATE_CUES.get(camera_id) or ('',))[0]) or {}
+            current = os.path.basename(str(plate_cue.get('sourceUrl') or ''))
+        try:
+            code, result = _plates.realign_group(group_id, current, CAPTURES, _mutate_show)
+        except _plates.PlateError as exc:
+            return self._json({'ok': False, 'detail': str(exc)}, exc.status)
+        except subprocess.TimeoutExpired:
+            return self._json({'ok': False, 'detail': '作り直しが時間内に終わりませんでした'}, 504)
+        if not result.get('ok') and 'detail' not in result:
+            # 断られたときは、生成し直しに渡す首尾フレームの置き場（道具の最後の行）を添える
+            result['detail'] = ' '.join([result.get('error') or ''] + (result.get('inputsLog') or [])[-1:])
+        return self._json(result, code)
 
     def _shoot_pull(self, body, host, port):
         payload, code = self._do_pull(str(body.get('name') or ''),
@@ -2295,7 +2322,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _preparation_post(self, path):
         allowed = ('/shoot/start', '/shoot/stop', '/shoot/pull', '/shoot/adopt',
-                   '/shoot/collect', '/shoot/plate-capture', '/shoot/plate-adopt')
+                   '/shoot/collect', '/shoot/plate-capture', '/shoot/plate-adopt', '/shoot/plate-realign')
         if path not in allowed or (path != '/shoot/collect' and not self._local_browser_request()):
             return False
         if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
@@ -2404,7 +2431,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({'ok': True, 'dwellMerged': merged})
         if parsed.path in ('/shoot/start', '/shoot/stop', '/shoot/pull',
                            '/shoot/adopt', '/shoot/delete', '/shoot/collect',
-                           '/shoot/plate-capture', '/shoot/plate-adopt'):
+                           '/shoot/plate-capture', '/shoot/plate-adopt', '/shoot/plate-realign'):
             return self._shoot_post(parsed.path)
         if parsed.path == '/dwell/reset':
             with _dwell_lock:

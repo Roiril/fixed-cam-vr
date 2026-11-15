@@ -537,6 +537,20 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>
+        /// 報告が成立したとき、どのカットが終わるまで畳まずに見せ切るか（step の <c>markShowThrough</c>・純判定）。
+        /// 2 周目 A の膨らむ顔と人形（「右のシミのもっこりは全員に見せたい演出」）。いまのカットか、それより後で最初に
+        /// <c>markShowThrough</c> の立ったカットの index。無ければ -1（従来どおり即畳む）。
+        /// いまのカットより後なら、呼び出し側が <c>endStepNow</c> でいまのカットを今で終える。
+        /// </summary>
+        public static int ResolveShowThroughDismissAfterStep(ShowStepDef[]? steps, int activeStep)
+        {
+            if (steps == null || activeStep < 0) return -1;
+            for (int i = activeStep; i < steps.Length; i++)
+                if (steps[i] != null && steps[i].markShowThrough) return i;
+            return -1;
+        }
+
+        /// <summary>
         /// 子供部屋の演出で報告が成立したとき、どのカットが終わるまで畳まずに見せ切るか（純判定・<c>canon/LEDGER.md</c> 0375）。
         /// いまのカットが子供部屋の動画か、その次の最後のコマ（ライブではないカット）なら、その最後のコマの index。
         /// 最後のコマが無ければ動画のカットの index。子供部屋の演出でない・まだ動画の前のカットなら -1（従来どおり即畳む）。
@@ -588,6 +602,16 @@ namespace FixedCamVr.Streaming
         /// ラン開始で 0 に戻る。
         /// </summary>
         public int KidsRoomHeldReportCount { get; private set; }
+        /// <summary>
+        /// <b>step の markShowThrough のカットを見せ切るために、畳むのを待った報告の数</b>（観測・テスト用・<c>ev=showthru</c>）。
+        /// ラン開始で 0 に戻る。
+        /// </summary>
+        public int ShowThroughHeldReportCount { get; private set; }
+
+        /// <summary>最後に見せ切るために保った報告の、成立したカットと、見せ切るカットの index と、演出 id。</summary>
+        public int LastShowThroughStep { get; private set; } = -1;
+        public int LastShowThroughUntilStep { get; private set; } = -1;
+        public string LastShowThroughTakeId { get; private set; } = "";
 
         /// <summary>最後に畳まずに保った報告の、押したカットと、畳むのを待つカットの index。</summary>
         public int LastKidsRoomHeldStep { get; private set; } = -1;
@@ -1029,11 +1053,24 @@ namespace FixedCamVr.Streaming
             // 最後のコマを見せ切ってから畳む。報告はここで成立する（数える）。区間を出た・watchdog・中止は従来どおり即畳む。
             int activeTake = _logic.ActiveTakeIndex;
             int activeStep = _logic.ActiveStepIndex;
-            int holdUntil = _logic.IsActive && !_markResponsePlaying && activeTake >= 0 && activeTake < _takes.Length
-                ? ResolveKidsRoomDismissAfterStep(_takes[activeTake].steps, activeStep)
+            bool canHold = _logic.IsActive && !_markResponsePlaying && activeTake >= 0 && activeTake < _takes.Length;
+            int holdUntil = canHold ? ResolveKidsRoomDismissAfterStep(_takes[activeTake].steps, activeStep) : -1;
+            // 全員に見せたいカット（markShowThrough）: その前のカットで成立したら今でそのカットへ進め、終わってから畳む
+            int showThrough = canHold && holdUntil < 0
+                ? ResolveShowThroughDismissAfterStep(_takes[activeTake].steps, activeStep)
                 : -1;
             TakeRunnerLogic.MarkResult result = _logic.NotifyMarkPressed(Now,
-                deferDismiss: _markResponsePlaying, dismissAfterStep: holdUntil);
+                deferDismiss: _markResponsePlaying, dismissAfterStep: showThrough >= 0 ? showThrough : holdUntil,
+                endStepNow: showThrough > activeStep);
+            if (result == TakeRunnerLogic.MarkResult.Dismissed && showThrough >= 0)
+            {
+                ShowThroughHeldReportCount++;
+                LastShowThroughStep = activeStep;
+                LastShowThroughUntilStep = _logic.DismissAfterStep;
+                LastShowThroughTakeId = TakeId(activeTake);
+                Debug.Log($"[TakeRunner] 見せ切るカットの前後で報告が成立 → そのカットの終わりまで畳まない take={LastShowThroughTakeId} " +
+                          $"step={activeStep} until={LastShowThroughUntilStep}");
+            }
             if (result == TakeRunnerLogic.MarkResult.Dismissed && _markResponsePlaying)
                 _markResponseReported = true;
             if (result == TakeRunnerLogic.MarkResult.Dismissed && holdUntil >= 0)
@@ -1385,6 +1422,10 @@ namespace FixedCamVr.Streaming
             KidsRoomJumpCount = 0;
             KidsRoomLandCount = 0;
             KidsRoomHeldReportCount = 0;
+            ShowThroughHeldReportCount = 0;
+            LastShowThroughStep = -1;
+            LastShowThroughUntilStep = -1;
+            LastShowThroughTakeId = "";
             LastKidsRoomJumpFromSec = float.NaN;
             LastKidsRoomJumpMode = "";
             LastKidsRoomJumpTakeId = "";

@@ -4,9 +4,18 @@
   "groups": {
     "stainA": {
       "camera": "A",
-      "title": "2 周目 A のシミ（左の幕と右の幕・盛り上がり・幕の裏の人形）",
-      "how": "新しい写真を元にシミの画を Codex で生成し直し、比の画とマスクを組み直す。手順は tools/gen-plate/stain3/README.md（右は run_chain_right.ps1 → build_right_burst.py、左は bleed_maps.py --recipe）。台本へは show-apply-stain-right.py",
+      "title": "2 周目 A の左の幕のシミ",
+      "how": "新しい写真を元にシミの画を Codex で生成し直し、bleed_maps.py --recipe で比の画とマスクを組み直す。手順は tools/gen-plate/stain3/README.md。台本へは show-apply-stain-right.py",
       "needsInternet": true
+    },
+    "stainARight": {
+      "camera": "A",
+      "title": "2 周目 A の右の幕（顔のしみ・膨らむ顔と人形の動画）",
+      "how": "「この写真に合わせ直す」を押す（1 分ほど。外の回線は要らない）。断られたら、カメラの位置か幕の並びが変わっている。カメラを採用中の写真に合わせて戻すか、動画を生成し直す（手順は tools/gen-plate/stain3/README.md「当日に作り直す（右の幕）」）",
+      "needsInternet": false,
+      "realign": {"script": "tools/gen-plate/stain3/build_flow_right.py",
+                  "pointer": "tools/web-compositor/static-inputs/stain_A_right_flow.json",
+                  "timeoutSec": 900}
     },
     "dollsA": {
       "camera": "A",
@@ -24,10 +33,10 @@
   "dependents": {
     "cue_stain_A": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
     "cue_stain_A_left_hold": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
-    "stain_A_press_bulge": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
-    "cue_stain_A_right_hold": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
-    "stain_A_right_burst": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
-    "stain_A_right_watch": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
+    "cue_stain_A_right_hold": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
+    "stain_A_right_burst": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
+    "stain_A_right_watch": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
+    "cue_stain_A_right_face": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
     "stain_A_done_doll": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
     "dolls_A_in": {"group": "dollsA", "plate": "plate_A_20261115_125052.jpg"},
     "gen_dolls_A_left": {"group": "dollsA", "plate": "plate_A_20261115_125052.jpg"},

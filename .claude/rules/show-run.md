@@ -67,7 +67,7 @@ paths:
 - `yield` は区間を移ると畳み、離脱の演出も出さない。前進は `yieldedForward` で追いつきに数える（take の `exitHoldSec` 秒は畳まない・mark-advance.md）。`hold` は区間を跨ぐ — `TakeRunnerLogic.OnZoneCommitted` 〔streaming:1784-1788〕
 - watchdog は演出の頭から数え、既定は 45s。戻り先は時計の確定ゾーン — `TakeSchema.DefaultMaxDurationSec` / `CameraSwitchDirector.TryGetCurrentZoneCamera` 〔streaming:622-624〕
 - 尺の待ち相手は負値。clip 終端・次の区間・線・報告・線の向こう側。線は開始後の横断、向こう側は状態で数え、線が無ければ既定尺。報告は締め専用で開始 4s は受けない — `TakeRunnerLogic.WaitClipEnd`〜`WaitBeyond` / `EndStep*` / `LineSideLogic` / `MarkGraceSec` 〔streaming:1775-1777, 2226-2249, 2495-2514〕
-- `once` は決着回数で数える。未決着は「yield で切れた ∧ 未報告」だけで、その区間へ戻れば頭から再演する（2 回まで）。走行中の自分は武装しない — `TakeRunnerLogic.Outcome` / `ArmEnterTakes` / `TakeReplayOnBacktrackTests` 〔streaming:2586-2610〕
+- `once` は決着回数で数える。未決着は「yield で切れた ∧ 未報告」だけ（素材だけ消した markClear の報告は未報告のまま）で、その区間へ戻れば頭から再演する（2 回まで）。走行中の自分は武装しない — `TakeRunnerLogic.Outcome` / `ArmEnterTakes` / `TakeReplayOnBacktrackTests` 〔streaming:2586-2610〕
 - `dismissible`（既定 false）は報告で畳まれ、乱れ 420ms で現実へ戻る。Ready と持ち越しは捨てる。締めのカットと `afterTakeId` は消せない — `TakeRunnerLogic.NotifyMarkPressed` / `TakeRunner.SetTakes` / `TakeSchema.DismissGlitchMs` 〔streaming:2515-2558〕
 - `markStartCueId` は長押しの開始で出す。動画は 1 往復を流しきり、静止画は押している間だけで、成立前に離すと元の画へ戻る。成立後は `markDoneCueId` を `markDoneSec` 出して畳む。`markDoneCueId` はユーザーが名指しした演出だけ（LEDGER 0330） — `TakeRunner.NotifyVisitorMarkEnded` / `BeginMarkDone`
 - 報告に数えるのは走行中の押下だけ — `TakeRunnerLogic.NotifyMarkPressed` 〔streaming:2599-2604〕

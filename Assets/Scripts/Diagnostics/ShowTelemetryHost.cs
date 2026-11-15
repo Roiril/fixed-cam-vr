@@ -175,6 +175,7 @@ namespace FixedCamVr.Diagnostics
         private int _lastKidsJumpCount;
         private int _lastKidsLandCount;
         private int _lastKidsHeldCount;
+        private int _lastShowThroughCount;
         private int _lastMarkAdvanceCount;
         private int _lastMarkClearCount;
         private int _lastMarkStartAdvanceCount;
@@ -1242,6 +1243,16 @@ namespace FixedCamVr.Diagnostics
                              $"step={_takes.LastKidsRoomHeldStep} until={_takes.LastKidsRoomHeldUntilStep} " +
                              $"n={_takes.KidsRoomHeldReportCount}");
                     _lastKidsHeldCount = _takes.KidsRoomHeldReportCount;
+                }
+                // 報告は成立したが、全員に見せたいカット（step の markShowThrough・2 周目 A の膨らむ顔と人形）の
+                // 終わりまで畳まない。until のカットが出る前に畳む・why=done で終わる、を解析器が FAIL にする。
+                if (_takes.ShowThroughHeldReportCount != _lastShowThroughCount)
+                {
+                    if (_takes.ShowThroughHeldReportCount > _lastShowThroughCount)
+                        Emit($"ev=showthru take={(string.IsNullOrEmpty(_takes.LastShowThroughTakeId) ? "-" : _takes.LastShowThroughTakeId)} " +
+                             $"step={_takes.LastShowThroughStep} until={_takes.LastShowThroughUntilStep} " +
+                             $"n={_takes.ShowThroughHeldReportCount}");
+                    _lastShowThroughCount = _takes.ShowThroughHeldReportCount;
                 }
                 // 報告でカットを 1 つ進めた（step の markAdvance）。step= は進める前のカット。
                 // 次のカット（ev=step take=<id> i=<step+1>）が 3 秒以内に続かなければ解析器が FAIL にする。

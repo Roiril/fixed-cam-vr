@@ -1,7 +1,9 @@
 ---
 name: mark-advance
-description: 報告でカットを 1 つ進める（step の markAdvance）・素材だけ消す・長押しで進める・相手が畳まれたら出さない・区間を出た後も画面を持つ（exitHoldSec）の現行の契約
+description: 報告でカットを 1 つ進める（step の markAdvance）・素材だけ消す・長押しで進める・報告しても見せ切る（markShowThrough）・相手が畳まれたら出さない・区間を出た後も画面を持つ（exitHoldSec）の現行の契約
 paths:
+  - "Assets/Tests/Streaming/TakeMarkShowThroughTests.cs"
+  - "tools/test_mark_clear_log.py"
   - "Assets/Scripts/Streaming/TakeRunner.cs"
   - "Assets/Scripts/Streaming/TakeRunnerLogic.cs"
   - "Assets/Scripts/Streaming/ShowTakeSchema.cs"
@@ -14,7 +16,7 @@ paths:
   - "tools/show-apply-stain-right.py"
 ---
 
-# 報告でカットを進める（markAdvance）・素材だけを消す（markClear）・長押しで進める・相手が畳まれたら出さない
+# 報告でカットを進める（markAdvance）・素材だけを消す（markClear）・長押しで進める・見せ切る・相手が畳まれたら出さない
 
 **現行の契約だけを書く。** 変わったら行を書き換える（`rules/doc-sync.md`）。報告と演出の骨格は [show-run.md](show-run.md)。
 
@@ -46,6 +48,17 @@ paths:
 - そのカットが CG の人形を出していれば人形も引く（`_cgLayer.Hide`・2-B の後ろの人形・0382）。観測は `ev=trail vis=0`
 - 消しただけは「報告で畳まれた」に数えない（skipIfDismissed の相手にならない）。`ShowControlClient` は None 以外を報告成立として数える
 - 消した後の同じ演出への報告は別の異変として数える（`TimelineDirector.ActiveTakeCleared` → `VisitorReportTally.Record(afterClear)`・鍵は id + `ClearedSuffix`）
+- 消しただけは演出の決着（`once` の報告済み）にも数えない。消した後に引き返して区間へ戻ると、演出は頭から再演する（消した素材も出直す）
+  — `TakeRunnerLogic.NotifyMarkPressed` は markClear の分岐を `_activeReported = true` より前に置く・`TakeMarkShowThroughTests.ClearThenBacktrack_*`
+
+## 報告しても見せ切る（markShowThrough）
+
+- step の `markShowThrough`（既定 false）は、報告で演出を畳むとき、そのカットの終わりまでは畳まない。報告は成立した時点で数える（`Dismissed`）
+  — `TakeRunner.ResolveShowThroughDismissAfterStep` → `TakeRunnerLogic.NotifyMarkPressed(dismissAfterStep, endStepNow)`
+- そのカットより前のカットで成立したら、いまのカットを今で終えてそのカットへ進む（`endStepNow`・線待ちで止まらない）。そのカットの中で成立したらその終わりで畳む。後のカットでは従来どおり即畳む
+- 区間を出た（yield）・watchdog・卓の中止・ラン開始は即畳む。子供部屋の演出（`rules/kids-room.md`）が解けたら、そちらが先
+- 2 周目 A は膨らむ顔と人形の動画のカット（`untilClipEnd`）に立てる。take の `maxDurationSec` は 150 秒（区間で立ち止まった人にも右の幕が出切る）— `tools/show-apply-stain-right.py`
+- 卓の白名簿は `timeline-model.js` の `markShowThrough`
 
 ## 長押しの開始でカットを進める（markStartAdvance）
 
@@ -77,5 +90,6 @@ paths:
 - `ev=markclear take= step= n=` — `mark_clear_findings`。1 秒以内に同じ演出が `why=mark` で畳まれたら FAIL、2 秒以内にそのカットの cue の `ev=cue st=off`（人形のカットなら `ev=trail vis=0`）が無ければ FAIL
 - `ev=markstartadv take= step= n=` — `mark_start_advance_findings`（判定は markadv と同じ）
 - `ev=takeskip take= by= n=` — `take_skip_findings`。相手の `why=mark` が先に無い・出さなかった演出が後で始まった・相手が畳まれたのに `takeskip` 無しで始まった、なら FAIL
+- `ev=showthru take= step= until= n=` — `show_through_findings`。`why=mark` で畳んだのに `until` のカットが出ていない・その後のカットへ進んだ・`why=done` で終わった、なら FAIL。台本に `markShowThrough` があるのにそのカットより前で `why=mark` で畳んだら FAIL。保つ間に区間を出たら WARN
 - `ev=exithold take= sec= n=` — `exit_hold_findings`。持ち始めから sec + 0.5 秒（`EXIT_HOLD_SLACK_SEC`）以内に同じ演出の `ev=take st=end` が無ければ FAIL。台本に `exitHoldSec` が無い・yield でない演出が持ったら FAIL。滞在をはみ出した WARN は持つ秒の内なら出さない
-- 機械の門: `TakeExitHoldTests`・`tools/test_exit_hold_log.py`・`TakeMarkAdvanceTests`・`TakeMarkClearTests`（C#）・`DollLaughAudioTests.MarkAdvance_ThroughTheRunner_*`・`tools/test_mark_advance_log.py`・`tools/test_mark_clear_log.py`
+- 機械の門: `TakeExitHoldTests`・`tools/test_exit_hold_log.py`・`TakeMarkAdvanceTests`・`TakeMarkClearTests`・`TakeMarkShowThroughTests`（C#）・`DollLaughAudioTests.MarkAdvance_ThroughTheRunner_*`・`tools/test_mark_advance_log.py`・`tools/test_mark_clear_log.py`

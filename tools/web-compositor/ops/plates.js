@@ -72,6 +72,10 @@ export function mountPlates(root, ctx) {
     view.select.disabled = busy || !view.select.options.length;
     view.sure.disabled = busy || !known || !view.loaded || !!view.base;
     view.adopt.disabled = ctx.demo || busy || !canCapture || !known || !view.loaded || !view.sure.checked || !!view.base;
+    for (const fit of view.deps.querySelectorAll('button[data-realign]')) {
+      fit.disabled = ctx.demo || busy || !canCapture;
+      fit.title = !canCapture ? '合わせ直しは、卓の PC で開いた画面からだけできます。' : '';
+    }
     setText(view.connection, online ? '担当と映像を確かめてあります。' : '「準備」でこのカメラの映像が進んでいると、重ねたり撮ったりできます。');
     if (!online && !view.now.hidden) closeLive(view);
   }
@@ -105,12 +109,16 @@ export function mountPlates(root, ctx) {
         const look = h('button.button.small', { type: 'button', text: '元にした写真と重ねる',
           disabled: !d.plateExists, title: d.plateExists ? '' : `${d.plate} が卓にありません` });
         look.addEventListener('click', () => { view.base = d; renderImage(view); if (connected(view) && view.now.hidden) openLive(view); });
+        // 位置合わせだけで作り直せる素材（2 周目 A の右の幕）は、ここから採用中の写真へ合わせ直す
+        const fit = d.realign && !d.current ? h('button.button.primary.small', { type: 'button', text: 'この写真に合わせ直す',
+          dataset: { realign: d.group } }) : null;
+        fit?.addEventListener('click', () => realign(view, d));
         return h('div.dep', { dataset: { state: d.current ? 'ok' : 'warning' } },
           h('p.dep-title', {}, badge(d.current ? 'ok' : 'warning', d.current ? '合っている' : '作り直し'), h('span', { text: d.title })),
           h('p.note', { text: d.current ? `採用中の写真に合わせてあります（${d.cueIds.length} 本）。写真を替えたら作り直します。`
-            : `前の写真（${d.plate}）に合わせてあります（${d.cueIds.length} 本）。重ねてずれていれば作り直してから焼き直します。` }),
+            : `前の写真（${d.plate}）に合わせてあります（${d.cueIds.length} 本）。${d.realign ? '採用中の写真に合わせ直してから焼き直します。' : '重ねてずれていれば作り直してから焼き直します。'}` }),
           d.current ? null : h('p.note', { text: `作り方: ${d.how}${d.needsInternet ? '（生成に外の回線が要ります）' : ''}` }),
-          d.current ? null : h('div.actions', {}, look));
+          d.current ? null : h('div.actions', {}, fit, look));
       }));
   }
   function setInventory(next, preferred = {}) {
@@ -146,6 +154,21 @@ export function mountPlates(root, ctx) {
       setText(message, action === 'capture' ? '撮りました。人が写っていないことと、構図と照明を見てから採用します。'
         : `カメラ ${view.id} の写真を採用しました。${view.id === 'A' ? '右半分に使う写真も同時に替えました。' : ''}実機に出すには焼き直します。`);
     } catch (error) { message.dataset.state = 'error'; setText(message, `操作できませんでした。${error.message}`); }
+    finally { busy = false; cards.forEach(renderActions); }
+  }
+  /** 素材を採用中の写真へ合わせ直す。断られたら、生成し直すしかない（カメラか物の位置が変わった）。 */
+  async function realign(view, d) {
+    if (busy || ctx.demo || capabilities?.plateCapture !== true) return;
+    busy = true; cards.forEach(renderActions);
+    message.dataset.state = ''; setText(message, `${d.title}を採用中の写真に合わせ直しています（1 分ほど）…`);
+    try {
+      const result = await ctx.request('/shoot/plate-realign', { method: 'POST', body: { group: d.group }, timeout: 900_000 });
+      if (!result.ok) throw new Error(result.detail || result.error || '合わせ直せませんでした。');
+      const fresh = await ctx.request('/shoot/plates');
+      setInventory(fresh); ctx.setPlates(fresh); ctx.materialsChanged();
+      message.dataset.state = 'ok';
+      setText(message, `${d.title}を ${result.plate} に合わせ直しました。実機に出すには焼き直します。`);
+    } catch (error) { message.dataset.state = 'error'; setText(message, `合わせ直せませんでした。${error.message}`); }
     finally { busy = false; cards.forEach(renderActions); }
   }
 
