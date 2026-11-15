@@ -412,6 +412,7 @@ namespace FixedCamVr.Streaming.Cg
             _hideDeferred = false;
             // 乗っ取っていた背丈と影の倍率も必ず戻す（残すと次のカットの人形が砂の大きさで出る）。
             _swapHeightM = 0f;
+            _heightMul = 1f;
             _groundMul = 1f;
             _farewell = false;
             _farewellPending = false;
@@ -717,6 +718,8 @@ namespace FixedCamVr.Streaming.Cg
             if (string.IsNullOrEmpty(actorId) || actorId == TakeSchema.SwapHumanActorId) return false;
             _farewellSample = EndingFarewellLogic.SampleAt(0f);
             _farewellFaceRendered = false;
+            // 別れの人形は体験者が人形になった姿ではない。人形化の A・C の倍率を持ち込まない（0384）。
+            _heightMul = 1f;
             _farewellPending = true;
             Apply(actorId, TakeSchema.CgFollow, cameraIndex);
             _farewellPending = false;
@@ -838,7 +841,7 @@ namespace FixedCamVr.Streaming.Cg
         public string CurrentActorId => _actorDef != null ? _actorDef.id : "";
 
         /// <summary>いま出している人形の実寸 (m)。出していなければ 0。</summary>
-        public float CurrentActorHeightM => _actorDef != null ? Mathf.Max(0.05f, _actorDef.heightM) : 0f;
+        public float CurrentActorHeightM => _actorDef != null ? Mathf.Max(0.05f, _actorDef.heightM) * _heightMul : 0f;
 
         /// <summary>
         /// <b>姿だけを差し替える</b>（立ち位置・向き・カメラ・乗っ取った背丈はそのまま）。
@@ -885,7 +888,24 @@ namespace FixedCamVr.Streaming.Cg
 
         /// <summary>いま実際に人形へ掛かっている背丈 (m)。入れ替わり中はその値。</summary>
         public float EffectiveHeightM
-            => _swapHeightM > 0f ? _swapHeightM : (_actorDef != null ? Mathf.Max(0.2f, _actorDef.heightM) : 0f);
+            => _swapHeightM > 0f ? _swapHeightM : (_actorDef != null ? Mathf.Max(0.2f, _actorDef.heightM) * _heightMul : 0f);
+
+        /// <summary>
+        /// 人形の背丈に掛ける倍率（1 = show.json の heightM のまま）。体験者が人形になったカットの A・C だけ
+        /// <see cref="TakeRunner.DollReplacementHeightScale"/> が 1.5 を入れる（0384「下に表示されていて見れない」）。
+        /// <see cref="Hide"/> と別れの人形の開始で 1 に戻る。
+        /// </summary>
+        private float _heightMul = 1f;
+
+        /// <summary>いまの背丈の倍率（テレメトリ・テスト用）。</summary>
+        public float HeightScale => _heightMul;
+
+        /// <summary>背丈の倍率を入れる。0 以下は 1。出している人形があればすぐ大きさを入れ直す。</summary>
+        public void SetHeightScale(float mul)
+        {
+            _heightMul = mul > 0f ? mul : 1f;
+            if (_actorDef != null) ApplyActorScale(_actorDef);
+        }
 
         /// <summary>
         /// 体験者の背丈 (m) の推定。HMD の高さから <see cref="ActorArmLogic.EstimateHeightM"/> で解く。
@@ -1539,7 +1559,7 @@ namespace FixedCamVr.Streaming.Cg
             if (_screen == null) return -1f;
             if (_actorInstance != null && _virtualCam != null)
             {
-                float h = Mathf.Max(0.05f, _actorDef != null ? _actorDef.heightM : 0.4f);
+                float h = Mathf.Max(0.05f, _actorDef != null ? _actorDef.heightM * _heightMul : 0.4f);
                 Vector3 vp = _virtualCam.WorldToViewportPoint(
                     _actorInstance.transform.position + Vector3.up * (h * 0.5f));
                 if (vp.z > 0.01f)
@@ -1825,7 +1845,7 @@ namespace FixedCamVr.Streaming.Cg
         {
             if (_actorInstance == null) return;
             // 入れ替わり中は背丈を乗っ取る（足元は原点なので、縮尺を変えるだけで足が動かない）。
-            float h = _swapHeightM > 0f ? _swapHeightM : Mathf.Max(0.2f, def.heightM);
+            float h = _swapHeightM > 0f ? _swapHeightM : Mathf.Max(0.2f, def.heightM) * _heightMul;
             if (_actorIsFallbackCapsule)
             {
                 _actorInstance.transform.localScale = new Vector3(0.35f, h * 0.5f, 0.35f);

@@ -400,6 +400,17 @@ namespace FixedCamVr.Streaming
         public static bool IsDollReplacementStep(bool toDoll, string? cgMode)
             => toDoll && cgMode != TakeSchema.CgTrail;
 
+        /// <summary>体験者が人形になったカットの、カメラ A・C での背丈の倍率（0384）。</summary>
+        public const float DollReplacementHeightScaleAC = 1.5f;
+
+        /// <summary>
+        /// 人形の背丈に掛ける倍率。体験者が人形になったカットで、カメラ A（0）か C（2）のときだけ
+        /// <see cref="DollReplacementHeightScaleAC"/>。B と、体験者の代わりでない人形（trail・別れ）は 1。
+        /// ユーザー「エリアA,Cの間だけ1.5倍くらいに補正してほしい。下に表示されていて見れない。Bでは現在のままでok」（0384）。
+        /// </summary>
+        public static float DollReplacementHeightScale(bool dollReplacement, int camera)
+            => dollReplacement && (camera == 0 || camera == 2) ? DollReplacementHeightScaleAC : 1f;
+
         public static bool IsDollPovCue(string cueId)
             => cueId == "pov_0" || cueId == "pov_1" || cueId == "pov_2"
                || cueId == "pov_3" || cueId == "pov_4";
@@ -1357,7 +1368,8 @@ namespace FixedCamVr.Streaming
             // ⚠⚠ CleanupActive は「走行中の演出が無ければ」何もしないで返る。ところが闇の目は
             //    カットより長生きする（0093 の流しきり）ので、**演出が終わった後のラン開始**が
             //    そこをすり抜ける。体験者の交代でだけは、走行中かどうかに関わらず落とす。
-            _eyes?.Abort();
+            //    増えるスクリーンへ配る静止画もここで捨てる（0384 ⑤）。
+            _eyes?.ResetRun();
             _logic.ResetRun();
             // 前の体験者の位置・横断状態を持ち越さない（ラン開始直後に幽霊の横断を作らない）。
             _lineCross.Reset();
@@ -1787,11 +1799,17 @@ namespace FixedCamVr.Streaming
                                      $"CG 人形 '{step.cg}' は出さない（素材の構図と人形のパースが合わないため）");
                 }
                 if (toDoll)
-                    _cgLayer.Apply(step.cg, step.cgMode,
-                                   step.camera >= 0 ? step.camera : ResolveLatestZoneCamera(),
+                {
+                    int cgCamera = step.camera >= 0 ? step.camera : ResolveLatestZoneCamera();
+                    // A・C で体験者が人形になったカットだけ背丈を 1.5 倍（0384）。Apply が大きさを入れるので先に渡す。
+                    // 人の代役（入れ替わりの人型）は体験者の背丈のまま。
+                    bool scaleDoll = IsDollReplacementStep(true, step.cgMode) && step.cg != TakeSchema.SwapHumanActorId;
+                    _cgLayer.SetHeightScale(DollReplacementHeightScale(scaleDoll, cgCamera));
+                    _cgLayer.Apply(step.cg, step.cgMode, cgCamera,
                                    step.hasPlacement ? step.placement : null,
                                    step.trailGapM, step.trailStepM, step.trailHideM,
                                    step.trailFromX, step.trailFromZ, step.trailHopSec);
+                }
                 // ⚠ 持続の覆いが立てた代役は畳まない（畳むと覆いの形が消える）。
                 //   この代役を消す責任は SwapMorphFx.Cancel が持つ。
                 else if (!holdVeil) _cgLayer.Hide();

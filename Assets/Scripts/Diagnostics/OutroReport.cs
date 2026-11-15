@@ -20,6 +20,8 @@ namespace FixedCamVr.Diagnostics
         public const float PanelWidth = 3.60f, PanelHeight = 1.90f;
         public const float PhotoWidth = 2.16f, PhotoHeight = PhotoWidth * 9f / 16f;
         public const float OutcomeDeg = 2.55f, CountDeg = 1.5f;
+        /// <summary>「装置を外してください。」の字の高さ（度）。結末名と報告数のあいだの大きさ。</summary>
+        public const float RemovePromptDeg = 1.8f;
 
         private static readonly Color TitleInk = new Color32(224, 219, 207, 255);
         private static readonly Color RecordInk = new Color32(188, 184, 175, 255);
@@ -30,6 +32,8 @@ namespace FixedCamVr.Diagnostics
         private static readonly int TargetAspectId = Shader.PropertyToID("_TargetAspect");
 
         private readonly List<TMP_Text> _fields = new List<TMP_Text>();
+        private TMP_Text? _removePrompt;
+        private float _removeAlpha;
         private readonly List<Material> _materials = new List<Material>();
         private Transform? _card;
         private HeadYawFollow? _follow;
@@ -67,6 +71,10 @@ namespace FixedCamVr.Diagnostics
         public bool MusicPlaying => _music != null && _music.IsPlaying;
         public float MusicVolume => _music != null ? _music.Volume : 0;
         public float MusicSeconds => _music != null ? _music.PlaybackSeconds : 0;
+        /// <summary>「装置を外してください。」の欄（0384 ⑥）。プレビューが字の描画を確かめるのに使う。</summary>
+        public TMP_Text? RemovePromptField => _removePrompt;
+        /// <summary>「装置を外してください。」に書いた不透明度（画に出た側の観測）。組めていなければ -1。</summary>
+        public float AppliedRemovePromptAlpha => _removePrompt != null ? _removeAlpha : -1;
 
         private void Awake()
         {
@@ -114,6 +122,11 @@ namespace FixedCamVr.Diagnostics
 
             AddField("Outcome", font, -1.49f, .085f, 1.06f, .20f, OutcomeDeg, TitleInk).richText = true;
             AddField("ReportCount", font, -1.49f, -.12f, 1.06f, .14f, CountDeg, RecordInk);
+            // 報告の面が閉じた所（結末名・報告数の位置）に、面が消えた後で出す（0384 ⑥）。_fields には入れない。
+            _removePrompt = AddField("RemovePrompt", font, -1.71f, .07f, 1.50f, .20f, RemovePromptDeg, TitleInk);
+            _fields.Remove(_removePrompt);
+            _removePrompt.alignment = TextAlignmentOptions.Top;
+            _removePrompt.horizontalAlignment = HorizontalAlignmentOptions.Center;
         }
 
         private Material AddQuad(string name, Shader shader, Vector2 position, Vector2 size, int mode,
@@ -209,6 +222,11 @@ namespace FixedCamVr.Diagnostics
             if (lang == ShowLang.Ja && outcome != ShowEndingOutcome.Interrupted)
                 title = title.Replace("End", " <size=67%>End</size>");
             string[] texts = { title, OutroReportText.CountLine(reports, lang) };
+            if (_removePrompt != null)
+            {
+                _removePrompt.characterSpacing = lang == ShowLang.Ja ? 9f : 3f;
+                _removePrompt.SetText(OutroReportText.RemovePrompt(lang));
+            }
             ReportChars = 0;
             bool active = _card != null && _card.gameObject.activeSelf;
             if (_card != null) _card.gameObject.SetActive(true);
@@ -233,14 +251,18 @@ namespace FixedCamVr.Diagnostics
             _resolveWait += SimTime.Dt;
             if (_resolveWait >= 1) { _resolveWait = 0; ResolveRefs(); }
             float alpha = outro != null ? Mathf.Clamp01(outro.ReportAlpha) : 0;
+            float prompt = outro != null ? Mathf.Clamp01(outro.RemovePromptAlpha) : 0;
+            float musicLevel = outro != null ? Mathf.Clamp01(outro.MusicLevel) : 0;
             if (_endingFrames != null)
                 SetEndingImages(_endingFrames.ReleasedShot, _endingFrames.TrappedShot);
-            bool wanted = alpha > 0;
-            _music?.SetPresented(wanted, SimTime.Dt, outro != null ? outro.CloseLevel : 1);
+            // 面は報告が出ている間か「装置を外してください。」が出ている間。曲は面とは別の時計（0384 ⑥）。
+            bool wanted = alpha > 0 || prompt > 0;
+            _music?.SetPresented(alpha > 0 || musicLevel > 0, SimTime.Dt, musicLevel);
             if (!wanted)
             {
                 _presented = false;
                 ApplyAlpha(0);
+                ApplyRemovePrompt(0);
                 if (typeSfx != null) typeSfx.StopAll();
                 _follow?.SnapToHead();
                 return;
@@ -253,6 +275,19 @@ namespace FixedCamVr.Diagnostics
                 _presented = true;
             }
             ApplyAlpha(alpha);
+            ApplyRemovePrompt(prompt);
+        }
+
+        private void ApplyRemovePrompt(float alpha)
+        {
+            _removeAlpha = Mathf.Clamp01(alpha);
+            if (_removePrompt == null) return;
+            bool visible = _removeAlpha > 0;
+            if (visible && _card != null && !_card.gameObject.activeSelf) _card.gameObject.SetActive(true);
+            if (_removePrompt.gameObject.activeSelf != visible) _removePrompt.gameObject.SetActive(visible);
+            Color ink = TitleInk;
+            ink.a = PerceptualFade.Reveal(_removeAlpha);
+            _removePrompt.color = ink;
         }
 
         private void ApplyAlpha(float alpha)
@@ -262,7 +297,9 @@ namespace FixedCamVr.Diagnostics
             // 進み（_alpha）を見た目の明るさの曲線へ通してから面と文字へ書く（2026-10-14）。
             // 線形のアルファは黒の上で最初の数コマに急に見え始め、その後は変化が見えない。
             float shown = PerceptualFade.Reveal(_alpha);
-            if (_card != null && _card.gameObject.activeSelf != visible) _card.gameObject.SetActive(visible);
+            // 「装置を外してください。」が出ている間は器（_card）を畳まない（0384 ⑥）。
+            bool keepCard = visible || _removeAlpha > 0;
+            if (_card != null && _card.gameObject.activeSelf != keepCard) _card.gameObject.SetActive(keepCard);
             _plate?.SetFloat(AlphaId, shown);
             _logo?.SetFloat(AlphaId, shown);
             _photo?.SetFloat(AlphaId, shown);
@@ -282,13 +319,25 @@ namespace FixedCamVr.Diagnostics
         {
             Build();
             Capture(reports, total, outcome, lang);
+            ApplyRemovePrompt(0);
             ApplyAlpha(1);
+        }
+
+        /// <summary>報告の面が閉じた後の姿（「装置を外してください。」だけ）をプレビューに出す（0384 ⑥）。</summary>
+        public void PresentRemovePromptPreview(ShowLang lang)
+        {
+            Build();
+            Capture(0, 0, ShowEndingOutcome.Released, lang);
+            ApplyAlpha(0);
+            ApplyRemovePrompt(1);
+            _removePrompt?.ForceMeshUpdate(true, true);
         }
 
         private void OnDisable()
         {
             _presented = false;
             ApplyAlpha(0);
+            ApplyRemovePrompt(0);
             if (_music != null) _music.SetPresented(false, 0);
             if (typeSfx != null) typeSfx.StopAll();
         }

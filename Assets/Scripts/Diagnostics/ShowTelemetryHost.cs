@@ -747,6 +747,25 @@ namespace FixedCamVr.Diagnostics
             ? "-"
             : $"{_eyes.Wall.ArrivingCount}/{_eyes.Wall.MaxEmergeSeenM:F1}";
 
+        /// <summary>
+        /// 増えるスクリーンへ配る静止画（<c>canon/LEDGER.md</c> 0384 ⑤）。
+        /// <c>&lt;配れる枚数&gt;/&lt;A&gt;/&lt;B&gt;/&lt;C&gt;/&lt;暗くて捨てた累計&gt;</c>。
+        /// ⚠ 出番のときに 1 つ目が 0 なら、面は撮りためた静止画ではなく従来の遅れた取り込みを映している。
+        /// </summary>
+        private string ScreenSnapshotState => _eyes == null || _eyes.Wall == null
+            ? "-"
+            : $"{_eyes.Wall.SnapshotCount}/{_eyes.Wall.SnapshotCountOf(0)}/{_eyes.Wall.SnapshotCountOf(1)}"
+              + $"/{_eyes.Wall.SnapshotCountOf(2)}/{_eyes.Wall.SnapshotDarkCount}";
+
+        /// <summary>
+        /// 最後に残る面の笑う人形（0384 ④）。<c>&lt;素材を読めたか&gt;/&lt;顔が出た累計&gt;/&lt;材質へ書いた量&gt;/&lt;笑い声の累計&gt;</c>。
+        /// ⚠ 2 つ目が増えたのに 4 つ目が増えなければ、顔は出たが笑い声が鳴っていない（音は録画に映らない）。
+        /// </summary>
+        private string ScreenFaceState => _eyes == null || _eyes.Wall == null
+            ? "-"
+            : $"{(_eyes.Wall.FaceTextureLoaded ? 1 : 0)}/{_eyes.Wall.FaceShownCount}/{_eyes.Wall.FaceApplied:F2}"
+              + $"/{_eyes.FaceLaughCount}";
+
         private string EyeSfxState => _eyes == null
             ? "-"
             : $"{_eyes.EyeSfxCount}/{(_eyes.EyeBigSfxFired ? 1 : 0)}"
@@ -1624,6 +1643,9 @@ namespace FixedCamVr.Diagnostics
             _sb.Append(" eyes=").Append(EyesState);
             _sb.Append(" scrMul=").Append(ScreenMultiplyState);
             _sb.Append(" scrEmg=").Append(ScreenEmergeState);
+            //   scrSnap / scrFace = 増えるスクリーンへ配る静止画と、最後の面の笑う人形（`canon/LEDGER.md` 0384 ④⑤）。
+            _sb.Append(" scrSnap=").Append(ScreenSnapshotState);
+            _sb.Append(" scrFace=").Append(ScreenFaceState);
             //   osd = 装置が打っている時計（`canon/LEDGER.md` 0108）。組めたか/刻んだ回数/不透明度。
             //   ⚠ **本編で 1/0/… なら時計が止まっている**（秒が変わっても敷き直していない）。
             //     画には「時計が無い」としか出ないので、ここが唯一の手掛かり。

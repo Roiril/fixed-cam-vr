@@ -69,6 +69,25 @@ namespace FixedCamVr.Streaming.EditorTools
                             evidence.AppendLine($"{lang},{outcome},{t.name},{t.textInfo.characterCount},{t.maxVisibleCharacters},{glyphs},{t.fontMaterial.renderQueue},{missingPixels}");
                         }
                     }
+                // 報告の面が閉じた後に残る「装置を外してください。」（0384 ⑥）。
+                foreach (ShowLang lang in new[] { ShowLang.Ja, ShowLang.En, ShowLang.Fr })
+                {
+                    report.PresentRemovePromptPreview(lang);
+                    foreach (var t in stage.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = 31;
+                    TMP_Text prompt = report.RemovePromptField!;
+                    prompt.ForceMeshUpdate(true, true);
+                    camera.Render();
+                    RenderTexture.active = rt;
+                    image.ReadPixels(new Rect(0, 0, Width, Height), 0, 0);
+                    image.Apply();
+                    string path = Path.Combine(dir, lang + "-RemovePrompt.png");
+                    File.WriteAllBytes(path, image.EncodeToPNG());
+                    Debug.Log("[EndingPreview] " + path);
+                    int missingPixels = MissingGlyphPixels(prompt, camera, image.GetPixels32(), out int glyphs);
+                    if (glyphs == 0) throw new InvalidOperationException("Remove prompt has no visible glyphs");
+                    missingTotal += missingPixels;
+                    evidence.AppendLine($"{lang},RemovePrompt,{prompt.name},{prompt.textInfo.characterCount},{prompt.maxVisibleCharacters},{glyphs},{prompt.fontMaterial.renderQueue},{missingPixels}");
+                }
                 File.WriteAllText(Path.Combine(dir, "layout.csv"), evidence.ToString(), new UTF8Encoding(false));
                 if (missingTotal != 0)
                     throw new InvalidOperationException($"Ending preview has {missingTotal} glyphs without rendered pixels; inspect layout.csv");
@@ -171,7 +190,7 @@ namespace FixedCamVr.Streaming.EditorTools
             for (char c = ' '; c <= '~'; c++) chars.Add(c);
             foreach (ShowLang lang in new[] { ShowLang.Ja, ShowLang.En, ShowLang.Fr })
                 foreach (ShowEndingOutcome outcome in new[] { ShowEndingOutcome.Released, ShowEndingOutcome.Trapped, ShowEndingOutcome.Interrupted })
-                    foreach (char c in OutroReportText.Compose(1234567890, 8, outcome, lang))
+                    foreach (char c in OutroReportText.Compose(1234567890, 8, outcome, lang) + OutroReportText.RemovePrompt(lang))
                         if (!char.IsControl(c)) chars.Add(c);
             var charset = new StringBuilder();
             foreach (char c in chars) charset.Append(c);

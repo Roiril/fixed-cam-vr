@@ -319,8 +319,11 @@ def doll_laugh_findings(events, takes):
     鳴った証拠は ev=sfx id=DollLaughOnce（書き手は C# の ShowTelemetryHost、鳴らすのは TakeRunner.PlayDollLaugh）。
     ⚠ 同じフレームで別の一撃が鳴ると ev=sfx は 1 行にまとまる（LastCue が 1 つしか出ない）ので、回数の不足は WARN。
     takes が None なら台本が読めていないので、回数だけ出して判定しない。
+    3 周目 C の増えるスクリーンの最後の面の笑い声（LEDGER 0384 ④・scrFace の 4 つ目）は同じ音源なので、その回数を引いてから突き合わせる。
     """
-    sounds = [e for e in events if e.get("ev") == "sfx" and str(e.get("id")) == DOLL_LAUGH_SFX]
+    all_sounds = [e for e in events if e.get("ev") == "sfx" and str(e.get("id")) == DOLL_LAUGH_SFX]
+    face = screen_face_laugh_count(events)
+    sounds = all_sounds[:max(0, len(all_sounds) - face)]
     if takes is None:
         if not sounds:
             return [], []
@@ -408,6 +411,62 @@ def mark_advance_findings(events, takes=None):
 # 報告で素材だけを消したあと、その演出が畳まれていないことを見る窓（秒）と、素材が引くまでの上限（秒）。
 MARK_CLEAR_FOLD_SEC = 1.0
 MARK_CLEAR_OFF_SEC = 2.0
+
+
+def screen_face_laugh_count(events: list[dict]) -> int:
+    """増えるスクリーンの最後の面で鳴らした笑い声の累計（scrFace の 4 つ目の最大・LEDGER 0384 ④）。旧ログは 0。"""
+    best = 0
+    for v in effect_samples(events, "scrFace"):
+        parts = str(v).split("/")
+        if len(parts) == 4:
+            try:
+                best = max(best, int(parts[3]))
+            except ValueError:
+                pass
+    return best
+
+
+def screen_wall_extra_findings(events: list[dict]) -> list[tuple[str, str]]:
+    """増えるスクリーンへ配る静止画（scrSnap）と最後の面の笑う人形（scrFace）の判定（LEDGER 0384 ④⑤）。
+
+    scrSnap = <配れる枚数>/<A>/<B>/<C>/<暗くて捨てた累計>。scrFace = <素材>/<顔が出た累計>/<量>/<笑い声の累計>。
+    旧ログ（キーが無い）は何も言わない。
+    """
+    out: list[tuple[str, str]] = []
+    snaps = [str(v).split("/") for v in effect_samples(events, "scrSnap") if str(v).count("/") == 4]
+    if snaps:
+        try:
+            best = max(snaps, key=lambda p: int(p[0]))
+            n, a, b, c, dark = (int(x) for x in best)
+        except ValueError:
+            n = -1
+        if n == 0:
+            out.append(("WARN", "スクリーンに配る静止画が 1 枚も撮れていない（従来の遅れた取り込みで映した）— "
+                                "出番の前に区間が分かっていたか（ZoneSpan）と、暗くて捨てた数（scrSnap の 5 つ目）を見る"))
+        elif n > 0:
+            missing = [name for name, k in (("A", a), ("B", b), ("C", c)) if k == 0]
+            if missing:
+                out.append(("WARN", f"スクリーンに配る静止画が {n} 枚あるが {'・'.join(missing)} の区間のものが無い"))
+            else:
+                out.append(("OK", f"スクリーンに静止画 {n} 枚を配った（A {a} / B {b} / C {c}・暗くて捨てた {dark}）"))
+    faces = [str(v).split("/") for v in effect_samples(events, "scrFace") if str(v).count("/") == 3]
+    if faces:
+        try:
+            loaded = max(int(p[0]) for p in faces)
+            shown = max(int(p[1]) for p in faces)
+            amount = max(float(p[2]) for p in faces)
+            laughs = max(int(p[3]) for p in faces)
+        except ValueError:
+            return out
+        if loaded == 0:
+            out.append(("FAIL", "最後の面の笑う人形の素材（Resources/ScreenMultiply/DollLaughFace）を読めていない"))
+        elif shown == 0:
+            out.append(("WARN", "最後の面に笑う人形が出ていない — スクリーンが閉じ切る前に出番が中止されたか"))
+        elif laughs == 0:
+            out.append(("FAIL", f"最後の面に笑う人形が {shown} 回出たのに笑い声が鳴っていない"))
+        else:
+            out.append(("OK", f"最後の面に笑う人形が出て笑い声が鳴った（顔 {shown} 回・量 最大 {amount:.2f}・笑い声 {laughs} 回）"))
+    return out
 
 
 def mark_clear_findings(events, takes=None):
@@ -5329,6 +5388,9 @@ def analyze(events, others, exp, warns=None):
                                     "点いた時刻（_WallOpenAt）が配られていない")
                 else:
                     verdict("OK", f"スクリーンが霧の奥（最大 {far:.1f}m）から寄った")
+            if want_eyes and wall_lit > 0:
+                for line in screen_wall_extra_findings(events):
+                    verdict(*line)
 
         # 固着。目はカットの中でしか指されないので、演出が終わった後に残っていたら
         # 次の体験者の視界に最初から目が居ることになる。

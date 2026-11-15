@@ -3,8 +3,7 @@
   "cues": {
     "cue_hands_B": {
       "source": "twin_handsB_ratio.png",
-      "mask": "twin_handsB_mask.png",
-      "reveal": "twin_handsB_reveal.png"
+      "mask": "twin_handsB_mask.png"
     },
     "plate_A": {
       "source": "../plates/twin_A_plate.jpg"

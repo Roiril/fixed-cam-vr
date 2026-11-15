@@ -44,6 +44,9 @@ paths:
 - 左右分割の反転はライブと凍結だけ。軸は枠 UV の 0.5。第 2 層は静止画専用・フェードしない・色合わせは 1 層目だけ — `_SplitFlipLeft` / `CameraFeelFx.SetSplit` / `_Overlay2Tex` 〔出典: S:2045-2073、LEDGER 0050〕
 - 3-C は目の代わりにメインスクリーンの面を増やす（0317・試作）。切替は `AnomalyEyes.ScreensReplaceEyes`（増える面が組めなかったときも目へ戻さず何も描かない）。時計と出番は目と共有し、席は `tools/make-screen-wall.py` が焼く `ScreenMultiplySeats.cs`。画は `ScreenMultiply` の取り込み。詳しくは memory/screen_multiply.md
 - `ScreenMultiply` の席はメイン（2m）より奥に置く。シェーダの開きの式は `AnomalyEyesLogic.EyeOpen` と同じ。シェーダは Resources 配置で `Resources.Load`。`scrMul=` / `scrEmg=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す
+- 増える面の中身は撮りためた静止画（0384 ⑤）。目の出番の外（`Stage == Off`）で `ScreenMultiply.TickSnapshots` が 4 秒ごとにメインスクリーンの画を取り込み、区間（`ZoneSpan.camera`）ごとに新しい `SnapshotPerCamera` 4 枚まで残す（輪 16 層の 0..11。15 層目で仮置きし、最小 mip の中心の輝度が 0.06 未満なら捨てる）。シェーダは `_WallSlots` / `_WallSlotCount` / `_WallShuffle`（体験ごとの乱数）で面ごとに 1 枚を選ぶ。1 枚も無ければ従来の遅れた取り込み。体験者の交代で捨てる（`AnomalyEyes.ResetRun` ← `TakeRunner.ResetRun`）
+- 最後に残る面（席 0・`uv1.w`）の笑う顔（0384 ④）。ほかの面が閉じ切って席 0 だけ残ったら、席 0 が `FaceInSec` で開き直り `Resources/ScreenMultiply/DollLaughFace.png` を `FaceHoldSec` 2.4 秒、`FaceCloseSec` で消える。その間は目の時計が止まっても `AnomalyEyes` が面を回す（`FaceHolding`）。顔が出た瞬間に `SoundCue.DollLaughOnce` を 1 回（`FaceJustStarted`）
+- `scrSnap=<枚数>/<A>/<B>/<C>/<暗くて捨てた数>` と `scrFace=<素材>/<顔の回数>/<量>/<笑い声の回数>` は `ShowTelemetryHost` と `analyze-xp-log.py` の `screen_wall_extra_findings` で対（`tools/test_screen_wall_log.py`）
 - 闇の霧の式は `ScreenFogLogic` と `Resources/ScreenFog.hlsl` で対。面は点いた時刻（`ScreenMultiply` が float4[40] に詰めて渡す。読み出しは `ScreenMultiplyCommon.hlsl`）から `ArriveSec` かけて奥から寄る。霧のぼけは取り込みの mip。見るのは `menu screen-wall`
 - 闇の目はスクリーンの外だけ（Background+100・前乗算）。段は兆し 1.42 / 凝視 0.5 / 開眼 3.0 / 閉じ 1.6 秒で著作させない — `AnomalyEyesLogic.HintSec` `StareSec` `SwarmSec` `CloseSec` 〔出典: S:1801-1815, S:1902-1911、LEDGER 0076 / 0094 / 0138〕
 - 兆しの開きは焼いた `sfx_eye_big` の形に合わせる — `AnomalyEyesLogic.HintOpenKnots` 〔出典: S:1915-1919、LEDGER 0138〕

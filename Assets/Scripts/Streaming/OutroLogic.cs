@@ -32,7 +32,8 @@ namespace FixedCamVr.Streaming
         Report,
         /// <summary>
         /// 出し切った。<b>報告は <see cref="OutroTiming.holdSec"/> のあいだ出したまま、
-        /// <see cref="OutroTiming.closeFadeSec"/> かけて曲ごと溶けて閉じる</b>（2026-10-22）。
+        /// <see cref="OutroTiming.closeFadeSec"/> かけて閉じ、同じ所に「装置を外してください。」が出る</b>（LEDGER 0384 ⑥）。
+        /// 曲は面とは別の時計（<see cref="OutroLogic.MusicLevel"/>）で鳴り続ける。
         /// 閉じた後は黒のまま次のランを待つ（<see cref="OutroLogic.Disable"/>）。
         /// ⚠ 閉じる途中も段は Done のまま。博士タブレットの「done」とリセットの可否は
         /// Done への到達で決まっており、閉じ終わるまで待たせない。
@@ -88,6 +89,7 @@ namespace FixedCamVr.Streaming
         private float _totalElapsed;
         private float _powerCutAt;
         private float _doneElapsed;
+        private bool _closedFired;
 
         public OutroStage Stage => _stage;
         public float StageElapsedSec => _stageElapsed;
@@ -103,13 +105,13 @@ namespace FixedCamVr.Streaming
         /// <summary>計時が進んでいるか（＝ まだ段が残っている）。</summary>
         public bool Active => _stage != OutroStage.Off && _stage != OutroStage.Done;
 
-        /// <summary>報告と曲が閉じ切ったか（Done の中で保持とフェードアウトを終えた）。</summary>
+        /// <summary>報告の面（結末名・報告数・写真）が閉じ切ったか。曲はまだ鳴っている（<see cref="MusicLevel"/>）。</summary>
         public bool Closed => _stage == OutroStage.Done && _doneElapsed >= _t.holdSec + _t.closeFadeSec;
 
         /// <summary>
-        /// 閉じる側の残り 1..0（2026-10-22）。報告の面と結果曲の両方がここを掛ける —
-        /// <b>面と曲を別々の時計で消さない</b>（片方だけ残る終わり方になる）。
-        /// Done の保持が終わるまで 1、<see cref="OutroTiming.closeFadeSec"/> かけて 0。
+        /// 報告の面の閉じる側の残り 1..0。Done の保持が終わるまで 1、<see cref="OutroTiming.closeFadeSec"/> かけて 0。
+        /// ⚠ <b>曲はここを掛けない</b>（<c>canon/LEDGER.md</c> 0384 ⑥「エンディングのBGMを、1.5minくらい流し続けておいて。
+        /// また、エンディング画面の報告数や○○ENDなどを、6sで閉じて」）。曲は <see cref="MusicLevel"/> の別の時計。
         /// </summary>
         public float CloseLevel
         {
@@ -119,6 +121,37 @@ namespace FixedCamVr.Streaming
                 float sec = _doneElapsed - _t.holdSec;
                 if (sec <= 0f) return 1f;
                 return _t.closeFadeSec <= 0f ? 0f : 1f - Clamp01(sec / _t.closeFadeSec);
+            }
+        }
+
+        /// <summary>
+        /// 「装置を外してください。」の不透明度 0..1（0384 ⑥）。報告の面が閉じ切ってから
+        /// <see cref="OutroTiming.removeFadeSec"/> かけて 1 になり、次のランまで 1 のまま。
+        /// </summary>
+        public float RemovePromptAlpha
+        {
+            get
+            {
+                if (_stage != OutroStage.Done) return 0f;
+                float sec = _doneElapsed - _t.holdSec - _t.closeFadeSec;
+                if (sec <= 0f) return 0f;
+                return _t.removeFadeSec <= 0f ? 1f : Clamp01(sec / _t.removeFadeSec);
+            }
+        }
+
+        /// <summary>
+        /// 結果曲の閉じる側の残り 1..0（0384 ⑥）。報告が出始めてから <see cref="OutroTiming.musicSec"/> まで 1、
+        /// <see cref="OutroTiming.musicFadeSec"/> かけて 0。報告の段（<see cref="OutroStage.Report"/>）でも 1。
+        /// </summary>
+        public float MusicLevel
+        {
+            get
+            {
+                if (_stage == OutroStage.Report) return 1f;
+                if (_stage != OutroStage.Done) return 0f;
+                float sec = _t.reportFadeSec + _doneElapsed - _t.musicSec;
+                if (sec <= 0f) return 1f;
+                return _t.musicFadeSec <= 0f ? 0f : 1f - Clamp01(sec / _t.musicFadeSec);
             }
         }
 
@@ -163,6 +196,7 @@ namespace FixedCamVr.Streaming
             _stageElapsed = 0f;
             _totalElapsed = 0f;
             _doneElapsed = 0f;
+            _closedFired = false;
             _powerCutAt = showCollapse ? _t.noiseSec : 0f;
         }
 
@@ -173,6 +207,7 @@ namespace FixedCamVr.Streaming
             _stageElapsed = 0f;
             _totalElapsed = 0f;
             _doneElapsed = 0f;
+            _closedFired = false;
             _powerCutAt = 0f;
         }
 
@@ -181,11 +216,17 @@ namespace FixedCamVr.Streaming
             if (dt < 0f) dt = 0f;
             if (_stage == OutroStage.Done)
             {
-                // 報告を出し切った後の保持と、曲ごとのフェードアウト。閉じ切った時に 1 回だけ Closed。
-                if (Closed) return OutroEvent.None;
-                _doneElapsed += dt;
-                _totalElapsed += dt;
-                return Closed ? OutroEvent.Closed : OutroEvent.None;
+                // 報告を出し切った後の保持と面のフェードアウト。面が閉じ切った時に 1 回だけ Closed。
+                // 閉じた後も時計は進める（「装置を外してください。」の立ち上がりと曲の 30 秒）。
+                // 曲が退き切った先は進めない（数時間放置されても float の桁が落ちない）。
+                if (_doneElapsed < _t.reportFadeSec + _t.musicSec + _t.musicFadeSec + _t.holdSec + _t.closeFadeSec + _t.removeFadeSec)
+                {
+                    _doneElapsed += dt;
+                    _totalElapsed += dt;
+                }
+                if (_closedFired || !Closed) return OutroEvent.None;
+                _closedFired = true;
+                return OutroEvent.Closed;
             }
             if (!Active) return OutroEvent.None;
 
@@ -210,6 +251,7 @@ namespace FixedCamVr.Streaming
                     if (_stageElapsed < _t.reportFadeSec) return OutroEvent.None;
                     _stage = OutroStage.Done;
                     _doneElapsed = 0f;
+                    _closedFired = false;
                     return OutroEvent.Finished;
 
                 default:
@@ -325,14 +367,24 @@ namespace FixedCamVr.Streaming
         public float reportFadeSec;
 
         /// <summary>
-        /// 報告を出し切ってから閉じ始めるまで（2026-10-22）。ユーザー指定
-        /// 「エンディングの音楽と画面も、フェードで15sくらいで閉じるようにしてほしい」。
-        /// 報告の出始めから閉じ切るまで <c>reportFadeSec + holdSec + closeFadeSec</c> ＝ 既定 15 秒。
+        /// 報告を出し切ってから閉じ始めるまで。報告の出始めから閉じ始めまで <c>reportFadeSec + holdSec</c> ＝ 既定 6 秒
+        /// （<c>canon/LEDGER.md</c> 0384 ⑥「エンディング画面の報告数や○○ENDなどを、6sで閉じて」）。
         /// </summary>
         public float holdSec;
 
-        /// <summary>報告の面と結果曲が溶けて消えるまで（2026-10-22）。</summary>
+        /// <summary>報告の面が溶けて消えるまで。曲はここで閉じない（<see cref="musicSec"/>）。</summary>
         public float closeFadeSec;
+
+        /// <summary>報告の面が消えた所に「装置を外してください。」が浮かび上がるまで（0384 ⑥）。</summary>
+        public float removeFadeSec;
+
+        /// <summary>
+        /// 報告が出始めてから結果曲が退き始めるまで（0384 ⑥「エンディングのBGMを、1.5minくらい流し続けておいて」の後に「結果曲は30sでいいや。」）。
+        /// </summary>
+        public float musicSec;
+
+        /// <summary>結果曲が退き切るまで。</summary>
+        public float musicFadeSec;
 
         /// <summary>
         /// コード既定。<b>合計 3.91s</b>（砂嵐 0.95 ＋ 潰れ 0.26 ＋ 黒 1.2 ＋ 報告 1.5。<see cref="TotalSec"/>）。
@@ -351,9 +403,13 @@ namespace FixedCamVr.Streaming
             collapseSec = 0.26f,
             darkSec = 1.2f,
             reportFadeSec = 1.5f,
-            // 報告の出始めから 1.5 + 9.5 + 4.0 = 15 秒で閉じ切る（2026-10-22）。
-            holdSec = 9.5f,
-            closeFadeSec = 4.0f,
+            // 報告の出始めから 1.5 + 4.5 = 6 秒で閉じ始め、1 秒で消える。続けて「装置を外してください。」が 1 秒で出る（0384 ⑥）。
+            holdSec = 4.5f,
+            closeFadeSec = 1.0f,
+            removeFadeSec = 1.0f,
+            // 曲は報告の出始めから 30 秒鳴らし、4 秒で退かせる（0384 ⑥）。
+            musicSec = 30f,
+            musicFadeSec = 4.0f,
         };
 
         /// <summary>潰れの尺として受け付ける範囲（秒）。<see cref="PickCollapse"/>。</summary>
@@ -372,13 +428,16 @@ namespace FixedCamVr.Streaming
                 reportFadeSec = Pick(reportFadeSec, d.reportFadeSec),
                 holdSec = Pick(holdSec, d.holdSec),
                 closeFadeSec = Pick(closeFadeSec, d.closeFadeSec),
+                removeFadeSec = Pick(removeFadeSec, d.removeFadeSec),
+                musicSec = musicSec >= 1f && musicSec <= 600f ? musicSec : d.musicSec,
+                musicFadeSec = Pick(musicFadeSec, d.musicFadeSec),
             };
         }
 
         /// <summary>合計（報告を出し切るまで）。閉じる側は含めない（<see cref="ReportToCloseSec"/>）。</summary>
         public float TotalSec => noiseSec + collapseSec + darkSec + reportFadeSec;
 
-        /// <summary>報告の出始めから、面と曲が閉じ切るまで。</summary>
+        /// <summary>報告の出始めから、報告の面が閉じ切るまで（曲は <see cref="musicSec"/> まで鳴る）。</summary>
         public float ReportToCloseSec => reportFadeSec + holdSec + closeFadeSec;
 
         /// <summary>砂嵐の尺として受け付ける範囲（秒）。長い砂嵐は「通信が切れた」ではなく故障の画になる。</summary>

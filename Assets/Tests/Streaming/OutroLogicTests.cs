@@ -110,7 +110,7 @@ namespace FixedCamVr.Tests.Streaming
             Assert.IsFalse(l.Closed);
         }
 
-        // --- 報告と曲を 15 秒で閉じる（2026-10-22）---------------------------------
+        // --- 報告は 6 秒で閉じ、「装置を外してください。」を出す。曲は 30 秒（LEDGER 0384 ⑥）------
 
         private static OutroLogic MakeDone()
         {
@@ -126,11 +126,56 @@ namespace FixedCamVr.Tests.Streaming
         }
 
         [Test]
-        public void Timing_ClosesFifteenSecondsAfterTheReportBegins()
+        public void Timing_StartsClosingSixSecondsAfterTheReportBegins()
         {
-            // ユーザー指定「エンディングの音楽と画面も、フェードで15sくらいで閉じる」。
-            Assert.AreEqual(15f, OutroTiming.Default.ReportToCloseSec, 1e-3f);
-            Assert.Greater(OutroTiming.Default.closeFadeSec, 2f, "閉じ方は一瞬ではなくフェード");
+            // 0384 ⑥「エンディング画面の報告数や○○ENDなどを、6sで閉じて」。
+            OutroTiming t = OutroTiming.Default;
+            Assert.AreEqual(6f, t.reportFadeSec + t.holdSec, 1e-3f);
+            Assert.AreEqual(7f, t.ReportToCloseSec, 1e-3f);
+            Assert.Greater(t.closeFadeSec, 0.5f, "閉じ方は一瞬ではなくフェード");
+            // 「結果曲は30sでいいや。」
+            Assert.AreEqual(30f, t.musicSec, 1e-3f);
+        }
+
+        [Test]
+        public void RemovePrompt_AppearsAfterTheReportClosed_AndStays()
+        {
+            var l = MakeDone();
+            OutroTiming t = OutroTiming.Default;
+            l.Tick(t.holdSec + t.closeFadeSec * 0.5f);
+            Assert.AreEqual(0f, l.RemovePromptAlpha, 1e-4f, "報告が閉じ切るまでは出さない");
+            Assert.AreEqual(OutroEvent.Closed, l.Tick(t.closeFadeSec * 0.5f));
+            l.Tick(t.removeFadeSec * 0.5f);
+            Assert.AreEqual(0.5f, l.RemovePromptAlpha, 1e-3f);
+            l.Tick(60f);
+            Assert.AreEqual(1f, l.RemovePromptAlpha, 1e-4f, "次のランまで出したまま");
+            l.Disable();
+            Assert.AreEqual(0f, l.RemovePromptAlpha, 1e-4f);
+        }
+
+        [Test]
+        public void Music_KeepsPlayingAfterTheReportClosed_ThenFadesAtThirtySeconds()
+        {
+            var l = Make();
+            l.Begin();
+            OutroTiming t = OutroTiming.Default;
+            l.Tick(t.noiseSec);
+            l.Tick(t.collapseSec);
+            Assert.AreEqual(0f, l.MusicLevel, 1e-4f, "報告の前は鳴らさない");
+            l.Tick(t.darkSec);
+            l.Tick(t.reportFadeSec * 0.5f);
+            Assert.AreEqual(1f, l.MusicLevel, 1e-4f, "報告が出始めたら鳴る");
+            l.Tick(t.reportFadeSec * 0.5f);
+            l.Tick(t.holdSec + t.closeFadeSec);
+            Assert.IsTrue(l.Closed);
+            Assert.AreEqual(1f, l.MusicLevel, 1e-4f, "面が閉じても曲は続く");
+            float toMusicEnd = t.musicSec - t.reportFadeSec - t.holdSec - t.closeFadeSec;
+            l.Tick(toMusicEnd - 0.01f);
+            Assert.AreEqual(1f, l.MusicLevel, 1e-3f);
+            l.Tick(0.01f + t.musicFadeSec * 0.5f);
+            Assert.AreEqual(0.5f, l.MusicLevel, 1e-3f);
+            l.Tick(t.musicFadeSec);
+            Assert.AreEqual(0f, l.MusicLevel, 1e-4f);
         }
 
         [Test]
@@ -188,7 +233,7 @@ namespace FixedCamVr.Tests.Streaming
         [Test]
         public void Timing_CloseFallsBackToDefaultsWhenUnset()
         {
-            // 新キーを持たない show.json（JsonUtility が 0 で埋める）でも 15 秒で閉じる。
+            // 新キーを持たない show.json（JsonUtility が 0 で埋める）でも既定の秒で閉じる。
             var def = new ShowOutroDef { enabled = true, holdSec = 0f, closeFadeSec = 0f };
             OutroTiming t = def.ToTiming();
             Assert.AreEqual(OutroTiming.Default.holdSec, t.holdSec, 1e-4f);

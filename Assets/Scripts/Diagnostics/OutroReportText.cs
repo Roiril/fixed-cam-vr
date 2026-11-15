@@ -51,6 +51,12 @@ namespace FixedCamVr.Diagnostics
         public static string Footer(ShowLang lang) => lang == ShowLang.En ? "Experience complete. Please remove the headset."
             : lang == ShowLang.Fr ? "L’expérience est terminée. Retirez le casque."
             : "体験は終了です。装置を外してください。";
+        /// <summary>
+        /// 報告の面が閉じた所に出す促し（<c>canon/LEDGER.md</c> 0384 ⑥「閉じた場所に、装置を外してください。と促す文言を追加してほしい」）。
+        /// </summary>
+        public static string RemovePrompt(ShowLang lang) => lang == ShowLang.En ? "Please remove the headset."
+            : lang == ShowLang.Fr ? "Veuillez retirer le casque."
+            : "装置を外してください。";
         public static string Ratio(int reports, int total) =>
             CountOf(reports, ShowLang.En) + " / " + (total > 0 ? CountOf(total, ShowLang.En) : "—");
         public static string Compose(int reports) => Compose(reports, ShowLanguage.Current);

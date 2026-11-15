@@ -136,7 +136,7 @@ namespace FixedCamVr.Diagnostics.Tests
         [Test]
         public void CloseLevelFadesTheMusicOutOnTheSameCurveAsTheFadeIn()
         {
-            // 2026-10-22。面と同じ閉じる進みを音量へ掛ける（面が消え切る瞬間に 0）。
+            // 閉じる側の進み（OutroLogic.MusicLevel・LEDGER 0384 で面とは別の時計）を音量へ掛ける。
             var go = new GameObject("outro-result-music-close-test");
             try
             {

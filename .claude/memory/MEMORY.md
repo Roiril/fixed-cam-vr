@@ -3,14 +3,14 @@
 技術の罠・実装の経緯の索引。**1 行 1 フック**。世界観・演出の判定は `.claude/canon/`（混ぜない — `rules/canon-boundary.md`）。
 
 ## いま開いている指摘
-- [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうること
+- [scenario_audit_20261022.md](scenario_audit_20261022.md) — 10-22 シナリオ監査の未修正 17 件。最重要は 4-A で③a より先に人形 End が成立しうる
 - [fixed_cam_review_backlog.md](fixed_cam_review_backlog.md) — 06-10 レビューの残り。rules に罠を足したら既存コードもスイープする
 - [logic_audit_2026_07_23.md](logic_audit_2026_07_23.md) — 07-23 監査。実機確認のリストだけ残る
 
 ## 体験の骨格・演出の連続
 - [show_run_skeleton.md](show_run_skeleton.md) — ゲートは CueScheduler 1 点／終了は次フレーム／導入で録画を消さない／終わり方の出口は 5 つ
 - [take_continuity.md](take_continuity.md) — 持ち越しは因果条件で絞る／chainNext には安全網／遷移は割り込む側が持つ
-- [backtrack_and_replay.md](backtrack_and_replay.md) — 引き返し。周は 2 つ／前進は直前のカメラも見る／once は決着した回数／録画は上書きしない
+- [backtrack_and_replay.md](backtrack_and_replay.md) — 引き返し。周は 2 つ／前進は直前のカメラも見る／once は決着回数／録画は上書きしない
 - [approach_and_veil_hold.md](approach_and_veil_hold.md) — 接近の再設計。startCovered で画面差し替えが消える／保持中の Hide で人形が消える
 - [closing_line_halt.md](closing_line_halt.md) — 4-A の③a は線 OR 3 秒。いまの台本は線が空で時計だけ
 - [ending_result.md](ending_result.md) — 最後の A の警告・帰還不能・解除・人形 End の条件と報告数の集計
@@ -56,7 +56,7 @@
 - [cam_c_lens_study.md](cam_c_lens_study.md) — B と C の魚眼（版 3）。見るのは `menu crt-lens`・A は別れが解けない
 - [warm_palette.md](warm_palette.md) — 色は 7 箇所に散っている。暖色へ寄せるとき直す所と直さない所
 - [glitch_and_latency.md](glitch_and_latency.md) — _Glitch と _SignalLost は別系統／post は 4 箇所同時／絶対 E2E は未測定
-- [screen_multiply.md](screen_multiply.md) — 3-C の増えるスクリーン
+- [screen_multiply.md](screen_multiply.md) — 3-C の増えるスクリーン。静止画と笑う顔（0384）
 - [camera_feel_flicker.md](camera_feel_flicker.md) — 「ちかちかする」は自前の色ノイズ。明るさと色を別々に測る
 - [dark_eyes_slices.md](dark_eyes_slices.md) — 闇の目は Codex に描かせた壊れた画像の版。手続きの帯は「整然・チープ」で不採用
 - [eye_jack.md](eye_jack.md) — 目の視界ジャック（当日写真）。全開で発火は多数派に届かない／正規化を端末でしない
@@ -85,7 +85,7 @@
 - [hud_font_and_preview.md](hud_font_and_preview.md) — HMD 内の文言を変えたらフォント再生成。見た目は HudPreviewScreenshot
 
 ## 検証・計器
-- [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証（[XP]・自動走行・判定・機の選択）と解析の嘘。logcat は ≒1020B で切る
+- [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証（[XP]・自動走行・判定・機の選択）と解析の嘘。logcat は約 1020B で切る
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
 - [twin_verify.md](twin_verify.md) — HMD なしの通し検証。時計は tau・既知。[演出ライブラリー](fx_library.md)・[体が画のどこを通るか](stage_map.md) [意味](twin_meaning.md)
 - [twin_room.md](twin_room.md) — ツインの部屋。光は撮影時だけ・`menu twin`・霞で GPU 落ち
@@ -93,7 +93,7 @@
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
 - [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4
-- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP。正は CLI
+- [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP（正は CLI）
 
 ## 機材・ビルド・ネットワーク
 - [quest_fleet_two_devices.md](quest_fleet_two_devices.md) — **α = `2G0YC1ZF890864` / β = `2G0YC1ZF7S06BW`**。機ごとに必ず食い違う 4 つ
@@ -105,14 +105,14 @@
 - [camera_fleet.md](camera_fleet.md) — 配信スマホ Pixel 7a ×3。IP は揮発／傾きで「カメラが動いたか」が分かる
 - [streamer_operator_ui.md](streamer_operator_ui.md) — 配信スマホ側の面（補助線・鏡合わせ・撮影パネル・卓の自動発見）
 - [approach_shoot_console.md](approach_shoot_console.md) — 当日の素材撮り。停滞は `ev=clip` にしか出ない
-- [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラの検討（MJPEG 直 pull／RTSP）。go2rtc 中継は[却下](camera_c120_go2rtc_plan.md)
+- [camera_source_alternatives.md](camera_source_alternatives.md) — スマホ以外の配信カメラ（MJPEG 直 pull／RTSP）。go2rtc 中継は[却下](camera_c120_go2rtc_plan.md)
 - [iphone_camera_streamer_plan.md](iphone_camera_streamer_plan.md) — iPhone はデモなら IP Cam Lite。自作は PWA＋WS
-- [droidcam_endpoint.md](droidcam_endpoint.md) — 予備の DroidCam
+- [droidcam_endpoint.md](droidcam_endpoint.md) — 予備 DroidCam
 - [web_compositor.md](web_compositor.md) — `tools/web-compositor`（卓・合成検証・プロンプト管理・サーバ API）
 
 ## Unity・SDK
-- [unity_pitfalls.md](unity_pitfalls.md) — Unity / Meta XR の地雷集（Quad 向き・Texture 初期化・SkinnedMesh のカメラ別切替は無効 ほか）
-- [sdk_decision.md](sdk_decision.md) — Meta XR All-in-One + XRI 採用の経緯
+- [unity_pitfalls.md](unity_pitfalls.md) — Unity / Meta XR の地雷集（Quad 向き・Texture 初期化・SkinnedMesh ほか）
+- [sdk_decision.md](sdk_decision.md) — Meta XR All-in-One + XRI を採った経緯
 - [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路。登録済み・要 Editor 起動）
 
 ## 対外資料・その他

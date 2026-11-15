@@ -35,12 +35,12 @@ paths:
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
 - 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空き、スイの面が閉じた縁に（面は最大 8 秒待つ）、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる最短 1.15（写真を待つ）→ 後ろを向く 0.75 → 下がって消える 6.0 秒（最後 4.5 秒で消える）。消え切ってから電源断 — `EndingFarewellLogic.NoticeWaitMaxSec` / `EndingFarewellDoll` 〔出典: LEDGER 0291・0293。尺は実装判断〕
 - 立ち位置は体験者がいま立っている所から人形の点だけ解く（`visitorFoot`）。頭と胸が枠の外なら L 字の内側の仮の点で人形だけ先に立てる。画の左が人形、右が体験者。カメラの intrinsics は変えない。解けなければ出さない。条件は memory/ending_farewell_doll.md — `TrySolveAtWall` 〔出典: LEDGER 0293。余白・許容値は実装判断〕
-- 写真は左右の並びと枠と向きで決まる（`PhotoBlock`）。見つめ始めて 4 秒までは全身が枠に入って互いに 35° 以内。4 秒から足が切れてもよい（頭と胸は枠の中）。8 秒から胸が枠に入れば撮り、人の向きを問わない。人形の向きは最後まで見る。15 秒で撮れなければ写真なしで退場し、結末は Released のまま。人形を出せなくても 15 秒で Done。実際の位置は壁で判定しない — `PhotoStrictSec` / `PhotoAnyYawSec` / `PhotoGiveUpSec` / `Photo_LoosensWithTime_ThenTheDollLeavesWithoutIt` 〔実装判断〕
+- 写真の条件（左右の並び・枠・向きが時間で緩む・15 秒で諦める）・撮る時機（成立した 1 コマ・撮れたら上書きしない）・退場の道（L 字の奥へ下がる直線）の詳細は memory/ending_farewell_doll.md の「写真と退場の契約」 — `PhotoBlock` / `SolveRetreats` / `PickRetreat`
 - 別れの人形は体験者の分身ではない。腕は体験者に合わせず、笑わない（`dollPresent` から外す）。立ち位置が解けるまで強さ 0 — `ShowCgLayer.BeginFarewell` / `ShowSoundDirector`（`FarewellActive`）〔出典: コード〕
-- 退場は L 字の奥へ下がる直線。全身を画に残し、カメラから遠ざかり、像の高さが 0.92 倍以下に縮み、体験者の足元へ入らない道だけ採る。図 0293 の左の壁端の外へは回らない。位置と向きは `PoseAt` を本番・保存プレートで共有し、Done でも終点を保つ — `SolveRetreats` / `PickRetreat` 〔出典: LEDGER 0291。向きと道は実装判断〕
-- 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 9.5 秒 ＋ 閉じる 4.0 秒）— `OutroTiming.Default` / `Timing_MatchesTheDoctorTabletSignalCut` 〔出典: show-design:806-826〕
+- 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 4.5 秒 ＋ 閉じる 1.0 秒。出始めから 6 秒で閉じ始める）。既定は `OutroTiming.Default` と `ShowOutroDef` の 2 か所で一致させる — `Timing_StartsClosingSixSecondsAfterTheReportBegins` 〔出典: LEDGER 0384 ⑥〕
 - Trapped では砂嵐も潰れも出さない。同じフレームに電力を落とし、Dark から始める — `OutroDirector.Begin` / `Trapped_StartsDarkWithoutShowingLive_ThenResetsForTheNextVisitor` 〔出典: show-design:830〕
-- 面と曲は `CloseLevel` 1 本の時計で閉じる。閉じた後は黒のままで、パススルーへは戻さない。閉じている途中も段は Done — `OutroLogic.CloseLevel` / `VisitorPortal.OutroCode` 〔出典: show-design:813-822〕
+- 時計は 3 本。報告の面（結末名・報告数・写真）は `CloseLevel`、閉じた所に出る「装置を外してください。」は `RemovePromptAlpha`（面が閉じ切ってから `removeFadeSec` 1.0 秒で出て次のランまで残る）、結果曲は `MusicLevel`（報告が出始めてから `musicSec` 30 秒で `musicFadeSec` 4.0 秒かけて消える）。`Closed` は報告の面が閉じ切った意味で、曲はまだ鳴っている。閉じた後は黒のままで、パススルーへは戻さない。閉じている途中も段は Done — `OutroLogic` / `OutroReport.LateUpdate` / `VisitorPortal.OutroCode` 〔出典: LEDGER 0384 ⑥〕
+- 促しの文言は `OutroReportText.RemovePrompt`（日・英・仏）。欄は `OutroReport` の `RemovePrompt`（結末名と報告数の位置・`RemovePromptDeg`）で、`_fields` に入れず報告の面とは別に出す。字は終幕専用の `OutroReport SDF` に入るので、文言を変えたら `.\tools\unity.ps1 menu ending-record` で焼き直す（字の確かめは同じメニューの `*-RemovePrompt.png`）
 - 終幕の一撃は 1 本だけ。帰還と中断は電源断、人形 End は電源断の代わりに黒へ落ちる音（`DollEndFall`）。`PowerCutAtSec` で鳴り、段名は読まない — `Outro_FiresOnlyThePowerOff_AndOnlyOnce` / `TrappedOutro_FiresTheFallInsteadOfPowerOff_OnlyOnce` 〔出典: show-design:890-898、LEDGER 0312〕
 - 別れの人形の位置からオルゴールが鳴る。現れる間に立ち上がり、見つめる間は保ち、後ろを向いてから消えるまで -30dB へ下げ、最後の 1 秒で閉じる — `EndingFarewellLogic.MusicBoxGain` / `ShowSoundDirector.ApplyFarewellBox` 〔出典: LEDGER 0312。下げ幅と尺は実装判断〕
 - 尺の許容は砂嵐 0.3〜3 秒、潰れ 0.2〜2 秒。外れた値や欠けたキーは既定値に戻す — `OutroTiming.PickCollapse` / `ShowOutroDef.LooksUnset` 〔出典: show-design:899-907〕
@@ -48,7 +48,6 @@ paths:
 - 報告数は押した回数。表示を始めた時点で固定する — `OutroReport.Capture`（`VisitorMarkCount`）〔出典: LEDGER 0247〕
 - 画面に組んだ分子を `ev=outro repN=` に出し、解析器がそのランの最後の `ev=mark n=` と照合する。`anomalies=`（同じ演出は 1・0234）は画面に出さない内部の集計 — `OutroReport.Presented` / `analyze-xp-log.py` 〔コード〕
 - 写真はラン内だけ GPU に保持する。撮れなければ代わりの画を入れない — `EndingFrameCapture` / `RunRestartAndDisableDiscardBothVisitorsShots` 〔出典: memory/ending_roll.md〕
-- 帰還の写真は別れの人形が見つめる段で、写真の条件が成立した 1 コマを撮る。GPU 合成成功を `NotifyEndingFarewellCaptured` で返した後は上書きしない。条件未成立・人形を出せないときは撮らず再試行を待つ。batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭で撮る — `EndingFrameCapture` / `EndingFarewellDoll.Facing` 〔出典: LEDGER 0293〕
 
 ## 罠（破ると壊れる）
 - 武装と結末を落とすのは `ShowRunDirector.BeginRun` の 1 か所だけ 〔show-design:940〕

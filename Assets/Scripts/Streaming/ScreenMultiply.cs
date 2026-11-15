@@ -107,6 +107,44 @@ namespace FixedCamVr.Streaming
         private static readonly int CrtReferenceId = Shader.PropertyToID("_CrtReference");
         private static readonly int TubeMaskId = Shader.PropertyToID("_WallTubeMask");
         private static readonly int HasTubeMaskId = Shader.PropertyToID("_WallHasTubeMask");
+        private static readonly int SlotsId = Shader.PropertyToID("_WallSlots");
+        private static readonly int SlotCountId = Shader.PropertyToID("_WallSlotCount");
+        private static readonly int ShuffleId = Shader.PropertyToID("_WallShuffle");
+        private static readonly int FaceTexId = Shader.PropertyToID("_WallFaceTex");
+        private static readonly int FaceId = Shader.PropertyToID("_WallFace");
+
+        // ── 撮りためた静止画（canon/LEDGER.md 0384 ⑤）─────────────────────────
+        // 「そこに至るまでに10枚ほど撮影をして起き、それをランダムに並べてすべてのテレビの中に画像として入れて」
+        // 「Cの区間だけでなく、A,Bともに」。出番の前からメインスクリーンを間隔を空けて撮り、
+        // カメラ（区間）ごとに新しい順で SnapshotPerCamera 枚ずつ残す。面は席ごとに乱数でどれか 1 枚を映す。
+
+        /// <summary>区間（カメラ）ごとに残す静止画の枚数。A・B・C で合わせて <see cref="SnapshotSlots"/> 枚。</summary>
+        public const int SnapshotPerCamera = 4;
+        public const int SnapshotCameras = 3;
+        public const int SnapshotSlots = SnapshotPerCamera * SnapshotCameras;
+        /// <summary>撮りためる間隔（秒）。1 区間に十数秒いるので、1 回の滞在から 1〜3 枚撮れる。</summary>
+        public const float SnapshotIntervalSec = 4f;
+        /// <summary>
+        /// 画の中央の平均の明るさ（sRGB 0..1）がこれより暗い静止画は捨てる。切替の暗転・信号断の黒が
+        /// 面に並ぶと「消えたテレビ」に見えるため。
+        /// </summary>
+        public const float SnapshotMinLuma = 0.06f;
+        /// <summary>確かめる前の静止画を一時的に置くリングの段（静止画の段より後ろ）。</summary>
+        private const int StagingSlot = ScreenMultiplyLayout.DelaySlots - 1;
+
+        // ── 最後に残る面の笑う人形（canon/LEDGER.md 0384 ④）──────────────────
+        // 「一番最後まで閉じないで残っているスクリーン(メインスクリーンじゃないやつ)の中に、最後に、
+        //  笑ってる日本人形の顔面をドアップにしたものを合成して、笑った音もつけてほしい。」
+        // 最後まで残るのは 0 番（大きい目の席）。ほかが閉じ切ったら 0 番を開き直して顔を映し、
+        // 笑い声 1 回（SoundCue.DollLaughOnce・2.4 秒）のあいだ保ってから電源を落とす。
+
+        public const string FaceTextureResource = "ScreenMultiply/DollLaughFace";
+        /// <summary>顔を保つ秒。笑い声 1 回の尺（<c>rules/doll-laugh.md</c>）。</summary>
+        public const float FaceHoldSec = 2.4f;
+        /// <summary>顔へ移る秒（面が開き直す秒も同じ）。</summary>
+        public const float FaceInSec = 0.25f;
+        /// <summary>保ち終えてから電源が落ちきるまでの秒。</summary>
+        public const float FaceCloseSec = 0.6f;
 
         // 面と暈。[0] がそのもの、[1] が床に映した分。
         private Mesh? _surfaceMesh, _glowMesh;
@@ -129,6 +167,21 @@ namespace FixedCamVr.Streaming
         private float _now;
         private float _floorWorldY;
 
+        // 撮りためた静止画。段 i（0..SnapshotSlots-1）はカメラ i / SnapshotPerCamera のもの。
+        private readonly bool[] _slotFilled = new bool[SnapshotSlots];
+        private readonly int[] _cameraCursor = new int[SnapshotCameras];
+        private readonly Vector4[] _slotsPacked = new Vector4[4];
+        private readonly float[] _slotList = new float[16];
+        private float _sinceSnapshot = SnapshotIntervalSec;
+        private int _snapshotGen;
+        private int _pendingSlot = -1;
+        private float _shuffle;
+
+        // 最後に残る面の顔。
+        private Texture2D? _faceTex;
+        private float _faceAt = NeverOpened;
+        private float _faceBig;
+
         /// <summary>面を描く材質と取り込みの器を組めたか。</summary>
         public bool IsBuilt { get; private set; }
 
@@ -149,6 +202,32 @@ namespace FixedCamVr.Streaming
 
         /// <summary>出番の頭からの秒（帯の回転と点いた時刻の時計）。</summary>
         public float RunSec => _now;
+
+        /// <summary>いま面へ配れる静止画の枚数（0..<see cref="SnapshotSlots"/>）。0 なら従来の遅れた取り込みで映す。</summary>
+        public int SnapshotCount { get; private set; }
+        /// <summary>静止画として採った累計（体験者ごとに 0 へ戻る）。</summary>
+        public int SnapshotTakenCount { get; private set; }
+        /// <summary>暗すぎて捨てた累計。</summary>
+        public int SnapshotDarkCount { get; private set; }
+        /// <summary>カメラ（A・B・C）ごとの残っている枚数。</summary>
+        public int SnapshotCountOf(int camera)
+        {
+            if (camera < 0 || camera >= SnapshotCameras) return 0;
+            int n = 0;
+            for (int k = 0; k < SnapshotPerCamera; k++) if (_slotFilled[camera * SnapshotPerCamera + k]) n++;
+            return n;
+        }
+
+        /// <summary>笑う人形の顔の素材を読めたか。読めなければ顔は出ない（警告済み）。</summary>
+        public bool FaceTextureLoaded => _faceTex != null;
+        /// <summary>このフレームで 0 番の面が顔へ移り始めた（笑い声を鳴らす合図）。</summary>
+        public bool FaceJustStarted { get; private set; }
+        /// <summary>顔を保っている〜電源が落ちきるまで true。<see cref="AnomalyEyes"/> は目の時計が止まってもこの間は面を回す。</summary>
+        public bool FaceHolding { get; private set; }
+        /// <summary>材質へ書いた顔の量 0..1（画に出た側の観測）。</summary>
+        public float FaceApplied { get; private set; }
+        /// <summary>顔が出た累計。</summary>
+        public int FaceShownCount { get; private set; }
 
         private void Awake() => Build();
 
@@ -246,6 +325,15 @@ namespace FixedCamVr.Streaming
                 _surfaceMats[k] = sm;
                 _glowMats[k] = gm;
             }
+            _faceTex = Resources.Load<Texture2D>(FaceTextureResource);
+            if (_faceTex == null)
+                Debug.LogWarning($"[ScreenMultiply] 笑う人形の顔 Resources/{FaceTextureResource} が見つかりません。最後の面に顔は出ません。");
+            for (int k = 0; k < 2; k++)
+            {
+                _surfaceMats[k]!.SetTexture(FaceTexId, _faceTex != null ? _faceTex : Texture2D.blackTexture);
+                _surfaceMats[k]!.SetFloat(FaceId, 0f);
+                _surfaceMats[k]!.SetFloat(SlotCountId, 0f);
+            }
             SetLook(ScreenFogLogic.Density, EmergeM, showFar: true);
             ResetOpenTimes();
 
@@ -325,6 +413,105 @@ namespace FixedCamVr.Streaming
             ArrivingCount = 0;
             AfterglowCount = 0;
             MaxEmergeSeenM = 0f;
+            ResetFace();
+        }
+
+        private void ResetFace()
+        {
+            _faceAt = NeverOpened;
+            _faceBig = 0f;
+            FaceJustStarted = false;
+            FaceHolding = false;
+            FaceApplied = 0f;
+            foreach (Material? m in _surfaceMats) m?.SetFloat(FaceId, 0f);
+        }
+
+        /// <summary>
+        /// 撮りためた静止画を捨てる（体験者の交代・中止）。前の体験者の部屋が次の人のテレビに映らないように。
+        /// </summary>
+        public void ClearSnapshots()
+        {
+            for (int i = 0; i < _slotFilled.Length; i++) _slotFilled[i] = false;
+            for (int c = 0; c < _cameraCursor.Length; c++) _cameraCursor[c] = 0;
+            SnapshotTakenCount = 0;
+            SnapshotDarkCount = 0;
+            _sinceSnapshot = SnapshotIntervalSec;
+            _snapshotGen++;
+            _pendingSlot = -1;
+            RepackSlots();
+        }
+
+        /// <summary>
+        /// 出番の外で毎フレーム。<see cref="SnapshotIntervalSec"/> ごとにメインスクリーンを 1 枚撮り、
+        /// いま居る区間（<paramref name="camera"/> 0..2）の静止画として残す（0384 ⑤）。区間が分からなければ撮らない。
+        /// </summary>
+        public void TickSnapshots(float dt, int camera)
+        {
+            if (!IsBuilt || camera < 0 || camera >= SnapshotCameras) return;
+            _sinceSnapshot += dt;
+            if (_sinceSnapshot < SnapshotIntervalSec || _pendingSlot >= 0) return;
+            if (!RenderTile()) return;
+            _sinceSnapshot = 0f;
+            int slot = camera * SnapshotPerCamera + _cameraCursor[camera];
+            // 確かめる前は控えの段へ置く。暗い画で残っている良い画を潰さない。
+            for (int mip = 0; mip < FeedMips; mip++) Graphics.CopyTexture(_tileRt, 0, mip, _ring, StagingSlot, mip);
+            if (!SystemInfo.supportsAsyncGPUReadback) { CommitSnapshot(slot, camera); return; }
+            int gen = _snapshotGen;
+            _pendingSlot = slot;
+            UnityEngine.Rendering.AsyncGPUReadback.Request(_tileRt, FeedMips - 1, TextureFormat.RGBA32, req =>
+            {
+                if (this == null || gen != _snapshotGen) return;
+                _pendingSlot = -1;
+                if (!req.hasError
+                    && SnapshotLuma(req.GetData<Color32>(), req.width, req.height) < SnapshotMinLuma)
+                {
+                    SnapshotDarkCount++;
+                    return;
+                }
+                CommitSnapshot(slot, camera);
+            });
+        }
+
+        /// <summary>小さい mip の中央半分の平均の明るさ（sRGB 0..1）。外枠（筐体）を数えない。</summary>
+        public static float SnapshotLuma(Unity.Collections.NativeArray<Color32> px, int w, int h)
+        {
+            if (w <= 0 || h <= 0 || px.Length < w * h) return 1f;
+            float sum = 0f;
+            int n = 0;
+            for (int y = h / 4; y < h - h / 4; y++)
+            for (int x = w / 4; x < w - w / 4; x++)
+            {
+                Color32 c = px[y * w + x];
+                sum += (0.30f * c.r + 0.59f * c.g + 0.11f * c.b) / 255f;
+                n++;
+            }
+            return n > 0 ? sum / n : 1f;
+        }
+
+        private void CommitSnapshot(int slot, int camera)
+        {
+            if (_ring == null) return;
+            for (int mip = 0; mip < FeedMips; mip++) Graphics.CopyTexture(_ring, StagingSlot, mip, _ring, slot, mip);
+            _slotFilled[slot] = true;
+            _cameraCursor[camera] = (_cameraCursor[camera] + 1) % SnapshotPerCamera;
+            SnapshotTakenCount++;
+            RepackSlots();
+        }
+
+        private void RepackSlots()
+        {
+            int n = 0;
+            for (int i = 0; i < _slotList.Length; i++) _slotList[i] = 0f;
+            for (int i = 0; i < SnapshotSlots; i++) if (_slotFilled[i]) _slotList[n++] = i;
+            for (int g = 0; g < _slotsPacked.Length; g++)
+                _slotsPacked[g] = new Vector4(_slotList[g * 4], _slotList[g * 4 + 1], _slotList[g * 4 + 2], _slotList[g * 4 + 3]);
+            SnapshotCount = n;
+            foreach (Material? m in _surfaceMats)
+            {
+                if (m == null) continue;
+                m.SetVectorArray(SlotsId, _slotsPacked);
+                m.SetFloat(SlotCountId, n);
+            }
         }
 
         /// <summary>出番の頭。リングを空に戻し、次のフレームで最初の画を取り込む。</summary>
@@ -334,6 +521,9 @@ namespace FixedCamVr.Streaming
             _ringFilled = 0;
             _sinceCapture = CaptureIntervalSec;
             ResetOpenTimes();
+            // 並べ方は出番ごとに変える（同じ静止画が毎回同じ席に来ない）。
+            _shuffle = Random.Range(0f, 1000f);
+            foreach (Material? m in _surfaceMats) m?.SetFloat(ShuffleId, _shuffle);
         }
 
         /// <summary>1 フレーム分。出番の間（兆しの闇も含む）だけ呼ぶ。</summary>
@@ -346,12 +536,15 @@ namespace FixedCamVr.Streaming
         public void Drive(float dt, float big, float field, float span, float closing, float clock)
         {
             NewestClosedSeat = -1;
+            FaceJustStarted = false;
             if (!IsBuilt || _surfaceMats[0] == null) return;
 
+            // 撮りためた静止画があればそれを配る（0384 ⑤）。無いとき（ツインで途中から始めた等）だけ、
+            // 従来どおりメインを取り込み続け、席ごとに少し前の画を映す。
             // 閉じ始めたら取り込みを止める。閉じの段は区間の終わり（録画が尽きる暗転）と重なり、
             // 止めないとメインの暗転がそのまま面へ写って、電源が切れて見える前に全部が黒くなる。
             _sinceCapture += dt;
-            if (_sinceCapture >= CaptureIntervalSec && closing < 0.5f)
+            if (SnapshotCount == 0 && _sinceCapture >= CaptureIntervalSec && closing < 0.5f)
             {
                 _sinceCapture = 0f;
                 CaptureMainScreen();
@@ -360,6 +553,28 @@ namespace FixedCamVr.Streaming
             // 席ごとの「点いた時刻」と「消えた時刻」。奥から寄る動き・橙からの落ち着き・残光はここから数える
             // （目の時計は途中で止まるので使わない）。
             _now += dt;
+
+            // 最後に残る 0 番の面（0384 ④）。ほかが閉じ切ったら開き直して顔を映し、笑い声 1 回ぶん保ってから落とす。
+            if (_faceTex != null && _faceAt >= NeverOpened && closing > 0.5f && field <= 0.001f && big > 0.02f)
+            {
+                _faceAt = _now;
+                _faceBig = big;
+                FaceJustStarted = true;
+                FaceShownCount++;
+            }
+            float face = 0f;
+            if (_faceAt < NeverOpened)
+            {
+                float t = _now - _faceAt;
+                face = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / FaceInSec));
+                big = t < FaceHoldSec
+                    ? Mathf.Lerp(_faceBig, 1f, face)
+                    : Mathf.Clamp01(1f - (t - FaceHoldSec) / FaceCloseSec);
+                FaceHolding = t < FaceHoldSec + FaceCloseSec;
+            }
+            FaceApplied = face;
+            for (int k = 0; k < 2; k++) _surfaceMats[k]!.SetFloat(FaceId, face);
+
             int seats = Mathf.Min(ScreenMultiplyLayout.Seats.Length, _openAt.Length);
             int arriving = 0, afterglow = 0;
             for (int i = 0; i < seats; i++)
@@ -415,7 +630,7 @@ namespace FixedCamVr.Streaming
 
             OpenCount = ScreenMultiplyLayout.CountOpen(big, field);
             // 最初の画が入るまでは出さない（リングの中身は前の体験者の画）。
-            bool show = _ringFilled > 0 && (OpenCount > 0 || afterglow > 0);
+            bool show = (_ringFilled > 0 || SnapshotCount > 0) && (OpenCount > 0 || afterglow > 0);
             for (int k = 0; k < 2; k++)
             {
                 bool on = show && (k == 0 || FloorReflection);
@@ -449,21 +664,33 @@ namespace FixedCamVr.Streaming
         {
             OpenCount = 0;
             AfterglowCount = 0;
+            ResetFace();
             foreach (MeshRenderer? r in _surfaceRenderers) if (r != null) r.enabled = false;
             foreach (MeshRenderer? r in _glowRenderers) if (r != null) r.enabled = false;
         }
 
         private void CaptureMainScreen()
         {
-            if (_captureRt == null || _tileRt == null || _ring == null) return;
+            if (!RenderTile()) return;
+            int next = _ringFilled == 0 ? 0 : (_ringHead + 1) % ScreenMultiplyLayout.DelaySlots;
+            for (int mip = 0; mip < FeedMips; mip++) Graphics.CopyTexture(_tileRt, 0, mip, _ring, next, mip);
+            _ringHead = next;
+            _ringFilled = Mathf.Min(_ringFilled + 1, ScreenMultiplyLayout.DelaySlots);
+            CaptureCount++;
+        }
+
+        /// <summary>メインスクリーンを正面から 1 枚写して <c>_tileRt</c>（mip つき）に置く。写せなければ false。</summary>
+        private bool RenderTile()
+        {
+            if (_captureRt == null || _tileRt == null || _ring == null) return false;
             if (_screenRenderer == null)
             {
                 _screen = FindObjectOfType<MjpegScreen>();
                 if (_screen != null) _screenRenderer = _screen.GetComponent<Renderer>();
-                if (_screenRenderer == null) return;
+                if (_screenRenderer == null) return false;
             }
             EnsureCamera();
-            if (_captureCam == null) return;
+            if (_captureCam == null) return false;
 
             // 正面から、メインスクリーンの面ぴったりを平行投影で写す。
             Transform s = _screenRenderer.transform;
@@ -481,12 +708,7 @@ namespace FixedCamVr.Streaming
             Graphics.Blit(_captureRt, _tileRt);
             RenderTexture.active = prev;
             _tileRt.GenerateMips();
-
-            int next = _ringFilled == 0 ? 0 : (_ringHead + 1) % ScreenMultiplyLayout.DelaySlots;
-            for (int mip = 0; mip < FeedMips; mip++) Graphics.CopyTexture(_tileRt, 0, mip, _ring, next, mip);
-            _ringHead = next;
-            _ringFilled = Mathf.Min(_ringFilled + 1, ScreenMultiplyLayout.DelaySlots);
-            CaptureCount++;
+            return true;
         }
 
         /// <summary>

@@ -42,6 +42,7 @@ paths:
 - 人形の向きは頭ヨーを半減期 0.35s で追い、首のねじれ 50° で引く — `ActorArmLogic.SmoothYawDeg` 〔出典: S:2689-2692〕〔未照合: 定数値〕
 - 立ち位置も腕・向きと同じ時刻を読む — `CourseTrack` 〔出典: S:2693-2694〕
 - `cgMode:"trail"` は体験者の歩いた跡の上を `trailGapM` 後ろに立つ。位置は `trailStepM` ごとに飛び、`trailHideM` より近いと描かない。跡は人形を出していない間も積み、体験者の交代で捨てる — `FootprintTrail` / `ShowCgLayer.UpdateTrailStand` / `ShowCgLayer.ResetRun` 〔コード〕
+- 体験者が人形になったカット（`IsDollReplacementStep`）の人形は、区間 A と C（camera 0・2）でだけ背丈を `TakeRunner.DollReplacementHeightScaleAC` 1.5 倍にする（LEDGER 0384 ③）。`Apply` の前に `ShowCgLayer.SetHeightScale` を渡し、足元は変えず上へ伸びる。B・人の代役（`SwapHumanActorId`）・trail・別れの人形は 1 倍。`Hide` と別れの人形の開始で 1 に戻る — `DollReplacementHeightScaleTests`
 - trail の人形は体験者が人形になった姿ではないので、人形化（`ScreenDecay` の人形の加工・連絡の面の侵食）に数えない — `TakeRunner.IsDollReplacementStep` / `CommsPossessionLogicTests.TrailDoll_IsNotTheVisitorTurnedIntoADoll`
 - trail のカットが `trailFromX` / `trailFromZ`（course m。両方が有限のときだけ有効。キーが無ければ NaN ＝ 無効）を持つと、人形はまずその点に立ち、体験者の方を向く。指定点にいちばん近い跡の点の道のり s0 から、`trailHopSec`（0 以下 = 0.55 秒）ごとに目標を `trailStepM` 進めてその点へ跳ぶ（滑らせない）。次の目標が `Length − trailGapM` に届いたら gap の飛び石へ渡す。渡すのは gap の飛び石が今の目標以上になってからで、後ろへ戻らない。`trailHideM` はこの間も効く。いちばん近い跡の点が 0.6m（`TrailApproach.MaxSnapM`）より遠ければ警告を 1 行出して gap の立ち方へ落とす。跡が数え直されたら打ち切って gap へ移る — `TrailApproach` / `FootprintTrail.TryNearest` / `ShowCgLayer.BeginTrailApproach` / `TrailApproachTests` 〔コード〕
 - 観測は `ev=trail station= x= z= vis= gap= from=0|1`。`from=1` の間の station は歩き出しの hop の回数（0 = 指定点）、`from=0` は gap の飛び石の番号。`ShowTelemetryHost` と `analyze-xp-log.py` の `trail_findings` を対で直す（`tools/test_trail_from_log.py`）

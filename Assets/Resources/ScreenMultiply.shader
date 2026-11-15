@@ -19,6 +19,7 @@ Shader "FixedCamVr/ScreenMultiply"
     {
         [HideInInspector] _FeedTex("Feed Ring", 2DArray) = "black" {}
         [HideInInspector] _WallTubeMask("Tube Mask", 2D) = "white" {}
+        [HideInInspector] _WallFaceTex("Face", 2D) = "black" {}
     }
     SubShader
     {
@@ -45,6 +46,11 @@ Shader "FixedCamVr/ScreenMultiply"
             SAMPLER(sampler_FeedTex);
             TEXTURE2D(_WallTubeMask);
             SAMPLER(sampler_WallTubeMask);
+            TEXTURE2D(_WallFaceTex);
+            SAMPLER(sampler_WallFaceTex);
+
+            // 撮りためた静止画のリングの段（ScreenMultiply.SnapshotSlots 以下）。4 つずつ詰めてある。
+            float4 _WallSlots[4];
 
             CBUFFER_START(UnityPerMaterial)
                 float _WallBig;
@@ -70,6 +76,9 @@ Shader "FixedCamVr/ScreenMultiply"
                 float _WallMirror;
                 float _WallFloorY;
                 float _WallMirrorFadeM;
+                float _WallSlotCount;    // 撮りためた静止画の枚数。0 なら従来の遅れた取り込み
+                float _WallShuffle;      // 体験者ごとの並べ方の種
+                float _WallFace;         // 0 番の面に笑う人形の顔を映す量 0..1（LEDGER 0384 ④）
                 float4 _WallWarm;        // rgb 点いた直後の色 / w 落ち着くまでの秒
                 float4 _WallDrift;       // 帯 0..3 の回った角（rad）
                 float4 _WallMirrorLook;  // 明るさ / 足すぼけ / 揺らぎの振幅 rad / 揺らぎの周期 秒
@@ -92,7 +101,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 float4 uv : TEXCOORD0;      // xy 面の uv / z 部位 / w 箱の奥行き
                 float4 seat : TEXCOORD1;    // x 開き / y 点いた直後の明るさ / z 席の乱数 / w リングの段
                 float3 tint : TEXCOORD2;
-                float3 extra : TEXCOORD3;   // x 霧を抜けて届く光 / y 残光 1..0 / z 床の映り込みの濃さ
+                float4 extra : TEXCOORD3;   // x 霧を抜けて届く光 / y 残光 1..0 / z 床の映り込みの濃さ / w 0 番の面
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -126,12 +135,19 @@ Shader "FixedCamVr/ScreenMultiply"
                 float since = v.uv1.w > 0.5 ? saturate((_WallBig - 0.6) / 0.4) : saturate((_WallField - rank) / 0.14);
                 float settle = (1.0 - since) * (1.0 - _WallClosing);
 
+                float seatIndex = floor(v.uv2.w + 0.5);
                 float filled = max(1.0, _WallRingFilled);
                 float d = min(v.uv1.y, filled - 1.0);
                 float slot = fmod(_WallRingHead - d + _WallRingCount, _WallRingCount);
+                // 撮りためた静止画があれば、席ごとに乱数でどれか 1 枚（LEDGER 0384 ⑤）。
+                if (_WallSlotCount > 0.5)
+                {
+                    float j = min(floor(Hash11(seatIndex * 7.31 + _WallShuffle) * _WallSlotCount), _WallSlotCount - 1.0);
+                    float g = floor(j * 0.25);
+                    slot = dot(_WallSlots[(int)g], WallLane(j - g * 4.0));
+                }
 
                 // 点いた時刻・消えた時刻（ScreenMultiply が配る）。
-                float seatIndex = floor(v.uv2.w + 0.5);
                 float openAt = WallSeatOpenAt(seatIndex);
                 float after = WallAfterglow(open, WallSeatClosedAt(seatIndex), _WallNow, _WallAfterglowSec);
 
@@ -159,7 +175,7 @@ Shader "FixedCamVr/ScreenMultiply"
                 o.uv = v.uv0;
                 o.seat = float4(open, settle, v.uv1.z, slot);
                 o.tint = WallTint(v.color.rgb, _WallNow - openAt, _WallWarm) * v.uv3.y;
-                o.extra = float3(fog, after, mirrorFade);
+                o.extra = float4(fog, after, mirrorFade, v.uv1.w);
                 return o;
             }
 
@@ -224,6 +240,16 @@ Shader "FixedCamVr/ScreenMultiply"
                 float lamp = lerp(0.5, 1.05, seed);
                 float luma = dot(feed.rgb, float3(0.30, 0.59, 0.11));
                 float3 picture = lerp(feed.rgb, luma.xxx, _WallDesat) * i.tint * _WallGain * lamp * flutter;
+
+                // 最後に残った 0 番の面だけ、笑う人形の顔へ移る（LEDGER 0384 ④）。色は抜きすぎず、唇の赤を残す。
+                if (i.extra.w > 0.5 && _WallFace > 0.001)
+                {
+                    half3 faceCol = SAMPLE_TEXTURE2D_LOD(_WallFaceTex, sampler_WallFaceTex, tornUv, blur).rgb;
+                    float faceLuma = dot(faceCol, float3(0.30, 0.59, 0.11));
+                    float tintLevel = max(i.tint.r, max(i.tint.g, i.tint.b));
+                    float3 facePic = lerp(faceCol, faceLuma.xxx, 0.3) * tintLevel * _WallGain * flutter;
+                    picture = lerp(picture, facePic, _WallFace);
+                }
 
                 if (torn > 0.5)
                 {

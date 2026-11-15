@@ -81,13 +81,16 @@ namespace FixedCamVr.Streaming
         /// <summary>報告の面の不透明度（<c>OutroReport</c> が読む）。</summary>
         public float ReportAlpha => _logic.ReportAlpha;
 
-        /// <summary>
-        /// 閉じる側の残り 1..0（2026-10-22）。報告の面は <see cref="ReportAlpha"/> 経由で、
-        /// 結果曲は <c>OutroReport</c> がこれを音量へ掛ける（面と曲を同じ時計で閉じる）。
-        /// </summary>
+        /// <summary>報告の面の閉じる側の残り 1..0（面は <see cref="ReportAlpha"/> 経由で読む）。</summary>
         public float CloseLevel => _logic.CloseLevel;
 
-        /// <summary>報告の面と結果曲が閉じ切ったか。</summary>
+        /// <summary>結果曲の閉じる側の残り 1..0。面とは別の時計（<c>canon/LEDGER.md</c> 0384 ⑥）。</summary>
+        public float MusicLevel => _logic.MusicLevel;
+
+        /// <summary>「装置を外してください。」の不透明度 0..1（0384 ⑥）。</summary>
+        public float RemovePromptAlpha => _logic.RemovePromptAlpha;
+
+        /// <summary>報告の面が閉じ切ったか。曲は <see cref="MusicLevel"/> が 0 になるまで鳴る。</summary>
         public bool Closed => _logic.Closed;
 
         /// <summary>いまの段の進み 0..1（StatusHud・卓の heartbeat 用）。</summary>
@@ -243,9 +246,9 @@ namespace FixedCamVr.Streaming
             if (osd != null) osd.Suppressed = collapse > OsdCutAt;
 
             if (ev == OutroEvent.Finished)
-                Debug.Log("[Outro] 終幕が終わった（報告を保持してから曲ごと閉じる）");
+                Debug.Log("[Outro] 終幕が終わった（報告を保持してから閉じる）");
             else if (ev == OutroEvent.Closed)
-                Debug.Log("[Outro] 報告と曲が閉じた（黒のまま次のランを待つ）");
+                Debug.Log("[Outro] 報告の面が閉じた（装置を外す促しを出し、曲は鳴らし続ける）");
         }
 
         /// <summary>

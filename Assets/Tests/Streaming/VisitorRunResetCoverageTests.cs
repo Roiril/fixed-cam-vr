@@ -47,6 +47,7 @@ namespace FixedCamVr.Streaming.Tests
             ("Streaming/GlitchEscalationLogic.cs:ResetRun", "Streaming/GlitchFx.cs", "_esc.ResetRun()", "BeginRun → GlitchFx.ResetAll"),
             ("Streaming/Sound/SoundCueLogic.cs:ResetRun", "Streaming/Sound/ShowSoundDirector.cs", "_cues.ResetRun()", "ShowSoundDirector.ResetRun"),
             ("Streaming/TakeRunner.cs:ResetRun", "Streaming/TimelineDirector.cs", "takeRunner?.ResetRun()", "TimelineDirector.ResetRun"),
+            ("Streaming/AnomalyEyes.cs:ResetRun", "Streaming/TakeRunner.cs", "_eyes?.ResetRun()", "TakeRunner.ResetRun"),
             ("Streaming/TakeRunnerLogic.cs:ResetRun", "Streaming/TakeRunner.cs", "_logic.ResetRun()", "TakeRunner.ResetRun"),
             ("Streaming/EndingFarewellDoll.cs:ResetRun", "Streaming/TakeRunner.cs", "_farewell?.ResetRun()", "TakeRunner.ResetRun"),
             ("Streaming/Cg/ShowCgLayer.cs:ResetRun", "Streaming/TakeRunner.cs", "_cgLayer?.ResetRun()", "TakeRunner.ResetRun"),

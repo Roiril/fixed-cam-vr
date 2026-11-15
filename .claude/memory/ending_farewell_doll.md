@@ -94,3 +94,9 @@ batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭�
 タブレットの台車パネルと `tools/romi/` とファームは残っている（使わない）。
 
 関連: [[ending-roll]] [[romi-cart-esp32]] [[swap-veil-mask]]
+
+## 写真と退場の契約（2026-11-15 に rules/ending.md から移した。破ると壊れる）
+
+- 写真は左右の並びと枠と向きで決まる（`PhotoBlock`）。見つめ始めて 4 秒までは全身が枠に入って互いに 35° 以内。4 秒から足が切れてもよい（頭と胸は枠の中）。8 秒から胸が枠に入れば撮り、人の向きを問わない。人形の向きは最後まで見る。15 秒で撮れなければ写真なしで退場し、結末は Released のまま。人形を出せなくても 15 秒で Done。実際の位置は壁で判定しない — `PhotoStrictSec` / `PhotoAnyYawSec` / `PhotoGiveUpSec` / `Photo_LoosensWithTime_ThenTheDollLeavesWithoutIt` 〔実装判断〕
+- 退場は L 字の奥へ下がる直線。全身を画に残し、カメラから遠ざかり、像の高さが 0.92 倍以下に縮み、体験者の足元へ入らない道だけ採る。図 0293 の左の壁端の外へは回らない。位置と向きは `PoseAt` を本番・保存プレートで共有し、Done でも終点を保つ — `SolveRetreats` / `PickRetreat` 〔出典: LEDGER 0291。向きと道は実装判断〕
+- 帰還の写真は別れの人形が見つめる段で、写真の条件が成立した 1 コマを撮る。GPU 合成成功を `NotifyEndingFarewellCaptured` で返した後は上書きしない。条件未成立・人形を出せないときは撮らず再試行を待つ。batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭で撮る — `EndingFrameCapture` / `EndingFarewellDoll.Facing` 〔出典: LEDGER 0293〕

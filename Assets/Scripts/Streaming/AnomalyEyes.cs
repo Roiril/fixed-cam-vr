@@ -409,6 +409,16 @@ namespace FixedCamVr.Streaming
         /// <see cref="Release"/> と違って 1 フレームで消える —— 体験者が交代したのに
         /// 前の人の目が閉じ残ると、次の人は<b>最初から見られている</b>状態で始まる。
         /// </summary>
+        /// <summary>
+        /// 体験者の交代。<see cref="Abort"/> に加えて、増えるスクリーンへ配るために撮りためた静止画も捨てる
+        /// （<c>canon/LEDGER.md</c> 0384 ⑤。前の人の部屋を次の人のテレビに映さない）。
+        /// </summary>
+        public void ResetRun()
+        {
+            Abort();
+            _wall?.ClearSnapshots();
+        }
+
         public void Abort()
         {
             StopWallRise();
@@ -465,6 +475,21 @@ namespace FixedCamVr.Streaming
             //   後ろに置くと、その残りのあいだ面が凍る（stale な写真が視界に貼り付いたまま）。
             DriveJack(dt);
 
+            // 増えるスクリーンの最後の面が笑う人形の顔を保っているあいだは、目の時計が止まっても面を回す（0384 ④）。
+            if (_logic.Stage == EyesStage.Off && WallActive && _wall!.FaceHolding)
+            {
+                if (head != null) transform.position = head.position;
+                _wall.SetFloorWorldY(FloorWorldY());
+                _wall.Drive(dt, 0f, 0f, _logic.Span, 1f, _clock);
+                _renderer!.enabled = false;
+                OpenCount = _wall.OpenCount;
+                return;
+            }
+
+            // 出番の外では、テレビへ配る静止画をメインスクリーンから撮りためる（0384 ⑤。A・B・C の各区間から）。
+            if (_logic.Stage == EyesStage.Off && WallActive)
+                _wall!.TickSnapshots(dt, span.valid ? span.camera : -1);
+
             if (_logic.Stage == EyesStage.Off)
             {
                 Hide();
@@ -492,6 +517,13 @@ namespace FixedCamVr.Streaming
                 if (_logic.JustStarted) _wall!.BeginRun();
                 _wall!.SetFloorWorldY(FloorWorldY());
                 _wall.Drive(dt, _logic.Big, _logic.Field, _logic.Span, _logic.Closing, _clock);
+                // 最後の面が顔へ移った瞬間に笑い声 1 回（0384 ④・rules/doll-laugh.md の音源）。面の方角から。
+                if (_wall.FaceJustStarted && _sound != null)
+                {
+                    FaceLaughFired = _sound.PlaySpot(SoundCue.DollLaughOnce, transform.TransformPoint(_wall.SeatCenter(0)),
+                                                     follow: transform);
+                    if (FaceLaughFired) FaceLaughCount++;
+                }
                 _renderer.enabled = false;
                 AppliedBig = _logic.Big;
                 AppliedField = _logic.Field;
@@ -582,6 +614,12 @@ namespace FixedCamVr.Streaming
             _wallRisePlaying = false;
             _sound?.StopSpot(SoundCue.WallRise, WallRiseFadeSec);
         }
+
+        /// <summary>最後の面の顔に合わせて笑い声を鳴らせたか（直近の 1 回・0384 ④）。</summary>
+        public bool FaceLaughFired { get; private set; }
+
+        /// <summary>最後の面の顔に合わせて鳴らした笑い声の累計（テレメトリ用・0384 ④）。</summary>
+        public int FaceLaughCount { get; private set; }
 
         /// <summary>鳴らした一撃の累計（テレメトリ用）。<b>音は録画に映らない。</b></summary>
         public int EyeSfxCount { get; private set; }
