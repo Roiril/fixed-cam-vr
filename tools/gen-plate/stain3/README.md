@@ -37,7 +37,7 @@
 
 | 場所 | 待機 | 左のしみ（掛け算） | 盛り上がり | 右の幕 |
 |---|---|---|---|---|
-| 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | `stain_A_right_*_20261115_1250.*` |
+| 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | 比の画 `stain_A_right_ratio*_20261115_1250.png`・伸び出しと人形 `stain_A_right_{burst,watch,mask}_20261115_1250r2.*` |
 | ツイン `tools/twin/assets/` | `twin_stainA_idle.png` | `twin_stainA_ratio.png` | `twin_stainA_bulge.png` | `twin_stainA_right_*` |
 
 - 左のしみの姿（0143 で判定済み）は比の画が持っている。待機は無人写真にその比の画を掛けた画（生成ではない）
@@ -83,5 +83,9 @@
 ## 罠
 
 - 別々の生成を同時に走らせない（結果が入れ替わる。`memory/codex_image_pipeline.md` §4）
+- 前の版を参照に渡すと、生成が部屋を縮めて描き直すことがある（11-15 の右の幕 3 枚: 下へ行くほど上へずれ、床で約 38px）。
+  そのまま差の塊を戻すと手すりが 2 本に見える。`build_right_burst.py` は変えていない所の正方形を突き合わせて 3 次の多項式で
+  待機の座標へ引き戻してから組む（`register`。残差の中央値が出力に出る。1〜2px なら合っている）。伸び出しは手すりの上端で切り、
+  手すりとそこから下は待機の画のまま（`above_rail`）。組んだら手すりの所を 4 倍に拡大して 1 本か見る
 - 人形は布の裏に立たせる。幕の縁が体を手前から隠していないと、貼り付いて見える
 - 待機のしみは 0143 で「顔ははっきり見えないけど怖い方がいい」と判定されている。盛り上がりの画に合わせて待機を濃くしない

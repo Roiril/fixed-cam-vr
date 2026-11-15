@@ -46,6 +46,7 @@ DOLL_HEIGHT_M = 0.8
 # 画像の人形が幕の裏で見ている床の点（tools/gen-plate/stain3/README.md の「右の幕の人形」）。CG はここから出る
 DOLL_FROM = (0.44, 0.62)
 TAG = "20261115_1250"   # 素材を合わせた無人写真 plate_A_20261115_125052.jpg
+BURST_TAG = "20261115_1250r2"   # 伸び出しと人形の画（生成の部屋の縮みを引き戻して組み直した版。手すりが 2 本に見えていた）
 
 # 側待ち（untilBeyond）は線分を無限の直線へ延ばして側を見るので、端点は向きと卓の表示を決めるだけ。
 # 区間 A の歩きは C 側の (0.75, 0.45) あたりから入り、壁沿いに (-0.26, 0.26) → (-0.26, -0.5) → 壁の端を回って
@@ -67,12 +68,12 @@ CUES = [
      "sourceUrl": "/static-inputs/stain_A_ratio_20261113.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0, "blend": "multiply"},
     {"id": "stain_A_right_burst", "name": "右の幕の顔が左へ伸び出し、幕の裏の人形が笑う（2周目A）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_mask_{TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_burst_{TAG}.mp4", "strength": 1, "loop": False,
+     "maskUrl": f"/static-inputs/stain_A_right_mask_{BURST_TAG}.png",
+     "sourceUrl": f"/static-inputs/stain_A_right_burst_{BURST_TAG}.mp4", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
     {"id": "stain_A_right_watch", "name": "右の幕の裏で人形が黙って見ている（2周目A）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_mask_{TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_watch_{TAG}.png", "strength": 1, "loop": False,
+     "maskUrl": f"/static-inputs/stain_A_right_mask_{BURST_TAG}.png",
+     "sourceUrl": f"/static-inputs/stain_A_right_watch_{BURST_TAG}.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
     {"id": "cue_stain_A_right_hold", "name": "右の幕の顔のシミだけ（2周目A・掛け算）", "camera": "A",
      "maskUrl": f"/static-inputs/stain_A_right_ratio_mask_{TAG}.png",
@@ -98,7 +99,7 @@ def step(source: str, **kw) -> dict:
 
 
 def burst_sec() -> float:
-    meta = STATIC / f"stain_A_right_burst_{TAG}.json"
+    meta = STATIC / f"stain_A_right_burst_{BURST_TAG}.json"
     if meta.exists():
         return float(json.loads(meta.read_text(encoding="utf-8"))["durationSec"])
     return 2.6

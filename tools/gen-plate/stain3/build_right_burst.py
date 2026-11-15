@@ -51,11 +51,11 @@ SETS = {
         out_dir="tools/web-compositor/static-inputs",
         bulge_box=(282, 40, 512, 240),
         rail=((280, 224), (515, 234)),   # 手すりの芯（元の画素）。伸び出しの手前に元の手すりを貼り直す
-        names=dict(burst="stain_A_right_burst_20261115_1250.mp4", watch="stain_A_right_watch_20261115_1250.png",
-                   mask="stain_A_right_mask_20261115_1250.png", ratio="stain_A_both_ratio_20261115_1250.png",
+        names=dict(burst="stain_A_right_burst_20261115_1250r2.mp4", watch="stain_A_right_watch_20261115_1250r2.png",
+                   mask="stain_A_right_mask_20261115_1250r2.png", ratio="stain_A_both_ratio_20261115_1250.png",
                    both_mask="stain_A_both_mask_20261115_1250.png", right_ratio="stain_A_right_ratio_20261115_1250.png",
                    right_ratio_mask="stain_A_right_ratio_mask_20261115_1250.png",
-                   meta="stain_A_right_burst_20261115_1250.json"),
+                   meta="stain_A_right_burst_20261115_1250r2.json"),
     ),
     "twin": dict(
         base="tools/twin/assets/twin_stainA_idle.png",
@@ -73,7 +73,8 @@ SETS = {
 
 # 生成が描き換えてよい範囲（元の画素 640x480・x0, y0, x1, y1）。左の幕とその染みは外す
 BOX_STAIN = (350, 50, 515, 238)    # 右の幕の顔のシミ
-BOX_DOLL = (478, 236, 630, 476)    # 右の幕の縁の裏の人形と、その影
+BOX_DOLL = (478, 236, 660, 500)    # 右の幕の縁の裏の人形と、その影（右と下は枠の外まで。枠の縁で薄まらない）
+BOX_DOLL_EDIT = (440, 0, 578, 480)  # 人形の画が描き換える所（人形と、引かれた幕の縁）。座標合わせの突き合わせに使わない（右の棚は使う）
 # 尺（秒）。笑い声 1 回（sfx_doll_laugh_once）に合わせる
 # 伸び出しは動かさない（2026-11-15 ユーザー「最初フレームと最後フレームだけ」）。
 # シミだけの画 → 伸び切った画 → シミだけの画を、どれも 1 コマで切り替える
@@ -96,9 +97,89 @@ def load(p: Path) -> np.ndarray:
     return np.asarray(Image.open(p).convert("RGB"), dtype=np.float32)
 
 
-def fit(gen: Path, ref: np.ndarray) -> np.ndarray:
-    """生成を 640x480 へ戻し、変わっていない所で色を ref へ合わせる。"""
+def _match(ref_g: np.ndarray, gen_g: np.ndarray, x0: int, y0: int, size: int, rx, ry):
+    """ref の (x0, y0) の正方形が gen のどこにあるか。NCC の山を放物線で小数まで詰める。(dx, dy, r)
+    rx / ry は探す幅。(負の向き, 正の向き) の組でもよい（枠の端まで点を取るため、ずれる向きの側だけ広く探す）。"""
+    from numpy.lib.stride_tricks import sliding_window_view
+    a = ref_g[y0:y0 + size, x0:x0 + size]
+    if a.std() < 4:
+        return None
+    rxn, rxp = rx if isinstance(rx, tuple) else (rx, rx)
+    ryn, ryp = ry if isinstance(ry, tuple) else (ry, ry)
+    ys, xs = y0 - ryn, x0 - rxn
+    if ys < 0 or xs < 0 or y0 + size + ryp > gen_g.shape[0] or x0 + size + rxp > gen_g.shape[1]:
+        return None
+    rx, ry = rxn, ryn
+    reg = gen_g[ys:y0 + size + ryp, xs:x0 + size + rxp]
+    win = sliding_window_view(reg, (size, size))           # (2ry+1, 2rx+1, size, size)
+    a = (a - a.mean()) / a.std()
+    m = win.mean(axis=(2, 3), keepdims=True)
+    s = win.std(axis=(2, 3), keepdims=True) + 1e-6
+    r = ((win - m) / s * a).mean(axis=(2, 3))
+    iy, ix = np.unravel_index(np.argmax(r), r.shape)
+    if not (0 < iy < r.shape[0] - 1 and 0 < ix < r.shape[1] - 1):
+        return None                                         # 探す範囲の端に山がある = 当たっていない
+
+    def para(l, c, rr):
+        den = l - 2 * c + rr
+        return 0.0 if abs(den) < 1e-9 else 0.5 * (l - rr) / den
+    fy = para(r[iy - 1, ix], r[iy, ix], r[iy + 1, ix])
+    fx = para(r[iy, ix - 1], r[iy, ix], r[iy, ix + 1])
+    return ix - rx + fx, iy - ry + fy, float(r[iy, ix])
+
+
+def _poly_terms(x: np.ndarray, y: np.ndarray, deg: int) -> np.ndarray:
+    x, y = x / W, y / H
+    t = [np.ones_like(x)]
+    for d in range(1, deg + 1):
+        for i in range(d + 1):
+            t.append(x ** (d - i) * y ** i)
+    return np.stack(t, -1)
+
+
+def register(a: np.ndarray, ref: np.ndarray, skip=(), deg: int = 3) -> tuple[np.ndarray, dict]:
+    """生成は部屋を縮めて・ずらして描き直すことがある（2026-11-15 の右の幕: 下へ行くほど上へずれ、床で約 38px）。
+    変えていないはずの所の正方形を ref と突き合わせ、ref の座標 → 生成の座標を 3 次の多項式で解いて、ref の座標へ引き戻す。
+    skip は突き合わせに使わない箱（生成が描き換える所）。"""
+    import cv2
+    rg, ag = ref.mean(2), a.mean(2)
+    pts = []
+    size, step = 40, 24
+    for y0 in list(range(4, H - size - 4, step)) + [H - size - 4]:
+        for x0 in list(range(4, W - size - 4, step)) + [W - size - 4]:
+            if any(x0 < b[2] and x0 + size > b[0] and y0 < b[3] and y0 + size > b[1] for b in skip):
+                continue
+            # 枠の端の近くは、はみ出さない側の幅だけで探す（最低 3 画素）。端まで点が無いと多項式が外挿になる
+            rx = (min(16, x0), min(16, W - x0 - size))
+            ry = (min(44, y0), min(44, H - y0 - size))
+            if min(*rx, *ry) < 3:
+                continue
+            m = _match(rg, ag, x0, y0, size, rx, ry)
+            if m and m[2] > 0.8:
+                pts.append((x0 + size / 2, y0 + size / 2, m[0], m[1]))
+    p = np.array(pts, np.float64)
+    X = _poly_terms(p[:, 0], p[:, 1], deg)
+    keep = np.ones(len(p), bool)
+    for _ in range(6):
+        cx, *_ = np.linalg.lstsq(X[keep], p[keep, 2], rcond=None)
+        cy, *_ = np.linalg.lstsq(X[keep], p[keep, 3], rcond=None)
+        err = np.hypot(X @ cx - p[:, 2], X @ cy - p[:, 3])
+        keep = err < max(1.0, 2.5 * np.median(err[keep]))
+    gy, gx = np.mgrid[0:H, 0:W].astype(np.float64)
+    T = _poly_terms(gx, gy, deg)
+    mx = (gx + T @ cx).astype(np.float32)
+    my = (gy + T @ cy).astype(np.float32)
+    out = cv2.remap(np.ascontiguousarray(a), mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    info = {"points": int(keep.sum()), "of": len(p), "residualPx": round(float(np.median(err[keep])), 2),
+            "maxShiftPx": round(float(np.hypot(mx - gx, my - gy).max()), 1)}
+    print(f"  register: {info['points']}/{info['of']} 点・残差の中央値 {info['residualPx']}px・最大のずれ {info['maxShiftPx']}px")
+    return np.clip(out, 0, 255), info
+
+
+def fit(gen: Path, ref: np.ndarray, skip=()) -> np.ndarray:
+    """生成を 640x480 へ戻して ref の座標へ引き戻し（register）、変わっていない所で色を ref へ合わせる。"""
     a = np.asarray(Image.open(gen).convert("RGB").resize((W, H), Image.LANCZOS), dtype=np.float32)
+    a, _ = register(a, ref, skip)
     d = np.abs(a - ref).mean(2)
     calm = d < np.percentile(d, 55)
     for c in range(3):
@@ -186,6 +267,18 @@ def rail_mask(rail, half: float = 5.0) -> np.ndarray:
     return m.astype(np.float32)
 
 
+def above_rail(rail, half: float = 5.0, gap: float = 1.0) -> np.ndarray:
+    """手すりの帯の上端より上で 1、上端から下で 0（1 画素で落とす）。手すりの x の外は 1。"""
+    (x0, y0), (x1, y1) = rail
+    xs = np.arange(W, dtype=np.float32)
+    top = y0 + (y1 - y0) * (xs - x0) / (x1 - x0) - half - gap
+    ys = np.arange(H, dtype=np.float32)[:, None]
+    m = np.clip(top[None, :] - ys + 0.5, 0, 1)
+    m[:, : int(x0)] = 1
+    m[:, int(x1):] = 1
+    return m.astype(np.float32)
+
+
 def build(name: str, laugh_sec: float | None) -> dict:
     cfg = SETS[name]
     wd = ROOT / cfg["work"] if cfg.get("work") else WORK / name
@@ -200,11 +293,13 @@ def build(name: str, laugh_sec: float | None) -> dict:
         rr = None
         S = fit(wd / "stain.png", base)
         ms = soft_mask(S, base, BOX_STAIN, 0.025, 0.07)
-    B = fit(wd / "bulge.png", S)
-    D = fit(wd / "doll_laugh.png", S)
-    Wt = fit(wd / "doll_watch.png", D)
+    bb = cfg["bulge_box"]   # 手すりは描き換えないので、突き合わせには手すりの上端から下を使う
+    print("bulge.png"); B = fit(wd / "bulge.png", S, [(bb[0], bb[1], bb[2], min(bb[3], int(min(cfg["rail"][0][1], cfg["rail"][1][1])) - 8))])
+    print("doll_laugh.png"); D = fit(wd / "doll_laugh.png", S, [BOX_DOLL_EDIT])
+    print("doll_watch.png"); Wt = fit(wd / "doll_watch.png", S, [BOX_DOLL_EDIT])
     S = base * (1 - ms[..., None]) + S * ms[..., None]
-    mb = soft_mask(B, S, cfg["bulge_box"], 0.02, 0.07, close=6)
+    # 伸び出しは手すりの上端で終える。手すりとそこから下は待機の画のまま（生成の手すりを 1 画素も残さない）
+    mb = soft_mask(B, S, cfg["bulge_box"], 0.02, 0.07, close=6) * above_rail(cfg["rail"])
     md = soft_mask(D, S, BOX_DOLL, 0.03, 0.08, close=6)
     mw = np.maximum(soft_mask(Wt, S, BOX_DOLL, 0.03, 0.08, close=6), md)
     B = S * (1 - mb[..., None]) + B * mb[..., None]
