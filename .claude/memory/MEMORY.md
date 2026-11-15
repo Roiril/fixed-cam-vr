@@ -116,7 +116,7 @@
 - [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路。登録済み・要 Editor 起動）
 
 ## 対外資料・その他
-- [paper_dcexpo_env.md](paper_dcexpo_env.md) — DCEXPO 向け資料 `paper/dcexpo`。HTML→Edge→PDF・図は実物へ差し替え
+- [paper_dcexpo_env.md](paper_dcexpo_env.md) — DCEXPO 資料 `paper/dcexpo`。[骨組みパイプと送る箱](booth_pipes_shipping.md)
 - [website_plates_and_fonts.md](website_plates_and_fonts.md) — 公式サイト。文言を変えたら `npm run fonts`・Vercel は `--scope`
 - [ivrc_video_pages_naming.md](ivrc_video_pages_naming.md) — IVRC 動画の pages/ の透過 PNG はファイル名固定
 - [proposal_single_source.md](proposal_single_source.md) — 企画書は読まない（08-08）。骨格は実装と機械が守る
