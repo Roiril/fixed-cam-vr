@@ -313,7 +313,7 @@ main {
 }
 
 /* ───────── 章の格子 ─────────
-   左の柱に縦書きの筆の章題。章を読み進める間、章題は柱に留まる */
+   左の柱に縦書きの筆の章題。章題は章の頭に置いたまま動かさない */
 
 .chapter {
   display: grid;
@@ -332,8 +332,7 @@ main {
 }
 
 .chapter > h2 {
-  position: sticky;
-  top: calc(var(--header-h) + 1.25rem);
+  position: relative;
   z-index: 1;
   grid-column: 1;
   justify-self: center;
@@ -366,28 +365,6 @@ main {
 .chapter-body {
   grid-column: 2;
   min-width: 0;
-}
-
-/* 章題は、章に入ったときに筆で書くように上から現れる（1 度だけ） */
-.js-reveal .chapter > h2 {
-  clip-path: inset(-.3em -.4em 100% -.4em);
-}
-
-.js-reveal .chapter.is-in > h2 {
-  clip-path: inset(-.3em -.4em -.3em -.4em);
-  transition: clip-path 900ms var(--write) 80ms;
-}
-
-/* 物は、画面に入ったときに 1 度だけ浮かぶ */
-.js-reveal [data-reveal]:not(.tag) {
-  opacity: 0;
-  translate: 0 18px;
-}
-
-.js-reveal [data-reveal].is-revealed:not(.tag) {
-  opacity: 1;
-  translate: none;
-  transition: opacity 500ms ease-out calc(var(--i, 0) * 110ms), translate 700ms var(--ease) calc(var(--i, 0) * 110ms);
 }
 
 /* ───────── ヘッダー ─────────
@@ -598,13 +575,13 @@ main {
     0 0 9rem rgb(255 196 130 / 7%);
 }
 
-/* 触れると、四隅の角がスクリーンへ寄る */
+/* スクリーンの四隅の角（動かさない） */
 .trailer-frame::after {
   position: absolute;
-  inset: -14px;
+  inset: -10px;
   content: "";
   pointer-events: none;
-  opacity: .5;
+  opacity: .6;
   background:
     linear-gradient(var(--ink) 0 0) left top / 14px 1.5px,
     linear-gradient(var(--ink) 0 0) left top / 1.5px 14px,
@@ -615,14 +592,6 @@ main {
     linear-gradient(var(--ink) 0 0) right bottom / 14px 1.5px,
     linear-gradient(var(--ink) 0 0) right bottom / 1.5px 14px;
   background-repeat: no-repeat;
-  transition: inset 220ms var(--ease), opacity 220ms var(--ease);
-}
-
-@media (hover: hover) {
-  .trailer-frame:hover::after {
-    inset: -7px;
-    opacity: 1;
-  }
 }
 
 .trailer-frame iframe {
@@ -738,9 +707,8 @@ main {
 .on-wall .handheld-modes button[aria-pressed="true"] .cam { fill: var(--red-on-dark); }
 .on-wall .handheld-modes button[aria-pressed="true"] .mode-key { border-color: rgb(236 229 216 / 45%); color: var(--cream); }
 
-/* ───────── 実世界×固定視点：歩くと切り替わる ─────────
-   読み進める間テレビは画面に留まり、進んだ分だけカメラが 01 → 02 → 03 と切り替わる。
-   右の線の上の赤い点が、いまどこまで進んだかを指す */
+/* ───────── 実世界×固定視点 ─────────
+   テレビと 3 台のカメラ。カメラを選ぶと、テレビの映像が切り替わる */
 
 .fixed-view {
   --lamp-x: 44%;
@@ -754,29 +722,19 @@ main {
   --drape-x: 0%;
 }
 
-.chapter.fixed-view {
-  padding-bottom: 0;
-}
-
-.camera-exhibit {
-  height: calc(100svh + 150vh);
-}
-
 .camera-stage {
-  position: sticky;
-  top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(8.5rem, 13vw, 12rem);
   column-gap: var(--s-group);
   align-items: center;
-  height: 100svh;
+  padding-block: var(--s-part) var(--s-group);
 }
 
 .camera-monitor {
   position: relative;
   z-index: 2;
   justify-self: center;
-  width: min(100%, calc((100svh - 7rem) * 1.3333));
+  width: min(100%, 60rem);
 }
 
 /* テレビの光が幕に落ちる。いま映っているカメラの絵をぼかして背面へ */
@@ -913,34 +871,10 @@ main {
   box-shadow: 0 0 6px rgb(224 87 79 / 70%);
 }
 
-/* 3 台のカメラ。左の線は歩く道のり */
+/* 3 台のカメラ */
 .camera-console {
-  position: relative;
   display: grid;
   gap: var(--s-part);
-  padding-left: 1.6rem;
-}
-
-.camera-console::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  content: "";
-  background: var(--line-2);
-}
-
-.camera-walker {
-  position: absolute;
-  top: calc(var(--walk, 0) * 100%);
-  left: 0;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--red-on-dark);
-  box-shadow: 0 0 .6rem rgb(224 87 79 / 70%);
-  translate: -4px -50%;
 }
 
 .camera-button {
@@ -1034,10 +968,15 @@ main {
   --lamp-x: 40%;
 }
 
+/* 染みは、読み進めるほど濃い芯から外へ広がる（--spread は .5〜1.2。main.js がスクロールの位置から決める）。
+   なぜ動かすか：調査対象の壁が、近づくほど侵されていく */
 .stain {
+  --spread: 1.2;
   position: absolute;
   z-index: -1;
   background: url("assets/stain.webp") center / contain no-repeat;
+  -webkit-mask-image: radial-gradient(ellipse farthest-corner at 64% 36%, #000 calc(var(--spread) * 100% - 20%), transparent calc(var(--spread) * 100%));
+  mask-image: radial-gradient(ellipse farthest-corner at 64% 36%, #000 calc(var(--spread) * 100% - 20%), transparent calc(var(--spread) * 100%));
   mix-blend-mode: multiply;
   pointer-events: none;
 }
@@ -1050,7 +989,8 @@ main {
   opacity: .9;
 }
 
-/* 髪。読み進めるほど下へ伸びる（--grow は 0〜1。main.js がスクロールの位置から決める） */
+/* 髪。読み進めるほど下へ伸びる（--grow は .3〜1。main.js がスクロールの位置から決める）。
+   なぜ動かすか：幕の裏に居るものが、こちらへ出てくる */
 .hair {
   --grow: 1;
   position: absolute;
@@ -1099,7 +1039,6 @@ main {
   position: relative;
   margin: var(--s-group) 0 0;
   rotate: -1.6deg;
-  transition: rotate 500ms var(--ease);
 }
 
 .photo-mount {
@@ -1182,12 +1121,8 @@ main {
   transition: opacity 200ms;
 }
 
-/* 触れると、傾きが戻って壁から少し浮く */
+/* 依頼書は押すと原寸で開く。触れると、傾きが戻って壁から少し浮く */
 @media (hover: hover) {
-  .wall-photo:hover {
-    rotate: 0deg;
-  }
-
   .investigation-request:hover {
     rotate: 0deg;
     translate: 0 -4px;
@@ -1219,6 +1154,18 @@ main {
   --lamp-x: 58%;
   --lamp-y: 40%;
   --shade: 58%;
+}
+
+/* 電源を入れると、ブラウン管が点く：横 1 本の光の線が上下に開いて絵になる。
+   なぜ動かすか：押したのは電源だから。最初は線、最後は絵、420ms */
+.footage-gate[open] .footage-viewer {
+  animation: tube-on 420ms cubic-bezier(.2, .7, .2, 1) both;
+}
+
+@keyframes tube-on {
+  0% { clip-path: inset(49.7% 0 49.7% 0); filter: brightness(3.2); }
+  35% { clip-path: inset(49.7% 0 49.7% 0); filter: brightness(3.2); }
+  100% { clip-path: inset(0); filter: brightness(1); }
 }
 
 /* ───────── 展示履歴：壁の釘に吊るした荷札 ───────── */
@@ -1293,7 +1240,6 @@ main {
   );
   transform-origin: 20px 20px;
   rotate: var(--tilt, 0deg);
-  transition: rotate 700ms var(--ease), translate 700ms var(--ease), opacity 400ms ease-out;
 }
 
 .tag:nth-child(1) { --tilt: -1.2deg; }
@@ -1452,17 +1398,6 @@ main {
 
 .tag :focus-visible {
   outline-color: var(--tag-ink);
-}
-
-/* 吊るされて、揺れが止まる。1 回だけ */
-.js-reveal .tag[data-reveal]:not(.is-revealed) {
-  opacity: 0;
-  translate: 0 -10px;
-  rotate: calc(var(--tilt, 0deg) - 6deg);
-}
-
-.js-reveal .tag[data-reveal] {
-  transition-delay: calc(var(--i, 0) * 120ms);
 }
 
 /* 吊るした線の右端に、いつの記録かを書く */
@@ -2027,13 +1962,6 @@ kbd,
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .js-reveal .tag[data-reveal]:not(.is-revealed) {
-    opacity: 1;
-    translate: none;
-    rotate: var(--tilt, 0deg);
-  }
-}
 
 
 /* 釘 2 本に渡した針金へ、糸で吊るす */
@@ -2066,13 +1994,6 @@ kbd,
 /* 更新日は左下。右下は染みが広がっている */
 .archive-updated {
   justify-content: flex-start;
-}
-
-/* 触れると、荷札が反対へ振れる */
-@media (hover: hover) {
-  .tag.is-revealed:hover {
-    rotate: calc(var(--tilt, 0deg) * -1.1);
-  }
 }
 
 /* ───────── クレジット：幕の下りた空の部屋 ─────────
@@ -2176,14 +2097,6 @@ kbd,
     margin: 0;
   }
 
-  .js-reveal .chapter > h2 {
-    clip-path: inset(-.3em 100% -.3em -.3em);
-  }
-
-  .js-reveal .chapter.is-in > h2 {
-    clip-path: inset(-.3em -.3em -.3em -.3em);
-  }
-
   .hero-band {
     display: block;
   }
@@ -2227,14 +2140,9 @@ kbd,
     stroke-width: 4;
   }
 
-  /* テレビは上、3 台のカメラは下に横並び。道のりの線は横に引く */
-  .camera-exhibit {
-    height: calc(100svh + 130vh);
-  }
-
+  /* テレビは上、3 台のカメラは下に横並び */
   .camera-stage {
     grid-template-columns: minmax(0, 1fr);
-    align-content: center;
     row-gap: var(--s-group);
   }
 
@@ -2249,20 +2157,6 @@ kbd,
   .camera-console {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: .7rem;
-    padding: 1.3rem 0 0;
-  }
-
-  .camera-console::before {
-    right: 0;
-    bottom: auto;
-    width: auto;
-    height: 1px;
-  }
-
-  .camera-walker {
-    top: 0;
-    left: calc(var(--walk, 0) * 100%);
-    translate: -50% -4px;
   }
 
   .camera-label {
@@ -2336,18 +2230,14 @@ kbd,
     scroll-behavior: auto;
   }
 
-  .crt-screen.is-switching .screen-noise {
+  .crt-screen.is-switching .screen-noise,
+  .footage-gate[open] .footage-viewer {
     animation: none;
   }
 
   .site-header,
-  .trailer-frame::after,
   .site-nav a::after,
-  .wall-photo,
-  .investigation-request,
-  .tag,
-  .js-reveal .chapter.is-in > h2,
-  .js-reveal [data-reveal].is-revealed:not(.tag) {
+  .investigation-request {
     transition: none;
   }
 }

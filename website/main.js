@@ -1,4 +1,9 @@
 // 動くのは、スクロールとホバー（指ならタップ）に応えるものだけ。時間で勝手に進むものは置かない。
+// 動かすのは理由を言えるものだけ：
+//   カメラの切り替え（選んだ映像に替わる。替わった瞬間だけ 180ms 乱れる）
+//   髪（読み進めるほど下へ伸びる。裾の下の 3 割から全部まで）
+//   染み（読み進めるほど芯から縁へ広がる）
+//   ヘッダー（読んでいる間は退き、戻ると出る）
 
 const feeds = [...document.querySelectorAll("[data-camera-feed]")];
 const cameraButtons = [...document.querySelectorAll("[data-camera-button]")];
@@ -6,14 +11,12 @@ const screen = document.querySelector(".crt-screen");
 const indicator = document.querySelector("#camera-indicator");
 const status = document.querySelector("#camera-status");
 const cameraConsole = document.querySelector(".camera-console");
-const cameraScroll = document.querySelector("[data-camera-scroll]");
-const cameraStage = document.querySelector(".camera-stage");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const canHover = window.matchMedia("(hover: hover)");
 
 const CAMERA_COUNT = 3;
 
-let scrollCamera = 1;   // 読み進めた位置が決めるカメラ
+let selectedCamera = 1; // 押して選んだカメラ
 let previewCamera = 0;  // 触れている間だけ映すカメラ（0 は無し）
 let shownCamera = 0;
 let noiseTimer = null;
@@ -40,7 +43,7 @@ function showSwitchNoise() {
 }
 
 function renderCamera({ animate = true } = {}) {
-  const camera = previewCamera || scrollCamera;
+  const camera = previewCamera || selectedCamera;
   if (camera === shownCamera) return;
   shownCamera = camera;
 
@@ -61,31 +64,13 @@ function renderCamera({ animate = true } = {}) {
   if (animate) showSwitchNoise();
 }
 
-// テレビが画面に留まっている区間を 3 つに割り、進んだ分でカメラを決める
-function cameraTravel() {
-  return Math.max(cameraScroll.offsetHeight - cameraStage.offsetHeight, 1);
-}
-
-function updateCameraFromScroll() {
-  const progress = Math.min(Math.max(-cameraScroll.getBoundingClientRect().top / cameraTravel(), 0), 1);
-  cameraConsole.style.setProperty("--walk", progress.toFixed(4));
-  scrollCamera = Math.min(Math.floor(progress * CAMERA_COUNT), CAMERA_COUNT - 1) + 1;
-  renderCamera();
-}
-
-// 押すと、そのカメラの区間の中ほどまでページを送る
-function scrollToCamera(camera) {
-  const top = cameraScroll.getBoundingClientRect().top + window.scrollY;
-  const target = top + cameraTravel() * ((camera - 0.5) / CAMERA_COUNT);
-  window.scrollTo({ top: target, behavior: reducedMotion.matches ? "auto" : "smooth" });
-}
-
 for (const button of cameraButtons) {
   const camera = Number(button.dataset.cameraButton);
 
   button.addEventListener("click", () => {
     previewCamera = 0;
-    scrollToCamera(camera);
+    selectedCamera = camera;
+    renderCamera();
   });
 
   // マウスを乗せている間・キーボードで選んでいる間は、そのカメラを映す
@@ -134,45 +119,18 @@ reducedMotion.addEventListener("change", (event) => {
   if (event.matches) stopSwitchNoise();
 });
 
-// ───── 章題と物の現れ ─────
-// 既定の CSS では見えている。ここで js-reveal を付けてから隠すので、この処理が動かなくても内容は消えない。
-
-const chapters = [...document.querySelectorAll(".chapter")];
-const revealTargets = [...document.querySelectorAll("[data-reveal]")];
-document.documentElement.classList.add("js-reveal");
-if (reducedMotion.matches || !("IntersectionObserver" in window)) {
-  for (const chapter of chapters) chapter.classList.add("is-in");
-  for (const target of revealTargets) target.classList.add("is-revealed");
-} else {
-  const chapterObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      entry.target.classList.add("is-in");
-      chapterObserver.unobserve(entry.target);
-    }
-  }, { rootMargin: "0px 0px -22% 0px" });
-  for (const chapter of chapters) chapterObserver.observe(chapter);
-
-  const revealObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      entry.target.classList.add("is-revealed");
-      revealObserver.unobserve(entry.target);
-    }
-  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
-  for (const target of revealTargets) revealObserver.observe(target);
-}
-
-// ───── スクロールに応えるもの：ヘッダー・髪・カメラ ─────
+// ───── スクロールに応えるもの：ヘッダーと髪 ─────
 
 const siteHeader = document.querySelector("[data-site-header]");
 const heroStage = document.querySelector(".hero-stage");
 const hairs = [...document.querySelectorAll("[data-grow]")];
+const stains = [...document.querySelectorAll("[data-spread]")];
 const desktopHeader = window.matchMedia("(min-width: 721px)");
 let lastScrollY = window.scrollY;
 let scrollFrame = 0;
 
 const clamp01 = (value) => Math.min(Math.max(value, 0), 1);
+const easeInOut = (t) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
 
 function updateOnScroll() {
   scrollFrame = 0;
@@ -191,14 +149,16 @@ function updateOnScroll() {
   }
   lastScrollY = y;
 
-  // 髪は、裾が画面の下から 4 割の高さまで上がる間に、3 割から全部まで伸びる
+  // 髪も染みも、自分の上端が画面の下端に入ったときが最初、画面の上から 2 割まで上がったときが最後。
+  // 髪は長さの 3 割 → 全部、染みは芯だけ（.5）→ 縁まで（1.2）。その間は、ゆっくり出て、ゆっくり止まる
   for (const hair of hairs) {
-    const top = hair.getBoundingClientRect().top;
-    const grown = reducedMotion.matches ? 1 : 0.3 + 0.7 * clamp01((viewport - top) / (viewport * 0.9));
-    hair.style.setProperty("--grow", grown.toFixed(3));
+    const t = reducedMotion.matches ? 1 : easeInOut(clamp01((viewport - hair.getBoundingClientRect().top) / (viewport * 0.8)));
+    hair.style.setProperty("--grow", (0.3 + 0.7 * t).toFixed(3));
   }
-
-  updateCameraFromScroll();
+  for (const stain of stains) {
+    const t = reducedMotion.matches ? 1 : easeInOut(clamp01((viewport - stain.getBoundingClientRect().top) / (viewport * 0.8)));
+    stain.style.setProperty("--spread", (0.5 + 0.7 * t).toFixed(3));
+  }
 }
 
 function requestScrollUpdate() {

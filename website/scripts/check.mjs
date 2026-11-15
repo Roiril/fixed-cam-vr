@@ -205,9 +205,12 @@ if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support 
 if (/setInterval\(|AUTO_SWITCH_INTERVAL_MS/.test(js)) errors.push("nothing may advance on a timer: motion is driven by scroll, hover or tap only");
 if (/animation:[^;]*infinite/.test(css)) errors.push("looping CSS animations are not allowed: motion is driven by scroll, hover or tap only");
 if (html.includes("data-site-clock")) errors.push("the elapsed-time clock was removed with the timer-driven motion");
-// カメラは読み進めた位置で 01 → 02 → 03 と切り替わる。ボタンは、その区間までページを送る
-if (!html.includes("data-camera-scroll") || !js.includes("function updateCameraFromScroll()") || !js.includes("Math.floor(progress * CAMERA_COUNT)")) errors.push("camera switching must follow the scroll position");
-if (!/button\.addEventListener\("click",[\s\S]*?scrollToCamera\(/.test(js)) errors.push("camera buttons must scroll the page to their segment");
+// 2026-11-16 の指示：スクロールを止めて留める演出と、章題が動くのをやめる。カメラは押して選ぶ
+if (/position:\s*sticky/.test(css) || html.includes("data-camera-scroll")) errors.push("nothing may pin to the viewport while scrolling (no sticky chapters or titles)");
+if (html.includes("data-reveal") || js.includes("js-reveal") || css.includes("js-reveal")) errors.push("entrance reveals were removed: move only what has a stated reason");
+// 理由のある動き 2 つ：髪と染みは読み進めた位置で伸びる・広がる
+if ((html.match(/data-grow/g)?.length ?? 0) !== 2 || (html.match(/data-spread/g)?.length ?? 0) !== 2 || !js.includes('"--grow"') || !js.includes('"--spread"')) errors.push("hair growth and stain spread must follow the scroll position");
+if (!/button\.addEventListener\("click",[\s\S]*?selectedCamera = camera;/.test(js)) errors.push("camera buttons must select their camera on click");
 // 章の地は幕と壁の 2 つ。幕の章には幕の絵、壁の章には壁の地が要る
 if ((html.match(/class="chapter on-drape /g)?.length ?? 0) !== 4 || (html.match(/class="chapter on-wall /g)?.length ?? 0) !== 3) errors.push("chapters must alternate between the drape (4) and the wall (3)");
 if ((html.match(/<div class="drape" aria-hidden="true">/g)?.length ?? 0) !== 4) errors.push("every drape chapter needs its curtain layers");
