@@ -5,6 +5,7 @@
 //   染み（読み進めるほど芯から縁へ広がる）
 //   ヘッダー（読んでいる間は退き、戻ると出る）
 //   ページの終わり（暗がりを抜けると、また最初の部屋に戻っている。体験と同じく 3 周）
+//   周ごとの異変と色（廻るたびに狂う。2 周目で色が抜け、3 周目で血の色に沈む）
 
 const feeds = [...document.querySelectorAll("[data-camera-feed]")];
 const cameraButtons = [...document.querySelectorAll("[data-camera-button]")];
@@ -166,18 +167,26 @@ function buildLoop() {
 
 // 本物の頭から写しの頭までを整数の画素にする。端数が残ると、移った瞬間に文字のにじみ方が変わる
 function alignLoop() {
-  if (!loopBridge) return;
+  if (!loopBridge || !loopEcho) return;
   loopBridge.style.height = "";
   const length = docTop(loopEcho) - docTop(realHead[0]);
   const base = loopBridge.getBoundingClientRect().height;
   loopBridge.style.height = `${base + (Math.ceil(length) - length)}px`;
 }
 
+// 3 周目に入ったら、写しを外す。暗がりはそのまま残し、その先には頭ではなく人形の顔を置く。
+// 読み手は 3 度目の「頭へ戻る」を待っているので、暗がりから出てくるのは最初の部屋だと思っている。
+// 顔の絵はここで読み込み始める（3 周目を読み終えるまでには届いている）
+let loopFinal = null;
 function removeLoop() {
-  loopBridge?.remove();
   loopEcho?.remove();
-  loopBridge = null;
   loopEcho = null;
+  if (!loopBridge) return;
+  loopFinal = document.createElement("div");
+  loopFinal.className = "loop-final";
+  loopFinal.setAttribute("aria-hidden", "true");
+  loopFinal.innerHTML = '<picture><source media="(max-width: 600px)" srcset="assets/final-mobile.webp"><img src="assets/final-desktop.webp" width="1672" height="941" alt="" decoding="async"></picture>';
+  loopBridge.after(loopFinal);
 }
 
 const docTop = (element) => element.getBoundingClientRect().top + window.scrollY;
@@ -207,9 +216,121 @@ function wrapIfInEcho({ force = false } = {}) {
   if (window.scrollY >= echoTop) return false;
   lastScrollY = window.scrollY;
   suppressHeaderOnce = true;
+  loopLengthKnown = loopLength;
   lap += 1;
   if (lap >= LAPS) removeLoop();
+  applyLap();
   return true;
+}
+
+// ───── 周ごとの異変 ─────
+// 周は main・フッター・頭の写しが data-lap で持つ。写しは次の周の姿。
+// 替えるのは移った瞬間だけ。そのとき画面は頭を映していて、頭は写しと同じ姿なので、替わったのは見えない。
+// 画面の外にある物（テレビの映像）は、その場で入れ替える。
+
+const lapHolders = [document.querySelector("main"), document.querySelector(".site-footer")].filter(Boolean);
+let loopLengthKnown = 0;
+
+// テレビの 3 台。周ごとに、映る廊下が狂っていく（2 周目は 02 だけ、3 周目は 3 台とも）
+const feedsByLap = {
+  1: [
+    ["assets/camera-fiction-01.webp", "薄暗い廊下に立つ人物を天井近くから見下ろす"],
+    ["assets/camera-fiction-02.webp", "同じ廊下と人物を反対側のカメラから見る"],
+    ["assets/camera-fiction-03.webp", "廊下の曲がり角と壁に隠れる人物を見る"]
+  ],
+  2: [
+    ["assets/camera-fiction-01.webp", "薄暗い廊下に立つ人物を天井近くから見下ろす"],
+    ["assets/camera-fiction-02-lap2.webp", "同じ廊下と人物を反対側のカメラから見る。奥に小さな人形が立っている"],
+    ["assets/camera-fiction-03.webp", "廊下の曲がり角と壁に隠れる人物を見る"]
+  ],
+  3: [
+    ["assets/camera-fiction-01-lap3.webp", "人物の立っていた所に人形が立ち、カメラを見上げている"],
+    ["assets/camera-fiction-02-lap3.webp", "うつむく人物の周りを、カメラを向いた人形が埋めている"],
+    ["assets/camera-fiction-03-lap3.webp", "レンズのすぐ前に人形の顔がある"]
+  ]
+};
+
+function applyFeeds(n) {
+  const set = feedsByLap[n] ?? feedsByLap[3];
+  for (const feed of feeds) {
+    const [src, alt] = set[Number(feed.dataset.cameraFeed) - 1];
+    if (!feed.src.endsWith(src)) feed.src = src;
+    feed.alt = alt;
+  }
+  for (const button of cameraButtons) {
+    const thumb = button.querySelector(".camera-thumb img");
+    const [src] = set[Number(button.dataset.cameraButton) - 1];
+    if (thumb && !thumb.src.endsWith(src)) thumb.src = src;
+  }
+}
+
+// 次の周の絵は、その周が近づいたら読み込ませる（初めの人には余計な通信をさせない）
+const armedLaps = new Set();
+function armLap(n) {
+  if (armedLaps.has(n)) return;
+  armedLaps.add(n);
+  for (const picture of document.querySelectorAll(`.hero-anomaly[data-anomaly-lap="${n}"]`)) {
+    for (const source of picture.querySelectorAll("source[data-srcset]")) source.srcset = source.dataset.srcset;
+    const img = picture.querySelector("img[data-src]");
+    if (img) img.src = img.dataset.src;
+  }
+  for (const [src] of feedsByLap[n] ?? []) {
+    const preload = new Image();
+    preload.src = src;
+  }
+}
+
+function applyLap() {
+  for (const holder of lapHolders) holder.dataset.lap = String(lap);
+  if (loopEcho) loopEcho.dataset.lap = String(lap + 1);
+  if (lap > 1) {
+    armLap(lap);
+    applyFeeds(lap);
+  }
+}
+
+// 色の崩れ。重ねる層は 4 枚（色を抜く・血の色に染める・明るい所まで血の色に焼く・四隅から暗く沈める）
+const hauntLayers = ["drain", "blood", "burn", "dark"].map((name) => {
+  const layer = document.createElement("div");
+  layer.className = `haunt haunt-${name}`;
+  layer.setAttribute("aria-hidden", "true");
+  layer.hidden = true;
+  document.body.append(layer);
+  return layer;
+});
+
+const smooth = (from, to, value) => {
+  const t = Math.min(Math.max((value - from) / (to - from), 0), 1);
+  return t * t * (3 - 2 * t);
+};
+
+// 読み進めた量を周で数える（1 周目の頭が 0、2 周目の頭が 1、3 周目の頭が 2）。
+// 写しの中の位置 p は次の周の頭から p の所なので、移る前後でこの値は続いている
+function lapProgress() {
+  let length = loopLengthKnown;
+  if (loopEcho) length = loopLengthKnown = docTop(loopEcho) - docTop(realHead[0]);
+  if (!length) return 0;
+  return lap - 1 + window.scrollY / length;
+}
+
+// 1 周目は手を付けない。2 周目は読み進めるほど色が抜け、終わり際に赤みが差す。
+// 3 周目は読み進めるほど血の色に沈み、四隅から暗くなる。3 周目の終わり（フッター）でいちばん深い
+function renderHaunt() {
+  const p = lapProgress();
+  if (p > 0.55) armLap(2);
+  if (p > 1.55) armLap(3);
+  const second = smooth(1.0, 2.0, p);
+  const third = smooth(2.0, 2.8, p);
+  const values = [
+    0.7 * second + 0.3 * third,                       // drain
+    0.14 * smooth(1.55, 2.0, p) + 0.8 * third,        // blood
+    0.8 * smooth(2.1, 2.9, p),                        // burn
+    0.3 * second + 0.6 * third                        // dark
+  ];
+  hauntLayers.forEach((layer, index) => {
+    layer.hidden = values[index] < 0.002;
+    layer.style.opacity = values[index].toFixed(3);
+  });
 }
 
 function onLoopScroll() {
@@ -220,6 +341,7 @@ function onLoopScroll() {
 }
 
 buildLoop();
+applyLap();
 if (loopEcho) {
   window.addEventListener("scroll", onLoopScroll, { passive: true });
   window.addEventListener("scrollend", () => wrapIfInEcho({ force: true }), { passive: true });
@@ -262,12 +384,15 @@ function updateOnScroll() {
     siteHeader.classList.remove("is-away");
   }
   lastScrollY = y;
+  renderHaunt();
 
   // 写しのキービジュアルは、暗がりから浮かび上がる。写しの上端が画面の下端に入ったときが最初（暗がり）、
   // 画面の上端に着いたときが最後（本物と同じ明るさ）。最後で本物と同じ絵になっていないと、移ったのが見える
-  if (loopEcho) {
-    const t = clamp01((viewport - loopEcho.getBoundingClientRect().top) / viewport);
-    loopEcho.style.setProperty("--dusk", (1 - easeInOut(t)).toFixed(3));
+  // 最後の顔も同じ。暗がりから出てきて、ページの終わりで画面を埋める
+  for (const room of [loopEcho, loopFinal]) {
+    if (!room) continue;
+    const t = clamp01((viewport - room.getBoundingClientRect().top) / viewport);
+    room.style.setProperty("--dusk", (1 - easeInOut(t)).toFixed(3));
   }
 
   // 髪も染みも、自分の上端が画面の下端に入ったときが最初、画面の上から 2 割まで上がったときが最後。

@@ -481,6 +481,101 @@ main {
   height: auto;
 }
 
+/* ───────── 周ごとの異変 ─────────
+   「廻るたびに狂う世界」。周（data-lap）は main・フッター・頭の写しが持つ。写しは次の周の姿で待つので、
+   頭へ戻った瞬間にもう狂っている。周が替わるのは画面が頭の写しを映している間だけ（替わる瞬間は見えない） */
+
+.hero-stage {
+  position: relative;
+}
+
+.hero-anomaly {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+
+[data-lap="2"] .hero-anomaly[data-anomaly-lap="2"],
+[data-lap="3"] .hero-anomaly[data-anomaly-lap="3"] {
+  visibility: visible;
+}
+
+/* 髪は周ごとに長く、染みは周ごとに大きくなる。読み進めたぶんの伸び（--grow / --spread）はその上に乗る */
+.hair {
+  transform-origin: top center;
+}
+
+.stain {
+  transform-origin: 64% 36%;
+}
+
+[data-lap="2"] .hair { scale: 1 1.45; }
+[data-lap="3"] .hair { scale: 1.15 2.3; }
+[data-lap="2"] .stain { scale: 1.3; }
+[data-lap="3"] .stain { scale: 1.9; }
+
+/* 色の崩れ。2 周目で色が抜け、3 周目で血の色に沈む（各層の不透明度は main.js が周と位置から決める）。
+   どれも画面全体に重ねる。重ね方で色を変えるので、互いに独立した層にする（まとめると下の頁と混ざらない） */
+.haunt {
+  position: fixed;
+  z-index: 850;
+  inset: 0;
+  pointer-events: none;
+}
+
+.haunt[hidden] {
+  display: none !important;
+}
+
+.haunt-drain {
+  background: #808080;
+  mix-blend-mode: saturation;
+  opacity: 0;
+}
+
+.haunt-blood {
+  background: #a3121a;
+  mix-blend-mode: color;
+  opacity: 0;
+}
+
+/* 色だけ替えると、明るい壁は桃色に浮く。掛け合わせで明るい所まで血の色に焼く */
+.haunt-burn {
+  background: #7a0a10;
+  mix-blend-mode: multiply;
+  opacity: 0;
+}
+
+.haunt-dark {
+  background: radial-gradient(ellipse 75% 70% at 50% 46%, transparent 30%, rgb(40 0 2 / 80%) 72%, #000 100%);
+  mix-blend-mode: multiply;
+  opacity: 0;
+}
+
+/* 3 周目の終わり。暗がりの先に、最初の部屋ではなく人形の顔が待つ。ページはここで終わる */
+.loop-final {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+
+.loop-final img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.loop-final::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: #000;
+  opacity: var(--dusk, 1);
+}
+
 .hero-band {
   position: relative;
   isolation: isolate;

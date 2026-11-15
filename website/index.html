@@ -156,6 +156,15 @@
             <source srcset="assets/hero-small.webp 1024w, assets/hero-desktop.webp 1672w" sizes="100vw">
             <img src="assets/hero-desktop.webp" width="1672" height="941" alt="日本人形と廻リ視の題字を配したキービジュアル" fetchpriority="high">
           </picture>
+          <!-- 2 周目・3 周目の部屋。周が近づいたら main.js が読み込ませる -->
+          <picture class="hero-picture hero-anomaly" data-anomaly-lap="2" aria-hidden="true">
+            <source media="(max-width: 600px)" data-srcset="assets/hero-lap2-mobile.webp" width="900" height="1350">
+            <img data-src="assets/hero-lap2-desktop.webp" width="1672" height="941" alt="" decoding="async">
+          </picture>
+          <picture class="hero-picture hero-anomaly" data-anomaly-lap="3" aria-hidden="true">
+            <source media="(max-width: 600px)" data-srcset="assets/hero-lap3-mobile.webp" width="900" height="1350">
+            <img data-src="assets/hero-lap3-desktop.webp" width="1672" height="941" alt="" decoding="async">
+          </picture>
         </div>
         <div class="hero-band">
           <p class="hero-lead">監視カメラに映る自分を見ながら、<br>現実の空間を歩くホラー体験。</p>
