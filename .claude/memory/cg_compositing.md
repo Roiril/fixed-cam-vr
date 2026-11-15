@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: a6c8f7d1-9002-4f6a-a3d9-d11f6afaa276
-  modified: 2026-11-15T03:57:20.836Z
+  modified: 2026-11-15T04:08:31.710Z
 ---
 
 CG 人形を実写映像へなじませる基盤は 2026-07-27 に作り直した。契約の正本は
@@ -51,6 +51,7 @@ CG 人形を実写映像へなじませる基盤は 2026-07-27 に作り直し�
 9/5〜9/7 に卓で打った較正は 3 台とも `fxPx` 399.4（水平 77.4 度）で解いてあり、9/24 の無人写真の点に対して rms A 25 / B 29 / C 63px ずれていた（画の端ほど外れる。画角の誤りの形）。
 ツイン（`tools/twin/plate_fit.py`）が 3 台の写真から共通に解いた画角は水平 96 度（`rig.json` の `_fit.fPx` 288.33）で、各台 2〜5px で合う。
 11-15 に show.json の A/B/C の calib を、`tools/twin/plate_obs.json` の点からその画角で解き直した（`method: plate-fit`。A 3.7 / B 4.5 / C 2.1px）。旧値は `tools/web-compositor/show.json.bak-20261115_pre_calib_fov96`。
+C は同じ日に据え直したので、その日の配信の画で点を読み直して解いた（4.6px。解いた傾き pitch -24.0 / roll 27.3 は端末の傾きの計測値 -23.7 / 27.4 と一致）。A と B は 9/24 の点のまま。
 新旧を写真へ重ねた画は Drive `screenshots/fixed-cam-vr/20261115_calib_old_new.jpg`。カメラを据え直したら、写真で点を読み直してこの画角のまま解く。卓で打ち直すときも画角は 96 度に固定する（77.4 度へ戻さない）。
 
 ## 実測で決まった運用制約（変えると精度が落ちる）
