@@ -1,14 +1,15 @@
-# 2 周目 A：左の幕のしみと、右の幕の裏の人形（静止画から）
+# 2 周目 A：左の幕のしみと、右の幕の顔と人形
 
-`.claude/canon/LEDGER.md` 0330（左のしみ）と 0376・0378（右の幕）。動画生成は使わない。素材は全部 Codex の画像生成の静止画から作る。
+`.claude/canon/LEDGER.md` 0330（左のしみ）・0376・0378（右の幕の流れ）・0389（右の幕は動画生成）・0390（左の膨らみは無し）。
+左のしみは Codex の静止画から、右の幕は動画生成（Flow）の動画から作る。
 
 | 段 | いつ | 画 | cue |
 |---|---|---|---|
-| 0 待機 | 2-A に入った瞬間から、体が伸び出しの顔に重ならない所（線 `s2a_rightstain`）を越えるまで | 左の幕に顔のように見えるしみ。長押しの間は顔の所が盛り上がる。報告すると左のしみだけが消え、演出は続く（step の `markClear`） | `cue_stain_A`（盛り上がりは take の `markStartCueId` = `stain_A_press_bulge`） |
-| 1 右のしみ | 0 の後、その 0.12m 先（線 `s2a_leftend`）に届くか、報告の長押しを始めるまで（step の `markStartAdvance`） | 右の幕に顔のしみが 1 秒で滲む（step の `fadeInSec`）。左のしみが残っていれば残る | `cue_stain_A_right_hold`（掛け算）＋ 2 枚目の層 `cue_stain_A_left_hold` |
-| 2 右で笑う | 1 の後 | 次のコマで顔が布ごと左へ画面の半分まで伸び切った画に替わる（途中は無い）。右の幕の縁の裏で人形が笑う。笑い声 1 回 | `stain_A_right_burst`（動画）＋ 2 枚目の層 |
-| 3 隠れて見る | 2 の動画が終わってから、壁の端を回る（線 `s2a_walk`）まで | 人形は布の縁の裏へ身を引き、黙ってこちらを見ている | `stain_A_right_watch` ＋ 2 枚目の層 |
-| 4 ついてくる | 3 の後、区間を出て 3.5 秒まで（区間を出てもこの秒まではカメラ A の画のまま。take の `exitHoldSec`） | 乱れで CG の人形（0.8m）に替わり、幕の裏の同じ所から歩いた跡をついてくる。右のしみは残る | `cue_stain_A_right_hold` ＋ 2 枚目の層 ＋ CG `doll_mid`（trail） |
+| 0 待機 | 2-A に入った瞬間から、体が右の幕の顔に重ならない所（線 `s2a_rightstain`）を越えるまで | 左の幕に顔のように見えるしみ。長押ししても膨らまない（0390）。報告すると左のしみだけが消え、演出は続く（step の `markClear`） | `cue_stain_A` |
+| 1 右のしみ | 0 の後、その 0.12m 先（線 `s2a_leftend`）に届くか、報告の長押しを始めるまで（step の `markStartAdvance`） | 何も無い右の幕に顔のしみが 0.25 秒のディゾルブで出る（step の `fadeInSec`）。左のしみが残っていれば残る | `cue_stain_A_right_hold`（掛け算）＋ 2 枚目の層 `cue_stain_A_left_hold` |
+| 2 膨らんで覗く | 1 の後 | しみが案 1 の笑う顔に膨らみ、右の幕の縁から人形が覗く（2.29 秒の動画）。笑い声 1 回 | `stain_A_right_burst`（動画）＋ 2 枚目の層 |
+| 3 止め | 2 の動画が終わってから、壁の端を回る（線 `s2a_walk`）まで | 最後のコマで止まる。顔と覗く人形 | `stain_A_right_watch` ＋ 2 枚目の層 |
+| 4 ついてくる | 3 の後、区間を出て 3.5 秒まで（区間を出てもこの秒まではカメラ A の画のまま。take の `exitHoldSec`） | 乱れで CG の人形（0.8m）に替わり、幕の裏の同じ所から歩いた跡をついてくる。幕には顔だけが残る | `cue_stain_A_right_face` ＋ 2 枚目の層 ＋ CG `doll_mid`（trail） |
 
 段 0 で左のしみを消していれば、以後の段の 2 枚目の層は出ない。段 1 の報告は押し始めで段 2 へ進み、押し切ると段 2 で畳まれる。
 段 2〜4 の報告は演出ごと畳む（左右のしみも人形も消える）。そのとき 2 周目 B の演出 `L2C1#0` は出ない（take の `skipIfDismissed`）。
@@ -52,7 +53,7 @@
 
 本番は 2026-11-15 12:50 の無人写真 `captures/plate_A_20261115_125052.jpg` に合わせてある（`tools/web-compositor/plate-dependents.json` の `plate`）。
 
-| 場所 | 待機 | 左のしみ（掛け算） | 盛り上がり | 右の幕 |
+| 場所 | 待機 | 左のしみ（掛け算） | 盛り上がり（0390 から台本で使っていない） | 右の幕 |
 |---|---|---|---|---|
 | 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | 動画生成の版 `stain_A_right_flow_*_20261116_flow.*`（0389。前の版の `stain_A_right_*_20261115_1250*` は台本から外れた） |
 | ツイン `tools/twin/assets/` | `twin_stainA_idle.png` | `twin_stainA_ratio.png` | `twin_stainA_bulge.png` | `twin_stainA_right_*` |

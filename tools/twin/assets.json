@@ -28,11 +28,6 @@
       "mask": "twin_stainA_mask.png",
       "reveal": "twin_stainA_reveal.png"
     },
-    "stain_A_press_bulge": {
-      "source": "twin_stainA_bulge.png",
-      "mask": "twin_stainA_mask.png",
-      "pressMask": "twin_stainA_pressmask.png"
-    },
     "pov_0": {
       "source": "twin_pov_0.mp4"
     },

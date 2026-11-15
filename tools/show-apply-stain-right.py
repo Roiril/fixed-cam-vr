@@ -1,6 +1,7 @@
 """本番の台本（tools/web-compositor/show.json）の 2 周目 A を、右の幕から人形が笑う形へ書き換える（LEDGER 0376・0378）。
 
-  段 0  入ってくると左の幕に顔のシミ（cue_stain_A・滲んで出る）。報告するとシミだけが消える（markClear・演出は続く）。
+  段 0  入ってくると左の幕に顔のシミ（cue_stain_A・滲んで出る）。長押ししてもシミは膨らまない（0390）。
+        報告するとシミだけが消える（markClear・演出は続く）。
         体が伸び出しの顔に重ならない所（線 s2a_rightstain）を越えるまで
   段 1  何も無い右の幕に、しみが 0.25 秒のディゾルブで出る（0389。左のシミが残っていれば 2 枚目の層で保つ）。
         体がもっと左（s2a_leftend）に届くか、報告の長押しを始めたら次へ（markStartAdvance）
@@ -132,9 +133,11 @@ def patch(show: dict) -> None:
         take["exitHoldSec"] = EXIT_HOLD_SEC
         take["ifMissed"] = "skip"
         take["dismissible"] = True
-        # 報告の後に左の幕の縁から人形が覗く一瞬（0330）は、右の幕の人形と重なるので外す。押している間の膨らみは残す
+        # 報告の後に左の幕の縁から人形が覗く一瞬（0330）は、右の幕の人形と重なるので外す。
+        # 押している間に左のシミが膨らむ応答（0349）も外す（0390）
         take.pop("markDoneCueId", None)
         take.pop("markDoneSec", None)
+        take.pop("markStartCueId", None)
         take["steps"] = [
             # 報告で左のシミだけを消す。演出は続き、右のシミの線を待つ
             step("inherit", cueId="cue_stain_A", durKind="untilBeyond", lineId="s2a_rightstain", durSec=40,
