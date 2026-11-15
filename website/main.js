@@ -1,31 +1,25 @@
+// 動くのは、スクロールとホバー（指ならタップ）に応えるものだけ。時間で勝手に進むものは置かない。
+
 const feeds = [...document.querySelectorAll("[data-camera-feed]")];
 const cameraButtons = [...document.querySelectorAll("[data-camera-button]")];
 const screen = document.querySelector(".crt-screen");
 const indicator = document.querySelector("#camera-indicator");
 const status = document.querySelector("#camera-status");
 const cameraConsole = document.querySelector(".camera-console");
+const cameraScroll = document.querySelector("[data-camera-scroll]");
+const cameraStage = document.querySelector(".camera-stage");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const canHover = window.matchMedia("(hover: hover)");
 
 const CAMERA_COUNT = 3;
-const AUTO_SWITCH_INTERVAL_MS = 6000;
 
-let currentCamera = readCameraFromUrl();
+let scrollCamera = 1;   // 読み進めた位置が決めるカメラ
+let previewCamera = 0;  // 触れている間だけ映すカメラ（0 は無し）
+let shownCamera = 0;
 let noiseTimer = null;
-let autoSwitchTimer = null;
-
-function readCameraFromUrl() {
-  const raw = new URL(window.location.href).searchParams.get("camera");
-  return /^[1-3]$/.test(raw ?? "") ? Number(raw) : 1;
-}
 
 function cameraLabel(camera) {
   return `CAM ${String(camera).padStart(2, "0")}`;
-}
-
-function writeCameraToUrl(camera, historyMode) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("camera", String(camera));
-  window.history[historyMode]({ camera }, "", url);
 }
 
 function stopSwitchNoise() {
@@ -34,6 +28,7 @@ function stopSwitchNoise() {
   screen.classList.remove("is-switching");
 }
 
+// 切り替わった瞬間だけ画面が乱れる
 function showSwitchNoise() {
   if (reducedMotion.matches) return;
 
@@ -44,9 +39,10 @@ function showSwitchNoise() {
   });
 }
 
-function renderCamera(camera, { animate = true } = {}) {
-  const label = cameraLabel(camera);
-  currentCamera = camera;
+function renderCamera({ animate = true } = {}) {
+  const camera = previewCamera || scrollCamera;
+  if (camera === shownCamera) return;
+  shownCamera = camera;
 
   for (const feed of feeds) {
     const active = Number(feed.dataset.cameraFeed) === camera;
@@ -60,50 +56,58 @@ function renderCamera(camera, { animate = true } = {}) {
     button.setAttribute("aria-pressed", String(active));
   }
 
-  indicator.textContent = label;
+  indicator.textContent = cameraLabel(camera);
   status.textContent = `カメラ ${String(camera).padStart(2, "0")}`;
   if (animate) showSwitchNoise();
 }
 
-function stopAutoSwitch() {
-  window.clearTimeout(autoSwitchTimer);
-  autoSwitchTimer = null;
-  cameraConsole.classList.remove("is-running");
+// テレビが画面に留まっている区間を 3 つに割り、進んだ分でカメラを決める
+function cameraTravel() {
+  return Math.max(cameraScroll.offsetHeight - cameraStage.offsetHeight, 1);
 }
 
-// 選ばれているカメラの下に、次の切り替えまでの残りを引く。タイマーを掛け直すたびに頭から
-function restartSwitchProgress() {
-  cameraConsole.style.setProperty("--switch-ms", `${AUTO_SWITCH_INTERVAL_MS}ms`);
-  cameraConsole.classList.remove("is-running");
-  void cameraConsole.offsetWidth;
-  cameraConsole.classList.add("is-running");
+function updateCameraFromScroll() {
+  const progress = Math.min(Math.max(-cameraScroll.getBoundingClientRect().top / cameraTravel(), 0), 1);
+  cameraConsole.style.setProperty("--walk", progress.toFixed(4));
+  scrollCamera = Math.min(Math.floor(progress * CAMERA_COUNT), CAMERA_COUNT - 1) + 1;
+  renderCamera();
 }
 
-function scheduleAutoSwitch() {
-  stopAutoSwitch();
-  if (document.hidden) return;
-
-  autoSwitchTimer = window.setTimeout(advanceCamera, AUTO_SWITCH_INTERVAL_MS);
-  restartSwitchProgress();
-}
-
-function advanceCamera() {
-  const nextCamera = (currentCamera % CAMERA_COUNT) + 1;
-  renderCamera(nextCamera);
-  writeCameraToUrl(nextCamera, "replaceState");
-  scheduleAutoSwitch();
-}
-
-function selectCamera(camera) {
-  scheduleAutoSwitch();
-  if (camera === currentCamera) return;
-  renderCamera(camera);
-  writeCameraToUrl(camera, "pushState");
+// 押すと、そのカメラの区間の中ほどまでページを送る
+function scrollToCamera(camera) {
+  const top = cameraScroll.getBoundingClientRect().top + window.scrollY;
+  const target = top + cameraTravel() * ((camera - 0.5) / CAMERA_COUNT);
+  window.scrollTo({ top: target, behavior: reducedMotion.matches ? "auto" : "smooth" });
 }
 
 for (const button of cameraButtons) {
+  const camera = Number(button.dataset.cameraButton);
+
   button.addEventListener("click", () => {
-    selectCamera(Number(button.dataset.cameraButton));
+    previewCamera = 0;
+    scrollToCamera(camera);
+  });
+
+  // マウスを乗せている間・キーボードで選んでいる間は、そのカメラを映す
+  button.addEventListener("pointerenter", (event) => {
+    if (event.pointerType !== "mouse" || !canHover.matches) return;
+    previewCamera = camera;
+    renderCamera();
+  });
+  button.addEventListener("pointerleave", () => {
+    if (!previewCamera) return;
+    previewCamera = 0;
+    renderCamera();
+  });
+  button.addEventListener("focus", () => {
+    if (!button.matches(":focus-visible")) return;
+    previewCamera = camera;
+    renderCamera();
+  });
+  button.addEventListener("blur", () => {
+    if (!previewCamera) return;
+    previewCamera = 0;
+    renderCamera();
   });
 
   button.addEventListener("keydown", (event) => {
@@ -123,7 +127,6 @@ for (const button of cameraButtons) {
     if (nextIndex === null) return;
     event.preventDefault();
     cameraButtons[nextIndex].focus();
-    selectCamera(nextIndex + 1);
   });
 }
 
@@ -131,82 +134,92 @@ reducedMotion.addEventListener("change", (event) => {
   if (event.matches) stopSwitchNoise();
 });
 
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    stopAutoSwitch();
-  } else {
-    scheduleAutoSwitch();
-  }
-});
+// ───── 章題と物の現れ ─────
+// 既定の CSS では見えている。ここで js-reveal を付けてから隠すので、この処理が動かなくても内容は消えない。
 
-window.addEventListener("popstate", () => {
-  renderCamera(readCameraFromUrl(), { animate: false });
-  scheduleAutoSwitch();
-});
-
-renderCamera(currentCamera, { animate: false });
-writeCameraToUrl(currentCamera, "replaceState");
-scheduleAutoSwitch();
-
-// 記録の荷札と銘板は、既定の CSS では見えている。ここで js-reveal を付けてから隠すので、
-// この処理が動かなくても内容は消えない。
+const chapters = [...document.querySelectorAll(".chapter")];
 const revealTargets = [...document.querySelectorAll("[data-reveal]")];
-if (revealTargets.length > 0) {
-  document.documentElement.classList.add("js-reveal");
-  if (reducedMotion.matches || !("IntersectionObserver" in window)) {
-    for (const target of revealTargets) target.classList.add("is-revealed");
-  } else {
-    const revealObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        entry.target.classList.add("is-revealed");
-        revealObserver.unobserve(entry.target);
-      }
-    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
-    for (const target of revealTargets) revealObserver.observe(target);
-  }
+document.documentElement.classList.add("js-reveal");
+if (reducedMotion.matches || !("IntersectionObserver" in window)) {
+  for (const chapter of chapters) chapter.classList.add("is-in");
+  for (const target of revealTargets) target.classList.add("is-revealed");
+} else {
+  const chapterObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add("is-in");
+      chapterObserver.unobserve(entry.target);
+    }
+  }, { rootMargin: "0px 0px -22% 0px" });
+  for (const chapter of chapters) chapterObserver.observe(chapter);
+
+  const revealObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add("is-revealed");
+      revealObserver.unobserve(entry.target);
+    }
+  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
+  for (const target of revealTargets) revealObserver.observe(target);
 }
 
-// ───── ヘッダー・目次・経過時間・キービジュアルの暗転 ─────
+// ───── スクロールに応えるもの：ヘッダー・キービジュアルの暗転・髪・カメラ ─────
 
 const siteHeader = document.querySelector("[data-site-header]");
 const hero = document.querySelector(".hero");
+const heroStage = document.querySelector(".hero-stage");
+const heroBand = document.querySelector(".hero-band");
+const hairs = [...document.querySelectorAll("[data-grow]")];
 const desktopHeader = window.matchMedia("(min-width: 721px)");
 let lastScrollY = window.scrollY;
 let scrollFrame = 0;
 
-// 地の上に出たら面を敷く。下へ読み進めている間は退き、上へ戻すと出る
+const clamp01 = (value) => Math.min(Math.max(value, 0), 1);
+
 function updateOnScroll() {
   scrollFrame = 0;
   const y = window.scrollY;
-  const heroHeight = hero.offsetHeight;
+  const viewport = window.innerHeight;
+  const stageHeight = heroStage.offsetHeight;
 
+  // 下へ読み進めている間は退き、上へ戻すと出る
   if (desktopHeader.matches) {
-    siteHeader.classList.toggle("is-solid", y > 24);
     const goingDown = y > lastScrollY + 2;
     const goingUp = y < lastScrollY - 2;
-    if (goingDown && y > heroHeight * 0.6) siteHeader.classList.add("is-away");
-    else if (goingUp || y <= heroHeight * 0.6) siteHeader.classList.remove("is-away");
+    if (goingDown && y > stageHeight * 0.6) siteHeader.classList.add("is-away");
+    else if (goingUp || y <= stageHeight * 0.6) siteHeader.classList.remove("is-away");
   } else {
-    siteHeader.classList.remove("is-solid", "is-away");
+    siteHeader.classList.remove("is-away");
   }
   lastScrollY = y;
 
-  // 0 から 0.7 まで、キービジュアルの高さを読み進める間に線形で落とす
-  const dim = reducedMotion.matches ? 0 : Math.min(Math.max(y / heroHeight, 0), 1) * 0.7;
-  hero.style.setProperty("--hero-dim", dim.toFixed(3));
+  // 壁がせり上がって絵を覆うのに合わせて、0 から 0.72 まで線形で落とす
+  const covered = clamp01((viewport - heroBand.getBoundingClientRect().top) / Math.min(stageHeight, viewport));
+  hero.style.setProperty("--hero-dim", (reducedMotion.matches ? 0 : covered * 0.72).toFixed(3));
+
+  // 髪は、裾が画面の下から 4 割の高さまで上がる間に、3 割から全部まで伸びる
+  for (const hair of hairs) {
+    const top = hair.getBoundingClientRect().top;
+    const grown = reducedMotion.matches ? 1 : 0.3 + 0.7 * clamp01((viewport - top) / (viewport * 0.9));
+    hair.style.setProperty("--grow", grown.toFixed(3));
+  }
+
+  updateCameraFromScroll();
 }
 
-window.addEventListener("scroll", () => {
+function requestScrollUpdate() {
   if (!scrollFrame) scrollFrame = window.requestAnimationFrame(updateOnScroll);
-}, { passive: true });
-desktopHeader.addEventListener("change", updateOnScroll);
-reducedMotion.addEventListener("change", updateOnScroll);
+}
+
+window.addEventListener("scroll", requestScrollUpdate, { passive: true });
+window.addEventListener("resize", requestScrollUpdate, { passive: true });
+desktopHeader.addEventListener("change", requestScrollUpdate);
+reducedMotion.addEventListener("change", requestScrollUpdate);
+renderCamera({ animate: false });
 updateOnScroll();
 
-// いま読んでいる章を目次に示す
+// いま読んでいる章を目次に示す。目次に無い章（予告動画・ストーリー・クレジット）へ入ったら、どれも示さない
 const navLinks = [...document.querySelectorAll(".site-nav a[href^='#']")];
-// 目次に無い章（予告動画・ストーリー・クレジット）へ入ったら、どれも示さない
 const chapterSections = [...document.querySelectorAll("main section[id]")];
 if (navLinks.length > 0 && "IntersectionObserver" in window) {
   const navObserver = new IntersectionObserver((entries) => {
@@ -219,17 +232,4 @@ if (navLinks.length > 0 && "IntersectionObserver" in window) {
     }
   }, { rootMargin: "-45% 0px -50% 0px" });
   for (const section of chapterSections) navObserver.observe(section);
-}
-
-// ページを開いてからの経過時間。監視カメラの時刻表示の形で、実際の経過だけを出す
-const clock = document.querySelector("[data-site-clock]");
-if (clock) {
-  const openedAt = performance.now();
-  const pad = (value) => String(value).padStart(2, "0");
-  const tick = () => {
-    const total = Math.floor((performance.now() - openedAt) / 1000);
-    clock.textContent = `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
-  };
-  tick();
-  window.setInterval(tick, 1000);
 }

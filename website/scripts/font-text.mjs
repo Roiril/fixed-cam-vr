@@ -24,7 +24,7 @@ export function pageText(html) {
 
 // 等幅の欧文書体（IBM Plex Mono）で組む要素。styles.css / experience.css の font-family: var(--mono) と対にして保つ。
 const LATIN_CLASSES = [
-  "site-clock",
+  "hero-fact-key",
   "camera-indicator",
   "mode-key",
   "archive-date",

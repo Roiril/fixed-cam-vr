@@ -1,7 +1,9 @@
-/* 廻リ視の公式サイト。
-   面ごとに「現実（紙・写真・幕）」と「映像（画面・信号）」を交互に置き、
-   題字の赤 1 色と、四隅の枠（画面では撮影枠、紙では写真の角）で揃える。
-   章はすべて同じ格子に載る。左の柱に縦書きの章題、柱の右端に 1 本の線、その右に中身。 */
+/* 廻リ視の公式サイト（2026-11-15 第 3 版「幕と壁」）。
+   ページは 1 枚の壁。その手前に、キービジュアルと同じ幕が何段か掛かっている。
+   暗い章は幕の上（映る側）、明るい章は壁の上（現実の側）。
+   章の境界は幕のレール（まっすぐ）と幕の裾（波打つ）。境界をまたぐのは、
+   壁を這うケーブル、裾の下から伸びる髪、壁の染み、裾が壁に落とす影。
+   動くのはスクロールとホバー（指ならタップ）に応えるものだけ。時間で勝手に動くものは置かない。 */
 
 @font-face {
   font-family: "Shippori Mincho";
@@ -32,33 +34,24 @@
 :root {
   color-scheme: dark;
 
-  /* 地 */
-  --night: #0a0908;
-  --night-2: #12100d;
-  --screen-room: #0a0c0b;
+  /* 幕の側の地と文字 */
+  --night: #0b0908;
+  --cream: #ece5d8;
+  --cream-2: #b9b0a2;
+  --cream-3: #8a8175;
 
-  /* 文字 */
-  --ink: #ece5d8;
-  --ink-2: #b6ad9f;
-  --ink-3: #847b70;
-  --line: rgb(236 229 216 / 13%);
-  --line-2: rgb(236 229 216 / 28%);
+  /* 壁の側の地と文字（墨） */
+  --wall: #d6ccb9;
+  --sumi: #15110e;
+  --sumi-2: #473e34;
+  --sumi-3: #74695b;
 
   /* 1 色。題字の「視」の赤 */
   --red: #b02a32;
-  --red-text: #e0574f;
-
-  /* 画面の側（冷たい燐光） */
-  --signal: #c6d2bd;
-  --signal-line: rgb(198 210 189 / 38%);
-
-  /* 紙の側（調査ファイル） */
-  --kraft: #c2aa82;
-  --paper-ink: #1c1712;
-  --paper-muted: #4c4236;
+  --red-on-dark: #e0574f;
 
   /* 荷札と銘板 */
-  --tag: #e2d8c5;
+  --tag: #efe7d6;
   --tag-ink: #151210;
   --tag-muted: #5a5349;
   --plate: rgb(19 17 14 / 82%);
@@ -72,23 +65,64 @@
   --content: 1296px;
   --header-h: 72px;
   --ease: cubic-bezier(.2, .7, .2, 1);
+  --write: cubic-bezier(.65, 0, .15, 1);
   --cut: 14px;
 
   /* 格子。--edge は中身の左端（100% は使う場所の幅で決まる） */
   --edge: max(var(--gutter), calc((100% - var(--content)) / 2));
   --spine: clamp(3.25rem, 5.6vw, 5.75rem);
-  --spine-gap: clamp(1.75rem, 3.6vw, 3.5rem);
-  --title-size: clamp(2.3rem, 3.6vw, 4rem);
+  --spine-gap: clamp(1.5rem, 3vw, 3rem);
+  --title-size: clamp(2.4rem, 3.8vw, 4.2rem);
 
   /* 余白は 4 段だけ。近いものほど詰め、関係が遠くなるほど空ける */
-  --s-label: .6rem;                        /* 札と、その札が指すもの */
-  --s-part: clamp(1.25rem, 2vw, 1.75rem);  /* 1 つの物の部品どうし */
-  --s-group: clamp(2.75rem, 4.5vw, 4rem);  /* 章の中の別の物 */
-  --s-chapter: clamp(4.5rem, 7vw, 7rem);   /* 章の上下。章と章の間はこの 2 倍 */
+  --s-label: .6rem;
+  --s-part: clamp(1.25rem, 2vw, 1.75rem);
+  --s-group: clamp(2.75rem, 4.5vw, 4rem);
+  --s-chapter: clamp(4.5rem, 7vw, 7rem);
+
+  /* 幕の寸法。絵（1536px 幅）の中の位置を、表示幅に掛けて出す。
+     レールの上面は絵の上から 62px、裾のいちばん下は裾の絵（190px）の上から 172px */
+  --drape-w: max(116vw, 1180px);
+  --rail-h: calc(var(--drape-w) * 240 / 1536);
+  --hem-h: calc(var(--drape-w) * 190 / 1536);
+  --rail-rise: calc(var(--drape-w) * 62 / 1536);
+  --hem-drop: calc(var(--drape-w) * 150 / 1536);
 
   font-family: var(--serif);
   font-synthesis: none;
   background: var(--night);
+}
+
+/* 幕の側（既定） */
+:root,
+.on-drape,
+.site-footer,
+.handheld-player.is-expanded {
+  --ink: var(--cream);
+  --ink-2: var(--cream-2);
+  --ink-3: var(--cream-3);
+  --line: rgb(236 229 216 / 13%);
+  --line-2: rgb(236 229 216 / 28%);
+  --red-text: var(--red-on-dark);
+  --tint: 198 210 189;
+  --signal: #c6d2bd;
+  --signal-line: rgb(198 210 189 / 38%);
+  --box: rgb(7 9 8 / 72%);
+  color: var(--ink);
+}
+
+/* 壁の側 */
+.on-wall {
+  --ink: var(--sumi);
+  --ink-2: var(--sumi-2);
+  --ink-3: var(--sumi-3);
+  --line: rgb(21 17 14 / 16%);
+  --line-2: rgb(21 17 14 / 42%);
+  --red-text: var(--red);
+  --tint: 21 17 14;
+  --signal: var(--sumi);
+  --signal-line: rgb(21 17 14 / 60%);
+  --box: rgb(250 246 236 / 46%);
   color: var(--ink);
 }
 
@@ -108,13 +142,12 @@ body {
   margin: 0;
   overflow-x: clip;
   background: var(--night);
-  color: var(--ink);
   line-height: 1.9;
   font-feature-settings: "palt";
   -webkit-font-smoothing: antialiased;
 }
 
-/* 全面の粒子。黒が平らに見えないようにする */
+/* 全面の粒子。幕の黒と壁の白が平らに見えないようにする */
 body::after {
   position: fixed;
   z-index: 900;
@@ -122,7 +155,7 @@ body::after {
   content: "";
   pointer-events: none;
   background: url("assets/grain.png") 0 0 / 160px 160px;
-  opacity: .55;
+  opacity: .5;
 }
 
 [hidden] {
@@ -174,6 +207,7 @@ button {
   transform: translateY(-160%);
   border: 1px solid var(--line-2);
   background: var(--night);
+  color: var(--cream);
   transition: transform 160ms ease-out;
 }
 
@@ -197,434 +231,361 @@ section[id] {
   scroll-margin-top: 0;
 }
 
-/* ───────── 章の格子 ───────── */
-
-.chapter {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  grid-template-columns: var(--spine) minmax(0, 1fr);
-  align-items: start;
-  column-gap: var(--spine-gap);
-  padding: var(--s-chapter) var(--edge);
+/* 壁の染みや髪は章の幅の外へはみ出す。横へは流さない */
+main {
+  overflow-x: clip;
 }
 
-/* 柱の右端の線。予告動画からクレジットまで、章をまたいで 1 本に続く */
-.chapter::after {
+/* ───────── 壁 ───────── */
+
+.on-wall {
+  position: relative;
+  isolation: isolate;
+  background: var(--wall) url("assets/wall.webp") 50% var(--wall-y, 0) / max(100%, 1100px) auto repeat-y;
+}
+
+/* 1 灯で照らした壁。隅が沈み、上の幕の裾の下が陰る */
+.on-wall::before {
   position: absolute;
-  z-index: 0;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--edge) + var(--spine) + var(--spine-gap) / 2);
-  width: 1px;
+  z-index: -2;
+  inset: 0;
   content: "";
-  background: var(--line);
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgb(24 14 6 / 46%), transparent 15rem),
+    radial-gradient(ellipse 90% 80% at var(--lamp-x, 46%) 42%, transparent 38%, rgb(44 28 12 / 40%) 100%);
+  mix-blend-mode: multiply;
+}
+
+/* ───────── 幕 ─────────
+   レール・ひだ・裾の 3 枚。ひだは縦に伸ばしても形が崩れないので、章の高さに合わせて伸ばす。
+   レールは章の上の縁に、裾は章の下の縁の外へ垂らす。幕の章は壁の章より手前に重ねる */
+
+.on-drape {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
+}
+
+.drape {
+  position: absolute;
+  z-index: -2;
+  inset: calc(-1 * var(--rail-rise)) 0 calc(-1 * var(--hem-drop));
+  display: grid;
+  grid-template-rows: var(--rail-h) minmax(0, 1fr) var(--hem-h);
   pointer-events: none;
 }
 
-/* 章題は柱の中に縦に組む。読み進める間は柱に残る */
+/* 幕は画面より少し広い。章ごとに切り出す位置（--drape-x）をずらして、同じひだが並ばないようにする */
+.drape > i {
+  display: block;
+  background: var(--drape-x, 50%) 0 / var(--drape-w) 100% no-repeat;
+}
+
+.drape > .drape-rail {
+  background-image: url("assets/drape-rail.webp");
+}
+
+.drape > .drape-folds {
+  margin-block: -1px;
+  background-color: #17100c;
+  background-image: url("assets/drape-folds.webp");
+}
+
+/* 裾は壁に影を落とす */
+.drape > .drape-hem {
+  background-image: url("assets/drape-hem.webp");
+  filter: drop-shadow(0 16px 14px rgb(22 12 4 / 55%));
+}
+
+/* 幕に当たる灯り。章ごとに位置と色を変える */
+.on-drape::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: radial-gradient(ellipse var(--lamp-w, 62%) var(--lamp-h, 70%) at var(--lamp-x, 50%) var(--lamp-y, 34%), transparent 0, rgb(9 7 6 / var(--shade, 56%)) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9rem, #000 calc(100% - 7rem), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 9rem, #000 calc(100% - 7rem), transparent);
+}
+
+/* ───────── 章の格子 ─────────
+   左の柱に縦書きの筆の章題。章を読み進める間、章題は柱に留まる */
+
+.chapter {
+  display: grid;
+  grid-template-columns: var(--spine) minmax(0, 1fr);
+  column-gap: var(--spine-gap);
+  align-items: start;
+  padding-inline: var(--edge);
+}
+
+.chapter.on-drape {
+  padding-block: calc(var(--s-chapter) + 2.5rem) var(--s-chapter);
+}
+
+.chapter.on-wall {
+  padding-block: calc(var(--hem-drop) + var(--s-chapter)) calc(var(--s-chapter) + var(--rail-rise));
+}
+
 .chapter > h2 {
   position: sticky;
+  top: calc(var(--header-h) + 1.25rem);
   z-index: 1;
-  top: calc(var(--header-h) + 1.5rem);
-  justify-self: end;
+  grid-column: 1;
+  justify-self: center;
   margin: 0;
+  color: var(--ink);
   font-family: var(--brush);
   font-size: var(--title-size);
   font-weight: 400;
-  letter-spacing: .24em;
-  line-height: 1.2;
+  letter-spacing: .14em;
+  line-height: 1;
+  white-space: nowrap;
   writing-mode: vertical-rl;
+  text-orientation: upright;
 }
 
-/* 線の上の赤い目盛り。章題と一緒に動くので、いま読んでいる章の位置を指す */
-.chapter > h2::after {
-  position: absolute;
-  top: .3em;
-  left: 100%;
-  width: calc(var(--spine-gap) / 2 + 6px);
-  height: 1px;
+/* 章題の頭の赤い短い線 */
+.chapter > h2::before {
+  display: block;
+  width: 2px;
+  height: 1.6rem;
+  margin: 0 auto .9rem;
   content: "";
   background: var(--red);
 }
 
+.on-drape > h2 {
+  text-shadow: 0 .06em .5em rgb(0 0 0 / 70%);
+}
+
 .chapter-body {
-  position: relative;
-  z-index: 1;
   grid-column: 2;
   min-width: 0;
 }
 
-/* ───────── 共通の部品 ───────── */
-
-/* 文字のリンク。下線が左から引かれる */
-.text-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 1.1rem;
-  min-height: 44px;
-  padding: .55rem 0;
-  border: 0;
-  background:
-    linear-gradient(var(--red), var(--red)) left bottom / 0 1px no-repeat,
-    linear-gradient(var(--line-2), var(--line-2)) left bottom / 100% 1px no-repeat;
-  color: var(--ink);
-  font-family: var(--serif);
-  font-size: .9rem;
-  letter-spacing: .08em;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-size 320ms var(--ease), color 160ms;
+/* 章題は、章に入ったときに筆で書くように上から現れる（1 度だけ） */
+.js-reveal .chapter > h2 {
+  clip-path: inset(-.3em -.4em 100% -.4em);
 }
 
-.text-link span {
-  display: inline-block;
-  color: var(--ink-2);
-  transition: transform 220ms var(--ease), color 160ms;
+.js-reveal .chapter.is-in > h2 {
+  clip-path: inset(-.3em -.4em -.3em -.4em);
+  transition: clip-path 900ms var(--write) 80ms;
 }
 
-/* 外へ出る矢印。明朝の ↗ は頭が小さく斜線に見えるので、線で描き直す（文字は読み上げから隠してある） */
-.text-link > span[aria-hidden="true"],
-.plate-portfolio > span[aria-hidden="true"] {
-  flex: none;
-  width: .62rem;
-  height: .62rem;
-  overflow: hidden;
-  background-color: currentColor;
-  font-size: 0;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 10 10%27%3E%3Cpath d=%27M1.6 8.4 8.2 1.8M3.2 1.6h5.2v5.2%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.3%27/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 10 10%27%3E%3Cpath d=%27M1.6 8.4 8.2 1.8M3.2 1.6h5.2v5.2%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.3%27/%3E%3C/svg%3E") center / contain no-repeat;
-}
-
-.text-link:hover,
-.text-link:focus-visible {
-  background-size: 100% 1px, 100% 1px;
-}
-
-.text-link:hover span,
-.text-link:focus-visible span {
-  transform: translate(2px, -2px);
-  color: var(--ink);
-}
-
-/* 注意の札。赤い四角 1 つ */
-.spoiler-note {
-  display: inline-flex;
-  align-items: center;
-  gap: .7em;
-  margin: 0;
-  padding: .3rem .8rem .3rem .65rem;
-  border: 1px solid var(--line-2);
-  color: var(--ink);
-  font-size: .82rem;
-  letter-spacing: .1em;
-  line-height: 1.6;
-}
-
-.spoiler-note::before {
-  width: 7px;
-  height: 7px;
-  content: "";
-  background: var(--red);
-}
-
-/* 押せる箱の四隅。撮影枠が対象に合う動き：外に浮いた角が、触れると箱に寄って止まる */
-.handheld-modes button,
-.camera-button,
-.footage-controls button,
-.footage-gate > summary,
-#game-expand {
-  --frame-color: var(--ink);
-  --frame-len: 10px;
-  position: relative;
-}
-
-.handheld-modes button::after,
-.camera-button::after,
-.footage-controls button::after,
-.footage-gate > summary::after,
-#game-expand::after {
-  position: absolute;
-  inset: -8px;
-  content: "";
-  pointer-events: none;
+/* 物は、画面に入ったときに 1 度だけ浮かぶ */
+.js-reveal [data-reveal]:not(.tag) {
   opacity: 0;
-  background:
-    linear-gradient(var(--frame-color) 0 0) left top / var(--frame-len) 1.5px,
-    linear-gradient(var(--frame-color) 0 0) left top / 1.5px var(--frame-len),
-    linear-gradient(var(--frame-color) 0 0) right top / var(--frame-len) 1.5px,
-    linear-gradient(var(--frame-color) 0 0) right top / 1.5px var(--frame-len),
-    linear-gradient(var(--frame-color) 0 0) left bottom / var(--frame-len) 1.5px,
-    linear-gradient(var(--frame-color) 0 0) left bottom / 1.5px var(--frame-len),
-    linear-gradient(var(--frame-color) 0 0) right bottom / var(--frame-len) 1.5px,
-    linear-gradient(var(--frame-color) 0 0) right bottom / 1.5px var(--frame-len);
-  background-repeat: no-repeat;
-  transition: inset 180ms var(--ease), opacity 180ms var(--ease);
+  translate: 0 18px;
 }
 
-.handheld-modes button:focus-visible::after,
-.camera-button:focus-visible::after,
-.footage-controls button:focus-visible::after,
-.footage-gate > summary:focus-visible::after,
-#game-expand:focus-visible::after {
-  inset: -4px;
+.js-reveal [data-reveal].is-revealed:not(.tag) {
   opacity: 1;
+  translate: none;
+  transition: opacity 500ms ease-out calc(var(--i, 0) * 110ms), translate 700ms var(--ease) calc(var(--i, 0) * 110ms);
 }
 
-/* 指で触る端末ではホバーが押した後に残るので、ポインタのある端末だけ */
-@media (hover: hover) {
-  .handheld-modes button:hover:not(:disabled)::after,
-  .camera-button:hover::after,
-  .footage-controls button:hover::after,
-  .footage-gate > summary:hover::after,
-  #game-expand:hover::after {
-    inset: -4px;
-    opacity: 1;
-  }
-}
-
-/* キーの刻印。操作部の並びと同じ形に組む */
-kbd,
-.mode-key {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 .3rem;
-  border: 1px solid var(--line-2);
-  border-bottom-width: 2px;
-  border-radius: 3px;
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: .66rem;
-  font-weight: 500;
-  line-height: 1;
-}
-
-/* ───────── ヘッダー ───────── */
+/* ───────── ヘッダー ─────────
+   地が幕でも壁でも読めるように、下の色との差で描く */
 
 .site-header {
   position: fixed;
-  z-index: 50;
-  inset: 0 0 auto;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  z-index: 800;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
   align-items: center;
-  gap: clamp(1rem, 3vw, 2.5rem);
+  justify-content: space-between;
+  gap: 2rem;
   height: var(--header-h);
   padding: 0 max(var(--gutter), env(safe-area-inset-right)) 0 max(var(--gutter), env(safe-area-inset-left));
-  border-bottom: 1px solid transparent;
-  transition: transform 280ms var(--ease), background-color 220ms, border-color 220ms;
-}
-
-.site-header::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0 0 -24px;
-  content: "";
-  background: linear-gradient(to bottom, rgb(10 9 8 / 62%), transparent);
+  color: #fff;
+  mix-blend-mode: difference;
   pointer-events: none;
-  transition: opacity 220ms;
+  transition: transform 320ms var(--ease);
 }
 
-.site-header.is-solid::before {
-  opacity: 0;
+.site-header > * {
+  pointer-events: auto;
 }
 
-.site-header.is-solid {
-  border-color: var(--line);
-  background: rgb(10 9 8 / 84%);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-}
-
-.site-header.is-away:not(:focus-within) {
-  transform: translateY(-101%);
-}
-
-.site-mark,
-.site-nav a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  text-decoration: none;
+.site-header.is-away {
+  transform: translateY(-110%);
 }
 
 .site-mark {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
+  display: inline-flex;
+  align-items: baseline;
+  gap: .7rem;
+  min-height: 44px;
+  padding-block: .4rem;
   font-family: var(--brush);
   font-size: 1.35rem;
-  letter-spacing: .18em;
-  line-height: 1;
+  letter-spacing: .12em;
+  line-height: 1.4;
+  text-decoration: none;
 }
 
 .site-mark-reading {
-  margin-top: .38rem;
-  color: var(--ink-2);
   font-family: var(--serif);
-  font-size: .58rem;
-  letter-spacing: .32em;
+  font-size: .68rem;
+  letter-spacing: .3em;
+  opacity: .78;
 }
 
 .site-nav {
   display: flex;
-  justify-self: end;
-  gap: clamp(1rem, 2.6vw, 2.4rem);
+  gap: clamp(1.25rem, 2.6vw, 2.5rem);
 }
 
 .site-nav a {
   position: relative;
-  color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   font-size: .82rem;
   letter-spacing: .14em;
-  transition: color 160ms;
+  text-decoration: none;
+  white-space: nowrap;
+  opacity: .82;
+  transition: opacity 160ms;
 }
 
+/* 下線は左から引かれる。いま読んでいる章は引いたまま */
 .site-nav a::after {
   position: absolute;
   right: 0;
-  bottom: .45rem;
+  bottom: 9px;
   left: 0;
   height: 1px;
   content: "";
-  background: var(--red);
+  background: currentColor;
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 220ms var(--ease);
+  transition: transform 320ms var(--ease);
 }
 
 .site-nav a:hover,
 .site-nav a:focus-visible,
-.site-nav a[aria-current="true"] {
-  color: var(--ink);
+.site-nav a[aria-current] {
+  opacity: 1;
 }
 
 .site-nav a:hover::after,
 .site-nav a:focus-visible::after,
-.site-nav a[aria-current="true"]::after {
+.site-nav a[aria-current]::after {
   transform: scaleX(1);
 }
 
-/* 開いてからの経過時間。カメラの時刻表示の形で、実際の経過だけを出す */
-.site-clock {
-  display: flex;
-  align-items: center;
-  gap: .55rem;
-  margin: 0;
-  padding-left: clamp(1rem, 2vw, 1.75rem);
-  border-left: 1px solid var(--line);
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: .72rem;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .14em;
-}
-
-.site-clock-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--red);
-  animation: clock-blink 2s steps(1, end) infinite;
-}
-
-@keyframes clock-blink {
-  0%, 60% { opacity: 1; }
-  60.01%, 100% { opacity: .15; }
-}
-
-/* ───────── キービジュアル ───────── */
+/* ───────── キービジュアル ─────────
+   絵は画面に留まり、その上を壁がせり上がって覆う。覆われるにつれて絵は暗くなる */
 
 .hero {
   position: relative;
-  isolation: isolate;
-  background: var(--night);
+  z-index: 1;
+  --kv-h: calc(100vw * 941 / 1672);
 }
 
-.hero-picture {
-  display: block;
+.hero-stage {
+  position: sticky;
+  z-index: 0;
+  top: min(0px, calc(100svh - var(--kv-h)));
+  background: #000;
 }
 
-/* 画面の高さに収める。両端と下端は地へ溶かす。右下に焼き込んだ担当表記（90〜96%）は消さない */
 .hero-picture img {
-  width: min(100%, calc((100svh - 104px) * 1672 / 941));
+  width: 100%;
   height: auto;
-  margin-inline: auto;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, #000 97%, transparent);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to right, transparent, #000 2.5%, #000 97.5%, transparent), linear-gradient(to bottom, #000 97%, transparent);
-  mask-composite: intersect;
 }
 
-/* スクロールで部屋の明かりが落ちていく。値は main.js が送る */
 .hero-shade {
   position: absolute;
-  z-index: 1;
   inset: 0;
-  background: var(--night);
+  background: #000;
   opacity: var(--hero-dim, 0);
   pointer-events: none;
 }
 
-.hero-bottom {
-  position: relative;
-  z-index: 2;
+.hero-band {
+  z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: clamp(16rem, 33vw, 30rem) minmax(0, 1fr);
+  column-gap: var(--s-group);
   align-items: end;
-  gap: 2.5rem;
-  width: min(100% - 2 * var(--gutter), var(--content));
-  margin: .4rem auto 0;
-  padding-bottom: 1.4rem;
-  border-bottom: 1px solid var(--line);
+  padding: var(--s-chapter) var(--edge) calc(var(--s-chapter) + var(--rail-rise));
+  box-shadow: 0 -2.5rem 5rem rgb(0 0 0 / 55%);
+}
+
+.hero-band::before {
+  background:
+    radial-gradient(ellipse 90% 110% at 34% 30%, transparent 30%, rgb(44 28 12 / 42%) 100%);
+}
+
+/* 監視カメラ。台座は壁と絵の境目に掛かり、ケーブルは絵の暗がりへ消える。影は絵に焼き込んである。
+   キービジュアルの右下には担当表記が焼き込んであるので、左に掛けて右の文へ向ける */
+.cctv {
+  grid-row: 1 / span 2;
+  grid-column: 1;
+  align-self: start;
+  width: 100%;
+  height: auto;
+  margin-top: calc(-1 * var(--s-chapter) - 12%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 9%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 9%);
+  pointer-events: none;
 }
 
 .hero-lead {
+  grid-column: 2;
   margin: 0;
-  color: var(--ink);
-  font-size: .98rem;
-  letter-spacing: .1em;
-  line-height: 1.95;
+  font-size: clamp(1.45rem, 2.75vw, 2.6rem);
+  font-weight: 400;
+  letter-spacing: .14em;
+  line-height: 1.75;
+  text-wrap: balance;
 }
 
 .hero-facts {
+  grid-column: 2;
   display: flex;
-  gap: clamp(1.5rem, 3.5vw, 3.5rem);
-  margin: 0;
+  flex-wrap: wrap;
+  gap: var(--s-part) var(--s-group);
+  margin: var(--s-group) 0 0;
 }
 
 .hero-fact {
   display: grid;
-  gap: .3rem;
-  padding-left: 1.1rem;
+  gap: .2rem;
+  padding-left: 1rem;
   border-left: 1px solid var(--line-2);
 }
 
-.hero-fact dt {
+.hero-fact.is-award {
+  border-left: 2px solid var(--red);
+}
+
+.hero-fact-key {
   color: var(--ink-3);
   font-family: var(--mono);
-  font-size: .68rem;
+  font-size: .72rem;
   font-weight: 500;
-  letter-spacing: .2em;
-  line-height: 1.3;
+  letter-spacing: .16em;
+  line-height: 1.5;
 }
 
 .hero-fact dd {
   margin: 0;
-  font-size: 1.08rem;
-  letter-spacing: .08em;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.hero-fact.is-award dd {
-  color: var(--red-text);
+  font-size: clamp(1rem, 1.45vw, 1.3rem);
+  letter-spacing: .12em;
+  line-height: 1.6;
 }
 
 .hero-fact-sep {
-  padding-inline: .5em;
+  margin-inline: .6em;
   color: var(--ink-3);
 }
 
@@ -632,46 +593,54 @@ kbd,
   margin-right: .6em;
 }
 
-/* ───────── 予告動画：上映 ───────── */
+/* ───────── 予告動画：幕の前のスクリーン ───────── */
 
 .trailer {
-  background:
-    radial-gradient(ellipse 48% 42% at 60% 46%, rgb(238 214 178 / 6.5%), transparent 72%),
-    var(--night);
+  --lamp-y: 30%;
+  --shade: 56%;
 }
 
-/* 注意の札は、札が指す画面の左上に付ける */
-.trailer .spoiler-note {
-  margin-bottom: var(--s-part);
+.trailer .chapter-body {
+  display: grid;
+  gap: var(--s-part);
+  max-width: 62rem;
 }
 
 .trailer-frame {
   position: relative;
   aspect-ratio: 16 / 9;
-  background: #050505;
+  background: #000;
   box-shadow:
     0 0 0 1px var(--line-2),
-    0 3rem 8rem -2rem rgb(0 0 0 / 80%),
-    0 0 9rem -1rem rgb(238 214 178 / 9%);
+    0 2.5rem 5rem -1rem rgb(0 0 0 / 80%),
+    0 0 9rem rgb(255 196 130 / 7%);
 }
 
-/* 撮影枠の四隅 */
-.trailer-frame::before {
-  --c: var(--ink-2);
+/* 触れると、四隅の角がスクリーンへ寄る */
+.trailer-frame::after {
   position: absolute;
-  inset: -12px;
+  inset: -14px;
   content: "";
   pointer-events: none;
+  opacity: .5;
   background:
-    linear-gradient(var(--c) 0 0) left top / 24px 1.5px,
-    linear-gradient(var(--c) 0 0) left top / 1.5px 24px,
-    linear-gradient(var(--c) 0 0) right top / 24px 1.5px,
-    linear-gradient(var(--c) 0 0) right top / 1.5px 24px,
-    linear-gradient(var(--c) 0 0) left bottom / 24px 1.5px,
-    linear-gradient(var(--c) 0 0) left bottom / 1.5px 24px,
-    linear-gradient(var(--c) 0 0) right bottom / 24px 1.5px,
-    linear-gradient(var(--c) 0 0) right bottom / 1.5px 24px;
+    linear-gradient(var(--ink) 0 0) left top / 14px 1.5px,
+    linear-gradient(var(--ink) 0 0) left top / 1.5px 14px,
+    linear-gradient(var(--ink) 0 0) right top / 14px 1.5px,
+    linear-gradient(var(--ink) 0 0) right top / 1.5px 14px,
+    linear-gradient(var(--ink) 0 0) left bottom / 14px 1.5px,
+    linear-gradient(var(--ink) 0 0) left bottom / 1.5px 14px,
+    linear-gradient(var(--ink) 0 0) right bottom / 14px 1.5px,
+    linear-gradient(var(--ink) 0 0) right bottom / 1.5px 14px;
   background-repeat: no-repeat;
+  transition: inset 220ms var(--ease), opacity 220ms var(--ease);
+}
+
+@media (hover: hover) {
+  .trailer-frame:hover::after {
+    inset: -7px;
+    opacity: 1;
+  }
 }
 
 .trailer-frame iframe {
@@ -682,82 +651,144 @@ kbd,
 }
 
 .trailer-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem 2rem;
-  margin-top: var(--s-part);
-}
-
-.trailer-notes {
-  color: var(--ink-2);
-  font-size: .86rem;
-  letter-spacing: .06em;
-  line-height: 1.9;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--s-part);
+  align-items: center;
 }
 
 .trailer-notes p {
   margin: 0;
+  color: var(--ink-2);
+  font-size: .82rem;
+  letter-spacing: .06em;
+  line-height: 1.8;
 }
 
-/* ───────── 実世界×固定視点：監視室 ─────────
-   この章だけ章題を横に大きく組み、柱と線をまたがせる。章題の字の下側はテレビの筐体の上枠に載せる */
+/* ───────── 固定視点とは：壁に掛けたゲーム機 ───────── */
+
+.perspective-lab {
+  --wall-y: -340px;
+  --lamp-x: 52%;
+}
+
+/* 壁を這うケーブル。上の幕の裏から出て、下の幕の裏へ入る */
+.cable {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: max(.75rem, calc(var(--edge) * .42));
+  bottom: 0;
+  width: 60px;
+  filter: drop-shadow(5px 6px 4px rgb(30 18 6 / 38%));
+  pointer-events: none;
+}
+
+.cable svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.cable path {
+  fill: none;
+  stroke: #17130f;
+  stroke-width: 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 留め具 */
+.cable-clip {
+  position: absolute;
+  top: var(--at);
+  left: var(--x);
+  width: 20px;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(#3a342d, #1b1713);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
+  translate: -50% -50%;
+  rotate: -8deg;
+}
+
+.cable-clip::after {
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  content: "";
+  background: #6d655b;
+}
+
+.on-wall .handheld {
+  filter: drop-shadow(0 30px 26px rgb(40 24 8 / 46%)) drop-shadow(0 3px 3px rgb(40 24 8 / 40%));
+}
+
+.on-wall .handheld-modes button[aria-pressed="true"] {
+  border-color: var(--sumi);
+  background: var(--sumi);
+  color: var(--cream);
+}
+
+.on-wall .handheld-modes button[aria-pressed="true"] .cone { fill: rgb(236 229 216 / 22%); stroke: var(--cream); }
+.on-wall .handheld-modes button[aria-pressed="true"] .body { fill: var(--cream); }
+.on-wall .handheld-modes button[aria-pressed="true"] .ring { stroke: var(--red-on-dark); }
+.on-wall .handheld-modes button[aria-pressed="true"] .cam { fill: var(--red-on-dark); }
+.on-wall .handheld-modes button[aria-pressed="true"] .mode-key { border-color: rgb(236 229 216 / 45%); color: var(--cream); }
+
+/* ───────── 実世界×固定視点：歩くと切り替わる ─────────
+   読み進める間テレビは画面に留まり、進んだ分だけカメラが 01 → 02 → 03 と切り替わる。
+   右の線の上の赤い点が、いまどこまで進んだかを指す */
 
 .fixed-view {
-  --fv-title: clamp(2.3rem, 7.4vw, 7.6rem);
-  grid-template-rows: auto auto;
-  overflow: clip;
-  background:
-    radial-gradient(ellipse 55% 60% at 62% 64%, #17150f 0%, transparent 75%),
-    linear-gradient(to bottom, var(--night), #0d0c0a 50%, var(--night));
+  --lamp-x: 44%;
+  --lamp-y: 46%;
+  --lamp-w: 56%;
+  --lamp-h: 46%;
+  --shade: 66%;
 }
 
-.fixed-view > h2 {
-  position: relative;
-  z-index: 3;
-  top: auto;
-  grid-row: 1;
-  grid-column: 1 / -1;
-  justify-self: start;
-  font-size: var(--fv-title);
-  letter-spacing: .04em;
-  line-height: 1;
-  white-space: nowrap;
-  writing-mode: horizontal-tb;
-  text-shadow: 0 .04em .2em rgb(0 0 0 / 65%);
+.fixed-view .drape {
+  --drape-x: 0%;
 }
 
-.fixed-view > h2::after {
-  display: none;
+.chapter.fixed-view {
+  padding-bottom: 0;
 }
 
 .camera-exhibit {
-  display: grid;
-  grid-row: 2;
-  grid-template-columns: minmax(0, 1fr) clamp(9rem, 14vw, 13rem);
-  align-items: center;
-  column-gap: var(--s-part);
+  height: calc(100svh + 150vh);
 }
 
-/* テレビの絵は左右 10% と上 5.6% が筐体の外。左右に広げて筐体の左端を中身の格子線に揃え、
-   上は章題の字の下 2 割が筐体の上枠（木の帯）に載る高さまで持ち上げる。画面のガラスまでは届かせない
-   （5% は広げた幅に対する上の余白。字の墨は行の箱の下端とほぼ同じ高さで終わる） */
+.camera-stage {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(8.5rem, 13vw, 12rem);
+  column-gap: var(--s-group);
+  align-items: center;
+  height: 100svh;
+}
+
 .camera-monitor {
   position: relative;
   z-index: 2;
-  margin: calc(-5% - var(--fv-title) * .22) -8% 0 -11.2%;
+  justify-self: center;
+  width: min(100%, calc((100svh - 7rem) * 1.3333));
 }
 
-/* テレビの光が壁に落ちる。いま映っているカメラの絵をぼかして背面へ */
+/* テレビの光が幕に落ちる。いま映っているカメラの絵をぼかして背面へ */
 .crt-ambient {
   position: absolute;
   z-index: -1;
   inset: 0;
   background: center / cover no-repeat;
   filter: blur(60px) saturate(1.3);
-  opacity: .32;
-  transform: scale(.9);
+  opacity: .36;
   transition: background-image 300ms;
 }
 
@@ -765,14 +796,15 @@ kbd,
 .fixed-view:has([data-camera-feed="2"].is-active) .crt-ambient { background-image: url("assets/camera-fiction-02.webp"); }
 .fixed-view:has([data-camera-feed="3"].is-active) .crt-ambient { background-image: url("assets/camera-fiction-03.webp"); }
 
+/* テレビの絵は左右 10% と上下が筐体の外。その分だけ広げて、筐体が枠いっぱいに来るようにする */
 .crt {
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
   isolation: isolate;
+  transform: scale(1.17);
 }
 
-/* 筐体の輪郭で切り抜く。背後の章題を隠すので、地と重ねる合成はしない */
 .crt-body {
   position: relative;
   z-index: 1;
@@ -831,20 +863,14 @@ kbd,
   pointer-events: none;
 }
 
-/* 走査線と管面の周辺減光。帯は 7 秒で 1 回、上から下へ通る */
+/* 走査線と管面の周辺減光（止まっている） */
 .screen-scan {
   background:
-    linear-gradient(to bottom, transparent 0%, rgb(220 230 210 / 5%) 48%, transparent 56%) 0 -100% / 100% 60% no-repeat,
     repeating-linear-gradient(to bottom, transparent 0 2px, rgb(0 0 0 / 22%) 2px 3px),
     radial-gradient(ellipse at center, transparent 52%, rgb(0 0 0 / 48%) 100%);
-  animation: screen-roll 7s linear infinite;
 }
 
-@keyframes screen-roll {
-  from { background-position: 0 -100%, 0 0, 0 0; }
-  to { background-position: 0 260%, 0 0, 0 0; }
-}
-
+/* 切り替わった瞬間だけ乱れる */
 .screen-noise {
   background-image:
     repeating-linear-gradient(to bottom, rgb(235 225 210 / 14%) 0 1px, transparent 1px 4px),
@@ -885,14 +911,38 @@ kbd,
   height: .55em;
   border-radius: 50%;
   content: "";
-  background: var(--red-text);
+  background: var(--red-on-dark);
   box-shadow: 0 0 6px rgb(224 87 79 / 70%);
 }
 
-/* 3 台の小さなモニターを縦に積む。押すと隣の大きな画面が切り替わる */
+/* 3 台のカメラ。左の線は歩く道のり */
 .camera-console {
+  position: relative;
   display: grid;
   gap: var(--s-part);
+  padding-left: 1.6rem;
+}
+
+.camera-console::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  content: "";
+  background: var(--line-2);
+}
+
+.camera-walker {
+  position: absolute;
+  top: calc(var(--walk, 0) * 100%);
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--red-on-dark);
+  box-shadow: 0 0 .6rem rgb(224 87 79 / 70%);
+  translate: -4px -50%;
 }
 
 .camera-button {
@@ -906,7 +956,6 @@ kbd,
   color: var(--ink-2);
   text-align: left;
   cursor: pointer;
-  --frame-color: var(--signal);
 }
 
 .camera-thumb {
@@ -951,29 +1000,6 @@ kbd,
   border-radius: 50%;
 }
 
-/* 次の切り替えまでの残り。小さな画面の下端に、6 秒で端まで伸びる */
-.switch-progress {
-  position: relative;
-  z-index: 1;
-  grid-row: 1;
-  grid-column: 1;
-  align-self: end;
-  justify-self: start;
-  width: 0;
-  height: 2px;
-  background: var(--signal);
-  pointer-events: none;
-}
-
-.camera-console.is-running .camera-button.is-active .switch-progress {
-  animation: switch-progress var(--switch-ms, 6000ms) linear forwards;
-}
-
-@keyframes switch-progress {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
 .camera-button:hover .camera-thumb img,
 .camera-button:focus-visible .camera-thumb img {
   filter: brightness(.72) saturate(.75);
@@ -992,8 +1018,8 @@ kbd,
 }
 
 .camera-button.is-active .button-led {
-  border-color: var(--red-text);
-  background: var(--red-text);
+  border-color: var(--red-on-dark);
+  background: var(--red-on-dark);
   box-shadow: 0 0 .45rem rgb(224 87 79 / 70%);
 }
 
@@ -1002,120 +1028,104 @@ kbd,
   opacity: 1;
 }
 
-/* ───────── ストーリー：調査ファイル ───────── */
+/* ───────── ストーリー：呪われた壁 ─────────
+   壁に染みが広がり、上の幕の裾の下から髪が伸びている。依頼書と写真は壁に留めてある */
 
 .scenario {
-  overflow: clip;
-  background:
-    radial-gradient(ellipse 58% 52% at 54% 50%, #2b2015 0%, #150f0b 52%, transparent 82%),
-    var(--night);
+  --wall-y: -1180px;
+  --lamp-x: 40%;
 }
 
-/* 机に置いたクラフトの紙挟み。上辺に見出しの耳 */
+.stain {
+  position: absolute;
+  z-index: -1;
+  background: url("assets/stain.webp") center / contain no-repeat;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.scenario .stain {
+  top: 6%;
+  right: -9%;
+  width: min(78%, 68rem);
+  aspect-ratio: 3 / 2;
+  opacity: .9;
+}
+
+/* 髪。読み進めるほど下へ伸びる（--grow は 0〜1。main.js がスクロールの位置から決める） */
+.hair {
+  --grow: 1;
+  position: absolute;
+  z-index: -1;
+  top: calc(var(--hem-drop) * .35);
+  aspect-ratio: 2 / 3;
+  background: url("assets/hair.webp") top center / 100% 100% no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(var(--grow) * 100% - 14%), transparent calc(var(--grow) * 100%));
+  mask-image: linear-gradient(to bottom, #000 calc(var(--grow) * 100% - 14%), transparent calc(var(--grow) * 100%));
+  pointer-events: none;
+}
+
+.scenario .hair {
+  right: 1.5%;
+  width: clamp(13rem, 27vw, 26rem);
+  transform: scaleX(-1);
+}
+
 .dossier {
-  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--s-group);
   align-items: start;
-  gap: clamp(2rem, 5vw, 5rem);
-  margin-top: 1.9rem;
-  padding: clamp(2.25rem, 5vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem) clamp(2.5rem, 5vw, 4.5rem);
-  color: var(--paper-ink);
-  background:
-    radial-gradient(ellipse 70% 60% at 22% 12%, rgb(255 246 226 / 22%), transparent 62%),
-    radial-gradient(ellipse 60% 70% at 100% 100%, rgb(70 46 22 / 30%), transparent 64%),
-    url("assets/grain.png") 0 0 / 160px 160px,
-    var(--kraft);
-  box-shadow:
-    0 2.5rem 6rem -1rem rgb(0 0 0 / 75%),
-    0 .4rem 1rem rgb(0 0 0 / 40%),
-    inset 0 1px 0 rgb(255 248 230 / 30%);
-  rotate: -.6deg;
 }
 
-.dossier::before {
-  position: absolute;
-  bottom: 100%;
-  left: clamp(1.5rem, 6vw, 5.5rem);
-  width: clamp(9rem, 18vw, 15rem);
-  height: 1.9rem;
-  content: "";
-  background:
-    linear-gradient(to bottom, rgb(255 246 226 / 16%), transparent),
-    url("assets/grain.png") 0 0 / 160px 160px,
-    var(--kraft);
-  clip-path: polygon(0 100%, 1.4rem 0, calc(100% - 1.4rem) 0, 100% 100%);
-}
-
-/* 綴じ穴 */
-.dossier::after {
-  position: absolute;
-  top: 50%;
-  left: clamp(.6rem, 1.4vw, 1.25rem);
-  width: 12px;
-  height: 92px;
-  content: "";
-  transform: translateY(-50%);
-  background:
-    radial-gradient(circle, #1a130d 0 4.5px, rgb(0 0 0 / 0%) 5px) center top / 12px 12px no-repeat,
-    radial-gradient(circle, #1a130d 0 4.5px, rgb(0 0 0 / 0%) 5px) center bottom / 12px 12px no-repeat;
-  opacity: .82;
-}
-
-/* 依頼の 1 文は、紙挟みに縦に書く。柱の章題と同じ向き */
+/* 調査依頼の 1 文。壁に墨で */
 .scenario-line {
-  grid-column: 2;
-  grid-row: 1;
-  height: 17.6em;  /* 1 列 14 字（1 字 1.22em）がちょうど収まる高さ */
   margin: 0;
-  font-size: clamp(1.15rem, 1.75vw, 1.6rem);
+  font-size: clamp(1.35rem, 2.3vw, 2.1rem);
   letter-spacing: .22em;
-  line-height: 2.3;
+  line-height: 2.1;
+  white-space: nowrap;
   writing-mode: vertical-rl;
 }
 
 .scenario-collage {
-  position: relative;
-  grid-column: 1;
-  grid-row: 1;
-  min-width: 0;
-  aspect-ratio: 1.45 / 1;
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  gap: var(--s-group);
+  align-items: start;
+  max-width: 60rem;
 }
 
+/* 写真は紙焼き。上の 2 か所をテープで留める */
 .wall-photo {
-  position: absolute;
-  z-index: 1;
-  top: 3%;
-  left: 0;
-  width: 60%;
-  margin: 0;
-  rotate: -2.2deg;
+  position: relative;
+  margin: var(--s-group) 0 0;
+  rotate: -1.6deg;
+  transition: rotate 500ms var(--ease);
 }
 
-/* 印画紙の白い縁と、台紙の写真コーナー（画面の撮影枠と対になる四隅） */
 .photo-mount {
   position: relative;
   display: block;
-  padding: clamp(6px, 1vw, 12px);
-  background: #e9e3d6;
-  box-shadow: 0 1.2rem 2.4rem -.6rem rgb(30 18 8 / 55%), 0 .15rem .3rem rgb(30 18 8 / 35%);
+  padding: .7rem .7rem 0;
+  background: #f1ebde;
+  box-shadow: 0 1.1rem 1.6rem -.5rem rgb(40 24 8 / 55%), 0 1px 2px rgb(40 24 8 / 40%);
 }
 
-.photo-mount::before {
-  --corner: #231a12;
-  --size: clamp(18px, 2.4vw, 28px);
+.photo-mount::before,
+.photo-mount::after {
   position: absolute;
-  inset: -3px;
+  z-index: 1;
+  top: -.75rem;
+  width: 5.2rem;
+  height: 1.5rem;
   content: "";
-  pointer-events: none;
-  background:
-    linear-gradient(135deg, var(--corner) 50%, transparent 50%) left top / var(--size) var(--size),
-    linear-gradient(225deg, var(--corner) 50%, transparent 50%) right top / var(--size) var(--size),
-    linear-gradient(45deg, var(--corner) 50%, transparent 50%) left bottom / var(--size) var(--size),
-    linear-gradient(315deg, var(--corner) 50%, transparent 50%) right bottom / var(--size) var(--size);
-  background-repeat: no-repeat;
-  opacity: .9;
+  background: rgb(196 178 140 / 78%);
+  box-shadow: 0 1px 2px rgb(40 24 8 / 30%);
 }
+
+.photo-mount::before { left: 8%; rotate: -5deg; }
+.photo-mount::after { right: 7%; rotate: 4deg; }
 
 .wall-evidence {
   width: 100%;
@@ -1123,102 +1133,118 @@ kbd,
 }
 
 .wall-photo figcaption {
-  margin-top: var(--s-label);
-  padding-left: .25rem;
-  color: var(--paper-muted);
+  padding: .5rem .8rem .7rem;
+  background: #f1ebde;
+  color: var(--sumi-2);
   font-size: .78rem;
-  letter-spacing: .1em;
+  letter-spacing: .12em;
+  line-height: 1.6;
+  box-shadow: 0 1.1rem 1.6rem -.5rem rgb(40 24 8 / 55%);
 }
 
+/* 依頼書は赤い頭のピン 1 本 */
 .investigation-request {
-  position: absolute;
-  z-index: 2;
-  top: 10%;
-  right: 2%;
-  width: 40%;
-  rotate: 3deg;
-  transition: rotate 260ms var(--ease), translate 260ms var(--ease);
+  position: relative;
+  display: block;
+  rotate: 1.4deg;
+  box-shadow: 0 1.4rem 2.2rem -.6rem rgb(40 24 8 / 60%), 0 1px 2px rgb(40 24 8 / 40%);
+  transition: rotate 500ms var(--ease), box-shadow 500ms var(--ease), translate 500ms var(--ease);
 }
 
 .investigation-request img {
   width: 100%;
   height: auto;
-  background: #f1ece2;
-  box-shadow: 0 1.6rem 3rem -.5rem rgb(30 18 8 / 60%), 0 .2rem .5rem rgb(30 18 8 / 35%);
 }
 
-/* クリップ */
 .investigation-request::before {
   position: absolute;
   z-index: 1;
-  top: -1.3rem;
-  left: 22%;
-  width: 1.15rem;
-  height: 3.6rem;
+  top: 1.1rem;
+  left: 50%;
+  width: .9rem;
+  height: .9rem;
+  border-radius: 50%;
   content: "";
-  border: 2.5px solid #8f8a80;
-  border-radius: .6rem;
-  box-shadow: 0 2px 2px rgb(0 0 0 / 25%);
-}
-
-.investigation-request::after {
-  position: absolute;
-  z-index: 1;
-  top: -.75rem;
-  left: calc(22% + .3rem);
-  width: .55rem;
-  height: 2.6rem;
-  content: "";
-  border: 2.5px solid #8f8a80;
-  border-bottom: 0;
-  border-radius: .4rem .4rem 0 0;
+  background: radial-gradient(circle at 35% 30%, #e06a62, var(--red) 55%, #6d151b);
+  box-shadow: 3px 5px 4px rgb(40 24 8 / 50%);
+  translate: -50% 0;
 }
 
 .request-open {
   position: absolute;
-  right: .75rem;
-  bottom: .75rem;
+  right: .8rem;
+  bottom: .8rem;
   padding: .3rem .7rem;
-  background: var(--paper-ink);
-  color: #efe8da;
-  font-size: .72rem;
+  background: var(--sumi);
+  color: var(--cream);
+  font-size: .74rem;
   letter-spacing: .12em;
-  line-height: 1.5;
+  line-height: 1.6;
   opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 200ms var(--ease), transform 200ms var(--ease);
+  transition: opacity 200ms;
 }
 
-.investigation-request:hover,
-.investigation-request:focus-visible {
-  rotate: 1deg;
-  translate: 0 -.35rem;
+/* 触れると、傾きが戻って壁から少し浮く */
+@media (hover: hover) {
+  .wall-photo:hover {
+    rotate: 0deg;
+  }
+
+  .investigation-request:hover {
+    rotate: 0deg;
+    translate: 0 -4px;
+    box-shadow: 0 2.2rem 3rem -.8rem rgb(40 24 8 / 60%), 0 1px 2px rgb(40 24 8 / 40%);
+  }
+
+  .investigation-request:hover .request-open {
+    opacity: 1;
+  }
 }
 
-.investigation-request:hover .request-open,
 .investigation-request:focus-visible .request-open {
   opacity: 1;
-  transform: none;
-}
-
-.investigation-request:focus-visible {
-  outline-color: var(--paper-ink);
 }
 
 @media (hover: none) {
   .request-open {
     opacity: 1;
-    transform: none;
   }
 }
 
-/* ───────── 展示履歴：吊るした荷札 ───────── */
+/* ───────── 演出一覧 ───────── */
 
-.archive {
-  background: linear-gradient(to bottom, var(--night), #0f0d0b 60%, var(--night));
+.footage .drape {
+  --drape-x: 100%;
 }
 
-/* 1 本の線に 2 枚を吊るす。糸は穴の位置から線へ */
+.footage {
+  --lamp-x: 58%;
+  --lamp-y: 40%;
+  --shade: 58%;
+}
+
+/* ───────── 展示履歴：壁の釘に吊るした荷札 ───────── */
+
+.archive {
+  --wall-y: -620px;
+  --lamp-x: 56%;
+}
+
+.archive .stain {
+  right: -12%;
+  bottom: -5%;
+  width: min(62%, 52rem);
+  aspect-ratio: 3 / 2;
+  opacity: .8;
+  transform: rotate(-7deg);
+}
+
+/* 髪は荷札の裏を通って、下へ抜ける */
+.archive .hair {
+  left: 36%;
+  width: clamp(14rem, 26vw, 25rem);
+}
+
 .archive-records {
   --gap: clamp(1.5rem, 4vw, 4rem);
   --drop: 3.25rem;
@@ -1462,26 +1488,153 @@ kbd,
   letter-spacing: .16em;
 }
 
-/* ───────── クレジット：幕の下りた空の部屋 ───────── */
+/* ───────── 共通の部品 ───────── */
 
-.credits {
-  overflow: clip;
-  padding-bottom: calc(var(--s-chapter) * 1.4);
-  background: var(--night);
-}
-
-/* キービジュアルと同じ部屋。人形は居ない */
-.credits::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  content: "";
+/* 文字のリンク。下線が左から引かれる */
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.1rem;
+  min-height: 44px;
+  padding: .55rem 0;
+  border: 0;
   background:
-    linear-gradient(to bottom, var(--night) 0%, rgb(10 9 8 / 22%) 26%, rgb(10 9 8 / 36%) 70%, var(--night) 100%),
-    radial-gradient(ellipse 60% 50% at 50% 55%, transparent, rgb(10 9 8 / 70%)),
-    url("assets/room-empty.webp") center 20% / cover no-repeat;
-  opacity: .92;
+    linear-gradient(var(--red), var(--red)) left bottom / 0 1px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) left bottom / 100% 1px no-repeat;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: .9rem;
+  letter-spacing: .08em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-size 320ms var(--ease), color 160ms;
 }
+
+.text-link span {
+  display: inline-block;
+  color: var(--ink-2);
+  transition: transform 220ms var(--ease), color 160ms;
+}
+
+/* 外へ出る矢印。明朝の ↗ は頭が小さく斜線に見えるので、線で描き直す（文字は読み上げから隠してある） */
+.text-link > span[aria-hidden="true"],
+.plate-portfolio > span[aria-hidden="true"] {
+  flex: none;
+  width: .62rem;
+  height: .62rem;
+  overflow: hidden;
+  background-color: currentColor;
+  font-size: 0;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 10 10%27%3E%3Cpath d=%27M1.6 8.4 8.2 1.8M3.2 1.6h5.2v5.2%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.3%27/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 10 10%27%3E%3Cpath d=%27M1.6 8.4 8.2 1.8M3.2 1.6h5.2v5.2%27 fill=%27none%27 stroke=%27%23000%27 stroke-width=%271.3%27/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.text-link:hover,
+.text-link:focus-visible {
+  background-size: 100% 1px, 100% 1px;
+}
+
+.text-link:hover span,
+.text-link:focus-visible span {
+  transform: translate(2px, -2px);
+  color: var(--ink);
+}
+
+/* 注意の札。赤い四角 1 つ */
+.spoiler-note {
+  display: inline-flex;
+  align-items: center;
+  gap: .7em;
+  margin: 0;
+  padding: .3rem .8rem .3rem .65rem;
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+  font-size: .82rem;
+  letter-spacing: .1em;
+  line-height: 1.6;
+}
+
+.spoiler-note::before {
+  width: 7px;
+  height: 7px;
+  content: "";
+  background: var(--red);
+}
+
+/* 押せる箱の四隅。撮影枠が対象に合う動き：外に浮いた角が、触れると箱に寄って止まる */
+.handheld-modes button,
+.camera-button,
+.footage-controls button,
+.footage-gate > summary,
+#game-expand {
+  --frame-color: var(--ink);
+  --frame-len: 10px;
+  position: relative;
+}
+
+.handheld-modes button::after,
+.camera-button::after,
+.footage-controls button::after,
+.footage-gate > summary::after,
+#game-expand::after {
+  position: absolute;
+  inset: -8px;
+  content: "";
+  pointer-events: none;
+  opacity: 0;
+  background:
+    linear-gradient(var(--frame-color) 0 0) left top / var(--frame-len) 1.5px,
+    linear-gradient(var(--frame-color) 0 0) left top / 1.5px var(--frame-len),
+    linear-gradient(var(--frame-color) 0 0) right top / var(--frame-len) 1.5px,
+    linear-gradient(var(--frame-color) 0 0) right top / 1.5px var(--frame-len),
+    linear-gradient(var(--frame-color) 0 0) left bottom / var(--frame-len) 1.5px,
+    linear-gradient(var(--frame-color) 0 0) left bottom / 1.5px var(--frame-len),
+    linear-gradient(var(--frame-color) 0 0) right bottom / var(--frame-len) 1.5px,
+    linear-gradient(var(--frame-color) 0 0) right bottom / 1.5px var(--frame-len);
+  background-repeat: no-repeat;
+  transition: inset 180ms var(--ease), opacity 180ms var(--ease);
+}
+
+.handheld-modes button:focus-visible::after,
+.camera-button:focus-visible::after,
+.footage-controls button:focus-visible::after,
+.footage-gate > summary:focus-visible::after,
+#game-expand:focus-visible::after {
+  inset: -4px;
+  opacity: 1;
+}
+
+/* 指で触る端末ではホバーが押した後に残るので、ポインタのある端末だけ */
+@media (hover: hover) {
+  .handheld-modes button:hover:not(:disabled)::after,
+  .camera-button:hover::after,
+  .footage-controls button:hover::after,
+  .footage-gate > summary:hover::after,
+  #game-expand:hover::after {
+    inset: -4px;
+    opacity: 1;
+  }
+}
+
+/* キーの刻印。操作部の並びと同じ形に組む */
+kbd,
+.mode-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 .3rem;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: .66rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* ───────── 銘板 ───────── */
 
 .plate {
   position: relative;
@@ -1746,246 +1899,9 @@ kbd,
   font-size: .82rem;
 }
 
-/* ───────── 中くらいの幅 ───────── */
-
-@media (max-width: 1080px) {
-  .site-nav a {
-    font-size: .76rem;
-    letter-spacing: .08em;
-  }
-
-  /* テレビを中身の幅いっぱいにして、3 台は下に横並び */
-  .camera-exhibit {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    row-gap: var(--s-part);
-  }
-
-  .camera-monitor {
-    grid-column: 1 / -1;
-  }
-
-  .camera-console {
-    display: contents;
-  }
-}
-
-/* ───────── スマートフォン ───────── */
+/* ───────── 荷札と銘板：狭い幅 ───────── */
 
 @media (max-width: 720px) {
-  :root {
-    --header-h: auto;
-    --cut: 10px;
-  }
-
-  /* ヘッダーは流れの中に置く。上段に題と時刻、下段に目次 */
-  .site-header {
-    position: relative;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "mark clock"
-      "nav  nav";
-    gap: 0;
-    height: auto;
-    padding-top: max(.35rem, env(safe-area-inset-top));
-    padding-right: max(1rem, env(safe-area-inset-right));
-    padding-left: max(1rem, env(safe-area-inset-left));
-    border-bottom: 1px solid var(--line);
-    background: var(--night);
-    transform: none !important;
-  }
-
-  .site-header::before {
-    display: none;
-  }
-
-  .site-mark {
-    grid-area: mark;
-    flex-direction: row;
-    justify-content: flex-start;
-    justify-self: start;
-    align-items: baseline;
-    gap: .7rem;
-    font-size: 1.2rem;
-    letter-spacing: .12em;
-  }
-
-  .site-mark-reading {
-    margin: 0;
-  }
-
-  .site-clock {
-    grid-area: clock;
-    padding-left: 0;
-    border: 0;
-    font-size: .66rem;
-  }
-
-  .site-nav {
-    grid-area: nav;
-    justify-self: stretch;
-    justify-content: space-between;
-    gap: .25rem;
-    border-top: 1px solid var(--line);
-  }
-
-  .site-nav a {
-    font-size: .74rem;
-    letter-spacing: .02em;
-  }
-
-  .site-nav a::after {
-    bottom: .35rem;
-  }
-
-  .hero-picture img {
-    width: 100%;
-    -webkit-mask-image: linear-gradient(to bottom, #000 97%, transparent);
-    mask-image: linear-gradient(to bottom, #000 97%, transparent);
-  }
-
-  .hero-bottom {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.25rem;
-    margin-top: .5rem;
-    padding-bottom: 1.4rem;
-  }
-
-  .hero-lead {
-    font-size: .92rem;
-    letter-spacing: .06em;
-  }
-
-  .hero-facts {
-    display: grid;
-    gap: .9rem;
-  }
-
-  .hero-fact {
-    grid-template-columns: 6.5rem minmax(0, 1fr);
-    align-items: baseline;
-    padding-left: .85rem;
-  }
-
-  .hero-fact dd {
-    font-size: .98rem;
-  }
-
-  /* 柱をたたみ、章題は中身の上に横に組む。赤い目盛りは章題の頭に付ける */
-  .chapter {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: var(--s-part);
-    padding-inline: var(--gutter);
-  }
-
-  .chapter::after {
-    display: none;
-  }
-
-  .chapter > h2 {
-    position: static;
-    display: flex;
-    align-items: center;
-    gap: .9rem;
-    justify-self: start;
-    font-size: clamp(2.1rem, 10vw, 2.7rem);
-    letter-spacing: .12em;
-    writing-mode: horizontal-tb;
-  }
-
-  .chapter > h2::after {
-    position: static;
-    order: -1;
-    flex: none;
-    width: 1.25rem;
-  }
-
-  .chapter-body {
-    grid-column: 1;
-  }
-
-  .trailer-frame {
-    margin-inline: -.25rem;
-  }
-
-  .trailer-frame::before {
-    inset: -8px;
-  }
-
-  .trailer-foot {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  /* 章題とテレビは重ねるので、章の行の間隔は取らない */
-  .fixed-view {
-    --fv-title: clamp(2rem, 10.4vw, 3rem);
-    row-gap: 0;
-  }
-
-  .fixed-view > h2 {
-    letter-spacing: .02em;
-  }
-
-  .camera-exhibit {
-    grid-row: auto;
-    column-gap: .55rem;
-  }
-
-  .camera-monitor {
-    margin-inline: -.75rem;
-  }
-
-  .camera-label {
-    gap: .35rem;
-    font-size: .62rem;
-    letter-spacing: .04em;
-  }
-
-  .dossier {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2rem;
-    margin-top: 1.9rem;
-    padding: 1.75rem 1.1rem 2rem 1.5rem;
-    rotate: -.4deg;
-  }
-
-  .dossier::after {
-    left: .35rem;
-    width: 9px;
-    background-size: 9px 9px;
-  }
-
-  .scenario-line {
-    grid-column: 1;
-    justify-self: end;
-    height: 16.4em;
-    font-size: 1.05rem;
-    letter-spacing: .14em;
-    line-height: 2.1;
-  }
-
-  .scenario-collage {
-    grid-column: 1;
-    grid-row: 2;
-    aspect-ratio: .9 / 1;
-  }
-
-  .wall-photo {
-    top: 0;
-    width: 72%;
-  }
-
-  .wall-photo figcaption {
-    font-size: .7rem;
-    letter-spacing: .04em;
-  }
-
-  .investigation-request {
-    top: 40%;
-    right: 0;
-    width: 46%;
-  }
-
   .archive-records {
     grid-template-columns: minmax(0, 1fr);
     padding-top: .5rem;
@@ -2078,16 +1994,6 @@ kbd,
 }
 
 @media (max-width: 360px) {
-  .hero-fact {
-    grid-template-columns: minmax(0, 1fr);
-    gap: .1rem;
-  }
-
-  .site-nav a {
-    font-size: .68rem;
-    letter-spacing: 0;
-  }
-
   .plate {
     margin-inline: -.75rem;
     padding-right: .5rem;
@@ -2107,7 +2013,6 @@ kbd,
     gap: 0;
   }
 
-  /* 札の帯と結果を 1 行に収める */
   .tag {
     padding-right: 2.1rem;
     padding-left: 1.9rem;
@@ -2124,6 +2029,308 @@ kbd,
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .js-reveal .tag[data-reveal]:not(.is-revealed) {
+    opacity: 1;
+    translate: none;
+    rotate: var(--tilt, 0deg);
+  }
+}
+
+
+/* 釘 2 本に渡した針金へ、糸で吊るす */
+.archive-records {
+  filter: drop-shadow(0 12px 11px rgb(40 24 8 / 34%));
+}
+
+.archive-records::before {
+  right: 0;
+  background: var(--sumi-2);
+}
+
+.archive-records::after {
+  position: absolute;
+  top: calc(1rem - 4px);
+  right: -4px;
+  left: -4px;
+  height: 9px;
+  content: "";
+  background:
+    radial-gradient(circle at 35% 35%, #7a7166, #1d1915 62%) left / 9px 9px no-repeat,
+    radial-gradient(circle at 35% 35%, #7a7166, #1d1915 62%) right / 9px 9px no-repeat;
+  border-radius: 5px;
+}
+
+.on-wall .tag-hole {
+  background: #b5a992;
+}
+
+/* 更新日は左下。右下は染みが広がっている */
+.archive-updated {
+  justify-content: flex-start;
+}
+
+/* 触れると、荷札が反対へ振れる */
+@media (hover: hover) {
+  .tag.is-revealed:hover {
+    rotate: calc(var(--tilt, 0deg) * -1.1);
+  }
+}
+
+/* ───────── クレジット：幕の下りた空の部屋 ─────────
+   最後の幕は裾を見せず、キービジュアルと同じ部屋の床へ降りる */
+
+.credits {
+  padding-bottom: calc(var(--s-chapter) * 1.6);
+  --lamp-y: 30%;
+  --shade: 58%;
+}
+
+.credits .drape {
+  inset-block-end: 0;
+  grid-template-rows: var(--rail-h) minmax(0, 1fr);
+  --drape-x: 22%;
+}
+
+.credits::after {
+  position: absolute;
+  z-index: -1;
+  inset: 30% 0 0;
+  content: "";
+  pointer-events: none;
+  background:
+    linear-gradient(to bottom, transparent 55%, var(--night) 100%),
+    url("assets/room-empty.webp") center bottom / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%);
+  mask-image: linear-gradient(to bottom, transparent, #000 45%);
+}
+
+.site-footer {
+  position: relative;
+  z-index: 2;
+  border-top: 0;
+}
+
+/* ───────── 中くらいの幅 ───────── */
+
+@media (max-width: 1080px) {
+  .camera-stage {
+    column-gap: var(--s-part);
+  }
+
+  .scenario-collage {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 30rem;
+  }
+
+  .wall-photo {
+    margin-top: 0;
+  }
+
+  .trailer-foot {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .trailer-foot .spoiler-note {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+/* ───────── スマートフォン ───────── */
+
+@media (max-width: 720px) {
+  :root {
+    --header-h: 56px;
+    --title-size: 2rem;
+    --s-chapter: 4rem;
+  }
+
+  .site-nav {
+    display: none;
+  }
+
+  .site-mark {
+    font-size: 1.15rem;
+  }
+
+  .chapter {
+    display: block;
+  }
+
+  /* 章題は横書き。赤い短い線は章題の前 */
+  .chapter > h2 {
+    position: static;
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+    justify-self: start;
+    margin-bottom: var(--s-group);
+    letter-spacing: .1em;
+    line-height: 1.3;
+    writing-mode: horizontal-tb;
+  }
+
+  .chapter > h2::before {
+    flex: none;
+    width: 1.6rem;
+    height: 2px;
+    margin: 0;
+  }
+
+  .js-reveal .chapter > h2 {
+    clip-path: inset(-.3em 100% -.3em -.3em);
+  }
+
+  .js-reveal .chapter.is-in > h2 {
+    clip-path: inset(-.3em -.3em -.3em -.3em);
+  }
+
+  .hero-band {
+    display: block;
+    padding-top: 46vw;
+  }
+
+  .cctv {
+    position: absolute;
+    top: -9vw;
+    left: -5vw;
+    width: 60vw;
+    margin: 0;
+  }
+
+  .hero-lead {
+    font-size: min(5vw, 1.4rem);
+    letter-spacing: .08em;
+    line-height: 1.9;
+  }
+
+  .hero-facts {
+    display: grid;
+    margin-top: var(--s-part);
+  }
+
+  .trailer-foot {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-label);
+    justify-items: start;
+  }
+
+  .trailer-foot .text-link {
+    justify-self: start;
+  }
+
+  .cable {
+    right: 2px;
+    width: 40px;
+  }
+
+  .cable path {
+    stroke-width: 4;
+  }
+
+  /* テレビは上、3 台のカメラは下に横並び。道のりの線は横に引く */
+  .camera-exhibit {
+    height: calc(100svh + 130vh);
+  }
+
+  .camera-stage {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: center;
+    row-gap: var(--s-group);
+  }
+
+  .camera-monitor {
+    width: 100%;
+  }
+
+  .crt {
+    transform: scale(1.2);
+  }
+
+  .camera-console {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .7rem;
+    padding: 1.3rem 0 0;
+  }
+
+  .camera-console::before {
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+  }
+
+  .camera-walker {
+    top: 0;
+    left: calc(var(--walk, 0) * 100%);
+    translate: -50% -4px;
+  }
+
+  .camera-label {
+    font-size: .7rem;
+    letter-spacing: .04em;
+  }
+
+  .dossier {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    row-gap: var(--s-group);
+  }
+
+  .scenario-line {
+    font-size: 1.3rem;
+    letter-spacing: .2em;
+  }
+
+  .scenario-collage {
+    width: 100%;
+  }
+
+  .investigation-request {
+    width: 88%;
+    margin-inline: auto;
+  }
+
+  /* 染みは章題に掛けない。依頼の 1 文の後ろから下へ */
+  .scenario .stain {
+    top: 17%;
+    right: -34%;
+    width: 150%;
+    opacity: .58;
+  }
+
+  .scenario .hair {
+    right: -4%;
+    width: 46vw;
+  }
+
+  .archive .stain {
+    right: -45%;
+    width: 130%;
+  }
+
+  .archive .hair {
+    left: auto;
+    right: -3%;
+    width: 50vw;
+  }
+
+  .archive-records {
+    filter: drop-shadow(0 8px 8px rgb(40 24 8 / 32%));
+  }
+
+  .archive-records::after {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero {
+    --kv-h: 150vw;
+  }
+}
+
 /* ───────── 動きを減らす設定 ───────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -2131,27 +2338,18 @@ kbd,
     scroll-behavior: auto;
   }
 
-  *,
-  *::before,
-  *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-duration: .01ms !important;
+  .crt-screen.is-switching .screen-noise {
+    animation: none;
   }
 
-  .switch-progress,
-  .screen-scan {
-    animation: none !important;
-  }
-
-  .switch-progress {
-    display: none;
-  }
-
-  .js-reveal .tag[data-reveal]:not(.is-revealed) {
-    opacity: 1;
-    translate: none;
-    rotate: var(--tilt, 0deg);
+  .site-header,
+  .trailer-frame::after,
+  .site-nav a::after,
+  .wall-photo,
+  .investigation-request,
+  .tag,
+  .js-reveal .chapter.is-in > h2,
+  .js-reveal [data-reveal].is-revealed:not(.tag) {
+    transition: none;
   }
 }

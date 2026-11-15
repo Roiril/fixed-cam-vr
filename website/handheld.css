@@ -7,7 +7,7 @@
 .handheld .game-stage { position: absolute; inset: 0; margin: 0; }
 .handheld .game-stage iframe { display: block; border: 0; width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; }
 
-#game-launch { position: absolute; inset: 0; width: 100%; border: 0; color: var(--ink); background: radial-gradient(ellipse, #19221e, #020403 75%); font: inherit; font-size: clamp(.85rem, 2vw, 1.4rem); letter-spacing: .16em; cursor: pointer; transition: color 160ms; }
+#game-launch { position: absolute; inset: 0; width: 100%; border: 0; color: var(--cream); background: radial-gradient(ellipse, #19221e, #020403 75%); font: inherit; font-size: clamp(.85rem, 2vw, 1.4rem); letter-spacing: .16em; cursor: pointer; transition: color 160ms; }
 #game-launch:hover { color: #fff; }
 
 .hardware { position: absolute; padding: 0; border: 0; background: transparent; border-radius: 25%; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -102,7 +102,7 @@
   min-height: 60px;
   padding: .6rem .75rem;
   border: 1px solid var(--line);
-  background: rgb(7 9 8 / 72%);
+  background: var(--box);
   color: var(--ink-2);
   font: inherit;
   text-align: left;
@@ -119,7 +119,7 @@
 }
 
 .mode-diagram .room { fill: none; stroke: var(--line-2); stroke-width: 1.5; }
-.mode-diagram .cone { fill: rgb(198 210 189 / 8%); stroke: rgb(198 210 189 / 26%); stroke-width: 1; transition: fill 200ms, stroke 200ms; }
+.mode-diagram .cone { fill: rgb(var(--tint) / 8%); stroke: rgb(var(--tint) / 26%); stroke-width: 1; transition: fill 200ms, stroke 200ms; }
 .mode-diagram .body { fill: var(--ink-2); }
 .mode-diagram .ring { fill: none; stroke: var(--ink-3); stroke-width: 1.5; transition: stroke 200ms; }
 .mode-diagram .cam { fill: var(--ink-3); transition: fill 200ms; }
@@ -156,10 +156,10 @@
 .handheld-modes button[aria-pressed="true"] {
   color: var(--ink);
   border-color: var(--signal-line);
-  background: rgb(198 210 189 / 7%);
+  background: rgb(var(--tint) / 7%);
 }
 
-.handheld-modes button[aria-pressed="true"] .cone { fill: rgb(198 210 189 / 24%); stroke: var(--signal); }
+.handheld-modes button[aria-pressed="true"] .cone { fill: rgb(var(--tint) / 24%); stroke: var(--signal); }
 .handheld-modes button[aria-pressed="true"] .body { fill: var(--ink); }
 .handheld-modes button[aria-pressed="true"] .ring { stroke: var(--red-text); }
 .handheld-modes button[aria-pressed="true"] .cam { fill: var(--red-text); }
@@ -178,7 +178,7 @@
 .game-actions .text-link { touch-action: manipulation; }
 #game-unavailable { padding-left: .9rem; border-left: 2px solid var(--red); color: var(--ink-2); font-size: .82rem; letter-spacing: .06em; }
 #game-expand { min-height: 44px; padding: .55rem 1.2rem; border: 1px solid var(--line-2); background: none; letter-spacing: .14em; }
-#game-expand:hover, #game-expand:focus-visible { border-color: var(--signal-line); background: rgb(198 210 189 / 6%); }
+#game-expand:hover, #game-expand:focus-visible { border-color: var(--signal-line); background: rgb(var(--tint) / 6%); }
 #game-close, #game-fallback { min-height: 44px; padding: .55rem .2rem; color: var(--ink-2); }
 #game-close:hover, #game-close:focus-visible, #game-fallback:hover, #game-fallback:focus-visible { color: var(--ink); }
 #game-fallback { gap: .45rem; }
@@ -191,6 +191,8 @@
 .is-expanded .handheld { grid-area: handheld; width: min(100%, 64rem, calc((100svh - 13rem) * 2)); }
 .is-expanded .handheld-legend { grid-area: legend; width: min(100%, 64rem, calc((100svh - 13rem) * 2)); margin: 0; }
 .is-expanded .handheld-modes button { min-height: 48px; }
+.on-wall .is-expanded .handheld-modes button[aria-pressed="true"] { border-color: var(--signal-line); background: rgb(var(--tint) / 7%); color: var(--ink); }
+.on-wall .is-expanded .handheld { filter: drop-shadow(0 28px 32px #000a); }
 .is-expanded .game-actions { grid-area: actions; margin: 0; }
 .is-expanded .game-state { grid-area: state; margin: 0; }
 body.handheld-expanded { overflow: hidden; }

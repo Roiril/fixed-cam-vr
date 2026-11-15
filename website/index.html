@@ -68,7 +68,7 @@
     <link rel="manifest" href="site.webmanifest">
     <link rel="preload" href="assets/shippori-mincho.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="assets/title.png" as="image" type="image/png">
-    <link rel="preload" href="assets/hero-desktop.webp" as="image" type="image/webp" media="(min-width: 601px)" imagesrcset="assets/hero-small.webp 1024w, assets/hero-desktop.webp 1672w" imagesizes="(min-width: 1800px) 1800px, 100vw" fetchpriority="high">
+    <link rel="preload" href="assets/hero-desktop.webp" as="image" type="image/webp" media="(min-width: 601px)" imagesrcset="assets/hero-small.webp 1024w, assets/hero-desktop.webp 1672w" imagesizes="100vw" fetchpriority="high">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="experience.css">
     <link rel="stylesheet" href="handheld.css">
@@ -145,35 +145,38 @@
         <a href="#footage">演出一覧</a>
         <a href="#archive">展示履歴</a>
       </nav>
-      <p class="site-clock" aria-hidden="true"><span class="site-clock-dot"></span><span data-site-clock>00:00:00</span></p>
     </header>
 
     <main id="main" tabindex="-1">
       <section class="hero" aria-labelledby="hero-title">
         <h1 id="hero-title" class="sr-only">廻リ視（まわりみ）｜固定視点を用いた実世界ホラー体験</h1>
-        <picture class="hero-picture">
-          <source media="(max-width: 600px)" srcset="assets/hero-mobile.webp" width="900" height="1350">
-          <source srcset="assets/hero-small.webp 1024w, assets/hero-desktop.webp 1672w" sizes="(min-width: 1800px) 1800px, 100vw">
-          <img src="assets/hero-desktop.webp" width="1672" height="941" alt="日本人形と廻リ視の題字を配したキービジュアル" fetchpriority="high">
-        </picture>
-        <span class="hero-shade" aria-hidden="true"></span>
-        <div class="hero-bottom">
+        <div class="hero-stage">
+          <picture class="hero-picture">
+            <source media="(max-width: 600px)" srcset="assets/hero-mobile.webp" width="900" height="1350">
+            <source srcset="assets/hero-small.webp 1024w, assets/hero-desktop.webp 1672w" sizes="100vw">
+            <img src="assets/hero-desktop.webp" width="1672" height="941" alt="日本人形と廻リ視の題字を配したキービジュアル" fetchpriority="high">
+          </picture>
+          <span class="hero-shade" aria-hidden="true"></span>
+        </div>
+        <div class="hero-band on-wall">
+          <img class="cctv" src="assets/cctv.webp" width="900" height="900" alt="" aria-hidden="true">
           <p class="hero-lead">監視カメラに映る自分を見ながら、<br>現実の空間を歩くホラー体験。</p>
           <dl class="hero-facts">
-            <div class="hero-fact is-award"><dt>IVRC2026</dt><dd>総合優勝<span class="hero-fact-sep" aria-hidden="true">/</span>DCEXPO賞</dd></div>
-            <div class="hero-fact"><dt>DCEXPO2026</dt><dd><time datetime="2026-11">2026年11月</time>展示予定</dd></div>
+            <div class="hero-fact is-award"><dt class="hero-fact-key">IVRC2026</dt><dd>総合優勝<span class="hero-fact-sep" aria-hidden="true">/</span>DCEXPO賞</dd></div>
+            <div class="hero-fact"><dt class="hero-fact-key">DCEXPO2026</dt><dd><time datetime="2026-11">2026年11月</time>展示予定</dd></div>
           </dl>
         </div>
       </section>
 
-      <section id="trailer" class="chapter trailer" aria-labelledby="trailer-title">
+      <section id="trailer" class="chapter on-drape trailer" aria-labelledby="trailer-title">
+        <div class="drape" aria-hidden="true"><i class="drape-rail"></i><i class="drape-folds"></i><i class="drape-hem"></i></div>
         <h2 id="trailer-title">予告動画</h2>
         <div class="chapter-body">
-          <p class="spoiler-note">ネタバレを含みます</p>
-          <div class="trailer-frame">
+          <div class="trailer-frame" data-reveal>
             <iframe src="https://www.youtube-nocookie.com/embed/ipoU4gU9G4k" title="廻リ視 予告動画" width="560" height="315" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
           </div>
           <div class="trailer-foot">
+            <p class="spoiler-note">ネタバレを含みます</p>
             <div class="trailer-notes">
               <p>この映像は2026.09.01時点で作成したものです。</p>
               <p>DCEXPOに向けた新しい予告動画を作成中です。</p>
@@ -183,7 +186,13 @@
         </div>
       </section>
 
-      <section id="perspective-lab" class="chapter perspective-lab" role="region" aria-labelledby="perspective-title">
+      <section id="perspective-lab" class="chapter on-wall perspective-lab" role="region" aria-labelledby="perspective-title">
+        <div class="cable" aria-hidden="true">
+          <svg viewBox="0 0 60 1000" preserveAspectRatio="none" focusable="false"><path d="M34 0 C 40 150 22 290 30 470 S 44 800 26 1000"/></svg>
+          <span class="cable-clip" style="--at: 19%; --x: 46%"></span>
+          <span class="cable-clip" style="--at: 58%; --x: 58%"></span>
+          <span class="cable-clip" style="--at: 88%; --x: 50%"></span>
+        </div>
         <h2 id="perspective-title">固定視点とは</h2>
         <div class="chapter-body">
           <div class="handheld-player" id="handheld-player">
@@ -234,41 +243,47 @@
         </div>
       </section>
 
-      <section id="fixed-view" class="chapter fixed-view" aria-labelledby="fixed-view-title">
+      <section id="fixed-view" class="chapter on-drape fixed-view" aria-labelledby="fixed-view-title">
+        <div class="drape" aria-hidden="true"><i class="drape-rail"></i><i class="drape-folds"></i><i class="drape-hem"></i></div>
         <h2 id="fixed-view-title">実世界×固定視点</h2>
-        <div class="chapter-body camera-exhibit">
-          <div class="camera-monitor">
-            <div class="crt-ambient" aria-hidden="true"></div>
-            <div class="crt">
-              <img class="crt-body" src="assets/crt.webp" width="1448" height="1086" alt="" aria-hidden="true" loading="lazy">
-              <div class="crt-screen">
-                <img class="camera-feed is-active" src="assets/camera-fiction-01.webp" width="1152" height="864" alt="薄暗い廊下に立つ人物を天井近くから見下ろす" data-camera-feed="1" loading="lazy">
-                <img class="camera-feed" src="assets/camera-fiction-02.webp" width="1152" height="864" alt="同じ廊下と人物を反対側のカメラから見る" data-camera-feed="2" aria-hidden="true" loading="lazy">
-                <img class="camera-feed" src="assets/camera-fiction-03.webp" width="1152" height="864" alt="廊下の曲がり角と壁に隠れる人物を見る" data-camera-feed="3" aria-hidden="true" loading="lazy">
-                <span class="screen-scan" aria-hidden="true"></span>
-                <span class="screen-noise" aria-hidden="true"></span>
-                <span id="camera-indicator" class="camera-indicator" aria-hidden="true">CAM 01</span>
+        <div class="chapter-body camera-exhibit" data-camera-scroll>
+          <div class="camera-stage">
+            <div class="camera-monitor">
+              <div class="crt-ambient" aria-hidden="true"></div>
+              <div class="crt">
+                <img class="crt-body" src="assets/crt.webp" width="1448" height="1086" alt="" aria-hidden="true" loading="lazy">
+                <div class="crt-screen">
+                  <img class="camera-feed is-active" src="assets/camera-fiction-01.webp" width="1152" height="864" alt="薄暗い廊下に立つ人物を天井近くから見下ろす" data-camera-feed="1" loading="lazy">
+                  <img class="camera-feed" src="assets/camera-fiction-02.webp" width="1152" height="864" alt="同じ廊下と人物を反対側のカメラから見る" data-camera-feed="2" aria-hidden="true" loading="lazy">
+                  <img class="camera-feed" src="assets/camera-fiction-03.webp" width="1152" height="864" alt="廊下の曲がり角と壁に隠れる人物を見る" data-camera-feed="3" aria-hidden="true" loading="lazy">
+                  <span class="screen-scan" aria-hidden="true"></span>
+                  <span class="screen-noise" aria-hidden="true"></span>
+                  <span id="camera-indicator" class="camera-indicator" aria-hidden="true">CAM 01</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="camera-console" role="group" aria-label="カメラを選択">
-            <button class="camera-button is-active" type="button" data-camera-button="1" aria-pressed="true"><span class="camera-thumb" aria-hidden="true"><img src="assets/camera-fiction-01.webp" width="1152" height="864" alt="" loading="lazy"></span><span class="camera-label"><span class="button-led" aria-hidden="true"></span>カメラ 01</span><span class="switch-progress" aria-hidden="true"></span></button>
-            <button class="camera-button" type="button" data-camera-button="2" aria-pressed="false"><span class="camera-thumb" aria-hidden="true"><img src="assets/camera-fiction-02.webp" width="1152" height="864" alt="" loading="lazy"></span><span class="camera-label"><span class="button-led" aria-hidden="true"></span>カメラ 02</span><span class="switch-progress" aria-hidden="true"></span></button>
-            <button class="camera-button" type="button" data-camera-button="3" aria-pressed="false"><span class="camera-thumb" aria-hidden="true"><img src="assets/camera-fiction-03.webp" width="1152" height="864" alt="" loading="lazy"></span><span class="camera-label"><span class="button-led" aria-hidden="true"></span>カメラ 03</span><span class="switch-progress" aria-hidden="true"></span></button>
+            <div class="camera-console" role="group" aria-label="カメラを選択">
+              <span class="camera-walker" aria-hidden="true"></span>
+              <button class="camera-button is-active" type="button" data-camera-button="1" aria-pressed="true"><span class="camera-thumb" aria-hidden="true"><img src="assets/camera-fiction-01.webp" width="1152" height="864" alt="" loading="lazy"></span><span class="camera-label"><span class="button-led" aria-hidden="true"></span>カメラ 01</span></button>
+              <button class="camera-button" type="button" data-camera-button="2" aria-pressed="false"><span class="camera-thumb" aria-hidden="true"><img src="assets/camera-fiction-02.webp" width="1152" height="864" alt="" loading="lazy"></span><span class="camera-label"><span class="button-led" aria-hidden="true"></span>カメラ 02</span></button>
+              <button class="camera-button" type="button" data-camera-button="3" aria-pressed="false"><span class="camera-thumb" aria-hidden="true"><img src="assets/camera-fiction-03.webp" width="1152" height="864" alt="" loading="lazy"></span><span class="camera-label"><span class="button-led" aria-hidden="true"></span>カメラ 03</span></button>
+            </div>
           </div>
           <p id="camera-status" class="sr-only" aria-live="polite">カメラ 01</p>
         </div>
       </section>
 
-      <section id="scenario" class="chapter scenario" aria-labelledby="scenario-title">
+      <section id="scenario" class="chapter on-wall scenario" aria-labelledby="scenario-title">
+        <span class="stain" aria-hidden="true"></span>
+        <span class="hair" data-grow aria-hidden="true"></span>
         <h2 id="scenario-title">ストーリー</h2>
         <div class="chapter-body">
           <div class="dossier">
             <p class="scenario-line">あなたは、怪異調査員として、<br>呪われた壁の調査に向かう。</p>
             <div class="scenario-collage">
-              <figure class="wall-photo"><span class="photo-mount"><img class="wall-evidence" src="assets/camera-01-doll.webp" width="960" height="720" alt="実際の撮影場所にある幕と手すり" loading="lazy"></span><figcaption>実際のカメラで撮影した場所</figcaption></figure>
-              <a class="investigation-request" href="assets/investigation-request.webp" aria-label="調査依頼書を原寸で開く">
+              <figure class="wall-photo" data-reveal><span class="photo-mount"><img class="wall-evidence" src="assets/camera-01-doll.webp" width="960" height="720" alt="実際の撮影場所にある幕と手すり" loading="lazy"></span><figcaption>実際のカメラで撮影した場所</figcaption></figure>
+              <a class="investigation-request" href="assets/investigation-request.webp" aria-label="調査依頼書を原寸で開く" data-reveal style="--i: 1">
                 <img src="assets/investigation-request.webp" width="1273" height="1800" alt="調査依頼書。壁面周辺の観測調査について。" loading="lazy">
                 <span class="request-open" aria-hidden="true">原寸で開く</span>
               </a>
@@ -277,7 +292,8 @@
         </div>
       </section>
 
-      <section id="footage" class="chapter footage" aria-labelledby="footage-heading">
+      <section id="footage" class="chapter on-drape footage" aria-labelledby="footage-heading">
+        <div class="drape" aria-hidden="true"><i class="drape-rail"></i><i class="drape-folds"></i><i class="drape-hem"></i></div>
         <h2 id="footage-heading">演出一覧</h2>
         <div class="chapter-body">
           <details id="footage-gate" class="footage-gate">
@@ -303,7 +319,9 @@
         </div>
       </section>
 
-      <section id="archive" class="chapter archive" aria-labelledby="archive-title">
+      <section id="archive" class="chapter on-wall archive" aria-labelledby="archive-title">
+        <span class="stain" aria-hidden="true"></span>
+        <span class="hair" data-grow aria-hidden="true"></span>
         <h2 id="archive-title">展示履歴</h2>
         <div class="chapter-body">
           <ol class="archive-records">
@@ -336,10 +354,11 @@
         </div>
       </section>
 
-      <section id="credits" class="chapter credits" aria-labelledby="credits-title">
+      <section id="credits" class="chapter on-drape credits" aria-labelledby="credits-title">
+        <div class="drape" aria-hidden="true"><i class="drape-rail"></i><i class="drape-folds"></i></div>
         <h2 id="credits-title">クレジット</h2>
         <div class="chapter-body">
-          <div class="plate">
+          <div class="plate" data-reveal>
             <span class="plate-rivet plate-rivet-tl" aria-hidden="true"></span>
             <span class="plate-rivet plate-rivet-tr" aria-hidden="true"></span>
             <span class="plate-rivet plate-rivet-bl" aria-hidden="true"></span>

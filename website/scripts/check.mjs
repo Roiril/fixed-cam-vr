@@ -38,6 +38,13 @@ const requiredAssets = [
   "assets/crt.webp",
   "assets/investigation-request.webp",
   "assets/room-empty.webp",
+  "assets/drape-rail.webp",
+  "assets/drape-folds.webp",
+  "assets/drape-hem.webp",
+  "assets/wall.webp",
+  "assets/cctv.webp",
+  "assets/hair.webp",
+  "assets/stain.webp",
   "assets/grain.png",
   "assets/footage-fracture.mp4",
   "assets/footage-fracture.webp",
@@ -192,28 +199,18 @@ for (const oldCopy of ["この視点に入る", "ここから先は、体験中�
   if (html.includes(oldCopy)) errors.push(`obsolete copy remains: ${oldCopy}`);
 }
 if (html.includes('class="plate-qr"') || html.includes('class="plate-url"')) errors.push("credit code or URL remains");
-if (!js.includes('searchParams.get("camera")') || !js.includes('addEventListener("popstate"')) errors.push("camera URL or back navigation support is missing");
 if (!js.includes('prefers-reduced-motion')) errors.push("reduced motion support is missing");
-if (!js.includes("const AUTO_SWITCH_INTERVAL_MS = 6000;")) errors.push("automatic camera interval must be 6000 ms");
-if (!js.includes("const nextCamera = (currentCamera % CAMERA_COUNT) + 1;")) errors.push("automatic camera order must loop forward");
-if (!/function advanceCamera\(\)\s*{[\s\S]*?writeCameraToUrl\(nextCamera, "replaceState"\);[\s\S]*?scheduleAutoSwitch\(\);[\s\S]*?}/.test(js)) {
-  errors.push("automatic camera switching must replace URL state and reschedule");
-}
-if (!/function selectCamera\(camera\)\s*{\s*scheduleAutoSwitch\(\);\s*if \(camera === currentCamera\) return;[\s\S]*?writeCameraToUrl\(camera, "pushState"\);[\s\S]*?}/.test(js)) {
-  errors.push("manual camera selection must reset the timer and avoid duplicate history entries");
-}
-if (!/button\.addEventListener\("click",[\s\S]*?selectCamera\(/.test(js) || !/button\.addEventListener\("keydown",[\s\S]*?selectCamera\(/.test(js)) {
-  errors.push("click and keyboard camera selection must use the manual reset path");
-}
-if (!/function scheduleAutoSwitch\(\)\s*{[\s\S]*?if \(document\.hidden\) return;[\s\S]*?AUTO_SWITCH_INTERVAL_MS[\s\S]*?}/.test(js)) {
-  errors.push("automatic camera timer must not run while the document is hidden");
-}
-if (!/document\.addEventListener\("visibilitychange",[\s\S]*?stopAutoSwitch\(\);[\s\S]*?scheduleAutoSwitch\(\);[\s\S]*?}\);/.test(js)) {
-  errors.push("visibility changes must pause and restart automatic camera switching");
-}
-if (!/window\.addEventListener\("popstate",[\s\S]*?scheduleAutoSwitch\(\);[\s\S]*?}\);/.test(js)) {
-  errors.push("back and forward navigation must restart the automatic camera timer");
-}
+// 2026-11-15 の 3 つ目の指示「アニメーションは、スクロール or ホバー（スマホではタップ）のみ」。
+// 時間で勝手に進むもの（6 秒ごとのカメラ切替・経過時間の表示・走査線の帯）を置かない。
+if (/setInterval\(|AUTO_SWITCH_INTERVAL_MS/.test(js)) errors.push("nothing may advance on a timer: motion is driven by scroll, hover or tap only");
+if (/animation:[^;]*infinite/.test(css)) errors.push("looping CSS animations are not allowed: motion is driven by scroll, hover or tap only");
+if (html.includes("data-site-clock")) errors.push("the elapsed-time clock was removed with the timer-driven motion");
+// カメラは読み進めた位置で 01 → 02 → 03 と切り替わる。ボタンは、その区間までページを送る
+if (!html.includes("data-camera-scroll") || !js.includes("function updateCameraFromScroll()") || !js.includes("Math.floor(progress * CAMERA_COUNT)")) errors.push("camera switching must follow the scroll position");
+if (!/button\.addEventListener\("click",[\s\S]*?scrollToCamera\(/.test(js)) errors.push("camera buttons must scroll the page to their segment");
+// 章の地は幕と壁の 2 つ。幕の章には幕の絵、壁の章には壁の地が要る
+if ((html.match(/class="chapter on-drape /g)?.length ?? 0) !== 4 || (html.match(/class="chapter on-wall /g)?.length ?? 0) !== 3) errors.push("chapters must alternate between the drape (4) and the wall (3)");
+if ((html.match(/<div class="drape" aria-hidden="true">/g)?.length ?? 0) !== 4) errors.push("every drape chapter needs its curtain layers");
 if (/data-(?:auto-switch|camera-autoplay)|自動切替|自動再生|auto(?:matic)?\s+(?:switch|play)/i.test(html)) {
   errors.push("automatic camera switching must not add an on/off control");
 }

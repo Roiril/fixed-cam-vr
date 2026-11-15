@@ -1,13 +1,4 @@
-/* ゲーム機の章と、実機録画の章。どちらも「映る側」の暗い部屋に置く。 */
-
-/* ───────── 固定視点とは：ゲーム機 ───────── */
-
-.perspective-lab {
-  overflow: clip;
-  background:
-    radial-gradient(ellipse 46% 38% at 54% 46%, rgb(198 210 189 / 7%), transparent 72%),
-    linear-gradient(to bottom, var(--night), var(--screen-room) 22%, var(--screen-room) 78%, var(--night));
-}
+/* ゲーム機の状態表示と、実機録画の章。章の地（幕と壁）は styles.css が持つ。 */
 
 .game-state {
   color: var(--ink-2);
@@ -22,10 +13,6 @@
 }
 
 /* ───────── 演出一覧：実機録画 ───────── */
-
-.footage {
-  background: linear-gradient(to bottom, var(--night), var(--screen-room) 16%, var(--screen-room) 84%, var(--night));
-}
 
 /* 閉じた状態は、電源の入っていないモニター 1 枚。注意の札と電源は画面の上に置く */
 .footage-gate {
@@ -45,7 +32,7 @@
   list-style: none;
   background:
     repeating-linear-gradient(to bottom, transparent 0 2px, rgb(0 0 0 / 26%) 2px 3px),
-    radial-gradient(ellipse 70% 80% at 50% 45%, rgb(198 210 189 / 5%), transparent 70%),
+    radial-gradient(ellipse 70% 80% at 50% 45%, rgb(var(--tint) / 5%), transparent 70%),
     #060807;
   box-shadow:
     inset 0 0 0 1px var(--line-2),
@@ -63,7 +50,7 @@
     box-shadow:
       inset 0 0 0 1px var(--signal-line),
       inset 0 0 7rem rgb(0 0 0 / 60%),
-      inset 0 0 0 100vmax rgb(198 210 189 / 3%);
+      inset 0 0 0 100vmax rgb(var(--tint) / 3%);
   }
 }
 
@@ -187,7 +174,7 @@
 
 .footage-controls button[aria-pressed="true"] {
   color: var(--ink);
-  background: rgb(198 210 189 / 6%);
+  background: rgb(var(--tint) / 6%);
   box-shadow: inset 2px 0 var(--red-text);
 }
 
