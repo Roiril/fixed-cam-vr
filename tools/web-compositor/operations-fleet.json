@@ -12,7 +12,7 @@
   ],
   "quests": [
     {"id": "alpha", "label": "Quest α", "host": "192.168.10.31", "port": 8090, "deviceId": "219dcb6cfe8d1bc84801c8356aae825c", "shortId": "219dcb", "serial": "2G0YC1ZF890864"},
-    {"id": "beta", "label": "Quest β", "host": "192.168.10.32", "port": 8090, "deviceId": "", "shortId": "", "serial": "2G0YC1ZF7S06BW"}
+    {"id": "beta", "label": "Quest β", "host": "192.168.10.32", "port": 8090, "deviceId": "aca930e6a8f8b21672cf71f8dd2c0789", "shortId": "aca930", "serial": "2G0YC1ZF7S06BW"}
   ],
   "tablets": [
     {"id": "alpha", "label": "博士タブレット α", "model": "Redmi", "serial": "122d7871", "host": "192.168.10.41", "target": "alpha", "questId": "alpha", "package": "com.roiril.mawarimi.tablet"}
