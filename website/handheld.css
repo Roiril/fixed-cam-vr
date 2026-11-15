@@ -8,7 +8,6 @@
 .handheld .game-stage iframe { display: block; border: 0; width: 100%; height: 100%; min-height: 0; aspect-ratio: auto; }
 
 #game-launch { position: absolute; inset: 0; width: 100%; border: 0; color: var(--ink); background: radial-gradient(ellipse, #19221e, #020403 75%); font: inherit; font-size: clamp(.85rem, 2vw, 1.4rem); letter-spacing: .16em; cursor: pointer; transition: color 160ms; }
-#game-launch span { display: block; margin-top: 1rem; color: var(--ink-2); font-size: .6em; letter-spacing: .1em; }
 #game-launch:hover { color: #fff; }
 
 .hardware { position: absolute; padding: 0; border: 0; background: transparent; border-radius: 25%; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -28,25 +27,78 @@
 .view-stick { left: 82.2%; }
 .hardware-stick.is-held { background: radial-gradient(circle, transparent 35%, #b8e8bd44 70%, transparent 72%); }
 
+/* 操作の凡例。ゲーム機と同じ幅で 3 つに割り、左右の操作部と画面の真下に置く。
+   列の幅は絵の割合（左の操作部 0〜20.5%、画面 20.5〜79.5%、右の操作部 79.5〜100%）。
+   絵の下 11% は透明なので、その分だけ持ち上げて本体の縁に付ける */
+.handheld-legend {
+  display: grid;
+  grid-template-columns: 20.5% minmax(0, 1fr) 20.5%;
+  align-items: start;
+  width: 100%;
+  max-width: 64rem;
+  margin: calc(min(100%, 64rem) * -.052 + var(--s-label)) auto 0;
+}
+
+.legend-side {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: var(--s-label);
+  margin: 0;
+  padding-top: 1.1rem;
+  color: var(--ink);
+  font-size: .9rem;
+  letter-spacing: .16em;
+  line-height: 1.4;
+}
+
+/* 本体の縁から下ろした短い線。どの操作部の話かを指す */
+.legend-side::before {
+  position: absolute;
+  top: 0;
+  left: calc(50% - .5px);
+  width: 1px;
+  height: .75rem;
+  content: "";
+  background: var(--line-2);
+}
+
+/* 操作部の中心に揃える：左は十字キーとスティックの間（11%）、右は 88.8% */
+.legend-move { transform: translateX(3.6%); }
+.legend-look { transform: translateX(-4.6%); }
+
+/* キーは十字キーと同じ十字に組む */
+.keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1.5rem);
+  grid-template-areas: ". u ." "l d r";
+  gap: 3px;
+}
+
+.keys kbd:nth-child(1) { grid-area: u; }
+.keys kbd:nth-child(2) { grid-area: l; }
+.keys kbd:nth-child(3) { grid-area: d; }
+.keys kbd:nth-child(4) { grid-area: r; }
+
 /* 視点の 3 択。上から見た部屋に、視野の扇と体とカメラの位置を描く */
 .handheld-modes {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .75rem;
-  width: 100%;
-  max-width: 54rem;
-  margin: 1.25rem auto 0;
+  gap: .6rem;
+  min-width: 0;
+  padding-inline: .4rem;
 }
 
 .handheld-modes button {
   --frame-color: var(--signal);
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
-  gap: .85rem;
+  gap: .7rem;
   min-width: 0;
-  min-height: 66px;
-  padding: .7rem .9rem;
+  min-height: 60px;
+  padding: .6rem .75rem;
   border: 1px solid var(--line);
   background: rgb(7 9 8 / 72%);
   color: var(--ink-2);
@@ -59,8 +111,8 @@
 
 .mode-diagram {
   display: block;
-  width: 54px;
-  height: 36px;
+  width: 48px;
+  height: 32px;
   overflow: visible;
 }
 
@@ -71,23 +123,17 @@
 .mode-diagram .cam { fill: var(--ink-3); transition: fill 200ms; }
 
 .mode-text {
-  display: block;
   min-width: 0;
-  font-size: .95rem;
-  letter-spacing: .12em;
+  font-size: .92rem;
+  letter-spacing: .1em;
   line-height: 1.35;
   white-space: nowrap;
 }
 
-.handheld-modes small {
-  display: block;
-  margin-top: .3rem;
-  color: var(--ink-3);
-  font-size: .7rem;
-  letter-spacing: .03em;
-  line-height: 1.5;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.mode-key {
+  min-width: 1.3rem;
+  height: 1.3rem;
+  font-size: .6rem;
 }
 
 .handheld-modes button:hover:not(:disabled),
@@ -108,10 +154,17 @@
 .handheld-modes button[aria-pressed="true"] .body { fill: var(--ink); }
 .handheld-modes button[aria-pressed="true"] .ring { stroke: var(--red-text); }
 .handheld-modes button[aria-pressed="true"] .cam { fill: var(--red-text); }
+.handheld-modes button[aria-pressed="true"] .mode-key { border-color: var(--signal-line); color: var(--ink); }
 .handheld-modes button[aria-pressed="true"]::after { inset: -4px; opacity: 1; }
 .handheld-modes button:disabled { cursor: default; }
 
-.game-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .5rem 1.5rem; margin: 1.25rem auto 0; }
+/* キーボードの刻印は、キーボードがある端末だけ */
+@media (hover: none), (pointer: coarse) {
+  .keys, .mode-key { display: none; }
+  .handheld-modes button { grid-template-columns: 48px minmax(0, 1fr); }
+}
+
+.game-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .5rem 1.5rem; margin: var(--s-group) auto 0; }
 .game-actions > * { margin-block: 0; }
 .game-actions .text-link { touch-action: manipulation; }
 #game-unavailable { padding-left: .9rem; border-left: 2px solid var(--red); color: var(--ink-2); font-size: .82rem; letter-spacing: .06em; }
@@ -121,19 +174,14 @@
 #game-close:hover, #game-close:focus-visible, #game-fallback:hover, #game-fallback:focus-visible { color: var(--ink); }
 #game-fallback { gap: .45rem; }
 
-.handheld-guide { margin: 1rem 0 0; color: var(--ink-2); font-size: .82rem; letter-spacing: .06em; line-height: 2; }
-.handheld-guide span { color: var(--ink-3); font-size: .74rem; letter-spacing: .04em; }
-.handheld-mobile-hint { display: none; margin: .35rem 0 0; color: var(--ink-2); font-size: .74rem; }
+.handheld-mobile-hint { display: none; color: var(--ink-3); font-size: .74rem; letter-spacing: .06em; }
 .handheld-player .game-state { min-height: 1.5em; margin: .5rem 0 0; }
 
 /* 拡大したときは画面いっぱいにゲーム機だけを置く */
-.handheld-player.is-expanded { position: fixed; z-index: 1100; inset: 0; overflow: auto; background: #070908; padding: max(.75rem, env(safe-area-inset-top)) max(.75rem, env(safe-area-inset-right)) max(.75rem, env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left)); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "handheld" "modes" "actions" "guide" "hint" "state"; align-content: center; justify-items: center; gap: .75rem; }
+.handheld-player.is-expanded { position: fixed; z-index: 1100; inset: 0; overflow: auto; background: #070908; padding: max(.75rem, env(safe-area-inset-top)) max(.75rem, env(safe-area-inset-right)) max(.75rem, env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left)); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "handheld" "legend" "actions" "state"; align-content: center; justify-items: center; gap: .75rem; }
 .is-expanded .handheld { grid-area: handheld; width: min(100%, 64rem, calc((100svh - 13rem) * 2)); }
-.is-expanded .handheld-modes { grid-area: modes; margin: 0; }
-.is-expanded .handheld-modes small { display: none; }
+.is-expanded .handheld-legend { grid-area: legend; width: min(100%, 64rem, calc((100svh - 13rem) * 2)); margin: 0; }
 .is-expanded .handheld-modes button { min-height: 48px; }
-.is-expanded .handheld-guide { grid-area: guide; margin: 0; }
-.is-expanded .handheld-mobile-hint { grid-area: hint; margin: 0; }
 .is-expanded .game-actions { grid-area: actions; margin: 0; }
 .is-expanded .game-state { grid-area: state; margin: 0; }
 body.handheld-expanded { overflow: hidden; }
@@ -142,28 +190,22 @@ body.handheld-expanded { overflow: hidden; }
   .handheld-player { width: calc(100% + 2 * var(--gutter)); margin-left: calc(-1 * var(--gutter)); }
   .handheld-player.is-expanded { width: 100%; margin: 0; }
   .handheld { max-width: none; }
-  .handheld-modes { width: calc(100% - 2rem); gap: .5rem; margin-top: 1.25rem; }
-  .handheld-modes button { grid-template-columns: minmax(0, 1fr); justify-items: start; gap: .45rem; padding: .7rem .6rem .75rem; }
-  .mode-diagram { width: 45px; height: 30px; }
-  .mode-text { font-size: .84rem; letter-spacing: .06em; }
-  .handheld-modes small { font-size: .62rem; letter-spacing: 0; }
-  .handheld-guide { padding: 0 1rem; font-size: .74rem; }
-  .handheld-guide span { display: none; }
-  .handheld-mobile-hint { display: block; }
-  .game-actions { padding: 0 1rem; }
-  .handheld-player.is-expanded .handheld-modes { width: 100%; }
-}
-
-@media (max-width: 480px) {
-  .handheld-modes small { display: none; }
+  .handheld-legend { max-width: none; margin-top: calc(100% * -.052 + var(--s-label)); }
+  .legend-side { padding-top: .9rem; font-size: .78rem; letter-spacing: .1em; }
+  .handheld-modes { gap: .35rem; padding-inline: .2rem; }
+  .handheld-modes button { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: .3rem; min-height: 64px; padding: .5rem .25rem .55rem; text-align: center; }
+  .mode-diagram { width: 40px; height: 27px; }
+  .mode-text { font-size: .74rem; letter-spacing: .04em; }
+  .game-actions { gap: .25rem 1.25rem; margin-top: var(--s-part); padding: 0 1rem; }
+  .handheld-mobile-hint { display: block; flex-basis: 100%; }
 }
 
 @media (orientation: landscape) and (max-height: 600px) {
-  .handheld-player.is-expanded { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "handheld handheld" "modes actions"; align-content: center; gap: .4rem .75rem; padding: max(.4rem, env(safe-area-inset-top)) max(.4rem, env(safe-area-inset-right)) max(.4rem, env(safe-area-inset-bottom)) max(.4rem, env(safe-area-inset-left)); }
+  .handheld-player.is-expanded { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "handheld handheld" "legend actions"; align-content: center; gap: .4rem .75rem; padding: max(.4rem, env(safe-area-inset-top)) max(.4rem, env(safe-area-inset-right)) max(.4rem, env(safe-area-inset-bottom)) max(.4rem, env(safe-area-inset-left)); }
   .is-expanded .handheld { width: min(100%, 64rem, calc((100svh - 4.5rem) * 2)); }
-  .is-expanded .handheld-guide, .is-expanded .handheld-mobile-hint, .is-expanded .game-state { display: none; }
-  .is-expanded .handheld-modes { width: 100%; }
-  .is-expanded .handheld-modes button { grid-template-columns: auto minmax(0, 1fr); min-height: 44px; padding: .4rem .6rem; }
+  .is-expanded .handheld-legend { display: block; width: 100%; }
+  .is-expanded .legend-side, .is-expanded .game-state, .is-expanded .handheld-mobile-hint { display: none; }
+  .is-expanded .handheld-modes button { grid-template-columns: auto minmax(0, 1fr); justify-items: start; min-height: 44px; padding: .4rem .6rem; }
   .is-expanded .mode-diagram { width: 36px; height: 24px; }
   .is-expanded .game-actions { justify-self: end; padding: 0; }
   .is-expanded .game-actions a { display: none; }

@@ -18,8 +18,9 @@ const assetRoot = join(websiteRoot, "assets");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
 
 // 欧文の 2 書体は印字できる ASCII 全部と、データ表記で使う記号を持たせる。
+// 矢印 4 つはゲーム機の凡例のキー刻印（↑←↓→）で使う。
 const ASCII = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i)).join("");
-const LATIN_EXTRA = "×·—–→";
+const LATIN_EXTRA = "×·—–→←↑↓";
 
 export const FONTS = [
   { key: "mincho", family: "Shippori Mincho", weights: [400], out: "shippori-mincho", ofl: "shipporimincho", text: "page" },

@@ -24,11 +24,10 @@ export function pageText(html) {
 
 // 等幅の欧文書体（IBM Plex Mono）で組む要素。styles.css / experience.css の font-family: var(--mono) と対にして保つ。
 const LATIN_CLASSES = [
-  "section-number",
   "site-clock",
   "camera-indicator",
-  "gate-index",
-  "plate-heading-meta",
+  "mode-key",
+  "archive-date",
   "tag-strip",
   "tag-title",
   "tag-code",
@@ -44,6 +43,8 @@ export function latinText(html) {
     const pattern = new RegExp(`<(\\w+)\\b[^>]*class="[^"]*\\b${className}\\b[^"]*"[^>]*>([\\s\\S]*?)</\\1>`, "gi");
     for (const match of html.matchAll(pattern)) parts.push(stripTags(match[2]));
   }
+  // キーの刻印（kbd）も等幅で組む
+  for (const match of html.matchAll(/<kbd\b[^>]*>([\s\S]*?)<\/kbd>/gi)) parts.push(stripTags(match[1]));
   return parts.join("");
 }
 

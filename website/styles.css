@@ -1,6 +1,7 @@
 /* 廻リ視の公式サイト。
    面ごとに「現実（紙・写真・幕）」と「映像（画面・信号）」を交互に置き、
-   題字の赤 1 色と、四隅の枠（画面では撮影枠、紙では写真の角）で揃える。 */
+   題字の赤 1 色と、四隅の枠（画面では撮影枠、紙では写真の角）で揃える。
+   章はすべて同じ格子に載る。左の柱に縦書きの章題、柱の右端に 1 本の線、その右に中身。 */
 
 @font-face {
   font-family: "Shippori Mincho";
@@ -72,6 +73,18 @@
   --header-h: 72px;
   --ease: cubic-bezier(.2, .7, .2, 1);
   --cut: 14px;
+
+  /* 格子。--edge は中身の左端（100% は使う場所の幅で決まる） */
+  --edge: max(var(--gutter), calc((100% - var(--content)) / 2));
+  --spine: clamp(3.25rem, 5.6vw, 5.75rem);
+  --spine-gap: clamp(1.75rem, 3.6vw, 3.5rem);
+  --title-size: clamp(2.3rem, 3.6vw, 4rem);
+
+  /* 余白は 4 段だけ。近いものほど詰め、関係が遠くなるほど空ける */
+  --s-label: .6rem;                        /* 札と、その札が指すもの */
+  --s-part: clamp(1.25rem, 2vw, 1.75rem);  /* 1 つの物の部品どうし */
+  --s-group: clamp(2.75rem, 4.5vw, 4rem);  /* 章の中の別の物 */
+  --s-chapter: clamp(4.5rem, 7vw, 7rem);   /* 章の上下。章と章の間はこの 2 倍 */
 
   font-family: var(--serif);
   font-synthesis: none;
@@ -184,39 +197,65 @@ section[id] {
   scroll-margin-top: 0;
 }
 
-/* ───────── 共通の部品 ───────── */
+/* ───────── 章の格子 ───────── */
 
-/* 章の見出し：番号は等幅、題は筆 */
-.section-number {
-  display: flex;
-  align-items: center;
-  gap: .9em;
-  margin: 0 0 1.1rem;
-  color: var(--ink-2);
-  font-family: var(--mono);
-  font-size: .72rem;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .2em;
-  line-height: 1.4;
+.chapter {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: var(--spine) minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--spine-gap);
+  padding: var(--s-chapter) var(--edge);
 }
 
-.section-number::before {
-  flex: none;
-  width: 28px;
+/* 柱の右端の線。予告動画からクレジットまで、章をまたいで 1 本に続く */
+.chapter::after {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--edge) + var(--spine) + var(--spine-gap) / 2);
+  width: 1px;
+  content: "";
+  background: var(--line);
+  pointer-events: none;
+}
+
+/* 章題は柱の中に縦に組む。読み進める間は柱に残る */
+.chapter > h2 {
+  position: sticky;
+  z-index: 1;
+  top: calc(var(--header-h) + 1.5rem);
+  justify-self: end;
+  margin: 0;
+  font-family: var(--brush);
+  font-size: var(--title-size);
+  font-weight: 400;
+  letter-spacing: .24em;
+  line-height: 1.2;
+  writing-mode: vertical-rl;
+}
+
+/* 線の上の赤い目盛り。章題と一緒に動くので、いま読んでいる章の位置を指す */
+.chapter > h2::after {
+  position: absolute;
+  top: .3em;
+  left: 100%;
+  width: calc(var(--spine-gap) / 2 + 6px);
   height: 1px;
   content: "";
   background: var(--red);
 }
 
-.chapter-head h2 {
-  margin: 0;
-  font-family: var(--brush);
-  font-size: clamp(2.6rem, 5vw, 4.6rem);
-  font-weight: 400;
-  letter-spacing: .08em;
-  line-height: 1.15;
+.chapter-body {
+  position: relative;
+  z-index: 1;
+  grid-column: 2;
+  min-width: 0;
 }
+
+/* ───────── 共通の部品 ───────── */
 
 /* 文字のリンク。下線が左から引かれる */
 .text-link {
@@ -273,7 +312,7 @@ section[id] {
   display: inline-flex;
   align-items: center;
   gap: .7em;
-  margin: 0 0 1.1rem;
+  margin: 0;
   padding: .3rem .8rem .3rem .65rem;
   border: 1px solid var(--line-2);
   color: var(--ink);
@@ -342,6 +381,24 @@ section[id] {
     inset: -4px;
     opacity: 1;
   }
+}
+
+/* キーの刻印。操作部の並びと同じ形に組む */
+kbd,
+.mode-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 .3rem;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: .66rem;
+  font-weight: 500;
+  line-height: 1;
 }
 
 /* ───────── ヘッダー ───────── */
@@ -578,46 +635,14 @@ section[id] {
 /* ───────── 予告動画：上映 ───────── */
 
 .trailer {
-  position: relative;
-  isolation: isolate;
-  padding: clamp(6rem, 10vw, 9.5rem) var(--gutter) clamp(5.5rem, 9vw, 8.5rem);
-  overflow: clip;
   background:
     radial-gradient(ellipse 48% 42% at 60% 46%, rgb(238 214 178 / 6.5%), transparent 72%),
     var(--night);
 }
 
-.trailer-inner {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 10fr);
-  gap: clamp(1.5rem, 4vw, 4rem);
-  max-width: var(--content);
-  margin-inline: auto;
-}
-
-/* 縦書きの章題。番号は横倒しで並ぶ */
-.trailer-head {
-  justify-self: start;
-  writing-mode: vertical-rl;
-}
-
-.trailer-head .section-number {
-  margin: 0 0 0 1.1rem;
-}
-
-.trailer-head .section-number::before {
-  width: 1px;
-  height: 28px;
-}
-
-/* 大きさはほかの章と同じ（2026-09-26 の指示）。縦に組むだけ変える */
-.trailer-head h2 {
-  letter-spacing: .22em;
-  line-height: 1.4;
-}
-
-.trailer-content {
-  min-width: 0;
+/* 注意の札は、札が指す画面の左上に付ける */
+.trailer .spoiler-note {
+  margin-bottom: var(--s-part);
 }
 
 .trailer-frame {
@@ -634,18 +659,18 @@ section[id] {
 .trailer-frame::before {
   --c: var(--ink-2);
   position: absolute;
-  inset: -16px;
+  inset: -12px;
   content: "";
   pointer-events: none;
   background:
-    linear-gradient(var(--c) 0 0) left top / 26px 1.5px,
-    linear-gradient(var(--c) 0 0) left top / 1.5px 26px,
-    linear-gradient(var(--c) 0 0) right top / 26px 1.5px,
-    linear-gradient(var(--c) 0 0) right top / 1.5px 26px,
-    linear-gradient(var(--c) 0 0) left bottom / 26px 1.5px,
-    linear-gradient(var(--c) 0 0) left bottom / 1.5px 26px,
-    linear-gradient(var(--c) 0 0) right bottom / 26px 1.5px,
-    linear-gradient(var(--c) 0 0) right bottom / 1.5px 26px;
+    linear-gradient(var(--c) 0 0) left top / 24px 1.5px,
+    linear-gradient(var(--c) 0 0) left top / 1.5px 24px,
+    linear-gradient(var(--c) 0 0) right top / 24px 1.5px,
+    linear-gradient(var(--c) 0 0) right top / 1.5px 24px,
+    linear-gradient(var(--c) 0 0) left bottom / 24px 1.5px,
+    linear-gradient(var(--c) 0 0) left bottom / 1.5px 24px,
+    linear-gradient(var(--c) 0 0) right bottom / 24px 1.5px,
+    linear-gradient(var(--c) 0 0) right bottom / 1.5px 24px;
   background-repeat: no-repeat;
 }
 
@@ -662,7 +687,7 @@ section[id] {
   align-items: flex-end;
   justify-content: space-between;
   gap: 1rem 2rem;
-  margin-top: 2rem;
+  margin-top: var(--s-part);
 }
 
 .trailer-notes {
@@ -676,70 +701,59 @@ section[id] {
   margin: 0;
 }
 
-/* ───────── 実世界×固定視点：監視室 ───────── */
+/* ───────── 実世界×固定視点：監視室 ─────────
+   この章だけ章題を横に大きく組み、柱と線をまたがせる。章題の字の下側はテレビの筐体の上枠に載せる */
 
 .fixed-view {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
-  grid-template-areas:
-    "num   num"
-    "title title"
-    "lead  tv"
-    "cams  tv";
-  grid-template-rows: auto auto auto 1fr;
-  column-gap: clamp(2rem, 4.5vw, 4.5rem);
-  padding: clamp(5.5rem, 8vw, 8rem) max(var(--gutter), calc((100% - var(--content)) / 2)) clamp(3rem, 5vw, 5rem);
+  --fv-title: clamp(2.3rem, 7.4vw, 7.6rem);
+  grid-template-rows: auto auto;
   overflow: clip;
   background:
-    radial-gradient(ellipse 55% 60% at 70% 62%, #17150f 0%, transparent 75%),
+    radial-gradient(ellipse 55% 60% at 62% 64%, #17150f 0%, transparent 75%),
     linear-gradient(to bottom, var(--night), #0d0c0a 50%, var(--night));
 }
 
-.fixed-view-copy,
-.camera-exhibit {
-  display: contents;
-}
-
-.fixed-view .section-number {
-  grid-area: num;
-}
-
-.fixed-view h2 {
+.fixed-view > h2 {
   position: relative;
   z-index: 3;
-  grid-area: title;
-  font-size: clamp(2.6rem, 7.6vw, 7.4rem);
+  top: auto;
+  grid-row: 1;
+  grid-column: 1 / -1;
+  justify-self: start;
+  font-size: var(--fv-title);
   letter-spacing: .04em;
-  line-height: 1.05;
+  line-height: 1;
   white-space: nowrap;
-  text-shadow: 0 .05em .4em rgb(0 0 0 / 60%);
+  writing-mode: horizontal-tb;
+  text-shadow: 0 .04em .2em rgb(0 0 0 / 65%);
 }
 
-.fixed-view-lead {
-  grid-area: lead;
-  align-self: start;
-  margin: 2rem 0 0;
-  color: var(--ink);
-  font-size: clamp(1rem, 1.35vw, 1.2rem);
-  letter-spacing: .1em;
-  line-height: 2.1;
+.fixed-view > h2::after {
+  display: none;
 }
 
-.crt-ambient,
-.crt {
-  grid-area: tv;
+.camera-exhibit {
+  display: grid;
+  grid-row: 2;
+  grid-template-columns: minmax(0, 1fr) clamp(9rem, 14vw, 13rem);
+  align-items: center;
+  column-gap: var(--s-part);
+}
+
+/* テレビの絵は左右 10% と上 5.6% が筐体の外。左右に広げて筐体の左端を中身の格子線に揃え、
+   上は章題の字の下 2 割が筐体の上枠（木の帯）に載る高さまで持ち上げる。画面のガラスまでは届かせない
+   （5% は広げた幅に対する上の余白。字の墨は行の箱の下端とほぼ同じ高さで終わる） */
+.camera-monitor {
+  position: relative;
+  z-index: 2;
+  margin: calc(-5% - var(--fv-title) * .22) -8% 0 -11.2%;
 }
 
 /* テレビの光が壁に落ちる。いま映っているカメラの絵をぼかして背面へ */
 .crt-ambient {
-  position: relative;
+  position: absolute;
   z-index: -1;
-  align-self: center;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  margin-top: -9vw;
+  inset: 0;
   background: center / cover no-repeat;
   filter: blur(60px) saturate(1.3);
   opacity: .32;
@@ -753,25 +767,33 @@ section[id] {
 
 .crt {
   position: relative;
-  z-index: 1;
-  align-self: start;
   width: 100%;
-  margin-top: -9vw;
   aspect-ratio: 4 / 3;
   isolation: isolate;
 }
 
+/* 筐体の輪郭で切り抜く。背後の章題を隠すので、地と重ねる合成はしない */
 .crt-body {
   position: relative;
   z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  mix-blend-mode: lighten;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 9%, #000 85%, transparent), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to bottom, transparent, #000 9%, #000 85%, transparent), linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-  mask-composite: intersect;
+  clip-path: inset(5.6% 10.1% 10.3% 10% round 1.2% / 1.6%);
+  filter: drop-shadow(0 2rem 2.5rem rgb(0 0 0 / 70%));
+}
+
+.crt::after {
+  position: absolute;
+  z-index: 0;
+  right: 12%;
+  bottom: 6%;
+  left: 12%;
+  height: 8%;
+  content: "";
+  border-radius: 50%;
+  background: rgb(0 0 0 / 70%);
+  filter: blur(18px);
 }
 
 .crt-screen {
@@ -867,20 +889,16 @@ section[id] {
   box-shadow: 0 0 6px rgb(224 87 79 / 70%);
 }
 
-/* 3 台の小さなモニター。押すと大きな画面が切り替わる */
+/* 3 台の小さなモニターを縦に積む。押すと隣の大きな画面が切り替わる */
 .camera-console {
   display: grid;
-  grid-area: cams;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-self: start;
-  gap: .85rem;
-  margin-top: 2.75rem;
+  gap: var(--s-part);
 }
 
 .camera-button {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: .55rem;
+  gap: var(--s-label);
   min-width: 0;
   padding: 0;
   border: 0;
@@ -987,12 +1005,9 @@ section[id] {
 /* ───────── ストーリー：調査ファイル ───────── */
 
 .scenario {
-  position: relative;
-  isolation: isolate;
-  padding: clamp(4rem, 7vw, 7rem) var(--gutter) clamp(5rem, 8vw, 8rem);
   overflow: clip;
   background:
-    radial-gradient(ellipse 58% 52% at 50% 46%, #2b2015 0%, #150f0b 52%, transparent 82%),
+    radial-gradient(ellipse 58% 52% at 54% 50%, #2b2015 0%, #150f0b 52%, transparent 82%),
     var(--night);
 }
 
@@ -1003,9 +1018,8 @@ section[id] {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: clamp(2rem, 5vw, 5rem);
-  max-width: 76rem;
-  margin: 2rem auto 0;
-  padding: clamp(2.25rem, 5vw, 4.75rem) clamp(1.5rem, 5vw, 5rem) clamp(2.5rem, 5vw, 5rem);
+  margin-top: 1.9rem;
+  padding: clamp(2.25rem, 5vw, 4.5rem) clamp(1.5rem, 5vw, 4.5rem) clamp(2.5rem, 5vw, 4.5rem);
   color: var(--paper-ink);
   background:
     radial-gradient(ellipse 70% 60% at 22% 12%, rgb(255 246 226 / 22%), transparent 62%),
@@ -1048,40 +1062,16 @@ section[id] {
   opacity: .82;
 }
 
-/* 縦書き。子は右から左へ列として並ぶ（flex にすると上から下へ積まれて 1 列 1 字になる） */
-.scenario-copy {
+/* 依頼の 1 文は、紙挟みに縦に書く。柱の章題と同じ向き */
+.scenario-line {
   grid-column: 2;
   grid-row: 1;
-  display: block;
-  height: clamp(24rem, 38vw, 32rem);
-  writing-mode: vertical-rl;
-}
-
-.scenario .section-number {
-  margin: 0 0 0 1.6rem;
-  color: var(--paper-muted);
-}
-
-.scenario .section-number::before {
-  width: 1px;
-  height: 28px;
-}
-
-.scenario h2 {
-  margin: 0 0 0 2rem;
-  font-family: var(--brush);
-  font-size: clamp(2.8rem, 5vw, 4.6rem);
-  font-weight: 400;
-  letter-spacing: .26em;
-  line-height: 1.4;
-}
-
-.scenario-line {
+  height: 17.6em;  /* 1 列 14 字（1 字 1.22em）がちょうど収まる高さ */
   margin: 0;
-  padding-top: clamp(2.5rem, 5vw, 4.5rem);
-  font-size: clamp(1.05rem, 1.55vw, 1.42rem);
-  letter-spacing: .2em;
-  line-height: 2.25;
+  font-size: clamp(1.15rem, 1.75vw, 1.6rem);
+  letter-spacing: .22em;
+  line-height: 2.3;
+  writing-mode: vertical-rl;
 }
 
 .scenario-collage {
@@ -1089,15 +1079,15 @@ section[id] {
   grid-column: 1;
   grid-row: 1;
   min-width: 0;
-  aspect-ratio: 1.3 / 1;
+  aspect-ratio: 1.45 / 1;
 }
 
 .wall-photo {
   position: absolute;
   z-index: 1;
-  top: 4%;
+  top: 3%;
   left: 0;
-  width: 62%;
+  width: 60%;
   margin: 0;
   rotate: -2.2deg;
 }
@@ -1133,7 +1123,7 @@ section[id] {
 }
 
 .wall-photo figcaption {
-  margin-top: .7rem;
+  margin-top: var(--s-label);
   padding-left: .25rem;
   color: var(--paper-muted);
   font-size: .78rem;
@@ -1143,9 +1133,9 @@ section[id] {
 .investigation-request {
   position: absolute;
   z-index: 2;
-  top: 16%;
-  right: 1%;
-  width: 44%;
+  top: 10%;
+  right: 2%;
+  width: 40%;
   rotate: 3deg;
   transition: rotate 260ms var(--ease), translate 260ms var(--ease);
 }
@@ -1225,43 +1215,7 @@ section[id] {
 /* ───────── 展示履歴：吊るした荷札 ───────── */
 
 .archive {
-  position: relative;
-  padding: clamp(6rem, 9vw, 9rem) var(--gutter) clamp(5.5rem, 8vw, 8rem);
   background: linear-gradient(to bottom, var(--night), #0f0d0b 60%, var(--night));
-}
-
-.archive-inner {
-  max-width: 70rem;
-  margin-inline: auto;
-}
-
-.archive-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 0 1rem;
-}
-
-.archive-head .section-number {
-  grid-column: 1;
-}
-
-.archive-head h2 {
-  grid-column: 1;
-}
-
-.plate-heading-meta {
-  display: flex;
-  grid-row: 2;
-  grid-column: 2;
-  gap: 1.5em;
-  margin: 0 0 .6rem;
-  color: var(--ink-3);
-  font-family: var(--mono);
-  font-size: .68rem;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .18em;
 }
 
 /* 1 本の線に 2 枚を吊るす。糸は穴の位置から線へ */
@@ -1272,6 +1226,7 @@ section[id] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--gap);
+  max-width: 64rem;
   margin: 0;
   padding: calc(var(--drop) + 1rem) 0 0;
   list-style: none;
@@ -1283,11 +1238,11 @@ section[id] {
 .archive-records::before {
   position: absolute;
   top: 1rem;
-  right: -3rem;
-  left: -3rem;
+  right: -2rem;
+  left: 0;
   height: 1px;
   content: "";
-  background: linear-gradient(90deg, transparent, var(--line-2) 8%, var(--line-2) 92%, transparent);
+  background: linear-gradient(90deg, var(--line-2) 0, var(--line-2) 92%, transparent);
 }
 
 .tag {
@@ -1371,6 +1326,10 @@ section[id] {
   line-height: 1.4;
 }
 
+.tag-strip span {
+  white-space: nowrap;
+}
+
 .tag-strip span:first-child {
   color: var(--red);
 }
@@ -1403,6 +1362,11 @@ section[id] {
   font-size: clamp(1.1rem, 1.6vw, 1.35rem);
   letter-spacing: .06em;
   line-height: 1.6;
+}
+
+/* 「DCEXPO賞」「展示予定」の途中で折らない。折るなら区切りの所で */
+.tag-result > * {
+  white-space: nowrap;
 }
 
 .tag-divider {
@@ -1477,13 +1441,32 @@ section[id] {
   transition-delay: calc(var(--i, 0) * 120ms);
 }
 
+/* 吊るした線の右端に、いつの記録かを書く */
+.archive-updated {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: .8em;
+  max-width: 64rem;
+  margin: var(--s-part) 0 0;
+  color: var(--ink-3);
+  font-size: .76rem;
+  letter-spacing: .14em;
+}
+
+.archive-date {
+  font-family: var(--mono);
+  font-size: .7rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .16em;
+}
+
 /* ───────── クレジット：幕の下りた空の部屋 ───────── */
 
 .credits {
-  position: relative;
-  isolation: isolate;
-  padding: clamp(5.5rem, 8vw, 8rem) var(--gutter) clamp(6rem, 9vw, 9rem);
   overflow: clip;
+  padding-bottom: calc(var(--s-chapter) * 1.4);
   background: var(--night);
 }
 
@@ -1500,28 +1483,10 @@ section[id] {
   opacity: .92;
 }
 
-.credits-inner {
-  max-width: 72rem;
-  margin-inline: auto;
-}
-
-.credits-head {
-  display: grid;
-  justify-items: center;
-  margin-bottom: clamp(2.5rem, 4vw, 3.5rem);
-  text-align: center;
-}
-
-.credits-head .section-number::after {
-  width: 28px;
-  height: 1px;
-  content: "";
-  background: var(--red);
-}
-
 .plate {
   position: relative;
   isolation: isolate;
+  max-width: 72rem;
   padding: 2.25rem 2.5rem 2rem 4.75rem;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 4%), transparent 40%),
@@ -1789,28 +1754,18 @@ section[id] {
     letter-spacing: .08em;
   }
 
-  .fixed-view {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "num"
-      "title"
-      "lead"
-      "tv"
-      "cams";
-    grid-template-rows: none;
+  /* テレビを中身の幅いっぱいにして、3 台は下に横並び */
+  .camera-exhibit {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: var(--s-part);
   }
 
-  .crt,
-  .crt-ambient {
-    width: min(100%, 52rem);
-    margin: 2rem auto 0;
-    justify-self: center;
+  .camera-monitor {
+    grid-column: 1 / -1;
   }
 
   .camera-console {
-    width: min(100%, 40rem);
-    justify-self: center;
-    margin-top: 1rem;
+    display: contents;
   }
 }
 
@@ -1915,31 +1870,37 @@ section[id] {
     font-size: .98rem;
   }
 
-  .chapter-head h2 {
-    font-size: clamp(2.2rem, 11vw, 3rem);
-  }
-
-  .trailer-inner {
+  /* 柱をたたみ、章題は中身の上に横に組む。赤い目盛りは章題の頭に付ける */
+  .chapter {
     grid-template-columns: minmax(0, 1fr);
-    gap: 1.75rem;
+    row-gap: var(--s-part);
+    padding-inline: var(--gutter);
   }
 
-  .trailer-head {
+  .chapter::after {
+    display: none;
+  }
+
+  .chapter > h2 {
+    position: static;
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+    justify-self: start;
+    font-size: clamp(2.1rem, 10vw, 2.7rem);
+    letter-spacing: .12em;
     writing-mode: horizontal-tb;
   }
 
-  .trailer-head .section-number {
-    margin: 0 0 .9rem;
+  .chapter > h2::after {
+    position: static;
+    order: -1;
+    flex: none;
+    width: 1.25rem;
   }
 
-  .trailer-head .section-number::before {
-    width: 28px;
-    height: 1px;
-  }
-
-  .trailer-head h2 {
-    font-size: clamp(2.2rem, 11vw, 3rem);
-    letter-spacing: .12em;
+  .chapter-body {
+    grid-column: 1;
   }
 
   .trailer-frame {
@@ -1947,7 +1908,7 @@ section[id] {
   }
 
   .trailer-frame::before {
-    inset: -10px;
+    inset: -8px;
   }
 
   .trailer-foot {
@@ -1955,29 +1916,23 @@ section[id] {
     align-items: flex-start;
   }
 
-  .fixed-view h2 {
-    font-size: clamp(2rem, 10.6vw, 3rem);
+  /* 章題とテレビは重ねるので、章の行の間隔は取らない */
+  .fixed-view {
+    --fv-title: clamp(2rem, 10.4vw, 3rem);
+    row-gap: 0;
+  }
+
+  .fixed-view > h2 {
     letter-spacing: .02em;
   }
 
-  .fixed-view-lead {
-    margin-top: 1.25rem;
-    font-size: 1rem;
-    letter-spacing: .05em;
+  .camera-exhibit {
+    grid-row: auto;
+    column-gap: .55rem;
   }
 
-  .desktop-break {
-    display: none;
-  }
-
-  .crt,
-  .crt-ambient {
-    width: calc(100% + 1.5rem);
-    margin: 1.25rem -.75rem 0;
-  }
-
-  .camera-console {
-    gap: .55rem;
+  .camera-monitor {
+    margin-inline: -.75rem;
   }
 
   .camera-label {
@@ -1988,8 +1943,8 @@ section[id] {
 
   .dossier {
     grid-template-columns: minmax(0, 1fr);
-    gap: 2.25rem;
-    margin-top: 1.5rem;
+    gap: 2rem;
+    margin-top: 1.9rem;
     padding: 1.75rem 1.1rem 2rem 1.5rem;
     rotate: -.4deg;
   }
@@ -2000,24 +1955,11 @@ section[id] {
     background-size: 9px 9px;
   }
 
-  .scenario-copy {
+  .scenario-line {
     grid-column: 1;
     justify-self: end;
-    height: 21rem;
-  }
-
-  .scenario .section-number {
-    margin-left: 1.1rem;
-  }
-
-  .scenario h2 {
-    margin-left: 1.3rem;
-    font-size: 2.6rem;
-  }
-
-  .scenario-line {
-    padding-top: 3.2rem;
-    font-size: 1.02rem;
+    height: 16.4em;
+    font-size: 1.05rem;
     letter-spacing: .14em;
     line-height: 2.1;
   }
@@ -2044,19 +1986,9 @@ section[id] {
     width: 46%;
   }
 
-  .archive-head {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .plate-heading-meta {
-    grid-row: auto;
-    grid-column: 1;
-    margin: .5rem 0 0;
-  }
-
   .archive-records {
     grid-template-columns: minmax(0, 1fr);
-    padding-top: 2rem;
+    padding-top: .5rem;
     background: none;
   }
 
@@ -2081,10 +2013,6 @@ section[id] {
   .tag-edge {
     font-size: .56rem;
     letter-spacing: .14em;
-  }
-
-  .credits-head {
-    margin-bottom: 2rem;
   }
 
   .plate {
@@ -2177,6 +2105,22 @@ section[id] {
 
   .credit-list > div:nth-child(9) {
     gap: 0;
+  }
+
+  /* 札の帯と結果を 1 行に収める */
+  .tag {
+    padding-right: 2.1rem;
+    padding-left: 1.9rem;
+  }
+
+  .tag-strip {
+    gap: 1em;
+    letter-spacing: .08em;
+  }
+
+  .tag-result {
+    font-size: 1rem;
+    letter-spacing: .03em;
   }
 }
 

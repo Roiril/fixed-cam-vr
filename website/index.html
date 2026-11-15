@@ -142,8 +142,8 @@
       <nav class="site-nav" aria-label="ページ内">
         <a href="#perspective-lab">固定視点とは</a>
         <a href="#fixed-view">実世界×固定視点</a>
-        <a href="#archive">展示履歴</a>
         <a href="#footage">演出一覧</a>
+        <a href="#archive">展示履歴</a>
       </nav>
       <p class="site-clock" aria-hidden="true"><span class="site-clock-dot"></span><span data-site-clock>00:00:00</span></p>
     </header>
@@ -158,7 +158,7 @@
         </picture>
         <span class="hero-shade" aria-hidden="true"></span>
         <div class="hero-bottom">
-          <p class="hero-lead">監視カメラに映る自分を見ながら<br>現実の空間を歩くホラー体験。</p>
+          <p class="hero-lead">監視カメラに映る自分を見ながら、<br>現実の空間を歩くホラー体験。</p>
           <dl class="hero-facts">
             <div class="hero-fact is-award"><dt>IVRC2026</dt><dd>総合優勝<span class="hero-fact-sep" aria-hidden="true">/</span>DCEXPO賞</dd></div>
             <div class="hero-fact"><dt>DCEXPO2026</dt><dd><time datetime="2026-11">2026年11月</time>展示予定</dd></div>
@@ -166,95 +166,89 @@
         </div>
       </section>
 
-      <section id="trailer" class="trailer" aria-labelledby="trailer-title">
-        <div class="trailer-inner">
-          <header class="chapter-head trailer-head">
-            <p class="section-number" aria-hidden="true">01 / PREVIEW</p>
-            <h2 id="trailer-title">予告動画</h2>
-          </header>
-          <div class="trailer-content">
-            <p class="spoiler-note">ネタバレを含みます</p>
-            <div class="trailer-frame">
-              <iframe src="https://www.youtube-nocookie.com/embed/ipoU4gU9G4k" title="廻リ視 予告動画" width="560" height="315" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+      <section id="trailer" class="chapter trailer" aria-labelledby="trailer-title">
+        <h2 id="trailer-title">予告動画</h2>
+        <div class="chapter-body">
+          <p class="spoiler-note">ネタバレを含みます</p>
+          <div class="trailer-frame">
+            <iframe src="https://www.youtube-nocookie.com/embed/ipoU4gU9G4k" title="廻リ視 予告動画" width="560" height="315" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+          </div>
+          <div class="trailer-foot">
+            <div class="trailer-notes">
+              <p>この映像は2026.09.01時点で作成したものです。</p>
+              <p>DCEXPOに向けた新しい予告動画を作成中です。</p>
             </div>
-            <div class="trailer-foot">
-              <div class="trailer-notes">
-                <p>この映像は2026.09.01時点で作成したものです。</p>
-                <p>DCEXPOに向けた新しい予告動画を作成中です。</p>
+            <a class="text-link" href="https://youtu.be/ipoU4gU9G4k" target="_blank" rel="noopener noreferrer">YouTubeで見る<span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section id="perspective-lab" class="chapter perspective-lab" role="region" aria-labelledby="perspective-title">
+        <h2 id="perspective-title">固定視点とは</h2>
+        <div class="chapter-body">
+          <div class="handheld-player" id="handheld-player">
+            <div class="handheld">
+              <img src="assets/handheld.webp" width="1774" height="887" alt="使い込まれた白い携帯ゲーム機" loading="lazy">
+              <div class="handheld-screen">
+                <div id="game-stage" class="game-stage"></div>
+                <button id="game-launch" type="button" hidden>電源を入れる</button>
               </div>
-              <a class="text-link" href="https://youtu.be/ipoU4gU9G4k" target="_blank" rel="noopener noreferrer">YouTubeで見る<span aria-hidden="true">↗</span></a>
+              <button class="hardware up" data-game-key="KeyW" aria-label="前へ移動" disabled></button>
+              <button class="hardware down" data-game-key="KeyS" aria-label="後ろへ移動" disabled></button>
+              <button class="hardware left" data-game-key="KeyA" aria-label="左へ移動" disabled></button>
+              <button class="hardware right" data-game-key="KeyD" aria-label="右へ移動" disabled></button>
+              <button class="hardware look-left" data-game-key="ArrowLeft" aria-label="左を向く" disabled></button>
+              <button class="hardware look-right" data-game-key="ArrowRight" aria-label="右を向く" disabled></button>
+              <button class="hardware look-up" data-game-key="ArrowUp" aria-label="上を向く" disabled></button>
+              <button class="hardware look-down" data-game-key="ArrowDown" aria-label="下を向く" disabled></button>
+              <div class="hardware-stick move-stick" data-game-stick="move" aria-hidden="true"></div>
+              <div class="hardware-stick view-stick" data-game-stick="view" aria-hidden="true"></div>
             </div>
+            <div class="handheld-legend">
+              <p class="legend-side legend-move"><span class="legend-label">歩く</span><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></p>
+              <div class="handheld-modes" role="group" aria-label="視点を選ぶ">
+                <button type="button" data-game-mode="fps" aria-pressed="false" disabled>
+                  <svg class="mode-diagram" viewBox="0 0 72 48" aria-hidden="true" focusable="false"><rect class="room" x="1" y="1" width="70" height="46"/><path class="cone" d="M36 33 L12 4 H60 Z"/><circle class="ring" cx="36" cy="36" r="7.5"/><circle class="body" cx="36" cy="36" r="3.6"/></svg>
+                  <span class="mode-text">一人称</span><span class="mode-key" aria-hidden="true">1</span>
+                </button>
+                <button type="button" data-game-mode="tps" aria-pressed="false" disabled>
+                  <svg class="mode-diagram" viewBox="0 0 72 48" aria-hidden="true" focusable="false"><rect class="room" x="1" y="1" width="70" height="46"/><path class="cone" d="M36 39 L10 4 H62 Z"/><circle class="body" cx="36" cy="24" r="3.6"/><rect class="cam" x="31" y="38.5" width="10" height="6" rx="1"/></svg>
+                  <span class="mode-text">三人称</span><span class="mode-key" aria-hidden="true">2</span>
+                </button>
+                <button type="button" data-game-mode="fixed" aria-pressed="true" disabled>
+                  <svg class="mode-diagram" viewBox="0 0 72 48" aria-hidden="true" focusable="false"><rect class="room" x="1" y="1" width="70" height="46"/><path class="cone" d="M63 8 L4 21 L30 47 Z"/><circle class="body" cx="26" cy="30" r="3.6"/><rect class="cam" x="58" y="4" width="10" height="6" rx="1" transform="rotate(38 63 7)"/></svg>
+                  <span class="mode-text">固定視点</span><span class="mode-key" aria-hidden="true">3</span>
+                </button>
+              </div>
+              <p class="legend-side legend-look"><span class="legend-label">見回す</span><span class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span></p>
+            </div>
+            <div class="game-actions">
+              <p id="game-unavailable">視点切り替え体験は準備中です。</p>
+              <button id="game-expand" class="text-link" type="button" aria-pressed="false">拡大する</button>
+              <button id="game-close" class="text-link" type="button" hidden>電源を切る</button>
+              <a id="game-fallback" class="text-link" target="_blank" rel="noopener noreferrer" hidden>別のタブで開く<span aria-hidden="true">↗</span></a>
+              <p class="handheld-mobile-hint">横向きにすると広く遊べます</p>
+            </div>
+            <p id="game-state" class="game-state" role="status"></p>
           </div>
         </div>
       </section>
 
-      <section id="perspective-lab" class="perspective-lab" role="region" aria-labelledby="perspective-title">
-        <div class="lab-heading chapter-head">
-          <p class="section-number" aria-hidden="true">02 / GAME VIEW</p>
-          <h2 id="perspective-title">固定視点とは</h2>
-        </div>
-        <div class="handheld-player" id="handheld-player">
-          <div class="handheld">
-            <img src="assets/handheld.webp" width="1774" height="887" alt="使い込まれた白い携帯ゲーム機" loading="lazy">
-            <div class="handheld-screen">
-              <div id="game-stage" class="game-stage"></div>
-              <button id="game-launch" type="button" hidden>電源を入れる<span>一人称 / 三人称 / 固定視点</span></button>
-            </div>
-            <button class="hardware up" data-game-key="KeyW" aria-label="前へ移動" disabled></button>
-            <button class="hardware down" data-game-key="KeyS" aria-label="後ろへ移動" disabled></button>
-            <button class="hardware left" data-game-key="KeyA" aria-label="左へ移動" disabled></button>
-            <button class="hardware right" data-game-key="KeyD" aria-label="右へ移動" disabled></button>
-            <button class="hardware look-left" data-game-key="ArrowLeft" aria-label="左を向く" disabled></button>
-            <button class="hardware look-right" data-game-key="ArrowRight" aria-label="右を向く" disabled></button>
-            <button class="hardware look-up" data-game-key="ArrowUp" aria-label="上を向く" disabled></button>
-            <button class="hardware look-down" data-game-key="ArrowDown" aria-label="下を向く" disabled></button>
-            <div class="hardware-stick move-stick" data-game-stick="move" aria-hidden="true"></div>
-            <div class="hardware-stick view-stick" data-game-stick="view" aria-hidden="true"></div>
-          </div>
-          <div class="handheld-modes" aria-label="視点を選ぶ">
-            <button type="button" data-game-mode="fps" aria-pressed="false" disabled>
-              <svg class="mode-diagram" viewBox="0 0 72 48" aria-hidden="true" focusable="false"><rect class="room" x="1" y="1" width="70" height="46"/><path class="cone" d="M36 33 L12 4 H60 Z"/><circle class="ring" cx="36" cy="36" r="7.5"/><circle class="body" cx="36" cy="36" r="3.6"/></svg>
-              <span class="mode-text">一人称<small>自分の目の位置から。</small></span>
-            </button>
-            <button type="button" data-game-mode="tps" aria-pressed="false" disabled>
-              <svg class="mode-diagram" viewBox="0 0 72 48" aria-hidden="true" focusable="false"><rect class="room" x="1" y="1" width="70" height="46"/><path class="cone" d="M36 39 L10 4 H62 Z"/><circle class="body" cx="36" cy="24" r="3.6"/><rect class="cam" x="31" y="38.5" width="10" height="6" rx="1"/></svg>
-              <span class="mode-text">三人称<small>自分を追いかける位置から。</small></span>
-            </button>
-            <button type="button" data-game-mode="fixed" aria-pressed="true" disabled>
-              <svg class="mode-diagram" viewBox="0 0 72 48" aria-hidden="true" focusable="false"><rect class="room" x="1" y="1" width="70" height="46"/><path class="cone" d="M63 8 L4 21 L30 47 Z"/><circle class="body" cx="26" cy="30" r="3.6"/><rect class="cam" x="58" y="4" width="10" height="6" rx="1" transform="rotate(38 63 7)"/></svg>
-              <span class="mode-text">固定視点<small>動かないカメラから。</small></span>
-            </button>
-          </div>
-          <div class="game-actions">
-            <p id="game-unavailable">視点切り替え体験は準備中です。</p>
-            <button id="game-expand" class="text-link" type="button" aria-pressed="false">拡大する</button>
-            <button id="game-close" class="text-link" type="button" hidden>電源を切る</button>
-            <a id="game-fallback" class="text-link" target="_blank" rel="noopener noreferrer" hidden>別のタブで開く<span aria-hidden="true">↗</span></a>
-          </div>
-          <p class="handheld-guide">左で歩く。右で見回す。スティックも動かせます。<br><span>キーボード：WASDで移動 / 1・2・3で視点切り替え</span></p>
-          <p class="handheld-mobile-hint">スマホは横向きにすると広く遊べます。</p>
-          <p id="game-state" class="game-state" role="status"></p>
-        </div>
-      </section>
-
-      <section id="fixed-view" class="fixed-view" aria-labelledby="fixed-view-title">
-        <div class="fixed-view-copy chapter-head">
-          <p class="section-number" aria-hidden="true">03 / REAL WORLD</p>
-          <h2 id="fixed-view-title">実世界×固定視点</h2>
-          <p class="fixed-view-lead">監視カメラに映る自分を見ながら、<br class="desktop-break">現実の空間を歩く。</p>
-        </div>
-
-        <div class="camera-exhibit">
-          <div class="crt-ambient" aria-hidden="true"></div>
-          <div class="crt">
-            <img class="crt-body" src="assets/crt.webp" width="1448" height="1086" alt="" aria-hidden="true" loading="lazy">
-            <div class="crt-screen">
-              <img class="camera-feed is-active" src="assets/camera-fiction-01.webp" width="1152" height="864" alt="薄暗い廊下に立つ人物を天井近くから見下ろす" data-camera-feed="1" loading="lazy">
-              <img class="camera-feed" src="assets/camera-fiction-02.webp" width="1152" height="864" alt="同じ廊下と人物を反対側のカメラから見る" data-camera-feed="2" aria-hidden="true" loading="lazy">
-              <img class="camera-feed" src="assets/camera-fiction-03.webp" width="1152" height="864" alt="廊下の曲がり角と壁に隠れる人物を見る" data-camera-feed="3" aria-hidden="true" loading="lazy">
-              <span class="screen-scan" aria-hidden="true"></span>
-              <span class="screen-noise" aria-hidden="true"></span>
-              <span id="camera-indicator" class="camera-indicator" aria-hidden="true">CAM 01</span>
+      <section id="fixed-view" class="chapter fixed-view" aria-labelledby="fixed-view-title">
+        <h2 id="fixed-view-title">実世界×固定視点</h2>
+        <div class="chapter-body camera-exhibit">
+          <div class="camera-monitor">
+            <div class="crt-ambient" aria-hidden="true"></div>
+            <div class="crt">
+              <img class="crt-body" src="assets/crt.webp" width="1448" height="1086" alt="" aria-hidden="true" loading="lazy">
+              <div class="crt-screen">
+                <img class="camera-feed is-active" src="assets/camera-fiction-01.webp" width="1152" height="864" alt="薄暗い廊下に立つ人物を天井近くから見下ろす" data-camera-feed="1" loading="lazy">
+                <img class="camera-feed" src="assets/camera-fiction-02.webp" width="1152" height="864" alt="同じ廊下と人物を反対側のカメラから見る" data-camera-feed="2" aria-hidden="true" loading="lazy">
+                <img class="camera-feed" src="assets/camera-fiction-03.webp" width="1152" height="864" alt="廊下の曲がり角と壁に隠れる人物を見る" data-camera-feed="3" aria-hidden="true" loading="lazy">
+                <span class="screen-scan" aria-hidden="true"></span>
+                <span class="screen-noise" aria-hidden="true"></span>
+                <span id="camera-indicator" class="camera-indicator" aria-hidden="true">CAM 01</span>
+              </div>
             </div>
           </div>
 
@@ -267,30 +261,51 @@
         </div>
       </section>
 
-      <section id="scenario" class="scenario" aria-labelledby="scenario-title">
-        <div class="dossier">
-          <div class="scenario-copy">
-            <p class="section-number" aria-hidden="true">04 / STORY</p>
-            <h2 id="scenario-title">ストーリー</h2>
+      <section id="scenario" class="chapter scenario" aria-labelledby="scenario-title">
+        <h2 id="scenario-title">ストーリー</h2>
+        <div class="chapter-body">
+          <div class="dossier">
             <p class="scenario-line">あなたは、怪異調査員として、<br>呪われた壁の調査に向かう。</p>
-          </div>
-          <div class="scenario-collage">
-            <figure class="wall-photo"><span class="photo-mount"><img class="wall-evidence" src="assets/camera-01-doll.webp" width="960" height="720" alt="実際の撮影場所にある幕と手すり" loading="lazy"></span><figcaption>実際のカメラで撮影した場所</figcaption></figure>
-            <a class="investigation-request" href="assets/investigation-request.webp" aria-label="調査依頼書を原寸で開く">
-              <img src="assets/investigation-request.webp" width="1273" height="1800" alt="調査依頼書。壁面周辺の観測調査について。" loading="lazy">
-              <span class="request-open" aria-hidden="true">原寸で開く</span>
-            </a>
+            <div class="scenario-collage">
+              <figure class="wall-photo"><span class="photo-mount"><img class="wall-evidence" src="assets/camera-01-doll.webp" width="960" height="720" alt="実際の撮影場所にある幕と手すり" loading="lazy"></span><figcaption>実際のカメラで撮影した場所</figcaption></figure>
+              <a class="investigation-request" href="assets/investigation-request.webp" aria-label="調査依頼書を原寸で開く">
+                <img src="assets/investigation-request.webp" width="1273" height="1800" alt="調査依頼書。壁面周辺の観測調査について。" loading="lazy">
+                <span class="request-open" aria-hidden="true">原寸で開く</span>
+              </a>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="archive" class="archive" aria-labelledby="archive-title">
-        <div class="archive-inner">
-          <header class="chapter-head archive-head">
-            <p class="section-number" aria-hidden="true">05</p>
-            <h2 id="archive-title">展示履歴</h2>
-            <p class="plate-heading-meta" aria-hidden="true"><span>MAWARIMI</span><span data-updated>2026-11-15</span></p>
-          </header>
+      <section id="footage" class="chapter footage" aria-labelledby="footage-heading">
+        <h2 id="footage-heading">演出一覧</h2>
+        <div class="chapter-body">
+          <details id="footage-gate" class="footage-gate">
+            <summary>
+              <span class="spoiler-note">ネタバレを含みます</span>
+              <span class="gate-label"><svg class="gate-power" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M6.1 4.7a7 7 0 1 0 7.8 0M10 1.9v7.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="gate-closed">演出を見る</span><span class="gate-opened">閉じる</span></span>
+              <span class="gate-meta">Meta Quest 3 実機録画</span>
+            </summary>
+            <div class="footage-room">
+              <div class="footage-viewer"><video id="footage-player" controls playsinline preload="none" width="960" height="960" aria-label="廻リ視の実機片目録画"></video></div>
+              <div class="footage-side">
+                <div class="footage-controls" role="group" aria-label="演出映像を選択">
+                  <button type="button" data-video-select="fracture" aria-pressed="true">現実がスクリーンになる</button>
+                  <button type="button" data-video-select="error" aria-pressed="false">エラーの演出</button>
+                  <button type="button" data-video-select="eye" aria-pressed="false">目の演出</button>
+                </div>
+                <div class="footage-caption"><h3 id="footage-title">現実がスクリーンになる</h3><p id="footage-description">目の前の現実が割れて、映像を映すスクリーンへ変わる。</p><p id="footage-meta">Meta Quest 3 / 片目の録画 / 14秒 / 音声なし</p><p id="footage-error" role="status"></p></div>
+                <p class="footage-note">明滅を含みます。</p>
+              </div>
+              <noscript><p>映像の再生には JavaScript を有効にしてください。</p></noscript>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section id="archive" class="chapter archive" aria-labelledby="archive-title">
+        <h2 id="archive-title">展示履歴</h2>
+        <div class="chapter-body">
           <ol class="archive-records">
             <li class="tag" data-record="01" data-reveal style="--i: 0">
               <span class="tag-hole" aria-hidden="true"></span>
@@ -317,38 +332,13 @@
               <span class="tag-edge" aria-hidden="true">mawarimi.vercel.app</span>
             </li>
           </ol>
+          <p class="archive-updated">更新<time class="archive-date" data-updated datetime="2026-11-15">2026-11-15</time></p>
         </div>
       </section>
 
-      <section id="footage" class="footage" aria-labelledby="footage-heading">
-        <div class="footage-inner">
-          <header class="chapter-head footage-head"><p class="section-number" aria-hidden="true">06 / INSIDE THE HEADSET</p><h2 id="footage-heading">演出一覧</h2></header>
-          <div class="footage-intro"><p class="spoiler-note">ネタバレを含みます</p></div>
-          <details id="footage-gate" class="footage-gate">
-            <summary><span class="gate-index" aria-hidden="true">REC</span><span class="gate-label">演出を見る<small>Meta Quest 3 実機録画</small></span><span class="gate-symbol" aria-hidden="true"></span></summary>
-            <div class="footage-room">
-              <div class="footage-viewer"><div class="viewer-topline"><span>QUEST 3 / SINGLE EYE</span><span>体験記録</span></div><video id="footage-player" controls playsinline preload="none" width="960" height="960" aria-label="廻リ視の実機片目録画"></video></div>
-              <div class="footage-side">
-                <div class="footage-controls" role="group" aria-label="演出映像を選択">
-                  <button type="button" data-video-select="fracture" aria-pressed="true"><span aria-hidden="true">01</span>現実がスクリーンになる</button>
-                  <button type="button" data-video-select="error" aria-pressed="false"><span aria-hidden="true">02</span>エラーの演出</button>
-                  <button type="button" data-video-select="eye" aria-pressed="false"><span aria-hidden="true">03</span>目の演出</button>
-                </div>
-                <div class="footage-caption"><h3 id="footage-title">現実がスクリーンになる</h3><p id="footage-description">目の前の現実が割れて、映像を映すスクリーンへ変わる。</p><p id="footage-meta">Meta Quest 3 / 片目の録画 / 音声なし</p><p id="footage-error" role="status"></p></div>
-                <p class="footage-note">明滅を含みます。映像は再生ボタンで始まります。</p>
-              </div>
-              <noscript><p>映像の再生には JavaScript を有効にしてください。</p></noscript>
-            </div>
-          </details>
-        </div>
-      </section>
-
-      <section id="credits" class="credits" aria-labelledby="credits-title">
-        <div class="credits-inner">
-          <header class="chapter-head credits-head">
-            <p class="section-number" aria-hidden="true">07</p>
-            <h2 id="credits-title">クレジット</h2>
-          </header>
+      <section id="credits" class="chapter credits" aria-labelledby="credits-title">
+        <h2 id="credits-title">クレジット</h2>
+        <div class="chapter-body">
           <div class="plate">
             <span class="plate-rivet plate-rivet-tl" aria-hidden="true"></span>
             <span class="plate-rivet plate-rivet-tr" aria-hidden="true"></span>

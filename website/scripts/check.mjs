@@ -120,14 +120,16 @@ for (const forbidden of forbiddenReferences) {
 const sectionCount = html.match(/<section\b/g)?.length ?? 0;
 if (sectionCount !== 8) errors.push(`expected 8 sections, found ${sectionCount}`);
 
+// 2026-11-15 の指示「根本からセクションとか並びとか変えていいよ」で、演出一覧を展示履歴の前へ移した。
+// 物語（ストーリー）→ 体験の中身（演出一覧）→ 作品の記録（展示履歴・クレジット）の順。
 const sectionMarkers = [
   'class="hero"',
   'id="trailer"',
   'id="perspective-lab"',
   'id="fixed-view"',
   'id="scenario"',
-  'id="archive"',
   'id="footage"',
+  'id="archive"',
   'id="credits"'
 ];
 let previousSectionIndex = -1;
@@ -137,22 +139,16 @@ for (const marker of sectionMarkers) {
   else if (sectionIndex <= previousSectionIndex) errors.push(`section order is invalid: ${marker}`);
   previousSectionIndex = sectionIndex;
 }
-for (const marker of [
-  '01 / PREVIEW',
-  '02 / GAME VIEW',
-  '03 / REAL WORLD',
-  '04 / STORY',
-  '<p class="section-number" aria-hidden="true">05</p>',
-  '06 / INSIDE THE HEADSET',
-  '<p class="section-number" aria-hidden="true">07</p>'
-]) {
-  if (!html.includes(marker)) errors.push(`section number is missing: ${marker}`);
-}
+// 章は同じ格子に載る。番号の札は置かない（並びの順は章題と柱の線で読む）
+if ((html.match(/<section id="[^"]+" class="chapter /g)?.length ?? 0) !== 7) errors.push("every chapter after the hero must use the shared chapter grid");
+if (html.includes('class="section-number"')) errors.push("chapter number labels were removed in the 2026-11-15 redesign");
+const navOrder = [...(html.match(/<nav class="site-nav"[\s\S]*?<\/nav>/)?.[0] ?? "").matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+if (navOrder.join(",") !== "perspective-lab,fixed-view,footage,archive") errors.push(`navigation must follow the page order: ${navOrder.join(",")}`);
 
 const pageCopy = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
 const requiredCopy = [
   "固定視点",
-  "監視カメラに映る自分を見ながら、現実の空間を歩く。",
+  "監視カメラに映る自分を見ながら、現実の空間を歩く",
   "ストーリー",
   "展示履歴",
   "演出一覧",
