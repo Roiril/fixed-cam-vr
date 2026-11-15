@@ -85,7 +85,7 @@
 - [hud_font_and_preview.md](hud_font_and_preview.md) — HMD 内の文言を変えたらフォント再生成。見た目は HudPreviewScreenshot
 
 ## 検証・計器
-- [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証 4 点（[XP]・自動走行・判定・機の選択）と解析が嘘をつく経路
+- [onsite_experience_test.md](onsite_experience_test.md) — 実機の通し検証（[XP]・自動走行・判定・機の選択）と解析の嘘。logcat は ≒1020B で切る
 - [virtual_walk.md](virtual_walk.md) — PC の仮想体験 `menu virtualwalk`。前後比較は `virtualwalk-video.py --compare`
 - [twin_verify.md](twin_verify.md) — HMD なしの通し検証。時計は tau・既知。[演出ライブラリー](fx_library.md)・[体が画のどこを通るか](stage_map.md) [意味](twin_meaning.md)
 - [twin_room.md](twin_room.md) — ツインの部屋。光は撮影時だけ・`menu twin`・霞で GPU 落ち

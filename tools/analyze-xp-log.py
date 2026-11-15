@@ -110,14 +110,37 @@ def load_warnings(path: str):
     return hits
 
 
+# 割った行の続きの印。C# の `TelemetryLineSplit.ContinuationMark` と対。
+# ⚠⚠ Quest の Unity は 1 回の Debug.Log を ≒1020 バイトで黙って切るので、長い行（ev=sum）は
+#    `[XP] + <続き>` に割って出る。継がないと続きのキーが全部消える（2026-11-15・nzMax 以降が実機で 0 件）。
+CONTINUATION = "+"
+
+
+def is_continuation(body: str) -> bool:
+    return body == CONTINUATION or body.startswith(CONTINUATION + " ")
+
+
+def continuation_rest(body: str) -> str:
+    return body[len(CONTINUATION):].strip()
+
+
 def load_events(path: str):
     """[XP] イベントと、参考にする既存タグ行を返す。"""
     events, others = [], []
+    last_body = None
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for raw in fh:
             m = XP.search(raw)
             if m:
-                body = m.group(1)
+                body = m.group(1).rstrip()
+                if is_continuation(body):
+                    if last_body is None or not events:
+                        continue
+                    last_body = last_body + " " + continuation_rest(body)
+                    events.pop()
+                    body = last_body
+                else:
+                    last_body = body
                 head, *cams = body.split("|")
                 ev = parse_kv(head)
                 ev["_cams"] = [parse_kv(c) for c in cams]

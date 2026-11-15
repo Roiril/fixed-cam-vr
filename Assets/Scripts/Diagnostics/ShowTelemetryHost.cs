@@ -2016,6 +2016,11 @@ namespace FixedCamVr.Diagnostics
             Emit(_sb.ToString());
         }
 
-        private static void Emit(string body) => Debug.Log($"{Tag} t={Now:F2} {body}");
+        // logcat は 1 行 ≒1020 バイトで黙って切るので割って出す（TelemetryLineSplit）。
+        private static void Emit(string body)
+        {
+            foreach (string part in TelemetryLineSplit.Split(Tag, $"{Tag} t={Now:F2} {body}"))
+                Debug.Log(part);
+        }
     }
 }

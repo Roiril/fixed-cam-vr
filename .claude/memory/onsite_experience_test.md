@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 83b2ae19-6926-4454-a4df-b5d350711b24
-  modified: 2026-11-15T04:44:13.687Z
+  modified: 2026-11-15T05:03:50.748Z
 ---
 
 # 実機で体験を丸ごと検証する
@@ -108,6 +108,20 @@ UTF-8 でファイルへ書いて Read で読む）。
 
 食い違ったときの直し方: `py -3.11 tools/quest-fleet.py reset-config <serial>` でキャッシュを消し、
 卓の「📦 ビルド用エクスポート」(`POST /export-build`) で焼き込みを更新してからビルドし直す。
+
+### ⚠⚠ logcat は 1 行 ≒1020 バイトで黙って切る（2026-11-15 実害）
+
+Quest の Unity は 1 回の `Debug.Log` を約 1020 バイトで切る。`ev=sum` は 1 行 1000 字を超えていて、
+実機ログの要約行は**全部 1061 字（logcat の行頭込み）で止まっていた**。`nzMax` 以降のキー
+（`ctrlL` / `ctrlR` / `hud` / `ovl2` / 音の `snd*` の一部）とカメラごとの欄 `|c0 …` は**実機で 1 度も残っていない**。
+判定は「終幕の砂嵐が出切っていない（nzMax 0.00）」「右コントローラが一度も繋がっていない」
+「ステータスの観測が出ていない」と、**計器の穴を体験の不具合の顔で**出していた。
+Editor のログは切らないので、ツインの走行では見えない。
+
+→ C# は `TelemetryLineSplit` で 900 バイトごとに割り、2 行目以降を `[XP] + <続き>` で出す。
+読み手 3 本（`analyze-xp-log.py` の `load_events` / `mix-from-log.py` / `xp-evidence.py`）が直前の行へ継ぐ
+（`tools/test_telemetry_split_log.py`・`TelemetryLineSplitTests`）。**`[XP]` を読む道具を足したら継ぎ直しも入れる。**
+疑うときは `awk '{print length($0)}' <xp.log> | sort -n | uniq -c | tail` — 同じ長さに張り付いていたら切られている。
 
 ## ⚠ ログでは分からないことがある — 画を見る（2026-07-31）
 

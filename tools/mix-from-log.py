@@ -120,10 +120,19 @@ def load_score(track: str) -> tuple[np.ndarray, float] | None:
 def parse(path: str):
     """`ev=sfx` の縁と `ev=sum` の標本を拾う。"""
     spots, sums = [], []
+    last_ev = None
     for line in open(path, encoding="utf-8", errors="replace"):
         if "[XP] " not in line:
             continue
-        d = dict(re.findall(r"(\w+)=([^\s]+)", line.split("[XP] ", 1)[1]))
+        body = line.split("[XP] ", 1)[1]
+        # `[XP] + <続き>` は直前の行の続き（logcat が長い行を切るので C# が割って出す。
+        # `TelemetryLineSplit` / analyze-xp-log.py の CONTINUATION と対）。
+        if body.startswith("+ ") or body.strip() == "+":
+            if sums and last_ev == "sum":
+                sums[-1][1].update(re.findall(r"(\w+)=([^\s]+)", body))
+            continue
+        d = dict(re.findall(r"(\w+)=([^\s]+)", body))
+        last_ev = d.get("ev")
         if "t" not in d:
             continue
         try:

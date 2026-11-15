@@ -129,7 +129,16 @@ def load_rows(path: str, ref: datetime):
             m = XP.search(line)
             if not m:
                 continue
-            body = m.group(1).split("|")[0]
+            full = m.group(1).rstrip()
+            # `[XP] + <続き>` は直前の行の続き（logcat が長い行を切るので C# が割って出す。
+            # `TelemetryLineSplit` / analyze-xp-log.py の CONTINUATION と対）。カメラ欄（| 以降）は読まない。
+            if full == "+" or full.startswith("+ "):
+                if rows and "|" not in rows[-1].get("_raw", ""):
+                    rest = full[1:].strip()
+                    rows[-1]["_raw"] += " " + rest
+                    rows[-1]["ev"].update(parse_kv(rest.split("|")[0]))
+                continue
+            body = full.split("|")[0]
             ev = parse_kv(body)
             try:
                 t = float(ev.get("t", ""))
@@ -142,6 +151,7 @@ def load_rows(path: str, ref: datetime):
                 "ev": ev,
                 "pid": pm.group(1) if pm else None,
                 "line_no": len(raw) - 1,
+                "_raw": full,
             })
     return rows, raw
 
