@@ -1629,7 +1629,9 @@ class Handler(SimpleHTTPRequestHandler):
                 show = copy.deepcopy(_show)
             show['cameras'] = [self._plate_assignment_camera(camera)
                                for camera in (show.get('cameras') or [])]
-            return self._json(_plates.plate_status(show, _shoot_manifest(), CAPTURES))
+            return self._json(_plates.plate_status(
+                show, _shoot_manifest(), CAPTURES, dependents=_plates.load_dependents(),
+                referenced=_export.referenced_cue_ids(show)))
         if path == '/shoot/plan':
             # 配信スマホの撮影パネルが読む「今日撮るもの」。cam= は端末の cameraId。
             pq = parse_qs(urlparse(self.path).query)

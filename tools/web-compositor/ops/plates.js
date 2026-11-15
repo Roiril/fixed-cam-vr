@@ -22,16 +22,18 @@ export function mountPlates(root, ctx) {
     const connection = h('p.note');
     const sure = h('input', { type: 'checkbox' });
     const adopt = h('button.button.primary', { type: 'button', text: 'この写真を採用' });
+    const adoptNote = h('p.note.warn-note', { hidden: true });
+    const deps = h('section.deps', { 'aria-label': `カメラ ${id} の写真に合わせて作った素材` });
     const node = h('article.plate', { 'aria-label': `カメラ ${id}` },
       h('h3', {}, `カメラ ${id}`, state), box, mixRow, h('div.actions', {}, overlay, capture), connection,
       h('label.field', {}, '見る写真', select), meta,
-      h('label.confirm', {}, sure, h('span', { text: '人が写っていない。本番の構図と照明で撮った。' })), h('div.actions', {}, adopt));
+      h('label.confirm', {}, sure, h('span', { text: '人が写っていない。本番の構図と照明で撮った。' })), adoptNote, h('div.actions', {}, adopt), deps);
     const view = { id, node, state, photo, now, empty, mix, mixRow, overlay, select, meta, capture, connection, sure, adopt,
-      item: null, key: '', loaded: false, timer: 0 };
+      adoptNote, deps, base: null, item: null, key: '', loaded: false, timer: 0 };
     mix.addEventListener('input', () => { now.style.opacity = String(Number(mix.value) / 100); });
     overlay.addEventListener('click', () => (view.now.hidden ? openLive(view) : closeLive(view)));
     now.addEventListener('error', () => { if (!now.hidden) { closeLive(view); setText(message, `カメラ ${id} の映像を開けません。`); message.dataset.state = 'error'; } });
-    select.addEventListener('change', () => { sure.checked = false; renderImage(view); });
+    select.addEventListener('change', () => { sure.checked = false; view.base = null; renderImage(view); });
     sure.addEventListener('change', () => renderActions(view));
     capture.addEventListener('click', () => perform(view, 'capture'));
     adopt.addEventListener('click', () => perform(view, 'adopt'));
@@ -68,19 +70,48 @@ export function mountPlates(root, ctx) {
     view.capture.disabled = ctx.demo || busy || !canCapture || !online;
     view.capture.title = !canCapture ? '撮影と採用は、卓の PC で開いた画面からだけできます。' : '';
     view.select.disabled = busy || !view.select.options.length;
-    view.sure.disabled = busy || !known || !view.loaded;
-    view.adopt.disabled = ctx.demo || busy || !canCapture || !known || !view.loaded || !view.sure.checked;
+    view.sure.disabled = busy || !known || !view.loaded || !!view.base;
+    view.adopt.disabled = ctx.demo || busy || !canCapture || !known || !view.loaded || !view.sure.checked || !!view.base;
     setText(view.connection, online ? '担当と映像を確かめてあります。' : '「準備」でこのカメラの映像が進んでいると、重ねたり撮ったりできます。');
     if (!online && !view.now.hidden) closeLive(view);
   }
   function renderImage(view) {
     const candidate = chosen(view);
-    view.photo.hidden = !candidate?.url; view.empty.hidden = !!candidate?.url;
-    if (candidate?.url && view.photo.getAttribute('src') !== candidate.url) { view.loaded = false; view.photo.src = candidate.url; }
-    if (!candidate?.url) { view.loaded = false; view.photo.removeAttribute('src'); }
+    // 素材を合わせた写真を見ているあいだは、そちらを下に敷く（採用の対象にはしない）。
+    const shown = view.base?.plateUrl || candidate?.url;
+    view.photo.hidden = !shown; view.empty.hidden = !!shown;
+    if (shown && view.photo.getAttribute('src') !== shown) { view.loaded = false; view.photo.src = shown; }
+    if (!shown) { view.loaded = false; view.photo.removeAttribute('src'); }
     const adopted = candidate?.url && candidate.url === view.item?.current?.url;
-    setText(view.meta, candidate ? `${adopted ? '採用中' : 'まだ採用していない候補'}／${when(candidate.capturedAt) || '撮った日時は不明'}` : view.item ? '' : '写真の状態を読めていません。');
+    setText(view.meta, view.base ? `素材を合わせた写真（${view.base.plate}）。いまの映像と重ねて、壁と床の線が合うかを見ます`
+      : candidate ? `${adopted ? '採用中' : 'まだ採用していない候補'}／${when(candidate.capturedAt) || '撮った日時は不明'}` : view.item ? '' : '写真の状態を読めていません。');
+    renderAdoptNote(view);
     renderActions(view);
+  }
+  /** 採用しようとしている写真が、素材を合わせた写真と違えば、作り直しが要る素材を先に言う。 */
+  function renderAdoptNote(view) {
+    const url = chosen(view)?.url, name = url?.split('/').pop();
+    const misses = url && url !== view.item?.current?.url ? (view.item?.dependents || []).filter(d => d.plate !== name) : [];
+    view.adoptNote.hidden = !misses.length;
+    setText(view.adoptNote, misses.length ? `この写真を採用すると、${misses.map(d => d.title).join('、')}は前の写真に合わせたまま残ります。下の「元にした写真と重ねる」でずれていれば作り直します。` : '');
+  }
+  function renderDeps(view) {
+    const list = view.item?.dependents;
+    if (!Array.isArray(list)) { view.deps.replaceChildren(h('p.note', { text: '写真に合わせて作った素材の台帳を読めていません。' })); return; }
+    if (!list.length) { view.deps.replaceChildren(h('p.note', { text: 'この写真に合わせて作った素材はありません。写真を替えても作り直しは要りません。' })); return; }
+    view.deps.replaceChildren(
+      h('h4', { text: 'この写真に合わせて作った素材' }),
+      ...list.map(d => {
+        const look = h('button.button.small', { type: 'button', text: '元にした写真と重ねる',
+          disabled: !d.plateExists, title: d.plateExists ? '' : `${d.plate} が卓にありません` });
+        look.addEventListener('click', () => { view.base = d; renderImage(view); if (connected(view) && view.now.hidden) openLive(view); });
+        return h('div.dep', { dataset: { state: d.current ? 'ok' : 'warning' } },
+          h('p.dep-title', {}, badge(d.current ? 'ok' : 'warning', d.current ? '合っている' : '作り直し'), h('span', { text: d.title })),
+          h('p.note', { text: d.current ? `採用中の写真に合わせてあります（${d.cueIds.length} 本）。写真を替えたら作り直します。`
+            : `前の写真（${d.plate}）に合わせてあります（${d.cueIds.length} 本）。重ねてずれていれば作り直してから焼き直します。` }),
+          d.current ? null : h('p.note', { text: `作り方: ${d.how}${d.needsInternet ? '（生成に外の回線が要ります）' : ''}` }),
+          d.current ? null : h('div.actions', {}, look));
+      }));
   }
   function setInventory(next, preferred = {}) {
     inventory = next;
@@ -89,7 +120,8 @@ export function mountPlates(root, ctx) {
       const key = JSON.stringify(item);
       if (key !== view.key || preferred[view.id]) {
         const keep = preferred[view.id] || view.select.value;
-        view.key = key; view.item = item; view.sure.checked = false;
+        view.key = key; view.item = item; view.sure.checked = false; view.base = null;
+        renderDeps(view);
         const entries = [...(item?.current ? [item.current] : []), ...(item?.candidates || []).filter(c => c.url !== item?.current?.url)];
         view.select.replaceChildren(...entries.map(c => h('option', { value: c.url, text: `${c.url === item?.current?.url ? '採用中' : '候補'}　${when(c.capturedAt) || c.name}` })));
         if (entries.some(c => c.url === keep)) view.select.value = keep;

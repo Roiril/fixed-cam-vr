@@ -316,6 +316,12 @@ input[type="range"] { width: 100%; accent-color: var(--ink); min-height: 32px; }
 .plate { display: grid; gap: 12px; align-content: start; min-width: 0; }
 .plate h3 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .overlay-top { transition: opacity .08s linear; }
+.deps { display: grid; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.deps h4 { font-size: .9375rem; font-weight: 600; }
+.dep { display: grid; gap: 6px; padding-left: 12px; border-left: 2px solid var(--line-strong); }
+.dep[data-state="warning"] { border-left-color: var(--warn); }
+.dep-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: .9375rem; line-height: 1.5; }
+.warn-note { color: var(--warn); }
 .confirm { display: flex; gap: 12px; align-items: flex-start; font-size: .9375rem; line-height: 1.55; cursor: pointer; }
 .confirm:has(input:disabled) { opacity: .55; cursor: not-allowed; }
 .media-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }

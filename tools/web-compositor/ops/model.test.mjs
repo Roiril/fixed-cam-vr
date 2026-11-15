@@ -166,6 +166,29 @@ test('materials need every clip, every photo and both human looks', () => {
   assert.equal(at({ shots: { required: 0, complete: 0, today: 0, rows: [] } }).status, 'ok');
 });
 
+test('a replaced photo names the materials made for the old one, without blocking the opening', () => {
+  const time = new Date(2026, 10, 15, 12).getTime();
+  const dep = (current) => ({ group: 'stainA', title: 'シミ', plate: 'plate_A_old.jpg', current, cueIds: ['a', 'b'] });
+  const item = (cameraId, dependents) => ({ cameraId, ready: true, dependents,
+    current: { exists: true, url: `/captures/${cameraId}.jpg`, capturedAt: new Date(time - 1000).toISOString() } });
+  const payload = (a) => ({ ok: true, observedAt: time / 1000, unclassified: [], items: [item('A', a), item('B', []), item('C', [])] });
+  const same = summarizePlates(payload([dep(true)]), time);
+  assert.deepEqual([same.stale.length, same.ledger], [0, true]);
+  const replaced = summarizePlates(payload([dep(false)]), time);
+  assert.equal(replaced.stale.length, 1);
+  assert.equal(replaced.stale[0].cameraId, 'A');
+  const at = (plates) => byId(gates({ ...complete(), plates }, now), 'materials');
+  const materials = at(replaced);
+  assert.equal(materials.status, 'warning');
+  assert.match(materials.summary, /カメラ A の写真を替えました。前の写真に合わせた素材が 1 種類/);
+  assert.equal(at(same).status, 'ok');
+  assert.equal(at({ ...same, unclassified: ['cue_new'] }).status, 'warning');
+  // 台帳を読めない卓（古い版）では何も言わない。
+  assert.equal(summarizePlates({ ...payload(undefined), unclassified: undefined }, time).ledger, false);
+  // 注意は開場を止めない。
+  assert.equal(verdict(gates({ ...complete(), plates: replaced }, now)).ready, true);
+});
+
 test('the human look at materials dies with the content, the day, or a moved camera', () => {
   const s = snapshot(), c = content();
   const time = new Date(2026, 10, 15, 12).getTime();

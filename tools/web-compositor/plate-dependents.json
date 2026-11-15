@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "note": "台本が使う cue のうち、固定カメラの無人の写真に画素を合わせて作った素材。写真を替えたら作り直す。plate はその素材を合わせた写真のファイル名。作り直したら plate を新しい写真の名前に書き換える。台本が使う cue は dependents か independent のどちらかに必ず書く（書いていない cue は当日の画面が「分類されていない」と出す）",
+  "groups": {
+    "stainA": {
+      "camera": "A",
+      "title": "2 周目 A のシミ（左の幕と右の幕・盛り上がり・幕の裏の人形）",
+      "how": "新しい写真を元にシミの画を Codex で生成し直し、比の画とマスクを組み直す。手順は tools/gen-plate/stain3/README.md（右は run_chain_right.ps1 → build_right_burst.py、左は bleed_maps.py --recipe）。台本へは show-apply-stain-right.py",
+      "needsInternet": true
+    },
+    "dollsA": {
+      "camera": "A",
+      "title": "4 周目 A の左半分に集まる人形（動画と静止画）",
+      "how": "1 コマ目を新しい写真にして集まる動画を生成し直し、居続ける静止画も替える。手順は tools/gen-plate/video/dolls-gather.md",
+      "needsInternet": true
+    },
+    "handsB": {
+      "camera": "B",
+      "title": "1 周目 B の壁の手形",
+      "how": "新しい写真を種に手形を生成し直し、bleed_maps.py --recipe tools/gen-plate/mask-recipes/bleed-hands-b-20261113.json で比の画を作る（手順は .claude/memory/material_flow.md の 6）",
+      "needsInternet": true
+    }
+  },
+  "dependents": {
+    "cue_stain_A": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "cue_stain_A_left_hold": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "stain_A_press_bulge": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "cue_stain_A_right_hold": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "stain_A_right_burst": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "stain_A_right_watch": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "stain_A_done_doll": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "dolls_A_in": {"group": "dollsA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "gen_dolls_A_left": {"group": "dollsA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "cue_hands_B": {"group": "handsB", "plate": "plate_B_20260924_172210_4abb5bae.jpg"}
+  },
+  "independent": {
+    "pov_0": "手持ちのスマホで撮る人形視点",
+    "pov_1": "手持ちのスマホで撮る人形視点",
+    "pov_2": "手持ちのスマホで撮る人形視点",
+    "pov_3": "手持ちのスマホで撮る人形視点",
+    "pov_4": "手持ちのスマホで撮る人形視点",
+    "backrooms_B_in": "2 周目 B の飛ぶ先の子供部屋。画面全体を別の部屋に替える",
+    "backrooms_B": "2 周目 B の飛ぶ先の子供部屋。画面全体を別の部屋に替える"
+  }
+}

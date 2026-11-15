@@ -104,7 +104,17 @@ export function demoShoot(mode) {
   return { plan: { ok: true, nowIso: iso(0), shots }, manifest: { ok: true, items },
     platesPayload: { ok: true, observedAt: seconds(), items: CAMERA_IDS.map((cameraId, i) => ({ cameraId, ready: !(partial && i === 2),
       current: partial && i === 2 ? null : { url: pixel, name: `plate_${cameraId}_example.jpg`, exists: true, capturedAt: `${iso(partial ? 52 : 0)}+09:00` },
-      candidates: [] })) } };
+      candidates: [], dependents: demoDependents(cameraId, partial) })), unclassified: [] } };
+}
+
+// 見本: issue のときだけ、カメラ A の写真を替えたあとの状態にする。
+function demoDependents(cameraId, replaced) {
+  const row = (group, title, n) => ({ group, title, how: 'tools/gen-plate の手順で作り直す', needsInternet: true,
+    plate: `plate_${cameraId}_20260924.jpg`, plateUrl: '', plateExists: false, current: !(replaced && cameraId === 'A'),
+    cueIds: Array.from({ length: n }, (_, i) => `${group}_${i}`) });
+  if (cameraId === 'A') return [row('stainA', '2 周目 A のシミ', 6), row('dollsA', '4 周目 A の左半分に集まる人形', 2)];
+  if (cameraId === 'B') return [row('handsB', '1 周目 B の壁の手形', 1)];
+  return [];
 }
 
 export function demoInspection(mode) {

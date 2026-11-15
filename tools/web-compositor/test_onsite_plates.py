@@ -228,5 +228,84 @@ class OnsitePlateApiTest(unittest.TestCase):
         self.assertEqual(status, 403)
 
 
+class PlateDependentsTest(unittest.TestCase):
+    """写真を替えたら作り直す素材を、カメラごとに出す。"""
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('onsite_plates_dep', os.path.join(HERE, 'onsite_plates.py'))
+        self.plates = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.plates)
+        self.tmp = tempfile.mkdtemp(prefix='plate_dep_')
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        for name in ('plate_A_old.jpg', 'plate_A_new.jpg', 'plate_B_old.jpg'):
+            with open(os.path.join(self.tmp, name), 'wb') as stream:
+                stream.write(jpeg_bytes())
+        self.dependents = {
+            'groups': {'stain': {'camera': 'A', 'title': 'シミ', 'how': '作り直す', 'needsInternet': True},
+                       'hands': {'camera': 'B', 'title': '手形', 'how': '作り直す'}},
+            'dependents': {'cue_stain': {'group': 'stain', 'plate': 'plate_A_old.jpg'},
+                           'cue_stain_right': {'group': 'stain', 'plate': 'plate_A_old.jpg'},
+                           'cue_hands': {'group': 'hands', 'plate': 'plate_B_old.jpg'},
+                           'cue_unused': {'group': 'stain', 'plate': 'plate_A_old.jpg'}},
+            'independent': {'pov_0': '手持ち'},
+        }
+
+    def status(self, current_a, referenced):
+        show = {'cues': [{'id': 'plate_A', 'sourceUrl': f'/captures/{current_a}'},
+                         {'id': 'plate_A_right', 'sourceUrl': f'/captures/{current_a}'},
+                         {'id': 'plate_B', 'sourceUrl': '/captures/plate_B_old.jpg'},
+                         {'id': 'plate_C', 'sourceUrl': '/captures/plate_C.jpg'}],
+                'cameras': []}
+        return self.plates.plate_status(show, {}, self.tmp, observed_at=1,
+                                        dependents=self.dependents, referenced=referenced)
+
+    def test_lists_only_cues_the_timeline_uses_grouped_by_how_they_are_made(self):
+        result = self.status('plate_A_old.jpg', {'cue_stain', 'cue_stain_right', 'cue_hands', 'pov_0', 'plate_A'})
+        items = {item['cameraId']: item for item in result['items']}
+        self.assertEqual(len(items['A']['dependents']), 1)
+        stain = items['A']['dependents'][0]
+        self.assertEqual(stain['cueIds'], ['cue_stain', 'cue_stain_right'])
+        self.assertTrue(stain['current'])
+        self.assertTrue(stain['plateExists'])
+        self.assertTrue(stain['needsInternet'])
+        self.assertEqual(items['B']['dependents'][0]['cueIds'], ['cue_hands'])
+        self.assertEqual(items['C']['dependents'], [])
+        self.assertEqual(result['unclassified'], [])
+
+    def test_a_new_plate_marks_the_materials_made_for_the_old_one(self):
+        result = self.status('plate_A_new.jpg', {'cue_stain', 'cue_hands'})
+        items = {item['cameraId']: item for item in result['items']}
+        self.assertFalse(items['A']['dependents'][0]['current'])
+        self.assertEqual(items['A']['dependents'][0]['plateUrl'], '/captures/plate_A_old.jpg')
+        self.assertTrue(items['B']['dependents'][0]['current'])
+
+    def test_a_used_cue_missing_from_the_ledger_is_reported(self):
+        result = self.status('plate_A_old.jpg', {'cue_stain', 'cue_new_effect'})
+        self.assertEqual(result['unclassified'], ['cue_new_effect'])
+
+    def test_without_the_ledger_nothing_is_claimed(self):
+        result = self.plates.plate_status({'cues': [], 'cameras': []}, {}, self.tmp, observed_at=1)
+        self.assertTrue(all(item['dependents'] is None for item in result['items']))
+        self.assertIsNone(result['unclassified'])
+
+    def test_the_real_ledger_covers_every_cue_the_timeline_uses(self):
+        ledger = self.plates.load_dependents()
+        self.assertIsNotNone(ledger)
+        for cue_id, row in ledger['dependents'].items():
+            self.assertIn(row['group'], ledger['groups'], cue_id)
+            self.assertIn(ledger['groups'][row['group']]['camera'], ('A', 'B', 'C'), cue_id)
+            self.assertRegex(row['plate'], r'^plate_[ABC]_.+\.jpg$', cue_id)
+        self.assertFalse(set(ledger['dependents']) & set(ledger.get('independent') or {}))
+        show_path = os.path.join(HERE, 'show.json')
+        if not os.path.isfile(show_path):
+            self.skipTest('show.json は現場設定で、この機に無い')
+        import export_build
+        with open(show_path, encoding='utf-8') as stream:
+            show = json.load(stream)
+        result = self.plates.plate_status(show, {}, self.tmp, observed_at=1, dependents=ledger,
+                                          referenced=export_build.referenced_cue_ids(show))
+        self.assertEqual(result['unclassified'], [], '台本が使う cue を plate-dependents.json に書いていない')
+
+
 if __name__ == '__main__':
     unittest.main()

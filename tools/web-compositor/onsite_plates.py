@@ -4,6 +4,7 @@ import base64
 import datetime
 import hashlib
 import io
+import json
 import os
 import time
 import uuid
@@ -18,6 +19,7 @@ PLATE_CUES = {
     'C': ('plate_C',),
 }
 MAX_FRAME_BYTES = 4 * 1024 * 1024
+DEPENDENTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'plate-dependents.json')
 
 
 class PlateError(Exception):
@@ -87,8 +89,65 @@ def _same_assignment(entry, camera):
         entry['cameraAssignment'] == _camera_assignment(camera)
 
 
-def plate_status(show, manifest, captures_dir, observed_at=None):
-    """show と撮影台帳から GET /shoot/plates の応答を作る。"""
+def load_dependents(path=DEPENDENTS_PATH):
+    """写真に合わせて作った素材の台帳（plate-dependents.json）。読めなければ None。"""
+    try:
+        with open(path, encoding='utf-8') as stream:
+            data = json.load(stream)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get('dependents'), dict) or \
+            not isinstance(data.get('groups'), dict):
+        return None
+    return data
+
+
+def dependents_status(dependents, referenced, current_names, captures_dir):
+    """台本が使う cue のうち、無人の写真に合わせて作った素材を、カメラごと・作り方ごとにまとめる。
+
+    plate（素材を合わせた写真）が採用中の写真と違えば current=False。そのカメラの写真を
+    替えたので、素材は前の写真の位置と明るさのまま出る。
+    """
+    plate_cue_ids = {cue_id for ids in PLATE_CUES.values() for cue_id in ids}
+    if dependents is None:
+        return {camera_id: None for camera_id in PLATE_CUES}, None
+    rows = dependents['dependents']
+    independent = dependents.get('independent') or {}
+    groups = dependents['groups']
+    out = {camera_id: [] for camera_id in PLATE_CUES}
+    unclassified = []
+    for cue_id in sorted(referenced):
+        if cue_id in plate_cue_ids or cue_id in independent:
+            continue
+        row = rows.get(cue_id)
+        group = groups.get(row.get('group')) if isinstance(row, dict) else None
+        camera_id = group.get('camera') if isinstance(group, dict) else None
+        plate = row.get('plate') if isinstance(row, dict) else None
+        if camera_id not in out or not isinstance(plate, str) or not plate:
+            unclassified.append(cue_id)
+            continue
+        entry = next((e for e in out[camera_id]
+                      if e['group'] == row['group'] and e['plate'] == plate), None)
+        if entry is None:
+            url = '/captures/' + plate
+            path = _capture_path(url, captures_dir)
+            entry = {'group': row['group'], 'title': str(group.get('title') or row['group']),
+                     'how': str(group.get('how') or ''),
+                     'needsInternet': group.get('needsInternet') is True,
+                     'plate': plate, 'plateUrl': url,
+                     'plateExists': bool(path and os.path.isfile(path)),
+                     'current': plate == current_names.get(camera_id), 'cueIds': []}
+            out[camera_id].append(entry)
+        entry['cueIds'].append(cue_id)
+    return out, unclassified
+
+
+def plate_status(show, manifest, captures_dir, observed_at=None, dependents=None, referenced=None):
+    """show と撮影台帳から GET /shoot/plates の応答を作る。
+
+    dependents（plate-dependents.json）と referenced（台本が使う cue の id）を渡すと、
+    各カメラに「この写真に合わせて作った素材」を添える。
+    """
     cues = {cue.get('id'): cue for cue in (show.get('cues') or [])
             if isinstance(cue, dict) and cue.get('id')}
     cameras = {camera.get('id'): camera for camera in (show.get('cameras') or [])
@@ -129,9 +188,14 @@ def plate_status(show, manifest, captures_dir, observed_at=None):
                  camera_id in cameras and _same_assignment(current_evidence, cameras[camera_id]))
         items.append({'cameraId': camera_id, 'cueIds': list(cue_ids), 'current': current,
                       'candidates': candidates, 'ready': bool(ready)})
+    current_names = {item['cameraId']: (item['current'] or {}).get('name') for item in items}
+    derived, unclassified = dependents_status(
+        dependents if referenced is not None else None, referenced or (), current_names, captures_dir)
+    for item in items:
+        item['dependents'] = derived[item['cameraId']]
     return {'ok': True, 'observedAt': int(observed_at if observed_at is not None
                                           else datetime.datetime.now().timestamp()),
-            'items': items}
+            'items': items, 'unclassified': unclassified}
 
 
 def _read_jpeg(response, byte_limit, deadline_sec=6.0):

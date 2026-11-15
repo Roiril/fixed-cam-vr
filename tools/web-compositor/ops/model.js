@@ -171,10 +171,20 @@ export function summarizePlates(payload, now = Date.now()) {
     const adopted = item?.ready === true && item.current?.exists === true;
     const taken = new Date(item?.current?.capturedAt || '');
     const known = adopted && Number.isFinite(taken.getTime()) && taken.getTime() <= now + 5000;
+    const dependents = Array.isArray(item?.dependents) ? item.dependents : null;
     return { cameraId: id, adopted, url: adopted ? item.current.url : '', capturedAt: known ? taken.toISOString() : '',
-      today: known && sameDay(taken, now) };
+      today: known && sameDay(taken, now), dependents, stale: (dependents || []).filter(d => d.current !== true) };
   });
-  return { required: 3, complete: rows.filter(r => r.adopted).length, today: rows.filter(r => r.today).length, rows };
+  return { required: 3, complete: rows.filter(r => r.adopted).length, today: rows.filter(r => r.today).length, rows,
+    stale: rows.flatMap(r => r.stale.map(d => ({ ...d, cameraId: r.cameraId }))),
+    unclassified: Array.isArray(payload.unclassified) ? payload.unclassified : [],
+    ledger: rows.every(r => r.dependents) };
+}
+
+/** 写真を替えたので作り直しが要る素材を、準備の表の 1 行に言う。 */
+export function staleText(stale) {
+  const cams = [...new Set(stale.map(d => d.cameraId))];
+  return `${cams.map(c => `カメラ ${c}`).join('と')} の写真を替えました。前の写真に合わせた素材が ${stale.length} 種類あります`;
 }
 
 /** 較正時から傾いたカメラ。人の「このまま使う」を取り消す根拠にする。 */
@@ -292,6 +302,10 @@ export function gates(input, now = Date.now()) {
     materials = gate('materials', 'unknown', '会場と合っているかをまだ見ていません', '無人の写真をいまの映像と重ねて確かめます');
   else if (!review.watched)
     materials = gate('materials', 'unknown', '採用中の素材をまだ見ていません', '見比べの画面で確かめます');
+  else if (plates.stale?.length)
+    materials = gate('materials', 'warning', staleText(plates.stale), '無人の写真の画面で、元にした写真といまの映像を重ねます。ずれていれば作り直してから焼き直します');
+  else if (plates.unclassified?.length)
+    materials = gate('materials', 'warning', `写真に依るか分からない素材が ${plates.unclassified.length} 本あります`, 'plate-dependents.json に書き足します');
   else materials = gate('materials', 'ok', `人形視点 ${shots.complete} 本と無人の写真 3 枚を確かめました`);
 
   const release = summarizeContent(content, now, contentFailed);
