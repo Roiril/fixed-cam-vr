@@ -38,6 +38,11 @@
 - 首尾フレームは `py -3.11 tools/gen-plate/stain3/video_inputs.py` が組む（生成ではない）。無人写真 × 右のしみの比の画の上に、`bulge.png` / `doll_laugh.png` / `doll_watch.png` の変えた所だけを戻す。
   出力は `Logs/gen-plate/stain2A_right_video_20261115/` の `A_stain`（右のしみだけ）・`B_burst`（伸び切った顔と笑う人形）・`C_watch`（隠れて見る人形）と、それぞれの黒帯つき 16:9（2560×1440）
 - 1 本目は Flow の Omni 1.2 Flash・360p・6 秒、A → B。返った動画は `flow_v1_A_to_B.mp4`、4:3 に戻した版は `flow_v1_A_to_B_4x3.mp4`（写真の幅は 490px・x=75 から）
+- 2 本目で決まった形（LEDGER 0389）: 最初のフレームは何も無い無人写真 `P_plain_16x9.png`、最後は案 1 の顔（裂けた笑み・丸い目）と笑う人形 `faces/grin_v3_last_16x9.png`。
+  顔は Codex で `faces/p_common.md` ＋ `faces/p_face_grin.md`、入力は右のしみだけの画の 2 倍 `faces/in_stain2x.png` と参考 `faces/ref_grin.png`（`faces/run_faces.ps1 grin`）。
+  前の伸び出しの顔（`bulge.png`）は「なんかリアルで変」。せり出しは、角まで出る版（`faces/v1/`）は出すぎ、浅く浮く版（`faces/v2/`）は控えめすぎ
+- 返った動画 `flow_v2_plain_to_grin_4x3.mp4` に緩急を付けるのは `py -3.11 tools/gen-plate/stain3/retime_flow.py C_dissolve_pop`。
+  しみが滲む途中を切り、何も無い画から膨らむ直前のしみ（元の 2.0 秒）へディゾルブで移り、顔を加速する。半分の速さには落とさない。本編にはまだ当てていない
 
 ## 素材
 
