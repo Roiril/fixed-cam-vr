@@ -558,25 +558,41 @@ def trail_findings(events, takes=None):
 # 子供部屋の動画の「落ちる所」（秒）。押し始めでここへ飛ぶ（canon/LEDGER.md 0375）。
 # C# の TakeRunner.KidsRoomFallSec と対（ev=kidsjump の to= と突き合わせる）。
 KIDS_ROOM_FALL_SEC = 4.2
+# 人形が画の上から入る最初のコマ（112 コマ目 / 24fps）。C# の KidsRoomJumpTests.DollEntersSec と同じ測り方。
+# 飛ばずにこれより早く区間を出たら、人形が落ちる所を見ていない（0380）。
+KIDS_ROOM_DOLL_IN_SEC = 112 / 24
+# ev=kidsjump の by=（C# の TakeRunner.LastKidsRoomJumpBy と対）。mark = 報告の押し始め（0375）/ line = 落ちる所の線（0380）。
+KIDS_JUMP_BY = {"mark": "押し始め", "line": "落ちる所の線"}
+# 落ちる所の線の id（C# の TakeRunner.KidsRoomFallLineId と対）。
+KIDS_FALL_LINE_ID = "kids_B_fall"
 
 
-def kids_jump_findings(events):
+def kids_jump_findings(events, takes=None):
     """2-B の子供部屋で、押し始めで落ちる所へ飛んだか・報告を最後のコマまで保ったかを見る。(行, 判定) を返す。
 
     書き手は C# の ShowTelemetryHost:
-      ev=kidsjump take= from= to= mode=xfade|prep n=   押し始めで飛んだ（from= は押した瞬間の再生秒）
+      ev=kidsjump take= from= to= mode=xfade|prep by=mark|line n=   押し始めか落ちる所の線で飛んだ（from= は飛んだ瞬間の再生秒）
       ev=kidsland wait= timedOut= n=                    飛んだ先（落ちる所）の画が出た
       ev=kidshold take= step= until= n=                 報告は成立したが、until のカットが終わるまで畳まない
     演出 1 本（ev=take st=begin → st=end）ごとに突き合わせる。どれも出ていなければ何も言わない。
+    takes（台本）があれば、子供部屋の動画のカットが出たのに飛ばず、人形が入る前（KIDS_ROOM_DOLL_IN_SEC）に
+    区間を出た演出を WARN にする（人形が落ちる所を見ていない・0380）。
     """
     jumps = [e for e in events if e.get("ev") == "kidsjump"]
     lands = [e for e in events if e.get("ev") == "kidsland"]
     holds = [e for e in events if e.get("ev") == "kidshold"]
-    if not (jumps or lands or holds):
+    kids_keys = set()
+    if takes:
+        kids_keys = {(t.get("id"), i) for t in takes for i, s in enumerate(t.get("steps") or [])
+                     if str(s.get("cueId") or "") == KIDS_ROOM_CUE}
+    kids_shown = [e for e in events if e.get("ev") == "step" and fnum(e, "played", 0.0) == 1.0
+                  and (str(e.get("take", "")), int(fnum(e, "i", -1.0))) in kids_keys]
+    if not (jumps or lands or holds or kids_shown):
         return [], []
-    froms = ", ".join(f"{fnum(e, 'from', float('nan')):.2f}" for e in jumps)
-    lines = [f"  子供部屋の押し始め: 落ちる所へ飛んだ {len(jumps)} 回"
-             + (f"（押した時の再生秒 {froms}）" if jumps else "")
+    froms = ", ".join(f"{fnum(e, 'from', float('nan')):.2f}({KIDS_JUMP_BY.get(str(e.get('by', '')), '?')})"
+                      for e in jumps)
+    lines = [f"  子供部屋の落ちる所へ飛ぶ: {len(jumps)} 回"
+             + (f"（飛んだ時の再生秒と引き金 {froms}）" if jumps else "")
              + f" / 落ちる所の画が出た {len(lands)} 回 / 報告を最後のコマまで保った {len(holds)} 回"]
     verdicts = []
 
@@ -588,6 +604,10 @@ def kids_jump_findings(events):
         elif f is None or f >= to:
             verdicts.append(("FAIL", f"落ちる所（{to:.2f} 秒）以後に押したのに飛んだ（from={e.get('from')}）— "
                                      "TakeRunner.ShouldJumpKidsRoom を見る"))
+        by = str(e.get("by", ""))
+        if by and by not in KIDS_JUMP_BY:
+            verdicts.append(("FAIL", f"ev=kidsjump の引き金 by={by} を解析器が知らない — "
+                                     "C# の TakeRunner.LastKidsRoomJumpBy と KIDS_JUMP_BY を対で直す"))
 
     # 演出 1 本ごとに区切る。
     spans = []   # (take id, 始まり t, 終わり t, why)
@@ -611,6 +631,14 @@ def kids_jump_findings(events):
         js = [e for e in jumps if inside(e, span)]
         ls = [e for e in lands if inside(e, span)]
         hs = [e for e in holds if inside(e, span)]
+        ks = [e for e in kids_shown if inside(e, span)]
+        if ks and not js and why == "yield":
+            seen = t1 - fnum(ks[0], "t", 0.0)
+            if seen < KIDS_ROOM_DOLL_IN_SEC:
+                verdicts.append(("WARN", f"{tid}: 子供部屋の動画が出て {seen:.2f} 秒で区間を出た。飛ばなかったので人形が落ちる所を見ていない — "
+                                         f"layout.lines の {KIDS_FALL_LINE_ID} が無いか、越える前に区間を出た"))
+            else:
+                verdicts.append(("OK", f"{tid}: 飛ばずに人形が落ちる所まで見てから区間を出た（{seen:.2f} 秒）"))
         if not (js or hs):
             continue
         if len(js) > 1:
@@ -626,7 +654,8 @@ def kids_jump_findings(events):
                 verdicts.append(("WARN", f"{tid}: 落ちる所の画が出るのを待ちきれずに重ね始めた（wait={wait:.2f}s）— "
                                          "seekCompleted が届いていない"))
             else:
-                verdicts.append(("OK", f"{tid}: 押し始めで落ちる所へ飛び、{wait:.2f} 秒後に重ね始めた"))
+                by = "、".join(sorted({KIDS_JUMP_BY.get(str(e.get("by", "")), "押し始め") for e in js}))
+                verdicts.append(("OK", f"{tid}: {by}で落ちる所へ飛び、{wait:.2f} 秒後に重ね始めた"))
         if hs:
             until = int(fnum(hs[0], "until", -1.0))
             if why == "done":
@@ -3919,7 +3948,7 @@ def analyze(events, others, exp, warns=None):
             verdict(level, text)
 
         # -- 子供部屋で押し始めたら人形の落ちる所へ飛ぶ・報告しても最後のコマまで見せ切る（canon/LEDGER.md 0375）
-        kj_lines, kj_verdicts = kids_jump_findings(events)
+        kj_lines, kj_verdicts = kids_jump_findings(events, exp.get("takes"))
         for line in kj_lines:
             w(line)
         for level, text in kj_verdicts:
@@ -4054,6 +4083,7 @@ def analyze(events, others, exp, warns=None):
     dismissed = [e for e in events
                  if e.get("ev") == "take" and e.get("st") == "end" and e.get("why") == "mark"]
     marks = [e for e in events if e.get("ev") == "mark"]
+    cleared = [e for e in events if e.get("ev") == "markclear"]
     anchor = exp.get("outroAnchorId", "")
 
     if dismissible or dismissed:
@@ -4088,12 +4118,14 @@ def analyze(events, others, exp, warns=None):
             verdict("WARN", "「報告で消える」演出が 1 本も著作されていないのに消えている")
         elif not marks:
             verdict("WARN", "体験者が 1 度も報告していないので、消える機構は検証できていない")
-        elif not dismissed:
+        elif not dismissed and not cleared:
             verdict("WARN", f"報告 {len(marks)} 回に対して 1 本も消えていない — "
                             "消せる演出が走っていない区間で押したか、旗が実機へ届いていない"
                             "（`ev=take st=end why=` が全部 done なら後者）")
         else:
-            verdict("OK", f"報告 {len(marks)} 回で演出が {len(dismissed)} 本消えた")
+            # markClear（素材だけ消す報告・ev=markclear）は演出を畳まないが、報告で異常が消えている（0378）。
+            verdict("OK", f"報告 {len(marks)} 回で演出が {len(dismissed)} 本消えた"
+                          + (f"・素材だけ消えた {len(cleared)} 回" if cleared else ""))
         w()
 
     # ------------------------------------------------------------------

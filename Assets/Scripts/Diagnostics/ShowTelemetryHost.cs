@@ -1193,7 +1193,8 @@ namespace FixedCamVr.Diagnostics
                      $"max={_overlay.BleedLastHoldMax:F2}");
             }
 
-            // 2-B の子供部屋で、押し始めで人形の落ちる所へ飛んだ（canon/LEDGER.md 0375）。from= は押した瞬間の再生位置。
+            // 2-B の子供部屋で、押し始め（0375）か落ちる所の線（0380）で人形の落ちる所へ飛んだ（canon/LEDGER.md）。
+            // from= は飛んだ瞬間の再生位置、by= は引き金（mark / line）。
             // 飛んだ（kidsjump）のに落ちる所の画が出ない（kidsland が続かない）、報告を保った（kidshold）のに
             // 演出が報告以外で終わる、を解析器が FAIL にする。
             if (_takes != null)
@@ -1203,7 +1204,7 @@ namespace FixedCamVr.Diagnostics
                     if (_takes.KidsRoomJumpCount > _lastKidsJumpCount)
                         Emit($"ev=kidsjump take={(string.IsNullOrEmpty(_takes.LastKidsRoomJumpTakeId) ? "-" : _takes.LastKidsRoomJumpTakeId)} " +
                              $"from={_takes.LastKidsRoomJumpFromSec:F2} to={TakeRunner.KidsRoomFallSec:F2} " +
-                             $"mode={_takes.LastKidsRoomJumpMode} n={_takes.KidsRoomJumpCount}");
+                             $"mode={_takes.LastKidsRoomJumpMode} by={_takes.LastKidsRoomJumpBy} n={_takes.KidsRoomJumpCount}");
                     _lastKidsJumpCount = _takes.KidsRoomJumpCount;
                 }
                 if (_takes.KidsRoomLandCount != _lastKidsLandCount)

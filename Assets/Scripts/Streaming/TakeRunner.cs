@@ -500,6 +500,18 @@ namespace FixedCamVr.Streaming
         public static bool ShouldJumpKidsRoom(bool kidsCutShowing, bool alreadyJumped, float videoSec, float fallSec)
             => kidsCutShowing && !alreadyJumped && !float.IsNaN(videoSec) && videoSec >= 0f && videoSec < fallSec;
 
+        /// <summary>
+        /// <b>押さずに歩き続けた人にも人形が落ちる所を見せる線の id</b>（<c>canon/LEDGER.md</c> 0380）。
+        /// <c>layout.lines</c> のこの線の向こう側に居るあいだ、押し始めと同じく落ちる所へ飛ぶ（<see cref="ShouldJumpKidsRoomByLine"/>）。
+        /// 越えた事象ではなく向こう側に居る状態で見る — 動画が出る前に越えていた人も、動画が出た瞬間に飛ぶ。
+        /// 線が layout に無ければ何もしない（欠けは <c>WarnMissingLines</c> が警告する）。
+        /// </summary>
+        public const string KidsRoomFallLineId = "kids_B_fall";
+
+        /// <summary>線の向こう側に居ることで落ちる所へ飛ばすか（純判定・0380）。向こう側に居て、押し始めと同じ条件が揃うとき。</summary>
+        public static bool ShouldJumpKidsRoomByLine(bool beyond, bool kidsCutShowing, bool alreadyJumped, float videoSec, float fallSec)
+            => beyond && ShouldJumpKidsRoom(kidsCutShowing, alreadyJumped, videoSec, fallSec);
+
         /// <summary>落ちる所へ飛んで縮むカットの尺（秒）。落ちる所以後なら 0。</summary>
         public static float KidsRoomJumpSkipSec(float videoSec, float fallSec)
             => float.IsNaN(videoSec) ? 0f : Mathf.Max(0f, fallSec - videoSec);
@@ -545,6 +557,12 @@ namespace FixedCamVr.Streaming
         /// <summary>最後に飛んだ演出の id。</summary>
         public string LastKidsRoomJumpTakeId { get; private set; } = "";
 
+        /// <summary>最後に飛んだ引き金。<c>mark</c> = 報告の押し始め（0375）/ <c>line</c> = 落ちる所の線の向こう側に出た（0380）。</summary>
+        public string LastKidsRoomJumpBy { get; private set; } = "";
+
+        /// <summary>落ちる所の線（<see cref="KidsRoomFallLineId"/>）のスロット。台本に子供部屋のカットが無ければ -1。テスト用。</summary>
+        public int KidsRoomFallLineSlot => _kidsFallLineSlot;
+
         /// <summary>
         /// <b>飛んだ先（落ちる所）の画が出た回数</b>（観測・テスト用・<c>ev=kidsland</c>）。
         /// 飛んだのにここが増えなければ、飛び先の画が出ないまま演出が畳まれた。
@@ -586,6 +604,8 @@ namespace FixedCamVr.Streaming
 
         // この演出で落ちる所へ飛んだか（1 回の演出で 1 度だけ）。
         private bool _takeKidsRoomJumped;
+        // 落ちる所の線のスロット（0380）。台本に子供部屋のカットがあるときだけ取る。
+        private int _kidsFallLineSlot = -1;
         // 飛んだが、落ちる所の画がまだ出ていない。出たら尺を待った分だけ延ばし、音を落ちる所から鳴らし直す。
         private bool _kidsJumpAwaitLand;
         private int _kidsJumpLandBase;
@@ -780,6 +800,7 @@ namespace FixedCamVr.Streaming
                 _takes = Array.Empty<ShowTakeDef>();
                 _takeSegLaps = Array.Empty<int>();
                 _takeSegCams = Array.Empty<int>();
+                _kidsFallLineSlot = -1;
                 _logic.SetDefs(Array.Empty<TakeRunnerLogic.Def>());
                 return;
             }
@@ -866,6 +887,12 @@ namespace FixedCamVr.Streaming
             _closingLineId = TakeSchema.ResolveClosingLineId(_takes);
             _closingLineSlot = string.IsNullOrEmpty(_closingLineId) ? -1 : LineSlot(_closingLineId);
             anyLine |= _closingLineSlot >= 0;
+            // 子供部屋の落ちる所の線（0380）。子供部屋のカットがあるときだけ枠を取り、位置の追跡も回す。
+            bool anyKids = false;
+            foreach (ShowTakeDef t in _takes)
+                if (FindKidsRoomStep(t.steps) >= 0) { anyKids = true; break; }
+            _kidsFallLineSlot = anyKids ? LineSlot(KidsRoomFallLineId) : -1;
+            anyLine |= _kidsFallLineSlot >= 0;
             _hasLineTakes = anyLine;
             _logic.SetDefs(defs.ToArray());
             // 新しく取った枠も含めてラインを貼り直す（layout が既に来ていれば geometry が入る）。
@@ -955,6 +982,8 @@ namespace FixedCamVr.Streaming
                 foreach (ShowStepDef? st in t.steps ?? Array.Empty<ShowStepDef>())
                     if (st != null && st.IsLineWait) Check(st.lineId);
             }
+            // 落ちる所の線が無いと、押さずに歩き続けた人は人形が落ちる所を見ないまま 2-C へ進む（0380）。
+            if (_kidsFallLineSlot >= 0) Check(KidsRoomFallLineId);
             string key = string.Join(",", missing);
             if (key == _warnedMissingLines) return;
             _warnedMissingLines = key;
@@ -1074,7 +1103,7 @@ namespace FixedCamVr.Streaming
         {
             // 子供部屋の動画が落ちる所より前なら、押し始めの瞬間に落ちる所へ重ねて飛ぶ（0375）。
             // この演出は markStartCueId を持たないので、下の応答より先に見る。
-            TryJumpKidsRoom();
+            TryJumpKidsRoom(byLine: false);
             // 長押しの開始でカットを進める（markStartAdvance・0378 の右の幕）。報告の成立は待たない。
             int startTake = _logic.ActiveTakeIndex;
             int startStep = _logic.ActiveStepIndex;
@@ -1330,6 +1359,7 @@ namespace FixedCamVr.Streaming
             LastKidsRoomJumpFromSec = float.NaN;
             LastKidsRoomJumpMode = "";
             LastKidsRoomJumpTakeId = "";
+            LastKidsRoomJumpBy = "";
             LastKidsRoomLandWaitSec = float.NaN;
             LastKidsRoomHeldStep = -1;
             LastKidsRoomHeldUntilStep = -1;
@@ -1425,6 +1455,10 @@ namespace FixedCamVr.Streaming
                                 && (_farewell == null || !_farewell.Completed);
             TakeRunnerLogic.Decision d = _logic.Tick(Now, latest, lines, holdFarewell, sides);
             Apply(d, exitAnchored: false);
+            // 押さずに落ちる所の線の向こう側へ出たら、押し始めと同じく落ちる所へ飛ぶ（0380）。
+            // 位置が取れたフレーム（lines が null でない）だけ見る。カットが替わった直後は動画がまだ出ていない（NaN）ので次のフレームで飛ぶ。
+            if (lines != null && _kidsFallLineSlot >= 0 && _lineSide.Beyond(_kidsFallLineSlot))
+                TryJumpKidsRoom(byLine: true);
 
             // 締めの線を踏んだ縁を 1 行出す（③a の引き金・0233）。「線は踏まれたのに③a が出ない」と
             // 「そもそも踏んでいない」を実機で切り分けるのはこの行だけ（線の横断そのものは上の
@@ -2416,15 +2450,16 @@ namespace FixedCamVr.Streaming
                                  + "`.\\tools\\unity.ps1 menu sound-import` を走らせること。");
         }
 
-        // 押し始めの瞬間、子供部屋の動画が落ちる所より前なら落ちる所へ飛ばす（`canon/LEDGER.md` 0375）。
+        // 押し始めの瞬間（0375）か、落ちる所の線の向こう側に出たとき（0380）、子供部屋の動画が落ちる所より前なら
+        // 落ちる所へ飛ばす（`canon/LEDGER.md`）。2 つの引き金は同じ処理で、どちらが先でも 1 回の演出で 1 度だけ。
         // ⚠ カットの尺は飛んだ分だけ縮める（落ちる所から動画の終わりまで＋最後のコマ）。落ちる所の画が出るまで
         //   待った分は TickKidsRoomLand が延ばす（seek は準備ができるまで前のコマを出し続ける）。
-        // ⚠ 1 回の演出で 1 度だけ。落ちる所以後に押したら何もしない。
-        private void TryJumpKidsRoom()
+        // ⚠ 落ちる所以後に押した・越えたら何もしない。
+        private void TryJumpKidsRoom(bool byLine)
         {
             if (!_logic.IsActive || overlay == null || !IsKidsRoomCue(_activeStepCueId)) return;
             float videoSec = overlay.VideoTimeSec(_clipToken);
-            if (!ShouldJumpKidsRoom(true, _takeKidsRoomJumped, videoSec, KidsRoomFallSec)) return;
+            if (!ShouldJumpKidsRoomByLine(true, true, _takeKidsRoomJumped, videoSec, KidsRoomFallSec)) return;
             ScreenOverlayController.SeekJump jump = overlay.BeginSeekJump(_clipToken, KidsRoomFallSec, KidsRoomJumpFadeSec);
             if (jump == ScreenOverlayController.SeekJump.Failed) return;
             _takeKidsRoomJumped = true;
@@ -2437,8 +2472,10 @@ namespace FixedCamVr.Streaming
             LastKidsRoomJumpFromSec = videoSec;
             LastKidsRoomJumpMode = jump == ScreenOverlayController.SeekJump.Crossfade ? "xfade" : "prep";
             LastKidsRoomJumpTakeId = TakeId(_logic.ActiveTakeIndex);
-            Debug.Log($"[TakeRunner] 押し始めで子供部屋の動画を落ちる所へ飛ばす take={LastKidsRoomJumpTakeId} " +
-                      $"from={videoSec:F2}s to={KidsRoomFallSec:F2}s mode={LastKidsRoomJumpMode} skip={skip:F2}s");
+            LastKidsRoomJumpBy = byLine ? "line" : "mark";
+            Debug.Log($"[TakeRunner] {(byLine ? "落ちる所の線を越えて" : "押し始めで")}子供部屋の動画を落ちる所へ飛ばす " +
+                      $"take={LastKidsRoomJumpTakeId} from={videoSec:F2}s to={KidsRoomFallSec:F2}s " +
+                      $"mode={LastKidsRoomJumpMode} by={LastKidsRoomJumpBy} skip={skip:F2}s");
         }
 
         // 飛んだ先（落ちる所）の画が出た瞬間に、待った分だけカットを延ばし、音を落ちる所から 0.4 秒で重ねて鳴らし直す。

@@ -33,6 +33,15 @@ paths:
   `analyze-xp-log.py` の `KIDS_ROOM_FALL_SEC` と対
 - ⚠ 画面（オーバーレイ）が無い・動画が出ていない（`VideoTimeSec` が NaN）なら飛ばない
 
+## 押さずに落ちる所の線を越えたら飛ぶ（0380）
+
+- `layout.lines` の線 `TakeRunner.KidsRoomFallLineId` = **`kids_B_fall`** の向こう側に居るあいだ、押し始めと同じ処理（`TryJumpKidsRoom`）で落ちる所へ飛ぶ
+  — `TakeRunner.ShouldJumpKidsRoomByLine`。見るのは越えた事象ではなく向こう側の状態（`LineSideLogic.Beyond`）で、
+  動画が出る前に越えていた人も、動画が出た最初のフレームで飛ぶ。押し始めと線のどちらが先でも 1 演出 1 度
+- 枠は台本に子供部屋のカットがあるときだけ取る（`KidsRoomFallLineSlot`）。線が layout に無ければ `WarnMissingLines` が警告し、何もしない
+- 線の位置は show.json（git 管理外）。B の通路の上端、2-C との境 z=0.45（x −0.9〜−0.3・`dir` both）。卓で動かせる。
+  届く線 `trail_B_reach`（z=0.25）より先で、2-C の区間（z&gt;0.45）へ入る前に必ず越える所に置く
+
 ## 報告しても最後のコマまで見せ切る（0375）
 
 - 子供部屋の動画のカットか、その次の最後のコマ（ライブでないカット）で報告が成立しても、最後のコマが尺どおり終わるまで畳まない。
@@ -42,7 +51,9 @@ paths:
 
 ## 観測（`ShowTelemetryHost` と `analyze-xp-log.py` の `kids_jump_findings` を対で直す）
 
-- `ev=kidsjump take= from=<押した時の再生秒> to=4.20 mode=xfade|prep n=` — 押し始めで飛んだ
+- `ev=kidsjump take= from=<飛んだ時の再生秒> to=4.20 mode=xfade|prep by=mark|line n=` — 押し始め（mark）か落ちる所の線（line）で飛んだ。
+  `by` の語は `TakeRunner.LastKidsRoomJumpBy` と解析器の `KIDS_JUMP_BY` が対
+- 台本があれば、子供部屋の動画のカットが出たのに飛ばず、人形が入る前（`KIDS_ROOM_DOLL_IN_SEC` = 112/24 秒）に区間を出た演出を WARN にする（人形が落ちる所を見ていない）
 - `ev=kidsland wait=<秒> timedOut=0|1 n=` — 落ちる所の画が出た。飛んだのに続かなければ FAIL
 - `ev=kidshold take= step= until= n=` — 報告を保った。その演出が `why=done` で終わる・最後のコマ（`until`）が出る前に `why=mark` で畳む、なら FAIL
 - 機械の門: `KidsRoomJumpTests`（C#）と `tools/test_kids_room_log.py`（書き手と読み手の照合）

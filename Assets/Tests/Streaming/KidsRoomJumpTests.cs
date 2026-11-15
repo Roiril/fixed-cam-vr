@@ -62,6 +62,34 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(TakeRunner.ShouldJumpKidsRoom(true, false, -0.1f, fall), Is.False);
         }
 
+        /// <summary>落ちる所の線（0380）は、向こう側に居るときだけ押し始めと同じ条件で飛ぶ。</summary>
+        [Test]
+        public void ShouldJumpByLine_OnlyBeyondTheLine_WithTheSameConditionsAsAPress()
+        {
+            const float fall = TakeRunner.KidsRoomFallSec;
+            Assert.That(TakeRunner.ShouldJumpKidsRoomByLine(true, true, false, 0.6f, fall), Is.True);
+            Assert.That(TakeRunner.ShouldJumpKidsRoomByLine(false, true, false, 0.6f, fall), Is.False, "線の手前では飛ばない");
+            Assert.That(TakeRunner.ShouldJumpKidsRoomByLine(true, true, true, 0.6f, fall), Is.False, "押して飛んだ後は線でもう飛ばない");
+            Assert.That(TakeRunner.ShouldJumpKidsRoomByLine(true, true, false, 4.3f, fall), Is.False, "落ちる所以後に越えたら何もしない");
+            Assert.That(TakeRunner.ShouldJumpKidsRoomByLine(true, true, false, float.NaN, fall), Is.False, "動画が出るまで待つ");
+            Assert.That(TakeRunner.ShouldJumpKidsRoomByLine(true, false, false, 0.6f, fall), Is.False, "子供部屋のカットでなければ飛ばない");
+        }
+
+        /// <summary>台本に子供部屋のカットがあるときだけ落ちる所の線の枠を取る（位置の追跡も回る）。無ければ警告する。</summary>
+        [Test]
+        public void Runner_TakesTheFallLineSlot_OnlyWithAKidsRoomCut_AndWarnsWhenTheLineIsMissing()
+        {
+            Rig rig = MakeRig();
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning,
+                new System.Text.RegularExpressions.Regex($"layout.lines に無いライン.*{TakeRunner.KidsRoomFallLineId}"));
+            rig.Timeline.SetTimeline(new[] { Segment(KidsTake()) });
+            Assert.That(rig.Runner.KidsRoomFallLineSlot, Is.GreaterThanOrEqualTo(0));
+            Assert.That((bool)GetField(rig.Runner, "_hasLineTakes")!, Is.True, "線の側を見るために位置の追跡を回す");
+
+            rig.Timeline.SetTimeline(new[] { Segment(EnterTake("other", LiveStep(2f))) });
+            Assert.That(rig.Runner.KidsRoomFallLineSlot, Is.EqualTo(-1));
+        }
+
         [Test]
         public void SkipSec_IsWhatTheJumpCutsOff()
         {
@@ -477,6 +505,13 @@ namespace FixedCamVr.Streaming.Tests
             FieldInfo? field = target.GetType().GetField(name, BF);
             Assert.That(field, Is.Not.Null, $"field '{name}' not found on {target.GetType().Name}");
             field!.SetValue(target, value);
+        }
+
+        private static object? GetField(object target, string name)
+        {
+            FieldInfo? field = target.GetType().GetField(name, BF);
+            Assert.That(field, Is.Not.Null, $"field '{name}' not found on {target.GetType().Name}");
+            return field!.GetValue(target);
         }
 
         private static void Invoke(object target, string method)

@@ -121,8 +121,8 @@ class KidsJumpAnalyzerTests(unittest.TestCase):
                 *inner,
                 ev("take", t1, id="L2C1#0", st="end", why=why)]
 
-    def jump(self, t, frm=1.3, to=4.2, mode="xfade", n=1):
-        return ev("kidsjump", t, take="L2C1#0", **{"from": frm}, to=to, mode=mode, n=n)
+    def jump(self, t, frm=1.3, to=4.2, mode="xfade", n=1, by="mark"):
+        return ev("kidsjump", t, take="L2C1#0", **{"from": frm}, to=to, mode=mode, by=by, n=n)
 
     def land(self, t, wait=0.05, timed_out=0, n=1):
         return ev("kidsland", t, wait=wait, timedOut=timed_out, n=n)
@@ -181,6 +181,34 @@ class KidsJumpAnalyzerTests(unittest.TestCase):
                            ev("step", 46.9, take="L2C1#0", i=2, src="plate", played=1))
         self.assertEqual(self.levels(events), ["FAIL"])
 
+    def test_line_jump_then_land_passes(self):
+        events = self.take(40, 46, "done", self.jump(41.3, by="line"), self.land(41.35))
+        self.assertEqual(self.levels(events), ["OK"])
+
+    def test_unknown_jump_trigger_fails(self):
+        events = self.take(40, 46, "done", self.jump(41.3, by="walk"), self.land(41.35))
+        self.assertIn("FAIL", self.levels(events))
+
+    # 台本つき: 子供部屋の動画が出たのに飛ばず、人形が入る前に区間を出た（0380）。
+    TAKES = [{"id": "L2C1#0", "steps": [{"cueId": ""}, {"cueId": "backrooms_B_in"}, {"cueId": "backrooms_B"}]}]
+
+    def test_walked_out_before_the_doll_fell_warns(self):
+        events = self.take(40, 44.2, "yield", ev("step", 41, take="L2C1#0", i=1, src="plate", played=1))
+        _, verdicts = xp.kids_jump_findings(events, self.TAKES)
+        self.assertEqual([lv for lv, _ in verdicts], ["WARN"])
+        self.assertIn("kids_B_fall", verdicts[0][1])
+
+    def test_walked_out_after_the_doll_fell_passes(self):
+        events = self.take(40, 46.0, "yield", ev("step", 41, take="L2C1#0", i=1, src="plate", played=1))
+        _, verdicts = xp.kids_jump_findings(events, self.TAKES)
+        self.assertEqual([lv for lv, _ in verdicts], ["OK"])
+
+    def test_walked_out_after_a_line_jump_is_not_a_miss(self):
+        events = self.take(40, 43.0, "yield", ev("step", 41, take="L2C1#0", i=1, src="plate", played=1),
+                           self.jump(41.6, frm=0.5, by="line"), self.land(41.65))
+        _, verdicts = xp.kids_jump_findings(events, self.TAKES)
+        self.assertEqual([lv for lv, _ in verdicts], ["OK"])
+
     def test_held_report_cut_by_walking_out_says_nothing_bad(self):
         events = self.take(40, 43, "yield",
                            ev("step", 41, take="L2C1#0", i=1, src="plate", played=1),
@@ -198,7 +226,7 @@ class KidsJumpWriterReaderTests(unittest.TestCase):
     def test_csharp_writes_the_events(self):
         host = read("Assets/Scripts/Diagnostics/ShowTelemetryHost.cs")
         for key in ('Emit($"ev=kidsjump take=', '$"from={_takes.LastKidsRoomJumpFromSec:F2} to={TakeRunner.KidsRoomFallSec:F2} "',
-                    '$"mode={_takes.LastKidsRoomJumpMode} n={_takes.KidsRoomJumpCount}"',
+                    '$"mode={_takes.LastKidsRoomJumpMode} by={_takes.LastKidsRoomJumpBy} n={_takes.KidsRoomJumpCount}"',
                     'Emit($"ev=kidsland wait={_takes.LastKidsRoomLandWaitSec:F2} "',
                     'Emit($"ev=kidshold take=', '$"step={_takes.LastKidsRoomHeldStep} until={_takes.LastKidsRoomHeldUntilStep} "'):
             self.assertIn(key, host)
@@ -206,6 +234,20 @@ class KidsJumpWriterReaderTests(unittest.TestCase):
     def test_mode_tokens_match(self):
         runner = read("Assets/Scripts/Streaming/TakeRunner.cs")
         self.assertIn('LastKidsRoomJumpMode = jump == ScreenOverlayController.SeekJump.Crossfade ? "xfade" : "prep";', runner)
+
+    def test_trigger_tokens_match(self):
+        runner = read("Assets/Scripts/Streaming/TakeRunner.cs")
+        self.assertIn('LastKidsRoomJumpBy = byLine ? "line" : "mark";', runner)
+        self.assertEqual(set(xp.KIDS_JUMP_BY), {"line", "mark"})
+
+    def test_fall_line_id_matches_the_runner(self):
+        runner = read("Assets/Scripts/Streaming/TakeRunner.cs")
+        self.assertIn(f'public const string KidsRoomFallLineId = "{xp.KIDS_FALL_LINE_ID}";', runner)
+
+    def test_doll_entry_matches_the_csharp_test(self):
+        test = read("Assets/Tests/Streaming/KidsRoomJumpTests.cs")
+        self.assertIn("private const float DollEntersSec = 112f / 24f;", test)
+        self.assertAlmostEqual(xp.KIDS_ROOM_DOLL_IN_SEC, 112 / 24)
 
 
 if __name__ == "__main__":
