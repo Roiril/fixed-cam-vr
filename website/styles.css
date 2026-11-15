@@ -135,6 +135,12 @@
 html {
   scroll-behavior: smooth;
   background: var(--night);
+  /* ページは 3 周する。スクロールバーのつまみが下から上へ跳ぶと、頭へ戻ったのが見えてしまう */
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
 }
 
 body {
@@ -2028,6 +2034,35 @@ kbd,
   position: relative;
   z-index: 2;
   border-top: 0;
+}
+
+/* ───────── 3 周するページ ─────────
+   フッターの先は暗がり。その先に最初の部屋（ページの頭の写し）が浮かび上がる。
+   写しは本物と同じ組版で、上端が画面の上端に着いたときに本物と同じ絵になる（main.js が本物の位置へ移す） */
+
+.loop-bridge {
+  height: 40vh;
+  background: var(--night);
+}
+
+.loop-echo {
+  position: relative;
+  overflow-x: clip;
+  /* 移すまでの滑走路。ここは見えない（絵が尽きる手前で移す） */
+  padding-bottom: 100vh;
+  background: var(--night);
+}
+
+/* 暗がり。写しの上端が画面の下端に入ると濃く、上端に着くとなくなる（--dusk は main.js） */
+.loop-echo::before {
+  position: absolute;
+  z-index: 5;
+  inset: 0 0 auto;
+  height: 100vh;
+  content: "";
+  pointer-events: none;
+  background: var(--night);
+  opacity: var(--dusk, 1);
 }
 
 /* ───────── 中くらいの幅 ───────── */

@@ -210,6 +210,10 @@ if (/position:\s*sticky/.test(css) || html.includes("data-camera-scroll")) error
 if (html.includes("data-reveal") || js.includes("js-reveal") || css.includes("js-reveal")) errors.push("entrance reveals were removed: move only what has a stated reason");
 // 理由のある動き 2 つ：髪と染みは読み進めた位置で伸びる・広がる
 if ((html.match(/data-grow/g)?.length ?? 0) !== 2 || (html.match(/data-spread/g)?.length ?? 0) !== 2 || !js.includes('"--grow"') || !js.includes('"--spread"')) errors.push("hair growth and stain spread must follow the scroll position");
+// 2026-11-16 の指示：一番下まで読むと、気づいたら一番上から始まっていて、それが 3 回。再読み込みやワープに見えないこと。
+// 移すのは瞬時（smooth だと移る途中が見える）、スクロールバーは出さない（つまみが跳ぶ）、3 周目で写しを外す
+if (!/const LAPS = 3;/.test(js) || !js.includes('behavior: "instant"') || !js.includes("removeLoop()")) errors.push("the page must loop three times with an instant, invisible jump");
+if (!/scrollbar-width:\s*none/.test(css)) errors.push("the scrollbar must stay hidden so the loop does not show as a jumping thumb");
 if (!/button\.addEventListener\("click",[\s\S]*?selectedCamera = camera;/.test(js)) errors.push("camera buttons must select their camera on click");
 // 章の地は幕と壁の 2 つ。幕の章には幕の絵、壁の章には壁の地が要る
 if ((html.match(/class="chapter on-drape /g)?.length ?? 0) !== 4 || (html.match(/class="chapter on-wall /g)?.length ?? 0) !== 3) errors.push("chapters must alternate between the drape (4) and the wall (3)");
