@@ -2,11 +2,11 @@
 
   段 0  入ってくると左の幕に顔のシミ（cue_stain_A・滲んで出る）。報告するとシミだけが消える（markClear・演出は続く）。
         体が伸び出しの顔に重ならない所（線 s2a_rightstain）を越えるまで
-  段 1  右の幕に顔のシミが 1 秒で滲む（左のシミが残っていれば 2 枚目の層で保つ）。体がもっと左（s2a_leftend）に届くか、
-        報告の長押しを始めたら次へ（markStartAdvance）
-  段 2  右の幕の顔が左へ画面の半分まで伸び出し、右の幕の裏から人形が覗いて笑う。笑い声が 1 回
-  段 3  人形は幕の裏へ身を引き、黙ってこちらを見ている。壁の端を回る（s2a_walk）と次へ
-  段 4  乱れで CG の人形に替わる。幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出て EXIT_HOLD_SEC 秒まで
+  段 1  何も無い右の幕に、しみが 0.25 秒のディゾルブで出る（0389。左のシミが残っていれば 2 枚目の層で保つ）。
+        体がもっと左（s2a_leftend）に届くか、報告の長押しを始めたら次へ（markStartAdvance）
+  段 2  しみが笑う顔（0389 の案 1）に膨らみ、右の幕の縁から人形が覗く。動画生成（Flow）を緩急を付けて詰めた版。笑い声が 1 回
+  段 3  顔と覗く人形の最後のコマで止まる。壁の端を回る（s2a_walk）と次へ
+  段 4  乱れで CG の人形に替わる。幕には顔だけが残る。人形は幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出て EXIT_HOLD_SEC 秒まで
 
 区間 B へ出ても EXIT_HOLD_SEC 秒は畳まずにカメラ A の画を持つ（take の exitHoldSec）。右のシミの線から区間の出口までは
 0.6〜0.7m しか無く、歩き続ける人は線から約 2.7 秒で出る。そのままでは段 2 の途中で切れて段 3・4 が見えない。
@@ -23,7 +23,7 @@
     py -3.11 tools/show-apply-stain-right.py            # 変わる所を並べるだけ
     py -3.11 tools/show-apply-stain-right.py --apply    # 書く。そのあと py -3.11 tools/export-show-build.py で焼く
 
-素材は static-inputs に置いてから流す（作るのは tools/gen-plate/stain3/build_right_burst.py）。
+素材は static-inputs に置いてから流す（作るのは tools/gen-plate/stain3/build_flow_right.py）。
 """
 from __future__ import annotations
 
@@ -45,8 +45,7 @@ DOLL = "doll_mid"
 DOLL_HEIGHT_M = 0.8
 # 画像の人形が幕の裏で見ている床の点（tools/gen-plate/stain3/README.md の「右の幕の人形」）。CG はここから出る
 DOLL_FROM = (0.44, 0.62)
-TAG = "20261115_1250"   # 素材を合わせた無人写真 plate_A_20261115_125052.jpg
-BURST_TAG = "20261115_1250r2"   # 伸び出しと人形の画（生成の部屋の縮みを引き戻して組み直した版。手すりが 2 本に見えていた）
+FLOW_TAG = "20261116_flow"   # 動画生成（Flow）の版（0389 の C）。build_flow_right.py が無人写真へ位置合わせして書く
 
 # 側待ち（untilBeyond）は線分を無限の直線へ延ばして側を見るので、端点は向きと卓の表示を決めるだけ。
 # 区間 A の歩きは C 側の (0.75, 0.45) あたりから入り、壁沿いに (-0.26, 0.26) → (-0.26, -0.5) → 壁の端を回って
@@ -67,18 +66,22 @@ CUES = [
      "maskUrl": "/static-inputs/stain_A_press_leftmask_20260925.png",
      "sourceUrl": "/static-inputs/stain_A_ratio_20261113.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0, "blend": "multiply"},
-    {"id": "stain_A_right_burst", "name": "右の幕の顔が左へ伸び出し、幕の裏の人形が笑う（2周目A）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_mask_{BURST_TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_burst_{BURST_TAG}.mp4", "strength": 1, "loop": False,
+    {"id": "stain_A_right_burst", "name": "右の幕のしみが笑う顔に膨らみ、幕の縁から人形が覗く（2周目A・動画生成）", "camera": "A",
+     "maskUrl": f"/static-inputs/stain_A_right_flow_mask_{FLOW_TAG}.png",
+     "sourceUrl": f"/static-inputs/stain_A_right_flow_pop_{FLOW_TAG}.mp4", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
-    {"id": "stain_A_right_watch", "name": "右の幕の裏で人形が黙って見ている（2周目A）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_mask_{BURST_TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_watch_{BURST_TAG}.png", "strength": 1, "loop": False,
+    {"id": "stain_A_right_watch", "name": "右の幕の笑う顔と、幕の縁から覗く人形（2周目A・止め）", "camera": "A",
+     "maskUrl": f"/static-inputs/stain_A_right_flow_mask_{FLOW_TAG}.png",
+     "sourceUrl": f"/static-inputs/stain_A_right_flow_watch_{FLOW_TAG}.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0},
-    {"id": "cue_stain_A_right_hold", "name": "右の幕の顔のシミだけ（2周目A・掛け算）", "camera": "A",
-     "maskUrl": f"/static-inputs/stain_A_right_ratio_mask_{TAG}.png",
-     "sourceUrl": f"/static-inputs/stain_A_right_ratio_{TAG}.png", "strength": 1, "loop": False,
+    {"id": "cue_stain_A_right_hold", "name": "右の幕の顔のしみだけ（2周目A・掛け算）", "camera": "A",
+     "maskUrl": f"/static-inputs/stain_A_right_flow_ratio_mask_{FLOW_TAG}.png",
+     "sourceUrl": f"/static-inputs/stain_A_right_flow_ratio_{FLOW_TAG}.png", "strength": 1, "loop": False,
      "fadeIn": 0, "fadeOut": 0, "blend": "multiply"},
+    {"id": "cue_stain_A_right_face", "name": "右の幕の笑う顔だけ（2周目A・CG の人形がついてくる間）", "camera": "A",
+     "maskUrl": f"/static-inputs/stain_A_right_flow_face_mask_{FLOW_TAG}.png",
+     "sourceUrl": f"/static-inputs/stain_A_right_flow_face_{FLOW_TAG}.png", "strength": 1, "loop": False,
+     "fadeIn": 0, "fadeOut": 0},
 ]
 OLD_CUES = {"cue_stain_A_both"}
 
@@ -87,7 +90,7 @@ WATCH_MIN_SEC = 0.6
 # 区間を出た後に画面を持つ秒。線 1 から約 2.7 秒で出る歩きで、段 2 の残り（約 0.7 秒）と段 3 の 0.6 秒を流し、
 # CG の人形に約 2 秒を残す。これ以上長くすると 2 周目 B の演出の入りが遅れ、体験者が B の線を先に越えてしまう
 EXIT_HOLD_SEC = 3.5
-RIGHT_STAIN_FADE_SEC = 1.0   # 0378「右にシミが1sかけてじんわりでき始め」
+RIGHT_STAIN_FADE_SEC = 0.25   # 0389「しみがじわーっとなるところはカットで、ディゾルブ的に一瞬で膨らむ前までくる」
 
 
 def step(source: str, **kw) -> dict:
@@ -99,7 +102,7 @@ def step(source: str, **kw) -> dict:
 
 
 def burst_sec() -> float:
-    meta = STATIC / f"stain_A_right_burst_{BURST_TAG}.json"
+    meta = STATIC / f"stain_A_right_flow_pop_{FLOW_TAG}.json"
     if meta.exists():
         return float(json.loads(meta.read_text(encoding="utf-8"))["durationSec"])
     return 2.6
@@ -124,7 +127,7 @@ def patch(show: dict) -> None:
         if int(seg.get("lap", 0)) != 2 or int(seg.get("camera", 0)) != 0:
             continue
         take = next(t for t in seg["takes"] if t["id"] == TAKE)
-        take["name"] = "2周目A 左の幕のシミ → 右のシミが滲む → 右の幕の裏で人形が笑う → 隠れて見る → CG がついてくる"
+        take["name"] = "2周目A 左の幕のシミ → 右のしみ → 笑う顔に膨らみ人形が覗く → 止め → CG がついてくる"
         take["policy"] = "yield"
         take["exitHoldSec"] = EXIT_HOLD_SEC
         take["ifMissed"] = "skip"
@@ -136,7 +139,7 @@ def patch(show: dict) -> None:
             # 報告で左のシミだけを消す。演出は続き、右のシミの線を待つ
             step("inherit", cueId="cue_stain_A", durKind="untilBeyond", lineId="s2a_rightstain", durSec=40,
                  markClear=True),
-            # 右のシミが 1 秒で滲む。線を既に越えていても滲み切るまでは待つ。長押しを始めたらすぐ次へ
+            # 右のしみがディゾルブで出る。線を既に越えていても出きるまでは待つ。長押しを始めたらすぐ次へ
             step("inherit", cueId="cue_stain_A_right_hold", overlay2CueId="cue_stain_A_left_hold",
                  fadeInSec=RIGHT_STAIN_FADE_SEC, durKind="untilBeyond", lineId="s2a_leftend", durSec=20,
                  beyondMinSec=RIGHT_STAIN_FADE_SEC, markStartAdvance=True),
@@ -145,7 +148,7 @@ def patch(show: dict) -> None:
             # 見ている人形は線を既に越えていても最短 WATCH_MIN_SEC は見せる
             step("inherit", cueId="stain_A_right_watch", overlay2CueId="cue_stain_A_left_hold",
                  durKind="untilBeyond", lineId="s2a_walk", durSec=8, beyondMinSec=WATCH_MIN_SEC),
-            step("inherit", cueId="cue_stain_A_right_hold", overlay2CueId="cue_stain_A_left_hold", camera=0,
+            step("inherit", cueId="cue_stain_A_right_face", overlay2CueId="cue_stain_A_left_hold", camera=0,
                  cg=DOLL, cgMode="trail", transition="glitch",
                  durKind="untilZoneChange", trailGapM=0.9, trailStepM=0.45, trailHideM=0.6,
                  trailFromX=DOLL_FROM[0], trailFromZ=DOLL_FROM[1], trailHopSec=0.55),

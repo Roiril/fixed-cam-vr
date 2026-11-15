@@ -1,0 +1,30 @@
+{
+  "durationSec": 2.292,
+  "fps": 24,
+  "register": {
+    "points": 290,
+    "of": 418,
+    "residualPx": 0.37,
+    "maxShiftPx": 6.0
+  },
+  "firstFrameDiff": 5.8,
+  "source": "Logs/gen-plate/stain2A_right_video_20261115/flow_v2_plain_to_grin_4x3.mp4",
+  "rest": [
+    [
+      2.0,
+      2.9,
+      3.0
+    ],
+    [
+      2.9,
+      4.0,
+      1.6
+    ],
+    [
+      4.0,
+      5.2,
+      1.0
+    ]
+  ],
+  "stainAt": 2.0
+}

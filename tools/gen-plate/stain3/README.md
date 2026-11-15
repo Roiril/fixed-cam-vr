@@ -42,7 +42,11 @@
   顔は Codex で `faces/p_common.md` ＋ `faces/p_face_grin.md`、入力は右のしみだけの画の 2 倍 `faces/in_stain2x.png` と参考 `faces/ref_grin.png`（`faces/run_faces.ps1 grin`）。
   前の伸び出しの顔（`bulge.png`）は「なんかリアルで変」。せり出しは、角まで出る版（`faces/v1/`）は出すぎ、浅く浮く版（`faces/v2/`）は控えめすぎ
 - 返った動画 `flow_v2_plain_to_grin_4x3.mp4` に緩急を付けるのは `py -3.11 tools/gen-plate/stain3/retime_flow.py C_dissolve_pop`。
-  しみが滲む途中を切り、何も無い画から膨らむ直前のしみ（元の 2.0 秒）へディゾルブで移り、顔を加速する。半分の速さには落とさない。本編にはまだ当てていない
+  しみが滲む途中を切り、何も無い画から膨らむ直前のしみ（元の 2.0 秒）へディゾルブで移り、顔を加速する。半分の速さには落とさない
+- 本編の素材にするのは `py -3.11 tools/gen-plate/stain3/build_flow_right.py`（`--dry` で確認の画だけ）。最初のコマを無人写真へ 1 回だけ
+  位置合わせし、全部のコマへ同じ写し方と色の合わせを掛けて、段 1 のしみ（比の画）・段 2 の動画・段 3 の止め・段 4 の顔だけの画を
+  `static-inputs/stain_A_right_flow_*_20261116_flow.*` に書く。確認の画は `Logs/gen-plate/stain2A_right_video_20261115/build/sheet.png`。
+  台本へは `tools/show-apply-stain-right.py`。ツインの部屋の版は作っていない（ツインは前の版の素材を出す）
 
 ## 素材
 
@@ -50,7 +54,7 @@
 
 | 場所 | 待機 | 左のしみ（掛け算） | 盛り上がり | 右の幕 |
 |---|---|---|---|---|
-| 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | 比の画 `stain_A_right_ratio*_20261115_1250.png`・伸び出しと人形 `stain_A_right_{burst,watch,mask}_20261115_1250r2.*` |
+| 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | 動画生成の版 `stain_A_right_flow_*_20261116_flow.*`（0389。前の版の `stain_A_right_*_20261115_1250*` は台本から外れた） |
 | ツイン `tools/twin/assets/` | `twin_stainA_idle.png` | `twin_stainA_ratio.png` | `twin_stainA_bulge.png` | `twin_stainA_right_*` |
 
 - 左のしみの姿（0143 で判定済み）は比の画が持っている。待機は無人写真にその比の画を掛けた画（生成ではない）
