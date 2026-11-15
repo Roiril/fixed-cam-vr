@@ -108,6 +108,12 @@ namespace FixedCamVr.Streaming
             /// <b>take index + 1</b> で持つ（0 = 相手なし）。struct の既定 0 を「なし」にするため。
             /// </summary>
             public int skipIfDismissedTake1;
+
+            /// <summary>
+            /// <c>policy:"yield"</c> で前へ抜けても畳まずに画面を持つ秒（take の <c>exitHoldSec</c>・0 = すぐ畳む）。
+            /// <see cref="OnZoneCommitted"/> が持ち始め、<see cref="Tick"/> がこの秒の終わりで前進の yield として畳む。
+            /// </summary>
+            public float exitHoldSec;
         }
 
         public enum Action { None, BeginStep, EndTake }
@@ -316,6 +322,9 @@ namespace FixedCamVr.Streaming
 
         // 走行中の演出。
         private bool _running;
+        // 前へ抜けた後も畳まずに画面を持っている（take の exitHoldSec）。持ち終わる時刻。
+        private bool _exitHolding;
+        private float _exitHoldUntil;
         // 体験者の報告を受けた。実際に畳むのは次の Tick（終わり方を EndTakeDecision 1 本に保つため）。
         private bool _dismissPending;
         // 報告は成立したが、応答映像が元の姿勢へ戻るまで画面だけ保つ。
@@ -402,6 +411,7 @@ namespace FixedCamVr.Streaming
             _activeStep = -1;
             _hasCurrent = false;
             _closingLineCrossedAt = float.NegativeInfinity;
+            _exitHolding = false;
         }
 
         /// <summary>
@@ -431,6 +441,9 @@ namespace FixedCamVr.Streaming
             MarkStartAdvanceCount = 0;
             SkippedByDismissCount = 0;
             LastSkippedByDismissTake = -1;
+            ExitHoldCount = 0;
+            LastExitHoldTake = -1;
+            _exitHolding = false;
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // ラン境界なので報告不要
             _running = false;
@@ -474,6 +487,24 @@ namespace FixedCamVr.Streaming
             // 別の演出が始まって「返したのにまた持って行かれる」のを避けるため。
             if (_running && _defs[_activeTake].yieldOnZoneChange)
             {
+                // 前へ抜けても exitHoldSec のあいだは畳まずに画面を持つ（2 周目 A の人形がついてくる・0378）。
+                // 持つのは 1 演出 1 度。持っている間にもう 1 度区間を移ったら（引き返し・さらに先）従来どおり畳む。
+                // 次の区間の演出は普通に武装する — 画面が空くまで Ready のまま待ち、畳んだ次の Tick で始まる。
+                if (forward && !_exitHolding && _defs[_activeTake].exitHoldSec > 0f)
+                {
+                    _exitHolding = true;
+                    _exitHoldUntil = now + _defs[_activeTake].exitHoldSec;
+                    ExitHoldCount++;
+                    LastExitHoldTake = _activeTake;
+                    if (hadPrev) ReportRemainingDrops(prevLap, prevCam, -1, screenBusy: true);
+                    ClearArmed();
+                    _hasCurrent = true;
+                    _curLap = newLap;
+                    _curCam = newCam;
+                    _curEnteredAt = now;
+                    ArmEnterTakes(newLap, newCam, now);
+                    return result;
+                }
                 Decision yielded = EndTakeDecision(newCam, EndReason.Yielded);
                 yielded.yieldedForward = forward;
                 // 打ち切りで消える武装も**黙って消さない**（旧実装はここだけ報告が漏れていた）。
@@ -559,6 +590,15 @@ namespace FixedCamVr.Streaming
 
                 if (!holdCurrentStep && now >= _deadline)
                     return EndTakeDecision(latestZoneCam, EndReason.Watchdog);
+
+                // 前へ抜けた後に持っていた秒（exitHoldSec）が尽きた。前進の yield として畳み、画面を今の区間へ返す。
+                // chainNext は立てない — 次の演出は別の区間のカメラで出るので、画面を返してから始める。
+                if (_exitHolding && now >= _exitHoldUntil)
+                {
+                    Decision held = EndTakeDecision(latestZoneCam, EndReason.Yielded);
+                    held.yieldedForward = true;
+                    return held;
+                }
 
                 // ⚠ ここで武装中の演出を決着させない（旧実装はしていた）。
                 //   画面が塞がっているのは**システム内部の都合**なので、著作された演出を捨てる理由にならない。
@@ -795,16 +835,26 @@ namespace FixedCamVr.Streaming
         //    消すと著作した内容が黙って減る。
         private Decision DismissDecision(int latestZoneCam)
         {
+            if (_activeTake >= 0 && _activeTake < _takeDismissed.Length) _takeDismissed[_activeTake] = true;
             for (int k = _armedIndex.Count - 1; k >= 0; k--)
             {
-                if (_armedState[k] != Armed.Ready) continue;
                 int dropped = _armedIndex[k];
+                // 畳んだ演出を相手に持つ演出（skipIfDismissed）は、Waiting でも Ready でもここで外して「出さなかった」に数える。
+                // 前へ抜けた後も画面を持つ演出（exitHoldSec）は、持っている間に次の区間の演出を武装済みなので、
+                // 武装の時点の見送り（ArmEnterTakes）だけでは 2 周目 B の人形が出てしまう（0378）。
+                if (SuppressedByDismiss(dropped))
+                {
+                    RemoveArmedAt(k, out _);
+                    SkippedByDismissCount++;
+                    LastSkippedByDismissTake = dropped;
+                    continue;
+                }
+                if (_armedState[k] != Armed.Ready) continue;
                 RemoveArmedAt(k, out _);
                 TakeDropped?.Invoke(dropped, DropReason.VisitorDismissed);
             }
             DropAllCarry(DropReason.VisitorDismissed);
             DismissCount++;
-            if (_activeTake >= 0 && _activeTake < _takeDismissed.Length) _takeDismissed[_activeTake] = true;
             // **連続の渡し（chainNext）は立てない。** 渡すと画面が異常のまま次の演出へ移り、
             // 現実が 1 フレームも出ない ＝ 報告の因果が画から消える。
             return EndTakeDecision(latestZoneCam, EndReason.VisitorDismissed);
@@ -1032,8 +1082,19 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void NotifyZoneChanged(float now)
         {
+            // 前へ抜けたら画面を持つ演出（exitHoldSec）は、ここではカットを終えない。前進なら持っている秒の終わりまで続き、
+            // 引き返しなら直後の OnZoneCommitted が演出ごと畳む。持っている間の 2 度目の区間移りも演出ごと畳まれる。
+            if (_running && !_exitHolding && _defs[_activeTake].yieldOnZoneChange && _defs[_activeTake].exitHoldSec > 0f)
+                return;
             if (CurrentStepWait() == WaitZoneChange) SetCurrentStepEnd(now);
         }
+
+        /// <summary>前へ抜けた後も画面を持っているか（take の exitHoldSec）。</summary>
+        public bool ExitHolding => _running && _exitHolding;
+
+        /// <summary>前へ抜けた後に画面を持ち始めた回数と、最後に持った演出の index（テレメトリ・テスト用）。</summary>
+        public int ExitHoldCount { get; private set; }
+        public int LastExitHoldTake { get; private set; } = -1;
 
         /// <summary>走行中のカットの尺（負値なら待っている相手）。走行していなければ 0。</summary>
         private float CurrentStepWait()
@@ -1109,6 +1170,7 @@ namespace FixedCamVr.Streaming
             _activeReported = false;
             _activeCleared = false;
             _dismissAfterStep = -1;
+            _exitHolding = false;
             _baseZoneCam = baseZoneCam;
             float[] durs = _defs[index].stepDurSec;
             _stepBeganAt = now;
@@ -1151,6 +1213,7 @@ namespace FixedCamVr.Streaming
             }
             _activeReported = false;
             _running = false;
+            _exitHolding = false;
             _activeTake = -1;
             _activeStep = -1;
             // 走行が終わったので、消化されなかった報告を次の演出へ持ち越さない

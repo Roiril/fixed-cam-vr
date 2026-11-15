@@ -46,39 +46,39 @@ paths:
 体験者に見えることは `canon/NOW.md`、経緯は `reference/archive/streaming-2026-10-22.md`（S:）・`reference/archive/show-design-2026-10-22.md`（D:）。出典の行番号はその凍結版のもの。
 
 ## 契約
-- 相は Intro → Run → Finished — `ShowRunLogic.Tick` / `ShowRunDirector.Update` 〔出典: streaming:741-752〕
-- 本編へ入る条件は「導入演出が終わった ∧ スタート区間 ∧ 中止でない ∧ introMinSec 経過」。スタッフの明示操作は常に通す — `ShowRunLogic.Tick(introCompleted, introAborted)` / `IntroDirector.Completed` 〔出典: show-design:409-427, 963-981〕
-- 導入・終了の間、区間進行を止めるのは 1 点だけ。カメラ切替は止めない — `CueScheduler.SetShowGate` 〔出典: streaming:804-806〕
-- 導入 → 本編は録画を消さない。新しい体験者の号令元は卓と現地の 2 つで、体験 1 回ぶんの状態はどちらからも `BeginRun` で落とす — `ShowControlClient.BeginMainRun` / `TriggerRunReset` / `BeginNewVisitorRunLocal` / `ShowRunDirector.BeginRun` 〔出典: memory/show_run_skeleton.md〕
-- 周は 2 つ。進行の周は単調増加で終了判定に使う。区間の周は引き返すと戻り、演出・録画・post・BGM の区間キーになる。コードの名前は進行が `ProgressLap`、区間が `SegmentLap` で、`CurrentLap` という名前は使わない — `LapCounterLogic.ProgressLap` / `SegmentLap` / `TimelineDirector.SegmentLap` / `CueScheduler.CameraEntered(camera, segmentLap, progressLap)` 〔出典: streaming:443-457〕
+- 相は Intro → Run → Finished — `ShowRunLogic.Tick` / `ShowRunDirector.Update` 〔streaming:741-752〕
+- 本編へ入る条件は「導入演出が終わった ∧ スタート区間 ∧ 中止でない ∧ introMinSec 経過」。スタッフの明示操作は常に通す — `ShowRunLogic.Tick(introCompleted, introAborted)` / `IntroDirector.Completed` 〔show-design:409-427, 963-981〕
+- 導入・終了の間、区間進行を止めるのは 1 点だけ。カメラ切替は止めない — `CueScheduler.SetShowGate` 〔streaming:804-806〕
+- 導入 → 本編は録画を消さない。新しい体験者の号令元は卓と現地の 2 つで、体験 1 回ぶんの状態はどちらからも `BeginRun` で落とす — `ShowControlClient.BeginMainRun` / `TriggerRunReset` / `BeginNewVisitorRunLocal` / `ShowRunDirector.BeginRun` 〔memory/show_run_skeleton.md〕
+- 周は 2 つ。進行の周は単調増加で終了判定に使う。区間の周は引き返すと戻り、演出・録画・post・BGM の区間キーになる。コードの名前は進行が `ProgressLap`、区間が `SegmentLap` で、`CurrentLap` という名前は使わない — `LapCounterLogic.ProgressLap` / `SegmentLap` / `TimelineDirector.SegmentLap` / `CueScheduler.CameraEntered(camera, segmentLap, progressLap)` 〔streaming:443-457〕
 - テレメトリのキーは `lap=` が常に区間の周、`plap=` が常に進行の周。解析器は旧ログのため `plap` が無ければ `lap` に落ちる — `ShowTelemetryHost.OnZoneCommitted` 〔コード〕
 - `ShowControlClient.LapCountReset` は周の数え直しの合図で、新しい体験者（卓・現地）と導入から本編へ移るときの 3 か所で発火する。体験者が替わった合図として購読しない — `BeginMainRun` 〔コード〕
-- 前進は `prev == order[pos] && cam == order[pos+1]` のときだけ。`order[0]` へ戻ると lap++。区間の周は進行の周を超えない — `LapCounterLogic.Feed` / `LapCounterTests.SegmentLap_NeverExceedsProgressLap` 〔出典: streaming:460-466〕
-- 周回の時計は dwell 0.5s で確定し、画面の凍結・dip・卓の固定に左右されない — `ZoneProgressionLogic.DefaultDwellSec` / `CameraSwitchDirector.ZoneCommitted` 〔出典: streaming:436-441〕
-- 到達可能な区間は `lap <= totalLaps || (lap == totalLaps+1 && cam == order[0])` — `ShowRunReach.IsSegmentReachable` / `ShowRunReachTests` 〔出典: streaming:758-767〕
-- 周を走り切ったら 3s は必ず待ち、走行中の演出は 60s まで見せ切る。締めの武装中も待つ。時間切れ 300s は待たない。判定は次フレームの Tick — `ShowRunLogic.Tick(deferNaturalEnd)` / `ShowRunDefaults.EndGraceSec` / `EndHoldMaxSec` 〔出典: streaming:769-800〕
-- 出口は 5 つ。終幕の合図（`afterTakeId` の演出が走り終えた）／締めの判定（Trapped）／周回／時間切れ／卓。発火済みを落とすのは `BeginRun` だけ（人の介入は武装だけ外す）— `EndingCueLogic` / `ShowRunDirector.TickEndingDecision` 〔出典: show-design:930-962〕
-- 体験の時計は休止を数えない — `ShowClock.MaxStepSec` 〔出典: memory/unexpected_event_recovery.md〕
+- 前進は `prev == order[pos] && cam == order[pos+1]` のときだけ。`order[0]` へ戻ると lap++。区間の周は進行の周を超えない — `LapCounterLogic.Feed` / `LapCounterTests.SegmentLap_NeverExceedsProgressLap` 〔streaming:460-466〕
+- 周回の時計は dwell 0.5s で確定し、画面の凍結・dip・卓の固定に左右されない — `ZoneProgressionLogic.DefaultDwellSec` / `CameraSwitchDirector.ZoneCommitted` 〔streaming:436-441〕
+- 到達可能な区間は `lap <= totalLaps || (lap == totalLaps+1 && cam == order[0])` — `ShowRunReach.IsSegmentReachable` / `ShowRunReachTests` 〔streaming:758-767〕
+- 周を走り切ったら 3s は必ず待ち、走行中の演出は 60s まで見せ切る。締めの武装中も待つ。時間切れ 300s は待たない。判定は次フレームの Tick — `ShowRunLogic.Tick(deferNaturalEnd)` / `ShowRunDefaults.EndGraceSec` / `EndHoldMaxSec` 〔streaming:769-800〕
+- 出口は 5 つ。終幕の合図（`afterTakeId` の演出が走り終えた）／締めの判定（Trapped）／周回／時間切れ／卓。発火済みを落とすのは `BeginRun` だけ（人の介入は武装だけ外す）— `EndingCueLogic` / `ShowRunDirector.TickEndingDecision` 〔show-design:930-962〕
+- 体験の時計は休止を数えない — `ShowClock.MaxStepSec` 〔memory/unexpected_event_recovery.md〕
 - 実時間の時計は `SimTime`（体験）と `WallClock`（壁時計）から読み、`Time.unscaled*` / `realtimeSinceStartup` を直接読まない — `SimTime` / `TimeSourceLintTests` 〔コード〕
-- 区間に take が 0..N 本。実行体は 1 つ。v2 は読込時に変換する — `TimelineMigration.EnsureTakes` / `TimelineDirector.SetTimeline` 〔出典: streaming:598-605〕
-- 開始規則は enter+t・exit・line の 3 つ。line は担当カメラが一致したときだけ due になる。横断の猶予は 0.6s。使えない線は `lineIndex=-1` — `TakeRunnerLogic.IsDue` / `LineCrossLogic.CrossLatchSec` / `TakeWiringTests.LineTake_WithoutLineId_*` 〔出典: streaming:1583-1607〕
-- 画面が塞がっているだけなら区間内で Ready のまま待つ。捨てたら報告する — `TakeRunnerLogic.TakeDropped` 〔出典: streaming:611-620〕
-- `wait:"chain"` は塞がれていた演出だけ持ち越す。上限は 2 本と 60s — `TakeRunnerLogic.MaxCarrySlots` / `CarryMaxWaitSec` 〔出典: streaming:674-690〕
-- `yield` は区間を移ると畳み、離脱の演出も出さない。前進は `yieldedForward` で追いつきに数える。`hold` は区間を跨ぐ — `TakeRunnerLogic.OnZoneCommitted` 〔streaming:1784-1788〕
-- watchdog は演出の頭から数え、既定は 45s。戻り先は時計の確定ゾーン — `TakeSchema.DefaultMaxDurationSec` / `CameraSwitchDirector.TryGetCurrentZoneCamera` 〔出典: streaming:622-624〕
-- 尺の待ち相手は負値。clip 終端・次の区間・線・報告・線の向こう側。線は開始後の横断、向こう側は状態で数え、線が無ければ既定尺。報告は締め専用で開始 4s は受けない — `TakeRunnerLogic.WaitClipEnd`〜`WaitBeyond` / `EndStep*` / `LineSideLogic` / `MarkGraceSec` 〔出典: streaming:1775-1777, 2226-2249, 2495-2514〕
-- `once` は決着回数で数える。未決着は「yield で切れた ∧ 未報告」だけで、その区間へ戻れば頭から再演する（2 回まで）。走行中の自分は武装しない — `TakeRunnerLogic.Outcome` / `ArmEnterTakes` / `TakeReplayOnBacktrackTests` 〔出典: streaming:2586-2610〕
-- `dismissible`（既定 false）は報告で畳まれ、乱れ 420ms で現実へ戻る。Ready と持ち越しは捨てる。締めのカットと `afterTakeId` は消せない — `TakeRunnerLogic.NotifyMarkPressed` / `TakeRunner.SetTakes` / `TakeSchema.DismissGlitchMs` 〔出典: streaming:2515-2558〕
+- 区間に take が 0..N 本。実行体は 1 つ。v2 は読込時に変換する — `TimelineMigration.EnsureTakes` / `TimelineDirector.SetTimeline` 〔streaming:598-605〕
+- 開始規則は enter+t・exit・line の 3 つ。line は担当カメラが一致したときだけ due になる。横断の猶予は 0.6s。使えない線は `lineIndex=-1` — `TakeRunnerLogic.IsDue` / `LineCrossLogic.CrossLatchSec` / `TakeWiringTests.LineTake_WithoutLineId_*` 〔streaming:1583-1607〕
+- 画面が塞がっているだけなら区間内で Ready のまま待つ。捨てたら報告する — `TakeRunnerLogic.TakeDropped` 〔streaming:611-620〕
+- `wait:"chain"` は塞がれていた演出だけ持ち越す。上限は 2 本と 60s — `TakeRunnerLogic.MaxCarrySlots` / `CarryMaxWaitSec` 〔streaming:674-690〕
+- `yield` は区間を移ると畳み、離脱の演出も出さない。前進は `yieldedForward` で追いつきに数える（take の `exitHoldSec` 秒は畳まない・mark-advance.md）。`hold` は区間を跨ぐ — `TakeRunnerLogic.OnZoneCommitted` 〔streaming:1784-1788〕
+- watchdog は演出の頭から数え、既定は 45s。戻り先は時計の確定ゾーン — `TakeSchema.DefaultMaxDurationSec` / `CameraSwitchDirector.TryGetCurrentZoneCamera` 〔streaming:622-624〕
+- 尺の待ち相手は負値。clip 終端・次の区間・線・報告・線の向こう側。線は開始後の横断、向こう側は状態で数え、線が無ければ既定尺。報告は締め専用で開始 4s は受けない — `TakeRunnerLogic.WaitClipEnd`〜`WaitBeyond` / `EndStep*` / `LineSideLogic` / `MarkGraceSec` 〔streaming:1775-1777, 2226-2249, 2495-2514〕
+- `once` は決着回数で数える。未決着は「yield で切れた ∧ 未報告」だけで、その区間へ戻れば頭から再演する（2 回まで）。走行中の自分は武装しない — `TakeRunnerLogic.Outcome` / `ArmEnterTakes` / `TakeReplayOnBacktrackTests` 〔streaming:2586-2610〕
+- `dismissible`（既定 false）は報告で畳まれ、乱れ 420ms で現実へ戻る。Ready と持ち越しは捨てる。締めのカットと `afterTakeId` は消せない — `TakeRunnerLogic.NotifyMarkPressed` / `TakeRunner.SetTakes` / `TakeSchema.DismissGlitchMs` 〔streaming:2515-2558〕
 - `markStartCueId` は長押しの開始で出す。動画は 1 往復を流しきり、静止画は押している間だけで、成立前に離すと元の画へ戻る。成立後は `markDoneCueId` を `markDoneSec` 出して畳む。`markDoneCueId` はユーザーが名指しした演出だけ（LEDGER 0330） — `TakeRunner.NotifyVisitorMarkEnded` / `BeginMarkDone`
-- 報告に数えるのは走行中の押下だけ — `TakeRunnerLogic.NotifyMarkPressed` 〔出典: streaming:2599-2604〕
-- 次の演出が控えていれば復帰の暗転を打たない。安全網は次フレーム以降で判定する — `TakeRunner._chainPendingFrame` 〔出典: streaming:691-707〕
-- 継ぎ目の遷移は割り込む側が持つ — `CameraSwitchDirector.HandoffDip` 〔出典: streaming:709-725〕
-- 卓の介入と現地リセットは走行中の演出を畳む — `TimelineDirector.SetSuppressed` / `ShowControlClient.ReleaseLiveHolds` 〔出典: streaming:642-646〕
-- カットの分割・凍結は、正常終了・中止・ラン開始のどれでも畳む — `TakeRunner.ReleaseStepState` / `TakeSplitLayerTests` 〔出典: streaming:2206-2211〕
-- `switchSfx` は素材カットだけで、画を差し替える行から鳴らす — `CameraSwitchDirector.PlaySwitchSfx` / `SwitchAudioCueTests` 〔出典: streaming:2196-2225〕
-- BGM は指示の無い区間で継続する。take の bgm は占有で、終われば今のレーンへ戻る。step の bgm はレーンを書き換え、戻らない — `BgmPlanLogic.Decide` / `DecideRestore` / `TakeRunner.BeginStepBgm` 〔出典: streaming:3222-3262〕
+- 報告に数えるのは走行中の押下だけ — `TakeRunnerLogic.NotifyMarkPressed` 〔streaming:2599-2604〕
+- 次の演出が控えていれば復帰の暗転を打たない。安全網は次フレーム以降で判定する — `TakeRunner._chainPendingFrame` 〔streaming:691-707〕
+- 継ぎ目の遷移は割り込む側が持つ — `CameraSwitchDirector.HandoffDip` 〔streaming:709-725〕
+- 卓の介入と現地リセットは走行中の演出を畳む — `TimelineDirector.SetSuppressed` / `ShowControlClient.ReleaseLiveHolds` 〔streaming:642-646〕
+- カットの分割・凍結は、正常終了・中止・ラン開始のどれでも畳む — `TakeRunner.ReleaseStepState` / `TakeSplitLayerTests` 〔streaming:2206-2211〕
+- `switchSfx` は素材カットだけで、画を差し替える行から鳴らす — `CameraSwitchDirector.PlaySwitchSfx` / `SwitchAudioCueTests` 〔streaming:2196-2225〕
+- BGM は指示の無い区間で継続する。take の bgm は占有で、終われば今のレーンへ戻る。step の bgm はレーンを書き換え、戻らない — `BgmPlanLogic.Decide` / `DecideRestore` / `TakeRunner.BeginStepBgm` 〔streaming:3222-3262〕
 - 録った区間は録り直さない。3 周目は区間を出たら録画の途中でも畳み、次が plate なら 2 周目の滞在で切り上げる — `SegmentRecorder.SegmentAlreadyRecorded` / `TakeRunnerLogic.ResolveRecordedCutSec` 〔streaming:467, 1742-1747 / memory/take_continuity.md〕
-- present-flag は「宣言 ∧ 実体あり」 — `TimelinePresentFlags.Reconcile` 〔出典: streaming:575-589〕
+- present-flag は「宣言 ∧ 実体あり」 — `TimelinePresentFlags.Reconcile` 〔streaming:575-589〕
 
 ## 罠（破ると壊れる）
 - `NotifyLap` に区間の周を渡すと、帰りの A で引き返した人の体験が終わらない 〔streaming:457〕

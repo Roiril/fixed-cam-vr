@@ -28,7 +28,7 @@ paths:
 | [sound-design.md](sound-design.md) | Streaming/Sound/** と音の道具（まだ分けていない） |
 | [kids-room.md](kids-room.md) | 2 周目 B の子供部屋の動画（音・押し始めで落ちる所へ飛ぶ・報告しても最後のコマまで見せ切る） |
 | [doll-laugh.md](doll-laugh.md) | カットの `dollLaugh`（人形の笑い声 1 回・音源の切り出し・鳴らす縁・観測） |
-| [mark-advance.md](mark-advance.md) | 報告でカットを 1 つ進める（`markAdvance`）・素材だけ消す（`markClear`）・長押しで進める（`markStartAdvance`）・相手が畳まれたら出さない（take の `skipIfDismissed`） |
+| [mark-advance.md](mark-advance.md) | 報告でカットを 1 つ進める（`markAdvance`）・素材だけ消す（`markClear`）・長押しで進める（`markStartAdvance`）・相手が畳まれたら出さない（take の `skipIfDismissed`）・区間を出た後も画面を持つ（take の `exitHoldSec`） |
 
 Editor のプレビュー（`Streaming/Editor/`）は、プレビューする対象と同じ接頭辞の rule に従う。
 

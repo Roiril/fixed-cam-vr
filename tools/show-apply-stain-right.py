@@ -6,7 +6,12 @@
         報告の長押しを始めたら次へ（markStartAdvance）
   段 2  右の幕の顔が左へ画面の半分まで伸び出し、右の幕の裏から人形が覗いて笑う。笑い声が 1 回
   段 3  人形は幕の裏へ身を引き、黙ってこちらを見ている。壁の端を回る（s2a_walk）と次へ
-  段 4  乱れで CG の人形に替わる。幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出るまで
+  段 4  乱れで CG の人形に替わる。幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出て EXIT_HOLD_SEC 秒まで
+
+区間 B へ出ても EXIT_HOLD_SEC 秒は畳まずにカメラ A の画を持つ（take の exitHoldSec）。右のシミの線から区間の出口までは
+0.6〜0.7m しか無く、歩き続ける人は線から約 2.7 秒で出る。そのままでは段 2 の途中で切れて段 3・4 が見えない。
+持っている間に段 2〜4 が尺どおり進み、人形は体験者が出ていった画の左の端へついていく。持ち終わると B の画へ戻り、
+2 周目 B の人形の演出が始まる。引き返したときは従来どおりすぐ畳む。
 
 段 2〜4 の報告は演出ごと畳む（左右のシミも人形も消える）。2 周目 B の人形の演出は、この演出が報告で畳まれたら出ない
 （skipIfDismissed）。左のシミは段 1〜4 では 2 枚目の層の掛け算で保ち、段 0 で消していれば出さない。
@@ -78,6 +83,9 @@ OLD_CUES = {"cue_stain_A_both"}
 
 
 WATCH_MIN_SEC = 0.6
+# 区間を出た後に画面を持つ秒。線 1 から約 2.7 秒で出る歩きで、段 2 の残り（約 0.7 秒）と段 3 の 0.6 秒を流し、
+# CG の人形に約 2 秒を残す。これ以上長くすると 2 周目 B の演出の入りが遅れ、体験者が B の線を先に越えてしまう
+EXIT_HOLD_SEC = 3.5
 RIGHT_STAIN_FADE_SEC = 1.0   # 0378「右にシミが1sかけてじんわりでき始め」
 
 
@@ -117,6 +125,7 @@ def patch(show: dict) -> None:
         take = next(t for t in seg["takes"] if t["id"] == TAKE)
         take["name"] = "2周目A 左の幕のシミ → 右のシミが滲む → 右の幕の裏で人形が笑う → 隠れて見る → CG がついてくる"
         take["policy"] = "yield"
+        take["exitHoldSec"] = EXIT_HOLD_SEC
         take["ifMissed"] = "skip"
         take["dismissible"] = True
         # 報告の後に左の幕の縁から人形が覗く一瞬（0330）は、右の幕の人形と重なるので外す。押している間の膨らみは残す
@@ -156,7 +165,7 @@ def summary(show: dict) -> list:
         if int(seg.get("lap", 0)) != 2 or int(seg.get("camera", 0)) != 0:
             continue
         for t in seg["takes"]:
-            out.append(f"  2-A {t['id']} at={t.get('at')} policy={t.get('policy')} markStart={t.get('markStartCueId', '')}"
+            out.append(f"  2-A {t['id']} at={t.get('at')} policy={t.get('policy')} exitHold={t.get('exitHoldSec', 0)} markStart={t.get('markStartCueId', '')}"
                        f" markDone={t.get('markDoneCueId', '')}:")
             for s in t["steps"]:
                 out.append(f"    {s['source']}[{s.get('cueId') or '-'}{' +' + s['overlay2CueId'] if s.get('overlay2CueId') else ''}"

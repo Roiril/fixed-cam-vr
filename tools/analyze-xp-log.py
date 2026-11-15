@@ -498,6 +498,52 @@ def take_skip_findings(events, takes=None):
     return lines, verdicts
 
 
+# 前へ抜けた後も畳まずに画面を持った演出（take の exitHoldSec）が、持つ秒の後に終わるまでの猶予。
+# 終わるのは Tick の 1 フレーム後なので、1 フレームより十分長く、持つ秒と取り違えない程度に短く取る。
+EXIT_HOLD_SLACK_SEC = 0.5
+
+
+def exit_hold_findings(events, takes=None):
+    """前へ抜けた後も畳まずに画面を持った演出（take の exitHoldSec）を確かめる。(行, 判定) を返す。
+
+    書き手は C# の ShowTelemetryHost:
+      ev=exithold take=<演出> sec=<持つ秒> n=<累計>
+    持ち始めてから sec + EXIT_HOLD_SLACK_SEC 秒以内に同じ演出の ev=take st=end が無ければ FAIL（画面を持ったまま次の区間を塞いだ）。
+    台本があれば、exitHoldSec を持たない演出が持った・yield でない演出が持ったら FAIL。
+    持っている間に終わった演出の終わり方（why）と、持っていた秒を行に出す。
+    """
+    holds = [e for e in events if e.get("ev") == "exithold"]
+    lines, verdicts = [], []
+    if not holds:
+        return lines, verdicts
+    lines.append(f"  前へ抜けた後も画面を持った演出: {len(holds)} 回")
+    by_id = {str(t.get("id", "")): t for t in (takes or [])}
+    for e in holds:
+        tid = str(e.get("take", ""))
+        sec = fnum(e, "sec", 0.0)
+        t0 = fnum(e, "t", 0.0)
+        ends = [s for s in events if s.get("ev") == "take" and s.get("st") == "end"
+                and str(s.get("id", "")) == tid and fnum(s, "t", 0.0) >= t0]
+        if takes is not None:
+            t = by_id.get(tid)
+            if t is None or float(t.get("exitHoldSec", 0) or 0) <= 0:
+                verdicts.append(("FAIL", f"{tid}: 台本に exitHoldSec が無いのに、前へ抜けた後も画面を持った"))
+            elif str(t.get("policy", "")) != "yield":
+                verdicts.append(("FAIL", f"{tid}: policy が yield でないのに exitHoldSec で画面を持った"))
+        if not ends:
+            verdicts.append(("FAIL", f"{tid}: 前へ抜けた後に画面を持ったまま、演出の終わり（ev=take st=end）が無い"))
+            continue
+        dt = fnum(ends[0], "t", 0.0) - t0
+        why = str(ends[0].get("why", ""))
+        lines.append(f"    {tid}: 区間を出てから {dt:.2f} 秒持った（上限 {sec:.2f} 秒・終わり方 {why or '-'}）")
+        if dt > sec + EXIT_HOLD_SLACK_SEC:
+            verdicts.append(("FAIL", f"{tid}: 区間を出てから {dt:.2f} 秒画面を持った（上限 {sec:.2f} 秒）— "
+                                     "TakeRunnerLogic.Tick の exitHold の畳みを見る"))
+        else:
+            verdicts.append(("OK", f"{tid}: 区間を出てから {dt:.2f} 秒だけ画面を持って畳んだ（上限 {sec:.2f} 秒）"))
+    return lines, verdicts
+
+
 def _finite(v):
     try:
         f = float(v)
@@ -831,6 +877,8 @@ def expected_from_show(show: dict):
                 "ifMissed": t.get("ifMissed") or "fireOnExit",
                 "lineId": t.get("lineId"),
                 "wait": t.get("wait") or "segment",
+                # 区間を移ったら畳むか（yield）・跨ぐか（hold）。exitHoldSec は yield でだけ効く
+                "policy": t.get("policy") or "hold",
                 # 体験者が異変を報告したら畳まれる演出か（canon/LEDGER.md 0050）。
                 # 既定 false ＝ 消えない（JsonUtility の 0 埋めと同じ側へ倒してある）。
                 "dismissible": bool(t.get("dismissible")),
@@ -838,6 +886,8 @@ def expected_from_show(show: dict):
                 "markBleed": bool(t.get("markBleed")),
                 # 相手の演出が報告で畳まれていたら出ない（C# の ShowTakeDef.skipIfDismissed・0378）。空 = 相手なし
                 "skipIfDismissed": str(t.get("skipIfDismissed") or ""),
+                # 前へ抜けても畳まずに画面を持つ秒（C# の ShowTakeDef.exitHoldSec・0378）。0 = すぐ畳む
+                "exitHoldSec": float(t.get("exitHoldSec") or 0),
                 "steps": t.get("steps") or [],
             })
     exp["takes"] = takes
@@ -1468,8 +1518,13 @@ def analyze(events, others, exp, warns=None):
         #    これを「滞在をはみ出した」と呼ぶと、仕様どおりの動作を毎回 WARN で報告することになる
         #    （実際に前セッションが同じ行を読んで「2 周目 A の演出が壊れている」と誤診した）。
         #    著作の調整が要るのは「区間の中で始まったのに終わりきらなかった」場合だけ。
+        # 前へ抜けても exitHoldSec のあいだ画面を持つのは台本の指定（0378 の 2 周目 A の人形）。その秒までのはみ出しは契約。
+        #    持つ秒を超えたかは exit_hold_findings が FAIL で見る。
+        hold = float(t.get("exitHoldSec") or 0) if t.get("policy") == "yield" else 0.0
         if start >= seg_end - 0.05:
             w(f"  ✅ {tid}: 尺 {dur:.1f}s — 離脱の瞬間に決着（区間外で走るのが契約）")
+        elif hold > 0 and over <= hold + EXIT_HOLD_SLACK_SEC:
+            w(f"  ✅ {tid}: 尺 {dur:.1f}s / 滞在 {stay:.1f}s — 区間を出た後 {max(over, 0):.1f}s 画面を持った（exitHoldSec {hold:.1f}s の内）")
         elif over > 0.3:
             w(f"  ⚠ {tid}: 尺 {dur:.1f}s / 滞在 {stay:.1f}s — {over:.1f}s はみ出した")
             verdict("WARN", f"演出 {tid} が区間の滞在を {over:.1f}s 超えた"
@@ -3970,7 +4025,7 @@ def analyze(events, others, exp, warns=None):
 
         # -- 報告で素材だけを消す（markClear）・長押しの開始で進める（markStartAdvance）・相手が畳まれたら出さない（skipIfDismissed）
         #    canon/LEDGER.md 0378。2 周目 A の左のシミ・右の幕・2 周目 B の人形
-        for fn in (mark_clear_findings, mark_start_advance_findings, take_skip_findings):
+        for fn in (mark_clear_findings, mark_start_advance_findings, take_skip_findings, exit_hold_findings):
             fl, fv = fn(events, exp.get("takes"))
             for line in fl:
                 w(line)

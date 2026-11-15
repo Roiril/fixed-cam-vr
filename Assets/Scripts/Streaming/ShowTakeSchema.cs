@@ -106,6 +106,14 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public string skipIfDismissed = "";
 
+        /// <summary>
+        /// <c>policy:"yield"</c> の演出が<b>順路の前進</b>で次の区間へ抜けても、この秒までは畳まずに画面を持つ（既定 0 = すぐ畳む）。
+        /// 持っている間はカメラを切り替えず、カットは尺どおり進む。<c>untilZoneChange</c> のカットはこの秒の終わりで終わる。
+        /// 引き返し・もう 1 度の区間移り・報告・watchdog は従来どおりすぐ畳む。次の区間の演出は武装され、画面が空くのを待つ。
+        /// 2 周目 A の人形（0378）が、体験者が区間を出た後に幕の裏から出てついてくるのを見せるために足した。
+        /// </summary>
+        public float exitHoldSec;
+
         public ShowStepDef[] steps = Array.Empty<ShowStepDef>();
 
         /// <summary>

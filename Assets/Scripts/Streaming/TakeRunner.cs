@@ -858,6 +858,7 @@ namespace FixedCamVr.Streaming
                         once = t.once,
                         maxDurationSec = t.maxDurationSec,
                         yieldOnZoneChange = t.IsYield,
+                        exitHoldSec = t.IsYield && t.exitHoldSec > 0f ? t.exitHoldSec : 0f,
                         chainWait = t.IsChainWait,
                         stepDurSec = BuildStepDurations(t),
                         onLine = onLine,
@@ -1059,6 +1060,11 @@ namespace FixedCamVr.Streaming
         public int MarkStartAdvanceCount => _logic.MarkStartAdvanceCount;
         public string LastMarkStartAdvanceTakeId { get; private set; } = "";
         public int LastMarkStartAdvanceStep { get; private set; } = -1;
+        /// <summary>前へ抜けた後も画面を持ち始めた回数と、その演出の id・秒（take の exitHoldSec・テレメトリ）。</summary>
+        public int ExitHoldCount => _logic.ExitHoldCount;
+        public string LastExitHoldTakeId => _logic.LastExitHoldTake >= 0 ? TakeId(_logic.LastExitHoldTake) : "";
+        public float LastExitHoldSec
+            => _logic.LastExitHoldTake >= 0 && _logic.LastExitHoldTake < _takes.Length ? _takes[_logic.LastExitHoldTake].exitHoldSec : 0f;
         /// <summary>skipIfDismissed で出さなかった回数と、最後に出さなかった演出の id（テレメトリ）。</summary>
         public int SkippedByDismissCount => _logic.SkippedByDismissCount;
         public string LastSkippedByDismissTakeId => _logic.LastSkippedByDismissTake >= 0 ? TakeId(_logic.LastSkippedByDismissTake) : "";

@@ -179,6 +179,7 @@ namespace FixedCamVr.Diagnostics
         private int _lastMarkClearCount;
         private int _lastMarkStartAdvanceCount;
         private int _lastSkippedByDismissCount;
+        private int _lastExitHoldCount;
         // 滲んで現れる cue で出た _OverlayReveal の最大（0349）。滲む cue だけ 0 以上。cue の off に revMax= で出す。
         private float _cueRevealMax = -1f;
         // 目の視界ジャックの縁検出（canon/LEDGER.md 0099）。
@@ -1256,6 +1257,15 @@ namespace FixedCamVr.Diagnostics
                              $"by={(string.IsNullOrEmpty(_takes.LastSkippedByDismissBecauseId) ? "-" : _takes.LastSkippedByDismissBecauseId)} " +
                              $"n={_takes.SkippedByDismissCount}");
                     _lastSkippedByDismissCount = _takes.SkippedByDismissCount;
+                }
+                // 前へ抜けた後も畳まずに画面を持ち始めた（take の exitHoldSec・0378 の 2 周目 A の人形）。
+                // 解析器は、sec= の秒（と猶予）以内に同じ演出が終わったかを見る。
+                if (_takes.ExitHoldCount != _lastExitHoldCount)
+                {
+                    if (_takes.ExitHoldCount > _lastExitHoldCount)
+                        Emit($"ev=exithold take={(string.IsNullOrEmpty(_takes.LastExitHoldTakeId) ? "-" : _takes.LastExitHoldTakeId)} " +
+                             $"sec={_takes.LastExitHoldSec.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} n={_takes.ExitHoldCount}");
+                    _lastExitHoldCount = _takes.ExitHoldCount;
                 }
             }
 

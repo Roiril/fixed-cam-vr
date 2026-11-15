@@ -1,6 +1,6 @@
 ---
 name: mark-advance
-description: 報告でカットを 1 つ進める（step の markAdvance）の現行の契約。演出は畳まず、そのカットだけを終える
+description: 報告でカットを 1 つ進める（step の markAdvance）・素材だけ消す・長押しで進める・相手が畳まれたら出さない・区間を出た後も画面を持つ（exitHoldSec）の現行の契約
 paths:
   - "Assets/Scripts/Streaming/TakeRunner.cs"
   - "Assets/Scripts/Streaming/TakeRunnerLogic.cs"
@@ -9,6 +9,9 @@ paths:
   - "Assets/Tests/Streaming/TakeMarkAdvanceTests.cs"
   - "tools/test_mark_advance_log.py"
   - "Assets/Tests/Streaming/TakeStepUntilBeyondTests.cs"
+  - "Assets/Tests/Streaming/TakeExitHoldTests.cs"
+  - "tools/test_exit_hold_log.py"
+  - "tools/show-apply-stain-right.py"
 ---
 
 # 報告でカットを進める（markAdvance）・素材だけを消す（markClear）・長押しで進める・相手が畳まれたら出さない
@@ -52,8 +55,17 @@ paths:
 
 - take の `skipIfDismissed`（既定 ""）は相手の take id。相手が同じランで `VisitorDismissed` で終わっていたら、この演出は武装しない
   — `TakeRunnerLogic.ArmEnterTakes`・`FindExitCandidate`・`ReportRemainingDrops` が `_takeDismissed[]` を見る。`ResetRun` / `SetDefs` で忘れる
+- 報告で畳んだ縁（`TakeRunnerLogic.DismissDecision`）でも、武装済み（Waiting・Ready）の演出のうち相手が畳まれたものを外し、出さなかったに数える。区間を出た後も画面を持つ演出（take の `exitHoldSec`・`rules/show-run.md`）は、持っている間に次の区間の演出を武装しているため
 - 台本の id は `TakeRunner.ResolveSkipIfDismissed` が index+1 へ解く（0 = 相手なし。知らない id は警告して相手なし）
 - 卓の白名簿は `timeline-model.js` の `markClear` / `markStartAdvance` / `skipIfDismissed`。2-A の台本は `tools/show-apply-stain-right.py`
+
+## 区間を出た後も画面を持つ（exitHoldSec）
+
+- take の `exitHoldSec`（既定 0）を持つ `policy:"yield"` の演出は、前進で区間を出てもその秒までは畳まずに画面（元のカメラ）を持つ — `TakeRunnerLogic.OnZoneCommitted` / `ExitHolding`。`TakeRunner` は yield でない演出の値を 0 にする
+- 持っている間もカットは尺どおり進む。`untilZoneChange` のカットは区間移りでは終わらず、持つ秒の終わりで終わる（`NotifyZoneChanged`）
+- 持ち終わりは前進の yield（`Yielded`・`yieldedForward`）。`chainNext` は立てない（次の演出は別のカメラなので、画面を返してから始める）
+- 引き返し・持っている間の 2 度目の区間移り・報告・watchdog はすぐ畳む。持つのは 1 演出 1 度
+- 次の区間の演出は持ち始めた時点で武装され、画面が空くまで Ready で待つ。2 周目 A は `tools/show-apply-stain-right.py` の `EXIT_HOLD_SEC`
 
 ## 観測（`ShowTelemetryHost` と `analyze-xp-log.py` を対で直す）
 
@@ -63,4 +75,5 @@ paths:
 - `ev=markclear take= step= n=` — `mark_clear_findings`。1 秒以内に同じ演出が `why=mark` で畳まれたら FAIL、2 秒以内にそのカットの cue の `ev=cue st=off` が無ければ FAIL
 - `ev=markstartadv take= step= n=` — `mark_start_advance_findings`（判定は markadv と同じ）
 - `ev=takeskip take= by= n=` — `take_skip_findings`。相手の `why=mark` が先に無い・出さなかった演出が後で始まった・相手が畳まれたのに `takeskip` 無しで始まった、なら FAIL
-- 機械の門: `TakeMarkAdvanceTests`・`TakeMarkClearTests`（C#）・`DollLaughAudioTests.MarkAdvance_ThroughTheRunner_*`・`tools/test_mark_advance_log.py`・`tools/test_mark_clear_log.py`
+- `ev=exithold take= sec= n=` — `exit_hold_findings`。持ち始めから sec + 0.5 秒（`EXIT_HOLD_SLACK_SEC`）以内に同じ演出の `ev=take st=end` が無ければ FAIL。台本に `exitHoldSec` が無い・yield でない演出が持ったら FAIL。滞在をはみ出した WARN は持つ秒の内なら出さない
+- 機械の門: `TakeExitHoldTests`・`tools/test_exit_hold_log.py`・`TakeMarkAdvanceTests`・`TakeMarkClearTests`（C#）・`DollLaughAudioTests.MarkAdvance_ThroughTheRunner_*`・`tools/test_mark_advance_log.py`・`tools/test_mark_clear_log.py`

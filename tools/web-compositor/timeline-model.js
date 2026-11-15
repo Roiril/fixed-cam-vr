@@ -228,6 +228,8 @@ export function newTake(id, over = {}) {
     markBleed: false,
     // この id の演出が報告で畳まれていたら、この演出は出ない（空 = 何もしない）。卓に編集欄は無く、値を保つだけ。
     skipIfDismissed: '',
+    // policy=yield で前の区間へ抜けても、この秒までは畳まずに画面を持つ（0 = すぐ畳む）。卓に編集欄は無く、値を保つだけ。
+    exitHoldSec: 0,
     steps: [],
     // 演出中だけの BGM（hasBgm=false = 区間で鳴っている曲がそのまま続く）。
     bgm: defaultBgm(), hasBgm: false,
@@ -346,6 +348,7 @@ function serializeTake(t) {
     markDoneSec: num(t.markDoneSec, 0),
     markBleed: !!t.markBleed,
     skipIfDismissed: t.skipIfDismissed || '',
+    exitHoldSec: num(t.exitHoldSec, 0),
     steps: (t.steps || []).map(serializeStep),
   };
   // present-flag 規約: false のときは入れ子キー自体を出さない（幽霊指示を作らない）。
@@ -407,6 +410,7 @@ function normalizeTake(t) {
     markDoneSec: num(t.markDoneSec, 0),
     markBleed: !!t.markBleed,
     skipIfDismissed: typeof t.skipIfDismissed === 'string' ? t.skipIfDismissed : '',
+    exitHoldSec: num(t.exitHoldSec, 0),
     hasBgm: !!t.hasBgm,
     bgm: { ...defaultBgm(), ...(t.bgm || {}) },
   });
