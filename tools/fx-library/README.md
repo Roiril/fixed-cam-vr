@@ -48,6 +48,7 @@ py -3.11 tools/twin-verify.py --calib twin --nomark --tag fxlib-doll            
 - 動画がカクつくなら、撮影が内蔵 GPU で描いている。走行のログの `[Replay] 撮影を始めた ... gpu=` を見る（`描いた N・繰り返し M` の M が N の 1 割を超えたら撮り直す）。
   `tools/unity.ps1` は独立 GPU を `-force-device-index` で指す（`.claude/memory/fx_library.md`）。撮り直しは `--keep-rec` で残した記録から `.\tools\unity.ps1 replay -Set rec=<記録>,view=eye,fov=52,out=<出力>`。
   `replay_xp.log` は出力の隣に書かれる。撮り直したら動画と一緒に走行フォルダへ置き換える（時刻が揃うのは同じ撮影のログだけ）
+- 走行と同じ Play で撮った動画は、最初のコマが詰まった分だけ時計より遅れて始まる（2026-11-16 に 1.34 秒と 1.99 秒）。`build.py` が最初の `ev=sum` の `worst` を読んで、出来事の時刻をその分だけ前へずらす。山場がずれて見えたら、組むときの「動画は時計より … 遅れて始まる」の行を見る
 - 時刻は再生のログ（`replay_xp.log` の `tau=`）で決める。走行のログ（`run_xp.log`・`events.json`）は同じ場面が数秒ずれる
 - ツインは部屋が黒い（パススルーが無い）。導入の暗転より前の現実と、視野の端の床の矢印はほとんど映らない
 - 年表（`poster.html`）は `~/.agents/skills/timeline/tools/timeline.mjs` で検査する。`data-date` は読む順の番号（人形 End の枝は別の走行で、時刻が本線と前後するため）。画に出す時刻は本物

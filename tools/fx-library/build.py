@@ -106,6 +106,16 @@ def find_run(key: str, tag: str, pinned: dict[str, str]) -> Run:
     events = parse_log(folder / "replay_xp.log")
     if not events:
         raise SystemExit(f"{folder.name}/replay_xp.log に tau= の行が無い（11-11 より前の走行は時計が合わない）")
+    # 走行と同じ Play で撮った動画（single-pass）は、最初のコマが詰まった分だけ時計より遅れて始まる。
+    # 動画の時刻 = tau − 最初の詰まり（最初の ev=sum の worst）。2026-11-16 の本線で 1.34 秒
+    # （子供部屋の終わりと WARNING の出る所で照合）。頭が詰まらなかった走行は 0 のまま
+    first_sum = next((e for e in events if e.ev == "sum"), None)
+    worst = re.search(r"worst=(\d+)", first_sum.rest) if first_sum else None
+    lead = int(worst.group(1)) / 1000 if worst and int(worst.group(1)) >= 500 else 0.0
+    if lead:
+        print(f"  {folder.name}: 動画は時計より {lead:.2f}s 遅れて始まる。出来事の時刻をその分だけ前へずらす")
+        for e in events:
+            e.tau = max(e.tau - lead, 0.0)
     return Run(key, folder, events, probe_duration(folder / "eye.mp4"))
 
 
@@ -437,7 +447,9 @@ def main() -> int:
 
     stamp = time.strftime("%Y%m%d_%H%M")
     if a.only:
-        prev = sorted(LOCAL_OUT.glob("2*"))
+        # 版のフォルダだけを見る（library.json を持つもの）。Logs/fx-library には別の用途のフォルダも置かれる。
+        # 2026-11-16、名前順でいちばん後ろの `2ab_20261114`（別の作業の動画置き場）へ書き、latest.json まで向け替えた
+        prev = sorted(d for d in LOCAL_OUT.glob("2*") if (d / "library.json").is_file())
         if not prev:
             raise SystemExit("--only は前回のローカル出力（Logs/fx-library/）が要る")
         out = prev[-1]
