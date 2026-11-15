@@ -371,12 +371,19 @@ def load_set(recipe: Path, maps_dir: Path) -> dict:
     names = rec["outputs"]
     maps = json.loads((maps_dir / names["maps"]).read_text(encoding="utf-8"))
     pv = rec["preview"]
+
+    def made(key: str) -> Path:
+        # その回に作らず前の回の素材を使い続けるもの（レシピの reuse）は static-inputs から読む
+        if names.get(key):
+            return maps_dir / names[key]
+        return bm.find_input("tools/web-compositor/static-inputs/" + rec["reuse"][key], roots)
+
     s = {
         "rec": rec,
         "live": contain_fit(device_tex(bm.find_input(pv["live"], roots)), 0.0),
         "source": contain_fit(device_tex(bm.find_input(rec["source"], roots)), 0.0),
-        "ratio": ratio_fit(device_tex(maps_dir / names["ratio"])),
-        "reveal": frame_gray(maps_dir / names["reveal"]),
+        "ratio": ratio_fit(device_tex(made("ratio"))),
+        "reveal": frame_gray(made("reveal")),
         "cueMask": frame_gray(bm.find_input(pv["cueMask"], roots)),
         "silhouette": pv["silhouette"],
         "cue": rec.get("cue", {}),
@@ -500,7 +507,7 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     rdir = Path(__file__).resolve().parent / "mask-recipes"
-    ap.add_argument("--stain-recipe", default=str(rdir / "bleed-stain-a-20261113.json"))
+    ap.add_argument("--stain-recipe", default=str(rdir / "bleed-stain-a-20261115.json"))
     ap.add_argument("--hands-recipe", default=str(rdir / "bleed-hands-b-20261113.json"))
     ap.add_argument("--maps", default=str(ROOT / "Logs/gen-plate/bleed/out"))
     ap.add_argument("--out", default=str(ROOT / "Logs/gen-plate/bleed/preview"))

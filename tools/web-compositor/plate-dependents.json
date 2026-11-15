@@ -22,16 +22,16 @@
     }
   },
   "dependents": {
-    "cue_stain_A": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "cue_stain_A_left_hold": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "stain_A_press_bulge": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "cue_stain_A_right_hold": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "stain_A_right_burst": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "stain_A_right_watch": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
+    "cue_stain_A": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
+    "cue_stain_A_left_hold": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
+    "stain_A_press_bulge": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
+    "cue_stain_A_right_hold": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
+    "stain_A_right_burst": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
+    "stain_A_right_watch": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
     "stain_A_done_doll": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
     "dolls_A_in": {"group": "dollsA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "gen_dolls_A_left": {"group": "dollsA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "cue_hands_B": {"group": "handsB", "plate": "plate_B_20260924_172210_4abb5bae.jpg"}
+    "gen_dolls_A_left": {"group": "dollsA", "plate": "plate_A_20261115_125052.jpg"},
+    "cue_hands_B": {"group": "handsB", "plate": "plate_B_20261115_130713.jpg"}
   },
   "independent": {
     "pov_0": "手持ちのスマホで撮る人形視点",

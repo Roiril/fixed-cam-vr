@@ -3,7 +3,7 @@
     py -3.11 tools/gen-plate/stain3/build_right_burst.py real   # 本番 → tools/web-compositor/static-inputs/
     py -3.11 tools/gen-plate/stain3/build_right_burst.py twin   # ツイン → tools/twin/assets/
 
-入力（Logs/gen-plate/stain2A_right_20261115/<real|twin>/。作り方は README の「右の幕」）:
+入力（SETS の work、無ければ Logs/gen-plate/stain2A_right_20261115/<名>/。作り方は README の「右の幕」と「作り直す」）:
   stain.png       右の幕に顔のシミを足した画（待機の 2 倍から）
   bulge.png       シミの所から顔が左へ伸び出した画（stain から）
   doll_laugh.png  右の幕の裏で人形が笑っている画（stain から）
@@ -17,7 +17,7 @@
   *_both_mask_*.png     左右のシミの合成範囲（枠空間）
   *_right_ratio_*.png   右のシミだけの比の画（線形の比を sRGB で符号化）。*_right_ratio_mask_*.png がその合成範囲
   *_right_burst_*.json  尺と、人形の頭の位置（台本と検査が読む）
-  Logs/gen-plate/stain2A_right_20261115/<名>/sheet_*.png  確かめる画
+  <入力のフォルダ>/sheet_*.png  確かめる画
 
 生成は部屋を少し描き直す。変えた所（元との差の塊）だけを残し、ほかは元の画素へ戻す（keep_base.py と同じ考え）。
 """
@@ -40,17 +40,22 @@ W, H = 640, 480
 FW, FH = 640, 360
 
 SETS = {
+    # 本番は 2026-11-15 12:50 の無人写真（plate_A_20261115_125052.jpg）に合わせる。待機はその写真に左のしみの比の画を
+    # 掛けた画、stain.png はさらに右のしみの比の画を掛けた画（どちらも生成ではない。README「作り直す」）
     "real": dict(
-        base="tools/web-compositor/static-inputs/stain_A_idle_20261112.png",
+        work="Logs/gen-plate/stainA_refit_20261115",
+        base="tools/web-compositor/static-inputs/stain_A_idle_20261115_1250.png",
+        right_ratio_src="tools/web-compositor/static-inputs/stain_A_right_ratio_20261115.png",  # 9/24 の部屋で作った右のしみ
         left_ratio="tools/web-compositor/static-inputs/stain_A_ratio_20261113.png",
         left_mask="tools/web-compositor/static-inputs/stain_A_press_leftmask_20260925.png",
         out_dir="tools/web-compositor/static-inputs",
         bulge_box=(282, 40, 512, 240),
-        rail=((250, 229), (515, 237)),   # 手すりの芯（元の画素）。伸び出しの手前に元の手すりを貼り直す
-        names=dict(burst="stain_A_right_burst_20261115.mp4", watch="stain_A_right_watch_20261115.png",
-                   mask="stain_A_right_mask_20261115.png", ratio="stain_A_both_ratio_20261115.png",
-                   both_mask="stain_A_both_mask_20261115.png", right_ratio="stain_A_right_ratio_20261115.png",
-                   right_ratio_mask="stain_A_right_ratio_mask_20261115.png", meta="stain_A_right_burst_20261115.json"),
+        rail=((280, 224), (515, 234)),   # 手すりの芯（元の画素）。伸び出しの手前に元の手すりを貼り直す
+        names=dict(burst="stain_A_right_burst_20261115_1250.mp4", watch="stain_A_right_watch_20261115_1250.png",
+                   mask="stain_A_right_mask_20261115_1250.png", ratio="stain_A_both_ratio_20261115_1250.png",
+                   both_mask="stain_A_both_mask_20261115_1250.png", right_ratio="stain_A_right_ratio_20261115_1250.png",
+                   right_ratio_mask="stain_A_right_ratio_mask_20261115_1250.png",
+                   meta="stain_A_right_burst_20261115_1250.json"),
     ),
     "twin": dict(
         base="tools/twin/assets/twin_stainA_idle.png",
@@ -183,14 +188,21 @@ def rail_mask(rail, half: float = 5.0) -> np.ndarray:
 
 def build(name: str, laugh_sec: float | None) -> dict:
     cfg = SETS[name]
-    wd = WORK / name
+    wd = ROOT / cfg["work"] if cfg.get("work") else WORK / name
     base = load(ROOT / cfg["base"])
-    S = fit(wd / "stain.png", base)
+    right_src = cfg.get("right_ratio_src")
+    if right_src:
+        # 右のしみを前の回の比の画のまま使う。差から取り直すと薄い垂れが閾値で落ちる
+        rr = lin(load(ROOT / right_src))
+        S = srgb(lin(base) * rr)
+        ms = blur(grow((rr.mean(2) < 0.985).astype(np.float32), 2), 1.5)   # 比の画の 1 は 254 で書かれている
+    else:
+        rr = None
+        S = fit(wd / "stain.png", base)
+        ms = soft_mask(S, base, BOX_STAIN, 0.025, 0.07)
     B = fit(wd / "bulge.png", S)
     D = fit(wd / "doll_laugh.png", S)
     Wt = fit(wd / "doll_watch.png", D)
-
-    ms = soft_mask(S, base, BOX_STAIN, 0.025, 0.07)
     S = base * (1 - ms[..., None]) + S * ms[..., None]
     mb = soft_mask(B, S, cfg["bulge_box"], 0.02, 0.07, close=6)
     md = soft_mask(D, S, BOX_DOLL, 0.03, 0.08, close=6)
@@ -256,7 +268,7 @@ def build(name: str, laugh_sec: float | None) -> dict:
     # 左右のシミの比の画（CG の人形がついてくる間）
     left = np.asarray(Image.open(ROOT / cfg["left_ratio"]).convert("RGB"), dtype=np.float32)
     left_lin = lin(left)
-    right_lin = np.clip(lin(S) / np.maximum(lin(base), 1e-3), 0, 1)
+    right_lin = rr if rr is not None else np.clip(lin(S) / np.maximum(lin(base), 1e-3), 0, 1)
     msr = ms[..., None]
     both = left_lin * (1 - msr) + (left_lin * right_lin) * msr
     Image.fromarray(srgb(both).astype(np.uint8)).save(out / names["ratio"])

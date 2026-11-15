@@ -5,9 +5,10 @@
             stain_A_press_bulge  報告の長押しで、シミのある所の布が膨らむ（press マスクと膨らみの中心）
             stain_A_done_doll    報告の直後に出る人形を、人形の周りだけのマスクで切る
 
-素材は tools/gen-plate/bleed_maps.py が Logs/gen-plate/bleed/out/ へ出す。先に static-inputs/ へ写す:
+素材は tools/gen-plate/bleed_maps.py が Logs/gen-plate/bleed/out/ へ出す。先に static-inputs/ へ写す
+（2-A のシミは比の画・順の画・人形の周りのマスクを前の回のまま使う。レシピの reuse にある名前）:
 
-    copy Logs\\gen-plate\\bleed\\out\\stain_A_{ratio,reveal,pressmask,dollmask}_20261113.png tools\\web-compositor\\static-inputs\\
+    copy Logs\\gen-plate\\bleed\\out\\stain_A_pressmask_20261115_1250.png tools\\web-compositor\\static-inputs\\
     copy Logs\\gen-plate\\bleed\\out\\hands_B_{ratio,reveal}_20261113.png tools\\web-compositor\\static-inputs\\
 
 何度流しても同じ結果になる。書く前に Logs/show-backup/ へ元の show.json を写す。
@@ -37,7 +38,7 @@ RECIPES = ROOT / "tools/gen-plate/mask-recipes"
 BLEED_OUT = ROOT / "Logs/gen-plate/bleed/out"
 STATIC = "/static-inputs/"
 
-STAIN_RECIPE = "bleed-stain-a-20261113.json"
+STAIN_RECIPE = "bleed-stain-a-20261115.json"
 HANDS_RECIPE = "bleed-hands-b-20261113.json"
 
 # レシピの cue から cue へ写すキー（markDoneRevealOutSec は C# の定数 OverlayRevealLogic.MarkDoneOutSec が持つ）
@@ -73,9 +74,13 @@ def load_plan() -> dict:
     if not (isinstance(center, list) and len(center) == 2):
         raise SystemExit(f"maps に pressCenter が無い: {maps_path}")
 
+    def made(recipe: dict, key: str) -> str:
+        """その回に作った素材。作らずに前の回のものを使い続けるなら reuse に名前がある。"""
+        return recipe["outputs"].get(key) or recipe.get("reuse", {})[key]
+
     def reveal(recipe: dict) -> dict:
-        out = recipe["outputs"]
-        d = {"blend": "multiply", "sourceUrl": STATIC + out["ratio"], "revealUrl": STATIC + out["reveal"]}
+        d = {"blend": "multiply", "sourceUrl": STATIC + made(recipe, "ratio"),
+             "revealUrl": STATIC + made(recipe, "reveal")}
         for k in REVEAL_KEYS:
             d[k] = float(recipe["cue"][k])
         return d
@@ -86,7 +91,7 @@ def load_plan() -> dict:
         "cue_stain_A": reveal(stain),
         "stain_A_press_bulge": {"pressMaskUrl": STATIC + so["pressMask"],
                                 "pressCenter": [round(float(center[0]), 4), round(float(center[1]), 4)]},
-        "stain_A_done_doll": {"maskUrl": STATIC + so["dollMask"]},
+        "stain_A_done_doll": {"maskUrl": STATIC + made(stain, "dollMask")},
     }
 
 

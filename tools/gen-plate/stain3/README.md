@@ -33,34 +33,52 @@
 
 ## 素材
 
-| 場所 | 待機 | 盛り上がり | 人形 |
-|---|---|---|---|
-| 本番（9/24 の部屋）`tools/web-compositor/static-inputs/` | `stain_A_idle_20261112.png` | `stain_A_bulge_20261112.png` | `stain_A_doll_20261112.png` |
-| ツイン `tools/twin/assets/` | `twin_stainA_idle.png` | `twin_stainA_bulge.png` | `twin_stainA_doll.png` |
+本番は 2026-11-15 12:50 の無人写真 `captures/plate_A_20261115_125052.jpg` に合わせてある（`tools/web-compositor/plate-dependents.json` の `plate`）。
 
-- 本番の待機は `captures/gen_stainA_still_20260924.png` と同じ画（0249 の動画の先頭コマの元）。しみの姿は変えていない
-- 3 枚は同じ 1 枚（待機）から作り、変えた所の外は待機と同じ画素。合成範囲は従来の左半分マスク `stain_A_press_leftmask_20260925.png`
-- 生成の生画像は `Logs/gen-plate/stain3_20261112/`
+| 場所 | 待機 | 左のしみ（掛け算） | 盛り上がり | 右の幕 |
+|---|---|---|---|---|
+| 本番 `tools/web-compositor/static-inputs/` | `stain_A_idle_20261115_1250.png` | `stain_A_ratio_20261113.png`・順の画 `stain_A_reveal_20261113.png` | `stain_A_bulge_20261115_1250.png`・press マスク `stain_A_pressmask_20261115_1250.png` | `stain_A_right_*_20261115_1250.*` |
+| ツイン `tools/twin/assets/` | `twin_stainA_idle.png` | `twin_stainA_ratio.png` | `twin_stainA_bulge.png` | `twin_stainA_right_*` |
+
+- 左のしみの姿（0143 で判定済み）は比の画が持っている。待機は無人写真にその比の画を掛けた画（生成ではない）
+- 比の画 2 枚（左・右）は 9/24 の部屋で作ったものを 11-15 の写真にもそのまま使っている。11-15 の写真は手すりが 3〜5px 上がり、
+  左のしみの垂れの先が x=277〜283 の 7 列で手すりに最大 6px 掛かる（比 0.96 以上の薄い所・暗い手すりの上なので見えない）。右は掛からない
+- 盛り上がり・右の幕の伸び出し・笑う人形・見ている人形は、待機から生成し、変えた所の外は待機と同じ画素。合成範囲は左が `stain_A_press_leftmask_20260925.png`、右が `stain_A_right_mask_*`
+- 報告直後の人形 `stain_A_done_doll`（`stain_A_doll_20261112.png`）は台本から外れているので 9/24 の部屋のまま
+- 生成の生画像は `Logs/gen-plate/stainA_refit_20261115/`（11-15）・`Logs/gen-plate/stain3_20261112/`（9/24）
 
 ## 作り直す（部屋が変わったとき）
 
-1. 待機の画を用意する（その日の無人写真に `anomaly/face-stain.md` でしみを足す。640×480）
-2. 待機を 2 倍（1280×960）にして、`prompt-bulge.md` と `prompt-doll.md` を 1 本ずつ流す。人形は資料 `tools/doll-ref/out/gen_standing.png` を 2 枚目に渡す
+しみの形・人形の顔と着物・伸び出しの形は判定済みなので変えない。比の画はそのまま使い、部屋の画素を含む素材だけを
+その日の写真から生成し直す。生成には前の版を参照に渡して姿を揃える。
+
+1. 比の画をその日の写真に掛けて、しみが幕からはみ出さないか見る（手すり・幕の縁・合わせ目との距離を画素で測る）。
+   はみ出すなら比の画を作り直す（`anomaly/face-stain.md`）。収まるなら、写真 × 左の比の画を待機（640×480）、
+   さらに右の比の画を掛けた画を 2 倍（1280×960）にして作業フォルダの `stain.png` にする。待機の 2 倍は `idle2x.png`
+2. 前の版の生成の生画像を作業フォルダへ `ref_left_bulge.png` / `ref_right_bulge.png` / `ref_doll_laugh.png` / `ref_doll_watch.png` として置き、
+   プロンプトを書いて 4 本を 1 本ずつ流す（同時に流さない）
 
    ```powershell
-   & "$env:USERPROFILE\.claude\scripts\codex-run.ps1" -PromptFile tools\gen-plate\stain3\prompt-bulge.md -Mode image -Images <待機の2倍.png> -OutImage <出力>\bulge.png
-   & "$env:USERPROFILE\.claude\scripts\codex-run.ps1" -PromptFile tools\gen-plate\stain3\prompt-doll.md -Mode image -Images <待機の2倍.png>,tools\doll-ref\out\gen_standing.png -OutImage <出力>\doll.png
+   py -3.11 tools/gen-plate/stain3/refit_prompts.py <作業フォルダ> --doll-dx <右の幕の縁が動いた画素×2>
+   & tools\gen-plate\stain3\run_refit.ps1 -Work <作業フォルダ>
    ```
 
-3. 生成は部屋を少し描き直し、寸法も変わる。変えた所だけ待機の上へ戻す
+   `refit_prompts.py` は元のプロンプトの後ろに `prompt-refit.md`（前の版に揃える段）を足す。`--doll-dx` は笑う人形の左右の位置
+   （11-15 は右の幕の自由な縁が 9/24 より約 20px 右なので 40）
+3. 左の盛り上がりは変えた所だけ待機の上へ戻し、press マスクを作る
 
    ```powershell
-   py -3.11 tools/gen-plate/keep_base.py <待機.png> <出力>\bulge.png <置き場>\stain_A_bulge_<日付>.png --box 0,0,330,480 --sheet <確認用.jpg>
-   py -3.11 tools/gen-plate/keep_base.py <待機.png> <出力>\doll.png  <置き場>\stain_A_doll_<日付>.png  --box 0,0,330,480 --sheet <確認用.jpg>
+   py -3.11 tools/gen-plate/keep_base.py <待機.png> <作業フォルダ>\left_bulge.png <置き場>\stain_A_bulge_<日付>.png --box 0,0,330,480 --sheet <確認用.jpg>
+   py -3.11 tools/gen-plate/bleed_maps.py --recipe tools/gen-plate/mask-recipes/bleed-stain-a-<日付>.json
    ```
 
-   `--box` はマスクの中（左半分）。確認用の画は 元・生成・結果・残した範囲 の順に並ぶ。必ず開いて見る
-4. 卓の cue の `sourceUrl` を新しい名前へ替える（卓サーバが動いていれば `GET /state` → `POST /state`。`memory/show_json_is_live_config.md`）
+   `--box` はマスクの中（左半分）。確認用の画は 元・生成・結果・残した範囲 の順に並ぶ。必ず開いて見る。
+   レシピは比の画と順の画を作らず `reuse` に前の名前を書く（`show-apply-bleed.py` と `bleed_preview.py` がそこから読む）。
+   膨らみの見え方は `py -3.11 tools/gen-plate/bleed_preview.py --only press`
+4. 右の幕は `build_right_burst.py real`（`SETS["real"]` の `work`・`base`・`rail`（手すりの芯）・`names` をその日の写真に合わせる）
+5. cue の URL を新しい名前へ替える（卓サーバが動いていれば `GET /state` → `POST /state`。準備モードで弾かれたら卓を止めて
+   `show.json` の `cues` だけ直し、起動し直す。`memory/show_json_is_live_config.md`）。`plate_A` / `plate_A_right` も同じ写真へ替え、
+   `plate-dependents.json` の `plate` を書き換える
 
 ## 罠
 

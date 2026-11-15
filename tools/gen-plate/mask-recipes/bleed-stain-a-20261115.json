@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "kind": "stain",
+  "note": "2 周目 A の幕の顔のシミを 2026-11-15 12:50 の無人写真へ合わせ直したもの。比の画と順の画は 20261113 のまま使う（今日の写真に掛けても幕の上に収まる）ので出さない。盛り上がりの画を今日の待機から生成し直したので press マスクだけを作る。待機 = 今日の写真 × stain_A_ratio_20261113.png",
+  "source": "tools/web-compositor/static-inputs/stain_A_idle_20261115_1250.png",
+  "clean": [
+    "tools/web-compositor/captures/plate_A_20261115_125052.jpg"
+  ],
+  "domainMask": "tools/web-compositor/static-inputs/stain_A_press_leftmask_20260925.png",
+  "domainBox": [108, 0, 300, 232],
+  "seed": 1113,
+  "ratio": {
+    "noiseRadius": 2,
+    "normalizeBox": [108, 10, 300, 228],
+    "chroma": 0.35,
+    "knee": [0.93, 0.965],
+    "domainFeather": 6
+  },
+  "reveal": {
+    "inThreshold": 0.035,
+    "minIslandPx": 30,
+    "coreTopPct": 12,
+    "coreRange": [0.0, 0.15],
+    "bodyRange": [0.12, 0.8],
+    "dripRange": [0.55, 1.0],
+    "dripWidthPx": 5,
+    "dripWidthFrac": 0.6,
+    "dripBelowCorePct": 85,
+    "dripMinPx": 12,
+    "darkWeight": 0.25,
+    "bodyGamma": 0.85,
+    "noiseAmp": 0.06,
+    "orderSmooth": 1
+  },
+  "press": {
+    "source": "tools/web-compositor/static-inputs/stain_A_bulge_20261115_1250.png",
+    "diffRange": [0.03, 0.12],
+    "closeRadius": 6,
+    "keep": 0.35,
+    "closeHolesPx": 14,
+    "blurPasses": 3,
+    "blurRadius": 10,
+    "plateau": 0.55
+  },
+  "cue": {
+    "revealSec": 4.2,
+    "revealDelaySec": 0.6,
+    "revealOutSec": 0.45,
+    "markDoneRevealOutSec": 0.25
+  },
+  "preview": {
+    "live": "tools/web-compositor/captures/plate_A_20261115_125052.jpg",
+    "cueMask": "tools/web-compositor/static-inputs/stain_A_press_leftmask_20260925.png",
+    "silhouette": [232, 30, 330]
+  },
+  "outputs": {
+    "pressMask": "stain_A_pressmask_20261115_1250.png",
+    "maps": "stain_A_maps_20261115_1250.json"
+  },
+  "reuse": {
+    "ratio": "stain_A_ratio_20261113.png",
+    "reveal": "stain_A_reveal_20261113.png",
+    "dollMask": "stain_A_dollmask_20261113.png"
+  }
+}

@@ -27,9 +27,10 @@ for a,b in (('tools/web-compositor/captures/plate_A_<日時>.jpg','logs/gen-plat
     Image.open(a).convert('RGB').resize((1280,960), Image.LANCZOS).save(b)"
 ```
 
-- **2026-09-04 の候補で焼いてある**: `logs/gen-plate/seedance_first_A_20260904.png`（8/23 19:42 のプレート）/
-  `seedance_last_A_20260904.png`（`gen_dollsA_left_20260904_0703.png`・まとまった群れ）。
-  散った群れ（`gen_dollsA_left_20260904_0231d.png`）を到達点にするなら最終コマを差し替える
+- **2026-11-15 の写真で焼いてある**: `Logs/gen-plate/dollsA_video_input_20261115/` の `first_A_20261115_*`（`plate_A_20261115_125052.jpg`）と
+  `last_A_20261115_*`（`gen_dollsA_left_20261115_1250.png`。0925 の群れを参照に、その日の部屋へ Codex で置き直したもの）。
+  それぞれ 4:3 の 640x480・1920x1440 と、黒帯つき 16:9 の 2560x1440。焼いた動画は `dolls_A_in` へ当て、
+  `plate-dependents.json` の `dolls_A_in` の `plate` を同じ写真の名前にする
 - **整数倍で拡大する。** 位置が 1 画素もずれない
 - ⚠⚠ **渡す画は 16:9 にする。左右を黒で埋めて作る**（2026-09-05 ユーザー指定）。
   4:3 のまま渡すと**道具が上下を切って 16:9 にして返す**（同日実測: 1280x960 で渡したら
