@@ -411,6 +411,7 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public void Abort()
         {
+            StopWallRise();
             _wanted = 0f;
             _jackWanted = false;
             if (_jack.Active) JackLastEndWhy = "abort";
@@ -468,6 +469,7 @@ namespace FixedCamVr.Streaming
             {
                 Hide();
                 _lastOpenCount = 0;   // 次の出番で 1 発目から鳴る（0131）
+                StopWallRise();
                 return;
             }
             if (_renderer == null || _mat == null) return;
@@ -562,6 +564,24 @@ namespace FixedCamVr.Streaming
         private ShowSoundDirector? _sound;
         private int _lastOpenCount;
         private float _eyeSfxCooldown;
+        private float _closeSfxCooldown;
+        private bool _wallRisePlaying;
+
+        /// <summary>増えるスクリーンの裏の音（<c>sfx_wall_rise</c>）が退くまでの秒数（0383）。</summary>
+        public const float WallRiseFadeSec = 1.0f;
+
+        /// <summary>増えるスクリーンが消える音の累計（テレメトリ用・0383）。</summary>
+        public int ScreenRemoveSfxCount { get; private set; }
+
+        /// <summary>増えるスクリーンの裏の音を鳴らせたか（1 回の出番に 1 度きり・テレメトリ用・0383）。</summary>
+        public bool WallRiseSfxFired { get; private set; }
+
+        private void StopWallRise()
+        {
+            if (!_wallRisePlaying) return;
+            _wallRisePlaying = false;
+            _sound?.StopSpot(SoundCue.WallRise, WallRiseFadeSec);
+        }
 
         /// <summary>鳴らした一撃の累計（テレメトリ用）。<b>音は録画に映らない。</b></summary>
         public int EyeSfxCount { get; private set; }
@@ -578,6 +598,7 @@ namespace FixedCamVr.Streaming
         private void DriveEyeSfx(float dt)
         {
             if (_eyeSfxCooldown > 0f) _eyeSfxCooldown -= dt;
+            if (_closeSfxCooldown > 0f) _closeSfxCooldown -= dt;
 
             // ⚠ **大きい目の音は兆しの段の頭で撃つ**（見開く瞬間ではない）。素材の頭に無音が
             //    足してあり、いちばん大きいところが見開く瞬間へ来るように焼いてある
@@ -586,7 +607,13 @@ namespace FixedCamVr.Streaming
             {
                 _lastOpenCount = 0;
                 // スクリーンの版は、最初の 1 枚が点いた瞬間に鳴らす（下）。
-                if (WallActive) EyeBigSfxFired = false;
+                // 裏の音（0383）は兆しの頭から 1 本。2D。出番が終わる（Off / Abort）と退く。
+                if (WallActive)
+                {
+                    EyeBigSfxFired = false;
+                    WallRiseSfxFired = _sound != null && _sound.PlaySpot(SoundCue.WallRise);
+                    _wallRisePlaying = WallRiseSfxFired;
+                }
                 else
                 // ⚠⚠ **6.2 秒あるので付いていかせる**（2026-09-04・`canon/LEDGER.md` 0139）。
                 //    目の群れは頭の**位置**に付いて動くので、置きっぱなしだと体験者が 1.5m 歩いた
@@ -604,7 +631,9 @@ namespace FixedCamVr.Streaming
             int now = OpenCount;
             if (WallActive && _lastOpenCount == 0 && now > 0 && !EyeBigSfxFired && _sound != null)
             {
-                EyeBigSfxFired = _sound.PlaySpot(SoundCue.ScreenOn, BigEyeWorld(), follow: transform);
+                // 最初の 1 枚も、続く面と同じ「出現のたび」の音（0383。旧 ScreenOn の「ぴこりっ」は使わない）。
+                EyeBigSfxFired = _sound.PlaySpot(SoundCue.ScreenAdd, BigEyeWorld(),
+                                                 EyeSfxPitchSpread, EyeSfxGainSpreadDb, follow: transform);
                 _eyeSfxCooldown = EyeSfxMinIntervalSec;
                 _lastOpenCount = now;
                 return;
@@ -627,6 +656,19 @@ namespace FixedCamVr.Streaming
             else if (now < _lastOpenCount)
             {
                 _lastOpenCount = now;
+            }
+
+            // 増えるスクリーンが 1 枚消えるたび（0383）。出現と同じ間隔で間引き、消えた面の方角から鳴らす。
+            if (WallActive && _sound != null && _closeSfxCooldown <= 0f)
+            {
+                int closed = _wall!.NewestClosedSeat;
+                if (closed >= 0
+                    && _sound.PlaySpot(SoundCue.ScreenRemove, transform.TransformPoint(_wall.SeatCenter(closed)),
+                                       EyeSfxPitchSpread, EyeSfxGainSpreadDb, follow: transform))
+                {
+                    _closeSfxCooldown = EyeSfxMinIntervalSec;
+                    ScreenRemoveSfxCount++;
+                }
             }
         }
 

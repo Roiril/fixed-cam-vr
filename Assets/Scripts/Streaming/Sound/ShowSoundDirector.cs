@@ -618,10 +618,21 @@ namespace FixedCamVr.Streaming
             float gain = c == SoundCue.Glitch && _glitch != null ? _glitch.SfxGain : 1f;
             // ⚠ masterGain は SfxPlayer.Play の中で掛かる。ここで渡すと**二乗になる**
             //   （既定 1.0 なので今まで見えていなかっただけ。下げた瞬間に効果音だけ沈む）。
-            _sfx?.Play(clip, gain, at: PlaceFor(c));
+            // ⚠ テレビの砂嵐は寄ってくるテレビについて動く（0383）。
+            Transform? follow = c == SoundCue.TvNoise ? _screen : null;
+            _sfx?.Play(clip, gain, at: PlaceFor(c), follow: follow);
+            // ⚠⚠ **重ねて入れ替える 2 組**（0383・ユーザー指定「被らせてクロスフェードで」
+            //    「来る前に流れてた上の音は消す」）。新しい音は頭から立っているので、前の音だけを退かせる。
+            if (c == SoundCue.TitleOut) StopSpot(SoundCue.TitleIn, TitleCrossSec);
+            else if (c == SoundCue.TvOn) StopSpot(SoundCue.TvNoise, TvNoiseCrossSec);
             _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
             LastCue = c;
         }
+
+        /// <summary>題字が消える音が鳴った縁で、出る音を退かせる秒数（0383）。</summary>
+        public const float TitleCrossSec = 1.0f;
+        /// <summary>テレビの電源が入った縁で、寄ってくる間の砂嵐を退かせる秒数（0383）。</summary>
+        public const float TvNoiseCrossSec = 0.6f;
 
         /// <summary>
         /// <b>外から 1 発鳴らす</b>（カットが持つ音。<c>canon/LEDGER.md</c> 0109 の人形の呼びかけ）。
@@ -722,6 +733,8 @@ namespace FixedCamVr.Streaming
                 // 装置の音 — スクリーンから
                 case SoundCue.Glitch:
                 case SoundCue.ScreenOn:
+                case SoundCue.TvNoise:
+                case SoundCue.TvOn:
                 case SoundCue.PowerOff:
                     return _screen != null ? _screen.position : (Vector3?)null;
                 // 人形の呼びかけ — 鳴らした瞬間の**後ろ**（そこに置いたまま動かさない）

@@ -754,7 +754,9 @@ REGISTRY = {
     "sfx_shell_open": (sfx_shell_open, False),
     # sfx_title_in は 2026-08-12 にユーザー提供の「シネマチックなタイトル」へ置き換えた
     # (tools/ingest-sounds.py が焼く)。合成版の関数は設計の記録として残してある。
-    "sfx_title_out": (sfx_title_out, False),
+    # ⚠⚠ sfx_title_out も 2026-11-15 にユーザー提供の Scene-Flashback07 へ置き換えた
+    #    （`canon/LEDGER.md` 0383・`tools/ingest-sounds.py` が焼く）。**ここに戻すと上書きしてしまう。**
+    #    合成版の関数（`sfx_title_out`）は設計の記録として残してある。
 }
 
 

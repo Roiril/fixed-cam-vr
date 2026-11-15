@@ -69,6 +69,10 @@ SEAM_MAX = 3.0        # ループの継ぎ目の飛び（隣接標本差の何�
 #       音源は 0057 のものと同じ 1 本で、切り出し方と並べ方だけが違う。
 RECORDED = {"amb_bell", "amb_creak_1", "amb_creak_2", "sfx_title_in", "sfx_seal_close",
             "sfx_screen_on",
+            # 2026-11-15・0383 のユーザー指定（題字の 2 本・テレビ・増えるスクリーン）
+            "sfx_title_out", "sfx_tv_noise", "sfx_tv_on", "sfx_wall_rise",
+            *(f"sfx_tv_degauss_{i}" for i in range(1, 7)),
+            *(f"sfx_tv_off_{i}" for i in range(1, 5)),
             "sfx_shatter", "amb_dolls_laugh",
             # 笑いは体ごとに 1 本（2026-09-04・`canon/LEDGER.md` 0139）。
             *(f"bed_dolls_laugh_{i}" for i in range(1, 9)),

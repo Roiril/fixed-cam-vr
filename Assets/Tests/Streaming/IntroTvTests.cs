@@ -246,8 +246,10 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ScreenOn_FiresOnce_WhenThePowerComesOn()
+        public void TvNoise_ThenTvOn_EachFireOnce()
         {
+            // 0383: テレビが寄ってくる段 3 で砂嵐、目の前に来て電源が入る段 4 の頭で電源の音。
+            // 旧スクリーン音（ScreenOn・「ぴこりっ」）は鳴らさない。
             var cues = new SoundCueLogic();
             cues.ResetRun();
             IntroLogic l = AtStage(IntroStage.Structure);
@@ -255,15 +257,18 @@ namespace FixedCamVr.Streaming.Tests
             s.introActive = true;
             s.introStage = l.Stage;
             s.introWeights = l.Weights;
-            cues.Tick(0.01f, s, 0f, out int before);
-            Assert.AreEqual(0, before, "テレビが出る段で音が鳴っている");
+            System.ReadOnlySpan<SoundCue> noise = cues.Tick(0.01f, s, 0f, out int first);
+            Assert.AreEqual(1, first, "テレビが寄ってくる段の頭で砂嵐が鳴っていない");
+            Assert.AreEqual(SoundCue.TvNoise, noise[0]);
+            cues.Tick(0.01f, s, 0f, out int still);
+            Assert.AreEqual(0, still, "砂嵐が 2 回鳴っている");
 
             l.Tick(StructureOwnSec(IntroTiming.Default), Ready());
             s.introStage = l.Stage;
             s.introWeights = l.Weights;
             System.ReadOnlySpan<SoundCue> fired = cues.Tick(0.01f, s, 0f, out int count);
             Assert.AreEqual(1, count);
-            Assert.AreEqual(SoundCue.ScreenOn, fired[0]);
+            Assert.AreEqual(SoundCue.TvOn, fired[0]);
             cues.Tick(0.01f, s, 0f, out int again);
             Assert.AreEqual(0, again, "電源の音が 2 回鳴っている");
         }

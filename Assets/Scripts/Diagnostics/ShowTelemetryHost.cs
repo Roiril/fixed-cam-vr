@@ -749,7 +749,8 @@ namespace FixedCamVr.Diagnostics
 
         private string EyeSfxState => _eyes == null
             ? "-"
-            : $"{_eyes.EyeSfxCount}/{(_eyes.EyeBigSfxFired ? 1 : 0)}";
+            : $"{_eyes.EyeSfxCount}/{(_eyes.EyeBigSfxFired ? 1 : 0)}"
+              + $"/{_eyes.ScreenRemoveSfxCount}/{(_eyes.WallRiseSfxFired ? 1 : 0)}";
 
         /// <summary>
         /// 装置が打っている時計（<c>canon/LEDGER.md</c> 0108）—

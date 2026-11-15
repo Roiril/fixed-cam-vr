@@ -59,7 +59,9 @@ namespace FixedCamVr.Streaming.Tests
                     Assert.IsTrue(set.Contains($"{stem}_{i}"), $"{stem}_{i} が名簿に無い");
             }
             foreach (var c in new[] { SoundCue.Glitch, SoundCue.ScreenOn,
-                                      SoundCue.PowerOff, SoundCue.DollCall })
+                                      SoundCue.PowerOff, SoundCue.DollCall,
+                                      SoundCue.TvNoise, SoundCue.TvOn,
+                                      SoundCue.ScreenAdd, SoundCue.ScreenRemove })
             {
                 string baseName = SoundCueLogic.ResourceName(c);
                 int n = SoundCueLogic.VariantCount(c);

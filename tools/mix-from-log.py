@@ -53,6 +53,9 @@ CUES = {
     "DollEndFall": ("sfx_doll_end_fall", 1), "KidsRoom": ("sfx_kidsroom", 1),
     "DollLaughOnce": ("sfx_doll_laugh_once", 1),
     "EyeOpen": ("sfx_eye", 6), "EyeBig": ("sfx_eye_big", 1),
+    # 0383
+    "TvNoise": ("sfx_tv_noise", 1), "TvOn": ("sfx_tv_on", 1), "WallRise": ("sfx_wall_rise", 1),
+    "ScreenAdd": ("sfx_tv_degauss", 6), "ScreenRemove": ("sfx_tv_off", 4),
 }
 
 # 敷く音: テレメトリのキー → その値で鳴る音源たち。

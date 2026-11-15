@@ -41,6 +41,10 @@ MONO3D = {
     "sfx_switch_warn",
     "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
     "sfx_screen_on", "sfx_power_off",
+    # テレビ（2026-11-15・0383）。導入のテレビと、3 周目 C の増えるスクリーンの 1 枚ずつから
+    "sfx_tv_noise", "sfx_tv_on",
+    *(f"sfx_tv_degauss_{i}" for i in range(1, 7)),
+    *(f"sfx_tv_off_{i}" for i in range(1, 5)),
     "sfx_comms_alert", "sfx_comms_block", "sfx_comms_sweep",
     "bed_device", "bed_device_worn", "bed_static",
     # 目（2026-09-03・0131）。**1 つ 1 つがその目の方角から鳴る**ので 3D

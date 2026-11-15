@@ -75,11 +75,18 @@ PLAN = [
     # ⚠⚠ **2026-08-15 に音源を差し替えた**（`canon/LEDGER.md` 0047・ユーザー指定）。
     #    旧: `シネマチックなタイトル.mp3`（2026-08-12 指定・11.9 秒）。復号済みは
     #    `logs/sound/ingest/src_title_cine.wav` に残してある（戻すならここのパスを差し替える）。
-    ("Sonniss.com-GDC2026-GameAudioBundle1of5/344 Audio - Bass Drops & Downers Vol. 3/"
-     "DSGNBass_Tone Downer (Reverb)_344 Audio_Bass Drops and Downers Vol 3.wav",
+    # ⚠⚠ **2026-11-15 に題字の 2 本を差し替えた**（`canon/LEDGER.md` 0383・ユーザー指定）。
+    #    旧: Sonniss の `DSGNBass_Tone Downer (Reverb)`（2026-08-15・0047）と、合成の吸い込み
+    #    （`make-sounds.py` の `sfx_title_out`・0261）。どちらの変種を使うかはシュビーの判断:
+    #    出る音は 6 本のうち内蔵SPで落ちない中域・長い版、消える音は 1.5 秒で鳴り終わる短い版
+    #    （字が消え切る 1.60 秒と揃う）。
+    ("Horror_Accent16-mp3/Horror_Accent16/Horror_Accent16-2(Mid-Long).mp3",
      "sfx_title_in", "lufs", -17.0,
-     "タイトル出現（A を押した瞬間）。**尾は切らない** — 題字が消えた後も鳴り続けて "
-     "パススルーへの継ぎ目を音が跨ぐ"),
+     "タイトル出現（字が書き出された縁）。消える音（`sfx_title_out`）が鳴った縁で 1.0 秒かけて退く"
+     "（クロスフェード）"),
+    ("Scene-Flashback07-mp3/Scene-Flashback07/Scene-Flashback07-1(Short).mp3",
+     "sfx_title_out", "lufs", -19.0,
+     "タイトルが消える（短く押して離した縁）。出る音に重ねて鳴らす"),
     # ⚠ 尖頭で揃えると -12.4 LUFS で、**破砕（-14.0）より大きくなる**。
     #    導入の山は段 4 の破砕なので、隔離の音がそれを超えてはいけない。
     ("黒い中に入るときの金属音.mp3", "sfx_seal_close", "lufs", -16.0,
@@ -120,6 +127,37 @@ PLAN = [
     ("Cyber14-mp3/Cyber14/Cyber14-1.mp3", "sfx_screen_on", "lufs!", -13.0,
      "段 4 — **現実からカメラ映像への入れ替えが終わった所**で 1 度だけ。**導入の山**。"
      "⚠ 割れる音（`sfx_shatter`）とは重ねない — 向こうが鳴り終わって静かになってから鳴る"),
+    # ---- 2026-11-15・`canon/LEDGER.md` 0383（ユーザー指定）-----------------------
+    # ③ 最初にテレビに電気がつく所。⚠ テレビ方式の導入では `sfx_screen_on`（Cyber14-1・
+    #    「ぴこりっ」）を鳴らさない。上の行は割れる遷移（`transition=shatter`）だけが使う。
+    #    変種の選び方はシュビーの判断: 近い砂嵐の長い版（10 秒・段 3 の 3.8 秒を覆う）と、
+    #    終幕の電源断（Dry）と被らない残響つきの版。
+    ("TV-Signal_Noise01-mp3/TV-Signal_Noise01/TV-Signal_Noise01-4(Close).mp3",
+     "sfx_tv_noise", "lufs", -24.0,
+     "段 3 — テレビが奥から寄ってくるあいだ。スクリーンについて動く（3D）。電源が入る縁で 0.6 秒で退く"),
+    ("TV-Turn_Off01-mp3/TV-Turn_Off01/TV-Turn_Off01-2(Reverb).mp3",
+     "sfx_tv_on", "lufs", -15.0,
+     "段 4 の頭 — テレビが目の前に来て電源が入る。砂嵐と入れ替わる（クロスフェード）"),
+    # ② 大量のテレビが出る所（3 周目 C の増えるスクリーン）。
+    ("Horror_Accent-Rise01-mp3/Horror_Accent-Rise01/Horror_Accent-Rise01-1(Short).mp3",
+     "sfx_wall_rise", "lufs", -22.0,
+     "増えるスクリーンの裏で 1 本（2D）。山（7.1 秒）が閉じ始めの頃に来る"),
+] + [
+    (f"TV-Degauss01-mp3/TV-Degauss01/TV-Degauss01-{i}({kind}).mp3",
+     f"sfx_tv_degauss_{i}", "lufs", -24.0,
+     "増えるスクリーンが 1 枚出るたび（その面の方角から・間引く）。6 本を順に")
+    for i, kind in enumerate(["Short", "Mid", "Long", "Short", "Mid", "Long"], start=1)
+] + [
+    # 消えるたびに TV-Hardware01 と 02 を交互に（ユーザー指定）。1 → 2 → 3 → 4 の順に鳴らす。
+    ("TV-Hardware01-mp3/TV-Hardware01/TV-Hardware01-1(Switch).mp3",
+     "sfx_tv_off_1", "lufs", -26.0, "増えるスクリーンが 1 枚消えるたび（01 の 1 本目）"),
+    ("TV-Hardware02-mp3/TV-Hardware02/TV-Hardware02-01(Button).mp3",
+     "sfx_tv_off_2", "lufs", -26.0, "同上（02 の 1 本目）"),
+    ("TV-Hardware01-mp3/TV-Hardware01/TV-Hardware01-2(Switch).mp3",
+     "sfx_tv_off_3", "lufs", -26.0, "同上（01 の 2 本目）"),
+    ("TV-Hardware02-mp3/TV-Hardware02/TV-Hardware02-15(RC-Button).mp3",
+     "sfx_tv_off_4", "lufs", -26.0, "同上（02 の 2 本目）"),
+] + [
     # ⚠⚠ **周ごとの環境音は 2026-08-23 に退役した**（`canon/LEDGER.md` 0116・ユーザー逐語
     #    「1~3周目に設定した環境音が怖くなくて、全部HorrorBGMにしてほしい」）。
     #    1〜3 周目の背景は劇伴（`HorrBGM`）1 本になり、`bed_room` は導入と終幕だけで鳴る。

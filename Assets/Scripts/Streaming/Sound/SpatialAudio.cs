@@ -120,6 +120,11 @@ namespace FixedCamVr.Streaming
             "sfx_switch_warn",
             "sfx_glitch_1", "sfx_glitch_2", "sfx_glitch_3",
             "sfx_screen_on", "sfx_power_off",
+            // テレビ（2026-11-15・0383）。導入のテレビと、3 周目 C の増えるスクリーンの 1 枚ずつから
+            "sfx_tv_noise", "sfx_tv_on",
+            "sfx_tv_degauss_1", "sfx_tv_degauss_2", "sfx_tv_degauss_3",
+            "sfx_tv_degauss_4", "sfx_tv_degauss_5", "sfx_tv_degauss_6",
+            "sfx_tv_off_1", "sfx_tv_off_2", "sfx_tv_off_3", "sfx_tv_off_4",
             // 提供動画の警告と遮断は主画面、侵食は連絡の面から鳴る。
             "sfx_comms_alert", "sfx_comms_block", "sfx_comms_sweep",
             "bed_device", "bed_device_worn", "bed_static",

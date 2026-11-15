@@ -631,12 +631,15 @@ class CurrentXpLogTests(unittest.TestCase):
                 self.assertTrue(self.has(verdicts, "WARN", "音声出力は未検証"))
 
     def test_tv_intro_requires_the_power_sound_instead_of_the_shatter(self):
-        for sounds, missing in ((("Bell", "ScreenOn"), False), (("Bell", "Shatter"), True)):
+        # 0383: テレビ方式は砂嵐（TvNoise）と電源（TvOn）。旧スクリーン音（ScreenOn）は鳴ったら FAIL。
+        for sounds, missing in ((("Bell", "TvNoise", "TvOn"), False), (("Bell", "Shatter"), True),
+                                (("Bell", "TvNoise", "ScreenOn"), True)):
             with self.subTest(sounds=sounds):
                 events = [{"ev": "intro", "stage": "Swap", "t": "1", "shatStyle": "tv"}]
                 events.extend({"ev": "sfx", "id": sound, "t": "1"} for sound in sounds)
                 _, verdicts = self.analyze(events)
                 self.assertEqual(self.has(verdicts, "FAIL", "「テレビの電源」の音"), missing)
+                self.assertEqual(self.has(verdicts, "FAIL", "旧スクリーン音"), "ScreenOn" in sounds)
                 self.assertFalse(self.has(verdicts, "FAIL", "現実が割れる"))
 
     def test_tv_intro_does_not_require_the_aperture_or_the_shards(self):

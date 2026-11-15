@@ -3575,8 +3575,22 @@ def analyze(events, others, exp, warns=None):
         if eye_sfx:
             last = str(eye_sfx[-1])
             parts = last.split("/")
-            if len(parts) == 2 and parts[0].isdigit():
+            # 0383 から <出現>/<最初の 1 発>/<消える音>/<裏の音>（目の版は後ろ 2 つが 0）
+            if len(parts) >= 2 and parts[0].isdigit():
                 hits, big = int(parts[0]), parts[1]
+                if len(parts) >= 4 and parts[2].isdigit():
+                    closes, rise = int(parts[2]), parts[3]
+                    # 増えるスクリーンが寄ってきたことがあるか（scrEmg の 2 つ目 = 寄りの最大 m）
+                    walled = any(len(str(v).split("/")) >= 2
+                                 and str(v).split("/")[1].replace(".", "", 1).isdigit()
+                                 and float(str(v).split("/")[1]) > 0
+                                 for v in effect_samples(events, "scrEmg"))
+                    if walled:
+                        w(f"  増えるスクリーンの消える音: {closes} 発 / 裏の音 {rise}")
+                        if closes == 0:
+                            verdict("FAIL", "増えるスクリーンが出たのに、消える音（sfx_tv_off_*）が 1 発も鳴っていない")
+                        if rise == "0":
+                            verdict("FAIL", "増えるスクリーンの裏の音（sfx_wall_rise）が鳴っていない")
                 eyes_open = max((int(str(v).split("/")[1]) for v in effect_samples(events, "eyes")
                                  if len(str(v).split("/")) >= 2
                                  and str(v).split("/")[1].isdigit()), default=0)
@@ -3709,8 +3723,14 @@ def analyze(events, others, exp, warns=None):
             #    - ノイズ（ScreenNoise）は**鳴らさない**。ここに残すと毎回誤検出する
             # テレビ方式（0309）は電源の音、割れる遷移は破砕音。割れる遷移の ScreenOn は生成動画の音に含む。
             tv_intro = "tv" in effect_samples(events, "shatStyle")
-            intro_sounds = (("Bell", "完全にスクリーンになった所の鈴"),
-                            ("ScreenOn", "テレビの電源") if tv_intro else ("Shatter", "現実が割れる"))
+            # テレビ方式は 0383 から、寄ってくる間の砂嵐（TvNoise）と電源（TvOn）。ScreenOn は鳴らさない。
+            intro_sounds = ((("Bell", "完全にスクリーンになった所の鈴"),
+                             ("TvNoise", "テレビが寄ってくる間の砂嵐"),
+                             ("TvOn", "テレビの電源")) if tv_intro
+                            else (("Bell", "完全にスクリーンになった所の鈴"),
+                                  ("Shatter", "現実が割れる")))
+            if tv_intro and by_id.get("ScreenOn", 0) > 0:
+                verdict("FAIL", "テレビ方式の導入で旧スクリーン音（ScreenOn）が鳴った — 0383 で使わないと決めた音")
             for want, label in intro_sounds:
                 if by_id.get(want, 0) == 0:
                     verdict("FAIL", f"導入は段 Swap まで進んだのに「{label}」の音が鳴っていない"

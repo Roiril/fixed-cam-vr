@@ -45,7 +45,7 @@ true の間に増えるスクリーンが組めなかったときは、目へ戻
 
 **描画**: 面と箱で 1 draw、暈で 1 draw（床の映り込みでそれぞれもう 1 draw）。`Queue=Geometry+50` なのでメインに隠れた所は深度で捨てる。暈は `Geometry+60` の加算で alpha を変えない。シェーダは `Assets/Resources` に置いて `Resources.Load`（`ProjectSettings` を触らないため）。
 
-**音**: 最初の 1 枚が `ScreenOn`、以降が `SoundCue.ScreenAdd`。間引きは目と同じ 0.09 秒で、`sndEye=` に出る。耳では確かめていない。
+**音**（0383・ユーザー指定）: 兆しの頭から裏で `SoundCue.WallRise`（`sfx_wall_rise`・2D）。Off / `Abort` で 1.0 秒で退く。1 枚点くたびに `ScreenAdd`（`sfx_tv_degauss_1..6`・最初の 1 枚も同じ）、1 枚消えるたびに `ScreenRemove`（`sfx_tv_off_1..4`・TV-Hardware01 と 02 が交互）。消えた面は `ScreenMultiply.NewestClosedSeat`（そのフレームに消えた面・無ければ -1）。どちらも 0.09 秒に間引き、面の方角から 3D。観測は `sndEye=<点く>/<最初の 1 発>/<消える>/<裏の音>`。耳では確かめていない。
 
 **計器**: `scrMul=<組めたか>/<点いた枚数>/<取り込みの累計>`、`scrEmg=<寄っている途中の枚数>/<席より奥に居た最大 m>`。意味は変えていない。残光の枚数は観測に出していない。
 

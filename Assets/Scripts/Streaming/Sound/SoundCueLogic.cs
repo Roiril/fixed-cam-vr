@@ -144,6 +144,25 @@ namespace FixedCamVr.Streaming
         /// 2D（<c>SpatialAudio.MonoRequired</c> に入れない）・劇伴は退かせない（<see cref="SoundCueLogic.DuckFor"/> 0）。
         /// </summary>
         DollLaughOnce,
+
+        /// <summary>
+        /// 段 3 — テレビが奥から目の前まで寄ってくるあいだの砂嵐（<c>canon/LEDGER.md</c> 0383）。
+        /// スクリーンについて動く（3D）。<see cref="TvOn"/> が鳴った縁で退く（クロスフェード）。
+        /// </summary>
+        TvNoise,
+        /// <summary>
+        /// 段 4 の頭 — テレビが目の前に来て電源が入る（0383）。テレビ方式では <see cref="ScreenOn"/> の代わりに鳴る。
+        /// </summary>
+        TvOn,
+        /// <summary>
+        /// 3 周目 C の増えるスクリーンの裏で 1 本（0383・2D）。鳴らすのは <see cref="AnomalyEyes"/>。
+        /// </summary>
+        WallRise,
+        /// <summary>
+        /// 増えるスクリーンが 1 枚消えるたび（0383）。4 本を順に回す（TV-Hardware01 と 02 が交互）。
+        /// 消えた面の方角から鳴らす。間引きは <see cref="AnomalyEyes"/> の側。
+        /// </summary>
+        ScreenRemove,
     }
 
     /// <summary>
@@ -198,6 +217,7 @@ namespace FixedCamVr.Streaming
         // ⚠ `SealClose` / `Swap` のラッチは持たない（2026-08-15 に鳴らさなくなった）。
         private bool _shatterFired;
         private bool _screenOnFired;
+        private bool _tvNoiseFired;
         private bool _glitchArmed = true;
         private float _glitchCooldown;
         private bool _glyphWasShowing;
@@ -242,6 +262,7 @@ namespace FixedCamVr.Streaming
         {
             _shatterFired = false;
             _screenOnFired = false;
+            _tvNoiseFired = false;
             _bellFired = false;
             _swapSec = 0f;
         }
@@ -287,12 +308,19 @@ namespace FixedCamVr.Streaming
                     _shatterFired = true;
                     Push(SoundCue.Shatter, ref count);
                 }
-                // テレビの電源（0309）。音は 0057 でユーザーが指定した「スクリーンが出る音」。
-                // 割れる遷移（tv=false）は生成動画の音に帰還まで含まれるため、ScreenOn を重ねない。
+                // テレビが奥から寄ってくる段 3 の頭で砂嵐（0383）。電源が入るまで鳴り続ける。
+                if (!_tvNoiseFired && s.introWeights.tv && s.introStage == IntroStage.Structure)
+                {
+                    _tvNoiseFired = true;
+                    Push(SoundCue.TvNoise, ref count);
+                }
+                // テレビの電源（0309）。音は 0383 でユーザーが指定した TV-Turn_Off01（「ぴこりっ」の
+                // ScreenOn は鳴らさない）。砂嵐は鳴らす側（ShowSoundDirector.FireCue）が退かせる。
+                // 割れる遷移（tv=false）は生成動画の音に帰還まで含まれるため、何も重ねない。
                 if (!_screenOnFired && s.introWeights.tv && s.introStage == IntroStage.Frame)
                 {
                     _screenOnFired = true;
-                    Push(SoundCue.ScreenOn, ref count);
+                    Push(SoundCue.TvOn, ref count);
                 }
                 // ⚠⚠ **その後のノイズ（`ScreenNoise`）は 2026-08-16 に鳴らさなくなった**
                 //    （`canon/LEDGER.md` 0057・ユーザー指示「ノイズは鳴らさない」）。
@@ -381,6 +409,8 @@ namespace FixedCamVr.Streaming
                 case SoundCue.SealClose: return 0.85f;
                 case SoundCue.Shatter: return 0.90f;    // 導入の山。劇伴を深く退かせる
                 case SoundCue.ScreenOn: return 0.90f;   // 旧音の設定は保持する
+                case SoundCue.TvOn: return 0.60f;       // テレビの電源。導入の山
+                case SoundCue.WallRise: return 0.45f;   // 増えるスクリーンの裏。劇伴を引いて前へ出す
                 case SoundCue.ScreenNoise: return 0.75f; // 山の尾。退かせたまま保つ
                 case SoundCue.Swap: return 0.55f;
                 // ⚠ 題字が閉じる音は劇伴を退かせない（2026-10-14・`rules/sound-design.md`「劇伴はそのまま続く」）。
@@ -423,7 +453,11 @@ namespace FixedCamVr.Streaming
                 case SoundCue.DollEndFall: return "sfx_doll_end_fall";
                 case SoundCue.EyeOpen: return "sfx_eye";        // 6 種
                 case SoundCue.EyeBig: return "sfx_eye_big";
-                case SoundCue.ScreenAdd: return "sfx_switch";   // 6 種
+                case SoundCue.ScreenAdd: return "sfx_tv_degauss";   // 6 種（0383）
+                case SoundCue.ScreenRemove: return "sfx_tv_off";    // 4 種（0383）
+                case SoundCue.TvNoise: return "sfx_tv_noise";
+                case SoundCue.TvOn: return "sfx_tv_on";
+                case SoundCue.WallRise: return "sfx_wall_rise";
                 case SoundCue.KidsRoom: return "sfx_kidsroom";
                 case SoundCue.DollLaughOnce: return "sfx_doll_laugh_once";
                 default: return "";
@@ -439,6 +473,7 @@ namespace FixedCamVr.Streaming
                 case SoundCue.Creak: return 2;
                 case SoundCue.EyeOpen: return 6;
                 case SoundCue.ScreenAdd: return 6;
+                case SoundCue.ScreenRemove: return 4;
                 default: return 1;
             }
         }

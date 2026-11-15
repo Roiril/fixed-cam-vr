@@ -945,7 +945,8 @@ namespace FixedCamVr.Streaming.EditorTools
                         for (int i = 0; i < count; i++)
                         {
                             SoundCue cue = fired[i];
-                            if (cue != SoundCue.Shatter && cue != SoundCue.ScreenOn && cue != SoundCue.Bell)
+                            if (cue != SoundCue.Shatter && cue != SoundCue.ScreenOn && cue != SoundCue.Bell
+                                && cue != SoundCue.TvNoise && cue != SoundCue.TvOn)
                                 continue;
                             cuesTsv.AppendLine(FormattableString.Invariant(
                                 $"{tSec:0.000000}\t{cue}\t{SoundCueLogic.ResourceName(cue)}"));

@@ -337,8 +337,15 @@ namespace FixedCamVr.Streaming
         }
 
         /// <summary>1 フレーム分。出番の間（兆しの闇も含む）だけ呼ぶ。</summary>
+        /// <summary>
+        /// <b>このフレームで消えた面</b>の番号（消えた面が無ければ -1）。消える音を
+        /// その面の方角から鳴らすため（<c>canon/LEDGER.md</c> 0383）。同じフレームに複数消えたら最後の 1 枚。
+        /// </summary>
+        public int NewestClosedSeat { get; private set; } = -1;
+
         public void Drive(float dt, float big, float field, float span, float closing, float clock)
         {
+            NewestClosedSeat = -1;
             if (!IsBuilt || _surfaceMats[0] == null) return;
 
             // 閉じ始めたら取り込みを止める。閉じの段は区間の終わり（録画が尽きる暗転）と重なり、
@@ -360,7 +367,11 @@ namespace FixedCamVr.Streaming
                 bool lit = ScreenMultiplyLayout.SeatOpen(i, big, field, span) > 0.001f;
                 if (!lit)
                 {
-                    if (_openAt[i] < NeverOpened && _closedAt[i] >= NeverOpened) _closedAt[i] = _now;
+                    if (_openAt[i] < NeverOpened && _closedAt[i] >= NeverOpened)
+                    {
+                        _closedAt[i] = _now;
+                        NewestClosedSeat = i;
+                    }
                     if (_closedAt[i] < NeverOpened && _now - _closedAt[i] < ScreenMultiplyLayout.AfterglowSec)
                     {
                         afterglow++;
