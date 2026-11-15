@@ -53,10 +53,18 @@ namespace FixedCamVr.Streaming
         public RenderTexture? Processed => _processed;
         public bool IsDisposed => _disposed;
 
+        /// <summary>
+        /// 中間の画（linear・ぼかし・前段・濾波）の形式。16bit 浮動小数（ARGBHalf）で持つ。
+        /// ⚠⚠ 32bit（ARGBFloat）だと Quest 3 で本編が 42fps まで落ちる（2026-11-15 実測）。ぼかしは受信ごと（毎秒 30 回）に
+        /// lod&gt;0 で 2 倍（1280×960）の画を 5 回書くので、1 画素 16 バイトの帯域がそのまま GPU を食う。
+        /// Half にしただけで本編 42→80fps。画の差は memory/crt_signal_stage_precision.md。
+        /// </summary>
+        public const RenderTextureFormat IntermediateFormat = RenderTextureFormat.ARGBHalf;
+
         public CrtSignalProcessor()
         {
             CrtSignalResources resources = CrtSignalResources.Load();
-            if (!SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBFloat)) throw new NotSupportedException("CRT linear Float render targets are unsupported");
+            if (!SystemInfo.SupportsRenderTextureFormat(IntermediateFormat)) throw new NotSupportedException("CRT linear Half render targets are unsupported");
             Shader composite = resources.Composite, psf = resources.SourcePsf, filter = resources.SignalFilter;
             _composition = NewMaterial(composite);
             _source = NewMaterial(psf);
@@ -99,6 +107,8 @@ namespace FixedCamVr.Streaming
                 Vector4 phase = psfScale == 2 ? new Vector4(.25f / live.width, .25f / live.height, 0, 0) : Vector4.zero;
                 bool changed = forceSource || _cachedSource != live || _cachedGeneration != generation || _cachedUpdate != live.updateCount
                     || _cachedSigma != sigma || _cachedScale != scale || _cachedLod != lod || _cachedSrgb != srgb;
+                CrtPerfProbe.Mode probe = CrtPerfProbe.Current;
+                if (probe == CrtPerfProbe.Mode.NoPsf && PsfUpdates > 0 && !forceSource) changed = false;
                 if (changed)
                 {
                     _linear!.DiscardContents();
@@ -113,6 +123,11 @@ namespace FixedCamVr.Streaming
                     InputUpdates++; PsfUpdates++;
                 }
                 BindPsf(_composition, sigma, phase);
+                if (probe == CrtPerfProbe.Mode.NoGlass && ProcessedFrames > 0 && !forceSource)
+                {
+                    BindPsf(state, sigma, phase);
+                    return true;
+                }
                 // Every pass here writes all pixels without blending, so a tile GPU need not load the old contents.
                 _preGlass!.DiscardContents();
                 Graphics.Blit(Texture2D.blackTexture, _preGlass, _composition, _preGlassPass);
@@ -245,7 +260,7 @@ namespace FixedCamVr.Streaming
             {
                 if (rt == null) continue;
                 int w = rt.width, h = rt.height;
-                do { allocated += (long)w * h * 16; if (!rt.useMipMap || w == 1 && h == 1) break; w = Mathf.Max(1, w / 2); h = Mathf.Max(1, h / 2); } while (true);
+                do { allocated += (long)w * h * 8; /* ARGBHalf = 8 バイト/画素 */ if (!rt.useMipMap || w == 1 && h == 1) break; w = Mathf.Max(1, w / 2); h = Mathf.Max(1, h / 2); } while (true);
             }
             PeakOwnedTextureBytes = Math.Max(PeakOwnedTextureBytes, allocated);
             _cachedSource = null;
@@ -255,7 +270,7 @@ namespace FixedCamVr.Streaming
 
         private static RenderTexture Target(int width, int height, bool mip, string name)
         {
-            var rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear)
+            var rt = new RenderTexture(width, height, 0, IntermediateFormat, RenderTextureReadWrite.Linear)
             { name = name, hideFlags = HideFlags.HideAndDontSave, antiAliasing = 1, useMipMap = mip, autoGenerateMips = false, wrapMode = TextureWrapMode.Clamp, filterMode = mip ? FilterMode.Trilinear : FilterMode.Bilinear };
             if (!rt.Create()) { DestroyOwned(rt); throw new InvalidOperationException("Could not create " + name); }
             return rt;

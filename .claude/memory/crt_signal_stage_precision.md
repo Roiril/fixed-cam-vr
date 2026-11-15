@@ -11,3 +11,5 @@ GPU backendをまたぐ一般則とは扱わない。
 最大1byteだからと許容差へ変更せず、通る対照を維持して出力signatureと中間出力を分離する。中間RTがFloatでも、shaderの出力型は別に確認する。今回、HDR flag変更を再試行する根拠はない。
 
 失敗出力は`processing-signal-01-invalid-identity01`、成功した12枚・校正・source26点の退避とXMLはDriveの`2026-10-30_crt-reference/processing-signal-01/`。sourceの絶対/相対pathをrepo相対に正規化した`source-archive.json`から照合できる。EditMode2288/2288とsource26前後hash差0を確認した時点の記録で、後続helper変更後の全件再試験とは区別する。
+
+2026-11-15 から本番の中間 RT は ARGBHalf（`CrtSignalProcessor.IntermediateFormat`）。Float との差は最大 1/255。fps の根拠は [[comms_performance_20261018]] の 11-15 の節。

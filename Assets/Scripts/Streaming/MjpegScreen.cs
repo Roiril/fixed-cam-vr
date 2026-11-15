@@ -49,6 +49,7 @@ namespace FixedCamVr.Streaming
         private Renderer? _renderer;
         private Material? _material;
         private CrtSignalProcessor? _signalProcessor;
+        private bool _signalPrepared;   // 診断の口 perfcrt=freeze が「1 回は組んだ」を見る
         private int _lastSignalFrame = -1;
 
         public CrtSignalProcessor? SignalProcessor => _signalProcessor;
@@ -89,6 +90,7 @@ namespace FixedCamVr.Streaming
         public void EnableReferenceSurface()
         {
             if (ReferenceSurfaceActive || GetComponent<CrtScreenMesh>() == null) return;
+            if (Application.isPlaying && CrtPerfProbe.Current == CrtPerfProbe.Mode.Legacy) return;
             if (_renderer == null) _renderer = GetComponent<Renderer>();
             if (_renderer == null) return;
             if (_material == null)
@@ -284,7 +286,7 @@ namespace FixedCamVr.Streaming
         private void OnDisable()
         {
             RenderPipelineManager.beginCameraRendering -= PrepareSignal;
-            _signalProcessor?.Dispose(); _signalProcessor = null;
+            _signalProcessor?.Dispose(); _signalProcessor = null; _signalPrepared = false;
             if (_material != null && _material.HasProperty("_CrtSignalRuntime")) _material.SetFloat("_CrtSignalRuntime", 0);
             _receiver?.Dispose();
             _receiver = null;
@@ -394,6 +396,7 @@ namespace FixedCamVr.Streaming
         {
             if (!isActiveAndEnabled || !ReferenceSurfaceActive || _material == null
                 || _lastSignalFrame == Time.frameCount) return;
+            if (_signalPrepared && CrtPerfProbe.Current == CrtPerfProbe.Mode.Freeze) return;
             _lastSignalFrame = Time.frameCount;
             try
             {
@@ -401,12 +404,30 @@ namespace FixedCamVr.Streaming
                 // OnDisable が落とした実行フラグだけ戻す。固定値は PrepareDisplay が書く。
                 CrtSignalProfile.EnableRuntime(_material);
                 _signalProcessor.PrepareDisplay(_material, SourceFrameId);
+                _signalPrepared = true;
+                if (CrtPerfProbe.Logs) LogSignalRate(_signalProcessor);
             }
             catch (System.Exception e)
             {
                 CrtSignalProcessor.InvalidateBindings(_material);
                 Debug.LogError("[CrtSignal] スクリーン信号を構成できません: " + e);
             }
+        }
+
+        // 診断の口（perfcrt）を開けたときだけ、信号処理の回数を 5 秒ごとに出す。
+        private float _rateAt = -1f;
+        private long _ratePsf, _rateGlass, _rateMips;
+        private void LogSignalRate(CrtSignalProcessor p)
+        {
+            float now = SimTime.Realtime;
+            if (_rateAt < 0f) { _rateAt = now; _ratePsf = p.PsfUpdates; _rateGlass = p.ProcessedFrames; _rateMips = p.MipBuilds; return; }
+            float dt = now - _rateAt;
+            if (dt < 5f) return;
+            Texture? live = _material != null ? _material.GetTexture(LiveTexId) : null;
+            Debug.Log($"[PerfCrt] rate {name} psf={(p.PsfUpdates - _ratePsf) / dt:F1}/s glass={(p.ProcessedFrames - _rateGlass) / dt:F1}/s "
+                + $"mips={(p.MipBuilds - _rateMips) / dt:F1}/s src={(live != null ? live.width + "x" + live.height : "-")} "
+                + $"lod={(_material != null ? CrtSignalProcessor.CoarseLod(_material, live != null ? live.width : 640) : -1f):F2} mode={CrtPerfProbe.Current}");
+            _rateAt = now; _ratePsf = p.PsfUpdates; _rateGlass = p.ProcessedFrames; _rateMips = p.MipBuilds;
         }
     }
 }

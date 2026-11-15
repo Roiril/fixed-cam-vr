@@ -228,7 +228,9 @@ namespace FixedCamVr.Streaming.Tests
                     worst = Mathf.Max(worst, Mathf.Abs(encoded[i].g - eachTap[i].g));
                     worst = Mathf.Max(worst, Mathf.Abs(encoded[i].b - eachTap[i].b));
                 }
-                Assert.That(worst, Is.LessThan(1e-5f));
+                // 中間 RT は ARGBHalf（CrtSignalProcessor.IntermediateFormat・2026-11-15）。前段を sRGB で持つ経路と linear で持つ経路は
+                // Half の丸めが違うので、Float の頃の 1e-5 では比べられない。8bit の表示で 1 段に満たない差まで許す（実測 .0036）。
+                Assert.That(worst, Is.LessThan(1f / 255f));
             }
             finally { RenderTexture.ReleaseTemporary(target); }
         }

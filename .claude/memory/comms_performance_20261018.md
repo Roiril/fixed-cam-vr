@@ -78,4 +78,17 @@
   - 四角の切り詰めは uv の丸めを変える。`floor(uv * float2(40, 12))` の粒の境目が 1 画素ずれ、高さ 1 画素の横線として出る（1 枚平均 6 画素が差 8 超、最大 95/255）。粒は毎秒 18 回変わる
 - 未測定。実機の fps は 11-01 の CRT 導入後に 1 度も取っていない。次の実機で 3-A・3-C の fps と `rx=` `dfps=` `dfail=` `drop=` を見る
 - 残した手段。絵が変わるので判定が要る。`quest3MaxDynamicResolutionScale` 1.6→1.3（画素 34% 減）・FFR・MSAA 4→2・手前の断片の数・pre-glass の精度
-- やらなかったこと。入力が同じ間の CRT の Blit 省略（`_Time`・AGC・OSD が毎フレーム変わる）。ARGBFloat→Half と ±4 タップの削減（完全一致しない）
+- やらなかったこと。入力が同じ間の CRT の Blit 省略（`_Time`・AGC・OSD が毎フレーム変わる）。±4 タップの削減（完全一致しない）。ARGBFloat→Half は 11-15 に採った（次の節）
+
+## 2026-11-15 実機の fps（CRT 導入後の初測定）と中間 RT の Half 化
+
+- 実機 β・90Hz・録画なしの自動走行で、本編 42fps・導入 34fps（GPU 0.87・App 18ms）。11-01 の CRT 導入から測っていなかった
+- 切り分けは診断の口 2 つ（Development のみ・intent extra）。`perfcrt=freeze|legacy|nopsf|noglass|count|half`（`CrtPerfProbe`）と `perfres=<倍率>`（`PerfResProbe`）。
+  計測の台本は `am start -e xpwalk 1 -e perfcrt <mode> -n …` → 160 秒 → `logcat -d` の `ev=sum fps` を相ごとに平均
+- 結果（本編 / 導入 fps）: 通常 42/34・freeze 57/79・legacy 60/65・**nopsf 74/59**・noglass 36/41・res1.0 48/38・res1.25 45/32・**half 80/60**・half+res1.0 87/74・res1.0+freeze 87/84
+- 主因は**ぼかし（PSF）**。受信ごと（`psf=30/s`）に、lod 0.68（`_CoarseBlocks` が常時効く）で 2 倍の 1280×960 を ARGBFloat で 5 回書く。帯域律速なので Half で半分になる
+- **採用: 中間 RT を ARGBHalf**（`CrtSignalProcessor.IntermediateFormat`）。`menu crt-lens` の A/B/C で Float と比べて最大差 1/255（B の 1 画素だけ 2）・画素の 9〜12% が 1 段ずれる。
+  出力は `G:/マイドライブ/shubie/renders/crt-half/{float,half}/`
+- 目の倍率の上限（OVRManager の動的解像度は上限 1.6・幅 3264px で、GPU 律速でも viewport を下げない）は**下げていない**。
+  1.0 で本編 +7fps。絵が変わるので被って判定が要る。下げるなら `OvrBridge/EyeResolutionCap.cs`（未配線）を `OvrControllerBridge.Update` から呼ぶ
+- 残り: 導入は Half でも 60fps。倍率 1.0 でも 74 で、解像度ではない律速が残る（未切り分け）
