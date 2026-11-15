@@ -1,64 +1,66 @@
-# web compositor — 廻リ視の設営と点検・演出編集
+# web compositor — 廻リ視の当日の画面と演出編集
 
-## 現行の入口（2026-09-23）
+## 当日の画面
 
-`./serve.ps1 -Prepare` で準備用に起動し、`http://localhost:8099/` を開く。
-`index.html` が当日の準備画面。旧 `onsite.html` と `shoot.html` もここへ転送する。
-「設営 → 接続 → 撮影 → 演出 → ビルド → 開場前」の順に進む。
-URL の `#setup`、`#devices`、`#shoot`、`#content`、`#build`、`#checks` で各項目を直接開ける。
-撮影には選んだカメラの接続と録画機能が必要。Quest と博士タブレットの確認は撮影の前提にせず、開場前に完了させる。
-人は構図・照明・演技を決めてスマホで人形視点の 5 本を撮影する。同じ準備画面で回収・冒頭の試写・切り出し・採用を行う。その後で固定カメラを本番位置へ戻し、A・B・C の無人静止画を 1 枚ずつ撮る。各写真を見て無人であることと構図・照明を確認して採用する。エージェントには素材の加工・検査・選択済み素材の反映・ビルド・導入を任せる。
-「演出」は会場での撮影から始める。人形視点はその日に撮ったテイクを採用する。必要な合成素材は会場で撮った写真を元に画像を作り、動きが要るものだけ画像から動画にする。試写・採用を終えてから書き出し、APK を作って両 Quest に入れる。既存素材を使う演出は一律に再生成しない。
-演出編集は `authoring.html` に移した。既定では演出を変更する POST を 403 で拒否する。
-準備用起動では `FIXEDCAM_PREPARATION=1` を設定する。loopback と同一オリジンからの撮影開始・停止・回収・人形視点の採用・無人静止画の撮影と採用だけを許可する。スマホで撮影した後の回収はこの PC の「撮影」で行う。
+`./serve.ps1` で起動し、`http://localhost:8099/` を開く。`index.html` が当日の画面で、本体は `ops/`。
+同じ LAN のスマホからは `http://192.168.10.10:8099/` で開く（見ることと復旧だけ。撮影と採用は卓の PC の localhost から）。
+旧 `onsite.html` / `shoot.html` / `runbook.html` は転送だけ。演出の編集は `authoring.html`。
 
-無人静止画は `GET /shoot/plates` で確認する。`POST /shoot/plate-capture {cameraId}` は登録した A・B・C から新しい JPEG を取得する。自動採用はしない。`POST /shoot/plate-adopt {cameraId,url}` は同じカメラで撮影した候補だけを採用する。A は `plate_A` と `plate_A_right` を同時に更新する。ファイルの実在と撮影台帳を確認し、当日撮影して採用した 3 枚がそろうまでビルド依頼を有効にしない。カメラ位置や照明が本番と一致しているかは人が判断する。
-通常の `./serve.ps1` は撮影準備用。点検だけなら `./serve.ps1 -Inspect` で準備用の書き込みを無効にする。一般の演出編集が必要な場合だけ環境変数 `FIXEDCAM_AUTHORING=1` で起動する。
-電源を入れるところからの手順は [設営の入口](../../docs/onsite/setup-from-zero.md)。`py -3.11 tools/onsite.py setup` は登録した Quest と博士タブレットを起動する。
-次節以降のタイムラインや画質の操作説明は旧編集画面の記録。Player へのライブ反映は廃止した。
-`GET /ops/capabilities` で起動モードと使用できる操作を読み、使えない操作は理由付きで表示する。Python の API 変更時はサーバーを再起動する。
+面は 4 つ。URL のハッシュが状態を持つ（`#ready/cameras`・`#shoot/plates`・`#shoot/compare/<場面>`・`#help/<症状>`）。
 
-当日画面は固定のカメラ A/B/C と Quest α/β、対応する博士タブレット 2 台を表示する。
-固定登録は `operations-fleet.json`。A/B/C は `192.168.10.21/.22/.23:8080`、Quest α/β は
-`192.168.10.31/.32`。スマホの登録 UUID は 2026-09-24 の実機観測値。A は
-`37081JEHN03028`、C は `37201JEHN14152`。8 月の割り当てとは A と C の端末が入れ替わっている。
-設置時は画面の担当表示、固定 IP、実際の配置を照合する。
-PC は `autoFollow=false`、Quest は `discoveryEnabled=false`、A/B/C は `pinned=true` を投影する。
-通常画面から演出編集や ID・IP の変更はできない。`show.json` の host などローカル接続値はコミットしない。
+| 面 | 何に答えるか |
+|---|---|
+| 準備 `#ready` | 開場できるか。あと何件か。次にやることは何か。8 行（回線と卓／カメラ／Quest／博士タブレット／会場の素材／アプリの版／詳しい点検／人が確かめること） |
+| 素材 `#shoot` | 人形視点 5 本の撮影・回収・採用、無人の写真 3 枚の撮影・採用、採用中の素材と焼いたアプリの中の見比べ |
+| 本番 `#live` | 会期中に、いま人が動くこと。Quest が体験のどこに居るか。見張り（`onsite.py watch`）の記録 |
+| 困ったとき `#help` | 症状から入り、最初にやることを 1 つ出す |
 
-`GET /ops/status` はカメラの ID・UUID、実フレーム 2 枚以上と連番の進行、温度・電池、
-Quest ごとの 6 秒以内の heartbeat を確認する。HTTP 応答や fps の値だけでは映像を正常としない。
-`POST /ops/restart` の `{ "cameraId": "A" }` は登録 UUID が一致する 1 台だけを起こし直す。
-同じカメラの再試行は 90 秒待ち、復旧後はフレームを再観測する。
-歩く場所と構図、Quest 2 台の映像・音・入力は人が確認する。確認の有効時間は 1 時間で、
-切断または設定変更時に解除される。詳細点検の結果は 30 分有効。準備完了には対象項目に NG・注意・未確認が残っていないことが必要。
-詳細点検と `py -3.11 tools/onsite.py check` は従来の機器情報と素材も見る補助。
-台本で使わない目の写真は、詳細点検でも Quest ごとの未確認項目に数えない。
-固定登録の適用による設定番号の差だけでは異常にしない。人形視点は使用する映像ファイルを確認する。
-旧撮影画面の採用記録は必須にしない。インターネット接続は展示に不要なので開場判定から除外する。
-既存の音・素材はこの画面変更では変わらない。2026-09-24 にスマホ 3 台へ配信アプリ v0.16.0 を入れ、固定登録と映像配信を実機で確認した。Quest 内の見え方は装着して確認する。
+上の帯の灯（卓・A・B・C・α・β・博士）はどの面でも出る。色と形の両方で状態を出す。
+
+### 判定の決まり（`ops/model.js`・テストは `ops/model.test.mjs`）
+
+- 20 秒より古い値、欠けた行、応答があるだけの端末を「済み」にしない。
+- 状態は 4 つ。済み／注意／まだ／対処。**注意は開場を止めない。**止めるのは「まだ」と「対処」。
+- 原因が 1 つなら表示も 1 つ。画面が卓に届かないとき、卓の PC が `192.168.10.10` を失ったときは、機器の行を「分かりません」にまとめる。
+- 灯は生の値だけで作る。期限つきの人の確認（1 時間）と詳しい点検（30 分）は準備の表にだけ入れる。
+- 博士タブレットの状態は Quest から聞いている。Quest が落ちているあいだは「Quest の応答待ち」と出す。
+- 今日使わない Quest は `operations-fleet.json` の `quests[]` に `"standby": true` を書く。行は「予備」と出て、開場の判定・アプリの版の照合・人の確認から外れる。登録の無い側の博士タブレットも判定に入れない。
+- 位置合わせ（Quest の申告 `registered` / `needsReReg`）が済んでいなければ Quest の行は「まだ」。読めていない音は「注意」。
+- 本番の面は体験の段で重みを変える。体験中に左コントローラが見えていなければ「対処」。待機中の右コントローラは見ない。
+- 会場の素材は、採用の本数に加えて人の確認が 2 つ要る（いまのカメラの位置と照明で撮った／採用中の素材を見た）。確認は、素材の版・日付・カメラの傾きの判定のどれかが変わると外れる。前の日の写真でも、いまの映像と重ねて合っていれば使える。
+
+### サーバの口
+
+準備用起動（`serve.ps1`・`onsite.py serve`）は `FIXEDCAM_PREPARATION=1` を立てる。loopback と同一オリジンからの撮影開始・停止・回収・採用・無人の写真の撮影と採用だけを許す。
+点検だけなら `./serve.ps1 -Inspect`。一般の演出編集は `FIXEDCAM_AUTHORING=1` で起動したときだけ。`GET /ops/capabilities` が起動モードを返す。
+
+| 口 | 中身 |
+|---|---|
+| `GET /ops/status` | カメラ（ID・UUID・実フレーム 2 枚以上の連番進行・温度・電池・無線で直せるか）／Quest（6 秒以内の heartbeat・`run`＝体験の段と周と経過・`facts`＝位置合わせ・左右コントローラ・音・`standby`）／博士タブレット（待受・30 秒以内の応答・設定の実値反映・`registered`）／`desk`（卓の PC の IP）／`watch`（見張りが動いているかと記録の末尾 40 行） |
+| `POST /ops/restart {cameraId}` | 登録どおりの 1 台だけを起こし直す。同じ台は 90 秒に 1 回（見張りと記録を共有） |
+| `POST /onsite/check` / `GET /onsite/check` | 詳しい点検を走らせる／直前の結果を読む |
+| `POST /onsite/fix {name}` | 画面から呼べるのは `panel`（Quest の設定パネルを閉じる）だけ。`cameras` は端末の照合も 90 秒の間隔も見ないので `FIXEDCAM_AUTHORING=1` のときだけ |
+| `GET /ops/content` | 採用中の素材 → 書き出し → 焼いたアプリ → 各 Quest の版の照合。予備の機は一致を要求しない |
+| `GET /ops/library` / `GET /ops/apk-asset` | 場面ごとの採用中の素材と、焼いたアプリの中の実ファイル（SHA256 で比較） |
+| `GET /shoot/plan|manifest|plates|devices|takes` `POST /shoot/start|stop|pull|adopt|plate-capture|plate-adopt` | 人形視点と無人の写真。`plate-adopt` は同じカメラで撮った候補だけを採用し、A は `plate_A` と `plate_A_right` を同時に替える |
+
+`capturedAt` は卓へ回収した時刻で、撮った日を証明しない。会場と合っているかは人が見る。
+固定の登録は `operations-fleet.json`（A/B/C は `192.168.10.21/.22/.23:8080`、Quest α/β は `.31/.32`、卓は `.10`）。通常の画面から演出・ID・IP は変えられない。`show.json` の host はコミットしない。
+博士タブレットは `:8090` の Quest に直接つなぐ。卓は設定を送らない。体験者 1 人ごとの進行も卓からは操作しない。
+Python を直したらサーバを起動し直す。
+
+⚠ `adb` の出力は UTF-8 で読む（`operations._ADB_TEXT`）。届かない端末への `adb connect` は日本語の失敗文を返し、既定の cp932 で読むと `stdout` が `None` になる。2026-11-15 まで、カメラが 1 台でも届かないと `/ops/status` が丸ごと落ちていた。
 
 確認コマンド:
 
 ```powershell
 py -3.11 -m unittest discover -s tools/web-compositor -p 'test_*.py'
 py -3.11 -m unittest tools/test_onsite_operations.py
-node --test tools/web-compositor/test_ops_model.mjs tools/web-compositor/test_ops_shoot.mjs tools/web-compositor/shoot-model.test.mjs tools/web-compositor/test_ops_library_preview.mjs
+node --test tools/web-compositor/ops/model.test.mjs tools/web-compositor/ops/shell.test.mjs tools/web-compositor/test_ops_shoot.mjs tools/web-compositor/shoot-model.test.mjs tools/web-compositor/test_ops_library_preview.mjs
 ```
 
-演出の準備は `GET /ops/content` で照合する。参照ファイルの有無、StreamingAssets への同梱、APK 内の素材を別々に表示する。これだけでは素材が当日の画と合うかは判定できない。
-人形視点は `GET /shoot/plan` と `GET /shoot/manifest` を突き合わせ、採用本数と当日回収を確認できる本数を分けて表示する。`capturedAt` は PC への回収時刻であり撮影日を証明しない。
-「演出」は `GET /ops/library` を使い、演出ごとの現在採用素材と APK 内の実ファイルを並べる。同名ファイルも SHA256 で比較する。「現在の採用」は `/state` のカット指定・カメラ・マスク・画像加工を解決し、選択した 1 カットだけを既存の WebGL 合成器でライブ映像に重ねる。ライブの鮮度は `/cam/liveness` で確認し、途切れた映像を合成結果として見せない。全面差し替えと実機専用の演出は素材表示に留める。APK 内の試写は検証済み manifest のファイルだけを `/ops/apk-asset` から配信する。動画の Range / HEAD に対応する。APK の同梱一致だけでは Quest に導入済みと表示しない。
-当日の撮影環境と採用素材の試写は人がチェックする。確認はこのブラウザのセッションに保持する。演出版が変わった場合や日付が変わった場合は失効する。ファイルの照合結果が古い間も確認済みにしない。
-「ビルドの依頼文をコピー」は現在の演出版と役割分担を含む依頼を作る。ビルドを自動実行するボタンではない。試写後に素材が変わっていたら、エージェントは再確認してからビルドする。
-export は必要な画像・動画・BGM を検証し、本文と素材の SHA256 を manifest に書く。カット単位の BGM も対象。
-Unity ビルドは欠損と改変を拒否する。成功時の `mawarimi.apk.content.json` は APK のハッシュと buildGuid を保存する。
-起動中の Quest が同じ contentId と buildGuid を報告した場合だけ導入版一致になる。素材差し替え後は再ビルドが必要。
-
-博士タブレットは `:8090` の Quest に直接接続する。卓は設定を送らない。
-`GET /ops/status` の `tablets` は待受、30 秒以内のページ応答、設定の実値反映を分ける。
-Quest 起動 ID とページ ID を照合する。未送信、別ページの送信、反映待ち、複数ページ、応答期限切れは確認済みにしない。
-両方のタブレットから設定を実際に送り、言語と軽減の表示を見比べて点検する。
+機材が無くても画面は見られる。`?demo=ready` `?demo=issue` `?demo=live` `?demo=down`（見本の値。操作は実行されない）。
+電源を入れるところからの手順は [設営の入口](../../docs/onsite/setup-from-zero.md)。
 
 ## 演出編集画面の記録
 
@@ -84,7 +86,7 @@ Quest 起動 ID とページ ID を照合する。未送信、別ページの送
 | **🎬 演出**（既定） | 体験を組む正面 | 周回タイムライン・**⏺ 端末内録画**・🕹 シミュレーション・カメラ別の画質・🎵 BGM・🎭 CG 人形・📦 焼き込み |
 | **🚨 本番** | 走らせる | ✅ 本番前チェック → ラン状態 → 監視列 → cue 手動発火 → 端末・診断。緊急操作は**画面下端に常駐** |
 
-撮影コンソールは準備画面の `#shoot` に統合した。旧 `shoot.html` も同じ画面へ移動する。
+撮影は当日の画面の「素材」（`#shoot`）で行う。旧 `shoot.html` は転送だけ。
 接近の人形視点 5 本を撮り終えてから、固定カメラ A・B・C の無人静止画を撮影する。
 1 ショットずつ誘導 → 端末が自動停止 → 卓が回収・検分 → **画に出る頭の窓だけ**を試写 → 採用。
 判定は [`shoot-model.js`](shoot-model.js)（node テストあり）が単一の正で、
@@ -432,8 +434,9 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` / `ops-model.js` | 当日の設営と点検。固定 5 台の状態と人の確認を表示 |
-| `onsite.html` | `index.html` へ転送する旧入口 |
+| `index.html` / `ops/` | 当日の画面。`main.js`（通信と面の切替）・`model.js`（判定）・`board.js`（準備）・`materials.js` `shoot.js` `plates.js` `compare.js`（素材）・`live.js`（本番）・`help.js`（困ったとき）・`parts.js` `ui.js`（部品）・`demo.js`（見本）・`ops.css` |
+| `ops-shoot-model.js` / `shoot-model.js` / `ops-library-preview.js` | 録画の帰属・回収・必要な長さ・見比べの 1 場面の解決（DOM を持たない。`ops/` が読む） |
+| `onsite.html` / `shoot.html` / `runbook.html` | `index.html` へ転送する旧入口 |
 | `authoring.html` / `style.css` | 演出編集の統合 UI（タイムライン主面 + 監視カメラ列） |
 | `operations-fleet.json` / `operations.py` | 固定登録、実フレーム点検、登録済みカメラの復旧 |
 | `app.js` | 全配線（status / モードナビ / カメラ列監視 / IP・画質 / 録画 / ライブ運用 / プロンプト）。show.json を正に I/O |
@@ -477,7 +480,7 @@ MJPEG プロキシは `<メインポート+1>`（8100）で別 listen（同一�
 - フロアマップの ◇ HMD 位置は heartbeat の `headCourseX` / `headCourseZ` / `currentZone` を読む（**2026-07-25 修正**。旧実装は `hmdX` / `hmdZ` / `zoneLabel` という存在しないキーを見ていたため、Unity が繋がっていても ◇ が一度も出なかった）。
 - 合成素材は既存 `captures/` から選ぶ（📷 でその場保存も可）。AI 生成素材は外部で用意して `captures/` に置く。スペース入りファイル名も URL エンコードで対応。
 
-## 撮影コンソール（`shoot.html`）— 当日の素材撮り
+## 撮影（当日の画面の「素材」）— 当日の素材撮り
 
 `canon/LEDGER.md` 0102 の接近シーンは、**当日その会場で撮った 6 本の録画だけで走る**
 （ライブに 1 秒も依存しない）。設計は

@@ -101,7 +101,7 @@
 - [quest_adb_auth.md](quest_adb_auth.md) — adb unauthorized で許可が出ない。中古機は別アカウント＝初期化
 - [show_json_is_live_config.md](show_json_is_live_config.md) — show.json は git 管理外の現場設定。サーバはメモリを配る
 - [no_internet_autojoin_kill.md](no_internet_autojoin_kill.md) — ⚠ 上流の無い展示網を Android が恒久無効化する。展示の朝に全機が踏む
-- [onsite_day_ops.md](onsite_day_ops.md) — 会期中の運用の道具（onsite.py・当日パネル・自動起動）。古い heartbeat で判定しない
+- [onsite_day_ops.md](onsite_day_ops.md) — 当日の画面と onsite.py。届かないカメラ 1 台で /ops/status が落ちていた
 - [camera_fleet.md](camera_fleet.md) — 配信スマホ Pixel 7a ×3。IP は揮発／傾きで「カメラが動いたか」が分かる
 - [streamer_operator_ui.md](streamer_operator_ui.md) — 配信スマホ側の面（補助線・鏡合わせ・撮影パネル・卓の自動発見）
 - [approach_shoot_console.md](approach_shoot_console.md) — 当日の素材撮り。停滞は `ev=clip` にしか出ない

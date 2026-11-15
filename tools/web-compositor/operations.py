@@ -320,6 +320,12 @@ def _heartbeat_value(heartbeat, key):
     return nested.get(key) if isinstance(nested, dict) else None
 
 
+# adb の出力は UTF-8 で読む。届かない端末への `adb connect` は Windows の日本語の失敗文を返し、
+# 既定（cp932）で読むと読み取りスレッドが落ちて stdout が None になる。そのまま `.lower()` を呼んで
+# `/ops/status` が丸ごと落ちていた（カメラが 1 台でも届かないと、画面が「卓に届かない」と出る形）。
+_ADB_TEXT = {'capture_output': True, 'text': True, 'encoding': 'utf-8', 'errors': 'replace', 'check': False}
+
+
 def _wireless_adb(fixed, runner=subprocess.run):
     """登録済みの物理 serial と無線 ADB の接続先が同じ端末かを確認する。"""
     expected = (fixed.get('serial') or '').strip()
@@ -330,21 +336,21 @@ def _wireless_adb(fixed, runner=subprocess.run):
     transport = fixed['host'] + ':5555'
     try:
         adb_path = resolve_adb()
-        connected = runner([adb_path, 'connect', transport], capture_output=True, text=True,
-                           timeout=20, check=False)
-        if connected.returncode != 0 or 'connected' not in connected.stdout.lower():
+        connected = runner([adb_path, 'connect', transport], timeout=20, **_ADB_TEXT)
+        if connected.returncode != 0 or 'connected' not in (connected.stdout or '').lower():
             result['state'] = 'unreachable'
             return result
         result['reachable'] = True
         observed = runner([adb_path, '-s', transport, 'shell', 'getprop', 'ro.serialno'],
-                          capture_output=True, text=True, timeout=20, check=False)
+                          timeout=20, **_ADB_TEXT)
     except (OSError, RuntimeError, subprocess.TimeoutExpired):
         result['state'] = 'unreachable'
         return result
     if observed.returncode != 0:
         result['state'] = 'identity_unavailable'
         return result
-    result['observedSerial'] = observed.stdout.strip().splitlines()[0] if observed.stdout.strip() else ''
+    serial_text = (observed.stdout or '').strip()
+    result['observedSerial'] = serial_text.splitlines()[0] if serial_text else ''
     result['identityOk'] = result['observedSerial'] == expected
     result['state'] = 'verified' if result['identityOk'] else 'identity_mismatch'
     return result
@@ -495,6 +501,130 @@ def _finish(row):
     return row
 
 
+def _number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _flag(value):
+    return value if isinstance(value, bool) else None
+
+
+def _quest_run(hb):
+    """体験の進み具合。heartbeat の値をそのまま写す（判定はしない）。"""
+    lap = _heartbeat_value(hb, 'lap')
+    total = _heartbeat_value(hb, 'totalLaps')
+    return {'phase': hb.get('phase') if hb.get('phase') in ('INTRO', 'RUN', 'END') else None,
+            'titleStage': hb.get('titleStage') if isinstance(hb.get('titleStage'), str) else '',
+            'lap': lap if isinstance(lap, int) and not isinstance(lap, bool) and lap > 0 else None,
+            'totalLaps': total if isinstance(total, int) and not isinstance(total, bool) and total > 0 else None,
+            'runSec': _number(_heartbeat_value(hb, 'runSec')),
+            'introSec': _number(_heartbeat_value(hb, 'introSec')),
+            'targetSec': _number(_heartbeat_value(hb, 'targetSec')),
+            'endHolding': _flag(_heartbeat_value(hb, 'endHolding'))}
+
+
+def _quest_facts(hb):
+    """被らないと分からないことのうち、Quest 自身が申告している分。
+
+    ⚠ ここは行の status に混ぜない。右コントローラが机で寝ているだけで行が要確認になると、
+    本当に直すべき行が埋もれる。画面は詳細としてだけ出す。
+    """
+    def controller(side):
+        connected = _flag(_heartbeat_value(hb, f'ctrl{side}Connected'))
+        tracked = _flag(_heartbeat_value(hb, f'ctrl{side}Tracked'))
+        return None if connected is None else {'connected': connected, 'tracked': tracked is True}
+
+    resolved = _heartbeat_value(hb, 'sndResolved')
+    missing = _heartbeat_value(hb, 'sndMissing')
+    sound = None
+    if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (resolved, missing)):
+        sound = {'resolved': resolved, 'missing': missing,
+                 'audible': _number(_heartbeat_value(hb, 'sndAudible'))}
+    registered = _flag(_heartbeat_value(hb, 'registered'))
+    return {'registered': registered,
+            'needsReRegistration': _flag(_heartbeat_value(hb, 'needsReReg')) if registered is not None else None,
+            'controllerLeft': controller('L'), 'controllerRight': controller('R'), 'sound': sound,
+            'cameraCount': _number(_heartbeat_value(hb, 'cameraCount')),
+            'activeCamera': _heartbeat_value(hb, 'activeCamera') or None,
+            'recvFps': _number(_heartbeat_value(hb, 'recvFps')),
+            'contentVerified': _flag(_heartbeat_value(hb, 'contentVerified')),
+            'lang': hb.get('lang') if isinstance(hb.get('lang'), str) else None,
+            'relief': _flag(hb.get('relief'))}
+
+
+def desk_status(addresses=None):
+    """卓の PC が展示の網の固定 IP を持っているか。
+
+    全台が同時に NG になったとき、まず疑うのはここ（有線の IP を失って 169.254 へ落ちた実績）。
+    点検は「卓から見えるか」しか測れないので、卓が網から外れた姿と現場が全滅した姿は同じ顔で出る。
+    """
+    expected = (FLEET.get('desk') or {}).get('host') or '192.168.10.10'
+    if addresses is None:
+        try:
+            infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+            addresses = sorted({info[4][0] for info in infos})
+        except OSError:
+            addresses = None
+    row = {'expectedHost': expected, 'addresses': addresses or [], 'status': 'unknown',
+           'code': 'unconfirmed', 'title': 'この PC の IP を調べられません',
+           'action': 'PC のネットワーク設定を確認してください'}
+    if addresses is None:
+        return row
+    if expected in addresses:
+        row.update(status='ok', code='ok', title=f'この PC は {expected} です', action='')
+    elif any(a.startswith('169.254.') for a in addresses):
+        row.update(status='error', code='link_local', title='この PC が展示の網から外れています',
+                   action='LAN ケーブルとルーターの電源を確認し、PowerShell で ipconfig /renew "イーサネット" を実行してください')
+    else:
+        row.update(status='error', code='wrong_address', title=f'この PC が {expected} を持っていません',
+                   action='PC を展示ルーターへ有線でつなぎ、固定 IP を確認してください')
+    return row
+
+
+WATCH_LATEST = os.path.join(os.path.dirname(RESTART_LEDGER), 'watch-latest.json')
+WATCH_MAX_AGE_SEC = 90.0
+
+
+def _watch_events(folder, limit=40):
+    """いちばん新しい `watch-*.log` の末尾。行は `MM-DD HH:MM:SS  本文`。"""
+    try:
+        names = sorted(name for name in os.listdir(folder)
+                       if re.fullmatch(r'watch-\d{8}_\d{6}\.log', name))
+        if not names:
+            return []
+        with open(os.path.join(folder, names[-1]), encoding='utf-8', errors='replace') as source:
+            lines = source.read().splitlines()[-limit:]
+    except OSError:
+        return []
+    events = []
+    for line in lines:
+        match = re.fullmatch(r'(\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(.*\S)\s*', line)
+        if match:
+            events.append({'at': match.group(1), 'text': match.group(2)})
+    return events
+
+
+def watch_status(now=None, path=None):
+    """`onsite.py watch` が回っているか。毎巡書く `watch-latest.json` の時刻で見る。
+
+    `events` は見張りが書いた変わり目の記録。画面を開いていない間のことも、どの端末から見ても同じものが出る。
+    """
+    row = {'status': 'unknown', 'running': False, 'ageSec': None,
+           'title': '自動の見張りは動いていません',
+           'action': '会期中は py -3.11 tools/onsite.py watch を動かしてください',
+           'events': _watch_events(os.path.dirname(path or WATCH_LATEST))}
+    try:
+        with open(path or WATCH_LATEST, encoding='utf-8') as source:
+            at = time.mktime(time.strptime(json.load(source)['at'], '%Y-%m-%dT%H:%M:%S'))
+    except (OSError, ValueError, KeyError, TypeError, OverflowError):
+        return row
+    age = (time.time() if now is None else now) - at
+    row['ageSec'] = round(age, 1)
+    if 0 <= age <= WATCH_MAX_AGE_SEC:
+        row.update(status='ok', running=True, title='自動の見張りが動いています', action='')
+    return row
+
+
 def _quest(fixed, devices, now):
     matches = [(did, hb) for did, hb in devices.items()
                if hb.get('localIp') == fixed['host'] and
@@ -504,14 +634,16 @@ def _quest(fixed, devices, now):
            'action': 'Quest の起動を確認してください', 'ageSec': None, 'deviceId': None,
            'expectedDeviceId': fixed.get('deviceId') or '',
            'shortId': fixed.get('shortId') or '', 'serial': fixed.get('serial') or '',
-           'phase': None, 'visitorPort': None, 'issues': []}
+           'phase': None, 'visitorPort': None, 'run': None, 'facts': None,
+           'standby': fixed.get('standby') is True, 'issues': []}
     if len(matches) > 1:
         row['issues'].append(_issue('error', 'ip_collision', '同じ IP の Quest が複数あります',
                                     'Quest の IP 設定を確認してください'))
     elif matches:
         did, hb = matches[0]
         row.update(ageSec=round(now - float(hb['at']), 1), deviceId=did,
-                   phase=hb.get('phase'), visitorPort=hb.get('visitorPort'))
+                   phase=hb.get('phase'), visitorPort=hb.get('visitorPort'),
+                   run=_quest_run(hb), facts=_quest_facts(hb))
         if not fixed.get('deviceId'):
             row['issues'].append(_issue('unknown', 'identity_unregistered', '端末 ID が未登録です',
                                         'Quest の端末 ID を実測して固定台帳へ登録してください'))
@@ -575,7 +707,8 @@ def _tablet(fixed, devices, now):
            'tabletModel': tablet.get('model') if tablet else None,
            'tabletSerial': tablet.get('serial') if tablet else None,
            'tabletHost': tablet.get('host') if tablet else None,
-           'tabletPackage': tablet.get('package') if tablet else None}
+           'tabletPackage': tablet.get('package') if tablet else None,
+           'registered': tablet is not None, 'standby': fixed.get('standby') is True}
     matches = []
     for did, hb in devices.items():
         if not isinstance(hb, dict) or hb.get('localIp') != fixed['host']:
@@ -775,14 +908,15 @@ def restart(camera_id, devices, beacons, revision, runner=subprocess.run):
                      'com.fixedcamvr.streamer/.MainActivity']]
         for args in commands:
             try:
-                done = runner(args, capture_output=True, text=True, timeout=20, check=False)
+                done = runner(args, timeout=20, **_ADB_TEXT)
             except (OSError, subprocess.TimeoutExpired) as exc:
                 return 502, {'ok': False, 'cameraId': camera_id, 'message': 'ADB に失敗しました: ' + str(exc)}
+            out = done.stdout or ''
             if (done.returncode != 0 or
-                    (args[1] == 'connect' and 'connected' not in done.stdout.lower()) or
-                    ('am' in args and 'start' in args and 'Error' in done.stdout)):
+                    (args[1] == 'connect' and 'connected' not in out.lower()) or
+                    ('am' in args and 'start' in args and 'Error' in out)):
                 return 502, {'ok': False, 'cameraId': camera_id,
-                             'message': 'ADB に失敗しました: ' + (done.stderr or done.stdout).strip()[:120]}
+                             'message': 'ADB に失敗しました: ' + (done.stderr or out).strip()[:120]}
         recovered = False
         for attempt in range(3):
             if attempt:

@@ -326,6 +326,24 @@ class OnsiteOperationsTests(unittest.TestCase):
         selected = onsite.selected_quests(self.fleet, "alpha")
         self.assertEqual([q["id"] for q in selected], ["alpha"])
 
+    def test_standby_quest_leaves_the_default_selection_but_can_be_named(self):
+        fleet = {"quests": [{"id": "alpha"}, {"id": "beta", "standby": True}, {"id": "gamma", "standby": "yes"}]}
+        self.assertEqual([q["id"] for q in onsite.selected_quests(fleet, "all")], ["alpha", "gamma"])
+        self.assertEqual([q["id"] for q in onsite.selected_quests(fleet, "beta")], ["beta"])
+
+    def test_unregistered_tablet_is_shown_but_not_required(self):
+        fleet = {"quests": [{"id": "alpha", "label": "Quest α"}, {"id": "beta", "label": "Quest β"}]}
+        status = {"tablets": [
+            {"id": "alpha", "status": "unknown", "registered": True, "title": "タブレットの応答がありません"},
+            {"id": "beta", "status": "unknown", "registered": False, "title": "タブレットを確認できません"}]}
+        rows = onsite.Rows()
+        with mock.patch.object(onsite, "load_fleet", return_value=fleet), \
+                mock.patch.object(onsite, "get_json", return_value=status):
+            onsite.check_tablets(rows)
+        self.assertEqual([(r["label"], r["state"], r["required"]) for r in rows.items],
+                         [("Quest α", "skip", True), ("Quest β", "skip", False)])
+        self.assertEqual(rows.required_unconfirmed, 1)
+
     def test_heartbeat_content_mismatch_is_ng(self):
         rows = onsite.Rows()
         devices = {"devices": [{

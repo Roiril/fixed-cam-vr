@@ -3,6 +3,7 @@ import json
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 
 import export_build
@@ -75,6 +76,16 @@ class ReleaseInventoryTest(unittest.TestCase):
         self.assertFalse(ready['ready'])
         self.assertEqual(ready['quests'][0]['status'], 'ok')
         self.assertEqual(ready['quests'][1]['title'], '端末 ID が未登録です')
+        # 予備の機は一致を要求しない。使う機が 1 台も無ければ ready にしない。
+        fleet = release_inventory.operations.FLEET
+        with unittest.mock.patch.dict(fleet, {'quests': [fleet['quests'][0], dict(fleet['quests'][1], standby=True)]}):
+            spare = release_inventory.content_status(self.show, self.dirs, self.bundle, self.apk,
+                                                     devices, now=100)
+            self.assertTrue(spare['ready'])
+            self.assertEqual([q['standby'] for q in spare['quests']], [False, True])
+        with unittest.mock.patch.dict(fleet, {'quests': [dict(q, standby=True) for q in fleet['quests']]}):
+            self.assertFalse(release_inventory.content_status(self.show, self.dirs, self.bundle,
+                                                             self.apk, devices, now=100)['ready'])
         devices['duplicate'] = dict(devices[release_inventory.operations.FLEET['quests'][0]['deviceId']])
         self.assertFalse(release_inventory.content_status(self.show, self.dirs, self.bundle,
                                                          self.apk, devices, now=100)['ready'])

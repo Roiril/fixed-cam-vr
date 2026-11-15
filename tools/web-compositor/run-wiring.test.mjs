@@ -28,7 +28,7 @@ test('サーバの初期 layout が構える高さを持つ（0 = 床に着け�
 });
 
 test('卓の UI に猶予・上限・構える高さの入力欄がある', async () => {
-  const html = await read('index.html');
+  const html = await read('authoring.html');   // 演出の編集は 2026-09 に index.html から移った
   for (const id of ['runEndGrace', 'runEndHold']) {
     assert.match(html, new RegExp(`id="${id}"`), `${id} の入力欄が無い`);
   }

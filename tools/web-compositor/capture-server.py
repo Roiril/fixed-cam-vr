@@ -1588,8 +1588,10 @@ class Handler(SimpleHTTPRequestHandler):
                 show_cameras = copy.deepcopy(_show.get('cameras') or [])
             with _disc_lock:
                 beacons = [dict(b) for b in _disc.values() if time.time() - b['lastSeen'] < 12]
-            return self._json(_ops.status(_unity_devices_snapshot(), beacons, revision,
-                                          {'cameras': show_cameras}))
+            # 卓の PC の IP と自動の見張りは、端末の探査の持ち越し（5 秒）に載せず毎回測る。
+            return self._json(dict(_ops.status(_unity_devices_snapshot(), beacons, revision,
+                                               {'cameras': show_cameras}),
+                                   desk=_ops.desk_status(), watch=_ops.watch_status()))
         if path == '/ops/content':
             with _show_cond:
                 show = copy.deepcopy(_show)
@@ -2353,7 +2355,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         if os.environ.get('FIXEDCAM_AUTHORING') != '1' and parsed.path not in (
-                '/unity/heartbeat', '/ops/restart', '/onsite/check'):
+                '/unity/heartbeat', '/ops/restart', '/onsite/check', '/onsite/fix'):
             preparation = (os.environ.get('FIXEDCAM_PREPARATION') == '1'
                            and self._preparation_post(parsed.path))
             if preparation is None:
@@ -2594,10 +2596,26 @@ class Handler(SimpleHTTPRequestHandler):
         'panel': 'Quest の設定パネルを閉じる',
     }
 
+    # 当日の画面（同じ LAN のスマホを含む）から呼べるのは panel だけ。
+    # cameras は 3 台をまとめて起こし直し、端末の照合も 90 秒の間隔も見ない。
+    # 画面からは 1 台ずつの `/ops/restart` を使う。
+    _ONSITE_FIXES_FROM_SCREEN = ('panel',)
+
     def _post_onsite_fix(self):
-        name = (self._read_json_body().get('name') or '').strip()
+        origin = self.headers.get('Origin')
+        if origin and (urlparse(origin).netloc != self.headers.get('Host', '') or
+                       urlparse(origin).scheme != 'http'):
+            return self._json({'ok': False, 'error': '外部画面から操作できません'}, 403)
+        try:
+            body = self._read_json_body()
+        except (ValueError, UnicodeDecodeError):
+            return self._json({'ok': False, 'error': 'JSON を読めません'}, 400)
+        name = (body.get('name') or '').strip() if isinstance(body, dict) else ''
         if name not in self._ONSITE_FIXES:
             return self._json({'ok': False, 'error': '知らない復旧名です'}, 400)
+        if (os.environ.get('FIXEDCAM_AUTHORING') != '1'
+                and name not in self._ONSITE_FIXES_FROM_SCREEN):
+            return self._json({'ok': False, 'error': 'この復旧は画面からは実行できません'}, 403)
         script = os.path.join(REPO_ROOT, 'tools', 'onsite.py')
         try:
             p = subprocess.run(['py', '-3.11', script, 'fix', name], cwd=REPO_ROOT,

@@ -208,8 +208,16 @@ def connected_android_devices() -> tuple[list[dict], str]:
 
 
 def selected_quests(fleet: dict, selection: str) -> list[dict]:
+    """点検・見張りの対象にする Quest。
+
+    `all` は今日使う機だけ。登録に `"standby": true` と書いた予備の機は外す
+    （当日の画面の開場判定と同じ決まり。`tools/web-compositor/ops/model.js` の `activeQuests`）。
+    機を名指ししたとき（`alpha` / `beta`）は、予備でもその 1 台を返す。
+    """
     quests = [q for q in (fleet.get("quests") or []) if isinstance(q, dict)]
-    return quests if selection == "all" else [q for q in quests if q.get("id") == selection]
+    if selection == "all":
+        return [q for q in quests if q.get("standby") is not True]
+    return [q for q in quests if q.get("id") == selection]
 
 
 def load_apk_content() -> dict | None:
@@ -939,9 +947,14 @@ def check_tablets(rows: Rows, quest_selection="all"):
         matches = [t for t in tablets if t.get("id") == q.get("id")]
         if len(matches) != 1:
             rows.add(sec, "skip", tag, "タブレットの診断情報がありません",
-                     "博士タブレットで各 Quest のページを開く")
+                     "博士タブレットの「廻リ視 博士」を開き、スタッフ設定でこの Quest を選ぶ")
             continue
         tablet = matches[0]
+        if tablet.get("registered") is False:
+            # 登録の無い側は数えない（1 台のタブレットで接続先を切り替えて回す運用がある）。
+            rows.add(sec, "skip", tag, "この Quest 用のタブレットは登録されていません",
+                     "2 台目を使うなら operations-fleet.json の tablets に登録する", required=False)
+            continue
         state = tablet.get("status")
         if state == "ok":
             rows.add(sec, "ok", tag, tablet.get("title") or "接続と反映を確認しました")

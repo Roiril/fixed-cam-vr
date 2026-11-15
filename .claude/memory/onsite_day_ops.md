@@ -1,6 +1,6 @@
 ---
 name: onsite-day-ops
-description: 当日運用の道具（onsite.py / 当日パネル / 自動起動）と、点検が実際に暴いた 4 つ。PC を触らない経路の設計
+description: 当日運用の道具（onsite.py / 当日の画面 / 自動起動）。画面を作り直したときの決めごと・/ops/status が落ちていた罠・点検が暴いた 4 つ
 metadata: 
   node_type: memory
   type: project
@@ -10,44 +10,47 @@ metadata:
 
 # 当日の運用を触る前に
 
-## 現行の導線（2026-09-22）
+## 現行の導線（2026-11-15）
 
-演出と接続は別々に確認する。`/ops/content` は準備素材 → StreamingAssets → APK → 各 Quest を照合する。
+当日の画面は `tools/web-compositor/index.html` と `ops/`。6 ページの順路（設営 → 接続 → 撮影 → 演出 → ビルド → 開場前）をやめ、
+準備・素材・本番・困ったときの 4 面にした。判定の決まりと API は `tools/web-compositor/README.md`「当日の画面」が正。
+旧 `onsite.html` / `shoot.html` / `runbook.html` は転送だけ。以下の 2026-09-04 の記録にある画面の配置と操作は経緯であり、案内には使わない。
+
+演出と接続は別々に確かめる。`/ops/content` は採用中の素材 → 書き出し → APK → 各 Quest を照合する。
 `rev` の一致は証拠にしない。本文と素材の SHA256、成功した APK の buildGuid を使う。
-Player は演出のライブ更新と旧キャッシュを受けない。変更時は素材をそろえて再ビルドし、両 Quest に入れる。
-通常サーバは演出変更の POST を拒否。事前編集のときだけ `FIXEDCAM_AUTHORING=1` を使う。
-博士UIはタブレットの独立APK。画面と動画を端末内に持つ。スタッフ設定でα／βを選び、Questの `:8090` へ設定だけを送る。PCと卓は設定を中継しない。UIの更新はタブレットAPKを更新する。
-`/ops/status.tablets` で待受・ページの応答・送信した設定の実値反映を確認する。
-未送信、30 秒以上応答なし、複数ページ、別ページの送信、古い Quest 応答は確認済みにしない。
-`onsite.py check` は Wi-Fi 設定を変更しない。切断時の自動切り替えを点検に混ぜない。
+Player は演出のライブ更新と旧キャッシュを受けない。変えたら焼き直して、使う Quest すべてに入れる。
+博士 UI はタブレットの独立 APK。α／β を選び、Quest の `:8090` へ設定だけを送る。卓は中継しない。
 
-2026-09-22 検証: Streaming EditMode 1531 件、ビルドガード 12 件、Python 61+17 件、Node 10+10 件が通過。
-代役 Quest で博士 UI の送信 1 / 反映 1 と実値一致を確認。実機タブレットの往復は未確認。
-`build fixedcam -Force` の検証 APK は素材 20/20 件のハッシュと receipt / boot.config の build-guid が一致。
-通常ビルドは既存の hud-font / comms-horror-font / OSD の mtime 検査が未通過。既存の dirty フォントは保全した。
-この APK は実機へ配布していない。push は通常の事前チェックが通るまで保留。
+### 作り直したときに決めたこと
 
-`tools/web-compositor/serve.ps1` で新しい `capture-server.py` を起動してから
-`http://192.168.10.10:8099/` を開く。`index.html` は「設営と点検」。旧 `onsite.html` は転送入口。
-演出編集は `authoring.html`。以下の 2026-09-04 の記録にある旧画面の配置と操作は歴史的経緯であり、
-現行の当日画面の案内には使わない。新サーバを起動していなければ `/ops/status` と `/ops/restart` は無い。
+- **見出しが「開場できます」に届く形にした。** 旧画面は β の deviceId が空・β のタブレットが未登録というだけで、1 度も ready にならなかった
+  （`summarize` が 7 台を数えていた）。届かない見出しは読まれなくなる。⇒ 予備の機は登録の `"standby": true` で判定から外す。
+  登録の無い側のタブレットは数えない。**注意（熱・露出が自動・反映待ち）は開場を止めない**
+- **原因でまとめる。** 卓に届かない・卓の PC が `.10` を失った、のとき赤を 6 個並べない。機器の行は「分かりません」にする
+- **灯は生の値だけ。** 1 時間で切れる人の確認を灯に混ぜると、開場して 1 時間後に灯が黄色へ戻る
+- **素材の門は日付で止めない。** 旧画面は「無人の写真 3 枚が今日の日付」を要求し、2 日目に毎朝撮り直しを強いた。
+  日付は会場と照明の一致を証明しない。⇒ 採用中の写真といまの映像を重ねて人が見る。その確認は素材の版・日付・カメラの傾きの判定が変わると外れる
+- **サーバには事実だけ足した。** Quest 行の `run`（体験の段・周・経過）と `facts`（位置合わせ・左右コントローラ・音）は行の status に混ぜない。
+  右コントローラが机で寝ているだけで行が要確認になるのを避ける。重みは画面側が体験の段で変える
+- **状態が変わった記録はブラウザで作らない。** 画面を閉じているあいだ poll が止まり、見る端末ごとに中身が違う。⇒ `watch` の記録の末尾を `/ops/status.watch.events` で配る
+- **画面から呼べる復旧は 1 台ずつの `/ops/restart` と `fix panel` だけ。** `fix cameras` は端末の照合も 90 秒の間隔も見ない
+- **体験者 1 人ごとの流れは画面に持たない。** 正本は博士タブレットのスタッフ画面。二重に持つとずれる
+- 流用した判定は `ops-shoot-model.js` / `shoot-model.js` / `ops-library-preview.js`（録画の帰属・回収・必要な長さ）。表示は全部書き直した
 
-当日画面はカメラ A/B/C と Quest α/β を固定行で見る。登録は
-`tools/web-compositor/operations-fleet.json`（A/B/C=`192.168.10.21/.22/.23:8080`、
-Quest α/β=`192.168.10.31/.32`）。カメラ UUID は 8 月の観測値なので、新設 Android 登録との一致は要確認。
-PC の `autoFollow=false`、Quest の `discoveryEnabled=false`、A/B/C の `pinned=true` を投影する。
-通常面で演出・ID・IP は編集しない。`show.json` の host などローカル値はコミットしない。
+### ⚠⚠ カメラが 1 台届かないだけで `/ops/status` が落ちていた（2026-11-15 に直した）
 
-`GET /ops/status` は端末 ID・UUID と MJPEG の実フレーム 2 枚以上の連番進行、温度・電池、
-Quest ごとの 6 秒以内の heartbeat を見る。単一の `/unity/status` では両機を判定できない。
-連番の判定（`operations.probe_stream`）は 3 秒の窓。接続だけ 0.6 秒で諦め、以後は締切までの残りを待つ
-（urllib の応答は 1 度タイムアウトすると読めなくなり、フレームの間が 0.6 秒空いただけで停止と出ていた）。
-`POST /ops/restart` は登録 UUID が一致するカメラ 1 台だけを起こし直す。`watch` と共有の記録
-`Logs/onsite/restart-ledger.json`（host ごとの最終時刻）で 90 秒間は再試行せず、
-復旧後にフレームを再観測する。歩く場所と構図、Quest 2 台の映像・音・入力は人が確認する。
-確認は 1 時間で失効し、切断または設定変更でも解除される。
-`onsite.py check` と詳細点検は従来の機器情報・素材も見る補助。既存の音と素材は変更しない。
-スマホ 3 台が未接続のため、配信アプリの実機更新と動作は未検証。
+届かない端末への `adb connect` は、日本語 Windows では UTF-8 の失敗文を返す。`subprocess.run(text=True)` は既定の cp932 で読むので
+読み取りスレッドが `UnicodeDecodeError` で落ち、`stdout` が `None` になる。そのまま `.lower()` を呼んで `/ops/status` が空の応答を返していた。
+画面は「状態を取得できません」と出す。**いちばん画面が要る場面（カメラが落ちた）でだけ画面が死ぬ**形だった。
+テストは `runner` を差し替えていたので通っていた。見つけたのは、作り直した画面を実機のカメラ 2 台（B が不在）へ向けたとき。
+⇒ `operations._ADB_TEXT`（`encoding='utf-8', errors='replace'`）と `(stdout or '')`。`onsite.py` と `quest-fleet.py` は元から UTF-8 で読んでいた。
+⇒ 画面が「卓に届いていません」と出たら、`curl -s -m 20 http://127.0.0.1:8099/ops/status` を直接叩く。空なら卓の中の例外（`logs/onsite/desk.log`）。
+
+### 画面を確かめるとき
+
+`?demo=ready` / `issue` / `live` / `down` で、機材が無くても 4 面を出せる（`ops/demo.js`。値は見本）。
+`.claude/launch.json` の `web-compositor-verify`（:8299）は点検用で立つので、撮影と採用のボタンは押せない（押せる形で見るなら `serve.ps1`）。
+スマホ幅では、行を選ぶと詳細だけを出す（一覧へは「戻る」）。下のドックが 4 面の切替。
 
 ---
 
@@ -67,7 +70,7 @@ Quest ごとの 6 秒以内の heartbeat を見る。単一の `/unity/status` �
 | 層 | 実体 | 落ちる条件 |
 |---|---|---|
 | 機械が勝手に | `onsite.py watch`（監視と復旧）／ログオン自動起動 | PC が落ちる |
-| 人がスマホから | `http://192.168.10.10:8099/onsite.html` | LAN が落ちる |
+| 人が画面から | `http://192.168.10.10:8099/`（卓の PC は localhost） | LAN が落ちる |
 | シュビー | `py -3.11 tools/onsite.py <cmd>` | **外向き回線が落ちる** |
 
 ⚠ 3 つとも**同じ HTTP API を叩く**ので、どこから操作しても結果は同じ。ここを分けると
@@ -113,10 +116,10 @@ heartbeat に端末 ID が無く（`ShowControlClient.cs` の `Hb` に無い）�
 3. **露出 / AWB が 3 台とも自動のまま** — 素材を撮った時と本番で色が変わる
 4. **カメラ B が熱段 2**（40.3℃・充電中）
 
-## 5. 目の写真の経路（3 本あり、機械が探す）
+## 5. 目の写真の経路（0152 で廃止。当日の画面には無い。サーバの口と `onsite.py eyejack` だけ残る）
 
 1. **スマホのブラウザ → `POST /eyejack/upload`**（既定・LAN だけで閉じる）。
-   `onsite.html` の 1 押しで upload → `/eyejack/apply` → `/export-build` まで通る
+   旧い当日パネルの 1 押しで upload → `/eyejack/apply` → `/export-build` まで通っていた
 2. **`G:\マイドライブ\shubie\eyejack-drop`**（Drive 経由）。⚠ **外向き回線が要る**ので退避路
 3. 手で `tools/web-compositor/eyejack/` へ置く（従来）
 

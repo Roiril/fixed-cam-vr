@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "show": "mawarimi",
+  "desk": {"host": "192.168.10.10"},
   "cameras": [
     {"id": "A", "host": "192.168.10.21", "port": 8080, "uuid": "de2d8bea-7d42-4e6a-8823-c777a8901cae", "serial": "37081JEHN03028"},
     {"id": "B", "host": "192.168.10.22", "port": 8080, "uuid": "429a472b-8131-401b-81a3-9cfb91ad2165", "serial": "3C251JEHN03582"},

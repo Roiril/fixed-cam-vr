@@ -89,16 +89,16 @@
 公式サイト: [website/](website/)
 ローカル起動: `cd website` → `npm run dev`
 
-廻リ視の当日画面は [設営と点検](tools/web-compositor/README.md#現行の入口2026-09-23)。
-`tools/web-compositor/serve.ps1` で新しいサーバを起動し、`http://localhost:8099/` を開く。
-カメラ A/B/C と Quest α/β を固定して確認する。博士タブレットは応答と設定の反映を分けて確認する。
+廻リ視の当日の画面は [tools/web-compositor/README.md](tools/web-compositor/README.md#当日の画面)。
+`tools/web-compositor/serve.ps1` でサーバを起動し、`http://localhost:8099/` を開く。面は 準備・素材・本番・困ったとき の 4 つ。
+「準備」が、カメラ A/B/C・Quest α/β・博士タブレット・会場の素材・アプリの版・点検・人の確認の 8 行で「開場できるか」に答える。
 演出は準備素材 → ビルド用同梱 → APK → 起動中の Quest を内容とビルド識別子で照合する。
 Player は APK に入れた演出だけを使う。Web 卓の更新と旧設定キャッシュは適用しない。
 ビルド後に変更できる設定は博士 UI から直接届く言語とホラー軽減だけ。[博士UI](tablet/README.md)はAndroidタブレットの独立アプリ。画面と日本語4場面のリップシンク動画をタブレットAPKへ同梱する。スタッフ設定でQuest α／βを選ぶ。PCとQuestからの画面配信は起動に不要。
 通常サーバは演出変更の POST を拒否する。事前編集が必要な場合のみ `FIXEDCAM_AUTHORING=1` で起動する。
-旧 `/onsite.html` は当日画面へ転送する。
-人が歩く場所と構図、Quest 2 台の映像・音・入力を確認した記録は 1 時間有効で、切断や設定変更で解除される。
-スマホ 3 台が未接続のため、配信アプリの実機更新と動作は未検証。
+旧 `/onsite.html` `/shoot.html` `/runbook.html` は当日の画面へ転送する。
+人が確かめた印（歩く場所・構図・各 Quest を被る・タブレットの音・左グリップの撮影）は 1 時間有効で、機器が入れ替わると外れる。
+今日使わない Quest は `operations-fleet.json` の `"standby": true` で判定から外す。
 
 このプロジェクトは VR アプリ「廻リ視（FixedCam）」だけを持つ。
 

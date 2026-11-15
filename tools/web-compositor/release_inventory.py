@@ -525,11 +525,14 @@ def content_status(show, dirs, bundle_dir, apk_path, devices, now=None):
                        ('error' if quest_error else 'unknown'),
                        'contentId': hb.get('contentId', '') if fresh else '',
                        'buildGuid': hb.get('buildGuid', '') if fresh else '',
-                        'title': title, 'action': action})
+                       'title': title, 'action': action,
+                       'standby': q.get('standby') is True})
     effects = _effects(show, refs, prepared_id, bundle_id,
                        apk_id if build_guid else None, dirs)
+    # 予備の機（登録の standby）は一致を要求しない。行は出すので、古い版のままなら画面で見える。
+    in_use = [q for q in quests if not q['standby']]
     return {'ok': True, 'observedAt': int(now), 'policy': export_build.POLICY,
             'ready': bool(prepared_id and build_guid and prepared_id == bundle_id == apk_id
-                          and all(q['status'] == 'ok' for q in quests)),
+                          and in_use and all(q['status'] == 'ok' for q in in_use)),
             'preparation': prep, 'bundle': bundle, 'apk': apk,
             'effects': effects, 'quests': quests}

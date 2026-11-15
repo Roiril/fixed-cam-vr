@@ -154,6 +154,27 @@ class OperationsTests(unittest.TestCase):
         fixed['serial'] = 'CAM-002'
         self.assertEqual(ops._wireless_adb(fixed, runner)['state'], 'identity_mismatch')
 
+    def test_wireless_adb_survives_unreadable_output_from_an_unreachable_phone(self):
+        # 届かない端末への adb connect は、日本語 Windows では読めない失敗文を返す。
+        # 既定の符号化で読むと stdout が None になり、/ops/status が丸ごと落ちていた。
+        class Result:
+            returncode = 0
+            stderr = ''
+            stdout = None
+
+        seen = {}
+
+        def runner(args, **kwargs):
+            seen.update(kwargs)
+            return Result()
+
+        fixed = {'host': '192.168.10.21', 'serial': 'CAM-001'}
+        self.assertEqual(ops._wireless_adb(fixed, runner)['state'], 'unreachable')
+        self.assertEqual((seen['encoding'], seen['errors']), ('utf-8', 'replace'))
+        # 本物の adb で、誰も居ない宛先へ繋いでも落ちない（この PC に adb が無ければ unreachable で返る）。
+        with patch.object(ops, 'resolve_adb', side_effect=RuntimeError('no adb')):
+            self.assertEqual(ops._wireless_adb(fixed)['state'], 'unreachable')
+
     def test_quest_stale_missing_and_collision(self):
         now = time.time()
         fixed = ops.FLEET['quests'][0]
@@ -179,6 +200,84 @@ class OperationsTests(unittest.TestCase):
         healthy['activeCamera'] = 'Phone 01'
         healthy['activeIndex'] = 0
         self.assertEqual(ops._quest(fixed, {fixed['deviceId']: healthy}, now)['code'], 'active_stream_stalled')
+
+    def test_quest_row_carries_run_and_facts_without_changing_status(self):
+        now = time.time()
+        fixed = ops.FLEET['quests'][0]
+        healthy = {'localIp': fixed['host'], 'at': now, 'visitorPort': 8090,
+                   'cameraCount': 3, 'activeCamera': 'A', 'recvFps': 30, 'sourceAgeMs': 50}
+        bare = ops._quest(fixed, {fixed['deviceId']: dict(healthy)}, now)
+        self.assertEqual(bare['status'], 'ok')
+        self.assertEqual(bare['run']['phase'], None)
+        self.assertIsNone(bare['facts']['registered'])
+        self.assertIsNone(bare['facts']['controllerLeft'])
+        self.assertIsNone(bare['facts']['sound'])
+        # 位置合わせ未了・右が寝ている・音が欠けている、は事実として載るが、行は ok のまま。
+        full = dict(healthy, phase='RUN', titleStage='Done', lap=2, totalLaps=4, runSec=65.5,
+                    targetSec=180.0, endHolding=False, registered=False, needsReReg=True,
+                    ctrlLConnected=True, ctrlLTracked=True, ctrlRConnected=False, ctrlRTracked=False,
+                    sndResolved=40, sndMissing=2, sndAudible=0.5, contentVerified=True,
+                    lang='en', relief=True)
+        row = ops._quest(fixed, {fixed['deviceId']: full}, now)
+        self.assertEqual(row['status'], 'ok')
+        self.assertEqual(row['run'], {'phase': 'RUN', 'titleStage': 'Done', 'lap': 2, 'totalLaps': 4,
+                                      'runSec': 65.5, 'introSec': None, 'targetSec': 180.0,
+                                      'endHolding': False})
+        facts = row['facts']
+        self.assertIs(facts['registered'], False)
+        self.assertIs(facts['needsReRegistration'], True)
+        self.assertEqual(facts['controllerLeft'], {'connected': True, 'tracked': True})
+        self.assertEqual(facts['controllerRight'], {'connected': False, 'tracked': False})
+        self.assertEqual(facts['sound'], {'resolved': 40, 'missing': 2, 'audible': 0.5})
+        self.assertEqual((facts['lang'], facts['relief']), ('en', True))
+        # 音の実行体が居ない（-1）と、周がまだ無い（-1）は「分からない」に倒す。
+        absent = ops._quest(fixed, {fixed['deviceId']: dict(healthy, sndResolved=-1, sndMissing=-1, lap=-1)}, now)
+        self.assertIsNone(absent['facts']['sound'])
+        self.assertIsNone(absent['run']['lap'])
+        self.assertIsNone(ops._quest(fixed, {}, now)['run'])
+
+    def test_desk_address_names_the_link_local_fallback(self):
+        self.assertEqual(ops.desk_status(['192.168.10.10', '172.20.0.1'])['status'], 'ok')
+        lost = ops.desk_status(['169.254.12.7'])
+        self.assertEqual((lost['status'], lost['code']), ('error', 'link_local'))
+        self.assertIn('ipconfig /renew', lost['action'])
+        other = ops.desk_status(['192.168.1.5'])
+        self.assertEqual((other['status'], other['code']), ('error', 'wrong_address'))
+        self.assertEqual(ops.desk_status([])['status'], 'error')
+
+    def test_watch_is_running_only_while_its_record_is_recent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            record = os.path.join(folder, 'watch-latest.json')
+            self.assertIs(ops.watch_status(path=record)['running'], False)
+            stamp = time.mktime(time.strptime('2026-11-15T10:00:00', '%Y-%m-%dT%H:%M:%S'))
+            Path(record).write_text(json.dumps({'at': '2026-11-15T10:00:00'}), encoding='utf-8')
+            self.assertIs(ops.watch_status(now=stamp + 25, path=record)['running'], True)
+            self.assertEqual(ops.watch_status(now=stamp + 25, path=record)['status'], 'ok')
+            self.assertIs(ops.watch_status(now=stamp + 91, path=record)['running'], False)
+            self.assertIs(ops.watch_status(now=stamp - 5, path=record)['running'], False)
+            Path(record).write_text('{broken', encoding='utf-8')
+            self.assertIs(ops.watch_status(path=record)['running'], False)
+            # 記録はいちばん新しい watch-*.log の末尾。形の違う行と別名のファイルは拾わない。
+            self.assertEqual(ops.watch_status(path=record)['events'], [])
+            Path(folder, 'watch-20261114_090000.log').write_text('11-14 09:00:01  古い日の記録\n', encoding='utf-8')
+            Path(folder, 'watch-20261115_100000.log').write_text(
+                '11-15 10:00:20  カメラB（192.168.10.22）のフレーム連番が進んでいません\n'
+                '形の違う行\n'
+                '11-15 10:01:05    再確認: 復旧（連番 10→14）\n', encoding='utf-8')
+            Path(folder, 'watch-notes.log').write_text('11-15 11:00:00  別のファイル\n', encoding='utf-8')
+            self.assertEqual(ops.watch_status(path=record)['events'], [
+                {'at': '11-15 10:00:20', 'text': 'カメラB（192.168.10.22）のフレーム連番が進んでいません'},
+                {'at': '11-15 10:01:05', 'text': '再確認: 復旧（連番 10→14）'}])
+
+    def test_standby_and_tablet_registration_are_reported_as_facts(self):
+        now = time.time()
+        alpha, beta = ops.FLEET['quests'][0], ops.FLEET['quests'][1]
+        self.assertIs(ops._quest(alpha, {}, now)['standby'], False)
+        self.assertIs(ops._quest(dict(beta, standby=True), {}, now)['standby'], True)
+        self.assertIs(ops._quest(dict(beta, standby='yes'), {}, now)['standby'], False)
+        self.assertIs(ops._tablet(alpha, {}, now)['registered'], True)
+        with patch.dict(ops.FLEET, {'tablets': []}):
+            self.assertIs(ops._tablet(alpha, {}, now)['registered'], False)
 
     def test_quest_requires_identity_registration_and_all_stream_diagnostics(self):
         now = time.time()
@@ -334,6 +433,28 @@ class OperationsTests(unittest.TestCase):
                 urllib.request.urlopen(urllib.request.Request(
                     base + '/state', b'{}', {'Content-Type': 'application/json'}))
             self.assertEqual(error.exception.code, 403)
+
+            # 当日の画面から呼べる復旧は panel だけ。3 台まとめての起こし直しは画面に開けない。
+            def fix(name, origin=None):
+                headers = {'Content-Type': 'application/json'}
+                if origin:
+                    headers['Origin'] = origin
+                return urllib.request.urlopen(urllib.request.Request(
+                    base + '/onsite/fix', json.dumps({'name': name}).encode(), headers))
+            for name, origin, code in (('cameras', None, 403), ('bogus', None, 400),
+                                       ('panel', 'http://outside.invalid', 403)):
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    fix(name, origin)
+                self.assertEqual(error.exception.code, code, name)
+            ran = []
+
+            class Done:
+                stdout = 'serial: 設定パネルを閉じました'
+
+            with patch.object(module.subprocess, 'run', side_effect=lambda args, **_k: ran.append(args) or Done()):
+                with fix('panel') as response:
+                    self.assertEqual(json.load(response)['log'], 'serial: 設定パネルを閉じました')
+            self.assertEqual(ran[0][-2:], ['fix', 'panel'])
             authoring = patch.dict(os.environ, {'FIXEDCAM_AUTHORING': '1'})
             authoring.start()
             try:
