@@ -139,6 +139,30 @@ namespace FixedCamVr.Tracking.Tests
         }
 
         [Test]
+        public void AutomationClear_LowersTheFlagInMemoryButKeepsItInTheFile()
+        {
+            // 2026-11-15: 実機の自動走行が、起動時に立っていた要再登録の印で導入を中止され、
+            // 本編へ 1 歩も進めなかった。走行だけはメモリ上で降ろすが、現場の印は消さない。
+            CourseFrame frame = MakeFrame(out string path);
+            frame.SetRegistration(new Vector2(0.2f, 0.3f), 12f, 0.05f, 3, save: false);
+            frame.SaveRegistration();
+            UnityEngine.TestTools.LogAssert.ignoreFailingMessages = true;
+            frame.MarkNeedsReRegistration();
+            UnityEngine.TestTools.LogAssert.ignoreFailingMessages = false;
+            string before = File.ReadAllText(path);
+
+            frame.ClearNeedsReRegistrationForAutomation();
+
+            Assert.That(frame.NeedsReRegistration, Is.False, "走行中は印が降りる");
+            Assert.That(frame.HasRegistration, Is.True, "保存済みの登録はそのまま使う");
+            Assert.That(File.ReadAllText(path), Is.EqualTo(before), "registration.json は書かない");
+            CourseFrame reloaded = MakeFrame(out string path2);
+            File.Copy(path, path2, overwrite: true);
+            reloaded.LoadRegistration();
+            Assert.That(reloaded.NeedsReRegistration, Is.True, "次の起動ではまた要再登録");
+        }
+
+        [Test]
         public void OldRegistrationFileLoadsWithoutFloor()
         {
             // 床の高さを測っていない旧ファイル。originY=0 を「床が一致している」と読むと、

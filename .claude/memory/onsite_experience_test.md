@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 83b2ae19-6926-4454-a4df-b5d350711b24
-  modified: 2026-08-03T06:23:40.949Z
+  modified: 2026-11-15T04:44:13.687Z
 ---
 
 # 実機で体験を丸ごと検証する
@@ -56,6 +56,11 @@ SERIAL=<serial> bash tools/run-quest-xp-test.sh walk 300   # 機を指名する
   ストリームだけが黙って死ぬ（アプリは最後まで走っていたのに、ログは 50 秒で途切れた）。
   **走行中は adb を一切触らない。** run スクリプトはストリームとダンプ (`-d`) の**両方**を取り、
   `[XP]` 行数の多い方を採用する（片方が壊れてももう片方が残る）
+- ⚠ **Quest がスリープから起きると要再登録の印が立ち、導入が起動直後に中止される**（2026-11-15 実害）。
+  ログは `[Intro] トラッキング原点が変わったので導入演出を中止しました`。走行は 90 秒待って歩き出すが本編に入らず、
+  判定は FAIL 21 件（本編に入っていない・区間の進入なし・録画なし…）になる。どれも原因はこの 1 つ。
+  走行（`ShowWalkDebugDriver`）は印をメモリ上でだけ降ろし（`CourseFrame.ClearNeedsReRegistrationForAutomation`）、
+  `BeginNewVisitorRunLocal` で頭からやり直す。registration.json は書かないので、**人が被るときは位置合わせのやり直しが要る**
 - HMD を被っていないと Quest がアプリをバックグラウンドへ回すことがある（コントロールバーが前面に出る）。
   ただし **Unity の Update は止まらず走り切る**（実測）。`am start` で戻せるが、戻すと
   intent extra が付かないので自動走行は再開しない

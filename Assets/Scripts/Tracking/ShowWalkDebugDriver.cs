@@ -189,6 +189,19 @@ namespace FixedCamVr.Tracking
                 yield return null;
             }
 
+            // ⚠ **要再登録の印が立っていたら、メモリ上でだけ降ろしてランを頭からやり直す**（2026-11-15 実害）。
+            //   Quest がスリープから起きると OS の recenter で印が立ち、導入は起動直後に中止される。
+            //   走行は頭の位置を合成するので位置合わせの正否は判定に関係しないのに、印のせいで
+            //   導入が中止されたまま 90 秒待ち、本編に 1 度も入らなかった（FAIL 21 件がすべてこれ）。
+            //   中止からの復帰は保存時刻の変化を待つので、印を降ろすだけでは導入が戻らない。号令で頭から。
+            if (_frame!.NeedsReRegistration)
+            {
+                _frame.ClearNeedsReRegistrationForAutomation();
+                _show!.BeginNewVisitorRunLocal("自動走行");
+                Debug.Log("[XPWalk] 要再登録の印をメモリ上で降ろし、ランを頭からやり直した（registration.json は書かない）");
+                yield return null;
+            }
+
             ShowLayoutDef? layout = _show!.Layout;
             ShowGridDef? grid = layout?.grid;
             if (grid == null || !grid.HasData())

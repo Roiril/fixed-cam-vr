@@ -296,6 +296,19 @@ namespace FixedCamVr.Tracking
             if (_hasRegistration && File.Exists(RegistrationPath)) WriteRegistrationFile();
         }
 
+        /// <summary>
+        /// 要再登録の印を<b>メモリ上でだけ</b>降ろす。呼んでよいのは Development の自動走行
+        /// （<c>ShowWalkDebugDriver</c>）だけ。走行は頭の位置を合成するので、位置合わせが実物と
+        /// 合っているかは判定に関係しない。印が立ったままだと導入が中止されたまま本編へ進めない。
+        /// ⚠ registration.json は書かない。印はファイルに残り、次の起動でまた立つ（本番の流れは変えない）。
+        /// </summary>
+        public void ClearNeedsReRegistrationForAutomation()
+        {
+            if (!_needsReRegistration) return;
+            _needsReRegistration = false;
+            Changed?.Invoke();
+        }
+
         /// <summary>登録を identity へ戻し、保存ファイルを削除する。</summary>
         public void ResetRegistration(bool deleteFile = true)
         {
