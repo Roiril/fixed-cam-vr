@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 2b89953c-e90d-428a-bc15-5060ba8fefc5
-  modified: 2026-11-11T01:41:56.761Z
+  modified: 2026-11-15T05:20:30.546Z
 ---
 
 2026-10-30 のユーザー図（0293）で、人形は左・体験者は右で向き合う写真になった。0291 で台車（Romi）は不使用。
@@ -24,11 +24,12 @@ metadata:
 体験者を隠れた目標へ歩かせない。`visitorTargetFoot` は仮の点で、写真の判定に使わない。
 スコアは `|gap-.75| + |vu.y-du.y| + |du.x-.38|`、仮の点なら `+|vu.x-.65|`、向きが分かれば `+角度差/180`、さらに `+shrink + .5*max(0, gap-終点と体験者の距離)`。
 人形は L 字の内側を 2.5cm 刻みで探す。足の枠の判定は `DollFootFrameRadiusM`=0.06m。全身の回転半径 0.174m を足へ使うと、A の画の下端で候補が全部落ちる。
-本番 Toy の 45,523 CPU 頂点の bounds から回転半径は 0.17279m、既定 0.174m（背丈 .4m 時）。壁まで 4cm 空ける。
+本番 Toy の 45,523 CPU 頂点の bounds から回転半径は 0.17279m、既定 0.174m（背丈 .4m 時）。
+壁の面までの余白は、体験者が 4cm（`PhotoWallClearanceM`）、人形は回転の包絡から 2cm（`DollWallClearanceM`。立つ点と下がる道の両方）。
 本番の人物身長は追跡した頭の床上高 +0.12m（1.2〜2.1m）。`canStand` は room.floor の外側 0.5m まで。
 `pairAccepted` は保存プレート検証で実 CPU 頂点の不合格候補を拒否する。`trajectoryAccepted` は回転と退場の実 CPU 全身の壁余白を事前に測る。
 
-**下がる道**（`SolveRetreats` / `PickRetreat`）: 24 方向、0.05m 刻み、0.2〜1.2m の直線。カメラから遠ざかる内積 ≥.5、L 字の内側、壁余白、終点で全身が枠内、像の高さ ≤.92 倍。立つ点ごとに候補を点数順に持ち、体験者ごとに足元（下腿 0.13m + 人形の半径）へ入らない最初の道を採る。
+**下がる道**（`SolveRetreats` / `PickRetreat`）: 24 方向、0.05m 刻み、0.15〜1.2m の直線。カメラから遠ざかる内積 ≥.5、L 字の内側、壁余白、終点で全身が枠内、像の高さ ≤.92 倍。立つ点ごとに候補を点数順に持ち、体験者ごとに足元（下腿 0.13m + 人形の半径）へ入らない最初の道を採る。
 向きは進む向きとカメラから遠ざかる向きの中間（`AwayYaw`）。背中が画に映る。
 ⚠ 0293 の図は左の壁端の外へ出る。A では左へ回るとカメラへ近づいて足が画の下へ切れる（旧版が白い顔を見せたのも同じ理由）。図と違うのは実装判断で、未判定。
 人と人形の距離は少し縮むことがある。`RetreatM=.45` は名目パラメータで実移動距離ではない。`PoseAt` は本番と保存プレートで共有し、Done でも終点を保つ。
@@ -54,16 +55,23 @@ batchmode は `WaitForEndOfFrame` が再開しないので次フレームの頭�
 位置が解けるまで強さ0。腕入力は `ShowBodyInput.None`。笑わない。
 床への投影影と接地影は通常の人形と同じ。`room.floorY` に足元を合わせる。
 
-**検証**: `EndingFarewellLogicTests`（両レンズの立ち位置・写真の緩み・下がる道）、`TakeRunnerLogicTests`（watchdog を超える待機後の自然終了）。
-両レンズの走行は `py -3.11 tools/twin-verify.py --calib twin|show`。保存プレートは `G:\マイドライブ\shubieenders\plate-validation\`。実機 A は移動済みで、実機の画は未確認。
+**検証**: `EndingFarewellLogicTests`（9/5 の据え方の本番較正とツインの実レンズ、9/24 の据え方の A の立ち位置・写真の緩み・下がる道）、`TakeRunnerLogicTests`（watchdog を超える待機後の自然終了）。
+走行は `py -3.11 tools/twin-verify.py --calib twin|show`。保存プレートは `G:\マイドライブ\shubie\renders\plate-validation\`。実機の画は未確認。
 
-2026-11-06 の最終結果。どれも Released・`placement unavailable` 0 回。
-- `twin-verify/20261106_131056`（calib=twin）: PASS FAIL=0。fromV=1、shrink=.78、gap=.76、人形の足 v=.04、人の足 v=-.05。報告から写真まで 12.5 秒（level=2。歩行者が人形を向かない）
-- `twin-verify/20261106_132141`（calib=show）: PASS FAIL=0。fromV=1、shrink=.82、gap=.74、人形の足 v=.03、人の足 v=-.04。報告から写真まで 8.5 秒（level=1）
-- `plate-validation/20261106_130610_253`: complete=True。立ち位置 (0.51,0.26) から解いて gap=.752m、下がる距離 0.35m、像の高さ 124→95px、距離の最短 0.73m、最大 0.067m/s
+⚠ **A は 2026-11-15 に 9/24 の据え方へ戻った**（show.json とツインの rig が同じ較正。水平 96 度、角 (-0.5,0.5) から水平 1.57m）。
+床が画に入るのは奥行き 1.17m より先で、L 字の内側でそこに入るのは角の手前の 0.15〜0.2m の三角だけ。人形の足は必ず画の下端（v≈.04）に掛かる。
+壁余白 4cm・道の下限 0.2m のときは人形の候補 28 点の全部で下がる道が壁に当たり、`placement unavailable ... framed=0 noVisitorFit=100 noRetreat=235` で人形が出なかった。
+人形の余白を包絡から 2cm、道の下限を 0.15m にして、候補 45 点・道のある点 8 点になった。体験者が (0,0.26) より左だと人形の道が足元に近すぎ、仮の点へ落ちる。
+右寄り（x≥0.4）では 1.65m の体験者の頭が画の上で切れるので、写真は 8 秒の段（胸だけ）まで待つ。
+
+2026-11-15 の結果（9/24 の A）。どれも Released・`placement unavailable` 0 回・shot=1。
+- `twin-verify/20261115_141439_farewell-fix`（calib=show）: PASS FAIL=0。体験者 (0.507,0.261) から fromV=1、人形 (-0.225,0.125)、終点 (-0.264,0.270)、shrink=.90、gap=.745、人形の足 v=.04、人の足 v=-.24。写真は見つめ始めから 8.0 秒（level=2）
+- `twin-verify/20261115_141633_farewell-fix-twin`（calib=twin）: 同じ立ち位置・同じ数字で PASS FAIL=0
+- `plate-validation`: 別れより前の `center_idle` で止まる（A の全身の Remy が入る点が 0 個。`PlateValidation` 側の探索）。別れの保存プレートは未確認
 
 ⚠ **`plate-validation` は別れだけ体験者を測った立ち位置に置く**（`EndingVisitorXz`）。旧版は全身が枠に入る点を前提にしていて、A の画角では全身の入る組が人形の近くにしか無く、奥へ下がる道が体に当たって解けなかった。別れの体験者は壁で判定せず、頭と胸が枠に入ることを見る（`PhotoLevelFeetOut`）。解けないときは `noVisitorFit= noRetreat= pairRejected= pathRejected=` と道の不合格の理由がログに出る。
 ⚠ 画で見ると、人形は画の下端に近く小さい。体験者は右に立ち、足は切れ、頭の上も枠で切れることがある。実機は未確認。
+⚠ 保存プレート検証の `trajectoryAccepted` は実 CPU の全身で壁まで 4cm を求める。9/24 の A で解ける道は包絡から 2cm で、実寸の向きによっては 3.5cm 前後になるので、そこで落ちうる（未確認）。
 
 **スイの⑤ 別れの一言**（`canon/LEDGER.md` 0363「一瞬人形化したスイが言う」・0365「また、あそぼ」。文面の約束は [[comms-reply-spine]]）:
 人形が後ろを向き始めた縁（`TimelineDirector.FarewellPhase` が Turn か Retreat）で、解除済み（`ScreenDecayReleased`）で、

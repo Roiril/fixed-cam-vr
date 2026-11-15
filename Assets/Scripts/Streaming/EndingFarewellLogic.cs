@@ -371,14 +371,24 @@ namespace FixedCamVr.Streaming
         public const float PhotoMinOrderU = 0.05f;
         /// <summary>人形の足を画に入れる半径。回転全身の半径は足元には無い（足の実寸）。</summary>
         public const float DollFootFrameRadiusM = 0.06f;
-        /// <summary>下がる道の長さ (m)。短いと動いて見えない。</summary>
-        public const float RetreatMinM = 0.2f;
+        /// <summary>
+        /// 下がる道の長さ (m)。短いと動いて見えない。像の高さが <see cref="RetreatMaxShrink"/> 以下に縮むことも別に求める。
+        /// 9/24 の据え方の A は床が画に入る所から L 字の奥まで 0.15〜0.2m しかない（2026-11-15 実測）。
+        /// </summary>
+        public const float RetreatMinM = 0.15f;
         public const float RetreatMaxM = 1.2f;
         /// <summary>下がる向きとカメラから遠ざかる向きの内積の下限。背を向けて奥へ下がる。</summary>
         public const float RetreatMinAwayDot = 0.5f;
         /// <summary>下がり終わりの像の高さの上限（立っているときの比）。縮まない道は採らない。</summary>
         public const float RetreatMaxShrink = 0.92f;
+        /// <summary>体験者の身体と壁の面の間を空ける量 (m)。</summary>
         public const float PhotoWallClearanceM = 0.04f;
+        /// <summary>
+        /// 人形の回転の包絡（<see cref="DefaultDollBodyRadiusM"/>）と壁の面の間を空ける量 (m)。立つ点と下がる道の両方に使う。
+        /// 包絡は実頂点の最大半径 .17279m をすでに包むので、実際の身体は壁からこれより離れる。
+        /// 4cm では 9/24 の据え方の A で、床が画に入る範囲に下がる道が 1 本も残らなかった（2026-11-15）。
+        /// </summary>
+        public const float DollWallClearanceM = 0.02f;
         public const float PhotoFrameMargin = 0.005f;
         public const float RetreatMaxSpeedMps = 0.35f;
         // 本番人形 heightM=.4 の CPU bounds: x 最大 .15675569 / z 最大 .07268838。
@@ -420,7 +430,7 @@ namespace FixedCamVr.Streaming
                     if (clearance >= PhotoWallClearanceM
                         && (canStand == null || canStand(p, 0.25f))
                         && PointFitsFrame(cam, p) && PointFitsFrame(cam, p + Vector3.up * visitorHeightM)) visitors.Add(p);
-                    if (clearance >= dollRadius + PhotoWallClearanceM
+                    if (clearance >= dollRadius + DollWallClearanceM
                         && (canStand == null || canStand(p, dollRadius))
                         && FitsFrame(cam, p, dollHeightM, dollRadius)) dolls.Add(p);
                 }
@@ -609,7 +619,7 @@ namespace FixedCamVr.Streaming
             const float stepM = 0.05f;
             Vector3 axisA = Flat(endA - corner).normalized, axisB = Flat(endB - corner).normalized;
             Vector3 away = Flat(foot - cam.transform.position).normalized;
-            float clearance = radius + halfWall + PhotoWallClearanceM;
+            float clearance = radius + halfWall + DollWallClearanceM;
             float startHeight = ProjectedHeight(cam, foot, height);
             float startU = cam.WorldToViewportPoint(foot).x;
             var result = new List<RetreatPlan>();

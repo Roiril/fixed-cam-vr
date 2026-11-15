@@ -260,21 +260,25 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void VisitorAnchor_SolvesFromWhereTheVisitorStands_WithBothLenses()
         {
-            // 手すりの道の A の側。本番の較正と実レンズ（デジタルツイン）の両方で解ける。
-            var cameras = new[] { MakeEndingCamera(out GameObject showGo), MakeTwinCamera(out GameObject twinGo) };
+            // 手すりの道の A の側。9/5 の据え方の本番の較正と実レンズ（デジタルツイン）、9/24 の据え方の A で解ける。
+            // 9/24 の A は L 字の角に近く、床が画に入るのは人形の足が画の下端に掛かる帯だけ。x=0 では人形の道が体験者の足元に近すぎる。
+            var cameras = new[] { MakeEndingCamera(out GameObject showGo), MakeTwinCamera(out GameObject twinGo),
+                                  MakeSeptember24Camera(out GameObject sep24Go) };
+            var fromVisitorMinX = new[] { 0f, 0f, 0.1f };
             try
             {
                 Vector3 corner = new Vector3(-0.5f, 0f, 0.5f);
                 Vector3 endA = corner + Vector3.right * 0.955f, endB = corner + Vector3.back * 0.955f;
-                foreach (Camera cam in cameras)
+                for (int c = 0; c < cameras.Length; c++)
                     foreach (float x in new[] { 0.4f, 0.3f, 0.2f, 0.1f, 0f, -0.1f, -0.2f })
                     {
+                        Camera cam = cameras[c];
                         var visitor = new Vector3(x, 0f, 0.26f);
                         string at = $"{cam.name} x={x}";
                         Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner, endA, endB, out var a,
                             visitorFoot: visitor, visitorYawDeg: -120f), Is.True, at);
                         // 右寄りは今の立ち位置から解ける。人形に近い左寄りは L 字の内側の点へ落ちても撮れる。
-                        if (x >= 0f)
+                        if (x >= fromVisitorMinX[c] - 1e-4f)
                         {
                             Assert.That(a.fromVisitor, Is.True, at);
                             Assert.That(a.visitorTargetFoot, Is.EqualTo(visitor), at + " 隠れた目標へ歩かせない");
@@ -286,11 +290,16 @@ namespace FixedCamVr.Streaming.Tests
                         Assert.That(a.retreatShrink, Is.LessThanOrEqualTo(EndingFarewellLogic.RetreatMaxShrink), at);
                         float yaw = EndingFarewellLogic.FaceYawDeg(visitor, a.foot);
                         float dollYaw = EndingFarewellLogic.FaceYawDeg(a.foot, visitor);
-                        Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw, dollYaw, cam, EndingFarewellLogic.PhotoLevelFeetOut),
-                            Is.Empty, at + " 足が切れてよくなった段では必ず撮れる");
+                        // 9/24 の A は体験者に近く、右寄り（x=0.4）では 1.65m の頭が画の上で切れる。その位置は胸だけを見る段で撮る。
+                        bool headInFrame = cam.WorldToViewportPoint(visitor + Vector3.up * (1.65f - 0.10f)).y
+                                           <= 1f - EndingFarewellLogic.PhotoFrameMargin;
+                        Assert.That(headInFrame || c == 2, Is.True, at + " 頭が切れるのは 9/24 の A だけ");
+                        Assert.That(EndingFarewellLogic.PhotoBlock(a, visitor, yaw, dollYaw, cam,
+                                headInFrame ? EndingFarewellLogic.PhotoLevelFeetOut : EndingFarewellLogic.PhotoLevelAnyYaw),
+                            Is.Empty, at + (headInFrame ? " 足が切れてよくなった段では必ず撮れる" : " 胸だけを見る段では必ず撮れる"));
                     }
             }
-            finally { Object.DestroyImmediate(showGo); Object.DestroyImmediate(twinGo); }
+            finally { Object.DestroyImmediate(showGo); Object.DestroyImmediate(twinGo); Object.DestroyImmediate(sep24Go); }
         }
 
         [Test]
@@ -400,10 +409,35 @@ namespace FixedCamVr.Streaming.Tests
             return cam;
         }
 
+        /// <summary>
+        /// 9/24 の据え方へ戻した A（2026-11-15 の show.json とツインの較正。写真の点に 2〜5px で合う）。
+        /// 水平 96 度。L 字の角に近く、4cm の壁余白では立ち位置が 1 つも解けなかった。
+        /// </summary>
+        private static Camera MakeSeptember24Camera(out GameObject go)
+        {
+            Camera cam = MakeCamera(out go);
+            go.name = "FarewellTestCamSep24";
+            cam.transform.position = new Vector3(0.6107f, 0.9789f, -0.6129f);
+            cam.transform.rotation = Quaternion.Euler(3.747f, -45.083f, 0.033f);
+            cam.projectionMatrix = Cg.ShowCgLayer.BuildProjectionMatrix(288.33f, 288.33f,
+                320f, 240f, 640, 480, cam.nearClipPlane, cam.farClipPlane);
+            return cam;
+        }
+
         [Test]
         public void Retreat_ShowsItsBackAndClearsTheWall_ThenShrinksInTheFrame()
         {
-            Camera cam = MakeEndingCamera(out GameObject go);
+            Retreat_ShowsItsBack(MakeEndingCamera(out GameObject go), go);
+        }
+
+        [Test]
+        public void Retreat_ShowsItsBack_WithCameraASetUpAsOnSeptember24()
+        {
+            Retreat_ShowsItsBack(MakeSeptember24Camera(out GameObject go), go);
+        }
+
+        private static void Retreat_ShowsItsBack(Camera cam, GameObject go)
+        {
             try
             {
                 Vector3 corner = new Vector3(-0.5f, 0f, 0.5f);
@@ -429,7 +463,7 @@ namespace FixedCamVr.Streaming.Tests
                         Vector3.Distance(previousFoot, foot) / (EndingFarewellLogic.RetreatSec / 100f));
                     previousFoot = foot;
                     Assert.That(Mathf.Min(SegmentDistance(foot, corner, endA), SegmentDistance(foot, corner, endB))
-                        - a.dollBodyRadiusM - 0.02f, Is.GreaterThanOrEqualTo(EndingFarewellLogic.PhotoWallClearanceM - 1e-5f));
+                        - a.dollBodyRadiusM - 0.02f, Is.GreaterThanOrEqualTo(EndingFarewellLogic.DollWallClearanceM - 1e-5f));
                 }
                 Assert.That(maximumSpeed, Is.LessThanOrEqualTo(EndingFarewellLogic.RetreatMaxSpeedMps), "実際の道筋の距離/秒");
                 var done = new EndingFarewellLogic.Sample { phase = Phase.Done };
