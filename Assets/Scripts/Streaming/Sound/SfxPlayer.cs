@@ -317,6 +317,29 @@ namespace FixedCamVr.Streaming
             return n;
         }
 
+        /// <summary>
+        /// <b>この音源を鳴らしている声の音量を、鳴らしたまま書き換える</b>（テレビが寄ってくる間の砂嵐・0387）。
+        /// 書き換えた声の本数を返す。退かせている途中と立ち上げている途中の声には触らない
+        /// （そちらの曲線が音量を持っている）。<paramref name="gain"/> にはこの発声器の masterGain を掛ける（<see cref="Play"/> と同じ）。
+        /// </summary>
+        public int SetGain(AudioClip? clip, float gain)
+        {
+            if (clip == null) return 0;
+            double now = AudioSettings.dspTime;
+            float g = Mathf.Clamp01(gain * masterGain);
+            int n = 0;
+            for (int i = 0; i < _pool.Length; i++)
+            {
+                var s = _pool[i];
+                if (s == null || s.clip != clip || _busyUntil[i] <= now) continue;
+                if (_fadeSec[i] > 0f || _fadeInSec[i] > 0f) continue;
+                s.volume = g;
+                n++;
+            }
+            if (n > 0) LastGain = g;
+            return n;
+        }
+
         /// <summary>いま退かせている途中の声の本数。テストと切り分け用。</summary>
         public int FadingVoices
         {

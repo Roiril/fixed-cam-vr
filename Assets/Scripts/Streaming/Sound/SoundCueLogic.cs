@@ -407,6 +407,28 @@ namespace FixedCamVr.Streaming
             _buf[count++] = c;
         }
 
+        /// <summary>
+        /// テレビが定位置に着いたときの砂嵐の音量（0387・ユーザー指定「来るときのノイズの音の最大値を、今の半分の大きさに」）。
+        /// 0383 で入れた時点の 1.0 の半分の振幅（-6.0dB）。焼いた素材（-24 LUFS）は変えず、鳴らす側で掛ける。
+        /// </summary>
+        public const float TvNoisePeakGain = 0.5f;
+
+        /// <summary>
+        /// テレビが定位置より <paramref name="depthM"/> m 奥にいるときの砂嵐の音量（0387「奥にいるときは小さく、
+        /// 定位置につくときに最大値になるように徐々に上げて」）。
+        ///
+        /// 音の振幅を距離に反比例させる（点音源の 1/r）。見かけの幅も同じ比で大きくなるので、
+        /// 音の大きさとテレビの見かけの大きさが同じ割合で育つ。奥の端（7m 奥 ＝ 9m 先）で最大の 2/9（-13.1dB）。
+        ///
+        /// ⚠ 距離の減衰を <c>AudioSource</c> に任せない。<see cref="SpatialAudio"/> は減衰を切ってあり
+        ///   （<c>minDistance</c> 50m）、そちらを変えると他のすべての 3D 音の高さが動く。
+        /// </summary>
+        public static float TvNoiseGain(float depthM)
+        {
+            float d = depthM > 0f ? depthM : 0f;
+            return TvNoisePeakGain * IntroLogic.TvRestM / (IntroLogic.TvRestM + d);
+        }
+
         /// <summary>その節目で劇伴をどれだけ引くか（0..1）。**山ほど深く引く。**</summary>
         public static float DuckFor(SoundCue c)
         {

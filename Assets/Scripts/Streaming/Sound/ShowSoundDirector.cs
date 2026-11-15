@@ -470,12 +470,14 @@ namespace FixedCamVr.Streaming
 
             var st = ReadState();
             float glitchLevel = _glitch != null ? _glitch.Level : 0f;
+            _lastTvDepthM = st.introWeights.tvDepthM;
 
             if (cuesEnabled)
             {
                 var fired = _cues.Tick(dt, st, glitchLevel, out int n);
                 for (int i = 0; i < n; i++) FireCue(fired[i]);
             }
+            UpdateTvNoiseGain();
 
             var g = _beds.Tick(dt, st);
             ApplyBeds(g);
@@ -618,9 +620,19 @@ namespace FixedCamVr.Streaming
             float gain = c == SoundCue.Glitch && _glitch != null ? _glitch.SfxGain : 1f;
             // ⚠ masterGain は SfxPlayer.Play の中で掛かる。ここで渡すと**二乗になる**
             //   （既定 1.0 なので今まで見えていなかっただけ。下げた瞬間に効果音だけ沈む）。
-            // ⚠ テレビの砂嵐は寄ってくるテレビについて動く（0383）。
+            // ⚠ テレビの砂嵐は寄ってくるテレビについて動く（0383）。大きさはテレビの奥行きで決まり、
+            //   鳴っている間は Update が毎フレーム書き直す（0387）。
             Transform? follow = c == SoundCue.TvNoise ? _screen : null;
-            _sfx?.Play(clip, gain, at: PlaceFor(c), follow: follow);
+            if (c == SoundCue.TvNoise)
+            {
+                gain = SoundCueLogic.TvNoiseGain(_lastTvDepthM);
+                _tvNoiseClip = clip;
+            }
+            // ⚠ 導入のテレビの 2 本は音程も音量も散らさない（0387）。電源が入る画は電源の音の秒で動く
+            //   （`IntroLogic.TvIgniteAt`）ので、音程を ±3% 振ると山の時刻が画からずれる。
+            bool steady = c == SoundCue.TvNoise || c == SoundCue.TvOn;
+            _sfx?.Play(clip, gain, pitchSpread: steady ? 0f : 0.03f, gainSpreadDb: steady ? 0f : 1.2f,
+                       at: PlaceFor(c), follow: follow);
             // ⚠⚠ **重ねて入れ替える 2 組**（0383・ユーザー指定「被らせてクロスフェードで」
             //    「来る前に流れてた上の音は消す」）。新しい音は頭から立っているので、前の音だけを退かせる。
             if (c == SoundCue.TitleOut) StopSpot(SoundCue.TitleIn, TitleCrossSec);
@@ -628,6 +640,25 @@ namespace FixedCamVr.Streaming
             _beds.PushSpotDuck(SoundCueLogic.DuckFor(c));
             LastCue = c;
         }
+
+        /// <summary>
+        /// テレビが寄ってくる間の砂嵐を、テレビの奥行きに合わせて大きくする（0387・ユーザー指定
+        /// 「奥にいるときは小さく、定位置につくときに①の最大値になるように徐々に上げていって」）。
+        /// 退かせ始めた声（電源が入った縁）には触らない。鳴っている声が無くなったら手を離す。
+        /// </summary>
+        private void UpdateTvNoiseGain()
+        {
+            if (_tvNoiseClip == null) return;
+            if (_sfx == null) { _tvNoiseClip = null; return; }
+            TvNoiseGainNow = SoundCueLogic.TvNoiseGain(_lastTvDepthM);
+            if (_sfx.SetGain(_tvNoiseClip, TvNoiseGainNow) == 0) _tvNoiseClip = null;
+        }
+
+        /// <summary>段 3 の砂嵐へ最後に書いた音量（<c>SfxPlayer</c> の masterGain を掛ける前）。切り分け用。</summary>
+        public float TvNoiseGainNow { get; private set; }
+
+        private AudioClip? _tvNoiseClip;
+        private float _lastTvDepthM;
 
         /// <summary>題字が消える音が鳴った縁で、出る音を退かせる秒数（0383）。</summary>
         public const float TitleCrossSec = 1.0f;

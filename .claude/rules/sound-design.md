@@ -62,8 +62,8 @@ Webは同じWAVを無加工コピーして使う。以下の旧2音構成と`ing
 
 | 縁 | いつ | 音 | 高さ |
 |---|---|---|---|
-| 段 3 の頭（テレビが奥から寄ってくる） | 段 3 に入ったフレーム | `sfx_tv_noise`（TV-Signal_Noise01-4・`TvNoise`・テレビについて動く） | -24.0 LUFS |
-| 段 4 の頭（テレビの電源が入る。0309） | 段 4 に入ったフレーム | `sfx_tv_on`（TV-Turn_Off01-2・`TvOn`）。鳴った縁で砂嵐を `TvNoiseCrossSec`（0.6 秒）で退かせる | -15.0 LUFS |
+| 段 3 の頭（テレビが奥から寄ってくる） | 段 3 に入ったフレーム | `sfx_tv_noise`（TV-Signal_Noise01-4・`TvNoise`・テレビについて動く）。音量は奥行きの 1/r（`SoundCueLogic.TvNoiseGain`・奥 0.11 → 定位置 0.5・0387）を毎フレーム書く | -24.0 LUFS（再生の倍率 ≤ 0.5） |
+| 段 4 の頭（テレビの電源が入る。0309） | 段 4 に入ったフレーム | `sfx_tv_on`（TV-Turn_Off01-2・`TvOn`）。鳴った縁で砂嵐を `TvNoiseCrossSec`（0.6 秒）で退かせる。管の点き方と映像はこの音の秒で動く（`IntroLogic.TvIgniteAt` / `TvLiveAt`・0387）。2 本とも音程・音量を散らさない | -15.0 LUFS |
 | 段 5（**完全にスクリーンになった**） | 段 5 ＋ 1.2 秒 | **`amb_bell`**（もらった鈴） | -28.0 LUFS |
 
 ⚠⚠ **テレビ方式では `sfx_screen_on`（Cyber14-1・「ぴこりっ」）を鳴らさない**（0383）。`ScreenOn` が鳴るのは割れる遷移の枠を閉じる瞬間だけで、`analyze-xp-log.py` はテレビ方式で `ScreenOn` が鳴ったら FAIL にする。

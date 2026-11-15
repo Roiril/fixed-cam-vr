@@ -598,7 +598,7 @@ namespace FixedCamVr.Streaming
 
                 case IntroStage.Frame:
                 {
-                    if (!advance && _stageElapsed < _t.frameSec) return IntroEvent.None;
+                    if (!advance && _stageElapsed < FrameMinSec) return IntroEvent.None;
                     // スクリーンを見ていて、かつ映像が届いていること。少しは待つ（遅れて来ることがある）。
                     _centeredSec = input.frameCentered ? _centeredSec + dt : 0f;
                     bool ready = _centeredSec >= FrameCenteredHoldSec && input.liveFresh;
@@ -722,12 +722,14 @@ namespace FixedCamVr.Streaming
 
                     case IntroStage.Frame:
                     {
-                        float p = Progress(_t.frameSec);
+                        // 電源の音（`sfx_tv_on`）の頭から何秒か。音は段 4 に入った縁で予約され、
+                        // `SfxPlayer.ScheduleLeadSec` 後に鳴り始める（0387）。
+                        float u = _stageElapsed - TvOnLeadSec;
                         return new IntroWeights
                         {
                             tv = true, passthrough = 0f, frame = 1f,
-                            ignite = Clamp01(p / TvIgniteShare),
-                            live = PerceptualFade.Reveal((p - TvLiveFrom) / (1f - TvLiveFrom)),
+                            ignite = TvIgniteAt(u),
+                            live = TvLiveAt(u),
                             tvCase = 1f, tvDark = 0f,
                         };
                     }
@@ -777,11 +779,66 @@ namespace FixedCamVr.Streaming
         /// <summary>寄ってくる間のうち、明るさを 0 から立ち上げる割合。ここを過ぎたら霧の式だけで決まる。</summary>
         public const float TvEmergeFadeShare = 0.22f;
 
-        /// <summary>段 4 のうち、管が点き切るまでの割合（既定の尺で 2.1 秒）。</summary>
-        public const float TvIgniteShare = 0.70f;
+        // ---- 段 4 は電源の音の秒で動く（0387）------------------------------------
+        //
+        // ⚠⚠ **段の進み（frameSec に対する割合）で動かさない。** 音の長さは素材で決まっていて、
+        //    尺を変えても音は伸びない。割合で書くと、尺を変えた日に画だけが黙って音からずれる。
+        //    下の時刻は `sfx_tv_on`（TV-Turn_Off01-2）の波形を 10ms ごとに測って決めた:
+        //      0〜0.03 秒   高域のぱちぱち。0.030 秒に尖頭（-6.7dBFS）＝ 高電圧が乗る
+        //      0.07 秒〜    低域が入る（ぶうんという胴）
+        //      0.19〜0.25 秒 いちばん明るく大きい山（尖頭 -4.8dBFS）
+        //      0.25〜0.45 秒 胴が -13dB で続く
+        //      0.45〜1.2 秒 残響が下がっていく（1.2 秒で -45dB）
+        //    音を差し替えたら測り直す（`memory/intro_tv_reveal.md`「電源は音の秒で動く」）。
 
-        /// <summary>段 4 のうち、映像が上がり始める進み（既定の尺で 1.86 秒）。走査の帯が満ちてから。</summary>
-        public const float TvLiveFrom = 0.62f;
+        /// <summary>
+        /// 段 4 に入ってから電源の音が鳴り始めるまで（秒）。音は段 4 に入った縁で DSP 予約される。
+        /// ⚠ 鳴らす側（<see cref="SfxPlayer.Play"/>）の先読みそのもの。片方だけ変えない。
+        /// </summary>
+        public const float TvOnLeadSec = SfxPlayer.ScheduleLeadSec;
+
+        /// <summary>
+        /// 電源の音の秒 → <c>_CrtIgnite</c>。シェーダの段（縁 0〜.30〜.65・走査 .25〜.78・満ちる .55〜.90）を
+        /// 音の山へ置く: 尖頭で縁が光り切る / 胴で走査が開く / 大きい山で走査の帯がいちばん明るい /
+        /// 胴の終わりで開き切る / 残響の中で満ちる。
+        /// </summary>
+        private static readonly float[] TvIgniteKnotSec = { 0f, 0.030f, 0.220f, 0.450f, 0.750f };
+        private static readonly float[] TvIgniteKnotValue = { 0f, 0.30f, 0.58f, 0.80f, 1f };
+
+        /// <summary>映像が上がり始める秒（電源の音の頭から）。胴が終わり、残響へ移る所。</summary>
+        public const float TvLiveFromSec = 0.45f;
+
+        /// <summary>映像が出切る秒（電源の音の頭から）。残響が -45dB まで下がる所。</summary>
+        public const float TvLiveFullSec = 1.20f;
+
+        /// <summary>段 4 の演出が終わる秒（段 4 の頭から）。段 4 はこれより短くしない。</summary>
+        public const float TvPowerOnEndSec = TvOnLeadSec + TvLiveFullSec;
+
+        /// <summary>電源の音の頭から <paramref name="soundSec"/> 秒の <c>_CrtIgnite</c>（折れ線）。</summary>
+        public static float TvIgniteAt(float soundSec)
+        {
+            if (!(soundSec > 0f)) return 0f;
+            for (int i = 1; i < TvIgniteKnotSec.Length; i++)
+            {
+                if (soundSec >= TvIgniteKnotSec[i]) continue;
+                float a = TvIgniteKnotSec[i - 1], b = TvIgniteKnotSec[i];
+                return TvIgniteKnotValue[i - 1]
+                       + (TvIgniteKnotValue[i] - TvIgniteKnotValue[i - 1]) * (soundSec - a) / (b - a);
+            }
+            return 1f;
+        }
+
+        /// <summary>電源の音の頭から <paramref name="soundSec"/> 秒の映像の出方（<c>_IntroLive</c>）。</summary>
+        public static float TvLiveAt(float soundSec)
+            => PerceptualFade.Reveal((soundSec - TvLiveFromSec) / (TvLiveFullSec - TvLiveFromSec));
+
+        /// <summary>
+        /// 段 4 の最短の尺。テレビ方式は <see cref="TvPowerOnEndSec"/> を割らない
+        /// （show.json の frameSec が短くても、映像が出切る前に段 5 へ飛ばない）。
+        /// </summary>
+        private float FrameMinSec => _t.transition == IntroTransition.Tv
+            ? Math.Max(_t.frameSec, TvPowerOnEndSec)
+            : _t.frameSec;
 
         /// <summary>段 3 が単独で流れる秒数。段 2 と重なるぶんを引く（<see cref="IntroTiming.TotalSec"/> と同じ式）。</summary>
         private float StructureOwnSec

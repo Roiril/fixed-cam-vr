@@ -93,6 +93,38 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        /// <summary>
+        /// 0387: 鳴らしたままの声の音量を書き換える口（導入の砂嵐）。同じ音源の声だけを書き、
+        /// 退かせている途中の声には触らない（退かせの曲線が音量を持っている）。
+        /// </summary>
+        [Test]
+        public void SetGain_RewritesOnlyThatClip_AndLeavesAFadingVoiceAlone()
+        {
+            var go = new GameObject("sfx-player-setgain-test");
+            try
+            {
+                var p = go.AddComponent<SfxPlayer>();
+                Awake(p);
+                var noise = AudioClip.Create("noise", 48000 * 4, 1, 48000, false);
+                var other = AudioClip.Create("other", 48000 * 4, 1, 48000, false);
+                p.Play(noise, gain: 0.1f, pitchSpread: 0f, gainSpreadDb: 0f);
+                p.Play(other, gain: 0.8f, pitchSpread: 0f, gainSpreadDb: 0f);
+
+                Assert.AreEqual(1, p.SetGain(noise, 0.5f));
+                Assert.AreEqual(0.5f, VoiceHolding(go, noise)!.volume, 1e-6f);
+                Assert.AreEqual(0.8f, VoiceHolding(go, other)!.volume, 1e-6f, "別の音源の声まで書き換えた");
+
+                p.FadeOut(noise, 0.6f);
+                Assert.AreEqual(0, p.SetGain(noise, 0.9f), "退かせている声を書き換えた");
+                Assert.AreEqual(0.5f, VoiceHolding(go, noise)!.volume, 1e-6f);
+                Assert.AreEqual(0, p.SetGain(null, 0.5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
         /// <summary>ラン開始の <c>StopAll</c> で空きに戻る（前の体験者の予約が残らない）。</summary>
         [Test]
         public void StopAll_FreesEveryVoice()

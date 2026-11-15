@@ -173,19 +173,110 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void Frame_PowersOnFirst_ThenTheImageComes()
         {
-            IntroTiming t = IntroTiming.Default;
             IntroLogic l = AtStage(IntroStage.Frame);
             Assert.AreEqual(0f, l.Weights.ignite, 0.001f, "段 4 の頭は電源が入る前");
             Assert.AreEqual(1f, l.Weights.tvCase);
 
-            l.Tick(t.frameSec * (IntroLogic.TvLiveFrom - 0.02f), Ready());
+            // 電源の音が鳴り始める（予約の先読みの後）までは管は消えたまま。
+            l.Tick(IntroLogic.TvOnLeadSec * 0.9f, Ready());
+            Assert.AreEqual(0f, l.Weights.ignite, 0.001f, "電源の音より先に管が光っている");
+
+            l.Tick(IntroLogic.TvOnLeadSec * 0.1f + IntroLogic.TvLiveFromSec - 0.02f, Ready());
             Assert.Greater(l.Weights.ignite, 0.5f);
             Assert.AreEqual(0f, l.Weights.live, "管が点く前に映像が出ている");
 
-            l.Tick(t.frameSec * 0.35f, Ready());
+            l.Tick(IntroLogic.TvLiveFullSec - IntroLogic.TvLiveFromSec + 0.02f, Ready());
             Assert.AreEqual(1f, l.Weights.ignite, 0.001f);
-            Assert.Greater(l.Weights.live, 0.5f);
+            Assert.AreEqual(1f, l.Weights.live, 0.001f, "電源の音の残響が消える所で映像が出切っていない");
             Assert.AreEqual(l.Weights.live, l.Weights.LiveGate, "テレビ方式の映像は出方そのものを書く");
+        }
+
+        /// <summary>
+        /// 0387: 電源の画は電源の音（`sfx_tv_on`）の秒で動く。段の尺（frameSec）を変えても音に対する時刻は動かない。
+        /// 時刻は焼いた音の波形を測って決めた（`IntroLogic` の表の注釈）。
+        /// </summary>
+        [Test]
+        public void Frame_LightFollowsThePowerOnSound_NotTheStageLength()
+        {
+            // 尖頭（0.030 秒）で縁が光り切る（シェーダの rim は .30 で頂点）。
+            Assert.AreEqual(0.30f, IntroLogic.TvIgniteAt(0.030f), 0.001f);
+            // いちばん大きい山（0.19〜0.25 秒）で走査の帯がいちばん明るい所（.58）。
+            Assert.AreEqual(0.58f, IntroLogic.TvIgniteAt(0.220f), 0.001f);
+            Assert.AreEqual(1f, IntroLogic.TvIgniteAt(0.75f), 0.001f);
+            float prev = -1f;
+            for (float u = -0.1f; u < 1.5f; u += 0.005f)
+            {
+                float v = IntroLogic.TvIgniteAt(u);
+                Assert.GreaterOrEqual(v, prev, $"電源の進みが {u:0.000} 秒で戻っている");
+                Assert.That(v, Is.InRange(0f, 1f));
+                prev = v;
+            }
+            Assert.AreEqual(0f, IntroLogic.TvLiveAt(IntroLogic.TvLiveFromSec), 0.001f);
+            Assert.AreEqual(1f, IntroLogic.TvLiveAt(IntroLogic.TvLiveFullSec), 0.001f);
+
+            // 尺の違う 2 つの設定で、段 4 の頭から同じ秒の画が同じ。
+            foreach (float frameSec in new[] { 3.0f, 5.0f })
+            {
+                IntroTiming t = IntroTiming.Default;
+                t.frameSec = frameSec;
+                var l = new IntroLogic();
+                l.Configure(t);
+                l.Begin();
+                l.Tick(0f, Ready());
+                l.Tick(t.realSec, Ready());
+                l.Tick(t.degradeSec, Ready());
+                l.Tick(StructureOwnSec(t), Ready());
+                Assert.AreEqual(IntroStage.Frame, l.Stage);
+                l.Tick(IntroLogic.TvOnLeadSec + 0.22f, Ready());
+                Assert.AreEqual(0.58f, l.Weights.ignite, 0.002f, $"frameSec={frameSec} で電源の画が音からずれた");
+            }
+        }
+
+        /// <summary>0387: show.json の frameSec が短くても、映像が出切る前に段 5 へ飛ばない。</summary>
+        [Test]
+        public void Frame_NeverEndsBeforeThePowerOnFinishes()
+        {
+            IntroTiming t = IntroTiming.Default;
+            t.frameSec = 0.5f;
+            var l = new IntroLogic();
+            l.Configure(t);
+            l.Begin();
+            l.Tick(0f, Ready());
+            l.Tick(t.realSec, Ready());
+            l.Tick(t.degradeSec, Ready());
+            l.Tick(StructureOwnSec(t), Ready());
+            Assert.AreEqual(IntroStage.Frame, l.Stage);
+            for (int i = 0; i < 60; i++) l.Tick(0.02f, Ready());   // 1.2 秒
+            Assert.AreEqual(IntroStage.Frame, l.Stage, "映像が出切る前に段 5 へ進んだ");
+            Assert.Less(l.Weights.live, 1f);
+            for (int i = 0; i < 60; i++) l.Tick(0.02f, Ready());
+            Assert.AreEqual(IntroStage.Swap, l.Stage);
+        }
+
+        /// <summary>
+        /// 0387: 砂嵐は奥にいるときは小さく、定位置に着いたときに最大値（0383 の半分）。
+        /// 振幅は距離に反比例し、テレビが寄ってくる間は戻らずに上がる。
+        /// </summary>
+        [Test]
+        public void TvNoise_IsQuietFarAway_AndReachesHalfAtItsPlace()
+        {
+            Assert.AreEqual(0.5f, SoundCueLogic.TvNoisePeakGain, 1e-6f, "最大値は 0383 の半分（ユーザー指定）");
+            Assert.AreEqual(SoundCueLogic.TvNoisePeakGain, SoundCueLogic.TvNoiseGain(0f), 1e-6f);
+            float far = SoundCueLogic.TvNoiseGain(IntroLogic.TvFarM);
+            Assert.AreEqual(SoundCueLogic.TvNoisePeakGain * 2f / 9f, far, 1e-5f, "奥の端は 2/9（9m 先）");
+
+            // 段 3 を細かく回して、音量が戻らずに上がり、着いた所で最大値になる。
+            IntroLogic l = AtStage(IntroStage.Structure);
+            float own = StructureOwnSec(IntroTiming.Default);
+            float prev = 0f;
+            for (int i = 0; i < 100; i++)
+            {
+                float g = SoundCueLogic.TvNoiseGain(l.Weights.tvDepthM);
+                Assert.GreaterOrEqual(g, prev - 1e-6f, "寄ってくる途中で砂嵐が小さくなった");
+                prev = g;
+                l.Tick(own / 100f * 0.999f, Ready());
+            }
+            Assert.AreEqual(SoundCueLogic.TvNoisePeakGain, prev, 0.01f, "定位置に着いても最大値に届いていない");
         }
 
         [Test]

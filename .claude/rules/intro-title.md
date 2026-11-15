@@ -55,7 +55,7 @@ paths:
 - 段 2 は暗転だけ。色は抜かず、輪郭・粒・乱れ・線も使わない。全画素を同じ係数で落とすので覆いの `_ScreenFade` は `1 - passthrough`。構造線は既定 OFF — `IntroTvTests.Darken_FallsFromRealityToBlack_WithoutBreaking`
 - 段 3 は黒の保持（`TvBlackHoldShare`）の後、テレビが奥 `TvFarM` から定位置へ寄る（`tvDepthM` → `ScreenAnchor.SetIntroDepth`）。明るさは霧の式（`ScreenFogLogic.Transmit`）で、筐体 `tvCase` とガラスの灯り（`1 - tvDark`）は同じ量。段 4 以降は奥行き 0。スクリーンは段 3 に入る黒のうちに頭の正面へ据え（`HoldInFrontOfHead`）、畳む経路で解除する。観測 `tvZ=` — `IntroTvTests.Structure_TheTvComesFromTheDepth_AndStopsAtItsPlace`
 - テレビが出るまでスクリーンは描かない（`IntroVeil.TvScreenHidden`）。描くと暗転と黒の保持に矩形や縁が浮く。覆いが要らなくなる段 3 の経路でも止めを掛け直す — `IntroVeil.Apply`、観測 `scrHid=`
-- 段 4 は頭の角速度 45°/s 以下を待つ（最大 3 秒）。電源 `ignite` = p/`TvIgniteShare`、映像 `live` は `TvLiveFrom` から `PerceptualFade.Reveal`。頭で `SoundCue.ScreenOn` — `IntroLogic.MaxHeadTurnForFrame` / `IntroTvTests.Frame_PowersOnFirst_ThenTheImageComes`
+- 段 4 は頭の角速度 45°/s 以下を待つ（最大 3 秒）。頭で `TvOn`。`ignite` / `live` は段の進みではなく電源の音の秒で動き（`IntroLogic.TvIgniteAt` / `TvLiveAt`）、段 4 は `TvPowerOnEndSec` を割らない。砂嵐は `SoundCueLogic.TvNoiseGain`（奥行きの 1/r）。詳細は memory/intro_tv_reveal.md（0387） — `IntroTvTests.Frame_LightFollowsThePowerOnSound_NotTheStageLength`
 - `_IntroLive` の式は `IntroWeights.LiveGate` 1 か所。テレビは live そのもの、割れる遷移は 0/1。書くときに 4-A の時間切れ手前の沈み（`EndingDecisionLogic.SinkBrightness`・memory/ending_result.md）を掛ける。`ignite` はテレビの段 1〜4 で 0 から上がり、演出の外は 1。畳むすべての経路で 1 へ戻す — `IntroDirector.WriteIgnite` / `ResetIgnite`
 - 段 5 は live 1 の静止 1.6 秒で、乱れなし。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec`
 - 筐体 `tvCase` は段 4 から体験の終わりまで `IntroLogic.MainShowTvCase`（1・0321）。演出の外（Off / Done）の重みも同じ。`ResetIgnite` は方式で書き分ける（テレビ 1・割れる遷移 0）。0 を書くと本編で枠が消える — `IntroTvTests.Swap_KeepsTheCase_AndTheMainShowKeepsTheTvFrame` / `Shatter_NeverShowsTheTvCase_InAnyStageOrInTheMainShow`
@@ -69,7 +69,7 @@ paths:
 - `run.intro` 欠落は全部 0 になる → `ShowIntroDef.LooksUnset` で既定へ 〔出典: streaming:972〕
 - `IntroPreview` は `IntroDirector.WriteIgnite` が書く値と `TvScreenHidden` を写している。変えたら対で直す。`menu intro -Set style=shatter|tv` で方式を選ぶ（`tv` は show.json の尺を読まない）
 - 観測は「画に出た」側。`shatStyle=tv` / `tvCase=` / `ignite=` は `ShowTelemetryHost` と `analyze-xp-log.py` を対で直す（`ilive=` / `sig=` / `rvs=` は C# だけ）
-- 導入の音はテレビの電源 `ScreenOn`（段 4 の頭）と段 5 の鈴。`sfx_shatter` は割れる遷移だけ — `IntroTvTests.ScreenOn_FiresOnce_WhenThePowerComesOn`
+- 導入の音は段 3 の砂嵐 `TvNoise`・段 4 の頭の電源 `TvOn`（砂嵐を 0.6 秒で退かせる）・段 5 の鈴。`ScreenOn` と `sfx_shatter` は割れる遷移だけ — `IntroTvTests.TvNoise_ThenTvOn_EachFireOnce`
 - 題字の版を焼き直したら `ORDER_LO/HI` を測り直す 〔出典: memory/title_screen.md §4.5〕 〔未照合〕
 - `menu title` / `menu intro` は追従を映さない。`menu title` は `TitlePreview.Summoned` 経由で、hold の最大輝度 120 未満は LogError 〔出典: memory/title_screen.md §5〕
 
