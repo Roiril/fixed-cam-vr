@@ -33,7 +33,8 @@ TAKES = [
     {"id": "L2C0#0", "skipIfDismissed": "",
      "steps": [{"cueId": "cue_stain_A", "markClear": True}, {"cueId": "right", "markStartAdvance": True},
                {"cueId": "burst"}]},
-    {"id": "L2C1#0", "skipIfDismissed": "L2C0#0", "steps": [{"cueId": "inherit"}]},
+    {"id": "L2C1#0", "skipIfDismissed": "L2C0#0",
+     "steps": [{"cueId": "", "cg": "doll", "cgMode": "trail", "markClear": True}, {"cueId": "backrooms_B_in"}]},
 ]
 
 
@@ -50,6 +51,19 @@ class MarkClearAnalyzerTests(unittest.TestCase):
         events = [ev("markclear", 10.0, take="L2C0#0", step=0, n=1),
                   ev("cue", 10.02, id="cue_stain_A", st="off")]
         self.assertEqual(levels(xp.mark_clear_findings, events), ["OK"])
+
+    def test_trail_doll_cleared_passes_when_the_doll_went_away(self):
+        # 0382: 2-B の後ろをついてくる人形を報告で消す。人形の書き手は ShowTelemetryHost の ev=trail（vis=0 で消えた）
+        events = [ev("markclear", 20.0, take="L2C1#0", step=0, n=1),
+                  ev("trail", 20.01, station=-1, x=0, z=0, vis=0, gap=0.8)]
+        self.assertEqual(levels(xp.mark_clear_findings, events), ["OK"])
+
+    def test_trail_doll_cleared_but_still_visible_fails(self):
+        events = [ev("markclear", 20.0, take="L2C1#0", step=0, n=1),
+                  ev("trail", 20.5, station=33, x=-0.8, z=-0.6, vis=1, gap=0.8)]
+        self.assertEqual(levels(xp.mark_clear_findings, events), ["FAIL"])
+        host = read("Assets/Scripts/Streaming/TakeRunner.cs")
+        self.assertIn("_cgLayer.Hide();", host[host.index("private void ClearStepMaterial"):])
 
     def test_runtime_cue_id_is_take_and_step(self):
         # 実機・ツインの ev=cue id= は TakeRunner.StepCueKey（<take>#<step>）。台本の cueId では出ない

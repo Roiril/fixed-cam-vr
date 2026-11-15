@@ -1089,6 +1089,15 @@ namespace FixedCamVr.Streaming
             overlay?.StopOverlay(OverlayRevealLogic.MarkDoneOutSec);
             overlay?.ClearSecondLayer();
             _activeStepCueId = "";
+            // そのカットの素材が CG の人形（2-B の後ろをついてくる人形・cgMode trail）なら人形も引く。
+            // 演出は続くので、次のカット（子供部屋）は線を越えれば従来どおり出る（0382「人形の異変と部屋に飛ばされる異変は別物」）。
+            ShowStepDef? clearedStep = GetStep(takeIndex, stepIndex);
+            if (_cgLayer != null && clearedStep != null && clearedStep.HasCg)
+            {
+                _cgLayer.Hide();
+                _cgLayer.SetAura(0f);
+                _activeStepDollReplacement = false;
+            }
             director?.PulseGlitch(TakeSchema.GlitchTransitionLevel, TakeSchema.DismissGlitchMs / 1000f);
             Debug.Log($"[TakeRunner] 報告でカットの素材を消した take={LastMarkClearTakeId} step={stepIndex}（演出は続く）");
         }
@@ -1319,6 +1328,8 @@ namespace FixedCamVr.Streaming
 
         /// <summary>走行中の演出が報告で畳めるものか（<see cref="TakeRunnerLogic.ActiveRemovable"/>）。</summary>
         public bool ActiveTakeRemovable => _logic.ActiveRemovable;
+        /// <summary>走っている演出で markClear が素材を消し済みか。消した後の報告は別の異変として数える（0382）。</summary>
+        public bool ActiveTakeCleared => _logic.ActiveCleared;
 
         /// <summary>
         /// <b>報告で実際に演出が消えた回数</b>（テレメトリ用）。押した回数（<c>VisitorMarkCount</c>）とは別物 —

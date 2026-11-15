@@ -52,6 +52,20 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
+        public void ReportAfterTheMaterialWasCleared_IsAnotherAnomalyInTheSameTake()
+        {
+            // 0382「人形の異変と部屋に飛ばされる異変は別物」。2-B の後ろの人形を消した（markClear）あと、
+            // 同じ演出の子供部屋で押したら別の異変。子供部屋への押し直しは増えない。
+            var t = new VisitorReportTally();
+            Assert.IsTrue(t.Record("L2C1#0", detected: true));
+            Assert.IsTrue(t.Record("L2C1#0", detected: true, afterClear: true));
+            Assert.IsFalse(t.Record("L2C1#0", detected: true, afterClear: true));
+            Assert.AreEqual(3, t.PressCount);
+            Assert.AreEqual(2, t.AnomalyCount);
+            Assert.AreEqual("L2C1#0", t.LastTakeId);
+        }
+
+        [Test]
         public void PressWithNothingShowing_IsAPressButNotAnAnomaly()
         {
             // スイが「異状は検出されませんでした」と返す押下。押した事実は残し、異変には数えない。

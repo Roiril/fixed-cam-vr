@@ -70,13 +70,20 @@ namespace FixedCamVr.Streaming
         /// （<c>ShowControlClient.LastMarkDetected</c>）。スイの返事「異常を検出しました」と同じ判定を
         /// 使う — 画で「検出した」と言ったものだけを数える。</param>
         /// <returns>この報告で <see cref="AnomalyCount"/> が増えたか。</returns>
-        public bool Record(string? takeId, bool detected)
+        /// <param name="afterClear">報告の前に、同じ演出の素材を markClear で消し済みだったか。
+        /// 消した後の報告は同じ演出の中の<b>別の異変</b>として数える（0382「人形の異変と部屋に飛ばされる異変は別物」。
+        /// 2-B の後ろの人形 → 子供部屋、2-A の左のシミ → 右の幕の人形）。</param>
+        public bool Record(string? takeId, bool detected, bool afterClear = false)
         {
             PressCount++;
             LastTakeId = takeId ?? "";
-            LastCounted = detected && LastTakeId.Length > 0 && _reported.Add(LastTakeId);
+            string key = afterClear ? LastTakeId + ClearedSuffix : LastTakeId;
+            LastCounted = detected && LastTakeId.Length > 0 && _reported.Add(key);
             return LastCounted;
         }
+
+        /// <summary>素材を消した後の報告を、同じ演出の別の異変として数えるときの鍵の接尾辞。</summary>
+        public const string ClearedSuffix = "+cleared";
 
         /// <summary>その演出はもう報告されているか（診断・テスト用）。</summary>
         public bool HasReported(string takeId) => _reported.Contains(takeId);

@@ -426,10 +426,13 @@ def mark_clear_findings(events, takes=None):
     lines = [f"  報告で素材だけを消した: {len(clears)} 回"]
     verdicts = []
     cue_of = {}
+    trail_of = set()
     if takes is not None:
         for t in takes:
             for i, st in enumerate(t.get("steps") or []):
                 cue_of[(t["id"], i)] = str(st.get("cueId", "") or "")
+                if st.get("cg") and st.get("cgMode") == "trail":
+                    trail_of.add((t["id"], i))
     for e in clears:
         tid = str(e.get("take", ""))
         step = int(fnum(e, "step", -1.0))
@@ -440,6 +443,18 @@ def mark_clear_findings(events, takes=None):
         if folded:
             verdicts.append(("FAIL", f"{tid}: 報告でカット {step} の素材だけを消すはずが、演出ごと畳まれた（why=mark）— "
                                      "TakeRunnerLogic.NotifyMarkPressed の markClear の順番を見る"))
+            continue
+        if (tid, step) in trail_of:
+            # 素材が後ろをついてくる CG の人形（2-B・0382）。消えたかは ev=trail vis=0 で見る
+            gone = [s for s in events if s.get("ev") == "trail" and str(s.get("vis", "")) == "0"
+                    and t0 - 0.05 <= fnum(s, "t", 0.0) <= t0 + MARK_CLEAR_OFF_SEC]
+            if not gone:
+                verdicts.append(("FAIL", f"{tid}: 報告でカット {step} の人形を消したのに、"
+                                         f"{MARK_CLEAR_OFF_SEC:.0f} 秒以内に ev=trail vis=0 が出ていない — "
+                                         "TakeRunner.ClearStepMaterial の _cgLayer.Hide を見る"))
+                continue
+            dt = fnum(gone[0], "t", t0) - t0
+            verdicts.append(("OK", f"{tid}: 報告でカット {step} の後ろの人形が {dt:.2f} 秒で消え、演出は続いた"))
             continue
         cue = cue_of.get((tid, step), "")
         if cue and cue != "inherit":

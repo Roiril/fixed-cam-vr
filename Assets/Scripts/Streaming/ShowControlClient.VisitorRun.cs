@@ -313,6 +313,8 @@ namespace FixedCamVr.Streaming
             bool anomalyShowing = timelineDirector != null && timelineDirector.AnomalyShowing;
             // 同じく段が進む前に凍らせる。締めの報告は直後にカットが進み、消せる演出ではなくなる。
             bool removable = timelineDirector != null && timelineDirector.ActiveTakeRemovable;
+            // 同じく段が進む前に凍らせる。素材を消し済みの演出への報告は別の異変として数える（0382）。
+            bool afterClear = timelineDirector != null && timelineDirector.ActiveTakeCleared;
             // 「報告するまで」のカット（4 周目 A の締め）と、dismissible な演出だけが反応する。
             // ⚠ 戻り値が「何に効いたか」。畳んだ本人が答えるので、凍らせる順序に依存しない。
             TakeRunnerLogic.MarkResult result =
@@ -324,7 +326,7 @@ namespace FixedCamVr.Streaming
             // 押した回数と、報告した異変の数（0234「1つの異変に対して報告したら内部では1だけカウント」）。
             // 異変に数えるのは**画で「検出した」と言ったもの**だけ ＝ スイの返事（②）と同じ判定を使う。
             // 同じ演出への押し直し（侵食度 1 の嘘の一文を読んで押し直した形）は押した回数にしか乗らない。
-            bool counted = _reportTally.Record(markTakeId, LastMarkDetected);
+            bool counted = _reportTally.Record(markTakeId, LastMarkDetected, afterClear);
 
             // ⚠⚠ **呪いが解けるのは締めのカットが進んだ 1 回だけ**（`canon/LEDGER.md` 0083）。
             //    1〜2 周目で異変を消した（Dismissed）ときに戻すと、**まだ呪われている最中に

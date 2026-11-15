@@ -43,7 +43,9 @@ paths:
 - 消した印（`ActiveCleared`）は演出の終わりまで残る。以後のカットは 2 枚目の層（`overlay2CueId`）と長押しの膨らみを出さない
   — `ApplyStepOverlay2` / `EnsureTakePress` / `SetVisitorMarkProgress` / `NotifyVisitorMarkStarted`
 - 消した後の同じカットでの報告は None（何にも効かない）。`ActiveRemovable` も false。次のカットでは従来どおり `dismissible` で畳まれる
+- そのカットが CG の人形を出していれば人形も引く（`_cgLayer.Hide`・2-B の後ろの人形・0382）。観測は `ev=trail vis=0`
 - 消しただけは「報告で畳まれた」に数えない（skipIfDismissed の相手にならない）。`ShowControlClient` は None 以外を報告成立として数える
+- 消した後の同じ演出への報告は別の異変として数える（`TimelineDirector.ActiveTakeCleared` → `VisitorReportTally.Record(afterClear)`・鍵は id + `ClearedSuffix`）
 
 ## 長押しの開始でカットを進める（markStartAdvance）
 
@@ -72,7 +74,7 @@ paths:
 - `ev=markadv take=<id> step=<進める前のカット> n=<累計>`（`TakeRunner.MarkAdvanceCount`）
 - `mark_advance_findings` は、3 秒（`MARK_ADVANCE_NEXT_SEC`）以内に `ev=step take=<id> i=<step+1>` が続かなければ FAIL。
   最後のカットなら `ev=take st=end` で OK、`why=done` 以外で畳まれたら WARN
-- `ev=markclear take= step= n=` — `mark_clear_findings`。1 秒以内に同じ演出が `why=mark` で畳まれたら FAIL、2 秒以内にそのカットの cue の `ev=cue st=off` が無ければ FAIL
+- `ev=markclear take= step= n=` — `mark_clear_findings`。1 秒以内に同じ演出が `why=mark` で畳まれたら FAIL、2 秒以内にそのカットの cue の `ev=cue st=off`（人形のカットなら `ev=trail vis=0`）が無ければ FAIL
 - `ev=markstartadv take= step= n=` — `mark_start_advance_findings`（判定は markadv と同じ）
 - `ev=takeskip take= by= n=` — `take_skip_findings`。相手の `why=mark` が先に無い・出さなかった演出が後で始まった・相手が畳まれたのに `takeskip` 無しで始まった、なら FAIL
 - `ev=exithold take= sec= n=` — `exit_hold_findings`。持ち始めから sec + 0.5 秒（`EXIT_HOLD_SLACK_SEC`）以内に同じ演出の `ev=take st=end` が無ければ FAIL。台本に `exitHoldSec` が無い・yield でない演出が持ったら FAIL。滞在をはみ出した WARN は持つ秒の内なら出さない

@@ -47,7 +47,9 @@ paths:
 - 子供部屋の動画のカットか、その次の最後のコマ（ライブでないカット）で報告が成立しても、最後のコマが尺どおり終わるまで畳まない。
   報告はその時点で成立して数える（返り値 `Dismissed`）。最後のコマの終わりで `VisitorDismissed` として乱れでライブへ戻る
   — `TakeRunner.ResolveKidsRoomDismissAfterStep` / `TakeRunnerLogic.NotifyMarkPressed(dismissAfterStep)`
-- 動画の前のカット（人形が後ろを付いて来る所）で押したら従来どおり即畳む。区間を出た（yield）・watchdog・卓の中止・ラン開始も即畳む
+- 動画の前のカット（人形が後ろを付いて来る所）は `markClear`（0382）。押すと人形だけ消え（`ClearStepMaterial` が `_cgLayer.Hide`）、演出は続いて線を越えれば子供部屋へ飛ぶ。
+  旗は show.json（git 管理外）の `L2C1#0` の step 0。子供部屋での報告は別の異変に数える（`VisitorReportTally.Record(afterClear)`）
+- 区間を出た（yield）・watchdog・卓の中止・ラン開始は即畳む
 
 ## 観測（`ShowTelemetryHost` と `analyze-xp-log.py` の `kids_jump_findings` を対で直す）
 
