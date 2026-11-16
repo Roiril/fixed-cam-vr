@@ -25,14 +25,14 @@ paths:
 
 ## 契約
 - 判断 `CommsCueLogic`／文面 `CommsPanel.TextFor`（ja/en/fr）／出方 `CommsCueLogic.DeliveryOf` は各 1 か所 〔出典: show-design-2026-10-22.md:1341〕
-- 文面は 4 つの語で通す（違和感 → 異常／遮断／廻る／観測カメラ＝目に見えない異常を映す。「室内カメラ」と呼ばない）。ほかの約束（画を説明しない／周を名指さない／止められないものはログの行で返す／③b は体験者に遮断を任せる ほか）も `CommsNoticeTextTests` 〔LEDGER 0363・0365。memory/comms_reply_spine.md〕
+- 文面は 4 つの語で通す（違和感 → 異常／遮断／廻る／観測カメラ。「室内カメラ」と呼ばない）。ほかの約束（画を説明しない／周を名指さない／止められないものはログの行で返す／③b は体験者に遮断を任せる ほか）も `CommsNoticeTextTests` 〔LEDGER 0363・0365。memory/comms_reply_spine.md〕
 - 面は 1.5m・外 8°・下 17°、頭のヨーだけ追従。③a/③b だけ下 3°。倍率 2/3 は根 1 か所 — `CommsPanel.DistanceM/YawOffsetDeg/PitchOffsetDeg/ClosingPitchOffsetDeg/Scale` 〔出典: show-design:1139, 1393〕
 - 畳まれている間は追従の種を捨て、頭の正面に開く — `CommsPanelFollowTests.WhileFolded_TheFollowSeedIsDropped` 〔出典: show-design:1086〕
 - 地は黒い半透明 0.72、乗っ取り中だけ 0.96 — `CommsPanel.PanelAlpha/TakeoverPanelAlpha/MakeTranslucent` 〔出典: show-design:1114; memory/comms_takeover.md〕
 - 左の 0.15m 角にスイの顔、人形は斑で重ねる。枠線なし。文面の帯の右端は動かさない — `CommsFaceLayout.CellM/StrokeK`・`CommsFaceLayoutTests.FaceFrame_IsRemoved` 〔出典: show-design:1160; memory/comms_face.md〕
 - 位置合わせ・スタッフ準備中は面を隠し時計を止める — `CommsPanel.RegistrationHidden`・`CommsPanelPossessionTests.RegistrationHidesAndPausesAnActiveNoticeUntilExit` 〔出典: show-design:40〕
 - 導入は接続確認 → 練習 → 成功「報告できました。装置は正常です。」→ 名乗り → Reminder。練習系は Fade（打鍵 0） — `HmdOnboardingLogic.Prompt`・`CommsPanel.SetOnboardingNotice`・`CommsNoticeTextTests.GreetingIntroducesSuiAfterTheTutorial` 〔出典: show-design:39; memory/hmd_onboarding.md〕
-- 題字後は Walk（床の矢印と同じ行で出す・18 秒おきに最大 2 回再送）→ 段 0 を抜けた縁で Arrived を上書き — `CommsCueLogic.TickIntro/WalkRepeatSec/WalkRepeatMax`・`CommsPanel.Deliver`→`WalkGuide.NotifyExplaining` 〔出典: show-design:627-660〕
+- 題字後は Walk（床の矢印と同じ行で出す・18 秒おきに最大 2 回再送）→ 段 0 を抜けた縁で Arrived を上書き → 差し替えで ArrivedCamera — `CommsCueLogic.TickIntro/ArrivedCameraDue/WalkRepeatMax`・`CommsPanel.Deliver`→`WalkGuide.NotifyExplaining` 〔出典: show-design:627-660〕
 - 本編の頭は Begin のみ。BeginHow は出さない（`ResetRun` が `_beginHowFired=true`）。Begin は押しのけられても消費しない — `CommsCueLogicTests.EnteringTheMainRun_DoesNotRepeatTheHowTo` 〔出典: show-design:1338-1353 の表は旧。コードが正〕
 - 周の連絡は出さない。本編の頭の Begin の後は、2 周目 C で人形の視点が出たら ForeignFeed「何かが……」を報告を待たずに 1 回だけ（乗っ取りの前のみ） — `CommsCueLogic.Tick`・`CommsCueLogicTests.NoLapIsAnnounced_AfterTheBeginNotice/ForeignFeed_*` 〔LEDGER 0363〕
 - 打つ速さ ja 12 / Latin 18 字/秒、1 字 1 発、上限 7 秒 — `CommsPanelLogic.CharsPerSecFor/MaxTypeSec`・`CommsNoticeTextTests.EveryNotice_TypesAtTheDeviceSpeed` 〔出典: show-design:1037, 1445〕

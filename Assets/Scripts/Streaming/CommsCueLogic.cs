@@ -40,6 +40,7 @@ namespace FixedCamVr.Streaming
         /// ⓪c <b>円へ着いて導入演出が始まった瞬間</b>。到着を告げ、観測カメラへ接続すると言う
         /// （直後にテレビが点いてカメラの映像が来る）。文面は <c>CommsPanel</c>。
         /// ⚠ <b>段 0 を抜けた縁で出す</b>ので、⓪b（歩行の指示）が出ていればそれを押しのけて上書きする。
+        /// ⚠ 読ませ終わった縁に、同じ面のまま <see cref="ArrivedCamera"/> へ入れ替わる（<c>canon/LEDGER.md</c> 0392）。
         /// </summary>
         Arrived,
         /// <summary>
@@ -128,6 +129,14 @@ namespace FixedCamVr.Streaming
         /// 同じ面のまま入れ替えで出す（<c>canon/LEDGER.md</c> 0366「2回順番でスクリーンをだして。入れ替えで。」）。
         /// </summary>
         MarkClearedClose,
+        /// <summary>
+        /// ⓪c の 2 枚目。<see cref="Arrived"/> を読ませ終わった縁に、同じ面のまま入れ替えで出す。
+        /// 観測カメラが肉眼では見えない異常存在を映すと言う（<c>canon/LEDGER.md</c> 0392）。
+        /// 導入のうちに読ませ切れなければ本編の頭で、①（<see cref="Begin"/>）より先に出す。
+        /// ⚠ 末尾に足してある（<see cref="CommsCueLogic.IsOnboarding"/> は並びの範囲で判定する）。
+        /// ⚠ 名前は走行ログ（<c>ev=comms id=</c>）と解析器の綴り。
+        /// </summary>
+        ArrivedCamera,
     }
 
     /// <summary>
@@ -351,6 +360,7 @@ namespace FixedCamVr.Streaming
         private bool _greetFired;
         private bool _walkFired;
         private bool _arrivedFired;
+        private bool _arrivedCameraFired;
         private int _walkRepeats;
         private float _introSec;
         private float _idleSec;
@@ -404,6 +414,7 @@ namespace FixedCamVr.Streaming
             _greetFired = false;
             _walkFired = false;
             _arrivedFired = false;
+            _arrivedCameraFired = false;
             _walkRepeats = 0;
             _introSec = 0f;
             _idleSec = 0f;
@@ -483,6 +494,16 @@ namespace FixedCamVr.Streaming
 
         /// <summary>演出の始まりを告げたか（診断・テスト用）。</summary>
         public bool ArrivedFired => _arrivedFired;
+
+        /// <summary>⓪c の 2 枚目（観測カメラが何を映すか）を出したか（診断・テスト用）。</summary>
+        public bool ArrivedCameraFired => _arrivedCameraFired;
+
+        /// <summary>
+        /// ⓪c の 1 枚目を出し、読ませ終わった縁で 2 枚目がまだなら出す。
+        /// ⚠ 消費しない。面が空くまで待つ（1 枚目を押しのけない）。
+        /// </summary>
+        private bool ArrivedCameraDue(in CommsCueInput inp)
+            => _arrivedFired && !_arrivedCameraFired && inp.panelDoneReading;
 
         /// <summary>時間を進め、このフレームに出す連絡を返す（無ければ <see cref="CommsNotice.None"/>）。</summary>
         public CommsNotice Tick(in CommsCueInput inp)
@@ -572,6 +593,8 @@ namespace FixedCamVr.Streaming
                 return inp.invasionProgress >= CommsCurseLogic.PossessedLevel
                     ? CommsNotice.MarkAnalyzing : CommsNotice.MarkNothing;
             }
+            // ⓪c の 2 枚目を導入のうちに読ませ切れなかった回は、①より先にここで出す（0392）。
+            if (!_beginFired && ArrivedCameraDue(inp)) { _arrivedCameraFired = true; return CommsNotice.ArrivedCamera; }
             // 開始の合図は押しのけられても消費しない。報告を読ませ終わってから改めて出す。
             //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
             if (beginDue) { _beginFired = true; return CommsNotice.Begin; }
@@ -606,6 +629,8 @@ namespace FixedCamVr.Streaming
             if (!inp.introWaiting)
             {
                 _idleSec = 0f;
+                // 1 枚目を読ませ終わった縁に、同じ面のまま 2 枚目へ入れ替える（0392）。
+                if (ArrivedCameraDue(inp)) { _arrivedCameraFired = true; return CommsNotice.ArrivedCamera; }
                 if (_arrivedFired) return CommsNotice.None;
                 _arrivedFired = true;
                 return CommsNotice.Arrived;

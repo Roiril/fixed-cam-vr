@@ -23,7 +23,7 @@ metadata:
 - **廻る。** 開始 `Begin` → 赤い嘘 `CursedReplyText`「そのまま、廻ってください」→ ③a `Halt`「もう廻らないで」。en は circle、fr は tourner。
   `Circling_IsOneVerb_FromTheStartToTheWarning` / `TheWalkingOrders_StartContinueStop`
   ⚠ 途中で「歩く」「周を重ねる」に替えない。替えた版では、締めの「止まって」が何を止めるのか読まれなかった
-- **観測カメラ。** 到着 `Arrived`「観測カメラに接続します。／目に見えない異常も映ります。」だけが名指す。
+- **観測カメラ。** 到着 `Arrived`「到着しました。／観測カメラに接続します。」だけが名指し、読ませ終わった縁に同じ面で `ArrivedCamera`「このカメラは、／肉眼では見えない異常存在を、／高感度で映します。」へ入れ替わる（0392）。本編の頭までに読ませ切れなければ `Begin` より先に出す。
   `TheCameraIsNamedOnArrival` / `TheObservationCamera_ShowsWhatTheEyeCannot`
   ⚠ 「室内カメラ」と呼ばない（0360）。en は observation cameras、fr は caméras d'observation
 

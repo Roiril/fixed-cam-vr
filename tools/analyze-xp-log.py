@@ -2672,6 +2672,18 @@ def analyze(events, others, exp, warns=None):
                                     "（同時に出る約束）")
                 else:
                     verdict("OK", f"⓪c が演出の始まりと同時に届いた（t={t_arrived:.1f}s）")
+                # ⓪c の 2 枚目（0392）。1 枚目を読ませ終わった縁に出て、①より先に来る。
+                t_arrived_cam = _first("ArrivedCamera")
+                if t_arrived is not None:
+                    if t_arrived_cam is None:
+                        verdict("FAIL", "⓪c の 2 枚目『このカメラは、肉眼では見えない…』が届いていない "
+                                        "（CommsCueLogic.ArrivedCameraDue）")
+                    elif t_arrived_cam <= t_arrived:
+                        verdict("FAIL", "⓪c の 2 枚目が 1 枚目より先に出ている")
+                    elif t_begin is not None and t_begin <= t_arrived_cam:
+                        verdict("FAIL", "①が⓪c の 2 枚目より先に出ている")
+                    else:
+                        verdict("OK", f"⓪c の 2 枚目が 1 枚目の {t_arrived_cam - t_arrived:.1f}s 後、①より先に届いた")
 
             # ②の分岐が「異常演出が表示されていたか」と一致しているか。
             # 侵食度1では通常返答を維持できず Takeover が一度だけ走る。ただし最後の解除が

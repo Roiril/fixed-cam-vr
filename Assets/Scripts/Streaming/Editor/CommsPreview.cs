@@ -46,7 +46,7 @@ namespace FixedCamVr.Streaming.EditorTools
         private static readonly CommsNotice[] Notices =
         {
             CommsNotice.Tutorial, CommsNotice.TutorialAccepted, CommsNotice.TutorialReminder,
-            CommsNotice.Greeting, CommsNotice.Walk, CommsNotice.Arrived,
+            CommsNotice.Greeting, CommsNotice.Walk, CommsNotice.Arrived, CommsNotice.ArrivedCamera,
             CommsNotice.Begin, CommsNotice.BeginHow,
             CommsNotice.MarkLogged, CommsNotice.MarkStuck, CommsNotice.MarkNothing,
             // ⚠ 侵食中の空振りの返事。2026-11-13 まで一覧から漏れていて、**この文面だけ縦の座りを

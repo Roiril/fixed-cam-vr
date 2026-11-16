@@ -456,18 +456,30 @@ namespace FixedCamVr.Diagnostics.Tests
             StringAssert.Contains(camera, CommsPanel.NoticeText(CommsNotice.Arrived, lang));
         }
 
+        /// <summary>⓪c の 1 枚目は 0392 の逐語。何を映すかは 2 枚目だけが言う。</summary>
+        [Test]
+        public void TheArrival_ComesInTwoPanels()
+        {
+            Assert.AreEqual("到着しました。\n観測カメラに接続します。",
+                            CommsPanel.NoticeText(CommsNotice.Arrived, ShowLang.Ja));
+            foreach (ShowLang lang in ShowLanguage.All)
+                StringAssert.DoesNotContain(lang == ShowLang.Ja ? "見えない" : "invisible",
+                                            CommsPanel.NoticeText(CommsNotice.Arrived, lang),
+                                            $"1 枚目に 2 枚目の中身が残っている（{ShowLanguage.Code(lang)}）");
+        }
+
         /// <summary>
-        /// ⓪c は、そのカメラが<b>目に見えない異常を映す</b>と言う。ただの室内カメラでは、体験者がなぜ
+        /// ⓪c の 2 枚目は、そのカメラが<b>肉眼では見えない異常存在を映す</b>と言う。ただの室内カメラでは、体験者がなぜ
         /// 自分の目でなくテレビの中の自分を見て歩くのかに答えが無い（2026-11-14 作者の指摘）。
-        /// 「室内カメラ」とは呼ばない。
+        /// 「室内カメラ」とは呼ばない。日本語は 0392 の逐語（改行の位置だけ帯の幅に合わせた）。
         /// </summary>
-        [TestCase(ShowLang.Ja, "目に見えない", "室内")]
-        [TestCase(ShowLang.En, "eyes cannot", "room camera")]
-        [TestCase(ShowLang.Fr, "invisible", "de la pièce")]
+        [TestCase(ShowLang.Ja, "このカメラは、肉眼では見えない異常存在を、高感度で映します。", "室内")]
+        [TestCase(ShowLang.En, "invisible to the naked eye", "room camera")]
+        [TestCase(ShowLang.Fr, "invisibles à l'œil nu", "de la pièce")]
         public void TheObservationCamera_ShowsWhatTheEyeCannot(ShowLang lang, string unseen, string plain)
         {
-            string arrived = CommsPanel.NoticeText(CommsNotice.Arrived, lang);
-            StringAssert.Contains(unseen, arrived);
+            string second = CommsPanel.NoticeText(CommsNotice.ArrivedCamera, lang).Replace("\n", lang == ShowLang.Ja ? "" : " ");
+            StringAssert.Contains(unseen, second);
             foreach (string body in CommsPanel.AllBodies(lang))
                 StringAssert.DoesNotContain(plain, body, "ただの室内のカメラとして呼んでいる");
         }
