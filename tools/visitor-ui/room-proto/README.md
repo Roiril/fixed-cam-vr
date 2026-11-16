@@ -68,16 +68,17 @@
 
 ### 英語と仏語の吹き替えの版
 
-口とカメラは日本語の版と同じコマで、テレビの中の札（管理番号・長押し）だけを英仏にする。音は `layers/stem.mp3`（部屋の空気・テレビ・スイッチ）だけで、声は入れない（0394「再生は一旦なし」）。
+口とカメラは日本語の版と同じコマで、テレビの中の札（管理番号・長押し）だけを英仏にする。`bake-film.py` が焼くのは `layers/stem.mp3`（部屋の空気・テレビ・スイッチ）だけの版で、声は 5 で足す（0395）。
 
 1. `http://localhost:8142/?w=1280&text=en` を開き、コンソールで `await RoomProto.postMeta()`（`?text=` は札の言語。声と口の時刻は日本語のまま）
 2. `await RoomProto.export('film-en', 30, 0, RoomProto.END_AT + 400)`
 3. `py -3.11 tools/visitor-ui/room-proto/bake-film.py --lang en --version <日本語と同じ版>`。`briefing-v1.json` の `film.en` だけを書き換え、ほかの言語は残す
 4. 仏語は `text=fr`・`film-fr`・`--lang fr` で同じ手順。`frames/film-en/` と `frames/film-fr/` を消す
+5. `py -3.11 tools/visitor-ui/generate-doctor-dub.py --lang en fr --base-version <3 の版>`。声を合成し、文ごとに日本語の口の窓の頭へ置いて（`layers/voice-<言語>.mp3`）、効果音だけの版に混ぜた次の版を書く。`film.<言語>.file` だけが替わる。台詞を変えていなければ `--reuse` で合成をやり直さない
 
 - 吹き替えの版の `film.<lang>` には `windowsMs`（文ごとの日本語の口の窓の長さ）が入る。アプリは英仏の字幕をこの窓で切る。英仏の文の長さ（`cues.<lang>[].durationMs`）で進めると、口と字幕がずれていく
 - 札の訳は `briefing-v1.json` の `figures[].tag` と `figures[].hold` の `en` / `fr`。変えたら焼き直す
-- 英仏の声を作ったら、言語ごとの動画に音を足す（映像は流し直さずにコピーでよい）。そのときは窓も声に合わせて測り直す
+- 声は窓に合わせて置く（窓は声に合わせて測り直さない）。窓に収まらない文だけ速める（上限 1.35 倍。超えたら止めずに報告する）
 
 アプリは場面ごとに `film.ja.fromMs`（その場面の分の頭）から流し、文の窓は `voiceMs` に文の頭を足した位置で切る。場面をまたぐときは同じ動画を読み直さずに続けて流す（乱れを挟まない）。最初の文の字幕は声の頭まで待つ。動画が読めないときは、その説明の間だけ声とテレビの形へ戻る。
 

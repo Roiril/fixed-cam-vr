@@ -11,7 +11,8 @@
 字幕は焼かない（アプリが出す）。音は声と効果音（`layers/stem.mp3`）を混ぜる。
 
 英仏（`--lang en|fr`）は吹き替えの体で焼く。口は日本語の声のまま動き、テレビの中の札だけがその言語になる
-（試作のページを `?w=1280&text=en` で開いて `export('film-en', ...)`）。声はまだ入れず、音は効果音だけ。
+（試作のページを `?w=1280&text=en` で開いて `export('film-en', ...)`）。ここで焼くのは効果音だけの版で、
+吹き替えの声は `tools/visitor-ui/generate-doctor-dub.py` が次の版に足す。
 `film.<言語>` には、その動画の口の時刻で切った文の窓 `windowsMs` を書く（アプリは字幕をこの窓で出す）。
 アプリは場面ごとに `fromMs`（その場面の分の頭。前の場面の声の終わり）から流し、文の窓は `voiceMs` に文の頭を足した位置で切る。
 探す位置へすぐ飛べるよう、キーフレームは 0.5 秒ごと。
@@ -41,7 +42,7 @@ def duration(path: Path) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lang", choices=("ja", "en", "fr"), default="ja",
-                    help="ja は声と効果音。en・fr は吹き替えの体（口は日本語のまま・札だけその言語・声なしで効果音だけ）")
+                    help="ja は声と効果音。en・fr は吹き替えの体（口は日本語のまま・札だけその言語・効果音だけ。声は generate-doctor-dub.py が足す）")
     ap.add_argument("--frames", default=None, help="既定は ja が film、ほかは film-<言語>")
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--version", type=int, default=1)
@@ -65,7 +66,7 @@ def main() -> None:
     out = ASSET / film_name
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-framerate", str(args.fps), "-i", "f%05d.jpg"]
     if dub:
-        # 吹き替えの声はまだ無い。効果音だけを、日本語の版と同じ大きさで敷く
+        # 効果音だけを、日本語の版と同じ大きさで敷く（吹き替えの声は generate-doctor-dub.py が次の版に足す）
         cmd += ["-i", str(HERE / "layers" / "stem.mp3")]
         graph = f"[1:a]atrim=end={length:.3f},apad=whole_dur={length:.3f}[a]"
     else:

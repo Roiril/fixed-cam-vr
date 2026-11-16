@@ -65,6 +65,6 @@ Latin のアクセント付き文字は半角として幅を測る。`HmdTextSty
 
 - **WARNING の下の 4 語**は言語ごとの版。`UnauthorizedAccessEffect.UseLanguage(ShowLanguage.Current)` を `CommsTakeoverError.StartEffect` が `Play` の前に呼ぶ。英仏の版は prefab の `englishWords` / `frenchWords`。4 枚そろっていない言語は日本語で出る。版を焼き直したら、出力の `cap` を `UnauthorizedAccessEffect.LatinCapBoxes` と試験の `EnglishWords` / `FrenchWords` へ写す（本番の版は Read/Write 無効で、実行時に不透明の範囲を測れない）
 - **報告の説明のコントローラーの図**: 歩く映像は `loopVideo.startCue` から次の図の文の手前まで。英仏で映像が図を覆い、X・Y の輪と「Hold 1 s」だけが浮いていた（日本語は口の動画なので出ず、動画が読めないときだけ同じ形になっていた）。`verify-runtime.cjs` の試験が図の文で映像が止まることを見る
-- **英仏の博士**は吹き替えの版の動画（`room-proto/README.md`）。字幕は `film.<lang>.windowsMs` で切る。動画が読めないと英仏は声が無いので、媒体なしで文の長さで進む
-- 試作した英語の声は Drive `audio/fixed-cam-vr/doctor-en-trial-v1.mp3`（131 秒・流さない）
+- **英仏の博士**は吹き替えの版の動画（`room-proto/README.md`）。字幕は `film.<lang>.windowsMs` で切る。声は `tools/visitor-ui/generate-doctor-dub.py` が入れる（0395）。動画が読めないと英仏は声が無いので、媒体なしで文の長さで進む
+- ⚠ 合成の字の時刻（`/with-timestamps`）は、eleven_v3 で声より数百 ms 遅れることがある。時刻だけで文を切ると、次の文の頭の語が前の文の尻に入る（英語 14 文で頭の語が欠けた）。文の境目は時刻の近くの無音で決める。確かめるのは文字起こし（scribe）で、窓ごとに入った語を字幕と並べる
 - `CommsNotice.Greeting` の英仏は名乗りの前置き（"Let me introduce myself." / "Je me présente."）

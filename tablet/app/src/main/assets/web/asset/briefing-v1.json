@@ -94,7 +94,7 @@
           "voiceMs": 1500
         },
         "en": {
-          "file": "doctor-room-en-v3.mp4",
+          "file": "doctor-room-en-v4.mp4",
           "poster": "doctor-room-introduction-en-v3.jpg",
           "fromMs": 0,
           "voiceMs": 1500,
@@ -106,7 +106,7 @@
           ]
         },
         "fr": {
-          "file": "doctor-room-fr-v3.mp4",
+          "file": "doctor-room-fr-v4.mp4",
           "poster": "doctor-room-introduction-fr-v3.jpg",
           "fromMs": 0,
           "voiceMs": 1500,
@@ -233,7 +233,7 @@
           "voiceMs": 18753
         },
         "en": {
-          "file": "doctor-room-en-v3.mp4",
+          "file": "doctor-room-en-v4.mp4",
           "poster": "doctor-room-subject-en-v3.jpg",
           "fromMs": 17053,
           "voiceMs": 18753,
@@ -245,7 +245,7 @@
           ]
         },
         "fr": {
-          "file": "doctor-room-fr-v3.mp4",
+          "file": "doctor-room-fr-v4.mp4",
           "poster": "doctor-room-subject-fr-v3.jpg",
           "fromMs": 17053,
           "voiceMs": 18753,
@@ -438,7 +438,7 @@
           "voiceMs": 47709
         },
         "en": {
-          "file": "doctor-room-en-v3.mp4",
+          "file": "doctor-room-en-v4.mp4",
           "poster": "doctor-room-report-en-v3.jpg",
           "fromMs": 47208,
           "voiceMs": 47709,
@@ -454,7 +454,7 @@
           ]
         },
         "fr": {
-          "file": "doctor-room-fr-v3.mp4",
+          "file": "doctor-room-fr-v4.mp4",
           "poster": "doctor-room-report-fr-v3.jpg",
           "fromMs": 47208,
           "voiceMs": 47709,
@@ -564,7 +564,7 @@
           "voiceMs": 96346
         },
         "en": {
-          "file": "doctor-room-en-v3.mp4",
+          "file": "doctor-room-en-v4.mp4",
           "poster": "doctor-room-wear-en-v3.jpg",
           "fromMs": 95846,
           "voiceMs": 96346,
@@ -576,7 +576,7 @@
           ]
         },
         "fr": {
-          "file": "doctor-room-fr-v3.mp4",
+          "file": "doctor-room-fr-v4.mp4",
           "poster": "doctor-room-wear-fr-v3.jpg",
           "fromMs": 95846,
           "voiceMs": 96346,
