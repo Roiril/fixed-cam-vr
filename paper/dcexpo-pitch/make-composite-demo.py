@@ -3,8 +3,8 @@
     py -3.11 paper/dcexpo-pitch/make-composite-demo.py <出力フォルダ>
 
 同じ環境画像（カメラ A の無人の実写）から、画像生成で 2 枚を別々に作ってある。
-  src/gen-person.png  左に、右を向いて立つ人
-  src/gen-ghost.png   右に、左へ襲い掛かる幽霊の女
+  src/gen-person.png  左に、右を向いて立つ人（手すりの手前）
+  src/gen-ghost.png   右に、左へ襲い掛かる幽霊の女（手すりの手前）
 カメラが動かないので 2 枚は同じ構図になり、片方の右側をもう片方の右側へ差し替えるだけで合成になる。
 作品に出てくる物は使わない（ネタバレを避ける代役）。プロンプトは src/*.prompt.txt。
 1 合成前 / 2 合成後（右側をそのまま差し替える）/ 3 境界ブレンド後 / 4 画像加工後。
@@ -20,8 +20,8 @@ ROOT = HERE.parent.parent
 ENV = ROOT / "Assets/StreamingAssets/show/assets/plate_A_20261115_125052.jpg"
 PERSON = HERE / "src/gen-person.png"
 GHOST = HERE / "src/gen-ghost.png"
-SEAM = 0.40      # 差し替える境目（画面の幅に対して）。幽霊の手が中央より左へ出ているので、中央より少し左に置く
-FEATHER = 150    # 境界ブレンドの幅（px）
+SEAM = 0.50      # 差し替える境目（画面の幅に対して）。ちょうど半分
+FEATHER = 150    # 境界ブレンドの幅（px）。幽霊の指先が境目のすぐ右にあるので、境目から左へ取る
 rng = np.random.default_rng(7)
 
 
@@ -66,10 +66,10 @@ def main(out_dir):
     s2[:, seam:] = b[:, seam:]
 
     # 3 境界ブレンド後: 境目の近くで明るさと色を揃え、幅を持たせて混ぜる
-    band = slice(seam - 110, seam + 10)
+    band = slice(seam - 120, seam)
     gain = a[:, band].mean(axis=(0, 1)) / b[:, band].mean(axis=(0, 1))
     xs = np.arange(w, dtype=np.float32)
-    t = np.clip((xs - (seam - FEATHER / 2)) / FEATHER, 0, 1)
+    t = np.clip((xs - (seam - FEATHER)) / FEATHER, 0, 1)
     m = (t * t * (3 - 2 * t))[None, :, None]
     fade = np.clip((xs - seam) / (w * 0.25), 0, 1)[None, :, None]      # 色の補正は境目から離れるほど弱める
     b2 = b * (gain[None, None, :] * (1 - fade) + fade)
@@ -88,17 +88,12 @@ def main(out_dir):
     b_im.save(out / f"素材_生成2_右に幽霊_{w}x{h}.png")
 
     # 境目の拡大（2 と 3 の差は引きでは見えにくい）と、境目の位置を引いた版
-    box = (seam - 120, round(h * 0.26), seam + 120, round(h * 0.26) + 180)
+    box = (seam - 160, round(h * 0.24), seam + 80, round(h * 0.24) + 180)
     for name, im in zip(("2_合成後", "3_境界ブレンド後"), imgs[1:3]):
         im.crop(box).resize((960, 720), Image.LANCZOS).save(out / f"{name}_境目の拡大.png")
     guide = imgs[1].copy()
     ImageDraw.Draw(guide).line((seam, 0, seam, h), fill=(176, 42, 50), width=4)
     guide.save(out / f"2_合成後_境目に線_{w}x{h}.png")
-
-    # 差の大きさ（境目の左右 1px の差の平均。0〜255）
-    step2 = np.abs(s2[:, seam] - s2[:, seam - 1]).mean() * 255
-    step3 = np.abs(s3[:, seam] - s3[:, seam - 1]).mean() * 255
-    inner = np.abs(a[:, seam - 40] - a[:, seam - 41]).mean() * 255
 
     # 4 枚を並べた版（ラベルつき）
     pw, ph, gap, pad, lab = 800, 600, 28, 56, 96
@@ -112,7 +107,7 @@ def main(out_dir):
         dr.rectangle((x, pad + ph + 34, x + 36, pad + ph + 38), fill=(176, 42, 50))
         dr.text((x, pad + ph + 46), f"{n}　{label}", font=font, fill=(21, 17, 14))
     sheet.save(out / "0_4段階を並べた版.png")
-    print(f"size={w}x{h} seam={seam} step2={step2:.1f} step3={step3:.1f} inner={inner:.1f} gain={np.round(gain, 3)}")
+    print(f"size={w}x{h} seam={seam} gain={np.round(gain, 3)}")
 
 
 if __name__ == "__main__":
