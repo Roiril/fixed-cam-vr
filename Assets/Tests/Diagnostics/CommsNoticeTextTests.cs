@@ -456,12 +456,17 @@ namespace FixedCamVr.Diagnostics.Tests
             StringAssert.Contains(camera, CommsPanel.NoticeText(CommsNotice.Arrived, lang));
         }
 
-        /// <summary>⓪c の 1 枚目は 0392 の逐語。何を映すかは 2 枚目だけが言う。</summary>
+        /// <summary>
+        /// ⓪c の 2 枚はユーザーの文（<c>canon/LEDGER.md</c> 0392・0393）。<b>日本語はこのテストの文字列が正本</b>。
+        /// シュビーの案で書き換えない。変えるのはユーザーが新しく言ったときだけ。
+        /// </summary>
         [Test]
         public void TheArrival_ComesInTwoPanels()
         {
             Assert.AreEqual("到着しました。\n観測カメラに接続します。",
                             CommsPanel.NoticeText(CommsNotice.Arrived, ShowLang.Ja));
+            Assert.AreEqual("このカメラは、\n異常存在を高感度で映します。",
+                            CommsPanel.NoticeText(CommsNotice.ArrivedCamera, ShowLang.Ja));
             foreach (ShowLang lang in ShowLanguage.All)
                 StringAssert.DoesNotContain(lang == ShowLang.Ja ? "見えない" : "invisible",
                                             CommsPanel.NoticeText(CommsNotice.Arrived, lang),

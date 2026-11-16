@@ -4,7 +4,7 @@ description: スイの文面を通している 4 つの語（違和感→異常�
 metadata:
   node_type: memory
   type: project
-  modified: 2026-11-14T07:03:53.554Z
+  modified: 2026-11-16T03:16:17.387Z
   originSessionId: 9b348fe0-870c-4b5d-a739-2c09a2857306
 ---
 
@@ -23,7 +23,7 @@ metadata:
 - **廻る。** 開始 `Begin` → 赤い嘘 `CursedReplyText`「そのまま、廻ってください」→ ③a `Halt`「もう廻らないで」。en は circle、fr は tourner。
   `Circling_IsOneVerb_FromTheStartToTheWarning` / `TheWalkingOrders_StartContinueStop`
   ⚠ 途中で「歩く」「周を重ねる」に替えない。替えた版では、締めの「止まって」が何を止めるのか読まれなかった
-- **観測カメラ。** 到着 `Arrived`「到着しました。／観測カメラに接続します。」だけが名指し、読ませ終わった縁に同じ面で `ArrivedCamera`「このカメラは、／異常存在を高感度で映します。」へ入れ替わる（0392・0393）。本編の頭までに読ませ切れなければ `Begin` より先に出す。
+- **観測カメラ。** 到着 `Arrived`「到着しました。／観測カメラに接続します。」だけが名指し、読ませ終わった縁に同じ面で `ArrivedCamera`「このカメラは、／異常存在を高感度で映します。」へ入れ替わる（0392・0393）。本編の頭までに読ませ切れなければ `Begin` より先に出す。**到着の 2 枚の日本語はユーザーの文で正本**（`CommsNoticeTextTests.TheArrival_ComesInTwoPanels` が逐語で守る）。シュビーの案で書き換えない。
   `TheCameraIsNamedOnArrival` / `TheObservationCamera_ShowsWhatTheEyeCannot`
   ⚠ 「室内カメラ」と呼ばない（0360）。en は observation cameras、fr は caméras d'observation
 
