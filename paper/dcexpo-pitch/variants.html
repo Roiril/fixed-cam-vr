@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="design-mode" content="expressive">
+<title>廻リ視 — 3 枚目の別案</title>
+<style>
+/*@@FONTS@@*/
+:root {
+  --night: #0b0908; --cream: #ece5d8; --cream-2: #b9b0a2; --cream-3: #8a8175;
+  --sumi: #15110e; --sumi-2: #473e34; --sumi-3: #74695b;
+  --red: #b02a32; --red-on-dark: #e0574f;
+  --brush: "Yuji Boku", "Yu Mincho", serif;
+  --serif: "Shippori Mincho", "Yu Mincho", serif;
+  --mono: "IBM Plex Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+.slide { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; display: none; font-family: var(--serif); font-feature-settings: "palt"; line-height: 1.5; }
+.slide.on { display: block; }
+.slide > * { position: absolute; margin: 0; }
+p, h2 { font-weight: 400; }
+
+/* 2 番: テレビが主役 */
+.tvhero { background: #000; color: var(--cream); }
+.tvhero .big { right: -230px; top: -70px; width: 1560px; }
+.tvhero .big img { display: block; width: 100%; }
+.tvhero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, #000 0, rgb(0 0 0 / 88%) 22%, rgb(0 0 0 / 0%) 52%); }
+.tvhero .txt { z-index: 2; }
+.tvhero .rule { left: 112px; top: 96px; width: 56px; height: 5px; background: var(--red-on-dark); }
+.tvhero h2 { left: 104px; top: 128px; font-family: var(--brush); font-size: 46px; letter-spacing: .14em; }
+.tvhero .lead { left: 104px; top: 300px; font-size: 84px; font-weight: 600; line-height: 1.42; letter-spacing: .04em; }
+.tvhero .sub { left: 108px; top: 580px; font-size: 32px; line-height: 1.8; letter-spacing: .04em; color: var(--cream-2); }
+.tvhero .inset { left: 104px; bottom: 76px; width: 400px; padding: 8px; background: #f1ebdd; transform: rotate(-1.4deg); box-shadow: 0 18px 30px rgb(0 0 0 / 60%); }
+.tvhero .inset img { display: block; width: 100%; }
+.tvhero .incap { left: 540px; bottom: 96px; font-size: 26px; letter-spacing: .06em; color: var(--cream-2); }
+.tvhero .note { right: 84px; bottom: 60px; font-size: 20px; color: var(--cream-3); z-index: 2; }
+
+/* 3 番: 図面が主役 */
+.plan { background: #f4f1ea; color: var(--sumi); }
+.plan .rule { left: 112px; top: 96px; width: 56px; height: 5px; background: var(--red); }
+.plan h2 { left: 104px; top: 128px; font-family: var(--brush); font-size: 46px; letter-spacing: .14em; }
+.plan .lead { left: 104px; top: 300px; font-size: 70px; font-weight: 600; line-height: 1.45; letter-spacing: .04em; }
+.plan .sub { left: 108px; top: 540px; font-size: 30px; line-height: 1.8; letter-spacing: .04em; color: var(--sumi-2); }
+.plan svg { right: 90px; top: 90px; width: 980px; height: 900px; }
+.plan svg text { font-family: var(--mono); font-size: 22px; letter-spacing: .1em; fill: var(--sumi-2); }
+.plan svg .jp { font-family: var(--serif); font-size: 26px; letter-spacing: .06em; fill: var(--sumi); }
+.plan .note { right: 90px; bottom: 60px; font-size: 20px; color: var(--sumi-3); }
+</style>
+</head>
+<body>
+
+<section class="slide tvhero">
+  <div class="big"><img src="@@website/assets/fx/stain.webp@@" alt=""></div>
+  <i class="rule txt"></i>
+  <h2 class="txt">固定視点×実世界</h2>
+  <p class="lead txt">現実の部屋に、<br>カメラを三台置く。</p>
+  <p class="sub txt">体験者は、映像に映る自分を<br>見ながら歩く。</p>
+  <figure class="inset txt"><img src="@@paper/dcexpo-pitch/img/visitor.jpg@@" alt=""></figure>
+  <p class="incap txt">現実では、HMD をかぶって歩いている。</p>
+  <p class="note">テレビの画は PC 上の再現映像</p>
+</section>
+
+<section class="slide plan">
+  <i class="rule"></i>
+  <h2>固定視点×実世界</h2>
+  <p class="lead">現実の部屋に、<br>カメラを三台置く。</p>
+  <p class="sub">体験者は、映像に映る自分を<br>見ながら歩く。</p>
+  <svg viewBox="0 0 980 900" fill="none" stroke="#15110e" stroke-width="2">
+    <rect x="120" y="110" width="700" height="660"/>
+    <path d="M470 110 V470 H820" stroke-width="5"/>
+    <path d="M160 730 L470 470 L300 730 Z" fill="#b02a32" fill-opacity=".13" stroke="none"/>
+    <path d="M780 730 L470 470 L640 730 Z" fill="#15110e" fill-opacity=".07" stroke="none"/>
+    <path d="M160 150 L430 330 L430 150 Z" fill="#15110e" fill-opacity=".07" stroke="none"/>
+    <rect x="140" y="716" width="34" height="22" fill="#b02a32" stroke="#b02a32" transform="rotate(-38 157 727)"/>
+    <rect x="766" y="716" width="34" height="22" fill="#15110e" transform="rotate(38 783 727)"/>
+    <rect x="140" y="140" width="34" height="22" fill="#15110e" transform="rotate(34 157 151)"/>
+    <path d="M300 600 C380 660 560 660 650 590 C720 530 700 400 640 330" stroke-width="1.5" stroke-dasharray="4 8"/>
+    <circle cx="300" cy="600" r="16" fill="#f4f1ea"/>
+    <path d="M300 584 v-14"/>
+    <text x="120" y="810" stroke="none">CAM 01</text>
+    <text x="724" y="810" stroke="none">CAM 02</text>
+    <text x="120" y="92" stroke="none">CAM 03</text>
+    <text class="jp" x="330" y="560" stroke="none">体験者</text>
+    <text class="jp" x="500" y="440" stroke="none">壁</text>
+  </svg>
+  <p class="note">配置は模式図</p>
+</section>
+
+<script>
+(() => {
+  const s = [...document.querySelectorAll(".slide")];
+  const n = (parseInt(location.hash.slice(1), 10) || 1) - 1;
+  s.forEach((e, i) => e.classList.toggle("on", i === n));
+})();
+</script>
+</body>
+</html>

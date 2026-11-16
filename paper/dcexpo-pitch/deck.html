@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design-mode" content="expressive">
+<title>廻リ視 — INTER BEE IGNITION × DCEXPO 出展者プレゼンテーション</title>
+<style>
+/*@@FONTS@@*/
+:root {
+  --night: #0b0908;
+  --cream: #ece5d8;
+  --cream-2: #b9b0a2;
+  --cream-3: #8a8175;
+  --wall: #d6ccb9;
+  --sumi: #15110e;
+  --sumi-2: #473e34;
+  --sumi-3: #74695b;
+  --red: #b02a32;
+  --red-on-dark: #e0574f;
+  --paper: #f1ebdd;
+  --brush: "Yuji Boku", "Yu Mincho", "Hiragino Mincho ProN", serif;
+  --serif: "Shippori Mincho", "Yu Mincho", "Hiragino Mincho ProN", serif;
+  --mono: "IBM Plex Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+.slide {
+  position: absolute; left: 50%; top: 50%;
+  width: 1920px; height: 1080px;
+  transform: translate(-50%, -50%) scale(var(--k, 1));
+  overflow: hidden; display: none;
+  font-family: var(--serif); font-feature-settings: "palt";
+  line-height: 1.5;
+}
+.slide.on { display: block; }
+.slide img { display: block; }
+.slide p, .slide h2, .slide h3 { margin: 0; font-weight: 400; }
+
+/* 地 */
+.wall { background: var(--wall) url(@@paper/dcexpo-pitch/img/wall.jpg@@) center / cover; color: var(--sumi); }
+.drape { background: var(--night) url(@@paper/dcexpo-pitch/img/drape.jpg@@) center / cover; color: var(--cream); }
+.drape::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgb(11 9 8 / 0%) 0, rgb(11 9 8 / 46%) 26%, rgb(11 9 8 / 62%) 100%);
+}
+.drape > * { position: absolute; }
+
+/* 左の柱 */
+.rule { position: absolute; left: 112px; top: 96px; width: 56px; height: 5px; background: var(--red); }
+.drape .rule { background: var(--red-on-dark); }
+.spine {
+  position: absolute; left: 100px; top: 132px;
+  writing-mode: vertical-rl; font-family: var(--brush);
+  font-size: 72px; line-height: 80px; letter-spacing: .1em; white-space: nowrap;
+}
+.page {
+  position: absolute; left: 104px; bottom: 66px;
+  font-family: var(--mono); font-size: 20px; letter-spacing: .08em; color: var(--sumi-3);
+}
+.drape .page { color: var(--cream-3); }
+.lead { position: absolute; left: 300px; top: 92px; font-size: 62px; font-weight: 600; line-height: 1.48; letter-spacing: .04em; }
+.sub { position: absolute; left: 304px; font-size: 30px; line-height: 1.75; letter-spacing: .04em; color: var(--sumi-2); }
+.drape .sub { color: var(--cream-2); }
+.note { position: absolute; right: 84px; bottom: 66px; font-size: 20px; letter-spacing: .06em; color: var(--sumi-3); }
+.drape .note { color: var(--cream-3); }
+
+/* 壁に留めた写真 */
+.photo {
+  position: absolute; margin: 0; padding: 14px;
+  background: var(--paper);
+  box-shadow: 0 2px 3px rgb(21 17 14 / 30%), 0 18px 30px rgb(21 17 14 / 26%);
+}
+.photo img { width: 100%; height: auto; }
+.photo::before {
+  content: ""; position: absolute; left: 50%; top: -22px;
+  width: 128px; height: 40px; margin-left: -64px;
+  background: rgb(226 214 184 / 78%);
+  box-shadow: 0 1px 2px rgb(21 17 14 / 22%);
+  transform: rotate(-2deg);
+}
+.cap { position: absolute; }
+.cap b { display: block; font-size: 34px; font-weight: 600; letter-spacing: .1em; }
+.cap span { display: block; margin-top: 6px; font-size: 27px; line-height: 1.6; letter-spacing: .04em; color: var(--sumi-2); }
+
+/* 1・5 キービジュアル */
+.kv { background: #000 url(@@paper/dcexpo-pitch/img/kv.jpg@@) center / cover; color: var(--cream); }
+.kv .who { position: absolute; right: 68px; bottom: 44px; text-align: right; }
+.kv .who span { display: block; font-size: 23px; letter-spacing: .2em; color: #d9d0c0; }
+.kv .who b { display: block; margin-top: 4px; font-size: 42px; font-weight: 400; letter-spacing: .2em; margin-right: -.2em; }
+
+/* 2 固定視点とは */
+.views { position: absolute; left: 300px; top: 470px; width: 560px; }
+.view { display: grid; grid-template-columns: 132px 1fr; column-gap: 34px; align-items: center; height: 152px; }
+.view + .view { border-top: 1px solid rgb(21 17 14 / 20%); }
+.view svg { width: 132px; height: 132px; }
+.view h3 { font-size: 40px; font-weight: 600; letter-spacing: .12em; }
+.view p { margin-top: 2px; font-size: 25px; letter-spacing: .04em; color: var(--sumi-2); }
+.view.is h3 { color: var(--red); }
+.console { position: absolute; left: 930px; top: 372px; width: 920px; filter: drop-shadow(0 22px 22px rgb(21 17 14 / 34%)); }
+.console > img { width: 100%; }
+.console .screen {
+  position: absolute; left: 20.29%; top: 16.35%; width: 59.75%; height: 62.1%;
+  overflow: hidden; background: #000;
+}
+.console .screen img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 42%; }
+.console .screen::after {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(180deg, rgb(0 0 0 / 0%) 0 3px, rgb(0 0 0 / 16%) 3px 4px);
+  box-shadow: inset 0 0 60px rgb(0 0 0 / 60%);
+}
+
+/* 3 固定視点×実世界 */
+.cctv { position: absolute; right: 44px; top: -34px; width: 300px; filter: drop-shadow(-14px 18px 16px rgb(21 17 14 / 30%)); }
+
+/* 4 良さ */
+.merit { position: absolute; top: 214px; width: 478px; }
+.merit .photo { position: relative; }
+.merit h3 { margin-top: 44px; font-size: 46px; font-weight: 600; letter-spacing: .1em; }
+.merit h3::before { content: ""; display: block; width: 44px; height: 4px; margin-bottom: 20px; background: var(--red); }
+.merit p { margin-top: 14px; font-size: 28px; line-height: 1.7; letter-spacing: .04em; color: var(--sumi-2); }
+
+/* 6 ストーリー */
+.tale {
+  left: 300px; top: 136px; height: 860px; white-space: nowrap;
+  writing-mode: vertical-rl; font-size: 50px; font-weight: 600; line-height: 1.9; letter-spacing: .12em;
+}
+.drape .lead { left: 620px; top: 138px; font-size: 52px; }
+.lap { top: 410px; width: 396px; }
+.lap img { width: 100%; }
+.lap h3 { margin-top: 26px; font-family: var(--brush); font-size: 40px; letter-spacing: .14em; }
+.lap p { margin-top: 8px; font-size: 24px; line-height: 1.65; color: var(--cream-2); white-space: nowrap; }
+
+/* 7 仕組み */
+.flow { left: 300px; top: 404px; width: 1540px; height: 440px; }
+.flow > * { position: absolute; }
+.feed { top: 92px; width: 272px; }
+.feed img { width: 100%; height: 204px; object-fit: cover; outline: 1px solid rgb(236 229 216 / 28%); }
+.feed b, .tv b { display: block; margin-top: 14px; font-family: var(--mono); font-weight: 500; font-size: 20px; letter-spacing: .12em; color: var(--cream-2); }
+.wire { left: 876px; top: 193px; width: 150px; height: 2px; background: var(--cream-2); }
+.wire::after {
+  content: ""; position: absolute; right: -2px; top: -7px;
+  border-left: 14px solid var(--cream-2); border-top: 8px solid transparent; border-bottom: 8px solid transparent;
+}
+.wire span { position: absolute; left: 0; right: 14px; top: -50px; text-align: center; font-size: 26px; letter-spacing: .08em; color: var(--cream); }
+.tv { left: 1052px; top: 0; width: 488px; }
+.tv img { width: 100%; }
+.tv b { margin-top: 6px; padding-left: 34px; }
+.facts { left: 300px; top: 862px; display: flex; gap: 72px; }
+.facts div { padding-left: 22px; border-left: 2px solid var(--red-on-dark); }
+.facts span { display: block; font-size: 22px; letter-spacing: .12em; color: var(--cream-2); }
+.facts b { display: block; margin-top: 2px; font-size: 36px; font-weight: 600; letter-spacing: .06em; }
+
+/* 8 展示 */
+.room { background: #000 url(@@website/assets/room.jpg@@) center / cover; color: var(--cream); }
+.room::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgb(11 9 8 / 0%) 0, rgb(11 9 8 / 30%) 40%, rgb(11 9 8 / 58%) 100%); }
+.room > * { position: absolute; }
+.room .logo { right: 100px; top: 84px; width: 430px; }
+.where { left: 620px; top: 300px; }
+.where .venue { font-size: 30px; letter-spacing: .16em; color: #d9d0c0; }
+.where .booth { margin-top: 10px; display: flex; align-items: baseline; gap: 34px; line-height: 1; }
+.where .booth span { font-size: 62px; font-weight: 600; letter-spacing: .14em; }
+.where .booth b { font-family: var(--serif); font-size: 230px; font-weight: 600; letter-spacing: .02em; }
+.where .do { margin-top: 26px; font-size: 54px; font-weight: 600; letter-spacing: .1em; }
+.where .day { margin-top: 20px; font-size: 30px; letter-spacing: .1em; color: #d9d0c0; }
+.prize { left: 620px; bottom: 76px; padding-left: 22px; border-left: 2px solid var(--red-on-dark); font-size: 30px; letter-spacing: .1em; }
+.qr { right: 100px; bottom: 70px; width: 216px; text-align: center; }
+.qr svg { display: block; width: 216px; height: 216px; }
+.qr span { display: block; margin-top: 12px; font-family: var(--mono); font-size: 18px; letter-spacing: .04em; color: #d9d0c0; }
+
+@media print {
+  @page { size: 1920px 1080px; margin: 0; }
+  html, body { height: auto; overflow: visible; background: none; }
+  .slide { display: block; position: relative; left: 0; top: 0; transform: none; break-after: page; }
+}
+</style>
+</head>
+<body>
+
+<section class="slide kv" aria-label="廻リ視">
+  <p class="who"><span>明治大学大学院 先端数理科学研究科</span><b>白石大晴</b></p>
+</section>
+
+<section class="slide wall">
+  <i class="rule"></i>
+  <h2 class="spine">固定視点とは</h2>
+  <p class="lead">カメラは動かない。<br>動くのは、自分だけ。</p>
+  <p class="sub" style="top:300px">部屋ごとに置かれたカメラが、自分のキャラクターを映す。<br>1990年代のホラーゲームで広まった見せ方。</p>
+  <div class="views">
+    <div class="view">
+      <svg viewBox="0 0 132 132" fill="none" stroke="#15110e" stroke-width="2.5" stroke-linejoin="round">
+        <path d="M66 96 L30 22 H102 Z" fill="#15110e" fill-opacity=".1" stroke-width="1.5"/>
+        <circle cx="66" cy="98" r="11" fill="#d6ccb9"/>
+        <rect x="56" y="90" width="20" height="13" fill="#15110e"/>
+      </svg>
+      <div><h3>一人称</h3><p>カメラは自分の目。</p></div>
+    </div>
+    <div class="view">
+      <svg viewBox="0 0 132 132" fill="none" stroke="#15110e" stroke-width="2.5" stroke-linejoin="round">
+        <path d="M66 112 L26 18 H106 Z" fill="#15110e" fill-opacity=".1" stroke-width="1.5"/>
+        <circle cx="66" cy="58" r="11" fill="#d6ccb9"/>
+        <path d="M66 47 v-9" />
+        <rect x="56" y="105" width="20" height="13" fill="#15110e"/>
+      </svg>
+      <div><h3>三人称</h3><p>カメラは背中についてくる。</p></div>
+    </div>
+    <div class="view is">
+      <svg viewBox="0 0 132 132" fill="none" stroke="#15110e" stroke-width="2.5" stroke-linejoin="round">
+        <rect x="10" y="10" width="112" height="112"/>
+        <path d="M24 24 L122 62 V122 H62 Z" fill="#b02a32" fill-opacity=".14" stroke="none"/>
+        <path d="M94 98 C70 100 54 84 60 62" stroke-width="1.5" stroke-dasharray="3 6"/>
+        <circle cx="94" cy="98" r="11" fill="#d6ccb9"/>
+        <rect x="13" y="16" width="20" height="13" fill="#b02a32" stroke="#b02a32" transform="rotate(38 23 22)"/>
+      </svg>
+      <div><h3>固定視点</h3><p>カメラは部屋の隅から動かない。</p></div>
+    </div>
+  </div>
+  <div class="console">
+    <img src="@@website/assets/handheld.webp@@" alt="">
+    <div class="screen"><img src="@@website/assets/camera-fiction-01.webp@@" alt="廊下の隅のカメラから、歩く人物を見下ろした画"></div>
+  </div>
+  <p class="note">ゲーム機と画面の絵は生成した画像</p>
+  <span class="page">02 / 08</span>
+</section>
+
+<section class="slide wall">
+  <i class="rule"></i>
+  <h2 class="spine">固定視点×実世界</h2>
+  <p class="lead">現実の部屋に、<br>カメラを三台置く。</p>
+  <p class="sub" style="top:300px">体験者は、映像に映る自分を見ながら歩く。</p>
+  <img class="cctv" src="@@website/assets/cctv.webp@@" alt="">
+  <figure class="photo" style="left:300px;top:420px;width:760px;transform:rotate(-1.2deg)">
+    <img src="@@paper/dcexpo-pitch/img/visitor.jpg@@" alt="HMD をかぶって幕の前に立つ体験者">
+  </figure>
+  <p class="cap" style="left:306px;top:880px"><b>現実</b><span>HMD をかぶって、本物の部屋を歩く。</span></p>
+  <figure class="photo" style="left:1130px;top:346px;width:640px;transform:rotate(1.3deg)">
+    <img src="@@website/assets/fx/stain.webp@@" alt="テレビに映った監視カメラの映像。体験者の背中が映っている">
+  </figure>
+  <p class="cap" style="left:1140px;top:880px"><b>HMD の中</b><span>テレビに、カメラの映像が映る。</span></p>
+  <p class="note">右は PC 上の再現映像</p>
+  <span class="page">03 / 08</span>
+</section>
+
+<section class="slide wall">
+  <i class="rule"></i>
+  <h2 class="spine">固定視点がゆえの良さ</h2>
+  <div class="merit" style="left:300px">
+    <figure class="photo" style="transform:rotate(-.9deg)"><img src="@@website/assets/fx/doll-b.webp@@" alt=""></figure>
+    <h3>死角がある</h3>
+    <p>カメラに映らない場所は、<br>見えない。</p>
+  </div>
+  <div class="merit" style="left:830px">
+    <figure class="photo" style="transform:rotate(.7deg)"><img src="@@website/assets/fx/pov-chase.webp@@" alt=""></figure>
+    <h3>自分が映る</h3>
+    <p>画面の中の自分に、<br>何かが近づいてくる。</p>
+  </div>
+  <div class="merit" style="left:1360px">
+    <figure class="photo" style="transform:rotate(-.5deg)"><img src="@@website/assets/fx/doll-a.webp@@" alt=""></figure>
+    <h3>書き換えられる</h3>
+    <p>部屋は同じなのに、<br>映像の中だけが変わっていく。</p>
+  </div>
+  <p class="note">画面は PC 上の再現映像</p>
+  <span class="page">04 / 08</span>
+</section>
+
+<section class="slide kv" aria-label="廻リ視">
+  <p class="who"><span>明治大学大学院 先端数理科学研究科</span><b>白石大晴</b></p>
+</section>
+
+<section class="slide drape">
+  <i class="rule"></i>
+  <h2 class="spine">ストーリー</h2>
+  <p class="tale">あなたは、怪異調査員として、<br>呪われた壁の調査に向かう。</p>
+  <p class="lead">部屋を三周する。<br>異変を見つけたら、報告する。</p>
+  <div class="lap" style="left:620px">
+    <img src="@@website/assets/fx/handprint.webp@@" alt="">
+    <h3>一周目</h3><p>壁に、血の手形が滲む。</p>
+  </div>
+  <div class="lap" style="left:1030px">
+    <img src="@@website/assets/fx/stain-face.webp@@" alt="">
+    <h3>二周目</h3><p>幕が膨らんで、笑う顔がせり出す。</p>
+  </div>
+  <div class="lap" style="left:1440px">
+    <img src="@@website/assets/fx/warp.webp@@" alt="">
+    <h3>三周目</h3><p>部屋が伸び縮みして、傾く。</p>
+  </div>
+  <p class="note">画面は PC 上の再現映像</p>
+  <span class="page">06 / 08</span>
+</section>
+
+<section class="slide drape">
+  <i class="rule"></i>
+  <h2 class="spine">仕組み</h2>
+  <p class="lead" style="left:300px;top:128px">三台のカメラの映像を、<br>無線で HMD へ送る。</p>
+  <p class="sub" style="top:322px">HMD の中で、実写の映像に CG を重ねる。</p>
+  <div class="flow">
+    <div class="feed" style="left:0"><img src="@@website/assets/camera-01.webp@@" alt=""><b>CAM 01</b></div>
+    <div class="feed" style="left:288px"><img src="@@website/assets/camera-02.webp@@" alt=""><b>CAM 02</b></div>
+    <div class="feed" style="left:576px"><img src="@@website/assets/camera-03.webp@@" alt=""><b>CAM 03</b></div>
+    <i class="wire"><span>Wi-Fi</span></i>
+    <div class="tv"><img src="@@website/assets/fx/tv-power.webp@@" alt=""><b>HMD</b></div>
+  </div>
+  <div class="facts">
+    <div><span>カメラ</span><b>スマートフォン 3 台</b></div>
+    <div><span>HMD</span><b>Meta Quest 3</b></div>
+    <div><span>体験時間</span><b>約 3 分</b></div>
+  </div>
+  <span class="page">07 / 08</span>
+</section>
+
+<section class="slide room">
+  <img class="logo" src="@@website/assets/title.png@@" alt="廻リ視">
+  <div class="where">
+    <p class="venue">INTER BEE IGNITION × DCEXPO</p>
+    <p class="booth"><span>小間</span><b>4015</b></p>
+    <p class="do">体験できます。</p>
+    <p class="day">幕張メッセ　11月18日（水）– 20日（金）</p>
+  </div>
+  <p class="prize">IVRC2026 総合優勝 ／ DCEXPO賞</p>
+  <div class="qr"><!--@@QR@@--><span>mawarimi.vercel.app</span></div>
+</section>
+
+<script>
+(() => {
+  const slides = [...document.querySelectorAll(".slide")];
+  let at = 0;
+  const fit = () => document.documentElement.style.setProperty("--k", Math.min(innerWidth / 1920, innerHeight / 1080));
+  const show = (n) => {
+    at = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, i) => s.classList.toggle("on", i === at));
+    history.replaceState(null, "", "#" + (at + 1));
+  };
+  addEventListener("resize", fit);
+  addEventListener("keydown", (e) => {
+    if (["ArrowRight", "ArrowDown", "PageDown", " ", "Enter"].includes(e.key)) { e.preventDefault(); show(at + 1); }
+    if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace"].includes(e.key)) { e.preventDefault(); show(at - 1); }
+    if (e.key === "Home") show(0);
+    if (e.key === "End") show(slides.length - 1);
+    if (e.key === "f") document.documentElement.requestFullscreen?.();
+  });
+  addEventListener("click", (e) => show(at + (e.clientX < innerWidth * 0.3 ? -1 : 1)));
+  fit();
+  show((parseInt(location.hash.slice(1), 10) || 1) - 1);
+})();
+</script>
+</body>
+</html>
