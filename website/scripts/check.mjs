@@ -48,6 +48,8 @@ const requiredAssets = [
   "assets/final-mobile.webp",
   "assets/crt.webp",
   "assets/investigation-request.webp",
+  "assets/poster.webp",
+  "assets/poster-full.webp",
   "assets/room-empty.webp",
   "assets/drape-rail.webp",
   "assets/drape-folds.webp",

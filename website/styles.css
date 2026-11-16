@@ -2447,6 +2447,99 @@ kbd,
   }
 }
 
+/* ───────── 展示履歴：壁に貼ったポスター ─────────
+   主役は荷札のまま。ポスターは針金の右の壁に、四隅を紙テープで貼ってある。
+   依頼書と同じで、押すと原寸で開く */
+
+.archive .chapter-body {
+  display: grid;
+  grid-template-columns: minmax(0, 64rem) clamp(15rem, 21vw, 22rem);
+  column-gap: var(--s-group);
+  align-items: start;
+  justify-content: start;
+}
+
+.archive-records,
+.archive-updated {
+  grid-column: 1;
+}
+
+.wall-poster {
+  position: relative;
+  display: block;
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  margin-top: 1rem;
+  rotate: -1.1deg;
+  box-shadow: 0 1.4rem 2.2rem -.6rem rgb(40 24 8 / 60%), 0 1px 2px rgb(40 24 8 / 40%);
+  transition: rotate 500ms var(--ease), box-shadow 500ms var(--ease), translate 500ms var(--ease);
+}
+
+.poster-sheet {
+  display: block;
+}
+
+.poster-sheet img {
+  width: 100%;
+  height: auto;
+}
+
+.wall-poster::before,
+.wall-poster::after,
+.poster-sheet::before,
+.poster-sheet::after {
+  position: absolute;
+  z-index: 1;
+  width: 4.2rem;
+  height: 1.3rem;
+  content: "";
+  background: rgb(196 178 140 / 82%);
+  box-shadow: 0 1px 2px rgb(40 24 8 / 30%);
+}
+
+.wall-poster::before { top: .2rem; left: -1.5rem; rotate: -43deg; }
+.wall-poster::after { top: .3rem; right: -1.5rem; rotate: 41deg; }
+.poster-sheet::before { bottom: .3rem; left: -1.5rem; rotate: 44deg; }
+.poster-sheet::after { right: -1.5rem; bottom: .2rem; rotate: -40deg; }
+
+@media (hover: hover) {
+  .wall-poster:hover {
+    rotate: 0deg;
+    translate: 0 -4px;
+    box-shadow: 0 2.2rem 3rem -.8rem rgb(40 24 8 / 60%), 0 1px 2px rgb(40 24 8 / 40%);
+  }
+
+  .wall-poster:hover .request-open {
+    opacity: 1;
+  }
+}
+
+.wall-poster:focus-visible .request-open {
+  opacity: 1;
+}
+
+/* 横に並べると荷札が窮屈になる幅では、荷札の下の壁へ */
+@media (max-width: 1180px) {
+  .archive .chapter-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wall-poster {
+    grid-row: auto;
+    grid-column: 1;
+    justify-self: end;
+    width: min(22rem, 62%);
+    margin-top: var(--s-group);
+  }
+}
+
+@media (max-width: 720px) {
+  .wall-poster {
+    justify-self: center;
+    width: 82%;
+  }
+}
+
 /* ───────── 動きを減らす設定 ───────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -2461,7 +2554,8 @@ kbd,
 
   .site-header,
   .site-nav a::after,
-  .investigation-request {
+  .investigation-request,
+  .wall-poster {
     transition: none;
   }
 }

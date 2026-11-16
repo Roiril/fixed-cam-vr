@@ -102,6 +102,10 @@ Use case: compositing. This is responsive web art direction of an EXISTING finis
 
 `handheld.webp` はユーザーの携帯ゲーム機写真を参照して画像生成した架空の機器。実在ブランドの表記は含まない。透過PNGからWebPへ変換。元ファイルと最終プロンプトは [handheld-prompt.md](handheld-prompt.md)。画面部分には同梱した体験サイトを表示する。
 
+## ポスター（2026-11-16）
+
+- `poster.webp`（幅 880）と `poster-full.webp`（幅 2000）: `docs/poster/out/mawarimi-poster-main.png`（2481×3509。`docs/poster/build.py` の出力）を PIL で縮めて WebP にしたもの。絵には手を入れていない。ポスターを作り直したら同じ 2 枚を作り直す。
+
 ## 調査依頼の資料（2026-09-15）
 
 - `investigation-request.webp`: `docs/onsite/handout.pdf` の第1頁を Poppler で画像化して WebP に圧縮。本文は原稿のまま。原本 PDF は保持。サイト上の傾きと紙の色は CSS。
