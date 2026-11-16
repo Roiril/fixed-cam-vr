@@ -332,6 +332,15 @@ namespace FixedCamVr.Streaming
             float screenAspect = ScreenAspect;
             if (w == _lastTexW && h == _lastTexH && uvRotSteps == _lastUvRotSteps
                 && Mathf.Approximately(screenAspect, _lastScreenAspect)) return;
+            // ⚠ 同じ Texture2D が LoadImage で 2x2 → 640x480 に作り直されても、マテリアルの
+            //   `_LiveTex_TexelSize` は SetTexture した時点の 2x2 のまま残る。参照画面の clamp
+            //   （CrtCompositeShared の contentMin/Max）がそれを読んで中央の四角しか引かなくなる。
+            //   導入から切替なしで続く 1-A だけがこれを踏んでいた。寸法が変わったら渡し直す。
+            if (_lastTexW != 0 && (w != _lastTexW || h != _lastTexH))
+            {
+                if (_signalProcessor != null) CrtSignalProcessor.InvalidateBindings(_material);
+                _material.SetTexture(LiveTexId, tex);
+            }
             _lastTexW = w;
             _lastTexH = h;
             _lastScreenAspect = screenAspect;

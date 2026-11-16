@@ -39,6 +39,8 @@ Profileの再適用は固定加工だけを所有し、Directorが書いた動�
 
 全合成とOSDは1280×1030 linear Floatのcanonical preGlassへ描き、表示RGBで輝度/色差を別々に正規化filterしてgainを掛ける。曲面はsurface UVから処理済み信号を読み、Glass/Case/SwitchDim/powerを一回だけ適用する。共有本体は`CrtCompositeShared.hlsl`。player用`CRT_SIGNAL_RUNTIME`とResourcesのshader参照で診断keywordへ依存しない。
 
+参照画面は映像の範囲外を読まないよう`contentMin/Max`でsampleUvをclampし、その余白を`_LiveTex_TexelSize`から出す。同じTexture2Dが`LoadImage`で2x2→640x480に作り直されても、マテリアルの`_LiveTex_TexelSize`は`SetTexture`した時点の値のまま残る。2x2の値を読むと中央の四角（横.25〜.75）しか引かず、外が縁の画素の延長になる。導入の最初に仮の2x2で渡したAを切替なしで1-Aまで引き継ぐと必ず出ていた（ツインで11-05から毎回。11-16に修正）。`MjpegScreen.UpdateContainScale`が寸法の変化を見たら`SetTexture`し直す。
+
 表示はmain cameraのbeginCameraRenderingで1 frameにつき一回。CG等の補助cameraでは更新しない。EndingFrameCaptureとExperienceShotCaptureは専用materialの現在値から明示captureし、前の処理済み画像を流用しない。無効化時はbindingを外してRTを解放する。
 
 ## Web調整
