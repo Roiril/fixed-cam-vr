@@ -208,10 +208,110 @@ class Sources:
 
 # ------------------------------------------------------------------ 区間
 
+SERIF_PATH = Path(r"C:\Windows\Fonts\yuminl.ttf")  # 旧版の札・エンドカードと同じ明朝（欧文の字形を使う）
+
+
+def text_font(kind: str, px: int):
+    if kind == "serif":
+        return ImageFont.truetype(str(SERIF_PATH), px)
+    return font(px, "SemiBold" if kind == "sans-bold" else "Medium")
+
+
+def text_image(p: dict) -> tuple[Image.Image, tuple[int, int]]:
+    """文字の差し替え 1 件の、新しい文字の透過画像と置く所。box の中央に行を積む（align=left なら左上から）"""
+    x0, y0, x1, y1 = p["box"]
+    f = text_font(p.get("font", "sans"), int(p.get("size", 34)))
+    lines = p["text"] if isinstance(p["text"], list) else [p["text"]]
+    gap = int(p.get("line", round(p.get("size", 34) * 1.38)))
+    im = Image.new("RGBA", (x1 - x0, y1 - y0), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    top = (im.height - gap * (len(lines) - 1)) / 2
+    for i, ln in enumerate(lines):
+        kw = dict(stroke_width=3, stroke_fill=(0, 0, 0, 220)) if p.get("stroke") else {}
+        if p.get("align") == "left":
+            d.text((int(p.get("pad", 0)), top + i * gap), ln, font=f, fill=(255, 255, 255, 255), anchor="lm", **kw)
+        else:
+            d.text((im.width / 2, top + i * gap), ln, font=f, fill=(255, 255, 255, 255), anchor="mm", **kw)
+    return im, (x0, y0)
+
+
 def seg_old(src: Sources, seg: dict, out: Path) -> None:
+    """旧版をそのまま使う。編集表の patches がこの区間に掛かるなら、旧版のコマの上で文字だけを置き換える。
+
+    patches の 1 件: t（掛ける秒の範囲）・box（旧版の文字を覆う矩形）・text（新しい行）・fill
+      fill=black  矩形を黒で埋める（黒地の字幕・札）
+      fill=shift  矩形の dy 上の帯を写して埋める（砂嵐の上に出る札。地の模様が残る）
+      fill=none   覆わずに足す（紙の映像に添える訳。出入りは 0.15 秒）
+    新しい文字の濃さは、旧版の文字がそのコマでどれだけ出ているか（矩形の明るい画素と地の差）に合わせる。
+    だから旧版の出入りの間合いがそのまま残る"""
     t0, t1 = seg["t"]
-    ff(["-ss", f"{t0:.4f}", "-i", str(src.ref), "-map", "0:v:0", "-vf", f"fps={FPS}",
-        "-frames:v", str(frames(t0, t1)), *ENC, "-an", str(out)])
+    n = frames(t0, t1)
+    rules = [p for p in src.edl.get("patches", []) if p["t"][0] < t1 and p["t"][1] > t0]
+    if not rules:
+        ff(["-ss", f"{t0:.4f}", "-i", str(src.ref), "-map", "0:v:0", "-vf", f"fps={FPS}",
+            "-frames:v", str(n), *ENC, "-an", str(out)])
+        return
+    prepared = [(p, *text_image(p)) for p in rules]
+    wr = Writer(out)
+    for i, fr in enumerate(read_frames(["-ss", f"{t0:.4f}", "-i", str(src.ref), "-vf", f"fps={FPS}", "-frames:v", str(n)], W, H)):
+        t = t0 + i / FPS
+        canvas = None
+        for p, im, (x, y) in prepared:
+            a, b = p["t"]
+            if not (a <= t < b):
+                continue
+            x0, y0, x1, y1 = p["box"]
+            fill = p.get("fill", "black")
+            if fill == "none":
+                alpha = min(1.0, (t - a) / 0.15, (b - t) / 0.15)
+            else:
+                lum = fr[y0:y1, x0:x1].max(axis=2)
+                alpha = float(np.clip((np.percentile(lum, 99.5) - np.percentile(lum, 50)) / float(p.get("full", 230)), 0, 1))
+            if alpha <= 0.02:
+                continue
+            if canvas is None:
+                canvas = fr.copy()
+            if fill == "black":
+                canvas[y0:y1, x0:x1] = 0
+            elif fill == "shift":
+                dy = int(p.get("dy", -(y1 - y0) - 20))
+                canvas[y0:y1, x0:x1] = fr[y0 + dy:y1 + dy, x0:x1]
+            rgba = np.asarray(im).astype(np.float32)
+            k = rgba[..., 3:4] / 255 * alpha
+            region = canvas[y:y + im.height, x:x + im.width].astype(np.float32)
+            canvas[y:y + im.height, x:x + im.width] = (region * (1 - k) + rgba[..., :3] * k).astype(np.uint8)
+        wr.write(fr if canvas is None else canvas)
+    wr.close()
+
+
+def seg_endcard(src: Sources, seg: dict, out: Path) -> None:
+    """エンドカード。キービジュアルの道具で文字なしの版（題字つき）を組み、文面を置く。明るさの出入りは旧版に合わせる"""
+    t0, t1 = seg["t"]
+    n = frames(t0, t1)
+    plate_p = WORK / "cache" / "endcard_plate.png"
+    if not plate_p.exists():
+        r = subprocess.run([sys.executable, str(ROOT / "tools" / "make-key-visual.py"), "--ground", str(ROOT / "docs" / "key-visual" / "ground_relit.png"),
+                            "--no-text", "--title-x", "0.722", "--title-y", "0.375", "--title-width", "0.507", "--out", str(plate_p)])
+        if r.returncode != 0:
+            raise SystemExit("エンドカードの地（make-key-visual.py --no-text）が組めない")
+    card = Image.open(plate_p).convert("RGBA")
+    ov = Image.new("RGBA", card.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(ov)
+    ink = (232, 226, 214, 255)
+    for i, ln in enumerate(seg["tagline"]):
+        d.text((118, 172 + i * 78), ln, font=text_font("serif", 50), fill=ink, anchor="lm")
+    d.text((1386, 624), seg["sub"], font=text_font("serif", 31), fill=ink, anchor="mm")
+    d.text((1862, 988), seg["credit"][0], font=text_font("serif", 21), fill=ink, anchor="rm")
+    d.text((1862, 1030), seg["credit"][1], font=text_font("serif", 36), fill=ink, anchor="rm")
+    card.alpha_composite(ov)
+    base = np.asarray(card.convert("RGB")).astype(np.float32)
+    lit = float(np.asarray(grab(src.ref, 100.5).convert("L")).mean())
+    wr = Writer(out)
+    for i, fr in enumerate(read_frames(["-ss", f"{t0:.4f}", "-i", str(src.ref), "-vf", f"fps={FPS},scale=96:54,format=gray", "-frames:v", str(n)], 96, 54)):
+        # 頭の 0.3 秒は、旧版に前の区間の残りが写っているので黒にする
+        k = 0.0 if i < 0.3 * FPS else float(np.clip(fr.mean() / lit, 0, 1))
+        wr.write((base * k).astype(np.uint8))
+    wr.close()
 
 
 def eye_chain(seg: dict, dur: float) -> str:
@@ -514,7 +614,8 @@ def seg_gen(src: Sources, seg: dict, out: Path) -> None:
     panel_bg = (22, 22, 24)
     title_f, head_f = font(21, "Bold"), font(15, "Bold")
     origins = [(0, 0), (231, 503)]
-    cols = [("① 種（AI へ渡した入力）", 493), ("② AI が出したもの", 493), ("③ 体験者に届く画", 657)]
+    heads = src.edl.get("gen_cols", ["① 種（AI へ渡した入力）", "② AI が出したもの", "③ 体験者に届く画"])
+    cols = list(zip(heads, (493, 493, 657)))
     for (ox, oy), panel in zip(origins, seg["panels"]):
         pw = 1688 if ox == 0 else W - ox
         d.rectangle((ox, oy, ox + pw - 1, oy + 445), fill=panel_bg)
@@ -686,7 +787,7 @@ def seg_mosaic(src: Sources, seg: dict, out: Path) -> None:
 
 KINDS = {"old": seg_old, "eye": seg_eye, "pip": seg_pip, "multicam": seg_multicam, "chain": seg_chain,
          "gen": seg_gen, "tvpip": seg_tvpip, "mosaic": seg_mosaic, "black": seg_black,
-         "system": seg_system, "tppip": seg_tppip}
+         "system": seg_system, "tppip": seg_tppip, "endcard": seg_endcard}
 
 
 # ------------------------------------------------------------------ 仕上げ
