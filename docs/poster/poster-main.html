@@ -19,7 +19,7 @@
   }
 
   .shade-top { inset: 0 0 auto 0; height: 60mm; background: linear-gradient(#0d0b09 0%, rgba(13,11,9,0) 100%); opacity: .55; }
-  .shade-bottom { inset: auto 0 0 0; height: 112mm; background: linear-gradient(rgba(13,11,9,0) 0%, rgba(13,11,9,.12) 38%, rgba(13,11,9,.86) 80%, rgba(13,11,9,.96) 100%); }
+  .shade-bottom { inset: auto 0 0 0; height: 112mm; background: linear-gradient(rgba(13,11,9,0) 0%, rgba(13,11,9,.3) 45%, rgba(13,11,9,.5) 100%); }
   .vignette { inset: 0; background: radial-gradient(ellipse 78% 70% at 50% 48%, transparent 55%, rgba(8,6,5,.7) 100%); }
 
   /* テレビ。作中の増えるスクリーンと同じく、闇の奥から頭を囲む */
@@ -37,6 +37,14 @@
   .tv.mid { filter: brightness(.82); }
   .tv.warn { border-radius: 0; box-shadow: none; background: none; mix-blend-mode: lighten; overflow: visible; }
 
+  .hands { left: 112mm; top: 146mm; width: 52mm; transform: rotate(-18deg) skewX(-14deg); mix-blend-mode: multiply; opacity: .62;
+    -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 45%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 45%, transparent 100%); }
+  .hair { opacity: .95; filter: drop-shadow(0 1mm 1.2mm rgba(0,0,0,.6)); }
+  .tv.laugh { border: 1.3mm solid #121110; box-shadow: inset 0 0 3mm #000, 0 0 9mm rgba(190,205,215,.16), 0 3mm 8mm rgba(0,0,0,.7); }
+  .tv.laugh img { filter: grayscale(.8) contrast(1.25) brightness(1.05); }
+  .leaf { height: 14mm; width: auto; opacity: .9; }
+  .front { filter: none; }
+  .shade-foot { inset: auto 0 0 0; height: 46mm; background: linear-gradient(rgba(13,11,9,0) 0%, rgba(13,11,9,.82) 45%, rgba(13,11,9,.95) 100%); }
   .paper {
     box-shadow: 0 2mm 6mm rgba(0,0,0,.7);
     filter: brightness(.78) sepia(.25);
@@ -56,6 +64,8 @@
 <body>
 <div class="sheet">
   <img class="ground" src="assets/ground.png" alt="">
+  <img class="ground" src="assets/dolls-lift.png" alt="">
+  <img class="hands" src="assets/hands.png" alt="">
   <div class="shade-top"></div>
   <img class="face" src="assets/face.png" alt="">
   <div class="vignette"></div>
@@ -74,27 +84,34 @@
     <!-- 手前 -->
     <div class="tv" style="left:5mm; top:79mm; width:66mm; transform:rotateY(20deg) rotateZ(-3deg);"><img src="assets/tv-stain-face.jpg" alt=""></div>
     <div class="tv" style="left:141mm; top:83mm; width:63mm; transform:rotateY(-20deg) rotateZ(3deg);"><img src="assets/tv-final-enter.jpg" alt=""></div>
+    <div class="tv laugh" style="left:181mm; top:119mm; width:36mm; transform:rotateY(-30deg) rotateZ(-5deg);"><img src="../../Assets/Resources/ScreenMultiply/DollLaughFace.png" alt=""></div>
   </div>
 
-  <div class="laurel award" style="left:0; right:0; top:6.5mm; justify-content:center;">
-    <span class="rule"></span><span>IVRC2026 <b>総合優勝</b>　／　<b>DCEXPO賞</b></span><span class="rule"></span>
+  <img class="hair" src="../../website/assets/hair.webp" alt="" style="left:-14mm; top:-12mm; width:112mm;">
+  <img class="hair" src="../../website/assets/hair.webp" alt="" style="left:112mm; top:-22mm; width:112mm; transform:scaleX(-1);">
+
+  <div class="laurel award" style="left:0; right:0; top:4.5mm; justify-content:center;">
+    <img class="leaf" src="assets/laurel.svg" alt=""><span>IVRC2026 <b>総合優勝</b>　／　<b>DCEXPO賞</b></span><img class="leaf" src="assets/laurel.svg" alt="" style="transform:scaleX(-1);">
   </div>
 
   <p class="catch vertical" style="left:129mm; top:109mm; font-size:4.5mm;">廻るたびに狂う世界、<br>あなたは生きて戻れるか。</p>
 
   <div class="shade-bottom"></div>
 
-  <img class="warn" src="assets/tv-takeover.jpg" alt="" style="left:-22mm; top:152mm; width:112mm; mix-blend-mode:lighten; filter:contrast(1.15) brightness(1.1);">
-  <div class="tablet" style="left:151mm; top:176mm; width:47mm; transform:rotate(-4deg);"><img src="../../website/assets/doctor-briefing.webp" alt=""></div>
-  <div class="paper" style="left:174mm; top:209mm; width:27mm; transform:rotate(7deg);"><img src="../../website/assets/investigation-request.webp" alt=""></div>
+  <p class="genre" style="left:36mm; width:122mm; top:187.5mm; text-align:center; font-size:3.7mm; text-shadow:0 0 2mm #000, 0 0 4mm #000;">実世界 <span class="red">×</span> 固定視点ホラー</p>
 
-  <p class="genre" style="left:36mm; width:122mm; top:258.5mm; text-align:center; font-size:3.7mm;">実世界 <span class="red">×</span> 固定視点ホラー</p>
-
-  <div class="title" style="left:36mm; top:205mm; width:122mm; height:52.4mm;">
+  <div class="title" style="left:36mm; top:194mm; width:122mm; height:52.4mm;">
     <img src="assets/title-sub.png" alt="">
     <img src="assets/title-white.png" alt="廻リ">
     <img src="assets/title-red.png" alt="視">
   </div>
+
+  <img class="ground front" src="assets/dolls-front.png" alt="">
+  <div class="shade-foot"></div>
+  <img class="warn" src="assets/tv-takeover.jpg" alt="" style="left:-22mm; top:152mm; width:112mm; mix-blend-mode:lighten; filter:contrast(1.15) brightness(1.1);">
+  <div class="tablet" style="left:151mm; top:176mm; width:47mm; transform:rotate(-4deg);"><img src="../../website/assets/doctor-briefing.webp" alt=""></div>
+  <div class="paper" style="left:174mm; top:209mm; width:27mm; transform:rotate(7deg);"><img src="../../website/assets/investigation-request.webp" alt=""></div>
+
 
   <div class="billing" style="left:12mm; top:268mm;">
     <div><i>監視カメラに映る自分を見ながら現実空間を歩く、固定視点のホラー体験。</i></div>
