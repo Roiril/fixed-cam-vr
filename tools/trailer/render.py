@@ -115,10 +115,18 @@ def label_png(text: str, dest: Path) -> Path:
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     f = font(51, "Medium")
-    ImageDraw.Draw(shadow).text((4, 1066), text, font=f, fill=(0, 0, 0, 200), anchor="ls")
+    text, _, sub = text.partition("\n")   # 2 行目があれば英語の字幕として札の上に小さく置く
+    fs = font(34, "Medium")
+    sd = ImageDraw.Draw(shadow)
+    sd.text((4, 1066), text, font=f, fill=(0, 0, 0, 200), anchor="ls")
+    if sub:
+        sd.text((6, 1004), sub, font=fs, fill=(0, 0, 0, 230), anchor="ls", stroke_width=3, stroke_fill=(0, 0, 0, 230))
     shadow = shadow.filter(ImageFilter.GaussianBlur(4))
     im.alpha_composite(shadow)
-    ImageDraw.Draw(im).text((2, 1064), text, font=f, fill=(255, 255, 255, 255), anchor="ls")
+    d = ImageDraw.Draw(im)
+    d.text((2, 1064), text, font=f, fill=(255, 255, 255, 255), anchor="ls")
+    if sub:
+        d.text((4, 1002), sub, font=fs, fill=(255, 255, 255, 255), anchor="ls", stroke_width=2, stroke_fill=(0, 0, 0, 255))
     im.save(dest)
     return dest
 
@@ -241,7 +249,8 @@ def seg_old(src: Sources, seg: dict, out: Path) -> None:
     patches の 1 件: t（掛ける秒の範囲）・box（旧版の文字を覆う矩形）・text（新しい行）・fill
       fill=black  矩形を黒で埋める（黒地の字幕・札）
       fill=shift  矩形の dy 上の帯を写して埋める（砂嵐の上に出る札。地の模様が残る）
-      fill=none   覆わずに足す（紙の映像に添える訳。出入りは 0.15 秒）
+      fill=none   覆わずに足す（英語の字幕）。watch に旧版の日本語の矩形を書くと、その出入りに合わせて出る。
+                  watch が無ければ t の頭と終わりで 0.15 秒の出入り
     新しい文字の濃さは、旧版の文字がそのコマでどれだけ出ているか（矩形の明るい画素と地の差）に合わせる。
     だから旧版の出入りの間合いがそのまま残る"""
     t0, t1 = seg["t"]
@@ -262,10 +271,12 @@ def seg_old(src: Sources, seg: dict, out: Path) -> None:
                 continue
             x0, y0, x1, y1 = p["box"]
             fill = p.get("fill", "black")
-            if fill == "none":
+            if fill == "none" and not p.get("watch"):
                 alpha = min(1.0, (t - a) / 0.15, (b - t) / 0.15)
             else:
-                lum = fr[y0:y1, x0:x1].max(axis=2)
+                # watch: 濃さを合わせる相手（旧版の日本語の文字）の矩形。字幕を足すだけのときに使う
+                wx0, wy0, wx1, wy1 = p.get("watch", p["box"])
+                lum = fr[wy0:wy1, wx0:wx1].max(axis=2)
                 alpha = float(np.clip((np.percentile(lum, 99.5) - np.percentile(lum, 50)) / float(p.get("full", 230)), 0, 1))
             if alpha <= 0.02:
                 continue
