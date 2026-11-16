@@ -61,7 +61,7 @@ effect.Stop(); // 途中で直ちに消す
 ## 作り直しとプレビュー
 
 ```powershell
-py -3.11 tools/make-error-typography.py
+py -3.11 tools/make-error-typography.py --lang ja   # 英仏の 4 語は --lang en / --lang fr
 .\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.UnauthorizedAccessPreview.Build
 .\tools\unity.ps1 menu raw:FixedCamVr.Streaming.EditorTools.UnauthorizedAccessPreview.Run -Set sequence=1
 ```

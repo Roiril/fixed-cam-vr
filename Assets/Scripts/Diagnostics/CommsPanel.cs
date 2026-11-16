@@ -460,7 +460,8 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialReconnect => "Check the left controller.",
             // 博士の "If anything in the footage feels wrong, even slightly, report it." を受ける。
             CommsNotice.TutorialReminder => "If anything feels wrong,\nreport it the same way.\nI will analyse and block it.",
-            CommsNotice.Greeting => "My apologies.\nI am Sui, the agent\nsupporting your survey.",
+            // 「申し遅れました」は名乗る前置き。"My apologies." だと、練習の成功の直後に何かを詫びたと読める
+            CommsNotice.Greeting => "Let me introduce myself.\nI am Sui, the agent\nsupporting your survey.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
             CommsNotice.Arrived => "Arrived.\nConnecting to the\nobservation cameras.",
             CommsNotice.ArrivedCamera => "These cameras capture\nanomalous entities\nwith high sensitivity.",
@@ -492,7 +493,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.TutorialAccepted => "Signalement envoyé.\nLe dispositif fonctionne.",
             CommsNotice.TutorialReconnect => "Vérifiez la manette gauche.",
             CommsNotice.TutorialReminder => "Au moindre doute,\nsignalez-le ainsi.\nJ'analyse et je bloque.",
-            CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui, l'agente\nqui assiste votre enquête.",
+            CommsNotice.Greeting => "Je me présente.\nJe suis Sui, l'agente\nqui assiste votre enquête.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
             CommsNotice.Arrived => "Arrivé.\nConnexion aux caméras\nd'observation.",
             CommsNotice.ArrivedCamera => "Ces caméras captent\nles entités anormales\navec une haute sensibilité.",

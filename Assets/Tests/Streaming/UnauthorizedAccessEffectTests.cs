@@ -719,6 +719,166 @@ namespace FixedCamVr.Streaming.Tests
             }
         }
 
+        // 英仏の版の寸法と大文字の箱（tools/make-error-typography.py の出力。PIL の上原点の画素）
+        private static readonly (string Name, int Width, int Height, int X0, int CapTop, int X1, int Baseline)[] EnglishWords =
+        {
+            ("subtitle-en-v1", 803, 137, 31, 28, 774, 109),
+            ("context-en-v1", 1338, 137, 31, 28, 1309, 109),
+            ("attempt-en-v1", 738, 137, 31, 28, 712, 109),
+            ("failed-en-v1", 615, 146, 31, 27, 583, 120),
+        };
+
+        private static readonly (string Name, int Width, int Height, int X0, int CapTop, int X1, int Baseline)[] FrenchWords =
+        {
+            ("subtitle-fr-v1", 803, 137, 31, 28, 774, 109),
+            ("context-fr-v1", 1345, 137, 31, 28, 1315, 109),
+            ("attempt-fr-v1", 664, 137, 31, 28, 634, 109),
+            ("failed-fr-v1", 566, 175, 31, 54, 535, 147),
+        };
+
+        [TestCase(ShowLang.En, "WARNING | INTRUSION | SOURCE UNKNOWN | BLOCKING", "WARNING | INTRUSION | SOURCE UNKNOWN | FAILED")]
+        [TestCase(ShowLang.Fr, "WARNING | INTRUSION | SOURCE INCONNUE | BLOCAGE", "WARNING | INTRUSION | SOURCE INCONNUE | ÉCHEC")]
+        public void TakeoverLatinWordsReplaceTheFourJapaneseWordsAtTheirCapHeight(ShowLang lang,
+            string blockCaption, string failedCaption)
+        {
+            GameObject anchor = NewAnchor("LatinWordsAnchor");
+            GameObject host = new GameObject("LatinWordsEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            Texture2D[] words = new Texture2D[0];
+            try
+            {
+                var specs = lang == ShowLang.En ? EnglishWords : FrenchWords;
+                var effect = ConfigureProductionTakeover(host, out material, out textures);
+                words = new Texture2D[specs.Length];
+                for (int i = 0; i < specs.Length; i++)
+                    words[i] = new Texture2D(specs[i].Width, specs[i].Height) { name = specs[i].Name };
+                effect.ConfigureWords(lang, words[0], words[1], words[2], words[3]);
+                Assert.AreEqual(ShowLang.Ja, effect.WordsLanguage, "UseLanguage の前は日本語");
+
+                // 本番の順（CommsTakeoverError）: 言語を決めてから Play
+                effect.UseLanguage(lang);
+                effect.Play(anchor.transform, ReferenceSize);
+                Assert.AreEqual(lang, effect.WordsLanguage);
+
+                effect.SampleTakeover(CommsPanelLogic.TakeoverBlockSec + .2f, false, 1f);
+                Assert.AreSame(words[0], FindMaterial(effect, "Unauthorized Access Subtitle Bands").GetTexture("_MainTex"));
+                Assert.AreSame(words[1], FindMaterial(effect, "Unauthorized Access Context").GetTexture("_MainTex"));
+                Assert.AreSame(words[2], FindMaterial(effect, "Unauthorized Access Status").GetTexture("_MainTex"));
+                Assert.AreEqual(blockCaption, effect.TakeoverCaption);
+
+                // 4 語とも大文字の高さで組む。1 行目の 2 語は組で中心に、BLOCKING は右端をそろえる
+                float w = ReferenceSize.x, h = ReferenceSize.y;
+                Rect unauthorized = VisibleCapBox(effect, "Unauthorized Access Subtitle Bands", specs[0]);
+                Rect source = VisibleCapBox(effect, "Unauthorized Access Context", specs[1]);
+                Rect status = VisibleCapBox(effect, "Unauthorized Access Status", specs[2]);
+                Assert.AreEqual(.040f * h, unauthorized.height, .002f * h);
+                Assert.AreEqual(.040f * h, source.height, .002f * h);
+                Assert.AreEqual(.040f * h, status.height, .002f * h);
+                Assert.AreEqual(.07f * h, unauthorized.center.y, .002f * h);
+                Assert.AreEqual(.07f * h, source.center.y, .002f * h);
+                Assert.AreEqual(-.065f * h, status.center.y, .002f * h);
+                Assert.AreEqual(.06f * w, source.xMin - unauthorized.xMax, .002f * w, "1 行目の 2 語の間");
+                Assert.AreEqual(.046f * w, (unauthorized.xMin + source.xMax) * .5f, .002f * w, "1 行目の中心");
+                Assert.AreEqual(-.06f * w, status.xMax, .002f * w, "遮断の語の右端");
+
+                effect.SampleTakeover(CommsPanelLogic.DefaultTakeoverFailureSec, true, 1f);
+                Assert.AreSame(words[3], FindMaterial(effect, "Unauthorized Access Failure").GetTexture("_MainTex"));
+                Assert.AreEqual(failedCaption, effect.TakeoverCaption);
+                Rect failure = VisibleCapBox(effect, "Unauthorized Access Failure", specs[3]);
+                Assert.AreEqual(.066f * h, failure.height, .003f * h);
+                Assert.AreEqual(.06f * w, failure.center.x, .003f * w);
+                AssertTakeoverTextDoesNotOverlap(effect);
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
+                DestroyImmediate(words);
+            }
+        }
+
+        [Test]
+        public void TakeoverWordsStayJapaneseWithoutACompleteSet_AndSwitchBackDuringPlay()
+        {
+            GameObject anchor = NewAnchor("WordsFallbackAnchor");
+            GameObject host = new GameObject("WordsFallbackEffect");
+            Material? material = null;
+            Texture2D[] textures = new Texture2D[0];
+            Texture2D[] words = new Texture2D[0];
+            try
+            {
+                var effect = ConfigureProductionTakeover(host, out material, out textures);
+                words = new Texture2D[EnglishWords.Length];
+                for (int i = 0; i < EnglishWords.Length; i++)
+                    words[i] = new Texture2D(EnglishWords[i].Width, EnglishWords[i].Height) { name = EnglishWords[i].Name };
+                effect.ConfigureWords(ShowLang.En, words[0], words[1], words[2], words[3]);
+
+                // 仏語の版が無ければ日本語で出す（英語へ寄せない）
+                effect.UseLanguage(ShowLang.Fr);
+                Assert.AreEqual(ShowLang.Ja, effect.WordsLanguage);
+                effect.Play(anchor.transform, ReferenceSize);
+                effect.SampleTakeover(CommsPanelLogic.TakeoverBlockSec + .2f, false, 1f);
+                Assert.AreSame(textures[1], FindMaterial(effect, "Unauthorized Access Subtitle Bands").GetTexture("_MainTex"));
+                Assert.AreEqual("WARNING | 不正アクセス | 接続元不明 | 遮断を執行", effect.TakeoverCaption);
+                Vector3[] japanese = FindMesh(effect, "Unauthorized Access Subtitle Bands").vertices;
+
+                // 再生中に切り替えても組み直し、日本語へ戻すと元の位置に戻る
+                effect.UseLanguage(ShowLang.En);
+                effect.SampleTakeover(CommsPanelLogic.TakeoverBlockSec + .2f, false, 1f);
+                Assert.IsTrue(effect.IsPlaying);
+                Assert.AreSame(words[0], FindMaterial(effect, "Unauthorized Access Subtitle Bands").GetTexture("_MainTex"));
+                Assert.IsTrue(VerticesDiffer(japanese, FindMesh(effect, "Unauthorized Access Subtitle Bands").vertices));
+                effect.UseLanguage(ShowLang.Ja);
+                effect.SampleTakeover(CommsPanelLogic.TakeoverBlockSec + .2f, false, 1f);
+                Assert.AreSame(textures[1], FindMaterial(effect, "Unauthorized Access Subtitle Bands").GetTexture("_MainTex"));
+                CollectionAssert.AreEqual(japanese, FindMesh(effect, "Unauthorized Access Subtitle Bands").vertices);
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+                Object.DestroyImmediate(anchor);
+                DestroyImmediate(material);
+                DestroyImmediate(textures);
+                DestroyImmediate(words);
+            }
+        }
+
+        private static UnauthorizedAccessEffect ConfigureProductionTakeover(GameObject host,
+            out Material material, out Texture2D[] textures)
+        {
+            Shader shader = Shader.Find("FixedCamVr/UnauthorizedAccessFx");
+            Assert.IsNotNull(shader);
+            material = new Material(shader!);
+            textures = new[]
+            {
+                new Texture2D(1386, 220) { name = "wordmark-v5" },
+                new Texture2D(657, 138) { name = "subtitle-v5" },
+                NewTexture("symbol"), NewTexture("noise"),
+                new Texture2D(555, 143) { name = "context-v5" },
+                new Texture2D(555, 141) { name = "attempt-v5" },
+                new Texture2D(254, 141) { name = "failed-v5" },
+            };
+            var effect = host.AddComponent<UnauthorizedAccessEffect>();
+            effect.Configure(material, textures[0], textures[1], textures[2], textures[3],
+                textures[4], textures[5], textures[6]);
+            return effect;
+        }
+
+        /// <summary>メッシュの頂点の範囲に、版の大文字の箱（PIL の上原点）を写した矩形。</summary>
+        private static Rect VisibleCapBox(UnauthorizedAccessEffect effect, string name,
+            (string Name, int Width, int Height, int X0, int CapTop, int X1, int Baseline) spec)
+        {
+            Bounds bounds = MeshBounds(effect, name);
+            float u0 = spec.X0 / (float)spec.Width, u1 = spec.X1 / (float)spec.Width;
+            float v0 = (spec.Height - spec.Baseline) / (float)spec.Height;
+            float v1 = (spec.Height - spec.CapTop) / (float)spec.Height;
+            return Rect.MinMaxRect(bounds.min.x + bounds.size.x * u0, bounds.min.y + bounds.size.y * v0,
+                bounds.min.x + bounds.size.x * u1, bounds.min.y + bounds.size.y * v1);
+        }
+
         [Test]
         public void TakeoverReadFocusKeepsAccumulatedMessagesReadableAndSuppressesSurroundings()
         {

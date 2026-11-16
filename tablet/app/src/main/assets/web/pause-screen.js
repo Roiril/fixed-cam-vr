@@ -1,5 +1,6 @@
 // 展示を一時中止しているときに来場者へ見せる全画面（2026-11-14）。
 // スタッフ画面の「展示を一時中止する」で開く。閉じるのは右下の「スタッフ専用（長押し）」から。
+// 文面と同じく三言語で置く。英仏は「スタッフ用」だけ伝える（長押しの手順はスタッフが読む日本語だけ）。
 // 文面はその場で直せる。1 行が 1 ブロックで、行頭に「# 」「## 」「- 」と打つと見出し・小見出し・箇条書きになる。
 // 文面と「中止中か」は端末の localStorage に残す（アプリを開き直しても中止の画面へ戻る）。
 // 文字は textContent でしか書かない。貼り付けも文字だけにする（HTML を保存しない）。
@@ -62,6 +63,8 @@
     .pause-screen.is-editing .pause-block:hover { box-shadow: inset 0 0 0 1px var(--line); }
     .pause-screen.is-editing .pause-block:focus { box-shadow: inset 0 0 0 1px var(--line-strong); background: rgba(232,220,196,.04); }
     .pause-staff { position: fixed; right: max(16px,env(safe-area-inset-right)); bottom: max(16px,env(safe-area-inset-bottom)); min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--faint); font: 14px/1.4 var(--sans); overflow: hidden; isolation: isolate; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    .pause-staff span { display: block; }
+    .pause-staff .pause-staff-latin { font-size: 12px; }
     .pause-staff::before { content: ""; position: absolute; z-index: -1; inset: 0; background: rgba(232,220,196,.22); transform: scaleX(var(--hold,0)); transform-origin: left; }
     .pause-menu, .pause-tools { position: fixed; left: 50%; bottom: max(16px,env(safe-area-inset-bottom)); display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); padding: 12px; border: 1px solid var(--staff-line-strong); border-radius: 8px; background: var(--staff-panel); color: var(--staff-ink); font: 16px/1.4 var(--sans); transform: translateX(-50%); box-shadow: 0 8px 30px rgba(0,0,0,.5); }
     .pause-menu[hidden], .pause-tools[hidden], .pause-staff[hidden] { display: none; }
@@ -80,7 +83,7 @@
   dialog.setAttribute('aria-label', '展示の一時中止');
   dialog.innerHTML = `
     <div class="pause-body"><div class="pause-doc" id="pauseDoc"></div></div>
-    <button class="pause-staff" id="pauseStaff" type="button">スタッフ専用（長押し）</button>
+    <button class="pause-staff" id="pauseStaff" type="button"><span>スタッフ専用（長押し）</span><span class="pause-staff-latin">Staff only · Réservé au personnel</span></button>
     <div class="pause-menu" id="pauseMenu" role="group" aria-label="スタッフの操作" hidden>
       <button class="pause-main" id="pauseResume" type="button">展示を再開する</button>
       <button id="pauseEdit" type="button">文面を編集する</button>

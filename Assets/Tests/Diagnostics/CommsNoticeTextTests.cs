@@ -21,8 +21,9 @@ namespace FixedCamVr.Diagnostics.Tests
         // ⓪a。「調査を支援する」と職掌を言う。**異常を遮断する権限は、ここでしか渡していない**
         // （博士は「装置に搭載されたエージェントが解析します」までしか言わない）。
         [TestCase(ShowLang.Ja, "申し遅れました。\n私は調査を支援する\nエージェントのスイです。")]
-        [TestCase(ShowLang.En, "My apologies.\nI am Sui, the agent\nsupporting your survey.")]
-        [TestCase(ShowLang.Fr, "Veuillez m'excuser.\nJe suis Sui, l'agente\nqui assiste votre enquête.")]
+        // 英仏は名乗りの前置きとして訳す（"My apologies." は直前の「装置は正常です」を詫びたように読めた）
+        [TestCase(ShowLang.En, "Let me introduce myself.\nI am Sui, the agent\nsupporting your survey.")]
+        [TestCase(ShowLang.Fr, "Je me présente.\nJe suis Sui, l'agente\nqui assiste votre enquête.")]
         public void GreetingIntroducesSuiAfterTheTutorial(ShowLang lang, string text)
         {
             Assert.AreEqual(text, CommsPanel.NoticeText(CommsNotice.Greeting, lang));

@@ -5,7 +5,9 @@
 
 ## 文字
 
-`py -3.11 tools/make-error-typography.py` で文字だけを書き出す。
+`py -3.11 tools/make-error-typography.py --lang ja` で文字だけを書き出す。
+`--lang en` / `--lang fr` は WARNING の下の 4 語の英仏の版（`*-en-v1.png` / `*-fr-v1.png`）だけを書く。
+日本語の版はかすれが乱数なので、焼き直すと見た目が変わる。英仏だけ直すときは `--lang ja` を回さない。
 入力は `Assets/Art/Fonts/UnauthorizedAccess/` の未改変フォント。
 出力は `Assets/Art/Textures/UnauthorizedAccess/`。
 

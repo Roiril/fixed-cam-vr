@@ -178,7 +178,9 @@
     }
     return videos.get(src);
   };
-  const local = (o) => (o ? (o[lang] || o.ja) : '');
+  // テレビの中の文字（管理番号の札・長押しの札）の言語。?text=en は、日本語の声と口の時刻のまま札だけ英語にする（英仏の吹き替えの版）
+  const textLang = q.get('text') || lang;
+  const local = (o) => (o ? (o[textLang] || o.ja) : '');
   const programme = [];     // { t, until, kind, src, tag, hold, video, rate, in, out, frame, src2, swapAt, first }
   for (const it of tvPlan.items) {
     const scene = briefing.scenes.find((s) => s.id === it.scene);

@@ -131,6 +131,8 @@ namespace FixedCamVr.Diagnostics
 
             // UnauthorizedAccessEffect 自身の 7 秒時計は使わない。Comms の時計を SampleTakeover へ渡す。
             _effect.enabled = false;
+            // WARNING の下の 4 語は体験者の言語で出す（英仏は prefab の英仏の版）
+            _effect.UseLanguage(ShowLanguage.Current);
             _effect.Play(_screenAnchor, _screenSize);
             _active = true;
             if (Application.isPlaying && _panel != null)

@@ -630,7 +630,7 @@ test('設定は言語から軽減と確認へ進み、戻る操作と三言語�
   runtime.setSettingsStep('language', false);
   assert.equal(elements.get('subtitleTyped').textContent, 'Please choose the language you would like to use.');
   runtime.setSettingsStep('relief', false);
-  assert.equal(elements.get('subtitleTyped').textContent, 'Please choose whether you would like to reduce the horror.');
+  assert.equal(elements.get('subtitleTyped').textContent, 'Please choose whether to reduce the horror.');
   assert.equal(elements.get('submitLabel').textContent, 'Start with these settings');
 
   state.lang = 'fr';
@@ -1147,6 +1147,24 @@ test('本番JSONと表示指定の境界値を検証する', () => {
     assert.ok(Math.abs(films[i].fromMs - prevEnd) <= 40, `${briefing.scenes[i].id}: 前の場面の声の終わりから始まる`);
     assert.ok(films[i].voiceMs > films[i].fromMs);
   }
+  // 英仏は吹き替えの体の版。口は日本語の声のまま動くので、場面の頭と声の頭は日本語と同じ。
+  // テレビの札だけがその言語で、字幕は口の窓（windowsMs）で切る
+  for (const lang of ['en', 'fr']) {
+    const dubs = briefing.scenes.map((scene) => scene.film?.[lang]);
+    assert.ok(dubs.every(Boolean), `${lang}: 全場面に吹き替えの版がある`);
+    assert.equal(new Set(dubs.map((film) => film.file)).size, 1);
+    assert.notEqual(dubs[0].file, films[0].file, `${lang}: テレビの札がその言語の版`);
+    assert.ok(fs.statSync(path.join(assetRoot, dubs[0].file)).size > 1_000_000, dubs[0].file);
+    briefing.scenes.forEach((scene, i) => {
+      assert.equal(dubs[i].fromMs, films[i].fromMs, `${scene.id}/${lang}: 場面の頭が日本語と同じ`);
+      assert.equal(dubs[i].voiceMs, films[i].voiceMs, `${scene.id}/${lang}: 声の頭が日本語と同じ`);
+      assert.equal(dubs[i].windowsMs.length, scene.cues[lang].length);
+      const windows = dubs[i].windowsMs.reduce((sum, ms) => sum + ms, 0);
+      const voice = scene.cues.ja.reduce((sum, cue) => sum + cue.durationMs, 0);
+      assert.ok(Math.abs(windows - voice) <= 60, `${scene.id}/${lang}: 窓の和が日本語の声の長さ（${windows} と ${voice}）`);
+      assert.ok(fs.existsSync(path.join(assetRoot, dubs[i].poster)), dubs[i].poster);
+    });
+  }
   for (const mutate of [
     (data) => { data.scenes[0].film.ja.file = '../x.mp4'; },
     (data) => { data.scenes[0].film.ja.file = 'x.webm'; },
@@ -1154,6 +1172,9 @@ test('本番JSONと表示指定の境界値を検証する', () => {
     (data) => { data.scenes[0].film.ja.voiceMs = -1; },
     (data) => { data.scenes[1].film.ja.voiceMs = data.scenes[1].film.ja.fromMs - 1; },
     (data) => { data.scenes[0].film.de = data.scenes[0].film.ja; },
+    (data) => { data.scenes[0].film.en.windowsMs = data.scenes[0].film.en.windowsMs.slice(1); },
+    (data) => { data.scenes[0].film.en.windowsMs[0] = 0; },
+    (data) => { data.scenes[0].film.en.windowsMs = '1000'; },
   ]) {
     const invalid = clone(briefing);
     mutate(invalid);
@@ -1386,7 +1407,10 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   assert.equal(video.hidden, true);
 
   const startCue = scene.loopVideo.startCue;
-  assert.ok(startCue >= 1 && startCue < scene.cues.ja.length - 1, '壁の映像の後に 1 文以上ある');
+  // 歩く映像は次の図（ボタンの図）の手前まで。その文からは図を見せる
+  const nextFigure = scene.figures.find((figure) => figure.fromCue > startCue);
+  assert.ok(nextFigure, '歩く映像の後にボタンの図がある');
+  assert.ok(startCue >= 1 && nextFigure.fromCue - startCue >= 2, '歩く映像は 2 文以上流れる');
   for (let index = 0; index < startCue - 1; index++) runtime.moveBriefing(1, 'auto');
   assert.equal(video.playCount, before, '手順の文より前では壁の映像を出さない');
   runtime.moveBriefing(1, 'auto');
@@ -1398,7 +1422,7 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   video.currentTime = 4.2;
   const loadCount = video.loadCount;
 
-  while (state.briefing.cueIndex < scene.cues.ja.length - 1) runtime.moveBriefing(1, 'auto');
+  while (state.briefing.cueIndex < nextFigure.fromCue - 1) runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.sceneIndex, loopIndex);
   assert.equal(video.currentTime, 4.2);
   assert.equal(video.playCount, before + 1);
@@ -1411,6 +1435,20 @@ test('壁の動画は次の文から始まり、文送りでは再生位置を�
   assert.equal(video.paused, false);
   assert.equal(video.currentTime, 4.2);
 
+  // ボタンの図の文で歩く映像を止める。流し続けると映像が図を隠し、輪と「長押し」だけが浮いた（2026-11-16 英仏）
+  runtime.moveBriefing(1, 'auto');
+  assert.equal(state.briefing.cueIndex, nextFigure.fromCue);
+  assert.equal(video.paused, true);
+  assert.equal(video.hidden, true);
+  assert.equal(selectorElements.get('.briefing-visual').classList.contains('is-loop-playing'), false);
+  assert.match(elements.get('briefingImage').src, new RegExp(`${nextFigure.image.replace('.', '\\.')}$`));
+  assert.equal(elements.get('figureButtons').hidden, false);
+
+  // 再開の play で数は 1 増えている。図の文に入った時点の数から増えないことを見る
+  const playsAtFigure = video.playCount;
+  while (state.briefing.cueIndex < scene.cues.ja.length - 1) runtime.moveBriefing(1, 'auto');
+  assert.equal(video.playCount, playsAtFigure, '図の後で歩く映像を流し直さない');
+  assert.equal(video.hidden, true);
   runtime.moveBriefing(1, 'auto');
   assert.equal(state.briefing.sceneIndex, loopIndex + 1);
   assert.equal(video.paused, true);
@@ -1442,6 +1480,48 @@ test('部屋の動画は場面の頭の間から流し、字幕は声の頭ま�
   assert.ok(Math.abs(video.currentTime - second) < 1e-6, '2 文目は声の位置から');
   assert.equal(elements.get('subtitleTyped').textContent, scene.cues.ja[1].text);
   runtime.stopBriefingPlayback();
+});
+
+test('英仏は日本語の口の動画を吹き替えの体で流し、字幕を口の窓で切る', () => {
+  for (const lang of ['en', 'fr']) {
+    const data = clone(briefing);
+    prepareBriefing(data);
+    state.lang = lang;
+    const reportIndex = data.scenes.findIndex((candidate) => candidate.id === 'report');
+    const scene = data.scenes[reportIndex];
+    const film = scene.film[lang];
+    state.briefing.sceneIndex = reportIndex;
+    state.briefing.cueIndex = 0;
+    runtime.configureBriefingMedia(scene);
+    runtime.beginBriefingCue();
+    const video = elements.get('doctorVideo');
+    assert.equal(runtime.getBriefingMedia(), video);
+    assert.match(video.src, new RegExp(`${film.file.replace('.', '\\.')}$`));
+    assert.equal(selectorElements.get('.stage').classList.contains('is-film'), true);
+    // テレビは動画の中にある。額の図も歩く映像も重ねない
+    assert.equal(selectorElements.get('.stage').classList.contains('has-reference'), false);
+    assert.equal(elements.get('briefingLoopVideo').hidden, true);
+    video.onplaying();
+    // ボタンの図の文。字幕の言語の文の長さではなく、日本語の口の窓の位置から流す
+    const figureCue = scene.figures.find((figure) => figure.kind === 'buttons').fromCue;
+    // 'control' は 150ms 以内の連打を捨てるので、試験の中では 'auto' で送る
+    while (state.briefing.cueIndex < figureCue) assert.equal(runtime.moveBriefing(1, 'auto'), true);
+    const start = (film.voiceMs + film.windowsMs.slice(0, figureCue).reduce((sum, ms) => sum + ms, 0)) / 1000;
+    assert.ok(Math.abs(video.currentTime - start) < 1e-6, `${lang}: 口の窓の位置から（${video.currentTime} と ${start}）`);
+    assert.equal(elements.get('subtitleTyped').textContent, scene.cues[lang][figureCue].text);
+    assert.equal(elements.get('briefingLoopVideo').hidden, true, `${lang}: 歩く映像を図の上に流さない`);
+    // 窓の終わりで次の文へ。英仏の文の長さ（durationMs）では切らない
+    state.briefing.auto = true;
+    const ownEnd = start + scene.cues[lang][figureCue].durationMs / 1000;
+    assert.ok(ownEnd + 0.1 < start + film.windowsMs[figureCue] / 1000, `${lang}: この文は日本語の窓より短い`);
+    video.currentTime = ownEnd + 0.05;
+    video.ontimeupdate();
+    assert.equal(state.briefing.cueIndex, figureCue, `${lang}: 英仏の文の長さでは切らない`);
+    video.currentTime = start + film.windowsMs[figureCue] / 1000 - 0.01;
+    video.ontimeupdate();
+    assert.equal(state.briefing.cueIndex, figureCue + 1);
+    runtime.stopBriefingPlayback();
+  }
 });
 
 test('部屋の動画は章をまたいでも読み直さず、乱れを挟まずに続けて流す', () => {
@@ -1496,16 +1576,41 @@ test('部屋の動画が読めないときは、その説明の間だけ声と�
   runtime.stopBriefingPlayback();
 });
 
-test('英語と仏語は部屋の動画を使わない（日本語の声で焼いてある）', () => {
+test('吹き替えの版が読めないときは、額の図と文の長さで同じ文から続ける', () => {
   const data = clone(briefing);
   prepareBriefing(data);
   state.lang = 'en';
-  runtime.configureBriefingMedia(data.scenes[0]);
-  runtime.beginBriefingCue();
-  assert.equal(runtime.getBriefingMedia(), null);
-  assert.equal(selectorElements.get('.stage').classList.contains('is-film'), false);
-  runtime.stopBriefingPlayback();
-  state.lang = 'ja';
+  try {
+    state.briefing.sceneIndex = 1;
+    state.briefing.cueIndex = 1;
+    runtime.configureBriefingMedia(data.scenes[1]);
+    runtime.beginBriefingCue();
+    const video = runtime.getBriefingMedia();
+    assert.equal(video, elements.get('doctorVideo'));
+    assert.match(video.src, new RegExp(`${data.scenes[1].film.en.file.replace('.', '\\.')}$`));
+    video.onerror();
+    // 英仏の声は無いので、媒体なしで文の長さで進む（吹き替えの前と同じ形）
+    assert.equal(runtime.getBriefingMedia(), null);
+    assert.equal(state.briefing.filmFailed, true);
+    assert.equal(state.briefing.mediaFailed, false, '文の長さで続けられるので止めない');
+    assert.equal(state.briefing.cueIndex, 1);
+    assert.equal(selectorElements.get('.stage').classList.contains('is-film'), false);
+    assert.equal(selectorElements.get('.stage').classList.contains('has-reference'), true, 'テレビの資料へ戻る');
+    runtime.stopBriefingPlayback();
+
+    // 吹き替えの版を登録していない言語は部屋の動画を使わない
+    const bare = clone(briefing);
+    for (const scene of bare.scenes) delete scene.film.en;
+    prepareBriefing(bare);
+    state.lang = 'en';
+    runtime.configureBriefingMedia(bare.scenes[0]);
+    runtime.beginBriefingCue();
+    assert.equal(runtime.getBriefingMedia(), null);
+    assert.equal(selectorElements.get('.stage').classList.contains('is-film'), false);
+    runtime.stopBriefingPlayback();
+  } finally {
+    state.lang = 'ja';
+  }
 });
 
 test('媒体未指定の場面ではaudioもvideoも作らない', () => {

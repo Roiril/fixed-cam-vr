@@ -52,4 +52,14 @@ MonoBehaviour:
   contextGraphic: {fileID: 2800000, guid: c1b38b5d2f6a5fb46bc1b218b169b443, type: 3}
   attemptGraphic: {fileID: 2800000, guid: 5e727aeabdfe58d4b80fe13a171298ed, type: 3}
   failedGraphic: {fileID: 2800000, guid: 8e44d6ec406c09e4da0782a28694940a, type: 3}
+  englishWords:
+    subtitle: {fileID: 2800000, guid: 571f225433b74ae884a16a62c4e85905, type: 3}
+    context: {fileID: 2800000, guid: 6b891e8c230c4635bdf19d216824e72d, type: 3}
+    attempt: {fileID: 2800000, guid: d581020867f64859a9928e94ccb48e1d, type: 3}
+    failed: {fileID: 2800000, guid: b1762f2103ee4b90ad02eee4ef143faa, type: 3}
+  frenchWords:
+    subtitle: {fileID: 2800000, guid: 9d17c4cee112447fafdcfa0823799a2e, type: 3}
+    context: {fileID: 2800000, guid: 4ab7379a485e4aee94d06cffeeff6148, type: 3}
+    attempt: {fileID: 2800000, guid: 8935bd916d074a3ead2e4b372ec0b2e4, type: 3}
+    failed: {fileID: 2800000, guid: 0cdb66f357f34f9890d7d88157710258, type: 3}
   autoPlay: 0

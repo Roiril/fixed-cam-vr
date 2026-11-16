@@ -14,8 +14,15 @@ UnauthorizedAccessFx シェーダが付ける。かすれだけをここで焼�
 ⚠ **版を作り直したら、出力の bounds を UnauthorizedAccessEffect.OpaqueUvBounds へ写す。**
    本番の版は Read/Write 無効なので、実行時には不透明の範囲を測れない。
 
+英仏（2026-11-16）: WARNING の下の 4 語を、同じ明朝の大文字で別の版に焼く（`--lang en|fr`）。
+日本語の版は焼き直さない（かすれは乱数なので、回すたびに字の抜け方が変わる）。
+英仏の版の大きさは、出力の `cap`（大文字の高さの箱。É の点は外へ出る）を
+UnauthorizedAccessEffect.OpaqueUvBounds へ写す。並べる位置と高さは同じファイルの英仏の行。
+
 使い方:
-    py -3.11 tools/make-error-typography.py
+    py -3.11 tools/make-error-typography.py --lang en
+    py -3.11 tools/make-error-typography.py --lang fr
+    py -3.11 tools/make-error-typography.py --lang ja      # ⚠ 日本語の版を焼き直す（位置の写しも直す）
 """
 import argparse
 import json
@@ -70,6 +77,15 @@ def eaten_pct(ink, wear):
     return 100.0 * eaten / max(1, n)
 
 
+# 英仏の 4 語。日本語の 不正アクセス／接続元不明／遮断を執行／失敗 と同じ並び。
+# 「遮断」はスイの文面と同じ語（block / bloquer。CommsPanel の MarkStuck・MarkCleared）
+LATIN_WORDS = {
+    "en": ("INTRUSION", "SOURCE UNKNOWN", "BLOCKING", "FAILED"),
+    "fr": ("INTRUSION", "SOURCE INCONNUE", "BLOCAGE", "ÉCHEC"),
+}
+LATIN_VERSION = 1
+
+
 def typeset(font_path, text, size, tracking_em, weight_px, wear_pct, out_path):
     """size は最終解像度の em。weight_px は最終解像度での太らせ量（明朝の横画を残す程度）。"""
     font = ImageFont.truetype(str(font_path), size * SS)
@@ -98,9 +114,14 @@ def typeset(font_path, text, size, tracking_em, weight_px, wear_pct, out_path):
     rgba.save(temporary)
     temporary.replace(out_path)
     bbox = alpha.point(lambda v: 255 if v > 8 else 0).getbbox()
+    # 大文字の高さの箱（英仏の版の並べ方に使う）。横は不透明の範囲、縦は H の頭から基線まで
+    cap = font.getbbox("H")
+    cap_top = round((pad - top + cap[1]) / SS)
+    baseline = round((pad - top + cap[3]) / SS)
     return {
         "file": out_path.name, "text": text, "font": font_path.name,
         "pixels": list(rgba.size), "opaque": list(bbox) if bbox else None,
+        "cap": [bbox[0], cap_top, bbox[2], baseline] if bbox else None,
         "wear_pct": round(eaten_pct(ink, wear), 1),
     }
 
@@ -109,11 +130,25 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--font", type=Path, default=Path("Assets/Art/Fonts/SourceHanSerifJP-Regular.otf"))
     parser.add_argument("--out", type=Path, default=Path("Assets/Art/Textures/UnauthorizedAccess"))
+    parser.add_argument("--lang", choices=("ja", "en", "fr"), required=True,
+                        help="ja は日本語の 5 枚（WARNING を含む）を焼き直す。en・fr は下の 4 語だけ")
     args = parser.parse_args()
     if not args.font.is_file():
         raise SystemExit(f"font not found: {args.font}")
     args.out.mkdir(parents=True, exist_ok=True)
     f = args.font
+    if args.lang != "ja":
+        subtitle, context, attempt, failed = LATIN_WORDS[args.lang]
+        v = f"{args.lang}-v{LATIN_VERSION}"
+        # 字間を開けた大文字。WARNING と同じ組み方で、横画の細さを残す
+        results = [
+            typeset(f, subtitle, 112, 0.10, 0.6, 6, args.out / f"subtitle-{v}.png"),
+            typeset(f, context, 112, 0.10, 0.6, 6, args.out / f"context-{v}.png"),
+            typeset(f, attempt, 112, 0.10, 0.6, 5, args.out / f"attempt-{v}.png"),
+            typeset(f, failed, 128, 0.12, 0.9, 10, args.out / f"failed-{v}.png"),
+        ]
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        return
     results = [
         # 見出しは字間を開けた明朝の大文字。題字と同じく横画の細さを残す。
         typeset(f, "WARNING", 220, 0.14, 0.9, 11, args.out / "wordmark-v5.png"),

@@ -9,6 +9,7 @@
 - 発火待ち〜消去まで報告を拒否（数えない・後送りしない・離すまで再開しない） — `CommsPanel.TakeoverInputBlocked`・`CommsPossessionLogicTests.BlockedReport_DoesNotCountOrResolveAnything` 〔出典: memory/comms_takeover.md〕
 - 乗っ取り後の返事は Cursed: 人形の顔と赤い `CommsPanel.TakeoverLieText`（CommsHorror SDF）だけ。走り書きなし — `CommsPanelPossessionTests.CursedReplyStartsAsTheRedLieWithoutSweepOrKeystrokes` 〔出典: show-design:1223〕
 - 警告は明朝＋かすれ（v5）・朱と象牙。順・秒は不変 — `UnauthorizedAccessEffect.SampleTakeover`・`UnauthorizedAccessFx.shader` 〔出典: memory/comms_takeover.md 2026-10-21 節〕
+- WARNING の下の 4 語は体験者の言語で出す。`CommsTakeoverError.StartEffect` が `Play` の前に `UseLanguage(ShowLanguage.Current)` を呼び、英仏は prefab の `englishWords` / `frenchWords`（`*-en-v1.png` / `*-fr-v1.png`）。4 枚そろわない言語は日本語。英仏は大文字の高さで組む（4%・失敗 6.6%、1 行目の 2 語は組で中央）。版を焼き直したら `cap` を `UnauthorizedAccessEffect.LatinCapBoxes` と試験の表へ写す。読み上げ用の `TakeoverCaption` も同じ語 — `UnauthorizedAccessEffectTests.TakeoverLatinWordsReplaceTheFourJapaneseWordsAtTheirCapHeight` 〔LEDGER 0394〕
 - 断片の四角は帯の範囲だけ描く。式はシェーダの row と対で直す — `UnauthorizedAccessEffect.GlyphRowRange`・`UnauthorizedAccessEffectTests.GlyphRowRange_ContainsEveryRowTheShaderDraws` 〔memory/comms_performance_20261018.md〕
 
 ## 2026-09-25 主画面の砂嵐からライブへの切り替え

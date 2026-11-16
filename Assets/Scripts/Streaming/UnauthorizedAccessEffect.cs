@@ -42,6 +42,16 @@ namespace FixedCamVr.Streaming
         private const float TakeoverProcessY = -.065f;
         private const float TakeoverWarningVisibleHeight = .17f;
         private const float TakeoverJapaneseVisibleHeight = .052f;
+        private const float TakeoverJapaneseFailureHeight = .085f;
+        // 英仏の 4 語は大文字の高さ（H の頭から基線。É の点は外へ出る）で並べる。
+        // 漢字の箱 .052 に対し、明朝の大文字は .040 で同じ大きさに見える
+        private const float TakeoverLatinCapHeight = .040f;
+        private const float TakeoverLatinFailureCapHeight = .066f;
+        // 英仏の 1 行目（INTRUSION と SOURCE UNKNOWN）は幅が日本語より広いので、2 語の組を行の中心に置いて間を固定する
+        private const float TakeoverLatinMessageRowCenterX = .046f;
+        private const float TakeoverLatinMessageGap = .06f;
+        // 英仏の BLOCKING の右端。ここから遮断のバー（左端 -.02）まで間を空ける
+        private const float TakeoverLatinStatusRightX = -.06f;
         private const float TakeoverBlockFullHoldSec = .04f;
 
         private static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -91,7 +101,35 @@ namespace FixedCamVr.Streaming
         [SerializeField] private Texture2D? contextGraphic;
         [SerializeField] private Texture2D? attemptGraphic;
         [SerializeField] private Texture2D? failedGraphic;
+        // WARNING の下の 4 語の英仏の版（tools/make-error-typography.py --lang en|fr）。上の 4 つは日本語。
+        // 4 枚そろっていない言語は日本語のまま出す
+        [SerializeField] private TakeoverWordSet englishWords = new TakeoverWordSet();
+        [SerializeField] private TakeoverWordSet frenchWords = new TakeoverWordSet();
         [SerializeField] private bool autoPlay;
+
+        /// <summary>WARNING の下の 4 語（不正アクセス／接続元不明／遮断を執行／失敗）を 1 つの言語でそろえた版。</summary>
+        [Serializable]
+        private sealed class TakeoverWordSet
+        {
+            [SerializeField] private Texture2D? subtitle;
+            [SerializeField] private Texture2D? context;
+            [SerializeField] private Texture2D? attempt;
+            [SerializeField] private Texture2D? failed;
+
+            public Texture2D? Subtitle => subtitle;
+            public Texture2D? Context => context;
+            public Texture2D? Attempt => attempt;
+            public Texture2D? Failed => failed;
+            public bool IsComplete => subtitle != null && context != null && attempt != null && failed != null;
+
+            public void Set(Texture2D subtitleWord, Texture2D contextWord, Texture2D attemptWord, Texture2D failedWord)
+            {
+                subtitle = subtitleWord;
+                context = contextWord;
+                attempt = attemptWord;
+                failed = failedWord;
+            }
+        }
 
         private Transform? _screenRoot;
         private Transform? _spatialRoot;
@@ -189,8 +227,31 @@ namespace FixedCamVr.Streaming
         private float _takeoverOpacity = 1f;
         private float _takeoverReadFocus;
         private float _takeoverFailureAtSec = CommsPanelLogic.DefaultTakeoverFailureSec;
+        private ShowLang _wordsLang = ShowLang.Ja;
 
         public float Duration => EffectDuration;
+
+        /// <summary>いま WARNING の下の 4 語を出している言語。版がそろっていない言語は日本語になる。</summary>
+        public ShowLang WordsLanguage => LatinWords != null ? _wordsLang : ShowLang.Ja;
+
+        private TakeoverWordSet? LatinWords
+        {
+            get
+            {
+                TakeoverWordSet? words = _wordsLang switch
+                {
+                    ShowLang.En => englishWords,
+                    ShowLang.Fr => frenchWords,
+                    _ => null,
+                };
+                return words != null && words.IsComplete ? words : null;
+            }
+        }
+
+        private Texture2D? SubtitleWord => LatinWords is { } words ? words.Subtitle : subtitleGraphic;
+        private Texture2D? ContextWord => LatinWords is { } words ? words.Context : contextGraphic;
+        private Texture2D? AttemptWord => LatinWords is { } words ? words.Attempt : attemptGraphic;
+        private Texture2D? FailedWord => LatinWords is { } words ? words.Failed : failedGraphic;
         public bool IsPlaying { get; private set; }
         public float Elapsed { get; private set; }
         public int SpatialElementCount => GlyphCount + InterferenceStripCount;
@@ -226,7 +287,39 @@ namespace FixedCamVr.Streaming
             this.contextGraphic = contextGraphic;
             this.attemptGraphic = attemptGraphic;
             this.failedGraphic = failedGraphic;
-            if (!changed || _screenRoot == null) return;
+            if (changed) RebuildKeepingState();
+        }
+
+        /// <summary>WARNING の下の 4 語の英仏の版を入れる（試験とプレビュー用。本番は prefab が持つ）。</summary>
+        public void ConfigureWords(ShowLang lang, Texture2D subtitleWord, Texture2D contextWord,
+            Texture2D attemptWord, Texture2D failedWord)
+        {
+            TakeoverWordSet words = lang switch
+            {
+                ShowLang.En => englishWords,
+                ShowLang.Fr => frenchWords,
+                _ => throw new ArgumentOutOfRangeException(nameof(lang), "日本語の 4 語は Configure で入れる。"),
+            };
+            words.Set(subtitleWord, contextWord, attemptWord, failedWord);
+            if (_wordsLang == lang) RebuildKeepingState();
+        }
+
+        /// <summary>
+        /// WARNING の下の 4 語を出す言語。<see cref="Play"/> の前に呼ぶ（<c>CommsTakeoverError</c> が
+        /// <see cref="ShowLanguage.Current"/> を渡す）。版がそろっていない言語は日本語のまま出す。
+        /// </summary>
+        public void UseLanguage(ShowLang lang)
+        {
+            if (_wordsLang == lang) return;
+            TakeoverWordSet? before = LatinWords;
+            _wordsLang = lang;
+            if (before != LatinWords) RebuildKeepingState();
+        }
+
+        private void RebuildKeepingState()
+        {
+            _takeoverLayoutsMeasured = false;
+            if (_screenRoot == null) return;
 
             bool resume = IsPlaying;
             float elapsed = Elapsed;
@@ -306,7 +399,7 @@ namespace FixedCamVr.Streaming
             TakeoverBlockBreak = TakeoverBlockVisible ? Mathf.Clamp01(
                 (clock - fillStartSec - CommsPanelLogic.TakeoverBlockFillSec - TakeoverBlockFullHoldSec) /
                 (CommsPanelLogic.TakeoverBlockBreakSec - TakeoverBlockFullHoldSec)) : 0f;
-            TakeoverCaption = _takeoverOpacity > 0f ? CaptionFor(elapsed, _takeoverFailureAtSec) : string.Empty;
+            TakeoverCaption = _takeoverOpacity > 0f ? CaptionFor(elapsed, _takeoverFailureAtSec, WordsLanguage) : string.Empty;
             EnsureBuilt();
             if (_screenSize.x > 0f && _screenSize.y > 0f) Layout(_screenSize);
             Render(Mathf.Max(0f, elapsed));
@@ -382,15 +475,15 @@ namespace FixedCamVr.Streaming
             _warningMaterial = CreateRuntimeMaterial("Unauthorized Access Warning", 2f,
                 warningGraphic != null ? warningGraphic : Texture2D.whiteTexture, 1f, 3450);
             _subtitleMaterial = CreateRuntimeMaterial("Unauthorized Access Subtitle", 2f,
-                subtitleGraphic != null ? subtitleGraphic : Texture2D.whiteTexture, 1f, 3451);
+                SubtitleWord != null ? SubtitleWord : Texture2D.whiteTexture, 1f, 3451);
             _contextMaterial = CreateRuntimeMaterial("Unauthorized Access Context", 2f,
-                contextGraphic != null ? contextGraphic : Texture2D.whiteTexture, 1f, 3452);
+                ContextWord != null ? ContextWord : Texture2D.whiteTexture, 1f, 3452);
             _statusMaterial = CreateRuntimeMaterial("Unauthorized Access Status", 2f,
-                attemptGraphic != null ? attemptGraphic : Texture2D.whiteTexture, 1f, 3453);
+                AttemptWord != null ? AttemptWord : Texture2D.whiteTexture, 1f, 3453);
             _blockBarMaterial = CreateRuntimeMaterial("Unauthorized Access Block Bar", 2f,
                 Texture2D.whiteTexture, 1f, 3453, .18f);
             _failureMaterial = CreateRuntimeMaterial("Unauthorized Access Failure", 2f,
-                failedGraphic != null ? failedGraphic : Texture2D.whiteTexture, 1f, 3454);
+                FailedWord != null ? FailedWord : Texture2D.whiteTexture, 1f, 3454);
             _glyphMaterial = CreateRuntimeMaterial("Unauthorized Access Glyph", 1f,
                 Texture2D.whiteTexture, 1.18f);
             _interferenceMaterial = CreateRuntimeMaterial("Unauthorized Access Interference", 0f,
@@ -564,33 +657,59 @@ namespace FixedCamVr.Streaming
             _warningWidth = size.x * 1.06f;
             _warningHeight = _warningWidth / TextureAspect(warningGraphic, 1386f / 220f);
             _subtitleWidth = size.x * .76f;
-            _subtitleHeight = _subtitleWidth / TextureAspect(subtitleGraphic, 657f / 138f);
+            _subtitleHeight = _subtitleWidth / TextureAspect(SubtitleWord, 657f / 138f);
             _symbolSize = size.y * 1.16f;
             _contextWidth = size.x * .70f;
-            _contextHeight = _contextWidth / TextureAspect(contextGraphic, 5.4f);
+            _contextHeight = _contextWidth / TextureAspect(ContextWord, 5.4f);
             _statusHeight = size.y * .105f;
-            _statusWidth = _statusHeight * TextureAspect(attemptGraphic != null ? attemptGraphic : failedGraphic, 4.2f);
+            _statusWidth = _statusHeight * TextureAspect(AttemptWord != null ? AttemptWord : FailedWord, 4.2f);
             EnsureTakeoverLayoutMeasurements();
             _takeoverWarningLayout = TakeoverLayout(warningGraphic, _warningOpaqueUv,
                 TakeoverWarningVisibleHeight, .06f, TakeoverWarningY, 1386f / 220f, size);
-            _takeoverSubtitleLayout = TakeoverLayout(subtitleGraphic, _subtitleOpaqueUv,
-                TakeoverJapaneseVisibleHeight, -.12f, TakeoverMessageY, 657f / 138f, size);
-            _takeoverContextLayout = TakeoverLayout(contextGraphic, _contextOpaqueUv,
-                TakeoverJapaneseVisibleHeight, .23f, TakeoverMessageY, 5.4f, size);
-            _takeoverStatusLayout = TakeoverLayout(attemptGraphic, _statusOpaqueUv,
-                TakeoverJapaneseVisibleHeight, -.18f, TakeoverProcessY, 4.2f, size);
-            _takeoverFailureLayout = TakeoverLayout(failedGraphic, _failureOpaqueUv,
-                .085f, .06f, TakeoverProcessY, 4.2f, size);
+            if (LatinWords == null)
+            {
+                _takeoverSubtitleLayout = TakeoverLayout(SubtitleWord, _subtitleOpaqueUv,
+                    TakeoverJapaneseVisibleHeight, -.12f, TakeoverMessageY, 657f / 138f, size);
+                _takeoverContextLayout = TakeoverLayout(ContextWord, _contextOpaqueUv,
+                    TakeoverJapaneseVisibleHeight, .23f, TakeoverMessageY, 5.4f, size);
+                _takeoverStatusLayout = TakeoverLayout(AttemptWord, _statusOpaqueUv,
+                    TakeoverJapaneseVisibleHeight, -.18f, TakeoverProcessY, 4.2f, size);
+                _takeoverFailureLayout = TakeoverLayout(FailedWord, _failureOpaqueUv,
+                    TakeoverJapaneseFailureHeight, .06f, TakeoverProcessY, 4.2f, size);
+                return;
+            }
+            // 英仏: 1 行目の 2 語は組で行の中心に置き、間を固定する。BLOCKING は右端をバーの手前でそろえる
+            float subtitleWidth = VisibleWidth(SubtitleWord, _subtitleOpaqueUv, TakeoverLatinCapHeight, 6f, size);
+            float contextWidth = VisibleWidth(ContextWord, _contextOpaqueUv, TakeoverLatinCapHeight, 10f, size);
+            float statusWidth = VisibleWidth(AttemptWord, _statusOpaqueUv, TakeoverLatinCapHeight, 6f, size);
+            float rowLeft = TakeoverLatinMessageRowCenterX -
+                (subtitleWidth + TakeoverLatinMessageGap + contextWidth) * .5f;
+            _takeoverSubtitleLayout = TakeoverLayout(SubtitleWord, _subtitleOpaqueUv, TakeoverLatinCapHeight,
+                rowLeft + subtitleWidth * .5f, TakeoverMessageY, 6f, size);
+            _takeoverContextLayout = TakeoverLayout(ContextWord, _contextOpaqueUv, TakeoverLatinCapHeight,
+                rowLeft + subtitleWidth + TakeoverLatinMessageGap + contextWidth * .5f, TakeoverMessageY, 10f, size);
+            _takeoverStatusLayout = TakeoverLayout(AttemptWord, _statusOpaqueUv, TakeoverLatinCapHeight,
+                TakeoverLatinStatusRightX - statusWidth * .5f, TakeoverProcessY, 6f, size);
+            _takeoverFailureLayout = TakeoverLayout(FailedWord, _failureOpaqueUv,
+                TakeoverLatinFailureCapHeight, .06f, TakeoverProcessY, 4.2f, size);
+        }
+
+        /// <summary>見える範囲（<paramref name="visibleUv"/>）の幅を、画面の幅に対する割合で返す。</summary>
+        private static float VisibleWidth(Texture2D? texture, Rect visibleUv, float visibleHeight,
+            float fallbackAspect, Vector2 screenSize)
+        {
+            float height = screenSize.y * visibleHeight / visibleUv.height;
+            return height * TextureAspect(texture, fallbackAspect) * visibleUv.width / screenSize.x;
         }
 
         private void EnsureTakeoverLayoutMeasurements()
         {
             if (_takeoverLayoutsMeasured) return;
             _warningOpaqueUv = OpaqueUvBounds(warningGraphic);
-            _subtitleOpaqueUv = OpaqueUvBounds(subtitleGraphic);
-            _contextOpaqueUv = OpaqueUvBounds(contextGraphic);
-            _statusOpaqueUv = OpaqueUvBounds(attemptGraphic);
-            _failureOpaqueUv = OpaqueUvBounds(failedGraphic);
+            _subtitleOpaqueUv = OpaqueUvBounds(SubtitleWord);
+            _contextOpaqueUv = OpaqueUvBounds(ContextWord);
+            _statusOpaqueUv = OpaqueUvBounds(AttemptWord);
+            _failureOpaqueUv = OpaqueUvBounds(FailedWord);
             _takeoverLayoutsMeasured = true;
         }
 
@@ -621,8 +740,50 @@ namespace FixedCamVr.Streaming
                 return Rect.MinMaxRect(28f / 555f, 25f / 141f, 523f / 555f, 116f / 141f);
             if (texture.name == "failed-v5" && texture.width == 254 && texture.height == 141)
                 return Rect.MinMaxRect(30f / 254f, 25f / 141f, 227f / 254f, 116f / 141f);
+            // 英仏の版は大文字の高さの箱（出力の cap）。横は不透明の範囲、縦は H の頭から基線。É の点は外へ出る
+            foreach (LatinCapBox box in LatinCapBoxes)
+            {
+                if (texture.name == box.Name && texture.width == box.Width && texture.height == box.Height)
+                    return Rect.MinMaxRect(box.X0 / box.Width, (box.Height - box.Baseline) / box.Height,
+                        box.X1 / box.Width, (box.Height - box.CapTop) / box.Height);
+            }
             return new Rect(0f, 0f, 1f, 1f);
         }
+
+        /// <summary>英仏の版の大きさと大文字の箱（PIL の上原点の画素。tools/make-error-typography.py の cap）。</summary>
+        private readonly struct LatinCapBox
+        {
+            public readonly string Name;
+            public readonly float Width;
+            public readonly float Height;
+            public readonly float X0;
+            public readonly float CapTop;
+            public readonly float X1;
+            public readonly float Baseline;
+
+            public LatinCapBox(string name, float width, float height, float x0, float capTop, float x1, float baseline)
+            {
+                Name = name;
+                Width = width;
+                Height = height;
+                X0 = x0;
+                CapTop = capTop;
+                X1 = x1;
+                Baseline = baseline;
+            }
+        }
+
+        private static readonly LatinCapBox[] LatinCapBoxes =
+        {
+            new LatinCapBox("subtitle-en-v1", 803, 137, 31, 28, 774, 109),
+            new LatinCapBox("context-en-v1", 1338, 137, 31, 28, 1309, 109),
+            new LatinCapBox("attempt-en-v1", 738, 137, 31, 28, 712, 109),
+            new LatinCapBox("failed-en-v1", 615, 146, 31, 27, 583, 120),
+            new LatinCapBox("subtitle-fr-v1", 803, 137, 31, 28, 774, 109),
+            new LatinCapBox("context-fr-v1", 1345, 137, 31, 28, 1315, 109),
+            new LatinCapBox("attempt-fr-v1", 664, 137, 31, 28, 634, 109),
+            new LatinCapBox("failed-fr-v1", 566, 175, 31, 54, 535, 147),
+        };
 
         private static float TextureAspect(Texture2D? texture, float fallback) =>
             texture != null && texture.height > 0 ? texture.width / (float)texture.height : fallback;
@@ -768,7 +929,7 @@ namespace FixedCamVr.Streaming
             float reveal = Smooth01((seconds - .65f) / .20f);
             float ending = _takeoverMode ? 1f : 1f - Smooth01((seconds - 5.6f) / .4f);
             bool takeoverVisible = seconds >= TakeoverSourceUnknownSec;
-            float alpha = contextGraphic != null ?
+            float alpha = ContextWord != null ?
                 (_takeoverMode ? (takeoverVisible ? 1f : 0f) : reveal * ending) : 0f;
             SetQuadVertices(_contextVertices, 0,
                 _takeoverMode ? _takeoverContextLayout.CenterX : .15f * _screenSize.x,
@@ -784,7 +945,7 @@ namespace FixedCamVr.Streaming
         {
             if (_statusMesh == null) return;
             bool failed = !_takeoverMode && seconds >= 3.82f;
-            Texture2D? texture = failed ? failedGraphic : attemptGraphic;
+            Texture2D? texture = failed ? FailedWord : AttemptWord;
             if (_statusMaterial != null)
                 _statusMaterial.SetTexture(MainTexId, texture != null ? texture : Texture2D.whiteTexture);
             float reveal = Smooth01((seconds - 1.35f) / .20f);
@@ -852,7 +1013,7 @@ namespace FixedCamVr.Streaming
         private void UpdateFailureMesh(float seconds)
         {
             if (_failureMesh == null) return;
-            bool visible = _takeoverMode && seconds >= _takeoverFailureAtSec && failedGraphic != null;
+            bool visible = _takeoverMode && seconds >= _takeoverFailureAtSec && FailedWord != null;
             SetQuadVertices(_failureVertices, 0, _takeoverFailureLayout.CenterX,
                 _takeoverFailureLayout.CenterY, -.012f, _takeoverFailureLayout.Width,
                 _takeoverFailureLayout.Height);
@@ -1044,15 +1205,15 @@ namespace FixedCamVr.Streaming
                 (seconds >= .32f && seconds < 6.1f ?
                     ReadRect(.12f, -.14f, _subtitleWidth, _subtitleHeight) : Vector4.zero);
             Vector4 contextRect = _takeoverMode ?
-                (contextGraphic != null && seconds >= TakeoverSourceUnknownSec ?
+                (ContextWord != null && seconds >= TakeoverSourceUnknownSec ?
                     ReadRect(_takeoverContextLayout) : Vector4.zero) :
-                (contextGraphic != null && seconds >= .65f && seconds < 6f ?
+                (ContextWord != null && seconds >= .65f && seconds < 6f ?
                     ReadRect(.15f, -.34f, _contextWidth, _contextHeight) : Vector4.zero);
             Vector4 statusRect;
             if (_takeoverMode)
             {
-                bool attemptVisible = attemptGraphic != null && TakeoverBlockVisible;
-                bool failureVisible = failedGraphic != null && seconds >= _takeoverFailureAtSec;
+                bool attemptVisible = AttemptWord != null && TakeoverBlockVisible;
+                bool failureVisible = FailedWord != null && seconds >= _takeoverFailureAtSec;
                 statusRect = attemptVisible && failureVisible ?
                     EnclosingReadRect(_takeoverStatusLayout, _takeoverFailureLayout) :
                     attemptVisible ? ReadRect(_takeoverStatusLayout) :
@@ -1064,7 +1225,7 @@ namespace FixedCamVr.Streaming
             }
             else
             {
-                statusRect = (attemptGraphic != null || failedGraphic != null) &&
+                statusRect = (AttemptWord != null || FailedWord != null) &&
                     seconds >= 1.35f && seconds < 6.84f ?
                     ReadRect(.21f, -.50f, _statusWidth, _statusHeight) : Vector4.zero;
             }
@@ -1150,14 +1311,21 @@ namespace FixedCamVr.Streaming
             TakeoverBlockVisible = false;
         }
 
-        private static string CaptionFor(float seconds, float failureAtSec)
+        private static string CaptionFor(float seconds, float failureAtSec, ShowLang lang)
         {
+            // 版に焼いた 4 語と同じ文字列（tools/make-error-typography.py の LATIN_WORDS）
+            (string unauthorized, string source, string attempt, string failed) = lang switch
+            {
+                ShowLang.En => ("INTRUSION", "SOURCE UNKNOWN", "BLOCKING", "FAILED"),
+                ShowLang.Fr => ("INTRUSION", "SOURCE INCONNUE", "BLOCAGE", "ÉCHEC"),
+                _ => ("不正アクセス", "接続元不明", "遮断を執行", "失敗"),
+            };
             if (seconds < TakeoverUnauthorizedSec) return "WARNING";
-            if (seconds < TakeoverSourceUnknownSec) return "WARNING | 不正アクセス";
-            if (seconds < CommsPanelLogic.TakeoverBlockSec) return "WARNING | 不正アクセス | 接続元不明";
+            if (seconds < TakeoverSourceUnknownSec) return $"WARNING | {unauthorized}";
+            if (seconds < CommsPanelLogic.TakeoverBlockSec) return $"WARNING | {unauthorized} | {source}";
             return seconds < failureAtSec ?
-                "WARNING | 不正アクセス | 接続元不明 | 遮断を執行" :
-                "WARNING | 不正アクセス | 接続元不明 | 失敗";
+                $"WARNING | {unauthorized} | {source} | {attempt}" :
+                $"WARNING | {unauthorized} | {source} | {failed}";
         }
 
         private void MeasureAudience(Transform anchor)

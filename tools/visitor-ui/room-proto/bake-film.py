@@ -1,6 +1,7 @@
 """試作の部屋（口の動画入り）を、タブレットが流す 1 本の動画に焼く。
 
     py -3.11 tools/visitor-ui/room-proto/bake-film.py [--frames film] [--fps 30] [--version 1]
+    py -3.11 tools/visitor-ui/room-proto/bake-film.py --lang en --version 3      # 英仏の吹き替えの版
 
 1. 試作のページ（`?w=1280`）のコンソールで `await RoomProto.postMeta()` と
    `await RoomProto.export('film', 30, 0, RoomProto.END_AT + 400)`（声の終わりまで。終わりの砂嵐はアプリが出す）
@@ -8,6 +9,10 @@
    `briefing-v1.json` の各場面の `film.ja`（file・poster・fromMs・voiceMs）
 
 字幕は焼かない（アプリが出す）。音は声と効果音（`layers/stem.mp3`）を混ぜる。
+
+英仏（`--lang en|fr`）は吹き替えの体で焼く。口は日本語の声のまま動き、テレビの中の札だけがその言語になる
+（試作のページを `?w=1280&text=en` で開いて `export('film-en', ...)`）。声はまだ入れず、音は効果音だけ。
+`film.<言語>` には、その動画の口の時刻で切った文の窓 `windowsMs` を書く（アプリは字幕をこの窓で出す）。
 アプリは場面ごとに `fromMs`（その場面の分の頭。前の場面の声の終わり）から流し、文の窓は `voiceMs` に文の頭を足した位置で切る。
 探す位置へすぐ飛べるよう、キーフレームは 0.5 秒ごと。
 """
@@ -35,13 +40,16 @@ def duration(path: Path) -> float:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--frames", default="film")
+    ap.add_argument("--lang", choices=("ja", "en", "fr"), default="ja",
+                    help="ja は声と効果音。en・fr は吹き替えの体（口は日本語のまま・札だけその言語・声なしで効果音だけ）")
+    ap.add_argument("--frames", default=None, help="既定は ja が film、ほかは film-<言語>")
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--version", type=int, default=1)
     ap.add_argument("--crf", type=int, default=24, help="画質。20 で 89MB・24 で約 40MB（粒の見え方は 24 まで保つ）")
     args = ap.parse_args()
 
-    frames = HERE / "frames" / args.frames
+    dub = args.lang != "ja"
+    frames = HERE / "frames" / (args.frames or ("film" if not dub else f"film-{args.lang}"))
     meta = json.loads((HERE / "frames/meta/f00000.jpg").read_text(encoding="utf-8"))
     n = len(list(frames.glob("f*.jpg")))
     want = round((meta["end"] + 400) / 1000 * args.fps)
@@ -53,18 +61,23 @@ def main() -> None:
     starts: dict[str, int] = {}
     for c in meta["cues"]:
         starts.setdefault(c["scene"], c["s"])
-    film_name = f"doctor-room-ja-v{args.version}.mp4"
+    film_name = f"doctor-room-{args.lang}-v{args.version}.mp4"
     out = ASSET / film_name
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-framerate", str(args.fps), "-i", "f%05d.jpg"]
-    mix = []
-    for k, scene in enumerate(briefing["scenes"], start=1):
-        cmd += ["-i", str(ASSET / scene["audio"]["ja"])]
-        mix.append(f"[{k}:a]adelay={starts[scene['id']]}:all=1[a{k}]")
-    count = len(briefing["scenes"])
-    labels = "".join(f"[a{k}]" for k in range(1, count + 1))
-    cmd += ["-i", str(HERE / "layers" / "stem.mp3")]
-    labels += f"[{count + 1}:a]"
-    graph = ";".join(mix) + f";{labels}amix=inputs={count + 1}:normalize=0,atrim=end={length:.3f}[a]"
+    if dub:
+        # 吹き替えの声はまだ無い。効果音だけを、日本語の版と同じ大きさで敷く
+        cmd += ["-i", str(HERE / "layers" / "stem.mp3")]
+        graph = f"[1:a]atrim=end={length:.3f},apad=whole_dur={length:.3f}[a]"
+    else:
+        mix = []
+        for k, scene in enumerate(briefing["scenes"], start=1):
+            cmd += ["-i", str(ASSET / scene["audio"]["ja"])]
+            mix.append(f"[{k}:a]adelay={starts[scene['id']]}:all=1[a{k}]")
+        count = len(briefing["scenes"])
+        labels = "".join(f"[a{k}]" for k in range(1, count + 1))
+        cmd += ["-i", str(HERE / "layers" / "stem.mp3")]
+        labels += f"[{count + 1}:a]"
+        graph = ";".join(mix) + f";{labels}amix=inputs={count + 1}:normalize=0,atrim=end={length:.3f}[a]"
     cmd += ["-filter_complex", graph, "-map", "0:v", "-map", "[a]",
             "-c:v", "libx264", "-profile:v", "high", "-level", "4.1", "-crf", str(args.crf), "-preset", "slow",
             "-g", str(args.fps), "-keyint_min", str(args.fps), "-sc_threshold", "0", "-pix_fmt", "yuv420p",
@@ -76,11 +89,20 @@ def main() -> None:
     for scene in briefing["scenes"]:
         sid = scene["id"]
         voice = starts[sid]
-        poster = f"doctor-room-{sid}-v{args.version}.jpg"
+        poster = f"doctor-room-{sid}-{args.lang}-v{args.version}.jpg" if dub else f"doctor-room-{sid}-v{args.version}.jpg"
         frame_no = min(n - 1, round(prev_end / 1000 * args.fps))
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(frames / f"f{frame_no:05d}.jpg"),
                         "-q:v", "3", str(ASSET / poster)], check=True)
-        scene["film"] = {"ja": {"file": film_name, "poster": poster, "fromMs": int(prev_end), "voiceMs": int(voice)}}
+        entry = {"file": film_name, "poster": poster, "fromMs": int(prev_end), "voiceMs": int(voice)}
+        if dub:
+            # 口が動く窓（試作の時刻表の文の頭と終わり）。字幕はこの窓で出す
+            windows = [round(c["e"] - c["s"]) for c in sorted((c for c in meta["cues"] if c["scene"] == sid),
+                                                                 key=lambda c: c["i"])]
+            if len(windows) != len(scene["cues"][args.lang]):
+                sys.exit(f"{sid}: 口の窓 {len(windows)} 個と {args.lang} の文 {len(scene['cues'][args.lang])} 個が合わない")
+            entry["windowsMs"] = windows
+        # ほかの言語の版は残す
+        scene.setdefault("film", {})[args.lang] = entry
         prev_end = voice + round(duration(ASSET / scene["audio"]["ja"]) * 1000)
     tmp = BRIEFING.with_suffix(".json.tmp")
     with io.open(tmp, "w", encoding="utf-8", newline="\n") as f:
@@ -89,7 +111,7 @@ def main() -> None:
     os.replace(tmp, BRIEFING)
     print(f"{out}  {out.stat().st_size / 1e6:.1f}MB  {n} コマ・{length:.2f} 秒")
     for scene in briefing["scenes"]:
-        print(f"  {scene['id']}: {scene['film']['ja']}")
+        print(f"  {scene['id']}: {scene['film'][args.lang]}")
 
 
 if __name__ == "__main__":

@@ -1011,7 +1011,7 @@
       reliefOn: 'on', reliefOff: 'off',
       reliefOffNote: 'Normal effects and volume', reliefOnNote: 'Half volume with a cheerful tune',
       askLanguage: 'Please choose the language you would like to use.',
-      askRelief: 'Please choose whether you would like to reduce the horror.',
+      askRelief: 'Please choose whether to reduce the horror.',
       next: 'Next', back: 'Back',
       notice: 'This work contains horror imagery and\nscenes meant to unsettle or frighten.\n\nIf you feel unwell at any point, stop\nwhere you are, remove the headset and\nlet a member of staff know.',
       apply: 'Start with these settings', edit: 'Back to settings', retry: 'Send again',
@@ -1844,7 +1844,8 @@
         }
       }
       // 博士の部屋の動画（tools/visitor-ui/room-proto で焼いた 1 本）。全部の場面が同じファイルの別の位置を使う。
-      // fromMs はこの場面の分の頭（灯り・テレビが点く・カメラが動き出す間を含む）、voiceMs は声の頭
+      // fromMs はこの場面の分の頭（灯り・テレビが点く・カメラが動き出す間を含む）、voiceMs は声の頭。
+      // 英仏は吹き替えの体の版（口は日本語の声のまま）。windowsMs は口が動く文の窓で、字幕はこの窓で出す
       if (scene.film != null && (!isRecord(scene.film) || Object.entries(scene.film).some(([lang, film]) => (
         !BRIEFING_LANGS.includes(lang)
         || !isRecord(film)
@@ -1852,6 +1853,11 @@
         || !validAssetFilename(film.poster)
         || !Number.isFinite(film.fromMs) || !Number.isFinite(film.voiceMs)
         || film.fromMs < 0 || film.voiceMs < film.fromMs
+        || (film.windowsMs != null && (
+          !Array.isArray(film.windowsMs)
+          || film.windowsMs.length !== scene.cues[lang].length
+          || film.windowsMs.some((ms) => !Number.isFinite(ms) || ms <= 0)
+        ))
       )))) {
         throw new Error(`invalid briefing film: ${scene.id}`);
       }
@@ -1979,13 +1985,14 @@
     return film && !state.briefing.filmFailed ? film : null;
   }
 
+  // 歩く映像を流す文か。startCue から、次の図（fromCue が startCue より後。ボタンの図）が出る手前まで。
+  // 次の図の文まで流し続けると、映像が図を隠し、輪と「長押し」だけが映像の上に浮いた（2026-11-16）
   function isBriefingLoopCue() {
     const scene = currentBriefingScene();
-    return state.view === 'briefing'
-      && !state.briefing.ended
-      && !briefingFilm(scene)
-      && Boolean(scene?.loopVideo)
-      && state.briefing.cueIndex >= scene.loopVideo.startCue;
+    if (state.view !== 'briefing' || state.briefing.ended || briefingFilm(scene) || !scene?.loopVideo) return false;
+    const cueIndex = state.briefing.cueIndex;
+    const nextFigure = (scene.figures || []).find((figure) => figure.fromCue > scene.loopVideo.startCue);
+    return cueIndex >= scene.loopVideo.startCue && (!nextFigure || cueIndex < nextFigure.fromCue);
   }
 
   function stopBriefingLoopVideo() {
@@ -2178,12 +2185,17 @@
     const cue = currentBriefingCue();
     if (!scene || !cue) return;
     const film = briefingMedia === $('doctorVideo') ? briefingFilm(scene) : null;
-    const cueStart = cueStartMs(scene, state.briefing.cueIndex);
+    // 吹き替えの体の版は、文の窓を口の動き（windowsMs）で切る。字幕の言語の文の長さでは切らない
+    const windows = film?.windowsMs;
+    const cueStart = windows
+      ? windows.slice(0, state.briefing.cueIndex).reduce((total, ms) => total + ms, 0)
+      : cueStartMs(scene, state.briefing.cueIndex);
+    const cueLength = windows ? windows[state.briefing.cueIndex] : cue.durationMs;
     // 部屋の動画では、場面の最初の文の窓に、その前の間（灯り・テレビの電源・カメラの動き出し）を含める
     const startSec = film
       ? (state.briefing.cueIndex === 0 ? film.fromMs : film.voiceMs + cueStart) / 1000
       : cueStart / 1000;
-    const endSec = film ? (film.voiceMs + cueStart + cue.durationMs) / 1000 : startSec + cue.durationMs / 1000;
+    const endSec = film ? (film.voiceMs + cueStart + cueLength) / 1000 : startSec + cueLength / 1000;
     const media = briefingMedia;
     if (film && state.briefing.cueIndex === 0 && film.voiceMs - film.fromMs > 400) {
       const key = `briefing:${scene.id}:${state.lang}:0`;
