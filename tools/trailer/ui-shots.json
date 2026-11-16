@@ -1,0 +1,13 @@
+[
+  { "name": "ops-ready", "url": "http://localhost:8099/#ready", "load": 3500 },
+  { "name": "ops-shoot", "url": "http://localhost:8099/#shoot", "load": 3500 },
+  { "name": "ops-live", "url": "http://localhost:8099/#live", "load": 3500 },
+  { "name": "author-place", "url": "http://localhost:8099/authoring.html", "load": 4000, "steps": [{ "click": "場所", "after": 2500 }] },
+  { "name": "author-material", "url": "http://localhost:8099/authoring.html", "load": 4000, "steps": [{ "click": "素材", "after": 2500 }] },
+  { "name": "author-cut", "url": "http://localhost:8099/authoring.html", "load": 4000, "steps": [{ "click": "演出", "after": 2500 }] },
+  { "name": "author-live", "url": "http://localhost:8099/authoring.html", "load": 4000, "steps": [{ "click": "本番", "after": 2500 }] },
+  { "name": "floormap-plate", "url": "http://localhost:8099/floormap-plate.html", "load": 4000 },
+  { "name": "floormap-hi", "url": "http://localhost:8099/floormap-plate.html", "load": 4000, "scale": 2.5 },
+  { "name": "timeline-mock", "url": "http://localhost:8099/timeline-mock.html", "load": 3000 },
+  { "name": "onsite", "url": "http://localhost:8099/onsite.html", "load": 3500 }
+]

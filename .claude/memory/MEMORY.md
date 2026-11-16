@@ -92,7 +92,7 @@
 - [twin_cycles.md](twin_cycles.md) — 写実のツイン。配置は写真から解く・盲検の点
 - [sim_device_divergence.md](sim_device_divergence.md) — 卓のシミュレータと実機の食い違い 5 件。最初に疑う 3 点
 - [experience_shots.md](experience_shots.md) — 左グリップで体験中の画を 4 種類保存。**展示本番の機は OFF**
-- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4
+- [experience_replay.md](experience_replay.md) — 紹介動画用。Quest の入力記録を PC で流し直して広角 mp4。[予告動画](trailer_remake.md)
 - [verification_workflow.md](verification_workflow.md) — 旧来の Link+Play+MCP（正は CLI）
 
 ## 機材・ビルド・ネットワーク
@@ -113,7 +113,7 @@
 ## Unity・SDK
 - [unity_pitfalls.md](unity_pitfalls.md) — Unity / Meta XR の地雷集（Quad 向き・Texture 初期化・SkinnedMesh ほか）
 - [sdk_decision.md](sdk_decision.md) — Meta XR All-in-One + XRI を採った経緯
-- [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路。登録済み・要 Editor 起動）
+- [mcp_unity_setup.md](mcp_unity_setup.md) — Unity MCP の登録手順（退避路）
 
 ## 対外資料・その他
 - [paper_dcexpo_env.md](paper_dcexpo_env.md) — DCEXPO 資料 `paper/dcexpo`。[骨組みパイプと送る箱](booth_pipes_shipping.md)
