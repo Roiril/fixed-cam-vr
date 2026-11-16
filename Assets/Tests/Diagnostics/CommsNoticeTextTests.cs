@@ -469,13 +469,13 @@ namespace FixedCamVr.Diagnostics.Tests
         }
 
         /// <summary>
-        /// ⓪c の 2 枚目は、そのカメラが<b>肉眼では見えない異常存在を映す</b>と言う。ただの室内カメラでは、体験者がなぜ
+        /// ⓪c の 2 枚目は、そのカメラが<b>異常存在を映す</b>と言う。ただの室内カメラでは、体験者がなぜ
         /// 自分の目でなくテレビの中の自分を見て歩くのかに答えが無い（2026-11-14 作者の指摘）。
-        /// 「室内カメラ」とは呼ばない。日本語は 0392 の逐語（改行の位置だけ帯の幅に合わせた）。
+        /// 「室内カメラ」とは呼ばない。日本語は 0393 の逐語。
         /// </summary>
-        [TestCase(ShowLang.Ja, "このカメラは、肉眼では見えない異常存在を、高感度で映します。", "室内")]
-        [TestCase(ShowLang.En, "invisible to the naked eye", "room camera")]
-        [TestCase(ShowLang.Fr, "invisibles à l'œil nu", "de la pièce")]
+        [TestCase(ShowLang.Ja, "このカメラは、異常存在を高感度で映します。", "室内")]
+        [TestCase(ShowLang.En, "anomalous entities", "room camera")]
+        [TestCase(ShowLang.Fr, "entités anormales", "de la pièce")]
         public void TheObservationCamera_ShowsWhatTheEyeCannot(ShowLang lang, string unseen, string plain)
         {
             string second = CommsPanel.NoticeText(CommsNotice.ArrivedCamera, lang).Replace("\n", lang == ShowLang.Ja ? "" : " ");

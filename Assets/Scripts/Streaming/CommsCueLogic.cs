@@ -131,7 +131,7 @@ namespace FixedCamVr.Streaming
         MarkClearedClose,
         /// <summary>
         /// ⓪c の 2 枚目。<see cref="Arrived"/> を読ませ終わった縁に、同じ面のまま入れ替えで出す。
-        /// 観測カメラが肉眼では見えない異常存在を映すと言う（<c>canon/LEDGER.md</c> 0392）。
+        /// 観測カメラが異常存在を高感度で映すと言う（<c>canon/LEDGER.md</c> 0392・0393）。
         /// 導入のうちに読ませ切れなければ本編の頭で、①（<see cref="Begin"/>）より先に出す。
         /// ⚠ 末尾に足してある（<see cref="CommsCueLogic.IsOnboarding"/> は並びの範囲で判定する）。
         /// ⚠ 名前は走行ログ（<c>ev=comms id=</c>）と解析器の綴り。

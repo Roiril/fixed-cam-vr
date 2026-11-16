@@ -337,7 +337,7 @@ namespace FixedCamVr.Diagnostics
         ///   体験者が報告するのは「違和感」、スイが判定するのは「異常」（博士の台詞と同じ分け方。「異変」は使わない）。
         ///   スイがすることは「遮断」（乗っ取りの警告「遮断を執行／遮断失敗」と同じ語）。
         ///   廻ることは「廻る」1 つで通す（題字の字。開始 → 人形の嘘 → 締め）。
-        ///   映像の出どころは「観測カメラ」。肉眼では見えない異常存在を映すカメラ（到着の 2 枚目が言う）で、
+        ///   映像の出どころは「観測カメラ」。異常存在を高感度で映すカメラ（到着の 2 枚目が言う）で、
         ///   体験者がなぜテレビの中の自分を見て歩くのかの理由になる。
         /// ⚠ <b>スイは画を説明しない</b>（<c>canon/LEDGER.md</c> 0363「説明しすぎなんだよ」）。何が映っているかは画が見せる。
         ///   周の番号も言わない（各周の頭の演出に被る）。追い込まれると断片とログの行になる。ため口にはならない。
@@ -382,11 +382,8 @@ namespace FixedCamVr.Diagnostics
             //   博士の「観測装置」・結果画面の「観測記録」と同じ語の家族。博士は「室内のカメラ」と言うが、同じ物として読まれた。
             // ⚠ ユーザーの文（0392「2つに分けよう」）。1 枚目を読ませ終わったら同じ面で 2 枚目へ入れ替える。
             CommsNotice.Arrived => "到着しました。\n観測カメラに接続します。",
-            // ⓪c の 2 枚目。異常が映像にしか出ないこと（現実の部屋には何も無い）と、
-            //   終幕の写真に人形が写ることが、この 1 枚に乗る。ユーザーの文（0392）。
-            // ⚠ ユーザーは「このカメラは、肉眼では見えない／異常存在を、高感度で映します。」の 2 行で書いた。
-            //   1 行は全角 14 字までなので（`CommsNoticeTextTests.EveryLine_FitsTheBand`）、語を変えずに改行の位置だけ動かしている。
-            CommsNotice.ArrivedCamera => "このカメラは、\n肉眼では見えない異常存在を、\n高感度で映します。",
+            // ⓪c の 2 枚目。このカメラが異常存在を映す物だと言う。ユーザーの文（0393。0392 の「肉眼では見えない」を外した）。
+            CommsNotice.ArrivedCamera => "このカメラは、\n異常存在を高感度で映します。",
             // ① 開始の合図。⚠ 周の番号は言わない（0363。2・3 周目の頭にも何も出さない）。
             // ⚠ 「廻り始めてください。」博士は「エージェントの指示に従って歩き始めてください」と言い、体験者は
             //   テレビの前でその指示を待っている。「調査を開始してください。」では、歩いてよいのかが分からなかった。
@@ -464,7 +461,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Greeting => "My apologies.\nI am Sui, the agent\nsupporting your survey.",
             CommsNotice.Walk => "Start point marked.\nFollow the arrow.",
             CommsNotice.Arrived => "Arrived.\nConnecting to the\nobservation cameras.",
-            CommsNotice.ArrivedCamera => "These high-sensitivity\ncameras show anomalies\ninvisible to the naked eye.",
+            CommsNotice.ArrivedCamera => "These cameras capture\nanomalous entities\nwith high sensitivity.",
             CommsNotice.Begin => "Hold the handrail\nand start circling.",
             CommsNotice.BeginHow => "If anything feels wrong,\nhold the button.\nI will analyse and block it.",
             CommsNotice.MarkLogged => "An anomaly was detected.\nBlocking it.",
@@ -496,7 +493,7 @@ namespace FixedCamVr.Diagnostics
             CommsNotice.Greeting => "Veuillez m'excuser.\nJe suis Sui, l'agente\nqui assiste votre enquête.",
             CommsNotice.Walk => "Point de départ marqué.\nSuivez la flèche.",
             CommsNotice.Arrived => "Arrivé.\nConnexion aux caméras\nd'observation.",
-            CommsNotice.ArrivedCamera => "Très sensibles, ces caméras\nmontrent les anomalies\ninvisibles à l'œil nu.",
+            CommsNotice.ArrivedCamera => "Ces caméras captent\nles entités anormales\navec une haute sensibilité.",
             CommsNotice.Begin => "Tenez la main courante\net commencez à tourner.",
             CommsNotice.BeginHow => "Au moindre doute,\nmaintenez le bouton.\nJ'analyse et je bloque.",
             CommsNotice.MarkLogged => "Anomalie détectée.\nJe la bloque.",

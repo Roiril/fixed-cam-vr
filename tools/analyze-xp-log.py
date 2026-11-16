@@ -2676,7 +2676,7 @@ def analyze(events, others, exp, warns=None):
                 t_arrived_cam = _first("ArrivedCamera")
                 if t_arrived is not None:
                     if t_arrived_cam is None:
-                        verdict("FAIL", "⓪c の 2 枚目『このカメラは、肉眼では見えない…』が届いていない "
+                        verdict("FAIL", "⓪c の 2 枚目『このカメラは、異常存在を…』が届いていない "
                                         "（CommsCueLogic.ArrivedCameraDue）")
                     elif t_arrived_cam <= t_arrived:
                         verdict("FAIL", "⓪c の 2 枚目が 1 枚目より先に出ている")
