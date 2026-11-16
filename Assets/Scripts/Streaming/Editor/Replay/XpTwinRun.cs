@@ -15,7 +15,7 @@ namespace FixedCamVr.Streaming.EditorTools.Replay
     ///
     /// CLI: <c>.\tools\unity.ps1 twin-run -Set pack=&lt;束&gt;,out=&lt;フォルダ&gt;</c>。
     /// 値: pack（<c>tools/twin/make_pack.py</c> の出力）・out・speed（m/s。既定 0.25）・dwell（区間の真ん中で止まる秒。既定 6）・
-    /// nomark=1（報告しない）・relief=1（ホラー軽減）・calib=show（ツインの配置へ差し替えない）・
+    /// nomark=1（報告しない）・relief=1（ホラー軽減）・lang=en|fr（タブレットで選んだ言語）・calib=show（ツインの配置へ差し替えない）・
     /// marks=1B.2A.3B（周の中でも報告する区間。各区間に入って 2.5 秒後に 1 回）・
     /// capture=eye（走行の Play の中で目線の動画を撮り、out へ eye.mp4 と replay_xp.log を書く）。
     /// capture=eye の撮り方は replay と同じ値で渡せる: fov（縦の度。既定 52）・w・h・fps・msaa・eyecam。
@@ -70,6 +70,7 @@ namespace FixedCamVr.Streaming.EditorTools.Replay
             SessionState.SetFloat("fcv.twin.dwell", ArgFloat("dwell", 6f));
             SessionState.SetInt("fcv.twin.nomark", ArgFloat("nomark", 0f) != 0f ? 1 : 0);
             SessionState.SetInt("fcv.twin.relief", ArgFloat("relief", 0f) != 0f ? 1 : 0);
+            SessionState.SetString("fcv.twin.lang", EditorCliArgs.Get("lang") ?? "");
             SessionState.SetInt("fcv.twin.fast", ArgFloat("fast", 0f) != 0f ? 1 : 0);
             SessionState.SetString("fcv.twin.marks", EditorCliArgs.Get("marks") ?? "");
             SessionState.SetInt("fcv.twin.showcalib", EditorCliArgs.Get("calib") == "show" ? 1 : 0);

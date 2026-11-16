@@ -249,6 +249,12 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(self.plan("--fast")[1]["fast"], "1")
         self.assertEqual(self.plan("--fast", "--no-video")[1]["fast"], "1")
 
+    def test_lang_reaches_the_run_only_when_not_japanese(self):
+        self.assertNotIn("lang", self.plan()[1])
+        self.assertNotIn("lang", self.plan("--lang", "ja")[1])
+        self.assertEqual(self.plan("--lang", "en")[1]["lang"], "en")
+        self.assertEqual(self.plan("--lang", "fr", "--relief")[1]["lang"], "fr")
+
     def test_fov_reaches_the_run(self):
         self.assertEqual(float(self.plan("--fov", "72")[1]["fov"]), 72.0)
 

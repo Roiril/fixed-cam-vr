@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 1128468e-bd6b-4231-9f7d-17f5f7eac49b
-  modified: 2026-11-15T04:05:48.497Z
+  modified: 2026-11-16T03:52:46.751Z
 ---
 
 2026-11-05 ユーザー依頼「デジタルツインを新しく作り替えたので、それを使って、私がhmdを被らないでできる動作検証の仕組みも更新してほしい。」
@@ -24,6 +24,7 @@ metadata:
 `--two-pass` は従来の 2 段（走行 約 294 秒 → 同じ記録を `unity.ps1 replay` で再生して撮影 約 320 秒・通し約 650 秒）。`--follow`（後ろ上）はどちらでも再生で撮る段が 1 つ増える。`--no-video` は判定だけ。見る面は `preview_start twin-game` の `/verify.html`。
 出力は Drive `renders/twin-verify/<時刻>/`。⚠ 同じ Unity プロジェクトを使うので、他の batchmode と同時に走らない。
 自分で見つけて直す回し方は `skills/twin-loop`。
+**`--lang en|fr`**（11-16）: タブレットで言語を選んだ状態で通す。`XpTwinDriver` が導入の練習を抜けるところで `VisitorPrefs.Set` → `ApplyPending` を呼ぶ（`--relief` と同じ場所）。既定の ja では走行の args に `lang` を足さない。英語版の調査（ユーザー依頼「英語版がちゃんと機能しているのか、何か英語にし切れていないところがないかなど調査してきてほしい」）で足した。
 
 **2026-11-11 に足した 4 つ**（ユーザー依頼「デジタルツインを用いたclaudecodeによる自己改善(演出、システム、他いろいろと)を、いい感じにするためにハーネスを整備してほしい。」）:
 - **錠** `Logs/twin-run/.lock`。twin-verify どうしは同時に走らない（走行と撮影の隙間・共有の `pack` と `assets` を守る）。持ち主が死んだ錠は次の走行が引き継ぐ。他の batchmode との衝突は従来どおり `unity.ps1` の `Assert-NotLocked`

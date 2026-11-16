@@ -354,6 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="固定刻みで回す（1 フレーム = 1/90 秒。描ける速さで進み実時間より速い）。音と性能は判定できない")
     ap.add_argument("--nomark", action="store_true", help="報告しない（人形 End）")
     ap.add_argument("--relief", action="store_true", help="ホラー軽減")
+    ap.add_argument("--lang", choices=("ja", "en", "fr"), default="ja",
+                    help="タブレットで選んだ言語。タブレットと同じ VisitorPrefs の枠から入れる（体験者が読む面だけが変わる）")
     ap.add_argument("--marks", default="",
                     help="周の中でも報告する区間（1A,1B,2A のように周と区間）。各区間に入って 2.5 秒後に 1 回押す。既定は 4-A の締めだけ")
     ap.add_argument("--speed", type=float, default=0.25)
@@ -379,6 +381,8 @@ def run_set_args(a: argparse.Namespace, plan: dict, work: Path) -> dict[str, str
         args["nomark"] = "1"
     if a.relief:
         args["relief"] = "1"
+    if a.lang != "ja":
+        args["lang"] = a.lang
     if a.fast:
         args["fast"] = "1"
     marks = parse_marks(a.marks)
@@ -485,6 +489,8 @@ def verify(a: argparse.Namespace, stamp: str) -> int:
     run_args = {"speed": a.speed, "dwell": a.dwell, "nomark": a.nomark, "relief": a.relief, "calib": a.calib, "realAssets": a.real_assets}
     if marks:
         run_args["marks"] = marks   # 既定の走行の args は変えない（過去の走行との照合が切れる）
+    if a.lang != "ja":
+        run_args["lang"] = a.lang   # 同上。日本語の走行の args は変えない
     known = load_known()
     tag_known(verdicts, known)
     fresh = {lv: sum(1 for v in verdicts if v["level"] == lv and "known" not in v) for lv in ("FAIL", "WARN")}

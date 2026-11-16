@@ -45,6 +45,8 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost, IXp
     /// <summary>周の中でも報告する区間（"1B.2A.3B" のように周と区間の文字を . で区切る）。空なら 4-A の締めだけ押す。</summary>
     public const string KeyMarks = "fcv.twin.marks";
     public const string KeyRelief = "fcv.twin.relief";
+    /// <summary>タブレットで選んだ言語のコード（"en" / "fr"。空は日本語）。<see cref="VisitorPrefs"/> の枠から入れる。</summary>
+    public const string KeyLang = "fcv.twin.lang";
     public const string KeyShowCalib = "fcv.twin.showcalib";
     /// <summary>走行の Play の中で撮る動画（"eye" か空）。撮り方の値は <see cref="XpReplayCapture"/> の <c>fcv.replay.*</c>。</summary>
     public const string KeyCapture = "fcv.twin.capture";
@@ -219,6 +221,16 @@ public sealed class XpTwinDriver : MonoBehaviour, ShowWalkDebugDriver.IHost, IXp
         }
         StaffSetupPanel.Ensure()?.UseAutomation();
         if (SessionState.GetInt(KeyRelief, 0) != 0) HorrorRelief.Select(true);
+        // 言語はタブレットと同じ枠から入れる。題字の出し直し（BeginTitle の Reset → ApplyAtTitle）を挟んでも残り、
+        // 本番と同じく題字の表示へ進んだ時点で枠が空になる。
+        string langCode = SessionState.GetString(KeyLang, "");
+        if (langCode.Length > 0)
+        {
+            ShowLang lang = ShowLanguage.Parse(langCode);
+            VisitorPrefs.Set(lang, HorrorRelief.Enabled, VisitorPrefs.PendingSeq + 1);
+            VisitorPrefs.ApplyPending();
+            Debug.Log($"[Twin] タブレットの言語選択を模した（{ShowLanguage.Code(lang)}）");
+        }
         // 本番は準備画面の開始（Logic.Started）も見る。ツイン走行は準備画面を通らないので導入の完了だけを見る。
         _show.StartAuthorizedProvider = () => _bridge.OnboardingStage == HmdOnboardingStage.Complete;
 

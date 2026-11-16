@@ -50,3 +50,14 @@ HMD の文字は `JapaneseHud SDF.asset` へ事前に焼く。新しい表示文
 
 Latin のアクセント付き文字は半角として幅を測る。`HmdTextStyle.CharWidth` と各文面テストがこの前提を持つ。
 周回表示は独自のOSD版を使うため、訳語を変えた場合は `make-osd-font.py` 側も更新する。
+
+## 英語版の残り（2026-11-16 調査）
+
+ユーザー依頼「英語版がちゃんと機能しているのか、何か英語にし切れていないところがないかなど調査してきてほしい」。
+英語の通しは `py -3.11 tools/twin-verify.py --lang en --fast`（PASS・走行 20261116_124951）。報告は Drive `reports/2026-11-16_fixed-cam-vr_english-audit.html`。
+
+- HMD で日本語が残るのは 2-C の WARNING の下の 4 語だけ。`UnauthorizedAccessEffect` が焼いた PNG（`Assets/Art/Textures/UnauthorizedAccess/{subtitle,context,attempt,failed}-v5.png`）を言語に関係なく貼る。英語版の PNG と差し替えの口が無い
+- タブレットの英仏は、報告の説明（`report` の 6・7 文目）でコントローラーの図が出ない。`isBriefingLoopCue` が歩く映像を続け、CSS が図を隠し、X・Y の輪と「Hold 1 s」だけが映像の上に浮く。日本語は口の動く映像なので出ない（映像が読めなかったときだけ同じになる）。`verify-runtime.cjs` は捕まえない
+- 英仏には博士の声が無い（字幕だけ）。日本語と同じ声とモデルで作った英語の試作が Drive `audio/fixed-cam-vr/doctor-en-trial-v1.mp3`（131 秒・未採用）
+- 人形の呼びかけ `sfx_doll_call` は日本語の声（0109 のユーザーの録音）。STT は短すぎて読めない
+- `CommsNotice.Greeting` の英訳 "My apologies." は「申し遅れました」の意味から外れる
