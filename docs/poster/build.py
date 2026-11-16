@@ -118,6 +118,20 @@ def render(name):
     subprocess.run(common + ["--no-pdf-header-footer", f"--print-to-pdf={pdf}", url], check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(name, Image.open(png).size, pdf.stat().st_size // 1024, "KB")
+    print_version(name, png)
+
+
+def print_version(name, png):
+    """紙は画面より黒が浅く、暗部がつぶれる。暗部を起こし、彩度と輪郭を少し足した版を別に出す。"""
+    from PIL import ImageEnhance, ImageFilter
+
+    im = Image.open(png).convert("RGB")
+    lut = [min(255, int(round(255 * ((v / 255) ** 0.70)))) for v in range(256)]
+    im = im.point(lut * 3)
+    im = ImageEnhance.Color(im).enhance(1.18)
+    im = ImageEnhance.Contrast(im).enhance(1.06)
+    im = im.filter(ImageFilter.UnsharpMask(radius=3, percent=55, threshold=2))
+    im.save(OUT / f"mawarimi-poster-{name}-print.pdf", resolution=300.0, quality=95)
 
 
 def main():
