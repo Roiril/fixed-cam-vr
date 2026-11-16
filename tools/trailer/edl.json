@@ -14,7 +14,7 @@
       "note": "「廻リ視」は、環境にあらかじめ固定された3台のカメラの映像だけを頼りに現実世界を探索するホラー体験です。（日本語の字幕の上）" },
     { "t": [42.4, 53.75], "fill": "none", "watch": [100, 50, 440, 135], "box": [100, 124, 520, 172], "size": 30, "stroke": true, "align": "left", "pad": 18,
       "text": "Visitor’s view", "note": "体験者視点 の下" },
-    { "t": [54.6, 62.15], "fill": "none", "watch": [300, 945, 1620, 1060], "box": [300, 866, 1620, 946], "size": 30, "stroke": true,
+    { "t": [54.5, 62.15], "fill": "none", "watch": [300, 945, 1620, 1060], "box": [300, 866, 1620, 946], "size": 30, "stroke": true,
       "text": ["The camera feed shown to the visitor switches automatically", "according to where the visitor is standing."],
       "note": "体験者に提示されるカメラ映像は、体験者の位置に応じて自動的に切り替わります。（日本語の字幕の上）" },
     { "t": [62.9, 64.5], "fill": "none", "watch": [700, 480, 1220, 620], "box": [700, 612, 1220, 682], "font": "serif", "size": 44,
