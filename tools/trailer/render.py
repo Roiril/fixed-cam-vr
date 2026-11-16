@@ -43,7 +43,7 @@ W, H, FPS = 1920, 1080, 60
 # 目線の動画（1920x1080・画角 40 度）でテレビが占める範囲。tv は 16:9 に寄せた切り抜き、tvbox は枠ぎりぎり
 CROPS = {
     "full": None,
-    "tv": (229, 262, 1440, 810),
+    "tv": (211, 250, 1476, 830),   # テレビと、その左下に出るスイの吹き出しまで入る 16:9
     "tvbox": (365, 272, 1168, 784),
 }
 ENC = ["-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", "-r", str(FPS)]
@@ -148,6 +148,8 @@ class Sources:
         if not self.audio.exists():
             ff(["-i", str(self.ref), "-map", "0:a:0", "-c:a", "pcm_s16le", str(self.audio)])
         self.switches = self.read_switches(run / "replay_xp.log")
+        # 目線の動画と体の位置が揃った三人称（tp_sync.py が作る）
+        self.tp = self.local(run / "tp.mp4", f"{edl['run']}_tp.mp4") if (run / "tp.mp4").exists() else None
         self.work = work
         self.png = work / "png"
         self.png.mkdir(parents=True, exist_ok=True)
@@ -197,6 +199,8 @@ class Sources:
 
     def asset(self, name: str) -> Image.Image:
         p = ASSETS / name
+        if not p.exists() and (ROOT / name).exists():
+            p = ROOT / name  # リポジトリの頭からの道（ツインの部屋の素材 tools/twin/...）
         if not p.exists():
             raise SystemExit(f"同梱素材が無い: {p}")
         return Image.open(p).convert("RGB")
@@ -216,6 +220,8 @@ def eye_chain(seg: dict, dur: float) -> str:
     if speed != 1.0:
         vf.append(f"setpts=PTS/{speed}")
     vf += [f"fps={FPS}", crop_filter(seg.get("crop", "tv"))]
+    if seg.get("gamma"):
+        vf.append(f"eq=gamma={float(seg['gamma']):.2f}")
     if seg.get("fade_in"):
         vf.append(f"fade=t=in:st=0:d={seg['fade_in']}")
     if seg.get("fade_out"):
@@ -527,19 +533,127 @@ def seg_gen(src: Sources, seg: dict, out: Path) -> None:
     run_graph([still_input(still, dur), still_input(label, dur)], "[0:v][1:v]overlay=0:0,fps=60[out]", n, out)
 
 
+def need_tp(src: Sources) -> Path:
+    if src.tp is None:
+        raise SystemExit("三人称の動画 tp.mp4 が走行のフォルダに無い（README の「素材を作る」の三人称）")
+    return src.tp
+
+
 def seg_tvpip(src: Sources, seg: dict, out: Path) -> None:
-    """③④: 体験者に見える画の右上に、旧版の同じ時刻の三人称の小窓を置く"""
+    """③④: 体験者に見える画の右上に、同じ瞬間の三人称の小窓を置く（体の位置が画と対応する）"""
     t0, t1 = seg["t"]
     n, dur = frames(t0, t1), t1 - t0
     x, y, w, h = seg["tp_box"]
     label = label_png(seg["label"], src.png / f"label_{t0:.3f}.png")
+    frame = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(frame).rectangle((x - 3, y - 3, x + w + 2, y + h + 2), outline=(255, 255, 255, 255), width=3)
+    frame.alpha_composite(Image.open(label))
+    frame_p = src.png / f"tvpip_{t0:.3f}.png"
+    frame.save(frame_p)
     inputs = [["-ss", f"{seg['src']:.3f}", "-i", str(src.eye)],
-              ["-ss", f"{t0:.3f}", "-i", str(src.ref)],
-              still_input(label, dur)]
-    graph = (f"[0:v]{eye_chain({'crop': 'tv'}, dur)}[e];"
-             f"[1:v]fps={FPS},crop={w}:{h}:{x}:{y}[tp];"
+              ["-ss", f"{seg['src']:.3f}", "-i", str(need_tp(src))],
+              still_input(frame_p, dur)]
+    graph = (f"[0:v]{eye_chain({'crop': seg.get('crop', 'tv')}, dur)}[e];"
+             f"[1:v]fps={FPS},scale={w}:{h}[tp];"
              f"[e][tp]overlay={x}:{y}[a];[a][2:v]overlay=0:0[out]")
     run_graph(inputs, graph, n, out)
+
+
+def old_caption(src: Sources) -> Image.Image:
+    """旧版の「システム」の区間の字幕（黒地の所から取って、白の透過画像にする）"""
+    return luminance_to_alpha(grab(src.ref, 36.0).crop((262, 940, 1642, 1066)))
+
+
+def project(spec: dict, p, w: int, h: int):
+    """三人称の構図（pos・target・lens。センサー幅 36mm）で、部屋の点 p（Blender の x,y,z）が画のどこに映るか"""
+    pos, tgt = np.array(spec["pos"], float), np.array(spec["target"], float)
+    f = (tgt - pos) / np.linalg.norm(tgt - pos)
+    r = np.cross(f, [0, 0, 1.0])
+    r /= np.linalg.norm(r)
+    u = np.cross(r, f)
+    d = np.array(p, float) - pos
+    z = d @ f
+    k = spec["lens"] / 36.0
+    return (0.5 + (d @ r) / z * k) * w, (0.5 - (d @ u) / z * k * w / h) * h
+
+
+SYSTEM_RECT = (416, 104, 1088, 816)   # 「システム」の区間で三人称を置く所（x, y, w, h）
+PIP_TP_RECT = (1190, 392, 712, 534)   # 体験者視点の区間で三人称が縮んで収まる所
+PIP_EYE_RECT = (70, 236, 1080, 608)   # 体験者の画が育って収まる所
+
+
+def seg_system(src: Sources, seg: dict, out: Path) -> None:
+    """三人称（中央）に、カメラ 3 台の位置を矢印で示す。字幕は旧版のもの"""
+    t0, t1 = seg["t"]
+    n, dur = frames(t0, t1), t1 - t0
+    x, y, w, h = SYSTEM_RECT
+    spec = json.loads((HERE / "tp-shots.json").read_text(encoding="utf-8"))[seg.get("shot", "tp_front")]
+    rig = json.loads((ROOT / "tools" / "twin" / "rig.json").read_text(encoding="utf-8"))
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(ov)
+    f = font(34, "Medium")
+    # 札を置く側（矢印は札から機材へ）
+    side = seg.get("label_side", {"A": (230, -10), "B": (-250, -60), "C": (250, -70)})
+    for cam in rig["cameras"]:
+        ux, uy, uz = cam["pos"]
+        px, py = project(spec, (ux, uz, uy), w, h)   # Unity の x,y,z → Blender の x,z,y
+        px, py = x + px, y + py
+        dx, dy = side[cam["id"]]
+        lx, ly = px + dx, py + dy
+        text = f"Camera {cam['id']}"
+        tw = d.textlength(text, font=f)
+        tx = lx if dx > 0 else lx - tw
+        d.text((tx, ly - 24), text, font=f, fill=(255, 255, 255, 255), stroke_width=3, stroke_fill=(0, 0, 0, 200))
+        sx, sy = (lx - 12, ly) if dx > 0 else (lx + 12, ly)
+        ex, ey = px + (14 if dx > 0 else -14), py + (-4 if dy < 0 else 4)
+        d.line((sx, sy, ex, ey), fill=(0, 0, 0, 200), width=9)
+        d.line((sx, sy, ex, ey), fill=(255, 255, 255, 255), width=5)
+        ang = np.arctan2(ey - sy, ex - sx)
+        for a in (ang + 2.6, ang - 2.6):
+            d.line((ex, ey, ex + 26 * np.cos(a), ey + 26 * np.sin(a)), fill=(255, 255, 255, 255), width=5)
+    ov.alpha_composite(old_caption(src), (262, 940))
+    ov_p = src.png / "system_overlay.png"
+    ov.save(ov_p)
+    inputs = [["-ss", f"{seg['src']:.3f}", "-i", str(need_tp(src))], still_input(ov_p, dur)]
+    fade = f",fade=t=in:st=0:d={seg['fade_in']}" if seg.get("fade_in") else ""
+    graph = (f"color=black:s={W}x{H}:r={FPS}[bg];[0:v]fps={FPS},scale={w}:{h}[tp];"
+             f"[bg][tp]overlay={x}:{y}:shortest=1[a];[a][1:v]overlay=0:0{fade}[out]")
+    run_graph(inputs, graph, n, out)
+
+
+def seg_tppip(src: Sources, seg: dict, out: Path) -> None:
+    """体験者視点（左）と三人称（右下）。同じ走行の同じ瞬間なので、体の動きと画が対応する。
+    旧版と同じく、頭の move 秒で三人称が中央から右下へ縮み、体験者の画が左で育つ"""
+    t0, t1 = seg["t"]
+    n = frames(t0, t1)
+    move = float(seg.get("move", 1.6))
+    ref45 = grab(src.ref, 45.0)
+    tag = ref45.crop((100, 50, 420, 135))        # 旧版の「体験者視点」の札
+    cap = old_caption(src)
+    cap_box = Image.new("RGBA", cap.size, (0, 0, 0, 255))
+    cap_box.alpha_composite(cap)
+    eye_args = ["-ss", f"{seg['src']:.3f}", "-i", str(src.eye), "-vf",
+                f"fps={FPS},{crop_filter('tv').replace(f'scale={W}:{H}', 'scale=1080:608')}", "-frames:v", str(n)]
+    tp_args = ["-ss", f"{seg['src']:.3f}", "-i", str(need_tp(src)), "-vf", f"fps={FPS},scale=1088:816", "-frames:v", str(n)]
+    eye0 = (150, 440, 300, 169)
+    wr = Writer(out)
+    for i, (ef, tf) in enumerate(zip(read_frames(eye_args, 1080, 608), read_frames(tp_args, 1088, 816))):
+        k = min(1.0, i / FPS / move)
+        k = k * k * (3 - 2 * k)
+        canvas = Image.new("RGB", (W, H), (0, 0, 0))
+        tx, ty, tw, th = [round(a + (b - a) * k) for a, b in zip(SYSTEM_RECT, PIP_TP_RECT)]
+        ex, ey, ew, eh = [round(a + (b - a) * k) for a, b in zip(eye0, PIP_EYE_RECT)]
+        canvas.paste(Image.fromarray(tf).resize((tw, th), Image.BILINEAR), (tx, ty))
+        eye = Image.fromarray(ef).resize((ew, eh), Image.BILINEAR)
+        if k < 1:
+            eye.putalpha(round(255 * min(1.0, k * 3)))
+            canvas.paste(eye, (ex, ey), eye)
+        else:
+            canvas.paste(eye, (ex, ey))
+        canvas.paste(tag, (100, 50))
+        canvas.paste(cap_box, (262, 940), cap_box)
+        wr.write(np.asarray(canvas))
+    wr.close()
 
 
 def seg_mosaic(src: Sources, seg: dict, out: Path) -> None:
@@ -571,7 +685,8 @@ def seg_mosaic(src: Sources, seg: dict, out: Path) -> None:
 
 
 KINDS = {"old": seg_old, "eye": seg_eye, "pip": seg_pip, "multicam": seg_multicam, "chain": seg_chain,
-         "gen": seg_gen, "tvpip": seg_tvpip, "mosaic": seg_mosaic, "black": seg_black}
+         "gen": seg_gen, "tvpip": seg_tvpip, "mosaic": seg_mosaic, "black": seg_black,
+         "system": seg_system, "tppip": seg_tppip}
 
 
 # ------------------------------------------------------------------ 仕上げ
