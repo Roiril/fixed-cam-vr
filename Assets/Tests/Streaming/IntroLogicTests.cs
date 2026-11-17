@@ -801,6 +801,53 @@ namespace FixedCamVr.Streaming.Tests
             Assert.AreEqual(1f, skipped.Weights.ignite, 1e-4f, "飛ばしたのに管が消えている");
         }
 
+        // ---- 到着の連絡を読ませてから暗転する（canon/LEDGER.md 0397） ----------
+
+        [Test]
+        public void Real_WaitsForTheArrivalNotices_ThenDarkens()
+        {
+            var l = AtReal();
+            var pending = Ready(outsideM: 2f);
+            pending.arrivalPending = true;
+            // 尺（1.5 秒）を大きく超えても、連絡を読ませ終わるまで段 1 に留まる。
+            Advance(l, T.realSec + 5f, pending);
+            Assert.AreEqual(IntroStage.Real, l.Stage, "到着の連絡が読まれる前に暗転した");
+            Assert.Greater(l.ArrivalHeldSec, 4f);
+
+            var read = Ready(outsideM: 2f);
+            l.Tick(0.1f, read);
+            Assert.AreEqual(IntroStage.Degrade, l.Stage, "読ませ終わったのに暗転しない");
+        }
+
+        [Test]
+        public void Real_ArrivalWait_HasACap_AndIsNotCountedInMaxSec()
+        {
+            var l = AtReal();
+            var pending = Ready(outsideM: 2f);
+            pending.arrivalPending = true;
+            // 連絡の面が止まっても、上限を超えたら暗転へ進む。
+            Assert.AreEqual(IntroEvent.None,
+                RunStage(l, IntroStage.Real, pending, limitSec: IntroLogic.ArrivalHoldMaxSec + 5f));
+            Assert.AreEqual(IntroStage.Degrade, l.Stage);
+            Assert.GreaterOrEqual(l.ArrivalHeldSec, IntroLogic.ArrivalHoldMaxSec - 0.11f);
+            // 待ちは maxSec（保険の打ち切り）に数えない。残りの段は最後まで流れる。
+            var ev = IntroEvent.None;
+            for (int i = 0; i < 400 && l.Stage != IntroStage.Done; i++) ev = l.Tick(0.1f, Ready(outsideM: 2f));
+            Assert.AreEqual(IntroEvent.Finished, ev);
+            Assert.Less(l.TotalElapsedSec, T.maxSec, "到着の待ちが演出の尺へ数えられ、保険で打ち切られた");
+        }
+
+        [Test]
+        public void Real_StaffAdvance_DoesNotWaitForTheArrivalNotices()
+        {
+            var l = AtReal();
+            var pending = Ready(outsideM: 2f);
+            pending.arrivalPending = true;
+            l.RequestAdvance();
+            l.Tick(0.1f, pending);
+            Assert.AreEqual(IntroStage.Degrade, l.Stage);
+        }
+
         // ---- 補助関数 ----------------------------------------------------------
 
         [Test]

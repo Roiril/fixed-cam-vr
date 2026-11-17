@@ -52,6 +52,7 @@ paths:
 - 誘導が予約・指示中は出口が「円に着いた」1 つ。30 秒で諦めて従来判定へ — `IntroInput.guidingToSpot` / `WalkGuideLogic.GatesStart` / `HoldMaxSec` 〔出典: show-design:578-593〕
 - 従来判定は接近（境界から 1.0m・0.4 秒）・安全網（外を見てから中へ）・救済（中に立って 1.0 秒）。位置が解けない間は中／外を更新しない。武装し直しは 1 か所 — `ConcealStartSec` / `IntroDirector.TryOutsideBoxM` / `RearmStartSignal` 〔出典: show-design:459-535〕
 - 位置合わせ中は凍結して覆い・殻・誘導を畳み ignite を戻す。recenter は中止、復帰は位置合わせの確定 1 段。本編へ入るのは完走 — `IntroDirector.Aborted` / `TryRecoverFromAbort` / `Completed` 〔出典: show-design:409-444, 963〕
+- 段 1 は `Arrived` を読ませるまで暗転しない。`ArrivedCamera` は本編の頭（0397）— `IntroInput.arrivalPending`
 - 段 2 は暗転だけ。色は抜かず、輪郭・粒・乱れ・線も使わない。全画素を同じ係数で落とすので覆いの `_ScreenFade` は `1 - passthrough`。構造線は既定 OFF — `IntroTvTests.Darken_FallsFromRealityToBlack_WithoutBreaking`
 - 段 3 は黒の保持（`TvBlackHoldShare`）の後、テレビが奥 `TvFarM` から定位置へ寄る（`tvDepthM` → `ScreenAnchor.SetIntroDepth`）。明るさは霧の式（`ScreenFogLogic.Transmit`）で、筐体 `tvCase` とガラスの灯り（`1 - tvDark`）は同じ量。段 4 以降は奥行き 0。スクリーンは段 3 に入る黒のうちに頭の正面へ据え（`HoldInFrontOfHead`）、畳む経路で解除する。観測 `tvZ=` — `IntroTvTests.Structure_TheTvComesFromTheDepth_AndStopsAtItsPlace`
 - テレビが出るまでスクリーンは描かない（`IntroVeil.TvScreenHidden`）。描くと暗転と黒の保持に矩形や縁が浮く。覆いが要らなくなる段 3 の経路でも止めを掛け直す — `IntroVeil.Apply`、観測 `scrHid=`

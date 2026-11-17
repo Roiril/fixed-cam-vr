@@ -471,6 +471,13 @@ namespace FixedCamVr.Streaming
         /// <summary>このフレーム、誘導が「円へ行け」と言い切っているか（<see cref="IntroInput"/> へ渡す）。</summary>
         private bool _guiding;
 
+        /// <summary>
+        /// 到着の連絡（1 枚目）をまだ読ませ終わっていないか（<c>canon/LEDGER.md</c> 0397）。
+        /// 供給は <c>CommsPanel</c>（Diagnostics から Streaming は参照できないので口だけ開ける）。
+        /// 未配線なら待たない。
+        /// </summary>
+        public System.Func<bool>? ArrivalPendingProvider { get; set; }
+
         private IntroInput BuildInput()
         {
             bool valid = TryOutsideBoxM(out float outsideM);
@@ -480,6 +487,7 @@ namespace FixedCamVr.Streaming
                 startAuthorized = IsStartAuthorized(),
                 atStartSpot = IsAtStartSpot(),
                 guidingToSpot = _guiding,
+                arrivalPending = ArrivalPendingProvider?.Invoke() ?? false,
                 headTurnDegPerSec = _headTurn,
                 frameCentered = IsScreenCentered(),
                 liveFresh = IsLiveFresh(),

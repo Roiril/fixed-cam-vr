@@ -717,10 +717,10 @@ namespace FixedCamVr.Streaming.Tests
             // ⚠ 演出が始まってからも延々と何か出す、ではない（そこから先は画が主役）。
             var l = new CommsCueLogic();
             AdvanceIntro(l, CommsCueLogic.GreetDelaySec + 0.1f);
-            CollectionAssert.AreEqual(new[] { CommsNotice.Arrived, CommsNotice.ArrivedCamera },
+            CollectionAssert.AreEqual(new[] { CommsNotice.Arrived },
                                       AdvanceIntro(l, 30f, waiting: false));
             Assert.IsTrue(l.ArrivedFired);
-            Assert.IsTrue(l.ArrivedCameraFired);
+            Assert.IsFalse(l.ArrivedCameraFired, "2 枚目は導入（暗転〜テレビの点灯）に重ねない（0397）");
         }
 
         [Test]
@@ -728,19 +728,22 @@ namespace FixedCamVr.Streaming.Tests
         {
             // スタッフの ⏭ で題字から一気に演出へ入った場合も、装置は起動を告げる。
             var l = new CommsCueLogic();
-            CollectionAssert.AreEqual(new[] { CommsNotice.Arrived, CommsNotice.ArrivedCamera },
+            CollectionAssert.AreEqual(new[] { CommsNotice.Arrived },
                                       AdvanceIntro(l, 1f, waiting: false));
         }
 
         [Test]
-        public void TheSecondArrivalPanel_WaitsUntilTheFirstIsRead()
+        public void TheSecondArrivalPanel_WaitsForTheTv_ThenComesBeforeTheBegin()
         {
-            // 0392「2つに分けよう」。1 枚目を読ませ終わるまで 2 枚目で押しのけない。
+            // 0397「このカメラは…はテレビ点灯後にしてください」。導入のあいだは 1 枚目を読ませ終わっても
+            // 2 枚目を出さない。テレビが点いて本編に入ってから、①より先に出す。
             var l = new CommsCueLogic();
             CollectionAssert.AreEqual(new[] { CommsNotice.Arrived },
                                       AdvanceIntro(l, 5f, waiting: false, idle: false));
-            CollectionAssert.AreEqual(new[] { CommsNotice.ArrivedCamera },
-                                      AdvanceIntro(l, 5f, waiting: false));
+            CollectionAssert.IsEmpty(AdvanceIntro(l, 15f, waiting: false));
+            Assert.AreEqual(CommsNotice.ArrivedCamera, l.Tick(Run(read: true)));
+            Assert.AreEqual(CommsNotice.None, l.Tick(Run(read: false)));
+            Assert.AreEqual(CommsNotice.Begin, l.Tick(Run(read: true)));
         }
 
         [Test]

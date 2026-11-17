@@ -2672,7 +2672,7 @@ def analyze(events, others, exp, warns=None):
                                     "（同時に出る約束）")
                 else:
                     verdict("OK", f"⓪c が演出の始まりと同時に届いた（t={t_arrived:.1f}s）")
-                # ⓪c の 2 枚目（0392）。1 枚目を読ませ終わった縁に出て、①より先に来る。
+                # ⓪c の 2 枚目（0392）。テレビが点いた後（本編の頭）に出て、①より先に来る（0397）。
                 t_arrived_cam = _first("ArrivedCamera")
                 if t_arrived is not None:
                     if t_arrived_cam is None:
@@ -2684,6 +2684,21 @@ def analyze(events, others, exp, warns=None):
                         verdict("FAIL", "①が⓪c の 2 枚目より先に出ている")
                     else:
                         verdict("OK", f"⓪c の 2 枚目が 1 枚目の {t_arrived_cam - t_arrived:.1f}s 後、①より先に届いた")
+                # 0397: 1 枚目を読ませてから暗転し、2 枚目はテレビが点いた後（段 Swap 以降）に出す。
+                t_degrade = next((fnum(e, "t", 0.0) for e in events
+                                  if e.get("ev") == "intro" and e.get("stage") == "Degrade"), None)
+                t_swap = next((fnum(e, "t", 0.0) for e in events
+                               if e.get("ev") == "intro" and e.get("stage") == "Swap"), None)
+                if t_arrived is not None and t_degrade is not None:
+                    if t_degrade <= t_arrived:
+                        verdict("FAIL", "暗転が⓪c の 1 枚目より先に始まった（IntroInput.arrivalPending・0397）")
+                    else:
+                        verdict("OK", f"⓪c の 1 枚目の {t_degrade - t_arrived:.1f}s 後に暗転が始まった")
+                if t_arrived_cam is not None and t_swap is not None:
+                    if t_arrived_cam < t_swap:
+                        verdict("FAIL", "⓪c の 2 枚目がテレビの点灯より先に出た — 導入の演出に連絡が重なる（0397）")
+                    else:
+                        verdict("OK", f"⓪c の 2 枚目がテレビの点灯の後に出た（段 Swap の {t_arrived_cam - t_swap:.1f}s 後）")
 
             # ②の分岐が「異常演出が表示されていたか」と一致しているか。
             # 侵食度1では通常返答を維持できず Takeover が一度だけ走る。ただし最後の解除が

@@ -38,9 +38,10 @@ namespace FixedCamVr.Streaming
         Walk,
         /// <summary>
         /// ⓪c <b>円へ着いて導入演出が始まった瞬間</b>。到着を告げ、観測カメラへ接続すると言う
-        /// （直後にテレビが点いてカメラの映像が来る）。文面は <c>CommsPanel</c>。
+        /// 文面は <c>CommsPanel</c>。これを読ませ終わるまで導入は段 1（現実）に留まり、
+        /// 読み終わってから暗転してテレビが出る（<c>canon/LEDGER.md</c> 0397・<c>IntroInput.arrivalPending</c>）。
         /// ⚠ <b>段 0 を抜けた縁で出す</b>ので、⓪b（歩行の指示）が出ていればそれを押しのけて上書きする。
-        /// ⚠ 読ませ終わった縁に、同じ面のまま <see cref="ArrivedCamera"/> へ入れ替わる（<c>canon/LEDGER.md</c> 0392）。
+        /// ⚠ 2 枚目（<see cref="ArrivedCamera"/>・0392）は導入のうちには出さない。テレビが点いて本編に入ってから、①より先に出す（0397）。
         /// </summary>
         Arrived,
         /// <summary>
@@ -593,7 +594,7 @@ namespace FixedCamVr.Streaming
                 return inp.invasionProgress >= CommsCurseLogic.PossessedLevel
                     ? CommsNotice.MarkAnalyzing : CommsNotice.MarkNothing;
             }
-            // ⓪c の 2 枚目を導入のうちに読ませ切れなかった回は、①より先にここで出す（0392）。
+            // ⓪c の 2 枚目はテレビが点いた後（本編の頭）に、①より先にここで出す（0392・0397）。
             if (!_beginFired && ArrivedCameraDue(inp)) { _arrivedCameraFired = true; return CommsNotice.ArrivedCamera; }
             // 開始の合図は押しのけられても消費しない。報告を読ませ終わってから改めて出す。
             //   ②や③に割り込まれた回では**その連絡を読ませ終わってから**改めて出す。
@@ -629,8 +630,8 @@ namespace FixedCamVr.Streaming
             if (!inp.introWaiting)
             {
                 _idleSec = 0f;
-                // 1 枚目を読ませ終わった縁に、同じ面のまま 2 枚目へ入れ替える（0392）。
-                if (ArrivedCameraDue(inp)) { _arrivedCameraFired = true; return CommsNotice.ArrivedCamera; }
+                // ⚠ 2 枚目（ArrivedCamera）はここでは出さない（0397）。暗転からテレビの点灯までは
+                //    連絡を重ねない。テレビが点いて本編に入ってから `Tick` の本編側で出す。
                 if (_arrivedFired) return CommsNotice.None;
                 _arrivedFired = true;
                 return CommsNotice.Arrived;

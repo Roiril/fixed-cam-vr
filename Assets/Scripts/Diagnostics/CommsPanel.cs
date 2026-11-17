@@ -1115,6 +1115,7 @@ namespace FixedCamVr.Diagnostics
             if (showControl != null) showControl.VisitorMarkBlockedProvider = IsTakeoverInputBlocked;
             if (timeline == null) timeline = FindObjectOfType<TimelineDirector>();
             if (intro == null) intro = FindObjectOfType<IntroDirector>();
+            if (intro != null) intro.ArrivalPendingProvider = IsArrivalPending;
             if (walkGuide == null) walkGuide = FindObjectOfType<WalkGuide>();
             if (_feelFx == null) _feelFx = FindObjectOfType<CameraFeelFx>();
             if (_outro == null) _outro = FindObjectOfType<OutroDirector>();
@@ -1146,9 +1147,25 @@ namespace FixedCamVr.Diagnostics
             _runRestartHooked = false;
             if (showControl != null && showControl.VisitorMarkBlockedProvider == IsTakeoverInputBlocked)
                 showControl.VisitorMarkBlockedProvider = null;
+            if (intro != null && intro.ArrivalPendingProvider == IsArrivalPending)
+                intro.ArrivalPendingProvider = null;
         }
 
         private bool IsTakeoverInputBlocked() => TakeoverInputBlocked;
+
+        /// <summary>
+        /// 到着の連絡（⓪c の 1 枚目）をまだ読ませ終わっていないか（<c>canon/LEDGER.md</c> 0397）。
+        /// 導入はこれが立っているあいだ段 1（現実）に留まり、読み終わってから暗転してテレビが出る。
+        /// 2 枚目（このカメラは…）はテレビが点いた後に出るので、ここでは待たない。
+        /// 面が止まっている・タイトルがまだ画面を持っている（連絡を 1 文字も出さない）ときは待たせない。
+        /// </summary>
+        private bool IsArrivalPending()
+        {
+            if (!isActiveAndEnabled) return false;
+            if (runDirector == null || runDirector.Phase != ShowPhase.Intro) return false;
+            if (showControl != null && !showControl.StartAuthorized) return false;
+            return !_cue.ArrivedFired || !_logic.DoneReading;
+        }
 
         private void OnRunRestarted()
         {

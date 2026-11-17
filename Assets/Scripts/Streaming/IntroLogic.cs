@@ -312,6 +312,14 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public bool guidingToSpot;
 
+        /// <summary>
+        /// <b>到着の連絡（1 枚目）をまだ読ませ終わっていないか</b>（<c>canon/LEDGER.md</c> 0397）。
+        /// true のあいだ段 1 は尺が来ても段 2（暗転）へ進まない。テレビの点灯にスイの連絡を重ねない。
+        /// 供給は <c>CommsPanel</c>。連絡の面が無い・止まっている設定では常に false。
+        /// 待てる上限は <see cref="IntroLogic.ArrivalHoldMaxSec"/>。
+        /// </summary>
+        public bool arrivalPending;
+
         /// <summary>頭の角速度 (度/秒)。大きいうちは枠を出さない（見ていない方向で枠が閉じる事故を防ぐ）。</summary>
         public float headTurnDegPerSec;
         /// <summary>スクリーンの方向が視野中心の近くにあるか。</summary>
@@ -409,6 +417,13 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float ConcealStartSec = 1.0f;
 
+        /// <summary>
+        /// 段 1 で到着の連絡（<see cref="IntroInput.arrivalPending"/>）を待てる上限 (秒)。
+        /// 1 枚目を読ませる実測は 4 秒前後。連絡の面が止まっても、超えたら暗転へ進む。
+        /// この待ちは <see cref="IntroTiming.maxSec"/> の計時に含めない（演出の尺ではない）。
+        /// </summary>
+        public const float ArrivalHoldMaxSec = 10f;
+
         private IntroTiming _t = IntroTiming.Default;
         private IntroStage _stage = IntroStage.Off;
         private float _stageElapsed;
@@ -420,8 +435,12 @@ namespace FixedCamVr.Streaming
         private bool _insideBox;
         private bool _sawOutsideBox;
         private float _concealHeldSec;
+        private float _arrivalHeldSec;
 
         public IntroStage Stage => _stage;
+
+        /// <summary>段 1 で到着の連絡を待った秒数（診断とテスト用）。</summary>
+        public float ArrivalHeldSec => _arrivalHeldSec;
         public float StageElapsedSec => _stageElapsed;
         public float TotalElapsedSec => _totalElapsed;
 
@@ -461,6 +480,7 @@ namespace FixedCamVr.Streaming
             _insideBox = false;
             _sawOutsideBox = false;
             _concealHeldSec = 0f;
+            _arrivalHeldSec = 0f;
         }
 
         /// <summary>
@@ -487,6 +507,7 @@ namespace FixedCamVr.Streaming
             _holdSec = 0f;
             _advanceRequested = false;
             _skipRequested = false;
+            _arrivalHeldSec = 0f;
         }
 
         /// <summary>いまの段を今すぐ終える（スタッフ操作）。段 0 ではこれが「始める」の合図。</summary>
@@ -574,7 +595,16 @@ namespace FixedCamVr.Streaming
                 }
 
                 case IntroStage.Real:
-                    if (advance || _stageElapsed >= _t.realSec) Enter(IntroStage.Degrade);
+                    if (!advance && _stageElapsed < _t.realSec) return IntroEvent.None;
+                    // 到着の連絡を読ませ終わるまで暗転しない（0397）。テレビが出て点くあいだに
+                    // スイの連絡が重なると、どちらも読まれない。スタッフの ⏭ は待たない。
+                    if (!advance && input.arrivalPending && _arrivalHeldSec < ArrivalHoldMaxSec)
+                    {
+                        _arrivalHeldSec += dt;
+                        _totalElapsed -= dt;
+                        return IntroEvent.None;
+                    }
+                    Enter(IntroStage.Degrade);
                     return IntroEvent.None;
 
                 case IntroStage.Degrade:
