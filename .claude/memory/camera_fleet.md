@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 6d7a1a02-c926-4301-b3e5-40f96aeedf21
-  modified: 2026-11-14T14:35:48.560Z
+  modified: 2026-11-17T05:15:51.843Z
 ---
 
 # 配信カメラ実機フリート（2026-08-05 17:10 更新）
@@ -17,17 +17,17 @@ C（`.23`）は `37201JEHN14152` / UUID `b9ffed4c-18e2-4570-a8b8-2012c1e6559e`�
 下の表は 2026-08-05 時点の履歴。
 
 **⚠ スロットは serial ではなく端末内の `camera_id` が正**（画面に大書され、beacon と `/info` に載る）。
-下表の serial 対応は 2026-08-05 17:10 の実測。**それ以前の記録（Phone01=3C251 等）は誤りだった** —
-同日 17:00 に実物の prefs を読んで判明した（下の事故を参照）。
+下表は 2026-11-17 の実測（`adb getprop ro.serialno` と `/info` の `cameraId`・`uuid`）。
+**08-05 の表とは A と C の端末が入れ替わっている**（いつ替えたかは記録が無い）。表を信じず `/info` を見る。
 
-| スロット | 端末 serial | install uuid（IP より確か） | 版 | 無線 adb |
+| スロット | IP | 端末 serial | install uuid（IP より確か） | 版 |
 |---|---|---|---|---|
-| cam **A** | Pixel 7a（37201JEHN14152） | `b9ffed4c-18e2-4570-a8b8-2012c1e6559e` | **v0.9.0** | :5555 開 |
-| cam **B** | Pixel 7a（3C251JEHN03582） | `429a472b-8131-401b-81a3-9cfb91ad2165` | **v0.9.0** | :5555 開 |
-| cam **C** | Pixel 7a（37081JEHN03028） | `de2d8bea-7d42-4e6a-8823-c777a8901cae` | **v0.9.0** | :5555 開 |
+| cam **A** | 192.168.10.21 | Pixel 7a（37081JEHN03028） | `de2d8bea-7d42-4e6a-8823-c777a8901cae` | v0.18.2 |
+| cam **B** | 192.168.10.22 | Pixel 7a（3C251JEHN03582） | `429a472b-8131-401b-81a3-9cfb91ad2165` | v0.18.2 |
+| cam **C** | 192.168.10.23 | Pixel 7a（37201JEHN14152） | `b9ffed4c-18e2-4570-a8b8-2012c1e6559e` | v0.18.2 |
 
-3 台とも 2026-08-05 17:00〜17:20 に v0.9.0（傾きを配る）を入れ、レンズ 超広角 104.3°・
-`tiltState` あり・配信中を実測で確認した。
+無線 adb は 3 台とも `adb connect <IP>:5555` で繋がった（11-17）。
+3 台を同時に見るだけなら卓の `http://localhost:8099/cams.html`。
 
 IP は DHCP で毎回変わる（8/5 17:10 は A=.39 / B=.20 / C=.23）。**IP を覚えず beacon か
 `/discovery` で引く。** `adb -s <serial> shell "ip -f inet addr show wlan0"` が serial ↔ IP の唯一確実な対応。

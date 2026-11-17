@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カメラ 3 台</title>
+<style>
+  :root { color-scheme: dark; --bg:#0d0f12; --panel:#171a1f; --line:#2a2f37; --fg:#e6e8eb; --dim:#8b929c; --ok:#4fbf7a; --ng:#e06a5a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font: 13px/1.5 system-ui, "Yu Gothic UI", sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0; font-weight:600; }
+  header input { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:3px 6px; width:120px; font:inherit; }
+  header button { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
+  main { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:8px; padding:8px; }
+  .cell { background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden; display:flex; flex-direction:column; }
+  .cell.big { grid-column:1 / -1; }
+  .view { position:relative; background:#000; aspect-ratio:4/3; cursor:zoom-in; }
+  .cell.big .view { cursor:zoom-out; aspect-ratio:auto; height:calc(100vh - 140px); }
+  .view img { width:100%; height:100%; object-fit:contain; display:block; }
+  .view .msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--dim); }
+  .tag { position:absolute; top:6px; left:8px; font-size:22px; font-weight:700; text-shadow:0 0 4px #000; }
+  .meta { display:flex; justify-content:space-between; gap:8px; padding:4px 8px; color:var(--dim); font-size:12px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ng); margin-right:4px; }
+  .dot.ok { background:var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>カメラ 3 台</h1>
+  <label>配信元 <input id="h0"> <input id="h1"> <input id="h2"></label>
+  <label>port <input id="port" style="width:60px"></label>
+  <button id="apply">つなぎ直す</button>
+  <span style="color:var(--dim)">映像をクリックで拡大</span>
+</header>
+<main id="grid"></main>
+<script>
+const DEFAULT_HOSTS = ['192.168.10.21', '192.168.10.22', '192.168.10.23'];
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('cams.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('cams.' + k, JSON.stringify(v)); } catch {} },
+};
+let hosts = store.get('hosts', DEFAULT_HOSTS);
+let port = store.get('port', 8080);
+const grid = document.getElementById('grid');
+const cells = [];
+
+function camUrl(host) {
+  return `/cam?host=${encodeURIComponent(host)}&port=${port}&path=/video&t=${Date.now()}`;
+}
+
+function build() {
+  grid.textContent = '';
+  cells.length = 0;
+  hosts.forEach((host, i) => {
+    const cell = document.createElement('section');
+    cell.className = 'cell';
+    cell.innerHTML = `
+      <div class="view"><div class="msg">接続中…</div><img alt=""><div class="tag">?</div></div>
+      <div class="meta"><span class="st"><span class="dot"></span><span class="host"></span></span><span class="info"></span></div>`;
+    const c = {
+      host, el: cell,
+      img: cell.querySelector('img'), msg: cell.querySelector('.msg'),
+      tag: cell.querySelector('.tag'), dot: cell.querySelector('.dot'),
+      info: cell.querySelector('.info'), retry: null,
+    };
+    cell.querySelector('.host').textContent = `${host}:${port}`;
+    cell.querySelector('.view').addEventListener('click', () => cell.classList.toggle('big'));
+    c.img.addEventListener('load', () => { c.msg.style.display = 'none'; });
+    c.img.addEventListener('error', () => {
+      c.msg.style.display = 'flex';
+      c.msg.textContent = '映像が届いていません。5 秒後に再接続します';
+      clearTimeout(c.retry);
+      c.retry = setTimeout(() => connect(c), 5000);
+    });
+    grid.appendChild(cell);
+    cells.push(c);
+    connect(c);
+  });
+}
+
+function connect(c) {
+  c.msg.style.display = 'flex';
+  c.msg.textContent = '接続中…';
+  c.img.src = camUrl(c.host);
+}
+
+// 配信元の /info はブラウザから直接引けない（CORS）ので、卓の /caminfo 経由で取る。
+async function poll() {
+  for (const c of cells) {
+    try {
+      const r = await fetch(`/caminfo?host=${encodeURIComponent(c.host)}&port=${port}`, { cache: 'no-store' });
+      const j = await r.json();
+      const d = j.info || j;
+      c.tag.textContent = d.cameraId || '?';
+      c.info.textContent = [d.lensId, d.widthPx && `${d.widthPx}×${d.heightPx}`, d.appVersion && `v${d.appVersion}`,
+        Number.isFinite(d.tiltPitchDeg) && `傾き ${d.tiltPitchDeg.toFixed(1)}°`].filter(Boolean).join('  ');
+      c.dot.classList.toggle('ok', !!d.cameraId);
+    } catch {
+      c.dot.classList.remove('ok');
+      c.info.textContent = '情報が取れません';
+    }
+  }
+}
+
+function fillForm() {
+  hosts.forEach((h, i) => { document.getElementById('h' + i).value = h; });
+  document.getElementById('port').value = port;
+}
+document.getElementById('apply').addEventListener('click', () => {
+  hosts = [0, 1, 2].map(i => document.getElementById('h' + i).value.trim()).filter(Boolean);
+  port = parseInt(document.getElementById('port').value, 10) || 8080;
+  store.set('hosts', hosts); store.set('port', port);
+  build(); poll();
+});
+
+fillForm();
+build();
+poll();
+setInterval(poll, 5000);
+</script>
+</body>
+</html>
