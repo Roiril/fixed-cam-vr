@@ -1,0 +1,48 @@
+{
+  "note": "2026-11-17 会場。研究室の 11-15 の写真に合わせた素材を、会場の 11-17 14:51 の写真へ写す。点は幕の角の上端・角の手すり・手すりの先（A）、壁と床の線と壁の角（B）",
+  "sheetDir": "G:\\マイドライブ\\shubie\\screenshots\\onsite_20261117",
+  "homographies": {
+    "A_left": {"old": "plate_A_20261115_125052.jpg", "new": "plate_A_20261117_145119_d0311aa5.jpg",
+               "src": [[318, 38], [318, 226], [100, 231], [100, -55]],
+               "dst": [[338, 70], [322, 262], [160, 307], [160, 12]]},
+    "A_right": {"old": "plate_A_20261115_125052.jpg", "new": "plate_A_20261117_145119_d0311aa5.jpg",
+                "src": [[318, 38], [318, 226], [520, 229], [520, -50]],
+                "dst": [[345, 68], [328, 262], [485, 303], [485, 30]]},
+    "B_wall": {"old": "plate_B_20261115_130713.jpg", "new": "plate_B_20261117_145119_e8a7f00d.jpg",
+               "src": [[0, 300], [305, 300], [305, 0], [0, 0]],
+               "dst": [[0, 268], [285, 398], [285, 0], [0, 0]]}
+  },
+  "items": [
+    {"name": "stainA_ratio", "kind": "ratio", "homography": "A_left",
+     "src": "static-inputs/stain_A_ratio_20261113.png", "dst": "static-inputs/stain_A_ratio_20261117.png"},
+    {"name": "stainA_reveal", "kind": "frame", "fill": 255, "homography": "A_left",
+     "src": "static-inputs/stain_A_reveal_20261113.png", "dst": "static-inputs/stain_A_reveal_20261117.png"},
+    {"name": "stainA_leftmask", "kind": "frame", "homography": "A_left",
+     "src": "static-inputs/stain_A_press_leftmask_20260925.png", "dst": "static-inputs/stain_A_press_leftmask_20261117.png"},
+
+    {"name": "right_ratio", "kind": "ratio", "homography": "A_right",
+     "src": "static-inputs/stain_A_right_flow_ratio_20261115_125052.png", "dst": "static-inputs/stain_A_right_flow_ratio_20261117_145119.png"},
+    {"name": "right_ratio_mask", "kind": "frame", "homography": "A_right",
+     "src": "static-inputs/stain_A_right_flow_ratio_mask_20261115_125052.png", "dst": "static-inputs/stain_A_right_flow_ratio_mask_20261117_145119.png"},
+    {"name": "right_mask", "kind": "frame", "homography": "A_right",
+     "src": "static-inputs/stain_A_right_flow_mask_20261115_125052.png", "dst": "static-inputs/stain_A_right_flow_mask_20261117_145119.png"},
+    {"name": "right_face_mask", "kind": "frame", "homography": "A_right",
+     "src": "static-inputs/stain_A_right_flow_face_mask_20261115_125052.png", "dst": "static-inputs/stain_A_right_flow_face_mask_20261117_145119.png"},
+    {"name": "right_watch", "kind": "replace_img", "homography": "A_right",
+     "src": "static-inputs/stain_A_right_flow_watch_20261115_125052.png", "dst": "static-inputs/stain_A_right_flow_watch_20261117_145119.png"},
+    {"name": "right_face", "kind": "replace_img", "homography": "A_right",
+     "src": "static-inputs/stain_A_right_flow_face_20261115_125052.png", "dst": "static-inputs/stain_A_right_flow_face_20261117_145119.png"},
+    {"name": "right_pop", "kind": "replace_mp4", "homography": "A_right",
+     "src": "static-inputs/stain_A_right_flow_pop_20261115_125052.mp4", "dst": "static-inputs/stain_A_right_flow_pop_20261117_145119.mp4"},
+
+    {"name": "dolls_left", "kind": "replace_img", "homography": "A_left",
+     "src": "captures/gen_dollsA_left_20261115_1250.png", "dst": "captures/gen_dollsA_left_20261117_1451.png"},
+    {"name": "dolls_in", "kind": "replace_mp4", "homography": "A_left",
+     "src": "captures/gen_dollsA_in_20261115.mp4", "dst": "captures/gen_dollsA_in_20261117.mp4"},
+
+    {"name": "handsB_ratio", "kind": "ratio", "homography": "B_wall",
+     "src": "static-inputs/hands_B_ratio_20261113.png", "dst": "static-inputs/hands_B_ratio_20261117.png"},
+    {"name": "handsB_mask", "kind": "frame", "homography": "B_wall",
+     "src": "masks/cue_hands_B_solid_20260919.png", "dst": "masks/cue_hands_B_solid_20261117.png"}
+  ]
+}

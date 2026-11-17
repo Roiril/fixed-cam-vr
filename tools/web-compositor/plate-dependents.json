@@ -13,9 +13,11 @@
       "title": "2 周目 A の右の幕（顔のしみ・膨らむ顔と人形の動画）",
       "how": "「この写真に合わせ直す」を押す（1 分ほど。外の回線は要らない）。断られたら、カメラの位置か幕の並びが変わっている。カメラを採用中の写真に合わせて戻すか、動画を生成し直す（手順は tools/gen-plate/stain3/README.md「当日に作り直す（右の幕）」）",
       "needsInternet": false,
-      "realign": {"script": "tools/gen-plate/stain3/build_flow_right.py",
-                  "pointer": "tools/web-compositor/static-inputs/stain_A_right_flow.json",
-                  "timeoutSec": 900}
+      "realign": {
+        "script": "tools/gen-plate/stain3/build_flow_right.py",
+        "pointer": "tools/web-compositor/static-inputs/stain_A_right_flow.json",
+        "timeoutSec": 900
+      }
     },
     "dollsA": {
       "camera": "A",
@@ -31,16 +33,55 @@
     }
   },
   "dependents": {
-    "cue_stain_A": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
-    "cue_stain_A_left_hold": {"group": "stainA", "plate": "plate_A_20261115_125052.jpg"},
-    "cue_stain_A_right_hold": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
-    "stain_A_right_burst": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
-    "stain_A_right_watch": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
-    "cue_stain_A_right_face": {"group": "stainARight", "plate": "plate_A_20261115_125052.jpg"},
-    "stain_A_done_doll": {"group": "stainA", "plate": "plate_A_20260924_172209_b8e1f375.jpg"},
-    "dolls_A_in": {"group": "dollsA", "plate": "plate_A_20261115_125052.jpg"},
-    "gen_dolls_A_left": {"group": "dollsA", "plate": "plate_A_20261115_125052.jpg"},
-    "cue_hands_B": {"group": "handsB", "plate": "plate_B_20261115_130713.jpg"}
+    "cue_stain_A": {
+      "group": "stainA",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "cue_stain_A_left_hold": {
+      "group": "stainA",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "cue_stain_A_right_hold": {
+      "group": "stainARight",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "stain_A_right_burst": {
+      "group": "stainARight",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "stain_A_right_watch": {
+      "group": "stainARight",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "cue_stain_A_right_face": {
+      "group": "stainARight",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "stain_A_done_doll": {
+      "group": "stainA",
+      "plate": "plate_A_20260924_172209_b8e1f375.jpg"
+    },
+    "dolls_A_in": {
+      "group": "dollsA",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "gen_dolls_A_left": {
+      "group": "dollsA",
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    },
+    "cue_hands_B": {
+      "group": "handsB",
+      "plate": "plate_B_20261117_145119_e8a7f00d.jpg",
+      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+    }
   },
   "independent": {
     "pov_0": "手持ちのスマホで撮る人形視点",

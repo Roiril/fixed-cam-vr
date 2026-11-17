@@ -118,6 +118,9 @@ curl.exe -m 6 -s "http://127.0.0.1:8099/shoot/plan?cam=A"   # shots[].adoptedNam
 
 詳しくは `tools/gen-plate/stain3/README.md`「当日に作り直す（右の幕）」。
 
+**会場で部屋ごと変わり、生成し直す時間が無いとき**は、全部の素材を射影で写し替えるつなぎがある（`tools/gen-plate/replant.py`。手順は `tools/gen-plate/stain3/README.md`「当日に作り直す」）。
+写した名前へ cue を替えるのは `POST /state` ではできない（準備の卓は 403）。卓を止めて `show.json` の cues を直し、`onsite.py serve` で起こし直す。
+
 ### ほかの素材
 
 作り直すかは、札の「元にした写真と重ねる」でいまの映像と重ね、ずれで決める。作り直しは Codex の画像生成か動画の生成が要る（外の回線と 15 分〜）。作り直したら台帳の `plate` を新しい写真の名前に書き換え、焼き直す。
