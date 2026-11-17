@@ -296,6 +296,10 @@ namespace FixedCamVr.Streaming
         // 走行中の演出で markClear が効いたか（演出 1 本で 1 度）。
         private bool _activeCleared;
 
+        // 走行中の演出が、相手（skipIfDismissed）が報告で畳まれていたので CG 人形を出さずに始まったか。
+        // 演出そのものは出す（2-B の子供部屋は全員に見せる・0399）。人形のカットは最初から消した扱い（_activeCleared）。
+        private bool _activeDollWithheld;
+
         // 演出ごとに、体験者の報告で畳まれたか（skipIfDismissed が読む）。ラン開始で全部落とす。
         private bool[] _takeDismissed = Array.Empty<bool>();
 
@@ -400,6 +404,7 @@ namespace FixedCamVr.Streaming
             _replays = new int[_defs.Length];
             _takeDismissed = new bool[_defs.Length];
             _activeCleared = false;
+            _activeDollWithheld = false;
             ClearArmed();
             DropAllCarry(DropReason.BlockerGone, report: false); // 定義が変わった＝ index の意味が変わる
             _running = false;
@@ -437,6 +442,7 @@ namespace FixedCamVr.Streaming
             for (int i = 0; i < _replays.Length; i++) _replays[i] = 0;
             for (int i = 0; i < _takeDismissed.Length; i++) _takeDismissed[i] = false;
             _activeCleared = false;
+            _activeDollWithheld = false;
             ClearCount = 0;
             MarkStartAdvanceCount = 0;
             SkippedByDismissCount = 0;
@@ -849,16 +855,10 @@ namespace FixedCamVr.Streaming
             for (int k = _armedIndex.Count - 1; k >= 0; k--)
             {
                 int dropped = _armedIndex[k];
-                // 畳んだ演出を相手に持つ演出（skipIfDismissed）は、Waiting でも Ready でもここで外して「出さなかった」に数える。
-                // 前へ抜けた後も画面を持つ演出（exitHoldSec）は、持っている間に次の区間の演出を武装済みなので、
-                // 武装の時点の見送り（ArmEnterTakes）だけでは 2 周目 B の人形が出てしまう（0378）。
-                if (SuppressedByDismiss(dropped))
-                {
-                    RemoveArmedAt(k, out _);
-                    SkippedByDismissCount++;
-                    LastSkippedByDismissTake = dropped;
-                    continue;
-                }
+                // 畳んだ演出を相手に持つ演出（skipIfDismissed）は捨てない。人形を出さずに始まる（StartTake）ので、
+                // 畳んだ直後に出ても「別の異常が噴き出す」にはならない。捨てると 2-A の人形が付いて来る間（exitHoldSec）に
+                // 2-B で報告した人に子供部屋が出ない（2026-11-18 β の実機・0399）。
+                if (SuppressedByDismiss(dropped)) continue;
                 if (_armedState[k] != Armed.Ready) continue;
                 RemoveArmedAt(k, out _);
                 TakeDropped?.Invoke(dropped, DropReason.VisitorDismissed);
@@ -1021,23 +1021,29 @@ namespace FixedCamVr.Streaming
         /// <summary>走行中の演出で markClear が効いたか（効いた後は 2 枚目の層と長押しの膨らみを出さない）。</summary>
         public bool ActiveCleared => _running && _activeCleared;
 
+        /// <summary>
+        /// 走行中の演出が CG 人形を出さずに始まったか（相手の skipIfDismissed が報告で畳まれていた）。
+        /// <see cref="TakeRunner"/> は人形のカットで人形を出さない。演出のほかのカットはそのまま出る。
+        /// </summary>
+        public bool ActiveDollWithheld => _running && _activeDollWithheld;
+
         /// <summary>markClear で素材を消した回数（テレメトリ・テスト用）。</summary>
         public int ClearCount { get; private set; }
 
         /// <summary>markStartAdvance で長押しの開始がカットを進めた回数（テレメトリ・テスト用）。</summary>
         public int MarkStartAdvanceCount { get; private set; }
 
-        /// <summary>skipIfDismissed で出さなかった回数（テレメトリ・テスト用）。武装を見送るたびに数える。</summary>
+        /// <summary>skipIfDismissed で人形を出さずに始めた回数（テレメトリ・テスト用）。演出が始まるたびに数える。</summary>
         public int SkippedByDismissCount { get; private set; }
 
-        /// <summary>最後に skipIfDismissed で出さなかった演出の index（無ければ -1）。</summary>
+        /// <summary>最後に skipIfDismissed で人形を出さずに始めた演出の index（無ければ -1）。</summary>
         public int LastSkippedByDismissTake { get; private set; } = -1;
 
         /// <summary>演出が体験者の報告で畳まれたか（このランで）。</summary>
         public bool WasDismissed(int takeIndex)
             => takeIndex >= 0 && takeIndex < _takeDismissed.Length && _takeDismissed[takeIndex];
 
-        // 相手（skipIfDismissed）が報告で畳まれていたら、この演出は出さない。
+        // 相手（skipIfDismissed）が報告で畳まれていたか。畳まれていたら、この演出は人形を出さずに始まる。
         private bool SuppressedByDismiss(int takeIndex)
         {
             if (takeIndex < 0 || takeIndex >= _defs.Length) return false;
@@ -1178,7 +1184,14 @@ namespace FixedCamVr.Streaming
             _activeStep = 0;
             _outcome[index] = Outcome.Unresolved;   // 決着は終わり方（EndTakeDecision）が決める
             _activeReported = false;
-            _activeCleared = false;
+            // 相手（skipIfDismissed）が報告で畳まれていたら、人形のカットは最初から消した扱いで始める（0378 / 0399）。
+            _activeDollWithheld = SuppressedByDismiss(index);
+            _activeCleared = _activeDollWithheld;
+            if (_activeDollWithheld)
+            {
+                SkippedByDismissCount++;
+                LastSkippedByDismissTake = index;
+            }
             _dismissAfterStep = -1;
             _exitHolding = false;
             _baseZoneCam = baseZoneCam;
@@ -1263,13 +1276,7 @@ namespace FixedCamVr.Streaming
                 if (_running && i == _activeTake) continue;
                 if (d.once && _outcome[i] == Outcome.Settled) continue;
                 if (d.stepDurSec.Length == 0) continue; // カット空の演出は無視
-                // 相手の演出が報告で畳まれていたら出さない（2 周目 A で人形を報告したら 2 周目 B の人形も出ない・0378）。
-                if (SuppressedByDismiss(i))
-                {
-                    SkippedByDismissCount++;
-                    LastSkippedByDismissTake = i;
-                    continue;
-                }
+                // 相手の演出が報告で畳まれていても武装する。人形だけを出さない（StartTake・0378 / 0399）。
                 order.Add(i);
             }
             order.Sort((a, b) =>
@@ -1349,7 +1356,6 @@ namespace FixedCamVr.Streaming
                 // 走行中のものは「出ないまま終わった」ではない（いま画に出ている）。
                 if (_running && i == _activeTake) continue;
                 if (d.once && _outcome[i] == Outcome.Settled) continue;
-                if (SuppressedByDismiss(i)) continue;
                 if (!d.onExit && (d.skipWhenMissed || !IsArmed(i))) continue;
                 // 持ち越したものはまだ生きている（捨てていない）ので報告しない。
                 if (_carryIndex.Contains(i)) continue;
@@ -1370,7 +1376,6 @@ namespace FixedCamVr.Streaming
                 if (d.stepDurSec.Length == 0) continue;
                 if (_running && i == _activeTake) continue;
                 if (d.once && _outcome[i] == Outcome.Settled) continue;
-                if (SuppressedByDismiss(i)) continue;
                 if (d.onExit || (!d.skipWhenMissed && IsArmed(i))) return i; // 配列順で先頭が勝つ
             }
             return -1;

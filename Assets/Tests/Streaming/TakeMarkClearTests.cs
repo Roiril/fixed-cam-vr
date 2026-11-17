@@ -112,7 +112,7 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void SkipIfDismissed_TheNextTakeDoesNotShow_AfterTheVisitorDismissedTheFirst()
+        public void SkipIfDismissed_TheNextTakeShowsWithoutTheDoll_AfterTheVisitorDismissedTheFirst()
         {
             TakeRunnerLogic l = TwoTakes(out _);
             l.OnZoneCommitted(2, 0, false, 0, 0, 0f);
@@ -122,8 +122,12 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.WasDismissed(0), Is.True);
 
             l.OnZoneCommitted(2, 1, true, 2, 0, 3f, forward: true);
-            Assert.That(l.Tick(3f, 1).action, Is.EqualTo(TakeRunnerLogic.Action.None), "2 本目は出ない");
-            Assert.That(l.Tick(4f, 1).action, Is.EqualTo(TakeRunnerLogic.Action.None));
+            TakeRunnerLogic.Decision d = l.Tick(3f, 1);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep), "2 本目は出る（子供部屋は全員に見せる・0399）");
+            Assert.That(d.takeIndex, Is.EqualTo(1));
+            Assert.That(l.ActiveDollWithheld, Is.True, "人形は出さない（0378）");
+            Assert.That(l.NotifyMarkPressed(3.5f), Is.Not.EqualTo(TakeRunnerLogic.MarkResult.Cleared),
+                        "居ない人形を消したことにしない");
             Assert.That(l.SkippedByDismissCount, Is.EqualTo(1));
             Assert.That(l.LastSkippedByDismissTake, Is.EqualTo(1));
         }
@@ -160,6 +164,7 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(l.WasDismissed(0), Is.False);
             l.OnZoneCommitted(2, 1, true, 2, 0, 31f, forward: true);
             Assert.That(l.Tick(31f, 1).takeIndex, Is.EqualTo(1), "2 本目は出る");
+            Assert.That(l.ActiveDollWithheld, Is.False, "人形も出る");
         }
 
         [Test]

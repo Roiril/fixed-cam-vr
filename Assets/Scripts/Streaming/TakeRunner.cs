@@ -1790,7 +1790,9 @@ namespace FixedCamVr.Streaming
             // 一般の素材（clip / still）は撮影条件が分からないので、重ねれば必ず浮く。
             bool cgBlocked = TakeSchema.IsAssetSource(step.source)
                              && !TakeSchema.MatchesCameraPerspective(step.source);
-            bool toDoll = step.HasCg && !cgBlocked;
+            // 相手の演出（skipIfDismissed）が報告で畳まれていたら、この演出では人形を出さない。
+            // 演出そのもの（2-B の子供部屋）は出す（0378「2-B においても現れない」/ 0399「絶対に皆に見えるように」）。
+            bool toDoll = step.HasCg && !cgBlocked && !_logic.ActiveDollWithheld;
 
             // ---- 入れ替わりのノイズ（`canon/LEDGER.md` 0089）--------------------------------
             //

@@ -66,11 +66,11 @@ paths:
   — `TakeRunnerLogic.NotifyMarkStarted(now)`。入口は `TakeRunner.NotifyVisitorMarkStarted` の頭
 - 押し切ったときの報告は、進んだ先のカットで普通に判定する（2-A では伸び出しのカットで `dismissible` が畳む）
 
-## 相手が報告で畳まれたら出さない（skipIfDismissed）
+## 相手が報告で畳まれたら人形を出さない（skipIfDismissed）
 
-- take の `skipIfDismissed`（既定 ""）は相手の take id。相手が同じランで `VisitorDismissed` で終わっていたら、この演出は武装しない
-  — `TakeRunnerLogic.ArmEnterTakes`・`FindExitCandidate`・`ReportRemainingDrops` が `_takeDismissed[]` を見る。`ResetRun` / `SetDefs` で忘れる
-- 報告で畳んだ縁（`TakeRunnerLogic.DismissDecision`）でも、武装済み（Waiting・Ready）の演出のうち相手が畳まれたものを外し、出さなかったに数える。区間を出た後も画面を持つ演出（take の `exitHoldSec`・`rules/show-run.md`）は、持っている間に次の区間の演出を武装しているため
+- take の `skipIfDismissed`（既定 ""）は相手の take id。相手が同じランで `VisitorDismissed` で終わっていたら、この演出は**人形を出さずに始まる**。演出そのもの（2-B の子供部屋）は出す（0399）
+  — `TakeRunnerLogic.StartTake` が `_activeDollWithheld` と `_activeCleared` を立て、`TakeRunner.BeginStep` が `ActiveDollWithheld` の間は CG 人形を出さない。人形のカットの報告（markClear）は何も消さない。`ResetRun` / `SetDefs` で忘れる
+- 報告で畳んだ縁（`TakeRunnerLogic.DismissDecision`）は、相手が畳まれた武装済みの演出を捨てない（Ready でも残す）。捨てると、区間を出た後も画面を持つ演出（take の `exitHoldSec`）の間に次の区間で報告した人に 2-B が出ない（2026-11-18 β の実機）
 - 台本の id は `TakeRunner.ResolveSkipIfDismissed` が index+1 へ解く（0 = 相手なし。知らない id は警告して相手なし）
 - 卓の白名簿は `timeline-model.js` の `markClear` / `markStartAdvance` / `skipIfDismissed`。2-A の台本は `tools/show-apply-stain-right.py`
 
@@ -89,7 +89,7 @@ paths:
   最後のカットなら `ev=take st=end` で OK、`why=done` 以外で畳まれたら WARN
 - `ev=markclear take= step= n=` — `mark_clear_findings`。1 秒以内に同じ演出が `why=mark` で畳まれたら FAIL、2 秒以内にそのカットの cue の `ev=cue st=off`（人形のカットなら `ev=trail vis=0`）が無ければ FAIL
 - `ev=markstartadv take= step= n=` — `mark_start_advance_findings`（判定は markadv と同じ）
-- `ev=takeskip take= by= n=` — `take_skip_findings`。相手の `why=mark` が先に無い・出さなかった演出が後で始まった・相手が畳まれたのに `takeskip` 無しで始まった、なら FAIL
+- `ev=takeskip take= by= n=` — 人形を外して始めた（演出の begin と同じフレーム）。`take_skip_findings`。相手の `why=mark` が先に無い・近くに本人の begin が無い・本人の間に `ev=trail vis=1`・相手が畳まれたのに `takeskip` 無しで始まった・相手が畳まれた後に本人の区間に居たのに始まらなかった、なら FAIL
 - `ev=showthru take= step= until= n=` — `show_through_findings`。`why=mark` で畳んだのに `until` のカットが出ていない・その後のカットへ進んだ・`why=done` で終わった、なら FAIL。台本に `markShowThrough` があるのにそのカットより前で `why=mark` で畳んだら FAIL。保つ間に区間を出たら WARN
 - `ev=exithold take= sec= n=` — `exit_hold_findings`。持ち始めから sec + 0.5 秒（`EXIT_HOLD_SLACK_SEC`）以内に同じ演出の `ev=take st=end` が無ければ FAIL。台本に `exitHoldSec` が無い・yield でない演出が持ったら FAIL。滞在をはみ出した WARN は持つ秒の内なら出さない
 - 機械の門: `TakeExitHoldTests`・`tools/test_exit_hold_log.py`・`TakeMarkAdvanceTests`・`TakeMarkClearTests`・`TakeMarkShowThroughTests`（C#）・`DollLaughAudioTests.MarkAdvance_ThroughTheRunner_*`・`tools/test_mark_advance_log.py`・`tools/test_mark_clear_log.py`

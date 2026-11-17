@@ -550,18 +550,30 @@ def mark_start_advance_findings(events, takes=None):
 
 
 def take_skip_findings(events, takes=None):
-    """相手の演出が報告で畳まれていたので出さなかった（take の skipIfDismissed）ことを確かめる。(行, 判定) を返す。
+    """相手の演出が報告で畳まれていたので、人形を出さずに演出を始めた（take の skipIfDismissed）ことを確かめる。(行, 判定) を返す。
+
+    0378「2-B においても（人形は）現れない」と 0399「（2-B の子供部屋は）絶対に皆に見えるように」の両方を見る。
+    演出そのものは出し、人形のカットだけ人形を出さない。
 
     書き手は C# の ShowTelemetryHost:
-      ev=takeskip take=<出さなかった演出> by=<相手の演出> n=<累計>
-    相手が出した ev=take st=end why=mark が先に無ければ FAIL（畳まれていないのに出さなかった）。
-    出さなかった演出が、その後の同じ走行で ev=take st=begin していたら FAIL（出さないはずが出た）。
-    台本で skipIfDismissed を持つ演出の相手が why=mark で畳まれたのに、ev=takeskip が無く本人が始まっていたら FAIL。
+      ev=takeskip take=<人形を外して始めた演出> by=<相手の演出> n=<累計>（演出が始まった同じフレーム）
+    相手が出した ev=take st=end why=mark が先に無ければ FAIL（畳まれていないのに人形を外した）。
+    ev=takeskip の近く（TAKE_SKIP_BEGIN_SLACK_SEC）に本人の ev=take st=begin が無ければ FAIL（演出が出ていない）。
+    本人が走っている間に ev=trail vis=1 が出たら FAIL（人形が出た）。
+    台本で skipIfDismissed を持つ演出の相手が why=mark で畳まれた後:
+      - 本人が ev=takeskip 無しで始まったら FAIL（人形が出る）
+      - 体験者が本人の区間に居たのに本人が始まらなかったら FAIL（子供部屋が出ない・2026-11-18 β の実機）
     """
     skips = [e for e in events if e.get("ev") == "takeskip"]
     lines, verdicts = [], []
     if skips:
-        lines.append(f"  相手が報告で畳まれたので出さなかった演出: {len(skips)} 回")
+        lines.append(f"  相手が報告で畳まれたので人形を外して始めた演出: {len(skips)} 回")
+
+    def take_window(tid, t_begin):
+        ends = [fnum(s, "t", 0.0) for s in events if s.get("ev") == "take" and s.get("st") == "end"
+                and str(s.get("id", "")) == tid and fnum(s, "t", 0.0) >= t_begin]
+        return t_begin, (min(ends) if ends else float("inf"))
+
     for e in skips:
         tid = str(e.get("take", ""))
         by = str(e.get("by", ""))
@@ -569,19 +581,27 @@ def take_skip_findings(events, takes=None):
         dismissed = [s for s in events if s.get("ev") == "take" and s.get("st") == "end"
                      and str(s.get("id", "")) == by and str(s.get("why", "")) == "mark" and fnum(s, "t", 0.0) <= t0]
         began = [s for s in events if s.get("ev") == "take" and s.get("st") == "begin"
-                 and str(s.get("id", "")) == tid and fnum(s, "t", 0.0) > t0]
+                 and str(s.get("id", "")) == tid and abs(fnum(s, "t", 0.0) - t0) <= TAKE_SKIP_BEGIN_SLACK_SEC]
         if not dismissed:
-            verdicts.append(("FAIL", f"{tid}: 出さなかったが、相手 {by} が報告で畳まれた記録（why=mark）が先に無い"))
-        elif began:
-            verdicts.append(("FAIL", f"{tid}: 相手 {by} が報告で畳まれたので出さないはずが、"
-                                     f"{fnum(began[0], 't', 0.0) - t0:.1f} 秒後に始まった"))
+            verdicts.append(("FAIL", f"{tid}: 人形を外して始めたが、相手 {by} が報告で畳まれた記録（why=mark）が先に無い"))
+            continue
+        if not began:
+            verdicts.append(("FAIL", f"{tid}: 人形を外して始めると記録したのに、演出が始まっていない"))
+            continue
+        lo, hi = take_window(tid, fnum(began[0], "t", 0.0))
+        shown = [s for s in events if s.get("ev") == "trail" and str(s.get("vis", "")) == "1"
+                 and lo <= fnum(s, "t", 0.0) <= hi]
+        if shown:
+            verdicts.append(("FAIL", f"{tid}: 相手 {by} が報告で畳まれたのに、人形が出た（ev=trail vis=1 "
+                                     f"t={fnum(shown[0], 't', 0.0):.1f}）"))
         else:
-            verdicts.append(("OK", f"{tid}: 相手 {by} が報告で畳まれたので出さなかった"))
+            verdicts.append(("OK", f"{tid}: 相手 {by} が報告で畳まれたので、人形を出さずに演出を出した"))
     if takes is not None:
         skipped = {str(e.get("take", "")) for e in skips}
+        segs = sorted((fnum(e, "t", 0.0), e.get("lap"), e.get("cam")) for e in events if e.get("ev") == "seg")
         for t in takes:
             partner = str(t.get("skipIfDismissed", "") or "")
-            if not partner or t["id"] in skipped:
+            if not partner:
                 continue
             ends = [s for s in events if s.get("ev") == "take" and s.get("st") == "end"
                     and str(s.get("id", "")) == partner and str(s.get("why", "")) == "mark"]
@@ -590,10 +610,21 @@ def take_skip_findings(events, takes=None):
             t0 = fnum(ends[0], "t", 0.0)
             began = [s for s in events if s.get("ev") == "take" and s.get("st") == "begin"
                      and str(s.get("id", "")) == t["id"] and fnum(s, "t", 0.0) > t0]
-            if began:
-                verdicts.append(("FAIL", f"{t['id']}: 相手 {partner} が報告で畳まれたのに始まった（ev=takeskip が無い）— "
-                                         "TakeRunnerLogic.ArmEnterTakes の skipIfDismissed を見る"))
+            if began and t["id"] not in skipped:
+                verdicts.append(("FAIL", f"{t['id']}: 相手 {partner} が報告で畳まれたのに人形を外さずに始まった"
+                                         "（ev=takeskip が無い）— TakeRunnerLogic.StartTake の skipIfDismissed を見る"))
+            key = (str(t.get("lap")), str(t.get("camera")))
+            before = [sg for sg in segs if sg[0] <= t0]
+            was_in = bool(before) and (str(before[-1][1]), str(before[-1][2])) == key
+            entered = any((str(sg[1]), str(sg[2])) == key for sg in segs if sg[0] > t0)
+            if (was_in or entered) and not began:
+                verdicts.append(("FAIL", f"{t['id']}: 相手 {partner} が報告で畳まれた後、体験者はその区間に居たのに"
+                                         "演出が始まらなかった（全員に見せる演出が消えた・0399）"))
     return lines, verdicts
+
+
+# ev=takeskip は演出が始まった同じフレームで出る。Tick と書き手の順のずれだけを許す。
+TAKE_SKIP_BEGIN_SLACK_SEC = 0.5
 
 
 # 前へ抜けた後も畳まずに画面を持った演出（take の exitHoldSec）が、持つ秒の後に終わるまでの猶予。
@@ -1607,7 +1638,8 @@ def analyze(events, others, exp, warns=None):
     for e in takes_ev:
         if e.get("st") == "end":
             ended[e.get("id")].append(fnum(e, "t", 0))
-    # 相手が報告で畳まれたので出さなかった演出（take の skipIfDismissed・0378）。正しさは take_skip_findings が見る
+    # 相手が報告で畳まれたので人形を外して始めた演出（take の skipIfDismissed・0378 / 0399）。
+    # 2026-11-18 より前の版は演出ごと出さなかったので、begin が無く takeskip だけある。正しさは take_skip_findings が見る
     skipped_by_dismiss = {str(e.get("take", "")): str(e.get("by", ""))
                           for e in events if e.get("ev") == "takeskip"}
 
@@ -1641,7 +1673,7 @@ def analyze(events, others, exp, warns=None):
             w(f"  ✅ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出た t={starts[0]:.0f}s{dur}{how}{again} [{kinds}]")
         elif tid in skipped_by_dismiss:
             w(f"  ⏭ {tid} ({t['lap']}周 cam{t['camera']} {t['at']}) 出さなかった — "
-              f"相手 {skipped_by_dismiss[tid]} が報告で畳まれた（skipIfDismissed） [{kinds}]")
+              f"相手 {skipped_by_dismiss[tid]} が報告で畳まれた（skipIfDismissed・2026-11-18 より前の版） [{kinds}]")
         else:
             reason = ""
             if stayed is None:

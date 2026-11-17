@@ -33,7 +33,7 @@ TAKES = [
     {"id": "L2C0#0", "skipIfDismissed": "",
      "steps": [{"cueId": "cue_stain_A", "markClear": True}, {"cueId": "right", "markStartAdvance": True},
                {"cueId": "burst"}]},
-    {"id": "L2C1#0", "skipIfDismissed": "L2C0#0",
+    {"id": "L2C1#0", "skipIfDismissed": "L2C0#0", "lap": 2, "camera": 1,
      "steps": [{"cueId": "", "cg": "doll", "cgMode": "trail", "markClear": True}, {"cueId": "backrooms_B_in"}]},
 ]
 
@@ -110,26 +110,47 @@ class MarkStartAdvanceAnalyzerTests(unittest.TestCase):
 
 
 class TakeSkipAnalyzerTests(unittest.TestCase):
-    def test_skipped_after_partner_dismissed_passes(self):
+    """2-A の人形を報告で畳んだ回は、2-B の演出を人形だけ外して出す（0378 / 0399）。"""
+
+    def test_doll_withheld_and_take_shown_passes(self):
         events = [ev("take", 20.0, id="L2C0#0", st="end", why="mark"),
-                  ev("takeskip", 25.0, take="L2C1#0", by="L2C0#0", n=1)]
+                  ev("take", 25.0, id="L2C1#0", st="begin"),
+                  ev("takeskip", 25.0, take="L2C1#0", by="L2C0#0", n=1),
+                  ev("take", 40.0, id="L2C1#0", st="end", why="done")]
         self.assertEqual(levels(xp.take_skip_findings, events), ["OK"])
 
-    def test_skipped_without_partner_dismissed_fails(self):
+    def test_withheld_without_partner_dismissed_fails(self):
         events = [ev("take", 20.0, id="L2C0#0", st="end", why="yield"),
+                  ev("take", 25.0, id="L2C1#0", st="begin"),
                   ev("takeskip", 25.0, take="L2C1#0", by="L2C0#0", n=1)]
         self.assertEqual(levels(xp.take_skip_findings, events), ["FAIL"])
 
-    def test_skipped_take_began_later_fails(self):
+    def test_withheld_but_take_never_began_fails(self):
+        # 2026-11-18 より前の版の形（演出ごと出さなかった）
         events = [ev("take", 20.0, id="L2C0#0", st="end", why="mark"),
+                  ev("takeskip", 20.0, take="L2C1#0", by="L2C0#0", n=1)]
+        self.assertIn("FAIL", levels(xp.take_skip_findings, events))
+
+    def test_doll_shown_while_withheld_fails(self):
+        events = [ev("take", 20.0, id="L2C0#0", st="end", why="mark"),
+                  ev("take", 25.0, id="L2C1#0", st="begin"),
                   ev("takeskip", 25.0, take="L2C1#0", by="L2C0#0", n=1),
-                  ev("take", 30.0, id="L2C1#0", st="begin")]
+                  ev("trail", 25.5, station=0, vis=1),
+                  ev("take", 40.0, id="L2C1#0", st="end", why="done")]
         self.assertEqual(levels(xp.take_skip_findings, events), ["FAIL"])
 
     def test_partner_dismissed_but_take_began_without_skip_fails(self):
         events = [ev("take", 20.0, id="L2C0#0", st="end", why="mark"),
                   ev("take", 25.0, id="L2C1#0", st="begin")]
         self.assertEqual(levels(xp.take_skip_findings, events), ["FAIL"])
+
+    def test_report_inside_2b_during_hold_then_take_missing_fails(self):
+        # β の実機（2026-11-18）: 2-A の人形が付いて来る間に 2-B で報告し、子供部屋の演出が出なかった
+        events = [ev("seg", 201.8, lap=2, cam=1, plap=2),
+                  ev("take", 202.3, id="L2C0#0", st="end", why="mark"),
+                  ev("takeskip", 202.3, take="L2C1#0", by="L2C0#0", n=1),
+                  ev("seg", 209.1, lap=2, cam=2, plap=2)]
+        self.assertIn("FAIL", levels(xp.take_skip_findings, events))
 
     def test_partner_not_dismissed_and_take_began_says_nothing(self):
         events = [ev("take", 20.0, id="L2C0#0", st="end", why="yield"),

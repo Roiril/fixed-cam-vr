@@ -1280,7 +1280,7 @@ namespace FixedCamVr.Diagnostics
                              $"step={_takes.LastMarkStartAdvanceStep} n={_takes.MarkStartAdvanceCount}");
                     _lastMarkStartAdvanceCount = _takes.MarkStartAdvanceCount;
                 }
-                // 相手の演出が報告で畳まれていたので出さなかった（take の skipIfDismissed・0378 の 2 周目 B の人形）。
+                // 相手の演出が報告で畳まれていたので、人形を出さずに演出を始めた（take の skipIfDismissed・0378 / 0399 の 2 周目 B）。
                 if (_takes.SkippedByDismissCount != _lastSkippedByDismissCount)
                 {
                     if (_takes.SkippedByDismissCount > _lastSkippedByDismissCount)

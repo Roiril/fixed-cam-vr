@@ -151,13 +151,13 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void ReportDuringTheHold_KeepsTheNextZoneTakeThatSkipsOnDismiss_FromStarting()
+        public void ReportDuringTheHold_StartsTheNextZoneTake_WithoutTheDoll()
         {
             var l = new TakeRunnerLogic();
             TakeRunnerLogic.Def a = Take(0, Hold, 30f);
             a.dismissible = true;
             TakeRunnerLogic.Def b = Take(1, 0f, 10f);
-            b.skipIfDismissedTake1 = 1; // 2 周目 A（index 0）が報告で畳まれたら出ない
+            b.skipIfDismissedTake1 = 1; // 2 周目 A（index 0）が報告で畳まれたら人形を出さない（演出は出す・0399）
             l.SetDefs(new[] { a, b });
             l.OnZoneCommitted(2, 0, true, 1, 2, 0f, forward: true);
             l.Tick(0f, 0);
@@ -168,10 +168,14 @@ namespace FixedCamVr.Streaming.Tests
 
             Assert.That(l.NotifyMarkPressed(6f), Is.EqualTo(TakeRunnerLogic.MarkResult.Dismissed));
             Assert.That(l.Tick(6f, 1).reason, Is.EqualTo(TakeRunnerLogic.EndReason.VisitorDismissed));
-            Assert.That(l.SkippedByDismissCount, Is.EqualTo(1), "武装済みの相手は報告の縁で外して数える");
+            // 2026-11-18 β の実機: 人形が付いて来る間に 2-B で報告した人に子供部屋が出なかった
+            TakeRunnerLogic.Decision d = l.Tick(6.1f, 1);
+            Assert.That(d.action, Is.EqualTo(TakeRunnerLogic.Action.BeginStep), "2 周目 B の演出は捨てずに出す");
+            Assert.That(d.takeIndex, Is.EqualTo(1));
+            Assert.That(l.ActiveDollWithheld, Is.True, "人形だけを出さない");
+            Assert.That(l.ActiveCleared, Is.True, "人形のカットは最初から消した扱い");
+            Assert.That(l.SkippedByDismissCount, Is.EqualTo(1));
             Assert.That(l.LastSkippedByDismissTake, Is.EqualTo(1));
-            Assert.That(l.Tick(6.1f, 1).action, Is.EqualTo(TakeRunnerLogic.Action.None), "2 周目 B の演出は出ない");
-            Assert.That(l.Tick(20f, 1).action, Is.EqualTo(TakeRunnerLogic.Action.None));
         }
 
         [Test]
