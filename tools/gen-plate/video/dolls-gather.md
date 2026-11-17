@@ -37,6 +37,17 @@ for a,b in (('tools/web-compositor/captures/plate_A_<日時>.jpg','logs/gen-plat
   上下にはみ出た 5 行ずつは無人写真で埋め、頭の 4 コマを無人写真から、尾の 8 コマを静止画へ溶かしてつないだ
   （mp4 にした後の差は 1 コマ目 1.5・最終コマ 2.3）。卓の段の `durSec` は 4.0 → 6.0（クリップ長）。
   出力は `captures/gen_dollsA_in_20261115.mp4`、コマ一覧は Drive `screenshots/fixed-cam-vr/20261115_dollsA_in_sheet.jpg`
+- **2026-11-17 に展示会場の写真で焼いた**（`Logs/gen-plate/dollsA_video_input_20261117/`）。手順は 3 つ:
+  1. 静止画: `compose.py --anomaly dolls-many --site A_20261117 --place left-half --lap 4` の「足すもの」節を、
+     11-15 の採用版（`gen_dollsA_left_20261115_1250.png`）に揃える節へ差し替えて Codex で 2 枚。
+     Codex は部屋ごと描き直す（幕の襞・白い板）ので、`gen-tone.py undim` → `keep_base.py --box 0,240,318,480` で人形の所だけ写真へ戻す
+  2. 動画: Flow（Omni 1.2 Flash・360p・6 秒・首尾フレーム）。プロンプトは上の「右へ手を差し伸べる」の入り口を
+     会場の物（左の幕の裾・左下の白い板・手すりの後ろ）へ言い換えたもの（同じフォルダの `prompt.txt`）。1 回で通った
+  3. 戻す: `py -3.11 tools/gen-plate/video/fit_dolls_in.py`。倍率は今回も 1.022。
+     ⚠ **Flow の最終コマは渡した静止画に辿り着かない**（群れが 20 画素ほど左上にずれた。背景の手すりは合っていた）。
+     溶かすと人形が二重になるので、**② の静止画を動画の最終コマから作り直す**（`--tail 0` で書いた最終コマを
+     `keep_base.py` で写真へ戻し、それを `--still` にしてもう一度走らせる）。首尾の差は 2.1 / 2.2
+  - 出力は `captures/gen_dollsA_in_20261117_venue.mp4` と `captures/gen_dollsA_left_20261117_venue.png`
 - **整数倍で拡大する。** 位置が 1 画素もずれない
 - ⚠⚠ **渡す画は 16:9 にする。左右を黒で埋めて作る**（2026-09-05 ユーザー指定）。
   4:3 のまま渡すと**道具が上下を切って 16:9 にして返す**（同日実測: 1280x960 で渡したら

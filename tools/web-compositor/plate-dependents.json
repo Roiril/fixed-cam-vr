@@ -65,13 +65,11 @@
     },
     "dolls_A_in": {
       "group": "dollsA",
-      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
-      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg"
     },
     "gen_dolls_A_left": {
       "group": "dollsA",
-      "plate": "plate_A_20261117_145119_d0311aa5.jpg",
-      "replanted": "tools/gen-plate/replant/20261117.json（射影で写した仮の版。生成し直すまで）"
+      "plate": "plate_A_20261117_145119_d0311aa5.jpg"
     },
     "cue_hands_B": {
       "group": "handsB",
