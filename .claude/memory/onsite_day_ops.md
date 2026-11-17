@@ -158,5 +158,16 @@ heartbeat に端末 ID が無く（`ShowControlClient.cs` の `Hb` に無い）�
 ⚠ 未修正（2026-11-14 の運用監査）: 記録の読み書きはプロセスをまたいで原子的でない。watch と卓がミリ秒差で
 同じ台を判定すると、両方が起こし直しうる。起きるのは 1 回きりで、その次の判定から 90 秒の間隔に戻る。
 
+## Quest の受信が落ちたとき（2026-11-17 会場・β で実測）
+
+⚠⚠ **Quest の設定アプリを裏に残したまま渡さない。** `com.oculus.panelapp.settings` が開いていると
+10 秒おきに Wi-Fi スキャンが走り（`WifiService startScan uid=10074`。1 回 5〜9 秒・137 BSS）、受信が 1/3 ほどに落ちる。
+同じ秒に有線 PC は 26〜31fps を受け、β のアプリ描画も 88〜90fps だった。原因は描画でも配信スマホでもない。
+`adb shell am force-stop com.oculus.panelapp.settings` で、Quest の上で nc を使い 3 台を 10 秒受けた枚数が 44〜87 → 124〜230 に戻った（α は 239〜295）。
+- スキャン 0 回でも混む時間帯は落ちる（α 16:51）。こちらの原因は未解明
+- 落ちると lag 判定の張り直しが 2 秒おきに起き、張り直しがさらに受信を減らす
+- 測るときは Unity 付属の adb（`PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe`）をフルパスで使う。PATH の SideQuest 版と 5037 番を奪い合い、logcat が切れる
+- exp-a の 5GHz はこの日 ch48（5240MHz）だった。[[no_internet_autojoin_kill]] の 5180MHz から AP が自動で移している
+
 関連: [[quest_fleet_two_devices]] / [[camera_fleet]] / [[show_json_is_live_config]] /
 [[eye_jack]] / [[onsite_experience_test]] / [[visitor_sound_reset]]
