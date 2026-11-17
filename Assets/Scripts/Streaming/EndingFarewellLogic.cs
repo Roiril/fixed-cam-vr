@@ -357,6 +357,8 @@ namespace FixedCamVr.Streaming
             public bool fromVisitor;
             /// <summary>下がり終わりの像の高さ / 立っているときの像の高さ。</summary>
             public float retreatShrink;
+            /// <summary>下がる道が無く、その場で背を向けて薄くなる。</summary>
+            public bool retreatInPlace;
         }
 
         /// <summary>全身が画に入り、互いに向き合う。</summary>
@@ -442,14 +444,21 @@ namespace FixedCamVr.Streaming
                 pairAccepted = pairAccepted, trajectoryAccepted = trajectoryAccepted, dolls = dolls,
                 retreats = new List<RetreatPlan>?[dolls.Count],
             };
-            bool fromVisitor = false;
-            if (visitorFoot.HasValue && ChestInFrame(cam, visitorFoot.Value, visitorHeightM))
-            {
-                var here = new List<Vector3>(1) { visitorFoot.Value };
-                fromVisitor = search.Run(here, true, visitorYawDeg);
-            }
+            bool visitorInFrame = visitorFoot.HasValue && ChestInFrame(cam, visitorFoot.Value, visitorHeightM);
+            var here = visitorInFrame ? new List<Vector3>(1) { visitorFoot.GetValueOrDefault() } : null;
+            bool fromVisitor = here != null && search.Run(here, true, visitorYawDeg);
             // 体験者が枠の外か人形に近すぎるときは仮の点で人形だけ先に立てる。全身と壁の余白が解ける点を優先する。
-            if (!fromVisitor && !search.Run(visitors, false, null) && !search.Run(visitors, true, null))
+            bool solved = fromVisitor || search.Run(visitors, false, null) || search.Run(visitors, true, null);
+            // 下がる道が 1 本も取れない据え方では、その場で背を向けて薄くなる（会場 11-17 の A は
+            // L 字の角を正面から見下ろし、遠ざかる向きへ 0.15m 進むとすぐ壁の余白を割る）。
+            // 人形も写真も出さずに 15 秒待つより、写真を撮って同じ尺で消える方を採る。
+            if (!solved)
+            {
+                search.allowStay = true;
+                fromVisitor = here != null && search.Run(here, true, visitorYawDeg);
+                solved = fromVisitor || search.Run(visitors, false, null) || search.Run(visitors, true, null);
+            }
+            if (!solved)
             {
                 Debug.LogWarning($"[EndingFarewell] placement unavailable visitors={visitors.Count} dolls={dolls.Count} " +
                     $"separated={search.gapPairs} ordered={search.orderedPairs} framed={search.framedPairs} " +
@@ -461,9 +470,11 @@ namespace FixedCamVr.Streaming
             RetreatPlan retreat = search.retreat;
             Debug.Log($"[EndingFarewell] placement visitor=({visitor.x:0.000},{visitor.z:0.000}) " +
                 $"doll=({doll.x:0.000},{doll.z:0.000}) gap={Vector3.Distance(visitor, doll):0.000}m " +
-                $"end=({retreat.end.x:0.000},{retreat.end.z:0.000}) shrink={retreat.shrink:0.00} fromVisitor={(fromVisitor ? 1 : 0)}");
+                $"end=({retreat.end.x:0.000},{retreat.end.z:0.000}) shrink={retreat.shrink:0.00} fromVisitor={(fromVisitor ? 1 : 0)} " +
+                $"inPlace={(search.allowStay && retreat.InPlace ? 1 : 0)}");
             anchor = search.MakeAnchor(visitor, doll, retreat);
             anchor.fromVisitor = fromVisitor;
+            anchor.retreatInPlace = retreat.InPlace;
             return true;
         }
 
@@ -474,10 +485,14 @@ namespace FixedCamVr.Streaming
             public readonly Vector3 end;
             public readonly float shrink;
             public readonly float score;
-            public RetreatPlan(Vector3 end, float shrink, float score)
+            /// <summary>下がらず、その場で背を向けて薄くなる（下がる道が 1 本も無いときだけ）。</summary>
+            public readonly bool InPlace;
+            public RetreatPlan(Vector3 end, float shrink, float score, bool inPlace = false)
             {
-                ok = true; this.end = end; this.shrink = shrink; this.score = score;
+                ok = true; this.end = end; this.shrink = shrink; this.score = score; InPlace = inPlace;
             }
+
+            public static RetreatPlan Stay(Vector3 foot) => new RetreatPlan(foot, 1f, 1f, true);
         }
 
         /// <summary>体験者の候補と人形の候補の組を点数で選ぶ。1 回の探索の状態を束ねる。</summary>
@@ -495,6 +510,8 @@ namespace FixedCamVr.Streaming
             public Vector3 visitor, doll;
             public RetreatPlan retreat;
             public int gapPairs, orderedPairs, framedPairs, visitorFitFails, retreatFails, pairFails, pathFails;
+            /// <summary>下がる道が無い人形の点も、その場で薄くなる形で採る。</summary>
+            public bool allowStay;
 
             /// <param name="fixedVisitor">体験者の点は実際の立ち位置。身体の余白や全身の枠は問わない。</param>
             public bool Run(List<Vector3> visitors, bool fixedVisitor, float? visitorYawDeg)
@@ -532,6 +549,7 @@ namespace FixedCamVr.Streaming
                         // 下がる途中で体験者の下腿に触れない。人形は横へ抜けるので、前後に長い足の寸法は使わない。
                         float pathGap = 0.13f + dollRadiusM;
                         RetreatPlan plan = PickRetreat(retreats[i]!, d, v, pathGap);
+                        if (!plan.ok && allowStay) plan = RetreatPlan.Stay(d);
                         if (!plan.ok)
                         {
                             retreatFails++;
