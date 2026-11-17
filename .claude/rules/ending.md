@@ -35,7 +35,7 @@ paths:
 - 解除の縁でスタッフ用の右コントローラを振動させる — `OvrControllerBridge`（`CurseReleasedCount`）〔出典: LEDGER 0156〕
 - 帰還の別れの人形: 締めのライブで、入れ替わりが終わって CG 層が空き、スイの面が閉じた縁に（面は最大 8 秒待つ）、締めの人形（人の代役でない最後の `cg`）を 1 体だけ出す。現れる 0.35 → 見つめる最短 1.15（写真を待つ）→ 後ろを向く 0.75 → 下がって消える 6.0 秒（最後 4.5 秒で消える）。消え切ってから電源断 — `EndingFarewellLogic.NoticeWaitMaxSec` / `EndingFarewellDoll` 〔出典: LEDGER 0291・0293。尺は実装判断〕
 - 立ち位置は体験者がいま立っている所から人形の点だけ解く（`visitorFoot`）。頭と胸が枠の外なら L 字の内側の仮の点で人形だけ先に立てる。画の左が人形、右が体験者。カメラの intrinsics は変えない。解けなければ出さない。条件は memory/ending_farewell_doll.md — `TrySolveAtWall` 〔出典: LEDGER 0293。余白・許容値は実装判断〕
-- 写真の条件（左右の並び・枠・向きが時間で緩む・15 秒で諦める）・撮る時機（成立した 1 コマ・撮れたら上書きしない）・退場の道（L 字の奥へ下がる直線。無ければその場）の詳細は memory/ending_farewell_doll.md の「写真と退場の契約」 — `PhotoBlock` / `SolveRetreats` / `PickRetreat`
+- 写真の条件（左右の並び・枠・向きが時間で緩む・15 秒で諦める）・撮る時機（成立した 1 コマ・撮れたら上書きしない）・退場の道（L 字の奥への直線。無ければ壁の向こうへ）の詳細は memory/ending_farewell_doll.md の「写真と退場の契約」 — `PhotoBlock` / `SolveRetreats` / `PickRetreat`
 - 別れの人形は体験者の分身ではない。腕は体験者に合わせず、笑わない（`dollPresent` から外す）。立ち位置が解けるまで強さ 0 — `ShowCgLayer.BeginFarewell` / `ShowSoundDirector`（`FarewellActive`）〔出典: コード〕
 - 終幕の段は Noise 0.95 → Collapse 0.26 → Dark 1.2 → Report 1.5 → Done（保持 4.5 秒 ＋ 閉じる 1.0 秒。出始めから 6 秒で閉じ始める）。既定は `OutroTiming.Default` と `ShowOutroDef` の 2 か所で一致させる — `Timing_StartsClosingSixSecondsAfterTheReportBegins` 〔出典: LEDGER 0384 ⑥〕
 - Trapped では砂嵐も潰れも出さない。同じフレームに電力を落とし、Dark から始める — `OutroDirector.Begin` / `Trapped_StartsDarkWithoutShowingLive_ThenResetsForTheNextVisitor` 〔出典: show-design:830〕

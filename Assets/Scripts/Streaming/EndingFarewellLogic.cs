@@ -357,8 +357,10 @@ namespace FixedCamVr.Streaming
             public bool fromVisitor;
             /// <summary>下がり終わりの像の高さ / 立っているときの像の高さ。</summary>
             public float retreatShrink;
-            /// <summary>下がる道が無く、その場で背を向けて薄くなる。</summary>
+            /// <summary>下がる向きが決まらず（カメラの真下に立った等）、その場で背を向けて薄くなる。</summary>
             public bool retreatInPlace;
+            /// <summary>枠の中に収まる道が無く、背を向けた向きへまっすぐ奥まで歩いて壁の向こうへ消える（0400）。</summary>
+            public bool retreatThroughWall;
         }
 
         /// <summary>全身が画に入り、互いに向き合う。</summary>
@@ -449,9 +451,10 @@ namespace FixedCamVr.Streaming
             bool fromVisitor = here != null && search.Run(here, true, visitorYawDeg);
             // 体験者が枠の外か人形に近すぎるときは仮の点で人形だけ先に立てる。全身と壁の余白が解ける点を優先する。
             bool solved = fromVisitor || search.Run(visitors, false, null) || search.Run(visitors, true, null);
-            // 下がる道が 1 本も取れない据え方では、その場で背を向けて薄くなる（会場 11-17 の A は
-            // L 字の角を正面から見下ろし、遠ざかる向きへ 0.15m 進むとすぐ壁の余白を割る）。
-            // 人形も写真も出さずに 15 秒待つより、写真を撮って同じ尺で消える方を採る。
+            // 枠に収まる下がる道が 1 本も取れない据え方では、背を向けた向きへまっすぐ奥まで歩き、
+            // 壁の向こうへ隠れながら薄くなる（0400。会場 11-17 の A は L 字の角を正面から見下ろし、
+            // 遠ざかる向きへ 0.15m 進むとすぐ壁の余白を割る）。壁は ShowRoomProxy が深度で描くので、
+            // 壁を越えた身体は画から消える。人形も写真も出さずに 15 秒待つより、写真を撮って同じ尺で消える方を採る。
             if (!solved)
             {
                 search.allowStay = true;
@@ -471,10 +474,11 @@ namespace FixedCamVr.Streaming
             Debug.Log($"[EndingFarewell] placement visitor=({visitor.x:0.000},{visitor.z:0.000}) " +
                 $"doll=({doll.x:0.000},{doll.z:0.000}) gap={Vector3.Distance(visitor, doll):0.000}m " +
                 $"end=({retreat.end.x:0.000},{retreat.end.z:0.000}) shrink={retreat.shrink:0.00} fromVisitor={(fromVisitor ? 1 : 0)} " +
-                $"inPlace={(search.allowStay && retreat.InPlace ? 1 : 0)}");
+                $"inPlace={(search.allowStay && retreat.InPlace ? 1 : 0)} through={(retreat.ThroughWall ? 1 : 0)}");
             anchor = search.MakeAnchor(visitor, doll, retreat);
             anchor.fromVisitor = fromVisitor;
             anchor.retreatInPlace = retreat.InPlace;
+            anchor.retreatThroughWall = retreat.ThroughWall;
             return true;
         }
 
@@ -485,14 +489,60 @@ namespace FixedCamVr.Streaming
             public readonly Vector3 end;
             public readonly float shrink;
             public readonly float score;
-            /// <summary>下がらず、その場で背を向けて薄くなる（下がる道が 1 本も無いときだけ）。</summary>
+            /// <summary>下がらず、その場で背を向けて薄くなる（下がる向きも決まらないときだけ）。</summary>
             public readonly bool InPlace;
-            public RetreatPlan(Vector3 end, float shrink, float score, bool inPlace = false)
+            /// <summary>枠に収まる道が無く、まっすぐ奥へ歩いて壁を越える。</summary>
+            public readonly bool ThroughWall;
+            public RetreatPlan(Vector3 end, float shrink, float score, bool inPlace = false, bool throughWall = false)
             {
-                ok = true; this.end = end; this.shrink = shrink; this.score = score; InPlace = inPlace;
+                ok = true; this.end = end; this.shrink = shrink; this.score = score;
+                InPlace = inPlace; ThroughWall = throughWall;
             }
 
             public static RetreatPlan Stay(Vector3 foot) => new RetreatPlan(foot, 1f, 1f, true);
+        }
+
+        /// <summary>
+        /// 枠に収まる下がる道が無いときの退場（0400）。背を向けた向き（カメラから遠ざかる水平の向き）へ
+        /// まっすぐ歩く。壁に当たるなら身体が壁の向こうへ抜け切る所まで、当たらなければ <see cref="RetreatMaxM"/>。
+        /// 枠・縮み・壁の余白は問わない（壁の向こうは深度で隠れ、途中から薄くなる）。
+        /// </summary>
+        private static RetreatPlan WalkAway(Camera cam, Vector3 foot, Vector3 corner, Vector3 endA, Vector3 endB,
+                                            float radius, float height, float halfWall)
+        {
+            Vector3 dir = Flat(foot - cam.transform.position);
+            if (dir.sqrMagnitude < 1e-6f) return RetreatPlan.Stay(foot);
+            dir.Normalize();
+            float hitA = RayToWall(foot, dir, corner, endA), hitB = RayToWall(foot, dir, corner, endB);
+            float hit = Mathf.Min(hitA, hitB);
+            bool through = !float.IsPositiveInfinity(hit);
+            float length = RetreatMaxM;
+            if (through)
+            {
+                // 壁へ斜めに入るので、壁の面から身体が抜け切る距離を入射の角度で割って歩く向きの長さにする。
+                Vector3 wall = Flat((hitA <= hitB ? endA : endB) - corner).normalized;
+                float cos = Mathf.Max(0.2f, Mathf.Abs(dir.x * wall.z - dir.z * wall.x));
+                length = Mathf.Min(RetreatMaxM, hit + (halfWall + radius + WalkAwayBeyondWallM) / cos);
+            }
+            length = Mathf.Max(length, RetreatMinM);
+            Vector3 end = foot + dir * length;
+            float shrink = ProjectedHeight(cam, end, height) / Mathf.Max(1e-5f, ProjectedHeight(cam, foot, height));
+            return new RetreatPlan(end, shrink, 1f, false, through);
+        }
+
+        /// <summary>壁を越えたあと、身体の包絡がさらに抜ける余り (m)。</summary>
+        public const float WalkAwayBeyondWallM = 0.05f;
+
+        /// <summary>床面（XZ）で、点から向きへ伸ばした半直線が壁の線分に当たる距離。当たらなければ +∞。</summary>
+        private static float RayToWall(Vector3 from, Vector3 dir, Vector3 a, Vector3 b)
+        {
+            Vector3 s = Flat(b - a), r = Flat(dir);
+            float denom = r.x * s.z - r.z * s.x;
+            if (Mathf.Abs(denom) < 1e-6f) return float.PositiveInfinity;
+            Vector3 q = Flat(a - from);
+            float t = (q.x * s.z - q.z * s.x) / denom;
+            float u = (q.x * r.z - q.z * r.x) / denom;
+            return t >= 0f && u >= 0f && u <= 1f ? t : float.PositiveInfinity;
         }
 
         /// <summary>体験者の候補と人形の候補の組を点数で選ぶ。1 回の探索の状態を束ねる。</summary>
@@ -549,7 +599,11 @@ namespace FixedCamVr.Streaming
                         // 下がる途中で体験者の下腿に触れない。人形は横へ抜けるので、前後に長い足の寸法は使わない。
                         float pathGap = 0.13f + dollRadiusM;
                         RetreatPlan plan = PickRetreat(retreats[i]!, d, v, pathGap);
-                        if (!plan.ok && allowStay) plan = RetreatPlan.Stay(d);
+                        if (!plan.ok && allowStay)
+                        {
+                            plan = WalkAway(cam, d, corner, endA, endB, dollRadiusM, dollHeightM, halfWall);
+                            if (!plan.InPlace && DistanceToWall(v, d, plan.end) < pathGap) plan = RetreatPlan.Stay(d);
+                        }
                         if (!plan.ok)
                         {
                             retreatFails++;

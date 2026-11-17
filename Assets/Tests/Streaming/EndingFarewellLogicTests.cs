@@ -440,8 +440,9 @@ namespace FixedCamVr.Streaming.Tests
         }
 
         [Test]
-        public void Venue_NoRetreatPath_StillStandsForThePhoto_AndFadesInPlace()
+        public void Venue_NoFramedRetreat_StillStandsForThePhoto_ThenWalksStraightAwayThroughTheWall()
         {
+            // 0400: 会場の A は枠に収まる下がる道が無い。背を向けた向きへまっすぐ奥まで歩き、壁の向こうへ消える。
             Camera cam = MakeVenueCamera(out GameObject go);
             try
             {
@@ -450,19 +451,34 @@ namespace FixedCamVr.Streaming.Tests
                 Vector3 endB = corner + Vector3.back * 0.955f;
                 Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner, endA, endB, out var a), Is.True,
                     "下がる道が無くても人形は立つ（立たないと写真が撮れず 15 秒待つ）");
-                Assert.That(a.retreatInPlace, Is.True);
+                Assert.That(a.retreatInPlace, Is.False, "その場で薄くならない");
+                Assert.That(a.retreatThroughWall, Is.True);
                 float visitorYaw = EndingFarewellLogic.FaceYawDeg(a.visitorTargetFoot, a.foot);
                 float dollYaw = EndingFarewellLogic.FaceYawDeg(a.foot, a.visitorTargetFoot);
                 Assert.That(EndingFarewellLogic.IsPhotoReady(a, a.visitorTargetFoot, visitorYaw, dollYaw), Is.True);
 
-                var last = EndingFarewellLogic.SampleAt(EndingFarewellLogic.TotalSec);
-                EndingFarewellLogic.PoseAt(a, last, dollYaw, out Vector3 foot, out float yaw);
-                Assert.That(Vector3.Distance(foot, a.foot), Is.LessThan(1e-4f), "その場で薄くなる");
-                Vector3 back = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
                 Vector3 fromCam = a.foot - cam.transform.position;
                 fromCam.y = 0f;
-                Assert.That(Vector3.Dot(back, fromCam.normalized), Is.GreaterThan(0.5f), "背中をカメラへ向ける");
+                fromCam.Normalize();
+                var last = EndingFarewellLogic.SampleAt(EndingFarewellLogic.TotalSec);
+                EndingFarewellLogic.PoseAt(a, last, dollYaw, out Vector3 foot, out float yaw);
+                Vector3 walked = foot - a.foot;
+                walked.y = 0f;
+                Assert.That(walked.magnitude, Is.GreaterThanOrEqualTo(EndingFarewellLogic.RetreatMinM), "奥まで歩く");
+                Assert.That(Vector3.Dot(walked.normalized, fromCam), Is.GreaterThan(0.999f), "背を向けた向きへまっすぐ");
+                // 歩き終わりは身体ごと壁の向こう（L 字の内側の外）
+                float inA = Vector3.Dot(foot - corner, (endA - corner).normalized);
+                float inB = Vector3.Dot(foot - corner, (endB - corner).normalized);
+                Assert.That(Mathf.Min(inA, inB), Is.LessThan(-EndingFarewellLogic.DefaultDollBodyRadiusM), "壁を抜け切る");
+                Vector3 back = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+                Assert.That(Vector3.Dot(back, fromCam), Is.GreaterThan(0.99f), "歩く向きに背中を向ける");
                 Assert.That(float.IsNaN(yaw), Is.False);
+
+                // 途中で向きが変わらない（折れ線の角も同じ直線上）
+                var mid = EndingFarewellLogic.SampleAt(EndingFarewellLogic.TotalSec - EndingFarewellLogic.RetreatSec * 0.5f);
+                EndingFarewellLogic.PoseAt(a, mid, dollYaw, out Vector3 midFoot, out float midYaw);
+                Assert.That(Mathf.Abs(Mathf.DeltaAngle(midYaw, yaw)), Is.LessThan(1f));
+                Assert.That(Vector3.Dot((midFoot - a.foot).normalized, fromCam), Is.GreaterThan(0.999f));
             }
             finally { Object.DestroyImmediate(go); }
         }
@@ -477,6 +493,7 @@ namespace FixedCamVr.Streaming.Tests
                 Assert.That(EndingFarewellLogic.TrySolveAtWall(cam, Vector2.one, corner,
                     corner + Vector3.right * 0.955f, corner + Vector3.back * 0.955f, out var a), Is.True);
                 Assert.That(a.retreatInPlace, Is.False, "道が取れる据え方では従来どおり奥へ下がる");
+                Assert.That(a.retreatThroughWall, Is.False, "枠に収まる道があれば壁は越えない");
             }
             finally { Object.DestroyImmediate(go); }
         }
