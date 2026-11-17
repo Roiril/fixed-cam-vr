@@ -166,6 +166,8 @@
   .choice input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .choice-text { font: 400 clamp(24px,2.9vw,36px)/1.2 var(--serif); letter-spacing: .1em; white-space: nowrap; }
   .choice-mark { display: none; }
+  /* 英仏は博士の声が吹き替え。その言語で添える */
+  .choice-dub { display: block; margin-top: .15em; font-size: .46em; letter-spacing: .08em; text-align: center; }
   .choice::after { content: ""; position: absolute; left: -6%; right: -6%; bottom: 2px; height: 11px; background: var(--red); -webkit-mask: var(--brush) center / 100% 100% no-repeat; mask: var(--brush) center / 100% 100% no-repeat; clip-path: inset(0 100% 0 0); transition: clip-path .5s var(--ease-out); }
   .choice:has(input:checked) { color: var(--ink); text-shadow: 0 0 22px rgba(242,236,223,.18); }
   .choice:has(input:checked)::after { clip-path: inset(0 0 0 0); }
@@ -665,12 +667,12 @@
             </label>
             <label class="choice">
               <input type="radio" name="lang" value="en">
-              <span class="choice-text" lang="en">English</span>
+              <span class="choice-text" lang="en">English <span class="choice-dub">(dubbed)</span></span>
               <span class="choice-mark" aria-hidden="true"></span>
             </label>
             <label class="choice">
               <input type="radio" name="lang" value="fr">
-              <span class="choice-text" lang="fr">Français</span>
+              <span class="choice-text" lang="fr">Français <span class="choice-dub">(doublé)</span></span>
               <span class="choice-mark" aria-hidden="true"></span>
             </label>
           </div>
