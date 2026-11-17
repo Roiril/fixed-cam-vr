@@ -34,7 +34,21 @@ namespace FixedCamVr.Input
         public const float FocusSec = 0.35f;
         public const float TroubleAfterSec = 5f;
         public const int CameraCount = 3;
+
+        /// <summary>
+        /// 引き渡し後、いったん Ready になったカメラの一時的な途切れを体験者の門に数えない秒数。
+        ///
+        /// ⚠ 会場の Wi-Fi では受信が落ちて <c>StreamWatchdogLogic</c> の lag 判定が 5 秒おきに張り直す
+        /// （2026-11-17 α 機・2 分で 21 回）。張り直すたびに安定判定が 0 から数え直しになり、
+        /// 練習中の体験者からエージェント画面と題字の黒が消えて、段 0 の会場のパススルーが見えていた。
+        /// 張り直しは接続 0.3〜1.3 秒＋安定 <see cref="StableSec"/> で戻るので、それより長く取る。
+        /// 一時停止（HMD を外した・OS の休止）と、別のカメラ・別の作品だと分かった場合は猶予しない。
+        /// </summary>
+        public const float CameraDropGraceSec = 4f;
+
         private readonly float[] _stable = new float[CameraCount];
+        private readonly float[] _lostSec = new float[CameraCount];
+        private readonly bool[] _graceable = new bool[CameraCount];
         private readonly SetupCameraEvidence[] _previous = new SetupCameraEvidence[CameraCount];
         private readonly SetupDeviceState[] _states = new SetupDeviceState[CameraCount];
         private StaffSetupSnapshot _latest;
@@ -61,13 +75,27 @@ namespace FixedCamVr.Input
         {
             get { for (int i = 0; i < CameraCount; i++) if (_states[i] != SetupDeviceState.Ready) return false; return true; }
         }
+        /// <summary>
+        /// 引き渡し後の体験者の門で使うカメラの判定。全台 Ready か、途切れたカメラが
+        /// <see cref="CameraDropGraceSec"/> の猶予の内にいる。引き渡しの一括検査は <see cref="CamerasReady"/> のまま。
+        /// </summary>
+        public bool CamerasHeld
+        {
+            get
+            {
+                for (int i = 0; i < CameraCount; i++)
+                    if (_states[i] != SetupDeviceState.Ready && !_graceable[i]) return false;
+                return true;
+            }
+        }
+
         public bool DevicesReady => CamerasReady && _latest.tabletFresh && _latest.settingsSettled;
         public bool ReadyToHandOff => VisitorStage == VisitorPreparationStage.Ready && DevicesReady && _positionConfirmed && _latest.hasPosition
                                       && !_latest.positionInvalid && !_latest.registrationActive && _latest.contentReady;
         public bool CanBeginExperience => Stage == StaffSetupStage.HandedOff && _tabletVerified
             && VisitorStage == VisitorPreparationStage.Ready
             && _positionConfirmed && _latest.hasPosition && !_latest.positionInvalid
-            && !_latest.registrationActive && _latest.contentReady && CamerasReady && _latest.settingsSettled;
+            && !_latest.registrationActive && _latest.contentReady && CamerasHeld && _latest.settingsSettled;
         public bool BlocksVisitor => !_started && !CanBeginExperience;
 
         public bool Observe(in StaffSetupSnapshot snapshot, float dt)
@@ -90,6 +118,7 @@ namespace FixedCamVr.Input
                         && e.problem != SetupCameraProblem.WrongShow && _states[i] != SetupDeviceState.Ready
                         && _states[i] != SetupDeviceState.Trouble ? SetupDeviceState.Unknown : SetupDeviceState.Trouble);
                 _previous[i] = e;
+                UpdateDropGrace(i, e, dt);
             }
             // 通信喪失で済んだ位置合わせを消さない。基準変更だけを別の理由で戻す。
             if (!_started && (Stage == StaffSetupStage.Welcome || Stage == StaffSetupStage.HandedOff)
@@ -98,6 +127,28 @@ namespace FixedCamVr.Input
                 && (!snapshot.visitorSettingsApplied || !snapshot.visitorBriefingCompleted || !snapshot.settingsSettled))
                 Stage = StaffSetupStage.Welcome;
             return true;
+        }
+
+        // 猶予は「引き渡し後に Ready だったカメラ」だけに与える。Ready に戻れば数え直す。
+        private void UpdateDropGrace(int i, in SetupCameraEvidence e, float dt)
+        {
+            if (_states[i] == SetupDeviceState.Ready)
+            {
+                _lostSec[i] = 0f;
+                _graceable[i] = Stage == StaffSetupStage.HandedOff;
+                return;
+            }
+            if (!_graceable[i]) return;
+            _lostSec[i] += Math.Max(0f, Math.Min(dt, 0.25f));
+            if (Stage != StaffSetupStage.HandedOff || e.suspended
+                || e.problem == SetupCameraProblem.WrongCamera || e.problem == SetupCameraProblem.WrongShow
+                || _lostSec[i] >= CameraDropGraceSec)
+                _graceable[i] = false;
+        }
+
+        private void ClearDropGrace()
+        {
+            for (int i = 0; i < CameraCount; i++) { _graceable[i] = false; _lostSec[i] = 0f; }
         }
 
         /// <summary>
@@ -209,6 +260,7 @@ namespace FixedCamVr.Input
             _started = false;
             _latest = default;
             _visitorResetCompleted = false;
+            ClearDropGrace();
             if (Stage == StaffSetupStage.HandedOff)
                 Stage = _positionConfirmed ? StaffSetupStage.Welcome : StaffSetupStage.Alignment;
         }

@@ -50,6 +50,7 @@ paths:
 ### 準備・来場者・復帰
 - 主画面は博士タブレット。Quest では位置合わせと目視確認だけ。機器確認と並行してよい — `StaffSetupLogic.Stage` 〔show-design:19-21〕
 - カメラはデコード成功と /info の cameraId・show 一致が 0.5 秒続いて ok。タブレットは pulse 12 秒以内 — `StaffSetupLogic.StableSec` / `StaffSetupPanel.TabletFreshSec` 〔staff_setup〕
+- 引き渡し後に Ready だったカメラの途切れは 4 秒まで体験者の門（`BlocksVisitor`・開始押し）に数えない。一時停止と別カメラ・別作品は猶予しない。引き渡しの一括検査は全台 Ready のまま — `StaffSetupLogic.CameraDropGraceSec` / `CamerasHeld` / `ReconnectAfterHandOff_WithinGrace_NeverBlocksTheVisitor` 〔hmd_onboarding〕
 - 来場者は Reset → Settings → Explanation → Ready。初回もリセット必須 — `StaffSetupLogic.VisitorStage` / `FirstVisitorMustResetAfterAlignmentEvenIfOldSettingsLookApplied` 〔staff_setup〕
 - 引き渡しは Welcome 段だけで全項目を検査。題字の開始押しでも再検査し、開始は 1 回。開始後はタブレット途絶で止めない — `StaffSetupLogic.HandOff` / `TryBeginExperience` / `PlayingIsNotInterruptedByTabletOrNextVisitorSettings` 〔staff_setup〕
 - 右 B 短押しは予備の引き渡し。1 秒押しは準備画面を正面へ戻すだけ — `StaffSetupButtonLogic.RecallSec` 〔show-design:19-21〕

@@ -64,11 +64,48 @@ namespace FixedCamVr.Input.Tests
         }
         [Test] public void CameraDisconnectRevokesGreenGateButKeepsPosition_RecoveryResumes()
         {
-            var l = new StaffSetupLogic(); var s = HandedOff(l);
-            s.cameras[2].connected = false; l.Observe(s, 0f);
+            var l = new StaffSetupLogic(); var s = HandedOff(l); l.Observe(s, .25f);
+            s.cameras[2].connected = false;
+            for (float t = 0f; t < StaffSetupLogic.CameraDropGraceSec + .5f; t += .25f) l.Observe(s, .25f);
             Assert.AreEqual(SetupDeviceState.Trouble, l.CameraState(2)); Assert.IsTrue(l.PositionConfirmed);
             Assert.IsTrue(l.BlocksVisitor); Assert.IsFalse(l.TryBeginExperience(s));
-            s.cameras[2].connected = true; Stable(l, s); Assert.IsFalse(l.BlocksVisitor);
+            s.cameras[2].connected = true; s.cameras[2].connection = 2; Stable(l, s); Assert.IsFalse(l.BlocksVisitor);
+        }
+        // 2026-11-17 の会場: lag の張り直しが数秒おきに起き、練習中のエージェント画面が消えて出直し、
+        // 題字の黒が譲ってパススルーが見えた。引き渡し後の短い途切れでは体験者を止めない。
+        [Test] public void ReconnectAfterHandOff_WithinGrace_NeverBlocksTheVisitor()
+        {
+            var l = new StaffSetupLogic(); var s = HandedOff(l); l.Observe(s, .25f);
+            for (int round = 0; round < 3; round++)
+            {
+                s.cameras[round].connected = false;
+                for (int k = 0; k < 4; k++) { l.Observe(s, .25f); Assert.IsFalse(l.BlocksVisitor); }
+                s.cameras[round].connected = true; s.cameras[round].connection = 2 + round;
+                for (int k = 0; k < 2; k++) { l.Observe(s, .25f); Assert.IsFalse(l.BlocksVisitor); }
+                Assert.IsTrue(l.CamerasReady);
+            }
+            Assert.IsTrue(l.TryBeginExperience(s));
+        }
+        [Test] public void GraceIsNotGivenBeforeHandOff_ForWrongIdentity_OrWhileSuspended()
+        {
+            var l = new StaffSetupLogic(); var s = Good(l); Stable(l, s); l.ConfirmPosition(s);
+            l.VisitorResetCompleted(); s.generation = l.Generation; Stable(l, s);
+            s.cameras[0].connected = false; l.Observe(s, .25f);
+            Assert.IsFalse(l.HandOff(s));
+
+            l = new StaffSetupLogic(); s = HandedOff(l); l.Observe(s, .25f);
+            s.cameras[1].identityMatches = false; s.cameras[1].problem = SetupCameraProblem.WrongCamera;
+            l.Observe(s, .25f); Assert.IsTrue(l.BlocksVisitor);
+
+            l = new StaffSetupLogic(); s = HandedOff(l); l.Observe(s, .25f);
+            s.cameras[2].suspended = true; l.Observe(s, .25f); Assert.IsTrue(l.BlocksVisitor);
+        }
+        [Test] public void NextVisitorDoesNotInheritTheGrace()
+        {
+            var l = new StaffSetupLogic(); var s = HandedOff(l); l.Observe(s, .25f);
+            l.VisitorResetCompleted(); s.generation = l.Generation; l.Observe(s, 0f);
+            Assert.IsTrue(l.HandOff(s)); s.cameras[0].connected = false; l.Observe(s, .25f);
+            Assert.IsTrue(l.BlocksVisitor);
         }
         [Test] public void UnrequestedSettingsUseActualDefault_NoAckWait()
         {
