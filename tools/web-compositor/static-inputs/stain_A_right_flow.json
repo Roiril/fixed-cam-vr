@@ -16,6 +16,16 @@
     "video": "tools/gen-plate/stain3/flow/flow_20261117_145119_d0311aa5_4x3.mp4",
     "base": "tools/web-compositor/captures/plate_A_20261117_145119_d0311aa5.jpg",
     "end": "tools/gen-plate/stain3/flow/end_grin_A_20261115_125052.png",
-    "stainAt": 2.0
+    "stainAt": 2.0,
+    "dollBox": [
+      486,
+      266,
+      640,
+      480
+    ],
+    "dollFrom": [
+      0.435,
+      0.83
+    ]
   }
 }

@@ -21,7 +21,7 @@
           生の映像に掛けるので、幕の前を通る体は消えない）
   pop     元 2.0〜2.9 秒を 3 倍・2.9〜4.0 秒を 1.6 倍・4.0〜5.2 秒を等速。最後のコマを 3 枚足す。段 2
   watch   pop の最後のコマ（顔と覗く人形）。段 3
-  face    pop の最後のコマの顔だけ（手すりより上）。段 4 の CG の人形がついてくる間
+  face    pop の最後のコマから覗く人形だけを抜いた画（POINTER の dollBox。無い版は顔だけ）。段 4 の CG の人形がついてくる間
 
 素材の名前は写真の名前から付ける（stain_A_right_flow_*_<写真の日時>.*）。いま台本が使う版は
 static-inputs/stain_A_right_flow.json（POINTER）が持ち、tools/show-apply-stain-right.py と卓の「合わせ直す」が読む。
@@ -84,7 +84,12 @@ def source_of(version: dict) -> dict:
     def path(key, default):
         return ROOT / src[key] if isinstance(src.get(key), str) and src[key] else default
     return {"video": path("video", SRC), "base": path("base", BASE_PLATE), "end": path("end", END_FRAME),
-            "stainAt": float(src.get("stainAt", STAIN_AT))}
+            "stainAt": float(src.get("stainAt", STAIN_AT)),
+            "dollBox": tuple(int(v) for v in src["dollBox"]) if isinstance(src.get("dollBox"), list)
+            and len(src["dollBox"]) == 4 else None,
+            # 画の人形が立つ床の点（x, z）。CG の人形はここから出る（tools/show-apply-stain-right.py が読む）
+            "dollFrom": [float(v) for v in src["dollFrom"]] if isinstance(src.get("dollFrom"), list)
+            and len(src["dollFrom"]) == 2 else None}
 
 
 def crop_flow(raw: Path, out: Path) -> Path:
@@ -108,6 +113,10 @@ HOLD_FRAMES = 3
 RIGHT_BOX = (280, 0, W, H)          # Flow が変えてよい所（右の幕と、その縁の裏の人形）。左の幕は使わない
 RAIL = rb.SETS["real"]["rail"]
 FACE_BOX = (280, 0, 522, 245)     # 顔としみ（手すりの右端の支柱より左）。人形と右の支柱を入れない
+# 段 4 で消す人形の箱（動画を作った写真の 640x480 の画素）。POINTER の source.dollBox。動画ごとに人形の位置が違う。
+# 箱があれば段 4 は「段 2 の合成範囲から人形の箱を抜いた所」を最後のコマのまま残す（顔も垂れも膨らんだ布も残り、
+# 人形だけが CG に替わる）。無ければ従来どおり、顔の変わった所だけを FACE_BOX の中で拾う。
+# 従来の拾い方は、会場 11-17 の版で顔の顎から下と垂れと膨らんだ布を落とし、段 3 → 4 で画の一部だけが消えた
 
 
 def read_frames(path: Path) -> np.ndarray:
@@ -167,6 +176,9 @@ def main() -> int:
     ap.add_argument("--flow-inputs", action="store_true", help="生成し直すときの首尾フレーム（16:9）を書いて終わる")
     ap.add_argument("--from-flow", default=None,
                     help="生成し直した Flow の動画（16:9）。4:3 を切り出して flow/ に置き、--plate の写真を動画を作った写真として組む")
+    ap.add_argument("--doll-box", default=None,
+                    help="段 4 で消す覗く人形の箱 x0,y0,x1,y1（動画を作った写真の 640x480 の画素）。"
+                         "人形が全部入り、顔と膨らんだ布がなるべく入らない箱")
     ap.add_argument("--stain-at", type=float, default=None,
                     help="しみが出きってまだ膨らんでいないコマの秒（生成し直した動画で変わる。段 2 の区切りも同じだけずらす）")
     a = ap.parse_args()
@@ -186,10 +198,13 @@ def main() -> int:
         inputs = WORK / f"flow_inputs_{tag}"
         end = inputs / "end.png"
         source = {"video": crop_flow(Path(a.from_flow), HERE / f"flow/flow_{tag}_4x3.mp4"), "base": plate_path,
-                  "end": end if end.exists() else source["end"], "stainAt": source["stainAt"]}
+                  "end": end if end.exists() else source["end"], "stainAt": source["stainAt"],
+                  "dollBox": source["dollBox"], "dollFrom": source["dollFrom"]}
         print(f"生成し直した動画: {source['video'].relative_to(ROOT).as_posix()}")
     if a.stain_at is not None:
         source["stainAt"] = a.stain_at
+    if a.doll_box:
+        source["dollBox"] = tuple(int(v) for v in a.doll_box.split(","))
     stain_at = source["stainAt"]
     rest = [(s0 - STAIN_AT + stain_at, s1 - STAIN_AT + stain_at, sp) for s0, s1, sp in REST]
     print(f"組む動画: {source['video'].relative_to(ROOT).as_posix()}（動画を作った写真 {source['base'].name}・しみ {stain_at}s）")
@@ -274,10 +289,13 @@ def main() -> int:
     ratio = np.clip(rb.lin(Fs) / np.maximum(rb.lin(F0), 1e-3), 0, 1)
     ratio = np.ones_like(ratio) * (1 - ms[..., None]) + ratio * ms[..., None]
 
-    # 段 4 の顔だけ: 最後のコマの、手すりより上
+    # 段 4: 最後のコマから人形だけを抜く（人形の箱が無い版は、顔の変わった所を手すりより上で拾う）
     last = pop[-1]
-    mf = rb.soft_mask(last, F0, (0, 0, W, H), 0.03, 0.08, close=6) * box * above
-    mf = rb.blur(rb.grow(mf, 4), 3) * face_box
+    if source["dollBox"]:
+        mf = region * (1 - base_mask(rb.box_mask(source["dollBox"], 4)))
+    else:
+        mf = rb.soft_mask(last, F0, (0, 0, W, H), 0.03, 0.08, close=6) * box * above
+        mf = rb.blur(rb.grow(mf, 4), 3) * face_box
 
     def comp(f, m):
         return np.clip(plate * (1 - m[..., None]) + f * m[..., None], 0, 255).astype(np.uint8)
@@ -313,9 +331,12 @@ def main() -> int:
     (out / NAMES["meta"]).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     if not a.dry:
         tmp_p = POINTER.with_suffix(".json.tmp")
-        rel = {k: Path(v).resolve().relative_to(ROOT).as_posix() for k, v in source.items() if k != "stainAt"}
+        rel = {k: Path(v).resolve().relative_to(ROOT).as_posix() for k, v in source.items()
+               if k not in ("stainAt", "dollBox", "dollFrom")}
         tmp_p.write_text(json.dumps({"tag": tag, "plate": plate_path.name, "durationSec": meta["durationSec"],
-                                     "names": NAMES, "source": {**rel, "stainAt": stain_at}},
+                                     "names": NAMES, "source": {**rel, "stainAt": stain_at,
+                                                **({"dollBox": list(source["dollBox"])} if source["dollBox"] else {}),
+                                                **({"dollFrom": source["dollFrom"]} if source["dollFrom"] else {})}},
                                     ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp_p, POINTER)
     print(json.dumps(meta, ensure_ascii=False))

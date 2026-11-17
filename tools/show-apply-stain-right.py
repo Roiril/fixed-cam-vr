@@ -7,7 +7,7 @@
         体がもっと左（s2a_leftend）に届くか、報告の長押しを始めたら次へ（markStartAdvance）
   段 2  しみが笑う顔（0389 の案 1）に膨らみ、右の幕の縁から人形が覗く。動画生成（Flow）を緩急を付けて詰めた版。笑い声が 1 回
   段 3  顔と覗く人形の最後のコマで止まる。壁の端を回る（s2a_walk）と次へ
-  段 4  乱れで CG の人形に替わる。幕には顔だけが残る。人形は幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出て EXIT_HOLD_SEC 秒まで
+  段 4  乱れで CG の人形に替わる。幕には顔と膨らんだ布が残り、覗く人形だけが消える。人形は幕の裏の同じ所から出て、歩いた跡をついてくる。区間を出て EXIT_HOLD_SEC 秒まで
 
 区間 B へ出ても EXIT_HOLD_SEC 秒は畳まずにカメラ A の画を持つ（take の exitHoldSec）。右のシミの線から区間の出口までは
 0.6〜0.7m しか無く、歩き続ける人は線から約 2.7 秒で出る。そのままでは段 2 の途中で切れて段 3・4 が見えない。
@@ -51,11 +51,16 @@ DOLL_FROM = (0.44, 0.62)
 FLOW_POINTER = STATIC / "stain_A_right_flow.json"
 
 
-def flow_names() -> dict:
-    return json.loads(FLOW_POINTER.read_text(encoding="utf-8"))["names"]
+def flow_version() -> dict:
+    return json.loads(FLOW_POINTER.read_text(encoding="utf-8"))
 
 
-FLOW = flow_names()
+FLOW = flow_version()["names"]
+# 版ごとに画の人形の立つ所が違う（動画を生成し直すと人形の位置が変わる）。版に dollFrom があればそれを使う。
+# 会場 11-17 の版は (0.435, 0.83)。人形の足元の画素 (505, 462) をカメラ A の校正（2026-11-17 16:45）で床へ戻した
+_from = flow_version().get("source", {}).get("dollFrom")
+if isinstance(_from, list) and len(_from) == 2:
+    DOLL_FROM = (float(_from[0]), float(_from[1]))
 
 # 側待ち（untilBeyond）は線分を無限の直線へ延ばして側を見るので、端点は向きと卓の表示を決めるだけ。
 # 区間 A の歩きは C 側の (0.75, 0.45) あたりから入り、壁沿いに (-0.26, 0.26) → (-0.26, -0.5) → 壁の端を回って
