@@ -107,6 +107,13 @@ namespace FixedCamVr.Streaming
         // （2026-11-17 会場: 3-C → 4-A の乱れの中に、3-C の画が 4-A の人形のマスクの形で一瞬出た）。
         private Texture? _pendingVideoMask;
         private OverlayCueData? _pendingVideoCue;
+        // 動画 cue の準備中に、新しいマスクの中へ出す静止画（そのカメラの無人プレート）。
+        // 前の素材が続いていない（畳まれる途中・何も出ていない）ときだけ使う（2026-11-17 会場:
+        // 4-A に入った瞬間、準備の 130〜170ms だけ左半分にライブが出て、置いてある本物の人形が見えた）。
+        private Texture? _prepareCover;
+        private int _prepareCoverGen = -1;
+        /// <summary>準備中を無人プレートで塞いだ回数（観測用）。</summary>
+        public int PrepareCoveredCount { get; private set; }
         // 世代（stale ロード/Prepare 破棄）+ 動画 Prepare ライフサイクル（保留/タイムアウト/受理/エラー中止）の純判定。
         // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄する。動画 cue の Prepare 失敗経路
         // （errorReceived / タイムアウト）で _current を解放し、CameraSwitchDirector が cueActive=true のまま
@@ -587,7 +594,13 @@ namespace FixedCamVr.Streaming
         /// 戻り値は**この発火を指すトークン**で、<see cref="IsFinished"/> に渡すと終端を判定できる。
         /// 発火できなかった場合（未初期化）は -1。
         /// </summary>
-        public int PlayCue(OverlayCueData data)
+        public int PlayCue(OverlayCueData data) => PlayCue(data, null);
+
+        /// <param name="prepareCover">
+        /// 動画 cue の準備中に新しいマスクの中へ出す静止画（そのカメラの無人プレート）。
+        /// 前の素材が続いているとき（連続カット）は使わず、前の素材を前のマスクのまま保つ。
+        /// </param>
+        public int PlayCue(OverlayCueData data, Texture? prepareCover)
         {
             if (_material == null || _player == null) return -1;
             _finishedFramesToken = -1;
@@ -601,6 +614,8 @@ namespace FixedCamVr.Streaming
             CancelSeekCrossfade();
             _requestedVideo = data.SourceIsVideo;
             int gen = _logic.BeginPlay();
+            _prepareCover = data.SourceIsVideo ? prepareCover : null;
+            _prepareCoverGen = gen;
             _ = RunPlayCueAsync(data, gen, destroyCancellationToken);
             return gen;
         }
@@ -737,15 +752,34 @@ namespace FixedCamVr.Streaming
             }
             else if (data.SourceIsVideo)
             {
+                // 前の素材が続いているか（連続カット）。畳まれる途中か何も出ていなければ続いていない。
+                bool continuing = _current != null && !_stopWhenFadedOut && _strength > 0.001f;
+                Texture? cover = _prepareCoverGen == gen ? _prepareCover : null;
+                _prepareCover = null;
+                _prepareCoverGen = -1;
                 _current = data;
-                // 前の素材が畳まれる途中（StopOverlay のフェードアウト中）なら、準備のあいだ出し続けない。
-                // 区間が替わった直後はカメラも替わっているので、前の素材は別のカメラの画になる。
-                // 新しい画が載るまではライブを見せる（OnPrepared の BeginFadeIn が 0 から上げる）。
-                if (_stopWhenFadedOut)
+                switch (OverlayPlaybackLogic.PrepareView(continuing, cover != null))
                 {
-                    _strength = 0f;
-                    _target = 0f;
-                    ApplyStrength(0f);
+                    case OverlayPlaybackLogic.PrepareShow.Cover:
+                        // 準備のあいだ、新しいマスクの中をこのカメラの無人プレートで塞ぐ。
+                        // 前の素材（区間が替わった直後なら別のカメラの画）もライブ（そこに居る人や物）も見せない。
+                        UnbindReveal();
+                        _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
+                        ApplyColorMatch(data);
+                        _material.SetFloat(OverlayMulId, 0f);
+                        SetOverlayTexture(cover!, (float)cover!.width / Mathf.Max(1, cover.height), data.id);
+                        _strength = data.strength;
+                        _target = data.strength;
+                        ApplyStrength(_strength);
+                        PrepareCoveredCount++;
+                        Debug.Log($"[ScreenOverlay] 準備のあいだ無人プレートで塞ぐ cue={data.id}");
+                        break;
+                    case OverlayPlaybackLogic.PrepareShow.Live:
+                        // プレートが無い。前の素材は出し続けず、新しい画が載るまではライブを見せる。
+                        _strength = 0f;
+                        _target = 0f;
+                        ApplyStrength(0f);
+                        break;
                 }
                 // StopOverlay のフェードアウト進行中に新 cue が来たケース:
                 // クリアしないと Update のフェード完了分岐が preparing 中の player を Stop し

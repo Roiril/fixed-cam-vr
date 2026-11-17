@@ -233,5 +233,20 @@ namespace FixedCamVr.Streaming.Tests
             Assert.That(OverlayRevealLogic.IsMultiplyBlend(null), Is.False);
             Assert.That(OverlayRevealLogic.IsMultiplyBlend("screen"), Is.False, "未知の値は差し替え");
         }
+
+        [Test]
+        public void VideoPrepare_CoversWithThePlate_WhenNothingContinues_AndNeverShowsLiveIfAPlateExists()
+        {
+            // 会場 11-17: 4-A に入った瞬間、準備のあいだライブが出て左の本物の人形が見えた
+            Assert.That(OverlayPlaybackLogic.PrepareView(previousContinuing: false, hasCover: true),
+                Is.EqualTo(OverlayPlaybackLogic.PrepareShow.Cover));
+            // 連続カット（2-A の比の画 → 動画）は前の素材を前のマスクのまま保つ
+            Assert.That(OverlayPlaybackLogic.PrepareView(previousContinuing: true, hasCover: true),
+                Is.EqualTo(OverlayPlaybackLogic.PrepareShow.Keep));
+            Assert.That(OverlayPlaybackLogic.PrepareView(previousContinuing: true, hasCover: false),
+                Is.EqualTo(OverlayPlaybackLogic.PrepareShow.Keep));
+            Assert.That(OverlayPlaybackLogic.PrepareView(previousContinuing: false, hasCover: false),
+                Is.EqualTo(OverlayPlaybackLogic.PrepareShow.Live), "プレートが無いときだけライブ");
+        }
     }
 }

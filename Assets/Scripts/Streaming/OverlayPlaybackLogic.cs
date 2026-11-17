@@ -49,5 +49,24 @@ namespace FixedCamVr.Streaming
 
         /// 停止で世代を進め保留・ロード中を無効化。
         public void Stop() { _preparePending = false; _loading = false; ++_gen; }
+
+        /// <summary>動画 cue の準備中（Prepare の 130〜170ms）に、新しいマスクの所へ何を見せるか。</summary>
+        public enum PrepareShow
+        {
+            /// <summary>前の素材を前のマスクのまま保つ（連続カットの継ぎ目）。</summary>
+            Keep,
+            /// <summary>新しいマスクの中をそのカメラの無人プレートで塞ぐ。</summary>
+            Cover,
+            /// <summary>プレートが無いので、新しい画が載るまでライブを見せる。</summary>
+            Live,
+        }
+
+        /// <summary>
+        /// 前の素材が続いていれば保つ。続いていなければ（畳まれる途中・何も出ていない）、
+        /// プレートで塞ぐ。ライブはプレートが無いときの最後の手段
+        /// （ライブにはそこに置いた物や居る人が映る。2026-11-17 会場の 4-A で本物の人形が一瞬見えた）。
+        /// </summary>
+        public static PrepareShow PrepareView(bool previousContinuing, bool hasCover)
+            => previousContinuing ? PrepareShow.Keep : hasCover ? PrepareShow.Cover : PrepareShow.Live;
     }
 }

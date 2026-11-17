@@ -2186,7 +2186,12 @@ namespace FixedCamVr.Streaming
                 }
                 // 「終端イベントを持つ素材」= 動画 / 録画フレーム列。静止画は持たない。
                 bool hasNaturalEnd = cue.SourceIsVideo || cue.SourceIsFrames;
-                _clipToken = overlay.PlayCue(cue);
+                // 動画は準備に 130〜170ms かかる。そのあいだ新しいマスクの所を無人プレートで塞ぐ
+                // （前の素材が続いていないときだけ。ライブだとそこに置いた物や居る人が映る）。
+                Texture? cover = cue.SourceIsVideo && showControl != null
+                    ? showControl.SwapPlateFor(step.camera >= 0 ? step.camera : ResolveLatestZoneCamera())
+                    : null;
+                _clipToken = overlay.PlayCue(cue, cover);
                 _stepOverlayPlayed = true;
                 _awaitingClipEnd = step.IsUntilClipEnd && hasNaturalEnd;
                 if (step.IsUntilClipEnd && !hasNaturalEnd)
