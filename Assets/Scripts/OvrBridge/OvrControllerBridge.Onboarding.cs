@@ -41,7 +41,11 @@ namespace FixedCamVr.OvrBridge
 
         private void ApplyOnboardingPresentation()
         {
-            if (_staffSetup == null || _staffSetup.BlocksVisitor)
+            // 案内を畳むのは、スタッフ用の画面が実際に出たとき（題字の黒が譲るのと同じ合図）。
+            // ⚠ 門が閉じただけで畳むと、1 フレームの途切れでもエージェント画面が消えて頭から打ち直す
+            //    （2026-11-17 会場の β: 引き渡し後の約 50 秒で名乗りが 7 回）。門が閉じている間も
+            //    練習は進まない（dt=0・入力を捨てる）ので、案内を出したままでよい。
+            if (_staffSetup == null || _staffSetup.Visible)
             {
                 comms?.ClearOnboardingNotice();
                 titleScreen?.SetStartGuidance(TitleStartGuidance.Hidden);

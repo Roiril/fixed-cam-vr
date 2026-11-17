@@ -86,7 +86,7 @@ namespace FixedCamVr.Input.Tests
             }
             Assert.IsTrue(l.TryBeginExperience(s));
         }
-        [Test] public void GraceIsNotGivenBeforeHandOff_ForWrongIdentity_OrWhileSuspended()
+        [Test] public void GraceIsNotGivenBeforeHandOff_OrForWrongIdentity()
         {
             var l = new StaffSetupLogic(); var s = Good(l); Stable(l, s); l.ConfirmPosition(s);
             l.VisitorResetCompleted(); s.generation = l.Generation; Stable(l, s);
@@ -96,9 +96,36 @@ namespace FixedCamVr.Input.Tests
             l = new StaffSetupLogic(); s = HandedOff(l); l.Observe(s, .25f);
             s.cameras[1].identityMatches = false; s.cameras[1].problem = SetupCameraProblem.WrongCamera;
             l.Observe(s, .25f); Assert.IsTrue(l.BlocksVisitor);
-
-            l = new StaffSetupLogic(); s = HandedOff(l); l.Observe(s, .25f);
-            s.cameras[2].suspended = true; l.Observe(s, .25f); Assert.IsTrue(l.BlocksVisitor);
+        }
+        // 装着の確定の後に HMD が休止し、体験者が被って戻った直後。休止の間は数えず、戻ってから
+        // CameraResumeGraceSec の内にカメラが戻れば体験者を止めない。
+        [Test] public void SuspendAfterHandOff_PausesTheGrace_AndResumeGetsItsOwnGrace()
+        {
+            var l = new StaffSetupLogic(); var s = HandedOff(l); l.Observe(s, .25f);
+            for (int i = 0; i < 3; i++) s.cameras[i].suspended = true;
+            for (int k = 0; k < 400; k++) { l.Observe(s, .25f); Assert.IsFalse(l.BlocksVisitor, "休止の間"); }
+            for (int i = 0; i < 3; i++) { s.cameras[i].suspended = false; s.cameras[i].connected = false; }
+            for (float t = .25f; t < StaffSetupLogic.CameraResumeGraceSec - .25f; t += .25f)
+            { l.Observe(s, .25f); Assert.IsFalse(l.BlocksVisitor, $"戻って {t} 秒"); }
+            for (int i = 0; i < 3; i++) { s.cameras[i].connected = true; s.cameras[i].connection = 5; }
+            Stable(l, s); Assert.IsTrue(l.CamerasReady); Assert.IsTrue(l.TryBeginExperience(s));
+        }
+        [Test] public void ResumeGrace_RunsOut_WhenTheCameraNeverReturns()
+        {
+            var l = new StaffSetupLogic(); var s = HandedOff(l); l.Observe(s, .25f);
+            s.cameras[1].suspended = true; l.Observe(s, .25f);
+            s.cameras[1].suspended = false; s.cameras[1].connected = false;
+            for (float t = 0f; t < StaffSetupLogic.CameraResumeGraceSec + .5f; t += .25f) l.Observe(s, .25f);
+            Assert.IsTrue(l.BlocksVisitor); Assert.IsFalse(l.TryBeginExperience(s));
+        }
+        [Test] public void ResumeGrace_IsSpentOnce_TheNextDropUsesTheNormalGrace()
+        {
+            var l = new StaffSetupLogic(); var s = HandedOff(l); l.Observe(s, .25f);
+            s.cameras[0].suspended = true; l.Observe(s, .25f); s.cameras[0].suspended = false; l.Observe(s, .25f);
+            s.cameras[0].connection = 7; Stable(l, s); Assert.IsTrue(l.CamerasReady);
+            s.cameras[0].connected = false;
+            for (float t = 0f; t < StaffSetupLogic.CameraDropGraceSec + .5f; t += .25f) l.Observe(s, .25f);
+            Assert.IsTrue(l.BlocksVisitor, "戻った後の途切れは通常の猶予");
         }
         [Test] public void NextVisitorDoesNotInheritTheGrace()
         {
