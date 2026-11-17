@@ -1,0 +1,38 @@
+{
+  "durationSec": 2.292,
+  "fps": 24,
+  "plate": "plate_A_20261117_145119_d0311aa5.jpg",
+  "tag": "20261117_145119_d0311aa5",
+  "register": {
+    "points": 281,
+    "of": 398,
+    "residualPx": 0.47,
+    "maxShiftPx": 10.1
+  },
+  "registerBase": {
+    "points": 476,
+    "of": 476,
+    "residualPx": 0.01,
+    "maxShiftPx": 0.0
+  },
+  "firstFrameDiff": 5.14,
+  "source": "tools/gen-plate/stain3/flow/flow_20261117_145119_d0311aa5_4x3.mp4",
+  "rest": [
+    [
+      2.0,
+      2.9,
+      3.0
+    ],
+    [
+      2.9,
+      4.0,
+      1.6
+    ],
+    [
+      4.0,
+      5.2,
+      1.0
+    ]
+  ],
+  "stainAt": 2.0
+}

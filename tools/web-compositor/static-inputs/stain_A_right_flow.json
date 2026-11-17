@@ -1,20 +1,20 @@
 {
-  "tag": "20261115_125052",
-  "plate": "plate_A_20261115_125052.jpg",
+  "tag": "20261117_145119_d0311aa5",
+  "plate": "plate_A_20261117_145119_d0311aa5.jpg",
   "durationSec": 2.292,
   "names": {
-    "ratio": "stain_A_right_flow_ratio_20261115_125052.png",
-    "ratio_mask": "stain_A_right_flow_ratio_mask_20261115_125052.png",
-    "pop": "stain_A_right_flow_pop_20261115_125052.mp4",
-    "mask": "stain_A_right_flow_mask_20261115_125052.png",
-    "watch": "stain_A_right_flow_watch_20261115_125052.png",
-    "face": "stain_A_right_flow_face_20261115_125052.png",
-    "face_mask": "stain_A_right_flow_face_mask_20261115_125052.png",
-    "meta": "stain_A_right_flow_pop_20261115_125052.json"
+    "ratio": "stain_A_right_flow_ratio_20261117_145119_d0311aa5.png",
+    "ratio_mask": "stain_A_right_flow_ratio_mask_20261117_145119_d0311aa5.png",
+    "pop": "stain_A_right_flow_pop_20261117_145119_d0311aa5.mp4",
+    "mask": "stain_A_right_flow_mask_20261117_145119_d0311aa5.png",
+    "watch": "stain_A_right_flow_watch_20261117_145119_d0311aa5.png",
+    "face": "stain_A_right_flow_face_20261117_145119_d0311aa5.png",
+    "face_mask": "stain_A_right_flow_face_mask_20261117_145119_d0311aa5.png",
+    "meta": "stain_A_right_flow_pop_20261117_145119_d0311aa5.json"
   },
   "source": {
-    "video": "tools/gen-plate/stain3/flow/flow_v2_plain_to_grin_4x3.mp4",
-    "base": "tools/web-compositor/captures/plate_A_20261115_125052.jpg",
+    "video": "tools/gen-plate/stain3/flow/flow_20261117_145119_d0311aa5_4x3.mp4",
+    "base": "tools/web-compositor/captures/plate_A_20261117_145119_d0311aa5.jpg",
     "end": "tools/gen-plate/stain3/flow/end_grin_A_20261115_125052.png",
     "stainAt": 2.0
   }
