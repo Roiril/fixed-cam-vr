@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using FixedCamVr.Streaming;
 using NUnit.Framework;
 using Reason = FixedCamVr.Streaming.StreamWatchdogLogic.ReconnectReason;
@@ -147,6 +148,10 @@ namespace FixedCamVr.Streaming.Tests
 
         // ---- Lag ---------------------------------------------------------------------
 
+        // lag は表示中のカメラだけが張り直す。接続の有無は stall の経路を変えないよう false のまま渡す。
+        private static Reason Shown(StreamWatchdogLogic w, float now, float dt, float phone)
+            => w.EndTick(now, dt, phone, sourceThrottling: false, connected: false, displayed: true);
+
         // recvFps を任意の値へ立ち上げるヘルパー（窓 1.0s に frames 枚 ＝ recvFps = frames）。
         private static StreamWatchdogLogic PrimeRecvFpsN(int frames)
         {
@@ -175,7 +180,7 @@ namespace FixedCamVr.Streaming.Tests
             var w = PrimeBackgroundCamera();
             Assert.That(w.ReceivedFps, Is.EqualTo(30f).Within(0.5f));
             Assert.That(w.DecodedFps, Is.EqualTo(3f).Within(0.1f));
-            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 30f), Is.EqualTo(Reason.None),
+            Assert.That(Shown(w, 11.5f, 2f, 30f), Is.EqualTo(Reason.None),
                 "展開を間引いているだけで、経路は詰まっていない");
         }
 
@@ -184,7 +189,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             var w = PrimeRecvFpsN(15);
             Assert.That(w.DecodedFps, Is.EqualTo(15f).Within(0.5f));
-            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 30f), Is.EqualTo(Reason.Lag));
+            Assert.That(Shown(w, 11.5f, 2f, 30f), Is.EqualTo(Reason.Lag));
         }
 
         [Test]
@@ -217,7 +222,7 @@ namespace FixedCamVr.Streaming.Tests
             // 再接続がフレームを落として悪化する（2026-07-30 実機: 本編 69 秒で再接続 152 回）。
             var w = PrimeRecvFpsN(40);
             Assert.That(w.ReceivedFps, Is.EqualTo(40f).Within(0.5f));
-            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 60f), Is.EqualTo(Reason.None),
+            Assert.That(Shown(w, 11.5f, 2f, 60f), Is.EqualTo(Reason.None),
                 "配信 60fps でも受信 40fps は十分な品質 — 張り直さない");
         }
 
@@ -225,7 +230,7 @@ namespace FixedCamVr.Streaming.Tests
         public void Lag_StillFires_WhenReceptionIsActuallyBad_WithFastPhone()
         {
             var w = PrimeRecvFpsN(15);
-            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 60f), Is.EqualTo(Reason.Lag),
+            Assert.That(Shown(w, 11.5f, 2f, 60f), Is.EqualTo(Reason.Lag),
                 "受信 15fps は実用上限 30fps の 7 割を割る — 本物の詰まりは今までどおり拾う");
         }
 
@@ -234,7 +239,7 @@ namespace FixedCamVr.Streaming.Tests
         {
             // 暗所で配信が 15fps へ落ちた場合。分母は配信 fps のままなので従来の感度を保つ。
             var w = PrimeRecvFpsN(9);
-            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 15f), Is.EqualTo(Reason.Lag),
+            Assert.That(Shown(w, 11.5f, 2f, 15f), Is.EqualTo(Reason.Lag),
                 "9/15=0.6 < 0.7");
         }
 
@@ -246,23 +251,88 @@ namespace FixedCamVr.Streaming.Tests
                 "recvFps=3, phoneFps=30 なら ratio=0.1<0.7");
 
             // 同一窓内（now-_recvWindowStart<1）に留めて recvFps を保ちつつ dt で lag 窓を貯める。
-            var reason = w.EndTick(now: 11.5f, unscaledDt: StreamWatchdogLogic.LagDetectWindowSec, phoneFps: 30f);
+            var reason = Shown(w, 11.5f, StreamWatchdogLogic.LagDetectWindowSec, 30f);
             Assert.That(reason, Is.EqualTo(Reason.Lag));
 
             // 発火直後は _lagWindowAccum リセットで即再発火しない。
-            Assert.That(w.EndTick(now: 11.6f, unscaledDt: 0.016f, phoneFps: 30f), Is.EqualTo(Reason.None));
+            Assert.That(Shown(w, 11.6f, 0.016f, 30f), Is.EqualTo(Reason.None));
         }
 
         [Test]
         public void Lag_DoesNotFire_WhenNoFramesOrPhoneFpsTooLow()
         {
             var noRecv = new StreamWatchdogLogic();
-            Assert.That(noRecv.EndTick(now: 10f, unscaledDt: 2f, phoneFps: 30f), Is.EqualTo(Reason.None),
+            Assert.That(Shown(noRecv, 10f, 2f, 30f), Is.EqualTo(Reason.None),
                 "recvFps=0 では lag 不発火");
 
             var w = PrimeRecvFps(out _);
-            Assert.That(w.EndTick(now: 11.5f, unscaledDt: 2f, phoneFps: 1f), Is.EqualTo(Reason.None),
+            Assert.That(Shown(w, 11.5f, 2f, 1f), Is.EqualTo(Reason.None),
                 "phoneFps<=1 では lag 不発火");
+        }
+
+        [Test]
+        public void Lag_DoesNotFire_ForBackgroundCamera_AndDoesNotCarryTheWindowIntoDisplay()
+        {
+            var w = PrimeRecvFpsN(5);
+            Assert.That(w.EndTick(11.5f, 2f, 30f, false, connected: false, displayed: false), Is.EqualTo(Reason.None),
+                "背景の張り直しは体験者に見えず、表示中のカメラと電波を取り合うだけ");
+            Assert.That(Shown(w, 11.6f, 0.016f, 30f), Is.EqualTo(Reason.None),
+                "表示へ切り替わった瞬間に背景で溜めた窓で撃たない");
+            Assert.That(Shown(w, 11.9f, StreamWatchdogLogic.LagDetectWindowSec, 30f), Is.EqualTo(Reason.Lag),
+                "表示中になってから窓が溜まれば従来どおり張り直す");
+        }
+
+        // 1 秒ごとに受信 5fps の窓を回し、表示中として dt=0.25 で進める。張り直した時刻を返す。
+        private static System.Collections.Generic.List<float> RunLaggy(StreamWatchdogLogic w, float from, float to, int fps)
+        {
+            var fired = new System.Collections.Generic.List<float>();
+            for (float t = from; t < to; t += 0.25f)
+            {
+                if (Math.Abs(t - Math.Round(t)) < 0.01f) { w.OnFramesArrived(fps); w.OnFrameDecoded(t); }
+                if (Shown(w, t, 0.25f, 30f) == Reason.Lag) fired.Add(t);
+            }
+            return fired;
+        }
+
+        [Test]
+        public void Lag_BacksOff_WhenReconnectingDoesNotHelp()
+        {
+            var w = new StreamWatchdogLogic();
+            var fired = RunLaggy(w, 10f, 200f, 5);
+            Assert.That(fired.Count, Is.GreaterThanOrEqualTo(4));
+            for (int i = 1; i < fired.Count; i++)
+            {
+                float expected = Math.Min(StreamWatchdogLogic.LagReconnectCooldownSec * (float)Math.Pow(2, i),
+                                          StreamWatchdogLogic.LagReconnectMaxCooldownSec);
+                Assert.That(fired[i] - fired[i - 1], Is.GreaterThanOrEqualTo(expected - 0.01f),
+                    $"{i} 回目の後は {expected} 秒空ける（直らない張り直しを 5 秒おきに続けない）");
+                Assert.That(fired[i] - fired[i - 1], Is.LessThan(expected + 2f), "空けすぎない");
+            }
+            Assert.That(fired.Count, Is.LessThan(10), "混んだ電波の 190 秒で、5 秒おきなら 38 回になる");
+        }
+
+        [Test]
+        public void Lag_Backoff_ResetsAfterSustainedHealthyReception()
+        {
+            var w = new StreamWatchdogLogic();
+            RunLaggy(w, 10f, 60f, 5);
+            Assert.That(w.LagCooldownSec, Is.GreaterThan(StreamWatchdogLogic.LagReconnectCooldownSec));
+            RunLaggy(w, 60f, 60f + StreamWatchdogLogic.LagRecoverSec - 1f, 30);
+            Assert.That(w.LagCooldownSec, Is.GreaterThan(StreamWatchdogLogic.LagReconnectCooldownSec),
+                "短い回復ではまだ戻さない");
+            RunLaggy(w, 69f, 75f, 30);
+            Assert.That(w.LagCooldownSec, Is.EqualTo(StreamWatchdogLogic.LagReconnectCooldownSec),
+                "10 秒続けて受けられたら、次の詰まりはまた早く張り直す");
+        }
+
+        [Test]
+        public void Lag_Backoff_DoesNotCarryOverToANewEndpoint()
+        {
+            var w = new StreamWatchdogLogic();
+            RunLaggy(w, 10f, 60f, 5);
+            Assert.That(w.LagCooldownSec, Is.GreaterThan(StreamWatchdogLogic.LagReconnectCooldownSec));
+            w.NotifyEndpointChanged(60f);
+            Assert.That(w.LagCooldownSec, Is.EqualTo(StreamWatchdogLogic.LagReconnectCooldownSec));
         }
 
         // ---- DecodeFail --------------------------------------------------------------

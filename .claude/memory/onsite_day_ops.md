@@ -165,7 +165,7 @@ heartbeat に端末 ID が無く（`ShowControlClient.cs` の `Hb` に無い）�
 同じ秒に有線 PC は 26〜31fps を受け、β のアプリ描画も 88〜90fps だった。原因は描画でも配信スマホでもない。
 `adb shell am force-stop com.oculus.panelapp.settings` で、Quest の上で nc を使い 3 台を 10 秒受けた枚数が 44〜87 → 124〜230 に戻った（α は 239〜295）。
 - スキャン 0 回でも混む時間帯は落ちる（α 16:51）。こちらの原因は未解明
-- 落ちると lag 判定の張り直しが 2 秒おきに起き、張り直しがさらに受信を減らす
+- 落ちると 3 台が同じ瞬間に 5 秒おきに張り直し（約 4 分で 134 回）、張り直しがさらに受信を減らしていた。fps は張り直しで戻らなかった。同日、lag の張り直しを表示中のカメラだけにし、直らなければ間隔を倍にした（`StreamWatchdogLogic.LagCooldownSec`）
 - 測るときは Unity 付属の adb（`PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe`）をフルパスで使う。PATH の SideQuest 版と 5037 番を奪い合い、logcat が切れる
 - exp-a の 5GHz はこの日 ch48（5240MHz）だった。[[no_internet_autojoin_kill]] の 5180MHz から AP が自動で移している
 

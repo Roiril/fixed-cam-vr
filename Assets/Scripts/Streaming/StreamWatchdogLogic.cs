@@ -30,6 +30,19 @@ namespace FixedCamVr.Streaming
         /// </summary>
         public const float LagReferenceFps = 30f;
         public const float LagReconnectCooldownSec = 5.0f;
+
+        /// <summary>
+        /// lag の張り直しが続いたときの間隔の上限。張り直すたびに間隔を倍にする（5 → 10 → 20 → 40 → 60 秒）。
+        ///
+        /// 混んだ電波で受信が落ちているときは、張り直しても fps は戻らない。2026-11-17 の会場では
+        /// β が 3〜20fps のまま、3 台が同じ瞬間に 5 秒おきの張り直しを繰り返していた（走行約 4 分で 134 回）。
+        /// 張り直すたびに接続の確立とバッファの捨て直しで電波をさらに使い、受信が減る。
+        /// 1 回目は従来どおり早く張り直す（固まった接続はこれで直る）。直らなければ間隔を空ける。
+        /// </summary>
+        public const float LagReconnectMaxCooldownSec = 60f;
+
+        /// <summary>受信がこの秒数続けて閾値以上なら、lag の張り直し間隔を 1 回目に戻す。</summary>
+        public const float LagRecoverSec = 10f;
         // この秒数を超える unscaledDeltaTime は「フリーズ明け（HMD 着脱 / OS pause）」とみなす。
         // Registry も resume-gap ラッチ自己回復で参照するため public 必須。
         public const float ResumeGapSec = 0.5f;
@@ -58,6 +71,8 @@ namespace FixedCamVr.Streaming
         private float _decodedFps;
 
         private float _lagWindowAccum;
+        private int _lagStreak;          // 間に回復を挟まず続いた lag の張り直しの回数
+        private float _lagHealthyAccum;  // 受信が閾値以上で続いた秒数
         private float _lastReconnectTime;
         private float _lastFrameTime;
 
@@ -78,6 +93,17 @@ namespace FixedCamVr.Streaming
 
         /// <summary>最後に decode したフレームの realtimeSinceStartup。未受信 / リセット直後は 0。</summary>
         public float LastFrameRealtime => _lastFrameTime;
+
+        /// <summary>次の lag の張り直しまでに空ける秒数（前回の張り直しから）。</summary>
+        public float LagCooldownSec
+        {
+            get
+            {
+                float sec = LagReconnectCooldownSec;
+                for (int i = 0; i < _lagStreak && sec < LagReconnectMaxCooldownSec; i++) sec *= 2f;
+                return sec < LagReconnectMaxCooldownSec ? sec : LagReconnectMaxCooldownSec;
+            }
+        }
 
         /// <summary>
         /// suspend 状態を変更する。無変化なら false（呼び手はログを出さない）。
@@ -183,6 +209,8 @@ namespace FixedCamVr.Streaming
         /// 既定 false ＝ 渡さない呼び出し側の挙動は 1 ビットも変わらない。
         ///
         /// <paramref name="displayed"/> は「いま体験者に表示しているカメラか」（<c>CameraStreamRegistry.ActiveIndex</c>）。
+        /// <b>lag の張り直しは表示中のカメラだけ</b>。背景のカメラは落ちても体験者には見えず、張り直しは
+        /// 表示中のカメラと電波を取り合うだけになる。背景が本当に止まったときは stall の 10 秒が拾う。
         /// true かつ接続が生きていて、その接続で 1 枚でも展開した後に黙ったら
         /// <see cref="DisplayedStallReconnectSec"/> で張り直す。熱降格中は背景と同じ <see cref="StallReconnectSec"/>。
         /// 既定 false ＝ 背景と同じ扱い。
@@ -217,24 +245,33 @@ namespace FixedCamVr.Streaming
             }
 
             // 2. Lag 検出。PHONE_FPS と RECV_FPS が両方読めるときのみ評価。
+            // 背景のカメラは張り直さない（窓も溜めない。表示へ切り替わった瞬間に古い蓄積で撃たない）。
+            if (!displayed) _lagWindowAccum = 0f;
             if (phoneFps > 1f && _recvFps > 0f)
             {
                 float reference = phoneFps < LagReferenceFps ? phoneFps : LagReferenceFps;
                 float ratio = _recvFps / reference;
                 if (ratio < LagThresholdRatio)
                 {
-                    _lagWindowAccum += unscaledDt;
-                    if (_lagWindowAccum >= LagDetectWindowSec
-                        && now - _lastReconnectTime >= LagReconnectCooldownSec)
+                    _lagHealthyAccum = 0f;
+                    if (displayed)
                     {
-                        MarkReconnect(now);
-                        _lagWindowAccum = 0f;
-                        return ReconnectReason.Lag;
+                        _lagWindowAccum += unscaledDt;
+                        if (_lagWindowAccum >= LagDetectWindowSec
+                            && now - _lastReconnectTime >= LagCooldownSec)
+                        {
+                            MarkReconnect(now);
+                            _lagWindowAccum = 0f;
+                            _lagStreak++;
+                            return ReconnectReason.Lag;
+                        }
                     }
                 }
                 else
                 {
                     _lagWindowAccum = 0f;
+                    _lagHealthyAccum += unscaledDt;
+                    if (_lagHealthyAccum >= LagRecoverSec) _lagStreak = 0;
                 }
             }
 
@@ -294,6 +331,7 @@ namespace FixedCamVr.Streaming
         {
             ResetWindows(now);
             _decodedSinceReconnect = false; // 新しい接続先はまだ 1 枚も届けていない
+            _lagStreak = 0;                 // 別の配信なので、前の配信の張り直し回数を持ち越さない
         }
 
         // 張り直しを返すときの共通処理。新しい接続が 1 枚届けるまで表示中の早い stall を止める。
@@ -311,6 +349,7 @@ namespace FixedCamVr.Streaming
             _recvFps = 0f;
             _decodedFps = 0f;
             _lagWindowAccum = 0f;
+            _lagHealthyAccum = 0f;
             _lastReconnectTime = now;
         }
     }

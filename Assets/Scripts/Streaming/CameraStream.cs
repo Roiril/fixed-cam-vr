@@ -389,7 +389,7 @@ namespace FixedCamVr.Streaming
                                            displayed);
             if (reason == StreamWatchdogLogic.ReconnectReason.Lag)
             {
-                Debug.Log($"[CameraStream] lag detected (recv={_watchdog.ReceivedFps:F1}/phone={phoneFps:F1}). reconnecting.");
+                Debug.Log($"[CameraStream] lag detected (recv={_watchdog.ReceivedFps:F1}/phone={phoneFps:F1}). reconnecting. next={_watchdog.LagCooldownSec:F0}s");
                 _receiver.RequestReconnect();
             }
             else if (reason == StreamWatchdogLogic.ReconnectReason.Stall)
