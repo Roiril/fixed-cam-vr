@@ -55,6 +55,7 @@ paths:
 
 ## 罠
 
+- 動画の cue はマスクと色合わせを `OnPrepared` で貼る（`_pendingVideoMask`）。準備中（130〜170ms）は前の素材を前のマスクのまま出す。前の素材が畳まれる途中（`_stopWhenFadedOut`）なら準備の頭で strength を 0 にし、ライブを見せる。発火の時点で貼ると、前の素材が新しいマスクの形で一瞬出る（2026-11-17 会場の 3-C → 4-A）
 - 比の画・順の画・press マスクは sRGB で読まれ mip を持つ。線形の値として書いた PNG は暗く読まれる。道具は sRGB で書く
 - 順の画の無い cue では `StopOverlay(float)` の秒は使われず、cue の `fadeOut` で薄まる
 - 演出のカットは cue を写して出す（`TakeRunner.BuildStepOverlay`）。掛け算と滲みを継がないと比の画が差し替えの画として出る — `TakeSplitLayerTests.StepOverlay_InheritsMultiplyAndReveal_FromTheCue`

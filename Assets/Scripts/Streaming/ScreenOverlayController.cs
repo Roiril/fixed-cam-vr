@@ -101,6 +101,12 @@ namespace FixedCamVr.Streaming
         private float _clipDlSec;
         private bool _clipCached;
         private string _clipCueId = "";
+
+        // 動画 cue のマスク。Prepare が終わって画が載る瞬間（OnPrepared）まで貼らない。
+        // 準備中（実測 130〜170ms）に貼ると、まだ出ている前の素材が新しいマスクの形で見える
+        // （2026-11-17 会場: 3-C → 4-A の乱れの中に、3-C の画が 4-A の人形のマスクの形で一瞬出た）。
+        private Texture? _pendingVideoMask;
+        private OverlayCueData? _pendingVideoCue;
         // 世代（stale ロード/Prepare 破棄）+ 動画 Prepare ライフサイクル（保留/タイムアウト/受理/エラー中止）の純判定。
         // PlayCue が非同期ロードを挟む間に次の PlayCue が来たら古い方を破棄する。動画 cue の Prepare 失敗経路
         // （errorReceived / タイムアウト）で _current を解放し、CameraSwitchDirector が cueActive=true のまま
@@ -732,12 +738,22 @@ namespace FixedCamVr.Streaming
             else if (data.SourceIsVideo)
             {
                 _current = data;
+                // 前の素材が畳まれる途中（StopOverlay のフェードアウト中）なら、準備のあいだ出し続けない。
+                // 区間が替わった直後はカメラも替わっているので、前の素材は別のカメラの画になる。
+                // 新しい画が載るまではライブを見せる（OnPrepared の BeginFadeIn が 0 から上げる）。
+                if (_stopWhenFadedOut)
+                {
+                    _strength = 0f;
+                    _target = 0f;
+                    ApplyStrength(0f);
+                }
                 // StopOverlay のフェードアウト進行中に新 cue が来たケース:
                 // クリアしないと Update のフェード完了分岐が preparing 中の player を Stop し
                 // _current を null にして、新 cue が無言で殺される。
                 _stopWhenFadedOut = false;
-                _material!.SetTexture(MaskTexId, mask != null ? mask : Texture2D.whiteTexture);
-                ApplyColorMatch(data);
+                // マスクと色合わせは画が載る瞬間に貼る（準備中は前の素材を前のマスクのまま保つ。連続カットの継ぎ目）
+                _pendingVideoMask = mask;
+                _pendingVideoCue = data;
                 _player!.Stop();
                 if (data.clip != null)
                 {
@@ -1170,6 +1186,14 @@ namespace FixedCamVr.Streaming
                 };
                 _videoRt.Create();
             }
+
+            if (ReferenceEquals(_pendingVideoCue, cue))
+            {
+                _material.SetTexture(MaskTexId, _pendingVideoMask != null ? _pendingVideoMask : Texture2D.whiteTexture);
+                ApplyColorMatch(cue);
+            }
+            _pendingVideoMask = null;
+            _pendingVideoCue = null;
 
             vp.targetTexture = _videoRt;
             SetOverlayTexture(_videoRt, aspect, cue.id);
