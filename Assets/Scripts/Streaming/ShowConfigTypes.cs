@@ -785,9 +785,9 @@ namespace FixedCamVr.Streaming
         /// <summary>段 3。黒の後、闇からテレビが出る（段 2 の後半から重なる）。</summary>
         public float structureSec = 3.8f;
         /// <summary>段 4。テレビの電源が入り、カメラ映像が映る。</summary>
-        public float frameSec = 3.0f;
+        public float frameSec = 1.3f;
         /// <summary>段 5。映像を静止して見せ、筐体が闇へ沈む。</summary>
-        public float swapSec = 1.6f;
+        public float swapSec = 0.6f;
 
         /// <summary>
         /// 実物の輪郭線の色（<c>#rrggbb</c>）。既定は<b>生成り</b>（LEDGER 0010「全体的に暖色に」）。

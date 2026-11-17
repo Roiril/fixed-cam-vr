@@ -47,7 +47,7 @@ paths:
 ### 導入（IntroStage）
 - `ShowPhase.Intro` 内の段 Black→Real→Degrade→Structure→Frame→Swap→Done。相も段も増やさない。重みは `IntroLogic.Weights` 1 本 — `IntroStage` 〔出典: streaming:940-944〕
 - 方式は `IntroTransition`。既定は `Tv`（0309）、`run.intro.transition="shatter"` で割れる遷移（尺は `IntroTiming.Shatter` に固定。契約は memory/intro_fracture_cinematic.md の冒頭）
-- 尺の既定 1.5 / 1.5 / 3.8 / 3.0 / 1.6 秒・max 20、合計 10.8 秒（段 3 は段 2 の .6 から重なる）。`IntroTiming.Default` / `ShowIntroDef` / 卓 2 か所 / `sound-preview.py` で一致 — `IntroTvTests.TotalSec_MatchesTheTable`
+- 尺の既定 1.5 / 1.5 / 3.8 / 1.3 / 0.6 秒・max 20、合計 8.1 秒（段 3 は段 2 の .6 から重なる）。`IntroTiming.Default` / `ShowIntroDef` / 卓 2 か所 / `sound-preview.py` で一致 — `IntroTvTests.TotalSec_MatchesTheTable`
 - 段 0 は現実が見え、時間で進まず maxSec に数えない。自動の出口はすべて `startAuthorized`（練習と題字の完了 ∧ スタッフ用準備の開始）を通る。⏭ は通さない。未配線は true — `IntroInput.startAuthorized` / `OvrControllerBridge` / `Black_StaffOverrideStillWorksBeforeTheAPress` 〔出典: show-design:487-505〕
 - 誘導が予約・指示中は出口が「円に着いた」1 つ。30 秒で諦めて従来判定へ — `IntroInput.guidingToSpot` / `WalkGuideLogic.GatesStart` / `HoldMaxSec` 〔出典: show-design:578-593〕
 - 従来判定は接近（境界から 1.0m・0.4 秒）・安全網（外を見てから中へ）・救済（中に立って 1.0 秒）。位置が解けない間は中／外を更新しない。武装し直しは 1 か所 — `ConcealStartSec` / `IntroDirector.TryOutsideBoxM` / `RearmStartSignal` 〔出典: show-design:459-535〕
@@ -58,7 +58,7 @@ paths:
 - テレビが出るまでスクリーンは描かない（`IntroVeil.TvScreenHidden`）。描くと暗転と黒の保持に矩形や縁が浮く。覆いが要らなくなる段 3 の経路でも止めを掛け直す — `IntroVeil.Apply`、観測 `scrHid=`
 - 段 4 は頭の角速度 45°/s 以下を待つ（最大 3 秒）。頭で `TvOn`。`ignite` / `live` は段の進みではなく電源の音の秒で動き（`IntroLogic.TvIgniteAt` / `TvLiveAt`）、段 4 は `TvPowerOnEndSec` を割らない。砂嵐は `SoundCueLogic.TvNoiseGain`（奥行きの 1/r）。詳細は memory/intro_tv_reveal.md（0387） — `IntroTvTests.Frame_LightFollowsThePowerOnSound_NotTheStageLength`
 - `_IntroLive` の式は `IntroWeights.LiveGate` 1 か所。テレビは live そのもの、割れる遷移は 0/1。書くときに 4-A の時間切れ手前の沈み（`EndingDecisionLogic.SinkBrightness`・memory/ending_result.md）を掛ける。`ignite` はテレビの段 1〜4 で 0 から上がり、演出の外は 1。畳むすべての経路で 1 へ戻す — `IntroDirector.WriteIgnite` / `ResetIgnite`
-- 段 5 は live 1 の静止 1.6 秒で、乱れなし。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec`
+- 段 5 は live 1 の静止 0.6 秒で、乱れなし。映像が来なくても最大 3 秒で進み砂嵐 — `IntroLogic.MaxHoldSec`
 - 筐体 `tvCase` は段 4 から体験の終わりまで `IntroLogic.MainShowTvCase`（1・0321）。演出の外（Off / Done）の重みも同じ。`ResetIgnite` は方式で書き分ける（テレビ 1・割れる遷移 0）。0 を書くと本編で枠が消える — `IntroTvTests.Swap_KeepsTheCase_AndTheMainShowKeepsTheTvFrame` / `Shatter_NeverShowsTheTvCase_InAnyStageOrInTheMainShow`
 - 殻は導入で描かない（終幕だけ）。封印の箱は全段 0 で毎フレーム `SetHidden` — `ContainmentShellLogicTests.Intro_NeverPaintsTheShellAtAll` / `SealedBox_NeverAppears_InAnyStage` 〔出典: streaming:858, 898〕
 - 開口は「眼とスクリーンの 4 辺を通る平面」。全開は厳密に全開、`AnchorK` .15 まで頭の正面から寄せる。C# と shader が同じ式。ブラウン管の曲面は角を動かさない — `IntroVeil.SignedDistance` / `Open_CoversWholeFov_AtEveryHeadPitch` / `CrtScreenMesh` 〔出典: streaming:948-971〕

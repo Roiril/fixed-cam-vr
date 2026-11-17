@@ -40,10 +40,10 @@ SRC = os.path.join(ROOT, "Assets", "Resources", "Sound")
 OUT = os.path.join(ROOT, "logs", "sound")
 
 # --- 段の尺（`IntroLogic.IntroTiming.Default` の写し）------------------------
-# いまは 5 段 10.8 秒（`canon/LEDGER.md` 0309）:
+# いまは 5 段 8.1 秒（`canon/LEDGER.md` 0309）:
 #   段 1 素通し / 段 2 暗転 / 段 3 テレビが出る（段 2 と重なる）/ 段 4 電源と映像 / 段 5 静止。
 #   ⚠ `IntroTiming.Default` と同じ値にしておく（ずれると、聴いて決めた間が実機と違う）。
-REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 1.5, 3.8, 3.0, 1.6
+REAL, DEGRADE, STRUCTURE_SRC, FRAME, SWAP = 1.5, 1.5, 3.8, 1.3, 0.6
 # 段 3 は段 2 の後半から重なるので、単独で流れるのはこれだけ（`IntroTiming.TotalSec` と同じ式）。
 STRUCTURE = max(STRUCTURE_SRC - DEGRADE * (1 - 0.6), 0.5)
 # テレビの電源は段 4 の頭（`SoundCueLogic`）。音は 0057 の「スクリーンが出る音」。

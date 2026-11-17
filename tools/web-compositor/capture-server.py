@@ -584,12 +584,12 @@ def _default_show():
         'run': {'totalLaps': 3, 'introEnabled': True, 'introMinSec': 20, 'introAutoAdvance': True,
                 'targetSec': 180, 'hardLimitSec': 300, 'endFadeSec': 1.5,
                 'endGraceSec': 3.0, 'endHoldMaxSec': 60.0,
-                # 暗転 → テレビが出る → 電源 → 映像（canon/LEDGER.md 0309）。段 3 は段 2 と重なるので実尺 10.8s。
+                # 暗転 → テレビが出る → 電源 → 映像（canon/LEDGER.md 0309）。段 3 は段 2 と重なるので実尺 8.1s。
                 # ⚠ この値は tools/web-compositor/intro-model.js の INTRO_DEFAULT と一致していること
                 #   （intro-model.test.mjs が両者を突き合わせる。片方だけ直すと沈黙して食い違う）。
                 'intro': {'enabled': True, 'maxSec': 20,
                           'realSec': 1.5, 'degradeSec': 1.5, 'structureSec': 3.8,
-                          'frameSec': 3.0, 'swapSec': 1.6,
+                          'frameSec': 1.3, 'swapSec': 0.6,
                           # 構造の線は既定で出さない（2026-08-01。細い線が現実に重なると計測器に見える）。
                           # Unity の ShowIntroDef / 卓の INTRO_DEFAULT と 3 者で揃えること。
                           'edgeColor': '#ffcf9e', 'showCameraMarks': False, 'showRoomWire': False,

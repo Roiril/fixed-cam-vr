@@ -45,8 +45,8 @@ namespace FixedCamVr.Streaming.Tests
         [Test]
         public void TotalSec_MatchesTheTable()
         {
-            // 卓の intro-model.test.mjs と同じ値。1.5 + 1.5 + (3.8 - 1.5×0.4) + 3.0 + 1.6
-            Assert.AreEqual(10.8f, IntroTiming.Default.TotalSec, 0.001f);
+            // 卓の intro-model.test.mjs と同じ値。1.5 + 1.5 + (3.8 - 1.5×0.4) + 1.3 + 0.6
+            Assert.AreEqual(8.1f, IntroTiming.Default.TotalSec, 0.001f);
             Assert.AreEqual(3.2f, StructureOwnSec(IntroTiming.Default), 0.001f);
         }
 
@@ -249,7 +249,8 @@ namespace FixedCamVr.Streaming.Tests
             for (int i = 0; i < 60; i++) l.Tick(0.02f, Ready());   // 1.2 秒
             Assert.AreEqual(IntroStage.Frame, l.Stage, "映像が出切る前に段 5 へ進んだ");
             Assert.Less(l.Weights.live, 1f);
-            for (int i = 0; i < 60; i++) l.Tick(0.02f, Ready());
+            // 映像が出切ったら段 5 へ。段 5 の静止 0.6 秒（0398）を飛び越さないよう、抜けた所で止める
+            for (int i = 0; i < 120 && l.Stage == IntroStage.Frame; i++) l.Tick(0.02f, Ready());
             Assert.AreEqual(IntroStage.Swap, l.Stage);
         }
 
@@ -331,8 +332,9 @@ namespace FixedCamVr.Streaming.Tests
             IntroLogic l = AtStage(IntroStage.Frame);
             IntroInput noCamera = Ready();
             noCamera.liveFresh = false;
-            l.Tick(t.frameSec, noCamera);
-            l.Tick(IntroLogic.MaxHoldSec + 0.1f, noCamera);
+            // 実機と同じ細かい刻みで回す（1 回で大きく進めると、下限を越えた余りが待ちに数えられる）
+            float total = System.Math.Max(t.frameSec, IntroLogic.TvPowerOnEndSec) + IntroLogic.MaxHoldSec + 0.1f;
+            for (float e = 0f; e < total; e += 0.02f) l.Tick(0.02f, noCamera);
             Assert.AreEqual(IntroStage.Swap, l.Stage, "カメラが無くても砂嵐のまま段 5 へ進む（0025）");
         }
 

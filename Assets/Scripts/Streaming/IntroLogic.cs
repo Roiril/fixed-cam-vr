@@ -89,7 +89,7 @@ namespace FixedCamVr.Streaming
         {
             transition = IntroTransition.Tv,
             realSec = 1.5f, degradeSec = 1.5f, structureSec = 3.8f,
-            frameSec = 3.0f, swapSec = 1.6f, maxSec = 20f,
+            frameSec = 1.3f, swapSec = 0.6f, maxSec = 20f,
         };
 
         /// <summary>割れる遷移の尺。合計 12.7 秒。振り付けが段 4 = 5.0 秒に合わせてあるので固定（0221）。</summary>

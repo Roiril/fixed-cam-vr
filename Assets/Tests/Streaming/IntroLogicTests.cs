@@ -404,7 +404,8 @@ namespace FixedCamVr.Streaming.Tests
         public void Default_FitsInTheOpeningBudget()
         {
             var d = IntroTiming.Default;
-            Assert.GreaterOrEqual(d.TotalSec, 10f, $"短すぎる: {d.TotalSec}s");
+            // 0398: テレビの点灯は一瞬なので、点いた後の待ちを縮めた（合計 8.1 秒）
+            Assert.GreaterOrEqual(d.TotalSec, 7f, $"短すぎる: {d.TotalSec}s");
             Assert.LessOrEqual(d.TotalSec, 16f, $"長すぎる: {d.TotalSec}s");
             // ⚠⚠ **クロスフェードが終わってから段が終わるまでの余地**。
             //    ここに鈴が鳴る（`SoundCueLogic.BellAfterSwapSec` ＝ `SwapCrossfadeSec`）ので、
@@ -412,7 +413,10 @@ namespace FixedCamVr.Streaming.Tests
             //    ⚠ 2026-08-16 に下限を 1.0 → 0.2 秒へ下げた（`canon/LEDGER.md` 0058）。
             //    旧コメントは「『自分だ』と気づく時間」だったが、**その間そのものを外した**
             //    （ユーザー指示「3s またなくていい」）。残すのは鈴が鳴る余地だけ。
-            Assert.Greater(d.swapSec - IntroLogic.SwapCrossfadeSec, 0.2f);
+            //    テレビ方式（既定）は段 5 に入った縁で鳴らすので待たない（`SoundCueLogic` の tvIntro）。
+            //    クロスフェードの余地が要るのは割れる遷移だけ。
+            var shatter = IntroTiming.Shatter;
+            Assert.Greater(shatter.swapSec - IntroLogic.SwapCrossfadeSec, 0.2f);
             // 待ちを全部踏んでも打ち切り（maxSec）に掛からないこと。掛かると段が飛ぶ。
             float worst = d.TotalSec + IntroLogic.MaxHoldSec + IntroLogic.MaxHoldSec;
             Assert.Less(worst, d.maxSec, $"最悪ケース {worst}s が上限 {d.maxSec}s を超える");
